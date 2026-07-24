@@ -235,8 +235,14 @@ class GalHookMiningCoordinator {
           staleScene: staleScene,
         );
       }
+      final MineOutcome outcome = mined.outcome! as MineOutcome;
+      // 制卡成功回写行模型：把该行标记为「已制卡」，供捕获工作台列表显示徽章。
+      // 幂等（markLineMined 内部去重），覆写既有卡（updateNoteId）成功同样视作已制卡。
+      if (outcome.result == MineResult.success) {
+        _textService.markLineMined(entry.id);
+      }
       return GalHookMiningResult(
-        outcome: mined.outcome! as MineOutcome,
+        outcome: outcome,
         sentenceAudioMissing: sentenceAudioMissing,
         degradedToStill: degradedToStill,
         staleScene: staleScene,

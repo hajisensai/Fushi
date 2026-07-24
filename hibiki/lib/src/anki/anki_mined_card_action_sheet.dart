@@ -1,7 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 
+import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 import 'package:hibiki/utils.dart' show t, HibikiToast;
+
+/// BUG-1040：把「一段期间内让查词弹窗让位」的执行权交回宿主页面的钩子。
+///
+/// 查词弹窗是**原生平台视图**（桌面 WebView2 / Android platform view），靠 airspace
+/// 永远画在 Flutter 层之上——任何 `showDialog` 弹出来的东西都会被它盖住（BUG-797 已
+/// 在「选择句子上下文」对话框上踩过同一个坑）。所以本文件的对话框不能自己解决层级，
+/// 必须由持有弹窗层的宿主页面在对话框期间把弹窗停靠屏外。两条查词车道
+/// （`BaseSourcePageState` / `DictionaryPageMixin`）各实现一份并传进来；为 null 时
+/// 原样执行（无弹窗层的宿主，如纯查词页）。
+typedef LookupPopupHiddenRunner = Future<T> Function<T>(
+    Future<T> Function() body);
+
+/// [LookupPopupHiddenRunner] 缺省实现：直接跑，不动任何层级。
+Future<T> _runDirect<T>(Future<T> Function() body) => body();
 
 /// TODO-1007/1008：点查词弹窗「✓」（卡已存在）时弹出操作选择 + note viewer。
 /// 根因修复：旧行为点 ✓ 默默 return / 只覆写最近一张，把别处/上次会话建的同词卡挡死。
@@ -33,6 +48,11 @@ class AnkiMinedCardActionResult {
 
 /// 弹出操作选择并执行用户选择，返回结果。matches 由调用方先用
 /// BaseAnkiRepository.findMatchingNotes 查好（命中多张全部传入）。
+///
+/// BUG-1040：从底部 sheet 改为**居中对话框**。这是个「必须当场做决定」的模态选择
+/// （覆写哪张 / 新增重复卡 / 去 Anki 看），不是可下拉浏览的内容面板；底部 sheet 贴在
+/// 屏幕下沿、在视频页还会被播放器控件与窗口边缘裁掉半截（用户附图里进度条已被切）。
+/// 与同族的 [showAnkiNoteViewer] / [SentenceContextDialog] 统一走 [showAppDialog]。
 Future<AnkiMinedCardActionResult> showAnkiMinedCardActionSheet({
   required BuildContext context,
   required List<MinedNoteRef> matches,
@@ -40,11 +60,11 @@ Future<AnkiMinedCardActionResult> showAnkiMinedCardActionSheet({
   required Future<AnkiCardMutationResult> Function() mineNew,
   required Future<AnkiCardMutationResult> Function(int noteId) overwrite,
 }) async {
-  final result = await showModalBottomSheet<AnkiMinedCardActionResult>(
+  final result = await showAppDialog<AnkiMinedCardActionResult>(
     context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    builder: (sheetContext) => _MinedCardActionSheet(
+    // 制卡/覆写是有副作用的选择，误触 barrier 就丢掉整次操作——只允许显式取消。
+    barrierDismissible: false,
+    builder: (dialogContext) => _MinedCardActionDialog(
       matches: matches,
       repo: repo,
       mineNew: mineNew,
@@ -54,8 +74,8 @@ Future<AnkiMinedCardActionResult> showAnkiMinedCardActionSheet({
   return result ?? const AnkiMinedCardActionResult.unchanged();
 }
 
-class _MinedCardActionSheet extends StatefulWidget {
-  const _MinedCardActionSheet({
+class _MinedCardActionDialog extends StatefulWidget {
+  const _MinedCardActionDialog({
     required this.matches,
     required this.repo,
     required this.mineNew,
@@ -68,10 +88,10 @@ class _MinedCardActionSheet extends StatefulWidget {
   final Future<AnkiCardMutationResult> Function(int noteId) overwrite;
 
   @override
-  State<_MinedCardActionSheet> createState() => _MinedCardActionSheetState();
+  State<_MinedCardActionDialog> createState() => _MinedCardActionDialogState();
 }
 
-class _MinedCardActionSheetState extends State<_MinedCardActionSheet> {
+class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
   bool _busy = false;
 
   Future<void> _runMineNew() async {
@@ -133,72 +153,80 @@ class _MinedCardActionSheetState extends State<_MinedCardActionSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final matches = widget.matches;
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
-            child: Text(t.anki_mined_card_title,
-                style: theme.textTheme.titleMedium),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-            child: Text(
+    // 窄屏（手机）时不硬撑 420，取可用宽度的九成，避免对话框横向溢出。
+    final double width = MediaQuery.sizeOf(context).width * 0.9 < 420
+        ? MediaQuery.sizeOf(context).width * 0.9
+        : 420;
+    return AlertDialog(
+      title: Text(t.anki_mined_card_title),
+      content: SizedBox(
+        width: width,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
               matches.length > 1
                   ? t.anki_mined_multiple_matches(count: matches.length)
                   : t.anki_mined_card_subtitle,
               style: theme.textTheme.bodySmall,
             ),
-          ),
-          const Divider(height: 1),
-          Flexible(
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: matches.length,
-              itemBuilder: (context, i) {
-                final note = matches[i];
-                final preview =
-                    note.preview.isEmpty ? '#${note.noteId}' : note.preview;
-                return ListTile(
-                  title: Text(preview,
-                      maxLines: 2, overflow: TextOverflow.ellipsis),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        tooltip: t.anki_mined_action_overwrite,
-                        icon: const Icon(Icons.edit_outlined),
-                        onPressed:
-                            _busy ? null : () => _runOverwrite(note.noteId),
-                      ),
-                      IconButton(
-                        tooltip: t.anki_mined_action_view,
-                        icon: const Icon(Icons.open_in_new),
-                        onPressed: _busy ? null : () => _viewNote(note.noteId),
-                      ),
-                    ],
-                  ),
-                  onTap: _busy ? null : () => _viewNote(note.noteId),
-                );
-              },
+            const SizedBox(height: 12),
+            // AlertDialog 的 content 拿到的是**有界**高度（Dialog 已按屏幕减 inset 收口），
+            // 故此处 Flexible + shrinkWrap 列表安全：命中少时按内容高，多时自身滚动。
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: matches.length,
+                itemBuilder: (context, i) {
+                  final note = matches[i];
+                  final preview =
+                      note.preview.isEmpty ? '#${note.noteId}' : note.preview;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(preview,
+                        maxLines: 2, overflow: TextOverflow.ellipsis),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: t.anki_mined_action_overwrite,
+                          icon: const Icon(Icons.edit_outlined),
+                          onPressed:
+                              _busy ? null : () => _runOverwrite(note.noteId),
+                        ),
+                        IconButton(
+                          tooltip: t.anki_mined_action_view,
+                          icon: const Icon(Icons.open_in_new),
+                          onPressed:
+                              _busy ? null : () => _viewNote(note.noteId),
+                        ),
+                      ],
+                    ),
+                    onTap: _busy ? null : () => _viewNote(note.noteId),
+                  );
+                },
+              ),
             ),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.add),
-            title: Text(t.anki_mined_action_add_duplicate),
-            enabled: !_busy,
-            onTap: _busy ? null : _runMineNew,
-          ),
-          if (_busy)
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: LinearProgressIndicator(),
-            ),
-        ],
+            if (_busy)
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: LinearProgressIndicator(),
+              ),
+          ],
+        ),
       ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(),
+          child: Text(t.dialog_cancel),
+        ),
+        FilledButton.tonalIcon(
+          onPressed: _busy ? null : _runMineNew,
+          icon: const Icon(Icons.add),
+          label: Text(t.anki_mined_action_add_duplicate),
+        ),
+      ],
     );
   }
 }
@@ -353,6 +381,12 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
 ///   - 有命中 → 弹 [showAnkiMinedCardActionSheet] 让用户选（覆写哪张 / 新增重复卡 /
 ///     查看·在 Anki 中打开）。
 /// 返回值映射成 popup.js 用的 (ankiConnect, noteId) 元组，由调用方包成 MinePopupResult。
+///
+/// BUG-1040：[runHidden] 由宿主页面传入，用来在**对话框可见期间**把查词弹窗停靠屏外
+/// （原生平台视图 airspace 会盖住对话框，见 [LookupPopupHiddenRunner]）。刻意只包住
+/// 对话框那一段、不包 [BaseAnkiRepository.findMatchingNotes]——反查是网络往返，Anki
+/// 不可达时会一直等到超时，若连它一起藏就会出现「弹窗凭空消失好几秒又回来、期间什么
+/// 都没弹」的空窗。
 Future<AnkiCardMutationResult> runAnkiMinedCardAction({
   required BuildContext context,
   required BaseAnkiRepository repo,
@@ -360,6 +394,7 @@ Future<AnkiCardMutationResult> runAnkiMinedCardAction({
   required String reading,
   required Future<AnkiCardMutationResult> Function() mineNew,
   required Future<AnkiCardMutationResult> Function(int noteId) overwrite,
+  LookupPopupHiddenRunner? runHidden,
 }) async {
   final matches = await repo.findMatchingNotes(expression, reading);
   if (matches.isEmpty) {
@@ -370,12 +405,15 @@ Future<AnkiCardMutationResult> runAnkiMinedCardAction({
   if (!context.mounted) {
     return const (ankiConnect: false, noteId: null);
   }
-  final result = await showAnkiMinedCardActionSheet(
-    context: context,
-    matches: matches,
-    repo: repo,
-    mineNew: mineNew,
-    overwrite: overwrite,
+  final LookupPopupHiddenRunner hide = runHidden ?? _runDirect;
+  final result = await hide<AnkiMinedCardActionResult>(
+    () => showAnkiMinedCardActionSheet(
+      context: context,
+      matches: matches,
+      repo: repo,
+      mineNew: mineNew,
+      overwrite: overwrite,
+    ),
   );
   return (ankiConnect: result.ankiConnect, noteId: result.noteId);
 }
@@ -393,6 +431,7 @@ Future<void> openMinedCardInAnki({
   required BaseAnkiRepository repo,
   required String expression,
   required String reading,
+  LookupPopupHiddenRunner? runHidden,
 }) async {
   final matches = await repo.findMatchingNotes(expression, reading);
   if (matches.isEmpty) {
@@ -407,21 +446,26 @@ Future<void> openMinedCardInAnki({
     return;
   }
   if (!context.mounted) return;
-  await showAnkiOpenNotePicker(context: context, matches: matches, repo: repo);
+  // BUG-1040：与 [runAnkiMinedCardAction] 同理——选择框也是 Flutter 层，需宿主让位。
+  final LookupPopupHiddenRunner hide = runHidden ?? _runDirect;
+  await hide<void>(
+    () =>
+        showAnkiOpenNotePicker(context: context, matches: matches, repo: repo),
+  );
 }
 
 /// TODO-1360：同词命中多张卡时的轻量选择——只列预览行，点任意一张在 Anki 中打开。
 /// 不带覆写/新增（那是点 ✓ 的职责），保持本入口「查找并打开」单一语义。
+/// BUG-1040：与 [showAnkiMinedCardActionSheet] 同步改为居中对话框（同族模态选择，
+/// 不该一个居中一个贴底沿）。
 Future<void> showAnkiOpenNotePicker({
   required BuildContext context,
   required List<MinedNoteRef> matches,
   required BaseAnkiRepository repo,
 }) {
-  return showModalBottomSheet<void>(
+  return showAppDialog<void>(
     context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    builder: (sheetContext) => _OpenNotePicker(matches: matches, repo: repo),
+    builder: (dialogContext) => _OpenNotePicker(matches: matches, repo: repo),
   );
 }
 
@@ -456,48 +500,54 @@ class _OpenNotePickerState extends State<_OpenNotePicker> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final matches = widget.matches;
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
-            child: Text(t.anki_mined_card_title,
-                style: theme.textTheme.titleMedium),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-            child: Text(
+    final double width = MediaQuery.sizeOf(context).width * 0.9 < 420
+        ? MediaQuery.sizeOf(context).width * 0.9
+        : 420;
+    return AlertDialog(
+      title: Text(t.anki_mined_card_title),
+      content: SizedBox(
+        width: width,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
               t.anki_mined_multiple_matches(count: matches.length),
               style: theme.textTheme.bodySmall,
             ),
-          ),
-          const Divider(height: 1),
-          Flexible(
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: matches.length,
-              itemBuilder: (context, i) {
-                final note = matches[i];
-                final preview =
-                    note.preview.isEmpty ? '#${note.noteId}' : note.preview;
-                return ListTile(
-                  title: Text(preview,
-                      maxLines: 2, overflow: TextOverflow.ellipsis),
-                  trailing: const Icon(Icons.open_in_new),
-                  onTap: _busy ? null : () => _open(note.noteId),
-                );
-              },
+            const SizedBox(height: 12),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: matches.length,
+                itemBuilder: (context, i) {
+                  final note = matches[i];
+                  final preview =
+                      note.preview.isEmpty ? '#${note.noteId}' : note.preview;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(preview,
+                        maxLines: 2, overflow: TextOverflow.ellipsis),
+                    trailing: const Icon(Icons.open_in_new),
+                    onTap: _busy ? null : () => _open(note.noteId),
+                  );
+                },
+              ),
             ),
-          ),
-          if (_busy)
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: LinearProgressIndicator(),
-            ),
-        ],
+            if (_busy)
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: LinearProgressIndicator(),
+              ),
+          ],
+        ),
       ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(),
+          child: Text(t.dialog_cancel),
+        ),
+      ],
     );
   }
 }

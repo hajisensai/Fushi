@@ -2,6 +2,8 @@
 
 > 面向接手的另一个 AI/开发者，**自包含**。总设计见 [design.md](design.md)。
 > 已完成 A 阶段 Dart 基座 + native loopback + 波形桥 + C.1 注入组件（PR #212）。本文档给出**剩余任务**的落地路径：文件、接缝、gotcha、验证门。
+>
+> **迁移说明**：本文保留 2026-07-18/19 的历史实现证据；其中 `native/galgame_voice_hook/...` 均指迁出前路径。当前 native 实现在独立仓 `hajisensai/hibiki-hook`（对应 `hook/`、`injector/`、`include/`），新工作必须按 [Galgame Hook 引擎适配 SOP](../../agent/galgame-hooking.md) 和该仓现状定位，不能在 Hibiki 主仓重建旧目录。
 
 ## 落地进度
 
@@ -16,7 +18,7 @@
 | **C.4** EngineHookGalAudioSource+接回 | ✅ 真机通过 | `voice_hook_reader.{h,cpp}`+`app.hibiki.reader/voice_hook` channel（含 `processIsWow64` 与 `rawVoiceReady`）；`EngineHookGalAudioSource` 支持 PCM 与 Siglus raw-only Ogg；A6 已「引擎-hook 优先(按目标位数选 x86/x64 注入器)，不可用回退 loopback」 | 全 UI 热键→Anki 出卡仍可继续走查 |
 | **C.3** 逐引擎覆盖 | 🟡 Siglus 已完成 | `SiglusEngine.exe` 专属 OVK 索引/Ogg 捕获，连续两句真机导出与原归档逐字节一致 | Artemis/Unity 等继续覆盖；KiriKiriZ 干净 per-channel 仍未做 |
 
-**接缝提醒**：injector 可执行文件约定放在 app 同级 `voice_hook/<arch>/hibiki_voice_injector.exe`（`_resolveGalInjectorPath({is32Bit})`，按 `EngineHookGalAudioSource.targetIsWow64(pid)` 查目标进程位数选 x86/x64——**KiriKiri 多为 32 位必须 x86 注入器**），由 `native/galgame_voice_hook` 单独 cmake（`-A x64` / `-A Win32`）构建后随包分发/按需下载；缺失/位数不符时 A6 自动回退 loopback。C.2 的**校准模式 callsite/音量精筛**（只留角色语音、BGM/SE 不捕获）留 TODO（`dll_main.cpp` 内注释），需真机各引擎标定=C.3。
+**接缝提醒**：injector 可执行文件约定放在 app 同级 `voice_hook/<arch>/hibiki_voice_injector.exe`（`_resolveGalInjectorPath({is32Bit})`，按 `EngineHookGalAudioSource.targetIsWow64(pid)` 查目标进程位数选 x86/x64——**KiriKiri 多为 32 位必须 x86 注入器**），由独立仓 `hajisensai/hibiki-hook` 以 CMake（`-A x64` / `-A Win32`）构建后随包分发/按需下载；缺失/位数不符时 A6 自动回退 loopback。C.2 的**校准模式 callsite/音量精筛**是迁出前 TODO，当前应在独立仓 adapter/profile 中按真机证据实现，不应回填旧 `dll_main.cpp` 主干。
 
 ## ✅ 真机验证（2026-07-19，SiglusEngine 1.1.141.3 / anemoi 正式版）
 
@@ -74,15 +76,15 @@ GALTEST OK fmt=44100/2/16 float=false pcmBytes=529200   (=3s×44100×2×2，非�
   - `hibiki/lib/src/mining/galgame_audio_source.dart` — `GalAudioSource` 抽象、`GalAudioSlice`、`LoopbackGalAudioSource`（`app.hibiki.reader/audio_loopback` channel）。
   - `hibiki/lib/src/mining/galgame_waveform.dart` — `pcmToEnergyEnvelope(pcm, format)` → 逐窗 RMS dBFS。
   - `hibiki/windows/runner/audio_loopback_capture.{h,cpp}` — WASAPI loopback 环形缓冲 native（A 阶段音频源）。
-  - `native/galgame_voice_hook/` — C.1 独立注入组件（injector + hook DLL + IPC 契约）。
+  - `hajisensai/hibiki-hook` 独立仓 — C.1 注入组件（injector + hook DLL + IPC 契约；迁出前路径为 `native/galgame_voice_hook/`）。
 
 ## 1. 铁律（贯穿所有剩余任务）
 
 1. **`providedAudioBytes` 引擎逐字节写盘不重编码**（`hibiki/lib/src/mining/immersion_mining_engine.dart:173`）→ 塞进制卡的音频**必须是已封装容器**（aac/m4a），裸 PCM 先过 `pcmSliceToAacBytes`。
 2. **视频波形对话框 `SubtitleWaveformZoomView` 不可整体复用**——它是字幕对轴、产出 `delayMs`、无框选、音频硬绑 videoPath+ffmpeg。**只复用渲染层**：`SubtitleWaveformPainter` / `timeToX`（`hibiki/lib/src/media/video/subtitle_waveform_painter.dart`）+ `downsampleEnergyEnvelope`（`hibiki/lib/src/media/video/audio_energy_probe.dart:260`）。
-3. **注入代码绝不进 `hibiki.exe` 本体**（报毒污染全 app）。`native/galgame_voice_hook/` 独立构建/分发；hibiki.exe 只**读**注入组件建好的共享内存（读共享内存不是注入、不被标记）。
+3. **注入代码绝不进 `hibiki.exe` 本体**（报毒污染全 app）。`hajisensai/hibiki-hook` 独立仓构建/分发；hibiki.exe 只**读**注入组件建好的共享内存（读共享内存不是注入、不被标记）。
 4. **音频 hook 回调零阻塞**（C.2）：回调里只 memcpy + 更新 `write_pos`/`total_written`，写盘/编码/锁/IPC 全部移出——回调阻塞即爆音。
-5. **中文源码 native**：CMake 必须 `/utf-8`（否则中文 locale 下 MSVC 按 GBK 误读致编译失败，见 `native/galgame_voice_hook/CMakeLists.txt`）。
+5. **中文源码 native**：CMake 必须 `/utf-8`（否则中文 locale 下 MSVC 按 GBK 误读致编译失败；当前配置见 hibiki-hook 独立仓的 `CMakeLists.txt`）。
 
 ---
 
@@ -135,9 +137,9 @@ GALTEST OK fmt=44100/2/16 float=false pcmBytes=529200   (=3s×44100×2×2，非�
 
 ## 5. C.2 —— XAudio2/DirectSound 语音捕获 hook（C 的核心，需真实 galgame）
 
-**位置**：`native/galgame_voice_hook/hook/dll_main.cpp` 的 `HookWorker` 里「C.2 挂钩点」注释处。
+**历史位置**：迁出前为 `native/galgame_voice_hook/hook/dll_main.cpp` 的 `HookWorker`。当前实现位于 hibiki-hook 独立仓；按 `hook/adapter_registry.inc` 与 `hook/adapters/` 定位，不再往 `dll_main.cpp` 堆引擎逻辑。
 
-**依赖**：引入 **MinHook**（MIT，与 GPLv3 兼容）做 inline/vtable hook。CMake `FetchContent` 或 vendor 进 `native/galgame_voice_hook/third_party/minhook/`。
+**依赖**：引入 **MinHook**（MIT，与 GPLv3 兼容）做 inline/vtable hook。当前 vendored 位置是 hibiki-hook 独立仓的 `third_party/minhook/`。
 
 **XAudio2 路径**（现代 VN 主流）：
 - XAudio2 的语音接口是 COM vtable，`SubmitSourceBuffer` 不能 `GetProcAddress`。方案：hook `IXAudio2::CreateSourceVoice`（vtable 索引固定）→ 每次创建 source voice 时记下它的 `WAVEFORMATEX`（填 `SharedHeader` 格式）并 vtable-hook 该 voice 的 `SubmitSourceBuffer`。
@@ -161,7 +163,7 @@ GALTEST OK fmt=44100/2/16 float=false pcmBytes=529200   (=3s×44100×2×2，非�
 
 **架构（隔离红线的落法）**：
 1. Hibiki 主进程把 `hibiki_voice_injector.exe --pid <游戏PID> --hold` 当**子进程**拉起（注入这一步的报毒代码在隔离组件里）。
-2. hibiki.exe **自己的** native（新增，如 `hibiki/windows/runner/voice_hook_reader.{h,cpp}` + channel `app.hibiki.reader/voice_hook`）**按名打开**共享内存（`SharedMemoryName(pid)`，见 `native/galgame_voice_hook/include/voice_hook_ipc.h`，可把该头共享/复制进 runner）→ `grabRecent(backMs)`：按 `write_pos`/`total_written`/`ring_capacity`/格式算最近 N 毫秒 PCM。**读共享内存不是注入、不被杀软标记**，可安全进 hibiki.exe。
+2. hibiki.exe **自己的** native（新增，如 `hibiki/windows/runner/voice_hook_reader.{h,cpp}` + channel `app.hibiki.reader/voice_hook`）**按名打开**共享内存（`SharedMemoryName(pid)`，契约源见 hibiki-hook 独立仓 `include/voice_hook_ipc.h`，runner 保持同步副本）→ `grabRecent(backMs)`：按 `write_pos`/`total_written`/`ring_capacity`/格式算最近 N 毫秒 PCM。**读共享内存不是注入、不被杀软标记**，可安全进 hibiki.exe。
 3. Dart 新增 `EngineHookGalAudioSource implements GalAudioSource`（`galgame_audio_source.dart`），`grabRecent` 走上面的 voice_hook channel——**和 `LoopbackGalAudioSource` 同接口**，A5/A6 上层零改动。
 4. 加「音频来源」开关：loopback(A) / 引擎 hook(C)，hook 不可用（未注入/无该引擎）自动回退 A。
 

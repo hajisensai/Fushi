@@ -31,7 +31,11 @@ class GoogleDriveSyncBackend extends SyncBackend {
         e.message.toLowerCase().contains('insufficient_scope')) {
       return SyncAuthError(e.message);
     }
-    return SyncBackendError(e.message, isRetryable: e.isStaleCacheError);
+    // 可重试 = 404 陈旧缓存（重解析 ID）∨ 瞬时故障（408/429/5xx，轮内重试一次）。
+    // 二者语义正交：前者让重试重解析 folder ID，后者吸收超时/限流/网关抖动，避免一次
+    // 瞬时超时把整本书 skip 到下一轮（BUG-1023）。507 配额不在瞬时集内，仍 skip。
+    return SyncBackendError(e.message,
+        isRetryable: e.isStaleCacheError || e.isTransientError);
   }
 
   Future<T> _wrapErrors<T>(Future<T> Function() fn) async {

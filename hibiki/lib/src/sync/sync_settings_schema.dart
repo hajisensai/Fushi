@@ -28,6 +28,7 @@ import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_server_controller.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/lan_discovery_service.dart';
+import 'package:hibiki/src/sync/manual_sync_ui.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_pair_v2_client.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_ping_client.dart';
 import 'package:hibiki/src/sync/pairing/discovered_pairing_probe.dart';
@@ -36,9 +37,7 @@ import 'package:hibiki/src/sync/tls/hibiki_tofu_probe.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
-import 'package:hibiki/src/sync/sync_conflict_prompter.dart';
 import 'package:hibiki/src/sync/sync_error_messages.dart';
-import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/sync/sync_message_dialog.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -54,6 +53,10 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:hibiki/src/utils/misc/hibiki_share.dart';
+
+/// [summarizeSyncReport] 的实现搬去了 manual_sync_ui.dart（媒体页下拉同步共用），
+/// 这里再导出一次以保持既有导入点（test/sync/sync_summary_test.dart）不变。
+export 'package:hibiki/src/sync/manual_sync_ui.dart' show summarizeSyncReport;
 
 part 'sync_settings_schema/account.part.dart';
 part 'sync_settings_schema/backend_config.part.dart';
@@ -454,6 +457,34 @@ SettingsDestination buildInterconnectDestination() {
               await SyncRepository(ctx.appModel.database)
                   .setInterconnectSyncVideoFilesEnabled(value);
             },
+          ),
+        ],
+      ),
+      // 交给已配对设备：本机把某类工作整个甩给对端主机去做。两项都只有 client 角色
+      // 讲得通（host 没有「对端」可交），故与上面的上传区同门控——互联启用且本机不在
+      // host 模式。
+      //   · 制卡到已配对设备：制卡改由主机的 Anki 落卡（原在「制卡」分类，但它的前置
+      //     条件、目标设备、失效条件全由互联决定，互联关掉时在制卡页是个纯死开关）。
+      //   · 用互联做备份后端：把云备份通道也指向对端（详见 _InterconnectBackupBackendWidget）。
+      SettingsSection(
+        title: t.interconnect_section_delegate,
+        visible: (SettingsContext ctx) =>
+            interconnectActive(ctx) && !_isHostingInterconnect(ctx),
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'interconnect.mine_to_server',
+            title: t.anki_mine_to_server,
+            subtitle: t.anki_mine_to_server_hint,
+            icon: Icons.note_add_outlined,
+            value: (SettingsContext ctx) => ctx.appModel.mineToServerEnabled,
+            onChanged: (SettingsContext ctx, bool value) =>
+                ctx.appModel.setMineToServer(value),
+          ),
+          SettingsCustomItem(
+            id: 'interconnect.backup_backend',
+            icon: Icons.backup_outlined,
+            builder: (SettingsContext ctx) =>
+                _InterconnectBackupBackendWidget(settingsContext: ctx),
           ),
         ],
       ),

@@ -14,7 +14,7 @@
   - 在主 checkout 的 `.worktrees/coordination/claims/` 复制 `_template.json` 新建自己的 claim；若当前位于 `.worktrees/<task>` worktree，则使用同级的 `../coordination/claims/`。
   - claim 写清任务、agent、分支、worktree、base SHA、预计修改文件和高冲突文件；普通任务 agent 只编辑自己的 claim，不在 tracked 文件里记录协调状态。
   - 普通任务 agent 不主动 rebase/merge `develop`；integration owner 统一读取 claims、决定合并顺序、更新 `develop`、跑 broad verification，并将完成/阻塞的 claim 移到 `done/` / `blocked/`。
-- 多使用子代理：遇到 2 个以上可独立推进的分析、审查、文件定位、测试诊断或实现子任务时，优先派发子代理并行处理；主代理负责整合结论、控制范围、复核关键证据和最终提交。不要把需要共享同一脏文件或强顺序依赖的步骤硬拆给多个子代理。
+- 多使用子代理：遇到 2 个以上可独立推进的分析、审查、文件定位、测试诊断或实现子任务时，优先派发子代理并行处理；主代理负责整合结论、控制范围、复核关键证据和最终提交。不要把需要共享同一脏文件或强顺序依赖的步骤硬拆给多个子代理。子代理后台派发、主代理不空等，绝不让两个代理重复做同一子任务；难度分级、标准并行时间线和空等禁止清单见 [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md)。
 - 根因修复：遇到功能异常、测试失败、运行时报错或用户要求修复，先复现或沿真实代码路径定位，再修数据结构、状态同步、生命周期、平台边界或依赖契约。不允许用延迟、重试、吞异常、硬编码、特例分支掩盖症状；只有外部系统或平台限制不可控时才允许临时兼容层，并说明影响范围和清理条件。
 - 函数和新增 Dart helper 要有明确类型签名。
 - 不从零重写现有功能；在当前实现上删减、合并、修正。
@@ -30,11 +30,11 @@
 - reader source：`hibiki/lib/src/media/sources/reader_hibiki_source.dart`（`ReaderHibikiSource`）。
 - 阅读器 JS/CSS：`hibiki/lib/src/reader/`（17 个 JS/CSS 注入封装，`reader_pagination_scripts.dart` 等）；JS 桥接全局是 `window.hoshiReader`（历史命名，是真实符号，勿改）。
 - 全局状态：`hibiki/lib/src/models/app_model.dart`（`AppModel`，~5150 行，初始化流程 + 子系统委托核心，改前先理解）。
-- Drift 数据库：`packages/hibiki_core/lib/src/database/database.dart` 和 `tables.dart`（schema v50，46 张表，WAL）。
+- Drift 数据库：`packages/hibiki_core/lib/src/database/database.dart` 和 `tables.dart`（schema v51，46 张表，WAL）。
 - 词典：Dart 封装 `packages/hibiki_dictionary/lib/src/engine/hoshidicts.dart` + FFI 绑定 `lib/src/ffi/hoshidicts_ffi_bindings.dart`；C++ 引擎源码全在 `native/hoshidicts/`（包内已无 C++），`hoshidicts_external/` 是 vendored 第三方，上游同步基线见 `native/hoshidicts/UPSTREAM.md`。
 - 有声书：`packages/hibiki_audio/` + `hibiki/lib/src/media/audiobook/`（导入入口 `book_import_dialog.dart` / `audiobook_import_dialog.dart`）。
 - 互联/同步：`hibiki/lib/src/sync/`（`interconnect_*.dart`、`aggregate_sync_service.dart`、`backup_*`）。
-- galgame 制卡：Flutter 侧 `hibiki/lib/src/lookup/`（overlay 浮窗）+ `hibiki/lib/src/mining/galgame_*`（9 文件）；C++ hook 在 `native/galgame_voice_hook/`。
+- galgame 制卡：Flutter 侧 `hibiki/lib/src/lookup/`（overlay 浮窗）+ `hibiki/lib/src/mining/galgame_*`；C++ hook 已物理隔离到独立仓 `hajisensai/hibiki-hook`，本仓不再内置。
 - 浏览器扩展：`tools/browser-extension/`（注意是根级 `tools/`，与 `tool/` 不同目录）。
 - 工具脚本归属：根 `tool/` = `setup_worktree.ps1` / `bootstrap.ps1` / `bug.dart` / `check_release_policy.ps1` / `run_mac_itest.ps1`；`hibiki/tool/` = `i18n_sync.dart` / `run_windows_itest.ps1` / `comprehensive_test_runner.dart`。
 - 审查报告：`docs/reviews/YYYY-MM-DD-project-review.md`；已复现回归：`docs/REGRESSION_BUGS.md`（本地，不入库）；测试证据：`.codex-test/`（不入库）。
@@ -44,12 +44,22 @@
 - Flutter 版本分两处：本地钉 `.fvmrc` = `3.41.6`（pubspec `flutter: "^3.41.6"`），CI workflows 用 `3.44.0`；Dart SDK 约束 `>=3.5.0 <4.0.0`。最低 Android API 24，`compileSdk 36` / `targetSdk 35`。
 - 状态管理 Riverpod；音频 just_audio（桌面经 just_audio_media_kit）；录音 record 6.0.0；视频播放走 **media_kit**（third_party vendored 全套）+ youtube_explode_dart。
 - torrent 走内部包 `packages/hibiki_torrent`（libtorrent 2.x C ABI FFI，native 在 `native/hibiki_torrent/`；Windows 预编译 DLL 随包，缺失时回退外接 qBittorrent）。
-- 主存储是 Drift SQLite（`HibikiDatabase`，schema v50），偏好落 Drift `preferences` 表 + `profile_settings` 每 Profile 快照。**已无 Isar/Hive 依赖**；旧注释里的 Isar/Hive 不代表当前事实，先查代码再判断。
+- 主存储是 Drift SQLite（`HibikiDatabase`，schema v51），偏好落 Drift `preferences` 表 + `profile_settings` 每 Profile 快照。**已无 Isar/Hive 依赖**；旧注释里的 Isar/Hive 不代表当前事实，先查代码再判断。
 - EPUB 阅读器走 reader_hibiki 实现（见仓库地图）。`reader_ttu` key、`setTtu*` 方法、`ttuBookId` 列、`ttu_*` i18n 只是旧数据兼容残留，不代表还有 TTU 阅读器；没有迁移方案别随手改这些持久化 key。
 - 旧 TTU 迁移代码已移除（develop `90c37b472`：`TtuMigrationServer` / `TtuIdbReader` / `assets/ttu-ebook-reader` 均已删除）；只剩上述命名残留作旧数据兼容。阅读器渲染/交互问题按 reader_hibiki 路径修，不要去上游 ttu fork 仓库改。
 - 词典导入/查询核心走 `hoshidicts` C++ FFI；格式 UI 或旧 Dart format 类不一定是真实导入路径。
 - 国际化用 Slang，源文件 `hibiki/lib/i18n/*.i18n.json`（17 种语言），生成文件 `strings.g.dart`。
 - 5 平台均出包（Android/iOS/macOS/Windows/Linux）：`auto` 下五个平台统一走 Material Design 3；Cupertino / macOS renderer 仅保留为隐藏内部能力。桌面端依赖 fork 的 `flutter_inappwebview_windows` 渲染 EPUB。
+
+## Galgame Hook 硬规则
+
+- Galgame 文本/语音 Hook、LunaHook、helper、adapter、引擎适配和制卡 E2E 默认**只做 Windows 端**。允许范围是 Windows Hibiki、Windows x86/x64 注入器/helper/hook，以及 Windows 链路必需的共享代码和平台无关测试；禁止修改、构建、运行、打包、发布或宣称支持 Android、iOS、macOS、Linux 的 galgame 实现。只有用户明确变更平台范围时才能越过此边界，通用的多平台构建或集成测试说明不得自动扩大 galgame 任务范围。
+- 任何 galgame 文本/语音 Hook、LunaHook、helper、adapter、引擎适配或支持声明，开工前必须完整阅读 [docs/agent/galgame-hooking.md](docs/agent/galgame-hooking.md)；一引擎一任务、一独立 worktree，两仓改动分别提交。
+- 写代码前必须在用户原始安装与启动路径建立身份/时序台账：启动器与真实游戏 PID/父子关系、架构、exe/module/helper/DLL 实际路径与 SHA-256、注入/附着策略，以及进程出现、模块加载、首次资源访问和首次音频的时间。imports、模块名、DLL 已加载或 Hook installed 只算候选证据。
+- 能力阶段必须分开记录：`process_found → helper_ready → ipc_ready → text_ready → resource/pcm_ready → paired → e2e_verified`；不得用前一阶段推断后一阶段，也不得把 ready、捕获、纯人声分类、哈希一致和端到端混成一个“成功”。
+- 每轮只修原始路径上第一个未通过边界。引擎/保护壳/加载时序特例必须收进 profile/adapter；共享中间件不得仅凭 DLL 名启用，且须有跨引擎负向测试。
+- Loopback 只是显式降级，不能证明引擎 Hook、逐句配对或纯人声已验证；任何必需测试、双架构构建、replay 或真机门被跳过/阻塞，只能标 `implemented_unverified`，不得宣称“已支持/已修好”。
+- 支持升级必须回到原始启动路径完成“当前文本 → 对应语音 → 当前画面 → 真卡写入”E2E；宣称原始逐句资源时还须记录与源 entry 的字节哈希一致性，并只通过 hibiki-hook 的真相源更新支持状态。
 
 ## i18n 纪律
 
@@ -59,7 +69,7 @@
 ## 验证
 
 - 文档改动：至少 `git diff --cached --check`，不必跑 Flutter 测试。
-- Dart/Flutter 改动（在 `hibiki/` 下）：`dart format .` + `flutter test`（用项目钉定的工具链：本地 `.fvmrc` 3.41.6，CI 3.44.0；本机 flutter 不在 PATH 就把完整路径写进 `CLAUDE.local.md`）。
+- Dart/Flutter 改动（在 `hibiki/` 下）：`dart format` 改动文件 + push 前全量 `flutter analyze`（含 test 目录，CI 把 warning 当致命）+ **按爆炸半径分级的测试**——分支上跑改动覆盖 + 相邻功能的定向 `flutter test <目标> --no-pub`，全量套件由 PR CI 兜底（真单测门是 Build Release APK 的 Run unit tests）；**合入 `develop` 前仍必须本地全量 `flutter test`**。分级判据见 [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md)。（工具链钉定：本地 `.fvmrc` 3.41.6，CI 3.44.0；本机 flutter 不在 PATH 就把完整路径写进 `CLAUDE.local.md`。）
 - Android 资源/manifest/Gradle/权限/通知/前台服务/打包改动：再加 `gradlew :app:assembleRelease`（在 `hibiki/android/`；Windows 用 `.\gradlew.bat`）。
 - 阅读器/导入/播放/布局问题，声明「修好了」前必须用真实模拟器或用户指定设备复测原始失败路径并留证据（见 [docs/agent/integration-testing.md](docs/agent/integration-testing.md)）。
 - 集成测试操作真 app **一律焦点驱动（`FocusDriver` / `tester.sendKeyEvent`，禁止 `tester.tap` 或坐标点击）**：`Tab` 遍历→检测控件类型→Switch/按钮确认用 `Enter`（**不要用空格**——App 已把裸空格中和为 `DoNothingIntent`，焦点确认统一走 Enter / 手柄 A，见 `hibiki/lib/src/shortcuts/global_navigation.dart`）、Slider/Stepper/Segmented 用方向键→断言真写穿 DB/真生效→还原。同一份测试三端可跑（模拟器 `-d emulator-<port>` / Windows 离屏 `hibiki/tool/run_windows_itest.ps1` / Mac 跨机 `tool/run_mac_itest.ps1`），完整流程见 [docs/agent/integration-testing.md](docs/agent/integration-testing.md) 的「焦点驱动操作」。
@@ -78,6 +88,7 @@
 
 | 要做的事 | 看这里 |
 |---|---|
+| 加功能/修 bug/合并的分级快车道：难度分级、子代理分工、并行时间线、验证分级 | [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md) |
 | 5 平台构建 / Melos / bootstrap + 依赖补丁机制 / 发布通道与版本号规则 / galgame hook 注入器独立分发 | [docs/agent/build.md](docs/agent/build.md) |
 | 模拟器集成测试三层架构 / 焦点驱动（禁坐标点击）/ AnkiDroid provisioning / ADB 降级 / DB 查询 / 测试素材 | [docs/agent/integration-testing.md](docs/agent/integration-testing.md) |
 | 持续审查模式 / docs/reviews 报告格式 / 回归记录 | [docs/agent/review-process.md](docs/agent/review-process.md) |
@@ -85,6 +96,7 @@
 | Computer Use 可见巡检 / 离屏、非焦点抓真实像素 / 确定性开页 debug 钩子 / 证据留存 | [docs/agent/computer-use-testing.md](docs/agent/computer-use-testing.md) |
 | Windows app 外打开视频（文件关联 / argv / 拖拽）数据流 / single-instance WM_COPYDATA 转发 | [docs/agent/external-video-open.md](docs/agent/external-video-open.md) |
 | 全量快捷键 / 手柄 / 鼠标绑定盘点快照（2026-06-11） | [docs/agent/shortcuts-inventory.md](docs/agent/shortcuts-inventory.md) |
+| Galgame 用户报告 / 脱敏 probe / adapter 骨架 / 离线 replay / 双架构验证 / 真机证据 | [docs/agent/galgame-hooking.md](docs/agent/galgame-hooking.md) |
 
 ## 模块索引
 
@@ -102,7 +114,6 @@
 | `packages/gamepads_android_stub/` | Dart | `gamepads_android` no-op stub（防启动 ClassCastException，path override） | — |
 | `native/hoshidicts/` | C++ | 词典查询/导入引擎（上游深度 fork；`hoshidicts_external/` 为 vendored 第三方）；FFI/JNI 编入 app | [UPSTREAM.md](native/hoshidicts/UPSTREAM.md) |
 | `native/hibiki_torrent/` | C++ | libtorrent 2.x C ABI bridge；FFI，Windows 预编译 DLL 随包 | [README.md](native/hibiki_torrent/README.md) |
-| `native/galgame_voice_hook/` | C++ | galgame 引擎级 voice hook（混音前截语音）；独立子进程 + 共享内存，必报毒故物理隔离、**绝不编进 hibiki.exe**，独立分发 | [README.md](native/galgame_voice_hook/README.md) |
 | `server/log-collector/` | Go | 报错日志接收端（自有服务器 + EdgeOne 版）；独立部署 | [README.md](server/log-collector/README.md) |
 | `server/cf-worker/` | JS | 报错日志接收端（Cloudflare Worker + D1 版，与 Go 版择一）；独立部署 | [README.md](server/cf-worker/README.md) |
 | `tools/browser-extension/` | JS | 浏览器查词扩展（根级 `tools/`，非 `tool/`） | — |

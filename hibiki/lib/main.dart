@@ -1533,10 +1533,18 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
   Locale get locale => appModel.appLocale;
 }
 
-/// 按实验开关决定是否包裹自定义焦点导航层（[HibikiFocusRoot] 焦点控制器 +
-/// [HibikiFocusRing] 可见焦点环）。关闭（默认）时原样返回 [child]，App 走 Flutter
-/// 原生焦点遍历——各组件在缺少 HibikiFocusRoot 时会自动降级到 FocusableActionDetector。
+/// 焦点导航层（[HibikiFocusRoot] 焦点控制器 + [HibikiFocusRing] 可见焦点环）
+/// **恒定挂载，行为按实验开关门控**。禁用时 [HibikiFocusRoot.maybeControllerOf]
+/// 返回 null（各组件据此走原生焦点遍历，语义与「未包裹」时代逐字节一致）、
+/// 焦点环不绘制。
+///
+/// 用户实报（2026-07-22）：旧实现按开关插/拔这两层——切「键盘/手柄焦点导航」
+/// 开关时整棵 app 子树因结构变化被重挂载，被切的 Switch 以新状态直接 mount，
+/// 滑块动画消失（其余开关都有动画）。结构恒定后 Element 全保留，动画回归，
+/// 顺带不再丢各页滚动位置。
 Widget _wrapFocusNavigation({required bool enabled, required Widget child}) {
-  if (!enabled) return child;
-  return HibikiFocusRoot(child: HibikiFocusRing(child: child));
+  return HibikiFocusRoot(
+    enabled: enabled,
+    child: HibikiFocusRing(enabled: enabled, child: child),
+  );
 }

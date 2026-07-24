@@ -271,4 +271,37 @@ run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
 assert_nonempty "$WORK/clip.mp4"
 run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/clip.mp4" -f null -
 
+echo "[ffmpeg-min-smoke] verifying movtext encoder + soft-subtitle clip mux"
+# Clip export muxes the subtitle the user is actually watching into the exported
+# .mp4 as a soft subtitle stream. The cues live in Dart memory (Hibiki renders
+# subtitles in a Flutter overlay, not via libmpv), so they are written out as a
+# temporary SRT and fed to ffmpeg as a second input -- which needs the srt
+# demuxer + subrip decoder on the way in, and the movtext ENCODER on the way out
+# (ISO-BMFF only accepts 3GPP Timed Text). The movtext *decoder* has always been
+# enabled for reading embedded mp4 subs; the encoder is a separate switch and was
+# missing, which made every export silently fall back to a subtitle-less clip.
+"$FFMPEG_MIN" -hide_banner -encoders > "$WORK/encoders3.txt" 2>&1
+if ! grep -qw mov_text "$WORK/encoders3.txt"; then
+  echo "MISSING ENCODER (need movtext to mux soft subtitles into exported mp4 clips):"
+  cat "$WORK/encoders3.txt"
+  exit 1
+fi
+cat > "$WORK/clipsub.srt" <<'SRT'
+1
+00:00:00,100 --> 00:00:00,900
+テスト字幕
+SRT
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -ss 0.100 -t 1.000 -i "$MP4_FIXTURE" \
+  -i "$WORK/clipsub.srt" \
+  -map 0:v:0 -map '0:a?' -map 1:s:0 \
+  -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -c:s mov_text \
+  -movflags +faststart \
+  "$WORK/clip-subbed.mp4"
+assert_nonempty "$WORK/clip-subbed.mp4"
+# The subtitle stream must survive into the output, not just "ffmpeg exited 0".
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
+  -i "$WORK/clip-subbed.mp4" -map 0:s:0 "$WORK/clip-subbed.srt"
+assert_nonempty "$WORK/clip-subbed.srt"
+
 echo "[ffmpeg-min-smoke] PASS"

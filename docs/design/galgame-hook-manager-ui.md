@@ -3,6 +3,7 @@
 > 日期：2026-07-19
 > 状态：需求分析与草图；本轮不实现 Flutter 页面。
 > 参考：`references/ReinaManager` 固定于 `72b8ca255d6e874539a6bfe71029a369debf6c0a`，仅作产品与交互参考。
+> 路径说明：本文证据表中的 `native/galgame_voice_hook/...` 是迁出前历史锚点；当前 native 实现在独立仓 `hajisensai/hibiki-hook`，新实现应按 [Galgame Hook 引擎适配 SOP](../agent/galgame-hooking.md) 从 `hook/adapters/`、`injector/` 与 `include/` 定位。
 
 ## 1. 结论先行
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -9,8 +10,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'package:hibiki/main.dart' show HoshiReaderApp;
 import 'package:hibiki/src/epub/epub_importer.dart';
+import 'package:hibiki/src/media/media_item.dart' show MediaItem;
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/pages/implementations/home_page.dart'
+    show HomePage, HomeTab;
 import 'package:hibiki/src/pages/implementations/home_video_page.dart'
     show HomeVideoPage;
 import 'package:hibiki/src/media/video/video_book_repository.dart';
@@ -39,6 +44,55 @@ Future<AppModel> readyAppModel(WidgetTester tester) async {
   expect(appModel.isInitialised, isTrue,
       reason: 'AppModel must be initialised before seeding fixtures');
   return appModel;
+}
+
+/// 把 home 顶层切到书架 tab（确定性，经 [HomePage.debugSelectTab] 测试钩子）。
+///
+/// 书架（books）是惰性构建的保活 tab（home_page.dart 的 `_visitedKeepAliveTabs`：
+/// 没访问过就不预建），而冷启动初始 tab 是 dashboard（`HomeTab.home`）。不切过去
+/// 时 `book_entry_*` / `srt_entry_*` 书卡根本不在 widget 树中——任何等书卡出现的
+/// 轮询（含 [seedReaderBook] 的可见性轮询）都必然超时。等待书卡的测试必须先调这里。
+Future<void> showBooksTab(WidgetTester tester) async {
+  expect(HomePage.debugSelectTab, isNotNull,
+      reason: 'HomePage.debugSelectTab 钩子应已注册（debug/profile build）');
+  HomePage.debugSelectTab!(HomeTab.books);
+  await tester.pump(const Duration(milliseconds: 500));
+}
+
+/// 经生产路径打开一本已入库的书：按 bookKey 解析 [MediaItem] →
+/// [AppModel.openMedia]（与书卡 onTap 完全同一调用），把 [ReaderHibikiPage]
+/// 推上 navigator。
+///
+/// 不依赖书架视口/排序/焦点树：已入库 fixture 可能被书架排序排到当前视口外
+/// （abe553a5c 对 reader_pagination_test 的同一解耦理由），书卡的 Enter→activate
+/// 绑定也未挂在 HibikiFocusRoot 下（TODO-783）。openMedia 的 Future 要等 reader
+/// 路由 pop 才 resolve，故不 await，pump 若干帧让路由推入与 _initBook 启动。
+Future<void> openBookViaProductionPath(
+  WidgetTester tester,
+  String bookKey,
+) async {
+  final MediaItem? item =
+      await ReaderHibikiSource.instance.mediaItemForBookKey(bookKey);
+  expect(item, isNotNull,
+      reason: 'seeded book must resolve to a MediaItem (key=$bookKey)');
+
+  final ProviderContainer container = ProviderScope.containerOf(
+    tester.element(find.byType(MaterialApp).first),
+  );
+  final AppModel appModel = container.read(appProvider);
+  // openMedia 需要 WidgetRef 但 open 路径不解引用它（路由走 app navigatorKey 的
+  // context）；根 [HoshiReaderApp] 是 ConsumerStatefulWidget，其 element 即 WidgetRef。
+  final ConsumerStatefulElement appElement =
+      tester.element(find.byType(HoshiReaderApp)) as ConsumerStatefulElement;
+  final WidgetRef ref = appElement;
+  unawaited(appModel.openMedia(
+    ref: ref,
+    mediaSource: ReaderHibikiSource.instance,
+    item: item,
+  ));
+  for (int i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 250));
+  }
 }
 
 Future<String> seedReaderBook(

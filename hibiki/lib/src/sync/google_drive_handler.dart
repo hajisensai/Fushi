@@ -22,6 +22,17 @@ class GoogleDriveError implements Exception {
 
   bool get isStaleCacheError => statusCode == 404;
 
+  /// 瞬时后端故障：超时/限流/网关抖动，轮内重试一次通常即成功（与 Google Drive
+  /// API 官方退避重试建议的状态码集一致，BUG-1023）。**显式排除 507 Insufficient
+  /// Storage**——配额耗尽不是瞬时问题，重试无益，须继续走 skip 路径而非空转重试。
+  bool get isTransientError =>
+      statusCode == 408 || // Request Timeout
+      statusCode == 429 || // Too Many Requests（限流）
+      statusCode == 500 || // Internal Server Error
+      statusCode == 502 || // Bad Gateway
+      statusCode == 503 || // Service Unavailable
+      statusCode == 504; // Gateway Timeout
+
   @override
   String toString() => 'GoogleDriveError($statusCode): $message';
 }

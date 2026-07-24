@@ -295,6 +295,13 @@ class EpubBooks extends Table {
   TextColumn get sourceMetadata => text().nullable()();
   IntColumn get importedAt => integer()();
 
+  /// 书身份格式判别（PDF 阅读器 Phase 1）：`'epub'`（默认，含 EPUB / TextToEpub /
+  /// 有声书配对壳）或 `'pdf'`（pdfrx 渲染的真 PDF）。默认 `'epub'` 让既有全部行零破坏
+  /// （Never break userspace，v51 迁移 addColumn 自动回填），书架/进度/删除按此列区分而
+  /// 非另建平行表。PDF 行：`format='pdf'`、`epubPath`=PDF 绝对路径、`extractDir`=占位、
+  /// `chapterCount`=页数、`chaptersJson`=`'[]'`。
+  TextColumn get format => text().withDefault(const Constant('epub'))();
+
   /// 书「读完」的时间戳（用户手动标记，或读到全书末尾自动写入）；null = 未完成。
   /// 镜像 [VideoBooks.completedAt]，书架概览「Completed」统计用。跳过后记/附录的
   /// 读者靠手动标记即可计入完成，不再受「必须读到最后一字」限制。
@@ -765,6 +772,22 @@ class MediaCollections extends Table {
   /// 番名猜测。NULL = 未绑定（回退用合集名经 AniList 现解析）。无损迁移：nullable 无
   /// default，旧库既有行全 NULL = 行为与旧版一致。
   IntColumn get anilistId => integer().nullable()();
+
+  /// 系列级音轨偏好（libmpv `AudioTrack.id`，schema v52）。统一合集迁移前多集视频
+  /// 共享一行 [VideoBooks]，天然「整片一个音轨」；迁移后每集是独立行、换集不再共享 →
+  /// 同系列音轨记忆退化（回归）。把偏好提升回系列容器修根：合集内任一集选音轨即写这里，
+  /// 任一集加载优先读这里（回退各集自己行的 [VideoBooks.audioTrackId]，兼容迁移前已存的
+  /// per-book 值）。NULL = 系列内没人选过（回退 per-book / libmpv 默认）。无损迁移：
+  /// nullable 无 default → 旧库既有行全 NULL = 行为与旧版一致（Never break userspace）。
+  TextColumn get audioTrackId => text().nullable()();
+
+  /// 系列级字幕调轴（音画延迟，毫秒，schema v52）。与 [audioTrackId] 同款「系列共享」
+  /// 语义，恢复统一合集迁移前多集共享一个调轴值的行为。合集内任一集调轴即写这里，任一集
+  /// 加载优先读这里（回退各集自己行的 [VideoBooks.delayMs]）。**nullable**（区别于
+  /// [VideoBooks.delayMs] 的 withDefault(0)）：NULL = 系列内没人调过（回退 per-book / 0），
+  /// 与「显式调成 0」区分，避免 0 哨兵歧义。无损迁移：nullable 无 default → 旧库既有行全
+  /// NULL = 行为与旧版一致（Never break userspace）。
+  IntColumn get subtitleDelayMs => integer().nullable()();
 }
 
 // ── media_collection_items (合集成员引用 = Jellyfin LinkedChildren) ────

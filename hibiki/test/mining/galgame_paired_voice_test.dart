@@ -6,6 +6,59 @@ import 'package:hibiki/src/mining/galgame_audio_source.dart';
 /// T-220 最近、且非 BGM/SE 的 OGG。
 void main() {
   group('pickPairedVoiceOgg', () {
+    test('KiriKiri 显式 TextSlot seq 优先于附近旧式时间候选', () {
+      final List<String> files = <String>[
+        '32146998_legacy_guess.ogg',
+        '32147187_hibiki_textseq16_hir_015_0015.ogg',
+      ];
+      expect(
+        pickPairedVoiceOgg(
+          oggFileNames: files,
+          textTsMs: 32147218,
+          textEventId: 16,
+        ),
+        '32147187_hibiki_textseq16_hir_015_0015.ogg',
+      );
+    });
+
+    test('带事件 ID 的邻近资源不会按时间窗错配给另一条文本', () {
+      expect(
+        pickPairedVoiceOgg(
+          oggFileNames: const <String>[
+            '32147187_hibiki_textseq15_hir_015_0015.ogg',
+          ],
+          textTsMs: 32147218,
+          textEventId: 16,
+        ),
+        isNull,
+      );
+    });
+
+    test('调用方没有事件 ID 时忽略已标记资源', () {
+      expect(
+        pickPairedVoiceOgg(
+          oggFileNames: const <String>[
+            '32147187_hibiki_textseq16_hir_015_0015.ogg',
+          ],
+          textTsMs: 32147218,
+        ),
+        isNull,
+      );
+    });
+
+    test('损坏的稳定事件标记不会降级成普通 basename', () {
+      expect(
+        pickPairedVoiceOgg(
+          oggFileNames: const <String>[
+            '32147187_hibiki_textseqoops_hir_015_0015.ogg',
+          ],
+          textTsMs: 32147218,
+          textEventId: 16,
+        ),
+        isNull,
+      );
+    });
+
     test('Anemoi 新资源导出同 tick 时优先于旧的 T-220 候选', () {
       final List<String> files = <String>[
         '636939592_old_style.ogg',
@@ -102,6 +155,20 @@ void main() {
   });
 
   group('pickPairedGameResource', () {
+    test('把稳定文本事件 ID 传给 KiriKiri 资源选择', () {
+      expect(
+        pickPairedGameResource(
+          oggFileNames: const <String>[
+            '32147187_hibiki_textseq16_hir_015_0015.ogg',
+          ],
+          wavFileNames: const <String>[],
+          textTsMs: 32147218,
+          textEventId: 16,
+        ),
+        '32147187_hibiki_textseq16_hir_015_0015.ogg',
+      );
+    });
+
     test('有时间戳但精确窗口未命中时绝不冒用会话最新语音', () {
       expect(
         pickPairedGameResource(

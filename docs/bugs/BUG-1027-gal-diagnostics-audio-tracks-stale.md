@@ -1,0 +1,15 @@
+## BUG-1027 · 兼容性诊断音轨快照不自动拉取且资源音频模式误报尚无数据
+- **报告**：2026-07-23（用户：）
+- **真实性**：✅ 真 bug。
+  - `state.audioTracks` 唯一填充点是 `refreshAudioTracks()`（`hibiki/lib/src/mining/gal_hook_session_controller.dart:625-643`，修复前），唯一调用点是诊断页右上角「刷新音轨」按钮（`hibiki/lib/src/pages/implementations/game_diagnostics_page.dart:64-69`，修复前）——无任何自动拉取，`stopCapture` 清空后更是永远空。
+  - 结构性误导：「游戏资源音频」(gameResource) 模式语音逐句落盘资源文件、**不进共享内存 PCM 环**；native `ListAudioTracks` 只枚举 PCM 环（`hibiki/windows/runner/voice_hook_reader.cpp:546-560`）→ 该模式下刷新也必空，通用「尚无音轨数据」文案与工作台「音频来源可用」并存，被误读成音频链路故障。
+  - 附带缺陷：`selectVoiceTrack` 无 engine 时静默 return（修复前 `gal_hook_session_controller.dart:646-647`），诊断页点 radio 毫无反馈。
+- **[x] ① 已修复** — 544d08724
+  - 自动化：新增 `_syncTrackAutoRefresh()`（`hibiki/lib/src/mining/gal_hook_session_controller.dart`），接线在 `_activateEngine` / `_activateResourceWithLoopback` / `_activateTextWithLoopback` / `_promoteLateResourceAudio`——会话激活与音频后端变化后立即刷一次；enginePcm / systemLoopback（engine 存活）另起会话级 5s 低频定时器，`_stopSources` 统一回收。诊断页 `initState` 进入即拉一次快照。
+  - 解释态：`galTrackEmptyHintFor()` 纯函数分支——gameResource 空轨显示「按句直接提取、无 PCM 音轨列表」解释，systemLoopback 显示「混音单流无逐轨枚举」，不再统一「尚无音轨数据」。
+  - 反馈：`selectVoiceTrack` 无 engine 记结构化警告事件 `audio.voice_track_select_unavailable`，页面 toast 提示；「刷新音轨」按钮就近移入「活跃音轨」卡片标题行。
+  - 附带 UX：逐轨试听（`exportTrackPreview` 经既有 `grabUtterance` IPC 按 `sourcePtr` 过滤抓整句 PCM，`voice_hook_reader.cpp:408`，落临时 WAV 播放）；文本端点区加外部工具解释文案、engine hook 供文本时降级为默认收起的 ExpansionTile；KPI「0/3 文本端点」在 engine hook 激活时改显文本来源；「序号缺口」加副文案（Hook 文本环丢行计数，0 为正常）。
+- **[x] ② 已加自动化测试** — 544d08724
+  - 行为测试：`hibiki/test/mining/gal_hook_track_autorefresh_test.dart`（激活自动填充 / 定时器生命周期 / backend 迁移重刷 / 试听导出契约 / 无 engine 反馈 / 事件去噪）。
+  - 源码守卫：`hibiki/test/tools/gal_diagnostics_track_autorefresh_guard_test.dart`（接线点、定时器回收、initState 自动刷新、按钮位置、解释态分支、无 engine 反馈不得回退）。
+- **备注**：gameResource 模式音轨列表为空是**平台事实**（资源 hook 不产 PCM 环数据），修复方向是解释而非伪造列表；per-track 试听依赖 native `GrabUtterance` 的 `target_source` 过滤，未新增 IPC。

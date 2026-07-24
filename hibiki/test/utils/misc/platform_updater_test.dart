@@ -186,8 +186,11 @@ void main() {
       expect(platformSupportsInAppInstall(), u.supportsInAppInstall);
     });
 
-    test('in-app install capability is android or windows in phase 1', () {
-      final bool expected = Platform.isAndroid || Platform.isWindows;
+    test('in-app install capability is android, windows or macos', () {
+      // 195fbd320 起 macOS 也支持应用内自更新（MacUpdater）；iOS/Linux 仍只
+      // 检查版本后跳转发布页。
+      final bool expected =
+          Platform.isAndroid || Platform.isWindows || Platform.isMacOS;
       expect(platformSupportsInAppInstall(), expected);
     });
   });

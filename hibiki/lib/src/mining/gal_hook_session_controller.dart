@@ -1,14 +1,31 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:hibiki_core/hibiki_core.dart';
+
+import 'package:hibiki/src/mining/gal_hook_activity_accumulator.dart';
 import 'package:hibiki/src/mining/galgame_audio_encode.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
+import 'package:hibiki/src/mining/galgame_hook_code_profile.dart';
 import 'package:hibiki/src/mining/serial_job_queue.dart';
 import 'package:hibiki/src/mining/galgame_system_ui_filter.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client_manager.dart';
+import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
+
+/// 落 `activity_events` 的一条游戏活动写入契约。默认实现走 [HibikiDatabase.
+/// addActivityEvent]（[kActivityGame] / [kActivityMediaGame]）；单测可注入假写入方
+/// 断言 flush 时机与聚合值，无需真实 DB。
+typedef GalHookActivityWriter = Future<void> Function({
+  required String title,
+  String? mediaKey,
+  required String dateKey,
+  required int timestampMs,
+  required int durationMs,
+  required int charsDelta,
+});
 
 enum GalHookSessionPhase {
   idle,
@@ -24,6 +41,38 @@ enum GalHookSessionPhase {
 }
 
 enum GalHookAudioBackend { none, gameResource, enginePcm, systemLoopback }
+
+/// 「活跃音轨」空列表时的解释分支（BUG-1027，纯函数可单测）。
+///
+/// gameResource 模式语音按句直接提取资源文件、不进共享内存 PCM 环（native
+/// `ListAudioTracks` 只枚举 PCM 环，voice_hook_reader.cpp:546），空列表是**常态**
+/// 而非故障；systemLoopback 是整机混音单流，同样没有逐轨枚举。只有引擎 PCM /
+/// 无音频后端时才保留通用「尚无音轨数据」空态。
+enum GalTrackEmptyHint { generic, resourceMode, loopbackMode }
+
+/// 按音频后端返回音轨空态解释分支。
+GalTrackEmptyHint galTrackEmptyHintFor(GalHookAudioBackend backend) =>
+    switch (backend) {
+      GalHookAudioBackend.gameResource => GalTrackEmptyHint.resourceMode,
+      GalHookAudioBackend.systemLoopback => GalTrackEmptyHint.loopbackMode,
+      _ => GalTrackEmptyHint.generic,
+    };
+
+/// [GalHookSessionController.exportTrackPreview] 的产物：临时 WAV 路径 + 时长。
+@immutable
+class GalTrackPreview {
+  const GalTrackPreview({required this.filePath, required this.durationMs});
+
+  final String filePath;
+  final int durationMs;
+}
+
+/// 试听临时 WAV 的文件名（纯函数，可单测）：轨指针十六进制 + 抓取用文本时间戳。
+String galTrackPreviewFileName({
+  required int sourcePtr,
+  required int timestampMs,
+}) =>
+    'gal_track_preview_${sourcePtr.toRadixString(16)}_$timestampMs.wav';
 
 enum GalHookEventSeverity { info, success, warning, error }
 
@@ -181,9 +230,13 @@ class GalHookSessionController extends ChangeNotifier {
     Duration resourceAudioWait = const Duration(milliseconds: 1200),
     Duration resourceAudioPollInterval = const Duration(milliseconds: 80),
     int windowPollAttempts = 20,
+    Duration windowRebindInterval = const Duration(seconds: 2),
+    Duration trackRefreshInterval = const Duration(seconds: 5),
     Listenable? endpointListenable,
     List<TexthookerEndpointStatus> Function()? endpointStatusLoader,
+    GalHookActivityWriter? activityWriter,
   })  : _textService = textService ?? TexthookerService.instance,
+        _activityWriter = activityWriter,
         _engineSourceFactory = engineSourceFactory ?? _defaultEngineFactory,
         _loopbackSourceFactory =
             loopbackSourceFactory ?? LoopbackGalAudioSource.new,
@@ -200,6 +253,8 @@ class GalHookSessionController extends ChangeNotifier {
         _resourceAudioWait = resourceAudioWait,
         _resourceAudioPollInterval = resourceAudioPollInterval,
         _windowPollAttempts = windowPollAttempts,
+        _windowRebindInterval = windowRebindInterval,
+        _trackRefreshInterval = trackRefreshInterval,
         _endpointListenable =
             endpointListenable ?? TexthookerWsClientManager.instance,
         _endpointStatusLoader = endpointStatusLoader ??
@@ -231,6 +286,8 @@ class GalHookSessionController extends ChangeNotifier {
   final Duration _resourceAudioWait;
   final Duration _resourceAudioPollInterval;
   final int _windowPollAttempts;
+  final Duration _windowRebindInterval;
+  final Duration _trackRefreshInterval;
   final Listenable _endpointListenable;
   final List<TexthookerEndpointStatus> Function() _endpointStatusLoader;
 
@@ -247,6 +304,15 @@ class GalHookSessionController extends ChangeNotifier {
   }
 
   int? get selectedNativeTextThreadId => _selectedNativeTextThreadId;
+  String? get currentLaunchExecutable => _state.launchExe;
+  TexthookerTextThread? get selectedTextThread {
+    final String? key = selectedTextThreadKey;
+    if (key == null) return null;
+    for (final TexthookerTextThread thread in textThreads) {
+      if (thread.key == key) return thread;
+    }
+    return null;
+  }
 
   /// 当前捕获会话、当前线程的有效行。历史缓冲仍保留在 [lines]，但浮窗和场景
   /// 制卡只允许消费这里的行，防止跨会话或跨线程借用上下文。
@@ -271,12 +337,20 @@ class GalHookSessionController extends ChangeNotifier {
   List<TexthookerEndpointStatus> get endpointStatuses =>
       _endpointStatusLoader();
 
+  /// 当前是否存在引擎 hook 源。音轨选择 / 排除 / 试听等能力只在此时有意义；
+  /// 诊断页据此把「选轨不生效」显式提示给用户（BUG-1027），不再静默失败。
+  bool get hasEngineSource => _engineSource != null;
+
   final List<GalHookEvent> _events = <GalHookEvent>[];
   List<GalHookEvent> get events => List<GalHookEvent>.unmodifiable(_events);
 
   GalAudioSource? _audioSource;
   EngineHookGalAudioSource? _engineSource;
   Timer? _textPollTimer;
+  Timer? _trackRefreshTimer;
+  // BUG-1049：launch 后游戏窗口尚未出现时的重绑监视（见 [_startWindowRebindWatch]）。
+  Timer? _windowRebindTimer;
+  bool _windowRebindInFlight = false;
   bool _pollInFlight = false;
   int _lastTextSeq = 0;
   int _eventId = 0;
@@ -289,7 +363,30 @@ class GalHookSessionController extends ChangeNotifier {
 
   final Map<String, GalAudioSlice> _lineVoiceCache = <String, GalAudioSlice>{};
   final Map<String, int> _lineTimestampCache = <String, int>{};
-  final Map<String, int> _pendingResourceTimestamps = <String, int>{};
+  final Map<String, int> _lineTextEventIdCache = <String, int>{};
+  final Map<String, ({int timestampMs, int textEventId})>
+      _pendingResourceMatches =
+      <String, ({int timestampMs, int textEventId})>{};
+
+  // ── 游戏活动记账（首页「游戏」活动 = activity_events 的唯一写入方）─────────
+  /// 纯累计器：把 hook 文本行累计成活跃时长 + 字符数（挂机间隔封顶，见其实现）。
+  final GalHookActivityAccumulator _activityAccumulator =
+      GalHookActivityAccumulator();
+
+  /// 可注入的落库写入方（单测用假实现）；为 null 时经 [_activityDatabaseResolver]
+  /// 惰性取 DB 走默认写入。
+  final GalHookActivityWriter? _activityWriter;
+
+  /// 由桌面启动流程注入的 DB 惰性解析器（见 [attachActivityDatabase]）。flush 时才
+  /// 解析——App 未初始化完/未注入时解析到 null 静默不落库（累计保留，下次再试），
+  /// 避免 start 时急切解引用未初始化的 late 字段。
+  HibikiDatabase? Function()? _activityDatabaseResolver;
+
+  /// 当前会话归属的游戏显示名（窗口标题 / 可执行文件名）；null = 无可归属标题。
+  String? _activityGameTitle;
+
+  /// 当前会话的稳定游戏 id（launch 模式为可执行文件路径），无稳定 id 时为 null。
+  String? _activityGameKey;
 
   static EngineHookGalAudioSource _defaultEngineFactory({
     required int targetPid,
@@ -317,6 +414,19 @@ class GalHookSessionController extends ChangeNotifier {
       return File(path).existsSync() ? path : null;
     } catch (_) {
       return null;
+    }
+  }
+
+  Future<void> _attachPersistedHookProfiles(
+    EngineHookGalAudioSource engine,
+  ) async {
+    try {
+      final LunaHookCodeProfileStore store =
+          await LunaHookCodeProfileStore.openDefault();
+      engine.lunaHookProfilePath = store.file.path;
+    } catch (_) {
+      // Profile persistence must never prevent capture; injector built-ins and
+      // automatic Luna engine detection remain available.
     }
   }
 
@@ -385,6 +495,8 @@ class GalHookSessionController extends ChangeNotifier {
         textSignalReceived: false,
       ),
     );
+    // attach 模式无稳定可执行文件 id：以窗口标题作为游戏名，mediaKey 留空。
+    _beginActivitySession(title: window.title, mediaKey: null);
     _record(
       GalHookEventSeverity.info,
       'resolve',
@@ -403,6 +515,7 @@ class GalHookSessionController extends ChangeNotifier {
         injectorPath: injector,
         lunaPcHooks: false,
       );
+      await _attachPersistedHookProfiles(engine);
       final PcmFormat? format = await engine.start();
       if (generation != _operationGeneration) {
         await engine.stop();
@@ -470,6 +583,11 @@ class GalHookSessionController extends ChangeNotifier {
         textSignalReceived: false,
       ),
     );
+    // launch 模式可执行文件路径是稳定 id：文件名去扩展名作游戏名，路径作 mediaKey。
+    _beginActivitySession(
+      title: _displayNameForExecutable(executablePath),
+      mediaKey: executablePath,
+    );
     final bool? is32Bit = await _exe32BitProbe(executablePath);
     final String? injector = _injectorResolver(is32Bit: is32Bit ?? false);
     if (injector == null) {
@@ -499,6 +617,7 @@ class GalHookSessionController extends ChangeNotifier {
       injectorPath: injector,
       lunaPcHooks: lunaPcHooks,
     );
+    await _attachPersistedHookProfiles(engine);
     _setState(_state.copyWith(phase: GalHookSessionPhase.injecting));
     final PcmFormat? format = await engine.start();
     if (generation != _operationGeneration) {
@@ -572,12 +691,87 @@ class GalHookSessionController extends ChangeNotifier {
         'window.not_found',
         'Audio hook is active, but no game window was found for screenshots',
       );
+      // BUG-1049：开场那 10 秒只是「窗口通常多快出现」的经验值，不是硬事实——带启动器 /
+      // 壳解包 / 首次着色器编译的游戏常常更慢，而首帧一旦错过，旧实现就永久停在
+      // window_not_found，用户只能自己去点「捕获目标」条手动选窗口（明明是 Hibiki 自己
+      // 启动的进程）。绑定因此改成会话级监视：只要这条会话还活着且仍没有窗口，就继续
+      // 按同一个 pid 找，找到即自动绑上。
+      // gamePid 为空表示 hook 根本没拿到目标进程，没有可重试的匹配依据。
+      if (gamePid != null) _startWindowRebindWatch(generation, gamePid);
     }
     return true;
   }
 
+  /// launch 会话的窗口重绑监视：周期性按 [gamePid] 找顶层窗口，找到就补上绑定并把
+  /// 因 `window_not_found` 降级的会话恢复回真实 phase（文本信号来了就是 running，
+  /// 否则还在等信号）。绑定成功 / 会话被换代（stop、重启、attach）即自停。
+  ///
+  /// 只更新状态，不走 [bindWindow]——那条路径是给「用户手动改绑另一个窗口」用的，
+  /// 会 [startAttachedCapture] 重启整条会话；这里 hook 已经在跑，重启只会丢台词。
+  void _startWindowRebindWatch(int generation, int gamePid) {
+    _windowRebindTimer?.cancel();
+    _windowRebindTimer = Timer.periodic(_windowRebindInterval, (Timer timer) {
+      if (generation != _operationGeneration ||
+          _state.boundWindow != null ||
+          _state.gamePid != gamePid) {
+        timer.cancel();
+        _windowRebindTimer = null;
+        return;
+      }
+      if (_windowRebindInFlight) return;
+      _windowRebindInFlight = true;
+      unawaited(
+        _tryRebindWindow(generation, gamePid).whenComplete(() {
+          _windowRebindInFlight = false;
+        }),
+      );
+    });
+  }
+
+  Future<void> _tryRebindWindow(int generation, int gamePid) async {
+    final List<ExternalWindowInfo> windows = await _windowListLoader();
+    if (generation != _operationGeneration ||
+        _state.boundWindow != null ||
+        _state.gamePid != gamePid) {
+      return;
+    }
+    for (final ExternalWindowInfo candidate in windows) {
+      if (candidate.pid != gamePid) continue;
+      _windowRebindTimer?.cancel();
+      _windowRebindTimer = null;
+      final bool degradedForWindow =
+          _state.phase == GalHookSessionPhase.degraded &&
+              _state.fallbackReason == 'window_not_found';
+      _setState(
+        _state.copyWith(
+          boundWindow: candidate,
+          gamePid: gamePid,
+          phase: degradedForWindow
+              ? (_state.textSignalReceived
+                  ? GalHookSessionPhase.running
+                  : GalHookSessionPhase.waitingSignals)
+              : _state.phase,
+          clearFallbackReason: degradedForWindow,
+        ),
+      );
+      _record(
+        GalHookEventSeverity.success,
+        'window',
+        'window.auto_bound_late',
+        'Bound the launched game window once it appeared',
+        details: <String, Object?>{'pid': gamePid, 'hwnd': candidate.hwnd},
+      );
+      return;
+    }
+  }
+
   Future<void> stopCapture({bool keepBinding = true}) async {
     ++_operationGeneration;
+    // 会话结束先把剩余累计落库，再复位记账并解除游戏归属（防停后串扰）。
+    _flushGameActivity();
+    _activityAccumulator.reset();
+    _activityGameTitle = null;
+    _activityGameKey = null;
     if (_state.phase == GalHookSessionPhase.idle && _audioSource == null) {
       _setState(
         _state.copyWith(
@@ -622,29 +816,212 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
+  /// 两份音轨快照的「轨成员」是否一致（只比 sourcePtr 序列）。低频自动刷新下
+  /// clipCount / 能量持续变化，若纳入判等，事件日志会被每轮刷新刷成噪音——
+  /// 只有轨的出现/消失才值得记一条结构化事件。
+  @visibleForTesting
+  static bool sameTrackMembership(
+    List<GalAudioTrack> a,
+    List<GalAudioTrack> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i].sourcePtr != b[i].sourcePtr) return false;
+    }
+    return true;
+  }
+
   Future<void> refreshAudioTracks() async {
     final EngineHookGalAudioSource? engine = _engineSource;
     if (engine == null) {
-      _setState(_state.copyWith(audioTracks: const <GalAudioTrack>[]));
+      if (_state.audioTracks.isNotEmpty) {
+        _setState(_state.copyWith(audioTracks: const <GalAudioTrack>[]));
+      }
       return;
     }
     final int timestamp = _lineTimestampCache.values.isEmpty
         ? 0
         : _lineTimestampCache.values.last;
     final List<GalAudioTrack> tracks = await engine.listAudioTracks(timestamp);
+    // await 期间会话可能已停止/重启：旧 engine 的快照不落地（同 BUG-950 范式）。
+    if (engine != _engineSource) return;
+    final bool membershipChanged =
+        !sameTrackMembership(_state.audioTracks, tracks);
     _setState(_state.copyWith(audioTracks: tracks));
-    _record(
-      GalHookEventSeverity.info,
-      'audio',
-      'audio.tracks_refreshed',
-      'Audio track snapshot refreshed',
-      details: <String, Object?>{'count': tracks.length},
+    // BUG-1027：刷新已由定时器/状态迁移自动驱动，只有轨成员变化才记事件，
+    // 避免 5s 一条「已刷新」把事件日志淹掉。
+    if (membershipChanged) {
+      _record(
+        GalHookEventSeverity.info,
+        'audio',
+        'audio.tracks_refreshed',
+        'Audio track snapshot refreshed',
+        details: <String, Object?>{'count': tracks.length},
+      );
+    }
+  }
+
+  /// BUG-1027：音轨快照不再依赖诊断页手动刷新。
+  ///
+  /// 每次会话激活 / 音频后端切换后（含 [_promoteLateResourceAudio]）先立即刷一次；
+  /// 引擎 PCM 与「文本 + Loopback 混合」（engine 仍存活）两种形态另起**会话级**低频
+  /// 定时器持续刷新。定时器挂在会话生命周期而非诊断页可见性上：控制器不感知页面
+  /// 路由，且 [_trackRefreshInterval]（默认 5s）一次的共享内存枚举成本可忽略，为可见性
+  /// 门控引入页面回调只会增加状态同步面。gameResource 模式语音走逐句资源文件、不进
+  /// PCM 环（voice_hook_reader.cpp:546 只枚举 PCM 环），刷一次保持快照一致即可，不开
+  /// 定时器。[_stopSources] 统一回收定时器。
+  void _syncTrackAutoRefresh() {
+    _trackRefreshTimer?.cancel();
+    _trackRefreshTimer = null;
+    if (_engineSource == null) return;
+    unawaited(refreshAudioTracks());
+    final GalHookAudioBackend backend = _state.audioBackend;
+    if (backend == GalHookAudioBackend.enginePcm ||
+        backend == GalHookAudioBackend.systemLoopback) {
+      _trackRefreshTimer = Timer.periodic(
+        _trackRefreshInterval,
+        (_) => unawaited(refreshAudioTracks()),
+      );
+    }
+  }
+
+  /// 试听指定音轨（BUG-1027）：按最近一条 hook 台词时间戳，经既有 `grabUtterance`
+  /// IPC 抓取该 [sourcePtr] 在 `[ts-200, ts+6000]` 窗口内的整句 PCM（native
+  /// `GrabUtterance`，voice_hook_reader.cpp:408——`target_source` 非 0 时直接按轨过滤；
+  /// exclude 传空集，试听已标记 BGM 的轨同样允许），拼成 WAV 写入系统临时目录，播放
+  /// 器可直接播（无需 ffmpeg 转码）。无 engine / 尚无台词时间戳 / 该轨窗口内无 PCM /
+  /// 写盘失败时返回 null 并记结构化事件（调用方 toast 提示，不静默）。
+  Future<GalTrackPreview?> exportTrackPreview(int sourcePtr) async {
+    final EngineHookGalAudioSource? engine = _engineSource;
+    if (engine == null) return null;
+    final int timestamp = _lineTimestampCache.values.isEmpty
+        ? 0
+        : _lineTimestampCache.values.last;
+    final GalAudioSlice? slice = await engine.grabUtterance(
+      timestamp,
+      sourcePtr: sourcePtr,
+      exclude: const <int>[],
     );
+    if (slice == null || slice.isEmpty) {
+      _record(
+        GalHookEventSeverity.warning,
+        'audio',
+        'audio.track_preview_empty',
+        'No recent PCM was available on the selected track',
+        details: <String, Object?>{'sourcePtr': sourcePtr, 'tsMs': timestamp},
+      );
+      return null;
+    }
+    try {
+      final Directory dir = Directory(
+        '${Directory.systemTemp.path}${Platform.pathSeparator}'
+        'hibiki_gal_track_preview',
+      );
+      await dir.create(recursive: true);
+      final File out = File(
+        '${dir.path}${Platform.pathSeparator}'
+        '${galTrackPreviewFileName(sourcePtr: sourcePtr, timestampMs: timestamp)}',
+      );
+      await out.writeAsBytes(buildWavBytes(slice.pcm, slice.format),
+          flush: true);
+      final int durationMs =
+          pcmDurationMs(slice.pcm.length, slice.format.byteRate);
+      _record(
+        GalHookEventSeverity.info,
+        'audio',
+        'audio.track_preview_ready',
+        'Track preview clip exported',
+        details: <String, Object?>{
+          'sourcePtr': sourcePtr,
+          'durationMs': durationMs,
+        },
+      );
+      return GalTrackPreview(filePath: out.path, durationMs: durationMs);
+    } catch (error, stack) {
+      _record(
+        GalHookEventSeverity.error,
+        'audio',
+        'audio.track_preview_failed',
+        'Track preview export failed',
+        details: <String, Object?>{'error': '$error', 'stack': '$stack'},
+      );
+      return null;
+    }
+  }
+
+  /// 测试缝：向行级 PCM 缓存注入一条冻结切片（[exportLineAudioPreview] 的 ② 路径
+  /// 依赖会话期缓存，单测无真实引擎会话）。
+  @visibleForTesting
+  void debugCacheLineVoice(String lineId, GalAudioSlice slice) {
+    _lineVoiceCache[lineId] = slice;
+  }
+
+  /// 试听指定台词行已配的音频（实时台词列表行内播放按钮）：
+  ///  ① `game_resource` 行 → 直接返回 dump 目录里的原始资源文件路径（OGG/WAV，
+  ///     播放器原生可解，**不走** ffmpeg 转码链；时长未知记 0，调用方按上限兜底复位）；
+  ///  ② 引擎 PCM / loopback 兜底行 → [_lineVoiceCache] 冻结切片拼 WAV 写临时目录。
+  /// 只读既有配对结果，不改行状态、不影响制卡链路；取不到返回 null 并记结构化事件。
+  Future<GalTrackPreview?> exportLineAudioPreview(String lineId) async {
+    final EngineHookGalAudioSource? engine = _engineSource;
+    final String? resourceId = _resourceIdForLine(lineId);
+    if (engine != null && resourceId != null) {
+      final String? path = engine.pairedVoiceFilePathForResourceId(resourceId);
+      if (path != null) {
+        return GalTrackPreview(filePath: path, durationMs: 0);
+      }
+    }
+    final GalAudioSlice? slice = _lineVoiceCache[lineId];
+    if (slice != null && !slice.isEmpty) {
+      try {
+        final Directory dir = Directory(
+          '${Directory.systemTemp.path}${Platform.pathSeparator}'
+          'hibiki_gal_track_preview',
+        );
+        await dir.create(recursive: true);
+        final File out = File(
+          '${dir.path}${Platform.pathSeparator}gal_line_preview_$lineId.wav',
+        );
+        await out.writeAsBytes(buildWavBytes(slice.pcm, slice.format),
+            flush: true);
+        return GalTrackPreview(
+          filePath: out.path,
+          durationMs: pcmDurationMs(slice.pcm.length, slice.format.byteRate),
+        );
+      } catch (error) {
+        _record(
+          GalHookEventSeverity.error,
+          'audio',
+          'audio.line_preview_failed',
+          'Line preview export failed',
+          details: <String, Object?>{'lineId': lineId, 'error': '$error'},
+        );
+        return null;
+      }
+    }
+    _record(
+      GalHookEventSeverity.warning,
+      'audio',
+      'audio.line_preview_unavailable',
+      'No playable audio for the selected line',
+      details: <String, Object?>{'lineId': lineId},
+    );
+    return null;
   }
 
   void selectVoiceTrack(int sourcePtr) {
     final EngineHookGalAudioSource? engine = _engineSource;
-    if (engine == null) return;
+    if (engine == null) {
+      // BUG-1027：此前静默 return，诊断页点 radio 毫无反馈。记结构化警告事件，
+      // 页面另以 toast 明示「选轨需要引擎 hook 会话」。
+      _record(
+        GalHookEventSeverity.warning,
+        'audio',
+        'audio.voice_track_select_unavailable',
+        'Voice-track selection requires an active engine hook session',
+        details: <String, Object?>{'sourcePtr': sourcePtr},
+      );
+      return;
+    }
     engine.selectedAudioSourcePtr = sourcePtr;
     _setState(_state.copyWith(selectedAudioSourcePtr: sourcePtr));
     _record(
@@ -874,6 +1251,7 @@ class GalHookSessionController extends ChangeNotifier {
       // 这里只按精确 resourceId / 正时间戳窗口取，取不到就交给下游 PCM/loopback 或明确 missing。
       resourceId ??= engine.findPairedVoiceResourceId(
         timestamp,
+        textEventId: _lineTextEventIdCache[lineId],
         allowLatestSessionFallback: false,
       );
       if (resourceId != null && _resourceIdForLine(lineId) == null) {
@@ -887,6 +1265,7 @@ class GalHookSessionController extends ChangeNotifier {
       final Uint8List? bytes = await engine.grabPairedVoiceBytes(
         timestamp,
         outputExtension: outputExtension,
+        textEventId: _lineTextEventIdCache[lineId],
         resourceId: resourceId,
         allowLatestSessionFallback: false,
       );
@@ -933,10 +1312,125 @@ class GalHookSessionController extends ChangeNotifier {
 
   Future<void> close() async {
     ++_operationGeneration;
+    _flushGameActivity();
+    _activityAccumulator.reset();
     _textService.removeListener(_onTextBufferChanged);
     _endpointListenable.removeListener(_onEndpointStatusChanged);
     await _stopSources();
     dispose();
+  }
+
+  /// 注入 activity_events 落库用的 DB 惰性解析器（桌面启动流程
+  /// [GalHookTextOverlayController.start] 调用一次；解析在每次 flush 时发生，
+  /// App 尚未初始化完则返回 null 跳过本次落库）。是首页「游戏」活动的唯一数据来源。
+  void attachActivityDatabase(HibikiDatabase? Function() resolve) {
+    _activityDatabaseResolver = resolve;
+  }
+
+  /// 开始一段游戏活动记账：先把上一段残留 flush（防上次异常未落），再复位累计器并
+  /// 绑定本会话的游戏标题/稳定 id。会话开始（attach / launch）时调用。
+  void _beginActivitySession({required String title, String? mediaKey}) {
+    _flushGameActivity();
+    _activityAccumulator.reset();
+    final String trimmed = title.trim();
+    _activityGameTitle = trimmed.isEmpty ? null : trimmed;
+    _activityGameKey = mediaKey == null || mediaKey.isEmpty ? null : mediaKey;
+  }
+
+  /// 记一行 hook 文本到活动累计；命中中途 flush 阈值即落一条（防崩溃丢账）。
+  /// 仅在已开始游戏活动会话（[_activityGameTitle] 非空）时记账——纯 WebSocket/剪贴板
+  /// 文本流没有绑定游戏进程、无可归属标题，不计入「游戏」活动。
+  void _recordActivityLine(String text) {
+    if (text.isEmpty || _activityGameTitle == null) return;
+    _activityAccumulator.recordLine(
+      text.length,
+      _now().millisecondsSinceEpoch,
+    );
+    if (_activityAccumulator.shouldFlush) _flushGameActivity();
+  }
+
+  /// 可执行文件路径 → 展示用游戏名：取文件名去扩展名（跨平台按 `/` 或 `\` 切分）。
+  String _displayNameForExecutable(String path) {
+    final String name = path.split(RegExp(r'[\\/]')).last;
+    final int dot = name.lastIndexOf('.');
+    return dot > 0 ? name.substring(0, dot) : name;
+  }
+
+  /// 把当前累计（活跃时长 + 字符数）落一条 activity_events。无可归属标题、无 DB/写入
+  /// 方或无累计时不落（保留累计，等下一行或会话结束再试）；落库失败静默（try/catch）。
+  void _flushGameActivity() {
+    final String? title = _activityGameTitle;
+    final GalHookActivityWriter? writer = _resolveActivityWriter();
+    if (title == null || writer == null) return;
+    if (!_activityAccumulator.hasPending) return;
+    final (int charsDelta, int durationMs) = _activityAccumulator.drain();
+    if (charsDelta <= 0 && durationMs <= 0) return;
+    final String? mediaKey = _activityGameKey;
+    final DateTime now = _now();
+    unawaited(
+      _safeWriteActivity(
+        writer: writer,
+        title: title,
+        mediaKey: mediaKey,
+        charsDelta: charsDelta,
+        durationMs: durationMs,
+        now: now,
+      ),
+    );
+  }
+
+  GalHookActivityWriter? _resolveActivityWriter() {
+    final GalHookActivityWriter? injected = _activityWriter;
+    if (injected != null) return injected;
+    final HibikiDatabase? database = _activityDatabaseResolver?.call();
+    if (database == null) return null;
+    return ({
+      required String title,
+      String? mediaKey,
+      required String dateKey,
+      required int timestampMs,
+      required int durationMs,
+      required int charsDelta,
+    }) =>
+        database.addActivityEvent(
+          eventType: kActivityGame,
+          mediaType: kActivityMediaGame,
+          title: title,
+          mediaKey: mediaKey,
+          dateKey: dateKey,
+          timestampMs: timestampMs,
+          durationMs: durationMs,
+          charsDelta: charsDelta,
+        );
+  }
+
+  Future<void> _safeWriteActivity({
+    required GalHookActivityWriter writer,
+    required String title,
+    required String? mediaKey,
+    required int charsDelta,
+    required int durationMs,
+    required DateTime now,
+  }) async {
+    try {
+      await writer(
+        title: title,
+        mediaKey: mediaKey,
+        dateKey: HibikiTimeFormat.dayKey(now),
+        timestampMs: now.millisecondsSinceEpoch,
+        durationMs: durationMs,
+        charsDelta: charsDelta,
+      );
+    } catch (error, stack) {
+      _record(
+        GalHookEventSeverity.warning,
+        'activity',
+        'activity.write_failed',
+        'Failed to persist game activity event',
+        details: <String, Object?>{'error': '$error', 'stack': '$stack'},
+        notify: false,
+      );
+    }
   }
 
   void _activateEngine(
@@ -967,6 +1461,7 @@ class GalHookSessionController extends ChangeNotifier {
         'channels': format.channels,
       },
     );
+    _syncTrackAutoRefresh();
   }
 
   /// 原始游戏资源音频是首选，系统回环只作为某句没有资源文件时的兜底。资源 hook 本身
@@ -1007,6 +1502,7 @@ class GalHookSessionController extends ChangeNotifier {
         'loopbackAvailable': fallbackFormat != null,
       },
     );
+    _syncTrackAutoRefresh();
   }
 
   /// 保留已就绪的引擎文本 helper，同时以系统 Loopback 作为独立音频源。
@@ -1072,6 +1568,7 @@ class GalHookSessionController extends ChangeNotifier {
         if (format != null) 'channels': format.channels,
       },
     );
+    _syncTrackAutoRefresh();
     return true;
   }
 
@@ -1081,8 +1578,9 @@ class GalHookSessionController extends ChangeNotifier {
     _pollInFlight = false;
     _lineVoiceCache.clear();
     _lineTimestampCache.clear();
+    _lineTextEventIdCache.clear();
     _loopbackCacheInFlight.clear();
-    _pendingResourceTimestamps.clear();
+    _pendingResourceMatches.clear();
     unawaited(engine.pruneVoiceDump());
     _textPollTimer?.cancel();
     _textPollTimer = Timer.periodic(
@@ -1147,14 +1645,20 @@ class GalHookSessionController extends ChangeNotifier {
   Future<void> _stopSources() async {
     _textPollTimer?.cancel();
     _textPollTimer = null;
+    _trackRefreshTimer?.cancel();
+    _trackRefreshTimer = null;
+    _windowRebindTimer?.cancel();
+    _windowRebindTimer = null;
+    _windowRebindInFlight = false;
     _pollInFlight = false;
     final EngineHookGalAudioSource? engine = _engineSource;
     _engineSource = null;
     _lastTextSeq = 0;
     _lineVoiceCache.clear();
     _lineTimestampCache.clear();
+    _lineTextEventIdCache.clear();
     _loopbackCacheInFlight.clear();
-    _pendingResourceTimestamps.clear();
+    _pendingResourceMatches.clear();
     final GalAudioSource? source = _audioSource;
     _audioSource = null;
     if (engine != null && !identical(engine, source)) {
@@ -1240,11 +1744,17 @@ class GalHookSessionController extends ChangeNotifier {
           continue;
         }
         receivedTextLine = true;
+        _recordActivityLine(entry.text);
         _lineTimestampCache[entry.id] = line.timestampMs;
         _trimCache(_lineTimestampCache);
+        _lineTextEventIdCache[entry.id] = line.seq;
+        _trimCache(_lineTextEventIdCache);
         GalAudioSlice? clip;
         final String? resourceId = engine.rawVoiceReady
-            ? engine.findPairedVoiceResourceId(line.timestampMs)
+            ? engine.findPairedVoiceResourceId(
+                line.timestampMs,
+                textEventId: line.seq,
+              )
             : null;
         final bool resourceMatched = resourceId != null;
         if (resourceMatched) {
@@ -1262,8 +1772,11 @@ class GalHookSessionController extends ChangeNotifier {
             details: <String, Object?>{'lineId': entry.id, 'seq': line.seq},
           );
         } else if (engine.rawVoiceReady) {
-          _pendingResourceTimestamps[entry.id] = line.timestampMs;
-          _trimCache(_pendingResourceTimestamps);
+          _pendingResourceMatches[entry.id] = (
+            timestampMs: line.timestampMs,
+            textEventId: line.seq,
+          );
+          _trimCache(_pendingResourceMatches);
           _textService.updateLineAudio(
             entry.id,
             status: TexthookerLineAudioStatus.pending,
@@ -1336,8 +1849,15 @@ class GalHookSessionController extends ChangeNotifier {
 
   void _promoteLateResourceAudio(EngineHookGalAudioSource engine) {
     if (_state.audioBackend == GalHookAudioBackend.gameResource) return;
-    _pendingResourceTimestamps.addAll(_lineTimestampCache);
-    _trimCache(_pendingResourceTimestamps);
+    for (final MapEntry<String, int> line in _lineTimestampCache.entries) {
+      final int? textEventId = _lineTextEventIdCache[line.key];
+      if (textEventId == null) continue;
+      _pendingResourceMatches[line.key] = (
+        timestampMs: line.value,
+        textEventId: textEventId,
+      );
+    }
+    _trimCache(_pendingResourceMatches);
     _setState(
       _state.copyWith(
         phase: _state.textSignalReceived
@@ -1357,15 +1877,20 @@ class GalHookSessionController extends ChangeNotifier {
       details: <String, Object?>{'pid': _state.gamePid},
     );
     _refreshPendingResourceMatches(engine);
+    // audioBackend 已切到 gameResource：立即重刷一次音轨快照并停掉 PCM 低频定时器
+    //（BUG-1027，资源模式不进 PCM 环，快照保持一致的空/残留态即可）。
+    _syncTrackAutoRefresh();
   }
 
   void _refreshPendingResourceMatches(EngineHookGalAudioSource engine) {
-    if (!engine.rawVoiceReady || _pendingResourceTimestamps.isEmpty) return;
+    if (!engine.rawVoiceReady || _pendingResourceMatches.isEmpty) return;
     final List<String> matched = <String>[];
-    for (final MapEntry<String, int> pending
-        in _pendingResourceTimestamps.entries) {
-      final String? resourceId =
-          engine.findPairedVoiceResourceId(pending.value);
+    for (final MapEntry<String, ({int timestampMs, int textEventId})> pending
+        in _pendingResourceMatches.entries) {
+      final String? resourceId = engine.findPairedVoiceResourceId(
+        pending.value.timestampMs,
+        textEventId: pending.value.textEventId,
+      );
       if (resourceId == null) continue;
       _textService.updateLineAudio(
         pending.key,
@@ -1376,7 +1901,7 @@ class GalHookSessionController extends ChangeNotifier {
       matched.add(pending.key);
     }
     for (final String lineId in matched) {
-      _pendingResourceTimestamps.remove(lineId);
+      _pendingResourceMatches.remove(lineId);
     }
   }
 
@@ -1405,6 +1930,7 @@ class GalHookSessionController extends ChangeNotifier {
         } else {
           _state = _state.copyWith(textSignalReceived: true);
         }
+        _recordActivityLine(latest.text);
         unawaited(_cacheLoopbackForLine(latest));
       }
     }

@@ -69,7 +69,7 @@
 
 ## C 阶段任务（第二里程碑，干净语音，逐引擎，独立可选组件）
 
-组件在 `native/galgame_voice_hook/`（独立 CMake，**不被 hibiki/windows 引用**——部署红线，见下）。
+组件现位于独立仓 `hajisensai/hibiki-hook`（本设计早期的 `native/galgame_voice_hook/` 路径是迁出前历史名称）；独立 CMake 构建，**不被 hibiki/windows 引用**——部署红线见下。当前实施流程以 [Galgame Hook 引擎适配 SOP](../../agent/galgame-hooking.md) 为准。
 
 | # | 任务 | 状态 |
 |---|---|---|

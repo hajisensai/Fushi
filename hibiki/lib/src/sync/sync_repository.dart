@@ -334,14 +334,26 @@ class SyncRepository {
   /// 照常跑、且不再占着「云后端选择」这个位置。互联自身的持久化字段（serverEnabled
   /// / clientUrls / token 等）本就独立存储，无需搬运。
   ///
-  /// 幂等：仅当 backendType 原始字符串恰为 'hibikiServer' 时动作；其余情况 no-op。
+  /// 一次性：迁移过一次后（[_keyInterconnectBackendMigrated] 落盘）永远 no-op。
+  /// 这点是硬要求而非优化——解耦后用户仍可主动把云备份后端选成互联（互联页的
+  /// 「用互联做备份后端」按钮，把备份写到已配对对端而不是云盘）。若迁移继续只看
+  /// 「backendType 是不是 hibikiServer」，这个用户选择会在下次启动被当成旧数据
+  /// 抹回 googleDrive，按钮变成重启即失效的假开关。
+  ///
   /// 必须在任何 [getBackendType]（未知值静默回落 googleDrive）之前、init 期跑一次。
-  /// 用原始 key 字符串读取，独立于枚举符号的存亡。
+  /// 用原始 key 字符串读取 backendType，独立于枚举符号的存亡。
   Future<void> migrateInterconnectBackendToToggle() async {
+    if (await _db.getPrefTyped<bool>(_keyInterconnectBackendMigrated, false)) {
+      return;
+    }
     final String? backend = await _getStringOrNull(_keyBackendType);
-    if (backend != SyncBackendType.hibikiServer.name) return;
-    await setInterconnectEnabled(true);
-    await _setString(_keyBackendType, SyncBackendType.googleDrive.name);
+    if (backend == SyncBackendType.hibikiServer.name) {
+      await setInterconnectEnabled(true);
+      await _setString(_keyBackendType, SyncBackendType.googleDrive.name);
+    }
+    // 无论本机是否真有旧数据要搬，都记「迁移已跑过」：新装用户同样只有这一次窗口，
+    // 之后的 backendType 一律是用户的真实选择。
+    await _db.setPrefTyped<bool>(_keyInterconnectBackendMigrated, true);
   }
 
   // ── Content sync ──────────────────────────────────────────────────
@@ -551,6 +563,14 @@ class SyncRepository {
   // ── Hibiki Server config ────────────────────────────────────────
 
   static const _keyInterconnectEnabled = 'sync_interconnect_enabled';
+
+  /// 「旧互联后端 → 独立开关」迁移的一次性完成标记。见
+  /// [migrateInterconnectBackendToToggle]：迁移过去靠「backendType 不再是
+  /// hibikiServer」当哨兵，于是用户之后主动把备份后端设回互联（互联页的
+  /// 「用互联做备份后端」按钮）会在下次启动被迁移当成旧数据再改回 googleDrive。
+  /// 用独立标记记「本机已迁移过」，让迁移真正只跑一次。
+  static const _keyInterconnectBackendMigrated =
+      'sync_interconnect_backend_migrated';
   static const _keyServerEnabled = 'sync_server_enabled';
   static const _keyServerPort = 'sync_server_port';
   static const _keyServerPassword = 'sync_server_password';

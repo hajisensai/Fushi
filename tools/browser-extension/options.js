@@ -139,4 +139,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-loadSettings().then(() => refreshConnection(false));
+// BUG-1036：选项页每次打开都应报告当前真状态，不能复用 background 最多 5 秒的离线缓存；
+// 手动“重新检测”本来就是 force=true，首次自动检测保持同一语义。
+loadSettings().then(() => refreshConnection(true));

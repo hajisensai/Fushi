@@ -120,14 +120,19 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
-      // Friendly labels are shown, raw literals are not.
-      expect(find.text('Book Cover'), findsOneWidget);
-      expect(find.text('Video Clip (GIF)'), findsOneWidget);
+      // Friendly labels are shown, raw literals are not. 这两个都是旧别名，
+      // 标签额外带「已弃用」标注（纯展示，写回的仍是字面量）。
+      final String bookCoverLabel =
+          t.handlebar_deprecated_label(label: t.handlebar_book_cover);
+      final String videoClipLabel =
+          t.handlebar_deprecated_label(label: t.handlebar_video_clip);
+      expect(find.text(bookCoverLabel), findsOneWidget);
+      expect(find.text(videoClipLabel), findsOneWidget);
       expect(find.text('{book-cover}'), findsNothing);
       expect(find.text('{video-clip}'), findsNothing);
 
-      // Tapping the friendly "Video Clip (GIF)" returns the raw literal.
-      await tester.tap(find.text('Video Clip (GIF)'));
+      // Tapping the friendly label still returns the raw literal.
+      await tester.tap(find.text(videoClipLabel));
       await tester.pumpAndSettle();
       expect(returned, '{video-clip}');
     },

@@ -128,6 +128,105 @@ void main() {
       expect(await db.getRecentActivityEvents(), isEmpty);
     });
 
+    test('getActivityDailyTotals 按日聚合字符/时长，类别过滤，null 记 0', () async {
+      final db = await _openDb();
+      // game 同日两行（应合并），跨日一行；另有一条 read 不应混入。
+      await db.addActivityEvent(
+        eventType: kActivityGame,
+        mediaType: kActivityMediaGame,
+        title: 'GameA',
+        dateKey: '2026-07-18',
+        timestampMs: 1,
+        durationMs: 60000,
+        charsDelta: 300,
+      );
+      await db.addActivityEvent(
+        eventType: kActivityGame,
+        mediaType: kActivityMediaGame,
+        title: 'GameB',
+        dateKey: '2026-07-18',
+        timestampMs: 2,
+        durationMs: 30000,
+        charsDelta: 200,
+      );
+      await db.addActivityEvent(
+        eventType: kActivityGame,
+        mediaType: kActivityMediaGame,
+        title: 'GameA',
+        dateKey: '2026-07-19',
+        // null charsDelta / durationMs → COALESCE 记 0。
+        timestampMs: 3,
+      );
+      await db.addActivityEvent(
+        eventType: kActivityRead,
+        mediaType: kActivityMediaBook,
+        title: 'Book',
+        dateKey: '2026-07-18',
+        timestampMs: 4,
+        durationMs: 99999,
+        charsDelta: 9999,
+      );
+      final List<(String, int, int)> totals =
+          await db.getActivityDailyTotals(kActivityGame);
+      final Map<String, (int, int)> byDay = <String, (int, int)>{
+        for (final (String dateKey, int chars, int durationMs) in totals)
+          dateKey: (chars, durationMs),
+      };
+      expect(byDay.keys.toSet(), <String>{'2026-07-18', '2026-07-19'});
+      // 2026-07-18: 两行合并 → 字符 500 / 时长 90000（read 行不混入）。
+      expect(byDay['2026-07-18'], (500, 90000));
+      // 2026-07-19: null 字段记 0。
+      expect(byDay['2026-07-19'], (0, 0));
+    });
+
+    test('getActivityTitleTotalsForDay 按标题聚合，按时长降序，null 记 0', () async {
+      final db = await _openDb();
+      // 同日三行：Short 两行合并（时长 5000）、Long 一行（时长 40000）。
+      await db.addActivityEvent(
+        eventType: kActivityGame,
+        mediaType: kActivityMediaGame,
+        title: 'Short',
+        dateKey: '2026-07-18',
+        timestampMs: 1,
+        durationMs: 3000,
+        charsDelta: 10,
+      );
+      await db.addActivityEvent(
+        eventType: kActivityGame,
+        mediaType: kActivityMediaGame,
+        title: 'Short',
+        dateKey: '2026-07-18',
+        timestampMs: 2,
+        durationMs: 2000,
+        // null charsDelta → 只累加另一行的 10。
+      );
+      await db.addActivityEvent(
+        eventType: kActivityGame,
+        mediaType: kActivityMediaGame,
+        title: 'Long',
+        dateKey: '2026-07-18',
+        timestampMs: 3,
+        durationMs: 40000,
+        charsDelta: 500,
+      );
+      // 异日同标题不应混入。
+      await db.addActivityEvent(
+        eventType: kActivityGame,
+        mediaType: kActivityMediaGame,
+        title: 'Long',
+        dateKey: '2026-07-19',
+        timestampMs: 4,
+        durationMs: 111,
+        charsDelta: 111,
+      );
+      final List<(String, int, int)> totals =
+          await db.getActivityTitleTotalsForDay(kActivityGame, '2026-07-18');
+      // 时长降序：Long(40000) 先于 Short(5000)。
+      expect(totals.map((r) => r.$1).toList(), <String>['Long', 'Short']);
+      expect(totals[0], ('Long', 500, 40000));
+      expect(totals[1], ('Short', 10, 5000));
+    });
+
     test('watchDashboardDataChanges 在写入活动事件时 emit（首页自动刷新信号）', () async {
       final db = await _openDb();
       // .first 订阅后即挂上 tableUpdates；写入活动事件触发表变更 → 流 emit → 完成。

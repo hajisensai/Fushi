@@ -61,19 +61,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             _buildCreateLapisTile(uiState, vm),
           ],
         ),
-        // 互联「制卡到服务端」开关：无条件显示（跨平台——手机也可把卡制到桌面主机的 Anki）。
-        // 开启后所有制卡（查词/阅读器/视频）转发到已配对主机，用主机的 Anki 后端 + 配置落卡；
-        // 目标即互联客户端的配对主机（与远程查词同一目标），需先在「互联/同步」里配对。
-        AdaptiveSettingsSection(
-          children: [
-            AdaptiveSettingsSwitchRow(
-              title: t.anki_mine_to_server,
-              subtitle: t.anki_mine_to_server_hint,
-              value: appModel.mineToServerEnabled,
-              onChanged: (_) => appModel.toggleMineToServer(),
-            ),
-          ],
-        ),
+        // NOTE:「制卡到已配对设备」开关已移到设置 →「Hibiki 互联」→「交给已配对设备」
+        // （见 buildInterconnectDestination）。它的前置条件、目标主机、失效条件全部由互联
+        // 决定（未启用互联/未配对时只会让制卡失败），留在这里是一个与本页其余 Anki 本地
+        // 配置无关、且在互联关闭时纯死的开关。
         if (!Platform.isAndroid)
           AdaptiveSettingsSection(
             title: 'AnkiConnect',
@@ -200,7 +191,8 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         // TODO-1650 制卡媒体清晰度：媒体清晰度与「卡片带哪些标签」语义无关，单独占
         // 一个无标题区，紧随默认标签区之后。无条件显示（与标签区一致，不藏在
         // `uiState.isConfigured` 门控里）。图片/GIF 清晰度与音频质量各是一个独立滑块
-        // （替代旧的单一「压缩」开关）：越高越清晰、体积越大；满档=原片（源分辨率/帧率）。
+        // （替代旧的单一「压缩」开关）：越高越清晰、体积越大；满档=最高（截图原图直通，
+        // GIF 封顶——BUG-1039）。
         AdaptiveSettingsSection(
           children: [
             _buildMiningImageQualityRow(),
@@ -213,14 +205,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   }
 
   /// TODO-1650 图片/GIF 清晰度滑块（4 档 0..3，透传 [AppModel.miningImageQuality]）。
-  /// 只管截图分辨率/质量 + GIF 帧率/宽度；满档=原片（源分辨率+源帧率）。滑块值即档位下标，
+  /// 只管截图分辨率/质量 + GIF 帧率/宽度；满档=最高（截图原图直通，GIF 封顶）。滑块值即档位下标，
   /// `divisions/step=1` 让它按档吸附，`readout`/`label` 显示当前档名。
   Widget _buildMiningImageQualityRow() {
     final List<String> labels = <String>[
       t.mining_image_quality_thrift,
       t.mining_image_quality_standard,
       t.mining_image_quality_hd,
-      t.mining_image_quality_native,
+      // BUG-1039：满档过去叫「原片」，但它对 GIF 已不是源分辨率/源帧率（见
+      // [MiningMediaCompression.imageTiers]），只有截图仍是原图直通——名不副实，
+      // 改叫「最高」：只承诺是滑块顶格，不承诺具体保真度。
+      t.mining_image_quality_max,
     ];
     final int tier = appModel.miningImageQuality.clamp(0, labels.length - 1);
     return AdaptiveSettingsSliderRow(
@@ -242,12 +237,14 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   }
 
   /// TODO-1650 音频质量滑块（3 档 0..2，透传 [AppModel.miningAudioQuality]）。只管句子/cue
-  /// 音频声道 + 比特率；满档=原片（立体声 192k）。
+  /// 音频声道 + 比特率；满档=最高（立体声 192k）。
   Widget _buildMiningAudioQualityRow() {
     final List<String> labels = <String>[
       t.mining_audio_quality_standard,
       t.mining_audio_quality_high,
-      t.mining_audio_quality_native,
+      // BUG-1039：满档过去也叫「原片」，但 192k 立体声 AAC 是有损重编码、不是原片；
+      // 与图片滑块统一改叫「最高」（只承诺是滑块顶格）。
+      t.mining_audio_quality_max,
     ];
     final int tier = appModel.miningAudioQuality.clamp(0, labels.length - 1);
     return AdaptiveSettingsSliderRow(
@@ -446,7 +443,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   ) async {
     final dictionaryNames =
         appModel.termDictionaries.map((d) => d.name).toList();
-    final options = AnkiHandlebarOptions.forTermDictionaries(dictionaryNames);
+    // 隐藏没被用到的旧别名；当前字段正用着的旧别名仍会出现（并标「已弃用」）。
+    final options = AnkiHandlebarOptions.optionsForField(
+      dictionaryNames: dictionaryNames,
+      currentValue: currentValue,
+    );
 
     final result = await showAppDialog<String>(
       context: context,
@@ -572,11 +573,21 @@ class _AnkiConnectionFieldState extends State<_AnkiConnectionField> {
 /// （渲染器认的是字面量）。未识别 / 动态占位符回退原字面量，绝不返回空白：
 /// - `{single-glossary-<dict>}` → 直接显示词典名 `<dict>`（零新 i18n key）。
 /// - 其它未知占位符 → 原样返回 `option`（向后兼容）。
+/// - [AnkiHandlebarOptions.deprecatedAliases] 里的旧别名额外套一层「已弃用」标注，
+///   提示改用等价新键；标注只是展示，渲染器照旧认这些别名，行为完全不变。
 String ankiHandlebarLabel(String option) {
   const String singleGlossaryPrefix = '{single-glossary-';
   if (option.startsWith(singleGlossaryPrefix) && option.endsWith('}')) {
     return option.substring(singleGlossaryPrefix.length, option.length - 1);
   }
+  final String base = _ankiHandlebarBaseLabel(option);
+  return AnkiHandlebarOptions.deprecatedAliases.contains(option)
+      ? t.handlebar_deprecated_label(label: base)
+      : base;
+}
+
+/// [ankiHandlebarLabel] 的裸标签部分（不含「已弃用」标注）。
+String _ankiHandlebarBaseLabel(String option) {
   switch (option) {
     case '{expression}':
       return t.handlebar_expression;

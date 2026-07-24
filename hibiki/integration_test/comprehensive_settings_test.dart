@@ -65,6 +65,18 @@ void main() {
         tester.element(find.byType(MaterialApp).first),
       );
       final AppModel appModel = container.read(appProvider);
+
+      // 焦点驱动前置：实验焦点导航开关关闭（默认）时 Tab 被全局中和为
+      // DoNothingIntent（TODO-112，global_navigation.dart），_focusDriveSettingsRows
+      // 一步也走不动（iOS 模拟器每个测试文件都是全新容器，rows=0 实锤；macOS
+      // 此前只是碰巧吃到 app_smoke 残留的持久化偏好）。与 app_smoke /
+      // feature_flows 同范式先开开关；放在偏好快照之前，避免开关本身混进
+      // 「控件写穿 DB」的 before/after 差异断言。
+      await appModel.setExperimentalFocusNavigationEnabled(true);
+      for (int i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 250));
+      }
+
       await appModel.prefsRepo.refreshFromDb();
       final Map<String, String> before =
           Map<String, String>.from(appModel.prefsRepo.prefsSnapshot);

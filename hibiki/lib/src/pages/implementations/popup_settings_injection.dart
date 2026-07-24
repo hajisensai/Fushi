@@ -2,7 +2,7 @@
 // injection body. Both popup render paths feed the SAME popup assets and end in
 // window.renderPopup(). The settings body was previously hand-copied TWICE (in-app
 // _pushResults + app-outside buildFrameSettingsJs) and drifted: app-outside lost the
-// dictionary font (D1), autoExpandDictionaries (D2), and the clamped/NaN-guarded zoom
+// dictionary font (D1), autoExpandRows (D2), and the clamped/NaN-guarded zoom
 // (D3). This builder is the ONE place that emits the shared body; the two call sites
 // pass their own PopupSettingsOptions for the legitimate differences (app-outside
 // global-lookup class + icon-font override + hidden mine button; in-app sentence i18n
@@ -214,7 +214,7 @@ class PopupStaticSettingsJs {
 
 /// THE single source of truth for the popup settings injection body. Emits the
 /// shared theme vars + dictionary font + content zoom + every `window.*` flag
-/// (audio, dedup/harmonic, collapse + autoExpandDictionaries, collapsed/hidden
+/// (audio, dedup/harmonic, collapse + autoExpandRows, collapsed/hidden
 /// names, lookupEntries/kanjiResults, dictionary styles + custom CSS). Each call
 /// site appends its own reset hooks + window.renderPopup() AFTER this body, so the
 /// body intentionally does NOT call renderPopup itself.
@@ -296,6 +296,9 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 读这两个全局算新字号 → 立即 documentElement.style.zoom，再回调 Dart 持久化。
     window.__hoshiPopupUiScale = ${appModel.appUiScale};
     window.__hoshiPopupFontSize = ${appModel.dictionaryFontSize};
+    // BUG-1026: 查词弹窗滚轮速度倍率。popup.js 的 wheel 监听器把 factor 乘以它
+    // （缺省 1.0）。三种 in-app 弹窗都经此 head 注入；浏览器扩展走 theme 通道另发。
+    window.__hoshiPopupWheelSpeed = ${appModel.popupWheelSpeed};
     window.audioSources = ${jsonEncode(appModel.enabledAudioSources)};
     window.needsAudio = true;
     window.lookupAudioVolume = ${ReaderHibikiSource.instance.lookupAudioVolumeGain.clamp(0.0, 1.0).toStringAsFixed(4)};
@@ -307,7 +310,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.harmonicFrequency = ${appModel.harmonicFrequency};
     window.showExpressionTags = ${appModel.showExpressionTags};
     window.collapseDictionaries = ${appModel.collapseDictionaries};
-    window.autoExpandDictionaries = ${appModel.popupAutoExpandDictionaries};
+    window.autoExpandRows = ${appModel.popupAutoExpandDictionaries};
     window.collapsedDictionaryNames = $collapsedNames;
     window.hiddenDictionaryNames = $hiddenNames;
 ''';

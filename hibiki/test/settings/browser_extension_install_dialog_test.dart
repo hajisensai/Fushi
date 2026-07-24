@@ -83,11 +83,16 @@ void main() {
     expect(copied, 'chrome://extensions');
   });
 
-  testWidgets('banner shows ready state when server+token configured',
+  testWidgets(
+      'ready state hides the redundant banner (done text only at step 5)',
       (WidgetTester tester) async {
     await pumpSteps(tester, serverEnabled: true, hasToken: true);
-    expect(find.byIcon(Icons.check_circle), findsWidgets);
-    expect(find.text(t.browser_extension_step_done_auto), findsWidgets);
+    // 就绪时不再显示顶部横幅：既没有提醒文案，也没有横幅的实心对勾图标。
+    expect(find.text(t.browser_extension_enable_server_first), findsNothing);
+    expect(find.byIcon(Icons.check_circle), findsNothing);
+    // 「完成」文案只在步骤 5 出现一次（步骤 5 用的是描边对勾 check_circle_outline）。
+    expect(find.text(t.browser_extension_step_done_auto), findsOneWidget);
+    expect(find.byIcon(Icons.check_circle_outline), findsOneWidget);
   });
 
   testWidgets('banner nudges to enable server when not ready',

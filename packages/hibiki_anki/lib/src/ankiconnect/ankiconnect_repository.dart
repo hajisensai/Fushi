@@ -637,46 +637,18 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         mediaResults[3] as Map<String, String>;
 
     final String? remoteAudioRef = remoteAudio.ref;
-    final String processedAudio =
-        remoteAudioRef != null ? '[sound:$remoteAudioRef]' : '';
 
-    final mediaContext = AnkiMiningContext(
-      sentence: context.sentence,
-      cueSentence: context.cueSentence,
-      documentTitle: context.documentTitle,
-      coverPath: coverMediaRef != null ? '<img src="$coverMediaRef">' : null,
-      sasayakiAudioPath:
+    return renderMediaPayload(
+      settings: settings,
+      payload: payload,
+      context: context,
+      coverRef: coverMediaRef != null ? '<img src="$coverMediaRef">' : null,
+      sasayakiRef:
           sasayakiMediaRef != null ? '[sound:$sasayakiMediaRef]' : null,
-      sentenceOffset: context.sentenceOffset,
-    );
-
-    final mediaPayload = AnkiMiningPayload(
-      expression: payload.expression,
-      reading: payload.reading,
-      matched: payload.matched,
-      furiganaPlain: payload.furiganaPlain,
-      frequenciesHtml: payload.frequenciesHtml,
-      freqHarmonicRank: payload.freqHarmonicRank,
-      glossary: payload.glossary,
-      glossaryFirst: payload.glossaryFirst,
-      singleGlossaries: payload.singleGlossaries,
-      pitchPositions: payload.pitchPositions,
-      pitchCategories: payload.pitchCategories,
-      popupSelectionText: payload.popupSelectionText,
-      audio: processedAudio,
-      selectedDictionary: payload.selectedDictionary,
-      dictionaryMedia: payload.dictionaryMedia,
-    );
-
-    return RenderedMinedFields(
-      buildMinedFields(
-        fieldMappings: settings.fieldMappings,
-        payload: mediaPayload,
-        context: mediaContext,
-        dictionaryMediaTags: dictionaryMediaTags,
-        keepEmpty: keepEmpty,
-      ),
+      processedAudio: remoteAudioRef != null ? '[sound:$remoteAudioRef]' : '',
+      dictionaryMediaTags: dictionaryMediaTags,
       audioWarning: remoteAudio.failureReason,
+      keepEmpty: keepEmpty,
     );
   }
 
@@ -941,6 +913,22 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       switch (AnkiAudioRef.classify(url)) {
         case AnkiAudioRefKind.empty:
           return const AudioFetchOutcome.none();
+        case AnkiAudioRefKind.dataUri:
+          // BUG-1050：查词弹窗把本地音频库命中的单词发音编码成 `data:` URI 塞进
+          // fields['audio']。解码内联字节写入缓存文件，走与远端下载相同的入库尾部
+          // （下方 storeMediaFile），不再当成不存在的本地文件丢弃。
+          final data = AnkiAudioRef.decodeDataUri(url);
+          if (data == null) return const AudioFetchOutcome.none();
+          final cacheDir = Directory('${Directory.systemTemp.path}/anki-media');
+          if (!cacheDir.existsSync()) cacheDir.createSync(recursive: true);
+          final filename = await hibikiAnkiMediaFilenameForBytesAsync(
+            prefix: 'hibiki_audio_',
+            bytes: data.bytes,
+            sourceName: 'word_audio.${data.extension}',
+            fallbackExtension: data.extension,
+          );
+          audioFile = File('${cacheDir.path}/$filename');
+          await audioFile.writeAsBytes(data.bytes);
         case AnkiAudioRefKind.localFile:
           // file:// URI or a bare absolute path (Unix `/…` or Windows `C:\…`).
           final file = File(AnkiAudioRef.localPath(url));

@@ -44,8 +44,17 @@
     }
     .hp-gen:hover { filter: brightness(1.08); }
     .hp-gen:active { opacity: 0.7; }
+    /* TODO-1881：显式按钮状态——禁用（队列空/站点不对）灰化不可点；取消态（生成中）转警示色。 */
+    .hp-gen:disabled { background: rgba(128, 128, 128, 0.28); color: inherit; opacity: 0.55; cursor: default; }
+    .hp-gen:disabled:hover { filter: none; }
+    .hp-gen[data-mode="cancel"] { background: #a9443e; }
+    .hp-gen-hint { margin: -8px 14px 10px; font-size: 11px; line-height: 1.4; opacity: 0.6; }
     .hp-list { max-height: 320px; overflow-y: auto; padding: 0 6px 8px; }
-    .hp-list-title { padding: 6px 8px 4px; font-size: 11px; font-weight: 600; opacity: 0.55; text-transform: none; }
+    .hp-list-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px 4px; font-size: 11px; font-weight: 600; opacity: 0.55; text-transform: none; }
+    /* TODO-1881：清空队列（二次确认时文字变「确认清空？」并转警示色）。 */
+    .hp-clear { border: 0; padding: 2px 6px; border-radius: 4px; background: transparent; color: inherit; font: inherit; font-size: 11px; cursor: pointer; opacity: 0.8; }
+    .hp-clear:hover { background: rgba(128, 128, 128, 0.2); opacity: 1; }
+    .hp-clear[data-confirm="1"] { background: rgba(211, 47, 47, 0.85); color: #fff; opacity: 1; }
     .hp-row {
       display: flex;
       align-items: center;
@@ -61,6 +70,9 @@
       flex-direction: column;
       gap: 1px;
     }
+    /* TODO-1881：带跳转 URL 的条目可点击回到对应视频页（hover 主标签加下划线示意）。 */
+    .hp-row-main[data-url] { cursor: pointer; }
+    .hp-row-main[data-url]:hover .hp-row-text { text-decoration: underline; }
     .hp-row-text {
       overflow: hidden;
       text-overflow: ellipsis;
@@ -91,6 +103,7 @@
     .hp-del:hover { background: rgba(211, 47, 47, 0.85); color: #fff; opacity: 1; }
     .hp-empty { padding: 20px 14px 24px; text-align: center; opacity: 0.6; }
     .hp-connection {
+      cursor: pointer; /* TODO-1881：整行可点=强制重检连接 */
       display: grid;
       grid-template-columns: 9px minmax(0, 1fr) auto;
       align-items: center;
@@ -122,7 +135,7 @@
     <span class="hp-title">Hibiki 制卡队列</span>
     <span class="hp-count" id="hp-count"></span>
   </div>
-  <div class="hp-connection" id="hp-connection" data-tone="loading" title="点击齿轮打开完整设置">
+  <div class="hp-connection" id="hp-connection" data-tone="loading" title="点击重新检测；齿轮打开完整设置">
     <span class="hp-connection-dot" aria-hidden="true"></span>
     <span class="hp-connection-copy">
       <span class="hp-connection-title" id="hp-connection-title">正在检测 Hibiki…</span>
@@ -131,6 +144,8 @@
     <button class="hp-settings-link" id="hp-open-options" type="button" title="打开扩展设置" aria-label="打开扩展设置">⚙</button>
   </div>
   <button class="hp-gen" id="hp-gen" type="button">开始生成 / 录制</button>
+  <!-- TODO-1881：按钮不可用/跨站点剩余量的原因提示（状态机 hint，空则隐藏）。 -->
+  <div class="hp-gen-hint" id="hp-gen-hint" hidden></div>
   <div class="hp-list" id="hp-list"></div>
   <div class="hp-settings">
     <label class="hp-toggle">

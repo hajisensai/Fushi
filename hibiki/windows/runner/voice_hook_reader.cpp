@@ -32,6 +32,15 @@ ReaderState& State() {
   return state;
 }
 
+bool ProtocolMatches(const SharedHeader* h) {
+  return h != nullptr && h->magic == kSharedMagic &&
+         h->version == kSharedVersion &&
+         h->ipc_protocol_version == hibiki_voice_hook::kStableIpcVersion &&
+         h->luna_bridge_abi_version ==
+             hibiki_voice_hook::kLunaBridgeAbiVersion &&
+         h->luna_vendored_version == hibiki_voice_hook::kLunaVendoredVersion;
+}
+
 std::string WideToUtf8(const wchar_t* text, int length) {
   if (text == nullptr || length <= 0) return std::string();
   const int need = WideCharToMultiByte(CP_UTF8, 0, text, length, nullptr, 0,
@@ -46,9 +55,12 @@ std::string WideToUtf8(const wchar_t* text, int length) {
 // 从 header 填状态（不读环形缓冲）。契约不匹配返回 ok=false。调用方持锁。
 VoiceHookStatus StatusFromHeaderLocked(const SharedHeader* h) {
   VoiceHookStatus s;
-  if (h == nullptr || h->magic != kSharedMagic || h->version != kSharedVersion) {
+  if (!ProtocolMatches(h)) {
     return s;  // 全零、ok=false
   }
+  s.ipc_protocol_version = static_cast<int>(h->ipc_protocol_version);
+  s.luna_bridge_abi_version = static_cast<int>(h->luna_bridge_abi_version);
+  s.luna_vendored_version = static_cast<int>(h->luna_vendored_version);
   s.hooked = h->hooked != 0;
   s.calibrating = h->calibrating != 0;
   s.text_hooked = h->text_hooked != 0;
@@ -189,7 +201,7 @@ VoiceHookStatus VoiceHookReader::Open(uint32_t pid) {
     return VoiceHookStatus{};
   }
   // 只信任契约匹配的映射（防旧/坏映射读坏内存）。
-  if (header->magic != kSharedMagic || header->version != kSharedVersion) {
+  if (!ProtocolMatches(header)) {
     UnmapViewOfFile(header);
     CloseHandle(mapping);
     return VoiceHookStatus{};
@@ -258,8 +270,7 @@ uint64_t VoiceHookReader::TextWriteCount() {
   ReaderState& st = State();
   std::lock_guard<std::mutex> lock(st.mutex);
   const SharedHeader* h = st.header;
-  if (h == nullptr || h->magic != kSharedMagic ||
-      h->version != kSharedVersion) {
+  if (!ProtocolMatches(h)) {
     return 0;
   }
   return h->text_write_count;
@@ -271,8 +282,7 @@ void VoiceHookReader::PollText(uint64_t from_seq,
   ReaderState& st = State();
   std::lock_guard<std::mutex> lock(st.mutex);
   const SharedHeader* h = st.header;
-  if (h == nullptr || h->magic != kSharedMagic ||
-      h->version != kSharedVersion) {
+  if (!ProtocolMatches(h)) {
     return;
   }
   const uint64_t count = h->text_write_count;
@@ -335,7 +345,7 @@ bool VoiceHookReader::SelectTextThread(uint64_t thread_id) {
   ReaderState& st = State();
   std::lock_guard<std::mutex> lock(st.mutex);
   SharedHeader* h = st.header;
-  if (h == nullptr || h->magic != kSharedMagic || h->version != kSharedVersion) {
+  if (!ProtocolMatches(h)) {
     return false;
   }
   InterlockedExchange64(

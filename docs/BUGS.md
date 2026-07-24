@@ -27,15 +27,44 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 994 条。点号进各自文件。
+> 共 1023 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1056](bugs/BUG-1056-jimaku-source-subscription.md) | ✅ | ✅ | 字幕来源不可选且连载订阅无法绑定合集字幕 |
 | [BUG-1055](bugs/BUG-1055-anilist-segmented-title.md) | ✅ | ✅ | AniList 罗马字分词差异导致番剧误报无结果 |
 | [BUG-1054](bugs/BUG-1054-download-discovery-proxy.md) | ✅ | ✅ | 下载发现未读取环境与系统代理导致搜索超时 |
-| [BUG-1024](bugs/BUG-1024-qb-webui-no-request-timeout.md) | ✅ | ✅ | qB WebUI 请求缺少超时 |
-| [BUG-1023](bugs/BUG-1023-download-default-config-no-completion-poll.md) | ✅ | ✅ | 默认下载配置未传给完成轮询 |
+| [BUG-1053](bugs/BUG-1053-embedded-torrent-dht-always-on.md) | ✅ | ✅ | 空闲也常驻 libtorrent/DHT（6881），整机网络周期性高延迟 |
+| [BUG-1052](bugs/BUG-1052-reading-time-lost-session-clock-reanchor.md) | ✅ | ✅ | 阅读时长被会话时钟重锚吃掉，速度/统计爆表（今日 0 分钟 / 125666 字·时⁻¹） |
+| [BUG-1051](bugs/BUG-1051-series-audio-subtitle-memory-lost.md) | ✅ | ✅ | 同系列音轨选择与字幕调轴记忆丢失（统一合集迁移回归） |
+| [BUG-1050](bugs/BUG-1050-video-mine-word-audio-datauri-dropped.md) | ✅ | ✅ | 视频/沉浸制卡本地源单词发音被当 data: URI 丢弃 |
+| [BUG-1049](bugs/BUG-1049-gal-hook-window-autobind-late.md) | ✅ | ✅ | 捕获目标没有自动选中 Hibiki 启动的游戏（窗口迟到即永久停在 window_not_found） |
+| [BUG-1048](bugs/BUG-1048-galgame-lookup-mouse-hook-lag.md) | ✅ | ✅ | galgame 查词后鼠标移动全局卡顿（WH_MOUSE_LL 装在 Flutter 主线程） |
+| [BUG-1047](bugs/BUG-1047-ext-reload-orphans-content-script.md) | ✅ | ✅ | 扩展自更新reload孤立已开页content script需手动刷新 |
+| [BUG-1046](bugs/BUG-1046-hook-overlay-transparent-hittest.md) | ✅ | ✅ | 隐藏背景后Hook文本浮窗点不动文字 |
+| [BUG-1045](bugs/BUG-1045-ext-connection-heartbeat.md) | ✅ | ✅ | 扩展未连接:app内存last-seen无心跳+MV3 SW空闲回收 |
+| [BUG-1044](bugs/BUG-1044-popup-auto-expand-rows-vs-columns.md) | ✅ | ✅ | 折叠词典「自动展开词典数」与「词典列数」冲突：绝对本数不随列数对齐致顶部参差 |
+| [BUG-1043](bugs/BUG-1043-ios-smoke-update-dialog-steals-focus.md) | ✅ | ✅ | iOS冒烟测试焦点断言被启动期更新弹窗与恒真判定掩盖 |
+| [BUG-1042](bugs/BUG-1042-ios-generated-xcconfig-tracked.md) | ✅ | ✅ | iOS Flutter 生成文件误入库导致 Mac 上 pod install 失败 |
+| [BUG-1041](bugs/BUG-1041-global-lookup-card-corner-asymmetry.md) | 🚧 | 🚧 | 查词浮窗卡片左侧圆角右侧直角 |
+| [BUG-1040](bugs/BUG-1040-mined-card-dialog-centered-and-above-popup.md) | ✅ | ✅ | 「卡片已在 Anki 中」是底部 sheet 且层级低于查词弹窗（被盖住看不见） |
+| [BUG-1039](bugs/BUG-1039-native-tier-gif-explodes-mining.md) | ✅ | ✅ | 制卡「原片档」把 GIF 按源分辨率+源帧率导出 → 制卡/覆盖巨慢、Anki 无响应 |
+| [BUG-1038](bugs/BUG-1038-galgame-auto-locale.md) | ✅ | ✅ | Hibiki 启动日文非 Unicode 游戏时界面乱码 |
+| [BUG-1037](bugs/BUG-1037-steam-launch-duplicate-instance.md) | ✅ | ✅ | Steam 游戏启动并捕获触发重复实例且晚附着漏音频 |
+| [BUG-1036](bugs/BUG-1036-extension-connection-reopen-stale.md) | ✅ | ✅ | 浏览器扩展重开后连接检测误报 API 未开启 |
+| [BUG-1035](bugs/BUG-1035-glossary-first-ignores-selected-dict.md) | ✅ | ✅ | 长按选中词典对制卡无效：{glossary-first} 恒取第一本，Lapis 默认无字段消费 {selected-glossary} |
+| [BUG-1034](bugs/BUG-1034-subtitle-row-extent-clip.md) | ✅ | ✅ | 视频字幕列表当前行末行文字被裁掉一半 |
+| [BUG-1033](bugs/BUG-1033-popup-zoom-tooltip-misfire.md) | ✅ | ✅ | 嵌套查词弹出时 A- 的「缩小查词字号」tooltip 自动弹出遮挡正文 |
+| [BUG-1032](bugs/BUG-1032-qb-webui-no-request-timeout.md) | ✅ | ✅ | qB WebUI 请求缺少超时 |
+| [BUG-1031](bugs/BUG-1031-download-default-config-no-completion-poll.md) | ✅ | ✅ | 默认下载配置未传给完成轮询 |
+| [BUG-1030](bugs/BUG-1030-extension-subtitle-panel-overlay.md) | ✅ | ✅ | 浏览器扩展字幕列表覆盖页面而非挤压画面 |
+| [BUG-1029](bugs/BUG-1029-extension-subtitle-live-cumulative.md) | ✅ | ✅ | 浏览器扩展 YouTube 字幕列表逐字累积为重复行 |
+| [BUG-1028](bugs/BUG-1028-texthooker-popup-cold-webview.md) | ✅ | ✅ | 捕获工作台查词弹窗每次冷建WebView加载缓慢 |
+| [BUG-1027](bugs/BUG-1027-gal-diagnostics-audio-tracks-stale.md) | ✅ | ✅ | 兼容性诊断音轨快照不自动拉取且资源音频模式误报尚无数据 |
+| [BUG-1026](bugs/BUG-1026-popup-wheel-speed-config.md) | ✅ | ✅ | 查词弹窗滚轮滚动慢，缺可配置速度项 |
+| [BUG-1025](bugs/BUG-1025-clipboard-recopy-same-word-dedup.md) | ✅ | ✅ | 浏览器查词复制同一个词无法重复查（内容去重挡住手动重复复制） |
+| [BUG-1024](bugs/BUG-1024-ext-shift-hover-pending-deadlock.md) | ✅ | ✅ | 浏览器扩展 Shift 悬停查词在途闸永久死锁致弹窗不敏感 |
+| [BUG-1023](bugs/BUG-1023-drive-transient-408-not-retried.md) | ✅ | ✅ | Google Drive 瞬时故障(408/429/5xx)被判非重试整本skip |
 | [BUG-1022](bugs/BUG-1022-galgame-helper-dialog-latency-and-restack.md) | ✅ | ✅ | galgame 引擎组件下载确认弹窗点击不立即出现且多次点击叠出多个弹窗 |
 | [BUG-1021](bugs/BUG-1021-galgame-cardimage-alias-false-warning.md) | ✅ | ✅ | galgame 场景制卡误报缺少 {card-image}（旧别名瞎眼） |
 | [BUG-1020](bugs/BUG-1020-clipboard-watcher-pref-flip-desync.md) | ✅ | ✅ | Windows剪贴板监听页内翻转开关后永久失效 |

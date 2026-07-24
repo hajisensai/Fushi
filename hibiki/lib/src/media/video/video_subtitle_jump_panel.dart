@@ -33,6 +33,53 @@ double subtitleTimestampColumnWidth(double effectiveFontSize, bool hasHours) {
   return scaled < floor ? floor : scaled;
 }
 
+/// 字幕列表行的**固定几何**（BUG-1034）。行高由 `itemExtentBuilder` 事先给出，若与真实
+/// 渲染几何有一丝偏差，`SliverVariedExtentList` 就按给定 extent 裁掉超出的文本（用户报的
+/// 「ら 只露半个」）。所以文本列宽必须由**同一组常量**同时喂给测量与渲染，不能各算各的。
+///
+/// 行内水平结构（见 `_buildRow`）：
+/// `padding.left(8) | [勾选框 36 + 间隙 4] | 时间戳列 | 间隙 8 | 文本(Expanded) | 动作列 | padding.right(4)`
+const double kSubtitleRowPaddingLeft = 8;
+const double kSubtitleRowPaddingRight = 4;
+
+/// 行垂直内缩（上 8 + 下 8）。
+const double kSubtitleRowPaddingVertical = 16;
+
+/// 勾选框列宽：`Checkbox`（compact + shrinkWrap）实际是 36×36，用 [SizedBox.square] 锁死，
+/// 免得主题里的 visualDensity 改动悄悄改变列宽、把测量算歪。
+const double kSubtitleRowSelectionSize = 36;
+const double kSubtitleRowSelectionGap = 4;
+
+/// 时间戳列与文本列之间的间隙。
+const double kSubtitleRowTimestampGap = 8;
+
+/// 收藏行左侧竖色条宽度（画在 `padding.left` 内，不占内容宽度）。
+const double kSubtitleRowFavoriteBarWidth = 3;
+
+/// 动作列宽度：3 个图标，每个 `Icon(size: 字号+2)` 外加 `Padding(all: 2)` → 字号+6。
+double subtitleRowActionsWidth(double effectiveFontSize) =>
+    3 * (effectiveFontSize + 6);
+
+/// 行内字幕**文本列可用宽度**（BUG-1034）。纯函数，行高测量与真实渲染同源。
+double subtitleRowTextWidth({
+  required double rowWidth,
+  required double effectiveFontSize,
+  required double timestampColumnWidth,
+  required bool hasSelectionControls,
+}) {
+  final double selectionWidth = hasSelectionControls
+      ? kSubtitleRowSelectionSize + kSubtitleRowSelectionGap
+      : 0;
+  final double width = rowWidth -
+      kSubtitleRowPaddingLeft -
+      kSubtitleRowPaddingRight -
+      selectionWidth -
+      timestampColumnWidth -
+      kSubtitleRowTimestampGap -
+      subtitleRowActionsWidth(effectiveFontSize);
+  return width < 48 ? 48 : width;
+}
+
 /// 按局部坐标在一行字幕的 grapheme 屏幕矩形里反查命中的字下标（纯函数，可测）。
 ///
 /// BUG-916：旧实现走 `TextPainter.getPositionForOffset(point).offset` 取 caret 边界、
@@ -378,9 +425,23 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   int _cachedSelectedCuesLength = -1;
   int _cachedSelectedCount = 0;
 
-  /// 单行估算高度（仅作目标行未挂载时的粗滚后备，TODO-340）。换行后实际行高可变，
-  /// 故不再用作精确 itemExtent；当前 cue 行进入视口后由 ensureVisible 精确居中。
-  double get _estimatedRowExtent => 56 * _fontScaleSteps;
+  /// 行高保底下界（TODO-340 的历史视觉密度）：内容比它矮的行仍占这么高，内容更高的行
+  /// 按 [_measureRowExtent] 的真实测量值走。
+  double get _minRowExtent => 56 * _fontScaleSteps;
+
+  /// 行高测量缓存（BUG-1034），key = `加粗位 + 文本`。宽度 / 字号 / textScaler 变化时整体
+  /// 作废，见 [_rowExtentForCue]。
+  final Map<String, double> _rowExtentCache = <String, double>{};
+  double _rowExtentCacheWidth = -1;
+  double _rowExtentCacheFontSize = -1;
+  TextScaler _rowExtentCacheScaler = TextScaler.noScaling;
+  double? _timestampLineHeight;
+
+  /// 测量用的排版环境，[build] 每帧从 context 刷新。`initState` 里读 `MediaQuery` /
+  /// `Directionality` 会触发 `dependOnInheritedWidgetOfExactType` 断言，故先用默认值供
+  /// 初始滚动偏移粗估，首帧 build 后即为真值（变化时缓存自动作废）。
+  TextDirection _textDirection = TextDirection.ltr;
+  TextScaler _textScaler = TextScaler.noScaling;
 
   double get _fontScaleSteps => _kFontScaleSteps[_fontScaleIndex];
 
@@ -402,34 +463,104 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   double get _timestampColumnWidth =>
       subtitleTimestampColumnWidth(_effectiveFontSize, _hasHourTimestamps);
 
-  double _estimatedRowExtentForCue(AudioCue cue, double rowWidth) {
-    // 3 个操作图标：每个 icon 宽 [_effectiveFontSize]+2，[_RowActionButton] 内缩 all(2)
-    // → 每个约 +6，故动作列宽 ≈ 3×(字号+6)（TODO-1200 压缩内缩后，与 [_buildRowActions]
-    // 的实际几何一致，供行高文本宽度估算）。
-    final double actionWidth = 3 * (_effectiveFontSize + 6);
-    final double selectionWidth = _hasCueSelectionControls ? 44 : 0;
-    final double textWidth = rowWidth -
-        8 -
-        4 -
-        selectionWidth -
-        _timestampColumnWidth -
-        8 -
-        actionWidth;
-    final double safeTextWidth = textWidth < 48 ? 48 : textWidth;
-    final int charsPerLine = (safeTextWidth / (_effectiveFontSize * 0.95))
-        .floor()
-        .clamp(1, 10000)
-        .toInt();
-    int lineCount = 0;
-    for (final String line in cue.text.split('\n')) {
-      final int length = line.isEmpty ? 1 : line.length;
-      lineCount += (length / charsPerLine).ceil();
+  /// 行内字幕文本列的可用宽度（与 [_buildRow] 的实际布局同源，见 [subtitleRowTextWidth]）。
+  double _rowTextWidth(double rowWidth) => subtitleRowTextWidth(
+        rowWidth: rowWidth,
+        effectiveFontSize: _effectiveFontSize,
+        timestampColumnWidth: _timestampColumnWidth,
+        hasSelectionControls: _hasCueSelectionControls,
+      );
+
+  /// 行内字幕文本的样式。测量（[_measureRowExtent]）与渲染（[_buildRowText]）共用，
+  /// 保证 `itemExtentBuilder` 给出的行高与真实换行结果一致（BUG-1034）。
+  TextStyle _rowTextStyle({required bool bold, Color? color}) => TextStyle(
+        color: color,
+        fontSize: _effectiveFontSize,
+        fontWeight: bold ? FontWeight.w600 : null,
+        height: 1.25,
+      );
+
+  /// 一行**真实**高度（BUG-1034）。
+  ///
+  /// 旧实现按「文本长度 ÷ 每行估算字数」推行数（`字号 × 0.95` 当字宽），再乘行高当作
+  /// `itemExtentBuilder` 的返回值。但 `ListView` 的 `itemExtentBuilder` 不是提示而是**硬约束**：
+  /// 行拿到的就是这个高度，多出来的文本直接被裁掉。而那套估算复现不了 Flutter 的真实断行
+  /// —— 全角字宽是 1em（不是 0.95em）、日文禁则会把行首的小假名 / 标点挤到下一行、选中行
+  /// 还会加粗——于是长句实际换成 N+1 行、extent 只给了 N 行，末行被拦腰切掉（用户截图里
+  /// 当前播放行的「ら」只露出上半截）。
+  ///
+  /// 根治：用 [TextPainter] 按与渲染**完全相同**的样式、字宽约束、textScaler 真跑一次
+  /// 布局，拿 `painter.height` 当真值；同时把行内其它子项（勾选框 / 动作图标 / 时间戳）的
+  /// 高度纳入取最大值，因为 `Row` 的高度是子项高度的最大值。结果按「文本 + 是否加粗」缓存，
+  /// 宽度、字号或 textScaler 变化时整体作废——`SliverVariedExtentList` 每次布局都要遍历
+  /// 全部条目累加 maxScrollExtent，没有缓存会把 TextPainter 跑进每一帧。
+  double _rowExtentForCue(AudioCue cue, double rowWidth, {required bool bold}) {
+    if (rowWidth != _rowExtentCacheWidth ||
+        _effectiveFontSize != _rowExtentCacheFontSize ||
+        _textScaler != _rowExtentCacheScaler) {
+      _rowExtentCache.clear();
+      _timestampLineHeight = null;
+      _rowExtentCacheWidth = rowWidth;
+      _rowExtentCacheFontSize = _effectiveFontSize;
+      _rowExtentCacheScaler = _textScaler;
     }
-    if (lineCount < 1) lineCount = 1;
-    final double textHeight = lineCount * _effectiveFontSize * 1.25;
-    final double estimated = 16 + textHeight + 2;
-    return estimated < _estimatedRowExtent ? _estimatedRowExtent : estimated;
+    final String key = '${bold ? 1 : 0} ${cue.text}';
+    final double? cached = _rowExtentCache[key];
+    if (cached != null) return cached;
+    final double extent = _measureRowExtent(cue.text, rowWidth, bold);
+    _rowExtentCache[key] = extent;
+    return extent;
   }
+
+  double _measureRowExtent(String text, double rowWidth, bool bold) {
+    final double textHeight = _measureTextHeight(
+      text: text,
+      style: _rowTextStyle(bold: bold),
+      maxWidth: _rowTextWidth(rowWidth),
+    );
+    // Row 高度 = 子项高度最大值：文本、时间戳单行、动作图标，以及（有勾选控件时）勾选框。
+    double content = textHeight;
+    final double timestampHeight = _timestampLineHeight ??= _measureTextHeight(
+      text: '0:00',
+      style: TextStyle(fontSize: _effectiveFontSize - 1),
+      maxWidth: double.infinity,
+    );
+    if (content < timestampHeight) content = timestampHeight;
+    final double actionHeight = _effectiveFontSize + 6;
+    if (content < actionHeight) content = actionHeight;
+    if (_hasCueSelectionControls && content < kSubtitleRowSelectionSize) {
+      content = kSubtitleRowSelectionSize;
+    }
+    final double extent = kSubtitleRowPaddingVertical + content;
+    // 保底最小行高（历史视觉密度，TODO-340）：只抬高内容矮于它的行，绝不压低内容。
+    return extent < _minRowExtent ? _minRowExtent : extent;
+  }
+
+  double _measureTextHeight({
+    required String text,
+    required TextStyle style,
+    required double maxWidth,
+  }) {
+    final TextPainter painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textAlign: TextAlign.start,
+      textDirection: _textDirection,
+      textScaler: _textScaler,
+      maxLines: null,
+    );
+    try {
+      painter.layout(maxWidth: maxWidth);
+      return painter.height;
+    } finally {
+      painter.dispose();
+    }
+  }
+
+  /// 行是否按「当前播放 / 已选中制卡」加粗——加粗会改变断行，故行高测量必须同步判定
+  /// （与 [_buildRowText] 的 `selected || selectedForCard` 同源，BUG-1034）。
+  bool _isRowBold(int rawIndex, AudioCue cue) =>
+      rawIndex == _representativeRaw(widget.controller.currentCueIndex) ||
+      _isCueSelectedForCard(cue);
 
   double _estimatedScrollOffsetForVisibleIndex(
     int visibleIndex,
@@ -439,7 +570,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   ) {
     double offset = 0;
     for (int i = 0; i < visibleIndex; i++) {
-      offset += _estimatedRowExtentForCue(cues[visibleIndexes[i]], rowWidth);
+      final int rawIndex = visibleIndexes[i];
+      final AudioCue cue = cues[rawIndex];
+      offset += _rowExtentForCue(
+        cue,
+        rowWidth,
+        bold: _isRowBold(rawIndex, cue),
+      );
     }
     return offset;
   }
@@ -648,9 +785,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       cues,
       rowWidth,
     );
-    final double rowExtent = _estimatedRowExtentForCue(
+    final double rowExtent = _rowExtentForCue(
       cues[currentIndex],
       rowWidth,
+      // 目标行就是当前播放句，渲染时必加粗。
+      bold: true,
     );
     final double target = rowOffset - (viewport / 2) + (rowExtent / 2);
     final double clamped =
@@ -905,6 +1044,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     // 仅本帧真正构建（itemBuilder 调用）的行回填，避免读到上一帧的旧 cue。
     widget.hitTester?.bindHitTest(_hitTestRows);
     _rowHitCues.clear();
+    // BUG-1034：行高测量必须用与渲染一致的排版环境（文字缩放 / 书写方向）。
+    _textDirection = Directionality.of(context);
+    _textScaler = MediaQuery.textScalerOf(context);
     final ColorScheme cs = widget.colorScheme;
     final List<AudioCue> cues = widget.controller.cues;
     final List<int> visibleIndexes = _visibleCueIndexes(cues);
@@ -938,8 +1080,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                     ? _buildLoading(cs)
                     : cues.isEmpty || visibleIndexes.isEmpty
                         ? _buildEmpty(cs, cuesLoaded: cues.isNotEmpty)
-                        // 无 itemExtent：行高自适应换行后的文本（TODO-340）。每行包一个
-                        // GlobalKey（存 _rowKeys，按 rawIndex）供 ensureVisible 自动滚动。
+                        // 行高按真实文本布局测量（[_rowExtentForCue]，BUG-1034），与
+                        // itemExtentBuilder 的硬约束一致，长句换行不会被裁掉末行。每行包
+                        // 一个 GlobalKey（存 _rowKeys，按 rawIndex）供 ensureVisible 自动滚动。
                         : ListView.builder(
                             controller: _scrollController,
                             // BUG-878：Ctrl / ⌘ 按住时禁列表滚动，让 Ctrl+滚轮只缩字号
@@ -952,9 +1095,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                               if (i < 0 || i >= visibleIndexes.length) {
                                 return null;
                               }
-                              return _estimatedRowExtentForCue(
-                                cues[visibleIndexes[i]],
+                              final int rawIndex = visibleIndexes[i];
+                              final AudioCue cue = cues[rawIndex];
+                              return _rowExtentForCue(
+                                cue,
                                 dimensions.crossAxisExtent,
+                                bold: _isRowBold(rawIndex, cue),
                               );
                             },
                             itemCount: visibleIndexes.length,
@@ -1216,11 +1362,27 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         child: Container(
           // 左侧 3px 竖色条标记已收藏行（BUG-264）：未收藏时无边框、像素级不变。背景色
           // 统一走 [decoration]（不能同时传 color 与 decoration）。
-          padding: const EdgeInsets.only(left: 8, right: 4, top: 8, bottom: 8),
+          //
+          // BUG-1034：色条占的 3px 从**左内缩里扣**（5 + 3 = 8），使内容起点与文本列宽
+          // 恒定，不随收藏状态漂移——否则收藏行文本列凭空窄 3px，行高测量（按无边框宽度
+          // 算）就会偏小、末行被裁；顺带消除收藏时整行文字右移 3px 的抖动。
+          padding: EdgeInsets.only(
+            left: favorited
+                ? kSubtitleRowPaddingLeft - kSubtitleRowFavoriteBarWidth
+                : kSubtitleRowPaddingLeft,
+            right: kSubtitleRowPaddingRight,
+            top: kSubtitleRowPaddingVertical / 2,
+            bottom: kSubtitleRowPaddingVertical / 2,
+          ),
           decoration: BoxDecoration(
             color: bg,
             border: favorited
-                ? Border(left: BorderSide(color: cs.tertiary, width: 3))
+                ? Border(
+                    left: BorderSide(
+                      color: cs.tertiary,
+                      width: kSubtitleRowFavoriteBarWidth,
+                    ),
+                  )
                 : null,
           ),
           child: Row(
@@ -1228,7 +1390,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             children: <Widget>[
               if (_hasCueSelectionControls) ...<Widget>[
                 _buildSelectionCheckbox(cs, cue, selectedForCard),
-                const SizedBox(width: 4),
+                const SizedBox(width: kSubtitleRowSelectionGap),
               ],
               SizedBox(
                 // TODO-567：列宽随字号缩放（[_timestampColumnWidth]），且时间戳单行
@@ -1249,7 +1411,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: kSubtitleRowTimestampGap),
               Expanded(
                   child: _buildRowText(
                       cue, textColor, selected, selectedForCard, textKey)),
@@ -1274,11 +1436,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     bool selectedForCard,
     GlobalKey? textKey,
   ) {
-    final TextStyle textStyle = TextStyle(
+    // BUG-1034：与行高测量（[_measureRowExtent]）共用同一样式，断行结果一致，末行不被裁。
+    final TextStyle textStyle = _rowTextStyle(
+      bold: selected || selectedForCard,
       color: textColor,
-      fontSize: _effectiveFontSize,
-      fontWeight: selected || selectedForCard ? FontWeight.w600 : null,
-      height: 1.25,
     );
     final void Function(AudioCue, int, Rect)? onLookup = widget.onLookupCue;
     if (onLookup == null) {
@@ -1386,17 +1547,22 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     AudioCue cue,
     bool selectedForCard,
   ) {
-    return Tooltip(
-      message: selectedForCard
-          ? t.video_subtitle_list_remove_from_card
-          : t.video_subtitle_list_select_for_card,
-      child: Checkbox(
-        value: selectedForCard,
-        onChanged: (_) => widget.onToggleCueSelection?.call(cue),
-        visualDensity: VisualDensity.compact,
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        activeColor: cs.secondary,
-        checkColor: cs.onSecondary,
+    // BUG-1034：勾选框列宽 / 高锁死为 [kSubtitleRowSelectionSize]（即 compact + shrinkWrap
+    // 下 Checkbox 的实际 36×36），让行高测量用的几何常量不被主题里的 visualDensity 改动带偏。
+    return SizedBox.square(
+      dimension: kSubtitleRowSelectionSize,
+      child: Tooltip(
+        message: selectedForCard
+            ? t.video_subtitle_list_remove_from_card
+            : t.video_subtitle_list_select_for_card,
+        child: Checkbox(
+          value: selectedForCard,
+          onChanged: (_) => widget.onToggleCueSelection?.call(cue),
+          visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          activeColor: cs.secondary,
+          checkColor: cs.onSecondary,
+        ),
       ),
     );
   }
