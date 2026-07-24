@@ -250,21 +250,29 @@ class DandanplayClient {
   /// [config] 缺省读取进程级 [DandanplayConfig.current]（偏好仓库推送），使
   /// 播放页的零参 `DandanplayClient()` 自动吃到用户配置的服务器/凭据。显式 [baseUri]
   /// 优先于 [config] 的服务器地址（测试注入 / 强制覆盖用）。
+  ///
+  /// 超时分两档（BUG-1054）：[timeout] 给轻量请求（match / search，响应几 KB），
+  /// [commentTimeout] 给 `/api/v2/comment/{id}`——后者在 `withRelated=true` 时要由
+  /// 服务端聚合第三方弹幕源，响应体可达数 MB，而 `http.get().timeout()` 计的是
+  /// **整个响应体下载完**的时间；两者共用 8s 会让正片弹幕稳定超时。
   DandanplayClient({
     http.Client? httpClient,
     Uri? baseUri,
     DandanplayConfig? config,
     Duration timeout = const Duration(seconds: 8),
+    Duration commentTimeout = const Duration(seconds: 30),
   })  : _client = httpClient ?? http.Client(),
         _config = config ?? DandanplayConfig.current,
         _baseUri =
             baseUri ?? (config ?? DandanplayConfig.current).resolvedBaseUri,
-        _timeout = timeout;
+        _timeout = timeout,
+        _commentTimeout = commentTimeout;
 
   final http.Client _client;
   final DandanplayConfig _config;
   final Uri _baseUri;
   final Duration _timeout;
+  final Duration _commentTimeout;
 
   void close() => _client.close();
 
@@ -285,34 +293,19 @@ class DandanplayClient {
           matched.match == null) {
         return matched;
       }
-      final List<VideoDanmakuItem> items =
+      final DandanplayFetchResult comments =
           await fetchCommentsForMatch(matched.match!);
+      // 拉弹幕失败时如实上抛失败状态（此前被吞成「命中且 0 条」，见 BUG-1054）；
+      // 匹配信息仍保留，供 UI 展示已匹配到哪一集。
       return DandanplayFetchResult(
-        status: DandanplayFetchStatus.hit,
-        items: items,
+        status: comments.status,
+        items: comments.items,
         match: matched.match,
         matches: matched.matches,
-      );
-    } on SocketException catch (e) {
-      return DandanplayFetchResult(
-        status: DandanplayFetchStatus.networkError,
-        error: e,
-      );
-    } on http.ClientException catch (e) {
-      return DandanplayFetchResult(
-        status: DandanplayFetchStatus.networkError,
-        error: e,
-      );
-    } on TimeoutException catch (e) {
-      return DandanplayFetchResult(
-        status: DandanplayFetchStatus.networkError,
-        error: e,
+        error: comments.error,
       );
     } catch (e) {
-      return DandanplayFetchResult(
-        status: DandanplayFetchStatus.serverError,
-        error: e,
-      );
+      return DandanplayFetchResult(status: _statusForError(e), error: e);
     }
   }
 
@@ -372,7 +365,17 @@ class DandanplayClient {
     );
   }
 
-  Future<List<VideoDanmakuItem>> fetchCommentsForMatch(
+  /// 拉取 [match] 那一集的弹幕。
+  ///
+  /// 返回**带状态**的结果而不是裸列表（BUG-1054）：此前任何非 2xx 都被压成
+  /// `const []`，调用方无从区分「这一集真的 0 条弹幕」与「403 凭据/权限被拒、
+  /// 404 无此集、5xx、超时」。后果是手动绑定在服务器拒绝时反而「成功」——面板关闭、
+  /// episodeId 落库、弹幕为空、零提示；自动加载则把错误当成缓存失效，白跑一次
+  /// 16MiB 文件 hash + `/api/v2/match`。
+  ///
+  /// `hit` 允许 [DandanplayFetchResult.items] 为空：那是「该集有效但暂无弹幕」，
+  /// 与错误是两回事，由调用方分别给反馈。
+  Future<DandanplayFetchResult> fetchCommentsForMatch(
     DandanplayMatch match,
   ) async {
     final String path = '/api/v2/comment/${match.episodeId}';
@@ -382,19 +385,39 @@ class DandanplayClient {
         'withRelated': 'true',
       },
     );
-    final http.Response response =
-        await _client.get(uri, headers: _headersFor(path)).timeout(_timeout);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      return const <VideoDanmakuItem>[];
+    try {
+      final http.Response response = await _client
+          .get(uri, headers: _headersFor(path))
+          .timeout(_commentTimeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return DandanplayFetchResult(
+          status: DandanplayFetchStatus.serverError,
+          match: match,
+          error: response.statusCode,
+        );
+      }
+      final dynamic decoded = jsonDecode(response.body);
+      if (decoded is! Map || decoded['comments'] is! List) {
+        return DandanplayFetchResult(
+          status: DandanplayFetchStatus.serverError,
+          match: match,
+        );
+      }
+      return DandanplayFetchResult(
+        status: DandanplayFetchStatus.hit,
+        items: dandanplayCommentsToDanmaku(
+          decoded['comments'] as List<dynamic>,
+          shiftMs: (match.shiftSeconds * 1000).round(),
+        ),
+        match: match,
+      );
+    } catch (e) {
+      return DandanplayFetchResult(
+        status: _statusForError(e),
+        match: match,
+        error: e,
+      );
     }
-    final dynamic decoded = jsonDecode(response.body);
-    if (decoded is! Map) return const <VideoDanmakuItem>[];
-    final dynamic comments = decoded['comments'];
-    if (comments is! List) return const <VideoDanmakuItem>[];
-    return dandanplayCommentsToDanmaku(
-      comments,
-      shiftMs: (match.shiftSeconds * 1000).round(),
-    );
   }
 
   /// 手动按番剧名 [keyword] 搜索候选集（TODO-1376，dandanplay `/api/v2/search/episodes`）。
@@ -442,28 +465,22 @@ class DandanplayClient {
         status: DandanplayFetchStatus.hit,
         animes: animes,
       );
-    } on SocketException catch (e) {
-      return DandanplaySearchResult(
-        status: DandanplayFetchStatus.networkError,
-        error: e,
-      );
-    } on http.ClientException catch (e) {
-      return DandanplaySearchResult(
-        status: DandanplayFetchStatus.networkError,
-        error: e,
-      );
-    } on TimeoutException catch (e) {
-      return DandanplaySearchResult(
-        status: DandanplayFetchStatus.networkError,
-        error: e,
-      );
     } catch (e) {
-      return DandanplaySearchResult(
-        status: DandanplayFetchStatus.serverError,
-        error: e,
-      );
+      return DandanplaySearchResult(status: _statusForError(e), error: e);
     }
   }
+}
+
+/// 把请求期异常归类成 [DandanplayFetchStatus]：连不上/断流/超时算 `networkError`
+/// （用户侧可重试），其余（JSON 畸形等）算 `serverError`。三处调用点共用同一判据，
+/// 消除此前每处各写四个 `on ... catch` 的重复分支。
+DandanplayFetchStatus _statusForError(Object error) {
+  final bool network = error is IOException || // Socket/Handshake/Http 等
+      error is http.ClientException ||
+      error is TimeoutException;
+  return network
+      ? DandanplayFetchStatus.networkError
+      : DandanplayFetchStatus.serverError;
 }
 
 Future<String> dandanplayFileHash(File file) async {

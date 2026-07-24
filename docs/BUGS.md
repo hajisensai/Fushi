@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1020 条。点号进各自文件。
+> 共 1021 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1054](bugs/BUG-1054-danmaku-comment-fetch-timeout-and-swallowed-status.md) | ✅ | ✅ | 手动匹配弹幕「弹幕加载失败」：拉弹幕与搜索共用 8s 超时，且非 2xx 被吞成空列表 |
 | [BUG-1053](bugs/BUG-1053-embedded-torrent-dht-always-on.md) | ✅ | ✅ | 空闲也常驻 libtorrent/DHT（6881），整机网络周期性高延迟 |
 | [BUG-1052](bugs/BUG-1052-reading-time-lost-session-clock-reanchor.md) | ✅ | ✅ | 阅读时长被会话时钟重锚吃掉，速度/统计爆表（今日 0 分钟 / 125666 字·时⁻¹） |
 | [BUG-1051](bugs/BUG-1051-series-audio-subtitle-memory-lost.md) | ✅ | ✅ | 同系列音轨选择与字幕调轴记忆丢失（统一合集迁移回归） |
