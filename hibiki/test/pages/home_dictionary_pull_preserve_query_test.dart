@@ -227,10 +227,14 @@ void main() {
           'an outer Flutter scroll wrapper would not reliably receive WebView '
           'touch drags.',
     );
-    // TODO-931：外点遮罩同样改用 _hasVisiblePopup（隐藏热槽不该挂遮罩）。
+    // TODO-931：外点遮罩同样改用 hasVisiblePopup（隐藏热槽不该挂遮罩）。2026-07-24
+    // 去重后 barrier 骨架在 DictionaryPopupOverlayHostMixin（dictionary_page_mixin.dart）
+    // 的 buildPopupOverlayContent 里，守卫改扫 mixin。
+    final String overlayMixin =
+        read('lib/src/pages/implementations/dictionary_page_mixin.dart');
     expect(
-      resultBody,
-      contains('_hasVisiblePopup || _popup.isSearchingUi'),
+      overlayMixin,
+      contains('controller.hasVisiblePopup || controller.isSearchingUi'),
       reason:
           'The outside-tap shield should exist only for visible popup state, '
           'not as a general result-body gesture catcher.',

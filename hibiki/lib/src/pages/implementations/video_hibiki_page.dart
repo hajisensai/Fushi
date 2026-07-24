@@ -25,7 +25,6 @@ import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/video_loading_overlay.dart';
-import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
@@ -172,7 +171,7 @@ part 'video_hibiki/layout.part.dart';
 /// **之上**，窗口/全屏统一一套。根 Overlay 在 [HibikiAppUiScale] 的 `FittedBox` 之内
 /// （挂在 `MaterialApp.builder`），其坐标空间是**缩放后的小画布（view/s）**；若浮层直接在
 /// 此渲染，其词典 WebView 会按小画布尺寸栅格化、再被外层 `FittedBox` 拉大 → **字糊**
-/// （与 BUG-039 阅读器同源；BUG-051）。故 [_buildPopupOverlay] 把整棵浮层子树用
+/// （与 BUG-039 阅读器同源；BUG-051）。故 [DictionaryPopupOverlayHostMixin.buildPopupOverlayContent] 把整棵浮层子树用
 /// [HibikiAppUiScaleNeutralizer] 中和回**真实视口尺寸、净缩放=1**，WebView 按原生像素密度
 /// 渲染 → 清晰。中和后浮层坐标系即真实屏幕空间（净变换=1），与 `localToGlobal` 的字符
 /// rect 同系，故 [_lookupAt] **直接**用该屏幕 rect 定位（不再 ÷s 换算到画布），界面任意
@@ -635,7 +634,10 @@ class _VideoControlPopoverPlacement {
 }
 
 class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
-    with DictionaryPageMixin, WidgetsBindingObserver
+    with
+        DictionaryPageMixin,
+        DictionaryPopupOverlayHostMixin,
+        WidgetsBindingObserver
     implements VideoHibikiTestHooks {
   // 控制条尺寸基线（界面缩放 ×1.0 时的值）。视频页整页被
   // [HibikiAppUiScaleNeutralizer] 中和回 scale=1.0（保证 WebView 查词坐标一致），
@@ -1336,9 +1338,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
-  /// 承载查词浮层栈的根 Overlay 入口；非空时浮层栈渲染在根 Overlay（窗口/全屏统一，
-  /// 全屏时浮在 media_kit 全屏路由之上）。栈空时移除、栈变化时 `markNeedsBuild`。
-  OverlayEntry? _popupOverlayEntry;
+  // 承载查词浮层栈的根 Overlay 入口（窗口/全屏统一，全屏时浮在 media_kit 全屏路由
+  // 之上）：entry 状态与插入/刷新/摘除收口在 [DictionaryPopupOverlayHostMixin]
+  // （syncPopupOverlay / removePopupOverlayEntry），本页只提供接线与 barrier 分叉钩子。
 
   /// 最近一次查词所在字幕句（整条 cue 文本）；[onMineEntry] 制卡时作 sentence。
   /// 点字符查词时即时记录，确保制卡例句是「点词那一刻的那句字幕」。
@@ -3169,14 +3171,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _speedPersistDebounce?.cancel();
     unawaited(_flushPersistedVideoSpeed());
     // 先把根 Overlay 浮层 entry 摘除/释放，再 clear 浮层栈：entry 一旦移除就不会再被
-    // 根 Overlay 重建 _buildPopupOverlay，杜绝销毁期用失效 State 重建浮层（退视频红屏）。
-    final OverlayEntry? entry = _popupOverlayEntry;
-    if (entry != null) {
-      // remove() asserts if already detached（路由先 pop 时根 Overlay 可能已摘除）。
-      if (entry.mounted) entry.remove();
-      entry.dispose();
-      _popupOverlayEntry = null;
-    }
+    // 根 Overlay 重建 buildPopupOverlayContent，杜绝销毁期用失效 State 重建浮层
+    // （退视频红屏）。remove() 只在仍挂载时调的守卫在 mixin 里。
+    removePopupOverlayEntry();
     _popup.clear();
     _volumeDisplay.dispose();
     _watchTracker?.dispose();
@@ -3249,25 +3246,20 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     super.dispose();
   }
 
-  /// 退出视频 / 退全屏的销毁期保护（BUG-121）。根 Overlay 的查词浮层 entry 跨路由生存，
-  /// 比本 State 活得久；路由 pop 当帧本 State 先 `deactivate`，随后**同帧 layout 阶段**
-  /// 根 Overlay 的 [LayoutBuilder] 仍会重建 entry → 内层经 `appModel`(ref.read) / `mixinTheme`
-  /// (Theme.of) 做祖先查找，而 deactivated element 上的查找不安全 → 抛异常红屏。
-  /// `OverlayEntry.remove()` 在 build/layout 阶段会延迟到 post-frame，摘除来不及拦本帧；
-  /// 故置位此标志，让浮层 builder 在销毁期一律空渲染（[_buildPopupOverlay]）。
-  bool _overlayInert = false;
+  // 退出视频 / 退全屏的销毁期保护（BUG-121）：标志本体 [popupOverlayInert] 与空渲染
+  // 兜底在 [DictionaryPopupOverlayHostMixin]，本页只在 State 生命周期钩子里翻转。
 
   @override
   void deactivate() {
-    _overlayInert = true;
+    popupOverlayInert = true;
     super.deactivate();
   }
 
   @override
   void activate() {
     super.activate();
-    // GlobalKey 重挂等重新激活场景：恢复正常渲染，下次 build 的 _syncPopupOverlay 重建浮层。
-    _overlayInert = false;
+    // GlobalKey 重挂等重新激活场景：恢复正常渲染，下次 build 的 syncPopupOverlay 重建浮层。
+    popupOverlayInert = false;
   }
 
   /// 把键盘焦点还给 media_kit [Video]，恢复其内置快捷键（空格=播放/暂停等）。
@@ -3451,29 +3443,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// slot remains.
   int get _topVisiblePopupIndex => _popup.lastVisibleIndex;
 
-  /// TODO-1052：查词浮层 barrier 上「桌面水平拖过阈关一层」的纯状态追踪器（与
-  /// reader/audiobook 经 base_source_page、home_dictionary、texthooker 共用同一
-  /// [BarrierSwipeDismissTracker]，阈值/位移逻辑单一真相源、不漂移）。仅当
-  /// [ReaderHibikiSource.enableSwipeToClose] 开启时挂到 barrier（否则只 onTapUp，
-  /// 与旧行为一致）。过阈关一层 = [_popNestedPopupAt]（_topVisiblePopupIndex），与
-  /// 光标 B/Esc / 返回键逐层退回同语义，不清整栈（清整栈仍是点真空白的 onTapUp）。
-  final BarrierSwipeDismissTracker _barrierSwipe = BarrierSwipeDismissTracker();
-
-  void _onDismissBarrierHorizontalDragStart(DragStartDetails details) {
-    _barrierSwipe.begin();
-  }
-
-  void _onDismissBarrierHorizontalDragUpdate(DragUpdateDetails details) {
-    _barrierSwipe.update(details.delta.dx);
-  }
-
-  void _onDismissBarrierHorizontalDragEnd(DragEndDetails details) {
-    if (_barrierSwipe.end(
-      sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
-    )) {
-      _popNestedPopupAt(_topVisiblePopupIndex);
-    }
-  }
+  // TODO-1052：barrier「桌面水平拖过阈关一层」（[BarrierSwipeDismissTracker]）已上提到
+  // [DictionaryPopupOverlayHostMixin]（与 home_dictionary 逐字相同的副本合并）。过阈
+  // 关一层 = popPopupLayerAt(lastVisibleIndex) → [_popNestedPopupAt]，与光标 B/Esc /
+  // 返回键逐层退回同语义，不清整栈（清整栈仍是点真空白的 onTapUp）。
 
   /// Shift-悬停在 barrier 上「连续切换查词」的节流锚 + 去重键（TODO-756a，与阅读器
   /// [ReaderHibikiPage.onDismissBarrierHover] 同语义）。[Offset.zero] / 空句 / -1 表示
@@ -3485,7 +3458,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 桌面 Shift-鼠标悬停在查词浮层 dismiss barrier 上「连续切换查词」（BUG-861，与阅读器
   /// [ReaderHibikiPage.onDismissBarrierHover] 同语义）。
   ///
-  /// 根因：首次查词打开浮层后，全屏 dismiss barrier（[_buildPopupOverlay]）盖在字幕之上，
+  /// 根因：首次查词打开浮层后，全屏 dismiss barrier（[buildPopupOverlayContent]）盖在字幕之上，
   /// 字幕盒自己的 [MouseRegion.onHover]（[VideoSubtitleOverlay] 的 `_handleShiftHover`）被
   /// barrier 遮住收不到 hover——barrier 是此时**唯一**还能接 hover 的入口。阅读器早已在
   /// barrier 外层挂 `Listener(onPointerHover: onDismissBarrierHover)` 转发换词，视频页此前
@@ -3580,7 +3553,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // （seedWarmSlot/dismissAt 据此决定是否保留热槽）。
     _popup.lowMemory = appModel.lowMemoryMode;
     setState(() => _popup.seedWarmSlot());
-    _syncPopupOverlay();
+    syncPopupOverlay();
   }
 
   /// 查词浮层打开时，点根 Overlay 全屏 dismiss barrier 的处理：**非嵌套**（只有顶层可见）
@@ -3696,7 +3669,18 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
-  Widget _buildNestedPopupLayer(int index, Size screen) {
+  // ── 根 Overlay 宿主接线（DictionaryPopupOverlayHostMixin） ────────────────
+  //
+  // 同步（[syncPopupOverlay]，在 [build] 的 post-frame 调）/ 摘除 / 浮层骨架（中和器
+  // BUG-051、Clip.none BUG-135、销毁期兜底 BUG-121、TODO-1052 横拖关一层）收口在
+  // mixin；本页保留 video 专属分叉：barrier 用 onTapUp（带坐标「点词换词」）+ Listener
+  // hover 转发（BUG-861）。
+
+  @override
+  DictionaryPopupController get popupOverlayController => _popup;
+
+  @override
+  Widget buildPopupOverlayLayer(int index, Size screen) {
     return buildNestedPopupLayer(
       index: index,
       screen: screen,
@@ -3718,116 +3702,28 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
-  /// 把查词浮层栈同步到根 Overlay：栈非空且未插入则插入、栈空则移除、否则
-  /// `markNeedsBuild` 刷新。在 [build] 的 post-frame 调，使根 Overlay 总是反映
-  /// 当前栈（[DictionaryPageMixin] 的 push/pop 都走 `setState` → 重 build → 本同步）。
-  ///
-  /// 用根 Overlay（而非本页 `Stack`）的原因：media_kit 全屏是推到根 navigator 的独立
-  /// 路由，本页 `Stack` 会被全屏路由盖住；根 Overlay 浮在所有路由之上，窗口/全屏统一。
-  void _syncPopupOverlay() {
-    if (!mounted) return;
-    if (_popup.entries.isEmpty) {
-      final OverlayEntry? entry = _popupOverlayEntry;
-      if (entry != null) {
-        if (entry.mounted) entry.remove();
-        entry.dispose();
-        _popupOverlayEntry = null;
-      }
-      return;
-    }
-    if (_popupOverlayEntry != null) {
-      _popupOverlayEntry!.markNeedsBuild();
-      return;
-    }
-    final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
-    if (overlay == null) return;
-    final OverlayEntry entry = OverlayEntry(builder: _buildPopupOverlay);
-    _popupOverlayEntry = entry;
-    overlay.insert(entry);
-  }
+  @override
+  void popPopupLayerAt(int index) => _popNestedPopupAt(index);
 
-  /// 根 Overlay 里的查词浮层栈内容：透明遮罩（点击关栈）+ 各层 [DictionaryPopupLayer]。
-  ///
-  /// 根 Overlay 在 [HibikiAppUiScale] 的 `FittedBox` 之内＝缩放后的小画布，浮层 WebView
-  /// 在此栅格化再被拉大会字糊（BUG-051）。用 [HibikiAppUiScaleNeutralizer] 把整棵浮层
-  /// 子树中和回真实视口尺寸、净缩放=1，WebView 按原生密度渲染＝清晰。中和后 `screen`
-  /// （内层 [LayoutBuilder] 约束）即真实视口，与 [_lookupAt] 直接传入的 `localToGlobal`
-  /// 屏幕 rect 同坐标系（净变换=1），定位自洽。
-  Widget _buildPopupOverlay(BuildContext overlayContext) {
-    // 这个 entry 插在根 Overlay（跨路由生存，比本页 State 活得久）。退出视频 / 退全屏
-    // 时根 Overlay 可能在本 State 已 deactivate/dispose 之后重建此 entry——彼时再读
-    // State 的 `context` / `appModel`(ref.read) 会抛异常 → Flutter ErrorWidget 红屏
-    // （用户报「退视频红屏」）。故：State 失效就不渲染浮层；Theme 也改用 entry 自己的
-    // `overlayContext`（与本 entry 同寿命）而非借用更短命的 State `context`。
-    if (!mounted || _overlayInert) return const SizedBox.shrink();
-    return HibikiAppUiScaleNeutralizer(
-      child: Theme(
-        data: appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            // LayoutBuilder 的 builder 在 layout 阶段运行，可能晚于本 State 的 deactivate
-            // （退视频/退全屏同帧）；此刻读 appModel(ref.read)/mixinTheme 会做失效祖先查找
-            // 抛异常红屏（BUG-121）。销毁期标志置位则空渲染兜底。
-            if (!mounted || _overlayInert) return const SizedBox.shrink();
-            final Size screen = Size(
-              constraints.maxWidth,
-              constraints.maxHeight,
-            );
-            return Stack(
-              // BUG-135: 隐藏热槽被停到屏幕右外侧（buildNestedPopupLayer），默认
-              // Clip.hardEdge 会把它裁掉 → 原生 WebView 可能不再渲染、丢失预热。用
-              // Clip.none 让它在屏外照常栅格化保持温热（不盖任何控件）。
-              clipBehavior: Clip.none,
-              children: <Widget>[
-                // Dismiss barrier while a popup is visible OR a lookup is
-                // searching (搜索→就绪才显示：搜索期浮层还没显示，barrier 仍要拦点击
-                // 并支持点同句另一字切换查词)。仅剩隐藏热槽时不拦，放行给视频。
-                if (_hasVisiblePopup || _popup.isSearchingUi)
-                  Positioned.fill(
-                    // BUG-861：barrier 外层挂 Listener 转发 hover——首弹后 barrier 盖住字幕，
-                    // 字幕盒 MouseRegion 收不到 hover，此处是「按住 Shift 连续切换查词」唯一
-                    // 还能接 hover 的入口（与 reader onDismissBarrierHover 同语义）。
-                    child: Listener(
-                      onPointerHover: _onDismissBarrierHover,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        // onTapUp（带坐标）而非 onTap：点到同句另一个字幕字符时切换查词
-                        // 并保持暂停，点其它区域才 dismiss + 恢复（见 _onDismissBarrierTap）。
-                        onTapUp: (TapUpDetails d) =>
-                            _onDismissBarrierTap(d.globalPosition),
-                        // TODO-1052：桌面对齐手机——在 barrier 上水平拖过阈关一层
-                        // （_popNestedPopupAt，逐层关）。仅当滑动关闭开关开启时挂横拖识别
-                        // （否则只 onTapUp，与旧行为一致）。竞技场天然分流：单击走 onTapUp、
-                        // 横拖走 onHorizontalDrag*，互斥不冲突（与 base_source_page 同范式）。
-                        onHorizontalDragStart:
-                            ReaderHibikiSource.instance.enableSwipeToClose
-                                ? _onDismissBarrierHorizontalDragStart
-                                : null,
-                        onHorizontalDragUpdate:
-                            ReaderHibikiSource.instance.enableSwipeToClose
-                                ? _onDismissBarrierHorizontalDragUpdate
-                                : null,
-                        onHorizontalDragEnd:
-                            ReaderHibikiSource.instance.enableSwipeToClose
-                                ? _onDismissBarrierHorizontalDragEnd
-                                : null,
-                        child: const ColoredBox(color: Colors.transparent),
-                      ),
-                    ),
-                  ),
-                // 搜索期加载占位卡（与书内同观感：就绪才显示真正浮层）。
-                if (_popup.isSearchingUi && _popup.pendingRect != null)
-                  buildPopupLoadingPlaceholder(
-                    rect: _popup.pendingRect!,
-                    screen: screen,
-                  ),
-                for (int i = 0; i < _popup.entries.length; i++)
-                  _buildNestedPopupLayer(i, screen),
-              ],
-            );
-          },
-        ),
-      ),
+  /// video 分叉：不用 mixin 默认的 onTap 清栈——barrier 点击必须带坐标反查字幕字符
+  /// （见 [popupBarrierOnTapUp]），故单击回调置 null。
+  @override
+  GestureTapCallback? get popupBarrierOnTap => null;
+
+  /// onTapUp（带坐标）而非 onTap：点到同句另一个字幕字符时切换查词并保持暂停，
+  /// 点其它区域才 dismiss + 恢复（见 [_onDismissBarrierTap]）。
+  @override
+  GestureTapUpCallback? get popupBarrierOnTapUp =>
+      (TapUpDetails d) => _onDismissBarrierTap(d.globalPosition);
+
+  /// BUG-861：barrier 外层挂 Listener 转发 hover——首弹后 barrier 盖住字幕，字幕盒
+  /// MouseRegion 收不到 hover，此处是「按住 Shift 连续切换查词」唯一还能接 hover 的
+  /// 入口（与 reader onDismissBarrierHover 同语义）。
+  @override
+  Widget wrapPopupBarrier(Widget barrier) {
+    return Listener(
+      onPointerHover: _onDismissBarrierHover,
+      child: barrier,
     );
   }
 
@@ -6289,7 +6185,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 一个 factor=scale，原实现直接拿 controls 盒子的 `globalToLocal` 当锚点（真实空间），
   /// 界面大小≠100% 时菜单偏离鼠标 factor≈scale（用户报「调界面大小后右键菜单不在鼠标处」）。
   ///
-  /// 修复与查词浮层（[_lookupAt]/[_buildPopupOverlay]）同范式：不读 scale 数值逆算
+  /// 修复与查词浮层（[_lookupAt]/[buildPopupOverlayContent]）同范式：不读 scale 数值逆算
   /// （界面大小「自动」模式下生效 scale 由视口/平台动态算出，≠ `appModel.appUiScale`），
   /// 而用 `localToGlobal(..., ancestor: overlay)` 把右键点从 controls 盒子的本地（真实）
   /// 空间沿真实渲染变换链一路映射到 **Overlay 盒子** 坐标系——其间的 FittedBox 缩放被

@@ -33,13 +33,14 @@ part of '../video_hibiki_page.dart';
 /// splitting a non-contiguous subset).
 extension _VideoLayout on _VideoHibikiPageState {
   /// 视频本体：media_kit [Video] + 可点字幕 overlay。查词浮层栈不在这里渲染——它走
-  /// 根 Overlay（[_syncPopupOverlay] / [_buildPopupOverlay]），以便全屏时浮在全屏
-  /// 路由之上。每次 build 在 post-frame 同步根 Overlay 与当前栈。
+  /// 根 Overlay（[syncPopupOverlay] / [buildPopupOverlayContent]，收口在
+  /// [DictionaryPopupOverlayHostMixin]），以便全屏时浮在全屏路由之上。每次 build 在
+  /// post-frame 同步根 Overlay 与当前栈。
   Widget _buildVideoBody(
     VideoPlayerController controller,
     VideoController videoController,
   ) {
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
+    WidgetsBinding.instance.addPostFrameCallback((_) => syncPopupOverlay());
     final ({
       MaterialVideoControlsThemeData mobile,
       MaterialDesktopVideoControlsThemeData desktop,

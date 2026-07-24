@@ -6,30 +6,38 @@ void main() {
   // BUG-121: 退出视频/退全屏闪红屏。根因 = 查词浮层 entry 插在根 Overlay（跨路由生存），
   // 退出当帧本 State 先 deactivate，但同帧 layout 阶段根 Overlay 的 LayoutBuilder 仍重建
   // entry，内层经 appModel(ref.read) / mixinTheme(Theme.of) 做祖先查找，而 deactivated
-  // element 上的查找不安全 → 抛异常红屏。根因修=deactivate 置 _overlayInert（早于同帧
+  // element 上的查找不安全 → 抛异常红屏。根因修=deactivate 置 popupOverlayInert（早于同帧
   // layout），LayoutBuilder builder 起始据此空渲染。deactivate↔layout 同帧时序 headless
   // 难稳定复现，用源码守卫锁住生命周期拦截。
+  //
+  // 2026-07-24 去重：标志本体（popupOverlayInert）与浮层 builder
+  // （buildPopupOverlayContent）已上提到 DictionaryPopupOverlayHostMixin
+  // （dictionary_page_mixin.dart）；video 页保留生命周期钩子里的置位/复位。守卫随之分两处。
   final String pageSource = File(
     'lib/src/pages/implementations/video_hibiki_page.dart',
   ).readAsStringSync();
+  final String mixinSource = File(
+    'lib/src/pages/implementations/dictionary_page_mixin.dart',
+  ).readAsStringSync();
 
-  test('_overlayInert flag is set on deactivate and cleared on activate', () {
-    expect(pageSource, contains('bool _overlayInert'),
+  test('popupOverlayInert flag is set on deactivate and cleared on activate',
+      () {
+    expect(mixinSource, contains('bool popupOverlayInert'),
         reason: '需销毁期标志拦截浮层 builder（BUG-121）');
     final String deactivate = _functionSource(
       pageSource,
       '  void deactivate() {',
       '  void activate() {',
     );
-    expect(deactivate, contains('_overlayInert = true'),
+    expect(deactivate, contains('popupOverlayInert = true'),
         reason: 'deactivate 必须置位（早于同帧 layout 阶段）');
     final String activate = _functionSource(
       pageSource,
       '  void activate() {',
       '  void _refocusVideo() {',
     );
-    expect(activate, contains('_overlayInert = false'),
-        reason: 'activate 必须复位 _overlayInert，重挂后恢复浮层');
+    expect(activate, contains('popupOverlayInert = false'),
+        reason: 'activate 必须复位 popupOverlayInert，重挂后恢复浮层');
     // 防呆：deactivate/activate 都调 super。
     expect(deactivate, contains('super.deactivate()'));
     expect(activate, contains('super.activate()'));
@@ -38,13 +46,15 @@ void main() {
   test('popup overlay LayoutBuilder bails out during teardown before lookups',
       () {
     final String fn = _functionSource(
-      pageSource,
-      '  Widget _buildPopupOverlay(BuildContext overlayContext) {',
-      '  /// 制卡（覆写',
+      mixinSource,
+      '  Widget buildPopupOverlayContent(BuildContext overlayContext) {',
+      '\n}',
     );
-    // 外层与内层 LayoutBuilder 都要有 _overlayInert 早返回守卫。
+    // 外层与内层 LayoutBuilder 都要有 popupOverlayInert 早返回守卫。
     expect(
-        '_overlayInert) return const SizedBox.shrink();'.allMatches(fn).length,
+        'popupOverlayInert) return const SizedBox.shrink();'
+            .allMatches(fn)
+            .length,
         greaterThanOrEqualTo(2),
         reason: '外层 + 内层 LayoutBuilder builder 都要在访问 appModel 前空渲染兜底');
 
@@ -52,8 +62,8 @@ void main() {
     final int layoutIdx = fn.indexOf(
         'builder: (BuildContext context, BoxConstraints constraints) {');
     expect(layoutIdx, isNonNegative);
-    final int guardIdx =
-        fn.indexOf('_overlayInert) return const SizedBox.shrink();', layoutIdx);
+    final int guardIdx = fn.indexOf(
+        'popupOverlayInert) return const SizedBox.shrink();', layoutIdx);
     final int screenIdx = fn.indexOf('final Size screen', layoutIdx);
     expect(guardIdx, isNonNegative);
     expect(screenIdx, isNonNegative);

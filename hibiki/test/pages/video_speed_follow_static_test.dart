@@ -139,7 +139,7 @@ void main() {
 
     final String disposeBody = pageRegion(
       'void dispose() {',
-      'bool _overlayInert = false;',
+      'void deactivate() {',
     );
     expect(disposeBody.contains('_speedPersistDebounce?.cancel();'), isTrue);
     expect(disposeBody.contains('_flushPersistedVideoSpeed()'), isTrue);

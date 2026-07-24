@@ -19,6 +19,7 @@ import 'package:hibiki/src/pages/implementations/sentence_context_dialog.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
+import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/utils.dart';
 
 // 弹窗条目统一为共享的 [DictionaryPopupEntry]（见 dictionary_popup_controller.dart）；
@@ -932,5 +933,216 @@ mixin DictionaryPageMixin {
   ) {
     if (index < 0 || index >= controller.entries.length - 1) return; // 无后代
     setState(() => controller.truncateTo(index + 1));
+  }
+}
+
+/// 查词弹窗栈「根 Overlay 宿主」共享收口（2026-07-24 去重）：video 页与首页词典页
+/// 各自维护过一份逐字相同的 `_syncPopupOverlay` + 高度重合的 `_buildPopupOverlay`，
+/// 本 mixin 把根 [OverlayEntry] 的插入/刷新/摘除、销毁期兜底与浮层骨架上提为单一实现，
+/// 页间真实分叉收敛成可覆写钩子（barrier 点击语义 / hover 转发包装 / 滑动关闭开关来源）。
+///
+/// 用根 Overlay（而非页内 `Stack`）的原因：video 车道 media_kit 全屏是推到根 navigator
+/// 的独立路由，页内 `Stack` 会被全屏路由盖住，根 Overlay 浮在所有路由之上，窗口/全屏
+/// 统一；首页词典车道（TODO-617）借此跳出结果子区域 / DesktopContentLayout 的限宽 +
+/// padding + 默认 hardEdge 裁剪，全窗渲染。
+mixin DictionaryPopupOverlayHostMixin on DictionaryPageMixin {
+  // ---------------------------------------------------------------------------
+  // 宿主必须提供的接线
+  // ---------------------------------------------------------------------------
+
+  /// 本页的查词弹窗栈 controller（宿主的 `_popup` 字段）。
+  DictionaryPopupController get popupOverlayController;
+
+  /// 渲染栈中第 [index] 层浮层。宿主包装 [DictionaryPageMixin.buildNestedPopupLayer]，
+  /// 注入各自的 onPush（递归查词入口）/ onPop。
+  Widget buildPopupOverlayLayer(int index, Size screen);
+
+  /// 关闭第 [index] 层的宿主关栈汇聚点（video 带恢复播放/清草稿/收回焦点等会话收尾，
+  /// 首页直通 [DictionaryPageMixin.popNestedPopupAt]）。默认 barrier 单击
+  /// （[popupBarrierOnTap]）与共享滑动关闭（[_onPopupBarrierHorizontalDragEnd]）都经它。
+  void popPopupLayerAt(int index);
+
+  // ---------------------------------------------------------------------------
+  // 分叉钩子（默认 = 首页词典行为；video 覆写）
+  // ---------------------------------------------------------------------------
+
+  /// barrier 单击回调（无坐标）。默认清整栈（`popPopupLayerAt(0)`，首页语义）；video
+  /// 覆写为 null、改用 [popupBarrierOnTapUp]（带坐标反查字幕字符「点词换词」）。
+  @protected
+  GestureTapCallback? get popupBarrierOnTap => () => popPopupLayerAt(0);
+
+  /// barrier 点击（带坐标）回调。默认 null；video 覆写为 `_onDismissBarrierTap`
+  /// （点到字幕/列表字符→切换查词并保持暂停，否则关栈+续播）。
+  @protected
+  GestureTapUpCallback? get popupBarrierOnTapUp => null;
+
+  /// barrier 的外层包装钩子。默认原样返回；video 覆写包
+  /// `Listener(onPointerHover: ...)` 转发 hover（BUG-861：首弹后 barrier 盖住字幕，
+  /// 字幕盒 MouseRegion 收不到 hover，barrier 是「按住 Shift 连续切换查词」唯一还能接
+  /// hover 的入口）。
+  @protected
+  Widget wrapPopupBarrier(Widget barrier) => barrier;
+
+  /// TODO-1052：barrier 横拖关一层的平台/偏好级开关来源。两页现值同源
+  /// [ReaderHibikiSource.enableSwipeToClose]（Windows/Linux 默认 false）；保留为钩子
+  /// 以便宿主替换来源，不「顺手统一」语义。
+  @protected
+  bool get popupBarrierSwipeToCloseEnabled =>
+      ReaderHibikiSource.instance.enableSwipeToClose;
+
+  // ---------------------------------------------------------------------------
+  // 根 OverlayEntry 生命周期
+  // ---------------------------------------------------------------------------
+
+  /// 承载查词浮层栈的根 Overlay 入口；非空时浮层栈渲染在根 Overlay。栈空时移除、
+  /// 栈变化时 `markNeedsBuild`（见 [syncPopupOverlay]）。
+  OverlayEntry? _popupOverlayEntry;
+
+  /// 销毁期兜底（BUG-121）：根 Overlay 的浮层 entry 跨路由生存、比宿主 State 活得久；
+  /// 路由 pop / 切 tab 当帧宿主 State 先 `deactivate`，随后**同帧 layout 阶段**根
+  /// Overlay 的 [LayoutBuilder] 仍会重建 entry → 经 [mixinAppModel]（ref.read）/
+  /// `Theme.of` 做失效祖先查找抛异常红屏。`OverlayEntry.remove()` 在 build/layout
+  /// 阶段会延迟到 post-frame，摘除来不及拦本帧；故宿主在 `deactivate()` 置真、
+  /// `activate()` 置假（GlobalKey 重挂等重新激活场景恢复正常渲染），置位期间浮层
+  /// builder 一律空渲染（[buildPopupOverlayContent]）。
+  @protected
+  bool popupOverlayInert = false;
+
+  /// 把查词弹窗栈同步到根 Overlay：栈非空且未插入则插入、栈空则摘除、否则
+  /// `markNeedsBuild` 刷新。宿主在 build 的 post-frame 调用（push/pop 都走
+  /// `setState` → 重 build → 本同步），使根 Overlay 总反映当前栈。
+  void syncPopupOverlay() {
+    if (!mounted) return;
+    if (popupOverlayController.entries.isEmpty) {
+      removePopupOverlayEntry();
+      return;
+    }
+    if (_popupOverlayEntry != null) {
+      _popupOverlayEntry!.markNeedsBuild();
+      return;
+    }
+    final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
+    final OverlayEntry entry = OverlayEntry(builder: buildPopupOverlayContent);
+    _popupOverlayEntry = entry;
+    overlay.insert(entry);
+  }
+
+  /// 摘除并释放根 Overlay 的浮层 entry。宿主 dispose 里必须**先**调本方法再清浮层栈——
+  /// entry 一旦移除就不会再被根 Overlay 重建 [buildPopupOverlayContent]，杜绝销毁期用
+  /// 失效 State 重建浮层（BUG-121 红屏）。`remove()` 只在 entry 仍挂载时调
+  /// （路由先 pop 时根 Overlay 可能已摘除）。
+  void removePopupOverlayEntry() {
+    final OverlayEntry? entry = _popupOverlayEntry;
+    if (entry != null) {
+      if (entry.mounted) entry.remove();
+      entry.dispose();
+      _popupOverlayEntry = null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // barrier 滑动关闭（TODO-1052，两页逐字相同 → 上提）
+  // ---------------------------------------------------------------------------
+
+  /// TODO-1052：查词浮层 barrier 上「桌面水平拖过阈关一层」的纯状态追踪器（与
+  /// reader/audiobook 经 base_source_page、texthooker 共用
+  /// [BarrierSwipeDismissTracker]，阈值/位移逻辑单一真相源、不漂移）。仅当
+  /// [popupBarrierSwipeToCloseEnabled] 开启时挂到 barrier（否则只 tap，与旧行为
+  /// 一致）。过阈关一层 = `popPopupLayerAt(lastVisibleIndex)`，逐层关，不清整栈。
+  final BarrierSwipeDismissTracker _popupBarrierSwipe =
+      BarrierSwipeDismissTracker();
+
+  void _onPopupBarrierHorizontalDragStart(DragStartDetails details) {
+    _popupBarrierSwipe.begin();
+  }
+
+  void _onPopupBarrierHorizontalDragUpdate(DragUpdateDetails details) {
+    _popupBarrierSwipe.update(details.delta.dx);
+  }
+
+  void _onPopupBarrierHorizontalDragEnd(DragEndDetails details) {
+    if (_popupBarrierSwipe.end(
+      sensitivity: ReaderHibikiSource.instance.dismissSwipeSensitivity,
+    )) {
+      popPopupLayerAt(popupOverlayController.lastVisibleIndex);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 浮层内容骨架
+  // ---------------------------------------------------------------------------
+
+  /// 根 Overlay 里的查词弹窗栈内容：透明 dismiss barrier + 搜索期加载占位卡 + 各层
+  /// [DictionaryPopupLayer]。
+  ///
+  /// 根 Overlay 在 [HibikiAppUiScale] 的 `FittedBox` 之内＝缩放后的小画布，浮层
+  /// WebView 在此栅格化再被拉大会字糊（BUG-051）；[HibikiAppUiScaleNeutralizer] 把
+  /// 整棵浮层子树中和回真实视口、净缩放=1（WebView 按原生密度渲染＝清晰），其坐标系
+  /// 即真实屏幕空间，与顶层/嵌套选区 `localToGlobal` 的屏幕 rect 同系，定位自洽。
+  /// `Clip.none` 让飘出窗的弹窗 / 屏外热槽不被裁（BUG-135）。`screen` = 中和后内层
+  /// [LayoutBuilder] 约束 = 整窗。
+  @protected
+  Widget buildPopupOverlayContent(BuildContext overlayContext) {
+    // 销毁期（BUG-121）：State 失效 / 销毁期标志置位则空渲染兜底；Theme 用 entry 自己
+    // 的 overlayContext（与本 entry 同寿命）而非更短命的 State context。
+    if (!mounted || popupOverlayInert) return const SizedBox.shrink();
+    return HibikiAppUiScaleNeutralizer(
+      child: Theme(
+        data: mixinAppModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            // LayoutBuilder 的 builder 在 layout 阶段运行，可能晚于宿主 State 的
+            // deactivate（退页/退全屏/切 tab 同帧）；此刻读 mixinAppModel 会做失效
+            // 祖先查找抛异常红屏（BUG-121）。销毁期标志置位则空渲染兜底。
+            if (!mounted || popupOverlayInert) return const SizedBox.shrink();
+            final Size screen =
+                Size(constraints.maxWidth, constraints.maxHeight);
+            final DictionaryPopupController controller = popupOverlayController;
+            return Stack(
+              // BUG-135：隐藏热槽停到屏幕右外侧（buildNestedPopupLayer），默认
+              // Clip.hardEdge 会把它裁掉 → 原生 WebView 可能不再渲染、丢失预热。
+              // Clip.none 让它在屏外照常栅格化保持温热；飘出窗的弹窗同理不裁。
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                // 浮层可见或查词搜索期间挂 dismiss barrier（搜索→就绪才显示：搜索期
+                // 浮层还没显示，barrier 仍要拦点击）。仅剩隐藏热槽时不拦。
+                if (controller.hasVisiblePopup || controller.isSearchingUi)
+                  Positioned.fill(
+                    child: wrapPopupBarrier(
+                      GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: popupBarrierOnTap,
+                        onTapUp: popupBarrierOnTapUp,
+                        // TODO-1052：桌面对齐手机——barrier 上水平拖过阈关一层（逐层
+                        // 关）。仅当滑动关闭开关开启时挂横拖（否则只 tap，与旧行为
+                        // 一致）。竞技场天然分流单击/横拖，互斥不冲突。
+                        onHorizontalDragStart: popupBarrierSwipeToCloseEnabled
+                            ? _onPopupBarrierHorizontalDragStart
+                            : null,
+                        onHorizontalDragUpdate: popupBarrierSwipeToCloseEnabled
+                            ? _onPopupBarrierHorizontalDragUpdate
+                            : null,
+                        onHorizontalDragEnd: popupBarrierSwipeToCloseEnabled
+                            ? _onPopupBarrierHorizontalDragEnd
+                            : null,
+                        child: const ColoredBox(color: Colors.transparent),
+                      ),
+                    ),
+                  ),
+                // 搜索期加载占位卡（搜索→就绪才显示，与书内同观感）。
+                if (controller.isSearchingUi && controller.pendingRect != null)
+                  buildPopupLoadingPlaceholder(
+                    rect: controller.pendingRect!,
+                    screen: screen,
+                  ),
+                for (int i = 0; i < controller.entries.length; i++)
+                  buildPopupOverlayLayer(i, screen),
+              ],
+            );
+          },
+        ),
+      ),
+    );
   }
 }

@@ -12,7 +12,8 @@ import 'package:hibiki/src/utils/app_ui_scale.dart';
 /// ＝缩放后的小画布 `view/s`）。浮层的词典 WebView 在小画布尺寸栅格化、再被外层
 /// `FittedBox` 拉大 → 字糊（与 BUG-039 阅读器同源）。
 ///
-/// **修法**：[VideoHibikiPage._buildPopupOverlay] 把整棵浮层子树用
+/// **修法**：浮层骨架（2026-07-24 起收口在
+/// [DictionaryPopupOverlayHostMixin.buildPopupOverlayContent]）把整棵浮层子树用
 /// [HibikiAppUiScaleNeutralizer] 中和回**真实视口尺寸、净缩放=1**，WebView 按原生像素
 /// 密度渲染＝清晰；坐标随之统一到真实屏幕空间，故 `_lookupAt` **直接**用 `localToGlobal`
 /// 的字符屏幕 rect 定位（不再经 `scaledRectToCanvas` ÷s 换算到画布）。
@@ -21,7 +22,7 @@ import 'package:hibiki/src/utils/app_ui_scale.dart';
 /// 已由 `app_ui_scale_neutralizer_test.dart` 单测。本文件守的是**接线 + 坐标自洽**：
 /// 1. 行为：中和后的浮层用屏幕 rect 定位，浮层在**屏幕上**紧贴被点字符（任意缩放都不偏）；
 /// 2. 对照（红）：去掉中和器、同样直传屏幕 rect，浮层会偏 factor s（证明中和器不可省）；
-/// 3. 源码守卫：`_buildPopupOverlay` 含 `HibikiAppUiScaleNeutralizer`、全页不再 `scaledRectToCanvas`。
+/// 3. 源码守卫：浮层骨架含 `HibikiAppUiScaleNeutralizer`、全页不再 `scaledRectToCanvas`。
 void main() {
   const Size physical = Size(1000, 800);
 
@@ -61,7 +62,7 @@ void main() {
         );
       },
     );
-    // 生产 _buildPopupOverlay 用中和器包裹整棵浮层子树。
+    // 生产 buildPopupOverlayContent（mixin）用中和器包裹整棵浮层子树。
     if (neutralize) {
       overlayChild = HibikiAppUiScaleNeutralizer(child: overlayChild);
     }
@@ -173,14 +174,21 @@ void main() {
   });
 
   test(
-      '_buildPopupOverlay wraps the popup in HibikiAppUiScaleNeutralizer and '
+      'popup overlay wraps the popup in HibikiAppUiScaleNeutralizer and '
       'the manual scaledRectToCanvas conversion is gone', () {
     final String page = File(
       'lib/src/pages/implementations/video_hibiki_page.dart',
     ).readAsStringSync();
-    expect(page.contains('HibikiAppUiScaleNeutralizer('), isTrue,
+    // 2026-07-24 去重：浮层骨架在 DictionaryPopupOverlayHostMixin
+    // （dictionary_page_mixin.dart）；页面仍在路由层用中和器包整页。
+    final String mixin = File(
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
+    ).readAsStringSync();
+    expect(mixin.contains('HibikiAppUiScaleNeutralizer('), isTrue,
         reason: 'video popup overlay must be neutralized for native density');
     expect(page.contains('scaledRectToCanvas'), isFalse,
+        reason: 'neutralized overlay uses the raw screen rect directly');
+    expect(mixin.contains('scaledRectToCanvas'), isFalse,
         reason: 'neutralized overlay uses the raw screen rect directly');
 
     // 中和器接管坐标后，手动换算 helper 已删除（消除特例，不留死代码）。

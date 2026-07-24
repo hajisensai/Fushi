@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 
@@ -72,22 +74,37 @@ void main() {
     final String page = readVideoHibikiSource();
 
     test('dismiss barrier 外层挂 Listener 转发 hover 给 _onDismissBarrierHover', () {
-      final String overlay = _functionSource(
+      // 2026-07-24 去重：barrier 骨架上提到 DictionaryPopupOverlayHostMixin
+      // （dictionary_page_mixin.dart），video 经 wrapPopupBarrier 覆写在 barrier 外层
+      // 包 Listener（BUG-861 hover 转发）、经 popupBarrierOnTapUp 保留带坐标点击。
+      final String wrap = _functionSource(
         page,
-        'Widget _buildPopupOverlay(',
+        'Widget wrapPopupBarrier(Widget barrier) {',
         'Future<MinePopupResult> onMineEntry(',
       );
-      // barrier 段：Listener(onPointerHover:) 包住 GestureDetector（有 onTapUp 的那层）。
       expect(
-        overlay.contains('onPointerHover: _onDismissBarrierHover'),
+        wrap.contains('onPointerHover: _onDismissBarrierHover'),
         isTrue,
         reason: 'barrier 必须转发 onPointerHover，否则首弹后连续切换查词失效',
       );
-      // Listener 必须在 barrier 的 GestureDetector 之外（先出现）。
+      // 带坐标点击仍在（onTapUp 分叉钩子）。
       expect(
-        overlay.indexOf('onPointerHover: _onDismissBarrierHover'),
-        lessThan(overlay.indexOf('onTapUp: (TapUpDetails d) =>')),
-        reason: 'Listener 应包在 barrier GestureDetector 外层',
+        page.contains(
+            '(TapUpDetails d) => _onDismissBarrierTap(d.globalPosition)'),
+        isTrue,
+        reason: 'video barrier 点击必须带坐标反查字幕字符',
+      );
+      // mixin 骨架里 wrapPopupBarrier 包在 barrier GestureDetector 外层（先出现）。
+      final String mixinOverlay = _functionSource(
+        _readMixinSource(),
+        'Widget buildPopupOverlayContent(BuildContext overlayContext) {',
+        '\n}',
+      );
+      expect(
+        mixinOverlay.indexOf('wrapPopupBarrier('),
+        lessThan(mixinOverlay.indexOf('onTapUp: popupBarrierOnTapUp')),
+        reason: 'wrapPopupBarrier（video 的 Listener）应包在 barrier '
+            'GestureDetector 外层',
       );
     });
 
@@ -152,7 +169,7 @@ void main() {
       final String pop = _functionSource(
         page,
         'void _popNestedPopupAt(',
-        'Widget _buildNestedPopupLayer(',
+        'DictionaryPopupController get popupOverlayController',
       );
       expect(
         pop.contains('_barrierHoverLastSentence = \'\'') &&
@@ -163,6 +180,13 @@ void main() {
     });
   });
 }
+
+/// 读共享浮层宿主 mixin 源码（barrier 骨架 2026-07-24 上提至
+/// DictionaryPopupOverlayHostMixin，见 dictionary_page_mixin.dart）。
+String _readMixinSource() =>
+    File('lib/src/pages/implementations/dictionary_page_mixin.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n');
 
 /// 截取 [source] 中从 [start] 标记到 [end] 标记之间的源码片段（含 [start]、不含 [end]）。
 String _functionSource(String source, String start, String end) {

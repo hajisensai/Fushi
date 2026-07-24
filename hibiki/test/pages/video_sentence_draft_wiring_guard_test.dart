@@ -127,7 +127,7 @@ void main() {
     test('closing the whole popup stack discards an un-mined draft', () {
       final String pop = region(
         'void _popNestedPopupAt(int index) {',
-        'Widget _buildNestedPopupLayer(',
+        'DictionaryPopupController get popupOverlayController',
       );
       // 关栈汇聚点（reader onAllPopupsDismissed 的视频等价）：栈全空丢弃未制卡草稿。
       expect(pop, contains('if (stackEmpty) {'));

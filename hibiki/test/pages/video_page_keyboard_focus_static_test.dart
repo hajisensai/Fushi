@@ -102,8 +102,10 @@ void main() {
   test('查词浮层栈全空时在关栈汇聚点归还焦点（点遮罩/返回/Esc 全路径）', () {
     final int pop = src.indexOf('void _popNestedPopupAt(int index)');
     expect(pop, greaterThanOrEqualTo(0));
-    final String body =
-        src.substring(pop, src.indexOf('Widget _buildNestedPopupLayer', pop));
+    final String body = src.substring(
+        pop,
+        src.indexOf(
+            'DictionaryPopupController get popupOverlayController', pop));
     // TODO-270 E：关栈汇聚点的 stackEmpty 分支扩成块体（清未制卡草稿 + 归还焦点）；
     // 焦点归还仍在同一汇聚点，覆盖点遮罩/返回/Esc/滑动全部关闭路径。
     expect(body, contains('if (stackEmpty) {'),

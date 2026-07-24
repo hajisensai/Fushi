@@ -42,8 +42,15 @@ void main() {
     final String src = readSource();
 
     // 常驻热槽使 entries 永不空：返回 / barrier / pull 判据必须用 hasVisiblePopup（隐藏热槽不算）。
-    expect(
-        src, contains('bool get _hasVisiblePopup => _popup.hasVisiblePopup;'));
+    // 2026-07-24 去重：barrier 判据（controller.hasVisiblePopup）随浮层骨架上提到
+    // DictionaryPopupOverlayHostMixin（dictionary_page_mixin.dart），本页守剩余判据。
+    final String mixinSrc = File(
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    expect(mixinSrc,
+        contains('controller.hasVisiblePopup || controller.isSearchingUi'),
+        reason: 'barrier must key off visible popups (hidden warm slot never '
+            'mounts a barrier)');
     expect(src, contains('canPop: !_hasActiveQuery && !_popup.hasVisiblePopup'),
         reason: 'back/exit must ignore the hidden warm slot');
     expect(src, contains('if (_popup.hasVisiblePopup) {'),

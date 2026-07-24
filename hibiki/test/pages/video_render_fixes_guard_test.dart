@@ -39,25 +39,32 @@ void main() {
   });
 
   test('根 Overlay 浮层 builder 用自身 context + mounted 守卫（退视频红屏）', () {
+    // 2026-07-24 去重：浮层 builder（buildPopupOverlayContent）已上提到
+    // DictionaryPopupOverlayHostMixin（dictionary_page_mixin.dart），守卫改扫 mixin；
+    // dispose 的摘除时序仍在 video 页里守。
     final String src = File(videoPage).readAsStringSync();
+    final String mixin = File(
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
+    ).readAsStringSync();
 
     // builder 顶部有 mounted 守卫：State 失效就不渲染浮层。
     expect(
-      src,
-      contains('Widget _buildPopupOverlay(BuildContext overlayContext) {\n'),
+      mixin,
+      contains(
+          'Widget buildPopupOverlayContent(BuildContext overlayContext) {'),
     );
     // BUG-121 强化：仅 !mounted 不够——deactivate（未 unmount）期 mounted 仍为 true，
-    // 但同帧 layout 阶段 LayoutBuilder 重建仍会做失效祖先查找。守卫并入 _overlayInert。
+    // 但同帧 layout 阶段 LayoutBuilder 重建仍会做失效祖先查找。守卫并入 popupOverlayInert。
     expect(
-        src,
+        mixin,
         contains(
-            'if (!mounted || _overlayInert) return const SizedBox.shrink();'),
+            'if (!mounted || popupOverlayInert) return const SizedBox.shrink();'),
         reason: 'State 失效/销毁期根 Overlay 重建浮层不得触碰失效 context/appModel');
     // Theme 读 entry 自身的 overlayContext，而非更短命的 State context。
-    expect(src, contains('Theme.of(overlayContext)'));
+    expect(mixin, contains('Theme.of(overlayContext)'));
 
     // dispose：先摘/释放根 Overlay entry，再 clear 栈（entry 摘掉就不会被重建）。
-    final int entryRemoveIdx = src.indexOf('_popupOverlayEntry = null;');
+    final int entryRemoveIdx = src.indexOf('removePopupOverlayEntry();');
     final int clearIdx = src.indexOf('_popup.clear();');
     expect(entryRemoveIdx, greaterThanOrEqualTo(0));
     expect(clearIdx, greaterThan(entryRemoveIdx),

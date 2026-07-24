@@ -438,8 +438,13 @@ void main() {
 
     test('dismiss barrier uses onTapUp -> _onDismissBarrierTap (coord check)',
         () {
-      expect(page.contains('onTapUp: (TapUpDetails d) =>'), isTrue);
-      expect(page.contains('_onDismissBarrierTap(d.globalPosition)'), isTrue,
+      // 2026-07-24 去重：barrier 骨架上提到 DictionaryPopupOverlayHostMixin，video
+      // 经 popupBarrierOnTapUp 钩子保留带坐标点击（onTap 覆写为 null 防双触发）。
+      expect(page.contains('popupBarrierOnTapUp =>'), isTrue);
+      expect(
+          page.contains(
+              '(TapUpDetails d) => _onDismissBarrierTap(d.globalPosition)'),
+          isTrue,
           reason: 'barrier needs a coordinate check, not a blind pop');
     });
 

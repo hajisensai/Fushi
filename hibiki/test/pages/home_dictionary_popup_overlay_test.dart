@@ -201,24 +201,32 @@ void main() {
     final String page = File(
       'lib/src/pages/implementations/home_dictionary_page.dart',
     ).readAsStringSync();
+    // 2026-07-24 去重：根 Overlay 宿主逻辑（syncPopupOverlay /
+    // buildPopupOverlayContent）上提到 DictionaryPopupOverlayHostMixin
+    // （dictionary_page_mixin.dart）；结构性保证改在 mixin 里守，页面守「确实混入」
+    // + 页面侧仍保留的生命周期与坐标契约。
+    final String overlayHost = File(
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
+    ).readAsStringSync();
 
-    expect(page.contains('rootOverlay: true'), isTrue,
+    expect(page.contains('DictionaryPopupOverlayHostMixin'), isTrue,
+        reason: 'home page must mix in the shared popup overlay host');
+    expect(overlayHost.contains('rootOverlay: true'), isTrue,
         reason: 'home popup stack must mount in the root Overlay');
-    expect(page.contains('OverlayEntry'), isTrue,
+    expect(overlayHost.contains('OverlayEntry'), isTrue,
         reason: 'home popup overlay uses an OverlayEntry like video');
-    expect(page.contains('HibikiAppUiScaleNeutralizer('), isTrue,
+    expect(overlayHost.contains('HibikiAppUiScaleNeutralizer('), isTrue,
         reason: 'overlay popup subtree must be neutralized for native density');
-    expect(page.contains('clipBehavior: Clip.none'), isTrue,
+    expect(overlayHost.contains('clipBehavior: Clip.none'), isTrue,
         reason: 'overlay popup Stack must be Clip.none');
     // screen 来自整窗：弹窗栈在根 Overlay 的中和后 LayoutBuilder（rootOverlay: true 的
     // entry）取约束，而不再是结果子区域 LayoutBuilder。`rootOverlay: true` 是「screen=整窗」
-    // 的唯一信号（screen 从 _buildPopupOverlay 内层 LayoutBuilder 来，等于整窗视口）。
-    expect(page.contains('rootOverlay: true'), isTrue,
-        reason: 'popup screen must be the whole window (root Overlay), not the '
-            'result sub-area');
+    // 的唯一信号（screen 从 buildPopupOverlayContent 内层 LayoutBuilder 来，等于整窗视口）。
+    expect(page.contains('syncPopupOverlay()'), isTrue,
+        reason: 'result body must sync the stack into the root Overlay '
+            '(whole-window screen), not a result sub-area Stack');
 
-    expect(
-        page.contains('_overlayInert') || page.contains('overlayInert'), isTrue,
+    expect(page.contains('popupOverlayInert'), isTrue,
         reason: 'must guard the root-Overlay rebuild during deactivate');
     expect(page.contains('void deactivate()'), isTrue,
         reason: 'deactivate must mark the overlay inert');

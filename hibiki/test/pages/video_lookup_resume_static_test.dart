@@ -102,7 +102,7 @@ void main() {
       final String pop = _functionSource(
         page,
         'void _popNestedPopupAt(',
-        'Widget _buildNestedPopupLayer(',
+        'DictionaryPopupController get popupOverlayController',
       );
       expect(pop.contains('VideoHibikiPage.shouldResumeAfterLookupDismiss('),
           isTrue);
