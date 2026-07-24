@@ -205,7 +205,7 @@ class ActivityEvents extends Table {
   IntColumn get id => integer().autoIncrement()();
 
   /// 事件语义：'read'（读完一段）/ 'watch'（看了一段视频）/ 'added'（导入了媒体）
-  /// / 'game'（游戏游玩，本轮仅预留槽位、无写入方）。
+  /// / 'game'（galgame 游玩：时长行由前台窗口计时器写，字符行由 hook 文本累计器写）。
   TextColumn get eventType => text()();
 
   /// 媒体种类：'book' / 'video' / 'game'。与 [eventType] 分开，未来可扩展
@@ -1094,4 +1094,127 @@ class VideoScrapeMeta extends Table {
 
   @override
   Set<Column> get primaryKey => {bookUid};
+}
+
+// ── galgames ────────────────────────────────────────────────────────
+/// v55（游戏库对齐 ReinaManager，见 `docs/design/galgame-library-reina-parity.md`）：
+/// galgame 游戏库的持久真相源，取代旧的偏好表单一 JSON key `galgame_library`
+/// （那份 6 字段列表撑不起元数据、游玩状态与排序筛选）。
+///
+/// 主键**沿用旧 JSON 的 TEXT id**（添加时刻微秒时间戳字符串），不改成自增 int：
+/// 封面文件按 `<documents>/game_covers/<gameId>.<ext>` 命名，换主键类型要连带重命名
+/// 磁盘文件，纯粹是自找麻烦且零收益（Never break userspace）。
+///
+/// 元数据不落这张表的散列，而是走纵表 [GalgameSources]（一游戏多源）+ 本表的
+/// [customDataJson] 用户覆盖层，展示值由 `galgame_metadata_merge.dart` 的纯函数
+/// 按优先级合并。好处：加一个数据源零 schema 变更。
+@DataClassName('GalgameRow')
+class Galgames extends Table {
+  /// 稳定标识，沿用旧 JSON 的微秒时间戳字符串。封面文件名与之绑定。
+  TextColumn get id => text()();
+
+  /// 本地默认显示名（exe 文件名去扩展名）。用户改名走 [customDataJson] 的 `name`，
+  /// 不覆盖本列——这样「清空自定义名」能干净地回落到本地默认名。
+  TextColumn get name => text()();
+
+  /// 游戏可执行文件绝对路径（hook 注入目标）。
+  TextColumn get exePath => text()();
+
+  /// 工作目录（默认 exe 所在目录）。也是游玩计时判定「候选进程组」的范围依据。
+  TextColumn get workdir => text()();
+
+  /// 本地封面绝对路径；null = 用默认手柄图标。
+  TextColumn get coverPath => text().nullable()();
+
+  /// 添加毫秒戳。
+  IntColumn get addedAt => integer()();
+
+  /// 游玩状态：0=未设置 / 1=想玩 / 2=玩过 / 3=在玩 / 4=搁置 / 5=弃坑。
+  /// 1-5 的数值**故意对齐 Bangumi 收藏 type**，将来做云端收藏同步免一层映射。
+  /// 旧数据迁移后一律 0（未设置），行为与旧版一致。
+  IntColumn get playStatus => integer().withDefault(const Constant(0))();
+
+  /// 主显示源：'bgm' / 'vndb' / 'mixed' / 'custom'；null = 尚未刮削过。
+  TextColumn get primarySource => text().nullable()();
+
+  /// 发行日期（'YYYY-MM-DD'），从元数据上提成列供排序，避免为排序反序列化 JSON。
+  TextColumn get releaseDate => text().nullable()();
+
+  /// 用户覆盖层 JSON（name/coverSource/aliases/summary/tags/developer/nsfw/
+  /// userRating/userReview）。覆盖语义分两种：标量字段**覆盖**，aliases/tags **并集**。
+  TextColumn get customDataJson => text().nullable()();
+
+  /// 手动排序位（预留，M1 不做拖拽排序）。
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+// ── galgame_sources ─────────────────────────────────────────────────
+/// v55：游戏元数据的**源纵表**（一游戏多源，`(gameId, source)` 复合主键）。
+///
+/// 为什么是纵表而不是每源两列：加一个数据源（ymgal / dlsite / …）只是多一行
+/// `source` 取值，不动 schema、不写迁移。[dataJson] 存该源的完整 draft 快照，
+/// [score] / [rank] 在写入时一并上提成普通列，让排序留在 SQL 层。
+@DataClassName('GalgameSourceRow')
+class GalgameSources extends Table {
+  /// 所属游戏。删游戏 cascade 清本表。
+  TextColumn get gameId =>
+      text().references(Galgames, #id, onDelete: KeyAction.cascade)();
+
+  /// 数据源 key：'bgm' / 'vndb'（未来直接加值，不加列）。
+  TextColumn get source => text()();
+
+  /// 外部条目 ID（bgm subject id / vndb 的 'v12345'）。
+  TextColumn get externalId => text().nullable()();
+
+  /// 该源完整快照（`GalgameMetadataDraft.toJson()`）。
+  TextColumn get dataJson => text()();
+
+  /// 从 draft 上提的评分（0-10 归一后），供 SQL 排序。
+  RealColumn get score => real().nullable()();
+
+  /// 从 draft 上提的排名（仅 bgm 有），供 SQL 排序。
+  IntColumn get rank => integer().nullable()();
+
+  /// 抓取毫秒戳（判断缓存新旧、决定是否重新刮削）。
+  IntColumn get fetchedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {gameId, source};
+}
+
+// ── galgame_sessions ────────────────────────────────────────────────
+/// v55：游玩会话**事实表**，一次启动一行。由 `galgame_play_tracker.dart` 的
+/// 前台窗口 + 候选进程组计时器写入。
+///
+/// 这张表存在的理由是修一个真实缺陷：旧实现把游玩时长记在通用 `activity_events`
+/// 上、且由 **hook 抓到的文本行**驱动——没抓到文本就完全不计时（未适配引擎、
+/// 纯语音场景、hook 失败全部丢账）。改为按进程计时后时长与 hook 解耦。
+///
+/// **刻意不建统计投影表**：上游 ReinaManager 有一张 `game_statistics` 投影，代价是
+/// 「投影与事实表不一致」的一整类 bug（它为此写了增量更新 + 校验失败全量重算的兜底）。
+/// 单机游戏库规模是几百游戏 × 几千会话，直接 GROUP BY 聚合即可，一次消掉整类问题。
+@DataClassName('GalgameSessionRow')
+class GalgameSessions extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// 所属游戏。删游戏 cascade 清本表。
+  TextColumn get gameId =>
+      text().references(Galgames, #id, onDelete: KeyAction.cascade)();
+
+  /// 会话起始毫秒戳。
+  IntColumn get startMs => integer()();
+
+  /// 会话结束毫秒戳。
+  IntColumn get endMs => integer()();
+
+  /// 计入时长（**秒**）。playtime 模式 = 前台活跃秒数；elapsed 模式 = 墙钟秒数。
+  /// 上游存分钟，这里存秒——格式化是 UI 层的事，事实表不该先损失精度。
+  IntColumn get durationSeconds => integer()();
+
+  /// 冗余的按天分组键（'YYYY-MM-DD'，本地时区，取 [endMs] 的日期），
+  /// 与其它统计表 dateKey 同源，避免读取端为分组反算。
+  TextColumn get dateKey => text()();
 }

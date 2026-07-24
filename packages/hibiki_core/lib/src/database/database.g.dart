@@ -16913,7 +16913,7 @@ class ActivityEventRow extends DataClass
   final int id;
 
   /// 事件语义：'read'（读完一段）/ 'watch'（看了一段视频）/ 'added'（导入了媒体）
-  /// / 'game'（游戏游玩，本轮仅预留槽位、无写入方）。
+  /// / 'game'（galgame 游玩：时长行由前台窗口计时器写，字符行由 hook 文本累计器写）。
   final String eventType;
 
   /// 媒体种类：'book' / 'video' / 'game'。与 [eventType] 分开，未来可扩展
@@ -18185,6 +18185,1358 @@ class VideoScrapeMetaCompanion extends UpdateCompanion<VideoScrapeMetaRow> {
   }
 }
 
+class $GalgamesTable extends Galgames
+    with TableInfo<$GalgamesTable, GalgameRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $GalgamesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+      'name', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _exePathMeta =
+      const VerificationMeta('exePath');
+  @override
+  late final GeneratedColumn<String> exePath = GeneratedColumn<String>(
+      'exe_path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _workdirMeta =
+      const VerificationMeta('workdir');
+  @override
+  late final GeneratedColumn<String> workdir = GeneratedColumn<String>(
+      'workdir', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _coverPathMeta =
+      const VerificationMeta('coverPath');
+  @override
+  late final GeneratedColumn<String> coverPath = GeneratedColumn<String>(
+      'cover_path', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _addedAtMeta =
+      const VerificationMeta('addedAt');
+  @override
+  late final GeneratedColumn<int> addedAt = GeneratedColumn<int>(
+      'added_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _playStatusMeta =
+      const VerificationMeta('playStatus');
+  @override
+  late final GeneratedColumn<int> playStatus = GeneratedColumn<int>(
+      'play_status', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _primarySourceMeta =
+      const VerificationMeta('primarySource');
+  @override
+  late final GeneratedColumn<String> primarySource = GeneratedColumn<String>(
+      'primary_source', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _releaseDateMeta =
+      const VerificationMeta('releaseDate');
+  @override
+  late final GeneratedColumn<String> releaseDate = GeneratedColumn<String>(
+      'release_date', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _customDataJsonMeta =
+      const VerificationMeta('customDataJson');
+  @override
+  late final GeneratedColumn<String> customDataJson = GeneratedColumn<String>(
+      'custom_data_json', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _sortOrderMeta =
+      const VerificationMeta('sortOrder');
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+      'sort_order', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        name,
+        exePath,
+        workdir,
+        coverPath,
+        addedAt,
+        playStatus,
+        primarySource,
+        releaseDate,
+        customDataJson,
+        sortOrder
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'galgames';
+  @override
+  VerificationContext validateIntegrity(Insertable<GalgameRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+          _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('exe_path')) {
+      context.handle(_exePathMeta,
+          exePath.isAcceptableOrUnknown(data['exe_path']!, _exePathMeta));
+    } else if (isInserting) {
+      context.missing(_exePathMeta);
+    }
+    if (data.containsKey('workdir')) {
+      context.handle(_workdirMeta,
+          workdir.isAcceptableOrUnknown(data['workdir']!, _workdirMeta));
+    } else if (isInserting) {
+      context.missing(_workdirMeta);
+    }
+    if (data.containsKey('cover_path')) {
+      context.handle(_coverPathMeta,
+          coverPath.isAcceptableOrUnknown(data['cover_path']!, _coverPathMeta));
+    }
+    if (data.containsKey('added_at')) {
+      context.handle(_addedAtMeta,
+          addedAt.isAcceptableOrUnknown(data['added_at']!, _addedAtMeta));
+    } else if (isInserting) {
+      context.missing(_addedAtMeta);
+    }
+    if (data.containsKey('play_status')) {
+      context.handle(
+          _playStatusMeta,
+          playStatus.isAcceptableOrUnknown(
+              data['play_status']!, _playStatusMeta));
+    }
+    if (data.containsKey('primary_source')) {
+      context.handle(
+          _primarySourceMeta,
+          primarySource.isAcceptableOrUnknown(
+              data['primary_source']!, _primarySourceMeta));
+    }
+    if (data.containsKey('release_date')) {
+      context.handle(
+          _releaseDateMeta,
+          releaseDate.isAcceptableOrUnknown(
+              data['release_date']!, _releaseDateMeta));
+    }
+    if (data.containsKey('custom_data_json')) {
+      context.handle(
+          _customDataJsonMeta,
+          customDataJson.isAcceptableOrUnknown(
+              data['custom_data_json']!, _customDataJsonMeta));
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(_sortOrderMeta,
+          sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  GalgameRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return GalgameRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      name: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
+      exePath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}exe_path'])!,
+      workdir: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}workdir'])!,
+      coverPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}cover_path']),
+      addedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}added_at'])!,
+      playStatus: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}play_status'])!,
+      primarySource: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}primary_source']),
+      releaseDate: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}release_date']),
+      customDataJson: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}custom_data_json']),
+      sortOrder: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}sort_order'])!,
+    );
+  }
+
+  @override
+  $GalgamesTable createAlias(String alias) {
+    return $GalgamesTable(attachedDatabase, alias);
+  }
+}
+
+class GalgameRow extends DataClass implements Insertable<GalgameRow> {
+  /// 稳定标识，沿用旧 JSON 的微秒时间戳字符串。封面文件名与之绑定。
+  final String id;
+
+  /// 本地默认显示名（exe 文件名去扩展名）。用户改名走 [customDataJson] 的 `name`，
+  /// 不覆盖本列——这样「清空自定义名」能干净地回落到本地默认名。
+  final String name;
+
+  /// 游戏可执行文件绝对路径（hook 注入目标）。
+  final String exePath;
+
+  /// 工作目录（默认 exe 所在目录）。也是游玩计时判定「候选进程组」的范围依据。
+  final String workdir;
+
+  /// 本地封面绝对路径；null = 用默认手柄图标。
+  final String? coverPath;
+
+  /// 添加毫秒戳。
+  final int addedAt;
+
+  /// 游玩状态：0=未设置 / 1=想玩 / 2=玩过 / 3=在玩 / 4=搁置 / 5=弃坑。
+  /// 1-5 的数值**故意对齐 Bangumi 收藏 type**，将来做云端收藏同步免一层映射。
+  /// 旧数据迁移后一律 0（未设置），行为与旧版一致。
+  final int playStatus;
+
+  /// 主显示源：'bgm' / 'vndb' / 'mixed' / 'custom'；null = 尚未刮削过。
+  final String? primarySource;
+
+  /// 发行日期（'YYYY-MM-DD'），从元数据上提成列供排序，避免为排序反序列化 JSON。
+  final String? releaseDate;
+
+  /// 用户覆盖层 JSON（name/coverSource/aliases/summary/tags/developer/nsfw/
+  /// userRating/userReview）。覆盖语义分两种：标量字段**覆盖**，aliases/tags **并集**。
+  final String? customDataJson;
+
+  /// 手动排序位（预留，M1 不做拖拽排序）。
+  final int sortOrder;
+  const GalgameRow(
+      {required this.id,
+      required this.name,
+      required this.exePath,
+      required this.workdir,
+      this.coverPath,
+      required this.addedAt,
+      required this.playStatus,
+      this.primarySource,
+      this.releaseDate,
+      this.customDataJson,
+      required this.sortOrder});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['name'] = Variable<String>(name);
+    map['exe_path'] = Variable<String>(exePath);
+    map['workdir'] = Variable<String>(workdir);
+    if (!nullToAbsent || coverPath != null) {
+      map['cover_path'] = Variable<String>(coverPath);
+    }
+    map['added_at'] = Variable<int>(addedAt);
+    map['play_status'] = Variable<int>(playStatus);
+    if (!nullToAbsent || primarySource != null) {
+      map['primary_source'] = Variable<String>(primarySource);
+    }
+    if (!nullToAbsent || releaseDate != null) {
+      map['release_date'] = Variable<String>(releaseDate);
+    }
+    if (!nullToAbsent || customDataJson != null) {
+      map['custom_data_json'] = Variable<String>(customDataJson);
+    }
+    map['sort_order'] = Variable<int>(sortOrder);
+    return map;
+  }
+
+  GalgamesCompanion toCompanion(bool nullToAbsent) {
+    return GalgamesCompanion(
+      id: Value(id),
+      name: Value(name),
+      exePath: Value(exePath),
+      workdir: Value(workdir),
+      coverPath: coverPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverPath),
+      addedAt: Value(addedAt),
+      playStatus: Value(playStatus),
+      primarySource: primarySource == null && nullToAbsent
+          ? const Value.absent()
+          : Value(primarySource),
+      releaseDate: releaseDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(releaseDate),
+      customDataJson: customDataJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(customDataJson),
+      sortOrder: Value(sortOrder),
+    );
+  }
+
+  factory GalgameRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return GalgameRow(
+      id: serializer.fromJson<String>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      exePath: serializer.fromJson<String>(json['exePath']),
+      workdir: serializer.fromJson<String>(json['workdir']),
+      coverPath: serializer.fromJson<String?>(json['coverPath']),
+      addedAt: serializer.fromJson<int>(json['addedAt']),
+      playStatus: serializer.fromJson<int>(json['playStatus']),
+      primarySource: serializer.fromJson<String?>(json['primarySource']),
+      releaseDate: serializer.fromJson<String?>(json['releaseDate']),
+      customDataJson: serializer.fromJson<String?>(json['customDataJson']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'name': serializer.toJson<String>(name),
+      'exePath': serializer.toJson<String>(exePath),
+      'workdir': serializer.toJson<String>(workdir),
+      'coverPath': serializer.toJson<String?>(coverPath),
+      'addedAt': serializer.toJson<int>(addedAt),
+      'playStatus': serializer.toJson<int>(playStatus),
+      'primarySource': serializer.toJson<String?>(primarySource),
+      'releaseDate': serializer.toJson<String?>(releaseDate),
+      'customDataJson': serializer.toJson<String?>(customDataJson),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+    };
+  }
+
+  GalgameRow copyWith(
+          {String? id,
+          String? name,
+          String? exePath,
+          String? workdir,
+          Value<String?> coverPath = const Value.absent(),
+          int? addedAt,
+          int? playStatus,
+          Value<String?> primarySource = const Value.absent(),
+          Value<String?> releaseDate = const Value.absent(),
+          Value<String?> customDataJson = const Value.absent(),
+          int? sortOrder}) =>
+      GalgameRow(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        exePath: exePath ?? this.exePath,
+        workdir: workdir ?? this.workdir,
+        coverPath: coverPath.present ? coverPath.value : this.coverPath,
+        addedAt: addedAt ?? this.addedAt,
+        playStatus: playStatus ?? this.playStatus,
+        primarySource:
+            primarySource.present ? primarySource.value : this.primarySource,
+        releaseDate: releaseDate.present ? releaseDate.value : this.releaseDate,
+        customDataJson:
+            customDataJson.present ? customDataJson.value : this.customDataJson,
+        sortOrder: sortOrder ?? this.sortOrder,
+      );
+  GalgameRow copyWithCompanion(GalgamesCompanion data) {
+    return GalgameRow(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      exePath: data.exePath.present ? data.exePath.value : this.exePath,
+      workdir: data.workdir.present ? data.workdir.value : this.workdir,
+      coverPath: data.coverPath.present ? data.coverPath.value : this.coverPath,
+      addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
+      playStatus:
+          data.playStatus.present ? data.playStatus.value : this.playStatus,
+      primarySource: data.primarySource.present
+          ? data.primarySource.value
+          : this.primarySource,
+      releaseDate:
+          data.releaseDate.present ? data.releaseDate.value : this.releaseDate,
+      customDataJson: data.customDataJson.present
+          ? data.customDataJson.value
+          : this.customDataJson,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GalgameRow(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('exePath: $exePath, ')
+          ..write('workdir: $workdir, ')
+          ..write('coverPath: $coverPath, ')
+          ..write('addedAt: $addedAt, ')
+          ..write('playStatus: $playStatus, ')
+          ..write('primarySource: $primarySource, ')
+          ..write('releaseDate: $releaseDate, ')
+          ..write('customDataJson: $customDataJson, ')
+          ..write('sortOrder: $sortOrder')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      name,
+      exePath,
+      workdir,
+      coverPath,
+      addedAt,
+      playStatus,
+      primarySource,
+      releaseDate,
+      customDataJson,
+      sortOrder);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is GalgameRow &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.exePath == this.exePath &&
+          other.workdir == this.workdir &&
+          other.coverPath == this.coverPath &&
+          other.addedAt == this.addedAt &&
+          other.playStatus == this.playStatus &&
+          other.primarySource == this.primarySource &&
+          other.releaseDate == this.releaseDate &&
+          other.customDataJson == this.customDataJson &&
+          other.sortOrder == this.sortOrder);
+}
+
+class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
+  final Value<String> id;
+  final Value<String> name;
+  final Value<String> exePath;
+  final Value<String> workdir;
+  final Value<String?> coverPath;
+  final Value<int> addedAt;
+  final Value<int> playStatus;
+  final Value<String?> primarySource;
+  final Value<String?> releaseDate;
+  final Value<String?> customDataJson;
+  final Value<int> sortOrder;
+  final Value<int> rowid;
+  const GalgamesCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.exePath = const Value.absent(),
+    this.workdir = const Value.absent(),
+    this.coverPath = const Value.absent(),
+    this.addedAt = const Value.absent(),
+    this.playStatus = const Value.absent(),
+    this.primarySource = const Value.absent(),
+    this.releaseDate = const Value.absent(),
+    this.customDataJson = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  GalgamesCompanion.insert({
+    required String id,
+    required String name,
+    required String exePath,
+    required String workdir,
+    this.coverPath = const Value.absent(),
+    required int addedAt,
+    this.playStatus = const Value.absent(),
+    this.primarySource = const Value.absent(),
+    this.releaseDate = const Value.absent(),
+    this.customDataJson = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        name = Value(name),
+        exePath = Value(exePath),
+        workdir = Value(workdir),
+        addedAt = Value(addedAt);
+  static Insertable<GalgameRow> custom({
+    Expression<String>? id,
+    Expression<String>? name,
+    Expression<String>? exePath,
+    Expression<String>? workdir,
+    Expression<String>? coverPath,
+    Expression<int>? addedAt,
+    Expression<int>? playStatus,
+    Expression<String>? primarySource,
+    Expression<String>? releaseDate,
+    Expression<String>? customDataJson,
+    Expression<int>? sortOrder,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (exePath != null) 'exe_path': exePath,
+      if (workdir != null) 'workdir': workdir,
+      if (coverPath != null) 'cover_path': coverPath,
+      if (addedAt != null) 'added_at': addedAt,
+      if (playStatus != null) 'play_status': playStatus,
+      if (primarySource != null) 'primary_source': primarySource,
+      if (releaseDate != null) 'release_date': releaseDate,
+      if (customDataJson != null) 'custom_data_json': customDataJson,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  GalgamesCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? name,
+      Value<String>? exePath,
+      Value<String>? workdir,
+      Value<String?>? coverPath,
+      Value<int>? addedAt,
+      Value<int>? playStatus,
+      Value<String?>? primarySource,
+      Value<String?>? releaseDate,
+      Value<String?>? customDataJson,
+      Value<int>? sortOrder,
+      Value<int>? rowid}) {
+    return GalgamesCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      exePath: exePath ?? this.exePath,
+      workdir: workdir ?? this.workdir,
+      coverPath: coverPath ?? this.coverPath,
+      addedAt: addedAt ?? this.addedAt,
+      playStatus: playStatus ?? this.playStatus,
+      primarySource: primarySource ?? this.primarySource,
+      releaseDate: releaseDate ?? this.releaseDate,
+      customDataJson: customDataJson ?? this.customDataJson,
+      sortOrder: sortOrder ?? this.sortOrder,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (exePath.present) {
+      map['exe_path'] = Variable<String>(exePath.value);
+    }
+    if (workdir.present) {
+      map['workdir'] = Variable<String>(workdir.value);
+    }
+    if (coverPath.present) {
+      map['cover_path'] = Variable<String>(coverPath.value);
+    }
+    if (addedAt.present) {
+      map['added_at'] = Variable<int>(addedAt.value);
+    }
+    if (playStatus.present) {
+      map['play_status'] = Variable<int>(playStatus.value);
+    }
+    if (primarySource.present) {
+      map['primary_source'] = Variable<String>(primarySource.value);
+    }
+    if (releaseDate.present) {
+      map['release_date'] = Variable<String>(releaseDate.value);
+    }
+    if (customDataJson.present) {
+      map['custom_data_json'] = Variable<String>(customDataJson.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GalgamesCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('exePath: $exePath, ')
+          ..write('workdir: $workdir, ')
+          ..write('coverPath: $coverPath, ')
+          ..write('addedAt: $addedAt, ')
+          ..write('playStatus: $playStatus, ')
+          ..write('primarySource: $primarySource, ')
+          ..write('releaseDate: $releaseDate, ')
+          ..write('customDataJson: $customDataJson, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $GalgameSourcesTable extends GalgameSources
+    with TableInfo<$GalgameSourcesTable, GalgameSourceRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $GalgameSourcesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _gameIdMeta = const VerificationMeta('gameId');
+  @override
+  late final GeneratedColumn<String> gameId = GeneratedColumn<String>(
+      'game_id', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES galgames (id) ON DELETE CASCADE'));
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+      'source', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _externalIdMeta =
+      const VerificationMeta('externalId');
+  @override
+  late final GeneratedColumn<String> externalId = GeneratedColumn<String>(
+      'external_id', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _dataJsonMeta =
+      const VerificationMeta('dataJson');
+  @override
+  late final GeneratedColumn<String> dataJson = GeneratedColumn<String>(
+      'data_json', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _scoreMeta = const VerificationMeta('score');
+  @override
+  late final GeneratedColumn<double> score = GeneratedColumn<double>(
+      'score', aliasedName, true,
+      type: DriftSqlType.double, requiredDuringInsert: false);
+  static const VerificationMeta _rankMeta = const VerificationMeta('rank');
+  @override
+  late final GeneratedColumn<int> rank = GeneratedColumn<int>(
+      'rank', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _fetchedAtMeta =
+      const VerificationMeta('fetchedAt');
+  @override
+  late final GeneratedColumn<int> fetchedAt = GeneratedColumn<int>(
+      'fetched_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [gameId, source, externalId, dataJson, score, rank, fetchedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'galgame_sources';
+  @override
+  VerificationContext validateIntegrity(Insertable<GalgameSourceRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('game_id')) {
+      context.handle(_gameIdMeta,
+          gameId.isAcceptableOrUnknown(data['game_id']!, _gameIdMeta));
+    } else if (isInserting) {
+      context.missing(_gameIdMeta);
+    }
+    if (data.containsKey('source')) {
+      context.handle(_sourceMeta,
+          source.isAcceptableOrUnknown(data['source']!, _sourceMeta));
+    } else if (isInserting) {
+      context.missing(_sourceMeta);
+    }
+    if (data.containsKey('external_id')) {
+      context.handle(
+          _externalIdMeta,
+          externalId.isAcceptableOrUnknown(
+              data['external_id']!, _externalIdMeta));
+    }
+    if (data.containsKey('data_json')) {
+      context.handle(_dataJsonMeta,
+          dataJson.isAcceptableOrUnknown(data['data_json']!, _dataJsonMeta));
+    } else if (isInserting) {
+      context.missing(_dataJsonMeta);
+    }
+    if (data.containsKey('score')) {
+      context.handle(
+          _scoreMeta, score.isAcceptableOrUnknown(data['score']!, _scoreMeta));
+    }
+    if (data.containsKey('rank')) {
+      context.handle(
+          _rankMeta, rank.isAcceptableOrUnknown(data['rank']!, _rankMeta));
+    }
+    if (data.containsKey('fetched_at')) {
+      context.handle(_fetchedAtMeta,
+          fetchedAt.isAcceptableOrUnknown(data['fetched_at']!, _fetchedAtMeta));
+    } else if (isInserting) {
+      context.missing(_fetchedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {gameId, source};
+  @override
+  GalgameSourceRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return GalgameSourceRow(
+      gameId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}game_id'])!,
+      source: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source'])!,
+      externalId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}external_id']),
+      dataJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}data_json'])!,
+      score: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}score']),
+      rank: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}rank']),
+      fetchedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}fetched_at'])!,
+    );
+  }
+
+  @override
+  $GalgameSourcesTable createAlias(String alias) {
+    return $GalgameSourcesTable(attachedDatabase, alias);
+  }
+}
+
+class GalgameSourceRow extends DataClass
+    implements Insertable<GalgameSourceRow> {
+  /// 所属游戏。删游戏 cascade 清本表。
+  final String gameId;
+
+  /// 数据源 key：'bgm' / 'vndb'（未来直接加值，不加列）。
+  final String source;
+
+  /// 外部条目 ID（bgm subject id / vndb 的 'v12345'）。
+  final String? externalId;
+
+  /// 该源完整快照（`GalgameMetadataDraft.toJson()`）。
+  final String dataJson;
+
+  /// 从 draft 上提的评分（0-10 归一后），供 SQL 排序。
+  final double? score;
+
+  /// 从 draft 上提的排名（仅 bgm 有），供 SQL 排序。
+  final int? rank;
+
+  /// 抓取毫秒戳（判断缓存新旧、决定是否重新刮削）。
+  final int fetchedAt;
+  const GalgameSourceRow(
+      {required this.gameId,
+      required this.source,
+      this.externalId,
+      required this.dataJson,
+      this.score,
+      this.rank,
+      required this.fetchedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['game_id'] = Variable<String>(gameId);
+    map['source'] = Variable<String>(source);
+    if (!nullToAbsent || externalId != null) {
+      map['external_id'] = Variable<String>(externalId);
+    }
+    map['data_json'] = Variable<String>(dataJson);
+    if (!nullToAbsent || score != null) {
+      map['score'] = Variable<double>(score);
+    }
+    if (!nullToAbsent || rank != null) {
+      map['rank'] = Variable<int>(rank);
+    }
+    map['fetched_at'] = Variable<int>(fetchedAt);
+    return map;
+  }
+
+  GalgameSourcesCompanion toCompanion(bool nullToAbsent) {
+    return GalgameSourcesCompanion(
+      gameId: Value(gameId),
+      source: Value(source),
+      externalId: externalId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(externalId),
+      dataJson: Value(dataJson),
+      score:
+          score == null && nullToAbsent ? const Value.absent() : Value(score),
+      rank: rank == null && nullToAbsent ? const Value.absent() : Value(rank),
+      fetchedAt: Value(fetchedAt),
+    );
+  }
+
+  factory GalgameSourceRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return GalgameSourceRow(
+      gameId: serializer.fromJson<String>(json['gameId']),
+      source: serializer.fromJson<String>(json['source']),
+      externalId: serializer.fromJson<String?>(json['externalId']),
+      dataJson: serializer.fromJson<String>(json['dataJson']),
+      score: serializer.fromJson<double?>(json['score']),
+      rank: serializer.fromJson<int?>(json['rank']),
+      fetchedAt: serializer.fromJson<int>(json['fetchedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'gameId': serializer.toJson<String>(gameId),
+      'source': serializer.toJson<String>(source),
+      'externalId': serializer.toJson<String?>(externalId),
+      'dataJson': serializer.toJson<String>(dataJson),
+      'score': serializer.toJson<double?>(score),
+      'rank': serializer.toJson<int?>(rank),
+      'fetchedAt': serializer.toJson<int>(fetchedAt),
+    };
+  }
+
+  GalgameSourceRow copyWith(
+          {String? gameId,
+          String? source,
+          Value<String?> externalId = const Value.absent(),
+          String? dataJson,
+          Value<double?> score = const Value.absent(),
+          Value<int?> rank = const Value.absent(),
+          int? fetchedAt}) =>
+      GalgameSourceRow(
+        gameId: gameId ?? this.gameId,
+        source: source ?? this.source,
+        externalId: externalId.present ? externalId.value : this.externalId,
+        dataJson: dataJson ?? this.dataJson,
+        score: score.present ? score.value : this.score,
+        rank: rank.present ? rank.value : this.rank,
+        fetchedAt: fetchedAt ?? this.fetchedAt,
+      );
+  GalgameSourceRow copyWithCompanion(GalgameSourcesCompanion data) {
+    return GalgameSourceRow(
+      gameId: data.gameId.present ? data.gameId.value : this.gameId,
+      source: data.source.present ? data.source.value : this.source,
+      externalId:
+          data.externalId.present ? data.externalId.value : this.externalId,
+      dataJson: data.dataJson.present ? data.dataJson.value : this.dataJson,
+      score: data.score.present ? data.score.value : this.score,
+      rank: data.rank.present ? data.rank.value : this.rank,
+      fetchedAt: data.fetchedAt.present ? data.fetchedAt.value : this.fetchedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GalgameSourceRow(')
+          ..write('gameId: $gameId, ')
+          ..write('source: $source, ')
+          ..write('externalId: $externalId, ')
+          ..write('dataJson: $dataJson, ')
+          ..write('score: $score, ')
+          ..write('rank: $rank, ')
+          ..write('fetchedAt: $fetchedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(gameId, source, externalId, dataJson, score, rank, fetchedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is GalgameSourceRow &&
+          other.gameId == this.gameId &&
+          other.source == this.source &&
+          other.externalId == this.externalId &&
+          other.dataJson == this.dataJson &&
+          other.score == this.score &&
+          other.rank == this.rank &&
+          other.fetchedAt == this.fetchedAt);
+}
+
+class GalgameSourcesCompanion extends UpdateCompanion<GalgameSourceRow> {
+  final Value<String> gameId;
+  final Value<String> source;
+  final Value<String?> externalId;
+  final Value<String> dataJson;
+  final Value<double?> score;
+  final Value<int?> rank;
+  final Value<int> fetchedAt;
+  final Value<int> rowid;
+  const GalgameSourcesCompanion({
+    this.gameId = const Value.absent(),
+    this.source = const Value.absent(),
+    this.externalId = const Value.absent(),
+    this.dataJson = const Value.absent(),
+    this.score = const Value.absent(),
+    this.rank = const Value.absent(),
+    this.fetchedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  GalgameSourcesCompanion.insert({
+    required String gameId,
+    required String source,
+    this.externalId = const Value.absent(),
+    required String dataJson,
+    this.score = const Value.absent(),
+    this.rank = const Value.absent(),
+    required int fetchedAt,
+    this.rowid = const Value.absent(),
+  })  : gameId = Value(gameId),
+        source = Value(source),
+        dataJson = Value(dataJson),
+        fetchedAt = Value(fetchedAt);
+  static Insertable<GalgameSourceRow> custom({
+    Expression<String>? gameId,
+    Expression<String>? source,
+    Expression<String>? externalId,
+    Expression<String>? dataJson,
+    Expression<double>? score,
+    Expression<int>? rank,
+    Expression<int>? fetchedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (gameId != null) 'game_id': gameId,
+      if (source != null) 'source': source,
+      if (externalId != null) 'external_id': externalId,
+      if (dataJson != null) 'data_json': dataJson,
+      if (score != null) 'score': score,
+      if (rank != null) 'rank': rank,
+      if (fetchedAt != null) 'fetched_at': fetchedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  GalgameSourcesCompanion copyWith(
+      {Value<String>? gameId,
+      Value<String>? source,
+      Value<String?>? externalId,
+      Value<String>? dataJson,
+      Value<double?>? score,
+      Value<int?>? rank,
+      Value<int>? fetchedAt,
+      Value<int>? rowid}) {
+    return GalgameSourcesCompanion(
+      gameId: gameId ?? this.gameId,
+      source: source ?? this.source,
+      externalId: externalId ?? this.externalId,
+      dataJson: dataJson ?? this.dataJson,
+      score: score ?? this.score,
+      rank: rank ?? this.rank,
+      fetchedAt: fetchedAt ?? this.fetchedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (gameId.present) {
+      map['game_id'] = Variable<String>(gameId.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (externalId.present) {
+      map['external_id'] = Variable<String>(externalId.value);
+    }
+    if (dataJson.present) {
+      map['data_json'] = Variable<String>(dataJson.value);
+    }
+    if (score.present) {
+      map['score'] = Variable<double>(score.value);
+    }
+    if (rank.present) {
+      map['rank'] = Variable<int>(rank.value);
+    }
+    if (fetchedAt.present) {
+      map['fetched_at'] = Variable<int>(fetchedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GalgameSourcesCompanion(')
+          ..write('gameId: $gameId, ')
+          ..write('source: $source, ')
+          ..write('externalId: $externalId, ')
+          ..write('dataJson: $dataJson, ')
+          ..write('score: $score, ')
+          ..write('rank: $rank, ')
+          ..write('fetchedAt: $fetchedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $GalgameSessionsTable extends GalgameSessions
+    with TableInfo<$GalgameSessionsTable, GalgameSessionRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $GalgameSessionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _gameIdMeta = const VerificationMeta('gameId');
+  @override
+  late final GeneratedColumn<String> gameId = GeneratedColumn<String>(
+      'game_id', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES galgames (id) ON DELETE CASCADE'));
+  static const VerificationMeta _startMsMeta =
+      const VerificationMeta('startMs');
+  @override
+  late final GeneratedColumn<int> startMs = GeneratedColumn<int>(
+      'start_ms', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _endMsMeta = const VerificationMeta('endMs');
+  @override
+  late final GeneratedColumn<int> endMs = GeneratedColumn<int>(
+      'end_ms', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _durationSecondsMeta =
+      const VerificationMeta('durationSeconds');
+  @override
+  late final GeneratedColumn<int> durationSeconds = GeneratedColumn<int>(
+      'duration_seconds', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _dateKeyMeta =
+      const VerificationMeta('dateKey');
+  @override
+  late final GeneratedColumn<String> dateKey = GeneratedColumn<String>(
+      'date_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, gameId, startMs, endMs, durationSeconds, dateKey];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'galgame_sessions';
+  @override
+  VerificationContext validateIntegrity(Insertable<GalgameSessionRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('game_id')) {
+      context.handle(_gameIdMeta,
+          gameId.isAcceptableOrUnknown(data['game_id']!, _gameIdMeta));
+    } else if (isInserting) {
+      context.missing(_gameIdMeta);
+    }
+    if (data.containsKey('start_ms')) {
+      context.handle(_startMsMeta,
+          startMs.isAcceptableOrUnknown(data['start_ms']!, _startMsMeta));
+    } else if (isInserting) {
+      context.missing(_startMsMeta);
+    }
+    if (data.containsKey('end_ms')) {
+      context.handle(
+          _endMsMeta, endMs.isAcceptableOrUnknown(data['end_ms']!, _endMsMeta));
+    } else if (isInserting) {
+      context.missing(_endMsMeta);
+    }
+    if (data.containsKey('duration_seconds')) {
+      context.handle(
+          _durationSecondsMeta,
+          durationSeconds.isAcceptableOrUnknown(
+              data['duration_seconds']!, _durationSecondsMeta));
+    } else if (isInserting) {
+      context.missing(_durationSecondsMeta);
+    }
+    if (data.containsKey('date_key')) {
+      context.handle(_dateKeyMeta,
+          dateKey.isAcceptableOrUnknown(data['date_key']!, _dateKeyMeta));
+    } else if (isInserting) {
+      context.missing(_dateKeyMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  GalgameSessionRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return GalgameSessionRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      gameId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}game_id'])!,
+      startMs: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}start_ms'])!,
+      endMs: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}end_ms'])!,
+      durationSeconds: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}duration_seconds'])!,
+      dateKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}date_key'])!,
+    );
+  }
+
+  @override
+  $GalgameSessionsTable createAlias(String alias) {
+    return $GalgameSessionsTable(attachedDatabase, alias);
+  }
+}
+
+class GalgameSessionRow extends DataClass
+    implements Insertable<GalgameSessionRow> {
+  final int id;
+
+  /// 所属游戏。删游戏 cascade 清本表。
+  final String gameId;
+
+  /// 会话起始毫秒戳。
+  final int startMs;
+
+  /// 会话结束毫秒戳。
+  final int endMs;
+
+  /// 计入时长（**秒**）。playtime 模式 = 前台活跃秒数；elapsed 模式 = 墙钟秒数。
+  /// 上游存分钟，这里存秒——格式化是 UI 层的事，事实表不该先损失精度。
+  final int durationSeconds;
+
+  /// 冗余的按天分组键（'YYYY-MM-DD'，本地时区，取 [endMs] 的日期），
+  /// 与其它统计表 dateKey 同源，避免读取端为分组反算。
+  final String dateKey;
+  const GalgameSessionRow(
+      {required this.id,
+      required this.gameId,
+      required this.startMs,
+      required this.endMs,
+      required this.durationSeconds,
+      required this.dateKey});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['game_id'] = Variable<String>(gameId);
+    map['start_ms'] = Variable<int>(startMs);
+    map['end_ms'] = Variable<int>(endMs);
+    map['duration_seconds'] = Variable<int>(durationSeconds);
+    map['date_key'] = Variable<String>(dateKey);
+    return map;
+  }
+
+  GalgameSessionsCompanion toCompanion(bool nullToAbsent) {
+    return GalgameSessionsCompanion(
+      id: Value(id),
+      gameId: Value(gameId),
+      startMs: Value(startMs),
+      endMs: Value(endMs),
+      durationSeconds: Value(durationSeconds),
+      dateKey: Value(dateKey),
+    );
+  }
+
+  factory GalgameSessionRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return GalgameSessionRow(
+      id: serializer.fromJson<int>(json['id']),
+      gameId: serializer.fromJson<String>(json['gameId']),
+      startMs: serializer.fromJson<int>(json['startMs']),
+      endMs: serializer.fromJson<int>(json['endMs']),
+      durationSeconds: serializer.fromJson<int>(json['durationSeconds']),
+      dateKey: serializer.fromJson<String>(json['dateKey']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'gameId': serializer.toJson<String>(gameId),
+      'startMs': serializer.toJson<int>(startMs),
+      'endMs': serializer.toJson<int>(endMs),
+      'durationSeconds': serializer.toJson<int>(durationSeconds),
+      'dateKey': serializer.toJson<String>(dateKey),
+    };
+  }
+
+  GalgameSessionRow copyWith(
+          {int? id,
+          String? gameId,
+          int? startMs,
+          int? endMs,
+          int? durationSeconds,
+          String? dateKey}) =>
+      GalgameSessionRow(
+        id: id ?? this.id,
+        gameId: gameId ?? this.gameId,
+        startMs: startMs ?? this.startMs,
+        endMs: endMs ?? this.endMs,
+        durationSeconds: durationSeconds ?? this.durationSeconds,
+        dateKey: dateKey ?? this.dateKey,
+      );
+  GalgameSessionRow copyWithCompanion(GalgameSessionsCompanion data) {
+    return GalgameSessionRow(
+      id: data.id.present ? data.id.value : this.id,
+      gameId: data.gameId.present ? data.gameId.value : this.gameId,
+      startMs: data.startMs.present ? data.startMs.value : this.startMs,
+      endMs: data.endMs.present ? data.endMs.value : this.endMs,
+      durationSeconds: data.durationSeconds.present
+          ? data.durationSeconds.value
+          : this.durationSeconds,
+      dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GalgameSessionRow(')
+          ..write('id: $id, ')
+          ..write('gameId: $gameId, ')
+          ..write('startMs: $startMs, ')
+          ..write('endMs: $endMs, ')
+          ..write('durationSeconds: $durationSeconds, ')
+          ..write('dateKey: $dateKey')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, gameId, startMs, endMs, durationSeconds, dateKey);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is GalgameSessionRow &&
+          other.id == this.id &&
+          other.gameId == this.gameId &&
+          other.startMs == this.startMs &&
+          other.endMs == this.endMs &&
+          other.durationSeconds == this.durationSeconds &&
+          other.dateKey == this.dateKey);
+}
+
+class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
+  final Value<int> id;
+  final Value<String> gameId;
+  final Value<int> startMs;
+  final Value<int> endMs;
+  final Value<int> durationSeconds;
+  final Value<String> dateKey;
+  const GalgameSessionsCompanion({
+    this.id = const Value.absent(),
+    this.gameId = const Value.absent(),
+    this.startMs = const Value.absent(),
+    this.endMs = const Value.absent(),
+    this.durationSeconds = const Value.absent(),
+    this.dateKey = const Value.absent(),
+  });
+  GalgameSessionsCompanion.insert({
+    this.id = const Value.absent(),
+    required String gameId,
+    required int startMs,
+    required int endMs,
+    required int durationSeconds,
+    required String dateKey,
+  })  : gameId = Value(gameId),
+        startMs = Value(startMs),
+        endMs = Value(endMs),
+        durationSeconds = Value(durationSeconds),
+        dateKey = Value(dateKey);
+  static Insertable<GalgameSessionRow> custom({
+    Expression<int>? id,
+    Expression<String>? gameId,
+    Expression<int>? startMs,
+    Expression<int>? endMs,
+    Expression<int>? durationSeconds,
+    Expression<String>? dateKey,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (gameId != null) 'game_id': gameId,
+      if (startMs != null) 'start_ms': startMs,
+      if (endMs != null) 'end_ms': endMs,
+      if (durationSeconds != null) 'duration_seconds': durationSeconds,
+      if (dateKey != null) 'date_key': dateKey,
+    });
+  }
+
+  GalgameSessionsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? gameId,
+      Value<int>? startMs,
+      Value<int>? endMs,
+      Value<int>? durationSeconds,
+      Value<String>? dateKey}) {
+    return GalgameSessionsCompanion(
+      id: id ?? this.id,
+      gameId: gameId ?? this.gameId,
+      startMs: startMs ?? this.startMs,
+      endMs: endMs ?? this.endMs,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      dateKey: dateKey ?? this.dateKey,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (gameId.present) {
+      map['game_id'] = Variable<String>(gameId.value);
+    }
+    if (startMs.present) {
+      map['start_ms'] = Variable<int>(startMs.value);
+    }
+    if (endMs.present) {
+      map['end_ms'] = Variable<int>(endMs.value);
+    }
+    if (durationSeconds.present) {
+      map['duration_seconds'] = Variable<int>(durationSeconds.value);
+    }
+    if (dateKey.present) {
+      map['date_key'] = Variable<String>(dateKey.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GalgameSessionsCompanion(')
+          ..write('id: $id, ')
+          ..write('gameId: $gameId, ')
+          ..write('startMs: $startMs, ')
+          ..write('endMs: $endMs, ')
+          ..write('durationSeconds: $durationSeconds, ')
+          ..write('dateKey: $dateKey')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -18260,6 +19612,10 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
       $ClipboardHistoryTable(this);
   late final $VideoScrapeMetaTable videoScrapeMeta =
       $VideoScrapeMetaTable(this);
+  late final $GalgamesTable galgames = $GalgamesTable(this);
+  late final $GalgameSourcesTable galgameSources = $GalgameSourcesTable(this);
+  late final $GalgameSessionsTable galgameSessions =
+      $GalgameSessionsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -18311,7 +19667,10 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         revealedImages,
         activityEvents,
         clipboardHistory,
-        videoScrapeMeta
+        videoScrapeMeta,
+        galgames,
+        galgameSources,
+        galgameSessions
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -18440,6 +19799,20 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('video_scrape_meta', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('galgames',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('galgame_sources', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('galgames',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('galgame_sessions', kind: UpdateKind.delete),
             ],
           ),
         ],
@@ -30884,6 +32257,1019 @@ typedef $$VideoScrapeMetaTableProcessedTableManager = ProcessedTableManager<
     (VideoScrapeMetaRow, $$VideoScrapeMetaTableReferences),
     VideoScrapeMetaRow,
     PrefetchHooks Function({bool bookUid})>;
+typedef $$GalgamesTableCreateCompanionBuilder = GalgamesCompanion Function({
+  required String id,
+  required String name,
+  required String exePath,
+  required String workdir,
+  Value<String?> coverPath,
+  required int addedAt,
+  Value<int> playStatus,
+  Value<String?> primarySource,
+  Value<String?> releaseDate,
+  Value<String?> customDataJson,
+  Value<int> sortOrder,
+  Value<int> rowid,
+});
+typedef $$GalgamesTableUpdateCompanionBuilder = GalgamesCompanion Function({
+  Value<String> id,
+  Value<String> name,
+  Value<String> exePath,
+  Value<String> workdir,
+  Value<String?> coverPath,
+  Value<int> addedAt,
+  Value<int> playStatus,
+  Value<String?> primarySource,
+  Value<String?> releaseDate,
+  Value<String?> customDataJson,
+  Value<int> sortOrder,
+  Value<int> rowid,
+});
+
+final class $$GalgamesTableReferences
+    extends BaseReferences<_$HibikiDatabase, $GalgamesTable, GalgameRow> {
+  $$GalgamesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$GalgameSourcesTable, List<GalgameSourceRow>>
+      _galgameSourcesRefsTable(_$HibikiDatabase db) =>
+          MultiTypedResultKey.fromTable(db.galgameSources,
+              aliasName: 'galgames__id__galgame_sources__game_id');
+
+  $$GalgameSourcesTableProcessedTableManager get galgameSourcesRefs {
+    final manager = $$GalgameSourcesTableTableManager($_db, $_db.galgameSources)
+        .filter((f) => f.gameId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_galgameSourcesRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+
+  static MultiTypedResultKey<$GalgameSessionsTable, List<GalgameSessionRow>>
+      _galgameSessionsRefsTable(_$HibikiDatabase db) =>
+          MultiTypedResultKey.fromTable(db.galgameSessions,
+              aliasName: 'galgames__id__galgame_sessions__game_id');
+
+  $$GalgameSessionsTableProcessedTableManager get galgameSessionsRefs {
+    final manager =
+        $$GalgameSessionsTableTableManager($_db, $_db.galgameSessions)
+            .filter((f) => f.gameId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_galgameSessionsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+}
+
+class $$GalgamesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $GalgamesTable> {
+  $$GalgamesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get exePath => $composableBuilder(
+      column: $table.exePath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get workdir => $composableBuilder(
+      column: $table.workdir, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get coverPath => $composableBuilder(
+      column: $table.coverPath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get addedAt => $composableBuilder(
+      column: $table.addedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get playStatus => $composableBuilder(
+      column: $table.playStatus, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get primarySource => $composableBuilder(
+      column: $table.primarySource, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get releaseDate => $composableBuilder(
+      column: $table.releaseDate, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get customDataJson => $composableBuilder(
+      column: $table.customDataJson,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnFilters(column));
+
+  Expression<bool> galgameSourcesRefs(
+      Expression<bool> Function($$GalgameSourcesTableFilterComposer f) f) {
+    final $$GalgameSourcesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.galgameSources,
+        getReferencedColumn: (t) => t.gameId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgameSourcesTableFilterComposer(
+              $db: $db,
+              $table: $db.galgameSources,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> galgameSessionsRefs(
+      Expression<bool> Function($$GalgameSessionsTableFilterComposer f) f) {
+    final $$GalgameSessionsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.galgameSessions,
+        getReferencedColumn: (t) => t.gameId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgameSessionsTableFilterComposer(
+              $db: $db,
+              $table: $db.galgameSessions,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+}
+
+class $$GalgamesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $GalgamesTable> {
+  $$GalgamesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get exePath => $composableBuilder(
+      column: $table.exePath, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get workdir => $composableBuilder(
+      column: $table.workdir, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get coverPath => $composableBuilder(
+      column: $table.coverPath, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get addedAt => $composableBuilder(
+      column: $table.addedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get playStatus => $composableBuilder(
+      column: $table.playStatus, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get primarySource => $composableBuilder(
+      column: $table.primarySource,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get releaseDate => $composableBuilder(
+      column: $table.releaseDate, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get customDataJson => $composableBuilder(
+      column: $table.customDataJson,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnOrderings(column));
+}
+
+class $$GalgamesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $GalgamesTable> {
+  $$GalgamesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get exePath =>
+      $composableBuilder(column: $table.exePath, builder: (column) => column);
+
+  GeneratedColumn<String> get workdir =>
+      $composableBuilder(column: $table.workdir, builder: (column) => column);
+
+  GeneratedColumn<String> get coverPath =>
+      $composableBuilder(column: $table.coverPath, builder: (column) => column);
+
+  GeneratedColumn<int> get addedAt =>
+      $composableBuilder(column: $table.addedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get playStatus => $composableBuilder(
+      column: $table.playStatus, builder: (column) => column);
+
+  GeneratedColumn<String> get primarySource => $composableBuilder(
+      column: $table.primarySource, builder: (column) => column);
+
+  GeneratedColumn<String> get releaseDate => $composableBuilder(
+      column: $table.releaseDate, builder: (column) => column);
+
+  GeneratedColumn<String> get customDataJson => $composableBuilder(
+      column: $table.customDataJson, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  Expression<T> galgameSourcesRefs<T extends Object>(
+      Expression<T> Function($$GalgameSourcesTableAnnotationComposer a) f) {
+    final $$GalgameSourcesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.galgameSources,
+        getReferencedColumn: (t) => t.gameId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgameSourcesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.galgameSources,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<T> galgameSessionsRefs<T extends Object>(
+      Expression<T> Function($$GalgameSessionsTableAnnotationComposer a) f) {
+    final $$GalgameSessionsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.galgameSessions,
+        getReferencedColumn: (t) => t.gameId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgameSessionsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.galgameSessions,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+}
+
+class $$GalgamesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $GalgamesTable,
+    GalgameRow,
+    $$GalgamesTableFilterComposer,
+    $$GalgamesTableOrderingComposer,
+    $$GalgamesTableAnnotationComposer,
+    $$GalgamesTableCreateCompanionBuilder,
+    $$GalgamesTableUpdateCompanionBuilder,
+    (GalgameRow, $$GalgamesTableReferences),
+    GalgameRow,
+    PrefetchHooks Function(
+        {bool galgameSourcesRefs, bool galgameSessionsRefs})> {
+  $$GalgamesTableTableManager(_$HibikiDatabase db, $GalgamesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$GalgamesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$GalgamesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$GalgamesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> name = const Value.absent(),
+            Value<String> exePath = const Value.absent(),
+            Value<String> workdir = const Value.absent(),
+            Value<String?> coverPath = const Value.absent(),
+            Value<int> addedAt = const Value.absent(),
+            Value<int> playStatus = const Value.absent(),
+            Value<String?> primarySource = const Value.absent(),
+            Value<String?> releaseDate = const Value.absent(),
+            Value<String?> customDataJson = const Value.absent(),
+            Value<int> sortOrder = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              GalgamesCompanion(
+            id: id,
+            name: name,
+            exePath: exePath,
+            workdir: workdir,
+            coverPath: coverPath,
+            addedAt: addedAt,
+            playStatus: playStatus,
+            primarySource: primarySource,
+            releaseDate: releaseDate,
+            customDataJson: customDataJson,
+            sortOrder: sortOrder,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required String name,
+            required String exePath,
+            required String workdir,
+            Value<String?> coverPath = const Value.absent(),
+            required int addedAt,
+            Value<int> playStatus = const Value.absent(),
+            Value<String?> primarySource = const Value.absent(),
+            Value<String?> releaseDate = const Value.absent(),
+            Value<String?> customDataJson = const Value.absent(),
+            Value<int> sortOrder = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              GalgamesCompanion.insert(
+            id: id,
+            name: name,
+            exePath: exePath,
+            workdir: workdir,
+            coverPath: coverPath,
+            addedAt: addedAt,
+            playStatus: playStatus,
+            primarySource: primarySource,
+            releaseDate: releaseDate,
+            customDataJson: customDataJson,
+            sortOrder: sortOrder,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) =>
+                  (e.readTable(table), $$GalgamesTableReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: (
+              {galgameSourcesRefs = false, galgameSessionsRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (galgameSourcesRefs) db.galgameSources,
+                if (galgameSessionsRefs) db.galgameSessions
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (galgameSourcesRefs)
+                    await $_getPrefetchedData<GalgameRow, $GalgamesTable,
+                            GalgameSourceRow>(
+                        currentTable: table,
+                        referencedTable: $$GalgamesTableReferences
+                            ._galgameSourcesRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$GalgamesTableReferences(db, table, p0)
+                                .galgameSourcesRefs,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.gameId == item.id),
+                        typedResults: items),
+                  if (galgameSessionsRefs)
+                    await $_getPrefetchedData<GalgameRow, $GalgamesTable,
+                            GalgameSessionRow>(
+                        currentTable: table,
+                        referencedTable: $$GalgamesTableReferences
+                            ._galgameSessionsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$GalgamesTableReferences(db, table, p0)
+                                .galgameSessionsRefs,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.gameId == item.id),
+                        typedResults: items)
+                ];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$GalgamesTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $GalgamesTable,
+    GalgameRow,
+    $$GalgamesTableFilterComposer,
+    $$GalgamesTableOrderingComposer,
+    $$GalgamesTableAnnotationComposer,
+    $$GalgamesTableCreateCompanionBuilder,
+    $$GalgamesTableUpdateCompanionBuilder,
+    (GalgameRow, $$GalgamesTableReferences),
+    GalgameRow,
+    PrefetchHooks Function(
+        {bool galgameSourcesRefs, bool galgameSessionsRefs})>;
+typedef $$GalgameSourcesTableCreateCompanionBuilder = GalgameSourcesCompanion
+    Function({
+  required String gameId,
+  required String source,
+  Value<String?> externalId,
+  required String dataJson,
+  Value<double?> score,
+  Value<int?> rank,
+  required int fetchedAt,
+  Value<int> rowid,
+});
+typedef $$GalgameSourcesTableUpdateCompanionBuilder = GalgameSourcesCompanion
+    Function({
+  Value<String> gameId,
+  Value<String> source,
+  Value<String?> externalId,
+  Value<String> dataJson,
+  Value<double?> score,
+  Value<int?> rank,
+  Value<int> fetchedAt,
+  Value<int> rowid,
+});
+
+final class $$GalgameSourcesTableReferences extends BaseReferences<
+    _$HibikiDatabase, $GalgameSourcesTable, GalgameSourceRow> {
+  $$GalgameSourcesTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $GalgamesTable _gameIdTable(_$HibikiDatabase db) =>
+      db.galgames.createAlias('galgame_sources__game_id__galgames__id');
+
+  $$GalgamesTableProcessedTableManager get gameId {
+    final $_column = $_itemColumn<String>('game_id')!;
+
+    final manager = $$GalgamesTableTableManager($_db, $_db.galgames)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_gameIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$GalgameSourcesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $GalgameSourcesTable> {
+  $$GalgameSourcesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get source => $composableBuilder(
+      column: $table.source, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get externalId => $composableBuilder(
+      column: $table.externalId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get dataJson => $composableBuilder(
+      column: $table.dataJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get score => $composableBuilder(
+      column: $table.score, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get rank => $composableBuilder(
+      column: $table.rank, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get fetchedAt => $composableBuilder(
+      column: $table.fetchedAt, builder: (column) => ColumnFilters(column));
+
+  $$GalgamesTableFilterComposer get gameId {
+    final $$GalgamesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.gameId,
+        referencedTable: $db.galgames,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgamesTableFilterComposer(
+              $db: $db,
+              $table: $db.galgames,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$GalgameSourcesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $GalgameSourcesTable> {
+  $$GalgameSourcesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get source => $composableBuilder(
+      column: $table.source, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get externalId => $composableBuilder(
+      column: $table.externalId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get dataJson => $composableBuilder(
+      column: $table.dataJson, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get score => $composableBuilder(
+      column: $table.score, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get rank => $composableBuilder(
+      column: $table.rank, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get fetchedAt => $composableBuilder(
+      column: $table.fetchedAt, builder: (column) => ColumnOrderings(column));
+
+  $$GalgamesTableOrderingComposer get gameId {
+    final $$GalgamesTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.gameId,
+        referencedTable: $db.galgames,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgamesTableOrderingComposer(
+              $db: $db,
+              $table: $db.galgames,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$GalgameSourcesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $GalgameSourcesTable> {
+  $$GalgameSourcesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<String> get externalId => $composableBuilder(
+      column: $table.externalId, builder: (column) => column);
+
+  GeneratedColumn<String> get dataJson =>
+      $composableBuilder(column: $table.dataJson, builder: (column) => column);
+
+  GeneratedColumn<double> get score =>
+      $composableBuilder(column: $table.score, builder: (column) => column);
+
+  GeneratedColumn<int> get rank =>
+      $composableBuilder(column: $table.rank, builder: (column) => column);
+
+  GeneratedColumn<int> get fetchedAt =>
+      $composableBuilder(column: $table.fetchedAt, builder: (column) => column);
+
+  $$GalgamesTableAnnotationComposer get gameId {
+    final $$GalgamesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.gameId,
+        referencedTable: $db.galgames,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgamesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.galgames,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$GalgameSourcesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $GalgameSourcesTable,
+    GalgameSourceRow,
+    $$GalgameSourcesTableFilterComposer,
+    $$GalgameSourcesTableOrderingComposer,
+    $$GalgameSourcesTableAnnotationComposer,
+    $$GalgameSourcesTableCreateCompanionBuilder,
+    $$GalgameSourcesTableUpdateCompanionBuilder,
+    (GalgameSourceRow, $$GalgameSourcesTableReferences),
+    GalgameSourceRow,
+    PrefetchHooks Function({bool gameId})> {
+  $$GalgameSourcesTableTableManager(
+      _$HibikiDatabase db, $GalgameSourcesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$GalgameSourcesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$GalgameSourcesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$GalgameSourcesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> gameId = const Value.absent(),
+            Value<String> source = const Value.absent(),
+            Value<String?> externalId = const Value.absent(),
+            Value<String> dataJson = const Value.absent(),
+            Value<double?> score = const Value.absent(),
+            Value<int?> rank = const Value.absent(),
+            Value<int> fetchedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              GalgameSourcesCompanion(
+            gameId: gameId,
+            source: source,
+            externalId: externalId,
+            dataJson: dataJson,
+            score: score,
+            rank: rank,
+            fetchedAt: fetchedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String gameId,
+            required String source,
+            Value<String?> externalId = const Value.absent(),
+            required String dataJson,
+            Value<double?> score = const Value.absent(),
+            Value<int?> rank = const Value.absent(),
+            required int fetchedAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              GalgameSourcesCompanion.insert(
+            gameId: gameId,
+            source: source,
+            externalId: externalId,
+            dataJson: dataJson,
+            score: score,
+            rank: rank,
+            fetchedAt: fetchedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$GalgameSourcesTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({gameId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (gameId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.gameId,
+                    referencedTable:
+                        $$GalgameSourcesTableReferences._gameIdTable(db),
+                    referencedColumn:
+                        $$GalgameSourcesTableReferences._gameIdTable(db).id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$GalgameSourcesTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $GalgameSourcesTable,
+    GalgameSourceRow,
+    $$GalgameSourcesTableFilterComposer,
+    $$GalgameSourcesTableOrderingComposer,
+    $$GalgameSourcesTableAnnotationComposer,
+    $$GalgameSourcesTableCreateCompanionBuilder,
+    $$GalgameSourcesTableUpdateCompanionBuilder,
+    (GalgameSourceRow, $$GalgameSourcesTableReferences),
+    GalgameSourceRow,
+    PrefetchHooks Function({bool gameId})>;
+typedef $$GalgameSessionsTableCreateCompanionBuilder = GalgameSessionsCompanion
+    Function({
+  Value<int> id,
+  required String gameId,
+  required int startMs,
+  required int endMs,
+  required int durationSeconds,
+  required String dateKey,
+});
+typedef $$GalgameSessionsTableUpdateCompanionBuilder = GalgameSessionsCompanion
+    Function({
+  Value<int> id,
+  Value<String> gameId,
+  Value<int> startMs,
+  Value<int> endMs,
+  Value<int> durationSeconds,
+  Value<String> dateKey,
+});
+
+final class $$GalgameSessionsTableReferences extends BaseReferences<
+    _$HibikiDatabase, $GalgameSessionsTable, GalgameSessionRow> {
+  $$GalgameSessionsTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $GalgamesTable _gameIdTable(_$HibikiDatabase db) =>
+      db.galgames.createAlias('galgame_sessions__game_id__galgames__id');
+
+  $$GalgamesTableProcessedTableManager get gameId {
+    final $_column = $_itemColumn<String>('game_id')!;
+
+    final manager = $$GalgamesTableTableManager($_db, $_db.galgames)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_gameIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$GalgameSessionsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $GalgameSessionsTable> {
+  $$GalgameSessionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get startMs => $composableBuilder(
+      column: $table.startMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get endMs => $composableBuilder(
+      column: $table.endMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get durationSeconds => $composableBuilder(
+      column: $table.durationSeconds,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnFilters(column));
+
+  $$GalgamesTableFilterComposer get gameId {
+    final $$GalgamesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.gameId,
+        referencedTable: $db.galgames,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgamesTableFilterComposer(
+              $db: $db,
+              $table: $db.galgames,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$GalgameSessionsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $GalgameSessionsTable> {
+  $$GalgameSessionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get startMs => $composableBuilder(
+      column: $table.startMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get endMs => $composableBuilder(
+      column: $table.endMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get durationSeconds => $composableBuilder(
+      column: $table.durationSeconds,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get dateKey => $composableBuilder(
+      column: $table.dateKey, builder: (column) => ColumnOrderings(column));
+
+  $$GalgamesTableOrderingComposer get gameId {
+    final $$GalgamesTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.gameId,
+        referencedTable: $db.galgames,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgamesTableOrderingComposer(
+              $db: $db,
+              $table: $db.galgames,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$GalgameSessionsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $GalgameSessionsTable> {
+  $$GalgameSessionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get startMs =>
+      $composableBuilder(column: $table.startMs, builder: (column) => column);
+
+  GeneratedColumn<int> get endMs =>
+      $composableBuilder(column: $table.endMs, builder: (column) => column);
+
+  GeneratedColumn<int> get durationSeconds => $composableBuilder(
+      column: $table.durationSeconds, builder: (column) => column);
+
+  GeneratedColumn<String> get dateKey =>
+      $composableBuilder(column: $table.dateKey, builder: (column) => column);
+
+  $$GalgamesTableAnnotationComposer get gameId {
+    final $$GalgamesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.gameId,
+        referencedTable: $db.galgames,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgamesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.galgames,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$GalgameSessionsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $GalgameSessionsTable,
+    GalgameSessionRow,
+    $$GalgameSessionsTableFilterComposer,
+    $$GalgameSessionsTableOrderingComposer,
+    $$GalgameSessionsTableAnnotationComposer,
+    $$GalgameSessionsTableCreateCompanionBuilder,
+    $$GalgameSessionsTableUpdateCompanionBuilder,
+    (GalgameSessionRow, $$GalgameSessionsTableReferences),
+    GalgameSessionRow,
+    PrefetchHooks Function({bool gameId})> {
+  $$GalgameSessionsTableTableManager(
+      _$HibikiDatabase db, $GalgameSessionsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$GalgameSessionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$GalgameSessionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$GalgameSessionsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> gameId = const Value.absent(),
+            Value<int> startMs = const Value.absent(),
+            Value<int> endMs = const Value.absent(),
+            Value<int> durationSeconds = const Value.absent(),
+            Value<String> dateKey = const Value.absent(),
+          }) =>
+              GalgameSessionsCompanion(
+            id: id,
+            gameId: gameId,
+            startMs: startMs,
+            endMs: endMs,
+            durationSeconds: durationSeconds,
+            dateKey: dateKey,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String gameId,
+            required int startMs,
+            required int endMs,
+            required int durationSeconds,
+            required String dateKey,
+          }) =>
+              GalgameSessionsCompanion.insert(
+            id: id,
+            gameId: gameId,
+            startMs: startMs,
+            endMs: endMs,
+            durationSeconds: durationSeconds,
+            dateKey: dateKey,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$GalgameSessionsTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({gameId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (gameId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.gameId,
+                    referencedTable:
+                        $$GalgameSessionsTableReferences._gameIdTable(db),
+                    referencedColumn:
+                        $$GalgameSessionsTableReferences._gameIdTable(db).id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$GalgameSessionsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $GalgameSessionsTable,
+    GalgameSessionRow,
+    $$GalgameSessionsTableFilterComposer,
+    $$GalgameSessionsTableOrderingComposer,
+    $$GalgameSessionsTableAnnotationComposer,
+    $$GalgameSessionsTableCreateCompanionBuilder,
+    $$GalgameSessionsTableUpdateCompanionBuilder,
+    (GalgameSessionRow, $$GalgameSessionsTableReferences),
+    GalgameSessionRow,
+    PrefetchHooks Function({bool gameId})>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -30987,4 +33373,10 @@ class $HibikiDatabaseManager {
       $$ClipboardHistoryTableTableManager(_db, _db.clipboardHistory);
   $$VideoScrapeMetaTableTableManager get videoScrapeMeta =>
       $$VideoScrapeMetaTableTableManager(_db, _db.videoScrapeMeta);
+  $$GalgamesTableTableManager get galgames =>
+      $$GalgamesTableTableManager(_db, _db.galgames);
+  $$GalgameSourcesTableTableManager get galgameSources =>
+      $$GalgameSourcesTableTableManager(_db, _db.galgameSources);
+  $$GalgameSessionsTableTableManager get galgameSessions =>
+      $$GalgameSessionsTableTableManager(_db, _db.galgameSessions);
 }

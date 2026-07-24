@@ -159,7 +159,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 
 ## 数据模型
 
-数据模型全部定义在 `hibiki_core`（46 张 Drift 表，schema v51），本模块仅消费。互联配对设备表 `HibikiPairedPeers` 也在其中。
+数据模型全部定义在 `hibiki_core`（49 张 Drift 表，schema v54），本模块仅消费。互联配对设备表 `HibikiPairedPeers` 也在其中。
 
 ## 测试与质量
 
