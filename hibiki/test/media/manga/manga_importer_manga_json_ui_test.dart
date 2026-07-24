@@ -101,6 +101,53 @@ void main() {
     expect(row!.title, 'MyVolume');
   });
 
+  // 漫画 P3 修正：OCR 引擎（内置 ocrFolder / 远程代跑）把 manga.json 落在被扫描
+  // 目录的 manga_ocr_out/ 子目录里，而页 url 相对**被扫描目录**——导入必须显式传
+  // imageRootPath 才能解析到页图（旧默认「json 同级目录」对该布局必然缺图）。
+  test('imageRootPath resolves pages relative to the volume root (OCR layout)',
+      () async {
+    final String volRoot = p.join(srcRoot.path, 'ocr_vol');
+    final Directory images = Directory(p.join(volRoot, 'images'))
+      ..createSync(recursive: true);
+    File(p.join(images.path, 'p001.png')).writeAsBytesSync(<int>[1, 2, 3]);
+    final Directory outDir = Directory(p.join(volRoot, 'manga_ocr_out'))
+      ..createSync(recursive: true);
+    final String jsonPath = p.join(outDir.path, 'manga.json');
+    File(jsonPath).writeAsStringSync(jsonEncode(<String, Object?>{
+      'pages': <Object?>[
+        <String, Object?>{
+          'url': 'images/p001.png',
+          'width': 100,
+          'height': 200,
+          'blocks': <Object?>[],
+        },
+      ],
+    }));
+
+    // 不带 imageRootPath（旧默认 = json 同级 manga_ocr_out/）：页图必缺，导入拒绝。
+    await expectLater(
+      MangaImporter.importFromMangaJson(
+        db: db,
+        mangaJsonPath: jsonPath,
+        title: 'Broken Layout',
+      ),
+      throwsA(isA<MangaImportException>()),
+    );
+
+    // 显式指向被扫描目录：导入成功、页图拷贝到位。
+    final String bookKey = await MangaImporter.importFromMangaJson(
+      db: db,
+      mangaJsonPath: jsonPath,
+      imageRootPath: volRoot,
+      title: 'OCR Layout',
+    );
+    final EpubBookRow? row = await db.getEpubBook(bookKey);
+    expect(row, isNotNull);
+    expect(row!.format, 'manga');
+    expect(File(p.join(row.extractDir, 'images', 'p001.png')).existsSync(),
+        isTrue);
+  });
+
   test('throws when manga.json is missing', () async {
     await expectLater(
       MangaImporter.importFromMangaJson(

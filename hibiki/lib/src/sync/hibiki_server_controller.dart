@@ -4,8 +4,10 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 import 'package:hibiki/src/platform/desktop/desktop_device_info_service.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/hibiki_manga_ocr_host.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/interconnect_device_name.dart';
@@ -61,6 +63,7 @@ class HibikiSyncServerController extends ChangeNotifier {
     HibikiRemoteMiningService Function()? miningServiceFactory,
     HibikiRemoteHistoryService Function()? historyServiceFactory,
     HibikiLibraryHostService Function()? libraryServiceFactory,
+    MangaOcrService Function()? mangaOcrServiceFactory,
     PlatformDeviceInfoService? deviceInfo,
   })  : _navigatorKey = navigatorKey,
         _database = database,
@@ -69,6 +72,7 @@ class HibikiSyncServerController extends ChangeNotifier {
         _miningServiceFactory = miningServiceFactory,
         _historyServiceFactory = historyServiceFactory,
         _libraryServiceFactory = libraryServiceFactory,
+        _mangaOcrServiceFactory = mangaOcrServiceFactory,
         // Headless/test construction without an injected service falls back to
         // the desktop (machine-hostname) source; production wires the real
         // per-platform service so mobile hosts advertise their model, not
@@ -82,6 +86,10 @@ class HibikiSyncServerController extends ChangeNotifier {
   final HibikiRemoteMiningService Function()? _miningServiceFactory;
   final HibikiRemoteHistoryService Function()? _historyServiceFactory;
   final HibikiLibraryHostService Function()? _libraryServiceFactory;
+
+  /// 漫画 P3：互联 host 代跑 OCR 的服务工厂。null（headless/单测）= 不接线，
+  /// server 的 `/api/ocr/*` 端点 404、capabilities 不带 `mangaOcr` 字段。
+  final MangaOcrService Function()? _mangaOcrServiceFactory;
   final PlatformDeviceInfoService _deviceInfo;
 
   HibikiSyncServer? _server;
@@ -237,6 +245,9 @@ class HibikiSyncServerController extends ChangeNotifier {
       miningService: _miningServiceFactory?.call(),
       historyService: _historyServiceFactory?.call(),
       libraryService: _libraryServiceFactory?.call(),
+      // 漫画 P3：远程 OCR 任务管理器。上传页图落 <syncDataDir>/manga_ocr_jobs
+      // （TTL 自清理）。每次 start 新建管理器，stop 时 server 内部 disposeAll。
+      mangaOcrJobs: _buildMangaOcrJobManager(),
       securityContext: securityContext,
       hostFingerprint: hostFingerprint,
       deviceName: deviceName,
@@ -283,6 +294,20 @@ class HibikiSyncServerController extends ChangeNotifier {
       notifyListeners();
       return HibikiServerStartError(friendlySyncErrorDetail(e));
     }
+  }
+
+  /// 漫画 P3：按注入的 OCR 服务工厂构造远程 OCR 任务管理器；未注入返回 null
+  /// （server 端点整体关闭）。上传页图落 `<syncDataDir>/manga_ocr_jobs`（TTL
+  /// 自清理），每次 [start] 新建、server stop 时其内部 disposeAll。
+  MangaOcrHostJobManager? _buildMangaOcrJobManager() {
+    final MangaOcrService Function()? factory = _mangaOcrServiceFactory;
+    if (factory == null) return null;
+    return MangaOcrHostJobManager(
+      service: factory(),
+      jobRoot: Directory(
+        '${_syncDataDir()}${Platform.pathSeparator}manga_ocr_jobs',
+      ),
+    );
   }
 
   /// Stop the host. [persistDisabled] writes `serverEnabled=false` (the user

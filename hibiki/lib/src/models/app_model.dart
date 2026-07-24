@@ -42,6 +42,7 @@ import 'package:hibiki/src/models/dictionary_repository.dart';
 import 'package:hibiki/src/models/clipboard_history_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/embedded_torrent_host.dart';
 import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
@@ -433,6 +434,10 @@ class AppModel with ChangeNotifier {
     // TODO-1356: advertise this device's real per-platform name (hardware model
     // on mobile, hostname on desktop) so peers never see "localhost".
     deviceInfo: platformServices.deviceInfo,
+    // 漫画 P3：互联 host 代跑 OCR（/api/ocr/* + capabilities.mangaOcr）。工厂来自
+    // manga_ocr_provider（唯一引用 MangaOcrServiceImpl 的文件）；不支持内置 OCR 的
+    // 平台（移动端）也接线——capability 会如实报 supported=false，client 据此隐藏。
+    mangaOcrServiceFactory: createMangaOcrService,
     libraryServiceFactory: () => AppModelLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,
