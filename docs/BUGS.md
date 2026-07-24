@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1032 条。点号进各自文件。
+> 共 1033 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1066](bugs/BUG-1066-gal-hook-launch-degrade.md) | ✅ | ✅ | 已支持游戏总是启动失败或音频降级到整机混音 |
 | [BUG-1065](bugs/BUG-1065-inapp-wheel-dpr-parity.md) | ✅ | ✅ | app 内查词弹窗滚轮比 app 外慢 1/dpr（native sendScroll 未还原 DPR） |
 | [BUG-1064](bugs/BUG-1064-external-mined-card-action-dead.md) | ✅ | ✅ | app 外查词浮窗点已制卡 ✓ 无反应（重复卡操作面板被 native 降级成 null） |
 | [BUG-1063](bugs/BUG-1063-gal-hook-line-display-latency.md) | ✅ | ✅ | galgame hook 台词显示慢：文本推进被逐行语音抓取阻塞 |

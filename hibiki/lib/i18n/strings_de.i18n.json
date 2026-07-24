@@ -2470,5 +2470,22 @@
   "shortcut_wheel_needs_modifier": "A bare wheel scrolls the popup — hold Alt / Ctrl / Shift while scrolling",
   "shortcut_wheel_up": "Wheel up",
   "shortcut_wheel_down": "Wheel down",
-  "shortcut_scope_dictionary_popup_note": "Works while the pointer is over a dictionary popup"
+  "shortcut_scope_dictionary_popup_note": "Works while the pointer is over a dictionary popup",
+  "game_hook_reason_helper_missing": "Voice-hook helper is not installed for this game architecture; install it and try again.",
+  "game_hook_reason_target_missing": "No game process or executable was selected for capture.",
+  "game_hook_reason_spawn_failed": "The helper could not be started; check that antivirus has not removed or blocked it.",
+  "game_hook_reason_bitness_mismatch": "Helper architecture does not match the game (32-bit vs 64-bit); reinstall the helper.",
+  "game_hook_reason_access_denied": "The game runs with higher privileges; start Hibiki as administrator and try again.",
+  "game_hook_reason_elevation_required": "This game requires administrator rights; start Hibiki as administrator and launch it again.",
+  "game_hook_reason_create_process_failed": "The game could not be started from Hibiki; check the executable path.",
+  "game_hook_reason_hook_dll_missing": "The helper package is incomplete (hook library missing); reinstall it.",
+  "game_hook_reason_game_exe_missing": "The game executable no longer exists at the saved path.",
+  "game_hook_reason_stale_session": "A previous capture session is still loaded in the game; restart the game once.",
+  "game_hook_reason_ready_timeout": "The hook library did not finish loading in time; antivirus scanning can cause this.",
+  "game_hook_reason_injection_failed": "Injection into the game was blocked; add Hibiki and the game to antivirus exclusions.",
+  "game_hook_reason_guarded_hook_failed": "A profile-guarded hook could not be installed in time; retrying automatically.",
+  "game_hook_reason_resume_failed": "The launched game could not be resumed and was stopped; launch it again.",
+  "game_hook_reason_steam_timeout": "Steam accepted the launch request but the game process never appeared.",
+  "game_hook_reason_shared_memory_unavailable": "The capture channel could not be opened; restart Hibiki.",
+  "game_hook_reason_handshake_timeout": "The game was hooked but produced no text or audio in time; this engine may not be supported yet."
 }

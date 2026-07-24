@@ -2470,5 +2470,22 @@
   "shortcut_wheel_needs_modifier": "裸滚轮用于滚动弹窗内容，请按住 Alt / Ctrl / Shift 再滚",
   "shortcut_wheel_up": "滚轮向上",
   "shortcut_wheel_down": "滚轮向下",
-  "shortcut_scope_dictionary_popup_note": "鼠标位于查词弹窗上时生效"
+  "shortcut_scope_dictionary_popup_note": "鼠标位于查词弹窗上时生效",
+  "game_hook_reason_helper_missing": "未安装与该游戏位数匹配的语音钩子组件，请先安装后重试。",
+  "game_hook_reason_target_missing": "没有可捕获的游戏进程或可执行文件。",
+  "game_hook_reason_spawn_failed": "语音钩子组件无法启动，请检查是否被杀毒软件删除或拦截。",
+  "game_hook_reason_bitness_mismatch": "钩子组件位数与游戏不匹配（32 位 / 64 位），请重新安装组件。",
+  "game_hook_reason_access_denied": "游戏以更高权限运行，请以管理员身份启动 Hibiki 后重试。",
+  "game_hook_reason_elevation_required": "该游戏需要管理员权限，请以管理员身份启动 Hibiki 后再启动游戏。",
+  "game_hook_reason_create_process_failed": "Hibiki 无法启动该游戏，请检查可执行文件路径。",
+  "game_hook_reason_hook_dll_missing": "钩子组件不完整（缺少 hook 库），请重新安装。",
+  "game_hook_reason_game_exe_missing": "保存的游戏可执行文件路径已不存在。",
+  "game_hook_reason_stale_session": "游戏里还残留上一次的捕获会话，请重启一次游戏。",
+  "game_hook_reason_ready_timeout": "钩子库未能在超时内加载完成，杀毒软件扫描可能是原因。",
+  "game_hook_reason_injection_failed": "注入游戏被拦截，请把 Hibiki 与该游戏加入杀毒软件白名单。",
+  "game_hook_reason_guarded_hook_failed": "受保护的钩子未能在超时内安装，正在自动重试。",
+  "game_hook_reason_resume_failed": "已启动的游戏无法恢复运行并被结束，请重新启动。",
+  "game_hook_reason_steam_timeout": "Steam 已接受启动请求，但始终没有出现游戏进程。",
+  "game_hook_reason_shared_memory_unavailable": "捕获通道无法打开，请重启 Hibiki。",
+  "game_hook_reason_handshake_timeout": "已注入游戏，但超时内没有文本或音频，该引擎可能尚未支持。"
 }
