@@ -348,10 +348,16 @@ Future<VideoClipExportResult> exportVideoClipViaFfmpeg({
     int subtitleTrackCount = result.produced ? subtitlePaths.length : 0;
 
     // 带字幕的整轮（copy + 重编码）都失败 → 去掉字幕再跑一整轮。字幕封装依赖的是
-    // 不可控的外部 ffmpeg 能力：容器只能按扩展名猜，而**桌面精简 ffmpeg 早于
-    // TODO-1298 的旧二进制根本没编入 movtext 编码器**（见 tool/ffmpeg-min），
-    // 会直接 'Unknown encoder'。宁可导出一个没字幕的片段，也不能让「加字幕」这个
-    // 增强把原本能成功的导出变成失败。
+    // 不可控的外部 ffmpeg 能力：容器只能按扩展名猜，而用户机上的 ffmpeg 未必编入
+    // movtext 编码器，缺它会直接 'Unknown encoder'。宁可导出一个没字幕的片段，也不
+    // 能让「加字幕」这个增强把原本能成功的导出变成失败。
+    //
+    // ⚠️ 这条降级会**静默**吞掉字幕，所以它掩盖过一次真 bug：随包的精简 ffmpeg 自己
+    // 就漏编了 movtext（BUG-1058），桌面端每次导出都走到这里，用户只看到"导出成功但
+    // 没字幕"。入库二进制已重新 vendor 修好，且由
+    // hibiki/test/tools/ffmpeg_min_vendored_recipe_guard_test.dart 守住不再漂移；
+    // 降级本身保留，因为它要兜的是用户自带的第三方 ffmpeg，那个仍然不可控。
+    // 失败原因照常写进错误日志（下方 ErrorLogService），排查时先看那条。
     if (!result.produced && subtitlePaths.isNotEmpty) {
       ErrorLogService.instance.log(
         'VideoClipExport',

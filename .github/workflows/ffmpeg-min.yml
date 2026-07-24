@@ -6,6 +6,12 @@
 # third_party/ffmpeg-min/windows/ffmpeg.exe，release-desktop.yml 直接 Copy（不再跨
 # workflow 下载 artifact，见 TODO-416）。需要刷新入库二进制时：手动跑此 workflow，
 # 下载对应平台 artifact，替换 third_party 下的 vendored 文件再提交。
+#
+# ⚠️ 本 workflow 的 smoke-test 只验**当场刚编出来的**二进制，管不到入库的那个。
+# 「改了 build-ffmpeg-min.sh 却忘记重新 vendor」曾让桌面片段导出静默丢字幕整整一个
+# 版本（BUG-1058）。该缺口现由 hibiki/test/tools/ffmpeg_min_vendored_recipe_guard_test.dart
+# 在每次单测里静态比对配方与入库 exe 内嵌的 configure 串堵住——改配方后不重新 vendor
+# 会直接把单测打红。别去改守卫来绕过它，跑这个 workflow 换二进制才是修法。
 # configure 白名单调优清单见 docs/specs/2026-06-07-ffmpeg-min-build-pipeline.md。
 # TODO-1214/1257：加 libx264(H.264,GPL) + --enable-network(schannel/securetransport/
 # gnutls TLS) → 需各平台 x264 dev 包 + Linux gnutls dev（下方 install 步已加）。

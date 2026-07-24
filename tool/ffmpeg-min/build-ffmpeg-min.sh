@@ -26,6 +26,12 @@
 # ⚠️ 本脚本是 v0 脚手架：configure 精简白名单需在真实构建上「编译 + 用真实视频跑通
 # 四类命令」迭代收敛（漏一个 decoder/parser/bsf/filter → 某些视频运行时失败）。
 # 调优清单见 docs/specs/2026-06-07-ffmpeg-min-build-pipeline.md。
+#
+# ⚠️ 改下面任何一组组件清单后，**必须**重跑 .github/workflows/ffmpeg-min.yml 并把
+# Windows artifact 重新 vendor 到 third_party/ffmpeg-min/windows/ffmpeg.exe。改脚本
+# 不换二进制等于没改——用户跑的是入库的那个 exe（BUG-1058：movtext 漏了整整一版，
+# 片段导出静默丢字幕）。守卫 hibiki/test/tools/ffmpeg_min_vendored_recipe_guard_test.dart
+# 会静态比对本脚本与入库 exe 内嵌的 configure 串，漏 vendor 直接单测红。
 set -euo pipefail
 
 FFMPEG_REF="${FFMPEG_REF:-n7.1.5}"
