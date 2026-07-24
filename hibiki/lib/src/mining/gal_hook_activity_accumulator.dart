@@ -1,11 +1,16 @@
 /// galgame Hook 会话的「游戏活动」纯累计器。
 ///
 /// 把 hook 收到的每一行文本（到达时刻 + 字符数）累计成一段「活跃时长 + 字符数」，
-/// 供 [GalHookSessionController] 落 `activity_events`（首页「游戏」活动的唯一写入方）。
+/// 供 `GalHookSessionController` 落 `activity_events`。
+///
+/// **只有字符数会落库**（契约 §3.1）：游玩时长的真相源是 `GalgamePlayTracker`
+/// （前台窗口 + 候选进程组计时），hook 文本再写一份时长就是同一次游玩双计。这里
+/// 保留的活跃时长只当 [shouldFlush] 的节奏信号——「读了一分钟就先落一条防崩溃
+/// 丢账」，不再进 DB。
 ///
 /// 关键约束：相邻两行文本间隔超过 [idleGapMs] 的部分视为挂机/离席，不计入活跃
-/// 时长，避免玩家挂机让游戏时长虚高。累计逻辑做成纯类（不依赖时钟/DB），便于单测
-/// 覆盖间隔封顶、flush 阈值与字符累加。
+/// 时长，避免挂机把 flush 节奏拖成假活跃。累计逻辑做成纯类（不依赖时钟/DB），
+/// 便于单测覆盖间隔封顶、flush 阈值与字符累加。
 class GalHookActivityAccumulator {
   GalHookActivityAccumulator({
     this.idleGapMs = 30000,
