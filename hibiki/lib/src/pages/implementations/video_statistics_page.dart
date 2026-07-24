@@ -401,68 +401,21 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     final maxMs =
         _agg.byVideo.isEmpty ? 1 : _agg.byVideo.first.ms.clamp(1, 1 << 50);
     final fraction = video.ms / maxMs;
-    final colorScheme = Theme.of(context).colorScheme;
     final tokens = HibikiDesignTokens.of(context);
 
-    return Material(
-      type: MaterialType.transparency,
-      child: InkWell(
-        // 移动端长按、桌面端右键都弹删除确认（与阅读统计页同款交互）。
-        onLongPress: () => _confirmAndDeleteVideo(video),
-        onSecondaryTap: () => _confirmAndDeleteVideo(video),
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.card,
-            vertical: tokens.spacing.gap / 2,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                video.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              if (collectionName != null) ...[
-                SizedBox(height: tokens.spacing.gap / 4),
-                buildStatCollectionLabel(context, collectionName),
-              ],
-              SizedBox(height: tokens.spacing.gap / 2),
-              Row(
-                children: [
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: tokens.radii.chipRadius,
-                      child: LinearProgressIndicator(
-                        value: fraction,
-                        minHeight: 8,
-                        backgroundColor: colorScheme.surfaceContainerHighest,
-                        color: colorScheme.primary,
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
-                  Text(
-                    formatStatTime(video.ms),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                  ),
-                ],
-              ),
-              SizedBox(height: tokens.spacing.gap / 2),
-              Text(
-                '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines} · ${t.stat_favorited}: $favorites',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-              ),
-              SizedBox(height: tokens.spacing.gap / 2),
-            ],
-          ),
-        ),
-      ),
+    return buildStatMediaRow(
+      context: context,
+      title: video.title,
+      // 视频页尾随文本只有时长（阅读页额外含字数，由各调用方自拼）。
+      trailingText: formatStatTime(video.ms),
+      collectionName: collectionName,
+      fraction: fraction,
+      lookups: counter.lookups,
+      mines: counter.mines,
+      favorites: favorites,
+      onDeleteConfirm: () => _confirmAndDeleteVideo(video),
+      // 视频页外层保留水平内边距（阅读页无，默认 0）。
+      horizontalPadding: tokens.spacing.card,
     );
   }
 }

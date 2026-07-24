@@ -102,6 +102,94 @@ Widget buildStatCollectionLabel(
   );
 }
 
+/// 统计页 per-book / per-video 单项统计行（阅读统计与视频统计**字节级同构**，机械
+/// 去重抽出）：`Material(透明) → InkWell（长按 / 右键弹删除确认）→ Padding → Column`，
+/// 依次是标题（[title]，最多两行省略）、可选合集标签（[collectionName] 非 null）、
+/// 进度条 + 右侧尾随文本（[fraction] / [trailingText]）、底部查词/制卡/收藏计数行。
+///
+/// 页面间已漂移的部分由调用方吸收，不在此统一：
+/// - [title]：阅读页传 override 后的显示书名，视频页传原标题。
+/// - [trailingText]：阅读页拼「字数 · 时长」，视频页只有时长——是否含字数由调用方
+///   预先拼好传入，本函数不感知。
+/// - [horizontalPadding]：视频页外层有 `tokens.spacing.card` 水平内边距，阅读页无
+///   （默认 0）；垂直内边距两页一致（`tokens.spacing.gap / 2`）。
+/// - [onDeleteConfirm]：长按 / 右键的删除确认回调，两页各自实现。
+Widget buildStatMediaRow({
+  required BuildContext context,
+  required String title,
+  required String trailingText,
+  String? collectionName,
+  required double fraction,
+  required int lookups,
+  required int mines,
+  required int favorites,
+  required VoidCallback onDeleteConfirm,
+  double horizontalPadding = 0,
+}) {
+  final ColorScheme colorScheme = Theme.of(context).colorScheme;
+  final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+  return Material(
+    type: MaterialType.transparency,
+    child: InkWell(
+      // 移动端长按、桌面端右键（onSecondaryTap）都弹删除确认（书架同款交互）。
+      onLongPress: onDeleteConfirm,
+      onSecondaryTap: onDeleteConfirm,
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: horizontalPadding,
+          vertical: tokens.spacing.gap / 2,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            if (collectionName != null) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap / 4),
+              buildStatCollectionLabel(context, collectionName),
+            ],
+            SizedBox(height: tokens.spacing.gap / 2),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: tokens.radii.chipRadius,
+                    child: LinearProgressIndicator(
+                      value: fraction,
+                      minHeight: 8,
+                      backgroundColor: colorScheme.surfaceContainerHighest,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ),
+                SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
+                Text(
+                  trailingText,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+            SizedBox(height: tokens.spacing.gap / 2),
+            Text(
+              '${t.stat_lookup}: $lookups · ${t.stat_mined}: $mines · ${t.stat_favorited}: $favorites',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            SizedBox(height: tokens.spacing.gap / 2),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 /// TODO-1252：把收藏活行按 [FavoriteWordRow.title] 聚合成每本书/每个视频的收藏数，
 /// 供 per-book / per-video tile 展示。无书收藏（title 空）不入 tile，只进汇总面板。
 /// 聚合键与查词/制卡 tile 的 title 一致。收藏取消即删行 → 聚合活行天然回落。
