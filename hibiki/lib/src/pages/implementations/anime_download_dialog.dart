@@ -16,6 +16,7 @@ import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
 import 'package:hibiki/src/media/video/jimaku_client.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/jimaku_entry_picker.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart'
     show jimakuLanguageLabel;
 import 'package:hibiki/src/pages/implementations/download_actions.dart';
@@ -100,6 +101,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
   List<NyaaTorrent> _torrents = const <NyaaTorrent>[];
   String _category = '1_0';
   bool _trustedOnly = false;
+  List<JimakuEntry> _jimakuEntries = const <JimakuEntry>[];
+  JimakuEntry? _selectedJimakuEntry;
+  List<JimakuFile> _jimakuFiles = const <JimakuFile>[];
+  String? _jimakuPreferredLanguage;
+  int? _jimakuSearchEpisode;
   JimakuEpisodeIndex _jimakuIndex =
       JimakuEpisodeIndex.fromFiles(const <JimakuFile>[]);
   bool _jimakuLoaded = false;
@@ -173,8 +179,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
       _animeSearchError = false;
       _animeMatches = const <AniListMedia>[];
     });
-    final AniListClient anilist = AniListClient();
+    AniListClient? anilist;
     try {
+      anilist = AniListClient(
+        client: await ref.read(appProvider).createDownloadHttpClient(),
+      );
       final List<AniListMedia> media =
           await anilist.searchAnime(query).timeout(const Duration(seconds: 20));
       if (!mounted) return;
@@ -186,7 +195,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
       // 超时/网络错误：标记失败态（区分「无结果」），UI 给重试。
       if (mounted) setState(() => _animeSearchError = true);
     } finally {
-      anilist.close();
+      anilist?.close();
       if (mounted) setState(() => _searchingAnime = false);
     }
   }
@@ -209,6 +218,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
       _chosenSubs = const <(int?, JimakuFile)>[];
       _torrents = const <NyaaTorrent>[];
       _torrentsLoaded = false;
+      _jimakuEntries = const <JimakuEntry>[];
+      _selectedJimakuEntry = null;
+      _jimakuFiles = const <JimakuFile>[];
+      _jimakuPreferredLanguage = null;
+      _jimakuSearchEpisode = null;
       _jimakuIndex = JimakuEpisodeIndex.fromFiles(const <JimakuFile>[]);
       _jimakuLoaded = false;
     });
@@ -239,8 +253,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
       _torrentsLoaded = false;
       _torrentsError = false;
     });
-    final NyaaClient nyaa = NyaaClient();
+    NyaaClient? nyaa;
     try {
+      nyaa = NyaaClient(
+        client: await ref.read(appProvider).createDownloadHttpClient(),
+      );
       final List<NyaaTorrent> results = await nyaa
           .search(
             query,
@@ -259,7 +276,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     } catch (_) {
       if (mounted) setState(() => _torrentsError = true);
     } finally {
-      nyaa.close();
+      nyaa?.close();
       if (mounted) setState(() => _loadingTorrents = false);
     }
   }
@@ -284,7 +301,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     );
   }
 
-  /// Jimaku 搜索核心（自动/手动共用）：searchEntries（先 id 后文本回退）→ 首条目 →
+  /// Jimaku 搜索核心（自动/手动共用）：searchEntries（先 id 后文本回退）→
+  /// 显式保留全部条目供用户选择，默认加载首条 →
   /// listFiles（可按集号过滤）→ 按集索引落 [_jimakuIndex]；已选种子则重算 [_chosenSubs]。
   /// 无 key / 无条目 / 网络失败 → 空索引（徽标显示无字幕），不阻塞选种。用选番 id 做竞态
   /// 守卫：用户换番后旧结果不落到新番上。
@@ -302,6 +320,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
       _jimakuLoaded = false;
       _jimakuError = false;
       _jimakuNoKey = apiKey.isEmpty;
+      _jimakuEntries = const <JimakuEntry>[];
+      _selectedJimakuEntry = null;
+      _jimakuFiles = const <JimakuFile>[];
+      _jimakuIndex = JimakuEpisodeIndex.fromFiles(const <JimakuFile>[]);
+      _chosenSubs = const <(int?, JimakuFile)>[];
     });
     // 无 key：不搜（无从搜），提示填 key，不当「无字幕」。
     if (apiKey.isEmpty) {
@@ -313,8 +336,12 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
       }
       return;
     }
-    final JimakuClient jimaku = JimakuClient(apiKey: apiKey);
+    JimakuClient? jimaku;
     try {
+      jimaku = JimakuClient(
+        apiKey: apiKey,
+        client: await ref.read(appProvider).createDownloadHttpClient(),
+      );
       // AniList id 挂靠命中最准，但 Jimaku 大量条目未挂 id（冷门/YouTube 转录番等）——
       // 空结果必须回退按文本搜，否则「其实有字幕」会被误报成「无字幕」（BUG-896）。
       // 回退逻辑收敛在 JimakuClient.searchEntries（与字幕对话框同源）。
@@ -329,7 +356,14 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
       // 用户可能已换番：结果只落到仍选中的那个番上。
       if (!mounted || _selectedMedia?.id != guardId) return;
       setState(() {
-        _jimakuIndex = JimakuEpisodeIndex.fromFiles(files);
+        _jimakuEntries = entries;
+        _selectedJimakuEntry = entries.isEmpty ? null : entries.first;
+        _jimakuFiles = files;
+        _jimakuSearchEpisode = episode;
+        _jimakuIndex = JimakuEpisodeIndex.fromFiles(
+          files,
+          preferredLanguage: _jimakuPreferredLanguage,
+        );
         _jimakuLoaded = true;
         // 已选种子则同步刷新其字幕命中（手动重搜后确认阶段的字幕列表实时更新）。
         final NyaaTorrent? torrent = _selectedTorrent;
@@ -342,11 +376,72 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
         setState(() => _jimakuError = true);
       }
     } finally {
-      jimaku.close();
+      jimaku?.close();
       if (mounted && _selectedMedia?.id == guardId) {
         setState(() => _jimakuLoading = false);
       }
     }
+  }
+
+  Future<void> _selectJimakuEntry(JimakuEntry entry) async {
+    if (_selectedJimakuEntry?.id == entry.id || _jimakuLoading) return;
+    final AniListMedia? media = _selectedMedia;
+    if (media == null) return;
+    final String apiKey = ref.read(appProvider).jimakuApiKey.trim();
+    if (apiKey.isEmpty) return;
+    setState(() {
+      _selectedJimakuEntry = entry;
+      _jimakuLoading = true;
+      _jimakuError = false;
+      _jimakuFiles = const <JimakuFile>[];
+      _jimakuIndex = JimakuEpisodeIndex.fromFiles(const <JimakuFile>[]);
+      _chosenSubs = const <(int?, JimakuFile)>[];
+    });
+    JimakuClient? jimaku;
+    try {
+      jimaku = JimakuClient(
+        apiKey: apiKey,
+        client: await ref.read(appProvider).createDownloadHttpClient(),
+      );
+      final List<JimakuFile> files = await jimaku
+          .listFiles(entry.id, episode: _jimakuSearchEpisode)
+          .timeout(const Duration(seconds: 20));
+      if (!mounted || _selectedMedia?.id != media.id) return;
+      setState(() {
+        _jimakuFiles = files;
+        _jimakuIndex = JimakuEpisodeIndex.fromFiles(
+          files,
+          preferredLanguage: _jimakuPreferredLanguage,
+        );
+        final NyaaTorrent? torrent = _selectedTorrent;
+        if (torrent != null) {
+          _chosenSubs = chooseSubtitlesFor(torrent, _jimakuIndex);
+        }
+      });
+    } catch (_) {
+      if (mounted && _selectedMedia?.id == media.id) {
+        setState(() => _jimakuError = true);
+      }
+    } finally {
+      jimaku?.close();
+      if (mounted && _selectedMedia?.id == media.id) {
+        setState(() => _jimakuLoading = false);
+      }
+    }
+  }
+
+  void _selectJimakuLanguage(String? language) {
+    setState(() {
+      _jimakuPreferredLanguage = language;
+      _jimakuIndex = JimakuEpisodeIndex.fromFiles(
+        _jimakuFiles,
+        preferredLanguage: language,
+      );
+      final NyaaTorrent? torrent = _selectedTorrent;
+      if (torrent != null) {
+        _chosenSubs = chooseSubtitlesFor(torrent, _jimakuIndex);
+      }
+    });
   }
 
   /// 解析集号输入框：空/非法 → null（= 不按集过滤，列全部）。
@@ -436,9 +531,12 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     // ① 逐条下载选中的字幕到计划暂存目录（单条失败跳过该条）。
     final List<PlanSubtitle> staged = <PlanSubtitle>[];
     if (_includeSubs && _chosenSubs.isNotEmpty) {
-      final JimakuClient jimaku =
-          JimakuClient(apiKey: appModel.jimakuApiKey.trim());
+      JimakuClient? jimaku;
       try {
+        jimaku = JimakuClient(
+          apiKey: appModel.jimakuApiKey.trim(),
+          client: await appModel.createDownloadHttpClient(),
+        );
         final Directory subsDir = store.subsDirFor(planId);
         for (final (int? episode, JimakuFile file) in _chosenSubs) {
           final Uint8List? bytes = await jimaku.downloadFile(file.url);
@@ -457,8 +555,10 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
             // 单条落盘失败跳过，不影响其余字幕与推送。
           }
         }
+      } catch (_) {
+        // 字幕网络失败时仍允许下载视频；订阅轮询会在代理恢复后再次尝试。
       } finally {
-        jimaku.close();
+        jimaku?.close();
       }
     }
 
@@ -522,6 +622,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
             releaseGroup: releaseGroup,
             resolution: torrent.resolution,
             startAfterEpisode: episode,
+            jimakuEntryId: _includeSubs ? _selectedJimakuEntry?.id : null,
+            jimakuEntryName: _includeSubs ? _selectedJimakuEntry?.name : null,
+            jimakuLanguage: _includeSubs ? _jimakuPreferredLanguage : null,
           ),
         );
         subscribed = true;
@@ -1072,6 +1175,26 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
         ),
         const SizedBox(height: 4),
         _buildJimakuManualSearch(theme),
+        if (_jimakuEntries.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 8),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 148),
+            child: SingleChildScrollView(
+              child: JimakuEntryPicker(
+                entries: _jimakuEntries,
+                selectedEntryId: _selectedJimakuEntry?.id,
+                enabled: !_pushing && !_jimakuLoading,
+                onSelected: _selectJimakuEntry,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          JimakuLanguagePicker(
+            selectedLanguage: _jimakuPreferredLanguage,
+            enabled: !_pushing && !_jimakuLoading,
+            onSelected: _selectJimakuLanguage,
+          ),
+        ],
         const SizedBox(height: 4),
         if (_chosenSubs.isNotEmpty)
           SwitchListTile(
@@ -1135,6 +1258,17 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
                   textAlign: TextAlign.end,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                if (canSubscribe && _selectedJimakuEntry != null)
+                  Text(
+                    '${t.video_jimaku_source}: '
+                    '${_selectedJimakuEntry!.name}'
+                    '${_jimakuPreferredLanguage == null ? '' : ' · '
+                        '${jimakuLanguageLabel(_jimakuPreferredLanguage!)}'}',
+                    textAlign: TextAlign.end,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
               ],
             );
           },

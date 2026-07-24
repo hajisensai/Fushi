@@ -721,7 +721,7 @@ String ankiDictionaryMediaCacheFilename(String dictionary, String path) {
 
 /// Kind of audio reference resolved by [WordAudioResolver] and handed to the
 /// repo media-store paths.
-enum AnkiAudioRefKind { empty, remoteUrl, localFile }
+enum AnkiAudioRefKind { empty, remoteUrl, dataUri, localFile }
 
 /// Classifies a word-audio reference for Anki media storage, decided purely
 /// from its string form so the repo audio paths are unit-testable.
@@ -739,6 +739,13 @@ class AnkiAudioRef {
   static AnkiAudioRefKind classify(String ref) {
     if (ref.isEmpty) return AnkiAudioRefKind.empty;
     if (ref.startsWith('http')) return AnkiAudioRefKind.remoteUrl;
+    // BUG-1050：查词弹窗把命中本地音频库的单词发音编码成 `data:<mime>;base64,…`
+    // （audioRefToWebViewUrl，本为弹窗 HTML5 <audio> 播放而生）。视频/沉浸制卡时该
+    // URI 原样进 fields['audio']；它既不是 http 也不是真实文件路径——早先落到
+    // localFile 分支被当成不存在的文件（existsSync()==false）静默丢弃，导致本地源
+    // 单词发音永远进不了卡。识别为独立 kind，由各 repo 解码内联字节入库（远程 http
+    // 发音源本就正常，不受影响）。
+    if (ref.startsWith('data:')) return AnkiAudioRefKind.dataUri;
     return AnkiAudioRefKind.localFile;
   }
 
@@ -746,6 +753,65 @@ class AnkiAudioRef {
   /// decoding `file://` URIs and returning bare paths unchanged.
   static String localPath(String ref) =>
       ref.startsWith('file://') ? Uri.parse(ref).toFilePath() : ref;
+
+  /// Decodes a [AnkiAudioRefKind.dataUri] ref (`data:<mime>;base64,<payload>`,
+  /// produced by `audioRefToWebViewUrl` for popup HTML5 playback and reused
+  /// verbatim as the mine payload's audio field) into its raw bytes plus a
+  /// filename extension derived from the MIME type. Returns null when [ref] is
+  /// not a well-formed data: URI or carries no bytes, so callers fall back to
+  /// "no audio" instead of writing a broken media file into the card.
+  static AnkiAudioData? decodeDataUri(String ref) {
+    if (!ref.startsWith('data:')) return null;
+    final UriData data;
+    try {
+      data = UriData.parse(ref);
+    } catch (_) {
+      return null;
+    }
+    final Uint8List bytes;
+    try {
+      bytes = data.contentAsBytes();
+    } catch (_) {
+      return null;
+    }
+    if (bytes.isEmpty) return null;
+    return AnkiAudioData(
+      bytes: bytes,
+      extension: _audioExtForMime(data.mimeType),
+    );
+  }
+
+  /// Inverse of `audioMimeForPath`: the filename extension to store a decoded
+  /// `data:` audio payload under, from its MIME type. Unknown types fall back to
+  /// `mp3` (the dominant word-audio format).
+  static String _audioExtForMime(String mime) {
+    switch (mime.toLowerCase()) {
+      case 'audio/mpeg':
+        return 'mp3';
+      case 'audio/ogg':
+        return 'ogg';
+      case 'audio/mp4':
+      case 'audio/aac':
+        return 'm4a';
+      case 'audio/wav':
+      case 'audio/x-wav':
+        return 'wav';
+      case 'audio/flac':
+        return 'flac';
+      case 'audio/webm':
+        return 'webm';
+      default:
+        return 'mp3';
+    }
+  }
+}
+
+/// Decoded inline audio payload from a [AnkiAudioRefKind.dataUri] ref: the raw
+/// [bytes] and the filename [extension] to store them under in Anki media.
+class AnkiAudioData {
+  const AnkiAudioData({required this.bytes, required this.extension});
+  final Uint8List bytes;
+  final String extension;
 }
 
 String ankiInlineMediaReference(String addMediaResult) {

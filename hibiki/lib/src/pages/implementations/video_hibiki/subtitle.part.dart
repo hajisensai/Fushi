@@ -576,6 +576,7 @@ extension _VideoSubtitle on _VideoHibikiPageState {
         initialApiKey: appModel.jimakuApiKey,
         onApiKeyChanged: (String key) => appModel.setJimakuApiKey(key),
         saveDirectory: saveDir,
+        httpClientFactory: appModel.createDownloadHttpClient,
         initialPreferredLanguage: preferredLanguage,
         onPreferredLanguageChanged: (String lang) =>
             appModel.setJimakuPreferredLanguage(seriesKey, lang),

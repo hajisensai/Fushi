@@ -3,17 +3,17 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
-/// v52 迁移（漫画 OCR，第三种书）：epub_books 加 `manga_reading_mode` 覆盖列
+/// v53 迁移（漫画 OCR，第三种书）：epub_books 加 `manga_reading_mode` 覆盖列
 /// （null=按页图长宽比自动判定 / 'spread' / 'webtoon'），把漫画当「第三种书」复用整套
 /// EpubBooks/书架/进度/删除管线，而非另建平行表。
 ///
 /// 打开一个 user_version=51 的库（v51 shape：epub_books 有 format 列但**无**
-/// manga_reading_mode 列），触发真实 `if (from < 52)` 的
+/// manga_reading_mode 列），触发真实 `if (from < 53)` 的
 /// `addColumn(epubBooks.mangaReadingMode)`，验证：
 ///  ① 既有行被 SQLite `ADD COLUMN` 自动回填 NULL（Never break userspace——老 EPUB /
 ///     PDF 书行为不变，mangaReadingMode = null = 自动判定）；
 ///  ② 迁移后列存在且可写回 'spread' / 'webtoon'（漫画手动覆盖路径可用）；
-///  ③ user_version 升到当前 schemaVersion（52）。
+///  ③ user_version 升到当前 schemaVersion（53）。
 void main() {
   Future<HibikiDatabase> openV51Db() async {
     final HibikiDatabase db = HibikiDatabase.forTesting(
@@ -56,7 +56,7 @@ CREATE TABLE epub_books (
     return db;
   }
 
-  test('v52：既有行 mangaReadingMode 回填为 null（旧行零破坏）', () async {
+  test('v53：既有行 mangaReadingMode 回填为 null（旧行零破坏）', () async {
     final HibikiDatabase db = await openV51Db();
     final EpubBookRow? legacy = await db.getEpubBook('legacy_book');
     expect(legacy, isNotNull, reason: '旧行原样保留');
@@ -67,8 +67,8 @@ CREATE TABLE epub_books (
     expect(legacy.chapterCount, 3, reason: '其它列原样保留');
   });
 
-  test('v52：可插入并读回 format=manga 的漫画行 + mangaReadingMode 覆盖值', () async {
-    // 用完整 schema 的 forTesting 库（onCreate 建全表 @v52，含 insertEpubBook
+  test('v53：可插入并读回 format=manga 的漫画行 + mangaReadingMode 覆盖值', () async {
+    // 用完整 schema 的 forTesting 库（onCreate 建全表 @v53，含 insertEpubBook
     // 依赖的表）——手搭 v51 shape 只有 epub_books，跑不了真插入 DAO。
     final HibikiDatabase db =
         HibikiDatabase.forTesting(NativeDatabase.memory());
@@ -111,12 +111,12 @@ CREATE TABLE epub_books (
     expect(auto!.mangaReadingMode, isNull, reason: '不传时默认 null = 跟随自动判定');
   });
 
-  test('v52：user_version 升到当前 schemaVersion', () async {
+  test('v53：user_version 升到当前 schemaVersion', () async {
     final HibikiDatabase db = await openV51Db();
     await db.getEpubBook('legacy_book'); // 触发 open/migrate。
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 52);
+    expect(db.schemaVersion, 53);
   });
 }

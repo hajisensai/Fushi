@@ -62,6 +62,23 @@ void main() {
       );
     });
 
+    test('用户选择的语言优先于默认 ja 顺序', () {
+      final JimakuEpisodeIndex index = JimakuEpisodeIndex.fromFiles(
+        <JimakuFile>[
+          _file('Frieren - 01.ja.srt'),
+          _file('Frieren - 01.zh.srt'),
+        ],
+        preferredLanguage: 'zh',
+      );
+      expect(
+        index.byEpisode[1]!.map((JimakuFile f) => f.name).toList(),
+        <String>[
+          'Frieren - 01.zh.srt',
+          'Frieren - 01.ja.srt',
+        ],
+      );
+    });
+
     test('空输入 → 空索引', () {
       final JimakuEpisodeIndex index =
           JimakuEpisodeIndex.fromFiles(const <JimakuFile>[]);

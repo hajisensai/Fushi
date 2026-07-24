@@ -363,24 +363,52 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       return;
     }
     if (!context.mounted) return;
+    // BUG-1049：Hibiki 自己启动的游戏必须在这份列表里「已经选好」。会话知道游戏 pid，
+    // 却把它和一屏无关窗口平铺在一起，等于让用户替 app 认自己刚拉起的进程。按 pid
+    // 把它排到第一条、标注出来并预置焦点：打开即落在正确的窗口上，回车就绑。
+    final int? gamePid = _session.state.gamePid;
+    final int? boundHwnd = _session.state.boundWindow?.hwnd;
+    final List<ExternalWindowInfo> ordered = <ExternalWindowInfo>[
+      ...windows
+          .where((ExternalWindowInfo w) => gamePid != null && w.pid == gamePid),
+      ...windows
+          .where((ExternalWindowInfo w) => gamePid == null || w.pid != gamePid),
+    ];
     final ExternalWindowInfo? picked = await showDialog<ExternalWindowInfo>(
       context: context,
       builder: (BuildContext ctx) => SimpleDialog(
         title: Text(t.external_window_select),
         children: <Widget>[
-          for (final ExternalWindowInfo window in windows)
-            SimpleDialogOption(
-              onPressed: () => Navigator.of(ctx).pop(window),
-              child: Text(
+          for (final ExternalWindowInfo window in ordered)
+            ListTile(
+              // 焦点驱动纪律：这一项拿到初始焦点，Tab/方向键从它开始，Enter 直接确认。
+              autofocus: gamePid != null
+                  ? window.pid == gamePid
+                  : window.hwnd == boundHwnd,
+              title: Text(
                 window.title.isEmpty ? '#${window.hwnd}' : window.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
+              trailing: gamePid != null && window.pid == gamePid
+                  ? Text(
+                      t.external_window_current_game,
+                      style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
+                            color: Theme.of(ctx).colorScheme.primary,
+                          ),
+                    )
+                  : null,
+              onTap: () => Navigator.of(ctx).pop(window),
             ),
         ],
       ),
     );
-    if (picked != null) await _session.bindWindow(picked);
+    // 选回当前已绑定的那个窗口是 no-op，不是「重新绑定」：bindWindow 在捕获模式下会
+    // startAttachedCapture 重启整条会话（launch 会话会因此退化成 attach，正在跑的
+    // engine hook 与已收台词一起丢）。预选中当前游戏后回车确认是最自然的操作，绝不能
+    // 因此把会话打断。
+    if (picked == null || picked.hwnd == boundHwnd) return;
+    await _session.bindWindow(picked);
   }
 
   /// galgame 引擎-hook（launch 模式）：页面只发起会话；位数解析、注入器选择、窗口绑定、

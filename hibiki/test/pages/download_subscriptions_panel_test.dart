@@ -131,6 +131,9 @@ void main() {
         releaseGroup: 'A-Rather-Long-Release-Group',
         resolution: '1080p',
         startAfterEpisode: 12,
+        jimakuEntryId: 77,
+        jimakuEntryName: 'Complete season pack',
+        jimakuLanguage: 'ja',
         now: DateTime.utc(2026, 7, 1),
       ).copyWith(
         processedEpisodes: <int>{13},
@@ -175,6 +178,7 @@ void main() {
     expect(
         find.text('A Rather Long Example Anime Series Title'), findsOneWidget);
     expect(find.textContaining('A-Rather-Long-Release-Group'), findsOneWidget);
+    expect(find.textContaining('Complete season pack'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     service.checking.dispose();

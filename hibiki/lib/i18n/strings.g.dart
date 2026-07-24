@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 40902 (2406 per locale)
+/// Strings: 41633 (2449 per locale)
 ///
-/// Built on 2026-07-24 at 08:01 UTC
+/// Built on 2026-07-24 at 09:40 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3116,6 +3116,60 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Connect to a device above first.';
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  String get external_window_current_game => 'Current game';
+  String get video_scrape_online_match => 'Match poster online';
+  String get video_scrape_batch_title => 'Batch match posters';
+  String get video_scrape_search_hint => 'Search by title';
+  String get video_scrape_search => 'Search';
+  String get video_scrape_source_offline => 'Offline';
+  String get video_scrape_use => 'Use';
+  String get video_scrape_confidence_high => 'High match';
+  String get video_scrape_confidence_medium => 'Medium match';
+  String get video_scrape_confidence_low => 'Low match';
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  String get video_scrape_tmdb_key_save => 'Save';
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  String get video_scrape_no_results => 'No matches found';
+  String get video_scrape_searching => 'Searching…';
+  String get video_scrape_applied => 'Cover applied';
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  String get video_scrape_batch_download => 'Download';
+  String get video_scrape_batch_skip => 'Skip online only';
+  String get video_scrape_batch_start => 'Start matching';
+  String get video_scrape_batch_cancel => 'Cancel';
+  String get video_scrape_batch_close => 'Close';
+  String get video_scrape_status_applied => 'Applied';
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  String get video_scrape_status_skipped => 'Skipped';
+  String get video_scrape_status_failed => 'Failed';
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  String get video_scrape_batch_empty => 'No local videos to match';
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
+  String get video_jimaku_source => 'Subtitle source';
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  String get video_jimaku_find_sources => 'Find subtitles';
+  String get video_jimaku_anime_match => 'Anime match';
+  String get download_network_proxy_section => 'Discovery network';
+  String get download_network_proxy_auto => 'Auto';
+  String get download_network_proxy_direct => 'Direct';
+  String get download_network_proxy_custom => 'Custom';
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
   String get manga_import_title => 'Import Manga';
   String get manga_import_pick => 'Pick .mokuro File';
   String get manga_import_confirm => 'Import';
@@ -8503,6 +8557,103 @@ class _StringsAr extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
   @override
   String get manga_import_title => 'Import Manga';
   @override
@@ -14035,6 +14186,103 @@ class _StringsDe extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
   @override
   String get manga_import_title => 'Import Manga';
   @override
@@ -19583,6 +19831,103 @@ class _StringsEs extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
   @override
   String get manga_import_title => 'Import Manga';
   @override
@@ -25143,6 +25488,103 @@ class _StringsFr extends _StringsEn {
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
   @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
+  @override
   String get manga_import_title => 'Import Manga';
   @override
   String get manga_import_pick => 'Pick .mokuro File';
@@ -30628,6 +31070,103 @@ class _StringsId extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
   @override
   String get manga_import_title => 'Import Manga';
   @override
@@ -36163,6 +36702,103 @@ class _StringsIt extends _StringsEn {
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
   @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
+  @override
   String get manga_import_title => 'Import Manga';
   @override
   String get manga_import_pick => 'Pick .mokuro File';
@@ -41501,6 +42137,103 @@ class _StringsJa extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
   @override
   String get manga_import_title => 'Import Manga';
   @override
@@ -46843,6 +47576,103 @@ class _StringsKo extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
   @override
   String get manga_import_title => 'Import Manga';
   @override
@@ -52355,6 +53185,103 @@ class _StringsNl extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
   @override
   String get manga_import_title => 'Import Manga';
   @override
@@ -57883,6 +58810,103 @@ class _StringsPtBr extends _StringsEn {
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
   @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
+  @override
   String get manga_import_title => 'Import Manga';
   @override
   String get manga_import_pick => 'Pick .mokuro File';
@@ -63393,6 +64417,103 @@ class _StringsRu extends _StringsEn {
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
   @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
+  @override
   String get manga_import_title => 'Import Manga';
   @override
   String get manga_import_pick => 'Pick .mokuro File';
@@ -68847,6 +69968,103 @@ class _StringsTh extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
+  @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
   @override
   String get manga_import_title => 'Import Manga';
   @override
@@ -74335,6 +75553,103 @@ class _StringsTr extends _StringsEn {
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
   @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
+  @override
   String get manga_import_title => 'Import Manga';
   @override
   String get manga_import_pick => 'Pick .mokuro File';
@@ -79809,6 +81124,103 @@ class _StringsVi extends _StringsEn {
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
   @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
+  @override
   String get manga_import_title => 'Import Manga';
   @override
   String get manga_import_pick => 'Pick .mokuro File';
@@ -84909,6 +86321,100 @@ class _StringsZhCn extends _StringsEn {
   @override
   String interconnect_backup_backend_current({required Object backend}) =>
       '当前备份后端：${backend}';
+  @override
+  String get external_window_current_game => '当前游戏';
+  @override
+  String get video_scrape_online_match => '在线匹配海报';
+  @override
+  String get video_scrape_batch_title => '批量匹配海报';
+  @override
+  String get video_scrape_search_hint => '按片名搜索';
+  @override
+  String get video_scrape_search => '搜索';
+  @override
+  String get video_scrape_source_offline => '离线库';
+  @override
+  String get video_scrape_use => '使用';
+  @override
+  String get video_scrape_confidence_high => '高匹配';
+  @override
+  String get video_scrape_confidence_medium => '中匹配';
+  @override
+  String get video_scrape_confidence_low => '低匹配';
+  @override
+  String get video_scrape_tmdb_key_hint => '输入 TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => '保存';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB 需要 API Key';
+  @override
+  String get video_scrape_no_results => '没有找到匹配结果';
+  @override
+  String get video_scrape_searching => '搜索中…';
+  @override
+  String get video_scrape_applied => '封面已应用';
+  @override
+  String get video_scrape_apply_failed => '封面应用失败';
+  @override
+  String get video_scrape_batch_download_index => '下载离线索引库（约几十 MB，可跳过）';
+  @override
+  String get video_scrape_batch_download => '下载';
+  @override
+  String get video_scrape_batch_skip => '跳过（仅在线）';
+  @override
+  String get video_scrape_batch_start => '开始匹配';
+  @override
+  String get video_scrape_batch_cancel => '取消';
+  @override
+  String get video_scrape_batch_close => '关闭';
+  @override
+  String get video_scrape_status_applied => '已应用';
+  @override
+  String get video_scrape_status_needs_confirm => '待确认';
+  @override
+  String get video_scrape_status_skipped => '跳过';
+  @override
+  String get video_scrape_status_failed => '失败';
+  @override
+  String get video_scrape_downloading_index => '正在下载离线索引库…';
+  @override
+  String get video_scrape_batch_empty => '没有可匹配的本地视频';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      '同时应用到本合集全部 ${n} 集';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      '完成：应用 ${applied}，待确认 ${confirm}，跳过 ${skipped}';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      '匹配中 ${current}/${total}';
+  @override
+  String get video_jimaku_source => '字幕来源';
+  @override
+  String get video_jimaku_source_hint => '选择一个 Jimaku 条目；合集字幕会按集号自动匹配。';
+  @override
+  String get video_jimaku_find_sources => '查找字幕';
+  @override
+  String get video_jimaku_anime_match => '番剧匹配';
+  @override
+  String get download_network_proxy_section => '发现网络';
+  @override
+  String get download_network_proxy_auto => '自动';
+  @override
+  String get download_network_proxy_direct => '直连';
+  @override
+  String get download_network_proxy_custom => '自定义';
+  @override
+  String get download_network_proxy_auto_hint =>
+      '仅影响 AniList、Nyaa 和 Jimaku。自动模式先读环境变量，再读已启用的系统代理；种子流量不受影响。';
+  @override
+  String get download_network_proxy_custom_label => '自定义代理';
+  @override
+  String get update_custom_proxy_auto_hint => '留空时自动读取环境变量，再读取已启用的系统代理。';
   @override
   String get manga_import_title => '导入漫画';
   @override
@@ -90155,6 +91661,103 @@ class _StringsZhHk extends _StringsEn {
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
   @override
+  String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
+  @override
   String get manga_import_title => 'Import Manga';
   @override
   String get manga_import_pick => 'Pick .mokuro File';
@@ -95083,6 +96686,98 @@ extension on _StringsEn {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       case 'manga_import_title':
         return 'Import Manga';
       case 'manga_import_pick':
@@ -99993,6 +101688,98 @@ extension on _StringsAr {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       case 'manga_import_title':
         return 'Import Manga';
       case 'manga_import_pick':
@@ -104924,6 +106711,98 @@ extension on _StringsDe {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       case 'manga_import_title':
         return 'Import Manga';
       case 'manga_import_pick':
@@ -109854,6 +111733,98 @@ extension on _StringsEs {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       case 'manga_import_title':
         return 'Import Manga';
       case 'manga_import_pick':
@@ -114790,6 +116761,98 @@ extension on _StringsFr {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       case 'manga_import_title':
         return 'Import Manga';
       case 'manga_import_pick':
@@ -119708,6 +121771,98 @@ extension on _StringsId {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       case 'manga_import_title':
         return 'Import Manga';
       case 'manga_import_pick':
@@ -124641,6 +126796,98 @@ extension on _StringsIt {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       case 'manga_import_title':
         return 'Import Manga';
       case 'manga_import_pick':
@@ -129536,6 +131783,98 @@ extension on _StringsJa {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       case 'manga_import_title':
         return 'Import Manga';
       case 'manga_import_pick':
@@ -134435,6 +136774,98 @@ extension on _StringsKo {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       case 'manga_import_title':
         return 'Import Manga';
       case 'manga_import_pick':
@@ -139361,6 +141792,98 @@ extension on _StringsNl {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       case 'manga_import_title':
         return 'Import Manga';
       case 'manga_import_pick':
@@ -144284,6 +146807,98 @@ extension on _StringsPtBr {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       case 'manga_import_title':
         return 'Import Manga';
       case 'manga_import_pick':
@@ -149212,6 +151827,98 @@ extension on _StringsRu {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       case 'manga_import_title':
         return 'Import Manga';
       case 'manga_import_pick':
@@ -154124,6 +156831,98 @@ extension on _StringsTh {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       case 'manga_import_title':
         return 'Import Manga';
       case 'manga_import_pick':
@@ -159045,6 +161844,98 @@ extension on _StringsTr {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       case 'manga_import_title':
         return 'Import Manga';
       case 'manga_import_pick':
@@ -163961,6 +166852,98 @@ extension on _StringsVi {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       case 'manga_import_title':
         return 'Import Manga';
       case 'manga_import_pick':
@@ -168839,6 +171822,97 @@ extension on _StringsZhCn {
         return '请先在上面连接一台设备。';
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) => '当前备份后端：${backend}';
+      case 'external_window_current_game':
+        return '当前游戏';
+      case 'video_scrape_online_match':
+        return '在线匹配海报';
+      case 'video_scrape_batch_title':
+        return '批量匹配海报';
+      case 'video_scrape_search_hint':
+        return '按片名搜索';
+      case 'video_scrape_search':
+        return '搜索';
+      case 'video_scrape_source_offline':
+        return '离线库';
+      case 'video_scrape_use':
+        return '使用';
+      case 'video_scrape_confidence_high':
+        return '高匹配';
+      case 'video_scrape_confidence_medium':
+        return '中匹配';
+      case 'video_scrape_confidence_low':
+        return '低匹配';
+      case 'video_scrape_tmdb_key_hint':
+        return '输入 TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return '保存';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB 需要 API Key';
+      case 'video_scrape_no_results':
+        return '没有找到匹配结果';
+      case 'video_scrape_searching':
+        return '搜索中…';
+      case 'video_scrape_applied':
+        return '封面已应用';
+      case 'video_scrape_apply_failed':
+        return '封面应用失败';
+      case 'video_scrape_batch_download_index':
+        return '下载离线索引库（约几十 MB，可跳过）';
+      case 'video_scrape_batch_download':
+        return '下载';
+      case 'video_scrape_batch_skip':
+        return '跳过（仅在线）';
+      case 'video_scrape_batch_start':
+        return '开始匹配';
+      case 'video_scrape_batch_cancel':
+        return '取消';
+      case 'video_scrape_batch_close':
+        return '关闭';
+      case 'video_scrape_status_applied':
+        return '已应用';
+      case 'video_scrape_status_needs_confirm':
+        return '待确认';
+      case 'video_scrape_status_skipped':
+        return '跳过';
+      case 'video_scrape_status_failed':
+        return '失败';
+      case 'video_scrape_downloading_index':
+        return '正在下载离线索引库…';
+      case 'video_scrape_batch_empty':
+        return '没有可匹配的本地视频';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) => '同时应用到本合集全部 ${n} 集';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            '完成：应用 ${applied}，待确认 ${confirm}，跳过 ${skipped}';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            '匹配中 ${current}/${total}';
+      case 'video_jimaku_source':
+        return '字幕来源';
+      case 'video_jimaku_source_hint':
+        return '选择一个 Jimaku 条目；合集字幕会按集号自动匹配。';
+      case 'video_jimaku_find_sources':
+        return '查找字幕';
+      case 'video_jimaku_anime_match':
+        return '番剧匹配';
+      case 'download_network_proxy_section':
+        return '发现网络';
+      case 'download_network_proxy_auto':
+        return '自动';
+      case 'download_network_proxy_direct':
+        return '直连';
+      case 'download_network_proxy_custom':
+        return '自定义';
+      case 'download_network_proxy_auto_hint':
+        return '仅影响 AniList、Nyaa 和 Jimaku。自动模式先读环境变量，再读已启用的系统代理；种子流量不受影响。';
+      case 'download_network_proxy_custom_label':
+        return '自定义代理';
+      case 'update_custom_proxy_auto_hint':
+        return '留空时自动读取环境变量，再读取已启用的系统代理。';
       case 'manga_import_title':
         return '导入漫画';
       case 'manga_import_pick':
@@ -173729,6 +176803,98 @@ extension on _StringsZhHk {
       case 'interconnect_backup_backend_current':
         return ({required Object backend}) =>
             'Current backup backend: ${backend}';
+      case 'external_window_current_game':
+        return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       case 'manga_import_title':
         return 'Import Manga';
       case 'manga_import_pick':

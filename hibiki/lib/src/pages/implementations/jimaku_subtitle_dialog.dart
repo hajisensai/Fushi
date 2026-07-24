@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/media/video/anilist_client.dart';
@@ -116,6 +117,7 @@ class JimakuSubtitleDialog extends StatefulWidget {
     required this.saveDirectory,
     this.initialPreferredLanguage,
     this.onPreferredLanguageChanged,
+    this.httpClientFactory,
     this.debugInitialCandidates,
     this.debugInitialSeriesMatches,
     super.key,
@@ -138,6 +140,10 @@ class JimakuSubtitleDialog extends StatefulWidget {
 
   /// 选中语言时的持久化回调（TODO-674，与 [onApiKeyChanged] 同范式）；null = 不持久化。
   final Future<void> Function(String langCode)? onPreferredLanguageChanged;
+
+  /// Production injects the download proxy policy; tests/legacy callers use a
+  /// plain client.
+  final Future<http.Client> Function()? httpClientFactory;
 
   /// 仅测试用：预置候选结果，免去联网搜索即可验证「已有结果」时的列表布局/滚动。
   @visibleForTesting
@@ -239,8 +245,11 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
       _selectedSeriesId = null;
     });
 
-    final AniListClient anilist = AniListClient();
+    AniListClient? anilist;
     try {
+      anilist = AniListClient(
+        client: await _createHttpClient(),
+      );
       // ① 先经 AniList 把番名解析成候选系列（romaji/english/native 都能匹上）；存全部
       //   候选供用户消歧，默认取首条（相关度最高）。② AniList 无命中时回退文本直接搜。
       final List<AniListMedia> media = await anilist.searchAnime(query);
@@ -252,7 +261,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
         episode: episode,
       );
     } finally {
-      anilist.close();
+      anilist?.close();
       if (mounted) setState(() => _searching = false);
     }
   }
@@ -287,8 +296,12 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
     required String queryFallback,
     required int? episode,
   }) async {
-    final JimakuClient jimaku = JimakuClient(apiKey: _apiKeyCtrl.text.trim());
+    JimakuClient? jimaku;
     try {
+      jimaku = JimakuClient(
+        apiKey: _apiKeyCtrl.text.trim(),
+        client: await _createHttpClient(),
+      );
       final List<JimakuEntry> entries = <JimakuEntry>[];
       if (anilistId != null) {
         entries.addAll(await jimaku.searchByAnilistId(anilistId));
@@ -324,16 +337,27 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
         _apiKeyCollapsed = sorted.isNotEmpty;
       });
     } finally {
-      jimaku.close();
+      jimaku?.close();
     }
+  }
+
+  Future<http.Client> _createHttpClient() {
+    final Future<http.Client> Function()? factory = widget.httpClientFactory;
+    return factory == null
+        ? Future<http.Client>.value(http.Client())
+        : factory();
   }
 
   Future<void> _download(JimakuCandidate candidate) async {
     final String apiKey = _apiKeyCtrl.text.trim();
     if (apiKey.isEmpty) return;
     setState(() => _busyName = candidate.file.name);
-    final JimakuClient jimaku = JimakuClient(apiKey: apiKey);
+    JimakuClient? jimaku;
     try {
+      jimaku = JimakuClient(
+        apiKey: apiKey,
+        client: await _createHttpClient(),
+      );
       final Uint8List? bytes = await jimaku.downloadFile(candidate.file.url);
       if (bytes == null) {
         _snack(t.video_jimaku_download_failed);
@@ -346,7 +370,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
       if (!mounted) return;
       Navigator.pop(context, dest);
     } finally {
-      jimaku.close();
+      jimaku?.close();
       if (mounted) setState(() => _busyName = null);
     }
   }
