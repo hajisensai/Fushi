@@ -44,7 +44,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
   Timer? _statusTimer;
 
   /// 判定「插件近期连上过」的时间窗：扩展 SW 启动/查词/心跳时打本机 server 刷新 last-seen，
-  /// 加载/重新加载扩展后这段窗口内即可检测到。BUG-1043：扩展改用 chrome.alarms 每 60s
+  /// 加载/重新加载扩展后这段窗口内即可检测到。BUG-1045：扩展改用 chrome.alarms 每 60s
   /// 心跳保活，此窗口取 150s（> 一个心跳周期 + 抖动余量），单次心跳丢包不会误判「未连接」。
   static const Duration _seenWindow = Duration(seconds: 150);
 
