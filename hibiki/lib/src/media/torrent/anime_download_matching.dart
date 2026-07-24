@@ -17,7 +17,10 @@ class JimakuEpisodeIndex {
   });
 
   /// 从 [files] 构建索引（非文本字幕直接丢弃）。
-  factory JimakuEpisodeIndex.fromFiles(List<JimakuFile> files) {
+  factory JimakuEpisodeIndex.fromFiles(
+    List<JimakuFile> files, {
+    String? preferredLanguage,
+  }) {
     final Map<int, List<JimakuFile>> byEpisode = <int, List<JimakuFile>>{};
     final List<JimakuFile> unnumbered = <JimakuFile>[];
     for (final JimakuFile file in files) {
@@ -30,9 +33,11 @@ class JimakuEpisodeIndex {
       }
     }
     for (final List<JimakuFile> candidates in byEpisode.values) {
-      candidates.sort(_compareByLanguagePreference);
+      candidates.sort((JimakuFile a, JimakuFile b) =>
+          _compareByLanguagePreference(a, b, preferredLanguage));
     }
-    unnumbered.sort(_compareByLanguagePreference);
+    unnumbered.sort((JimakuFile a, JimakuFile b) =>
+        _compareByLanguagePreference(a, b, preferredLanguage));
     return JimakuEpisodeIndex._(byEpisode: byEpisode, unnumbered: unnumbered);
   }
 
@@ -53,9 +58,15 @@ class JimakuEpisodeIndex {
 }
 
 /// 候选排序键：语言权重升序（ja 优先）→ 文件名（大小写不敏感）tie-break。
-int _compareByLanguagePreference(JimakuFile a, JimakuFile b) {
-  final int rankA = jimakuLanguageRank(detectSubtitleLanguage(a.name));
-  final int rankB = jimakuLanguageRank(detectSubtitleLanguage(b.name));
+int _compareByLanguagePreference(
+  JimakuFile a,
+  JimakuFile b,
+  String? preferredLanguage,
+) {
+  final int rankA = jimakuLanguageRank(detectSubtitleLanguage(a.name),
+      preferred: preferredLanguage);
+  final int rankB = jimakuLanguageRank(detectSubtitleLanguage(b.name),
+      preferred: preferredLanguage);
   if (rankA != rankB) return rankA.compareTo(rankB);
   return a.name.toLowerCase().compareTo(b.name.toLowerCase());
 }

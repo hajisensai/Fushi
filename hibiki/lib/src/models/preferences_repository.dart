@@ -1677,6 +1677,24 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// AniList/Nyaa/Jimaku requests: auto (env > enabled system proxy > direct),
+  /// explicit direct, or a user-provided host:port proxy.
+  String get downloadNetworkProxyMode =>
+      getPref('download_network_proxy_mode', defaultValue: 'auto') as String;
+
+  Future<void> setDownloadNetworkProxyMode(String value) async {
+    await setPref('download_network_proxy_mode', value);
+    notifyListeners();
+  }
+
+  String get downloadCustomProxy =>
+      getPref('download_custom_proxy', defaultValue: '') as String;
+
+  Future<void> setDownloadCustomProxy(String value) async {
+    await setPref('download_custom_proxy', value);
+    notifyListeners();
+  }
+
   /// TODO-1024 / BUG-479：上次更新检查结果缓存（解码后；无/畸形 → null）。检查时先读它
   /// 乐观即时反馈，网络刷新在后台跑完再写回——不再每次冷查 GitHub 才知道结果（恒快）。
   UpdateCheckCacheEntry? get updateCheckCache => UpdateCheckCacheEntry.decode(

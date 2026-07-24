@@ -47,6 +47,10 @@ class ProfileKeys {
     // TODO-871: custom update proxy is a global update-policy key (same family as
     // update_beta_channel / update_debug_channel) — never per-profile snapshot.
     'update_custom_proxy',
+    // Network routes describe this device, not a reading profile. Restoring a
+    // different profile must not silently redirect AniList/Nyaa/Jimaku.
+    'download_network_proxy_mode',
+    'download_custom_proxy',
     // TODO-855: the monotonic prefs-version counter is the cross-process signal
     // the :popup process reads to decide whether to refresh its warm-reuse
     // pref cache. It must stay app-global and monotonic — snapshotting it

@@ -81,6 +81,29 @@ String normalizeAniListSearch(String query) {
   return sb.toString();
 }
 
+/// Produces conservative AniList fallbacks for punctuation-separated titles.
+///
+/// AniList can find `Watashi wo Tabetai, Hitodenashi`, but returns no result
+/// for the common alternate segmentation `Watashi o Tabetai, Hito de Nashi`.
+/// Retrying the leading title segment keeps the user's intent while avoiding a
+/// language-specific alias table.
+List<String> aniListSearchQueries(String raw) {
+  final List<String> queries = <String>[];
+  void add(String value) {
+    final String normalized = normalizeAniListSearch(value.trim());
+    if (normalized.isNotEmpty && !queries.contains(normalized)) {
+      queries.add(normalized);
+    }
+  }
+
+  add(raw);
+  final int separator = raw.indexOf(RegExp(r'[,，、]'));
+  if (separator > 0) {
+    add(raw.substring(0, separator));
+  }
+  return queries;
+}
+
 /// 解析 AniList GraphQL 搜索响应为 [AniListMedia] 列表。纯函数，容错（结构不符 →
 /// 空列表），便于单测。
 List<AniListMedia> parseAniListSearchResponse(String body) {
@@ -138,29 +161,33 @@ query ($search: String) {
 
   /// 按 [title] 搜索番剧。网络/解析失败返回空列表（不抛，调用方按空处理）。
   /// 搜索词先做 macron 归一化（见 [normalizeAniListSearch]），让带官方 romaji
-  /// 长音（ū ō…）的输入也能命中 AniList。
+  /// 长音（ū ō…）的输入也能命中 AniList；全标题无结果时再尝试逗号前的主标题，
+  /// 兼容罗马字连写/分写别名差异。
   Future<List<AniListMedia>> searchAnime(String title) async {
-    final String query = normalizeAniListSearch(title.trim());
-    if (query.isEmpty) return const <AniListMedia>[];
-    try {
-      final http.Response res = await _client.post(
-        Uri.parse(_endpoint),
-        headers: const <String, String>{
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: jsonEncode(<String, dynamic>{
-          'query': _searchQuery,
-          'variables': <String, dynamic>{'search': query},
-        }),
-      );
-      if (res.statusCode != 200) return const <AniListMedia>[];
-      // 显式 UTF-8 解码（res.body 无 charset 时按 latin1 → 日文/罗马音乱码）。
-      return parseAniListSearchResponse(
-          utf8.decode(res.bodyBytes, allowMalformed: true));
-    } catch (_) {
-      return const <AniListMedia>[];
+    for (final String query in aniListSearchQueries(title)) {
+      try {
+        final http.Response res = await _client.post(
+          Uri.parse(_endpoint),
+          headers: const <String, String>{
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: jsonEncode(<String, dynamic>{
+            'query': _searchQuery,
+            'variables': <String, dynamic>{'search': query},
+          }),
+        );
+        if (res.statusCode != 200) continue;
+        // 显式 UTF-8 解码（res.body 无 charset 时按 latin1 → 日文/罗马音乱码）。
+        final List<AniListMedia> matches = parseAniListSearchResponse(
+          utf8.decode(res.bodyBytes, allowMalformed: true),
+        );
+        if (matches.isNotEmpty) return matches;
+      } catch (_) {
+        // Try the next conservative fallback; callers still receive [].
+      }
     }
+    return const <AniListMedia>[];
   }
 
   void close() => _client.close();

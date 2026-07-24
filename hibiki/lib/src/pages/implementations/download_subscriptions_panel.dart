@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/src/media/torrent/anime_download_subscription.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart'
+    show jimakuLanguageLabel;
 import 'package:hibiki/utils.dart';
 
 class DownloadSubscriptionsPanel extends ConsumerStatefulWidget {
@@ -241,6 +243,10 @@ class _DownloadSubscriptionsPanelState
       subscription.releaseGroup,
       if (subscription.resolution?.isNotEmpty ?? false)
         subscription.resolution!,
+      if (subscription.jimakuEntryName?.isNotEmpty ?? false)
+        '${t.video_jimaku_source}: ${subscription.jimakuEntryName}'
+            '${subscription.jimakuLanguage == null ? '' : ' · '
+                '${jimakuLanguageLabel(subscription.jimakuLanguage!)}'}',
       t.download_subscription_after_episode(
         episode: subscription.startAfterEpisode,
       ),

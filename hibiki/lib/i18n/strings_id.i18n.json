@@ -2364,5 +2364,16 @@
   "video_scrape_batch_empty": "No local videos to match",
   "video_scrape_apply_to_collection": "Also apply to all $n episodes in this collection",
   "video_scrape_batch_summary": "Done: $applied applied, $confirm to review, $skipped skipped",
-  "video_scrape_batch_progress": "Matching $current/$total"
+  "video_scrape_batch_progress": "Matching $current/$total",
+  "video_jimaku_source": "Subtitle source",
+  "video_jimaku_source_hint": "Choose one Jimaku entry. Season packs are matched by episode automatically.",
+  "video_jimaku_find_sources": "Find subtitles",
+  "video_jimaku_anime_match": "Anime match",
+  "download_network_proxy_section": "Discovery network",
+  "download_network_proxy_auto": "Auto",
+  "download_network_proxy_direct": "Direct",
+  "download_network_proxy_custom": "Custom",
+  "download_network_proxy_auto_hint": "Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.",
+  "download_network_proxy_custom_label": "Custom proxy",
+  "update_custom_proxy_auto_hint": "Leave blank to use environment variables, then the enabled system proxy."
 }

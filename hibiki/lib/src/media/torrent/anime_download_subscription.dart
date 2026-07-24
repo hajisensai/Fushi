@@ -4,16 +4,19 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha1;
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
 import 'package:hibiki/src/media/torrent/nyaa_client.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
+import 'package:hibiki/src/media/video/jimaku_batch.dart';
+import 'package:hibiki/src/media/video/jimaku_client.dart';
 
 const Object _notSet = Object();
 
-/// A durable "series + release group + resolution" subscription.
+/// A durable "series + video release + optional Jimaku subtitle" subscription.
 ///
 /// [startAfterEpisode] is the episode the user selected when subscribing.
 /// Existing releases are deliberately not backfilled. [processedEpisodes]
@@ -31,6 +34,9 @@ class AnimeDownloadSubscription {
     required this.startAfterEpisode,
     this.coverUrl,
     this.resolution,
+    this.jimakuEntryId,
+    this.jimakuEntryName,
+    this.jimakuLanguage,
     this.trustedOnly = false,
     this.enabled = true,
     this.processedEpisodes = const <int>{},
@@ -48,6 +54,9 @@ class AnimeDownloadSubscription {
     required int startAfterEpisode,
     String? coverUrl,
     String? resolution,
+    int? jimakuEntryId,
+    String? jimakuEntryName,
+    String? jimakuLanguage,
     bool trustedOnly = false,
     DateTime? now,
   }) {
@@ -57,6 +66,8 @@ class AnimeDownloadSubscription {
       releaseGroup.trim().toLowerCase(),
       (resolution ?? '').trim().toLowerCase(),
       category.trim().toLowerCase(),
+      '${jimakuEntryId ?? ''}',
+      (jimakuLanguage ?? '').trim().toLowerCase(),
     ].join('|');
     return AnimeDownloadSubscription(
       id: sha1.convert(utf8.encode(identity)).toString(),
@@ -69,6 +80,9 @@ class AnimeDownloadSubscription {
       trustedOnly: trustedOnly,
       releaseGroup: releaseGroup.trim(),
       resolution: resolution?.trim(),
+      jimakuEntryId: jimakuEntryId,
+      jimakuEntryName: jimakuEntryName?.trim(),
+      jimakuLanguage: jimakuLanguage?.trim(),
       startAfterEpisode: startAfterEpisode,
     );
   }
@@ -83,6 +97,13 @@ class AnimeDownloadSubscription {
   final bool trustedOnly;
   final String releaseGroup;
   final String? resolution;
+
+  /// null = video-only subscription. A non-null id pins one explicit Jimaku
+  /// entry; season packs are resolved inside that entry by episode number.
+  final int? jimakuEntryId;
+  final String? jimakuEntryName;
+  final String? jimakuLanguage;
+
   final int startAfterEpisode;
   final Set<int> processedEpisodes;
   final bool enabled;
@@ -108,6 +129,9 @@ class AnimeDownloadSubscription {
       trustedOnly: trustedOnly,
       releaseGroup: releaseGroup,
       resolution: resolution,
+      jimakuEntryId: jimakuEntryId,
+      jimakuEntryName: jimakuEntryName,
+      jimakuLanguage: jimakuLanguage,
       startAfterEpisode: startAfterEpisode,
       processedEpisodes: processedEpisodes ?? this.processedEpisodes,
       enabled: enabled ?? this.enabled,
@@ -134,6 +158,9 @@ Map<String, dynamic> encodeAnimeDownloadSubscription(
     'trustedOnly': subscription.trustedOnly,
     'releaseGroup': subscription.releaseGroup,
     'resolution': subscription.resolution,
+    'jimakuEntryId': subscription.jimakuEntryId,
+    'jimakuEntryName': subscription.jimakuEntryName,
+    'jimakuLanguage': subscription.jimakuLanguage,
     'startAfterEpisode': subscription.startAfterEpisode,
     'processedEpisodes': processed,
     'enabled': subscription.enabled,
@@ -183,6 +210,14 @@ AnimeDownloadSubscription? decodeAnimeDownloadSubscription(
       releaseGroup: group.trim(),
       resolution:
           raw['resolution'] is String ? raw['resolution'] as String : null,
+      jimakuEntryId:
+          raw['jimakuEntryId'] is int ? raw['jimakuEntryId'] as int : null,
+      jimakuEntryName: raw['jimakuEntryName'] is String
+          ? raw['jimakuEntryName'] as String
+          : null,
+      jimakuLanguage: raw['jimakuLanguage'] is String
+          ? raw['jimakuLanguage'] as String
+          : null,
       startAfterEpisode: anchor,
       processedEpisodes: processed,
       enabled: raw['enabled'] != false,
@@ -319,6 +354,12 @@ typedef AnimeSubscriptionSearch = Future<List<NyaaTorrent>> Function(
   AnimeDownloadSubscription subscription,
 );
 
+typedef AnimeSubscriptionSubtitleFetcher = Future<List<PlanSubtitle>> Function(
+  AnimeDownloadSubscription subscription,
+  NyaaTorrent torrent,
+  Directory destination,
+);
+
 class AnimeDownloadSubscriptionService {
   AnimeDownloadSubscriptionService({
     required this.store,
@@ -326,26 +367,36 @@ class AnimeDownloadSubscriptionService {
     required QbConnectionConfig Function() configProvider,
     required TorrentBackend Function(QbConnectionConfig config) backendFactory,
     AnimeSubscriptionSearch? search,
+    String Function()? jimakuApiKeyProvider,
+    AnimeSubscriptionSubtitleFetcher? subtitleFetcher,
+    Future<http.Client> Function()? httpClientFactory,
     this.interval = const Duration(minutes: 15),
   })  : _configProvider = configProvider,
         _backendFactory = backendFactory,
-        _search = search ?? _searchNyaa;
+        _search = search,
+        _jimakuApiKeyProvider = jimakuApiKeyProvider ?? (() => ''),
+        _subtitleFetcher = subtitleFetcher,
+        _httpClientFactory = httpClientFactory ?? (() async => http.Client());
 
   final AnimeDownloadSubscriptionStore store;
   final AnimeDownloadPlanStore planStore;
   final QbConnectionConfig Function() _configProvider;
   final TorrentBackend Function(QbConnectionConfig config) _backendFactory;
-  final AnimeSubscriptionSearch _search;
+  final AnimeSubscriptionSearch? _search;
+  final String Function() _jimakuApiKeyProvider;
+  final AnimeSubscriptionSubtitleFetcher? _subtitleFetcher;
+  final Future<http.Client> Function() _httpClientFactory;
   final Duration interval;
   final ValueNotifier<bool> checking = ValueNotifier<bool>(false);
 
   Timer? _timer;
   bool _checking = false;
 
-  static Future<List<NyaaTorrent>> _searchNyaa(
+  Future<List<NyaaTorrent>> _searchNyaa(
     AnimeDownloadSubscription subscription,
   ) async {
-    final NyaaClient client = NyaaClient();
+    final http.Client rawClient = await _httpClientFactory();
+    final NyaaClient client = NyaaClient(client: rawClient);
     try {
       return await client
           .search(
@@ -356,6 +407,57 @@ class AnimeDownloadSubscriptionService {
           .timeout(const Duration(seconds: 20));
     } finally {
       client.close();
+    }
+  }
+
+  Future<List<PlanSubtitle>> _fetchSubtitlesFor(
+    AnimeDownloadSubscription subscription,
+    NyaaTorrent torrent,
+    Directory destination,
+  ) async {
+    if (subscription.jimakuEntryId == null) {
+      return const <PlanSubtitle>[];
+    }
+    final AnimeSubscriptionSubtitleFetcher? injected = _subtitleFetcher;
+    if (injected != null) {
+      return injected(subscription, torrent, destination);
+    }
+    final int? episode = torrent.episode;
+    if (episode == null) return const <PlanSubtitle>[];
+    final String apiKey = _jimakuApiKeyProvider().trim();
+    if (apiKey.isEmpty) {
+      throw StateError('Jimaku API key is missing');
+    }
+    final http.Client rawClient = await _httpClientFactory();
+    final JimakuClient jimaku = JimakuClient(apiKey: apiKey, client: rawClient);
+    try {
+      final List<JimakuFile> files = await jimaku
+          .listFiles(subscription.jimakuEntryId!, episode: episode)
+          .timeout(const Duration(seconds: 20));
+      final JimakuFile? selected = pickBestSubtitleFile(
+        files,
+        episode: episode,
+        preferredLanguage: subscription.jimakuLanguage,
+      );
+      if (selected == null) return const <PlanSubtitle>[];
+      final bytes = await jimaku
+          .downloadFile(selected.url)
+          .timeout(const Duration(seconds: 20));
+      if (bytes == null) return const <PlanSubtitle>[];
+      await destination.create(recursive: true);
+      final String fileName = p.basename(selected.name);
+      final File file = File(p.join(destination.path, fileName));
+      await file.writeAsBytes(bytes);
+      return <PlanSubtitle>[
+        PlanSubtitle(
+          episode: episode,
+          fileName: selected.name,
+          stagedPath: file.path,
+          language: detectSubtitleLanguage(selected.name),
+        ),
+      ];
+    } finally {
+      jimaku.close();
     }
   }
 
@@ -432,8 +534,11 @@ class AnimeDownloadSubscriptionService {
         ));
         return;
       }
-      final List<NyaaTorrent> releases =
-          selectSubscriptionReleases(current, await _search(current));
+      final AnimeSubscriptionSearch? injectedSearch = _search;
+      final List<NyaaTorrent> releases = selectSubscriptionReleases(
+        current,
+        await (injectedSearch?.call(current) ?? _searchNyaa(current)),
+      );
       if (releases.isEmpty) {
         await store.save(current.copyWith(
           lastCheckedAtMs: checkedAt,
@@ -445,6 +550,7 @@ class AnimeDownloadSubscriptionService {
         for (final AnimeDownloadPlan plan in await planStore.loadAll())
           plan.id.toLowerCase(),
       };
+      String? pendingError;
       final TorrentBackend backend = _backendFactory(config);
       try {
         await backend.prepareCategory(config.category);
@@ -454,6 +560,17 @@ class AnimeDownloadSubscriptionService {
           if (episode == null || id.isEmpty) continue;
           bool queued = existingPlanIds.contains(id);
           if (!queued) {
+            final List<PlanSubtitle> subtitles = await _fetchSubtitlesFor(
+              current,
+              torrent,
+              planStore.subsDirFor(id),
+            );
+            if (current.jimakuEntryId != null && subtitles.isEmpty) {
+              pendingError = 'subtitle not available for episode $episode from '
+                  '${current.jimakuEntryName ?? current.jimakuEntryId}';
+              await planStore.delete(id);
+              continue;
+            }
             final AnimeDownloadPlan plan = AnimeDownloadPlan(
               id: id,
               createdAtMs: DateTime.now().millisecondsSinceEpoch,
@@ -463,6 +580,7 @@ class AnimeDownloadSubscriptionService {
               torrentTitle: torrent.title,
               magnet: torrent.magnet,
               qbCategory: config.category,
+              subtitles: subtitles,
             );
             await planStore.save(plan);
             queued = await backend.addTorrent(
@@ -500,8 +618,10 @@ class AnimeDownloadSubscriptionService {
       if (current.lastCheckedAtMs != checkedAt) {
         await store.save(current.copyWith(
           lastCheckedAtMs: checkedAt,
-          lastError: 'matching release could not be queued',
+          lastError: pendingError ?? 'matching release could not be queued',
         ));
+      } else if (pendingError != null) {
+        await store.save(current.copyWith(lastError: pendingError));
       }
     } catch (error) {
       await store.save(current.copyWith(

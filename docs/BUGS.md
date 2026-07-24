@@ -27,10 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1020 条。点号进各自文件。
+> 共 1023 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1056](bugs/BUG-1056-jimaku-source-subscription.md) | ✅ | ✅ | 字幕来源不可选且连载订阅无法绑定合集字幕 |
+| [BUG-1055](bugs/BUG-1055-anilist-segmented-title.md) | ✅ | ✅ | AniList 罗马字分词差异导致番剧误报无结果 |
+| [BUG-1054](bugs/BUG-1054-download-discovery-proxy.md) | ✅ | ✅ | 下载发现未读取环境与系统代理导致搜索超时 |
 | [BUG-1053](bugs/BUG-1053-embedded-torrent-dht-always-on.md) | ✅ | ✅ | 空闲也常驻 libtorrent/DHT（6881），整机网络周期性高延迟 |
 | [BUG-1052](bugs/BUG-1052-reading-time-lost-session-clock-reanchor.md) | ✅ | ✅ | 阅读时长被会话时钟重锚吃掉，速度/统计爆表（今日 0 分钟 / 125666 字·时⁻¹） |
 | [BUG-1051](bugs/BUG-1051-series-audio-subtitle-memory-lost.md) | ✅ | ✅ | 同系列音轨选择与字幕调轴记忆丢失（统一合集迁移回归） |

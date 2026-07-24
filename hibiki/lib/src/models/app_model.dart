@@ -43,6 +43,7 @@ import 'package:hibiki/src/models/clipboard_history_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
+import 'package:hibiki/src/media/torrent/download_network_proxy.dart';
 import 'package:hibiki/src/media/torrent/embedded_torrent_host.dart';
 import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/qbittorrent_client.dart';
@@ -2915,6 +2916,26 @@ class AppModel with ChangeNotifier {
     _applyEmbeddedTorrentLimits(config);
   }
 
+  DownloadNetworkProxyConfig get downloadNetworkProxyConfig =>
+      DownloadNetworkProxyConfig(
+        mode: DownloadNetworkProxyMode.parse(
+          prefsRepo.downloadNetworkProxyMode,
+        ),
+        customProxy: prefsRepo.downloadCustomProxy,
+      );
+
+  Future<void> setDownloadNetworkProxyMode(
+    DownloadNetworkProxyMode mode,
+  ) =>
+      prefsRepo.setDownloadNetworkProxyMode(mode.name);
+
+  Future<void> setDownloadCustomProxy(String value) =>
+      prefsRepo.setDownloadCustomProxy(value);
+
+  /// Proxy-aware client shared by AniList, Nyaa and Jimaku call sites.
+  Future<http.Client> createDownloadHttpClient() =>
+      buildDownloadHttpClient(downloadNetworkProxyConfig);
+
   /// 把配置里的内置引擎资源限制应用到常驻宿主（宿主不存在则 no-op）。
   void _applyEmbeddedTorrentLimits(QbConnectionConfig? config) {
     final EmbeddedTorrentHost? host = _embeddedTorrentHost;
@@ -3029,6 +3050,8 @@ class AppModel with ChangeNotifier {
       configProvider: () =>
           effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
       backendFactory: _torrentBackendFor,
+      jimakuApiKeyProvider: () => prefsRepo.jimakuApiKey,
+      httpClientFactory: createDownloadHttpClient,
     )..start();
   }
 

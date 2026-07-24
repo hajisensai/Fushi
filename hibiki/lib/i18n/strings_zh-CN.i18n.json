@@ -2364,5 +2364,16 @@
   "video_scrape_batch_empty": "没有可匹配的本地视频",
   "video_scrape_apply_to_collection": "同时应用到本合集全部 $n 集",
   "video_scrape_batch_summary": "完成：应用 $applied，待确认 $confirm，跳过 $skipped",
-  "video_scrape_batch_progress": "匹配中 $current/$total"
+  "video_scrape_batch_progress": "匹配中 $current/$total",
+  "video_jimaku_source": "字幕来源",
+  "video_jimaku_source_hint": "选择一个 Jimaku 条目；合集字幕会按集号自动匹配。",
+  "video_jimaku_find_sources": "查找字幕",
+  "video_jimaku_anime_match": "番剧匹配",
+  "download_network_proxy_section": "发现网络",
+  "download_network_proxy_auto": "自动",
+  "download_network_proxy_direct": "直连",
+  "download_network_proxy_custom": "自定义",
+  "download_network_proxy_auto_hint": "仅影响 AniList、Nyaa 和 Jimaku。自动模式先读环境变量，再读已启用的系统代理；种子流量不受影响。",
+  "download_network_proxy_custom_label": "自定义代理",
+  "update_custom_proxy_auto_hint": "留空时自动读取环境变量，再读取已启用的系统代理。"
 }
