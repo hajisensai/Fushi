@@ -398,7 +398,7 @@ void main() {
     endpoints.dispose();
   });
 
-  test('text-only engine hook stays active with loopback audio fallback',
+  test('BUG-1060 text-only engine ignores stale PCM and caches loopback audio',
       () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
@@ -415,6 +415,17 @@ void main() {
           hookName: 'Unity',
         ),
       ],
+      // 真实故障里 helper 虽未通过 PCM readiness，旧 DirectSound 段仍可被
+      // grabUtterance 读到。降级会话必须忽略它，不能把碎片伪装成 Loopback。
+      utteranceSlice: GalAudioSlice(
+        pcm: Uint8List(192000),
+        format: const PcmFormat(
+          sampleRate: 48000,
+          channels: 2,
+          bitsPerSample: 16,
+          isFloat: false,
+        ),
+      ),
     );
     final _FakeLoopbackSource loopback = _FakeLoopbackSource();
     final GalHookSessionController controller = GalHookSessionController(
@@ -462,6 +473,8 @@ void main() {
     expect(service.entries.single.audioBackend, 'system_loopback');
     expect(loopback.grabRecentCalls, 1,
         reason: 'loopback audio is cached when the exact line arrives');
+    expect(engine.utteranceTimestamps, isEmpty,
+        reason: 'failed engine PCM readiness must remain authoritative');
 
     await controller.captureAudioBytes(
       lineId: service.entries.single.id,
@@ -470,6 +483,9 @@ void main() {
     );
     expect(loopback.grabRecentCalls, 1,
         reason: 'mining must reuse the line cache instead of recording later');
+    expect(engine.utteranceTimestamps, isEmpty,
+        reason:
+            'mining must not revive stale engine PCM in a loopback session');
 
     await controller.close();
     expect(engine.stopCalls, 1);

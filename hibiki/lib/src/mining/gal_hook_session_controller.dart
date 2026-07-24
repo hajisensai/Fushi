@@ -1186,7 +1186,13 @@ class GalHookSessionController extends ChangeNotifier {
       }
     }
     GalAudioSlice? slice = _lineVoiceCache[lineId];
-    if ((slice == null || slice.isEmpty) && engine != null && timestamp > 0) {
+    // 会话已经选用 Loopback 时，engine 仍需保活来提供文本/资源事件，但它的 PCM
+    // 明确没有通过 readiness 门。此时绝不能因为共享内存里残留着可读 clip 就重新
+    // 借用 engine PCM；否则会把错误格式/碎片缓存伪装成 system_loopback。
+    if ((slice == null || slice.isEmpty) &&
+        engine != null &&
+        identical(source, engine) &&
+        timestamp > 0) {
       slice = await engine.grabUtterance(timestamp) ??
           await engine.grabClipNear(timestamp);
     }
@@ -1782,7 +1788,10 @@ class GalHookSessionController extends ChangeNotifier {
             status: TexthookerLineAudioStatus.pending,
             backend: 'game_resource',
           );
-        } else {
+        } else if (identical(_audioSource, engine)) {
+          // 只有 readiness 已选择 engine PCM 作为当前音频源时才读取 engine clip。
+          // 文本 helper 在 Loopback 降级会话中仍然保活，但它暴露的残留/未通过门控
+          // PCM 不能覆盖真正的逐行 Loopback 缓存（BUG-1060）。
           clip = await engine.grabUtterance(line.timestampMs) ??
               await engine.grabClipNear(line.timestampMs);
         }
