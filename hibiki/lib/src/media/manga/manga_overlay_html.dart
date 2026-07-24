@@ -76,8 +76,16 @@ String mangaOcrBoxesHtml(MokuroImage page) {
 /// [spreadIndex] 标注本页所属的跨页号（写入 `data-spread`）。[pagesInSpread] 标注本页
 /// 所在跨页的页数（1=单页 / 2=双页），决定 spread 槽宽；写入 `data-spread-pages` 仅供
 /// 调试/测试，槽宽本身由内联 `width` 落实，不依赖 CSS 类选择。
+///
+/// [pageIndex] 是本页在整卷里的 0-based 页码（写入 `data-page`），连同页图原始
+/// 像素尺寸（`data-pw` / `data-ph`）供补扫模式把视口矩形换算回**页图像素坐标**：
+/// div 的 aspect-ratio 与页图一致 + `object-fit:contain`，图恒铺满 div（无信箱
+/// 留白），故 div getBoundingClientRect 与页图像素是纯线性映射。
 String mangaPageDivHtml(MokuroImage page, String imgSrc,
-    {int spreadIndex = 0, int pagesInSpread = 1, bool isWebtoon = false}) {
+    {int spreadIndex = 0,
+    int pagesInSpread = 1,
+    int pageIndex = 0,
+    bool isWebtoon = false}) {
   // div 内联声明：
   // - position:relative —— OCR 框绝对定位的包含块。
   // - container-type:inline-size —— cqi 参照宽（自包含，不依赖外部 style 块）。
@@ -93,6 +101,7 @@ String mangaPageDivHtml(MokuroImage page, String imgSrc,
   final String widthCss = isWebtoon ? '' : 'width:${_num(100.0 / slots)}vw;';
   return '<div class="manga-page" data-spread="$spreadIndex" '
       'data-spread-pages="$pagesInSpread" '
+      'data-page="$pageIndex" data-pw="${_num(w)}" data-ph="${_num(h)}" '
       'style="position:relative;container-type:inline-size;'
       '$widthCss'
       'aspect-ratio:${_num(w)}/${_num(h)};">'
@@ -136,6 +145,7 @@ String mangaWindowDocument(
   required String inlineSelectionJs,
   List<int>? pageSpreadIndices,
   List<int>? pagesPerSpread,
+  List<int>? pageNumbers,
   int currentSpread = 0,
   double restoreFraction = 0,
 }) {
@@ -158,11 +168,16 @@ String mangaWindowDocument(
         (!isWebtoon && pagesPerSpread != null && i < pagesPerSpread.length)
             ? pagesPerSpread[i]
             : 1;
+    // 真实页码（窗口化文档里数组序 != 整卷页码）；缺省退回数组序（webtoon 全量
+    // 渲染时两者一致）。
+    final int pageNumber =
+        (pageNumbers != null && i < pageNumbers.length) ? pageNumbers[i] : i;
     pagesHtml.write(mangaPageDivHtml(
       pages[i],
       imgSrcs[i],
       spreadIndex: spreadIndex,
       pagesInSpread: slotPages,
+      pageIndex: pageNumber,
       isWebtoon: isWebtoon,
     ));
   }
@@ -237,6 +252,10 @@ String mangaWindowDocument(
 /// 禁用，消除桌面拖动时的原生图片/选区残影（「秃瓢」）。手势阈值镜像 reader
 /// （absDx>absDy 判 swipe，小位移判 tap）。spread translateX 在 [_mangaApplyTranslate]
 /// 按 data-spread 测量。
+///
+/// 补扫模式（P4）：Dart 调 `window.__mangaSetRescanMode(true/false)` 进入/退出；
+/// 模式内指针独占给橡皮筋框选（查词/swipe/滚轮翻页全旁路），松手换算页图像素
+/// 坐标经 `onMangaBoxSelected` 回 Dart（协议见函数体注释）。
 String _mangaGestureJs({
   required bool isWebtoon,
   required bool rtl,
@@ -270,6 +289,82 @@ String _mangaGestureJs({
     var top = page.offsetTop + (fraction || 0) * page.offsetHeight;
     window.scrollTo(0, top);
   };
+  // ── 补扫模式（P4 单框补扫）──
+  // Dart 经 window.__mangaSetRescanMode(true/false) 进入/退出。模式内：
+  // - pointer 拖出橡皮筋矩形（fixed 定位半透明框，纯视觉反馈）；
+  // - 查词 tap / swipe 翻页 / 滚轮翻页全部旁路（选区手势独占指针）；
+  // - 松手把视口矩形换算成**页图像素坐标**（框中心命中的 .manga-page 的
+  //   data-page/data-pw/data-ph + getBoundingClientRect 线性映射；spread 跨页时
+  //   以框中心判定落页并 clamp 进该页），经 onMangaBoxSelected 回 Dart；
+  // - 任一维 < 8px（视口坐标）忽略并保持模式（用户重画）；
+  // - 有效框发出后自动退出模式（Dart 端收到即复位按钮态）。
+  var RESCAN = false;
+  var rescanStart = null;
+  var rescanEl = null;
+  window.__mangaSetRescanMode = function(on){
+    RESCAN = !!on;
+    // 模式内禁掉触摸原生滚动（webtoon 竖滚会抢拖框手势）。
+    document.body.style.touchAction = RESCAN ? 'none' : '';
+    if (!RESCAN) _rescanClear();
+  };
+  function _rescanClear(){
+    if (rescanEl && rescanEl.parentNode) rescanEl.parentNode.removeChild(rescanEl);
+    rescanEl = null;
+    rescanStart = null;
+  }
+  function _rescanUpdate(x, y){
+    if (!rescanStart) return;
+    if (!rescanEl) {
+      rescanEl = document.createElement('div');
+      rescanEl.id = 'manga-rescan-rect';
+      rescanEl.style.cssText = 'position:fixed;z-index:2147483647;'
+        + 'pointer-events:none;border:2px solid rgba(66,165,245,0.9);'
+        + 'background:rgba(66,165,245,0.25);';
+      document.body.appendChild(rescanEl);
+    }
+    rescanEl.style.left = Math.min(rescanStart.x, x) + 'px';
+    rescanEl.style.top = Math.min(rescanStart.y, y) + 'px';
+    rescanEl.style.width = Math.abs(x - rescanStart.x) + 'px';
+    rescanEl.style.height = Math.abs(y - rescanStart.y) + 'px';
+  }
+  function _rescanFinish(x, y){
+    var start = rescanStart;
+    _rescanClear();
+    if (!start) return;
+    if (Math.abs(x - start.x) < 8 || Math.abs(y - start.y) < 8) return;
+    var cx = (start.x + x) / 2, cy = (start.y + y) / 2;
+    var pages = document.querySelectorAll('.manga-page');
+    var target = null, tr = null;
+    for (var i = 0; i < pages.length; i++) {
+      var r = pages[i].getBoundingClientRect();
+      if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+        target = pages[i];
+        tr = r;
+        break;
+      }
+    }
+    if (!target || tr.width <= 0 || tr.height <= 0) return;
+    var pw = parseFloat(target.getAttribute('data-pw')) || 0;
+    var ph = parseFloat(target.getAttribute('data-ph')) || 0;
+    if (pw <= 0 || ph <= 0) return;
+    var pageIndex = parseInt(target.getAttribute('data-page'), 10) || 0;
+    function toPx(v){ return Math.min(pw, Math.max(0, (v - tr.left) / tr.width * pw)); }
+    function toPy(v){ return Math.min(ph, Math.max(0, (v - tr.top) / tr.height * ph)); }
+    RESCAN = false;
+    document.body.style.touchAction = '';
+    var b = _bridge();
+    if (!b) return;
+    b.callHandler('onMangaBoxSelected', JSON.stringify({
+      pageIndex: pageIndex,
+      left: toPx(Math.min(start.x, x)),
+      top: toPy(Math.min(start.y, y)),
+      right: toPx(Math.max(start.x, x)),
+      bottom: toPy(Math.max(start.y, y))
+    }));
+  }
+  document.addEventListener('pointermove', function(e){
+    if (RESCAN && rescanStart) _rescanUpdate(e.clientX, e.clientY);
+  }, {passive: true});
   var IS_WEBTOON = $isWebtoon;
   var CURRENT = $currentSpread;
   var RESTORE_FRACTION = ${restoreFraction.toStringAsFixed(6)};
@@ -332,10 +427,12 @@ String _mangaGestureJs({
   }
   document.addEventListener('pointerdown', function(e){
     if (e.button !== 0) return;
+    if (RESCAN) { rescanStart = {x: e.clientX, y: e.clientY}; return; }
     _start(e.clientX, e.clientY);
   }, {passive: true});
   document.addEventListener('pointerup', function(e){
     if (e.button !== 0) return;
+    if (RESCAN) { _rescanFinish(e.clientX, e.clientY); return; }
     _end(e.clientX, e.clientY);
   }, {passive: false});
 
@@ -349,6 +446,7 @@ String _mangaGestureJs({
     var _wheelLock = false;
     document.addEventListener('wheel', function(e){
       e.preventDefault();
+      if (RESCAN) return;
       if (_wheelLock) return;
       var d = e.deltaY || e.deltaX || 0;
       if (Math.abs(d) < 2) return;

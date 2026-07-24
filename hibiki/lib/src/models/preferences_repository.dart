@@ -1688,6 +1688,34 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 漫画云端手写识别（Gemini）总开关。**默认关**；关着时零网络调用（红线），
+  /// 只影响补扫结果卡片是否显示「云端重试」与请求闸门。
+  bool get mangaCloudOcrEnabled =>
+      getPref('manga_cloud_ocr_enabled', defaultValue: false) as bool;
+
+  Future<void> setMangaCloudOcrEnabled(bool value) async {
+    await setPref('manga_cloud_ocr_enabled', value);
+    notifyListeners();
+  }
+
+  /// Gemini API key（用户自备；设置区密文显示）。空串=未设，云端重试不可用。
+  String get mangaCloudOcrApiKey =>
+      getPref('manga_cloud_ocr_api_key', defaultValue: '') as String;
+
+  Future<void> setMangaCloudOcrApiKey(String value) async {
+    await setPref('manga_cloud_ocr_api_key', value);
+    notifyListeners();
+  }
+
+  /// 云端识别模型名（空串=默认 `gemini-2.5-flash`，见 cloud_ocr_client.dart）。
+  String get mangaCloudOcrModel =>
+      getPref('manga_cloud_ocr_model', defaultValue: '') as String;
+
+  Future<void> setMangaCloudOcrModel(String value) async {
+    await setPref('manga_cloud_ocr_model', value);
+    notifyListeners();
+  }
+
   /// TODO-1024 / BUG-479：上次更新检查结果缓存（解码后；无/畸形 → null）。检查时先读它
   /// 乐观即时反馈，网络刷新在后台跑完再写回——不再每次冷查 GitHub 才知道结果（恒快）。
   UpdateCheckCacheEntry? get updateCheckCache => UpdateCheckCacheEntry.decode(
