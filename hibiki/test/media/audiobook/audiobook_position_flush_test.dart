@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
+
+import 'helpers/audiobook_test_harness.dart';
 
 /// BUG-032：歌词模式播放中进程被杀，音频进度归零。
 ///
@@ -32,47 +32,16 @@ void main() {
     ..endMs = startMs + 1000
     ..audioFileIndex = 0;
 
-  Audiobook ab() => Audiobook()
-    ..bookKey = 'book'
-    ..audioPaths = const <String>[]
-    ..audioRoot = null
-    ..alignmentFormat = 'srt'
-    ..alignmentPath = '';
-
-  File makeFile(String name) {
-    final File f = File('${Directory.systemTemp.path}/$name');
-    if (!f.existsSync()) f.writeAsBytesSync(const <int>[0]);
-    addTearDown(() {
-      if (f.existsSync()) f.deleteSync();
-    });
-    return f;
-  }
-
-  _FakePlatform installPlatform() {
-    const MethodChannel ch = MethodChannel('com.ryanheise.audio_session');
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(ch, (_) async => null);
-    addTearDown(() {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(ch, null);
-    });
-    final JustAudioPlatform prev = JustAudioPlatform.instance;
-    final _FakePlatform p = _FakePlatform();
-    JustAudioPlatform.instance = p;
-    addTearDown(() => JustAudioPlatform.instance = prev);
-    return p;
-  }
-
   // ── baselines：证明控制器层的恢复 / 周期保存本身没坏 ────────────────────
 
   test('baseline: load(initialPositionMs) restores position, not 0', () async {
-    installPlatform();
+    installEmittingAudioPlatform();
     final AudiobookPlayerController c = AudiobookPlayerController();
     addTearDown(c.dispose);
 
     await c.load(
-      audiobook: ab(),
-      audioFiles: <File>[makeFile('hibiki-flush-a.mp3')],
+      audiobook: fakeAudiobook(),
+      audioFiles: <File>[createFakeAudioFile('hibiki-flush-a.mp3')],
       initialPositionMs: 65000,
     );
 
@@ -81,13 +50,13 @@ void main() {
 
   test('baseline: priming cues after load must not clobber savedMs with 0',
       () async {
-    installPlatform();
+    installEmittingAudioPlatform();
     final AudiobookPlayerController c = AudiobookPlayerController();
     addTearDown(c.dispose);
 
     await c.load(
-      audiobook: ab(),
-      audioFiles: <File>[makeFile('hibiki-flush-b.mp3')],
+      audiobook: fakeAudiobook(),
+      audioFiles: <File>[createFakeAudioFile('hibiki-flush-b.mp3')],
       initialPositionMs: 65000,
     );
 
@@ -102,13 +71,13 @@ void main() {
 
   test('flushPosition force-saves the current position even at the same second',
       () async {
-    final _FakePlatform plat = installPlatform();
+    final EmittingFakeAudioPlatform plat = installEmittingAudioPlatform();
     final AudiobookPlayerController c = AudiobookPlayerController();
     addTearDown(c.dispose);
 
     await c.load(
-      audiobook: ab(),
-      audioFiles: <File>[makeFile('hibiki-flush-c.mp3')],
+      audiobook: fakeAudiobook(),
+      audioFiles: <File>[createFakeAudioFile('hibiki-flush-c.mp3')],
       initialPositionMs: 0,
     );
     c.setChapterCues(<AudioCue>[cue(0), cue(1000), cue(2000), cue(3000)]);
@@ -121,7 +90,7 @@ void main() {
 
     // Advance playback to 3s: the periodic save persists the position once the
     // whole-second changes (the playing position extrapolates a few ms past).
-    plat.player!.emit(3000, ProcessingStateMessage.ready, playing: true);
+    plat.player!.emit(3000);
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(writes.where((int w) => w >= 3000), isNotEmpty,
         reason: 'periodic save must persist advancing playback position');
@@ -141,13 +110,13 @@ void main() {
   });
 
   test('flushPosition awaits the persistence write (durability)', () async {
-    installPlatform();
+    installEmittingAudioPlatform();
     final AudiobookPlayerController c = AudiobookPlayerController();
     addTearDown(c.dispose);
 
     await c.load(
-      audiobook: ab(),
-      audioFiles: <File>[makeFile('hibiki-flush-d.mp3')],
+      audiobook: fakeAudiobook(),
+      audioFiles: <File>[createFakeAudioFile('hibiki-flush-d.mp3')],
       initialPositionMs: 12000,
     );
 
@@ -169,121 +138,4 @@ void main() {
     await flush;
     expect(writeFinished, isTrue);
   });
-}
-
-class _FakePlatform extends JustAudioPlatform {
-  _FakePlayer? player;
-  @override
-  Future<AudioPlayerPlatform> init(InitRequest request) async {
-    player = _FakePlayer(request.id);
-    return player!;
-  }
-
-  @override
-  Future<DisposePlayerResponse> disposePlayer(
-      DisposePlayerRequest request) async {
-    await player?.dispose(DisposeRequest());
-    return DisposePlayerResponse();
-  }
-
-  @override
-  Future<DisposeAllPlayersResponse> disposeAllPlayers(
-      DisposeAllPlayersRequest request) async {
-    await player?.dispose(DisposeRequest());
-    return DisposeAllPlayersResponse();
-  }
-}
-
-class _FakePlayer extends AudioPlayerPlatform {
-  _FakePlayer(super.id);
-  final StreamController<PlaybackEventMessage> _events =
-      StreamController<PlaybackEventMessage>.broadcast();
-
-  void emit(int ms, ProcessingStateMessage state, {required bool playing}) {
-    _events.add(PlaybackEventMessage(
-      processingState: state,
-      updateTime: DateTime.now(),
-      updatePosition: Duration(milliseconds: ms),
-      bufferedPosition: Duration(milliseconds: ms),
-      duration: const Duration(seconds: 100),
-      icyMetadata: null,
-      currentIndex: 0,
-      androidAudioSessionId: null,
-    ));
-  }
-
-  @override
-  Stream<PlaybackEventMessage> get playbackEventMessageStream => _events.stream;
-
-  @override
-  Future<LoadResponse> load(LoadRequest request) async {
-    emit(request.initialPosition?.inMilliseconds ?? 0,
-        ProcessingStateMessage.ready,
-        playing: false);
-    return LoadResponse(duration: const Duration(seconds: 100));
-  }
-
-  @override
-  Future<PauseResponse> pause(PauseRequest request) async => PauseResponse();
-  @override
-  Future<PlayResponse> play(PlayRequest request) async => PlayResponse();
-  @override
-  Future<SeekResponse> seek(SeekRequest request) async {
-    emit(request.position?.inMilliseconds ?? 0, ProcessingStateMessage.ready,
-        playing: false);
-    return SeekResponse();
-  }
-
-  @override
-  Future<SetAndroidAudioAttributesResponse> setAndroidAudioAttributes(
-          SetAndroidAudioAttributesRequest request) async =>
-      SetAndroidAudioAttributesResponse();
-  @override
-  Future<SetAutomaticallyWaitsToMinimizeStallingResponse>
-      setAutomaticallyWaitsToMinimizeStalling(
-              SetAutomaticallyWaitsToMinimizeStallingRequest request) async =>
-          SetAutomaticallyWaitsToMinimizeStallingResponse();
-  @override
-  Future<SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse>
-      setCanUseNetworkResourcesForLiveStreamingWhilePaused(
-              SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest
-                  request) async =>
-          SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
-  @override
-  Future<SetLoopModeResponse> setLoopMode(SetLoopModeRequest request) async =>
-      SetLoopModeResponse();
-  @override
-  Future<SetPitchResponse> setPitch(SetPitchRequest request) async =>
-      SetPitchResponse();
-  @override
-  Future<SetPreferredPeakBitRateResponse> setPreferredPeakBitRate(
-          SetPreferredPeakBitRateRequest request) async =>
-      SetPreferredPeakBitRateResponse();
-  @override
-  Future<SetShuffleModeResponse> setShuffleMode(
-          SetShuffleModeRequest request) async =>
-      SetShuffleModeResponse();
-  @override
-  Future<SetShuffleOrderResponse> setShuffleOrder(
-          SetShuffleOrderRequest request) async =>
-      SetShuffleOrderResponse();
-  @override
-  Future<SetSkipSilenceResponse> setSkipSilence(
-          SetSkipSilenceRequest request) async =>
-      SetSkipSilenceResponse();
-  @override
-  Future<SetSpeedResponse> setSpeed(SetSpeedRequest request) async =>
-      SetSpeedResponse();
-  @override
-  Future<SetVolumeResponse> setVolume(SetVolumeRequest request) async =>
-      SetVolumeResponse();
-  @override
-  Future<SetWebCrossOriginResponse> setWebCrossOrigin(
-          SetWebCrossOriginRequest request) async =>
-      SetWebCrossOriginResponse();
-  @override
-  Future<DisposeResponse> dispose(DisposeRequest request) async {
-    await _events.close();
-    return DisposeResponse();
-  }
 }

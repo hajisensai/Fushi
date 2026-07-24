@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
@@ -11,9 +10,9 @@ import 'package:hibiki/src/media/audiobook/audiobook_session.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:hibiki/src/media/audiobook/now_listening_mini_bar.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 
 import '../../helpers/test_platform_services.dart';
+import 'helpers/audiobook_test_harness.dart';
 
 /// TODO-831 行为守卫：关「退出后续播」(audiobookBackgroundPlay=false) 退出有声书时，
 /// 书架 [NowListeningMiniBar] 不得「先显一帧播放条再收起」。
@@ -49,35 +48,6 @@ class _MiniBarAppModel extends AppModel {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  Audiobook ab(String key) => Audiobook()
-    ..bookKey = key
-    ..audioPaths = const <String>[]
-    ..audioRoot = null
-    ..alignmentFormat = 'srt'
-    ..alignmentPath = '';
-
-  File makeFile(String name) {
-    final File f = File('${Directory.systemTemp.path}/$name');
-    if (!f.existsSync()) f.writeAsBytesSync(const <int>[0]);
-    addTearDown(() {
-      if (f.existsSync()) f.deleteSync();
-    });
-    return f;
-  }
-
-  void installPlatform() {
-    const MethodChannel ch = MethodChannel('com.ryanheise.audio_session');
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(ch, (_) async => null);
-    addTearDown(() {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(ch, null);
-    });
-    final JustAudioPlatform prev = JustAudioPlatform.instance;
-    JustAudioPlatform.instance = _FakePlatform();
-    addTearDown(() => JustAudioPlatform.instance = prev);
-  }
-
   SessionPersistCallbacks persist() => SessionPersistCallbacks(
         onPositionWrite: (_, __) async {},
         onDelayPersist: (_) async {},
@@ -99,7 +69,7 @@ void main() {
   testWidgets(
       'mini bar collapses to SizedBox.shrink the same frame the session stops '
       '(no flash of the play bar on exit) — TODO-831', (tester) async {
-    installPlatform();
+    installEmittingAudioPlatform();
     final _MiniBarAppModel appModel = _MiniBarAppModel();
     // ProviderScope 拥有该 appModel 的生命周期，scope 拆除时会 dispose 它；这里
     // 不再额外 addTearDown(dispose)，否则二次 dispose 触发 ChangeNotifier 断言。
@@ -108,11 +78,11 @@ void main() {
     await session.start(
       info: SessionBookInfo(
         bookKey: 'a',
-        audiobook: ab('a'),
+        audiobook: fakeAudiobook(bookKey: 'a'),
         title: 'Test Book',
         mediaIdentifier: 'hoshi://book/a',
       ),
-      audioFiles: <File>[makeFile('hibiki-minibar-flash.mp3')],
+      audioFiles: <File>[createFakeAudioFile('hibiki-minibar-flash.mp3')],
       prefs: const SessionPrefs(
         followAudio: true,
         delayMs: 0,
@@ -177,17 +147,17 @@ void main() {
 
   testWidgets('mini bar defers session notifications during tree finalization',
       (tester) async {
-    installPlatform();
+    installEmittingAudioPlatform();
     final _MiniBarAppModel appModel = _MiniBarAppModel();
     final AudiobookSession session = appModel.audiobookSession;
     await session.start(
       info: SessionBookInfo(
         bookKey: 'a',
-        audiobook: ab('a'),
+        audiobook: fakeAudiobook(bookKey: 'a'),
         title: 'Test Book',
         mediaIdentifier: 'hoshi://book/a',
       ),
-      audioFiles: <File>[makeFile('hibiki-minibar-locked-tree.mp3')],
+      audioFiles: <File>[createFakeAudioFile('hibiki-minibar-locked-tree.mp3')],
       prefs: const SessionPrefs(
         followAudio: true,
         delayMs: 0,
@@ -229,17 +199,17 @@ void main() {
 
   testWidgets('post-frame session notifications request a follow-up frame',
       (tester) async {
-    installPlatform();
+    installEmittingAudioPlatform();
     final _MiniBarAppModel appModel = _MiniBarAppModel();
     final AudiobookSession session = appModel.audiobookSession;
     await session.start(
       info: SessionBookInfo(
         bookKey: 'a',
-        audiobook: ab('a'),
+        audiobook: fakeAudiobook(bookKey: 'a'),
         title: 'Test Book',
         mediaIdentifier: 'hoshi://book/a',
       ),
-      audioFiles: <File>[makeFile('hibiki-minibar-post-frame.mp3')],
+      audioFiles: <File>[createFakeAudioFile('hibiki-minibar-post-frame.mp3')],
       prefs: const SessionPrefs(
         followAudio: true,
         delayMs: 0,
@@ -294,18 +264,18 @@ void main() {
   test(
       'AudiobookSession.stop clears book/controller and notifies before the '
       'first await (TODO-831 方案3)', () async {
-    installPlatform();
+    installEmittingAudioPlatform();
     final _MiniBarAppModel appModel = _MiniBarAppModel();
     addTearDown(appModel.dispose);
     final AudiobookSession session = appModel.audiobookSession;
     await session.start(
       info: SessionBookInfo(
         bookKey: 'a',
-        audiobook: ab('a'),
+        audiobook: fakeAudiobook(bookKey: 'a'),
         title: 'Test Book',
         mediaIdentifier: 'hoshi://book/a',
       ),
-      audioFiles: <File>[makeFile('hibiki-minibar-notify.mp3')],
+      audioFiles: <File>[createFakeAudioFile('hibiki-minibar-notify.mp3')],
       prefs: const SessionPrefs(
         followAudio: true,
         delayMs: 0,
@@ -363,121 +333,4 @@ class _StopSessionOnDisposeState extends State<_StopSessionOnDispose> {
 
   @override
   Widget build(BuildContext context) => const SizedBox.shrink();
-}
-
-class _FakePlatform extends JustAudioPlatform {
-  _FakePlayer? player;
-  @override
-  Future<AudioPlayerPlatform> init(InitRequest request) async {
-    player = _FakePlayer(request.id);
-    return player!;
-  }
-
-  @override
-  Future<DisposePlayerResponse> disposePlayer(
-      DisposePlayerRequest request) async {
-    await player?.dispose(DisposeRequest());
-    return DisposePlayerResponse();
-  }
-
-  @override
-  Future<DisposeAllPlayersResponse> disposeAllPlayers(
-      DisposeAllPlayersRequest request) async {
-    await player?.dispose(DisposeRequest());
-    return DisposeAllPlayersResponse();
-  }
-}
-
-class _FakePlayer extends AudioPlayerPlatform {
-  _FakePlayer(super.id);
-  final StreamController<PlaybackEventMessage> _events =
-      StreamController<PlaybackEventMessage>.broadcast();
-
-  void emit(int ms, ProcessingStateMessage state, {required bool playing}) {
-    _events.add(PlaybackEventMessage(
-      processingState: state,
-      updateTime: DateTime.now(),
-      updatePosition: Duration(milliseconds: ms),
-      bufferedPosition: Duration(milliseconds: ms),
-      duration: const Duration(seconds: 100),
-      icyMetadata: null,
-      currentIndex: 0,
-      androidAudioSessionId: null,
-    ));
-  }
-
-  @override
-  Stream<PlaybackEventMessage> get playbackEventMessageStream => _events.stream;
-
-  @override
-  Future<LoadResponse> load(LoadRequest request) async {
-    emit(request.initialPosition?.inMilliseconds ?? 0,
-        ProcessingStateMessage.ready,
-        playing: false);
-    return LoadResponse(duration: const Duration(seconds: 100));
-  }
-
-  @override
-  Future<PauseResponse> pause(PauseRequest request) async => PauseResponse();
-  @override
-  Future<PlayResponse> play(PlayRequest request) async => PlayResponse();
-  @override
-  Future<SeekResponse> seek(SeekRequest request) async {
-    emit(request.position?.inMilliseconds ?? 0, ProcessingStateMessage.ready,
-        playing: false);
-    return SeekResponse();
-  }
-
-  @override
-  Future<SetAndroidAudioAttributesResponse> setAndroidAudioAttributes(
-          SetAndroidAudioAttributesRequest request) async =>
-      SetAndroidAudioAttributesResponse();
-  @override
-  Future<SetAutomaticallyWaitsToMinimizeStallingResponse>
-      setAutomaticallyWaitsToMinimizeStalling(
-              SetAutomaticallyWaitsToMinimizeStallingRequest request) async =>
-          SetAutomaticallyWaitsToMinimizeStallingResponse();
-  @override
-  Future<SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse>
-      setCanUseNetworkResourcesForLiveStreamingWhilePaused(
-              SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest
-                  request) async =>
-          SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
-  @override
-  Future<SetLoopModeResponse> setLoopMode(SetLoopModeRequest request) async =>
-      SetLoopModeResponse();
-  @override
-  Future<SetPitchResponse> setPitch(SetPitchRequest request) async =>
-      SetPitchResponse();
-  @override
-  Future<SetPreferredPeakBitRateResponse> setPreferredPeakBitRate(
-          SetPreferredPeakBitRateRequest request) async =>
-      SetPreferredPeakBitRateResponse();
-  @override
-  Future<SetShuffleModeResponse> setShuffleMode(
-          SetShuffleModeRequest request) async =>
-      SetShuffleModeResponse();
-  @override
-  Future<SetShuffleOrderResponse> setShuffleOrder(
-          SetShuffleOrderRequest request) async =>
-      SetShuffleOrderResponse();
-  @override
-  Future<SetSkipSilenceResponse> setSkipSilence(
-          SetSkipSilenceRequest request) async =>
-      SetSkipSilenceResponse();
-  @override
-  Future<SetSpeedResponse> setSpeed(SetSpeedRequest request) async =>
-      SetSpeedResponse();
-  @override
-  Future<SetVolumeResponse> setVolume(SetVolumeRequest request) async =>
-      SetVolumeResponse();
-  @override
-  Future<SetWebCrossOriginResponse> setWebCrossOrigin(
-          SetWebCrossOriginRequest request) async =>
-      SetWebCrossOriginResponse();
-  @override
-  Future<DisposeResponse> dispose(DisposeRequest request) async {
-    if (!_events.isClosed) await _events.close();
-    return DisposeResponse();
-  }
 }

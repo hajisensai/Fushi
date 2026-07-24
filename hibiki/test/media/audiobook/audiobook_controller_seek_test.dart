@@ -1,10 +1,9 @@
-import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
-import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
+
+import 'helpers/audiobook_test_harness.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -154,21 +153,15 @@ void main() {
     });
 
     test('load does not wait for platform preload to finish', () async {
-      final _HangingJustAudioPlatform platform = _installHangingAudioPlatform();
+      final HangingFakeAudioPlatform platform = installHangingAudioPlatform();
 
       final AudiobookPlayerController controller = AudiobookPlayerController();
       addTearDown(controller.dispose);
       final File audioFile =
-          File('${Directory.systemTemp.path}/hibiki-audiobook-load-test.mp3');
-      if (!audioFile.existsSync()) {
-        audioFile.writeAsBytesSync(const <int>[0]);
-      }
-      addTearDown(() {
-        if (audioFile.existsSync()) audioFile.deleteSync();
-      });
+          createFakeAudioFile('hibiki-audiobook-load-test.mp3');
 
       await controller.load(
-        audiobook: _audiobook(),
+        audiobook: fakeAudiobook(),
         audioFiles: <File>[audioFile],
       ).timeout(const Duration(milliseconds: 200));
 
@@ -176,28 +169,18 @@ void main() {
     });
 
     test('multi-file load does not wait for duration probes', () async {
-      final _HangingJustAudioPlatform platform = _installHangingAudioPlatform();
+      final HangingFakeAudioPlatform platform = installHangingAudioPlatform();
 
       final AudiobookPlayerController controller = AudiobookPlayerController();
       addTearDown(controller.dispose);
       final List<File> audioFiles = <File>[
-        File('${Directory.systemTemp.path}/hibiki-audiobook-load-test-1.mp3'),
-        File('${Directory.systemTemp.path}/hibiki-audiobook-load-test-2.mp3'),
+        createFakeAudioFile('hibiki-audiobook-load-test-1.mp3'),
+        createFakeAudioFile('hibiki-audiobook-load-test-2.mp3'),
       ];
-      for (final File audioFile in audioFiles) {
-        if (!audioFile.existsSync()) {
-          audioFile.writeAsBytesSync(const <int>[0]);
-        }
-      }
-      addTearDown(() {
-        for (final File audioFile in audioFiles) {
-          if (audioFile.existsSync()) audioFile.deleteSync();
-        }
-      });
 
       await controller
           .load(
-            audiobook: _audiobook(),
+            audiobook: fakeAudiobook(),
             audioFiles: audioFiles,
           )
           .timeout(const Duration(milliseconds: 200));
@@ -206,22 +189,16 @@ void main() {
     });
 
     test('skipToCue works before audio duration is known', () async {
-      _installHangingAudioPlatform();
+      installHangingAudioPlatform();
 
       final AudiobookPlayerController controller = AudiobookPlayerController();
       addTearDown(controller.dispose);
       final File audioFile =
-          File('${Directory.systemTemp.path}/hibiki-audiobook-skip-test.mp3');
-      if (!audioFile.existsSync()) {
-        audioFile.writeAsBytesSync(const <int>[0]);
-      }
-      addTearDown(() {
-        if (audioFile.existsSync()) audioFile.deleteSync();
-      });
+          createFakeAudioFile('hibiki-audiobook-skip-test.mp3');
       final AudioCue cue = _cue(1250);
 
       await controller.load(
-        audiobook: _audiobook(),
+        audiobook: fakeAudiobook(),
         audioFiles: <File>[audioFile],
       );
       controller.setChapterCues(<AudioCue>[cue]);
@@ -248,174 +225,4 @@ AudioCue _cue(
     ..startMs = startMs
     ..endMs = startMs + 500
     ..audioFileIndex = 0;
-}
-
-Audiobook _audiobook() {
-  return Audiobook()
-    ..bookKey = 'book'
-    ..audioPaths = const <String>[]
-    ..audioRoot = null
-    ..alignmentFormat = 'srt'
-    ..alignmentPath = '';
-}
-
-_HangingJustAudioPlatform _installHangingAudioPlatform() {
-  const MethodChannel audioSessionChannel =
-      MethodChannel('com.ryanheise.audio_session');
-  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-      .setMockMethodCallHandler(audioSessionChannel, (_) async => null);
-  addTearDown(() {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(audioSessionChannel, null);
-  });
-
-  final JustAudioPlatform previousPlatform = JustAudioPlatform.instance;
-  final _HangingJustAudioPlatform platform = _HangingJustAudioPlatform();
-  JustAudioPlatform.instance = platform;
-  addTearDown(() {
-    JustAudioPlatform.instance = previousPlatform;
-  });
-  return platform;
-}
-
-class _HangingJustAudioPlatform extends JustAudioPlatform {
-  _HangingAudioPlayer? player;
-
-  @override
-  Future<AudioPlayerPlatform> init(InitRequest request) async {
-    player = _HangingAudioPlayer(request.id);
-    return player!;
-  }
-
-  @override
-  Future<DisposePlayerResponse> disposePlayer(
-    DisposePlayerRequest request,
-  ) async {
-    await player?.dispose(DisposeRequest());
-    return DisposePlayerResponse();
-  }
-
-  @override
-  Future<DisposeAllPlayersResponse> disposeAllPlayers(
-    DisposeAllPlayersRequest request,
-  ) async {
-    await player?.dispose(DisposeRequest());
-    return DisposeAllPlayersResponse();
-  }
-}
-
-class _HangingAudioPlayer extends AudioPlayerPlatform {
-  _HangingAudioPlayer(super.id);
-
-  final StreamController<PlaybackEventMessage> _events =
-      StreamController<PlaybackEventMessage>.broadcast();
-  int loadCalls = 0;
-
-  @override
-  Stream<PlaybackEventMessage> get playbackEventMessageStream => _events.stream;
-
-  @override
-  Future<LoadResponse> load(LoadRequest request) {
-    loadCalls++;
-    return Completer<LoadResponse>().future;
-  }
-
-  @override
-  Future<PauseResponse> pause(PauseRequest request) async {
-    return PauseResponse();
-  }
-
-  @override
-  Future<PlayResponse> play(PlayRequest request) async {
-    return PlayResponse();
-  }
-
-  @override
-  Future<SeekResponse> seek(SeekRequest request) async {
-    return SeekResponse();
-  }
-
-  @override
-  Future<SetAndroidAudioAttributesResponse> setAndroidAudioAttributes(
-    SetAndroidAudioAttributesRequest request,
-  ) async {
-    return SetAndroidAudioAttributesResponse();
-  }
-
-  @override
-  Future<SetAutomaticallyWaitsToMinimizeStallingResponse>
-      setAutomaticallyWaitsToMinimizeStalling(
-    SetAutomaticallyWaitsToMinimizeStallingRequest request,
-  ) async {
-    return SetAutomaticallyWaitsToMinimizeStallingResponse();
-  }
-
-  @override
-  Future<SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse>
-      setCanUseNetworkResourcesForLiveStreamingWhilePaused(
-    SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest request,
-  ) async {
-    return SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
-  }
-
-  @override
-  Future<SetLoopModeResponse> setLoopMode(SetLoopModeRequest request) async {
-    return SetLoopModeResponse();
-  }
-
-  @override
-  Future<SetPitchResponse> setPitch(SetPitchRequest request) async {
-    return SetPitchResponse();
-  }
-
-  @override
-  Future<SetPreferredPeakBitRateResponse> setPreferredPeakBitRate(
-    SetPreferredPeakBitRateRequest request,
-  ) async {
-    return SetPreferredPeakBitRateResponse();
-  }
-
-  @override
-  Future<SetShuffleModeResponse> setShuffleMode(
-    SetShuffleModeRequest request,
-  ) async {
-    return SetShuffleModeResponse();
-  }
-
-  @override
-  Future<SetShuffleOrderResponse> setShuffleOrder(
-    SetShuffleOrderRequest request,
-  ) async {
-    return SetShuffleOrderResponse();
-  }
-
-  @override
-  Future<SetSkipSilenceResponse> setSkipSilence(
-    SetSkipSilenceRequest request,
-  ) async {
-    return SetSkipSilenceResponse();
-  }
-
-  @override
-  Future<SetSpeedResponse> setSpeed(SetSpeedRequest request) async {
-    return SetSpeedResponse();
-  }
-
-  @override
-  Future<SetVolumeResponse> setVolume(SetVolumeRequest request) async {
-    return SetVolumeResponse();
-  }
-
-  @override
-  Future<SetWebCrossOriginResponse> setWebCrossOrigin(
-    SetWebCrossOriginRequest request,
-  ) async {
-    return SetWebCrossOriginResponse();
-  }
-
-  @override
-  Future<DisposeResponse> dispose(DisposeRequest request) async {
-    await _events.close();
-    return DisposeResponse();
-  }
 }

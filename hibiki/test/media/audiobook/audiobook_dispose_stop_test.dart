@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
+
+import 'helpers/audiobook_test_harness.dart';
 
 /// BUG-278 / TODO-367：退出阅读 / 停止会话后有声书仍在播放。
 ///
@@ -24,7 +25,7 @@ void main() {
 
   group('AudiobookPlayerController.stopPlayback (BUG-278)', () {
     test('releases the native player (stop), not just pause', () async {
-      final _FakeJustAudioPlatform plat = _installFakeAudioPlatform();
+      final _TrackingFakeAudioPlatform plat = _installTrackingAudioPlatform();
 
       final AudiobookPlayerController controller = AudiobookPlayerController();
       addTearDown(controller.dispose);
@@ -34,7 +35,7 @@ void main() {
       });
 
       await controller.load(
-        audiobook: _audiobook(),
+        audiobook: fakeAudiobook(),
         audioFiles: <File>[audioFile],
       );
 
@@ -70,7 +71,7 @@ void main() {
 
     test('stopPlayback then dispose does not crash (no platform race)',
         () async {
-      _installFakeAudioPlatform();
+      _installTrackingAudioPlatform();
 
       final AudiobookPlayerController controller = AudiobookPlayerController();
       final File audioFile = _tempAudio('hibiki-audiobook-exit-dispose.mp3');
@@ -79,7 +80,7 @@ void main() {
       });
 
       await controller.load(
-        audiobook: _audiobook(),
+        audiobook: fakeAudiobook(),
         audioFiles: <File>[audioFile],
       );
       await controller.play();
@@ -96,7 +97,7 @@ void main() {
   group('AudiobookPlayerController.disposeAndRelease (TODO-1212)', () {
     test('awaits the native player release before returning (handle freed)',
         () async {
-      final _FakeJustAudioPlatform plat = _installFakeAudioPlatform();
+      final _TrackingFakeAudioPlatform plat = _installTrackingAudioPlatform();
 
       final AudiobookPlayerController controller = AudiobookPlayerController();
       final File audioFile = _tempAudio('hibiki-audiobook-migrate-release.mp3');
@@ -105,7 +106,7 @@ void main() {
       });
 
       await controller.load(
-        audiobook: _audiobook(),
+        audiobook: fakeAudiobook(),
         audioFiles: <File>[audioFile],
       );
       await controller.play();
@@ -183,53 +184,22 @@ void main() {
   });
 }
 
-File _tempAudio(String name) {
-  final File audioFile = File('${Directory.systemTemp.path}/$name');
-  if (!audioFile.existsSync()) {
-    audioFile.writeAsBytesSync(const <int>[0]);
-  }
-  return audioFile;
-}
+File _tempAudio(String name) => createFakeAudioFile(name, autoDelete: false);
 
-Audiobook _audiobook() {
-  return Audiobook()
-    ..bookKey = 'book'
-    ..audioPaths = const <String>[]
-    ..audioRoot = null
-    ..alignmentFormat = 'srt'
-    ..alignmentPath = '';
-}
+_TrackingFakeAudioPlatform _installTrackingAudioPlatform() =>
+    installFakeAudioPlatform(_TrackingFakeAudioPlatform());
 
-_FakeJustAudioPlatform _installFakeAudioPlatform() {
-  const MethodChannel audioSessionChannel =
-      MethodChannel('com.ryanheise.audio_session');
-  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-      .setMockMethodCallHandler(audioSessionChannel, (_) async => null);
-  addTearDown(() {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(audioSessionChannel, null);
-  });
+/// 记录 native 播放器释放次数的假平台：`stopPlayback` 会切到 idle 平台并
+/// `disposePlayer(native)`，是「真释放 native 解码器」的可观测信号（`pause()` 不触发）。
+class _TrackingFakeAudioPlatform extends JustAudioPlatform {
+  final List<_TrackingFakeAudioPlayer> players = <_TrackingFakeAudioPlayer>[];
 
-  final JustAudioPlatform previousPlatform = JustAudioPlatform.instance;
-  final _FakeJustAudioPlatform platform = _FakeJustAudioPlatform();
-  JustAudioPlatform.instance = platform;
-  addTearDown(() {
-    JustAudioPlatform.instance = previousPlatform;
-  });
-  return platform;
-}
-
-class _FakeJustAudioPlatform extends JustAudioPlatform {
-  final List<_FakeAudioPlayer> players = <_FakeAudioPlayer>[];
-
-  /// just_audio 释放某个 player 平台时的调用计数。`stop()` 切到 idle 平台会先
-  /// `disposePlayer(native)`，是「真释放 native 解码器」的可观测信号；`pause()`
-  /// 不触发。
   int disposePlayerCalls = 0;
 
   @override
   Future<AudioPlayerPlatform> init(InitRequest request) async {
-    final _FakeAudioPlayer player = _FakeAudioPlayer(request.id);
+    final _TrackingFakeAudioPlayer player =
+        _TrackingFakeAudioPlayer(request.id);
     players.add(player);
     return player;
   }
@@ -239,7 +209,7 @@ class _FakeJustAudioPlatform extends JustAudioPlatform {
     DisposePlayerRequest request,
   ) async {
     disposePlayerCalls++;
-    for (final _FakeAudioPlayer p in players) {
+    for (final _TrackingFakeAudioPlayer p in players) {
       if (p.id == request.id) {
         await p.dispose(DisposeRequest());
       }
@@ -252,137 +222,41 @@ class _FakeJustAudioPlatform extends JustAudioPlatform {
     DisposeAllPlayersRequest request,
   ) async {
     disposePlayerCalls++;
-    for (final _FakeAudioPlayer p in players) {
+    for (final _TrackingFakeAudioPlayer p in players) {
       await p.dispose(DisposeRequest());
     }
     return DisposeAllPlayersResponse();
   }
 }
 
-/// 立即完成 load/seek（不挂起），让 play() 能真正激活并保持 playing 状态。
-class _FakeAudioPlayer extends AudioPlayerPlatform {
-  _FakeAudioPlayer(super.id);
-
-  final StreamController<PlaybackEventMessage> _events =
-      StreamController<PlaybackEventMessage>.broadcast();
-  bool _disposed = false;
-
-  @override
-  Stream<PlaybackEventMessage> get playbackEventMessageStream => _events.stream;
-
-  void _emit(int ms, ProcessingStateMessage state, {required bool playing}) {
-    if (_disposed) return;
-    _events.add(PlaybackEventMessage(
-      processingState: state,
-      updateTime: DateTime.now(),
-      updatePosition: Duration(milliseconds: ms),
-      bufferedPosition: Duration(milliseconds: ms),
-      duration: const Duration(seconds: 10),
-      icyMetadata: null,
-      currentIndex: 0,
-      androidAudioSessionId: null,
-    ));
-  }
+/// 立即完成 load/seek（不挂起），让 play() 能真正激活并保持 playing 状态。时长固定
+/// 10s（源就绪后处于 `ready`：pause 维持 ready，stop 切到 idle 平台释放解码器）。
+class _TrackingFakeAudioPlayer extends FakeAudioPlayerBase {
+  _TrackingFakeAudioPlayer(super.id);
 
   @override
   Future<LoadResponse> load(LoadRequest request) async {
-    // 源就绪后处于 ready（解码器存活）：pause 维持 ready，stop 切到 idle 平台。
-    _emit(request.initialPosition?.inMilliseconds ?? 0,
-        ProcessingStateMessage.ready,
-        playing: false);
+    emit(request.initialPosition?.inMilliseconds ?? 0,
+        duration: const Duration(seconds: 10));
     return LoadResponse(duration: const Duration(seconds: 10));
   }
 
   @override
   Future<PlayResponse> play(PlayRequest request) async {
-    _emit(0, ProcessingStateMessage.ready, playing: true);
+    emit(0, duration: const Duration(seconds: 10));
     return PlayResponse();
   }
 
   @override
   Future<PauseResponse> pause(PauseRequest request) async {
-    _emit(0, ProcessingStateMessage.ready, playing: false);
+    emit(0, duration: const Duration(seconds: 10));
     return PauseResponse();
   }
 
   @override
   Future<SeekResponse> seek(SeekRequest request) async {
-    _emit(request.position?.inMilliseconds ?? 0, ProcessingStateMessage.ready,
-        playing: false);
+    emit(request.position?.inMilliseconds ?? 0,
+        duration: const Duration(seconds: 10));
     return SeekResponse();
-  }
-
-  @override
-  Future<SetAndroidAudioAttributesResponse> setAndroidAudioAttributes(
-    SetAndroidAudioAttributesRequest request,
-  ) async =>
-      SetAndroidAudioAttributesResponse();
-
-  @override
-  Future<SetAutomaticallyWaitsToMinimizeStallingResponse>
-      setAutomaticallyWaitsToMinimizeStalling(
-    SetAutomaticallyWaitsToMinimizeStallingRequest request,
-  ) async =>
-          SetAutomaticallyWaitsToMinimizeStallingResponse();
-
-  @override
-  Future<SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse>
-      setCanUseNetworkResourcesForLiveStreamingWhilePaused(
-    SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest request,
-  ) async =>
-          SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
-
-  @override
-  Future<SetLoopModeResponse> setLoopMode(SetLoopModeRequest request) async =>
-      SetLoopModeResponse();
-
-  @override
-  Future<SetPitchResponse> setPitch(SetPitchRequest request) async =>
-      SetPitchResponse();
-
-  @override
-  Future<SetPreferredPeakBitRateResponse> setPreferredPeakBitRate(
-    SetPreferredPeakBitRateRequest request,
-  ) async =>
-      SetPreferredPeakBitRateResponse();
-
-  @override
-  Future<SetShuffleModeResponse> setShuffleMode(
-    SetShuffleModeRequest request,
-  ) async =>
-      SetShuffleModeResponse();
-
-  @override
-  Future<SetShuffleOrderResponse> setShuffleOrder(
-    SetShuffleOrderRequest request,
-  ) async =>
-      SetShuffleOrderResponse();
-
-  @override
-  Future<SetSkipSilenceResponse> setSkipSilence(
-    SetSkipSilenceRequest request,
-  ) async =>
-      SetSkipSilenceResponse();
-
-  @override
-  Future<SetSpeedResponse> setSpeed(SetSpeedRequest request) async =>
-      SetSpeedResponse();
-
-  @override
-  Future<SetVolumeResponse> setVolume(SetVolumeRequest request) async =>
-      SetVolumeResponse();
-
-  @override
-  Future<SetWebCrossOriginResponse> setWebCrossOrigin(
-    SetWebCrossOriginRequest request,
-  ) async =>
-      SetWebCrossOriginResponse();
-
-  @override
-  Future<DisposeResponse> dispose(DisposeRequest request) async {
-    if (_disposed) return DisposeResponse();
-    _disposed = true;
-    await _events.close();
-    return DisposeResponse();
   }
 }
