@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_settings_section.dart';
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
+import 'package:hibiki/utils.dart';
 
 /// Fake 服务，模型状态与下载流可编程。
 class _FakeOcrService implements MangaOcrService {
@@ -166,8 +166,9 @@ void main() {
     expect(find.text(t.manga_cloud_ocr_section), findsOneWidget);
     expect(find.text(t.manga_cloud_ocr_privacy), findsOneWidget,
         reason: '必须明示所选图片将发送至 Google API');
-    final SwitchListTile toggle = tester.widget<SwitchListTile>(
-        find.byKey(const ValueKey<String>('manga_cloud_ocr_switch')));
+    final AdaptiveSettingsSwitchRow toggle =
+        tester.widget<AdaptiveSettingsSwitchRow>(
+            find.byKey(const ValueKey<String>('manga_cloud_ocr_switch')));
     expect(toggle.value, isFalse, reason: '云端识别默认关（红线）');
 
     // key 字段密文显示。
