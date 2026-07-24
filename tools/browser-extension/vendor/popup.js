@@ -1358,7 +1358,7 @@ async function minedCardAction(expression, reading, frequencies, pitches, rules,
     return await window.flutter_inappwebview.callHandler('minedCardAction', fields);
 }
 
-// BUG-1062 —— app 外表面的「卡片已在 Anki 中」操作面板（IN-PAGE 版）。
+// BUG-1063 —— app 外表面的「卡片已在 Anki 中」操作面板（IN-PAGE 版）。
 //
 // 宿主分两类：
 //   * 有原生对话框（window.__hibikiMinedCardActionNative）：app 内的三个
@@ -1416,7 +1416,10 @@ async function openMinedNoteInAnki(noteId) {
 // 「在 Anki 中打开」就地执行、不结束面板（用户可能只是想先看一眼再决定覆写）。
 // 与 app 内对话框一致：点遮罩不关闭（制卡/覆写有副作用，误触不该丢掉整次操作），
 // 只有「取消」与 Esc 能取消。
-function showMinedCardActionPanel(matches) {
+function showMinedCardActionPanel(matches, options) {
+    // openOnly（BUG-1063）：↗ 的多卡选择形态——只列卡片 + 打开，不带覆写 /
+    // 新增重复卡（那是点 ✓ 的职责），与 app 内 showAnkiOpenNotePicker 单一语义一致。
+    const openOnly = !!(options && options.openOnly);
     return new Promise((resolve) => {
         // 弹窗是否拥有整个文档：app 内/app 外都是独立的 popup.html 文档（true）；
         // 浏览器扩展把同一份 popup.js 注入到宿主页面的 shadow root 里（__hibikiRoot），
@@ -1468,7 +1471,7 @@ function showMinedCardActionPanel(matches) {
             className: 'mined-action-title',
             textContent: window.i18nMinedCardTitle || '卡片已在 Anki 中',
         }));
-        const subtitle = matches.length > 1
+        const subtitle = (matches.length > 1 || openOnly)
             ? (window.i18nMinedMultipleMatches || '{count} 张匹配的卡片')
                 .replace('{count}', String(matches.length))
             : (window.i18nMinedCardSubtitle || '选择对这张已存在的卡片做什么。');
@@ -1482,7 +1485,7 @@ function showMinedCardActionPanel(matches) {
                 textContent: note.preview || ('#' + note.noteId),
             }));
             const rowButtons = el('div', { className: 'mined-action-row-buttons' });
-            const overwriteBtn = el('button', {
+            const overwriteBtn = openOnly ? null : el('button', {
                 className: 'mined-action-btn ghost',
                 textContent: window.i18nMinedActionOverwrite || '覆写这张卡',
                 onclick: () => {
@@ -1506,8 +1509,11 @@ function showMinedCardActionPanel(matches) {
                     }
                 },
             });
-            buttons.push(overwriteBtn, viewBtn);
-            rowButtons.appendChild(overwriteBtn);
+            buttons.push(viewBtn);
+            if (overwriteBtn) {
+                buttons.push(overwriteBtn);
+                rowButtons.appendChild(overwriteBtn);
+            }
             rowButtons.appendChild(viewBtn);
             row.appendChild(rowButtons);
             list.appendChild(row);
@@ -1530,9 +1536,12 @@ function showMinedCardActionPanel(matches) {
                 finish({ action: 'duplicate' });
             },
         });
-        buttons.push(cancelBtn, duplicateBtn);
+        buttons.push(cancelBtn);
         actions.appendChild(cancelBtn);
-        actions.appendChild(duplicateBtn);
+        if (!openOnly) {
+            buttons.push(duplicateBtn);
+            actions.appendChild(duplicateBtn);
+        }
         panel.appendChild(actions);
 
         // 瞬态查词窗的窗口高度会被收缩到卡片内容高度（host measureAndReport），矮卡片
@@ -1541,8 +1550,59 @@ function showMinedCardActionPanel(matches) {
         if (ownsDocument) rootEl.classList.add(MINED_ACTION_OPEN_CLASS);
         __hibikiOverlayParent().appendChild(backdrop);
         document.addEventListener('keydown', onKey, true);
-        duplicateBtn.focus();
+        (openOnly ? cancelBtn : duplicateBtn).focus();
     });
+}
+
+// BUG-1063：按钮旁的一次性短提示（1.8s 后自渐隐）。app 外没有 Flutter toast 可用，
+// 「这个词在 Anki 里已经没有卡了」「打不开 Anki」这类结果必须就地说清楚，绝不静默。
+// 定位/样式复用 showNoAudioHint 那套（.inline-hint 与 .audio-hint 同一条 CSS 规则），
+// 锚到按钮的屏幕坐标，故窗口被裁到卡片 bbox 的 app 外覆盖窗里同样可见。
+function showInlineHint(button, message) {
+    const stale = __hibikiRootNode().querySelector('.inline-hint');
+    if (stale) stale.remove();
+    const hint = el('div', { className: 'inline-hint', textContent: message });
+    __hibikiOverlayParent().appendChild(hint);
+    const btnRect = button.getBoundingClientRect();
+    const hintRect = hint.getBoundingClientRect();
+    let left = btnRect.left + btnRect.width / 2 - hintRect.width / 2;
+    left = Math.max(4, Math.min(left, window.innerWidth - hintRect.width - 4));
+    let top = btnRect.top - hintRect.height - 6;
+    if (top < 4) top = btnRect.bottom + 6;
+    hint.style.left = left + 'px';
+    hint.style.top = top + 'px';
+    requestAnimationFrame(() => hint.classList.add('visible'));
+    setTimeout(() => {
+        hint.classList.remove('visible');
+        setTimeout(() => hint.remove(), 220);
+    }, 1800);
+}
+
+// BUG-1063：↗「在 Anki 中打开卡片」在 app 外的页内车道。
+//
+// 与点 ✓ 是**同一个根因的第二个入口**：宿主 handler `openInAnki` 同样没有被 app 外的
+// 裸 WebView2 窗口 DEFER（它同样要弹 Flutter 的多卡选择框 / toast），于是同样被立刻
+// 解析成 null——按钮转一圈什么都不发生。这里按宿主能力分流后，用与 app 内
+// `openMinedCardInAnki` 完全相同的三分支语义就地处理：
+//   - 无命中（探测时显示已制卡、现在查不到）→ 提示，不静默。
+//   - 命中 1 张 → 直接打开；打不开也提示，绝不假装成功。
+//   - 命中多张 → 弹页内面板的 openOnly 形态（只列卡片 + 打开，不带覆写/新增——
+//     那是 ✓ 的职责，与 app 内 showAnkiOpenNotePicker 的单一语义一致）。
+async function runInPageOpenInAnki(button, expression, reading) {
+    const matches = await findMinedMatches(expression, reading);
+    if (!matches.length) {
+        showInlineHint(button, window.i18nMinedOpenNoCard || '没有找到已制的卡片。');
+        return;
+    }
+    if (matches.length === 1) {
+        const ok = await openMinedNoteInAnki(matches[0].noteId);
+        if (!ok) {
+            showInlineHint(button,
+                window.i18nMinedOpenFailed || '无法在 Anki 中打开这张卡片。');
+        }
+        return;
+    }
+    await showMinedCardActionPanel(matches, { openOnly: true });
 }
 
 // 页内面板的完整编排。返回：
@@ -2463,7 +2523,7 @@ function createEntryHeader(entry, idx) {
                     // new duplicate, or view / open the card in Anki. Works for
                     // cards created elsewhere / in a previous session.
                     if (typeof window.flutter_inappwebview.callHandler === 'function') {
-                        // BUG-1062 两条车道，同一套选择：
+                        // BUG-1063 两条车道，同一套选择：
                         //   * 宿主有原生对话框（app 内）→ minedCardAction，Flutter 居中
                         //     对话框（BUG-1040），行为逐字不变。
                         //   * 宿主没有（app 外裸窗 / 扩展）→ 在本 WebView 里画页内面板。
@@ -2571,8 +2631,15 @@ function createEntryHeader(entry, idx) {
             openAnkiButton.dataset.busy = '1';
             openAnkiButton.disabled = true;
             try {
-                await window.flutter_inappwebview.callHandler(
-                    'openInAnki', { expression, reading });
+                // BUG-1063：与点 ✓ 同一分流——宿主有原生对话框（app 内）就交给
+                // openInAnki；没有（app 外裸窗 / 扩展）则就地处理，否则那根桥同样
+                // 只会回 null，按钮转一圈什么都不发生。
+                if (hasNativeMinedCardAction()) {
+                    await window.flutter_inappwebview.callHandler(
+                        'openInAnki', { expression, reading });
+                } else {
+                    await runInPageOpenInAnki(openAnkiButton, expression, reading);
+                }
             } catch (e) {
                 // 跳转失败不能卡死按钮；记日志并恢复可点（宿主侧另有 toast 反馈）。
                 console.error('open-anki button: openInAnki failed', e);
