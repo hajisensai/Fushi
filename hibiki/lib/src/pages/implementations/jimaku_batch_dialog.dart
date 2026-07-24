@@ -11,6 +11,7 @@ import 'package:hibiki/src/media/video/stream_video_launch.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
+import 'package:hibiki/src/pages/implementations/jimaku_entry_picker.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart'
     show jimakuLanguageLabel;
 import 'package:hibiki/src/storage/app_paths.dart';
@@ -57,7 +58,8 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
   bool _running = false; // 正在批量下载
   List<AniListMedia> _seriesMatches = const <AniListMedia>[];
   int? _selectedSeriesId;
-  List<int> _entryIds = const <int>[];
+  List<JimakuEntry> _entries = const <JimakuEntry>[];
+  int? _selectedEntryId;
   String? _preferredLanguage;
 
   /// 逐集状态：bookUid → item（下载推进时更新）。
@@ -106,9 +108,14 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
     setState(() {
       _resolving = true;
       _seriesMatches = const <AniListMedia>[];
+      _entries = const <JimakuEntry>[];
+      _selectedEntryId = null;
     });
-    final AniListClient anilist = AniListClient();
+    AniListClient? anilist;
     try {
+      anilist = AniListClient(
+        client: await appModel.createDownloadHttpClient(),
+      );
       final List<AniListMedia> media = await anilist.searchAnime(query);
       if (!mounted) return;
       setState(() => _seriesMatches = media);
@@ -119,7 +126,7 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
         await _resolveEntriesByQuery(query);
       }
     } finally {
-      anilist.close();
+      anilist?.close();
       if (mounted) setState(() => _resolving = false);
     }
   }
@@ -137,28 +144,37 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
   Future<void> _resolveEntriesForSeries(int anilistId) async {
     final String apiKey = _apiKeyCtrl.text.trim();
     if (apiKey.isEmpty) return;
-    final JimakuClient jimaku = JimakuClient(apiKey: apiKey);
+    JimakuClient? jimaku;
     try {
+      jimaku = JimakuClient(
+        apiKey: apiKey,
+        client: await appModel.createDownloadHttpClient(),
+      );
       final List<JimakuEntry> entries =
           await jimaku.searchByAnilistId(anilistId);
       if (!mounted) return;
-      setState(() => _entryIds = entries.map((JimakuEntry e) => e.id).toList());
+      _setEntries(entries);
     } finally {
-      jimaku.close();
+      jimaku?.close();
     }
   }
 
   Future<void> _resolveEntriesByQuery(String query) async {
-    final JimakuClient jimaku = JimakuClient(apiKey: _apiKeyCtrl.text.trim());
+    JimakuClient? jimaku;
     try {
+      jimaku = JimakuClient(
+        apiKey: _apiKeyCtrl.text.trim(),
+        client: await appModel.createDownloadHttpClient(),
+      );
       final List<JimakuEntry> entries = await jimaku.searchByQuery(query);
       if (!mounted) return;
       setState(() {
         _selectedSeriesId = null;
-        _entryIds = entries.map((JimakuEntry e) => e.id).toList();
+        _entries = entries;
+        _selectedEntryId = entries.isEmpty ? null : entries.first.id;
       });
     } finally {
-      jimaku.close();
+      jimaku?.close();
     }
   }
 
@@ -167,6 +183,13 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
     if (lang != null) {
       await appModel.setJimakuPreferredLanguage(_seriesKey, lang);
     }
+  }
+
+  void _setEntries(List<JimakuEntry> entries) {
+    setState(() {
+      _entries = entries;
+      _selectedEntryId = entries.isEmpty ? null : entries.first.id;
+    });
   }
 
   List<JimakuBatchTarget> _targets() => <JimakuBatchTarget>[
@@ -187,7 +210,8 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
       _snack(t.video_jimaku_no_key);
       return;
     }
-    if (_entryIds.isEmpty) {
+    final int? entryId = _selectedEntryId;
+    if (entryId == null) {
       _snack(t.video_jimaku_no_results);
       return;
     }
@@ -197,11 +221,15 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
       _running = true;
       _statusByUid.clear();
     });
-    final JimakuClient jimaku = JimakuClient(apiKey: apiKey);
+    JimakuClient? jimaku;
     try {
+      jimaku = JimakuClient(
+        apiKey: apiKey,
+        client: await appModel.createDownloadHttpClient(),
+      );
       await runJimakuBatch(
         client: jimaku,
-        entryIds: _entryIds,
+        entryIds: <int>[entryId],
         targets: _targets(),
         saveDirectory: saveDir,
         preferredLanguage: _preferredLanguage,
@@ -216,7 +244,7 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
         },
       );
     } finally {
-      jimaku.close();
+      jimaku?.close();
       if (mounted) setState(() => _running = false);
     }
     if (mounted) {
@@ -302,7 +330,7 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool hasSeries = _entryIds.isNotEmpty;
+    final bool hasSource = _selectedEntryId != null;
     return HibikiDialogFrame(
       maxWidth: 720,
       maxHeightFactor: 0.86,
@@ -349,12 +377,12 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
                         onPressed:
                             _resolving || _running ? null : _resolveSeries,
                         icon: const Icon(Icons.search, size: 18),
-                        label: Text(t.video_jimaku_series),
+                        label: Text(t.video_jimaku_find_sources),
                       ),
                     ],
                   ),
                   if (_seriesMatches.length >= 2)
-                    _chipSection(t.video_jimaku_series, <Widget>[
+                    _chipSection(t.video_jimaku_anime_match, <Widget>[
                       for (final AniListMedia media in _seriesMatches)
                         ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 260),
@@ -372,25 +400,22 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
                           ),
                         ),
                     ]),
-                  _chipSection(t.video_jimaku_language, <Widget>[
-                    ChoiceChip(
-                      label: Text(t.video_jimaku_language_all),
-                      selected: _preferredLanguage == null,
-                      onSelected:
-                          _running ? null : (_) => _selectLanguage(null),
+                  if (_entries.isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 12),
+                    JimakuEntryPicker(
+                      entries: _entries,
+                      selectedEntryId: _selectedEntryId,
+                      enabled: !_running,
+                      onSelected: (JimakuEntry entry) =>
+                          setState(() => _selectedEntryId = entry.id),
                     ),
-                    for (final String lang in const <String>[
-                      'ja',
-                      'zh',
-                      'en',
-                      'ko'
-                    ])
-                      ChoiceChip(
-                        label: Text(jimakuLanguageLabel(lang)),
-                        selected: _preferredLanguage == lang,
-                        onSelected:
-                            _running ? null : (_) => _selectLanguage(lang),
-                      ),
+                  ],
+                  _chipSection(t.video_jimaku_language, <Widget>[
+                    JimakuLanguagePicker(
+                      selectedLanguage: _preferredLanguage,
+                      enabled: !_running,
+                      onSelected: _selectLanguage,
+                    ),
                   ]),
                 ],
               ),
@@ -431,7 +456,7 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
                 child: Text(t.dialog_close),
               ),
               FilledButton.icon(
-                onPressed: _running || !hasSeries ? null : _downloadAll,
+                onPressed: _running || !hasSource ? null : _downloadAll,
                 icon: _running
                     ? const SizedBox(
                         width: 18,

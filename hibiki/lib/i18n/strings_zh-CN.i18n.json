@@ -2289,5 +2289,16 @@
   "download_subscription_after_episode": "第 ${episode} 集之后",
   "download_subscription_last_checked": "上次检查：${time}",
   "download_subscription_latest_episode": "最近加入：第 ${episode} 集",
-  "download_subscription_check_now": "立即检查"
+  "download_subscription_check_now": "立即检查",
+  "video_jimaku_source": "字幕来源",
+  "video_jimaku_source_hint": "选择一个 Jimaku 条目；合集字幕会按集号自动匹配。",
+  "video_jimaku_find_sources": "查找字幕",
+  "video_jimaku_anime_match": "番剧匹配",
+  "download_network_proxy_section": "发现网络",
+  "download_network_proxy_auto": "自动",
+  "download_network_proxy_direct": "直连",
+  "download_network_proxy_custom": "自定义",
+  "download_network_proxy_auto_hint": "仅影响 AniList、Nyaa 和 Jimaku。自动模式先读环境变量，再读已启用的系统代理；种子流量不受影响。",
+  "download_network_proxy_custom_label": "自定义代理",
+  "update_custom_proxy_auto_hint": "留空时自动读取环境变量，再读取已启用的系统代理。"
 }

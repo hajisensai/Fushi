@@ -27,10 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 991 条。点号进各自文件。
+> 共 994 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1056](bugs/BUG-1056-jimaku-source-subscription.md) | ✅ | ✅ | 字幕来源不可选且连载订阅无法绑定合集字幕 |
+| [BUG-1055](bugs/BUG-1055-anilist-segmented-title.md) | ✅ | ✅ | AniList 罗马字分词差异导致番剧误报无结果 |
+| [BUG-1054](bugs/BUG-1054-download-discovery-proxy.md) | ✅ | ✅ | 下载发现未读取环境与系统代理导致搜索超时 |
 | [BUG-1024](bugs/BUG-1024-qb-webui-no-request-timeout.md) | ✅ | ✅ | qB WebUI 请求缺少超时 |
 | [BUG-1023](bugs/BUG-1023-download-default-config-no-completion-poll.md) | ✅ | ✅ | 默认下载配置未传给完成轮询 |
 | [BUG-1022](bugs/BUG-1022-galgame-helper-dialog-latency-and-restack.md) | ✅ | ✅ | galgame 引擎组件下载确认弹窗点击不立即出现且多次点击叠出多个弹窗 |

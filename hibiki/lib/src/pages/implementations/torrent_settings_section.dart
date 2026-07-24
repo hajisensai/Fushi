@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
+import 'package:hibiki/src/media/torrent/download_network_proxy.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/utils.dart';
@@ -98,6 +99,7 @@ class _TorrentSettingsSectionState
     TextInputType? keyboard,
     TextEditingController? controller,
     FocusNode? focusNode,
+    String? errorText,
     required ValueChanged<String> onChanged,
   }) {
     assert(
@@ -113,6 +115,7 @@ class _TorrentSettingsSectionState
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
+          errorText: errorText,
           isDense: true,
           border: const OutlineInputBorder(),
         ),
@@ -166,6 +169,9 @@ class _TorrentSettingsSectionState
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final QbConnectionConfig c = _config;
+    final AppModel appModel = ref.watch(appProvider);
+    final DownloadNetworkProxyConfig proxy =
+        appModel.downloadNetworkProxyConfig;
     final String backend = c.resolveBackend(isDesktop: _isDesktop);
     final bool isQb = backend == QbConnectionConfig.backendQbittorrent;
     final bool isEmbedded = backend == QbConnectionConfig.backendEmbedded;
@@ -173,6 +179,54 @@ class _TorrentSettingsSectionState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        _sectionLabel(theme, t.download_network_proxy_section),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: SegmentedButton<DownloadNetworkProxyMode>(
+            showSelectedIcon: false,
+            segments: <ButtonSegment<DownloadNetworkProxyMode>>[
+              ButtonSegment<DownloadNetworkProxyMode>(
+                value: DownloadNetworkProxyMode.auto,
+                label: Text(t.download_network_proxy_auto),
+              ),
+              ButtonSegment<DownloadNetworkProxyMode>(
+                value: DownloadNetworkProxyMode.direct,
+                label: Text(t.download_network_proxy_direct),
+              ),
+              ButtonSegment<DownloadNetworkProxyMode>(
+                value: DownloadNetworkProxyMode.custom,
+                label: Text(t.download_network_proxy_custom),
+              ),
+            ],
+            selected: <DownloadNetworkProxyMode>{proxy.mode},
+            onSelectionChanged: (Set<DownloadNetworkProxyMode> selected) async {
+              await appModel.setDownloadNetworkProxyMode(selected.first);
+              if (mounted) setState(() {});
+            },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(2, 6, 2, 10),
+          child: Text(
+            t.download_network_proxy_auto_hint,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        if (proxy.mode == DownloadNetworkProxyMode.custom)
+          _text(
+            label: t.download_network_proxy_custom_label,
+            initial: proxy.customProxy,
+            hint: t.update_custom_proxy_hint,
+            errorText: proxy.customProxy.trim().isNotEmpty &&
+                    normalizeUserProxyHostPort(proxy.customProxy) == null
+                ? t.update_custom_proxy_invalid
+                : null,
+            onChanged: appModel.setDownloadCustomProxy,
+          ),
+        const Divider(height: 24),
+
         // 后端二选一。
         Align(
           alignment: Alignment.centerLeft,
