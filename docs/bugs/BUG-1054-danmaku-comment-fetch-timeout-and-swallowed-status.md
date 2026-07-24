@@ -20,7 +20,7 @@
   - `_loadDanmakuForVideo` 只在「记住的集有效但确实 0 条」时才退回整文件匹配。
   - 顺带把三处各写四个 `on ... catch` 的重复分支收敛成共用的 `_statusForError`。
   - 新增 2 个 i18n key 经 `hibiki/tool/i18n_sync.dart` 同步 17 语言并重跑 `dart run slang`。
-  - 提交：`<待填>`
+  - 提交：`1d7a4759f`
 
 - **[x] ② 已加自动化测试** —
   - `hibiki/test/media/video/dandanplay_client_test.dart`：非 2xx（403/404/500）→ `serverError` 且 `error` 带状态码；网络异常 → `networkError`；有效集 0 条弹幕 → 仍是 `hit`；**只把轻量 `timeout` 压到 1ms、`commentTimeout` 用默认值时拉弹幕仍成功而搜索超时**（谁再让两者共用一个超时即红）；`fetchBestDanmakuForFile` 在匹配成功但拉弹幕 403 时上报 `serverError` 而非 hit。
