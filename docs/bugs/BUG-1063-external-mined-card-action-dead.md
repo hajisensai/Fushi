@@ -1,4 +1,4 @@
-## BUG-1062 · app 外查词浮窗点已制卡 ✓ 无反应（重复卡操作面板被 native 降级成 null）
+## BUG-1063 · app 外查词浮窗点已制卡 ✓ 无反应（重复卡操作面板被 native 降级成 null）
 - **报告**：2026-07-24（用户：qqbotxiaoxiao，原话「这里app外重复制卡点击没反应……主页这里可以」，
   两张附图：app 外剪贴板查词浮窗点右上 ✓ 毫无反应；app 内查词页同一操作正常弹出
   「卡片已在 Anki 中 → 覆写 / 新增为重复卡」对话框）
@@ -39,19 +39,36 @@
     窗口下沿裁掉，面板打开期间撑最小高度，下一次测量即把窗口放大，关闭后恢复。
   - popup.js / popup.css 按三镜像纪律同步到两份 vendor，并重跑
     `tools/browser-extension/scripts/generate-content-css.mjs` 重新生成两份 content.css。
+- **同一根因的第二个入口（用户追问「跳转的也没反应修复了吗」）**：✓ 旁边的 ↗
+  「在 Anki 中打开卡片」按钮走的是**另一根桥** `openInAnki`（`popup.js` 的
+  `openAnkiButton`），它同样不在 C++ 的 deferred 名单里、同样被立刻解析成 null——因为
+  它同样要弹 Flutter 的多卡选择框 / toast。第一轮只修了 ✓，↗ 仍然是死的。补修：同一个
+  `__hibikiMinedCardActionNative` 分流，app 外由 popup.js 就地按**与 app 内
+  `openMinedCardInAnki` 相同的三分支**处理——无命中弹一次性提示（新增
+  `showInlineHint`，样式与 `.audio-hint` 同一条规则，锚按钮屏幕坐标，故窗口被裁到卡片
+  bbox 时也可见）、命中 1 张直接 `openMinedNote`（失败也提示，不假装成功）、命中多张弹
+  面板的 `openOnly` 形态（只列卡片 + 打开，不带覆写/新增——那是 ✓ 的职责，与 app 内
+  `showAnkiOpenNotePicker` 的单一语义一致）。无需新桥：复用第一轮加的
+  `findMinedMatches` / `openMinedNote`。
 - **[x] ② 已加自动化测试** —
   - `hibiki/test/utils/misc/popup_asset_behavior_test.js` 新增四条 app 外行为用例（真跑
     popup.js）：点 ✓ 必须弹页内面板且**绝不**调用 minedCardAction、「新增为重复卡」走
     mineEntry、「覆写这张卡」走 updateEntry 且带正确 noteId、取消不写任何东西、命中为空时
     直接重制。既有的 app 内用例显式声明 `__hibikiMinedCardActionNative = true`，两条车道
     互不遮掩。
-  - `hibiki/test/pages/anki_mined_card_action_wiring_static_test.dart` 新增 BUG-1062 组源码
+  - ↗ 那一半另有四条（同一文件）：单卡直开且不碰 openInAnki、多卡弹 openOnly 面板
+    （不得混入覆写 / 新增重复卡）、无命中弹提示而非静默、app 内仍原样交给宿主。
+    顺手修了 fake DOM 的一个真缺陷：`classList.add()` 会把构造时的 `className`
+    整个覆盖掉（提示气泡淡入时 `inline-hint` 变成只剩 `visible`）。
+  - `hibiki/test/pages/anki_mined_card_action_wiring_static_test.dart` 新增 BUG-1063 组源码
     守卫：popup.js 有面板与两根桥、C++ deferred 名单含两根新桥且
     **minedCardAction 仍不得纳入 deferred**、Dart 侧解析两根桥、注入按 `!globalLookup` 分流、
     popup.css 有面板样式 + 禁选 + 撑高规则。
 - **备注**：**待用户真机复验**（Windows）：剪贴板浮窗 / 划词浮窗查一个已制卡的词 → 点 ✓ →
   面板居中出现且完整可见 → 覆写 / 新增重复卡 / 在 Anki 中打开 / 取消 四条各走一次；再回
   app 内查词页确认仍是原来的 Flutter 对话框（BUG-1040 行为未变）。
+  ↗「在 Anki 中打开」同步复验：单卡直接跳 Anki、同词多卡弹只带「打开」的面板、
+  卡已在别处删掉时弹一次性提示。
   浏览器扩展侧顺带受益（同样不再静默），但它的 `findMinedMatches` / `openMinedNote` 尚未在
   bridge-shim 转发，命中列表会是空 → 走「直接重制」分支；扩展要拿到完整面板需另给 server
   加对应端点，属独立跟进项，不在本次范围。
