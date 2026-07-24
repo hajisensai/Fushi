@@ -461,6 +461,9 @@ void main() {
               '--launch',
               game.path,
               '--hold',
+              // 握手超时与 readyTimeout 同源下发（见 buildEngineHookInjectorArguments）。
+              '--wait-ms',
+              '1000',
               '--japanese-locale',
             ],
           );
@@ -751,6 +754,8 @@ void main() {
           '--launch',
           r'D:\Games\old-vn.exe',
           '--hold',
+          '--wait-ms',
+          '30000',
           '--japanese-locale',
         ],
       );
@@ -760,7 +765,7 @@ void main() {
           launchExe: null,
           japaneseLocale: true,
         ),
-        <String>['--pid', '4567', '--hold'],
+        <String>['--pid', '4567', '--hold', '--wait-ms', '30000'],
       );
     });
 
@@ -775,6 +780,8 @@ void main() {
           '--launch',
           r'D:\steam\steamapps\common\manosaba_game\manosaba.exe',
           '--hold',
+          '--wait-ms',
+          '30000',
           '--luna-pchooks',
         ],
       );
@@ -786,8 +793,142 @@ void main() {
           targetPid: 4567,
           launchExe: null,
         ),
+        <String>['--pid', '4567', '--hold', '--wait-ms', '30000'],
+      );
+    });
+
+    // 两侧截止时间必须同源：native 默认只等 5000ms，Dart 等 30s。native 先超时时会把
+    // CREATE_SUSPENDED 拉起的游戏丢在挂起态，Dart 侧却还在傻等，最终只报一个没有原因
+    // 的失败——所以握手超时必须由调用方下发给 injector。
+    test('握手超时下发给 injector，与 Dart 侧同源', () {
+      expect(
+        buildEngineHookInjectorArguments(
+          targetPid: 4567,
+          launchExe: null,
+          readyTimeoutMs: 45000,
+        ),
+        <String>['--pid', '4567', '--hold', '--wait-ms', '45000'],
+      );
+      // 非正超时=不下发（保留 injector 自身默认），不构造非法参数。
+      expect(
+        buildEngineHookInjectorArguments(
+          targetPid: 4567,
+          launchExe: null,
+          readyTimeoutMs: 0,
+        ),
         <String>['--pid', '4567', '--hold'],
       );
+    });
+  });
+
+  group('classifyGalHookInjectorFailure', () {
+    test('优先认新 helper 的机器可读 ERR reason=', () {
+      expect(
+        classifyGalHookInjectorFailure(
+          '[luna] connected pid=20096\nERR reason=accessDenied exit=1\n',
+        ),
+        GalHookInjectorFailure.accessDenied,
+      );
+    });
+
+    test('旧 helper 的人类可读诊断仍能归类（向后兼容）', () {
+      expect(
+        classifyGalHookInjectorFailure(
+          '位数不匹配：目标是 64 位进程，请改用对应 arch 的注入器\n',
+        ),
+        GalHookInjectorFailure.bitnessMismatch,
+      );
+      expect(
+        classifyGalHookInjectorFailure(
+          'OpenProcess(20096) failed: 5 (需管理员/相同完整性级别?)\n',
+        ),
+        GalHookInjectorFailure.accessDenied,
+      );
+      expect(
+        classifyGalHookInjectorFailure('CreateProcessW failed: 740\n'),
+        GalHookInjectorFailure.elevationRequired,
+      );
+      expect(
+        classifyGalHookInjectorFailure('CreateProcessW failed: 2\n'),
+        GalHookInjectorFailure.createProcessFailed,
+      );
+      expect(
+        classifyGalHookInjectorFailure(
+          '注入完成但未收到就绪信号（5000ms 超时）；hooked=0\n',
+        ),
+        GalHookInjectorFailure.readyTimeout,
+      );
+      expect(
+        classifyGalHookInjectorFailure(
+          '已存在但不可复用的 hook 会话（契约不匹配或 hooked=0）\n',
+        ),
+        GalHookInjectorFailure.staleSession,
+      );
+      expect(
+        classifyGalHookInjectorFailure('CreateRemoteThread failed: 5\n'),
+        GalHookInjectorFailure.injectionFailed,
+      );
+    });
+
+    test('无法归类时返回调用方给的 fallback，不编造原因', () {
+      expect(
+        classifyGalHookInjectorFailure(
+          '[luna] inserted PC hooks pid=1\n',
+          fallback: GalHookInjectorFailure.handshakeTimeout,
+        ),
+        GalHookInjectorFailure.handshakeTimeout,
+      );
+      expect(
+        classifyGalHookInjectorFailure(''),
+        GalHookInjectorFailure.unknown,
+      );
+    });
+
+    test('只有可能自愈的失败才允许重试', () {
+      // 会自愈：注入竞态 / DLL 加载慢 / 上一局残留。
+      expect(
+        galHookFailureIsRetryable(GalHookInjectorFailure.readyTimeout),
+        isTrue,
+      );
+      expect(
+        galHookFailureIsRetryable(GalHookInjectorFailure.staleSession),
+        isTrue,
+      );
+      expect(
+        galHookFailureIsRetryable(GalHookInjectorFailure.handshakeTimeout),
+        isTrue,
+      );
+      // 不会自愈：重试只会掩盖必须告诉用户的处置。
+      expect(
+        galHookFailureIsRetryable(GalHookInjectorFailure.accessDenied),
+        isFalse,
+      );
+      expect(
+        galHookFailureIsRetryable(GalHookInjectorFailure.bitnessMismatch),
+        isFalse,
+      );
+      expect(
+        galHookFailureIsRetryable(GalHookInjectorFailure.helperMissing),
+        isFalse,
+      );
+      expect(
+        galHookFailureIsRetryable(GalHookInjectorFailure.elevationRequired),
+        isFalse,
+      );
+    });
+  });
+
+  group('parseInjectorLaunchedPid', () {
+    test('注入结果之前就能拿到已创建的游戏 PID', () {
+      expect(parseInjectorLaunchedPid('LAUNCH pid=20096 arch=x64\n'), 20096);
+    });
+
+    test('旧 helper 不打印该行时返回 null（不猜）', () {
+      expect(
+        parseInjectorLaunchedPid('OK hooked pid=8152 hooked=1\n'),
+        isNull,
+      );
+      expect(parseInjectorLaunchedPid('LAUNCH pid=0\n'), isNull);
     });
   });
 

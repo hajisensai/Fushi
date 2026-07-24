@@ -180,6 +180,188 @@ int? parseInjectorHookedPid(String stdout) {
   return (pid != null && pid > 0) ? pid : null;
 }
 
+/// 从 injector stdout 解析 `LAUNCH pid=<N>`：injector 在 `CreateProcess` 成功后立刻回报的
+/// 游戏 PID，**先于**注入结果。旧 helper 不打印这行（返回 null），新 helper 打印后，
+/// 即使随后注入失败，Hibiki 也知道「游戏其实已经起来了」，可以改走附着重试而不是把
+/// 一个正在运行的游戏报成「启动失败」。纯函数，可单测。
+int? parseInjectorLaunchedPid(String stdout) {
+  final RegExpMatch? m = RegExp(r'LAUNCH pid=(\d+)').firstMatch(stdout);
+  if (m == null) {
+    return null;
+  }
+  final int? pid = int.tryParse(m.group(1)!);
+  return (pid != null && pid > 0) ? pid : null;
+}
+
+/// injector 启动/附着失败的结构化原因。
+///
+/// 旧实现把 injector 的 stdout/stderr 只丢给 `debugPrint`：release 包没有控制台，用户
+/// 与开发者都只能看到一句 `engine_attach_failed`，无法区分「游戏以管理员身份运行导致
+/// OpenProcess 被拒」「位数不符」「杀软拦下注入」「DLL 还在加载就超时」。这些原因的
+/// 处置完全不同（前两类重试无意义、后两类值得重试），因此必须结构化。
+enum GalHookInjectorFailure {
+  /// 未失败。
+  none,
+
+  /// 没有可用的 injector 可执行文件（未安装 / 架构目录缺失）。
+  helperMissing,
+
+  /// 既无 launchExe 也无有效 targetPid。
+  targetMissing,
+
+  /// injector 进程根本拉不起来（文件被杀软删除/锁定、权限不足）。
+  spawnFailed,
+
+  /// 注入器位数与目标进程不符。
+  bitnessMismatch,
+
+  /// `OpenProcess` 被拒：目标进程完整性级别更高（多为游戏以管理员身份运行）。
+  accessDenied,
+
+  /// `CreateProcess` 需要提权（ERROR_ELEVATION_REQUIRED=740）。
+  elevationRequired,
+
+  /// 其它 `CreateProcess` 失败。
+  createProcessFailed,
+
+  /// helper 目录缺 hook DLL（安装包不完整）。
+  hookDllMissing,
+
+  /// 游戏 exe 路径不存在（被移动/删除/盘符变化）。
+  gameExeMissing,
+
+  /// 上一局的共享内存还在，但契约不匹配或 hooked=0：需重启游戏清理旧 DLL。
+  staleSession,
+
+  /// 注入完成但 DLL 未在超时内发出就绪信号。
+  readyTimeout,
+
+  /// 远程线程注入本身失败（`VirtualAllocEx` / `WriteProcessMemory` / `CreateRemoteThread`）。
+  injectionFailed,
+
+  /// 精确 profile 要求先移除危险自动 hook，但守卫安装未在超时内确认。
+  guardedHookFailed,
+
+  /// 恢复挂起的游戏主线程失败：该进程已不可用，injector 会结束它以免留下僵尸。
+  resumeFailed,
+
+  /// Steam 客户端接受了启动请求但未在超时内出现目标进程。
+  steamTimeout,
+
+  /// injector 已宣告 hooked，但共享内存打不开（native 通道不可用）。
+  sharedMemoryUnavailable,
+
+  /// injector 已 hooked、共享内存已开，但超时内既没有 PCM 格式也没有文本 hook。
+  handshakeTimeout,
+
+  /// 有失败但无法归类（保留原始 stderr 尾巴供诊断）。
+  unknown,
+}
+
+/// 该失败原因是否值得原地重试。
+///
+/// 判据是「同一台机器、同一个游戏、什么都不做的情况下再试一次有没有可能成功」：
+/// 引擎初始化竞态、DLL 加载慢、旧会话残留会随时间自愈；架构不符、缺文件、需要提权
+/// 不会。重试不能用来掩盖后者——那类必须把可执行的处置说给用户。
+bool galHookFailureIsRetryable(GalHookInjectorFailure failure) =>
+    switch (failure) {
+      GalHookInjectorFailure.readyTimeout ||
+      GalHookInjectorFailure.injectionFailed ||
+      GalHookInjectorFailure.guardedHookFailed ||
+      GalHookInjectorFailure.staleSession ||
+      GalHookInjectorFailure.handshakeTimeout ||
+      GalHookInjectorFailure.sharedMemoryUnavailable ||
+      GalHookInjectorFailure.steamTimeout ||
+      GalHookInjectorFailure.unknown =>
+        true,
+      _ => false,
+    };
+
+/// injector 失败诊断：结构化原因 + 退出码 + stderr 尾部原文。
+@immutable
+class GalHookInjectorDiagnostics {
+  const GalHookInjectorDiagnostics({
+    this.failure = GalHookInjectorFailure.none,
+    this.exitCode,
+    this.stderrTail = '',
+  });
+
+  final GalHookInjectorFailure failure;
+  final int? exitCode;
+  final String stderrTail;
+
+  bool get isFailure => failure != GalHookInjectorFailure.none;
+  bool get isRetryable => galHookFailureIsRetryable(failure);
+
+  /// 事件详情用的可序列化摘要（不含用户路径以外的敏感信息；stderr 尾部截断）。
+  Map<String, Object?> toDetails() => <String, Object?>{
+        'reason': failure.name,
+        if (exitCode != null) 'exitCode': exitCode,
+        if (stderrTail.isNotEmpty) 'detail': stderrTail,
+      };
+}
+
+/// injector 诊断输出 → 结构化失败原因（纯函数，可单测）。
+///
+/// 优先认新 helper 的机器可读行 `ERR reason=<token>`；旧 helper 只有人类可读诊断，
+/// 因此保留对既有输出串的匹配（这些串是 native 现有事实，不是猜测）。两条路都命不中
+/// 时返回 [fallback]，绝不假装知道原因。
+GalHookInjectorFailure classifyGalHookInjectorFailure(
+  String diagnostics, {
+  GalHookInjectorFailure fallback = GalHookInjectorFailure.unknown,
+}) {
+  if (diagnostics.trim().isEmpty) {
+    return fallback;
+  }
+  final RegExpMatch? structured =
+      RegExp(r'ERR reason=([a-zA-Z_]+)').firstMatch(diagnostics);
+  if (structured != null) {
+    final String token = structured.group(1)!.toLowerCase();
+    for (final GalHookInjectorFailure candidate
+        in GalHookInjectorFailure.values) {
+      if (candidate.name.toLowerCase() == token) {
+        return candidate;
+      }
+    }
+  }
+  if (diagnostics.contains('位数不匹配') ||
+      diagnostics.contains('bitness mismatch')) {
+    return GalHookInjectorFailure.bitnessMismatch;
+  }
+  if (diagnostics.contains('OpenProcess(')) {
+    return GalHookInjectorFailure.accessDenied;
+  }
+  if (diagnostics.contains('CreateProcessW failed')) {
+    // 740 = ERROR_ELEVATION_REQUIRED：游戏 manifest 要求管理员，非提权进程拉不起来。
+    return diagnostics.contains('CreateProcessW failed: 740')
+        ? GalHookInjectorFailure.elevationRequired
+        : GalHookInjectorFailure.createProcessFailed;
+  }
+  if (diagnostics.contains('hook DLL not found')) {
+    return GalHookInjectorFailure.hookDllMissing;
+  }
+  if (diagnostics.contains('目标 exe 不存在')) {
+    return GalHookInjectorFailure.gameExeMissing;
+  }
+  if (diagnostics.contains('已存在但不可复用的 hook 会话')) {
+    return GalHookInjectorFailure.staleSession;
+  }
+  if (diagnostics.contains('未收到就绪信号')) {
+    return GalHookInjectorFailure.readyTimeout;
+  }
+  if (diagnostics.contains('injection failed') ||
+      diagnostics.contains('CreateRemoteThread failed') ||
+      diagnostics.contains('WriteProcessMemory failed') ||
+      diagnostics.contains('VirtualAllocEx failed') ||
+      diagnostics.contains('resolve LoadLibraryW failed')) {
+    return GalHookInjectorFailure.injectionFailed;
+  }
+  if (diagnostics.contains('Steam 已接受启动请求')) {
+    return GalHookInjectorFailure.steamTimeout;
+  }
+  return fallback;
+}
+
 /// galgame 纯人声配对（真机验证，docs/specs/galgame-mining）：具有运行时契约的引擎把
 /// `TextSlot.seq` 写进资源名并优先按该稳定 ID 配对；显式 ID 不匹配时禁止回退时间猜测。
 /// 旧资源仍是 `%TEMP%\hibiki_gal_voice\<tickMs>_<basename>.ogg`
@@ -394,6 +576,12 @@ bool shouldUseLunaPcHooksForExecutable(String executablePath) {
 
 /// 构造 voice injector 命令行参数。保持 `--hold` 默认开启，让共享内存与 LunaHost
 /// 在游戏会话期间存活。
+///
+/// [readyTimeoutMs] 必须来自调用方的握手超时（[EngineHookGalAudioSource] 的
+/// `readyTimeout`）。injector 的 `--wait-ms` 默认只有 5000ms，而 Dart 侧等 30s：
+/// 两个截止时间各自为政时，杀软扫描下的大 hook DLL 常在 native 先超时（native 此时
+/// 还会把 CREATE_SUSPENDED 拉起的游戏丢在挂起态），Dart 却仍在傻等，最终只报一个
+/// 没有原因的失败。超时只能有一个真相源，故显式下发。
 List<String> buildEngineHookInjectorArguments({
   required int targetPid,
   required String? launchExe,
@@ -402,12 +590,16 @@ List<String> buildEngineHookInjectorArguments({
   int? lunaCodepage,
   String? lunaHookProfilePath,
   List<String> lunaHookCodes = const <String>[],
+  int readyTimeoutMs = 30000,
 }) {
   final String? exe = launchExe;
   final bool launchMode = exe != null && exe.isNotEmpty;
   final List<String> args = launchMode
       ? <String>['--launch', exe, '--hold']
       : <String>['--pid', '$targetPid', '--hold'];
+  if (readyTimeoutMs > 0) {
+    args.addAll(<String>['--wait-ms', '$readyTimeoutMs']);
+  }
   if (launchMode && japaneseLocale) {
     args.add('--japanese-locale');
   }
@@ -535,6 +727,24 @@ class EngineHookGalAudioSource implements GalAudioSource {
       <StreamSubscription<String>>[];
   Completer<int?>? _hookedPidCompleter;
 
+  /// injector 诊断输出尾部（stdout+stderr 合流，有界）。失败时唯一的证据来源：
+  /// native 早就把「位数不匹配 / OpenProcess 失败 / 未收到就绪信号」打出来了，
+  /// 旧实现只送进 debugPrint，release 包等于丢弃。
+  final StringBuffer _diagnosticsBuffer = StringBuffer();
+  static const int _diagnosticsTailMax = 2048;
+
+  GalHookInjectorDiagnostics _lastFailure = const GalHookInjectorDiagnostics();
+
+  /// 最近一次 [start] 失败的结构化诊断；成功后为 [GalHookInjectorFailure.none]。
+  GalHookInjectorDiagnostics get lastFailure => _lastFailure;
+
+  int _launchedPid = 0;
+
+  /// launch 模式下 injector 回报的**已创建**游戏 PID（`LAUNCH pid=`）。注入是否成功
+  /// 与此无关：拿到它就说明游戏进程真的起来了，调用方据此改走附着重试，而不是把
+  /// 正在运行的游戏报成启动失败。旧 helper 不回报时为 null。
+  int? get launchedPid => _launchedPid > 0 ? _launchedPid : null;
+
   /// 实际注入命中的游戏 PID：attach=`targetPid`；launch=从 injector stdout 解析出的子进程 PID。
   /// [grabRecent]/`open` 都用它开共享内存。
   int _effectivePid = 0;
@@ -633,13 +843,22 @@ class EngineHookGalAudioSource implements GalAudioSource {
     _audioHooksReady = false;
     _rawVoiceReady = false;
     _pcmReady = false;
+    _launchedPid = 0;
+    _diagnosticsBuffer.clear();
+    _lastFailure = const GalHookInjectorDiagnostics();
     final String? path = injectorPath;
     if (path == null || !File(path).existsSync()) {
+      _lastFailure = const GalHookInjectorDiagnostics(
+        failure: GalHookInjectorFailure.helperMissing,
+      );
       return null; // 无 injector -> 降级
     }
     final String? exe = launchExe;
     final bool launchMode = exe != null && exe.isNotEmpty;
     if (!launchMode && targetPid <= 0) {
+      _lastFailure = const GalHookInjectorDiagnostics(
+        failure: GalHookInjectorFailure.targetMissing,
+      );
       return null; // 既无 launchExe 又无有效 targetPid -> 无目标
     }
     _sessionStartedAt = DateTime.now();
@@ -659,9 +878,14 @@ class EngineHookGalAudioSource implements GalAudioSource {
           lunaCodepage: lunaCodepage,
           lunaHookProfilePath: lunaHookProfilePath,
           lunaHookCodes: lunaHookCodes,
+          readyTimeoutMs: _readyTimeout.inMilliseconds,
         ),
       );
-    } on ProcessException {
+    } on ProcessException catch (error) {
+      _lastFailure = GalHookInjectorDiagnostics(
+        failure: GalHookInjectorFailure.spawnFailed,
+        stderrTail: error.message,
+      );
       return null;
     }
     _beginInjectorOutputDrain(_injector!);
@@ -672,8 +896,15 @@ class EngineHookGalAudioSource implements GalAudioSource {
     if (hookedPid == null ||
         hookedPid <= 0 ||
         (!launchMode && hookedPid != targetPid)) {
+      // 启动/注入失败（目标不符 / 位数不符 / 超时）。先把 native 的诊断和退出码
+      // 定格成结构化原因，再 stop()——stop 会杀掉进程并清空缓冲，顺序反了就没证据了。
+      await _captureFailure(
+        fallback: hookedPid == null
+            ? GalHookInjectorFailure.readyTimeout
+            : GalHookInjectorFailure.unknown,
+      );
       await stop();
-      return null; // 启动/注入失败（目标不符 / 位数不符 / 超时）
+      return null;
     }
     _effectivePid = hookedPid;
     // 2. open 共享内存（injector 已创建），成功后轮询 status 等 hook DLL 注入 + 拿到语音格式。
@@ -684,13 +915,22 @@ class EngineHookGalAudioSource implements GalAudioSource {
         <String, Object?>{'pid': _effectivePid},
       );
       if (opened == null || opened['error'] != null) {
+        await _captureFailure(
+          fallback: GalHookInjectorFailure.sharedMemoryUnavailable,
+        );
         await stop();
         return null;
       }
     } on PlatformException {
+      await _captureFailure(
+        fallback: GalHookInjectorFailure.sharedMemoryUnavailable,
+      );
       await stop();
       return null;
     } on MissingPluginException {
+      await _captureFailure(
+        fallback: GalHookInjectorFailure.sharedMemoryUnavailable,
+      );
       await stop();
       return null;
     }
@@ -709,8 +949,32 @@ class EngineHookGalAudioSource implements GalAudioSource {
       await Future<void>.delayed(_pollInterval);
     }
     // 超时未就绪（未注入成功 / 该引擎无捕获）：降级。
+    await _captureFailure(fallback: GalHookInjectorFailure.handshakeTimeout);
     await stop();
     return null;
+  }
+
+  /// 定格本次失败：把 injector 诊断尾部分类成结构化原因，并尽力取回退出码。
+  ///
+  /// injector 在 `--hold` 模式下失败即退出，因此这里等一个很短的窗口取 exitCode；
+  /// 进程仍存活（例如握手超时但 helper 还在跑）时退出码为 null，不阻塞调用方。
+  Future<void> _captureFailure({
+    required GalHookInjectorFailure fallback,
+  }) async {
+    final Process? process = _injector;
+    int? exitCode;
+    if (process != null) {
+      exitCode = await process.exitCode
+          .timeout(const Duration(milliseconds: 400), onTimeout: () => -1)
+          .then((int code) => code == -1 ? null : code)
+          .catchError((Object _) => null);
+    }
+    final String tail = _diagnosticsBuffer.toString().trim();
+    _lastFailure = GalHookInjectorDiagnostics(
+      failure: classifyGalHookInjectorFailure(tail, fallback: fallback),
+      exitCode: exitCode,
+      stderrTail: tail,
+    );
   }
 
   /// injector 是常驻 helper，stdout/stderr 也必须贯穿会话持续排空。只在解析到 launch PID
@@ -724,8 +988,13 @@ class EngineHookGalAudioSource implements GalAudioSource {
       process.stdout.transform(const SystemEncoding().decoder).listen(
         (String chunk) {
           _emitInjectorOutput(isStderr: false, chunk: chunk);
-          if (pidCompleter.isCompleted) return;
           stdoutBuffer.write(chunk);
+          // `LAUNCH pid=` 先于注入结果到达，且在 hooked 之后仍要保留：注入失败时
+          // 它是「游戏已经起来了」的唯一证据，不能因为 pidCompleter 已完成就不解析。
+          final int? launched =
+              parseInjectorLaunchedPid(stdoutBuffer.toString());
+          if (launched != null) _launchedPid = launched;
+          if (pidCompleter.isCompleted) return;
           final int? pid = parseInjectorHookedPid(stdoutBuffer.toString());
           if (pid != null) pidCompleter.complete(pid);
         },
@@ -757,6 +1026,14 @@ class EngineHookGalAudioSource implements GalAudioSource {
     required bool isStderr,
     required String chunk,
   }) {
+    // 有界留存：failure 分类与用户可见诊断都只看尾部，长会话不能无限增长。
+    _diagnosticsBuffer.write(chunk);
+    if (_diagnosticsBuffer.length > _diagnosticsTailMax * 2) {
+      final String kept = _diagnosticsBuffer.toString();
+      _diagnosticsBuffer
+        ..clear()
+        ..write(kept.substring(kept.length - _diagnosticsTailMax));
+    }
     try {
       _processOutputSink(isStderr, chunk);
     } catch (_) {

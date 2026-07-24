@@ -1099,6 +1099,256 @@ void _bug950Guard() {
       endpoints.dispose();
     });
   });
+
+  // 引擎 hook 失败后的处置。旧实现：attach 一次失败就永久 Loopback（`_engineSource=null`，
+  // 没有任何重试），launch 注入失败就把整个会话判成终态错误——哪怕游戏其实已经在跑。
+  group('engine hook failure handling', () {
+    test('可自愈的附着失败会在 Loopback 期间重试并升级回引擎源', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      // 第一次 attach：无 PCM 无文本，且 native 报「未收到就绪信号」（可自愈）。
+      final _FakeEngineSource failing = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        audioFormat: null,
+        failure: const GalHookInjectorDiagnostics(
+          failure: GalHookInjectorFailure.readyTimeout,
+          exitCode: 2,
+          stderrTail: '注入完成但未收到就绪信号（30000ms 超时）；hooked=0',
+        ),
+      );
+      // 重试那次：引擎 PCM 就绪。
+      final _FakeEngineSource recovered =
+          _FakeEngineSource(pairedBytes: Uint8List(0));
+      final List<_FakeEngineSource> queue = <_FakeEngineSource>[
+        failing,
+        recovered,
+      ];
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        targetWow64Probe: (_) async => false,
+        injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+        engineSourceFactory: ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+        }) =>
+            queue.isEmpty ? recovered : queue.removeAt(0),
+        loopbackSourceFactory: _FakeLoopbackSource.new,
+        windowListLoader: () async => const <ExternalWindowInfo>[],
+        windowPollAttempts: 1,
+        engineRetryBackoff: const <Duration>[Duration(milliseconds: 10)],
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 3, pid: 20096, title: 'manosaba'),
+      );
+
+      // 降级发生了，但失败原因必须是结构化的、可执行的，而不是只有一句代码。
+      expect(controller.state.phase, GalHookSessionPhase.degraded);
+      expect(controller.state.audioBackend, GalHookAudioBackend.systemLoopback);
+      expect(
+        controller.state.injectorFailure,
+        GalHookInjectorFailure.readyTimeout,
+      );
+      final GalHookEvent failedEvent = controller.events.firstWhere(
+        (GalHookEvent e) => e.code == 'audio.engine_attach_failed',
+      );
+      expect(failedEvent.details['reason'], 'readyTimeout');
+      expect(failedEvent.details['exitCode'], 2);
+      expect(failedEvent.details['detail'], contains('未收到就绪信号'));
+      expect(
+        controller.events.map((GalHookEvent e) => e.code),
+        contains('engine.retry_scheduled'),
+      );
+
+      // 退避到期后自动重试，成功即把音源升级回引擎，不再停在整机混音。
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(
+        controller.events.map((GalHookEvent e) => e.code),
+        contains('engine.attach_recovered'),
+      );
+      expect(controller.state.audioBackend, GalHookAudioBackend.enginePcm);
+      expect(controller.state.phase, GalHookSessionPhase.waitingSignals);
+      expect(
+        controller.state.injectorFailure,
+        GalHookInjectorFailure.none,
+      );
+      expect(controller.hasEngineSource, isTrue);
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
+    test('需要用户处置的失败一次都不重试（提权/位数）', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      int factoryCalls = 0;
+      final _FakeEngineSource denied = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        audioFormat: null,
+        failure: const GalHookInjectorDiagnostics(
+          failure: GalHookInjectorFailure.accessDenied,
+          exitCode: 1,
+          stderrTail: 'OpenProcess(20096) failed: 5',
+        ),
+      );
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        targetWow64Probe: (_) async => false,
+        injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+        engineSourceFactory: ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+        }) {
+          factoryCalls++;
+          return denied;
+        },
+        loopbackSourceFactory: _FakeLoopbackSource.new,
+        windowListLoader: () async => const <ExternalWindowInfo>[],
+        windowPollAttempts: 1,
+        engineRetryBackoff: const <Duration>[Duration(milliseconds: 10)],
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 3, pid: 20096, title: 'game'),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      expect(
+        controller.state.injectorFailure,
+        GalHookInjectorFailure.accessDenied,
+      );
+      final List<String> codes =
+          controller.events.map((GalHookEvent e) => e.code).toList();
+      expect(codes, contains('engine.retry_skipped'));
+      expect(codes, isNot(contains('engine.retry_scheduled')));
+      expect(factoryCalls, 1);
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
+    test('启动注入失败但游戏已在跑：保留会话降级重试，不报「启动失败」', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final _FakeEngineSource failing = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        audioFormat: null,
+        launched: 20096,
+        failure: const GalHookInjectorDiagnostics(
+          failure: GalHookInjectorFailure.readyTimeout,
+          exitCode: 2,
+          stderrTail: '注入完成但未收到就绪信号',
+        ),
+      );
+      final _FakeEngineSource recovered =
+          _FakeEngineSource(pairedBytes: Uint8List(0));
+      final List<_FakeEngineSource> queue = <_FakeEngineSource>[
+        failing,
+        recovered,
+      ];
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        exe32BitProbe: (_) async => false,
+        targetWow64Probe: (_) async => false,
+        injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+        engineSourceFactory: ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+        }) =>
+            queue.isEmpty ? recovered : queue.removeAt(0),
+        loopbackSourceFactory: _FakeLoopbackSource.new,
+        windowListLoader: () async => const <ExternalWindowInfo>[],
+        windowPollAttempts: 1,
+        engineRetryBackoff: const <Duration>[Duration(milliseconds: 10)],
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+
+      // 游戏确实被拉起来了（injector 回报 LAUNCH pid），只是注入没成：会话必须活着。
+      expect(
+          await controller.launchGame(r'D:\gal\manosaba\manosaba.exe'), isTrue);
+      expect(controller.state.phase, GalHookSessionPhase.degraded);
+      expect(controller.state.gamePid, 20096);
+      expect(controller.state.fallbackReason, 'launch_injection_failed');
+      final List<String> codes =
+          controller.events.map((GalHookEvent e) => e.code).toList();
+      expect(codes, contains('engine.launch_injection_degraded'));
+      expect(codes, isNot(contains('engine.launch_or_inject_failed')));
+
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(
+        controller.events.map((GalHookEvent e) => e.code),
+        contains('engine.attach_recovered'),
+      );
+      expect(controller.state.audioBackend, GalHookAudioBackend.enginePcm);
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
+    test('injector 未回报 PID（旧 helper）时仍是明确的启动失败，且带结构化原因', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final _FakeEngineSource failing = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        audioFormat: null,
+        failure: const GalHookInjectorDiagnostics(
+          failure: GalHookInjectorFailure.elevationRequired,
+          exitCode: 1,
+          stderrTail: 'CreateProcessW failed: 740',
+        ),
+      );
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        exe32BitProbe: (_) async => false,
+        injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+        engineSourceFactory: ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+        }) =>
+            failing,
+        loopbackSourceFactory: _FakeLoopbackSource.new,
+        windowListLoader: () async => const <ExternalWindowInfo>[],
+        windowPollAttempts: 1,
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+
+      expect(await controller.launchGame(r'D:\gal\x\x.exe'), isFalse);
+      expect(controller.state.phase, GalHookSessionPhase.error);
+      expect(
+        controller.state.injectorFailure,
+        GalHookInjectorFailure.elevationRequired,
+      );
+      final GalHookEvent failed = controller.events.firstWhere(
+        (GalHookEvent e) => e.code == 'engine.launch_or_inject_failed',
+      );
+      expect(failed.details['reason'], 'elevationRequired');
+
+      await controller.close();
+      endpoints.dispose();
+    });
+  });
 }
 
 class _FakeEngineSource extends EngineHookGalAudioSource {
@@ -1117,6 +1367,8 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
     this.pairedReadyAfterCalls = 1,
     this.polledLines = const <GalHookedLine>[],
     this.utteranceSlice,
+    this.failure = const GalHookInjectorDiagnostics(),
+    this.launched,
   }) : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
 
   final Uint8List pairedBytes;
@@ -1128,6 +1380,12 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   final int pairedReadyAfterCalls;
   final List<GalHookedLine> polledLines;
   final GalAudioSlice? utteranceSlice;
+
+  /// 本次 start 失败时 native 侧的结构化诊断（成功路径为 [GalHookInjectorFailure.none]）。
+  final GalHookInjectorDiagnostics failure;
+
+  /// injector 已 `CreateProcess` 出来的游戏 PID；null 模拟不回报该行的旧 helper。
+  final int? launched;
   final List<int> pairedTimestamps = <int>[];
   final List<int?> pairedEventIds = <int?>[];
   final List<int?> findEventIds = <int?>[];
@@ -1140,6 +1398,12 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
 
   @override
   int? get gamePid => 4242;
+
+  @override
+  GalHookInjectorDiagnostics get lastFailure => failure;
+
+  @override
+  int? get launchedPid => launched;
 
   @override
   bool get textHookReady => textReady;

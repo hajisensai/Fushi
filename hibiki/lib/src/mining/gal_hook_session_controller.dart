@@ -110,6 +110,7 @@ class GalHookSessionState {
     this.audioBackend = GalHookAudioBackend.none,
     this.audioFormat,
     this.fallbackReason,
+    this.injectorFailure = GalHookInjectorFailure.none,
     this.lastError,
     this.textSignalReceived = false,
     this.textGapCount = 0,
@@ -129,6 +130,10 @@ class GalHookSessionState {
   final GalHookAudioBackend audioBackend;
   final PcmFormat? audioFormat;
   final String? fallbackReason;
+
+  /// 降级/失败的**结构化**原因。[fallbackReason] 是给日志的内部代码（UI 曾经原样
+  /// 把 `engine_attach_failed` 甩给用户）；本字段才是 UI 该翻译成人话并给出处置的依据。
+  final GalHookInjectorFailure injectorFailure;
   final String? lastError;
   final bool textSignalReceived;
   final int textGapCount;
@@ -161,6 +166,7 @@ class GalHookSessionState {
     bool clearAudioFormat = false,
     String? fallbackReason,
     bool clearFallbackReason = false,
+    GalHookInjectorFailure? injectorFailure,
     String? lastError,
     bool clearLastError = false,
     bool? textSignalReceived,
@@ -184,6 +190,11 @@ class GalHookSessionState {
       audioFormat: clearAudioFormat ? null : audioFormat ?? this.audioFormat,
       fallbackReason:
           clearFallbackReason ? null : fallbackReason ?? this.fallbackReason,
+      // 降级原因与降级本身同生共死：clearFallbackReason 时必须一起复位，否则会话恢复后
+      // 还挂着上一次的失败原因。
+      injectorFailure: clearFallbackReason
+          ? GalHookInjectorFailure.none
+          : injectorFailure ?? this.injectorFailure,
       lastError: clearLastError ? null : lastError ?? this.lastError,
       textSignalReceived: textSignalReceived ?? this.textSignalReceived,
       textGapCount: textGapCount ?? this.textGapCount,
@@ -196,6 +207,20 @@ class GalHookSessionState {
     );
   }
 }
+
+/// 引擎 hook 失败后的重试退避表。
+///
+/// 只对**可能自愈**的失败生效（见 [galHookFailureIsRetryable]）：引擎初始化竞态、
+/// DLL 加载慢、上一局残留会话。位数不符 / 需要提权 / 缺文件这类不会随时间改变的
+/// 失败一次都不重试——重试只会掩盖必须告诉用户的处置。
+///
+/// 步长按「Unity/IL2CPP 游戏从进程创建到音频子系统就位」的量级取：首轮 3s 覆盖普通
+/// 竞态，最后一轮 20s 覆盖带壳解包与首次着色器编译；再长就该让用户手动重来了。
+const List<Duration> kGalEngineRetryBackoff = <Duration>[
+  Duration(seconds: 3),
+  Duration(seconds: 8),
+  Duration(seconds: 20),
+];
 
 typedef GalEngineSourceFactory = EngineHookGalAudioSource Function({
   required int targetPid,
@@ -235,6 +260,7 @@ class GalHookSessionController extends ChangeNotifier {
     int windowPollAttempts = 20,
     Duration windowRebindInterval = const Duration(seconds: 2),
     Duration trackRefreshInterval = const Duration(seconds: 5),
+    List<Duration> engineRetryBackoff = kGalEngineRetryBackoff,
     Listenable? endpointListenable,
     List<TexthookerEndpointStatus> Function()? endpointStatusLoader,
     GalHookActivityWriter? activityWriter,
@@ -258,6 +284,7 @@ class GalHookSessionController extends ChangeNotifier {
         _windowPollAttempts = windowPollAttempts,
         _windowRebindInterval = windowRebindInterval,
         _trackRefreshInterval = trackRefreshInterval,
+        _engineRetryBackoff = engineRetryBackoff,
         _endpointListenable =
             endpointListenable ?? TexthookerWsClientManager.instance,
         _endpointStatusLoader = endpointStatusLoader ??
@@ -294,6 +321,7 @@ class GalHookSessionController extends ChangeNotifier {
   final int _windowPollAttempts;
   final Duration _windowRebindInterval;
   final Duration _trackRefreshInterval;
+  final List<Duration> _engineRetryBackoff;
   final Listenable _endpointListenable;
   final List<TexthookerEndpointStatus> Function() _endpointStatusLoader;
 
@@ -357,6 +385,11 @@ class GalHookSessionController extends ChangeNotifier {
   // BUG-1049：launch 后游戏窗口尚未出现时的重绑监视（见 [_startWindowRebindWatch]）。
   Timer? _windowRebindTimer;
   bool _windowRebindInFlight = false;
+  // 引擎 hook 失败后的有界重试（见 [_scheduleEngineRecovery]）。降级到 Loopback 曾是
+  // 终态：一次注入竞态就让整局只剩整机混音、没有台词，用户只能重启游戏。
+  Timer? _engineRetryTimer;
+  int _engineRetryAttempt = 0;
+  bool _engineRetryInFlight = false;
   bool _pollInFlight = false;
 
   /// 上次向 native 问「资源语音是否就绪」的时刻。文本轮询降到 80ms 后不能每 tick
@@ -551,26 +584,39 @@ class GalHookSessionController extends ChangeNotifier {
         );
         return;
       }
+      // 诊断必须在 stop() 之前取：stop 只负责杀进程，失败原因由本次 start 定格。
+      final GalHookInjectorDiagnostics diagnostics = engine.lastFailure;
       await engine.stop();
       _record(
         GalHookEventSeverity.warning,
         'audio',
         'audio.engine_attach_failed',
         'Engine audio hook failed; falling back to system loopback',
+        details: diagnostics.toDetails(),
       );
-    } else {
-      _record(
-        GalHookEventSeverity.warning,
-        'helper',
-        'helper.missing',
-        'Matching voice-hook helper is unavailable; using loopback',
-        details: <String, Object?>{'arch': is32Bit == true ? 'x86' : 'x64'},
+      await _activateLoopback(
+        generation,
+        fallbackReason: 'engine_attach_failed',
+        failure: diagnostics.failure,
       );
+      _scheduleEngineRecovery(
+        generation,
+        pid: window.pid,
+        diagnostics: diagnostics,
+      );
+      return;
     }
+    _record(
+      GalHookEventSeverity.warning,
+      'helper',
+      'helper.missing',
+      'Matching voice-hook helper is unavailable; using loopback',
+      details: <String, Object?>{'arch': is32Bit == true ? 'x86' : 'x64'},
+    );
     await _activateLoopback(
       generation,
-      fallbackReason:
-          injector == null ? 'helper_missing' : 'engine_attach_failed',
+      fallbackReason: 'helper_missing',
+      failure: GalHookInjectorFailure.helperMissing,
     );
   }
 
@@ -605,6 +651,8 @@ class GalHookSessionController extends ChangeNotifier {
         'helper',
         'helper.missing',
         'Voice-hook helper is missing for the selected executable architecture',
+        details: <String, Object?>{'arch': is32Bit == true ? 'x86' : 'x64'},
+        failure: GalHookInjectorFailure.helperMissing,
       );
       return false;
     }
@@ -635,11 +683,46 @@ class GalHookSessionController extends ChangeNotifier {
       return false;
     }
     if (format == null && !engine.textHookReady) {
+      final GalHookInjectorDiagnostics diagnostics = engine.lastFailure;
+      // injector 在 CreateProcess 成功后即回报 `LAUNCH pid=`，这个 PID 与注入是否成功
+      // 无关。拿得到它就说明**游戏已经在跑**：此时把整个会话判成「启动失败」是错的——
+      // 用户面前明明有个游戏窗口，Hibiki 却停在终态错误，只能手动去「捕获目标」重绑。
+      // 改为保留会话、降级到 Loopback，并按退避表重试附着。
+      final int? runningPid = engine.launchedPid;
       await engine.stop();
+      if (runningPid != null) {
+        _record(
+          GalHookEventSeverity.warning,
+          'inject',
+          'engine.launch_injection_degraded',
+          'Game is running, but early engine injection failed; '
+              'falling back to system loopback',
+          details: <String, Object?>{
+            'pid': runningPid,
+            ...diagnostics.toDetails(),
+          },
+        );
+        _setState(_state.copyWith(gamePid: runningPid));
+        await _activateLoopback(
+          generation,
+          fallbackReason: 'launch_injection_failed',
+          failure: diagnostics.failure,
+        );
+        if (generation != _operationGeneration) return false;
+        _startWindowRebindWatch(generation, runningPid);
+        _scheduleEngineRecovery(
+          generation,
+          pid: runningPid,
+          diagnostics: diagnostics,
+        );
+        return true;
+      }
       _fail(
         'inject',
         'engine.launch_or_inject_failed',
         'Game launch or early engine injection failed',
+        details: diagnostics.toDetails(),
+        failure: diagnostics.failure,
       );
       return false;
     }
@@ -1743,6 +1826,9 @@ class GalHookSessionController extends ChangeNotifier {
         fallbackReason: format == null
             ? 'all_audio_sources_failed'
             : 'engine_pcm_unavailable',
+        // 文本 hook 已就绪 = 注入这条链是通的：不能把上一次注入失败的原因留在状态里，
+        // 否则 UI 会一直显示「需要管理员权限」之类早已不成立的处置。
+        injectorFailure: GalHookInjectorFailure.none,
         lastError: format == null
             ? 'Text hook is ready, but no audio capture source could be started'
             : null,
@@ -1798,6 +1884,7 @@ class GalHookSessionController extends ChangeNotifier {
   Future<void> _activateLoopback(
     int generation, {
     required String fallbackReason,
+    GalHookInjectorFailure failure = GalHookInjectorFailure.none,
   }) async {
     final LoopbackGalAudioSource loopback = _loopbackSourceFactory();
     final PcmFormat? format = await loopback.start();
@@ -1832,6 +1919,7 @@ class GalHookSessionController extends ChangeNotifier {
         audioBackend: GalHookAudioBackend.systemLoopback,
         audioFormat: format,
         fallbackReason: fallbackReason,
+        injectorFailure: failure,
         clearLastError: true,
       ),
     );
@@ -1848,6 +1936,160 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
+  /// 引擎 hook 失败后的**有界恢复**调度。
+  ///
+  /// 旧实现里 `_activateLoopback` 是终态：一次注入竞态（DLL 还在加载、上一局残留会话、
+  /// 引擎音频子系统尚未建好）就让整局只剩整机混音，用户只能关掉游戏重来。真实失败里
+  /// 相当一部分会自愈，因此按退避表重试；不会自愈的失败（位数不符 / 需要提权 / 缺文件）
+  /// 一次都不试，直接把原因留在事件里让 UI 说清处置。
+  void _scheduleEngineRecovery(
+    int generation, {
+    required int pid,
+    required GalHookInjectorDiagnostics diagnostics,
+  }) {
+    _engineRetryTimer?.cancel();
+    _engineRetryTimer = null;
+    if (!_isWindows || pid <= 0) return;
+    if (!diagnostics.isRetryable) {
+      _record(
+        GalHookEventSeverity.info,
+        'inject',
+        'engine.retry_skipped',
+        'Engine hook failure needs user action; not retrying',
+        details: diagnostics.toDetails(),
+      );
+      return;
+    }
+    if (_engineRetryAttempt >= _engineRetryBackoff.length) {
+      _record(
+        GalHookEventSeverity.warning,
+        'inject',
+        'engine.retry_exhausted',
+        'Engine hook retries are exhausted; staying on system loopback',
+        details: <String, Object?>{
+          'attempts': _engineRetryAttempt,
+          'reason': diagnostics.failure.name,
+        },
+      );
+      return;
+    }
+    final Duration delay = _engineRetryBackoff[_engineRetryAttempt];
+    final int attempt = _engineRetryAttempt + 1;
+    _record(
+      GalHookEventSeverity.info,
+      'inject',
+      'engine.retry_scheduled',
+      'Retrying the engine hook while system loopback keeps running',
+      details: <String, Object?>{
+        'attempt': attempt,
+        'delayMs': delay.inMilliseconds,
+        'reason': diagnostics.failure.name,
+      },
+    );
+    _engineRetryTimer = Timer(delay, () {
+      _engineRetryTimer = null;
+      unawaited(_retryEngineAttach(generation, pid: pid, attempt: attempt));
+    });
+  }
+
+  Future<void> _retryEngineAttach(
+    int generation, {
+    required int pid,
+    required int attempt,
+  }) async {
+    if (generation != _operationGeneration || _engineRetryInFlight) return;
+    // 只在仍处降级态时打扰：用户手动重绑、重启会话或引擎已自行恢复都不该被覆盖。
+    if (_state.phase != GalHookSessionPhase.degraded) return;
+    _engineRetryInFlight = true;
+    _engineRetryAttempt = attempt;
+    try {
+      final bool? is32Bit = await _targetWow64Probe(pid);
+      if (generation != _operationGeneration) return;
+      final String? injector = _injectorResolver(is32Bit: is32Bit ?? false);
+      if (injector == null) return; // helper 缺失：重试不可能变好
+      final EngineHookGalAudioSource engine = _engineSourceFactory(
+        targetPid: pid,
+        launchExe: null,
+        injectorPath: injector,
+        lunaPcHooks: false,
+      );
+      await _attachPersistedHookProfiles(engine);
+      final PcmFormat? format = await engine.start();
+      if (generation != _operationGeneration) {
+        await engine.stop();
+        return;
+      }
+      if (format != null || engine.textHookReady) {
+        await _swapLoopbackForEngine(
+          generation,
+          engine,
+          format: format,
+          gamePid: pid,
+          attempt: attempt,
+        );
+        return;
+      }
+      final GalHookInjectorDiagnostics diagnostics = engine.lastFailure;
+      await engine.stop();
+      _record(
+        GalHookEventSeverity.warning,
+        'inject',
+        'engine.retry_failed',
+        'Engine hook retry failed; still on system loopback',
+        details: <String, Object?>{
+          'attempt': attempt,
+          ...diagnostics.toDetails(),
+        },
+      );
+      _scheduleEngineRecovery(
+        generation,
+        pid: pid,
+        diagnostics: diagnostics,
+      );
+    } finally {
+      _engineRetryInFlight = false;
+    }
+  }
+
+  /// 重试成功：停掉降级中的 Loopback，把音源升级回引擎 hook。
+  Future<void> _swapLoopbackForEngine(
+    int generation,
+    EngineHookGalAudioSource engine, {
+    required PcmFormat? format,
+    required int gamePid,
+    required int attempt,
+  }) async {
+    // 先停旧 Loopback：_activate* 会各自新建来源，两个 WASAPI 捕获并存只会白耗资源。
+    final GalAudioSource? previous = _audioSource;
+    _audioSource = null;
+    await previous?.stop();
+    if (generation != _operationGeneration) {
+      await engine.stop();
+      return;
+    }
+    _engineRetryAttempt = 0;
+    _record(
+      GalHookEventSeverity.success,
+      'inject',
+      'engine.attach_recovered',
+      'Engine hook recovered after a bounded retry',
+      details: <String, Object?>{'attempt': attempt, 'pid': gamePid},
+    );
+    if (format != null) {
+      if (engine.rawVoiceReady) {
+        await _activateResourceWithLoopback(
+          generation,
+          engine,
+          gamePid: gamePid,
+        );
+      } else {
+        _activateEngine(engine, format, gamePid: gamePid);
+      }
+      return;
+    }
+    await _activateTextWithLoopback(generation, engine, gamePid: gamePid);
+  }
+
   Future<void> _stopSources() async {
     // 补录窗口挂在会话音源上，会话停就必须先收束（丢弃取音）：否则临时 loopback
     // 源泄漏，超时回调还会往已结束的会话行里写状态。
@@ -1858,6 +2100,10 @@ class GalHookSessionController extends ChangeNotifier {
     _trackRefreshTimer = null;
     _windowRebindTimer?.cancel();
     _windowRebindTimer = null;
+    _engineRetryTimer?.cancel();
+    _engineRetryTimer = null;
+    _engineRetryAttempt = 0;
+    _engineRetryInFlight = false;
     _windowRebindInFlight = false;
     _pollInFlight = false;
     _lastReadinessRefreshAt = null;
@@ -2279,16 +2525,23 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
-  void _fail(String stage, String code, String message) {
+  void _fail(
+    String stage,
+    String code,
+    String message, {
+    Map<String, Object?> details = const <String, Object?>{},
+    GalHookInjectorFailure failure = GalHookInjectorFailure.none,
+  }) {
     _setState(
       _state.copyWith(
         phase: GalHookSessionPhase.error,
         lastError: message,
+        injectorFailure: failure,
         audioBackend: GalHookAudioBackend.none,
         clearAudioFormat: true,
       ),
     );
-    _record(GalHookEventSeverity.error, stage, code, message);
+    _record(GalHookEventSeverity.error, stage, code, message, details: details);
   }
 
   void _setState(GalHookSessionState next) {
