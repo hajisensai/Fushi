@@ -5,8 +5,11 @@ part of '../reader_hibiki_history_page.dart';
 /// （勾选=[DeleteScope.syncEverywhere] 记墓碑传播到其他设备；默认不勾=
 /// [DeleteScope.keepLocalOnly] 只删本机）。[showSyncScope]=false 时隐藏勾选框、恒
 /// keepLocalOnly（用于不参与删除传播的实体/场景，保持旧行为）。取消返回 null。
+/// 弹窗本体收敛到全 app 共享的 [DeleteScopeConfirmDialog]（MD3 chrome 断言随
+/// 共享件走）；本类仅保留书架侧「确认走 onConfirm 回调、由调用方 pop」的契约
+/// 与公开测试入口。
 @visibleForTesting
-class ReaderHistoryDeleteDialog extends StatefulWidget {
+class ReaderHistoryDeleteDialog extends StatelessWidget {
   const ReaderHistoryDeleteDialog({
     required this.title,
     required this.message,
@@ -21,80 +24,13 @@ class ReaderHistoryDeleteDialog extends StatefulWidget {
   final bool showSyncScope;
 
   @override
-  State<ReaderHistoryDeleteDialog> createState() =>
-      _ReaderHistoryDeleteDialogState();
-}
-
-class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
-  bool _syncDelete = false;
-
-  @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-
-    return HibikiDialogFrame(
-      maxWidth: 420,
-      maxHeightFactor: 0.74,
-      child: HibikiModalSheetFrame(
-        title: widget.title,
-        leadingIcon: Icons.delete_outline,
-        bodyPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          0,
-          tokens.spacing.card,
-          tokens.spacing.gap,
-        ),
-        footerPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          tokens.spacing.gap,
-          tokens.spacing.card,
-          tokens.spacing.card,
-        ),
-        body: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(widget.message, style: tokens.type.listSubtitle),
-            if (widget.showSyncScope) ...[
-              SizedBox(height: tokens.spacing.gap),
-              AdaptiveSettingsRow(
-                title: t.delete_scope_sync_everywhere,
-                subtitle: _syncDelete
-                    ? t.delete_scope_sync_everywhere_desc
-                    : t.delete_scope_keep_local_desc,
-                onTap: () => setState(() => _syncDelete = !_syncDelete),
-                trailing: Icon(
-                  _syncDelete ? Icons.check_box : Icons.check_box_outline_blank,
-                  color: _syncDelete
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ],
-        ),
-        footer: Wrap(
-          alignment: WrapAlignment.end,
-          spacing: tokens.spacing.gap,
-          runSpacing: tokens.spacing.gap,
-          children: [
-            adaptiveDialogAction(
-              context: context,
-              onPressed: () => Navigator.pop(context, null),
-              child: Text(t.dialog_cancel),
-            ),
-            adaptiveDialogAction(
-              context: context,
-              isDestructiveAction: true,
-              onPressed: () => widget.onConfirm(
-                  widget.showSyncScope && _syncDelete
-                      ? DeleteScope.syncEverywhere
-                      : DeleteScope.keepLocalOnly),
-              child: Text(t.dialog_delete),
-            ),
-          ],
-        ),
-      ),
+    return DeleteScopeConfirmDialog(
+      title: title,
+      message: message,
+      showSyncScope: showSyncScope,
+      onCancel: () => Navigator.pop(context, null),
+      onConfirm: onConfirm,
     );
   }
 }

@@ -5,8 +5,9 @@ import 'package:hibiki/utils.dart';
 ///
 /// 删除范围只含**纯统计数字**（阅读 / 观看时长、字数、查词 / 制卡计数），不动用户
 /// 收藏的词句与制卡历史（见 `HibikiDatabase.deleteReadingStatisticsForTitle` /
-/// `deleteVideoStatisticsForTitle`）。自适应（Material / Cupertino）走 [showAppDialog]，
-/// 与书架删除确认（`ReaderHistoryDeleteDialog` / `_SeriesConfirmDialog`）同结构。
+/// `deleteVideoStatisticsForTitle`）。自适应（Material / Cupertino）走 [showAppDialog]；
+/// 弹窗本体收敛到与书架删除确认共享的 [DeleteScopeConfirmDialog]（无勾选行形态，
+/// pop bool）。
 @visibleForTesting
 class StatDeleteConfirmDialog extends StatelessWidget {
   const StatDeleteConfirmDialog({required this.itemTitle, super.key});
@@ -16,48 +17,12 @@ class StatDeleteConfirmDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiDialogFrame(
-      maxWidth: 420,
-      maxHeightFactor: 0.74,
-      child: HibikiModalSheetFrame(
-        title: t.stat_delete_title,
-        leadingIcon: Icons.delete_outline,
-        bodyPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          0,
-          tokens.spacing.card,
-          tokens.spacing.gap,
-        ),
-        footerPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          tokens.spacing.gap,
-          tokens.spacing.card,
-          tokens.spacing.card,
-        ),
-        body: Text(
-          '$itemTitle\n\n${t.stat_delete_message}',
-          style: tokens.type.listSubtitle,
-        ),
-        footer: Wrap(
-          alignment: WrapAlignment.end,
-          spacing: tokens.spacing.gap,
-          runSpacing: tokens.spacing.gap,
-          children: <Widget>[
-            adaptiveDialogAction(
-              context: context,
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(t.dialog_cancel),
-            ),
-            adaptiveDialogAction(
-              context: context,
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(t.dialog_delete),
-            ),
-          ],
-        ),
-      ),
+    return DeleteScopeConfirmDialog(
+      title: t.stat_delete_title,
+      message: '$itemTitle\n\n${t.stat_delete_message}',
+      showSyncScope: false,
+      onCancel: () => Navigator.pop(context, false),
+      onConfirm: (_) => Navigator.pop(context, true),
     );
   }
 }
@@ -76,9 +41,9 @@ Future<bool> confirmDeleteStatistics(
 }
 
 /// TODO-1322：统计页「清空全部统计」的危险操作确认弹窗。与 [StatDeleteConfirmDialog]
-/// 同结构（自适应 [showAppDialog] + [HibikiModalSheetFrame] + 破坏性动作），但清空范围
-/// 是**整个域**（全部书 / 全部视频）的纯统计数字，故独立标题、破坏性确认按钮，正文
-/// [message] 由调用页按阅读 / 视频域各自传入（明确列出清什么、保留什么、不可逆）。
+/// 同壳（共享 [DeleteScopeConfirmDialog] 本体 + 破坏性动作），但清空范围是**整个域**
+/// （全部书 / 全部视频）的纯统计数字，故独立标题、破坏性确认按钮，正文 [message]
+/// 由调用页按阅读 / 视频域各自传入（明确列出清什么、保留什么、不可逆）。
 @visibleForTesting
 class StatClearAllConfirmDialog extends StatelessWidget {
   const StatClearAllConfirmDialog({required this.message, super.key});
@@ -89,45 +54,14 @@ class StatClearAllConfirmDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiDialogFrame(
-      maxWidth: 420,
-      maxHeightFactor: 0.74,
-      child: HibikiModalSheetFrame(
-        title: t.stat_clear_all_title,
-        leadingIcon: Icons.delete_sweep_outlined,
-        bodyPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          0,
-          tokens.spacing.card,
-          tokens.spacing.gap,
-        ),
-        footerPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          tokens.spacing.gap,
-          tokens.spacing.card,
-          tokens.spacing.card,
-        ),
-        body: Text(message, style: tokens.type.listSubtitle),
-        footer: Wrap(
-          alignment: WrapAlignment.end,
-          spacing: tokens.spacing.gap,
-          runSpacing: tokens.spacing.gap,
-          children: <Widget>[
-            adaptiveDialogAction(
-              context: context,
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(t.dialog_cancel),
-            ),
-            adaptiveDialogAction(
-              context: context,
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(t.stat_clear_all_confirm),
-            ),
-          ],
-        ),
-      ),
+    return DeleteScopeConfirmDialog(
+      title: t.stat_clear_all_title,
+      message: message,
+      showSyncScope: false,
+      leadingIcon: Icons.delete_sweep_outlined,
+      confirmLabel: t.stat_clear_all_confirm,
+      onCancel: () => Navigator.pop(context, false),
+      onConfirm: (_) => Navigator.pop(context, true),
     );
   }
 }

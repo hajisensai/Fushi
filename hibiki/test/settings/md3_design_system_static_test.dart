@@ -1314,8 +1314,17 @@ void main() {
       'enum _BatchTagIntent',
     );
 
-    expect(deleteDialog, contains('HibikiDialogFrame('));
-    expect(deleteDialog, contains('HibikiModalSheetFrame('));
+    // 删除确认弹窗的 MD3 chrome 已抽到全 app 共享的 DeleteScopeConfirmDialog
+    // （sync/deletion_prompt.dart 的 showDeleteScopeConfirm、统计页
+    // StatDeleteConfirmDialog / StatClearAllConfirmDialog 同壳复用）；切片断言
+    // 走共享本体，再对共享文件断言真实 chrome，保证 MD3 保证传递闭环
+    // （参照下方 BatchTagPickerDialogFrame 先例）。
+    expect(deleteDialog, contains('DeleteScopeConfirmDialog('));
+    final String sharedDeleteScopeDialog = File(
+      'lib/src/utils/components/delete_scope_confirm_dialog.dart',
+    ).readAsStringSync();
+    expect(sharedDeleteScopeDialog, contains('HibikiDialogFrame('));
+    expect(sharedDeleteScopeDialog, contains('HibikiModalSheetFrame('));
     // 批量标签对话框的 MD3 chrome 已抽到与视频 tab 共用的
     // BatchTagPickerDialogFrame；切片断言走共享外壳，再对共享外壳文件
     // 断言真实 chrome，保证 MD3 保证传递闭环。
