@@ -1079,7 +1079,7 @@ void main() {
       // now 31 (v30 series/shelf_entries + v31 hibiki_paired_peers). This v28 DB
       // upgrades all the way to current; TODO-894's backfill still ran (asserted
       // below). The literal had to track the bump.
-      expect(db.schemaVersion, 52,
+      expect(db.schemaVersion, 53,
           reason: 'global schemaVersion is now 38 (TODO-616 v30 + TODO-1017 '
               'v31 + TODO-1195 v32 + TODO-1204 v33 + v34 statistics_tombstones + '
               'TODO-1157 v35 stream_spec_json + TODO-1252 v36 favorite_words '
@@ -1088,7 +1088,7 @@ void main() {
               'v40 collection order_updated_at/tombstones + '
               'v49 activity_events + v50 clipboard_history + '
               'v51 epub_books format + v52 media_collections '
-              'audio_track_id/subtitle_delay_ms 系列级音轨/调轴记忆); '
+              'audio_track_id/subtitle_delay_ms 系列级音轨/调轴记忆 + v53 epub_books manga_reading_mode 漫画阅读形态); '
               'TODO-894 backfill behavior asserted by the srt_books checks below');
 
       // The previously-unpaired EPUB-backed audiobook now has a srt_books row.
@@ -1155,7 +1155,7 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 52,
+      expect(db.schemaVersion, 53,
           reason:
               'TODO-1288 bumps schema to v37 (audiobook srt_books self-heal)');
 
@@ -1315,7 +1315,7 @@ void main() {
 
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 52,
+      expect(db.schemaVersion, 53,
           reason: 'global schemaVersion is now 38 (…v35 + TODO-1252 v36 + '
               'TODO-1288 v37 audiobook srt_books self-heal + v38 unified '
               'media_collections); v29->v30 '
@@ -1375,7 +1375,7 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 52,
+      expect(db.schemaVersion, 53,
           reason:
               'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
@@ -1409,7 +1409,7 @@ void main() {
       final db = await _openDb();
       final version = await db.customSelect('PRAGMA user_version').getSingle();
       expect(version.read<int>('user_version'), db.schemaVersion);
-      expect(db.schemaVersion, 52,
+      expect(db.schemaVersion, 53,
           reason:
               'TODO-1288 v37 audiobook srt_books self-heal; v38 unified media_collections (series→collection + playlist split)');
 
