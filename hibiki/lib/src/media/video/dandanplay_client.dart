@@ -251,7 +251,7 @@ class DandanplayClient {
   /// 播放页的零参 `DandanplayClient()` 自动吃到用户配置的服务器/凭据。显式 [baseUri]
   /// 优先于 [config] 的服务器地址（测试注入 / 强制覆盖用）。
   ///
-  /// 超时分两档（BUG-1054）：[timeout] 给轻量请求（match / search，响应几 KB），
+  /// 超时分两档（BUG-1057）：[timeout] 给轻量请求（match / search，响应几 KB），
   /// [commentTimeout] 给 `/api/v2/comment/{id}`——后者在 `withRelated=true` 时要由
   /// 服务端聚合第三方弹幕源，响应体可达数 MB，而 `http.get().timeout()` 计的是
   /// **整个响应体下载完**的时间；两者共用 8s 会让正片弹幕稳定超时。
@@ -295,7 +295,7 @@ class DandanplayClient {
       }
       final DandanplayFetchResult comments =
           await fetchCommentsForMatch(matched.match!);
-      // 拉弹幕失败时如实上抛失败状态（此前被吞成「命中且 0 条」，见 BUG-1054）；
+      // 拉弹幕失败时如实上抛失败状态（此前被吞成「命中且 0 条」，见 BUG-1057）；
       // 匹配信息仍保留，供 UI 展示已匹配到哪一集。
       return DandanplayFetchResult(
         status: comments.status,
@@ -367,7 +367,7 @@ class DandanplayClient {
 
   /// 拉取 [match] 那一集的弹幕。
   ///
-  /// 返回**带状态**的结果而不是裸列表（BUG-1054）：此前任何非 2xx 都被压成
+  /// 返回**带状态**的结果而不是裸列表（BUG-1057）：此前任何非 2xx 都被压成
   /// `const []`，调用方无从区分「这一集真的 0 条弹幕」与「403 凭据/权限被拒、
   /// 404 无此集、5xx、超时」。后果是手动绑定在服务器拒绝时反而「成功」——面板关闭、
   /// episodeId 落库、弹幕为空、零提示；自动加载则把错误当成缓存失效，白跑一次

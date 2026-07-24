@@ -2375,5 +2375,7 @@
   "download_network_proxy_custom": "自定义",
   "download_network_proxy_auto_hint": "仅影响 AniList、Nyaa 和 Jimaku。自动模式先读环境变量，再读已启用的系统代理；种子流量不受影响。",
   "download_network_proxy_custom_label": "自定义代理",
-  "update_custom_proxy_auto_hint": "留空时自动读取环境变量，再读取已启用的系统代理。"
+  "update_custom_proxy_auto_hint": "留空时自动读取环境变量，再读取已启用的系统代理。",
+  "video_danmaku_manual_bind_server_error": "弹幕服务器拒绝了请求，请稍后重试",
+  "video_danmaku_manual_bind_empty": "这一集还没有弹幕"
 }

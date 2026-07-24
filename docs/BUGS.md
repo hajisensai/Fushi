@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1023 条。点号进各自文件。
+> 共 1024 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1057](bugs/BUG-1057-danmaku-comment-fetch-timeout-and-swallowed-status.md) | ✅ | ✅ | 手动匹配弹幕「弹幕加载失败」：拉弹幕与搜索共用 8s 超时，且非 2xx 被吞成空列表 |
 | [BUG-1056](bugs/BUG-1056-jimaku-source-subscription.md) | ✅ | ✅ | 字幕来源不可选且连载订阅无法绑定合集字幕 |
 | [BUG-1055](bugs/BUG-1055-anilist-segmented-title.md) | ✅ | ✅ | AniList 罗马字分词差异导致番剧误报无结果 |
 | [BUG-1054](bugs/BUG-1054-download-discovery-proxy.md) | ✅ | ✅ | 下载发现未读取环境与系统代理导致搜索超时 |

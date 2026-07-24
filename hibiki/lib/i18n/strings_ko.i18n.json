@@ -2375,5 +2375,7 @@
   "download_network_proxy_custom": "Custom",
   "download_network_proxy_auto_hint": "Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.",
   "download_network_proxy_custom_label": "Custom proxy",
-  "update_custom_proxy_auto_hint": "Leave blank to use environment variables, then the enabled system proxy."
+  "update_custom_proxy_auto_hint": "Leave blank to use environment variables, then the enabled system proxy.",
+  "video_danmaku_manual_bind_server_error": "The danmaku server rejected the request. Try again later.",
+  "video_danmaku_manual_bind_empty": "No danmaku for this episode yet."
 }

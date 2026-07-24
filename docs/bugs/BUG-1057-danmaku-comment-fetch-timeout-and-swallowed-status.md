@@ -1,4 +1,4 @@
-## BUG-1054 · 手动匹配弹幕「弹幕加载失败」：拉弹幕与搜索共用 8s 超时，且非 2xx 被吞成空列表
+## BUG-1057 · 手动匹配弹幕「弹幕加载失败」：拉弹幕与搜索共用 8s 超时，且非 2xx 被吞成空列表
 - **报告**：2026-07-24（用户：截图——视频页「匹配弹幕」搜索 `Bad Girl 08` 已列出《坏女孩》TV动画 第8话，点选后左上角弹「弹幕加载失败，请稍后重试」）
 - **真实性**：✅ 真 bug。根因在 `hibiki/lib/src/media/video/dandanplay_client.dart:375-398`（原 `fetchCommentsForMatch`）与其调用方 `hibiki/lib/src/pages/implementations/video_hibiki/danmaku.part.dart:174-203`（原 `_bindDanmakuEpisode`）。
 

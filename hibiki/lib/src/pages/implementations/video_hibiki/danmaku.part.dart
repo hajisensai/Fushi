@@ -58,7 +58,7 @@ extension _VideoDanmaku on _VideoHibikiPageState {
         );
         // 只有「记住的这一集有效、但确实 0 条弹幕」才值得退回整文件匹配（多半是记错了
         // 集）；网络/服务器失败退回去走的是同一条链路，只会白算一次 16MiB 文件 hash
-        // 再失败一遍（BUG-1054：此前失败被吞成空列表，与 0 条弹幕无从区分）。
+        // 再失败一遍（BUG-1057：此前失败被吞成空列表，与 0 条弹幕无从区分）。
         result =
             cached.status == DandanplayFetchStatus.hit && cached.items.isEmpty
                 ? await client.fetchBestDanmakuForFile(file)
@@ -176,7 +176,7 @@ extension _VideoDanmaku on _VideoHibikiPageState {
       );
       if (!mounted) return;
       if (result.status != DandanplayFetchStatus.hit) {
-        // BUG-1054：拉弹幕失败时保持面板打开、不落 episodeId，并按失败类型给具体
+        // BUG-1057：拉弹幕失败时保持面板打开、不落 episodeId，并按失败类型给具体
         // 文案。此前非 2xx 被吞成空列表，反而走「成功」分支：面板关闭、episodeId
         // 落库、弹幕为空、零提示。
         debugPrint(

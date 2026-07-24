@@ -199,10 +199,10 @@ void main() {
       expect(result.items, isEmpty);
     });
 
-    // ---- BUG-1054 回归：拉弹幕的失败必须能被调用方区分，且不与轻量请求共用超时 ----
+    // ---- BUG-1057 回归：拉弹幕的失败必须能被调用方区分，且不与轻量请求共用超时 ----
 
     test(
-        'BUG-1054: comment fetch reports non-2xx as serverError instead of an '
+        'BUG-1057: comment fetch reports non-2xx as serverError instead of an '
         'empty comment list', () async {
       for (final int code in <int>[403, 404, 500]) {
         final DandanplayClient client = DandanplayClient(
@@ -221,7 +221,7 @@ void main() {
       }
     });
 
-    test('BUG-1054: comment fetch reports network failure as networkError',
+    test('BUG-1057: comment fetch reports network failure as networkError',
         () async {
       final DandanplayClient client = DandanplayClient(
         httpClient: MockClient((_) async => throw const SocketException('x')),
@@ -234,7 +234,7 @@ void main() {
       expect(result.items, isEmpty);
     });
 
-    test('BUG-1054: a valid episode with zero comments stays a hit', () async {
+    test('BUG-1057: a valid episode with zero comments stays a hit', () async {
       final DandanplayClient client = DandanplayClient(
         httpClient: MockClient((_) async => http.Response(
               jsonEncode(<String, dynamic>{'comments': <dynamic>[]}),
@@ -251,7 +251,7 @@ void main() {
     });
 
     test(
-        'BUG-1054: comment fetch uses its own long timeout, not the light-request '
+        'BUG-1057: comment fetch uses its own long timeout, not the light-request '
         'one', () async {
       // 直接触发点：搜索/匹配（几 KB）与拉弹幕（withRelated=true，服务端聚合第三方源、
       // 响应体可达数 MB）此前共用同一个 8s；http.get().timeout() 计的是整个响应体下载完
@@ -287,7 +287,7 @@ void main() {
     });
 
     test(
-        'BUG-1054: fetchBestDanmakuForFile propagates the comment failure '
+        'BUG-1057: fetchBestDanmakuForFile propagates the comment failure '
         'instead of claiming a hit with zero comments', () async {
       final File file = File(p.join(tempDir.path, 'Episode 10.mkv'));
       file.writeAsBytesSync(<int>[1, 2, 3, 4]);

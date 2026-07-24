@@ -264,7 +264,7 @@ void main() {
   });
 
   test(
-      'BUG-1054 source guard: manual bind gates on fetch status before '
+      'BUG-1057 source guard: manual bind gates on fetch status before '
       'persisting the episode', () {
     final String page = readVideoHibikiSource();
     final int start = page.indexOf('Future<void> _bindDanmakuEpisode');
@@ -277,8 +277,7 @@ void main() {
     // （面板关闭 + episodeId 落库 + 弹幕为空 + 零提示）。
     final int gate = body.indexOf('result.status != DandanplayFetchStatus.hit');
     final int persist = body.indexOf('setVideoDanmakuEpisodeId');
-    expect(gate, greaterThanOrEqualTo(0),
-        reason: '手动绑定必须检查拉弹幕的状态，而不是只看是否抛异常');
+    expect(gate, greaterThanOrEqualTo(0), reason: '手动绑定必须检查拉弹幕的状态，而不是只看是否抛异常');
     expect(persist, greaterThan(gate),
         reason: '拉弹幕失败时不得持久化 episodeId，否则下次自动加载会记住一个错的集');
     expect(body.indexOf('return;', gate), lessThan(persist),
@@ -292,7 +291,7 @@ void main() {
   });
 
   test(
-      'BUG-1054 source guard: cached-episode load only re-matches on a genuine '
+      'BUG-1057 source guard: cached-episode load only re-matches on a genuine '
       'empty hit', () {
     final String page = readVideoHibikiSource();
     final int start = page.indexOf('Future<void> _loadDanmakuForVideo');
