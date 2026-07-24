@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/mining/galgame_helper_installer.dart';
 
@@ -133,5 +135,69 @@ void main() {
       expect(galgameHelperNeedsUpdate(shaA, null), isFalse);
       expect(galgameHelperNeedsUpdate(null, null), isFalse);
     });
+  });
+
+  group('helper release manifest', () {
+    test('x86 requires locale runtime and license', () {
+      expect(
+        galgameHelperRequiredFiles('x86'),
+        containsAll(<String>[
+          'hibiki_voice_injector.exe',
+          'hibiki_voice_hook.dll',
+          'LunaHook32.dll',
+          'LunaHost32.dll',
+          'LoaderDll.dll',
+          'LocaleEmulator.dll',
+          'LocaleEmulator-LGPL-3.0.txt',
+        ]),
+      );
+    });
+
+    test('x64 uses its own Luna binaries and does not require x86 locale DLLs',
+        () {
+      final List<String> required = galgameHelperRequiredFiles('x64');
+      expect(
+          required,
+          containsAll(<String>[
+            'hibiki_voice_injector.exe',
+            'hibiki_voice_hook.dll',
+            'LunaHook64.dll',
+            'LunaHost64.dll',
+          ]));
+      expect(required, isNot(contains('LoaderDll.dll')));
+      expect(required, isNot(contains('LocaleEmulator.dll')));
+    });
+
+    test('missing-file detection is case-insensitive and complete', () {
+      final List<String> present =
+          List<String>.from(galgameHelperRequiredFiles('x86'))
+            ..remove('LocaleEmulator.dll')
+            ..remove('LocaleEmulator-LGPL-3.0.txt')
+            ..add('localeemulator-lgpl-3.0.TXT');
+      expect(
+        galgameHelperMissingFiles('x86', present),
+        <String>['LocaleEmulator.dll'],
+      );
+    });
+
+    test('unknown architecture is rejected', () {
+      expect(
+        () => galgameHelperRequiredFiles('arm64'),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  test('incomplete existing installs are repaired before launch', () {
+    final String source = File(
+      'lib/src/mining/galgame_helper_installer.dart',
+    ).readAsStringSync();
+    expect(source, contains('if (_hasExistingInstall(arch))'));
+    expect(source, contains('expectedSize: null'));
+    expect(source, contains('missingFromPackage'));
+    expect(
+      source.indexOf('missingFromPackage'),
+      lessThan(source.indexOf('_markerFile(arch).writeAsString')),
+    );
   });
 }

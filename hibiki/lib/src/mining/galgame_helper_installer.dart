@@ -43,6 +43,44 @@ List<String> galgameHelperCandidateUrls(String url) => <String>[
 /// 按目标游戏位数选注入器架构目录名：32 位游戏→x86，否则→x64（注入 DLL 位数必须匹配目标进程）。
 String galgameHelperArch({required bool is32Bit}) => is32Bit ? 'x86' : 'x64';
 
+/// helper 发布包根目录清单。必须与
+/// `.github/workflows/voice-hook-helper.yml` 保持一致。
+List<String> galgameHelperRequiredFiles(String arch) {
+  switch (arch) {
+    case 'x86':
+      return const <String>[
+        'hibiki_voice_injector.exe',
+        'hibiki_voice_hook.dll',
+        'LunaHook32.dll',
+        'LunaHost32.dll',
+        'LoaderDll.dll',
+        'LocaleEmulator.dll',
+        'LocaleEmulator-LGPL-3.0.txt',
+      ];
+    case 'x64':
+      return const <String>[
+        'hibiki_voice_injector.exe',
+        'hibiki_voice_hook.dll',
+        'LunaHook64.dll',
+        'LunaHost64.dll',
+      ];
+    default:
+      throw ArgumentError.value(arch, 'arch', 'unsupported helper arch');
+  }
+}
+
+/// 返回缺少的 helper 必需文件名；按 Windows 规则忽略文件名大小写。
+List<String> galgameHelperMissingFiles(
+  String arch,
+  Iterable<String> presentFiles,
+) {
+  final Set<String> present =
+      presentFiles.map((String name) => name.toLowerCase()).toSet();
+  return galgameHelperRequiredFiles(arch)
+      .where((String name) => !present.contains(name.toLowerCase()))
+      .toList(growable: false);
+}
+
 /// 某架构的分发 zip 文件名（与 CI workflow 打包命名一一对应）。
 String galgameHelperZipName(String arch) => 'voice_hook_$arch.zip';
 
@@ -118,17 +156,31 @@ class GalgameHelperInstaller {
     return Directory(p.join(exeDir, 'voice_hook', arch));
   }
 
-  /// 目标架构注入器 exe 的绝对路径。
-  File _injectorFile(String arch) =>
-      File(p.join(_archDir(arch).path, 'hibiki_voice_injector.exe'));
-
   /// 目标架构已装版本标记文件（内容 = 已装 zip 的 sha256）。
   File _markerFile(String arch) =>
       File(p.join(_archDir(arch).path, galgameHelperMarkerName()));
 
+  List<String> _missingInstalledFiles(String arch) {
+    final Directory dir = _archDir(arch);
+    if (!dir.existsSync()) {
+      return galgameHelperRequiredFiles(arch);
+    }
+    final Iterable<String> present = dir
+        .listSync(followLinks: false)
+        .whereType<File>()
+        .map((File file) => p.basename(file.path));
+    return galgameHelperMissingFiles(arch, present);
+  }
+
+  bool _hasExistingInstall(String arch) {
+    final Directory dir = _archDir(arch);
+    return dir.existsSync() && dir.listSync(followLinks: false).isNotEmpty;
+  }
+
   /// 确保对应架构注入器就位：
-  /// - 已存在 → true（幂等，直接放行启动）；
-  /// - 缺失 → 弹确认对话框（标大小）→ 确认后下载+校验+解压→复检；
+  /// - 完整安装 → true（并 best-effort 检查更新）；
+  /// - 已有残缺安装 → 自动下载当前包修复，失败则阻止错误启动；
+  /// - 从未安装 → 弹确认对话框（标大小）→ 确认后下载+校验+解压→复检；
   /// - 用户取消 / 下载失败 / 校验失败 / 解压后仍缺 → false（调用方中止启动）。
   Future<bool> ensureInjector({
     required bool is32Bit,
@@ -136,14 +188,31 @@ class GalgameHelperInstaller {
   }) async {
     if (!Platform.isWindows) return false;
     final String arch = galgameHelperArch(is32Bit: is32Bit);
-    final File injector = _injectorFile(arch);
-    if (injector.existsSync()) {
+    final List<String> missingBefore = _missingInstalledFiles(arch);
+    if (missingBefore.isEmpty) {
       // 已装：best-effort 检查 release 是否有新版（sha256 侧车比对），有则静默刷新（带进度框）。
       // 离线/超时/无标记/更新失败一律沿用现有，绝不阻塞启动（Never break）。
       if (context.mounted) {
         await _maybeAutoUpdate(arch: arch, context: context);
       }
-      return true; // 幂等：已装好（可能刚被刷新）
+      return _missingInstalledFiles(arch).isEmpty;
+    }
+
+    // 旧安装可能只有 injector，缺 Luna 或 Locale Emulator。直接用当前发布包修复；
+    // x86 缺转区组件时不得回退到普通区域启动非 Unicode 游戏。
+    if (_hasExistingInstall(arch)) {
+      final bool repaired = await _downloadAndExtract(
+        context: context,
+        arch: arch,
+        expectedSize: null,
+      );
+      if (!repaired || _missingInstalledFiles(arch).isNotEmpty) {
+        if (context.mounted) {
+          HibikiToast.show(msg: t.galgame_helper_install_incomplete);
+        }
+        return false;
+      }
+      return true;
     }
 
     // 确认对话框**立即**弹出，绝不为 best-effort 的大小探测阻塞 UI（旧实现先 await
@@ -183,7 +252,7 @@ class GalgameHelperInstaller {
     );
     if (!ok) return false;
 
-    if (!injector.existsSync()) {
+    if (_missingInstalledFiles(arch).isNotEmpty) {
       HibikiToast.show(msg: t.galgame_helper_install_incomplete);
       return false;
     }
@@ -361,7 +430,23 @@ class GalgameHelperInstaller {
       );
 
       // 3) 解压到 archDir（覆盖写；保留 x64 unity_audio_runtime/ 子目录）。
-      await _extractZip(zip, _archDir(arch));
+      final Set<String> extractedRootFiles =
+          await _extractZip(zip, _archDir(arch));
+      final List<String> missingFromPackage =
+          galgameHelperMissingFiles(arch, extractedRootFiles);
+      if (missingFromPackage.isNotEmpty) {
+        throw StateError(
+          'helper package incomplete ($arch): '
+          'missing ${missingFromPackage.join(', ')}',
+        );
+      }
+      final List<String> missingAfterExtract = _missingInstalledFiles(arch);
+      if (missingAfterExtract.isNotEmpty) {
+        throw StateError(
+          'helper install incomplete ($arch): '
+          'missing ${missingAfterExtract.join(', ')}',
+        );
+      }
 
       // 记录本次已装 zip 的 sha256 作自动更新比对基线；无 sha 侧车时不写标记（下次不自动更新，
       // 保守）。写标记失败不影响安装成功（best-effort）。
@@ -508,11 +593,12 @@ class GalgameHelperInstaller {
   /// getter（archive 3.6.1 下 ArchiveFile.decompress(out) 会写 0 字节，见
   /// sync_asset_package_service.dart 注释，故取 content 字节直接写）。只写常规文件、保留
   /// 相对目录结构，并拒绝绝对路径或逃出目标目录的条目以防 zip-slip。
-  Future<void> _extractZip(File zip, Directory targetDir) async {
+  Future<Set<String>> _extractZip(File zip, Directory targetDir) async {
     await targetDir.create(recursive: true);
     final Uint8List bytes = await zip.readAsBytes();
     final Archive archive = ZipDecoder().decodeBytes(bytes);
     final String targetRoot = p.normalize(targetDir.absolute.path);
+    final Set<String> extractedRootFiles = <String>{};
     for (final ArchiveFile entry in archive) {
       if (!entry.isFile) continue;
       final String relativePath =
@@ -525,7 +611,11 @@ class GalgameHelperInstaller {
       final File out = File(outputPath);
       await out.parent.create(recursive: true);
       await out.writeAsBytes(content, flush: true);
+      if (p.dirname(relativePath) == '.') {
+        extractedRootFiles.add(p.basename(relativePath));
+      }
     }
+    return extractedRootFiles;
   }
 }
 
