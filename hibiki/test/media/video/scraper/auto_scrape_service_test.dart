@@ -327,6 +327,31 @@ void main() {
     expect(await repo.scrapeMetadata('video/stop'), isNull);
   });
 
+  test('dispose 立刻唤醒节流等待，不留 pending Timer（BUG-834 类孤儿 async）', () async {
+    // 非零间隔：真机默认路径。sweep 会在第一本刮完后挂在节流等待上。
+    final List<VideoBookRow> books = <VideoBookRow>[
+      for (int i = 20; i <= 22; i++)
+        await seed(bookUid: 'video/throttle$i', videoPath: pathFor(i)),
+    ];
+    final VideoScrapeAutoService auto = VideoScrapeAutoService(
+      repository: repo,
+      serviceFactory: () async => buildService(),
+      perBookDelay: const Duration(seconds: 30),
+    );
+
+    final Future<void> running = auto.sweep(books);
+    // 让第一本跑完并挂上 30s 节流等待。
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    auto.dispose();
+
+    // 若 dispose 不唤醒等待，这里要挂满 30s 才返回（测试超时即回归）。
+    await running.timeout(
+      const Duration(seconds: 5),
+      onTimeout: () => fail('dispose 后 sweep 应立刻收手，不该继续等节流定时器'),
+    );
+    expect(auto.isRunning, isFalse);
+  });
+
   test('资料 JSON 列往返：标签/infobox 原样读回', () async {
     await seed(bookUid: 'video/roundtrip', videoPath: pathFor(9));
     await repo.saveScrapeMetadata(
