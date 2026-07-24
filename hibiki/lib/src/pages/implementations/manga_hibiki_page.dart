@@ -277,6 +277,13 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   List<MangaSpreadEntry> _spreads = <MangaSpreadEntry>[];
   bool _loadFailed = false;
 
+  /// 双页布局偏好：页内菜单运行时切换，不持久化，默认自动（横屏双页/竖屏单页）。
+  MangaSpreadPreference _spreadPreference = MangaSpreadPreference.auto;
+
+  /// 最近一次实际生效的布局（由 [_buildSpreadsFor] 记账），didChangeMetrics
+  /// 只在解析结果真变时才重建 spread 序列，避免键盘弹出等无关 metrics 抖动。
+  MangaPageLayout _pageLayout = MangaPageLayout.single;
+
   int _currentSpread = 0;
   int _currentPage = 0;
   double _currentFraction = 0;
@@ -350,6 +357,53 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     // 返回书架的正常路径：await 落盘，保证书架 recency/进度立刻正确。
     await _flushPosition();
     _readingTimeTracker?.stop();
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    // 旋转/窗口尺寸变化：自动布局可能在单页↔双页间翻转。didChangeMetrics 触发时
+    // MediaQuery 可能尚未反映新尺寸，推迟到帧后再解析；只有解析结果真变才重建。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_applySpreadLayoutIfChanged());
+    });
+  }
+
+  /// 若视口/偏好解析出的布局与当前生效布局不同，重建 spread 序列并保持当前页。
+  Future<void> _applySpreadLayoutIfChanged() async {
+    final MokuroPayload? payload = _payload;
+    if (payload == null || _mode != MangaReadingMode.spread) return;
+    if (_resolveLayout(_mode) == _pageLayout) return;
+    await _rebuildSpreadsPreservingPage(payload);
+  }
+
+  /// 以新布局重建 spread 序列：保持当前 spread 首页所在页，重挂窗口文档并
+  /// 落一次进度（sectionIndex 仍是 spread 首页页码，语义不变）。
+  Future<void> _rebuildSpreadsPreservingPage(MokuroPayload payload) async {
+    final int currentPage =
+        MangaHibikiPage.firstPageOfSpread(_spreads, _currentSpread);
+    final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, _mode);
+    setState(() {
+      _spreads = spreads;
+      _currentSpread = MangaHibikiPage.spreadIndexForPage(spreads, currentPage);
+      _currentPage = MangaHibikiPage.firstPageOfSpread(spreads, _currentSpread);
+    });
+    _pageNotifier.value = _currentPage;
+    await _loadInitialWindow();
+    _updateCurrentPageImagePath();
+    _recordProgress();
+  }
+
+  /// 页内菜单切换布局偏好（自动/单页/双页；运行时状态，不落库）。
+  Future<void> _setSpreadPreference(MangaSpreadPreference preference) async {
+    if (preference == _spreadPreference) return;
+    setState(() => _spreadPreference = preference);
+    final MokuroPayload? payload = _payload;
+    if (payload == null || _mode != MangaReadingMode.spread) return;
+    if (_resolveLayout(_mode) != _pageLayout) {
+      await _rebuildSpreadsPreservingPage(payload);
+    }
   }
 
   // ── 加载 / 恢复 ───────────────────────────────────────────────────────
@@ -427,16 +481,38 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     _pageNotifier.value = _currentPage;
   }
 
-  /// 构建 spread 序列。webtoon 每页独立；spread 模式当前恒单页布局（双页配对/封面
-  /// 偏移/方向配置列未入 schema，单页在所有设备上都正确，几何由覆盖层 100vw 槽宽落实）。
+  /// 当前视口是否横屏（宽 > 高）。自动布局的唯一判据。
+  bool get _viewportIsLandscape {
+    final Size size = MediaQuery.sizeOf(context);
+    return size.width > size.height;
+  }
+
+  /// 解析当前应生效的页布局：webtoon 恒单页（竖滚流布局与双页互斥）；spread 按
+  /// 偏好 + 视口横竖（[resolveMangaPageLayout] 纯函数）。
+  MangaPageLayout _resolveLayout(MangaReadingMode mode) {
+    if (mode == MangaReadingMode.webtoon) {
+      return MangaPageLayout.single;
+    }
+    return resolveMangaPageLayout(
+      preference: _spreadPreference,
+      isLandscape: _viewportIsLandscape,
+    );
+  }
+
+  /// 构建 spread 序列。webtoon 每页独立；spread 模式按解析出的布局配对（双页
+  /// 两两配对，奇数尾页独占；RTL 左右排序由覆盖层 direction:rtl 落实——DOM 序
+  /// 前一页序在右，符合日漫右开本）。spreadOffset 恒 1：日漫惯例封面独占单页，
+  /// 正文从第 2 页起两两配对（自定义偏移列未入 schema，需要时再加）。
   List<MangaSpreadEntry> _buildSpreadsFor(
     MokuroPayload payload,
     MangaReadingMode mode,
   ) {
+    final MangaPageLayout layout = _resolveLayout(mode);
+    _pageLayout = layout;
     return buildMangaSpreads(
       payload.images.length,
-      layout: MangaPageLayout.single,
-      spreadOffset: 0,
+      layout: layout,
+      spreadOffset: 1,
     );
   }
 
@@ -1048,10 +1124,21 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
           builder: (BuildContext context, int page, Widget? child) {
             final int pageCount = _payload?.images.length ?? 0;
             if (pageCount <= 0) return const SizedBox.shrink();
+            // 双页 spread 显示页码区间（如 3-4 / 40）；单页保持原样。
+            final int spreadIndex =
+                MangaHibikiPage.spreadIndexForPage(_spreads, page);
+            final MangaSpreadEntry? entry =
+                (spreadIndex >= 0 && spreadIndex < _spreads.length)
+                    ? _spreads[spreadIndex]
+                    : null;
+            final String label = (entry != null && entry.isSpread)
+                ? '${entry.pageIndices.first + 1}-'
+                    '${entry.pageIndices.last + 1} / $pageCount'
+                : '${page + 1} / $pageCount';
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
-                '${page + 1} / $pageCount',
+                label,
                 style: Theme.of(context)
                     .textTheme
                     .labelLarge
@@ -1060,6 +1147,33 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
             );
           },
         ),
+        // 布局偏好菜单（自动/单页/双页）：只对 spread 模式有意义，webtoon 恒单页。
+        if (_mode == MangaReadingMode.spread)
+          PopupMenuButton<MangaSpreadPreference>(
+            tooltip: t.spread_mode,
+            icon: const Icon(Icons.menu_book_outlined, color: Colors.white),
+            initialValue: _spreadPreference,
+            onSelected: (MangaSpreadPreference preference) =>
+                unawaited(_setSpreadPreference(preference)),
+            itemBuilder: (BuildContext context) =>
+                <PopupMenuEntry<MangaSpreadPreference>>[
+              CheckedPopupMenuItem<MangaSpreadPreference>(
+                value: MangaSpreadPreference.auto,
+                checked: _spreadPreference == MangaSpreadPreference.auto,
+                child: Text(t.spread_auto),
+              ),
+              CheckedPopupMenuItem<MangaSpreadPreference>(
+                value: MangaSpreadPreference.single,
+                checked: _spreadPreference == MangaSpreadPreference.single,
+                child: Text(t.spread_off),
+              ),
+              CheckedPopupMenuItem<MangaSpreadPreference>(
+                value: MangaSpreadPreference.double,
+                checked: _spreadPreference == MangaSpreadPreference.double,
+                child: Text(t.spread_on),
+              ),
+            ],
+          ),
         Tooltip(
           message: t.manga_mode_toggle,
           child: IconButton(

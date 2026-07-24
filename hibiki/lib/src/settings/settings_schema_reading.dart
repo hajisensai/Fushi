@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/settings/settings_schema_manga_ocr.dart';
 import 'package:hibiki/utils.dart';
 
 SettingsDestination buildReadingDestination() {
@@ -840,6 +841,10 @@ SettingsDestination buildReadingDestination() {
           ),
         ],
       ),
+      // 「漫画 OCR」组（内置模型下载/删除 + 外部 mokuro CLI）——仅桌面显示，
+      // 默认折叠。见 settings_schema_manga_ocr.dart（经 provider 触达并行编写的
+      // MangaOcrServiceImpl，impl 落地前 analyze 会报缺文件）。
+      buildMangaOcrSection(),
     ],
   );
 }

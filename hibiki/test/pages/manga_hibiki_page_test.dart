@@ -114,6 +114,11 @@ void main() {
   });
 
   testWidgets('有书行时加载 manga.json 并恢复已存页码（真实进度读穿）', (WidgetTester tester) async {
+    // 钉竖屏视口：本测试断言的是单页布局下的恢复语义；默认测试面 800x600 是
+    // 横屏，会命中自动双页布局（横屏双页），页码指示会变成区间显示。
+    tester.view.physicalSize = const Size(600, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
     final HibikiDatabase db =
         HibikiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
