@@ -804,6 +804,104 @@ void main() {
     endpoints.dispose();
   });
 
+  test('BUG-1049：窗口迟到时会话继续重绑，不停在 window_not_found', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List.fromList(<int>[1, 2, 3, 4]),
+    );
+    // 启动那一刻游戏窗口还没建好（带启动器/壳解包的真实情况）；几秒后才出现。
+    List<ExternalWindowInfo> windows = const <ExternalWindowInfo>[];
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => windows,
+      windowPollAttempts: 1,
+      windowRebindInterval: const Duration(milliseconds: 10),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(await controller.launchGame(r'D:\anemoi\SiglusEngine.exe'), isTrue);
+    expect(controller.state.boundWindow, isNull);
+    expect(controller.state.phase, GalHookSessionPhase.degraded);
+    expect(controller.state.fallbackReason, 'window_not_found');
+
+    // 窗口出现（pid 与 hook 注入的目标一致）。
+    windows = const <ExternalWindowInfo>[
+      ExternalWindowInfo(hwnd: 12, pid: 9, title: '别的窗口'),
+      ExternalWindowInfo(hwnd: 34, pid: 4242, title: '天使☆騒々 RE-BOOT!'),
+    ];
+    for (int i = 0; i < 40 && controller.state.boundWindow == null; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    expect(controller.state.boundWindow?.hwnd, 34,
+        reason: '游戏窗口一出现就该自动绑上，不必用户手动去选');
+    expect(controller.state.fallbackReason, isNull);
+    expect(controller.state.phase, isNot(GalHookSessionPhase.degraded));
+    expect(
+      controller.events.map((GalHookEvent event) => event.code),
+      contains('window.auto_bound_late'),
+    );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('BUG-1049：会话停止后不再继续重绑窗口', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List.fromList(<int>[1, 2, 3, 4]),
+    );
+    List<ExternalWindowInfo> windows = const <ExternalWindowInfo>[];
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      windowListLoader: () async => windows,
+      windowPollAttempts: 1,
+      windowRebindInterval: const Duration(milliseconds: 10),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(await controller.launchGame(r'D:\anemoi\SiglusEngine.exe'), isTrue);
+    await controller.stopCapture(keepBinding: false);
+    windows = const <ExternalWindowInfo>[
+      ExternalWindowInfo(hwnd: 34, pid: 4242, title: '天使☆騒々 RE-BOOT!'),
+    ];
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+
+    expect(controller.state.boundWindow, isNull,
+        reason: '会话已停，迟到的窗口不该把 app 拉回一条死会话');
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
   test('游戏活动落库：hook 台词累计字符/时长写入 activity_events（game 类别）', () async {
     final HibikiDatabase db =
         HibikiDatabase.forTesting(NativeDatabase.memory());

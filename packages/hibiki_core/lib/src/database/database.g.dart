@@ -13045,6 +13045,18 @@ class $MediaCollectionsTable extends MediaCollections
   late final GeneratedColumn<int> anilistId = GeneratedColumn<int>(
       'anilist_id', aliasedName, true,
       type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _audioTrackIdMeta =
+      const VerificationMeta('audioTrackId');
+  @override
+  late final GeneratedColumn<String> audioTrackId = GeneratedColumn<String>(
+      'audio_track_id', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _subtitleDelayMsMeta =
+      const VerificationMeta('subtitleDelayMs');
+  @override
+  late final GeneratedColumn<int> subtitleDelayMs = GeneratedColumn<int>(
+      'subtitle_delay_ms', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -13054,7 +13066,9 @@ class $MediaCollectionsTable extends MediaCollections
         sortOrder,
         createdAt,
         orderUpdatedAt,
-        anilistId
+        anilistId,
+        audioTrackId,
+        subtitleDelayMs
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -13107,6 +13121,18 @@ class $MediaCollectionsTable extends MediaCollections
       context.handle(_anilistIdMeta,
           anilistId.isAcceptableOrUnknown(data['anilist_id']!, _anilistIdMeta));
     }
+    if (data.containsKey('audio_track_id')) {
+      context.handle(
+          _audioTrackIdMeta,
+          audioTrackId.isAcceptableOrUnknown(
+              data['audio_track_id']!, _audioTrackIdMeta));
+    }
+    if (data.containsKey('subtitle_delay_ms')) {
+      context.handle(
+          _subtitleDelayMsMeta,
+          subtitleDelayMs.isAcceptableOrUnknown(
+              data['subtitle_delay_ms']!, _subtitleDelayMsMeta));
+    }
     return context;
   }
 
@@ -13132,6 +13158,10 @@ class $MediaCollectionsTable extends MediaCollections
           .read(DriftSqlType.int, data['${effectivePrefix}order_updated_at'])!,
       anilistId: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}anilist_id']),
+      audioTrackId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}audio_track_id']),
+      subtitleDelayMs: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}subtitle_delay_ms']),
     );
   }
 
@@ -13173,6 +13203,22 @@ class MediaCollectionRow extends DataClass
   /// 番名猜测。NULL = 未绑定（回退用合集名经 AniList 现解析）。无损迁移：nullable 无
   /// default，旧库既有行全 NULL = 行为与旧版一致。
   final int? anilistId;
+
+  /// 系列级音轨偏好（libmpv `AudioTrack.id`，schema v52）。统一合集迁移前多集视频
+  /// 共享一行 [VideoBooks]，天然「整片一个音轨」；迁移后每集是独立行、换集不再共享 →
+  /// 同系列音轨记忆退化（回归）。把偏好提升回系列容器修根：合集内任一集选音轨即写这里，
+  /// 任一集加载优先读这里（回退各集自己行的 [VideoBooks.audioTrackId]，兼容迁移前已存的
+  /// per-book 值）。NULL = 系列内没人选过（回退 per-book / libmpv 默认）。无损迁移：
+  /// nullable 无 default → 旧库既有行全 NULL = 行为与旧版一致（Never break userspace）。
+  final String? audioTrackId;
+
+  /// 系列级字幕调轴（音画延迟，毫秒，schema v52）。与 [audioTrackId] 同款「系列共享」
+  /// 语义，恢复统一合集迁移前多集共享一个调轴值的行为。合集内任一集调轴即写这里，任一集
+  /// 加载优先读这里（回退各集自己行的 [VideoBooks.delayMs]）。**nullable**（区别于
+  /// [VideoBooks.delayMs] 的 withDefault(0)）：NULL = 系列内没人调过（回退 per-book / 0），
+  /// 与「显式调成 0」区分，避免 0 哨兵歧义。无损迁移：nullable 无 default → 旧库既有行全
+  /// NULL = 行为与旧版一致（Never break userspace）。
+  final int? subtitleDelayMs;
   const MediaCollectionRow(
       {required this.id,
       required this.name,
@@ -13181,7 +13227,9 @@ class MediaCollectionRow extends DataClass
       required this.sortOrder,
       required this.createdAt,
       required this.orderUpdatedAt,
-      this.anilistId});
+      this.anilistId,
+      this.audioTrackId,
+      this.subtitleDelayMs});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -13196,6 +13244,12 @@ class MediaCollectionRow extends DataClass
     map['order_updated_at'] = Variable<int>(orderUpdatedAt);
     if (!nullToAbsent || anilistId != null) {
       map['anilist_id'] = Variable<int>(anilistId);
+    }
+    if (!nullToAbsent || audioTrackId != null) {
+      map['audio_track_id'] = Variable<String>(audioTrackId);
+    }
+    if (!nullToAbsent || subtitleDelayMs != null) {
+      map['subtitle_delay_ms'] = Variable<int>(subtitleDelayMs);
     }
     return map;
   }
@@ -13214,6 +13268,12 @@ class MediaCollectionRow extends DataClass
       anilistId: anilistId == null && nullToAbsent
           ? const Value.absent()
           : Value(anilistId),
+      audioTrackId: audioTrackId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(audioTrackId),
+      subtitleDelayMs: subtitleDelayMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(subtitleDelayMs),
     );
   }
 
@@ -13229,6 +13289,8 @@ class MediaCollectionRow extends DataClass
       createdAt: serializer.fromJson<int>(json['createdAt']),
       orderUpdatedAt: serializer.fromJson<int>(json['orderUpdatedAt']),
       anilistId: serializer.fromJson<int?>(json['anilistId']),
+      audioTrackId: serializer.fromJson<String?>(json['audioTrackId']),
+      subtitleDelayMs: serializer.fromJson<int?>(json['subtitleDelayMs']),
     );
   }
   @override
@@ -13243,6 +13305,8 @@ class MediaCollectionRow extends DataClass
       'createdAt': serializer.toJson<int>(createdAt),
       'orderUpdatedAt': serializer.toJson<int>(orderUpdatedAt),
       'anilistId': serializer.toJson<int?>(anilistId),
+      'audioTrackId': serializer.toJson<String?>(audioTrackId),
+      'subtitleDelayMs': serializer.toJson<int?>(subtitleDelayMs),
     };
   }
 
@@ -13254,7 +13318,9 @@ class MediaCollectionRow extends DataClass
           int? sortOrder,
           int? createdAt,
           int? orderUpdatedAt,
-          Value<int?> anilistId = const Value.absent()}) =>
+          Value<int?> anilistId = const Value.absent(),
+          Value<String?> audioTrackId = const Value.absent(),
+          Value<int?> subtitleDelayMs = const Value.absent()}) =>
       MediaCollectionRow(
         id: id ?? this.id,
         name: name ?? this.name,
@@ -13264,6 +13330,11 @@ class MediaCollectionRow extends DataClass
         createdAt: createdAt ?? this.createdAt,
         orderUpdatedAt: orderUpdatedAt ?? this.orderUpdatedAt,
         anilistId: anilistId.present ? anilistId.value : this.anilistId,
+        audioTrackId:
+            audioTrackId.present ? audioTrackId.value : this.audioTrackId,
+        subtitleDelayMs: subtitleDelayMs.present
+            ? subtitleDelayMs.value
+            : this.subtitleDelayMs,
       );
   MediaCollectionRow copyWithCompanion(MediaCollectionsCompanion data) {
     return MediaCollectionRow(
@@ -13280,6 +13351,12 @@ class MediaCollectionRow extends DataClass
           ? data.orderUpdatedAt.value
           : this.orderUpdatedAt,
       anilistId: data.anilistId.present ? data.anilistId.value : this.anilistId,
+      audioTrackId: data.audioTrackId.present
+          ? data.audioTrackId.value
+          : this.audioTrackId,
+      subtitleDelayMs: data.subtitleDelayMs.present
+          ? data.subtitleDelayMs.value
+          : this.subtitleDelayMs,
     );
   }
 
@@ -13293,14 +13370,25 @@ class MediaCollectionRow extends DataClass
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('orderUpdatedAt: $orderUpdatedAt, ')
-          ..write('anilistId: $anilistId')
+          ..write('anilistId: $anilistId, ')
+          ..write('audioTrackId: $audioTrackId, ')
+          ..write('subtitleDelayMs: $subtitleDelayMs')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, name, collectionType, coverSource,
-      sortOrder, createdAt, orderUpdatedAt, anilistId);
+  int get hashCode => Object.hash(
+      id,
+      name,
+      collectionType,
+      coverSource,
+      sortOrder,
+      createdAt,
+      orderUpdatedAt,
+      anilistId,
+      audioTrackId,
+      subtitleDelayMs);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -13312,7 +13400,9 @@ class MediaCollectionRow extends DataClass
           other.sortOrder == this.sortOrder &&
           other.createdAt == this.createdAt &&
           other.orderUpdatedAt == this.orderUpdatedAt &&
-          other.anilistId == this.anilistId);
+          other.anilistId == this.anilistId &&
+          other.audioTrackId == this.audioTrackId &&
+          other.subtitleDelayMs == this.subtitleDelayMs);
 }
 
 class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
@@ -13324,6 +13414,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
   final Value<int> createdAt;
   final Value<int> orderUpdatedAt;
   final Value<int?> anilistId;
+  final Value<String?> audioTrackId;
+  final Value<int?> subtitleDelayMs;
   const MediaCollectionsCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
@@ -13333,6 +13425,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     this.createdAt = const Value.absent(),
     this.orderUpdatedAt = const Value.absent(),
     this.anilistId = const Value.absent(),
+    this.audioTrackId = const Value.absent(),
+    this.subtitleDelayMs = const Value.absent(),
   });
   MediaCollectionsCompanion.insert({
     this.id = const Value.absent(),
@@ -13343,6 +13437,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     required int createdAt,
     this.orderUpdatedAt = const Value.absent(),
     this.anilistId = const Value.absent(),
+    this.audioTrackId = const Value.absent(),
+    this.subtitleDelayMs = const Value.absent(),
   })  : name = Value(name),
         createdAt = Value(createdAt);
   static Insertable<MediaCollectionRow> custom({
@@ -13354,6 +13450,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     Expression<int>? createdAt,
     Expression<int>? orderUpdatedAt,
     Expression<int>? anilistId,
+    Expression<String>? audioTrackId,
+    Expression<int>? subtitleDelayMs,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -13364,6 +13462,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       if (createdAt != null) 'created_at': createdAt,
       if (orderUpdatedAt != null) 'order_updated_at': orderUpdatedAt,
       if (anilistId != null) 'anilist_id': anilistId,
+      if (audioTrackId != null) 'audio_track_id': audioTrackId,
+      if (subtitleDelayMs != null) 'subtitle_delay_ms': subtitleDelayMs,
     });
   }
 
@@ -13375,7 +13475,9 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       Value<int>? sortOrder,
       Value<int>? createdAt,
       Value<int>? orderUpdatedAt,
-      Value<int?>? anilistId}) {
+      Value<int?>? anilistId,
+      Value<String?>? audioTrackId,
+      Value<int?>? subtitleDelayMs}) {
     return MediaCollectionsCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
@@ -13385,6 +13487,8 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       createdAt: createdAt ?? this.createdAt,
       orderUpdatedAt: orderUpdatedAt ?? this.orderUpdatedAt,
       anilistId: anilistId ?? this.anilistId,
+      audioTrackId: audioTrackId ?? this.audioTrackId,
+      subtitleDelayMs: subtitleDelayMs ?? this.subtitleDelayMs,
     );
   }
 
@@ -13415,6 +13519,12 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     if (anilistId.present) {
       map['anilist_id'] = Variable<int>(anilistId.value);
     }
+    if (audioTrackId.present) {
+      map['audio_track_id'] = Variable<String>(audioTrackId.value);
+    }
+    if (subtitleDelayMs.present) {
+      map['subtitle_delay_ms'] = Variable<int>(subtitleDelayMs.value);
+    }
     return map;
   }
 
@@ -13428,7 +13538,9 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('orderUpdatedAt: $orderUpdatedAt, ')
-          ..write('anilistId: $anilistId')
+          ..write('anilistId: $anilistId, ')
+          ..write('audioTrackId: $audioTrackId, ')
+          ..write('subtitleDelayMs: $subtitleDelayMs')
           ..write(')'))
         .toString();
   }
@@ -26557,6 +26669,8 @@ typedef $$MediaCollectionsTableCreateCompanionBuilder
   required int createdAt,
   Value<int> orderUpdatedAt,
   Value<int?> anilistId,
+  Value<String?> audioTrackId,
+  Value<int?> subtitleDelayMs,
 });
 typedef $$MediaCollectionsTableUpdateCompanionBuilder
     = MediaCollectionsCompanion Function({
@@ -26568,6 +26682,8 @@ typedef $$MediaCollectionsTableUpdateCompanionBuilder
   Value<int> createdAt,
   Value<int> orderUpdatedAt,
   Value<int?> anilistId,
+  Value<String?> audioTrackId,
+  Value<int?> subtitleDelayMs,
 });
 
 final class $$MediaCollectionsTableReferences extends BaseReferences<
@@ -26649,6 +26765,13 @@ class $$MediaCollectionsTableFilterComposer
   ColumnFilters<int> get anilistId => $composableBuilder(
       column: $table.anilistId, builder: (column) => ColumnFilters(column));
 
+  ColumnFilters<String> get audioTrackId => $composableBuilder(
+      column: $table.audioTrackId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get subtitleDelayMs => $composableBuilder(
+      column: $table.subtitleDelayMs,
+      builder: (column) => ColumnFilters(column));
+
   Expression<bool> mediaCollectionItemsRefs(
       Expression<bool> Function($$MediaCollectionItemsTableFilterComposer f)
           f) {
@@ -26729,6 +26852,14 @@ class $$MediaCollectionsTableOrderingComposer
 
   ColumnOrderings<int> get anilistId => $composableBuilder(
       column: $table.anilistId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get audioTrackId => $composableBuilder(
+      column: $table.audioTrackId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get subtitleDelayMs => $composableBuilder(
+      column: $table.subtitleDelayMs,
+      builder: (column) => ColumnOrderings(column));
 }
 
 class $$MediaCollectionsTableAnnotationComposer
@@ -26763,6 +26894,12 @@ class $$MediaCollectionsTableAnnotationComposer
 
   GeneratedColumn<int> get anilistId =>
       $composableBuilder(column: $table.anilistId, builder: (column) => column);
+
+  GeneratedColumn<String> get audioTrackId => $composableBuilder(
+      column: $table.audioTrackId, builder: (column) => column);
+
+  GeneratedColumn<int> get subtitleDelayMs => $composableBuilder(
+      column: $table.subtitleDelayMs, builder: (column) => column);
 
   Expression<T> mediaCollectionItemsRefs<T extends Object>(
       Expression<T> Function($$MediaCollectionItemsTableAnnotationComposer a)
@@ -26844,6 +26981,8 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             Value<int> createdAt = const Value.absent(),
             Value<int> orderUpdatedAt = const Value.absent(),
             Value<int?> anilistId = const Value.absent(),
+            Value<String?> audioTrackId = const Value.absent(),
+            Value<int?> subtitleDelayMs = const Value.absent(),
           }) =>
               MediaCollectionsCompanion(
             id: id,
@@ -26854,6 +26993,8 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             createdAt: createdAt,
             orderUpdatedAt: orderUpdatedAt,
             anilistId: anilistId,
+            audioTrackId: audioTrackId,
+            subtitleDelayMs: subtitleDelayMs,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -26864,6 +27005,8 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             required int createdAt,
             Value<int> orderUpdatedAt = const Value.absent(),
             Value<int?> anilistId = const Value.absent(),
+            Value<String?> audioTrackId = const Value.absent(),
+            Value<int?> subtitleDelayMs = const Value.absent(),
           }) =>
               MediaCollectionsCompanion.insert(
             id: id,
@@ -26874,6 +27017,8 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             createdAt: createdAt,
             orderUpdatedAt: orderUpdatedAt,
             anilistId: anilistId,
+            audioTrackId: audioTrackId,
+            subtitleDelayMs: subtitleDelayMs,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (
