@@ -1,0 +1,147 @@
+{
+  "data": [
+    {
+      "sources": ["https://myanimelist.net/anime/39535", "https://anilist.co/anime/108465"],
+      "title": "Mushoku Tensei: Isekai Ittara Honki Dasu",
+      "synonyms": [
+        "無職転生～異世界行ったら本気だす～",
+        "无职转生～到了异世界就拿出真本事～",
+        "Mushoku Tensei: Jobless Reincarnation",
+        "Jobless Reincarnation"
+      ],
+      "type": "TV",
+      "episodes": 11,
+      "animeSeason": {"season": "WINTER", "year": 2021},
+      "picture": "https://cdn.myanimelist.net/images/anime/1530/117776.jpg",
+      "thumbnail": "https://cdn.myanimelist.net/images/anime/1530/117776t.jpg"
+    },
+    {
+      "sources": ["https://myanimelist.net/anime/51179"],
+      "title": "Mushoku Tensei II: Isekai Ittara Honki Dasu",
+      "synonyms": [
+        "無職転生 Ⅱ ～異世界行ったら本気だす～",
+        "无职转生 第二季",
+        "Mushoku Tensei: Jobless Reincarnation Season 2",
+        "Mushoku Tensei II"
+      ],
+      "type": "TV",
+      "episodes": 12,
+      "animeSeason": {"season": "SUMMER", "year": 2023},
+      "picture": "https://cdn.myanimelist.net/images/anime/1028/135963.jpg",
+      "thumbnail": "https://cdn.myanimelist.net/images/anime/1028/135963t.jpg"
+    },
+    {
+      "sources": ["https://myanimelist.net/anime/32281"],
+      "title": "Kimi no Na wa.",
+      "synonyms": ["君の名は。", "你的名字。", "Your Name."],
+      "type": "MOVIE",
+      "episodes": 1,
+      "animeSeason": {"season": "SUMMER", "year": 2016},
+      "picture": "https://cdn.myanimelist.net/images/anime/5/87048.jpg",
+      "thumbnail": "https://cdn.myanimelist.net/images/anime/5/87048t.jpg"
+    },
+    {
+      "sources": ["https://myanimelist.net/anime/33352"],
+      "title": "Violet Evergarden",
+      "synonyms": ["紫罗兰永恒花园", "ヴァイオレット・エヴァーガーデン"],
+      "type": "TV",
+      "episodes": 13,
+      "animeSeason": {"season": "WINTER", "year": 2018},
+      "picture": "https://cdn.myanimelist.net/images/anime/1795/95088.jpg",
+      "thumbnail": "https://cdn.myanimelist.net/images/anime/1795/95088t.jpg"
+    },
+    {
+      "sources": ["https://myanimelist.net/anime/37987"],
+      "title": "Violet Evergarden Movie",
+      "synonyms": ["剧场版 紫罗兰永恒花园", "劇場版 ヴァイオレット・エヴァーガーデン"],
+      "type": "MOVIE",
+      "episodes": 1,
+      "animeSeason": {"season": "FALL", "year": 2020},
+      "picture": "https://cdn.myanimelist.net/images/anime/1825/110716.jpg",
+      "thumbnail": "https://cdn.myanimelist.net/images/anime/1825/110716t.jpg"
+    },
+    {
+      "sources": ["https://myanimelist.net/anime/50265"],
+      "title": "Spy x Family",
+      "synonyms": ["SPY×FAMILY", "间谍过家家", "スパイファミリー"],
+      "type": "TV",
+      "episodes": 12,
+      "animeSeason": {"season": "SPRING", "year": 2022},
+      "picture": "https://cdn.myanimelist.net/images/anime/1441/122795.jpg",
+      "thumbnail": "https://cdn.myanimelist.net/images/anime/1441/122795t.jpg"
+    },
+    {
+      "sources": ["https://myanimelist.net/anime/47917"],
+      "title": "Bocchi the Rock!",
+      "synonyms": ["孤独摇滚！", "ぼっち・ざ・ろっく！"],
+      "type": "TV",
+      "episodes": 12,
+      "animeSeason": {"season": "FALL", "year": 2022},
+      "picture": "https://cdn.myanimelist.net/images/anime/1448/127956.jpg",
+      "thumbnail": "https://cdn.myanimelist.net/images/anime/1448/127956t.jpg"
+    },
+    {
+      "sources": ["https://myanimelist.net/anime/52991"],
+      "title": "Sousou no Frieren",
+      "synonyms": ["葬送的芙莉莲", "葬送のフリーレン", "Frieren: Beyond Journey's End"],
+      "type": "TV",
+      "episodes": 28,
+      "animeSeason": {"season": "FALL", "year": 2023},
+      "picture": "https://cdn.myanimelist.net/images/anime/1015/138006.jpg",
+      "thumbnail": "https://cdn.myanimelist.net/images/anime/1015/138006t.jpg"
+    },
+    {
+      "sources": ["https://myanimelist.net/anime/777"],
+      "title": "Hellsing Ultimate",
+      "synonyms": ["ヘルシング", "皇家国教骑士团"],
+      "type": "OVA",
+      "episodes": 10,
+      "animeSeason": {"season": "WINTER", "year": 2006},
+      "picture": "https://cdn.myanimelist.net/images/anime/6/7333.jpg",
+      "thumbnail": "https://cdn.myanimelist.net/images/anime/6/7333t.jpg"
+    },
+    {
+      "sources": ["https://myanimelist.net/anime/42310"],
+      "title": "Cyberpunk: Edgerunners",
+      "synonyms": ["赛博朋克：边缘行者", "サイバーパンク エッジランナーズ"],
+      "type": "ONA",
+      "episodes": 10,
+      "animeSeason": {"season": "SUMMER", "year": 2022},
+      "picture": "https://cdn.myanimelist.net/images/anime/1818/126435.jpg",
+      "thumbnail": "https://cdn.myanimelist.net/images/anime/1818/126435t.jpg"
+    },
+    {
+      "sources": ["https://myanimelist.net/anime/27957"],
+      "title": "Steins;Gate: Kyoukaimenjou no Missing Link",
+      "synonyms": ["命运石之门 特别篇"],
+      "type": "SPECIAL",
+      "episodes": 1,
+      "animeSeason": {"season": "UNDEFINED", "year": 2015},
+      "picture": "https://cdn.myanimelist.net/images/anime/6/73199.jpg",
+      "thumbnail": "https://cdn.myanimelist.net/images/anime/6/73199t.jpg"
+    },
+    {
+      "title": "Mystery Pilot",
+      "synonyms": [],
+      "type": "UNKNOWN",
+      "picture": "https://cdn.myanimelist.net/images/anime/0/00000.jpg"
+    },
+    {
+      "sources": ["https://myanimelist.net/anime/99999"],
+      "title": "No Picture Show",
+      "synonyms": ["无海报测试条目"],
+      "type": "TV",
+      "episodes": 12,
+      "animeSeason": {"season": "SPRING", "year": 2024}
+    },
+    {
+      "sources": ["https://myanimelist.net/anime/99998"],
+      "title": "Empty Picture Show",
+      "synonyms": [],
+      "type": "TV",
+      "episodes": 12,
+      "animeSeason": {"season": "SPRING", "year": 2024},
+      "picture": ""
+    }
+  ]
+}

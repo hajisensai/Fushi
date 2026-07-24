@@ -2,21 +2,26 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-928 守卫：视频卡封面区必须锁定精确 16:9。
+/// BUG-928 守卫：视频卡封面区必须被固定 AspectRatio 锁定。
 ///
 /// 根因：封面此前用 `Expanded` 吃掉「cell 高 − 下方文字块实际高度」的剩余，而文字块
-/// 高度随标题行数 / 有无观看进度浮动，文字不足时多出的空间灌进封面区、使其高于
-/// 16:9，16:9 封面 `BoxFit.contain` 后上下留空隙（标题短或无进度时才现，「时有时无」）。
-/// 修复：封面 Stack 改由 `AspectRatio(aspectRatio: 16 / 9)` 包裹，与文字长短彻底解耦；
-/// 文字块下移进 `Expanded`（占封面下方剩余固定高度，ellipsis 内收）。
+/// 高度随标题行数 / 有无观看进度浮动，文字不足时多出的空间灌进封面区、使其比例
+/// 浮动，contain 封面上下留空隙（标题短或无进度时才现，「时有时无」）。
+/// 修复：封面 Stack 改由固定 `AspectRatio` 包裹，与文字长短彻底解耦；文字块下移进
+/// `Expanded`（占封面下方剩余固定高度，ellipsis 内收）。
+///
+/// 2026-07-24 用户拍板：主网格统一 Kazumi 式 2:3 竖版海报，封面比例从 16:9 改为
+/// `2 / 3`（横版截帧由 PosterCoverImage 模糊垫底填充）；守卫锚点同步到新比例，
+/// 「固定 AspectRatio、禁 Expanded 浮动比例」的 BUG-928 意图不变。
 ///
 /// 这是源码扫描守卫——封面是 UI 渲染难做像素断言，故锚定到两张视频卡（本地
-/// `_buildCard` + 远端 `_buildRemoteVideoCard`）的函数体，断言封面被 16:9 AspectRatio
+/// `_buildCard` + 远端 `_buildRemoteVideoCard`）的函数体，断言封面被 2:3 AspectRatio
 /// 锁定、且不得回退到 `Expanded(child: Stack(...))` 的浮动比例写法。
 void main() {
   const String path = 'lib/src/pages/implementations/home_video_page.dart';
 
-  test('video card covers are pinned to a 16:9 AspectRatio (no gap) — BUG-928',
+  test(
+      'video card covers are pinned to a 2:3 poster AspectRatio (no gap) — BUG-928',
       () {
     final String source = File(path).readAsStringSync();
 
@@ -36,9 +41,9 @@ void main() {
 
       expect(
         body,
-        contains('aspectRatio: 16 / 9'),
-        reason: '$name 的封面必须用 AspectRatio(aspectRatio: 16 / 9) 锁定精确 16:9，'
-            '标准 16:9 封面才不留空隙',
+        contains('aspectRatio: 2 / 3'),
+        reason: '$name 的封面必须用 AspectRatio(aspectRatio: 2 / 3) 锁定竖版海报'
+            '比例（2026-07-24 主网格统一 Kazumi 式竖版），比例不得随文字块浮动',
       );
       expect(
         body,
