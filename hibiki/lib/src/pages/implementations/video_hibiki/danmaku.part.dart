@@ -53,19 +53,16 @@ extension _VideoDanmaku on _VideoHibikiPageState {
       final int? savedEpisodeId =
           appModel.getVideoDanmakuEpisodeId(widget.bookUid);
       if (savedEpisodeId != null) {
-        final DandanplayMatch cached =
-            DandanplayMatch(episodeId: savedEpisodeId);
-        final List<VideoDanmakuItem> cachedItems =
-            await client.fetchCommentsForMatch(cached);
-        if (cachedItems.isNotEmpty) {
-          result = DandanplayFetchResult(
-            status: DandanplayFetchStatus.hit,
-            items: cachedItems,
-            match: cached,
-          );
-        } else {
-          result = await client.fetchBestDanmakuForFile(file);
-        }
+        final DandanplayFetchResult cached = await client.fetchCommentsForMatch(
+          DandanplayMatch(episodeId: savedEpisodeId),
+        );
+        // 只有「记住的这一集有效、但确实 0 条弹幕」才值得退回整文件匹配（多半是记错了
+        // 集）；网络/服务器失败退回去走的是同一条链路，只会白算一次 16MiB 文件 hash
+        // 再失败一遍（BUG-1054：此前失败被吞成空列表，与 0 条弹幕无从区分）。
+        result =
+            cached.status == DandanplayFetchStatus.hit && cached.items.isEmpty
+                ? await client.fetchBestDanmakuForFile(file)
+                : cached;
       } else {
         result = await client.fetchBestDanmakuForFile(file);
       }
@@ -174,10 +171,26 @@ extension _VideoDanmaku on _VideoHibikiPageState {
   Future<void> _bindDanmakuEpisode(DandanplaySearchEpisode episode) async {
     final DandanplayClient client = DandanplayClient();
     try {
-      final List<VideoDanmakuItem> items = await client.fetchCommentsForMatch(
+      final DandanplayFetchResult result = await client.fetchCommentsForMatch(
         DandanplayMatch(episodeId: episode.episodeId),
       );
       if (!mounted) return;
+      if (result.status != DandanplayFetchStatus.hit) {
+        // BUG-1054：拉弹幕失败时保持面板打开、不落 episodeId，并按失败类型给具体
+        // 文案。此前非 2xx 被吞成空列表，反而走「成功」分支：面板关闭、episodeId
+        // 落库、弹幕为空、零提示。
+        debugPrint(
+          '[VideoDanmaku] manual bind failed: episode=${episode.episodeId} '
+          'status=${result.status} error=${result.error}',
+        );
+        _showOsd(
+          result.status == DandanplayFetchStatus.networkError
+              ? t.video_danmaku_manual_network_error
+              : t.video_danmaku_manual_bind_server_error,
+          icon: Icons.error_outline,
+        );
+        return;
+      }
       await appModel.setVideoDanmakuEpisodeId(
           widget.bookUid, episode.episodeId);
       if (!appModel.videoDanmakuEnabled) {
@@ -186,11 +199,16 @@ extension _VideoDanmaku on _VideoHibikiPageState {
       if (!mounted) return;
       // 让任何在途的自动加载作废，避免覆盖用户手动选定的这一集。
       ++_danmakuLoadSeq;
-      _rebuild(() => _applyDanmakuItems(items));
+      _rebuild(() => _applyDanmakuItems(result.items));
       _hideVideoSidePanel();
+      // 该集有效但暂无弹幕：绑定照样生效（之后有人发就会出现），但要说清楚，
+      // 否则用户只看到「面板关了、什么都没有」。
+      if (result.items.isEmpty) {
+        _showOsd(t.video_danmaku_manual_bind_empty, icon: Icons.info_outline);
+      }
       debugPrint(
         '[VideoDanmaku] manual bind episode=${episode.episodeId} '
-        'comments=${items.length}',
+        'comments=${result.items.length}',
       );
     } catch (e) {
       debugPrint('[VideoDanmaku] manual bind failed: $e');

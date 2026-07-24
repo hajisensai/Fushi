@@ -170,7 +170,7 @@ void main() {
       final File file = File(p.join(tempDir.path, 'Episode 04.mkv'));
       file.writeAsBytesSync(<int>[1, 2, 3, 4]);
       final DandanplayClient client = DandanplayClient(
-        timeout: const Duration(milliseconds: 1),
+        commentTimeout: const Duration(milliseconds: 1),
         httpClient: MockClient((http.Request request) async {
           if (request.url.path == '/api/v2/match') {
             return http.Response(
@@ -196,6 +196,125 @@ void main() {
           await client.fetchBestDanmakuForFile(file);
 
       expect(result.status, DandanplayFetchStatus.networkError);
+      expect(result.items, isEmpty);
+    });
+
+    // ---- BUG-1054 回归：拉弹幕的失败必须能被调用方区分，且不与轻量请求共用超时 ----
+
+    test(
+        'BUG-1054: comment fetch reports non-2xx as serverError instead of an '
+        'empty comment list', () async {
+      for (final int code in <int>[403, 404, 500]) {
+        final DandanplayClient client = DandanplayClient(
+          httpClient: MockClient(
+              (http.Request request) async => http.Response('', code)),
+        );
+
+        final DandanplayFetchResult result = await client
+            .fetchCommentsForMatch(const DandanplayMatch(episodeId: 42));
+
+        expect(result.status, DandanplayFetchStatus.serverError,
+            reason: 'HTTP $code 是失败，不是「这一集 0 条弹幕」——'
+                '此前一律被压成 const []，手动绑定于是「成功」关面板、零提示');
+        expect(result.error, code, reason: '状态码要留在结果里供日志/文案分级');
+        expect(result.items, isEmpty);
+      }
+    });
+
+    test('BUG-1054: comment fetch reports network failure as networkError',
+        () async {
+      final DandanplayClient client = DandanplayClient(
+        httpClient: MockClient((_) async => throw const SocketException('x')),
+      );
+
+      final DandanplayFetchResult result = await client
+          .fetchCommentsForMatch(const DandanplayMatch(episodeId: 42));
+
+      expect(result.status, DandanplayFetchStatus.networkError);
+      expect(result.items, isEmpty);
+    });
+
+    test('BUG-1054: a valid episode with zero comments stays a hit', () async {
+      final DandanplayClient client = DandanplayClient(
+        httpClient: MockClient((_) async => http.Response(
+              jsonEncode(<String, dynamic>{'comments': <dynamic>[]}),
+              200,
+            )),
+      );
+
+      final DandanplayFetchResult result = await client
+          .fetchCommentsForMatch(const DandanplayMatch(episodeId: 42));
+
+      expect(result.status, DandanplayFetchStatus.hit,
+          reason: '「该集有效但暂无弹幕」与「拉取失败」是两回事，必须能分开');
+      expect(result.items, isEmpty);
+    });
+
+    test(
+        'BUG-1054: comment fetch uses its own long timeout, not the light-request '
+        'one', () async {
+      // 直接触发点：搜索/匹配（几 KB）与拉弹幕（withRelated=true，服务端聚合第三方源、
+      // 响应体可达数 MB）此前共用同一个 8s；http.get().timeout() 计的是整个响应体下载完
+      // 的时间，正片弹幕于是稳定超时 → 用户只看到「弹幕加载失败，请稍后重试」。
+      // 只把轻量超时压到 1ms，commentTimeout 用默认值：谁再让拉弹幕复用 _timeout，
+      // 本用例立刻红。
+      final DandanplayClient client = DandanplayClient(
+        timeout: const Duration(milliseconds: 1),
+        httpClient: MockClient((http.Request request) async {
+          await Future<void>.delayed(const Duration(milliseconds: 40));
+          return http.Response(
+            jsonEncode(<String, dynamic>{
+              'comments': <Map<String, dynamic>>[
+                <String, dynamic>{'p': '2.00,1,16777215,100', 'm': 'slow'},
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+
+      final DandanplayFetchResult result = await client
+          .fetchCommentsForMatch(const DandanplayMatch(episodeId: 42));
+
+      expect(result.status, DandanplayFetchStatus.hit,
+          reason: '拉弹幕比 1ms 的轻量超时慢得多也必须成功——它走默认的 commentTimeout');
+      expect(result.items.single.text, 'slow');
+
+      // 对照：同一个 client 下，轻量请求仍受 1ms 约束。
+      final DandanplaySearchResult search = await client.searchEpisodes('demo');
+      expect(search.status, DandanplayFetchStatus.networkError,
+          reason: '搜索仍走 timeout，两档超时确实是分开的');
+    });
+
+    test(
+        'BUG-1054: fetchBestDanmakuForFile propagates the comment failure '
+        'instead of claiming a hit with zero comments', () async {
+      final File file = File(p.join(tempDir.path, 'Episode 10.mkv'));
+      file.writeAsBytesSync(<int>[1, 2, 3, 4]);
+      final DandanplayClient client = DandanplayClient(
+        httpClient: MockClient((http.Request request) async {
+          if (request.url.path == '/api/v2/match') {
+            return http.Response(
+              jsonEncode(<String, dynamic>{
+                'success': true,
+                'isMatched': true,
+                'matches': <Map<String, dynamic>>[
+                  <String, dynamic>{'episodeId': 42},
+                ],
+              }),
+              200,
+            );
+          }
+          return http.Response('', 403);
+        }),
+      );
+
+      final DandanplayFetchResult result =
+          await client.fetchBestDanmakuForFile(file);
+
+      expect(result.status, DandanplayFetchStatus.serverError,
+          reason: '匹配成功但拉弹幕被拒 → 整体是失败，不能报 hit');
+      expect(result.match?.episodeId, 42, reason: '已匹配到的集仍要保留供 UI 展示');
       expect(result.items, isEmpty);
     });
 

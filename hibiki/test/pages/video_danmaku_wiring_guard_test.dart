@@ -262,4 +262,50 @@ void main() {
     expect(page, contains('client.searchEpisodes'));
     expect(page, contains('filterVideoDanmaku'));
   });
+
+  test(
+      'BUG-1054 source guard: manual bind gates on fetch status before '
+      'persisting the episode', () {
+    final String page = readVideoHibikiSource();
+    final int start = page.indexOf('Future<void> _bindDanmakuEpisode');
+    expect(start, greaterThanOrEqualTo(0));
+    final int end = page.indexOf('\n  /// 手动匹配侧栏内容', start);
+    expect(end, greaterThan(start));
+    final String body = page.substring(start, end);
+
+    // 失败必须先于「落 episodeId」返回：此前非 2xx 被吞成空列表，直接走成功分支
+    // （面板关闭 + episodeId 落库 + 弹幕为空 + 零提示）。
+    final int gate = body.indexOf('result.status != DandanplayFetchStatus.hit');
+    final int persist = body.indexOf('setVideoDanmakuEpisodeId');
+    expect(gate, greaterThanOrEqualTo(0),
+        reason: '手动绑定必须检查拉弹幕的状态，而不是只看是否抛异常');
+    expect(persist, greaterThan(gate),
+        reason: '拉弹幕失败时不得持久化 episodeId，否则下次自动加载会记住一个错的集');
+    expect(body.indexOf('return;', gate), lessThan(persist),
+        reason: '失败分支必须直接 return，不落库不关面板');
+
+    // 失败按类型给具体文案，而不是一句笼统的「请稍后重试」。
+    expect(body, contains('t.video_danmaku_manual_network_error'));
+    expect(body, contains('t.video_danmaku_manual_bind_server_error'));
+    // 该集有效但 0 条弹幕：绑定生效，但要说清楚。
+    expect(body, contains('t.video_danmaku_manual_bind_empty'));
+  });
+
+  test(
+      'BUG-1054 source guard: cached-episode load only re-matches on a genuine '
+      'empty hit', () {
+    final String page = readVideoHibikiSource();
+    final int start = page.indexOf('Future<void> _loadDanmakuForVideo');
+    expect(start, greaterThanOrEqualTo(0));
+    final int end = page.indexOf('void _clearDanmakuForCurrentVideo', start);
+    expect(end, greaterThan(start));
+    final String body = page.substring(start, end);
+
+    expect(
+      body,
+      contains('cached.status == DandanplayFetchStatus.hit &&'),
+      reason: '记住的集拉失败时不得退回整文件匹配——那只会白算一次 16MiB hash 再失败一遍',
+    );
+    expect(body, contains('cached.items.isEmpty'));
+  });
 }
