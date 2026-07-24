@@ -303,7 +303,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.needsAudio = true;
     window.lookupAudioVolume = ${ReaderHibikiSource.instance.lookupAudioVolumeGain.clamp(0.0, 1.0).toStringAsFixed(4)};
     window.i18nNoAudioAvailable = ${jsonEncode(t.popup_no_audio_available)};
-    // BUG-1063：点已制卡 ✓ 的「卡片已在 Anki 中」操作面板归属。
+    // BUG-1064：点已制卡 ✓ 的「卡片已在 Anki 中」操作面板归属。
     // true  = 宿主自己接了 `minedCardAction` JS handler，会弹 Flutter 居中对话框
     //         （dictionary_popup_webview 的三个 in-app 表面：app 内弹窗 / Android
     //         悬浮词典 / 独立查词页），popup.js 原样把点击交给宿主，行为不变。

@@ -14,7 +14,7 @@ class FakeClassList {
     this.values = new Set();
   }
 
-  // BUG-1063: className and classList must stay ONE set, as in a real DOM.
+  // BUG-1064: className and classList must stay ONE set, as in a real DOM.
   // el() assigns `className` directly, so a later classList.add() used to
   // rewrite className from the (still empty) Set and DROP the original classes
   // — e.g. the hint bubble created as `inline-hint` became just `visible` on
@@ -124,7 +124,7 @@ class FakeElement {
     }
   }
 
-  // BUG-1063: the in-page mined-card action panel detaches itself on close and
+  // BUG-1064: the in-page mined-card action panel detaches itself on close and
   // focuses its default action, so the stand-in needs both.
   remove() {
     const parent = this.parentElement;
@@ -252,7 +252,7 @@ function createPopupContext() {
 
   const document = {
     body: new FakeElement('body'),
-    // BUG-1063: the in-page action panel marks <html> while it is open (popup.css
+    // BUG-1064: the in-page action panel marks <html> while it is open (popup.css
     // gives the document a minimum height so the app-external window grows enough
     // to show it), so the stand-in document needs a real documentElement.
     documentElement: new FakeElement('html'),
@@ -294,7 +294,7 @@ function createPopupContext() {
       }
       listeners[type].push(handler);
     },
-    // BUG-1063: the action panel installs a capture-phase Esc handler and removes
+    // BUG-1064: the action panel installs a capture-phase Esc handler and removes
     // it on close; without a real removeEventListener the panel would leak one
     // handler per open in the harness (and mask a real leak in the product).
     removeEventListener(type, handler) {
@@ -338,7 +338,7 @@ function createPopupContext() {
       }
     },
     Node: {TEXT_NODE: 3},
-    // BUG-1063: the in-page hint bubble (showInlineHint) fades in on the next
+    // BUG-1064: the in-page hint bubble (showInlineHint) fades in on the next
     // frame; without a rAF stand-in the hint path would throw ReferenceError.
     // Runs the callback synchronously — tests assert on the resulting DOM, not
     // on frame timing.
@@ -1383,7 +1383,7 @@ async function testRelookupAfterDeletionDetectsMineableAndReMines() {
 // against Anki, finds the card gone, and re-mines.
 async function testMineButtonReMinesAfterCardDeletedWithoutReopening() {
   const context = loadPopup();
-  // BUG-1063：这一组用例模拟的是 app 内宿主——它自己接了 minedCardAction 并弹 Flutter
+  // BUG-1064：这一组用例模拟的是 app 内宿主——它自己接了 minedCardAction 并弹 Flutter
   // 居中对话框，所以 popup.js 把点击原样交出去。不声明这个标志的宿主（app 外裸
   // WebView2 窗口 / 浏览器扩展）只会把 minedCardAction 解析成 null，popup.js 改为在
   // 自己的 WebView 里画页内面板（见 testAppExternal* 用例）。
@@ -1441,7 +1441,7 @@ async function testMineButtonReMinesAfterCardDeletedWithoutReopening() {
 // genuinely in Anki (dupes off) must re-verify and add NOTHING.
 async function testMineButtonDoesNotDuplicateWhenCardStillExists() {
   const context = loadPopup();
-  // BUG-1063：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
+  // BUG-1064：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
   context.window.__hibikiMinedCardActionNative = true;
   context.window.allowDupes = false;
   const mined = [];
@@ -1608,7 +1608,7 @@ async function testLatestMinedCardCanBeOverwrittenInPlace() {
 // falls back to the ordinary mined path.
 async function testMiningNextCardDowngradesPreviousFromEditable() {
   const context = loadPopup();
-  // BUG-1063：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
+  // BUG-1064：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
   context.window.__hibikiMinedCardActionNative = true;
   context.window.allowDupes = true;
   const mined = [];
@@ -1662,7 +1662,7 @@ async function testMiningNextCardDowngradesPreviousFromEditable() {
 // never becomes the editable latest — it stays an ordinary ✓.
 async function testNoNoteIdNeverBecomesEditableLatest() {
   const context = loadPopup();
-  // BUG-1063：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
+  // BUG-1064：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
   context.window.__hibikiMinedCardActionNative = true;
   context.window.allowDupes = true;
   const updated = [];
@@ -2024,7 +2024,7 @@ testOverwriteScopeLatestKeepsEarlierCardOrdinary().catch((error) => {
 // re-detects mined state. Root-cause fix for "clicking ✓ did nothing".
 async function testClickingMinedCheckInvokesHostActionSheet() {
   const context = loadPopup();
-  // BUG-1063：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
+  // BUG-1064：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
   context.window.__hibikiMinedCardActionNative = true;
   context.window.allowDupes = false;
   const actionCalls = [];
@@ -2070,7 +2070,7 @@ testClickingMinedCheckInvokesHostActionSheet().catch((error) => {
   process.exitCode = 1;
 });
 
-// BUG-1063 —— app 外表面（Windows 裸 WebView2 剪贴板面板 / 瞬态查词窗、浏览器扩展）：
+// BUG-1064 —— app 外表面（Windows 裸 WebView2 剪贴板面板 / 瞬态查词窗、浏览器扩展）：
 // 这些宿主没有 Flutter 层可以呈现「卡片已在 Anki 中」对话框，它们的 minedCardAction
 // 只会立刻拿到 null。旧代码把这个 null 当作「宿主已处理」，于是点已制卡的 ✓ 什么都
 // 不发生（用户报「app 外重复制卡点击没反应」，而主页同一操作正常）。现在 popup.js 在
@@ -2100,7 +2100,7 @@ function stubAppExternalHost(context, {matches, calls}) {
   context.window.flutter_inappwebview.callHandler = (name, payload) => {
     if (name === 'duplicateCheck') return Promise.resolve(true);
     // The app-external native layer resolves this one with an immediate null
-    // too — the ↗ half of the same root cause (BUG-1063).
+    // too — the ↗ half of the same root cause (BUG-1064).
     if (name === 'openInAnki') {
       calls.openInAnki.push(payload);
       return Promise.resolve(null);
@@ -2258,7 +2258,7 @@ testAppExternalMinedClickReminesWhenCardIsGone().catch((error) => {
   process.exitCode = 1;
 });
 
-// BUG-1063 ↗「在 Anki 中打开卡片」——同一根因的第二个入口。宿主 handler `openInAnki`
+// BUG-1064 ↗「在 Anki 中打开卡片」——同一根因的第二个入口。宿主 handler `openInAnki`
 // 同样没有被 app 外裸窗 DEFER（它同样要弹 Flutter 的多卡选择框 / toast），同样被立刻
 // 解析成 null，于是按钮点了什么都不发生。以下三条钉死页内车道的三分支语义
 // （与 app 内 openMinedCardInAnki 一致：无命中提示 / 单卡直开 / 多卡弹选择）。

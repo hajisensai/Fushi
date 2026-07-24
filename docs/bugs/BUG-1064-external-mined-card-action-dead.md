@@ -1,4 +1,4 @@
-## BUG-1063 · app 外查词浮窗点已制卡 ✓ 无反应（重复卡操作面板被 native 降级成 null）
+## BUG-1064 · app 外查词浮窗点已制卡 ✓ 无反应（重复卡操作面板被 native 降级成 null）
 - **报告**：2026-07-24（用户：qqbotxiaoxiao，原话「这里app外重复制卡点击没反应……主页这里可以」，
   两张附图：app 外剪贴板查词浮窗点右上 ✓ 毫无反应；app 内查词页同一操作正常弹出
   「卡片已在 Anki 中 → 覆写 / 新增为重复卡」对话框）
@@ -60,7 +60,7 @@
     （不得混入覆写 / 新增重复卡）、无命中弹提示而非静默、app 内仍原样交给宿主。
     顺手修了 fake DOM 的一个真缺陷：`classList.add()` 会把构造时的 `className`
     整个覆盖掉（提示气泡淡入时 `inline-hint` 变成只剩 `visible`）。
-  - `hibiki/test/pages/anki_mined_card_action_wiring_static_test.dart` 新增 BUG-1063 组源码
+  - `hibiki/test/pages/anki_mined_card_action_wiring_static_test.dart` 新增 BUG-1064 组源码
     守卫：popup.js 有面板与两根桥、C++ deferred 名单含两根新桥且
     **minedCardAction 仍不得纳入 deferred**、Dart 侧解析两根桥、注入按 `!globalLookup` 分流、
     popup.css 有面板样式 + 禁选 + 撑高规则。

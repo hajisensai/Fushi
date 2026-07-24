@@ -1358,7 +1358,7 @@ async function minedCardAction(expression, reading, frequencies, pitches, rules,
     return await window.flutter_inappwebview.callHandler('minedCardAction', fields);
 }
 
-// BUG-1063 —— app 外表面的「卡片已在 Anki 中」操作面板（IN-PAGE 版）。
+// BUG-1064 —— app 外表面的「卡片已在 Anki 中」操作面板（IN-PAGE 版）。
 //
 // 宿主分两类：
 //   * 有原生对话框（window.__hibikiMinedCardActionNative）：app 内的三个
@@ -1417,7 +1417,7 @@ async function openMinedNoteInAnki(noteId) {
 // 与 app 内对话框一致：点遮罩不关闭（制卡/覆写有副作用，误触不该丢掉整次操作），
 // 只有「取消」与 Esc 能取消。
 function showMinedCardActionPanel(matches, options) {
-    // openOnly（BUG-1063）：↗ 的多卡选择形态——只列卡片 + 打开，不带覆写 /
+    // openOnly（BUG-1064）：↗ 的多卡选择形态——只列卡片 + 打开，不带覆写 /
     // 新增重复卡（那是点 ✓ 的职责），与 app 内 showAnkiOpenNotePicker 单一语义一致。
     const openOnly = !!(options && options.openOnly);
     return new Promise((resolve) => {
@@ -1554,7 +1554,7 @@ function showMinedCardActionPanel(matches, options) {
     });
 }
 
-// BUG-1063：按钮旁的一次性短提示（1.8s 后自渐隐）。app 外没有 Flutter toast 可用，
+// BUG-1064：按钮旁的一次性短提示（1.8s 后自渐隐）。app 外没有 Flutter toast 可用，
 // 「这个词在 Anki 里已经没有卡了」「打不开 Anki」这类结果必须就地说清楚，绝不静默。
 // 定位/样式复用 showNoAudioHint 那套（.inline-hint 与 .audio-hint 同一条 CSS 规则），
 // 锚到按钮的屏幕坐标，故窗口被裁到卡片 bbox 的 app 外覆盖窗里同样可见。
@@ -1578,7 +1578,7 @@ function showInlineHint(button, message) {
     }, 1800);
 }
 
-// BUG-1063：↗「在 Anki 中打开卡片」在 app 外的页内车道。
+// BUG-1064：↗「在 Anki 中打开卡片」在 app 外的页内车道。
 //
 // 与点 ✓ 是**同一个根因的第二个入口**：宿主 handler `openInAnki` 同样没有被 app 外的
 // 裸 WebView2 窗口 DEFER（它同样要弹 Flutter 的多卡选择框 / toast），于是同样被立刻
@@ -2523,7 +2523,7 @@ function createEntryHeader(entry, idx) {
                     // new duplicate, or view / open the card in Anki. Works for
                     // cards created elsewhere / in a previous session.
                     if (typeof window.flutter_inappwebview.callHandler === 'function') {
-                        // BUG-1063 两条车道，同一套选择：
+                        // BUG-1064 两条车道，同一套选择：
                         //   * 宿主有原生对话框（app 内）→ minedCardAction，Flutter 居中
                         //     对话框（BUG-1040），行为逐字不变。
                         //   * 宿主没有（app 外裸窗 / 扩展）→ 在本 WebView 里画页内面板。
@@ -2631,7 +2631,7 @@ function createEntryHeader(entry, idx) {
             openAnkiButton.dataset.busy = '1';
             openAnkiButton.disabled = true;
             try {
-                // BUG-1063：与点 ✓ 同一分流——宿主有原生对话框（app 内）就交给
+                // BUG-1064：与点 ✓ 同一分流——宿主有原生对话框（app 内）就交给
                 // openInAnki；没有（app 外裸窗 / 扩展）则就地处理，否则那根桥同样
                 // 只会回 null，按钮转一圈什么都不发生。
                 if (hasNativeMinedCardAction()) {
