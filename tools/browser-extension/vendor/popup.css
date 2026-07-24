@@ -492,6 +492,7 @@ html.global-lookup .mine-button:not(:disabled) {
    title。与 .audio-hint 共用视觉；由 popup.js setInlineButtonTip / __hoshiShowButtonTip
    按屏幕坐标定位。 */
 .audio-hint,
+.inline-hint,
 .hoshi-btn-tip {
     position: fixed;
     z-index: 10000;
@@ -511,6 +512,7 @@ html.global-lookup .mine-button:not(:disabled) {
 }
 
 .audio-hint.visible,
+.inline-hint.visible,
 .hoshi-btn-tip.visible {
     opacity: 1;
 }
@@ -1501,7 +1503,7 @@ html.global-lookup[data-theme="dark"] body {
 }
 
 /* =====================================================================
- * BUG-1062 —— 「卡片已在 Anki 中」页内操作面板（app 外裸窗 / 浏览器扩展）。
+ * BUG-1063 —— 「卡片已在 Anki 中」页内操作面板（app 外裸窗 / 浏览器扩展）。
  *
  * app 内点已制卡的 ✓ 弹的是 Flutter 居中对话框（BUG-1040）；app 外主窗在别的程序
  * 后面，Flutter 层根本呈现不出来，所以同一套选择由 popup.js 画在弹窗自己的 WebView

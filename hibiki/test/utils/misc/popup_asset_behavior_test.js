@@ -14,7 +14,20 @@ class FakeClassList {
     this.values = new Set();
   }
 
+  // BUG-1063: className and classList must stay ONE set, as in a real DOM.
+  // el() assigns `className` directly, so a later classList.add() used to
+  // rewrite className from the (still empty) Set and DROP the original classes
+  // — e.g. the hint bubble created as `inline-hint` became just `visible` on
+  // fade-in, and any querySelector('.inline-hint') then missed it. Absorbing
+  // className before every mutation keeps both views in sync.
+  _absorb() {
+    for (const name of (this.element.className || '').split(/\s+/)) {
+      if (name) this.values.add(name);
+    }
+  }
+
   add(...names) {
+    this._absorb();
     for (const name of names) {
       this.values.add(name);
     }
@@ -22,10 +35,12 @@ class FakeClassList {
   }
 
   contains(name) {
+    this._absorb();
     return this.values.has(name);
   }
 
   remove(name) {
+    this._absorb();
     this.values.delete(name);
     this.element.className = [...this.values].join(' ');
   }
@@ -109,7 +124,7 @@ class FakeElement {
     }
   }
 
-  // BUG-1062: the in-page mined-card action panel detaches itself on close and
+  // BUG-1063: the in-page mined-card action panel detaches itself on close and
   // focuses its default action, so the stand-in needs both.
   remove() {
     const parent = this.parentElement;
@@ -237,7 +252,7 @@ function createPopupContext() {
 
   const document = {
     body: new FakeElement('body'),
-    // BUG-1062: the in-page action panel marks <html> while it is open (popup.css
+    // BUG-1063: the in-page action panel marks <html> while it is open (popup.css
     // gives the document a minimum height so the app-external window grows enough
     // to show it), so the stand-in document needs a real documentElement.
     documentElement: new FakeElement('html'),
@@ -279,7 +294,7 @@ function createPopupContext() {
       }
       listeners[type].push(handler);
     },
-    // BUG-1062: the action panel installs a capture-phase Esc handler and removes
+    // BUG-1063: the action panel installs a capture-phase Esc handler and removes
     // it on close; without a real removeEventListener the panel would leak one
     // handler per open in the harness (and mask a real leak in the product).
     removeEventListener(type, handler) {
@@ -323,9 +338,18 @@ function createPopupContext() {
       }
     },
     Node: {TEXT_NODE: 3},
+    // BUG-1063: the in-page hint bubble (showInlineHint) fades in on the next
+    // frame; without a rAF stand-in the hint path would throw ReferenceError.
+    // Runs the callback synchronously — tests assert on the resulting DOM, not
+    // on frame timing.
+    requestAnimationFrame: (callback) => {
+      callback(0);
+      return 1;
+    },
     window: {
       devicePixelRatio: 1,
       innerWidth: 360,
+      innerHeight: 640,
       getSelection() {
         return selection;
       },
@@ -1359,7 +1383,7 @@ async function testRelookupAfterDeletionDetectsMineableAndReMines() {
 // against Anki, finds the card gone, and re-mines.
 async function testMineButtonReMinesAfterCardDeletedWithoutReopening() {
   const context = loadPopup();
-  // BUG-1062：这一组用例模拟的是 app 内宿主——它自己接了 minedCardAction 并弹 Flutter
+  // BUG-1063：这一组用例模拟的是 app 内宿主——它自己接了 minedCardAction 并弹 Flutter
   // 居中对话框，所以 popup.js 把点击原样交出去。不声明这个标志的宿主（app 外裸
   // WebView2 窗口 / 浏览器扩展）只会把 minedCardAction 解析成 null，popup.js 改为在
   // 自己的 WebView 里画页内面板（见 testAppExternal* 用例）。
@@ -1417,7 +1441,7 @@ async function testMineButtonReMinesAfterCardDeletedWithoutReopening() {
 // genuinely in Anki (dupes off) must re-verify and add NOTHING.
 async function testMineButtonDoesNotDuplicateWhenCardStillExists() {
   const context = loadPopup();
-  // BUG-1062：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
+  // BUG-1063：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
   context.window.__hibikiMinedCardActionNative = true;
   context.window.allowDupes = false;
   const mined = [];
@@ -1584,7 +1608,7 @@ async function testLatestMinedCardCanBeOverwrittenInPlace() {
 // falls back to the ordinary mined path.
 async function testMiningNextCardDowngradesPreviousFromEditable() {
   const context = loadPopup();
-  // BUG-1062：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
+  // BUG-1063：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
   context.window.__hibikiMinedCardActionNative = true;
   context.window.allowDupes = true;
   const mined = [];
@@ -1638,7 +1662,7 @@ async function testMiningNextCardDowngradesPreviousFromEditable() {
 // never becomes the editable latest — it stays an ordinary ✓.
 async function testNoNoteIdNeverBecomesEditableLatest() {
   const context = loadPopup();
-  // BUG-1062：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
+  // BUG-1063：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
   context.window.__hibikiMinedCardActionNative = true;
   context.window.allowDupes = true;
   const updated = [];
@@ -2000,7 +2024,7 @@ testOverwriteScopeLatestKeepsEarlierCardOrdinary().catch((error) => {
 // re-detects mined state. Root-cause fix for "clicking ✓ did nothing".
 async function testClickingMinedCheckInvokesHostActionSheet() {
   const context = loadPopup();
-  // BUG-1062：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
+  // BUG-1063：模拟 app 内宿主（自带原生 minedCardAction 对话框）。
   context.window.__hibikiMinedCardActionNative = true;
   context.window.allowDupes = false;
   const actionCalls = [];
@@ -2046,7 +2070,7 @@ testClickingMinedCheckInvokesHostActionSheet().catch((error) => {
   process.exitCode = 1;
 });
 
-// BUG-1062 —— app 外表面（Windows 裸 WebView2 剪贴板面板 / 瞬态查词窗、浏览器扩展）：
+// BUG-1063 —— app 外表面（Windows 裸 WebView2 剪贴板面板 / 瞬态查词窗、浏览器扩展）：
 // 这些宿主没有 Flutter 层可以呈现「卡片已在 Anki 中」对话框，它们的 minedCardAction
 // 只会立刻拿到 null。旧代码把这个 null 当作「宿主已处理」，于是点已制卡的 ✓ 什么都
 // 不发生（用户报「app 外重复制卡点击没反应」，而主页同一操作正常）。现在 popup.js 在
@@ -2075,6 +2099,12 @@ function findPanelButton(context, label) {
 function stubAppExternalHost(context, {matches, calls}) {
   context.window.flutter_inappwebview.callHandler = (name, payload) => {
     if (name === 'duplicateCheck') return Promise.resolve(true);
+    // The app-external native layer resolves this one with an immediate null
+    // too — the ↗ half of the same root cause (BUG-1063).
+    if (name === 'openInAnki') {
+      calls.openInAnki.push(payload);
+      return Promise.resolve(null);
+    }
     if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
     // The app-external native layer resolves this one with an immediate null —
     // exactly the degradation this bug is about.
@@ -2105,7 +2135,7 @@ function stubAppExternalHost(context, {matches, calls}) {
 function newCalls() {
   return {
     minedCardAction: [], findMinedMatches: [], mineEntry: [],
-    updateEntry: [], openMinedNote: [],
+    updateEntry: [], openMinedNote: [], openInAnki: [],
   };
 }
 
@@ -2224,6 +2254,154 @@ testAppExternalPanelCancelWritesNothing().catch((error) => {
 });
 
 testAppExternalMinedClickReminesWhenCardIsGone().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+// BUG-1063 ↗「在 Anki 中打开卡片」——同一根因的第二个入口。宿主 handler `openInAnki`
+// 同样没有被 app 外裸窗 DEFER（它同样要弹 Flutter 的多卡选择框 / toast），同样被立刻
+// 解析成 null，于是按钮点了什么都不发生。以下三条钉死页内车道的三分支语义
+// （与 app 内 openMinedCardInAnki 一致：无命中提示 / 单卡直开 / 多卡弹选择）。
+
+function buildOpenAnkiButton(context) {
+  const entry = {
+    expression: '刀',
+    reading: '刀',
+    matched: '刀',
+    frequencies: [],
+    pitches: [],
+    rules: [],
+  };
+  const header = context.createEntryHeader(entry, 0);
+  const hasClass = (node, name) =>
+    (node.className || '').split(/\s+/).includes(name) ||
+    (node.classList && node.classList.contains(name));
+  const visit = (node) => {
+    if (hasClass(node, 'open-anki-button')) return node;
+    for (const child of node.children ?? []) {
+      const found = visit(child);
+      if (found) return found;
+    }
+    return null;
+  };
+  const button = visit(header);
+  assert.ok(button, 'open-in-Anki button was not created');
+  return button;
+}
+
+async function testAppExternalOpenInAnkiSingleMatchOpensDirectly() {
+  const context = loadPopup();
+  const calls = newCalls();
+  stubAppExternalHost(context, {
+    matches: [{ noteId: 7001, preview: '刀' }],
+    calls,
+  });
+
+  const button = buildOpenAnkiButton(context);
+  await flush();
+  await button.onclick();
+  await flush();
+
+  assert.equal(calls.openInAnki.length, 0,
+    'an app-external host must NOT be handed openInAnki (it only ever replies null)');
+  assert.equal(calls.openMinedNote.length, 1, 'a single match opens straight away');
+  assert.equal(calls.openMinedNote[0].noteId, 7001, 'the matched note is the one opened');
+  assert.equal(context.document.querySelector('.mined-action-panel'), null,
+    'no panel for a single match');
+  assert.equal(button.disabled, false, 'the button is never left disabled');
+}
+
+async function testAppExternalOpenInAnkiMultipleMatchesShowsOpenOnlyPanel() {
+  const context = loadPopup();
+  const calls = newCalls();
+  stubAppExternalHost(context, {
+    matches: [
+      { noteId: 7002, preview: '刀 — A' },
+      { noteId: 7003, preview: '刀 — B' },
+    ],
+    calls,
+  });
+
+  const button = buildOpenAnkiButton(context);
+  await flush();
+  const click = button.onclick();
+  await flush();
+
+  const panel = context.document.querySelector('.mined-action-panel');
+  assert.ok(panel, 'multiple matches must offer a choice, not silently pick one');
+  // openOnly 形态：只列卡片 + 打开，不得混入覆写 / 新增重复卡（那是 ✓ 的职责）。
+  const labels = [];
+  const collect = (node) => {
+    if (node.tagName === 'BUTTON') labels.push(node.textContent);
+    for (const child of node.children ?? []) collect(child);
+  };
+  collect(panel);
+  assert.ok(!labels.includes('新增为重复卡'),
+    'the open-only panel must not offer add-duplicate');
+  assert.ok(!labels.includes('覆写这张卡'),
+    'the open-only panel must not offer overwrite');
+  assert.equal(labels.filter((l) => l === '查看 / 在 Anki 中打开').length, 2,
+    'every matching card is openable');
+
+  findPanelButton(context, '取消').onclick();
+  await click;
+  await flush();
+  assert.equal(calls.openMinedNote.length, 0, 'cancelling opens nothing');
+}
+
+async function testAppExternalOpenInAnkiNoMatchHintsInsteadOfSilence() {
+  const context = loadPopup();
+  const calls = newCalls();
+  stubAppExternalHost(context, { matches: [], calls });
+
+  const button = buildOpenAnkiButton(context);
+  await flush();
+  await button.onclick();
+  await flush();
+
+  assert.equal(calls.openMinedNote.length, 0, 'nothing to open');
+  const hint = context.document.querySelector('.inline-hint');
+  assert.ok(hint, 'a vanished card must say so, never fail silently');
+  assert.ok((hint.textContent || '').length > 0, 'the hint carries a message');
+}
+
+// app 内宿主（自带原生对话框 / toast）必须仍然把 ↗ 原样交给 openInAnki。
+async function testInAppOpenInAnkiStillGoesToHost() {
+  const context = loadPopup();
+  context.window.__hibikiMinedCardActionNative = true;
+  const calls = newCalls();
+  stubAppExternalHost(context, {
+    matches: [{ noteId: 7004, preview: '刀' }],
+    calls,
+  });
+
+  const button = buildOpenAnkiButton(context);
+  await flush();
+  await button.onclick();
+  await flush();
+
+  assert.equal(calls.openInAnki.length, 1,
+    'the in-app host keeps handling ↗ itself (Flutter picker / toast)');
+  assert.equal(calls.findMinedMatches.length, 0,
+    'the in-app lane must not run the in-page orchestration');
+}
+
+testAppExternalOpenInAnkiSingleMatchOpensDirectly().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testAppExternalOpenInAnkiMultipleMatchesShowsOpenOnlyPanel().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testAppExternalOpenInAnkiNoMatchHintsInsteadOfSilence().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testInAppOpenInAnkiStillGoesToHost().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
