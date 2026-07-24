@@ -154,6 +154,15 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     state = state.copyWith(settings: updated);
   }
 
+  /// 切换查重范围（deck=所选卡组 / deckRoot=根卡组全部子卡组 / collection=整库）。
+  /// 见 [AnkiDuplicateScope]：Anki 的 `deck:X` 不含父卡组与兄弟子卡组，所以把目标
+  /// 选成子卡组时同一个词制在别的子卡组里就查不出来。
+  Future<void> updateDuplicateScope(AnkiDuplicateScope value) async {
+    final updated = await _repository
+        .updateSettings((s) => s.copyWith(duplicateScope: value));
+    state = state.copyWith(settings: updated);
+  }
+
   Future<void> updateAnkiConnectHost(String host) async {
     // 不能对含 '/'、'?'、'#' 的输入静默 return（BUG-970）：那样用户逐字符敲
     // "http://" 时，敲到第一个 '/'（"http:/"）起就全被拒，失焦回退到最后被接受的

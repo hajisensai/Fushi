@@ -109,6 +109,11 @@ class ProfileKeys {
         'allowDupes': s.allowDupes.toString(),
         'compactGlossaries': s.compactGlossaries.toString(),
         'embedMedia': s.embedMedia.toString(),
+        // 两个范围单选必须进快照：[mapToAnkiSettings] 重建的是一个全新
+        // AnkiSettings，不在这里的字段会在切 Profile 时静默回默认值
+        // （overwriteScope 原本就漏了，顺手一并补上）。
+        'overwriteScope': s.overwriteScope.name,
+        'duplicateScope': s.duplicateScope.name,
       };
 
   static AnkiSettings mapToAnkiSettings(
@@ -141,6 +146,14 @@ class ProfileKeys {
       compactGlossaries: m['compactGlossaries'] == 'true',
       embedMedia:
           m.containsKey('embedMedia') ? m['embedMedia'] == 'true' : true,
+      // 旧快照没有这两个键 → 保留当前值（而不是回默认），否则一次切
+      // Profile 就把用户已选的范围抹掉。
+      overwriteScope: m.containsKey('overwriteScope')
+          ? ankiOverwriteScopeFromName(m['overwriteScope'])
+          : current.overwriteScope,
+      duplicateScope: m.containsKey('duplicateScope')
+          ? ankiDuplicateScopeFromName(m['duplicateScope'])
+          : current.duplicateScope,
     );
   }
 

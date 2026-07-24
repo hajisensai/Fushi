@@ -307,15 +307,19 @@ class AnkiConnectService {
     return result is int ? result : int.tryParse(result.toString());
   }
 
+  /// [scope] 默认 [AnkiDuplicateScope.deck]（= 旧行为：只查选中卡组及其子卡组），
+  /// 所以未传该参数的旧调用点与测试行为逐字不变。
   Future<bool> isDuplicate({
     required String deckName,
     required String fieldName,
     required String fieldValue,
+    AnkiDuplicateScope scope = AnkiDuplicateScope.deck,
   }) async {
     return (await findNotesByField(
       deckName: deckName,
       fieldName: fieldName,
       fieldValue: fieldValue,
+      scope: scope,
     ))
         .isNotEmpty;
   }
@@ -324,12 +328,14 @@ class AnkiConnectService {
     required String deckName,
     required String fieldName,
     required String fieldValue,
+    AnkiDuplicateScope scope = AnkiDuplicateScope.deck,
   }) async {
     final result = await _request('findNotes', {
       'query': _fieldValueQuery(
         deckName: deckName,
         fieldName: fieldName,
         fieldValue: fieldValue,
+        scope: scope,
       ),
     });
     if (result is! List) {
@@ -496,15 +502,43 @@ String ankiConnectErrorHint(String code, {String? host, int? port}) {
   }
 }
 
+/// 由查重范围 [scope] 解析出的 Anki 搜索卡组子句；空串 = 不限卡组（整个收藏集）。
+///
+/// Anki 的 `deck:X` **本来就包含** X 的子卡组，但不含父卡组与兄弟子卡组——这正是
+/// 「目标选了 `Lapis::Vocab` 就查不到 `Lapis` 其它子卡组里的同词卡」的原因。
+/// [AnkiDuplicateScope.deckRoot] 把卡组名截到第一段（`Lapis::Vocab::N5` → `Lapis`），
+/// 于是整棵 Lapis 树都在范围内。
+///
+/// 纯函数（不碰网络/设置），供单测直接钉查询语义。
+String ankiDuplicateDeckFilter(String deckName, AnkiDuplicateScope scope) {
+  switch (scope) {
+    case AnkiDuplicateScope.collection:
+      return '';
+    case AnkiDuplicateScope.deckRoot:
+      // `::` 是 Anki 的层级分隔符；没有分隔符时根卡组就是它自己。
+      final String root = deckName.split('::').first;
+      // 卡组名本身为空（配置异常）时不要发出 `deck:""` 这种恒不命中的子句，
+      // 退化成不限卡组，宁可多查也不要静默查不到（fail-open 与本设置的意图一致）。
+      if (root.isEmpty) return '';
+      return 'deck:"${_escapeAnkiQuery(root)}"';
+    case AnkiDuplicateScope.deck:
+      if (deckName.isEmpty) return '';
+      return 'deck:"${_escapeAnkiQuery(deckName)}"';
+  }
+}
+
 String _fieldValueQuery({
   required String deckName,
   required String fieldName,
   required String fieldValue,
+  required AnkiDuplicateScope scope,
 }) {
   // Quote the whole "field:value" term so field names containing spaces
   // (e.g. "Sentence Audio") are not split by Anki's query parser.
-  return 'deck:"${_escapeAnkiQuery(deckName)}" '
+  final String fieldTerm =
       '"${_escapeAnkiQuery(fieldName)}:${_escapeAnkiQuery(fieldValue)}"';
+  final String deckFilter = ankiDuplicateDeckFilter(deckName, scope);
+  return deckFilter.isEmpty ? fieldTerm : '$deckFilter $fieldTerm';
 }
 
 class AnkiConnectException implements Exception {

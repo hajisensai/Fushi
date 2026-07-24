@@ -2449,5 +2449,10 @@
   "manga_cloud_ocr_model": "模型名",
   "manga_cloud_ocr_privacy": "点击「云端重试」时，所选图片区域将用你自备的 API Key 发送至 Google Gemini API；仅在你手动触发时才会上传。",
   "manga_cloud_ocr_failed": "云端识别失败",
-  "manga_ocr_mobile_note": "移动端下载的模型用于漫画阅读页的框选识别。"
+  "manga_ocr_mobile_note": "移动端下载的模型用于漫画阅读页的框选识别。",
+  "anki_duplicate_scope_hint": "查询「这个词是否已经有卡」时搜索哪些卡组。仅 AnkiConnect（桌面 Anki）生效；AnkiDroid 始终整库查重。",
+  "anki_duplicate_scope_deck": "所选卡组（含子卡组）",
+  "anki_duplicate_scope_deck_root": "根卡组（含全部子卡组）",
+  "anki_duplicate_scope_collection": "整个收藏集",
+  "anki_duplicate_scope": "查重范围"
 }

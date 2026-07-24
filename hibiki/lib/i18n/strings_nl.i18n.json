@@ -2449,5 +2449,10 @@
   "manga_cloud_ocr_model": "Model name",
   "manga_cloud_ocr_privacy": "When you tap Cloud retry, the selected image area is sent to the Google Gemini API with your own API key. Nothing is uploaded unless you trigger it manually.",
   "manga_cloud_ocr_failed": "Cloud recognition failed",
-  "manga_ocr_mobile_note": "On mobile, the recognition model powers box scan in the manga reader."
+  "manga_ocr_mobile_note": "On mobile, the recognition model powers box scan in the manga reader.",
+  "anki_duplicate_scope_hint": "Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.",
+  "anki_duplicate_scope_deck": "Selected deck (and its subdecks)",
+  "anki_duplicate_scope_deck_root": "Root deck (all subdecks)",
+  "anki_duplicate_scope_collection": "Whole collection",
+  "anki_duplicate_scope": "Duplicate check scope"
 }
