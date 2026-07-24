@@ -1,12 +1,9 @@
 import 'dart:io';
+import 'dart:typed_data';
 
-import 'package:drift/drift.dart' hide isNull, isNotNull;
-import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
-import 'package:hibiki/src/sync/aggregate_snapshot.dart';
-import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -14,58 +11,14 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/tls/hibiki_tls_identity.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
+import 'helpers/fake_library_host_service.dart';
+import 'helpers/live_sync_harness.dart';
+
 const List<int> _coverBytes = <int>[0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4];
 
-class _FakeLibraryService implements HibikiLibraryHostService {
-  // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
-  @override
-  Future<File?> clipVideoAudio(String id,
-          {required int startMs,
-          required int endMs,
-          int episodeIndex = 0,
-          int? audioStreamIndex,
-          int? audioStreamCount,
-          int audioChannels = 1,
-          String audioBitrate = '64k'}) async =>
-      null;
-
-  @override
-  Future<List<RemoteActivityEvent>> listActivityEvents(
-          {int limit = 100}) async =>
-      const <RemoteActivityEvent>[];
-
-  @override
-  Future<String?> videoCoverPath(String id) async {
-    for (final RemoteVideoInfo v in await listVideos()) {
-      if (v.id == id) return v.coverPath;
-    }
-    return null;
-  }
-
-  @override
-  Future<String?> bookCoverPath(String id) async {
-    for (final RemoteBookInfo b in await listBooks()) {
-      if (b.downloadId == id || b.title == id) return b.coverPath;
-    }
-    return null;
-  }
-
-  @override
-  Future<AggregateSnapshot> getAggregateSnapshot() async =>
-      const AggregateSnapshot();
-
-  @override
-  Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async {}
-
-  @override
-  Future<CollectionManifest> getCollectionManifest() async =>
-      CollectionManifest.empty;
-
-  @override
-  Future<CollectionManifest> mergeCollectionManifest(
-          CollectionManifest incoming) async =>
-      incoming;
-
+// 共享的 [HibikiLibraryHostService] 存根上移到 [FakeLibraryHostServiceBase]；本文件
+// 只 override videos 相关方法并携带真实 sidecar / 封面 / 上传记录。
+class _FakeLibraryService extends FakeLibraryHostServiceBase {
   _FakeLibraryService() {
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_client_vid');
     videoFile = File('${tmp.path}/sample.mp4');
@@ -121,10 +74,6 @@ class _FakeLibraryService implements HibikiLibraryHostService {
       id == videoId || uploaded.any((u) => u.id == id);
 
   @override
-  Future<void> importVideoSubtitle(File subtitleFile,
-      {required String id, required String suffix}) async {}
-
-  @override
   Future<void> importVideo(File videoFile,
       {required String id,
       required String title,
@@ -137,98 +86,8 @@ class _FakeLibraryService implements HibikiLibraryHostService {
     ));
   }
 
-  @override
-  Future<List<RemoteDictionaryInfo>> listDictionaries() async =>
-      <RemoteDictionaryInfo>[];
-
-  @override
-  Future<File> exportDictionary(String name) async =>
-      throw UnimplementedError('not used in video test');
-
-  @override
-  Future<void> importDictionary(File packageFile) async {}
-
-  @override
-  Future<void> deleteDictionary(String name) async {}
-
-  @override
-  Future<List<RemoteBookInfo>> listBooks() async => <RemoteBookInfo>[];
-
-  @override
-  Future<File> exportBook(String title) async =>
-      throw UnimplementedError('not used in video test');
-
-  @override
-  Future<void> importBook(File epubFile) async {}
-
-  @override
-  Future<void> deleteBook(String title) async {}
-
-  final Map<String, RemoteBookProgress> bookProgress =
-      <String, RemoteBookProgress>{};
-
-  @override
-  Future<RemoteBookProgress> getBookProgress(String bookKey) async =>
-      bookProgress[bookKey] ?? RemoteBookProgress.empty;
-
-  @override
-  Future<void> putBookProgress(
-    String bookKey,
-    RemoteBookProgress progress,
-  ) async {
-    final RemoteBookProgress current =
-        bookProgress[bookKey] ?? RemoteBookProgress.empty;
-    bookProgress[bookKey] =
-        resolveBookProgressSync(local: current, remote: progress);
-  }
-
-  @override
-  Future<List<RemoteLocalAudioInfo>> listLocalAudio() async =>
-      <RemoteLocalAudioInfo>[];
-
-  @override
-  Future<File> exportLocalAudio(String displayName) async =>
-      throw UnimplementedError('not used in video test');
-
-  @override
-  Future<void> importLocalAudio(File packageFile) async {}
-
-  @override
-  Future<void> deleteLocalAudio(String displayName) async {}
-
-  @override
-  Future<List<RemoteAudiobookInfo>> listAudiobooks() async =>
-      <RemoteAudiobookInfo>[];
-
-  @override
-  Future<File> exportAudiobook(String bookKey) async =>
-      throw UnimplementedError('not used in video test');
-
-  @override
-  Future<bool> audiobookExists(String bookKey) async => false;
-
-  @override
-  Future<void> importAudiobook(File packageFile,
-      {String? bookKeyOverride}) async {}
-
-  @override
-  Future<void> deleteAudiobook(String bookKey) async {}
-
   final Map<String, ({int positionMs, int updatedAtMs})> videoPositions =
       <String, ({int positionMs, int updatedAtMs})>{};
-
-  @override
-  Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
-    String bookKey,
-  ) async =>
-      (positionMs: 0, updatedAtMs: 0);
-
-  @override
-  Future<void> putAudiobookPosition(
-    String bookKey,
-    int positionMs,
-    int updatedAtMs,
-  ) async {}
 
   @override
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(
@@ -255,31 +114,9 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   }
 }
 
-HibikiDatabase _testDb() =>
-    HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
-
 DateTime _uniqueSubtitleCacheMtime(String seed) {
   final int offsetMs = seed.hashCode & 0x3fffffff;
   return DateTime.fromMillisecondsSinceEpoch(1700000000000 + offsetMs);
-}
-
-Future<HibikiClientSyncBackend> _buildBackend({
-  required String base,
-  required String token,
-}) async {
-  final HibikiDatabase db = _testDb();
-  addTearDown(() async => db.close());
-  final SyncRepository repo = SyncRepository(db);
-  await repo.setHibikiClientUrls(<HibikiClientUrl>[
-    HibikiClientUrl(url: base, enabled: true),
-  ]);
-  await repo.setHibikiClientToken(token);
-
-  final HibikiClientSyncBackend backend =
-      HibikiClientSyncBackend.withProbe((String url, String tok) async => true);
-  await backend.restoreAuth(repo);
-  await backend.authenticate(repo: repo);
-  return backend;
 }
 
 void main() {
@@ -312,7 +149,7 @@ void main() {
 
   test('listRemoteVideos returns host video entries', () async {
     final HibikiClientSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+        await buildHibikiClientBackend(base: base, token: token);
 
     final List<RemoteVideoInfo> result = await backend.listRemoteVideos();
 
@@ -326,7 +163,7 @@ void main() {
   test('putRemoteVideo uploads local video file to host (client→host)',
       () async {
     final HibikiClientSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+        await buildHibikiClientBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_vid_up');
     addTearDown(() => tmp.deleteSync(recursive: true));
     // 非 ASCII 文件名 + 标题：验证 header URL-encode 往返（HTTP header 只收 ASCII）。
@@ -347,7 +184,7 @@ void main() {
   test('remoteVideoStreamUrls returns directly playable token stream URL',
       () async {
     final HibikiClientSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+        await buildHibikiClientBackend(base: base, token: token);
 
     final RemoteVideoStreamUrls urls =
         await backend.remoteVideoStreamUrls(_FakeLibraryService.videoId);
@@ -383,7 +220,7 @@ void main() {
   test('getRemoteVideoSubtitle downloads sidecar subtitle with Basic auth',
       () async {
     final HibikiClientSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+        await buildHibikiClientBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_vid_sub');
     final File dest = File('${tmp.path}/sample.ja.vtt');
     addTearDown(() => tmp.deleteSync(recursive: true));
@@ -398,7 +235,7 @@ void main() {
       'getRemoteVideoSubtitle downloads embedded text subtitle with Basic auth',
       () async {
     final HibikiClientSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+        await buildHibikiClientBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_vid_embsub');
     final File dest = File('${tmp.path}/sample.embedded.srt');
     addTearDown(() => tmp.deleteSync(recursive: true));
@@ -416,7 +253,7 @@ void main() {
 
   test('downloadRemoteVideo streams video bytes to destination file', () async {
     final HibikiClientSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+        await buildHibikiClientBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_vid_dl');
     final File dest = File('${tmp.path}/sample.mp4');
     addTearDown(() => tmp.deleteSync(recursive: true));
@@ -428,7 +265,7 @@ void main() {
   });
 
   test('listRemoteVideos with wrong token throws SyncAuthError', () async {
-    final HibikiDatabase db = _testDb();
+    final HibikiDatabase db = memLiveDb();
     addTearDown(() async => db.close());
     final SyncRepository repo = SyncRepository(db);
     await repo.setHibikiClientUrls(<HibikiClientUrl>[
@@ -449,7 +286,7 @@ void main() {
   test('putRemoteVideoPosition uploads then remoteVideoPosition reads it back',
       () async {
     final HibikiClientSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+        await buildHibikiClientBackend(base: base, token: token);
 
     await backend.putRemoteVideoPosition(
       _FakeLibraryService.videoId,
@@ -471,7 +308,7 @@ void main() {
   test('remoteVideoPosition for unknown id returns 0/0 (host 404, no throw)',
       () async {
     final HibikiClientSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+        await buildHibikiClientBackend(base: base, token: token);
 
     final ({int positionMs, int updatedAtMs}) read =
         await backend.remoteVideoPosition('video/does-not-exist');
@@ -513,7 +350,7 @@ void main() {
     tearDown(() async => tlsServer.stop());
 
     Future<HibikiClientSyncBackend> buildPinnedBackend(String? fp) async {
-      final HibikiDatabase db = _testDb();
+      final HibikiDatabase db = memLiveDb();
       addTearDown(() async => db.close());
       final SyncRepository repo = SyncRepository(db);
       await repo.setHibikiClientUrls(<HibikiClientUrl>[
@@ -562,7 +399,7 @@ void main() {
 
   test('fetchRemoteCover still works over plaintext http (老路径零破坏)', () async {
     final HibikiClientSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+        await buildHibikiClientBackend(base: base, token: token);
     final List<RemoteVideoInfo> videos = await backend.listRemoteVideos();
     final String? coverUrl = videos.single.coverUrl;
     expect(coverUrl, isNotNull);

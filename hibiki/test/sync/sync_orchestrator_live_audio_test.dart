@@ -25,15 +25,14 @@ import 'package:hibiki/src/sync/app_model_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
-import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
 import 'fake_asset_store.dart';
+import 'helpers/staged_asset_store_backend.dart';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -141,131 +140,6 @@ SyncOrchestrator _audioOrchestrator({
       localAudioEntries: localAudioEntries,
       onLocalAudioImported: onLocalAudioImported,
     );
-
-// ── Fake staged backend（云路径用）────────────────────────────────────────────
-
-class _FakeSyncBackend implements SyncBackend {
-  _FakeSyncBackend(this._store);
-  final FakeAssetStore _store;
-
-  int ensureNamespaceCalled = 0;
-
-  @override
-  Future<String> ensureNamespace(String name) {
-    ensureNamespaceCalled++;
-    return _store.ensureNamespace(name);
-  }
-
-  @override
-  Future<String> ensureFolder(String parentId, String name) =>
-      _store.ensureFolder(parentId, name);
-  @override
-  Future<List<AssetEntry>> listChildren(String namespaceId) =>
-      _store.listChildren(namespaceId);
-  @override
-  Future<AssetEntry?> findAsset(String namespaceId, String name) =>
-      _store.findAsset(namespaceId, name);
-  @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-          {void Function(double progress)? onProgress}) =>
-      _store.putAsset(namespaceId, name, file, onProgress: onProgress);
-  @override
-  Future<void> getAsset(String assetId, File destination,
-          {void Function(double progress)? onProgress}) =>
-      _store.getAsset(assetId, destination, onProgress: onProgress);
-  @override
-  Future<Object?> getJsonAsset(String assetId) => _store.getJsonAsset(assetId);
-  @override
-  Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
-      _store.putJsonAsset(namespaceId, name, json);
-  @override
-  Future<void> deleteAsset(String id, {bool isFolder = false}) =>
-      _store.deleteAsset(id, isFolder: isFolder);
-  @override
-  Future<String> findOrCreateRootFolder() async => 'root';
-  @override
-  Future<String> ensureBookFolder({
-    required String bookTitle,
-    required String rootFolderId,
-    Uint8List? coverData,
-  }) =>
-      _store.ensureFolder(rootFolderId, bookTitle);
-  @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async =>
-      const DriveSyncFiles(progress: null, statistics: null, audioBook: null);
-  @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async =>
-      const <DriveFile>[];
-  @override
-  Future<bool> get isAuthenticated async => true;
-  @override
-  Future<String?> get currentEmail async => null;
-  @override
-  Future<void> authenticate({required SyncRepository repo}) async {}
-  @override
-  Future<void> signOut({required SyncRepository repo}) async {}
-  @override
-  Future<bool> restoreAuth(SyncRepository repo) async => true;
-  @override
-  Future<void> refreshAuth() async {}
-  @override
-  Future<TtuProgress> getProgressFile(String fileId) async =>
-      throw UnimplementedError();
-  @override
-  Future<List<TtuStatistics>> getStatsFile(String fileId) async =>
-      throw UnimplementedError();
-  @override
-  Future<TtuAudioBook> getAudioBookFile(String fileId) async =>
-      throw UnimplementedError();
-  @override
-  Future<void> updateProgressFile({
-    required String folderId,
-    required String? fileId,
-    required TtuProgress progress,
-  }) async {}
-  @override
-  Future<void> updateStatsFile({
-    required String folderId,
-    required String? fileId,
-    required List<TtuStatistics> stats,
-  }) async {}
-  @override
-  Future<void> updateAudioBookFile({
-    required String folderId,
-    required String? fileId,
-    required TtuAudioBook audioBook,
-  }) async {}
-  @override
-  Future<void> uploadContentFile({
-    required String folderId,
-    required String fileName,
-    required File file,
-    void Function(double progress)? onProgress,
-  }) async {}
-  @override
-  Future<void> downloadContentFile({
-    required String fileId,
-    required File destination,
-    void Function(double progress)? onProgress,
-  }) async {}
-  @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async =>
-      null;
-  @override
-  void clearCache() {}
-  @override
-  void restoreCache(
-      {String? rootFolderId, Map<String, String>? titleToFolderId}) {}
-  @override
-  String? get cachedRootFolderId => 'root';
-  @override
-  Map<String, String> get cachedFolderIds => const <String, String>{};
-  @override
-  void cacheBookFolderIds(List<DriveFile> folders) {}
-
-  @override
-  void evictFolderId(String folderId) {}
-}
 
 // ── main ──────────────────────────────────────────────────────────────────────
 
@@ -918,7 +792,8 @@ void main() {
         'FakeSyncBackend + syncLocalAudio=true → 调用 ensureNamespace(__local_audio__)，不走 live 端点',
         () async {
       final FakeAssetStore store = FakeAssetStore();
-      final _FakeSyncBackend backend = _FakeSyncBackend(store);
+      final StagedAssetStoreSyncBackend backend =
+          StagedAssetStoreSyncBackend(store);
       final Directory tmp = Directory(p.join(work.path, 'tmp_d'))..createSync();
       final HibikiDatabase db = _memDb();
       addTearDown(db.close);
@@ -943,7 +818,8 @@ void main() {
         'FakeSyncBackend + syncAudioBookFiles=true → 调用 ensureBookFolder，不走 live 端点',
         () async {
       final FakeAssetStore store = FakeAssetStore();
-      final _FakeSyncBackend backend = _FakeSyncBackend(store);
+      final StagedAssetStoreSyncBackend backend =
+          StagedAssetStoreSyncBackend(store);
       final Directory tmp = Directory(p.join(work.path, 'tmp_d2'))
         ..createSync();
       final HibikiDatabase db = _memDb();
@@ -959,7 +835,7 @@ void main() {
       final SyncRunReport report = await orch.run();
 
       // 云路径：root folder 被请求（syncAudiobookPackages 需要 root）。
-      // 不走 live 端点（_FakeSyncBackend 没有 listRemoteAudiobooks，调用会抛）。
+      // 不走 live 端点（StagedAssetStoreSyncBackend 没有 listRemoteAudiobooks，调用会抛）。
       expect(report.audiobooksImported, 0);
       expect(report.audiobooksExported, 0);
       expect(report.errors, isEmpty,
@@ -1102,7 +978,8 @@ void main() {
     test('② syncAudiobookPackages：有配对 SrtBook → 整本上传（audiobooksExported=1）',
         () async {
       final FakeAssetStore store = FakeAssetStore();
-      final _FakeSyncBackend backend = _FakeSyncBackend(store);
+      final StagedAssetStoreSyncBackend backend =
+          StagedAssetStoreSyncBackend(store);
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await seedLocalAudiobook(localDb, withSrtBook: true);
@@ -1127,7 +1004,8 @@ void main() {
     test('② syncAudiobookPackages：无配对 SrtBook → skip（audiobooksExported=0）',
         () async {
       final FakeAssetStore store = FakeAssetStore();
-      final _FakeSyncBackend backend = _FakeSyncBackend(store);
+      final StagedAssetStoreSyncBackend backend =
+          StagedAssetStoreSyncBackend(store);
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       await seedLocalAudiobook(localDb, withSrtBook: false);
