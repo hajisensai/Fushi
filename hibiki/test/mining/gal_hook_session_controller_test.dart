@@ -918,7 +918,7 @@ void main() {
     endpoints.dispose();
   });
 
-  test('游戏活动落库：hook 台词累计字符/时长写入 activity_events（game 类别）', () async {
+  test('游戏活动落库：hook 台词只把字符数写入 activity_events（game 类别，不写时长）', () async {
     final HibikiDatabase db =
         HibikiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
@@ -990,8 +990,9 @@ void main() {
     expect(rows.single.mediaKey, isNull);
     // 两行合计 5 + 6 = 11 字。
     expect(rows.single.charsDelta, 11);
-    expect(rows.single.durationMs, isNotNull);
-    expect(rows.single.durationMs, greaterThanOrEqualTo(0));
+    // 契约 §3.1：时长真相源改为 GalgamePlayTracker（前台窗口计时），hook 文本这条
+    // 路径**不再写 durationMs**，否则同一次游玩被计两遍。
+    expect(rows.single.durationMs, isNull);
 
     await controller.close();
     endpoints.dispose();

@@ -18,12 +18,16 @@ import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 /// 落 `activity_events` 的一条游戏活动写入契约。默认实现走 [HibikiDatabase.
 /// addActivityEvent]（[kActivityGame] / [kActivityMediaGame]）；单测可注入假写入方
 /// 断言 flush 时机与聚合值，无需真实 DB。
+///
+/// **只写字符数，不写 `durationMs`**（契约 §3.1）：游玩时长的真相源已经是
+/// `GalgamePlayTracker`（前台窗口 + 候选进程组计时），hook 文本这条路径再写一份
+/// 时长就是同一次游玩被计两遍。hook 文本字符数仍然有价值（喂首页「今日字符数」），
+/// 所以这条写入保留，只是不再携带时长。
 typedef GalHookActivityWriter = Future<void> Function({
   required String title,
   String? mediaKey,
   required String dateKey,
   required int timestampMs,
-  required int durationMs,
   required int charsDelta,
 });
 
@@ -1653,15 +1657,18 @@ class GalHookSessionController extends ChangeNotifier {
     return dot > 0 ? name.substring(0, dot) : name;
   }
 
-  /// 把当前累计（活跃时长 + 字符数）落一条 activity_events。无可归属标题、无 DB/写入
-  /// 方或无累计时不落（保留累计，等下一行或会话结束再试）；落库失败静默（try/catch）。
+  /// 把当前累计的**字符数**落一条 activity_events。无可归属标题、无 DB/写入方或无
+  /// 字符累计时不落（保留累计，等下一行或会话结束再试）；落库失败静默（try/catch）。
+  ///
+  /// 契约 §3.1：时长不再从这里写（真相源是 `GalgamePlayTracker`）。累计器内部仍算
+  /// 活跃时长，但那只是 [GalHookActivityAccumulator.shouldFlush] 的节奏信号；没有
+  /// 字符就没有可记的事实，直接不落行，免得产生一堆全 null 的空活动。
   void _flushGameActivity() {
     final String? title = _activityGameTitle;
     final GalHookActivityWriter? writer = _resolveActivityWriter();
     if (title == null || writer == null) return;
-    if (!_activityAccumulator.hasPending) return;
-    final (int charsDelta, int durationMs) = _activityAccumulator.drain();
-    if (charsDelta <= 0 && durationMs <= 0) return;
+    if (_activityAccumulator.pendingChars <= 0) return;
+    final (int charsDelta, _) = _activityAccumulator.drain();
     final String? mediaKey = _activityGameKey;
     final DateTime now = _now();
     unawaited(
@@ -1670,7 +1677,6 @@ class GalHookSessionController extends ChangeNotifier {
         title: title,
         mediaKey: mediaKey,
         charsDelta: charsDelta,
-        durationMs: durationMs,
         now: now,
       ),
     );
@@ -1686,7 +1692,6 @@ class GalHookSessionController extends ChangeNotifier {
       String? mediaKey,
       required String dateKey,
       required int timestampMs,
-      required int durationMs,
       required int charsDelta,
     }) =>
         database.addActivityEvent(
@@ -1696,7 +1701,7 @@ class GalHookSessionController extends ChangeNotifier {
           mediaKey: mediaKey,
           dateKey: dateKey,
           timestampMs: timestampMs,
-          durationMs: durationMs,
+          // durationMs 刻意不传（留 null）：时长由 GalgamePlayTracker 独立写行。
           charsDelta: charsDelta,
         );
   }
@@ -1706,7 +1711,6 @@ class GalHookSessionController extends ChangeNotifier {
     required String title,
     required String? mediaKey,
     required int charsDelta,
-    required int durationMs,
     required DateTime now,
   }) async {
     try {
@@ -1715,7 +1719,6 @@ class GalHookSessionController extends ChangeNotifier {
         mediaKey: mediaKey,
         dateKey: HibikiTimeFormat.dayKey(now),
         timestampMs: now.millisecondsSinceEpoch,
-        durationMs: durationMs,
         charsDelta: charsDelta,
       );
     } catch (error, stack) {

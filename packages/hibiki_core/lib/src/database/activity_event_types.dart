@@ -14,7 +14,9 @@ const String kActivityWatch = 'watch';
 /// event_type：导入了一本书 / 一个视频。
 const String kActivityAdded = 'added';
 
-/// event_type：游戏游玩。本轮仅预留（首页 Activity 有「游戏」筛选页），无写入方。
+/// event_type：游戏游玩。两个写入方：`GalgamePlayTracker` 写会话时长
+/// （`durationMs`，前台窗口计时，时长真相源），`GalHookSessionController` 写 hook
+/// 文本字符数（`charsDelta`，不带时长，防双计）。
 const String kActivityGame = 'game';
 
 /// media_type：书（EPUB / 字幕书 / 有声书）。
@@ -23,5 +25,5 @@ const String kActivityMediaBook = 'book';
 /// media_type：视频。
 const String kActivityMediaVideo = 'video';
 
-/// media_type：游戏（预留）。
+/// media_type：游戏（galgame 游玩会话与 hook 文本活动）。
 const String kActivityMediaGame = 'game';
