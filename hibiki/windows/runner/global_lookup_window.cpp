@@ -1386,7 +1386,7 @@ void GlobalLookupWindow::ConfigureWebView() {
               // promoted, no overwrite affordance) and updateEntry with null
               // (parseMineResult -> overwrite silently did nothing), so app-external
               // overwrite could never work.
-              // BUG-1060 -- minedCardAction (the "overwrite which / add duplicate /
+              // BUG-1062 -- minedCardAction (the "overwrite which / add duplicate /
               // view" action panel) still stays NON-deferred -> immediate null, for
               // the SAME unchanged reason: it is a Flutter dialog and the main window
               // is backgrounded behind the external app, so it cannot be presented
