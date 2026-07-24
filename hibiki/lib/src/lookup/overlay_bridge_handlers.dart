@@ -79,6 +79,16 @@ bool maybeHandleOverlayDeferredBridge({
     case 'duplicateCheck':
       unawaited(_handleDuplicateBridge(model, message, resolveBridge));
       return true;
+    // BUG-1060 —— app 外「卡已存在」操作面板的两根数据桥。面板本身画在 popup.js
+    // 自己的 WebView 里（app 外没有 Flutter 层可以呈现对话框，见文件尾注），Dart
+    // 只提供数据与「在 Anki 中打开」这一个副作用；覆写/新增复用既有
+    // updateEntry / mineEntry 两根桥，不另开写路径。
+    case 'findMinedMatches':
+      unawaited(_handleFindMinedMatchesBridge(model, message, resolveBridge));
+      return true;
+    case 'openMinedNote':
+      unawaited(_handleOpenMinedNoteBridge(model, message, resolveBridge));
+      return true;
     case 'overwriteTargetNoteId':
       unawaited(_handleOverwriteTargetBridge(model, message, resolveBridge));
       return true;
@@ -383,6 +393,78 @@ Future<void> _handleDuplicateBridge(
   }
   if (id != null) {
     glog('duplicate: duplicateCheck -> reply=$reply (id=$id)');
+    unawaited(resolveBridge(id, reply));
+  }
+}
+
+/// BUG-1060 — resolves a DEFERRED `findMinedMatches` call: the app-external
+/// surfaces' equivalent of the in-app [runAnkiMinedCardAction] pre-step. Returns
+/// EVERY Anki note matching [expression]/[reading]
+/// ([BaseAnkiRepository.findMatchingNotes] — the same call the in-app action
+/// dialog makes) as a popup.js-shaped list `[{noteId, preview}, ...]`, so the
+/// in-page action panel can list the existing cards. An empty list means「探测时
+/// 显示已制卡但现在查不到」(deleted elsewhere) — popup.js then falls through to a
+/// plain re-mine, mirroring the in-app `matches.isEmpty -> mineNew()` branch.
+/// Always resolves so the ✓ button never freezes.
+Future<void> _handleFindMinedMatchesBridge(
+  AppModel? model,
+  Map<String, Object?> message,
+  OverlayBridgeResolver resolveBridge,
+) async {
+  final int? id = _bridgeIdOf(message);
+  List<Map<String, Object?>> reply = const <Map<String, Object?>>[];
+  try {
+    final Map<Object?, Object?> data = _firstMapArg(message);
+    final String expression = data['expression']?.toString() ?? '';
+    final String reading = data['reading']?.toString() ?? '';
+    if (model != null && expression.isNotEmpty) {
+      final BaseAnkiRepository repo =
+          model.platformServices.createAnkiRepository();
+      final List<MinedNoteRef> matches =
+          await repo.findMatchingNotes(expression, reading);
+      reply = <Map<String, Object?>>[
+        for (final MinedNoteRef note in matches)
+          <String, Object?>{'noteId': note.noteId, 'preview': note.preview},
+      ];
+    }
+  } catch (e, st) {
+    glog('mined-matches: EXCEPTION $e\n$st');
+    reply = const <Map<String, Object?>>[];
+  }
+  if (id != null) {
+    glog('mined-matches: findMinedMatches -> ${reply.length} hit(s) (id=$id)');
+    unawaited(resolveBridge(id, reply));
+  }
+}
+
+/// BUG-1060 — resolves a DEFERRED `openMinedNote` call by opening note [noteId]
+/// in Anki ([BaseAnkiRepository.openNoteInAnki]: AnkiConnect guiBrowse /
+/// AnkiDroid ACTION_VIEW), the same jump the in-app action dialog's 「查看·打开」
+/// performs. Replies with the bool so the panel can show a failure hint instead
+/// of pretending it worked. Always resolves.
+Future<void> _handleOpenMinedNoteBridge(
+  AppModel? model,
+  Map<String, Object?> message,
+  OverlayBridgeResolver resolveBridge,
+) async {
+  final int? id = _bridgeIdOf(message);
+  bool reply = false;
+  try {
+    final Map<Object?, Object?> data = _firstMapArg(message);
+    final Object? rawNoteId = data['noteId'];
+    final int? noteId =
+        (rawNoteId is num) ? rawNoteId.toInt() : int.tryParse('$rawNoteId');
+    if (model != null && noteId != null) {
+      final BaseAnkiRepository repo =
+          model.platformServices.createAnkiRepository();
+      reply = await repo.openNoteInAnki(noteId);
+    }
+  } catch (e, st) {
+    glog('mined-open: EXCEPTION $e\n$st');
+    reply = false;
+  }
+  if (id != null) {
+    glog('mined-open: openMinedNote -> reply=$reply (id=$id)');
     unawaited(resolveBridge(id, reply));
   }
 }
