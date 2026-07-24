@@ -62,34 +62,13 @@ class PlayAudioAction extends QuickAction {
     if (file != null) {
       await _audioPlayer.setFilePath(file.path);
 
-      AudioSession? session;
-      if (supportsNativeAudio) {
-        session = await AudioSession.instance;
-        await session.configure(
-          const AudioSessionConfiguration(
-            avAudioSessionCategory: AVAudioSessionCategory.playback,
-            avAudioSessionCategoryOptions:
-                AVAudioSessionCategoryOptions.duckOthers,
-            avAudioSessionMode: AVAudioSessionMode.defaultMode,
-            avAudioSessionRouteSharingPolicy:
-                AVAudioSessionRouteSharingPolicy.defaultPolicy,
-            avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
-            androidAudioAttributes: AndroidAudioAttributes(
-              contentType: AndroidAudioContentType.music,
-              usage: AndroidAudioUsage.media,
-            ),
-            androidAudioFocusGainType:
-                AndroidAudioFocusGainType.gainTransientMayDuck,
-            androidWillPauseWhenDucked: true,
-          ),
-        );
-
-        _noisySub?.cancel();
-        _noisySub = session.becomingNoisyEventStream.listen((event) async {
-          await _audioPlayer.stop();
-          session?.setActive(false);
-        });
-      }
+      _noisySub?.cancel();
+      _noisySub = null;
+      final DuckingPlayback? ducking = await beginDuckingPlayback(
+        onBecomingNoisy: () => _audioPlayer.stop(),
+      );
+      final AudioSession? session = ducking?.session;
+      _noisySub = ducking?.noisySubscription;
 
       session?.setActive(true);
       await _audioPlayer.play();

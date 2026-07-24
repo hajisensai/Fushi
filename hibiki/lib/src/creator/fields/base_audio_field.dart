@@ -26,7 +26,10 @@ abstract class BaseAudioField extends AudioExportField {
 
   final ValueNotifier<Duration> _positionNotifier =
       ValueNotifier<Duration>(Duration.zero);
-  final ValueNotifier<Duration?> _durationNotifier =
+  // Consumers (buildSlider/buildDurationAndPosition) always treat this as a
+  // non-null Duration, so the notifier is non-nullable and stream nulls are
+  // mapped to Duration.zero at the listener (HBK-AUDIT-107).
+  final ValueNotifier<Duration> _durationNotifier =
       ValueNotifier<Duration>(Duration.zero);
   final ValueNotifier<PlayerState?> _playerStateNotifier =
       ValueNotifier<PlayerState?>(null);
@@ -141,7 +144,7 @@ abstract class BaseAudioField extends AudioExportField {
     _durationNotifier.value = newPlayer.duration ?? Duration.zero;
     _audioSubscriptions.addAll([
       newPlayer.durationStream.listen((duration) {
-        _durationNotifier.value = duration;
+        _durationNotifier.value = duration ?? Duration.zero;
       }),
       newPlayer.positionStream.listen((position) {
         _positionNotifier.value = position;
@@ -200,36 +203,13 @@ abstract class BaseAudioField extends AudioExportField {
           icon: Icon(iconData, size: 24),
           tooltip: playerState?.playing == true ? t.pause : t.play,
           onPressed: () async {
-            AudioSession? session;
-            if (supportsNativeAudio) {
-              session = await AudioSession.instance;
-              await session.configure(
-                const AudioSessionConfiguration(
-                  avAudioSessionCategory: AVAudioSessionCategory.playback,
-                  avAudioSessionCategoryOptions:
-                      AVAudioSessionCategoryOptions.duckOthers,
-                  avAudioSessionMode: AVAudioSessionMode.defaultMode,
-                  avAudioSessionRouteSharingPolicy:
-                      AVAudioSessionRouteSharingPolicy.defaultPolicy,
-                  avAudioSessionSetActiveOptions:
-                      AVAudioSessionSetActiveOptions.none,
-                  androidAudioAttributes: AndroidAudioAttributes(
-                    contentType: AndroidAudioContentType.music,
-                    usage: AndroidAudioUsage.media,
-                  ),
-                  androidAudioFocusGainType:
-                      AndroidAudioFocusGainType.gainTransientMayDuck,
-                  androidWillPauseWhenDucked: true,
-                ),
-              );
-
-              _noisySub?.cancel();
-              _noisySub =
-                  session.becomingNoisyEventStream.listen((event) async {
-                await _audioPlayer.pause();
-                session?.setActive(false);
-              });
-            }
+            _noisySub?.cancel();
+            _noisySub = null;
+            final DuckingPlayback? ducking = await beginDuckingPlayback(
+              onBecomingNoisy: () => _audioPlayer.pause(),
+            );
+            final AudioSession? session = ducking?.session;
+            _noisySub = ducking?.noisySubscription;
 
             if (playerState == null ||
                 playerState.processingState == ProcessingState.completed) {
@@ -308,6 +288,7 @@ abstract class BaseAudioField extends AudioExportField {
         if (playerState == null ||
             playerState.processingState == ProcessingState.completed) {
           sliderValue = 0;
+          max = 1.0;
         }
 
         return Expanded(

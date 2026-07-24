@@ -172,36 +172,13 @@ class _AudioRecorderDialogPageState
           padding: EdgeInsets.all(tokens.spacing.gap),
           tooltip: playerState?.playing == true ? t.pause : t.play,
           onTap: () async {
-            AudioSession? session;
-            if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
-              session = await AudioSession.instance;
-              await session.configure(
-                const AudioSessionConfiguration(
-                  avAudioSessionCategory: AVAudioSessionCategory.playback,
-                  avAudioSessionCategoryOptions:
-                      AVAudioSessionCategoryOptions.duckOthers,
-                  avAudioSessionMode: AVAudioSessionMode.defaultMode,
-                  avAudioSessionRouteSharingPolicy:
-                      AVAudioSessionRouteSharingPolicy.defaultPolicy,
-                  avAudioSessionSetActiveOptions:
-                      AVAudioSessionSetActiveOptions.none,
-                  androidAudioAttributes: AndroidAudioAttributes(
-                    contentType: AndroidAudioContentType.music,
-                    usage: AndroidAudioUsage.media,
-                  ),
-                  androidAudioFocusGainType:
-                      AndroidAudioFocusGainType.gainTransientMayDuck,
-                  androidWillPauseWhenDucked: true,
-                ),
-              );
-
-              _noisySub?.cancel();
-              _noisySub =
-                  session.becomingNoisyEventStream.listen((event) async {
-                await _audioPlayer.pause();
-                session?.setActive(false);
-              });
-            }
+            _noisySub?.cancel();
+            _noisySub = null;
+            final DuckingPlayback? ducking = await beginDuckingPlayback(
+              onBecomingNoisy: () => _audioPlayer.pause(),
+            );
+            final AudioSession? session = ducking?.session;
+            _noisySub = ducking?.noisySubscription;
 
             if (playerState == null ||
                 playerState.processingState == ProcessingState.completed) {
