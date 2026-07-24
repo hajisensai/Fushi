@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 39695 (2335 per locale)
+/// Strings: 40222 (2366 per locale)
 ///
-/// Built on 2026-07-24 at 02:41 UTC
+/// Built on 2026-07-24 at 04:21 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3117,6 +3117,45 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String interconnect_backup_backend_current({required Object backend}) =>
       'Current backup backend: ${backend}';
   String get external_window_current_game => 'Current game';
+  String get video_scrape_online_match => 'Match poster online';
+  String get video_scrape_batch_title => 'Batch match posters';
+  String get video_scrape_search_hint => 'Search by title';
+  String get video_scrape_search => 'Search';
+  String get video_scrape_source_offline => 'Offline';
+  String get video_scrape_use => 'Use';
+  String get video_scrape_confidence_high => 'High match';
+  String get video_scrape_confidence_medium => 'Medium match';
+  String get video_scrape_confidence_low => 'Low match';
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  String get video_scrape_tmdb_key_save => 'Save';
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  String get video_scrape_no_results => 'No matches found';
+  String get video_scrape_searching => 'Searching…';
+  String get video_scrape_applied => 'Cover applied';
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  String get video_scrape_batch_download => 'Download';
+  String get video_scrape_batch_skip => 'Skip online only';
+  String get video_scrape_batch_start => 'Start matching';
+  String get video_scrape_batch_cancel => 'Cancel';
+  String get video_scrape_batch_close => 'Close';
+  String get video_scrape_status_applied => 'Applied';
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  String get video_scrape_status_skipped => 'Skipped';
+  String get video_scrape_status_failed => 'Failed';
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  String get video_scrape_batch_empty => 'No local videos to match';
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
 }
 
 // Path: <root>
@@ -8415,6 +8454,76 @@ class _StringsAr extends _StringsEn {
       'Current backup backend: ${backend}';
   @override
   String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
 }
 
 // Path: <root>
@@ -13786,6 +13895,76 @@ class _StringsDe extends _StringsEn {
       'Current backup backend: ${backend}';
   @override
   String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
 }
 
 // Path: <root>
@@ -19173,6 +19352,76 @@ class _StringsEs extends _StringsEn {
       'Current backup backend: ${backend}';
   @override
   String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
 }
 
 // Path: <root>
@@ -24571,6 +24820,76 @@ class _StringsFr extends _StringsEn {
       'Current backup backend: ${backend}';
   @override
   String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
 }
 
 // Path: <root>
@@ -29896,6 +30215,76 @@ class _StringsId extends _StringsEn {
       'Current backup backend: ${backend}';
   @override
   String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
 }
 
 // Path: <root>
@@ -35269,6 +35658,76 @@ class _StringsIt extends _StringsEn {
       'Current backup backend: ${backend}';
   @override
   String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
 }
 
 // Path: <root>
@@ -40447,6 +40906,76 @@ class _StringsJa extends _StringsEn {
       'Current backup backend: ${backend}';
   @override
   String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
 }
 
 // Path: <root>
@@ -45628,6 +46157,76 @@ class _StringsKo extends _StringsEn {
       'Current backup backend: ${backend}';
   @override
   String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
 }
 
 // Path: <root>
@@ -50979,6 +51578,76 @@ class _StringsNl extends _StringsEn {
       'Current backup backend: ${backend}';
   @override
   String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
 }
 
 // Path: <root>
@@ -56345,6 +57014,76 @@ class _StringsPtBr extends _StringsEn {
       'Current backup backend: ${backend}';
   @override
   String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
 }
 
 // Path: <root>
@@ -61694,6 +62433,76 @@ class _StringsRu extends _StringsEn {
       'Current backup backend: ${backend}';
   @override
   String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
 }
 
 // Path: <root>
@@ -66988,6 +67797,76 @@ class _StringsTh extends _StringsEn {
       'Current backup backend: ${backend}';
   @override
   String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
 }
 
 // Path: <root>
@@ -72314,6 +73193,76 @@ class _StringsTr extends _StringsEn {
       'Current backup backend: ${backend}';
   @override
   String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
 }
 
 // Path: <root>
@@ -77627,6 +78576,76 @@ class _StringsVi extends _StringsEn {
       'Current backup backend: ${backend}';
   @override
   String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
 }
 
 // Path: <root>
@@ -82567,6 +83586,75 @@ class _StringsZhCn extends _StringsEn {
       '当前备份后端：${backend}';
   @override
   String get external_window_current_game => '当前游戏';
+  @override
+  String get video_scrape_online_match => '在线匹配海报';
+  @override
+  String get video_scrape_batch_title => '批量匹配海报';
+  @override
+  String get video_scrape_search_hint => '按片名搜索';
+  @override
+  String get video_scrape_search => '搜索';
+  @override
+  String get video_scrape_source_offline => '离线库';
+  @override
+  String get video_scrape_use => '使用';
+  @override
+  String get video_scrape_confidence_high => '高匹配';
+  @override
+  String get video_scrape_confidence_medium => '中匹配';
+  @override
+  String get video_scrape_confidence_low => '低匹配';
+  @override
+  String get video_scrape_tmdb_key_hint => '输入 TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => '保存';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB 需要 API Key';
+  @override
+  String get video_scrape_no_results => '没有找到匹配结果';
+  @override
+  String get video_scrape_searching => '搜索中…';
+  @override
+  String get video_scrape_applied => '封面已应用';
+  @override
+  String get video_scrape_apply_failed => '封面应用失败';
+  @override
+  String get video_scrape_batch_download_index => '下载离线索引库（约几十 MB，可跳过）';
+  @override
+  String get video_scrape_batch_download => '下载';
+  @override
+  String get video_scrape_batch_skip => '跳过（仅在线）';
+  @override
+  String get video_scrape_batch_start => '开始匹配';
+  @override
+  String get video_scrape_batch_cancel => '取消';
+  @override
+  String get video_scrape_batch_close => '关闭';
+  @override
+  String get video_scrape_status_applied => '已应用';
+  @override
+  String get video_scrape_status_needs_confirm => '待确认';
+  @override
+  String get video_scrape_status_skipped => '跳过';
+  @override
+  String get video_scrape_status_failed => '失败';
+  @override
+  String get video_scrape_downloading_index => '正在下载离线索引库…';
+  @override
+  String get video_scrape_batch_empty => '没有可匹配的本地视频';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      '同时应用到本合集全部 ${n} 集';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      '完成：应用 ${applied}，待确认 ${confirm}，跳过 ${skipped}';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      '匹配中 ${current}/${total}';
 }
 
 // Path: <root>
@@ -87663,6 +88751,76 @@ class _StringsZhHk extends _StringsEn {
       'Current backup backend: ${backend}';
   @override
   String get external_window_current_game => 'Current game';
+  @override
+  String get video_scrape_online_match => 'Match poster online';
+  @override
+  String get video_scrape_batch_title => 'Batch match posters';
+  @override
+  String get video_scrape_search_hint => 'Search by title';
+  @override
+  String get video_scrape_search => 'Search';
+  @override
+  String get video_scrape_source_offline => 'Offline';
+  @override
+  String get video_scrape_use => 'Use';
+  @override
+  String get video_scrape_confidence_high => 'High match';
+  @override
+  String get video_scrape_confidence_medium => 'Medium match';
+  @override
+  String get video_scrape_confidence_low => 'Low match';
+  @override
+  String get video_scrape_tmdb_key_hint => 'Enter TMDB API Key';
+  @override
+  String get video_scrape_tmdb_key_save => 'Save';
+  @override
+  String get video_scrape_tmdb_key_required => 'TMDB requires an API key';
+  @override
+  String get video_scrape_no_results => 'No matches found';
+  @override
+  String get video_scrape_searching => 'Searching…';
+  @override
+  String get video_scrape_applied => 'Cover applied';
+  @override
+  String get video_scrape_apply_failed => 'Failed to apply cover';
+  @override
+  String get video_scrape_batch_download_index =>
+      'Download offline index (tens of MB, optional)';
+  @override
+  String get video_scrape_batch_download => 'Download';
+  @override
+  String get video_scrape_batch_skip => 'Skip online only';
+  @override
+  String get video_scrape_batch_start => 'Start matching';
+  @override
+  String get video_scrape_batch_cancel => 'Cancel';
+  @override
+  String get video_scrape_batch_close => 'Close';
+  @override
+  String get video_scrape_status_applied => 'Applied';
+  @override
+  String get video_scrape_status_needs_confirm => 'Needs review';
+  @override
+  String get video_scrape_status_skipped => 'Skipped';
+  @override
+  String get video_scrape_status_failed => 'Failed';
+  @override
+  String get video_scrape_downloading_index => 'Downloading offline index…';
+  @override
+  String get video_scrape_batch_empty => 'No local videos to match';
+  @override
+  String video_scrape_apply_to_collection({required Object n}) =>
+      'Also apply to all ${n} episodes in this collection';
+  @override
+  String video_scrape_batch_summary(
+          {required Object applied,
+          required Object confirm,
+          required Object skipped}) =>
+      'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+  @override
+  String video_scrape_batch_progress(
+          {required Object current, required Object total}) =>
+      'Matching ${current}/${total}';
 }
 
 /// Flat map(s) containing all translations.
@@ -92431,6 +93589,74 @@ extension on _StringsEn {
             'Current backup backend: ${backend}';
       case 'external_window_current_game':
         return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       default:
         return null;
     }
@@ -97197,6 +98423,74 @@ extension on _StringsAr {
             'Current backup backend: ${backend}';
       case 'external_window_current_game':
         return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       default:
         return null;
     }
@@ -101984,6 +103278,74 @@ extension on _StringsDe {
             'Current backup backend: ${backend}';
       case 'external_window_current_game':
         return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       default:
         return null;
     }
@@ -106770,6 +108132,74 @@ extension on _StringsEs {
             'Current backup backend: ${backend}';
       case 'external_window_current_game':
         return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       default:
         return null;
     }
@@ -111562,6 +112992,74 @@ extension on _StringsFr {
             'Current backup backend: ${backend}';
       case 'external_window_current_game':
         return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       default:
         return null;
     }
@@ -116336,6 +117834,74 @@ extension on _StringsId {
             'Current backup backend: ${backend}';
       case 'external_window_current_game':
         return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       default:
         return null;
     }
@@ -121125,6 +122691,74 @@ extension on _StringsIt {
             'Current backup backend: ${backend}';
       case 'external_window_current_game':
         return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       default:
         return null;
     }
@@ -125876,6 +127510,74 @@ extension on _StringsJa {
             'Current backup backend: ${backend}';
       case 'external_window_current_game':
         return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       default:
         return null;
     }
@@ -130631,6 +132333,74 @@ extension on _StringsKo {
             'Current backup backend: ${backend}';
       case 'external_window_current_game':
         return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       default:
         return null;
     }
@@ -135413,6 +137183,74 @@ extension on _StringsNl {
             'Current backup backend: ${backend}';
       case 'external_window_current_game':
         return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       default:
         return null;
     }
@@ -140192,6 +142030,74 @@ extension on _StringsPtBr {
             'Current backup backend: ${backend}';
       case 'external_window_current_game':
         return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       default:
         return null;
     }
@@ -144976,6 +146882,74 @@ extension on _StringsRu {
             'Current backup backend: ${backend}';
       case 'external_window_current_game':
         return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       default:
         return null;
     }
@@ -149744,6 +151718,74 @@ extension on _StringsTh {
             'Current backup backend: ${backend}';
       case 'external_window_current_game':
         return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       default:
         return null;
     }
@@ -154521,6 +156563,74 @@ extension on _StringsTr {
             'Current backup backend: ${backend}';
       case 'external_window_current_game':
         return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       default:
         return null;
     }
@@ -159293,6 +161403,74 @@ extension on _StringsVi {
             'Current backup backend: ${backend}';
       case 'external_window_current_game':
         return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       default:
         return null;
     }
@@ -164027,6 +166205,73 @@ extension on _StringsZhCn {
         return ({required Object backend}) => '当前备份后端：${backend}';
       case 'external_window_current_game':
         return '当前游戏';
+      case 'video_scrape_online_match':
+        return '在线匹配海报';
+      case 'video_scrape_batch_title':
+        return '批量匹配海报';
+      case 'video_scrape_search_hint':
+        return '按片名搜索';
+      case 'video_scrape_search':
+        return '搜索';
+      case 'video_scrape_source_offline':
+        return '离线库';
+      case 'video_scrape_use':
+        return '使用';
+      case 'video_scrape_confidence_high':
+        return '高匹配';
+      case 'video_scrape_confidence_medium':
+        return '中匹配';
+      case 'video_scrape_confidence_low':
+        return '低匹配';
+      case 'video_scrape_tmdb_key_hint':
+        return '输入 TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return '保存';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB 需要 API Key';
+      case 'video_scrape_no_results':
+        return '没有找到匹配结果';
+      case 'video_scrape_searching':
+        return '搜索中…';
+      case 'video_scrape_applied':
+        return '封面已应用';
+      case 'video_scrape_apply_failed':
+        return '封面应用失败';
+      case 'video_scrape_batch_download_index':
+        return '下载离线索引库（约几十 MB，可跳过）';
+      case 'video_scrape_batch_download':
+        return '下载';
+      case 'video_scrape_batch_skip':
+        return '跳过（仅在线）';
+      case 'video_scrape_batch_start':
+        return '开始匹配';
+      case 'video_scrape_batch_cancel':
+        return '取消';
+      case 'video_scrape_batch_close':
+        return '关闭';
+      case 'video_scrape_status_applied':
+        return '已应用';
+      case 'video_scrape_status_needs_confirm':
+        return '待确认';
+      case 'video_scrape_status_skipped':
+        return '跳过';
+      case 'video_scrape_status_failed':
+        return '失败';
+      case 'video_scrape_downloading_index':
+        return '正在下载离线索引库…';
+      case 'video_scrape_batch_empty':
+        return '没有可匹配的本地视频';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) => '同时应用到本合集全部 ${n} 集';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            '完成：应用 ${applied}，待确认 ${confirm}，跳过 ${skipped}';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            '匹配中 ${current}/${total}';
       default:
         return null;
     }
@@ -168773,6 +171018,74 @@ extension on _StringsZhHk {
             'Current backup backend: ${backend}';
       case 'external_window_current_game':
         return 'Current game';
+      case 'video_scrape_online_match':
+        return 'Match poster online';
+      case 'video_scrape_batch_title':
+        return 'Batch match posters';
+      case 'video_scrape_search_hint':
+        return 'Search by title';
+      case 'video_scrape_search':
+        return 'Search';
+      case 'video_scrape_source_offline':
+        return 'Offline';
+      case 'video_scrape_use':
+        return 'Use';
+      case 'video_scrape_confidence_high':
+        return 'High match';
+      case 'video_scrape_confidence_medium':
+        return 'Medium match';
+      case 'video_scrape_confidence_low':
+        return 'Low match';
+      case 'video_scrape_tmdb_key_hint':
+        return 'Enter TMDB API Key';
+      case 'video_scrape_tmdb_key_save':
+        return 'Save';
+      case 'video_scrape_tmdb_key_required':
+        return 'TMDB requires an API key';
+      case 'video_scrape_no_results':
+        return 'No matches found';
+      case 'video_scrape_searching':
+        return 'Searching…';
+      case 'video_scrape_applied':
+        return 'Cover applied';
+      case 'video_scrape_apply_failed':
+        return 'Failed to apply cover';
+      case 'video_scrape_batch_download_index':
+        return 'Download offline index (tens of MB, optional)';
+      case 'video_scrape_batch_download':
+        return 'Download';
+      case 'video_scrape_batch_skip':
+        return 'Skip online only';
+      case 'video_scrape_batch_start':
+        return 'Start matching';
+      case 'video_scrape_batch_cancel':
+        return 'Cancel';
+      case 'video_scrape_batch_close':
+        return 'Close';
+      case 'video_scrape_status_applied':
+        return 'Applied';
+      case 'video_scrape_status_needs_confirm':
+        return 'Needs review';
+      case 'video_scrape_status_skipped':
+        return 'Skipped';
+      case 'video_scrape_status_failed':
+        return 'Failed';
+      case 'video_scrape_downloading_index':
+        return 'Downloading offline index…';
+      case 'video_scrape_batch_empty':
+        return 'No local videos to match';
+      case 'video_scrape_apply_to_collection':
+        return ({required Object n}) =>
+            'Also apply to all ${n} episodes in this collection';
+      case 'video_scrape_batch_summary':
+        return (
+                {required Object applied,
+                required Object confirm,
+                required Object skipped}) =>
+            'Done: ${applied} applied, ${confirm} to review, ${skipped} skipped';
+      case 'video_scrape_batch_progress':
+        return ({required Object current, required Object total}) =>
+            'Matching ${current}/${total}';
       default:
         return null;
     }
