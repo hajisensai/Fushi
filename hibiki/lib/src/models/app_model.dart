@@ -2367,6 +2367,17 @@ class AppModel with ChangeNotifier {
         ]),
       ]);
 
+      // 弹窗进程也要加载用户的快捷键绑定：弹窗内的「上/下一个词条」（Alt+滚轮）由
+      // popup_settings_injection 把 shortcutRegistry 里的滚轮绑定注入给 popup.js，
+      // 不加载就只能发默认值、用户改的键在这个进程里不生效。与主 initialise() 同样
+      // 排在 ReaderHibikiSource.initialise() 之后（BUG-207：偏好缓存必须先就位，
+      // 否则读到空缓存会把用户快照写成 's:null'）。
+      await loadShortcutRegistry(
+        shortcutRegistry,
+        ReaderHibikiSource.instance,
+        defaultTargetPlatform,
+      );
+
       debugPrint('[Hibiki-popup] init: DONE');
       _isInitialised = true;
       // TODO-855: prime the prefs-version watermark from the freshly loaded
