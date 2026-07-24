@@ -55,6 +55,7 @@ class _RecordingService extends AnkiConnectService {
     required String deckName,
     required String fieldName,
     required String fieldValue,
+    AnkiDuplicateScope scope = AnkiDuplicateScope.deck,
   }) async =>
       false;
 

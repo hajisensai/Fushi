@@ -2456,5 +2456,10 @@
   "game_hook_recapture_started": "Recording — replay this line in the game",
   "game_hook_recapture_saved": "Recaptured voice saved to this line",
   "game_hook_recapture_empty": "No audio captured in the recapture window",
-  "game_hook_recapture_unavailable": "Voice recapture needs system loopback audio"
+  "game_hook_recapture_unavailable": "Voice recapture needs system loopback audio",
+  "anki_duplicate_scope_hint": "Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.",
+  "anki_duplicate_scope_deck": "Selected deck (and its subdecks)",
+  "anki_duplicate_scope_deck_root": "Root deck (all subdecks)",
+  "anki_duplicate_scope_collection": "Whole collection",
+  "anki_duplicate_scope": "Duplicate check scope"
 }

@@ -66,6 +66,45 @@ AnkiOverwriteScope ankiOverwriteScopeFromName(String? name) {
   }
 }
 
+/// 查重（以及据同一条件反查已存在卡）的**搜索范围**。
+///
+/// 用户痛点：Anki 的 `deck:X` 搜索包含 X 的子卡组，但**不包含**它的父卡组与兄弟
+/// 子卡组。所以把制卡目标选成 `Lapis::Vocab` 时，Hibiki 只能查到这个子卡组里的卡；
+/// 同一个词早先制在 `Lapis::Sentences` 或 `Lapis` 本身，就查不到、被当成新词。
+/// Yomitan 对此有 duplicate scope 设置，Hibiki 之前恒等于 [deck]。
+///
+/// - [deck]（默认，等于旧行为）：只查当前选中的卡组（含其子卡组）。
+/// - [deckRoot]：查当前卡组的**根卡组**及其全部子卡组（`Lapis::Vocab` → `Lapis`），
+///   即用户说的「选子卡组也能查到整个 Lapis 的卡」。
+/// - [collection]：不限卡组，整个 Anki 收藏集。
+///
+/// 仅对 AnkiConnect（桌面 Anki）有意义。AnkiDroid 后端经 ContentProvider
+/// `findDuplicateNotes` 按笔记类型全库查，本来就等价 [collection]，不读此设置。
+enum AnkiDuplicateScope {
+  /// 当前卡组（含子卡组）——旧行为。
+  deck,
+
+  /// 当前卡组的根卡组及其全部子卡组。
+  deckRoot,
+
+  /// 整个收藏集，不限卡组。
+  collection,
+}
+
+/// 把持久化字符串解析回 [AnkiDuplicateScope]；未知/缺失值容错回
+/// [AnkiDuplicateScope.deck]（旧用户存档没有此字段 → 等价现状，Never break userspace）。
+AnkiDuplicateScope ankiDuplicateScopeFromName(String? name) {
+  switch (name) {
+    case 'deckRoot':
+      return AnkiDuplicateScope.deckRoot;
+    case 'collection':
+      return AnkiDuplicateScope.collection;
+    case 'deck':
+    default:
+      return AnkiDuplicateScope.deck;
+  }
+}
+
 /// TODO-1007/1008：一张**已存在于 Anki**的、与当前查词同条件匹配的卡片的轻量引用。
 ///
 /// 用户痛点（根因）：旧的「点 ✓ 默默 return / 只覆写本会话最近一张」把「別处或上次会话
@@ -126,6 +165,7 @@ class AnkiSettings {
     this.compactGlossaries = false,
     this.embedMedia = true,
     this.overwriteScope = AnkiOverwriteScope.latest,
+    this.duplicateScope = AnkiDuplicateScope.deck,
     this.ankiConnectHost = 'localhost',
     this.ankiConnectPort = 8765,
     this.ankiConnectApiKey = '',
@@ -154,6 +194,8 @@ class AnkiSettings {
         embedMedia: json['embedMedia'] as bool? ?? true,
         overwriteScope:
             ankiOverwriteScopeFromName(json['overwriteScope'] as String?),
+        duplicateScope:
+            ankiDuplicateScopeFromName(json['duplicateScope'] as String?),
         ankiConnectHost: json['ankiConnectHost'] as String? ?? 'localhost',
         ankiConnectPort: json['ankiConnectPort'] as int? ?? 8765,
         ankiConnectApiKey: json['ankiConnectApiKey'] as String? ?? '',
@@ -180,6 +222,10 @@ class AnkiSettings {
 
   /// TODO-614：覆写已制卡片的范围（默认 [AnkiOverwriteScope.latest] = 仅最近一张）。
   final AnkiOverwriteScope overwriteScope;
+
+  /// 查重 / 反查已存在卡的搜索范围（默认 [AnkiDuplicateScope.deck] = 旧行为：
+  /// 只查当前卡组及其子卡组）。仅 AnkiConnect 生效，见 [AnkiDuplicateScope]。
+  final AnkiDuplicateScope duplicateScope;
   final String ankiConnectHost;
   final int ankiConnectPort;
   final String ankiConnectApiKey;
@@ -208,6 +254,7 @@ class AnkiSettings {
     bool? compactGlossaries,
     bool? embedMedia,
     AnkiOverwriteScope? overwriteScope,
+    AnkiDuplicateScope? duplicateScope,
     String? ankiConnectHost,
     int? ankiConnectPort,
     String? ankiConnectApiKey,
@@ -227,6 +274,7 @@ class AnkiSettings {
         compactGlossaries: compactGlossaries ?? this.compactGlossaries,
         embedMedia: embedMedia ?? this.embedMedia,
         overwriteScope: overwriteScope ?? this.overwriteScope,
+        duplicateScope: duplicateScope ?? this.duplicateScope,
         ankiConnectHost: ankiConnectHost ?? this.ankiConnectHost,
         ankiConnectPort: ankiConnectPort ?? this.ankiConnectPort,
         ankiConnectApiKey: ankiConnectApiKey ?? this.ankiConnectApiKey,
@@ -248,6 +296,7 @@ class AnkiSettings {
         'compactGlossaries': compactGlossaries,
         'embedMedia': embedMedia,
         'overwriteScope': overwriteScope.name,
+        'duplicateScope': duplicateScope.name,
         'ankiConnectHost': ankiConnectHost,
         'ankiConnectPort': ankiConnectPort,
         'ankiConnectApiKey': ankiConnectApiKey,

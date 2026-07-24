@@ -510,6 +510,10 @@ class AnkiRepository extends BaseAnkiRepository {
     }
   }
 
+  /// [AnkiSettings.duplicateScope] 在本后端**没有对应物**，故不读：AnkiDroid 的
+  /// ContentProvider `findDuplicateNotes` 是按笔记类型在**整库**查的，没有卡组维度，
+  /// 等价于 [AnkiDuplicateScope.collection]。设置项的说明里已写明「仅 AnkiConnect
+  /// 生效」——这里不是漏接线。
   @override
   Future<bool> isDuplicate(String expression, String reading) async {
     final settings = await loadSettings();

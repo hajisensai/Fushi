@@ -2456,5 +2456,10 @@
   "game_hook_recapture_started": "录音中——请在游戏里重播这句语音",
   "game_hook_recapture_saved": "补录语音已绑定到这句",
   "game_hook_recapture_empty": "补录窗口内没有录到声音",
-  "game_hook_recapture_unavailable": "补录需要系统声音采集可用"
+  "game_hook_recapture_unavailable": "补录需要系统声音采集可用",
+  "anki_duplicate_scope_hint": "查询「这个词是否已经有卡」时搜索哪些卡组。仅 AnkiConnect（桌面 Anki）生效；AnkiDroid 始终整库查重。",
+  "anki_duplicate_scope_deck": "所选卡组（含子卡组）",
+  "anki_duplicate_scope_deck_root": "根卡组（含全部子卡组）",
+  "anki_duplicate_scope_collection": "整个收藏集",
+  "anki_duplicate_scope": "查重范围"
 }
