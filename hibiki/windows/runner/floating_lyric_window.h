@@ -38,8 +38,12 @@ class FloatingLyricWindow {
   // Reports a tap on a character at |char_index| within the full |text|.
   using LookupCallback =
       std::function<void(const std::string& text, int char_index)>;
+  // |word_rect| is the tapped character's rectangle in SCREEN LOGICAL px
+  // (already un-scaled by DPI) — the lookup card anchors to the word the user
+  // actually pointed at instead of to the mouse cursor.
   using ContextLookupCallback = std::function<void(
-      const std::string& context_id, const std::string& text, int char_index)>;
+      const std::string& context_id, const std::string& text, int char_index,
+      const D2D1_RECT_F& word_rect)>;
   // Reports a tap on one of the control buttons. |action| is one of
   // "previousCue", "playPause", "nextCue", "close" (the "lock" button is
   // handled internally and surfaced through LockCallback instead).
@@ -174,7 +178,10 @@ class FloatingLyricWindow {
 
   // Returns the UTF-16 code-unit index nearest the client point, or -1 when
   // the point is outside the text area or no text is present.
-  int CharIndexAt(float x, float y);
+  // Returns the character index under the client-area point, or -1. When
+  // |out_char_rect| is given it receives that character's rect in client-area
+  // physical px (callers lift it to screen logical px for the lookup anchor).
+  int CharIndexAt(float x, float y, D2D1_RECT_F* out_char_rect = nullptr);
 
   // Returns the control action at the client point, or empty when none.
   std::string ControlActionAt(float x, float y);

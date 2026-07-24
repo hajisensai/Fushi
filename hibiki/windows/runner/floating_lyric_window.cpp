@@ -45,6 +45,14 @@ constexpr float kDragThresholdDip = 6.0f;
 // Base logical font size the lyric text was authored at; the rendered font
 // scales with the bar height so growing the bar enlarges the text too.
 constexpr float kBaseStripHeightForFontDip = 96.0f;
+// Hook mode authors its font against its own default window height (140dip) and
+// scales with the live height, so dragging the overlay taller enlarges the
+// caption instead of leaving it stranded at the authored size. Clamped so a
+// deliberately short, wide overlay (hugging the game's text box) never shrinks
+// the text below readability.
+constexpr float kHookTextBaseHeightForFontDip = 140.0f;
+constexpr float kHookTextFontScaleMin = 0.9f;
+constexpr float kHookTextFontScaleMax = 2.5f;
 // Control row slots, in draw / hit-test order: previous, play-pause, next,
 // lock, close. The lock button (slot 3) is the TODO-136 addition; both Render()
 // and ControlActionAt() derive their geometry from this single count so the
@@ -643,8 +651,10 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       // lookup now — single-tap lookup preserved.
       if (!was_dragging && was_pressed && was_text &&
           (on_lookup_ || on_context_lookup_)) {
+        D2D1_RECT_F char_rect = {};
         const int index = CharIndexAt(static_cast<float>(lookup_pt.x),
-                                      static_cast<float>(lookup_pt.y));
+                                      static_cast<float>(lookup_pt.y),
+                                      &char_rect);
         if (index >= 0) {
           int utf8_len = WideCharToMultiByte(CP_UTF8, 0, text_.c_str(),
                                              static_cast<int>(text_.size()),
@@ -654,7 +664,18 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
                               static_cast<int>(text_.size()), utf8.data(),
                               utf8_len, nullptr, nullptr);
           if (on_context_lookup_) {
-            on_context_lookup_(context_id_, utf8, index);
+            // Client-area physical px -> screen logical px: the lookup card
+            // anchors to the tapped word, so it must be in the same unit
+            // system Dart uses for screen rects.
+            const float scale = std::max(0.01f, static_cast<float>(dpi_) / 96.0f);
+            RECT wr = {};
+            GetWindowRect(hwnd_, &wr);
+            const D2D1_RECT_F screen_rect = D2D1::RectF(
+                (wr.left + char_rect.left) / scale,
+                (wr.top + char_rect.top) / scale,
+                (wr.left + char_rect.right) / scale,
+                (wr.top + char_rect.bottom) / scale);
+            on_context_lookup_(context_id_, utf8, index, screen_rect);
           } else if (on_lookup_) {
             on_lookup_(utf8, index);
           }
@@ -801,10 +822,11 @@ void FloatingLyricWindow::Render() {
   // height; the live font scales with strip_height_dip_ so dragging the resize
   // grip larger enlarges the lyric text too.
   if (text_format_ == nullptr) {
-    const float height_scale = hook_text_mode_
-                                   ? 1.0f
-                                   : strip_height_dip_ /
-                                         kBaseStripHeightForFontDip;
+    const float height_scale =
+        hook_text_mode_
+            ? std::clamp(strip_height_dip_ / kHookTextBaseHeightForFontDip,
+                         kHookTextFontScaleMin, kHookTextFontScaleMax)
+            : strip_height_dip_ / kBaseStripHeightForFontDip;
     const float scaled_font = static_cast<float>(style_.font_size) *
                               std::max(0.5f, height_scale);
     dwrite_factory_->CreateTextFormat(
@@ -1243,7 +1265,8 @@ void FloatingLyricWindow::SyncStripSizeFromWindow() {
   strip_height_dip_ = static_cast<float>(rc.bottom - rc.top) / scale;
 }
 
-int FloatingLyricWindow::CharIndexAt(float x, float y) {
+int FloatingLyricWindow::CharIndexAt(float x, float y,
+                                     D2D1_RECT_F* out_char_rect) {
   if (text_.empty() || text_layout_ == nullptr) {
     return -1;
   }
@@ -1262,6 +1285,13 @@ int FloatingLyricWindow::CharIndexAt(float x, float y) {
   }
   if (!is_inside) {
     return -1;
+  }
+  if (out_char_rect != nullptr) {
+    // Hit-test metrics are layout-local; lift them back into client-area px.
+    out_char_rect->left = text_rect_.left + metrics.left;
+    out_char_rect->top = text_rect_.top + metrics.top;
+    out_char_rect->right = out_char_rect->left + metrics.width;
+    out_char_rect->bottom = out_char_rect->top + metrics.height;
   }
   return static_cast<int>(metrics.textPosition);
 }
