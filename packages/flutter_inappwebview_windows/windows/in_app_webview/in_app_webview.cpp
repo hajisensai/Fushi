@@ -1974,13 +1974,26 @@ namespace flutter_inappwebview_plugin
     // delta * 6 gives me a multiple of WHEEL_DELTA (120) for a mouse notch (delta≈20).
     constexpr auto kScrollMultiplier = 6;
 
+    // BUG-1065 根因：这里的 delta 是 Flutter 的**逻辑像素**（framework converter.dart
+    // 对 scrollDelta 统一除过 devicePixelRatio），而 kScrollMultiplier=6 的前提「一档
+    // delta≈20」只在 dpr=1（100% 缩放）成立。150% 缩放下一档只剩 20/1.5≈13.3 → *6=80
+    // → 0.67 个 WHEEL_DELTA，同一份 popup.js 收到的 deltaY 就比 app 外裸 WebView2 窗
+    // （global_lookup_window.cpp 原样转发系统 WHEEL_DELTA=120）小 1/dpr，用户直观感受
+    // 就是「app 内弹窗滚得比 app 外慢」。本文件的鼠标坐标（sendMouseInput / setPosition）
+    // 早已乘 scaleFactor_ 还原物理像素，唯独滚轮 delta 漏了这一步——先还原再乘倍数，
+    // 使 WebView2 收到的 wheel 单位与系统原生一致。dpr=1 时逐帧与改前完全相同。
+    // 副作用（正向）：dpr≥2 时改前 deltaY 会跌破 popup.js 的 60px 粗/细设备阈值被误判
+    // 成触控板（factor 1.0 而非 0.24）而暴快，还原后分类回到设计假设。
+    const double dprScale =
+      (scaleFactor_ > 0.0f) ? static_cast<double>(scaleFactor_) : 1.0;
+
     // BUG-870 根因：static_cast<short>(delta * 6) 向零截断且无跨帧余量累积。精密触控板
     // 慢滑时 Flutter 每帧下发很小的 delta，delta*6 不足 1 时被截成 0 → 根本不发 wheel 给
     // WebView2 → 弹窗「滚不动 / 很难滚」（鼠标一档 delta≈20→120 不受影响，每帧即过整单位）。
     // 这是 popup.js 的 TODO-1387 子像素残差修复够不到的更上游截断点：wheel 还没进 DOM 就没了。
     // 改为按轴累加被截掉的小数余量，小 delta 攒够整数 wheel 单位再发，绝不丢帧。
     double& residual = horizontal ? scrollResidualX_ : scrollResidualY_;
-    double scaled = delta * kScrollMultiplier + residual;
+    double scaled = delta * kScrollMultiplier * dprScale + residual;
     // 防极快甩动 delta*6 溢出 short（否则环绕成反向跳变）；被夹掉的部分直接丢弃、不进余量。
     if (scaled > 32760.0) { scaled = 32760.0; }
     else if (scaled < -32760.0) { scaled = -32760.0; }

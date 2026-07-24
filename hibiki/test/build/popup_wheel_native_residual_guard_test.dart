@@ -19,6 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// popup_wheel_scroll_behavior_test.js.
 void main() {
   late String sendScrollBody;
+  late String forwardCompositionMouseBody;
 
   setUpAll(() {
     final String cpp = File(
@@ -31,6 +32,21 @@ void main() {
     expect(end, greaterThan(start),
         reason: 'setScrollDelta must follow sendScroll');
     sendScrollBody = cpp.substring(start, end);
+
+    // BUG-1065 对照端：app 外查词弹窗的裸 WebView2 overlay 转发路径。
+    final String overlayCpp =
+        File('windows/runner/global_lookup_window.cpp').readAsStringSync();
+    final int overlayStart =
+        overlayCpp.indexOf('void GlobalLookupWindow::ForwardCompositionMouse');
+    expect(overlayStart, greaterThanOrEqualTo(0),
+        reason:
+            'ForwardCompositionMouse must exist in global_lookup_window.cpp');
+    final int overlayEnd = overlayCpp.indexOf(
+        'void GlobalLookupWindow::EnsureWebView', overlayStart);
+    expect(overlayEnd, greaterThan(overlayStart),
+        reason: 'EnsureWebView must follow ForwardCompositionMouse');
+    forwardCompositionMouseBody =
+        overlayCpp.substring(overlayStart, overlayEnd);
   });
 
   group('BUG-870 native sendScroll carries a sub-unit remainder', () {
@@ -67,6 +83,59 @@ void main() {
       );
       expect(sendScrollBody.contains('static_cast<short>(scaled)'), isTrue,
           reason: 'the short cast must act on the residual-accumulated value');
+    });
+  });
+
+  // BUG-1065 —— app 内 / app 外两种查词弹窗喂给 WebView2 的 wheel 单位必须同尺度。
+  //
+  // app 内走 Flutter PointerScrollEvent，framework converter.dart 已把 scrollDelta
+  // 除过 devicePixelRatio（逻辑像素）；kScrollMultiplier=6 的「一档 delta≈20」前提
+  // 只在 dpr=1 成立。app 外的裸 WebView2 overlay 则原样转发系统 WHEEL_DELTA。
+  // 150% 缩放下 app 内一档只有 0.67 个 WHEEL_DELTA → 同一份 popup.js 收到的 deltaY
+  // 小 1/dpr，用户直观感受就是「app 内滚得慢」。dpr≥2 时更会跌破 popup.js 的
+  // POPUP_WHEEL_MOUSE_NOTCH_PX=60 粗/细设备阈值而被误判成触控板。
+  group('BUG-1065 wheel delta 与 app 外 overlay 同尺度', () {
+    test('in-app sendScroll 按 scaleFactor_ 还原物理像素后再乘倍数', () {
+      expect(sendScrollBody.contains('scaleFactor_'), isTrue,
+          reason: '滚轮 delta 是逻辑像素，必须用 scaleFactor_（devicePixelRatio）'
+              '还原成物理像素，与同文件鼠标坐标 (x * scaleFactor_) 的处理一致');
+      expect(
+        RegExp(r'delta \* kScrollMultiplier \* \w+ \+ residual')
+            .hasMatch(sendScrollBody),
+        isTrue,
+        reason: '缩放系数必须乘进 scaled，且仍走 BUG-870 的 residual 累积',
+      );
+    });
+
+    test('不再出现无 DPR 还原的旧形式', () {
+      expect(
+        sendScrollBody.contains('delta * kScrollMultiplier + residual'),
+        isFalse,
+        reason: '直接用逻辑像素乘 6 会让高 DPI 机器的 app 内弹窗慢 1/dpr（BUG-1065）',
+      );
+    });
+
+    test('scaleFactor_ 为 0/未初始化时回退 1.0，绝不把 wheel 归零', () {
+      expect(sendScrollBody.contains('1.0'), isTrue,
+          reason: 'scaleFactor_ 非法（<=0）时必须回退 1.0，否则一乘 0 滚轮全死');
+      expect(RegExp(r'scaleFactor_ > 0').hasMatch(sendScrollBody), isTrue,
+          reason: '必须显式判非法缩放系数再回退');
+    });
+
+    test('对照端：app 外 overlay 仍原样转发系统 WHEEL_DELTA', () {
+      // 这是 parity 的另一半锚点：修 app 内是为了对齐这里，若哪天有人反过来给
+      // overlay 加打折，两端又会漂开。
+      expect(
+        forwardCompositionMouseBody.contains('GET_WHEEL_DELTA_WPARAM(wparam)'),
+        isTrue,
+        reason: 'app 外弹窗必须把系统原始 wheel delta 原样交给 WebView2',
+      );
+      expect(
+        RegExp(r'GET_WHEEL_DELTA_WPARAM\(wparam\)\s*[*/]')
+            .hasMatch(forwardCompositionMouseBody),
+        isFalse,
+        reason: 'overlay 侧不得对 wheel delta 再做缩放/打折（parity 对照端）',
+      );
     });
   });
 }
