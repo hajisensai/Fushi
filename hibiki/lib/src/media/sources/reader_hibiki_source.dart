@@ -497,22 +497,26 @@ class ReaderHibikiSource extends ReaderMediaSource {
     }
     final int totalChars = sectionChars.fold<int>(0, (a, b) => a + b);
 
-    // PDF 阅读器：书架列书 format-agnostic（本方法列全部 EpubBooks 行），但
-    // `format=='pdf'` 的行必须带 [ReaderPdfSource] 的 mediaSourceIdentifier，这样
-    // `item.getMediaSource` 打开时解析到 PDF 源、进 ReaderPdfPage，而不是用 EPUB 阅读器
-    // 打开（后者会对 PDF 走解压/解析路径崩溃）。媒体标识前缀共用 `hoshi://book/<bookKey>`
-    // （bookKey 是主键、与 format 无关），路由只认 mediaSourceIdentifier。
+    // 书架列书 format-agnostic（本方法列全部 EpubBooks 行），但打开路由按 `format`
+    // 三态分流 mediaSourceIdentifier：`'pdf'` → [ReaderPdfSource]（进 ReaderPdfPage）、
+    // `'manga'` → [MangaHibikiSource]（进 MangaHibikiPage）、其余 → 本源（EPUB 阅读器）。
+    // 缺这条分流，PDF/漫画行会用 EPUB 阅读器打开并在解压/解析路径崩溃。媒体标识前缀
+    // 共用 `hoshi://book/<bookKey>`（bookKey 是主键、与 format 无关），路由只认
+    // mediaSourceIdentifier。
     final bool isPdf = book.format == 'pdf';
+    final bool isManga = book.format == 'manga';
+    // 页码型书（PDF/漫画）：进度单位是页而非章内字数。
+    final bool pageBased = isPdf || isManga;
 
     // TODO-1346：进度纳入当前章内 charOffset（与章字数同单位），并对老书无字数时
     // 回退章级粗粒度，避免书架恒显 0%。见 [computeBookProgress]。
     final pos = await posRepo.findByBookKey(book.bookKey);
-    final ({int position, int duration}) prog = isPdf
-        // PDF Phase 3：进度单位是**页**（sectionIndex=当前页 0-based，chapterCount=总页数）。
-        // chaptersJson='[]' 无字数，走 computeBookProgress 会恒回 (0,1)=0%。
-        // 用 sectionIndex+1（1-based 页序）而非 0-based：停在第 1 页时 position>0 才会被
-        // `tallyShelfProgress` 计入「在读」并进「继续阅读」；读到最后一页 position==duration
-        // 恰好等于「读完」判据，两端都自洽。
+    final ({int position, int duration}) prog = pageBased
+        // PDF Phase 3 / 漫画同款：进度单位是**页**（sectionIndex=当前页 0-based，
+        // chapterCount=总页数）。chaptersJson='[]' 无字数，走 computeBookProgress 会恒回
+        // (0,1)=0%。用 sectionIndex+1（1-based 页序）而非 0-based：停在第 1 页时
+        // position>0 才会被 `tallyShelfProgress` 计入「在读」并进「继续阅读」；读到最后
+        // 一页 position==duration 恰好等于「读完」判据，两端都自洽。
         ? (
             // 1-based 页序直接 clamp 到 [1, 总页数]，脏 sectionIndex 也不会让
             // position 溢出 duration（>100%）。
@@ -540,7 +544,11 @@ class ReaderHibikiSource extends ReaderMediaSource {
       author: book.author,
       imageUrl: imageUrl,
       mediaTypeIdentifier: mediaType.uniqueKey,
-      mediaSourceIdentifier: isPdf ? ReaderPdfSource.kUniqueKey : uniqueKey,
+      mediaSourceIdentifier: isPdf
+          ? ReaderPdfSource.kUniqueKey
+          : isManga
+              ? MangaHibikiSource.kUniqueKey
+              : uniqueKey,
       position: position,
       duration: duration,
       canDelete: false,

@@ -21,6 +21,7 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
+import 'package:hibiki/src/media/manga/manga_importer.dart';
 import 'package:hibiki/src/pdf/pdf_importer.dart';
 import 'package:hibiki/utils.dart';
 
@@ -384,6 +385,9 @@ class _BookImportDialogState extends State<BookImportDialog>
     // PDF 阅读器 Phase 1：PDF 走独立 PdfImporter（真渲染，不经 TextToEpub 文本转换），
     // 在 [_importEpubOnly] 里按 .pdf 扩展名分支。
     'pdf',
+    // 漫画（第三种书）：`.mokuro`（v0.2+）+ 同级图片走独立 MangaImporter，落库 format='manga'，
+    // 在 [_importEpubOnly] 里按 .mokuro 扩展名分支（须在 TextToEpub 文本转换之前早退）。
+    'mokuro',
     ...TextToEpub.supportedExtensions,
   ];
 
@@ -404,7 +408,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           _autoFillTitle(
             file.name.replaceAll(
                 RegExp(
-                    r'\.(epub|pdf|txt|html?|xhtml|md|markdown|rst|org|csv|tsv|log|json|xml)$',
+                    r'\.(epub|pdf|mokuro|txt|html?|xhtml|md|markdown|rst|org|csv|tsv|log|json|xml)$',
                     caseSensitive: false),
                 ''),
             ImportTitleSource.epub,
@@ -885,6 +889,29 @@ class _BookImportDialogState extends State<BookImportDialog>
         fileName: _epubName ?? p.basename(_epubPath!),
         title: title,
         onDuplicateTitle: _onDuplicateTitle,
+      );
+      reportProgress(1, t.import_step_done);
+      return;
+    }
+
+    // 漫画（第三种书）：.mokuro 走独立 MangaImporter（拷图 + 写 manga.json + 落库
+    // format='manga'），同样须在 TextToEpub 文本转换分支之前早退——否则 .mokuro 的 JSON 会被
+    // 当纯文本转成 EPUB。封面由 MangaImporter 取首页页图，故不走 _applyBestCoverToEpub。
+    if (ext == '.mokuro') {
+      reportProgress(0.5, t.import_step_importing_epub);
+      await MangaImporter.importFromMokuroPath(
+        db: widget.db,
+        mokuroPath: _epubPath!,
+        title: title,
+        onDuplicateTitle: _onDuplicateTitle,
+        onProgress: (int done, int total) {
+          if (total > 0) {
+            reportProgress(
+              (done / total).clamp(0.0, 1.0),
+              t.import_step_copying_file(name: p.basename(_epubPath!)),
+            );
+          }
+        },
       );
       reportProgress(1, t.import_step_done);
       return;

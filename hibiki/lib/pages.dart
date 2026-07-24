@@ -20,6 +20,7 @@ export 'src/pages/implementations/text_segmentation_dialog_page.dart';
 export 'src/pages/implementations/reader_hibiki_page.dart';
 export 'src/pages/implementations/reader_hibiki_history_page.dart';
 export 'src/pages/implementations/reader_pdf_page.dart';
+export 'src/pages/implementations/manga_hibiki_page.dart';
 export 'src/pages/implementations/hibiki_settings_page.dart';
 export 'src/pages/implementations/custom_theme_page.dart';
 export 'src/pages/implementations/custom_fonts_page.dart';

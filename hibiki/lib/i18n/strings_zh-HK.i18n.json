@@ -2332,5 +2332,13 @@
   "interconnect_backup_backend_apply": "Set as backup backend",
   "interconnect_backup_backend_active": "Backups already go to the paired device. Pick another backend in Sync & backup to switch away.",
   "interconnect_backup_backend_needs_pairing": "Connect to a device above first.",
-  "interconnect_backup_backend_current": "Current backup backend: $backend"
+  "interconnect_backup_backend_current": "Current backup backend: $backend",
+  "manga_import_title": "Import Manga",
+  "manga_import_pick": "Pick .mokuro File",
+  "manga_import_confirm": "Import",
+  "manga_import_action": "Import Manga",
+  "manga_invalid_import": "Not a valid Mokuro manga folder",
+  "manga_reading_mode_spread": "Spread",
+  "manga_reading_mode_webtoon": "Webtoon",
+  "manga_mode_toggle": "Reading Mode"
 }
