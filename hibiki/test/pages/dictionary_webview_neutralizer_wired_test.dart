@@ -36,12 +36,20 @@ void main() {
     // WebView 与嵌套弹窗共用同一净缩放=1 坐标系。若错放进 LayoutBuilder 内层只中和
     // 局部，会重蹈被撤销的 HibikiNativeScale 坐标错位坑。锚点用代码形态 child:
     // LayoutBuilder（注释里的「LayoutBuilder」字样不带 child: 前缀，不会误命中）。
+    // 根 Overlay 浮层骨架（中和器 + LayoutBuilder）已收口到
+    // DictionaryPopupOverlayHostMixin.buildPopupOverlayContent，本断言随代码移到
+    // mixin 文件；页面侧只需仍混入该 mixin（上一断言的中和器是结果区那份，BUG-054）。
+    final String mixinSrc =
+        read('lib/src/pages/implementations/dictionary_page_mixin.dart');
     expect(
-      src.indexOf('HibikiAppUiScaleNeutralizer') <
-          src.indexOf('child: LayoutBuilder'),
+      mixinSrc.indexOf('HibikiAppUiScaleNeutralizer') > 0 &&
+          mixinSrc.indexOf('HibikiAppUiScaleNeutralizer(') <
+              mixinSrc.indexOf('child: LayoutBuilder'),
       isTrue,
       reason: '中和器必须包在 LayoutBuilder 外层（净缩放=1 的真实视口坐标系）',
     );
+    expect(src.contains('DictionaryPopupOverlayHostMixin'), isTrue,
+        reason: 'home_dictionary_page 必须混入根 Overlay 收口 mixin');
   });
 
   test('popup_dictionary_page 整页用中和器包裹 _buildOuterContainer', () {

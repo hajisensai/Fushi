@@ -51,9 +51,15 @@ void main() {
   });
 
   test('video 弹窗 Overlay Stack 用 Clip.none', () {
+    // 根 Overlay 弹窗 Stack 已收口到 DictionaryPopupOverlayHostMixin
+    // （buildPopupOverlayContent）；断言随代码移到 mixin，video 页只需混入。
+    final String mixinSrc =
+        read('lib/src/pages/implementations/dictionary_page_mixin.dart');
+    expect(mixinSrc.contains('clipBehavior: Clip.none'), isTrue,
+        reason: '根 Overlay 弹窗 Stack 用 Clip.none，屏外热槽保持预热');
     final String src =
         read('lib/src/pages/implementations/video_hibiki_page.dart');
-    expect(src.contains('clipBehavior: Clip.none'), isTrue,
-        reason: '视频根 Overlay 弹窗 Stack 用 Clip.none，屏外热槽保持预热');
+    expect(src.contains('DictionaryPopupOverlayHostMixin'), isTrue,
+        reason: 'video_hibiki_page 必须混入根 Overlay 收口 mixin');
   });
 }

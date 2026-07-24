@@ -615,6 +615,13 @@ void main() {
       'lib/src/pages/implementations/video_statistics_page.dart':
           'Video statistics charts/metric bars mirror reading_statistics_page: '
               'progress-bar track surface is chart content, not page chrome.',
+      // 书/视频统计行合并进共享 buildStatMediaRow 后，进度条 track 的
+      // surfaceContainerHighest 随代码从上面两个已豁免页面移入 stat_shared——
+      // 同一图表内容豁免类，不是新的页面 chrome。
+      'lib/src/pages/implementations/stat_shared.dart':
+          'Shared stat media row extracted verbatim from the two statistics '
+              'pages above; progress-bar track surface is chart content, same '
+              'reviewed exception class.',
       // PR#247 首页活动热力图加翻页 + 选中日数值气泡：GitHub 式贡献热力图是数据可视化
       // 组件（格子强度按 colorScheme 映射色阶），header 的选中日数值气泡（_bubbleChip
       // 用 surfaceContainerHighest tonal 底 + labelMedium 文本）是图表标注内容，非普通
