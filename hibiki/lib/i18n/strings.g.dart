@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 41718 (2454 per locale)
+/// Strings: 42959 (2527 per locale)
 ///
-/// Built on 2026-07-24 at 15:00 UTC
+/// Built on 2026-07-24 at 17:19 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3269,6 +3269,80 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get games_drop_no_exe => 'No new game .exe among the dropped files';
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  String get games_search => 'Search games';
+  String get games_sort => 'Sort';
+  String get games_filter => 'Filter';
+  String get games_sort_added => 'Date added';
+  String get games_sort_release => 'Release date';
+  String get games_sort_last_played => 'Last played';
+  String get games_sort_site_score => 'Site rating';
+  String get games_sort_user_rating => 'My rating';
+  String get games_sort_name => 'Name';
+  String get games_sort_ascending => 'Ascending';
+  String get games_sort_descending => 'Descending';
+  String get games_filter_status => 'Play status';
+  String get games_filter_all => 'All';
+  String get games_filter_source => 'Availability';
+  String get games_filter_local_only => 'Has local file';
+  String get games_filter_metadata_only => 'Metadata only';
+  String get games_filter_tags => 'Tags';
+  String get games_filter_hide_nsfw => 'Hide adult titles';
+  String get games_filter_reset => 'Clear filters';
+  String get games_no_match => 'No games match the current filters';
+  String get games_play_status => 'Play status';
+  String get games_status_unset => 'Not set';
+  String get games_status_want_to_play => 'Want to play';
+  String get games_status_playing => 'Playing';
+  String get games_status_played => 'Played';
+  String get games_status_on_hold => 'On hold';
+  String get games_status_dropped => 'Dropped';
+  String get games_view_detail => 'View details';
+  String get games_scrape => 'Fetch metadata';
+  String get games_never_played => 'Never played';
+  String get game_detail_tab_stats => 'Stats';
+  String get game_detail_tab_summary => 'Overview';
+  String get game_detail_tab_edit => 'Edit';
+  String get game_detail_missing => 'This game is no longer in the library';
+  String get game_stat_total_time => 'Total play time';
+  String get game_stat_sessions => 'Sessions';
+  String get game_stat_today => 'Today';
+  String get game_stat_last_played => 'Last played';
+  String get game_stat_daily => 'Daily play time';
+  String get game_stat_session_list => 'Session history';
+  String get game_stat_no_sessions => 'No play sessions recorded yet';
+  String get game_stat_delete_session => 'Delete this session';
+  String get game_stat_prev_month => 'Previous month';
+  String get game_stat_next_month => 'Next month';
+  String get game_summary_none =>
+      'No description yet. Fetch metadata to fill it in.';
+  String get game_summary_aliases => 'Aliases';
+  String get game_summary_all_titles => 'All titles';
+  String get game_summary_release_date => 'Release date';
+  String get game_summary_average_hours => 'Average play time';
+  String get game_edit_display_name => 'Display name';
+  String get game_edit_summary => 'Description';
+  String get game_edit_tags => 'Tags (comma separated)';
+  String get game_edit_developer => 'Developer';
+  String get game_edit_release_date => 'Release date (YYYY-MM-DD)';
+  String get game_edit_nsfw => 'Adult title';
+  String get game_edit_user_rating => 'My rating (0-10)';
+  String get game_edit_user_review => 'My review';
+  String get game_edit_exe_path => 'Executable path';
+  String get game_edit_workdir => 'Working directory';
+  String get game_edit_save => 'Save';
+  String get game_edit_saved => 'Saved';
+  String get game_edit_invalid_date => 'Release date must be YYYY-MM-DD';
+  String get game_scrape_title => 'Fetch metadata';
+  String get game_scrape_query => 'Title or source ID';
+  String get game_scrape_no_result => 'No matching entry found';
+  String get game_scrape_failed => 'Metadata fetch failed';
+  String get game_scrape_applied => 'Metadata updated';
+  String get game_scrape_pick => 'Pick the matching entry';
+  String get game_open_source_site => 'Open source page';
+  String get game_launch => 'Launch';
+  String get game_developer => 'Developer';
+  String get game_site_score => 'Site rating';
+  String get game_user_rating => 'My rating';
 }
 
 // Path: <root>
@@ -8838,6 +8912,153 @@ class _StringsAr extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get games_search => 'Search games';
+  @override
+  String get games_sort => 'Sort';
+  @override
+  String get games_filter => 'Filter';
+  @override
+  String get games_sort_added => 'Date added';
+  @override
+  String get games_sort_release => 'Release date';
+  @override
+  String get games_sort_last_played => 'Last played';
+  @override
+  String get games_sort_site_score => 'Site rating';
+  @override
+  String get games_sort_user_rating => 'My rating';
+  @override
+  String get games_sort_name => 'Name';
+  @override
+  String get games_sort_ascending => 'Ascending';
+  @override
+  String get games_sort_descending => 'Descending';
+  @override
+  String get games_filter_status => 'Play status';
+  @override
+  String get games_filter_all => 'All';
+  @override
+  String get games_filter_source => 'Availability';
+  @override
+  String get games_filter_local_only => 'Has local file';
+  @override
+  String get games_filter_metadata_only => 'Metadata only';
+  @override
+  String get games_filter_tags => 'Tags';
+  @override
+  String get games_filter_hide_nsfw => 'Hide adult titles';
+  @override
+  String get games_filter_reset => 'Clear filters';
+  @override
+  String get games_no_match => 'No games match the current filters';
+  @override
+  String get games_play_status => 'Play status';
+  @override
+  String get games_status_unset => 'Not set';
+  @override
+  String get games_status_want_to_play => 'Want to play';
+  @override
+  String get games_status_playing => 'Playing';
+  @override
+  String get games_status_played => 'Played';
+  @override
+  String get games_status_on_hold => 'On hold';
+  @override
+  String get games_status_dropped => 'Dropped';
+  @override
+  String get games_view_detail => 'View details';
+  @override
+  String get games_scrape => 'Fetch metadata';
+  @override
+  String get games_never_played => 'Never played';
+  @override
+  String get game_detail_tab_stats => 'Stats';
+  @override
+  String get game_detail_tab_summary => 'Overview';
+  @override
+  String get game_detail_tab_edit => 'Edit';
+  @override
+  String get game_detail_missing => 'This game is no longer in the library';
+  @override
+  String get game_stat_total_time => 'Total play time';
+  @override
+  String get game_stat_sessions => 'Sessions';
+  @override
+  String get game_stat_today => 'Today';
+  @override
+  String get game_stat_last_played => 'Last played';
+  @override
+  String get game_stat_daily => 'Daily play time';
+  @override
+  String get game_stat_session_list => 'Session history';
+  @override
+  String get game_stat_no_sessions => 'No play sessions recorded yet';
+  @override
+  String get game_stat_delete_session => 'Delete this session';
+  @override
+  String get game_stat_prev_month => 'Previous month';
+  @override
+  String get game_stat_next_month => 'Next month';
+  @override
+  String get game_summary_none =>
+      'No description yet. Fetch metadata to fill it in.';
+  @override
+  String get game_summary_aliases => 'Aliases';
+  @override
+  String get game_summary_all_titles => 'All titles';
+  @override
+  String get game_summary_release_date => 'Release date';
+  @override
+  String get game_summary_average_hours => 'Average play time';
+  @override
+  String get game_edit_display_name => 'Display name';
+  @override
+  String get game_edit_summary => 'Description';
+  @override
+  String get game_edit_tags => 'Tags (comma separated)';
+  @override
+  String get game_edit_developer => 'Developer';
+  @override
+  String get game_edit_release_date => 'Release date (YYYY-MM-DD)';
+  @override
+  String get game_edit_nsfw => 'Adult title';
+  @override
+  String get game_edit_user_rating => 'My rating (0-10)';
+  @override
+  String get game_edit_user_review => 'My review';
+  @override
+  String get game_edit_exe_path => 'Executable path';
+  @override
+  String get game_edit_workdir => 'Working directory';
+  @override
+  String get game_edit_save => 'Save';
+  @override
+  String get game_edit_saved => 'Saved';
+  @override
+  String get game_edit_invalid_date => 'Release date must be YYYY-MM-DD';
+  @override
+  String get game_scrape_title => 'Fetch metadata';
+  @override
+  String get game_scrape_query => 'Title or source ID';
+  @override
+  String get game_scrape_no_result => 'No matching entry found';
+  @override
+  String get game_scrape_failed => 'Metadata fetch failed';
+  @override
+  String get game_scrape_applied => 'Metadata updated';
+  @override
+  String get game_scrape_pick => 'Pick the matching entry';
+  @override
+  String get game_open_source_site => 'Open source page';
+  @override
+  String get game_launch => 'Launch';
+  @override
+  String get game_developer => 'Developer';
+  @override
+  String get game_site_score => 'Site rating';
+  @override
+  String get game_user_rating => 'My rating';
 }
 
 // Path: <root>
@@ -14480,6 +14701,153 @@ class _StringsDe extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get games_search => 'Search games';
+  @override
+  String get games_sort => 'Sort';
+  @override
+  String get games_filter => 'Filter';
+  @override
+  String get games_sort_added => 'Date added';
+  @override
+  String get games_sort_release => 'Release date';
+  @override
+  String get games_sort_last_played => 'Last played';
+  @override
+  String get games_sort_site_score => 'Site rating';
+  @override
+  String get games_sort_user_rating => 'My rating';
+  @override
+  String get games_sort_name => 'Name';
+  @override
+  String get games_sort_ascending => 'Ascending';
+  @override
+  String get games_sort_descending => 'Descending';
+  @override
+  String get games_filter_status => 'Play status';
+  @override
+  String get games_filter_all => 'All';
+  @override
+  String get games_filter_source => 'Availability';
+  @override
+  String get games_filter_local_only => 'Has local file';
+  @override
+  String get games_filter_metadata_only => 'Metadata only';
+  @override
+  String get games_filter_tags => 'Tags';
+  @override
+  String get games_filter_hide_nsfw => 'Hide adult titles';
+  @override
+  String get games_filter_reset => 'Clear filters';
+  @override
+  String get games_no_match => 'No games match the current filters';
+  @override
+  String get games_play_status => 'Play status';
+  @override
+  String get games_status_unset => 'Not set';
+  @override
+  String get games_status_want_to_play => 'Want to play';
+  @override
+  String get games_status_playing => 'Playing';
+  @override
+  String get games_status_played => 'Played';
+  @override
+  String get games_status_on_hold => 'On hold';
+  @override
+  String get games_status_dropped => 'Dropped';
+  @override
+  String get games_view_detail => 'View details';
+  @override
+  String get games_scrape => 'Fetch metadata';
+  @override
+  String get games_never_played => 'Never played';
+  @override
+  String get game_detail_tab_stats => 'Stats';
+  @override
+  String get game_detail_tab_summary => 'Overview';
+  @override
+  String get game_detail_tab_edit => 'Edit';
+  @override
+  String get game_detail_missing => 'This game is no longer in the library';
+  @override
+  String get game_stat_total_time => 'Total play time';
+  @override
+  String get game_stat_sessions => 'Sessions';
+  @override
+  String get game_stat_today => 'Today';
+  @override
+  String get game_stat_last_played => 'Last played';
+  @override
+  String get game_stat_daily => 'Daily play time';
+  @override
+  String get game_stat_session_list => 'Session history';
+  @override
+  String get game_stat_no_sessions => 'No play sessions recorded yet';
+  @override
+  String get game_stat_delete_session => 'Delete this session';
+  @override
+  String get game_stat_prev_month => 'Previous month';
+  @override
+  String get game_stat_next_month => 'Next month';
+  @override
+  String get game_summary_none =>
+      'No description yet. Fetch metadata to fill it in.';
+  @override
+  String get game_summary_aliases => 'Aliases';
+  @override
+  String get game_summary_all_titles => 'All titles';
+  @override
+  String get game_summary_release_date => 'Release date';
+  @override
+  String get game_summary_average_hours => 'Average play time';
+  @override
+  String get game_edit_display_name => 'Display name';
+  @override
+  String get game_edit_summary => 'Description';
+  @override
+  String get game_edit_tags => 'Tags (comma separated)';
+  @override
+  String get game_edit_developer => 'Developer';
+  @override
+  String get game_edit_release_date => 'Release date (YYYY-MM-DD)';
+  @override
+  String get game_edit_nsfw => 'Adult title';
+  @override
+  String get game_edit_user_rating => 'My rating (0-10)';
+  @override
+  String get game_edit_user_review => 'My review';
+  @override
+  String get game_edit_exe_path => 'Executable path';
+  @override
+  String get game_edit_workdir => 'Working directory';
+  @override
+  String get game_edit_save => 'Save';
+  @override
+  String get game_edit_saved => 'Saved';
+  @override
+  String get game_edit_invalid_date => 'Release date must be YYYY-MM-DD';
+  @override
+  String get game_scrape_title => 'Fetch metadata';
+  @override
+  String get game_scrape_query => 'Title or source ID';
+  @override
+  String get game_scrape_no_result => 'No matching entry found';
+  @override
+  String get game_scrape_failed => 'Metadata fetch failed';
+  @override
+  String get game_scrape_applied => 'Metadata updated';
+  @override
+  String get game_scrape_pick => 'Pick the matching entry';
+  @override
+  String get game_open_source_site => 'Open source page';
+  @override
+  String get game_launch => 'Launch';
+  @override
+  String get game_developer => 'Developer';
+  @override
+  String get game_site_score => 'Site rating';
+  @override
+  String get game_user_rating => 'My rating';
 }
 
 // Path: <root>
@@ -20138,6 +20506,153 @@ class _StringsEs extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get games_search => 'Search games';
+  @override
+  String get games_sort => 'Sort';
+  @override
+  String get games_filter => 'Filter';
+  @override
+  String get games_sort_added => 'Date added';
+  @override
+  String get games_sort_release => 'Release date';
+  @override
+  String get games_sort_last_played => 'Last played';
+  @override
+  String get games_sort_site_score => 'Site rating';
+  @override
+  String get games_sort_user_rating => 'My rating';
+  @override
+  String get games_sort_name => 'Name';
+  @override
+  String get games_sort_ascending => 'Ascending';
+  @override
+  String get games_sort_descending => 'Descending';
+  @override
+  String get games_filter_status => 'Play status';
+  @override
+  String get games_filter_all => 'All';
+  @override
+  String get games_filter_source => 'Availability';
+  @override
+  String get games_filter_local_only => 'Has local file';
+  @override
+  String get games_filter_metadata_only => 'Metadata only';
+  @override
+  String get games_filter_tags => 'Tags';
+  @override
+  String get games_filter_hide_nsfw => 'Hide adult titles';
+  @override
+  String get games_filter_reset => 'Clear filters';
+  @override
+  String get games_no_match => 'No games match the current filters';
+  @override
+  String get games_play_status => 'Play status';
+  @override
+  String get games_status_unset => 'Not set';
+  @override
+  String get games_status_want_to_play => 'Want to play';
+  @override
+  String get games_status_playing => 'Playing';
+  @override
+  String get games_status_played => 'Played';
+  @override
+  String get games_status_on_hold => 'On hold';
+  @override
+  String get games_status_dropped => 'Dropped';
+  @override
+  String get games_view_detail => 'View details';
+  @override
+  String get games_scrape => 'Fetch metadata';
+  @override
+  String get games_never_played => 'Never played';
+  @override
+  String get game_detail_tab_stats => 'Stats';
+  @override
+  String get game_detail_tab_summary => 'Overview';
+  @override
+  String get game_detail_tab_edit => 'Edit';
+  @override
+  String get game_detail_missing => 'This game is no longer in the library';
+  @override
+  String get game_stat_total_time => 'Total play time';
+  @override
+  String get game_stat_sessions => 'Sessions';
+  @override
+  String get game_stat_today => 'Today';
+  @override
+  String get game_stat_last_played => 'Last played';
+  @override
+  String get game_stat_daily => 'Daily play time';
+  @override
+  String get game_stat_session_list => 'Session history';
+  @override
+  String get game_stat_no_sessions => 'No play sessions recorded yet';
+  @override
+  String get game_stat_delete_session => 'Delete this session';
+  @override
+  String get game_stat_prev_month => 'Previous month';
+  @override
+  String get game_stat_next_month => 'Next month';
+  @override
+  String get game_summary_none =>
+      'No description yet. Fetch metadata to fill it in.';
+  @override
+  String get game_summary_aliases => 'Aliases';
+  @override
+  String get game_summary_all_titles => 'All titles';
+  @override
+  String get game_summary_release_date => 'Release date';
+  @override
+  String get game_summary_average_hours => 'Average play time';
+  @override
+  String get game_edit_display_name => 'Display name';
+  @override
+  String get game_edit_summary => 'Description';
+  @override
+  String get game_edit_tags => 'Tags (comma separated)';
+  @override
+  String get game_edit_developer => 'Developer';
+  @override
+  String get game_edit_release_date => 'Release date (YYYY-MM-DD)';
+  @override
+  String get game_edit_nsfw => 'Adult title';
+  @override
+  String get game_edit_user_rating => 'My rating (0-10)';
+  @override
+  String get game_edit_user_review => 'My review';
+  @override
+  String get game_edit_exe_path => 'Executable path';
+  @override
+  String get game_edit_workdir => 'Working directory';
+  @override
+  String get game_edit_save => 'Save';
+  @override
+  String get game_edit_saved => 'Saved';
+  @override
+  String get game_edit_invalid_date => 'Release date must be YYYY-MM-DD';
+  @override
+  String get game_scrape_title => 'Fetch metadata';
+  @override
+  String get game_scrape_query => 'Title or source ID';
+  @override
+  String get game_scrape_no_result => 'No matching entry found';
+  @override
+  String get game_scrape_failed => 'Metadata fetch failed';
+  @override
+  String get game_scrape_applied => 'Metadata updated';
+  @override
+  String get game_scrape_pick => 'Pick the matching entry';
+  @override
+  String get game_open_source_site => 'Open source page';
+  @override
+  String get game_launch => 'Launch';
+  @override
+  String get game_developer => 'Developer';
+  @override
+  String get game_site_score => 'Site rating';
+  @override
+  String get game_user_rating => 'My rating';
 }
 
 // Path: <root>
@@ -25807,6 +26322,153 @@ class _StringsFr extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get games_search => 'Search games';
+  @override
+  String get games_sort => 'Sort';
+  @override
+  String get games_filter => 'Filter';
+  @override
+  String get games_sort_added => 'Date added';
+  @override
+  String get games_sort_release => 'Release date';
+  @override
+  String get games_sort_last_played => 'Last played';
+  @override
+  String get games_sort_site_score => 'Site rating';
+  @override
+  String get games_sort_user_rating => 'My rating';
+  @override
+  String get games_sort_name => 'Name';
+  @override
+  String get games_sort_ascending => 'Ascending';
+  @override
+  String get games_sort_descending => 'Descending';
+  @override
+  String get games_filter_status => 'Play status';
+  @override
+  String get games_filter_all => 'All';
+  @override
+  String get games_filter_source => 'Availability';
+  @override
+  String get games_filter_local_only => 'Has local file';
+  @override
+  String get games_filter_metadata_only => 'Metadata only';
+  @override
+  String get games_filter_tags => 'Tags';
+  @override
+  String get games_filter_hide_nsfw => 'Hide adult titles';
+  @override
+  String get games_filter_reset => 'Clear filters';
+  @override
+  String get games_no_match => 'No games match the current filters';
+  @override
+  String get games_play_status => 'Play status';
+  @override
+  String get games_status_unset => 'Not set';
+  @override
+  String get games_status_want_to_play => 'Want to play';
+  @override
+  String get games_status_playing => 'Playing';
+  @override
+  String get games_status_played => 'Played';
+  @override
+  String get games_status_on_hold => 'On hold';
+  @override
+  String get games_status_dropped => 'Dropped';
+  @override
+  String get games_view_detail => 'View details';
+  @override
+  String get games_scrape => 'Fetch metadata';
+  @override
+  String get games_never_played => 'Never played';
+  @override
+  String get game_detail_tab_stats => 'Stats';
+  @override
+  String get game_detail_tab_summary => 'Overview';
+  @override
+  String get game_detail_tab_edit => 'Edit';
+  @override
+  String get game_detail_missing => 'This game is no longer in the library';
+  @override
+  String get game_stat_total_time => 'Total play time';
+  @override
+  String get game_stat_sessions => 'Sessions';
+  @override
+  String get game_stat_today => 'Today';
+  @override
+  String get game_stat_last_played => 'Last played';
+  @override
+  String get game_stat_daily => 'Daily play time';
+  @override
+  String get game_stat_session_list => 'Session history';
+  @override
+  String get game_stat_no_sessions => 'No play sessions recorded yet';
+  @override
+  String get game_stat_delete_session => 'Delete this session';
+  @override
+  String get game_stat_prev_month => 'Previous month';
+  @override
+  String get game_stat_next_month => 'Next month';
+  @override
+  String get game_summary_none =>
+      'No description yet. Fetch metadata to fill it in.';
+  @override
+  String get game_summary_aliases => 'Aliases';
+  @override
+  String get game_summary_all_titles => 'All titles';
+  @override
+  String get game_summary_release_date => 'Release date';
+  @override
+  String get game_summary_average_hours => 'Average play time';
+  @override
+  String get game_edit_display_name => 'Display name';
+  @override
+  String get game_edit_summary => 'Description';
+  @override
+  String get game_edit_tags => 'Tags (comma separated)';
+  @override
+  String get game_edit_developer => 'Developer';
+  @override
+  String get game_edit_release_date => 'Release date (YYYY-MM-DD)';
+  @override
+  String get game_edit_nsfw => 'Adult title';
+  @override
+  String get game_edit_user_rating => 'My rating (0-10)';
+  @override
+  String get game_edit_user_review => 'My review';
+  @override
+  String get game_edit_exe_path => 'Executable path';
+  @override
+  String get game_edit_workdir => 'Working directory';
+  @override
+  String get game_edit_save => 'Save';
+  @override
+  String get game_edit_saved => 'Saved';
+  @override
+  String get game_edit_invalid_date => 'Release date must be YYYY-MM-DD';
+  @override
+  String get game_scrape_title => 'Fetch metadata';
+  @override
+  String get game_scrape_query => 'Title or source ID';
+  @override
+  String get game_scrape_no_result => 'No matching entry found';
+  @override
+  String get game_scrape_failed => 'Metadata fetch failed';
+  @override
+  String get game_scrape_applied => 'Metadata updated';
+  @override
+  String get game_scrape_pick => 'Pick the matching entry';
+  @override
+  String get game_open_source_site => 'Open source page';
+  @override
+  String get game_launch => 'Launch';
+  @override
+  String get game_developer => 'Developer';
+  @override
+  String get game_site_score => 'Site rating';
+  @override
+  String get game_user_rating => 'My rating';
 }
 
 // Path: <root>
@@ -31403,6 +32065,153 @@ class _StringsId extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get games_search => 'Search games';
+  @override
+  String get games_sort => 'Sort';
+  @override
+  String get games_filter => 'Filter';
+  @override
+  String get games_sort_added => 'Date added';
+  @override
+  String get games_sort_release => 'Release date';
+  @override
+  String get games_sort_last_played => 'Last played';
+  @override
+  String get games_sort_site_score => 'Site rating';
+  @override
+  String get games_sort_user_rating => 'My rating';
+  @override
+  String get games_sort_name => 'Name';
+  @override
+  String get games_sort_ascending => 'Ascending';
+  @override
+  String get games_sort_descending => 'Descending';
+  @override
+  String get games_filter_status => 'Play status';
+  @override
+  String get games_filter_all => 'All';
+  @override
+  String get games_filter_source => 'Availability';
+  @override
+  String get games_filter_local_only => 'Has local file';
+  @override
+  String get games_filter_metadata_only => 'Metadata only';
+  @override
+  String get games_filter_tags => 'Tags';
+  @override
+  String get games_filter_hide_nsfw => 'Hide adult titles';
+  @override
+  String get games_filter_reset => 'Clear filters';
+  @override
+  String get games_no_match => 'No games match the current filters';
+  @override
+  String get games_play_status => 'Play status';
+  @override
+  String get games_status_unset => 'Not set';
+  @override
+  String get games_status_want_to_play => 'Want to play';
+  @override
+  String get games_status_playing => 'Playing';
+  @override
+  String get games_status_played => 'Played';
+  @override
+  String get games_status_on_hold => 'On hold';
+  @override
+  String get games_status_dropped => 'Dropped';
+  @override
+  String get games_view_detail => 'View details';
+  @override
+  String get games_scrape => 'Fetch metadata';
+  @override
+  String get games_never_played => 'Never played';
+  @override
+  String get game_detail_tab_stats => 'Stats';
+  @override
+  String get game_detail_tab_summary => 'Overview';
+  @override
+  String get game_detail_tab_edit => 'Edit';
+  @override
+  String get game_detail_missing => 'This game is no longer in the library';
+  @override
+  String get game_stat_total_time => 'Total play time';
+  @override
+  String get game_stat_sessions => 'Sessions';
+  @override
+  String get game_stat_today => 'Today';
+  @override
+  String get game_stat_last_played => 'Last played';
+  @override
+  String get game_stat_daily => 'Daily play time';
+  @override
+  String get game_stat_session_list => 'Session history';
+  @override
+  String get game_stat_no_sessions => 'No play sessions recorded yet';
+  @override
+  String get game_stat_delete_session => 'Delete this session';
+  @override
+  String get game_stat_prev_month => 'Previous month';
+  @override
+  String get game_stat_next_month => 'Next month';
+  @override
+  String get game_summary_none =>
+      'No description yet. Fetch metadata to fill it in.';
+  @override
+  String get game_summary_aliases => 'Aliases';
+  @override
+  String get game_summary_all_titles => 'All titles';
+  @override
+  String get game_summary_release_date => 'Release date';
+  @override
+  String get game_summary_average_hours => 'Average play time';
+  @override
+  String get game_edit_display_name => 'Display name';
+  @override
+  String get game_edit_summary => 'Description';
+  @override
+  String get game_edit_tags => 'Tags (comma separated)';
+  @override
+  String get game_edit_developer => 'Developer';
+  @override
+  String get game_edit_release_date => 'Release date (YYYY-MM-DD)';
+  @override
+  String get game_edit_nsfw => 'Adult title';
+  @override
+  String get game_edit_user_rating => 'My rating (0-10)';
+  @override
+  String get game_edit_user_review => 'My review';
+  @override
+  String get game_edit_exe_path => 'Executable path';
+  @override
+  String get game_edit_workdir => 'Working directory';
+  @override
+  String get game_edit_save => 'Save';
+  @override
+  String get game_edit_saved => 'Saved';
+  @override
+  String get game_edit_invalid_date => 'Release date must be YYYY-MM-DD';
+  @override
+  String get game_scrape_title => 'Fetch metadata';
+  @override
+  String get game_scrape_query => 'Title or source ID';
+  @override
+  String get game_scrape_no_result => 'No matching entry found';
+  @override
+  String get game_scrape_failed => 'Metadata fetch failed';
+  @override
+  String get game_scrape_applied => 'Metadata updated';
+  @override
+  String get game_scrape_pick => 'Pick the matching entry';
+  @override
+  String get game_open_source_site => 'Open source page';
+  @override
+  String get game_launch => 'Launch';
+  @override
+  String get game_developer => 'Developer';
+  @override
+  String get game_site_score => 'Site rating';
+  @override
+  String get game_user_rating => 'My rating';
 }
 
 // Path: <root>
@@ -37047,6 +37856,153 @@ class _StringsIt extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get games_search => 'Search games';
+  @override
+  String get games_sort => 'Sort';
+  @override
+  String get games_filter => 'Filter';
+  @override
+  String get games_sort_added => 'Date added';
+  @override
+  String get games_sort_release => 'Release date';
+  @override
+  String get games_sort_last_played => 'Last played';
+  @override
+  String get games_sort_site_score => 'Site rating';
+  @override
+  String get games_sort_user_rating => 'My rating';
+  @override
+  String get games_sort_name => 'Name';
+  @override
+  String get games_sort_ascending => 'Ascending';
+  @override
+  String get games_sort_descending => 'Descending';
+  @override
+  String get games_filter_status => 'Play status';
+  @override
+  String get games_filter_all => 'All';
+  @override
+  String get games_filter_source => 'Availability';
+  @override
+  String get games_filter_local_only => 'Has local file';
+  @override
+  String get games_filter_metadata_only => 'Metadata only';
+  @override
+  String get games_filter_tags => 'Tags';
+  @override
+  String get games_filter_hide_nsfw => 'Hide adult titles';
+  @override
+  String get games_filter_reset => 'Clear filters';
+  @override
+  String get games_no_match => 'No games match the current filters';
+  @override
+  String get games_play_status => 'Play status';
+  @override
+  String get games_status_unset => 'Not set';
+  @override
+  String get games_status_want_to_play => 'Want to play';
+  @override
+  String get games_status_playing => 'Playing';
+  @override
+  String get games_status_played => 'Played';
+  @override
+  String get games_status_on_hold => 'On hold';
+  @override
+  String get games_status_dropped => 'Dropped';
+  @override
+  String get games_view_detail => 'View details';
+  @override
+  String get games_scrape => 'Fetch metadata';
+  @override
+  String get games_never_played => 'Never played';
+  @override
+  String get game_detail_tab_stats => 'Stats';
+  @override
+  String get game_detail_tab_summary => 'Overview';
+  @override
+  String get game_detail_tab_edit => 'Edit';
+  @override
+  String get game_detail_missing => 'This game is no longer in the library';
+  @override
+  String get game_stat_total_time => 'Total play time';
+  @override
+  String get game_stat_sessions => 'Sessions';
+  @override
+  String get game_stat_today => 'Today';
+  @override
+  String get game_stat_last_played => 'Last played';
+  @override
+  String get game_stat_daily => 'Daily play time';
+  @override
+  String get game_stat_session_list => 'Session history';
+  @override
+  String get game_stat_no_sessions => 'No play sessions recorded yet';
+  @override
+  String get game_stat_delete_session => 'Delete this session';
+  @override
+  String get game_stat_prev_month => 'Previous month';
+  @override
+  String get game_stat_next_month => 'Next month';
+  @override
+  String get game_summary_none =>
+      'No description yet. Fetch metadata to fill it in.';
+  @override
+  String get game_summary_aliases => 'Aliases';
+  @override
+  String get game_summary_all_titles => 'All titles';
+  @override
+  String get game_summary_release_date => 'Release date';
+  @override
+  String get game_summary_average_hours => 'Average play time';
+  @override
+  String get game_edit_display_name => 'Display name';
+  @override
+  String get game_edit_summary => 'Description';
+  @override
+  String get game_edit_tags => 'Tags (comma separated)';
+  @override
+  String get game_edit_developer => 'Developer';
+  @override
+  String get game_edit_release_date => 'Release date (YYYY-MM-DD)';
+  @override
+  String get game_edit_nsfw => 'Adult title';
+  @override
+  String get game_edit_user_rating => 'My rating (0-10)';
+  @override
+  String get game_edit_user_review => 'My review';
+  @override
+  String get game_edit_exe_path => 'Executable path';
+  @override
+  String get game_edit_workdir => 'Working directory';
+  @override
+  String get game_edit_save => 'Save';
+  @override
+  String get game_edit_saved => 'Saved';
+  @override
+  String get game_edit_invalid_date => 'Release date must be YYYY-MM-DD';
+  @override
+  String get game_scrape_title => 'Fetch metadata';
+  @override
+  String get game_scrape_query => 'Title or source ID';
+  @override
+  String get game_scrape_no_result => 'No matching entry found';
+  @override
+  String get game_scrape_failed => 'Metadata fetch failed';
+  @override
+  String get game_scrape_applied => 'Metadata updated';
+  @override
+  String get game_scrape_pick => 'Pick the matching entry';
+  @override
+  String get game_open_source_site => 'Open source page';
+  @override
+  String get game_launch => 'Launch';
+  @override
+  String get game_developer => 'Developer';
+  @override
+  String get game_site_score => 'Site rating';
+  @override
+  String get game_user_rating => 'My rating';
 }
 
 // Path: <root>
@@ -42496,6 +43452,153 @@ class _StringsJa extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get games_search => 'Search games';
+  @override
+  String get games_sort => 'Sort';
+  @override
+  String get games_filter => 'Filter';
+  @override
+  String get games_sort_added => 'Date added';
+  @override
+  String get games_sort_release => 'Release date';
+  @override
+  String get games_sort_last_played => 'Last played';
+  @override
+  String get games_sort_site_score => 'Site rating';
+  @override
+  String get games_sort_user_rating => 'My rating';
+  @override
+  String get games_sort_name => 'Name';
+  @override
+  String get games_sort_ascending => 'Ascending';
+  @override
+  String get games_sort_descending => 'Descending';
+  @override
+  String get games_filter_status => 'Play status';
+  @override
+  String get games_filter_all => 'All';
+  @override
+  String get games_filter_source => 'Availability';
+  @override
+  String get games_filter_local_only => 'Has local file';
+  @override
+  String get games_filter_metadata_only => 'Metadata only';
+  @override
+  String get games_filter_tags => 'Tags';
+  @override
+  String get games_filter_hide_nsfw => 'Hide adult titles';
+  @override
+  String get games_filter_reset => 'Clear filters';
+  @override
+  String get games_no_match => 'No games match the current filters';
+  @override
+  String get games_play_status => 'Play status';
+  @override
+  String get games_status_unset => 'Not set';
+  @override
+  String get games_status_want_to_play => 'Want to play';
+  @override
+  String get games_status_playing => 'Playing';
+  @override
+  String get games_status_played => 'Played';
+  @override
+  String get games_status_on_hold => 'On hold';
+  @override
+  String get games_status_dropped => 'Dropped';
+  @override
+  String get games_view_detail => 'View details';
+  @override
+  String get games_scrape => 'Fetch metadata';
+  @override
+  String get games_never_played => 'Never played';
+  @override
+  String get game_detail_tab_stats => 'Stats';
+  @override
+  String get game_detail_tab_summary => 'Overview';
+  @override
+  String get game_detail_tab_edit => 'Edit';
+  @override
+  String get game_detail_missing => 'This game is no longer in the library';
+  @override
+  String get game_stat_total_time => 'Total play time';
+  @override
+  String get game_stat_sessions => 'Sessions';
+  @override
+  String get game_stat_today => 'Today';
+  @override
+  String get game_stat_last_played => 'Last played';
+  @override
+  String get game_stat_daily => 'Daily play time';
+  @override
+  String get game_stat_session_list => 'Session history';
+  @override
+  String get game_stat_no_sessions => 'No play sessions recorded yet';
+  @override
+  String get game_stat_delete_session => 'Delete this session';
+  @override
+  String get game_stat_prev_month => 'Previous month';
+  @override
+  String get game_stat_next_month => 'Next month';
+  @override
+  String get game_summary_none =>
+      'No description yet. Fetch metadata to fill it in.';
+  @override
+  String get game_summary_aliases => 'Aliases';
+  @override
+  String get game_summary_all_titles => 'All titles';
+  @override
+  String get game_summary_release_date => 'Release date';
+  @override
+  String get game_summary_average_hours => 'Average play time';
+  @override
+  String get game_edit_display_name => 'Display name';
+  @override
+  String get game_edit_summary => 'Description';
+  @override
+  String get game_edit_tags => 'Tags (comma separated)';
+  @override
+  String get game_edit_developer => 'Developer';
+  @override
+  String get game_edit_release_date => 'Release date (YYYY-MM-DD)';
+  @override
+  String get game_edit_nsfw => 'Adult title';
+  @override
+  String get game_edit_user_rating => 'My rating (0-10)';
+  @override
+  String get game_edit_user_review => 'My review';
+  @override
+  String get game_edit_exe_path => 'Executable path';
+  @override
+  String get game_edit_workdir => 'Working directory';
+  @override
+  String get game_edit_save => 'Save';
+  @override
+  String get game_edit_saved => 'Saved';
+  @override
+  String get game_edit_invalid_date => 'Release date must be YYYY-MM-DD';
+  @override
+  String get game_scrape_title => 'Fetch metadata';
+  @override
+  String get game_scrape_query => 'Title or source ID';
+  @override
+  String get game_scrape_no_result => 'No matching entry found';
+  @override
+  String get game_scrape_failed => 'Metadata fetch failed';
+  @override
+  String get game_scrape_applied => 'Metadata updated';
+  @override
+  String get game_scrape_pick => 'Pick the matching entry';
+  @override
+  String get game_open_source_site => 'Open source page';
+  @override
+  String get game_launch => 'Launch';
+  @override
+  String get game_developer => 'Developer';
+  @override
+  String get game_site_score => 'Site rating';
+  @override
+  String get game_user_rating => 'My rating';
 }
 
 // Path: <root>
@@ -47948,6 +49051,153 @@ class _StringsKo extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get games_search => 'Search games';
+  @override
+  String get games_sort => 'Sort';
+  @override
+  String get games_filter => 'Filter';
+  @override
+  String get games_sort_added => 'Date added';
+  @override
+  String get games_sort_release => 'Release date';
+  @override
+  String get games_sort_last_played => 'Last played';
+  @override
+  String get games_sort_site_score => 'Site rating';
+  @override
+  String get games_sort_user_rating => 'My rating';
+  @override
+  String get games_sort_name => 'Name';
+  @override
+  String get games_sort_ascending => 'Ascending';
+  @override
+  String get games_sort_descending => 'Descending';
+  @override
+  String get games_filter_status => 'Play status';
+  @override
+  String get games_filter_all => 'All';
+  @override
+  String get games_filter_source => 'Availability';
+  @override
+  String get games_filter_local_only => 'Has local file';
+  @override
+  String get games_filter_metadata_only => 'Metadata only';
+  @override
+  String get games_filter_tags => 'Tags';
+  @override
+  String get games_filter_hide_nsfw => 'Hide adult titles';
+  @override
+  String get games_filter_reset => 'Clear filters';
+  @override
+  String get games_no_match => 'No games match the current filters';
+  @override
+  String get games_play_status => 'Play status';
+  @override
+  String get games_status_unset => 'Not set';
+  @override
+  String get games_status_want_to_play => 'Want to play';
+  @override
+  String get games_status_playing => 'Playing';
+  @override
+  String get games_status_played => 'Played';
+  @override
+  String get games_status_on_hold => 'On hold';
+  @override
+  String get games_status_dropped => 'Dropped';
+  @override
+  String get games_view_detail => 'View details';
+  @override
+  String get games_scrape => 'Fetch metadata';
+  @override
+  String get games_never_played => 'Never played';
+  @override
+  String get game_detail_tab_stats => 'Stats';
+  @override
+  String get game_detail_tab_summary => 'Overview';
+  @override
+  String get game_detail_tab_edit => 'Edit';
+  @override
+  String get game_detail_missing => 'This game is no longer in the library';
+  @override
+  String get game_stat_total_time => 'Total play time';
+  @override
+  String get game_stat_sessions => 'Sessions';
+  @override
+  String get game_stat_today => 'Today';
+  @override
+  String get game_stat_last_played => 'Last played';
+  @override
+  String get game_stat_daily => 'Daily play time';
+  @override
+  String get game_stat_session_list => 'Session history';
+  @override
+  String get game_stat_no_sessions => 'No play sessions recorded yet';
+  @override
+  String get game_stat_delete_session => 'Delete this session';
+  @override
+  String get game_stat_prev_month => 'Previous month';
+  @override
+  String get game_stat_next_month => 'Next month';
+  @override
+  String get game_summary_none =>
+      'No description yet. Fetch metadata to fill it in.';
+  @override
+  String get game_summary_aliases => 'Aliases';
+  @override
+  String get game_summary_all_titles => 'All titles';
+  @override
+  String get game_summary_release_date => 'Release date';
+  @override
+  String get game_summary_average_hours => 'Average play time';
+  @override
+  String get game_edit_display_name => 'Display name';
+  @override
+  String get game_edit_summary => 'Description';
+  @override
+  String get game_edit_tags => 'Tags (comma separated)';
+  @override
+  String get game_edit_developer => 'Developer';
+  @override
+  String get game_edit_release_date => 'Release date (YYYY-MM-DD)';
+  @override
+  String get game_edit_nsfw => 'Adult title';
+  @override
+  String get game_edit_user_rating => 'My rating (0-10)';
+  @override
+  String get game_edit_user_review => 'My review';
+  @override
+  String get game_edit_exe_path => 'Executable path';
+  @override
+  String get game_edit_workdir => 'Working directory';
+  @override
+  String get game_edit_save => 'Save';
+  @override
+  String get game_edit_saved => 'Saved';
+  @override
+  String get game_edit_invalid_date => 'Release date must be YYYY-MM-DD';
+  @override
+  String get game_scrape_title => 'Fetch metadata';
+  @override
+  String get game_scrape_query => 'Title or source ID';
+  @override
+  String get game_scrape_no_result => 'No matching entry found';
+  @override
+  String get game_scrape_failed => 'Metadata fetch failed';
+  @override
+  String get game_scrape_applied => 'Metadata updated';
+  @override
+  String get game_scrape_pick => 'Pick the matching entry';
+  @override
+  String get game_open_source_site => 'Open source page';
+  @override
+  String get game_launch => 'Launch';
+  @override
+  String get game_developer => 'Developer';
+  @override
+  String get game_site_score => 'Site rating';
+  @override
+  String get game_user_rating => 'My rating';
 }
 
 // Path: <root>
@@ -53570,6 +54820,153 @@ class _StringsNl extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get games_search => 'Search games';
+  @override
+  String get games_sort => 'Sort';
+  @override
+  String get games_filter => 'Filter';
+  @override
+  String get games_sort_added => 'Date added';
+  @override
+  String get games_sort_release => 'Release date';
+  @override
+  String get games_sort_last_played => 'Last played';
+  @override
+  String get games_sort_site_score => 'Site rating';
+  @override
+  String get games_sort_user_rating => 'My rating';
+  @override
+  String get games_sort_name => 'Name';
+  @override
+  String get games_sort_ascending => 'Ascending';
+  @override
+  String get games_sort_descending => 'Descending';
+  @override
+  String get games_filter_status => 'Play status';
+  @override
+  String get games_filter_all => 'All';
+  @override
+  String get games_filter_source => 'Availability';
+  @override
+  String get games_filter_local_only => 'Has local file';
+  @override
+  String get games_filter_metadata_only => 'Metadata only';
+  @override
+  String get games_filter_tags => 'Tags';
+  @override
+  String get games_filter_hide_nsfw => 'Hide adult titles';
+  @override
+  String get games_filter_reset => 'Clear filters';
+  @override
+  String get games_no_match => 'No games match the current filters';
+  @override
+  String get games_play_status => 'Play status';
+  @override
+  String get games_status_unset => 'Not set';
+  @override
+  String get games_status_want_to_play => 'Want to play';
+  @override
+  String get games_status_playing => 'Playing';
+  @override
+  String get games_status_played => 'Played';
+  @override
+  String get games_status_on_hold => 'On hold';
+  @override
+  String get games_status_dropped => 'Dropped';
+  @override
+  String get games_view_detail => 'View details';
+  @override
+  String get games_scrape => 'Fetch metadata';
+  @override
+  String get games_never_played => 'Never played';
+  @override
+  String get game_detail_tab_stats => 'Stats';
+  @override
+  String get game_detail_tab_summary => 'Overview';
+  @override
+  String get game_detail_tab_edit => 'Edit';
+  @override
+  String get game_detail_missing => 'This game is no longer in the library';
+  @override
+  String get game_stat_total_time => 'Total play time';
+  @override
+  String get game_stat_sessions => 'Sessions';
+  @override
+  String get game_stat_today => 'Today';
+  @override
+  String get game_stat_last_played => 'Last played';
+  @override
+  String get game_stat_daily => 'Daily play time';
+  @override
+  String get game_stat_session_list => 'Session history';
+  @override
+  String get game_stat_no_sessions => 'No play sessions recorded yet';
+  @override
+  String get game_stat_delete_session => 'Delete this session';
+  @override
+  String get game_stat_prev_month => 'Previous month';
+  @override
+  String get game_stat_next_month => 'Next month';
+  @override
+  String get game_summary_none =>
+      'No description yet. Fetch metadata to fill it in.';
+  @override
+  String get game_summary_aliases => 'Aliases';
+  @override
+  String get game_summary_all_titles => 'All titles';
+  @override
+  String get game_summary_release_date => 'Release date';
+  @override
+  String get game_summary_average_hours => 'Average play time';
+  @override
+  String get game_edit_display_name => 'Display name';
+  @override
+  String get game_edit_summary => 'Description';
+  @override
+  String get game_edit_tags => 'Tags (comma separated)';
+  @override
+  String get game_edit_developer => 'Developer';
+  @override
+  String get game_edit_release_date => 'Release date (YYYY-MM-DD)';
+  @override
+  String get game_edit_nsfw => 'Adult title';
+  @override
+  String get game_edit_user_rating => 'My rating (0-10)';
+  @override
+  String get game_edit_user_review => 'My review';
+  @override
+  String get game_edit_exe_path => 'Executable path';
+  @override
+  String get game_edit_workdir => 'Working directory';
+  @override
+  String get game_edit_save => 'Save';
+  @override
+  String get game_edit_saved => 'Saved';
+  @override
+  String get game_edit_invalid_date => 'Release date must be YYYY-MM-DD';
+  @override
+  String get game_scrape_title => 'Fetch metadata';
+  @override
+  String get game_scrape_query => 'Title or source ID';
+  @override
+  String get game_scrape_no_result => 'No matching entry found';
+  @override
+  String get game_scrape_failed => 'Metadata fetch failed';
+  @override
+  String get game_scrape_applied => 'Metadata updated';
+  @override
+  String get game_scrape_pick => 'Pick the matching entry';
+  @override
+  String get game_open_source_site => 'Open source page';
+  @override
+  String get game_launch => 'Launch';
+  @override
+  String get game_developer => 'Developer';
+  @override
+  String get game_site_score => 'Site rating';
+  @override
+  String get game_user_rating => 'My rating';
 }
 
 // Path: <root>
@@ -59207,6 +60604,153 @@ class _StringsPtBr extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get games_search => 'Search games';
+  @override
+  String get games_sort => 'Sort';
+  @override
+  String get games_filter => 'Filter';
+  @override
+  String get games_sort_added => 'Date added';
+  @override
+  String get games_sort_release => 'Release date';
+  @override
+  String get games_sort_last_played => 'Last played';
+  @override
+  String get games_sort_site_score => 'Site rating';
+  @override
+  String get games_sort_user_rating => 'My rating';
+  @override
+  String get games_sort_name => 'Name';
+  @override
+  String get games_sort_ascending => 'Ascending';
+  @override
+  String get games_sort_descending => 'Descending';
+  @override
+  String get games_filter_status => 'Play status';
+  @override
+  String get games_filter_all => 'All';
+  @override
+  String get games_filter_source => 'Availability';
+  @override
+  String get games_filter_local_only => 'Has local file';
+  @override
+  String get games_filter_metadata_only => 'Metadata only';
+  @override
+  String get games_filter_tags => 'Tags';
+  @override
+  String get games_filter_hide_nsfw => 'Hide adult titles';
+  @override
+  String get games_filter_reset => 'Clear filters';
+  @override
+  String get games_no_match => 'No games match the current filters';
+  @override
+  String get games_play_status => 'Play status';
+  @override
+  String get games_status_unset => 'Not set';
+  @override
+  String get games_status_want_to_play => 'Want to play';
+  @override
+  String get games_status_playing => 'Playing';
+  @override
+  String get games_status_played => 'Played';
+  @override
+  String get games_status_on_hold => 'On hold';
+  @override
+  String get games_status_dropped => 'Dropped';
+  @override
+  String get games_view_detail => 'View details';
+  @override
+  String get games_scrape => 'Fetch metadata';
+  @override
+  String get games_never_played => 'Never played';
+  @override
+  String get game_detail_tab_stats => 'Stats';
+  @override
+  String get game_detail_tab_summary => 'Overview';
+  @override
+  String get game_detail_tab_edit => 'Edit';
+  @override
+  String get game_detail_missing => 'This game is no longer in the library';
+  @override
+  String get game_stat_total_time => 'Total play time';
+  @override
+  String get game_stat_sessions => 'Sessions';
+  @override
+  String get game_stat_today => 'Today';
+  @override
+  String get game_stat_last_played => 'Last played';
+  @override
+  String get game_stat_daily => 'Daily play time';
+  @override
+  String get game_stat_session_list => 'Session history';
+  @override
+  String get game_stat_no_sessions => 'No play sessions recorded yet';
+  @override
+  String get game_stat_delete_session => 'Delete this session';
+  @override
+  String get game_stat_prev_month => 'Previous month';
+  @override
+  String get game_stat_next_month => 'Next month';
+  @override
+  String get game_summary_none =>
+      'No description yet. Fetch metadata to fill it in.';
+  @override
+  String get game_summary_aliases => 'Aliases';
+  @override
+  String get game_summary_all_titles => 'All titles';
+  @override
+  String get game_summary_release_date => 'Release date';
+  @override
+  String get game_summary_average_hours => 'Average play time';
+  @override
+  String get game_edit_display_name => 'Display name';
+  @override
+  String get game_edit_summary => 'Description';
+  @override
+  String get game_edit_tags => 'Tags (comma separated)';
+  @override
+  String get game_edit_developer => 'Developer';
+  @override
+  String get game_edit_release_date => 'Release date (YYYY-MM-DD)';
+  @override
+  String get game_edit_nsfw => 'Adult title';
+  @override
+  String get game_edit_user_rating => 'My rating (0-10)';
+  @override
+  String get game_edit_user_review => 'My review';
+  @override
+  String get game_edit_exe_path => 'Executable path';
+  @override
+  String get game_edit_workdir => 'Working directory';
+  @override
+  String get game_edit_save => 'Save';
+  @override
+  String get game_edit_saved => 'Saved';
+  @override
+  String get game_edit_invalid_date => 'Release date must be YYYY-MM-DD';
+  @override
+  String get game_scrape_title => 'Fetch metadata';
+  @override
+  String get game_scrape_query => 'Title or source ID';
+  @override
+  String get game_scrape_no_result => 'No matching entry found';
+  @override
+  String get game_scrape_failed => 'Metadata fetch failed';
+  @override
+  String get game_scrape_applied => 'Metadata updated';
+  @override
+  String get game_scrape_pick => 'Pick the matching entry';
+  @override
+  String get game_open_source_site => 'Open source page';
+  @override
+  String get game_launch => 'Launch';
+  @override
+  String get game_developer => 'Developer';
+  @override
+  String get game_site_score => 'Site rating';
+  @override
+  String get game_user_rating => 'My rating';
 }
 
 // Path: <root>
@@ -64827,6 +66371,153 @@ class _StringsRu extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get games_search => 'Search games';
+  @override
+  String get games_sort => 'Sort';
+  @override
+  String get games_filter => 'Filter';
+  @override
+  String get games_sort_added => 'Date added';
+  @override
+  String get games_sort_release => 'Release date';
+  @override
+  String get games_sort_last_played => 'Last played';
+  @override
+  String get games_sort_site_score => 'Site rating';
+  @override
+  String get games_sort_user_rating => 'My rating';
+  @override
+  String get games_sort_name => 'Name';
+  @override
+  String get games_sort_ascending => 'Ascending';
+  @override
+  String get games_sort_descending => 'Descending';
+  @override
+  String get games_filter_status => 'Play status';
+  @override
+  String get games_filter_all => 'All';
+  @override
+  String get games_filter_source => 'Availability';
+  @override
+  String get games_filter_local_only => 'Has local file';
+  @override
+  String get games_filter_metadata_only => 'Metadata only';
+  @override
+  String get games_filter_tags => 'Tags';
+  @override
+  String get games_filter_hide_nsfw => 'Hide adult titles';
+  @override
+  String get games_filter_reset => 'Clear filters';
+  @override
+  String get games_no_match => 'No games match the current filters';
+  @override
+  String get games_play_status => 'Play status';
+  @override
+  String get games_status_unset => 'Not set';
+  @override
+  String get games_status_want_to_play => 'Want to play';
+  @override
+  String get games_status_playing => 'Playing';
+  @override
+  String get games_status_played => 'Played';
+  @override
+  String get games_status_on_hold => 'On hold';
+  @override
+  String get games_status_dropped => 'Dropped';
+  @override
+  String get games_view_detail => 'View details';
+  @override
+  String get games_scrape => 'Fetch metadata';
+  @override
+  String get games_never_played => 'Never played';
+  @override
+  String get game_detail_tab_stats => 'Stats';
+  @override
+  String get game_detail_tab_summary => 'Overview';
+  @override
+  String get game_detail_tab_edit => 'Edit';
+  @override
+  String get game_detail_missing => 'This game is no longer in the library';
+  @override
+  String get game_stat_total_time => 'Total play time';
+  @override
+  String get game_stat_sessions => 'Sessions';
+  @override
+  String get game_stat_today => 'Today';
+  @override
+  String get game_stat_last_played => 'Last played';
+  @override
+  String get game_stat_daily => 'Daily play time';
+  @override
+  String get game_stat_session_list => 'Session history';
+  @override
+  String get game_stat_no_sessions => 'No play sessions recorded yet';
+  @override
+  String get game_stat_delete_session => 'Delete this session';
+  @override
+  String get game_stat_prev_month => 'Previous month';
+  @override
+  String get game_stat_next_month => 'Next month';
+  @override
+  String get game_summary_none =>
+      'No description yet. Fetch metadata to fill it in.';
+  @override
+  String get game_summary_aliases => 'Aliases';
+  @override
+  String get game_summary_all_titles => 'All titles';
+  @override
+  String get game_summary_release_date => 'Release date';
+  @override
+  String get game_summary_average_hours => 'Average play time';
+  @override
+  String get game_edit_display_name => 'Display name';
+  @override
+  String get game_edit_summary => 'Description';
+  @override
+  String get game_edit_tags => 'Tags (comma separated)';
+  @override
+  String get game_edit_developer => 'Developer';
+  @override
+  String get game_edit_release_date => 'Release date (YYYY-MM-DD)';
+  @override
+  String get game_edit_nsfw => 'Adult title';
+  @override
+  String get game_edit_user_rating => 'My rating (0-10)';
+  @override
+  String get game_edit_user_review => 'My review';
+  @override
+  String get game_edit_exe_path => 'Executable path';
+  @override
+  String get game_edit_workdir => 'Working directory';
+  @override
+  String get game_edit_save => 'Save';
+  @override
+  String get game_edit_saved => 'Saved';
+  @override
+  String get game_edit_invalid_date => 'Release date must be YYYY-MM-DD';
+  @override
+  String get game_scrape_title => 'Fetch metadata';
+  @override
+  String get game_scrape_query => 'Title or source ID';
+  @override
+  String get game_scrape_no_result => 'No matching entry found';
+  @override
+  String get game_scrape_failed => 'Metadata fetch failed';
+  @override
+  String get game_scrape_applied => 'Metadata updated';
+  @override
+  String get game_scrape_pick => 'Pick the matching entry';
+  @override
+  String get game_open_source_site => 'Open source page';
+  @override
+  String get game_launch => 'Launch';
+  @override
+  String get game_developer => 'Developer';
+  @override
+  String get game_site_score => 'Site rating';
+  @override
+  String get game_user_rating => 'My rating';
 }
 
 // Path: <root>
@@ -70392,6 +72083,153 @@ class _StringsTh extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get games_search => 'Search games';
+  @override
+  String get games_sort => 'Sort';
+  @override
+  String get games_filter => 'Filter';
+  @override
+  String get games_sort_added => 'Date added';
+  @override
+  String get games_sort_release => 'Release date';
+  @override
+  String get games_sort_last_played => 'Last played';
+  @override
+  String get games_sort_site_score => 'Site rating';
+  @override
+  String get games_sort_user_rating => 'My rating';
+  @override
+  String get games_sort_name => 'Name';
+  @override
+  String get games_sort_ascending => 'Ascending';
+  @override
+  String get games_sort_descending => 'Descending';
+  @override
+  String get games_filter_status => 'Play status';
+  @override
+  String get games_filter_all => 'All';
+  @override
+  String get games_filter_source => 'Availability';
+  @override
+  String get games_filter_local_only => 'Has local file';
+  @override
+  String get games_filter_metadata_only => 'Metadata only';
+  @override
+  String get games_filter_tags => 'Tags';
+  @override
+  String get games_filter_hide_nsfw => 'Hide adult titles';
+  @override
+  String get games_filter_reset => 'Clear filters';
+  @override
+  String get games_no_match => 'No games match the current filters';
+  @override
+  String get games_play_status => 'Play status';
+  @override
+  String get games_status_unset => 'Not set';
+  @override
+  String get games_status_want_to_play => 'Want to play';
+  @override
+  String get games_status_playing => 'Playing';
+  @override
+  String get games_status_played => 'Played';
+  @override
+  String get games_status_on_hold => 'On hold';
+  @override
+  String get games_status_dropped => 'Dropped';
+  @override
+  String get games_view_detail => 'View details';
+  @override
+  String get games_scrape => 'Fetch metadata';
+  @override
+  String get games_never_played => 'Never played';
+  @override
+  String get game_detail_tab_stats => 'Stats';
+  @override
+  String get game_detail_tab_summary => 'Overview';
+  @override
+  String get game_detail_tab_edit => 'Edit';
+  @override
+  String get game_detail_missing => 'This game is no longer in the library';
+  @override
+  String get game_stat_total_time => 'Total play time';
+  @override
+  String get game_stat_sessions => 'Sessions';
+  @override
+  String get game_stat_today => 'Today';
+  @override
+  String get game_stat_last_played => 'Last played';
+  @override
+  String get game_stat_daily => 'Daily play time';
+  @override
+  String get game_stat_session_list => 'Session history';
+  @override
+  String get game_stat_no_sessions => 'No play sessions recorded yet';
+  @override
+  String get game_stat_delete_session => 'Delete this session';
+  @override
+  String get game_stat_prev_month => 'Previous month';
+  @override
+  String get game_stat_next_month => 'Next month';
+  @override
+  String get game_summary_none =>
+      'No description yet. Fetch metadata to fill it in.';
+  @override
+  String get game_summary_aliases => 'Aliases';
+  @override
+  String get game_summary_all_titles => 'All titles';
+  @override
+  String get game_summary_release_date => 'Release date';
+  @override
+  String get game_summary_average_hours => 'Average play time';
+  @override
+  String get game_edit_display_name => 'Display name';
+  @override
+  String get game_edit_summary => 'Description';
+  @override
+  String get game_edit_tags => 'Tags (comma separated)';
+  @override
+  String get game_edit_developer => 'Developer';
+  @override
+  String get game_edit_release_date => 'Release date (YYYY-MM-DD)';
+  @override
+  String get game_edit_nsfw => 'Adult title';
+  @override
+  String get game_edit_user_rating => 'My rating (0-10)';
+  @override
+  String get game_edit_user_review => 'My review';
+  @override
+  String get game_edit_exe_path => 'Executable path';
+  @override
+  String get game_edit_workdir => 'Working directory';
+  @override
+  String get game_edit_save => 'Save';
+  @override
+  String get game_edit_saved => 'Saved';
+  @override
+  String get game_edit_invalid_date => 'Release date must be YYYY-MM-DD';
+  @override
+  String get game_scrape_title => 'Fetch metadata';
+  @override
+  String get game_scrape_query => 'Title or source ID';
+  @override
+  String get game_scrape_no_result => 'No matching entry found';
+  @override
+  String get game_scrape_failed => 'Metadata fetch failed';
+  @override
+  String get game_scrape_applied => 'Metadata updated';
+  @override
+  String get game_scrape_pick => 'Pick the matching entry';
+  @override
+  String get game_open_source_site => 'Open source page';
+  @override
+  String get game_launch => 'Launch';
+  @override
+  String get game_developer => 'Developer';
+  @override
+  String get game_site_score => 'Site rating';
+  @override
+  String get game_user_rating => 'My rating';
 }
 
 // Path: <root>
@@ -75989,6 +77827,153 @@ class _StringsTr extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get games_search => 'Search games';
+  @override
+  String get games_sort => 'Sort';
+  @override
+  String get games_filter => 'Filter';
+  @override
+  String get games_sort_added => 'Date added';
+  @override
+  String get games_sort_release => 'Release date';
+  @override
+  String get games_sort_last_played => 'Last played';
+  @override
+  String get games_sort_site_score => 'Site rating';
+  @override
+  String get games_sort_user_rating => 'My rating';
+  @override
+  String get games_sort_name => 'Name';
+  @override
+  String get games_sort_ascending => 'Ascending';
+  @override
+  String get games_sort_descending => 'Descending';
+  @override
+  String get games_filter_status => 'Play status';
+  @override
+  String get games_filter_all => 'All';
+  @override
+  String get games_filter_source => 'Availability';
+  @override
+  String get games_filter_local_only => 'Has local file';
+  @override
+  String get games_filter_metadata_only => 'Metadata only';
+  @override
+  String get games_filter_tags => 'Tags';
+  @override
+  String get games_filter_hide_nsfw => 'Hide adult titles';
+  @override
+  String get games_filter_reset => 'Clear filters';
+  @override
+  String get games_no_match => 'No games match the current filters';
+  @override
+  String get games_play_status => 'Play status';
+  @override
+  String get games_status_unset => 'Not set';
+  @override
+  String get games_status_want_to_play => 'Want to play';
+  @override
+  String get games_status_playing => 'Playing';
+  @override
+  String get games_status_played => 'Played';
+  @override
+  String get games_status_on_hold => 'On hold';
+  @override
+  String get games_status_dropped => 'Dropped';
+  @override
+  String get games_view_detail => 'View details';
+  @override
+  String get games_scrape => 'Fetch metadata';
+  @override
+  String get games_never_played => 'Never played';
+  @override
+  String get game_detail_tab_stats => 'Stats';
+  @override
+  String get game_detail_tab_summary => 'Overview';
+  @override
+  String get game_detail_tab_edit => 'Edit';
+  @override
+  String get game_detail_missing => 'This game is no longer in the library';
+  @override
+  String get game_stat_total_time => 'Total play time';
+  @override
+  String get game_stat_sessions => 'Sessions';
+  @override
+  String get game_stat_today => 'Today';
+  @override
+  String get game_stat_last_played => 'Last played';
+  @override
+  String get game_stat_daily => 'Daily play time';
+  @override
+  String get game_stat_session_list => 'Session history';
+  @override
+  String get game_stat_no_sessions => 'No play sessions recorded yet';
+  @override
+  String get game_stat_delete_session => 'Delete this session';
+  @override
+  String get game_stat_prev_month => 'Previous month';
+  @override
+  String get game_stat_next_month => 'Next month';
+  @override
+  String get game_summary_none =>
+      'No description yet. Fetch metadata to fill it in.';
+  @override
+  String get game_summary_aliases => 'Aliases';
+  @override
+  String get game_summary_all_titles => 'All titles';
+  @override
+  String get game_summary_release_date => 'Release date';
+  @override
+  String get game_summary_average_hours => 'Average play time';
+  @override
+  String get game_edit_display_name => 'Display name';
+  @override
+  String get game_edit_summary => 'Description';
+  @override
+  String get game_edit_tags => 'Tags (comma separated)';
+  @override
+  String get game_edit_developer => 'Developer';
+  @override
+  String get game_edit_release_date => 'Release date (YYYY-MM-DD)';
+  @override
+  String get game_edit_nsfw => 'Adult title';
+  @override
+  String get game_edit_user_rating => 'My rating (0-10)';
+  @override
+  String get game_edit_user_review => 'My review';
+  @override
+  String get game_edit_exe_path => 'Executable path';
+  @override
+  String get game_edit_workdir => 'Working directory';
+  @override
+  String get game_edit_save => 'Save';
+  @override
+  String get game_edit_saved => 'Saved';
+  @override
+  String get game_edit_invalid_date => 'Release date must be YYYY-MM-DD';
+  @override
+  String get game_scrape_title => 'Fetch metadata';
+  @override
+  String get game_scrape_query => 'Title or source ID';
+  @override
+  String get game_scrape_no_result => 'No matching entry found';
+  @override
+  String get game_scrape_failed => 'Metadata fetch failed';
+  @override
+  String get game_scrape_applied => 'Metadata updated';
+  @override
+  String get game_scrape_pick => 'Pick the matching entry';
+  @override
+  String get game_open_source_site => 'Open source page';
+  @override
+  String get game_launch => 'Launch';
+  @override
+  String get game_developer => 'Developer';
+  @override
+  String get game_site_score => 'Site rating';
+  @override
+  String get game_user_rating => 'My rating';
 }
 
 // Path: <root>
@@ -81573,6 +83558,153 @@ class _StringsVi extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get games_search => 'Search games';
+  @override
+  String get games_sort => 'Sort';
+  @override
+  String get games_filter => 'Filter';
+  @override
+  String get games_sort_added => 'Date added';
+  @override
+  String get games_sort_release => 'Release date';
+  @override
+  String get games_sort_last_played => 'Last played';
+  @override
+  String get games_sort_site_score => 'Site rating';
+  @override
+  String get games_sort_user_rating => 'My rating';
+  @override
+  String get games_sort_name => 'Name';
+  @override
+  String get games_sort_ascending => 'Ascending';
+  @override
+  String get games_sort_descending => 'Descending';
+  @override
+  String get games_filter_status => 'Play status';
+  @override
+  String get games_filter_all => 'All';
+  @override
+  String get games_filter_source => 'Availability';
+  @override
+  String get games_filter_local_only => 'Has local file';
+  @override
+  String get games_filter_metadata_only => 'Metadata only';
+  @override
+  String get games_filter_tags => 'Tags';
+  @override
+  String get games_filter_hide_nsfw => 'Hide adult titles';
+  @override
+  String get games_filter_reset => 'Clear filters';
+  @override
+  String get games_no_match => 'No games match the current filters';
+  @override
+  String get games_play_status => 'Play status';
+  @override
+  String get games_status_unset => 'Not set';
+  @override
+  String get games_status_want_to_play => 'Want to play';
+  @override
+  String get games_status_playing => 'Playing';
+  @override
+  String get games_status_played => 'Played';
+  @override
+  String get games_status_on_hold => 'On hold';
+  @override
+  String get games_status_dropped => 'Dropped';
+  @override
+  String get games_view_detail => 'View details';
+  @override
+  String get games_scrape => 'Fetch metadata';
+  @override
+  String get games_never_played => 'Never played';
+  @override
+  String get game_detail_tab_stats => 'Stats';
+  @override
+  String get game_detail_tab_summary => 'Overview';
+  @override
+  String get game_detail_tab_edit => 'Edit';
+  @override
+  String get game_detail_missing => 'This game is no longer in the library';
+  @override
+  String get game_stat_total_time => 'Total play time';
+  @override
+  String get game_stat_sessions => 'Sessions';
+  @override
+  String get game_stat_today => 'Today';
+  @override
+  String get game_stat_last_played => 'Last played';
+  @override
+  String get game_stat_daily => 'Daily play time';
+  @override
+  String get game_stat_session_list => 'Session history';
+  @override
+  String get game_stat_no_sessions => 'No play sessions recorded yet';
+  @override
+  String get game_stat_delete_session => 'Delete this session';
+  @override
+  String get game_stat_prev_month => 'Previous month';
+  @override
+  String get game_stat_next_month => 'Next month';
+  @override
+  String get game_summary_none =>
+      'No description yet. Fetch metadata to fill it in.';
+  @override
+  String get game_summary_aliases => 'Aliases';
+  @override
+  String get game_summary_all_titles => 'All titles';
+  @override
+  String get game_summary_release_date => 'Release date';
+  @override
+  String get game_summary_average_hours => 'Average play time';
+  @override
+  String get game_edit_display_name => 'Display name';
+  @override
+  String get game_edit_summary => 'Description';
+  @override
+  String get game_edit_tags => 'Tags (comma separated)';
+  @override
+  String get game_edit_developer => 'Developer';
+  @override
+  String get game_edit_release_date => 'Release date (YYYY-MM-DD)';
+  @override
+  String get game_edit_nsfw => 'Adult title';
+  @override
+  String get game_edit_user_rating => 'My rating (0-10)';
+  @override
+  String get game_edit_user_review => 'My review';
+  @override
+  String get game_edit_exe_path => 'Executable path';
+  @override
+  String get game_edit_workdir => 'Working directory';
+  @override
+  String get game_edit_save => 'Save';
+  @override
+  String get game_edit_saved => 'Saved';
+  @override
+  String get game_edit_invalid_date => 'Release date must be YYYY-MM-DD';
+  @override
+  String get game_scrape_title => 'Fetch metadata';
+  @override
+  String get game_scrape_query => 'Title or source ID';
+  @override
+  String get game_scrape_no_result => 'No matching entry found';
+  @override
+  String get game_scrape_failed => 'Metadata fetch failed';
+  @override
+  String get game_scrape_applied => 'Metadata updated';
+  @override
+  String get game_scrape_pick => 'Pick the matching entry';
+  @override
+  String get game_open_source_site => 'Open source page';
+  @override
+  String get game_launch => 'Launch';
+  @override
+  String get game_developer => 'Developer';
+  @override
+  String get game_site_score => 'Site rating';
+  @override
+  String get game_user_rating => 'My rating';
 }
 
 // Path: <root>
@@ -86766,6 +88898,152 @@ class _StringsZhCn extends _StringsEn {
   String get games_drop_no_exe => '拖入的文件里没有新的游戏 .exe';
   @override
   String games_drop_imported({required Object count}) => '已添加 ${count} 个游戏';
+  @override
+  String get games_search => '搜索游戏';
+  @override
+  String get games_sort => '排序';
+  @override
+  String get games_filter => '筛选';
+  @override
+  String get games_sort_added => '添加时间';
+  @override
+  String get games_sort_release => '发行日';
+  @override
+  String get games_sort_last_played => '最后游玩';
+  @override
+  String get games_sort_site_score => '站点评分';
+  @override
+  String get games_sort_user_rating => '我的评分';
+  @override
+  String get games_sort_name => '名称';
+  @override
+  String get games_sort_ascending => '升序';
+  @override
+  String get games_sort_descending => '降序';
+  @override
+  String get games_filter_status => '游玩状态';
+  @override
+  String get games_filter_all => '全部';
+  @override
+  String get games_filter_source => '条目来源';
+  @override
+  String get games_filter_local_only => '有本地 exe';
+  @override
+  String get games_filter_metadata_only => '仅元数据';
+  @override
+  String get games_filter_tags => '标签';
+  @override
+  String get games_filter_hide_nsfw => '隐藏成人向';
+  @override
+  String get games_filter_reset => '清除筛选';
+  @override
+  String get games_no_match => '没有符合当前筛选的游戏';
+  @override
+  String get games_play_status => '游玩状态';
+  @override
+  String get games_status_unset => '未设置';
+  @override
+  String get games_status_want_to_play => '想玩';
+  @override
+  String get games_status_playing => '在玩';
+  @override
+  String get games_status_played => '玩过';
+  @override
+  String get games_status_on_hold => '搁置';
+  @override
+  String get games_status_dropped => '弃坑';
+  @override
+  String get games_view_detail => '查看详情';
+  @override
+  String get games_scrape => '刮削元数据';
+  @override
+  String get games_never_played => '未游玩';
+  @override
+  String get game_detail_tab_stats => '统计';
+  @override
+  String get game_detail_tab_summary => '简介';
+  @override
+  String get game_detail_tab_edit => '编辑';
+  @override
+  String get game_detail_missing => '该游戏已不在库中';
+  @override
+  String get game_stat_total_time => '累计时长';
+  @override
+  String get game_stat_sessions => '游玩次数';
+  @override
+  String get game_stat_today => '今日时长';
+  @override
+  String get game_stat_last_played => '最后游玩';
+  @override
+  String get game_stat_daily => '每日时长';
+  @override
+  String get game_stat_session_list => '会话流水';
+  @override
+  String get game_stat_no_sessions => '还没有游玩记录';
+  @override
+  String get game_stat_delete_session => '删除这次记录';
+  @override
+  String get game_stat_prev_month => '上个月';
+  @override
+  String get game_stat_next_month => '下个月';
+  @override
+  String get game_summary_none => '还没有简介，刮削元数据后自动填充。';
+  @override
+  String get game_summary_aliases => '别名';
+  @override
+  String get game_summary_all_titles => '全部标题';
+  @override
+  String get game_summary_release_date => '发行日';
+  @override
+  String get game_summary_average_hours => '预计通关时长';
+  @override
+  String get game_edit_display_name => '显示名';
+  @override
+  String get game_edit_summary => '简介';
+  @override
+  String get game_edit_tags => '标签（逗号分隔）';
+  @override
+  String get game_edit_developer => '开发商';
+  @override
+  String get game_edit_release_date => '发行日（YYYY-MM-DD）';
+  @override
+  String get game_edit_nsfw => '成人向';
+  @override
+  String get game_edit_user_rating => '我的评分（0-10）';
+  @override
+  String get game_edit_user_review => '我的评价';
+  @override
+  String get game_edit_exe_path => '可执行文件路径';
+  @override
+  String get game_edit_workdir => '工作目录';
+  @override
+  String get game_edit_save => '保存';
+  @override
+  String get game_edit_saved => '已保存';
+  @override
+  String get game_edit_invalid_date => '发行日必须是 YYYY-MM-DD 格式';
+  @override
+  String get game_scrape_title => '刮削元数据';
+  @override
+  String get game_scrape_query => '标题或源 ID';
+  @override
+  String get game_scrape_no_result => '没有找到匹配条目';
+  @override
+  String get game_scrape_failed => '元数据获取失败';
+  @override
+  String get game_scrape_applied => '元数据已更新';
+  @override
+  String get game_scrape_pick => '选择匹配的条目';
+  @override
+  String get game_open_source_site => '打开源站页面';
+  @override
+  String get game_launch => '启动游戏';
+  @override
+  String get game_developer => '开发商';
+  @override
+  String get game_site_score => '站点评分';
+  @override
+  String get game_user_rating => '我的评分';
 }
 
 // Path: <root>
@@ -92133,6 +94411,153 @@ class _StringsZhHk extends _StringsEn {
   @override
   String games_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
+  @override
+  String get games_search => 'Search games';
+  @override
+  String get games_sort => 'Sort';
+  @override
+  String get games_filter => 'Filter';
+  @override
+  String get games_sort_added => 'Date added';
+  @override
+  String get games_sort_release => 'Release date';
+  @override
+  String get games_sort_last_played => 'Last played';
+  @override
+  String get games_sort_site_score => 'Site rating';
+  @override
+  String get games_sort_user_rating => 'My rating';
+  @override
+  String get games_sort_name => 'Name';
+  @override
+  String get games_sort_ascending => 'Ascending';
+  @override
+  String get games_sort_descending => 'Descending';
+  @override
+  String get games_filter_status => 'Play status';
+  @override
+  String get games_filter_all => 'All';
+  @override
+  String get games_filter_source => 'Availability';
+  @override
+  String get games_filter_local_only => 'Has local file';
+  @override
+  String get games_filter_metadata_only => 'Metadata only';
+  @override
+  String get games_filter_tags => 'Tags';
+  @override
+  String get games_filter_hide_nsfw => 'Hide adult titles';
+  @override
+  String get games_filter_reset => 'Clear filters';
+  @override
+  String get games_no_match => 'No games match the current filters';
+  @override
+  String get games_play_status => 'Play status';
+  @override
+  String get games_status_unset => 'Not set';
+  @override
+  String get games_status_want_to_play => 'Want to play';
+  @override
+  String get games_status_playing => 'Playing';
+  @override
+  String get games_status_played => 'Played';
+  @override
+  String get games_status_on_hold => 'On hold';
+  @override
+  String get games_status_dropped => 'Dropped';
+  @override
+  String get games_view_detail => 'View details';
+  @override
+  String get games_scrape => 'Fetch metadata';
+  @override
+  String get games_never_played => 'Never played';
+  @override
+  String get game_detail_tab_stats => 'Stats';
+  @override
+  String get game_detail_tab_summary => 'Overview';
+  @override
+  String get game_detail_tab_edit => 'Edit';
+  @override
+  String get game_detail_missing => 'This game is no longer in the library';
+  @override
+  String get game_stat_total_time => 'Total play time';
+  @override
+  String get game_stat_sessions => 'Sessions';
+  @override
+  String get game_stat_today => 'Today';
+  @override
+  String get game_stat_last_played => 'Last played';
+  @override
+  String get game_stat_daily => 'Daily play time';
+  @override
+  String get game_stat_session_list => 'Session history';
+  @override
+  String get game_stat_no_sessions => 'No play sessions recorded yet';
+  @override
+  String get game_stat_delete_session => 'Delete this session';
+  @override
+  String get game_stat_prev_month => 'Previous month';
+  @override
+  String get game_stat_next_month => 'Next month';
+  @override
+  String get game_summary_none =>
+      'No description yet. Fetch metadata to fill it in.';
+  @override
+  String get game_summary_aliases => 'Aliases';
+  @override
+  String get game_summary_all_titles => 'All titles';
+  @override
+  String get game_summary_release_date => 'Release date';
+  @override
+  String get game_summary_average_hours => 'Average play time';
+  @override
+  String get game_edit_display_name => 'Display name';
+  @override
+  String get game_edit_summary => 'Description';
+  @override
+  String get game_edit_tags => 'Tags (comma separated)';
+  @override
+  String get game_edit_developer => 'Developer';
+  @override
+  String get game_edit_release_date => 'Release date (YYYY-MM-DD)';
+  @override
+  String get game_edit_nsfw => 'Adult title';
+  @override
+  String get game_edit_user_rating => 'My rating (0-10)';
+  @override
+  String get game_edit_user_review => 'My review';
+  @override
+  String get game_edit_exe_path => 'Executable path';
+  @override
+  String get game_edit_workdir => 'Working directory';
+  @override
+  String get game_edit_save => 'Save';
+  @override
+  String get game_edit_saved => 'Saved';
+  @override
+  String get game_edit_invalid_date => 'Release date must be YYYY-MM-DD';
+  @override
+  String get game_scrape_title => 'Fetch metadata';
+  @override
+  String get game_scrape_query => 'Title or source ID';
+  @override
+  String get game_scrape_no_result => 'No matching entry found';
+  @override
+  String get game_scrape_failed => 'Metadata fetch failed';
+  @override
+  String get game_scrape_applied => 'Metadata updated';
+  @override
+  String get game_scrape_pick => 'Pick the matching entry';
+  @override
+  String get game_open_source_site => 'Open source page';
+  @override
+  String get game_launch => 'Launch';
+  @override
+  String get game_developer => 'Developer';
+  @override
+  String get game_site_score => 'Site rating';
+  @override
+  String get game_user_rating => 'My rating';
 }
 
 /// Flat map(s) containing all translations.
@@ -97147,6 +99572,152 @@ extension on _StringsEn {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_search':
+        return 'Search games';
+      case 'games_sort':
+        return 'Sort';
+      case 'games_filter':
+        return 'Filter';
+      case 'games_sort_added':
+        return 'Date added';
+      case 'games_sort_release':
+        return 'Release date';
+      case 'games_sort_last_played':
+        return 'Last played';
+      case 'games_sort_site_score':
+        return 'Site rating';
+      case 'games_sort_user_rating':
+        return 'My rating';
+      case 'games_sort_name':
+        return 'Name';
+      case 'games_sort_ascending':
+        return 'Ascending';
+      case 'games_sort_descending':
+        return 'Descending';
+      case 'games_filter_status':
+        return 'Play status';
+      case 'games_filter_all':
+        return 'All';
+      case 'games_filter_source':
+        return 'Availability';
+      case 'games_filter_local_only':
+        return 'Has local file';
+      case 'games_filter_metadata_only':
+        return 'Metadata only';
+      case 'games_filter_tags':
+        return 'Tags';
+      case 'games_filter_hide_nsfw':
+        return 'Hide adult titles';
+      case 'games_filter_reset':
+        return 'Clear filters';
+      case 'games_no_match':
+        return 'No games match the current filters';
+      case 'games_play_status':
+        return 'Play status';
+      case 'games_status_unset':
+        return 'Not set';
+      case 'games_status_want_to_play':
+        return 'Want to play';
+      case 'games_status_playing':
+        return 'Playing';
+      case 'games_status_played':
+        return 'Played';
+      case 'games_status_on_hold':
+        return 'On hold';
+      case 'games_status_dropped':
+        return 'Dropped';
+      case 'games_view_detail':
+        return 'View details';
+      case 'games_scrape':
+        return 'Fetch metadata';
+      case 'games_never_played':
+        return 'Never played';
+      case 'game_detail_tab_stats':
+        return 'Stats';
+      case 'game_detail_tab_summary':
+        return 'Overview';
+      case 'game_detail_tab_edit':
+        return 'Edit';
+      case 'game_detail_missing':
+        return 'This game is no longer in the library';
+      case 'game_stat_total_time':
+        return 'Total play time';
+      case 'game_stat_sessions':
+        return 'Sessions';
+      case 'game_stat_today':
+        return 'Today';
+      case 'game_stat_last_played':
+        return 'Last played';
+      case 'game_stat_daily':
+        return 'Daily play time';
+      case 'game_stat_session_list':
+        return 'Session history';
+      case 'game_stat_no_sessions':
+        return 'No play sessions recorded yet';
+      case 'game_stat_delete_session':
+        return 'Delete this session';
+      case 'game_stat_prev_month':
+        return 'Previous month';
+      case 'game_stat_next_month':
+        return 'Next month';
+      case 'game_summary_none':
+        return 'No description yet. Fetch metadata to fill it in.';
+      case 'game_summary_aliases':
+        return 'Aliases';
+      case 'game_summary_all_titles':
+        return 'All titles';
+      case 'game_summary_release_date':
+        return 'Release date';
+      case 'game_summary_average_hours':
+        return 'Average play time';
+      case 'game_edit_display_name':
+        return 'Display name';
+      case 'game_edit_summary':
+        return 'Description';
+      case 'game_edit_tags':
+        return 'Tags (comma separated)';
+      case 'game_edit_developer':
+        return 'Developer';
+      case 'game_edit_release_date':
+        return 'Release date (YYYY-MM-DD)';
+      case 'game_edit_nsfw':
+        return 'Adult title';
+      case 'game_edit_user_rating':
+        return 'My rating (0-10)';
+      case 'game_edit_user_review':
+        return 'My review';
+      case 'game_edit_exe_path':
+        return 'Executable path';
+      case 'game_edit_workdir':
+        return 'Working directory';
+      case 'game_edit_save':
+        return 'Save';
+      case 'game_edit_saved':
+        return 'Saved';
+      case 'game_edit_invalid_date':
+        return 'Release date must be YYYY-MM-DD';
+      case 'game_scrape_title':
+        return 'Fetch metadata';
+      case 'game_scrape_query':
+        return 'Title or source ID';
+      case 'game_scrape_no_result':
+        return 'No matching entry found';
+      case 'game_scrape_failed':
+        return 'Metadata fetch failed';
+      case 'game_scrape_applied':
+        return 'Metadata updated';
+      case 'game_scrape_pick':
+        return 'Pick the matching entry';
+      case 'game_open_source_site':
+        return 'Open source page';
+      case 'game_launch':
+        return 'Launch';
+      case 'game_developer':
+        return 'Developer';
+      case 'game_site_score':
+        return 'Site rating';
+      case 'game_user_rating':
+        return 'My rating';
       default:
         return null;
     }
@@ -102159,6 +104730,152 @@ extension on _StringsAr {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_search':
+        return 'Search games';
+      case 'games_sort':
+        return 'Sort';
+      case 'games_filter':
+        return 'Filter';
+      case 'games_sort_added':
+        return 'Date added';
+      case 'games_sort_release':
+        return 'Release date';
+      case 'games_sort_last_played':
+        return 'Last played';
+      case 'games_sort_site_score':
+        return 'Site rating';
+      case 'games_sort_user_rating':
+        return 'My rating';
+      case 'games_sort_name':
+        return 'Name';
+      case 'games_sort_ascending':
+        return 'Ascending';
+      case 'games_sort_descending':
+        return 'Descending';
+      case 'games_filter_status':
+        return 'Play status';
+      case 'games_filter_all':
+        return 'All';
+      case 'games_filter_source':
+        return 'Availability';
+      case 'games_filter_local_only':
+        return 'Has local file';
+      case 'games_filter_metadata_only':
+        return 'Metadata only';
+      case 'games_filter_tags':
+        return 'Tags';
+      case 'games_filter_hide_nsfw':
+        return 'Hide adult titles';
+      case 'games_filter_reset':
+        return 'Clear filters';
+      case 'games_no_match':
+        return 'No games match the current filters';
+      case 'games_play_status':
+        return 'Play status';
+      case 'games_status_unset':
+        return 'Not set';
+      case 'games_status_want_to_play':
+        return 'Want to play';
+      case 'games_status_playing':
+        return 'Playing';
+      case 'games_status_played':
+        return 'Played';
+      case 'games_status_on_hold':
+        return 'On hold';
+      case 'games_status_dropped':
+        return 'Dropped';
+      case 'games_view_detail':
+        return 'View details';
+      case 'games_scrape':
+        return 'Fetch metadata';
+      case 'games_never_played':
+        return 'Never played';
+      case 'game_detail_tab_stats':
+        return 'Stats';
+      case 'game_detail_tab_summary':
+        return 'Overview';
+      case 'game_detail_tab_edit':
+        return 'Edit';
+      case 'game_detail_missing':
+        return 'This game is no longer in the library';
+      case 'game_stat_total_time':
+        return 'Total play time';
+      case 'game_stat_sessions':
+        return 'Sessions';
+      case 'game_stat_today':
+        return 'Today';
+      case 'game_stat_last_played':
+        return 'Last played';
+      case 'game_stat_daily':
+        return 'Daily play time';
+      case 'game_stat_session_list':
+        return 'Session history';
+      case 'game_stat_no_sessions':
+        return 'No play sessions recorded yet';
+      case 'game_stat_delete_session':
+        return 'Delete this session';
+      case 'game_stat_prev_month':
+        return 'Previous month';
+      case 'game_stat_next_month':
+        return 'Next month';
+      case 'game_summary_none':
+        return 'No description yet. Fetch metadata to fill it in.';
+      case 'game_summary_aliases':
+        return 'Aliases';
+      case 'game_summary_all_titles':
+        return 'All titles';
+      case 'game_summary_release_date':
+        return 'Release date';
+      case 'game_summary_average_hours':
+        return 'Average play time';
+      case 'game_edit_display_name':
+        return 'Display name';
+      case 'game_edit_summary':
+        return 'Description';
+      case 'game_edit_tags':
+        return 'Tags (comma separated)';
+      case 'game_edit_developer':
+        return 'Developer';
+      case 'game_edit_release_date':
+        return 'Release date (YYYY-MM-DD)';
+      case 'game_edit_nsfw':
+        return 'Adult title';
+      case 'game_edit_user_rating':
+        return 'My rating (0-10)';
+      case 'game_edit_user_review':
+        return 'My review';
+      case 'game_edit_exe_path':
+        return 'Executable path';
+      case 'game_edit_workdir':
+        return 'Working directory';
+      case 'game_edit_save':
+        return 'Save';
+      case 'game_edit_saved':
+        return 'Saved';
+      case 'game_edit_invalid_date':
+        return 'Release date must be YYYY-MM-DD';
+      case 'game_scrape_title':
+        return 'Fetch metadata';
+      case 'game_scrape_query':
+        return 'Title or source ID';
+      case 'game_scrape_no_result':
+        return 'No matching entry found';
+      case 'game_scrape_failed':
+        return 'Metadata fetch failed';
+      case 'game_scrape_applied':
+        return 'Metadata updated';
+      case 'game_scrape_pick':
+        return 'Pick the matching entry';
+      case 'game_open_source_site':
+        return 'Open source page';
+      case 'game_launch':
+        return 'Launch';
+      case 'game_developer':
+        return 'Developer';
+      case 'game_site_score':
+        return 'Site rating';
+      case 'game_user_rating':
+        return 'My rating';
       default:
         return null;
     }
@@ -107192,6 +109909,152 @@ extension on _StringsDe {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_search':
+        return 'Search games';
+      case 'games_sort':
+        return 'Sort';
+      case 'games_filter':
+        return 'Filter';
+      case 'games_sort_added':
+        return 'Date added';
+      case 'games_sort_release':
+        return 'Release date';
+      case 'games_sort_last_played':
+        return 'Last played';
+      case 'games_sort_site_score':
+        return 'Site rating';
+      case 'games_sort_user_rating':
+        return 'My rating';
+      case 'games_sort_name':
+        return 'Name';
+      case 'games_sort_ascending':
+        return 'Ascending';
+      case 'games_sort_descending':
+        return 'Descending';
+      case 'games_filter_status':
+        return 'Play status';
+      case 'games_filter_all':
+        return 'All';
+      case 'games_filter_source':
+        return 'Availability';
+      case 'games_filter_local_only':
+        return 'Has local file';
+      case 'games_filter_metadata_only':
+        return 'Metadata only';
+      case 'games_filter_tags':
+        return 'Tags';
+      case 'games_filter_hide_nsfw':
+        return 'Hide adult titles';
+      case 'games_filter_reset':
+        return 'Clear filters';
+      case 'games_no_match':
+        return 'No games match the current filters';
+      case 'games_play_status':
+        return 'Play status';
+      case 'games_status_unset':
+        return 'Not set';
+      case 'games_status_want_to_play':
+        return 'Want to play';
+      case 'games_status_playing':
+        return 'Playing';
+      case 'games_status_played':
+        return 'Played';
+      case 'games_status_on_hold':
+        return 'On hold';
+      case 'games_status_dropped':
+        return 'Dropped';
+      case 'games_view_detail':
+        return 'View details';
+      case 'games_scrape':
+        return 'Fetch metadata';
+      case 'games_never_played':
+        return 'Never played';
+      case 'game_detail_tab_stats':
+        return 'Stats';
+      case 'game_detail_tab_summary':
+        return 'Overview';
+      case 'game_detail_tab_edit':
+        return 'Edit';
+      case 'game_detail_missing':
+        return 'This game is no longer in the library';
+      case 'game_stat_total_time':
+        return 'Total play time';
+      case 'game_stat_sessions':
+        return 'Sessions';
+      case 'game_stat_today':
+        return 'Today';
+      case 'game_stat_last_played':
+        return 'Last played';
+      case 'game_stat_daily':
+        return 'Daily play time';
+      case 'game_stat_session_list':
+        return 'Session history';
+      case 'game_stat_no_sessions':
+        return 'No play sessions recorded yet';
+      case 'game_stat_delete_session':
+        return 'Delete this session';
+      case 'game_stat_prev_month':
+        return 'Previous month';
+      case 'game_stat_next_month':
+        return 'Next month';
+      case 'game_summary_none':
+        return 'No description yet. Fetch metadata to fill it in.';
+      case 'game_summary_aliases':
+        return 'Aliases';
+      case 'game_summary_all_titles':
+        return 'All titles';
+      case 'game_summary_release_date':
+        return 'Release date';
+      case 'game_summary_average_hours':
+        return 'Average play time';
+      case 'game_edit_display_name':
+        return 'Display name';
+      case 'game_edit_summary':
+        return 'Description';
+      case 'game_edit_tags':
+        return 'Tags (comma separated)';
+      case 'game_edit_developer':
+        return 'Developer';
+      case 'game_edit_release_date':
+        return 'Release date (YYYY-MM-DD)';
+      case 'game_edit_nsfw':
+        return 'Adult title';
+      case 'game_edit_user_rating':
+        return 'My rating (0-10)';
+      case 'game_edit_user_review':
+        return 'My review';
+      case 'game_edit_exe_path':
+        return 'Executable path';
+      case 'game_edit_workdir':
+        return 'Working directory';
+      case 'game_edit_save':
+        return 'Save';
+      case 'game_edit_saved':
+        return 'Saved';
+      case 'game_edit_invalid_date':
+        return 'Release date must be YYYY-MM-DD';
+      case 'game_scrape_title':
+        return 'Fetch metadata';
+      case 'game_scrape_query':
+        return 'Title or source ID';
+      case 'game_scrape_no_result':
+        return 'No matching entry found';
+      case 'game_scrape_failed':
+        return 'Metadata fetch failed';
+      case 'game_scrape_applied':
+        return 'Metadata updated';
+      case 'game_scrape_pick':
+        return 'Pick the matching entry';
+      case 'game_open_source_site':
+        return 'Open source page';
+      case 'game_launch':
+        return 'Launch';
+      case 'game_developer':
+        return 'Developer';
+      case 'game_site_score':
+        return 'Site rating';
+      case 'game_user_rating':
+        return 'My rating';
       default:
         return null;
     }
@@ -112224,6 +115087,152 @@ extension on _StringsEs {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_search':
+        return 'Search games';
+      case 'games_sort':
+        return 'Sort';
+      case 'games_filter':
+        return 'Filter';
+      case 'games_sort_added':
+        return 'Date added';
+      case 'games_sort_release':
+        return 'Release date';
+      case 'games_sort_last_played':
+        return 'Last played';
+      case 'games_sort_site_score':
+        return 'Site rating';
+      case 'games_sort_user_rating':
+        return 'My rating';
+      case 'games_sort_name':
+        return 'Name';
+      case 'games_sort_ascending':
+        return 'Ascending';
+      case 'games_sort_descending':
+        return 'Descending';
+      case 'games_filter_status':
+        return 'Play status';
+      case 'games_filter_all':
+        return 'All';
+      case 'games_filter_source':
+        return 'Availability';
+      case 'games_filter_local_only':
+        return 'Has local file';
+      case 'games_filter_metadata_only':
+        return 'Metadata only';
+      case 'games_filter_tags':
+        return 'Tags';
+      case 'games_filter_hide_nsfw':
+        return 'Hide adult titles';
+      case 'games_filter_reset':
+        return 'Clear filters';
+      case 'games_no_match':
+        return 'No games match the current filters';
+      case 'games_play_status':
+        return 'Play status';
+      case 'games_status_unset':
+        return 'Not set';
+      case 'games_status_want_to_play':
+        return 'Want to play';
+      case 'games_status_playing':
+        return 'Playing';
+      case 'games_status_played':
+        return 'Played';
+      case 'games_status_on_hold':
+        return 'On hold';
+      case 'games_status_dropped':
+        return 'Dropped';
+      case 'games_view_detail':
+        return 'View details';
+      case 'games_scrape':
+        return 'Fetch metadata';
+      case 'games_never_played':
+        return 'Never played';
+      case 'game_detail_tab_stats':
+        return 'Stats';
+      case 'game_detail_tab_summary':
+        return 'Overview';
+      case 'game_detail_tab_edit':
+        return 'Edit';
+      case 'game_detail_missing':
+        return 'This game is no longer in the library';
+      case 'game_stat_total_time':
+        return 'Total play time';
+      case 'game_stat_sessions':
+        return 'Sessions';
+      case 'game_stat_today':
+        return 'Today';
+      case 'game_stat_last_played':
+        return 'Last played';
+      case 'game_stat_daily':
+        return 'Daily play time';
+      case 'game_stat_session_list':
+        return 'Session history';
+      case 'game_stat_no_sessions':
+        return 'No play sessions recorded yet';
+      case 'game_stat_delete_session':
+        return 'Delete this session';
+      case 'game_stat_prev_month':
+        return 'Previous month';
+      case 'game_stat_next_month':
+        return 'Next month';
+      case 'game_summary_none':
+        return 'No description yet. Fetch metadata to fill it in.';
+      case 'game_summary_aliases':
+        return 'Aliases';
+      case 'game_summary_all_titles':
+        return 'All titles';
+      case 'game_summary_release_date':
+        return 'Release date';
+      case 'game_summary_average_hours':
+        return 'Average play time';
+      case 'game_edit_display_name':
+        return 'Display name';
+      case 'game_edit_summary':
+        return 'Description';
+      case 'game_edit_tags':
+        return 'Tags (comma separated)';
+      case 'game_edit_developer':
+        return 'Developer';
+      case 'game_edit_release_date':
+        return 'Release date (YYYY-MM-DD)';
+      case 'game_edit_nsfw':
+        return 'Adult title';
+      case 'game_edit_user_rating':
+        return 'My rating (0-10)';
+      case 'game_edit_user_review':
+        return 'My review';
+      case 'game_edit_exe_path':
+        return 'Executable path';
+      case 'game_edit_workdir':
+        return 'Working directory';
+      case 'game_edit_save':
+        return 'Save';
+      case 'game_edit_saved':
+        return 'Saved';
+      case 'game_edit_invalid_date':
+        return 'Release date must be YYYY-MM-DD';
+      case 'game_scrape_title':
+        return 'Fetch metadata';
+      case 'game_scrape_query':
+        return 'Title or source ID';
+      case 'game_scrape_no_result':
+        return 'No matching entry found';
+      case 'game_scrape_failed':
+        return 'Metadata fetch failed';
+      case 'game_scrape_applied':
+        return 'Metadata updated';
+      case 'game_scrape_pick':
+        return 'Pick the matching entry';
+      case 'game_open_source_site':
+        return 'Open source page';
+      case 'game_launch':
+        return 'Launch';
+      case 'game_developer':
+        return 'Developer';
+      case 'game_site_score':
+        return 'Site rating';
+      case 'game_user_rating':
+        return 'My rating';
       default:
         return null;
     }
@@ -117262,6 +120271,152 @@ extension on _StringsFr {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_search':
+        return 'Search games';
+      case 'games_sort':
+        return 'Sort';
+      case 'games_filter':
+        return 'Filter';
+      case 'games_sort_added':
+        return 'Date added';
+      case 'games_sort_release':
+        return 'Release date';
+      case 'games_sort_last_played':
+        return 'Last played';
+      case 'games_sort_site_score':
+        return 'Site rating';
+      case 'games_sort_user_rating':
+        return 'My rating';
+      case 'games_sort_name':
+        return 'Name';
+      case 'games_sort_ascending':
+        return 'Ascending';
+      case 'games_sort_descending':
+        return 'Descending';
+      case 'games_filter_status':
+        return 'Play status';
+      case 'games_filter_all':
+        return 'All';
+      case 'games_filter_source':
+        return 'Availability';
+      case 'games_filter_local_only':
+        return 'Has local file';
+      case 'games_filter_metadata_only':
+        return 'Metadata only';
+      case 'games_filter_tags':
+        return 'Tags';
+      case 'games_filter_hide_nsfw':
+        return 'Hide adult titles';
+      case 'games_filter_reset':
+        return 'Clear filters';
+      case 'games_no_match':
+        return 'No games match the current filters';
+      case 'games_play_status':
+        return 'Play status';
+      case 'games_status_unset':
+        return 'Not set';
+      case 'games_status_want_to_play':
+        return 'Want to play';
+      case 'games_status_playing':
+        return 'Playing';
+      case 'games_status_played':
+        return 'Played';
+      case 'games_status_on_hold':
+        return 'On hold';
+      case 'games_status_dropped':
+        return 'Dropped';
+      case 'games_view_detail':
+        return 'View details';
+      case 'games_scrape':
+        return 'Fetch metadata';
+      case 'games_never_played':
+        return 'Never played';
+      case 'game_detail_tab_stats':
+        return 'Stats';
+      case 'game_detail_tab_summary':
+        return 'Overview';
+      case 'game_detail_tab_edit':
+        return 'Edit';
+      case 'game_detail_missing':
+        return 'This game is no longer in the library';
+      case 'game_stat_total_time':
+        return 'Total play time';
+      case 'game_stat_sessions':
+        return 'Sessions';
+      case 'game_stat_today':
+        return 'Today';
+      case 'game_stat_last_played':
+        return 'Last played';
+      case 'game_stat_daily':
+        return 'Daily play time';
+      case 'game_stat_session_list':
+        return 'Session history';
+      case 'game_stat_no_sessions':
+        return 'No play sessions recorded yet';
+      case 'game_stat_delete_session':
+        return 'Delete this session';
+      case 'game_stat_prev_month':
+        return 'Previous month';
+      case 'game_stat_next_month':
+        return 'Next month';
+      case 'game_summary_none':
+        return 'No description yet. Fetch metadata to fill it in.';
+      case 'game_summary_aliases':
+        return 'Aliases';
+      case 'game_summary_all_titles':
+        return 'All titles';
+      case 'game_summary_release_date':
+        return 'Release date';
+      case 'game_summary_average_hours':
+        return 'Average play time';
+      case 'game_edit_display_name':
+        return 'Display name';
+      case 'game_edit_summary':
+        return 'Description';
+      case 'game_edit_tags':
+        return 'Tags (comma separated)';
+      case 'game_edit_developer':
+        return 'Developer';
+      case 'game_edit_release_date':
+        return 'Release date (YYYY-MM-DD)';
+      case 'game_edit_nsfw':
+        return 'Adult title';
+      case 'game_edit_user_rating':
+        return 'My rating (0-10)';
+      case 'game_edit_user_review':
+        return 'My review';
+      case 'game_edit_exe_path':
+        return 'Executable path';
+      case 'game_edit_workdir':
+        return 'Working directory';
+      case 'game_edit_save':
+        return 'Save';
+      case 'game_edit_saved':
+        return 'Saved';
+      case 'game_edit_invalid_date':
+        return 'Release date must be YYYY-MM-DD';
+      case 'game_scrape_title':
+        return 'Fetch metadata';
+      case 'game_scrape_query':
+        return 'Title or source ID';
+      case 'game_scrape_no_result':
+        return 'No matching entry found';
+      case 'game_scrape_failed':
+        return 'Metadata fetch failed';
+      case 'game_scrape_applied':
+        return 'Metadata updated';
+      case 'game_scrape_pick':
+        return 'Pick the matching entry';
+      case 'game_open_source_site':
+        return 'Open source page';
+      case 'game_launch':
+        return 'Launch';
+      case 'game_developer':
+        return 'Developer';
+      case 'game_site_score':
+        return 'Site rating';
+      case 'game_user_rating':
+        return 'My rating';
       default:
         return null;
     }
@@ -122282,6 +125437,152 @@ extension on _StringsId {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_search':
+        return 'Search games';
+      case 'games_sort':
+        return 'Sort';
+      case 'games_filter':
+        return 'Filter';
+      case 'games_sort_added':
+        return 'Date added';
+      case 'games_sort_release':
+        return 'Release date';
+      case 'games_sort_last_played':
+        return 'Last played';
+      case 'games_sort_site_score':
+        return 'Site rating';
+      case 'games_sort_user_rating':
+        return 'My rating';
+      case 'games_sort_name':
+        return 'Name';
+      case 'games_sort_ascending':
+        return 'Ascending';
+      case 'games_sort_descending':
+        return 'Descending';
+      case 'games_filter_status':
+        return 'Play status';
+      case 'games_filter_all':
+        return 'All';
+      case 'games_filter_source':
+        return 'Availability';
+      case 'games_filter_local_only':
+        return 'Has local file';
+      case 'games_filter_metadata_only':
+        return 'Metadata only';
+      case 'games_filter_tags':
+        return 'Tags';
+      case 'games_filter_hide_nsfw':
+        return 'Hide adult titles';
+      case 'games_filter_reset':
+        return 'Clear filters';
+      case 'games_no_match':
+        return 'No games match the current filters';
+      case 'games_play_status':
+        return 'Play status';
+      case 'games_status_unset':
+        return 'Not set';
+      case 'games_status_want_to_play':
+        return 'Want to play';
+      case 'games_status_playing':
+        return 'Playing';
+      case 'games_status_played':
+        return 'Played';
+      case 'games_status_on_hold':
+        return 'On hold';
+      case 'games_status_dropped':
+        return 'Dropped';
+      case 'games_view_detail':
+        return 'View details';
+      case 'games_scrape':
+        return 'Fetch metadata';
+      case 'games_never_played':
+        return 'Never played';
+      case 'game_detail_tab_stats':
+        return 'Stats';
+      case 'game_detail_tab_summary':
+        return 'Overview';
+      case 'game_detail_tab_edit':
+        return 'Edit';
+      case 'game_detail_missing':
+        return 'This game is no longer in the library';
+      case 'game_stat_total_time':
+        return 'Total play time';
+      case 'game_stat_sessions':
+        return 'Sessions';
+      case 'game_stat_today':
+        return 'Today';
+      case 'game_stat_last_played':
+        return 'Last played';
+      case 'game_stat_daily':
+        return 'Daily play time';
+      case 'game_stat_session_list':
+        return 'Session history';
+      case 'game_stat_no_sessions':
+        return 'No play sessions recorded yet';
+      case 'game_stat_delete_session':
+        return 'Delete this session';
+      case 'game_stat_prev_month':
+        return 'Previous month';
+      case 'game_stat_next_month':
+        return 'Next month';
+      case 'game_summary_none':
+        return 'No description yet. Fetch metadata to fill it in.';
+      case 'game_summary_aliases':
+        return 'Aliases';
+      case 'game_summary_all_titles':
+        return 'All titles';
+      case 'game_summary_release_date':
+        return 'Release date';
+      case 'game_summary_average_hours':
+        return 'Average play time';
+      case 'game_edit_display_name':
+        return 'Display name';
+      case 'game_edit_summary':
+        return 'Description';
+      case 'game_edit_tags':
+        return 'Tags (comma separated)';
+      case 'game_edit_developer':
+        return 'Developer';
+      case 'game_edit_release_date':
+        return 'Release date (YYYY-MM-DD)';
+      case 'game_edit_nsfw':
+        return 'Adult title';
+      case 'game_edit_user_rating':
+        return 'My rating (0-10)';
+      case 'game_edit_user_review':
+        return 'My review';
+      case 'game_edit_exe_path':
+        return 'Executable path';
+      case 'game_edit_workdir':
+        return 'Working directory';
+      case 'game_edit_save':
+        return 'Save';
+      case 'game_edit_saved':
+        return 'Saved';
+      case 'game_edit_invalid_date':
+        return 'Release date must be YYYY-MM-DD';
+      case 'game_scrape_title':
+        return 'Fetch metadata';
+      case 'game_scrape_query':
+        return 'Title or source ID';
+      case 'game_scrape_no_result':
+        return 'No matching entry found';
+      case 'game_scrape_failed':
+        return 'Metadata fetch failed';
+      case 'game_scrape_applied':
+        return 'Metadata updated';
+      case 'game_scrape_pick':
+        return 'Pick the matching entry';
+      case 'game_open_source_site':
+        return 'Open source page';
+      case 'game_launch':
+        return 'Launch';
+      case 'game_developer':
+        return 'Developer';
+      case 'game_site_score':
+        return 'Site rating';
+      case 'game_user_rating':
+        return 'My rating';
       default:
         return null;
     }
@@ -127317,6 +130618,152 @@ extension on _StringsIt {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_search':
+        return 'Search games';
+      case 'games_sort':
+        return 'Sort';
+      case 'games_filter':
+        return 'Filter';
+      case 'games_sort_added':
+        return 'Date added';
+      case 'games_sort_release':
+        return 'Release date';
+      case 'games_sort_last_played':
+        return 'Last played';
+      case 'games_sort_site_score':
+        return 'Site rating';
+      case 'games_sort_user_rating':
+        return 'My rating';
+      case 'games_sort_name':
+        return 'Name';
+      case 'games_sort_ascending':
+        return 'Ascending';
+      case 'games_sort_descending':
+        return 'Descending';
+      case 'games_filter_status':
+        return 'Play status';
+      case 'games_filter_all':
+        return 'All';
+      case 'games_filter_source':
+        return 'Availability';
+      case 'games_filter_local_only':
+        return 'Has local file';
+      case 'games_filter_metadata_only':
+        return 'Metadata only';
+      case 'games_filter_tags':
+        return 'Tags';
+      case 'games_filter_hide_nsfw':
+        return 'Hide adult titles';
+      case 'games_filter_reset':
+        return 'Clear filters';
+      case 'games_no_match':
+        return 'No games match the current filters';
+      case 'games_play_status':
+        return 'Play status';
+      case 'games_status_unset':
+        return 'Not set';
+      case 'games_status_want_to_play':
+        return 'Want to play';
+      case 'games_status_playing':
+        return 'Playing';
+      case 'games_status_played':
+        return 'Played';
+      case 'games_status_on_hold':
+        return 'On hold';
+      case 'games_status_dropped':
+        return 'Dropped';
+      case 'games_view_detail':
+        return 'View details';
+      case 'games_scrape':
+        return 'Fetch metadata';
+      case 'games_never_played':
+        return 'Never played';
+      case 'game_detail_tab_stats':
+        return 'Stats';
+      case 'game_detail_tab_summary':
+        return 'Overview';
+      case 'game_detail_tab_edit':
+        return 'Edit';
+      case 'game_detail_missing':
+        return 'This game is no longer in the library';
+      case 'game_stat_total_time':
+        return 'Total play time';
+      case 'game_stat_sessions':
+        return 'Sessions';
+      case 'game_stat_today':
+        return 'Today';
+      case 'game_stat_last_played':
+        return 'Last played';
+      case 'game_stat_daily':
+        return 'Daily play time';
+      case 'game_stat_session_list':
+        return 'Session history';
+      case 'game_stat_no_sessions':
+        return 'No play sessions recorded yet';
+      case 'game_stat_delete_session':
+        return 'Delete this session';
+      case 'game_stat_prev_month':
+        return 'Previous month';
+      case 'game_stat_next_month':
+        return 'Next month';
+      case 'game_summary_none':
+        return 'No description yet. Fetch metadata to fill it in.';
+      case 'game_summary_aliases':
+        return 'Aliases';
+      case 'game_summary_all_titles':
+        return 'All titles';
+      case 'game_summary_release_date':
+        return 'Release date';
+      case 'game_summary_average_hours':
+        return 'Average play time';
+      case 'game_edit_display_name':
+        return 'Display name';
+      case 'game_edit_summary':
+        return 'Description';
+      case 'game_edit_tags':
+        return 'Tags (comma separated)';
+      case 'game_edit_developer':
+        return 'Developer';
+      case 'game_edit_release_date':
+        return 'Release date (YYYY-MM-DD)';
+      case 'game_edit_nsfw':
+        return 'Adult title';
+      case 'game_edit_user_rating':
+        return 'My rating (0-10)';
+      case 'game_edit_user_review':
+        return 'My review';
+      case 'game_edit_exe_path':
+        return 'Executable path';
+      case 'game_edit_workdir':
+        return 'Working directory';
+      case 'game_edit_save':
+        return 'Save';
+      case 'game_edit_saved':
+        return 'Saved';
+      case 'game_edit_invalid_date':
+        return 'Release date must be YYYY-MM-DD';
+      case 'game_scrape_title':
+        return 'Fetch metadata';
+      case 'game_scrape_query':
+        return 'Title or source ID';
+      case 'game_scrape_no_result':
+        return 'No matching entry found';
+      case 'game_scrape_failed':
+        return 'Metadata fetch failed';
+      case 'game_scrape_applied':
+        return 'Metadata updated';
+      case 'game_scrape_pick':
+        return 'Pick the matching entry';
+      case 'game_open_source_site':
+        return 'Open source page';
+      case 'game_launch':
+        return 'Launch';
+      case 'game_developer':
+        return 'Developer';
+      case 'game_site_score':
+        return 'Site rating';
+      case 'game_user_rating':
+        return 'My rating';
       default:
         return null;
     }
@@ -132314,6 +135761,152 @@ extension on _StringsJa {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_search':
+        return 'Search games';
+      case 'games_sort':
+        return 'Sort';
+      case 'games_filter':
+        return 'Filter';
+      case 'games_sort_added':
+        return 'Date added';
+      case 'games_sort_release':
+        return 'Release date';
+      case 'games_sort_last_played':
+        return 'Last played';
+      case 'games_sort_site_score':
+        return 'Site rating';
+      case 'games_sort_user_rating':
+        return 'My rating';
+      case 'games_sort_name':
+        return 'Name';
+      case 'games_sort_ascending':
+        return 'Ascending';
+      case 'games_sort_descending':
+        return 'Descending';
+      case 'games_filter_status':
+        return 'Play status';
+      case 'games_filter_all':
+        return 'All';
+      case 'games_filter_source':
+        return 'Availability';
+      case 'games_filter_local_only':
+        return 'Has local file';
+      case 'games_filter_metadata_only':
+        return 'Metadata only';
+      case 'games_filter_tags':
+        return 'Tags';
+      case 'games_filter_hide_nsfw':
+        return 'Hide adult titles';
+      case 'games_filter_reset':
+        return 'Clear filters';
+      case 'games_no_match':
+        return 'No games match the current filters';
+      case 'games_play_status':
+        return 'Play status';
+      case 'games_status_unset':
+        return 'Not set';
+      case 'games_status_want_to_play':
+        return 'Want to play';
+      case 'games_status_playing':
+        return 'Playing';
+      case 'games_status_played':
+        return 'Played';
+      case 'games_status_on_hold':
+        return 'On hold';
+      case 'games_status_dropped':
+        return 'Dropped';
+      case 'games_view_detail':
+        return 'View details';
+      case 'games_scrape':
+        return 'Fetch metadata';
+      case 'games_never_played':
+        return 'Never played';
+      case 'game_detail_tab_stats':
+        return 'Stats';
+      case 'game_detail_tab_summary':
+        return 'Overview';
+      case 'game_detail_tab_edit':
+        return 'Edit';
+      case 'game_detail_missing':
+        return 'This game is no longer in the library';
+      case 'game_stat_total_time':
+        return 'Total play time';
+      case 'game_stat_sessions':
+        return 'Sessions';
+      case 'game_stat_today':
+        return 'Today';
+      case 'game_stat_last_played':
+        return 'Last played';
+      case 'game_stat_daily':
+        return 'Daily play time';
+      case 'game_stat_session_list':
+        return 'Session history';
+      case 'game_stat_no_sessions':
+        return 'No play sessions recorded yet';
+      case 'game_stat_delete_session':
+        return 'Delete this session';
+      case 'game_stat_prev_month':
+        return 'Previous month';
+      case 'game_stat_next_month':
+        return 'Next month';
+      case 'game_summary_none':
+        return 'No description yet. Fetch metadata to fill it in.';
+      case 'game_summary_aliases':
+        return 'Aliases';
+      case 'game_summary_all_titles':
+        return 'All titles';
+      case 'game_summary_release_date':
+        return 'Release date';
+      case 'game_summary_average_hours':
+        return 'Average play time';
+      case 'game_edit_display_name':
+        return 'Display name';
+      case 'game_edit_summary':
+        return 'Description';
+      case 'game_edit_tags':
+        return 'Tags (comma separated)';
+      case 'game_edit_developer':
+        return 'Developer';
+      case 'game_edit_release_date':
+        return 'Release date (YYYY-MM-DD)';
+      case 'game_edit_nsfw':
+        return 'Adult title';
+      case 'game_edit_user_rating':
+        return 'My rating (0-10)';
+      case 'game_edit_user_review':
+        return 'My review';
+      case 'game_edit_exe_path':
+        return 'Executable path';
+      case 'game_edit_workdir':
+        return 'Working directory';
+      case 'game_edit_save':
+        return 'Save';
+      case 'game_edit_saved':
+        return 'Saved';
+      case 'game_edit_invalid_date':
+        return 'Release date must be YYYY-MM-DD';
+      case 'game_scrape_title':
+        return 'Fetch metadata';
+      case 'game_scrape_query':
+        return 'Title or source ID';
+      case 'game_scrape_no_result':
+        return 'No matching entry found';
+      case 'game_scrape_failed':
+        return 'Metadata fetch failed';
+      case 'game_scrape_applied':
+        return 'Metadata updated';
+      case 'game_scrape_pick':
+        return 'Pick the matching entry';
+      case 'game_open_source_site':
+        return 'Open source page';
+      case 'game_launch':
+        return 'Launch';
+      case 'game_developer':
+        return 'Developer';
+      case 'game_site_score':
+        return 'Site rating';
+      case 'game_user_rating':
+        return 'My rating';
       default:
         return null;
     }
@@ -137315,6 +140908,152 @@ extension on _StringsKo {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_search':
+        return 'Search games';
+      case 'games_sort':
+        return 'Sort';
+      case 'games_filter':
+        return 'Filter';
+      case 'games_sort_added':
+        return 'Date added';
+      case 'games_sort_release':
+        return 'Release date';
+      case 'games_sort_last_played':
+        return 'Last played';
+      case 'games_sort_site_score':
+        return 'Site rating';
+      case 'games_sort_user_rating':
+        return 'My rating';
+      case 'games_sort_name':
+        return 'Name';
+      case 'games_sort_ascending':
+        return 'Ascending';
+      case 'games_sort_descending':
+        return 'Descending';
+      case 'games_filter_status':
+        return 'Play status';
+      case 'games_filter_all':
+        return 'All';
+      case 'games_filter_source':
+        return 'Availability';
+      case 'games_filter_local_only':
+        return 'Has local file';
+      case 'games_filter_metadata_only':
+        return 'Metadata only';
+      case 'games_filter_tags':
+        return 'Tags';
+      case 'games_filter_hide_nsfw':
+        return 'Hide adult titles';
+      case 'games_filter_reset':
+        return 'Clear filters';
+      case 'games_no_match':
+        return 'No games match the current filters';
+      case 'games_play_status':
+        return 'Play status';
+      case 'games_status_unset':
+        return 'Not set';
+      case 'games_status_want_to_play':
+        return 'Want to play';
+      case 'games_status_playing':
+        return 'Playing';
+      case 'games_status_played':
+        return 'Played';
+      case 'games_status_on_hold':
+        return 'On hold';
+      case 'games_status_dropped':
+        return 'Dropped';
+      case 'games_view_detail':
+        return 'View details';
+      case 'games_scrape':
+        return 'Fetch metadata';
+      case 'games_never_played':
+        return 'Never played';
+      case 'game_detail_tab_stats':
+        return 'Stats';
+      case 'game_detail_tab_summary':
+        return 'Overview';
+      case 'game_detail_tab_edit':
+        return 'Edit';
+      case 'game_detail_missing':
+        return 'This game is no longer in the library';
+      case 'game_stat_total_time':
+        return 'Total play time';
+      case 'game_stat_sessions':
+        return 'Sessions';
+      case 'game_stat_today':
+        return 'Today';
+      case 'game_stat_last_played':
+        return 'Last played';
+      case 'game_stat_daily':
+        return 'Daily play time';
+      case 'game_stat_session_list':
+        return 'Session history';
+      case 'game_stat_no_sessions':
+        return 'No play sessions recorded yet';
+      case 'game_stat_delete_session':
+        return 'Delete this session';
+      case 'game_stat_prev_month':
+        return 'Previous month';
+      case 'game_stat_next_month':
+        return 'Next month';
+      case 'game_summary_none':
+        return 'No description yet. Fetch metadata to fill it in.';
+      case 'game_summary_aliases':
+        return 'Aliases';
+      case 'game_summary_all_titles':
+        return 'All titles';
+      case 'game_summary_release_date':
+        return 'Release date';
+      case 'game_summary_average_hours':
+        return 'Average play time';
+      case 'game_edit_display_name':
+        return 'Display name';
+      case 'game_edit_summary':
+        return 'Description';
+      case 'game_edit_tags':
+        return 'Tags (comma separated)';
+      case 'game_edit_developer':
+        return 'Developer';
+      case 'game_edit_release_date':
+        return 'Release date (YYYY-MM-DD)';
+      case 'game_edit_nsfw':
+        return 'Adult title';
+      case 'game_edit_user_rating':
+        return 'My rating (0-10)';
+      case 'game_edit_user_review':
+        return 'My review';
+      case 'game_edit_exe_path':
+        return 'Executable path';
+      case 'game_edit_workdir':
+        return 'Working directory';
+      case 'game_edit_save':
+        return 'Save';
+      case 'game_edit_saved':
+        return 'Saved';
+      case 'game_edit_invalid_date':
+        return 'Release date must be YYYY-MM-DD';
+      case 'game_scrape_title':
+        return 'Fetch metadata';
+      case 'game_scrape_query':
+        return 'Title or source ID';
+      case 'game_scrape_no_result':
+        return 'No matching entry found';
+      case 'game_scrape_failed':
+        return 'Metadata fetch failed';
+      case 'game_scrape_applied':
+        return 'Metadata updated';
+      case 'game_scrape_pick':
+        return 'Pick the matching entry';
+      case 'game_open_source_site':
+        return 'Open source page';
+      case 'game_launch':
+        return 'Launch';
+      case 'game_developer':
+        return 'Developer';
+      case 'game_site_score':
+        return 'Site rating';
+      case 'game_user_rating':
+        return 'My rating';
       default:
         return null;
     }
@@ -142343,6 +146082,152 @@ extension on _StringsNl {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_search':
+        return 'Search games';
+      case 'games_sort':
+        return 'Sort';
+      case 'games_filter':
+        return 'Filter';
+      case 'games_sort_added':
+        return 'Date added';
+      case 'games_sort_release':
+        return 'Release date';
+      case 'games_sort_last_played':
+        return 'Last played';
+      case 'games_sort_site_score':
+        return 'Site rating';
+      case 'games_sort_user_rating':
+        return 'My rating';
+      case 'games_sort_name':
+        return 'Name';
+      case 'games_sort_ascending':
+        return 'Ascending';
+      case 'games_sort_descending':
+        return 'Descending';
+      case 'games_filter_status':
+        return 'Play status';
+      case 'games_filter_all':
+        return 'All';
+      case 'games_filter_source':
+        return 'Availability';
+      case 'games_filter_local_only':
+        return 'Has local file';
+      case 'games_filter_metadata_only':
+        return 'Metadata only';
+      case 'games_filter_tags':
+        return 'Tags';
+      case 'games_filter_hide_nsfw':
+        return 'Hide adult titles';
+      case 'games_filter_reset':
+        return 'Clear filters';
+      case 'games_no_match':
+        return 'No games match the current filters';
+      case 'games_play_status':
+        return 'Play status';
+      case 'games_status_unset':
+        return 'Not set';
+      case 'games_status_want_to_play':
+        return 'Want to play';
+      case 'games_status_playing':
+        return 'Playing';
+      case 'games_status_played':
+        return 'Played';
+      case 'games_status_on_hold':
+        return 'On hold';
+      case 'games_status_dropped':
+        return 'Dropped';
+      case 'games_view_detail':
+        return 'View details';
+      case 'games_scrape':
+        return 'Fetch metadata';
+      case 'games_never_played':
+        return 'Never played';
+      case 'game_detail_tab_stats':
+        return 'Stats';
+      case 'game_detail_tab_summary':
+        return 'Overview';
+      case 'game_detail_tab_edit':
+        return 'Edit';
+      case 'game_detail_missing':
+        return 'This game is no longer in the library';
+      case 'game_stat_total_time':
+        return 'Total play time';
+      case 'game_stat_sessions':
+        return 'Sessions';
+      case 'game_stat_today':
+        return 'Today';
+      case 'game_stat_last_played':
+        return 'Last played';
+      case 'game_stat_daily':
+        return 'Daily play time';
+      case 'game_stat_session_list':
+        return 'Session history';
+      case 'game_stat_no_sessions':
+        return 'No play sessions recorded yet';
+      case 'game_stat_delete_session':
+        return 'Delete this session';
+      case 'game_stat_prev_month':
+        return 'Previous month';
+      case 'game_stat_next_month':
+        return 'Next month';
+      case 'game_summary_none':
+        return 'No description yet. Fetch metadata to fill it in.';
+      case 'game_summary_aliases':
+        return 'Aliases';
+      case 'game_summary_all_titles':
+        return 'All titles';
+      case 'game_summary_release_date':
+        return 'Release date';
+      case 'game_summary_average_hours':
+        return 'Average play time';
+      case 'game_edit_display_name':
+        return 'Display name';
+      case 'game_edit_summary':
+        return 'Description';
+      case 'game_edit_tags':
+        return 'Tags (comma separated)';
+      case 'game_edit_developer':
+        return 'Developer';
+      case 'game_edit_release_date':
+        return 'Release date (YYYY-MM-DD)';
+      case 'game_edit_nsfw':
+        return 'Adult title';
+      case 'game_edit_user_rating':
+        return 'My rating (0-10)';
+      case 'game_edit_user_review':
+        return 'My review';
+      case 'game_edit_exe_path':
+        return 'Executable path';
+      case 'game_edit_workdir':
+        return 'Working directory';
+      case 'game_edit_save':
+        return 'Save';
+      case 'game_edit_saved':
+        return 'Saved';
+      case 'game_edit_invalid_date':
+        return 'Release date must be YYYY-MM-DD';
+      case 'game_scrape_title':
+        return 'Fetch metadata';
+      case 'game_scrape_query':
+        return 'Title or source ID';
+      case 'game_scrape_no_result':
+        return 'No matching entry found';
+      case 'game_scrape_failed':
+        return 'Metadata fetch failed';
+      case 'game_scrape_applied':
+        return 'Metadata updated';
+      case 'game_scrape_pick':
+        return 'Pick the matching entry';
+      case 'game_open_source_site':
+        return 'Open source page';
+      case 'game_launch':
+        return 'Launch';
+      case 'game_developer':
+        return 'Developer';
+      case 'game_site_score':
+        return 'Site rating';
+      case 'game_user_rating':
+        return 'My rating';
       default:
         return null;
     }
@@ -147368,6 +151253,152 @@ extension on _StringsPtBr {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_search':
+        return 'Search games';
+      case 'games_sort':
+        return 'Sort';
+      case 'games_filter':
+        return 'Filter';
+      case 'games_sort_added':
+        return 'Date added';
+      case 'games_sort_release':
+        return 'Release date';
+      case 'games_sort_last_played':
+        return 'Last played';
+      case 'games_sort_site_score':
+        return 'Site rating';
+      case 'games_sort_user_rating':
+        return 'My rating';
+      case 'games_sort_name':
+        return 'Name';
+      case 'games_sort_ascending':
+        return 'Ascending';
+      case 'games_sort_descending':
+        return 'Descending';
+      case 'games_filter_status':
+        return 'Play status';
+      case 'games_filter_all':
+        return 'All';
+      case 'games_filter_source':
+        return 'Availability';
+      case 'games_filter_local_only':
+        return 'Has local file';
+      case 'games_filter_metadata_only':
+        return 'Metadata only';
+      case 'games_filter_tags':
+        return 'Tags';
+      case 'games_filter_hide_nsfw':
+        return 'Hide adult titles';
+      case 'games_filter_reset':
+        return 'Clear filters';
+      case 'games_no_match':
+        return 'No games match the current filters';
+      case 'games_play_status':
+        return 'Play status';
+      case 'games_status_unset':
+        return 'Not set';
+      case 'games_status_want_to_play':
+        return 'Want to play';
+      case 'games_status_playing':
+        return 'Playing';
+      case 'games_status_played':
+        return 'Played';
+      case 'games_status_on_hold':
+        return 'On hold';
+      case 'games_status_dropped':
+        return 'Dropped';
+      case 'games_view_detail':
+        return 'View details';
+      case 'games_scrape':
+        return 'Fetch metadata';
+      case 'games_never_played':
+        return 'Never played';
+      case 'game_detail_tab_stats':
+        return 'Stats';
+      case 'game_detail_tab_summary':
+        return 'Overview';
+      case 'game_detail_tab_edit':
+        return 'Edit';
+      case 'game_detail_missing':
+        return 'This game is no longer in the library';
+      case 'game_stat_total_time':
+        return 'Total play time';
+      case 'game_stat_sessions':
+        return 'Sessions';
+      case 'game_stat_today':
+        return 'Today';
+      case 'game_stat_last_played':
+        return 'Last played';
+      case 'game_stat_daily':
+        return 'Daily play time';
+      case 'game_stat_session_list':
+        return 'Session history';
+      case 'game_stat_no_sessions':
+        return 'No play sessions recorded yet';
+      case 'game_stat_delete_session':
+        return 'Delete this session';
+      case 'game_stat_prev_month':
+        return 'Previous month';
+      case 'game_stat_next_month':
+        return 'Next month';
+      case 'game_summary_none':
+        return 'No description yet. Fetch metadata to fill it in.';
+      case 'game_summary_aliases':
+        return 'Aliases';
+      case 'game_summary_all_titles':
+        return 'All titles';
+      case 'game_summary_release_date':
+        return 'Release date';
+      case 'game_summary_average_hours':
+        return 'Average play time';
+      case 'game_edit_display_name':
+        return 'Display name';
+      case 'game_edit_summary':
+        return 'Description';
+      case 'game_edit_tags':
+        return 'Tags (comma separated)';
+      case 'game_edit_developer':
+        return 'Developer';
+      case 'game_edit_release_date':
+        return 'Release date (YYYY-MM-DD)';
+      case 'game_edit_nsfw':
+        return 'Adult title';
+      case 'game_edit_user_rating':
+        return 'My rating (0-10)';
+      case 'game_edit_user_review':
+        return 'My review';
+      case 'game_edit_exe_path':
+        return 'Executable path';
+      case 'game_edit_workdir':
+        return 'Working directory';
+      case 'game_edit_save':
+        return 'Save';
+      case 'game_edit_saved':
+        return 'Saved';
+      case 'game_edit_invalid_date':
+        return 'Release date must be YYYY-MM-DD';
+      case 'game_scrape_title':
+        return 'Fetch metadata';
+      case 'game_scrape_query':
+        return 'Title or source ID';
+      case 'game_scrape_no_result':
+        return 'No matching entry found';
+      case 'game_scrape_failed':
+        return 'Metadata fetch failed';
+      case 'game_scrape_applied':
+        return 'Metadata updated';
+      case 'game_scrape_pick':
+        return 'Pick the matching entry';
+      case 'game_open_source_site':
+        return 'Open source page';
+      case 'game_launch':
+        return 'Launch';
+      case 'game_developer':
+        return 'Developer';
+      case 'game_site_score':
+        return 'Site rating';
+      case 'game_user_rating':
+        return 'My rating';
       default:
         return null;
     }
@@ -152398,6 +156429,152 @@ extension on _StringsRu {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_search':
+        return 'Search games';
+      case 'games_sort':
+        return 'Sort';
+      case 'games_filter':
+        return 'Filter';
+      case 'games_sort_added':
+        return 'Date added';
+      case 'games_sort_release':
+        return 'Release date';
+      case 'games_sort_last_played':
+        return 'Last played';
+      case 'games_sort_site_score':
+        return 'Site rating';
+      case 'games_sort_user_rating':
+        return 'My rating';
+      case 'games_sort_name':
+        return 'Name';
+      case 'games_sort_ascending':
+        return 'Ascending';
+      case 'games_sort_descending':
+        return 'Descending';
+      case 'games_filter_status':
+        return 'Play status';
+      case 'games_filter_all':
+        return 'All';
+      case 'games_filter_source':
+        return 'Availability';
+      case 'games_filter_local_only':
+        return 'Has local file';
+      case 'games_filter_metadata_only':
+        return 'Metadata only';
+      case 'games_filter_tags':
+        return 'Tags';
+      case 'games_filter_hide_nsfw':
+        return 'Hide adult titles';
+      case 'games_filter_reset':
+        return 'Clear filters';
+      case 'games_no_match':
+        return 'No games match the current filters';
+      case 'games_play_status':
+        return 'Play status';
+      case 'games_status_unset':
+        return 'Not set';
+      case 'games_status_want_to_play':
+        return 'Want to play';
+      case 'games_status_playing':
+        return 'Playing';
+      case 'games_status_played':
+        return 'Played';
+      case 'games_status_on_hold':
+        return 'On hold';
+      case 'games_status_dropped':
+        return 'Dropped';
+      case 'games_view_detail':
+        return 'View details';
+      case 'games_scrape':
+        return 'Fetch metadata';
+      case 'games_never_played':
+        return 'Never played';
+      case 'game_detail_tab_stats':
+        return 'Stats';
+      case 'game_detail_tab_summary':
+        return 'Overview';
+      case 'game_detail_tab_edit':
+        return 'Edit';
+      case 'game_detail_missing':
+        return 'This game is no longer in the library';
+      case 'game_stat_total_time':
+        return 'Total play time';
+      case 'game_stat_sessions':
+        return 'Sessions';
+      case 'game_stat_today':
+        return 'Today';
+      case 'game_stat_last_played':
+        return 'Last played';
+      case 'game_stat_daily':
+        return 'Daily play time';
+      case 'game_stat_session_list':
+        return 'Session history';
+      case 'game_stat_no_sessions':
+        return 'No play sessions recorded yet';
+      case 'game_stat_delete_session':
+        return 'Delete this session';
+      case 'game_stat_prev_month':
+        return 'Previous month';
+      case 'game_stat_next_month':
+        return 'Next month';
+      case 'game_summary_none':
+        return 'No description yet. Fetch metadata to fill it in.';
+      case 'game_summary_aliases':
+        return 'Aliases';
+      case 'game_summary_all_titles':
+        return 'All titles';
+      case 'game_summary_release_date':
+        return 'Release date';
+      case 'game_summary_average_hours':
+        return 'Average play time';
+      case 'game_edit_display_name':
+        return 'Display name';
+      case 'game_edit_summary':
+        return 'Description';
+      case 'game_edit_tags':
+        return 'Tags (comma separated)';
+      case 'game_edit_developer':
+        return 'Developer';
+      case 'game_edit_release_date':
+        return 'Release date (YYYY-MM-DD)';
+      case 'game_edit_nsfw':
+        return 'Adult title';
+      case 'game_edit_user_rating':
+        return 'My rating (0-10)';
+      case 'game_edit_user_review':
+        return 'My review';
+      case 'game_edit_exe_path':
+        return 'Executable path';
+      case 'game_edit_workdir':
+        return 'Working directory';
+      case 'game_edit_save':
+        return 'Save';
+      case 'game_edit_saved':
+        return 'Saved';
+      case 'game_edit_invalid_date':
+        return 'Release date must be YYYY-MM-DD';
+      case 'game_scrape_title':
+        return 'Fetch metadata';
+      case 'game_scrape_query':
+        return 'Title or source ID';
+      case 'game_scrape_no_result':
+        return 'No matching entry found';
+      case 'game_scrape_failed':
+        return 'Metadata fetch failed';
+      case 'game_scrape_applied':
+        return 'Metadata updated';
+      case 'game_scrape_pick':
+        return 'Pick the matching entry';
+      case 'game_open_source_site':
+        return 'Open source page';
+      case 'game_launch':
+        return 'Launch';
+      case 'game_developer':
+        return 'Developer';
+      case 'game_site_score':
+        return 'Site rating';
+      case 'game_user_rating':
+        return 'My rating';
       default:
         return null;
     }
@@ -157412,6 +161589,152 @@ extension on _StringsTh {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_search':
+        return 'Search games';
+      case 'games_sort':
+        return 'Sort';
+      case 'games_filter':
+        return 'Filter';
+      case 'games_sort_added':
+        return 'Date added';
+      case 'games_sort_release':
+        return 'Release date';
+      case 'games_sort_last_played':
+        return 'Last played';
+      case 'games_sort_site_score':
+        return 'Site rating';
+      case 'games_sort_user_rating':
+        return 'My rating';
+      case 'games_sort_name':
+        return 'Name';
+      case 'games_sort_ascending':
+        return 'Ascending';
+      case 'games_sort_descending':
+        return 'Descending';
+      case 'games_filter_status':
+        return 'Play status';
+      case 'games_filter_all':
+        return 'All';
+      case 'games_filter_source':
+        return 'Availability';
+      case 'games_filter_local_only':
+        return 'Has local file';
+      case 'games_filter_metadata_only':
+        return 'Metadata only';
+      case 'games_filter_tags':
+        return 'Tags';
+      case 'games_filter_hide_nsfw':
+        return 'Hide adult titles';
+      case 'games_filter_reset':
+        return 'Clear filters';
+      case 'games_no_match':
+        return 'No games match the current filters';
+      case 'games_play_status':
+        return 'Play status';
+      case 'games_status_unset':
+        return 'Not set';
+      case 'games_status_want_to_play':
+        return 'Want to play';
+      case 'games_status_playing':
+        return 'Playing';
+      case 'games_status_played':
+        return 'Played';
+      case 'games_status_on_hold':
+        return 'On hold';
+      case 'games_status_dropped':
+        return 'Dropped';
+      case 'games_view_detail':
+        return 'View details';
+      case 'games_scrape':
+        return 'Fetch metadata';
+      case 'games_never_played':
+        return 'Never played';
+      case 'game_detail_tab_stats':
+        return 'Stats';
+      case 'game_detail_tab_summary':
+        return 'Overview';
+      case 'game_detail_tab_edit':
+        return 'Edit';
+      case 'game_detail_missing':
+        return 'This game is no longer in the library';
+      case 'game_stat_total_time':
+        return 'Total play time';
+      case 'game_stat_sessions':
+        return 'Sessions';
+      case 'game_stat_today':
+        return 'Today';
+      case 'game_stat_last_played':
+        return 'Last played';
+      case 'game_stat_daily':
+        return 'Daily play time';
+      case 'game_stat_session_list':
+        return 'Session history';
+      case 'game_stat_no_sessions':
+        return 'No play sessions recorded yet';
+      case 'game_stat_delete_session':
+        return 'Delete this session';
+      case 'game_stat_prev_month':
+        return 'Previous month';
+      case 'game_stat_next_month':
+        return 'Next month';
+      case 'game_summary_none':
+        return 'No description yet. Fetch metadata to fill it in.';
+      case 'game_summary_aliases':
+        return 'Aliases';
+      case 'game_summary_all_titles':
+        return 'All titles';
+      case 'game_summary_release_date':
+        return 'Release date';
+      case 'game_summary_average_hours':
+        return 'Average play time';
+      case 'game_edit_display_name':
+        return 'Display name';
+      case 'game_edit_summary':
+        return 'Description';
+      case 'game_edit_tags':
+        return 'Tags (comma separated)';
+      case 'game_edit_developer':
+        return 'Developer';
+      case 'game_edit_release_date':
+        return 'Release date (YYYY-MM-DD)';
+      case 'game_edit_nsfw':
+        return 'Adult title';
+      case 'game_edit_user_rating':
+        return 'My rating (0-10)';
+      case 'game_edit_user_review':
+        return 'My review';
+      case 'game_edit_exe_path':
+        return 'Executable path';
+      case 'game_edit_workdir':
+        return 'Working directory';
+      case 'game_edit_save':
+        return 'Save';
+      case 'game_edit_saved':
+        return 'Saved';
+      case 'game_edit_invalid_date':
+        return 'Release date must be YYYY-MM-DD';
+      case 'game_scrape_title':
+        return 'Fetch metadata';
+      case 'game_scrape_query':
+        return 'Title or source ID';
+      case 'game_scrape_no_result':
+        return 'No matching entry found';
+      case 'game_scrape_failed':
+        return 'Metadata fetch failed';
+      case 'game_scrape_applied':
+        return 'Metadata updated';
+      case 'game_scrape_pick':
+        return 'Pick the matching entry';
+      case 'game_open_source_site':
+        return 'Open source page';
+      case 'game_launch':
+        return 'Launch';
+      case 'game_developer':
+        return 'Developer';
+      case 'game_site_score':
+        return 'Site rating';
+      case 'game_user_rating':
+        return 'My rating';
       default:
         return null;
     }
@@ -162435,6 +166758,152 @@ extension on _StringsTr {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_search':
+        return 'Search games';
+      case 'games_sort':
+        return 'Sort';
+      case 'games_filter':
+        return 'Filter';
+      case 'games_sort_added':
+        return 'Date added';
+      case 'games_sort_release':
+        return 'Release date';
+      case 'games_sort_last_played':
+        return 'Last played';
+      case 'games_sort_site_score':
+        return 'Site rating';
+      case 'games_sort_user_rating':
+        return 'My rating';
+      case 'games_sort_name':
+        return 'Name';
+      case 'games_sort_ascending':
+        return 'Ascending';
+      case 'games_sort_descending':
+        return 'Descending';
+      case 'games_filter_status':
+        return 'Play status';
+      case 'games_filter_all':
+        return 'All';
+      case 'games_filter_source':
+        return 'Availability';
+      case 'games_filter_local_only':
+        return 'Has local file';
+      case 'games_filter_metadata_only':
+        return 'Metadata only';
+      case 'games_filter_tags':
+        return 'Tags';
+      case 'games_filter_hide_nsfw':
+        return 'Hide adult titles';
+      case 'games_filter_reset':
+        return 'Clear filters';
+      case 'games_no_match':
+        return 'No games match the current filters';
+      case 'games_play_status':
+        return 'Play status';
+      case 'games_status_unset':
+        return 'Not set';
+      case 'games_status_want_to_play':
+        return 'Want to play';
+      case 'games_status_playing':
+        return 'Playing';
+      case 'games_status_played':
+        return 'Played';
+      case 'games_status_on_hold':
+        return 'On hold';
+      case 'games_status_dropped':
+        return 'Dropped';
+      case 'games_view_detail':
+        return 'View details';
+      case 'games_scrape':
+        return 'Fetch metadata';
+      case 'games_never_played':
+        return 'Never played';
+      case 'game_detail_tab_stats':
+        return 'Stats';
+      case 'game_detail_tab_summary':
+        return 'Overview';
+      case 'game_detail_tab_edit':
+        return 'Edit';
+      case 'game_detail_missing':
+        return 'This game is no longer in the library';
+      case 'game_stat_total_time':
+        return 'Total play time';
+      case 'game_stat_sessions':
+        return 'Sessions';
+      case 'game_stat_today':
+        return 'Today';
+      case 'game_stat_last_played':
+        return 'Last played';
+      case 'game_stat_daily':
+        return 'Daily play time';
+      case 'game_stat_session_list':
+        return 'Session history';
+      case 'game_stat_no_sessions':
+        return 'No play sessions recorded yet';
+      case 'game_stat_delete_session':
+        return 'Delete this session';
+      case 'game_stat_prev_month':
+        return 'Previous month';
+      case 'game_stat_next_month':
+        return 'Next month';
+      case 'game_summary_none':
+        return 'No description yet. Fetch metadata to fill it in.';
+      case 'game_summary_aliases':
+        return 'Aliases';
+      case 'game_summary_all_titles':
+        return 'All titles';
+      case 'game_summary_release_date':
+        return 'Release date';
+      case 'game_summary_average_hours':
+        return 'Average play time';
+      case 'game_edit_display_name':
+        return 'Display name';
+      case 'game_edit_summary':
+        return 'Description';
+      case 'game_edit_tags':
+        return 'Tags (comma separated)';
+      case 'game_edit_developer':
+        return 'Developer';
+      case 'game_edit_release_date':
+        return 'Release date (YYYY-MM-DD)';
+      case 'game_edit_nsfw':
+        return 'Adult title';
+      case 'game_edit_user_rating':
+        return 'My rating (0-10)';
+      case 'game_edit_user_review':
+        return 'My review';
+      case 'game_edit_exe_path':
+        return 'Executable path';
+      case 'game_edit_workdir':
+        return 'Working directory';
+      case 'game_edit_save':
+        return 'Save';
+      case 'game_edit_saved':
+        return 'Saved';
+      case 'game_edit_invalid_date':
+        return 'Release date must be YYYY-MM-DD';
+      case 'game_scrape_title':
+        return 'Fetch metadata';
+      case 'game_scrape_query':
+        return 'Title or source ID';
+      case 'game_scrape_no_result':
+        return 'No matching entry found';
+      case 'game_scrape_failed':
+        return 'Metadata fetch failed';
+      case 'game_scrape_applied':
+        return 'Metadata updated';
+      case 'game_scrape_pick':
+        return 'Pick the matching entry';
+      case 'game_open_source_site':
+        return 'Open source page';
+      case 'game_launch':
+        return 'Launch';
+      case 'game_developer':
+        return 'Developer';
+      case 'game_site_score':
+        return 'Site rating';
+      case 'game_user_rating':
+        return 'My rating';
       default:
         return null;
     }
@@ -167453,6 +171922,152 @@ extension on _StringsVi {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_search':
+        return 'Search games';
+      case 'games_sort':
+        return 'Sort';
+      case 'games_filter':
+        return 'Filter';
+      case 'games_sort_added':
+        return 'Date added';
+      case 'games_sort_release':
+        return 'Release date';
+      case 'games_sort_last_played':
+        return 'Last played';
+      case 'games_sort_site_score':
+        return 'Site rating';
+      case 'games_sort_user_rating':
+        return 'My rating';
+      case 'games_sort_name':
+        return 'Name';
+      case 'games_sort_ascending':
+        return 'Ascending';
+      case 'games_sort_descending':
+        return 'Descending';
+      case 'games_filter_status':
+        return 'Play status';
+      case 'games_filter_all':
+        return 'All';
+      case 'games_filter_source':
+        return 'Availability';
+      case 'games_filter_local_only':
+        return 'Has local file';
+      case 'games_filter_metadata_only':
+        return 'Metadata only';
+      case 'games_filter_tags':
+        return 'Tags';
+      case 'games_filter_hide_nsfw':
+        return 'Hide adult titles';
+      case 'games_filter_reset':
+        return 'Clear filters';
+      case 'games_no_match':
+        return 'No games match the current filters';
+      case 'games_play_status':
+        return 'Play status';
+      case 'games_status_unset':
+        return 'Not set';
+      case 'games_status_want_to_play':
+        return 'Want to play';
+      case 'games_status_playing':
+        return 'Playing';
+      case 'games_status_played':
+        return 'Played';
+      case 'games_status_on_hold':
+        return 'On hold';
+      case 'games_status_dropped':
+        return 'Dropped';
+      case 'games_view_detail':
+        return 'View details';
+      case 'games_scrape':
+        return 'Fetch metadata';
+      case 'games_never_played':
+        return 'Never played';
+      case 'game_detail_tab_stats':
+        return 'Stats';
+      case 'game_detail_tab_summary':
+        return 'Overview';
+      case 'game_detail_tab_edit':
+        return 'Edit';
+      case 'game_detail_missing':
+        return 'This game is no longer in the library';
+      case 'game_stat_total_time':
+        return 'Total play time';
+      case 'game_stat_sessions':
+        return 'Sessions';
+      case 'game_stat_today':
+        return 'Today';
+      case 'game_stat_last_played':
+        return 'Last played';
+      case 'game_stat_daily':
+        return 'Daily play time';
+      case 'game_stat_session_list':
+        return 'Session history';
+      case 'game_stat_no_sessions':
+        return 'No play sessions recorded yet';
+      case 'game_stat_delete_session':
+        return 'Delete this session';
+      case 'game_stat_prev_month':
+        return 'Previous month';
+      case 'game_stat_next_month':
+        return 'Next month';
+      case 'game_summary_none':
+        return 'No description yet. Fetch metadata to fill it in.';
+      case 'game_summary_aliases':
+        return 'Aliases';
+      case 'game_summary_all_titles':
+        return 'All titles';
+      case 'game_summary_release_date':
+        return 'Release date';
+      case 'game_summary_average_hours':
+        return 'Average play time';
+      case 'game_edit_display_name':
+        return 'Display name';
+      case 'game_edit_summary':
+        return 'Description';
+      case 'game_edit_tags':
+        return 'Tags (comma separated)';
+      case 'game_edit_developer':
+        return 'Developer';
+      case 'game_edit_release_date':
+        return 'Release date (YYYY-MM-DD)';
+      case 'game_edit_nsfw':
+        return 'Adult title';
+      case 'game_edit_user_rating':
+        return 'My rating (0-10)';
+      case 'game_edit_user_review':
+        return 'My review';
+      case 'game_edit_exe_path':
+        return 'Executable path';
+      case 'game_edit_workdir':
+        return 'Working directory';
+      case 'game_edit_save':
+        return 'Save';
+      case 'game_edit_saved':
+        return 'Saved';
+      case 'game_edit_invalid_date':
+        return 'Release date must be YYYY-MM-DD';
+      case 'game_scrape_title':
+        return 'Fetch metadata';
+      case 'game_scrape_query':
+        return 'Title or source ID';
+      case 'game_scrape_no_result':
+        return 'No matching entry found';
+      case 'game_scrape_failed':
+        return 'Metadata fetch failed';
+      case 'game_scrape_applied':
+        return 'Metadata updated';
+      case 'game_scrape_pick':
+        return 'Pick the matching entry';
+      case 'game_open_source_site':
+        return 'Open source page';
+      case 'game_launch':
+        return 'Launch';
+      case 'game_developer':
+        return 'Developer';
+      case 'game_site_score':
+        return 'Site rating';
+      case 'game_user_rating':
+        return 'My rating';
       default:
         return null;
     }
@@ -172432,6 +177047,152 @@ extension on _StringsZhCn {
         return '拖入的文件里没有新的游戏 .exe';
       case 'games_drop_imported':
         return ({required Object count}) => '已添加 ${count} 个游戏';
+      case 'games_search':
+        return '搜索游戏';
+      case 'games_sort':
+        return '排序';
+      case 'games_filter':
+        return '筛选';
+      case 'games_sort_added':
+        return '添加时间';
+      case 'games_sort_release':
+        return '发行日';
+      case 'games_sort_last_played':
+        return '最后游玩';
+      case 'games_sort_site_score':
+        return '站点评分';
+      case 'games_sort_user_rating':
+        return '我的评分';
+      case 'games_sort_name':
+        return '名称';
+      case 'games_sort_ascending':
+        return '升序';
+      case 'games_sort_descending':
+        return '降序';
+      case 'games_filter_status':
+        return '游玩状态';
+      case 'games_filter_all':
+        return '全部';
+      case 'games_filter_source':
+        return '条目来源';
+      case 'games_filter_local_only':
+        return '有本地 exe';
+      case 'games_filter_metadata_only':
+        return '仅元数据';
+      case 'games_filter_tags':
+        return '标签';
+      case 'games_filter_hide_nsfw':
+        return '隐藏成人向';
+      case 'games_filter_reset':
+        return '清除筛选';
+      case 'games_no_match':
+        return '没有符合当前筛选的游戏';
+      case 'games_play_status':
+        return '游玩状态';
+      case 'games_status_unset':
+        return '未设置';
+      case 'games_status_want_to_play':
+        return '想玩';
+      case 'games_status_playing':
+        return '在玩';
+      case 'games_status_played':
+        return '玩过';
+      case 'games_status_on_hold':
+        return '搁置';
+      case 'games_status_dropped':
+        return '弃坑';
+      case 'games_view_detail':
+        return '查看详情';
+      case 'games_scrape':
+        return '刮削元数据';
+      case 'games_never_played':
+        return '未游玩';
+      case 'game_detail_tab_stats':
+        return '统计';
+      case 'game_detail_tab_summary':
+        return '简介';
+      case 'game_detail_tab_edit':
+        return '编辑';
+      case 'game_detail_missing':
+        return '该游戏已不在库中';
+      case 'game_stat_total_time':
+        return '累计时长';
+      case 'game_stat_sessions':
+        return '游玩次数';
+      case 'game_stat_today':
+        return '今日时长';
+      case 'game_stat_last_played':
+        return '最后游玩';
+      case 'game_stat_daily':
+        return '每日时长';
+      case 'game_stat_session_list':
+        return '会话流水';
+      case 'game_stat_no_sessions':
+        return '还没有游玩记录';
+      case 'game_stat_delete_session':
+        return '删除这次记录';
+      case 'game_stat_prev_month':
+        return '上个月';
+      case 'game_stat_next_month':
+        return '下个月';
+      case 'game_summary_none':
+        return '还没有简介，刮削元数据后自动填充。';
+      case 'game_summary_aliases':
+        return '别名';
+      case 'game_summary_all_titles':
+        return '全部标题';
+      case 'game_summary_release_date':
+        return '发行日';
+      case 'game_summary_average_hours':
+        return '预计通关时长';
+      case 'game_edit_display_name':
+        return '显示名';
+      case 'game_edit_summary':
+        return '简介';
+      case 'game_edit_tags':
+        return '标签（逗号分隔）';
+      case 'game_edit_developer':
+        return '开发商';
+      case 'game_edit_release_date':
+        return '发行日（YYYY-MM-DD）';
+      case 'game_edit_nsfw':
+        return '成人向';
+      case 'game_edit_user_rating':
+        return '我的评分（0-10）';
+      case 'game_edit_user_review':
+        return '我的评价';
+      case 'game_edit_exe_path':
+        return '可执行文件路径';
+      case 'game_edit_workdir':
+        return '工作目录';
+      case 'game_edit_save':
+        return '保存';
+      case 'game_edit_saved':
+        return '已保存';
+      case 'game_edit_invalid_date':
+        return '发行日必须是 YYYY-MM-DD 格式';
+      case 'game_scrape_title':
+        return '刮削元数据';
+      case 'game_scrape_query':
+        return '标题或源 ID';
+      case 'game_scrape_no_result':
+        return '没有找到匹配条目';
+      case 'game_scrape_failed':
+        return '元数据获取失败';
+      case 'game_scrape_applied':
+        return '元数据已更新';
+      case 'game_scrape_pick':
+        return '选择匹配的条目';
+      case 'game_open_source_site':
+        return '打开源站页面';
+      case 'game_launch':
+        return '启动游戏';
+      case 'game_developer':
+        return '开发商';
+      case 'game_site_score':
+        return '站点评分';
+      case 'game_user_rating':
+        return '我的评分';
       default:
         return null;
     }
@@ -177424,6 +182185,152 @@ extension on _StringsZhHk {
         return 'No new game .exe among the dropped files';
       case 'games_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
+      case 'games_search':
+        return 'Search games';
+      case 'games_sort':
+        return 'Sort';
+      case 'games_filter':
+        return 'Filter';
+      case 'games_sort_added':
+        return 'Date added';
+      case 'games_sort_release':
+        return 'Release date';
+      case 'games_sort_last_played':
+        return 'Last played';
+      case 'games_sort_site_score':
+        return 'Site rating';
+      case 'games_sort_user_rating':
+        return 'My rating';
+      case 'games_sort_name':
+        return 'Name';
+      case 'games_sort_ascending':
+        return 'Ascending';
+      case 'games_sort_descending':
+        return 'Descending';
+      case 'games_filter_status':
+        return 'Play status';
+      case 'games_filter_all':
+        return 'All';
+      case 'games_filter_source':
+        return 'Availability';
+      case 'games_filter_local_only':
+        return 'Has local file';
+      case 'games_filter_metadata_only':
+        return 'Metadata only';
+      case 'games_filter_tags':
+        return 'Tags';
+      case 'games_filter_hide_nsfw':
+        return 'Hide adult titles';
+      case 'games_filter_reset':
+        return 'Clear filters';
+      case 'games_no_match':
+        return 'No games match the current filters';
+      case 'games_play_status':
+        return 'Play status';
+      case 'games_status_unset':
+        return 'Not set';
+      case 'games_status_want_to_play':
+        return 'Want to play';
+      case 'games_status_playing':
+        return 'Playing';
+      case 'games_status_played':
+        return 'Played';
+      case 'games_status_on_hold':
+        return 'On hold';
+      case 'games_status_dropped':
+        return 'Dropped';
+      case 'games_view_detail':
+        return 'View details';
+      case 'games_scrape':
+        return 'Fetch metadata';
+      case 'games_never_played':
+        return 'Never played';
+      case 'game_detail_tab_stats':
+        return 'Stats';
+      case 'game_detail_tab_summary':
+        return 'Overview';
+      case 'game_detail_tab_edit':
+        return 'Edit';
+      case 'game_detail_missing':
+        return 'This game is no longer in the library';
+      case 'game_stat_total_time':
+        return 'Total play time';
+      case 'game_stat_sessions':
+        return 'Sessions';
+      case 'game_stat_today':
+        return 'Today';
+      case 'game_stat_last_played':
+        return 'Last played';
+      case 'game_stat_daily':
+        return 'Daily play time';
+      case 'game_stat_session_list':
+        return 'Session history';
+      case 'game_stat_no_sessions':
+        return 'No play sessions recorded yet';
+      case 'game_stat_delete_session':
+        return 'Delete this session';
+      case 'game_stat_prev_month':
+        return 'Previous month';
+      case 'game_stat_next_month':
+        return 'Next month';
+      case 'game_summary_none':
+        return 'No description yet. Fetch metadata to fill it in.';
+      case 'game_summary_aliases':
+        return 'Aliases';
+      case 'game_summary_all_titles':
+        return 'All titles';
+      case 'game_summary_release_date':
+        return 'Release date';
+      case 'game_summary_average_hours':
+        return 'Average play time';
+      case 'game_edit_display_name':
+        return 'Display name';
+      case 'game_edit_summary':
+        return 'Description';
+      case 'game_edit_tags':
+        return 'Tags (comma separated)';
+      case 'game_edit_developer':
+        return 'Developer';
+      case 'game_edit_release_date':
+        return 'Release date (YYYY-MM-DD)';
+      case 'game_edit_nsfw':
+        return 'Adult title';
+      case 'game_edit_user_rating':
+        return 'My rating (0-10)';
+      case 'game_edit_user_review':
+        return 'My review';
+      case 'game_edit_exe_path':
+        return 'Executable path';
+      case 'game_edit_workdir':
+        return 'Working directory';
+      case 'game_edit_save':
+        return 'Save';
+      case 'game_edit_saved':
+        return 'Saved';
+      case 'game_edit_invalid_date':
+        return 'Release date must be YYYY-MM-DD';
+      case 'game_scrape_title':
+        return 'Fetch metadata';
+      case 'game_scrape_query':
+        return 'Title or source ID';
+      case 'game_scrape_no_result':
+        return 'No matching entry found';
+      case 'game_scrape_failed':
+        return 'Metadata fetch failed';
+      case 'game_scrape_applied':
+        return 'Metadata updated';
+      case 'game_scrape_pick':
+        return 'Pick the matching entry';
+      case 'game_open_source_site':
+        return 'Open source page';
+      case 'game_launch':
+        return 'Launch';
+      case 'game_developer':
+        return 'Developer';
+      case 'game_site_score':
+        return 'Site rating';
+      case 'game_user_rating':
+        return 'My rating';
       default:
         return null;
     }
