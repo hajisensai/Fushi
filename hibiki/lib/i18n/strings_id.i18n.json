@@ -2289,5 +2289,16 @@
   "download_subscription_after_episode": "After episode ${episode}",
   "download_subscription_last_checked": "Last checked: ${time}",
   "download_subscription_latest_episode": "Latest queued: episode ${episode}",
-  "download_subscription_check_now": "Check now"
+  "download_subscription_check_now": "Check now",
+  "video_jimaku_source": "Subtitle source",
+  "video_jimaku_source_hint": "Choose one Jimaku entry. Season packs are matched by episode automatically.",
+  "video_jimaku_find_sources": "Find subtitles",
+  "video_jimaku_anime_match": "Anime match",
+  "download_network_proxy_section": "Discovery network",
+  "download_network_proxy_auto": "Auto",
+  "download_network_proxy_direct": "Direct",
+  "download_network_proxy_custom": "Custom",
+  "download_network_proxy_auto_hint": "Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.",
+  "download_network_proxy_custom_label": "Custom proxy",
+  "update_custom_proxy_auto_hint": "Leave blank to use environment variables, then the enabled system proxy."
 }

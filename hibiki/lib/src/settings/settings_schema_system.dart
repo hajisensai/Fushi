@@ -190,6 +190,7 @@ SettingsDestination buildSystemDestination() {
           SettingsTextItem(
             id: 'system.update_custom_proxy',
             title: t.update_custom_proxy_label,
+            subtitle: t.update_custom_proxy_auto_hint,
             icon: Icons.dns_outlined,
             placeholder: t.update_custom_proxy_hint,
             keyboardType: TextInputType.url,

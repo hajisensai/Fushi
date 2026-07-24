@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 38947 (2291 per locale)
+/// Strings: 39134 (2302 per locale)
 ///
-/// Built on 2026-07-23 at 04:58 UTC
+/// Built on 2026-07-24 at 05:28 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3055,6 +3055,20 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String download_subscription_latest_episode({required Object episode}) =>
       'Latest queued: episode ${episode}';
   String get download_subscription_check_now => 'Check now';
+  String get video_jimaku_source => 'Subtitle source';
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  String get video_jimaku_find_sources => 'Find subtitles';
+  String get video_jimaku_anime_match => 'Anime match';
+  String get download_network_proxy_section => 'Discovery network';
+  String get download_network_proxy_auto => 'Auto';
+  String get download_network_proxy_direct => 'Direct';
+  String get download_network_proxy_custom => 'Custom';
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
 }
 
 // Path: <root>
@@ -8247,6 +8261,31 @@ class _StringsAr extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
 }
 
 // Path: <root>
@@ -13512,6 +13551,31 @@ class _StringsDe extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
 }
 
 // Path: <root>
@@ -18793,6 +18857,31 @@ class _StringsEs extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
 }
 
 // Path: <root>
@@ -24085,6 +24174,31 @@ class _StringsFr extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
 }
 
 // Path: <root>
@@ -29304,6 +29418,31 @@ class _StringsId extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
 }
 
 // Path: <root>
@@ -34571,6 +34710,31 @@ class _StringsIt extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
 }
 
 // Path: <root>
@@ -39643,6 +39807,31 @@ class _StringsJa extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
 }
 
 // Path: <root>
@@ -44718,6 +44907,31 @@ class _StringsKo extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
 }
 
 // Path: <root>
@@ -49963,6 +50177,31 @@ class _StringsNl extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
 }
 
 // Path: <root>
@@ -55223,6 +55462,31 @@ class _StringsPtBr extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
 }
 
 // Path: <root>
@@ -60466,6 +60730,31 @@ class _StringsRu extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
 }
 
 // Path: <root>
@@ -65654,6 +65943,31 @@ class _StringsTh extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
 }
 
 // Path: <root>
@@ -70874,6 +71188,31 @@ class _StringsTr extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
 }
 
 // Path: <root>
@@ -76081,6 +76420,31 @@ class _StringsVi extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
 }
 
 // Path: <root>
@@ -80925,6 +81289,29 @@ class _StringsZhCn extends _StringsEn {
       '最近加入：第 ${episode} 集';
   @override
   String get download_subscription_check_now => '立即检查';
+  @override
+  String get video_jimaku_source => '字幕来源';
+  @override
+  String get video_jimaku_source_hint => '选择一个 Jimaku 条目；合集字幕会按集号自动匹配。';
+  @override
+  String get video_jimaku_find_sources => '查找字幕';
+  @override
+  String get video_jimaku_anime_match => '番剧匹配';
+  @override
+  String get download_network_proxy_section => '发现网络';
+  @override
+  String get download_network_proxy_auto => '自动';
+  @override
+  String get download_network_proxy_direct => '直连';
+  @override
+  String get download_network_proxy_custom => '自定义';
+  @override
+  String get download_network_proxy_auto_hint =>
+      '仅影响 AniList、Nyaa 和 Jimaku。自动模式先读环境变量，再读已启用的系统代理；种子流量不受影响。';
+  @override
+  String get download_network_proxy_custom_label => '自定义代理';
+  @override
+  String get update_custom_proxy_auto_hint => '留空时自动读取环境变量，再读取已启用的系统代理。';
 }
 
 // Path: <root>
@@ -85915,6 +86302,31 @@ class _StringsZhHk extends _StringsEn {
       'Latest queued: episode ${episode}';
   @override
   String get download_subscription_check_now => 'Check now';
+  @override
+  String get video_jimaku_source => 'Subtitle source';
+  @override
+  String get video_jimaku_source_hint =>
+      'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+  @override
+  String get video_jimaku_find_sources => 'Find subtitles';
+  @override
+  String get video_jimaku_anime_match => 'Anime match';
+  @override
+  String get download_network_proxy_section => 'Discovery network';
+  @override
+  String get download_network_proxy_auto => 'Auto';
+  @override
+  String get download_network_proxy_direct => 'Direct';
+  @override
+  String get download_network_proxy_custom => 'Custom';
+  @override
+  String get download_network_proxy_auto_hint =>
+      'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+  @override
+  String get download_network_proxy_custom_label => 'Custom proxy';
+  @override
+  String get update_custom_proxy_auto_hint =>
+      'Leave blank to use environment variables, then the enabled system proxy.';
 }
 
 /// Flat map(s) containing all translations.
@@ -90593,6 +91005,28 @@ extension on _StringsEn {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       default:
         return null;
     }
@@ -95269,6 +95703,28 @@ extension on _StringsAr {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       default:
         return null;
     }
@@ -99966,6 +100422,28 @@ extension on _StringsDe {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       default:
         return null;
     }
@@ -104662,6 +105140,28 @@ extension on _StringsEs {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       default:
         return null;
     }
@@ -109364,6 +109864,28 @@ extension on _StringsFr {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       default:
         return null;
     }
@@ -114048,6 +114570,28 @@ extension on _StringsId {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       default:
         return null;
     }
@@ -118747,6 +119291,28 @@ extension on _StringsIt {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       default:
         return null;
     }
@@ -123408,6 +123974,28 @@ extension on _StringsJa {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       default:
         return null;
     }
@@ -128073,6 +128661,28 @@ extension on _StringsKo {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       default:
         return null;
     }
@@ -132765,6 +133375,28 @@ extension on _StringsNl {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       default:
         return null;
     }
@@ -137454,6 +138086,28 @@ extension on _StringsPtBr {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       default:
         return null;
     }
@@ -142148,6 +142802,28 @@ extension on _StringsRu {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       default:
         return null;
     }
@@ -146826,6 +147502,28 @@ extension on _StringsTh {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       default:
         return null;
     }
@@ -151513,6 +152211,28 @@ extension on _StringsTr {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       default:
         return null;
     }
@@ -156195,6 +156915,28 @@ extension on _StringsVi {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       default:
         return null;
     }
@@ -160841,6 +161583,28 @@ extension on _StringsZhCn {
         return ({required Object episode}) => '最近加入：第 ${episode} 集';
       case 'download_subscription_check_now':
         return '立即检查';
+      case 'video_jimaku_source':
+        return '字幕来源';
+      case 'video_jimaku_source_hint':
+        return '选择一个 Jimaku 条目；合集字幕会按集号自动匹配。';
+      case 'video_jimaku_find_sources':
+        return '查找字幕';
+      case 'video_jimaku_anime_match':
+        return '番剧匹配';
+      case 'download_network_proxy_section':
+        return '发现网络';
+      case 'download_network_proxy_auto':
+        return '自动';
+      case 'download_network_proxy_direct':
+        return '直连';
+      case 'download_network_proxy_custom':
+        return '自定义';
+      case 'download_network_proxy_auto_hint':
+        return '仅影响 AniList、Nyaa 和 Jimaku。自动模式先读环境变量，再读已启用的系统代理；种子流量不受影响。';
+      case 'download_network_proxy_custom_label':
+        return '自定义代理';
+      case 'update_custom_proxy_auto_hint':
+        return '留空时自动读取环境变量，再读取已启用的系统代理。';
       default:
         return null;
     }
@@ -165497,6 +166261,28 @@ extension on _StringsZhHk {
             'Latest queued: episode ${episode}';
       case 'download_subscription_check_now':
         return 'Check now';
+      case 'video_jimaku_source':
+        return 'Subtitle source';
+      case 'video_jimaku_source_hint':
+        return 'Choose one Jimaku entry. Season packs are matched by episode automatically.';
+      case 'video_jimaku_find_sources':
+        return 'Find subtitles';
+      case 'video_jimaku_anime_match':
+        return 'Anime match';
+      case 'download_network_proxy_section':
+        return 'Discovery network';
+      case 'download_network_proxy_auto':
+        return 'Auto';
+      case 'download_network_proxy_direct':
+        return 'Direct';
+      case 'download_network_proxy_custom':
+        return 'Custom';
+      case 'download_network_proxy_auto_hint':
+        return 'Applies to AniList, Nyaa, and Jimaku only. Auto uses environment variables, then the enabled system proxy; torrent traffic is unchanged.';
+      case 'download_network_proxy_custom_label':
+        return 'Custom proxy';
+      case 'update_custom_proxy_auto_hint':
+        return 'Leave blank to use environment variables, then the enabled system proxy.';
       default:
         return null;
     }

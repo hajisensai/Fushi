@@ -22,6 +22,8 @@ void main() {
           ProfileKeys.isExcludedPref('startup_default_dictionary_tab'), isTrue);
       expect(ProfileKeys.isExcludedPref('app_ui_scale'), isTrue);
       expect(ProfileKeys.isExcludedPref('app_ui_scale_mode'), isTrue);
+      expect(ProfileKeys.isExcludedPref('download_network_proxy_mode'), isTrue);
+      expect(ProfileKeys.isExcludedPref('download_custom_proxy'), isTrue);
     });
 
     test('excludes keys with current_source/ prefix', () {
