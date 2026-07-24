@@ -449,7 +449,9 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
             detail = raw;
           }
         }
-      } catch (_) {}
+      } catch (_) {
+        // 错误体解析失败就用默认错误码——本 catch 只服务于错误信息提取。
+      }
       throw MangaOcrRemoteException(code, detail);
     }
     return response;
@@ -460,7 +462,9 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
       final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
       if (decoded is Map<String, dynamic>) return decoded;
       if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    } catch (_) {}
+    } catch (_) {
+      // 解析失败统一走下面的 invalid JSON 异常，无需区分原因。
+    }
     throw const MangaOcrRemoteException('http', 'invalid JSON response');
   }
 

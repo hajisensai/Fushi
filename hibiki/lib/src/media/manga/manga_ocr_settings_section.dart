@@ -282,6 +282,16 @@ class _MangaOcrSettingsSectionState
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    // Material 透明层：cupertino 桌面嵌入渲染（BUG-009 R2 路径）下设置正文没有
+    // Material 祖先，而本组含 TextField/InkWell 系控件——透明 Material 只补墨水
+    // 与文本编辑依赖，不改视觉。
+    return Material(
+      type: MaterialType.transparency,
+      child: _buildBody(theme),
+    );
+  }
+
+  Widget _buildBody(ThemeData theme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -316,16 +326,14 @@ class _MangaOcrSettingsSectionState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _sectionLabel(theme, t.manga_cloud_ocr_section),
-        SwitchListTile(
+        AdaptiveSettingsSwitchRow(
           key: const ValueKey<String>('manga_cloud_ocr_switch'),
+          title: t.manga_cloud_ocr_enabled,
           value: _cloudEnabled,
           onChanged: (bool value) {
             setState(() => _cloudEnabled = value);
             unawaited(_writeCloudEnabled(value));
           },
-          title: Text(t.manga_cloud_ocr_enabled),
-          contentPadding: EdgeInsets.zero,
-          dense: true,
         ),
         const SizedBox(height: 8),
         TextField(

@@ -342,7 +342,9 @@ class MangaOcrHostJobManager {
       _jobs.remove(job.id);
       try {
         if (job.dir.existsSync()) job.dir.deleteSync(recursive: true);
-      } catch (_) {}
+      } catch (_) {
+        // 尽力清理：删除失败（文件被占用等）留给下次 TTL 扫描重试。
+      }
     }
     if (_orphanSweepDone) return;
     _orphanSweepDone = true;
@@ -359,10 +361,14 @@ class MangaOcrHostJobManager {
         if (mtime.isBefore(cutoff)) {
           try {
             entity.deleteSync(recursive: true);
-          } catch (_) {}
+          } catch (_) {
+            // 尽力清理孤儿目录：失败留给下次扫描。
+          }
         }
       }
-    } catch (_) {}
+    } catch (_) {
+      // 孤儿扫描整体尽力而为：IO 异常不得影响正常请求处理。
+    }
   }
 
   // ── 工具 ───────────────────────────────────────────────────────
