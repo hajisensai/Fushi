@@ -45,12 +45,17 @@ typedef GalHookTextLookupHandler = FutureOr<void> Function(
   String lineId,
   String text,
   int index,
+  Rect? wordRect,
 );
 typedef GalHookTextEventHandler = FutureOr<void> Function();
 typedef GalHookTextLockHandler = FutureOr<void> Function(bool locked);
 typedef GalHookTextBoundsHandler = FutureOr<void> Function(
   GalHookTextWindowRect rect,
 );
+
+/// Hook 台词浮窗的基准字号（逻辑 px）。native 在 hook 模式下按窗口高度对它做
+/// 0.9~2.5 倍缩放（`kHookTextBaseHeightForFontDip`），所以把浮窗拖高就能放大台词。
+const double kGalHookTextFontSize = 30.0;
 
 /// Windows Hook 台词浮窗的专用 MethodChannel 契约。
 class GalHookTextOverlayChannel extends FloatingOverlayChannel {
@@ -127,7 +132,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
         final String text = args['text']?.toString() ?? '';
         final int index = (args['index'] as num?)?.toInt() ?? 0;
         if (lineId.isNotEmpty && text.trim().isNotEmpty) {
-          await _onLookupText?.call(lineId, text, index);
+          await _onLookupText?.call(lineId, text, index, _wordRect(args));
         }
         break;
       case 'toggleFollow':
@@ -163,9 +168,23 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     }
   }
 
+  /// native 回传的被点字矩形（屏幕逻辑 px）。老 native 不带这几项时返回 null，
+  /// 调用方回落到原来的光标定位（Never break）。
+  static Rect? _wordRect(Map<Object?, Object?> args) {
+    final double? left = (args['wordLeft'] as num?)?.toDouble();
+    final double? top = (args['wordTop'] as num?)?.toDouble();
+    final double? width = (args['wordWidth'] as num?)?.toDouble();
+    final double? height = (args['wordHeight'] as num?)?.toDouble();
+    if (left == null || top == null || width == null || height == null) {
+      return null;
+    }
+    if (width <= 0 || height <= 0) return null;
+    return Rect.fromLTWH(left, top, width, height);
+  }
+
   static Future<bool> show({
     GalHookTextWindowRect? rect,
-    double fontSize = 24,
+    double fontSize = kGalHookTextFontSize,
     int textColor = 0xFFFFFFFF,
     int bgColor = 0xE0000000,
     bool following = true,
@@ -210,7 +229,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
   }) async {
     if (!_instance.isSupported) return;
     await _instance.channel.invokeMethod<void>('updateStyle', <String, Object?>{
-      'fontSize': 24.0,
+      'fontSize': kGalHookTextFontSize,
       'bgColor': bgColor,
       'textColor': textColor,
       'buttonTextColor': 0xFFFFFFFF,

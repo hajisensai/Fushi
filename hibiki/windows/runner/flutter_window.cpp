@@ -901,13 +901,25 @@ void FlutterWindow::RegisterGalHookTextChannel() {
 
   gal_hook_text_window_->SetContextLookupCallback(
       [this](const std::string& line_id, const std::string& text,
-             int char_index) {
+             int char_index, const D2D1_RECT_F& word_rect) {
+        // wordLeft/Top/Width/Height：被点字的屏幕逻辑 px 矩形，供查词卡锚定到
+        // 那个词（而不是鼠标位置）。
         flutter::EncodableMap map{
             {flutter::EncodableValue("lineId"),
              flutter::EncodableValue(line_id)},
             {flutter::EncodableValue("text"), flutter::EncodableValue(text)},
             {flutter::EncodableValue("index"),
              flutter::EncodableValue(char_index)},
+            {flutter::EncodableValue("wordLeft"),
+             flutter::EncodableValue(static_cast<double>(word_rect.left))},
+            {flutter::EncodableValue("wordTop"),
+             flutter::EncodableValue(static_cast<double>(word_rect.top))},
+            {flutter::EncodableValue("wordWidth"),
+             flutter::EncodableValue(
+                 static_cast<double>(word_rect.right - word_rect.left))},
+            {flutter::EncodableValue("wordHeight"),
+             flutter::EncodableValue(
+                 static_cast<double>(word_rect.bottom - word_rect.top))},
         };
         gal_hook_text_channel_->InvokeMethod(
             "lookupText",
