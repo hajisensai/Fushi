@@ -19,8 +19,70 @@ void main() {
     // return.
     expect(src.contains('async function minedCardAction('), isTrue);
     expect(src.contains("callHandler('minedCardAction', fields)"), isTrue);
-    expect(src.contains('const reply = await minedCardAction('), isTrue,
-        reason: 'the dataset.mined branch must call minedCardAction');
+    // BUG-1060：宿主自带原生对话框时（app 内）仍然必须把点击交给 minedCardAction。
+    // 这一支现在写在三元里（另一支是 app 外的页内面板），所以钉调用本身而不是旧的
+    // `const reply = await ...` 行形。
+    expect(src.contains('parseMineResult(await minedCardAction('), isTrue,
+        reason: 'the dataset.mined branch must still call minedCardAction '
+            'when the host has a native dialog');
+    expect(src.contains('hasNativeMinedCardAction()'), isTrue,
+        reason: 'the two lanes must be selected by the host capability flag');
+  });
+
+  /// BUG-1060：app 外表面（Windows 裸 WebView2 剪贴板面板 / 瞬态查词窗、浏览器扩展）
+  /// 没有 Flutter 层可以呈现这个对话框，它们的 minedCardAction 只会被立刻解析成 null。
+  /// 旧代码把 null 当「宿主已处理」→ 点已制卡的 ✓ 完全没反应。这一组钉死替代车道：
+  /// popup.js 自己画页内面板，数据走两根新 deferred 桥，动作复用 updateEntry/mineEntry。
+  group('BUG-1060 app 外点 ✓ 走页内面板（不得再静默）', () {
+    test('popup.js 有页内面板与它的两根数据桥', () {
+      final src = read('assets/popup/popup.js');
+      expect(src.contains('function showMinedCardActionPanel('), isTrue);
+      expect(src.contains('async function runInPageMinedCardAction('), isTrue);
+      expect(src.contains("'findMinedMatches'"), isTrue,
+          reason: '命中列表必须来自宿主真值（repo.findMatchingNotes）');
+      expect(src.contains("'openMinedNote'"), isTrue);
+      // 覆写/新增必须复用既有两根桥，不得新开写路径。
+      expect(src.contains("if (choice.action === 'overwrite')"), isTrue);
+      expect(src.contains('await updateEntry('), isTrue);
+      expect(src.contains("if (choice.action === 'duplicate')"), isTrue);
+      expect(src.contains('await mineEntry('), isTrue);
+      // 面板里产生原生选区会被 selection.js 当成查词，必须禁选。
+      final css = read('assets/popup/popup.css');
+      expect(css.contains('.mined-action-panel'), isTrue);
+      expect(css.contains('.mined-action-backdrop'), isTrue);
+      expect(css.contains('user-select: none'), isTrue);
+      expect(css.contains('html.mined-action-open'), isTrue,
+          reason: '瞬态窗高度按内容收缩，面板打开期间必须撑最小高度否则被裁');
+    });
+
+    test('C++ 把两根新桥列入 DEFERRED（minedCardAction 仍保持即时 null）', () {
+      final cpp = read('windows/runner/global_lookup_window.cpp');
+      expect(cpp.contains('body.find("\\"findMinedMatches\\"")'), isTrue);
+      expect(cpp.contains('body.find("\\"openMinedNote\\"")'), isTrue);
+      expect(cpp.contains('body.find("\\"minedCardAction\\"")'), isFalse,
+          reason: 'minedCardAction 是 Flutter 对话框，app 外无法呈现，'
+              '仍然不得纳入 deferred——替代方案是 popup.js 的页内面板');
+    });
+
+    test('Dart 侧解析两根新桥（复用 repo 的既有查找/打开）', () {
+      final src = read('lib/src/lookup/overlay_bridge_handlers.dart');
+      expect(src.contains("case 'findMinedMatches':"), isTrue);
+      expect(src.contains("case 'openMinedNote':"), isTrue);
+      expect(
+          src.contains('repo.findMatchingNotes(expression, reading)'), isTrue);
+      expect(src.contains('repo.openNoteInAnki(noteId)'), isTrue);
+    });
+
+    test('注入把「宿主有没有原生对话框」告诉 popup.js', () {
+      final src =
+          read('lib/src/pages/implementations/popup_settings_injection.dart');
+      expect(
+          src.contains(
+              'window.__hibikiMinedCardActionNative = \${!options.globalLookup};'),
+          isTrue,
+          reason: 'app 外（globalLookup）恒 false → 页内面板；'
+              'app 内恒 true → Flutter 对话框');
+    });
   });
 
   test('dictionary_popup_webview.dart registers the minedCardAction JS handler',

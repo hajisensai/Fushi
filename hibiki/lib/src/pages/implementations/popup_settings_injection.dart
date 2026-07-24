@@ -303,6 +303,29 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.needsAudio = true;
     window.lookupAudioVolume = ${ReaderHibikiSource.instance.lookupAudioVolumeGain.clamp(0.0, 1.0).toStringAsFixed(4)};
     window.i18nNoAudioAvailable = ${jsonEncode(t.popup_no_audio_available)};
+    // BUG-1060：点已制卡 ✓ 的「卡片已在 Anki 中」操作面板归属。
+    // true  = 宿主自己接了 `minedCardAction` JS handler，会弹 Flutter 居中对话框
+    //         （dictionary_popup_webview 的三个 in-app 表面：app 内弹窗 / Android
+    //         悬浮词典 / 独立查词页），popup.js 原样把点击交给宿主，行为不变。
+    // false = app 外的裸 WebView2 表面（剪贴板面板 + 瞬态查词窗）。主窗在外部程序
+    //         后面（甚至最小化），Flutter 对话框根本无法呈现，C++ 因此把
+    //         minedCardAction 立即解析成 null——而 popup.js 旧代码把 null 当成
+    //         「宿主已处理」，于是点 ✓ 彻底没反应。此时改由 popup.js 在自己的
+    //         WebView 里画同款面板（数据走 findMinedMatches / openMinedNote 两根
+    //         deferred 桥，动作复用 updateEntry / mineEntry）。
+    // 取 !globalLookup 而不是新开参数：globalLookup 恰好就是「这一帧属于 app 外
+    // 裸窗口」的既有真相。浏览器扩展不经本注入 → undefined → 同样走页内面板
+    // （它的 bridge-shim 对 minedCardAction 也只回 null）。
+    window.__hibikiMinedCardActionNative = ${!options.globalLookup};
+    window.i18nMinedCardTitle = ${jsonEncode(t.anki_mined_card_title)};
+    window.i18nMinedCardSubtitle = ${jsonEncode(t.anki_mined_card_subtitle)};
+    window.i18nMinedMultipleMatches = ${jsonEncode(t.anki_mined_multiple_matches(count: '{count}'))};
+    window.i18nMinedActionOverwrite = ${jsonEncode(t.anki_mined_action_overwrite)};
+    window.i18nMinedActionView = ${jsonEncode(t.anki_mined_action_view)};
+    window.i18nMinedActionAddDuplicate = ${jsonEncode(t.anki_mined_action_add_duplicate)};
+    window.i18nMinedActionCancel = ${jsonEncode(t.dialog_cancel)};
+    window.i18nMinedOpenFailed = ${jsonEncode(t.anki_note_open_failed)};
+    window.i18nMinedActionFailed = ${jsonEncode(t.anki_card_action_failed)};
     window.sentenceDraftEnabled = ${options.sentenceDraftEnabled};
     window._noResultsMessage = ${jsonEncode(t.no_search_results)};
     window.embedMedia = true;
