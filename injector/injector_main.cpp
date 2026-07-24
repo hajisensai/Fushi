@@ -92,6 +92,7 @@ using hibiki_voice_hook::LunaThreadParam;
 using hibiki_voice_hook::PFN_Luna_DetachProcess;
 using hibiki_voice_hook::PFN_Luna_InsertHookCode;
 using hibiki_voice_hook::PFN_Luna_InsertPCHooks;
+using hibiki_voice_hook::PFN_Luna_RemoveHook;
 
 // 目标与自身位数（WOW64）必须一致才能注入：x86 DLL 只能进 32 位进程，x64 只能进 64 位。
 // 返回 true 表示匹配。CREATE_SUSPENDED 的新进程也能查（此刻映像已就绪，IsWow64Process 有效）。
@@ -212,8 +213,15 @@ struct LunaCtx {
   PFN_Luna_DetachProcess detach = nullptr;
   PFN_Luna_InsertPCHooks insert_pc = nullptr;
   PFN_Luna_InsertHookCode insert_hook = nullptr;
+  PFN_Luna_RemoveHook remove_hook = nullptr;
   bool use_pc_hooks = false;       // 连接后是否补装通用 PC hooks（默认否，避免与 GDI 重复）
   std::vector<std::wstring> hook_codes;
+  std::vector<std::wstring> blocked_hook_codes;
+  std::vector<std::wstring> blocked_hook_names;
+  std::vector<std::wstring> confirmed_blocked_hook_names;
+  std::vector<std::wstring> preferred_hook_codes;
+  volatile LONG blocked_hook_remove_requests = 0;
+  volatile LONG blocked_hook_remove_confirmations = 0;
 };
 LunaCtx g_luna;
 
@@ -534,6 +542,15 @@ bool LunaShouldWriteLine(const wchar_t* hookcode, uint64_t thread_id,
     return !is_artifact &&
            (manually_selected == 0 || manually_selected == thread_id);
   }
+  if (manually_selected == 0 && !g_luna.preferred_hook_codes.empty()) {
+    if (is_artifact) return false;
+    for (const std::wstring& preferred : g_luna.preferred_hook_codes) {
+      if (hibiki_voice_hook::LunaHookCodeMatchesBlock(preferred, hookcode)) {
+        return true;
+      }
+    }
+    return false;
+  }
   const std::wstring key =
       (hookcode != nullptr) ? std::wstring(hookcode) : std::wstring();
   EnterCriticalSection(&g_lunaSelectCs);
@@ -664,13 +681,58 @@ void LunaThreadRemove(const wchar_t* hookcode, const char* hookname,
   (void)tp;
 }
 void LunaHostInfo(int type, const wchar_t* log) {
-  (void)type;
-  (void)log;
+  if (LunaDiagEnabled() && log != nullptr) {
+    fwprintf(stderr, L"[lunahost] type=%d log=%ls\n", type, log);
+    fflush(stderr);
+  }
+  if (log == nullptr) return;
+  const LONG requests =
+      InterlockedCompareExchange(&g_luna.blocked_hook_remove_requests, 0, 0);
+  LONG confirmations = InterlockedCompareExchange(
+      &g_luna.blocked_hook_remove_confirmations, 0, 0);
+  if (confirmations >= requests) return;
+  for (const std::wstring& name : g_luna.blocked_hook_names) {
+    if (hibiki_voice_hook::LunaHostLogConfirmsHookRemoval(log, name) &&
+        std::find(g_luna.confirmed_blocked_hook_names.begin(),
+                  g_luna.confirmed_blocked_hook_names.end(),
+                  name) == g_luna.confirmed_blocked_hook_names.end()) {
+      g_luna.confirmed_blocked_hook_names.push_back(name);
+      confirmations =
+          InterlockedIncrement(&g_luna.blocked_hook_remove_confirmations);
+      fprintf(stderr,
+              "[luna] confirmed unsafe auto hook removal "
+              "(confirmed=%ld requested=%ld)\n",
+              confirmations, requests);
+      return;
+    }
+  }
 }
 void LunaHookInsert(DWORD pid, uint64_t addr, const wchar_t* hookcode) {
-  (void)pid;
-  (void)addr;
-  (void)hookcode;
+  if (pid != g_luna.pid || hookcode == nullptr) return;
+  if (LunaDiagEnabled()) {
+    fwprintf(stderr, L"[lunahookinsert] pid=%lu addr=0x%llx code=%ls\n", pid,
+             static_cast<unsigned long long>(addr), hookcode);
+    fflush(stderr);
+  }
+  for (const std::wstring& blocked : g_luna.blocked_hook_codes) {
+    if (!hibiki_voice_hook::LunaHookCodeMatchesBlock(blocked, hookcode)) {
+      continue;
+    }
+    if (g_luna.remove_hook == nullptr) {
+      fprintf(stderr,
+              "[luna] unsafe auto hook matched but Luna_RemoveHook is missing: "
+              "%ls pid=%lu\n",
+              hookcode, pid);
+      return;
+    }
+    g_luna.remove_hook(pid, addr);
+    InterlockedIncrement(&g_luna.blocked_hook_remove_requests);
+    fprintf(stderr,
+            "[luna] requested unsafe auto hook removal %ls pid=%lu "
+            "addr=0x%llx\n",
+            hookcode, pid, static_cast<unsigned long long>(addr));
+    return;
+  }
 }
 void LunaEmbed(const wchar_t* text, LunaThreadParam tp) {
   (void)text;
@@ -682,7 +744,10 @@ void LunaEmbed(const wchar_t* text, LunaThreadParam tp) {
 // target 是目标进程句柄（复用 InjectDll 把 LunaHook<arch>.dll 注入游戏）。成功接线返回 true。
 bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
                   bool use_pc_hooks,
-                  const std::vector<std::wstring>& hook_codes) {
+                  const std::vector<std::wstring>& hook_codes,
+                  const std::vector<std::wstring>& blocked_hook_codes,
+                  const std::vector<std::wstring>& blocked_hook_names,
+                  const std::vector<std::wstring>& preferred_hook_codes) {
   const std::wstring host_path =
       InjectorDir() + L"LunaHost" + kLunaArch + L".dll";
   HMODULE host = LoadLibraryW(host_path.c_str());
@@ -706,8 +771,15 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
   g_luna.detach = bridge.detach;
   g_luna.insert_pc = bridge.insert_pc;
   g_luna.insert_hook = bridge.insert_hook;
+  g_luna.remove_hook = bridge.remove_hook;
   g_luna.use_pc_hooks = use_pc_hooks && (bridge.insert_pc != nullptr);
   g_luna.hook_codes = hook_codes;
+  g_luna.blocked_hook_codes = blocked_hook_codes;
+  g_luna.blocked_hook_names = blocked_hook_names;
+  g_luna.confirmed_blocked_hook_names.clear();
+  g_luna.preferred_hook_codes = preferred_hook_codes;
+  InterlockedExchange(&g_luna.blocked_hook_remove_requests, 0);
+  InterlockedExchange(&g_luna.blocked_hook_remove_confirmations, 0);
   header->hook_diagnostics |= kDiagLunaHostReady;
 
   // flushDelay=200ms（一句停顿 flush 一行）、filterRepetition=true（LunaHook 侧先去重）、
@@ -769,6 +841,15 @@ void ShutdownLunaHook() {
     g_luna.header = nullptr;
     g_luna.detach = nullptr;
     g_luna.insert_pc = nullptr;
+    g_luna.insert_hook = nullptr;
+    g_luna.remove_hook = nullptr;
+    g_luna.hook_codes.clear();
+    g_luna.blocked_hook_codes.clear();
+    g_luna.blocked_hook_names.clear();
+    g_luna.confirmed_blocked_hook_names.clear();
+    g_luna.preferred_hook_codes.clear();
+    InterlockedExchange(&g_luna.blocked_hook_remove_requests, 0);
+    InterlockedExchange(&g_luna.blocked_hook_remove_confirmations, 0);
     g_luna.pid = 0;
   }
 }
@@ -778,7 +859,11 @@ struct LunaOptions {
   bool enabled = true;    // --no-luna 关闭
   int codepage = 932;     // --luna-codepage（日文默认 SHIFT_JIS）
   bool pc_hooks = false;  // --luna-pchooks 补装通用 PC hooks
+  uint32_t defer_until_running_ms = 0;
   std::vector<std::wstring> hook_codes;  // 版本专用、已验证的 H-code
+  std::vector<std::wstring> blocked_hook_codes;  // SHA-256 精确匹配的危险自动 hook
+  std::vector<std::wstring> blocked_hook_names;  // 异步移除完成确认用 Luna 名称
+  std::vector<std::wstring> preferred_hook_codes;  // 自动制卡优先采用的干净线程
   std::wstring profile_path;  // 用户导入的 UTF-8 TSV（按 exe/module SHA-256）
 };
 
@@ -794,12 +879,45 @@ void ApplyLunaProfiles(const std::wstring& executable, DWORD pid,
   auto apply = [&](const std::string& tsv, const char* source) {
     const auto match = hibiki_voice_hook::MatchLunaHookProfiles(tsv, identity);
     if (match.codepage > 0) options->codepage = match.codepage;
+    if (match.enable_pc_hooks) options->pc_hooks = true;
+    if (match.defer_until_running_ms > options->defer_until_running_ms) {
+      options->defer_until_running_ms = match.defer_until_running_ms;
+      fprintf(stderr, "[luna] matched %s deferred guard: %u ms\n", source,
+              match.defer_until_running_ms);
+    }
     for (const std::wstring& code : match.hook_codes) {
       if (std::find(options->hook_codes.begin(), options->hook_codes.end(),
                     code) == options->hook_codes.end()) {
         options->hook_codes.push_back(code);
         fprintf(stderr, "[luna] matched %s SHA-256 profile: %ls\n", source,
                 code.c_str());
+      }
+    }
+    for (const std::wstring& code : match.blocked_hook_codes) {
+      if (std::find(options->blocked_hook_codes.begin(),
+                    options->blocked_hook_codes.end(),
+                    code) == options->blocked_hook_codes.end()) {
+        options->blocked_hook_codes.push_back(code);
+        fprintf(stderr, "[luna] matched %s blocked hook profile: %ls\n", source,
+                code.c_str());
+      }
+    }
+    for (const std::wstring& name : match.blocked_hook_names) {
+      if (std::find(options->blocked_hook_names.begin(),
+                    options->blocked_hook_names.end(),
+                    name) == options->blocked_hook_names.end()) {
+        options->blocked_hook_names.push_back(name);
+        fprintf(stderr, "[luna] matched %s blocked hook name: %ls\n", source,
+                name.c_str());
+      }
+    }
+    for (const std::wstring& code : match.preferred_hook_codes) {
+      if (std::find(options->preferred_hook_codes.begin(),
+                    options->preferred_hook_codes.end(),
+                    code) == options->preferred_hook_codes.end()) {
+        options->preferred_hook_codes.push_back(code);
+        fprintf(stderr, "[luna] matched %s preferred hook profile: %ls\n",
+                source, code.c_str());
       }
     }
   };
@@ -813,6 +931,26 @@ void ApplyLunaProfiles(const std::wstring& executable, DWORD pid,
       apply(imported, "user");
     }
   }
+}
+
+using PFN_NtSuspendProcess = LONG(NTAPI*)(HANDLE);
+using PFN_NtResumeProcess = LONG(NTAPI*)(HANDLE);
+
+// Fragile engine profiles need Luna installed only after their startup scripts
+// settle, while no game thread can execute a hook that is about to be removed.
+// Resolve the Windows process-wide suspend/resume pair dynamically so the
+// guarded behavior remains opt-in and fails closed when unavailable.
+bool SetTargetProcessSuspended(HANDLE target, bool suspended) {
+  HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+  if (ntdll == nullptr) return false;
+  if (suspended) {
+    const auto fn = reinterpret_cast<PFN_NtSuspendProcess>(
+        GetProcAddress(ntdll, "NtSuspendProcess"));
+    return fn != nullptr && fn(target) >= 0;
+  }
+  const auto fn = reinterpret_cast<PFN_NtResumeProcess>(
+      GetProcAddress(ntdll, "NtResumeProcess"));
+  return fn != nullptr && fn(target) >= 0;
 }
 
 // attach 与 launch 共用的注入编排。target=目标进程句柄，pid=目标 pid（命名共享内存/事件）。
@@ -944,6 +1082,43 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
 
   // CREATE_SUSPENDED launch 必须等游戏内 DLL 完成首次 XAudio2/DirectSound 导出 hook，
   // 再恢复主线程。否则 Unity 可能先创建全部 source voice，之后晚 attach 只能拿到混音。
+  bool luna_initialized = false;
+  auto init_guarded_luna = [&]() -> bool {
+    if (luna.blocked_hook_names.size() != luna.blocked_hook_codes.size()) {
+      fprintf(stderr,
+              "[luna] blocked-hook profile is missing removal confirmation "
+              "names\n");
+      return false;
+    }
+    luna_initialized =
+        InitLunaHook(header, target, pid, luna.codepage, luna.pc_hooks,
+                     luna.hook_codes, luna.blocked_hook_codes,
+                     luna.blocked_hook_names, luna.preferred_hook_codes);
+    if (!luna_initialized) return false;
+    const LONG expected_removed =
+        static_cast<LONG>(luna.blocked_hook_codes.size());
+    const ULONGLONG luna_deadline = GetTickCount64() + wait_ms;
+    while (InterlockedCompareExchange(
+               &g_luna.blocked_hook_remove_confirmations, 0, 0) <
+               expected_removed &&
+           GetTickCount64() < luna_deadline) {
+      Sleep(1);
+    }
+    const LONG removed = InterlockedCompareExchange(
+        &g_luna.blocked_hook_remove_confirmations, 0, 0);
+    if (removed < expected_removed) {
+      fprintf(stderr,
+              "[luna] blocked-hook guard timed out "
+              "(removed=%ld expected=%ld)\n",
+              removed, expected_removed);
+      return false;
+    }
+    fprintf(stderr,
+            "[luna] blocked-hook guard ready "
+            "(removed=%ld expected=%ld)\n",
+            removed, expected_removed);
+    return true;
+  };
   if (resume_thread != nullptr) {
     const ULONGLONG deadline = GetTickCount64() + wait_ms;
     while ((header->hook_diagnostics & kDiagStartupAudioHooksReady) == 0 &&
@@ -955,6 +1130,26 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
               "startup audio hook readiness timed out; resuming game with text/late-hook fallback\n");
     }
 
+    // 精确 profile 标记了危险自动 hook 时，必须在游戏线程挂起期间启动 Luna，
+    // 并确认这些 hook 已移除后才允许游戏继续执行。defer profile 会先让脆弱的
+    // 启动脚本稳定，再短暂挂起整个目标进程完成相同的安全安装。
+    const bool guarded_luna =
+        hold && luna.enabled && !luna.blocked_hook_codes.empty();
+    const bool defer_guard =
+        guarded_luna && luna.defer_until_running_ms > 0;
+    if (guarded_luna && !defer_guard) {
+      if (!init_guarded_luna()) {
+        fprintf(stderr,
+                "[luna] failed to initialize early blocked-hook guard; "
+                "refusing to resume suspended game\n");
+        ShutdownLunaHook();
+        CloseHandle(ready);
+        UnmapViewOfFile(header);
+        CloseHandle(mapping);
+        return 1;
+      }
+    }
+
     // 只有游戏内 DLL 完成首轮音频导出 hook 后才允许游戏主线程继续。
     // Unity 会在启动早期创建 XAudio2 engine/source voice，提前恢复会永久错过这些对象。
     if (ResumeThread(resume_thread) == static_cast<DWORD>(-1)) {
@@ -963,6 +1158,50 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
       UnmapViewOfFile(header);
       CloseHandle(mapping);
       return 1;
+    }
+
+    if (defer_guard) {
+      fprintf(stderr,
+              "[luna] deferring guarded hook installation for %u ms\n",
+              luna.defer_until_running_ms);
+      const ULONGLONG defer_deadline =
+          GetTickCount64() + luna.defer_until_running_ms;
+      while (GetTickCount64() < defer_deadline) {
+        if (hold_process != nullptr &&
+            WaitForSingleObject(hold_process, 0) == WAIT_OBJECT_0) {
+          luna_initialized = true;
+          break;
+        }
+        Sleep(50);
+      }
+      if (!luna_initialized) {
+        if (!SetTargetProcessSuspended(target, true)) {
+          fprintf(stderr,
+                  "[luna] failed to suspend running target for guarded "
+                  "installation\n");
+          CloseHandle(ready);
+          UnmapViewOfFile(header);
+          CloseHandle(mapping);
+          return 1;
+        }
+        fprintf(stderr,
+                "[luna] target suspended for guarded hook installation\n");
+        const bool guarded_ready = init_guarded_luna();
+        const bool resumed = SetTargetProcessSuspended(target, false);
+        if (!resumed) {
+          fprintf(stderr,
+                  "[luna] failed to resume target after guarded installation\n");
+        }
+        if (!guarded_ready || !resumed) {
+          ShutdownLunaHook();
+          CloseHandle(ready);
+          UnmapViewOfFile(header);
+          CloseHandle(mapping);
+          return 1;
+        }
+        fprintf(stderr,
+                "[luna] target resumed after guarded hook installation\n");
+      }
     }
   }
 
@@ -973,9 +1212,11 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
 
   // host 模式（--hold）才接入 LunaHook 全引擎文本 hook：写同一文本环，与游戏内 GDI hook
   // 并存（原子占号防撞槽）。probe 模式确认即退，LunaHook 没有捕获窗口，故不接。
-  if (hold && luna.enabled) {
+  if (hold && luna.enabled && !luna_initialized) {
     InitLunaHook(header, target, pid, luna.codepage, luna.pc_hooks,
-                 luna.hook_codes);
+                 luna.hook_codes, luna.blocked_hook_codes,
+                 luna.blocked_hook_names,
+                 luna.preferred_hook_codes);
   }
 
   if (hold) {

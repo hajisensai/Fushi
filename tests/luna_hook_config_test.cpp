@@ -14,6 +14,39 @@ int main() {
     return 1;
   }
 
+  hibiki_voice_hook::LunaTargetIdentity fate;
+  fate.executable_sha256 =
+      "9c195563b8724131cfc5cfd7b32767597efba136d98bb81dfda2fdb242695c2a";
+  const auto fate_profile = hibiki_voice_hook::MatchLunaHookProfiles(
+      hibiki_voice_hook::BuiltInLunaHookProfiles(), fate);
+  if (fate_profile.enable_pc_hooks ||
+      fate_profile.defer_until_running_ms != 8000 ||
+      fate_profile.blocked_hook_codes.size() != 2 ||
+      fate_profile.blocked_hook_codes.front() != L"EXHQXN8@1647F4" ||
+      fate_profile.blocked_hook_codes.back() != L"EXHWXN0@1D2865" ||
+      fate_profile.blocked_hook_names.size() != 2 ||
+      fate_profile.blocked_hook_names.front() != L"Krkr2wcs" ||
+      fate_profile.blocked_hook_names.back() != L"EmbedKrkr2" ||
+      fate_profile.preferred_hook_codes.size() != 1 ||
+      fate_profile.preferred_hook_codes.front() != L"HQXN-C@1D2F80" ||
+      !hibiki_voice_hook::LunaHookCodeMatchesBlock(
+          fate_profile.blocked_hook_codes.front(),
+          L"EXHQXN8@1647F4:Fate／stay night[Realta Nua] -Fate-.exe") ||
+      hibiki_voice_hook::LunaHookCodeMatchesBlock(
+          fate_profile.blocked_hook_codes.front(), L"EXHQXN8@1647F5")) {
+    std::fprintf(stderr, "Fate unsafe auto-hook profile did not match\n");
+    return 5;
+  }
+  if (!hibiki_voice_hook::LunaHostLogConfirmsHookRemoval(
+          L"移除钩子: Krkr2wcs", L"Krkr2wcs") ||
+      !hibiki_voice_hook::LunaHostLogConfirmsHookRemoval(
+          L"remove hook Krkr2wcs  \r\n", L"Krkr2wcs") ||
+      hibiki_voice_hook::LunaHostLogConfirmsHookRemoval(
+          L"注入钩子: Krkr2wcs 005647F4", L"Krkr2wcs")) {
+    std::fprintf(stderr, "Luna removal confirmation parsing failed\n");
+    return 6;
+  }
+
   hibiki_voice_hook::LunaTargetIdentity moved = nine;
   if (hibiki_voice_hook::MatchLunaHookProfiles(
           hibiki_voice_hook::BuiltInLunaHookProfiles(), moved)

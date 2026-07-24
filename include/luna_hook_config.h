@@ -3,6 +3,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
+#include <cstdlib>
+#include <cwchar>
+#include <cwctype>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -17,7 +21,12 @@ struct LunaTargetIdentity {
 
 struct LunaHookProfileMatch {
   int codepage = 0;
+  bool enable_pc_hooks = false;
+  uint32_t defer_until_running_ms = 0;
   std::vector<std::wstring> hook_codes;
+  std::vector<std::wstring> blocked_hook_codes;
+  std::vector<std::wstring> blocked_hook_names;
+  std::vector<std::wstring> preferred_hook_codes;
 };
 
 inline std::string LowerAscii(std::string value) {
@@ -45,8 +54,46 @@ inline std::vector<std::string> SplitTabs(const std::string& line) {
   return fields;
 }
 
+inline std::vector<std::string> SplitSemicolons(const std::string& value) {
+  std::vector<std::string> fields;
+  size_t start = 0;
+  while (start <= value.size()) {
+    const size_t separator = value.find(';', start);
+    fields.push_back(value.substr(start, separator - start));
+    if (separator == std::string::npos) break;
+    start = separator + 1;
+  }
+  return fields;
+}
+
+inline bool LunaHookCodeMatchesBlock(const std::wstring& blocked,
+                                     const wchar_t* hook_code) {
+  if (blocked.empty() || hook_code == nullptr) return false;
+  const std::wstring actual(hook_code);
+  return actual == blocked ||
+         (actual.size() > blocked.size() &&
+          actual.compare(0, blocked.size(), blocked) == 0 &&
+          actual[blocked.size()] == L':');
+}
+
+inline bool LunaHostLogConfirmsHookRemoval(const wchar_t* log,
+                                           const std::wstring& hook_name) {
+  if (log == nullptr || hook_name.empty()) return false;
+  size_t length = std::wcslen(log);
+  while (length > 0 && std::iswspace(log[length - 1])) --length;
+  return length >= hook_name.size() &&
+         std::wstring(log + length - hook_name.size(), hook_name.size()) ==
+             hook_name;
+}
+
 // TSV schema: exe_sha256, module_name, module_sha256, codepage, hook_code,
-// label. A row may identify the target by executable hash, module hash, or both.
+// label, options. Options are semicolon-separated: `pc-hooks` enables generic
+// candidates; `block=<hook-code-without-module>` removes a known-crashing
+// auto-detected hook; `block-name=<Luna-hook-name>` confirms that asynchronous
+// removal completed; `prefer=<hook-code-without-module>` limits automatic text
+// output to a known-good hook; `defer-ms=<milliseconds>` waits for fragile
+// engines to initialize before installing the guarded hooks. A row may identify
+// by executable hash, module hash, or both.
 inline LunaHookProfileMatch MatchLunaHookProfiles(
     const std::string& tsv, const LunaTargetIdentity& identity) {
   LunaHookProfileMatch result;
@@ -85,6 +132,30 @@ inline LunaHookProfileMatch MatchLunaHookProfiles(
     }
     if (!fields[4].empty()) {
       result.hook_codes.emplace_back(fields[4].begin(), fields[4].end());
+    }
+    if (fields.size() >= 7) {
+      for (const std::string& option : SplitSemicolons(fields[6])) {
+        if (option == "pc-hooks") {
+          result.enable_pc_hooks = true;
+        } else if (option.rfind("block=", 0) == 0 && option.size() > 6) {
+          const std::string code = option.substr(6);
+          result.blocked_hook_codes.emplace_back(code.begin(), code.end());
+        } else if (option.rfind("block-name=", 0) == 0 &&
+                   option.size() > 11) {
+          const std::string name = option.substr(11);
+          result.blocked_hook_names.emplace_back(name.begin(), name.end());
+        } else if (option.rfind("prefer=", 0) == 0 && option.size() > 7) {
+          const std::string code = option.substr(7);
+          result.preferred_hook_codes.emplace_back(code.begin(), code.end());
+        } else if (option.rfind("defer-ms=", 0) == 0 &&
+                   option.size() > 9) {
+          const unsigned long delay =
+              std::strtoul(option.c_str() + 9, nullptr, 10);
+          if (delay <= 30000) {
+            result.defer_until_running_ms = static_cast<uint32_t>(delay);
+          }
+        }
+      }
     }
   }
   return result;

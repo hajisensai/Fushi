@@ -46,6 +46,7 @@ using PFN_Luna_DetachProcess = void (*)(DWORD);
 using PFN_Luna_Settings = void (*)(int, bool, int, int, int, bool);
 using PFN_Luna_InsertPCHooks = void (*)(DWORD, int);
 using PFN_Luna_InsertHookCode = bool (*)(DWORD, const wchar_t*);
+using PFN_Luna_RemoveHook = void (*)(DWORD, uint64_t);
 
 inline constexpr std::array<const char*, 4> kLunaRequiredExports = {
     "Luna_Start", "Luna_ConnectProcess", "Luna_CheckIfNeedInject",
@@ -67,6 +68,7 @@ struct LunaBridgeExports {
   PFN_Luna_Settings settings = nullptr;
   PFN_Luna_InsertPCHooks insert_pc = nullptr;
   PFN_Luna_InsertHookCode insert_hook = nullptr;
+  PFN_Luna_RemoveHook remove_hook = nullptr;
 
   bool Resolve(HMODULE host) {
     start = reinterpret_cast<PFN_Luna_Start>(GetProcAddress(host, "Luna_Start"));
@@ -82,6 +84,8 @@ struct LunaBridgeExports {
         GetProcAddress(host, "Luna_InsertPCHooks"));
     insert_hook = reinterpret_cast<PFN_Luna_InsertHookCode>(
         GetProcAddress(host, "Luna_InsertHookCode"));
+    remove_hook = reinterpret_cast<PFN_Luna_RemoveHook>(
+        GetProcAddress(host, "Luna_RemoveHook"));
     return start != nullptr && connect != nullptr && need_inject != nullptr &&
            detach != nullptr;
   }
