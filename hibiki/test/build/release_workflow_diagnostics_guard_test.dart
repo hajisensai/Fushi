@@ -194,23 +194,29 @@ void main() {
 
   test('desktop release workflow publishes Windows macOS and iOS assets', () {
     final String workflow = readReleaseDesktopWorkflow();
+    // PR#167 重放后 apple 拆成 macos / ios 两个并行 job，资产与 manifest 统一在
+    // publish job 单点发布（mac/iOS 失败不阻塞 Windows）。守卫意图不变：三平台
+    // 资产都要产出并发布。
     final String windowsJob = workflowJob(workflow, 'windows');
-    final String appleJob = workflowJob(workflow, 'apple');
+    final String macosJob = workflowJob(workflow, 'macos');
+    final String iosJob = workflowJob(workflow, 'ios');
+    final String publishJob = workflowJob(workflow, 'publish');
 
     expect(windowsJob, contains('flutter build windows --release'));
     expect(windowsJob, contains('hibiki-*-windows-setup.exe'));
 
-    expect(appleJob, contains('flutter build macos --release'));
-    expect(appleJob, contains('ditto -c -k --keepParent'));
-    expect(appleJob, contains(r'hibiki-${BUILD_VERSION_NAME}-macos.zip'));
+    expect(macosJob, contains('flutter build macos --release'));
+    expect(macosJob, contains('ditto -c -k --keepParent'));
+    expect(macosJob, contains(r'hibiki-${BUILD_VERSION_NAME}-macos.zip'));
 
-    expect(appleJob, contains('flutter build ios --release --no-codesign'));
-    expect(appleJob, contains('Payload'));
-    expect(appleJob, contains(r'hibiki-${BUILD_VERSION_NAME}-ios.ipa'));
+    expect(iosJob, contains('flutter build ios --release --no-codesign'));
+    expect(iosJob, contains('Payload'));
+    expect(iosJob, contains(r'hibiki-${BUILD_VERSION_NAME}-ios.ipa'));
 
-    expect(appleJob, contains('hibiki-*-macos.zip'));
-    expect(appleJob, contains('hibiki-*-ios.ipa'));
-    expect(appleJob, contains('Publish mirror update manifest (Apple assets)'));
+    expect(publishJob, contains('hibiki-*-macos.zip'));
+    expect(publishJob, contains('hibiki-*-ios.ipa'));
+    expect(
+        publishJob, contains('Publish mirror update manifest (Apple assets)'));
   });
 
   test(
