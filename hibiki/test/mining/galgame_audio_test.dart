@@ -787,6 +787,62 @@ void main() {
       );
     });
 
+    // 用户配置的游戏启动参数：一个 token 一个 `--arg`。空配置时**一个都不发**，
+    // 命令行与旧版逐字节相同——老 injector（用户尚未更新 helper）也不会看到新 flag。
+    test('未配置启动参数时不发 --arg / --workdir（逐字节向后兼容）', () {
+      expect(
+        buildEngineHookInjectorArguments(
+          targetPid: 0,
+          launchExe: r'D:\Games\vn.exe',
+        ),
+        <String>[
+          '--launch',
+          r'D:\Games\vn.exe',
+          '--hold',
+          '--wait-ms',
+          '30000',
+        ],
+      );
+    });
+
+    test('配置了启动参数时逐 token 发 --arg，并带上 --workdir', () {
+      expect(
+        buildEngineHookInjectorArguments(
+          targetPid: 0,
+          launchExe: r'D:\Games\vn.exe',
+          gameArguments: <String>['-windowed', r'--save=D:\My Saves\s'],
+          workdir: r'D:\Games',
+        ),
+        <String>[
+          '--launch',
+          r'D:\Games\vn.exe',
+          '--hold',
+          '--wait-ms',
+          '30000',
+          '--workdir',
+          r'D:\Games',
+          '--arg',
+          '-windowed',
+          '--arg',
+          r'--save=D:\My Saves\s',
+        ],
+      );
+    });
+
+    // attach 模式游戏已经在跑，进程创建参数无从谈起：给了也必须不发，否则 injector
+    // 会收到一个 launch 专用 flag 而 `--pid` 路径根本不会用它。
+    test('attach 模式忽略启动参数与 workdir', () {
+      expect(
+        buildEngineHookInjectorArguments(
+          targetPid: 4567,
+          launchExe: null,
+          gameArguments: <String>['-windowed'],
+          workdir: r'D:\Games',
+        ),
+        <String>['--pid', '4567', '--hold', '--wait-ms', '30000'],
+      );
+    });
+
     test('attach 模式保持旧参数，未启用时不带 Luna PC hooks', () {
       expect(
         buildEngineHookInjectorArguments(

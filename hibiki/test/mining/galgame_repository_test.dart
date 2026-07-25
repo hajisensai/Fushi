@@ -18,12 +18,14 @@ void main() {
     int playStatus = 0,
     String? releaseDate,
     String? primarySource,
+    String launchArgs = '',
   }) {
     return GalgameRow(
       id: id,
       name: name,
       exePath: r'Z:\g\game.exe',
       workdir: r'Z:\g',
+      launchArgs: launchArgs,
       addedAt: DateTime(2026).millisecondsSinceEpoch,
       playStatus: playStatus,
       primarySource: primarySource,

@@ -2645,5 +2645,7 @@
   "game_line_track_tooltip": "Pick the voice track for this line",
   "game_line_track_dialog_title": "Voice track for this line",
   "game_line_track_failed": "That track has no audio around this line",
-  "game_line_track_applied": "Voice track applied to this line"
+  "game_line_track_applied": "Voice track applied to this line",
+  "game_edit_launch_args": "Launch arguments",
+  "game_edit_launch_args_hint": "Passed to the game on launch, e.g. -windowed"
 }

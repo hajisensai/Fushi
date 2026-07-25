@@ -43,6 +43,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           _VoiceTestEngine(),
       loopbackSourceFactory: _VoiceTestLoopback.new,

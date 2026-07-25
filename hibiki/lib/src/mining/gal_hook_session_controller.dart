@@ -290,6 +290,9 @@ typedef GalEngineSourceFactory = EngineHookGalAudioSource Function({
   required String injectorPath,
   required bool lunaPcHooks,
   int? lunaCodepage,
+  // launch 专用且可选：attach 路径（引擎重试、窗口绑定）不传，行为不变。
+  List<String> launchArguments,
+  String launchWorkdir,
 });
 typedef GalLoopbackSourceFactory = LoopbackGalAudioSource Function();
 typedef GalTargetWow64Probe = Future<bool?> Function(int pid);
@@ -534,10 +537,14 @@ class GalHookSessionController extends ChangeNotifier {
     required String injectorPath,
     required bool lunaPcHooks,
     int? lunaCodepage,
+    List<String> launchArguments = const <String>[],
+    String launchWorkdir = '',
   }) {
     return EngineHookGalAudioSource(
       targetPid: targetPid,
       launchExe: launchExe,
+      launchArguments: launchArguments,
+      launchWorkdir: launchWorkdir,
       injectorPath: injectorPath,
       lunaPcHooks: lunaPcHooks,
       lunaCodepage: lunaCodepage,
@@ -727,7 +734,16 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
-  Future<bool> launchGame(String executablePath) async {
+  /// 拉起游戏并注入。
+  ///
+  /// [launchArguments] 是用户为该游戏配置的启动参数（已按 Windows 规则拆成 argv
+  /// token，见 `parseGameLaunchArguments`），[workdir] 是工作目录。两者都可省略：
+  /// 省略即维持旧行为（不发 `--arg` / 不发 `--workdir`，injector 缺省用 exe 所在目录）。
+  Future<bool> launchGame(
+    String executablePath, {
+    List<String> launchArguments = const <String>[],
+    String workdir = '',
+  }) async {
     final int generation = ++_operationGeneration;
     await _stopSources();
     if (!_isWindows || generation != _operationGeneration) return false;
@@ -774,11 +790,15 @@ class GalHookSessionController extends ChangeNotifier {
         'exe': executablePath,
         'arch': is32Bit == true ? 'x86' : 'x64',
         'lunaPcHooks': lunaPcHooks,
+        'gameArgCount': launchArguments.length,
+        'hasWorkdir': workdir.isNotEmpty,
       },
     );
     final EngineHookGalAudioSource engine = _engineSourceFactory(
       targetPid: 0,
       launchExe: executablePath,
+      launchArguments: launchArguments,
+      launchWorkdir: workdir,
       injectorPath: injector,
       lunaPcHooks: lunaPcHooks,
     );

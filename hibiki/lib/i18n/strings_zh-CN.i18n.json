@@ -2645,5 +2645,7 @@
   "game_line_track_tooltip": "为这句选择语音轨",
   "game_line_track_dialog_title": "这句台词的语音轨",
   "game_line_track_failed": "这条轨在该句附近没有取到语音",
-  "game_line_track_applied": "已把该轨的语音绑定到这句"
+  "game_line_track_applied": "已把该轨的语音绑定到这句",
+  "game_edit_launch_args": "启动参数",
+  "game_edit_launch_args_hint": "启动时传给游戏，例如 -windowed"
 }
