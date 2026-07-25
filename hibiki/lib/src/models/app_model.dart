@@ -4936,6 +4936,13 @@ class AppModel with ChangeNotifier {
       // 的「验证插件已正常启用」连接检测显示（扩展 SW 启动时主动打 /api/extension/status，
       // 故装完扩展即刷新，无需用户先划词）。
       onExtensionSeen: () => _browserExtensionLastSeenAt = DateTime.now(),
+      // BUG-1079：扩展经 /api/extension/status 请求体自报「浏览器中实际加载的 build」。
+      // 记到 ValueNotifier 供扩展管理页与内置指纹比对：不一致 = 扩展自更新未生效
+      // （用户从别的目录加载 / reload 失败），页面显示更新警示条。
+      onExtensionReport: (String build, String? version) {
+        _browserExtensionReportedAt = DateTime.now();
+        browserExtensionReportedBuild.value = build;
+      },
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!HoshiDicts.isInitialized) return '';
@@ -4961,6 +4968,18 @@ class AppModel with ChangeNotifier {
   /// 浏览器扩展最近一次访问本机 yomitan-api server 的时间（null = 从未连上）。
   /// 扩展管理页「验证插件已正常启用」据此判断连接状态。
   DateTime? get browserExtensionLastSeenAt => _browserExtensionLastSeenAt;
+
+  /// BUG-1079：扩展自报的「浏览器中实际加载的 build」（/api/extension/status 请求体）。
+  /// null = 从未上报（旧扩展发 '{}' / 从未连接）。扩展管理页用 ValueListenableBuilder
+  /// 订阅，与 [browserExtensionBuild] 比对：不一致即显示「扩展需手动重新加载」警示。
+  final ValueNotifier<String?> browserExtensionReportedBuild =
+      ValueNotifier<String?>(null);
+
+  // BUG-1079：最近一次扩展自报版本的时间戳（内存态，与 last-seen 同生命周期）。
+  DateTime? _browserExtensionReportedAt;
+
+  /// BUG-1079：扩展最近一次自报版本的时间（null = 从未上报）。
+  DateTime? get browserExtensionReportedAt => _browserExtensionReportedAt;
 
   /// BUG-726：把已解压的浏览器扩展副本刷新到当前 app 内置版本（详见
   /// [refreshBundledBrowserExtensionIfStale]），并缓存内置指纹供查词响应下发。

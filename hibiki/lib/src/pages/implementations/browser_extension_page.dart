@@ -181,7 +181,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
             _verifyStep(theme),
           ],
           const Divider(height: 32),
-          _versionCard(theme, build),
+          _versionCard(theme, appModel, build),
         ],
       ),
     );
@@ -299,21 +299,67 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     );
   }
 
-  Widget _versionCard(ThemeData theme, String? build) {
-    return HibikiCard(
-      child: Row(
-        children: <Widget>[
-          Icon(Icons.info_outline,
-              size: 20, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              '${t.browser_extension_version_label} · ${build ?? '—'}',
-              style: const TextStyle(fontFamily: 'monospace'),
-            ),
+  /// 版本卡（BUG-1079 扩展为双行）：app 内置指纹 + 扩展自报的「浏览器中实际加载」指纹；
+  /// 两者都有且不一致时显示警示条（扩展自更新未生效，需手动到扩展管理页重新加载）。
+  /// 浏览器侧指纹经 [AppModel.browserExtensionReportedBuild]（ValueNotifier）实时驱动。
+  Widget _versionCard(ThemeData theme, AppModel appModel, String? build) {
+    return ValueListenableBuilder<String?>(
+      valueListenable: appModel.browserExtensionReportedBuild,
+      builder: (BuildContext context, String? reported, Widget? _) {
+        final bool mismatch =
+            build != null && reported != null && build != reported;
+        return HibikiCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Icon(Icons.info_outline,
+                      size: 20, color: theme.colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(t.browser_extension_version_label)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${t.browser_extension_version_app} · ${build ?? '—'}',
+                style: const TextStyle(fontFamily: 'monospace'),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${t.browser_extension_version_browser} · ${reported ?? '—'}',
+                style: const TextStyle(fontFamily: 'monospace'),
+              ),
+              if (mismatch) ...<Widget>[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Icon(Icons.update,
+                          size: 18, color: theme.colorScheme.onErrorContainer),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          t.browser_extension_version_mismatch,
+                          style: TextStyle(
+                              color: theme.colorScheme.onErrorContainer),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

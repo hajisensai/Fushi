@@ -11,6 +11,14 @@
 // scrolling (no preventDefault). The in-app popup (flutter_inappwebview, no
 // chrome) and wheels over the popup itself keep the custom scaled scroll.
 //
+// BUG-1078 extends this: even a cheap non-passive document wheel listener makes
+// the browser abandon the compositor fast-scroll path on EVERY page the content
+// script touches. So in the extension context popup.js must NOT attach to
+// document at all — it exposes the handler as window.__hibikiPopupWheelListener
+// and content.js lazily mounts it on the popup shadow host for the popup's
+// lifetime. The in-app popup (no chrome.runtime) keeps the resident document
+// listener ({passive:false}) — there the document IS the popup.
+//
 // This EXECUTES the real popup.js wheel handler against a minimal fake DOM and
 // asserts preventDefault / scrollBy per surface. Reverting the guard turns it red.
 //
@@ -35,7 +43,7 @@ function loadWheelHandler(opts) {
     hostScrollBy: [],
   };
 
-  let wheelHandler = null;
+  const documentWheelRegs = [];
 
   const hostEl = {
     style: {},
@@ -45,8 +53,8 @@ function loadWheelHandler(opts) {
   const documentObj = {
     documentElement: { style: {} },
     body: { tagName: 'BODY' },
-    addEventListener(type, handler) {
-      if (type === 'wheel') wheelHandler = handler;
+    addEventListener(type, handler, options) {
+      if (type === 'wheel') documentWheelRegs.push({ handler, options });
     },
   };
 
@@ -82,8 +90,28 @@ function loadWheelHandler(opts) {
   vm.createContext(sandbox);
   vm.runInContext(source, sandbox, { filename: 'popup.js' });
 
-  assert.ok(typeof wheelHandler === 'function',
-    'popup.js must register a document wheel handler');
+  let wheelHandler = null;
+  if (opts.extension) {
+    // BUG-1078: extension context must leave document COMPLETELY free of wheel
+    // listeners (a resident non-passive listener kills compositor fast scroll on
+    // every page). The handler is exposed for content.js to mount on the shadow
+    // host for the popup's lifetime.
+    assert.strictEqual(documentWheelRegs.length, 0,
+      'extension context must NOT attach any document wheel listener (BUG-1078)');
+    wheelHandler = windowObj.__hibikiPopupWheelListener;
+    assert.ok(typeof wheelHandler === 'function',
+      'extension context must expose window.__hibikiPopupWheelListener for ' +
+      'content.js to lazily mount on the popup shadow host');
+  } else {
+    // In-app popup WebView: the document IS the popup — the resident document
+    // listener must stay, and stay non-passive (it preventDefault()s).
+    assert.strictEqual(documentWheelRegs.length, 1,
+      'in-app popup must keep exactly one resident document wheel listener');
+    assert.ok(documentWheelRegs[0].options &&
+      documentWheelRegs[0].options.passive === false,
+      'in-app document wheel listener must be {passive:false} (it preventDefaults)');
+    wheelHandler = documentWheelRegs[0].handler;
+  }
 
   return { wheelHandler, calls, hostEl };
 }

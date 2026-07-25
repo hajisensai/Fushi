@@ -17,6 +17,7 @@ class YomitanApiServerManager {
     String? Function()? extensionBuildProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     void Function()? onExtensionSeen,
+    void Function(String build, String? version)? onExtensionReport,
   })  : _lookup = lookupService,
         _mining = miningService,
         _history = historyService,
@@ -26,7 +27,8 @@ class YomitanApiServerManager {
         _audioSourcesProvider = audioSourcesProvider,
         _extensionBuildProvider = extensionBuildProvider,
         _onExtensionPopupSize = onExtensionPopupSize,
-        _onExtensionSeen = onExtensionSeen;
+        _onExtensionSeen = onExtensionSeen,
+        _onExtensionReport = onExtensionReport;
 
   final HibikiRemoteLookupService _lookup;
   final HibikiRemoteMiningService? _mining;
@@ -43,6 +45,9 @@ class YomitanApiServerManager {
   final void Function(double maxWidth, double maxHeight)? _onExtensionPopupSize;
   // 浏览器扩展连接探活回调，透传给 [YomitanApiServer]（app 侧记录 last-seen）。
   final void Function()? _onExtensionSeen;
+  // BUG-1079：扩展自报版本回调，透传给 [YomitanApiServer]（app 侧记录浏览器中实际
+  // 加载的 build，与内置指纹比对给出更新提示）。
+  final void Function(String build, String? version)? _onExtensionReport;
 
   YomitanApiServer? _server;
 
@@ -63,6 +68,7 @@ class YomitanApiServerManager {
       extensionBuildProvider: _extensionBuildProvider,
       onExtensionPopupSize: _onExtensionPopupSize,
       onExtensionSeen: _onExtensionSeen,
+      onExtensionReport: _onExtensionReport,
       apiKey: apiKey.isEmpty ? null : apiKey,
       allowLan: true,
     );
