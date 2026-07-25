@@ -24,7 +24,7 @@ Android: pilih **arm64**. Windows: pilih berkas **.exe**.
 
 ### 1. Mengimpor kamus yang direkomendasikan dan audio lokal (Sangat direkomendasikan untuk pemula!!! · opsional)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Unduhan langsung (cermin, 9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
 
 Di dalam aplikasi: Pengaturan -> Sinkronisasi & Cadangan -> ketuk **Impor Cadangan**.
 

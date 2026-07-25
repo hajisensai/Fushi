@@ -24,7 +24,7 @@ Android: เลือก **arm64** Windows: เลือกไฟล์ **.exe**
 
 ### 1. นำเข้าพจนานุกรมที่แนะนำและไฟล์เสียงในเครื่อง (แนะนำอย่างยิ่งสำหรับมือใหม่!!! · ไม่บังคับ)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [ดาวน์โหลดโดยตรง (มิเรอร์ 9.3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
 
 ในแอป: การตั้งค่า -> ซิงค์และสำรองข้อมูล -> แตะ **นำเข้าข้อมูลสำรอง**
 
