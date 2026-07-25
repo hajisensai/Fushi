@@ -151,6 +151,9 @@ void main() {
           engine,
       loopbackSourceFactory: () => loopback,
       textPollInterval: const Duration(milliseconds: 5),
+      // BUG-1101：逐行 loopback 是延迟冻结的，单测把等待压到 10ms 才能确定地
+      // 先看到自动兜底那一次 grabRecent。
+      loopbackFreezeDelay: const Duration(milliseconds: 10),
       endpointListenable: endpoints,
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
     );

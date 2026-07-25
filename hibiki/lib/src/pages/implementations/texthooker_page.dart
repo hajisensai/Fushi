@@ -140,6 +140,65 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     );
   }
 
+  /// 为单条台词改选语音轨（BUG-1102 的用户裁决出口）。
+  ///
+  /// 会话级「活跃音轨」选择只改自动选源的默认值，且只在引擎 PCM 是当前音源时生效；
+  /// 用户对**某一句**说「这句应该用这条轨」是与手动补录同级的裁决，走
+  /// [GalHookSessionController.setLineVoiceTrack] 独立取音。列表复用会话已有的音轨
+  /// 快照，并保留逐轨试听，让用户先听再定。
+  Future<void> _pickLineTrack(TexthookerLineEntry line) async {
+    final List<GalAudioTrack> tracks = _session.state.audioTracks;
+    if (tracks.isEmpty) {
+      HibikiToast.show(msg: t.game_no_tracks);
+      return;
+    }
+    final int? picked = await showDialog<int>(
+      context: context,
+      builder: (BuildContext dialogContext) => SimpleDialog(
+        title: Text(t.game_line_track_dialog_title),
+        children: <Widget>[
+          for (final GalAudioTrack track in tracks)
+            ListTile(
+              leading: const Icon(Icons.graphic_eq),
+              title: Text(
+                '${t.game_track_voice} ${track.orderIndex + 1} · '
+                '${track.format.sampleRate} Hz · ${track.format.channels} ch',
+              ),
+              subtitle: Text(
+                '${t.game_track_clips} ${track.clipCount} · '
+                '${t.game_track_energy} ${track.avgEnergy.toStringAsFixed(1)}',
+              ),
+              trailing: HibikiIconButton(
+                icon: Icons.play_circle_outline,
+                tooltip: t.game_track_preview,
+                onTap: () => unawaited(_previewTrackInDialog(track.sourcePtr)),
+              ),
+              onTap: () => Navigator.of(dialogContext).pop(track.sourcePtr),
+            ),
+        ],
+      ),
+    );
+    if (picked == null || !mounted) return;
+    final bool applied = await _session.setLineVoiceTrack(line.id, picked);
+    if (!mounted) return;
+    HibikiToast.show(
+      msg: applied ? t.game_line_track_applied : t.game_line_track_failed,
+    );
+  }
+
+  /// 选轨对话框里的逐轨试听：复用诊断页同一条 `exportTrackPreview` 通道。
+  Future<void> _previewTrackInDialog(int sourcePtr) async {
+    final GalTrackPreview? preview =
+        await _session.exportTrackPreview(sourcePtr);
+    if (preview == null) {
+      HibikiToast.show(msg: t.game_track_preview_failed);
+      return;
+    }
+    if (!await DesktopAudioPlayback.playFile(preview.filePath)) {
+      HibikiToast.show(msg: t.game_track_preview_failed);
+    }
+  }
+
   /// 分词结果缓存：行文本按 id 不可变，缓存 textToWords 避免每次 rebuild 重复分词
   /// （每来一行整页 setState）。行对象随音频/制卡/收藏态 copyWith 换新但 id/text 不变，
   /// 按 id 缓存恒安全。上限略高于行 buffer 上限，越界淘汰最旧插入项。
@@ -1173,11 +1232,18 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                         words: _wordCache.wordsFor(line.id, line.text),
                         selected: line.id == _activeLineId,
                         previewingAudio: line.id == _previewingLineId,
+                        // 逐行改音轨要求：会话内有 engine helper、有可选音轨快照，
+                        // 且这行属于当前会话（历史会话的时间戳早已失效）。
+                        canPickTrack: _session.hasEngineSource &&
+                            _session.state.audioTracks.isNotEmpty &&
+                            _session.isLineInCurrentSession(line),
                         onSelectLine: _selectLine,
                         onWordTap: _onWordTap,
                         onToggleFavorite: _toggleLineFavorite,
                         onPreviewAudio: (TexthookerLineEntry l) =>
                             unawaited(_toggleLinePreview(l)),
+                        onPickTrack: (TexthookerLineEntry l) =>
+                            unawaited(_pickLineTrack(l)),
                       );
                     },
                   ),
@@ -1419,7 +1485,10 @@ class _SessionOverviewCard extends StatelessWidget {
                 // 这种内部代码原样甩给用户，等于什么都没说。没有结构化原因时才退回代码。
                 if (!compact && state.fallbackReason != null)
                   Text(
+                    // BUG-1100：先看注入失败的可执行处置，再看降级原因自己的人话文案；
+                    // 两张表都没有才回退内部代码。
                     galHookFailureLabel(state.injectorFailure) ??
+                        galHookFallbackLabel(state.fallbackReason!) ??
                         state.fallbackReason!,
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
@@ -1703,10 +1772,12 @@ class _TexthookerLine extends StatelessWidget {
     required this.words,
     required this.selected,
     required this.previewingAudio,
+    required this.canPickTrack,
     required this.onSelectLine,
     required this.onWordTap,
     required this.onToggleFavorite,
     required this.onPreviewAudio,
+    required this.onPickTrack,
   });
 
   final TexthookerLineEntry line;
@@ -1715,11 +1786,17 @@ class _TexthookerLine extends StatelessWidget {
 
   /// 本行是否正被行内试听（播放按钮显示为停止）。
   final bool previewingAudio;
+
+  /// 是否显示「改音轨」按钮：会话有 engine helper、有音轨快照、且本行属于当前会话。
+  final bool canPickTrack;
   final ValueChanged<TexthookerLineEntry> onSelectLine;
   final ValueChanged<TexthookerLineEntry> onToggleFavorite;
 
   /// 行内试听已配音频（仅 [TexthookerLineEntry.hasAudio] 行显示按钮）。
   final ValueChanged<TexthookerLineEntry> onPreviewAudio;
+
+  /// 为本行单独改选语音轨（自动配对配错时的用户裁决出口）。
+  final ValueChanged<TexthookerLineEntry> onPickTrack;
   final void Function(
     TexthookerLineEntry line,
     String word,
@@ -1778,6 +1855,18 @@ class _TexthookerLine extends StatelessWidget {
                     enabledColor: previewingAudio ? colors.primary : null,
                     focusId: HibikiFocusId('game-line-preview-${line.id}'),
                     onTap: () => onPreviewAudio(line),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                // 逐行改音轨（BUG-1102）：自动选源在真机上会误选 BGM/旁白轨，
+                // 用户必须能对**这一句**直接指定用哪条轨重抓。
+                if (canPickTrack) ...<Widget>[
+                  HibikiIconButton(
+                    icon: Icons.multitrack_audio_outlined,
+                    tooltip: t.game_line_track_tooltip,
+                    size: 18,
+                    focusId: HibikiFocusId('game-line-track-${line.id}'),
+                    onTap: () => onPickTrack(line),
                   ),
                   const SizedBox(width: 4),
                 ],

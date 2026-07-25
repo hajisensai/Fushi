@@ -70,3 +70,23 @@ String galHookLaunchOutcomeMessage({
 
 String _withReason(String message, String? reason) =>
     reason == null ? message : '$message（$reason）';
+/// 会话降级原因（`GalHookSessionState.fallbackReason` 的内部代码）→ 人话文案。
+///
+/// BUG-1100：`_activateTextWithLoopback` 这条路径显式把 `injectorFailure` 置成
+/// [GalHookInjectorFailure.none]（注入链本来就是通的），于是 [galHookFailureLabel]
+/// 返回 null，UI 只能把内部代码 `engine_pcm_unavailable` 原样甩给用户看——用户既看不懂，
+/// 也不知道这只是「还没播过语音」的临时状态。降级原因和注入失败原因是**两套**独立的
+/// 事实，各自要有自己的翻译表，不能指望前者搭后者的便车。
+///
+/// 未知代码返回 null（调用方回退显示原始代码，绝不编造原因）。
+String? galHookFallbackLabel(String fallbackReason) => switch (fallbackReason) {
+      'engine_pcm_unavailable' => t.game_hook_fallback_engine_pcm_unavailable,
+      'all_audio_sources_failed' =>
+        t.game_hook_fallback_all_audio_sources_failed,
+      'window_not_found' => t.game_hook_fallback_window_not_found,
+      'engine_attach_failed' => t.game_hook_fallback_engine_attach_failed,
+      'launch_injection_failed' => t.game_hook_fallback_launch_injection_failed,
+      'helper_missing' => t.game_hook_reason_helper_missing,
+      'target_missing' => t.game_hook_reason_target_missing,
+      _ => null,
+    };

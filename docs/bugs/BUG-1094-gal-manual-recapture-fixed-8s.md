@@ -1,0 +1,15 @@
+## BUG-1094 · 手动录音 ⏺ 固定 8 秒自动关闭，且回取长度被同一个错误常量夹住
+- **报告**：2026-07-26（用户：「⏺ 重播并录音 8 秒就自己关了，来不及去游戏里点重播」）
+- **真实性**：✅ 真 bug（常量语义错误 + 注释与 native 事实不符）
+  - `gal_hook_session_controller.dart:1130-1133`（改前）：`_recaptureWindow = Duration(milliseconds: _galAudioBackMs)`（8000），`:1202` 用它起唯一的自动停止定时器（无 VAD、无静音检测、新台词/焦点变化都不停）。
+  - 同一常量在 `:1245` 二次夹住回取长度 `elapsedMs.clamp(_recaptureMinBackMs, _galAudioBackMs)`。
+  - **注释理由是错的**：它写「8s 是因为 loopback 环只保留这么长」，但环形缓冲实际保留 **60 秒**（`hibiki/windows/runner/audio_loopback_capture.cpp:21` `kRingSeconds = 60`）。等于用一个不存在的存储限制去砍用户的操作时间。
+- **[x] ① 已修复** — 提交 `77486f1c7`：把「补录窗口时长」与「回取长度上限」拆成两个互不相干的量。
+  - 删掉 `_galAudioBackMs`；新增 `_loopbackRingCapacityMs = 60000`（注释里点名 native 真相源 `kRingSeconds = 60`），它是 `grabRecent` 回取长度的唯一硬上限。
+  - `_recaptureWindow` 改为独立的 `Duration(seconds: 20)`，只由「用户要多久才能去游戏里点一次重播」决定；`:1245` 的 clamp 上限改为 `_loopbackRingCapacityMs`。原注释就地改写为真值。
+  - 定时器不再是唯一自动收束源：新台词到达（玩家已经翻页）即 `finishLineRecapture()`（`_pollHookedText` 里，只认引擎 hook 台词——剪贴板/外部 WS 通道与游戏进度无关，不该替用户结束录音）；用户再点一次 ⏺ 立即收束的既有路径不变。
+  - `startLineRecapture` 顺手取消该行待触发的延迟 Loopback 冻结（BUG-1101 引入），免得到点后再盖掉用户裁决。
+- **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_audio_degrade_track_test.dart`：
+  - 「BUG-1094 补录窗口与回取上限解耦：常量与错误注释都必须改掉」：源码守卫——`_galAudioBackMs` 必须消失、`_loopbackRingCapacityMs = 60000` 必须存在、clamp 上限必须是它、`kRingSeconds = 60` 与「环形缓冲实际保留 60 秒」必须写进注释、`_recaptureWindow` 必须是自己的 `Duration(seconds: …)` 常量。
+  - 「BUG-1094 新台词到达即收束补录窗口」：真行为——开补录后向 fake helper 追加一条新台词，断言 `isRecapturing` 变 false、`recapturingLineId` 变 null。
+- **备注**：20s 是操作时长的经验值，不是硬事实；真机验收未做，需在 Windows 上确认补录窗口够用且新台词收束不误伤（例如打字机式逐字重发的引擎）。

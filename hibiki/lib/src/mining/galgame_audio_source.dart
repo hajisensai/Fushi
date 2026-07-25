@@ -762,11 +762,21 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// 上层据此保留本实例继续轮询文本，同时另启系统 Loopback 作为音频源。
   bool get textHookReady => _textHookReady;
   bool get rawVoiceReady => _rawVoiceReady;
-  bool get pcmReady => _pcmReady;
+
+  /// 共享内存已通过与 [start] **完全相同**的就绪门（`ready` + 有效 PCM 格式）时的格式。
+  ///
+  /// null 只说明「游戏还没播过语音」，不说明 hook 没装上（那看 [textHookReady] 与 native
+  /// 的 `audioHooksReady`）。控制器据此在会话运行中把降级的 Loopback 升格回引擎 PCM
+  /// （BUG-1100）。判据必须是这道就绪门：直接看 `parseGalPcmFormat` 会把未过门的残留
+  /// 碎片当成可用 PCM，那正是 BUG-1060 已修掉的回归。
+  PcmFormat? get readyPcmFormat => _readyFormat;
+
+  /// [readyPcmFormat] 的布尔别名。
+  bool get pcmReady => _readyFormat != null;
   bool _textHookReady = false;
   bool _audioHooksReady = false;
   bool _rawVoiceReady = false;
-  bool _pcmReady = false;
+  PcmFormat? _readyFormat;
 
   /// 查目标进程 [pid] 是否 32 位（WOW64）。hibiki.exe 是 64 位，故 native `IsWow64Process`
   /// 为 true 即目标为 32 位（多数 KiriKiri galgame），调用方据此选 x86 注入器（DLL 位数必须
@@ -843,7 +853,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     _textHookReady = false;
     _audioHooksReady = false;
     _rawVoiceReady = false;
-    _pcmReady = false;
+    _readyFormat = null;
     _launchedPid = 0;
     _diagnosticsBuffer.clear();
     _lastFailure = const GalHookInjectorDiagnostics();
@@ -944,6 +954,11 @@ class EngineHookGalAudioSource implements GalAudioSource {
       // Luna 文本线程可能先于 DLL 音频工作线程出现。必须等首轮音频探针完成后，才把
       // “文本-only”交给控制器组合 Loopback；否则 Siglus 原始 OVK hook 会被启动竞态
       // 误判为不可用。helper 仍会保留，因此后续资源语音始终优先于 Loopback。
+      //
+      // BUG-1100：这里返回 null **只代表「此刻还没有可用 PCM」**，不代表这局都没有。
+      // 游戏刚启动、一句语音都还没播时共享内存里本就没有格式，等满 [_readyTimeout]
+      // 只会白白拖慢文本上屏。控制器据此先用 Loopback 顶着，并在会话运行中持续复查
+      // [readyPcmFormat]，首句语音出现即把主音源升格回引擎 PCM。
       if (_textHookReady && _audioHooksReady) {
         return null;
       }
@@ -1077,8 +1092,11 @@ class EngineHookGalAudioSource implements GalAudioSource {
       _textHookReady = parseEngineTextHookReady(r);
       _audioHooksReady = parseEngineAudioHooksReady(r);
       _rawVoiceReady = r['rawVoiceReady'] == true;
-      _pcmReady = parseGalPcmFormat(r) != null;
-      return parseEngineHookReadyFormat(r);
+      // 就绪门只有一处真相源：start() 与运行中的 refreshReadiness() 必须用同一判据，
+      // 否则「启动时不算就绪、运行中却算就绪」会让两条路径对同一份共享内存给出
+      // 互相矛盾的结论（BUG-1100）。
+      _readyFormat = parseEngineHookReadyFormat(r);
+      return _readyFormat;
     } on PlatformException {
       return null;
     } on MissingPluginException {
@@ -1091,6 +1109,9 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// KiriKiriZ 的 `TVPCreateStream` 等资源层可能晚于 Luna 文本管线初始化；启动阶段
   /// 因此会先进入“文本 + Loopback”。控制器在后续文本轮询中调用此方法，才能在资源
   /// hook 晚到后把原始游戏语音提升为主来源。
+  ///
+  /// 同一次刷新也更新 [readyPcmFormat]：引擎 PCM 与资源语音是两条各自会「晚到」的能力，
+  /// 升格判据必须对称（BUG-1100）。返回值仍是资源语音就绪与否，PCM 侧读 [readyPcmFormat]。
   Future<bool> refreshReadiness() async {
     await _pollFormat();
     return _rawVoiceReady;
@@ -1553,6 +1574,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
     _sessionStartedAt = null;
     _textHookReady = false;
     _audioHooksReady = false;
+    _rawVoiceReady = false;
+    _readyFormat = null;
   }
 }
 
