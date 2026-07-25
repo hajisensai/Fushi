@@ -2631,5 +2631,16 @@
   "yomitan_port_kill_confirm_message": "The port is currently used by: $process",
   "yomitan_port_kill_self_instance": "This process is another running instance of this app.",
   "yomitan_port_kill_confirm": "End process",
-  "yomitan_port_kill_protected": "$process is a critical system process — Hibiki will not end it. Change the port instead."
+  "yomitan_port_kill_protected": "$process is a critical system process — Hibiki will not end it. Change the port instead.",
+  "game_hook_fallback_engine_pcm_unavailable": "The engine voice hook is installed, but the game has not played any voice yet. System mix is used for now and will switch back automatically once the first voice arrives.",
+  "game_hook_fallback_all_audio_sources_failed": "Neither the engine voice hook nor the system loopback could be started; no audio can be captured.",
+  "game_hook_fallback_window_not_found": "Audio capture is running, but the game window has not appeared yet, so screenshots are unavailable. It will bind automatically once the window shows up.",
+  "game_hook_fallback_engine_attach_failed": "Attaching the engine voice hook to the running game failed; system mix is used instead.",
+  "game_hook_fallback_launch_injection_failed": "The game is running, but early engine injection failed; system mix is used instead.",
+  "game_tracks_pcm_only_hint": "Per-track selection only affects capture while engine PCM is the active audio backend. The list below is read-only under the current backend.",
+  "game_track_no_clips": "No clips in the recent window",
+  "game_line_track_tooltip": "Pick the voice track for this line",
+  "game_line_track_dialog_title": "Voice track for this line",
+  "game_line_track_failed": "That track has no audio around this line",
+  "game_line_track_applied": "Voice track applied to this line"
 }

@@ -53,7 +53,22 @@ enum GalHookAudioBackend { none, gameResource, enginePcm, systemLoopback }
 /// `ListAudioTracks` 只枚举 PCM 环，voice_hook_reader.cpp:546），空列表是**常态**
 /// 而非故障；systemLoopback 是整机混音单流，同样没有逐轨枚举。只有引擎 PCM /
 /// 无音频后端时才保留通用「尚无音轨数据」空态。
+///
+/// BUG-1093：这个解释**不是空列表专用**。用户机器上列表非空（残留 PCM 环仍能枚举）
+/// 却照样点不动选轨，原因就是当前后端根本不消费 `selectedAudioSourcePtr`。判据必须是
+/// 「后端是不是引擎 PCM」（[galTrackSelectionAffectsCapture]），不是「列表空不空」。
 enum GalTrackEmptyHint { generic, resourceMode, loopbackMode }
+
+/// 会话级选轨 / 排除是否真的影响取音（纯函数，可单测）。
+///
+/// 只有引擎 PCM 后端会走 `grabUtterance`，也只有它读
+/// [EngineHookGalAudioSource.selectedAudioSourcePtr] / `excludedAudioSourcePtrs`；
+/// 资源模式按句取原始资源文件、Loopback 是整机混音，两者都与轨选择无关。UI 据此禁用
+/// 控件并说清原因，而不是让用户点一个不会生效的按钮（BUG-1093）。
+/// 单条台词的选轨是另一回事——那是用户裁决，走
+/// [GalHookSessionController.setLineVoiceTrack]。
+bool galTrackSelectionAffectsCapture(GalHookAudioBackend backend) =>
+    backend == GalHookAudioBackend.enginePcm;
 
 /// 按音频后端返回音轨空态解释分支。
 GalTrackEmptyHint galTrackEmptyHintFor(GalHookAudioBackend backend) =>
@@ -307,6 +322,11 @@ class GalHookSessionController extends ChangeNotifier {
     int windowPollAttempts = 20,
     Duration windowRebindInterval = const Duration(seconds: 2),
     Duration trackRefreshInterval = const Duration(seconds: 5),
+    // BUG-1092：Loopback 是**纯后向**的环形缓冲，而 galgame 的时序永远是「文本先绘制
+    // → 语音随后播放」。台词一到就 grabRecent 只会取到上一句 + BGM，错位一句是必然。
+    // 因此台词到达后先延后这么久再冻结，让本句语音真的进环。默认 4s 覆盖绝大多数单句
+    // 语音；文本仍立刻上屏，只有音频后补。
+    Duration loopbackFreezeDelay = const Duration(milliseconds: 4000),
     List<Duration> engineRetryBackoff = kGalEngineRetryBackoff,
     Listenable? endpointListenable,
     List<TexthookerEndpointStatus> Function()? endpointStatusLoader,
@@ -331,6 +351,7 @@ class GalHookSessionController extends ChangeNotifier {
         _windowPollAttempts = windowPollAttempts,
         _windowRebindInterval = windowRebindInterval,
         _trackRefreshInterval = trackRefreshInterval,
+        _loopbackFreezeDelay = loopbackFreezeDelay,
         _engineRetryBackoff = engineRetryBackoff,
         _endpointListenable =
             endpointListenable ?? TexthookerWsClientManager.instance,
@@ -346,7 +367,17 @@ class GalHookSessionController extends ChangeNotifier {
 
   static final GalHookSessionController instance = GalHookSessionController();
   static const int _voiceCacheMax = 200;
-  static const int _galAudioBackMs = 8000;
+
+  /// Loopback 环形缓冲的**真实**容量：native `kRingSeconds = 60`
+  /// （hibiki/windows/runner/audio_loopback_capture.cpp:21）。
+  /// 这是 `grabRecent` 回取长度的唯一硬上限，与任何窗口时长无关（BUG-1094）。
+  static const int _loopbackRingCapacityMs = 60000;
+
+  /// 逐行 loopback 冻结时额外向前多取的余量：少数引擎的语音会略早于文本落地。
+  static const int _loopbackPreRollMs = 1000;
+
+  /// 提前收束（制卡/升格）时的最小回取长度，避免取出一段空 PCM。
+  static const int _loopbackMinBackMs = 800;
 
   /// 资源语音就绪查询的最小间隔（见 [_lastReadinessRefreshAt]）。
   static const Duration _readinessRefreshInterval = Duration(milliseconds: 500);
@@ -368,6 +399,7 @@ class GalHookSessionController extends ChangeNotifier {
   final int _windowPollAttempts;
   final Duration _windowRebindInterval;
   final Duration _trackRefreshInterval;
+  final Duration _loopbackFreezeDelay;
   final List<Duration> _engineRetryBackoff;
   final Listenable _endpointListenable;
   final List<TexthookerEndpointStatus> Function() _endpointStatusLoader;
@@ -450,6 +482,14 @@ class GalHookSessionController extends ChangeNotifier {
   int? _selectedNativeTextThreadId;
   final SerialJobQueue _audioQueue = SerialJobQueue();
   final Set<String> _loopbackCacheInFlight = <String>{};
+
+  /// 逐行 loopback「延迟冻结」定时器（BUG-1092）：lineId → 到点后把环形缓冲冻结成该行
+  /// 语音的定时器。等待必须在队列**之外**——在串行音频队列里 sleep 会把后续台词的抓取
+  /// 和制卡全部堵住。
+  final Map<String, Timer> _loopbackFreezeTimers = <String, Timer>{};
+
+  /// 每条待冻结行的台词到达时刻，用于提前收束（制卡 / 升格）时算真实已等待长度。
+  final Map<String, DateTime> _loopbackFreezeStartedAt = <String, DateTime>{};
 
   final Map<String, GalAudioSlice> _lineVoiceCache = <String, GalAudioSlice>{};
   final Map<String, int> _lineTimestampCache = <String, int>{};
@@ -1123,7 +1163,9 @@ class GalHookSessionController extends ChangeNotifier {
   /// 只读既有配对结果，不改行状态、不影响制卡链路；取不到返回 null 并记结构化事件。
   Future<GalTrackPreview?> exportLineAudioPreview(String lineId) async {
     final EngineHookGalAudioSource? engine = _engineSource;
-    final String? resourceId = _resourceIdForLine(lineId);
+    // 用户裁决过的行只播它自己的冻结切片，绝不回头播资源原件。
+    final String? resourceId =
+        _isUserAdjudicated(lineId) ? null : _resourceIdForLine(lineId);
     if (engine != null && resourceId != null) {
       final String? path = engine.pairedVoiceFilePathForResourceId(resourceId);
       if (path != null) {
@@ -1169,10 +1211,17 @@ class GalHookSessionController extends ChangeNotifier {
   }
 
   // ── 手动补录（浮窗「重播并录音」）────────────────────────────────────────
-  /// 补录窗口上限：够用户在游戏里触发一次「重播这句语音」并等它播完；到点自动收束。
-  /// 与 [_galAudioBackMs] 对齐——loopback 环只保留这么长，取不到更早的声音。
-  static const Duration _recaptureWindow =
-      Duration(milliseconds: _galAudioBackMs);
+  /// 补录窗口上限：够用户在游戏里找到并触发一次「重播这句语音」、再等它播完；到点自动收束。
+  ///
+  /// BUG-1094：旧值是 8000ms，注释说这是因为「loopback 环只保留这么长」——**那是错的**。
+  /// native 环形缓冲实际保留 60 秒（audio_loopback_capture.cpp:21 `kRingSeconds = 60`）。
+  /// 「补录窗口时长」与「回取长度上限」是两个互不相干的量：前者只由「用户要多久才能
+  /// 去游戏里点一次重播」决定，后者是环的真实容量 [_loopbackRingCapacityMs]。把二者
+  /// 绑在一个常量上，等于用一个不存在的存储限制去砍用户的操作时间。
+  ///
+  /// 窗口并非唯一收束源：再点一次 ⏺ 立即收束（[toggleLineRecapture]），
+  /// 新台词到达（玩家已经翻页）也收束（见 [_pollHookedText]）。
+  static const Duration _recaptureWindow = Duration(seconds: 20);
 
   /// 补录至少回取的毫秒数：用户手速极快时也别取出一段空 PCM。
   static const int _recaptureMinBackMs = 500;
@@ -1188,6 +1237,11 @@ class GalHookSessionController extends ChangeNotifier {
   /// 手动补录过的行：制卡与试听时其冻结切片**优先于**资源配对。用户手动补录本身
   /// 就是「自动配对的结果不对」的判据，绝不能再被 game_resource 覆盖回去。
   final Set<String> _manualRecaptureLines = <String>{};
+
+  /// 用户为**单条台词**显式指定的语音轨（会话内 source_ptr，见 [setLineVoiceTrack]）。
+  /// 与 [_manualRecaptureLines] 同级的用户裁决：制卡、试听、延迟资源匹配都必须让路。
+  /// 两者互斥——后做的那一次覆盖前一次。
+  final Map<String, int> _lineVoiceSourcePtr = <String, int>{};
 
   String? get recapturingLineId => _recapturingLineId;
   bool get isRecapturing => _recapturingLineId != null;
@@ -1240,6 +1294,9 @@ class GalHookSessionController extends ChangeNotifier {
     }
     _recaptureTempSource = temp;
     _recapturingLineId = lineId;
+    // 这行的自动延迟冻结已被用户裁决取代，别让它到点后再盖一次。
+    _loopbackFreezeTimers.remove(lineId)?.cancel();
+    _loopbackFreezeStartedAt.remove(lineId);
     _recaptureElapsed = Stopwatch()..start();
     _recaptureTimer = Timer(
       _recaptureWindow,
@@ -1283,8 +1340,9 @@ class GalHookSessionController extends ChangeNotifier {
         if (!discard) _markLineAudioMissing(lineId, 'manual_recapture_empty');
         return false;
       }
+      // 回取长度只由本次窗口的**真实已用时间**决定，上限是环的真实容量。
       final int backMs =
-          elapsedMs.clamp(_recaptureMinBackMs, _galAudioBackMs).toInt();
+          elapsedMs.clamp(_recaptureMinBackMs, _loopbackRingCapacityMs).toInt();
       final GalAudioSlice? slice = await _audioQueue.enqueue<GalAudioSlice?>(
         () => source.grabRecent(backMs),
         buildFailure: (Object error, StackTrace stack) => null,
@@ -1303,8 +1361,9 @@ class GalHookSessionController extends ChangeNotifier {
       _lineVoiceCache[lineId] = slice;
       _trimCache(_lineVoiceCache);
       _manualRecaptureLines.add(lineId);
-      // 补录即用户裁决：清掉这行的资源配对，也别让延迟资源匹配再把它改回去。
+      // 补录即用户裁决：清掉这行的资源配对与逐行选轨，也别让延迟资源匹配改回去。
       _pendingResourceMatches.remove(lineId);
+      _lineVoiceSourcePtr.remove(lineId);
       _textService.updateLineAudio(
         lineId,
         status: TexthookerLineAudioStatus.fallback,
@@ -1385,6 +1444,105 @@ class GalHookSessionController extends ChangeNotifier {
     return selected;
   }
 
+  /// 单条台词改用指定音轨重抓语音（BUG-1093 的真正出口）。
+  ///
+  /// 会话级 [selectVoiceTrack] 只改自动选源的默认值，且只在引擎 PCM 是当前音源时生效；
+  /// 用户在实时台词列表里对**某一句**说「这句应该用这条轨」是与手动补录同级的裁决，
+  /// 因此这里显式绕开 `identical(_audioSource, engine)` 那道自动门（那道门防的是**自动**
+  /// 误配，BUG-1060，不能因为本需求就放宽它），直接按 [sourcePtr] 重抓整句。
+  ///
+  /// 抓不到（该轨在该句窗口内无 PCM）返回 false 并记结构化事件，绝不静默改状态。
+  /// 注意 source_ptr 只在**本次会话内**稳定（见 [EngineHookGalAudioSource.
+  /// selectedAudioSourcePtr] 的 TODO），因此本映射刻意只活在内存里，不做跨会话持久化。
+  Future<bool> setLineVoiceTrack(String lineId, int sourcePtr) async {
+    final EngineHookGalAudioSource? engine = _engineSource;
+    final TexthookerLineEntry? entry = _textService.entryById(lineId);
+    final int timestamp = _lineTimestampCache[lineId] ?? 0;
+    if (engine == null ||
+        entry == null ||
+        !isLineInCurrentSession(entry) ||
+        timestamp <= 0) {
+      _record(
+        GalHookEventSeverity.warning,
+        'audio',
+        'audio.line_track_unavailable',
+        'Per-line voice-track override needs a live engine session and a hooked '
+            'line timestamp',
+        details: <String, Object?>{
+          'lineId': lineId,
+          'sourcePtr': sourcePtr,
+          'tsMs': timestamp,
+        },
+      );
+      return false;
+    }
+    final GalAudioSlice? slice = await _audioQueue.enqueue<GalAudioSlice?>(
+      () => engine.grabUtterance(
+        timestamp,
+        sourcePtr: sourcePtr,
+        exclude: const <int>[],
+      ),
+      buildFailure: (Object error, StackTrace stack) => null,
+      onError: (Object error, StackTrace stack) => _record(
+        GalHookEventSeverity.error,
+        'audio',
+        'audio.line_track_exception',
+        'Per-line voice-track grab failed',
+        details: <String, Object?>{'lineId': lineId, 'error': '$error'},
+      ),
+    );
+    // BUG-950 范式：入队到执行之间可能夹一次 stop/重启，旧会话的结果不落地。
+    if (engine != _engineSource) return false;
+    if (slice == null || slice.isEmpty) {
+      _record(
+        GalHookEventSeverity.warning,
+        'audio',
+        'audio.line_track_empty',
+        'The selected track has no PCM around this line',
+        details: <String, Object?>{
+          'lineId': lineId,
+          'sourcePtr': sourcePtr,
+          'tsMs': timestamp,
+        },
+      );
+      return false;
+    }
+    _lineVoiceCache[lineId] = slice;
+    _trimCache(_lineVoiceCache);
+    _lineVoiceSourcePtr[lineId] = sourcePtr;
+    _trimCache(_lineVoiceSourcePtr);
+    // 选轨与补录互斥，且都要挡住延迟资源匹配 / 延迟 loopback 冻结把结果改回去。
+    _manualRecaptureLines.remove(lineId);
+    _pendingResourceMatches.remove(lineId);
+    _loopbackFreezeTimers.remove(lineId)?.cancel();
+    _loopbackFreezeStartedAt.remove(lineId);
+    _textService.updateLineAudio(
+      lineId,
+      status: TexthookerLineAudioStatus.matched,
+      backend: 'engine_pcm',
+      durationMs: (slice.pcm.length * 1000) ~/ slice.format.byteRate,
+      fallbackReason: 'manual_track_override',
+      clearResourceId: true,
+    );
+    _record(
+      GalHookEventSeverity.success,
+      'match',
+      'audio.line_track_selected',
+      'User-selected voice track locked to the line',
+      details: <String, Object?>{'lineId': lineId, 'sourcePtr': sourcePtr},
+    );
+    notifyListeners();
+    return true;
+  }
+
+  /// 本行的语音是否由用户显式裁决过（手动补录或逐行选轨）。自动配对一律让路。
+  bool _isUserAdjudicated(String lineId) =>
+      _manualRecaptureLines.contains(lineId) ||
+      _lineVoiceSourcePtr.containsKey(lineId);
+
+  @visibleForTesting
+  int? debugLineVoiceSourcePtr(String lineId) => _lineVoiceSourcePtr[lineId];
+
   void setTrackExcluded(int sourcePtr, bool excluded) {
     final EngineHookGalAudioSource? engine = _engineSource;
     if (engine == null) return;
@@ -1450,17 +1608,21 @@ class GalHookSessionController extends ChangeNotifier {
       _markLineAudioMissing(lineId, 'audio_source_unavailable');
       return null;
     }
-    // 手动补录优先于一切自动配对：用户点了浮窗「重播并录音」就说明自动结果不对，
-    // 这里再去等资源配对会把补录的那段直接顶掉。
-    final GalAudioSlice? recaptured =
-        _manualRecaptureLines.contains(lineId) ? _lineVoiceCache[lineId] : null;
-    if (recaptured != null && !recaptured.isEmpty) {
+    // 用户裁决优先于一切自动配对：点了浮窗「重播并录音」或为这句选了音轨，都说明
+    // 自动结果不对；这里再去等资源配对会把用户选定的那段直接顶掉。两种裁决共用一条
+    // 分支，只有 backend 标签不同——它必须如实说明字节到底来自哪条链路。
+    final int? overriddenTrack = _lineVoiceSourcePtr[lineId];
+    final GalAudioSlice? adjudicated =
+        _isUserAdjudicated(lineId) ? _lineVoiceCache[lineId] : null;
+    if (adjudicated != null && !adjudicated.isEmpty) {
       return _encodeLineSlice(
         lineId: lineId,
-        slice: recaptured,
-        backend: 'system_loopback',
+        slice: adjudicated,
+        backend: overriddenTrack != null ? 'engine_pcm' : 'system_loopback',
         outputExtension: outputExtension,
-        fallbackReason: 'manual_recapture',
+        fallbackReason: overriddenTrack != null
+            ? 'manual_track_override'
+            : 'manual_recapture',
       );
     }
     final int timestamp = _lineTimestampCache[lineId] ?? 0;
@@ -1517,6 +1679,9 @@ class GalHookSessionController extends ChangeNotifier {
         return null;
       }
     }
+    // BUG-1092：这行的 loopback 冻结可能还在等窗口到点。制卡就是「现在就要这段声音」，
+    // 因此提前收束（按真实已等待时长回取），而不是拿一份还没冻的空缓存报 missing。
+    await _flushLoopbackFreeze(lineId);
     GalAudioSlice? slice = _lineVoiceCache[lineId];
     // 会话已经选用 Loopback 时，engine 仍需保活来提供文本/资源事件，但它的 PCM
     // 明确没有通过 readiness 门。此时绝不能因为共享内存里残留着可读 clip 就重新
@@ -1876,6 +2041,11 @@ class GalHookSessionController extends ChangeNotifier {
   /// Unity/IL2CPP 游戏可能让 Luna 文本 hook 正常工作，却不经过当前 XAudio2/
   /// DirectSound PCM 钩子。文本与音频是两项独立能力，不能因为引擎 PCM 缺失就关闭
   /// helper、退化成“只有混音但没有台词”。
+  ///
+  /// BUG-1091：本状态是**临时**的。走到这里最常见的原因不是「这个引擎没有 PCM」，而是
+  /// 「游戏刚启动、一句语音都还没播过」——共享内存里当然没有格式。`engine_pcm_unavailable`
+  /// 因此只是当前事实，不是终局判决：[_refreshReadinessThrottled] 会持续复查
+  /// [EngineHookGalAudioSource.readyPcmFormat]，首句语音出现即 [_promoteLateEnginePcm]。
   Future<bool> _activateTextWithLoopback(
     int generation,
     EngineHookGalAudioSource engine, {
@@ -1948,9 +2118,11 @@ class GalHookSessionController extends ChangeNotifier {
     _lastReadinessRefreshAt = null;
     _lineVoiceCache.clear();
     _manualRecaptureLines.clear();
+    _lineVoiceSourcePtr.clear();
     _lineTimestampCache.clear();
     _lineTextEventIdCache.clear();
     _loopbackCacheInFlight.clear();
+    _cancelLoopbackFreezes();
     _pendingResourceMatches.clear();
     unawaited(engine.pruneVoiceDump());
     _textPollTimer?.cancel();
@@ -2191,9 +2363,11 @@ class GalHookSessionController extends ChangeNotifier {
     _lastTextSeq = 0;
     _lineVoiceCache.clear();
     _manualRecaptureLines.clear();
+    _lineVoiceSourcePtr.clear();
     _lineTimestampCache.clear();
     _lineTextEventIdCache.clear();
     _loopbackCacheInFlight.clear();
+    _cancelLoopbackFreezes();
     _pendingResourceMatches.clear();
     final GalAudioSource? source = _audioSource;
     _audioSource = null;
@@ -2332,6 +2506,12 @@ class GalHookSessionController extends ChangeNotifier {
       _refreshPendingResourceMatches(engine);
       // 只推进到实际看见并处理完成的最大 seq；不能盲用 native header count 跳过未提交槽。
       if (cursor > _lastTextSeq) _lastTextSeq = cursor;
+      // BUG-1094：新台词到达 = 玩家已经翻过这句，补录窗口没有继续开着的理由。
+      // 定时器不再是唯一的自动收束源（另一个是用户再点一次 ⏺）。只认引擎 hook 的台词：
+      // 剪贴板 / 外部 WS 通道可能与游戏进度无关，不该替用户结束录音。
+      if (receivedTextLine && _recapturingLineId != null) {
+        unawaited(finishLineRecapture());
+      }
       if (receivedTextLine) {
         _setState(
           _state.copyWith(
@@ -2364,7 +2544,69 @@ class GalHookSessionController extends ChangeNotifier {
     if (engine != _engineSource) return;
     if (!hadResourceAudio && engine.rawVoiceReady) {
       _promoteLateResourceAudio(engine);
+      return;
     }
+    // BUG-1091：引擎 PCM 与资源语音是两条各自会「晚到」的能力，升格必须对称。
+    // 只有资源侧有升格分支时，「hook 装好了但游戏还没播过语音」这一条就是终态：
+    // 第一个 poll tick 判死后，整局再也回不到引擎 PCM。
+    final PcmFormat? readyFormat = engine.readyPcmFormat;
+    if (readyFormat != null && !engine.rawVoiceReady) {
+      await _promoteLateEnginePcm(engine, readyFormat);
+    }
+  }
+
+  /// 引擎 PCM 晚到时把主音源从降级的 Loopback 升格回引擎（BUG-1091，与
+  /// [_promoteLateResourceAudio] 对称）。
+  ///
+  /// [_activateTextWithLoopback] 之所以选 Loopback，只是因为握手那一刻共享内存里还没有
+  /// 任何 PCM 格式——hook 本身早就装好了，游戏只是还没播过语音。这是**临时**状态：首句
+  /// 语音一出现，helper 立刻通过与 [EngineHookGalAudioSource.start] 完全相同的就绪门给出
+  /// 格式，此时必须把音源换回来。
+  ///
+  /// 刻意**不**走 [_activateEngine] / [_swapLoopbackForEngine]：engine 实例仍存活、不需要
+  /// 重新注入，而 [_startEngineTextPolling] 会把文本轮询游标归零并清掉逐行缓存与用户裁决，
+  /// 那会让整段历史台词重放一遍。
+  Future<void> _promoteLateEnginePcm(
+    EngineHookGalAudioSource engine,
+    PcmFormat format,
+  ) async {
+    if (engine != _engineSource || identical(_audioSource, engine)) return;
+    if (_state.audioBackend != GalHookAudioBackend.systemLoopback &&
+        _state.audioBackend != GalHookAudioBackend.none) {
+      return;
+    }
+    // 补录窗口正持有当前 Loopback：用户裁决优先，等它收束后的下一个 tick 再升格。
+    if (_recapturingLineId != null) return;
+    // 还在等窗口的行属于旧音源，先按真实已等待时长冻结，别把它们的声音丢掉。
+    await _flushAllLoopbackFreezes();
+    if (engine != _engineSource) return;
+    final GalAudioSource? previous = _audioSource;
+    _audioSource = engine;
+    await previous?.stop();
+    if (engine != _engineSource) return;
+    _setState(
+      _state.copyWith(
+        phase: _state.textSignalReceived
+            ? GalHookSessionPhase.running
+            : GalHookSessionPhase.waitingSignals,
+        audioBackend: GalHookAudioBackend.enginePcm,
+        audioFormat: format,
+        clearFallbackReason: true,
+        clearLastError: true,
+      ),
+    );
+    _record(
+      GalHookEventSeverity.success,
+      'audio',
+      'audio.engine_pcm_late_ready',
+      'Engine PCM became available and is now the primary audio source',
+      details: <String, Object?>{
+        'pid': _state.gamePid,
+        'sampleRate': format.sampleRate,
+        'channels': format.channels,
+      },
+    );
+    _syncTrackAutoRefresh();
   }
 
   /// 把某行的语音抓取排进串行音频队列（BUG-1063）。与制卡采集共用同一队列：native
@@ -2440,10 +2682,11 @@ class GalHookSessionController extends ChangeNotifier {
       return;
     }
     if (_audioSource is LoopbackGalAudioSource) {
-      // Loopback 必须在台词到达时冻结对应环形片段；制卡时再抓“最近声音”会把
-      // 后续台词/BGM 错配给旧行。资源音频尚未落盘时也先保留这份逐行兜底，
-      // 稍后若资源匹配成功会覆盖为 game_resource。
-      await _cacheLoopbackForLine(entry);
+      // Loopback 必须按本行自己的时间窗冻结环形片段；制卡时再抓“最近声音”会把
+      // 后续台词/BGM 错配给旧行。BUG-1092：窗口必须是前向的，故只在这里排定时器，
+      // 到点后才冻结（见 [_scheduleLoopbackFreeze]）。资源音频尚未落盘时也先保留这份
+      // 逐行兜底，稍后若资源匹配成功会覆盖为 game_resource。
+      _scheduleLoopbackFreeze(entry);
       return;
     }
     if (!resourceReady) {
@@ -2467,6 +2710,8 @@ class GalHookSessionController extends ChangeNotifier {
     for (final MapEntry<String, int> line in _lineTimestampCache.entries) {
       final int? textEventId = _lineTextEventIdCache[line.key];
       if (textEventId == null) continue;
+      // 用户已经为这行裁决过音频（补录 / 选轨），晚到的资源不得改回去。
+      if (_isUserAdjudicated(line.key)) continue;
       _pendingResourceMatches[line.key] = (
         timestampMs: line.value,
         textEventId: textEventId,
@@ -2502,6 +2747,10 @@ class GalHookSessionController extends ChangeNotifier {
     final List<String> matched = <String>[];
     for (final MapEntry<String, ({int timestampMs, int textEventId})> pending
         in _pendingResourceMatches.entries) {
+      if (_isUserAdjudicated(pending.key)) {
+        matched.add(pending.key); // 用户已裁决：撤出待匹配集合，不再自动改写。
+        continue;
+      }
       final String? resourceId = engine.findPairedVoiceResourceId(
         pending.value.timestampMs,
         textEventId: pending.value.textEventId,
@@ -2546,7 +2795,7 @@ class GalHookSessionController extends ChangeNotifier {
           _state = _state.copyWith(textSignalReceived: true);
         }
         _recordActivityLine(latest.text, fromEngineHook: false);
-        unawaited(_cacheLoopbackForLine(latest));
+        _scheduleLoopbackFreeze(latest);
       }
     }
     _lastObservedLineId = latestId;
@@ -2555,15 +2804,102 @@ class GalHookSessionController extends ChangeNotifier {
 
   void _onEndpointStatusChanged() => notifyListeners();
 
-  Future<void> _cacheLoopbackForLine(TexthookerLineEntry entry) async {
+  /// 为 [entry] 排一次「延迟冻结」（BUG-1092）。
+  ///
+  /// `grabRecent(backMs)` 的语义是**当前时刻往前** backMs，纯后向、零前向等待
+  /// （契约见 [GalAudioSource.grabRecent]）。galgame 的时序恒为「文本先绘制 → 语音随后
+  /// 播放」，所以在台词到达那一刻抓，窗口里装的全是**上一句** + BGM，一个本句采样都没有
+  /// ——错位一句是旧实现的设计必然，不是抖动。引擎 PCM 路径早就用的是前向窗口
+  /// （`grabUtterance`，native `[ts-200, ts+6000]`），Loopback 必须对称：记下 t0，等到
+  /// t0+[_loopbackFreezeDelay] 再回取 `delay + preRoll`，等价于取 `[t0-preRoll, t0+delay]`。
+  ///
+  /// 等待刻意放在串行音频队列**之外**：在队列里 sleep 会把后续台词的抓取和制卡一起堵住。
+  /// 文本上屏完全不受影响，只有音频后补。
+  void _scheduleLoopbackFreeze(TexthookerLineEntry entry) {
+    if (_audioSource is! LoopbackGalAudioSource ||
+        !isLineInCurrentSession(entry) ||
+        _isUserAdjudicated(entry.id) ||
+        _loopbackFreezeTimers.containsKey(entry.id) ||
+        _loopbackCacheInFlight.contains(entry.id)) {
+      return;
+    }
+    _loopbackFreezeStartedAt[entry.id] = _now();
+    _trimCache(_loopbackFreezeStartedAt);
+    final int backMs = _loopbackFreezeDelay.inMilliseconds + _loopbackPreRollMs;
+    _loopbackFreezeTimers[entry.id] = Timer(_loopbackFreezeDelay, () {
+      _loopbackFreezeTimers.remove(entry.id);
+      unawaited(
+        _audioQueue.enqueue<bool>(
+          () async {
+            await _cacheLoopbackForLine(entry, backMs: backMs);
+            return true;
+          },
+          buildFailure: (Object error, StackTrace stack) => false,
+          onError: (Object error, StackTrace stack) => _record(
+            GalHookEventSeverity.error,
+            'match',
+            'audio.loopback_freeze_exception',
+            'Delayed loopback freeze failed',
+            details: <String, Object?>{'lineId': entry.id, 'error': '$error'},
+          ),
+        ),
+      );
+    });
+  }
+
+  /// 提前收束 [lineId] 的延迟冻结：按**真实已等待时长**回取，而不是白等满窗口。
+  /// 制卡（用户现在就要这段声音）与引擎 PCM 升格（音源即将换走）都用它。
+  /// 已经冻过 / 没排过的行是 no-op。
+  Future<void> _flushLoopbackFreeze(String lineId) async {
+    final Timer? timer = _loopbackFreezeTimers.remove(lineId);
+    if (timer == null) return;
+    timer.cancel();
+    final TexthookerLineEntry? entry = _textService.entryById(lineId);
+    if (entry == null) {
+      _loopbackFreezeStartedAt.remove(lineId);
+      return;
+    }
+    final DateTime? startedAt = _loopbackFreezeStartedAt[lineId];
+    final int elapsedMs =
+        startedAt == null ? 0 : _now().difference(startedAt).inMilliseconds;
+    final int backMs = (elapsedMs + _loopbackPreRollMs)
+        .clamp(_loopbackMinBackMs, _loopbackRingCapacityMs)
+        .toInt();
+    await _cacheLoopbackForLine(entry, backMs: backMs);
+  }
+
+  /// 收束所有待冻结行（音源即将被换走时调用；此刻还持有旧 Loopback）。
+  Future<void> _flushAllLoopbackFreezes() async {
+    for (final String lineId in _loopbackFreezeTimers.keys.toList()) {
+      await _flushLoopbackFreeze(lineId);
+    }
+  }
+
+  /// 丢弃所有待冻结行（会话结束/重启）。
+  void _cancelLoopbackFreezes() {
+    for (final Timer timer in _loopbackFreezeTimers.values) {
+      timer.cancel();
+    }
+    _loopbackFreezeTimers.clear();
+    _loopbackFreezeStartedAt.clear();
+  }
+
+  Future<void> _cacheLoopbackForLine(
+    TexthookerLineEntry entry, {
+    required int backMs,
+  }) async {
     final GalAudioSource? source = _audioSource;
     if (source is! LoopbackGalAudioSource ||
         !isLineInCurrentSession(entry) ||
+        // 用户裁决与已配到的原始资源都优先：延迟冻结到点时它们可能已经落定，
+        // 这一段回环混音绝不能反过来把它们盖掉。
+        _isUserAdjudicated(entry.id) ||
+        _resourceIdForLine(entry.id) != null ||
         !_loopbackCacheInFlight.add(entry.id)) {
       return;
     }
     try {
-      final GalAudioSlice? slice = await source.grabRecent(_galAudioBackMs);
+      final GalAudioSlice? slice = await source.grabRecent(backMs);
       if (slice == null || slice.isEmpty || _audioSource != source) {
         _markLineAudioMissing(entry.id, 'loopback_line_slice_unavailable');
         return;
@@ -2582,10 +2918,11 @@ class GalHookSessionController extends ChangeNotifier {
         'match',
         'audio.loopback_line_locked',
         'System loopback audio was locked to the captured line',
-        details: <String, Object?>{'lineId': entry.id},
+        details: <String, Object?>{'lineId': entry.id, 'backMs': backMs},
       );
     } finally {
       _loopbackCacheInFlight.remove(entry.id);
+      _loopbackFreezeStartedAt.remove(entry.id);
     }
   }
 

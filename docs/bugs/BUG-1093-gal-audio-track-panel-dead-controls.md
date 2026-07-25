@@ -1,0 +1,15 @@
+## BUG-1093 · 兼容性诊断页「活跃音轨」面板全无效：选轨/排除点了没反应，空轨照样占位
+- **报告**：2026-07-26（用户：「活跃音轨那块全是没用的，试听能响，选为语音轨点了完全没反应；抓不到片段的音轨还留在列表里」）
+- **真实性**：✅ 真 bug（断链点明确）
+  - 状态真相源在 engine 源对象上：`galgame_audio_source.dart:1205 selectedAudioSourcePtr` / `:1208 excludedAudioSourcePtrs`，由 `gal_hook_session_controller.dart:1302`/`:1350` 写入。
+  - **唯一消费者**是 `grabUtterance`（`galgame_audio_source.dart:1219-1225`），而它的两个真实调用点——逐行抓取 `gal_hook_session_controller.dart:2377` 与制卡补抓 `:1482-1488`——都要求 `identical(_audioSource, engine)`。降级 / 资源模式下 `_audioSource` 不是 engine → 永远为假 → 选轨/排除对实际取音**零影响**。试听 `exportTrackPreview:1018` 显式传 `sourcePtr` 绕过这两个字段，所以「试听能响、选了没反应」。
+  - BUG-1027 加的解释态（`game_diagnostics_page.dart:454-457` + `galTrackEmptyHintFor`）**只在 `audioTracks.isEmpty` 时生效**；用户机器上列表非空（PCM 环里仍有可枚举残留）→ 解释被跳过 → 一整套死控件照常渲染。
+  - `_TrackTile`（`:508`）对 `clipCount == 0` 不作任何体现，失败只有瞬时 toast。
+- **[x] ① 已修复** — 提交 `PLACEHOLDER_COMMIT`：
+  - `gal_hook_session_controller.dart` 新增纯函数 `galTrackSelectionAffectsCapture(backend)`（只有 `enginePcm` 为 true）。判据从「列表空不空」换成「后端是不是引擎 PCM」——这才是控件生不生效的真实依据。
+  - `game_diagnostics_page.dart`：解释态改为**只要后端不是引擎 PCM 就渲染**（resourceMode / loopbackMode 沿用 BUG-1027 文案，其余非引擎场景用新 key `game_tracks_pcm_only_hint`）；「自动选择」radio 仅在生效时渲染；`_TrackTile` 新增 `selectable`，非引擎 PCM 时禁用「选为语音轨」与「标记 BGM」（试听保留——它显式传 sourcePtr，仍是用户判断哪条是语音的手段）。`clipCount == 0` 的轨**保留在列表里**（用户需要知道它存在）但 `enabled: false` 并追加 `game_track_no_clips` 标注。`_handleSelectVoice` 留一条兜底 toast，防止将来别的入口绕过禁用又变回静默。
+  - 用户真正需要的「让选轨生效」出口做成**逐行选轨**（见本轮功能项 `setLineVoiceTrack`），它是与手动补录同级的用户裁决、走独立取音路径，**没有**放宽 `identical(_audioSource, engine)` 这道防自动误配的门（BUG-1060）。
+- **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_audio_degrade_track_test.dart`：
+  - 「BUG-1093 选轨是否生效只由音频后端决定」：`galTrackSelectionAffectsCapture` 四态真值表 + 诊断页源码守卫（必须出现 `galTrackSelectionAffectsCapture(state.audioBackend)`、`selectable: selectionEffective`、`enabled: selectable && !excluded`、`game_track_no_clips`、`game_tracks_pcm_only_hint`；**禁止**再出现 `state.audioTracks.isEmpty && emptyHint` 那条把解释态锁在空列表上的判据）。
+  - 既有 `test/tools/gal_diagnostics_track_autorefresh_guard_test.dart`（BUG-1027 守卫）全绿，未回归。
+- **备注**：真机验收未做——需在 Windows 上确认引擎 PCM 会话里选轨确实改变取音、非引擎后端控件确实置灰且解释可见。

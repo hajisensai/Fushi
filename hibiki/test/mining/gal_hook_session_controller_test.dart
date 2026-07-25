@@ -443,6 +443,9 @@ void main() {
           engine,
       loopbackSourceFactory: () => loopback,
       textPollInterval: const Duration(milliseconds: 5),
+      // BUG-1092：逐行 loopback 改成「延迟冻结」（台词到达后等本句语音进环再抓）。
+      // 单测把等待压到 10ms，断言的仍是同一条链路。
+      loopbackFreezeDelay: const Duration(milliseconds: 10),
       endpointListenable: endpoints,
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
     );
@@ -460,7 +463,7 @@ void main() {
     expect(await controller.selectTextThread(99), isTrue,
         reason: 'retained engine helper must still accept Luna thread choices');
 
-    for (int i = 0; i < 20 && service.entries.isEmpty; i++) {
+    for (int i = 0; i < 60 && loopback.grabRecentCalls == 0; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
     expect(service.entries, hasLength(1));
