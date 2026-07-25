@@ -2611,5 +2611,10 @@
   "anime_download_search_error_proxy_hint": "If the site cannot be reached directly, configure a network proxy in download settings.",
   "yomitan_api_server_started": "Yomitan API server started",
   "yomitan_port_kill_action": "End process and retry",
-  "yomitan_port_kill_failed": "Could not end $process. Please end it manually, then retry."
+  "yomitan_port_kill_failed": "Could not end $process. Please end it manually, then retry.",
+  "yomitan_port_kill_confirm_title": "End the process using port $port?",
+  "yomitan_port_kill_confirm_message": "The port is currently used by: $process",
+  "yomitan_port_kill_self_instance": "This process is another running instance of this app.",
+  "yomitan_port_kill_confirm": "End process",
+  "yomitan_port_kill_protected": "$process is a critical system process — Hibiki will not end it. Change the port instead."
 }

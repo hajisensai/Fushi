@@ -10,6 +10,7 @@ import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
+import 'package:hibiki/src/settings/port_kill_confirm.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
@@ -60,19 +61,38 @@ Future<void> _terminatePortOwnerAndRetry(
   int port,
 ) async {
   final AppModel appModel = settingsContext.appModel;
-  final PortListenerInfo? listener =
-      await PortProcessTerminator.findListener(port);
-  if (listener != null) {
-    final bool killed = await PortProcessTerminator.terminate(listener);
-    if (!killed) {
+  // 杀前必须确认：弹窗展示实际占用者（进程名 + PID + 路径；hibiki 旧实例
+  // 特别标注），关键系统进程直接拒杀。端口是用户可配置偏好，占用者完全可能
+  // 是 IDE 辅助进程/dev server，未经确认一键 taskkill 不可接受。
+  final PortKillDecision decision =
+      await decidePortKill(settingsContext.context, port: port);
+  switch (decision.kind) {
+    case PortKillDecisionKind.cancelled:
+      return;
+    case PortKillDecisionKind.refusedProtected:
       _showSettingsSnackBar(
         settingsContext,
-        t.yomitan_port_kill_failed(
-          process: '${listener.processName} (PID ${listener.pid})',
+        t.yomitan_port_kill_protected(
+          process: describePortListener(decision.listener!),
         ),
       );
       return;
-    }
+    case PortKillDecisionKind.listenerChanged:
+      // 占用者换人：重走冲突提示，让用户对新占用者重新发起并确认。
+      _showYomitanPortConflictSnackBar(settingsContext);
+      return;
+    case PortKillDecisionKind.confirmed:
+      final PortListenerInfo listener = decision.listener!;
+      final bool killed = await PortProcessTerminator.terminate(listener);
+      if (!killed) {
+        _showSettingsSnackBar(
+          settingsContext,
+          t.yomitan_port_kill_failed(process: describePortListener(listener)),
+        );
+        return;
+      }
+    case PortKillDecisionKind.noListener:
+      break;
   }
   // 占用进程已结束（或本就已退出）：重试开启。进程退出后 OS 释放端口可能有极短
   // 延迟，端口仍占时再等一拍重试一次，仍失败按端口冲突报出。
