@@ -1,0 +1,6 @@
+## BUG-1068 · 字幕听力沉浸模糊在字幕间隙后锁死显形不再变模糊
+- **报告**：2026-07-25（用户：遮罩有时故障，鼠标挪开了还没变模糊）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/media/video/video_subtitle_overlay.dart`：显形态 `_revealed`（383）/`_secondaryRevealed`（387）是靠成对 `MouseRegion.onEnter/onExit`（1263-1273）维持的锁存位。悬停某层显形后，该层进入无字幕间隙（活动集空）时 build 返回 `SizedBox.shrink()`（667-669）或该层不再构建，承载 hover 的 `MouseRegion` 随层卸载；Flutter 只对仍挂载的 MouseRegion 派发 `onExit`，故指针仍在其内时 `onExit` 缺席，显形态锁死 `true`。下一条字幕 `blurred = 开 && !true && 播放 = false`（714-716）→ 直接清晰显示（用户报「鼠标挪开了还没变模糊」）。此前复位 `_revealed` 只有 `didUpdateWidget`（604，仅关模糊时）和 `onExit` 两条路径，均不覆盖间隙卸载。
+- **[x] ① 已修复** — build 里在计算完 `mainCues`/`secondaryCues` 后、早退之前兜底复位：`if (mainCues.isEmpty && _revealed) _revealed = false;` + 副字幕对称。把显形态生命周期绑定到「该层当前有字幕盒在屏」，不依赖 onExit；指针若确实仍停在下一条字幕出现处，MouseRegion 重挂时 MouseTracker 会再派 onEnter 显形（Never break userspace）。build 期直接改字段（值在本帧稍后算 blurred 时被读到，无需 setState）。提交见本轮。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_subtitle_blur_gap_reset_test.dart`：真 overlay widget 测试。字幕 A→间隙→字幕 B，悬停显形 A 后经间隙，断言 B 恢复模糊（揭开热区 `Key('video-subtitle-reveal')` 再现）。回归前 `_revealed` 锁死 true 使 B 直接清晰，断言失败。
+- **备注**：per-layer 复位同时覆盖「双语字幕仅一层进间隙」的卸载场景，不只全空间隙。与 BUG-198（opaque:false 纪律）/BUG-199（isPlaying 门）同一状态机，未改其契约。

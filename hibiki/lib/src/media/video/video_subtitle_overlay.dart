@@ -641,6 +641,20 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
             ? const <AudioCue>[]
             : widget.controller.secondaryActiveCues;
 
+        // BUG-1068：显形态（_revealed / _secondaryRevealed）的生命周期必须绑定「该层
+        // 当前有字幕盒在屏」。悬停某层显形（onEnter → _setRevealed(true)）后，该层进入
+        // 字幕间隙（活动集空）时，承载 hover 的 MouseRegion 随层一起从树上卸载——若此刻
+        // 指针仍在其内，onExit 不会触发（Flutter 只对仍挂载的 MouseRegion 派发 exit），
+        // 显形态就锁死为 true。结果下一条字幕即便鼠标早已离开也直接清晰显示（用户报
+        // 「鼠标挪开了还没变模糊」）。这里不依赖 onExit 做兜底复位：某层活动集为空即复位
+        // 该层显形态；若指针确实仍停在下一条字幕出现处，MouseRegion 重新挂载时 MouseTracker
+        // 会再次派发 onEnter 显形（Never break userspace：真悬停仍显形）。build 期直接改
+        // 字段（不 setState）：值在本帧稍后 [_buildSubtitleLayer] 算 blurred 时即被读到。
+        if (mainCues.isEmpty && _revealed) _revealed = false;
+        if (secondaryCues.isEmpty && _secondaryRevealed) {
+          _secondaryRevealed = false;
+        }
+
         // TODO-1372/BUG-698：清扫「组内已无任何在屏 cue」的槽位状态——整组离场即重置，
         // 下一条从锚点侧基线重新开始；同一活动集重复 build 幂等。放在空集早退之前，
         // 保证 gap 帧也把状态清干净。
