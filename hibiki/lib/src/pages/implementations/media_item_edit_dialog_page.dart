@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/utils.dart';
 
 /// The content of the dialog upon selecting 'Edit' in the
@@ -115,8 +116,9 @@ class _MediaItemEditDialogPageState
             onPickImage: () async {
               // BUG-1074：桌面端 image_picker 无平台实现，直接调 pickImage 抛
               // MissingPluginException 且无人捕获 → 按钮「点了没反应」。统一走
-              // 平台感知入口：移动端相册、桌面端 file_picker 文件对话框。
-              final File? pickedFile = await pickGalleryImageFile();
+              // 封面服务的平台感知入口（移动端相册、桌面端 file_picker 文件
+              // 对话框，三媒体岛同一条选图路径）。
+              final File? pickedFile = await MediaCoverService.pickCoverImage();
               if (pickedFile != null) {
                 _newFile = pickedFile;
                 _coverImageProvider = FileImage(pickedFile);
@@ -172,8 +174,11 @@ class _MediaItemEditDialogPageState
         title: _nameOverrideController.text,
       );
 
-      await mediaSource.setOverrideThumbnailFromMediaItem(
+      // 统一封面服务（P3）：薄路由到 setOverrideThumbnailFromMediaItem（存储
+      // 位置/键不变），落盘后在该路径末尾统一驱逐旧解码缓存。
+      await MediaCoverService.applyBookCoverOverride(
         appModel: appModel,
+        mediaSource: mediaSource,
         item: widget.item,
         file: _newFile,
         clearOverrideImage: _clearOverrideImage,

@@ -13,6 +13,7 @@ import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart'
     show CollectionShelfRow;
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
@@ -211,19 +212,16 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     if (!silent) HibikiToast.show(msg: t.games_cover_updated);
   }
 
-  /// 手动设置封面：选一张图 → 拷进 `<documents>/game_covers` → 回填条目。
-  /// 与视频卡「设置封面」同款语义（拷盘而非引用原图，原图移动/删除不会让封面消失）。
+  /// 手动设置封面：统一封面服务（P3）——[MediaCoverService.pickCoverImage] 平台
+  /// 感知选图（移动端相册 / 桌面文件对话框），再经 [MediaCoverService.applyGameCover]
+  /// 拷进 `<documents>/game_covers`（落盘 + 双键驱逐）→ 回填条目。与视频卡「设置
+  /// 封面」同款语义（拷盘而非引用原图，原图移动/删除不会让封面消失）。
   Future<void> _setCover(GalgameEntry game) async {
-    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-    );
-    final String? source = (picked != null && picked.files.isNotEmpty)
-        ? picked.files.first.path
-        : null;
-    if (source == null || source.isEmpty) return;
-    final String? saved = await saveGameCoverFromFile(
+    final File? picked = await MediaCoverService.pickCoverImage();
+    if (picked == null) return;
+    final String? saved = await MediaCoverService.applyGameCover(
       gameId: game.id,
-      sourcePath: source,
+      sourcePath: picked.path,
     );
     if (saved == null) {
       HibikiToast.show(msg: t.games_cover_not_found);

@@ -29,6 +29,7 @@ import 'package:hibiki/src/media/video/scraper/poster_downloader.dart';
 import 'package:hibiki/src/media/video/scraper/poster_scraper_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
+import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_subtitle_attach.dart';
@@ -1656,27 +1657,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     }
   }
 
-  /// 设置封面：选图 → 经共享 [setVideoCoverFromPickedFile]（拷盘 + 驱逐旧缓存 +
-  /// 落库）→ 刷新。与书架视频卡的换封面共用同一入口，封面与自动截图同目录。
+  /// 设置封面：统一封面服务（P3）——[MediaCoverService.pickCoverImage] 平台感知
+  /// 选图（移动端相册 / 桌面文件对话框），再经 [MediaCoverService.applyVideoCoverManual]
+  /// （拷盘 + 双键驱逐旧缓存 + 落库 + 记 manual 保护标记，批量刮削永不覆盖）→ 刷新。
   Future<void> _pickCover(VideoBookRow book) async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-    );
-    final String? pickedPath = result?.files.first.path;
-    if (pickedPath == null || !mounted) return;
-    await setVideoCoverFromPickedFile(
+    final File? picked = await MediaCoverService.pickCoverImage();
+    if (picked == null || !mounted) return;
+    await MediaCoverService.applyVideoCoverManual(
       repo: widget.repo,
       bookUid: book.bookUid,
-      pickedPath: pickedPath,
+      pickedPath: picked.path,
     );
-    // 手动设置的封面标记 manual，批量刮削永不覆盖（CoverMetaStore 目录 = 封面目录）。
-    try {
-      final Directory covers = await VideoStorage.coversDir();
-      await CoverMetaStore(covers)
-          .set(book.bookUid, const CoverMeta(origin: CoverOrigin.manual));
-    } catch (_) {
-      // 元数据记账失败不影响封面已设置（best-effort，保护性标记）。
-    }
     if (mounted) _refresh();
   }
 
@@ -2754,12 +2745,15 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           ),
         );
       }
+      // BUG-959 同款收敛（P3）：本地封面文件一律走 [ShelfFileCover] 降采样解码，
+      // 不再裸 Image.file 整帧解码（已下载的远端封面常是 1080p 原图，撑爆
+      // ImageCache 导致滚动重解码卡顿）。fit/衬底/占位语义不变。
       return _coverBacking(
-        Image.file(
-          File(coverPath),
+        ShelfFileCover(
           key: coverKey,
+          path: coverPath,
           fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => ShelfCoverPlaceholder(
+          placeholder: ShelfCoverPlaceholder(
             icon: Icons.movie_outlined,
             backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
           ),
