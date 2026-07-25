@@ -15,18 +15,18 @@
       "version": "1.2.0-debug.8937"
     },
     {
-      "name": "hibiki-1.2.0-debug.8937-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8937-ios.ipa",
-      "releaseSequence": 8937,
-      "tag": "v1.2.0-debug.8937+66bfbe5",
-      "version": "1.2.0-debug.8937"
+      "name": "hibiki-1.2.0-debug.8938-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8938-ios.ipa",
+      "releaseSequence": 8938,
+      "tag": "v1.2.0-debug.8938+a44b45a",
+      "version": "1.2.0-debug.8938"
     },
     {
-      "name": "hibiki-1.2.0-debug.8937-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8937-macos.zip",
-      "releaseSequence": 8937,
-      "tag": "v1.2.0-debug.8937+66bfbe5",
-      "version": "1.2.0-debug.8937"
+      "name": "hibiki-1.2.0-debug.8938-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.8938-macos.zip",
+      "releaseSequence": 8938,
+      "tag": "v1.2.0-debug.8938+a44b45a",
+      "version": "1.2.0-debug.8938"
     },
     {
       "name": "hibiki-1.2.0-debug.8938-windows-setup.exe",
