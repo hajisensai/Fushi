@@ -34,9 +34,11 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// - 区块 3：Activity 时间轴——把 [ActivityEventRow] 事件流经纯函数
 ///   [aggregateActivityEvents] 聚合成「按日期分组」的时间线，顶部按类别筛选。
 ///
-/// 分栏：宽屏（`constraints.maxWidth >= 900`）热力图置顶通栏 + 下方左列（继续）右列
-/// （Activity）；窄屏堆叠。书与阅读位置走 Riverpod provider（响应式）；视频与活动事件在
-/// [initState] 一次性异步载入到本地状态（视频列表天然是 Future）。
+/// 分栏（BUG-1073 后）：宽屏（`constraints.maxWidth >= 900`）= 主列（flex 3：学习活动
+/// → 继续 → 最近添加）+ 侧列（flex 2：Activity 时间轴），整体限宽
+/// [_kDashboardMaxWidth] 居中；窄屏单列堆叠。书与阅读位置走 Riverpod provider
+/// （响应式）；视频与活动事件在 [initState] 一次性异步载入到本地状态（视频列表天然是
+/// Future）。
 class HomeDashboardPage extends ConsumerStatefulWidget {
   const HomeDashboardPage({
     super.key,
@@ -109,11 +111,25 @@ class _ContinueEntry {
 /// dispose」会在退场动画帧触碰已销毁 controller——保存后本页 setState 让仍在
 /// 退场的 TextField 重建 addListener 直接断言崩（widget 测试实测复现）。
 /// 保存 pop 解析后的字数（空/非法 → 0 = 关闭目标），取消 pop null。
+///
+/// BUG-1075：此前只有一个裸 TextField（labelText=每日目标），用户「不知道该填
+/// 什么、单位是什么、算不算看视频」。现在补齐三件事（不引入加权系统——那是过度
+/// 设计，口径说清即可）：输入框带单位后缀 + 口径 helperText、近 7 日日均参考值、
+/// 一排快捷预设 chip。
 class _DailyGoalDialog extends StatefulWidget {
-  const _DailyGoalDialog({required this.initialChars});
+  const _DailyGoalDialog({
+    required this.initialChars,
+    required this.recentDailyAverage,
+  });
 
   /// 当前目标（0 = 未设，输入框留空）。
   final int initialChars;
+
+  /// 近 7 日日均字数（全来源合计，与目标同口径）；<=0 不显示参考行。
+  final int recentDailyAverage;
+
+  /// 快捷预设（字/天）：点一下直接填进输入框，省得用户凭空想数字。
+  static const List<int> presets = <int>[3000, 5000, 10000, 20000];
 
   @override
   State<_DailyGoalDialog> createState() => _DailyGoalDialogState();
@@ -130,14 +146,59 @@ class _DailyGoalDialogState extends State<_DailyGoalDialog> {
     super.dispose();
   }
 
+  /// 预设 chip → 填入输入框（光标置尾，用户可继续改）。
+  void _applyPreset(int chars) {
+    final String text = chars.toString();
+    _controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return AlertDialog(
       title: Text(t.stat_goal_set),
-      content: TextField(
-        controller: _controller,
-        keyboardType: TextInputType.number,
-        decoration: InputDecoration(labelText: t.stat_goal_daily),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            TextField(
+              controller: _controller,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: t.stat_goal_daily,
+                // 单位 + 口径：目标是「每天多少字」，且计入阅读/视频字幕/游戏文本。
+                suffixText: t.stat_goal_unit_chars,
+                helperText: t.stat_goal_scope_hint,
+                helperMaxLines: 3,
+              ),
+            ),
+            if (widget.recentDailyAverage > 0) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                t.stat_goal_recent_average(n: widget.recentDailyAverage),
+                style: tokens.type.metadata,
+              ),
+            ],
+            SizedBox(height: tokens.spacing.gap + 4),
+            Text(t.stat_goal_presets, style: tokens.type.metadata),
+            SizedBox(height: tokens.spacing.gap / 2),
+            Wrap(
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap / 2,
+              children: <Widget>[
+                for (final int preset in _DailyGoalDialog.presets)
+                  ActionChip(
+                    label: Text(preset.toString()),
+                    onPressed: () => _applyPreset(preset),
+                  ),
+              ],
+            ),
+          ],
+        ),
       ),
       actions: <Widget>[
         TextButton(
@@ -153,6 +214,9 @@ class _DailyGoalDialogState extends State<_DailyGoalDialog> {
     );
   }
 }
+
+/// 仪表盘内容最大宽度（逻辑像素）：超宽屏限宽居中，避免每个区块被拉成大片空白。
+const double _kDashboardMaxWidth = 1600;
 
 class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   /// 「继续」横滑行：卡片封面等高，书竖版 5:7 / 视频横版 16:9 由宽度区分（同一行
@@ -500,42 +564,72 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool wide = constraints.maxWidth >= 900;
-        final Widget bodyBelow;
+        final Widget body;
         if (wide) {
-          // 热力图置顶通栏后，下方两列并排（左：继续；右：Activity）。整页在纵向滚动的
-          // ListView 里，Row 收到的高度约束是无界（h=Infinity）；用 CrossAxisAlignment
-          // .start 让两列各自收敛到内容高度，避免 stretch 被迫无限高在 layout 阶段崩溃。
-          bodyBelow = Row(
+          // BUG-1073：宽屏改成「主列 + 侧列」两栏。此前是「热力图通栏 → 继续|活动
+          // 两栏 → 最近添加通栏」的三明治：热力图和最近添加各自被拉到 1700px 宽
+          // （内容却只有几百 px），继续区一行只 4 张卡右侧全空，活动列又比左列高
+          // 出一大截。现在把三个「宽度用不满」的区块（学习活动 / 继续 / 最近添加）
+          // 竖着塞进主列，天然长的活动时间轴独占侧列，两列高度也就对齐了。
+          //
+          // 整页在纵向滚动的 ListView 里，Row 收到的高度约束是无界（h=Infinity）；
+          // 用 CrossAxisAlignment.start 让两列各自收敛到内容高度，避免 stretch 被
+          // 迫无限高在 layout 阶段崩溃。
+          body = Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Expanded(child: continueCard),
+              Expanded(
+                flex: 3,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    heatmapCard,
+                    SizedBox(height: tokens.spacing.card),
+                    continueCard,
+                    // 空库不占位（用户反馈「底部很空」的填充提案）。
+                    if (recentCard != null) ...<Widget>[
+                      SizedBox(height: tokens.spacing.card),
+                      recentCard,
+                    ],
+                  ],
+                ),
+              ),
               SizedBox(width: tokens.spacing.card),
-              Expanded(child: activityCard),
+              Expanded(flex: 2, child: activityCard),
             ],
           );
         } else {
-          bodyBelow = Column(
+          body = Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              heatmapCard,
+              SizedBox(height: tokens.spacing.card),
               continueCard,
               SizedBox(height: tokens.spacing.card),
               activityCard,
+              if (recentCard != null) ...<Widget>[
+                SizedBox(height: tokens.spacing.card),
+                recentCard,
+              ],
             ],
           );
         }
         return ListView(
           padding: EdgeInsets.all(tokens.spacing.card),
           children: <Widget>[
-            // 区块 1：学习活动热力图，置顶（原顶部统计卡已移除）。
-            heatmapCard,
-            SizedBox(height: tokens.spacing.card),
-            bodyBelow,
-            // 区块 4：「最近添加」横滑行，两栏下方通栏（空库不占位——用户反馈
-            // 「底部很空」的填充提案）。
-            if (recentCard != null) ...<Widget>[
-              SizedBox(height: tokens.spacing.card),
-              recentCard,
-            ],
+            // 超宽屏（4K/带鱼屏）限宽居中：再宽下去只是把每个区块拉稀，不增信息量。
+            // heightFactor: 1 让 Align 在 ListView 的无界高度里收敛到内容高度。
+            Align(
+              alignment: Alignment.topCenter,
+              heightFactor: 1,
+              child: ConstrainedBox(
+                constraints:
+                    const BoxConstraints(maxWidth: _kDashboardMaxWidth),
+                child: body,
+              ),
+            ),
           ],
         );
       },
@@ -1052,7 +1146,12 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
             valueByDateKey: charsByDay,
             now: DateTime.now(),
             baseColor: tokens.surfaces.primary,
-            emptyColor: tokens.surfaces.card,
+            // BUG-1073 病灶 1 根因：此前用 surfaces.card（= surfaceContainer），
+            // 与本卡底色 surfaces.group（= surfaceContainerLow）几乎同色——暗色
+            // 主题下「没活动的那些周」等于没画，观感是左边一大片死黑。改用
+            // surfaces.overlay（= surfaceContainerHighest）才和卡底拉开对比，
+            // 空周照样是 GitHub 式浅格子。
+            emptyColor: tokens.surfaces.overlay,
             // 气泡 = 日期 · 字数 · 学习时长（时长为 0 的旧数据/纯导入日不显示
             // 时长段），字数与时长都跟随当前来源筛选。
             valueLabel: (String dateKey, int chars) {
@@ -1105,12 +1204,32 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   Widget _buildDailyGoalRow(HibikiDesignTokens tokens) {
     final int goal = ref.read(appProvider).readingGoalDailyChars;
     if (goal <= 0) {
-      return Align(
-        alignment: Alignment.centerLeft,
-        child: TextButton.icon(
-          onPressed: () => unawaited(_editDailyGoal()),
-          icon: const Icon(Icons.flag_outlined, size: 18),
-          label: Text(t.stat_goal_set),
+      // BUG-1073 病灶 2：此前是热力图下方孤零零一个左对齐按钮。改成与已设目标态
+      // 同构的一整行（图标 + 标签 + 口径说明 + 右侧入口），视觉上属于这张卡。
+      return Padding(
+        padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+        child: Row(
+          children: <Widget>[
+            Icon(
+              Icons.flag_outlined,
+              size: 18,
+              color: tokens.type.metadata.color,
+            ),
+            SizedBox(width: tokens.spacing.gap),
+            Expanded(
+              child: Text(
+                t.stat_goal_scope_hint,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: tokens.type.metadata,
+              ),
+            ),
+            SizedBox(width: tokens.spacing.gap),
+            TextButton(
+              onPressed: () => unawaited(_editDailyGoal()),
+              child: Text(t.stat_goal_set),
+            ),
+          ],
         ),
       );
     }
@@ -1155,12 +1274,29 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     final AppModel appModel = ref.read(appProvider);
     final int? saved = await showDialog<int>(
       context: context,
-      builder: (BuildContext _) =>
-          _DailyGoalDialog(initialChars: appModel.readingGoalDailyChars),
+      builder: (BuildContext _) => _DailyGoalDialog(
+        initialChars: appModel.readingGoalDailyChars,
+        recentDailyAverage: _recentDailyAverageChars(),
+      ),
     );
     if (saved == null) return;
     await appModel.setReadingGoalDailyChars(saved < 0 ? 0 : saved);
     if (mounted) setState(() {});
+  }
+
+  /// 近 [days] 天（含今天）的日均字数，**与目标同口径**（全来源合计
+  /// [_readingCharsByDay]）：给「我该填多少」一个真实参考值（BUG-1075）。
+  /// 无数据日按 0 计入分母（真实反映日均，不是活跃日均）。
+  int _recentDailyAverageChars({int days = 7}) {
+    if (days <= 0) return 0;
+    final DateTime today = DateTime.now();
+    int total = 0;
+    for (int i = 0; i < days; i++) {
+      final String key =
+          HibikiTimeFormat.dayKey(today.subtract(Duration(days: i)));
+      total += _readingCharsByDay[key] ?? 0;
+    }
+    return total ~/ days;
   }
 
   /// 点热力图某日 → 当日明细 sheet：头部=日期+当日合计（全来源），内容按

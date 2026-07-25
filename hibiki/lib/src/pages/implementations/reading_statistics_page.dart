@@ -764,21 +764,34 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
         final HibikiDesignTokens tokens = HibikiDesignTokens.of(dialogContext);
         return AlertDialog(
           title: Text(t.stat_goal_set),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              TextField(
-                controller: dailyController,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(labelText: t.stat_goal_daily),
-              ),
-              SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-              TextField(
-                controller: weeklyController,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(labelText: t.stat_goal_weekly),
-              ),
-            ],
+          // helperText 让内容变高：横屏/小窗下用滚动兜底，不再顶到溢出。
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                // BUG-1075：单位 + 口径（与首页仪表盘目标对话框同一批 i18n key，
+                // 两处编辑的是同一个持久化目标）。
+                TextField(
+                  controller: dailyController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: t.stat_goal_daily,
+                    suffixText: t.stat_goal_unit_chars,
+                    helperText: t.stat_goal_scope_hint,
+                    helperMaxLines: 3,
+                  ),
+                ),
+                SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
+                TextField(
+                  controller: weeklyController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: t.stat_goal_weekly,
+                    suffixText: t.stat_goal_unit_chars,
+                  ),
+                ),
+              ],
+            ),
           ),
           actions: <Widget>[
             TextButton(

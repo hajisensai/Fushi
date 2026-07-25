@@ -2573,5 +2573,9 @@
   "game_launch": "Launch",
   "game_developer": "Developer",
   "game_site_score": "Site rating",
-  "game_user_rating": "My rating"
+  "game_user_rating": "My rating",
+  "stat_goal_unit_chars": "chars",
+  "stat_goal_scope_hint": "Counts all characters combined: reading + video subtitles + game text.",
+  "stat_goal_recent_average": "Last 7 days: $n chars/day on average",
+  "stat_goal_presets": "Presets"
 }
