@@ -47,6 +47,10 @@ void main() {
           required String injectorPath,
           required bool lunaPcHooks,
           int? lunaCodepage,
+          // PR#427 给工厂加了 launch 专用可选参数；本 fake 不关心其取值，
+          // 但签名必须跟上 typedef，否则赋值类型不兼容。
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
         }) =>
             engine,
         loopbackSourceFactory: () => loopback,
