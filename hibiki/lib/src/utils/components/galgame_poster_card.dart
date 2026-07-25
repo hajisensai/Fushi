@@ -108,9 +108,8 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
     final Widget interactive = MouseRegion(
       onEnter: (_) => _setHover(true),
       onExit: (_) => _setHover(false),
-      cursor: widget.onTap == null
-          ? MouseCursor.defer
-          : SystemMouseCursors.click,
+      cursor:
+          widget.onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
       child: GestureDetector(
         onTap: widget.onTap,
         onLongPress: widget.onLongPress,
@@ -184,8 +183,7 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
             fit: StackFit.expand,
             children: <Widget>[
               widget.cover,
-              if (widget.overlayText != null &&
-                  widget.overlayText!.isNotEmpty)
+              if (widget.overlayText != null && widget.overlayText!.isNotEmpty)
                 _buildSortOverlay(context),
               if (widget.multiSelected) _buildSelectBadge(colors),
               if (widget.trailing != null)
@@ -198,6 +196,10 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
   }
 
   /// 封面底部的排序信息渐变浮层：白字、单行、左对齐，底部深色渐变蒙版托底。
+  ///
+  /// 设计承 ReinaManager（AGPL-3.0，`references/ReinaManager`）卡片浮层的**风格**
+  /// （透明→深色三段渐变托底白字），但渐变透明度、stop 位置与内边距均为本仓自调
+  /// 数值，并非照搬其实现参数。
   Widget _buildSortOverlay(BuildContext context) {
     return Positioned(
       left: 0,
@@ -205,17 +207,17 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
       bottom: 0,
       child: IgnorePointer(
         child: Container(
-          padding: const EdgeInsets.fromLTRB(10, 24, 10, 6),
+          padding: const EdgeInsets.fromLTRB(10, 22, 10, 6),
           decoration: const BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: <Color>[
                 Color(0x00000000),
-                Color(0x4D0F1720),
-                Color(0xD90F1720),
+                Color(0x520F1720),
+                Color(0xD40F1720),
               ],
-              stops: <double>[0.0, 0.5, 1.0],
+              stops: <double>[0.0, 0.55, 1.0],
             ),
           ),
           child: Text(
@@ -224,12 +226,12 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.left,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  shadows: const <Shadow>[
-                    Shadow(color: Color(0x99000000), blurRadius: 2),
-                  ],
-                ),
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              shadows: const <Shadow>[
+                Shadow(color: Color(0x99000000), blurRadius: 2),
+              ],
+            ),
           ),
         ),
       ),

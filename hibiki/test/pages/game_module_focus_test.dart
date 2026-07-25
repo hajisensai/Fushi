@@ -12,6 +12,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/pages/implementations/galgame_home_page.dart';
 import 'package:hibiki/src/pages/implementations/games_library_page.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/pages/implementations/texthooker_page.dart';
@@ -107,6 +108,101 @@ void main() {
     expect(launchFeedback, findsOneWidget, reason: 'ActivateIntent 必须触发游戏启动路径');
 
     // 放掉桌面 toast 的自动消失计时器，避免测试尾部 pending timer。
+    await tester.pump(const Duration(seconds: 4));
+  });
+
+  testWidgets(
+      'recent-played thumb registers focus target and Enter activates launch',
+      (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final HibikiDatabase db = HibikiDatabase.forTesting(
+      NativeDatabase.memory(),
+    );
+    addTearDown(db.close);
+    final PreferencesRepository prefsRepo = PreferencesRepository(db);
+    await prefsRepo.loadFromDb();
+    final Directory tmpDir =
+        Directory.systemTemp.createTempSync('hibiki_recent_focus_');
+    addTearDown(() {
+      try {
+        tmpDir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+    final AppModel appModel = AppModel(testPlatformServices())
+      ..wireLocalAudioForTesting(
+          prefsRepo: prefsRepo, databaseDirectory: tmpDir)
+      ..wireDatabaseForTesting(db);
+    await appModel.setGalgames(<GalgameEntry>[
+      GalgameEntry(
+        id: 'g1',
+        name: 'Recent Game',
+        exePath: r'Z:\definitely\missing\game.exe',
+        workdir: r'Z:\definitely\missing',
+        addedAt: DateTime(2026),
+      ),
+    ]);
+    // 一段游玩会话 → lastPlayedMs>0 → Focus 卡渲染「最近玩过」缩略图条。
+    final DateTime now = DateTime.now();
+    await appModel.database.insertGalgameSession(
+      GalgameSessionsCompanion.insert(
+        gameId: 'g1',
+        startMs: now.millisecondsSinceEpoch - 600000,
+        endMs: now.millisecondsSinceEpoch,
+        durationSeconds: 600,
+        dateKey: HibikiTimeFormat.dayKey(now),
+      ),
+    );
+
+    final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+    HibikiToast.navigatorKey = navKey;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          appProvider.overrideWith((ref) => appModel),
+        ],
+        child: TranslationProvider(
+          child: MaterialApp(
+            navigatorKey: navKey,
+            home: Scaffold(
+              body: HibikiFocusRoot(
+                child: GalgameHomePage(
+                  onShowLibrary: () {},
+                  onShowMonitor: () {},
+                  onShowDiagnostics: () {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final HibikiFocusController controller = HibikiFocusRoot.controllerOf(
+      tester.element(find.byType(GalgameHomePage)),
+    );
+    expect(
+      controller.requestById(const HibikiFocusId('game-recent-g1')),
+      isTrue,
+      reason: '最近玩过缩略图必须注册 game-recent-<id> 焦点站点（TODO-1946 焦点缺口）',
+    );
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    // Enter 触发 onTap → _launchGame：Windows 宿主提示缺 exe，非 Windows 宿主
+    // 提示平台不支持——两者都证明 ActivateIntent 激活路径与点按一致。
+    final Finder launchFeedback = find.byWidgetPredicate(
+      (Widget w) =>
+          w is Text &&
+          (w.data == t.games_exe_missing ||
+              w.data == t.games_launch_unsupported),
+    );
+    expect(launchFeedback, findsOneWidget,
+        reason: 'ActivateIntent 必须触发最近玩过缩略图的启动路径');
+
     await tester.pump(const Duration(seconds: 4));
   });
 
