@@ -2,13 +2,13 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:network_to_file_image/network_to_file_image.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hibiki/creator.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/utils/misc/gallery_image_picker.dart';
 
 /// An enhancement that can be used to select a picture with the
 class PickImageEnhancement extends ImageEnhancement {
@@ -39,8 +39,9 @@ class PickImageEnhancement extends ImageEnhancement {
     required EnhancementTriggerCause cause,
   }) async {
     ImageExportField imageField = field as ImageExportField;
-    XFile? pickedFile =
-        await ImagePicker().pickImage(source: ImageSource.gallery);
+    // BUG-1074：桌面端 image_picker 无平台实现（MissingPluginException），
+    // 统一走平台感知入口：移动端相册、桌面端 file_picker 文件对话框。
+    final File? pickedFile = await pickGalleryImageFile();
 
     if (pickedFile == null) {
       return;
@@ -59,7 +60,8 @@ class PickImageEnhancement extends ImageEnhancement {
     String imagePath = '${imageDir.path}/image';
     imageDir.createSync(recursive: true);
 
-    await pickedFile.saveTo(imagePath);
+    // 与旧 XFile.saveTo 等价：把选中文件复制到 app 私有目录再引用副本。
+    await pickedFile.copy(imagePath);
     File pickedImage = File(imagePath);
 
     await imageField.setImages(

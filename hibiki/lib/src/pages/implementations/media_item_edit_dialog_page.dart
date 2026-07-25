@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
@@ -114,16 +113,14 @@ class _MediaItemEditDialogPageState
           MediaItemCoverOverrideField(
             imageProvider: _coverImageProvider ?? _defaultImageProvider!,
             onPickImage: () async {
-              ImagePicker imagePicker = ImagePicker();
-              final pickedFile = await imagePicker.pickImage(
-                source: ImageSource.gallery,
-              );
+              // BUG-1074：桌面端 image_picker 无平台实现，直接调 pickImage 抛
+              // MissingPluginException 且无人捕获 → 按钮「点了没反应」。统一走
+              // 平台感知入口：移动端相册、桌面端 file_picker 文件对话框。
+              final File? pickedFile = await pickGalleryImageFile();
               if (pickedFile != null) {
-                _newFile = File(pickedFile.path);
-                _coverImageProvider = FileImage(_newFile!);
-                if (_newFile != null) {
-                  _clearOverrideImage = false;
-                }
+                _newFile = pickedFile;
+                _coverImageProvider = FileImage(pickedFile);
+                _clearOverrideImage = false;
               }
 
               setState(() {});
