@@ -1485,7 +1485,7 @@ class _SessionOverviewCard extends StatelessWidget {
                 // 这种内部代码原样甩给用户，等于什么都没说。没有结构化原因时才退回代码。
                 if (!compact && state.fallbackReason != null)
                   Text(
-                    // BUG-1091：先看注入失败的可执行处置，再看降级原因自己的人话文案；
+                    // BUG-1100：先看注入失败的可执行处置，再看降级原因自己的人话文案；
                     // 两张表都没有才回退内部代码。
                     galHookFailureLabel(state.injectorFailure) ??
                         galHookFallbackLabel(state.fallbackReason!) ??

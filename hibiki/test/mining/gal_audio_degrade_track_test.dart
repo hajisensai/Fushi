@@ -10,7 +10,7 @@ import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client.dart';
 
-/// BUG-1091 降级不可恢复 / BUG-1092 降级下音频配错句 / BUG-1093 活跃音轨面板无效 /
+/// BUG-1100 降级不可恢复 / BUG-1101 降级下音频配错句 / BUG-1093 活跃音轨面板无效 /
 /// BUG-1094 手动补录固定 8 秒，以及「单条台词可改对应音轨」。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -57,7 +57,7 @@ void main() {
         endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
       );
 
-  test('BUG-1091 引擎 PCM 晚到时把降级的 Loopback 升格回引擎，且不重放台词', () async {
+  test('BUG-1100 引擎 PCM 晚到时把降级的 Loopback 升格回引擎，且不重放台词', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     DateTime clock = DateTime(2020, 1, 1, 12);
@@ -118,7 +118,7 @@ void main() {
     endpoints.dispose();
   });
 
-  test('BUG-1091 降级原因必须有人话文案，不再把内部代码甩给用户', () {
+  test('BUG-1100 降级原因必须有人话文案，不再把内部代码甩给用户', () {
     expect(galHookFallbackLabel('engine_pcm_unavailable'), isNotNull);
     expect(galHookFallbackLabel('engine_pcm_unavailable'),
         isNot('engine_pcm_unavailable'));
@@ -144,7 +144,7 @@ void main() {
     );
   });
 
-  test('BUG-1092 逐行 loopback 改为延迟冻结：窗口向前，不再抓上一句', () async {
+  test('BUG-1101 逐行 loopback 改为延迟冻结：窗口向前，不再抓上一句', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     DateTime clock = DateTime(2020, 1, 1, 12);
@@ -196,7 +196,7 @@ void main() {
     endpoints.dispose();
   });
 
-  test('BUG-1092 制卡提前收束延迟冻结，不会拿一份还没冻的空缓存报 missing', () async {
+  test('BUG-1101 制卡提前收束延迟冻结，不会拿一份还没冻的空缓存报 missing', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
     DateTime clock = DateTime(2020, 1, 1, 12);
@@ -454,7 +454,7 @@ class _FakeEngine extends EngineHookGalAudioSource {
   final bool pairedCandidate;
   final GalAudioSlice? utterance;
 
-  /// 会话运行中才出现的引擎 PCM 就绪格式（BUG-1091 的升格触发点）。
+  /// 会话运行中才出现的引擎 PCM 就绪格式（BUG-1100 的升格触发点）。
   PcmFormat? readyFormat;
 
   int pollCalls = 0;

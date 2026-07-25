@@ -443,7 +443,7 @@ void main() {
           engine,
       loopbackSourceFactory: () => loopback,
       textPollInterval: const Duration(milliseconds: 5),
-      // BUG-1092：逐行 loopback 改成「延迟冻结」（台词到达后等本句语音进环再抓）。
+      // BUG-1101：逐行 loopback 改成「延迟冻结」（台词到达后等本句语音进环再抓）。
       // 单测把等待压到 10ms，断言的仍是同一条链路。
       loopbackFreezeDelay: const Duration(milliseconds: 10),
       endpointListenable: endpoints,

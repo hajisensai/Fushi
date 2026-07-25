@@ -767,7 +767,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
   ///
   /// null 只说明「游戏还没播过语音」，不说明 hook 没装上（那看 [textHookReady] 与 native
   /// 的 `audioHooksReady`）。控制器据此在会话运行中把降级的 Loopback 升格回引擎 PCM
-  /// （BUG-1091）。判据必须是这道就绪门：直接看 `parseGalPcmFormat` 会把未过门的残留
+  /// （BUG-1100）。判据必须是这道就绪门：直接看 `parseGalPcmFormat` 会把未过门的残留
   /// 碎片当成可用 PCM，那正是 BUG-1060 已修掉的回归。
   PcmFormat? get readyPcmFormat => _readyFormat;
 
@@ -955,7 +955,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
       // “文本-only”交给控制器组合 Loopback；否则 Siglus 原始 OVK hook 会被启动竞态
       // 误判为不可用。helper 仍会保留，因此后续资源语音始终优先于 Loopback。
       //
-      // BUG-1091：这里返回 null **只代表「此刻还没有可用 PCM」**，不代表这局都没有。
+      // BUG-1100：这里返回 null **只代表「此刻还没有可用 PCM」**，不代表这局都没有。
       // 游戏刚启动、一句语音都还没播时共享内存里本就没有格式，等满 [_readyTimeout]
       // 只会白白拖慢文本上屏。控制器据此先用 Loopback 顶着，并在会话运行中持续复查
       // [readyPcmFormat]，首句语音出现即把主音源升格回引擎 PCM。
@@ -1094,7 +1094,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
       _rawVoiceReady = r['rawVoiceReady'] == true;
       // 就绪门只有一处真相源：start() 与运行中的 refreshReadiness() 必须用同一判据，
       // 否则「启动时不算就绪、运行中却算就绪」会让两条路径对同一份共享内存给出
-      // 互相矛盾的结论（BUG-1091）。
+      // 互相矛盾的结论（BUG-1100）。
       _readyFormat = parseEngineHookReadyFormat(r);
       return _readyFormat;
     } on PlatformException {
@@ -1111,7 +1111,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// hook 晚到后把原始游戏语音提升为主来源。
   ///
   /// 同一次刷新也更新 [readyPcmFormat]：引擎 PCM 与资源语音是两条各自会「晚到」的能力，
-  /// 升格判据必须对称（BUG-1091）。返回值仍是资源语音就绪与否，PCM 侧读 [readyPcmFormat]。
+  /// 升格判据必须对称（BUG-1100）。返回值仍是资源语音就绪与否，PCM 侧读 [readyPcmFormat]。
   Future<bool> refreshReadiness() async {
     await _pollFormat();
     return _rawVoiceReady;

@@ -322,7 +322,7 @@ class GalHookSessionController extends ChangeNotifier {
     int windowPollAttempts = 20,
     Duration windowRebindInterval = const Duration(seconds: 2),
     Duration trackRefreshInterval = const Duration(seconds: 5),
-    // BUG-1092：Loopback 是**纯后向**的环形缓冲，而 galgame 的时序永远是「文本先绘制
+    // BUG-1101：Loopback 是**纯后向**的环形缓冲，而 galgame 的时序永远是「文本先绘制
     // → 语音随后播放」。台词一到就 grabRecent 只会取到上一句 + BGM，错位一句是必然。
     // 因此台词到达后先延后这么久再冻结，让本句语音真的进环。默认 4s 覆盖绝大多数单句
     // 语音；文本仍立刻上屏，只有音频后补。
@@ -483,7 +483,7 @@ class GalHookSessionController extends ChangeNotifier {
   final SerialJobQueue _audioQueue = SerialJobQueue();
   final Set<String> _loopbackCacheInFlight = <String>{};
 
-  /// 逐行 loopback「延迟冻结」定时器（BUG-1092）：lineId → 到点后把环形缓冲冻结成该行
+  /// 逐行 loopback「延迟冻结」定时器（BUG-1101）：lineId → 到点后把环形缓冲冻结成该行
   /// 语音的定时器。等待必须在队列**之外**——在串行音频队列里 sleep 会把后续台词的抓取
   /// 和制卡全部堵住。
   final Map<String, Timer> _loopbackFreezeTimers = <String, Timer>{};
@@ -1679,7 +1679,7 @@ class GalHookSessionController extends ChangeNotifier {
         return null;
       }
     }
-    // BUG-1092：这行的 loopback 冻结可能还在等窗口到点。制卡就是「现在就要这段声音」，
+    // BUG-1101：这行的 loopback 冻结可能还在等窗口到点。制卡就是「现在就要这段声音」，
     // 因此提前收束（按真实已等待时长回取），而不是拿一份还没冻的空缓存报 missing。
     await _flushLoopbackFreeze(lineId);
     GalAudioSlice? slice = _lineVoiceCache[lineId];
@@ -2042,7 +2042,7 @@ class GalHookSessionController extends ChangeNotifier {
   /// DirectSound PCM 钩子。文本与音频是两项独立能力，不能因为引擎 PCM 缺失就关闭
   /// helper、退化成“只有混音但没有台词”。
   ///
-  /// BUG-1091：本状态是**临时**的。走到这里最常见的原因不是「这个引擎没有 PCM」，而是
+  /// BUG-1100：本状态是**临时**的。走到这里最常见的原因不是「这个引擎没有 PCM」，而是
   /// 「游戏刚启动、一句语音都还没播过」——共享内存里当然没有格式。`engine_pcm_unavailable`
   /// 因此只是当前事实，不是终局判决：[_refreshReadinessThrottled] 会持续复查
   /// [EngineHookGalAudioSource.readyPcmFormat]，首句语音出现即 [_promoteLateEnginePcm]。
@@ -2546,7 +2546,7 @@ class GalHookSessionController extends ChangeNotifier {
       _promoteLateResourceAudio(engine);
       return;
     }
-    // BUG-1091：引擎 PCM 与资源语音是两条各自会「晚到」的能力，升格必须对称。
+    // BUG-1100：引擎 PCM 与资源语音是两条各自会「晚到」的能力，升格必须对称。
     // 只有资源侧有升格分支时，「hook 装好了但游戏还没播过语音」这一条就是终态：
     // 第一个 poll tick 判死后，整局再也回不到引擎 PCM。
     final PcmFormat? readyFormat = engine.readyPcmFormat;
@@ -2555,7 +2555,7 @@ class GalHookSessionController extends ChangeNotifier {
     }
   }
 
-  /// 引擎 PCM 晚到时把主音源从降级的 Loopback 升格回引擎（BUG-1091，与
+  /// 引擎 PCM 晚到时把主音源从降级的 Loopback 升格回引擎（BUG-1100，与
   /// [_promoteLateResourceAudio] 对称）。
   ///
   /// [_activateTextWithLoopback] 之所以选 Loopback，只是因为握手那一刻共享内存里还没有
@@ -2683,7 +2683,7 @@ class GalHookSessionController extends ChangeNotifier {
     }
     if (_audioSource is LoopbackGalAudioSource) {
       // Loopback 必须按本行自己的时间窗冻结环形片段；制卡时再抓“最近声音”会把
-      // 后续台词/BGM 错配给旧行。BUG-1092：窗口必须是前向的，故只在这里排定时器，
+      // 后续台词/BGM 错配给旧行。BUG-1101：窗口必须是前向的，故只在这里排定时器，
       // 到点后才冻结（见 [_scheduleLoopbackFreeze]）。资源音频尚未落盘时也先保留这份
       // 逐行兜底，稍后若资源匹配成功会覆盖为 game_resource。
       _scheduleLoopbackFreeze(entry);
@@ -2804,7 +2804,7 @@ class GalHookSessionController extends ChangeNotifier {
 
   void _onEndpointStatusChanged() => notifyListeners();
 
-  /// 为 [entry] 排一次「延迟冻结」（BUG-1092）。
+  /// 为 [entry] 排一次「延迟冻结」（BUG-1101）。
   ///
   /// `grabRecent(backMs)` 的语义是**当前时刻往前** backMs，纯后向、零前向等待
   /// （契约见 [GalAudioSource.grabRecent]）。galgame 的时序恒为「文本先绘制 → 语音随后

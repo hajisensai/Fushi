@@ -72,7 +72,7 @@ String _withReason(String message, String? reason) =>
     reason == null ? message : '$message（$reason）';
 /// 会话降级原因（`GalHookSessionState.fallbackReason` 的内部代码）→ 人话文案。
 ///
-/// BUG-1091：`_activateTextWithLoopback` 这条路径显式把 `injectorFailure` 置成
+/// BUG-1100：`_activateTextWithLoopback` 这条路径显式把 `injectorFailure` 置成
 /// [GalHookInjectorFailure.none]（注入链本来就是通的），于是 [galHookFailureLabel]
 /// 返回 null，UI 只能把内部代码 `engine_pcm_unavailable` 原样甩给用户看——用户既看不懂，
 /// 也不知道这只是「还没播过语音」的临时状态。降级原因和注入失败原因是**两套**独立的

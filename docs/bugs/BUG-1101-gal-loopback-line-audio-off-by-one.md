@@ -1,4 +1,4 @@
-## BUG-1092 · 降级到系统 Loopback 时逐行语音永远配到上一句
+## BUG-1101 · 降级到系统 Loopback 时逐行语音永远配到上一句
 - **报告**：2026-07-26（用户：「降级模式下每句配的都是上一句的声音」）
 - **真实性**：✅ 真 bug（设计必然，不是抖动）
   - 根因 `gal_hook_session_controller.dart:2524`（改前）：`_cacheLoopbackForLine` 调 `source.grabRecent(_galAudioBackMs)`（8000）。`grabRecent(backMs)` 的契约是「**当前时刻往前** backMs」（`galgame_audio_source.dart:24-26`，native `audio_loopback_capture.cpp:270 GrabRecent`），纯后向、零前向等待。
@@ -10,7 +10,7 @@
   - `_cacheLoopbackForLine` 改带 `backMs` 参数，并新增两条让路守卫：`_isUserAdjudicated(lineId)`（手动补录 / 逐行选轨）与 `_resourceIdForLine(lineId) != null`——延迟到点时这两者可能已落定，回环混音绝不能反过来盖掉它们。`_manualRecaptureLines` 的用户裁决优先（`:1411-1423`）因此完整保留。
   - `_stopSources` / `_startEngineTextPolling` 统一 `_cancelLoopbackFreezes()` 回收定时器。
 - **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_audio_degrade_track_test.dart`：
-  - 「BUG-1092 逐行 loopback 改为延迟冻结：窗口向前，不再抓上一句」：台词到达后立刻断言 `grabRecent` **未被调用**（旧实现正是在这一刻抓的），到点后断言参数恰为 `delay + 1000`。
-  - 「BUG-1092 制卡提前收束延迟冻结」：窗口设 30s，注入时钟推进 2500ms 后制卡，断言 `grabRecent` 被调用且参数为 `2500 + 1000`。
+  - 「BUG-1101 逐行 loopback 改为延迟冻结：窗口向前，不再抓上一句」：台词到达后立刻断言 `grabRecent` **未被调用**（旧实现正是在这一刻抓的），到点后断言参数恰为 `delay + 1000`。
+  - 「BUG-1101 制卡提前收束延迟冻结」：窗口设 30s，注入时钟推进 2500ms 后制卡，断言 `grabRecent` 被调用且参数为 `2500 + 1000`。
   - 既有 `gal_hook_session_controller_test.dart`「BUG-1060 text-only engine…」与 `gal_hook_line_latency_recapture_test.dart`「手动补录…」改为注入 10ms 冻结延迟，保持原断言语义。
 - **备注**：默认 4000ms 是「单句语音时长」的经验值，不是硬事实；真机验收未做，需在 Windows 上确认降级模式下逐句语音对得上，并按实际语音长度回调该默认值。

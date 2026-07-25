@@ -8,7 +8,7 @@
   - 删掉 `_galAudioBackMs`；新增 `_loopbackRingCapacityMs = 60000`（注释里点名 native 真相源 `kRingSeconds = 60`），它是 `grabRecent` 回取长度的唯一硬上限。
   - `_recaptureWindow` 改为独立的 `Duration(seconds: 20)`，只由「用户要多久才能去游戏里点一次重播」决定；`:1245` 的 clamp 上限改为 `_loopbackRingCapacityMs`。原注释就地改写为真值。
   - 定时器不再是唯一自动收束源：新台词到达（玩家已经翻页）即 `finishLineRecapture()`（`_pollHookedText` 里，只认引擎 hook 台词——剪贴板/外部 WS 通道与游戏进度无关，不该替用户结束录音）；用户再点一次 ⏺ 立即收束的既有路径不变。
-  - `startLineRecapture` 顺手取消该行待触发的延迟 Loopback 冻结（BUG-1092 引入），免得到点后再盖掉用户裁决。
+  - `startLineRecapture` 顺手取消该行待触发的延迟 Loopback 冻结（BUG-1101 引入），免得到点后再盖掉用户裁决。
 - **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_audio_degrade_track_test.dart`：
   - 「BUG-1094 补录窗口与回取上限解耦：常量与错误注释都必须改掉」：源码守卫——`_galAudioBackMs` 必须消失、`_loopbackRingCapacityMs = 60000` 必须存在、clamp 上限必须是它、`kRingSeconds = 60` 与「环形缓冲实际保留 60 秒」必须写进注释、`_recaptureWindow` 必须是自己的 `Duration(seconds: …)` 常量。
   - 「BUG-1094 新台词到达即收束补录窗口」：真行为——开补录后向 fake helper 追加一条新台词，断言 `isRecapturing` 变 false、`recapturingLineId` 变 null。
