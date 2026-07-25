@@ -2595,5 +2595,13 @@
   "game_random_reroll": "Shuffle",
   "browser_extension_version_app": "App bundled",
   "browser_extension_version_browser": "Loaded in browser",
-  "browser_extension_version_mismatch": "The extension loaded in your browser is outdated. Prepare the extension again if needed, then reload it from your browser's extensions page (chrome://extensions)."
+  "browser_extension_version_mismatch": "The extension loaded in your browser is outdated. Prepare the extension again if needed, then reload it from your browser's extensions page (chrome://extensions).",
+  "book_scrape_cover": "Scrape cover online",
+  "book_scrape_title": "Match cover online",
+  "book_scrape_hint": "Book title / author",
+  "book_scrape_search": "Search",
+  "book_scrape_use": "Use",
+  "book_scrape_empty": "No matching covers",
+  "book_scrape_failed": "Failed to fetch cover",
+  "book_scrape_search_failed": "Search failed. Tap Search to retry."
 }

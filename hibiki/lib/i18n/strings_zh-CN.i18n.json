@@ -2595,5 +2595,13 @@
   "game_random_reroll": "换一个",
   "browser_extension_version_app": "App 内置",
   "browser_extension_version_browser": "浏览器中加载",
-  "browser_extension_version_mismatch": "浏览器中加载的扩展不是最新版本：如有需要先重新准备扩展，再到浏览器扩展管理页（chrome://extensions）点「重新加载」。"
+  "browser_extension_version_mismatch": "浏览器中加载的扩展不是最新版本：如有需要先重新准备扩展，再到浏览器扩展管理页（chrome://extensions）点「重新加载」。",
+  "book_scrape_cover": "在线刮削封面",
+  "book_scrape_title": "在线匹配封面",
+  "book_scrape_hint": "书名 / 作者",
+  "book_scrape_search": "搜索",
+  "book_scrape_use": "使用",
+  "book_scrape_empty": "无匹配封面",
+  "book_scrape_failed": "封面获取失败",
+  "book_scrape_search_failed": "搜索失败，请点击「搜索」重试"
 }
