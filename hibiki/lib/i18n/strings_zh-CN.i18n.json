@@ -2082,7 +2082,6 @@
   "game_capture_launching": "正在启动游戏并开始捕获…",
   "game_capture_launch_failed": "游戏启动或捕获失败",
   "game_capture_running": "捕获会话已运行",
-  "game_capture_running_no_window": "捕获已运行；尚未找到游戏窗口",
   "game_text_source_engine": "引擎 Hook",
   "game_text_source_websocket": "WebSocket",
   "game_text_source_unknown": "未知来源",
@@ -2604,5 +2603,7 @@
   "book_scrape_empty": "无匹配封面",
   "book_scrape_failed": "封面获取失败",
   "book_scrape_search_failed": "搜索失败，请点击「搜索」重试",
-  "add_to_collection": "加入合集"
+  "add_to_collection": "加入合集",
+  "game_capture_degraded_loopback": "游戏已在运行，但引擎注入失败，改用整机混音兜底，可能混入 BGM 和音效。",
+  "game_capture_window_missing": "游戏进程已启动，但窗口一直没有出现，游戏可能没能真正启动。可以再启动一次试试。"
 }

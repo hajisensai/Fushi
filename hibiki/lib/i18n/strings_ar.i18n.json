@@ -2082,7 +2082,6 @@
   "game_capture_launching": "Launching game and starting capture...",
   "game_capture_launch_failed": "Game launch or capture failed",
   "game_capture_running": "Capture session is running",
-  "game_capture_running_no_window": "Capture is running; the game window was not found yet",
   "game_text_source_engine": "Engine hook",
   "game_text_source_websocket": "WebSocket",
   "game_text_source_unknown": "Unknown source",
@@ -2604,5 +2603,7 @@
   "book_scrape_empty": "No matching covers",
   "book_scrape_failed": "Failed to fetch cover",
   "book_scrape_search_failed": "Search failed. Tap Search to retry.",
-  "add_to_collection": "Add to collection"
+  "add_to_collection": "Add to collection",
+  "game_capture_degraded_loopback": "The game is running, but engine injection failed; falling back to system audio, which can mix in BGM and effects.",
+  "game_capture_window_missing": "The game process started but its window never appeared, so the game may not have launched. Try starting it again."
 }
