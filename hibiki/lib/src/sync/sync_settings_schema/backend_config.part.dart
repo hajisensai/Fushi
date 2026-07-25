@@ -287,11 +287,12 @@ bool _isBackendSelectable(SyncBackendType type) {
       return OneDriveSyncBackend.isConfigured;
     case SyncBackendType.dropbox:
       return DropboxSyncBackend.isConfigured;
-    // 互联（hibikiServer）不再是「同步方式」的互斥单选项——它已解耦成独立分类 +
-    // 独立开关（buildInterconnectDestination），与云备份并存。故从后端选择器隐藏；
-    // 枚举值与 [_backendLabel] 仅为防御性回显（迁移前的历史持久化值）保留。
+    // BUG-1084：互联回到「同步方式」选择器。解耦（独立分类 + 独立开关，可与云备份
+    // 并存）保留，但把备份后端指向互联必须能从这里直接选——曾经唯一的入口是互联页
+    // 的「设为备份后端」按钮，而它又被 host 门控藏掉，host 设备上入口彻底消失。
+    // 选中后连接配置仍在「Hibiki 互联」分类（选择器下方有指引行）。
     case SyncBackendType.hibikiServer:
-      return false;
+      return true;
     case SyncBackendType.googleDrive:
     case SyncBackendType.webDav:
     case SyncBackendType.ftp:
@@ -379,6 +380,11 @@ class _BackendSelectorWidgetState extends State<_BackendSelectorWidget> {
       previous: previous,
       next: value,
     );
+    // BUG-1084：选互联做同步方式时顺手打开互联总开关——不开互联，连接配置区不显示、
+    // 通道认证也过不去，选完就是个死后端。反向（选回云盘）不动互联开关，二者可并存。
+    if (value == SyncBackendType.hibikiServer && !state.interconnectEnabled) {
+      await state.setInterconnectEnabled(true);
+    }
     widget.settingsContext.refresh();
   }
 }

@@ -144,9 +144,19 @@ SettingsDestination buildSyncBackupDestination() {
             builder: (SettingsContext ctx) =>
                 _SftpConfigWidget(settingsContext: ctx),
           ),
-          // 互联（局域网端到端）已从「同步方式」枚举里解耦成独立分类 + 独立开关
-          // （buildInterconnectDestination），与云备份后端并存、互不排斥；这里不再
-          // 需要「互联被选为同步方式」的指引行。
+          // 互联被选为同步方式时的指引行（BUG-1084）：连接配置（URL/token/配对/
+          // LAN 发现/host 开关）在独立的「Hibiki 互联」分类里，这里只指路不复制。
+          SettingsCustomItem(
+            id: 'sync.interconnect_config_note',
+            icon: Icons.devices_outlined,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType == SyncBackendType.hibikiServer,
+            builder: (SettingsContext ctx) => AdaptiveSettingsRow(
+              title: t.sync_backend_hibiki_server,
+              subtitle: t.interconnect_moved_note,
+              icon: Icons.devices_outlined,
+            ),
+          ),
         ],
       ),
       // ── Group 3: What to sync — global, applies to every backend ──────
@@ -158,13 +168,13 @@ SettingsDestination buildSyncBackupDestination() {
             title: t.sync_auto_sync,
             icon: Icons.sync_outlined,
             // Auto-sync is an OUTBOUND switch: it triggers app-open/background/
-            // book-close pushes through the resolved backend. A Hibiki host has
-            // no outbound sync (clients pull from / push to it), so every
-            // auto-sync path early-returns on an unconfigured outbound backend —
-            // the toggle does nothing in host mode. Hide it there, matching the
-            // sync_now / compare gates (BUG-084). Client-mode hibikiServer DOES
-            // have outbound sync, so only hide when actively hosting.
-            visible: (SettingsContext ctx) => !_isHostingInterconnect(ctx),
+            // book-close pushes through the resolved backend. Outbound only
+            // vanishes when the selected sync method IS the interconnect and
+            // this device is the host (clients pull from / push to it, BUG-084).
+            // A cloud backend keeps its outbound regardless of hosting — hiding
+            // on host identity alone blanked Google Drive users' toggle
+            // (BUG-1084).
+            visible: (SettingsContext ctx) => !_cloudOutboundUnavailable(ctx),
             value: (SettingsContext ctx) => _syncSettings(ctx).autoSync,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).autoSync = value;
@@ -209,16 +219,18 @@ SettingsDestination buildSyncBackupDestination() {
           ),
           // 「上传X文件」三个开关都是 OUTBOUND：把本机资产推给**云备份**后端。BUG-988
           // 起互联通道不再复用这套共享开关——互联的内容上传由「上传到互联对端」分项开关
-          // 单独控制（见 buildInterconnectDestination），二者互不牵连。互联 host（本机在
-          // 做服务端）没有任何 outbound sync——client 从它拉取/往它推，它自己不上传
-          // （auto_sync 同理已隐藏）。故 host 模式下这三个上传开关纯空转，一律随 auto_sync
-          // 的 `!_isHostingInterconnect` 门控隐藏（client 模式仍可见）。
+          // 单独控制（见 buildInterconnectDestination），二者互不牵连。故这三个开关只在
+          // 云通道本身没有出站语义时才隐藏：同步方式被选成互联（该通道按互联专属开关
+          // 走，共享开关是死开关）。云后端（Google Drive/WebDAV/...）无论本机是否在做
+          // 互联 host 都照常出站——旧的 `!_isHostingInterconnect` 门控把 host 设备上的
+          // 云盘上传开关整排藏掉，是解耦前遗留的错误特例（BUG-1084）。
           SettingsSwitchItem(
             id: 'sync.content',
             title: t.sync_content,
             subtitle: t.sync_content_warning,
             icon: Icons.book_outlined,
-            visible: (SettingsContext ctx) => !_isHostingInterconnect(ctx),
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.hibikiServer,
             value: (SettingsContext ctx) => _syncSettings(ctx).syncContent,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).syncContent = value;
@@ -231,7 +243,8 @@ SettingsDestination buildSyncBackupDestination() {
             title: t.sync_audiobook_files,
             subtitle: t.sync_audiobook_files_warning,
             icon: Icons.audio_file_outlined,
-            visible: (SettingsContext ctx) => !_isHostingInterconnect(ctx),
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.hibikiServer,
             value: (SettingsContext ctx) =>
                 _syncSettings(ctx).syncAudioBookFiles,
             onChanged: (SettingsContext ctx, bool value) async {
@@ -244,13 +257,14 @@ SettingsDestination buildSyncBackupDestination() {
           // `__videos__` 伪装资产（run() 非互联分支）；互联（hibikiServer）走
           // _syncVideosLive 的 host 上传端点（client→host）。两条通道同为 upload-only
           // （host→client 仍按需流式/下载，且与本开关正交——客户端手动浏览/下载远端视频
-          // 只看 show_remote_entries，从不受此开关门控）。host 模式无 outbound → 隐藏。
+          // 只看 show_remote_entries，从不受此开关门控）。可见性同上两个上传开关。
           SettingsSwitchItem(
             id: 'sync.video_files',
             title: t.sync_video_files,
             subtitle: t.sync_video_files_warning,
             icon: Icons.video_file_outlined,
-            visible: (SettingsContext ctx) => !_isHostingInterconnect(ctx),
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.hibikiServer,
             value: (SettingsContext ctx) => _syncSettings(ctx).syncVideoFiles,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).syncVideoFiles = value;
@@ -267,15 +281,15 @@ SettingsDestination buildSyncBackupDestination() {
       SettingsSection(
         title: t.sync_section_actions,
         items: <SettingsItem>[
-          // Hosting as a Hibiki server has no OUTBOUND sync: the host is a
-          // passive data source that connected clients pull from / push to, so
-          // "sync now" / "compare" resolve to an unconfigured outbound backend
-          // and used to misleadingly say "set up sync first". Hide them in
-          // server mode and explain instead (BUG-084).
+          // Sync-method-is-interconnect + hosting has no OUTBOUND sync: the host
+          // is a passive data source that connected clients pull from / push to,
+          // so "sync now" / "compare" would misleadingly say "set up sync
+          // first". Hide them for that combination only and explain instead
+          // (BUG-084); a cloud backend keeps outbound while hosting (BUG-1084).
           SettingsCustomItem(
             id: 'sync.server_mode_note',
             icon: Icons.router_outlined,
-            visible: (SettingsContext ctx) => _isHostingInterconnect(ctx),
+            visible: (SettingsContext ctx) => _cloudOutboundUnavailable(ctx),
             builder: (SettingsContext ctx) => AdaptiveSettingsRow(
               title: t.sync_server_mode_active,
               subtitle: t.sync_server_mode_clients_drive,
@@ -285,7 +299,7 @@ SettingsDestination buildSyncBackupDestination() {
           SettingsCustomItem(
             id: 'sync.sync_now',
             icon: Icons.sync,
-            visible: (SettingsContext ctx) => !_isHostingInterconnect(ctx),
+            visible: (SettingsContext ctx) => !_cloudOutboundUnavailable(ctx),
             builder: (SettingsContext ctx) =>
                 _SyncNowWidget(settingsContext: ctx),
           ),
@@ -293,7 +307,7 @@ SettingsDestination buildSyncBackupDestination() {
             id: 'sync.compare',
             title: t.sync_compare,
             icon: Icons.compare_arrows,
-            visible: (SettingsContext ctx) => !_isHostingInterconnect(ctx),
+            visible: (SettingsContext ctx) => !_cloudOutboundUnavailable(ctx),
             onTap: (SettingsContext ctx) => showSyncCompareDialog(
               ctx.context,
               ctx.appModel.database,
@@ -559,6 +573,15 @@ AppModel? _activeSyncOwner;
 /// only uses a cloud backend, which would otherwise hide sync-now on the cloud).
 bool _isHostingInterconnect(SettingsContext ctx) =>
     _syncSettings(ctx).serverEnabled && _syncSettings(ctx).interconnectEnabled;
+
+/// 云备份通道此刻是否真的没有出站同步（BUG-1084）：仅当「同步方式」本身选的是互联、
+/// 且本机正在做互联 host——host 是被动数据源，client 从它拉/往它推，它自己无出站
+/// （BUG-084）。云后端（Google Drive/WebDAV/...）的出站与互联 host 身份无关：host
+/// 设备照样往云盘备份。旧门控只看 host 身份，把云通道的上传开关、自动同步、立即
+/// 同步整排藏掉，是互联还与云备份互斥时代遗留的错误特例。
+bool _cloudOutboundUnavailable(SettingsContext ctx) =>
+    _syncSettings(ctx).backendType == SyncBackendType.hibikiServer &&
+    _isHostingInterconnect(ctx);
 
 _SyncSettingsState _syncSettings(SettingsContext ctx) {
   final AppModel owner = ctx.appModel;
