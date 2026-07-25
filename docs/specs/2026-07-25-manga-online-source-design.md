@@ -129,7 +129,18 @@ Mangatan（1Selxo/Mangatan，Mangayomi fork，Dart，GPL-3.0，69★，2026-07 �
 | O5 | 收藏建行入书架 + 移动端经互联 + 单页互联代跑 | 手机真机闭环 |
 | O6 | Suwayomi 下载离线衔接本地链 | 离线卷可整卷 OCR |
 
-## 10. 调研出处
+## 10. O1 实现计划（mokuro.moe 目录源，2026-07-25 接入点核实后定稿）
+
+新增 `hibiki/lib/src/media/manga/online/`：
+- `mokuro_moe_client.dart`：REST client（`dart:io HttpClient` + `findProxyFromEnvironment`，同 model downloader 栈，构造注入 `HttpClient Function()` 供 loopback 测试）；模型 `MokuroMoeSeries/MokuroMoeVolume`；`fetchLibrary()` / `fetchSeries(name)` / `coverUrl()` / `cbzUrl()` / `mokuroUrl()`；base URL 走偏好 `manga_online_catalog_base_url`（默认 `https://mokuro.moe`）。
+- `mokuro_moe_volume_downloader.dart`：CBZ+.mokuro 下载（Range 断点续传，照 `manga_ocr_model_downloader.dart` 范式；CBZ 无预知长度，完整性校验放宽为 zip 中央目录可解析）→ isolate 流式解包（照 `backup_service.dart` `_backupExtractWorker` 范式，`InputFileStream` + 分块）→ `MangaImporter.importFromMokuroPath` 落库 → 清理临时目录；`Stream<MokuroMoeDownloadEvent>` 报进度；顺序下载队列 + 取消。
+- `mokuro_moe_catalog_dialog.dart`：照 `MangaOcrWizardDialog` 范式（依赖全构造注入 + 阶段机 browse/series/downloading）；封面 `CachedNetworkImageProvider(cacheKey: series|vol)`；成功 pop bookKey。
+
+改动现有：书架页头（`reader_hibiki_history_page.dart` 管理来源旁）+ `book_import_dialog.dart` actions 各加「在线目录」入口；`preferences_repository.dart`/`app_model.dart` 加 base URL 偏好；`settings_schema_manga_ocr.dart` 加站点地址 `SettingsTextItem` 并在 `kCoveredElsewhere` 登记；i18n 全走 `tool/i18n_sync.dart`（`manga_online_*` 前缀）+ `dart run slang`。
+
+测试：client/downloader 用 loopback `HttpServer`（照 `manga_ocr_model_downloader_test.dart` 的 `_ModelServer`），downloader 端到端到内存 DB 落库；对话框 widget 测试注入 fake。明确不改：`manga_importer.dart`、schema（不加列）。
+
+## 11. 调研出处
 
 - Mangatan 浅 clone @ `9e3b366`（2026-07-06）：OCR 三引擎 `lib/services/mining/{screen_ai_ocr,chrome_lens_ocr,mokuro_parser}.dart`、块合并 `ocr_block_merger.dart`（自注释 OwOCR stages）、覆盖层 `lib/modules/mining/widgets/reader_ocr_overlay.dart`（Canvas afterPaintImage 绘制，0..1 归一化坐标）、弹窗 `dictionary_lookup_popup.dart`（单例屏外 prewarm）、Anki `anki_markers.dart`（约 40 个 Yomitan 式 marker + Lapis 映射）、扩展桥 `lib/eval/`（dart_eval + flutter_qjs，上游继承）、`windows/runner/screen_ai_bridge.cpp`（动态加载 Chrome ScreenAI DLL + 手写 protobuf 解码）。
 - Hibiki 现状：`docs/specs/2026-07-24-manga-ocr-design.md`（设计 v2）+ develop `de5103250`（P1-P4 全量实现）。
