@@ -1954,7 +1954,7 @@
   "anime_download_play_now_fail": "Not ready yet (metadata pending or connection failed) — try again later",
   "interconnect_section_related": "Remote content & lookup",
   "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows",
-  "browser_extension_yomitan_port_conflict": "Port $port is occupied by Yomitan API. Disable Yomitan API in Yomitan advanced settings, then enable the Yomitan API server in Hibiki.",
+  "browser_extension_yomitan_port_conflict": "Port $port is in use by another process (usually the yomitan-api component — a Python process launched by your browser). End that process, or disable Yomitan API in Yomitan's advanced settings, then enable the Yomitan API server in Hibiki again.",
   "interconnect_enable": "Enable interconnect",
   "interconnect_enable_hint": "Connect to your other devices over the LAN. Works alongside a cloud backup backend — they don't conflict.",
   "reading_activity": "Study activity",
@@ -2608,5 +2608,8 @@
   "anime_download_sort_seeders": "Seeders",
   "anime_download_sort_size": "Size",
   "anime_download_sort_date": "Published",
-  "anime_download_search_error_proxy_hint": "If the site cannot be reached directly, configure a network proxy in download settings."
+  "anime_download_search_error_proxy_hint": "If the site cannot be reached directly, configure a network proxy in download settings.",
+  "yomitan_api_server_started": "Yomitan API server started",
+  "yomitan_port_kill_action": "End process and retry",
+  "yomitan_port_kill_failed": "Could not end $process. Please end it manually, then retry."
 }

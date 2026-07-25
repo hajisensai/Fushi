@@ -1954,7 +1954,7 @@
   "anime_download_play_now_fail": "暂不可提前入库（元数据未就绪或连接失败），稍后再试",
   "interconnect_section_related": "远端内容与查词",
   "desktop_clipboard_window_mode_hint": "控制 Hibiki 是否保持在其他窗口上方",
-  "browser_extension_yomitan_port_conflict": "端口 $port 正被 Yomitan API 占用。请先在 Yomitan 高级设置中关闭 Yomitan API，再回 Hibiki 开启 Yomitan API 服务器。",
+  "browser_extension_yomitan_port_conflict": "端口 $port 正被其他进程占用（通常是浏览器拉起的 yomitan-api 组件，即一个 Python 进程）。可直接结束该进程，或在 Yomitan 高级设置中关闭 Yomitan API，然后重新开启 Hibiki 的 Yomitan API 服务器。",
   "interconnect_enable": "启用互联",
   "interconnect_enable_hint": "通过局域网连接你的其他设备。与云备份后端并存，互不冲突。",
   "reading_activity": "学习活动",
@@ -2608,5 +2608,8 @@
   "anime_download_sort_seeders": "做种数",
   "anime_download_sort_size": "体积",
   "anime_download_sort_date": "发布时间",
-  "anime_download_search_error_proxy_hint": "站点无法直连时，可在下载设置中配置网络代理。"
+  "anime_download_search_error_proxy_hint": "站点无法直连时，可在下载设置中配置网络代理。",
+  "yomitan_api_server_started": "Yomitan API 服务器已开启",
+  "yomitan_port_kill_action": "结束进程并重试",
+  "yomitan_port_kill_failed": "无法结束 $process，请手动结束该进程后重试。"
 }
