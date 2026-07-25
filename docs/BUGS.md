@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1042 条。点号进各自文件。
+> 共 1043 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1076](bugs/BUG-1076-galgame-helper-update-tied-to-launch.md) | ✅ | ✅ | galgame helper 自动更新绑死游戏启动时刻且 6s 硬超时弱网永远静默放弃 |
 | [BUG-1075](bugs/BUG-1075-daily-goal-no-unit-no-hint.md) | ✅ | ✅ | 每日目标弹窗无单位无口径说明 |
 | [BUG-1074](bugs/BUG-1074-cover-update-button-windows-noop.md) | ✅ | ✅ | 书籍编辑封面更新按钮Windows无反应 |
 | [BUG-1073](bugs/BUG-1073-dashboard-layout-imbalance.md) | ✅ | ✅ | 首页dashboard排版失衡热力图大片空白 |
