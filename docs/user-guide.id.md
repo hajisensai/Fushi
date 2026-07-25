@@ -22,9 +22,9 @@ Android: pilih **arm64**. Windows: pilih berkas **.exe**.
 
 ## Tutorial Konfigurasi
 
-### 1. Mengimpor kamus yang direkomendasikan dan audio lokal (Sangat direkomendasikan untuk pemula!!! · opsional)
+### 1. Mengimpor kamus yang direkomendasikan (kamus kata + aksen nada + frekuensi) dan audio lokal (basis data audio bahasa Jepang dan Inggris) (Sangat direkomendasikan untuk pemula!!! · opsional)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Unduhan langsung (cermin, 9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Unduhan Cloudflare (9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
 
 Di dalam aplikasi: Pengaturan -> Sinkronisasi & Cadangan -> ketuk **Impor Cadangan**.
 

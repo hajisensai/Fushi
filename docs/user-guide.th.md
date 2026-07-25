@@ -22,9 +22,9 @@ Android: เลือก **arm64** Windows: เลือกไฟล์ **.exe**
 
 ## บทแนะนำการตั้งค่า
 
-### 1. นำเข้าพจนานุกรมที่แนะนำและไฟล์เสียงในเครื่อง (แนะนำอย่างยิ่งสำหรับมือใหม่!!! · ไม่บังคับ)
+### 1. นำเข้าพจนานุกรมที่แนะนำ (พจนานุกรมคำศัพท์ + ระดับเสียงสูงต่ำ + ความถี่) และไฟล์เสียงในเครื่อง (ฐานข้อมูลเสียงภาษาญี่ปุ่นและภาษาอังกฤษ) (แนะนำอย่างยิ่งสำหรับมือใหม่!!! · ไม่บังคับ)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [ดาวน์โหลดโดยตรง (มิเรอร์ 9.3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [ดาวน์โหลดผ่าน Cloudflare (9.3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
 
 ในแอป: การตั้งค่า -> ซิงค์และสำรองข้อมูล -> แตะ **นำเข้าข้อมูลสำรอง**
 

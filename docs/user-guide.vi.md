@@ -22,9 +22,9 @@ Android: chọn **arm64**. Windows: chọn tệp **.exe**.
 
 ## Hướng dẫn cấu hình
 
-### 1. Nhập các từ điển được đề xuất và âm thanh cục bộ (Rất khuyến khích cho người mới!!! · tùy chọn)
+### 1. Nhập các từ điển được đề xuất (từ điển từ vựng + trọng âm cao độ + tần suất) và âm thanh cục bộ (cơ sở dữ liệu âm thanh tiếng Nhật và tiếng Anh) (Rất khuyến khích cho người mới!!! · tùy chọn)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Tải xuống trực tiếp (bản sao, 9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Tải xuống qua Cloudflare (9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
 
 Trong ứng dụng: Cài đặt -> Đồng bộ & Sao lưu -> nhấn **Nhập bản sao lưu**.
 

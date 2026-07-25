@@ -22,9 +22,9 @@ Android: escolha **arm64**. Windows: escolha o arquivo **.exe**.
 
 ## Tutorial de configuração
 
-### 1. Importar os dicionários recomendados e o áudio local (Altamente recomendado para iniciantes!!! · opcional)
+### 1. Importar os dicionários recomendados (dicionários de palavras + acento tonal + frequência) e o áudio local (bancos de dados de áudio em japonês e inglês) (Altamente recomendado para iniciantes!!! · opcional)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Download direto (espelho, 9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Download pelo Cloudflare (9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
 
 No aplicativo: Configurações -> Sincronização e backup -> toque em **Importar backup**.
 
