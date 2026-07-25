@@ -73,6 +73,9 @@ class _PosterMatchDialogState extends ConsumerState<PosterMatchDialog> {
   bool _applyToCollection = false;
   bool _applying = false;
 
+  /// 正在应用的候选（用于在其「使用」按钮上显示转圈；null = 无进行中应用）。
+  ScrapeCandidate? _applyingCandidate;
+
   @override
   void initState() {
     super.initState();
@@ -159,25 +162,45 @@ class _PosterMatchDialogState extends ConsumerState<PosterMatchDialog> {
 
   Future<void> _use(ScrapeCandidate candidate) async {
     if (_applying) return;
-    setState(() => _applying = true);
+    // 记录进行中的候选：按钮转圈给用户明确「正在应用」反馈（下载海报最长 30s，无反馈
+    // 会被误当成「点了没反应」，BUG-1081）。
+    setState(() {
+      _applying = true;
+      _applyingCandidate = candidate;
+    });
     final List<String> targets =
         _applyToCollection && widget.collectionMemberUids.length > 1
             ? widget.collectionMemberUids
             : <String>[widget.book.bookUid];
+    bool ok = false;
     try {
       await widget.service.applyCandidateToBooks(
         bookUids: targets,
         candidate: candidate,
         aliasKey: _parsed?.title,
       );
+      ok = true;
     } catch (_) {
-      if (!mounted) return;
-      setState(() => _applying = false);
+      // ok 保持 false，走下方失败分支——绝不吞成静默无反馈。
+    }
+    if (!mounted) return;
+    if (!ok) {
+      // 失败：复位 _applying（否则按钮永久禁用），弹可见失败提示，弹窗保留让用户改选。
+      setState(() {
+        _applying = false;
+        _applyingCandidate = null;
+      });
       HibikiToast.show(msg: t.video_scrape_apply_failed);
       return;
     }
+    // 成功：刷新库页 + 关弹窗 + 成功提示。onApplied 单独 guard，任何异常都不得阻断关闭
+    // 弹窗（否则 _applying 卡在 true、按钮永久禁用 = 「使用没反应」的另一条成因）。
+    try {
+      widget.onApplied();
+    } catch (_) {
+      // 刷新回调异常不影响「已应用」这一既成事实，吞掉即可。
+    }
     if (!mounted) return;
-    widget.onApplied();
     Navigator.of(context).pop();
     HibikiToast.show(msg: t.video_scrape_applied);
   }
@@ -378,7 +401,13 @@ class _PosterMatchDialogState extends ConsumerState<PosterMatchDialog> {
           const SizedBox(width: 8),
           FilledButton.tonal(
             onPressed: _applying ? null : () => _use(candidate),
-            child: Text(t.video_scrape_use),
+            child: identical(_applyingCandidate, candidate)
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(t.video_scrape_use),
           ),
         ],
       ),

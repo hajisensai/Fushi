@@ -193,6 +193,36 @@ void main() {
       expect(best.typeMatched, isTrue);
     });
 
+    test('无电影提示时类型加权中性，正片不被联动 CM 徽标反超（BUG-1080）', () {
+      // 文件名没写「剧场版」时，候选是不是电影从文件名根本推不出来，不得据此奖惩。
+      // 旧实现给「无 hint + movie 候选」−0.10、给「无 hint + 非 movie 候选」+0.05，这
+      // 0.15 摆动会把正片压成 medium、把靠借来别名蹭到同样 titleScore 的联动 CM 顶成 high。
+      const ParsedMediaName parsed =
+          ParsedMediaName(title: 'kimi no na wa'); // 无 isMovieHint
+      final MatchDecision movie = MatchScorer.score(
+        parsed: parsed,
+        candidate:
+            candidateOf(title: 'Kimi no Na wa.', type: ScrapeEntryType.movie),
+      );
+      final MatchDecision cm = MatchScorer.score(
+        parsed: parsed,
+        candidate: candidateOf(
+          title: 'Suntory Minami Alps no Tennensui',
+          aliases: <String>['Kimi no Na wa'], // 借来的别名蹭 titleScore
+          type: ScrapeEntryType.special,
+        ),
+      );
+      // 修后：无 hint 时类型加权恒为 0，typeMatched 不可判定；两者 titleScore 同为 1.0
+      // → 同级，正片不再被 CM 的类型加权反超。
+      expect(movie.typeMatched, isNull);
+      expect(cm.typeMatched, isNull);
+      expect(movie.titleScore, 1.0);
+      expect(cm.titleScore, 1.0);
+      expect(movie.confidence, cm.confidence,
+          reason: '标题同分时类型不再制造偏差，正片不再被联动 CM 徽标反超');
+      expect(movie.confidence, MatchConfidence.high);
+    });
+
     test('罗马数字季度记号（Ⅱ/ii）也能对上', () {
       final ScrapeCandidate romanTwo = candidateOf(
         title: 'Mushoku Tensei II',

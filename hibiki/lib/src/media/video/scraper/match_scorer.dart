@@ -27,15 +27,8 @@ const double _kYearFarPenalty = -0.20;
 /// 电影提示与候选类型一致（剧场版 hint + movie 条目）：加分。
 const double _kTypeMovieBonus = 0.10;
 
-/// 无电影提示且候选是剧集类（tv/ova/special）：弱一致，小幅加分
-/// （「没写剧场版」是弱信号，权重必须低于显式 hint）。
-const double _kTypeWeakBonus = 0.05;
-
 /// 显式电影提示但候选不是 movie：强冲突减分。
 const double _kTypeConflictStrongPenalty = -0.20;
-
-/// 无电影提示但候选是 movie：弱冲突减分（剧集文件常省略标记，罚轻些）。
-const double _kTypeConflictWeakPenalty = -0.10;
 
 /// 季度记号对上（parsed.season≥2 且候选标题/别名含对应季度记号）：加分。
 const double _kSeasonBonus = 0.15;
@@ -127,22 +120,21 @@ class MatchScorer {
       }
     }
 
-    // --- 类型：isMovieHint 与 candidate.type == movie 互验；unknown 不参与。---
+    // --- 类型：只有文件名显式带电影标记（剧场版/Movie/映画）时类型才是可信信号。---
+    // hint + movie → 一致加分；hint + 非 movie → 强冲突减分。
+    // 文件名**没**电影标记时，候选是不是电影从文件名根本推不出来（剧集文件常省略、
+    // 电影文件也常不写「剧场版」）——此时保持中性 0，不得据此奖惩任一方。旧实现给
+    // 「无 hint + movie 候选」−0.10、给「无 hint + 剧集候选」+0.05，这 0.15 的系统性
+    // 摆动会把无标记的正片压到联动 CM / 剧集条目之下（BUG-1080）。unknown 同样不参与。
     bool? typeMatched;
-    if (candidate.type != ScrapeEntryType.unknown) {
+    if (candidate.type != ScrapeEntryType.unknown && parsed.isMovieHint) {
       final bool candidateIsMovie = candidate.type == ScrapeEntryType.movie;
-      if (parsed.isMovieHint && candidateIsMovie) {
+      if (candidateIsMovie) {
         typeMatched = true;
         total += _kTypeMovieBonus;
-      } else if (parsed.isMovieHint && !candidateIsMovie) {
+      } else {
         typeMatched = false;
         total += _kTypeConflictStrongPenalty;
-      } else if (!parsed.isMovieHint && candidateIsMovie) {
-        typeMatched = false;
-        total += _kTypeConflictWeakPenalty;
-      } else {
-        typeMatched = true;
-        total += _kTypeWeakBonus;
       }
     }
 

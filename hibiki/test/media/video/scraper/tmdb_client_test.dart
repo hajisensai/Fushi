@@ -29,7 +29,7 @@ void main() {
       expect(tv.title, '进击的巨人');
       expect(tv.aliases, <String>['進撃の巨人']);
       expect(tv.year, 2013);
-      expect(tv.posterUrl, 'https://image.tmdb.org/t/p/w500/tv.jpg');
+      expect(tv.posterUrl, 'https://image.tmdb.org/t/p/original/tv.jpg');
       expect(tv.detailUrl, 'https://www.themoviedb.org/tv/100');
       expect(tv.ratingText, 'TMDB 8.7'); // 8.65(≈8.6500000003) → 一位小数进为 8.7
 

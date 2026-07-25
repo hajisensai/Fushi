@@ -228,13 +228,22 @@ class OfflineIndex {
     final List<int> limitedPool = pool.length > _kCandidatePoolLimit
         ? pool.sublist(0, _kCandidatePoolLimit)
         : pool;
-    // 细算相似度并排序。
-    final List<(int, double)> scored = <(int, double)>[
+    // 细算相似度并排序。主键 = title+synonyms 的最大相似度；打平时 tiebreaker = 主
+    // 标题本身的相似度：借来的别名蹭分的联动/CM（如「Suntory×君の名は」CM 把「君の名は」
+    // 塞进 synonyms）主标题与查询几乎无关，应排到「真名直接命中」的正片之后（BUG-1080）。
+    final List<(int, double, double)> scored = <(int, double, double)>[
       for (final int recordIndex in limitedPool)
-        (recordIndex, _bestSimilarity(rawTitle, _records[recordIndex])),
-    ]..sort(((int, double) a, (int, double) b) => b.$2.compareTo(a.$2));
+        (
+          recordIndex,
+          _bestSimilarity(rawTitle, _records[recordIndex]),
+          TitleNormalizer.similarity(rawTitle, _records[recordIndex].title),
+        ),
+    ]..sort(((int, double, double) a, (int, double, double) b) {
+        final int byBest = b.$2.compareTo(a.$2);
+        return byBest != 0 ? byBest : b.$3.compareTo(a.$3);
+      });
     return <ScrapeCandidate>[
-      for (final (int recordIndex, double _) in scored.take(limit))
+      for (final (int recordIndex, double _, double _) in scored.take(limit))
         _toCandidate(recordIndex, _records[recordIndex]),
     ];
   }

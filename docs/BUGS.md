@@ -27,10 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1046 条。点号进各自文件。
+> 共 1049 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1082](bugs/BUG-1082-scrape-poster-lowres.md) | ✅ | ✅ | TMDB刮削海报w500缩略图发糊非满分辨率 |
+| [BUG-1081](bugs/BUG-1081-poster-use-no-feedback.md) | ✅ | ✅ | 海报匹配弹窗点使用没反应无进度反馈 |
+| [BUG-1080](bugs/BUG-1080-poster-match-cm-rank.md) | ✅ | ✅ | 视频海报离线匹配把联动CM排到正片前 |
 | [BUG-1079](bugs/BUG-1079-extension-update-silent-stale.md) | ✅ | ✅ | 扩展自更新失败永久静默无重试且无任何更新提示 |
 | [BUG-1078](bugs/BUG-1078-extension-passive-wheel-scroll-drag.md) | ✅ | ✅ | 扩展在所有网页常驻非passive wheel监听拖慢浏览器滚动 |
 | [BUG-1077](bugs/BUG-1077-nested-lookup-mouse-hook-starvation.md) | ✅ | ✅ | 嵌套查词瞬间全局鼠标卡顿：钩子线程无优先级+嵌套路径卸装钩子churn |
