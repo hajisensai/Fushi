@@ -54,8 +54,17 @@ void main() {
       expect(reloadCall, greaterThan(respond),
           reason: 'maybeSelfReload 必须在 lookup 的 sendResponse 之后');
       // 三重防护：任一侧缺指纹不动 / 已为该指纹 reload 过不再重试 / 录制中跳过。
-      expect(
-          src, contains('if (!remote || !local || remote === local) return;'));
+      // BUG-1079 后防护收敛进 self-update.js 的纯函数 decide()（node 测试覆盖
+      // 15 例），background.js 只消费其决策——守卫改为断言状态机本体 + 消费接线。
+      final String selfUpdate =
+          File('assets/browser_extension/self-update.js').readAsStringSync();
+      expect(selfUpdate,
+          contains('if (!remote || !local) return { action: actions.none };'));
+      expect(selfUpdate,
+          contains('if (recording) return { action: actions.none };'));
+      expect(selfUpdate, contains('if (reloadedFor === remote)'));
+      expect(src, contains('HIBIKI_SELF_UPDATE'),
+          reason: 'background.js 必须消费 self-update 状态机的决策');
       expect(src, contains('hibikiReloadedForBuild'));
       final int fn = src.indexOf('async function maybeSelfReload');
       expect(fn, greaterThanOrEqualTo(0));

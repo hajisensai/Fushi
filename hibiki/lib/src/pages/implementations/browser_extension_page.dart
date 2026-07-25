@@ -337,7 +337,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.errorContainer,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: HibikiBorderRadius.group,
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,

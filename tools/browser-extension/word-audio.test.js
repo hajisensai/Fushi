@@ -69,28 +69,58 @@ test('resolveWordAudio: background 抛错 (无 responder 抛) → 返回 null（
   assert.strictEqual(url, null);
 });
 
-test('playWordAudio: 用 HTML5 Audio 播放并返回 true', async () => {
-  const { call, played } = load();
-  const ok = await call('playWordAudio', { url: 'http://h/file?id=1', mode: 'interrupt' });
-  assert.strictEqual(ok, true);
+// 89294bf4b (land PR#278) 起 playWordAudio 桥已从 bridge-shim 删除：播放收敛进
+// vendor/popup.js 的 playWordAudio（三端同一 HTML5 <audio> 路径，导出为
+// window.__hibikiPlayWordAudioUrl）。以下用源码切片在受控 vm 里断言新契约。
+const POPUP_EXPORT = 'window.__hibikiPlayWordAudioUrl = playWordAudio;';
+
+function loadPopupPlayer() {
+  const popupSrc = fs.readFileSync(
+    path.join(__dirname, 'vendor', 'popup.js'), 'utf8');
+  const start = popupSrc.indexOf('function playWordAudio(');
+  const end = popupSrc.indexOf(POPUP_EXPORT);
+  assert.ok(start >= 0 && end > start,
+    'vendor/popup.js 必须含 playWordAudio 及其 __hibikiPlayWordAudioUrl 导出');
+  const slice = popupSrc.slice(start, end + POPUP_EXPORT.length);
+  const played = [];
+  const paused = [];
+  function FakeAudio(url) {
+    this.url = url;
+    this._failPlay = url === 'FAIL';
+    played.push(url);
+  }
+  FakeAudio.prototype.play = function () {
+    return this._failPlay
+      ? Promise.reject(new Error('play failed')) : Promise.resolve();
+  };
+  FakeAudio.prototype.pause = function () { paused.push(this.url); };
+  const windowObj = {};
+  const ctx = { window: windowObj, Audio: FakeAudio };
+  vm.createContext(ctx);
+  vm.runInContext(slice, ctx);
+  return { play: windowObj.__hibikiPlayWordAudioUrl, played, paused };
+}
+
+test('playWordAudio(popup): 用 HTML5 Audio 播放并返回 true', async () => {
+  const { play, played } = loadPopupPlayer();
+  assert.strictEqual(await play('http://h/file?id=1'), true);
   assert.deepStrictEqual(played, ['http://h/file?id=1']);
 });
 
-test('playWordAudio: interrupt 模式先掐掉上一段', async () => {
-  const { call, paused } = load();
-  await call('playWordAudio', { url: 'http://h/a', mode: 'interrupt' });
-  await call('playWordAudio', { url: 'http://h/b', mode: 'interrupt' });
+test('playWordAudio(popup): interrupt 模式先掐掉上一段', async () => {
+  const { play, paused } = loadPopupPlayer();
+  await play('http://h/a');
+  await play('http://h/b');
   assert.deepStrictEqual(paused, ['http://h/a']);
 });
 
-test('playWordAudio: 空 url → false', async () => {
-  const { call } = load();
-  const ok = await call('playWordAudio', { url: '', mode: 'interrupt' });
-  assert.strictEqual(ok, false);
+test('playWordAudio(popup): 空 url → false 且不构造 Audio', async () => {
+  const { play, played } = loadPopupPlayer();
+  assert.strictEqual(await play(''), false);
+  assert.strictEqual(played.length, 0);
 });
 
-test('playWordAudio: play() 失败 → false', async () => {
-  const { call } = load();
-  const ok = await call('playWordAudio', { url: 'FAIL', mode: 'interrupt' });
-  assert.strictEqual(ok, false);
+test('playWordAudio(popup): play() 失败 → false（不抛）', async () => {
+  const { play } = loadPopupPlayer();
+  assert.strictEqual(await play('FAIL'), false);
 });
