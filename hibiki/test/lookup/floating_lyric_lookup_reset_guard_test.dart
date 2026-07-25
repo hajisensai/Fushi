@@ -18,13 +18,19 @@ void main() {
   setUpAll(
       () => controller = read('lib/src/lookup/global_lookup_controller.dart'));
 
-  /// 抽出 `lookupText` 函数体（从签名到其 `return true;`）。
+  /// 抽出 `lookupText` 的**完整**函数体（签名到函数收尾的 `\n  }`）。
+  ///
+  /// BUG-1099 起 lookupText 开头多了一条被动流早退（命中「用户卡还在屏上」判据时
+  /// 直接 `return true;`），旧写法「截到第一个 return true」会把前置 hide 整段切掉
+  /// 而误报。改成取整个函数体：前置 hide 必须在 _lookupExternal 之前这条契约不变。
   String lookupTextBody(String src) {
     const String sig = 'Future<bool> lookupText(';
     final int at = src.indexOf(sig);
     expect(at, greaterThanOrEqualTo(0),
         reason: 'lookupText 程序化入口必须存在（TODO-872）');
-    final int end = src.indexOf('return true;', at);
+    // 收尾是独占一行的 `  }`；不能只找 `\\n  }`，那会先命中多行签名的
+    // `  }) async {`。
+    final int end = src.indexOf('\n  }\n', at);
     expect(end, greaterThan(at));
     return src.substring(at, end);
   }

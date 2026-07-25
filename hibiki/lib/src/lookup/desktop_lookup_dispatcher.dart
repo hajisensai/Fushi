@@ -56,8 +56,13 @@ class DesktopLookupDispatcher {
         DesktopLookupService.instance.clearPending();
         // 整句作 root 卡句子横幅 + 制卡 sentence 字段；查词词条由引擎按
         // 前缀/去屈折从句首匹配（与主窗 tab 的整句自动查同语义）。
-        unawaited(GlobalLookupController.instance
-            .lookupText(request.text, sentence: request.text));
+        // BUG-1099：被动剪贴板流（galgame 台词 / 外部 texthooker）标记透传，
+        // 用户点词开出的卡还在屏上时不被整帧重建（不清尺寸、不缩窗）。
+        unawaited(GlobalLookupController.instance.lookupText(
+          request.text,
+          sentence: request.text,
+          passiveStream: request.passiveStream,
+        ));
       case DesktopLookupConsumer.textWindow:
         DesktopLookupService.instance.clearPending();
         // 逐像素透明文字窗原地显示整句：不自动查词，用户点某个字才经 native

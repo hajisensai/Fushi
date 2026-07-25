@@ -21,6 +21,7 @@ import 'package:hibiki/src/lookup/global_lookup_controller.dart'
         GlobalLookupMediaRequest,
         resolveGlobalLookupMedia;
 import 'package:hibiki/src/lookup/clipboard_history_payload.dart';
+import 'package:hibiki/src/lookup/desktop_lookup_router.dart';
 import 'package:hibiki/src/lookup/global_lookup_log.dart';
 import 'package:hibiki/src/lookup/global_lookup_render.dart';
 import 'package:hibiki/src/lookup/global_lookup_stack.dart';
@@ -114,7 +115,8 @@ class ClipboardPanelController {
   int _updateSeq = 0;
 
   /// 当前 root 帧是否为**用户显式点词**的结果（`_lookupFromBanner`），而非被动来源自动查词。
-  /// 为 true 时，被动连续文本流（galgame 台词，`request.passiveStream`）不再抢占/重置 root：
+  /// 为 true 时，被动连续文本流（剪贴板监听灌进来的 galgame 台词，
+  /// `request.passiveStream`）不再抢占/重置 root：
   /// 只把可点句子横幅换成最新台词，保留用户点出的释义（否则每 ~400ms 一条新台词会 `++_updateSeq`
   /// 作废点词的在途 searchDictionary + `_seedRootFrame` 整帧重置冲掉释义，表现为「对话流动时
   /// 点词没反应」）。用户显式动作（点新横幅词 / 真剪贴板复制 / 关面板）重置它。
@@ -180,7 +182,13 @@ class ClipboardPanelController {
     // 换 _currentSentence（新台词逐字可点）+ 原地重渲（不 _seedRootFrame、不 resetRootScroll、
     // 不 ++_updateSeq），点词的在途查词与已出释义都不被冲掉。用户点新横幅词即正常换根。
     // 仅对被动流（galgame 台词）生效；真剪贴板复制是显式意图，走下方正常重查。
-    if (request.passiveStream && _userOwnedRoot && _visible) {
+    // BUG-1099：判据抽成纯函数（`keepUserOwnedCardForPassiveStream`），与瞬态覆盖窗
+    // 共用同一真相源并可直接单测两个方向（被动流不清帧 / 显式意图仍替换）。
+    if (keepUserOwnedCardForPassiveStream(
+      passiveStream: request.passiveStream,
+      userOwnedCard: _userOwnedRoot,
+      visible: _visible,
+    )) {
       _currentSentence = request.text;
       _rootHitStart = 0; // 新句与旧词根无对应，撤销高亮基准避免错位高亮
       await _renderPanel(model);

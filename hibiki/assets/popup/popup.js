@@ -3112,7 +3112,14 @@ function buildEntryElement(entry, idx) {
 }
 
 function postProcessRuby(container) {
-    container.querySelectorAll('.glossary-content ruby').forEach(ruby => {
+    // BUG-1098: `.expression ruby` (the entry HEADWORD's furigana, built as a
+    // bare <ruby>/<rt> by buildFuriganaEl) joins the glossary bodies here. It
+    // used to be skipped entirely, so it never got the per-base unit and never
+    // got popup.css's em padding-top reserve; the reading then overflowed the
+    // header line box and .expression-scroll (a scroll container whose TOP
+    // overflow is unreachable) clipped it. Same wrap, same reserve, no new
+    // mechanism.
+    container.querySelectorAll('.glossary-content ruby, .expression ruby').forEach(ruby => {
         // Wrap each base — a bare text node OR an element base like <rb>/<span>
         // (monolingual dicts such as 明鏡 emit element bases, not bare text) — in
         // a <span class="ruby-unit"> and pull that base's OWN <rt> into the span.
@@ -3140,6 +3147,17 @@ function postProcessRuby(container) {
             // A base is anything that is not a reading (<rt>), a fallback paren
             // (<rp>), or inter-token whitespace.
             if (isEl(node, 'RT') || isEl(node, 'RP') || isBlankText(node)) {
+                continue;
+            }
+            // BUG-1098: idempotence. renderPopup calls postProcessRuby(firstEntry)
+            // and then postProcessRuby(container) for the tail entries, and the
+            // container CONTAINS the first entry — so entry 0's ruby is walked
+            // twice. Without this guard the second pass wraps the existing
+            // .ruby-unit in ANOTHER .ruby-unit, stacking a second padding-top and
+            // pushing entry 0's base text down relative to every other entry.
+            // An already-wrapped base is done; leave it alone.
+            if (node.nodeType === Node.ELEMENT_NODE &&
+                node.classList.contains('ruby-unit')) {
                 continue;
             }
             const unit = document.createElement('span');

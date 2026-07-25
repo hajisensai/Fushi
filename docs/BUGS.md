@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1059 条。点号进各自文件。
+> 共 1061 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1099](bugs/BUG-1099-passive-clipboard-stream-clobbers-lookup.md) | ✅ | ✅ | 查完词后剪贴板一更新，浮窗释义就被清空「缩回去」 |
+| [BUG-1098](bugs/BUG-1098-popup-headword-furigana-clipped.md) | ✅ | ✅ | 查词弹窗词头的假名（furigana）被垂直压扁 / 裁掉 |
 | [BUG-1092](bugs/BUG-1092-gal-locale-resume-skipped.md) | 🚧 | 🚧 | Locale Emulator 启动的游戏永久停在挂起态：窗口永不出现，injector 却报 OK hooked |
 | [BUG-1091](bugs/BUG-1091-gal-injector-diagnostics-mojibake.md) | ✅ | ✅ | injector 诊断按系统代码页解码：会话事件乱码且中文失败分类永久失配 |
 | [BUG-1090](bugs/BUG-1090-audio-source-url-not-editable.md) | ✅ | ✅ | 管理音频来源弹窗里已有远端 URL 无法编辑，只能删了重加 |

@@ -191,7 +191,15 @@ html {
        overflow-y `auto`, so the extension popup (real Chrome, classic
        scrollbars) showed a tiny arrows+thumb vertical scrollbar squeezed
        against the header buttons. In-app WebView2 hid it only by luck (Fluent
-       overlay scrollbars are invisible at rest). */
+       overlay scrollbars are invisible at rest).
+       BUG-1098 correction: BUG-775 concluded "overflow-y:auto is harmless, the
+       few px of furigana spill can still be scrolled to". That was WRONG - a
+       scroll container's TOP overflow is unreachable (scrollTop can never go
+       negative), so the spilling <rt> was permanently CLIPPED, not scrollable.
+       The real fix is that the headword ruby no longer overflows at all: it now
+       carries the same intrinsic em padding-top reserve as glossary ruby (see
+       the :where(..., .expression) block below), so the implicit overflow-y is
+       genuinely inert. */
     scrollbar-width: none;
 }
 
@@ -238,8 +246,17 @@ html {
     white-space: nowrap;
 }
 
+/* BUG-1098: the headword <rt> geometry (size / absolute anchor / reserve) comes
+   from the SHARED :where(..., .expression) ruby block below - the same intrinsic
+   em reserve glossary furigana has used since BUG-108/363/722/850. The only
+   headword-specific bit left is user-select: the headword is a click target
+   (onLinkClick), so its reading must never be selected by a drag.
+   The old `font-size: 13px` is gone on purpose: 13px == 0.5em of .expression's
+   26px, so the rendered size is unchanged, but a `.expression rt` (0,1,1)
+   declaration used to OUT-RANK the zero-specificity `:where(...) rt` rule and
+   would have pinned the reading to an absolute px size that no longer tracks the
+   popup content zoom. */
 .expression rt {
-    font-size: 13px;
     -webkit-user-select: none;
 }
 
@@ -852,8 +869,26 @@ html[data-theme="dark"] .glossary-group {
     padding: 0 8px;
 }
 
-/* Furigana inside dictionary glossary bodies. Three layout invariants live in
-   this rule group and must stay together. The anchor of all three is the
+/* Furigana inside dictionary glossary bodies AND on the entry headword
+   (.expression). Three layout invariants live in this rule group and must stay
+   together.
+   BUG-1098 — the headword was NOT in this group until now and had zero vertical
+   reserve of its own (`.expression rt { font-size: 13px }` and nothing else),
+   because BUG-108 deliberately scoped its fix to glossary bodies. Its <rt> is
+   built by popup.js buildFuriganaEl as a BARE <ruby>/<rt>, so it also never
+   reached postProcessRuby (which only scanned `.glossary-content ruby`). The
+   reading therefore overflowed the header line box, and .expression-scroll
+   (overflow-x:auto -> computed overflow-y:auto) turned that box into a scroll
+   container whose TOP overflow is unreachable, so the reading was clipped /
+   squashed. Only single-segment readings hit it, because buildFuriganaEl only
+   asks for the .expression-scroll wrapper when the whole word is one segment
+   (pure-kanji nouns: 気配 / 邂逅 / 逢瀬), which is exactly the galgame vocabulary.
+   Fix = no new mechanism: postProcessRuby now also processes `.expression ruby`
+   and these rules cover `.expression`, so the headword gets the identical
+   per-base unit + em reserve + horizontal twin. `.expression` is 26px, so the
+   old hard-coded 13px reading is exactly the shared `font-size: 0.5em` — same
+   pixels today, and now it also tracks the popup content zoom instead of
+   growing the overflow linearly with it. The anchor of all three is the
    per-base UNIT box (.ruby-unit), NOT the <ruby> element — popup.js's
    postProcessRuby wraps each base text node in a <span class="ruby-unit"> and
    moves that base's own <rt> INTO the span, so every rt sizes and positions
@@ -892,14 +927,14 @@ html[data-theme="dark"] .glossary-group {
    The <ruby> itself stays inline-block+relative only as a fallback anchor: if
    postProcessRuby ever failed to wrap (never in practice), a bare <rt> would
    still pin to the <ruby> instead of escaping to the viewport. */
-:where(.glossary-group, .glossary-content) ruby {
+:where(.glossary-group, .glossary-content, .expression) ruby {
     display: inline-block;
     position: relative;
     line-height: 1;
     vertical-align: baseline;
 }
 
-:where(.glossary-group, .glossary-content) .ruby-unit {
+:where(.glossary-group, .glossary-content, .expression) .ruby-unit {
     display: inline-block;
     position: relative;
     line-height: 1;
@@ -910,7 +945,7 @@ html[data-theme="dark"] .glossary-group {
     text-align: center;
 }
 
-:where(.glossary-group, .glossary-content) rt {
+:where(.glossary-group, .glossary-content, .expression) rt {
     font-size: 0.5em;
     position: absolute;
     left: 0;
@@ -934,7 +969,7 @@ html[data-theme="dark"] .glossary-group {
    stays zoom-immune. Units whose reading fits its kanji keep the old compaction.
    The twin is aria-hidden + user-select:none so it never affects ruby lookup
    selection (BUG-110/123/125/129). */
-:where(.glossary-group, .glossary-content) .ruby-reserve {
+:where(.glossary-group, .glossary-content, .expression) .ruby-reserve {
     display: block;
     width: -webkit-max-content;
     width: max-content;
