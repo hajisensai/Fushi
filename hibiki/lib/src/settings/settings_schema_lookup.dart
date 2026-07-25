@@ -10,10 +10,12 @@ import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
+import 'package:hibiki/src/settings/port_kill_confirm.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
+import 'package:hibiki/src/sync/port_process_terminator.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client_manager.dart';
 import 'package:hibiki/src/sync/yomitan_api_server.dart'
     show kYomitanApiDefaultPort;
@@ -23,6 +25,98 @@ String _yomitanApiPortInUseMessage(int port) {
   return port == kYomitanApiDefaultPort
       ? t.browser_extension_yomitan_port_conflict(port: port)
       : t.sync_server_port_in_use(port: port);
+}
+
+void _showSettingsSnackBar(SettingsContext settingsContext, String message) {
+  final BuildContext ctx = settingsContext.context;
+  if (!ctx.mounted) return;
+  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(message)));
+}
+
+/// 端口冲突提示：说明占用者（默认端口时通常是浏览器拉起的 yomitan-api Python
+/// 进程），并在支持的桌面平台附「结束进程并重试」action——直接结束占用进程后
+/// 自动重试开启，免去用户去 Yomitan 高级设置绕一圈。
+void _showYomitanPortConflictSnackBar(SettingsContext settingsContext) {
+  final BuildContext ctx = settingsContext.context;
+  if (!ctx.mounted) return;
+  final int port = settingsContext.appModel.yomitanApiPort;
+  ScaffoldMessenger.of(ctx).showSnackBar(
+    SnackBar(
+      content: Text(_yomitanApiPortInUseMessage(port)),
+      duration: const Duration(seconds: 10),
+      action: PortProcessTerminator.isSupported
+          ? SnackBarAction(
+              label: t.yomitan_port_kill_action,
+              onPressed: () => unawaited(
+                _terminatePortOwnerAndRetry(settingsContext, port),
+              ),
+            )
+          : null,
+    ),
+  );
+}
+
+Future<void> _terminatePortOwnerAndRetry(
+  SettingsContext settingsContext,
+  int port,
+) async {
+  final AppModel appModel = settingsContext.appModel;
+  // 杀前必须确认：弹窗展示实际占用者（进程名 + PID + 路径；hibiki 旧实例
+  // 特别标注），关键系统进程直接拒杀。端口是用户可配置偏好，占用者完全可能
+  // 是 IDE 辅助进程/dev server，未经确认一键 taskkill 不可接受。
+  final PortKillDecision decision =
+      await decidePortKill(settingsContext.context, port: port);
+  switch (decision.kind) {
+    case PortKillDecisionKind.cancelled:
+      return;
+    case PortKillDecisionKind.refusedProtected:
+      _showSettingsSnackBar(
+        settingsContext,
+        t.yomitan_port_kill_protected(
+          process: describePortListener(decision.listener!),
+        ),
+      );
+      return;
+    case PortKillDecisionKind.listenerChanged:
+      // 占用者换人：重走冲突提示，让用户对新占用者重新发起并确认。
+      _showYomitanPortConflictSnackBar(settingsContext);
+      return;
+    case PortKillDecisionKind.confirmed:
+      final PortListenerInfo listener = decision.listener!;
+      final bool killed = await PortProcessTerminator.terminate(listener);
+      if (!killed) {
+        _showSettingsSnackBar(
+          settingsContext,
+          t.yomitan_port_kill_failed(process: describePortListener(listener)),
+        );
+        return;
+      }
+    case PortKillDecisionKind.noListener:
+      break;
+  }
+  // 占用进程已结束（或本就已退出）：重试开启。进程退出后 OS 释放端口可能有极短
+  // 延迟，端口仍占时再等一拍重试一次，仍失败按端口冲突报出。
+  await appModel.setYomitanApiServerEnabled(true);
+  for (int attempt = 0;; attempt++) {
+    try {
+      await appModel.startYomitanApiServer();
+      break;
+    } on SyncServerPortInUseException {
+      if (attempt >= 1) {
+        _showSettingsSnackBar(
+          settingsContext,
+          _yomitanApiPortInUseMessage(port),
+        );
+        settingsContext.refresh();
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      // startYomitanApiServer 抛出前把开关复位成 false，重试前需重新置位。
+      await appModel.setYomitanApiServerEnabled(true);
+    }
+  }
+  _showSettingsSnackBar(settingsContext, t.yomitan_api_server_started);
+  settingsContext.refresh();
 }
 
 SettingsDestination buildLookupDestination() {
@@ -858,18 +952,7 @@ SettingsDestination buildLookupDestination() {
                   await settingsContext.appModel.startYomitanApiServer();
                 } on SyncServerPortInUseException {
                   // startYomitanApiServer 已在抛出前把开关复位为 false。
-                  final BuildContext ctx = settingsContext.context;
-                  if (ctx.mounted) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          _yomitanApiPortInUseMessage(
-                            settingsContext.appModel.yomitanApiPort,
-                          ),
-                        ),
-                      ),
-                    );
-                  }
+                  _showYomitanPortConflictSnackBar(settingsContext);
                 }
               } else {
                 await settingsContext.appModel.stopYomitanApiServer();
@@ -1018,16 +1101,6 @@ Future<void> _restartYomitanApiServerIfEnabled(
   try {
     await settingsContext.appModel.startYomitanApiServer();
   } on SyncServerPortInUseException {
-    final BuildContext ctx = settingsContext.context;
-    if (!ctx.mounted) return;
-    ScaffoldMessenger.of(ctx).showSnackBar(
-      SnackBar(
-        content: Text(
-          _yomitanApiPortInUseMessage(
-            settingsContext.appModel.yomitanApiPort,
-          ),
-        ),
-      ),
-    );
+    _showYomitanPortConflictSnackBar(settingsContext);
   }
 }

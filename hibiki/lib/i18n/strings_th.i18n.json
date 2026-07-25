@@ -1954,7 +1954,7 @@
   "anime_download_play_now_fail": "Not ready yet (metadata pending or connection failed) — try again later",
   "interconnect_section_related": "Remote content & lookup",
   "desktop_clipboard_window_mode_hint": "Controls whether Hibiki stays above other windows",
-  "browser_extension_yomitan_port_conflict": "Port $port is occupied by Yomitan API. Disable Yomitan API in Yomitan advanced settings, then enable the Yomitan API server in Hibiki.",
+  "browser_extension_yomitan_port_conflict": "Port $port is in use by another process (usually the yomitan-api component — a Python process launched by your browser). End that process, or disable Yomitan API in Yomitan's advanced settings, then enable the Yomitan API server in Hibiki again.",
   "interconnect_enable": "Enable interconnect",
   "interconnect_enable_hint": "Connect to your other devices over the LAN. Works alongside a cloud backup backend — they don't conflict.",
   "reading_activity": "Study activity",
@@ -2623,5 +2623,13 @@
   "audio_source_edit_url": "Edit audio source link",
   "audio_source_updated": "Audio source updated",
   "game_capture_degraded_loopback": "The game is running, but engine injection failed; falling back to system audio, which can mix in BGM and effects.",
-  "game_capture_window_missing": "The game process started but its window never appeared, so the game may not have launched. Try starting it again."
+  "game_capture_window_missing": "The game process started but its window never appeared, so the game may not have launched. Try starting it again.",
+  "yomitan_api_server_started": "Yomitan API server started",
+  "yomitan_port_kill_action": "End process and retry",
+  "yomitan_port_kill_failed": "Could not end $process. Please end it manually, then retry.",
+  "yomitan_port_kill_confirm_title": "End the process using port $port?",
+  "yomitan_port_kill_confirm_message": "The port is currently used by: $process",
+  "yomitan_port_kill_self_instance": "This process is another running instance of this app.",
+  "yomitan_port_kill_confirm": "End process",
+  "yomitan_port_kill_protected": "$process is a critical system process — Hibiki will not end it. Change the port instead."
 }
