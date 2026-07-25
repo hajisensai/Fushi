@@ -24,7 +24,7 @@ Android: **arm64** seçin. Windows: **.exe** dosyasını seçin.
 
 ### 1. Önerilen sözlükleri ve yerel sesi içe aktarma (Yeni başlayanlara şiddetle önerilir!!! · isteğe bağlı)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Doğrudan indirme (yansı, 9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
 
 Uygulamada: Ayarlar -> Eşitleme ve Yedekleme -> **Yedeği İçe Aktar** öğesine dokunun.
 

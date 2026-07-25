@@ -24,7 +24,7 @@ Android: chọn **arm64**. Windows: chọn tệp **.exe**.
 
 ### 1. Nhập các từ điển được đề xuất và âm thanh cục bộ (Rất khuyến khích cho người mới!!! · tùy chọn)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Tải xuống trực tiếp (bản sao, 9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
 
 Trong ứng dụng: Cài đặt -> Đồng bộ & Sao lưu -> nhấn **Nhập bản sao lưu**.
 
