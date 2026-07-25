@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1052 条。点号进各自文件。
+> 共 1054 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1087](bugs/BUG-1087-jimaku-episode-label-truncated.md) | ✅ | ✅ | 番剧下载确认页集号输入框在界面缩放下 label 截断成「集…」 |
+| [BUG-1086](bugs/BUG-1086-nyaa-search-error-swallowed.md) | ✅ | ✅ | Nyaa 搜索网络错误被吞成统一文案，真实报错不可见（生肉分类超时无从定位） |
 | [BUG-1085](bugs/BUG-1085-gal-charcount-inflated.md) | ✅ | ✅ | galgame 字数统计虚高：标点全算/重复行重计/递增重发重计/外部通道双计 |
 | [BUG-1084](bugs/BUG-1084-torrent-settings-field-full-width.md) | ✅ | ✅ | 下载设置输入框在宽屏详情面板被拉满整宽 |
 | [BUG-1083](bugs/BUG-1083-manga-author-edit-missing.md) | ✅ | ✅ | 漫画编辑对话框缺作者字段(未覆盖supportsAuthorEdit) |

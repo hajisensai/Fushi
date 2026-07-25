@@ -250,16 +250,38 @@ void main() {
       client.close();
     });
 
-    test('默认 category=1_0 / filter=0；非 200 → 空列表', () async {
+    test('默认 category=1_0 / filter=0；非 200 → 抛 ClientException（含状态码）',
+        () async {
+      // 以前吞错返回空列表，真实网络故障（站点被墙/代理未配）会被误报成
+      // 「无结果」；现在必须抛出让调用方展示真实错误。
       Uri? captured;
       final MockClient mock = MockClient((http.Request req) async {
         captured = req.url;
         return http.Response('server error', 500);
       });
       final NyaaClient client = NyaaClient(client: mock);
-      expect(await client.search('frieren'), isEmpty);
+      await expectLater(
+        client.search('frieren'),
+        throwsA(isA<http.ClientException>().having(
+            (http.ClientException e) => e.message, 'message', 'HTTP 500')),
+      );
       expect(captured!.queryParameters['c'], '1_0');
       expect(captured!.queryParameters['f'], '0');
+      client.close();
+    });
+
+    test('底层网络异常（如握手失败）原样穿透，不吞成空列表', () async {
+      final MockClient mock = MockClient((http.Request req) async {
+        throw http.ClientException('HandshakeException: 模拟被墙', req.url);
+      });
+      final NyaaClient client = NyaaClient(client: mock);
+      await expectLater(
+        client.search('frieren'),
+        throwsA(isA<http.ClientException>().having(
+            (http.ClientException e) => e.message,
+            'message',
+            contains('HandshakeException'))),
+      );
       client.close();
     });
 
