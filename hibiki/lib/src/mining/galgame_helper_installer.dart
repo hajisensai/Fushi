@@ -114,8 +114,118 @@ bool sha256Matches(String expected, String actual) =>
     expected.trim().toLowerCase() == actual.trim().toLowerCase();
 
 /// 已装 helper 的版本标记文件名：装成功后在 `voice_hook/<arch>/` 写入该 zip 的 sha256，供下次
-/// 启动比对 release 侧车判断是否有新版（自动更新）。放在 arch 目录内，随 helper 一起被覆盖/清理。
+/// app 启动比对 release 侧车判断是否有新版（后台自动更新）。放在 arch 目录内，随 helper 一起
+/// 被覆盖/清理。
 String galgameHelperMarkerName() => 'installed.sha256';
+
+/// 后台静默更新取 sha256 侧车的总预算（BUG-1076）。更新时机在 app 启动后台、不抢任何
+/// 交互路径，所以给「直连 + 5 镜像」逐个轮询留充分时间；对照旧实现把更新绑在游戏启动
+/// 关键路径上被迫设的 6s 自残上限（弱网必然超时 → 永远静默放弃、helper 停在旧版）。
+const Duration kGalgameHelperBackgroundShaTimeout = Duration(seconds: 90);
+
+/// 换入时旧文件的改名后缀：`<name>.stale`（占用时递增 `.stale1`…）。被进程映射的 DLL
+/// 在 Windows 下**可改名不可覆盖**，改名让位是被占用文件的唯一安全换法。
+const String kGalgameHelperStaleSuffix = '.stale';
+
+/// 匹配换入残骸文件名（`x.dll.stale` / `x.dll.stale2`）。
+final RegExp kGalgameHelperStalePattern = RegExp(r'\.stale\d*$');
+
+/// 清扫 [dir] 里上轮换入留下的 `*.stale*` 残骸（当时被进程占用删不掉的旧文件）。
+/// best-effort：仍被占用的留给下轮。
+void galgameHelperSweepStaleFiles(Directory dir) {
+  if (!dir.existsSync()) return;
+  for (final FileSystemEntity entity
+      in dir.listSync(recursive: true, followLinks: false)) {
+    if (entity is File &&
+        kGalgameHelperStalePattern.hasMatch(p.basename(entity.path))) {
+      try {
+        entity.deleteSync();
+      } catch (_) {}
+    }
+  }
+}
+
+/// 一次换入操作的账目：换入的新文件路径 + 旧文件让位后的路径（原位无旧文件则 null）。
+class _GalgameHelperSwapOp {
+  const _GalgameHelperSwapOp({required this.newPath, required this.asidePath});
+  final String newPath;
+  final String? asidePath;
+}
+
+/// staging → target 的**换入式安装**（首装/修复/后台更新三条路径共用）：逐文件先把 target
+/// 里的旧文件 rename 成 `.stale` 让位（被映射的 DLL 可改名不可覆盖——旧实现就地覆盖写，
+/// 撞上被占用的 `hibiki_voice_hook.dll` 会半途失败留下混版本残局，是 BUG-1076 的次生根因），
+/// 再把 staging 的新文件 rename 进来（跨卷退化为 copy+delete）。任何一步失败即逆序回滚：
+/// 删掉已换入的新文件、把 `.stale` 改回原名——target 要么完整旧版要么完整新版，绝无混版本。
+/// 成功后 best-effort 清 `.stale`（被占用的留给下轮 [galgameHelperSweepStaleFiles]）。
+/// [onBeforeReplace] 仅测试注入失败用。
+Future<void> galgameHelperSwapInstall({
+  required Directory staging,
+  required Directory target,
+  void Function(String relativePath)? onBeforeReplace,
+}) async {
+  await target.create(recursive: true);
+  final String stagingRoot = p.normalize(staging.absolute.path);
+  final String targetRoot = p.normalize(target.absolute.path);
+  final List<File> newFiles = staging
+      .listSync(recursive: true, followLinks: false)
+      .whereType<File>()
+      .toList();
+  final List<_GalgameHelperSwapOp> done = <_GalgameHelperSwapOp>[];
+  try {
+    for (final File src in newFiles) {
+      final String rel = p.relative(src.path, from: stagingRoot);
+      onBeforeReplace?.call(rel);
+      final File dst = File(p.join(targetRoot, rel));
+      await dst.parent.create(recursive: true);
+      String? asidePath;
+      if (dst.existsSync()) {
+        File aside = File('${dst.path}$kGalgameHelperStaleSuffix');
+        try {
+          if (aside.existsSync()) aside.deleteSync();
+        } catch (_) {}
+        int n = 0;
+        while (aside.existsSync()) {
+          n++;
+          aside = File('${dst.path}$kGalgameHelperStaleSuffix$n');
+        }
+        dst.renameSync(aside.path);
+        asidePath = aside.path;
+      }
+      try {
+        src.renameSync(dst.path);
+      } on FileSystemException {
+        // systemTemp 与安装目录不同卷时 rename 会失败：退化为 copy+delete。
+        src.copySync(dst.path);
+        try {
+          src.deleteSync();
+        } catch (_) {}
+      }
+      done.add(_GalgameHelperSwapOp(newPath: dst.path, asidePath: asidePath));
+    }
+  } catch (_) {
+    for (final _GalgameHelperSwapOp op in done.reversed) {
+      try {
+        File(op.newPath).deleteSync();
+      } catch (_) {}
+      final String? aside = op.asidePath;
+      if (aside != null) {
+        try {
+          File(aside).renameSync(op.newPath);
+        } catch (_) {}
+      }
+    }
+    rethrow;
+  }
+  for (final _GalgameHelperSwapOp op in done) {
+    final String? aside = op.asidePath;
+    if (aside != null) {
+      try {
+        File(aside).deleteSync();
+      } catch (_) {}
+    }
+  }
+}
 
 /// 是否需要自动更新 helper：**仅当**本地有装机标记 [localSha]、远端侧车可取 [remoteSha]、且两者
 /// 不等时才更新。任一为 null（无标记=手动放置/旧装、或离线取不到远端）都返回 false —— 保守沿用
@@ -138,15 +248,77 @@ String formatDownloadSize(int bytes) {
 }
 
 /// 缺失注入器时的「按需下载」安装器（方案 B）：弹确认对话框（标大小）→ 用户确认 →
-/// 下载对应架构 zip（走系统代理 + 镜像回退 + sha256 校验）→ 解压到 exe 同级
-/// voice_hook/<arch>/ → 复检。仅 Windows；用户取消或任一步失败均返回 false（调用方
-/// 中止启动、已给提示，Never break）。
+/// 下载对应架构 zip（走系统代理 + 镜像回退 + sha256 校验）→ staging 解压校验 → 换入
+/// exe 同级 voice_hook/<arch>/ → 复检。仅 Windows；用户取消或任一步失败均返回 false
+/// （调用方中止启动、已给提示，Never break）。已装 helper 的自动更新不在这里——见
+/// [updateInstalledHelpersInBackground]（app 启动后台静默更新，BUG-1076）。
 class GalgameHelperInstaller {
   GalgameHelperInstaller();
 
   /// 取消令牌：用户在进度对话框点「取消」时置位，并强制关闭下载 client 中断在途请求。
   bool _canceled = false;
   HttpClient? _client;
+
+  /// 后台静默更新与游戏启动路径唯一的共享写窗口是「换入」（亚秒级本地文件操作）。所有换入
+  /// 都串到这条门上、启动路径检查文件前也先过门，二者绝不与半换入状态竞态；下载/解压只碰
+  /// 临时目录，无需互斥。
+  static Future<void> _extractionGate = Future<void>.value();
+
+  /// 把 [job]（换入操作）串行挂到 [_extractionGate] 上执行。
+  static Future<T> _serializeExtraction<T>(Future<T> Function() job) {
+    final Future<T> run = _extractionGate.then((_) => job());
+    _extractionGate = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  /// app 启动后的**后台静默自更新**（BUG-1076 根因修复；`main.dart` 启动块挂载）。
+  /// 对每个已装（有装机标记且清单完整）的架构：清扫上轮 `.stale` 残骸 → 取 release
+  /// sha256 侧车（宽松预算 [kGalgameHelperBackgroundShaTimeout]，后台不抢交互路径所以
+  /// 不需要旧实现那种 6s 上限）→ 与本地标记比对 → 有新版则静默下载+校验+换入。全程无
+  /// UI；任一步失败静默放弃、下次 app 启动再试（Never break：绝不影响 app 与游戏启动）。
+  static Future<void> updateInstalledHelpersInBackground() async {
+    if (!Platform.isWindows) return;
+    final GalgameHelperInstaller installer = GalgameHelperInstaller();
+    for (final String arch in const <String>['x86', 'x64']) {
+      try {
+        await installer._updateArchSilently(arch);
+      } catch (_) {
+        // 后台更新是锦上添花：静默放弃本架构，继续下一个。
+      }
+    }
+  }
+
+  /// 单架构的静默更新（无 UI、无 toast）。未安装/无标记/残缺一律不动——首装与修复属于
+  /// 用户交互路径（[ensureInjector] 的确认框/进度框），后台只做「已装 → 最新」。
+  Future<void> _updateArchSilently(String arch) async {
+    galgameHelperSweepStaleFiles(_archDir(arch));
+    final File marker = _markerFile(arch);
+    if (!marker.existsSync()) return; // 手动放置/旧装：保守沿用现有
+    if (_missingInstalledFiles(arch).isNotEmpty) return; // 残缺留给交互修复路径
+    final String localSha = (await marker.readAsString()).trim();
+
+    final HttpClient client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 30);
+    client.idleTimeout = const Duration(seconds: 60);
+    await applyUpdateProxy(client);
+    try {
+      final String? remoteSha = await _fetchSha256(client, arch).timeout(
+        kGalgameHelperBackgroundShaTimeout,
+        onTimeout: () => null,
+      );
+      if (!galgameHelperNeedsUpdate(localSha, remoteSha)) {
+        return; // 已最新 / 取不到远端：沿用现有
+      }
+      await _installCore(
+        client: client,
+        arch: arch,
+        expectedSize: null,
+        expectedSha: remoteSha,
+      );
+    } finally {
+      client.close(force: true);
+    }
+  }
 
   /// exe 同级的 `voice_hook/<arch>` 目录（安装器写入落点，与 defaultInjectorResolver /
   /// GalHookSessionController 注入器解析的读取落点一致）。安装包 Inno Setup
@@ -178,24 +350,26 @@ class GalgameHelperInstaller {
   }
 
   /// 确保对应架构注入器就位：
-  /// - 完整安装 → true（并 best-effort 检查更新）；
+  /// - 完整安装 → true（零网络零 UI；自动更新在 app 启动后台，见
+  ///   [updateInstalledHelpersInBackground]）；
   /// - 已有残缺安装 → 自动下载当前包修复，失败则阻止错误启动；
-  /// - 从未安装 → 弹确认对话框（标大小）→ 确认后下载+校验+解压→复检；
-  /// - 用户取消 / 下载失败 / 校验失败 / 解压后仍缺 → false（调用方中止启动）。
+  /// - 从未安装 → 弹确认对话框（标大小）→ 确认后下载+校验+换入→复检；
+  /// - 用户取消 / 下载失败 / 校验失败 / 换入后仍缺 → false（调用方中止启动）。
   Future<bool> ensureInjector({
     required bool is32Bit,
     required BuildContext context,
   }) async {
     if (!Platform.isWindows) return false;
     final String arch = galgameHelperArch(is32Bit: is32Bit);
+    // 等在途换入（若有）落定再检查文件，绝不读到半换入状态；平时门是已完成 future，零开销。
+    await _extractionGate;
+    if (!context.mounted) return false;
     final List<String> missingBefore = _missingInstalledFiles(arch);
     if (missingBefore.isEmpty) {
-      // 已装：best-effort 检查 release 是否有新版（sha256 侧车比对），有则静默刷新（带进度框）。
-      // 离线/超时/无标记/更新失败一律沿用现有，绝不阻塞启动（Never break）。
-      if (context.mounted) {
-        await _maybeAutoUpdate(arch: arch, context: context);
-      }
-      return _missingInstalledFiles(arch).isEmpty;
+      // 安装完整：直接放行。自动更新已挪到 app 启动后台
+      // （[updateInstalledHelpersInBackground]，BUG-1076）——游戏启动路径不再做任何
+      // 网络探测，也就不存在旧实现在这里抢 6s 的自残上限。
+      return true;
     }
 
     // 旧安装可能只有 injector，缺 Luna 或 Locale Emulator。直接用当前发布包修复；
@@ -257,48 +431,6 @@ class GalgameHelperInstaller {
       return false;
     }
     return true;
-  }
-
-  /// 已装 helper 的**自动更新**（方案 B 的补强）：读本地装机标记 sha → best-effort 取 release
-  /// 侧车 sha（**硬 6s 上限**，绝不为一次网络卡死拖慢每次启动）→ 若确实有新版则复用下载+解压流程
-  /// 静默刷新（带进度框，会顺带覆盖标记）。任一步失败/离线/无标记/用户取消更新都静默返回、沿用
-  /// 现有 helper（Never break：更新是锦上添花，不该挡住启动）。
-  Future<void> _maybeAutoUpdate({
-    required String arch,
-    required BuildContext context,
-  }) async {
-    try {
-      final File marker = _markerFile(arch);
-      if (!marker.existsSync()) {
-        return; // 无标记（手动放置 / 旧装 / 上次无侧车）：不自动更新，保守沿用现有
-      }
-      final String localSha = (await marker.readAsString()).trim();
-
-      final HttpClient client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 6);
-      await applyUpdateProxy(client);
-      String? remoteSha;
-      try {
-        // 硬上限：镜像轮询可能慢，超 6s 视作取不到（离线/卡），本次不更新。
-        remoteSha = await _fetchSha256(client, arch).timeout(
-          const Duration(seconds: 6),
-          onTimeout: () => null,
-        );
-      } finally {
-        client.close(force: true);
-      }
-
-      if (!galgameHelperNeedsUpdate(localSha, remoteSha)) {
-        return; // 同版本 / 取不到远端：沿用现有
-      }
-      if (!context.mounted) return;
-      // 有新版：复用下载+解压（带进度框，成功后覆盖 helper 与标记）。失败/取消由其自身处理，
-      // 返回后 injector 仍在原地，启动继续用现有版本。
-      await _downloadAndExtract(
-          context: context, arch: arch, expectedSize: null);
-    } catch (_) {
-      // 离线 / 解析失败 / 任意异常：静默沿用现有 helper。
-    }
   }
 
   /// 弹确认对话框（复用 app 统一对话框外框），返回用户是否确认下载。[sizeText] 是可监听的
@@ -406,21 +538,10 @@ class GalgameHelperInstaller {
     _client = client;
 
     try {
-      // 1) 取 sha256 侧车（校验完整性用；取不到则跳过 sha256，仍靠 size 兜底）。
-      final String? expectedSha = await _fetchSha256(client, arch);
-
-      // 2) 下载 zip（ResumableDownloader 自带 Range 续传 + size/sha256 校验 + 原子 promote）。
-      final Directory tmp = Directory.systemTemp;
-      final File dest =
-          File(p.join(tmp.path, 'hibiki_${galgameHelperZipName(arch)}'));
-      final File part = File('${dest.path}.part');
-      final File zip = await _downloadZip(
+      await _installCore(
         client: client,
         arch: arch,
-        dest: dest,
-        part: part,
         expectedSize: expectedSize,
-        expectedSha256: expectedSha,
         onProgress: (int received, int? total) {
           final int? denom = total ?? expectedSize;
           progress.value = (denom != null && denom > 0)
@@ -428,10 +549,59 @@ class GalgameHelperInstaller {
               : null;
         },
       );
+      closeDialog();
+      return true;
+    } catch (e) {
+      closeDialog();
+      if (_canceled) {
+        // 用户主动取消：静默（不当作错误）。
+        return false;
+      }
+      HibikiToast.show(msg: t.galgame_helper_download_failed(error: '$e'));
+      return false;
+    } finally {
+      client.close(force: true);
+      _client = null;
+      progress.dispose();
+    }
+  }
 
-      // 3) 解压到 archDir（覆盖写；保留 x64 unity_audio_runtime/ 子目录）。
-      final Set<String> extractedRootFiles =
-          await _extractZip(zip, _archDir(arch));
+  /// UI 无关的安装核心（交互路径与后台静默路径共用）：取 sha256 侧车（[expectedSha] 已取到
+  /// 则复用，不重复请求）→ 下载 zip（镜像回退 + Range 续传 + size/sha256 校验）→ 解压到
+  /// staging 临时目录并校验清单 → [galgameHelperSwapInstall] 换入（经 [_extractionGate]
+  /// 与启动路径串行）→ 复检安装 → 写装机标记。任一步失败抛异常，由调用方决定提示或静默；
+  /// 失败时保留 zip/part 供下次续传，staging 一律清理。
+  Future<void> _installCore({
+    required HttpClient client,
+    required String arch,
+    required int? expectedSize,
+    String? expectedSha,
+    ResumableDownloadProgress? onProgress,
+  }) async {
+    // 1) 取 sha256 侧车（校验完整性用；取不到则跳过 sha256，仍靠 size 兜底）。
+    expectedSha ??= await _fetchSha256(client, arch);
+
+    // 2) 下载 zip（ResumableDownloader 自带 Range 续传 + size/sha256 校验 + 原子 promote）。
+    final Directory tmp = Directory.systemTemp;
+    final File dest =
+        File(p.join(tmp.path, 'hibiki_${galgameHelperZipName(arch)}'));
+    final File part = File('${dest.path}.part');
+    final File zip = await _downloadZip(
+      client: client,
+      arch: arch,
+      dest: dest,
+      part: part,
+      expectedSize: expectedSize,
+      expectedSha256: expectedSha,
+      onProgress: onProgress ?? (int _, int? __) {},
+    );
+
+    // 3) 解压到 staging 临时目录（保留 x64 unity_audio_runtime/ 子目录结构），先在
+    //    staging 里验完清单再换入——坏包/缺文件在触碰安装目录之前就被拒。
+    final Directory staging =
+        await Directory.systemTemp.createTemp('hibiki_voice_hook_staging_');
+    try {
+      final Set<String> extractedRootFiles = await _extractZip(zip, staging);
       final List<String> missingFromPackage =
           galgameHelperMissingFiles(arch, extractedRootFiles);
       if (missingFromPackage.isNotEmpty) {
@@ -440,6 +610,11 @@ class GalgameHelperInstaller {
           'missing ${missingFromPackage.join(', ')}',
         );
       }
+
+      // 4) 换入（失败自回滚，安装目录要么完整旧版要么完整新版）。
+      await _serializeExtraction(() =>
+          galgameHelperSwapInstall(staging: staging, target: _archDir(arch)));
+
       final List<String> missingAfterExtract = _missingInstalledFiles(arch);
       if (missingAfterExtract.isNotEmpty) {
         throw StateError(
@@ -456,26 +631,15 @@ class GalgameHelperInstaller {
         } catch (_) {}
       }
 
-      // 清理临时 zip（best-effort）。
+      // 清理临时 zip（best-effort；失败路径不清，保留续传现场）。
       try {
         if (await zip.exists()) await zip.delete();
         if (await part.exists()) await part.delete();
       } catch (_) {}
-
-      closeDialog();
-      return true;
-    } catch (e) {
-      closeDialog();
-      if (_canceled) {
-        // 用户主动取消：静默（不当作错误）。
-        return false;
-      }
-      HibikiToast.show(msg: t.galgame_helper_download_failed(error: '$e'));
-      return false;
     } finally {
-      client.close(force: true);
-      _client = null;
-      progress.dispose();
+      try {
+        if (staging.existsSync()) staging.deleteSync(recursive: true);
+      } catch (_) {}
     }
   }
 
@@ -589,7 +753,8 @@ class GalgameHelperInstaller {
     };
   }
 
-  /// 解压 zip 到 [targetDir]（覆盖写）。用 archive 包 ZipDecoder；写字节用 file.content
+  /// 解压 zip 到 [targetDir]（staging 临时目录——**不**直接写安装目录，换入走
+  /// [galgameHelperSwapInstall]）。用 archive 包 ZipDecoder；写字节用 file.content
   /// getter（archive 3.6.1 下 ArchiveFile.decompress(out) 会写 0 字节，见
   /// sync_asset_package_service.dart 注释，故取 content 字节直接写）。只写常规文件、保留
   /// 相对目录结构，并拒绝绝对路径或逃出目标目录的条目以防 zip-slip。
