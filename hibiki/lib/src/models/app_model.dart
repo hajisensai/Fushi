@@ -3087,16 +3087,24 @@ class AppModel with ChangeNotifier {
   /// 默认下载根（未解析完成前为空串）。
   String get downloadDefaultSaveRoot => _downloadDefaultSaveRoot ?? '';
 
+  /// 已保存的下载根配置（空串 = 用默认根）。
+  ///
+  /// 走 `_prefsRepo?`（而非 `prefsRepo` 的 `!`）：设置区块能在 AppModel 尚未
+  /// `initialise()` 的场景下被构建（widget 测试直接 new AppModel 建区块，
+  /// 见 test/pages/torrent_settings_field_width_test.dart），此时 `_prefsRepo`
+  /// 还是 null，用 `!` 会在 build 里抛 TypeError 把整块设置炸掉。
+  String get _configuredDownloadSaveRoot =>
+      _prefsRepo?.downloadSaveRoot.trim() ?? '';
+
   /// 当前生效的下载根（新任务落点）。未解析完成时回退到已保存的配置值/空串。
   String get downloadSaveRoot =>
       _embeddedTorrentSaveRoots?.active ??
-      (prefsRepo.downloadSaveRoot.trim().isNotEmpty
-          ? prefsRepo.downloadSaveRoot.trim()
+      (_configuredDownloadSaveRoot.isNotEmpty
+          ? _configuredDownloadSaveRoot
           : downloadDefaultSaveRoot);
 
   /// 当前是否在用默认下载根（设置页据此禁用「恢复默认」）。
-  bool get downloadSaveRootIsDefault =>
-      prefsRepo.downloadSaveRoot.trim().isEmpty;
+  bool get downloadSaveRootIsDefault => _configuredDownloadSaveRoot.isEmpty;
 
   /// 启动时配置目录不可用而回退默认根的原因（null = 没发生过回退）。
   DownloadSaveRootIssue? get downloadSaveRootIssue => _downloadSaveRootIssue;
