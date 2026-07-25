@@ -6,6 +6,7 @@ import 'package:hibiki/src/mining/galgame_audio_encode.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 
@@ -265,6 +266,72 @@ void main() {
           (preferences['gal_hook_text_window_rect'] as String?)
               ?.contains('"left":50') ==
           true,
+    );
+  });
+
+  // BUG-1095：字号是一条独立偏好，与窗口几何（gal_hook_text_window_rect）互不影响。
+  // 修复前 native 按窗口高度缩放字号，「拖高浮窗」＝「放大台词」，可见行数几乎不涨。
+  test('保存的字号随 show 一起送给 native，且窗口几何不受影响', () async {
+    preferences['gal_hook_text_font_size'] = 48.0;
+    preferences['gal_hook_text_window_rect'] =
+        '{"left":12,"top":34,"width":800,"height":180}';
+    await controller.start(appModel: AppModel(testPlatformServices()));
+    await startSession();
+    textService.appendLine(
+      'フォントサイズ',
+      source: TexthookerLineSource.websocket,
+    );
+    await _waitUntil(() => controller.isVisible);
+
+    final MethodCall show = nativeCalls.lastWhere(
+      (MethodCall call) => call.method == 'show',
+    );
+    final Map<Object?, Object?> args = show.arguments as Map<Object?, Object?>;
+    expect(args['fontSize'], 48.0, reason: '字号必须来自偏好，而不是硬常量');
+    expect(controller.fontSize, 48.0);
+    expect(args['height'], 180, reason: '改字号不得连带改窗口几何（两者已解耦）');
+  });
+
+  test('越界的历史脏字号被收敛到合法区间', () async {
+    preferences['gal_hook_text_font_size'] = 9999.0;
+    await controller.start(appModel: AppModel(testPlatformServices()));
+    expect(
+      controller.fontSize,
+      PreferencesRepository.galHookTextFontSizeMax,
+    );
+  });
+
+  test('applyFontSizeFromPreferences 立刻把新字号经 updateStyle 推给 native', () async {
+    await controller.start(appModel: AppModel(testPlatformServices()));
+    await startSession();
+    textService.appendLine(
+      '設定から変更',
+      source: TexthookerLineSource.websocket,
+    );
+    await _waitUntil(() => controller.isVisible);
+    expect(controller.fontSize, kGalHookTextFontSize);
+
+    // 设置页写 pref（真实链路是 AppModel.setGalHookTextFontSize）后调用本方法。
+    preferences['gal_hook_text_font_size'] = 20.0;
+    await controller.applyFontSizeFromPreferences();
+
+    expect(controller.fontSize, 20.0);
+    final MethodCall style = nativeCalls.lastWhere(
+      (MethodCall call) => call.method == 'updateStyle',
+    );
+    expect(
+      (style.arguments as Map<Object?, Object?>)['fontSize'],
+      20.0,
+      reason: '漏掉这一步字号只落了盘，浮窗要等下次改透明度才顺带刷新（TODO-1069 同款纪律）',
+    );
+
+    // 幂等：值没变时不再重复推 native。
+    final int stylePushes =
+        nativeCalls.where((MethodCall c) => c.method == 'updateStyle').length;
+    await controller.applyFontSizeFromPreferences();
+    expect(
+      nativeCalls.where((MethodCall c) => c.method == 'updateStyle').length,
+      stylePushes,
     );
   });
 }

@@ -1540,6 +1540,32 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // BUG-1095: galgame Hook 台词浮窗字号（逻辑 px）。以前这个值没有真值来源——native
+  // 按浮窗高度对基准 30 做 0.9~2.5 倍缩放，于是「把浮窗拖高」和「把字放大」是同一个
+  // 手势，用户「放不下想拖高」永远拖不出更多行。现在窗高只管窗高，字号是这条独立
+  // 偏好。默认 30 == 旧基准在默认窗高（140dip）下的实际字号，没拖过窗的用户观感不变。
+  static const double galHookTextFontSizeMin = 12.0;
+  static const double galHookTextFontSizeMax = 72.0;
+  static const double galHookTextFontSizeDefault = 30.0;
+
+  double get galHookTextFontSize {
+    final Object? stored = getPref(
+      'gal_hook_text_font_size',
+      defaultValue: galHookTextFontSizeDefault,
+    );
+    final double value =
+        stored is num ? stored.toDouble() : galHookTextFontSizeDefault;
+    return value.clamp(galHookTextFontSizeMin, galHookTextFontSizeMax);
+  }
+
+  Future<void> setGalHookTextFontSize(double value) async {
+    await setPref(
+      'gal_hook_text_font_size',
+      value.clamp(galHookTextFontSizeMin, galHookTextFontSizeMax).toDouble(),
+    );
+    notifyListeners();
+  }
+
   bool get floatingLyricClickLookup =>
       getPref('floating_lyric_click_lookup', defaultValue: true) as bool;
 

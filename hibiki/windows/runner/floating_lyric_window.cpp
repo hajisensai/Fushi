@@ -45,14 +45,21 @@ constexpr float kDragThresholdDip = 6.0f;
 // Base logical font size the lyric text was authored at; the rendered font
 // scales with the bar height so growing the bar enlarges the text too.
 constexpr float kBaseStripHeightForFontDip = 96.0f;
-// Hook mode authors its font against its own default window height (140dip) and
-// scales with the live height, so dragging the overlay taller enlarges the
-// caption instead of leaving it stranded at the authored size. Clamped so a
-// deliberately short, wide overlay (hugging the game's text box) never shrinks
-// the text below readability.
-constexpr float kHookTextBaseHeightForFontDip = 140.0f;
-constexpr float kHookTextFontScaleMin = 0.9f;
-constexpr float kHookTextFontScaleMax = 2.5f;
+// BUG-1095 — hook mode does NOT scale its font with the window height.
+//
+// It used to: the caption font was style_.font_size * clamp(height / 140dip,
+// 0.9, 2.5). Because strip_height_dip_ is read straight back off the live
+// window rect (SyncStripSizeFromWindow on every WM_SIZE), "drag the overlay
+// taller" and "enlarge the caption" were the SAME gesture. Dragging from the
+// 140dip default to the 480dip ceiling (3.4x taller) also multiplied the font
+// by 2.5, so the visible line count only crept from ~2.3 to ~4.3 — which is
+// exactly the user report: "it doesn't fit, and dragging it taller STILL
+// doesn't fit". Height and font size are two independent things the user
+// wants to control, so they are now two independent inputs: the window rect
+// stays the drag target, and the font size comes from its own preference
+// (gal_hook_text_font_size -> Style::font_size). At the authored default
+// height the old formula evaluated to exactly 1.0, so a user who never
+// dragged the overlay sees pixel-identical text.
 // Control row slots, in draw / hit-test order: previous, play-pause, next,
 // lock, close. The lock button (slot 3) is the TODO-136 addition; both Render()
 // and ControlActionAt() derive their geometry from this single count so the
@@ -818,15 +825,16 @@ void FloatingLyricWindow::Render() {
                                         brush.GetAddressOf());
   render_target_->FillRoundedRectangle(bg_rect, brush.Get());
 
-  // Text format / layout. The authored font size assumes the default bar
-  // height; the live font scales with strip_height_dip_ so dragging the resize
-  // grip larger enlarges the lyric text too.
+  // Text format / layout. The audiobook lyric strip keeps its historical
+  // behaviour: its authored font size assumes the default bar height and the
+  // live font scales with strip_height_dip_, so dragging the resize grip larger
+  // enlarges the lyric text too. Hook mode does NOT (BUG-1095): its font size is
+  // an independent user preference, so dragging the overlay taller buys visible
+  // LINES instead of re-inflating the same two lines.
   if (text_format_ == nullptr) {
     const float height_scale =
-        hook_text_mode_
-            ? std::clamp(strip_height_dip_ / kHookTextBaseHeightForFontDip,
-                         kHookTextFontScaleMin, kHookTextFontScaleMax)
-            : strip_height_dip_ / kBaseStripHeightForFontDip;
+        hook_text_mode_ ? 1.0f
+                        : strip_height_dip_ / kBaseStripHeightForFontDip;
     const float scaled_font = static_cast<float>(style_.font_size) *
                               std::max(0.5f, height_scale);
     dwrite_factory_->CreateTextFormat(
@@ -864,6 +872,23 @@ void FloatingLyricWindow::Render() {
                                         text_layout_.GetAddressOf());
     }
     if (text_layout_ != nullptr) {
+      // BUG-1095: overflow still CLIPS (there is no scrolling in a layered
+      // Direct2D strip), but WHICH end gets clipped matters. With the paragraph
+      // vertically centred, an over-long caption loses its head AND its tail
+      // symmetrically — the user cannot even start reading. Top-align the hook
+      // caption the moment it no longer fits, so reading order is preserved and
+      // only the tail is lost; a caption that fits stays centred (unchanged
+      // pixels). Scoped to hook mode: the audiobook lyric strip wants its
+      // current line near the middle, so its centring is left alone.
+      if (hook_text_mode_) {
+        DWRITE_TEXT_METRICS metrics = {};
+        if (SUCCEEDED(text_layout_->GetMetrics(&metrics))) {
+          text_layout_->SetParagraphAlignment(
+              metrics.height > text_rect_.height
+                  ? DWRITE_PARAGRAPH_ALIGNMENT_NEAR
+                  : DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        }
+      }
       // BUG-1070: the lyric / hook-text body is vertically centred
       // (DWRITE_PARAGRAPH_ALIGNMENT_CENTER) inside a layout box whose top edge
       // is text_rect_.top == controls_h, i.e. just below the hover control band

@@ -766,6 +766,13 @@ void main() {
           'AppModel builds the FloatingLyricStyle data object (overlay font '
               'size is user content passed to the platform overlay), not an '
               'ordinary page-chrome TextStyle.',
+      'lib/src/lookup/gal_hook_text_overlay_controller.dart':
+          'BUG-1095: the fontSize: hits are named arguments of the '
+              'GalHookTextOverlayChannel MethodChannel wrapper (the caption '
+              'size handed to the native Win32 overlay window), not a Flutter '
+              'TextStyle — this controller renders no widgets at all. Same '
+              'reviewed exception class as the allowlisted AppModel '
+              'FloatingLyricStyle payload.',
       'lib/src/media/video/video_subtitle_overlay.dart':
           'Video subtitle overlay renders caption content (fixed '
               'white-on-black caption radius/size), not ordinary page chrome.',

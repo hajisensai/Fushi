@@ -1210,6 +1210,36 @@ void GlobalLookupWindow::ConfigureWebView() {
     return;
   }
 
+  // BUG-1097 — turn off the WebView2 status bar (the link-target preview).
+  //
+  // Yomitan structured content writes dictionary-internal links straight into
+  // href (assets/popup/popup.js: element.setAttribute('href', node.href)), so
+  // hovering a glossary cross-reference makes WebView2 paint
+  // "https://hibiki.popup/popup.html?query=…&wildcards=off" in the bottom-left
+  // corner of ITS OWN surface. The overlay host is a topmost frameless window
+  // stretched over the whole cascade bounding box, so that strip reads to the
+  // user as a stray URL in the bottom-left of the app. The href itself must
+  // stay (the click handler needs it, and preventDefault only cancels the
+  // click — it can never cancel the hover preview), so the fix is to disable
+  // the preview surface.
+  //
+  // put_IsStatusBarEnabled lives on the BASE ICoreWebView2Settings, so no
+  // version QI is needed. ConfigureWebView() is the single funnel for both
+  // creation paths (composition + windowed) and for the BUG-693 self-heal
+  // rebuild, so this one call covers every surface this window ever owns.
+  wil::com_ptr<ICoreWebView2Settings> settings;
+  HRESULT status_bar_hr = webview_->get_Settings(&settings);
+  if (SUCCEEDED(status_bar_hr) && settings != nullptr) {
+    status_bar_hr = settings->put_IsStatusBarEnabled(FALSE);
+  } else if (SUCCEEDED(status_bar_hr)) {
+    status_bar_hr = E_POINTER;  // get_Settings said OK but handed back null.
+  }
+  if (FAILED(status_bar_hr)) {
+    // Never swallow it: a failure here means the stray URL is back, and we do
+    // not want to re-investigate that from zero.
+    ReportOverlayError("put_IsStatusBarEnabled(FALSE) failed", status_bar_hr);
+  }
+
   // Inject the bridge adapter at document start so popup.js's
   // window.flutter_inappwebview.callHandler maps to chrome.webview.postMessage.
   std::wstring adapter = LoadAdapterScript();

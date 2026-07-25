@@ -2631,5 +2631,8 @@
   "yomitan_port_kill_confirm_message": "The port is currently used by: $process",
   "yomitan_port_kill_self_instance": "This process is another running instance of this app.",
   "yomitan_port_kill_confirm": "End process",
-  "yomitan_port_kill_protected": "$process is a critical system process — Hibiki will not end it. Change the port instead."
+  "yomitan_port_kill_protected": "$process is a critical system process — Hibiki will not end it. Change the port instead.",
+  "gal_hook_text_font_size": "Galgame caption font size",
+  "gal_hook_text_font_size_hint": "Drag the overlay's corner to resize the window; the caption size is set here.",
+  "settings_section_gal_hook_overlay": "Galgame caption overlay"
 }

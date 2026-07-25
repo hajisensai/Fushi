@@ -94,5 +94,47 @@ void main() {
       final res = await WindowCaptureChannel.captureWindow(1);
       expect(res.ok, false);
     });
+
+    // BUG-1096：native 的成功路径诊断（WGC 光标抑制是否真的生效 / 捕获目标是否被从
+    // Magpie 缩放窗重定向）。它与 error 正交——有诊断不代表这一帧失败了。
+    test('diagnostics 与 error 正交：带诊断的成功结果仍然是 ok', () async {
+      final Uint8List png = Uint8List.fromList([0x89, 0x50, 0x4E, 0x47]);
+      messenger.setMockMethodCallHandler(channel, (MethodCall call) async {
+        return <Object?, Object?>{
+          'pngBytes': png,
+          'diagnostics': 'capture target redirected: Magpie scaling window -> '
+              'source window (Magpie.SrcHWND)',
+        };
+      });
+      final res = await WindowCaptureChannel.captureWindow(1);
+      expect(res.ok, true);
+      expect(res.error, isNull);
+      expect(res.diagnostics, contains('Magpie.SrcHWND'));
+    });
+
+    test('失败结果也能带诊断（光标抑制未生效这类事实不因失败而丢）', () async {
+      messenger.setMockMethodCallHandler(channel, (MethodCall call) async {
+        return <Object?, Object?>{
+          'error': 'capture timed out',
+          'diagnostics': 'IGraphicsCaptureSession2 unavailable (needs Windows '
+              '10 build 19041+); WGC cursor NOT suppressed hr=0x80004002',
+        };
+      });
+      final res = await WindowCaptureChannel.captureWindow(1);
+      expect(res.ok, false);
+      expect(res.error, 'capture timed out');
+      expect(res.diagnostics, contains('cursor NOT suppressed'));
+    });
+
+    test('native 不带 diagnostics 时为 null（无话可说 = 一切如预期）', () async {
+      messenger.setMockMethodCallHandler(channel, (MethodCall call) async {
+        return <Object?, Object?>{
+          'pngBytes': Uint8List.fromList([1, 2, 3, 4]),
+        };
+      });
+      final res = await WindowCaptureChannel.captureWindow(1);
+      expect(res.ok, true);
+      expect(res.diagnostics, isNull);
+    });
   });
 }

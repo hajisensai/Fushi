@@ -73,6 +73,38 @@ HRESULT GetActivationFactory(const wchar_t* class_name, I** out) {
                                 reinterpret_cast<void**>(out));
 }
 
+// BUG-1096：把一次「成功但值得记录」的事实追加进 diagnostics（多条以 "; " 相连）。
+// [hr] 为 S_OK 时不附 HRESULT（纯陈述），否则附十六进制码。
+void AppendDiagnostic(WindowCaptureResult* out, const char* note, HRESULT hr) {
+  if (out == nullptr || note == nullptr) {
+    return;
+  }
+  std::string line = note;
+  if (hr != S_OK) {
+    char hr_buf[16];
+    _snprintf_s(hr_buf, sizeof(hr_buf), _TRUNCATE, "0x%08lX",
+                static_cast<unsigned long>(hr));
+    line += " hr=";
+    line += hr_buf;
+  }
+  if (!out->diagnostics.empty()) {
+    out->diagnostics += "; ";
+  }
+  out->diagnostics += line;
+}
+
+// 读窗口标题（无标题返回空串）。
+std::wstring ReadWindowTitle(HWND hwnd) {
+  const int len = GetWindowTextLengthW(hwnd);
+  if (len <= 0) {
+    return std::wstring();
+  }
+  std::wstring title(static_cast<size_t>(len) + 1, L'\0');
+  const int got = GetWindowTextW(hwnd, title.data(), len + 1);
+  title.resize(got > 0 ? static_cast<size_t>(got) : 0);
+  return title;
+}
+
 struct EnumContext {
   HWND self;
   std::vector<ExternalWindow>* out;
@@ -95,21 +127,32 @@ BOOL CALLBACK EnumProc(HWND hwnd, LPARAM lparam) {
   if (ex_style & WS_EX_TOOLWINDOW) {
     return TRUE;
   }
-  const int len = GetWindowTextLengthW(hwnd);
-  if (len <= 0) {
-    return TRUE;
-  }
-  std::wstring title(static_cast<size_t>(len) + 1, L'\0');
-  const int got = GetWindowTextW(hwnd, title.data(), len + 1);
-  title.resize(got > 0 ? static_cast<size_t>(got) : 0);
+  std::wstring title = ReadWindowTitle(hwnd);
   if (title.empty()) {
     return TRUE;
   }
+  // BUG-1096：Magpie 缩放窗口在这里就换成它正在缩放的**源窗口**——否则用户选中的
+  // 是「游戏画面 + Magpie 补画的第二个光标」那一层，PID 也是 Magpie.exe 而不是游戏
+  // （voice hook 的注入目标同样会错）。拿不到属性时保持原窗口不变。
+  HWND target = hwnd;
+  if (const HWND source = ResolveScalingSourceWindow(hwnd)) {
+    target = source;
+    std::wstring source_title = ReadWindowTitle(source);
+    if (!source_title.empty()) {
+      title = std::move(source_title);
+    }
+  }
+  // 重定向后可能与单独枚举到的源窗口重合（Z 序谁先到都可能），按 hwnd 去重。
+  for (const ExternalWindow& existing : *ctx->out) {
+    if (existing.hwnd == target) {
+      return TRUE;
+    }
+  }
   ExternalWindow w;
-  w.hwnd = hwnd;
+  w.hwnd = target;
   w.title = WideToUtf8(title);
   // 所属进程 PID（供 galgame 引擎级 voice hook 注入目标；纯读，不改窗口）。
-  GetWindowThreadProcessId(hwnd, &w.pid);
+  GetWindowThreadProcessId(target, &w.pid);
   ctx->out->push_back(std::move(w));
   return TRUE;
 }
@@ -204,6 +247,25 @@ ComPtr<ID3D11Device> CreateD3DDevice() {
 }
 
 }  // namespace
+
+// BUG-1096：Magpie 缩放窗 -> 源窗口。判定契约是**窗口属性** `Magpie.SrcHWND`
+// （Magpie 在缩放窗上 SetProp 的公开标记），不是类名——类名里的 GUID 属于实现细节，
+// 属性名才是跨版本稳定的那一条。属性缺失 / 指向自身 / 句柄已失效都返回 nullptr，
+// 调用方原样保留传入窗口（Never break：没装 Magpie 的用户走的路径与以前逐字相同）。
+HWND ResolveScalingSourceWindow(HWND hwnd) {
+  if (hwnd == nullptr || !IsWindow(hwnd)) {
+    return nullptr;
+  }
+  const HANDLE prop = GetPropW(hwnd, L"Magpie.SrcHWND");
+  if (prop == nullptr) {
+    return nullptr;
+  }
+  HWND source = static_cast<HWND>(prop);
+  if (source == hwnd || !IsWindow(source)) {
+    return nullptr;
+  }
+  return source;
+}
 
 std::vector<ExternalWindow> EnumerateTopLevelWindows(HWND self) {
   std::vector<ExternalWindow> out;
@@ -307,10 +369,24 @@ void CaptureCore(HWND hwnd, WindowCaptureResult* out) {
     out->error = "capture session create failed";
     return;
   }
-  // 尽力关闭鼠标捕获与黄框（旧系统无对应接口时静默跳过，不影响捕获）。
+  // BUG-1096：关闭 WGC 合成光标。IGraphicsCaptureSession2 需要 Win10 build 19041+，
+  // 以前 QI 的失败和 put_ 的 HRESULT **两处都被静默丢掉**——「用户机器上到底关掉了
+  // 没有」是个彻底的盲区。现在两条路径都写进 diagnostics（经 channel 回到 Dart 日志），
+  // 成不成立变成可证的事实，而不是靠推断。注意：游戏**自绘**的光标是画面内容本身，
+  // 任何捕获 API 都剥不掉，这里只负责不再由 WGC 额外合成一个。
   ComPtr<WGC::IGraphicsCaptureSession2> session2;
-  if (SUCCEEDED(session.As(&session2))) {
-    session2->put_IsCursorCaptureEnabled(false);
+  const HRESULT cursor_qi = session.As(&session2);
+  if (SUCCEEDED(cursor_qi) && session2) {
+    const HRESULT cursor_hr = session2->put_IsCursorCaptureEnabled(false);
+    if (FAILED(cursor_hr)) {
+      AppendDiagnostic(out, "put_IsCursorCaptureEnabled(false) failed",
+                       cursor_hr);
+    }
+  } else {
+    AppendDiagnostic(out,
+                     "IGraphicsCaptureSession2 unavailable (needs Windows 10 "
+                     "build 19041+); WGC cursor NOT suppressed",
+                     SUCCEEDED(cursor_qi) ? E_POINTER : cursor_qi);
   }
   ComPtr<WGC::IGraphicsCaptureSession3> session3;
   if (SUCCEEDED(session.As(&session3))) {
@@ -427,6 +503,15 @@ WindowCaptureResult CaptureWindowPng(HWND hwnd) {
   if (hwnd == nullptr || !IsWindow(hwnd)) {
     out.error = "window handle invalid";
     return out;
+  }
+  // BUG-1096：捕获绑定前重定向。Dart 侧可能拿的是**上一次枚举缓存**的句柄，或者
+  // Magpie 是在选窗之后才起来的，所以枚举侧重定向不够，绑定这一步必须再过一次。
+  if (const HWND source = ResolveScalingSourceWindow(hwnd)) {
+    AppendDiagnostic(&out,
+                     "capture target redirected: Magpie scaling window -> "
+                     "source window (Magpie.SrcHWND)",
+                     S_OK);
+    hwnd = source;
   }
   const HRESULT ro = RoInitialize(RO_INIT_MULTITHREADED);
   // RPC_E_CHANGED_MODE = 本线程已按其它套间初始化；照常用、但不由我们反初始化。

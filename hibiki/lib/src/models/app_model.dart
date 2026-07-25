@@ -5166,6 +5166,11 @@ class AppModel with ChangeNotifier {
   Future<void> setFloatingLyricClickLookup(bool value) =>
       prefsRepo.setFloatingLyricClickLookup(value);
 
+  // BUG-1095: galgame Hook 台词浮窗字号（逻辑 px），与窗高解耦后的唯一真值。
+  double get galHookTextFontSize => prefsRepo.galHookTextFontSize;
+  Future<void> setGalHookTextFontSize(double value) =>
+      prefsRepo.setGalHookTextFontSize(value);
+
   // TODO-370: 悬浮字幕透明度（按钮底色 / 文字），0..100 百分比，100=保持现观感。
   int get floatingLyricButtonBgOpacity =>
       prefsRepo.floatingLyricButtonBgOpacity;

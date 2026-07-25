@@ -10,6 +10,7 @@ import 'package:hibiki/src/utils/misc/desktop_audio_playback.dart';
 import 'package:hibiki/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/home_game_page.dart';
 import 'package:hibiki/src/pages/implementations/home_page.dart';
 import 'package:hibiki/src/platform/gal_hook_text_overlay_channel.dart';
@@ -59,6 +60,11 @@ class GalHookTextOverlayController extends ChangeNotifier {
   static const String _opacityPreferenceKey = 'gal_hook_text_window_bg_opacity';
   static const double _defaultOpacity = 0.88;
 
+  /// BUG-1095：台词字号的持久化 key。与 [_rectPreferenceKey]（窗口几何）严格分开——
+  /// 这两件事以前被 native 的「字号 = 基准 × 窗高比例」耦成一件，正是「放不下拖高
+  /// 还是放不下」的根因。范围/默认值的唯一真值在 `PreferencesRepository`。
+  static const String _fontSizePreferenceKey = 'gal_hook_text_font_size';
+
   final GalHookSessionController _session;
   final GalHookMiningCoordinator _miningCoordinator;
   final GalHookPreferenceReader? _preferenceReader;
@@ -85,6 +91,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
   String? _displayedLineId;
   double _opacity = _defaultOpacity;
   double _lastNonZeroOpacity = _defaultOpacity;
+  double _fontSize = kGalHookTextFontSize;
   GalHookTextWindowRect? _savedRect;
 
   static bool get isSupported =>
@@ -98,6 +105,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
   String? get displayedLineId => _displayedLineId;
   bool get isReplaying => _replaying;
   bool get isRecapturing => _session.isRecapturing;
+
+  /// BUG-1095：当前台词字号（逻辑 px），与窗口高度无关。
+  double get fontSize => _fontSize;
 
   /// 试听兜底复位上限：资源原件（OGG/WAV）时长未知时按它把按钮高亮收回，
   /// 与实时台词列表的行内试听同一上限。
@@ -149,6 +159,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
         storedOpacity is num ? storedOpacity.toDouble() : _defaultOpacity;
     _opacity = stored.clamp(0.0, 1.0);
     if (_opacity > 0) _lastNonZeroOpacity = _opacity;
+    _fontSize = _readFontSizePreference();
     final Object? storedRect = read(_rectPreferenceKey, '');
     final String encoded = storedRect is String ? storedRect : '';
     if (encoded.isEmpty) return;
@@ -162,6 +173,22 @@ class GalHookTextOverlayController extends ChangeNotifier {
     } catch (_) {
       _savedRect = null;
     }
+  }
+
+  /// BUG-1095：读台词字号偏好（逻辑 px）。范围钳位与默认值的唯一真值在
+  /// [PreferencesRepository]；这里只负责取值并按同一区间收敛脏数据。
+  double _readFontSizePreference() {
+    const double fallback = PreferencesRepository.galHookTextFontSizeDefault;
+    final AppModel? model = _appModel;
+    final Object? stored = _preferenceReader != null
+        ? _preferenceReader(_fontSizePreferenceKey, defaultValue: fallback)
+        : model?.prefsRepo
+            .getPref(_fontSizePreferenceKey, defaultValue: fallback);
+    final double value = stored is num ? stored.toDouble() : fallback;
+    return value.clamp(
+      PreferencesRepository.galHookTextFontSizeMin,
+      PreferencesRepository.galHookTextFontSizeMax,
+    );
   }
 
   void _scheduleSync() {
@@ -234,6 +261,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       );
       _visible = await GalHookTextOverlayChannel.show(
         rect: _savedRect,
+        fontSize: _fontSize,
         bgColor: _backgroundColor,
         following: _following,
         passThrough: _passThrough,
@@ -311,7 +339,30 @@ class GalHookTextOverlayController extends ChangeNotifier {
         await model.prefsRepo.setPref(_opacityPreferenceKey, _opacity);
       }
     }
-    await GalHookTextOverlayChannel.updateStyle(bgColor: _backgroundColor);
+    await GalHookTextOverlayChannel.updateStyle(
+      bgColor: _backgroundColor,
+      fontSize: _fontSize,
+    );
+    notifyListeners();
+  }
+
+  /// BUG-1095：把字号偏好重新读进来并立刻推给 native 浮窗。
+  ///
+  /// 设置页写偏好（`AppModel.setGalHookTextFontSize`）后调用本方法，与悬浮字幕的
+  /// 「setFloatingLyricFontSize + applyFloatingLyricStyle」同款纪律：漏掉这一步字号
+  /// 只落了盘，浮窗要等下一次改透明度才顺带刷新。窗口几何完全不动——这正是修复的
+  /// 要点：拖窗只改窗口大小（换来更多可见行），字号只由这条偏好决定。
+  Future<void> applyFontSizeFromPreferences() async {
+    // 未 start（非 Windows / 测试替身 / 初始化尚未走到）时没有偏好源也没有 native
+    // 窗口可推；start() 自己会读一次最新值，这里静默返回即可。
+    if (!_started) return;
+    final double next = _readFontSizePreference();
+    if (next == _fontSize) return;
+    _fontSize = next;
+    await GalHookTextOverlayChannel.updateStyle(
+      bgColor: _backgroundColor,
+      fontSize: next,
+    );
     notifyListeners();
   }
 

@@ -27,10 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1060 条。点号进各自文件。
+> 共 1063 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1097](bugs/BUG-1097-lookup-overlay-webview2-status-bar-url.md) | ✅ | ✅ | 查词浮窗左下角冒出 `https://hibiki.popup/popup.html?query=…&wildcards=off` |
+| [BUG-1096](bugs/BUG-1096-window-capture-two-mouse-cursors.md) | ✅ | ✅ | 画面捕获出现两个鼠标指针 |
+| [BUG-1095](bugs/BUG-1095-gal-overlay-font-size-coupled-to-window-height.md) | ✅ | ✅ | galgame 台词浮窗拖动窗口时字号跟着变，「放不下」怎么拖都放不下 |
 | [BUG-1093](bugs/BUG-1093-first-lookup-audio-missing.md) | ✅ | ✅ | 第一次查词音频容易没有：WebView autoplay 拦截+兜底失效 |
 | [BUG-1092](bugs/BUG-1092-gal-locale-resume-skipped.md) | 🚧 | 🚧 | Locale Emulator 启动的游戏永久停在挂起态：窗口永不出现，injector 却报 OK hooked |
 | [BUG-1091](bugs/BUG-1091-gal-injector-diagnostics-mojibake.md) | ✅ | ✅ | injector 诊断按系统代码页解码：会话事件乱码且中文失败分类永久失配 |
