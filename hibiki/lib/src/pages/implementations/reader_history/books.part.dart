@@ -217,6 +217,19 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
             await _relocateSrtBookAudio(book);
           },
         ),
+      // 单卡「加入合集」：与 EPUB 卡菜单对称，纯字幕书（bookKey 为空）也可加入；
+      // entryKey 编码与 shelfSelectionToEntry 对 'srt_<uid>' 选择键的解码一致（= uid）。
+      // 合集详情页成员卡语境（已注入「移出合集」）不显示——同一条目在详情页语境下
+      // 再加合集没有意义。
+      if (removeFromCollection == null)
+        DialogListAction(
+          label: t.add_to_collection,
+          icon: Icons.collections_bookmark_outlined,
+          onPressed: () async {
+            Navigator.pop(dialogContext);
+            await _addSrtToCollection(book);
+          },
+        ),
       if (bookKey.isNotEmpty) ...[
         // 与 EPUB 卡菜单对称：手动「标记为已读完 / 取消」。有声书完成状态与 EPUB 共用
         // 同一 EpubBooks.completedAt（按配对 bookKey），故复用同一 [_toggleBookCompleted]。
@@ -232,8 +245,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         // TODO-1191：与 EPUB 卡菜单对称补「查看插画」。仅在该 SRT 书有对应
         // EpubBooks 行（[_epubBackedBookKeys] 命中 = extractDir 存在）时展示，
         // 复用 EPUB 侧同一 [_openIllustrations]（自行 Navigator.pop + 打开
-        // [IllustrationsViewerPage]，无插图时页面友好占位）。「选择封面图片」照旧
-        // 保留——EPUB 卡不能选封面、SRT 卡可选是合理差异。
+        // [IllustrationsViewerPage]，无插图时页面友好占位）。菜单里的「选择封面
+        // 图片」动作已移除——选封面统一走「编辑信息」弹窗的封面字段（EPUB / SRT 皆可）。
         if (_epubBackedBookKeys.contains(bookKey))
           DialogQuickAction(
             label: t.view_illustrations,
@@ -274,6 +287,25 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
           ),
       ],
     ];
+  }
+
+  /// 单卡「加入合集」（SRT/有声书卡菜单入口）：弹共享的合集选择弹窗（新建合集
+  /// 默认名 = 该书标题剥卷号，与批量档1同款推导）；加入成功后按
+  /// [_combineAddToExisting] 同款刷新（重取分组映射 + 重绘）。
+  Future<void> _addSrtToCollection(SrtBook book) async {
+    final bool added = await showAddToCollectionDialog(
+      context: context,
+      database: appModel.database,
+      mediaType: 'srt',
+      entryKey: book.uid,
+      defaultNewName: deriveSeriesDefaultName(
+        <String>[book.title],
+        fallback: t.series_default_name,
+      ),
+    );
+    if (!added || !mounted) return;
+    _shelfMapsFuture = _loadShelfMaps();
+    _rebuild(() {});
   }
 
   Future<void> _showSrtBookDialog(SrtBook book,

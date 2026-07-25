@@ -101,6 +101,40 @@ void main() {
     );
   });
 
+  test('单卡长按菜单含「加入合集」入口，合集详情页语境隐藏', () {
+    final String epubActions = _sectionSource(
+      src,
+      'List<DialogAction> extraActions(MediaItem item) {',
+      '  String? _parseBookKey(String mediaIdentifier) =>',
+    );
+    final String srtActions = _sectionSource(
+      src,
+      'List<DialogAction> _srtExtraActions(',
+      '  Future<void> _showSrtBookDialog(',
+    );
+    // EPUB 卡：有入口，entryKey 编码与批量三档一致（epub → bookKey），
+    // 合集详情页成员卡语境（inCollectionDetail）隐藏。
+    expect(epubActions, contains('t.add_to_collection'));
+    expect(epubActions, contains("mediaType: 'epub'"));
+    expect(epubActions, contains('entryKey: bookKey'));
+    expect(epubActions, contains('if (!inCollectionDetail)'));
+    // SRT/有声书卡：有入口，entryKey 编码一致（srt → uid），详情页注入
+    // 「移出合集」时隐藏（removeFromCollection 非空）。
+    expect(srtActions, contains('t.add_to_collection'));
+    expect(srtActions, contains("mediaType: 'srt'"));
+    expect(srtActions, contains('entryKey: book.uid'));
+    expect(srtActions, contains('if (removeFromCollection == null)'));
+    // 合集详情页渲染路径必须真的走 inCollectionDetail: true（隐藏加入入口）。
+    expect(
+      src,
+      contains('_epubExtraActions(it, inCollectionDetail: true)'),
+      reason: '详情页成员卡菜单必须经 inCollectionDetail 隐藏「加入合集」。',
+    );
+    // 两侧落库都走共享单卡弹窗（与批量三档同一 addToCollection DAO 路径）。
+    expect(epubActions, contains('showAddToCollectionDialog'));
+    expect(srtActions, contains('showAddToCollectionDialog'));
+  });
+
   test('SRT 卡长按菜单对称补「查看插画」并 EPUB-backed 门控（TODO-1191）', () {
     final String srtActions = _sectionSource(
       src,

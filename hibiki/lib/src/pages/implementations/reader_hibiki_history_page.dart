@@ -33,6 +33,7 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
+import 'package:hibiki/src/media/collections/add_to_collection_dialog.dart';
 import 'package:hibiki/src/media/collections/batch_combine.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/shelf_sort.dart';
@@ -1456,6 +1457,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             compactDatabase: false,
           );
           anyVideo = true;
+        case 'game':
+          // 游戏成员**刻意跳过**：game 维度只支持解散合集不删本体——游戏本体是
+          // 用户安装目录（exe 及其资源），绝不能从合集删除路径连带删除；从库移除
+          // 走游戏库页自己的「移除」。合集引用行随后由 deleteMediaCollection
+          // cascade 清理，游戏回到游戏库散卡。
+          break;
       }
     }
     if (anyVideo) {
@@ -1502,6 +1509,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       }
       return null;
     }
+    // 其它 mediaType（'video' / 'game' / 未来新增）：本页不认识 → 返 null 由详情页
+    // 跳过，不当成 epub 渲染。混合合集的 game 成员在游戏库页打开同一合集时渲染。
     return null;
   }
 
@@ -1667,7 +1676,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             extraActions: removeFromCollection == null
                 ? extraActions
                 : (MediaItem it) => <DialogAction>[
-                      ...extraActions(it),
+                      // 合集详情页成员卡语境：隐藏「加入合集」（同一条目在详情页
+                      // 语境下再加合集没有意义），只补「移出合集」。
+                      ..._epubExtraActions(it, inCollectionDetail: true),
                       DialogListAction(
                         label: t.collection_remove_member,
                         icon: Icons.remove_circle_outline,
@@ -1692,6 +1703,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   List<DialogAction> extraActions(MediaItem item) {
+    return _epubExtraActions(item);
+  }
+
+  /// EPUB 书卡长按菜单动作真身。[inCollectionDetail] = 合集详情页成员卡语境
+  /// （菜单已注入「移出合集」）——该语境下隐藏「加入合集」，同一条目在详情页
+  /// 语境下再加合集没有意义。
+  List<DialogAction> _epubExtraActions(MediaItem item,
+      {bool inCollectionDetail = false}) {
     final String? bookKey = _parseBookKey(item.mediaIdentifier);
     if (bookKey == null) return const [];
     return <DialogAction>[
@@ -1718,6 +1737,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             : Icons.check_circle_outline,
         onPressed: () => _toggleBookCompleted(bookKey),
       ),
+      // 单卡「加入合集」：与批量三档共用同一 DAO 路径；entryKey 编码与
+      // shelfSelectionToEntry 对 epub 选择键的解码一致（= bookKey）。
+      if (!inCollectionDetail)
+        DialogListAction(
+          label: t.add_to_collection,
+          icon: Icons.collections_bookmark_outlined,
+          onPressed: () => _addEpubToCollection(item, bookKey),
+        ),
       DialogListAction(
         label: t.profile_book_profile,
         icon: Icons.account_circle_outlined,
@@ -1739,6 +1766,26 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           onPressed: () => _toggleFloatingLyricFromShelf(bookKey),
         ),
     ];
+  }
+
+  /// 单卡「加入合集」（EPUB 卡菜单入口）：先收起长按菜单，再弹共享的合集选择
+  /// 弹窗（新建合集默认名 = 该书标题剥卷号，与批量档1同款推导）；加入成功后按
+  /// [_combineAddToExisting] 同款刷新（重取分组映射 + 重绘）。
+  Future<void> _addEpubToCollection(MediaItem item, String bookKey) async {
+    Navigator.pop(context);
+    final bool added = await showAddToCollectionDialog(
+      context: context,
+      database: appModel.database,
+      mediaType: 'epub',
+      entryKey: bookKey,
+      defaultNewName: deriveSeriesDefaultName(
+        <String>[item.title],
+        fallback: t.series_default_name,
+      ),
+    );
+    if (!added || !mounted) return;
+    _shelfMapsFuture = _loadShelfMaps();
+    _rebuild(() {});
   }
 
   /// 手动切换书 / 有声书「已读完」状态：写 EpubBooks.completedAt（单一真值，按
