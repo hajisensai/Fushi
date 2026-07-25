@@ -146,4 +146,33 @@ void main() {
       expect(index.search('～！？'), isEmpty);
     });
   });
+
+  group('借来别名的联动/CM 降级（BUG-1080）', () {
+    test('主标题直接命中的正片，排在只靠借来别名命中的联动 CM 之前', () {
+      // 复刻真实 bug：Suntory「天然水」联动 CM 把「君の名は / Kimi no Na wa」塞进
+      // synonyms，于是它对查询的 title+synonyms 最大相似度与正片相同；但 CM 自己的主
+      // 标题「Suntory…」与查询无关。tiebreaker（主标题相似度）应让正片压过 CM。
+      final OfflineIndex idx = OfflineIndex(const <OfflineAnimeRecord>[
+        OfflineAnimeRecord(
+          title: 'Suntory Minami Alps no Tennensui',
+          synonyms: <String>['Kimi no Na wa', '君の名は'],
+          type: ScrapeEntryType.special,
+          picture: 'https://example.invalid/cm.jpg',
+          sourceId: 'anidb/cm',
+        ),
+        OfflineAnimeRecord(
+          title: 'Kimi no Na wa.',
+          synonyms: <String>['你的名字。', 'Your Name.'],
+          type: ScrapeEntryType.movie,
+          picture: 'https://example.invalid/movie.jpg',
+          sourceId: 'myanimelist.net/anime/32281',
+        ),
+      ]);
+      // 用户实际输入（含 "-your name"），两者 best 相似度打平在 0.8。
+      final List<ScrapeCandidate> results =
+          idx.search('Kimi no Na wa. -your name');
+      expect(results.first.title, 'Kimi no Na wa.',
+          reason: '正片主标题直接命中，应压过靠借来别名蹭分的联动 CM');
+    });
+  });
 }
