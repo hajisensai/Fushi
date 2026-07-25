@@ -15,7 +15,7 @@
   ② **`put_IsCursorCaptureEnabled(false)` 在用户机器上没生效**：`IGraphicsCaptureSession2`
   需要 Win10 build 19041+，而 `window_capture.cpp:310-318`（修复前）的 QI 结果与 put_ 的
   HRESULT **两处都被静默吞掉、不写任何日志**，是彻底的盲区——「到底关掉没有」不可证。
-- **[x] ① 已修复**（提交 fceb21443）— 两条成因都覆盖：
+- **[x] ① 已修复**（提交 64e0e8211）— 两条成因都覆盖：
   - **成因①（捕获目标）**：新增 `hibiki::ResolveScalingSourceWindow()`
     （`hibiki/windows/runner/window_capture.cpp` + `.h`），按窗口属性 `Magpie.SrcHWND`
     （**不按类名**——类名里的 GUID 是实现细节，属性名才是稳定契约）把缩放窗解析成源窗口。

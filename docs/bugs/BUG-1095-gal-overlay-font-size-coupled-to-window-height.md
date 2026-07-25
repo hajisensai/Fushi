@@ -17,7 +17,7 @@
     / `kHookTextFontScaleMax` 三个常量。
   - 新增独立偏好 `gal_hook_text_font_size`（`hibiki/lib/src/models/preferences_repository.dart`
     `galHookTextFontSize`，范围 12..72，默认 30）+ `AppModel` 委托 + 设置项
-    `card_creation.gal_hook_text_font_size`（`hibiki/lib/src/settings/settings_schema_card_creation.dart`，
+    `lookup.gal_hook_text_font_size`（`hibiki/lib/src/settings/settings_schema_lookup.dart`，
     仅 Windows 可见）。
   - `GalHookTextOverlayChannel.show/updateStyle` 传真实 `fontSize`；
     `GalHookTextOverlayController.applyFontSizeFromPreferences()` 在设置页改完立刻推 native。
@@ -27,7 +27,7 @@
     `gal_hook_text_window_rect` 语义未变，不需要迁移。
   - 顺带：hook 模式下台词一旦装不下就从垂直居中改成**顶端对齐**（`floating_lyric_window.cpp:874-890`），
     保住阅读起点，只丢句尾；装得下时仍居中（像素不变）。
-  - 提交：fceb21443
+  - 提交：64e0e8211
 - **[x] ② 已加自动化测试** —
   - 源码守卫 `hibiki/test/build/gal_overlay_font_decoupled_guard_test.dart`：断言 hook 分支不再
     出现按窗高缩放的常量/表达式、恒为 1.0f，且溢出顶端对齐存在。
