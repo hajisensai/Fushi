@@ -212,7 +212,9 @@ class _MediaItemEditDialogPageState
       // never re-fires it — refreshTab() alone re-renders stale cached
       // MediaItems and the edit looks like it "did not save". Invalidate the
       // book providers so the shelf re-reads the DB rows.
-      if (mediaSource is ReaderHibikiSource) {
+      // 覆盖全部书族源（EPUB / 漫画 / PDF 都 extends ReaderMediaSource）：漫画作者编辑
+      // （MangaHibikiSource，非 ReaderHibikiSource）此前落在此条件外，改完书架不刷新。
+      if (mediaSource is ReaderMediaSource) {
         ref.invalidate(hibikiBooksProvider);
         ref.invalidate(srtBooksProvider);
       }

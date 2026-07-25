@@ -97,4 +97,21 @@ class MangaHibikiSource extends ReaderMediaSource {
   BasePage buildHistoryPage({MediaItem? item}) {
     return const ReaderHibikiHistoryPage();
   }
+
+  /// 漫画是 `EpubBooks`（`format=='manga'`）的行，和 EPUB 共用可编辑的 `author` 列，
+  /// 因此同样开放作者编辑。此前 `MangaHibikiSource extends ReaderMediaSource` 未覆盖，
+  /// 沿用基类默认 `false`，导致漫画长按编辑里缺作者字段（EPUB 有）——补齐这条缺口。
+  @override
+  bool get supportsAuthorEdit => true;
+
+  /// 委托给 [ReaderHibikiSource]：作者写库逻辑（按 bookKey 写 `epubBooks.author`）与源
+  /// 实例无关（走 sharedDatabase + item.mediaIdentifier），漫画行的 bookKey 解析一致，
+  /// 直接复用同一条写入路径，不重复实现。
+  @override
+  Future<void> setAuthorFromMediaItem({
+    required MediaItem item,
+    required String? author,
+  }) =>
+      ReaderHibikiSource.instance
+          .setAuthorFromMediaItem(item: item, author: author);
 }
