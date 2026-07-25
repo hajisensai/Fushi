@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/utils/misc/local_audio_db.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:sqlite3/sqlite3.dart';
 
@@ -96,6 +97,9 @@ void main() {
   tearDown(() async {
     prefs.dispose();
     await db.close();
+    // 绑定库列表会后台补查询索引（LocalAudioDb.ensureIndexes，持 readWrite
+    // 句柄）；Windows 上删被打开的文件是 errno 32，删临时目录前先排空在途任务。
+    await LocalAudioDb.waitForPendingIndexing();
     if (storeDir.existsSync()) {
       storeDir.deleteSync(recursive: true);
     }

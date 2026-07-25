@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:sqlite3/sqlite3.dart';
@@ -77,44 +79,89 @@ class LocalAudioDb {
     }
   }
 
-  /// 以「用于查询」的方式打开 [dbPath]，并**尽力**把桌面路径缺失的两条索引补上
-  /// （根因修复：导入的 Yomitan Local Audio Server 库原本无索引，桌面 Dart 路径
-  /// 直接 `SELECT ... WHERE expression=?` 就是全表扫描——数十万行时单次查词几百 ms，
-  /// 正是「查词发音特别慢」的真因。Android 原生 `TtsChannelHandler` 早在
-  /// `setLocalAudioDb` 时后台建过同名索引；桌面此前完全没建）。
+  /// 两条查询索引的 DDL 单一真相源（只被 [ensureIndexes] 消费；查询路径
+  /// [queryMeta] / [extractBlob] 一律只读打开，**不得**再出现任何 DDL）。
+  static const List<String> _indexDdls = <String>[
+    'CREATE INDEX IF NOT EXISTS idx_entries_expr_read '
+        'ON entries(expression, reading)',
+    'CREATE INDEX IF NOT EXISTS idx_android_file_source '
+        'ON android(file, source)',
+  ];
+
+  /// 每个库路径**在途**的建索引任务（key = 调用方传入的解析后路径；整条数据流
+  /// —— `LocalAudioManager._configFor` → `TtsChannel.setLocalAudioDbs` →
+  /// 本类 —— 用的是同一份 `resolveInternalPath` 结果，字符串一致）。
+  /// 用途：① 同一路径重复绑定去重；② [waitForPendingIndexing] 让删除方在删
+  /// 库文件前等后台 readWrite 句柄释放（Windows 上删被打开的文件是 errno 32）。
+  static final Map<String, Future<void>> _pendingIndexing =
+      <String, Future<void>>{};
+
+  /// 等 [dbPath] 上在途的建索引连接结束（没有则立即完成）；[dbPath] 为 null 时
+  /// 等**全部**在途任务（测试 teardown 删临时目录前排空用）。永不抛。
+  static Future<void> waitForPendingIndexing([String? dbPath]) {
+    if (dbPath != null) {
+      return _pendingIndexing[dbPath] ?? Future<void>.value();
+    }
+    return Future.wait(_pendingIndexing.values.toList())
+        .then((List<void> _) {});
+  }
+
+  /// 绑定期一次性把 [dbPath] 缺失的两条查询索引补上（根因修复：导入的 Yomitan
+  /// Local Audio Server 库原本无索引，`SELECT ... WHERE expression=?` 是全表扫描
+  /// ——数十万行时单次查词几百 ms。Android 原生 `TtsChannelHandler` 早在
+  /// `setLocalAudioDb` 时后台线程建过同名索引；桌面对齐同一做法：
+  /// `TtsChannel.setLocalAudioDbs` 绑定库列表时对每个库 unawaited 跑一次本方法）。
   ///
-  /// 策略：优先读写打开建 `CREATE INDEX IF NOT EXISTS`（幂等——首次建、之后 sqlite
-  /// 查 sqlite_master 命中即秒返；索引持久化进**库文件**，故后续即便每次重新开-查-关、
-  /// 甚至别的 isolate（弹窗词典是独立 entry-point）查询也一律走索引，无需任何进程内
-  /// 连接池，天然规避 Windows 文件句柄锁 + 多 isolate 删除时序）。只读介质 / 无写权限
-  /// 时读写打开会抛 → 降级只读打开（不建索引，仍能查，只是慢；若该库曾被建过索引则
-  /// 依旧受益）。两条 DDL 各自独立 try：某表不存在（如只有 android 表的库）时另一条
-  /// 仍能建，互不牵连。调用方负责 `dispose()`——本方法不缓存连接。
-  static Database _openForQuery(String dbPath) {
-    Database db;
-    bool writable = true;
+  /// 索引持久化进**库文件**，故建一次后任何连接（含弹窗词典独立 isolate 的只读
+  /// 连接）都受益；查询路径因此可以永远 [OpenMode.readOnly] 打开，不再与并发
+  /// isolate 抢写锁。首次在大库上建索引可达数秒，DDL 在 [Isolate.run] 里跑，
+  /// 不阻塞调用方 isolate。两条 DDL 各自独立 try：某表不存在（如只有 android 表
+  /// 的库）时另一条仍能建，互不牵连。任何失败（只读介质 / 无写权限 / 被独占）
+  /// 记 [ErrorLogService] 后返回，不抛——建不了不致命，查询仍可跑（只是慢）。
+  static Future<void> ensureIndexes(String dbPath) {
+    if (dbPath.isEmpty || !File(dbPath).existsSync()) {
+      return Future<void>.value();
+    }
+    // 同一路径已有在途任务：复用（重复绑定去重），不再开第二条写连接。
+    final Future<void>? pending = _pendingIndexing[dbPath];
+    if (pending != null) return pending;
+    // 注册用显式 Completer 而非直接存 `_ensureIndexesImpl(..).whenComplete(..)`
+    // 的链式 future：后者在 flutter tester（TestWidgetsFlutterBinding）下实测
+    // 会丢失对外部监听者的完成通知（await 它的 waitForPendingIndexing 永不
+    // 返回），Completer 形式在同环境下稳定送达。语义完全等价。
+    final Completer<void> done = Completer<void>();
+    _pendingIndexing[dbPath] = done.future;
+    _ensureIndexesImpl(dbPath).whenComplete(() {
+      _pendingIndexing.remove(dbPath);
+      done.complete();
+    });
+    return done.future;
+  }
+
+  static Future<void> _ensureIndexesImpl(String dbPath) async {
     try {
-      db = sqlite3.open(dbPath, mode: OpenMode.readWrite);
-    } catch (_) {
-      // 只读介质 / 无写权限 / 被独占：降级只读，跳过建索引。
-      db = sqlite3.open(dbPath, mode: OpenMode.readOnly);
-      writable = false;
-    }
-    if (writable) {
-      for (final String ddl in <String>[
-        'CREATE INDEX IF NOT EXISTS idx_entries_expr_read '
-            'ON entries(expression, reading)',
-        'CREATE INDEX IF NOT EXISTS idx_android_file_source '
-            'ON android(file, source)',
-      ]) {
+      await Isolate.run(() {
+        final Database db = sqlite3.open(dbPath, mode: OpenMode.readWrite);
         try {
-          db.execute(ddl);
-        } catch (_) {
-          // 目标表不存在 / 库被占用等：建不了不致命，查询仍可跑（慢），不牵连另一条。
+          // 建索引的提交需要独占锁；并发查询 isolate 的只读连接正持
+          // shared 锁时会立刻 SQLITE_BUSY（默认无 busy handler）→ 被下面的
+          // per-DDL catch 吞掉＝索引永远建不出来。busy_timeout 让 sqlite 自己
+          // 等读者放锁（读者是毫秒级瞬态），这是 SQLite 标准并发机制。
+          db.execute('PRAGMA busy_timeout = 10000');
+          for (final String ddl in _indexDdls) {
+            try {
+              db.execute(ddl);
+            } catch (_) {
+              // 目标表不存在等：建不了不致命，不牵连另一条。
+            }
+          }
+        } finally {
+          db.dispose();
         }
-      }
+      });
+    } catch (e, stack) {
+      ErrorLogService.instance.log('LocalAudioDb.ensureIndexes', e, stack);
     }
-    return db;
   }
 
   /// Looks up the `(file, source)` for [expression] in [dbPath], preferring an
@@ -135,7 +182,13 @@ class LocalAudioDb {
     }
     Database? db;
     try {
-      db = _openForQuery(dbPath);
+      // 只读打开：索引由绑定期的 [ensureIndexes] 负责，查询路径零 DDL、零写锁
+      // ——与弹窗独立 isolate 并发查询绝不互相抢 readWrite 句柄（BUG 根因：
+      // 抢锁失败被 catch 吞成 null → 用户看到「暂无发音」）。busy_timeout：
+      // [ensureIndexes] 的写提交瞬间持独占锁，读者不等锁会 SQLITE_BUSY 被
+      // catch 吞成 null；让 sqlite 自己等写者放锁（提交是瞬态）。
+      db = sqlite3.open(dbPath, mode: OpenMode.readOnly);
+      db.execute('PRAGMA busy_timeout = 3000');
       // order 为空走快路径（LIMIT 1）；非空要取全部候选行再按序挑。
       final String limit = order.isEmpty ? ' LIMIT 1' : '';
       ResultSet rows = db.select(
@@ -197,7 +250,10 @@ class LocalAudioDb {
     if (dbPath.isEmpty || !File(dbPath).existsSync()) return null;
     Database? db;
     try {
-      db = _openForQuery(dbPath);
+      // 只读打开 + busy_timeout：同 [queryMeta]，索引由 [ensureIndexes] 在
+      // 绑定期负责，写提交瞬间的独占锁由 sqlite 自己等。
+      db = sqlite3.open(dbPath, mode: OpenMode.readOnly);
+      db.execute('PRAGMA busy_timeout = 3000');
       final ResultSet rows = db.select(
         'SELECT data FROM android WHERE file = ? AND source = ? LIMIT 1',
         <Object?>[file, source],

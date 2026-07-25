@@ -280,6 +280,10 @@ class LocalAudioManager {
   /// 删除一个本地库的主文件及其 -wal / -shm 旁文件。
   static Future<void> deleteFiles(String dbPath) async {
     if (dbPath.isEmpty) return;
+    // 绑定期的后台建索引（LocalAudioDb.ensureIndexes）可能还握着本库的
+    // readWrite 句柄；Windows 上删被打开的文件是 errno 32。先等它结束
+    // （没有在途任务时立即返回），删除与索引生命周期同步而非撞运气。
+    await LocalAudioDb.waitForPendingIndexing(dbPath);
     for (final String suffix in <String>['', '-wal', '-shm']) {
       final File f = File('$dbPath$suffix');
       if (await f.exists()) await f.delete();

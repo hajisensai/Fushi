@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -34,8 +36,7 @@ enum ResolvedAudioPlayback { none, url, file }
 /// (`TtsChannelHandler`); off Android they fall back to pure-Dart / OS-tool
 /// implementations so the desktop builds (Windows/macOS/Linux) have working
 /// local-audio lookup, preview playback, sentence-clip extraction, cover
-/// extraction, and TTS-to-file. `speak` (TTS aloud) has no callers and stays
-/// Android-only.
+/// extraction, and TTS-to-file.
 class TtsChannel {
   TtsChannel._();
   static final TtsChannel instance = TtsChannel._();
@@ -54,18 +55,6 @@ class TtsChannel {
 
   List<String> get _desktopDbPaths =>
       _desktopDbConfigs.map((LocalAudioDbConfig c) => c.path).toList();
-
-  Future<void> speak(String text, {String locale = 'ja-JP'}) async {
-    if (!_isSupported) return;
-    try {
-      await _channel.invokeMethod('speak', {
-        'text': text,
-        'locale': locale,
-      });
-    } catch (e, stack) {
-      ErrorLogService.instance.log('TtsChannel.speak', e, stack);
-    }
-  }
 
   /// 桌面查词播放器冷启动预热（BUG-1015）。just_audio_media_kit 首次平台激活会吞掉
   /// 第一段播放输出，导致本次 app 启动后「第一次查词自动发音没声音、点第二次才响」。
@@ -92,6 +81,12 @@ class TtsChannel {
   Future<bool> setLocalAudioDbs(List<LocalAudioDbConfig> dbs) async {
     if (!_isSupported) {
       _desktopDbConfigs = List<LocalAudioDbConfig>.of(dbs);
+      // 绑定期对每个库后台补一次查询索引（对齐 Android `TtsChannelHandler`
+      // 在 `setLocalAudioDb` 时后台建索引的做法）。unawaited + Isolate.run：
+      // 首次大库建索引可达数秒，不阻塞绑定调用方；建好后查询路径永远只读打开。
+      for (final LocalAudioDbConfig cfg in dbs) {
+        unawaited(LocalAudioDb.ensureIndexes(cfg.path));
+      }
       return true;
     }
     try {
@@ -138,25 +133,42 @@ class TtsChannel {
   }) async {
     if (!_isSupported) {
       final int start = dbIndex ?? 0;
-      final int end = dbIndex == null ? _desktopDbPaths.length : start + 1;
-      for (int i = start; i < end && i < _desktopDbConfigs.length; i++) {
-        if (i < 0) continue;
-        final LocalAudioDbConfig cfg = _desktopDbConfigs[i];
-        final ({String file, String source})? meta = LocalAudioDb.queryMeta(
-          cfg.path,
-          expression,
-          reading,
-          order: cfg.sourceOrder,
-        );
-        if (meta != null) {
-          return <String, dynamic>{
-            'file': meta.file,
-            'source': meta.source,
-            'dbIndex': i,
-          };
-        }
+      final int end = dbIndex == null ? _desktopDbConfigs.length : start + 1;
+      // 同步 SQLite 体挪进 Isolate.run：此前 async 函数体在首个 await 前跑完，
+      // 调用方（lookup_audio_playback）的 `.timeout(500ms)` 是死代码，慢库会
+      // 无上限阻塞调用者 isolate。闭包只捕获纯数据（路径/词/reading/order 快照），
+      // sqlite3 句柄 per-isolate，Isolate.run 内自行开关（readOnly 开销小）。
+      // 弹窗独立 isolate 也会调进来：Isolate.run 嵌套是允许的。
+      final List<({String path, List<String> order})> configs =
+          <({String path, List<String> order})>[
+        for (final LocalAudioDbConfig c in _desktopDbConfigs)
+          (path: c.path, order: List<String>.of(c.sourceOrder)),
+      ];
+      try {
+        return await Isolate.run(() {
+          for (int i = start; i < end && i < configs.length; i++) {
+            if (i < 0) continue;
+            final ({String path, List<String> order}) cfg = configs[i];
+            final ({String file, String source})? meta = LocalAudioDb.queryMeta(
+              cfg.path,
+              expression,
+              reading,
+              order: cfg.order,
+            );
+            if (meta != null) {
+              return <String, dynamic>{
+                'file': meta.file,
+                'source': meta.source,
+                'dbIndex': i,
+              };
+            }
+          }
+          return null;
+        });
+      } catch (e, stack) {
+        ErrorLogService.instance.log('TtsChannel.queryLocalAudio', e, stack);
+        return null;
       }
-      return null;
     }
     try {
       final result = await _channel.invokeMethod('queryLocalAudio', {
@@ -176,13 +188,23 @@ class TtsChannel {
       {int dbIndex = 0}) async {
     if (!_isSupported) {
       if (dbIndex < 0 || dbIndex >= _desktopDbPaths.length) return null;
+      final String dbPath = _desktopDbPaths[dbIndex];
+      // getTemporaryDirectory 走平台插件，必须留在调用方 isolate；同步 SQLite
+      // blob 读取 + 写盘挪进 Isolate.run（同 [queryLocalAudio]，闭包只捕获纯
+      // 字符串，Directory 在 worker isolate 内重建）。
       final Directory dir = await getTemporaryDirectory();
-      return LocalAudioDb.extractBlob(
-        dbPath: _desktopDbPaths[dbIndex],
-        file: file,
-        source: source,
-        cacheDir: dir,
-      );
+      final String cacheDirPath = dir.path;
+      try {
+        return await Isolate.run(() => LocalAudioDb.extractBlob(
+              dbPath: dbPath,
+              file: file,
+              source: source,
+              cacheDir: Directory(cacheDirPath),
+            ));
+      } catch (e, stack) {
+        ErrorLogService.instance.log('TtsChannel.extractLocalAudio', e, stack);
+        return null;
+      }
     }
     try {
       final result = await _channel.invokeMethod('extractLocalAudio', {
