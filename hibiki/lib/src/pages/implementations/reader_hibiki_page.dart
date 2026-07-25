@@ -2927,8 +2927,34 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// Hand the char-level cursor to the freshly rendered top popup when in cursor
   /// mode. Pure-touch users (surface == none) are unaffected.
   @override
-  void onDictionaryPopupRendered(int index) =>
-      _caret.onDictionaryPopupRendered(index);
+  void onDictionaryPopupRendered(int index) {
+    _caret.onDictionaryPopupRendered(index);
+    // BUG-1071 ②：指针（触摸/鼠标点词）唤出的弹窗此前**没有任何 Flutter 焦点持有者**
+    // —— 弹窗是纯原生平台 WebView（无 Flutter FocusNode），点词后 OS 焦点落在原生
+    // WebView 上，Esc/关词典键被它吞或到不了 [_handleKeyEvent] → 用户报「键盘关词典
+    // 经常失效」（光标/手柄唤出时焦点仍在 _focusNode 才「有时能关」）。这里把 Flutter
+    // 焦点收回正文 _focusNode（与阅读器每个指针手势 BUG-136 reclaim 同一已验证机制，
+    // requestFocus 会把平台焦点从原生 WebView 夺回），使关词典键确定性抵达
+    // _handleKeyEvent → readerDismissDict → clearDictionaryResult，不再依赖飘忽焦点。
+    //
+    // 仅指针唤出（[_caretSurface] == none）路径 reclaim：光标/手柄唤出时
+    // [_caret.onDictionaryPopupRendered] 会把光标 transfer 进弹窗，_focusNode 本就持焦
+    // 驱动光标键，此处不介入以免与 transfer 竞争（不回归 BUG-136：弹窗无 Flutter 焦点
+    // 节点，reclaim 键盘焦点不影响弹窗指针交互——嵌套查词/制卡/收藏均 pointer 驱动）。
+    if (_caretSurface == CaretSurface.none) {
+      _reclaimReaderFocusForTouchPopup();
+    }
+  }
+
+  /// BUG-1071 ②：指针唤出词典弹窗后把 Flutter 键盘焦点收回正文 [_focusNode]，让
+  /// 关词典键（Esc / 绑定键）确定性抵达 [_handleKeyEvent]。与 [_reclaimReaderFocusAfterGesture]
+  /// 的区别：那条**故意**在弹窗可见时早退（BUG-136 的旧假设「弹窗自持焦点」——对纯原生
+  /// WebView 不成立）；本 helper 正是要在弹窗可见时 reclaim，故不套那条谓词。歌词态不动
+  /// （歌词自有焦点路径），非 mounted / 无弹窗时 no-op。
+  void _reclaimReaderFocusForTouchPopup() {
+    if (!mounted || _lyricsMode || !isDictionaryShown) return;
+    _focusNode.requestFocus();
+  }
 
   // ── DictionaryCaretHost ───────────────────────────────────────────
   // The reader is the host for its [_caret] state machine: it supplies the

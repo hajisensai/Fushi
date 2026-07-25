@@ -1,0 +1,13 @@
+## BUG-1071 · 关闭词典鼠标键失效+键盘经常失效(弹窗无Flutter焦点)
+- **报告**：2026-07-25（用户：关闭词典鼠标键用不了；关闭词典键盘快捷键也经常失效；图层错）
+- **真实性**：✅ 真 bug。三症同源于「词典弹窗是纯原生平台 WebView，无任何 Flutter 焦点节点」。
+  - **症② 键盘经常失效**：指针（触摸/鼠标）点词唤出的弹窗抢 OS 焦点到原生 WebView，Esc 被吞/到不了 `reader_hibiki/caret.part.dart` 的 `_handleKeyEvent`；谓词 `shouldReclaimReaderFocusAfterGesture`（`reader_hibiki_page.dart:159-163`）在弹窗可见时**永不 reclaim** `_focusNode`（BUG-136 基于「弹窗自持焦点」的假设，对纯原生 WebView 不成立）。光标/手柄唤出时 `_focusNode` 仍持焦才「有时能关」。
+  - **症① 鼠标键关不掉**：唯一鼠标运行时路径 `onPointerSeek`（`reader_hibiki/webview.part.dart:1939`）此前 `_audiobookController == null` 即整段早退（纯 EPUB 恒 null），且只判 seek-to-sentence；`readerDismissDict` 的鼠标绑定有 `resolveMouse` 解析但**无运行时消费者**。
+  - **症③ 图层错**：原生平台视图无视 Flutter Stack 序、画在所有 Flutter 之上，现有 `_popupHidingDialogDepth`（`base_source_page.dart:684-687`）已停靠屏外补偿；用户「关闭相关图层错」大概率是症①②「关不掉→弹窗一直压着」的表象。
+- **[x] ① 已修复** —
+  - 症②：`reader_hibiki_page.dart` 覆写 `onDictionaryPopupRendered`，仅指针路径（`_caretSurface == CaretSurface.none`）调 `_reclaimReaderFocusForTouchPopup()` 把 Flutter 焦点收回正文 `_focusNode`（与阅读器每个手势的已验证 `requestFocus` 同机制），使关词典键确定性抵达 `_handleKeyEvent → readerDismissDict → clearDictionaryResult`。光标/手柄路径（surface≠none）不介入（交给既有 `_caret.transfer`，不回归 BUG-136）；歌词态/无弹窗 no-op。
+  - 症①：`onPointerSeek` handler 加真正派发——弹窗可见且 `resolveMouse(button, scope:reader)==readerDismissDict` 时 `clearDictionaryResult()`，排在 `_audiobookController==null` 早退**之前**（纯 EPUB 也能关）；seek 旧路径原样保留在其后。
+  - 症③：焦点+派发修好后表象应消失；无真机复现具体错层证据前**不动原生 z-order**（不可控平台限制，盲改违反根因修原则）。
+- **[x] ② 已加自动化测试** — `hibiki/test/reader/dismiss_dict_pointer_and_focus_guard_test.dart`（源码接线守卫，原生焦点/指针 headless 难稳定复现）：症①（resolveMouse+reader scope+readerDismissDict、isDictionaryShown+clearDictionaryResult、判定排在 controller==null 早退前、seek 旧路径保留）+ 症②（`_reclaimReaderFocusForTouchPopup` requestFocus 正文节点+歌词/弹窗门控、`onDictionaryPopupRendered` 仅 CaretSurface.none 回收且保留光标 transfer）。相邻回归 pointer_seek_guard / reader_chrome_focus_guard_728 / reader_resumed_focus_reclaim_static / reader_popup_caret_static 全绿。
+- **验证状态**：症①②源码守卫 + 相邻回归绿、`flutter analyze` 0 issue。`implemented_unverified`：`_focusNode.requestFocus()` 从**弹窗**原生 WebView 夺回平台焦点这一具体面**需真机**跑「触摸/鼠标点词唤弹窗 → Esc/鼠标键关」确认。
+- **已知边界（后续跟进）**：症①的鼠标键路径覆盖「点弹窗矩形**之外**的正文区（behind barrier）」；**点击直接落在弹窗 WebView 表面**那一格需 `assets/popup/popup.js` 加 `auxclick`/`mousedown` 转发（浏览器扩展三镜像 + 需真机），本轮未改，待真机确认用户实际点击落点后决定是否必要。

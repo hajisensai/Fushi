@@ -1939,10 +1939,27 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         controller.addJavaScriptHandler(
           handlerName: 'onPointerSeek',
           callback: (List<dynamic> args) async {
-            if (args.length < 3 || _audiobookController == null) return;
+            if (args.length < 3) return;
             final int button = (args[0] as num?)?.toInt() ?? -1;
-            if (!isSeekToClickedSentenceButton(
-                appModel.shortcutRegistry, button)) {
+            if (button < 0) return;
+            final registry = appModel.shortcutRegistry;
+            // BUG-1071 ①：绑到「关闭词典」(readerDismissDict) 的鼠标键此前只有
+            // resolveMouse 解析、运行时无消费者（onPointerSeek 硬编码只判 seek-to-
+            // sentence），故鼠标键关不掉词典。鼠标键是位置型动作，不走位置无关的
+            // _executeShortcutAction，在此收口：正文 WebView（弹窗矩形之外/behind
+            // barrier 的正文区）按下该键且弹窗可见时 → 关整栈。与键盘 Esc 的
+            // readerDismissDict 语义一致（clearDictionaryResult），且**独立于**
+            // _audiobookController（纯 EPUB 无有声书 controller，此前整个 handler 因
+            // controller==null 早退、连 seek 都只在有声书下生效——关词典不能被它拦）。
+            if (isDictionaryShown &&
+                registry.resolveMouse(button, scope: ShortcutScope.reader) ==
+                    ShortcutAction.readerDismissDict) {
+              clearDictionaryResult();
+              return;
+            }
+            // seek-to-clicked-sentence 仅有声书表面有意义，故仍需 controller。
+            if (_audiobookController == null) return;
+            if (!isSeekToClickedSentenceButton(registry, button)) {
               return;
             }
             final double x = _ReaderHibikiPageState._toDouble(args[1]) ?? 0;
