@@ -27,10 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1039 条。点号进各自文件。
+> 共 1042 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1075](bugs/BUG-1075-daily-goal-no-unit-no-hint.md) | ✅ | ✅ | 每日目标弹窗无单位无口径说明 |
+| [BUG-1074](bugs/BUG-1074-cover-update-button-windows-noop.md) | ✅ | ✅ | 书籍编辑封面更新按钮Windows无反应 |
+| [BUG-1073](bugs/BUG-1073-dashboard-layout-imbalance.md) | ✅ | ✅ | 首页dashboard排版失衡热力图大片空白 |
 | [BUG-1072](bugs/BUG-1072-profile-snapshot-credential-leak.md) | ✅ | ✅ | 备份/Profile 分享泄漏凭据：判定散落三处且兜底锁死 sync_ 前缀，profile_settings 通道无判定 |
 | [BUG-1071](bugs/BUG-1071-dismiss-dictionary-mouse-and-keyboard-fails.md) | ✅ | ✅ | 关闭词典鼠标键失效+键盘经常失效(弹窗无Flutter焦点) |
 | [BUG-1070](bugs/BUG-1070-galgame-overlay-lyric-spills-into-control-band.md) | ✅ | ✅ | galgame浮窗台词溢出到顶部控制条按钮带遮住UI |

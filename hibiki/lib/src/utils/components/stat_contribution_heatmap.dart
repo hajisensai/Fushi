@@ -172,7 +172,9 @@ class StatContributionHeatmap extends StatefulWidget {
     super.key,
     this.onDaySelected,
     this.weeks = 17,
+    this.maxWeeks = 53,
     this.cell = 12,
+    this.maxCell = 18,
     this.spacing = 3,
   });
 
@@ -196,13 +198,23 @@ class StatContributionHeatmap extends StatefulWidget {
 
   /// 每屏**最少**列数（周数），也是窄屏下的翻页步长。宽屏下实际列数按可用宽度
   /// 自适应加宽（见 build 的 LayoutBuilder）——此前固定 17 周 + FittedBox 只缩
-  /// 不放，桌面宽窗下卡片右侧大片空白（用户反馈「好空」）；多出来的宽度用来
-  /// 显示更长的历史，而不是把格子放大。
+  /// 不放，桌面宽窗下卡片右侧大片空白（用户反馈「好空」）；多出来的宽度先用来
+  /// 显示更长的历史（加列，到 [maxWeeks] 为止），再用来放大格子（到 [maxCell]）。
   final int weeks;
 
-  /// 单格边长（逻辑像素，自然尺寸）。实际渲染由外层 [FittedBox] 按可用宽度等比
-  /// 缩小（不放大），故这是「上限」尺寸。
+  /// 每屏**最多**列数（周数），默认 53 = GitHub 式「一年」。宽度自适应加列到此为止：
+  /// 此前无上限，4K 全屏（卡内可用宽 ~1700）会铺出 110+ 列（两年多），而实际有数据
+  /// 的只有最近几周，其余全是空格子——空格子底色又与卡底几乎同色，观感就是「左边
+  /// 一大片死黑」（BUG-1073 病灶 1）。
+  final int maxWeeks;
+
+  /// 单格边长（逻辑像素，自然尺寸）。列数已达 [maxWeeks] 后仍有富余宽度时，格子会
+  /// 等比放大到 [maxCell] 把宽度吃满（不再右侧留大片空白）；窄到连 [weeks] 列都放不
+  /// 下时由外层 [FittedBox] 等比缩小。
   final double cell;
+
+  /// 格子放大上限（逻辑像素）：防止超宽屏把一年的格子撑成大方块。
+  final double maxCell;
   final double spacing;
 
   @override
@@ -231,10 +243,12 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
     });
   }
 
-  void _onTapGrid(Offset local, StatHeatmapModel model) {
+  /// [cell] 是**本帧实际**格子边长（宽屏下会大于 [StatContributionHeatmap.cell]），
+  /// 命中判定必须用它，否则点击位置与绘制错位。
+  void _onTapGrid(Offset local, StatHeatmapModel model, double cell) {
     final ({int col, int row})? hit = hitStatHeatmapCell(
       local,
-      cell: widget.cell,
+      cell: cell,
       spacing: widget.spacing,
       cols: model.weeks.length,
     );
@@ -351,7 +365,23 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
         final int fitWeeks = constraints.maxWidth.isFinite
             ? ((constraints.maxWidth + widget.spacing) / unit).floor()
             : widget.weeks;
-        final int effWeeks = fitWeeks < widget.weeks ? widget.weeks : fitWeeks;
+        // 列数下限 = weeks（窄屏靠 FittedBox 缩），上限 = maxWeeks（配置反过来时
+        // 以 weeks 为准，不出现空窗口）。
+        final int hardMaxWeeks =
+            widget.maxWeeks < widget.weeks ? widget.weeks : widget.maxWeeks;
+        int effWeeks = fitWeeks < widget.weeks ? widget.weeks : fitWeeks;
+        if (effWeeks > hardMaxWeeks) effWeeks = hardMaxWeeks;
+        // 列数封顶后剩下的宽度分摊给格子边长（上限 maxCell），否则 4K 宽窗下右侧
+        // 又是一大片空白。未封顶说明宽度刚好用完，保持自然尺寸。
+        double effCell = widget.cell;
+        if (constraints.maxWidth.isFinite && effWeeks == hardMaxWeeks) {
+          final double grown =
+              (constraints.maxWidth - (effWeeks - 1) * widget.spacing) /
+                  effWeeks;
+          if (grown > effCell) {
+            effCell = grown > widget.maxCell ? widget.maxCell : grown;
+          }
+        }
 
         final int maxOffset = maxHeatmapPageOffset(
           valueByDateKey: widget.valueByDateKey,
@@ -371,11 +401,12 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
         final int cols = model.weeks.length;
         if (cols == 0) return const SizedBox.shrink();
 
-        final double natW = cols * widget.cell + (cols - 1) * widget.spacing;
-        final double natH = 7 * widget.cell + 6 * widget.spacing;
+        final double natW = cols * effCell + (cols - 1) * widget.spacing;
+        final double natH = 7 * effCell + 6 * widget.spacing;
         final Widget grid = GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTapUp: (TapUpDetails d) => _onTapGrid(d.localPosition, model),
+          onTapUp: (TapUpDetails d) =>
+              _onTapGrid(d.localPosition, model, effCell),
           child: SizedBox(
             width: natW,
             height: natH,
@@ -385,7 +416,7 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
                   model: model,
                   baseColor: widget.baseColor,
                   emptyColor: widget.emptyColor,
-                  cell: widget.cell,
+                  cell: effCell,
                   spacing: widget.spacing,
                   selectedDateKey: _selectedDateKey,
                   selectedBorderColor: theme.colorScheme.onSurface,

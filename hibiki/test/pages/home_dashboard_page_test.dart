@@ -17,6 +17,7 @@ import 'package:hibiki/src/pages/implementations/home_page.dart'
     show homeShellTabNotifier, HomeTab;
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -656,6 +657,163 @@ void main() {
     expect(find.text('进击的巨人'), findsOneWidget);
     expect(find.text('S01E01 · ${t.home_filter_watch}'), findsOneWidget);
     expect(find.text('S01E02 · ${t.home_filter_watch}'), findsNothing);
+  });
+
+  /// BUG-1073 用的装配：继续区 + 最近添加 + 活动 + 热力图四块都有内容。
+  Future<void> seedAllSections() async {
+    await seedSampleData();
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value('recent-added-v'),
+      title: const Value('刚导入的视频'),
+      videoPath: const Value('/abs/recent-added.mp4'),
+      importedAt: Value(DateTime.now()),
+    ));
+  }
+
+  testWidgets('BUG-1073 宽屏排版：学习活动/继续/最近添加同在主列，活动时间轴独占侧列',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await seedAllSections();
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    // 主列三块左边缘对齐（此前是「热力图通栏 → 继续|活动两栏 → 最近添加通栏」的
+    // 三明治：热力图/最近添加被拉到整页宽，继续区一行 4 张卡右侧全空）。
+    final double mainX = tester.getTopLeft(find.text(t.reading_activity)).dx;
+    expect(tester.getTopLeft(find.text(t.home_continue)).dx, mainX);
+    expect(tester.getTopLeft(find.text(t.home_recently_added)).dx, mainX);
+    // 活动时间轴在右侧列（天然最长，独占一列才和主列高度对得上）。
+    expect(
+      tester.getTopLeft(find.text(t.home_activity)).dx,
+      greaterThan(mainX + 200),
+    );
+    // 热力图不再被拉到整页宽。
+    expect(
+      tester.getSize(find.byType(StatContributionHeatmap)).width,
+      lessThan(1600 * 0.7),
+    );
+  });
+
+  testWidgets('BUG-1073 病灶 1 根因守卫：热力图空周底色必须与卡底拉开对比',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await seedAllSections();
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    final Finder heatmapFinder = find.byType(StatContributionHeatmap);
+    final StatContributionHeatmap heatmap =
+        tester.widget<StatContributionHeatmap>(heatmapFinder);
+    final HibikiDesignTokens tokens =
+        HibikiDesignTokens.of(tester.element(heatmapFinder));
+    // 此前传的是 surfaces.card（surfaceContainer），与区块卡底 surfaces.group
+    // （surfaceContainerLow）几乎同色 → 没活动的周等于没画（用户看到「大片死黑」）。
+    expect(heatmap.emptyColor, isNot(tokens.surfaces.group));
+    expect(
+      (heatmap.emptyColor.computeLuminance() -
+              tokens.surfaces.group.computeLuminance())
+          .abs(),
+      greaterThan(0.01),
+    );
+  });
+
+  testWidgets('BUG-1073 超宽屏（1920）：内容限宽居中，不再左右拉满', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1920, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await seedAllSections();
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    // 可用宽 > 1600 时内容居中：左侧留白远大于页面 padding（20）。
+    expect(
+      tester.getTopLeft(find.text(t.reading_activity)).dx,
+      greaterThan(100),
+    );
+  });
+
+  testWidgets('BUG-1073 窄屏（420）：四个区块仍单列堆叠、左边缘一致', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(420, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await seedAllSections();
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final double x = tester.getTopLeft(find.text(t.reading_activity)).dx;
+    expect(tester.getTopLeft(find.text(t.home_continue)).dx, x);
+    expect(tester.getTopLeft(find.text(t.home_activity)).dx, x);
+  });
+
+  testWidgets('BUG-1075 目标对话框：单位 + 口径说明 + 近 7 日日均 + 预设 chip 填入',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 今天读了 800 字（seedSampleData）→ 近 7 日日均 = 800 ~/ 7 = 114。
+    await seedSampleData();
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    await tester.tap(find.text(t.stat_goal_set));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final Finder dialog = find.byType(AlertDialog);
+    // 单位（suffixText）+ 口径说明（helperText）：用户「不知道该填什么」的解药。
+    expect(
+      find.descendant(of: dialog, matching: find.text(t.stat_goal_unit_chars)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.text(t.stat_goal_scope_hint)),
+      findsOneWidget,
+    );
+    // 参考值：与目标同口径（全来源合计）的近 7 日日均。
+    expect(
+      find.descendant(
+        of: dialog,
+        matching: find.text(t.stat_goal_recent_average(n: 114)),
+      ),
+      findsOneWidget,
+    );
+
+    // 预设 chip 点一下就填进输入框。
+    await tester.tap(find.widgetWithText(ActionChip, '5000'));
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      '5000',
+    );
+
+    // 保存后目标行按填入值生效（与阅读统计页同一持久化）。
+    await tester.tap(find.text(t.dialog_save));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(tester.takeException(), isNull);
+    expect(
+      find.text(t.stat_goal_progress(read: 800, goal: 5000)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('中等宽度（700，<900 窄分支）单列堆叠不抛无限高度', (WidgetTester tester) async {
