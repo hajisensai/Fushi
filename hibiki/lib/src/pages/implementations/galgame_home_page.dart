@@ -8,6 +8,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
@@ -580,6 +581,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                           cover: _coverImage(context, g),
                           onTap: () => unawaited(_launchGame(g)),
                           semanticLabel: g.displayName,
+                          focusId: HibikiFocusId('game-recent-${g.id}'),
                         ),
                         const SizedBox(width: 8),
                       ],
@@ -1025,15 +1027,19 @@ class _RecentThumb extends StatelessWidget {
     required this.cover,
     required this.onTap,
     required this.semanticLabel,
+    required this.focusId,
   });
 
   final Widget cover;
   final VoidCallback onTap;
   final String semanticLabel;
 
+  /// 焦点站点 id（`game-recent-<gameId>`）：手柄/键盘可聚焦，Enter/A 启动。
+  final HibikiFocusId focusId;
+
   @override
   Widget build(BuildContext context) {
-    return Semantics(
+    final Widget thumb = Semantics(
       label: semanticLabel,
       button: true,
       child: GestureDetector(
@@ -1046,6 +1052,27 @@ class _RecentThumb extends StatelessWidget {
             child: cover,
           ),
         ),
+      ),
+    );
+    // 焦点接线：与 GalgamePosterCard 同款——存在焦点根时注册焦点站点（焦点描边由
+    // 全局 HibikiFocusRing 绘制），并把 ActivateIntent（Enter / 手柄 A）接到 onTap；
+    // Actions 必须在 HibikiFocusTarget 之上（手柄 A 从焦点节点向上找 handler）。
+    // 无焦点根（纯 widget-test）直接返回原样。
+    if (HibikiFocusRoot.maybeControllerOf(context) == null) {
+      return thumb;
+    }
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            onTap();
+            return null;
+          },
+        ),
+      },
+      child: HibikiFocusTarget(
+        id: focusId,
+        child: thumb,
       ),
     );
   }
