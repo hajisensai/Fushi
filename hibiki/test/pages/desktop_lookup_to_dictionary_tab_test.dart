@@ -168,8 +168,13 @@ void main() {
     expect(readStart, isNonNegative);
     final String clipboardBody = src.substring(clipboardStart, hotKeyStart);
     final String hotKeyBody = src.substring(hotKeyStart, readStart);
-    expect(clipboardBody.contains('submitText(text)'), isTrue,
+    // 只钉「剪贴板命中 → submitText(text)」这条排队动作本身；实参列表会随需求增长
+    // （BUG-1099 给剪贴板入口补了 `passiveStream: true`），钉死整串字面量会把无关
+    // 改动误判成回归，所以钉调用头 + 单独断言 passiveStream 这个已定契约。
+    expect(clipboardBody.contains('submitText(text'), isTrue,
         reason: '剪贴板命中仍要排队查词请求');
+    expect(clipboardBody.contains('passiveStream: true'), isTrue,
+        reason: '剪贴板是被动流入口（BUG-1099），排队时必须标 passiveStream');
     expect(hotKeyBody.contains('_queueLookupRequest'), isTrue,
         reason: '热键命中仍要排队查词请求');
     expect(clipboardBody.contains('bringPendingLookupToFront'), isFalse,

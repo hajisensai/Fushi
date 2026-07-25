@@ -1,0 +1,23 @@
+## BUG-1099 · 查完词后剪贴板一更新，浮窗释义就被清空「缩回去」
+- **报告**：2026-07-26（用户：点词查完，游戏台词一往下走，浮窗里的释义就没了，窗口还缩回去）
+- **真实性**：✅ 真 bug（保护逻辑写好了但是死代码；沿 clipboard → dispatcher → 两个消费面的真实路径验证）
+  - 面板侧的保护本来就在：`hibiki/lib/src/lookup/clipboard_panel_controller.dart:183` `if (request.passiveStream && _userOwnedRoot && _visible)` —— 本意正是「用户点出来的释义不被被动台词流冲掉」。
+  - 但 `passiveStream` 在整个 `hibiki/lib` + `hibiki/test` 里**从未被置为 true**（全仓 `passiveStream: true` 命中数 = 0）。溯源：该字段由 `a3330a4bc` 引入，唯一置 true 的调用点是 `galgame_session_controller.dart:236`；该文件在 `2df13d481`「删除旧死代码 GalgameSessionController」中被整体删除（删除时它确已零调用点），于是保护分支从此永不触发，变成死代码。
+  - 结果：剪贴板监听（`desktop_lookup_service.dart:291 onClipboardChanged` → `:332 _handleClipboardChange` → `:344 processClipboardText` → `:353 submitText` → `:129 _queueLookupRequest` → dispatcher `desktop_lookup_dispatcher.dart:33 _onPending`）灌进来的每条新台词都跌到 `clipboard_panel_controller.dart:191` `_userOwnedRoot = false` → `:217 _seedRootFrame(...)` → `:323-339` `_stack` 被整帧替换成只剩 root、`_frameResults.clear()` / `_frameAnchors.clear()`，用户点出来的释义帧全部蒸发。默认去向就是 panel（`preferences_repository.dart:509-513` 读 `desktop_clipboard_destination` 默认 `''` → `:64` 回退 `DesktopClipboardDestination.panel`）。
+  - transient 去向同病异源：dispatcher 的 transient 分支无条件 `GlobalLookupController.instance.lookupText(...)` → `global_lookup_controller.dart:446 GlobalLookupChannel.hide(notify:false)` → `:539-541` `_lastSentWidth = -1; _lastSentHeight = -1; _revealed = false`（丢弃已测尺寸强制从零重测）→ `:1125` `_stack = GlobalLookupStack([root])`。窗口是 auto-size，新 root 内容小 → 窗口跟着缩小，正是用户说的「缩回去」。
+- **[x] ① 已修复** — 见本分支提交：
+  - **主动 / 被动的判据 = 这次文本进 Hibiki 时，用户有没有对 Hibiki 做过动作**（不是靠时间窗、不是靠内容猜）：
+    - 被动（`passiveStream: true`）：`desktop_lookup_service.dart` 的**环境剪贴板监听**——`processClipboardText`（OS 剪贴板变化事件驱动，galgame 台词 hook / 外部 texthooker 正是经这里每 ~400ms 灌一条）与 `endSelfInflictedCapture` 的回放（同一条环境通道，只是抓选区括号期内先到、事后对账放行）。
+    - 主动（保持 `false`）：全局热键 `_onHotKey`（`origin=hotkey`，`dedupe:false`）、悬浮字幕/歌词点词 `triggerLookup`（`origin=explicit`）、面板句子横幅点字 `_lookupFromBanner`、卡内点词压栈 `_lookupNested`、台词浮窗点词 `gal_hook_text_overlay_controller._onLookupText`。这些一律照常重建，绝不被保护分支锁死。
+  - 判据抽成纯函数 `keepUserOwnedCardForPassiveStream(passiveStream, userOwnedCard, visible)`（`hibiki/lib/src/lookup/desktop_lookup_router.dart`），面板与瞬态窗共用同一真相源，两条出口的抢占语义不会再漂开，也可直接单测两个方向。
+  - 面板：`clipboard_panel_controller.dart:183` 改用该纯函数（行为不变，仍是「只换可点句子横幅、不 `++_updateSeq`、不 `_seedRootFrame`、不 `resetRootScroll`」）。
+  - 瞬态窗：`desktop_lookup_dispatcher.dart` transient 分区把 `passiveStream` 透传；`global_lookup_controller.dart` 新增 `_userOwnedCard`（`lookupText` 非被动流时置位、`_onHotKey` 置位、`_lookupNested` 在 `await` 前置位挡在途竞争、`_onOverlayHidden` 复位），命中判据时 `lookupText` **整条早退**（在 `hide()` + `_lookupExternal` 之前），卡原地不动：不重建 root、不清 `_lastSentWidth/_lastSentHeight`、不动窗口。这里比面板更保守（不刷横幅）——瞬态卡是锚在被点词旁的一次性卡，把横幅换成一句无关的新台词既看不懂，又会把制卡 `{sentence}` 上下文（`_currentSentence`）换成用户根本没在看的那句，做出错卡。
+  - 所有权不会永久粘住：瞬态窗一侧由真正的用户关闭（点外 / 前台钩子 / Esc → `_onOverlayHidden`）复位；面板一侧沿用既有的 `hidePanel()` / 任一非被动请求复位。
+- **[x] ② 已加自动化测试** — `hibiki/test/lookup/passive_stream_user_card_bug1099_test.dart`（12 例全绿）：
+  - 纯函数四个方向：被动流+用户卡+可见 → 保住；**显式意图恒替换**（本条最容易做错的方向）；卡不是用户点出来的 → 正常替换；卡已不在屏上 → 正常开新卡。
+  - 服务侧真实排队：`processClipboardText` 与括号期回放排出的请求 `passiveStream=true`；`triggerLookup` 排出的 `passiveStream=false`；热键函数体源码不得出现 `passiveStream`。
+  - 接线守卫：面板 `update` 里判据必须在 `_seedRootFrame` 之前；dispatcher 必须透传；瞬态窗早退必须在 `GlobalLookupChannel.hide(` 之前；`_userOwnedCard` 的置位/复位三处齐全（缺复位会永久吞掉后续所有被动流查词）。
+- **备注**：
+  - 已知取舍：用户**自己**在别的 app 里 Ctrl+C（同样走剪贴板监听，OS 层与台词流不可区分）且面板上正挂着自己点出来的释义时，面板只刷新句子横幅、不再自动整句重查——需要点新横幅里的词，或按全局热键强制重查。选择这个方向是因为两边的代价极不对称：台词流下不保护 = 释义每 ~400ms 蒸发一次、完全没法读；主动复制下保护 = 少一次「自动查句首词」的便利、一次点击即可恢复。真要区分只能引入时间窗（台词间隔与「切窗口再复制」的耗时严重重叠，不可靠），故不做。
+  - `hibiki/windows/runner/floating_lyric_window.cpp:329-341 UpdateText()` 已复核：新台词只重置 `text_layout_` 重绘、不碰窗口 rect，本条不需要动 C++。
+  - 本条为桌面（Windows）路径，**仍需真机复测**：galgame 台词流下点词→释义保留→关卡后下一条台词正常开卡；以及热键/悬浮字幕点词照常替换。

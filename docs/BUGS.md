@@ -27,13 +27,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1067 条。点号进各自文件。
+> 共 1069 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1102](bugs/BUG-1102-gal-audio-track-panel-dead-controls.md) | ✅ | ✅ | 兼容性诊断页「活跃音轨」面板全无效：选轨/排除点了没反应，空轨照样占位 |
 | [BUG-1101](bugs/BUG-1101-gal-loopback-line-audio-off-by-one.md) | ✅ | ✅ | 降级到系统 Loopback 时逐行语音永远配到上一句 |
 | [BUG-1100](bugs/BUG-1100-gal-degrade-unrecoverable-engine-pcm.md) | ✅ | ✅ | galgame 刚启动就误报「降级运行 · engine_pcm_unavailable」，且永远回不到引擎 PCM |
+| [BUG-1099](bugs/BUG-1099-passive-clipboard-stream-clobbers-lookup.md) | ✅ | ✅ | 查完词后剪贴板一更新，浮窗释义就被清空「缩回去」 |
+| [BUG-1098](bugs/BUG-1098-popup-headword-furigana-clipped.md) | ✅ | ✅ | 查词弹窗词头的假名（furigana）被垂直压扁 / 裁掉 |
 | [BUG-1097](bugs/BUG-1097-lookup-overlay-webview2-status-bar-url.md) | ✅ | ✅ | 查词浮窗左下角冒出 `https://hibiki.popup/popup.html?query=…&wildcards=off` |
 | [BUG-1096](bugs/BUG-1096-window-capture-two-mouse-cursors.md) | ✅ | ✅ | 画面捕获出现两个鼠标指针 |
 | [BUG-1095](bugs/BUG-1095-gal-overlay-font-size-coupled-to-window-height.md) | ✅ | ✅ | galgame 台词浮窗拖动窗口时字号跟着变，「放不下」怎么拖都放不下 |

@@ -38,8 +38,11 @@ void main() {
         dispatcherSrc.indexOf('case DesktopLookupConsumer.panel:');
     final String tail = dispatcherSrc.substring(panelCase);
     expect(tail.contains('clearPending'), isTrue);
-    expect(tail.contains('lookupText(request.text, sentence: request.text)'),
-        isTrue,
+    // BUG-1099：这一段现在还要透传 passiveStream，调用被 dart format 拆成多行，
+    // 故不再钉整行字面量，只钉两条真契约（整句进 root 卡 + 整句作 sentence）。
+    expect(tail.contains('lookupText('), isTrue);
+    expect(tail.contains('request.text,'), isTrue);
+    expect(tail.contains('sentence: request.text,'), isTrue,
         reason: '整句作 root 卡句子横幅 + 制卡 sentence 字段');
   });
 
