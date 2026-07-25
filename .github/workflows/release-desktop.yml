@@ -528,177 +528,19 @@ jobs:
       # (softprops steps below). When that publish intermittently 403s, the
       # installer is built successfully but has NO download path and dies with
       # the runner. Capture it as a workflow-run artifact so the build is always
-      # downloadable from the run page, decoupled from Release publish. Pure
-      # additive capture: touches no tag/publish/Latest/formal logic.
-      - name: Upload Windows installer artifact to workflow run
+      # downloadable from the run page, decoupled from Release publish. The
+      # single non-blocking `publish` job downloads this artifact and does all
+      # Release publishing, so Windows never waits on / is blocked by mac/iOS.
+      - name: Upload Windows installer artifact
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: hibiki-${{ steps.channel.outputs.channel }}-windows-setup-${{ github.sha }}
+          name: desktop-artifacts-windows
           path: hibiki/build/release-artifacts/hibiki-*-windows-setup.exe
           if-no-files-found: ignore
           retention-days: 14
-      - name: Upload to release
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ steps.channel.outputs.tag }}
-          files: hibiki/build/release-artifacts/hibiki-*-windows-setup.exe
-      # TODO-1049 / TODO-1123 / TODO-1129: same rolling-release asset GC as
-      # release.yml. softprops upserts same-named assets but never removes a
-      # PRIOR commit's asset (different seq/sha in the name) from the reused
-      # `debug-rolling` release, so without pruning it would accumulate one
-      # EXE/DMG/IPA per commit. The OLD prune kept ONLY assets carrying THIS
-      # desktop build's versionName, which cross-platform WIPED the Android APKs
-      # (release.yml publishes to the SAME rolling tag with a different
-      # versionName) -- TODO-1129. We now mirror release.yml exactly: keep the
-      # most recent KEEP_SEQS (=3) debug sequences by seq number, so Android and
-      # desktop publishing to the same tag each keep their top-3 and never delete
-      # each other, and a client mid-download against a just-superseded seq is
-      # not 404'd. Skipped unless rolling debug; missing release / nothing to
-      # prune is a no-op.
-      - name: Prune stale assets from rolling debug release
-        if: steps.channel.outputs.publish_managed_release == 'true' && steps.channel.outputs.rolling_debug == 'true'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PUBLISH_TAG: ${{ steps.channel.outputs.publish_tag }}
-          BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
-        run: |
-          set -euo pipefail
-          # Keep the most recent KEEP_SEQS debug sequences (current + prior 2) so a
-          # client mid-download against a just-superseded seq is not 404'd.
-          KEEP_SEQS=3
-          if ! gh release view "$PUBLISH_TAG" --repo "$REPO" >/dev/null 2>&1; then
-            echo "Rolling release $PUBLISH_TAG does not exist yet; nothing to prune."
-            exit 0
-          fi
-          ASSET_NAMES=()
-          while IFS= read -r line; do ASSET_NAMES+=("$line"); done < <(
-            gh release view "$PUBLISH_TAG" --repo "$REPO" --json assets \
-              --jq '.assets[].name' || true
-          )
-          if [ "${#ASSET_NAMES[@]}" -eq 0 ]; then
-            echo "No assets on $PUBLISH_TAG; nothing to prune."
-            exit 0
-          fi
-          # TODO-1131: only ever prune THIS platform's own assets. The rolling
-          # debug release is shared by Android/Windows/Apple, each publishing from
-          # an independent workflow run. Computing the kept-seq set across ALL
-          # platforms' assets means a lagging platform has its last-good asset's
-          # seq pushed out of the top KEEP_SEQS by the OTHER platforms' newer
-          # seqs -- so another platform's prune deletes it and the rolling release
-          # "loses" that device. Scope the candidate set to this platform's
-          # filename shape (Windows: *-windows-setup.exe) so each platform keeps
-          # its own top KEEP_SEQS and never touches another's assets.
-          PLATFORM_ASSETS=()
-          for name in "${ASSET_NAMES[@]}"; do
-            case "$name" in
-              *-windows-setup.exe) PLATFORM_ASSETS+=("$name") ;;
-            esac
-          done
-          # Check length BEFORE re-expanding the (possibly empty) array: on macOS
-          # bash 3.2 `("${empty[@]}")` under `set -u` is an unbound-variable error,
-          # and no-asset-for-this-platform is exactly the lagging / first-publish
-          # case this fix must handle gracefully. `${#arr[@]}` is safe on 3.2.
-          if [ "${#PLATFORM_ASSETS[@]}" -eq 0 ]; then
-            echo "No Windows assets on $PUBLISH_TAG; nothing to prune."
-            exit 0
-          fi
-          ASSET_NAMES=("${PLATFORM_ASSETS[@]}")
-          # Asset names embed the versionName token `-<base>-debug.<seq>-` (e.g.
-          # hibiki-0.11.1-debug.5633-3cf5905-windows-setup.exe). Parse the current
-          # build's seq from BUILD_VERSION_NAME (0.11.1-debug.5633), extract every
-          # asset's seq the same way, keep the top KEEP_SEQS distinct seqs (numeric
-          # desc), and delete only assets whose seq is NOT in that set. Assets with
-          # no parseable debug seq are treated as stale (superseded/legacy naming).
-          seq_of() { printf '%s' "$1" | sed -n 's/.*-debug\.\([0-9]\+\).*/\1/p'; }
-          CURRENT_SEQ="$(seq_of "$BUILD_VERSION_NAME")"
-          {
-            # Terminal-position `[ -n "$X" ] && echo` inside a pipefail
-            # brace-group returns 1 when the last test is false (empty seq /
-            # legacy tail asset), which pipefail propagates and set -e kills
-            # silently. Use no-else `if` so a false test yields exit 0.
-            if [ -n "$CURRENT_SEQ" ]; then echo "$CURRENT_SEQ"; fi
-            for name in "${ASSET_NAMES[@]}"; do
-              s="$(seq_of "$name")"
-              if [ -n "$s" ]; then echo "$s"; fi
-            done
-          } | sort -rn -u > /tmp/all_seqs.txt
-          KEEP_SEQ_LIST=()
-          while IFS= read -r line; do KEEP_SEQ_LIST+=("$line"); done < <(head -n "$KEEP_SEQS" /tmp/all_seqs.txt)
-          echo "Keeping debug seqs: ${KEEP_SEQ_LIST[*]:-<none>}"
-          in_keep() {
-            local target="$1"
-            for k in "${KEEP_SEQ_LIST[@]}"; do
-              [ "$k" = "$target" ] && return 0
-            done
-            return 1
-          }
-          STALE=()
-          for name in "${ASSET_NAMES[@]}"; do
-            [ -n "$name" ] || continue
-            s="$(seq_of "$name")"
-            if [ -z "$s" ] || ! in_keep "$s"; then
-              STALE+=("$name")
-            fi
-          done
-          if [ "${#STALE[@]}" -eq 0 ]; then
-            echo "No stale assets on $PUBLISH_TAG (all within kept seqs)."
-            exit 0
-          fi
-          for asset in "${STALE[@]}"; do
-            [ -n "$asset" ] || continue
-            echo "  deleting stale asset $asset from $PUBLISH_TAG"
-            gh release delete-asset "$PUBLISH_TAG" "$asset" --repo "$REPO" --yes
-          done
-      - name: Publish desktop channel release
-        if: steps.channel.outputs.publish_managed_release == 'true'
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ steps.channel.outputs.publish_tag }}
-          target_commitish: ${{ github.sha }}
-          name: ${{ steps.channel.outputs.name }}
-          body: ${{ steps.channel.outputs.body }}
-          prerelease: ${{ steps.channel.outputs.prerelease }}
-          make_latest: ${{ steps.channel.outputs.make_latest }}
-          files: hibiki/build/release-artifacts/hibiki-*-windows-setup.exe
-      # TODO-705: publish a mirror update manifest so beta/debug in-China update
-      # checks succeed (raw.githubusercontent.com is proxiable; api.github.com
-      # /releases is mirror-403'd, BUG-292). This pushes a DATA FILE to the
-      # update-manifest branch -- it is NOT a GitHub Release: it never sets
-      # make_latest / prerelease:false, reuses the channel outputs verbatim, uses
-      # the shared release_sequence (never run_number), and update-manifest is
-      # absent from this workflow's push trigger (main/develop only) so it does
-      # not cascade a run. Merges this platform's assets into any same-tag
-      # manifest the Android workflow already pushed (concurrent, dedupe by name).
-      - name: Publish mirror update manifest (desktop assets)
-        # BUG-869: gate on publish_manifest + manifest_channel so the `release`
-        # event emits latest-stable.json without re-touching the manual Release.
-        if: steps.channel.outputs.publish_manifest == 'true'
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          CHANNEL: ${{ steps.channel.outputs.manifest_channel }}
-          TAG: ${{ steps.channel.outputs.tag }}
-          # TODO-1049: manifest `tag` keeps the versioned/seq TAG for client
-          # version comparison; asset URLs resolve under DOWNLOAD_TAG (the actual
-          # release tag -- `debug-rolling` for debug, else identical to TAG).
-          DOWNLOAD_TAG: ${{ steps.channel.outputs.publish_tag }}
-          PRERELEASE: ${{ steps.channel.outputs.prerelease }}
-          NOTES: ${{ steps.channel.outputs.body }}
-          VERSION: ${{ steps.channel.outputs.build_version_name }}
-          RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
-          ARTIFACTS_DIR: hibiki/build/release-artifacts
-          ASSET_GLOB: hibiki-*-windows-setup.exe
-          PLATFORM_LABEL: desktop
-        run: bash tool/publish_update_manifest.sh
 
-  apple:
-    needs: windows
-    if: ${{ always() }}
+  macos:
     runs-on: macos-latest
     permissions:
       contents: write
@@ -710,7 +552,7 @@ jobs:
         with:
           flutter-version: '3.44.0'
           cache: true
-      - name: Resolve Apple release channel
+      - name: Resolve desktop release channel
         id: channel
         shell: bash
         env:
@@ -746,26 +588,26 @@ jobs:
             push)
               CHANNEL=debug
               TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
-              NAME="${NAME:-Hibiki Apple debug ${VERSION} (${SHORT_SHA})}"
-              BODY="Automated Apple debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Push releases are always prerelease and never Latest."
+              NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
+              BODY="Automated desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Push releases are always prerelease and never Latest."
               PUBLISH_MANAGED_RELEASE=true
               ;;
             workflow_dispatch)
               case "$CHANNEL" in
                 debug)
                   TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
-                  NAME="${NAME:-Hibiki Apple debug ${VERSION} (${SHORT_SHA})}"
-                  BODY="Manual Apple debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Debug releases are prerelease and never Latest."
+                  NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
+                  BODY="Manual desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Debug releases are prerelease and never Latest."
                   ;;
                 beta)
                   TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
                   NAME="${NAME:-Hibiki ${VERSION} beta ${RELEASE_SEQUENCE}}"
-                  BODY="Manual Apple beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
+                  BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
                   ;;
                 formal)
                   TAG="${TAG:-v${VERSION}}"
                   NAME="${NAME:-Hibiki ${VERSION}}"
-                  BODY="Manual Apple formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
+                  BODY="Manual desktop formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
                   PRERELEASE=false
                   MAKE_LATEST=true
                   ;;
@@ -789,10 +631,15 @@ jobs:
               fi
               ;;
             *)
-              echo "::error title=Unsupported event::$EVENT is not an Apple release event."
+              echo "::error title=Unsupported event::$EVENT is not a desktop release event."
               exit 1
               ;;
           esac
+
+          # BUG-869: push / workflow_dispatch unchanged — MANIFEST_CHANNEL follows
+          # CHANNEL and manifest publishes whenever the managed release does.
+          if [ -z "$MANIFEST_CHANNEL" ]; then MANIFEST_CHANNEL="$CHANNEL"; fi
+          if [ "$PUBLISH_MANAGED_RELEASE" = true ]; then PUBLISH_MANIFEST=true; fi
 
           BUILD_VERSION_NAME="$VERSION"
           case "$CHANNEL" in
@@ -947,6 +794,250 @@ jobs:
           mkdir -p "$out_dir"
           rm -f "$out_dir"/hibiki-*-macos.zip
           ditto -c -k --keepParent "$app_dir" "$out_dir/hibiki-${BUILD_VERSION_NAME}-macos.zip"
+      # The single non-blocking `publish` job downloads this artifact and does
+      # all Release publishing, so macOS builds in parallel with Windows/iOS and
+      # never blocks (or is blocked by) the other platforms.
+      - name: Upload macOS app artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-artifacts-macos
+          path: hibiki/build/release-artifacts/hibiki-*-macos.zip
+          if-no-files-found: ignore
+          retention-days: 14
+
+  ios:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.0'
+          cache: true
+      - name: Resolve desktop release channel
+        id: channel
+        shell: bash
+        env:
+          INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
+          INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+          RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          VERSION=$(grep '^version:' hibiki/pubspec.yaml | sed 's/version: *//;s/+.*//')
+          RELEASE_SEQUENCE=$(git rev-list --count HEAD)
+          if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
+            echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
+            exit 1
+          fi
+          SHORT_SHA="${GITHUB_SHA::7}"
+          EVENT="${GITHUB_EVENT_NAME}"
+          CHANNEL="${INPUT_CHANNEL:-}"
+          TAG="${INPUT_TAG_NAME:-}"
+          NAME="${INPUT_RELEASE_NAME:-}"
+          BODY=""
+          PRERELEASE=true
+          MAKE_LATEST=false
+          PUBLISH_MANAGED_RELEASE=false
+          # BUG-869: manifest-only publish flag decoupled from
+          # PUBLISH_MANAGED_RELEASE (see release.yml) so the `release` event can
+          # emit latest-stable.json without re-touching the manual Release.
+          PUBLISH_MANIFEST=false
+          MANIFEST_CHANNEL=""
+
+          case "$EVENT" in
+            push)
+              CHANNEL=debug
+              TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
+              NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
+              BODY="Automated desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Push releases are always prerelease and never Latest."
+              PUBLISH_MANAGED_RELEASE=true
+              ;;
+            workflow_dispatch)
+              case "$CHANNEL" in
+                debug)
+                  TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
+                  NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
+                  BODY="Manual desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Debug releases are prerelease and never Latest."
+                  ;;
+                beta)
+                  TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
+                  NAME="${NAME:-Hibiki ${VERSION} beta ${RELEASE_SEQUENCE}}"
+                  BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
+                  ;;
+                formal)
+                  TAG="${TAG:-v${VERSION}}"
+                  NAME="${NAME:-Hibiki ${VERSION}}"
+                  BODY="Manual desktop formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
+                  PRERELEASE=false
+                  MAKE_LATEST=true
+                  ;;
+                *)
+                  echo "::error title=Invalid release channel::Use debug, beta, or formal."
+                  exit 1
+                  ;;
+              esac
+              PUBLISH_MANAGED_RELEASE=true
+              ;;
+            release)
+              CHANNEL=github-release
+              TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
+              # BUG-869: a manually-published NON-prerelease Release IS the formal
+              # stable release → emit latest-stable.json (with releaseSequence) for
+              # in-China stable clients. Manifest-only; never touches the Release.
+              if [ "${RELEASE_IS_PRERELEASE}" = "false" ]; then
+                MANIFEST_CHANNEL=formal
+                PUBLISH_MANIFEST=true
+                PRERELEASE=false
+              fi
+              ;;
+            *)
+              echo "::error title=Unsupported event::$EVENT is not a desktop release event."
+              exit 1
+              ;;
+          esac
+
+          # BUG-869: push / workflow_dispatch unchanged — MANIFEST_CHANNEL follows
+          # CHANNEL and manifest publishes whenever the managed release does.
+          if [ -z "$MANIFEST_CHANNEL" ]; then MANIFEST_CHANNEL="$CHANNEL"; fi
+          if [ "$PUBLISH_MANAGED_RELEASE" = true ]; then PUBLISH_MANIFEST=true; fi
+
+          BUILD_VERSION_NAME="$VERSION"
+          case "$CHANNEL" in
+            debug)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+                echo "::error title=Invalid debug tag::Use v<version>-debug.<sequence>+<short-sha>, not debug-<sha>."
+                exit 1
+              fi
+              ;;
+            beta)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-beta\.[0-9]+$ ]]; then
+                echo "::error title=Invalid beta tag::Use v<version>-beta.<sequence>."
+                exit 1
+              fi
+              ;;
+            formal)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
+                echo "::error title=Invalid formal tag::Use v<version>."
+                exit 1
+              fi
+              ;;
+          esac
+          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+            BUILD_VERSION_NAME="${TAG#v}"
+            BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
+          fi
+
+          ROLLING_DEBUG_TAG=debug-rolling
+          if [ "$CHANNEL" = debug ]; then
+            PUBLISH_TAG="$ROLLING_DEBUG_TAG"
+            ROLLING_DEBUG=true
+          else
+            PUBLISH_TAG="$TAG"
+            ROLLING_DEBUG=false
+          fi
+
+          {
+            echo "channel=$CHANNEL"
+            echo "tag=$TAG"
+            echo "publish_tag=$PUBLISH_TAG"
+            echo "rolling_debug=$ROLLING_DEBUG"
+            echo "name=$NAME"
+            echo "prerelease=$PRERELEASE"
+            echo "make_latest=$MAKE_LATEST"
+            echo "publish_managed_release=$PUBLISH_MANAGED_RELEASE"
+            echo "publish_manifest=$PUBLISH_MANIFEST"
+            echo "manifest_channel=$MANIFEST_CHANNEL"
+            echo "build_version_name=$BUILD_VERSION_NAME"
+            echo "release_sequence=$RELEASE_SEQUENCE"
+            echo "body<<EOF"
+            echo "$BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - name: Provide gitignored Google OAuth secret stub
+        shell: bash
+        env:
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+        run: |
+          dst=hibiki/lib/src/sync/google_oauth_secret.dart
+          if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+            printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
+              "$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')" \
+              > "$dst"
+          elif [ ! -f "$dst" ]; then
+            cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
+          fi
+      - name: Provide gitignored log upload secret stub
+        shell: bash
+        env:
+          LOG_UPLOAD_ENDPOINT: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
+          LOG_UPLOAD_TOKEN: ${{ secrets.LOG_UPLOAD_TOKEN }}
+        run: |
+          dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
+          if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
+            printf 'const String kLogUploadEndpoint = %s;\nconst String kLogUploadToken = %s;\n' \
+              "$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')" \
+              "$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')" \
+              > "$dst"
+          elif [ ! -f "$dst" ]; then
+            cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
+          fi
+      # dandanplay_secret.dart ships a committed empty placeholder (AppId/AppSecret
+      # = '') so a fresh clone compiles and online danmaku degrades to unsigned.
+      # When the DANDANPLAY_APP_ID / DANDANPLAY_APP_SECRET repo secrets are set,
+      # bake the real values in so CI/release builds sign dandanplay open-API
+      # requests and online danmaku works out of the box (no manual API entry).
+      - name: Provide gitignored dandanplay secret stub
+        shell: bash
+        env:
+          DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+        run: |
+          dst=hibiki/lib/src/media/video/dandanplay_secret.dart
+          if [ -n "$DANDANPLAY_APP_ID" ]; then
+            printf "const String kDandanplayAppId = '%s';\nconst String kDandanplayAppSecret = '%s';\n" \
+              "$DANDANPLAY_APP_ID" \
+              "$DANDANPLAY_APP_SECRET" \
+              > "$dst"
+          elif [ ! -f "$dst" ]; then
+            cp hibiki/lib/src/media/video/dandanplay_secret.example.dart "$dst"
+          fi
+      # TODO-1208: cache resolved pub packages (macOS/iOS default ~/.pub-cache).
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
+      # TODO-1208: cache CocoaPods spec repos + downloaded pod source and the
+      # generated Pods dirs. Keyed on the Podfile.lock/pubspec.lock so a pod bump
+      # invalidates it; CocoaPods re-installs on a mismatch, and a miss just
+      # re-downloads.
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods
+            hibiki/ios/Pods
+            hibiki/macos/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('hibiki/ios/Podfile.lock', 'hibiki/macos/Podfile.lock', 'hibiki/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
+      - name: Flutter pub get
+        working-directory: hibiki
+        run: flutter pub get
+      - name: Apply pub cache patches
+        shell: bash
+        run: |
+          chmod +x ci/apply-patches.sh
+          bash ci/apply-patches.sh
       # See build-multiplatform.yml ios job: flutter_native_splash 2.4.4 ships a
       # broken SPM Package.swift and its 2.4.5+ fix conflicts with our pinned
       # archive ^3.6.1 / xml ^6.3.0. iOS deps are CocoaPods-managed, so disable
@@ -981,24 +1072,207 @@ jobs:
             cd "$payload_dir"
             zip -qry "$GITHUB_WORKSPACE/hibiki/$out_dir/hibiki-${BUILD_VERSION_NAME}-ios.ipa" Payload
           )
-      - name: Upload Apple artifacts to workflow run
+      # The single non-blocking `publish` job downloads this artifact and does
+      # all Release publishing, so iOS builds in parallel with Windows/macOS and
+      # never blocks (or is blocked by) the other platforms.
+      - name: Upload iOS IPA artifact
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: hibiki-${{ steps.channel.outputs.channel }}-apple-${{ github.sha }}
-          path: |
-            hibiki/build/release-artifacts/hibiki-*-macos.zip
-            hibiki/build/release-artifacts/hibiki-*-ios.ipa
+          name: desktop-artifacts-ios
+          path: hibiki/build/release-artifacts/hibiki-*-ios.ipa
           if-no-files-found: ignore
           retention-days: 14
-      - name: Upload Apple assets to GitHub Release event
+
+  publish:
+    needs: [windows, macos, ios]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Validate unified release policy
+        shell: pwsh
+        run: ./tool/check_release_policy.ps1
+      - name: Resolve desktop release channel
+        id: channel
+        shell: bash
+        env:
+          INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
+          INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+          RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          VERSION=$(grep '^version:' hibiki/pubspec.yaml | sed 's/version: *//;s/+.*//')
+          RELEASE_SEQUENCE=$(git rev-list --count HEAD)
+          if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
+            echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
+            exit 1
+          fi
+          SHORT_SHA="${GITHUB_SHA::7}"
+          EVENT="${GITHUB_EVENT_NAME}"
+          CHANNEL="${INPUT_CHANNEL:-}"
+          TAG="${INPUT_TAG_NAME:-}"
+          NAME="${INPUT_RELEASE_NAME:-}"
+          BODY=""
+          PRERELEASE=true
+          MAKE_LATEST=false
+          PUBLISH_MANAGED_RELEASE=false
+          # BUG-869: manifest-only publish flag decoupled from
+          # PUBLISH_MANAGED_RELEASE (see release.yml) so the `release` event can
+          # emit latest-stable.json without re-touching the manual Release.
+          PUBLISH_MANIFEST=false
+          MANIFEST_CHANNEL=""
+
+          case "$EVENT" in
+            push)
+              CHANNEL=debug
+              TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
+              NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
+              BODY="Automated desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Push releases are always prerelease and never Latest."
+              PUBLISH_MANAGED_RELEASE=true
+              ;;
+            workflow_dispatch)
+              case "$CHANNEL" in
+                debug)
+                  TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
+                  NAME="${NAME:-Hibiki desktop debug ${VERSION} (${SHORT_SHA})}"
+                  BODY="Manual desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Debug releases are prerelease and never Latest."
+                  ;;
+                beta)
+                  TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
+                  NAME="${NAME:-Hibiki ${VERSION} beta ${RELEASE_SEQUENCE}}"
+                  BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
+                  ;;
+                formal)
+                  TAG="${TAG:-v${VERSION}}"
+                  NAME="${NAME:-Hibiki ${VERSION}}"
+                  BODY="Manual desktop formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
+                  PRERELEASE=false
+                  MAKE_LATEST=true
+                  ;;
+                *)
+                  echo "::error title=Invalid release channel::Use debug, beta, or formal."
+                  exit 1
+                  ;;
+              esac
+              PUBLISH_MANAGED_RELEASE=true
+              ;;
+            release)
+              CHANNEL=github-release
+              TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
+              # BUG-869: a manually-published NON-prerelease Release IS the formal
+              # stable release → emit latest-stable.json (with releaseSequence) for
+              # in-China stable clients. Manifest-only; never touches the Release.
+              if [ "${RELEASE_IS_PRERELEASE}" = "false" ]; then
+                MANIFEST_CHANNEL=formal
+                PUBLISH_MANIFEST=true
+                PRERELEASE=false
+              fi
+              ;;
+            *)
+              echo "::error title=Unsupported event::$EVENT is not a desktop release event."
+              exit 1
+              ;;
+          esac
+
+          # BUG-869: push / workflow_dispatch unchanged — MANIFEST_CHANNEL follows
+          # CHANNEL and manifest publishes whenever the managed release does.
+          if [ -z "$MANIFEST_CHANNEL" ]; then MANIFEST_CHANNEL="$CHANNEL"; fi
+          if [ "$PUBLISH_MANAGED_RELEASE" = true ]; then PUBLISH_MANIFEST=true; fi
+
+          BUILD_VERSION_NAME="$VERSION"
+          case "$CHANNEL" in
+            debug)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+                echo "::error title=Invalid debug tag::Use v<version>-debug.<sequence>+<short-sha>, not debug-<sha>."
+                exit 1
+              fi
+              ;;
+            beta)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-beta\.[0-9]+$ ]]; then
+                echo "::error title=Invalid beta tag::Use v<version>-beta.<sequence>."
+                exit 1
+              fi
+              ;;
+            formal)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
+                echo "::error title=Invalid formal tag::Use v<version>."
+                exit 1
+              fi
+              ;;
+          esac
+          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+            BUILD_VERSION_NAME="${TAG#v}"
+            BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
+          fi
+
+          ROLLING_DEBUG_TAG=debug-rolling
+          if [ "$CHANNEL" = debug ]; then
+            PUBLISH_TAG="$ROLLING_DEBUG_TAG"
+            ROLLING_DEBUG=true
+          else
+            PUBLISH_TAG="$TAG"
+            ROLLING_DEBUG=false
+          fi
+
+          {
+            echo "channel=$CHANNEL"
+            echo "tag=$TAG"
+            echo "publish_tag=$PUBLISH_TAG"
+            echo "rolling_debug=$ROLLING_DEBUG"
+            echo "name=$NAME"
+            echo "prerelease=$PRERELEASE"
+            echo "make_latest=$MAKE_LATEST"
+            echo "publish_managed_release=$PUBLISH_MANAGED_RELEASE"
+            echo "publish_manifest=$PUBLISH_MANIFEST"
+            echo "manifest_channel=$MANIFEST_CHANNEL"
+            echo "build_version_name=$BUILD_VERSION_NAME"
+            echo "release_sequence=$RELEASE_SEQUENCE"
+            echo "body<<EOF"
+            echo "$BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      # Pull in every platform's built asset. Windows / macOS / iOS build in
+      # PARALLEL and upload their installers/zips/ipas as `desktop-artifacts-*`
+      # workflow artifacts; this single publish job (needs: all three, but
+      # if: always()) gathers whichever ones succeeded and does ALL Release
+      # publishing here. merge-multiple flattens them into one dir; a failed
+      # platform simply contributes no file (uploads use if-no-files-found:
+      # ignore), so a broken mac/iOS build never blocks the Windows publish.
+      - name: Download platform release artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: desktop-artifacts-*
+          merge-multiple: true
+          path: hibiki/build/release-artifacts
+      - name: Upload assets to GitHub Release event
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.channel.outputs.tag }}
           files: |
+            hibiki/build/release-artifacts/hibiki-*-windows-setup.exe
             hibiki/build/release-artifacts/hibiki-*-macos.zip
             hibiki/build/release-artifacts/hibiki-*-ios.ipa
+      # TODO-1049 / TODO-1123 / TODO-1129: same rolling-release asset GC as
+      # release.yml. softprops upserts same-named assets but never removes a
+      # PRIOR commit's asset (different seq/sha in the name) from the reused
+      # `debug-rolling` release, so without pruning it would accumulate one
+      # EXE/DMG/IPA per commit. The OLD prune kept ONLY assets carrying THIS
+      # desktop build's versionName, which cross-platform WIPED the Android APKs
+      # (release.yml publishes to the SAME rolling tag with a different
+      # versionName) -- TODO-1129. We now mirror release.yml exactly: keep the
+      # most recent KEEP_SEQS (=3) debug sequences by seq number, so Android and
+      # desktop publishing to the same tag each keep their top-3 and never delete
+      # each other, and a client mid-download against a just-superseded seq is
+      # not 404'd. Skipped unless rolling debug; missing release / nothing to
+      # prune is a no-op.
       - name: Prune stale assets from rolling debug release
         if: steps.channel.outputs.publish_managed_release == 'true' && steps.channel.outputs.rolling_debug == 'true'
         shell: bash
@@ -1025,19 +1299,20 @@ jobs:
             echo "No assets on $PUBLISH_TAG; nothing to prune."
             exit 0
           fi
-          # TODO-1131: only ever prune THIS platform's own assets. The rolling
-          # debug release is shared by Android/Windows/Apple, each publishing from
-          # an independent workflow run. Computing the kept-seq set across ALL
-          # platforms' assets means a lagging platform has its last-good asset's
-          # seq pushed out of the top KEEP_SEQS by the OTHER platforms' newer
-          # seqs -- so another platform's prune deletes it and the rolling release
-          # "loses" that device. Scope the candidate set to this platform's
-          # filename shape (Apple: *-macos.zip / *-ios.ipa) so each platform keeps
-          # its own top KEEP_SEQS and never touches another's assets.
+          # TODO-1131: only ever prune THIS workflow's own (desktop + Apple)
+          # assets. The rolling debug release is shared by Android and this
+          # desktop/Apple workflow, each publishing from an independent workflow
+          # run. Computing the kept-seq set across ALL platforms' assets means a
+          # lagging platform has its last-good asset's seq pushed out of the top
+          # KEEP_SEQS by the OTHER platforms' newer seqs -- so another platform's
+          # prune deletes it and the rolling release "loses" that device. Scope
+          # the candidate set to THIS workflow's filename shapes (Windows:
+          # *-windows-setup.exe / macOS: *-macos.zip / iOS: *-ios.ipa) so it keeps
+          # its own top KEEP_SEQS and never touches Android's assets.
           PLATFORM_ASSETS=()
           for name in "${ASSET_NAMES[@]}"; do
             case "$name" in
-              *-macos.zip|*-ios.ipa) PLATFORM_ASSETS+=("$name") ;;
+              *-windows-setup.exe|*-macos.zip|*-ios.ipa) PLATFORM_ASSETS+=("$name") ;;
             esac
           done
           # Check length BEFORE re-expanding the (possibly empty) array: on macOS
@@ -1045,12 +1320,12 @@ jobs:
           # and no-asset-for-this-platform is exactly the lagging / first-publish
           # case this fix must handle gracefully. `${#arr[@]}` is safe on 3.2.
           if [ "${#PLATFORM_ASSETS[@]}" -eq 0 ]; then
-            echo "No Apple assets on $PUBLISH_TAG; nothing to prune."
+            echo "No desktop/Apple assets on $PUBLISH_TAG; nothing to prune."
             exit 0
           fi
           ASSET_NAMES=("${PLATFORM_ASSETS[@]}")
           # Asset names embed the versionName token `-<base>-debug.<seq>-` (e.g.
-          # hibiki-0.11.1-debug.5633-3cf5905-macos.zip). Parse the current
+          # hibiki-0.11.1-debug.5633-3cf5905-windows-setup.exe). Parse the current
           # build's seq from BUILD_VERSION_NAME (0.11.1-debug.5633), extract every
           # asset's seq the same way, keep the top KEEP_SEQS distinct seqs (numeric
           # desc), and delete only assets whose seq is NOT in that set. Assets with
@@ -1095,7 +1370,7 @@ jobs:
             echo "  deleting stale asset $asset from $PUBLISH_TAG"
             gh release delete-asset "$PUBLISH_TAG" "$asset" --repo "$REPO" --yes
           done
-      - name: Publish Apple channel release
+      - name: Publish desktop channel release
         if: steps.channel.outputs.publish_managed_release == 'true'
         uses: softprops/action-gh-release@v3
         with:
@@ -1106,8 +1381,40 @@ jobs:
           prerelease: ${{ steps.channel.outputs.prerelease }}
           make_latest: ${{ steps.channel.outputs.make_latest }}
           files: |
+            hibiki/build/release-artifacts/hibiki-*-windows-setup.exe
             hibiki/build/release-artifacts/hibiki-*-macos.zip
             hibiki/build/release-artifacts/hibiki-*-ios.ipa
+      # TODO-705: publish a mirror update manifest so beta/debug in-China update
+      # checks succeed (raw.githubusercontent.com is proxiable; api.github.com
+      # /releases is mirror-403'd, BUG-292). This pushes a DATA FILE to the
+      # update-manifest branch -- it is NOT a GitHub Release: it never sets
+      # make_latest / prerelease:false, reuses the channel outputs verbatim, uses
+      # the shared release_sequence (never run_number), and update-manifest is
+      # absent from this workflow's push trigger (main/develop only) so it does
+      # not cascade a run. Merges this platform's assets into any same-tag
+      # manifest the Android workflow already pushed (concurrent, dedupe by name).
+      - name: Publish mirror update manifest (desktop assets)
+        # BUG-869: gate on publish_manifest + manifest_channel so the `release`
+        # event emits latest-stable.json without re-touching the manual Release.
+        if: steps.channel.outputs.publish_manifest == 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          CHANNEL: ${{ steps.channel.outputs.manifest_channel }}
+          TAG: ${{ steps.channel.outputs.tag }}
+          # TODO-1049: manifest `tag` keeps the versioned/seq TAG for client
+          # version comparison; asset URLs resolve under DOWNLOAD_TAG (the actual
+          # release tag -- `debug-rolling` for debug, else identical to TAG).
+          DOWNLOAD_TAG: ${{ steps.channel.outputs.publish_tag }}
+          PRERELEASE: ${{ steps.channel.outputs.prerelease }}
+          NOTES: ${{ steps.channel.outputs.body }}
+          VERSION: ${{ steps.channel.outputs.build_version_name }}
+          RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
+          ARTIFACTS_DIR: hibiki/build/release-artifacts
+          ASSET_GLOB: hibiki-*-windows-setup.exe
+          PLATFORM_LABEL: desktop
+        run: bash tool/publish_update_manifest.sh
       - name: Publish mirror update manifest (Apple assets)
         # BUG-869: gate on publish_manifest + manifest_channel so the `release`
         # event emits latest-stable.json without re-touching the manual Release.
