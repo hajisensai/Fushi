@@ -22,7 +22,7 @@ Android: Wähle **arm64**. Windows: Wähle die **.exe**-Datei.
 
 ## Einrichtungs-Tutorial
 
-### 1. Empfohlene Wörterbücher und lokales Audio importieren (Sehr empfehlenswert für Einsteiger!!! · optional)
+### 1. Empfohlene Wörterbücher (Wort- + Tonhöhenakzent- + Häufigkeitswörterbücher) und lokales Audio (japanische und englische Audiodatenbanken) importieren (Sehr empfehlenswert für Einsteiger!!! · optional)
 
 [Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare-Download (9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
 

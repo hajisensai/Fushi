@@ -22,7 +22,7 @@ Android: scegli **arm64**. Windows: scegli il file **.exe**.
 
 ## Tutorial di configurazione
 
-### 1. Importare i dizionari consigliati e l'audio locale (Altamente consigliato per i principianti!!! · facoltativo)
+### 1. Importare i dizionari consigliati (dizionari di parole + accento tonale + frequenza) e l'audio locale (database audio giapponese e inglese) (Altamente consigliato per i principianti!!! · facoltativo)
 
 [Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Download da Cloudflare (9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
 

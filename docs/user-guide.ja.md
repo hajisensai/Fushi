@@ -22,7 +22,7 @@ Android：**arm64** を選んでください。Windows：**.exe** ファイル�
 
 ## 設定チュートリアル
 
-### 1. 推奨辞書とローカル音声をインポートする（初心者に強くおすすめ！！！・任意）
+### 1. 推奨辞書（語彙＋アクセント＋頻度辞書）とローカル音声（日本語・英語の音声データベース）をインポートする（初心者に強くおすすめ！！！・任意）
 
 [Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare からダウンロード（9.3 GB）](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
 

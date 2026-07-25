@@ -26,7 +26,7 @@ Android: choose **arm64**. Windows: choose the **.exe** file.
 
 ## Configuration Tutorial
 
-### 1. Import recommended dictionaries and local audio (Highly recommended for beginners!!! · optional)
+### 1. Import recommended dictionaries (word + pitch-accent + frequency dictionaries) and local audio (Japanese and English audio databases) (Highly recommended for beginners!!! · optional)
 
 [Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare download (9.3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
 

@@ -22,7 +22,7 @@ Android: kies **arm64**. Windows: kies het **.exe**-bestand.
 
 ## Configuratiehandleiding
 
-### 1. Aanbevolen woordenboeken en lokale audio importeren (Sterk aanbevolen voor beginners!!! · optioneel)
+### 1. Aanbevolen woordenboeken (woord- + toonhoogteaccent- + frequentiewoordenboeken) en lokale audio (Japanse en Engelse audiodatabases) importeren (Sterk aanbevolen voor beginners!!! · optioneel)
 
 [Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare-download (9,3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
 
