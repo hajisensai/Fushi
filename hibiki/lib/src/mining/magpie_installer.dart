@@ -20,6 +20,11 @@ import 'package:hibiki/src/utils/misc/resumable_downloader.dart';
 import 'package:hibiki/src/utils/misc/update_checker.dart'
     show applyUpdateProxy;
 
+/// 统一日志出口。安装器全程无 UI（后台静默更新 + 交互确认回调），失败若只剩一个 enum，
+/// 用户报「装不上」时根本无从判断卡在网络、侧车、校验还是解压 —— 关键路径必须留痕。
+/// 与同目录 `galgame_cover_download.dart` 同范式（带模块前缀的 debugPrint）。
+void _log(String message) => debugPrint('[magpie] $message');
+
 /// 我们自建的 Magpie fork 仓库 slug。上游是 `Blinue/Magpie`（GPL-3.0）；fork 出来自己编译，
 /// 为的是后续能改源码。fork 保持 public 且带完整源码与原 LICENSE —— 分发 GPL 二进制的
 /// 硬性合规条件。
@@ -62,9 +67,15 @@ const List<String> kMagpieRequiredRootFiles = <String>[
 /// 校验安装完整性用的必需子目录：缺 `effects` 就没有任何缩放算法可用，装了等于没装。
 const List<String> kMagpieRequiredDirs = <String>['effects'];
 
-/// 后台静默更新取 sha256 侧车的总预算。与 galgame helper 同理（BUG-1076）：更新只发生在
-/// app 启动后的后台，不抢任何交互路径，所以给「直连 + 5 镜像」逐个轮询留充分时间。
+/// 后台静默更新取 sha256 侧车的总预算。更新只发生在 app 启动后的后台，不抢任何交互路径，
+/// 所以给直连留充分时间（BUG-1076 的教训：预算太紧等于把弱网用户永久钉在旧版）。
 const Duration kMagpieBackgroundShaTimeout = Duration(seconds: 90);
+
+/// 交互安装路径取 sha256 侧车的总预算。**必须有上限**：没有它，直连被 GFW 静默丢包时这里
+/// 会一直悬着，用户点了「下载」既等不到成功也等不到失败。取与后台同量级但更短——交互路径
+/// 背后有人在等，而侧车只走直连（无镜像轮询，见 [magpieSidecarUrls]），45s 足够覆盖一次
+/// 带重定向的慢连接。
+const Duration kMagpieInteractiveShaTimeout = Duration(seconds: 45);
 
 /// 已装版本标记文件名：装成功后写入该 zip 的 sha256，下次启动与 release 侧车比对判断新版。
 String magpieMarkerName() => 'installed.sha256';
@@ -123,6 +134,48 @@ String magpieSha256Url(
   String tag = kMagpieReleaseTag,
 }) =>
     '${magpieDownloadUrl(arch, repo: repo, tag: tag)}.sha256';
+
+/// sha256 侧车**唯一**可信来源的主机白名单（GitHub 自己的域）。
+///
+/// 为什么侧车不能和 zip 走同一批第三方 GFW 镜像：镜像是他人控制的完整中间人，一旦它同时
+/// 供应 zip 和 `.sha256`，就能给出「篡改过的 zip + 与之匹配的摘要」，校验退化成走过场——
+/// 等于没有校验。所以摘要必须来自我们信任的源（直连 GitHub），而 zip 本体可以随便走镜像：
+/// 它的内容已被直连拿到的摘要独立锁死，镜像改一个字节都会在校验时炸掉。
+///
+/// `objects.` / `release-assets.` 是 GitHub release 资产 302 的落点，属重定向链的合法一环。
+///
+/// TODO(supply-chain): 同一套「侧车与 zip 同源镜像 + 取不到就不校验」的模式在
+/// `galgame_helper_installer.dart` 里同样存在（它的 `_fetchSha256` 走
+/// [galgameHelperCandidateUrls]，失败返回 null 后照装）。那边影响面更大（注入器 + hook
+/// DLL），但改动会牵到已发布的 helper 自更新链路，故本轮不顺手动，留独立任务跟进。
+const List<String> kMagpieTrustedSidecarHosts = <String>[
+  'github.com',
+  'api.github.com',
+  'objects.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+  'raw.githubusercontent.com',
+];
+
+/// **纯函数**：该 URL 是否是可信侧车来源（https + 主机在 [kMagpieTrustedSidecarHosts] 内）。
+/// 任何镜像前缀套出来的 URL（`https://ghfast.top/https://github.com/...`）主机都是镜像自己，
+/// 一律判否。
+bool magpieIsTrustedSidecarUrl(String url) {
+  final Uri? uri = Uri.tryParse(url);
+  if (uri == null || uri.scheme.toLowerCase() != 'https') return false;
+  return kMagpieTrustedSidecarHosts.contains(uri.host.toLowerCase());
+}
+
+/// **纯函数**：取 sha256 侧车的候选 URL —— **只有直连，绝不含镜像**（与
+/// [galgameHelperCandidateUrls] 的 zip 候选刻意不同，理由见 [kMagpieTrustedSidecarHosts]）。
+/// 直连不可用时列表为空，安装路径据此硬失败（宁可不装，也不装未校验产物）。
+List<String> magpieSidecarUrls(
+  String arch, {
+  String repo = kMagpieRepo,
+  String tag = kMagpieReleaseTag,
+}) {
+  final String url = magpieSha256Url(arch, repo: repo, tag: tag);
+  return magpieIsTrustedSidecarUrl(url) ? <String>[url] : const <String>[];
+}
 
 /// 返回缺少的必需根文件名；按 Windows 规则忽略大小写。
 List<String> magpieMissingFiles(Iterable<String> presentFiles) {
@@ -194,7 +247,8 @@ class MagpiePackageMetadata {
             ? version
             : (version is String ? int.tryParse(version) : null),
       );
-    } catch (_) {
+    } catch (e) {
+      _log('metadata parse failed: $e');
       return null;
     }
   }
@@ -224,9 +278,61 @@ enum MagpieInstallResult {
   /// 用户在确认回调里拒绝了下载。
   declined,
 
-  /// 下载/校验/解压/换入任一步失败。调用方降级即可，绝不崩。
+  /// 下载失败：直连与所有镜像都拿不到 zip（离线、全被墙、404）。可重试。
+  downloadFailed,
+
+  /// **完整性校验失败**：拿不到直连 GitHub 的 sha256 侧车，或下到的 zip 与侧车摘要不符。
+  /// 与 [downloadFailed] 分开是因为语义完全不同——这条意味着「东西下下来了但不可信」或
+  /// 「无法证明可信」，此时一律**不安装**。
+  verificationFailed,
+
+  /// 校验通过之后的步骤失败（解压 / staging 清单不全 / 换入 / 复检）。调用方降级即可，绝不崩。
   failed,
 }
+
+/// 安装失败的分类载体：把「哪一步炸的」从 [MagpieInstaller] 内部一路带到
+/// [MagpieInstaller.ensureInstalled] 的返回值，免得调用方只看得到一个笼统的 failed。
+@immutable
+class MagpieInstallException implements Exception {
+  const MagpieInstallException(this.result, this.message);
+
+  /// 该失败对应的对外结果枚举。
+  final MagpieInstallResult result;
+
+  /// 人类可读的失败原因（已写进日志，这里再带一份便于上层拼提示）。
+  final String message;
+
+  @override
+  String toString() => 'MagpieInstallException(${result.name}): $message';
+}
+
+/// 校验前置门：拿不到可信 sha256 就**放弃安装**（抛 [MagpieInstallException]）。
+///
+/// 这是本安装器的安全底线。产物走的是可被完整中间人替换的第三方镜像，摘要是唯一能把内容
+/// 钉死的东西；旧实现在这里降级成「取不到就不校验」，等于任何一个镜像都能把任意 exe 装进
+/// 用户 `Hibiki.exe` 同级目录 —— 供应链后门。宁可装不上，也不装未校验产物。
+///
+/// 抽成顶层函数是为了在任何平台都能被测（真实安装路径只在 Windows 跑）。
+String magpieRequireVerifiedSha(String? sha, String arch) {
+  final String? parsed = sha == null ? null : parseSha256Sidecar(sha);
+  if (parsed == null) {
+    throw MagpieInstallException(
+      MagpieInstallResult.verificationFailed,
+      '$arch: no trusted sha256 sidecar (direct GitHub only); '
+      'refusing to install an unverified package',
+    );
+  }
+  return parsed;
+}
+
+/// **纯函数**：镜像轮询全灭时的失败分类。中途只要出现过 sha256 不符（内容与直连摘要对不
+/// 上），就报 [MagpieInstallResult.verificationFailed]——那是投毒/损坏，不是网络不通。
+MagpieInstallResult magpieClassifyDownloadFailure({
+  required bool sawIntegrityFailure,
+}) =>
+    sawIntegrityFailure
+        ? MagpieInstallResult.verificationFailed
+        : MagpieInstallResult.downloadFailed;
 
 /// 传给确认回调的下载提示信息。
 ///
@@ -258,7 +364,14 @@ class MagpieInstaller {
   MagpieInstaller();
 
   bool _canceled = false;
-  HttpClient? _client;
+
+  /// 所有**在途**的 HttpClient。
+  ///
+  /// 原来是单个 `_client?`，但大小探测的 client 与安装的 client 在时间上是重叠的（探测在
+  /// confirm 之前发起、confirm 期间还活着，安装随后又要装一个），单字段必然互相覆盖：要么
+  /// 探测 client 漏掉 cancel（探测那个根本没登记过），要么探测结束时把安装 client 置空。
+  /// 换成集合就没有这个特殊情况了 —— 谁在途谁在里面，[cancel] 一次全关。
+  final Set<HttpClient> _liveClients = <HttpClient>{};
 
   /// 换入是唯一与「读取安装目录」竞态的写窗口（亚秒级本地文件操作），全部串到这条门上；
   /// 下载/解压只碰临时目录，无需互斥。
@@ -270,10 +383,32 @@ class MagpieInstaller {
     return run;
   }
 
-  /// 用户主动取消下载：置位并强制关闭在途 client 中断请求。
+  /// 用户主动取消下载：置位并强制关闭**所有**在途 client 中断请求。
   void cancel() {
     _canceled = true;
-    _client?.close(force: true);
+    for (final HttpClient client in _liveClients.toList(growable: false)) {
+      try {
+        client.close(force: true);
+      } catch (e) {
+        _log('cancel: close client failed: $e');
+      }
+    }
+  }
+
+  /// 登记在途 client（[cancel] 能关到它）。
+  HttpClient _track(HttpClient client) {
+    _liveClients.add(client);
+    return client;
+  }
+
+  /// 注销并关闭一个在途 client。
+  void _release(HttpClient client) {
+    _liveClients.remove(client);
+    try {
+      client.close(force: true);
+    } catch (e) {
+      _log('release: close client failed: $e');
+    }
   }
 
   /// `Hibiki.exe` 同级的 `magpie\` 安装目录。
@@ -355,12 +490,21 @@ class MagpieInstaller {
 
     try {
       await _runInstall(arch: targetArch, onProgress: onProgress);
-    } catch (_) {
+    } on MagpieInstallException catch (e) {
+      // 分类失败（校验缺失/不符 vs 下载不通）原样透传给调用方，别糊成一个 failed。
+      _log('install aborted ($targetArch): $e');
+      return e.result;
+    } catch (e) {
+      _log('install failed ($targetArch): $e');
       return MagpieInstallResult.failed;
     }
-    return missingInstalledEntries().isEmpty
-        ? MagpieInstallResult.installed
-        : MagpieInstallResult.failed;
+    final List<String> missingAfter = missingInstalledEntries();
+    if (missingAfter.isNotEmpty) {
+      _log('install finished but incomplete ($targetArch): '
+          'missing ${missingAfter.join(', ')}');
+      return MagpieInstallResult.failed;
+    }
+    return MagpieInstallResult.installed;
   }
 
   /// app 启动后的后台静默自更新（无 UI、无 toast）。只做「已装 → 最新」：未安装/无标记/
@@ -369,8 +513,9 @@ class MagpieInstaller {
     if (!Platform.isWindows) return;
     try {
       await MagpieInstaller()._updateSilently();
-    } catch (_) {
-      // 后台更新是锦上添花：绝不影响 app 启动。
+    } catch (e) {
+      // 后台更新是锦上添花：绝不影响 app 启动。但必须留痕，否则「一直不更新」无从查。
+      _log('background update skipped: $e');
     }
   }
 
@@ -382,21 +527,21 @@ class MagpieInstaller {
     final String localSha = (await marker.readAsString()).trim();
     final String arch = magpieCurrentArch();
 
-    final HttpClient client = HttpClient();
+    final HttpClient client = _track(HttpClient());
     client.connectionTimeout = const Duration(seconds: 30);
     client.idleTimeout = const Duration(seconds: 60);
     await applyUpdateProxy(client);
-    _client = client;
     try {
-      final String? remoteSha = await _fetchSha256(client, arch).timeout(
-        kMagpieBackgroundShaTimeout,
-        onTimeout: () => null,
+      final String? remoteSha = await fetchSha256Sidecar(
+        client,
+        urls: magpieSidecarUrls(arch),
+        timeout: kMagpieBackgroundShaTimeout,
       );
       if (!magpieNeedsUpdate(localSha, remoteSha)) return;
+      _log('background update: $arch $localSha -> $remoteSha');
       await _installCore(client: client, arch: arch, expectedSha: remoteSha);
     } finally {
-      client.close(force: true);
-      _client = null;
+      _release(client);
     }
   }
 
@@ -405,39 +550,47 @@ class MagpieInstaller {
     required String arch,
     ResumableDownloadProgress? onProgress,
   }) async {
-    final HttpClient client = HttpClient();
+    final HttpClient client = _track(HttpClient());
     client.connectionTimeout = const Duration(seconds: 15);
     client.idleTimeout = const Duration(seconds: 60);
     await applyUpdateProxy(client); // 中国大陆直连 GitHub 常失败
-    _client = client;
     try {
       await _installCore(client: client, arch: arch, onProgress: onProgress);
     } finally {
-      client.close(force: true);
-      _client = null;
+      _release(client);
     }
   }
 
-  /// UI 无关的安装核心（交互路径与后台静默路径共用）：取 sha256 侧车 → 下载 zip（镜像回退
-  /// + Range 续传 + sha256 校验）→ 解压到 staging 并校验清单 → 换入 → 复检 → 写装机标记
-  /// → best-effort 写便携标记。任一步失败抛异常，由调用方决定提示或静默。
+  /// UI 无关的安装核心（交互路径与后台静默路径共用）：**先**从直连 GitHub 取 sha256 侧车
+  /// （取不到即硬失败）→ 下载 zip（镜像回退 + Range 续传 + sha256 校验）→ 解压到 staging 并
+  /// 校验清单 → 换入 → 复检 → 写装机标记 → best-effort 写便携标记。任一步失败抛异常，由
+  /// 调用方决定提示或静默。
   Future<void> _installCore({
     required HttpClient client,
     required String arch,
     String? expectedSha,
     ResumableDownloadProgress? onProgress,
   }) async {
-    expectedSha ??= await _fetchSha256(client, arch);
+    // 摘要必须**先于**任何下载拿到：没有它就没有判断产物真伪的依据，那就干脆别下。
+    final String sha = magpieRequireVerifiedSha(
+      expectedSha ??
+          await fetchSha256Sidecar(
+            client,
+            urls: magpieSidecarUrls(arch),
+            timeout: kMagpieInteractiveShaTimeout,
+          ),
+      arch,
+    );
 
     final File dest = File(
         p.join(Directory.systemTemp.path, 'hibiki_${magpieZipName(arch)}'));
     final File part = File('${dest.path}.part');
     final File zip = await _downloadZip(
       client: client,
-      arch: arch,
+      candidates: galgameHelperCandidateUrls(magpieDownloadUrl(arch)),
       dest: dest,
       part: part,
-      expectedSha256: expectedSha,
+      expectedSha256: sha,
       onProgress: onProgress ?? (int _, int? __) {},
     );
 
@@ -469,22 +622,28 @@ class MagpieInstaller {
         );
       }
 
-      if (expectedSha != null) {
-        try {
-          await _markerFile().writeAsString(expectedSha, flush: true);
-        } catch (_) {}
+      try {
+        await _markerFile().writeAsString(sha, flush: true);
+      } catch (e) {
+        // 标记写不成只影响下次自更新判据，不影响这次安装可用性。
+        _log('marker write failed ($arch): $e');
       }
 
       await ensurePortableConfig(metadata: metadata);
+      _log('installed $arch (sha256 $sha)');
 
       try {
         if (await zip.exists()) await zip.delete();
         if (await part.exists()) await part.delete();
-      } catch (_) {}
+      } catch (e) {
+        _log('temp cleanup failed ($arch): $e');
+      }
     } finally {
       try {
         if (staging.existsSync()) staging.deleteSync(recursive: true);
-      } catch (_) {}
+      } catch (e) {
+        _log('staging cleanup failed ($arch): $e');
+      }
     }
   }
 
@@ -495,7 +654,8 @@ class MagpieInstaller {
     if (!file.existsSync()) return null;
     try {
       return MagpiePackageMetadata.parse(await file.readAsString());
-    } catch (_) {
+    } catch (e) {
+      _log('metadata read failed: $e');
       return null;
     }
   }
@@ -522,23 +682,44 @@ class MagpieInstaller {
       await config.parent.create(recursive: true);
       await config.writeAsString(magpiePortableConfigContent(), flush: true);
       return true;
-    } catch (_) {
+    } catch (e) {
+      _log('portable config write failed: $e');
       return false;
     }
   }
 
-  /// 逐镜像候选下载 zip；全部失败则抛最后一个异常。
-  Future<File> _downloadZip({
+  /// 逐镜像候选下载 zip。zip **本体**可以随便走镜像：内容已被 [expectedSha256]（来自直连
+  /// GitHub 的侧车）钉死，镜像改一个字节都会在校验时炸掉。全部候选失败则抛分类过的
+  /// [MagpieInstallException] —— 中途出现过 sha256 不符就是 verificationFailed。
+  /// [candidates] 可注入仅为测试用（生产调用点传 [galgameHelperCandidateUrls] 的结果）。
+  @visibleForTesting
+  Future<File> downloadZip({
     required HttpClient client,
-    required String arch,
+    required List<String> candidates,
     required File dest,
     required File part,
-    required String? expectedSha256,
+    required String expectedSha256,
+    required ResumableDownloadProgress onProgress,
+  }) =>
+      _downloadZip(
+        client: client,
+        candidates: candidates,
+        dest: dest,
+        part: part,
+        expectedSha256: expectedSha256,
+        onProgress: onProgress,
+      );
+
+  Future<File> _downloadZip({
+    required HttpClient client,
+    required List<String> candidates,
+    required File dest,
+    required File part,
+    required String expectedSha256,
     required ResumableDownloadProgress onProgress,
   }) async {
-    final List<String> candidates =
-        galgameHelperCandidateUrls(magpieDownloadUrl(arch));
     Object? lastError;
+    bool sawIntegrityFailure = false;
     for (final String url in candidates) {
       if (_canceled) throw StateError('canceled');
       try {
@@ -553,35 +734,95 @@ class MagpieInstaller {
         ).download();
       } catch (e) {
         lastError = e;
+        if (e is ResumableDownloadIntegrityException) {
+          // 这条镜像给的内容与直连摘要对不上：损坏或投毒。换下一个，但记住见过。
+          sawIntegrityFailure = true;
+          _log('download integrity FAILED from $url: $e');
+        } else {
+          _log('download failed from $url: $e');
+        }
         if (_canceled) rethrow;
         // 换镜像前清掉可能不一致的 part（不同镜像 body 不可续）。
         try {
           if (await part.exists()) await part.delete();
-        } catch (_) {}
+        } catch (e) {
+          _log('part cleanup failed: $e');
+        }
       }
     }
-    throw Exception(lastError?.toString() ?? 'no download candidate');
+    final MagpieInstallResult result = magpieClassifyDownloadFailure(
+      sawIntegrityFailure: sawIntegrityFailure,
+    );
+    final String reason = lastError?.toString() ?? 'no download candidate';
+    _log('all ${candidates.length} download candidates exhausted '
+        '(${result.name}): $reason');
+    throw MagpieInstallException(result, reason);
   }
 
-  /// 取 sha256 侧车文本并解析出摘要；任何失败返回 null（降级为不校验 sha256）。
-  Future<String?> _fetchSha256(HttpClient client, String arch) async {
-    final List<String> candidates =
-        galgameHelperCandidateUrls(magpieSha256Url(arch));
-    for (final String url in candidates) {
+  /// 取 sha256 侧车文本并解析出摘要。
+  ///
+  /// **只走 [magpieSidecarUrls] 给的直连 URL**（生产调用点如此），并逐跳校验重定向没有离开
+  /// 可信主机 —— 侧车一旦允许从第三方镜像取，镜像就能同时供应「篡改的 zip + 匹配的摘要」，
+  /// 校验退化成走过场。取不到一律返回 null，由 [magpieRequireVerifiedSha] 把 null 变成硬
+  /// 失败（绝不降级成「不校验」）。[timeout] 是**总**预算：没有它，直连被静默丢包时这里会
+  /// 一直悬着。[isTrusted] 仅测试注入（生产用默认值，有源码守卫）。
+  @visibleForTesting
+  Future<String?> fetchSha256Sidecar(
+    HttpClient client, {
+    required List<String> urls,
+    Duration? timeout,
+    bool Function(String url) isTrusted = magpieIsTrustedSidecarUrl,
+  }) {
+    final Future<String?> job = _fetchSha256(client, urls, isTrusted);
+    if (timeout == null) return job;
+    return job.timeout(timeout, onTimeout: () {
+      _log('sidecar fetch timed out after $timeout');
+      return null;
+    });
+  }
+
+  Future<String?> _fetchSha256(
+    HttpClient client,
+    List<String> urls,
+    bool Function(String url) isTrusted,
+  ) async {
+    if (urls.isEmpty) {
+      _log('no trusted sidecar source available (direct GitHub only)');
+      return null;
+    }
+    for (final String url in urls) {
       if (_canceled) return null;
+      if (!isTrusted(url)) {
+        _log('sidecar source rejected (untrusted host): $url');
+        continue;
+      }
       try {
-        final HttpClientRequest req = await client.getUrl(Uri.parse(url));
+        final Uri base = Uri.parse(url);
+        final HttpClientRequest req = await client.getUrl(base);
         final HttpClientResponse resp = await req.close();
+        // 重定向链也必须留在可信主机内，否则一次 302 就能把摘要来源换成任何人。
+        final Uri? untrustedHop = resp.redirects
+            .map((RedirectInfo hop) => base.resolveUri(hop.location))
+            .cast<Uri?>()
+            .firstWhere((Uri? hop) => !isTrusted(hop.toString()),
+                orElse: () => null);
+        if (untrustedHop != null) {
+          await resp.drain<void>();
+          _log('sidecar redirect left trusted hosts: ${untrustedHop.host}');
+          continue;
+        }
         if (resp.statusCode != 200) {
           await resp.drain<void>();
+          _log('sidecar HTTP ${resp.statusCode}: $url');
           continue;
         }
         final String body =
             await resp.transform(const SystemEncoding().decoder).join();
         final String? sha = parseSha256Sidecar(body);
         if (sha != null) return sha;
-      } catch (_) {
-        // 试下一个镜像
+        _log('sidecar body has no valid sha256 digest: $url');
+      } catch (e) {
+        _log('sidecar fetch failed from $url: $e');
       }
     }
     return null;
@@ -589,7 +830,8 @@ class MagpieInstaller {
 
   /// 探测 zip 大小（Content-Length）：逐镜像发 HEAD。全失败返回 null。
   Future<int?> _probeSize(String arch) async {
-    final HttpClient client = HttpClient();
+    // 登记进在途集合，否则 cancel() 关不到它：用户取消后这条 HEAD 还会一直挂着。
+    final HttpClient client = _track(HttpClient());
     client.connectionTimeout = const Duration(seconds: 10);
     await applyUpdateProxy(client);
     try {
@@ -605,13 +847,13 @@ class MagpieInstaller {
           if (resp.statusCode == 200 && resp.contentLength > 0) {
             return resp.contentLength;
           }
-        } catch (_) {
-          // 试下一个镜像
+        } catch (e) {
+          _log('size probe failed from $url: $e'); // 试下一个镜像
         }
       }
       return null;
     } finally {
-      client.close(force: true);
+      _release(client);
     }
   }
 
@@ -652,11 +894,20 @@ class MagpieInstaller {
       if (!entry.isFile) continue;
       final String relativePath =
           entry.name.replaceAll('/', p.separator).replaceAll('\\', p.separator);
-      if (relativePath.isEmpty || p.isAbsolute(relativePath)) continue;
+      if (relativePath.isEmpty || p.isAbsolute(relativePath)) {
+        _log('extract: skipped absolute/empty entry "${entry.name}"');
+        continue;
+      }
       final String outputPath = p.normalize(p.join(targetRoot, relativePath));
-      if (!p.isWithin(targetRoot, outputPath)) continue;
+      if (!p.isWithin(targetRoot, outputPath)) {
+        _log('extract: skipped zip-slip entry "${entry.name}"');
+        continue;
+      }
       final Object? content = entry.content;
-      if (content is! List<int>) continue;
+      if (content is! List<int>) {
+        _log('extract: skipped unreadable entry "${entry.name}"');
+        continue;
+      }
       final File out = File(outputPath);
       await out.parent.create(recursive: true);
       await out.writeAsBytes(content, flush: true);
