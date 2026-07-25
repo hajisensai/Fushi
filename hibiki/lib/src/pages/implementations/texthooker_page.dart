@@ -140,7 +140,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     );
   }
 
-  /// 为单条台词改选语音轨（BUG-1093 的用户裁决出口）。
+  /// 为单条台词改选语音轨（BUG-1102 的用户裁决出口）。
   ///
   /// 会话级「活跃音轨」选择只改自动选源的默认值，且只在引擎 PCM 是当前音源时生效；
   /// 用户对**某一句**说「这句应该用这条轨」是与手动补录同级的裁决，走
@@ -1858,7 +1858,7 @@ class _TexthookerLine extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                 ],
-                // 逐行改音轨（BUG-1093）：自动选源在真机上会误选 BGM/旁白轨，
+                // 逐行改音轨（BUG-1102）：自动选源在真机上会误选 BGM/旁白轨，
                 // 用户必须能对**这一句**直接指定用哪条轨重抓。
                 if (canPickTrack) ...<Widget>[
                   HibikiIconButton(

@@ -54,7 +54,7 @@ enum GalHookAudioBackend { none, gameResource, enginePcm, systemLoopback }
 /// 而非故障；systemLoopback 是整机混音单流，同样没有逐轨枚举。只有引擎 PCM /
 /// 无音频后端时才保留通用「尚无音轨数据」空态。
 ///
-/// BUG-1093：这个解释**不是空列表专用**。用户机器上列表非空（残留 PCM 环仍能枚举）
+/// BUG-1102：这个解释**不是空列表专用**。用户机器上列表非空（残留 PCM 环仍能枚举）
 /// 却照样点不动选轨，原因就是当前后端根本不消费 `selectedAudioSourcePtr`。判据必须是
 /// 「后端是不是引擎 PCM」（[galTrackSelectionAffectsCapture]），不是「列表空不空」。
 enum GalTrackEmptyHint { generic, resourceMode, loopbackMode }
@@ -64,7 +64,7 @@ enum GalTrackEmptyHint { generic, resourceMode, loopbackMode }
 /// 只有引擎 PCM 后端会走 `grabUtterance`，也只有它读
 /// [EngineHookGalAudioSource.selectedAudioSourcePtr] / `excludedAudioSourcePtrs`；
 /// 资源模式按句取原始资源文件、Loopback 是整机混音，两者都与轨选择无关。UI 据此禁用
-/// 控件并说清原因，而不是让用户点一个不会生效的按钮（BUG-1093）。
+/// 控件并说清原因，而不是让用户点一个不会生效的按钮（BUG-1102）。
 /// 单条台词的选轨是另一回事——那是用户裁决，走
 /// [GalHookSessionController.setLineVoiceTrack]。
 bool galTrackSelectionAffectsCapture(GalHookAudioBackend backend) =>
@@ -1444,7 +1444,7 @@ class GalHookSessionController extends ChangeNotifier {
     return selected;
   }
 
-  /// 单条台词改用指定音轨重抓语音（BUG-1093 的真正出口）。
+  /// 单条台词改用指定音轨重抓语音（BUG-1102 的真正出口）。
   ///
   /// 会话级 [selectVoiceTrack] 只改自动选源的默认值，且只在引擎 PCM 是当前音源时生效；
   /// 用户在实时台词列表里对**某一句**说「这句应该用这条轨」是与手动补录同级的裁决，

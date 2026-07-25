@@ -10,7 +10,7 @@ import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client.dart';
 
-/// BUG-1100 降级不可恢复 / BUG-1101 降级下音频配错句 / BUG-1093 活跃音轨面板无效 /
+/// BUG-1100 降级不可恢复 / BUG-1101 降级下音频配错句 / BUG-1102 活跃音轨面板无效 /
 /// BUG-1094 手动补录固定 8 秒，以及「单条台词可改对应音轨」。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -251,7 +251,7 @@ void main() {
     endpoints.dispose();
   });
 
-  test('BUG-1093 选轨是否生效只由音频后端决定（与列表空不空无关）', () {
+  test('BUG-1102 选轨是否生效只由音频后端决定（与列表空不空无关）', () {
     expect(
       galTrackSelectionAffectsCapture(GalHookAudioBackend.enginePcm),
       isTrue,
@@ -280,7 +280,7 @@ void main() {
     expect(
       card.contains('state.audioTracks.isEmpty && emptyHint'),
       isFalse,
-      reason: '列表非空时解释态被跳过，正是 BUG-1093 里整套死控件照常渲染的原因',
+      reason: '列表非空时解释态被跳过，正是 BUG-1102 里整套死控件照常渲染的原因',
     );
     expect(card.contains('selectable: selectionEffective'), isTrue);
     expect(card.contains('enabled: selectable && !excluded'), isTrue,

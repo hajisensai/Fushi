@@ -31,10 +31,10 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1102](bugs/BUG-1102-gal-audio-track-panel-dead-controls.md) | ✅ | ✅ | 兼容性诊断页「活跃音轨」面板全无效：选轨/排除点了没反应，空轨照样占位 |
 | [BUG-1101](bugs/BUG-1101-gal-loopback-line-audio-off-by-one.md) | ✅ | ✅ | 降级到系统 Loopback 时逐行语音永远配到上一句 |
 | [BUG-1100](bugs/BUG-1100-gal-degrade-unrecoverable-engine-pcm.md) | ✅ | ✅ | galgame 刚启动就误报「降级运行 · engine_pcm_unavailable」，且永远回不到引擎 PCM |
 | [BUG-1094](bugs/BUG-1094-gal-manual-recapture-fixed-8s.md) | ✅ | ✅ | 手动录音 ⏺ 固定 8 秒自动关闭，且回取长度被同一个错误常量夹住 |
-| [BUG-1093](bugs/BUG-1093-gal-audio-track-panel-dead-controls.md) | ✅ | ✅ | 兼容性诊断页「活跃音轨」面板全无效：选轨/排除点了没反应，空轨照样占位 |
 | [BUG-1092](bugs/BUG-1092-gal-locale-resume-skipped.md) | 🚧 | 🚧 | Locale Emulator 启动的游戏永久停在挂起态：窗口永不出现，injector 却报 OK hooked |
 | [BUG-1091](bugs/BUG-1091-gal-injector-diagnostics-mojibake.md) | ✅ | ✅ | injector 诊断按系统代码页解码：会话事件乱码且中文失败分类永久失配 |
 | [BUG-1090](bugs/BUG-1090-audio-source-url-not-editable.md) | ✅ | ✅ | 管理音频来源弹窗里已有远端 URL 无法编辑，只能删了重加 |
