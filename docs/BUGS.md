@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1046 条。点号进各自文件。
+> 共 1048 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1086](bugs/BUG-1086-shelf-continue-hero-raw-title.md) | ✅ | ✅ | 改名后书架继续阅读条仍显示旧名 |
+| [BUG-1085](bugs/BUG-1085-reading-stats-phantom-chars-lost-duration.md) | ✅ | ✅ | 阅读统计速度爆表：幻象字数+纯时长行被拒 |
 | [BUG-1079](bugs/BUG-1079-extension-update-silent-stale.md) | ✅ | ✅ | 扩展自更新失败永久静默无重试且无任何更新提示 |
 | [BUG-1078](bugs/BUG-1078-extension-passive-wheel-scroll-drag.md) | ✅ | ✅ | 扩展在所有网页常驻非passive wheel监听拖慢浏览器滚动 |
 | [BUG-1077](bugs/BUG-1077-nested-lookup-mouse-hook-starvation.md) | ✅ | ✅ | 嵌套查词瞬间全局鼠标卡顿：钩子线程无优先级+嵌套路径卸装钩子churn |

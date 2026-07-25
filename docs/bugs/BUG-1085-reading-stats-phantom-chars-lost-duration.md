@@ -1,0 +1,21 @@
+## BUG-1085 · 阅读统计速度爆表：幻象字数+纯时长行被拒
+- **报告**：2026-07-25（用户：统计页截图「速度 1619597 字/时」「最快日 1619597 字/时·07-25」，今日 2213 字/0 分钟；分书行「幸福の王子 1.1万字·1分钟」。用户归因「改名后统计有问题」）
+- **真实性**：✅ 真 bug，但**改名非根因**（验真结论）：
+  - override 改名只写偏好（`ReaderHibikiSource.overrideTitleForBookKey`，`hibiki/lib/src/media/sources/reader_hibiki_source.dart:273`），不动 `EpubBooks.title` / `bookKey` / `reading_statistics.title`（(title,dateKey) 复合键，同行同键）；全仓无直改 title 的路径 → 改名不可能把统计「分身」，用户看到的分书行就是唯一一行的合计。
+  - **断点 A（时长丢失）**：`hibiki/lib/src/pages/implementations/reader_hibiki/navigation.part.dart:1207`（修复前）`if (_sessionCharsRead <= 0 || _book == null) return;`——EPUB 拒写纯时长行；页面 dispose 时最后一段无新字数则 `_sessionReadingMs` 直接丢；歌词/听书模式全程不计字（`navigation.part.dart:819` `_refreshProgress` 在 `_lyricsMode` 早退）⇒ 时长 100% 丢。对照 PDF（`reader_pdf_page.dart:251-252`）与漫画（`manga_hibiki_page.dart:1339-1340`）都允许 `charsRead: 0` 纯时长行——只有 EPUB 禁止，口径分叉。这是「1.1 万字·1 分钟」「今日 0 分钟」的时长侧根因。
+  - **断点 B（幻象字数）**：`navigation.part.dart:156-159`（修复前）水位用 `_absoluteCharPosition(_initialProgress)` 播种，但真实恢复锚是 `_initialCharOffset`；`reader_hibiki_page.dart:1677-1678`（charAnchor 跳转把 `_initialProgress` 强制 0.0）与 `reader_hibiki/audiobook.part.dart:464`（cue 兜底同样置 0）两处使水位落在章首，首个 `_refreshProgress`（`navigation.part.dart:862-867`）把章内前缀整段计成新读字数；章内 skipToCue 音频跳转（`packages/hibiki_audio/lib/src/audiobook/audiobook_controller.dart:822` 漏斗，音量键/快捷键/底栏/媒体通知全汇聚）也不抬水位，跳过的段落被计成已读。这是字数侧根因。
+  - **显示层**：`stat_trends.dart:30-33`（修复前）`computeCph` 无样本门槛；`stat_summary.dart:166`（修复前）最快日门槛仅 `ms>0 && chars>0`——几秒脏行外推「字/小时」顶爆极值（1.1 万字 ÷ 几十秒 ≈ 1619597 字/时）。
+  - 历史脏行不会自愈；显示层加门槛后自然不再展示爆表数字。
+  - 相关旧档：`docs/bugs/BUG-1052-reading-time-lost-session-clock-reanchor.md`（同症状 07-24，已修时钟重锚吃时长；本条是其残余的守卫/水位/显示层三段）。
+- **[x] ① 已修复** — `ffa9e3ca6`
+  - R1 允许纯时长行：`navigation.part.dart` `_flushReadingStats` 守卫改「无书 或 (无新字数 且 已确认时长 <1s)」才早退（<1s 与 PDF 同口径的生命周期抖动阈值，未达阈值保留累计器留到下次 flush，不丢时长）；纯时长时以 `charsRead: 0` 落库。挂机膨胀仍由 tracker 层 BUG-892 `isContinuousReadingGap` gap 守卫逐 tick 过滤，不再用「必须有字数」间接挡。
+  - R4 水位与恢复锚同源：新纯函数 `computeCharWatermark(...)`（`reader_hibiki_page.dart`，sessionWatermarkAfterRestore 旁）——有效 `_initialCharOffset`（>=0）用「章首累计 + clamp(锚, 章字数)」推导绝对水位，无锚退回分数口径；`_onRestoreComplete`（`navigation.part.dart`）播种改经它。显式跳句：`AudiobookPlayerController.skipToCue`（所有句子跳转唯一漏斗）新增 `onExplicitCueJump` 回调（seek 前触发），经 `AudiobookSession.attachReader/detachReader` 接线到 reader 的 `_handleExplicitCueJump`（`audiobook.part.dart`）把水位抬到目标 cue 位置（sasayaki 走 normCharStart 精确锚、SRT 走句号比例）——音频跳过的段落不算已读；后跳因水位只升不降天然 no-op。
+  - R5 cph 样本门槛：`stat_trends.dart` `computeCph` 增加 `minMs` 门槛参数（默认 `kMinCphSampleMs` = 60000ms，不足返回 null）；`stat_summary.dart` 典型日/最快/最慢日极值筛选、窗口加权均速，`reading_statistics_page.dart` 今日速度（不足显示「-」占位）、分书行速度（折叠为 0，不再霸速度榜）应用同一门槛；趋势图 `StatTrendPoint.cph` 把 null 折叠为 0。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/stat_trends_test.dart`（cph 门槛：脏行→null、边界 60000ms、minMs 可调、趋势点折叠）、`hibiki/test/pages/stat_summary_test.dart`（脏日不进最快日/典型日、≥1 分钟日仍合法）、`hibiki/test/reader/char_caliber_test.dart`（`computeCharWatermark` 全分支：分数恢复/charAnchor 恢复/clamp/cue 兜底/越界）、`hibiki/test/pages/reader_stats_pure_duration_guard_static_test.dart`（源码扫描：旧「必须有字数」守卫不得回归 + 新守卫形态 + 水位播种消费 `_initialCharOffset` + skipToCue 漏斗 seek 前回调 + session 双向接线）
+- **备注**：
+  - 未做/后续（待用户/后续任务决策）：
+    - R2 时长单一真相源：`reading_statistics` 的时长改为从事实表现算（仿 GalgameSessions 范式），消灭「桶账 + 会话账」双写。
+    - R3 统计身份 title→bookKey：`reading_statistics` 主键含 title 是定时炸弹（两本书同名即合并、真改 DB title 即分身），需 schema v56 迁移。
+    - 断点 C：ッツ 同步 OVERWRITE 会把远端缺失时长覆盖成 0（`hibiki/lib/src/sync/sync_manager.dart:867-877`）。
+    - 历史脏数据一次性重算（现有爆表行仍在 DB，显示层门槛只是不再展示）待用户决策。
+  - 真机复测原始失败路径（统计页速度/最快日/分书行）待补。
