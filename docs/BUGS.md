@@ -27,10 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1043 条。点号进各自文件。
+> 共 1046 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1079](bugs/BUG-1079-extension-update-silent-stale.md) | ✅ | ✅ | 扩展自更新失败永久静默无重试且无任何更新提示 |
+| [BUG-1078](bugs/BUG-1078-extension-passive-wheel-scroll-drag.md) | ✅ | ✅ | 扩展在所有网页常驻非passive wheel监听拖慢浏览器滚动 |
+| [BUG-1077](bugs/BUG-1077-nested-lookup-mouse-hook-starvation.md) | ✅ | ✅ | 嵌套查词瞬间全局鼠标卡顿：钩子线程无优先级+嵌套路径卸装钩子churn |
 | [BUG-1076](bugs/BUG-1076-galgame-helper-update-tied-to-launch.md) | ✅ | ✅ | galgame helper 自动更新绑死游戏启动时刻且 6s 硬超时弱网永远静默放弃 |
 | [BUG-1075](bugs/BUG-1075-daily-goal-no-unit-no-hint.md) | ✅ | ✅ | 每日目标弹窗无单位无口径说明 |
 | [BUG-1074](bugs/BUG-1074-cover-update-button-windows-noop.md) | ✅ | ✅ | 书籍编辑封面更新按钮Windows无反应 |
