@@ -16,6 +16,7 @@ import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/media/drag_drop/card_drop_registry.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
+import 'package:hibiki/src/media/display_title.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
@@ -1781,8 +1782,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       database: appModel.database,
       mediaType: 'epub',
       entryKey: bookKey,
+      // P4：用户看到的默认合集名应是改名后的显示名（身份 entryKey 仍是 raw
+      // bookKey，不受影响）。
       defaultNewName: deriveSeriesDefaultName(
-        <String>[item.title],
+        <String>[displayTitleForBook(item: item, rawTitle: item.title)],
         fallback: t.series_default_name,
       ),
     );

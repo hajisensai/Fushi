@@ -10,6 +10,9 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
+import 'package:hibiki/src/media/display_title.dart';
+import 'package:hibiki/src/mining/galgame_library.dart';
+import 'package:hibiki/src/mining/galgame_repository.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/implementations/activity_feed.dart';
@@ -239,6 +242,10 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   /// [initState] 异步载入的视频库（继续观看 + 视频计数）。
   List<VideoBookRow> _videos = const <VideoBookRow>[];
 
+  /// [_loadDashboardDataUnsafe] 载入的游戏库整表缓存（P4：日明细「游戏」节 +
+  /// 活动时间轴游戏行的显示名反查用；空表 = 库为空或尚未载入）。
+  List<GalgameEntry> _games = const <GalgameEntry>[];
+
   /// [initState] 异步载入的活动事件流（时间轴原始数据，本地 + 远端混排后）。
   List<ActivityEventRow> _activityEvents = const <ActivityEventRow>[];
 
@@ -316,7 +323,16 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         .database
         .watchDashboardDataChanges()
         .listen((_) => _scheduleReload());
+    // P4：游戏改名/刮削（库页写穿 galgames 表后 GalgameRepository.load() 通知）
+    // 也要刷新日明细/时间轴的游戏显示名——galgames 表不在
+    // watchDashboardDataChanges 的表集里，走仓储 ChangeNotifier 这条既有通道
+    // 与视频（videoBooks 表级信号）对齐失效语义。
+    _galgameRepo = ref.read(appProvider).galgameRepo
+      ..addListener(_scheduleReload);
   }
+
+  /// 游戏库仓储（[initState] 挂监听，[dispose] 解除）。
+  GalgameRepository? _galgameRepo;
 
   /// 表变更后防抖重载（多次连续写只重查一次，避免频繁 setState）。
   void _scheduleReload() {
@@ -330,6 +346,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   void dispose() {
     _reloadDebounce?.cancel();
     unawaited(_dataChangeSub?.cancel());
+    _galgameRepo?.removeListener(_scheduleReload);
     super.dispose();
   }
 
@@ -359,6 +376,12 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     // 游戏活动日聚合（activity_events 的 game 事件，热力图「游戏」档数据源）。
     final List<(String, int, int)> gameDaily =
         await db.getActivityDailyTotals(kActivityGame);
+    // P4：游戏库整表（日明细/时间轴的游戏显示名反查）。仓储缓存与表恒一致，
+    // 未载入过才真查 DB（毫秒级）；load() 会 notify → 本页监听器防抖重载一次
+    // 后 isLoaded=true，不再形成回环。
+    final GalgameRepository galgameRepo = appModel.galgameRepo;
+    final List<GalgameEntry> games =
+        galgameRepo.isLoaded ? galgameRepo.games : await galgameRepo.load();
     // 合集归属映射（统计页/书架同源）：显示名规则「非合集上下文拼合集名」用。
     final Map<int, String> collectionNamesById = <int, String>{
       for (final MediaCollectionRow c in await db.getAllMediaCollections())
@@ -441,6 +464,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     if (!mounted) return;
     setState(() {
       _videos = videos;
+      _games = games;
       _localActivityEvents = events;
       _activityEvents = events;
       _readingCharsByDay = charsByDay;
@@ -1311,10 +1335,12 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         _readingDayRows(dateKey);
     final List<({String title, int chars, int timeMs})> watch =
         _watchDayRows(dateKey);
+    // P4：游戏节的 title 是 activity_events 落库时的标题快照（聚合键，恒 raw），
+    // 上屏前按库内条目反查显示名（用户改名后明细跟着变；查不到原样显示快照）。
     final List<({String title, int chars, int timeMs})> game =
         <({String title, int chars, int timeMs})>[
       for (final (String title, int chars, int timeMs) in gameRows)
-        (title: title, chars: chars, timeMs: timeMs),
+        (title: _gameDisplayTitle(title), chars: chars, timeMs: timeMs),
     ];
     await adaptiveModalSheet<void>(
       context: context,
@@ -1351,17 +1377,49 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     ];
   }
 
-  /// 阅读统计行 title → 显示名：命中合集拼「合集名 - 名字」；反查不到 bookKey
-  /// （视频字幕书/已删书等）原样返回。
+  /// 阅读统计行 title → 显示名：先过 display-title 门面（P4：改名 override 应用
+  /// 到明细行；统计行 title 是聚合键恒 raw，仅上屏时替换），命中合集再拼
+  /// 「合集名 - 名字」；反查不到 bookKey（视频字幕书/已删书等）原样返回。
   String _readingStatDisplayTitle(String title) {
+    final String display = displayTitleForStatRow(
+      rawTitle: title,
+      bookKeyByTitle: _bookKeyByTitle,
+    );
     final String? bookKey = _bookKeyByTitle[title];
-    if (bookKey == null) return title;
+    if (bookKey == null) return display;
     return collectionQualifiedTitle(
       entryKey: 'epub|$bookKey',
-      rawTitle: title,
+      rawTitle: display,
       primaryByEntry: _primaryCollectionByEntry,
       collectionNamesById: _collectionNamesById,
     );
+  }
+
+  /// 游戏活动标题 → 显示名（P4）：先按 [mediaKey]（galgames.id）精确命中，
+  /// 再按「落库时的标题快照 == 库内条目任一已知名」兜底（老事件无 mediaKey），
+  /// 最后回落快照原文。查找委托 [displayTitleForGame]。
+  String _gameDisplayTitle(String rawTitle, {String? mediaKey}) {
+    GalgameEntry? entry;
+    if (mediaKey != null && mediaKey.isNotEmpty) {
+      for (final GalgameEntry g in _games) {
+        if (g.id == mediaKey) {
+          entry = g;
+          break;
+        }
+      }
+    }
+    if (entry == null) {
+      for (final GalgameEntry g in _games) {
+        if (g.name == rawTitle ||
+            g.displayName == rawTitle ||
+            g.metadata.name == rawTitle ||
+            g.metadata.nameCn == rawTitle) {
+          entry = g;
+          break;
+        }
+      }
+    }
+    return displayTitleForGame(entry: entry, rawTitle: rawTitle);
   }
 
   /// 明细「观看」节：video_watch_statistics 当日行按 title 聚合；行自带 bookUid
@@ -1664,6 +1722,12 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
           collectionNamesById: _collectionNamesById,
         );
       }
+    }
+    // P4：游戏行渲染时应用库内显示名（改名/刮削后时间轴同步显示新名）。events
+    // 落库仍存当时标题快照（聚合键身份不变），只在这里按 mediaKey（galgames.id）
+    // / 标题快照反查替换显示。
+    if (entry.mediaType == kActivityMediaGame) {
+      return _gameDisplayTitle(entry.title, mediaKey: entry.mediaKey);
     }
     return entry.title;
   }

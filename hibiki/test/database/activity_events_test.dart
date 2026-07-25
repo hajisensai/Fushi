@@ -257,5 +257,25 @@ void main() {
       );
       await emitted;
     });
+
+    test(
+        'watchDashboardDataChanges 在视频改名（updateVideoBookTitle）时也 emit '
+        '（P4：别页改名后首页 _videos 缓存自动失效重载的根通道）', () async {
+      final db = await _openDb();
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'v-rename',
+          title: '旧名',
+          videoPath: '/tmp/v.mp4',
+        ),
+      );
+      // 先插行再订阅：只验证「改名写穿 videoBooks 表 → 表级信号」这一步。
+      final Future<void> emitted = db.watchDashboardDataChanges().first.timeout(
+            const Duration(seconds: 3),
+          );
+      await db.updateVideoBookTitle('v-rename', '新名');
+      await emitted;
+      expect((await db.getVideoBookByBookUid('v-rename'))!.title, '新名');
+    });
   });
 }

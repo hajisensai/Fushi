@@ -161,10 +161,21 @@ extension _ReaderMining on _ReaderHibikiPageState {
 
     // TODO-644 / BUG-357：用 await 前的快照值构造上下文（cue 句 / 加粗偏移），不再
     // 读 currentCueSentence / _cachedSentenceOffset 这两个会被并发查词改写的可变成员。
+    //
+    // P4 身份/显示二分：[AnkiMiningContext.documentTitle] 只喂 `{document-title}`
+    // 卡片字段（经 base_anki_repository 的 renderMediaPayload → buildMinedFields，
+    // 含互联转发端），是**写到卡片上给人看的显示语境**——过 display-title 门面；
+    // Anki 查重身份用 expression，不经此值。统计聚合键（[_recordMined] 的
+    // addMineCountPerBook.title）与制卡历史快照（[_recordMinedSentence] 的
+    // documentTitle 落库列）是身份语境，**各自直取 raw `_book?.title`**，刻意不
+    // 复用本变量——两个用途两个变量，见下方两处注释。
+    final String? displayDocumentTitle = _book == null
+        ? null
+        : displayTitleForBook(bookKey: widget.bookKey, rawTitle: _book!.title);
     final AnkiMiningContext miningContext = AnkiMiningContext(
       sentence: sentence,
       cueSentence: snapshotCueSentence.isNotEmpty ? snapshotCueSentence : null,
-      documentTitle: _book?.title,
+      documentTitle: displayDocumentTitle,
       coverPath: coverPath,
       sasayakiAudioPath: sasayakiAudioPath,
       sentenceOffset: snapshotSentenceOffset,
@@ -173,8 +184,11 @@ extension _ReaderMining on _ReaderHibikiPageState {
       // TODO-681 / BUG-393：「自动添加书名到标签」开启时追加书名标签。reader 弹窗制卡
       // 此前不走卡片创建器 TagsField，故标题没被加进 tag；与视频同走共享 buildNoteTags
       // 注入（经创建器再走 fields 已带同一标签时由 buildNoteTags 去重，不重复）。
+      // P4 判断：Anki 标签是卡片上的组织性显示标注（与 {document-title} 同为
+      // 给人看），与 documentTitle 同源过门面——两者不同名会破坏 buildNoteTags
+      // 与创建器 TagsField 的去重口径。
       bookTitleTag: appModel.autoAddBookNameToTags
-          ? BaseAnkiRepository.sanitizeTitleTag(_book?.title)
+          ? BaseAnkiRepository.sanitizeTitleTag(displayDocumentTitle)
           : null,
       collectionTag: collectionTag,
     );
@@ -363,6 +377,8 @@ extension _ReaderMining on _ReaderHibikiPageState {
     }
     // TODO-1204：并行写 per-book 制卡计数（book 来源，带 bookKey + 标题；title 与
     // 阅读统计 tile 的聚合键 [EpubBook.title] 对齐）。
+    // P4 身份红线：这里的 title 是统计聚合键，**恒 raw**（`_book?.title`）——
+    // 过 override 门面会让改名前后的计数分叉成两个桶。
     try {
       await appModel.database.addMineCountPerBook(
         bookKey: widget.bookKey,
@@ -398,7 +414,11 @@ extension _ReaderMining on _ReaderHibikiPageState {
         reading: fields['reading'] ?? '',
         glossary: fields['glossary'] ?? '',
         sentence: context.sentence,
-        documentTitle: context.documentTitle ?? _book?.title,
+        // P4 身份红线：`mined_sentences.document_title` 是落库快照（与收藏句
+        // chrome.part.dart 的 `bookTitle: _book!.title` 同款 raw 身份快照）——
+        // context.documentTitle 已过显示门面，这里**必须直取 raw**；收藏页
+        // 渲染端按 bookKey 再过门面显示新名。
+        documentTitle: _book?.title,
         chapterLabel: _currentChapterLabelFor(section),
         bookKey: widget.bookKey,
         sectionIndex: section,

@@ -9,6 +9,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
+import 'package:hibiki/src/media/display_title.dart';
 import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
@@ -834,7 +835,10 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
                   Text(
-                    entry.title,
+                    // P4：渲染时应用库内显示名（entry.title 是活动落库时的标题
+                    // 快照，聚合键恒 raw；改名后时间轴跟着显示新名，查不到条目
+                    // 回落快照）。game 已在上方按 mediaKey/显示名反查。
+                    displayTitleForGame(entry: game, rawTitle: entry.title),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyLarge?.copyWith(
