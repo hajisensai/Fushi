@@ -10,7 +10,7 @@
   preventDefault 只拦点击，**拦不住 hover 预览**。看着像「主窗口左下角」是因为覆盖窗是撑满
   整个级联包围盒的 topmost 无边框窗（`global_lookup_window.cpp:461-481`），status bar 画在它
   自己的左下角。
-- **[x] ① 已修复**（提交 d2ef8ed0e）— `hibiki/windows/runner/global_lookup_window.cpp` 的 `ConfigureWebView()`
+- **[x] ① 已修复**（提交 fceb21443）— `hibiki/windows/runner/global_lookup_window.cpp` 的 `ConfigureWebView()`
   函数体开头（null guard 之后）加 `get_Settings` + `put_IsStatusBarEnabled(FALSE)`，并把失败的
   HRESULT 经 `ReportOverlayError` 记进 native 日志（不静默吞）。`put_IsStatusBarEnabled` 在
   **基类** `ICoreWebView2Settings` 上，不需要 QI 新版本接口。`ConfigureWebView()` 是两条创建
