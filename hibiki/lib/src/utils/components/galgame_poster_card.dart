@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 
 /// galgame 竖版海报卡（对齐 ReinaManager 库页/首页的卡片观感，见
@@ -26,6 +28,7 @@ class GalgamePosterCard extends StatefulWidget {
     this.onSecondaryTap,
     this.trailing,
     this.semanticLabel,
+    this.focusId,
   });
 
   /// 封面 widget（3:4 会被外层裁剪；建议 `fit: BoxFit.cover`）。
@@ -53,6 +56,10 @@ class GalgamePosterCard extends StatefulWidget {
   final Widget? trailing;
 
   final String? semanticLabel;
+
+  /// 焦点站点 id（手柄/键盘导航）。传入时注册到 [HibikiFocusRoot]，`Enter`/A 键
+  /// 触发 [onTap]。库页靠它保持 `game-card-<id>` 焦点站点可被 requestById 聚焦。
+  final HibikiFocusId? focusId;
 
   @override
   State<GalgamePosterCard> createState() => _GalgamePosterCardState();
@@ -118,13 +125,37 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
       ),
     );
 
-    return Semantics(
+    final Widget semantic = Semantics(
       label: widget.semanticLabel ?? widget.title,
       button: widget.onTap != null,
       selected: widget.selected,
       child: interactive,
     );
+
+    // 焦点注册：与 HibikiCard 同款——有 onTap 且存在焦点根时，注册焦点站点并把
+    // ActivateIntent（Enter / 手柄 A）接到 onTap。无焦点根（纯 widget-test）直接返回。
+    if (widget.onTap == null ||
+        HibikiFocusRoot.maybeControllerOf(context) == null) {
+      return semantic;
+    }
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            widget.onTap?.call();
+            return null;
+          },
+        ),
+      },
+      child: HibikiFocusTarget(
+        id: widget.focusId ?? _fallbackFocusId,
+        child: semantic,
+      ),
+    );
   }
+
+  late final HibikiFocusId _fallbackFocusId =
+      HibikiFocusId('galgame-poster-${identityHashCode(this)}');
 
   Widget _buildCover(BuildContext context, ColorScheme colors) {
     const BorderRadius radius = HibikiBorderRadius.poster;
