@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
 import 'package:hibiki/utils.dart';
 
 @visibleForTesting
@@ -386,10 +387,11 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final BuildContext? fieldContext = _urlFieldKey.currentContext;
       if (fieldContext != null && mounted) {
-        Scrollable.ensureVisible(
+        // 焦点驱动滚动收口在 focus 包（守卫 test/focus/focus_architecture_static_test.dart）：
+        // 页面不自持滚动实现，统一走 HibikiFocusScroll。
+        HibikiFocusScroll.ensureVisible(
           fieldContext,
           duration: const Duration(milliseconds: 150),
-          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
         );
       }
     });
