@@ -81,6 +81,12 @@ class _TorrentSettingsSectionState
     ));
   }
 
+  /// 输入框最大宽度。详情面板按用户拍板填满整宽（settings_home_page.dart 的
+  /// 960 限宽已回滚），但 TextFormField 会吃满给定宽度——4K 全屏下一条输入框
+  /// 拉到三千多像素（BUG-1084）。限宽只作用于输入框本身并左对齐：开关行、
+  /// 分段按钮、说明文字仍占满整宽，窄屏（< 上限）不受影响。
+  static const double _kFieldMaxWidth = 480;
+
   static int _nonNegInt(String v) {
     final int n = int.tryParse(v.trim()) ?? 0;
     return n < 0 ? 0 : n;
@@ -106,20 +112,26 @@ class _TorrentSettingsSectionState
         (initial == null) != (controller == null), 'initial 与 controller 二选一');
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: TextFormField(
-        initialValue: initial,
-        controller: controller,
-        focusNode: focusNode,
-        obscureText: obscure,
-        keyboardType: keyboard,
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: hint,
-          errorText: errorText,
-          isDense: true,
-          border: const OutlineInputBorder(),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: _kFieldMaxWidth),
+          child: TextFormField(
+            initialValue: initial,
+            controller: controller,
+            focusNode: focusNode,
+            obscureText: obscure,
+            keyboardType: keyboard,
+            decoration: InputDecoration(
+              labelText: label,
+              hintText: hint,
+              errorText: errorText,
+              isDense: true,
+              border: const OutlineInputBorder(),
+            ),
+            onChanged: onChanged,
+          ),
         ),
-        onChanged: onChanged,
       ),
     );
   }
