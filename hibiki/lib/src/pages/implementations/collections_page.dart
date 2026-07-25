@@ -428,6 +428,13 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       favoriteSectionIndex: item.sectionIndex,
       favoriteStartMs: startMs,
     );
+    // BUG-1067：本集若属于某 playlist 合集，必须带上主合集 id 进播放器——否则
+    // 视频初始化时系列级音轨/字幕调轴记忆分支（video_hibiki_page 1884-1894，
+    // schema v52）被整段跳过，退回读本集 per-book 默认值（音轨 null / 调轴 0），
+    // 表现为「从收藏跳转后音轨与调好的字幕轴又被重置」。解析口径与书架/首页
+    // dashboard 续播一致（getPrimaryCollectionIdByEntry，key='video|<bookUid>'）。
+    final int? playlistCollectionId =
+        await _resolveVideoPlaylistCollectionId(row.bookUid);
     if (!mounted) return;
     Navigator.push(
       context,
@@ -436,12 +443,22 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         builder: (_) => VideoHibikiPage.neutralized(
           bookUid: row.bookUid,
           repo: repo,
+          playlistCollectionId: playlistCollectionId,
           initialCueStartMs: target.startMs,
           initialEpisodeIndex: target.episodeIndex,
           initialSubtitleListVisible: true,
         ),
       ),
     );
+  }
+
+  /// 解析该视频条目所属的主 playlist 合集 id（无归属返回 null → 按散卡单视频打开）。
+  /// 与书架 [_open]（`collection.id`）、首页 dashboard 续播（`_primaryCollectionByEntry`）
+  /// 同口径，确保系列级音轨/字幕调轴记忆命中同一 collectionId（BUG-1067）。
+  Future<int?> _resolveVideoPlaylistCollectionId(String bookUid) async {
+    final Map<String, int> primaryByEntry =
+        await appModel.database.getPrimaryCollectionIdByEntry();
+    return primaryByEntry['video|$bookUid'];
   }
 
   Future<int?> _resolveVideoFavoriteStartMs(

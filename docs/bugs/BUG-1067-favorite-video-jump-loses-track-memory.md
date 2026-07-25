@@ -1,0 +1,6 @@
+## BUG-1067 · 收藏句子跳视频丢失系列音轨/字幕调轴记忆
+- **报告**：2026-07-25（用户：从收藏夹的句子跳转到视频里，原先选好的音轨和调好轴的字幕又重置了）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/collections_page.dart:417` `_openVideoSentence` 构造 `VideoHibikiPage.neutralized` 时未传 `playlistCollectionId`。系列级音轨/字幕调轴记忆（schema v52）落在 `MediaCollections.audioTrackId / subtitleDelayMs`，`video_hibiki_page.dart:1884-1894` 只在 `widget.playlistCollectionId != null` 时才读合集级记忆；收藏入口传 null → 记忆分支整段跳过，退回读本集 per-book 默认（`row.audioTrackId` null / `row.delayMs` 0，见 1871-1872）→ 表现「被重置」。仅**多集/合集**视频从收藏跳转受影响（单文件视频记忆是 per-book，无条件加载）。书架/首页 dashboard 入口都带主合集 id 故正常。
+- **[x] ① 已修复** — `_openVideoSentence` 用 `getPrimaryCollectionIdByEntry()`（key=`video|<bookUid>`，与书架 `_open`、dashboard `_primaryCollectionByEntry` 同口径）解析该视频所属主 playlist 合集 id 并透传进 `VideoHibikiPage.neutralized`。`collections_page.dart` 新增 `_resolveVideoPlaylistCollectionId`。提交见本轮。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/favorite_video_jump_collection_memory_guard_test.dart`：源码接线守卫（跳转经 Navigator+平台视频页，widget 难真触发），盯死 ① 用统一 key 口径解析主合集 id、② `_openVideoSentence` 把解析出的 `playlistCollectionId` 透传进 `VideoHibikiPage`。
+- **备注**：主合集口径与书架/dashboard 一致，确保系列记忆命中同一 collectionId。同类风险已核：`home_dashboard_page`/`episode.part.dart` 换集均已带，收藏是唯一漏点。
