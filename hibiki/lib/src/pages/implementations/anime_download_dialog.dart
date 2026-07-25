@@ -29,6 +29,40 @@ import 'package:hibiki/utils.dart';
 /// 分节渐进式（同 [JimakuSubtitleDialog] 的节奏）：三个阶段互斥展示（搜番结果 /
 /// 种子列表 / 确认推送），底部常驻「下载任务」折叠区列出既有计划。所有网络操作
 /// 容错降级为空结果 + 节内提示，不崩对话框。
+/// 选种结果排序键（一律降序：多的/大的/新的在前）。
+enum TorrentSortKey { seeders, size, date }
+
+/// 选种结果排序比较器（一律降序；size/date 缺失值沉底）。纯函数，便于单测。
+int compareNyaaTorrents(TorrentSortKey key, NyaaTorrent a, NyaaTorrent b) {
+  switch (key) {
+    case TorrentSortKey.seeders:
+      return b.seeders.compareTo(a.seeders);
+    case TorrentSortKey.size:
+      return (b.sizeBytes ?? -1).compareTo(a.sizeBytes ?? -1);
+    case TorrentSortKey.date:
+      final DateTime aDate =
+          a.pubDate ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final DateTime bDate =
+          b.pubDate ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bDate.compareTo(aDate);
+  }
+}
+
+/// 手动字幕搜索框的标题候选（罗马字优先 → 日文原名 → 英文；去空、去重，保序）。
+/// 首项是默认预填（与 Nyaa 查询词同口径），其余供输入框下拉切换。纯函数。
+List<String> animeTitleOptions(AniListMedia media) {
+  final List<String> out = <String>[];
+  for (final String? title in <String?>[
+    media.romaji,
+    media.native,
+    media.english,
+  ]) {
+    final String q = title?.trim() ?? '';
+    if (q.isNotEmpty && !out.contains(q)) out.add(q);
+  }
+  return out;
+}
+
 class AnimeDownloadDialog extends ConsumerStatefulWidget {
   const AnimeDownloadDialog({
     super.key,
@@ -89,6 +123,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
 
   /// 搜番失败/超时（区分「搜索出错」与「真没结果」，避免超时也显示「无结果」）。
   bool _animeSearchError = false;
+
+  /// 搜番失败的真实错误串（异常 toString），错误态原样展示帮助定位网络问题。
+  String? _animeSearchErrorDetail;
   List<AniListMedia> _animeMatches = const <AniListMedia>[];
   AniListMedia? _selectedMedia;
 
@@ -98,9 +135,14 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
 
   /// 选种搜索失败/超时（区分出错与真无种子）。
   bool _torrentsError = false;
+
+  /// 选种搜索失败的真实错误串（异常 toString，如 HandshakeException / 超时），
+  /// 错误态原样展示：站点被墙 / 代理未配时用户能看出是自己网络的问题。
+  String? _torrentsErrorDetail;
   List<NyaaTorrent> _torrents = const <NyaaTorrent>[];
   String _category = '1_0';
   bool _trustedOnly = false;
+  TorrentSortKey _torrentSort = TorrentSortKey.seeders;
   List<JimakuEntry> _jimakuEntries = const <JimakuEntry>[];
   JimakuEntry? _selectedJimakuEntry;
   List<JimakuFile> _jimakuFiles = const <JimakuFile>[];
@@ -135,6 +177,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     final AniListMedia? debugMedia = widget.debugInitialMedia;
     if (debugMedia != null) {
       _selectedMedia = debugMedia;
+      // 与真实点选路径同口径预填查询词（罗马字），测试直达时行为一致。
+      _prefillQueriesFor(debugMedia);
       final NyaaTorrent? debugTorrent = widget.debugInitialTorrent;
       if (debugTorrent != null) {
         _selectedTorrent = debugTorrent;
@@ -177,6 +221,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
       _searchingAnime = true;
       _searchedAnime = false;
       _animeSearchError = false;
+      _animeSearchErrorDetail = null;
       _animeMatches = const <AniListMedia>[];
     });
     AniListClient? anilist;
@@ -191,27 +236,38 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
         _animeMatches = media;
         _searchedAnime = true;
       });
-    } catch (_) {
-      // 超时/网络错误：标记失败态（区分「无结果」），UI 给重试。
-      if (mounted) setState(() => _animeSearchError = true);
+    } catch (error) {
+      // 超时/网络错误：标记失败态（区分「无结果」），UI 给重试 + 真实错误串。
+      if (mounted) {
+        setState(() {
+          _animeSearchError = true;
+          _animeSearchErrorDetail = error.toString();
+        });
+      }
     } finally {
       anilist?.close();
       if (mounted) setState(() => _searchingAnime = false);
     }
   }
 
-  /// 点选某番：进入选种阶段，并行拉 Nyaa 种子与 Jimaku 字幕索引。
-  /// Jimaku 空结果/无 key 不阻塞选种，只是徽标显示无字幕。
-  Future<void> _selectMedia(AniListMedia media) async {
+  /// 选番后的查询词预填：Nyaa 查询词与手动字幕搜索框都预填罗马字（Jimaku
+  /// 条目名多为罗马字，同口径），集号清空；其余标题（日文原名/英文名）在
+  /// 输入框下拉里可选，用户可改词/填集号重搜。
+  void _prefillQueriesFor(AniListMedia media) {
     final String query = (media.romaji?.trim().isNotEmpty ?? false)
         ? media.romaji!.trim()
         : media.displayTitle;
     _nyaaQueryCtrl.text = query;
-    // 手动字幕搜索框预填自动推导标题（日文名优先），集号清空；用户可改词/填集号重搜。
-    final List<String> jimakuQueries = _jimakuFallbackQueries(media);
+    final List<String> titleOptions = _titleOptions(media);
     _jimakuQueryCtrl.text =
-        jimakuQueries.isNotEmpty ? jimakuQueries.first : media.displayTitle;
+        titleOptions.isNotEmpty ? titleOptions.first : media.displayTitle;
     _jimakuEpisodeCtrl.clear();
+  }
+
+  /// 点选某番：进入选种阶段，并行拉 Nyaa 种子与 Jimaku 字幕索引。
+  /// Jimaku 空结果/无 key 不阻塞选种，只是徽标显示无字幕。
+  Future<void> _selectMedia(AniListMedia media) async {
+    _prefillQueriesFor(media);
     setState(() {
       _selectedMedia = media;
       _selectedTorrent = null;
@@ -244,7 +300,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
 
   // ---------------------------------------------------------------- 阶段 2
 
-  /// 按当前查询词/分类/Trusted 过滤搜 Nyaa，结果按 seeders 降序。
+  /// 按当前查询词/分类/Trusted 过滤搜 Nyaa，结果按 [_torrentSort] 降序。
   Future<void> _fetchTorrents() async {
     final String query = _nyaaQueryCtrl.text.trim();
     if (query.isEmpty) return;
@@ -252,6 +308,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
       _loadingTorrents = true;
       _torrentsLoaded = false;
       _torrentsError = false;
+      _torrentsErrorDetail = null;
     });
     NyaaClient? nyaa;
     try {
@@ -266,19 +323,46 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
           )
           .timeout(const Duration(seconds: 20));
       final List<NyaaTorrent> sorted = List<NyaaTorrent>.of(results)
-        ..sort(
-            (NyaaTorrent a, NyaaTorrent b) => b.seeders.compareTo(a.seeders));
+        ..sort(_compareTorrents);
       if (!mounted) return;
       setState(() {
         _torrents = sorted;
         _torrentsLoaded = true;
       });
-    } catch (_) {
-      if (mounted) setState(() => _torrentsError = true);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _torrentsError = true;
+          _torrentsErrorDetail = error.toString();
+        });
+      }
     } finally {
       nyaa?.close();
       if (mounted) setState(() => _loadingTorrents = false);
     }
+  }
+
+  int _compareTorrents(NyaaTorrent a, NyaaTorrent b) =>
+      compareNyaaTorrents(_torrentSort, a, b);
+
+  String _torrentSortLabel(TorrentSortKey key) {
+    switch (key) {
+      case TorrentSortKey.seeders:
+        return t.anime_download_sort_seeders;
+      case TorrentSortKey.size:
+        return t.anime_download_sort_size;
+      case TorrentSortKey.date:
+        return t.anime_download_sort_date;
+    }
+  }
+
+  /// 切换排序键：就地重排已加载结果，不重新请求。
+  void _selectTorrentSort(TorrentSortKey key) {
+    if (_torrentSort == key) return;
+    setState(() {
+      _torrentSort = key;
+      _torrents = List<NyaaTorrent>.of(_torrents)..sort(_compareTorrents);
+    });
   }
 
   /// 自动拉 Jimaku 字幕索引（选番时）：先按 AniList id 搜、空则回退标题文本搜。
@@ -466,6 +550,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     }
     return out;
   }
+
+  /// 手动搜索框的标题候选，见顶层 [animeTitleOptions]。
+  List<String> _titleOptions(AniListMedia media) => animeTitleOptions(media);
 
   /// 手动重搜 Jimaku 字幕（用户填了 key / 出错后重试）。
   Future<void> _retryJimaku() async {
@@ -916,8 +1003,15 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
   }
 
   /// 出错态：一句提示 + 重试按钮（区分「出错/超时」与「真无结果」）。
+  /// [detail] 是真实错误串（异常 toString），原样展示帮助定位（如握手失败 =
+  /// 站点被墙）；[offerSettings] 再补一行代理提示 + 「去设置」直达下载设置。
   Widget _buildErrorRetry(
-      ThemeData theme, String message, VoidCallback onRetry) {
+    ThemeData theme,
+    String message,
+    VoidCallback onRetry, {
+    String? detail,
+    bool offerSettings = false,
+  }) {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -926,11 +1020,49 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
               size: 40, color: theme.colorScheme.error),
           const SizedBox(height: 8),
           Text(message, textAlign: TextAlign.center),
+          if (detail != null && detail.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 4),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Text(
+                detail,
+                textAlign: TextAlign.center,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ),
+          ],
+          if (offerSettings) ...<Widget>[
+            const SizedBox(height: 4),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Text(
+                t.anime_download_search_error_proxy_hint,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.outline),
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
-          FilledButton.tonalIcon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh, size: 18),
-            label: Text(t.anime_download_retry),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              FilledButton.tonalIcon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: Text(t.anime_download_retry),
+              ),
+              if (offerSettings) ...<Widget>[
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: _openBackendSettings,
+                  child: Text(t.download_open_settings),
+                ),
+              ],
+            ],
           ),
         ],
       ),
@@ -943,7 +1075,12 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     }
     if (_animeSearchError) {
       return _buildErrorRetry(
-          theme, t.anime_download_search_failed, _searchAnime);
+        theme,
+        t.anime_download_search_failed,
+        _searchAnime,
+        detail: _animeSearchErrorDetail,
+        offerSettings: true,
+      );
     }
     if (_searchedAnime && _animeMatches.isEmpty) {
       return Center(child: Text(t.anime_download_no_results));
@@ -1056,6 +1193,25 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
               selected: _trustedOnly,
               onSelected: _loadingTorrents ? null : _toggleTrustedOnly,
             ),
+            PopupMenuButton<TorrentSortKey>(
+              tooltip: t.sort_by,
+              initialValue: _torrentSort,
+              enabled: !_loadingTorrents,
+              onSelected: _selectTorrentSort,
+              itemBuilder: (BuildContext context) =>
+                  <PopupMenuEntry<TorrentSortKey>>[
+                for (final TorrentSortKey key in TorrentSortKey.values)
+                  PopupMenuItem<TorrentSortKey>(
+                    value: key,
+                    child: Text(_torrentSortLabel(key)),
+                  ),
+              ],
+              child: Chip(
+                avatar: const Icon(Icons.sort, size: 18),
+                label: Text('${t.sort_by}: ${_torrentSortLabel(_torrentSort)}'),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -1070,7 +1226,12 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     }
     if (_torrentsError) {
       return _buildErrorRetry(
-          theme, t.anime_download_search_failed, _fetchTorrents);
+        theme,
+        t.anime_download_search_failed,
+        _fetchTorrents,
+        detail: _torrentsErrorDetail,
+        offerSettings: true,
+      );
     }
     if (_torrentsLoaded && _torrents.isEmpty) {
       return Center(child: Text(t.anime_download_no_results));
@@ -1277,9 +1438,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
     );
   }
 
-  /// 字幕手动搜索行：可编辑搜索词（预填自动推导标题）+ 集号 + 搜索按钮。自动搜不到
-  /// 或命中错版时，用户改词/填集号重搜 Jimaku（i18n 复用视频字幕对话框同款 key）。
+  /// 字幕手动搜索行：可编辑搜索词（预填罗马字，下拉可换日文原名/英文名）+
+  /// 集号 + 搜索按钮。自动搜不到或命中错版时，用户改词/填集号重搜 Jimaku
+  /// （i18n 复用视频字幕对话框同款 key）。
   Widget _buildJimakuManualSearch(ThemeData theme) {
+    final AniListMedia? media = _selectedMedia;
+    final List<String> titleOptions =
+        media == null ? const <String>[] : _titleOptions(media);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
@@ -1289,6 +1454,27 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
             decoration: InputDecoration(
               labelText: t.video_jimaku_query,
               isDense: true,
+              // 标题候选下拉（≥2 个才显示）：罗马字/日文原名/英文名一键切换。
+              suffixIcon: titleOptions.length < 2
+                  ? null
+                  : PopupMenuButton<String>(
+                      tooltip: t.video_jimaku_query,
+                      icon: const Icon(Icons.arrow_drop_down),
+                      onSelected: (String value) =>
+                          _jimakuQueryCtrl.text = value,
+                      itemBuilder: (BuildContext context) =>
+                          <PopupMenuEntry<String>>[
+                        for (final String title in titleOptions)
+                          PopupMenuItem<String>(
+                            value: title,
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                    ),
             ),
             textInputAction: TextInputAction.search,
             onSubmitted: (_) => _searchJimakuManual(),
@@ -1296,7 +1482,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
         ),
         const SizedBox(width: 8),
         SizedBox(
-          width: 72,
+          // 96：72 在界面缩放 >1 时装不下「集号」label，会截成「集…」。
+          width: 96,
           child: TextField(
             controller: _jimakuEpisodeCtrl,
             keyboardType: TextInputType.number,

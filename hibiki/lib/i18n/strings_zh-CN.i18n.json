@@ -2604,5 +2604,9 @@
   "book_scrape_empty": "无匹配封面",
   "book_scrape_failed": "封面获取失败",
   "book_scrape_search_failed": "搜索失败，请点击「搜索」重试",
-  "add_to_collection": "加入合集"
+  "add_to_collection": "加入合集",
+  "anime_download_sort_seeders": "做种数",
+  "anime_download_sort_size": "体积",
+  "anime_download_sort_date": "发布时间",
+  "anime_download_search_error_proxy_hint": "站点无法直连时，可在下载设置中配置网络代理。"
 }

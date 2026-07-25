@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1050 条。点号进各自文件。
+> 共 1052 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1087](bugs/BUG-1087-jimaku-episode-label-truncated.md) | ✅ | ✅ | 番剧下载确认页集号输入框在界面缩放下 label 截断成「集…」 |
+| [BUG-1086](bugs/BUG-1086-nyaa-search-error-swallowed.md) | ✅ | ✅ | Nyaa 搜索网络错误被吞成统一文案，真实报错不可见（生肉分类超时无从定位） |
 | [BUG-1083](bugs/BUG-1083-manga-author-edit-missing.md) | ✅ | ✅ | 漫画编辑对话框缺作者字段(未覆盖supportsAuthorEdit) |
 | [BUG-1082](bugs/BUG-1082-scrape-poster-lowres.md) | ✅ | ✅ | TMDB刮削海报w500缩略图发糊非满分辨率 |
 | [BUG-1081](bugs/BUG-1081-poster-use-no-feedback.md) | ✅ | ✅ | 海报匹配弹窗点使用没反应无进度反馈 |
