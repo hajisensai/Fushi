@@ -2608,5 +2608,8 @@
   "anime_download_sort_seeders": "Seeders",
   "anime_download_sort_size": "Size",
   "anime_download_sort_date": "Published",
-  "anime_download_search_error_proxy_hint": "If the site cannot be reached directly, configure a network proxy in download settings."
+  "anime_download_search_error_proxy_hint": "If the site cannot be reached directly, configure a network proxy in download settings.",
+  "audio_source_edit_target_gone": "That audio source no longer exists — edit discarded",
+  "audio_source_edit_url": "Edit audio source link",
+  "audio_source_updated": "Audio source updated"
 }

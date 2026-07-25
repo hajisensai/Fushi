@@ -2608,5 +2608,8 @@
   "anime_download_sort_seeders": "做种数",
   "anime_download_sort_size": "体积",
   "anime_download_sort_date": "发布时间",
-  "anime_download_search_error_proxy_hint": "站点无法直连时，可在下载设置中配置网络代理。"
+  "anime_download_search_error_proxy_hint": "站点无法直连时，可在下载设置中配置网络代理。",
+  "audio_source_edit_target_gone": "该音频来源已不存在，编辑已丢弃",
+  "audio_source_edit_url": "编辑音频来源链接",
+  "audio_source_updated": "已更新音频来源"
 }
