@@ -787,6 +787,14 @@ mixin DictionaryPageMixin {
       reuseWarmSlot: reuseWarmSlot,
       replaceStack: replaceStack,
       visible: revealWhileSearching,
+      // 搜索期占位用与热槽 seed / DictionaryPopupLayer 兜底**同一个**单例：
+      // 不传时 entry.result 为 null → 本帧 WebView 的 widget.result 落到
+      // `result ?? kPopupSearchingPlaceholderResult` 兜底，但热槽停驻期的 seed
+      // 若是另一个空结果实例，空→空的身份变化仍触发 didUpdateWidget 全量
+      // renderPopup（先整卡画一遍 no-results，结果到达再画真内容——每次查词双倍
+      // WebView 渲染）。单例恒等让搜索期 didUpdateWidget 天然 no-op，只在
+      // fillResult 换成真结果时推一次。加载盖板仍由 isSearching 驱动，观感不变。
+      initialResult: kPopupSearchingPlaceholderResult,
     );
     // 搜索期占位卡只在「顶层」查词时进入——与 reader base_source_page 的
     // `searching && !hasVisiblePopup` 门控对齐。嵌套查词时父弹窗仍可见，而三个 mixin

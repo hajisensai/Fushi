@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/utils.dart';
+
+// 占位单例的 canonical 声明已收口到 dictionary_popup_controller.dart（controller
+// 内部 seed/复位也用它，必须同一对象）；此处 re-export 维持既有宿主 import 不变。
+export 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart'
+    show kPopupSearchingPlaceholderResult;
 
 Rect calcPopupPosition({
   required Rect selectionRect,
@@ -386,13 +392,9 @@ Rect popupWordScreenRect({
   return fallback;
 }
 
-/// Shared empty result used to mount the popup WebView during the search phase
-/// (BUG-080), so popup.html + JS + CSS cold-load in parallel with the FFI
-/// lookup instead of serially after it. A single instance keeps the WebView's
-/// `didUpdateWidget` from re-pushing between search-state rebuilds (it only
-/// re-pushes when the result identity changes to the real result).
-final DictionarySearchResult kPopupSearchingPlaceholderResult =
-    DictionarySearchResult(searchTerm: '');
+// [kPopupSearchingPlaceholderResult]（BUG-080 搜索期预挂载共享空结果）现声明于
+// dictionary_popup_controller.dart，经文件头 export 在此可用（_buildBody 的
+// `result ?? kPopupSearchingPlaceholderResult` 兜底与热槽 seed 是同一单例）。
 
 class DictionaryPopupLayer extends StatelessWidget {
   const DictionaryPopupLayer({

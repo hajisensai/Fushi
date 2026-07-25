@@ -638,6 +638,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     final fillColor = appModel.overrideDictionaryColor ?? effectiveCs.surface;
 
     return Positioned(
+      // 占位层也要有稳定 key（与弹窗层的 ObjectKey(item) 配套）：barrier 插拔时
+      // Stack 里 keyed 子项按 key 匹配，占位/弹窗层不会被按位置错配成对方。
+      key: const ValueKey<String>('base-source-popup-loading-placeholder'),
       left: pos.left,
       top: pos.top,
       width: pos.width,
@@ -680,6 +683,12 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
     // BUG-135 parking + Visibility 几何收口在 [parkedPopupLayer]。
     return parkedPopupLayer(
+      // 与 mixin 侧 BUG-941 同根因：dismiss barrier / 搜索占位层出现或消失时，本层
+      // 在 Stack children 中前/后移一位。若顶层 Positioned 无 key，Flutter 按位置
+      // 把相邻层的元素错配更新、再拆掉旧位置的平台 WebView——热槽被冷重载
+      // （popup.html + JS 整包重来），甚至 Windows 上只剩空白外壳。以 entry 身份
+      // 钉住整层，让元素真正搬位而不是拆建原生表面。
+      key: ObjectKey(item),
       pos: pos,
       // BUG-797 / BUG-1040：任何「必须盖住弹窗」的 Flutter 对话框（选择句子上下文 /
       // 已制卡动作 / 打开卡片选择）期间把弹窗停靠屏外，否则原生平台视图

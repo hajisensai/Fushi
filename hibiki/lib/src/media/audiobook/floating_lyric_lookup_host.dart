@@ -59,10 +59,20 @@ class FloatingLyricLookupNotifier extends ChangeNotifier {
 /// 挂在 [main.dart] 根 builder 的 Stack 顶层，覆盖任意页面。监听
 /// [FloatingLyricLookupNotifier]：收到点词请求时按命中字 index 分词，经
 /// [DictionaryPageMixin.pushNestedPopup] 弹查词浮层（与独立查词页 / texthooker 同款
-/// 弹窗引擎，复用同一套 mining / 收藏 / 自动发音逻辑）。无挂起请求时不渲染任何层
-/// （[IgnorePointer] 全透传，不抢任何页面的命中测试）。
+/// 弹窗引擎，复用同一套 mining / 收藏 / 自动发音逻辑）。首次查词后保留常驻隐藏
+/// 热槽（停屏外预热，BUG-094）；无可见弹窗时 [IgnorePointer] 全透传（判据
+/// [FloatingLyricLookupHost.shouldBlockHitTest]），不抢任何页面的命中测试。
 class FloatingLyricLookupHost extends ConsumerStatefulWidget {
   const FloatingLyricLookupHost({super.key});
+
+  /// 本 host 是否应参与命中测试（拦截页面/悬浮歌词的点击）。
+  ///
+  /// 热槽常驻（[DictionaryPopupController.seedWarmSlot]）后 `entries` 永不空，
+  /// 不能再用 `entries.isNotEmpty` 当判据——那会让隐藏热槽把整层 [IgnorePointer]
+  /// 永久翻成可命中，吃掉底下所有点击。判据 = 搜索期占位在显示，或存在**可见**
+  /// 弹窗层；隐身热槽（visible=false，停屏外预热）不算。
+  static bool shouldBlockHitTest(DictionaryPopupController popup) =>
+      popup.isSearchingUi || popup.hasVisiblePopup;
 
   @override
   ConsumerState<FloatingLyricLookupHost> createState() =>
@@ -112,9 +122,24 @@ class _FloatingLyricLookupHostState
     _lookup(req);
   }
 
+  /// 确保常驻热槽已 seed（对齐视频页 `_seedWarmPopup` 成例，BUG-094）：此前本表面
+  /// 从不 seed 且每次查词 `replaceStack` 清栈重建，[DictionaryPopupWebView] 每次都
+  /// 冷载 popup.html + JS + CSS。seed 后热槽 WebView 只冷载一次、全程复用。
+  ///
+  /// 不能在 [initState] 做：本 host 常驻 main.dart 根 builder，挂载时
+  /// [AppModel.initialise] 可能尚未完成（过早读 [AppModel.lowMemoryMode] 会因
+  /// prefsRepo 未就绪抛错）；而查词请求必然来自有声书会话（app 已初始化），首次
+  /// 查词请求即最早的安全 seed 时机。[DictionaryPopupController.seedWarmSlot]
+  /// 幂等（已有条目 / 低内存直接 no-op），每次查词前调无副作用。
+  void _ensureWarmPopup() {
+    _popup.lowMemory = _appModel.lowMemoryMode;
+    _popup.seedWarmSlot();
+  }
+
   void _lookup(FloatingLyricLookupRequest req) {
     final String trimmed = req.text.trim();
     if (trimmed.isEmpty) return;
+    _ensureWarmPopup();
     final String word = _appModel.targetLanguage
         .wordFromIndex(text: req.text, index: req.index)
         .trim();
@@ -132,6 +157,9 @@ class _FloatingLyricLookupHostState
       selectionRect: selectionRect,
       controller: _popup,
       replaceStack: true,
+      // BUG-094：顶层查词原地复用常驻热槽（预热 WebView 直接查新词，不再每次
+      // 冷载）；低内存无热槽时经 replaceStack 走清栈重建的旧路径。
+      reuseWarmSlot: true,
       autoRead: true,
     );
   }
@@ -139,11 +167,17 @@ class _FloatingLyricLookupHostState
   @override
   Widget build(BuildContext context) {
     final Size screen = MediaQuery.sizeOf(context);
-    final bool hasPopups = _popup.isSearchingUi || _popup.entries.isNotEmpty;
-    // 无弹窗时整层 IgnorePointer + 空，绝不抢任何页面的命中测试。
+    // 判据见 [FloatingLyricLookupHost.shouldBlockHitTest]：热槽常驻后 entries 永不
+    // 空，必须按「可见弹窗/搜索占位」判定，否则本层永久吃掉底下页面与悬浮歌词点击。
+    final bool hasPopups = FloatingLyricLookupHost.shouldBlockHitTest(_popup);
+    // 无可见弹窗时整层 IgnorePointer + 空，绝不抢任何页面的命中测试。
     return IgnorePointer(
       ignoring: !hasPopups,
       child: Stack(
+        // BUG-135：隐藏热槽经 [parkedPopupLayer] 停在屏幕右外侧 (screen.width+8)
+        // 保活预热，默认 hardEdge 会把它裁掉（原生 WebView 失温、每次查词重新冷载），
+        // 必须 Clip.none（与 base_source_page.buildDictionary 的 Stack 同款）。
+        clipBehavior: Clip.none,
         children: <Widget>[
           if (_popup.isSearchingUi && _popup.pendingRect != null)
             buildPopupLoadingPlaceholder(
