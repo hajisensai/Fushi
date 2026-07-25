@@ -5259,6 +5259,11 @@ class AppModel with ChangeNotifier {
   Future<void> setMangaExternalMokuroPath(String value) =>
       prefsRepo.setMangaExternalMokuroPath(value);
 
+  /// 漫画「在线目录」站点根 URL（O1 mokuro.moe 目录源；空值由 client 归一回默认）。
+  String get mangaOnlineCatalogBaseUrl => prefsRepo.mangaOnlineCatalogBaseUrl;
+  Future<void> setMangaOnlineCatalogBaseUrl(String value) =>
+      prefsRepo.setMangaOnlineCatalogBaseUrl(value);
+
   /// 漫画云端手写识别（Gemini）开关/API key/模型名（P4 补扫云端兜底；默认关，
   /// 关着时零网络调用）。
   bool get mangaCloudOcrEnabled => prefsRepo.mangaCloudOcrEnabled;

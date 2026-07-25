@@ -1,5 +1,8 @@
+import 'package:flutter/material.dart';
+
 import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_settings_section.dart';
+import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/utils.dart';
@@ -23,6 +26,20 @@ SettingsSection buildMangaOcrSection() {
         builder: (SettingsContext c) => MangaOcrSettingsSection(
           service: c.ref.read(mangaOcrServiceProvider),
         ),
+      ),
+      // 漫画「在线目录」站点根 URL（O1 mokuro.moe 目录源）。空串/尾斜杠由
+      // MokuroMoeClient 的 normalizeMokuroMoeBaseUrl 归一回默认站点，故这里
+      // 只 trim 存原值、不做格式校验。
+      SettingsTextItem(
+        id: 'reading.manga_online_catalog_base_url',
+        title: t.manga_online_base_url_label,
+        icon: Icons.cloud_outlined,
+        keyboardType: TextInputType.url,
+        placeholder: kMokuroMoeDefaultBaseUrl,
+        value: (SettingsContext settingsContext) =>
+            settingsContext.appModel.mangaOnlineCatalogBaseUrl,
+        onChanged: (SettingsContext settingsContext, String value) =>
+            settingsContext.appModel.setMangaOnlineCatalogBaseUrl(value.trim()),
       ),
     ],
   );

@@ -1730,6 +1730,17 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 漫画「在线目录」站点根 URL（O1：mokuro.moe 目录源；`MokuroMoeClient` 消费，
+  /// 空串/尾斜杠由 client 侧 `normalizeMokuroMoeBaseUrl` 归一回默认站点）。
+  String get mangaOnlineCatalogBaseUrl =>
+      getPref('manga_online_catalog_base_url',
+          defaultValue: 'https://mokuro.moe') as String;
+
+  Future<void> setMangaOnlineCatalogBaseUrl(String value) async {
+    await setPref('manga_online_catalog_base_url', value);
+    notifyListeners();
+  }
+
   /// 漫画云端手写识别（Gemini）总开关。**默认关**；关着时零网络调用（红线），
   /// 只影响补扫结果卡片是否显示「云端重试」与请求闸门。
   bool get mangaCloudOcrEnabled =>

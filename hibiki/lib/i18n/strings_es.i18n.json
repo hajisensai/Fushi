@@ -2608,5 +2608,16 @@
   "anime_download_sort_seeders": "Seeders",
   "anime_download_sort_size": "Size",
   "anime_download_sort_date": "Published",
-  "anime_download_search_error_proxy_hint": "If the site cannot be reached directly, configure a network proxy in download settings."
+  "anime_download_search_error_proxy_hint": "If the site cannot be reached directly, configure a network proxy in download settings.",
+  "manga_online_catalog_title": "Online catalog",
+  "manga_online_search_hint": "Search series",
+  "manga_online_load_failed": "Failed to load catalog",
+  "manga_online_downloaded": "Imported",
+  "manga_online_download_selected": "Download selected",
+  "manga_online_stage_mokuro": "Downloading OCR data…",
+  "manga_online_stage_cbz": "Downloading volume…",
+  "manga_online_stage_extract": "Extracting…",
+  "manga_online_queue_progress": "Volume $done / $total",
+  "manga_online_failed": "Download failed",
+  "manga_online_base_url_label": "Online catalog URL"
 }
