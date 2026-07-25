@@ -49,6 +49,10 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   bool _searching = false;
   bool _searched = false;
 
+  /// 上一次搜索是否因网络 / 接口异常失败。失败态在结果区显示错误行（区别于
+  /// 「无匹配」空态），用户可再点「搜索」重试——不允许静默塌缩成空列表。
+  bool _searchFailed = false;
+
   /// 正在下载封面的候选（在其「使用」按钮上转圈；null = 无进行中）。
   BookScrapeCandidate? _applyingCandidate;
 
@@ -74,17 +78,21 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     setState(() {
       _searching = true;
       _searched = true;
+      _searchFailed = false;
     });
     List<BookScrapeCandidate> results;
+    bool failed = false;
     try {
       results = await _scraper.search(keyword);
     } catch (_) {
       results = const <BookScrapeCandidate>[];
+      failed = true;
     }
     if (!mounted) return;
     setState(() {
       _results = results;
       _searching = false;
+      _searchFailed = failed;
     });
   }
 
@@ -109,6 +117,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return AlertDialog(
       title: Text(t.book_scrape_title),
       content: SizedBox(
@@ -141,7 +150,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
             Flexible(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minHeight: 120),
-                child: _buildResults(theme),
+                child: _buildResults(theme, tokens),
               ),
             ),
           ],
@@ -156,9 +165,27 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     );
   }
 
-  Widget _buildResults(ThemeData theme) {
+  Widget _buildResults(ThemeData theme, HibikiDesignTokens tokens) {
     if (_searching) {
       return const Center(child: CircularProgressIndicator());
+    }
+    if (_searchFailed) {
+      // 搜索失败错误行：可见反馈 + 重试指引（搜索按钮此时已恢复可点）。
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.error_outline, color: theme.colorScheme.error),
+            const SizedBox(height: 8),
+            Text(
+              t.book_scrape_search_failed,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.error),
+            ),
+          ],
+        ),
+      );
     }
     if (_searched && _results.isEmpty) {
       return Center(child: Text(t.book_scrape_empty));
@@ -167,11 +194,15 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       itemCount: _results.length,
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (BuildContext context, int index) =>
-          _buildTile(theme, _results[index]),
+          _buildTile(theme, tokens, _results[index]),
     );
   }
 
-  Widget _buildTile(ThemeData theme, BookScrapeCandidate candidate) {
+  Widget _buildTile(
+    ThemeData theme,
+    HibikiDesignTokens tokens,
+    BookScrapeCandidate candidate,
+  ) {
     final List<String> metaParts = <String>[
       if (candidate.year != null) '${candidate.year}',
       if (candidate.originalTitle != null) candidate.originalTitle!,
@@ -185,16 +216,17 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
             width: 46,
             height: 66,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
+              // 行内小缩略图与 galgame 首页小封面同级，用 chip 语义圆角。
+              borderRadius: HibikiBorderRadius.chip,
               child: Image.network(
                 candidate.coverUrl,
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => Container(
-                  color: theme.colorScheme.surfaceContainerHighest,
+                  color: tokens.surfaces.overlay,
                   child: Icon(
                     Icons.image_not_supported_outlined,
                     size: 20,
-                    color: theme.colorScheme.onSurfaceVariant,
+                    color: tokens.surfaces.onVariant,
                   ),
                 ),
               ),
