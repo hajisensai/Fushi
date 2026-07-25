@@ -783,6 +783,66 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     await controller.skipToCue(targetCues.first);
   }
 
+  /// BUG-1085（断点 B·幻象字数）：显式跳句（[AudiobookPlayerController.skipToCue]
+  /// 漏斗——音量键句子导航 / 快捷键 / 底栏「上一句·下一句」/ 媒体通知按钮全部汇聚
+  /// 到那里）落定目标后，把本 session 统计字数水位抬到目标 cue 的绝对字符位置。
+  ///
+  /// 语义：**音频跳过的段落不算已读**。不抬水位时，跳句后的 WebView 跟随滚动会让
+  /// `_refreshProgress` 把「旧位置 → 目标 cue」之间整段正文误计成本次读到的新字数。
+  /// 后跳（上一句）目标位置低于水位，[sessionWatermarkAfterRestore] 的只升不降
+  /// 语义天然 no-op（重听不重复计也不回退）。
+  void _handleExplicitCueJump(AudioCue cue) {
+    final int target = _absoluteCharPositionForCue(cue);
+    _sessionMaxAbsoluteChars = sessionWatermarkAfterRestore(
+      _sessionMaxAbsoluteChars,
+      target,
+    );
+  }
+
+  /// 目标 cue 的绝对字符位置（全书累计口径）。解析不出时返回 0（水位取 max，
+  /// 0 恒为 no-op，fail-open 不影响统计）。
+  ///
+  /// - sasayaki cue：`textFragmentId` 解码出章号 + 章内 normCharStart（与章字数
+  ///   同一归一化口径），走 [computeCharWatermark] 的精确锚分支。
+  /// - SRT cue：无字符锚，按句号在本章 cue 区间内的比例（与跨章恢复共用的
+  ///   [audiobookSrtCrossChapterProgress] 公式）折算成分数口径。
+  int _absoluteCharPositionForCue(AudioCue cue) {
+    if (_book == null || _chapterCumulativeChars.isEmpty) return 0;
+    final SasayakiFragment? frag =
+        SasayakiMatchCodec.tryDecode(cue.textFragmentId);
+    if (frag != null) {
+      return computeCharWatermark(
+        chapterCumulativeChars: _chapterCumulativeChars,
+        chapterCharCounts: _chapterCharCounts,
+        chapter: frag.sectionIndex,
+        progress: 0.0,
+        charOffset: frag.normCharStart,
+      );
+    }
+    final int? srtChapter = _srtCueChapterMap?[cue.sentenceIndex];
+    final List<(int, int)>? ranges = _srtChapterRanges;
+    if (srtChapter == null ||
+        ranges == null ||
+        srtChapter < 0 ||
+        srtChapter >= ranges.length) {
+      return 0;
+    }
+    final (int first, int last) = ranges[srtChapter];
+    final double progress = audiobookSrtCrossChapterProgress(
+          sentenceIndex: cue.sentenceIndex,
+          first: first,
+          last: last,
+        ) ??
+        0.0;
+    return computeCharWatermark(
+      chapterCumulativeChars: _chapterCumulativeChars,
+      chapterCharCounts: _chapterCharCounts,
+      chapter: srtChapter,
+      progress: progress,
+      charOffset: -1,
+    );
+  }
+
   int get _lookupSectionIndex {
     if (_lyricsMode && _lookupCue != null) {
       final SasayakiFragment? frag =

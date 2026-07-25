@@ -21,14 +21,22 @@ class StatTrendPoint {
   final int chars;
   final int ms;
 
-  /// 该桶的阅读速度：字/小时（characters per hour）。时长为 0 时返回 0。
-  double get cph => computeCph(chars, ms);
+  /// 该桶的阅读速度：字/小时（characters per hour）。样本不足（时长 <
+  /// [kMinCphSampleMs]）折叠为 0——折线图纵轴需要 double，0 = 无有效速度，
+  /// 不再让几秒的脏样本在速度维度画出爆表尖峰。
+  double get cph => computeCph(chars, ms) ?? 0;
 }
 
-/// 纯函数：阅读速度（字/小时）。[ms] 为 0（无有效时长）时返回 0，避免除零。
+/// cph 计算的最小样本时长（ms）：不足 1 分钟的时长样本外推「字/小时」毫无统计
+/// 意义（BUG-1085 用户截图「1619597 字/时」= 1.1 万字 ÷ 几十秒脏行外推），一律
+/// 视为无有效速度。汇总卡、极值日、今日速度、按书行共用此一门槛。
+const int kMinCphSampleMs = 60000;
+
+/// 纯函数：阅读速度（字/小时）。样本时长不足 [minMs]（默认 [kMinCphSampleMs]，
+/// 1 分钟）时返回 null——调用方显示占位符而不是把脏样本外推成爆表数字（BUG-1085）。
 /// 汇总卡、按书、趋势点都经此一处计算，口径统一。
-double computeCph(int chars, int ms) {
-  if (ms <= 0) return 0;
+double? computeCph(int chars, int ms, {int minMs = kMinCphSampleMs}) {
+  if (ms <= 0 || ms < minMs) return null;
   return chars / (ms / 3600000.0);
 }
 

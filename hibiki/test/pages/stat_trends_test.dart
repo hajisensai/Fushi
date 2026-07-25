@@ -16,13 +16,39 @@ void main() {
       expect(computeCph(1800, 1800000), closeTo(3600, 0.001));
     });
 
-    test('zero ms yields 0 (no div-by-zero)', () {
-      expect(computeCph(500, 0), 0);
-      expect(computeCph(0, 0), 0);
+    test('zero ms yields null (no div-by-zero, no speed)', () {
+      expect(computeCph(500, 0), isNull);
+      expect(computeCph(0, 0), isNull);
     });
 
-    test('zero chars yields 0', () {
+    test('zero chars with valid duration yields 0', () {
       expect(computeCph(0, 3600000), 0);
+    });
+
+    // BUG-1085：样本时长门槛。用户实况「1.1 万字 · 几十秒脏行」外推出
+    // 1619597 字/时的爆表速度——不足 kMinCphSampleMs（1 分钟）一律 null。
+    test('sub-minute sample yields null (BUG-1085 爆表根因)', () {
+      // 11000 字 / 25 秒 → 旧口径外推 158 万 cph，新口径无有效速度。
+      expect(computeCph(11000, 25000), isNull);
+      expect(computeCph(2213, 1), isNull);
+    });
+
+    test('exactly kMinCphSampleMs passes the gate', () {
+      expect(computeCph(100, kMinCphSampleMs), closeTo(6000, 0.001));
+    });
+
+    test('minMs is overridable', () {
+      expect(computeCph(100, 1000, minMs: 1000), closeTo(360000, 0.001));
+      expect(computeCph(100, 999, minMs: 1000), isNull);
+    });
+
+    test('StatTrendPoint.cph folds sub-threshold samples to 0 for charts', () {
+      final StatTrendPoint dirty = StatTrendPoint(
+          bucketKey: '2026-07-25', label: '07-25', chars: 11000, ms: 25000);
+      expect(dirty.cph, 0);
+      final StatTrendPoint ok = StatTrendPoint(
+          bucketKey: '2026-07-24', label: '07-24', chars: 3600, ms: 3600000);
+      expect(ok.cph, closeTo(3600, 0.001));
     });
   });
 

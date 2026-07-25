@@ -125,7 +125,8 @@ class SpeedSummary {
     required this.slowestDay,
   });
 
-  /// 加权均速：全窗口 sum(chars) / sum(hours)。无有效时长时为 0。
+  /// 加权均速：全窗口 sum(chars) / sum(hours)。无有效时长（窗口总时长不足
+  /// 最小样本门槛 [kMinCphSampleMs]）时为 0。
   final double weightedAvgCph;
 
   /// 典型日：有阅读的各天 cph 的中位数。无有效样本时为 null。
@@ -163,13 +164,16 @@ SpeedSummary computeSpeedSummary(
   for (final StatDayData d in daily) {
     totalChars += d.chars;
     totalMs += d.ms;
-    if (d.ms > 0 && d.chars > 0) {
-      nonZeroDays.add(
-        StatExtremeDay(dateKey: d.dateKey, cph: computeCph(d.chars, d.ms)),
-      );
+    // BUG-1085：旧门槛仅 `ms>0 && chars>0`，几秒钟的脏行（幻象字数 + 近零时长）
+    // 外推出「1619597 字/时」并霸占「最快日」。[computeCph] 现内建最小样本时长
+    // 门槛（kMinCphSampleMs = 1 分钟），不足返回 null → 该日不参与典型日中位数
+    // 与最快/最慢日极值。
+    final double? dayCph = computeCph(d.chars, d.ms);
+    if (dayCph != null && d.chars > 0) {
+      nonZeroDays.add(StatExtremeDay(dateKey: d.dateKey, cph: dayCph));
     }
   }
-  final double weighted = computeCph(totalChars, totalMs);
+  final double weighted = computeCph(totalChars, totalMs) ?? 0;
 
   // 典型日：非零 cph 中位数。
   double? typical;
@@ -220,7 +224,8 @@ SpeedSummary computeSpeedSummary(
   );
 }
 
-/// 一个窗口内的加权均速（sum chars / sum hours）。
+/// 一个窗口内的加权均速（sum chars / sum hours）。窗口总时长不足最小样本
+/// 门槛时视为 0（无有效速度，调用方 `prevCph > 0` 判据自然跳过环比）。
 double _windowWeightedCph(List<StatDayData> window) {
   int chars = 0;
   int ms = 0;
@@ -228,5 +233,5 @@ double _windowWeightedCph(List<StatDayData> window) {
     chars += d.chars;
     ms += d.ms;
   }
-  return computeCph(chars, ms);
+  return computeCph(chars, ms) ?? 0;
 }
