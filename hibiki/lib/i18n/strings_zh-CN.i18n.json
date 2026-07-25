@@ -2595,5 +2595,16 @@
   "game_random_reroll": "换一个",
   "browser_extension_version_app": "App 内置",
   "browser_extension_version_browser": "浏览器中加载",
-  "browser_extension_version_mismatch": "浏览器中加载的扩展不是最新版本：如有需要先重新准备扩展，再到浏览器扩展管理页（chrome://extensions）点「重新加载」。"
+  "browser_extension_version_mismatch": "浏览器中加载的扩展不是最新版本：如有需要先重新准备扩展，再到浏览器扩展管理页（chrome://extensions）点「重新加载」。",
+  "manga_online_catalog_title": "在线目录",
+  "manga_online_search_hint": "搜索系列",
+  "manga_online_load_failed": "目录加载失败",
+  "manga_online_downloaded": "已入库",
+  "manga_online_download_selected": "下载所选",
+  "manga_online_stage_mokuro": "下载 OCR 数据…",
+  "manga_online_stage_cbz": "下载卷包…",
+  "manga_online_stage_extract": "解包中…",
+  "manga_online_queue_progress": "第 $done / $total 卷",
+  "manga_online_failed": "下载失败",
+  "manga_online_base_url_label": "在线目录地址"
 }

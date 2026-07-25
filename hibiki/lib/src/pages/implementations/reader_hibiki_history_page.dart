@@ -18,6 +18,7 @@ import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
+import 'package:hibiki/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_feature_flags.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
@@ -491,6 +492,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           icon: Icons.folder_copy_outlined,
           onTap: _openManageSources,
         ),
+        // 漫画「在线目录」（O1 mokuro.moe 目录源）：浏览/搜索 → 卷级下载 →
+        // 现有 .mokuro 导入链落库。
+        _headerAction(
+          tooltip: t.manga_online_catalog_title,
+          icon: Icons.cloud_download_outlined,
+          onTap: _openOnlineCatalog,
+        ),
         // 视频导入入口**只属于视频 tab**（HomeVideoPage），书架不放视频导入——
         // 书架是书的地方。这里保留编译期常量门控（默认关）只为旧调试路径，运行时
         // 实验开关不再在书架放出视频导入（用户反馈：书架不该有视频导入入口）。
@@ -536,6 +544,20 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       builder: (_) => const MediaSourcesDialog(mediaKind: 'book'),
     );
     if (!mounted) return;
+    ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+    ref.invalidate(srtBooksProvider);
+  }
+
+  /// 打开漫画「在线目录」对话框；有导入发生（返回成功卷数 > 0）则刷新书架
+  /// （照 [_openManageSources] 的失效范式）。barrier 不可点关：导入结果经显式
+  /// 关闭按钮回传，避免点空白丢「需刷新」信号。
+  Future<void> _openOnlineCatalog() async {
+    final int? imported = await showAppDialog<int>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => MokuroMoeCatalogDialog(db: appModel.database),
+    );
+    if (!mounted || imported == null || imported <= 0) return;
     ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
     ref.invalidate(srtBooksProvider);
   }

@@ -72,6 +72,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // cloud_ocr_client_test 的「默认关零网络」gating。
   'reading/Enable cloud recognition':
       'test/media/manga/manga_ocr_settings_section_ui_test.dart + test/ocr/cloud_ocr_client_test.dart',
+  // 漫画「在线目录」站点根 URL（O1 mokuro.moe 目录源）：网络端点，写穿偏好后
+  // 消费点在 MokuroMoeClient 的请求 URL 拼接（widget harness 观测不到真生效）；
+  // 由 client 专项测试咬住（base URL 归一 + URL 编码 + 端点拼接）。
+  'reading/Online catalog URL':
+      'test/media/manga/online/mokuro_moe_client_test.dart',
   // 专项 unit/widget 生效探针（docs/specs/2026-06-03-t4-effect-probes-plan.md T1–T9）
   'reading/Text Orientation': 'test/reader/reader_content_styles_test.dart',
   'reading/Font Kerning (Vertical)':

@@ -2595,5 +2595,16 @@
   "game_random_reroll": "Shuffle",
   "browser_extension_version_app": "App bundled",
   "browser_extension_version_browser": "Loaded in browser",
-  "browser_extension_version_mismatch": "The extension loaded in your browser is outdated. Prepare the extension again if needed, then reload it from your browser's extensions page (chrome://extensions)."
+  "browser_extension_version_mismatch": "The extension loaded in your browser is outdated. Prepare the extension again if needed, then reload it from your browser's extensions page (chrome://extensions).",
+  "manga_online_catalog_title": "Online catalog",
+  "manga_online_search_hint": "Search series",
+  "manga_online_load_failed": "Failed to load catalog",
+  "manga_online_downloaded": "Imported",
+  "manga_online_download_selected": "Download selected",
+  "manga_online_stage_mokuro": "Downloading OCR data…",
+  "manga_online_stage_cbz": "Downloading volume…",
+  "manga_online_stage_extract": "Extracting…",
+  "manga_online_queue_progress": "Volume $done / $total",
+  "manga_online_failed": "Download failed",
+  "manga_online_base_url_label": "Online catalog URL"
 }
