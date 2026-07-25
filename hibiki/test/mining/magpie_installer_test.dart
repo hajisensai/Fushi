@@ -189,6 +189,15 @@ void main() {
       expect(meta.configVersion, isNull);
     });
 
+    test('带 UTF-8 BOM 的元数据仍能解析（否则会静默降级成只装不配）', () {
+      expect(
+        MagpiePackageMetadata.parse(
+                '﻿{"configVersion":4,"upstreamVersion":"v0.12.1"}')
+            ?.configVersion,
+        4,
+      );
+    });
+
     test('null / 空白 / 坏 JSON / 非对象 → null，绝不抛', () {
       expect(MagpiePackageMetadata.parse(null), isNull);
       expect(MagpiePackageMetadata.parse('   '), isNull);

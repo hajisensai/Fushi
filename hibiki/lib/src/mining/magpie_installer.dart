@@ -173,9 +173,16 @@ class MagpiePackageMetadata {
   /// 从元数据 JSON 文本解析；**任何异常都吞掉返回 null**（元数据是锦上添花，缺失或损坏
   /// 只降级为「只装不配」，绝不让安装失败）。
   static MagpiePackageMetadata? parse(String? content) {
-    if (content == null || content.trim().isEmpty) return null;
+    if (content == null) return null;
+    // 剥掉可能的 UTF-8 BOM：Dart 的 utf8 解码不会吃掉 U+FEFF，而 jsonDecode 见到它就抛
+    // FormatException —— 那会被下面的 catch 静默吞成 null，表现为「明明发了元数据却永远
+    // 只装不配」。当前 workflow 用 pwsh 7 写出的是无 BOM UTF-8（已实测），但写入端一旦
+    // 换成 Windows PowerShell 5.1 就会带 BOM，这里挡住这类静默降级。
+    final String text =
+        content.startsWith('﻿') ? content.substring(1) : content;
+    if (text.trim().isEmpty) return null;
     try {
-      final Object? decoded = jsonDecode(content);
+      final Object? decoded = jsonDecode(text);
       if (decoded is! Map<String, dynamic>) return null;
       final Object? version = decoded['configVersion'];
       final Object? upstream = decoded['upstreamVersion'];
