@@ -1031,6 +1031,10 @@ class GalHookSessionController extends ChangeNotifier {
   Timer? _recaptureTimer;
   Stopwatch? _recaptureElapsed;
 
+  /// 补录窗口开启的墙钟时刻。收束时据此只认窗口内**新落盘**的语音资源——用户重播产生
+  /// 的原始原件优先于窗口里录到的系统混音（见 [EngineHookGalAudioSource.findVoiceResourceSince]）。
+  DateTime? _recaptureStartedAt;
+
   /// 引擎资源/PCM 会话里临时拉起的 loopback 源（会话本身没有 loopback 时才有），
   /// 补录结束即停——不改变会话的常驻音源。
   LoopbackGalAudioSource? _recaptureTempSource;
@@ -1078,18 +1082,25 @@ class GalHookSessionController extends ChangeNotifier {
       final PcmFormat? format = await temp.start();
       if (format == null) {
         await temp.stop();
-        _record(
-          GalHookEventSeverity.error,
-          'audio',
-          'audio.recapture_source_unavailable',
-          'System loopback could not be started for manual recapture',
-          details: <String, Object?>{'lineId': lineId},
-        );
-        return false;
+        temp = null;
+        // loopback 起不来不等于补录无路：引擎资源层可用时，用户重播产生的**原始语音
+        // 原件**才是补录真正要拿的东西，混音兜底缺席也应放行开窗口。两条路都没有才是
+        // 真的补不了。
+        if (_engineSource?.rawVoiceReady != true) {
+          _record(
+            GalHookEventSeverity.error,
+            'audio',
+            'audio.recapture_source_unavailable',
+            'System loopback could not be started for manual recapture',
+            details: <String, Object?>{'lineId': lineId},
+          );
+          return false;
+        }
       }
     }
     _recaptureTempSource = temp;
     _recapturingLineId = lineId;
+    _recaptureStartedAt = DateTime.now();
     _recaptureElapsed = Stopwatch()..start();
     _recaptureTimer = Timer(
       _recaptureWindow,
@@ -1121,6 +1132,8 @@ class GalHookSessionController extends ChangeNotifier {
     _recaptureTimer = null;
     final int elapsedMs = _recaptureElapsed?.elapsedMilliseconds ?? 0;
     _recaptureElapsed = null;
+    final DateTime? startedAt = _recaptureStartedAt;
+    _recaptureStartedAt = null;
     _recapturingLineId = null;
     final LoopbackGalAudioSource? temp = _recaptureTempSource;
     _recaptureTempSource = null;
@@ -1129,8 +1142,41 @@ class GalHookSessionController extends ChangeNotifier {
         temp ?? (live is LoopbackGalAudioSource ? live : null);
     notifyListeners();
     try {
-      if (discard || source == null) {
-        if (!discard) _markLineAudioMissing(lineId, 'manual_recapture_empty');
+      if (discard) return false;
+      // 用户在游戏里重播时，引擎会重新走一遍语音播放入口，hook 因此重新 dump 出这句的
+      // **原始语音原件**（混音前、无 BGM/SE、与游戏归档字节一致）。它必须优先于本窗口
+      // 录到的系统混音：此前无条件写死 system_loopback + clearResourceId，会把已经拿到
+      // 的干净原件降级成带 BGM 的混音，正好与「补录是为了更准」的意图相反。
+      final EngineHookGalAudioSource? engine = _engineSource;
+      final String? resourceId = (startedAt == null || engine == null)
+          ? null
+          : engine.findVoiceResourceSince(startedAt);
+      if (resourceId != null) {
+        // 锁定原件后就别再让补录的混音切片抢先（[_captureAudioBytesNow] 会优先用它）。
+        _manualRecaptureLines.remove(lineId);
+        _lineVoiceCache.remove(lineId);
+        // 但仍要挡住延迟资源匹配：它按时间戳猜，会把用户刚锁定的这条改回去。
+        _pendingResourceMatches.remove(lineId);
+        _textService.updateLineAudio(
+          lineId,
+          status: TexthookerLineAudioStatus.matched,
+          backend: 'game_resource',
+          resourceId: resourceId,
+        );
+        _record(
+          GalHookEventSeverity.success,
+          'match',
+          'audio.recapture_resource_locked',
+          'Replayed original game voice resource locked to the line',
+          details: <String, Object?>{
+            'lineId': lineId,
+            'resourceId': resourceId,
+          },
+        );
+        return true;
+      }
+      if (source == null) {
+        _markLineAudioMissing(lineId, 'manual_recapture_empty');
         return false;
       }
       final int backMs =

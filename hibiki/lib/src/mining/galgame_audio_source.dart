@@ -299,6 +299,40 @@ String? pickPairedGameResource({
       );
 }
 
+/// 语音 dump 目录里的一个文件：basename + 落盘时间。[pickVoiceResourceSince] 只吃这个，
+/// 不碰文件系统，因此该决策可在任何平台单测（真实 dump 目录只存在于 Windows）。
+typedef VoiceDumpEntry = ({String name, DateTime modified});
+
+/// 手动补录窗口的资源选择：在 [files] 里挑 [since] 之后**新落盘**的最新角色语音。
+///
+/// 用户点「重播并录音」后在游戏里重播，引擎重走语音播放入口 → hook 重新 dump 出这句的
+/// 原始原件。取最新一个即是用户刚重播的那句。
+///
+/// 严格要求晚于 [since]：补录前就存在的资源属于**别的句子**——用户点补录恰恰说明自动
+/// 配对结果不对，借用旧资源等于把同一个错误再犯一遍。BGM/SE/系统音（[_isNonVoiceBasename]）
+/// 与不合资源命名规则的文件始终排除。无命中返回 null（调用方回退 loopback 混音）。
+///
+/// 纯函数，可单测。
+String? pickVoiceResourceSince({
+  required List<VoiceDumpEntry> files,
+  required DateTime since,
+}) {
+  String? best;
+  DateTime? bestModified;
+  for (final VoiceDumpEntry entry in files) {
+    final String lower = entry.name.toLowerCase();
+    if (!lower.endsWith('.ogg') && !lower.endsWith('.wav')) continue;
+    final _ParsedVoiceOgg? parsed = _parseVoiceOggName(entry.name);
+    if (parsed == null || _isNonVoiceBasename(parsed.basename)) continue;
+    if (entry.modified.isBefore(since)) continue;
+    if (bestModified == null || entry.modified.isAfter(bestModified)) {
+      bestModified = entry.modified;
+      best = entry.name;
+    }
+  }
+  return best;
+}
+
 /// 旧资源名为 `<tick>_<basename>`；具有运行时顺序证据的引擎可写
 /// `<tick>_hibiki_textseq<textSeq>_<basename>`，把资源绑定到稳定的
 /// TextSlot::seq。
@@ -1080,6 +1114,38 @@ class EngineHookGalAudioSource implements GalAudioSource {
       allowLatestSessionFallback: allowLatestSessionFallback,
     );
     return file == null ? null : _fileBaseName(file.path);
+  }
+
+  /// 手动补录窗口专用：取 [since] 之后**新落盘**的最新语音资源 basename。
+  ///
+  /// 用户在游戏里按「重播这句语音」时，引擎会重新走一遍语音播放入口，hook 因此重新
+  /// dump 出这句的**原始语音原件**（混音前、无 BGM/SE，与游戏归档字节一致）。它比补录
+  /// 窗口里录到的系统混音干净得多，必须优先于 loopback 采样——否则「重播并录音」会把
+  /// 本来已有的干净原件降级成带 BGM 的混音。
+  ///
+  /// 只认 [since] 之后修改的文件：补录前就存在的资源属于**别的句子**（用户点补录恰恰
+  /// 说明自动配对结果不对），借用它等于把同一个错误再犯一次。窗口内没有新资源（引擎无
+  /// 资源层 hook / 用户没点重播）返回 null，调用方回退 loopback。
+  String? findVoiceResourceSince(DateTime since) {
+    if (!Platform.isWindows) return null;
+    final Directory dir = _galVoiceDumpDir();
+    if (!dir.existsSync()) return null;
+    final List<VoiceDumpEntry> entries = <VoiceDumpEntry>[];
+    try {
+      for (final FileSystemEntity e in dir.listSync()) {
+        if (e is! File) continue;
+        DateTime modified;
+        try {
+          modified = e.statSync().modified;
+        } catch (_) {
+          continue;
+        }
+        entries.add((name: _fileBaseName(e.path), modified: modified));
+      }
+    } catch (_) {
+      return null;
+    }
+    return pickVoiceResourceSince(files: entries, since: since);
   }
 
   File? _voiceFileForResourceId(String resourceId) {

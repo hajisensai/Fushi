@@ -204,6 +204,91 @@ void main() {
     endpoints.dispose();
   });
 
+  test('补录窗口内重播出的原始语音原件优先于 loopback 混音（不再把干净原件降级）', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    const String replayed = '900_hibiki_textseq7_voice0001.ogg';
+    final _LatencyEngine engine = _LatencyEngine(
+      utterance: Future<GalAudioSlice?>.value(),
+      audioFormat: null,
+      rawReady: true,
+      pairedCandidate: true,
+      replayResource: replayed,
+    );
+    final _SilentLoopback loopback = _SilentLoopback(withPcm: true);
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
+    );
+    final TexthookerLineEntry line = service.appendLine(
+      '再生し直したい台詞',
+      source: TexthookerLineSource.websocket,
+    )!;
+
+    await waitUntil(() => loopback.grabRecentCalls > 0);
+    final int autoGrabs = loopback.grabRecentCalls;
+
+    expect(await controller.startLineRecapture(line.id), isTrue);
+    expect(await controller.finishLineRecapture(), isTrue);
+
+    final TexthookerLineEntry recaptured = service.entries.last;
+    expect(
+      recaptured.audioBackend,
+      'game_resource',
+      reason: '重播产生的是引擎原始语音原件，不是系统混音',
+    );
+    expect(recaptured.audioStatus, TexthookerLineAudioStatus.matched);
+    expect(recaptured.audioResourceId, replayed);
+    expect(
+      engine.resourceSinceRequests,
+      isNotEmpty,
+      reason: '收束时必须先问窗口内有没有新落盘的资源，再考虑 loopback',
+    );
+    expect(
+      loopback.grabRecentCalls,
+      autoGrabs,
+      reason: '已拿到干净原件就不该再去冻结一段带 BGM 的混音',
+    );
+    expect(
+      controller.debugIsManualRecapture(line.id),
+      isFalse,
+      reason: '资源原件走正常资源路径，不该被当成「混音切片优先」的手动裁决',
+    );
+
+    // 制卡必须走资源路径拿原件，而不是用补录混音切片。
+    await controller.captureAudioBytes(
+      lineId: line.id,
+      sentence: line.text,
+      outputExtension: 'aac',
+    );
+    expect(
+      engine.pairedRequests,
+      isNotEmpty,
+      reason: '锁定资源后制卡应向资源层要字节',
+    );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
   test('会话结束会收束补录窗口并停掉临时 loopback', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
@@ -267,6 +352,7 @@ class _LatencyEngine extends EngineHookGalAudioSource {
     ),
     this.rawReady = false,
     this.pairedCandidate = false,
+    this.replayResource,
   }) : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
 
   final Future<GalAudioSlice?> utterance;
@@ -275,10 +361,15 @@ class _LatencyEngine extends EngineHookGalAudioSource {
   final bool rawReady;
   final bool pairedCandidate;
 
+  /// 补录窗口内「用户在游戏里重播 → hook 重新 dump 出原始语音原件」的模拟结果。
+  /// null 表示窗口内没有新资源落盘（调用方应回退 loopback 混音）。
+  final String? replayResource;
+
   int pollCalls = 0;
   int readinessCalls = 0;
   int utteranceCalls = 0;
   final List<int> pairedRequests = <int>[];
+  final List<DateTime> resourceSinceRequests = <DateTime>[];
 
   @override
   int? get gamePid => 4242;
@@ -334,6 +425,12 @@ class _LatencyEngine extends EngineHookGalAudioSource {
     bool allowLatestSessionFallback = true,
   }) =>
       pairedCandidate ? 'fake-$textTsMs.ogg' : null;
+
+  @override
+  String? findVoiceResourceSince(DateTime since) {
+    resourceSinceRequests.add(since);
+    return replayResource;
+  }
 
   @override
   Future<Uint8List?> grabPairedVoiceBytes(

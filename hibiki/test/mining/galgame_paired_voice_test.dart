@@ -205,4 +205,88 @@ void main() {
       );
     });
   });
+
+  group('pickVoiceResourceSince（手动补录窗口内的重播原件）', () {
+    final DateTime since = DateTime(2026, 7, 25, 12, 0, 0);
+
+    test('取窗口内新落盘的最新语音，忽略补录前就存在的旧资源', () {
+      expect(
+        pickVoiceResourceSince(
+          files: <VoiceDumpEntry>[
+            (
+              name: '900_previous_line.ogg',
+              modified: since.subtract(const Duration(seconds: 30)),
+            ),
+            (
+              name: '1200_replayed_line.ogg',
+              modified: since.add(const Duration(seconds: 2)),
+            ),
+            (
+              name: '1500_replayed_again.ogg',
+              modified: since.add(const Duration(seconds: 4)),
+            ),
+          ],
+          since: since,
+        ),
+        '1500_replayed_again.ogg',
+      );
+    });
+
+    test('窗口内没有新资源时返回 null（调用方回退 loopback 混音）', () {
+      expect(
+        pickVoiceResourceSince(
+          files: <VoiceDumpEntry>[
+            (
+              name: '900_previous_line.ogg',
+              modified: since.subtract(const Duration(milliseconds: 1)),
+            ),
+          ],
+          since: since,
+        ),
+        isNull,
+      );
+    });
+
+    test('窗口内的 BGM/SE 与非资源命名文件不得被当成重播语音', () {
+      expect(
+        pickVoiceResourceSince(
+          files: <VoiceDumpEntry>[
+            (
+              name: '1200_bgm_theme.ogg',
+              modified: since.add(const Duration(seconds: 1)),
+            ),
+            (
+              name: '1300_se_click.wav',
+              modified: since.add(const Duration(seconds: 2)),
+            ),
+            (
+              name: 'not-a-dump.ogg',
+              modified: since.add(const Duration(seconds: 3)),
+            ),
+            (
+              name: '1400_notes.txt',
+              modified: since.add(const Duration(seconds: 4)),
+            ),
+          ],
+          since: since,
+        ),
+        isNull,
+      );
+    });
+
+    test('携带 textseq 的重播原件正常命中', () {
+      expect(
+        pickVoiceResourceSince(
+          files: <VoiceDumpEntry>[
+            (
+              name: '1200_hibiki_textseq7_voice0001.ogg',
+              modified: since.add(const Duration(seconds: 1)),
+            ),
+          ],
+          since: since,
+        ),
+        '1200_hibiki_textseq7_voice0001.ogg',
+      );
+    });
+  });
 }
