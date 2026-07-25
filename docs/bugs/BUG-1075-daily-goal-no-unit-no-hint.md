@@ -23,7 +23,7 @@
 
 ### 修复
 
-- **[x] ① 已修复** — 提交哈希：（待补）
+- **[x] ① 已修复** — 提交哈希：ad4919976
   - 输入框加单位后缀 `suffixText: t.stat_goal_unit_chars`（字 / chars）与口径
     `helperText: t.stat_goal_scope_hint`（阅读 + 视频字幕 + 游戏文本的全部字符数合计）。
   - 弹窗内显示「近 7 日日均 X 字」（`_recentDailyAverageChars()`，与目标同口径取自

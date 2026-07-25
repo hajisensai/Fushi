@@ -28,7 +28,7 @@
 
 ### 修复
 
-- **[x] ① 已修复** — 提交哈希：（待补）
+- **[x] ① 已修复** — 提交哈希：ad4919976
   - `emptyColor` 改 `tokens.surfaces.overlay`（= `surfaceContainerHighest`），空周
     恢复成 GitHub 式浅格子。
   - `StatContributionHeatmap` 新增 `maxWeeks`（默认 53 = 一年）与 `maxCell`
