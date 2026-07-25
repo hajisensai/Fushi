@@ -5,6 +5,7 @@ import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
+import 'package:hibiki/src/sync/pref_redaction_policy.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'temp_dir_cleanup.dart';
@@ -793,10 +794,12 @@ void main() {
     });
 
     test('every secret-shaped key stripped on export is also preserved', () {
-      // The export LIKE sweep strips any sync_%password%/%token%/%secret%/
-      // %private_key% key. Each known credential key MUST also be in the
-      // preserve list, else it'd be stripped from the backup but not restored
-      // on import → permanent credential loss. Anti-drift guard for new keys.
+      // Strip (export) and preserve (import) now run the SAME predicate
+      // ([PrefRedactionPolicy]), so they cannot drift apart by construction —
+      // that is the fix. This guard keeps the known credential keys pinned to
+      // the whitelist that is the predicate's main line, so deleting one from
+      // `deviceLocalPrefKeys` still trips a test rather than silently demoting
+      // it to shape-matching only.
       const List<String> secretKeys = <String>[
         'sync_webdav_password',
         'sync_ftp_password',
@@ -811,7 +814,170 @@ void main() {
       for (final String k in secretKeys) {
         expect(SyncRepository.deviceLocalPrefKeys, contains(k),
             reason: '$k is stripped on export but missing from preserve list');
+        expect(PrefRedactionPolicy.isDeviceLocalOrCredential(k), isTrue);
       }
+    });
+
+    test('non-sync_ credentials do not leak into a backup', () async {
+      // Regression: the old export sweep was `key LIKE 'sync_%…'`, so every
+      // credential owned by another subsystem travelled in the clear.
+      final srcDir = await Directory.systemTemp.createTemp('hibiki_ns_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final srcDb = HibikiDatabase(srcDir.path);
+      const Map<String, String> credentials = <String, String>{
+        'media_source_secret_1': 'BASE64-SFTP-PASSWORD',
+        'media_source_secret_2': 'BASE64-PRIVATE-KEY-PEM',
+        'qb_connection_config': '{"host":"h","username":"u","password":"pw"}',
+        'yomitan_api_key': 'YOMITAN-KEY',
+        'jimaku_api_key': 'JIMAKU-KEY',
+        'manga_cloud_ocr_api_key': 'OCR-KEY',
+        'video_scraper_tmdb_api_key': 'TMDB-KEY',
+      };
+      for (final MapEntry<String, String> e in credentials.entries) {
+        await srcDb.setPref(e.key, e.value);
+      }
+      // A plain setting with no credential shape must still travel.
+      await srcDb.setPref('reader_font_size', '18');
+
+      final zipDir = await Directory.systemTemp.createTemp('hibiki_ns_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zipPath = '${zipDir.path}/b.zip';
+      await BackupService(
+        db: srcDb,
+        dbDirectory: srcDir.path,
+        appVersion: '1.0.0',
+      ).exportBackup(zipPath);
+      await srcDb.close();
+
+      final dstDir = await Directory.systemTemp.createTemp('hibiki_ns_dst_');
+      addTearDown(() => cleanupTempDir(dstDir));
+      await BackupService.importBackupFiles(
+          dbDirectory: dstDir.path, zipPath: zipPath);
+
+      final dstDb = HibikiDatabase(dstDir.path);
+      addTearDown(dstDb.close);
+      for (final String key in credentials.keys) {
+        expect(await dstDb.getPref(key), isNull,
+            reason: '$key leaked into the exported backup');
+      }
+      expect(await dstDb.getPref('reader_font_size'), '18');
+    });
+
+    test('credentials inside a Profile snapshot do not leak into a backup',
+        () async {
+      // THE leak this whole change exists for: `snapshotCurrentSettings` copies
+      // every pref into `profile_settings`, and `profiles` is ticked by default
+      // on export — so deleting the rows from `preferences` alone shipped the
+      // credentials in a second table. Simulates an upgrading device whose
+      // snapshot was taken BEFORE the writer learned to skip credentials.
+      final srcDir = await Directory.systemTemp.createTemp('hibiki_ps_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final srcDb = HibikiDatabase(srcDir.path);
+      final int nowMs = DateTime.now().millisecondsSinceEpoch;
+      final int profileId = await srcDb.insertProfile(ProfilesCompanion.insert(
+        name: 'Leaky',
+        createdAt: nowMs,
+        updatedAt: nowMs,
+      ));
+      const Map<String, String> snapshotCredentials = <String, String>{
+        'sync_webdav_password': 'WEBDAV-PW',
+        'sync_desktop_credentials': 'OAUTH-REFRESH-TOKEN',
+        'media_source_secret_1': 'BASE64-SFTP-PASSWORD',
+        'qb_connection_config': '{"password":"pw"}',
+        'yomitan_api_key': 'YOMITAN-KEY',
+      };
+      for (final MapEntry<String, String> e in snapshotCredentials.entries) {
+        await srcDb.upsertProfileSetting(ProfileSettingsCompanion.insert(
+          profileId: profileId,
+          category: BackupService.profilePrefCategory,
+          key: e.key,
+          value: e.value,
+        ));
+      }
+      // A genuine per-profile preference in the same snapshot must survive.
+      await srcDb.upsertProfileSetting(ProfileSettingsCompanion.insert(
+        profileId: profileId,
+        category: BackupService.profilePrefCategory,
+        key: 'reader_font_size',
+        value: '22',
+      ));
+
+      final zipDir = await Directory.systemTemp.createTemp('hibiki_ps_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zipPath = '${zipDir.path}/b.zip';
+      await BackupService(
+        db: srcDb,
+        dbDirectory: srcDir.path,
+        appVersion: '1.0.0',
+      ).exportBackup(zipPath);
+      await srcDb.close();
+
+      final dstDir = await Directory.systemTemp.createTemp('hibiki_ps_dst_');
+      addTearDown(() => cleanupTempDir(dstDir));
+      await BackupService.importBackupFiles(
+          dbDirectory: dstDir.path, zipPath: zipPath);
+
+      final dstDb = HibikiDatabase(dstDir.path);
+      addTearDown(dstDb.close);
+      final List<ProfileSettingRow> rows =
+          await dstDb.getProfileSettings(profileId);
+      final Map<String, String> restored = <String, String>{
+        for (final ProfileSettingRow r in rows)
+          if (r.category == BackupService.profilePrefCategory) r.key: r.value,
+      };
+      for (final String key in snapshotCredentials.keys) {
+        expect(restored.containsKey(key), isFalse,
+            reason: '$key leaked via profile_settings');
+      }
+      expect(restored['reader_font_size'], '22',
+          reason: 'a real per-profile preference must still travel');
+    });
+
+    test('import preserves THIS device credentials the export strips',
+        () async {
+      // Symmetry: broadening the strip without broadening the preserve would
+      // wipe the importing device's own SFTP password / API keys.
+      final srcDir = await Directory.systemTemp.createTemp('hibiki_sym_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final srcDb = HibikiDatabase(srcDir.path);
+      await srcDb.setPref('reader_font_size', '18');
+      final zipDir = await Directory.systemTemp.createTemp('hibiki_sym_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zipPath = '${zipDir.path}/b.zip';
+      await BackupService(
+        db: srcDb,
+        dbDirectory: srcDir.path,
+        appVersion: '1.0.0',
+      ).exportBackup(zipPath);
+      await srcDb.close();
+
+      // The importing device already has its own credentials configured.
+      final dstDir = await Directory.systemTemp.createTemp('hibiki_sym_dst_');
+      addTearDown(() => cleanupTempDir(dstDir));
+      final localDb = HibikiDatabase(dstDir.path);
+      const Map<String, String> localCredentials = <String, String>{
+        'sync_webdav_password': 'LOCAL-WEBDAV-PW',
+        'media_source_secret_1': 'LOCAL-SFTP-PASSWORD',
+        'qb_connection_config': '{"password":"local"}',
+        'yomitan_api_key': 'LOCAL-YOMITAN-KEY',
+      };
+      for (final MapEntry<String, String> e in localCredentials.entries) {
+        await localDb.setPref(e.key, e.value);
+      }
+      await localDb.close();
+
+      await BackupService.importBackupFiles(
+          dbDirectory: dstDir.path, zipPath: zipPath);
+
+      final dstDb = HibikiDatabase(dstDir.path);
+      addTearDown(dstDb.close);
+      for (final MapEntry<String, String> e in localCredentials.entries) {
+        expect(await dstDb.getPref(e.key), e.value,
+            reason: '${e.key} was stripped from the backup but NOT restored '
+                'from this device → permanent credential loss');
+      }
+      expect(await dstDb.getPref('reader_font_size'), '18',
+          reason: 'the backup\'s settings still apply');
     });
   });
 

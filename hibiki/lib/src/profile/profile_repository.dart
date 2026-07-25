@@ -8,7 +8,7 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/profile/profile_keys.dart';
 import 'package:hibiki/src/sync/backup_service.dart'
     show rebaseFontCatalogJson, rebaseFontListJson;
-import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/pref_redaction_policy.dart';
 
 /// 配置方案导入失败：文件损坏 / 类型魔数不符 / 版本不兼容 / 结构非法。
 ///
@@ -332,34 +332,15 @@ class ProfileRepository {
 
   // ── 导出 / 导入（单 Profile JSON 序列化）────────────────────────────
 
-  /// LIKE 兜底匹配（小写）的凭据 key 子串。白名单
-  /// [SyncRepository.deviceLocalPrefKeys] 是主防线；这里再加一道按内容形状的
-  /// 兜底，使将来新增的、还没进白名单的凭据 key 也被剔除（防漏）。
-  ///
-  /// 注意补齐了 `private_key`（sync_sftp_private_key）和 `credential`
-  /// （sync_desktop_credentials）——只匹配 password/token/secret 会漏掉这两个。
-  static const List<String> _credentialSubstrings = <String>[
-    'password',
-    'token',
-    'secret',
-    'private_key',
-    'credential',
-  ];
-
   /// 判断一个 pref key 是否属于「设备本地 / 凭据」，导出时必须剔除。
   ///
-  /// 主防线：白名单 [SyncRepository.deviceLocalPrefKeys]（含全部 9 个 sync
-  /// 凭据 + 后端选择 + 服务器地址等设备本地配置）。
-  /// 兜底：`sync_` 前缀 + 凭据形状子串（[_credentialSubstrings]）的 LIKE 扫描。
-  static bool _isCredentialOrDeviceLocalPref(String key) {
-    if (SyncRepository.deviceLocalPrefKeys.contains(key)) return true;
-    final String lower = key.toLowerCase();
-    if (!lower.startsWith('sync_')) return false;
-    for (final String sub in _credentialSubstrings) {
-      if (lower.contains(sub)) return true;
-    }
-    return false;
-  }
+  /// 判定本身收敛到 [PrefRedactionPolicy]（备份 zip / Profile 快照 / 本分享
+  /// JSON 三条出境通道共用的唯一真相源）。此前这里是一份独立实现，兜底被
+  /// `if (!lower.startsWith('sync_')) return false;` 锁死在 `sync_` 家族，于是
+  /// `media_source_secret_*`（SFTP/FTP 密码 + 私钥 PEM）、`qb_connection_config`
+  /// （明文密码）与 `*_api_key` 全部漏网 —— 分享一个 Profile 就把它们一起送出去。
+  static bool _isCredentialOrDeviceLocalPref(String key) =>
+      PrefRedactionPolicy.isDeviceLocalOrCredential(key);
 
   /// 把单个 Profile 序列化成可分享的 JSON 字符串。
   ///

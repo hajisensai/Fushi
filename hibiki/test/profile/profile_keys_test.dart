@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/profile/profile_keys.dart';
+import 'package:hibiki/src/sync/backup_service.dart';
+import 'package:hibiki/src/sync/pref_redaction_policy.dart';
 
 void main() {
   group('ProfileKeys.isExcludedPref', () {
@@ -190,6 +192,59 @@ void main() {
       final result = ProfileKeys.mapToAnkiSettings(map, current);
 
       expect(result.embedMedia, isTrue);
+    });
+  });
+
+  group('ProfileKeys.isExcludedPref — credentials never enter a snapshot', () {
+    // 快照的写（snapshotCurrentSettings）、读（applyProfile 的 restore map）和
+    // 剪枝（applyProfile 的 prune loop）三处都走这个谓词，所以在这里排除凭据
+    // 一次生效三处：不再产生新的凭据快照行、存量凭据行不会被回写、切 Profile
+    // 也不会把本机凭据剪掉。
+    test('excludes device-local + credential prefs', () {
+      const List<String> credentials = <String>[
+        'sync_webdav_password',
+        'sync_sftp_private_key',
+        'sync_desktop_credentials',
+        'sync_hibiki_client_token',
+        'media_source_secret_1',
+        'qb_connection_config',
+        'yomitan_api_key',
+        'jimaku_api_key',
+        'manga_cloud_ocr_api_key',
+        'video_scraper_tmdb_api_key',
+      ];
+      for (final String key in credentials) {
+        expect(ProfileKeys.isExcludedPref(key), isTrue,
+            reason: '$key 会随 Profile 快照进备份 / 分享 JSON');
+      }
+    });
+
+    test('delegates to the shared policy rather than re-implementing it', () {
+      // 防漂移：任何只改 PrefRedactionPolicy 而漏改这里的做法都会被这条抓住。
+      for (final String key in PrefRedactionPolicy.sensitiveKeys) {
+        expect(ProfileKeys.isExcludedPref(key), isTrue);
+      }
+      for (final String substring in PrefRedactionPolicy.credentialSubstrings) {
+        expect(ProfileKeys.isExcludedPref('any_subsystem_$substring'), isTrue);
+      }
+    });
+
+    test('still lets genuine per-profile preferences through', () {
+      for (final String key in <String>[
+        'reader_font_size',
+        'reader_theme',
+        'sync_auto_enabled',
+        'favorite_sentences',
+      ]) {
+        expect(ProfileKeys.isExcludedPref(key), isFalse,
+            reason: '$key 是真正的 per-profile 偏好，排除会让切 Profile 失效');
+      }
+    });
+
+    test('backup_service pins the same profile_settings category constant', () {
+      // backup_service 为避免回边而复制了 'pref' 字面量；两者漂开会让导出侧
+      // 的 profile_settings 剔除静默失配（删不到任何行）。
+      expect(BackupService.profilePrefCategory, ProfileKeys.categoryPref);
     });
   });
 }

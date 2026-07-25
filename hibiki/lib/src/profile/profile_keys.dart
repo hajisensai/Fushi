@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:hibiki_anki/hibiki_anki.dart';
 
 import 'package:hibiki/src/models/preferences_repository.dart';
+import 'package:hibiki/src/sync/pref_redaction_policy.dart';
 
 class ProfileKeys {
   ProfileKeys._();
@@ -88,6 +89,24 @@ class ProfileKeys {
   static const String _overrideTitleMarker = 'override_title://';
 
   static bool isExcludedPref(String key) {
+    // 凭据 / 设备本地 key 绝不进 Profile 快照（[PrefRedactionPolicy] 是这条判定
+    // 的唯一真相源，与备份导出、Profile 分享 JSON 共用）。
+    //
+    // 这里此前完全没有凭据判定，造成两个独立缺陷：
+    // 1. 泄漏：`snapshotCurrentSettings` 把全部 prefs（含 WebDAV/SFTP 密码、
+    //    OAuth refresh token、API key）复制进 `profile_settings`，而备份导出只
+    //    DELETE `preferences` —— 凭据以另一张表原样出境。
+    // 2. 串号：`applyProfile` 会用快照覆盖当前 prefs，于是切换 Profile 会把
+    //    A Profile 快照里的同步凭据写进 B Profile。这些 key 按定义是**设备
+    //    本地**的（见 [SyncRepository.deviceLocalPrefKeys] 的命名与文档），本来
+    //    就不该跟着 Profile 走。
+    //
+    // 放在 isExcludedPref 里而不是各调用点，是因为快照的写（snapshot）、读
+    // （apply 的 restore map）与剪枝（apply 的 prune loop）三处已经全部走这个
+    // 谓词：一处收敛即三处生效，且 prune 不再删除凭据行 —— 切 Profile 时本机
+    // 凭据原样留存，正是想要的行为。存量快照里已有的凭据行由读侧过滤失效，
+    // 无需 schema 迁移；导出副本里的那份由 `_stripCredentials` 删除。
+    if (PrefRedactionPolicy.isDeviceLocalOrCredential(key)) return true;
     if (_excludedPrefKeys.contains(key)) return true;
     for (final prefix in _excludedPrefPrefixes) {
       if (key.startsWith(prefix)) return true;
