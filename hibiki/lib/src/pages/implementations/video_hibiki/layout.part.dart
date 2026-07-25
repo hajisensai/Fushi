@@ -400,6 +400,9 @@ extension _VideoLayout on _VideoHibikiPageState {
                           // 字幕骑进度条上方一点点、不顶飞 ~47×缩放 的透明命中区空白。
                           controlsBottomReserve:
                               _subtitleControlsBottomReserve(),
+                          // BUG-1069：顶部锚字幕在控制条可见时同样避让顶栏（标题栏 +
+                          // 右上角菜单），整体下移到顶栏下方 → UI 赢重叠、不被字幕盖住。
+                          controlsTopReserve: _subtitleControlsTopReserve(),
                           fontFamily: appModel.subtitleFontFamily,
                           // TODO-1105：尊重 .ass 自带样式（字体/主色/描边/阴影）。开关默认开；
                           // 关时 overlay 全走上面的统一样式，外观与历史像素级一致。

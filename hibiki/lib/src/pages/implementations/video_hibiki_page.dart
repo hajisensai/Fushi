@@ -5203,6 +5203,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     );
   }
 
+  /// 字幕动态避让的「顶栏下缘」高度（BUG-1069）：控制条可见时**顶部锚字幕**顶缘对它取
+  /// 下限（`max(用户顶距, reserve)`，见 [VideoSubtitleOverlay._paddingFor]），躲开视频内嵌
+  /// 顶栏（标题栏 + 右上角菜单，替代被删的 AppBar，BUG-102），避免字幕把 UI 盖住。与
+  /// [_subtitleControlsBottomReserve] 对称：顶栏下缘 = 顶部系统 inset（`_videoTopBarMargin`，
+  /// 桌面为 0；移动端抬离状态栏/刘海）+ 一个（已缩放）按钮行高 + 字幕呼吸间距。
+  double _subtitleControlsTopReserve() {
+    return videoSubtitleControlsTopReserve(
+      buttonBarHeight: _videoButtonBarHeight,
+      topSystemInset: _videoTopBarMargin().top,
+      subtitleBreathingGap: _videoSubtitleSeekBarBreathingGap,
+    );
+  }
+
   /// 设置音画延迟（毫秒）：即时调 controller（字幕 cue 同步偏移立即生效，BUG-373：
   /// controller 侧 [VideoPlayerController.setDelayMs] 已立即重算当前 cue + notify）+
   /// 持久化到 VideoBook.delayMs（换集复用、跨重启保留）+ 刷新面板显示 + 左上角 OSD

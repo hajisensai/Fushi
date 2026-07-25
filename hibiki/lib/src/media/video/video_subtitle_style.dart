@@ -30,6 +30,13 @@ import 'package:hibiki/src/utils/app_ui_scale.dart';
 const double _kButtonBarHeight = 56;
 const double kVideoControlsBottomReserve = _kButtonBarHeight;
 
+/// 控制条可见时**顶部锚字幕**要让出的「顶栏下缘距视频顶边的高度」（逻辑像素）。与
+/// [kVideoControlsBottomReserve] 对称：顶部内嵌 chrome（标题栏 + 右上角菜单，替代被删
+/// 的 AppBar，BUG-102）占据视频顶部一个按钮行高；此前只有底部锚字幕避让进度条，顶部锚
+/// 字幕无避让 → 控制条可见时顶部字幕与标题栏/菜单重叠、把 UI 盖住（BUG-1069）。默认取
+/// 一个按钮行高（桌面顶栏贴 y=0、无系统 inset），移动端由页面按真实几何加总覆盖。
+const double kVideoControlsTopReserve = _kButtonBarHeight;
+
 /// 控制条可见时字幕要让出的「进度条上缘距视频底边的高度」（逻辑像素），由真实控制条
 /// 几何加总而成，并随界面缩放（`uiScale`）放大（BUG-238）。
 ///
@@ -90,6 +97,21 @@ double videoSubtitleControlsReserve({
       seekBarButtonGap +
       seekBarContainerHeight +
       subtitleBreathingGap;
+}
+
+/// 控制条可见时**顶部锚字幕**要让出的「顶栏下缘距视频顶边的高度」（逻辑像素），与
+/// [videoSubtitleControlsReserve]（底部）对称。顶部内嵌 chrome（标题栏 + 右上角菜单）位于
+/// 视频顶部：桌面贴 y=0、无系统 inset；移动端顶栏抬离状态栏/刘海（`_videoTopBarMargin`）。
+/// 顶栏下缘 = 顶部系统 inset + 一个按钮行高；再加字幕呼吸间距让顶部字幕与顶栏留一点分隔。
+/// 顶部锚字幕顶缘对本值取下限（`max(用户顶距, 本值)`，见 [VideoSubtitleOverlay._paddingFor]），
+/// 控制条可见时整体下移到顶栏下方、不再被标题栏/菜单遮（BUG-1069）；隐藏时落回用户基线。
+/// 几何项均已 ×uiScale（由调用方传入已缩放值，本函数不二次缩放）。
+double videoSubtitleControlsTopReserve({
+  required double buttonBarHeight,
+  required double topSystemInset,
+  required double subtitleBreathingGap,
+}) {
+  return topSystemInset + buttonBarHeight + subtitleBreathingGap;
 }
 
 /// seek bar 章节刻度层（TODO-432）相对**控制条区域底边**的竖直锚定：返回紧贴轨道的刻度带

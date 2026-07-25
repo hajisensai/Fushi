@@ -173,6 +173,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.bottomPadding = 75,
     this.controlsVisible,
     this.controlsBottomReserve = kVideoControlsBottomReserve,
+    this.controlsTopReserve = kVideoControlsTopReserve,
     this.fontFamily,
     this.respectAssStyle = false,
     super.key,
@@ -276,6 +277,15 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 进度条被抬到按钮行上方，上缘 ≈140×缩放 > 默认基线 75，故取下限 `max(75,140)` 才真正
   /// 抬升盖过进度条；否则常量 56 < 75 → `max(75,56)=75` 把字幕留在进度条下面被遮。
   final double controlsBottomReserve;
+
+  /// 控制条可见时**顶部锚字幕**顶缘对其取下限的避让高度 = 顶部内嵌 chrome（标题栏 + 右上角
+  /// 菜单，替代被删的 AppBar，BUG-102）下缘距视频顶边的高度。与 [controlsBottomReserve]
+  /// 对称，仅在 [controlsVisible] 非 null 时生效：可见时顶部锚字幕顶部 padding 取
+  /// `max(用户顶距, controlsTopReserve)`，整体下移到顶栏下方、不再被标题栏/菜单遮
+  /// （BUG-1069）；隐藏时落回用户基线。基线 ≥ 本值则不下移（取基线）。默认
+  /// [kVideoControlsTopReserve]=56（桌面顶栏贴 y=0、约一个按钮行高），视频页显式传入按平台
+  /// 真实几何加总 + 随界面缩放的值（`videoSubtitleControlsTopReserve`）。
+  final double controlsTopReserve;
 
   /// 字幕字体。传 null 时走平台默认；视频页传 app-wide reader custom font。
   final String? fontFamily;
@@ -2207,11 +2217,19 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
               : bottomBase,
         ),
       // 顶部锚点：有 ASS MarginV 时用缩放 MarginV 作顶部偏移（标题 / 多行歌词各就其位），
-      // 否则回退用户基线 bottomPadding（历史行为，像素级不变）。
+      // 否则回退用户基线 bottomPadding（历史行为，像素级不变）。BUG-1069：控制条可见时对
+      // 顶栏（标题栏 + 右上角菜单）避让——顶部 padding 取 `max(用户顶距, controlsTopReserve)`
+      // （与底部锚点对称、同为取下限非加法：基线更高时不下移、不凭空多推一段）→ 顶部字幕
+      // 整体落到顶栏下方，UI 赢重叠；控制条隐藏时落回用户基线（历史外观）。
       SubtitleVAlign.top => EdgeInsets.only(
           left: left,
           right: right,
-          top: scaledMarginV ?? widget.bottomPadding,
+          top: () {
+            final double topBase = scaledMarginV ?? widget.bottomPadding;
+            return controlsVisible
+                ? math.max(topBase, widget.controlsTopReserve)
+                : topBase;
+          }(),
         ),
       SubtitleVAlign.middle => EdgeInsets.only(left: left, right: right),
     };
