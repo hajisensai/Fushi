@@ -828,6 +828,11 @@ class SyncRepository {
     _keyCollectionsBaselineMs,
     // 删除墓碑消费基线：同理设备本地，跨设备携带会让新设备反复弹老墓碑确认框。
     _keyDeletionTombstonesBaselineMs,
+    // TODO-1961：下载保存根与历史根都是**本机绝对路径**（如 D:\downloads），跨设备
+    // 恢复必然指向新机不存在的位置。启动校验会回退默认根并警告（不丢数据），但让它
+    // 漂过去只会给用户「我明明设过怎么变了」的困惑，故按设备本地处理不随备份携带。
+    'download_save_root',
+    'download_save_root_history',
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────
