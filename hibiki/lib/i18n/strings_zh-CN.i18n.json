@@ -2619,5 +2619,8 @@
   "manga_online_stage_extract": "解包中…",
   "manga_online_queue_progress": "第 $done / $total 卷",
   "manga_online_failed": "下载失败",
-  "manga_online_base_url_label": "在线目录地址"
+  "manga_online_base_url_label": "在线目录地址",
+  "audio_source_edit_target_gone": "该音频来源已不存在，编辑已丢弃",
+  "audio_source_edit_url": "编辑音频来源链接",
+  "audio_source_updated": "已更新音频来源"
 }

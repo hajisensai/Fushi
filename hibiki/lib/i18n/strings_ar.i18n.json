@@ -2619,5 +2619,8 @@
   "manga_online_stage_extract": "Extracting…",
   "manga_online_queue_progress": "Volume $done / $total",
   "manga_online_failed": "Download failed",
-  "manga_online_base_url_label": "Online catalog URL"
+  "manga_online_base_url_label": "Online catalog URL",
+  "audio_source_edit_target_gone": "That audio source no longer exists — edit discarded",
+  "audio_source_edit_url": "Edit audio source link",
+  "audio_source_updated": "Audio source updated"
 }
