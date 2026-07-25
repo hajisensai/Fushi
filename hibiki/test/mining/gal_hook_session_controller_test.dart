@@ -998,6 +998,144 @@ void main() {
     endpoints.dispose();
   });
 
+  test('BUG-1085：重复台词/标点不计入字数，引擎计数后外部通道行不再双计', () async {
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      polledLines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 1000,
+          text: '「こんにちは。」', // 5 字（括号句号不计）
+          threadId: 1,
+          hookName: 'Unity',
+        ),
+        GalHookedLine(
+          seq: 2,
+          timestampMs: 2000,
+          text: '「こんにちは。」', // 引擎重发同句 → 0
+          threadId: 1,
+          hookName: 'Unity',
+        ),
+        GalHookedLine(
+          seq: 3,
+          timestampMs: 3000,
+          text: 'ありがとう', // 5 字
+          threadId: 1,
+          hookName: 'Unity',
+        ),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+    controller.attachActivityDatabase(() => db);
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'サノバウィッチ'),
+    );
+    for (int i = 0; i < 40 && service.entries.length < 3; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(service.entries, hasLength(3));
+
+    // 引擎已计数后，外部 WS 通道送来的同游戏台词不得再计（Luna 并行双计场景）。
+    service.appendLine(
+      '外部フックの台詞',
+      source: TexthookerLineSource.websocket,
+    );
+
+    await controller.stopCapture();
+    List<ActivityEventRow> rows = const <ActivityEventRow>[];
+    for (int i = 0; i < 40 && rows.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      rows =
+          await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
+    }
+    expect(rows, hasLength(1));
+    // 5（首句去标点）+ 0（重发）+ 5（ありがとう）；外部行被单计数源门挡下。
+    expect(rows.single.charsDelta, 10);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('BUG-1085：引擎无文本时外部通道是唯一计数源，照常计数', () async {
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+    controller.attachActivityDatabase(() => db);
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'サノバウィッチ'),
+    );
+    service.appendLine(
+      '「こんにちは、世界。」', // 7 字
+      source: TexthookerLineSource.websocket,
+    );
+
+    await controller.stopCapture();
+    List<ActivityEventRow> rows = const <ActivityEventRow>[];
+    for (int i = 0; i < 40 && rows.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      rows =
+          await db.getRecentActivityEvents(eventTypes: <String>[kActivityGame]);
+    }
+    expect(rows, hasLength(1));
+    expect(rows.single.charsDelta, 7);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
   _bug950Guard();
 }
 
