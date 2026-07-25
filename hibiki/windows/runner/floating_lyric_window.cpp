@@ -864,6 +864,26 @@ void FloatingLyricWindow::Render() {
                                         text_layout_.GetAddressOf());
     }
     if (text_layout_ != nullptr) {
+      // BUG-1070: the lyric / hook-text body is vertically centred
+      // (DWRITE_PARAGRAPH_ALIGNMENT_CENTER) inside a layout box whose top edge
+      // is text_rect_.top == controls_h, i.e. just below the hover control band
+      // [kControlsTopDip, kControlsTopDip + kButtonSizeDip]. When the wrapped
+      // text is taller than the box (many lines in a short strip), vertical
+      // centring pushes the extra lines symmetrically OUTWARD, so the top lines
+      // spill ABOVE the box into the control band. Because the buttons only
+      // occupy the horizontal centre, the spilled glyphs show through the two
+      // uncovered sides of the toolbar strip and read as "the subtitle is
+      // covering the UI". Clip every pixel of text drawing (highlight fills +
+      // the DrawTextLayout below) to text_rect_ so nothing is ever painted above
+      // y == controls_h. text_rect_ is already in physical px (its top/left use
+      // the same ScaleForDpi() as the render target's pixel-sized DIB), so no
+      // extra DIP→px conversion is needed. A short single line stays vertically
+      // centred well inside text_rect_ and is therefore never clipped.
+      const D2D1_RECT_F text_clip = D2D1::RectF(
+          text_rect_.left, text_rect_.top, text_rect_.left + text_rect_.width,
+          text_rect_.top + text_rect_.height);
+      render_target_->PushAxisAlignedClip(text_clip,
+                                          D2D1_ANTIALIAS_MODE_ALIASED);
       // Highlight range background.
       if (highlight_start_ >= 0 && highlight_length_ > 0) {
         DWRITE_TEXT_RANGE range = {static_cast<UINT32>(highlight_start_),
@@ -925,6 +945,10 @@ void FloatingLyricWindow::Render() {
       render_target_->DrawTextLayout(
           D2D1::Point2F(text_rect_.left, text_rect_.top), text_layout_.Get(),
           brush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
+      // BUG-1070: balance the PushAxisAlignedClip that fenced the text to
+      // text_rect_ (must pop before the control band / toolbar is drawn so the
+      // buttons are unaffected).
+      render_target_->PopAxisAlignedClip();
     }
   }
 

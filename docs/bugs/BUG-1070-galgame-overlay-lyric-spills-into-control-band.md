@@ -1,0 +1,7 @@
+## BUG-1070 · galgame浮窗台词溢出到顶部控制条按钮带遮住UI
+- **报告**：2026-07-25（用户：把 UI 图层放字幕上面，galgame 字幕和 ui 重叠了）
+- **真实性**：✅ 真 bug（Windows 原生 Direct2D 绘制层）。根因 `hibiki/windows/runner/floating_lyric_window.cpp` `FloatingLyricWindow::Render()`：台词框 `text_rect_.top = controls_h`（= `ScaleForDpi(kControlsTopDip) + ScaleForDpi(kButtonSizeDip)`，即顶部控制带下沿），但台词 `SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)`（垂直居中）+ 换行、`DrawTextLayout` 用 `D2D1_DRAW_TEXT_OPTIONS_NONE` 且**无任何裁剪**。多行文本高度超过 box 时，垂直居中把多出的行对称向外挤，顶部行溢出到 `y < controls_h` 落进按钮带 `[kControlsTopDip, +kButtonSizeDip]`；按钮只占顶部带水平中央（约 230dip），两侧无按钮像素 → 溢出台词透显进控制带、把 UI 盖住。控制条本身（绘制序在台词之后）已在台词之上，故非 z-order 反了，而是台词无裁剪向上溢出。
+- **[x] ① 已修复** — 台词绘制（highlight 填充 + `DrawTextLayout`）加 `PushAxisAlignedClip(text_rect_)` / `PopAxisAlignedClip`，把台词像素严格裁到 `y ≥ controls_h`，永不侵入按钮带。裁剪矩形直接复用已是物理像素的 `text_rect_`（无二次 DIP→px 换算）；Pop 在 `DrawTextLayout` 后、控制带/工具条绘制前，按钮不受裁剪。单行短台词垂直居中仍完整落在 `text_rect_` 内、不被裁（never break userspace）。未改 hover 门控、未碰 IPC/hook/引擎/支持状态。提交见本轮。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/galgame_overlay_lyric_clip_guard_test.dart`：源码扫描守卫（原生无 Dart 单测宿主），盯死 Push/Pop 成对包裹台词绘制、裁剪矩形取 `text_rect_`、Pop 在 `->DrawTextLayout(` 之后（工具条前）不回归。
+- **验证状态**：`implemented_unverified`。原生需完整 Windows 构建，本会话未编译/真机验证。**需 Windows 真机**跑 galgame hook 台词浮窗、把窗口拉短制造多行溢出，目视确认台词不再透显进顶部按钮带、且短单行台词仍正常垂直居中。仅 Windows 端（galgame 硬规则）。
+- **备注**：与 BUG-1069（视频顶部字幕盖 chrome）是用户同一句诉求「UI 放字幕上面」的两个不同子系统（galgame 原生浮窗 / 视频 Flutter 层），修法各按各自渲染栈。
