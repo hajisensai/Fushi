@@ -965,6 +965,13 @@ void GlobalLookupWindow::ForwardCompositionMouse(UINT message, WPARAM wparam,
 void GlobalLookupWindow::EnsureWebView() {
   CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   auto options = Make<CoreWebView2EnvironmentOptions>();
+  // BUG-1091: mirror the in-app fork (in_app_webview.cpp) — WebView2 has no
+  // per-view autoplay setting, so allow media autoplay process-wide for this
+  // overlay environment. The overlay popup plays word audio via its own HTML5
+  // <audio>; without this, an auto-read on a never-clicked overlay document
+  // would be rejected by Chromium's autoplay policy exactly like in-app.
+  options->put_AdditionalBrowserArguments(
+      L"--autoplay-policy=no-user-gesture-required");
   // Register image:// AND dictmedia:// as custom schemes so WebResourceRequested
   // fires for them (non file/http(s) schemes are otherwise ignored). Must mirror
   // the in-app InAppWebView which registers BOTH schemes (see
@@ -1400,10 +1407,13 @@ void GlobalLookupWindow::ConfigureWebView() {
               // existing cards) and openMinedNote (repo.openNoteInAnki). Its overwrite
               // / add-duplicate actions reuse the already-deferred updateEntry /
               // mineEntry, so this adds NO new write path.
+              // playWordAudio removed from this list: the bridge is dead —
+              // popup.js plays the resolved URL itself (see bridge-shim.js) and
+              // the Dart handler branch was deleted (it could only fail: a
+              // data: URL fed to playAudioRef classifies as a local file).
               const bool deferred =
                   body.find("\"resolveWordAudio\"") != std::string::npos ||
                   body.find("\"queryLocalAudio\"") != std::string::npos ||
-                  body.find("\"playWordAudio\"") != std::string::npos ||
                   body.find("\"favoriteEntry\"") != std::string::npos ||
                   body.find("\"favoriteCheck\"") != std::string::npos ||
                   body.find("\"mineEntry\"") != std::string::npos ||

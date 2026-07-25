@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/utils/misc/word_audio_resolver.dart';
 
@@ -74,25 +75,50 @@ Future<String?> resolveLookupAudioUrl(
 
 /// Auto-read a word, preferring the popup's own HTML5 `<audio>` element (the
 /// unified fast path — no native/libmpv round-trip) and falling back to the Dart
-/// player when no ready popup WebView is available, so auto-read never silently
-/// drops (Never break userspace).
+/// player when the WebView is not ready or its `audio.play()` actually failed
+/// (e.g. the platform autoplay policy blocked a document with no user
+/// activation, BUG-1091), so auto-read never silently drops (Never break
+/// userspace).
 ///
 /// [playInWebView] plays an already-resolved WebView URL in the popup and
-/// returns whether it actually did (false when the WebView is not ready); pass
-/// null when this surface has no popup WebView (e.g. an inline full-page view),
+/// returns whether playback truly started (the popup reports the real
+/// `audio.play()` outcome back over the `wordAudioPlayed` bridge); pass null
+/// when this surface has no popup WebView (e.g. an inline full-page view),
 /// which goes straight to the Dart fallback.
+///
+/// The audio ref is resolved exactly once and shared by both play paths — the
+/// fallback must never re-resolve (a second resolve re-opens local DBs and
+/// re-fires remote requests, and a transient remote failure would put the
+/// source into cooldown twice).
 Future<void> autoReadWordUnified(
   AppModel appModel,
   String expression,
   String reading, {
   required Future<bool> Function(String url)? playInWebView,
 }) async {
+  final String? ref =
+      await resolveLookupAudioUrl(appModel, expression, reading);
+  if (ref == null || ref.isEmpty) return;
+
   if (playInWebView != null) {
-    final String? url =
-        await resolveWordAudioWebViewUrl(appModel, expression, reading);
-    if (url != null && url.isNotEmpty && await playInWebView(url)) return;
+    final String? url = await audioRefToWebViewUrl(ref);
+    if (url != null && url.isNotEmpty) {
+      if (await playInWebView(url)) return;
+      // The WebView reported a real failure (autoplay blocked / JS error /
+      // bridge timeout). Record it — this exact silence used to be invisible
+      // (zero logs) and cost a mis-rooted fix in BUG-1015 — then fall back.
+      ErrorLogService.instance.logDiagnostic(
+        'autoReadWordUnified',
+        'WebView 播放失败（autoplay 拦截/未就绪/JS 异常），回落 Dart 播放器：'
+            '$expression',
+      );
+    }
   }
-  await playLookupAudio(appModel, expression, reading);
+
+  await TtsChannel.instance.playAudioRef(
+    ref,
+    volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
+  );
 }
 
 /// Resolves word audio for [expression] / [reading] into a URL that an HTML5

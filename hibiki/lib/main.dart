@@ -196,7 +196,11 @@ void main([List<String> args = const <String>[]]) {
     // BUG-1015：just_audio_media_kit 首次平台激活会吞掉第一段播放输出，导致本次启动后
     // 「第一次查词自动发音没声音、点第二次才响」。这里静音预热查词播放器一次，把冷启动
     // 首帧空窗在无声中消耗掉，使首个真实自动发音即出声。fire-and-forget，不阻塞启动；
-    // 失败内部吞掉。仅桌面走 media_kit 需要（本块已 Windows/Linux/macOS 门控）。
+    // 失败内部吞掉。仅桌面走 media_kit 需要——平台门控在 warmUpLookupAudioPlayer
+    // 内部（Android 原生 MediaPlayer 无此冷启动，no-op），本调用点自身不做门控。
+    // 注意（BUG-1091）：本预热只保护 Dart/media_kit 播放路径（app 外浮窗自动发音 +
+    // WebView 播放失败的兜底）；app 内自动发音的快路径是弹窗 WebView <audio>，其
+    // 首次无声根因是 WebView2 autoplay 策略，修在 fork 的环境参数里，与本预热无关。
     unawaited(TtsChannel.instance.warmUpLookupAudioPlayer());
 
     // macOS native shell: initialise the macos_window_utils channel (paired with
