@@ -48,10 +48,14 @@ Mangatan（1Selxo/Mangatan，Mangayomi fork，Dart，GPL-3.0，69★，2026-07 �
 
 ### 甲′：mokuro.moe 在线目录源（Mokuro Bunko，用户点名新增，推荐首做）
 - https://mokuro.moe/catalog/ ——社区托管的 **mokuro 预处理漫画目录**：内容本身就是「图片 + .mokuro」，**零 OCR、零部署**。
-- 结构（2026-07-25 探查）：JS 前端 + JSON API：`/catalog/api/library`（series/volumes 树）、`/catalog/api/config`（已验证无鉴权可读，reader_url=reader.mokuro.app）；站点有登录体系，library 端点鉴权情况实现期核实。
+- **合同已实测验证（2026-07-25）**：`/catalog/api/library` 无鉴权，1019 系列，`{series:[{name,path,cover,volumes:[{name,cover,ocr_pending,ocr_active}]}]}`；系列详情 `/catalog/api/series?name=<enc>`；封面 `/catalog/api/cover?path=<enc>`；卷包 `/mokuro-reader/<系列>/<卷>.cbz`（纯图片 zip，`Accept-Ranges: bytes` 支持断点续传，样本 56MB/173 页）；OCR 数据**同路径旁挂** `/mokuro-reader/<系列>/<卷>.mokuro`（实测 v0.2.0-beta.6，`pages[{img_width,img_height,img_path,blocks[{box,vertical,font_size,lines}]}]`，`img_path` 与 CBZ 内路径一致）——正是现有导入器支持的 mokuro v0.2+ 格式，下载解包后零转换直通。
 - 实现形态：漫画 tab 加「在线目录」入口，浏览/搜索系列 → **卷级一键下载**（图片 + .mokuro，并发 + 断点续传）→ 直接衔接**现有 .mokuro 导入链**入书架，查词/制卡当场可用。全链只新增一个 API client + 下载器 UI，是所有路线里最短闭环。
 - 二期可选：不下载直接流式读（远程取图 + 远程 .mokuro），价值待定（本地化后体验更好，磁盘换流量）。
 - 边界：内容覆盖 = 社区上传过的作品；站点内容版权灰色属用户自担（与外接 Suwayomi 同性质）。
+
+### 甲″：种子/磁力下载获取（用户拍板新增，「qb 下载」）
+- 复用 Hibiki 现有 torrent 栈（`packages/hibiki_torrent` 内置 libtorrent，缺 DLL 回退外接 qBittorrent）：粘贴磁力/种子（如 nyaa 上的生肉卷）下载，完成后落地文件夹接**现有漫画导入链**（有 .mokuro 直通；裸图/压缩包走内置 ONNX 整卷 OCR）。
+- 不做站内搜索聚合（nyaa 爬取等灰色功能不进 app），只做「磁力入口 + 下载完成后一键导入为漫画」。
 
 ### 甲：MangaDex 官方 API 直连（内置源）
 - 公开合法 API（api.mangadex.org，免 key，5 req/s），搜索/章节/at-home 图片服务器齐全。
@@ -106,15 +110,37 @@ Mangatan（1Selxo/Mangatan，Mangayomi fork，Dart，GPL-3.0，69★，2026-07 �
 | O4 | 收藏入书架（建行 + 进度恢复 + 继续阅读卡）+ 移动端经互联读 host 的 Suwayomi + 单页互联代跑 | 手机真机闭环 |
 | O5 | Suwayomi 下载离线 → 本地漫画衔接；（可选）MangaDex 内置源 | 离线卷可整卷 OCR |
 
-## 9. P0 未决问题（待用户拍板）
+## 9. P0 拍板结果（用户，2026-07-25）
 
-1. **路线组合**（可多选）：甲′（mokuro.moe 目录源，首做）+ 乙（外接 Suwayomi，主路线，接受用户自装 server）？甲（MangaDex 内置）要不要进二期？
-2. **推翻旧「刻意不做」**：确认「阅读期懒 OCR + 整章预扫 + 磁盘缓存」进范围（仅针对乙/甲这类无 .mokuro 的在线内容；甲′与本地路径不需要）？
-3. **收藏形态**：在线系列「收藏才建行」进书架（推荐，横切能力免费），还是完全独立的在线库页？（甲′是下载即入书架，天然无此问题）
-4. **Suwayomi 下载离线**（O5）进不进首期范围？
-5. **Jimaku 字幕自动下载**（视频侧，jimaku.cc API，需用户 key）：值得单独立项吗？——与本设计无依赖，单纯问要不要。
+1. **路线组合**：✅ 甲′（mokuro.moe 目录源）+ ✅ 乙（外接 Suwayomi）+ ✅ **甲″ 种子/qb 下载**；甲（MangaDex）未选，不做。
+2. **阅读期懒 OCR**：✅ 确认（仅乙路线在线内容；甲′/甲″/本地路径不受影响）。
+3. **收藏形态**：✅ 按推荐——在线系列收藏才建行进书架。
+4. **Suwayomi 下载离线**：✅ 做。
+5. **Jimaku**：❌ 不立项（与漫画无关，用户裁定）。
 
-## 10. 调研出处
+### 拍板后分期（覆盖 §8 草案）
+
+| 阶段 | 内容 | 出口 |
+|---|---|---|
+| O1 | mokuro.moe 目录源：浏览/搜索 + CBZ/.mokuro 下载器（断点续传）+ 现有导入链衔接 | 真机：目录搜书→下载→书架打开→查词制卡 |
+| O2 | 种子获取（甲″）：磁力入口 + 完成后一键导入为漫画 | 真机：磁力→下载→导入→（裸图卷）整卷 OCR→查词 |
+| O3 | Suwayomi API client + 在线浏览/直读（桌面先行） | 真机：浏览→开章→翻页流畅 |
+| O4 | 阅读期懒 OCR（预扫+磁盘缓存+进度 HUD）+ 查词/制卡接通 | 真机：在线生肉点字查词→制卡带页图 |
+| O5 | 收藏建行入书架 + 移动端经互联 + 单页互联代跑 | 手机真机闭环 |
+| O6 | Suwayomi 下载离线衔接本地链 | 离线卷可整卷 OCR |
+
+## 10. O1 实现计划（mokuro.moe 目录源，2026-07-25 接入点核实后定稿）
+
+新增 `hibiki/lib/src/media/manga/online/`：
+- `mokuro_moe_client.dart`：REST client（`dart:io HttpClient` + `findProxyFromEnvironment`，同 model downloader 栈，构造注入 `HttpClient Function()` 供 loopback 测试）；模型 `MokuroMoeSeries/MokuroMoeVolume`；`fetchLibrary()` / `fetchSeries(name)` / `coverUrl()` / `cbzUrl()` / `mokuroUrl()`；base URL 走偏好 `manga_online_catalog_base_url`（默认 `https://mokuro.moe`）。
+- `mokuro_moe_volume_downloader.dart`：CBZ+.mokuro 下载（Range 断点续传，照 `manga_ocr_model_downloader.dart` 范式；CBZ 无预知长度，完整性校验放宽为 zip 中央目录可解析）→ isolate 流式解包（照 `backup_service.dart` `_backupExtractWorker` 范式，`InputFileStream` + 分块）→ `MangaImporter.importFromMokuroPath` 落库 → 清理临时目录；`Stream<MokuroMoeDownloadEvent>` 报进度；顺序下载队列 + 取消。
+- `mokuro_moe_catalog_dialog.dart`：照 `MangaOcrWizardDialog` 范式（依赖全构造注入 + 阶段机 browse/series/downloading）；封面 `CachedNetworkImageProvider(cacheKey: series|vol)`；成功 pop bookKey。
+
+改动现有：书架页头（`reader_hibiki_history_page.dart` 管理来源旁）+ `book_import_dialog.dart` actions 各加「在线目录」入口；`preferences_repository.dart`/`app_model.dart` 加 base URL 偏好；`settings_schema_manga_ocr.dart` 加站点地址 `SettingsTextItem` 并在 `kCoveredElsewhere` 登记；i18n 全走 `tool/i18n_sync.dart`（`manga_online_*` 前缀）+ `dart run slang`。
+
+测试：client/downloader 用 loopback `HttpServer`（照 `manga_ocr_model_downloader_test.dart` 的 `_ModelServer`），downloader 端到端到内存 DB 落库；对话框 widget 测试注入 fake。明确不改：`manga_importer.dart`、schema（不加列）。
+
+## 11. 调研出处
 
 - Mangatan 浅 clone @ `9e3b366`（2026-07-06）：OCR 三引擎 `lib/services/mining/{screen_ai_ocr,chrome_lens_ocr,mokuro_parser}.dart`、块合并 `ocr_block_merger.dart`（自注释 OwOCR stages）、覆盖层 `lib/modules/mining/widgets/reader_ocr_overlay.dart`（Canvas afterPaintImage 绘制，0..1 归一化坐标）、弹窗 `dictionary_lookup_popup.dart`（单例屏外 prewarm）、Anki `anki_markers.dart`（约 40 个 Yomitan 式 marker + Lapis 映射）、扩展桥 `lib/eval/`（dart_eval + flutter_qjs，上游继承）、`windows/runner/screen_ai_bridge.cpp`（动态加载 Chrome ScreenAI DLL + 手写 protobuf 解码）。
 - Hibiki 现状：`docs/specs/2026-07-24-manga-ocr-design.md`（设计 v2）+ develop `de5103250`（P1-P4 全量实现）。
