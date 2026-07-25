@@ -36,6 +36,8 @@ void main() {
     final String literal = src.substring(braceOpen, braceClose);
     expect(literal.contains('HomeTab.books'), isTrue,
         reason: '书架 tab 必须保活（远端书列表 + 封面无持久缓存）');
+    expect(literal.contains('HomeTab.manga'), isTrue,
+        reason: '漫画 tab 与书架同款保活（保滚动位置/封面；远端区块已在页内门控）');
     expect(literal.contains('HomeTab.video'), isTrue,
         reason: '视频 tab 必须保活（远端视频列表 + 封面无持久缓存）');
     expect(literal.contains('HomeTab.games'), isTrue,

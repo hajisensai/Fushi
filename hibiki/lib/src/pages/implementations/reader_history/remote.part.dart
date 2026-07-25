@@ -34,6 +34,10 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
   }
 
   Future<_RemoteBookState?> _loadRemoteBooks() async {
+    // 漫画书架不做远端书区块（互联/云端书库当前只投 EPUB/有声书；漫画的互联能力
+    // 是「代跑 OCR」而非远端库浏览）。单点早退，所有重拉路径（下拉刷新 / 切 tab /
+    // 首次加载）一并失效，无需在各调用点重复门控。
+    if (_mangaShelf) return null;
     final RemoteBookClient? client = await _resolveRemoteBookClient();
     _remoteBookClient = client;
     if (client == null) return null;

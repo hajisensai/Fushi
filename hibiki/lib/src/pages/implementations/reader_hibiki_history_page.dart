@@ -13,6 +13,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
+import 'package:hibiki/src/media/manga/manga_import_dialog.dart';
 import 'package:hibiki/src/media/drag_drop/card_drop_registry.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
@@ -75,8 +76,14 @@ part 'reader_history/dialogs.part.dart';
 /// derived per-instance ids) precisely so anchors can point at them by name.
 const HibikiFocusId kShelfImportFocusId = HibikiFocusId('reader-shelf-import');
 
+/// 漫画书架的导入按钮焦点 id。书架与漫画两个 tab 都保活（Offstage 常驻挂载），
+/// [HibikiFocusController] 的注册表按 id 覆盖，静态 id 必须按 shelf 隔离命名空间。
+const HibikiFocusId kMangaShelfImportFocusId =
+    HibikiFocusId('manga-shelf-import');
+
 class ReaderHibikiHistoryPage extends HistoryReaderPage {
   const ReaderHibikiHistoryPage({
+    this.mangaShelf = false,
     this.remoteBookClientLoader,
     this.remoteBookDownloadDestination,
     this.remoteBookImporter,
@@ -84,6 +91,12 @@ class ReaderHibikiHistoryPage extends HistoryReaderPage {
     this.remoteAudiobookImporter,
     super.key,
   });
+
+  /// true = 漫画书架（首页独立漫画 tab）：只列 `format=='manga'` 的书（按
+  /// [MangaHibikiSource.kUniqueKey] 分流），页头换漫画导入入口，SRT/远端书/有声书
+  /// 区块整体关闭；false（默认）= 书架，列出**除漫画外**的全部书。两页共用同一
+  /// 组件与全套标签/合集/批量管理逻辑，消除第二套书架实现。
+  final bool mangaShelf;
 
   final Future<RemoteBookClient?> Function()? remoteBookClientLoader;
   final Future<File> Function(RemoteBookInfo book)?
@@ -113,6 +126,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     extends HistoryReaderPageState {
   ReaderHibikiHistoryPage get _pageWidget => widget as ReaderHibikiHistoryPage;
 
+  /// 本实例是否漫画书架（见 [ReaderHibikiHistoryPage.mangaShelf]）。
+  bool get _mangaShelf => _pageWidget.mangaShelf;
+
+  /// 静态焦点 id / ValueKey 的 shelf 命名空间前缀：书架与漫画两个实例都保活
+  /// （Offstage 常驻），[HibikiFocusController] 注册表按 id 覆盖，同名会互踩。
+  /// 书卡/SRT 卡 id 携带 bookKey 天然不相交，只有页内静态 id 与合集卡需要前缀。
+  String get _shelfFocusPrefix => _mangaShelf ? 'manga-' : '';
+
   @override
   MediaType get mediaType => mediaSource.mediaType;
 
@@ -132,6 +153,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   void _rebuild(VoidCallback fn) => setState(fn);
 
   Future<Map<String, _AudiobookInfo>> _loadAllAudiobookInfo() async {
+    // 漫画书架无有声书概念：跳过全库有声书健康扫描（纯 IO 浪费）。
+    if (_mangaShelf) return const <String, _AudiobookInfo>{};
     final repo = AudiobookRepository(appModel.database);
     final allAudiobooks = await repo.buildBookKeyMap();
     final result = <String, _AudiobookInfo>{};
@@ -307,10 +330,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     homeShellTabNotifier.addListener(_onShellTabActivated);
   }
 
-  /// 切回书架 tab 时自动重拉远端书（BUG-992）。非书架 tab 的切换忽略。
+  /// 切回书架 tab 时自动重拉远端书（BUG-992）。非本 shelf 对应 tab 的切换忽略；
+  /// 漫画书架的远端区块整体关闭（[_loadRemoteBooks] 早退），刷新是 no-op，但仍按
+  /// 自身 tab 身份判断，避免书架/漫画两个保活实例互相触发。
   void _onShellTabActivated() {
     if (!mounted) return;
-    if (homeShellTabNotifier.value == HomeTab.books) {
+    final HomeTab ownTab = _mangaShelf ? HomeTab.manga : HomeTab.books;
+    if (homeShellTabNotifier.value == ownTab) {
       _refreshRemoteBooks();
     }
   }
@@ -398,10 +424,20 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 const SyncProgressBanner(),
                 Expanded(
                   child: books.when(
-                    data: (bookList) {
+                    data: (allBooks) {
                       _batchAudiobookInfoFuture ??= _loadAllAudiobookInfo();
                       _remoteBooksFuture ??= _loadRemoteBooks();
                       _shelfMapsFuture ??= _loadShelfMaps();
+                      // 漫画独立成页：provider 仍列全量行（首页「继续」卡等消费全量），
+                      // 由两个 shelf 实例在此按 mediaSourceIdentifier 各取一半——漫画
+                      // 书架只留漫画，书架剔除漫画。单一分流谓词，无 format 特例
+                      // 下渗到下游任何逻辑。
+                      final List<MediaItem> bookList = allBooks
+                          .where((MediaItem item) =>
+                              (item.mediaSourceIdentifier ==
+                                  MangaHibikiSource.kUniqueKey) ==
+                              _mangaShelf)
+                          .toList();
                       final Set<String>? filterSet = filteredIds.valueOrNull;
                       final List<MediaItem> filtered;
                       if (filterSet == null) {
@@ -475,22 +511,34 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   Widget _buildPageHeader() {
     return HibikiPageHeader(
-      title: t.books,
+      title: _mangaShelf ? t.nav_manga : t.books,
       actions: <Widget>[
         // 宽窗（非 compact）时动作展开成「图标+文字」药丸（与视频 tab 页头一致，
         // 用户 mockup：导入书籍 / 来源 / 合集 / 阅读统计带文字外显）；窄窗回落纯图标。
-        mediaSource.buildBookImportButton(
-          context: context,
-          ref: ref,
-          appModel: appModel,
-          focusId: kShelfImportFocusId,
-          label: t.srt_import,
-        ),
-        _headerAction(
-          tooltip: t.media_source_manage_title,
-          icon: Icons.folder_copy_outlined,
-          onTap: _openManageSources,
-        ),
+        if (_mangaShelf)
+          // 漫画书架：专属导入对话框（.mokuro + OCR 向导），不走书籍导入对话框。
+          HibikiIconButton(
+            tooltip: t.manga_import_title,
+            label: t.manga_import_title,
+            icon: Icons.library_add_outlined,
+            focusId: kMangaShelfImportFocusId,
+            onTap: _openMangaImport,
+          )
+        else
+          mediaSource.buildBookImportButton(
+            context: context,
+            ref: ref,
+            appModel: appModel,
+            focusId: kShelfImportFocusId,
+            label: t.srt_import,
+          ),
+        // 「管理来源」是阅读器媒体源的概念，漫画 tab 无源切换，不放。
+        if (!_mangaShelf)
+          _headerAction(
+            tooltip: t.media_source_manage_title,
+            icon: Icons.folder_copy_outlined,
+            onTap: _openManageSources,
+          ),
         // 视频导入入口**只属于视频 tab**（HomeVideoPage），书架不放视频导入——
         // 书架是书的地方。这里保留编译期常量门控（默认关）只为旧调试路径，运行时
         // 实验开关不再在书架放出视频导入（用户反馈：书架不该有视频导入入口）。
@@ -512,6 +560,19 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         ),
       ],
     );
+  }
+
+  /// 漫画书架页头「导入漫画」：打开漫画专属导入对话框（.mokuro 选择 + OCR 向导），
+  /// 返回非 null bookKey 说明入库成功，刷新书列表与最近阅读 recency。
+  Future<void> _openMangaImport() async {
+    final String? bookKey = await showAppDialog<String>(
+      context: context,
+      builder: (_) => MangaImportDialog(db: appModel.database),
+    );
+    if (bookKey != null && mounted) {
+      ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+      ref.invalidate(bookLastReadAtProvider);
+    }
   }
 
   Widget _headerAction({
@@ -795,8 +856,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     List<MediaItem> books, [
     AsyncSnapshot<_RemoteBookState?>? remoteSnapshot,
   ]) {
-    final List<SrtBook> srtBooks =
-        ref.watch(srtBooksProvider).valueOrNull ?? const [];
+    // 漫画书架无 SRT 书（字幕书是 EPUB 生态的概念），恒空列表。
+    final List<SrtBook> srtBooks = _mangaShelf
+        ? const <SrtBook>[]
+        : ref.watch(srtBooksProvider).valueOrNull ?? const [];
     return _buildBodyWithSrtBooks(books, srtBooks, remoteSnapshot);
   }
 
@@ -846,8 +909,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         ? ((hero.position / hero.duration) * 100).clamp(0, 100).round()
         : 0;
     return HibikiCard(
-      key: const ValueKey<String>('reader_shelf_continue_hero'),
-      focusId: const HibikiFocusId('reader-shelf-continue-hero'),
+      // 书架/漫画两个保活实例共存挂载，key 与焦点 id 按 shelf 隔离命名空间。
+      key: ValueKey<String>('${_shelfFocusPrefix}reader_shelf_continue_hero'),
+      focusId: HibikiFocusId('${_shelfFocusPrefix}reader-shelf-continue-hero'),
       onTap: () async {
         final MediaSource source = hero.getMediaSource(appModel: appModel);
         await appModel.openMedia(ref: ref, mediaSource: source, item: hero);
@@ -1260,7 +1324,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         vertical: tokens.spacing.gap / 2,
       ),
       child: CollectionShelfRow(
-        key: ValueKey<String>('reader_shelf_collection_row_${collection.id}'),
+        key: ValueKey<String>(
+            '${_shelfFocusPrefix}reader_shelf_collection_row_${collection.id}'),
         title: collection.name,
         countLabel: t.series_item_count(n: memberCount),
         itemCount: group.items.length,
@@ -1268,8 +1333,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         rowHeight: rowHeight,
         // 书卡自带 12px 内边距 → 行内间距归零，与散书网格视觉间距一致。
         itemGap: 0,
-        headerFocusId:
-            HibikiFocusId('reader-shelf-collection-${collection.id}'),
+        // 混合合集（既有书又有漫画）会在两个 shelf 各出一行，焦点 id 按 shelf 前缀隔离。
+        headerFocusId: HibikiFocusId(
+            '${_shelfFocusPrefix}reader-shelf-collection-${collection.id}'),
         onOpenDetail: () => _openCollectionDetail(collection),
         collapsed:
             appModel.prefsRepo.collapsedCollectionIds.contains(collection.id),
@@ -1361,8 +1427,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       itemCount: group.items.length,
       slotAspectRatio: kShelfBookCardAspectRatio,
       // Gamepad/keyboard focus id：与散书卡同 'reader-shelf-<kind>-<id>' 方案，
-      // 折叠合集可被 D-pad 到达。
-      focusId: HibikiFocusId('reader-shelf-collection-${collection.id}'),
+      // 折叠合集可被 D-pad 到达。混合合集两 shelf 各出一卡，按 shelf 前缀隔离。
+      focusId: HibikiFocusId(
+          '${_shelfFocusPrefix}reader-shelf-collection-${collection.id}'),
       covers: covers,
       onTap: () => _openCollectionDetail(collection),
     );

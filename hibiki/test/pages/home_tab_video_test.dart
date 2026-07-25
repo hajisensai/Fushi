@@ -10,12 +10,13 @@ import 'package:hibiki/src/pages/implementations/home_page.dart';
 /// DB；此处验证它的「生效」= tab 的出现/位置。
 void main() {
   group('homeActiveTabs', () {
-    test('关闭实验视频：无视频/下载 tab，顺序为 首页→书架→词典→游戏→设置', () {
+    test('关闭实验视频：无视频/下载 tab，顺序为 首页→书架→漫画→词典→游戏→设置', () {
       final List<HomeTab> tabs =
           homeActiveTabs(videoEnabled: false, gamesEnabled: true);
       expect(tabs, <HomeTab>[
         HomeTab.home,
         HomeTab.books,
+        HomeTab.manga,
         HomeTab.dictionaries,
         HomeTab.games,
         HomeTab.settings,
@@ -23,29 +24,31 @@ void main() {
       expect(tabs.contains(HomeTab.video), isFalse);
     });
 
-    test('开启实验视频：视频+下载 tab 出现，顺序为 首页→书架→视频→下载→词典→游戏→设置', () {
+    test('开启实验视频：视频+下载 tab 出现，顺序为 首页→书架→漫画→视频→下载→词典→游戏→设置', () {
       final List<HomeTab> tabs =
           homeActiveTabs(videoEnabled: true, gamesEnabled: true);
       expect(tabs, <HomeTab>[
         HomeTab.home,
         HomeTab.books,
+        HomeTab.manga,
         HomeTab.video,
         HomeTab.downloads,
         HomeTab.dictionaries,
         HomeTab.games,
         HomeTab.settings,
       ]);
-      expect(tabs.indexOf(HomeTab.video), tabs.indexOf(HomeTab.books) + 1);
+      // 漫画独立成页后视频紧随漫画（漫画固定在书架之后）。
+      expect(tabs.indexOf(HomeTab.video), tabs.indexOf(HomeTab.manga) + 1);
     });
 
     test('视频后紧随下载 tab，再到词典（用户要求：下载单独拿出来）', () {
       final List<HomeTab> tabs =
           homeActiveTabs(videoEnabled: true, gamesEnabled: true);
-      final int books = tabs.indexOf(HomeTab.books);
+      final int manga = tabs.indexOf(HomeTab.manga);
       final int video = tabs.indexOf(HomeTab.video);
       final int downloads = tabs.indexOf(HomeTab.downloads);
       final int dict = tabs.indexOf(HomeTab.dictionaries);
-      expect(video, equals(books + 1));
+      expect(video, equals(manga + 1));
       expect(downloads, equals(video + 1));
       expect(dict, equals(downloads + 1));
     });

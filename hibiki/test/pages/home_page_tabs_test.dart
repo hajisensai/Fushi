@@ -112,6 +112,34 @@ void main() {
     });
   });
 
+  group('manga home tab', () {
+    test('HomeTab 枚举包含 manga，常驻（不随 video/games 门控）', () {
+      expect(HomeTab.values, contains(HomeTab.manga));
+      expect(homeActiveTabs(videoEnabled: false), contains(HomeTab.manga));
+      expect(
+        homeActiveTabs(videoEnabled: true, gamesEnabled: true),
+        contains(HomeTab.manga),
+      );
+    });
+
+    test('漫画 tab 紧邻书架之后', () {
+      for (final bool videoEnabled in <bool>[false, true]) {
+        final List<HomeTab> tabs = homeActiveTabs(videoEnabled: videoEnabled);
+        final int books = tabs.indexOf(HomeTab.books);
+        expect(books, isNonNegative);
+        expect(tabs.indexOf(HomeTab.manga), equals(books + 1),
+            reason: '漫画独立成页：位置固定在书架与视频之间');
+      }
+    });
+
+    test('漫画导航项使用 nav_manga 标签与书签集图标', () {
+      final AdaptiveNavItem item = homeNavItemFor(HomeTab.manga);
+      expect(item.icon, Icons.collections_bookmark_outlined);
+      expect(item.selectedIcon, Icons.collections_bookmark);
+      expect(item.label, t.nav_manga);
+    });
+  });
+
   group('home tab structure', () {
     test('HomeTab 枚举不再含已删的 texthooker', () {
       expect(

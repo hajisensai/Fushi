@@ -41,6 +41,7 @@ import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 enum HomeTab {
   home,
   books,
+  manga,
   video,
   downloads,
   dictionaries,
@@ -61,6 +62,10 @@ List<HomeTab> homeActiveTabs({
     <HomeTab>[
       HomeTab.home,
       HomeTab.books,
+      // 漫画独立成页（用户要求）：与书架同源（EpubBooks format='manga'）但单独一个
+      // tab，紧邻书架之后。常驻无门控——与 video 同样「毕业为常驻」，macOS 根侧栏的
+      // homeActiveTabs 调用点因此无需第二处实参同步。
+      HomeTab.manga,
       if (videoEnabled) HomeTab.video,
       // 下载 tab 与视频子系统同门控（下载入口原本就在视频页头，把它单独拿出来
       // 成独立底栏条目）；位置紧随视频。
@@ -125,6 +130,12 @@ AdaptiveNavItem homeNavItemFor(HomeTab tab) {
         icon: Icons.menu_book_outlined,
         selectedIcon: Icons.menu_book,
         label: t.books,
+      );
+    case HomeTab.manga:
+      return AdaptiveNavItem(
+        icon: Icons.collections_bookmark_outlined,
+        selectedIcon: Icons.collections_bookmark,
+        label: t.nav_manga,
       );
     case HomeTab.video:
       return AdaptiveNavItem(
@@ -911,6 +922,9 @@ class _HomePageState extends BasePageState<HomePage>
   /// 若把它也保活会不再 re-mount 而漏消费。
   static const Set<HomeTab> _keepAliveTabs = <HomeTab>{
     HomeTab.books,
+    // 漫画书架与书架同款保活：保滚动位置/已加载封面（远端/SRT 区块在 manga shelf
+    // 内部已门控关闭，不会因保活多拉网络）。
+    HomeTab.manga,
     HomeTab.video,
     HomeTab.games,
   };
@@ -977,6 +991,11 @@ class _HomePageState extends BasePageState<HomePage>
         return _buildSettingsTabContent(showBackButton: false);
       case HomeTab.books:
         return const HomeReaderPage();
+      case HomeTab.manga:
+        // 漫画书架：复用书架页 + mangaShelf 过滤（同一张 EpubBooks 表按
+        // mediaSourceIdentifier 分流），不经 BaseTabPage 的「当前源」间接层——漫画
+        // tab 无源切换概念，页面自身已监听 tabRefreshNotifier。
+        return const ReaderHibikiHistoryPage(mangaShelf: true);
     }
   }
 

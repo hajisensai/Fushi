@@ -5,6 +5,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/media/manga/manga_import_dialog.dart';
 import 'package:hibiki/utils.dart';
 
 /// 漫画书的媒体源（漫画 OCR / mokuro，P1）。
@@ -82,19 +83,29 @@ class MangaHibikiSource extends ReaderMediaSource {
     required WidgetRef ref,
     required AppModel appModel,
   }) {
-    // 导入按钮统一由 EPUB 源提供（同一个对话框通吃 epub/pdf/manga）；本源作为打开-漫画
-    // 的短暂当前源，页头动作复用同一按钮以防被设为当前源时缺动作。
+    // 漫画独立成页后导入入口是漫画专属对话框（.mokuro + OCR 向导）；本源作为打开-漫画
+    // 的短暂当前源，页头动作对齐漫画 tab 以防被设为当前源时缺动作。
     return <Widget>[
-      ReaderHibikiSource.instance.buildBookImportButton(
-        context: context,
-        ref: ref,
-        appModel: appModel,
+      HibikiIconButton(
+        tooltip: t.manga_import_title,
+        icon: Icons.library_add_outlined,
+        onTap: () async {
+          final String? bookKey = await showAppDialog<String>(
+            context: context,
+            builder: (_) => MangaImportDialog(db: appModel.database),
+          );
+          if (bookKey != null) {
+            ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+            ref.invalidate(bookLastReadAtProvider);
+          }
+        },
       ),
     ];
   }
 
   @override
   BasePage buildHistoryPage({MediaItem? item}) {
-    return const ReaderHibikiHistoryPage();
+    // 漫画 tab 的书架：同一书架组件 + mangaShelf 过滤（见 ReaderHibikiHistoryPage）。
+    return const ReaderHibikiHistoryPage(mangaShelf: true);
   }
 }
