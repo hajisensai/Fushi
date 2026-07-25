@@ -620,8 +620,10 @@ class AppModel with ChangeNotifier {
             await FavoriteSentenceRepository(database)
                 .removeByItemKey(c.itemKey);
           default:
-            // 未知类型：跳过。
-            break;
+            // 未知类型：跳过，但留痕——用户确认了删除、这里静默吞掉会造成
+            // 「以为删了实际没删」且无从排查（mediaType 审计 2026-07-25）。
+            debugPrint(
+                '[sync] skip deletion of unknown mediaType ${c.mediaType}/${c.itemKey}');
         }
       } catch (e) {
         debugPrint('[sync] apply deletion ${c.mediaType}/${c.itemKey}: $e');

@@ -86,8 +86,10 @@ void main() {
 
   /// 只在网格里找卡片标题：搜索框里刚敲进去的同名文字也是一个 Text，
   /// 不限定祖先会把它一起数进来（findsOneWidget 直接红）。
+  /// 游戏进合集后网格改为 CustomScrollView 分区（合集横排行 + 散卡 SliverGrid），
+  /// 祖先随之从 GridView 换成 CustomScrollView，语义不变。
   Finder cardTitle(String title) => find.descendant(
-        of: find.byType(GridView),
+        of: find.byType(CustomScrollView),
         matching: find.text(title),
       );
 

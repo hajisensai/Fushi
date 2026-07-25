@@ -716,7 +716,8 @@ class Series extends Table {
 // 远端-only 条目无本地 row 可挂列，故用独立映射表。
 @DataClassName('ShelfEntryRow')
 class ShelfEntries extends Table {
-  /// 媒体种类：'epub' | 'srt' | 'video'。
+  /// 媒体种类：'epub' | 'srt' | 'video'（'game' 不写本表——游戏库排序走
+  /// `galgame_library_query.dart` 的视图偏好，合集归属见 [MediaCollectionItems]）。
   TextColumn get mediaType => text()();
 
   /// 条目稳定身份：本地 = bookKey / srtUid / videoBookUid；远端 = downloadId /
@@ -799,18 +800,21 @@ class MediaCollections extends Table {
 // ── media_collection_items (合集成员引用 = Jellyfin LinkedChildren) ────
 // 复合主键 (collectionId, mediaType, entryKey) 按合集去重：**同一条目可属于多个
 // 合集**；删合集 cascade 只删本表引用行。entryKey 是逻辑外键（epub=bookKey / srt=uid /
-// video=bookUid），不加本地三表 DB FK——与 [ShelfEntries].entryKey 同理由（远端条目无
-// 本地行，写 FK 会违反约束）。孤儿由删除路径主动清理 + 读取期过滤兜底。
+// video=bookUid / game=galgames.id），不加本地媒体表 DB FK——与 [ShelfEntries].entryKey
+// 同理由（远端条目无本地行，写 FK 会违反约束）。孤儿由删除路径主动清理 + 读取期过滤兜底。
 @DataClassName('MediaCollectionItemRow')
 class MediaCollectionItems extends Table {
   /// 所属合集（[MediaCollections].id）。onDelete:cascade = 删合集连带删本引用行。
   IntColumn get collectionId => integer()
       .references(MediaCollections, #id, onDelete: KeyAction.cascade)();
 
-  /// 媒体种类：'epub' | 'srt' | 'video'（同 [ShelfEntries].mediaType 值域）。
+  /// 媒体种类：'epub' | 'srt' | 'video' | 'game'（前三者同 [ShelfEntries].mediaType
+  /// 值域；'game' 仅存在于本表——游戏库无书架排序行）。自由 TextColumn，无 CHECK。
   TextColumn get mediaType => text()();
 
-  /// 条目稳定身份：epub=bookKey / srt=uid / video=bookUid。
+  /// 条目稳定身份：epub=bookKey / srt=uid / video=bookUid / game=galgames.id
+  /// （game 的 id 是添加时刻微秒时间戳字符串，**本机局域身份**：与 exe 路径同为
+  /// 本机事实，跨端同步时对端无对应行则该成员静默忽略）。
   TextColumn get entryKey => text()();
 
   /// 合集内序：playlist 的播放顺序 / collection 的展示顺序。

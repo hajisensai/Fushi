@@ -314,6 +314,23 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 游戏库合集横排行的折叠集（独立命名空间：同一个合集在书架折叠不应连带游戏库
+  /// 折叠，两页各记各的）。存储格式与 [collapsedCollectionIds] 相同。
+  Set<int> get gamesCollapsedCollectionIds {
+    final String raw =
+        getPref('games_collapsed_collection_ids', defaultValue: '') as String;
+    return <int>{
+      for (final String part in raw.split(','))
+        if (int.tryParse(part) case final int id) id,
+    };
+  }
+
+  Future<void> setGamesCollapsedCollectionIds(Set<int> ids) async {
+    final List<int> sorted = ids.toList()..sort();
+    await setPref('games_collapsed_collection_ids', sorted.join(','));
+    notifyListeners();
+  }
+
   /// 多端库联合视图（spec 2026-07-12 §2.1/§2.4）：书架/视频页主网格是否把「远端有、
   /// 本地无」的条目渲染成占位卡（云角标 + 远端封面，点击下载/流播）。**默认 true**——
   /// 用户拍板远端混排默认开。关闭时占位卡全部不渲染，两页只剩本地库。离线/未配对/

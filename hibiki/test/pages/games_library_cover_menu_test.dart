@@ -12,6 +12,8 @@ import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/games_library_page.dart';
+import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart'
+    show MediaItemDialogFrame;
 import 'package:hibiki/utils.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -68,7 +70,20 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('溢出菜单含设置封面 / 自动获取封面', (WidgetTester tester) async {
+  /// 卡片菜单应含的全部项（与 `_GameCard._menuItems` 单一真相源对账：任一处漏项
+  /// 本表即断言失败）。'remove' 在长按对话框落危险区，但文案仍必须在场。
+  List<String> menuLabels() => <String>[
+        t.games_view_detail,
+        t.games_play_status,
+        t.games_scrape,
+        t.games_rename,
+        t.games_set_cover,
+        t.games_auto_cover,
+        t.add_to_collection,
+        t.games_remove,
+      ];
+
+  testWidgets('溢出菜单项齐全（含设置封面 / 自动获取封面 / 加入合集）', (WidgetTester tester) async {
     final AppModel appModel = await buildModel(<GalgameEntry>[
       GalgameEntry(
         id: 'g1',
@@ -83,13 +98,13 @@ void main() {
     await tester.tap(find.byType(PopupMenuButton<String>));
     await tester.pumpAndSettle();
 
-    expect(find.text(t.games_set_cover), findsOneWidget);
-    expect(find.text(t.games_auto_cover), findsOneWidget);
-    expect(find.text(t.games_rename), findsOneWidget);
-    expect(find.text(t.games_remove), findsOneWidget);
+    for (final String label in menuLabels()) {
+      expect(find.text(label), findsOneWidget, reason: '溢出菜单缺「$label」');
+    }
   });
 
-  testWidgets('长按菜单与溢出菜单项一致', (WidgetTester tester) async {
+  testWidgets('长按菜单走 MediaItemDialogFrame 且与溢出菜单项一致',
+      (WidgetTester tester) async {
     final AppModel appModel = await buildModel(<GalgameEntry>[
       GalgameEntry(
         id: 'g1',
@@ -101,12 +116,21 @@ void main() {
     ]);
     await pumpPage(tester, appModel);
 
-    await tester.longPress(find.text('テスト'));
+    await tester.longPress(find.text('テスト', skipOffstage: false).first);
     await tester.pumpAndSettle();
 
-    expect(find.byType(SimpleDialog), findsOneWidget);
-    expect(find.text(t.games_set_cover), findsOneWidget);
-    expect(find.text(t.games_auto_cover), findsOneWidget);
+    // 与书/视频卡同款对话框骨架（不再是手搓 SimpleDialog）。
+    expect(find.byType(MediaItemDialogFrame), findsOneWidget);
+    for (final String label in menuLabels()) {
+      expect(
+        find.descendant(
+          of: find.byType(MediaItemDialogFrame),
+          matching: find.text(label),
+        ),
+        findsOneWidget,
+        reason: '长按菜单缺「$label」（须与溢出菜单同源同项）',
+      );
+    }
   });
 
   testWidgets('有封面文件时卡片渲染封面图而非占位图标', (WidgetTester tester) async {
@@ -133,10 +157,17 @@ void main() {
     ]);
     await pumpPage(tester, appModel);
 
+    // 封面统一走 ShelfFileCover（BUG-959：resizedFileImage 降采样 + FadeInImage），
+    // 底层 provider 是 ResizeImage 包 FileImage——两层都断言，防退回裸 Image.file。
     expect(
-      find.byWidgetPredicate((Widget w) => w is Image && w.image is FileImage),
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w is FadeInImage &&
+            w.image is ResizeImage &&
+            (w.image as ResizeImage).imageProvider is FileImage,
+      ),
       findsOneWidget,
-      reason: 'coverPath 指向的文件存在时必须渲染封面图',
+      reason: 'coverPath 指向的文件存在时必须经降采样封面加载器渲染封面图',
     );
   });
 }

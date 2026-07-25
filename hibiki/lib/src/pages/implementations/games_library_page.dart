@@ -4,9 +4,14 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/media/collections/add_to_collection_dialog.dart';
+import 'package:hibiki/src/media/collections/collection_grouping.dart';
+import 'package:hibiki/src/media/collections/collection_shelf_row.dart'
+    show CollectionShelfRow;
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
@@ -17,7 +22,17 @@ import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/galgame_library_query.dart';
 import 'package:hibiki/src/mining/galgame_repository.dart';
 import 'package:hibiki/src/pages/implementations/galgame_detail_page.dart';
+import 'package:hibiki/src/pages/implementations/media_collection_grid_detail_page.dart';
+import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart'
+    show DialogDangerAction, DialogQuickAction, MediaItemDialogFrame;
+import 'package:hibiki/src/utils/cover_image.dart' show evictLocalCoverCache;
 import 'package:hibiki/utils.dart';
+
+/// 游戏进合集（统一媒体库）：`media_collection_items.mediaType` 的游戏值。
+/// entryKey = `galgames.id`（添加时刻微秒时间戳字符串）——**游戏本机局域身份**：
+/// 与 exe 路径同为本机事实，跨端同步时对端无对应 `galgames` 行则该成员静默忽略
+/// （合集同步引擎对 mediaType/entryKey 透传，不解引用）。
+const String kGameCollectionMediaType = 'game';
 
 /// 首页「游戏」tab：galgame 库。展示用户添加的游戏网格，点击一个游戏经
 /// [GalHookSessionController.launchGame]（引擎-hook launch 路径）拉起并注入。
@@ -62,6 +77,13 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
 
   final TextEditingController _searchController = TextEditingController();
 
+  /// 合集分组映射（与书架 `_loadShelfMaps` 同款三件套）：合集字典、条目 → 主折叠
+  /// 合集 id、条目在主折叠合集里的 sortIndex。[_reload] 时一并批量预取。
+  Map<int, MediaCollectionRow> _collectionsById =
+      const <int, MediaCollectionRow>{};
+  Map<String, int> _primaryCollectionByEntry = const <String, int>{};
+  Map<String, int> _memberSortIndex = const <String, int>{};
+
   /// 启动流程的**再入守卫**：一次启动含位数探测、helper 确认/下载对话框、注入会话等多个 await，
   /// 全程可能持续数秒。没有此守卫时，用户在等待期间重复点击游戏卡片会各自开一条 _launchGame，
   /// 叠出多个「需要下载 galgame 引擎组件」对话框（用户实测症状）。true 期间忽略新的启动点击。
@@ -79,10 +101,31 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     super.dispose();
   }
 
-  /// 从 DB 全量重载（三个批量查询，无 N+1）。
+  /// 从 DB 全量重载（三个批量查询，无 N+1）+ 合集分组映射。
   Future<void> _reload() async {
     await _repo.load();
+    await _loadCollectionMaps();
     _refresh();
+  }
+
+  /// 预取合集分组三件套（照书架 `_loadShelfMaps` 的口径：一次 getAllCollectionItems
+  /// 内存分组，不逐合集 N+1；memberSortIndex 只记主折叠合集的行）。
+  Future<void> _loadCollectionMaps() async {
+    final HibikiDatabase db = _appModel.database;
+    final List<MediaCollectionRow> collections =
+        await db.getAllMediaCollections();
+    final Map<String, int> primaryMap =
+        await db.getPrimaryCollectionIdByEntry();
+    final Map<String, int> memberSortIndex = <String, int>{};
+    for (final MediaCollectionItemRow m in await db.getAllCollectionItems()) {
+      final String key = '${m.mediaType}|${m.entryKey}';
+      if (primaryMap[key] == m.collectionId) memberSortIndex[key] = m.sortIndex;
+    }
+    _collectionsById = <int, MediaCollectionRow>{
+      for (final MediaCollectionRow c in collections) c.id: c,
+    };
+    _primaryCollectionByEntry = primaryMap;
+    _memberSortIndex = memberSortIndex;
   }
 
   /// 把仓储缓存同步到本页（仓储的每个写方法内部已重载）。
@@ -192,11 +235,12 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
 
   /// 把新封面路径写回条目并刷新。
   ///
-  /// 必须先 `imageCache.evict`：[FileImage] 按 `(path, scale)` 缓存解码结果，换封面
-  /// 常常落在**同一个** `<id>.<ext>` 路径上，不驱逐旧条目的话 UI 重建会命中旧解码，
-  /// 用户看到的还是换之前那张图（与视频封面同一个坑，见 `setVideoCoverFromPickedFile`）。
+  /// 必须先驱逐旧解码缓存：换封面常常落在**同一个** `<id>.<ext>` 路径上，不驱逐的话
+  /// UI 重建会命中旧解码，用户看到的还是换之前那张图（与视频封面同一个坑，见
+  /// `setVideoCoverFromPickedFile`）。卡片经 [ShelfFileCover] 走降采样键，裸
+  /// FileImage 键与 ResizeImage 键都要清（[evictLocalCoverCache]）。
   Future<void> _applyCover(GalgameEntry game, String coverPath) async {
-    PaintingBinding.instance.imageCache.evict(FileImage(File(coverPath)));
+    await evictLocalCoverCache(coverPath);
     // 后台补齐期间用户可能已删掉这条：仓储按 id 更新，行不在就是空操作。
     if (_repo.byId(game.id) == null) return;
     await _repo.setCoverPath(game.id, coverPath);
@@ -277,6 +321,74 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       ),
     );
     await _reload();
+  }
+
+  /// 单卡「加入合集」：与书/视频同走 [showAddToCollectionDialog]（同一条
+  /// createMediaCollection / addToCollection DAO 路径）；成功后重取分组映射刷新。
+  Future<void> _addGameToCollection(GalgameEntry game) async {
+    final bool added = await showAddToCollectionDialog(
+      context: context,
+      database: _appModel.database,
+      mediaType: kGameCollectionMediaType,
+      entryKey: game.id,
+      defaultNewName: game.displayName,
+    );
+    if (!added || !mounted) return;
+    await _loadCollectionMaps();
+    _refresh();
+  }
+
+  /// 合集横排行折叠开关（游戏库独立偏好命名空间，见
+  /// [PreferencesRepository.gamesCollapsedCollectionIds]）。setPref 先同步刷内存
+  /// 缓存，setState 重建即读到新值；落库 fire-and-forget（与书架同模式）。
+  void _toggleCollectionCollapsed(int collectionId) {
+    final Set<int> ids = _appModel.prefsRepo.gamesCollapsedCollectionIds;
+    if (!ids.remove(collectionId)) ids.add(collectionId);
+    unawaited(_appModel.prefsRepo.setGamesCollapsedCollectionIds(ids));
+    setState(() {});
+  }
+
+  /// 行头「查看全部」→ 通用合集网格详情页。game 成员用游戏卡渲染、点击进详情页；
+  /// 非 game 成员（混合合集里的书/视频）builder 返 null 由详情页跳过——书架/视频页
+  /// 打开同一合集时依旧渲染它们自己的成员，互不越界。
+  ///
+  /// 不注入 [MediaCollectionGridDetailPage.onDeleteMembersMedia]：game 维度先只支持
+  /// 解散合集不删游戏本体（对齐「删除合集不删媒体本体、勾选才删」语义的保守端——
+  /// 游戏本体是用户安装目录，绝不能从合集路径误删）。
+  void _openCollectionDetail(MediaCollectionRow collection) {
+    Navigator.push<void>(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => MediaCollectionGridDetailPage(
+          database: _appModel.database,
+          collection: collection,
+          memberCardBuilder: (
+            String mediaType,
+            String entryKey, {
+            VoidCallback? onRemoveFromCollection,
+          }) =>
+              buildGameCollectionMemberCard(
+            games: _games,
+            mediaType: mediaType,
+            entryKey: entryKey,
+          ),
+          onOpenMember: _openCollectionMember,
+          onChanged: () {
+            unawaited(_reload());
+          },
+        ),
+      ),
+    );
+  }
+
+  /// 合集详情页「打开成员」：game 成员进详情页（含启动按钮，复用库页带再入守卫的
+  /// [_launchGame]）；其它 mediaType 非本页职责，忽略。
+  void _openCollectionMember(String mediaType, String entryKey) {
+    if (mediaType != kGameCollectionMediaType) return;
+    final GalgameEntry? game = _repo.byId(entryKey);
+    if (game == null) return;
+    unawaited(_openDetail(game));
   }
 
   /// 弹一个单行输入对话框返回用户输入的名称（取消返回 null）。
@@ -638,39 +750,157 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   }
 
   /// 游戏海报网格（对齐 ReinaManager 库页：3:4 竖版海报卡，见
-  /// `docs/design/galgame-library-reina-visual-parity.md` §1）。
+  /// `docs/design/galgame-library-reina-visual-parity.md` §1）+ 合集分区。
   ///
   /// 不再套书架的 extent/比例：galgame 是竖版海报（3:4 封面 + 下方标题），与横向
-  /// 偏方的书封不同形。maxCrossAxisExtent≈168（ReinaManager 海报宽档），间距 16，
+  /// 偏方的书封不同形。目标卡宽≈168（ReinaManager 海报宽档），间距 16，
   /// childAspectRatio 按「3:4 封面 + 一行标题」估（约 0.62），标题超长由卡内省略。
+  ///
+  /// 合集渲染照书架分区范式（去碎片方案 A+顶部）：属合集的游戏折进
+  /// [CollectionShelfRow] 横排行集中在前，散卡合成单一 SliverGrid 在后；排序/筛选
+  /// 作用于 [_visible]（散卡序与成员存活），组内成员序走合集 sortIndex（与书架/
+  /// 详情页同一顺序真相源）。
   Widget _buildGrid(BuildContext context, List<GalgameEntry> visible) {
+    final List<CollectionGroup<GalgameEntry>> groups =
+        groupByCollections<GalgameEntry>(
+      items: <CollectionOrderingItem<GalgameEntry>>[
+        for (final GalgameEntry game in visible)
+          CollectionOrderingItem<GalgameEntry>(
+            mediaType: kGameCollectionMediaType,
+            entryKey: game.id,
+            importedAt: game.addedAt.millisecondsSinceEpoch,
+            payload: game,
+          ),
+      ],
+      primaryCollectionIdByEntry: _primaryCollectionByEntry,
+      collectionsById: _collectionsById,
+      memberSortIndex: _memberSortIndex,
+    );
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        return GridView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 168,
-            mainAxisSpacing: 16,
-            crossAxisSpacing: 16,
-            childAspectRatio: 0.62,
-          ),
-          itemCount: visible.length,
-          itemBuilder: (BuildContext context, int i) => _GameCard(
-            game: visible[i],
-            sortLabel: galgameSortValueLabel(visible[i], _view.sortField),
-            onTap: () => unawaited(_launchGame(visible[i])),
-            onRename: () => unawaited(_renameGame(visible[i])),
-            onRemove: () => unawaited(_removeGame(visible[i])),
-            onSetCover: () => unawaited(_setCover(visible[i])),
-            onAutoCover: () => unawaited(_autoCover(visible[i])),
-            onPlayStatus: () => unawaited(_promptPlayStatus(visible[i])),
-            onDetail: () => unawaited(_openDetail(visible[i])),
-            onScrape: () => unawaited(_openDetail(visible[i], initialTab: 2)),
-          ),
+        // 复算 MaxCrossAxisExtent(168) 的列数/卡宽（ceil→卡宽 ≤168），供合集行
+        // 成员卡与散卡网格取同一实际卡宽，行内卡与网格卡逐像素同尺寸。
+        const double spacing = 16;
+        const double targetExtent = 168;
+        const double aspect = 0.62;
+        final double rawWidth = constraints.maxWidth - 32;
+        final double available = rawWidth < 1 ? 1 : rawWidth;
+        final int columns = ((available + spacing) / (targetExtent + spacing))
+            .ceil()
+            .clamp(1, 1 << 10);
+        final double cardWidth =
+            (available - (columns - 1) * spacing) / columns;
+        final List<Widget> slivers = <Widget>[];
+        final List<GalgameEntry> loose = <GalgameEntry>[];
+        for (final CollectionGroup<GalgameEntry> group in groups) {
+          final MediaCollectionRow? collection = group.collection;
+          if (collection == null) {
+            loose.add(group.coverItem.payload);
+          } else {
+            slivers.add(
+              SliverToBoxAdapter(
+                child: _buildCollectionRow(group, collection, cardWidth),
+              ),
+            );
+          }
+        }
+        if (loose.isNotEmpty) {
+          slivers.add(
+            SliverGrid.builder(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                mainAxisSpacing: spacing,
+                crossAxisSpacing: spacing,
+                childAspectRatio: aspect,
+              ),
+              itemCount: loose.length,
+              itemBuilder: (BuildContext context, int i) =>
+                  _buildGameCard(loose[i]),
+            ),
+          );
+        }
+        return CustomScrollView(
+          slivers: <Widget>[
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+              sliver: SliverMainAxisGroup(slivers: slivers),
+            ),
+          ],
         );
       },
     );
   }
+
+  /// 一个游戏合集的横排行：行头（合集名 + 数量 + 查看全部 → 详情页）+ 行内成员
+  /// 游戏卡（与散卡同一渲染，交互/焦点自带）。折叠偏好走游戏库自己的命名空间。
+  Widget _buildCollectionRow(
+    CollectionGroup<GalgameEntry> group,
+    MediaCollectionRow collection,
+    double cardWidth,
+  ) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    // 槽比 0.62 = 宽/高 → 行高按同比换算，行内卡与网格卡同形。
+    final double rowHeight = cardWidth / 0.62;
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+      child: CollectionShelfRow(
+        key: ValueKey<String>('games_collection_row_${collection.id}'),
+        title: collection.name,
+        countLabel: t.series_item_count(n: group.items.length),
+        itemCount: group.items.length,
+        itemWidth: cardWidth,
+        rowHeight: rowHeight,
+        itemGap: 16,
+        headerFocusId: HibikiFocusId('games-collection-${collection.id}'),
+        onOpenDetail: () => _openCollectionDetail(collection),
+        collapsed: _appModel.prefsRepo.gamesCollapsedCollectionIds
+            .contains(collection.id),
+        onToggleCollapsed: () => _toggleCollectionCollapsed(collection.id),
+        itemBuilder: (BuildContext _, int i) =>
+            _buildGameCard(group.items[i].payload),
+      ),
+    );
+  }
+
+  /// 单张游戏卡（散卡网格与合集行内共用同一构造，回调全量接线）。
+  Widget _buildGameCard(GalgameEntry game) {
+    return _GameCard(
+      game: game,
+      sortLabel: galgameSortValueLabel(game, _view.sortField),
+      onTap: () => unawaited(_launchGame(game)),
+      onRename: () => unawaited(_renameGame(game)),
+      onRemove: () => unawaited(_removeGame(game)),
+      onSetCover: () => unawaited(_setCover(game)),
+      onAutoCover: () => unawaited(_autoCover(game)),
+      onPlayStatus: () => unawaited(_promptPlayStatus(game)),
+      onDetail: () => unawaited(_openDetail(game)),
+      onScrape: () => unawaited(_openDetail(game, initialTab: 2)),
+      onAddToCollection: () => unawaited(_addGameToCollection(game)),
+    );
+  }
+}
+
+/// 合集详情页的 game 成员卡（纯查找 + 纯 widget，顶层函数供 widget 测试直接驱动）。
+///
+/// 非 game 成员返回 null（详情页跳过，混合合集里的书/视频由各自页面渲染）；game
+/// 成员在 [games] 里找不到（已从库移除的孤儿引用）也返回 null。卡片不带 onTap——
+/// 详情页网格统一接管激活（[MediaCollectionGridDetailPage.onOpenMember]）与
+/// 上下文菜单（移出合集）。
+Widget? buildGameCollectionMemberCard({
+  required List<GalgameEntry> games,
+  required String mediaType,
+  required String entryKey,
+}) {
+  if (mediaType != kGameCollectionMediaType) return null;
+  for (final GalgameEntry game in games) {
+    if (game.id == entryKey) {
+      return GalgamePosterCard(
+        cover: GameCoverThumb(game: game),
+        title: game.displayName,
+      );
+    }
+  }
+  return null;
 }
 
 /// 游玩状态的用户可读标签（枚举 `.name` 直接上屏是 17 语言用户的灾难）。
@@ -789,6 +1019,7 @@ class _GameCard extends StatelessWidget {
     required this.onPlayStatus,
     required this.onDetail,
     required this.onScrape,
+    required this.onAddToCollection,
     this.sortLabel,
   });
 
@@ -805,39 +1036,120 @@ class _GameCard extends StatelessWidget {
   final VoidCallback onPlayStatus;
   final VoidCallback onDetail;
   final VoidCallback onScrape;
+  final VoidCallback onAddToCollection;
 
-  /// 长按 / 右键的上下文菜单：与封面溢出菜单同项。两处菜单**共用**
-  /// [_menuItems] 与 [_dispatchAction]，避免两份手抄。
+  /// 长按 / 右键的上下文菜单：与书卡/视频卡同款 [MediaItemDialogFrame]（封面块 +
+  /// 快捷动作 chips + 底部危险区），替代旧手搓 SimpleDialog。菜单项与封面溢出菜单
+  /// **共用** [_menuItems] 与 [_dispatchAction]，避免两份手抄。
   Future<void> _showContextMenu(BuildContext context) async {
-    final String? action = await showDialog<String>(
+    await showAppDialog<void>(
       context: context,
-      builder: (BuildContext ctx) => SimpleDialog(
-        title: Text(
-          game.displayName,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        children: <Widget>[
-          for (final (String value, String label) item in _menuItems)
-            SimpleDialogOption(
-              onPressed: () => Navigator.of(ctx).pop(item.$1),
-              child: Text(item.$2),
-            ),
+      builder: (BuildContext dialogContext) => MediaItemDialogFrame(
+        cover: _dialogCover(dialogContext),
+        title: game.displayName,
+        showLaunchAction: false,
+        quickActions: <DialogQuickAction>[
+          for (final _GameMenuItem item in _menuItems)
+            if (!item.danger)
+              DialogQuickAction(
+                label: item.label,
+                icon: item.icon,
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  _dispatchAction(item.action);
+                },
+              ),
+        ],
+        dangerActions: <DialogDangerAction>[
+          for (final _GameMenuItem item in _menuItems)
+            if (item.danger)
+              DialogDangerAction(
+                label: item.label,
+                icon: item.icon,
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  _dispatchAction(item.action);
+                },
+              ),
         ],
       ),
     );
-    if (action != null) _dispatchAction(action);
   }
 
-  /// 卡片菜单项单一真相源：`(action, 文案)`。
-  List<(String, String)> get _menuItems => <(String, String)>[
-        ('detail', t.games_view_detail),
-        ('status', t.games_play_status),
-        ('scrape', t.games_scrape),
-        ('rename', t.games_rename),
-        ('cover', t.games_set_cover),
-        ('autocover', t.games_auto_cover),
-        ('remove', t.games_remove),
+  /// 长按对话框顶部的封面块：有封面文件用降采样图（BoxFit.contain 整图可见），
+  /// 无封面用与书架长按框同规格的占位图标（size 40 / onSurfaceVariant）。
+  Widget _dialogCover(BuildContext context) {
+    final String? cover = game.coverPath;
+    if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
+      return ShelfFileCover(
+        path: cover,
+        placeholder: const SizedBox.shrink(),
+        fit: BoxFit.contain,
+      );
+    }
+    return SizedBox(
+      height: 120,
+      child: Center(
+        child: Icon(
+          Icons.videogame_asset,
+          size: 40,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  /// 卡片菜单项单一真相源：`(action, 文案, 图标, 危险区)`。溢出菜单与长按/右键
+  /// 对话框都从这一份生成，任一处漏项测试即红。
+  List<_GameMenuItem> get _menuItems => <_GameMenuItem>[
+        (
+          action: 'detail',
+          label: t.games_view_detail,
+          icon: Icons.info_outline,
+          danger: false,
+        ),
+        (
+          action: 'status',
+          label: t.games_play_status,
+          icon: Icons.flag_outlined,
+          danger: false,
+        ),
+        (
+          action: 'scrape',
+          label: t.games_scrape,
+          icon: Icons.cloud_download_outlined,
+          danger: false,
+        ),
+        (
+          action: 'rename',
+          label: t.games_rename,
+          icon: Icons.drive_file_rename_outline,
+          danger: false,
+        ),
+        (
+          action: 'cover',
+          label: t.games_set_cover,
+          icon: Icons.image_outlined,
+          danger: false,
+        ),
+        (
+          action: 'autocover',
+          label: t.games_auto_cover,
+          icon: Icons.image_search,
+          danger: false,
+        ),
+        (
+          action: 'collect',
+          label: t.add_to_collection,
+          icon: Icons.collections_bookmark_outlined,
+          danger: false,
+        ),
+        (
+          action: 'remove',
+          label: t.games_remove,
+          icon: Icons.delete_outline,
+          danger: true,
+        ),
       ];
 
   void _dispatchAction(String action) {
@@ -854,6 +1166,8 @@ class _GameCard extends StatelessWidget {
         onSetCover();
       case 'autocover':
         onAutoCover();
+      case 'collect':
+        onAddToCollection();
       case 'remove':
         onRemove();
     }
@@ -868,7 +1182,7 @@ class _GameCard extends StatelessWidget {
     // 浮层 + hover 放大 + 主色选中环，全部由共享组件 [GalgamePosterCard] 负责。
     // focusId 沿用 `game-card-<id>`（手柄/键盘可 requestById 聚焦，focus 测试守）。
     return GalgamePosterCard(
-      cover: _buildCover(colors),
+      cover: GameCoverThumb(game: game),
       title: game.displayName,
       overlayText: sort,
       focusId: HibikiFocusId('game-card-${game.id}'),
@@ -900,38 +1214,44 @@ class _GameCard extends StatelessWidget {
       ),
       onSelected: _dispatchAction,
       itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-        for (final (String value, String label) item in _menuItems)
-          PopupMenuItem<String>(value: item.$1, child: Text(item.$2)),
+        for (final _GameMenuItem item in _menuItems)
+          PopupMenuItem<String>(value: item.action, child: Text(item.label)),
       ],
     );
   }
+}
 
-  // ── 旧的手搭卡片（HibikiCard + Stack + 手抄标题 footer）已由上面的
-  //    GalgamePosterCard 取代，_buildCover / _defaultCover 仍复用。──
+/// 游戏卡菜单项：action 键 + 文案 + 图标 + 是否落危险区（对话框底部红字）。
+typedef _GameMenuItem = ({
+  String action,
+  String label,
+  IconData icon,
+  bool danger,
+});
 
-  /// 封面：有 coverPath 且文件存在则显示图片，否则默认手柄图标占位。
-  Widget _buildCover(ColorScheme colors) {
+/// 游戏封面缩略图（库页卡片 / 合集行成员卡 / 合集详情成员卡共用）。
+///
+/// 有 coverPath 且文件真实存在 → 经 [ShelfFileCover] 降采样加载（BUG-959 同类：
+/// 旧裸 `Image.file` 整帧解码游戏包装图会撑爆 ImageCache）；否则共享占位件
+/// [ShelfCoverPlaceholder]（保留原 surfaceContainerHighest 底色 + 手柄图标 48）。
+/// existsSync 短路语义保留：缺失文件直接画占位，不进图片加载失败路径。
+class GameCoverThumb extends StatelessWidget {
+  const GameCoverThumb({required this.game, super.key});
+
+  final GalgameEntry game;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final Widget placeholder = ShelfCoverPlaceholder(
+      icon: Icons.videogame_asset,
+      iconSize: 48,
+      backgroundColor: colors.surfaceContainerHighest,
+    );
     final String? cover = game.coverPath;
     if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
-      return Image.file(
-        File(cover),
-        fit: BoxFit.cover,
-        errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
-            _defaultCover(colors),
-      );
+      return ShelfFileCover(path: cover, placeholder: placeholder);
     }
-    return _defaultCover(colors);
-  }
-
-  Widget _defaultCover(ColorScheme colors) {
-    return Container(
-      color: colors.surfaceContainerHighest,
-      alignment: Alignment.center,
-      child: Icon(
-        Icons.videogame_asset,
-        size: 48,
-        color: colors.onSurfaceVariant,
-      ),
-    );
+    return placeholder;
   }
 }
