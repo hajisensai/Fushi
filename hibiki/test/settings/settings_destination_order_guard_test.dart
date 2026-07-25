@@ -2,17 +2,17 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 顶层大类顺序守卫：`buildSettingsSchema`「外观」置顶 + 内容类在前、系统类殿后。
+/// 顶层大类顺序守卫：`buildSettingsSchema` 四块分层（外观 → 内容 → 横切工具 →
+/// 数据与设备/系统）。
 ///
-/// 这是「用户决策过的位置」——外观置顶（2026-07-25 用户拍板，覆盖阶段 G 纯任务
-/// 优先排序），其后是最常改的阅读 / 查词 / 制卡 / 视频 / 听书 / 下载，
-/// Profile / 同步备份 / 互联 / 系统殿后。锁死顺序让未来漂移必须是有意为之
-/// （改 `buildSettingsSchema` 时同步改本守卫）。用源码顺序断言（零 harness 依赖：
-/// 无需构造 SettingsContext + AppModel 即可校验 destination 列表次序）。
+/// 这是「用户决策过的位置」（2026-07-26 用户拍板，取代阶段 G 纯任务优先排序）：
+/// 外观置顶；内容块内相关项相邻（阅读→听书、视频→下载）；查词/制卡是跨媒体
+/// 横切工具排内容之后；Profile / 同步备份 / 互联 / 系统殿后。锁死顺序让未来漂移
+/// 必须是有意为之（改 `buildSettingsSchema` 时同步改本守卫）。用源码顺序断言
+/// （零 harness 依赖：无需构造 SettingsContext + AppModel 即可校验列表次序）。
 void main() {
-  test(
-      'buildSettingsSchema keeps the appearance-first top-level destination '
-      'order', () {
+  test('buildSettingsSchema keeps the four-block top-level destination order',
+      () {
     final String src = File('lib/src/settings/settings_schema.dart')
         .readAsStringSync()
         .replaceAll('\r\n', '\n');
@@ -26,11 +26,11 @@ void main() {
     const List<String> expectedOrder = <String>[
       'buildAppearanceDestination()',
       'buildReadingDestination()',
+      'buildListeningDestination()',
+      'buildVideoDestination()',
+      'buildDownloadsDestination()',
       'buildLookupDestination()',
       'buildCardCreationDestination()',
-      'buildVideoDestination()',
-      'buildListeningDestination()',
-      'buildDownloadsDestination()',
       'buildProfilesDestination()',
       'buildSyncBackupDestination()',
       'buildInterconnectDestination()',
