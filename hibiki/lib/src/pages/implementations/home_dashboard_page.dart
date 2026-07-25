@@ -1146,11 +1146,11 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
             valueByDateKey: charsByDay,
             now: DateTime.now(),
             baseColor: tokens.surfaces.primary,
-            // BUG-1073 病灶 1 根因：此前用 surfaces.card（= surfaceContainer），
-            // 与本卡底色 surfaces.group（= surfaceContainerLow）几乎同色——暗色
-            // 主题下「没活动的那些周」等于没画，观感是左边一大片死黑。改用
-            // surfaces.overlay（= surfaceContainerHighest）才和卡底拉开对比，
-            // 空周照样是 GitHub 式浅格子。
+            // BUG-1073 病灶 1 根因：此前用 surfaces.card，与本卡底色
+            // surfaces.group 在暗色主题下几乎同色（两个相邻的 surface 容器
+            // 色阶）——「没活动的那些周」等于没画，观感是左边一大片死黑。改用
+            // 色阶更高的 surfaces.overlay 才和卡底拉开对比，空周照样是
+            // GitHub 式浅格子。
             emptyColor: tokens.surfaces.overlay,
             // 气泡 = 日期 · 字数 · 学习时长（时长为 0 的旧数据/纯导入日不显示
             // 时长段），字数与时长都跟随当前来源筛选。
