@@ -20,6 +20,7 @@
 #include "voice_hook_session.h"
 #include "child_process_policy.h"
 #include "ffmpeg_runtime.h"
+#include "launch_failure_policy.h"
 #include "locale_emulator_launch.h"
 #include "siglus_launch.h"
 #include "steam_launch.h"
@@ -187,6 +188,24 @@ uint32_t ComputeLoopbackCapacity() {
 int Fail(const char* msg) {
   fprintf(stderr, "%s\n", msg);
   return 1;
+}
+
+// 把结构化失败原因打成 host 可解析的一行。人类可读诊断保持原样（诊断包/日志仍要它），
+// 这一行只是让 Hibiki 不必去猜中文串，从而能对「需要管理员 / 位数不符 / 被杀软拦下 /
+// DLL 加载慢」给出各自不同的处置与重试策略。
+void ReportFailureReason(hibiki_voice_hook::LaunchFailureReason reason,
+                         int exit_code) {
+  if (reason == hibiki_voice_hook::LaunchFailureReason::kNone) return;
+  fprintf(stderr, "ERR reason=%s exit=%d\n",
+          hibiki_voice_hook::LaunchFailureToken(reason), exit_code);
+}
+
+// 记录失败原因并返回退出码：每个失败出口都必须同时给出这两样，否则 host 只会看到
+// 一个没有原因的非零退出。
+int FailWith(hibiki_voice_hook::LaunchFailureReason* reason_out,
+             hibiki_voice_hook::LaunchFailureReason reason, int exit_code) {
+  if (reason_out != nullptr) *reason_out = reason;
+  return exit_code;
 }
 
 // LunaHook 集成（host 侧全引擎文本 hook）。
@@ -959,16 +978,24 @@ bool SetTargetProcessSuspended(HANDLE target, bool suspended) {
 // 挂起终点（launch 给游戏进程句柄，挂到游戏退出；attach 给 nullptr，无限 Sleep）。
 // 契约与 --pid 老路径完全一致：建共享内存(pid) + 就绪事件(pid)，注入，[Resume]，等事件，
 // 打印 OK hooked ...，[hold]。全部句柄本函数负责关闭。返回进程退出码。
+// [reason_out] 回报结构化失败原因；[resumed_out] 回报「挂起的游戏主线程是否已经被本函数
+// 恢复」——这是**事实**，不能再像旧实现那样从返回码推断（rc==2 的两个来源都发生在
+// ResumeThread 之前，却被注释当成已恢复，于是游戏被永久留在挂起态）。
 int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
                  DWORD wait_ms, bool hold, HANDLE resume_thread,
-                 HANDLE hold_process, const LunaOptions& luna) {
+                 HANDLE hold_process, const LunaOptions& luna,
+                 hibiki_voice_hook::LaunchFailureReason* reason_out = nullptr,
+                 bool* resumed_out = nullptr) {
+  using hibiki_voice_hook::LaunchFailureReason;
+  if (reason_out != nullptr) *reason_out = LaunchFailureReason::kNone;
+  if (resumed_out != nullptr) *resumed_out = false;
   bool target_wow64 = false;
   if (!BitnessMatches(target, &target_wow64)) {
     fprintf(stderr,
             "位数不匹配：目标是 %s 进程，请改用对应 arch 的注入器 "
             "(32 位游戏用 x86 injector+DLL，64 位用 x64)。\n",
             target_wow64 ? "32 位" : "64 位");
-    return 1;
+    return FailWith(reason_out, LaunchFailureReason::kBitnessMismatch, 1);
   }
 
   // 建共享内存（header + 环形缓冲）并清零、写契约头。injector 持有映射句柄=内存所有者；
@@ -995,13 +1022,17 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
       static_cast<DWORD>(total_size & 0xFFFFFFFF), shm.c_str());
   const bool mapping_already_exists = GetLastError() == ERROR_ALREADY_EXISTS;
   if (mapping == nullptr) {
-    return Fail("CreateFileMapping failed");
+    Fail("CreateFileMapping failed");
+    return FailWith(reason_out,
+                    LaunchFailureReason::kSharedMemoryUnavailable, 1);
   }
   auto* header = static_cast<SharedHeader*>(
       MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, 0));
   if (header == nullptr) {
     CloseHandle(mapping);
-    return Fail("MapViewOfFile failed");
+    Fail("MapViewOfFile failed");
+    return FailWith(reason_out,
+                    LaunchFailureReason::kSharedMemoryUnavailable, 1);
   }
   const uint32_t expected_text_offset =
       static_cast<uint32_t>(sizeof(SharedHeader) + ring_capacity);
@@ -1015,7 +1046,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
             "已存在但不可复用的 hook 会话（契约不匹配或 hooked=0）；请重启一次游戏以清理旧 DLL。\n");
     UnmapViewOfFile(header);
     CloseHandle(mapping);
-    return 2;
+    return FailWith(reason_out, LaunchFailureReason::kStaleSession, 2);
   }
   const bool reuse_ready = mapping_action == MappingSessionAction::kReuseReady;
   if (!reuse_ready) {
@@ -1057,14 +1088,17 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   if (ready == nullptr) {
     UnmapViewOfFile(header);
     CloseHandle(mapping);
-    return Fail("CreateEvent failed");
+    Fail("CreateEvent failed");
+    return FailWith(reason_out,
+                    LaunchFailureReason::kSharedMemoryUnavailable, 1);
   }
 
   if (!reuse_ready && !InjectDll(target, dll_path)) {
     CloseHandle(ready);
     UnmapViewOfFile(header);
     CloseHandle(mapping);
-    return Fail("injection failed");
+    Fail("injection failed");
+    return FailWith(reason_out, LaunchFailureReason::kInjectionFailed, 1);
   }
 
   // 等 hook DLL 的 proof-of-life。超时=注入了但 DLL 没跑到通知点（arch/契约/权限问题）。
@@ -1076,7 +1110,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
       CloseHandle(ready);
       UnmapViewOfFile(header);
       CloseHandle(mapping);
-      return 2;
+      return FailWith(reason_out, LaunchFailureReason::kReadyTimeout, 2);
     }
   }
 
@@ -1146,7 +1180,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
         CloseHandle(ready);
         UnmapViewOfFile(header);
         CloseHandle(mapping);
-        return 1;
+        return FailWith(reason_out, LaunchFailureReason::kGuardedHookFailed, 1);
       }
     }
 
@@ -1157,8 +1191,10 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
       CloseHandle(ready);
       UnmapViewOfFile(header);
       CloseHandle(mapping);
-      return 1;
+      return FailWith(reason_out, LaunchFailureReason::kResumeFailed, 1);
     }
+    // 恢复成功是**事实**，立即回报：此后任何失败都不得再把游戏当成挂起态处置。
+    if (resumed_out != nullptr) *resumed_out = true;
 
     if (defer_guard) {
       fprintf(stderr,
@@ -1182,7 +1218,8 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
           CloseHandle(ready);
           UnmapViewOfFile(header);
           CloseHandle(mapping);
-          return 1;
+          return FailWith(reason_out,
+                          LaunchFailureReason::kGuardedHookFailed, 1);
         }
         fprintf(stderr,
                 "[luna] target suspended for guarded hook installation\n");
@@ -1197,7 +1234,10 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
           CloseHandle(ready);
           UnmapViewOfFile(header);
           CloseHandle(mapping);
-          return 1;
+          // 主线程此前已恢复（resumed_out=true），处置策略据此不会把一个正在运行的
+          // 游戏误当成挂起僵尸去「恢复」或结束。
+          return FailWith(reason_out,
+                          LaunchFailureReason::kGuardedHookFailed, 1);
         }
         fprintf(stderr,
                 "[luna] target resumed after guarded hook installation\n");
@@ -1788,6 +1828,8 @@ int RunSteamLaunch(const std::wstring& exe, const std::wstring& app_id,
       fprintf(stderr,
               "Steam 已接受启动请求，但 45 秒内未发现目标进程：%ls\n",
               expected_exe.c_str());
+      ReportFailureReason(hibiki_voice_hook::LaunchFailureReason::kSteamTimeout,
+                          1);
       return 1;
     }
     fprintf(stderr, "[steam] discovered launched game pid=%lu image=%ls\n", pid,
@@ -1795,9 +1837,14 @@ int RunSteamLaunch(const std::wstring& exe, const std::wstring& app_id,
   }
 
   ApplyLunaProfiles(expected_exe, pid, luna.profile_path, &luna);
+  // Steam 路径的游戏由客户端启动、始终处于运行态，没有可恢复的挂起主线程；但失败原因
+  // 同样必须回报，否则 host 只能看到一个没有原因的非零退出。
+  hibiki_voice_hook::LaunchFailureReason reason =
+      hibiki_voice_hook::LaunchFailureReason::kNone;
   const int rc = RunInjection(target, pid, dll_path, wait_ms, hold, nullptr,
-                              target, luna);
+                              target, luna, &reason);
   CloseHandle(target);
+  if (rc != 0) ReportFailureReason(reason, rc);
   return rc;
 }
 
@@ -1809,7 +1856,10 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
               bool follow_child_processes, bool japanese_locale,
               bool force_direct_launch, const LunaOptions& luna) {
   if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) {
-    return Fail("目标 exe 不存在（--launch <exe路径>）");
+    Fail("目标 exe 不存在（--launch <exe路径>）");
+    ReportFailureReason(hibiki_voice_hook::LaunchFailureReason::kGameExeMissing,
+                        1);
+    return 1;
   }
   LunaOptions effective_luna = luna;
   if (!effective_luna.pc_hooks && ShouldAutoUseLunaPcHooks(exe)) {
@@ -1911,9 +1961,24 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
         previous_game_id_chars > 0 ? previous_steam_game_id : nullptr);
   }
   if (!created) {
-    fprintf(stderr, "CreateProcessW failed: %lu\n", GetLastError());
+    const DWORD create_error = GetLastError();
+    fprintf(stderr, "CreateProcessW failed: %lu\n", create_error);
+    // 740 = ERROR_ELEVATION_REQUIRED：游戏 manifest 要求管理员，非提权 injector 拉不起来。
+    // host 据此提示「以管理员身份启动 Hibiki」，而不是笼统的启动失败。
+    if (create_error == ERROR_ELEVATION_REQUIRED) {
+      fprintf(stderr, "ERR reason=elevationRequired exit=1\n");
+    } else {
+      ReportFailureReason(
+          hibiki_voice_hook::LaunchFailureReason::kCreateProcessFailed, 1);
+    }
     return 1;
   }
+
+  // 游戏进程**已经存在**这件事必须先于注入结果回报：注入之后再失败时，host 才知道
+  // 「游戏其实在跑」，可以改走附着重试，而不是把一个有窗口的游戏报成「启动失败」。
+  printf("LAUNCH pid=%lu arch=%s\n", pi.dwProcessId,
+         sizeof(void*) == 8 ? "x64" : "x86");
+  fflush(stdout);
 
   const auto locale_resume_policy =
       hibiki_voice_hook::SelectLocaleThreadResumePolicy(
@@ -1960,6 +2025,10 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
         target_exe = ProcessImagePath(child_process);
         fprintf(stderr, "[process] following child pid=%lu image=%ls\n",
                 child_pid, target_exe.c_str());
+        // 真正承载游戏的是子进程：更新回报，host 的附着重试必须瞄准它而不是启动器。
+        printf("LAUNCH pid=%lu arch=%s\n", child_pid,
+               sizeof(void*) == 8 ? "x64" : "x86");
+        fflush(stdout);
       }
     }
     if (target_process == pi.hProcess) {
@@ -1974,16 +2043,46 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
 
   // 复用 attach 同一套编排；普通 launch 的 resume_thread=pi.hThread（注入后放行），
   // Siglus 已正常运行故为 nullptr；hold_process 让 --hold 挂到游戏退出。
+  hibiki_voice_hook::LaunchFailureReason reason =
+      hibiki_voice_hook::LaunchFailureReason::kNone;
+  bool resumed = false;
   const int rc = RunInjection(
       target_process, target_pid, dll_path, wait_ms, hold,
       (delayed_siglus || follow_children) ? nullptr : pi.hThread,
-      target_process, effective_luna);
+      target_process, effective_luna, &reason, &resumed);
 
-  // 普通早注入在注入前/Resume 前失败（rc==1）时游戏仍处挂起：强制结束，避免留下僵死
-  // 挂起进程。Siglus 延迟附着时游戏已经正常运行，hook 失败也交给用户/上层回退处理。
-  // rc==2（超时但已 Resume）游戏已在跑，不 terminate。rc==0 正常退出，游戏自然运行。
-  if (rc == 1 && !delayed_siglus && !follow_children) {
-    TerminateProcess(pi.hProcess, 1);
+  // 失败后的进程处置以**事实**为准（是否 CREATE_SUSPENDED、是否已恢复），不再按返回码
+  // 猜测。旧实现：rc==1 一律 TerminateProcess（杀掉用户明明要玩的游戏）；rc==2 依据
+  // 「超时但已 Resume」的注释放着不管——而 rc==2 的两个来源（就绪事件超时、旧映射不可
+  // 复用）都发生在 ResumeThread 之前，游戏于是被永久留在挂起态：进程在、窗口永不出现，
+  // 用户看到的就是「启动失败」。现在任何失败都至少让游戏以无 hook 方式跑起来。
+  const bool created_suspended =
+      (creation_flags & CREATE_SUSPENDED) != 0 && !delayed_siglus &&
+      !follow_children;
+  if (rc != 0) {
+    hibiki_voice_hook::LaunchedProcessDisposition disposition =
+        hibiki_voice_hook::DecideLaunchedProcessDisposition(created_suspended,
+                                                            resumed, reason);
+    if (disposition ==
+        hibiki_voice_hook::LaunchedProcessDisposition::kResumeDegraded) {
+      if (ResumeThread(pi.hThread) == static_cast<DWORD>(-1)) {
+        fprintf(stderr,
+                "[launch] hook failed and resuming the game failed: %lu\n",
+                GetLastError());
+        reason = hibiki_voice_hook::LaunchFailureReason::kResumeFailed;
+        disposition =
+            hibiki_voice_hook::LaunchedProcessDisposition::kTerminate;
+      } else {
+        fprintf(stderr,
+                "[launch] hook failed; game resumed without hooks so it still "
+                "starts\n");
+      }
+    }
+    if (disposition ==
+        hibiki_voice_hook::LaunchedProcessDisposition::kTerminate) {
+      TerminateProcess(pi.hProcess, 1);
+    }
+    ReportFailureReason(reason, rc);
   }
   if (child_process != nullptr) CloseHandle(child_process);
   CloseHandle(pi.hThread);
@@ -2067,7 +2166,10 @@ int main() {
     dll_path = DefaultDllPath();
   }
   if (GetFileAttributesW(dll_path.c_str()) == INVALID_FILE_ATTRIBUTES) {
-    return Fail("hook DLL not found (pass --dll <path>)");
+    Fail("hook DLL not found (pass --dll <path>)");
+    ReportFailureReason(hibiki_voice_hook::LaunchFailureReason::kHookDllMissing,
+                        1);
+    return 1;
   }
 
   // launch 模式：CREATE_SUSPENDED 早注入。
@@ -2085,6 +2187,9 @@ int main() {
   if (target == nullptr) {
     fprintf(stderr, "OpenProcess(%lu) failed: %lu (需管理员/相同完整性级别?)\n",
             pid, GetLastError());
+    // 附着失败最常见的真实原因：游戏以更高完整性级别（管理员）运行。host 据此提示
+    // 「以管理员身份启动 Hibiki」，并且不做无意义的重试。
+    fprintf(stderr, "ERR reason=accessDenied exit=1\n");
     return 1;
   }
 
@@ -2101,8 +2206,11 @@ int main() {
             ExecutableBaseName(target_exe).c_str());
   }
 
+  hibiki_voice_hook::LaunchFailureReason reason =
+      hibiki_voice_hook::LaunchFailureReason::kNone;
   const int rc = RunInjection(target, pid, dll_path, wait_ms, hold, nullptr,
-                              nullptr, effective_luna);
+                              nullptr, effective_luna, &reason);
   CloseHandle(target);
+  if (rc != 0) ReportFailureReason(reason, rc);
   return rc;
 }
