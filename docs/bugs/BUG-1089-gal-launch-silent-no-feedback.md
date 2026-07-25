@@ -1,0 +1,16 @@
+## BUG-1089 · 点启动游戏无任何提示：注入降级/窗口未出现都静默走成功路径
+- **报告**：2026-07-25（用户：「点启动游戏没反应，游戏没打开，如果有报错应该提醒啊」，附「会话事件」截图：`game.launch_started` → 31s 后 `engine.launch_injection_degraded {reason: handshakeTimeout}` → `audio.loopback_active` → `engine.retry_scheduled`，全程 UI 无一字提示）
+- **真实性**：✅ 真 bug。「游戏没打开」的 native 根因另记 [BUG-1092](BUG-1092-gal-locale-resume-skipped.md)；本条只记**UI 完全不报错**这一半——即用户明确要求的「应该提醒」。
+  - **表层**：`games_library_page.dart` 的 `_launchGame` 只在 `!launched` 时 toast，`launched == true` 直接 `widget.onLaunched?.call()`，**一个字都不提示**。但 `launchGame` 有两条「返回 true 却什么都没成」的路径：
+    - `gal_hook_session_controller.dart:732`——早注入失败但拿到 `LAUNCH pid`，判定「游戏已经在跑」，降级 Loopback 后 `return true`（该判定本身是对的，见 BUG-1066；错的是调用方把它当完全成功）；
+    - `gal_hook_session_controller.dart:787-799`——窗口轮询耗尽没找到游戏窗口，设 `phase: degraded` + `fallbackReason: 'window_not_found'` 并记 warning 事件，**但 UI 从不读这两个字段**。
+  - **根因（数据结构）**：`launchGame` 返回 `bool`，把「彻底失败 / 游戏在跑但注入降级 / 完全成功」**三种结果压成两个值**。结果的第三态只存在于 `GalHookSessionState`，于是每个调用方各自去 state 里翻，翻得还不一样：`texthooker_page.dart` 翻了 `boundWindow`，游戏库页一个字段都没翻。这不是漏写一行 toast，是返回值类型丢了信息导致的必然分歧。
+  - **次生**：texthooker 那条虽然有提示，文案却避重就轻——`game_capture_running_no_window` =「捕获已运行；尚未找到游戏窗口」。窗口没出现往往意味着游戏主线程还挂着、根本没跑起来（BUG-1092），说成「已运行」会让用户以为没事。
+- **[x] ① 已修复** — 把「启动结果分级」收成单一判定，两个调用方共用，消灭各自翻 state 的分歧：
+  - 新增纯函数 `classifyGalHookLaunchOutcome`（`hibiki/lib/src/mining/gal_hook_session_controller.dart`）+ 枚举 `GalHookLaunchOutcome{failed, windowMissing, degradedLoopback, running}`。判「注入链通不通」用 `injectorFailure` 而**不是** `phase == degraded`：`_activateTextWithLoopback`（文本 hook 就绪、音频用 Loopback）同样把 phase 设成 `degraded`，但显式把 `injectorFailure` 清成 `none`（同文件 `:1844` 及其注释）——那是「有台词、音频兜底」的可接受模式，拿它去烦用户是误报。
+  - `windowMissing` 优先于 `degradedLoopback`：两者同时成立时（本次现场正是），用户首要感知是「游戏没打开」，不是「音频降级了」。
+  - 新增唯一播报口 `galHookLaunchOutcomeMessage`（`hibiki/lib/src/mining/gal_hook_failure_text.dart`），四种结果**都说话**（成功也说——「点了按钮什么都没发生」本身就是本 bug 的用户表征），并把 `galHookFailureLabel` 的可执行处置作为后缀带上。
+  - 两个调用方改为共用：`games_library_page.dart` `_launchGame`、`texthooker_page.dart`。
+  - i18n：`i18n_sync.dart --add` 新增 `game_capture_window_missing` / `game_capture_degraded_loopback`（17 语言），`--remove` 删除被取代且已无引用的 `game_capture_running_no_window`，`dart run slang` 重新生成。
+- **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_hook_launch_outcome_and_encoding_test.dart` 的 group `classifyGalHookLaunchOutcome (BUG-1089)`：6 项，含现场真实组合（`launched=true` + 无窗口 + `handshakeTimeout` → `windowMissing`）、`windowMissing` 优先级、`injectorFailure=none` 不误报降级、以及对 `GalHookInjectorFailure.values` × 有/无窗口的全组合穷举（不留未定义组合）。全文件 11 项通过；连跑相邻 `galgame_audio_test.dart` + `gal_hook_session_controller_test.dart` 共 98 项通过；`flutter analyze` 全量 0 issue。
+- **备注**：提示逻辑本身是纯函数 + toast，已单测覆盖；但「真机上点一次启动游戏、亲眼看到 toast」属真机门，尚未验证 → 按 galgame SOP 记 `implemented_unverified`。

@@ -27,11 +27,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1056 条。点号进各自文件。
+> 共 1059 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1092](bugs/BUG-1092-gal-locale-resume-skipped.md) | 🚧 | 🚧 | Locale Emulator 启动的游戏永久停在挂起态：窗口永不出现，injector 却报 OK hooked |
+| [BUG-1091](bugs/BUG-1091-gal-injector-diagnostics-mojibake.md) | ✅ | ✅ | injector 诊断按系统代码页解码：会话事件乱码且中文失败分类永久失配 |
 | [BUG-1090](bugs/BUG-1090-audio-source-url-not-editable.md) | ✅ | ✅ | 管理音频来源弹窗里已有远端 URL 无法编辑，只能删了重加 |
+| [BUG-1089](bugs/BUG-1089-gal-launch-silent-no-feedback.md) | ✅ | ✅ | 点启动游戏无任何提示：注入降级/窗口未出现都静默走成功路径 |
 | [BUG-1088](bugs/BUG-1088-sync-host-hides-cloud-upload-and-interconnect-backend.md) | ✅ | ✅ | host 模式误藏云备份上传开关，互联从同步方式消失且无入口 |
 | [BUG-1087](bugs/BUG-1087-jimaku-episode-label-truncated.md) | ✅ | ✅ | 番剧下载确认页集号输入框在界面缩放下 label 截断成「集…」 |
 | [BUG-1086](bugs/BUG-1086-nyaa-search-error-swallowed.md) | ✅ | ✅ | Nyaa 搜索网络错误被吞成统一文案，真实报错不可见（生肉分类超时无从定位） |

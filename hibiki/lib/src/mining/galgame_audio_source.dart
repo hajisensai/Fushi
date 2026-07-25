@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -980,12 +981,28 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// injector 是常驻 helper，stdout/stderr 也必须贯穿会话持续排空。只在解析到 launch PID
   /// 后取消 stdout 订阅会让后续输出填满匿名管道；完全不订阅 stderr 更会使 native 卡死在
   /// `fprintf(stderr, ...)`，Unity 资源事件队列随之停止消费但进程仍显示存活。
+  ///
+  /// **编码契约是 UTF-8，不是系统 ANSI 代码页。** injector 的 `CMakeLists.txt` 无条件加了
+  /// MSVC `/utf-8`，它同时把 execution-charset 设成 UTF-8，所以诸如
+  /// `[luna] LunaHook32.dll 已注入 pid=...` 这类中文字面量在二进制里就是 UTF-8 字节，
+  /// `fprintf(stderr, ...)` 原样写出。旧实现用 [SystemEncoding]（中文 Windows 上是 CP936）
+  /// 解码，后果有两层，第二层比乱码严重得多：
+  ///   1. 会话事件里的 native 诊断显示成「宸叉敞鍏?」这类乱码；
+  ///   2. [classifyGalHookInjectorFailure] 靠中文串（`位数不匹配` / `目标 exe 不存在` /
+  ///      `已存在但不可复用的 hook 会话` / `未收到就绪信号`）识别旧 helper 的失败原因，
+  ///      解错码后这些分支**永远匹配不上**，失败分类永久退化成 fallback，用户拿不到
+  ///      「需要管理员 / 位数不符 / 缺文件」这类可执行处置。
+  /// [allowMalformed] 是必须的：stderr 里 `%ls` 宽字符经 C locale 转换后可能夹带非法字节，
+  /// 单个坏字节不得让整条诊断流抛异常而丢掉全部证据。
+  static const Converter<List<int>, String> _injectorOutputDecoder =
+      Utf8Decoder(allowMalformed: true);
+
   void _beginInjectorOutputDrain(Process process) {
     final Completer<int?> pidCompleter = Completer<int?>();
     final StringBuffer stdoutBuffer = StringBuffer();
     _hookedPidCompleter = pidCompleter;
     _injectorOutputSubscriptions.add(
-      process.stdout.transform(const SystemEncoding().decoder).listen(
+      process.stdout.transform(_injectorOutputDecoder).listen(
         (String chunk) {
           _emitInjectorOutput(isStderr: false, chunk: chunk);
           stdoutBuffer.write(chunk);
@@ -1012,7 +1029,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
       ),
     );
     _injectorOutputSubscriptions.add(
-      process.stderr.transform(const SystemEncoding().decoder).listen(
+      process.stderr.transform(_injectorOutputDecoder).listen(
             (String chunk) => _emitInjectorOutput(isStderr: true, chunk: chunk),
             onError: (Object error) => _emitInjectorOutput(
               isStderr: true,

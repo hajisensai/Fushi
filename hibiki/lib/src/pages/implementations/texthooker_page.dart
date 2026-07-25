@@ -445,21 +445,21 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       HibikiToast.show(msg: t.game_capture_launching);
       final bool launched = await _session.launchGame(executable);
       if (!mounted) return;
+      // 与游戏库页共用同一条结果播报（BUG-1089）。旧实现在这里自己判 `boundWindow`
+      // 并说「捕获已运行；尚未找到游戏窗口」——避重就轻：窗口没出现往往意味着游戏
+      // 主线程还挂着、根本没跑起来，说成「已运行」会让用户以为没事。
       final GalHookSessionState state = _session.state;
-      if (!launched) {
-        // 失败提示优先给可执行处置（需要管理员 / 被杀软拦截 / 组件缺失），
-        // lastError 是英文内部消息，只作最后兜底。
-        HibikiToast.show(
-          msg: galHookFailureLabel(state.injectorFailure) ??
-              state.lastError ??
-              t.game_capture_launch_failed,
-        );
-        return;
-      }
+      final GalHookLaunchOutcome outcome = classifyGalHookLaunchOutcome(
+        launched: launched,
+        hasBoundWindow: state.boundWindow != null,
+        injectorFailure: state.injectorFailure,
+      );
       HibikiToast.show(
-        msg: state.boundWindow == null
-            ? t.game_capture_running_no_window
-            : t.game_capture_running,
+        msg: galHookLaunchOutcomeMessage(
+          outcome: outcome,
+          failure: state.injectorFailure,
+          lastError: state.lastError,
+        ),
       );
     } finally {
       _launchingGalHook = false;

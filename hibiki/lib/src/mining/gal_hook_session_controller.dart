@@ -63,6 +63,48 @@ GalTrackEmptyHint galTrackEmptyHintFor(GalHookAudioBackend backend) =>
       _ => GalTrackEmptyHint.generic,
     };
 
+/// 一次「启动游戏」结束后**必须**告知用户的结果分级（BUG-1089，纯函数可单测）。
+///
+/// 存在的理由：[GalHookSessionController.launchGame] 返回 `bool`，把三种结果压成两个值
+/// ——「彻底失败」「游戏在跑但注入降级」「完全成功」。于是每个调用方都得自己去
+/// [GalHookSessionState] 里翻，结果两个调用方翻得不一样：texthooker 翻了 `boundWindow`，
+/// 游戏库页**一个字都不提示**，用户点完「启动游戏」看不到游戏也看不到任何报错。
+/// 把「结果分级」收成这一个判定，两个调用方共用，消灭那处不一致。
+enum GalHookLaunchOutcome {
+  /// 启动彻底失败：游戏进程都没起来。
+  failed,
+
+  /// 游戏进程起来了，但窗口始终没出现。**用户眼里就是「点了没反应、游戏没打开」**，
+  /// 所以它比 [degradedLoopback] 更严重：注入恢复失败会让游戏主线程停在挂起态，
+  /// 进程在、CPU 有、窗口永不出现。这种情况绝不能只说「捕获已运行」。
+  windowMissing,
+
+  /// 游戏在跑、窗口也绑上了，但引擎注入失败，只能拿整机混音兜底（会混入 BGM/音效）。
+  degradedLoopback,
+
+  /// 注入成功、窗口已绑定。
+  running,
+}
+
+/// 把一次启动的结果判成 [GalHookLaunchOutcome]（纯函数，无 i18n、无 IO）。
+///
+/// 判「注入链通不通」用 [injectorFailure] 而不是 `phase == degraded`：
+/// `_activateTextWithLoopback`（文本 hook 就绪、音频用 Loopback）同样把 phase 设成
+/// `degraded`，但它显式把 injectorFailure 清成 [GalHookInjectorFailure.none]——那是
+/// 「有台词、音频兜底」的可接受模式，不该报成降级去烦用户。
+GalHookLaunchOutcome classifyGalHookLaunchOutcome({
+  required bool launched,
+  required bool hasBoundWindow,
+  required GalHookInjectorFailure injectorFailure,
+}) {
+  if (!launched) return GalHookLaunchOutcome.failed;
+  if (!hasBoundWindow) return GalHookLaunchOutcome.windowMissing;
+  if (injectorFailure != GalHookInjectorFailure.none) {
+    return GalHookLaunchOutcome.degradedLoopback;
+  }
+  return GalHookLaunchOutcome.running;
+}
+
 /// [GalHookSessionController.exportTrackPreview] 的产物：临时 WAV 路径 + 时长。
 @immutable
 class GalTrackPreview {

@@ -1,4 +1,5 @@
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
 
 /// 结构化 injector 失败原因 → 用户可执行的处置文案。
@@ -40,3 +41,32 @@ String? galHookFailureLabel(GalHookInjectorFailure failure) =>
       GalHookInjectorFailure.handshakeTimeout =>
         t.game_hook_reason_handshake_timeout,
     };
+
+/// 一次「启动游戏」结束后要 toast 给用户的话（BUG-1089）。
+///
+/// 唯一的启动结果播报口：游戏库页和 texthooker 页都走这里，不再各写一套、也不再出现
+/// 「游戏库页一个字都不提示」。四种 [GalHookLaunchOutcome] 都有话说——**成功也说**，
+/// 因为「点了按钮什么都没发生」本身就是这个 bug 的用户表征。
+///
+/// [failure] 非 [GalHookInjectorFailure.none] 时把可执行处置作为后缀带上：知道「窗口
+/// 没出现」不够，还得知道是缺组件、要管理员，还是握手超时。
+String galHookLaunchOutcomeMessage({
+  required GalHookLaunchOutcome outcome,
+  required GalHookInjectorFailure failure,
+  String? lastError,
+}) {
+  final String? reason = galHookFailureLabel(failure);
+  return switch (outcome) {
+    // 彻底失败：处置优先，内部英文消息只作最后兜底，绝不编造原因。
+    GalHookLaunchOutcome.failed =>
+      reason ?? lastError ?? t.game_capture_launch_failed,
+    GalHookLaunchOutcome.windowMissing =>
+      _withReason(t.game_capture_window_missing, reason),
+    GalHookLaunchOutcome.degradedLoopback =>
+      _withReason(t.game_capture_degraded_loopback, reason),
+    GalHookLaunchOutcome.running => t.game_capture_running,
+  };
+}
+
+String _withReason(String message, String? reason) =>
+    reason == null ? message : '$message（$reason）';
