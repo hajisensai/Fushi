@@ -257,10 +257,13 @@ class CollectionManifestMember {
     required this.sortIndex,
   });
 
-  /// 'epub' | 'srt' | 'video'（同 MediaCollectionItems.mediaType 值域）。
+  /// 'epub' | 'srt' | 'video' | 'game'（同 MediaCollectionItems.mediaType 值域，
+  /// 引擎对值透传不解引用）。
   final String mediaType;
 
-  /// 条目稳定身份：epub=bookKey / srt=uid / video=bookUid。
+  /// 条目稳定身份：epub=bookKey / srt=uid / video=bookUid / game=galgames.id
+  /// （game 是本机局域身份：对端无对应 galgames 行时该成员在对端静默不渲染，
+  /// 归属关系仍随清单往返、不丢失）。
   final String entryKey;
 
   /// 合集内序（整合集 LWW 覆盖的载荷）。

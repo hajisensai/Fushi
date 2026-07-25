@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/cover_image.dart';
+import 'package:transparent_image/transparent_image.dart';
 
 /// 书架卡片 footer / 勾选圈 / 选中罩的共享实现。
 ///
@@ -113,6 +117,78 @@ class ShelfSelectedOverlay extends StatelessWidget {
                 borderRadius: tokens.radii.cardRadius,
               ),
       ),
+    );
+  }
+}
+
+/// 无封面占位（书架 / 视频库 / 游戏库共用）。
+///
+/// 巡检 B11：深色主题下无封面占位（卡面色 ≈ 页面背景）与背景零对比，占位卡读作
+/// 一块空洞——统一补 1px 描边（tokens.surfaces.outline，全主题恒有；eink 的卡级
+/// 描边另由 HibikiCard 兜，叠加无害）。[backgroundColor] 供视频/游戏库保留各自的
+/// 高阶容器底色，书架传 null 维持无底色原样。
+class ShelfCoverPlaceholder extends StatelessWidget {
+  const ShelfCoverPlaceholder({
+    required this.icon,
+    this.iconSize = 40,
+    this.backgroundColor,
+    super.key,
+  });
+
+  final IconData icon;
+  final double iconSize;
+  final Color? backgroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    // 全走 tokens（tokens.surfaces.outline 即 scheme 的 outlineVariant、onVariant
+    // 即 onSurfaceVariant）：本文件被 MD3 静态守卫盯着，不许直读 scheme 的描边角色。
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        border: Border.all(color: tokens.surfaces.outline),
+        borderRadius: tokens.radii.cardRadius,
+      ),
+      child: Center(
+        child: Icon(
+          icon,
+          size: iconSize,
+          color: tokens.surfaces.onVariant,
+        ),
+      ),
+    );
+  }
+}
+
+/// 本地文件封面的统一加载（书架 / 视频库 / 游戏库共用）。
+///
+/// BUG-959：一律经 [resizedFileImage] 降采样解码，避免原始封面（EPUB 常
+/// 1600×2400、游戏包装图更大）整帧解码撑爆 ImageCache；FadeInImage 提供淡入与
+/// 解码失败回退 [placeholder]。文件是否存在由调用方判定（各页对缺失文件的
+/// 短路语义不同，不在此处吞）。
+class ShelfFileCover extends StatelessWidget {
+  const ShelfFileCover({
+    required this.path,
+    required this.placeholder,
+    this.fit = BoxFit.cover,
+    this.alignment = Alignment.center,
+    super.key,
+  });
+
+  final String path;
+  final Widget placeholder;
+  final BoxFit fit;
+  final Alignment alignment;
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeInImage(
+      imageErrorBuilder: (_, __, ___) => placeholder,
+      placeholder: MemoryImage(kTransparentImage),
+      image: resizedFileImage(File(path)),
+      alignment: alignment,
+      fit: fit,
     );
   }
 }

@@ -2603,5 +2603,6 @@
   "book_scrape_use": "Use",
   "book_scrape_empty": "No matching covers",
   "book_scrape_failed": "Failed to fetch cover",
-  "book_scrape_search_failed": "Search failed. Tap Search to retry."
+  "book_scrape_search_failed": "Search failed. Tap Search to retry.",
+  "add_to_collection": "Add to collection"
 }

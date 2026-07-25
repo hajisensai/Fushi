@@ -144,16 +144,24 @@ class GalgameRepository extends ChangeNotifier {
     final Set<String> keep = <String>{
       for (final GalgameEntry game in next) game.id,
     };
+    final List<String> removed = <String>[];
     await _db.transaction(() async {
       for (final GalgameRow row in await _db.getAllGalgames()) {
         if (!keep.contains(row.id)) {
           await _db.deleteGalgame(row.id);
+          removed.add(row.id);
         }
       }
       for (final GalgameEntry game in next) {
         await _db.upsertGalgame(galgamesCompanionFromEntry(game));
       }
     });
+    // 同 [remove]：合集引用是逻辑外键无 cascade，批量删除后逐条清理
+    // （#346 删除传播）。在主事务外做：清理自身已是事务，且本体
+    // 删除成功后引用清理失败可由读取期过滤兜底，不应回滚本体。
+    for (final String id in removed) {
+      await _db.removeEntryFromAllCollections(kGameCollectionMediaType, id);
+    }
     await load();
   }
 
@@ -174,9 +182,12 @@ class GalgameRepository extends ChangeNotifier {
     await load();
   }
 
-  /// 删除一条。
+  /// 删除一条。除本体行（源快照/会话经 FK cascade 连带）外，还主动清其全部
+  /// 合集引用（`media_collection_items.entryKey` 是逻辑外键无 DB cascade，
+  /// 对齐 #346 删除传播惯例）；被清空的合集随之自删，不留孤儿成员。
   Future<void> remove(String id) async {
     await _db.deleteGalgame(id);
+    await _db.removeEntryFromAllCollections(kGameCollectionMediaType, id);
     await load();
   }
 

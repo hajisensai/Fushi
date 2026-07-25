@@ -225,7 +225,10 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
 /// Title, author, and actions sit in the foreground using shared MD3 controls.
 /// The launch/read affordance is optional so shelf book long-press menus can
 /// stay management-only while ordinary history dialogs can still expose it.
-@visibleForTesting
+///
+/// 不是 `@visibleForTesting`：视频卡（`home_video_page._showVideoMenu`）与游戏卡
+/// （`games_library_page._GameCard`）的长按菜单在生产直接复用本骨架——它是三库
+/// 共用的正式 API，不再只服务测试。
 class MediaItemDialogFrame extends StatelessWidget {
   const MediaItemDialogFrame({
     required this.title,

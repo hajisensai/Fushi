@@ -314,7 +314,7 @@ void main() {
     );
   });
 
-  testWidgets('长按视频卡弹出封面背景动作面板（五项管理动作、无播放）', (WidgetTester tester) async {
+  testWidgets('长按视频卡弹出封面背景动作面板（管理动作、无播放）', (WidgetTester tester) async {
     await seedTaggedVideo();
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
@@ -331,6 +331,8 @@ void main() {
     expect(t.video_import_pick_subtitle, isNot(contains('srt')));
     expect(t.video_import_pick_subtitle, isNot(contains('vtt')));
     expect(t.video_import_pick_subtitle, isNot(contains('ass')));
+    // 单卡「加入合集」（共享 showAddToCollectionDialog 入口）。
+    expect(find.text(t.add_to_collection), findsOneWidget);
     expect(find.text(t.dialog_delete), findsOneWidget);
     expect(find.text(t.dialog_read), findsNothing);
   });
@@ -351,6 +353,7 @@ void main() {
     expect(find.text(t.video_rename), findsOneWidget);
     expect(find.text(t.srt_import_pick_cover), findsOneWidget);
     expect(find.text(t.video_import_pick_subtitle), findsOneWidget);
+    expect(find.text(t.add_to_collection), findsOneWidget);
     expect(find.text(t.dialog_delete), findsOneWidget);
   });
 

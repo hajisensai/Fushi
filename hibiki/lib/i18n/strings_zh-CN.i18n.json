@@ -2603,5 +2603,6 @@
   "book_scrape_use": "使用",
   "book_scrape_empty": "无匹配封面",
   "book_scrape_failed": "封面获取失败",
-  "book_scrape_search_failed": "搜索失败，请点击「搜索」重试"
+  "book_scrape_search_failed": "搜索失败，请点击「搜索」重试",
+  "add_to_collection": "加入合集"
 }

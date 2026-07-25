@@ -4,6 +4,8 @@ import 'package:hibiki/src/media/collections/collection_shelf_row.dart'
     show unifiedShelfCardLayout;
 import 'package:hibiki/src/media/collections/shelf_sort.dart'
     show naturalCompare;
+import 'package:hibiki/src/mining/metadata/galgame_metadata_merge.dart'
+    show GalgameCustomData;
 import 'package:hibiki/src/pages/implementations/collection_detail_shared.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart'
     show kShelfBookCardAspectRatio;
@@ -108,16 +110,25 @@ class _MediaCollectionGridDetailPageState
 
   /// 一键整理（排序交互重设计层次 B2；覆盖 95% 场景，配合网格拖拽精修）：按名称 /
   /// 导入时间（旧→新）重排全表并落盘 sortIndex（`reorderCollectionItems`），库页合集行
-  /// 同源立即同序。标题/导入时间从 epub/srt 两表现查（成员行只有身份键）。
+  /// 同源立即同序。标题/导入时间从 epub/srt/galgames 三表现查（成员行只有身份键）。
   Future<void> _applyOneKeySort({required bool byTitle}) async {
     final List<EpubBookRow> epubs = await widget.database.getAllEpubBooks();
     final List<SrtBookRow> srts = await widget.database.getAllSrtBooks();
+    // game 成员（游戏库页打开本详情页）：标题取用户覆盖名（customDataJson.name）
+    // 优先，回落本地默认名；导入时间 = addedAt。查不到的类型仍走下面的
+    // (entryKey, 0) 兜底，不 throw。
+    final List<GalgameRow> games = await widget.database.getAllGalgames();
     final Map<String, ({String title, int importedAt})> meta =
         <String, ({String title, int importedAt})>{
       for (final EpubBookRow r in epubs)
         'epub|${r.bookKey}': (title: r.title, importedAt: r.importedAt),
       for (final SrtBookRow r in srts)
         'srt|${r.uid}': (title: r.title, importedAt: r.importedAt),
+      for (final GalgameRow r in games)
+        'game|${r.id}': (
+          title: GalgameCustomData.decode(r.customDataJson).name ?? r.name,
+          importedAt: r.addedAt,
+        ),
     };
     ({String title, int importedAt}) metaOf(MediaCollectionItemRow r) =>
         meta['${r.mediaType}|${r.entryKey}'] ??

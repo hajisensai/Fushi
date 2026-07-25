@@ -43,6 +43,7 @@ import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/collections_page.dart';
+import 'package:hibiki/src/media/collections/add_to_collection_dialog.dart';
 import 'package:hibiki/src/media/collections/batch_combine.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
@@ -1556,6 +1557,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               _pickSubtitle(book);
             },
           ),
+          DialogQuickAction(
+            label: t.add_to_collection,
+            icon: Icons.collections_bookmark_outlined,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _addToCollection(book);
+            },
+          ),
         ],
         dangerActions: <DialogDangerAction>[
           DialogDangerAction(
@@ -1579,6 +1588,21 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     final String? subtitlePath = result?.files.single.path;
     if (subtitlePath == null || !mounted) return;
     await _attachSubtitleToVideoCard(book, subtitlePath);
+  }
+
+  /// 单卡「加入合集」：entryKey 与批量组合三档同一编码——视频选择键就是裸
+  /// bookUid（见 [shelfSelectionToEntry] 的 video 分支），落库同走
+  /// addToCollection DAO；成功后按 [_combineAddToExisting] 同款
+  /// [_loadLibraryMaps] 刷新分组/网格。
+  Future<void> _addToCollection(VideoBookRow book) async {
+    final bool added = await showAddToCollectionDialog(
+      context: context,
+      database: ref.read(appProvider).database,
+      mediaType: 'video',
+      entryKey: book.bookUid,
+    );
+    if (!added || !mounted) return;
+    await _loadLibraryMaps();
   }
 
   Future<void> _editTags(VideoBookRow book) async {
@@ -2496,21 +2520,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                   Positioned(
                     top: 6,
                     left: 6,
-                    child: _buildSelectionCheck(selected),
+                    child: ShelfSelectionCheck(selected: selected),
                   ),
                 if (selected)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withValues(alpha: 0.12),
-                        ),
-                      ),
-                    ),
-                  ),
+                  const Positioned.fill(child: ShelfSelectedOverlay()),
               ],
             ),
           ),
@@ -2568,7 +2581,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         // 前景」填充；解码上限与旧 cacheWidth 同源（resizedFileImage 默认 720）。
         return PosterCoverImage(
           image: resizedFileImage(File(cover)),
-          errorBuilder: (BuildContext _) => _coverPlaceholder(),
+          errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
+            icon: Icons.movie_outlined,
+            backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+          ),
         );
       }
     }
@@ -2580,7 +2596,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
               (remote.coverUrl != null && remote.coverUrl!.isNotEmpty);
       if (hasCover) return _buildRemoteVideoCover(remote, poster: true);
     }
-    return _coverPlaceholder();
+    return ShelfCoverPlaceholder(
+      icon: Icons.movie_outlined,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+    );
   }
 
   /// 合集卡进度行：有观看痕迹且未整套看完 → 「继续看 第n集」（[continueMemberIndex]
@@ -2729,7 +2748,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         return PosterCoverImage(
           image: FileImage(File(coverPath)),
           imageKey: coverKey,
-          errorBuilder: (BuildContext _) => _coverPlaceholder(),
+          errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
+            icon: Icons.movie_outlined,
+            backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+          ),
         );
       }
       return _coverBacking(
@@ -2737,7 +2759,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           File(coverPath),
           key: coverKey,
           fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => _coverPlaceholder(),
+          errorBuilder: (_, __, ___) => ShelfCoverPlaceholder(
+            icon: Icons.movie_outlined,
+            backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+          ),
         ),
       );
     }
@@ -2754,7 +2779,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         return PosterCoverImage(
           image: remoteImage,
           imageKey: coverKey,
-          errorBuilder: (BuildContext _) => _coverPlaceholder(),
+          errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
+            icon: Icons.movie_outlined,
+            backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+          ),
         );
       }
       return _coverBacking(
@@ -2763,15 +2791,21 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           key: coverKey,
           // 非 16:9 源 contain 完整显示，同上衬底。
           fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => _coverPlaceholder(),
+          errorBuilder: (_, __, ___) => ShelfCoverPlaceholder(
+            icon: Icons.movie_outlined,
+            backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+          ),
         ),
       );
     }
-    return _coverPlaceholder();
+    return ShelfCoverPlaceholder(
+      icon: Icons.movie_outlined,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+    );
   }
 
   /// 封面衬底（UI 巡检 PR-4）：contain 的非 16:9 封面在 16:9 槽位里露出的空带
-  /// 垫 surfaceContainer（与 [_coverPlaceholder] 同色），本地 / 远端卡共用。
+  /// 垫 surfaceContainer（与共享 [ShelfCoverPlaceholder] 占位同色），本地 / 远端卡共用。
   Widget _coverBacking(Widget cover) {
     return ColoredBox(
       color: Theme.of(context).colorScheme.surfaceContainer,
@@ -3163,21 +3197,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                   Positioned(
                     top: 6,
                     left: 6,
-                    child: _buildSelectionCheck(selected),
+                    child: ShelfSelectionCheck(selected: selected),
                   ),
                 if (selected)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withValues(alpha: 0.12),
-                        ),
-                      ),
-                    ),
-                  ),
+                  const Positioned.fill(child: ShelfSelectedOverlay()),
                 // TODO-1346：观看进度条（贴封面底部，YouTube 式）。多集按「看到第几集」，
                 // 单视频仅已看完满格；无可展示进度（watchFrac==null）时不画。
                 if (watchFrac != null)
@@ -3265,34 +3288,6 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         t.video_last_watched(date: _formatOverviewDate(watched)),
     ];
     return parts.join(' · ');
-  }
-
-  /// 批量选择勾选标记：选中实心对勾，未选空心圆（与书架 _buildBookCard 一致）。
-  Widget _buildSelectionCheck(bool selected) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final Color selectionColor = tokens.surfaces.primary;
-    return IgnorePointer(
-      child: Container(
-        decoration: BoxDecoration(
-          color: selected
-              ? selectionColor
-              : tokens.surfaces.page.withValues(alpha: 0.7),
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: selected ? selectionColor : tokens.surfaces.outline,
-            width: 1.5,
-          ),
-        ),
-        padding: EdgeInsets.all(tokens.spacing.gap / 4),
-        child: Icon(
-          Icons.check,
-          size: tokens.spacing.gap * 1.75,
-          color: selected
-              ? Theme.of(context).colorScheme.onPrimary
-              : Colors.transparent,
-        ),
-      ),
-    );
   }
 
   /// 批量操作栏（底部，仅选择态显示）：选中计数 + 全选 / 反选 + 打标签 + 删除。
@@ -3410,13 +3405,19 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     // 单卡一次 stat 成本极小；首屏真正的开销是解码尺寸（下方 cacheWidth 降采样）
     // 与 _repairMovedCoverPaths 的全库 stat（已改异步）。
     if (cover == null || cover.isEmpty || !File(cover).existsSync()) {
-      return _coverPlaceholder();
+      return ShelfCoverPlaceholder(
+        icon: Icons.movie_outlined,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+      );
     }
     if (poster) {
       // 解码上限与下方 cacheWidth 同源（resizedFileImage 默认 720，BUG-959）。
       return PosterCoverImage(
         image: resizedFileImage(File(cover)),
-        errorBuilder: (BuildContext _) => _coverPlaceholder(),
+        errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
+          icon: Icons.movie_outlined,
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+        ),
       );
     }
     // TODO-616 phase C / BUG-926 后注释更新（UI 巡检 PR-4）：非 poster 槽位保留
@@ -3427,18 +3428,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         fit: BoxFit.contain,
         // BUG-959: 按物理像素上限解码，避免视频原生分辨率(1080p/4K)整帧撑爆 ImageCache。
         cacheWidth: kLocalCoverDecodePixelWidth,
-        errorBuilder: (_, __, ___) => _coverPlaceholder(),
-      ),
-    );
-  }
-
-  Widget _coverPlaceholder() {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    return ColoredBox(
-      color: colors.surfaceContainer,
-      child: Center(
-        child: Icon(Icons.movie_outlined,
-            size: 40, color: colors.onSurfaceVariant),
+        errorBuilder: (_, __, ___) => ShelfCoverPlaceholder(
+          icon: Icons.movie_outlined,
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+        ),
       ),
     );
   }

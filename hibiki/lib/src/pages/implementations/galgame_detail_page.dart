@@ -7,6 +7,8 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/media/collections/add_to_collection_dialog.dart';
+import 'package:hibiki/src/mining/galgame_cover_download.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/galgame_repository.dart';
 import 'package:hibiki/src/mining/galgame_scrape_controller.dart';
@@ -16,6 +18,7 @@ import 'package:hibiki/src/mining/metadata/galgame_metadata_merge.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
 import 'package:hibiki/src/pages/implementations/games_library_page.dart'
     show formatGalgameDate, galgamePlayStatusLabel;
+import 'package:hibiki/src/utils/cover_image.dart' show evictLocalCoverCache;
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki/src/pages/implementations/stat_shared.dart'
     show formatStatTime;
@@ -163,6 +166,18 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     await _load();
   }
 
+  /// 「加入合集」：mediaType='game'、entryKey=`galgames.id`（本机局域身份，见
+  /// [kGameCollectionMediaType]），与库页卡片菜单同一 DAO 路径。
+  Future<void> _addToCollection(GalgameEntry game) async {
+    await showAddToCollectionDialog(
+      context: context,
+      database: _appModel.database,
+      mediaType: kGameCollectionMediaType,
+      entryKey: game.id,
+      defaultNewName: game.displayName,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final GalgameEntry? game = _game;
@@ -185,6 +200,15 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
+        actions: <Widget>[
+          // 「加入合集」：与库页卡片菜单同一入口语义（mediaType='game'，entryKey=
+          // galgames.id），落库同走 addToCollection DAO；库页返回后 _reload 刷新分组。
+          IconButton(
+            tooltip: t.add_to_collection,
+            icon: const Icon(Icons.collections_bookmark_outlined),
+            onPressed: () => unawaited(_addToCollection(game)),
+          ),
+        ],
       ),
       body: Column(
         children: <Widget>[
@@ -487,27 +511,20 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
+  /// 封面：有 coverPath 且文件存在则经 [ShelfFileCover] 降采样加载（BUG-959 同类，
+  /// 裸 Image.file 整帧解码包装图撑爆 ImageCache），否则共享占位件
+  /// [ShelfCoverPlaceholder]（保持原 overlay 底色 + 手柄图标 40）。
   Widget _buildCover(BuildContext context, GalgameEntry game) {
+    final Widget placeholder = ShelfCoverPlaceholder(
+      icon: Icons.videogame_asset,
+      iconSize: 40,
+      backgroundColor: HibikiDesignTokens.of(context).surfaces.overlay,
+    );
     final String? cover = game.coverPath;
     if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
-      return Image.file(
-        File(cover),
-        fit: BoxFit.cover,
-        errorBuilder: (BuildContext ctx, Object error, StackTrace? stack) =>
-            _defaultCover(context),
-      );
+      return ShelfFileCover(path: cover, placeholder: placeholder);
     }
-    return _defaultCover(context);
-  }
-
-  Widget _defaultCover(BuildContext context) {
-    final HibikiSurfaceColors surfaces =
-        HibikiDesignTokens.of(context).surfaces;
-    return Container(
-      color: surfaces.overlay,
-      alignment: Alignment.center,
-      child: Icon(Icons.videogame_asset, size: 40, color: surfaces.onVariant),
-    );
+    return placeholder;
   }
 
   // ── 统计 tab ───────────────────────────────────────────────────────────
@@ -883,6 +900,10 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
       await widget.onSaved();
       if (!mounted) return;
       HibikiToast.show(msg: t.game_scrape_applied);
+      // 刮削封面落地：仅当该游戏当前无可用封面文件时自动下载 coverUrl 并写
+      // coverPath；已有封面（手选/自动/上次下载）绝不覆盖。失败静默降级（元数据
+      // 本身已成功），原因由下载函数记 debug 日志。
+      await _maybeDownloadScrapedCover();
     } on GalgameMetadataException catch (e) {
       if (!mounted) return;
       HibikiToast.show(msg: '${t.game_scrape_failed}: ${e.message}');
@@ -893,6 +914,38 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
       _scraping = false;
       if (mounted) setState(() {});
     }
+  }
+
+  /// 刮削成功后的封面落地（决策纯函数 [shouldAutoDownloadScrapedCover] 可单测）：
+  /// 读**重载后**的最新条目（合并层已按优先级/手选源算好 coverUrl），无可用封面
+  /// 文件才下载；成功后驱逐旧解码缓存（裸 FileImage 键 + 降采样键都清）、写
+  /// coverPath 并复用 `t.games_cover_updated` 提示。
+  Future<void> _maybeDownloadScrapedCover() async {
+    final GalgameEntry? latest = widget.repo.byId(widget.game.id);
+    if (latest == null) return;
+    final String? coverPath = latest.coverPath;
+    final bool hasUsableCoverFile = coverPath != null &&
+        coverPath.isNotEmpty &&
+        File(coverPath).existsSync();
+    final String? coverUrl = latest.metadata.coverUrl;
+    if (!shouldAutoDownloadScrapedCover(
+      hasUsableCoverFile: hasUsableCoverFile,
+      coverUrl: coverUrl,
+    )) {
+      return;
+    }
+    final String? saved = await downloadGalgameCoverToFile(
+      gameId: latest.id,
+      url: coverUrl!,
+    );
+    if (saved == null) return; // 失败静默：原因已进 debug 日志。
+    await evictLocalCoverCache(saved);
+    // 下载期间条目可能已被移除：仓储按 id 更新，行不在就不写。
+    if (widget.repo.byId(latest.id) == null) return;
+    await widget.repo.setCoverPath(latest.id, saved);
+    await widget.onSaved();
+    if (!mounted) return;
+    HibikiToast.show(msg: t.games_cover_updated);
   }
 
   @override

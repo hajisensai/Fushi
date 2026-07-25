@@ -23,3 +23,15 @@ ImageProvider resizedFileImage(
   int width = kLocalCoverDecodePixelWidth,
 }) =>
     ResizeImage(FileImage(file), width: width, allowUpscaling: false);
+
+/// 换封面（同路径覆盖写）后驱逐该路径的**全部**旧解码缓存条目。
+///
+/// [ImageCache] 按 provider key 存条目：裸 [FileImage] 与 [resizedFileImage]
+/// （[ResizeImage] 包装键）是**两个不同的 key**——只驱逐 FileImage 的话，走降采样
+/// 渲染的卡片重建时仍命中旧解码，用户看到的还是换之前那张图（游戏封面卡与视频
+/// 封面同坑，见 `setVideoCoverFromPickedFile` 注释）。两个键都清才干净。
+Future<void> evictLocalCoverCache(String path) async {
+  final File file = File(path);
+  await FileImage(file).evict();
+  await resizedFileImage(file).evict();
+}
