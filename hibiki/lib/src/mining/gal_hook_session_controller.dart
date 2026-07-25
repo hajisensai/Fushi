@@ -62,7 +62,7 @@ GalTrackEmptyHint galTrackEmptyHintFor(GalHookAudioBackend backend) =>
       _ => GalTrackEmptyHint.generic,
     };
 
-/// 一次「启动游戏」结束后**必须**告知用户的结果分级（BUG-1087，纯函数可单测）。
+/// 一次「启动游戏」结束后**必须**告知用户的结果分级（BUG-1089，纯函数可单测）。
 ///
 /// 存在的理由：[GalHookSessionController.launchGame] 返回 `bool`，把三种结果压成两个值
 /// ——「彻底失败」「游戏在跑但注入降级」「完全成功」。于是每个调用方都得自己去

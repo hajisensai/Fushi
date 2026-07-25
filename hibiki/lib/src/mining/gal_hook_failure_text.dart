@@ -42,7 +42,7 @@ String? galHookFailureLabel(GalHookInjectorFailure failure) =>
         t.game_hook_reason_handshake_timeout,
     };
 
-/// 一次「启动游戏」结束后要 toast 给用户的话（BUG-1087）。
+/// 一次「启动游戏」结束后要 toast 给用户的话（BUG-1089）。
 ///
 /// 唯一的启动结果播报口：游戏库页和 texthooker 页都走这里，不再各写一套、也不再出现
 /// 「游戏库页一个字都不提示」。四种 [GalHookLaunchOutcome] 都有话说——**成功也说**，

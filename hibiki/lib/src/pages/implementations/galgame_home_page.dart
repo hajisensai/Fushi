@@ -272,15 +272,23 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
           widget.sessionController ?? GalHookSessionController.instance;
       final bool launched = await controller.launchGame(game.exePath);
       if (!mounted) return;
-      if (!launched) {
-        final GalHookSessionState state = controller.state;
-        HibikiToast.show(
-          msg: galHookFailureLabel(state.injectorFailure) ??
-              state.lastError ??
-              t.game_capture_launch_failed,
-        );
-        return;
-      }
+      // 每种结果都播报（BUG-1089）。旧实现只在 `!launched` 时说话，可注入降级和
+      // 「游戏窗口从未出现」这两条路径 `launchGame` 都返回 true，于是点完「启动」
+      // 既看不到游戏也看不到任何提示 —— 用户感知就是「点了没反应」。
+      final GalHookSessionState state = controller.state;
+      final GalHookLaunchOutcome outcome = classifyGalHookLaunchOutcome(
+        launched: launched,
+        hasBoundWindow: state.boundWindow != null,
+        injectorFailure: state.injectorFailure,
+      );
+      HibikiToast.show(
+        msg: galHookLaunchOutcomeMessage(
+          outcome: outcome,
+          failure: state.injectorFailure,
+          lastError: state.lastError,
+        ),
+      );
+      if (!launched) return;
       widget.onLaunched?.call();
     } finally {
       _launching = false;

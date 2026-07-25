@@ -445,7 +445,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       HibikiToast.show(msg: t.game_capture_launching);
       final bool launched = await _session.launchGame(executable);
       if (!mounted) return;
-      // 与游戏库页共用同一条结果播报（BUG-1087）。旧实现在这里自己判 `boundWindow`
+      // 与游戏库页共用同一条结果播报（BUG-1089）。旧实现在这里自己判 `boundWindow`
       // 并说「捕获已运行；尚未找到游戏窗口」——避重就轻：窗口没出现往往意味着游戏
       // 主线程还挂着、根本没跑起来，说成「已运行」会让用户以为没事。
       final GalHookSessionState state = _session.state;

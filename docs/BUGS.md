@@ -31,9 +31,9 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1089](bugs/BUG-1089-gal-locale-resume-skipped.md) | 🚧 | 🚧 | Locale Emulator 启动的游戏永久停在挂起态：窗口永不出现，injector 却报 OK hooked |
-| [BUG-1088](bugs/BUG-1088-gal-injector-diagnostics-mojibake.md) | ✅ | ✅ | injector 诊断按系统代码页解码：会话事件乱码且中文失败分类永久失配 |
-| [BUG-1087](bugs/BUG-1087-gal-launch-silent-no-feedback.md) | ✅ | ✅ | 点启动游戏无任何提示：注入降级/窗口未出现都静默走成功路径 |
+| [BUG-1092](bugs/BUG-1092-gal-locale-resume-skipped.md) | 🚧 | 🚧 | Locale Emulator 启动的游戏永久停在挂起态：窗口永不出现，injector 却报 OK hooked |
+| [BUG-1091](bugs/BUG-1091-gal-injector-diagnostics-mojibake.md) | ✅ | ✅ | injector 诊断按系统代码页解码：会话事件乱码且中文失败分类永久失配 |
+| [BUG-1089](bugs/BUG-1089-gal-launch-silent-no-feedback.md) | ✅ | ✅ | 点启动游戏无任何提示：注入降级/窗口未出现都静默走成功路径 |
 | [BUG-1084](bugs/BUG-1084-torrent-settings-field-full-width.md) | ✅ | ✅ | 下载设置输入框在宽屏详情面板被拉满整宽 |
 | [BUG-1083](bugs/BUG-1083-manga-author-edit-missing.md) | ✅ | ✅ | 漫画编辑对话框缺作者字段(未覆盖supportsAuthorEdit) |
 | [BUG-1082](bugs/BUG-1082-scrape-poster-lowres.md) | ✅ | ✅ | TMDB刮削海报w500缩略图发糊非满分辨率 |

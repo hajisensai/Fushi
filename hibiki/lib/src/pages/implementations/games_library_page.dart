@@ -426,7 +426,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           widget.sessionController ?? GalHookSessionController.instance;
       final bool launched = await session.launchGame(game.exePath);
       if (!mounted) return;
-      // 每种结果都播报（BUG-1087）。旧实现只在 `!launched` 时说话，可注入降级和
+      // 每种结果都播报（BUG-1089）。旧实现只在 `!launched` 时说话，可注入降级和
       // 「游戏窗口从未出现」这两条路径 `launchGame` 都返回 true，于是点完「启动游戏」
       // 既看不到游戏也看不到任何提示 —— 用户感知就是「点了没反应」。
       final GalHookSessionState state = session.state;

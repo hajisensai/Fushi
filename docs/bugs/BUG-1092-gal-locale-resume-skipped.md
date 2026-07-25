@@ -1,5 +1,5 @@
-## BUG-1089 · Locale Emulator 启动的游戏永久停在挂起态：窗口永不出现，injector 却报 OK hooked
-- **报告**：2026-07-25（用户：「点启动游戏没反应，游戏没打开」。同一轮报告里「没有报错提醒」这一半另记 [BUG-1087](BUG-1087-gal-launch-silent-no-feedback.md)，「事件乱码」记 [BUG-1088](BUG-1088-gal-injector-diagnostics-mojibake.md)）
+## BUG-1092 · Locale Emulator 启动的游戏永久停在挂起态：窗口永不出现，injector 却报 OK hooked
+- **报告**：2026-07-25（用户：「点启动游戏没反应，游戏没打开」。同一轮报告里「没有报错提醒」这一半另记 [BUG-1089](BUG-1089-gal-launch-silent-no-feedback.md)，「事件乱码」记 [BUG-1091](BUG-1091-gal-injector-diagnostics-mojibake.md)）
 - **样本**：`D:\APP\GalGame\屋上の百合霊さん\屋上の百合霊さんフルコーラス.exe`（x86，Unity，非 Siglus），走日语 locale 路径。
 - **真实性**：✅ 真 bug，**根因在 native（独立仓 `hibiki-voice-hook`），本仓只记账**。
   - **现场硬证据（本机实测，非推断）**：
@@ -18,4 +18,4 @@
   - **测试覆盖缺口**：`tests/locale_emulator_launch_test.cpp` 只验「策略枚举选对了」，从不触碰 `LeCreateProcess` 的 hThread 出参语义，也从不断言「游戏主线程挂起计数被减到 0」。本次现场组合完全没有守卫。
 - **[ ] ① 未修复** — 修复须在独立仓 `hibiki-voice-hook` 完成，**本轮未做**，原因如实记录：跨仓改动 + 必须重新构建 x86/x64 并发布 helper release 用户才拿得到 + 需回到用户原始启动路径做真机 E2E，不是本轮 Dart 侧改动能覆盖的范围。建议方向（未实施）：① 不再把 LE 回填的 `hThread` 当可靠 resume 句柄，改为按 pid 确定性恢复（该文件已有 `NtResumeProcess` 封装 `:970-972`）或按 `dwProcessId` 枚举真实主线程再 resume，并**校验挂起计数确实降到 0**；② 把 `:1156` 的「resume_thread 为空」从静默跳过改成**硬失败并回报结构化 `ERR reason=`**——在应当 resume 的策略下静默不 resume 却打印 `OK hooked` 是不可接受的说谎。
 - **[ ] ② 未加自动化测试** — 待 native 修复时补：针对 `locale_launched=true + 非 Siglus + 非 follow-child + hold`，注入 `LeCreateProcess` stub 分别回填 `hThread=null` 与「非主线程句柄」两个变体，断言 `RunInjection` **不得**在未真正 resume 游戏主线程的情况下返回成功 / 打印 `OK hooked`。
-- **备注**：**用户侧当前可用的绕过办法**：本次是用外部 `ResumeThread` 手工救活的（进程仍在时可救，不用重启游戏）。修好前，若点启动后游戏窗口没出现，可关掉残留进程重试；BUG-1087 的修复已让这种情况至少**明确提示**「游戏进程已启动但窗口一直没有出现」而不再静默。状态：`root_caused_unfixed`（根因已定位到 native `file:line`，修复与真机验证未做）。
+- **备注**：**用户侧当前可用的绕过办法**：本次是用外部 `ResumeThread` 手工救活的（进程仍在时可救，不用重启游戏）。修好前，若点启动后游戏窗口没出现，可关掉残留进程重试；BUG-1089 的修复已让这种情况至少**明确提示**「游戏进程已启动但窗口一直没有出现」而不再静默。状态：`root_caused_unfixed`（根因已定位到 native `file:line`，修复与真机验证未做）。

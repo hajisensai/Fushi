@@ -11,11 +11,11 @@ import 'package:hibiki/src/mining/galgame_audio_source.dart';
 List<int> _nativeStderrBytes(String diagnostics) => utf8.encode(diagnostics);
 
 void main() {
-  // BUG-1088：injector 输出按系统 ANSI 代码页（中文 Windows = CP936）解码，导致
+  // BUG-1091：injector 输出按系统 ANSI 代码页（中文 Windows = CP936）解码，导致
   // ① 会话事件里 native 诊断显示成乱码；② 更严重的是 classifyGalHookInjectorFailure
   // 靠中文串识别旧 helper 的失败原因，解错码后这些分支永远匹配不上，失败分类永久
   // 退化成 fallback，用户拿不到「位数不符 / 需要管理员 / 缺文件」这类可执行处置。
-  group('injector 诊断编码契约是 UTF-8 (BUG-1088)', () {
+  group('injector 诊断编码契约是 UTF-8 (BUG-1091)', () {
     // 每条都是 injector 真实会打印的中文诊断（对应 classify 里的中文分支）。
     const Map<String, GalHookInjectorFailure> cases =
         <String, GalHookInjectorFailure>{
@@ -100,16 +100,16 @@ void main() {
         RegExp(r'SystemEncoding\s*\(').hasMatch(code),
         isFalse,
         reason: 'injector 用 /utf-8 编译，输出恒为 UTF-8；'
-            '用 SystemEncoding() 解码会在中文 Windows 上重现 BUG-1088',
+            '用 SystemEncoding() 解码会在中文 Windows 上重现 BUG-1091',
       );
       expect(code, contains('Utf8Decoder(allowMalformed: true)'));
     });
   });
 
-  // BUG-1087：launchGame 返回 bool，把「彻底失败 / 游戏在跑但注入降级 / 完全成功」
+  // BUG-1089：launchGame 返回 bool，把「彻底失败 / 游戏在跑但注入降级 / 完全成功」
   // 三种结果压成两个值，于是每个调用方自己去 state 里翻，翻得还不一样——游戏库页
   // 一个字都不提示。用户点完「启动游戏」既看不到游戏也看不到报错。
-  group('classifyGalHookLaunchOutcome (BUG-1087)', () {
+  group('classifyGalHookLaunchOutcome (BUG-1089)', () {
     test('launchGame 返回 false → failed', () {
       expect(
         classifyGalHookLaunchOutcome(
