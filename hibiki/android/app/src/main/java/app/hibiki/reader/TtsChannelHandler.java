@@ -70,9 +70,6 @@ public class TtsChannelHandler {
         new MethodChannel(engine.getDartExecutor().getBinaryMessenger(), CHANNEL)
             .setMethodCallHandler((call, result) -> {
                 switch (call.method) {
-                    case "speak":
-                        handleSpeak(call, result);
-                        break;
                     case "ttsToFile":
                         handleTtsToFile(call, result);
                         break;
@@ -96,9 +93,6 @@ public class TtsChannelHandler {
                         break;
                     case "extractLocalAudio":
                         handleExtractLocalAudio(call, result);
-                        break;
-                    case "extractAudioSegment":
-                        handleExtractAudioSegment(call, result);
                         break;
                     case "extractEmbeddedCover":
                         handleExtractEmbeddedCover(call, result);
@@ -128,22 +122,6 @@ public class TtsChannelHandler {
             tts.shutdown();
             tts = null;
         }
-    }
-
-    private void handleSpeak(MethodCall call, MethodChannel.Result result) {
-        String text = call.argument("text");
-        String locale = call.argument("locale");
-        if (text == null || text.isEmpty() || !ttsReady) {
-            result.success(false);
-            return;
-        }
-        if (locale != null && !locale.isEmpty()) {
-            String[] parts = locale.split("-");
-            Locale loc = parts.length >= 2 ? new Locale(parts[0], parts[1]) : new Locale(parts[0]);
-            tts.setLanguage(loc);
-        }
-        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "hibiki_lookup");
-        result.success(true);
     }
 
     private void handleTtsToFile(MethodCall call, MethodChannel.Result result) {
@@ -555,116 +533,6 @@ public class TtsChannelHandler {
             builder.append(String.format("%02x", b & 0xff));
         }
         return builder.toString();
-    }
-
-    @androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
-    private void handleExtractAudioSegment(MethodCall call, MethodChannel.Result result) {
-        String inputPath = call.argument("inputPath");
-        Number startMsN = call.argument("startMs");
-        Number endMsN = call.argument("endMs");
-        String outputPath = call.argument("outputPath");
-        if (inputPath == null || outputPath == null || startMsN == null || endMsN == null) {
-            result.error("INVALID_ARGS", "Missing required arguments", null);
-            return;
-        }
-        long startMs = Math.max(startMsN.longValue(), 0L);
-        long endMs = Math.max(endMsN.longValue(), startMs + 1);
-
-        final File transformerTmp = new File(outputPath + ".tmp.m4a");
-
-        android.os.HandlerThread exportThread = new android.os.HandlerThread("HibikiAudioExport");
-        exportThread.start();
-        android.os.Handler exportHandler = new android.os.Handler(exportThread.getLooper());
-
-        final java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
-        final java.util.concurrent.atomic.AtomicBoolean completed = new java.util.concurrent.atomic.AtomicBoolean(false);
-        final java.util.concurrent.atomic.AtomicReference<Throwable> failure = new java.util.concurrent.atomic.AtomicReference<>(null);
-
-        exportHandler.post(() -> {
-            try {
-                androidx.media3.transformer.Transformer transformer =
-                    new androidx.media3.transformer.Transformer.Builder(activity.getApplicationContext())
-                        .setLooper(exportThread.getLooper())
-                        .setAudioMimeType(androidx.media3.common.MimeTypes.AUDIO_AAC)
-                        .setMuxerFactory(new androidx.media3.transformer.FrameworkMuxer.Factory())
-                        .addListener(new androidx.media3.transformer.Transformer.Listener() {
-                            @Override
-                            public void onCompleted(
-                                    androidx.media3.transformer.Composition composition,
-                                    androidx.media3.transformer.ExportResult exportResult) {
-                                completed.set(true);
-                                done.countDown();
-                            }
-                            @Override
-                            public void onError(
-                                    androidx.media3.transformer.Composition composition,
-                                    androidx.media3.transformer.ExportResult exportResult,
-                                    androidx.media3.transformer.ExportException exportException) {
-                                failure.set(exportException);
-                                done.countDown();
-                            }
-                        })
-                        .build();
-
-                androidx.media3.common.MediaItem mediaItem =
-                    new androidx.media3.common.MediaItem.Builder()
-                        .setUri(android.net.Uri.fromFile(new File(inputPath)))
-                        .setClippingConfiguration(
-                            new androidx.media3.common.MediaItem.ClippingConfiguration.Builder()
-                                .setStartPositionMs(startMs)
-                                .setEndPositionMs(endMs)
-                                .build())
-                        .build();
-
-                androidx.media3.transformer.EditedMediaItem editedItem =
-                    new androidx.media3.transformer.EditedMediaItem.Builder(mediaItem)
-                        .setRemoveVideo(true)
-                        .build();
-
-                transformer.start(editedItem, transformerTmp.getAbsolutePath());
-            } catch (Exception e) {
-                failure.set(e);
-                done.countDown();
-            }
-        });
-
-        ioExecutor.execute(() -> {
-            try {
-                boolean finished = done.await(30, java.util.concurrent.TimeUnit.SECONDS);
-                exportThread.quitSafely();
-
-                if (!finished || !completed.get() || failure.get() != null) {
-                    Throwable err = failure.get();
-                    android.util.Log.e("hibiki-audio", "Transformer export failed",
-                        err != null ? err : new Exception("timeout"));
-                    transformerTmp.delete();
-                    new File(outputPath).delete();
-                    new Handler(Looper.getMainLooper()).post(() ->
-                        result.error("EXTRACT_ERROR",
-                            err != null ? err.getMessage() : "Export timeout", null));
-                    return;
-                }
-
-                File outputFile = new File(outputPath);
-                if (!AacAdtsCueAudioRewriter.rewrite(transformerTmp, outputFile)) {
-                    android.util.Log.e("hibiki-audio", "ADTS rewrite failed for " + transformerTmp.getAbsolutePath());
-                    transformerTmp.delete();
-                    outputFile.delete();
-                    new Handler(Looper.getMainLooper()).post(() ->
-                        result.error("REWRITE_ERROR", "ADTS rewrite failed", null));
-                    return;
-                }
-                transformerTmp.delete();
-
-                new Handler(Looper.getMainLooper()).post(() -> result.success(outputPath));
-            } catch (Exception e) {
-                exportThread.quitSafely();
-                android.util.Log.e("hibiki-audio", "extractAudioSegment failed", e);
-                transformerTmp.delete();
-                new Handler(Looper.getMainLooper()).post(() ->
-                    result.error("EXTRACT_ERROR", e.getMessage(), null));
-            }
-        });
     }
 
     private void handleExtractEmbeddedCover(MethodCall call, MethodChannel.Result result) {

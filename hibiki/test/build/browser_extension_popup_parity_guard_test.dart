@@ -36,6 +36,8 @@ void main() {
       'popup.js',
       'popup.html',
       'popup.css',
+      // 选区/划词脚本同为三镜像共享渲染逻辑，纳入字节守卫防单侧漂移。
+      'selection.js',
     ]) {
       test('$rel matches app renderer in both extension mirrors', () {
         final List<int> app = bytes('$appPopup/$rel');
