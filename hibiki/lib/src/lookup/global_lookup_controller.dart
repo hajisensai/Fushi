@@ -9,7 +9,7 @@
 // The main Dart engine owns the dictionary, so this controller does the lookup
 // (AppModel.searchDictionary -> popupJson), pushes it to the native overlay
 // (GlobalLookupChannel), resolves gaiji bytes (image:// via HoshiDicts) and the
-// deferred audio bridge calls (resolveWordAudio / playWordAudio).
+// deferred audio bridge calls (resolveWordAudio / queryLocalAudio).
 
 import 'dart:async';
 import 'dart:io';

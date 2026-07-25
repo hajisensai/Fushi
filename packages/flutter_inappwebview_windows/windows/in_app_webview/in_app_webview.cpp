@@ -4,6 +4,7 @@
 #include <objbase.h>
 #include <Shlwapi.h>
 #include <windows.h>
+#include <WebView2EnvironmentOptions.h>
 #include <wil/wrl.h>
 
 #include "../custom_platform_view/util/composition.desktop.interop.h"
@@ -197,8 +198,24 @@ namespace flutter_inappwebview_plugin
       CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
       const std::wstring userDataFolder =
         OptionalEnvWide(L"HIBIKI_WEBVIEW2_USER_DATA_FOLDER");
+      // BUG-1091: allow media autoplay without a user gesture. WebView2 has NO
+      // per-view equivalent of `mediaPlaybackRequiresUserGesture` (the Dart-side
+      // setting silently did nothing on this fork), so Chromium's autoplay policy
+      // rejected the dictionary popup's first auto-read `audio.play()` on a
+      // document that had never been clicked — first lookup per popup document
+      // was silent until the user clicked once (sticky user activation). The
+      // policy can only be set process-wide via a browser argument on the shared
+      // environment. Every in-app WebView renders trusted first-party content
+      // (EPUB reader / dictionary popup), so unconditional autoplay is the
+      // intended behavior. NOTE: all environments created against the same user
+      // data folder must use identical options (mismatch fails with
+      // 0x8007139F) — this is the plugin's single default-environment site.
+      auto options = Make<CoreWebView2EnvironmentOptions>();
+      options->put_AdditionalBrowserArguments(
+        L"--autoplay-policy=no-user-gesture-required");
       hr = CreateCoreWebView2EnvironmentWithOptions(
-        nullptr, userDataFolder.empty() ? nullptr : userDataFolder.c_str(), nullptr,
+        nullptr, userDataFolder.empty() ? nullptr : userDataFolder.c_str(),
+        options.Get(),
         Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(callback).Get());
     }
 

@@ -229,12 +229,15 @@ void main() {
     expect(File(second!).readAsBytesSync(), <int>[8, 7, 6]);
   });
 
-  // 性能根因守卫：桌面查询路径必须给外部导入的库补索引，否则 WHERE expression=?
-  // 退回全表扫描（数十万行时每次查词几百 ms＝「查词发音特别慢」）。索引持久化进
-  // 库文件，故建一次后独立只读连接也能在 sqlite_master 看到。
-  group('auto index creation (no full-table scan)', () {
+  // 性能/并发根因守卫（索引挪到绑定期）：
+  // * 索引由 ensureIndexes 在绑定库列表时一次性补齐（对齐 Android
+  //   TtsChannelHandler 的做法），否则 WHERE expression=? 退回全表扫描
+  //   （数十万行时每次查词几百 ms＝「查词发音特别慢」）。
+  // * 查询路径（queryMeta / extractBlob）必须只读打开、零 DDL——否则与弹窗
+  //   独立 isolate 并发时抢 readWrite 句柄，失败被 catch 吞成 null＝「暂无发音」。
+  group('index creation lives in ensureIndexes, not the query path', () {
     bool hasIndex(String name) {
-      final Database probe = sqlite3.open(dbPath);
+      final Database probe = sqlite3.open(dbPath, mode: OpenMode.readOnly);
       try {
         return probe.select(
           "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
@@ -245,23 +248,64 @@ void main() {
       }
     }
 
-    test('queryMeta builds idx_entries_expr_read on first access', () {
+    test('ensureIndexes builds both query indexes and is idempotent', () async {
       expect(hasIndex('idx_entries_expr_read'), isFalse,
           reason: 'setUp 建的库本无索引');
-      LocalAudioDb.queryMeta(dbPath, '勉強', 'べんきょう');
+      expect(hasIndex('idx_android_file_source'), isFalse);
+      await LocalAudioDb.ensureIndexes(dbPath);
       expect(hasIndex('idx_entries_expr_read'), isTrue,
           reason: 'entries(expression,reading) 索引必须被建，消除全表扫描');
+      expect(hasIndex('idx_android_file_source'), isTrue);
+      // 幂等：重复调用不抛、索引仍在（CREATE INDEX IF NOT EXISTS）。
+      await LocalAudioDb.ensureIndexes(dbPath);
+      expect(hasIndex('idx_entries_expr_read'), isTrue);
+      expect(hasIndex('idx_android_file_source'), isTrue);
     });
 
-    test('extractBlob builds idx_android_file_source on first access', () {
-      expect(hasIndex('idx_android_file_source'), isFalse);
+    test('ensureIndexes tolerates a db missing one of the tables', () async {
+      final String partial = '${dir.path}/android_only.db';
+      final Database db = sqlite3.open(partial);
+      db.execute('CREATE TABLE android (file TEXT, source TEXT, data BLOB)');
+      db.dispose();
+      await LocalAudioDb.ensureIndexes(partial); // entries 缺失：不抛
+      final Database probe = sqlite3.open(partial, mode: OpenMode.readOnly);
+      try {
+        expect(
+          probe.select(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
+            <Object?>['idx_android_file_source'],
+          ).isNotEmpty,
+          isTrue,
+          reason: '另一条 DDL 不被缺表的那条牵连',
+        );
+      } finally {
+        probe.dispose();
+      }
+    });
+
+    test('ensureIndexes on a missing path is a no-op (no throw)', () async {
+      await LocalAudioDb.ensureIndexes('${dir.path}/no_such.db');
+      await LocalAudioDb.ensureIndexes('');
+    });
+
+    test('queryMeta / extractBlob never create indexes (read-only path)', () {
+      expect(LocalAudioDb.queryMeta(dbPath, '勉強', 'べんきょう'), isNotNull,
+          reason: '无索引的库查询仍必须成功（只是慢）');
       LocalAudioDb.extractBlob(
         dbPath: dbPath,
         file: 'a.mp3',
         source: 'src1',
         cacheDir: dir,
       );
-      expect(hasIndex('idx_android_file_source'), isTrue);
+      expect(hasIndex('idx_entries_expr_read'), isFalse,
+          reason: '查询路径不得再有任何 DDL：索引只归 ensureIndexes 建');
+      expect(hasIndex('idx_android_file_source'), isFalse);
+    });
+
+    test('query path succeeds after indexes exist (readOnly still works)',
+        () async {
+      await LocalAudioDb.ensureIndexes(dbPath);
+      expect(LocalAudioDb.queryMeta(dbPath, '勉強', 'べんきょう')?.file, 'a.mp3');
     });
   });
 }

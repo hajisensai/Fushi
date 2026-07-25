@@ -43,7 +43,6 @@ Shared constants are centralized here:
 - `HoshiBridge.kt` — JNI bridge to the hoshidicts C++ library.
 - `TtsChannelHandler.java` — TTS + audio extraction channel.
 - `AnkiChannelHandler.java` + `AnkiDroidHelper.java` — AnkiDroid API bridge.
-- `AacAdtsCueAudioRewriter.java` — Rewrites AAC/ADTS cue audio for playback.
 - `HibikiFileProvider.java` — FileProvider for sharing exported files.
 - `IconSwitchHelper.java` — Runtime launcher-icon alias switching.
 

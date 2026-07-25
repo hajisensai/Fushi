@@ -1,10 +1,23 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/widgets.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 
-final DictionarySearchResult _kWarmSlotSeedResult =
+/// Shared empty result used to mount the popup WebView during the search phase
+/// (BUG-080), so popup.html + JS + CSS cold-load in parallel with the FFI
+/// lookup instead of serially after it, **and** to seed / re-park the resident
+/// warm slot ([DictionaryPopupController.seedWarmSlot] / dismiss restore).
+///
+/// 必须是**同一个单例**：`DictionaryPopupWebView.didUpdateWidget` 按 result 对象
+/// 身份判断是否重推（`oldWidget.result != widget.result`）。热槽 seed、关栈复位、
+/// 搜索期占位（[DictionaryPopupController.beginTop] 的 `initialResult` 与
+/// dictionary_popup_layer 的 `result ?? kPopupSearchingPlaceholderResult` 兜底）
+/// 若各持一个空结果实例，空→空的身份变化也会触发一整次 `renderPopup()` no-results
+/// 重画——每次查词凭空多一遍 WebView 渲染。canonical 实例放本文件（controller 是
+/// 唯一内部消费者且保持纯逻辑可测），dictionary_popup_layer.dart re-export 供各宿主用。
+final DictionarySearchResult kPopupSearchingPlaceholderResult =
     DictionarySearchResult(searchTerm: '');
 
 /// 统一的查词弹窗条目（合并旧 `_PopupStackItem`（base_source_page）与
@@ -113,7 +126,15 @@ class DictionaryPopupController extends ChangeNotifier {
       <DictionaryPopupEntry, Timer>{};
 
   final List<DictionaryPopupEntry> _entries = <DictionaryPopupEntry>[];
-  List<DictionaryPopupEntry> get entries => List.unmodifiable(_entries);
+
+  /// [_entries] 的常驻不可变 live 视图。此前每次访问 `List.unmodifiable(_entries)`
+  /// 都整表拷贝一份——entries 在宿主 build 循环、`contains` 身份核对里高频调用，
+  /// 每次查词/重建都白分配。[UnmodifiableListView] 包装内部列表：外部依旧不可变
+  /// （写操作抛 UnsupportedError），读实时反映内部变更，零拷贝。
+  late final List<DictionaryPopupEntry> _entriesView =
+      UnmodifiableListView<DictionaryPopupEntry>(_entries);
+
+  List<DictionaryPopupEntry> get entries => _entriesView;
 
   bool get hasVisiblePopup =>
       _entries.any((DictionaryPopupEntry e) => e.visible);
@@ -148,13 +169,14 @@ class DictionaryPopupController extends ChangeNotifier {
   }
 
   /// 开页 seed 一个常驻隐藏热槽，使其 WebView 冷加载一次后全程复用。
-  /// [seedResult] 让宿主放一个占位结果（书内放 kPopupSearchingPlaceholderResult）。
+  /// [seedResult] 让宿主放一个占位结果；缺省即 [kPopupSearchingPlaceholderResult]
+  /// canonical 单例（与搜索期占位同一对象，seed→查词的 result 身份不变、不触发重推）。
   void seedWarmSlot({DictionarySearchResult? seedResult}) {
     if (lowMemory || _entries.isNotEmpty) return;
     _entries.add(DictionaryPopupEntry(
       searchTerm: '',
       selectionRect: Rect.zero,
-      result: seedResult ?? _kWarmSlotSeedResult,
+      result: seedResult ?? kPopupSearchingPlaceholderResult,
       visible: false,
       isWarmSlot: true,
     ));
@@ -166,7 +188,7 @@ class DictionaryPopupController extends ChangeNotifier {
     e
       ..searchTerm = ''
       ..selectionRect = Rect.zero
-      ..result = _kWarmSlotSeedResult
+      ..result = kPopupSearchingPlaceholderResult
       ..visible = false
       ..revealOnRender = false
       ..isSearching = false

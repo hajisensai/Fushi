@@ -445,4 +445,82 @@ void main() {
       });
     }
   });
+
+  // dict-media.js 是「两 vendor 字节一致 + app 语义一致」的特殊形态：vendor 版在
+  // rewriteDictionaryMediaPath / rewriteDictLinks 里有正当的扩展环境分叉
+  // （TODO-1215 __hibikiDictMedia → /api/media/dictionary），但 constructDictCss
+  // （词典自带 CSS 的作用域化，含 at-rule 处理）不允许分叉——历史上 vendor 副本漏掉了
+  // app 版的 at-rule 逻辑，扩展里 @font-face/@keyframes/@media 被错误加前缀。
+  // 这里逐字符比对三副本的 constructDictCss 函数全文，之后任何单侧改动必红。
+  group('constructDictCss stays semantically identical app <-> vendor', () {
+    /// 从 [src] 提取 `function constructDictCss(...) { ... }` 全文。
+    /// 花括号配对时跳过注释与字符串字面量（函数体里有 `'{'` / `' {'` / `'}'`
+    /// 这类含花括号的字符串，裸计数会失衡）。
+    String extractConstructDictCss(String src, String label) {
+      const String marker = 'function constructDictCss(';
+      final int start = src.indexOf(marker);
+      expect(start, greaterThanOrEqualTo(0),
+          reason: '$label is missing constructDictCss');
+      final int braceStart = src.indexOf('{', start);
+      expect(braceStart, greaterThan(start),
+          reason: '$label constructDictCss has no body');
+      int depth = 0;
+      int i = braceStart;
+      int end = -1;
+      while (i < src.length) {
+        final String c = src[i];
+        if (c == '/' && i + 1 < src.length && src[i + 1] == '/') {
+          // 行注释：跳到行尾（注释里有撇号/反引号，不能当字符串处理）。
+          final int nl = src.indexOf('\n', i);
+          i = nl == -1 ? src.length : nl + 1;
+          continue;
+        }
+        if (c == '/' && i + 1 < src.length && src[i + 1] == '*') {
+          final int close = src.indexOf('*/', i + 2);
+          i = close == -1 ? src.length : close + 2;
+          continue;
+        }
+        if (c == "'" || c == '"' || c == '`') {
+          // 字符串字面量：跳到同类引号（含转义）。
+          i++;
+          while (i < src.length && src[i] != c) {
+            if (src[i] == r'\') i++;
+            i++;
+          }
+          i++;
+          continue;
+        }
+        if (c == '{') {
+          depth++;
+        } else if (c == '}') {
+          depth--;
+          if (depth == 0) {
+            end = i;
+            break;
+          }
+        }
+        i++;
+      }
+      expect(end, greaterThan(braceStart),
+          reason: '$label constructDictCss braces never close — extraction '
+              'heuristic broke; update this guard alongside the function.');
+      return src.substring(start, end + 1);
+    }
+
+    test('app assets/popup vs both extension vendor mirrors', () {
+      final String app = extractConstructDictCss(
+          File('assets/popup/dict-media.js').readAsStringSync(),
+          'assets/popup/dict-media.js');
+      for (final MapEntry<String, String> mirror in mirrors.entries) {
+        final String vendor = extractConstructDictCss(
+            File('${mirror.value}/vendor/dict-media.js').readAsStringSync(),
+            '${mirror.value}/vendor/dict-media.js');
+        expect(vendor, app,
+            reason: '[${mirror.key}] vendor/dict-media.js constructDictCss '
+                'drifted from assets/popup/dict-media.js — the scoping/at-rule '
+                'logic must stay identical across app and extension (only the '
+                'TODO-1215 media-URL rewrite outside this function may fork).');
+      }
+    });
+  });
 }

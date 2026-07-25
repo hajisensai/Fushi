@@ -2169,13 +2169,13 @@ async function fetchAudioUrl(expression, reading) {
 // MediaPlayer（Android）或 libmpv（桌面 just_audio）——那条桌面路径每播一次都要
 // stop→loadfile→play，比手机的原生同步 prepare 慢。三端（app 内 InAppWebView / app 外
 // overlay WebView2 / 浏览器扩展真实浏览器）现在同一路径：resolveWordAudio 已返回可直接
-// 播放的 URL（远端 http、本地 base64 data:）。interrupt 模式先掐上一段，留 window.
-// __hibikiWordAudio 句柄。音量取 window.lookupAudioVolume（0..1，宿主注入；扩展缺省 1）。
+// 播放的 URL（远端 http、本地 base64 data:）。新播放固定先掐上一段（interrupt 行为；
+// 宿主从未注入过别的模式），留 window.__hibikiWordAudio 句柄。音量取
+// window.lookupAudioVolume（0..1，宿主注入；扩展缺省 1）。
 function playWordAudio(audioUrl) {
     try {
         if (!audioUrl) return Promise.resolve(false);
-        if ((window.audioPlaybackMode || 'interrupt') === 'interrupt'
-                && window.__hibikiWordAudio) {
+        if (window.__hibikiWordAudio) {
             try { window.__hibikiWordAudio.pause(); } catch (_) { /* no-op */ }
         }
         const audio = new Audio(audioUrl);

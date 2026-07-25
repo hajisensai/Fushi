@@ -615,18 +615,57 @@ JSON.stringify((function(){
   Future<String?> _resolveWordAudio(String expression, String reading) =>
       resolveWordAudioWebViewUrl(ref.read(appProvider), expression, reading);
 
+  /// BUG-1093：等待 JS 真实播放结果的 pending 表。`evaluateJavascript` 不会 await
+  /// JS Promise，之前本方法无条件返回 true——WebView2 的 autoplay 策略在 document
+  /// 尚无 user activation 时把首次 `audio.play()` 静默 reject（Windows fork 不解析
+  /// `mediaPlaybackRequiresUserGesture`），Dart 兜底永不触发、彻底无声且零日志。
+  /// 现在 popup.js 播完经 `wordAudioPlayed` 桥回报 `(token, ok)`，按 token 兑现。
+  int _wordAudioPlayToken = 0;
+  final Map<int, Completer<bool>> _pendingWordAudioPlays =
+      <int, Completer<bool>>{};
+
+  /// popup.js 侧 `audio.play()` 结果最长等待。data:/已缓存 URL 即刻回报；远端 URL
+  /// 要等首帧可播（play() resolve），弱网下给足余量。超时按失败处理走 Dart 兜底。
+  static const Duration _kWordAudioPlayReportTimeout = Duration(seconds: 5);
+
   /// Auto-read entry point: drives the popup's own `<audio>` element to play an
-  /// already-resolved URL (from [resolveWordAudioWebViewUrl]). Returns false when
-  /// the WebView is not ready, so the Dart caller can fall back to its player and
-  /// never lose auto-read (Never break userspace).
+  /// already-resolved URL (from [resolveWordAudioWebViewUrl]). Returns whether
+  /// playback truly started — false when the WebView is not ready, the JS side
+  /// is missing, `audio.play()` rejected (autoplay policy, decode error), or the
+  /// result never came back — so the Dart caller can fall back to its player and
+  /// never lose auto-read (Never break userspace, BUG-1093).
   Future<bool> playWordAudioUrl(String url) async {
     final InAppWebViewController? controller = _controller;
     if (controller == null || !_ready || url.isEmpty) return false;
-    await controller.evaluateJavascript(
-      source: 'window.__hibikiPlayWordAudioUrl && '
-          'window.__hibikiPlayWordAudioUrl(${jsonEncode(url)})',
-    );
-    return true;
+    final int token = ++_wordAudioPlayToken;
+    final Completer<bool> completer = Completer<bool>();
+    _pendingWordAudioPlays[token] = completer;
+    try {
+      await controller.evaluateJavascript(source: '''
+(function () {
+  var report = function (ok) {
+    try {
+      window.flutter_inappwebview.callHandler('wordAudioPlayed', $token, ok === true);
+    } catch (_) { /* bridge gone: Dart side times out and falls back */ }
+  };
+  try {
+    var play = window.__hibikiPlayWordAudioUrl;
+    if (!play) { report(false); return; }
+    Promise.resolve(play(${jsonEncode(url)}))
+        .then(report, function () { report(false); });
+  } catch (_) { report(false); }
+})();
+''');
+      return await completer.future.timeout(_kWordAudioPlayReportTimeout);
+    } on TimeoutException {
+      return false;
+    } catch (_) {
+      // evaluateJavascript threw (controller torn down mid-flight): treat as a
+      // normal "WebView could not play" so the caller falls back.
+      return false;
+    } finally {
+      _pendingWordAudioPlays.remove(token);
+    }
   }
 
   // No dispose() override that disposes _controller here.
@@ -1072,6 +1111,32 @@ JSON.stringify((function(){
               ErrorLogService.instance,
               () {
                 logPopupJsError(ErrorLogService.instance, args);
+                return null;
+              },
+            );
+          },
+        );
+
+        // BUG-1093：单词音频真实播放结果回传（见 playWordAudioUrl）。args =
+        // [token, ok]；未知/迟到的 token 直接丢弃（Dart 侧已超时走了兜底）。
+        controller.addJavaScriptHandler(
+          handlerName: 'wordAudioPlayed',
+          callback: (args) {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.wordAudioPlayed',
+              null,
+              ErrorLogService.instance,
+              () {
+                final int? token =
+                    args.isNotEmpty ? (args[0] as num?)?.toInt() : null;
+                final bool ok = args.length > 1 && args[1] == true;
+                if (token != null) {
+                  final Completer<bool>? pending =
+                      _pendingWordAudioPlays.remove(token);
+                  if (pending != null && !pending.isCompleted) {
+                    pending.complete(ok);
+                  }
+                }
                 return null;
               },
             );

@@ -1,7 +1,7 @@
 // spec 2026-07-10 — the DEFERRED overlay bridge handlers, extracted VERBATIM
 // from GlobalLookupController (TODO-617/1188/1225 lineage) so the persistent
-// clipboard panel (the second bare-WebView2 window) resolves the same nine
-// natively-deferred popup.js bridges (audio ×3, favorite ×2, mine ×2,
+// clipboard panel (the second bare-WebView2 window) resolves the same
+// natively-deferred popup.js bridges (audio ×2, favorite ×2, mine ×2,
 // overwrite ×2) through the same authority — never a copy (spec red line: the
 // two surfaces must not drift).
 //
@@ -14,12 +14,10 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:hibiki/src/lookup/global_lookup_log.dart';
-import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
-import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -34,7 +32,7 @@ typedef OverlayMiningHandler = Future<Map<String, Object?>> Function({
   int? updateNoteId,
 });
 
-/// Dispatches [handler] if it is one of the nine natively-DEFERRED bridges.
+/// Dispatches [handler] if it is one of the natively-DEFERRED bridges.
 /// Returns true when handled (the caller's _onJsMessage returns immediately);
 /// false = not a deferred bridge, the caller keeps its own dispatch.
 ///
@@ -56,9 +54,12 @@ bool maybeHandleOverlayDeferredBridge({
   OverlayMiningHandler? miningHandler,
 }) {
   switch (handler) {
+    // playWordAudio 桥已删：popup.js 三端统一自己用 HTML5 <audio> 播放解析好的
+    // URL（bridge-shim.js 同步删除，native deferred 名单同步删除）。旧分支若被调
+    // 只会失败——resolveWordAudio 返回的 data: URL 进 playAudioRef 会被分类成
+    // 本地文件路径。
     case 'resolveWordAudio':
     case 'queryLocalAudio':
-    case 'playWordAudio':
       unawaited(_handleAudioBridge(
           model, handler! as String, message, resolveBridge));
       return true;
@@ -140,16 +141,7 @@ Future<void> _handleAudioBridge(
   try {
     final Map<Object?, Object?> data = _firstMapArg(message);
     if (model == null) {
-      reply = handler == 'playWordAudio' ? false : null;
-    } else if (handler == 'playWordAudio') {
-      final String url = data['url']?.toString() ?? '';
-      final bool ok = url.isEmpty
-          ? false
-          : await TtsChannel.instance.playAudioRef(
-              url,
-              volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
-            );
-      reply = ok;
+      reply = null;
     } else {
       // resolveWordAudio / queryLocalAudio -> the configured-source URL.
       final String expression = data['expression']?.toString() ?? '';
@@ -165,7 +157,7 @@ Future<void> _handleAudioBridge(
     }
   } catch (e, st) {
     glog('audio: EXCEPTION $e\n$st');
-    reply = handler == 'playWordAudio' ? false : null;
+    reply = null;
   }
   if (id != null) {
     glog('audio: $handler -> reply=$reply (id=$id)');
