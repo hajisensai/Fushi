@@ -2595,5 +2595,6 @@
   "game_random_reroll": "Shuffle",
   "browser_extension_version_app": "App bundled",
   "browser_extension_version_browser": "Loaded in browser",
-  "browser_extension_version_mismatch": "The extension loaded in your browser is outdated. Prepare the extension again if needed, then reload it from your browser's extensions page (chrome://extensions)."
+  "browser_extension_version_mismatch": "The extension loaded in your browser is outdated. Prepare the extension again if needed, then reload it from your browser's extensions page (chrome://extensions).",
+  "add_to_collection": "Add to collection"
 }
