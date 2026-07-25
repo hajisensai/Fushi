@@ -178,12 +178,19 @@ class ClipboardPanelController {
   Future<void> update(DesktopLookupRequest request) async {
     final AppModel? model = _appModel;
     if (!_started || model == null) return;
-    // 用户已显式点词、正看释义时，被动连续台词流只刷新可点句子横幅、不抢占/不重置 root：
-    // 换 _currentSentence（新台词逐字可点）+ 原地重渲（不 _seedRootFrame、不 resetRootScroll、
+    // 用户已显式点词、正看释义时，被动流只刷新可点句子横幅、不抢占/不重置 root：
+    // 换 _currentSentence（新句逐字可点）+ 原地重渲（不 _seedRootFrame、不 resetRootScroll、
     // 不 ++_updateSeq），点词的在途查词与已出释义都不被冲掉。用户点新横幅词即正常换根。
-    // 仅对被动流（galgame 台词）生效；真剪贴板复制是显式意图，走下方正常重查。
     // BUG-1099：判据抽成纯函数（`keepUserOwnedCardForPassiveStream`），与瞬态覆盖窗
     // 共用同一真相源并可直接单测两个方向（被动流不清帧 / 显式意图仍替换）。
+    // 被动流的口径（当前实现，勿按旧注释理解）：`DesktopLookupService` 把**所有**剪贴板
+    // 变化（`_handleClipboardChange` + 抓选区括号期回放）都标 `passiveStream:true`——
+    // galgame 台词灌进来的和用户自己在别的 app 里 Ctrl+C 的走同一条入口、无法区分。
+    // 只有全局热键、悬浮字幕点词、面板横幅点字、卡内点词、台词浮窗点词这些对 Hibiki
+    // 的显式动作才是 `passiveStream:false`。面板是持久窗（`_visible` 恒 true，不像瞬态窗
+    // 有 dismiss 钩子复位），`_userOwnedRoot` 只在 `hidePanel()` 或本函数下方「建立新 root」
+    // 时复位，所以用户点过一次词之后，后续每一次真实 Ctrl+C 也只换横幅、不再自动重查，
+    // 直到点横幅里的字或关面板。这是 BUG-1099「已知取舍」条目里记的待拍板行为，不是笔误。
     if (keepUserOwnedCardForPassiveStream(
       passiveStream: request.passiveStream,
       userOwnedCard: _userOwnedRoot,

@@ -9,7 +9,8 @@
   - 同函数加幂等门：已是 `.ruby-unit` 的 base 跳过。`renderPopup` 先 `postProcessRuby(firstEntry)` 再 `postProcessRuby(container)`（container 含 firstEntry），首词条本来会被走两遍、套出双层 `.ruby-unit` 叠两份 `padding-top`——这条既有隐患顺带堵上。
   - `hibiki/assets/popup/popup.css`：`:where(.glossary-group, .glossary-content)` 的 `ruby` / `.ruby-unit` / `rt` / `.ruby-reserve` 四条作用域各加 `.expression`；`.expression rt` 只留 `-webkit-user-select:none`（词头是 `onLinkClick` 点击目标）。删掉的 `font-size:13px` 等价于 `.expression`（26px）的共享 `0.5em`——像素不变，但从此随 `popupContentZoom` 等比缩放，不再让溢出量随 zoom 线性放大。
   - `.expression-scroll` 保留 `overflow-x:auto`（长词头仍要能横滚）；注音不再溢出，隐式 `overflow-y` 自然无害。注释已更正 BUG-775 的错误判断。
-  - 三镜像同步：`hibiki/assets/browser_extension/vendor/{popup.css,popup.js}`、`tools/browser-extension/vendor/{popup.css,popup.js}` 复制到位，并重跑 `node tools/browser-extension/scripts/generate-content-css.mjs` 重新生成两份 `content.css`（`--check` 已通过）。
+  - 三镜像同步：`hibiki/assets/browser_extension/vendor/{popup.css,popup.js}`、`tools/browser-extension/vendor/{popup.css,popup.js}` 复制到位，并重跑 `node tools/browser-extension/scripts/generate-content-css.mjs` 重新生成两份 `content.css`。
+    - **勘误（本 PR 审查修复）**：首版提交里这两份 `content.css` 其实是漂移版本（各多出 15 行空行），`--check` 报 OUT OF SYNC——上面原写的「`--check` 已通过」当时并不属实。已重跑生成器重新生成并提交，两份产物 md5 一致且 `node tools/browser-extension/scripts/generate-content-css.mjs --check` 现报 in sync。
 - **[x] ② 已加自动化测试** — `hibiki/test/pages/popup_headword_ruby_reserve_bug1098_test.dart`（8 例全绿）：
   - 四条共享 ruby 规则的 `:where(...)` 作用域必须同时含 `glossary-group` / `glossary-content` / `.expression`；
   - 预留必须是 em `padding-top` + `line-height:1`，`rt` 必须 `position:absolute` + `top:0` + em 字号；

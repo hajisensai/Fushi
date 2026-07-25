@@ -80,12 +80,6 @@
     text-align: left;
 }
 
-
-
-
-
-
-
 :where(#entries-container) {
     overflow-x: hidden;
     padding: 0 10px 10px;
@@ -344,9 +338,6 @@
 .mine-button:disabled {
     opacity: 0.15;
 }
-
-
-
 
 /* TODO-1338: 制卡后图标乱码根因修。制卡按钮的 +/✓/✓↩ 是「文本字形标记」(应用户要求保留
    文本，不走 SVG，见 popup.js setMineState)。默认它会继承 Dart 注入到 html,body 的用户
@@ -1369,12 +1360,6 @@
     opacity: 0.6;
     -webkit-user-select: none;
 }
-
-
-
-
-
-
 
 /* 用户「词典方框怎么能左右动，Niratan 不会」根因修：app 外全局查词 / 浏览器扩展原本
    在 .global-lookup 下把 .category-body 从 grid 覆盖成 flex-wrap（flex:1 1 auto;
