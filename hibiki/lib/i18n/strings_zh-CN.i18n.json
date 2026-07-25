@@ -2648,5 +2648,13 @@
   "game_line_track_applied": "已把该轨的语音绑定到这句",
   "game_edit_launch_args": "启动参数",
   "game_edit_launch_args_hint": "启动时传给游戏，例如 -windowed",
-  "galgame_helper_verification_failed": "引擎组件已被拒绝安装：无法校验其完整性（GitHub 上的 .sha256 校验文件不可达、缺失或与下载内容不符）。为避免装入被篡改的注入器代码，本次安装已终止。"
+  "galgame_helper_verification_failed": "引擎组件已被拒绝安装：无法校验其完整性（GitHub 上的 .sha256 校验文件不可达、缺失或与下载内容不符）。为避免装入被篡改的注入器代码，本次安装已终止。",
+  "download_save_root_title": "下载目录",
+  "download_save_root_hint": "新的下载任务保存到这里；已有任务仍留在原目录，不会被移动。",
+  "download_save_root_change": "更改目录",
+  "download_save_root_reset": "恢复默认",
+  "download_save_root_not_absolute": "请选择一个绝对路径的目录。",
+  "download_save_root_create_failed": "无法创建该目录，请检查磁盘与权限。",
+  "download_save_root_not_writable": "该目录不可写入。",
+  "download_save_root_fallback_warning": "配置的下载目录当前不可用，已回退到默认目录。"
 }

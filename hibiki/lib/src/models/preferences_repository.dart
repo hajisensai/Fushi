@@ -1813,6 +1813,28 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// TODO-1961：内置下载引擎的下载根（新任务落点）。空串 = 未设置 → 用默认根
+  /// `<documents>/anime_downloads/content`（与本 key 出现之前逐字节一致）。
+  /// 设备本地路径，不进 Profile 快照（见 `ProfileKeys._excludedPrefKeys`）。
+  String get downloadSaveRoot =>
+      getPref('download_save_root', defaultValue: '') as String;
+
+  Future<void> setDownloadSaveRoot(String value) async {
+    await setPref('download_save_root', value);
+    notifyListeners();
+  }
+
+  /// TODO-1961：用过的历史下载根（JSON 字符串数组，新的在前，见
+  /// `encodeSaveRootHistory`）。**只**用于让改目录之前的旧任务在下载页仍被认出，
+  /// 永不作为写入目标。旧任务不迁移是刻意的：迁移=移动几十 GB 且掐断做种。
+  String get downloadSaveRootHistory =>
+      getPref('download_save_root_history', defaultValue: '') as String;
+
+  Future<void> setDownloadSaveRootHistory(String value) async {
+    await setPref('download_save_root_history', value);
+    notifyListeners();
+  }
+
   /// TODO-1024 / BUG-479：上次更新检查结果缓存（解码后；无/畸形 → null）。检查时先读它
   /// 乐观即时反馈，网络刷新在后台跑完再写回——不再每次冷查 GitHub 才知道结果（恒快）。
   UpdateCheckCacheEntry? get updateCheckCache => UpdateCheckCacheEntry.decode(

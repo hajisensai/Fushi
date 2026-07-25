@@ -8,6 +8,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/torrent/download_save_root.dart';
 import 'package:hibiki/src/media/torrent/embedded_torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki_torrent/hibiki_torrent.dart';
@@ -77,7 +78,7 @@ void main() {
       expect(session, isNotNull);
       final EmbeddedTorrentBackend backend = EmbeddedTorrentBackend(
         session: session!,
-        baseSavePath: p.join(tempDir.path, 'downloads'),
+        saveRoots: TorrentSaveRoots(active: p.join(tempDir.path, 'downloads')),
       );
       addTearDown(backend.close);
 

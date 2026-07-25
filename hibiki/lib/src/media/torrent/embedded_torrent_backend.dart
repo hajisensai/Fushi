@@ -1,14 +1,16 @@
 import 'dart:io';
 
+import 'package:hibiki/src/media/torrent/download_save_root.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki_torrent/hibiki_torrent.dart';
-import 'package:path/path.dart' as p;
 
 /// [TorrentBackend] 的内置 libtorrent 实现（阶段1b：Windows 先行）。
 ///
 /// 映射约定：
-/// - 分类 = `<baseSavePath>/<category>/` 子目录：add 落到分类目录，
-///   listTorrents 按 savePath 前缀过滤 —— 目录即真相，不另建分类账本。
+/// - 分类 = `<活动下载根>/<category>/` 子目录：add 落到活动根的分类目录，
+///   listTorrents 按 [TorrentSaveRoots.ownsCategoryPath] 认**所有**根（活动 +
+///   历史）—— 目录即真相，不另建分类账本。TODO-1961：用户改下载目录后，旧任务
+///   的 savePath 仍指着旧根，只认单根会让它们整批从下载页消失。
 /// - [addTorrent] 只接受 magnet 链接与本地 .torrent 文件路径；
 ///   http(s) .torrent URL 是外接 qb 的能力，内置引擎的选种链路
 ///   （Nyaa）本来就产 magnet，不为不存在的调用方加下载器。
@@ -19,14 +21,16 @@ import 'package:path/path.dart' as p;
 class EmbeddedTorrentBackend implements TorrentBackend {
   EmbeddedTorrentBackend({
     required EmbeddedTorrentSession session,
-    required String baseSavePath,
+    required TorrentSaveRoots saveRoots,
     bool closesSession = true,
   })  : _session = session,
-        _baseSavePath = baseSavePath,
+        _saveRoots = saveRoots,
         _closesSession = closesSession;
 
   final EmbeddedTorrentSession _session;
-  final String _baseSavePath;
+
+  /// 活动根 + 历史根。写入只用活动根，列表认全部（见类注释）。
+  final TorrentSaveRoots _saveRoots;
 
   /// close() 是否真的销毁底层 session。standalone/测试用途持有自己的
   /// session → true；app 侧 [EmbeddedTorrentHost] 派发的短命适配器共享
@@ -44,7 +48,7 @@ class EmbeddedTorrentBackend implements TorrentBackend {
     return version.isEmpty ? null : 'libtorrent $version';
   }
 
-  /// 分类目录建好即可用。
+  /// 分类目录建好即可用（永远建在**活动**根下）。
   @override
   Future<bool> prepareCategory(String category) async {
     try {
@@ -89,12 +93,11 @@ class EmbeddedTorrentBackend implements TorrentBackend {
   @override
   Future<List<TorrentSnapshot>> listTorrents({String? category}) async {
     _applyPendingFirstLast();
-    final String? prefix =
-        category == null ? null : p.normalize(_categoryPath(category));
     return _session
         .listTorrents()
         .where((HtTorrentStatus t) =>
-            prefix == null || p.equals(p.normalize(t.savePath), prefix))
+            category == null ||
+            _saveRoots.ownsCategoryPath(t.savePath, category))
         .map(_toSnapshot)
         .toList(growable: false);
   }
@@ -118,7 +121,7 @@ class EmbeddedTorrentBackend implements TorrentBackend {
     if (_closesSession) _session.close();
   }
 
-  String _categoryPath(String category) => p.join(_baseSavePath, category);
+  String _categoryPath(String category) => _saveRoots.categoryPathFor(category);
 
   /// 元数据未就绪时挂起的首尾块提优，随轮询补应用。
   void _applyPendingFirstLast() {

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anti_leech.dart';
+import 'package:hibiki/src/media/torrent/download_save_root.dart';
 import 'package:hibiki/src/media/torrent/embedded_torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/torrent_memory.dart';
 import 'package:hibiki/src/media/torrent/torrent_upload_policy.dart';
@@ -28,17 +29,22 @@ class EmbeddedTorrentHost {
   EmbeddedTorrentHost._({
     required EmbeddedTorrentEngine engine,
     required EmbeddedTorrentSession session,
-    required String baseSavePath,
+    required TorrentSaveRoots saveRoots,
     required int Function() clockMs,
   })  : _engine = engine,
         _session = session,
-        _baseSavePath = baseSavePath,
+        _saveRoots = saveRoots,
         _clockMs = clockMs;
 
   final EmbeddedTorrentEngine _engine;
   final EmbeddedTorrentSession _session;
-  final String _baseSavePath;
   final int Function() _clockMs;
+
+  /// 下载根集合：[TorrentSaveRoots.active] 收新任务，历史根只参与列表过滤。
+  /// TODO-1961：**非 final** —— 用户在设置里改下载目录时 [setActiveSaveRoot] 就地
+  /// 换活动根，旧根降级为历史根。不能重建 host 来换根：重建 = 销毁 session =
+  /// 掐断当前所有下载与做种，正是「只影响新增任务」要避免的。
+  TorrentSaveRoots _saveRoots;
 
   /// 全局反吸血引擎（共享连坐段，见 anti_leech.dart 类 doc 建议）。用户在设置里
   /// 调开关/阈值时 [applyAntiLeechConfig] 会用新 [AntiLeechConfig] 重建它。
@@ -63,13 +69,15 @@ class EmbeddedTorrentHost {
   String get libtorrentVersion => _engine.libtorrentVersion();
 
   /// 打开宿主。[libraryPath] 显式 DLL 路径（缺省按平台默认名搜系统路径）；
-  /// [baseSavePath] 内置下载根目录；[listenInterfaces] 监听接口（桌面默认
-  /// 全网 6881，端口占用时 libtorrent 自行回退）；[clockMs] 单调毫秒时钟
-  /// 注入（反吸血引擎判定基准，测试可注入假时钟）。
+  /// [baseSavePath] 内置下载根目录（新任务落点）；[legacySavePaths] 历史下载根
+  /// （用户改过下载目录时的旧根，只参与列表过滤，永不写入）；[listenInterfaces]
+  /// 监听接口（桌面默认全网 6881，端口占用时 libtorrent 自行回退）；[clockMs]
+  /// 单调毫秒时钟注入（反吸血引擎判定基准，测试可注入假时钟）。
   /// 任何失败（DLL 加载 / session 创建）返回 null。
   static EmbeddedTorrentHost? open({
     String? libraryPath,
     required String baseSavePath,
+    Iterable<String> legacySavePaths = const <String>[],
     String listenInterfaces = '0.0.0.0:6881',
     bool enableDht = true,
     int Function()? clockMs,
@@ -91,7 +99,8 @@ class EmbeddedTorrentHost {
     return EmbeddedTorrentHost._(
       engine: engine,
       session: session,
-      baseSavePath: baseSavePath,
+      saveRoots:
+          TorrentSaveRoots(active: baseSavePath, legacy: legacySavePaths),
       clockMs: clockMs ?? _defaultClockMs,
     );
   }
@@ -194,9 +203,20 @@ class EmbeddedTorrentHost {
   EmbeddedTorrentBackend backendView() {
     return EmbeddedTorrentBackend(
       session: _session,
-      baseSavePath: _baseSavePath,
+      saveRoots: _saveRoots,
       closesSession: false,
     );
+  }
+
+  /// 当前下载根集合（活动根 + 历史根）。诊断/设置页展示用。
+  TorrentSaveRoots get saveRoots => _saveRoots;
+
+  /// TODO-1961：用户在设置里改下载目录时就地换活动根 —— **只影响之后新增的任务**。
+  /// 已在跑的种子保持各自的 savePath 不动（不 move_storage、不重建 session），
+  /// 旧根降级为历史根后仍被 [EmbeddedTorrentBackend.listTorrents] 认得，
+  /// 下载页不会因为改目录而丢任务。
+  void setActiveSaveRoot(String newActiveRoot) {
+    _saveRoots = _saveRoots.withActive(newActiveRoot);
   }
 
   /// 反吸血扫描：遍历所有种子的 peer，喂进 [AntiLeechEngine] 判定，

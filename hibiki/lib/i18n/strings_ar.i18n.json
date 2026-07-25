@@ -2648,5 +2648,13 @@
   "game_line_track_applied": "Voice track applied to this line",
   "game_edit_launch_args": "Launch arguments",
   "game_edit_launch_args_hint": "Passed to the game on launch, e.g. -windowed",
-  "galgame_helper_verification_failed": "Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code."
+  "galgame_helper_verification_failed": "Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.",
+  "download_save_root_title": "Download folder",
+  "download_save_root_hint": "New downloads are saved here. Existing tasks keep their original folder.",
+  "download_save_root_change": "Change folder",
+  "download_save_root_reset": "Restore default",
+  "download_save_root_not_absolute": "Please pick an absolute folder path.",
+  "download_save_root_create_failed": "Cannot create that folder. Check the drive and permissions.",
+  "download_save_root_not_writable": "That folder is not writable.",
+  "download_save_root_fallback_warning": "The configured download folder is unavailable, so the default folder is being used."
 }

@@ -26,6 +26,9 @@ void main() {
       expect(ProfileKeys.isExcludedPref('app_ui_scale_mode'), isTrue);
       expect(ProfileKeys.isExcludedPref('download_network_proxy_mode'), isTrue);
       expect(ProfileKeys.isExcludedPref('download_custom_proxy'), isTrue);
+      // TODO-1961: download folder + legacy-folder history are device-local.
+      expect(ProfileKeys.isExcludedPref('download_save_root'), isTrue);
+      expect(ProfileKeys.isExcludedPref('download_save_root_history'), isTrue);
     });
 
     test('excludes keys with current_source/ prefix', () {

@@ -45,6 +45,7 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/download_network_proxy.dart';
+import 'package:hibiki/src/media/torrent/download_save_root.dart';
 import 'package:hibiki/src/media/torrent/embedded_torrent_host.dart';
 import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/qbittorrent_client.dart';
@@ -3052,24 +3053,103 @@ class AppModel with ChangeNotifier {
   EmbeddedTorrentHost? _embeddedTorrentHost;
   EmbeddedTorrentHost? get embeddedTorrentHost => _embeddedTorrentHost;
 
-  /// 内置下载根目录（懒建 host 时需要）。[startAnimeDownloadService] 里算好存下，
-  /// 避免懒建路径再去 await 一次目录解析。
-  String? _embeddedTorrentSavePath;
+  /// 内置下载根集合（懒建 host 时需要）。[startAnimeDownloadService] 里算好存下，
+  /// 避免懒建路径再去 await 一次目录解析。TODO-1961：活动根 = 用户配置目录（未配置
+  /// 或不可用时 = 默认根），历史根让改过目录的旧任务在下载页仍然可见。
+  TorrentSaveRoots? _embeddedTorrentSaveRoots;
+
+  /// 默认下载根 `<documents>/anime_downloads/content`（设置页展示与「恢复默认」用）。
+  String? _downloadDefaultSaveRoot;
+
+  /// 启动时用户配置的下载目录不可用（不存在且建不出/写不进）时记下原因与路径，
+  /// 设置页据此显示警告。**不静默**：回退默认根这件事必须让用户看见。
+  DownloadSaveRootIssue? _downloadSaveRootIssue;
+  String? _downloadSaveRootRejectedPath;
 
   /// 需要真会话时才建（幂等）。不支持的平台 / 无保存路径 / DLL 不可用 → null，
   /// 调用方自然回退外接 qb。
   EmbeddedTorrentHost? _ensureEmbeddedTorrentHost() {
     final EmbeddedTorrentHost? existing = _embeddedTorrentHost;
     if (existing != null) return existing;
-    final String? savePath = _embeddedTorrentSavePath;
-    if (savePath == null || !_supportsEmbeddedTorrent()) return null;
-    final EmbeddedTorrentHost? host =
-        EmbeddedTorrentHost.open(baseSavePath: savePath);
+    final TorrentSaveRoots? roots = _embeddedTorrentSaveRoots;
+    if (roots == null || !_supportsEmbeddedTorrent()) return null;
+    final EmbeddedTorrentHost? host = EmbeddedTorrentHost.open(
+      baseSavePath: roots.active,
+      legacySavePaths: roots.legacy,
+    );
     if (host == null) return null;
     _embeddedTorrentHost = host;
     // 建好即把已保存的资源限制/会话设置铺上（不必等用户改设置）。
     _applyEmbeddedTorrentLimits(prefsRepo.qbConnectionConfig);
     return host;
+  }
+
+  /// 默认下载根（未解析完成前为空串）。
+  String get downloadDefaultSaveRoot => _downloadDefaultSaveRoot ?? '';
+
+  /// 当前生效的下载根（新任务落点）。未解析完成时回退到已保存的配置值/空串。
+  String get downloadSaveRoot =>
+      _embeddedTorrentSaveRoots?.active ??
+      (prefsRepo.downloadSaveRoot.trim().isNotEmpty
+          ? prefsRepo.downloadSaveRoot.trim()
+          : downloadDefaultSaveRoot);
+
+  /// 当前是否在用默认下载根（设置页据此禁用「恢复默认」）。
+  bool get downloadSaveRootIsDefault =>
+      prefsRepo.downloadSaveRoot.trim().isEmpty;
+
+  /// 启动时配置目录不可用而回退默认根的原因（null = 没发生过回退）。
+  DownloadSaveRootIssue? get downloadSaveRootIssue => _downloadSaveRootIssue;
+
+  /// 被拒绝的配置目录（配合 [downloadSaveRootIssue] 提示用户具体是哪个目录）。
+  String? get downloadSaveRootRejectedPath => _downloadSaveRootRejectedPath;
+
+  /// TODO-1961：改下载目录。校验通过才落盘，**只影响之后新增的任务**——旧根进历史
+  /// 根列表（下载页仍认得旧任务），已在跑的种子不动（不 move_storage）。
+  /// 返回 null = 成功；非 null = 目录不可用的原因，调用方必须反馈给用户。
+  Future<DownloadSaveRootIssue?> setDownloadSaveRoot(String newRoot) async {
+    final String trimmed = newRoot.trim();
+    if (trimmed.isEmpty) return DownloadSaveRootIssue.notAbsolute;
+    final DownloadSaveRootIssue? issue = await checkDownloadSaveRoot(trimmed);
+    if (issue != null) return issue;
+    await _applyDownloadSaveRoot(trimmed);
+    return null;
+  }
+
+  /// 恢复默认下载根（清空配置 key）。旧根同样降级为历史根，不丢任务。
+  Future<void> resetDownloadSaveRoot() => _applyDownloadSaveRoot('');
+
+  /// 落盘 + 就地换活动根。[newRoot] 空串 = 恢复默认根。
+  Future<void> _applyDownloadSaveRoot(String newRoot) async {
+    final String previousActive =
+        _embeddedTorrentSaveRoots?.active ?? prefsRepo.downloadSaveRoot.trim();
+    await prefsRepo.setDownloadSaveRoot(newRoot);
+    if (previousActive.isNotEmpty) {
+      await prefsRepo.setDownloadSaveRootHistory(encodeSaveRootHistory(<String>[
+        previousActive,
+        ...decodeSaveRootHistory(prefsRepo.downloadSaveRootHistory),
+      ]));
+    }
+    final String active =
+        newRoot.trim().isEmpty ? downloadDefaultSaveRoot : newRoot.trim();
+    final TorrentSaveRoots? existing = _embeddedTorrentSaveRoots;
+    if (existing != null) {
+      _embeddedTorrentSaveRoots = existing.withActive(active);
+    } else if (active.isNotEmpty) {
+      _embeddedTorrentSaveRoots = TorrentSaveRoots(
+        active: active,
+        legacy: <String>[
+          if (previousActive.isNotEmpty) previousActive,
+          ...decodeSaveRootHistory(prefsRepo.downloadSaveRootHistory),
+        ],
+      );
+    }
+    // 会话已在跑：就地换根，绝不重建 session（重建 = 掐断当前下载与做种）。
+    if (active.isNotEmpty) _embeddedTorrentHost?.setActiveSaveRoot(active);
+    // 用户显式改过目录，之前的启动回退警告作废。
+    _downloadSaveRootIssue = null;
+    _downloadSaveRootRejectedPath = null;
+    notifyListeners();
   }
 
   /// 启动番剧下载完成监听。幂等（重复调用不重建）；失败由调用方记日志，不破坏 init。
@@ -3081,14 +3161,34 @@ class AppModel with ChangeNotifier {
         AnimeDownloadPlanStore(baseDir: baseDir);
     _animeDownloadPlanStore = store;
 
-    // 内置引擎宿主：仅桌面（Android/iOS 阶段4/5 再定），且下载根目录就在
-    // 计划目录旁的 `content/` 子目录（分类再往下分）。
+    // 内置引擎宿主：仅桌面（Android/iOS 阶段4/5 再定）。默认下载根就在计划目录旁的
+    // `content/` 子目录（分类再往下分）；TODO-1961 起用户可在设置里改成任意目录。
     //
     // BUG-1053：这里**只记路径，不建 session**。真正的 libtorrent session 会绑
     // 6881 并起 DHT，对没有下载任务的用户是纯粹的网络噪声（整机延迟）。改由
     // [_ensureEmbeddedTorrentHost] 在第一次真要用后端时懒建；`_tickOnce` 本就
     // 「没有等待中的计划就不建连接」，所以空闲用户永远不会走到那一步。
-    _embeddedTorrentSavePath = path.join(baseDir.path, 'content');
+    //
+    // TODO-1961：配置目录不可写/建不出时**回退默认根并记下原因**（设置页显示警告），
+    // 绝不静默把下载丢进一个写不进去的目录。默认根本身不预检——它是既有行为，
+    // 首次 add 时 prepareCategory 会建，失败路径与改动前逐字节一致。
+    final String defaultSaveRoot = path.join(baseDir.path, 'content');
+    _downloadDefaultSaveRoot = defaultSaveRoot;
+    String configuredRoot = prefsRepo.downloadSaveRoot.trim();
+    if (configuredRoot.isNotEmpty) {
+      final DownloadSaveRootIssue? issue =
+          await checkDownloadSaveRoot(configuredRoot);
+      if (issue != null) {
+        _downloadSaveRootIssue = issue;
+        _downloadSaveRootRejectedPath = configuredRoot;
+        configuredRoot = '';
+      }
+    }
+    _embeddedTorrentSaveRoots = resolveTorrentSaveRoots(
+      defaultRoot: defaultSaveRoot,
+      configuredRoot: configuredRoot,
+      history: decodeSaveRootHistory(prefsRepo.downloadSaveRootHistory),
+    );
 
     _animeDownloadService = AnimeDownloadService(
       store: store,
@@ -3147,7 +3247,7 @@ class AppModel with ChangeNotifier {
   bool get isEmbeddedTorrentReady =>
       _embeddedTorrentHost != null ||
       (_supportsEmbeddedTorrent() &&
-          _embeddedTorrentSavePath != null &&
+          _embeddedTorrentSaveRoots != null &&
           EmbeddedTorrentHost.probeAvailable());
 
   /// 按配置解析出应使用的下载后端（供下载对话框的推送按钮与轮询服务共用

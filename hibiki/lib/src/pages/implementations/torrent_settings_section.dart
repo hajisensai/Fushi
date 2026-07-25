@@ -3,8 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:file_picker/file_picker.dart';
+
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/download_network_proxy.dart';
+import 'package:hibiki/src/media/torrent/download_save_root.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/utils.dart';
@@ -30,6 +33,9 @@ class _TorrentSettingsSectionState
 
   /// 「测试连接」进行中（按钮禁用防重入）。
   bool _probing = false;
+
+  /// TODO-1961：目录选择/校验进行中（按钮禁用防重入）。
+  bool _pickingFolder = false;
 
   /// 分类输入框：持 controller 是为了失焦回填——清空时存储侧兜底 'hibiki'，
   /// 失焦把实际生效值写回输入框，所见即所得（不再「显示空、实际 hibiki」）。
@@ -79,6 +85,89 @@ class _TorrentSettingsSectionState
           ? t.download_test_connection_failed
           : t.download_test_connection_ok(version: version)),
     ));
+  }
+
+  /// TODO-1961：选新的下载目录。校验不过**不写**配置，直接 snack 报原因（不静默）。
+  /// 桌面统一走 file_picker 的 `getDirectoryPath`（与数据根设置同一惯例）。
+  Future<void> _changeDownloadFolder() async {
+    if (_pickingFolder) return;
+    setState(() => _pickingFolder = true);
+    try {
+      final String? picked = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: t.download_save_root_change,
+      );
+      if (picked == null || picked.trim().isEmpty || !mounted) return;
+      final DownloadSaveRootIssue? issue =
+          await ref.read(appProvider).setDownloadSaveRoot(picked);
+      if (!mounted) return;
+      if (issue != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(_saveRootIssueMessage(issue))));
+      }
+    } finally {
+      if (mounted) setState(() => _pickingFolder = false);
+    }
+  }
+
+  Future<void> _resetDownloadFolder() async {
+    if (_pickingFolder) return;
+    await ref.read(appProvider).resetDownloadSaveRoot();
+    if (mounted) setState(() {});
+  }
+
+  static String _saveRootIssueMessage(DownloadSaveRootIssue issue) {
+    switch (issue) {
+      case DownloadSaveRootIssue.notAbsolute:
+        return t.download_save_root_not_absolute;
+      case DownloadSaveRootIssue.createFailed:
+        return t.download_save_root_create_failed;
+      case DownloadSaveRootIssue.notWritable:
+        return t.download_save_root_not_writable;
+    }
+  }
+
+  /// 下载目录行（当前路径 + 更改 / 恢复默认）＋ 启动回退警告。
+  /// 只在内置引擎分支渲染：外接 qb 的落盘目录由 qb 自己管，改不到。
+  List<Widget> _downloadFolderRows(ThemeData theme, AppModel appModel) {
+    final DownloadSaveRootIssue? issue = appModel.downloadSaveRootIssue;
+    return <Widget>[
+      AdaptiveSettingsRow(
+        title: t.download_save_root_title,
+        subtitle: '${appModel.downloadSaveRoot}\n${t.download_save_root_hint}',
+        icon: Icons.folder_open_outlined,
+        showIcon: true,
+        controlBelow: true,
+        onTap: _pickingFolder ? null : _changeDownloadFolder,
+        trailing: Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: <Widget>[
+            FilledButton.tonal(
+              onPressed: _pickingFolder ? null : _changeDownloadFolder,
+              child: Text(t.download_save_root_change),
+            ),
+            TextButton(
+              onPressed: _pickingFolder || appModel.downloadSaveRootIsDefault
+                  ? null
+                  : _resetDownloadFolder,
+              child: Text(t.download_save_root_reset),
+            ),
+          ],
+        ),
+      ),
+      if (issue != null)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(2, 0, 2, 10),
+          child: Text(
+            '${t.download_save_root_fallback_warning}'
+            '\n${appModel.downloadSaveRootRejectedPath ?? ''} — '
+            '${_saveRootIssueMessage(issue)}',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.error),
+          ),
+        ),
+      const Divider(height: 24),
+    ];
   }
 
   /// 输入框最大宽度。详情面板按用户拍板填满整宽（settings_home_page.dart 的
@@ -318,6 +407,8 @@ class _TorrentSettingsSectionState
 
         // 内置引擎资源限制。
         if (isEmbedded) ...<Widget>[
+          // TODO-1961：下载目录（只影响新增任务，旧任务留在原目录）。
+          ..._downloadFolderRows(theme, appModel),
           _numField(
             label: t.video_setting_torrent_download_limit,
             value: c.downloadLimitKbps,
