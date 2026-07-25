@@ -1,4 +1,4 @@
-## BUG-1071 · galgame 手动补录把干净原件降级成 loopback 混音
+## BUG-1072 · galgame 手动补录把干净原件降级成 loopback 混音
 - **报告**：2026-07-25（用户：屋上の百合霊さん 制卡音频「能不能从游戏的语音重播按钮拿，更准确」）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/mining/gal_hook_session_controller.dart:1117` `finishLineRecapture()`：收束补录窗口时**无条件**写 `backend: 'system_loopback'` + `clearResourceId: true`，且 `startLineRecapture()` 只判断“当前源不是 loopback 就临时开一路 loopback”，全程不看引擎资源层是否可用。
 
