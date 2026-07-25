@@ -2580,5 +2580,8 @@
   "stat_goal_presets": "Presets",
   "data_root_unavailable_title": "Data location not responding",
   "data_root_unavailable_message": "Your configured data location $path is temporarily unreachable (the drive may be asleep, busy, or disconnected). Your data is safe and untouched there — nothing is lost. Tap Retry once the drive is ready to load your data, or start with the default location for now (your existing data will NOT be modified).",
-  "data_root_use_default_button": "Start with default location"
+  "data_root_use_default_button": "Start with default location",
+  "browser_extension_version_app": "App bundled",
+  "browser_extension_version_browser": "Loaded in browser",
+  "browser_extension_version_mismatch": "The extension loaded in your browser is outdated. Prepare the extension again if needed, then reload it from your browser's extensions page (chrome://extensions)."
 }

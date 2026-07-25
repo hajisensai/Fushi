@@ -7,7 +7,12 @@ function __hibikiContainer(){ var r = window.__hibikiRoot; return r ? r.querySel
 function __hibikiOverlayParent(){ return window.__hibikiRoot || document.body; }
 function __hibikiScrollHeight(){ var c = __hibikiContainer(); return c ? c.scrollHeight : document.body.scrollHeight; }
 function __hibikiSel(){ var r = window.__hibikiRoot; try { return (r && r.getSelection) ? r.getSelection() : window.getSelection(); } catch(_){ return window.getSelection(); } }
-function __hibikiEventTarget(e){ try { var p = e.composedPath && e.composedPath(); if (p && p.length) return p[0]; } catch(_){} return e.target; }
+/* BUG-1078: composedPath() allocates a fresh array on every call and the wheel
+   handler used to call it at least twice per event (__hibikiEventTarget +
+   __hibikiWheelScroller). Cache the path on the event object for the duration of
+   its dispatch so every helper shares ONE composedPath() result. */
+function __hibikiComposedPath(e){ if (e.__hibikiPathCache !== undefined) return e.__hibikiPathCache; var p = null; try { p = (e.composedPath && e.composedPath()) || null; } catch(_){ p = null; } try { e.__hibikiPathCache = p; } catch(_){} return p; }
+function __hibikiEventTarget(e){ var p = __hibikiComposedPath(e); if (p && p.length) return p[0]; return e.target; }
 /* BUG-688: the extension floating popup scrolls on the SHADOW HOST
    (#hibiki-popup-host has overflow-y:auto + max-height; #entries-container is
    neutralized to overflow:visible inside the shadow), while the in-app popup
@@ -20,7 +25,7 @@ function __hibikiShadowHost(){ var r = window.__hibikiRoot; return (r && r.host)
 function __hibikiWheelScroller(e){
     var host = __hibikiShadowHost();
     if (!host) return null;
-    try { var p = e.composedPath && e.composedPath(); if (p && p.indexOf(host) !== -1) return host; } catch(_){}
+    try { var p = __hibikiComposedPath(e); if (p && p.indexOf(host) !== -1) return host; } catch(_){}
     return null;
 }
 
@@ -4039,21 +4044,38 @@ function popupEntryWheelAction(e) {
     if (matches(cfg.prev)) return 'prev';
     return null;
 }
-document.addEventListener('wheel', (e) => {
+/* BUG-1078: this listener is non-passive by necessity (it preventDefault()s to
+   re-implement popup scrolling), but a RESIDENT non-passive document wheel
+   listener forces the browser off the compositor fast-scroll path on every page
+   the extension content script touches. Two-part fix:
+   - in-app popup WebView (no chrome.runtime): the document IS the popup — keep
+     the resident document listener exactly as before (BUG-1026 wheel speed,
+     BUG-1065 DPR parity and the Alt+wheel entry navigation all live here);
+   - extension content script: never attach to document. The handler is exposed
+     as window.__hibikiPopupWheelListener and content.js mounts it on the popup
+     shadow host ({passive:false}) when the popup is created, unmounting it in
+     hibikiRemoveContainer — host pages carry ZERO non-passive wheel listeners
+     while no popup is open. */
+const __hibikiPopupWheelListener = (e) => {
+    // BUG-1078 前置早退：先用最廉价的判定（一次 composedPath + indexOf）解析滚轮
+    // 表面。扩展 content script 里滚轮不在弹窗 shadow 内 ⇒ 与弹窗无关，立即放行
+    // 原生滚动——昂贵的祖先 getComputedStyle/scrollHeight 遍历和词条导航判定都不再
+    // 为宿主页滚轮买单。（BUG-732 的放行守卫从 preventDefault 前挪到最前；挂载本身
+    // 已随 BUG-1078 懒装到 shadow host，此守卫是纵深防御 + in-app/扩展共用判据。）
+    const scroller = __hibikiWheelScroller(e);
+    const inExtensionContentScript =
+        typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id);
+    if (!scroller && inExtensionContentScript) return;
     // 词条导航先于一切滚动处理判定（否则 ctrlKey 早退会吃掉 Ctrl 系绑定）。只有
     // 焦点真的移动了（返回 'moved'）才吞掉事件：单词条 / 已到首尾时返回 'blocked'，
-    // 这一帧继续走下面的正常滚动，弹窗不会「按住 Alt 就滚不动」。
-    // 作用域判据与下面的滚动接管同源：扩展里滚轮必须真的落在弹窗 shadow 内
-    // （__hibikiWheelScroller 非空），in-app 整份文档就是弹窗故允许 null。
+    // 这一帧继续走下面的正常滚动，弹窗不会「按住 Alt 就滚不动」。作用域判据由上面
+    // 的前置早退保证：走到这里的滚轮要么在弹窗 shadow 内（扩展），要么整份文档就是
+    // 弹窗（in-app）。
     const entryAction = popupEntryWheelAction(e);
     if (entryAction && typeof window.hoshiFocusDictionaryEntryMove === 'function') {
-        const inExtensionHost =
-            typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id);
-        if (__hibikiWheelScroller(e) || !inExtensionHost) {
-            if (window.hoshiFocusDictionaryEntryMove(entryAction) === 'moved') {
-                e.preventDefault();
-                return;
-            }
+        if (window.hoshiFocusDictionaryEntryMove(entryAction) === 'moved') {
+            e.preventDefault();
+            return;
         }
     }
     // Ignore zoom gestures (ctrl+wheel / pinch) and predominantly-horizontal wheels.
@@ -4072,14 +4094,11 @@ document.addEventListener('wheel', (e) => {
     if (deltaPx === 0) return;
     if (popupAncestorAbsorbsVerticalWheel(__hibikiEventTarget(e), deltaPx)) return;
     // BUG-732: 这段缩放平滑滚动只服务查词弹窗。扩展里弹窗是宿主页上的 shadow 覆盖层，
-    // __hibikiWheelScroller 仅当滚轮 composedPath 穿过弹窗 shadow 才返回 host；返回 null
-    // 时唯一合法「滚 window」的表面是 in-app 弹窗文档（整份文档即弹窗，且无 chrome.runtime）。
-    // 普通网页上扩展 content script 有 chrome.runtime.id，此时滚轮不在弹窗内绝不能接管：
-    // 否则整页被 POPUP_WHEEL_PIXEL_FACTOR(0.24) 降速 + preventDefault 抢走原生滚动。
-    const scroller = __hibikiWheelScroller(e);
-    const inExtensionContentScript =
-        typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id);
-    if (!scroller && inExtensionContentScript) return;
+    // __hibikiWheelScroller 仅当滚轮 composedPath 穿过弹窗 shadow 才返回 host（scroller
+    // 已在本监听最顶部解析并早退）；返回 null 时唯一合法「滚 window」的表面是 in-app
+    // 弹窗文档（整份文档即弹窗，且无 chrome.runtime）。普通网页上扩展 content script 有
+    // chrome.runtime.id，滚轮不在弹窗内已在顶部放行原生滚动：否则整页会被
+    // POPUP_WHEEL_PIXEL_FACTOR(0.24) 降速 + preventDefault 抢走原生滚动。
     e.preventDefault();
     // TODO-1387: carry the sub-pixel remainder across events; BUG-870: also reset
     // the device-class latch here so each new gesture is classified fresh. A
@@ -4136,7 +4155,17 @@ document.addEventListener('wheel', (e) => {
     if (step === 0) return; // sub-pixel this frame — carried to the next event
     if (scroller) { scroller.scrollBy({ top: step, behavior: 'auto' }); }
     else { window.scrollBy({ top: step, behavior: 'auto' }); }
-}, { passive: false });
+};
+if (typeof chrome !== 'undefined' && !!(chrome.runtime && chrome.runtime.id)) {
+    // BUG-1078: 扩展 content script——绝不常驻 document。content.js 在弹窗 shadow host
+    // 创建时把这个监听挂上去（{passive:false} 只作用于弹窗内滚轮）、销毁时卸载；弹窗
+    // 不在场时宿主页 document 上没有任何非 passive wheel 监听，浏览器保留合成器快速
+    // 滚动路径。
+    window.__hibikiPopupWheelListener = __hibikiPopupWheelListener;
+} else {
+    // in-app 弹窗 WebView：整份文档就是弹窗，常驻 document 监听是正确行为（不变）。
+    document.addEventListener('wheel', __hibikiPopupWheelListener, { passive: false });
+}
 
 
 let _popupMouseDownPos = null;

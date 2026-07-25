@@ -14,6 +14,16 @@
 //
 // 线程常驻（首次 Arm 时懒创建），Arm/Disarm 只是让它装/卸钩子——查词是高频操作，
 // 每次都建销线程反而制造无谓的竞态窗口。
+//
+// BUG-1077 — 两条补强，针对「嵌套查词瞬间鼠标卡一下」：
+//   ① 钩子线程跑在 TIME_CRITICAL 优先级：嵌套查词的瞬间进程内 CPU 风暴（同步 FFI
+//      词典查询 + 整栈 JSON 序列化 + WebView2 COM + 窗口区域重建）会把 NORMAL
+//      优先级的钩子线程抢占几十毫秒，而系统同步等它返回才分发输入——全系统鼠标
+//      跟着卡一下。
+//   ② Disarm 延迟真卸：嵌套/连续查词路径每次都是 Hide(Disarm) → 百毫秒 →
+//      Reveal(Arm)，立卸立装 = 每次两回全局钩子表变更（又各是一次输入停顿）。
+//      Disarm 先清目标（回调立即纯放行，语义等同已卸载），宽限期内无新 Arm 才
+//      真正 UnhookWindowsHookEx。
 
 #include <windows.h>
 
@@ -31,7 +41,8 @@ POINT UnpackMouseHookPoint(WPARAM wparam);
 
 // 装钩子并把命中事件投递给 |target|。重复调用只是替换目标窗口（幂等）。
 void ArmLowLevelMouseHook(HWND target);
-// 卸钩子（目标窗口清空）。未装时是 no-op。
+// 卸钩子：目标窗口立即清空（回调纯放行）；真正的 UnhookWindowsHookEx 延迟一段
+// 宽限期（见 .cpp 的 kDisarmGraceMs），期间再次 Arm 则取消卸载。未装时是 no-op。
 void DisarmLowLevelMouseHook();
 
 }  // namespace hibiki

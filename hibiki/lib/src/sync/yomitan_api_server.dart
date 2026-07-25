@@ -60,6 +60,7 @@ class YomitanApiServer {
     String? Function()? extensionBuildProvider,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     void Function()? onExtensionSeen,
+    void Function(String build, String? version)? onExtensionReport,
     String? apiKey,
     bool allowLan = false,
   })  : _requestedPort = port,
@@ -73,6 +74,7 @@ class YomitanApiServer {
         _extensionBuildProvider = extensionBuildProvider,
         _onExtensionPopupSize = onExtensionPopupSize,
         _onExtensionSeen = onExtensionSeen,
+        _onExtensionReport = onExtensionReport,
         _apiKey = apiKey,
         _allowLan = allowLan;
 
@@ -96,6 +98,10 @@ class YomitanApiServer {
   // 供「安装 → 验证插件已正常启用」的连接检测显示）。扩展 background 在 SW 启动时
   // 主动打 /api/extension/status，故装完扩展即刷新 last-seen，无需用户先划词。
   final void Function()? _onExtensionSeen;
+  // BUG-1079：扩展经 /api/extension/status 请求体自报「浏览器中实际加载的 build」
+  // （+ manifest version）。app 侧记录后与内置指纹比对，不一致时在扩展管理页给出
+  // 更新提示。旧扩展发 '{}'（无 build 字段）时不回调——行为等同现状（向后兼容）。
+  final void Function(String build, String? version)? _onExtensionReport;
   final String? _apiKey;
   final bool _allowLan;
 
@@ -246,19 +252,7 @@ class YomitanApiServer {
       case '/api/extension/popup-size':
         return _handleExtensionPopupSize(request);
       case '/api/extension/status':
-        // BUG-726/自更新：状态端点回带当前内置扩展指纹（extensionBuild），扩展
-        // background 在 SW 启动时打这里比对自身 build，不一致即 chrome.runtime.reload()
-        // 从磁盘拉新——把「只有查词才检查更新」升级为「启动即主动检查」。null（指纹
-        // 尚未算好 / 旧 app）时省略该字段，向后兼容。
-        {
-          final String? extensionBuild = _extensionBuildProvider?.call();
-          return _json(<String, dynamic>{
-            'app': 'hibiki',
-            'ready': true,
-            'port': port,
-            if (extensionBuild != null) 'extensionBuild': extensionBuild,
-          });
-        }
+        return _handleExtensionStatus(request);
       case '/api/youtube/captions':
         return _handleYoutubeCaptions(request);
       case '/api/subtitle/parse':
@@ -266,6 +260,35 @@ class YomitanApiServer {
       default:
         return shelf.Response.notFound('Unknown endpoint');
     }
+  }
+
+  /// BUG-726/自更新：状态端点回带当前内置扩展指纹（extensionBuild），扩展
+  /// background 在 SW 启动时打这里比对自身 build，不一致即 chrome.runtime.reload()
+  /// 从磁盘拉新——把「只有查词才检查更新」升级为「启动即主动检查」。null（指纹
+  /// 尚未算好 / 旧 app）时省略该字段，向后兼容。
+  ///
+  /// BUG-1079：请求体可携带扩展自报的 `{build, version}`（浏览器中实际加载的版本），
+  /// 有非空 build 时经 [_onExtensionReport] 记到 app 侧。旧扩展发 '{}' / 空 body /
+  /// 非法 JSON 一律容错——不回调、不报错，响应与现状完全一致（向后兼容）。
+  Future<shelf.Response> _handleExtensionStatus(shelf.Request request) async {
+    final Map<String, dynamic>? body = await _readJson(request);
+    final Object? reportedBuild = body?['build'];
+    if (reportedBuild is String && reportedBuild.isNotEmpty) {
+      final Object? reportedVersion = body?['version'];
+      _onExtensionReport?.call(
+        reportedBuild,
+        reportedVersion is String && reportedVersion.isNotEmpty
+            ? reportedVersion
+            : null,
+      );
+    }
+    final String? extensionBuild = _extensionBuildProvider?.call();
+    return _json(<String, dynamic>{
+      'app': 'hibiki',
+      'ready': true,
+      'port': port,
+      if (extensionBuild != null) 'extensionBuild': extensionBuild,
+    });
   }
 
   /// BUG-530：浏览器扩展查词端点（与 HibikiSyncServer 共享契约）。

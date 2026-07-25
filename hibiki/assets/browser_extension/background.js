@@ -1,6 +1,6 @@
 // TODO-1087：自动配置默认值。app 安装助手在解压时把当前 server 真值写进 hibiki-defaults.js，
 // 于是加载已解压扩展后无需手填。用户仍可在 options 手动覆盖（chrome.storage.local 优先于默认）。
-try { importScripts('hibiki-defaults.js', 'connection-diagnostics.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
+try { importScripts('hibiki-defaults.js', 'connection-diagnostics.js', 'self-update.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
 const HIBIKI_DEFAULTS =
     (self.HIBIKI_DEFAULTS) || { host: '127.0.0.1', port: 19633, token: '' };
 
@@ -15,6 +15,16 @@ async function cfg() {
   return { base: `http://${host}:${port}`, token };
 }
 function authHeader(token) { return 'Basic ' + btoa('hibiki:' + token); }
+
+// BUG-1079：/api/extension/status 请求体统一自报「浏览器中实际加载的版本」
+// （HIBIKI_DEFAULTS.build + manifest version）。此前写死 '{}'，app 端对浏览器里实际
+// 跑的是哪个 build 零感知。旧 app 忽略 body → 向后兼容。
+function statusRequestBody() {
+  try {
+    return self.HIBIKI_SELF_UPDATE.statusRequestBody(
+        HIBIKI_DEFAULTS, chrome.runtime.getManifest().version);
+  } catch (_) { return '{}'; }
+}
 
 let connectionCache = null;
 async function responseJson(resp) {
@@ -35,7 +45,7 @@ async function diagnoseConnection(force) {
     const r = await fetch(base + '/api/extension/status', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
-      body: '{}',
+      body: statusRequestBody(),
     });
     primary = { status: r.status, body: await responseJson(r) };
     if (r.status === 404 || r.status === 405) {
@@ -71,16 +81,36 @@ async function diagnoseConnection(force) {
 // 两者：不一致 = 磁盘上已有新版而当前加载的还是旧版 → chrome.runtime.reload() 从磁盘拉新
 // （等价于扩展管理页的「重新加载」，未解压包路径不变）。防护：
 // - 任一侧缺指纹（旧 app / 占位默认）→ 不动（向后兼容，绝不空转 reload）；
-// - storage 记录已为该指纹 reload 过 → 不再重试（防「磁盘没刷成」时无限循环）；
+// - storage 记录已为该指纹 reload 过 → 不再重复 reload（防「磁盘没刷成」时无限循环）；
 // - 正在 Netflix 逐句回放录制 → 跳过（reload 会杀掉 offscreen 录制，等录完下次查词再说）。
+// BUG-1079：latch 不再是「永久静默」——每次心跳仍重新比对（决策抽成 self-update.js 的
+// 纯状态机）：已 reload 过仍不一致 = 自更新失效（用户从别的目录加载 / 磁盘没刷成 /
+// 浏览器拒绝 reload），落 chrome.storage.local.hibikiUpdateStale {remote, local} 供
+// action-popup 显示「需手动重载」提示 + 图标角标；恢复一致时清除 stale 与角标。
 async function maybeSelfReload(data) {
   try {
     const remote = data && data.extensionBuild;
     const local = HIBIKI_DEFAULTS.build;
-    if (!remote || !local || remote === local) return;
-    if (await isOffscreenRecording()) return;
-    const st = await chrome.storage.local.get(['hibikiReloadedForBuild']);
-    if (st.hibikiReloadedForBuild === remote) return;
+    const st = await chrome.storage.local.get(
+        ['hibikiReloadedForBuild', 'hibikiUpdateStale']);
+    const decision = self.HIBIKI_SELF_UPDATE.decide(
+        remote, local, st.hibikiReloadedForBuild, await isOffscreenRecording());
+    if (decision.action === 'clear') {
+      if (st.hibikiUpdateStale) {
+        await chrome.storage.local.remove(['hibikiUpdateStale']);
+        refreshUpdateBadge();
+      }
+      return;
+    }
+    if (decision.action === 'stale') {
+      const prev = st.hibikiUpdateStale;
+      if (!prev || prev.remote !== remote || prev.local !== local) {
+        await chrome.storage.local.set({ hibikiUpdateStale: decision.stale });
+      }
+      refreshUpdateBadge();
+      return;
+    }
+    if (decision.action !== 'reload') return;
     // BUG-1047：置重注入标记，reload 后新 SW 据此把 content script 补回已打开网页
     // （chrome.runtime.reload() 会让所有已注入页的 content script 上下文失效 → 不补的话
     // 用户必须手动刷新浏览器才恢复）。
@@ -90,6 +120,19 @@ async function maybeSelfReload(data) {
     });
     chrome.runtime.reload();
   } catch (_) { /* 自更新失败不影响查词本身 */ }
+}
+
+// BUG-1079：自更新失效角标。stale 存在且**不在录制**时在扩展图标打「↑」提醒；录制角标
+// 优先（红点 ● 绝不被盖掉——录制中本函数整个跳过，录制结束由 setRecordingBadge(false)
+// 回调这里恢复）。只动 badge，不动 title（title 归录制状态机管）。
+async function refreshUpdateBadge() {
+  try {
+    if (await isOffscreenRecording()) return; // 录制角标优先
+    const st = await chrome.storage.local.get(['hibikiUpdateStale']);
+    const stale = !!st.hibikiUpdateStale;
+    chrome.action.setBadgeBackgroundColor({ color: stale ? '#F9A825' : '#00000000' });
+    chrome.action.setBadgeText({ text: stale ? '↑' : '' });
+  } catch (_) { /* badge 在某些上下文不可用：忽略 */ }
 }
 
 // BUG-1047：自更新 chrome.runtime.reload() 会让所有已打开标签页里注入的 content script
@@ -144,10 +187,12 @@ async function maybeReinjectAfterReload() {
 async function checkVersionOnStartup() {
   try {
     const { base, token } = await cfg();
+    // BUG-1079：请求体自报 build/version（不再写死 '{}'），app 端据此显示「浏览器中
+    // 实际加载的版本」并在与内置指纹不一致时给出更新提示。
     const r = await fetch(base + '/api/extension/status', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
-      body: '{}',
+      body: statusRequestBody(),
     });
     if (!r.ok) return;
     const status = await responseJson(r);
@@ -199,6 +244,8 @@ function setRecordingBadge(on) {
           : 'Hibiki：点击生成 Netflix 制卡队列（逐集自动回放录制）',
     });
   } catch (_) { /* setBadge 在某些上下文不可用：忽略，不影响录制 */ }
+  // BUG-1079：录制角标撤下后恢复自更新失效角标（若 stale 仍在）。录制中绝不动录制红点。
+  if (!on) refreshUpdateBadge();
 }
 
 // 录制真相源是 **offscreen 文档**（它持有 MediaStream，跨整场持续录），不是这个易失的

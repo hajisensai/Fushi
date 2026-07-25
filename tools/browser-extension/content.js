@@ -1032,6 +1032,14 @@ function hibikiEnsureContainer() {
     shadow.appendChild(c);
     hibikiContainer = c;
     window.__hibikiRoot = shadow; // popup.js 的 DOM 查询/浮层/选区都相对它解析
+    // BUG-1078：弹窗滚轮监听懒装——popup.js 在扩展上下文里不再常驻 document（常驻的
+    // 非 passive wheel 监听会让浏览器在所有网页放弃合成器快速滚动路径），而是把监听
+    // 暴露为 window.__hibikiPopupWheelListener，由这里在弹窗 host 创建时挂到 shadow
+    // host 上（非 passive 只影响弹窗内滚轮），hibikiRemoveContainer 销毁时卸载。
+    if (typeof window.__hibikiPopupWheelListener === 'function') {
+      hibikiHost.addEventListener('wheel', window.__hibikiPopupWheelListener,
+          { passive: false });
+    }
   }
   if (hibikiHost.parentNode !== parent) parent.appendChild(hibikiHost); // 进/出全屏迁父节点
   return hibikiContainer;
@@ -1152,6 +1160,12 @@ function hibikiRemoveContainer() {
   // ease-out 对齐）。pointer-events:none 避免淡出期误吞点击；transitionend 用 setTimeout
   // 兜底（reduced-motion / 离屏也能移除）。高亮/选区已在上面即时清，不随淡出延迟残留。
   if (dying) {
+    // BUG-1078：随弹窗卸载滚轮监听（挂载见 hibikiEnsureContainer）。节点淡出期间
+    // pointer-events:none 已让事件不再命中它，这里显式卸载把契约钉死：弹窗不在场 ⇒
+    // 页面上不存在任何非 passive wheel 监听。
+    if (typeof window.__hibikiPopupWheelListener === 'function') {
+      dying.removeEventListener('wheel', window.__hibikiPopupWheelListener);
+    }
     dying.style.pointerEvents = 'none';
     dying.style.opacity = '0';
     let dropped = false;

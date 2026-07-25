@@ -104,11 +104,24 @@ function hibikiGenButtonState(queue, batchActive, tabSite) {
   };
 }
 
+// BUG-1079：自更新失效提示文案（纯函数供 node 测试）。stale = background 写入
+// chrome.storage.local.hibikiUpdateStale 的 {remote, local}（remote=app 内置最新指纹，
+// local=浏览器中实际加载副本的指纹）。无 stale（或缺 remote）返回 null（隐藏提示行）。
+function hibikiUpdateNotice(stale) {
+  if (!stale || !stale.remote) return null;
+  const short = (s) => String(s || '').slice(0, 8);
+  return {
+    title: '扩展有新版本，需手动重新加载',
+    detail: '自动更新未生效：请到 chrome://extensions 找到本扩展点「重新加载」'
+        + '（当前 ' + (short(stale.local) || '未知') + ' → 最新 ' + short(stale.remote) + '）',
+  };
+}
+
 // node 单测导出（浏览器里 module 未定义，直接跳过）。
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     hibikiFilterQueue, hibikiQueueItemLabel, hibikiQueueItemContext, hibikiReadPanelEnabled,
-    hibikiQueueItemUrl, hibikiTabSite, hibikiGenButtonState,
+    hibikiQueueItemUrl, hibikiTabSite, hibikiGenButtonState, hibikiUpdateNotice,
   };
 }
 
@@ -143,6 +156,33 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   }
   refreshConnection();
   if (connEl) connEl.addEventListener('click', () => refreshConnection());
+
+  // BUG-1079：自更新失效提示行。background 检测到「已 reload 过仍与 app 内置指纹不一致」
+  // 时写 hibikiUpdateStale；这里渲染「需到 chrome://extensions 手动重新加载」并随 storage
+  // 变化实时显隐（恢复一致时 background 清除该键 → 提示消失）。
+  const updateEl = document.getElementById('hp-update');
+  const updateTitleEl = document.getElementById('hp-update-title');
+  const updateDetailEl = document.getElementById('hp-update-detail');
+  function renderUpdateNotice(stale) {
+    if (!updateEl) return;
+    const notice = hibikiUpdateNotice(stale);
+    updateEl.hidden = !notice;
+    if (!notice) return;
+    if (updateTitleEl) updateTitleEl.textContent = notice.title;
+    if (updateDetailEl) updateDetailEl.textContent = notice.detail;
+  }
+  try {
+    chrome.storage.local.get(['hibikiUpdateStale'], (r) => {
+      renderUpdateNotice(r && r.hibikiUpdateStale);
+    });
+  } catch (_) {}
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.hibikiUpdateStale) {
+        renderUpdateNotice(changes.hibikiUpdateStale.newValue);
+      }
+    });
+  } catch (_) {}
   const optionsEl = document.getElementById('hp-open-options');
   if (optionsEl) {
     optionsEl.addEventListener('click', (e) => {
