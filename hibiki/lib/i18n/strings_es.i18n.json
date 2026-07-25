@@ -2580,5 +2580,17 @@
   "stat_goal_presets": "Presets",
   "data_root_unavailable_title": "Data location not responding",
   "data_root_unavailable_message": "Your configured data location $path is temporarily unreachable (the drive may be asleep, busy, or disconnected). Your data is safe and untouched there — nothing is lost. Tap Retry once the drive is ready to load your data, or start with the default location for now (your existing data will NOT be modified).",
-  "data_root_use_default_button": "Start with default location"
+  "data_root_use_default_button": "Start with default location",
+  "game_meta_source": "Data source",
+  "game_meta_added": "Added",
+  "game_meta_ranking": "Ranking",
+  "game_tags_title": "Game tags",
+  "game_tags_clear": "Clear selection",
+  "game_dashboard": "Home",
+  "game_kpi_total_games": "Games",
+  "game_kpi_week": "This week",
+  "game_focus_continue": "Continue",
+  "game_recently_played": "Recently played",
+  "game_random_title": "Pick for me",
+  "game_random_reroll": "Shuffle"
 }

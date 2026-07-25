@@ -17,9 +17,6 @@ import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/galgame_library_query.dart';
 import 'package:hibiki/src/mining/galgame_repository.dart';
 import 'package:hibiki/src/pages/implementations/galgame_detail_page.dart';
-// 书架卡片规格单一真相源（kShelfBookCardAspectRatio / kShelfTitleFooterHeight）。
-import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart'
-    show kShelfBookCardAspectRatio, kShelfTitleFooterHeight;
 import 'package:hibiki/utils.dart';
 
 /// 首页「游戏」tab：galgame 库。展示用户添加的游戏网格，点击一个游戏经
@@ -640,25 +637,22 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     );
   }
 
-  /// 游戏网格（无「继续游戏」/热力图，纯列表）。
+  /// 游戏海报网格（对齐 ReinaManager 库页：3:4 竖版海报卡，见
+  /// `docs/design/galgame-library-reina-visual-parity.md` §1）。
   ///
-  /// 卡槽规格对齐书架（巡检 C4：旧硬编码 180/0.72 自成一派）：extent 走书架的
-  /// 响应式断点 [readerShelfGridExtentForLayout]，槽比用 [kShelfBookCardAspectRatio]，
-  /// 标题在固定 40px footer（[kShelfTitleFooterHeight]）里，同一封面在书架与游戏库
-  /// 同形同宽。
+  /// 不再套书架的 extent/比例：galgame 是竖版海报（3:4 封面 + 下方标题），与横向
+  /// 偏方的书封不同形。maxCrossAxisExtent≈168（ReinaManager 海报宽档），间距 16，
+  /// childAspectRatio 按「3:4 封面 + 一行标题」估（约 0.62），标题超长由卡内省略。
   Widget _buildGrid(BuildContext context, List<GalgameEntry> visible) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         return GridView.builder(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
-          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: readerShelfGridExtentForLayout(
-              mediaWidth: MediaQuery.sizeOf(context).width,
-              contentWidth: constraints.maxWidth,
-            ),
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: kShelfBookCardAspectRatio,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 168,
+            mainAxisSpacing: 16,
+            crossAxisSpacing: 16,
+            childAspectRatio: 0.62,
           ),
           itemCount: visible.length,
           itemBuilder: (BuildContext context, int i) => _GameCard(
@@ -870,110 +864,50 @@ class _GameCard extends StatelessWidget {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final String? sort = sortLabel;
-    return HibikiCard(
-      padding: EdgeInsets.zero,
+    // 竖版海报卡（对齐 ReinaManager 库页观感）：封面 3:4 + 标题居中 + 底部排序
+    // 浮层 + hover 放大 + 主色选中环，全部由共享组件 [GalgamePosterCard] 负责。
+    // focusId 沿用 `game-card-<id>`（手柄/键盘可 requestById 聚焦，focus 测试守）。
+    return GalgamePosterCard(
+      cover: _buildCover(colors),
+      title: game.displayName,
+      overlayText: sort,
       focusId: HibikiFocusId('game-card-${game.id}'),
       onTap: onTap,
       onLongPress: () => unawaited(_showContextMenu(context)),
       onSecondaryTap: () => unawaited(_showContextMenu(context)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Expanded(
-            child: Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                _buildCover(colors),
-                Positioned(
-                  top: 0,
-                  right: 0,
-                  child: PopupMenuButton<String>(
-                    // 半透明 scrim 圆底承托图标（书架选择勾同款调性），替代
-                    // Colors.black54 阴影——浅色封面上阴影对比不足且 eink 下发灰。
-                    icon: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: tokens.surfaces.page.withValues(
-                          alpha: isEinkTheme(context) ? 1 : 0.7,
-                        ),
-                        border: Border.all(color: tokens.surfaces.outline),
-                      ),
-                      child: Icon(
-                        Icons.more_vert,
-                        size: 18,
-                        color: colors.onSurface,
-                      ),
-                    ),
-                    onSelected: _dispatchAction,
-                    itemBuilder: (BuildContext context) =>
-                        <PopupMenuEntry<String>>[
-                      for (final (String value, String label) item
-                          in _menuItems)
-                        PopupMenuItem<String>(
-                          value: item.$1,
-                          child: Text(item.$2),
-                        ),
-                    ],
-                  ),
-                ),
-                if (sort != null && sort.isNotEmpty)
-                  Positioned(
-                    left: 4,
-                    bottom: 4,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: tokens.surfaces.page.withValues(
-                          alpha: isEinkTheme(context) ? 1 : 0.78,
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: tokens.surfaces.outline),
-                      ),
-                      child: Text(
-                        sort,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: tokens.type.metadata.copyWith(
-                          color: tokens.surfaces.onSurface,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          // 与书架书卡同款固定标题 footer（40px，长名不推挤网格）。
-          SizedBox(
-            height: kShelfTitleFooterHeight,
-            child: Padding(
-              padding: EdgeInsetsDirectional.fromSTEB(
-                tokens.spacing.gap * 0.75,
-                tokens.spacing.gap / 2,
-                tokens.spacing.gap * 0.75,
-                0,
-              ),
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: Text(
-                  game.displayName,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  softWrap: true,
-                  style: tokens.type.metadata.copyWith(
-                    color: tokens.surfaces.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+      trailing: _menuButton(context, colors, tokens),
+      semanticLabel: game.displayName,
     );
   }
+
+  /// 卡片右上角的更多菜单按钮（半透明 scrim 圆底承托图标，浅色封面上也清晰）。
+  Widget _menuButton(
+    BuildContext context,
+    ColorScheme colors,
+    HibikiDesignTokens tokens,
+  ) {
+    return PopupMenuButton<String>(
+      icon: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: tokens.surfaces.page.withValues(
+            alpha: isEinkTheme(context) ? 1 : 0.7,
+          ),
+          border: Border.all(color: tokens.surfaces.outline),
+        ),
+        child: Icon(Icons.more_vert, size: 18, color: colors.onSurface),
+      ),
+      onSelected: _dispatchAction,
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+        for (final (String value, String label) item in _menuItems)
+          PopupMenuItem<String>(value: item.$1, child: Text(item.$2)),
+      ],
+    );
+  }
+
+  // ── 旧的手搭卡片（HibikiCard + Stack + 手抄标题 footer）已由上面的
+  //    GalgamePosterCard 取代，_buildCover / _defaultCover 仍复用。──
 
   /// 封面：有 coverPath 且文件存在则显示图片，否则默认手柄图标占位。
   Widget _buildCover(ColorScheme colors) {

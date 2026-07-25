@@ -13,9 +13,20 @@ Widget _testLibrary(
 ) =>
     const Center(child: Icon(Icons.sports_esports_outlined));
 
+/// 新增游戏首页（dashboard）后，游戏模块默认停在首页；这些针对库/工作台/诊断的
+/// 断言仍要在「库」子区上验证。用桩 dashboard 绕开首页对 appProvider 的依赖，并在
+/// setUp 里把 IndexedStack 起始子区切到库（与旧默认行为等价）。
+Widget _stubDashboard(BuildContext _, VoidCallback __) => const SizedBox();
+
 void main() {
-  setUp(() => TexthookerService.instance.clear());
-  tearDown(() => TexthookerService.instance.clear());
+  setUp(() {
+    TexthookerService.instance.clear();
+    gameSectionNotifier.value = GameSection.library;
+  });
+  tearDown(() {
+    TexthookerService.instance.clear();
+    gameSectionNotifier.value = GameSection.dashboard;
+  });
 
   testWidgets('library shows real capture count and true empty state',
       (WidgetTester tester) async {
@@ -25,6 +36,7 @@ void main() {
         home: HomeGamePage(
           monitorBuilder: (_, __) => const SizedBox(),
           libraryBuilder: _testLibrary,
+          dashboardBuilder: _stubDashboard,
         ),
       ),
     );
@@ -43,6 +55,7 @@ void main() {
       MaterialApp(
         home: HomeGamePage(
           libraryBuilder: _testLibrary,
+          dashboardBuilder: _stubDashboard,
           monitorBuilder: (_, VoidCallback onShowLibrary) => _TestMonitor(
             onShowLibrary: onShowLibrary,
             onInit: () => initCount++,
@@ -79,6 +92,7 @@ void main() {
           child: HomeGamePage(
             monitorBuilder: (_, __) => const SizedBox(),
             libraryBuilder: _testLibrary,
+            dashboardBuilder: _stubDashboard,
           ),
         ),
       ),
@@ -110,6 +124,7 @@ void main() {
         home: HibikiFocusRoot(
           child: HomeGamePage(
             libraryBuilder: _testLibrary,
+            dashboardBuilder: _stubDashboard,
             monitorBuilder: (_, __) => const Text('focused-monitor'),
           ),
         ),
@@ -143,6 +158,7 @@ void main() {
           home: HomeGamePage(
             monitorBuilder: (_, __) => const SizedBox(),
             libraryBuilder: _testLibrary,
+            dashboardBuilder: _stubDashboard,
           ),
         ),
       );

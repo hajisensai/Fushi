@@ -140,10 +140,10 @@ void main() {
     expect(find.text(t.game_stat_sessions), findsOneWidget);
     expect(find.text('2'), findsOneWidget);
 
-    // 柱状图与会话流水都在（流水在折叠线以下，先滚上来）。
+    // 折线图与会话流水都在（流水在折叠线以下，先滚上来）。
     expect(
       find.byWidgetPredicate(
-          (Widget w) => w is CustomPaint && w.painter is StatBarChartPainter),
+          (Widget w) => w is CustomPaint && w.painter is StatLineChartPainter),
       findsOneWidget,
     );
     await tester.drag(find.byType(ListView), const Offset(0, -400));
@@ -164,7 +164,9 @@ void main() {
     expect(find.text('这是简介。'), findsOneWidget);
     expect(find.text(t.game_summary_aliases), findsOneWidget);
     expect(find.text('アルファ'), findsOneWidget);
-    expect(find.text(t.game_summary_release_date), findsOneWidget);
+    // 发行日标签现在同时出现在常驻头部的元信息网格与简介 tab（富头部改造后），
+    // 故断言放宽为 findsWidgets（原为 findsOneWidget）。
+    expect(find.text(t.game_summary_release_date), findsWidgets);
     expect(find.text('2024-03-15'), findsWidgets);
   });
 
@@ -221,15 +223,16 @@ void main() {
     await tester.pump(const Duration(seconds: 4)); // 放掉桌面 toast 计时器
   });
 
-  test('buildGalgameMonthChartData 铺满整月且缺省天为 0', () {
-    final List<StatDayData> data = buildGalgameMonthChartData(
-      DateTime(2026, 2),
-      <String, int>{'2026-02-03': 120},
+  test('buildGalgameRangeChartData 铺满区间且缺省天为 0', () {
+    final List<StatDayData> data = buildGalgameRangeChartData(
+      DateTime(2026, 7, 7),
+      7,
+      <String, int>{'2026-07-05': 120},
     );
-    expect(data.length, 28);
-    expect(data.first.dateKey, '2026-02-01');
-    expect(data.last.dateKey, '2026-02-28');
-    expect(data[2].ms, 120 * 1000);
+    expect(data.length, 7);
+    expect(data.first.dateKey, '2026-07-01');
+    expect(data.last.dateKey, '2026-07-07');
+    expect(data[4].ms, 120 * 1000); // 2026-07-05 是第 5 个点（index 4）
     expect(data[0].ms, 0);
   });
 

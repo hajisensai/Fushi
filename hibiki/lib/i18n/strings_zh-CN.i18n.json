@@ -2580,5 +2580,17 @@
   "stat_goal_presets": "快捷预设",
   "data_root_unavailable_title": "数据位置未响应",
   "data_root_unavailable_message": "你设置的数据位置 $path 暂时读不到（盘可能在休眠、被占用或未连接）。你的数据是安全的、原封不动留在那里——没有丢失。请点「重试」,等盘就绪即可用回你的数据；或选择用默认位置临时启动（不会改动你原来的数据）。",
-  "data_root_use_default_button": "仍用默认位置启动"
+  "data_root_use_default_button": "仍用默认位置启动",
+  "game_meta_source": "数据来源",
+  "game_meta_added": "添加时间",
+  "game_meta_ranking": "游戏排行",
+  "game_tags_title": "游戏标签",
+  "game_tags_clear": "清空所选",
+  "game_dashboard": "首页",
+  "game_kpi_total_games": "游戏总数",
+  "game_kpi_week": "本周",
+  "game_focus_continue": "继续游戏",
+  "game_recently_played": "最近玩过",
+  "game_random_title": "随机推荐",
+  "game_random_reroll": "换一个"
 }

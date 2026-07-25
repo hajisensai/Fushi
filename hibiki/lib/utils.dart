@@ -20,6 +20,7 @@ export 'src/utils/components/hibiki_text_selection_controls.dart';
 export 'src/utils/components/hibiki_list_tile.dart';
 export 'src/utils/components/hibiki_focusable.dart';
 export 'src/utils/components/hibiki_focus_ring.dart';
+export 'src/utils/components/galgame_poster_card.dart';
 export 'src/utils/components/hibiki_design_tokens.dart';
 export 'src/utils/components/hibiki_motion_tokens.dart';
 export 'src/utils/components/hibiki_material_components.dart';

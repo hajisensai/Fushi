@@ -62,14 +62,23 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   List<GalgameSessionRow> _sessions = const <GalgameSessionRow>[];
   List<GalgameSourceRow> _sources = const <GalgameSourceRow>[];
 
-  /// 柱状图当前展示的月份（取该月 1 号 0 点）。
-  late DateTime _month = _firstOfMonth(DateTime.now());
+  /// 折线图时间窗口天数（含当天）。7D / 30D 两档（契约 §4）。
+  int _rangeDays = 7;
 
-  /// 当前月每日秒数（dateKey → 秒）。
-  Map<String, int> _daily = const <String, int>{};
+  /// 当前时间窗口的每日秒数（dateKey → 秒）。
+  Map<String, int> _dailyRange = const <String, int>{};
 
-  /// 今日秒数（与 [_month] 无关，单独查一天）。
+  /// 今日秒数（与 [_rangeDays] 无关，单独查一天）。
   int _todaySeconds = 0;
+
+  /// 头部标签区本地选中集合（选中态 filled primary，对齐 ReinaManager）。
+  final Set<String> _selectedTags = <String>{};
+
+  /// 头部标签区是否展开（超过 [_kTagLimit] 时折叠，展开显示全部）。
+  bool _tagsExpanded = false;
+
+  /// 折叠前展示的标签上限（契约 §2）。
+  static const int _kTagLimit = 40;
 
   bool _loading = true;
 
@@ -84,9 +93,6 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     _tabs.dispose();
     super.dispose();
   }
-
-  static DateTime _firstOfMonth(DateTime value) =>
-      DateTime(value.year, value.month);
 
   Future<void> _load() async {
     final GalgameEntry? game = _repo.byId(widget.gameId) ??
@@ -103,7 +109,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     }
     final List<GalgameSessionRow> sessions = await _repo.sessions(game.id);
     final List<GalgameSourceRow> sources = await _repo.sourcesOf(game.id);
-    final Map<String, int> daily = await _loadMonth(game.id, _month);
+    final Map<String, int> daily = await _loadRange(game.id, _rangeDays);
     final String todayKey = formatGalgameDate(DateTime.now());
     final Map<String, int> today = await _repo.dailySeconds(
       game.id,
@@ -115,32 +121,40 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
       _game = game;
       _sessions = sessions;
       _sources = sources;
-      _daily = daily;
+      _dailyRange = daily;
       _todaySeconds = today[todayKey] ?? 0;
       _loading = false;
     });
   }
 
-  Future<Map<String, int>> _loadMonth(String gameId, DateTime month) {
-    final DateTime last = DateTime(month.year, month.month + 1, 0);
+  /// 查最近 [days] 天（含当天）的每日秒数。
+  Future<Map<String, int>> _loadRange(String gameId, int days) {
+    final DateTime today = DateTime.now();
+    final DateTime start = DateTime(today.year, today.month, today.day)
+        .subtract(Duration(days: days - 1));
     return _repo.dailySeconds(
       gameId,
-      fromDateKey: formatGalgameDate(month),
-      toDateKey: formatGalgameDate(last),
+      fromDateKey: formatGalgameDate(start),
+      toDateKey: formatGalgameDate(today),
     );
   }
 
-  /// 翻月：[delta] = ±1。不允许翻到未来（当月是上界）。
-  Future<void> _shiftMonth(int delta) async {
+  /// 切换折线图时间窗口（7D / 30D）。
+  Future<void> _setRange(int days) async {
     final GalgameEntry? game = _game;
-    if (game == null) return;
-    final DateTime next = DateTime(_month.year, _month.month + delta);
-    if (next.isAfter(_firstOfMonth(DateTime.now()))) return;
-    final Map<String, int> daily = await _loadMonth(game.id, next);
+    if (game == null || days == _rangeDays) return;
+    final Map<String, int> daily = await _loadRange(game.id, days);
     if (!mounted) return;
     setState(() {
-      _month = next;
-      _daily = daily;
+      _rangeDays = days;
+      _dailyRange = daily;
+    });
+  }
+
+  /// 头部标签点击：本地选中态切换（对齐 ReinaManager 的可选标签）。
+  void _toggleTag(String tag) {
+    setState(() {
+      if (!_selectedTags.remove(tag)) _selectedTags.add(tag);
     });
   }
 
@@ -202,106 +216,260 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     );
   }
 
-  /// 头部常驻：封面大图 + 显示名 / 开发商 / 评分 / 状态 / 标签 chips + 外链 + 启动。
+  /// 头部常驻（契约 §2）：封面居左 + 右侧富信息列（元信息网格 / 评分行 / 标签区）。
+  /// 窄屏降级成封面在上、信息在下的单列。
   Widget _buildHeader(BuildContext context, GalgameEntry game) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme colors = theme.colorScheme;
-    final List<String> tags = game.tags;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final Widget cover = _coverBlock(context, game);
+    final Widget info = _infoColumn(context, game);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      child: Row(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.rowHorizontal,
+        tokens.spacing.rowVertical,
+        tokens.spacing.rowHorizontal,
+        tokens.spacing.gap,
+      ),
+      child: LayoutBuilder(
+        builder: (BuildContext ctx, BoxConstraints c) {
+          if (c.maxWidth < 560) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Align(child: cover),
+                SizedBox(height: tokens.spacing.card),
+                info,
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              cover,
+              const SizedBox(width: 24),
+              Expanded(child: info),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// 封面块：max 宽 160 / max 高 260 / 圆角 / 大阴影（契约 §2）。
+  Widget _coverBlock(BuildContext context, GalgameEntry game) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 160, maxHeight: 260),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: HibikiBorderRadius.card,
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.28),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: AspectRatio(
+        aspectRatio: 3 / 4,
+        child: _buildCover(context, game),
+      ),
+    );
+  }
+
+  /// 右侧信息列：标题 + 状态 chip + 元信息网格 + 评分行 + 启动 + 标签区。
+  Widget _infoColumn(BuildContext context, GalgameEntry game) {
+    final ThemeData theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          game.displayName,
+          style: theme.textTheme.headlineSmall,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 6),
+        HibikiTagChip(
+          label: galgamePlayStatusLabel(game.playStatus),
+          selected: true,
+        ),
+        const SizedBox(height: 12),
+        _metaGrid(context, game),
+        const SizedBox(height: 8),
+        _scoreRow(context, game),
+        if (widget.onLaunch != null) ...<Widget>[
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              onPressed: widget.onLaunch,
+              icon: const Icon(Icons.play_arrow),
+              label: Text(t.game_launch),
+            ),
+          ),
+        ],
+        _tagsSection(context, game),
+      ],
+    );
+  }
+
+  /// 元信息网格：每项「粗体 label + 下方 value」，flex-wrap（契约 §2）。
+  Widget _metaGrid(BuildContext context, GalgameEntry game) {
+    final GalgameMetadataDraft meta = game.metadata;
+    final List<Widget> cells = <Widget>[
+      if (_sources.isNotEmpty)
+        _metaCell(context, t.game_meta_source, _sourceChips(context)),
+      if (game.developer != null)
+        _metaCell(
+          context,
+          t.game_edit_developer,
+          HibikiTagChip(label: game.developer!),
+        ),
+      if (game.effectiveReleaseDate != null)
+        _metaTextCell(
+            context, t.game_summary_release_date, game.effectiveReleaseDate!),
+      _metaTextCell(
+          context, t.game_meta_added, formatGalgameDate(game.addedAt)),
+      if (meta.averageHours != null)
+        _metaTextCell(context, t.game_summary_average_hours,
+            '${meta.averageHours!.toStringAsFixed(1)} h'),
+      if (meta.rank != null)
+        _metaTextCell(context, t.game_meta_ranking, '#${meta.rank}'),
+    ];
+    return Wrap(runSpacing: 4, children: cells);
+  }
+
+  /// 一个「粗体 label + 值 widget」的网格单元。
+  Widget _metaCell(BuildContext context, String label, Widget value) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(right: 24, bottom: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          SizedBox(
-            width: 96,
-            height: 128,
-            child: ClipRRect(
-              borderRadius: HibikiBorderRadius.card,
-              child: _buildCover(context, game),
+          Text(
+            label,
+            style: tokens.type.metadata.copyWith(
+              fontWeight: FontWeight.w700,
+              color: tokens.surfaces.onSurface,
             ),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  game.displayName,
-                  style: theme.textTheme.titleLarge,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  <String>[
-                    if (game.developer != null) game.developer!,
-                    galgamePlayStatusLabel(game.playStatus),
-                    if (game.effectiveReleaseDate != null)
-                      game.effectiveReleaseDate!,
-                  ].join('  ·  '),
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: colors.onSurfaceVariant),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: <Widget>[
-                    if (game.siteScore != null)
-                      _scoreChip(theme, Icons.public,
-                          '${t.game_site_score} ${game.siteScore!.toStringAsFixed(1)}'),
-                    if (game.userRating != null)
-                      _scoreChip(theme, Icons.star,
-                          '${t.game_user_rating} ${game.userRating!.toStringAsFixed(1)}'),
-                    for (final GalgameSourceRow row in _sources)
-                      if (_externalUrl(row) != null)
-                        TextButton.icon(
-                          onPressed: () =>
-                              unawaited(_openUrl(_externalUrl(row)!)),
-                          icon: const Icon(Icons.open_in_new, size: 16),
-                          label: Text(
-                            GalgameMetadataSource.fromKey(row.source)?.label ??
-                                row.source,
-                          ),
-                        ),
-                    if (widget.onLaunch != null)
-                      FilledButton.icon(
-                        onPressed: widget.onLaunch,
-                        icon: const Icon(Icons.play_arrow),
-                        label: Text(t.game_launch),
-                      ),
-                  ],
-                ),
-                if (tags.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: <Widget>[
-                      for (final String tag in tags.take(12))
-                        HibikiTagChip(label: tag),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
+          const SizedBox(height: 2),
+          value,
         ],
       ),
     );
   }
 
-  Widget _scoreChip(ThemeData theme, IconData icon, String label) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+  /// 文本值的网格单元。
+  Widget _metaTextCell(BuildContext context, String label, String value) {
+    final ThemeData theme = Theme.of(context);
+    return _metaCell(
+      context,
+      label,
+      Text(value, style: theme.textTheme.bodyMedium),
+    );
+  }
+
+  /// 数据来源 chips：可点者用 [HibikiActionChip] 开外链，无链回落展示 chip。
+  Widget _sourceChips(BuildContext context) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
       children: <Widget>[
-        Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
-        const SizedBox(width: 4),
-        Text(label, style: theme.textTheme.bodySmall),
+        for (final GalgameSourceRow row in _sources)
+          () {
+            final String label =
+                GalgameMetadataSource.fromKey(row.source)?.label ?? row.source;
+            final String? url = _externalUrl(row);
+            if (url == null) return HibikiTagChip(label: label);
+            return HibikiActionChip(
+              label: label,
+              icon: Icons.open_in_new,
+              onPressed: () => unawaited(_openUrl(url)),
+            );
+          }(),
       ],
+    );
+  }
+
+  /// 评分行：`站点 X.X`（默认）+ `我的 X.X`（primary 选中态）两个 chip。
+  Widget _scoreRow(BuildContext context, GalgameEntry game) {
+    final List<Widget> chips = <Widget>[
+      if (game.siteScore != null)
+        HibikiTagChip(
+          label: '${t.game_site_score} ${game.siteScore!.toStringAsFixed(1)}',
+        ),
+      if (game.userRating != null)
+        HibikiTagChip(
+          label: '${t.game_user_rating} ${game.userRating!.toStringAsFixed(1)}',
+          selected: true,
+        ),
+    ];
+    if (chips.isEmpty) return const SizedBox.shrink();
+    return Wrap(spacing: 8, runSpacing: 4, children: chips);
+  }
+
+  /// 标签区（契约 §2）：标题行（"游戏标签" + 选中计数 + 清空）+ flex-wrap 标签
+  /// chips（选中态 filled primary），上限 [_kTagLimit] + 展开/折叠。
+  Widget _tagsSection(BuildContext context, GalgameEntry game) {
+    final List<String> tags = game.tags;
+    if (tags.isEmpty) return const SizedBox.shrink();
+    final ThemeData theme = Theme.of(context);
+    final bool overflowing = tags.length > _kTagLimit;
+    final List<String> shown =
+        (overflowing && !_tagsExpanded) ? tags.sublist(0, _kTagLimit) : tags;
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Text(
+                _selectedTags.isEmpty
+                    ? t.game_tags_title
+                    : '${t.game_tags_title} · ${_selectedTags.length}',
+                style: theme.textTheme.titleSmall,
+              ),
+              const Spacer(),
+              if (_selectedTags.isNotEmpty)
+                HibikiActionChip(
+                  label: t.game_tags_clear,
+                  icon: Icons.clear,
+                  onPressed: () => setState(_selectedTags.clear),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: <Widget>[
+              for (final String tag in shown)
+                HibikiTagChip(
+                  label: tag,
+                  tone: HibikiTagChipTone.surface,
+                  selected: _selectedTags.contains(tag),
+                  onTap: () => _toggleTag(tag),
+                ),
+            ],
+          ),
+          if (overflowing)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => setState(() => _tagsExpanded = !_tagsExpanded),
+                icon:
+                    Icon(_tagsExpanded ? Icons.expand_less : Icons.expand_more),
+                label: Text(_tagsExpanded
+                    ? t.collection_collapse
+                    : '${t.collection_expand} +${tags.length - _kTagLimit}'),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -372,43 +540,23 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
           children: <Widget>[
             Expanded(
               child: Text(
-                '${t.game_stat_daily}  ${_month.year}-${_month.month.toString().padLeft(2, '0')}',
+                t.game_stat_daily,
                 style: theme.textTheme.titleMedium,
               ),
             ),
-            IconButton(
-              tooltip: t.game_stat_prev_month,
-              icon: const Icon(Icons.chevron_left),
-              onPressed: () => unawaited(_shiftMonth(-1)),
-            ),
-            IconButton(
-              tooltip: t.game_stat_next_month,
-              icon: const Icon(Icons.chevron_right),
-              onPressed: _month.isBefore(_firstOfMonth(DateTime.now()))
-                  ? () => unawaited(_shiftMonth(1))
-                  : null,
+            SegmentedButton<int>(
+              showSelectedIcon: false,
+              segments: const <ButtonSegment<int>>[
+                ButtonSegment<int>(value: 7, label: Text('7D')),
+                ButtonSegment<int>(value: 30, label: Text('30D')),
+              ],
+              selected: <int>{_rangeDays},
+              onSelectionChanged: (Set<int> s) => unawaited(_setRange(s.first)),
             ),
           ],
         ),
         const SizedBox(height: 8),
-        SizedBox(
-          height: 160,
-          child: CustomPaint(
-            size: Size.infinite,
-            painter: StatBarChartPainter(
-              data: buildGalgameMonthChartData(_month, _daily),
-              barColor: theme.colorScheme.primary,
-              barRadius: HibikiDesignTokens.of(context).radii.chipCorner,
-              labelColor: theme.colorScheme.onSurfaceVariant,
-              labelStyle: HibikiDesignTokens.of(context).type.metadata.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-              // 游玩时长用 ms 值 + 时长纵轴（与视频统计同款）。
-              valueOf: statMsValue,
-              labelFormatter: formatStatDurationAxis,
-            ),
-          ),
-        ),
+        _buildDailyLineChart(context, theme),
         const SizedBox(height: 20),
         Text(t.game_stat_session_list, style: theme.textTheme.titleMedium),
         const SizedBox(height: 8),
@@ -432,6 +580,43 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
               ),
             ),
       ],
+    );
+  }
+
+  /// 每日游玩时长折线图（契约 §4）：线色主题色、Y 轴时长、X 轴日期、双向淡网格。
+  /// 复用 [StatLineChartPainter]（阅读/视频统计同款自绘），不引图表库。
+  Widget _buildDailyLineChart(BuildContext context, ThemeData theme) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme colors = theme.colorScheme;
+    final List<StatDayData> points =
+        buildGalgameRangeChartData(DateTime.now(), _rangeDays, _dailyRange);
+    final List<double> values = <double>[
+      for (final StatDayData d in points) d.ms.toDouble(),
+    ];
+    final List<String> labels = <String>[
+      for (final StatDayData d in points) statDayLabel(d),
+    ];
+    return SizedBox(
+      height: 280,
+      child: CustomPaint(
+        size: Size.infinite,
+        painter: StatLineChartPainter(
+          series: <StatLineSeries>[
+            StatLineSeries(values: values, color: colors.primary),
+          ],
+          xLabels: labels,
+          anomalies: const <bool>[],
+          anomalyColor: colors.primary,
+          labelColor: colors.onSurfaceVariant,
+          labelStyle: tokens.type.metadata.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
+          // 纵轴是游玩时长（ms → "Xh Ym" / "Xm"），与视频统计同款。
+          labelFormatter: formatGalgameDurationAxis,
+          // 7 天档标签每天都显，30 天档抽稀到每 5 天。
+          labelEvery: _rangeDays <= 7 ? 1 : 5,
+        ),
+      ),
     );
   }
 
@@ -510,22 +695,29 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   }
 }
 
-/// 纯函数：把某月的每日秒数映射铺成柱状图数据点（缺省天为 0，保证整月都有柱位）。
-/// 值落 [StatDayData.ms]（秒 × 1000），与视频统计同款走时长纵轴。
-List<StatDayData> buildGalgameMonthChartData(
-  DateTime month,
+/// 纯函数：把最近 [days] 天（以 [end] 当天为最后一天，含当天）的每日秒数铺成折线
+/// 图数据点（缺省天为 0，保证整段区间都有点位）。值落 [StatDayData.ms]（秒 ×
+/// 1000），与视频统计同款走时长纵轴。返回顺序按日期升序（旧 → 新）。
+List<StatDayData> buildGalgameRangeChartData(
+  DateTime end,
+  int days,
   Map<String, int> secondsByDay,
 ) {
-  final int days = DateTime(month.year, month.month + 1, 0).day;
+  final DateTime endDay = DateTime(end.year, end.month, end.day);
   return <StatDayData>[
-    for (int d = 1; d <= days; d++)
+    for (int i = days - 1; i >= 0; i--)
       () {
         final String key =
-            formatGalgameDate(DateTime(month.year, month.month, d));
+            formatGalgameDate(endDay.subtract(Duration(days: i)));
         return StatDayData(dateKey: key)..ms = (secondsByDay[key] ?? 0) * 1000;
       }(),
   ];
 }
+
+/// 把折线图纵轴的时长值（毫秒，double）格式化为标签（"Xh Ym" / "Xm" / "Xs"）。
+/// 顶层 tear-off 而非闭包，保 [StatLineChartPainter.shouldRepaint] 的函数相等稳定。
+String formatGalgameDurationAxis(double ms) =>
+    formatStatDurationAxis(ms.round());
 
 /// 一条会话的时间范围文案：`2026-07-24 21:03 → 22:41`。
 String formatGalgameSessionRange(GalgameSessionRow row) {

@@ -600,6 +600,10 @@ void main() {
           'Token source owns app radii and semantic surface roles.',
       'lib/src/utils/components/hibiki_material_components.dart':
           'Shared MD3 component implementation may map tokens to framework widgets.',
+      'lib/src/utils/components/galgame_poster_card.dart':
+          'Shared galgame poster-card component maps radius/typography/color '
+              'tokens to framework widgets; the class name PosterCard trips the '
+              'crude Card( substring scan.',
       'lib/src/utils/components/settings_shared.dart':
           'Shared adaptive settings primitives own compact settings controls.',
       'lib/src/utils/components/hibiki_dropdown.dart':

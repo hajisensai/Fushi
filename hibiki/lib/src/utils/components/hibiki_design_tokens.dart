@@ -72,6 +72,10 @@ class HibikiRadii {
   static const double dialogValue = 16;
   static const double sheetValue = 16;
 
+  /// galgame 竖版海报卡的圆角（对齐 ReinaManager 的圆润卡片观感，比 Hibiki 常规
+  /// [cardValue] 稍大一档；见 `docs/design/galgame-library-reina-visual-parity.md`）。
+  static const double posterValue = 16;
+
   final double group;
   final double card;
   final double control;
@@ -101,6 +105,8 @@ abstract final class HibikiBorderRadius {
       BorderRadius.all(Radius.circular(HibikiRadii.groupValue));
   static const BorderRadius card =
       BorderRadius.all(Radius.circular(HibikiRadii.cardValue));
+  static const BorderRadius poster =
+      BorderRadius.all(Radius.circular(HibikiRadii.posterValue));
   static const BorderRadius control =
       BorderRadius.all(Radius.circular(HibikiRadii.controlValue));
   static const BorderRadius chip =
