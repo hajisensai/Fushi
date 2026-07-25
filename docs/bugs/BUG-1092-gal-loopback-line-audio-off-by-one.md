@@ -4,7 +4,7 @@
   - 根因 `gal_hook_session_controller.dart:2524`（改前）：`_cacheLoopbackForLine` 调 `source.grabRecent(_galAudioBackMs)`（8000）。`grabRecent(backMs)` 的契约是「**当前时刻往前** backMs」（`galgame_audio_source.dart:24-26`，native `audio_loopback_capture.cpp:270 GrabRecent`），纯后向、零前向等待。
   - 调用时机是台词**刚到达**时（`_pollHookedText` → `_scheduleLineAudioAttach:2280` → `_attachLineAudio:2400`；外部文本源 `_onTextBufferChanged:2507`）。galgame 时序恒为「文本先绘制 → 语音随后播放」，所以那 8 秒窗口里全是上一句 + BGM，一个本句采样都没有。
   - 对照：引擎 PCM 路径用 `grabUtterance(tsMs)`，native 窗口是**前向**的 `[ts-200, ts+6000]`（`galgame_audio_source.dart:1214-1241`）。两条路径的窗口方向不对称，是本 bug 的本质。
-- **[x] ① 已修复** — 提交 `PLACEHOLDER_COMMIT`：`gal_hook_session_controller.dart` 把逐行 Loopback 改成「延迟冻结」，窗口等价于 `[t0-preRoll, t0+delay]`：
+- **[x] ① 已修复** — 提交 `77486f1c7`：`gal_hook_session_controller.dart` 把逐行 Loopback 改成「延迟冻结」，窗口等价于 `[t0-preRoll, t0+delay]`：
   - 新增 `_scheduleLoopbackFreeze(entry)`：记 t0，起一个 `_loopbackFreezeDelay`（默认 4000ms，构造参数可注入）定时器；到点后才把冻结任务丢进串行音频队列，`grabRecent(delay + _loopbackPreRollMs)`（preRoll 1000ms 覆盖语音略早于文本的引擎）。等待刻意放在队列**之外**——在队列里 sleep 会把后续台词抓取和制卡一起堵住；文本上屏完全不受影响，只有音频后补。
   - 新增 `_flushLoopbackFreeze(lineId)`：制卡（`_captureAudioBytesNow`）与引擎 PCM 升格时提前收束，按**真实已等待时长** + preRoll 回取（clamp 到 `[_loopbackMinBackMs, _loopbackRingCapacityMs]`），不会拿一份还没冻的空缓存报 missing。
   - `_cacheLoopbackForLine` 改带 `backMs` 参数，并新增两条让路守卫：`_isUserAdjudicated(lineId)`（手动补录 / 逐行选轨）与 `_resourceIdForLine(lineId) != null`——延迟到点时这两者可能已落定，回环混音绝不能反过来盖掉它们。`_manualRecaptureLines` 的用户裁决优先（`:1411-1423`）因此完整保留。

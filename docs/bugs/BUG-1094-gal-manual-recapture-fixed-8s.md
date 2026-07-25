@@ -4,7 +4,7 @@
   - `gal_hook_session_controller.dart:1130-1133`（改前）：`_recaptureWindow = Duration(milliseconds: _galAudioBackMs)`（8000），`:1202` 用它起唯一的自动停止定时器（无 VAD、无静音检测、新台词/焦点变化都不停）。
   - 同一常量在 `:1245` 二次夹住回取长度 `elapsedMs.clamp(_recaptureMinBackMs, _galAudioBackMs)`。
   - **注释理由是错的**：它写「8s 是因为 loopback 环只保留这么长」，但环形缓冲实际保留 **60 秒**（`hibiki/windows/runner/audio_loopback_capture.cpp:21` `kRingSeconds = 60`）。等于用一个不存在的存储限制去砍用户的操作时间。
-- **[x] ① 已修复** — 提交 `PLACEHOLDER_COMMIT`：把「补录窗口时长」与「回取长度上限」拆成两个互不相干的量。
+- **[x] ① 已修复** — 提交 `77486f1c7`：把「补录窗口时长」与「回取长度上限」拆成两个互不相干的量。
   - 删掉 `_galAudioBackMs`；新增 `_loopbackRingCapacityMs = 60000`（注释里点名 native 真相源 `kRingSeconds = 60`），它是 `grabRecent` 回取长度的唯一硬上限。
   - `_recaptureWindow` 改为独立的 `Duration(seconds: 20)`，只由「用户要多久才能去游戏里点一次重播」决定；`:1245` 的 clamp 上限改为 `_loopbackRingCapacityMs`。原注释就地改写为真值。
   - 定时器不再是唯一自动收束源：新台词到达（玩家已经翻页）即 `finishLineRecapture()`（`_pollHookedText` 里，只认引擎 hook 台词——剪贴板/外部 WS 通道与游戏进度无关，不该替用户结束录音）；用户再点一次 ⏺ 立即收束的既有路径不变。
