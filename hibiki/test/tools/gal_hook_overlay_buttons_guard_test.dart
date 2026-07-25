@@ -70,22 +70,24 @@ void main() {
     );
   });
 
-  test('hook 台词字号随窗口高度缩放（不再钉死在作者尺寸）', () {
+  test('hook 台词字号与窗口高度解耦（字号只由用户 pref 决定）', () {
+    // BUG-1095 起，hook 台词字号不再随窗口高度缩放：拖窗只改窗口几何，字号由
+    // 设置项 gal_hook_text_font_size 单独控制（旧的按高度缩放让「拖高一点」变成
+    // 「字也跟着变」，两个诉求被绑死）。守卫从「必须缩放」翻转为「必须不缩放」。
     final String source = window.readAsStringSync();
-    expect(
-      source,
-      contains('kHookTextBaseHeightForFontDip'),
-      reason: 'hook 模式必须有自己的字号基准高度',
-    );
-    // 旧写法是 hook_text_mode_ ? 1.0f : ...，等于把台词字号钉死；缩放必须真的用上
-    // 实时高度，否则用户把浮窗拖大字还是原来那么小。
     final int scaleAt = source.indexOf('const float height_scale');
-    expect(scaleAt, greaterThan(0));
+    expect(scaleAt, greaterThan(0), reason: '非 hook 的歌词条仍按高度缩放，该表达式应当还在');
     final String scaleExpr = source.substring(scaleAt, scaleAt + 400);
     expect(
-      scaleExpr.contains('strip_height_dip_ / kHookTextBaseHeightForFontDip'),
+      scaleExpr.contains('hook_text_mode_ ? 1.0f'),
       isTrue,
-      reason: 'hook 分支必须按实时窗口高度缩放字号',
+      reason: 'hook 分支的高度缩放必须恒为 1.0f（字号与窗高解耦）',
+    );
+    // 有声书歌词条的「拖高放大」不受影响：非 hook 分支仍拿实时高度算比例。
+    expect(
+      scaleExpr.contains('strip_height_dip_'),
+      isTrue,
+      reason: '非 hook 分支仍须按实时窗口高度缩放字号',
     );
   });
 
