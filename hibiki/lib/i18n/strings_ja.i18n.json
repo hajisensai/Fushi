@@ -2573,5 +2573,17 @@
   "game_launch": "Launch",
   "game_developer": "Developer",
   "game_site_score": "Site rating",
-  "game_user_rating": "My rating"
+  "game_user_rating": "My rating",
+  "game_meta_source": "Data source",
+  "game_meta_added": "Added",
+  "game_meta_ranking": "Ranking",
+  "game_tags_title": "Game tags",
+  "game_tags_clear": "Clear selection",
+  "game_dashboard": "Home",
+  "game_kpi_total_games": "Games",
+  "game_kpi_week": "This week",
+  "game_focus_continue": "Continue",
+  "game_recently_played": "Recently played",
+  "game_random_title": "Pick for me",
+  "game_random_reroll": "Shuffle"
 }

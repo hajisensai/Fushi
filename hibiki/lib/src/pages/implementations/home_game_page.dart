@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
+import 'package:hibiki/src/pages/implementations/galgame_home_page.dart';
 import 'package:hibiki/src/pages/implementations/game_diagnostics_page.dart';
 import 'package:hibiki/src/pages/implementations/game_shared.dart';
 import 'package:hibiki/src/pages/implementations/games_library_page.dart';
@@ -22,6 +23,13 @@ typedef GameLibraryBuilder = Widget Function(
   VoidCallback onLaunched,
 );
 
+/// 游戏首页（仪表盘）子页构造器；测试可注入桩，绕开 [GalgameHomePage] 对
+/// `appProvider`（Drift DB / 仓储）的依赖。
+typedef GameDashboardBuilder = Widget Function(
+  BuildContext context,
+  VoidCallback onShowLibrary,
+);
+
 /// 首页一级「游戏」模块。
 ///
 /// 集成持久化游戏库、Hook 监控工作台与兼容性诊断。内部使用 [IndexedStack]，
@@ -32,13 +40,16 @@ class HomeGamePage extends StatefulWidget {
     super.key,
     this.monitorBuilder,
     this.libraryBuilder,
+    this.dashboardBuilder,
     this.controller,
   });
 
   final GameMonitorBuilder? monitorBuilder;
   final GameLibraryBuilder? libraryBuilder;
+  final GameDashboardBuilder? dashboardBuilder;
   final GalHookSessionController? controller;
 
+  static const Key dashboardKey = ValueKey<String>('game-dashboard');
   static const Key libraryKey = ValueKey<String>('game-library');
   static const Key monitorKey = ValueKey<String>('game-monitor');
   static const Key diagnosticsKey = ValueKey<String>('game-diagnostics');
@@ -65,8 +76,9 @@ class _HomeGamePageState extends State<HomeGamePage> {
   void dispose() {
     gameSectionNotifier.removeListener(_onSectionRequested);
     // HomeGamePage 生命周期结束后不要把一次外部导航请求泄漏给下一次挂载（也避免
-    // profile/窗口重建后意外停在旧工作台）。运行中的页面仍由 notifier 正常保态。
-    gameSectionNotifier.value = GameSection.library;
+    // profile/窗口重建后意外停在旧工作台）。回落到默认首屏（游戏首页）。运行中的
+    // 页面仍由 notifier 正常保态。
+    gameSectionNotifier.value = GameSection.dashboard;
     super.dispose();
   }
 
@@ -84,6 +96,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
     _onSectionRequested();
   }
 
+  void _showDashboard() => _showSection(GameSection.dashboard);
   void _showLibrary() => _showSection(GameSection.library);
   void _showMonitor() => _showSection(GameSection.monitor);
   void _showDiagnostics() => _showSection(GameSection.diagnostics);
@@ -96,11 +109,23 @@ class _HomeGamePageState extends State<HomeGamePage> {
               onShowLibrary: onShowLibrary,
               onShowDiagnostics: _showDiagnostics,
             );
+    final GameDashboardBuilder dashboardBuilder = widget.dashboardBuilder ??
+        (BuildContext context, VoidCallback onShowLibrary) => GalgameHomePage(
+              sessionController: _controller,
+              onShowLibrary: onShowLibrary,
+              onShowMonitor: _showMonitor,
+              onShowDiagnostics: _showDiagnostics,
+              onLaunched: _showMonitor,
+            );
     return Material(
       type: MaterialType.transparency,
       child: IndexedStack(
         index: _section.index,
         children: <Widget>[
+          KeyedSubtree(
+            key: HomeGamePage.dashboardKey,
+            child: dashboardBuilder(context, _showLibrary),
+          ),
           KeyedSubtree(
             key: HomeGamePage.libraryKey,
             child: _buildLibrary(context),
@@ -135,6 +160,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
             bottom: GameSectionTabs(
               selected: GameSection.library,
               focusIdPrefix: 'game-library-tab',
+              onSelectDashboard: _showDashboard,
               onSelectLibrary: _showLibrary,
               onSelectMonitor: _showMonitor,
               onSelectDiagnostics: _showDiagnostics,

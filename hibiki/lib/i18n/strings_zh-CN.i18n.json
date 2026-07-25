@@ -2573,5 +2573,17 @@
   "game_launch": "启动游戏",
   "game_developer": "开发商",
   "game_site_score": "站点评分",
-  "game_user_rating": "我的评分"
+  "game_user_rating": "我的评分",
+  "game_meta_source": "数据来源",
+  "game_meta_added": "添加时间",
+  "game_meta_ranking": "游戏排行",
+  "game_tags_title": "游戏标签",
+  "game_tags_clear": "清空所选",
+  "game_dashboard": "首页",
+  "game_kpi_total_games": "游戏总数",
+  "game_kpi_week": "本周",
+  "game_focus_continue": "继续游戏",
+  "game_recently_played": "最近玩过",
+  "game_random_title": "随机推荐",
+  "game_random_reroll": "换一个"
 }

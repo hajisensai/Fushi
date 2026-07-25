@@ -11,12 +11,14 @@ import 'package:hibiki/utils.dart';
 /// `_formatTime` 两份拷贝、section tab chip 行三份拷贝，且多处枚举 `.name`
 /// 直接上屏（camelCase 英文暴露给 17 语言用户）。
 
-/// 游戏页子区。
-enum GameSection { library, monitor, diagnostics }
+/// 游戏页子区。[dashboard] 是游戏模块的默认首屏（游戏首页/仪表盘），排在最前，
+/// 库/工作台/诊断顺延——枚举顺序即 [HomeGamePage] 的 IndexedStack 索引顺序。
+enum GameSection { dashboard, library, monitor, diagnostics }
 
-/// App 级游戏页子区导航。原生 Hook 浮窗可在主窗最小化时请求回到捕获工作台。
+/// App 级游戏页子区导航。默认停在游戏首页（[GameSection.dashboard]）；原生 Hook
+/// 浮窗可在主窗最小化时请求回到捕获工作台（写 [GameSection.monitor]）。
 final ValueNotifier<GameSection> gameSectionNotifier =
-    ValueNotifier<GameSection>(GameSection.library);
+    ValueNotifier<GameSection>(GameSection.dashboard);
 
 /// Hook 会话音频后端的用户可读标签。
 String galHookAudioBackendLabel(GalHookAudioBackend backend) =>
@@ -87,6 +89,7 @@ class GameSectionTabs extends StatelessWidget {
     required this.onSelectLibrary,
     required this.onSelectMonitor,
     required this.onSelectDiagnostics,
+    this.onSelectDashboard,
     super.key,
   });
 
@@ -95,6 +98,11 @@ class GameSectionTabs extends StatelessWidget {
 
   /// focusId 前缀（如 `game-library-tab`）。
   final String focusIdPrefix;
+
+  /// 游戏首页（仪表盘）页签回调。可空：未接线时回落到直接写
+  /// [gameSectionNotifier]（[HomeGamePage] 监听该 notifier 完成导航），这样不改
+  /// 捕获工作台 / 诊断页的构造签名也能让「首页」页签在三页里都工作。
+  final VoidCallback? onSelectDashboard;
 
   final VoidCallback onSelectLibrary;
   final VoidCallback onSelectMonitor;
@@ -106,6 +114,15 @@ class GameSectionTabs extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       child: Row(
         children: <Widget>[
+          HibikiSelectableChip(
+            label: t.game_dashboard,
+            leadingIcon: Icons.dashboard_outlined,
+            selected: selected == GameSection.dashboard,
+            focusId: HibikiFocusId('$focusIdPrefix-dashboard'),
+            onSelected: (_) => (onSelectDashboard ??
+                () => gameSectionNotifier.value = GameSection.dashboard)(),
+          ),
+          const SizedBox(width: 8),
           HibikiSelectableChip(
             label: t.game_library,
             leadingIcon: Icons.sports_esports_outlined,
