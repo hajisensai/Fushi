@@ -182,6 +182,16 @@ class GalHookMiningCoordinator {
     bool degradedToStill = false;
     if (coverBytes == null || coverBytes.isEmpty) {
       final WindowCaptureResult still = await _captureStill(window.hwnd);
+      // BUG-1096：native 成功路径诊断（WGC 光标抑制是否生效 / 是否从 Magpie 缩放窗
+      // 重定向到源窗口）。降级到单帧时也要留痕，否则这条路径仍是盲区。
+      final String? diagnostics = still.diagnostics;
+      if (diagnostics != null && diagnostics.isNotEmpty) {
+        ErrorLogService.instance.log(
+          'galHookMineLine',
+          'window capture diagnostics: $diagnostics',
+          StackTrace.current,
+        );
+      }
       if (!still.ok) {
         return GalHookMiningResult(
           failureReason: still.error ?? 'game window capture failed',

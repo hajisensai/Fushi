@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/lookup/clipboard_panel_controller.dart';
 import 'package:hibiki/src/lookup/clipboard_text_overlay_controller.dart';
+import 'package:hibiki/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
@@ -990,6 +992,38 @@ SettingsDestination buildLookupDestination() {
               } else {
                 await TexthookerWsClientManager.instance.stop();
               }
+              settingsContext.refresh();
+            },
+          ),
+        ],
+      ),
+      // BUG-1095: galgame Hook 台词浮窗此前在设置页**一条条目都没有**——字号只能靠
+      // 「把窗口拖高」这个副作用去改，而 native 同时按窗高把字放大，可见行数几乎不涨
+      // （「放不下，上下拖还是放不下」）。字号现在是与窗口几何完全解耦的独立偏好，这里
+      // 是它唯一的入口。挂在查词分类：浮窗对用户就是「显示台词 + 点词查词」的那块面板，
+      // 紧邻上面的 texthooker（台词的来源）。仅 Windows——galgame Hook 只做 Windows。
+      SettingsSection(
+        title: t.settings_section_gal_hook_overlay,
+        visible: (_) => Platform.isWindows,
+        items: <SettingsItem>[
+          SettingsStepperItem(
+            id: 'lookup.gal_hook_text_font_size',
+            title: t.gal_hook_text_font_size,
+            subtitle: t.gal_hook_text_font_size_hint,
+            icon: Icons.format_size,
+            visible: (_) => Platform.isWindows,
+            min: PreferencesRepository.galHookTextFontSizeMin,
+            max: PreferencesRepository.galHookTextFontSizeMax,
+            step: 1,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookTextFontSize,
+            format: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.appModel.setGalHookTextFontSize(value);
+              // 与悬浮字幕字号同款纪律（TODO-1069）：写完 pref 立刻把整支 style 推给
+              // native 浮窗，否则字号只落了盘，浮窗要等下次改透明度才顺带刷新。
+              await GalHookTextOverlayController.instance
+                  .applyFontSizeFromPreferences();
               settingsContext.refresh();
             },
           ),
