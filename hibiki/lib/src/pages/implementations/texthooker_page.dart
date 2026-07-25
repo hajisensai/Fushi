@@ -17,6 +17,7 @@ import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
 import 'package:hibiki/src/mining/galgame_helper_installer.dart';
 import 'package:hibiki/src/mining/galgame_hook_code_profile.dart';
+import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/game_shared.dart';
@@ -443,7 +444,18 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         if (!installed || !mounted) return;
       }
       HibikiToast.show(msg: t.game_capture_launching);
-      final bool launched = await _session.launchGame(executable);
+      // 这条入口只拿到一个裸 exe 路径、不经过游戏库条目，但同一个 exe 就是同一个游戏：
+      // 按路径回查库里已配置的启动参数与工作目录，让「从库里启动」和「从工作台启动并
+      // 捕获」用同一份配置。库里没有这个 exe（临时选的文件）→ 空配置 = 旧行为。
+      final GalgameEntry? known = findGalgameByExePath(
+        _appModel.galgameRepo.games,
+        executable,
+      );
+      final bool launched = await _session.launchGame(
+        executable,
+        launchArguments: known?.launchArgumentTokens ?? const <String>[],
+        workdir: known?.workdir ?? '',
+      );
       if (!mounted) return;
       // 与游戏库页共用同一条结果播报（BUG-1089）。旧实现在这里自己判 `boundWindow`
       // 并说「捕获已运行；尚未找到游戏窗口」——避重就轻：窗口没出现往往意味着游戏

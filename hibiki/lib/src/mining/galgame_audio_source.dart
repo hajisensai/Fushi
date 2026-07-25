@@ -583,9 +583,20 @@ bool shouldUseLunaPcHooksForExecutable(String executablePath) {
 /// 两个截止时间各自为政时，杀软扫描下的大 hook DLL 常在 native 先超时（native 此时
 /// 还会把 CREATE_SUSPENDED 拉起的游戏丢在挂起态），Dart 却仍在傻等，最终只报一个
 /// 没有原因的失败。超时只能有一个真相源，故显式下发。
+///
+/// [gameArguments] 是用户为该游戏配置的启动参数，**一个 token 一个 `--arg`**：
+/// injector 按 Windows 规则重新转义后拼进 `CreateProcessW` 的 `lpCommandLine`，
+/// 所以含空格/引号的参数也会原样成为游戏的一个 argv。空列表时**一个 `--arg` 都不发**，
+/// 命令行与旧版逐字节相同 —— 老 injector（用户尚未更新 helper）遇到不认识的 flag 是
+/// 静默忽略而非报错，但「不配置就不发」仍是更硬的兼容保证。
+///
+/// [workdir] 是游戏工作目录；空串时不发 `--workdir`，由 injector 缺省成 exe 所在目录
+/// （与旧行为一致）。
 List<String> buildEngineHookInjectorArguments({
   required int targetPid,
   required String? launchExe,
+  List<String> gameArguments = const <String>[],
+  String workdir = '',
   bool japaneseLocale = false,
   bool lunaPcHooks = false,
   int? lunaCodepage,
@@ -603,6 +614,15 @@ List<String> buildEngineHookInjectorArguments({
   }
   if (launchMode && japaneseLocale) {
     args.add('--japanese-locale');
+  }
+  // workdir / --arg 都是 launch 专用：attach 模式游戏已经在跑，进程创建参数无从谈起。
+  if (launchMode && workdir.isNotEmpty) {
+    args.addAll(<String>['--workdir', workdir]);
+  }
+  if (launchMode) {
+    for (final String argument in gameArguments) {
+      args.addAll(<String>['--arg', argument]);
+    }
   }
   if (lunaPcHooks) {
     args.add('--luna-pchooks');
@@ -666,6 +686,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
   EngineHookGalAudioSource({
     this.targetPid = 0,
     this.launchExe,
+    this.launchArguments = const <String>[],
+    this.launchWorkdir = '',
     required this.injectorPath,
     this.automaticJapaneseLocale = true,
     this.lunaPcHooks = false,
@@ -691,6 +713,14 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// **launch 模式**要拉起的游戏 exe 绝对路径。非空即走 `injector --launch`，从 injector
   /// stdout 解析子进程 PID。null -> 走 attach（[targetPid]）。
   final String? launchExe;
+
+  /// **launch 模式**追加给游戏 exe 的命令行参数，一个元素 = 游戏侧一个 argv。
+  /// 空列表（默认）= 不发任何 `--arg`，启动命令行与旧版逐字节相同。
+  final List<String> launchArguments;
+
+  /// **launch 模式**游戏工作目录；空串（默认）= 不发 `--workdir`，由 injector 缺省成
+  /// exe 所在目录（旧行为）。
+  final String launchWorkdir;
 
   /// injector 可执行文件绝对路径（随 app 分发 / 按需下载）；null 或文件不存在 -> 源不可用
   /// （降级回 loopback，绝不假装注入成功）。**位数必须匹配目标游戏**（KiriKiriZ 多 32 位 -> x86）。
@@ -874,6 +904,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
         buildEngineHookInjectorArguments(
           targetPid: targetPid,
           launchExe: exe,
+          gameArguments: launchArguments,
+          workdir: launchWorkdir,
           japaneseLocale: japaneseLocale,
           lunaPcHooks: lunaPcHooks,
           lunaCodepage: lunaCodepage,

@@ -1127,6 +1127,16 @@ class Galgames extends Table {
   /// 工作目录（默认 exe 所在目录）。也是游玩计时判定「候选进程组」的范围依据。
   TextColumn get workdir => text()();
 
+  /// v56：启动游戏时追加给 exe 的命令行参数，存**用户原样输入的一整行**
+  /// （如 `-windowed --save="D:\My Saves"`），空串 = 不带任何参数。
+  ///
+  /// 刻意不存 `List<String>` 的 JSON：用户的心智模型就是「一行命令行」（从攻略、
+  /// Steam 启动项里复制粘贴），存原文才能原样回显、原样再编辑。拆分成 argv 的规则
+  /// 由 `parseGameLaunchArguments` 这个纯函数在启动时执行一次，与 Windows
+  /// `CommandLineToArgvW` 同规则 —— 存拆分结果反而要多维护一套「拆了再拼回去给用户看」
+  /// 的逆变换，且无法无损还原用户写的引号。
+  TextColumn get launchArgs => text().withDefault(const Constant(''))();
+
   /// 本地封面绝对路径；null = 用默认手柄图标。
   TextColumn get coverPath => text().nullable()();
 

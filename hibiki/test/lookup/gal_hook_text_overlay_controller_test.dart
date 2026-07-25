@@ -84,6 +84,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           _OverlayTestEngine(),
       endpointStatusLoader: () => const [],

@@ -270,7 +270,11 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       }
       final GalHookSessionController controller =
           widget.sessionController ?? GalHookSessionController.instance;
-      final bool launched = await controller.launchGame(game.exePath);
+      final bool launched = await controller.launchGame(
+        game.exePath,
+        launchArguments: game.launchArgumentTokens,
+        workdir: game.workdir,
+      );
       if (!mounted) return;
       // 每种结果都播报（BUG-1089）。旧实现只在 `!launched` 时说话，可注入降级和
       // 「游戏窗口从未出现」这两条路径 `launchGame` 都返回 true，于是点完「启动」

@@ -54,6 +54,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: _SilentLoopback.new,
@@ -97,6 +99,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: _SilentLoopback.new,
@@ -147,6 +151,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -223,6 +229,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: () {

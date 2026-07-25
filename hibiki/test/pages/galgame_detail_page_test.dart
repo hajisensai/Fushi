@@ -200,6 +200,66 @@ void main() {
     await tester.pump(const Duration(seconds: 4)); // 放掉桌面 toast 计时器
   });
 
+  // `_save()` 是**逐字段重建** GalgameEntry 而不是 copyWith：任何新增列漏写进那份
+  // 字面量，就会在每次保存时被静默清空（workdir 这种「存了但从不用」的字段藏得住，
+  // launchArgs 会直接让游戏参数消失）。这条守卫钉住「保存一次不丢字段」。
+  testWidgets('编辑 tab 能写入启动参数，且保存不丢既有字段', (WidgetTester tester) async {
+    final AppModel appModel = await buildModel();
+    await pumpPage(tester, appModel, initialTab: 2);
+
+    await tester.dragUntilVisible(
+      find.byKey(const ValueKey<String>('galgame-edit-launchArgs')),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
+    await tester.enterText(
+      editField('launchArgs'),
+      r'-windowed --save="Z:\My Saves"',
+    );
+    await tester.dragUntilVisible(
+      find.text(t.game_edit_save),
+      find.byType(ListView),
+      const Offset(0, 120),
+    );
+    await tester.tap(find.text(t.game_edit_save));
+    await tester.pumpAndSettle();
+
+    final GalgameEntry saved = appModel.galgameRepo.byId('g1')!;
+    expect(saved.launchArgs, r'-windowed --save="Z:\My Saves"');
+    // 原样存的一行，拆出来才是 argv（injector 侧一个 token 一个 --arg）。
+    expect(
+      saved.launchArgumentTokens,
+      <String>['-windowed', r'--save=Z:\My Saves'],
+    );
+    // 逐字段重建的其余字段一个都不能丢。
+    expect(saved.exePath, r'Z:\a\alpha.exe');
+    expect(saved.workdir, r'Z:\a');
+    expect(saved.userRating, 9);
+    expect(saved.playStatus, GalgamePlayStatus.playing);
+    expect(saved.releaseDate, '2024-03-15');
+    await tester.pump(const Duration(seconds: 4)); // 放掉桌面 toast 计时器
+  });
+
+  // 没配启动参数的老游戏：保存一轮后仍是空串（= 启动命令行与旧版逐字节相同）。
+  testWidgets('未配置启动参数的游戏保存后仍为空串', (WidgetTester tester) async {
+    final AppModel appModel = await buildModel();
+    await pumpPage(tester, appModel, initialTab: 2);
+
+    await tester.enterText(editField('name'), 'x');
+    await tester.dragUntilVisible(
+      find.text(t.game_edit_save),
+      find.byType(ListView),
+      const Offset(0, 120),
+    );
+    await tester.tap(find.text(t.game_edit_save));
+    await tester.pumpAndSettle();
+
+    final GalgameEntry saved = appModel.galgameRepo.byId('g1')!;
+    expect(saved.launchArgs, '');
+    expect(saved.launchArgumentTokens, <String>[]);
+    await tester.pump(const Duration(seconds: 4)); // 放掉桌面 toast 计时器
+  });
+
   testWidgets('编辑 tab 拒绝半截发行日', (WidgetTester tester) async {
     final AppModel appModel = await buildModel();
     await pumpPage(tester, appModel, initialTab: 2);

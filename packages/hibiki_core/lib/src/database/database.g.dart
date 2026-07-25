@@ -12790,7 +12790,8 @@ class $ShelfEntriesTable extends ShelfEntries
 }
 
 class ShelfEntryRow extends DataClass implements Insertable<ShelfEntryRow> {
-  /// 媒体种类：'epub' | 'srt' | 'video'。
+  /// 媒体种类：'epub' | 'srt' | 'video'（'game' 不写本表——游戏库排序走
+  /// `galgame_library_query.dart` 的视图偏好，合集归属见 [MediaCollectionItems]）。
   final String mediaType;
 
   /// 条目稳定身份：本地 = bookKey / srtUid / videoBookUid；远端 = downloadId /
@@ -13650,10 +13651,13 @@ class MediaCollectionItemRow extends DataClass
   /// 所属合集（[MediaCollections].id）。onDelete:cascade = 删合集连带删本引用行。
   final int collectionId;
 
-  /// 媒体种类：'epub' | 'srt' | 'video'（同 [ShelfEntries].mediaType 值域）。
+  /// 媒体种类：'epub' | 'srt' | 'video' | 'game'（前三者同 [ShelfEntries].mediaType
+  /// 值域；'game' 仅存在于本表——游戏库无书架排序行）。自由 TextColumn，无 CHECK。
   final String mediaType;
 
-  /// 条目稳定身份：epub=bookKey / srt=uid / video=bookUid。
+  /// 条目稳定身份：epub=bookKey / srt=uid / video=bookUid / game=galgames.id
+  /// （game 的 id 是添加时刻微秒时间戳字符串，**本机局域身份**：与 exe 路径同为
+  /// 本机事实，跨端同步时对端无对应行则该成员静默忽略）。
   final String entryKey;
 
   /// 合集内序：playlist 的播放顺序 / collection 的展示顺序。
@@ -18213,6 +18217,14 @@ class $GalgamesTable extends Galgames
   late final GeneratedColumn<String> workdir = GeneratedColumn<String>(
       'workdir', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _launchArgsMeta =
+      const VerificationMeta('launchArgs');
+  @override
+  late final GeneratedColumn<String> launchArgs = GeneratedColumn<String>(
+      'launch_args', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
   static const VerificationMeta _coverPathMeta =
       const VerificationMeta('coverPath');
   @override
@@ -18265,6 +18277,7 @@ class $GalgamesTable extends Galgames
         name,
         exePath,
         workdir,
+        launchArgs,
         coverPath,
         addedAt,
         playStatus,
@@ -18305,6 +18318,12 @@ class $GalgamesTable extends Galgames
           workdir.isAcceptableOrUnknown(data['workdir']!, _workdirMeta));
     } else if (isInserting) {
       context.missing(_workdirMeta);
+    }
+    if (data.containsKey('launch_args')) {
+      context.handle(
+          _launchArgsMeta,
+          launchArgs.isAcceptableOrUnknown(
+              data['launch_args']!, _launchArgsMeta));
     }
     if (data.containsKey('cover_path')) {
       context.handle(_coverPathMeta,
@@ -18361,6 +18380,8 @@ class $GalgamesTable extends Galgames
           .read(DriftSqlType.string, data['${effectivePrefix}exe_path'])!,
       workdir: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}workdir'])!,
+      launchArgs: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}launch_args'])!,
       coverPath: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}cover_path']),
       addedAt: attachedDatabase.typeMapping
@@ -18398,6 +18419,16 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
   /// 工作目录（默认 exe 所在目录）。也是游玩计时判定「候选进程组」的范围依据。
   final String workdir;
 
+  /// v56：启动游戏时追加给 exe 的命令行参数，存**用户原样输入的一整行**
+  /// （如 `-windowed --save="D:\My Saves"`），空串 = 不带任何参数。
+  ///
+  /// 刻意不存 `List<String>` 的 JSON：用户的心智模型就是「一行命令行」（从攻略、
+  /// Steam 启动项里复制粘贴），存原文才能原样回显、原样再编辑。拆分成 argv 的规则
+  /// 由 `parseGameLaunchArguments` 这个纯函数在启动时执行一次，与 Windows
+  /// `CommandLineToArgvW` 同规则 —— 存拆分结果反而要多维护一套「拆了再拼回去给用户看」
+  /// 的逆变换，且无法无损还原用户写的引号。
+  final String launchArgs;
+
   /// 本地封面绝对路径；null = 用默认手柄图标。
   final String? coverPath;
 
@@ -18426,6 +18457,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       required this.name,
       required this.exePath,
       required this.workdir,
+      required this.launchArgs,
       this.coverPath,
       required this.addedAt,
       required this.playStatus,
@@ -18440,6 +18472,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
     map['name'] = Variable<String>(name);
     map['exe_path'] = Variable<String>(exePath);
     map['workdir'] = Variable<String>(workdir);
+    map['launch_args'] = Variable<String>(launchArgs);
     if (!nullToAbsent || coverPath != null) {
       map['cover_path'] = Variable<String>(coverPath);
     }
@@ -18464,6 +18497,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       name: Value(name),
       exePath: Value(exePath),
       workdir: Value(workdir),
+      launchArgs: Value(launchArgs),
       coverPath: coverPath == null && nullToAbsent
           ? const Value.absent()
           : Value(coverPath),
@@ -18490,6 +18524,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       name: serializer.fromJson<String>(json['name']),
       exePath: serializer.fromJson<String>(json['exePath']),
       workdir: serializer.fromJson<String>(json['workdir']),
+      launchArgs: serializer.fromJson<String>(json['launchArgs']),
       coverPath: serializer.fromJson<String?>(json['coverPath']),
       addedAt: serializer.fromJson<int>(json['addedAt']),
       playStatus: serializer.fromJson<int>(json['playStatus']),
@@ -18507,6 +18542,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       'name': serializer.toJson<String>(name),
       'exePath': serializer.toJson<String>(exePath),
       'workdir': serializer.toJson<String>(workdir),
+      'launchArgs': serializer.toJson<String>(launchArgs),
       'coverPath': serializer.toJson<String?>(coverPath),
       'addedAt': serializer.toJson<int>(addedAt),
       'playStatus': serializer.toJson<int>(playStatus),
@@ -18522,6 +18558,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           String? name,
           String? exePath,
           String? workdir,
+          String? launchArgs,
           Value<String?> coverPath = const Value.absent(),
           int? addedAt,
           int? playStatus,
@@ -18534,6 +18571,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
         name: name ?? this.name,
         exePath: exePath ?? this.exePath,
         workdir: workdir ?? this.workdir,
+        launchArgs: launchArgs ?? this.launchArgs,
         coverPath: coverPath.present ? coverPath.value : this.coverPath,
         addedAt: addedAt ?? this.addedAt,
         playStatus: playStatus ?? this.playStatus,
@@ -18550,6 +18588,8 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       name: data.name.present ? data.name.value : this.name,
       exePath: data.exePath.present ? data.exePath.value : this.exePath,
       workdir: data.workdir.present ? data.workdir.value : this.workdir,
+      launchArgs:
+          data.launchArgs.present ? data.launchArgs.value : this.launchArgs,
       coverPath: data.coverPath.present ? data.coverPath.value : this.coverPath,
       addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
       playStatus:
@@ -18573,6 +18613,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           ..write('name: $name, ')
           ..write('exePath: $exePath, ')
           ..write('workdir: $workdir, ')
+          ..write('launchArgs: $launchArgs, ')
           ..write('coverPath: $coverPath, ')
           ..write('addedAt: $addedAt, ')
           ..write('playStatus: $playStatus, ')
@@ -18590,6 +18631,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       name,
       exePath,
       workdir,
+      launchArgs,
       coverPath,
       addedAt,
       playStatus,
@@ -18605,6 +18647,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           other.name == this.name &&
           other.exePath == this.exePath &&
           other.workdir == this.workdir &&
+          other.launchArgs == this.launchArgs &&
           other.coverPath == this.coverPath &&
           other.addedAt == this.addedAt &&
           other.playStatus == this.playStatus &&
@@ -18619,6 +18662,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
   final Value<String> name;
   final Value<String> exePath;
   final Value<String> workdir;
+  final Value<String> launchArgs;
   final Value<String?> coverPath;
   final Value<int> addedAt;
   final Value<int> playStatus;
@@ -18632,6 +18676,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     this.name = const Value.absent(),
     this.exePath = const Value.absent(),
     this.workdir = const Value.absent(),
+    this.launchArgs = const Value.absent(),
     this.coverPath = const Value.absent(),
     this.addedAt = const Value.absent(),
     this.playStatus = const Value.absent(),
@@ -18646,6 +18691,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     required String name,
     required String exePath,
     required String workdir,
+    this.launchArgs = const Value.absent(),
     this.coverPath = const Value.absent(),
     required int addedAt,
     this.playStatus = const Value.absent(),
@@ -18664,6 +18710,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     Expression<String>? name,
     Expression<String>? exePath,
     Expression<String>? workdir,
+    Expression<String>? launchArgs,
     Expression<String>? coverPath,
     Expression<int>? addedAt,
     Expression<int>? playStatus,
@@ -18678,6 +18725,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
       if (name != null) 'name': name,
       if (exePath != null) 'exe_path': exePath,
       if (workdir != null) 'workdir': workdir,
+      if (launchArgs != null) 'launch_args': launchArgs,
       if (coverPath != null) 'cover_path': coverPath,
       if (addedAt != null) 'added_at': addedAt,
       if (playStatus != null) 'play_status': playStatus,
@@ -18694,6 +18742,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
       Value<String>? name,
       Value<String>? exePath,
       Value<String>? workdir,
+      Value<String>? launchArgs,
       Value<String?>? coverPath,
       Value<int>? addedAt,
       Value<int>? playStatus,
@@ -18707,6 +18756,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
       name: name ?? this.name,
       exePath: exePath ?? this.exePath,
       workdir: workdir ?? this.workdir,
+      launchArgs: launchArgs ?? this.launchArgs,
       coverPath: coverPath ?? this.coverPath,
       addedAt: addedAt ?? this.addedAt,
       playStatus: playStatus ?? this.playStatus,
@@ -18732,6 +18782,9 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     }
     if (workdir.present) {
       map['workdir'] = Variable<String>(workdir.value);
+    }
+    if (launchArgs.present) {
+      map['launch_args'] = Variable<String>(launchArgs.value);
     }
     if (coverPath.present) {
       map['cover_path'] = Variable<String>(coverPath.value);
@@ -18767,6 +18820,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
           ..write('name: $name, ')
           ..write('exePath: $exePath, ')
           ..write('workdir: $workdir, ')
+          ..write('launchArgs: $launchArgs, ')
           ..write('coverPath: $coverPath, ')
           ..write('addedAt: $addedAt, ')
           ..write('playStatus: $playStatus, ')
@@ -32262,6 +32316,7 @@ typedef $$GalgamesTableCreateCompanionBuilder = GalgamesCompanion Function({
   required String name,
   required String exePath,
   required String workdir,
+  Value<String> launchArgs,
   Value<String?> coverPath,
   required int addedAt,
   Value<int> playStatus,
@@ -32276,6 +32331,7 @@ typedef $$GalgamesTableUpdateCompanionBuilder = GalgamesCompanion Function({
   Value<String> name,
   Value<String> exePath,
   Value<String> workdir,
+  Value<String> launchArgs,
   Value<String?> coverPath,
   Value<int> addedAt,
   Value<int> playStatus,
@@ -32341,6 +32397,9 @@ class $$GalgamesTableFilterComposer
 
   ColumnFilters<String> get workdir => $composableBuilder(
       column: $table.workdir, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get launchArgs => $composableBuilder(
+      column: $table.launchArgs, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get coverPath => $composableBuilder(
       column: $table.coverPath, builder: (column) => ColumnFilters(column));
@@ -32428,6 +32487,9 @@ class $$GalgamesTableOrderingComposer
   ColumnOrderings<String> get workdir => $composableBuilder(
       column: $table.workdir, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get launchArgs => $composableBuilder(
+      column: $table.launchArgs, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get coverPath => $composableBuilder(
       column: $table.coverPath, builder: (column) => ColumnOrderings(column));
 
@@ -32472,6 +32534,9 @@ class $$GalgamesTableAnnotationComposer
 
   GeneratedColumn<String> get workdir =>
       $composableBuilder(column: $table.workdir, builder: (column) => column);
+
+  GeneratedColumn<String> get launchArgs => $composableBuilder(
+      column: $table.launchArgs, builder: (column) => column);
 
   GeneratedColumn<String> get coverPath =>
       $composableBuilder(column: $table.coverPath, builder: (column) => column);
@@ -32565,6 +32630,7 @@ class $$GalgamesTableTableManager extends RootTableManager<
             Value<String> name = const Value.absent(),
             Value<String> exePath = const Value.absent(),
             Value<String> workdir = const Value.absent(),
+            Value<String> launchArgs = const Value.absent(),
             Value<String?> coverPath = const Value.absent(),
             Value<int> addedAt = const Value.absent(),
             Value<int> playStatus = const Value.absent(),
@@ -32579,6 +32645,7 @@ class $$GalgamesTableTableManager extends RootTableManager<
             name: name,
             exePath: exePath,
             workdir: workdir,
+            launchArgs: launchArgs,
             coverPath: coverPath,
             addedAt: addedAt,
             playStatus: playStatus,
@@ -32593,6 +32660,7 @@ class $$GalgamesTableTableManager extends RootTableManager<
             required String name,
             required String exePath,
             required String workdir,
+            Value<String> launchArgs = const Value.absent(),
             Value<String?> coverPath = const Value.absent(),
             required int addedAt,
             Value<int> playStatus = const Value.absent(),
@@ -32607,6 +32675,7 @@ class $$GalgamesTableTableManager extends RootTableManager<
             name: name,
             exePath: exePath,
             workdir: workdir,
+            launchArgs: launchArgs,
             coverPath: coverPath,
             addedAt: addedAt,
             playStatus: playStatus,

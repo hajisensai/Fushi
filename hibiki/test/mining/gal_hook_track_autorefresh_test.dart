@@ -142,6 +142,8 @@ GalHookSessionController _controller({
       required String injectorPath,
       required bool lunaPcHooks,
       int? lunaCodepage,
+      List<String> launchArguments = const <String>[],
+      String launchWorkdir = '',
     }) =>
         engine,
     loopbackSourceFactory: _SilentLoopback.new,

@@ -99,6 +99,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -145,6 +147,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       windowListLoader: () async => const <ExternalWindowInfo>[],
@@ -195,6 +199,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -253,6 +259,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) {
         capturedLunaPcHooks = lunaPcHooks;
         return engine;
@@ -312,6 +320,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -375,6 +385,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -439,6 +451,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -522,6 +536,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -612,6 +628,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -669,6 +687,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -744,6 +764,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       textPollInterval: const Duration(milliseconds: 5),
@@ -791,6 +813,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -839,6 +863,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -894,6 +920,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -957,6 +985,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -1044,6 +1074,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -1105,6 +1137,8 @@ void main() {
         required String injectorPath,
         required bool lunaPcHooks,
         int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
       }) =>
           engine,
       loopbackSourceFactory: () => loopback,
@@ -1288,6 +1322,8 @@ void _bug950Guard() {
           required String injectorPath,
           required bool lunaPcHooks,
           int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
         }) =>
             queue.isEmpty ? recovered : queue.removeAt(0),
         loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -1358,6 +1394,8 @@ void _bug950Guard() {
           required String injectorPath,
           required bool lunaPcHooks,
           int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
         }) {
           factoryCalls++;
           return denied;
@@ -1422,6 +1460,8 @@ void _bug950Guard() {
           required String injectorPath,
           required bool lunaPcHooks,
           int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
         }) =>
             queue.isEmpty ? recovered : queue.removeAt(0),
         loopbackSourceFactory: _FakeLoopbackSource.new,
@@ -1473,6 +1513,8 @@ void _bug950Guard() {
           required String injectorPath,
           required bool lunaPcHooks,
           int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
         }) =>
             failing,
         loopbackSourceFactory: _FakeLoopbackSource.new,
