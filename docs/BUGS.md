@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1050 条。点号进各自文件。
+> 共 1051 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1084](bugs/BUG-1084-gal-charcount-inflated.md) | ✅ | ✅ | galgame 字数统计虚高：标点全算/重复行重计/递增重发重计/外部通道双计 |
 | [BUG-1083](bugs/BUG-1083-manga-author-edit-missing.md) | ✅ | ✅ | 漫画编辑对话框缺作者字段(未覆盖supportsAuthorEdit) |
 | [BUG-1082](bugs/BUG-1082-scrape-poster-lowres.md) | ✅ | ✅ | TMDB刮削海报w500缩略图发糊非满分辨率 |
 | [BUG-1081](bugs/BUG-1081-poster-use-no-feedback.md) | ✅ | ✅ | 海报匹配弹窗点使用没反应无进度反馈 |

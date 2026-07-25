@@ -5,6 +5,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 import 'package:hibiki/src/mining/gal_hook_activity_accumulator.dart';
 import 'package:hibiki/src/mining/galgame_audio_encode.dart';
+import 'package:hibiki/src/mining/galgame_char_count.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
 import 'package:hibiki/src/mining/galgame_hook_code_profile.dart';
 import 'package:hibiki/src/mining/serial_job_queue.dart';
@@ -419,6 +420,16 @@ class GalHookSessionController extends ChangeNotifier {
   /// 纯累计器：把 hook 文本行累计成活跃时长 + 字符数（挂机间隔封顶，见其实现）。
   final GalHookActivityAccumulator _activityAccumulator =
       GalHookActivityAccumulator();
+
+  /// 统计字数的唯一计数口径（相邻去重 + 递增增量 + 标点剔除 + CJK 每字/西文
+  /// 每词 + 超长垃圾行门），见 [GalgameLineCharCounter]。
+  final GalgameLineCharCounter _activityCharCounter = GalgameLineCharCounter();
+
+  /// 本会话是否已有引擎 hook 台词计入统计。置位后外部 WS/剪贴板行不再计数——
+  /// 同一游戏同时开着 LunaTranslator 等外部 hook 时，每句台词会从两条通道各到
+  /// 一次，一个会话只允许一个计数源。引擎侧一直无文本时（仅用外部工具喂文本、
+  /// hibiki 只管音频的场景）外部行仍照常计数。
+  bool _engineTextCounted = false;
 
   /// 可注入的落库写入方（单测用假实现）；为 null 时经 [_activityDatabaseResolver]
   /// 惰性取 DB 走默认写入。
@@ -1615,6 +1626,7 @@ class GalHookSessionController extends ChangeNotifier {
     ++_operationGeneration;
     _flushGameActivity();
     _activityAccumulator.reset();
+    _activityCharCounter.reset();
     _textService.removeListener(_onTextBufferChanged);
     _endpointListenable.removeListener(_onEndpointStatusChanged);
     await _stopSources();
@@ -1633,6 +1645,8 @@ class GalHookSessionController extends ChangeNotifier {
   void _beginActivitySession({required String title, String? mediaKey}) {
     _flushGameActivity();
     _activityAccumulator.reset();
+    _activityCharCounter.reset();
+    _engineTextCounted = false;
     final String trimmed = title.trim();
     _activityGameTitle = trimmed.isEmpty ? null : trimmed;
     _activityGameKey = mediaKey == null || mediaKey.isEmpty ? null : mediaKey;
@@ -1641,10 +1655,20 @@ class GalHookSessionController extends ChangeNotifier {
   /// 记一行 hook 文本到活动累计；命中中途 flush 阈值即落一条（防崩溃丢账）。
   /// 仅在已开始游戏活动会话（[_activityGameTitle] 非空）时记账——纯 WebSocket/剪贴板
   /// 文本流没有绑定游戏进程、无可归属标题，不计入「游戏」活动。
-  void _recordActivityLine(String text) {
+  ///
+  /// 字数走 [_activityCharCounter] 统一口径（BUG-1084：裸 `text.length` 把标点、
+  /// 相邻重发、打字机递增、外部工具双通道全算成字数，统计虚高）。计 0 的行仍
+  /// [GalHookActivityAccumulator.recordLine] 记时间戳——行到达本身是"人在读"
+  /// 的活跃信号，flush 节奏不受去重影响。
+  void _recordActivityLine(String text, {required bool fromEngineHook}) {
     if (text.isEmpty || _activityGameTitle == null) return;
+    if (fromEngineHook) {
+      _engineTextCounted = true;
+    } else if (_engineTextCounted) {
+      return; // 引擎 hook 是本会话计数源，外部通道的同句不再计（防双计）。
+    }
     _activityAccumulator.recordLine(
-      text.length,
+      _activityCharCounter.countLine(text),
       _now().millisecondsSinceEpoch,
     );
     if (_activityAccumulator.shouldFlush) _flushGameActivity();
@@ -2210,7 +2234,7 @@ class GalHookSessionController extends ChangeNotifier {
           continue;
         }
         receivedTextLine = true;
-        _recordActivityLine(entry.text);
+        _recordActivityLine(entry.text, fromEngineHook: true);
         _lineTimestampCache[entry.id] = line.timestampMs;
         _trimCache(_lineTimestampCache);
         _lineTextEventIdCache[entry.id] = line.seq;
@@ -2479,7 +2503,7 @@ class GalHookSessionController extends ChangeNotifier {
         } else {
           _state = _state.copyWith(textSignalReceived: true);
         }
-        _recordActivityLine(latest.text);
+        _recordActivityLine(latest.text, fromEngineHook: false);
         unawaited(_cacheLoopbackForLine(latest));
       }
     }
