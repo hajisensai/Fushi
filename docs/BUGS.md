@@ -276,7 +276,7 @@
 | [BUG-818](bugs/BUG-818-popup-surface-translucent-wallpaper.md) | ✅ | ✅ | 查词浮窗卡片背景半透明透出壁纸浅色下看不清 |
 | [BUG-817](bugs/BUG-817-merge-text-image-spread-mispair.md) | ✅ | ✅ | 自动跨页把文本章与固定布局插画章错配成spread导致合并插图失效 |
 | [BUG-816](bugs/BUG-816-backup-export-category-gating.md) | ✅ | ✅ | 导出未按功能类别剥离个人数据(收藏句/音频源路径/字体路径/sync开关/配对token泄漏) |
-| [BUG-815](bugs/BUG-815-init-retry-race.md) | ✅ | ✅ | 看门狗重试与在飞初始化竞态致数据全空(移动端) |
+| [BUG-815](bugs/BUG-815-init-retry-race.md) | ✅ | ✅ | 启动数据根不可达/看门狗重试致「数据全空」观感(移动端竞态 + 桌面静默回退空默认库) |
 | [BUG-814](bugs/BUG-814-interconnect-video-list-empty.md) | ✅ | ✅ | 互联开启后手机视频列表为空(host listVideos 每视频串行 ffmpeg 探测超过 client 15s 超时) |
 | [BUG-813](bugs/BUG-813-interconnect-download-no-reading-progress.md) | ✅ | ✅ | 互联手动下载远端书不带回阅读记录(阅读进度/有声书断点) |
 | [BUG-812](bugs/BUG-812-interconnect-audiobook-not-in-collection.md) | ✅ | ✅ | 互联开启后手机上有声书不进合集(host listBooks 只用 epub\|bookKey 查归属，漏 srt-backed 有声书的 srt\|uid 成员键) |

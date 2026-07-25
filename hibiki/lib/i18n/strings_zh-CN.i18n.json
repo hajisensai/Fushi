@@ -2577,5 +2577,8 @@
   "stat_goal_unit_chars": "字",
   "stat_goal_scope_hint": "口径：阅读 + 视频字幕 + 游戏文本的全部字符数合计",
   "stat_goal_recent_average": "近 7 日日均 $n 字",
-  "stat_goal_presets": "快捷预设"
+  "stat_goal_presets": "快捷预设",
+  "data_root_unavailable_title": "数据位置未响应",
+  "data_root_unavailable_message": "你设置的数据位置 $path 暂时读不到（盘可能在休眠、被占用或未连接）。你的数据是安全的、原封不动留在那里——没有丢失。请点「重试」,等盘就绪即可用回你的数据；或选择用默认位置临时启动（不会改动你原来的数据）。",
+  "data_root_use_default_button": "仍用默认位置启动"
 }

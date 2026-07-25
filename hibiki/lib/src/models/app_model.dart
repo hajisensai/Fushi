@@ -840,6 +840,13 @@ class AppModel with ChangeNotifier {
       _unrecoverableDbError;
   HibikiDatabaseUnrecoverableException? _unrecoverableDbError;
 
+  /// BUG-815：非 null 表示桌面**配置了自定义数据根、但本次启动它不可达**（休眠 / 掉线 /
+  /// 拔出的盘）。UI 据此显「数据位置未响应」逃生屏（重试 / 显式用默认位置启动），而**不**
+  /// 静默把空默认库当真数据显示。真实数据仍原封不动躺在 [DataRootUnavailableException.
+  /// configuredPath]。DB 尚未打开（init 在 resolve-data-roots 步就抛出），故重试是干净重跑。
+  DataRootUnavailableException? get dataRootUnavailable => _dataRootUnavailable;
+  DataRootUnavailableException? _dataRootUnavailable;
+
   /// Clears the error state and re-runs [initialise].
   Future<void> retryInitialise() async {
     // BUG-815: if an init started by main() is still IN FLIGHT — a slow cold
@@ -880,9 +887,19 @@ class AppModel with ChangeNotifier {
     _initError = null;
     _downgradeError = null;
     _unrecoverableDbError = null;
+    _dataRootUnavailable = null;
     _isInitialised = false;
     notifyListeners();
     await initialise();
+  }
+
+  /// BUG-815：用户在「数据位置未响应」逃生屏点「仍用默认位置启动」时调用。置全局
+  /// [AppPaths.forceDefaultRootForSession] 让本次进程用 `path_provider` 默认根打开
+  /// （配置根不动、原盘数据一字节不动），再走常规 [retryInitialise]。仅本次有效：下次
+  /// 启动重新探测配置根，盘醒了自动用回真实数据。绝不自动调用——只由用户显式点击触发。
+  Future<void> retryInitialiseWithDefaultRoot() async {
+    AppPaths.forceDefaultRootForSession = true;
+    await retryInitialise();
   }
 
   /// Used for caching images and audio produced from media seeds.
@@ -2245,6 +2262,19 @@ class AppModel with ChangeNotifier {
         ErrorLogService.instance
             .log('AppModel.startAnimeDownloadService', e, s);
       }));
+      notifyListeners();
+    } on DataRootUnavailableException catch (e, stack) {
+      // BUG-815: a custom data root IS configured but is currently unreachable
+      // (slow/sleeping/disconnected drive). AppPaths.resolve threw INSTEAD of
+      // silently deriving the empty default location — the DB was never opened
+      // (_databaseOpened stays false, so retry is a clean re-run). Surface a
+      // dedicated "data location unavailable" escape screen (Retry / explicit
+      // opt-in-to-default); do NOT set _initError so the generic error screen
+      // doesn't shadow it. The real data is untouched on e.configuredPath.
+      debugPrint('[Hibiki] init PAUSED (data root unavailable): $e\n$stack');
+      ErrorLogService.instance
+          .log('AppModel.initialise.dataRootUnavailable', e, stack);
+      _dataRootUnavailable = e;
       notifyListeners();
     } on HibikiDatabaseDowngradeException catch (e, stack) {
       // The DB is newer than this build. drift refused to open it WITHOUT

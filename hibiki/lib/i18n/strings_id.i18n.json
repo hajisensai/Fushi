@@ -2577,5 +2577,8 @@
   "stat_goal_unit_chars": "chars",
   "stat_goal_scope_hint": "Counts all characters combined: reading + video subtitles + game text.",
   "stat_goal_recent_average": "Last 7 days: $n chars/day on average",
-  "stat_goal_presets": "Presets"
+  "stat_goal_presets": "Presets",
+  "data_root_unavailable_title": "Data location not responding",
+  "data_root_unavailable_message": "Your configured data location $path is temporarily unreachable (the drive may be asleep, busy, or disconnected). Your data is safe and untouched there — nothing is lost. Tap Retry once the drive is ready to load your data, or start with the default location for now (your existing data will NOT be modified).",
+  "data_root_use_default_button": "Start with default location"
 }

@@ -72,13 +72,31 @@ void main() {
       expect(paths.tempRoot.path, equals(fakeTemp.path));
     });
 
-    test('data_root 指向不存在目录 → 回退默认（不派生到失效路径）', () async {
+    test(
+        'data_root 指向不存在目录 → 抛 DataRootUnavailableException，不静默回退空默认根 (BUG-815)',
+        () async {
+      // BUG-815 契约变更：配置了自定义根但探测不可达（含目录不存在——盘休眠/未挂载时
+      // 表现同样是「路径不存在」）→ 抛异常给启动层渲染逃生屏，绝不静默派生空默认根
+      // （旧行为=用户数据「被清空」观感，正是 BUG-815 要消灭的）。
       final String missing = p.join(tmp.path, 'does_not_exist');
       AppPaths.debugDataRootReader = () async => missing;
 
+      await expectLater(
+        AppPaths.resolve(),
+        throwsA(isA<DataRootUnavailableException>()
+            .having((e) => e.configuredPath, 'configuredPath', missing)),
+      );
+    });
+
+    test('data_root 指向不存在目录 + forceDefaultRootForSession → 用户显式回退默认根 (BUG-815)',
+        () async {
+      final String missing = p.join(tmp.path, 'does_not_exist');
+      AppPaths.debugDataRootReader = () async => missing;
+      AppPaths.forceDefaultRootForSession = true;
+      addTearDown(() => AppPaths.forceDefaultRootForSession = false);
+
       final AppPaths paths = await AppPaths.resolve();
 
-      // 失效 dataRoot 被忽略 → 回退 path_provider 默认根。
       expect(paths.documentsRoot.path, isNot(startsWith(missing)));
       expect(paths.documentsRoot.path,
           equals(p.join(tmp.path, 'default_documents')));

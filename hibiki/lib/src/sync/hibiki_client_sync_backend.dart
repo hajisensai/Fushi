@@ -135,6 +135,17 @@ class HibikiClientSyncBackend extends SyncBackend
   /// host degrades to "failed" instead of an infinite wait.
   static const Duration listTimeout = Duration(seconds: 15);
 
+  /// 下载健壮性（弱网，TODO-819 续）超时：
+  /// - [downloadStallTimeout]：数据流两个 chunk 之间的最大空闲。超过即判定连接卡死并
+  ///   中断（[ResumableDownloader] 保留 .part 可续传），而不是干等到 OS 级 TCP 超时
+  ///   （弱网下可能几分钟像卡死）。给得比常规请求宽松，容忍慢但活着的链路。
+  /// - [videoFirstByteTimeout]：视频是稳定磁盘文件、host 无需打包，首字节应很快。
+  /// - [packageFirstByteTimeout]：书/有声书/词典包下载——host 要先导出临时包再流式，
+  ///   首字节（=打包耗时）可能较慢，给足打包余量，远比视频宽松。
+  static const Duration downloadStallTimeout = Duration(seconds: 45);
+  static const Duration videoFirstByteTimeout = Duration(seconds: 30);
+  static const Duration packageFirstByteTimeout = Duration(minutes: 5);
+
   final HibikiProbe _probe;
   List<HibikiClientUrl> _candidates = const <HibikiClientUrl>[];
   String? _token;
@@ -437,6 +448,10 @@ class HibikiClientSyncBackend extends SyncBackend
       destination: destination,
       partFile: partFile,
       resumeState: ResumableDownloadState(etag: storedEtag),
+      // 弱网停顿超时：流内空闲超 downloadStallTimeout 即中断保 part 可续；打包型
+      // 包端点首字节（=打包耗时）给足 packageFirstByteTimeout 余量。
+      firstByteTimeout: packageFirstByteTimeout,
+      bodyTimeout: downloadStallTimeout,
       open: (Uri uri, Map<String, String> headers) async {
         final HttpClientRequest req =
             await _ops!.buildRequest('GET', uri.toString());
@@ -1346,6 +1361,10 @@ class HibikiClientSyncBackend extends SyncBackend
         partFile: partFile,
         open: (Uri uri, Map<String, String> headers) =>
             _openResumableRequest(client, uri, headers),
+        // 弱网停顿超时：稳定视频文件首字节快（videoFirstByteTimeout），流内空闲超
+        // downloadStallTimeout 即中断保 part 可续，不再无限等卡死连接。
+        firstByteTimeout: videoFirstByteTimeout,
+        bodyTimeout: downloadStallTimeout,
         onProgress: (int received, int? total) {
           if (total != null && total > 0) {
             onProgress?.call(received / total);

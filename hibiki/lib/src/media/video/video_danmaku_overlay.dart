@@ -50,13 +50,16 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
 
   bool get _shouldTick => widget.enabled && widget.items.isNotEmpty;
 
-  /// 平滑播放时钟（毫秒）。null = 尚未锚定（下一帧用真值锚定）。
-  int? _smoothMs;
+  /// 锚点真值（毫秒）：最近一次对齐播放器时钟时的 [positionMs] 值。null = 尚未锚定。
+  int? _anchorRawMs;
 
-  /// 上一帧的 [SchedulerBinding.currentFrameTimeStamp]（毫秒），用于求帧间隔。
+  /// 锚点帧时间（毫秒）：锚定当刻的 [SchedulerBinding.currentFrameTimeStamp]。
   /// 该时钟在生产环境按 vsync 逐帧推进、在 widget 测试里按 `pump(duration)` 推进，
   /// 故插值在测试中确定、不依赖真实墙钟。
-  int _lastFrameMs = 0;
+  int _anchorFrameMs = 0;
+
+  /// 上一帧返回的平滑位置（毫秒），用于**只进不退**单调钳制，消除退出边缘的来回跳动。
+  int _lastSmoothMs = 0;
 
   @override
   void initState() {
@@ -83,15 +86,17 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
       if (_ticker.isAnimating) _ticker.stop(canceled: false);
       // 不在动画时丢弃锚点：下次开启（换视频/重新开弹幕）从真值重新锚定，
       // 不把上个视频的陈旧平滑时钟带过来。
-      _smoothMs = null;
+      _anchorRawMs = null;
     }
   }
 
-  /// 按帧插值出的平滑播放位置（毫秒），消除 media_kit `state.position` ~200ms 才更新
-  /// 一次导致的弹幕跳格。
+  /// 按帧插值出的**单调**平滑播放位置（毫秒），消除 media_kit `state.position`
+  /// ~200ms 才更新一次导致的弹幕跳格，且**播放中只进不退**——避免退出边缘（progress
+  /// 逼近 1）来回穿越活动/淡出阈值造成的「来回跳动 + 忽隐忽现」。
   ///
-  /// 每帧按真实帧间隔 × 速率推进内部时钟；对播放器真值做**软校正**（小漂移每帧拉近
-  /// 15%，避免可见回跳），漂移过大（seek / 大失步）直接吸附真值；暂停时冻结在真值。
+  /// 锚点法：以最近的真值为地面真相，从锚点按 帧时间 × 速率外推；真值每前进一格就
+  /// 重锚（当前时刻真相），故外推不会越跑越远。外推结果对上一帧做单调钳制（不得后退）；
+  /// 真值大跳（seek）时才允许一次性对齐（含后退）；暂停时冻结当前平滑值。
   int _smoothPositionMs() {
     final int raw = widget.positionMs();
     final int frameMs =
@@ -99,29 +104,31 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
     final bool playing = widget.isPlaying?.call() ?? true;
     final double speed = widget.speed?.call() ?? 1.0;
 
-    if (_smoothMs == null) {
-      _smoothMs = raw;
-      _lastFrameMs = frameMs;
-      return raw;
-    }
-    final int dtMs = frameMs - _lastFrameMs;
-    _lastFrameMs = frameMs;
-
-    if (!playing || dtMs <= 0) {
-      // 暂停 / 无时间推进：钉在真值，避免外推。
-      _smoothMs = raw;
+    // 首帧 / seek（真值大跳，前进或后退）：以真值重锚并直接对齐（允许后退，仅此一次）。
+    if (_anchorRawMs == null || (raw - _anchorRawMs!).abs() > 1000) {
+      _anchorRawMs = raw;
+      _anchorFrameMs = frameMs;
+      _lastSmoothMs = raw;
       return raw;
     }
 
-    int next = _smoothMs! + (dtMs * speed).round();
-    final int drift = raw - next;
-    if (drift.abs() > 400) {
-      next = raw; // seek 或大失步（后台丢帧）→ 直接对齐真值。
-    } else {
-      next += (drift * 0.15).round(); // 小漂移软校正，肉眼无回跳。
+    // 暂停：冻结在上一帧平滑值（不外推），锚点挪到当下使恢复播放时无跳变。
+    if (!playing) {
+      _anchorRawMs = raw;
+      _anchorFrameMs = frameMs;
+      return _lastSmoothMs;
     }
-    if (next < 0) next = 0;
-    _smoothMs = next;
+
+    // 真值前进了一格（media_kit ~200ms 一次）→ 用最新真值重锚（当前时刻的地面真相）。
+    if (raw != _anchorRawMs) {
+      _anchorRawMs = raw;
+      _anchorFrameMs = frameMs;
+    }
+
+    // 从锚点按 帧时间 × 速率外推，再做只进不退单调钳制。
+    int next = _anchorRawMs! + ((frameMs - _anchorFrameMs) * speed).round();
+    if (next < _lastSmoothMs) next = _lastSmoothMs;
+    _lastSmoothMs = next;
     return next;
   }
 
