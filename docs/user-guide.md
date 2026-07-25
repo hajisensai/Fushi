@@ -28,7 +28,7 @@ Android: choose **arm64**. Windows: choose the **.exe** file.
 
 ### 1. Import recommended dictionaries and local audio (Highly recommended for beginners!!! · optional)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Direct download (mirror, 9.3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare download (9.3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
 
 In the app: Settings -> Sync & Backup -> tap **Import Backup**.
 

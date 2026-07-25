@@ -24,7 +24,7 @@ Android: выберите **arm64**. Windows: выберите файл **.exe**
 
 ### 1. Импорт рекомендуемых словарей и локального аудио (Настоятельно рекомендуется новичкам!!! · необязательно)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Прямая ссылка (зеркало, 9,3 ГБ)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Загрузка через Cloudflare (9,3 ГБ)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
 
 В приложении: Настройки -> Синхронизация и резервное копирование -> нажмите **Импортировать резервную копию**.
 

@@ -24,7 +24,7 @@ Android: **arm64**를 선택하세요. Windows: **.exe** 파일을 선택하세�
 
 ### 1. 추천 사전과 로컬 오디오 가져오기(초보자에게 강력 추천!!! · 선택 사항)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [직접 다운로드(미러, 9.3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [Cloudflare 다운로드(9.3 GB)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
 
 앱에서: 설정 -> 동기화 및 백업 -> **백업 가져오기**를 탭합니다.
 

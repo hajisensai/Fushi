@@ -24,7 +24,7 @@ https://github.com/hajisensai/hibiki/releases/latest
 
 ### 1. استيراد القواميس المُوصى بها والصوت المحلي (يُوصى به بشدة للمبتدئين!!! · اختياري)
 
-[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [تنزيل مباشر (نسخة بديلة، ‏9.3 غيغابايت)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
+[Google Drive](https://drive.google.com/file/d/19WIDymw87t7Ra_h-Vny6qRe7kBKBs2G0/view?usp=sharing) · [التنزيل عبر Cloudflare (‏9.3 غيغابايت)](https://dl.wrds.xyz/hibiki-recommended-2026-07-15.hibiki.zip)
 
 داخل التطبيق: الإعدادات -> المزامنة والنسخ الاحتياطي -> اضغط على **استيراد نسخة احتياطية**.
 
