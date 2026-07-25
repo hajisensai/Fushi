@@ -2647,5 +2647,6 @@
   "game_line_track_failed": "That track has no audio around this line",
   "game_line_track_applied": "Voice track applied to this line",
   "game_edit_launch_args": "Launch arguments",
-  "game_edit_launch_args_hint": "Passed to the game on launch, e.g. -windowed"
+  "game_edit_launch_args_hint": "Passed to the game on launch, e.g. -windowed",
+  "galgame_helper_verification_failed": "Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code."
 }

@@ -1,0 +1,22 @@
+## BUG-1103 · galgame helper 安装器：sha256 侧车拉不到就不校验照装 + 侧车与产物同源第三方镜像（注入器/hook DLL 供应链后门）
+- **报告**：2026-07-26（PR#426 审查阻塞项外溢；与已落地的 magpie 修复同模式，但影响面更大）
+- **真实性**：✅ 真 bug（两条根因都在旧代码里逐字可见，且发布包内容是**要注入用户游戏进程的原生代码**）
+  - 根因 ①「取不到摘要就降级为不校验」：旧 `galgame_helper_installer.dart:686-707 _fetchSha256()` 任何失败一律 `return null`；`_installCore:582` 拿到 null 后照样往下走，`_downloadZip` 的 `expectedSha256` 是 `String?`（旧 `:653`），null 时 `ResumableDownloader` 只剩 `expectedSize` 兜底——而 size 是攻击者随手就能对齐的量。等价于「拿不到摘要 ⇒ 装任何字节」。
+  - 根因 ②「侧车与产物同源镜像」：旧 `_fetchSha256:687-688` 用 `galgameHelperCandidateUrls(galgameHelperSha256Url(arch))`，与 zip 本体走同一批第三方 GFW 镜像（`kGalgameHelperProxyPrefixes`：ghfast.top / gh-proxy.com / ghproxy.net / ghproxy.cc / gh.llkk.cc）。镜像是他人控制的完整中间人，可同时供应「篡改过的 zip + 与之匹配的 .sha256」，校验退化成走过场。
+  - 影响面：包内是 `hibiki_voice_injector.exe` + `hibiki_voice_hook.dll`（x86/x64 双架构，x86 另带 LocaleEmulator 系列），装完会被注入用户的 galgame 进程 —— 换掉一次即任意代码执行。落点是 `Hibiki.exe` 同级 `voice_hook/<arch>/`，且**后台静默自更新**（`updateInstalledHelpersInBackground`）会无 UI 地重复走这条路径。
+  - 旧代码还有一处放大：`_installCore` 旧 `:628` 用 `if (expectedSha != null)` 决定写不写装机标记 —— 未校验安装反而不留标记，下次连比对基线都没有。
+- **线上侧车实际情况**：`gh release view voice-hook-helper --repo hajisensai/hibiki-hook` 实测四个资产齐全 —— `voice_hook_x64.zip` / `voice_hook_x64.zip.sha256`（64 B，裸摘要）/ `voice_hook_x86.zip` / `voice_hook_x86.zip.sha256`。**无需补发侧车**，硬失败不会把现有用户挡在门外；`voice-hook-helper.yml` 是固定 tag 反复 upsert，后续发布必须继续产出同名 `.sha256`（否则本修复会正确地拒绝安装）。
+- **[x] ① 已修复** — 提交 `TBD`（`hibiki/lib/src/mining/galgame_helper_installer.dart`）：
+  - **无可信摘要即硬失败**：新增顶层纯函数 `galgameHelperRequireVerifiedSha(sha, arch)`，null/非法摘要一律抛 `GalgameHelperInstallException(verificationFailed)`。`_installCore` 把它放在**任何下载之前**（拿不到摘要就不下载），`_downloadZip` 的 `expectedSha256` 由 `String?` 收紧成 `String` —— 类型上就不给「不校验」留口子。双架构（x86/x64）走同一条路径，每个架构的整包（injector exe + hook DLL + Luna/LocaleEmulator）都被该架构侧车摘要钉死；换入前另有 `galgameHelperMissingFiles` 逐文件清单复检。
+  - **侧车只认直连**：新增 `kGalgameHelperTrustedSidecarHosts`（github.com / api / objects. / release-assets. / raw.githubusercontent.com）+ `galgameHelperIsTrustedSidecarUrl()` + `galgameHelperSidecarUrls(arch)`（**只返回直连一条，绝不含镜像前缀**）。`fetchSha256Sidecar()` 请求前先判可信主机（不可信直接不发请求）、并逐跳校验 `resp.redirects` 没有离开可信主机。zip **本体**照旧走全部镜像 —— 内容已被直连摘要独立钉死，镜像改一个字节就会在校验时炸掉。
+  - **失败态可区分**：新增 `GalgameHelperInstallFailure { canceled, downloadFailed, verificationFailed, installFailed }` + `galgameHelperClassifyDownloadFailure(sawIntegrityFailure:)`。镜像轮询中只要出现过 `ResumableDownloadIntegrityException` 就报 `verificationFailed`（投毒/损坏，重试无用），纯连不上才是 `downloadFailed`。UI 层 `_downloadAndExtract` 据此给**专属**用户可读提示（新 i18n key `galgame_helper_verification_failed`：「无法校验其完整性……为避免装入被篡改的注入器代码，本次安装已终止」），不再把「不可信」糊成「下载失败」。
+  - **可诊断**：新增 `[gal-helper]` 前缀日志（照 magpie 的 `[magpie]` 范式），覆盖侧车拒绝/超时/HTTP 码/非法 body、逐镜像下载失败与完整性失败、候选耗尽分类、zip-slip 跳过、标记写入、后台更新跳过原因。原先若干零日志 `catch (_)` 全部补上原因。
+  - **顺带消重**：`magpie_installer.dart` 的 `kMagpieTrustedSidecarHosts` / `magpieIsTrustedSidecarUrl` 改为直接复用 helper 侧的同一份真值（安全白名单出现两份复制迟早在只改一份时漂开），并清掉它里面指向本 BUG 的 `TODO(supply-chain)`。
+- **[x] ② 已加自动化测试** — `hibiki/test/mining/galgame_helper_installer_test.dart`（新增 5 个 `BUG-1103` 组，共 +23 用例；全部平台无关，非 Windows 也跑）：
+  - 侧车来源：x86/x64 侧车候选各只有直连一条且不含任何镜像前缀；侧车候选数**严格小于** zip 候选数（「两者不同源」的守卫）；镜像前缀套出的 URL 一律不可信；只认 https + GitHub 自有域（否掉 http、evil.com、`github.com.evil.com`、非 URL）。
+  - 硬失败：`galgameHelperRequireVerifiedSha(null/''/'Not Found'/'deadbeef')` 双架构均抛 `verificationFailed`；合法摘要归一化小写；失败分类真值表（见过 sha 不符→校验失败，纯网络→下载失败，且两者是不同枚举值）。
+  - 真实 HTTP（本地服务器）：默认可信判定下**非 GitHub 主机的侧车根本不会被请求**（断言服务器 hits 为空 —— 镜像不得供应侧车）；侧车 404（历史包没发侧车/被墙）→ null → 安装硬失败；镜像错误页 body → 不当摘要用；无响应服务器在总超时预算内返回 null；交互/后台侧车预算均 ≥30s。
+  - zip 下载：内容与直连摘要对不上 → `verificationFailed` 且 `dest`/`part` **都不落地**；全连不上 → `downloadFailed` 且不落地。
+  - 源码守卫：侧车绝不走 `galgameHelperCandidateUrls(galgameHelperSha256Url`；`galgameHelperRequireVerifiedSha` 必须出现在 `_downloadZip` 之前；下载入口签名是 `required String expectedSha256`（禁 `String?`）；装机标记不再被 `if (expectedSha != null)` 包住；关键路径日志齐全；交互路径带 `kGalgameHelperInteractiveShaTimeout`；校验失败有专属 i18n 提示；magpie 侧不得再有第二份主机清单副本。
+  - 回归面：`magpie_installer_test.dart` / `galgame_helper_background_update_guard_test.dart`（BUG-1076 零网络启动路径 + 后台无 UI 守卫）/ `galgame_helper_launch_guard_test.dart` / `galgame_helper_swap_install_test.dart` 全绿。
+- **备注**：真机验收未做 —— 需在 Windows 上跑一次首装（确认能正常装上、侧车走直连）、一次断网/侧车不可达（确认弹的是「校验未通过」而不是「下载失败」，且 `voice_hook/<arch>/` 不被写入）、一次后台自更新。另：`hibiki-hook` 仓库的发布 workflow 今后必须持续产出 `.sha256` 侧车，否则本修复会（正确地）拒绝安装。

@@ -12,8 +12,10 @@ import 'package:path/path.dart' as p;
 import 'package:hibiki/src/mining/galgame_helper_installer.dart'
     show
         galgameHelperCandidateUrls,
+        galgameHelperIsTrustedSidecarUrl,
         galgameHelperSwapInstall,
         galgameHelperSweepStaleFiles,
+        kGalgameHelperTrustedSidecarHosts,
         parseSha256Sidecar,
         sha256Matches;
 import 'package:hibiki/src/utils/misc/resumable_downloader.dart';
@@ -144,26 +146,16 @@ String magpieSha256Url(
 ///
 /// `objects.` / `release-assets.` 是 GitHub release 资产 302 的落点，属重定向链的合法一环。
 ///
-/// TODO(supply-chain): 同一套「侧车与 zip 同源镜像 + 取不到就不校验」的模式在
-/// `galgame_helper_installer.dart` 里同样存在（它的 `_fetchSha256` 走
-/// [galgameHelperCandidateUrls]，失败返回 null 后照装）。那边影响面更大（注入器 + hook
-/// DLL），但改动会牵到已发布的 helper 自更新链路，故本轮不顺手动，留独立任务跟进。
-const List<String> kMagpieTrustedSidecarHosts = <String>[
-  'github.com',
-  'api.github.com',
-  'objects.githubusercontent.com',
-  'release-assets.githubusercontent.com',
-  'raw.githubusercontent.com',
-];
+/// **别名，不是第二份清单**：BUG-1103 把同一套收紧落到 galgame helper 安装器之后，两个安装器
+/// 的可信主机白名单必须是同一个真值 —— 安全白名单出现两份复制，迟早在只改一份时漂开。
+const List<String> kMagpieTrustedSidecarHosts =
+    kGalgameHelperTrustedSidecarHosts;
 
 /// **纯函数**：该 URL 是否是可信侧车来源（https + 主机在 [kMagpieTrustedSidecarHosts] 内）。
 /// 任何镜像前缀套出来的 URL（`https://ghfast.top/https://github.com/...`）主机都是镜像自己，
-/// 一律判否。
-bool magpieIsTrustedSidecarUrl(String url) {
-  final Uri? uri = Uri.tryParse(url);
-  if (uri == null || uri.scheme.toLowerCase() != 'https') return false;
-  return kMagpieTrustedSidecarHosts.contains(uri.host.toLowerCase());
-}
+/// 一律判否。判定实现与 helper 安装器共用一份（见 [kMagpieTrustedSidecarHosts]）。
+bool magpieIsTrustedSidecarUrl(String url) =>
+    galgameHelperIsTrustedSidecarUrl(url);
 
 /// **纯函数**：取 sha256 侧车的候选 URL —— **只有直连，绝不含镜像**（与
 /// [galgameHelperCandidateUrls] 的 zip 候选刻意不同，理由见 [kMagpieTrustedSidecarHosts]）。

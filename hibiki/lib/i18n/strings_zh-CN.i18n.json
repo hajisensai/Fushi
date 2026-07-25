@@ -2647,5 +2647,6 @@
   "game_line_track_failed": "这条轨在该句附近没有取到语音",
   "game_line_track_applied": "已把该轨的语音绑定到这句",
   "game_edit_launch_args": "启动参数",
-  "game_edit_launch_args_hint": "启动时传给游戏，例如 -windowed"
+  "game_edit_launch_args_hint": "启动时传给游戏，例如 -windowed",
+  "galgame_helper_verification_failed": "引擎组件已被拒绝安装：无法校验其完整性（GitHub 上的 .sha256 校验文件不可达、缺失或与下载内容不符）。为避免装入被篡改的注入器代码，本次安装已终止。"
 }
