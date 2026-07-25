@@ -4,10 +4,12 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
+import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/sync/backup_merge_engine.dart';
+import 'package:hibiki/src/sync/pref_redaction_policy.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -1317,36 +1319,44 @@ class BackupService {
     }
   }
 
-  /// Strips device-local sync config from the standalone DB copy in
+  /// Strips device-local config and credentials from the standalone DB copy in
   /// [dbDirectory] before it leaves the device. Opened via [HibikiDatabase]
   /// (the copy is already at the current schema, so no migration runs).
   ///
-  /// Two layers, both required:
-  /// 1. [SyncRepository.deviceLocalPrefKeys] — the single source of truth for
-  ///    "what stays on this device": backend choice, credentials, server config
-  ///    AND server addresses / usernames / Hibiki client URLs. None of these
-  ///    belong in a shareable backup — a backup that leaks your NAS address,
-  ///    username or LAN/DDNS topology is a privacy hole. On import these are
-  ///    preserved from the local DB, so stripping them here is symmetric.
-  /// 2. A `sync_%` secret-shaped LIKE sweep — a future-proof catch-all so a
-  ///    newly added credential key is stripped even before it's added to the
-  ///    preserve list. (A test asserts every secret-shaped key is also in the
-  ///    preserve list, so the catch-all never strips something import wouldn't
-  ///    restore.)
+  /// What counts as "must not leave this device" is [PrefRedactionPolicy] —
+  /// the single predicate shared by all three outbound channels (backup zip,
+  /// Profile snapshot, Profile share JSON) and by the import-side preserve
+  /// ([_readDeviceLocalPrefs]). It subsumes the old two layers here (the
+  /// `deviceLocalPrefKeys` whitelist + a `sync_%` secret-shaped LIKE sweep);
+  /// the sweep was strictly narrower — being anchored on the `sync_` prefix it
+  /// missed every credential belonging to another subsystem
+  /// (`media_source_secret_*`, `qb_connection_config`, the `*_api_key` family).
+  ///
+  /// **Two tables, both required.** Stripping `preferences` alone was the leak:
+  /// `ProfileRepository.snapshotCurrentSettings` copies *every* Drift pref into
+  /// `profile_settings` as `category='pref'` rows, and `profiles` is ticked by
+  /// default on export (`defaultBackupExportCategories()`). So on any device
+  /// that ever switched profiles, the credentials deleted from `preferences`
+  /// were still sitting in the exported `hibiki.db` under `profile_settings`.
+  /// The snapshot writer/reader now applies the same policy
+  /// ([ProfileKeys.isExcludedPref]) so no NEW credential rows are produced, but
+  /// pre-existing snapshots on an upgrading device still carry them — this
+  /// strip is what keeps those out of the exported copy, with no migration.
   ///
   /// VACUUM + checkpoint so values are not recoverable from freelist/WAL pages.
   static Future<void> _stripCredentials(String dbDirectory) async {
     final db = HibikiDatabase(dbDirectory);
     try {
-      await (db.delete(db.preferences)
-            ..where((t) => t.key.isIn(SyncRepository.deviceLocalPrefKeys)))
-          .go();
-      await db.customStatement(
-        "DELETE FROM preferences WHERE key LIKE 'sync_%password%'"
-        " OR key LIKE 'sync_%token%' OR key LIKE 'sync_%secret%'"
-        " OR key LIKE 'sync_%private_key%'"
-        " OR key = 'sync_desktop_credentials'",
-      );
+      final Map<String, String> allPrefs = await db.getAllPrefs();
+      final List<String> redactedPrefKeys = allPrefs.keys
+          .where(PrefRedactionPolicy.isDeviceLocalOrCredential)
+          .toList(growable: false);
+      if (redactedPrefKeys.isNotEmpty) {
+        await (db.delete(db.preferences)
+              ..where((t) => t.key.isIn(redactedPrefKeys)))
+            .go();
+      }
+      await _stripCredentialRowsFromProfileSnapshots(db);
       // BUG-816: device-local tables (LAN pairing token + sync baselines) live
       // outside `preferences`, so the key sweeps above never touched them and a
       // shared backup leaked the plaintext pairing `token`. Wipe them from the
@@ -1361,6 +1371,45 @@ class BackupService {
       await db.close();
     }
   }
+
+  /// Deletes the credential-bearing `category='pref'` rows from every Profile
+  /// snapshot in the export copy (see [_stripCredentials] for why this table is
+  /// a second, independent outbound channel).
+  ///
+  /// Gated on `category='pref'` on purpose: the `anki` category holds deck /
+  /// note-type / field-mapping values and `dictionary_meta` is keyed by
+  /// dictionary NAME, so an unfiltered sweep could drop a dictionary that merely
+  /// happens to be named e.g. "secret". Only the `pref` rows mirror
+  /// `preferences` and are therefore the ones the policy is written for.
+  ///
+  /// The keys are resolved in Dart (one predicate, no SQL LIKE dialect of it)
+  /// and deleted in a single parameterised statement.
+  static Future<void> _stripCredentialRowsFromProfileSnapshots(
+    HibikiDatabase db,
+  ) async {
+    final List<QueryRow> rows = await db.customSelect(
+      'SELECT DISTINCT key FROM profile_settings WHERE category = ?',
+      variables: <Variable<Object>>[Variable<String>(profilePrefCategory)],
+    ).get();
+    final List<String> redacted = rows
+        .map((QueryRow row) => row.read<String>('key'))
+        .where(PrefRedactionPolicy.isDeviceLocalOrCredential)
+        .toList(growable: false);
+    if (redacted.isEmpty) return;
+    final String placeholders =
+        List<String>.filled(redacted.length, '?').join(', ');
+    await db.customStatement(
+      'DELETE FROM profile_settings '
+      'WHERE category = ? AND key IN ($placeholders)',
+      <Object>[profilePrefCategory, ...redacted],
+    );
+  }
+
+  /// `ProfileKeys.categoryPref`. Duplicated as a literal rather than imported so
+  /// `backup_service` (which `profile_repository` already imports) does not gain
+  /// a back-edge into the profile layer; a test pins the two to stay equal.
+  @visibleForTesting
+  static const String profilePrefCategory = 'pref';
 
   /// Restores [_deviceLocalTables] from [bakPath] (this device's pre-import
   /// snapshot) into the freshly-overwritten DB in [dbDirectory] (BUG-816). The
@@ -2689,8 +2738,17 @@ class BackupService {
     }
   }
 
-  /// Reads the device-local sync prefs (only the keys in
-  /// [SyncRepository.deviceLocalPrefKeys]) from the DB in [dbDirectory].
+  /// Reads this device's device-local / credential prefs from the DB in
+  /// [dbDirectory] so an import can write them back afterwards.
+  ///
+  /// Filters by [PrefRedactionPolicy] rather than enumerating
+  /// [SyncRepository.deviceLocalPrefKeys]: the policy also matches by prefix and
+  /// shape (`media_source_secret_<id>` is one key PER SOURCE ROW and could never
+  /// be listed), and — decisively — it is the SAME predicate the export strip
+  /// uses. Enumerating a fixed list here while the strip matched by shape is
+  /// exactly how the two sides would drift: every key the strip removed but the
+  /// list did not name would be deleted from the imported DB and never restored,
+  /// silently wiping this device's own SFTP passwords / API keys on import.
   static Future<Map<String, String>> _readDeviceLocalPrefs(
       String dbDirectory) async {
     HibikiDatabase? db;
@@ -2698,9 +2756,10 @@ class BackupService {
       db = HibikiDatabase(dbDirectory);
       final all = await db.getAllPrefs();
       final out = <String, String>{};
-      for (final key in SyncRepository.deviceLocalPrefKeys) {
-        final value = all[key];
-        if (value != null) out[key] = value;
+      for (final MapEntry<String, String> entry in all.entries) {
+        if (PrefRedactionPolicy.isDeviceLocalOrCredential(entry.key)) {
+          out[entry.key] = entry.value;
+        }
       }
       return out;
     } catch (e, st) {

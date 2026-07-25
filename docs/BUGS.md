@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1038 条。点号进各自文件。
+> 共 1039 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1072](bugs/BUG-1072-profile-snapshot-credential-leak.md) | ✅ | ✅ | 备份/Profile 分享泄漏凭据：判定散落三处且兜底锁死 sync_ 前缀，profile_settings 通道无判定 |
 | [BUG-1071](bugs/BUG-1071-dismiss-dictionary-mouse-and-keyboard-fails.md) | ✅ | ✅ | 关闭词典鼠标键失效+键盘经常失效(弹窗无Flutter焦点) |
 | [BUG-1070](bugs/BUG-1070-galgame-overlay-lyric-spills-into-control-band.md) | ✅ | ✅ | galgame浮窗台词溢出到顶部控制条按钮带遮住UI |
 | [BUG-1069](bugs/BUG-1069-video-top-subtitle-covers-chrome.md) | ✅ | ✅ | 视频顶部字幕盖住标题栏和菜单UI |
