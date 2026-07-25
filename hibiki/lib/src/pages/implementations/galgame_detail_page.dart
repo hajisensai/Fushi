@@ -17,7 +17,7 @@ import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_merge.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
 import 'package:hibiki/src/pages/implementations/games_library_page.dart'
-    show formatGalgameDate, galgamePlayStatusLabel, kGameCollectionMediaType;
+    show formatGalgameDate, galgamePlayStatusLabel;
 import 'package:hibiki/src/utils/cover_image.dart' show evictLocalCoverCache;
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki/src/pages/implementations/stat_shared.dart'

@@ -28,12 +28,6 @@ import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart'
 import 'package:hibiki/src/utils/cover_image.dart' show evictLocalCoverCache;
 import 'package:hibiki/utils.dart';
 
-/// 游戏进合集（统一媒体库）：`media_collection_items.mediaType` 的游戏值。
-/// entryKey = `galgames.id`（添加时刻微秒时间戳字符串）——**游戏本机局域身份**：
-/// 与 exe 路径同为本机事实，跨端同步时对端无对应 `galgames` 行则该成员静默忽略
-/// （合集同步引擎对 mediaType/entryKey 透传，不解引用）。
-const String kGameCollectionMediaType = 'game';
-
 /// 首页「游戏」tab：galgame 库。展示用户添加的游戏网格，点击一个游戏经
 /// [GalHookSessionController.launchGame]（引擎-hook launch 路径）拉起并注入。
 /// 台词进入同一个捕获会话，原生浮窗点词与工作台制卡共享稳定 lineId。

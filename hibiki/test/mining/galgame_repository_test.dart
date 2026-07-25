@@ -268,6 +268,50 @@ void main() {
       expect(repo.byId('g1')!.sessionCount, 1);
     });
 
+    test('remove 删游戏同时清其全部合集引用；移空的合集自删', () async {
+      await repo.addAll(<GalgameEntry>[newEntry('g1'), newEntry('g2')]);
+      // 混合合集：g1 + g2；另一个合集只有 g1。
+      final int mixed = await db.createMediaCollection('mixed');
+      await db.addToCollection(mixed, kGameCollectionMediaType, 'g1');
+      await db.addToCollection(mixed, kGameCollectionMediaType, 'g2');
+      final int solo = await db.createMediaCollection('solo');
+      await db.addToCollection(solo, kGameCollectionMediaType, 'g1');
+
+      await repo.remove('g1');
+
+      // 混合合集：g1 引用行消失，成员数从 2 回到 1（不虚高）。
+      final List<MediaCollectionItemRow> rest =
+          await db.getCollectionItems(mixed);
+      expect(
+        rest.map((MediaCollectionItemRow m) => m.entryKey).toList(),
+        <String>['g2'],
+      );
+      // 只剩 g1 的合集被清空后自删（与书/视频同语义）。
+      expect(await db.getMediaCollectionById(solo), isNull);
+    });
+
+    test('setGames 整表覆写删掉的 id 也清合集引用，不留孤儿成员', () async {
+      await repo.setGames(<GalgameEntry>[newEntry('g1'), newEntry('g2')]);
+      final int c = await db.createMediaCollection('c');
+      await db.addToCollection(c, kGameCollectionMediaType, 'g1');
+      await db.addToCollection(c, kGameCollectionMediaType, 'g2');
+
+      await repo.setGames(<GalgameEntry>[newEntry('g2')]);
+
+      expect(
+        (await db.getCollectionItems(c))
+            .map((MediaCollectionItemRow m) => m.entryKey)
+            .toList(),
+        <String>['g2'],
+      );
+      // 全库无任何 g1 孤儿引用。
+      expect(
+        (await db.getAllCollectionItems())
+            .where((MediaCollectionItemRow m) => m.entryKey == 'g1'),
+        isEmpty,
+      );
+    });
+
     test('删游戏时源快照与会话经 FK cascade 连带清理', () async {
       await repo.addAll(<GalgameEntry>[newEntry('g1')]);
       await repo.saveScrapeResult(
