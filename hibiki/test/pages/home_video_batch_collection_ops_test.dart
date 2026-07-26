@@ -231,8 +231,10 @@ void main() {
         .tap(find.byKey(const ValueKey<String>('home_video_batch_combine')));
     await tester.pumpAndSettle();
     // 合并弹命名框，默认名 = 成员最多合集名（大集，3 > 2）。
+    // 库页自 P5-A 起有常驻搜索框（key=video_search_field），全页 EditableText
+    // 不止一个。命名弹窗是压在页面之上的 route，其输入框在树序最后。
     final EditableText field = tester.widget<EditableText>(
-      find.byType(EditableText),
+      find.byType(EditableText).last,
     );
     expect(field.controller.text, '大集', reason: '默认名=成员最多合集名');
     await tester.tap(find.text(t.dialog_ok));
