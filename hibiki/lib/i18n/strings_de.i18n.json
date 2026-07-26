@@ -2656,5 +2656,12 @@
   "download_save_root_not_absolute": "Please pick an absolute folder path.",
   "download_save_root_create_failed": "Cannot create that folder. Check the drive and permissions.",
   "download_save_root_not_writable": "That folder is not writable.",
-  "download_save_root_fallback_warning": "The configured download folder is unavailable, so the default folder is being used."
+  "download_save_root_fallback_warning": "The configured download folder is unavailable, so the default folder is being used.",
+  "galgame_upscaling": "Game window upscaling",
+  "galgame_upscaling_hint": "Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.",
+  "galgame_upscaling_auto": "Auto",
+  "galgame_upscaling_installed_only": "Installed only",
+  "galgame_upscaling_off": "Off",
+  "galgame_upscaling_download_title": "Download Magpie upscaler?",
+  "galgame_upscaling_download_body": "Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?"
 }

@@ -10,6 +10,7 @@ import 'package:hibiki/src/mining/galgame_audio_source.dart';
 import 'package:hibiki/src/mining/galgame_hook_code_profile.dart';
 import 'package:hibiki/src/mining/serial_job_queue.dart';
 import 'package:hibiki/src/mining/galgame_system_ui_filter.dart';
+import 'package:hibiki/src/mining/magpie_upscaling_service.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client.dart';
@@ -525,6 +526,12 @@ class GalHookSessionController extends ChangeNotifier {
   /// 避免 start 时急切解引用未初始化的 late 字段。
   HibikiDatabase? Function()? _activityDatabaseResolver;
 
+  /// 由桌面启动流程注入的窗口超分编排器（见 [attachMagpieUpscaling]）。
+  ///
+  /// 可空是刻意的：超分是**纯附加能力**，未注入（测试替身、非 Windows、用户没开）时
+  /// 整条链路是 `?.` 空操作，会话行为与没有它时逐字节一致。
+  MagpieUpscalingService? _magpieUpscaling;
+
   /// 当前会话归属的游戏显示名（窗口标题 / 可执行文件名）；null = 无可归属标题。
   String? _activityGameTitle;
 
@@ -1009,6 +1016,9 @@ class GalHookSessionController extends ChangeNotifier {
       'session.stop_listening',
       'Stopping listeners and helper; injected game code may remain until exit',
     );
+    // 必须在 _stopSources() 之前：此时 _state.boundWindow 还没被下面的复位清掉，
+    // 超分编排器仍能按本次会话的窗口身份把 autoScale profile 关回去。
+    await _notifyMagpieSessionEnded();
     await _stopSources();
     _setState(
       _state.copyWith(
@@ -1856,6 +1866,7 @@ class GalHookSessionController extends ChangeNotifier {
     _activityCharCounter.reset();
     _textService.removeListener(_onTextBufferChanged);
     _endpointListenable.removeListener(_onEndpointStatusChanged);
+    await _notifyMagpieSessionEnded();
     await _stopSources();
     dispose();
   }
@@ -1865,6 +1876,13 @@ class GalHookSessionController extends ChangeNotifier {
   /// App 尚未初始化完则返回 null 跳过本次落库）。是首页「游戏」活动的唯一数据来源。
   void attachActivityDatabase(HibikiDatabase? Function() resolve) {
     _activityDatabaseResolver = resolve;
+  }
+
+  /// 注入窗口超分编排器（桌面启动流程 [GalHookTextOverlayController.start] 调用一次）。
+  ///
+  /// 不注入 = 完全没有超分，会话逻辑不受任何影响。
+  void attachMagpieUpscaling(MagpieUpscalingService service) {
+    _magpieUpscaling = service;
   }
 
   /// 开始一段游戏活动记账：先把上一段残留 flush（防上次异常未落），再复位累计器并
@@ -2981,8 +2999,32 @@ class GalHookSessionController extends ChangeNotifier {
   }
 
   void _setState(GalHookSessionState next) {
+    // 超分启动挂钩收在这一处状态跃迁上，而不是散在四条绑窗路径（launch 自动绑定 /
+    // 迟到重绑 / 手动 bindWindow / attach）里：窗口从「无」变「有」是它们唯一的公共
+    // 事实，收在这里既不漏也不重。fire-and-forget —— 超分绝不阻塞状态更新，
+    // [MagpieUpscalingService.onGameWindowReady] 自身保证不抛。
+    final ExternalWindowInfo? previousWindow = _state.boundWindow;
     _state = next;
+    final ExternalWindowInfo? boundWindow = next.boundWindow;
+    if (previousWindow == null && boundWindow != null) {
+      unawaited(_notifyMagpieWindowReady(boundWindow.hwnd));
+    }
     notifyListeners();
+  }
+
+  /// 把「游戏窗口就绪」转给超分编排器。**吞掉一切异常**：超分是锦上添花，它出问题
+  /// 不能让 hook 会话跟着倒。
+  Future<void> _notifyMagpieWindowReady(int hwnd) async {
+    try {
+      await _magpieUpscaling?.onGameWindowReady(hwnd: hwnd);
+    } catch (_) {}
+  }
+
+  /// 会话收尾时关掉超分（关 autoScale profile + 退出我们自己起的 Magpie）。同样吞异常。
+  Future<void> _notifyMagpieSessionEnded() async {
+    try {
+      await _magpieUpscaling?.onSessionEnded();
+    } catch (_) {}
   }
 
   void _record(

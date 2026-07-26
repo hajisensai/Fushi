@@ -2656,5 +2656,12 @@
   "download_save_root_not_absolute": "请选择一个绝对路径的目录。",
   "download_save_root_create_failed": "无法创建该目录，请检查磁盘与权限。",
   "download_save_root_not_writable": "该目录不可写入。",
-  "download_save_root_fallback_warning": "配置的下载目录当前不可用，已回退到默认目录。"
+  "download_save_root_fallback_warning": "配置的下载目录当前不可用，已回退到默认目录。",
+  "galgame_upscaling": "游戏窗口超分",
+  "galgame_upscaling_hint": "使用 Magpie 在 galgame hook 会话期间对游戏窗口做超分。「自动」会在首次使用时按需下载 Magpie。",
+  "galgame_upscaling_auto": "自动",
+  "galgame_upscaling_installed_only": "仅用已装",
+  "galgame_upscaling_off": "关闭",
+  "galgame_upscaling_download_title": "下载 Magpie 超分组件？",
+  "galgame_upscaling_download_body": "游戏窗口超分需要 Magpie（约 10 MB，GPL-3.0，由我们自行从源码编译）。现在下载吗？"
 }

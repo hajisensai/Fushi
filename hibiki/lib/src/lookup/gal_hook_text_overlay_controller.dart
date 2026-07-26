@@ -9,6 +9,8 @@ import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_playback.dart';
 import 'package:hibiki/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
+import 'package:hibiki/src/mining/magpie_download_confirm.dart';
+import 'package:hibiki/src/mining/magpie_upscaling_service.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/home_game_page.dart';
@@ -122,6 +124,15 @@ class GalHookTextOverlayController extends ChangeNotifier {
     // （或测试替身无 DB）则返回 null 跳过本次落库，不在 start 急切解引用 late 字段。
     _session.attachActivityDatabase(
       () => appModel.isInitialised ? appModel.database : null,
+    );
+    // 窗口超分编排器：唯一的注入点。策略惰性读偏好（用户中途改设置下一局就生效），
+    // 下载确认走全局 navigator。未注入时会话侧全是 `?.` 空操作，故这里失败也不致命。
+    _session.attachMagpieUpscaling(
+      MagpieUpscalingService(
+        modeReader: () => appModel.galgameUpscalingMode,
+        confirmDownload: (MagpieDownloadPrompt prompt) =>
+            confirmMagpieDownload(appModel, prompt),
+      ),
     );
     _loadPreferences(appModel);
     GalHookTextOverlayChannel.setEventHandlers(

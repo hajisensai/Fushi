@@ -1795,6 +1795,19 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// galgame 窗口超分策略（`auto` / `installed_only` / `off`）。
+  ///
+  /// 存**裸字符串**而不是 enum index：重排枚举项不会毁掉用户设置。enum 转换在 AppModel
+  /// 层做（`magpieUpscalingModeFromKey` / `magpieUpscalingModeToKey`）。
+  /// 默认 `off` —— 整条超分链路尚未真机验证，且超分实打实吃 GPU，用户显式打开才启用。
+  String get galgameUpscalingMode =>
+      getPref('galgame_magpie_upscaling_mode', defaultValue: 'off') as String;
+
+  Future<void> setGalgameUpscalingMode(String value) async {
+    await setPref('galgame_magpie_upscaling_mode', value);
+    notifyListeners();
+  }
+
   /// AniList/Nyaa/Jimaku requests: auto (env > enabled system proxy > direct),
   /// explicit direct, or a user-provided host:port proxy.
   String get downloadNetworkProxyMode =>

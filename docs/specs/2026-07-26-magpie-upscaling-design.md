@@ -1,7 +1,7 @@
 # 内置 Magpie 超分：阶段一落地 + 关键调研结论
 
 - 日期：2026-07-26
-- 状态：**阶段一已实现**（自建 fork + 自编 release + 客户端安装器）；**阶段二（会话联动 / UI / 真机验证）未开始**
+- 状态：**阶段一 + 阶段二代码已实现**；**真机验证仍为零**（详见文末阶段二 §6）
 - 需求原文（用户拍板，不再论证）：「我们自己编译吧，mpv，hook 等一样。方便修改。和 hook 一样启动游戏之前下载」
 - 上游：[Blinue/Magpie](https://github.com/Blinue/Magpie)，GPL-3.0，基线 `v0.12.1`（2025-08-27）
 - 我们的 fork：<https://github.com/hajisensai/Magpie>（public，分支 `dev`，fork 自上游 `e6167ef`）
@@ -309,3 +309,150 @@ UWP XAML Islands + WinUI 2.8（**没有 C#，没有 WinUI 3**）。
 3. 处理 Magpie 自更新指回上游（§4.5）。
 4. 决定缩放触发方式：热键模拟 / 预置 Profile（注意 §3.1 的 50ms 轮询硬规则）/ §3.4 的 CLI。
 5. 再补 UI（确认下载对话框 + 设置开关 + i18n key）与 `main.dart` 的后台自更新挂载。
+
+---
+
+# 阶段二：真正让它跑起来（2026-07-26）
+
+- 状态：**代码链路已闭合，尚未真机验证**。见 §6「还差什么」。
+- 本轮范围：探测 → 按需下载 → 写自动缩放 profile → 拉起 Magpie → 会话收束 → 设置项 + i18n
+  + native 缩放状态回传。
+
+## 1. 落地的模块
+
+| 文件 | 职责 |
+|---|---|
+| `hibiki/lib/src/mining/magpie_upscaling.dart` | **纯逻辑**：三态枚举与偏好编解码、后端裁决 `resolveMagpieBackend`、profile 增量改写 `magpieConfigWithAutoScaleProfile` / `magpieConfigWithAutoScaleDisabled`、硬禁令守卫 `magpieProfileTargetAllowed`。不碰 dart:io / FFI / UI，任意平台可单测。 |
+| `hibiki/lib/src/mining/magpie_upscaling_service.dart` | **运行时编排**：`MagpieUpscalingService.onGameWindowReady()` / `.onSessionEnded()`；Win32 边界抽象 `MagpieWin32Bridge` + 裸 FFI 实现 `MagpieWindowsBridge`。 |
+| `hibiki/lib/src/mining/magpie_download_confirm.dart` | 下载确认对话框（走 `AppModel.navigatorKey`），让服务层保持零 UI 依赖。 |
+| `hibiki/lib/src/mining/magpie_installer.dart` | 阶段一已有，本轮**接上调用方**（首装 + `main.dart` 后台自更新）。 |
+
+## 2. 挂钩点（刻意压到最小，为了与 PR#423 的并发改动错开）
+
+`gal_hook_session_controller.dart` 只多了 6 处、共约 40 行：
+
+| # | 位置 | 内容 |
+|---|---|---|
+| 1 | import 区 | `magpie_upscaling_service.dart` |
+| 2 | 字段区（`_activityDatabaseResolver` 之后） | `MagpieUpscalingService? _magpieUpscaling;` |
+| 3 | `attachActivityDatabase` 之后 | `attachMagpieUpscaling(...)` setter（同一注入范式） |
+| 4 | `_setState` | 「`boundWindow` 从 null 变非 null」跃迁 → `unawaited(_notifyMagpieWindowReady(hwnd))` |
+| 5 | `stopCapture` 的 `await _stopSources();` **之前** | `await _notifyMagpieSessionEnded();` |
+| 6 | `close()` 的 `await _stopSources();` **之前** | 同上 |
+
+**为什么收在 `_setState` 而不是四条绑窗路径各挂一次**：launch 自动绑定 / 迟到重绑 /
+手动 `bindWindow` / attach 四条路径的唯一公共事实就是「窗口从无变有」。收在状态跃迁上
+既不漏也不重，而且 PR#423 改的是降级升格 / 延迟冻结 / 逐行选轨，都不动 `_setState` 的
+这两行，冲突面接近零。
+
+注入唯一发生在 `gal_hook_text_overlay_controller.dart` 的 `start()`（`attachActivityDatabase`
+紧邻，+9 行）。不注入 = 全链路 `?.` 空操作，会话行为与没有超分时逐字节一致。
+
+## 3. 三个陷阱各自怎么处理的
+
+### 陷阱 1：50ms 前台轮询 → 绝不给 Hibiki 自己建 autoScale profile
+
+`magpieProfileTargetAllowed(targetExecutablePath, hibikiExecutablePath)` 是**硬门不是建议**：
+`magpieConfigWithAutoScaleProfile` 在验证身份完整性之后立刻调它，命中就返回
+`MagpieProfileSkipReason.forbiddenTarget`。比较忽略大小写（比 Magpie 自己的匹配更严 ——
+这里宁可多拒不可漏放）。单测 `🔴 硬禁令` 组 4 条。
+
+### 陷阱 2：便携 config 必须写 0 字节
+
+**复核结论：阶段一实现是对的。** `magpie_installer.dart:153`
+`String magpiePortableConfigContent() => '';` —— 真的是空字符串、真的写出 0 字节文件。
+`ensurePortableConfig` 还额外保证「已存在 config.json 就一律不动」。
+本轮加了源码守卫测试钉死这一行，防止后人「顺手」改成 `{}`。
+
+### 陷阱 3：Magpie 自带更新器指向上游
+
+**没有改 fork，因为它在我们的产物里是死代码 —— 有完整证据链：**
+
+| 环 | 事实 | 位置 |
+|---|---|---|
+| 1 | 我们的 release workflow **不传** `--version-string` | `hajisensai/Magpie` `.github/workflows/hibiki-release.yml:86` |
+| 2 | 不传 → msbuild 属性 `VersionString` 为空 | `scripts/publish.py:60` |
+| 3 | `VersionString` 为空 → **`MP_VERSION_STRING` 宏根本不定义** | `src/Common.Post.props:13,35`（`Condition="'$(VersionString)' != ''"`） |
+| 4 | 未定义 → `UpdateService::Initialize()` **整个函数体被 `#ifdef` 编译掉**（定时器、启动检查、设置回调全没了） | `src/Magpie/UpdateService.cpp:34` |
+| 5 | 未定义 → 「检查更新」按钮 `IsCheckForUpdatesButtonEnabled()` 恒 `return false` | `src/Magpie/AboutViewModel.cpp:110-116` |
+
+即：自动检查不会启动，手动检查按钮是灰的，`CheckForUpdatesAsync` 里那两个硬编码的
+`raw.githubusercontent.com/Blinue/Magpie/...` URL 永远走不到。改 fork 的 C++ 反而要
+承担「本机编不了 Magpie（缺 VC/UWP 工作负载 + Conan，见 §4.4）→ 改了没法验证」的风险。
+
+⚠️ **这条保证依赖于 workflow 永远不传 `--version-string`**。哪天有人为了让 About 页显示
+版本号而加上它，更新器就会复活并把我们的产物换成上游官方包。若要把它变成结构性保证，
+应在 fork 的 workflow 里发布前删掉 `Updater.exe`（纯 workflow 改动、无 C++ 编译风险）——
+本轮没做。
+
+## 4. 新增的关键 schema 事实（阶段一文档**漏了一条要命的**）
+
+🔴 **`classNameRule` 不是可选项。** `ProfileService::_GetProfileForWindow` 先比
+`classNameRule` 再比 `pathRule`（`ProfileService.cpp:220-222`，类名比取 exe 路径快得多所以
+放前面）。**只写 `pathRule` 不写 `classNameRule` 的 profile 永远匹配不上任何窗口**，是一条
+静默的死规则。阶段一文档 §3.2 只提了 `pathRule` 大小写敏感，没提这个先决条件。
+
+因此 `MagpieWindowIdentity` 是 `(executablePath, windowClassName)` 二元组，运行时由
+`GetClassNameW` + `QueryFullProcessImageNameW` 取（后者必须与 Magpie 的
+`Win32Helper::GetWindowPath` 同源，因为匹配是裸 `std::wstring ==`）。
+
+其余已核实：`name` trim 后非空 / `packaged` / `pathRule` / `classNameRule` 四者缺一，
+`_LoadProfile` 直接返回 false 丢弃整条（`AppSettings.cpp:926-960`）；`autoScale` 是 uint
+枚举 `Disabled=0 / Fullscreen=1 / Windowed=2 / COUNT=3`（`Profile.h:29-34`）；
+`scalingMode` 越界钳 -1（`AppSettings.cpp:990-993`），而 `scalingMode < 0` 直接报
+`InvalidScalingMode`（`ScalingService.cpp:324`）。
+
+## 5. 生命周期（时序是硬约束，不是风格）
+
+```
+onGameWindowReady(hwnd)
+  ├─ 读三态偏好 → resolveMagpieBackend
+  │    installedAvailable = 我们装好了 OR 机器上已有 Magpie 在跑（互斥体）
+  ├─ needsDownload → ensureInstalled(confirm)   ← 确认框立即弹，体积探测后台补
+  ├─ 已有别人的 Magpie 在跑 → hotkeyOnly，什么都不碰      ← 见下
+  ├─ 【必须在拉起之前】写 autoScale profile（best-effort）
+  └─ Process.start(Magpie.exe, ['-t'])          ← 静默、只驻托盘
+
+onSessionEnded()
+  ├─ broadcastQuit()（best-effort）
+  ├─ 等 3s，超时 kill —— 只 kill 我们自己起的那个 PID
+  ├─ 静置 400ms                                  ← 见下
+  └─ 把 autoScale 关回 Disabled
+```
+
+三条时序理由（都有源码依据）：
+
+1. **配置必须在拉起之前写**：Magpie 只在 `AppSettings::Initialize()` 读一次 config.json，
+   全仓**没有任何文件监视**（0 处 `ReadDirectoryChanges` / `FindFirstChangeNotification`）。
+2. **收尾必须在 Magpie 退出之后**：Magpie 在设置变更与主窗口销毁时 `SaveAsync()` 整份回写
+   （`AppSettings.cpp:287`、`MainWindow.cpp:320`）。提前改一定被覆盖。
+3. **QUIT 必须有 kill 兜底**：`App::InitMessages()` 只对 `WM_MAGPIE_SHOWME` 调了
+   `ChangeWindowMessageFilter`，**QUIT 没放行**（`App.cpp:57-60`）。Magpie 若自我提权运行，
+   我们的广播会被 UIPI 静默丢掉。且 `-t` 模式没有主窗口，`HWND_BROADCAST` 能不能投到
+   托盘窗口未经验证。
+
+**为什么「用户自己开着 Magpie 就什么都不做」**：① 它的配置在哪我们不知道（便携 vs
+`%LOCALAPPDATA%\Magpie\config\v4\`）；② 它读配置只在启动时读一次、退出又整份回写，
+此时改必被覆盖；③ 那是用户的进程，我们没有权限替他关掉重开。代价是这种情况下用户得
+自己按 Magpie 热键。**如实记为已知限制。**
+
+**为什么会话结束必须把 autoScale 关回去**：留着的话，用户下次**不经 Hibiki**直接双击游戏
+也会被 Magpie 的 50ms 轮询自动拉起缩放 —— 那是我们没被授权做的事。
+
+## 6. 还差什么才能真机验证（如实清单）
+
+1. 🔴 **`magpie-hibiki` release 从没被真的下载安装过**。`ensureInstalled` 全链路
+   （下载 → sha256 → 换入 → 0 字节 config → `Magpie.exe -t` 能起 → 便携模式生效）
+   本轮仍只有单测，**没有一次真机执行**。
+2. 🔴 **「启动游戏 → 自动超分」端到端从没跑通过**。链路上每一环都有单测或源码证据，
+   但「Magpie 读到我们写的 profile → 50ms 轮询命中 → 真的全屏缩放起来」这一步是纯推理。
+   尤其 `classNameRule` 取值是否与 Magpie 的 `ParseClassName` 结果一致（它对 WPF /
+   RPGMakerMZ / TeknoParrot 三类窗口有特殊解析，`ProfileService.cpp:87-99`）**未验证**。
+3. **首次使用必然降级为热键模式**。我们写的便携 config 是 0 字节，Magpie 第一次跑完才会
+   生成含 `scalingModes` 的完整配置。所以：第一局游戏 = `hotkeyOnly`，第二局起才可能
+   `active`。这是陷阱 2 与「不手写 scalingModes」两条约束的必然结果，不是 bug，但**用户
+   感知上是「第一次装完没反应」**，UI 上目前没有任何提示。
+4. **查词浮窗与缩放窗口的实际共存**未验证（§3.1 推断失焦不结束缩放，但没在真机上看过）。
+5. `-t` 静默模式下 `HWND_BROADCAST` 的 QUIT 能否投达未验证（有 kill 兜底，不阻塞）。
+6. 设置项落在「查词 → 外部集成」分组里（`lookup.galgame_upscaling`），不是独立的「游戏」
+   设置页 —— 本仓目前**没有** galgame 设置 destination，新建一个的改动面远大于收益。
