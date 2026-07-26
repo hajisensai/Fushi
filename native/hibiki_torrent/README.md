@@ -38,6 +38,7 @@ hibiki/lib/src/media/torrent/
 `ht_connect_peer` / `ht_list_torrents` / `ht_torrent_files` /
 `ht_torrent_pieces` / `ht_poll_piece_events` / `ht_set_piece_deadline` /
 `ht_apply_first_last_priority` / `ht_remove_torrent`。
+持久化（TODO-1961-a）：`ht_save_resume_data` / `ht_load_resume_dir`。
 出参 JSON 一律 `ht_free_string` 释放；详细契约见 `hibiki_torrent.h` 注释。
 
 ### 关键语义（踩过的坑，别再踩）
@@ -51,6 +52,14 @@ hibiki/lib/src/media/torrent/
 - **Windows 依赖 DLL 搜索**：`DynamicLibrary.open` 不把目标 DLL 所在目录
   纳入其依赖搜索路径；`EmbeddedTorrentEngine.open` 会先预载同目录的
   vcpkg applocal 依赖（torrent-rasterbar/ssl/crypto）再开主库。
+- **alert 只有一个收割点**：`pop_alerts` 是破坏性的（取走即从 libtorrent 消失）。
+  bridge 内 `ht_session_ctx` 持有分派后的队列，**唯一**的收割入口是
+  `drain_alerts`，各 poll 函数只读自己的队列。新增任何需要 alert 的能力时，
+  往 `drain_alerts` 里加一个分支，**绝不要**再写第二处 `pop_alerts` ——
+  两个消费者会静默吃掉彼此的事件。
+- **resume data 只对已有元数据的种子有意义**：磁力刚加时没有 info dict，
+  `ht_save_resume_data` 会跳过这类种子（存了也重建不出来）。保存时带
+  `save_info_dict`，故恢复后无需再向 DHT/peer 取元数据。
 - **firstLastPiecePrio 无 add 期开关**：元数据未就绪无从提优；
   `ht_apply_first_last_priority` 在元数据就绪后调用（返回 0 = 未就绪，
   轮询重试；`EmbeddedTorrentBackend` 已在 listTorrents 轮询里补应用）。

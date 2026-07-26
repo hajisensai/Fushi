@@ -7,6 +7,7 @@ import 'package:hibiki/src/media/torrent/embedded_torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/torrent_memory.dart';
 import 'package:hibiki/src/media/torrent/torrent_upload_policy.dart';
 import 'package:hibiki_torrent/hibiki_torrent.dart';
+import 'package:path/path.dart' as p;
 
 /// 内置 libtorrent 引擎的 app 侧宿主：拥有**常驻**引擎 + 单个 session
 /// （所有内置下载共享），按需派发短命 [EmbeddedTorrentBackend] 适配器给
@@ -30,15 +31,31 @@ class EmbeddedTorrentHost {
     required EmbeddedTorrentEngine engine,
     required EmbeddedTorrentSession session,
     required TorrentSaveRoots saveRoots,
+    required String resumeDir,
     required int Function() clockMs,
   })  : _engine = engine,
         _session = session,
         _saveRoots = saveRoots,
+        _resumeDir = resumeDir,
         _clockMs = clockMs;
 
   final EmbeddedTorrentEngine _engine;
   final EmbeddedTorrentSession _session;
   final int Function() _clockMs;
+
+  /// resume data 目录（`<计划目录>/resume`，每种子一个 `<infohash>.resume`）。
+  ///
+  /// TODO-1961-a：它**跟数据根走、不跟下载根走** —— resume 描述的是「哪些种子
+  /// 该活着」这一 app 状态，不是下载内容本身。用户改下载目录时它不该被搬走。
+  final String _resumeDir;
+
+  /// 上次成功保存 resume 的时刻（节流基准，0 = 本次会话还没存过）。
+  int _lastResumeSaveMs = 0;
+
+  /// resume 保存最小间隔。每 tick（20s）都全量写盘没有收益：resume 只在
+  /// 「进度显著推进」后才有新信息，而崩溃丢失最多一分钟进度会由 libtorrent
+  /// 启动时的文件校验补回来（校验只读盘，不重下）。
+  static const Duration resumeSaveInterval = Duration(minutes: 1);
 
   /// 下载根集合：[TorrentSaveRoots.active] 收新任务，历史根只参与列表过滤。
   /// TODO-1961：**非 final** —— 用户在设置里改下载目录时 [setActiveSaveRoot] 就地
@@ -78,6 +95,8 @@ class EmbeddedTorrentHost {
     String? libraryPath,
     required String baseSavePath,
     Iterable<String> legacySavePaths = const <String>[],
+    required String resumeDir,
+    Set<String> restoreIds = const <String>{},
     String listenInterfaces = '0.0.0.0:6881',
     bool enableDht = true,
     int Function()? clockMs,
@@ -96,13 +115,19 @@ class EmbeddedTorrentHost {
       enableDht: enableDht,
     );
     if (session == null) return null;
-    return EmbeddedTorrentHost._(
+    final EmbeddedTorrentHost host = EmbeddedTorrentHost._(
       engine: engine,
       session: session,
       saveRoots:
           TorrentSaveRoots(active: baseSavePath, legacy: legacySavePaths),
+      resumeDir: resumeDir,
       clockMs: clockMs ?? _defaultClockMs,
     );
+    // TODO-1961-a：会话一建起来就把上次的种子加回来（续传 + 继续做种）。
+    // [restoreIds] = 当前仍存在的计划 id 集合：**计划是真相源**，用户删掉的
+    // 任务不能靠残留的 resume 文件复活成一个 UI 里看不见、却在偷偷做种的种子。
+    host.restoreFromResume(restoreIds);
+    return host;
   }
 
   static int _defaultClockMs() => DateTime.now().millisecondsSinceEpoch;
@@ -135,6 +160,68 @@ class EmbeddedTorrentHost {
 
   /// 仅测试用：清掉 [probeAvailable] 的缓存。
   static void resetAvailabilityProbeForTesting() => _availabilityCache = null;
+
+  /// TODO-1961-a：resume 目录里**无主**（不在 [keepIds] 里）的文件全删。
+  ///
+  /// 唯一的剪枝入口，load 与 save 之后都走它 —— 「计划集合」是真相源，resume
+  /// 目录只是它的落盘镜像。不这样做的后果很具体：用户删掉一个下载任务后，
+  /// 残留的 `.resume` 会在下次启动把种子加回来，UI 里看不见它，却在后台占带宽
+  /// 做种。异常静默吞（剪枝失败不该打断下载）。
+  int _pruneResumeFiles(Set<String> keepIds) {
+    int removed = 0;
+    try {
+      final Directory dir = Directory(_resumeDir);
+      if (!dir.existsSync()) return 0;
+      for (final FileSystemEntity entity in dir.listSync()) {
+        if (entity is! File || !entity.path.endsWith('.resume')) continue;
+        final String id = p.basenameWithoutExtension(entity.path).toLowerCase();
+        if (keepIds.contains(id)) continue;
+        try {
+          entity.deleteSync();
+          removed++;
+        } on FileSystemException {
+          // 单个删不掉不影响其它。
+        }
+      }
+    } on FileSystemException {
+      return removed;
+    }
+    return removed;
+  }
+
+  /// TODO-1961-a：把上次会话存下的种子加回来（续传 + 继续做种）。
+  /// 先按 [keepIds] 剪枝再加载，保证被删计划的种子不会复活。
+  /// 返回真正加回来的种子数。
+  int restoreFromResume(Set<String> keepIds) {
+    _pruneResumeFiles(keepIds);
+    try {
+      return _session.loadResumeDir(_resumeDir).length;
+    } on Object {
+      return 0;
+    }
+  }
+
+  /// TODO-1961-a：把当前所有种子的 resume data 落盘（每 [resumeSaveInterval]
+  /// 至多一次；[force] 忽略节流，退出前用）。保存后按 [keepIds] 剪枝，
+  /// 把本轮写出的无主种子文件一并清掉。
+  ///
+  /// 返回本轮实际落盘的种子数（被节流跳过时返回 null）。
+  int? saveResumeSnapshot(Set<String> keepIds, {bool force = false}) {
+    final int nowMs = _clockMs();
+    if (!force &&
+        _lastResumeSaveMs != 0 &&
+        nowMs - _lastResumeSaveMs < resumeSaveInterval.inMilliseconds) {
+      return null;
+    }
+    _lastResumeSaveMs = nowMs;
+    try {
+      final HtResumeSaveResult result = _session.saveResumeData(_resumeDir);
+      _pruneResumeFiles(keepIds);
+      return result.saved;
+    } on Object {
+      return 0;
+    }
+  }
 
   /// 应用用户可调的全局资源限制（速率 + 连接数）。[downloadKbps]/[uploadKbps]
   /// 单位 KB/s（0 = 不限），[maxConnections]（0 = 引擎默认）。config 变更时
@@ -332,7 +419,12 @@ class EmbeddedTorrentHost {
   }
 
   /// 释放常驻 session（app 退出时）。
-  void dispose() {
+  ///
+  /// TODO-1961-a：关 session **之前**强制存一次 resume —— 这是「下次启动能
+  /// 续传/继续做种」的最后一道保存点，节流在这里必须让路（[force]）。
+  /// [keepIds] 同 [saveResumeSnapshot]：当前仍存在的计划 id 集合。
+  void dispose({Set<String> keepIds = const <String>{}}) {
+    saveResumeSnapshot(keepIds, force: true);
     _session.close();
   }
 }

@@ -402,6 +402,41 @@ class HibikiTorrentBindings {
   late final _ht_remove_torrent = _ht_remove_torrentPtr.asFunction<
       int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)>();
 
+  /// 把所有已有元数据的种子的 resume data 落盘到 out_dir；同步等待最多
+  /// timeout_ms（<=0 取默认 5000）。返回 malloc JSON（ht_free_string 释放）。
+  ffi.Pointer<ffi.Char> ht_save_resume_data(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> out_dir,
+    int timeout_ms,
+  ) {
+    return _ht_save_resume_data(session, out_dir, timeout_ms);
+  }
+
+  late final _ht_save_resume_dataPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>, ffi.Int)>>('ht_save_resume_data');
+  late final _ht_save_resume_data = _ht_save_resume_dataPtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)>();
+
+  /// 把 dir 下所有 `*.resume` 重新 add 回 session（启动续跑）。
+  /// 返回 malloc JSON（ht_free_string 释放）。
+  ffi.Pointer<ffi.Char> ht_load_resume_dir(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> dir,
+  ) {
+    return _ht_load_resume_dir(session, dir);
+  }
+
+  late final _ht_load_resume_dirPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>)>>('ht_load_resume_dir');
+  late final _ht_load_resume_dir = _ht_load_resume_dirPtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+
   /// 释放本库返回的 char* 串；传 NULL 为 no-op。
   void ht_free_string(ffi.Pointer<ffi.Char> s) {
     return _ht_free_string(s);

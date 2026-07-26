@@ -330,6 +330,25 @@ class HtPieceEvent {
   final int piece;
 }
 
+/// 一轮 [EmbeddedTorrentSession.saveResumeData] 的结果。
+class HtResumeSaveResult {
+  const HtResumeSaveResult({
+    required this.saved,
+    required this.failed,
+    this.timedOut = 0,
+  });
+
+  /// 成功落盘的种子数。
+  final int saved;
+
+  /// 引擎回执失败 + 写盘失败的种子数。
+  final int failed;
+
+  /// 在超时预算内没等到回执的种子数。**不是错误**：下一轮保存会再试，
+  /// 这些种子只是这次没更新到盘上（盘上仍是上一轮的 resume）。
+  final int timedOut;
+}
+
 /// 一个 libtorrent session 的高层封装。所有方法容错：底层失败返回
 /// false / null / 空列表，不抛（与 TorrentBackend 契约同姿态）。
 class EmbeddedTorrentSession {
@@ -556,6 +575,49 @@ class EmbeddedTorrentSession {
               piece: (e['piece'] as num?)?.toInt() ?? -1,
             ))
         .toList(growable: false);
+  }
+
+  /// TODO-1961-a：把当前所有已有元数据的种子的 resume data 落盘到 [dir]
+  /// （每种子一个 `<infohash>.resume`，原子写）。
+  ///
+  /// 同步阻塞最多 [timeoutMs] 毫秒等引擎回执（内部 wait_for_alert 挂起，不是
+  /// sleep 轮询）；通常几十毫秒内收齐。调用时机是「周期性 + 退出前」，不是每 tick。
+  HtResumeSaveResult saveResumeData(String dir, {int timeoutMs = 5000}) {
+    if (isClosed) return const HtResumeSaveResult(saved: 0, failed: 0);
+    final Pointer<Char> out = dir.toNativeUtf8().cast<Char>();
+    try {
+      final Object? json = _engine
+          ._consumeJson(_b.ht_save_resume_data(_session, out, timeoutMs));
+      if (json is! Map<String, dynamic> || json['ok'] != true) {
+        return const HtResumeSaveResult(saved: 0, failed: 0);
+      }
+      return HtResumeSaveResult(
+        saved: (json['saved'] as num?)?.toInt() ?? 0,
+        failed: (json['failed'] as num?)?.toInt() ?? 0,
+        timedOut: (json['timed_out'] as num?)?.toInt() ?? 0,
+      );
+    } finally {
+      malloc.free(out);
+    }
+  }
+
+  /// TODO-1961-a：把 [dir] 下所有 `*.resume` 重新 add 回会话（启动续跑）。
+  /// 目录不存在 = 首次运行，返回空列表而非错误。返回成功加回的 infohash 列表。
+  List<String> loadResumeDir(String dir) {
+    if (isClosed) return const <String>[];
+    final Pointer<Char> path = dir.toNativeUtf8().cast<Char>();
+    try {
+      final Object? json =
+          _engine._consumeJson(_b.ht_load_resume_dir(_session, path));
+      if (json is! Map<String, dynamic> || json['ok'] != true) {
+        return const <String>[];
+      }
+      final Object? ids = json['ids'];
+      if (ids is! List) return const <String>[];
+      return ids.whereType<String>().toList(growable: false);
+    } finally {
+      malloc.free(path);
+    }
   }
 
   /// 流式播放原语：单 piece 截止期（毫秒）。

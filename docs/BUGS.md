@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1075 条。点号进各自文件。
+> 共 1076 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1109](bugs/BUG-1109-local-rig-rate-limit-flake.md) | 🚧 | 🚧 | 内置引擎本地 rig 测试：限速对 loopback peer 不生效导致 peer 观察窗口消失（flaky） |
 | [BUG-1108](bugs/BUG-1108-shelf-continue-hero-raw-title.md) | ✅ | ✅ | 改名后书架继续阅读条仍显示旧名 |
 | [BUG-1107](bugs/BUG-1107-reading-stats-phantom-chars-lost-duration.md) | ✅ | ✅ | 阅读统计速度爆表：幻象字数+纯时长行被拒 |
 | [BUG-1106](bugs/BUG-1106-desktop-settings-smoke-focus-gate-broken.md) | ✅ | ✅ | `desktop_settings_smoke_test.dart`（Windows 离屏 itest 默认门）在全新 profile 上必红 |

@@ -3065,6 +3065,16 @@ class AppModel with ChangeNotifier {
   /// 默认下载根 `<documents>/anime_downloads/content`（设置页展示与「恢复默认」用）。
   String? _downloadDefaultSaveRoot;
 
+  /// TODO-1961-a：resume data 目录 `<documents>/anime_downloads/resume`。
+  /// 与 `plans/` / `subs/` 同级 —— 它是 app 状态（哪些种子该活着），跟数据根走，
+  /// **不**跟用户配置的下载根走。
+  String? _embeddedTorrentResumeDir;
+
+  /// 当前仍存在的计划 id 集合（= infohash）。resume 剪枝的真相源：不在这个集合
+  /// 里的 `.resume` 文件一律删，否则用户删掉的任务会在下次启动复活成一个 UI 里
+  /// 看不见、却在后台做种的种子。每轮 tick 与启动时刷新。
+  Set<String> _animeDownloadPlanIds = const <String>{};
+
   /// 启动时用户配置的下载目录不可用（不存在且建不出/写不进）时记下原因与路径，
   /// 设置页据此显示警告。**不静默**：回退默认根这件事必须让用户看见。
   DownloadSaveRootIssue? _downloadSaveRootIssue;
@@ -3076,10 +3086,15 @@ class AppModel with ChangeNotifier {
     final EmbeddedTorrentHost? existing = _embeddedTorrentHost;
     if (existing != null) return existing;
     final TorrentSaveRoots? roots = _embeddedTorrentSaveRoots;
-    if (roots == null || !_supportsEmbeddedTorrent()) return null;
+    final String? resumeDir = _embeddedTorrentResumeDir;
+    if (roots == null || resumeDir == null || !_supportsEmbeddedTorrent()) {
+      return null;
+    }
     final EmbeddedTorrentHost? host = EmbeddedTorrentHost.open(
       baseSavePath: roots.active,
       legacySavePaths: roots.legacy,
+      resumeDir: resumeDir,
+      restoreIds: _animeDownloadPlanIds,
     );
     if (host == null) return null;
     _embeddedTorrentHost = host;
@@ -3201,6 +3216,7 @@ class AppModel with ChangeNotifier {
       configuredRoot: configuredRoot,
       history: decodeSaveRootHistory(prefsRepo.downloadSaveRootHistory),
     );
+    _embeddedTorrentResumeDir = path.join(baseDir.path, 'resume');
 
     _animeDownloadService = AnimeDownloadService(
       store: store,
@@ -3212,6 +3228,7 @@ class AppModel with ChangeNotifier {
       onTick: () {
         _embeddedTorrentHost?.sweepAntiLeech();
         _embeddedTorrentHost?.sweepUploadPolicy();
+        unawaited(_saveEmbeddedTorrentResume());
       },
     )..start();
     final AnimeDownloadSubscriptionStore subscriptionStore =
@@ -3226,6 +3243,66 @@ class AppModel with ChangeNotifier {
       jimakuApiKeyProvider: () => prefsRepo.jimakuApiKey,
       httpClientFactory: createDownloadHttpClient,
     )..start();
+
+    // TODO-1961-a：上次会话留下的种子在这里接回来（续传 + 继续做种）。
+    //
+    // BUG-1053 的边界必须守住：**只有真的有种子要恢复时才建 session**。
+    // 判据是「resume 目录里有属于现存计划的 .resume 文件」——从没下载过东西的
+    // 用户永远没有这种文件，于是永远不建 session、不绑端口、不起 DHT，与
+    // BUG-1053 修复后的行为逐字节一致。
+    await _restoreEmbeddedTorrentSession(store);
+  }
+
+  /// 刷新 [_animeDownloadPlanIds]（resume 剪枝的真相源）并返回它。
+  Future<Set<String>> _refreshAnimeDownloadPlanIds(
+      AnimeDownloadPlanStore store) async {
+    final List<AnimeDownloadPlan> plans = await store.loadAll();
+    _animeDownloadPlanIds = <String>{
+      for (final AnimeDownloadPlan plan in plans) plan.id.toLowerCase(),
+    };
+    return _animeDownloadPlanIds;
+  }
+
+  /// TODO-1961-a：启动时按需恢复上次的内置引擎会话。
+  /// 没有可恢复的种子就**不建 session**（见 BUG-1053）。
+  Future<void> _restoreEmbeddedTorrentSession(
+      AnimeDownloadPlanStore store) async {
+    final String? resumeDir = _embeddedTorrentResumeDir;
+    if (resumeDir == null || !_supportsEmbeddedTorrent()) return;
+    final Set<String> planIds = await _refreshAnimeDownloadPlanIds(store);
+    if (planIds.isEmpty) return;
+    bool hasRestorable = false;
+    try {
+      final Directory dir = Directory(resumeDir);
+      if (!await dir.exists()) return;
+      await for (final FileSystemEntity entity in dir.list()) {
+        if (entity is! File || !entity.path.endsWith('.resume')) continue;
+        final String id = path
+            .basenameWithoutExtension(entity.path)
+            .toLowerCase();
+        if (planIds.contains(id)) {
+          hasRestorable = true;
+          break;
+        }
+      }
+    } on FileSystemException {
+      return;
+    }
+    if (!hasRestorable) return;
+    _ensureEmbeddedTorrentHost();
+  }
+
+  /// TODO-1961-a：周期性把 resume data 落盘（host 内部按
+  /// [EmbeddedTorrentHost.resumeSaveInterval] 节流，这里每 tick 调是安全的）。
+  Future<void> _saveEmbeddedTorrentResume() async {
+    final EmbeddedTorrentHost? host = _embeddedTorrentHost;
+    final AnimeDownloadPlanStore? store = _animeDownloadPlanStore;
+    if (host == null || store == null) return;
+    try {
+      host.saveResumeSnapshot(await _refreshAnimeDownloadPlanIds(store));
+    } catch (_) {
+      // 保存失败不打断下载轮询；下轮再试。
+    }
   }
 
   /// 下载完成的书籍（epub）入库回调：逐个走 [EpubImporter] 进阅读库
@@ -4573,7 +4650,11 @@ class AppModel with ChangeNotifier {
     _remoteLookupHttpClient?.close();
     _remoteLookupHttpClient = null;
     _animeDownloadService?.stop();
-    _embeddedTorrentHost?.dispose();
+    // TODO-1961-a：退出前强制存一次 resume（下次启动据此续传/继续做种）。
+    // 用最近一次 tick 缓存的计划 id 集合剪枝 —— dispose 是同步的，不能在这里
+    // await 一次 `store.loadAll()`；缓存最多落后一个 tick（20s），代价只是某个
+    // 刚删掉的计划多留一轮 resume 文件，下次启动的剪枝会立刻清掉它。
+    _embeddedTorrentHost?.dispose(keepIds: _animeDownloadPlanIds);
     _embeddedTorrentHost = null;
     super.dispose();
   }

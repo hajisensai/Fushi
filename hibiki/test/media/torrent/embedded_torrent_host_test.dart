@@ -54,6 +54,7 @@ void main() {
       final EmbeddedTorrentHost? host = EmbeddedTorrentHost.open(
         libraryPath: libPath,
         baseSavePath: p.join(tempDir.path, 'content'),
+        resumeDir: p.join(tempDir.path, 'resume'),
         listenInterfaces: '127.0.0.1:0',
         enableDht: false,
         clockMs: () => _fakeClock,
@@ -100,6 +101,108 @@ void main() {
     skip: skip,
     timeout: const Timeout(Duration(minutes: 2)),
   );
+
+  // ── TODO-1961-a：resume 生命周期 ───────────────────────────────────
+  //
+  // 这里守的是「计划是真相源」这条不变量：用户删掉一个下载任务后，残留的
+  // `.resume` 绝不能在下次启动把种子加回来 —— 那会变成 UI 里看不见、却在后台
+  // 占带宽做种的幽灵任务。
+
+  test(
+    'resume snapshot persists live torrents and prunes plans the user deleted',
+    () async {
+      final EmbeddedTorrentEngine rigEngine =
+          EmbeddedTorrentEngine.open(libraryPath: libPath!);
+      final LocalSeedRig rig = await LocalSeedRig.start(
+          engine: rigEngine, workDir: tempDir, contentBytes: 512 * 1024);
+      addTearDown(rig.dispose);
+
+      final String resumeDir = p.join(tempDir.path, 'resume');
+      final EmbeddedTorrentHost? host = EmbeddedTorrentHost.open(
+        libraryPath: libPath,
+        baseSavePath: p.join(tempDir.path, 'content'),
+        resumeDir: resumeDir,
+        listenInterfaces: '127.0.0.1:0',
+        enableDht: false,
+        clockMs: () => _fakeClock,
+      );
+      expect(host, isNotNull);
+      addTearDown(host!.dispose);
+
+      // 用 rig 的 **.torrent 文件**添加而不是磁力：元数据现成，无需连 peer。
+      // （resume data 只对已有元数据的种子有意义——磁力刚加时没有 info dict，
+      // 引擎侧会跳过它，见 ht_save_resume_data。）
+      final TorrentBackend view = host.backendView();
+      expect(
+        await view.addTorrent(rig.torrentPath, category: 'hibiki-anime'),
+        isTrue,
+      );
+      await _pollUntil(
+        () => host.backendView().listTorrents().then(
+            (List<TorrentSnapshot> t) => t.isNotEmpty && t.single.progress >= 0),
+        timeout: const Duration(seconds: 30),
+        what: 'torrent to appear',
+      );
+
+      final File resumeFile = File(p.join(resumeDir, '${rig.infoHash}.resume'));
+
+      // ① 计划仍在 → resume 落盘保留。
+      await _pollUntil(
+        () async {
+          host.saveResumeSnapshot(<String>{rig.infoHash}, force: true);
+          return resumeFile.existsSync();
+        },
+        timeout: const Duration(seconds: 30),
+        what: 'resume file for a live plan',
+      );
+
+      // ② 节流：非 force 的紧接一次调用应被跳过（返回 null），不写盘。
+      expect(host.saveResumeSnapshot(<String>{rig.infoHash}), isNull);
+
+      // ③ 计划被用户删掉（keepIds 里没有它）→ resume 文件必须被剪掉，
+      //    否则下次启动这个种子会复活。
+      host.saveResumeSnapshot(const <String>{}, force: true);
+      expect(resumeFile.existsSync(), isFalse,
+          reason: 'a deleted plan must not keep a resume file behind — '
+              'otherwise it silently resurrects as an invisible seeding torrent');
+
+      // ④ 剪光之后再恢复：没有任何东西可加回来。
+      expect(host.restoreFromResume(const <String>{}), 0);
+    },
+    skip: skip,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  test(
+    'restoreFromResume on an empty/missing resume dir is a no-op',
+    () {
+      final EmbeddedTorrentHost? host = EmbeddedTorrentHost.open(
+        libraryPath: libPath,
+        baseSavePath: p.join(tempDir.path, 'content'),
+        resumeDir: p.join(tempDir.path, 'no-such-resume'),
+        listenInterfaces: '',
+        enableDht: false,
+        clockMs: () => _fakeClock,
+      );
+      expect(host, isNotNull);
+      addTearDown(host!.dispose);
+
+      expect(host.restoreFromResume(<String>{'deadbeef'}), 0);
+    },
+    skip: skip,
+  );
+}
+
+Future<void> _pollUntil(
+  Future<bool> Function() done, {
+  required Duration timeout,
+  required String what,
+}) async {
+  final Stopwatch sw = Stopwatch()..start();
+  while (!await done()) {
+    if (sw.elapsed > timeout) fail('timeout waiting for $what');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
 }
 
 // 反吸血引擎的判定基准时钟（注入固定值；本测试不依赖时间推进）。

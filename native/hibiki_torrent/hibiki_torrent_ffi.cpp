@@ -1,8 +1,10 @@
 // hibiki_torrent C ABI bridge implementation（阶段1b：真实下载管线）。
 //
 // 设计原则：
-// - C 层无自有状态：句柄即 lt::session*，种子按 infohash 每次现查
-//   （get_torrents() 线性扫，任务数为个位数，够用且消灭状态同步）。
+// - C 层不存**种子**状态：种子按 infohash 每次现查（get_torrents() 线性扫，
+//   任务数为个位数，够用且消灭状态同步）。句柄是 ht_session_ctx*，它只拥有
+//   lt::session 与**已收割待取的 alert 队列**（见 drain_alerts 的注释：
+//   pop_alerts 是破坏性的，队列是它唯一正确的去处，不是可选的缓存）。
 // - 出参一律 malloc 的 UTF-8 JSON（手写生成 + 转义，零第三方依赖，
 //   不引 GPL/非 BSD 传染）；入参路径一律 UTF-8（libtorrent 原生约定）。
 // - 所有入口 try/catch 到边界：C ABI 绝不向 Dart 泄异常。
@@ -18,6 +20,7 @@
 #include <libtorrent/error_code.hpp>
 #include <libtorrent/ip_filter.hpp>
 #include <libtorrent/magnet_uri.hpp>
+#include <libtorrent/read_resume_data.hpp>
 #include <libtorrent/session.hpp>
 #include <libtorrent/session_params.hpp>
 #include <libtorrent/settings_pack.hpp>
@@ -26,8 +29,10 @@
 #include <libtorrent/torrent_info.hpp>
 #include <libtorrent/torrent_status.hpp>
 #include <libtorrent/version.hpp>
+#include <libtorrent/write_resume_data.hpp>
 
 #include <cctype>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -98,8 +103,53 @@ char* json_ok_id(const std::string& id) {
 
 // ── libtorrent helpers ──────────────────────────────────────────────
 
+// 一条 piece 完成事件（收割后待 ht_poll_piece_events 取走）。
+struct PieceEvent {
+  std::string id;
+  int piece;
+};
+
+// piece 事件队列上限（超出丢**最旧**的）。
+//
+// 必须有上限：生产端只有边下边播/测试才会调 ht_poll_piece_events，而
+// ht_save_resume_data 每分钟也会 drain 一次 —— 没有消费者时队列会无限涨。
+// 语义与 libtorrent 自身的 alert_queue_size 溢出丢弃一致：piece 事件是
+// 「进度提示」，丢了不影响正确性（真相在 ht_torrent_pieces 的位图里）。
+constexpr std::size_t kMaxQueuedPieceEvents = 4096;
+
+// session 句柄的真身：拥有 lt::session + 已收割待取的 alert 队列。
+//
+// TODO-1961-b：为什么必须有队列 —— `pop_alerts` 是**破坏性**的（取走即从
+// libtorrent 内部消失）。以前只有 ht_poll_piece_events 一个消费者，它 pop 完
+// 把非 piece 的 alert 全丢掉，看起来「无状态」；一旦再有第二个消费者
+// （resume data 的完成信号），两个消费者就会互相吃掉对方的事件，且丢失是静默
+// 的。正解不是加第二个 pop 点，而是**一个 session 只有一个收割点**
+// （[drain_alerts]），收割后按类型分派进各自队列，各 poll 函数只读自己的队列。
+struct ht_session_ctx {
+  explicit ht_session_ctx(lt::settings_pack sp) : ses(std::move(sp)) {}
+
+  lt::session ses;
+
+  // 已收割待取的 piece 完成事件。
+  std::vector<PieceEvent> pieces;
+
+  // 已收割的 resume data（infohash → bencode 后的字节）。
+  std::vector<std::pair<std::string, std::vector<char>>> resumes;
+
+  // 已发出 save_resume_data 但尚未收到回执的种子数（收齐即可停止等待）。
+  int resume_pending = 0;
+
+  // 本轮 save_resume_data 失败的个数（诊断用，随每轮保存清零）。
+  int resume_failed = 0;
+};
+
+ht_session_ctx* as_ctx(void* session) {
+  return static_cast<ht_session_ctx*>(session);
+}
+
+// 兼容既有 21 处调用点：它们只要 lt::session*。
 lt::session* as_session(void* session) {
-  return static_cast<lt::session*>(session);
+  return session == nullptr ? nullptr : &as_ctx(session)->ses;
 }
 
 // 种子身份：v1 sha1 优先、纯 v2 用截断 sha256（与 magnet btih 一致）。
@@ -115,6 +165,38 @@ std::string best_hash_hex(const lt::info_hash_t& ih) {
     out += kHex[b & 0x0f];
   }
   return out;
+}
+
+// **唯一**的 alert 收割点：pop 一次，按类型分派进 ctx 的各队列，其余丢弃。
+// 任何需要 alert 的入口都只调它，绝不自己 pop_alerts（理由见 ht_session_ctx）。
+void drain_alerts(ht_session_ctx* ctx) {
+  if (ctx == nullptr) return;
+  std::vector<lt::alert*> alerts;
+  ctx->ses.pop_alerts(&alerts);
+  for (const lt::alert* a : alerts) {
+    if (const auto* pf = lt::alert_cast<lt::piece_finished_alert>(a)) {
+      if (pf->handle.is_valid()) {
+        // 队列满了先丢最旧的，保证「没有消费者」时占用有上限。
+        if (ctx->pieces.size() >= kMaxQueuedPieceEvents) {
+          ctx->pieces.erase(ctx->pieces.begin());
+        }
+        ctx->pieces.push_back(PieceEvent{
+            best_hash_hex(pf->handle.info_hashes()), int(pf->piece_index)});
+      }
+      continue;
+    }
+    if (const auto* sr = lt::alert_cast<lt::save_resume_data_alert>(a)) {
+      if (ctx->resume_pending > 0) ctx->resume_pending--;
+      ctx->resumes.emplace_back(best_hash_hex(sr->params.info_hashes),
+                                lt::write_resume_data_buf(sr->params));
+      continue;
+    }
+    if (lt::alert_cast<lt::save_resume_data_failed_alert>(a) != nullptr) {
+      if (ctx->resume_pending > 0) ctx->resume_pending--;
+      ctx->resume_failed++;
+      continue;
+    }
+  }
 }
 
 // 按小写十六进制 infohash 找种子；找不到返回无效 handle。
@@ -201,18 +283,20 @@ HT_EXPORT void* ht_session_create(const char* listen_interfaces,
     sp.set_bool(lt::settings_pack::enable_lsd, false);
     sp.set_bool(lt::settings_pack::enable_upnp, false);
     sp.set_bool(lt::settings_pack::enable_natpmp, false);
-    // piece 完成事件（下载顺序证据/边下边播缓冲）+ 状态/错误告警。
+    // piece 完成事件（下载顺序证据/边下边播缓冲）+ 状态/错误告警 +
+    // storage（save_resume_data_alert 属此类，TODO-1961-a 的完成信号）。
     sp.set_int(lt::settings_pack::alert_mask,
                lt::alert_category::status | lt::alert_category::error |
-                   lt::alert_category::piece_progress);
-    return new lt::session(std::move(sp));
+                   lt::alert_category::piece_progress |
+                   lt::alert_category::storage);
+    return new ht_session_ctx(std::move(sp));
   } catch (...) {
     return nullptr;
   }
 }
 
 HT_EXPORT void ht_session_destroy(void* session) {
-  delete as_session(session);
+  delete as_ctx(session);
 }
 
 HT_EXPORT int ht_session_listen_port(void* session) {
@@ -559,18 +643,20 @@ HT_EXPORT char* ht_torrent_pieces(void* session, const char* info_hash) {
 HT_EXPORT char* ht_poll_piece_events(void* session) {
   if (session == nullptr) return dup_string("[]");
   try {
-    std::vector<lt::alert*> alerts;
-    as_session(session)->pop_alerts(&alerts);
+    ht_session_ctx* ctx = as_ctx(session);
+    // 收割一次（会把非 piece 的 alert 分派进各自队列，不再静默丢弃），
+    // 然后**取走**本队列：取走即清空，语义与改造前逐字节一致。
+    drain_alerts(ctx);
+    std::vector<PieceEvent> events;
+    events.swap(ctx->pieces);
     std::string out = "[";
     bool first = true;
-    for (const lt::alert* a : alerts) {
-      const auto* pf = lt::alert_cast<lt::piece_finished_alert>(a);
-      if (pf == nullptr || !pf->handle.is_valid()) continue;
+    for (const PieceEvent& e : events) {
       if (!first) out += ',';
       first = false;
       out += "{";
-      append_json_str_field(out, "id", best_hash_hex(pf->handle.info_hashes()));
-      out += ",\"piece\":" + std::to_string(int(pf->piece_index)) + '}';
+      append_json_str_field(out, "id", e.id);
+      out += ",\"piece\":" + std::to_string(e.piece) + '}';
     }
     out += ']';
     return dup_string(out);
@@ -765,6 +851,170 @@ HT_EXPORT int ht_remove_torrent(void* session, const char* info_hash,
     return 1;
   } catch (...) {
     return 0;
+  }
+}
+
+HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
+                                    int timeout_ms) {
+  if (session == nullptr) return json_error("session is null");
+  if (out_dir == nullptr || *out_dir == '\0') {
+    return json_error("out_dir is empty");
+  }
+  try {
+    ht_session_ctx* ctx = as_ctx(session);
+    std::error_code fs_ec;
+    std::filesystem::create_directories(
+        std::filesystem::u8path(std::string(out_dir)), fs_ec);
+
+    // 前一轮的残留（超时未收齐）不该算进本轮：清账再发。
+    ctx->resumes.clear();
+    ctx->resume_pending = 0;
+    ctx->resume_failed = 0;
+
+    for (const lt::torrent_handle& h : ctx->ses.get_torrents()) {
+      if (!h.is_valid()) continue;
+      // 无元数据的种子（磁力刚加、还没拿到 info dict）存了也无法重建，
+      // libtorrent 会直接回 failed_alert —— 不发，省一轮等待。
+      if (!h.torrent_file()) continue;
+      // save_info_dict：把 info dict 一并写进 resume，重启后磁力种子无需
+      // 重新向 DHT/peer 取元数据即可直接续传/做种。
+      h.save_resume_data(lt::torrent_handle::save_info_dict);
+      ctx->resume_pending++;
+    }
+
+    const int budget_ms = timeout_ms > 0 ? timeout_ms : 5000;
+    const std::chrono::steady_clock::time_point deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(budget_ms);
+    while (ctx->resume_pending > 0) {
+      const std::chrono::steady_clock::time_point now =
+          std::chrono::steady_clock::now();
+      if (now >= deadline) break;
+      // 等到有 alert 再收割（而不是 sleep 轮询猜）。返回 nullptr = 本段
+      // 时间窗内无 alert，继续判超时。
+      ctx->ses.wait_for_alert(
+          std::chrono::duration_cast<lt::time_duration>(deadline - now));
+      drain_alerts(ctx);
+    }
+
+    int saved = 0;
+    int write_failed = 0;
+    for (const std::pair<std::string, std::vector<char>>& entry :
+         ctx->resumes) {
+      const std::filesystem::path target =
+          std::filesystem::u8path(std::string(out_dir)) /
+          std::filesystem::u8path(entry.first + ".resume");
+      // 原子落盘：先写 .tmp 再 rename，避免断电/崩溃留半个 resume 文件
+      // （半个文件会让下次启动整个种子加不回来）。
+      const std::filesystem::path tmp =
+          std::filesystem::path(target).concat(".tmp");
+      {
+        std::ofstream os(tmp, std::ios::binary | std::ios::trunc);
+        if (!os) {
+          write_failed++;
+          continue;
+        }
+        os.write(entry.second.data(),
+                 static_cast<std::streamsize>(entry.second.size()));
+        if (!os) {
+          write_failed++;
+          continue;
+        }
+      }
+      std::error_code ren_ec;
+      std::filesystem::rename(tmp, target, ren_ec);
+      if (ren_ec) {
+        write_failed++;
+        std::error_code rm_ec;
+        std::filesystem::remove(tmp, rm_ec);
+        continue;
+      }
+      saved++;
+    }
+    const int alert_failed = ctx->resume_failed;
+    const int pending_left = ctx->resume_pending;
+    ctx->resumes.clear();
+    ctx->resume_pending = 0;
+    ctx->resume_failed = 0;
+
+    std::string out = "{\"ok\":true,\"saved\":";
+    out += std::to_string(saved);
+    out += ",\"failed\":";
+    out += std::to_string(alert_failed + write_failed);
+    out += ",\"timed_out\":";
+    out += std::to_string(pending_left);
+    out += '}';
+    return dup_string(out);
+  } catch (const std::exception& e) {
+    return json_error(e.what());
+  } catch (...) {
+    return json_error("unknown error in ht_save_resume_data");
+  }
+}
+
+HT_EXPORT char* ht_load_resume_dir(void* session, const char* dir) {
+  if (session == nullptr) return json_error("session is null");
+  if (dir == nullptr || *dir == '\0') return json_error("dir is empty");
+  try {
+    lt::session* ses = as_session(session);
+    const std::filesystem::path root =
+        std::filesystem::u8path(std::string(dir));
+    std::error_code exists_ec;
+    if (!std::filesystem::exists(root, exists_ec)) {
+      // 首次运行没有 resume 目录是正常态，不是错误。
+      return dup_string("{\"ok\":true,\"added\":0,\"failed\":0,\"ids\":[]}");
+    }
+    int added = 0;
+    int failed = 0;
+    std::string ids;
+    std::error_code iter_ec;
+    for (const std::filesystem::directory_entry& entry :
+         std::filesystem::directory_iterator(root, iter_ec)) {
+      if (iter_ec) break;
+      if (!entry.is_regular_file()) continue;
+      if (entry.path().extension() != ".resume") continue;
+      std::ifstream is(entry.path(), std::ios::binary);
+      if (!is) {
+        failed++;
+        continue;
+      }
+      const std::vector<char> buf((std::istreambuf_iterator<char>(is)),
+                                  std::istreambuf_iterator<char>());
+      if (buf.empty()) {
+        failed++;
+        continue;
+      }
+      lt::error_code ec;
+      lt::add_torrent_params params = lt::read_resume_data(buf, ec);
+      if (ec) {
+        failed++;
+        continue;
+      }
+      // 与 add_with_params 同一语义：本引擎的 add = 「开始跑」。resume 里
+      // 存的 paused 旗标必须清掉，否则加回来是暂停态，既不续传也不做种。
+      params.flags &= ~lt::torrent_flags::paused;
+      lt::error_code add_ec;
+      lt::torrent_handle h = ses->add_torrent(std::move(params), add_ec);
+      if ((add_ec && add_ec != lt::errors::duplicate_torrent) ||
+          !h.is_valid()) {
+        failed++;
+        continue;
+      }
+      if (added > 0) ids += ',';
+      ids += '"';
+      append_json_escaped(ids, best_hash_hex(h.info_hashes()));
+      ids += '"';
+      added++;
+    }
+    std::string out = "{\"ok\":true,\"added\":";
+    out += std::to_string(added);
+    out += ",\"failed\":";
+    out += std::to_string(failed);
+    out += ",\"ids\":[" + ids + "]}";
+    return dup_string(out);
+  } catch (const std::exception& e) {
+    return json_error(e.what());
+  } catch (...) {
+    return json_error("unknown error in ht_load_resume_dir");
   }
 }
 
