@@ -127,15 +127,24 @@ struct StorageOp {
   int pending = 0;
   bool ok = false;
   std::string detail;
+  lt::torrent_handle handle;
+  int file_index = -1;
 
-  void arm() {
+  bool arm(lt::torrent_handle target, int index = -1) {
+    // 超时只代表调用方不再等，不代表 libtorrent 已取消操作。迟到 alert 在被
+    // drain 之前必须继续占着槽；否则下一次调用会把它误认成自己的回执。
+    if (pending > 0) return false;
     pending = 1;
     ok = false;
     detail.clear();
+    handle = std::move(target);
+    file_index = index;
+    return true;
   }
 
   void settle(bool success, std::string message) {
-    if (pending > 0) pending--;
+    if (pending <= 0) return;
+    pending = 0;
     ok = success;
     detail = std::move(message);
   }
@@ -229,19 +238,31 @@ void drain_alerts(ht_session_ctx* ctx) {
     }
     // TODO-1961-c：改名 / 移动的回执。
     if (const auto* fr = lt::alert_cast<lt::file_renamed_alert>(a)) {
-      ctx->rename_op.settle(true, fr->new_name());
+      if (ctx->rename_op.pending > 0 &&
+          ctx->rename_op.handle == fr->handle &&
+          ctx->rename_op.file_index == int(fr->index)) {
+        ctx->rename_op.settle(true, fr->new_name());
+      }
       continue;
     }
     if (const auto* rf = lt::alert_cast<lt::file_rename_failed_alert>(a)) {
-      ctx->rename_op.settle(false, rf->error.message());
+      if (ctx->rename_op.pending > 0 &&
+          ctx->rename_op.handle == rf->handle &&
+          ctx->rename_op.file_index == int(rf->index)) {
+        ctx->rename_op.settle(false, rf->error.message());
+      }
       continue;
     }
     if (const auto* sm = lt::alert_cast<lt::storage_moved_alert>(a)) {
-      ctx->move_op.settle(true, sm->storage_path());
+      if (ctx->move_op.pending > 0 && ctx->move_op.handle == sm->handle) {
+        ctx->move_op.settle(true, sm->storage_path());
+      }
       continue;
     }
     if (const auto* mf = lt::alert_cast<lt::storage_moved_failed_alert>(a)) {
-      ctx->move_op.settle(false, mf->error.message());
+      if (ctx->move_op.pending > 0 && ctx->move_op.handle == mf->handle) {
+        ctx->move_op.settle(false, mf->error.message());
+      }
       continue;
     }
   }
@@ -935,7 +956,9 @@ HT_EXPORT char* ht_rename_file(void* session, const char* info_hash,
 
     // 先把之前可能残留的回执清掉再发，避免读到上一次的结果。
     drain_alerts(ctx);
-    ctx->rename_op.arm();
+    if (!ctx->rename_op.arm(h, file_index)) {
+      return json_error("previous rename is still pending");
+    }
     h.rename_file(lt::file_index_t(file_index), std::string(new_path));
     if (!await_storage_op(ctx, ctx->rename_op, timeout_ms)) {
       return json_error("rename timed out");
@@ -964,7 +987,9 @@ HT_EXPORT char* ht_move_storage(void* session, const char* info_hash,
     if (!h.is_valid()) return json_error("torrent not found");
 
     drain_alerts(ctx);
-    ctx->move_op.arm();
+    if (!ctx->move_op.arm(h)) {
+      return json_error("previous move is still pending");
+    }
     // fail_if_exist：目标已有同名文件就**整体失败**，绝不覆盖用户数据、也绝不
     // 「跳过已存在的、搬走其余的」留下半个内容目录。用户拿到明确错误后自己决定
     // （libtorrent 的默认 always_replace_files 会直接覆盖，对用户数据太危险）。

@@ -226,6 +226,41 @@ void main() {
       expect(outcome.isSuccess, isFalse, reason: '磁盘动了库没跟上 —— 用户必须知道，不能当成功');
     });
 
+    test('改名拒绝绝对路径和逃出种子目录的路径，且不触碰后端或库', () async {
+      final _FakeBackend backend = _FakeBackend();
+      bool libraryTouched = false;
+      final DownloadRelocateService service = DownloadRelocateService(
+        backendFactory: () => backend,
+        migrateLibraryPaths: (
+            {required String fromPath, required String toPath}) async {
+          libraryTouched = true;
+          return 1;
+        },
+      );
+
+      final List<String> invalid = <String>[
+        p.join(p.rootPrefix(p.current), 'outside.mkv'),
+        p.join('..', 'outside.mkv'),
+        p.join('season', '..', '..', 'outside.mkv'),
+      ];
+      for (final String newPath in invalid) {
+        final RelocateOutcome outcome = await service.renameFile(
+          infoHash: 'abc',
+          fileIndex: 0,
+          currentRelativePath: 'old.mkv',
+          newRelativePath: newPath,
+          saveRoot: root,
+        );
+        expect(outcome.status, RelocateStatus.engineFailed,
+            reason: '应拒绝 $newPath');
+        expect(outcome.error, contains('inside the torrent'));
+      }
+
+      expect(backend.calls, isEmpty);
+      expect(backend.closed, isFalse, reason: '校验失败前不应创建后端');
+      expect(libraryTouched, isFalse);
+    });
+
     test('目标与现状相同 → unchanged，不打扰引擎也不动库', () async {
       final _FakeBackend backend = _FakeBackend();
       bool libraryTouched = false;

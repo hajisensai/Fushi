@@ -43,15 +43,24 @@ class DownloadRelocateService {
     if (trimmed.isEmpty) {
       return const RelocateOutcome.engineFailed('new name is empty');
     }
-    if (p.equals(p.normalize(trimmed), p.normalize(currentRelativePath))) {
+    final String normalized = p.normalize(trimmed);
+    final List<String> segments = p.split(normalized);
+    if (p.isAbsolute(normalized) ||
+        normalized == '.' ||
+        segments.isEmpty ||
+        segments.first == '..') {
+      return const RelocateOutcome.engineFailed(
+          'new name must stay inside the torrent');
+    }
+    if (p.equals(normalized, p.normalize(currentRelativePath))) {
       // 名字没变：不打扰引擎，也不动库。
       return const RelocateOutcome.unchanged();
     }
     return _run(
       op: (TorrentBackend backend) =>
-          backend.renameFile(infoHash, fileIndex, trimmed),
+          backend.renameFile(infoHash, fileIndex, normalized),
       fromPath: p.join(saveRoot, currentRelativePath),
-      toPath: p.join(saveRoot, trimmed),
+      toPath: p.join(saveRoot, normalized),
     );
   }
 
