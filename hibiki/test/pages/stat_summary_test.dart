@@ -169,9 +169,9 @@ void main() {
       expect(s.recentActiveDays, 3);
     });
 
-    // BUG-1104：几秒钟的脏行（幻象字数 + 近零时长）不得进入极值/典型日样本。
+    // BUG-1107：几秒钟的脏行（幻象字数 + 近零时长）不得进入极值/典型日样本。
     // 用户实况：「最快日 1619597 字/时 · 07-25」= 1.1 万字 ÷ 几十秒外推。
-    test('sub-minute dirty day is excluded from fastest/typical (BUG-1104)',
+    test('sub-minute dirty day is excluded from fastest/typical (BUG-1107)',
         () {
       final List<StatDayData> daily = <StatDayData>[
         _day('2026-07-23', 3600, 3600000), // 3600 cph，正常日

@@ -199,4 +199,49 @@ void main() {
     expect(newMap['video|v2'], 1);
     expect(newMap['video|v3'], 1);
   });
+
+  // P5 未知种类透传：合集成员行值可能是**对端未来新增的种类**（同步引擎原样
+  // 透传，不经 tryParse 过滤）。详情页移出走 `removeFromCollectionRaw`
+  // （media_collection_grid_detail_page._removeMember 的明文契约），否则
+  // tryParse 丢弃会让这条成员**永远移不掉**——用户点「移出合集」毫无反应。
+  test('removeFromCollectionRaw 能移出未知种类成员（typed 入口覆盖不到的行值）', () async {
+    final HibikiDatabase db = await _openDb();
+    final int c = await db.createMediaCollection('C');
+    // 'manga' 不在 MediaKind 值域内 —— 模拟对端新增种类同步进来的成员行。
+    const String unknownKind = 'manga';
+    expect(MediaKind.tryParse(unknownKind), isNull, reason: '前提：确实是未知种类');
+
+    await db.addToCollectionRaw(c, unknownKind, 'm1');
+    await db.addToCollection(c, MediaKind.video, 'v1');
+    expect((await db.getCollectionItems(c)).map((m) => m.mediaType).toList(),
+        <String>[unknownKind, 'video'],
+        reason: 'raw 入口原样落库未知种类，不被静默丢弃');
+
+    await db.removeFromCollectionRaw(c, unknownKind, 'm1');
+    final List<MediaCollectionItemRow> after = await db.getCollectionItems(c);
+    expect(after.map((m) => m.entryKey).toList(), <String>['v1'],
+        reason: '未知种类成员必须移得掉');
+
+    // 同时写出成员移出墓碑（否则跨端并集会把它复活）——墓碑里也是原样种类串。
+    final List<CollectionMemberTombstoneRow> tombs =
+        (await db.getAllCollectionMemberTombstones())
+            .where((r) => r.collectionName == 'C')
+            .toList();
+    expect(
+      tombs.where((r) => r.mediaType == unknownKind && r.entryKey == 'm1'),
+      isNotEmpty,
+      reason: '未知种类的移出墓碑同样要写，且种类串原样保留',
+    );
+  });
+
+  test('removeFromCollection typed 入口与 raw 入口对已知种类等价', () async {
+    final HibikiDatabase db = await _openDb();
+    final int c = await db.createMediaCollection('C');
+    await db.addToCollection(c, MediaKind.video, 'v1');
+    await db.addToCollection(c, MediaKind.epub, 'b1');
+
+    await db.removeFromCollectionRaw(c, MediaKind.video.dbValue, 'v1');
+    expect((await db.getCollectionItems(c)).map((m) => m.entryKey).toList(),
+        <String>['b1']);
+  });
 }

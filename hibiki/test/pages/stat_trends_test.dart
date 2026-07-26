@@ -25,9 +25,9 @@ void main() {
       expect(computeCph(0, 3600000), 0);
     });
 
-    // BUG-1104：样本时长门槛。用户实况「1.1 万字 · 几十秒脏行」外推出
+    // BUG-1107：样本时长门槛。用户实况「1.1 万字 · 几十秒脏行」外推出
     // 1619597 字/时的爆表速度——不足 kMinCphSampleMs（1 分钟）一律 null。
-    test('sub-minute sample yields null (BUG-1104 爆表根因)', () {
+    test('sub-minute sample yields null (BUG-1107 爆表根因)', () {
       // 11000 字 / 25 秒 → 旧口径外推 158 万 cph，新口径无有效速度。
       expect(computeCph(11000, 25000), isNull);
       expect(computeCph(2213, 1), isNull);

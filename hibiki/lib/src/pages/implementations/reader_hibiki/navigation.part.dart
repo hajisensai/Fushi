@@ -153,7 +153,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     // 跨章回读（往回翻章 → 恢复完成）会把水位下调到更靠前那章章首，导致重读那章
     // 正文被再次计入统计（字数虚高）。改用 [sessionWatermarkAfterRestore] 取
     // max：前进/首次进入抬高水位（新内容照常计入），回读已读章不下调（不重复计）。
-    // BUG-1104（断点 B·幻象字数）：水位必须与**真实恢复锚**同源。精确字符锚恢复
+    // BUG-1107（断点 B·幻象字数）：水位必须与**真实恢复锚**同源。精确字符锚恢复
     // （收藏句 charAnchor 跳转 / 带 charOffset 的存档恢复）会把 `_initialProgress`
     // 强制 0.0（锚优先、分数只作兜底），旧代码只看分数 → 水位落在章首，首个
     // `_refreshProgress` 把章内恢复点之前的整段前缀误计成新读字数。改经
@@ -1216,7 +1216,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     // BUG-1052：先把「上一次 tick 到现在」这段未满一个 tick 的窗口结算进
     // [_sessionReadingMs]（不停表），否则每次落库都漏掉最多一个 tick 间隔。
     _readingTimeTracker?.sampleNow();
-    // BUG-1104（断点 A·时长丢失）：旧守卫 `_sessionCharsRead <= 0` 早退，EPUB 拒写
+    // BUG-1107（断点 A·时长丢失）：旧守卫 `_sessionCharsRead <= 0` 早退，EPUB 拒写
     // **纯时长行**——页面 dispose 时最后一段若无新字数，这段时长直接蒸发；歌词/听书
     // 模式全程不计字（`_refreshProgress` 在 lyricsMode 早退）⇒ 时长 100% 丢，统计页
     // 呈现「2213 字 / 0 分钟 / 1619597 字·时⁻¹」。PDF（reader_pdf_page.dart）与漫画

@@ -783,7 +783,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     await controller.skipToCue(targetCues.first);
   }
 
-  /// BUG-1104（断点 B·幻象字数）：显式跳句（[AudiobookPlayerController.skipToCue]
+  /// BUG-1107（断点 B·幻象字数）：显式跳句（[AudiobookPlayerController.skipToCue]
   /// 漏斗——音量键句子导航 / 快捷键 / 底栏「上一句·下一句」/ 媒体通知按钮全部汇聚
   /// 到那里）落定目标后，把本 session 统计字数水位抬到目标 cue 的绝对字符位置。
   ///

@@ -35,7 +35,6 @@ import 'package:hibiki/utils.dart';
 // 对应 `galgames` 行则该成员静默忽略（合集同步引擎对 mediaType/entryKey 透传，
 // 不解引用）。
 
-
 /// 首页「游戏」tab：galgame 库。展示用户添加的游戏网格，点击一个游戏经
 /// [GalHookSessionController.launchGame]（引擎-hook launch 路径）拉起并注入。
 /// 台词进入同一个捕获会话，原生浮窗点词与工作台制卡共享稳定 lineId。
@@ -217,6 +216,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 感知选图（移动端相册 / 桌面文件对话框），再经 [MediaCoverService.applyGameCover]
   /// 拷进 `<documents>/game_covers`（落盘 + 双键驱逐）→ 回填条目。与视频卡「设置
   /// 封面」同款语义（拷盘而非引用原图，原图移动/删除不会让封面消失）。
+  ///
+  /// 「没选到图」的三种形态（取消 / 空结果集 / 空 path）已在
+  /// `pickGalleryImageFile` 内一次收敛为 `null`，这里只判 `null` 即与旧版
+  /// `picked.files.isNotEmpty` + `source.isEmpty` 双守卫等价。
   Future<void> _setCover(GalgameEntry game) async {
     final File? picked = await MediaCoverService.pickCoverImage();
     if (picked == null) return;

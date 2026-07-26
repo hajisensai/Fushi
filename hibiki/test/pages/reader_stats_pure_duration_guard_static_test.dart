@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'reader_hibiki_page_source_corpus.dart';
 
-/// BUG-1104 源码扫描守卫：阅读统计「速度爆表」三段根因的形态锁定。
+/// BUG-1107 源码扫描守卫：阅读统计「速度爆表」三段根因的形态锁定。
 ///
 /// 断点 A（时长丢失）：EPUB 的 `_flushReadingStats` 旧守卫
 /// `_sessionCharsRead <= 0 || _book == null` 拒写纯时长行——dispose 时最后一段
@@ -31,7 +31,7 @@ void main() {
         flush(),
         isNot(contains('if (_sessionCharsRead <= 0 || _book == null) return;')),
         reason: '旧守卫拒写纯时长行：dispose 最后一段 / 歌词·听书模式的时长会整段蒸发'
-            '（BUG-1104 断点 A）',
+            '（BUG-1107 断点 A）',
       );
     });
 
@@ -61,7 +61,7 @@ void main() {
         isNot(contains(
             'sessionWatermarkAfterRestore(\n      _sessionMaxAbsoluteChars,\n'
             '      _absoluteCharPosition(_initialProgress),')),
-        reason: '不得退回只看 _initialProgress 的旧播种形式（BUG-1104 断点 B）',
+        reason: '不得退回只看 _initialProgress 的旧播种形式（BUG-1107 断点 B）',
       );
     });
 

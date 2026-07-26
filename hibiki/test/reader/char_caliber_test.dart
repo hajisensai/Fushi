@@ -9,7 +9,7 @@ import 'package:hibiki/src/pages/implementations/reader_hibiki_page.dart'
         sessionWatermarkAfterRestore;
 
 /// TODO-1192：锁定「计数口径版本判定」+「跨章回读水位只升不降」两条纯逻辑。
-/// BUG-1104：追加锁定「水位与真实恢复锚同源」（[computeCharWatermark]）。
+/// BUG-1107：追加锁定「水位与真实恢复锚同源」（[computeCharWatermark]）。
 void main() {
   String jsonFor(List<Map<String, Object?>> entries) => jsonEncode(entries);
 
@@ -79,7 +79,7 @@ void main() {
     });
   });
 
-  group('computeCharWatermark (BUG-1104 水位与恢复锚同源)', () {
+  group('computeCharWatermark (BUG-1107 水位与恢复锚同源)', () {
     // 三章书：字数 [1000, 2000, 3000]，章首累计 [0, 1000, 3000]。
     const List<int> cumulative = <int>[0, 1000, 3000];
     const List<int> counts = <int>[1000, 2000, 3000];
@@ -98,7 +98,7 @@ void main() {
     });
 
     test('charAnchor 恢复：progress 被强制 0.0 时锚仍然生效（爆表根因）', () {
-      // BUG-1104 断点 B：收藏句跳转把 _initialProgress 强制 0.0、锚存在
+      // BUG-1107 断点 B：收藏句跳转把 _initialProgress 强制 0.0、锚存在
       // _initialCharOffset。旧实现只看 progress → 水位落章首 (1000)，首个进度
       // 回调把章内前 1500 字整段误计成新读字数。新实现用锚推导。
       expect(

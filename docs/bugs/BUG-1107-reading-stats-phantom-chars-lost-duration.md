@@ -1,4 +1,4 @@
-## BUG-1104 · 阅读统计速度爆表：幻象字数+纯时长行被拒
+## BUG-1107 · 阅读统计速度爆表：幻象字数+纯时长行被拒
 - **报告**：2026-07-25（用户：统计页截图「速度 1619597 字/时」「最快日 1619597 字/时·07-25」，今日 2213 字/0 分钟；分书行「幸福の王子 1.1万字·1分钟」。用户归因「改名后统计有问题」）
 - **真实性**：✅ 真 bug，但**改名非根因**（验真结论）：
   - override 改名只写偏好（`ReaderHibikiSource.overrideTitleForBookKey`，`hibiki/lib/src/media/sources/reader_hibiki_source.dart:273`），不动 `EpubBooks.title` / `bookKey` / `reading_statistics.title`（(title,dateKey) 复合键，同行同键）；全仓无直改 title 的路径 → 改名不可能把统计「分身」，用户看到的分书行就是唯一一行的合计。

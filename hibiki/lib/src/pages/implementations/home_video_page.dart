@@ -2747,15 +2747,12 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           ),
         );
       }
-      // BUG-959 同款收敛（P3）：本地封面文件一律走 [ShelfFileCover] 降采样解码，
-      // 不再裸 Image.file 整帧解码（已下载的远端封面常是 1080p 原图，撑爆
-      // ImageCache 导致滚动重解码卡顿）。fit/衬底/占位语义不变。
       return _coverBacking(
-        ShelfFileCover(
+        Image.file(
+          File(coverPath),
           key: coverKey,
-          path: coverPath,
           fit: BoxFit.contain,
-          placeholder: ShelfCoverPlaceholder(
+          errorBuilder: (_, __, ___) => ShelfCoverPlaceholder(
             icon: Icons.movie_outlined,
             backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
           ),

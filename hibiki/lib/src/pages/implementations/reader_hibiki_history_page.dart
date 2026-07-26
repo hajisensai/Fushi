@@ -904,7 +904,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 Text(t.book_continue_reading, style: tokens.type.sectionLabel),
                 SizedBox(height: tokens.spacing.gap / 2),
                 Text(
-                  // BUG-1105：与同卡封面（getDisplayThumbnailFromMediaItem）同源，
+                  // BUG-1108：与同卡封面（getDisplayThumbnailFromMediaItem）同源，
                   // 经 getDisplayTitleFromMediaItem 应用编辑弹窗写入的 override
                   // 书名；直读 DB 原始列 hero.title 会在改名后仍显示旧名。
                   mediaSource.getDisplayTitleFromMediaItem(hero),
