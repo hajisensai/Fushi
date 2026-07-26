@@ -50,7 +50,12 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
     final int pending = await _repository.pendingCount();
     if (!mounted) return;
     setState(() {
-      _mappings = mappings;
+      _mappings = mappings
+          .where(
+            (mapping) =>
+                mapping.mediaType != TrackingMediaType.bookChapter.value,
+          )
+          .toList(growable: false);
       _pending = pending;
     });
   }

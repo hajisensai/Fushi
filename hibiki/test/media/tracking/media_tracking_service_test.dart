@@ -751,6 +751,146 @@ void main() {
     expect(api.searches.single, (keyword: '药屋少女的呢喃', subjectType: 1));
   });
 
+  test('novel series selects novel over same-title manga and syncs chapter',
+      () async {
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'series-volume-1',
+        title: '同名系列 01 (MFブックス)',
+        epubPath: '/tmp/series-1.epub',
+        extractDir: '/tmp/series-1',
+        chapterCount: 4,
+        chaptersJson: '''
+[
+  {"href":"text/nav.xhtml"},
+  {"href":"text/chapter-1.xhtml"},
+  {"href":"text/illustration.xhtml"},
+  {"href":"text/chapter-2.xhtml"}
+]
+''',
+        tocJson: const Value<String>('''
+[
+  {"title":"目次","href":"text/nav.xhtml"},
+  {"title":"第一話","href":"text/chapter-1.xhtml"},
+  {"title":"第二話","href":"text/chapter-2.xhtml"}
+]
+'''),
+        importedAt: 1,
+      ),
+    );
+    await db.upsertReaderPosition(
+      ReaderPositionsCompanion.insert(
+        bookKey: 'series-volume-1',
+        sectionIndex: 2,
+        normCharOffset: 0,
+        updatedAt: 2,
+      ),
+    );
+    api.searchResults = const <BangumiSubject>[
+      BangumiSubject(
+        id: 10,
+        type: 1,
+        name: '同名系列',
+        nameCn: '',
+        platform: '漫画',
+        episodeCount: 120,
+        volumeCount: 12,
+      ),
+      BangumiSubject(
+        id: 20,
+        type: 1,
+        name: '同名系列',
+        nameCn: '',
+        platform: '小说',
+        episodeCount: 262,
+        volumeCount: 26,
+      ),
+    ];
+    api.subject = const BangumiSubject(
+      id: 20,
+      type: 1,
+      name: '同名系列',
+      nameCn: '',
+      platform: '小说',
+      episodeCount: 262,
+      volumeCount: 26,
+    );
+    api.collection = const BangumiUserCollection(
+      type: 1,
+      episodeProgress: 0,
+      volumeProgress: 0,
+    );
+
+    await service.recordBookProgress(
+      bookKey: 'series-volume-1',
+      completedChapterCount: 17,
+      completed: false,
+    );
+    await service.syncNow();
+    while (await repository.pendingCount() > 0) {
+      await service.syncNow();
+    }
+
+    final MediaTrackingMappingRow? volumeMapping = await repository.findMapping(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'series-volume-1',
+    );
+    final MediaTrackingMappingRow? chapterMapping =
+        await repository.findMapping(
+      mediaType: TrackingMediaType.bookChapter,
+      mediaKey: 'series-volume-1',
+    );
+    expect(volumeMapping, isNotNull);
+    expect(volumeMapping!.subjectId, 20);
+    expect(volumeMapping.progressMode, TrackingProgressMode.volume.value);
+    expect(volumeMapping.progressOffset, 1);
+    expect(chapterMapping, isNotNull);
+    expect(chapterMapping!.subjectId, 20);
+    expect(chapterMapping.progressOffset, 0);
+    expect(api.searches.single, (keyword: '同名系列', subjectType: 1));
+    expect(
+      api.patches,
+      anyElement(equals(<String, dynamic>{'ep_status': 1})),
+      reason: '章节进度必须按 TOC 逻辑章节上报，不能使用 17 个 spine 文件',
+    );
+    expect(
+      api.patches,
+      anyElement(equals(<String, dynamic>{'type': 3})),
+    );
+
+    await db.upsertReaderPosition(
+      ReaderPositionsCompanion.insert(
+        bookKey: 'series-volume-1',
+        sectionIndex: 3,
+        normCharOffset: 10000,
+        updatedAt: 3,
+      ),
+    );
+    await db.markEpubBookCompletedIfUnset(
+      'series-volume-1',
+      DateTime.fromMillisecondsSinceEpoch(3),
+    );
+    await service.recordBookProgress(
+      bookKey: 'series-volume-1',
+      completedChapterCount: 99,
+      completed: true,
+    );
+    await service.syncNow();
+    while (await repository.pendingCount() > 0) {
+      await service.syncNow();
+    }
+
+    expect(
+      api.patches,
+      anyElement(equals(<String, dynamic>{'vol_status': 1, 'type': 3})),
+      reason: '读完第 1/26 卷只增加卷数，收藏仍须保持在读',
+    );
+    expect(
+      api.patches,
+      anyElement(equals(<String, dynamic>{'ep_status': 2})),
+    );
+  });
+
   test('manga volume suffix reports previous volumes while current is reading',
       () async {
     await db.insertEpubBook(

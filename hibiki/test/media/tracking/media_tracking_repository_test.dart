@@ -14,6 +14,46 @@ void main() {
 
   tearDown(() => db.close());
 
+  test('EPUB TOC progress counts logical chapters instead of spine files', () {
+    final int progress = estimateCompletedBookChapters(
+      chaptersJson: '''
+[
+  {"href":"text/nav.xhtml"},
+  {"href":"text/chapter-1.xhtml"},
+  {"href":"text/illustration.xhtml"},
+  {"href":"text/chapter-2.xhtml"}
+]
+''',
+      tocJson: '''
+[
+  {"title":"目次","href":"text/nav.xhtml"},
+  {"title":"第一話","href":"text/chapter-1.xhtml"},
+  {"title":"第二話","href":"text/chapter-2.xhtml"}
+]
+''',
+      sectionIndex: 2,
+      sectionCompleted: false,
+      bookCompleted: false,
+      fallbackProgress: 17,
+    );
+
+    expect(progress, 1);
+  });
+
+  test('completed EPUB reports all logical TOC chapters', () {
+    final int progress = estimateCompletedBookChapters(
+      chaptersJson: '[{"href":"text/a.xhtml"},{"href":"text/b.xhtml"}]',
+      tocJson:
+          '[{"title":"序章","href":"text/a.xhtml"},{"title":"終章","href":"text/b.xhtml"}]',
+      sectionIndex: 1,
+      sectionCompleted: true,
+      bookCompleted: true,
+      fallbackProgress: 2,
+    );
+
+    expect(progress, 2);
+  });
+
   test('mapping upsert keeps the stable local identity unique', () async {
     final int first = await repository.saveMapping(
       mediaType: TrackingMediaType.book,

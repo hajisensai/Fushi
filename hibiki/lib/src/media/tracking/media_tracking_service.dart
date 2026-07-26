@@ -39,17 +39,22 @@ typedef _PreparedTrackingTitle = ({
 });
 
 final RegExp _trackingVolumeSuffix = RegExp(
-  r'\s*[-–—:：]?\s*(?:(?:vol(?:ume)?\.?|第)\s*(\d{1,3})\s*(?:卷|巻)?|(\d{1,3})\s*(?:卷|巻))\s*$',
+  r'(?:\s*[-–—:：]?\s*(?:(?:vol(?:ume)?\.?|第)\s*(\d{1,3})\s*(?:卷|巻)?|(\d{1,3})\s*(?:卷|巻))|\s+(\d{1,3}))\s*$',
   caseSensitive: false,
+);
+final RegExp _trackingEditionSuffix = RegExp(
+  r'\s*[\(（][^()（）\r\n]{1,48}[\)）]\s*$',
 );
 
 _PreparedTrackingTitle _prepareTrackingTitle(String rawTitle) {
   final String title = rawTitle.trim();
-  final RegExpMatch? match = _trackingVolumeSuffix.firstMatch(title);
+  final String withoutEdition =
+      title.replaceFirst(_trackingEditionSuffix, '').trim();
+  final RegExpMatch? match = _trackingVolumeSuffix.firstMatch(withoutEdition);
   if (match == null) return (query: title, volumeNumber: null);
   final int? volumeNumber =
-      int.tryParse(match.group(1) ?? match.group(2) ?? '');
-  final String base = title.substring(0, match.start).trim();
+      int.tryParse(match.group(1) ?? match.group(2) ?? match.group(3) ?? '');
+  final String base = withoutEdition.substring(0, match.start).trim();
   return (
     query: base.isEmpty ? title : base,
     volumeNumber: volumeNumber,
@@ -59,12 +64,27 @@ _PreparedTrackingTitle _prepareTrackingTitle(String rawTitle) {
 BangumiSubject? _uniqueHighConfidenceSubject(
   String query,
   List<BangumiSubject> subjects,
+  TrackingKind kind,
 ) {
   if (query.trim().isEmpty || subjects.isEmpty) return null;
+  final List<BangumiSubject> kindMatches = subjects.where((subject) {
+    if (kind == TrackingKind.anime) return true;
+    final String platform = subject.platform.toLowerCase();
+    if (kind == TrackingKind.manga) {
+      return platform.contains('漫画') ||
+          platform.contains('manga') ||
+          platform.contains('comic');
+    }
+    return platform.contains('小说') ||
+        platform.contains('小説') ||
+        platform.contains('novel');
+  }).toList(growable: false);
+  final List<BangumiSubject> candidates =
+      kindMatches.isEmpty ? subjects : kindMatches;
   final String normalizedQuery = TitleNormalizer.normalize(query);
   final List<({BangumiSubject subject, double score, bool exact})> scored =
       <({BangumiSubject subject, double score, bool exact})>[
-    for (final BangumiSubject subject in subjects)
+    for (final BangumiSubject subject in candidates)
       (
         subject: subject,
         score: <double>[
@@ -115,6 +135,7 @@ class MediaTrackingService {
   final BangumiApiFactory _apiFactory;
 
   Future<MediaTrackingSyncResult>? _syncInFlight;
+  bool _syncAgainRequested = false;
   final Map<String, ({int progress, bool completed})> _lastQueued =
       <String, ({int progress, bool completed})>{};
   final Map<String, Future<MediaTrackingMappingRow?>> _autoMappingInFlight =
@@ -234,14 +255,31 @@ class MediaTrackingService {
     final MediaTrackingMappingRow? mapping =
         await _ensureAutoBookMapping(bookKey);
     if (mapping == null) return;
+    final int logicalChapterProgress =
+        await _repository.loadBookChapterProgress(
+      bookKey: bookKey,
+      fallbackProgress: completedChapterCount,
+    );
     final bool isVolume =
         mapping.progressMode == TrackingProgressMode.volume.value;
+    final MediaTrackingMappingRow? chapterMapping =
+        isVolume && mapping.kind == TrackingKind.novel.value
+            ? await _ensureBookChapterMapping(mapping)
+            : null;
     await _enqueueAndSync(
       mediaType: TrackingMediaType.book,
       mediaKey: bookKey,
       // 卷模式的 offset 就是当前卷号：在读时减一只报告此前已读卷，读完才计入本卷。
-      localProgress: isVolume ? (completed ? 0 : -1) : completedChapterCount,
+      localProgress: isVolume ? (completed ? 0 : -1) : logicalChapterProgress,
       completed: completed,
+    );
+    if (chapterMapping == null) return;
+    await _enqueueAndSync(
+      mediaType: TrackingMediaType.bookChapter,
+      mediaKey: bookKey,
+      localProgress: logicalChapterProgress,
+      // 章节伴随映射只负责 ep_status；整部作品是否读完由主卷映射判断。
+      completed: false,
     );
   }
 
@@ -282,7 +320,7 @@ class MediaTrackingService {
           kind: TrackingKind.anime,
         );
         final BangumiSubject? subject =
-            _uniqueHighConfidenceSubject(query, subjects);
+            _uniqueHighConfidenceSubject(query, subjects, TrackingKind.anime);
         if (subject == null) return null;
         return _repository.saveMappingIfAbsent(
           mediaType: mediaType,
@@ -322,10 +360,11 @@ class MediaTrackingService {
           kind: kind,
         );
         final BangumiSubject? subject =
-            _uniqueHighConfidenceSubject(prepared.query, subjects);
+            _uniqueHighConfidenceSubject(prepared.query, subjects, kind);
         if (subject == null) return null;
-        final bool trackAsVolume =
-            kind == TrackingKind.manga || prepared.volumeNumber != null;
+        final bool trackAsVolume = kind == TrackingKind.manga ||
+            prepared.volumeNumber != null ||
+            subject.volumeCount > 1;
         return _repository.saveMappingIfAbsent(
           mediaType: TrackingMediaType.book,
           mediaKey: bookKey,
@@ -337,6 +376,54 @@ class MediaTrackingService {
               ? TrackingProgressMode.volume
               : TrackingProgressMode.chapter,
           progressOffset: trackAsVolume ? (prepared.volumeNumber ?? 1) : 0,
+        );
+      },
+    );
+  }
+
+  Future<MediaTrackingMappingRow?> _ensureBookChapterMapping(
+    MediaTrackingMappingRow volumeMapping,
+  ) async {
+    final MediaTrackingMappingRow? existing = await _repository.findMapping(
+      mediaType: TrackingMediaType.bookChapter,
+      mediaKey: volumeMapping.mediaKey,
+    );
+    if (existing != null) return existing;
+    if (!isConfigured) return null;
+    return _singleFlightAutoMapping(
+      '${TrackingMediaType.bookChapter.value}:${volumeMapping.mediaKey}',
+      () async {
+        final int volumeNumber = volumeMapping.progressOffset;
+        int? chapterOffset;
+        if (volumeNumber <= 1) {
+          chapterOffset = 0;
+        } else {
+          final BangumiTrackingApi api = _apiFactory(accessToken);
+          try {
+            final BangumiUser user = await api.getMe();
+            final BangumiUserCollection? collection = await api.getCollection(
+              user.username,
+              volumeMapping.subjectId,
+            );
+            // 只有远端恰好停在当前卷之前，ep_status 才能作为稳定的累计话数基线。
+            // 跳卷或倒回重读时不猜偏移，宁可只同步卷数。
+            if (collection?.volumeProgress == volumeNumber - 1) {
+              chapterOffset = collection!.episodeProgress;
+            }
+          } finally {
+            api.close();
+          }
+        }
+        if (chapterOffset == null) return null;
+        return _repository.saveMappingIfAbsent(
+          mediaType: TrackingMediaType.bookChapter,
+          mediaKey: volumeMapping.mediaKey,
+          mediaTitle: volumeMapping.mediaTitle,
+          kind: TrackingKind.novel,
+          subjectId: volumeMapping.subjectId,
+          subjectName: volumeMapping.subjectName,
+          progressMode: TrackingProgressMode.chapter,
+          progressOffset: chapterOffset,
         );
       },
     );
@@ -410,7 +497,11 @@ class MediaTrackingService {
         progress: localProgress,
         completed: completed || (previous?.completed ?? false),
       );
-      unawaited(syncNow());
+      if (_syncInFlight == null) {
+        unawaited(syncNow());
+      } else {
+        _syncAgainRequested = true;
+      }
     } catch (error, stackTrace) {
       ErrorLogService.instance.log(
         'MediaTrackingService.enqueue',
@@ -423,11 +514,23 @@ class MediaTrackingService {
   Future<MediaTrackingSyncResult> syncNow({bool force = false}) {
     final Future<MediaTrackingSyncResult>? running = _syncInFlight;
     if (running != null) return running;
-    final Future<MediaTrackingSyncResult> run = _reconcileAndSync(force: force);
+    final Future<MediaTrackingSyncResult> run = _syncUntilSettled(force: force);
     _syncInFlight = run;
     return run.whenComplete(() {
-      if (identical(_syncInFlight, run)) _syncInFlight = null;
+      if (!identical(_syncInFlight, run)) return;
+      _syncInFlight = null;
     });
+  }
+
+  Future<MediaTrackingSyncResult> _syncUntilSettled({
+    required bool force,
+  }) async {
+    MediaTrackingSyncResult result = await _reconcileAndSync(force: force);
+    while (_syncAgainRequested) {
+      _syncAgainRequested = false;
+      result = await _reconcileAndSync(force: false);
+    }
+    return result;
   }
 
   Future<MediaTrackingSyncResult> _reconcileAndSync({
@@ -487,7 +590,7 @@ class MediaTrackingService {
     int nextWatermark = watermark;
     for (final PersistedBookTrackingProgress item in progress) {
       await _repository.enqueueProgress(
-        mediaType: TrackingMediaType.book,
+        mediaType: item.mediaType,
         mediaKey: item.mediaKey,
         localProgress: item.localProgress,
         completed: item.completed,
@@ -638,6 +741,8 @@ class MediaTrackingService {
     MediaTrackingOutboxRow outbox,
     BangumiUserCollection? collection,
   ) async {
+    final bool isChapterCompanion =
+        mapping.mediaType == TrackingMediaType.bookChapter.value;
     final bool isVolume =
         mapping.progressMode == TrackingProgressMode.volume.value;
     final String progressField = isVolume ? 'vol_status' : 'ep_status';
@@ -647,6 +752,15 @@ class MediaTrackingService {
     final Map<String, dynamic> payload = <String, dynamic>{};
     if (outbox.progress > remoteProgress) {
       payload[progressField] = outbox.progress;
+    }
+    if (isChapterCompanion) {
+      if (collection == null) {
+        payload['type'] = 3;
+        await api.createCollection(mapping.subjectId, payload: payload);
+      } else if (payload.isNotEmpty) {
+        await api.patchCollection(mapping.subjectId, payload: payload);
+      }
+      return;
     }
 
     // 书籍状态与真实阅读语义对齐：
@@ -659,8 +773,16 @@ class MediaTrackingService {
       reachesLastUnit = outbox.completed &&
           subject.volumeCount > 0 &&
           outbox.progress >= subject.volumeCount;
+    } else if (outbox.completed) {
+      final BangumiSubject subject = await api.getSubject(mapping.subjectId);
+      reachesLastUnit = subject.volumeCount <= 1;
+      if (reachesLastUnit &&
+          subject.volumeCount == 1 &&
+          (collection?.volumeProgress ?? 0) < 1) {
+        payload['vol_status'] = 1;
+      }
     } else {
-      reachesLastUnit = outbox.completed;
+      reachesLastUnit = false;
     }
     final int currentType = collection?.type ?? 3;
     final int targetType = currentType == 2 || reachesLastUnit ? 2 : 3;

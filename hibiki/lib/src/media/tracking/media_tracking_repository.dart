@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:drift/drift.dart';
@@ -7,6 +8,7 @@ const String kTrackingProviderBangumi = 'bangumi';
 
 enum TrackingMediaType {
   book('book'),
+  bookChapter('book_chapter'),
   video('video'),
   videoCollection('video_collection');
 
@@ -55,10 +57,101 @@ typedef CompletedVideoTrackingProgress = ({
 
 typedef PersistedBookTrackingProgress = ({
   String mediaKey,
+  TrackingMediaType mediaType,
   int localProgress,
   bool completed,
   int evidenceAt,
 });
+
+final RegExp _ignoredBookTocLabel = RegExp(
+  r'^(?:目次|目录|目錄|contents?|table\s+of\s+contents|扉|title\s+page|表紙|cover|奥付|版权|版權|colophon|口絵|イラスト|插图|插圖|あとがき|后记|後記|著者紹介)$',
+  caseSensitive: false,
+);
+
+String _normalizeBookHref(String value) {
+  String path = value.split('#').first.split('?').first.replaceAll(r'\', '/');
+  try {
+    path = Uri.decodeComponent(path);
+  } on ArgumentError {
+    // Malformed percent escapes are kept verbatim, matching EPUB navigation.
+  }
+  final List<String> parts = <String>[];
+  for (final String part in path.split('/')) {
+    if (part.isEmpty || part == '.') continue;
+    if (part == '..') {
+      if (parts.isNotEmpty) parts.removeLast();
+      continue;
+    }
+    parts.add(part);
+  }
+  return parts.join('/').toLowerCase();
+}
+
+/// 将 EPUB spine 位置保守换算为目录中的逻辑章节数。
+///
+/// Bangumi 的 `ep_status` 是作品“话数”，不能直接使用 EPUB 的 XHTML/spine 数量。
+/// 只把已经越过的 TOC 项计为完成；同一 XHTML 内的多个锚点要等离开该 XHTML（或
+/// 整本完成）才一并计入，宁可稍晚同步也不提前虚报。
+int estimateCompletedBookChapters({
+  required String chaptersJson,
+  required String? tocJson,
+  required int sectionIndex,
+  required bool sectionCompleted,
+  required bool bookCompleted,
+  required int fallbackProgress,
+}) {
+  if (tocJson == null || tocJson.trim().isEmpty) {
+    return math.max(0, fallbackProgress);
+  }
+  try {
+    final dynamic chaptersValue = jsonDecode(chaptersJson);
+    final dynamic tocValue = jsonDecode(tocJson);
+    if (chaptersValue is! List || tocValue is! List) {
+      return math.max(0, fallbackProgress);
+    }
+    final Map<String, int> chapterIndexes = <String, int>{};
+    for (int index = 0; index < chaptersValue.length; index++) {
+      final dynamic item = chaptersValue[index];
+      if (item is! Map) continue;
+      final String href = '${item['href'] ?? ''}'.trim();
+      if (href.isEmpty) continue;
+      chapterIndexes.putIfAbsent(_normalizeBookHref(href), () => index);
+    }
+    final List<int> tocIndexes = <int>[];
+    final Set<String> seen = <String>{};
+
+    void collect(dynamic value) {
+      if (value is! List) return;
+      for (final dynamic item in value) {
+        if (item is! Map) continue;
+        final String label = '${item['title'] ?? item['label'] ?? ''}'.trim();
+        final String href = '${item['href'] ?? ''}'.trim();
+        final String normalizedHref = _normalizeBookHref(href);
+        final int? index = chapterIndexes[normalizedHref];
+        final String identity = '$normalizedHref\u0000$label';
+        if (index != null &&
+            !_ignoredBookTocLabel.hasMatch(label) &&
+            seen.add(identity)) {
+          tocIndexes.add(index);
+        }
+        collect(item['children']);
+      }
+    }
+
+    collect(tocValue);
+    if (tocIndexes.isEmpty) return math.max(0, fallbackProgress);
+    if (bookCompleted) return tocIndexes.length;
+    return tocIndexes
+        .where(
+          (int index) =>
+              index < sectionIndex ||
+              (sectionCompleted && index == sectionIndex),
+        )
+        .length;
+  } on FormatException {
+    return math.max(0, fallbackProgress);
+  }
+}
 
 class PendingTrackingUpdate {
   const PendingTrackingUpdate({
@@ -242,6 +335,26 @@ class MediaTrackingRepository {
     return (title: book.title, format: book.format);
   }
 
+  Future<int> loadBookChapterProgress({
+    required String bookKey,
+    required int fallbackProgress,
+  }) async {
+    final EpubBookRow? book = await _db.getEpubBook(bookKey);
+    if (book == null || book.format == 'manga') {
+      return math.max(0, fallbackProgress);
+    }
+    final ReaderPositionRow? position = await _db.getReaderPosition(bookKey);
+    if (position == null) return math.max(0, fallbackProgress);
+    return estimateCompletedBookChapters(
+      chaptersJson: book.chaptersJson,
+      tocJson: book.tocJson,
+      sectionIndex: position.sectionIndex,
+      sectionCompleted: position.normCharOffset >= 9990,
+      bookCompleted: book.completedAt != null,
+      fallbackProgress: fallbackProgress,
+    );
+  }
+
   /// 返回自 [afterMs] 之后新增或重新映射的本地已完成视频进度。
   ///
   /// 旧版只在跨过 90% 阈值的瞬间发同步事件；状态语义修正后，已经完成且 outbox
@@ -326,8 +439,13 @@ class MediaTrackingRepository {
     final List<PersistedBookTrackingProgress> result =
         <PersistedBookTrackingProgress>[];
     for (final MediaTrackingMappingRow mapping in mappings) {
-      if (mapping.provider != kTrackingProviderBangumi ||
-          mapping.mediaType != TrackingMediaType.book.value) {
+      final TrackingMediaType? mediaType =
+          mapping.mediaType == TrackingMediaType.book.value
+              ? TrackingMediaType.book
+              : mapping.mediaType == TrackingMediaType.bookChapter.value
+                  ? TrackingMediaType.bookChapter
+                  : null;
+      if (mapping.provider != kTrackingProviderBangumi || mediaType == null) {
         continue;
       }
       final EpubBookRow? book = await _db.getEpubBook(mapping.mediaKey);
@@ -343,29 +461,61 @@ class MediaTrackingRepository {
       final int evidenceAt = math.max(mapping.updatedAt, localEvidenceAt);
       if (evidenceAt <= afterMs) continue;
 
+      final bool isChapterCompanion =
+          mediaType == TrackingMediaType.bookChapter;
       final bool isVolume =
           mapping.progressMode == TrackingProgressMode.volume.value;
       final bool completed = completedAt != null;
       final int localProgress;
-      if (isVolume) {
+      if (isChapterCompanion ||
+          mapping.progressMode == TrackingProgressMode.chapter.value) {
+        localProgress = estimateCompletedBookChapters(
+          chaptersJson: book.chaptersJson,
+          tocJson: book.tocJson,
+          sectionIndex: position?.sectionIndex ?? 0,
+          sectionCompleted: (position?.normCharOffset ?? 0) >= 9990,
+          bookCompleted: completed,
+          fallbackProgress: (position?.sectionIndex ?? 0) +
+              ((position?.normCharOffset ?? 0) >= 9990 ? 1 : 0),
+        );
+      } else if (isVolume) {
         localProgress = completed ? 0 : -1;
       } else {
-        localProgress = (position?.sectionIndex ?? 0) +
-            ((position?.normCharOffset ?? 0) >= 9990 ? 1 : 0);
+        continue;
       }
       result.add((
         mediaKey: mapping.mediaKey,
+        mediaType: mediaType,
         localProgress: localProgress,
-        completed: completed,
+        completed: isChapterCompanion ? false : completed,
         evidenceAt: evidenceAt,
       ));
     }
     return result;
   }
 
-  Future<void> deleteMapping(int id) =>
-      (_db.delete(_db.mediaTrackingMappings)..where((t) => t.id.equals(id)))
+  Future<void> deleteMapping(int id) async {
+    final MediaTrackingMappingRow? mapping =
+        await (_db.select(_db.mediaTrackingMappings)
+              ..where((t) => t.id.equals(id)))
+            .getSingleOrNull();
+    if (mapping == null) return;
+    if (mapping.mediaType != TrackingMediaType.book.value) {
+      await (_db.delete(_db.mediaTrackingMappings)
+            ..where((t) => t.id.equals(id)))
           .go();
+      return;
+    }
+    await (_db.delete(_db.mediaTrackingMappings)
+          ..where((t) =>
+              t.provider.equals(mapping.provider) &
+              t.mediaKey.equals(mapping.mediaKey) &
+              t.mediaType.isIn(<String>[
+                TrackingMediaType.book.value,
+                TrackingMediaType.bookChapter.value,
+              ])))
+        .go();
+  }
 
   /// 将本地 0-based [localProgress] 翻译为远端进度并入队。没有映射返回 false；
   /// 调用方据此无声跳过，播放/阅读主路径不受外部服务影响。
