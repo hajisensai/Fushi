@@ -13,6 +13,7 @@ import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart'
     show CollectionShelfRow;
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
+import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
@@ -27,6 +28,12 @@ import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart'
     show DialogDangerAction, DialogQuickAction, MediaItemDialogFrame;
 import 'package:hibiki/src/utils/cover_image.dart' show evictLocalCoverCache;
 import 'package:hibiki/utils.dart';
+
+// 游戏进合集（统一媒体库）：mediaType 用 [MediaKind.game]（P5 枚举地基，取代旧
+// 常量 kGameCollectionMediaType）。entryKey = `galgames.id`（添加时刻微秒时间戳
+// 字符串）——**游戏本机局域身份**：与 exe 路径同为本机事实，跨端同步时对端无
+// 对应 `galgames` 行则该成员静默忽略（合集同步引擎对 mediaType/entryKey 透传，
+// 不解引用）。
 
 /// 首页「游戏」tab：galgame 库。展示用户添加的游戏网格，点击一个游戏经
 /// [GalHookSessionController.launchGame]（引擎-hook launch 路径）拉起并注入。
@@ -205,19 +212,20 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     if (!silent) HibikiToast.show(msg: t.games_cover_updated);
   }
 
-  /// 手动设置封面：选一张图 → 拷进 `<documents>/game_covers` → 回填条目。
-  /// 与视频卡「设置封面」同款语义（拷盘而非引用原图，原图移动/删除不会让封面消失）。
+  /// 手动设置封面：统一封面服务（P3）——[MediaCoverService.pickCoverImage] 平台
+  /// 感知选图（移动端相册 / 桌面文件对话框），再经 [MediaCoverService.applyGameCover]
+  /// 拷进 `<documents>/game_covers`（落盘 + 双键驱逐）→ 回填条目。与视频卡「设置
+  /// 封面」同款语义（拷盘而非引用原图，原图移动/删除不会让封面消失）。
+  ///
+  /// 「没选到图」的三种形态（取消 / 空结果集 / 空 path）已在
+  /// `pickGalleryImageFile` 内一次收敛为 `null`，这里只判 `null` 即与旧版
+  /// `picked.files.isNotEmpty` + `source.isEmpty` 双守卫等价。
   Future<void> _setCover(GalgameEntry game) async {
-    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-    );
-    final String? source = (picked != null && picked.files.isNotEmpty)
-        ? picked.files.first.path
-        : null;
-    if (source == null || source.isEmpty) return;
-    final String? saved = await saveGameCoverFromFile(
+    final File? picked = await MediaCoverService.pickCoverImage();
+    if (picked == null) return;
+    final String? saved = await MediaCoverService.applyGameCover(
       gameId: game.id,
-      sourcePath: source,
+      sourcePath: picked.path,
     );
     if (saved == null) {
       HibikiToast.show(msg: t.games_cover_not_found);
@@ -323,7 +331,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     final bool added = await showAddToCollectionDialog(
       context: context,
       database: _appModel.database,
-      mediaType: kGameCollectionMediaType,
+      mediaType: MediaKind.game,
       entryKey: game.id,
       defaultNewName: game.displayName,
     );
@@ -379,7 +387,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 合集详情页「打开成员」：game 成员进详情页（含启动按钮，复用库页带再入守卫的
   /// [_launchGame]）；其它 mediaType 非本页职责，忽略。
   void _openCollectionMember(String mediaType, String entryKey) {
-    if (mediaType != kGameCollectionMediaType) return;
+    if (MediaKind.tryParse(mediaType) != MediaKind.game) return;
     final GalgameEntry? game = _repo.byId(entryKey);
     if (game == null) return;
     unawaited(_openDetail(game));
@@ -769,7 +777,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       items: <CollectionOrderingItem<GalgameEntry>>[
         for (final GalgameEntry game in visible)
           CollectionOrderingItem<GalgameEntry>(
-            mediaType: kGameCollectionMediaType,
+            mediaType: MediaKind.game,
             entryKey: game.id,
             importedAt: game.addedAt.millisecondsSinceEpoch,
             payload: game,
@@ -894,7 +902,7 @@ Widget? buildGameCollectionMemberCard({
   required String mediaType,
   required String entryKey,
 }) {
-  if (mediaType != kGameCollectionMediaType) return null;
+  if (MediaKind.tryParse(mediaType) != MediaKind.game) return null;
   for (final GalgameEntry game in games) {
     if (game.id == entryKey) {
       return GalgamePosterCard(

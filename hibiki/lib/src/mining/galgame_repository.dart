@@ -162,7 +162,7 @@ class GalgameRepository extends ChangeNotifier {
     // （#346 删除传播）。在主事务外做：清理自身已是事务，且本体
     // 删除成功后引用清理失败可由读取期过滤兜底，不应回滚本体。
     for (final String id in removed) {
-      await _db.removeEntryFromAllCollections(kGameCollectionMediaType, id);
+      await _db.removeEntryFromAllCollections(MediaKind.game, id);
     }
     await load();
   }
@@ -189,7 +189,7 @@ class GalgameRepository extends ChangeNotifier {
   /// 对齐 #346 删除传播惯例）；被清空的合集随之自删，不留孤儿成员。
   Future<void> remove(String id) async {
     await _db.deleteGalgame(id);
-    await _db.removeEntryFromAllCollections(kGameCollectionMediaType, id);
+    await _db.removeEntryFromAllCollections(MediaKind.game, id);
     await load();
   }
 

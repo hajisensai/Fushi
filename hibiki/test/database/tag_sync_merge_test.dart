@@ -42,8 +42,8 @@ void main() {
       await db.addTagToBook('BookA', tagId);
       await db.removeTagFromBook('BookA', tagId); // 墓碑 removedAt=now(>10)
       // 远端快照仍带旧的 听力(addedAt=10) → 不得复活。
-      await db.mergeRemoteBookTags('BookA',
-          remoteAddedAt: <String, int>{'听力': 10});
+      await db
+          .mergeRemoteBookTags('BookA', remoteAddedAt: <String, int>{'听力': 10});
       expect(await _bookTagNames(db, 'BookA'), isEmpty,
           reason: '本地移除晚于远端旧 add，remove-wins，不复活');
     });
@@ -52,15 +52,16 @@ void main() {
       await _seedBook(db, 'BookA');
       final int tagId = await db.getOrCreateTagByName('听力');
       await db.addTagToBook('BookA', tagId); // 本地 add，addedAt≈now
-      final int localAdd =
-          (await db.bookTagAddedAtByName('BookA'))['听力']!;
+      final int localAdd = (await db.bookTagAddedAtByName('BookA'))['听力']!;
       await db.mergeRemoteBookTags('BookA',
           remoteAddedAt: const <String, int>{},
           remoteTombstones: <String, int>{'听力': localAdd + 1000});
       expect(await _bookTagNames(db, 'BookA'), isEmpty,
           reason: '远端移除戳晚于本地 add，remove-wins，删除传播');
       // 墓碑保留（防后续第三端旧 add 复活）。
-      expect((await db.tagTombstonesByName('BookA', 'epub')).containsKey('听力'),
+      expect(
+          (await db.tagTombstonesByName('BookA', MediaKind.epub))
+              .containsKey('听力'),
           isTrue);
     });
 
@@ -70,12 +71,13 @@ void main() {
       await db.addTagToBook('BookA', tagId);
       await db.removeTagFromBook('BookA', tagId);
       // 远端更晚的 add 戳 → add-wins 恢复。
-      final int laterAdd =
-          DateTime.now().millisecondsSinceEpoch + 1000000;
+      final int laterAdd = DateTime.now().millisecondsSinceEpoch + 1000000;
       await db.mergeRemoteBookTags('BookA',
           remoteAddedAt: <String, int>{'听力': laterAdd});
       expect(await _bookTagNames(db, 'BookA'), <String>{'听力'});
-      expect((await db.tagTombstonesByName('BookA', 'epub')).containsKey('听力'),
+      expect(
+          (await db.tagTombstonesByName('BookA', MediaKind.epub))
+              .containsKey('听力'),
           isFalse,
           reason: 'present 名清墓碑');
     });

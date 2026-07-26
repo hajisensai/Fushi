@@ -219,6 +219,9 @@ class AudiobookSession extends ChangeNotifier {
       controller.getCurrentReaderSection = reader.getCurrentReaderSection;
       controller.onCrossChapter = reader.onCueCrossChapter;
       controller.onBoundarySkip = reader.onBoundarySkip;
+      // BUG-1107：显式跳句（skipToCue 漏斗）→ reader 抬阅读统计字数水位到目标
+      // cue（音频跳过的段落不算已读）。
+      controller.onExplicitCueJump = reader.onExplicitCueJump;
     }
   }
 
@@ -237,6 +240,7 @@ class AudiobookSession extends ChangeNotifier {
       controller.getCurrentReaderSection = () => -1;
       controller.onCrossChapter = null;
       controller.onBoundarySkip = null;
+      controller.onExplicitCueJump = null;
       // 离开 reader 时把跨章守卫复位，避免 reader 在跳章 await 中途离开导致
       // _chapterTransition 卡 true，会话继续播却永不推进 cue。
       controller.cancelChapterTransition();
@@ -570,6 +574,11 @@ abstract class ReaderAudiobookView {
 
   /// 章首/章尾跳句越界，reader 负责加载相邻章并 seek。
   Future<void> onBoundarySkip(int delta);
+
+  /// 显式跳句（[AudiobookPlayerController.skipToCue] 漏斗：音量键 / 快捷键 /
+  /// 底栏按钮 / 媒体通知）已定位目标 cue。reader 把阅读统计字数水位抬到目标
+  /// 位置——音频跳过的段落不算已读（BUG-1107）。
+  void onExplicitCueJump(AudioCue cue);
 
   /// 控制器 cue / 播放态变化：reader 更新 WebView 正文高亮 / lyrics / 进度。
   void onReaderCueChanged();

@@ -826,8 +826,8 @@ void main() {
   // regardless of categories; collections/shelf/tags must FOLLOW the book.
   Future<void> seedOrphanRows(HibikiDatabase db) async {
     final int cid = await db.createMediaCollection('C1');
-    await db.addToCollection(cid, 'epub', 'Bk');
-    await db.upsertShelfOrder('epub', 'Bk', 0);
+    await db.addToCollection(cid, MediaKind.epub, 'Bk');
+    await db.upsertShelfOrder(MediaKind.epub, 'Bk', 0);
     final int tid = await db.createTag('T1', 0xFF112233);
     await db.addTagToBook('Bk', tid);
     await db.upsertSearchHistoryItem(SearchHistoryItemsCompanion.insert(
@@ -893,8 +893,8 @@ void main() {
     // Full export: the srt member survives (cross-device union).
     final full = await buildDataSource();
     final int fcid = await full.db.createMediaCollection('SrtCol');
-    await full.db.addToCollection(fcid, 'srt', 'ghost_srt');
-    await full.db.upsertShelfOrder('srt', 'ghost_srt', 0);
+    await full.db.addToCollection(fcid, MediaKind.srt, 'ghost_srt');
+    await full.db.upsertShelfOrder(MediaKind.srt, 'ghost_srt', 0);
     final fzip = p.join(src.path, 'srt_full.zip');
     await full.service.exportBackup(fzip);
     await full.db.close();
@@ -910,8 +910,8 @@ void main() {
     // Content-excluding export: the dangling srt row is dropped.
     final none = await buildDataSource();
     final int ncid = await none.db.createMediaCollection('SrtCol');
-    await none.db.addToCollection(ncid, 'srt', 'ghost_srt');
-    await none.db.upsertShelfOrder('srt', 'ghost_srt', 0);
+    await none.db.addToCollection(ncid, MediaKind.srt, 'ghost_srt');
+    await none.db.upsertShelfOrder(MediaKind.srt, 'ghost_srt', 0);
     final nzip = p.join(src.path, 'srt_none.zip');
     await none.service.exportBackup(nzip, categories: <BackupCategory>{});
     await none.db.close();

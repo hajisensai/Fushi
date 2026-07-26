@@ -16,6 +16,7 @@ import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/media/drag_drop/card_drop_registry.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
+import 'package:hibiki/src/media/display_title.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
@@ -417,8 +418,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                           // 打了标签的合集其成员整组存活，折叠出合集组）。
                           return keepMemberUnderTagFilter(
                             memberMatched: filterSet.contains(key),
-                            primaryCollectionId:
-                                _primaryCollectionByEntry['epub|$key'],
+                            primaryCollectionId: _primaryCollectionByEntry[
+                                MediaKind.epub.compositeKey(key)],
                             collectionFilter: tagCollectionFilter,
                           );
                         }).toList();
@@ -903,7 +904,10 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 Text(t.book_continue_reading, style: tokens.type.sectionLabel),
                 SizedBox(height: tokens.spacing.gap / 2),
                 Text(
-                  hero.title,
+                  // BUG-1108：与同卡封面（getDisplayThumbnailFromMediaItem）同源，
+                  // 经 getDisplayTitleFromMediaItem 应用编辑弹窗写入的 override
+                  // 书名；直读 DB 原始列 hero.title 会在改名后仍显示旧名。
+                  mediaSource.getDisplayTitleFromMediaItem(hero),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: tokens.type.listTitle,
@@ -989,7 +993,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
               b.id != null &&
               keepMemberUnderTagFilter(
                 memberMatched: srtFilterSet.contains(b.id),
-                primaryCollectionId: _primaryCollectionByEntry['srt|${b.uid}'],
+                primaryCollectionId: _primaryCollectionByEntry[
+                    MediaKind.srt.compositeKey(b.uid)],
                 collectionFilter: collectionFilter,
               ))
           .toList();
@@ -1033,14 +1038,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         <CollectionOrderingItem<_ShelfBookSlot>>[
       for (final SrtBook srt in srtBooks)
         CollectionOrderingItem<_ShelfBookSlot>(
-          mediaType: 'srt',
+          mediaType: MediaKind.srt,
           entryKey: srt.uid,
           importedAt: srt.importedAt,
           payload: _ShelfBookSlot(srt: srt),
         ),
       for (final MediaItem epub in epubBooks)
         CollectionOrderingItem<_ShelfBookSlot>(
-          mediaType: 'epub',
+          mediaType: MediaKind.epub,
           entryKey: _parseBookKey(epub.mediaIdentifier) ?? '',
           importedAt:
               _epubImportedAtByKey[_parseBookKey(epub.mediaIdentifier) ?? ''] ??
@@ -1058,7 +1063,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     for (int i = 0; i < remoteSrtBooks.length; i++) {
       shelfItems.add(
         CollectionOrderingItem<_ShelfBookSlot>(
-          mediaType: 'srt',
+          mediaType: MediaKind.srt,
           entryKey: remoteSrtBooks[i].identity,
           importedAt: -1 - remoteBooks.length - i,
           payload: _ShelfBookSlot(remoteSrt: remoteSrtBooks[i]),
@@ -1068,7 +1073,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     for (int i = 0; i < remoteBooks.length; i++) {
       shelfItems.add(
         CollectionOrderingItem<_ShelfBookSlot>(
-          mediaType: 'epub',
+          mediaType: MediaKind.epub,
           entryKey: remoteBooks[i].downloadId,
           importedAt: -1 - i,
           payload: _ShelfBookSlot(remote: remoteBooks[i]),
@@ -1084,7 +1089,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final Map<String, int> memberSortIndex =
         Map<String, int>.of(_memberSortIndex);
     for (final RemoteBookInfo book in remoteBooks) {
-      final String key = 'epub|${book.downloadId}';
+      final String key = MediaKind.epub.compositeKey(book.downloadId);
       final RemoteCollectionMembership? membership = book.collection;
       if (membership != null) {
         // 互联/host 路径：host 下发 RemoteBookInfo.collection，按 (name,type) 解析
@@ -1103,7 +1108,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       // （entryKey = 本地 bookKey = sanitizeTtuFilename(title)）。远端占位卡的 title
       // 与本地书同名，故用其本地等价 bookKey 回查已同步的折叠归属注入——云盘远端书
       // 也能折进对应合集行（否则云盘合集永远不成组，BUG：云盘书架合集不渲染）。
-      final String localKey = 'epub|${sanitizeTtuFilename(book.title)}';
+      final String localKey =
+          MediaKind.epub.compositeKey(sanitizeTtuFilename(book.title));
       final int? cid = _primaryCollectionByEntry[localKey];
       if (cid == null) continue; // 本地无已同步的合集归属 → 散卡降级
       primaryByEntry[key] = cid;
@@ -1452,14 +1458,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   ) async {
     bool anyVideo = false;
     for (final MediaCollectionItemRow m in members) {
-      switch (m.mediaType) {
-        case 'epub':
+      switch (MediaKind.tryParse(m.mediaType)) {
+        case MediaKind.epub:
           await ReaderHibikiSource.instance.deleteBook(
             db: appModel.database,
             bookKey: m.entryKey,
             appModel: appModel,
           );
-        case 'srt':
+        case MediaKind.srt:
           final SrtBookRepository repo = SrtBookRepository(appModel.database);
           final SrtBook? book = await repo.findByUid(m.entryKey);
           if (book != null) {
@@ -1472,18 +1478,21 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             }
             await repo.delete(m.entryKey);
           }
-        case 'video':
+        case MediaKind.video:
           // 混合合集里若混入视频成员：删视频 DB 行 + app 拥有副本，保留原始视频文件。
           await _videoRepo.deleteVideoBookAndReclaimAssets(
             m.entryKey,
             compactDatabase: false,
           );
           anyVideo = true;
-        case 'game':
+        case MediaKind.game:
           // 游戏成员**刻意跳过**：game 维度只支持解散合集不删本体——游戏本体是
           // 用户安装目录（exe 及其资源），绝不能从合集删除路径连带删除；从库移除
           // 走游戏库页自己的「移除」。合集引用行随后由 deleteMediaCollection
           // cascade 清理，游戏回到游戏库散卡。
+          break;
+        case null:
+          // 未知种类（对端未来新增 / '' 哨兵）：本页不认识 → 跳过，不误删。
           break;
       }
     }
@@ -1506,7 +1515,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // 若复用书架同名 focusId，两个 HibikiFocusTarget 撞号——焦点注册表按 id 覆盖，
     // 后注册者赢、pop 后书架卡失焦。详情页渲染路径统一加 route 前缀隔离命名空间。
     const String prefix = 'collection-detail-';
-    if (mediaType == 'srt') {
+    final MediaKind? kind = MediaKind.tryParse(mediaType);
+    if (kind == MediaKind.srt) {
       for (final SrtBook book in _visibleSrtBooks) {
         if (book.uid == entryKey) {
           return _buildSrtCard(
@@ -1519,7 +1529,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       }
       return null;
     }
-    if (mediaType == 'epub') {
+    if (kind == MediaKind.epub) {
       for (final MediaItem item in _visibleEpubBooks) {
         if (_parseBookKey(item.mediaIdentifier) == entryKey) {
           return _buildEpubBookCard(
@@ -1540,7 +1550,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 屏蔽（见 [MediaCollectionGridDetailPage]），故打开统一经此回调走与书架卡片
   /// onTap 相同的路径——epub 经 openMedia，srt 经 _openSrtBook。
   void _openCollectionMember(String mediaType, String entryKey) {
-    if (mediaType == 'srt') {
+    final MediaKind? kind = MediaKind.tryParse(mediaType);
+    if (kind == MediaKind.srt) {
       for (final SrtBook book in _visibleSrtBooks) {
         if (book.uid == entryKey) {
           unawaited(_openSrtBook(book));
@@ -1549,7 +1560,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       }
       return;
     }
-    if (mediaType == 'epub') {
+    if (kind == MediaKind.epub) {
       for (final MediaItem item in _visibleEpubBooks) {
         if (_parseBookKey(item.mediaIdentifier) == entryKey) {
           final MediaSource source = item.getMediaSource(appModel: appModel);
@@ -1798,10 +1809,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     final bool added = await showAddToCollectionDialog(
       context: context,
       database: appModel.database,
-      mediaType: 'epub',
+      mediaType: MediaKind.epub,
       entryKey: bookKey,
+      // P4：用户看到的默认合集名应是改名后的显示名（身份 entryKey 仍是 raw
+      // bookKey，不受影响）。
       defaultNewName: deriveSeriesDefaultName(
-        <String>[item.title],
+        <String>[displayTitleForBook(item: item, rawTitle: item.title)],
         fallback: t.series_default_name,
       ),
     );

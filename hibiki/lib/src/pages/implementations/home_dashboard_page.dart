@@ -10,6 +10,9 @@ import 'package:hibiki/media.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
+import 'package:hibiki/src/media/display_title.dart';
+import 'package:hibiki/src/mining/galgame_library.dart';
+import 'package:hibiki/src/mining/galgame_repository.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/implementations/activity_feed.dart';
@@ -239,6 +242,10 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   /// [initState] 异步载入的视频库（继续观看 + 视频计数）。
   List<VideoBookRow> _videos = const <VideoBookRow>[];
 
+  /// [_loadDashboardDataUnsafe] 载入的游戏库整表缓存（P4：日明细「游戏」节 +
+  /// 活动时间轴游戏行的显示名反查用；空表 = 库为空或尚未载入）。
+  List<GalgameEntry> _games = const <GalgameEntry>[];
+
   /// [initState] 异步载入的活动事件流（时间轴原始数据，本地 + 远端混排后）。
   List<ActivityEventRow> _activityEvents = const <ActivityEventRow>[];
 
@@ -316,7 +323,16 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         .database
         .watchDashboardDataChanges()
         .listen((_) => _scheduleReload());
+    // P4：游戏改名/刮削（库页写穿 galgames 表后 GalgameRepository.load() 通知）
+    // 也要刷新日明细/时间轴的游戏显示名——galgames 表不在
+    // watchDashboardDataChanges 的表集里，走仓储 ChangeNotifier 这条既有通道
+    // 与视频（videoBooks 表级信号）对齐失效语义。
+    _galgameRepo = ref.read(appProvider).galgameRepo
+      ..addListener(_scheduleReload);
   }
+
+  /// 游戏库仓储（[initState] 挂监听，[dispose] 解除）。
+  GalgameRepository? _galgameRepo;
 
   /// 表变更后防抖重载（多次连续写只重查一次，避免频繁 setState）。
   void _scheduleReload() {
@@ -330,6 +346,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   void dispose() {
     _reloadDebounce?.cancel();
     unawaited(_dataChangeSub?.cancel());
+    _galgameRepo?.removeListener(_scheduleReload);
     super.dispose();
   }
 
@@ -359,6 +376,12 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     // 游戏活动日聚合（activity_events 的 game 事件，热力图「游戏」档数据源）。
     final List<(String, int, int)> gameDaily =
         await db.getActivityDailyTotals(kActivityGame);
+    // P4：游戏库整表（日明细/时间轴的游戏显示名反查）。仓储缓存与表恒一致，
+    // 未载入过才真查 DB（毫秒级）；load() 会 notify → 本页监听器防抖重载一次
+    // 后 isLoaded=true，不再形成回环。
+    final GalgameRepository galgameRepo = appModel.galgameRepo;
+    final List<GalgameEntry> games =
+        galgameRepo.isLoaded ? galgameRepo.games : await galgameRepo.load();
     // 合集归属映射（统计页/书架同源）：显示名规则「非合集上下文拼合集名」用。
     final Map<int, String> collectionNamesById = <int, String>{
       for (final MediaCollectionRow c in await db.getAllMediaCollections())
@@ -441,6 +464,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     if (!mounted) return;
     setState(() {
       _videos = videos;
+      _games = games;
       _localActivityEvents = events;
       _activityEvents = events;
       _readingCharsByDay = charsByDay;
@@ -683,7 +707,8 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         <int, List<VideoBookRow>>{};
     final List<VideoBookRow> standaloneVideos = <VideoBookRow>[];
     for (final VideoBookRow v in _videos) {
-      final int? cid = _primaryCollectionByEntry['video|${v.bookUid}'];
+      final int? cid =
+          _primaryCollectionByEntry[MediaKind.video.compositeKey(v.bookUid)];
       if (cid == null) {
         standaloneVideos.add(v);
       } else {
@@ -843,7 +868,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         title: v.title,
         recentMs: addedMs,
         collectionName: statCollectionName(
-          'video|${v.bookUid}',
+          MediaKind.video.compositeKey(v.bookUid),
           _primaryCollectionByEntry,
           _collectionNamesById,
         ),
@@ -869,11 +894,13 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   String _bookCollectionKey(MediaItem item) {
     final String? bookKey =
         ReaderHibikiSource.parseBookKey(item.mediaIdentifier);
-    if (bookKey != null) return 'epub|$bookKey';
+    if (bookKey != null) return MediaKind.epub.compositeKey(bookKey);
     final String? srtUid =
         ReaderHibikiSource.parseSrtBookUid(item.mediaIdentifier);
-    if (srtUid != null) return 'srt|$srtUid';
-    return 'epub|${item.mediaIdentifier}';
+    if (srtUid != null) return MediaKind.srt.compositeKey(srtUid);
+    // 有意的 miss-key 兜底：entryKey 是完整 hoshi:// 标识而非 bookKey，
+    // 查不中合集，安全降级为散卡。
+    return MediaKind.epub.compositeKey(item.mediaIdentifier);
   }
 
   /// 视频行 → 继续卡条目（散卡与合集续播目标共用）：进度到集粒度（VideoBooks
@@ -907,8 +934,12 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   VideoBookRow? _collectionResumeTarget(List<VideoBookRow> members) {
     final List<VideoBookRow> sorted = List<VideoBookRow>.of(members)
       ..sort((VideoBookRow a, VideoBookRow b) {
-        final int ai = _memberSortIndex['video|${a.bookUid}'] ?? 1 << 30;
-        final int bi = _memberSortIndex['video|${b.bookUid}'] ?? 1 << 30;
+        final int ai =
+            _memberSortIndex[MediaKind.video.compositeKey(a.bookUid)] ??
+                1 << 30;
+        final int bi =
+            _memberSortIndex[MediaKind.video.compositeKey(b.bookUid)] ??
+                1 << 30;
         if (ai != bi) return ai.compareTo(bi);
         return a.bookUid.compareTo(b.bookUid);
       });
@@ -1098,7 +1129,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   /// [_scheduleReload] 自动重查。测试经 [HomeDashboardPage.openVideoOverride] 注入替身。
   Future<void> _openLocalVideo(String bookUid) async {
     final int? playlistCollectionId =
-        _primaryCollectionByEntry['video|$bookUid'];
+        _primaryCollectionByEntry[MediaKind.video.compositeKey(bookUid)];
     final Future<void> Function(
       BuildContext context,
       VideoBookRepository repo,
@@ -1311,10 +1342,12 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         _readingDayRows(dateKey);
     final List<({String title, int chars, int timeMs})> watch =
         _watchDayRows(dateKey);
+    // P4：游戏节的 title 是 activity_events 落库时的标题快照（聚合键，恒 raw），
+    // 上屏前按库内条目反查显示名（用户改名后明细跟着变；查不到原样显示快照）。
     final List<({String title, int chars, int timeMs})> game =
         <({String title, int chars, int timeMs})>[
       for (final (String title, int chars, int timeMs) in gameRows)
-        (title: title, chars: chars, timeMs: timeMs),
+        (title: _gameDisplayTitle(title), chars: chars, timeMs: timeMs),
     ];
     await adaptiveModalSheet<void>(
       context: context,
@@ -1351,17 +1384,49 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     ];
   }
 
-  /// 阅读统计行 title → 显示名：命中合集拼「合集名 - 名字」；反查不到 bookKey
-  /// （视频字幕书/已删书等）原样返回。
+  /// 阅读统计行 title → 显示名：先过 display-title 门面（P4：改名 override 应用
+  /// 到明细行；统计行 title 是聚合键恒 raw，仅上屏时替换），命中合集再拼
+  /// 「合集名 - 名字」；反查不到 bookKey（视频字幕书/已删书等）原样返回。
   String _readingStatDisplayTitle(String title) {
-    final String? bookKey = _bookKeyByTitle[title];
-    if (bookKey == null) return title;
-    return collectionQualifiedTitle(
-      entryKey: 'epub|$bookKey',
+    final String display = displayTitleForStatRow(
       rawTitle: title,
+      bookKeyByTitle: _bookKeyByTitle,
+    );
+    final String? bookKey = _bookKeyByTitle[title];
+    if (bookKey == null) return display;
+    return collectionQualifiedTitle(
+      entryKey: MediaKind.epub.compositeKey(bookKey),
+      rawTitle: display,
       primaryByEntry: _primaryCollectionByEntry,
       collectionNamesById: _collectionNamesById,
     );
+  }
+
+  /// 游戏活动标题 → 显示名（P4）：先按 [mediaKey]（galgames.id）精确命中，
+  /// 再按「落库时的标题快照 == 库内条目任一已知名」兜底（老事件无 mediaKey），
+  /// 最后回落快照原文。查找委托 [displayTitleForGame]。
+  String _gameDisplayTitle(String rawTitle, {String? mediaKey}) {
+    GalgameEntry? entry;
+    if (mediaKey != null && mediaKey.isNotEmpty) {
+      for (final GalgameEntry g in _games) {
+        if (g.id == mediaKey) {
+          entry = g;
+          break;
+        }
+      }
+    }
+    if (entry == null) {
+      for (final GalgameEntry g in _games) {
+        if (g.name == rawTitle ||
+            g.displayName == rawTitle ||
+            g.metadata.name == rawTitle ||
+            g.metadata.nameCn == rawTitle) {
+          entry = g;
+          break;
+        }
+      }
+    }
+    return displayTitleForGame(entry: entry, rawTitle: rawTitle);
   }
 
   /// 明细「观看」节：video_watch_statistics 当日行按 title 聚合；行自带 bookUid
@@ -1386,7 +1451,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
           title: e.value.uid == null
               ? e.key
               : collectionQualifiedTitle(
-                  entryKey: 'video|${e.value.uid}',
+                  entryKey: MediaKind.video.compositeKey(e.value.uid!),
                   rawTitle: e.key,
                   primaryByEntry: _primaryCollectionByEntry,
                   collectionNamesById: _collectionNamesById,
@@ -1641,12 +1706,12 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         // 书事件的 mediaKey 无类型标记：epub 键优先，standalone SRT（mediaKey=
         // uid）回退 srt 键；都不中就是散卡。
         final String? collectionName = statCollectionName(
-              'epub|$bookKey',
+              MediaKind.epub.compositeKey(bookKey),
               _primaryCollectionByEntry,
               _collectionNamesById,
             ) ??
             statCollectionName(
-              'srt|$bookKey',
+              MediaKind.srt.compositeKey(bookKey),
               _primaryCollectionByEntry,
               _collectionNamesById,
             );
@@ -1658,12 +1723,18 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       final String? uid = entry.mediaKey;
       if (uid != null && uid.isNotEmpty) {
         return collectionQualifiedTitle(
-          entryKey: 'video|$uid',
+          entryKey: MediaKind.video.compositeKey(uid),
           rawTitle: entry.title,
           primaryByEntry: _primaryCollectionByEntry,
           collectionNamesById: _collectionNamesById,
         );
       }
+    }
+    // P4：游戏行渲染时应用库内显示名（改名/刮削后时间轴同步显示新名）。events
+    // 落库仍存当时标题快照（聚合键身份不变），只在这里按 mediaKey（galgames.id）
+    // / 标题快照反查替换显示。
+    if (entry.mediaType == kActivityMediaGame) {
+      return _gameDisplayTitle(entry.title, mediaKey: entry.mediaKey);
     }
     return entry.title;
   }

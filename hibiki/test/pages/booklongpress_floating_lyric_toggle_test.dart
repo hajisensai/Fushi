@@ -115,13 +115,14 @@ void main() {
     // EPUB 卡：有入口，entryKey 编码与批量三档一致（epub → bookKey），
     // 合集详情页成员卡语境（inCollectionDetail）隐藏。
     expect(epubActions, contains('t.add_to_collection'));
-    expect(epubActions, contains("mediaType: 'epub'"));
+    // P5：mediaType 走 MediaKind 枚举（落库串仍 'epub'，见 media_kind_test）。
+    expect(epubActions, contains('mediaType: MediaKind.epub'));
     expect(epubActions, contains('entryKey: bookKey'));
     expect(epubActions, contains('if (!inCollectionDetail)'));
     // SRT/有声书卡：有入口，entryKey 编码一致（srt → uid），详情页注入
     // 「移出合集」时隐藏（removeFromCollection 非空）。
     expect(srtActions, contains('t.add_to_collection'));
-    expect(srtActions, contains("mediaType: 'srt'"));
+    expect(srtActions, contains('mediaType: MediaKind.srt'));
     expect(srtActions, contains('entryKey: book.uid'));
     expect(srtActions, contains('if (removeFromCollection == null)'));
     // 合集详情页渲染路径必须真的走 inCollectionDetail: true（隐藏加入入口）。

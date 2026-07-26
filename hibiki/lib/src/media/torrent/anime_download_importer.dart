@@ -75,8 +75,10 @@ Future<AnimeDownloadImportOutcome?> Function(
         );
         if (coverPath != null) {
           await repo.updateCover(firstUid, coverPath);
+          // ⚠️ 唯一落库点：MediaCollections.coverSource 持久化 'video|<uid>'，
+          // compositeKey 生成串与历史手写插值逐字节一致。
           await db.updateMediaCollectionCover(
-              result.collectionId, 'video|$firstUid');
+              result.collectionId, MediaKind.video.compositeKey(firstUid));
         }
       } catch (_) {}
     }

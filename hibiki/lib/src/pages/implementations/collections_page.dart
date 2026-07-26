@@ -13,6 +13,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/pages/base_page.dart';
 import 'package:hibiki/src/utils/misc/collection_exporter.dart';
+import 'package:hibiki/src/media/display_title.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
@@ -220,7 +221,14 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final bookTitleMap = <String, String>{};
     for (final b in srtBooks) {
       if (b.bookKey.isNotEmpty) {
-        bookTitleMap[b.bookKey] = b.title;
+        // P4：反查表的值即显示名——过 display-title 门面应用编辑弹窗写入的
+        // override（bookKey 非空的 SRT/有声书行与 EPUB 共享 `hoshi://book/`
+        // 身份，见 BUG-1018 A3；门面按 bookKey 优先分派）。
+        bookTitleMap[b.bookKey] = displayTitleForBook(
+          bookKey: b.bookKey,
+          srtUid: b.uid,
+          rawTitle: b.title,
+        );
       }
     }
 
@@ -372,11 +380,54 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     }
   }
 
+  /// P4：收藏/制卡/收藏词行「所属书/视频」的显示名统一解析。
+  ///
+  /// 行的 `bookTitle`（收藏句 `book_title` / 制卡句 `document_title`）是落库时的
+  /// **raw 身份快照**（写入端保持 raw 不动，见 chrome.part.dart / mining.part.dart），
+  /// 渲染端在这里按行身份过 display-title 门面：
+  /// - 视频来源句：`bookKey` 是视频 bookUid，视频改名直写 `video_books.title`
+  ///   （raw 即显示名），按 [_videoRowMap] 现查行取列值（[displayTitleForVideo]）；
+  ///   行已删则回落快照。
+  /// - 书来源句：按 bookKey 过 override 门面（[_bookTitleMap] 的 SRT 值已 facade，
+  ///   再过一次幂等）。
+  /// - 无 bookKey（收藏词/老数据）：原样返回快照。
+  String? _displayBookTitleFor({
+    required String? bookKey,
+    required String? source,
+    required String? rawSnapshot,
+  }) {
+    final String? raw =
+        (rawSnapshot != null && rawSnapshot.isNotEmpty) ? rawSnapshot : null;
+    if (bookKey == null || bookKey.isEmpty) return raw;
+    if (source == kFavoriteSentenceSourceVideo) {
+      final VideoBookRow? row = _videoRowMap[bookKey];
+      return row != null ? displayTitleForVideo(row) : raw;
+    }
+    final String display = displayTitleForBook(
+      bookKey: bookKey,
+      rawTitle: _bookTitleMap[bookKey] ?? raw ?? '',
+    );
+    return display.isEmpty ? raw : display;
+  }
+
+  /// [_displayBookTitleFor] 的 [_CollectionItem] 便捷入口（列表副标题/详情弹窗）。
+  String? _itemDisplayBookTitle(_CollectionItem item) => _displayBookTitleFor(
+        bookKey: item.bookKey,
+        source: item.source,
+        rawSnapshot: item.bookTitle,
+      );
+
   void _openBook(_CollectionItem item) {
     final String? bookKey = item.bookKey;
     if (bookKey == null || bookKey.isEmpty) return;
 
-    final String title = _bookTitleMap[bookKey] ?? item.bookTitle ?? '';
+    // 标题仅作展示（身份走 mediaIdentifier=bookKey），过门面显示改名后书名。
+    final String title = _displayBookTitleFor(
+          bookKey: bookKey,
+          source: item.source,
+          rawSnapshot: item.bookTitle,
+        ) ??
+        '';
 
     final MediaItem mediaItem = buildCollectionReaderMediaItem(
       bookKey: bookKey,
@@ -458,7 +509,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   Future<int?> _resolveVideoPlaylistCollectionId(String bookUid) async {
     final Map<String, int> primaryByEntry =
         await appModel.database.getPrimaryCollectionIdByEntry();
-    return primaryByEntry['video|$bookUid'];
+    return primaryByEntry[MediaKind.video.compositeKey(bookUid)];
   }
 
   Future<int?> _resolveVideoFavoriteStartMs(
@@ -732,13 +783,15 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       item.type == _CollectionType.mined);
 
   /// 把当前列表里的收藏句转成导出载体（按 bookTitle 分组、来源透传）。
+  ///
+  /// P4 身份/显示二分：导出是「给人看的导出」——分组标题（= 导出面板可选书目 =
+  /// 文内分组头）过 display-title 门面显示改名后书名；DB 快照列本身保持 raw
+  /// 不动。[_loadFavoritesForExport] 的分组键同过门面，勾选过滤两端恒一致。
   List<ExportSentence> _favoriteSentencesForExport() => _items
       .where((item) => item.type == _CollectionType.sentence)
       .map((item) => ExportSentence(
             text: item.text ?? '',
-            bookTitle: (item.bookTitle != null && item.bookTitle!.isNotEmpty)
-                ? item.bookTitle!
-                : t.collection_sentence,
+            bookTitle: _itemDisplayBookTitle(item) ?? t.collection_sentence,
             chapterLabel: item.chapterLabel,
             source: item.source,
             createdAt: item.createdAt,
@@ -781,6 +834,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   }
 
   /// 读 DB 全量制卡句并映射成导出载体（与 913 口径一致）。
+  ///
+  /// P4：分组标题（给人看的导出）过 display-title 门面；`document_title` 快照列
+  /// 保持 raw 身份不动。
   Future<List<ExportMinedSentence>> _loadMinedForExport() async {
     final List<MinedSentenceRow> rows =
         await appModel.database.getAllMinedSentences();
@@ -790,10 +846,12 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
               expression: r.expression,
               reading: r.reading,
               glossary: r.glossary,
-              bookTitle:
-                  (r.documentTitle != null && r.documentTitle!.isNotEmpty)
-                      ? r.documentTitle!
-                      : t.collection_export_mined_title,
+              bookTitle: _displayBookTitleFor(
+                    bookKey: r.bookKey,
+                    source: r.source,
+                    rawSnapshot: r.documentTitle,
+                  ) ??
+                  t.collection_export_mined_title,
               source: r.source,
               createdAt: DateTime.fromMillisecondsSinceEpoch(r.createdAt),
             ))
@@ -802,6 +860,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   /// 读 DB 全量收藏句并映射成导出载体（口径=DB 全量，对齐制卡句 全量；不依赖页面
   /// 内存 [_items]，避免「全部」模式两段覆盖范围隐性不一致）。可选按书过滤。
+  ///
+  /// P4：分组标题过 display-title 门面（与 [_favoriteSentencesForExport] 产出的
+  /// 可选书目同一口径，[bookTitle] 过滤两端恒一致）；`book_title` 快照列保持
+  /// raw 身份不动。
   Future<List<ExportSentence>> _loadFavoritesForExport(
       {String? bookTitle}) async {
     final List<FavoriteSentence> all =
@@ -809,8 +871,12 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final List<ExportSentence> mapped = all
         .map((FavoriteSentence f) => ExportSentence(
               text: f.text,
-              bookTitle:
-                  f.bookTitle.isNotEmpty ? f.bookTitle : t.collection_sentence,
+              bookTitle: _displayBookTitleFor(
+                    bookKey: f.bookKey,
+                    source: f.source,
+                    rawSnapshot: f.bookTitle,
+                  ) ??
+                  t.collection_sentence,
               chapterLabel: f.chapterLabel,
               source: f.source,
               createdAt: f.createdAt,
@@ -863,6 +929,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     await _saveExport(
       content: content,
       format: choice.format,
+      // P4 判断：导出文件名属「给人看的导出」（一次性产物，无任何程序把它
+      // re-parse 回书身份），随分组标题一起用门面显示名；真正的身份文件名
+      // （bookKey=sanitizeTtuFilename、同步资产键）不经此路径。
       baseName: choice.bookTitle ?? t.collection_export_sentences_title,
     );
   }
@@ -987,14 +1056,16 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final canNavigate = item.bookKey != null && item.bookKey!.isNotEmpty;
     final hasAudio = _hasAudio(item);
     final displayTitle = item.text ?? '';
+    // P4：副标题（所属书/视频名）过 display-title 门面（快照列保持 raw 身份）。
+    final String? bookDisplayTitle = _itemDisplayBookTitle(item);
     final cs = Theme.of(context).colorScheme;
 
     await showAppDialog<void>(
       context: context,
       builder: (ctx) => CollectionItemDialogFrame(
         title: SelectableText(displayTitle, maxLines: 3),
-        content: item.bookTitle != null
-            ? Text(item.bookTitle!, style: textTheme.bodyMedium)
+        content: bookDisplayTitle != null
+            ? Text(bookDisplayTitle, style: textTheme.bodyMedium)
             : null,
         actions: [
           if (hasAudio)
@@ -1178,7 +1249,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       subtitle = [
         // 视频来源句子标注「视频」前缀，与书内/有声书来源区分（用现有 nav_video）。
         if (isVideoSentence) t.nav_video,
-        item.bookTitle,
+        // P4：所属书/视频名过 display-title 门面（快照列保持 raw 身份）。
+        _itemDisplayBookTitle(item),
         item.chapterLabel,
       ].where((s) => s != null && s.isNotEmpty).join(' · ');
     }

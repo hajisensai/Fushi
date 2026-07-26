@@ -1896,7 +1896,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           await widget.repo.getCollectionItems(collectionId);
       final List<_PlaylistEpisodeRef> refs = <_PlaylistEpisodeRef>[];
       for (final MediaCollectionItemRow m in members) {
-        if (m.mediaType != 'video') continue;
+        if (m.mediaType != MediaKind.video.dbValue) continue;
         final VideoBookRow? er = await widget.repo.getByBookUid(m.entryKey);
         if (er == null) continue; // 孤儿成员（集行已删）→ 读取期过滤。
         refs.add(_PlaylistEpisodeRef(

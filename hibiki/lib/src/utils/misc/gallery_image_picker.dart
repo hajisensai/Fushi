@@ -56,17 +56,26 @@ GalleryImagePickerBackend galleryImagePickerBackendFor(
 /// 移动端返回的是 image_picker 复制到 app cache 的副本路径（与旧行为一致，
 /// 调用方应按「单次会话内使用 / 自行落盘持久化」处理）；桌面端返回
 /// file_picker 给出的真实文件路径。
+///
+/// 「没选到图」的所有形态在这里一次收敛成 `null`，调用方只判 `null` 即可：
+/// 用户取消（`result == null`）、结果集为空（`files` 是空 list——直接 `.first`
+/// 会抛 `StateError`，这是各岛旧代码里 `picked.files.isNotEmpty` 守卫的由来）、
+/// 以及 path 为空串（部分平台实现会给出无 path 的条目）。
 Future<File?> pickGalleryImageFile() async {
   switch (galleryImagePickerBackendFor(defaultTargetPlatform)) {
     case GalleryImagePickerBackend.imagePicker:
       final XFile? pickedFile =
           await ImagePicker().pickImage(source: ImageSource.gallery);
-      return pickedFile == null ? null : File(pickedFile.path);
+      final String? mobilePath = pickedFile?.path;
+      if (mobilePath == null || mobilePath.isEmpty) return null;
+      return File(mobilePath);
     case GalleryImagePickerBackend.filePicker:
       final FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.image,
       );
-      final String? pickedPath = result?.files.first.path;
-      return pickedPath == null ? null : File(pickedPath);
+      if (result == null || result.files.isEmpty) return null;
+      final String? pickedPath = result.files.first.path;
+      if (pickedPath == null || pickedPath.isEmpty) return null;
+      return File(pickedPath);
   }
 }

@@ -539,7 +539,18 @@ abstract class MediaSource {
     } else if (file != null) {
       thumbnailFile.parent.createSync(recursive: true);
       file.copySync(filename);
+    } else {
+      // 既没清除也没新图：磁盘未动，无需驱逐。
+      return;
     }
+
+    // 统一封面服务不变量（P3）：override 缩略图是「同路径覆盖写/删除」——filename
+    // 由 hashCode 派生、换图不换路径，而 ImageCache 按 (path, scale) 而非内容缓存
+    // 解码。写/删后必须双键驱逐（裸 FileImage + resizedFileImage 的 ResizeImage 键，
+    // 见 [evictLocalCoverCache]），否则书架/编辑弹窗重建仍命中旧解码，表现为
+    // 「换了封面没生效」。放在这里而非上层，是让 clearOverrideValues 等所有写入方
+    // 共享同一条驱逐路径。
+    await evictLocalCoverCache(filename);
   }
 
   /// Used to clear override values of a [MediaItem] upon deletion.

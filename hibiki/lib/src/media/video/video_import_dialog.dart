@@ -16,6 +16,7 @@ import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:hibiki/src/utils/cover_image.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
@@ -79,22 +80,29 @@ String uniqueVideoBookUid(String base, Set<String> existingKeys) {
 /// 用用户挑选的图片 [pickedPath] 覆盖 [bookUid] 的封面：拷到持久化
 /// `video_covers/<uid>.jpg` → **驱逐旧解码缓存** → 落库 `coverPath`，返回目标路径。
 ///
-/// 书架/视频库长按菜单「设置封面」共用此入口（消除两处手抄）。封面写到与导入
+/// 书架/视频库长按菜单「设置封面」共用此入口（消除两处手抄），统一封面服务
+/// `MediaCoverService.applyVideoCoverManual` 薄路由到这里。封面写到与导入
 /// 时自动截图同一路径（同一 [videoCoverFileName]），所以 DB 里的 `coverPath`
 /// 字符串不变；而 [FileImage] 按 `(path, scale)` 而非内容/mtime 缓存解码，覆盖
-/// 同名文件后必须 `imageCache.evict` 掉旧条目，否则 UI 重建时命中旧解码、用户
-/// 重设封面后看到的还是旧图（直到缓存淘汰或重启）。
+/// 同名文件后必须驱逐旧条目，否则 UI 重建时命中旧解码、用户重设封面后看到的
+/// 还是旧图（直到缓存淘汰或重启）。驱逐走 [evictLocalCoverCache]：裸 FileImage
+/// 键与 `resizedFileImage` 的 ResizeImage 键是两个不同 key，只清前者的话走降
+/// 采样渲染的卡片（ShelfFileCover 等）仍命中旧解码。
+///
+/// [coversDirectory] 是测试接缝：默认经唯一入口 [AppPaths] 派生
+/// `<documents>/video_covers`（TODO-935 E0），测试传临时目录即可断言真实落盘。
 Future<String> setVideoCoverFromPickedFile({
   required VideoBookRepository repo,
   required String bookUid,
   required String pickedPath,
+  Directory? coversDirectory,
 }) async {
-  // TODO-935 E0：封面目录经唯一入口 [AppPaths] 派生 `<documents>/video_covers`。
-  final Directory coverDir = await AppPaths.videoCoversDirectory();
+  final Directory coverDir =
+      coversDirectory ?? await AppPaths.videoCoversDirectory();
   await coverDir.create(recursive: true);
   final String dest = p.join(coverDir.path, videoCoverFileName(bookUid));
   await File(pickedPath).copy(dest);
-  PaintingBinding.instance.imageCache.evict(FileImage(File(dest)));
+  await evictLocalCoverCache(dest);
   await repo.updateCover(bookUid, dest);
   return dest;
 }

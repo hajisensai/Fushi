@@ -3,15 +3,6 @@ import 'dart:convert';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_merge.dart';
 
-/// 游戏进合集（统一媒体库）：`media_collection_items.mediaType` 的游戏值。
-/// entryKey = `galgames.id`（添加时刻微秒时间戳字符串）——**游戏本机局域身份**：
-/// 与 exe 路径同为本机事实，跨端同步时对端无对应 `galgames` 行则该成员静默忽略
-/// （合集同步引擎对 mediaType/entryKey 透传，不解引用）。
-///
-/// 放在领域层（而非页面文件）：删除路径 `GalgameRepository` 清理合集引用时也要用，
-/// 仓储不该反向 import 页面。
-const String kGameCollectionMediaType = 'game';
-
 /// 游玩状态（契约 §1.5）。数值**故意对齐 Bangumi 收藏 type**，省掉一层映射；
 /// [value] 直接落 `galgames.playStatus` 列，**不可随意改**。
 enum GalgamePlayStatus {

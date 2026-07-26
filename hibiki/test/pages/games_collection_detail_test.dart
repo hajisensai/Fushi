@@ -67,9 +67,9 @@ void main() {
         HibikiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final int c = await db.createMediaCollection('ネコぱら全集');
-    await db.addToCollection(c, 'game', 'g1');
-    await db.addToCollection(c, 'game', 'gone'); // 孤儿：库里无此游戏。
-    await db.addToCollection(c, 'epub', 'book-1'); // 混合合集：书成员。
+    await db.addToCollection(c, MediaKind.game, 'g1');
+    await db.addToCollection(c, MediaKind.game, 'gone'); // 孤儿：库里无此游戏。
+    await db.addToCollection(c, MediaKind.epub, 'book-1'); // 混合合集：书成员。
     final MediaCollectionRow collection = (await db.getMediaCollectionById(c))!;
 
     final List<GalgameEntry> games = <GalgameEntry>[entry('g1', 'ATRI')];

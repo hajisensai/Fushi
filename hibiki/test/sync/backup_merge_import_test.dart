@@ -958,7 +958,7 @@ void main() {
     await cur.createMediaCollection('Filler');
     final int tDupe =
         await cur.createMediaCollection('Dupe', collectionType: 'playlist');
-    await cur.addToCollection(tDupe, 'video', 'keep-target');
+    await cur.addToCollection(tDupe, MediaKind.video, 'keep-target');
     await cur.close();
 
     // 备份：同名同类型 Dupe(playlist)（src 里落 id 1）含 from-src；另有全新
@@ -968,9 +968,11 @@ void main() {
     final src = HibikiDatabase(srcDir.path);
     final int sDupe =
         await src.createMediaCollection('Dupe', collectionType: 'playlist');
-    await src.addToCollection(sDupe, 'video', 'from-src');
+    await src.addToCollection(sDupe, MediaKind.video, 'from-src');
     final int sNew = await src.createMediaCollection('NewOne');
-    await src.addToCollection(sNew, 'book', 'b1');
+    // 'book' 是本机未知的种类（旧值域/对端未来值）：raw 版原样落库，
+    // 检验合并导入对未知种类的透传（typed 版收 MediaKind 表达不了它）。
+    await src.addToCollectionRaw(sNew, 'book', 'b1');
     expect(sDupe, isNot(tDupe),
         reason: 'src/target 的 Dupe id 必须不同，才能真正检验 remap');
     final zipDir = await _tempDir('mg_zip_');
@@ -1020,8 +1022,8 @@ void main() {
     final src = HibikiDatabase(srcDir.path);
     final int sCol =
         await src.createMediaCollection('Show', collectionType: 'playlist');
-    await src.addToCollection(sCol, 'video', 'e1');
-    await src.addToCollection(sCol, 'video', 'e2');
+    await src.addToCollection(sCol, MediaKind.video, 'e1');
+    await src.addToCollection(sCol, MediaKind.video, 'e2');
     final zipDir = await _tempDir('mg_zip_');
     addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');

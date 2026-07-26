@@ -833,7 +833,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final double charFrac = goalFraction(_todayChars, charGoal);
     final int todayMinutes = _todayMs ~/ 60000;
     final double timeFrac = goalFraction(todayMinutes, _kDailyTimeGoalMinutes);
-    final double todayCph = computeCph(_todayChars, _todayMs);
+    // BUG-1107：今日速度同样过最小样本门槛（[computeCph] 内建，不足 1 分钟返回
+    // null）——今日只有几十秒的记录时显示占位符，不外推爆表数字。
+    final double? todayCph = computeCph(_todayChars, _todayMs);
 
     return _card(
       title: t.stat_today,
@@ -871,8 +873,11 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           Row(
             children: <Widget>[
               Expanded(
-                child: _miniStat(t.stat_metric_speed,
-                    todayCph > 0 ? _formatCph(todayCph) : '-'),
+                child: _miniStat(
+                    t.stat_metric_speed,
+                    todayCph != null && todayCph > 0
+                        ? _formatCph(todayCph)
+                        : '-'),
               ),
               Expanded(
                 child: _miniStat(t.stat_streak, t.stat_format_days(n: _streak)),
@@ -1161,7 +1166,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final String? bookKey = _bookKeyByTitle[title];
     if (bookKey == null) return null;
     return statCollectionName(
-      'epub|$bookKey',
+      MediaKind.epub.compositeKey(bookKey),
       _primaryCollectionByEntry,
       _collectionNamesById,
     );
@@ -1258,8 +1263,10 @@ class _BookData {
   int chars = 0;
   int ms = 0;
 
-  /// 该书阅读速度（字/小时）。复用统一口径的 [computeCph]。
-  double get cph => computeCph(chars, ms);
+  /// 该书阅读速度（字/小时）。复用统一口径的 [computeCph]（内建最小样本时长
+  /// 门槛，BUG-1107）；样本不足折叠为 0——排序/进度条把它当「无有效速度」，
+  /// 不再让几秒脏行的书在速度维度霸榜。
+  double get cph => computeCph(chars, ms) ?? 0;
 }
 
 /// 「今日」面板底部三宫格里的单个迷你统计（速度/连击/收藏）。

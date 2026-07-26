@@ -46,7 +46,7 @@ void main() {
       collectionType: 'playlist',
     );
     for (final String uid in <String>['video/beta', 'video/a10', 'video/a9']) {
-      await db.addToCollection(collectionId, 'video', uid);
+      await db.addToCollection(collectionId, MediaKind.video, uid);
     }
   });
 

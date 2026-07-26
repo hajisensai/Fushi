@@ -115,8 +115,8 @@ void main() {
     await seedVideo('video/ep1', '第1集');
     await seedVideo('video/ep2', '第2集');
     final int cid = await db.createMediaCollection('合集甲');
-    await db.addToCollection(cid, 'video', 'video/ep1');
-    await db.addToCollection(cid, 'video', 'video/ep2');
+    await db.addToCollection(cid, MediaKind.video, 'video/ep1');
+    await db.addToCollection(cid, MediaKind.video, 'video/ep2');
 
     await pumpPage(tester);
     await enterSelectionMode(tester);
@@ -179,8 +179,8 @@ void main() {
     await seedVideo('video/ep2', '第2集');
     await seedVideo('video/looseL', '散卡L');
     final int cid = await db.createMediaCollection('合集乙');
-    await db.addToCollection(cid, 'video', 'video/ep1');
-    await db.addToCollection(cid, 'video', 'video/ep2');
+    await db.addToCollection(cid, MediaKind.video, 'video/ep1');
+    await db.addToCollection(cid, MediaKind.video, 'video/ep2');
 
     await pumpPage(tester);
     await enterSelectionMode(tester);
@@ -212,12 +212,12 @@ void main() {
     await seedVideo('video/b2', 'B2');
     await seedVideo('video/b3', 'B3');
     final int small = await db.createMediaCollection('小集');
-    await db.addToCollection(small, 'video', 'video/a1');
-    await db.addToCollection(small, 'video', 'video/a2');
+    await db.addToCollection(small, MediaKind.video, 'video/a1');
+    await db.addToCollection(small, MediaKind.video, 'video/a2');
     final int big = await db.createMediaCollection('大集');
-    await db.addToCollection(big, 'video', 'video/b1');
-    await db.addToCollection(big, 'video', 'video/b2');
-    await db.addToCollection(big, 'video', 'video/b3');
+    await db.addToCollection(big, MediaKind.video, 'video/b1');
+    await db.addToCollection(big, MediaKind.video, 'video/b2');
+    await db.addToCollection(big, MediaKind.video, 'video/b3');
 
     await pumpPage(tester);
     await enterSelectionMode(tester);
@@ -254,8 +254,8 @@ void main() {
     await seedVideo('video/ep1', '第1集');
     await seedVideo('video/ep2', '第2集');
     final int cid = await db.createMediaCollection('待解散');
-    await db.addToCollection(cid, 'video', 'video/ep1');
-    await db.addToCollection(cid, 'video', 'video/ep2');
+    await db.addToCollection(cid, MediaKind.video, 'video/ep1');
+    await db.addToCollection(cid, MediaKind.video, 'video/ep2');
 
     await pumpPage(tester);
     await enterSelectionMode(tester);
@@ -282,8 +282,8 @@ void main() {
     await seedVideo('video/ep2', '第2集');
     await seedVideo('video/looseL', '散卡L');
     final int cid = await db.createMediaCollection('某合集');
-    await db.addToCollection(cid, 'video', 'video/ep1');
-    await db.addToCollection(cid, 'video', 'video/ep2');
+    await db.addToCollection(cid, MediaKind.video, 'video/ep1');
+    await db.addToCollection(cid, MediaKind.video, 'video/ep2');
 
     await pumpPage(tester);
     await enterSelectionMode(tester);

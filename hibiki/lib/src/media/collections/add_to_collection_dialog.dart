@@ -16,7 +16,7 @@ import 'package:hibiki/utils.dart';
 Future<bool> showAddToCollectionDialog({
   required BuildContext context,
   required HibikiDatabase database,
-  required String mediaType,
+  required MediaKind mediaType,
   required String entryKey,
   String defaultNewName = '',
 }) async {
@@ -29,7 +29,7 @@ Future<bool> showAddToCollectionDialog({
   for (final MediaCollectionItemRow item in allItems) {
     memberCounts[item.collectionId] =
         (memberCounts[item.collectionId] ?? 0) + 1;
-    if (item.mediaType == mediaType && item.entryKey == entryKey) {
+    if (item.mediaType == mediaType.dbValue && item.entryKey == entryKey) {
       alreadyIn.add(item.collectionId);
     }
   }

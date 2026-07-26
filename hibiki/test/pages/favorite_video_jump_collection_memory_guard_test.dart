@@ -13,9 +13,8 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 这是源码扫描守卫（跳转经 Navigator + 平台视频页，widget 层难真触发），盯死接线不回归。
 void main() {
-  final String src =
-      File('lib/src/pages/implementations/collections_page.dart')
-          .readAsStringSync();
+  final String src = File('lib/src/pages/implementations/collections_page.dart')
+      .readAsStringSync();
 
   test('_openVideoSentence 解析主合集 id 用统一 key 口径 video|<bookUid>', () {
     expect(
@@ -25,17 +24,18 @@ void main() {
     );
     expect(
       src,
-      contains("primaryByEntry['video|\$bookUid']"),
-      reason: 'key 必须是 video|<bookUid>，与 getPrimaryCollectionIdByEntry 的建 key 口径一致',
+      contains('primaryByEntry[MediaKind.video.compositeKey(bookUid)]'),
+      reason: 'key 必须是 video|<bookUid>（P5 经 MediaKind.video.compositeKey 生成，'
+          '串与 getPrimaryCollectionIdByEntry 的建 key 口径逐字节一致）',
     );
   });
 
   test('_openVideoSentence 把解析出的 playlistCollectionId 透传进 VideoHibikiPage', () {
     // 定位到 _openVideoSentence 里的 neutralized 构造调用段。
     final int openIdx = src.indexOf('Future<void> _openVideoSentence(');
-    expect(openIdx, greaterThanOrEqualTo(0),
-        reason: '_openVideoSentence 必须存在');
-    final int nextMethodIdx = src.indexOf('Future<int?> _resolveVideoFavoriteStartMs(');
+    expect(openIdx, greaterThanOrEqualTo(0), reason: '_openVideoSentence 必须存在');
+    final int nextMethodIdx =
+        src.indexOf('Future<int?> _resolveVideoFavoriteStartMs(');
     expect(nextMethodIdx, greaterThan(openIdx));
     final String openBody = src.substring(openIdx, nextMethodIdx);
     expect(

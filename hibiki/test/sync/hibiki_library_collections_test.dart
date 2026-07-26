@@ -51,8 +51,8 @@ void main() {
       ));
       final int cid =
           await db.createMediaCollection('文学全集', collectionType: 'collection');
-      await db.addToCollection(cid, 'epub', 'Other'); // sortIndex 0
-      await db.addToCollection(cid, 'epub', 'BookA'); // sortIndex 1
+      await db.addToCollection(cid, MediaKind.epub, 'Other'); // sortIndex 0
+      await db.addToCollection(cid, MediaKind.epub, 'BookA'); // sortIndex 1
 
       final List<RemoteBookInfo> books = await buildSvc(db).listBooks();
       final RemoteBookInfo bookA =
@@ -92,8 +92,8 @@ void main() {
       final int first = await db.createMediaCollection('先建'); // 较小 id
       final int second = await db.createMediaCollection('后建'); // 较大 id
       expect(first < second, isTrue);
-      await db.addToCollection(second, 'epub', 'Multi');
-      await db.addToCollection(first, 'epub', 'Multi');
+      await db.addToCollection(second, MediaKind.epub, 'Multi');
+      await db.addToCollection(first, MediaKind.epub, 'Multi');
 
       final List<RemoteBookInfo> books = await buildSvc(db).listBooks();
       final RemoteBookInfo multi =
@@ -124,7 +124,7 @@ void main() {
       final int cid =
           await db.createMediaCollection('有声集', collectionType: 'collection');
       // 有声书加入合集时以 srt|uid 存（本地书架当 SRT 卡渲染的成员键），非 epub|bookKey。
-      await db.addToCollection(cid, 'srt', 'srtbook_epub_AudioVol1');
+      await db.addToCollection(cid, MediaKind.srt, 'srtbook_epub_AudioVol1');
 
       final List<RemoteBookInfo> books = await buildSvc(db).listBooks();
       final RemoteBookInfo vol1 =
@@ -169,7 +169,7 @@ void main() {
       ));
       final int cid =
           await db.createMediaCollection('番剧', collectionType: 'playlist');
-      await db.addToCollection(cid, 'video', 'video/ep1');
+      await db.addToCollection(cid, MediaKind.video, 'video/ep1');
 
       final List<RemoteVideoInfo> videos = await buildSvc(db).listVideos();
       final RemoteVideoInfo ep1 =
@@ -331,7 +331,7 @@ void main() {
     test('GET 返回 host 合集清单；POST 把新合集并入 host DB', () async {
       final int hc =
           await hostDb.createMediaCollection('S', collectionType: 'playlist');
-      await hostDb.addToCollection(hc, 'video', 'v1');
+      await hostDb.addToCollection(hc, MediaKind.video, 'v1');
 
       final HibikiDatabase clientDb = memDb();
       final HibikiClientSyncBackend backend = await buildBackend(clientDb);
@@ -366,15 +366,15 @@ void main() {
     test('双端各建同名 playlist → 一次互推收敛为成员并集（host+client）', () async {
       final int hc =
           await hostDb.createMediaCollection('S', collectionType: 'playlist');
-      await hostDb.addToCollection(hc, 'video', 'v1');
-      await hostDb.addToCollection(hc, 'video', 'v2');
+      await hostDb.addToCollection(hc, MediaKind.video, 'v1');
+      await hostDb.addToCollection(hc, MediaKind.video, 'v2');
       await tick();
 
       final HibikiDatabase clientDb = memDb();
       final HibikiClientSyncBackend backend = await buildBackend(clientDb);
       final int cc =
           await clientDb.createMediaCollection('S', collectionType: 'playlist');
-      await clientDb.addToCollection(cc, 'video', 'v9');
+      await clientDb.addToCollection(cc, MediaKind.video, 'v9');
       await tick();
 
       final SyncRunReport report = SyncRunReport();
@@ -391,9 +391,9 @@ void main() {
       // 先收敛：host 建 S{v1,v2,v3}，client 同步一轮取到全部。
       final int hc =
           await hostDb.createMediaCollection('S', collectionType: 'playlist');
-      await hostDb.addToCollection(hc, 'video', 'v1');
-      await hostDb.addToCollection(hc, 'video', 'v2');
-      await hostDb.addToCollection(hc, 'video', 'v3');
+      await hostDb.addToCollection(hc, MediaKind.video, 'v1');
+      await hostDb.addToCollection(hc, MediaKind.video, 'v2');
+      await hostDb.addToCollection(hc, MediaKind.video, 'v3');
       await tick();
 
       final HibikiDatabase clientDb = memDb();
@@ -406,7 +406,7 @@ void main() {
       // client 移出 v2 → 再同步：host 端应删除 v2（不靠 host 自删）。
       final int cc =
           (await clientDb.getMediaCollectionByNaturalKey('S', 'playlist'))!.id;
-      await clientDb.removeFromCollection(cc, 'video', 'v2');
+      await clientDb.removeFromCollection(cc, MediaKind.video, 'v2');
       await tick();
       await orchestrator(clientDb, backend)
           .syncCollectionsLiveForTest(SyncRunReport(), backend);
@@ -424,9 +424,9 @@ void main() {
     test('client 拖序 → host 采 client 序（手动序整合集 LWW 经 endpoint）', () async {
       final int hc =
           await hostDb.createMediaCollection('S', collectionType: 'playlist');
-      await hostDb.addToCollection(hc, 'video', 'v1');
-      await hostDb.addToCollection(hc, 'video', 'v2');
-      await hostDb.addToCollection(hc, 'video', 'v3');
+      await hostDb.addToCollection(hc, MediaKind.video, 'v1');
+      await hostDb.addToCollection(hc, MediaKind.video, 'v2');
+      await hostDb.addToCollection(hc, MediaKind.video, 'v3');
       await tick();
 
       final HibikiDatabase clientDb = memDb();

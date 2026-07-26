@@ -24,8 +24,8 @@ class CollectionOrderingItem<T> {
     required this.payload,
   });
 
-  /// 'epub' | 'srt' | 'video'。
-  final String mediaType;
+  /// 媒体种类（合集/书架值域，复合键经 [MediaKind.compositeKey] 生成）。
+  final MediaKind mediaType;
 
   /// 稳定身份：epub=bookKey / srt=uid / video=bookUid。
   final String entryKey;
@@ -55,7 +55,8 @@ class CollectionGroup<T> {
   CollectionOrderingItem<T> get coverItem => items.first;
 }
 
-String _composite(String mediaType, String entryKey) => '$mediaType|$entryKey';
+String _composite(MediaKind mediaType, String entryKey) =>
+    mediaType.compositeKey(entryKey);
 
 /// 标签筛选下判断一个媒体条目是否应存活到 [groupByCollections] 折叠阶段。
 ///

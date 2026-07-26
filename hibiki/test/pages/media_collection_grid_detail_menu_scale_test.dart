@@ -31,7 +31,7 @@ void main() {
     addTearDown(db.close);
     final int cid = await db.createMediaCollection('C');
     for (int i = 1; i <= count; i++) {
-      await db.addToCollection(cid, 'epub', 'k$i');
+      await db.addToCollection(cid, MediaKind.epub, 'k$i');
     }
     final MediaCollectionRow col = (await db.getMediaCollectionById(cid))!;
     return (db: db, col: col);

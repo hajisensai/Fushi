@@ -208,7 +208,7 @@ void main() {
     await seedEpub('memberKey', '成员书');
     await seedEpub('looseKey', '散书');
     final int cid = await db.createMediaCollection('合集乙');
-    await db.addToCollection(cid, 'epub', 'memberKey');
+    await db.addToCollection(cid, MediaKind.epub, 'memberKey');
 
     await pumpPage(tester);
     final Finder row =
@@ -242,7 +242,7 @@ void main() {
       (WidgetTester tester) async {
     await seedEpub('bodyKey', '正文书');
     final int cid = await db.createMediaCollection('待解散');
-    await db.addToCollection(cid, 'epub', 'bodyKey');
+    await db.addToCollection(cid, MediaKind.epub, 'bodyKey');
 
     await pumpPage(tester);
     final Finder row =

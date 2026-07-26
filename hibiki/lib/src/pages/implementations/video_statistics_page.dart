@@ -385,7 +385,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     final String? bookUid = _bookUidByTitle[title];
     if (bookUid == null) return null;
     return statCollectionName(
-      'video|$bookUid',
+      MediaKind.video.compositeKey(bookUid),
       _primaryCollectionByEntry,
       _collectionNamesById,
     );

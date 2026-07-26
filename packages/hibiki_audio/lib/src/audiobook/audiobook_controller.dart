@@ -224,6 +224,16 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// reader 负责加载目标章 cues 并 seek。
   Future<void> Function(int delta)? onBoundarySkip;
 
+  /// 显式跳句回调（BUG-1080）：[skipToCue] 漏斗成功定位目标后触发，带目标 cue。
+  ///
+  /// [skipToCue] 是**所有**显式句子跳转的唯一漏斗（skipToPrevCue / skipToNextCue /
+  /// skipByCues / skipToCueIndex / playCueAndContinue，以及底栏按钮、媒体通知、
+  /// 音量键、快捷键最终都汇聚到这里）。reader 借此把阅读统计的字数水位抬到目标
+  /// cue 位置——「音频跳过的段落不算已读」，否则跳句后的 WebView 跟随滚动会被
+  /// 进度回调误计成本次读到的新字数（幻象字数）。
+  /// 控制器只报事件不做统计判断，与 [onBoundarySkip] 同样保持与 reader 解耦。
+  void Function(AudioCue cue)? onExplicitCueJump;
+
   /// 对齐 Sasayaki `hasPlayedOnce`：true 之前不允许跨章自动翻页，避免
   /// 打开书 / 恢复位置瞬间 cue 与 reader 当前章不一致就立刻跳章，
   /// 把用户当前阅读位置吃掉。在首次 [play] 调用时翻为 true，不会复位
@@ -832,6 +842,10 @@ class AudiobookPlayerController extends ChangeNotifier {
       return;
     }
     final int positionMs = _clampToKnownDuration(mappedPosition.positionMs);
+    // BUG-1080：目标已成功定位、跳转必然发生 → 通知 reader 抬统计字数水位到目标
+    // cue（跳过的段落不算已读）。放在物理 seek 之前，保证水位在任何后续进度回调
+    // （seek 落地触发的 WebView 跟随滚动 → _refreshProgress）之前就位。
+    onExplicitCueJump?.call(cue);
     _beginExplicitSeek(mappedPosition.audioFileIndex, positionMs);
     await _player.seek(
       Duration(milliseconds: positionMs),

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/misc/shelf_ordering.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 
 /// shelf_ordering 纯函数守卫（widget-free）。
 /// UI v2 Phase E：旧 groupAndSortShelfEntries 已删（分组唯一真相源 =
@@ -10,7 +11,7 @@ void main() {
       final ShelfEntryRef? ref =
           shelfSelectionToEntry('srt_abc-123', ShelfSelectionSurface.books);
       expect(ref, isNotNull);
-      expect(ref!.mediaType, 'srt');
+      expect(ref!.mediaType, MediaKind.srt);
       expect(ref.entryKey, 'abc-123');
     });
 
@@ -18,7 +19,7 @@ void main() {
       final ShelfEntryRef? ref = shelfSelectionToEntry(
           'hoshi://book/mybook_key', ShelfSelectionSurface.books);
       expect(ref, isNotNull);
-      expect(ref!.mediaType, 'epub');
+      expect(ref!.mediaType, MediaKind.epub);
       expect(ref.entryKey, 'mybook_key');
     });
 
@@ -34,7 +35,7 @@ void main() {
       final ShelfEntryRef? ref = shelfSelectionToEntry(
           'hoshi://book/$key', ShelfSelectionSurface.books);
       expect(ref, isNotNull);
-      expect(ref!.mediaType, 'epub');
+      expect(ref!.mediaType, MediaKind.epub);
       expect(ref.entryKey, key,
           reason: '%3C/%3E must NOT be decoded back to </>');
 
@@ -55,7 +56,7 @@ void main() {
       final ShelfEntryRef? ref =
           shelfSelectionToEntry('video-uid-9', ShelfSelectionSurface.video);
       expect(ref, isNotNull);
-      expect(ref!.mediaType, 'video');
+      expect(ref!.mediaType, MediaKind.video);
       expect(ref.entryKey, 'video-uid-9');
     });
 
@@ -63,7 +64,7 @@ void main() {
       final ShelfEntryRef? ref =
           shelfSelectionToEntry('srt_looking', ShelfSelectionSurface.video);
       expect(ref, isNotNull);
-      expect(ref!.mediaType, 'video');
+      expect(ref!.mediaType, MediaKind.video);
       expect(ref.entryKey, 'srt_looking');
     });
 
@@ -74,8 +75,8 @@ void main() {
 
     test('ShelfEntryRef 值相等性', () {
       expect(
-        const ShelfEntryRef(mediaType: 'epub', entryKey: 'k'),
-        const ShelfEntryRef(mediaType: 'epub', entryKey: 'k'),
+        const ShelfEntryRef(mediaType: MediaKind.epub, entryKey: 'k'),
+        const ShelfEntryRef(mediaType: MediaKind.epub, entryKey: 'k'),
       );
     });
   });

@@ -375,8 +375,8 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       // 失败留旧 downloadId 孤儿行交读取期过滤兜底。仅在真发生漂移时迁移。
       if (localBookKey != null && localBookKey != book.downloadId) {
         try {
-          await appModel.database
-              .migrateShelfEntryKey('epub', book.downloadId, localBookKey);
+          await appModel.database.migrateShelfEntryKey(
+              MediaKind.epub, book.downloadId, localBookKey);
         } catch (e, stack) {
           // 排序/系列元数据迁移失败不能让已成功的下载失败。
           ErrorLogService.instance

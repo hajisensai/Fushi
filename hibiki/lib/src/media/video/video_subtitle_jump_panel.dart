@@ -504,7 +504,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       _rowExtentCacheFontSize = _effectiveFontSize;
       _rowExtentCacheScaler = _textScaler;
     }
-    final String key = '${bold ? 1 : 0} ${cue.text}';
+    final String key = '${bold ? 1 : 0}\u0000${cue.text}';
     final double? cached = _rowExtentCache[key];
     if (cached != null) return cached;
     final double extent = _measureRowExtent(cue.text, rowWidth, bold);
@@ -898,7 +898,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final Map<int, int> repByRaw = <int, int>{};
     for (int i = 0; i < cues.length; i++) {
       final AudioCue cue = cues[i];
-      final String key = '${cue.startMs} ${cue.text}';
+      final String key = '${cue.startMs}\u0000${cue.text}';
       final int? rep = firstByKey[key];
       if (rep == null) {
         firstByKey[key] = i;

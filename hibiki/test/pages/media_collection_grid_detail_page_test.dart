@@ -23,9 +23,9 @@ void main() {
   Future<({HibikiDatabase db, MediaCollectionRow col})> seed() async {
     final HibikiDatabase db = await openDb();
     final int cid = await db.createMediaCollection('C');
-    await db.addToCollection(cid, 'epub', 'k1');
-    await db.addToCollection(cid, 'epub', 'k2');
-    await db.addToCollection(cid, 'epub', 'k3');
+    await db.addToCollection(cid, MediaKind.epub, 'k1');
+    await db.addToCollection(cid, MediaKind.epub, 'k2');
+    await db.addToCollection(cid, MediaKind.epub, 'k3');
     final MediaCollectionRow col = (await db.getMediaCollectionById(cid))!;
     return (db: db, col: col);
   }
@@ -150,7 +150,7 @@ void main() {
     final HibikiDatabase db = await openDb();
     final int cid = await db.createMediaCollection('C');
     for (final String k in <String>['k1', 'k2', 'k3', 'k4', 'k5']) {
-      await db.addToCollection(cid, 'epub', k);
+      await db.addToCollection(cid, MediaKind.epub, k);
     }
     final MediaCollectionRow col = (await db.getMediaCollectionById(cid))!;
 

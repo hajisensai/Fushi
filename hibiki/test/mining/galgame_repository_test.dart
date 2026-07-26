@@ -274,10 +274,10 @@ void main() {
       await repo.addAll(<GalgameEntry>[newEntry('g1'), newEntry('g2')]);
       // 混合合集：g1 + g2；另一个合集只有 g1。
       final int mixed = await db.createMediaCollection('mixed');
-      await db.addToCollection(mixed, kGameCollectionMediaType, 'g1');
-      await db.addToCollection(mixed, kGameCollectionMediaType, 'g2');
+      await db.addToCollection(mixed, MediaKind.game, 'g1');
+      await db.addToCollection(mixed, MediaKind.game, 'g2');
       final int solo = await db.createMediaCollection('solo');
-      await db.addToCollection(solo, kGameCollectionMediaType, 'g1');
+      await db.addToCollection(solo, MediaKind.game, 'g1');
 
       await repo.remove('g1');
 
@@ -295,8 +295,8 @@ void main() {
     test('setGames 整表覆写删掉的 id 也清合集引用，不留孤儿成员', () async {
       await repo.setGames(<GalgameEntry>[newEntry('g1'), newEntry('g2')]);
       final int c = await db.createMediaCollection('c');
-      await db.addToCollection(c, kGameCollectionMediaType, 'g1');
-      await db.addToCollection(c, kGameCollectionMediaType, 'g2');
+      await db.addToCollection(c, MediaKind.game, 'g1');
+      await db.addToCollection(c, MediaKind.game, 'g2');
 
       await repo.setGames(<GalgameEntry>[newEntry('g2')]);
 

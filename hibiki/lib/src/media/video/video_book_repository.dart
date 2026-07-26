@@ -219,7 +219,7 @@ class VideoBookRepository {
       collectionId = await _db.createMediaCollection(collectionName,
           collectionType: 'playlist');
       for (final String uid in epUids) {
-        await _db.addToCollection(collectionId, 'video', uid);
+        await _db.addToCollection(collectionId, MediaKind.video, uid);
       }
     });
     return (collectionId: collectionId, episodeUids: epUids);
@@ -253,7 +253,7 @@ class VideoBookRepository {
         await _db.getCollectionItems(collectionId);
     final Map<String, String> memberBaseByUid = <String, String>{};
     for (final MediaCollectionItemRow item in items) {
-      if (item.mediaType != 'video') continue;
+      if (item.mediaType != MediaKind.video.dbValue) continue;
       final VideoBookRow? row = await _db.getVideoBookByBookUid(item.entryKey);
       if (row != null) {
         memberBaseByUid[item.entryKey] = coreSingleVideoBookUid(row.videoPath);
@@ -288,13 +288,13 @@ class VideoBookRepository {
           ),
           sourceId: sourceId,
         );
-        await _db.addToCollection(collectionId, 'video', uid);
+        await _db.addToCollection(collectionId, MediaKind.video, uid);
         added++;
       }
       // 后删：成员有、清单已删的基身份（只解绑，保留 VideoBook 本体）。
       for (final MapEntry<String, String> m in memberBaseByUid.entries) {
         if (manifestBases.contains(m.value)) continue;
-        await _db.removeFromCollection(collectionId, 'video', m.key);
+        await _db.removeFromCollection(collectionId, MediaKind.video, m.key);
         removed++;
       }
     });
@@ -450,7 +450,7 @@ class VideoBookRepository {
     await _db.deleteVideoBook(bookUid);
     // 统一合集：删条目时清其全部合集引用（逻辑外键无 DB cascade）；被清空的 playlist
     // 合集随之自删，避免留孤儿成员 / 合集卡数量虚高。
-    await _db.removeEntryFromAllCollections('video', bookUid);
+    await _db.removeEntryFromAllCollections(MediaKind.video, bookUid);
     // 删除传播（显式确认式）：仅当用户选「同步删除」才记 sync 删除墓碑，供同步发布到远端
     // 标记、其他设备逐条确认后也删。keepLocalOnly 不记，避免删本地→回写墓碑循环。best-effort。
     if (scope == DeleteScope.syncEverywhere) {

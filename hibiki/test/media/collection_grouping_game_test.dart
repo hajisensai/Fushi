@@ -22,7 +22,7 @@ CollectionOrderingItem<String> _game(
   int importedAt = 0,
 }) =>
     CollectionOrderingItem<String>(
-      mediaType: 'game',
+      mediaType: MediaKind.game,
       entryKey: id,
       importedAt: importedAt,
       payload: 'game:$id',
@@ -67,7 +67,7 @@ void main() {
       items: <CollectionOrderingItem<String>>[
         _game('same-key'),
         const CollectionOrderingItem<String>(
-          mediaType: 'video',
+          mediaType: MediaKind.video,
           entryKey: 'same-key',
           importedAt: 0,
           payload: 'video:same-key',
@@ -81,9 +81,9 @@ void main() {
 
     expect(groups, hasLength(2));
     expect(groups[0].collection, isNull);
-    expect(groups[0].coverItem.mediaType, 'game');
+    expect(groups[0].coverItem.mediaType, MediaKind.game);
     expect(groups[1].collection?.id, 1);
-    expect(groups[1].coverItem.mediaType, 'video');
+    expect(groups[1].coverItem.mediaType, MediaKind.video);
   });
 
   test('归属合集已删（孤儿引用）→ game 退化为散卡，不丢条目', () {

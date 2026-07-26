@@ -3,14 +3,17 @@
 /// UI v2 Phase E：旧 `groupAndSortShelfEntries`（按 [ShelfEntries].seriesId 折叠）
 /// 已删——分组唯一真相源是 `collection_grouping.dart` 的 `groupByCollections`
 /// （MediaCollections 引用表）。本文件只保留选择键解码与合集默认名推导。
+library;
+
+import 'package:hibiki_core/hibiki_core.dart';
 
 /// 一条书架 / 视频选择键解码后的稳定身份 `(mediaType, entryKey)`。
 /// 直接喂 [HibikiDatabase.addToCollection] / [HibikiDatabase.upsertShelfOrder]。
 class ShelfEntryRef {
   const ShelfEntryRef({required this.mediaType, required this.entryKey});
 
-  /// 媒体种类：'epub' | 'srt' | 'video'。
-  final String mediaType;
+  /// 媒体种类（合集/书架值域，落 DB 用 [MediaKind.dbValue]）。
+  final MediaKind mediaType;
 
   /// 稳定身份：本地 = bookKey / srtUid / videoBookUid。
   final String entryKey;
@@ -50,16 +53,16 @@ ShelfEntryRef? shelfSelectionToEntry(
   switch (surface) {
     case ShelfSelectionSurface.video:
       if (selectionKey.isEmpty) return null;
-      return ShelfEntryRef(mediaType: 'video', entryKey: selectionKey);
+      return ShelfEntryRef(mediaType: MediaKind.video, entryKey: selectionKey);
     case ShelfSelectionSurface.books:
       if (selectionKey.startsWith('srt_')) {
         final String uid = selectionKey.substring(4);
         if (uid.isEmpty) return null;
-        return ShelfEntryRef(mediaType: 'srt', entryKey: uid);
+        return ShelfEntryRef(mediaType: MediaKind.srt, entryKey: uid);
       }
       final String? bookKey = _parseHoshiBookKey(selectionKey);
       if (bookKey == null || bookKey.isEmpty) return null;
-      return ShelfEntryRef(mediaType: 'epub', entryKey: bookKey);
+      return ShelfEntryRef(mediaType: MediaKind.epub, entryKey: bookKey);
   }
 }
 

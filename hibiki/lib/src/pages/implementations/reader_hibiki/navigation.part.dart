@@ -153,9 +153,21 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     // 跨章回读（往回翻章 → 恢复完成）会把水位下调到更靠前那章章首，导致重读那章
     // 正文被再次计入统计（字数虚高）。改用 [sessionWatermarkAfterRestore] 取
     // max：前进/首次进入抬高水位（新内容照常计入），回读已读章不下调（不重复计）。
+    // BUG-1107（断点 B·幻象字数）：水位必须与**真实恢复锚**同源。精确字符锚恢复
+    // （收藏句 charAnchor 跳转 / 带 charOffset 的存档恢复）会把 `_initialProgress`
+    // 强制 0.0（锚优先、分数只作兜底），旧代码只看分数 → 水位落在章首，首个
+    // `_refreshProgress` 把章内恢复点之前的整段前缀误计成新读字数。改经
+    // [computeCharWatermark]：有效 `_initialCharOffset`（>=0）用「章首累计 + 锚」
+    // 推导绝对水位，无锚才退回分数口径（行为同旧）。
     _sessionMaxAbsoluteChars = sessionWatermarkAfterRestore(
       _sessionMaxAbsoluteChars,
-      _absoluteCharPosition(_initialProgress),
+      computeCharWatermark(
+        chapterCumulativeChars: _chapterCumulativeChars,
+        chapterCharCounts: _chapterCharCounts,
+        chapter: _currentChapter,
+        progress: _initialProgress,
+        charOffset: _initialCharOffset,
+      ),
     );
 
     // TODO-718: 连续模式恢复完成后，进入 WebView 的 settle reflow 会把裸 window.scrollY
@@ -1204,11 +1216,22 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     // BUG-1052：先把「上一次 tick 到现在」这段未满一个 tick 的窗口结算进
     // [_sessionReadingMs]（不停表），否则每次落库都漏掉最多一个 tick 间隔。
     _readingTimeTracker?.sampleNow();
-    if (_sessionCharsRead <= 0 || _book == null) return;
+    // BUG-1107（断点 A·时长丢失）：旧守卫 `_sessionCharsRead <= 0` 早退，EPUB 拒写
+    // **纯时长行**——页面 dispose 时最后一段若无新字数，这段时长直接蒸发；歌词/听书
+    // 模式全程不计字（`_refreshProgress` 在 lyricsMode 早退）⇒ 时长 100% 丢，统计页
+    // 呈现「2213 字 / 0 分钟 / 1619597 字·时⁻¹」。PDF（reader_pdf_page.dart）与漫画
+    // （manga_hibiki_page.dart）本就允许 `charsRead: 0` 的纯时长行，只有 EPUB 口径
+    // 分叉——这里对齐：无书才拒；无新字数时只要有已确认时长（>=1s，与 PDF 同口径的
+    // 生命周期抖动阈值；不足保留累计器留到下次 flush，不丢时长）也落库。
+    // 挂机膨胀不由「必须有字数」间接挡：时长增量在 [_readingTimeTracker]（BUG-892
+    // 的 `isContinuousReadingGap` gap 守卫）逐 tick 过滤，挂机窗口根本进不了
+    // [_sessionReadingMs]，这里无需重复设防。
+    if (_book == null) return;
+    if (_sessionCharsRead <= 0 && _sessionReadingMs < 1000) return;
     final DateTime now = DateTime.now();
     // BUG-1052：时长来自 [_readingTimeTracker] 的 gap 守卫增量累计，不再是
-    // `now - _sessionStartTime` 墙钟差。早退路径（无新字数）不消费累计器，这段时长
-    // 留到下次真正落库时一并计入——旧实现在这里蒸发。
+    // `now - _sessionStartTime` 墙钟差。早退路径（无新字数且时长未达阈值）不消费
+    // 累计器，这段时长留到下次真正落库时一并计入——旧实现在这里蒸发。
     final int elapsedMs = _sessionReadingMs;
     final String dateKey = statDateKey(now);
     final int charsRead = _sessionCharsRead;

@@ -9,6 +9,16 @@ part of '../reader_hibiki_history_page.dart';
 /// 这种行渲染时应保留有声书语义的耳机角标（与 `_audiobookBadge` 一致），而不是
 /// 纯字幕书的字幕角标。纯字幕书（无 EPUB 关联，[SrtBook.bookKey] 为空）仍用字幕
 /// 角标——消除特殊情况只在这一处判据。
+/// P4：SRT/有声书卡上屏名统一入口——过 display-title 门面应用编辑弹窗写入的
+/// override。门面按身份分派：bookKey 非空走 EPUB 共享身份 `hoshi://book/<key>`，
+/// 空串哨兵（standalone SRT）走 `hoshi://srtbook/<uid>`（BUG-1018 A3，与
+/// `_srtBookMediaItem` 同一套分派）。
+String _srtDisplayTitle(SrtBook book) => displayTitleForBook(
+      bookKey: book.bookKey,
+      srtUid: book.uid,
+      rawTitle: book.title,
+    );
+
 bool isEpubBackedAudiobookSrt(SrtBook book) {
   if (book.bookKey.isEmpty) return false;
   final List<String>? audioPaths = book.audioPaths;
@@ -296,10 +306,11 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     final bool added = await showAddToCollectionDialog(
       context: context,
       database: appModel.database,
-      mediaType: 'srt',
+      mediaType: MediaKind.srt,
       entryKey: book.uid,
+      // P4：用户看到的默认合集名用改名后的显示名（身份 entryKey 仍是 raw uid）。
       defaultNewName: deriveSeriesDefaultName(
-        <String>[book.title],
+        <String>[_srtDisplayTitle(book)],
         fallback: t.series_default_name,
       ),
     );
@@ -352,11 +363,13 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
 
   /// 该 epub bookKey 是否已折进某合集（= 合集成员，不作散卡单选/全选）。
   bool _isEpubCollectionMember(String? bookKey) =>
-      bookKey != null && _primaryCollectionByEntry.containsKey('epub|$bookKey');
+      bookKey != null &&
+      _primaryCollectionByEntry
+          .containsKey(MediaKind.epub.compositeKey(bookKey));
 
   /// 该 srt uid 是否已折进某合集。
   bool _isSrtCollectionMember(String uid) =>
-      _primaryCollectionByEntry.containsKey('srt|$uid');
+      _primaryCollectionByEntry.containsKey(MediaKind.srt.compositeKey(uid));
 
   void _selectAll() {
     _rebuild(() {
@@ -626,11 +639,14 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     // TODO-1125 B：预填合集默认名——收集选中条目标题（epub 用 mediaIdentifier、srt 用
     // 'srt_<uid>' 与选择键同编码匹配），经 deriveSeriesDefaultName 剥卷号取公共前缀；
     // 推导为空则兜底 t.series_default_name（「新系列」）。
+    // P4：标题过 display-title 门面——用户看到的默认合集名应是改名后的新名
+    // （合集成员身份 entryKey 仍是 raw，不受影响）。
     final List<String> memberTitles = <String>[
       for (final MediaItem item in _visibleEpubBooks)
-        if (_selectedKeys.contains(item.mediaIdentifier)) item.title,
+        if (_selectedKeys.contains(item.mediaIdentifier))
+          displayTitleForBook(item: item, rawTitle: item.title),
       for (final SrtBook book in _visibleSrtBooks)
-        if (_selectedKeys.contains('srt_${book.uid}')) book.title,
+        if (_selectedKeys.contains('srt_${book.uid}')) _srtDisplayTitle(book),
     ];
     final String defaultName = deriveSeriesDefaultName(
       memberTitles,
@@ -728,7 +744,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       final List<MediaCollectionItemRow> members =
           await db.getCollectionItems(id);
       for (final MediaCollectionItemRow m in members) {
-        await db.addToCollection(targetId, m.mediaType, m.entryKey);
+        // 原样搬家现有成员行：行值可能是对端未知种类，走 raw 版防静默丢成员。
+        await db.addToCollectionRaw(targetId, m.mediaType, m.entryKey);
       }
       await db.deleteMediaCollection(id);
     }
@@ -744,9 +761,10 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   }
 
   Future<void> _confirmDeleteSrtBook(SrtBook book) async {
+    // P4：确认弹窗给人看，书名过门面（删除本体仍按 raw bookKey/uid 身份执行）。
     final DeleteScope? scope = await _confirmMediaDelete(
       title: t.srt_delete_title,
-      message: t.srt_delete_confirm(title: book.title),
+      message: t.srt_delete_confirm(title: _srtDisplayTitle(book)),
     );
     if (scope == null) return;
 
@@ -800,9 +818,12 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
 
   Future<void> _confirmDeleteEpub(MediaItem item, String bookKey) async {
     Navigator.pop(context);
+    // P4：确认弹窗给人看，书名过门面（删除本体仍按 raw bookKey 身份执行）。
     final DeleteScope? scope = await _confirmMediaDelete(
       title: t.epub_delete_title,
-      message: t.srt_delete_confirm(title: item.title),
+      message: t.srt_delete_confirm(
+        title: displayTitleForBook(item: item, rawTitle: item.title),
+      ),
     );
     if (scope == null) return;
 
@@ -838,7 +859,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       adaptivePageRoute(
         context: context,
         builder: (_) => IllustrationsViewerPage(
-          bookTitle: item.title,
+          // P4：页标题给人看，过门面；插画定位身份走 extractDir/bookKey（raw）。
+          bookTitle: displayTitleForBook(item: item, rawTitle: item.title),
           extractDir: row.extractDir,
           bookKey: bookKey,
           database: appModel.database,

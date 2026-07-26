@@ -276,6 +276,9 @@ class _FakeReader implements ReaderAudiobookView {
   Future<void> onBoundarySkip(int delta) async {}
 
   @override
+  void onExplicitCueJump(AudioCue cue) {}
+
+  @override
   void onReaderCueChanged() {
     cueChangedCount++;
   }

@@ -29,6 +29,7 @@ import 'package:hibiki/src/media/video/scraper/poster_downloader.dart';
 import 'package:hibiki/src/media/video/scraper/poster_scraper_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
+import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_subtitle_attach.dart';
@@ -622,8 +623,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   }
 
   /// 一个可见视频是否已折进某合集（= 合集成员，不作散卡单选/全选）。
-  bool _isCollectionMember(String bookUid) =>
-      _primaryCollectionByEntry.containsKey('video|$bookUid');
+  bool _isCollectionMember(String bookUid) => _primaryCollectionByEntry
+      .containsKey(MediaKind.video.compositeKey(bookUid));
 
   void _selectAllVisible() {
     setState(() {
@@ -1100,7 +1101,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       final List<MediaCollectionItemRow> members =
           await db.getCollectionItems(id);
       for (final MediaCollectionItemRow m in members) {
-        await db.addToCollection(targetId, m.mediaType, m.entryKey);
+        // 原样搬家现有成员行：行值可能是对端未知种类，走 raw 版防静默丢成员。
+        await db.addToCollectionRaw(targetId, m.mediaType, m.entryKey);
       }
       await db.deleteMediaCollection(id);
     }
@@ -1598,7 +1600,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     final bool added = await showAddToCollectionDialog(
       context: context,
       database: ref.read(appProvider).database,
-      mediaType: 'video',
+      mediaType: MediaKind.video,
       entryKey: book.bookUid,
     );
     if (!added || !mounted) return;
@@ -1656,27 +1658,17 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     }
   }
 
-  /// 设置封面：选图 → 经共享 [setVideoCoverFromPickedFile]（拷盘 + 驱逐旧缓存 +
-  /// 落库）→ 刷新。与书架视频卡的换封面共用同一入口，封面与自动截图同目录。
+  /// 设置封面：统一封面服务（P3）——[MediaCoverService.pickCoverImage] 平台感知
+  /// 选图（移动端相册 / 桌面文件对话框），再经 [MediaCoverService.applyVideoCoverManual]
+  /// （拷盘 + 双键驱逐旧缓存 + 落库 + 记 manual 保护标记，批量刮削永不覆盖）→ 刷新。
   Future<void> _pickCover(VideoBookRow book) async {
-    final FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-    );
-    final String? pickedPath = result?.files.first.path;
-    if (pickedPath == null || !mounted) return;
-    await setVideoCoverFromPickedFile(
+    final File? picked = await MediaCoverService.pickCoverImage();
+    if (picked == null || !mounted) return;
+    await MediaCoverService.applyVideoCoverManual(
       repo: widget.repo,
       bookUid: book.bookUid,
-      pickedPath: pickedPath,
+      pickedPath: picked.path,
     );
-    // 手动设置的封面标记 manual，批量刮削永不覆盖（CoverMetaStore 目录 = 封面目录）。
-    try {
-      final Directory covers = await VideoStorage.coversDir();
-      await CoverMetaStore(covers)
-          .set(book.bookUid, const CoverMeta(origin: CoverOrigin.manual));
-    } catch (_) {
-      // 元数据记账失败不影响封面已设置（best-effort，保护性标记）。
-    }
     if (mounted) _refresh();
   }
 
@@ -1718,13 +1710,14 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 本视频所属合集的全部成员 uid（用于「同时应用到本合集全部 N 集」）；不属任何合集
   /// 时返回仅含自身的单元素列表。
   Future<List<String>> _collectionMemberUids(String bookUid) async {
-    final int? collectionId = _primaryCollectionByEntry['video|$bookUid'];
+    final int? collectionId =
+        _primaryCollectionByEntry[MediaKind.video.compositeKey(bookUid)];
     if (collectionId == null) return <String>[bookUid];
     final List<MediaCollectionItemRow> items =
         await ref.read(appProvider).database.getCollectionItems(collectionId);
     final List<String> uids = <String>[
       for (final MediaCollectionItemRow m in items)
-        if (m.mediaType == 'video') m.entryKey,
+        if (m.mediaType == MediaKind.video.dbValue) m.entryKey,
     ];
     return uids.isEmpty ? <String>[bookUid] : uids;
   }
@@ -1933,8 +1926,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                 // 整组存活、折叠出合集组）。
                 return keepMemberUnderTagFilter(
                   memberMatched: filter.contains(b.bookUid),
-                  primaryCollectionId:
-                      _primaryCollectionByEntry['video|${b.bookUid}'],
+                  primaryCollectionId: _primaryCollectionByEntry[
+                      MediaKind.video.compositeKey(b.bookUid)],
                   collectionFilter: collectionFilter,
                 );
               }).toList();
@@ -2096,7 +2089,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     HibikiDesignTokens tokens,
   ) {
     final int? collectionId =
-        _primaryCollectionByEntry['video|${hero.bookUid}'];
+        _primaryCollectionByEntry[MediaKind.video.compositeKey(hero.bookUid)];
     // 非合集上下文的 hero：命中主合集时标题行显示合集名、剧集名降到副标题行首，
     // 让用户一眼分清是哪部（用户实报裸剧集名 `S01E01` 认不出）；未命中合集保持
     // 原样显示剧集名。合集名取自与 [_primaryCollectionByEntry] 同批预取的
@@ -2288,7 +2281,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         membership.collectionType,
       );
       if (cid == null) continue; // 归属解析不到本地合集 → 散卡降级
-      final String key = 'video|${video.id}';
+      final String key = MediaKind.video.compositeKey(video.id);
       primaryByEntry[key] = cid;
       memberSortIndex[key] = membership.sortIndex;
     }
@@ -2372,7 +2365,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         <CollectionOrderingItem<_VideoSlot>>[
       for (final VideoBookRow book in books)
         CollectionOrderingItem<_VideoSlot>(
-          mediaType: 'video',
+          mediaType: MediaKind.video,
           entryKey: book.bookUid,
           importedAt: book.importedAt?.millisecondsSinceEpoch ?? 0,
           payload: _VideoSlot(local: book),
@@ -2381,7 +2374,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     for (int i = 0; i < remoteVideos.length; i++) {
       final RemoteVideoInfo video = remoteVideos[i];
       items.add(CollectionOrderingItem<_VideoSlot>(
-        mediaType: 'video',
+        mediaType: MediaKind.video,
         entryKey: video.id,
         importedAt: -1 - i,
         payload: _VideoSlot(remote: video),
@@ -3096,7 +3089,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                 await repo.getCollectionItems(collection.id);
             final List<VideoBookRow> rows = <VideoBookRow>[];
             for (final MediaCollectionItemRow m in members) {
-              if (m.mediaType != 'video') continue;
+              if (m.mediaType != MediaKind.video.dbValue) continue;
               final VideoBookRow? r = await repo.getByBookUid(m.entryKey);
               if (r != null) rows.add(r);
             }

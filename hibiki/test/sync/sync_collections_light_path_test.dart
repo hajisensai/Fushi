@@ -55,7 +55,7 @@ void main() {
 
     test('A 建合集 → 双方 runCollectionsOnly → B 收到合集', () async {
       final int id = await dbA.createMediaCollection('Fav');
-      await dbA.addToCollection(id, 'epub', 'book-1');
+      await dbA.addToCollection(id, MediaKind.epub, 'book-1');
 
       await orch(dbA, 'devA').runCollectionsOnly();
       await orch(dbB, 'devB').runCollectionsOnly();
@@ -92,7 +92,7 @@ void main() {
       );
 
       final int id = await db.createMediaCollection('Watch');
-      await db.addToCollection(id, 'video', 'video/x');
+      await db.addToCollection(id, MediaKind.video, 'video/x');
       // drift tableUpdates 是异步流，让事件跑完。
       await Future<void>.delayed(const Duration(milliseconds: 100));
       expect(collectionsSyncScheduledForTest, greaterThan(before),
@@ -100,7 +100,7 @@ void main() {
 
       uninstallCollectionsSyncWatcher();
       final int after = collectionsSyncScheduledForTest;
-      await db.addToCollection(id, 'video', 'video/y');
+      await db.addToCollection(id, MediaKind.video, 'video/y');
       await Future<void>.delayed(const Duration(milliseconds: 100));
       expect(collectionsSyncScheduledForTest, after,
           reason: 'uninstall 后不得再调度（测试 teardown / DB 关闭前的安全性）');

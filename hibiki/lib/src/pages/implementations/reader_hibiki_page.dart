@@ -37,6 +37,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_clip_text_render.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_clip_webview_render.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
     show extractAudioSegmentViaFfmpeg;
+import 'package:hibiki/src/media/display_title.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:hibiki/src/media/audiobook/reader_quick_settings_sheet.dart';
@@ -376,6 +377,44 @@ int sessionWatermarkAfterRestore(int currentWatermark, int restoreAbsolute) {
   return restoreAbsolute > currentWatermark
       ? restoreAbsolute
       : currentWatermark;
+}
+
+/// BUG-1107（断点 B·幻象字数）：恢复完成 / cue 跳转时，统计水位应落到的
+/// **绝对**字符位置（全书累计口径，与 `_absoluteCharPosition` 同基准）。
+///
+/// 旧实现只用 `_absoluteCharPosition(_initialProgress)` 播种水位，但精确字符锚
+/// 恢复（收藏句 charAnchor 跳转、带 charOffset 的存档恢复）会把 `_initialProgress`
+/// 强制 0.0（「精确锚优先；分数仅作兜底」）——水位于是落在**章首**，首个
+/// `_refreshProgress` 把章内恢复点之前的整段前缀误计成本次读到的新字数
+/// （用户截图「今日 2213 字 / 0 分钟 / 1619597 字·时⁻¹」的字数一半来源）。
+///
+/// 本函数让水位与**真实恢复锚同源**：
+/// - [charOffset] >= 0（charAnchor / 带精确锚的恢复 / cue 的 normCharStart）→
+///   `章首累计 + min(charOffset, 本章字数)`（clamp 防越章，零计数占位期安全）。
+/// - 否则退回分数口径 `章首累计 + round(progress × 本章字数)`（旧行为）。
+/// - [chapter] 越界 / 计数未就绪 → 0（水位取 max，0 恒为 no-op）。
+///
+/// 纯函数，供单测锁定四类恢复路径（正常分数恢复 / charAnchor 恢复 / cue 兜底 /
+/// 章内跳转）的水位语义。
+int computeCharWatermark({
+  required List<int> chapterCumulativeChars,
+  required List<int> chapterCharCounts,
+  required int chapter,
+  required double progress,
+  required int charOffset,
+}) {
+  if (chapterCumulativeChars.isEmpty ||
+      chapter < 0 ||
+      chapter >= chapterCumulativeChars.length ||
+      chapter >= chapterCharCounts.length) {
+    return 0;
+  }
+  final int chapterChars = chapterCharCounts[chapter];
+  if (charOffset >= 0) {
+    final int clamped = charOffset > chapterChars ? chapterChars : charOffset;
+    return chapterCumulativeChars[chapter] + clamped;
+  }
+  return chapterCumulativeChars[chapter] + (progress * chapterChars).round();
 }
 
 /// TODO-1229 v2：跨章去抖判据（纯函数，供单测锁定「一次连续手势=一次跨章」语义）。
@@ -2671,6 +2710,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   @override
   Future<void> onBoundarySkip(int delta) => _handleBoundarySkip(delta);
+
+  /// BUG-1107：显式跳句（skipToCue 漏斗：音量键 / 快捷键 / 底栏按钮 / 媒体通知）
+  /// → 把统计字数水位抬到目标 cue 位置，跳过的段落不算已读。实现见
+  /// audiobook.part.dart 的 [_handleExplicitCueJump]。
+  @override
+  void onExplicitCueJump(AudioCue cue) => _handleExplicitCueJump(cue);
 
   AudioCue? _lookupCue;
   ({int offset, int length, String text})? _cachedSelectionRange;
