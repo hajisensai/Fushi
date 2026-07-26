@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
 // ── 本地音频 ──────────────────────────────────────────────────────────────────
@@ -237,7 +238,13 @@ class RemoteBookInfo {
     this.collection,
     this.progressPercent = 0,
     this.progressUpdatedAtMs = 0,
+    this.kind = MediaKind.epub,
   });
+
+  /// 该书的媒体种类（BUG-1119）。additive wire 字段 `'kind'`：epub 缺省**不写键**
+  /// （旧书清单 wire 字节完全不变），缺失/未知一律回落 [MediaKind.epub]（旧 host
+  /// 兼容）。视频走独立 `/api/library/videos` 清单，天然 video，无此字段。
+  final MediaKind kind;
 
   /// host 端阅读进度百分比（0..100，来自 host `MediaItems.position/duration`，
   /// 与本地首页「继续」条目同源同算）；0 = 未读/旧 host 未带。additive 字段：
@@ -292,6 +299,7 @@ class RemoteBookInfo {
         if (collection != null) 'collection': collection!.toJson(),
         if (progressPercent > 0) 'progressPercent': progressPercent,
         if (progressUpdatedAtMs > 0) 'progressUpdatedAtMs': progressUpdatedAtMs,
+        if (kind != MediaKind.epub) 'kind': kind.dbValue,
       };
 
   RemoteBookInfo copyWith({
@@ -306,6 +314,7 @@ class RemoteBookInfo {
     RemoteCollectionMembership? collection,
     int? progressPercent,
     int? progressUpdatedAtMs,
+    MediaKind? kind,
   }) =>
       RemoteBookInfo(
         title: title,
@@ -321,6 +330,7 @@ class RemoteBookInfo {
         collection: collection ?? this.collection,
         progressPercent: progressPercent ?? this.progressPercent,
         progressUpdatedAtMs: progressUpdatedAtMs ?? this.progressUpdatedAtMs,
+        kind: kind ?? this.kind,
       );
 
   static RemoteBookInfo fromJson(Map<String, Object?> json) {
@@ -343,6 +353,8 @@ class RemoteBookInfo {
       progressPercent:
           _jsonNonNegativeInt(json['progressPercent']).clamp(0, 100),
       progressUpdatedAtMs: _jsonNonNegativeInt(json['progressUpdatedAtMs']),
+      // 缺失（旧 host）/未知（对端未来新增）一律回落 epub，绝不抛异常。
+      kind: MediaKind.tryParse(_jsonString(json['kind'])) ?? MediaKind.epub,
     );
   }
 }

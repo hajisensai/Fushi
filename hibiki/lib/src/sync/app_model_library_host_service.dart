@@ -353,6 +353,12 @@ class AppModelLibraryHostService
                 : null),
         progressPercent: progressByKey[r.bookKey]?.percent ?? 0,
         progressUpdatedAtMs: progressByKey[r.bookKey]?.updatedAtMs ?? 0,
+        // BUG-1119：EpubBooks 行都是可下载 EPUB，显式标 epub（srt-backed 有声书
+        // 的 EPUB 卡语义仍是 epub——与本地 _bookMediaKind 按 hoshi://book/ 身份判
+        // epub 一致，勿标成 srt 造成两端同书异 kind）。standalone SRT 书（身份
+        // hoshi://srtbook/<uid>，无 EpubBooks 行）今天不在本清单，进清单是独立
+        // follow-up。
+        kind: MediaKind.epub,
       );
     }).toList();
   }

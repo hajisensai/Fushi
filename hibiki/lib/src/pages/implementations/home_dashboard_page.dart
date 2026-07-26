@@ -805,7 +805,9 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     // 按最近活动时刻统一混排（「继续也走互联」）。
     for (final RemoteContinueCandidate c in _remoteContinue) {
       entries.add(_ContinueEntry(
-        kind: c.isVideo ? MediaKind.video : MediaKind.epub,
+        // BUG-1119：此前是 `c.isVideo ? video : epub` 二元降维——远端 SRT 书会被
+        // 抹成 epub、第三种媒体装不下（BUG-1111 的漏网消费点）。直读候选种类。
+        kind: c.kind,
         title: c.title,
         recentMs: c.recentMs,
         percent: c.percent,
