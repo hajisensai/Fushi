@@ -29,8 +29,8 @@ void main() {
       ),
     );
     final int c = await db.createMediaCollection('ネコぱら全集');
-    await db.addToCollection(c, 'game', '1753400000000001');
-    await db.addToCollection(c, 'epub', 'book-1'); // 混合合集：书成员共存。
+    await db.addToCollection(c, MediaKind.game, '1753400000000001');
+    await db.addToCollection(c, MediaKind.epub, 'book-1'); // 混合合集：书成员共存。
 
     final List<MediaCollectionItemRow> items = await db.getCollectionItems(c);
     expect(
@@ -45,22 +45,22 @@ void main() {
     expect(primary['game|1753400000000001'], c);
 
     // 幂等：重复加入不新增、不改序。
-    await db.addToCollection(c, 'game', '1753400000000001');
+    await db.addToCollection(c, MediaKind.game, '1753400000000001');
     expect((await db.getCollectionItems(c)).length, 2);
   });
 
   test('removeFromCollection game 成员 → 移空自删 + 重加回不被墓碑吞', () async {
     final HibikiDatabase db = await _openDb();
     final int c = await db.createMediaCollection('G');
-    await db.addToCollection(c, 'game', 'g1');
+    await db.addToCollection(c, MediaKind.game, 'g1');
 
-    await db.removeFromCollection(c, 'game', 'g1');
+    await db.removeFromCollection(c, MediaKind.game, 'g1');
     // 唯一成员移出 → 合集自删（与书/视频同语义）。
     expect(await db.getMediaCollectionById(c), isNull);
 
     // 重建同名合集再加回：addToCollection 自带墓碑清理，成员不被同步复活逻辑吞。
     final int c2 = await db.createMediaCollection('G');
-    await db.addToCollection(c2, 'game', 'g1');
+    await db.addToCollection(c2, MediaKind.game, 'g1');
     expect((await db.getCollectionItems(c2)).single.mediaType, 'game');
   });
 
@@ -76,7 +76,7 @@ void main() {
       ),
     );
     final int c = await db.createMediaCollection('X');
-    await db.addToCollection(c, 'game', 'g-keep');
+    await db.addToCollection(c, MediaKind.game, 'g-keep');
     await db.deleteMediaCollection(c);
 
     expect(await db.getAllCollectionItems(), isEmpty);

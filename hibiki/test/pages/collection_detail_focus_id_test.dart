@@ -131,7 +131,7 @@ void main() {
       (WidgetTester tester) async {
     await seedEpub('memberKey', '成员书');
     final int cid = await db.createMediaCollection('系列甲');
-    await db.addToCollection(cid, 'epub', 'memberKey');
+    await db.addToCollection(cid, MediaKind.epub, 'memberKey');
     final String mediaId = ReaderHibikiSource.mediaIdentifierFor('memberKey');
 
     tester.view.physicalSize = const Size(1400, 1200);

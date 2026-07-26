@@ -306,7 +306,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     final bool added = await showAddToCollectionDialog(
       context: context,
       database: appModel.database,
-      mediaType: 'srt',
+      mediaType: MediaKind.srt,
       entryKey: book.uid,
       // P4：用户看到的默认合集名用改名后的显示名（身份 entryKey 仍是 raw uid）。
       defaultNewName: deriveSeriesDefaultName(
@@ -363,11 +363,13 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
 
   /// 该 epub bookKey 是否已折进某合集（= 合集成员，不作散卡单选/全选）。
   bool _isEpubCollectionMember(String? bookKey) =>
-      bookKey != null && _primaryCollectionByEntry.containsKey('epub|$bookKey');
+      bookKey != null &&
+      _primaryCollectionByEntry
+          .containsKey(MediaKind.epub.compositeKey(bookKey));
 
   /// 该 srt uid 是否已折进某合集。
   bool _isSrtCollectionMember(String uid) =>
-      _primaryCollectionByEntry.containsKey('srt|$uid');
+      _primaryCollectionByEntry.containsKey(MediaKind.srt.compositeKey(uid));
 
   void _selectAll() {
     _rebuild(() {
@@ -742,7 +744,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       final List<MediaCollectionItemRow> members =
           await db.getCollectionItems(id);
       for (final MediaCollectionItemRow m in members) {
-        await db.addToCollection(targetId, m.mediaType, m.entryKey);
+        // 原样搬家现有成员行：行值可能是对端未知种类，走 raw 版防静默丢成员。
+        await db.addToCollectionRaw(targetId, m.mediaType, m.entryKey);
       }
       await db.deleteMediaCollection(id);
     }

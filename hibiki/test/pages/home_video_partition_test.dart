@@ -85,8 +85,8 @@ void main() {
       '某番剧',
       collectionType: 'playlist',
     );
-    await db.addToCollection(collectionId, 'video', 'video/ep1');
-    await db.addToCollection(collectionId, 'video', 'video/ep2');
+    await db.addToCollection(collectionId, MediaKind.video, 'video/ep1');
+    await db.addToCollection(collectionId, MediaKind.video, 'video/ep2');
 
     // 散卡 A：watch-stats = now（「最近」序里排最前，旧布局会压在合集行之上）。
     // 不设 lastPositionMs——带进度行的卡标题 y 会比无进度卡低，干扰同行断言。

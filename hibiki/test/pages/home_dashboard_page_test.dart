@@ -349,7 +349,7 @@ void main() {
       lastPositionMs: Value(60000),
     ));
     final int cid = await db.createMediaCollection('进击的巨人');
-    await db.addToCollection(cid, 'video', 'v1');
+    await db.addToCollection(cid, MediaKind.video, 'v1');
     await db.addActivityEvent(
       eventType: kActivityWatch,
       mediaType: kActivityMediaVideo,
@@ -459,7 +459,7 @@ void main() {
       lastPositionMs: Value(60000),
     ));
     final int cid = await db.createMediaCollection('进击的巨人');
-    await db.addToCollection(cid, 'video', 'v1');
+    await db.addToCollection(cid, MediaKind.video, 'v1');
     // 活动条命中同一本地 uid：点击也应走同一条续播路径。
     await db.addActivityEvent(
       eventType: kActivityWatch,
@@ -541,8 +541,8 @@ void main() {
     await db.upsertVideoBook(e1);
     await db.upsertVideoBook(e2);
     final int cid = await db.createMediaCollection('进击的巨人');
-    await db.addToCollection(cid, 'video', 'e1');
-    await db.addToCollection(cid, 'video', 'e2');
+    await db.addToCollection(cid, MediaKind.video, 'e1');
+    await db.addToCollection(cid, MediaKind.video, 'e2');
     return cid;
   }
 

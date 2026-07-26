@@ -308,7 +308,7 @@ class AppModelLibraryHostService
     final Map<String, Map<String, int>> tagAddedAtByKey =
         await _db.allBookTagAddedAtByName();
     final Map<String, Map<String, int>> tagTombByKey =
-        await _db.allTagTombstonesByName('epub');
+        await _db.allTagTombstonesByName(MediaKind.epub);
     final Map<String, RemoteCollectionMembership> membership =
         await _primaryCollectionMembership();
     // 阅读进度内联（首页仪表盘「继续」的互联数据源）：percent 与本地首页同源同算
@@ -346,9 +346,10 @@ class AppModelLibraryHostService
         // 合集成员键：epub 条目 mediaType='epub'、entryKey=bookKey（§2.3 任务5.1）。
         // srt-backed 有声书兜底：该书以 srt|uid 入合集时，epub|bookKey 会 miss，
         // 回退查 srt|uid（BUG-812）。散卡（两键都无）= null。
-        collection: membership['epub|${r.bookKey}'] ??
+        collection: membership[MediaKind.epub.compositeKey(r.bookKey)] ??
             (srtUidByBookKey[r.bookKey] != null
-                ? membership['srt|${srtUidByBookKey[r.bookKey]}']
+                ? membership[
+                    MediaKind.srt.compositeKey(srtUidByBookKey[r.bookKey]!)]
                 : null),
         progressPercent: progressByKey[r.bookKey]?.percent ?? 0,
         progressUpdatedAtMs: progressByKey[r.bookKey]?.updatedAtMs ?? 0,
@@ -898,7 +899,7 @@ class AppModelLibraryHostService
     final Map<String, Map<String, int>> tagAddedAtByUid =
         await _db.allVideoTagAddedAtByName();
     final Map<String, Map<String, int>> tagTombByUid =
-        await _db.allTagTombstonesByName('video');
+        await _db.allTagTombstonesByName(MediaKind.video);
     final Map<String, List<String>?> sidecarDirCache =
         <String, List<String>?>{};
     final List<RemoteVideoInfo> videos = <RemoteVideoInfo>[];
@@ -907,7 +908,7 @@ class AppModelLibraryHostService
         row,
         tags: tagsByVideoUid[row.bookUid] ?? const <String>[],
         // 合集成员键：video 条目 mediaType='video'、entryKey=bookUid（§2.3 任务5.1）。
-        collection: membership['video|${row.bookUid}'],
+        collection: membership[MediaKind.video.compositeKey(row.bookUid)],
         prefs: allPrefs,
         tagsAddedAt: tagAddedAtByUid[row.bookUid] ?? const <String, int>{},
         tagTombstones: tagTombByUid[row.bookUid] ?? const <String, int>{},

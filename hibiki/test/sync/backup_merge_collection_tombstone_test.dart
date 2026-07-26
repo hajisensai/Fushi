@@ -36,12 +36,12 @@ void main() {
 
     // Keep 合集：曾有 [a, b]，用户移出 b → 留成员墓碑 {Keep, epub, b}。
     final int keep = await cur.createMediaCollection('Keep');
-    await cur.addToCollection(keep, 'epub', 'a');
-    await cur.addToCollection(keep, 'epub', 'b');
-    await cur.removeFromCollection(keep, 'epub', 'b');
+    await cur.addToCollection(keep, MediaKind.epub, 'a');
+    await cur.addToCollection(keep, MediaKind.epub, 'b');
+    await cur.removeFromCollection(keep, MediaKind.epub, 'b');
     // Gone 合集：曾存在，用户删除 → 留合集级删除哨兵墓碑 {Gone}。
     final int gone = await cur.createMediaCollection('Gone');
-    await cur.addToCollection(gone, 'epub', 'g');
+    await cur.addToCollection(gone, MediaKind.epub, 'g');
     await cur.deleteMediaCollection(gone);
     await cur.close();
 
@@ -51,15 +51,15 @@ void main() {
     final HibikiDatabase src = HibikiDatabase(srcDir.path);
     // Keep：备份仍有 b（应被墓碑挡下）+ 新成员 c（无墓碑，应正常合入）。
     final int sKeep = await src.createMediaCollection('Keep');
-    await src.addToCollection(sKeep, 'epub', 'a');
-    await src.addToCollection(sKeep, 'epub', 'b');
-    await src.addToCollection(sKeep, 'epub', 'c');
+    await src.addToCollection(sKeep, MediaKind.epub, 'a');
+    await src.addToCollection(sKeep, MediaKind.epub, 'b');
+    await src.addToCollection(sKeep, MediaKind.epub, 'c');
     // Gone：备份仍有该合集（应整个被删除墓碑挡下）。
     final int sGone = await src.createMediaCollection('Gone');
-    await src.addToCollection(sGone, 'epub', 'g');
+    await src.addToCollection(sGone, MediaKind.epub, 'g');
     // New：全新合集（应照常合入）。
     final int sNew = await src.createMediaCollection('New');
-    await src.addToCollection(sNew, 'epub', 'n');
+    await src.addToCollection(sNew, MediaKind.epub, 'n');
 
     final Directory zipDir = await tempDir('mg_tomb_zip_');
     addTearDown(() => cleanupTempDir(zipDir));

@@ -210,9 +210,9 @@ extension _ReaderMining on _ReaderHibikiPageState {
     if (primaryByEntry.isEmpty) return null;
     final String? srtUid = _srtBookUid;
     final int? collectionId = srtUid != null
-        ? (primaryByEntry['srt|$srtUid'] ??
-            primaryByEntry['epub|${widget.bookKey}'])
-        : primaryByEntry['epub|${widget.bookKey}'];
+        ? (primaryByEntry[MediaKind.srt.compositeKey(srtUid)] ??
+            primaryByEntry[MediaKind.epub.compositeKey(widget.bookKey)])
+        : primaryByEntry[MediaKind.epub.compositeKey(widget.bookKey)];
     if (collectionId == null) return null;
     return (await db.getMediaCollectionById(collectionId))?.name;
   }

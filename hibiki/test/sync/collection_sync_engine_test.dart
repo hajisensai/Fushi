@@ -42,9 +42,9 @@ void main() {
   Future<void> seedConverged() async {
     final int c =
         await a.db.createMediaCollection('S', collectionType: 'playlist');
-    await a.db.addToCollection(c, 'video', 'v1');
-    await a.db.addToCollection(c, 'video', 'v2');
-    await a.db.addToCollection(c, 'video', 'v3');
+    await a.db.addToCollection(c, MediaKind.video, 'v1');
+    await a.db.addToCollection(c, MediaKind.video, 'v2');
+    await a.db.addToCollection(c, MediaKind.video, 'v3');
     await tick();
     await a.sync(cloud);
     await b.sync(cloud);
@@ -92,7 +92,7 @@ void main() {
 
     final int cA =
         (await a.db.getMediaCollectionByNaturalKey('S', 'playlist'))!.id;
-    await a.db.removeFromCollection(cA, 'video', 'v2');
+    await a.db.removeFromCollection(cA, MediaKind.video, 'v2');
     await tick();
     await a.sync(cloud);
     await b.sync(cloud);
@@ -114,7 +114,7 @@ void main() {
     // A 移出 v2 并传播到 B。
     final int cA =
         (await a.db.getMediaCollectionByNaturalKey('S', 'playlist'))!.id;
-    await a.db.removeFromCollection(cA, 'video', 'v2');
+    await a.db.removeFromCollection(cA, MediaKind.video, 'v2');
     await tick();
     await a.sync(cloud);
     await b.sync(cloud);
@@ -124,7 +124,7 @@ void main() {
     await tick();
     final int cB =
         (await b.db.getMediaCollectionByNaturalKey('S', 'playlist'))!.id;
-    await b.db.addToCollection(cB, 'video', 'v2');
+    await b.db.addToCollection(cB, MediaKind.video, 'v2');
     await tick();
     await b.sync(cloud);
     await a.sync(cloud);
@@ -142,9 +142,9 @@ void main() {
 
   test('两端各自新建同名合集 → 自然键合一（成员并集，同序收敛）', () async {
     final int cA = await a.db.createMediaCollection('Fav');
-    await a.db.addToCollection(cA, 'epub', 'x');
+    await a.db.addToCollection(cA, MediaKind.epub, 'x');
     final int cB = await b.db.createMediaCollection('Fav');
-    await b.db.addToCollection(cB, 'epub', 'y');
+    await b.db.addToCollection(cB, MediaKind.epub, 'y');
     await tick();
 
     await a.sync(cloud);
@@ -189,7 +189,7 @@ void main() {
     await tick();
     final int cB =
         await b.db.createMediaCollection('S', collectionType: 'playlist');
-    await b.db.addToCollection(cB, 'video', 'v9');
+    await b.db.addToCollection(cB, MediaKind.video, 'v9');
     await tick();
     await b.sync(cloud);
     await a.sync(cloud);
@@ -200,13 +200,13 @@ void main() {
   test('移空自删的移出知识进清单：对端不复活刚移出的最后一个成员', () async {
     // A 只有单成员合集；B 端同合集有两个成员。
     final int cA = await a.db.createMediaCollection('Solo');
-    await a.db.addToCollection(cA, 'epub', 'x');
+    await a.db.addToCollection(cA, MediaKind.epub, 'x');
     await tick();
     await a.sync(cloud);
     await b.sync(cloud);
     final int cB =
         (await b.db.getMediaCollectionByNaturalKey('Solo', 'collection'))!.id;
-    await b.db.addToCollection(cB, 'epub', 'y');
+    await b.db.addToCollection(cB, MediaKind.epub, 'y');
     await tick();
     await b.sync(cloud);
     await a.sync(cloud); // A 收敛到 {x, y}。
@@ -216,8 +216,8 @@ void main() {
     await tick();
     final int cA2 =
         (await a.db.getMediaCollectionByNaturalKey('Solo', 'collection'))!.id;
-    await a.db.removeFromCollection(cA2, 'epub', 'x');
-    await a.db.removeFromCollection(cA2, 'epub', 'y');
+    await a.db.removeFromCollection(cA2, MediaKind.epub, 'x');
+    await a.db.removeFromCollection(cA2, MediaKind.epub, 'y');
     expect(await a.db.getMediaCollectionByNaturalKey('Solo', 'collection'),
         isNull);
     await tick();
@@ -665,7 +665,7 @@ void main() {
     addTearDown(db.close);
     final int cid =
         await db.createMediaCollection('C', collectionType: 'collection');
-    await db.addToCollection(cid, 'video', 'u1');
+    await db.addToCollection(cid, MediaKind.video, 'u1');
     final int t = await db.createTag('日语', 0xFF0000FF);
     await db.addTagToCollection(cid, t);
 
@@ -679,7 +679,7 @@ void main() {
     addTearDown(db2.close);
     final int cid2 =
         await db2.createMediaCollection('C', collectionType: 'collection');
-    await db2.addToCollection(cid2, 'video', 'u1');
+    await db2.addToCollection(cid2, MediaKind.video, 'u1');
     await applyCollectionLocalChanges(
       db2,
       const CollectionLocalChanges(<CollectionManifestEntry>[

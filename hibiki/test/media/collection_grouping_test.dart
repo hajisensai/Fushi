@@ -17,7 +17,7 @@ MediaCollectionRow _col(int id, String name) => MediaCollectionRow(
 
 CollectionOrderingItem<String> _item(String key, int importedAt) =>
     CollectionOrderingItem<String>(
-      mediaType: 'video',
+      mediaType: MediaKind.video,
       entryKey: key,
       importedAt: importedAt,
       payload: key,

@@ -169,8 +169,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Future<void> _removeEpisode(VideoBookRow ep) async {
     if (!await confirmDetailRemoveMember()) return;
     if (!mounted) return;
-    await widget.database
-        .removeFromCollection(widget.collection.id, 'video', ep.bookUid);
+    await widget.database.removeFromCollection(
+        widget.collection.id, MediaKind.video, ep.bookUid);
     if (!mounted) return;
     widget.onChanged();
     HibikiToast.show(msg: t.collection_member_removed);

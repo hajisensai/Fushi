@@ -1053,7 +1053,7 @@ class SyncOrchestrator {
             priorEntry?.tagsAddedAt ?? const <String, int>{},
           );
           final Map<String, int> mergedTagTombstones = _unionMaxIntMap(
-            await _db.tagTombstonesByName(v.bookUid, 'video'),
+            await _db.tagTombstonesByName(v.bookUid, MediaKind.video),
             priorEntry?.tagTombstones ?? const <String, int>{},
           );
 

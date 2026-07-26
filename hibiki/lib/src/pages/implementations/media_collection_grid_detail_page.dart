@@ -121,11 +121,17 @@ class _MediaCollectionGridDetailPageState
     final Map<String, ({String title, int importedAt})> meta =
         <String, ({String title, int importedAt})>{
       for (final EpubBookRow r in epubs)
-        'epub|${r.bookKey}': (title: r.title, importedAt: r.importedAt),
+        MediaKind.epub.compositeKey(r.bookKey): (
+          title: r.title,
+          importedAt: r.importedAt
+        ),
       for (final SrtBookRow r in srts)
-        'srt|${r.uid}': (title: r.title, importedAt: r.importedAt),
+        MediaKind.srt.compositeKey(r.uid): (
+          title: r.title,
+          importedAt: r.importedAt
+        ),
       for (final GalgameRow r in games)
-        'game|${r.id}': (
+        MediaKind.game.compositeKey(r.id): (
           title: GalgameCustomData.decode(r.customDataJson).name ?? r.name,
           importedAt: r.addedAt,
         ),
@@ -190,7 +196,8 @@ class _MediaCollectionGridDetailPageState
   }
 
   Future<void> _removeMember(MediaCollectionItemRow row) async {
-    await widget.database.removeFromCollection(
+    // 按成员行值移出（行值可能是对端未知种类）→ raw 版，保证移得掉。
+    await widget.database.removeFromCollectionRaw(
         widget.collection.id, row.mediaType, row.entryKey);
     if (!mounted) return;
     widget.onChanged();

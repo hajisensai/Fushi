@@ -737,7 +737,7 @@ class SyncManager {
     final Map<String, int> tagAddedAt =
         await _db.bookTagAddedAtByName(book.bookKey);
     final Map<String, int> tagTombstones =
-        await _db.tagTombstonesByName(book.bookKey, 'epub');
+        await _db.tagTombstonesByName(book.bookKey, MediaKind.epub);
     if (tagAddedAt.isNotEmpty || tagTombstones.isNotEmpty) {
       await _backend
           .putJsonAsset(folderId, kSyncBookTagsAssetName, <String, Object?>{

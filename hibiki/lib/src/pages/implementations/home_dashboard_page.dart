@@ -707,7 +707,8 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         <int, List<VideoBookRow>>{};
     final List<VideoBookRow> standaloneVideos = <VideoBookRow>[];
     for (final VideoBookRow v in _videos) {
-      final int? cid = _primaryCollectionByEntry['video|${v.bookUid}'];
+      final int? cid =
+          _primaryCollectionByEntry[MediaKind.video.compositeKey(v.bookUid)];
       if (cid == null) {
         standaloneVideos.add(v);
       } else {
@@ -867,7 +868,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         title: v.title,
         recentMs: addedMs,
         collectionName: statCollectionName(
-          'video|${v.bookUid}',
+          MediaKind.video.compositeKey(v.bookUid),
           _primaryCollectionByEntry,
           _collectionNamesById,
         ),
@@ -893,11 +894,13 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   String _bookCollectionKey(MediaItem item) {
     final String? bookKey =
         ReaderHibikiSource.parseBookKey(item.mediaIdentifier);
-    if (bookKey != null) return 'epub|$bookKey';
+    if (bookKey != null) return MediaKind.epub.compositeKey(bookKey);
     final String? srtUid =
         ReaderHibikiSource.parseSrtBookUid(item.mediaIdentifier);
-    if (srtUid != null) return 'srt|$srtUid';
-    return 'epub|${item.mediaIdentifier}';
+    if (srtUid != null) return MediaKind.srt.compositeKey(srtUid);
+    // 有意的 miss-key 兜底：entryKey 是完整 hoshi:// 标识而非 bookKey，
+    // 查不中合集，安全降级为散卡。
+    return MediaKind.epub.compositeKey(item.mediaIdentifier);
   }
 
   /// 视频行 → 继续卡条目（散卡与合集续播目标共用）：进度到集粒度（VideoBooks
@@ -931,8 +934,12 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   VideoBookRow? _collectionResumeTarget(List<VideoBookRow> members) {
     final List<VideoBookRow> sorted = List<VideoBookRow>.of(members)
       ..sort((VideoBookRow a, VideoBookRow b) {
-        final int ai = _memberSortIndex['video|${a.bookUid}'] ?? 1 << 30;
-        final int bi = _memberSortIndex['video|${b.bookUid}'] ?? 1 << 30;
+        final int ai =
+            _memberSortIndex[MediaKind.video.compositeKey(a.bookUid)] ??
+                1 << 30;
+        final int bi =
+            _memberSortIndex[MediaKind.video.compositeKey(b.bookUid)] ??
+                1 << 30;
         if (ai != bi) return ai.compareTo(bi);
         return a.bookUid.compareTo(b.bookUid);
       });
@@ -1122,7 +1129,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   /// [_scheduleReload] 自动重查。测试经 [HomeDashboardPage.openVideoOverride] 注入替身。
   Future<void> _openLocalVideo(String bookUid) async {
     final int? playlistCollectionId =
-        _primaryCollectionByEntry['video|$bookUid'];
+        _primaryCollectionByEntry[MediaKind.video.compositeKey(bookUid)];
     final Future<void> Function(
       BuildContext context,
       VideoBookRepository repo,
@@ -1388,7 +1395,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     final String? bookKey = _bookKeyByTitle[title];
     if (bookKey == null) return display;
     return collectionQualifiedTitle(
-      entryKey: 'epub|$bookKey',
+      entryKey: MediaKind.epub.compositeKey(bookKey),
       rawTitle: display,
       primaryByEntry: _primaryCollectionByEntry,
       collectionNamesById: _collectionNamesById,
@@ -1444,7 +1451,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
           title: e.value.uid == null
               ? e.key
               : collectionQualifiedTitle(
-                  entryKey: 'video|${e.value.uid}',
+                  entryKey: MediaKind.video.compositeKey(e.value.uid!),
                   rawTitle: e.key,
                   primaryByEntry: _primaryCollectionByEntry,
                   collectionNamesById: _collectionNamesById,
@@ -1699,12 +1706,12 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         // 书事件的 mediaKey 无类型标记：epub 键优先，standalone SRT（mediaKey=
         // uid）回退 srt 键；都不中就是散卡。
         final String? collectionName = statCollectionName(
-              'epub|$bookKey',
+              MediaKind.epub.compositeKey(bookKey),
               _primaryCollectionByEntry,
               _collectionNamesById,
             ) ??
             statCollectionName(
-              'srt|$bookKey',
+              MediaKind.srt.compositeKey(bookKey),
               _primaryCollectionByEntry,
               _collectionNamesById,
             );
@@ -1716,7 +1723,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       final String? uid = entry.mediaKey;
       if (uid != null && uid.isNotEmpty) {
         return collectionQualifiedTitle(
-          entryKey: 'video|$uid',
+          entryKey: MediaKind.video.compositeKey(uid),
           rawTitle: entry.title,
           primaryByEntry: _primaryCollectionByEntry,
           collectionNamesById: _collectionNamesById,

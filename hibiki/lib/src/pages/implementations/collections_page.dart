@@ -509,7 +509,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   Future<int?> _resolveVideoPlaylistCollectionId(String bookUid) async {
     final Map<String, int> primaryByEntry =
         await appModel.database.getPrimaryCollectionIdByEntry();
-    return primaryByEntry['video|$bookUid'];
+    return primaryByEntry[MediaKind.video.compositeKey(bookUid)];
   }
 
   Future<int?> _resolveVideoFavoriteStartMs(

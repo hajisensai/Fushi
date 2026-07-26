@@ -113,7 +113,7 @@ void main() {
       title: Value('Local Ep1'),
       videoPath: Value('/abs/ep1.mp4'),
     ));
-    await db.addToCollection(cid, 'video', 'video/local-ep1');
+    await db.addToCollection(cid, MediaKind.video, 'video/local-ep1');
 
     // 远端有归属同一合集的第二集。
     await tester.pumpWidget(buildApp(_ListFakeRemoteVideoClient(

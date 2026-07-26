@@ -1166,7 +1166,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final String? bookKey = _bookKeyByTitle[title];
     if (bookKey == null) return null;
     return statCollectionName(
-      'epub|$bookKey',
+      MediaKind.epub.compositeKey(bookKey),
       _primaryCollectionByEntry,
       _collectionNamesById,
     );

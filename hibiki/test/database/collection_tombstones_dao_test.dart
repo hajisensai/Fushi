@@ -27,8 +27,8 @@ void main() {
   test('reorderCollectionItems 同事务 bump orderUpdatedAt', () async {
     final HibikiDatabase db = await _openDb();
     final int c = await db.createMediaCollection('C');
-    await db.addToCollection(c, 'video', 'v1');
-    await db.addToCollection(c, 'video', 'v2');
+    await db.addToCollection(c, MediaKind.video, 'v1');
+    await db.addToCollection(c, MediaKind.video, 'v2');
     expect((await db.getMediaCollectionById(c))!.orderUpdatedAt, 0,
         reason: '加成员不 bump（只有真实拖序才算手动排序）');
 
@@ -48,11 +48,11 @@ void main() {
     final HibikiDatabase db = await _openDb();
     final int c =
         await db.createMediaCollection('C', collectionType: 'playlist');
-    await db.addToCollection(c, 'video', 'v1');
-    await db.addToCollection(c, 'video', 'v2');
+    await db.addToCollection(c, MediaKind.video, 'v1');
+    await db.addToCollection(c, MediaKind.video, 'v2');
 
     final int before = DateTime.now().millisecondsSinceEpoch;
-    await db.removeFromCollection(c, 'video', 'v1');
+    await db.removeFromCollection(c, MediaKind.video, 'v1');
     final List<CollectionMemberTombstoneRow> tombs =
         await _tombsFor(db, 'C', 'playlist');
     expect(tombs, hasLength(1), reason: '移出必须留墓碑，否则对端并集复活');
@@ -61,7 +61,7 @@ void main() {
     expect(tombs.single.removedAt, greaterThanOrEqualTo(before));
 
     // 重新加入 → 同键墓碑清除（允许重加，防复活不变成禁重加）。
-    await db.addToCollection(c, 'video', 'v1');
+    await db.addToCollection(c, MediaKind.video, 'v1');
     expect(await _tombsFor(db, 'C', 'playlist'), isEmpty);
     expect((await db.getCollectionItems(c)).map((m) => m.entryKey),
         containsAll(<String>['v1', 'v2']));
@@ -70,8 +70,8 @@ void main() {
   test('移空自删只留成员墓碑，不写合集级哨兵', () async {
     final HibikiDatabase db = await _openDb();
     final int c = await db.createMediaCollection('C');
-    await db.addToCollection(c, 'video', 'v1');
-    await db.removeFromCollection(c, 'video', 'v1');
+    await db.addToCollection(c, MediaKind.video, 'v1');
+    await db.removeFromCollection(c, MediaKind.video, 'v1');
     expect(await db.getMediaCollectionById(c), isNull, reason: '移空自删');
     final List<CollectionMemberTombstoneRow> tombs =
         await _tombsFor(db, 'C', 'collection');
@@ -89,9 +89,9 @@ void main() {
   test('deleteMediaCollection 写合集级哨兵 + 清残留成员墓碑', () async {
     final HibikiDatabase db = await _openDb();
     final int c = await db.createMediaCollection('C');
-    await db.addToCollection(c, 'video', 'v1');
-    await db.addToCollection(c, 'video', 'v2');
-    await db.removeFromCollection(c, 'video', 'v1'); // 留一条成员墓碑。
+    await db.addToCollection(c, MediaKind.video, 'v1');
+    await db.addToCollection(c, MediaKind.video, 'v2');
+    await db.removeFromCollection(c, MediaKind.video, 'v1'); // 留一条成员墓碑。
 
     final int before = DateTime.now().millisecondsSinceEpoch;
     await db.deleteMediaCollection(c);
@@ -107,7 +107,7 @@ void main() {
   test('createMediaCollection 清同自然键合集级墓碑（重建撤销删除）', () async {
     final HibikiDatabase db = await _openDb();
     final int c = await db.createMediaCollection('C');
-    await db.addToCollection(c, 'video', 'v1');
+    await db.addToCollection(c, MediaKind.video, 'v1');
     await db.deleteMediaCollection(c);
     expect(await _tombsFor(db, 'C', 'collection'), hasLength(1));
 
@@ -118,7 +118,7 @@ void main() {
     // 不同 collectionType 是不同自然键：playlist 的墓碑不受 collection 重建影响。
     final int p =
         await db.createMediaCollection('P', collectionType: 'playlist');
-    await db.addToCollection(p, 'video', 'v1');
+    await db.addToCollection(p, MediaKind.video, 'v1');
     await db.deleteMediaCollection(p);
     await db.createMediaCollection('P'); // 默认 collection 类型 ≠ playlist。
     expect(await _tombsFor(db, 'P', 'playlist'), hasLength(1),

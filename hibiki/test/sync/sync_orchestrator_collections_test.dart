@@ -100,9 +100,9 @@ void main() {
   /// A/B 收敛于合集 Fav{x,y,z}。
   Future<void> seedConverged() async {
     final int c = await a.db.createMediaCollection('Fav');
-    await a.db.addToCollection(c, 'epub', 'x');
-    await a.db.addToCollection(c, 'epub', 'y');
-    await a.db.addToCollection(c, 'epub', 'z');
+    await a.db.addToCollection(c, MediaKind.epub, 'x');
+    await a.db.addToCollection(c, MediaKind.epub, 'y');
+    await a.db.addToCollection(c, MediaKind.epub, 'z');
     await tick();
     await a.sync();
     await b.sync();
@@ -133,10 +133,10 @@ void main() {
       // A 移出 x、B 移出 z（并发）。
       final int cA =
           (await a.db.getMediaCollectionByNaturalKey('Fav', 'collection'))!.id;
-      await a.db.removeFromCollection(cA, 'epub', 'x');
+      await a.db.removeFromCollection(cA, MediaKind.epub, 'x');
       final int cB =
           (await b.db.getMediaCollectionByNaturalKey('Fav', 'collection'))!.id;
-      await b.db.removeFromCollection(cB, 'epub', 'z');
+      await b.db.removeFromCollection(cB, MediaKind.epub, 'z');
       await tick();
 
       // 各自发布到自己那份文件（互不覆盖）。
@@ -183,7 +183,7 @@ void main() {
         () async {
       // B 建 Fav{x} 并发布自己那份（collections-devB.json = Fav{x}）。
       final int c = await b.db.createMediaCollection('Fav');
-      await b.db.addToCollection(c, 'epub', 'x');
+      await b.db.addToCollection(c, MediaKind.epub, 'x');
       await tick();
       await b.sync();
       expect(await b.orderOf('Fav'), <String>['x']);
@@ -229,7 +229,7 @@ void main() {
       // A 移出 x 并发布（tomb x），B **不同步**（devB 仍列 x 活）。
       final int cA =
           (await a.db.getMediaCollectionByNaturalKey('Fav', 'collection'))!.id;
-      await a.db.removeFromCollection(cA, 'epub', 'x');
+      await a.db.removeFromCollection(cA, MediaKind.epub, 'x');
       await tick();
       await a.sync();
       expect(await a.orderOf('Fav'), <String>['y', 'z']);
@@ -252,7 +252,7 @@ void main() {
       // A 移出 x、发布；B 同步（应用移出）。
       final int cA =
           (await a.db.getMediaCollectionByNaturalKey('Fav', 'collection'))!.id;
-      await a.db.removeFromCollection(cA, 'epub', 'x');
+      await a.db.removeFromCollection(cA, MediaKind.epub, 'x');
       await tick();
       await a.sync();
       await b.sync();
@@ -262,7 +262,7 @@ void main() {
       await tick();
       final int cB =
           (await b.db.getMediaCollectionByNaturalKey('Fav', 'collection'))!.id;
-      await b.db.addToCollection(cB, 'epub', 'x');
+      await b.db.addToCollection(cB, MediaKind.epub, 'x');
       await tick();
       await b.sync();
       await a.sync();
@@ -277,7 +277,7 @@ void main() {
   group('finding2 corrupt manifest resilience (no whole-run abort)', () {
     test('own file corrupt: self-heal republish, does not abort', () async {
       final int c = await a.db.createMediaCollection('Fav');
-      await a.db.addToCollection(c, 'epub', 'x');
+      await a.db.addToCollection(c, MediaKind.epub, 'x');
       await tick();
       await a.sync();
 
@@ -305,13 +305,13 @@ void main() {
     test('peer file corrupt: skip that file + continue (no abort)', () async {
       // B 发布 Fav{y} 到自己那份。
       final int cB = await b.db.createMediaCollection('Fav');
-      await b.db.addToCollection(cB, 'epub', 'y');
+      await b.db.addToCollection(cB, MediaKind.epub, 'y');
       await tick();
       await b.sync();
 
       // A 有 Fav{x}。损坏 B 那份（A 视角是对端文件）。
       final int cA = await a.db.createMediaCollection('Fav');
-      await a.db.addToCollection(cA, 'epub', 'x');
+      await a.db.addToCollection(cA, MediaKind.epub, 'x');
       await tick();
       await store.putJsonAsset(
           kSyncCollectionsNamespace, 'collections-devB.json', null);
@@ -355,7 +355,7 @@ void main() {
 
       // A 有本地 Fav{x}，同步：吸收旧单文件知识（legacy 成员并入）后删除旧单文件。
       final int cA = await a.db.createMediaCollection('Fav');
-      await a.db.addToCollection(cA, 'epub', 'x');
+      await a.db.addToCollection(cA, MediaKind.epub, 'x');
       await tick();
       await a.sync();
 

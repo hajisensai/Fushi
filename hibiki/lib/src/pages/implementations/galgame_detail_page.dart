@@ -17,7 +17,7 @@ import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_merge.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
 import 'package:hibiki/src/pages/implementations/games_library_page.dart'
-    show formatGalgameDate, galgamePlayStatusLabel, kGameCollectionMediaType;
+    show formatGalgameDate, galgamePlayStatusLabel;
 import 'package:hibiki/src/utils/cover_image.dart' show evictLocalCoverCache;
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki/src/pages/implementations/stat_shared.dart'
@@ -166,13 +166,13 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     await _load();
   }
 
-  /// 「加入合集」：mediaType='game'、entryKey=`galgames.id`（本机局域身份，见
-  /// [kGameCollectionMediaType]），与库页卡片菜单同一 DAO 路径。
+  /// 「加入合集」：mediaType=[MediaKind.game]、entryKey=`galgames.id`（本机局域
+  /// 身份），与库页卡片菜单同一 DAO 路径。
   Future<void> _addToCollection(GalgameEntry game) async {
     await showAddToCollectionDialog(
       context: context,
       database: _appModel.database,
-      mediaType: kGameCollectionMediaType,
+      mediaType: MediaKind.game,
       entryKey: game.id,
       defaultNewName: game.displayName,
     );

@@ -85,8 +85,8 @@ void main() {
       '某番剧',
       collectionType: 'playlist',
     );
-    await db.addToCollection(collectionId, 'video', 'video/ep1');
-    await db.addToCollection(collectionId, 'video', 'video/ep2');
+    await db.addToCollection(collectionId, MediaKind.video, 'video/ep1');
+    await db.addToCollection(collectionId, MediaKind.video, 'video/ep2');
   });
 
   tearDown(() async {

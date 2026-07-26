@@ -29,11 +29,11 @@ import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart'
 import 'package:hibiki/src/utils/cover_image.dart' show evictLocalCoverCache;
 import 'package:hibiki/utils.dart';
 
-/// 游戏进合集（统一媒体库）：`media_collection_items.mediaType` 的游戏值。
-/// entryKey = `galgames.id`（添加时刻微秒时间戳字符串）——**游戏本机局域身份**：
-/// 与 exe 路径同为本机事实，跨端同步时对端无对应 `galgames` 行则该成员静默忽略
-/// （合集同步引擎对 mediaType/entryKey 透传，不解引用）。
-const String kGameCollectionMediaType = 'game';
+// 游戏进合集（统一媒体库）：mediaType 用 [MediaKind.game]（P5 枚举地基，取代旧
+// 局部常量 kGameCollectionMediaType）。entryKey = `galgames.id`（添加时刻微秒
+// 时间戳字符串）——**游戏本机局域身份**：与 exe 路径同为本机事实，跨端同步时
+// 对端无对应 `galgames` 行则该成员静默忽略（合集同步引擎对 mediaType/entryKey
+// 透传，不解引用）。
 
 /// 首页「游戏」tab：galgame 库。展示用户添加的游戏网格，点击一个游戏经
 /// [GalHookSessionController.launchGame]（引擎-hook launch 路径）拉起并注入。
@@ -327,7 +327,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     final bool added = await showAddToCollectionDialog(
       context: context,
       database: _appModel.database,
-      mediaType: kGameCollectionMediaType,
+      mediaType: MediaKind.game,
       entryKey: game.id,
       defaultNewName: game.displayName,
     );
@@ -383,7 +383,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 合集详情页「打开成员」：game 成员进详情页（含启动按钮，复用库页带再入守卫的
   /// [_launchGame]）；其它 mediaType 非本页职责，忽略。
   void _openCollectionMember(String mediaType, String entryKey) {
-    if (mediaType != kGameCollectionMediaType) return;
+    if (MediaKind.tryParse(mediaType) != MediaKind.game) return;
     final GalgameEntry? game = _repo.byId(entryKey);
     if (game == null) return;
     unawaited(_openDetail(game));
@@ -764,7 +764,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       items: <CollectionOrderingItem<GalgameEntry>>[
         for (final GalgameEntry game in visible)
           CollectionOrderingItem<GalgameEntry>(
-            mediaType: kGameCollectionMediaType,
+            mediaType: MediaKind.game,
             entryKey: game.id,
             importedAt: game.addedAt.millisecondsSinceEpoch,
             payload: game,
@@ -889,7 +889,7 @@ Widget? buildGameCollectionMemberCard({
   required String mediaType,
   required String entryKey,
 }) {
-  if (mediaType != kGameCollectionMediaType) return null;
+  if (MediaKind.tryParse(mediaType) != MediaKind.game) return null;
   for (final GalgameEntry game in games) {
     if (game.id == entryKey) {
       return GalgamePosterCard(

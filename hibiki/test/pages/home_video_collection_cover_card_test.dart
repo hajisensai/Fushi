@@ -113,7 +113,7 @@ void main() {
       collectionType: 'playlist',
     );
     for (final String uid in uids) {
-      await db.addToCollection(cid, 'video', uid);
+      await db.addToCollection(cid, MediaKind.video, uid);
     }
     return cid;
   }

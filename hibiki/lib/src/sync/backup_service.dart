@@ -1600,7 +1600,7 @@ class BackupService {
       // its own `media_type`-keyed rows across the shared tables (collection
       // memberships, shelf entries, and the per-item deletion markers). srt has
       // no category (always exported), so its rows always stay.
-      Future<void> stripForMediaType(String mediaType) async {
+      Future<void> stripForMediaType(MediaKind mediaType) async {
         for (final String table in const <String>[
           'media_collection_items',
           'shelf_entries',
@@ -1608,12 +1608,12 @@ class BackupService {
           'sync_deletion_tombstones',
         ]) {
           await db.customStatement(
-              'DELETE FROM $table WHERE media_type = ?', [mediaType]);
+              'DELETE FROM $table WHERE media_type = ?', [mediaType.dbValue]);
         }
       }
 
-      if (!includeBooks) await stripForMediaType('epub');
-      if (!includeVideos) await stripForMediaType('video');
+      if (!includeBooks) await stripForMediaType(MediaKind.epub);
+      if (!includeVideos) await stripForMediaType(MediaKind.video);
       // media_sources holds local library ROOT PATHS (e.g. D:/books, D:/videos)
       // — a privacy leak in a content-excluding backup and useless without the
       // content it indexes (BUG-832). Its `media_kind` is 'book' | 'video'; drop
@@ -1635,12 +1635,14 @@ class BackupService {
       // "collections carry only exported content"; a FULL export keeps them so
       // the merge-union still propagates cross-device srt memberships.
       if (!includeBooks || !includeVideos) {
-        const String srtDangling = "media_type = 'srt' AND entry_key NOT IN "
+        // P5：'srt' 改参数绑定（值来自 MediaKind.srt.dbValue，串不变）。
+        const String srtDangling = 'media_type = ? AND entry_key NOT IN '
             '(SELECT uid FROM srt_books WHERE uid IS NOT NULL)';
         await db.customStatement(
-            'DELETE FROM media_collection_items WHERE $srtDangling');
-        await db
-            .customStatement('DELETE FROM shelf_entries WHERE $srtDangling');
+            'DELETE FROM media_collection_items WHERE $srtDangling',
+            [MediaKind.srt.dbValue]);
+        await db.customStatement('DELETE FROM shelf_entries WHERE $srtDangling',
+            [MediaKind.srt.dbValue]);
       }
       // Drop collections the strip emptied — but keep always-empty tag-only
       // collections (a member-less collection is a valid tag-union carrier).
