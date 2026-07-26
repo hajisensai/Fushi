@@ -29,8 +29,13 @@ class TmdbClient {
 
   static const Duration _timeout = Duration(seconds: 15);
 
-  /// TMDB 海报基址（w500 尺寸）。
-  static const String posterBase = 'https://image.tmdb.org/t/p/w500';
+  /// TMDB 海报基址：`original` = 满分辨率原图（用户要求默认满分辨率，BUG-1082）。
+  ///
+  /// 旧值 `w500`（500px 宽缩略档）落盘后放大到高 dpr 大格子会发糊。Bangumi(large) /
+  /// 离线库(picture) 本就取各源最高档，唯 TMDB 之前钉在缩略档，是刮削海报发糊的根因。
+  /// 落盘无损（[PosterDownloader] 原样写字节），渲染层 `resizedFileImage` 解码上限自会
+  /// 按需降采样，不会因原图更大而变慢展示。
+  static const String posterBase = 'https://image.tmdb.org/t/p/original';
 
   /// 搜索关键词 [keyword]（[year] 仅用于占位/未来精确化，multi 端点本身不接受 year）。
   ///

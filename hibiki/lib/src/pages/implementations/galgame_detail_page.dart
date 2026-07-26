@@ -784,6 +784,8 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
       TextEditingController(text: widget.game.exePath);
   late final TextEditingController _workdir =
       TextEditingController(text: widget.game.workdir);
+  late final TextEditingController _launchArgs =
+      TextEditingController(text: widget.game.launchArgs);
   late bool _nsfw = widget.game.customData.nsfw ?? false;
 
   bool _scraping = false;
@@ -800,6 +802,7 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
       _review,
       _exePath,
       _workdir,
+      _launchArgs,
     ]) {
       c.dispose();
     }
@@ -831,6 +834,9 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
       name: game.name,
       exePath: _exePath.text.trim(),
       workdir: _workdir.text.trim(),
+      // 这里是**逐字段重建**而非 copyWith：新增列必须在本列表里显式带上，漏一个就会
+      // 每次保存静默清空该字段。改 GalgameEntry 字段时务必同步这里（有回归测试守着）。
+      launchArgs: _launchArgs.text.trim(),
       coverPath: game.coverPath,
       addedAt: game.addedAt,
       playStatus: game.playStatus,
@@ -987,6 +993,12 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
         ),
         _field('exePath', _exePath, t.game_edit_exe_path),
         _field('workdir', _workdir, t.game_edit_workdir),
+        _field(
+          'launchArgs',
+          _launchArgs,
+          t.game_edit_launch_args,
+          helperText: t.game_edit_launch_args_hint,
+        ),
       ],
     );
   }
@@ -998,6 +1010,7 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
     TextEditingController controller,
     String label, {
     int maxLines = 1,
+    String? helperText,
   }) {
     return Padding(
       key: ValueKey<String>('galgame-edit-$fieldKey'),
@@ -1007,6 +1020,7 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
         maxLines: maxLines,
         decoration: InputDecoration(
           labelText: label,
+          helperText: helperText,
           border: const OutlineInputBorder(),
           isDense: true,
         ),

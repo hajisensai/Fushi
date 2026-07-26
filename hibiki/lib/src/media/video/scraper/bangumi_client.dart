@@ -11,9 +11,9 @@
 /// 在中国大陆一般可直连；若用户所在网络不通，交由外层代理生效即可。
 library;
 
-import 'dart:async';
 import 'dart:convert';
 
+import 'package:hibiki/src/media/metadata/bangumi_api_client.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:http/http.dart' as http;
 
@@ -35,59 +35,43 @@ class ScrapeNetworkException implements Exception {
 }
 
 /// Bangumi 搜索客户端。构造函数注入 [http.Client]（默认自建），测试用 mock client。
+///
+/// 传输层（URL / 请求头 / 超时 / utf8 解码 / 传输异常边界）现由跨媒体共享的
+/// [BangumiApiClient] 承担；本类只保留「动画（type=2）」语义 + `ScrapeCandidate` /
+/// `ScrapeMetadata` 领域映射 + `ScrapeNetworkException` 异常契约。
 class BangumiClient {
-  BangumiClient({http.Client? client}) : _client = client ?? http.Client();
+  BangumiClient({http.Client? client})
+      : _api = BangumiApiClient(client: client, userAgent: _userAgent);
 
-  final http.Client _client;
+  final BangumiApiClient _api;
 
   /// Bangumi API 要求可识别的 User-Agent（否则可能被限流/拒绝）。
   static const String _userAgent =
       'hibiki-reader/scraper (https://github.com/hajisensai)';
 
-  static const Duration _timeout = Duration(seconds: 15);
-
   /// 搜索关键词 [keyword]，返回动画候选（最多 [limit] 条）。
   ///
   /// 网络失败 / 非 2xx / JSON 异常 → 抛 [ScrapeNetworkException]。
   Future<List<ScrapeCandidate>> search(String keyword, {int limit = 10}) async {
-    final Uri uri = Uri.parse('https://api.bgm.tv/v0/search/subjects')
-        .replace(queryParameters: <String, String>{'limit': '$limit'});
-    final String requestBody = jsonEncode(<String, Object?>{
-      'keyword': keyword,
-      'filter': <String, Object?>{
-        'type': <int>[2], // 2 = 动画
-      },
-    });
-
-    final http.Response response;
+    final BangumiRawResponse response;
     try {
-      response = await _client
-          .post(
-            uri,
-            headers: const <String, String>{
-              'User-Agent': _userAgent,
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: requestBody,
-          )
-          .timeout(_timeout);
-    } on TimeoutException {
-      throw const ScrapeNetworkException('Bangumi search timed out');
-    } catch (e) {
-      throw ScrapeNetworkException('Bangumi request failed: $e');
+      response = await _api.searchSubjects(
+        keyword,
+        subjectType: kBangumiSubjectTypeAnime,
+        limit: limit,
+      );
+    } on BangumiTransportException catch (e) {
+      throw ScrapeNetworkException('Bangumi search ${e.message}');
     }
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
+    if (!response.isOk) {
       throw ScrapeNetworkException(
         'Bangumi search HTTP ${response.statusCode}',
         statusCode: response.statusCode,
       );
     }
 
-    // 服务器返回的是 utf8 原始字节；用 bodyBytes 走 utf8 解码，避免 http.Response.body
-    // 在缺 charset 时按 latin1 解码毁掉中日文。
-    return parseBangumiSearchResponse(utf8.decode(response.bodyBytes));
+    return parseBangumiSearchResponse(response.body);
   }
 
   /// 拉取条目详情 `GET /v0/subjects/{id}`，返回条目级资料（简介/评分/放送/话数/
@@ -100,35 +84,25 @@ class BangumiClient {
   /// 网络失败 / 非 2xx / JSON 异常 → 抛 [ScrapeNetworkException]；404（条目不存在
   /// 或被删）同样走异常，由上层降级为「只有封面没有资料」。
   Future<ScrapeMetadata> fetchSubject(String subjectId) async {
-    final Uri uri = Uri.parse('https://api.bgm.tv/v0/subjects/$subjectId');
-    final http.Response response;
+    final BangumiRawResponse response;
     try {
-      response = await _client.get(
-        uri,
-        headers: const <String, String>{
-          'User-Agent': _userAgent,
-          'Accept': 'application/json',
-        },
-      ).timeout(_timeout);
-    } on TimeoutException {
-      throw const ScrapeNetworkException('Bangumi subject fetch timed out');
-    } catch (e) {
-      throw ScrapeNetworkException('Bangumi subject request failed: $e');
+      response = await _api.fetchSubject(subjectId);
+    } on BangumiTransportException catch (e) {
+      throw ScrapeNetworkException('Bangumi subject ${e.message}');
     }
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
+    if (!response.isOk) {
       throw ScrapeNetworkException(
         'Bangumi subject HTTP ${response.statusCode}',
         statusCode: response.statusCode,
       );
     }
 
-    // 同 search：走 bodyBytes + utf8，避免缺 charset 时按 latin1 毁中日文。
-    return parseBangumiSubjectResponse(utf8.decode(response.bodyBytes));
+    return parseBangumiSubjectResponse(response.body);
   }
 
   /// 关闭内部 client（若为默认自建）。测试注入的 mock client 由调用方自行管理。
-  void close() => _client.close();
+  void close() => _api.close();
 }
 
 /// 纯函数：把 Bangumi `/v0/subjects/{id}` 响应体解析为 [ScrapeMetadata]。

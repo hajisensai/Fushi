@@ -2122,18 +2122,23 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
       // silent empty success).
       auto* pending = reinterpret_cast<WindowCapturePending*>(lparam);
       if (pending != nullptr) {
+        flutter::EncodableMap reply;
         if (pending->result.ok && !pending->result.png.empty()) {
-          pending->reply->Success(flutter::EncodableValue(flutter::EncodableMap{
-              {flutter::EncodableValue("pngBytes"),
-               flutter::EncodableValue(pending->result.png)}}));
+          reply[flutter::EncodableValue("pngBytes")] =
+              flutter::EncodableValue(pending->result.png);
         } else {
-          const std::string err = pending->result.error.empty()
-                                      ? std::string("capture failed")
-                                      : pending->result.error;
-          pending->reply->Success(flutter::EncodableValue(flutter::EncodableMap{
-              {flutter::EncodableValue("error"),
-               flutter::EncodableValue(err)}}));
+          reply[flutter::EncodableValue("error")] =
+              flutter::EncodableValue(pending->result.error.empty()
+                                          ? std::string("capture failed")
+                                          : pending->result.error);
         }
+        // BUG-1096 — 成功路径上的可观测事实（WGC 光标抑制是否真的生效 / 捕获目标是否
+        // 被从 Magpie 缩放窗重定向）。空则不带字段，Dart 侧只在非空时记一条日志。
+        if (!pending->result.diagnostics.empty()) {
+          reply[flutter::EncodableValue("diagnostics")] =
+              flutter::EncodableValue(pending->result.diagnostics);
+        }
+        pending->reply->Success(flutter::EncodableValue(std::move(reply)));
         delete pending;
       }
       return 0;

@@ -191,7 +191,6 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 - `AnkiChannelHandler.java` / `AnkiDroidHelper.java` -- AnkiDroid 集成。
 - `TtsChannelHandler.java` -- TTS 通道。
 - `HibikiFileProvider.java` -- 文件提供者。
-- `AacAdtsCueAudioRewriter.java` -- AAC 音频重写。
 
 ## 资产文件 (`assets/`)
 

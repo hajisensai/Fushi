@@ -9,6 +9,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:hibiki/src/media/metadata/bangumi_api_client.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_adapter.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_rate_limit.dart';
@@ -34,19 +35,22 @@ class BangumiMetadataAdapter implements GalgameMetadataAdapter {
     String? accessToken,
     String baseUrl = 'https://api.bgm.tv/v0',
     Duration timeout = const Duration(seconds: 15),
-  })  : _client = client ?? http.Client(),
-        _ownsClient = client == null,
-        _rateLimiter = rateLimiter ?? GalgameRateLimiter(),
-        _accessToken = accessToken,
-        _baseUrl = baseUrl,
-        _timeout = timeout;
+  }) : _rateLimiter = rateLimiter ?? GalgameRateLimiter() {
+    _api = BangumiApiClient(
+      client: client,
+      userAgent: _userAgent,
+      baseUrl: baseUrl,
+      timeout: timeout,
+      accessToken: accessToken,
+      gate: _gate,
+    );
+  }
 
-  final http.Client _client;
-  final bool _ownsClient;
+  /// 跨媒体共享传输层（URL / 请求头 / 超时 / utf8 解码 / 传输异常边界）。本 adapter 只
+  /// 保留「游戏（type=4）」语义 + 限流注入 + `GalgameMetadataDraft` 领域映射 + 404 策略。
+  late final BangumiApiClient _api;
+
   final GalgameRateLimiter _rateLimiter;
-  final String? _accessToken;
-  final String _baseUrl;
-  final Duration _timeout;
 
   /// Bangumi 要求可识别的 User-Agent，否则可能被限流 / 拒绝。
   static const String _userAgent =
@@ -70,10 +74,9 @@ class BangumiMetadataAdapter implements GalgameMetadataAdapter {
         source: source,
       );
     }
-    final http.Response response = await _send(
-      () => _client
-          .get(Uri.parse('$_baseUrl/subjects/$trimmed'), headers: _headers())
-          .timeout(_timeout),
+    final BangumiRawResponse response = await _fetch(
+      () => _api.fetchSubject(trimmed),
+      'fetch subject $trimmed',
     );
     if (response.statusCode == 404) {
       return null; // 条目不存在是正常结果，不是异常。
@@ -100,19 +103,13 @@ class BangumiMetadataAdapter implements GalgameMetadataAdapter {
     if (keyword.isEmpty) {
       return const <SourceCandidate>[];
     }
-    final Uri uri = Uri.parse('$_baseUrl/search/subjects').replace(
-      queryParameters: <String, String>{'limit': '${limit.clamp(1, 50)}'},
-    );
-    final String body = jsonEncode(<String, Object?>{
-      'keyword': keyword,
-      'filter': <String, Object?>{
-        'type': <int>[kBangumiSubjectTypeGame],
-      },
-    });
-    final http.Response response = await _send(
-      () => _client
-          .post(uri, headers: _headers(json: true), body: body)
-          .timeout(_timeout),
+    final BangumiRawResponse response = await _fetch(
+      () => _api.searchSubjects(
+        keyword,
+        subjectType: kBangumiSubjectTypeGame,
+        limit: limit,
+      ),
+      'search "$keyword"',
     );
     if (response.statusCode == 404) {
       return const <SourceCandidate>[]; // 无命中时 Bangumi 偶尔回 404。
@@ -125,49 +122,36 @@ class BangumiMetadataAdapter implements GalgameMetadataAdapter {
   }
 
   @override
-  void close() {
-    if (_ownsClient) {
-      _client.close();
-    }
-  }
+  void close() => _api.close();
 
-  Map<String, String> _headers({bool json = false}) {
-    final Map<String, String> headers = <String, String>{
-      'User-Agent': _userAgent,
-      'Accept': 'application/json',
-    };
-    if (json) {
-      headers['Content-Type'] = 'application/json';
-    }
-    final String? token = _accessToken;
-    if (token != null && token.trim().isNotEmpty) {
-      headers['Authorization'] = 'Bearer ${token.trim()}';
-    }
-    return headers;
-  }
-
-  /// 过限流器发一次请求，并把 429/503 的 `Retry-After` 记回桶里。
-  Future<http.Response> _send(Future<http.Response> Function() send) {
+  /// 限流 gate（注入进共享传输层）：过限流器发一次请求，并把 429/503 的 `Retry-After`
+  /// 记回桶里。超时 / 网络失败在共享层归一为 [BangumiTransportException]，由 [_fetch] 再
+  /// 包装成 galgame 领域异常。
+  Future<http.Response> _gate(Future<http.Response> Function() send) {
     return _rateLimiter.run(() async {
-      final http.Response response;
-      try {
-        response = await send();
-      } on TimeoutException {
-        throw GalgameMetadataException('Bangumi request timed out',
-            source: source);
-      } on GalgameMetadataException {
-        rethrow;
-      } catch (e) {
-        throw GalgameMetadataException('Bangumi request failed: $e',
-            source: source);
-      }
+      final http.Response response = await send();
       _rateLimiter.noteResponse(response.statusCode, response.headers);
       return response;
     });
   }
 
-  void _ensureOk(http.Response response, String what) {
-    if (response.statusCode >= 200 && response.statusCode < 300) {
+  /// 把共享传输层的 [BangumiTransportException] 归一成 galgame 领域异常。
+  Future<BangumiRawResponse> _fetch(
+    Future<BangumiRawResponse> Function() run,
+    String what,
+  ) async {
+    try {
+      return await run();
+    } on BangumiTransportException catch (e) {
+      throw GalgameMetadataException(
+        'Bangumi $what ${e.message}',
+        source: source,
+      );
+    }
+  }
+
+  void _ensureOk(BangumiRawResponse response, String what) {
+    if (response.isOk) {
       return;
     }
     throw GalgameMetadataException(
@@ -177,10 +161,10 @@ class BangumiMetadataAdapter implements GalgameMetadataAdapter {
     );
   }
 
-  /// 用 bodyBytes + utf8 解码：缺 charset 时 `http.Response.body` 会按 latin1 解，毁中日文。
-  Object? _decodeJson(http.Response response, String what) {
+  /// 共享层已用 bodyBytes + utf8 解好码（避免缺 charset 时 latin1 毁中日文），这里只做 JSON 解析。
+  Object? _decodeJson(BangumiRawResponse response, String what) {
     try {
-      return jsonDecode(utf8.decode(response.bodyBytes));
+      return jsonDecode(response.body);
     } catch (e) {
       throw GalgameMetadataException(
         'Bangumi $what returned malformed JSON: $e',

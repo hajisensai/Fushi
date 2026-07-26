@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/media_cover_service.dart';
+import 'package:hibiki/src/media/metadata/book_cover_scrape_dialog.dart';
 import 'package:hibiki/utils.dart';
 
 /// The content of the dialog upon selecting 'Edit' in the
@@ -113,6 +114,24 @@ class _MediaItemEditDialogPageState
           ],
           MediaItemCoverOverrideField(
             imageProvider: _coverImageProvider ?? _defaultImageProvider!,
+            onScrape: () async {
+              // 在线刮削封面（P1b）：搜 Bangumi 书籍条目，选中即下载封面成临时文件，
+              // 走与手动选图完全相同的 override 通道（保存时 setOverrideThumbnail）。
+              final String query =
+                  _nameOverrideController.text.trim().isNotEmpty
+                      ? _nameOverrideController.text.trim()
+                      : widget.item.title;
+              final File? scraped = await showBookCoverScrapeDialog(
+                context: context,
+                initialQuery: query,
+              );
+              if (scraped != null) {
+                _newFile = scraped;
+                _coverImageProvider = FileImage(scraped);
+                _clearOverrideImage = false;
+                setState(() {});
+              }
+            },
             onPickImage: () async {
               // BUG-1074：桌面端 image_picker 无平台实现，直接调 pickImage 抛
               // MissingPluginException 且无人捕获 → 按钮「点了没反应」。统一走
@@ -198,7 +217,9 @@ class _MediaItemEditDialogPageState
       // never re-fires it — refreshTab() alone re-renders stale cached
       // MediaItems and the edit looks like it "did not save". Invalidate the
       // book providers so the shelf re-reads the DB rows.
-      if (mediaSource is ReaderHibikiSource) {
+      // 覆盖全部书族源（EPUB / 漫画 / PDF 都 extends ReaderMediaSource）：漫画作者编辑
+      // （MangaHibikiSource，非 ReaderHibikiSource）此前落在此条件外，改完书架不刷新。
+      if (mediaSource is ReaderMediaSource) {
         ref.invalidate(hibikiBooksProvider);
         ref.invalidate(srtBooksProvider);
       }
@@ -265,12 +286,16 @@ class MediaItemCoverOverrideField extends StatelessWidget {
     required this.imageProvider,
     required this.onPickImage,
     required this.onUndo,
+    this.onScrape,
     super.key,
   });
 
   final ImageProvider imageProvider;
   final Future<void> Function()? onPickImage;
   final Future<void> Function()? onUndo;
+
+  /// 在线刮削封面（非空才显示刮削按钮）。书族复用视频/游戏之外的第三条封面来源。
+  final Future<void> Function()? onScrape;
 
   @override
   Widget build(BuildContext context) {
@@ -304,6 +329,15 @@ class MediaItemCoverOverrideField extends StatelessWidget {
               ),
             ),
             SizedBox(width: tokens.spacing.gap),
+            if (onScrape != null) ...<Widget>[
+              HibikiIconButton(
+                tooltip: t.book_scrape_cover,
+                isWideTapArea: true,
+                icon: Icons.image_search_outlined,
+                onTap: onScrape,
+              ),
+              SizedBox(width: tokens.spacing.gap / 2),
+            ],
             HibikiIconButton(
               tooltip: t.pick_image,
               isWideTapArea: true,

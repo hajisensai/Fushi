@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -582,9 +583,20 @@ bool shouldUseLunaPcHooksForExecutable(String executablePath) {
 /// 两个截止时间各自为政时，杀软扫描下的大 hook DLL 常在 native 先超时（native 此时
 /// 还会把 CREATE_SUSPENDED 拉起的游戏丢在挂起态），Dart 却仍在傻等，最终只报一个
 /// 没有原因的失败。超时只能有一个真相源，故显式下发。
+///
+/// [gameArguments] 是用户为该游戏配置的启动参数，**一个 token 一个 `--arg`**：
+/// injector 按 Windows 规则重新转义后拼进 `CreateProcessW` 的 `lpCommandLine`，
+/// 所以含空格/引号的参数也会原样成为游戏的一个 argv。空列表时**一个 `--arg` 都不发**，
+/// 命令行与旧版逐字节相同 —— 老 injector（用户尚未更新 helper）遇到不认识的 flag 是
+/// 静默忽略而非报错，但「不配置就不发」仍是更硬的兼容保证。
+///
+/// [workdir] 是游戏工作目录；空串时不发 `--workdir`，由 injector 缺省成 exe 所在目录
+/// （与旧行为一致）。
 List<String> buildEngineHookInjectorArguments({
   required int targetPid,
   required String? launchExe,
+  List<String> gameArguments = const <String>[],
+  String workdir = '',
   bool japaneseLocale = false,
   bool lunaPcHooks = false,
   int? lunaCodepage,
@@ -602,6 +614,15 @@ List<String> buildEngineHookInjectorArguments({
   }
   if (launchMode && japaneseLocale) {
     args.add('--japanese-locale');
+  }
+  // workdir / --arg 都是 launch 专用：attach 模式游戏已经在跑，进程创建参数无从谈起。
+  if (launchMode && workdir.isNotEmpty) {
+    args.addAll(<String>['--workdir', workdir]);
+  }
+  if (launchMode) {
+    for (final String argument in gameArguments) {
+      args.addAll(<String>['--arg', argument]);
+    }
   }
   if (lunaPcHooks) {
     args.add('--luna-pchooks');
@@ -665,6 +686,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
   EngineHookGalAudioSource({
     this.targetPid = 0,
     this.launchExe,
+    this.launchArguments = const <String>[],
+    this.launchWorkdir = '',
     required this.injectorPath,
     this.automaticJapaneseLocale = true,
     this.lunaPcHooks = false,
@@ -690,6 +713,14 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// **launch 模式**要拉起的游戏 exe 绝对路径。非空即走 `injector --launch`，从 injector
   /// stdout 解析子进程 PID。null -> 走 attach（[targetPid]）。
   final String? launchExe;
+
+  /// **launch 模式**追加给游戏 exe 的命令行参数，一个元素 = 游戏侧一个 argv。
+  /// 空列表（默认）= 不发任何 `--arg`，启动命令行与旧版逐字节相同。
+  final List<String> launchArguments;
+
+  /// **launch 模式**游戏工作目录；空串（默认）= 不发 `--workdir`，由 injector 缺省成
+  /// exe 所在目录（旧行为）。
+  final String launchWorkdir;
 
   /// injector 可执行文件绝对路径（随 app 分发 / 按需下载）；null 或文件不存在 -> 源不可用
   /// （降级回 loopback，绝不假装注入成功）。**位数必须匹配目标游戏**（KiriKiriZ 多 32 位 -> x86）。
@@ -761,11 +792,21 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// 上层据此保留本实例继续轮询文本，同时另启系统 Loopback 作为音频源。
   bool get textHookReady => _textHookReady;
   bool get rawVoiceReady => _rawVoiceReady;
-  bool get pcmReady => _pcmReady;
+
+  /// 共享内存已通过与 [start] **完全相同**的就绪门（`ready` + 有效 PCM 格式）时的格式。
+  ///
+  /// null 只说明「游戏还没播过语音」，不说明 hook 没装上（那看 [textHookReady] 与 native
+  /// 的 `audioHooksReady`）。控制器据此在会话运行中把降级的 Loopback 升格回引擎 PCM
+  /// （BUG-1100）。判据必须是这道就绪门：直接看 `parseGalPcmFormat` 会把未过门的残留
+  /// 碎片当成可用 PCM，那正是 BUG-1060 已修掉的回归。
+  PcmFormat? get readyPcmFormat => _readyFormat;
+
+  /// [readyPcmFormat] 的布尔别名。
+  bool get pcmReady => _readyFormat != null;
   bool _textHookReady = false;
   bool _audioHooksReady = false;
   bool _rawVoiceReady = false;
-  bool _pcmReady = false;
+  PcmFormat? _readyFormat;
 
   /// 查目标进程 [pid] 是否 32 位（WOW64）。hibiki.exe 是 64 位，故 native `IsWow64Process`
   /// 为 true 即目标为 32 位（多数 KiriKiri galgame），调用方据此选 x86 注入器（DLL 位数必须
@@ -842,7 +883,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     _textHookReady = false;
     _audioHooksReady = false;
     _rawVoiceReady = false;
-    _pcmReady = false;
+    _readyFormat = null;
     _launchedPid = 0;
     _diagnosticsBuffer.clear();
     _lastFailure = const GalHookInjectorDiagnostics();
@@ -873,6 +914,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
         buildEngineHookInjectorArguments(
           targetPid: targetPid,
           launchExe: exe,
+          gameArguments: launchArguments,
+          workdir: launchWorkdir,
           japaneseLocale: japaneseLocale,
           lunaPcHooks: lunaPcHooks,
           lunaCodepage: lunaCodepage,
@@ -943,6 +986,11 @@ class EngineHookGalAudioSource implements GalAudioSource {
       // Luna 文本线程可能先于 DLL 音频工作线程出现。必须等首轮音频探针完成后，才把
       // “文本-only”交给控制器组合 Loopback；否则 Siglus 原始 OVK hook 会被启动竞态
       // 误判为不可用。helper 仍会保留，因此后续资源语音始终优先于 Loopback。
+      //
+      // BUG-1100：这里返回 null **只代表「此刻还没有可用 PCM」**，不代表这局都没有。
+      // 游戏刚启动、一句语音都还没播时共享内存里本就没有格式，等满 [_readyTimeout]
+      // 只会白白拖慢文本上屏。控制器据此先用 Loopback 顶着，并在会话运行中持续复查
+      // [readyPcmFormat]，首句语音出现即把主音源升格回引擎 PCM。
       if (_textHookReady && _audioHooksReady) {
         return null;
       }
@@ -980,12 +1028,28 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// injector 是常驻 helper，stdout/stderr 也必须贯穿会话持续排空。只在解析到 launch PID
   /// 后取消 stdout 订阅会让后续输出填满匿名管道；完全不订阅 stderr 更会使 native 卡死在
   /// `fprintf(stderr, ...)`，Unity 资源事件队列随之停止消费但进程仍显示存活。
+  ///
+  /// **编码契约是 UTF-8，不是系统 ANSI 代码页。** injector 的 `CMakeLists.txt` 无条件加了
+  /// MSVC `/utf-8`，它同时把 execution-charset 设成 UTF-8，所以诸如
+  /// `[luna] LunaHook32.dll 已注入 pid=...` 这类中文字面量在二进制里就是 UTF-8 字节，
+  /// `fprintf(stderr, ...)` 原样写出。旧实现用 [SystemEncoding]（中文 Windows 上是 CP936）
+  /// 解码，后果有两层，第二层比乱码严重得多：
+  ///   1. 会话事件里的 native 诊断显示成「宸叉敞鍏?」这类乱码；
+  ///   2. [classifyGalHookInjectorFailure] 靠中文串（`位数不匹配` / `目标 exe 不存在` /
+  ///      `已存在但不可复用的 hook 会话` / `未收到就绪信号`）识别旧 helper 的失败原因，
+  ///      解错码后这些分支**永远匹配不上**，失败分类永久退化成 fallback，用户拿不到
+  ///      「需要管理员 / 位数不符 / 缺文件」这类可执行处置。
+  /// [allowMalformed] 是必须的：stderr 里 `%ls` 宽字符经 C locale 转换后可能夹带非法字节，
+  /// 单个坏字节不得让整条诊断流抛异常而丢掉全部证据。
+  static const Converter<List<int>, String> _injectorOutputDecoder =
+      Utf8Decoder(allowMalformed: true);
+
   void _beginInjectorOutputDrain(Process process) {
     final Completer<int?> pidCompleter = Completer<int?>();
     final StringBuffer stdoutBuffer = StringBuffer();
     _hookedPidCompleter = pidCompleter;
     _injectorOutputSubscriptions.add(
-      process.stdout.transform(const SystemEncoding().decoder).listen(
+      process.stdout.transform(_injectorOutputDecoder).listen(
         (String chunk) {
           _emitInjectorOutput(isStderr: false, chunk: chunk);
           stdoutBuffer.write(chunk);
@@ -1012,7 +1076,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
       ),
     );
     _injectorOutputSubscriptions.add(
-      process.stderr.transform(const SystemEncoding().decoder).listen(
+      process.stderr.transform(_injectorOutputDecoder).listen(
             (String chunk) => _emitInjectorOutput(isStderr: true, chunk: chunk),
             onError: (Object error) => _emitInjectorOutput(
               isStderr: true,
@@ -1060,8 +1124,11 @@ class EngineHookGalAudioSource implements GalAudioSource {
       _textHookReady = parseEngineTextHookReady(r);
       _audioHooksReady = parseEngineAudioHooksReady(r);
       _rawVoiceReady = r['rawVoiceReady'] == true;
-      _pcmReady = parseGalPcmFormat(r) != null;
-      return parseEngineHookReadyFormat(r);
+      // 就绪门只有一处真相源：start() 与运行中的 refreshReadiness() 必须用同一判据，
+      // 否则「启动时不算就绪、运行中却算就绪」会让两条路径对同一份共享内存给出
+      // 互相矛盾的结论（BUG-1100）。
+      _readyFormat = parseEngineHookReadyFormat(r);
+      return _readyFormat;
     } on PlatformException {
       return null;
     } on MissingPluginException {
@@ -1074,6 +1141,9 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// KiriKiriZ 的 `TVPCreateStream` 等资源层可能晚于 Luna 文本管线初始化；启动阶段
   /// 因此会先进入“文本 + Loopback”。控制器在后续文本轮询中调用此方法，才能在资源
   /// hook 晚到后把原始游戏语音提升为主来源。
+  ///
+  /// 同一次刷新也更新 [readyPcmFormat]：引擎 PCM 与资源语音是两条各自会「晚到」的能力，
+  /// 升格判据必须对称（BUG-1100）。返回值仍是资源语音就绪与否，PCM 侧读 [readyPcmFormat]。
   Future<bool> refreshReadiness() async {
     await _pollFormat();
     return _rawVoiceReady;
@@ -1536,6 +1606,8 @@ class EngineHookGalAudioSource implements GalAudioSource {
     _sessionStartedAt = null;
     _textHookReady = false;
     _audioHooksReady = false;
+    _rawVoiceReady = false;
+    _readyFormat = null;
   }
 }
 

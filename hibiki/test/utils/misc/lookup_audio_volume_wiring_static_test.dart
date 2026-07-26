@@ -22,13 +22,21 @@ void main() {
         reason: 'the Dart fallback (playLookupAudio) must still pass the '
             'configured volume',
       );
-      // 统一入口 + 兜底接线。
+      // 统一入口 + 兜底接线。BUG-1093 后解析只做一次：WebView 失败回落时直接用
+      // 同一 ref 走 TtsChannel.playAudioRef，绝不重新解析（避免二次开库/远端请求）。
       expect(playback, contains('autoReadWordUnified('));
       expect(
         playback,
-        contains('await playLookupAudio(appModel, expression, reading)'),
-        reason: 'autoReadWordUnified must fall back to the Dart player when no '
-            'popup WebView is ready',
+        contains('await audioRefToWebViewUrl(ref)'),
+        reason: 'autoReadWordUnified must reuse the single resolved ref for '
+            'the WebView play path',
+      );
+      expect(
+        playback,
+        contains('await TtsChannel.instance.playAudioRef('),
+        reason: 'autoReadWordUnified must fall back to the Dart player with '
+            'the SAME resolved ref when the WebView did not actually play '
+            '(BUG-1093)',
       );
 
       // base/mixin 自动发音都经统一 helper（不再各自手抄 playLookupAudio + gain）。

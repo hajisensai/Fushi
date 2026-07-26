@@ -49,8 +49,8 @@ void main() {
     });
 
     test('group 1 (sync method) holds selector + scoped account/config', () {
-      // 互联已从「同步方式」解耦成独立分类 + 独立开关（不再是 backendType 单选项），
-      // 故这里不再有 'sync.interconnect_pointer' 指引行。
+      // BUG-1088：互联回到「同步方式」选择器；选中时显示一行指引（连接配置在
+      // 「Hibiki 互联」分类），其余后端各自的凭据/配置行不变。
       expect(idsOf(dest.sections[0]), <String>[
         'sync.mode',
         'sync.account_status',
@@ -58,6 +58,7 @@ void main() {
         'sync.webdav_config',
         'sync.ftp_config',
         'sync.sftp_config',
+        'sync.interconnect_config_note',
       ]);
     });
 
@@ -93,18 +94,16 @@ void main() {
     });
 
     test(
-        'auto-sync is gated on the hosting role; other content switches are not',
+        'auto-sync and upload switches are gated; content-scope switches are not',
         () {
-      // Auto-sync is an OUTBOUND switch (TODO-876 / BUG-NNN): a Hibiki host has
-      // no outbound sync, so the toggle is a no-op there and must be hidden in
-      // host mode — same gate as sync_now / compare (BUG-084). The remaining
-      // "what to sync" switches are content-scope settings that still apply to
-      // client mode, so they stay unconditional (always shown).
+      // Auto-sync 与三个「上传X文件」开关都带可见性谓词（见下方 source guard 对
+      // 谓词内容的锁定）；统计/词典/本地音频是 content-scope 设置，恒显。
       final SettingsSection content = dest.sections[1];
       SettingsItem byId(String id) =>
           content.items.firstWhere((SettingsItem i) => i.id == id);
       expect(byId('sync.auto_sync').visible, isNotNull,
-          reason: 'auto-sync must be hidden when hosting as a server');
+          reason:
+              'auto-sync hides when the sync method itself has no outbound');
       for (final String id in <String>[
         'sync.statistics',
         'sync.dictionary',
@@ -113,46 +112,53 @@ void main() {
         expect(byId(id).visible, isNull,
             reason: '$id is a content-scope setting, global to every backend');
       }
-      // a147a28ca：三个「上传X文件」开关都是 OUTBOUND——互联 host 无 outbound
-      // sync，host 模式下纯空转，随 auto_sync 的 !_isHostingInterconnect 门控隐藏
-      //（client 模式仍可见）。基底提交改了源码未同步本断言，这里按其意图更新。
       for (final String id in <String>[
         'sync.content',
         'sync.audiobook_files',
         'sync.video_files',
       ]) {
         expect(byId(id).visible, isNotNull,
-            reason: '$id is an outbound upload switch, hidden while hosting');
+            reason: '$id is a cloud-channel upload switch, gated on backend');
       }
     });
 
-    test('sync.video_files is unconditional across every backend', () {
-      // Source guard: 视频上传开关不再带 backend-scope 门控——云后端与互联(hibikiServer)
-      // 都实现了视频文件上传（云走 syncVideoAssets，互联走 _syncVideosLive host 端点），
-      // 故绝不能再携带 `!= SyncBackendType.hibikiServer` 之类的隐藏判据。
+    test(
+        'upload switches hide only when the sync method is the interconnect '
+        '(BUG-1088)', () {
+      // Source guard: BUG-988 起互联通道读互联专属上传开关（互联分类里那四个），
+      // 共享 sync.* 上传开关只管云通道——它们唯一的死区是「同步方式=互联」（该通道
+      // 按互联专属开关走）。绝不能再按 _isHostingInterconnect 隐藏：host 身份不影响
+      // 云后端出站，旧门控把 host 设备上 Google Drive 的上传开关整排藏掉（BUG-1088）。
       final String src =
           File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
-      final int at = src.indexOf("id: 'sync.video_files'");
-      expect(at, greaterThanOrEqualTo(0));
-      final String block = src.substring(at, at + 500);
-      expect(block, isNot(contains('!= SyncBackendType.hibikiServer')),
-          reason:
-              'video upload now works on every backend; no hibikiServer gate');
+      for (final String id in <String>[
+        'sync.content',
+        'sync.audiobook_files',
+        'sync.video_files',
+      ]) {
+        final int at = src.indexOf("id: '$id'");
+        expect(at, greaterThanOrEqualTo(0));
+        final String block = src.substring(at, at + 500);
+        expect(block, contains('!= SyncBackendType.hibikiServer'),
+            reason: '$id governs the cloud channel; dead when method=互联');
+        expect(block, isNot(contains('_isHostingInterconnect')),
+            reason: '$id must not hide on host identity (BUG-1088)');
+      }
     });
 
-    test('auto-sync gate keys off the hosting-interconnect role (TODO-876)',
-        () {
-      // Source guard: auto_sync must hide via !_isHostingInterconnect — the same
-      // both-conditions role used by sync_now / compare — so a stale
-      // serverEnabled flag on a cloud backend can't hide auto-sync, and a
-      // client-mode hibikiServer (which DOES have outbound sync) keeps it shown.
+    test('auto-sync gate keys off cloud-outbound availability (BUG-1088)', () {
+      // Source guard: auto_sync must hide via !_cloudOutboundUnavailable — the
+      // combined "method is interconnect AND hosting" predicate shared with
+      // sync_now / compare. Host identity alone (cloud backend selected) must
+      // NOT hide it: the cloud channel keeps its outbound while hosting.
       final String src =
           File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
       final int autoSyncAt = src.indexOf("id: 'sync.auto_sync'");
       expect(autoSyncAt, greaterThanOrEqualTo(0));
       final String autoSyncBlock = src.substring(autoSyncAt, autoSyncAt + 900);
-      expect(autoSyncBlock, contains('!_isHostingInterconnect('),
-          reason: 'auto-sync must hide only while hosting the interconnect');
+      expect(autoSyncBlock, contains('!_cloudOutboundUnavailable('),
+          reason:
+              'auto-sync hides only when the cloud channel has no outbound');
     });
 
     test('manual-sync actions are gated on server mode (BUG-084)', () {
@@ -170,13 +176,13 @@ void main() {
           reason: 'the server-mode note shows only while hosting');
     });
 
-    test('the action gates key off the hosting-interconnect role (BUG-084)',
-        () {
-      // Source guard: the gates must branch on _isHostingInterconnect, which
-      // requires BOTH serverEnabled AND the hibikiServer backend — so a stale
-      // serverEnabled flag left from a past interconnect session can't hide
-      // sync-now on a cloud backend (observed: serverEnabled=true while
-      // backendType=googleDrive).
+    test(
+        'the action gates key off cloud-outbound availability '
+        '(BUG-084 / BUG-1088)', () {
+      // Source guard: the gates must branch on _cloudOutboundUnavailable, which
+      // requires the sync method to BE the interconnect AND the hosting role —
+      // so neither a stale serverEnabled flag nor genuine hosting can hide
+      // sync-now on a cloud backend (a host still uploads to Google Drive).
       final String src =
           File('lib/src/sync/sync_settings_schema.dart').readAsStringSync();
       final int noteAt = src.indexOf("id: 'sync.server_mode_note'");
@@ -184,17 +190,25 @@ void main() {
       final int compareAt = src.indexOf("id: 'sync.compare'");
       expect(noteAt, greaterThanOrEqualTo(0));
       for (final int at in <int>[noteAt, nowAt, compareAt]) {
-        expect(src.substring(at, at + 200), contains('_isHostingInterconnect'),
-            reason: 'manual-sync gate must use the hosting-interconnect role');
+        expect(
+            src.substring(at, at + 200), contains('_cloudOutboundUnavailable'),
+            reason: 'manual-sync gate must use cloud-outbound availability');
       }
-      // The helper itself must require both conditions (not serverEnabled alone):
-      // 互联解耦后由独立的 interconnectEnabled 开关取代 backendType==hibikiServer，
-      // 故 stale serverEnabled（互联关闭时）不得再隐藏云后端的 sync-now。
-      final int helperAt = src.indexOf('bool _isHostingInterconnect(');
+      // 谓词链自身必须同时咬住三个条件：backendType==hibikiServer（同步方式是互联）
+      // + serverEnabled + interconnectEnabled（_isHostingInterconnect 的两条件，
+      // BUG-084 的 stale serverEnabled 防线保持不变）。
+      final int helperAt = src.indexOf('bool _cloudOutboundUnavailable(');
       expect(helperAt, greaterThanOrEqualTo(0));
-      final String helper = src.substring(helperAt, helperAt + 200);
-      expect(helper, contains('serverEnabled'));
-      expect(helper, contains('interconnectEnabled'),
+      final String helper = src.substring(helperAt, helperAt + 300);
+      expect(helper, contains('== SyncBackendType.hibikiServer'),
+          reason: 'outbound only vanishes when the method itself is 互联');
+      expect(helper, contains('_isHostingInterconnect'),
+          reason: 'and only while actually hosting');
+      final int hostingAt = src.indexOf('bool _isHostingInterconnect(');
+      expect(hostingAt, greaterThanOrEqualTo(0));
+      final String hosting = src.substring(hostingAt, hostingAt + 200);
+      expect(hosting, contains('serverEnabled'));
+      expect(hosting, contains('interconnectEnabled'),
           reason: 'hosting role must also require interconnect to be enabled');
     });
 
@@ -218,6 +232,39 @@ void main() {
           .map((SettingsItem i) => i.id)
           .toList();
       expect(allIds, isNot(contains('sync.smb_config')));
+    });
+
+    test('the backend picker lists the interconnect again (BUG-1088)', () {
+      // Source guard: _isBackendSelectable 对 hibikiServer 必须 return true。
+      // 解耦时它被从选择器摘掉，唯一补偿入口（互联页「设为备份后端」按钮）又被
+      // host 门控藏住，host 设备上「备份写到已配对设备」入口彻底消失。
+      final String src =
+          File('lib/src/sync/sync_settings_schema/backend_config.part.dart')
+              .readAsStringSync();
+      final int fnAt = src.indexOf('bool _isBackendSelectable(');
+      expect(fnAt, greaterThanOrEqualTo(0));
+      final String fn = src.substring(fnAt, src.indexOf('\n}', fnAt));
+      final int caseAt = fn.indexOf('case SyncBackendType.hibikiServer:');
+      expect(caseAt, greaterThanOrEqualTo(0));
+      final String afterCase = fn.substring(caseAt, caseAt + 80);
+      expect(afterCase, contains('return true'),
+          reason: 'hibikiServer must be selectable as a sync method');
+    });
+
+    test(
+        'selecting the interconnect as sync method enables interconnect '
+        '(BUG-1088)', () {
+      // Source guard: _selectBackend 选中 hibikiServer 时必须顺手
+      // setInterconnectEnabled(true)——不开互联总开关，连接配置区不显示、通道认证
+      // 也过不去，选完就是个死后端。
+      final String src =
+          File('lib/src/sync/sync_settings_schema/backend_config.part.dart')
+              .readAsStringSync();
+      final int fnAt = src.indexOf('Future<void> _selectBackend(');
+      expect(fnAt, greaterThanOrEqualTo(0));
+      final String fn = src.substring(fnAt, fnAt + 1200);
+      expect(fn, contains('setInterconnectEnabled(true)'),
+          reason: 'picking 互联 must flip the interconnect master toggle on');
     });
   });
 

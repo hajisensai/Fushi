@@ -36,3 +36,24 @@ DesktopLookupConsumer resolveDesktopLookupConsumer({
       return DesktopLookupConsumer.textWindow;
   }
 }
+
+/// BUG-1099 纯判据：一条**被动文本流**请求到达时，是否保留用户已点出的那张卡
+/// （只换句子横幅 / 直接忽略），而不是整帧重建 root。
+///
+/// 单一真相源，面板（[ClipboardPanelController.update]）与瞬态覆盖窗
+/// （[GlobalLookupController.lookupText]）共用，两条出口的抢占语义不会漂开。
+///
+/// 三个条件缺一不可：
+/// - [passiveStream]：请求来自**环境剪贴板监听**（用户没有对 Hibiki 做任何动作，
+///   见 [DesktopLookupService.processClipboardText]），而不是热键 / 悬浮字幕点词
+///   这类显式意图。显式意图恒重建，绝不被这条保护锁死。
+/// - [userOwnedCard]：当前这张卡是用户**自己点出来的**（面板横幅点字 /
+///   卡内点词压栈 / 台词浮窗点词），而不是上一条被动流自动查出来的。自动查出来的
+///   卡本来就该被下一条流替换。
+/// - [visible]：卡还在屏幕上。已藏起来的卡没有什么可保护，下一条流正常重开。
+bool keepUserOwnedCardForPassiveStream({
+  required bool passiveStream,
+  required bool userOwnedCard,
+  required bool visible,
+}) =>
+    passiveStream && userOwnedCard && visible;

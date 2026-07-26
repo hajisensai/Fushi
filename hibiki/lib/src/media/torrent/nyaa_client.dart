@@ -249,30 +249,31 @@ class NyaaClient {
   final String baseUrl;
   final http.Client _client;
 
-  /// 按关键词搜索种子。网络错误 / 非 200 返回空列表，不抛。
+  /// 按关键词搜索种子。网络错误 / 非 200 **抛出**（`ClientException` /
+  /// `SocketException` / `HandshakeException` 等），由调用方决定展示或记录：
+  /// 以前这里吞错返回空列表，真实网络故障（如站点被墙、代理未配）会被
+  /// 误报成「无结果」，用户无从判断。RSS 内容坏损仍宽容（[parseNyaaRss]）。
   Future<List<NyaaTorrent>> search(
     String query, {
     String category = '1_0',
     String filter = '0',
   }) async {
-    try {
-      final Uri uri = Uri.parse(baseUrl).replace(
-        path: '/',
-        queryParameters: <String, String>{
-          'page': 'rss',
-          'q': query,
-          'c': category,
-          'f': filter,
-        },
-      );
-      final http.Response res = await _client.get(uri);
-      if (res.statusCode != 200) return const <NyaaTorrent>[];
-      // Nyaa RSS 是 UTF-8 但常不声明 charset，http 的 res.body 会按 latin1 解码 →
-      // 日文标题变乱码（如「ソ・ラ・ノ・ヲ・ト」→「Soã»Ra...」）。显式按 UTF-8 解码。
-      return parseNyaaRss(utf8.decode(res.bodyBytes, allowMalformed: true));
-    } catch (_) {
-      return const <NyaaTorrent>[];
+    final Uri uri = Uri.parse(baseUrl).replace(
+      path: '/',
+      queryParameters: <String, String>{
+        'page': 'rss',
+        'q': query,
+        'c': category,
+        'f': filter,
+      },
+    );
+    final http.Response res = await _client.get(uri);
+    if (res.statusCode != 200) {
+      throw http.ClientException('HTTP ${res.statusCode}', uri);
     }
+    // Nyaa RSS 是 UTF-8 但常不声明 charset，http 的 res.body 会按 latin1 解码 →
+    // 日文标题变乱码（如「ソ・ラ・ノ・ヲ・ト」→「Soã»Ra...」）。显式按 UTF-8 解码。
+    return parseNyaaRss(utf8.decode(res.bodyBytes, allowMalformed: true));
   }
 
   void close() => _client.close();

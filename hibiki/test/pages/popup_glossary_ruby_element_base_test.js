@@ -63,23 +63,69 @@ function mkEl(tag) {
     removeAttribute(k) { delete this.attributes[k]; },
     addEventListener() {}, closest() { return null; },
     getBoundingClientRect() { return { left: 0, top: 0, width: 0, height: 0 }; },
+    // Selector-LIST aware: a real DOM reads `a, b` as "matches a OR b", and
+    // popup.js legitimately queries `.glossary-content ruby, .expression ruby`
+    // (BUG-1098 pulled the headword furigana into the same per-base wrap).
+    // Comparing the selector STRING literally would silently return [] and turn
+    // this whole behavior test into a no-op, so parse it: comma -> alternatives,
+    // whitespace -> descendant combinator, each token `tag` / `.class` / both.
     querySelectorAll(sel) {
       const out = [];
-      const selfGloss = this.classList && this.classList.contains('glossary-content');
-      const walk = (n, underGloss) => {
+      const groups = parseSelectorList(sel);
+      if (groups.length === 0) return out;
+      const walk = (n, ancestors) => {
         for (const c of (n.childNodes || [])) {
           if (c.nodeType !== 1) continue;
-          const ug = underGloss || (c.classList && c.classList.contains('glossary-content'));
-          if (sel === '.glossary-content ruby' && ug && c.tagName === 'RUBY') out.push(c);
-          walk(c, ug);
+          if (groups.some((chain) => matchesChain(chain, c, ancestors))) out.push(c);
+          walk(c, ancestors.concat([c]));
         }
       };
-      walk(this, selfGloss);
+      // The receiver itself counts as descendant context (it IS the
+      // `.glossary-content` div in analyze()), matching how a real
+      // `root.querySelectorAll('.x y')` behaves when the root carries `.x`.
+      walk(this, [this]);
       return out;
     },
     querySelector(sel) { const a = this.querySelectorAll(sel); return a[0] || null; },
   };
   return el;
+}
+// ---- minimal CSS selector engine (comma list + descendant combinator) ----
+// Only what popup.js actually asks this harness for: `tag`, `.class`,
+// `tag.class`, `*`, descendant chains, and comma-separated alternatives.
+function parseSimple(token) {
+  const parts = String(token).split('.');
+  const tag = parts[0] ? parts[0].toUpperCase() : null;
+  return { tag: (!tag || tag === '*') ? null : tag, classes: parts.slice(1).filter(Boolean) };
+}
+function parseSelectorList(sel) {
+  return String(sel || '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => part.split(/\s+/).filter(Boolean).map(parseSimple))
+    .filter((chain) => chain.length > 0);
+}
+function matchesSimple(el, simple) {
+  if (!el || el.nodeType !== 1) return false;
+  if (simple.tag && el.tagName !== simple.tag) return false;
+  return simple.classes.every((c) => el.classList && el.classList.contains(c));
+}
+// Right-to-left match: the last token must match the node itself, every earlier
+// token must match some ancestor, in order (plain descendant semantics).
+function matchesChain(chain, node, ancestors) {
+  if (!matchesSimple(node, chain[chain.length - 1])) return false;
+  let j = ancestors.length - 1;
+  for (let i = chain.length - 2; i >= 0; i--) {
+    let found = false;
+    while (j >= 0) {
+      const hit = matchesSimple(ancestors[j], chain[i]);
+      j--;
+      if (hit) { found = true; break; }
+    }
+    if (!found) return false;
+  }
+  return true;
 }
 function siblingOf(node, dir) {
   const p = node.parentNode; if (!p) return null;

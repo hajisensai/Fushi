@@ -1540,6 +1540,32 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // BUG-1095: galgame Hook 台词浮窗字号（逻辑 px）。以前这个值没有真值来源——native
+  // 按浮窗高度对基准 30 做 0.9~2.5 倍缩放，于是「把浮窗拖高」和「把字放大」是同一个
+  // 手势，用户「放不下想拖高」永远拖不出更多行。现在窗高只管窗高，字号是这条独立
+  // 偏好。默认 30 == 旧基准在默认窗高（140dip）下的实际字号，没拖过窗的用户观感不变。
+  static const double galHookTextFontSizeMin = 12.0;
+  static const double galHookTextFontSizeMax = 72.0;
+  static const double galHookTextFontSizeDefault = 30.0;
+
+  double get galHookTextFontSize {
+    final Object? stored = getPref(
+      'gal_hook_text_font_size',
+      defaultValue: galHookTextFontSizeDefault,
+    );
+    final double value =
+        stored is num ? stored.toDouble() : galHookTextFontSizeDefault;
+    return value.clamp(galHookTextFontSizeMin, galHookTextFontSizeMax);
+  }
+
+  Future<void> setGalHookTextFontSize(double value) async {
+    await setPref(
+      'gal_hook_text_font_size',
+      value.clamp(galHookTextFontSizeMin, galHookTextFontSizeMax).toDouble(),
+    );
+    notifyListeners();
+  }
+
   bool get floatingLyricClickLookup =>
       getPref('floating_lyric_click_lookup', defaultValue: true) as bool;
 
@@ -1730,6 +1756,17 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 漫画「在线目录」站点根 URL（O1：mokuro.moe 目录源；`MokuroMoeClient` 消费，
+  /// 空串/尾斜杠由 client 侧 `normalizeMokuroMoeBaseUrl` 归一回默认站点）。
+  String get mangaOnlineCatalogBaseUrl =>
+      getPref('manga_online_catalog_base_url',
+          defaultValue: 'https://mokuro.moe') as String;
+
+  Future<void> setMangaOnlineCatalogBaseUrl(String value) async {
+    await setPref('manga_online_catalog_base_url', value);
+    notifyListeners();
+  }
+
   /// 漫画云端手写识别（Gemini）总开关。**默认关**；关着时零网络调用（红线），
   /// 只影响补扫结果卡片是否显示「云端重试」与请求闸门。
   bool get mangaCloudOcrEnabled =>
@@ -1773,6 +1810,28 @@ class PreferencesRepository extends ChangeNotifier {
 
   Future<void> setDownloadCustomProxy(String value) async {
     await setPref('download_custom_proxy', value);
+    notifyListeners();
+  }
+
+  /// TODO-1961：内置下载引擎的下载根（新任务落点）。空串 = 未设置 → 用默认根
+  /// `<documents>/anime_downloads/content`（与本 key 出现之前逐字节一致）。
+  /// 设备本地路径，不进 Profile 快照（见 `ProfileKeys._excludedPrefKeys`）。
+  String get downloadSaveRoot =>
+      getPref('download_save_root', defaultValue: '') as String;
+
+  Future<void> setDownloadSaveRoot(String value) async {
+    await setPref('download_save_root', value);
+    notifyListeners();
+  }
+
+  /// TODO-1961：用过的历史下载根（JSON 字符串数组，新的在前，见
+  /// `encodeSaveRootHistory`）。**只**用于让改目录之前的旧任务在下载页仍被认出，
+  /// 永不作为写入目标。旧任务不迁移是刻意的：迁移=移动几十 GB 且掐断做种。
+  String get downloadSaveRootHistory =>
+      getPref('download_save_root_history', defaultValue: '') as String;
+
+  Future<void> setDownloadSaveRootHistory(String value) async {
+    await setPref('download_save_root_history', value);
     notifyListeners();
   }
 

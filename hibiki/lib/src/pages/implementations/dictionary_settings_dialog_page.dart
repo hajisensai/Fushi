@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
 import 'package:hibiki/utils.dart';
 
 @visibleForTesting
@@ -48,6 +49,17 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   bool _referenceOriginal = false;
   bool _urlValid = false;
   final TextEditingController _controller = TextEditingController();
+  final FocusNode _urlFocusNode = FocusNode();
+  final GlobalKey _urlFieldKey = GlobalKey();
+
+  /// 正在编辑的远端来源（按**值身份**而非下标追踪）。远端 URL 过去只能删了重加：写错
+  /// 一个字符就得整条重敲。编辑不另开嵌套弹窗，而是复用下方那个 URL 输入框——载入该行
+  /// URL、`+` 变 ✓、旁边给 ✕ 取消，校验/报错沿用同一条路径，不生第二套输入 UI。
+  ///
+  /// 存值而非 index：编辑中用户仍可拖拽重排（`_sources` 顺序会变），存下标就会把新 URL
+  /// 写到**别人**那行上。[AudioSourceConfig] 是 `@immutable` 且实现了 `==`，提交时用
+  /// `indexOf` 现场定位即可；该行被删掉则 `indexOf` 返回 -1，编辑态在删除处即时清空。
+  AudioSourceConfig? _editingSource;
 
   @override
   void initState() {
@@ -63,6 +75,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
     // 回收）。把持久化下沉到 dispose 后，所有关闭路径行为一致（BUG-053）。
     widget.onSave(_sources);
     _controller.dispose();
+    _urlFocusNode.dispose();
     super.dispose();
   }
 
@@ -198,6 +211,9 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
     final AudioSourceConfig source = _sources[index];
     final bool isHibiki = source.kind == AudioSourceKind.hibikiRemote;
     final bool isLocal = source.kind == AudioSourceKind.localAudio;
+    final bool isRemoteUrl = source.kind == AudioSourceKind.remoteAudio;
+    final bool isEditingThis =
+        _editingSource != null && _editingSource == source;
     final String title =
         isHibiki ? t.audio_source_hibiki_interconnect : source.displayLabel;
     final bool loopbackWarn = source.pointsAtLoopbackHost;
@@ -229,6 +245,19 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
               tooltip: t.local_audio_edit_sources,
               padding: EdgeInsets.all(tokens.spacing.gap / 2),
               onTap: () => widget.onEditLocalSources!(source.path!),
+            ),
+          // 「编辑 URL」只在自定义远端行出现，占的是与本地行 tune 完全相同的槽位
+          // （开关左侧）→ 两类行各多一个同尺寸按钮，开关/↑/↓/删除四列仍跨行右贴边
+          // 对齐（BUG-027）。hibikiRemote 无 URL 可改、本地库路径由选择器决定，都不给。
+          if (isRemoteUrl)
+            HibikiIconButton(
+              icon: isEditingThis ? Icons.edit : Icons.edit_outlined,
+              size: 18,
+              tooltip: t.dialog_edit,
+              enabledColor:
+                  isEditingThis ? Theme.of(context).colorScheme.primary : null,
+              padding: EdgeInsets.all(tokens.spacing.gap / 2),
+              onTap: () => _beginEditRemoteUrl(source),
             ),
           Switch.adaptive(
             value: source.enabled,
@@ -266,7 +295,12 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
             tooltip: t.dialog_delete,
             enabled: !isHibiki,
             padding: EdgeInsets.all(tokens.spacing.gap / 2),
-            onTap: () => setState(() => _sources.removeAt(index)),
+            onTap: () => setState(() {
+              _sources.removeAt(index);
+              // 删掉的正是在编辑的那行 → 编辑态当场失效（否则提交时 indexOf 找不到
+              // 它，或在存在等值重复行时改到别人头上）。
+              if (isEditingThis) _cancelEdit();
+            }),
           ),
         ],
       ),
@@ -275,22 +309,30 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
 
   Widget _buildUrlField(HibikiDesignTokens tokens) {
     final bool showError = _controller.text.trim().isNotEmpty && !_urlValid;
+    final bool editing = _editingSource != null;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         AdaptiveSettingsTextField(
+          key: _urlFieldKey,
           controller: _controller,
+          focusNode: _urlFocusNode,
+          // 编辑态给出可见标签，让「这一栏现在改的是已有那行、不是新增」有据可依。
+          labelText: editing ? t.audio_source_edit_url : null,
           hintText: 'https://...{term}...{reading}',
           onChanged: (String value) => setState(
             () => _urlValid = AudioSourcesDialog.isValidRemoteUrl(value),
           ),
-          onSubmitted: (_) => _addRemoteUrl(),
+          onSubmitted: (_) => _commitRemoteUrl(),
           suffixIcon: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              if (!_sources.any((AudioSourceConfig s) =>
-                  s.kind == AudioSourceKind.hibikiRemote))
+              // 编辑态下不再暴露「加入 Hibiki 互联源」——那是新增动作，与当前正在改的
+              // 那一行无关，混在一起只会让 ✓ 的语义变模糊。
+              if (!editing &&
+                  !_sources.any((AudioSourceConfig s) =>
+                      s.kind == AudioSourceKind.hibikiRemote))
                 HibikiIconButton(
                   icon: Icons.hub_outlined,
                   tooltip: t.audio_source_hibiki_interconnect,
@@ -300,12 +342,19 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                         AudioSourceConfig.hibikiRemote(),
                       )),
                 ),
+              if (editing)
+                HibikiIconButton(
+                  icon: Icons.close,
+                  tooltip: t.dialog_cancel,
+                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                  onTap: () => setState(_cancelEdit),
+                ),
               HibikiIconButton(
-                icon: Icons.add,
-                tooltip: t.dialog_add,
+                icon: editing ? Icons.check : Icons.add,
+                tooltip: editing ? t.dialog_save : t.dialog_add,
                 enabled: _urlValid,
                 padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                onTap: _addRemoteUrl,
+                onTap: _commitRemoteUrl,
               ),
             ],
           ),
@@ -323,18 +372,66 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   }
 
   // ── actions ──────────────────────────────────────────────────────────────
-  void _addRemoteUrl() {
+
+  /// 把某个远端行的 URL 载入下方输入框，进入编辑态（光标置末尾，便于改个别字符）。
+  void _beginEditRemoteUrl(AudioSourceConfig source) {
+    final String url = source.url ?? '';
+    setState(() {
+      _editingSource = source;
+      _controller.text = url;
+      _controller.selection = TextSelection.collapsed(offset: url.length);
+      _urlValid = AudioSourcesDialog.isValidRemoteUrl(url);
+    });
+    _urlFocusNode.requestFocus();
+    // 来源多时输入框可能在可视区之外：滚进视野，别让用户以为点了没反应。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final BuildContext? fieldContext = _urlFieldKey.currentContext;
+      if (fieldContext != null && mounted) {
+        // 焦点驱动滚动收口在 focus 包（守卫 test/focus/focus_architecture_static_test.dart）：
+        // 页面不自持滚动实现，统一走 HibikiFocusScroll。
+        HibikiFocusScroll.ensureVisible(
+          fieldContext,
+          duration: const Duration(milliseconds: 150),
+        );
+      }
+    });
+  }
+
+  /// 退出编辑态并清空输入框。**不**自带 setState：调用点已在 setState 内（删除行）或
+  /// 自行包裹（✕ / 提交），避免嵌套 setState。
+  void _cancelEdit() {
+    _editingSource = null;
+    _controller.clear();
+    _urlValid = false;
+  }
+
+  /// 输入框提交：编辑态改写目标行的 URL，否则按新增插到最前。
+  void _commitRemoteUrl() {
     final String text = _controller.text.trim();
     if (!AudioSourcesDialog.isValidRemoteUrl(text)) {
       _showSnack(t.audio_source_url_invalid);
       return;
     }
+    final AudioSourceConfig? editing = _editingSource;
+    // 现场按值定位：编辑期间的拖拽重排不会让我们写错行（存下标才会）。
+    final int index = editing == null ? -1 : _sources.indexOf(editing);
+    if (editing != null && index < 0) {
+      // 目标行已在编辑期间消失（理论上删除处已清编辑态，这里是兜底）：不静默把它
+      // 当新增塞回去——那等于复活用户刚删掉的来源。
+      setState(_cancelEdit);
+      _showSnack(t.audio_source_edit_target_gone);
+      return;
+    }
     setState(() {
-      _sources.insert(0, AudioSourceConfig.remoteAudio(url: text));
-      _controller.clear();
-      _urlValid = false;
+      if (index >= 0) {
+        // label / enabled 保持原样：用户改的只是链接，不该顺手重置显示名和启用状态。
+        _sources[index] = _sources[index].copyWith(url: text);
+      } else {
+        _sources.insert(0, AudioSourceConfig.remoteAudio(url: text));
+      }
+      _cancelEdit();
     });
-    _showSnack(t.audio_source_added);
+    _showSnack(index >= 0 ? t.audio_source_updated : t.audio_source_added);
   }
 
   Future<void> _addLocalDb() async {
@@ -371,6 +468,8 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
 
   void _resetToDefaults() {
     setState(() {
+      // 整表重建 → 编辑目标不再属于新列表，编辑态必须一起清掉。
+      _cancelEdit();
       final bool hadHibiki = _sources
           .any((AudioSourceConfig s) => s.kind == AudioSourceKind.hibikiRemote);
       final List<AudioSourceConfig> locals = _sources

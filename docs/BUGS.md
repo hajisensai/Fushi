@@ -27,12 +27,36 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1048 条。点号进各自文件。
+> 共 1072 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1086](bugs/BUG-1086-shelf-continue-hero-raw-title.md) | ✅ | ✅ | 改名后书架继续阅读条仍显示旧名 |
-| [BUG-1085](bugs/BUG-1085-reading-stats-phantom-chars-lost-duration.md) | ✅ | ✅ | 阅读统计速度爆表：幻象字数+纯时长行被拒 |
+| [BUG-1105](bugs/BUG-1105-shelf-continue-hero-raw-title.md) | ✅ | ✅ | 改名后书架继续阅读条仍显示旧名 |
+| [BUG-1104](bugs/BUG-1104-reading-stats-phantom-chars-lost-duration.md) | ✅ | ✅ | 阅读统计速度爆表：幻象字数+纯时长行被拒 |
+| [BUG-1103](bugs/BUG-1103-helper-supply-chain.md) | ✅ | ✅ | galgame helper 安装器：sha256 侧车拉不到就不校验照装 + 侧车与产物同源第三方镜像（注入器/hook DLL 供应链后门） |
+| [BUG-1102](bugs/BUG-1102-gal-audio-track-panel-dead-controls.md) | ✅ | ✅ | 兼容性诊断页「活跃音轨」面板全无效：选轨/排除点了没反应，空轨照样占位 |
+| [BUG-1101](bugs/BUG-1101-gal-loopback-line-audio-off-by-one.md) | ✅ | ✅ | 降级到系统 Loopback 时逐行语音永远配到上一句 |
+| [BUG-1100](bugs/BUG-1100-gal-degrade-unrecoverable-engine-pcm.md) | ✅ | ✅ | galgame 刚启动就误报「降级运行 · engine_pcm_unavailable」，且永远回不到引擎 PCM |
+| [BUG-1099](bugs/BUG-1099-passive-clipboard-stream-clobbers-lookup.md) | ✅ | ✅ | 查完词后剪贴板一更新，浮窗释义就被清空「缩回去」 |
+| [BUG-1098](bugs/BUG-1098-popup-headword-furigana-clipped.md) | ✅ | ✅ | 查词弹窗词头的假名（furigana）被垂直压扁 / 裁掉 |
+| [BUG-1097](bugs/BUG-1097-lookup-overlay-webview2-status-bar-url.md) | ✅ | ✅ | 查词浮窗左下角冒出 `https://hibiki.popup/popup.html?query=…&wildcards=off` |
+| [BUG-1096](bugs/BUG-1096-window-capture-two-mouse-cursors.md) | ✅ | ✅ | 画面捕获出现两个鼠标指针 |
+| [BUG-1095](bugs/BUG-1095-gal-overlay-font-size-coupled-to-window-height.md) | ✅ | ✅ | galgame 台词浮窗拖动窗口时字号跟着变，「放不下」怎么拖都放不下 |
+| [BUG-1094](bugs/BUG-1094-gal-manual-recapture-fixed-8s.md) | ✅ | ✅ | 手动录音 ⏺ 固定 8 秒自动关闭，且回取长度被同一个错误常量夹住 |
+| [BUG-1093](bugs/BUG-1093-first-lookup-audio-missing.md) | ✅ | ✅ | 第一次查词音频容易没有：WebView autoplay 拦截+兜底失效 |
+| [BUG-1092](bugs/BUG-1092-gal-locale-resume-skipped.md) | 🚧 | 🚧 | Locale Emulator 启动的游戏永久停在挂起态：窗口永不出现，injector 却报 OK hooked |
+| [BUG-1091](bugs/BUG-1091-gal-injector-diagnostics-mojibake.md) | ✅ | ✅ | injector 诊断按系统代码页解码：会话事件乱码且中文失败分类永久失配 |
+| [BUG-1090](bugs/BUG-1090-audio-source-url-not-editable.md) | ✅ | ✅ | 管理音频来源弹窗里已有远端 URL 无法编辑，只能删了重加 |
+| [BUG-1089](bugs/BUG-1089-gal-launch-silent-no-feedback.md) | ✅ | ✅ | 点启动游戏无任何提示：注入降级/窗口未出现都静默走成功路径 |
+| [BUG-1088](bugs/BUG-1088-sync-host-hides-cloud-upload-and-interconnect-backend.md) | ✅ | ✅ | host 模式误藏云备份上传开关，互联从同步方式消失且无入口 |
+| [BUG-1087](bugs/BUG-1087-jimaku-episode-label-truncated.md) | ✅ | ✅ | 番剧下载确认页集号输入框在界面缩放下 label 截断成「集…」 |
+| [BUG-1086](bugs/BUG-1086-nyaa-search-error-swallowed.md) | ✅ | ✅ | Nyaa 搜索网络错误被吞成统一文案，真实报错不可见（生肉分类超时无从定位） |
+| [BUG-1085](bugs/BUG-1085-gal-charcount-inflated.md) | ✅ | ✅ | galgame 字数统计虚高：标点全算/重复行重计/递增重发重计/外部通道双计 |
+| [BUG-1084](bugs/BUG-1084-torrent-settings-field-full-width.md) | ✅ | ✅ | 下载设置输入框在宽屏详情面板被拉满整宽 |
+| [BUG-1083](bugs/BUG-1083-manga-author-edit-missing.md) | ✅ | ✅ | 漫画编辑对话框缺作者字段(未覆盖supportsAuthorEdit) |
+| [BUG-1082](bugs/BUG-1082-scrape-poster-lowres.md) | ✅ | ✅ | TMDB刮削海报w500缩略图发糊非满分辨率 |
+| [BUG-1081](bugs/BUG-1081-poster-use-no-feedback.md) | ✅ | ✅ | 海报匹配弹窗点使用没反应无进度反馈 |
+| [BUG-1080](bugs/BUG-1080-poster-match-cm-rank.md) | ✅ | ✅ | 视频海报离线匹配把联动CM排到正片前 |
 | [BUG-1079](bugs/BUG-1079-extension-update-silent-stale.md) | ✅ | ✅ | 扩展自更新失败永久静默无重试且无任何更新提示 |
 | [BUG-1078](bugs/BUG-1078-extension-passive-wheel-scroll-drag.md) | ✅ | ✅ | 扩展在所有网页常驻非passive wheel监听拖慢浏览器滚动 |
 | [BUG-1077](bugs/BUG-1077-nested-lookup-mouse-hook-starvation.md) | ✅ | ✅ | 嵌套查词瞬间全局鼠标卡顿：钩子线程无优先级+嵌套路径卸装钩子churn |

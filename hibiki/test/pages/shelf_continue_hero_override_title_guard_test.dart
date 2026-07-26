@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-1086 源码扫描守卫：书架顶部「继续阅读」hero 条的书名必须经
+/// BUG-1105 源码扫描守卫：书架顶部「继续阅读」hero 条的书名必须经
 /// [MediaSource.getDisplayTitleFromMediaItem] 应用编辑弹窗写入的 override 书名，
 /// 不得直读 DB 原始列 `hero.title` 上屏。
 ///
@@ -31,7 +31,7 @@ void main() {
     expect(
       hero(),
       isNot(contains('hero.title,')),
-      reason: '直读 hero.title 会在改名后仍显示旧名（BUG-1086）',
+      reason: '直读 hero.title 会在改名后仍显示旧名（BUG-1105）',
     );
   });
 }

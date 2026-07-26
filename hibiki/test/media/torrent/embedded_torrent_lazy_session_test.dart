@@ -39,8 +39,8 @@ void main() {
           _memberBody(appModel, 'Future<void> startAnimeDownloadService()');
       expect(body.contains('EmbeddedTorrentHost.open('), isFalse,
           reason: 'BUG-1053 回归：启动即建 session = 空闲也在跑 DHT/占 6881');
-      // 只记保存路径，真会话交给懒建入口。
-      expect(body.contains('_embeddedTorrentSavePath'), isTrue);
+      // 只记保存路径（TODO-1961 起是活动根 + 历史根集合），真会话交给懒建入口。
+      expect(body.contains('_embeddedTorrentSaveRoots'), isTrue);
     });
 
     test('后端工厂在真要用时才懒建（且仅内置后端路径）', () {

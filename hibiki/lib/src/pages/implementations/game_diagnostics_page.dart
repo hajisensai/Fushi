@@ -59,9 +59,18 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
   }
 
   /// 选轨需要引擎 hook 会话；无 engine 时明确 toast 而非静默无反应（BUG-1027）。
+  ///
+  /// BUG-1102：有 engine 不等于选轨生效——资源模式与 Loopback 后端根本不消费
+  /// `selectedAudioSourcePtr`。控件此时已被禁用，这里保留一条兜底提示，防止将来
+  /// 有别的入口绕过禁用又变回静默无反应。
   void _handleSelectVoice(int sourcePtr) {
     if (!_controller.hasEngineSource) {
       HibikiToast.show(msg: t.game_track_select_requires_engine);
+    } else if (!galTrackSelectionAffectsCapture(
+      _controller.state.audioBackend,
+    )) {
+      HibikiToast.show(msg: t.game_tracks_pcm_only_hint);
+      return;
     }
     _controller.selectVoiceTrack(sourcePtr);
   }
@@ -451,10 +460,22 @@ class _AudioTracksCard extends StatelessWidget {
     // BUG-1027：gameResource / 纯 Loopback 模式下 PCM 音轨列表**本就不存在**，
     // 通用「尚无音轨数据」会误导用户以为音频链路故障——改为按后端给解释态，
     // 且不再渲染只对引擎 PCM 有意义的「自动选择」radio。
+    //
+    // BUG-1102：解释态与禁用判据都必须看**后端**，不是看列表空不空。用户机器上列表非空
+    // （PCM 环里还有残留可枚举）却照样点不动选轨，正是因为当前后端根本不消费
+    // selectedAudioSourcePtr；旧实现只在 isEmpty 时解释，于是整套死控件照常渲染。
     final GalTrackEmptyHint emptyHint =
         galTrackEmptyHintFor(state.audioBackend);
-    final bool explainedEmpty =
-        state.audioTracks.isEmpty && emptyHint != GalTrackEmptyHint.generic;
+    final bool selectionEffective =
+        galTrackSelectionAffectsCapture(state.audioBackend);
+    final String? backendHint = selectionEffective
+        ? null
+        : switch (emptyHint) {
+            GalTrackEmptyHint.resourceMode => t.game_tracks_resource_mode_hint,
+            GalTrackEmptyHint.loopbackMode => t.game_tracks_loopback_hint,
+            GalTrackEmptyHint.generic =>
+              state.audioTracks.isEmpty ? null : t.game_tracks_pcm_only_hint,
+          };
     return _SectionCard(
       title: t.game_audio_tracks,
       icon: Icons.multitrack_audio_outlined,
@@ -463,44 +484,44 @@ class _AudioTracksCard extends StatelessWidget {
         tooltip: t.game_refresh_tracks,
         onTap: onRefresh,
       ),
-      child: explainedEmpty
-          ? _DetailBox(
-              icon: Icons.info_outline,
-              text: emptyHint == GalTrackEmptyHint.resourceMode
-                  ? t.game_tracks_resource_mode_hint
-                  : t.game_tracks_loopback_hint,
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                RadioListTile<int>(
-                  contentPadding: EdgeInsets.zero,
-                  value: 0,
-                  groupValue: state.selectedAudioSourcePtr,
-                  onChanged: (int? value) => onSelectVoice(value ?? 0),
-                  title: Text(t.game_track_auto),
-                  secondary: const Icon(Icons.auto_awesome_outlined),
-                ),
-                if (state.audioTracks.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Text(t.game_no_tracks),
-                  )
-                else
-                  for (final GalAudioTrack track in state.audioTracks)
-                    _TrackTile(
-                      track: track,
-                      selected: state.selectedAudioSourcePtr == track.sourcePtr,
-                      excluded: state.excludedAudioSourcePtrs
-                          .contains(track.sourcePtr),
-                      previewing: previewingSourcePtr == track.sourcePtr,
-                      onSelect: () => onSelectVoice(track.sourcePtr),
-                      onPreview: () => onPreviewTrack(track),
-                      onToggleExcluded: (bool excluded) =>
-                          onToggleExcluded(track.sourcePtr, excluded),
-                    ),
-              ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (backendHint != null)
+            _DetailBox(icon: Icons.info_outline, text: backendHint),
+          // 「自动选择」只对引擎 PCM 有意义；其余后端不渲染它，免得暗示能选。
+          if (selectionEffective)
+            RadioListTile<int>(
+              contentPadding: EdgeInsets.zero,
+              value: 0,
+              groupValue: state.selectedAudioSourcePtr,
+              onChanged: (int? value) => onSelectVoice(value ?? 0),
+              title: Text(t.game_track_auto),
+              secondary: const Icon(Icons.auto_awesome_outlined),
             ),
+          if (state.audioTracks.isEmpty && backendHint == null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(t.game_no_tracks),
+            )
+          else
+            // 抓不到片段的轨照样列出来（用户需要知道它存在），但明确标注并置灰，
+            // 不再让它看起来和可用轨一样（BUG-1102 ②）。
+            for (final GalAudioTrack track in state.audioTracks)
+              _TrackTile(
+                track: track,
+                selected: state.selectedAudioSourcePtr == track.sourcePtr,
+                excluded:
+                    state.excludedAudioSourcePtrs.contains(track.sourcePtr),
+                previewing: previewingSourcePtr == track.sourcePtr,
+                selectable: selectionEffective,
+                onSelect: () => onSelectVoice(track.sourcePtr),
+                onPreview: () => onPreviewTrack(track),
+                onToggleExcluded: (bool excluded) =>
+                    onToggleExcluded(track.sourcePtr, excluded),
+              ),
+        ],
+      ),
     );
   }
 }
@@ -511,6 +532,7 @@ class _TrackTile extends StatelessWidget {
     required this.selected,
     required this.excluded,
     required this.previewing,
+    required this.selectable,
     required this.onSelect,
     required this.onPreview,
     required this.onToggleExcluded,
@@ -522,6 +544,11 @@ class _TrackTile extends StatelessWidget {
 
   /// 该轨是否正在试听（按钮显示为停止）。
   final bool previewing;
+
+  /// 当前音频后端是否真的消费选轨/排除（BUG-1102）。false 时这两个控件禁用——
+  /// 让用户点一个不会生效的按钮比直接说清楚更糟。试听仍可用（它显式传 sourcePtr、
+  /// 不经过这两个字段），用户仍能靠它判断哪条是语音。
+  final bool selectable;
   final VoidCallback onSelect;
   final VoidCallback onPreview;
   final ValueChanged<bool> onToggleExcluded;
@@ -529,16 +556,30 @@ class _TrackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final PcmFormat format = track.format;
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    // 近窗内一个片段都没有的轨：留在列表里（用户需要知道它存在），但明确标注并置灰，
+    // 不再让它看起来和真能取到语音的轨一样（BUG-1102 ②）。
+    final bool silent = track.clipCount <= 0;
     return ListTile(
       contentPadding: EdgeInsets.zero,
+      enabled: !silent,
       leading: Icon(excluded ? Icons.music_off_outlined : Icons.graphic_eq),
       title: Text(
         '${t.game_track_voice} ${track.orderIndex + 1} · ${format.sampleRate} Hz · ${format.channels} ch',
       ),
       subtitle: Text(
-        '0x${track.sourcePtr.toRadixString(16)} · '
-        '${t.game_track_clips} ${track.clipCount} · '
-        '${t.game_track_energy} ${track.avgEnergy.toStringAsFixed(1)}',
+        <String>[
+          '0x${track.sourcePtr.toRadixString(16)}',
+          '${t.game_track_clips} ${track.clipCount}',
+          '${t.game_track_energy} ${track.avgEnergy.toStringAsFixed(1)}',
+          if (silent) t.game_track_no_clips,
+        ].join(' · '),
+        style: silent
+            ? Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(color: colors.outline)
+            : null,
       ),
       trailing: Wrap(
         spacing: 4,
@@ -556,12 +597,13 @@ class _TrackTile extends StatelessWidget {
           HibikiIconButton(
             icon: selected ? Icons.check_circle : Icons.circle_outlined,
             tooltip: t.game_track_select_as_voice,
-            enabled: !excluded,
+            enabled: selectable && !excluded,
             onTap: onSelect,
           ),
           HibikiIconButton(
             icon: excluded ? Icons.undo : Icons.music_off_outlined,
             tooltip: excluded ? t.game_track_restore : t.game_track_exclude_bgm,
+            enabled: selectable,
             onTap: () => onToggleExcluded(!excluded),
           ),
         ],

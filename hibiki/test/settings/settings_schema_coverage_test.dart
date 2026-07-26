@@ -35,6 +35,15 @@ import '../helpers/test_platform_services.dart';
 /// 让覆盖测试不对「别处已覆盖」的项裸喊 UNVERIFIED/FAIL，且强制每个 changed
 /// 但未 effect-verified 的设置都必须有去处（no silent caps）。
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // BUG-1095：galgame Hook 台词浮窗字号。写 prefsRepo（changed=true），生效点在
+  // runner 自有的 Win32 分层浮窗（Direct2D/DirectWrite 直绘，不是 Flutter widget
+  // 树），本进程内没有任何可探的渲染输入，故无适用探针；由三层专项测试咬住：
+  // 偏好边界（默认/钳位/脏值）、控制器把字号经 show/updateStyle 真推给 native、
+  // 以及 native 源码守卫（hook 模式不再按窗高缩放字号）。
+  'lookup/Galgame caption font size':
+      'test/models/preferences_repository_gal_hook_font_test.dart + '
+          'test/lookup/gal_hook_text_overlay_controller_test.dart + '
+          'test/build/gal_overlay_font_decoupled_guard_test.dart',
   // 视频条目自动刮削总闸。写 prefsRepo（changed=true），生效点在
   // VideoScrapeAutoService.sweep 的进场门（关=零网络请求、零资料落库），不是
   // reader CSS / 主题树，无适用探针；由专项服务测试咬住（关=不发请求、关→开
@@ -72,6 +81,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // cloud_ocr_client_test 的「默认关零网络」gating。
   'reading/Enable cloud recognition':
       'test/media/manga/manga_ocr_settings_section_ui_test.dart + test/ocr/cloud_ocr_client_test.dart',
+  // 漫画「在线目录」站点根 URL（O1 mokuro.moe 目录源）：网络端点，写穿偏好后
+  // 消费点在 MokuroMoeClient 的请求 URL 拼接（widget harness 观测不到真生效）；
+  // 由 client 专项测试咬住（base URL 归一 + URL 编码 + 端点拼接）。
+  'reading/Online catalog URL':
+      'test/media/manga/online/mokuro_moe_client_test.dart',
   // 专项 unit/widget 生效探针（docs/specs/2026-06-03-t4-effect-probes-plan.md T1–T9）
   'reading/Text Orientation': 'test/reader/reader_content_styles_test.dart',
   'reading/Font Kerning (Vertical)':

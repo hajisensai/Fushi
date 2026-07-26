@@ -27,6 +27,7 @@ import 'package:hibiki/src/media/manga/external_mokuro_runner.dart';
 import 'package:hibiki/src/media/manga/manga_importer.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_wizard_dialog.dart';
+import 'package:hibiki/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
 import 'package:hibiki/src/pdf/pdf_importer.dart';
 import 'package:hibiki/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -217,6 +218,12 @@ class _BookImportDialogState extends State<BookImportDialog>
               onPressed: importing ? null : _openOcrWizard,
               child: Text(t.manga_ocr_wizard_title),
             ),
+          // 漫画「在线目录」（O1 mokuro.moe 目录源）：卷级下载 → 现有导入链落库。
+          adaptiveDialogAction(
+            context: context,
+            onPressed: importing ? null : _openOnlineCatalog,
+            child: Text(t.manga_online_catalog_title),
+          ),
           adaptiveDialogAction(
             context: context,
             onPressed: () => Navigator.pop(context),
@@ -266,6 +273,20 @@ class _BookImportDialogState extends State<BookImportDialog>
       ),
     );
     if (bookKey != null && mounted) {
+      Navigator.pop(context, true);
+    }
+  }
+
+  /// 打开漫画「在线目录」（O1 mokuro.moe 目录源）：完全照 [_openOcrWizard] 范式，
+  /// 有导入发生（返回成功卷数 > 0）则连同关闭本导入框并回传 true，让书架刷新。
+  /// barrier 不可点关：导入计数经显式关闭按钮回传，点空白会丢「需刷新」信号。
+  Future<void> _openOnlineCatalog() async {
+    final int? imported = await showAppDialog<int>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => MokuroMoeCatalogDialog(db: widget.db),
+    );
+    if (imported != null && imported > 0 && mounted) {
       Navigator.pop(context, true);
     }
   }

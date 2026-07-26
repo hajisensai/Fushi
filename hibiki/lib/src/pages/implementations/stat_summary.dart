@@ -164,7 +164,7 @@ SpeedSummary computeSpeedSummary(
   for (final StatDayData d in daily) {
     totalChars += d.chars;
     totalMs += d.ms;
-    // BUG-1085：旧门槛仅 `ms>0 && chars>0`，几秒钟的脏行（幻象字数 + 近零时长）
+    // BUG-1104：旧门槛仅 `ms>0 && chars>0`，几秒钟的脏行（幻象字数 + 近零时长）
     // 外推出「1619597 字/时」并霸占「最快日」。[computeCph] 现内建最小样本时长
     // 门槛（kMinCphSampleMs = 1 分钟），不足返回 null → 该日不参与典型日中位数
     // 与最快/最慢日极值。

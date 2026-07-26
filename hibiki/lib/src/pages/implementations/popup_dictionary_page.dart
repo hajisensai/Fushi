@@ -501,6 +501,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // 关闭是 Flutter 层手势所以幸存）。screen 取窗口尺寸：卡片原点 ≥ 0，卡片局部
     // x = screen.width + 8 必在窗外，原生视图放行触摸。
     return parkedPopupLayer(
+      // 与 base_source_page / mixin 侧 BUG-941 同根因：相邻层（占位/隐藏热槽）插拔时
+      // 无 key 的 Positioned 会按位置错配更新、拆建原生 WebView 平台视图，热槽冷重载。
+      // 以 entry 身份钉住整层。
+      key: ObjectKey(entry),
       pos: Rect.fromLTWH(0, 0, cardSize.width, cardSize.height),
       visible: entry.visible,
       screen: MediaQuery.sizeOf(context),

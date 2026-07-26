@@ -1,0 +1,14 @@
+## BUG-1080 · 视频海报离线匹配把联动CM排到正片前
+- **报告**：2026-07-25（用户）
+- **真实性**：✅ 真 bug。用户搜「Kimi no Na wa. -your name」，离线库第 1 名是 Suntory 天然水联动 CM（标高匹配），正片「Kimi no Na wa.」movie 只中匹配排第 2。两条独立成因：列表排序 `offline_index.dart:_bestSimilarity` + 徽标 `match_scorer.dart` 类型加权。
+- **根因**：
+  - ① 列表排序：`offline_index.dart:243 _bestSimilarity` 对 title+synonyms 取 MAX 相似度，无来源区分。Suntory CM 把「君の名は/Kimi no Na wa」塞进 synonyms，蹭到与正片相同的最大相似度；CM 自身无关的主标题「Suntory…」不产生任何惩罚。tie 时排序不稳定，CM 可能顶到前面。
+  - ② 徽标反转：`match_scorer.dart:130-147` 类型加权方向错。文件名没「剧场版」标记时（`parsed.isMovieHint==false`，movie 文件常如此），正片（movie 候选）被 `_kTypeConflictWeakPenalty=-0.10`、CM（special/ona）被 `_kTypeWeakBonus=+0.05`——0.15 系统性摆动把 CM 顶成 high、正片压成 medium。
+- **[x] ① 已修复** — commit（见末）。
+  - `match_scorer.dart`：类型加权改为**只有文件名显式带电影标记时才生效**（hint+movie 加分 / hint+非movie 强冲突减分）；无 hint 时中性 0，不得据此奖惩任一方。删除仅无-hint用的 `_kTypeWeakBonus` / `_kTypeConflictWeakPenalty` 常量。
+  - `offline_index.dart:search`：排序加 tiebreaker——最大相似度打平时，优先「主标题（非借来别名）相似度」更高的候选。正片主标题直接命中（0.8）压过 CM 主标题命中≈0。
+  - 刻意**不**动「别名折扣」（会误伤中文名跨语言查词：query=中文名、title=罗马字、中文名在 synonyms 的正常情形结构与 CM 相同）。
+- **[x] ② 已加自动化测试** —
+  - `test/media/video/scraper/offline_index_test.dart`：「借来别名的联动/CM 降级」——构造 Suntory CM（synonyms 借「Kimi no Na wa」）+ 正片，search 断言正片排第 1。
+  - `test/media/video/scraper/match_scorer_test.dart`：「无电影提示时类型加权中性」——断言无 hint 时 movie/非movie 候选 typeMatched 均 null、同 titleScore 同 confidence，正片不再被反超。
+- **备注**：属「统一各媒体页服务」P1 刮削域。CM/联动条目的深度识别降权（type/时长/标题特征）留作后续可选加强，A+C 已让正片重回第 1。

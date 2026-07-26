@@ -53,8 +53,13 @@ typedef GalHookTextBoundsHandler = FutureOr<void> Function(
   GalHookTextWindowRect rect,
 );
 
-/// Hook 台词浮窗的基准字号（逻辑 px）。native 在 hook 模式下按窗口高度对它做
-/// 0.9~2.5 倍缩放（`kHookTextBaseHeightForFontDip`），所以把浮窗拖高就能放大台词。
+/// Hook 台词浮窗的默认字号（逻辑 px）。
+///
+/// BUG-1095：以前 native 会在 hook 模式下按窗口高度对它做 0.9~2.5 倍缩放，于是
+/// 「拖高浮窗」＝「放大台词」，可见行数几乎不涨，用户「放不下想拖高」永远无解。
+/// 现在 native 直接用这个值（不再乘窗高比例），真值来自 `gal_hook_text_font_size`
+/// 偏好；本常量只是它的默认值，等于旧公式在默认窗高（140dip）下的实际字号，
+/// 所以没拖过窗的用户观感逐像素不变。
 const double kGalHookTextFontSize = 30.0;
 
 /// Windows Hook 台词浮窗的专用 MethodChannel 契约。
@@ -226,10 +231,11 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
   static Future<void> updateStyle({
     required int bgColor,
     int textColor = 0xFFFFFFFF,
+    double fontSize = kGalHookTextFontSize,
   }) async {
     if (!_instance.isSupported) return;
     await _instance.channel.invokeMethod<void>('updateStyle', <String, Object?>{
-      'fontSize': kGalHookTextFontSize,
+      'fontSize': fontSize,
       'bgColor': bgColor,
       'textColor': textColor,
       'buttonTextColor': 0xFFFFFFFF,

@@ -833,7 +833,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final double charFrac = goalFraction(_todayChars, charGoal);
     final int todayMinutes = _todayMs ~/ 60000;
     final double timeFrac = goalFraction(todayMinutes, _kDailyTimeGoalMinutes);
-    // BUG-1085：今日速度同样过最小样本门槛（[computeCph] 内建，不足 1 分钟返回
+    // BUG-1104：今日速度同样过最小样本门槛（[computeCph] 内建，不足 1 分钟返回
     // null）——今日只有几十秒的记录时显示占位符，不外推爆表数字。
     final double? todayCph = computeCph(_todayChars, _todayMs);
 
@@ -1264,7 +1264,7 @@ class _BookData {
   int ms = 0;
 
   /// 该书阅读速度（字/小时）。复用统一口径的 [computeCph]（内建最小样本时长
-  /// 门槛，BUG-1085）；样本不足折叠为 0——排序/进度条把它当「无有效速度」，
+  /// 门槛，BUG-1104）；样本不足折叠为 0——排序/进度条把它当「无有效速度」，
   /// 不再让几秒脏行的书在速度维度霸榜。
   double get cph => computeCph(chars, ms) ?? 0;
 }

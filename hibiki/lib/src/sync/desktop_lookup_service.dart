@@ -39,10 +39,23 @@ class DesktopLookupRequest {
   final DesktopLookupForegroundPolicy foregroundPolicy;
   final bool showSourcePanel;
 
-  /// 被动连续文本流（galgame 台词 hook 每 ~400ms 灌一条新台词）而非用户一次性显式意图
-  /// （剪贴板复制 / 热键）。悬浮面板据此决定：用户已点词查看释义时，被动流只刷新可点句子
-  /// 横幅、不抢占/不重置用户的查词结果（否则连续流会把点词的 searchDictionary 作废 + 整帧
-  /// 重置冲掉释义，表现为「对话流动时点词没反应」）。真剪贴板复制（false）仍正常重查。
+  /// 被动连续文本流：Hibiki 在**没有收到任何指向自己的用户动作**时被环境喂进来的文本
+  /// （galgame 台词 hook / 外部 texthooker 每 ~400ms 往剪贴板灌一条新台词，由
+  /// [DesktopLookupService.processClipboardText] 的剪贴板监听接住），而不是用户的一次性
+  /// 显式意图（全局热键 [DesktopLookupOrigin.hotkey] / 悬浮字幕点词
+  /// [DesktopLookupOrigin.explicit]）。
+  ///
+  /// 两个消费面据此决定是否保留用户已点出的那张卡（判据单一真相源
+  /// `keepUserOwnedCardForPassiveStream`）：
+  /// - 悬浮面板：用户已点词查看释义时只刷新可点句子横幅，不抢占/不重置 root；
+  /// - 瞬态覆盖窗：用户点词开出的卡直接留在原地，不重建 root、不清空已测尺寸。
+  /// 否则连续流会把点词的 searchDictionary 作废 + 整帧重置冲掉释义，表现为
+  /// 「对话流动时点词没反应 / 释义被清空缩回去」（BUG-1099）。
+  ///
+  /// BUG-1099 根因备忘：本字段自 a3330a4bc 引入后，唯一置 true 的调用点在
+  /// GalgameSessionController；该文件在 2df13d481 作为死代码整体删除，于是全仓再无
+  /// `passiveStream: true`，上面两条保护变成永不触发的死代码，用户报的
+  /// 「查完词后剪贴板一更新释义就被清空」重新出现。现由剪贴板监听路径直接标记。
   final bool passiveStream;
 }
 
@@ -117,6 +130,12 @@ class DesktopLookupService extends ChangeNotifier
   /// 仍可按全局热键（Ctrl+Shift+D，origin=hotkey）或在悬浮字幕上点词（origin=explicit）
   /// ——那些是显式意图，保留 bringToFront。窗口置顶策略（[DesktopClipboardWindowMode]）
   /// 不改变本约定：无论选哪种策略，被动剪贴板变化都不抢焦点。
+  ///
+  /// BUG-1099 — [passiveStream]：本方法的两个调用点（[processClipboardText] 与
+  /// [endSelfInflictedCapture] 的回放）都来自**环境剪贴板监听**，即 Hibiki 没有收到
+  /// 任何指向自己的用户动作，故一律传 true。显式意图（热键 [_onHotKey] / 悬浮字幕点词
+  /// [triggerLookup]）不走本方法，它们直接调 [_queueLookupRequest] 并保持
+  /// `passiveStream: false`，因此永远不会被消费侧的「保留用户卡」分支拦下。
   void submitText(String raw, {bool passiveStream = false}) {
     _queueLookupRequest(
       raw,
@@ -325,7 +344,9 @@ class DesktopLookupService extends ChangeNotifier
     _deferredDuringCapture.clear();
     for (final String text in deferred) {
       if (selfInflicted.contains(text.trim())) continue;
-      submitText(text);
+      // BUG-1099：回放的仍是**剪贴板监听**接住的事件（只是抓选区括号期内先到、
+      // 事后对账放行），来源与 [processClipboardText] 同一条环境通道，故同样是被动流。
+      submitText(text, passiveStream: true);
     }
   }
 
@@ -350,7 +371,11 @@ class DesktopLookupService extends ChangeNotifier
       return;
     }
     if (clipboardIgnores.consume(text)) return;
-    submitText(text);
+    // BUG-1099：剪贴板监听 = 被动文本流。这条路径由 OS 的剪贴板变化事件驱动
+    // （[onClipboardChanged]），用户没有对 Hibiki 做任何动作；galgame 台词 hook /
+    // 外部 texthooker 正是经这里每 ~400ms 灌一条新台词。标 passiveStream 让消费侧
+    // 能把它与热键/点词这类显式意图区分开，不再冲掉用户点出的释义。
+    submitText(text, passiveStream: true);
   }
 
   Future<void> _onHotKey() async {

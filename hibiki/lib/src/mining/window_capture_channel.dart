@@ -104,13 +104,19 @@ class ExternalWindowInfo {
 
 /// [WindowCaptureChannel.captureWindow] 的结果：成功带 PNG 字节，失败带人类可读原因。
 class WindowCaptureResult {
-  const WindowCaptureResult({this.pngBytes, this.error});
+  const WindowCaptureResult({this.pngBytes, this.error, this.diagnostics});
 
   /// 捕获到的 PNG 图像字节（成功时非空）。
   final Uint8List? pngBytes;
 
   /// 失败原因（成功时为 null）。
   final String? error;
+
+  /// BUG-1096：**成功路径**上值得记录的 native 事实，与 [error] 正交（有它不代表失败）。
+  /// 目前两类：① WGC 光标合成抑制没能生效（`IGraphicsCaptureSession2` 缺失或
+  /// `put_IsCursorCaptureEnabled` 失败——以前这两处 HRESULT 都被 native 静默吞掉）；
+  /// ② 捕获目标被从 Magpie 缩放窗重定向到了真实源窗口。native 无话可说时为 null。
+  final String? diagnostics;
 
   /// true = 成功拿到非空图像字节。
   bool get ok => error == null && pngBytes != null && pngBytes!.isNotEmpty;
@@ -119,5 +125,6 @@ class WindowCaptureResult {
       WindowCaptureResult(
         pngBytes: m['pngBytes'] as Uint8List?,
         error: m['error'] as String?,
+        diagnostics: m['diagnostics'] as String?,
       );
 }

@@ -30,10 +30,11 @@ import 'package:hibiki/src/utils/cover_image.dart' show evictLocalCoverCache;
 import 'package:hibiki/utils.dart';
 
 // 游戏进合集（统一媒体库）：mediaType 用 [MediaKind.game]（P5 枚举地基，取代旧
-// 局部常量 kGameCollectionMediaType）。entryKey = `galgames.id`（添加时刻微秒
-// 时间戳字符串）——**游戏本机局域身份**：与 exe 路径同为本机事实，跨端同步时
-// 对端无对应 `galgames` 行则该成员静默忽略（合集同步引擎对 mediaType/entryKey
-// 透传，不解引用）。
+// 常量 kGameCollectionMediaType）。entryKey = `galgames.id`（添加时刻微秒时间戳
+// 字符串）——**游戏本机局域身份**：与 exe 路径同为本机事实，跨端同步时对端无
+// 对应 `galgames` 行则该成员静默忽略（合集同步引擎对 mediaType/entryKey 透传，
+// 不解引用）。
+
 
 /// 首页「游戏」tab：galgame 库。展示用户添加的游戏网格，点击一个游戏经
 /// [GalHookSessionController.launchGame]（引擎-hook launch 路径）拉起并注入。
@@ -426,22 +427,31 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         );
         if (!installed || !mounted) return;
       }
-      final bool launched =
-          await (widget.sessionController ?? GalHookSessionController.instance)
-              .launchGame(game.exePath);
+      final GalHookSessionController session =
+          widget.sessionController ?? GalHookSessionController.instance;
+      final bool launched = await session.launchGame(
+        game.exePath,
+        launchArguments: game.launchArgumentTokens,
+        workdir: game.workdir,
+      );
       if (!mounted) return;
-      if (!launched) {
-        final GalHookSessionState state =
-            (widget.sessionController ?? GalHookSessionController.instance)
-                .state;
-        // 同 texthooker：先给用户可执行的处置，再退回内部消息。
-        HibikiToast.show(
-          msg: galHookFailureLabel(state.injectorFailure) ??
-              state.lastError ??
-              t.game_capture_launch_failed,
-        );
-        return;
-      }
+      // 每种结果都播报（BUG-1089）。旧实现只在 `!launched` 时说话，可注入降级和
+      // 「游戏窗口从未出现」这两条路径 `launchGame` 都返回 true，于是点完「启动游戏」
+      // 既看不到游戏也看不到任何提示 —— 用户感知就是「点了没反应」。
+      final GalHookSessionState state = session.state;
+      final GalHookLaunchOutcome outcome = classifyGalHookLaunchOutcome(
+        launched: launched,
+        hasBoundWindow: state.boundWindow != null,
+        injectorFailure: state.injectorFailure,
+      );
+      HibikiToast.show(
+        msg: galHookLaunchOutcomeMessage(
+          outcome: outcome,
+          failure: state.injectorFailure,
+          lastError: state.lastError,
+        ),
+      );
+      if (!launched) return;
       widget.onLaunched?.call();
     } finally {
       _launching = false;

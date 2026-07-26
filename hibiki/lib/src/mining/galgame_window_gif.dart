@@ -33,12 +33,26 @@ Future<Uint8List?> captureWindowGifBytes({
     tempDir = await Directory.systemTemp.createTemp('hibiki_gal_gif_');
     // 连续抓帧：任一帧失败跳过该帧；帧间 sleep [intervalMs]（捕获本身还有 WGC 延迟）。
     int captured = 0;
+    // BUG-1096：native 的成功路径诊断（光标抑制是否真的生效 / 捕获目标是否被从
+    // Magpie 缩放窗重定向）。每轮只记一次，逐帧刷会把日志淹掉。
+    String? loggedDiagnostics;
     for (int i = 0; i < frames; i++) {
       if (i > 0 && intervalMs > 0) {
         await Future<void>.delayed(Duration(milliseconds: intervalMs));
       }
       final WindowCaptureResult cap =
           await WindowCaptureChannel.captureWindow(hwnd);
+      final String? diagnostics = cap.diagnostics;
+      if (diagnostics != null &&
+          diagnostics.isNotEmpty &&
+          diagnostics != loggedDiagnostics) {
+        loggedDiagnostics = diagnostics;
+        ErrorLogService.instance.log(
+          'captureWindowGifBytes',
+          'window capture diagnostics: $diagnostics',
+          StackTrace.current,
+        );
+      }
       if (!cap.ok) {
         continue; // 该帧失败：跳过，尽力而为。
       }

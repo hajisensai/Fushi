@@ -543,4 +543,48 @@ void main() {
       expect(notifies, 0, reason: '不在栈内的旧条目不得触发重定位');
     });
   });
+
+  group('占位单例身份稳定（WebView 每次查词只推一次的根基）', () {
+    test('seed / beginTop(initialResult) / dismiss 复位共用同一单例', () {
+      final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      expect(
+          identical(c.entries.first.result, kPopupSearchingPlaceholderResult),
+          true,
+          reason: 'seed 缺省即 canonical 单例');
+      final e = c.beginTop(
+        term: 'あ',
+        rect: Rect.zero,
+        reuseWarmSlot: true,
+        replaceStack: false,
+        visible: false,
+        initialResult: kPopupSearchingPlaceholderResult,
+      );
+      expect(identical(e.result, kPopupSearchingPlaceholderResult), true,
+          reason: '搜索期 result 身份不变 → WebView didUpdateWidget 天然 no-op，'
+              '不再空→空整卡重画（每次查词双次 renderPopup 的根因）');
+      c.fillResult(
+        e,
+        result: DictionarySearchResult(searchTerm: 'あ'),
+        allLoaded: true,
+      );
+      c.dismissAt(0);
+      expect(
+          identical(c.entries.first.result, kPopupSearchingPlaceholderResult),
+          true,
+          reason: '关栈复位回同一单例，下次查词 停驻→搜索 依旧无身份变化');
+    });
+  });
+
+  group('entries 是零拷贝的不可变 live 视图', () {
+    test('同一视图实例、实时反映内部变更、外部不可写', () {
+      final c = DictionaryPopupController(lowMemory: false);
+      final List<DictionaryPopupEntry> view = c.entries;
+      expect(identical(view, c.entries), true,
+          reason: '不再每次访问整表拷贝（build 循环 / contains 高频调用）');
+      c.seedWarmSlot();
+      expect(view.length, 1, reason: 'live 视图实时反映内部列表变更');
+      expect(() => view.clear(), throwsUnsupportedError, reason: '外部不可变语义保持不变');
+      expect(identical(view, c.entries), true);
+    });
+  });
 }

@@ -355,6 +355,216 @@ void main() {
         saved!.map((AudioSourceConfig s) => s.url).toList();
     expect(order.indexOf(urlA), greaterThan(order.indexOf(urlB)));
   });
+  // 远端 URL 过去只能删了重加（行尾只有开关/↑/↓/删除），写错一个字符就得整条重敲。
+  // 修复=远端行给 ✎，把该行 URL 载入下方输入框改写，✓ 提交后落到**同一行**且保留
+  // label / enabled / 位置。
+  testWidgets(
+      'editing a remote row rewrites that row in place, keeping its '
+      'label, enabled state and position', (WidgetTester tester) async {
+    List<AudioSourceConfig>? saved;
+    await openDialog(
+      tester,
+      AudioSourcesDialog(
+        sources: <AudioSourceConfig>[
+          AudioSourceConfig.remoteAudio(url: 'https://keep.example.com/{term}'),
+          AudioSourceConfig.remoteAudio(
+            url: 'http://localhost:5050/?term={term}',
+            label: 'Anki',
+            enabled: false,
+          ),
+        ],
+        onSave: (List<AudioSourceConfig> v) => saved = v,
+      ),
+    );
+
+    // 第 2 行（label=Anki、已关闭）的 ✎。
+    expect(find.byIcon(Icons.edit_outlined), findsNWidgets(2));
+    await tester.tap(find.byIcon(Icons.edit_outlined).at(1));
+    await tester.pumpAndSettle();
+
+    // 进入编辑态：原 URL 已载入输入框，+ 变 ✓，并出现取消 ✕。
+    expect(find.byType(TextField), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      'http://localhost:5050/?term={term}',
+    );
+    expect(find.byIcon(Icons.check), findsOneWidget);
+    expect(find.byIcon(Icons.add), findsNothing);
+    expect(find.byIcon(Icons.close), findsOneWidget);
+
+    await tester.enterText(
+        find.byType(TextField), 'http://192.168.1.9:5050/?term={term}');
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.check));
+    await tester.pumpAndSettle();
+
+    // 提交后退出编辑态（✓ 变回 +，输入框清空）。
+    expect(find.byIcon(Icons.add), findsOneWidget);
+    expect(find.byIcon(Icons.check), findsNothing);
+
+    await tester.tap(find.text(t.dialog_close));
+    await tester.pumpAndSettle();
+
+    expect(saved, isNotNull);
+    // 没有变成「删一条加一条」：仍是 2 条，且改的是原位那条。
+    expect(saved!.length, 2);
+    expect(saved![0].url, 'https://keep.example.com/{term}');
+    expect(saved![1].url, 'http://192.168.1.9:5050/?term={term}');
+    // 用户改的只是链接：显示名与启用状态不该被顺手重置。
+    expect(saved![1].label, 'Anki');
+    expect(saved![1].enabled, isFalse);
+  });
+
+  testWidgets('cancelling an edit leaves the source untouched',
+      (WidgetTester tester) async {
+    List<AudioSourceConfig>? saved;
+    await openDialog(
+      tester,
+      AudioSourcesDialog(
+        sources: <AudioSourceConfig>[
+          AudioSourceConfig.remoteAudio(url: 'https://a.example.com/{term}'),
+        ],
+        onSave: (List<AudioSourceConfig> v) => saved = v,
+      ),
+    );
+
+    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byType(TextField), 'https://typo.example.com/{term}');
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+
+    // 取消后回到新增态，且不多出一条。
+    expect(find.byIcon(Icons.add), findsOneWidget);
+    await tester.tap(find.text(t.dialog_close));
+    await tester.pumpAndSettle();
+
+    expect(saved!.length, 1);
+    expect(saved!.single.url, 'https://a.example.com/{term}');
+  });
+
+  // 编辑目标按值身份而非下标追踪：编辑期间把该行拖到别处（这里用等价的 ↓ 按钮重排），
+  // 提交仍必须改到**它自己**，而不是原下标上现在那一行。
+  testWidgets(
+      'reordering while editing still writes to the edited row, not '
+      'whatever now sits at its old index', (WidgetTester tester) async {
+    List<AudioSourceConfig>? saved;
+    await openDialog(
+      tester,
+      AudioSourcesDialog(
+        sources: <AudioSourceConfig>[
+          AudioSourceConfig.remoteAudio(
+              url: 'https://first.example.com/{term}'),
+          AudioSourceConfig.remoteAudio(
+              url: 'https://other.example.com/{term}'),
+        ],
+        onSave: (List<AudioSourceConfig> v) => saved = v,
+      ),
+    );
+
+    // 编辑第 1 行，然后把它用 ↓ 移到第 2 位（编辑态保持）。
+    await tester.tap(find.byIcon(Icons.edit_outlined).at(0));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.keyboard_arrow_down).at(0));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+        find.byType(TextField), 'https://fixed.example.com/{term}');
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.check));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.dialog_close));
+    await tester.pumpAndSettle();
+
+    expect(saved!.length, 2);
+    // 被编辑的那条现在在第 2 位，改写落在它身上；未参与编辑的那条原文不动。
+    expect(saved![0].url, 'https://other.example.com/{term}');
+    expect(saved![1].url, 'https://fixed.example.com/{term}');
+  });
+
+  // 编辑中把该行删掉：提交不得把它当新增复活（那等于撤销用户的删除）。
+  testWidgets('deleting the row being edited does not resurrect it on submit',
+      (WidgetTester tester) async {
+    List<AudioSourceConfig>? saved;
+    await openDialog(
+      tester,
+      AudioSourcesDialog(
+        sources: <AudioSourceConfig>[
+          AudioSourceConfig.remoteAudio(url: 'https://gone.example.com/{term}'),
+        ],
+        onSave: (List<AudioSourceConfig> v) => saved = v,
+      ),
+    );
+
+    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.pumpAndSettle();
+
+    // 删除即退出编辑态（输入框清空、回到新增态的 +）。
+    expect(find.byIcon(Icons.check), findsNothing);
+    expect(find.byIcon(Icons.add), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      isEmpty,
+    );
+
+    await tester.tap(find.text(t.dialog_close));
+    await tester.pumpAndSettle();
+    expect(saved, isNotNull);
+    expect(saved, isEmpty);
+  });
+
+  // hibikiRemote 无 URL 可改、本地库路径由文件选择器决定 → 都不给 ✎（只有自定义远端行有）。
+  testWidgets('only remoteAudio rows expose the edit button',
+      (WidgetTester tester) async {
+    await openDialog(
+      tester,
+      AudioSourcesDialog(
+        sources: <AudioSourceConfig>[
+          AudioSourceConfig.hibikiRemote(),
+          AudioSourceConfig.localAudio(
+              label: 'a.db', path: '/a.db', enabled: true),
+          AudioSourceConfig.remoteAudio(url: 'https://a.example.com/{term}'),
+        ],
+        onSave: (_) {},
+        onEditLocalSources: (String _) async {},
+      ),
+    );
+
+    expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+  });
+
+  // BUG-027 的开关列对齐必须继续成立：远端行的 ✎ 占的是本地行 tune 的同一槽位
+  // （开关左侧），所以两类行的开关/↑/↓/删除四列仍右贴边对齐。
+  testWidgets(
+      'the edit button sits left of the switch and keeps the switch '
+      'column aligned across local and remote rows (BUG-027)',
+      (WidgetTester tester) async {
+    await openDialog(
+      tester,
+      AudioSourcesDialog(
+        sources: <AudioSourceConfig>[
+          AudioSourceConfig.localAudio(
+              label: 'a.db', path: '/a.db', enabled: true),
+          AudioSourceConfig.remoteAudio(url: 'https://b.example.com/{term}'),
+        ],
+        onSave: (_) {},
+        onEditLocalSources: (String _) async {},
+      ),
+    );
+
+    final Finder switches = find.byType(Switch);
+    expect(switches, findsNWidgets(2));
+    final double localSwitchX = tester.getCenter(switches.at(0)).dx;
+    final double remoteSwitchX = tester.getCenter(switches.at(1)).dx;
+    expect((localSwitchX - remoteSwitchX).abs(), lessThan(1.0));
+    expect(tester.getCenter(find.byIcon(Icons.edit_outlined)).dx,
+        lessThan(remoteSwitchX));
+  });
+
   testWidgets(
       'a loopback remoteAudio source shows the cross-machine re-point warning '
       '(TODO-1171)', (WidgetTester tester) async {

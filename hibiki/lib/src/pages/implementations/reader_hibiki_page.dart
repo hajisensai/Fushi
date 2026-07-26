@@ -379,7 +379,7 @@ int sessionWatermarkAfterRestore(int currentWatermark, int restoreAbsolute) {
       : currentWatermark;
 }
 
-/// BUG-1085（断点 B·幻象字数）：恢复完成 / cue 跳转时，统计水位应落到的
+/// BUG-1104（断点 B·幻象字数）：恢复完成 / cue 跳转时，统计水位应落到的
 /// **绝对**字符位置（全书累计口径，与 `_absoluteCharPosition` 同基准）。
 ///
 /// 旧实现只用 `_absoluteCharPosition(_initialProgress)` 播种水位，但精确字符锚
@@ -2711,7 +2711,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   @override
   Future<void> onBoundarySkip(int delta) => _handleBoundarySkip(delta);
 
-  /// BUG-1085：显式跳句（skipToCue 漏斗：音量键 / 快捷键 / 底栏按钮 / 媒体通知）
+  /// BUG-1104：显式跳句（skipToCue 漏斗：音量键 / 快捷键 / 底栏按钮 / 媒体通知）
   /// → 把统计字数水位抬到目标 cue 位置，跳过的段落不算已读。实现见
   /// audiobook.part.dart 的 [_handleExplicitCueJump]。
   @override

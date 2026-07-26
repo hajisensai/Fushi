@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -6,14 +7,17 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/lookup/clipboard_panel_controller.dart';
 import 'package:hibiki/src/lookup/clipboard_text_overlay_controller.dart';
+import 'package:hibiki/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
+import 'package:hibiki/src/settings/port_kill_confirm.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
+import 'package:hibiki/src/sync/port_process_terminator.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client_manager.dart';
 import 'package:hibiki/src/sync/yomitan_api_server.dart'
     show kYomitanApiDefaultPort;
@@ -23,6 +27,98 @@ String _yomitanApiPortInUseMessage(int port) {
   return port == kYomitanApiDefaultPort
       ? t.browser_extension_yomitan_port_conflict(port: port)
       : t.sync_server_port_in_use(port: port);
+}
+
+void _showSettingsSnackBar(SettingsContext settingsContext, String message) {
+  final BuildContext ctx = settingsContext.context;
+  if (!ctx.mounted) return;
+  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(message)));
+}
+
+/// 端口冲突提示：说明占用者（默认端口时通常是浏览器拉起的 yomitan-api Python
+/// 进程），并在支持的桌面平台附「结束进程并重试」action——直接结束占用进程后
+/// 自动重试开启，免去用户去 Yomitan 高级设置绕一圈。
+void _showYomitanPortConflictSnackBar(SettingsContext settingsContext) {
+  final BuildContext ctx = settingsContext.context;
+  if (!ctx.mounted) return;
+  final int port = settingsContext.appModel.yomitanApiPort;
+  ScaffoldMessenger.of(ctx).showSnackBar(
+    SnackBar(
+      content: Text(_yomitanApiPortInUseMessage(port)),
+      duration: const Duration(seconds: 10),
+      action: PortProcessTerminator.isSupported
+          ? SnackBarAction(
+              label: t.yomitan_port_kill_action,
+              onPressed: () => unawaited(
+                _terminatePortOwnerAndRetry(settingsContext, port),
+              ),
+            )
+          : null,
+    ),
+  );
+}
+
+Future<void> _terminatePortOwnerAndRetry(
+  SettingsContext settingsContext,
+  int port,
+) async {
+  final AppModel appModel = settingsContext.appModel;
+  // 杀前必须确认：弹窗展示实际占用者（进程名 + PID + 路径；hibiki 旧实例
+  // 特别标注），关键系统进程直接拒杀。端口是用户可配置偏好，占用者完全可能
+  // 是 IDE 辅助进程/dev server，未经确认一键 taskkill 不可接受。
+  final PortKillDecision decision =
+      await decidePortKill(settingsContext.context, port: port);
+  switch (decision.kind) {
+    case PortKillDecisionKind.cancelled:
+      return;
+    case PortKillDecisionKind.refusedProtected:
+      _showSettingsSnackBar(
+        settingsContext,
+        t.yomitan_port_kill_protected(
+          process: describePortListener(decision.listener!),
+        ),
+      );
+      return;
+    case PortKillDecisionKind.listenerChanged:
+      // 占用者换人：重走冲突提示，让用户对新占用者重新发起并确认。
+      _showYomitanPortConflictSnackBar(settingsContext);
+      return;
+    case PortKillDecisionKind.confirmed:
+      final PortListenerInfo listener = decision.listener!;
+      final bool killed = await PortProcessTerminator.terminate(listener);
+      if (!killed) {
+        _showSettingsSnackBar(
+          settingsContext,
+          t.yomitan_port_kill_failed(process: describePortListener(listener)),
+        );
+        return;
+      }
+    case PortKillDecisionKind.noListener:
+      break;
+  }
+  // 占用进程已结束（或本就已退出）：重试开启。进程退出后 OS 释放端口可能有极短
+  // 延迟，端口仍占时再等一拍重试一次，仍失败按端口冲突报出。
+  await appModel.setYomitanApiServerEnabled(true);
+  for (int attempt = 0;; attempt++) {
+    try {
+      await appModel.startYomitanApiServer();
+      break;
+    } on SyncServerPortInUseException {
+      if (attempt >= 1) {
+        _showSettingsSnackBar(
+          settingsContext,
+          _yomitanApiPortInUseMessage(port),
+        );
+        settingsContext.refresh();
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      // startYomitanApiServer 抛出前把开关复位成 false，重试前需重新置位。
+      await appModel.setYomitanApiServerEnabled(true);
+    }
+  }
+  _showSettingsSnackBar(settingsContext, t.yomitan_api_server_started);
+  settingsContext.refresh();
 }
 
 SettingsDestination buildLookupDestination() {
@@ -858,18 +954,7 @@ SettingsDestination buildLookupDestination() {
                   await settingsContext.appModel.startYomitanApiServer();
                 } on SyncServerPortInUseException {
                   // startYomitanApiServer 已在抛出前把开关复位为 false。
-                  final BuildContext ctx = settingsContext.context;
-                  if (ctx.mounted) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          _yomitanApiPortInUseMessage(
-                            settingsContext.appModel.yomitanApiPort,
-                          ),
-                        ),
-                      ),
-                    );
-                  }
+                  _showYomitanPortConflictSnackBar(settingsContext);
                 }
               } else {
                 await settingsContext.appModel.stopYomitanApiServer();
@@ -907,6 +992,38 @@ SettingsDestination buildLookupDestination() {
               } else {
                 await TexthookerWsClientManager.instance.stop();
               }
+              settingsContext.refresh();
+            },
+          ),
+        ],
+      ),
+      // BUG-1095: galgame Hook 台词浮窗此前在设置页**一条条目都没有**——字号只能靠
+      // 「把窗口拖高」这个副作用去改，而 native 同时按窗高把字放大，可见行数几乎不涨
+      // （「放不下，上下拖还是放不下」）。字号现在是与窗口几何完全解耦的独立偏好，这里
+      // 是它唯一的入口。挂在查词分类：浮窗对用户就是「显示台词 + 点词查词」的那块面板，
+      // 紧邻上面的 texthooker（台词的来源）。仅 Windows——galgame Hook 只做 Windows。
+      SettingsSection(
+        title: t.settings_section_gal_hook_overlay,
+        visible: (_) => Platform.isWindows,
+        items: <SettingsItem>[
+          SettingsStepperItem(
+            id: 'lookup.gal_hook_text_font_size',
+            title: t.gal_hook_text_font_size,
+            subtitle: t.gal_hook_text_font_size_hint,
+            icon: Icons.format_size,
+            visible: (_) => Platform.isWindows,
+            min: PreferencesRepository.galHookTextFontSizeMin,
+            max: PreferencesRepository.galHookTextFontSizeMax,
+            step: 1,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookTextFontSize,
+            format: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.appModel.setGalHookTextFontSize(value);
+              // 与悬浮字幕字号同款纪律（TODO-1069）：写完 pref 立刻把整支 style 推给
+              // native 浮窗，否则字号只落了盘，浮窗要等下次改透明度才顺带刷新。
+              await GalHookTextOverlayController.instance
+                  .applyFontSizeFromPreferences();
               settingsContext.refresh();
             },
           ),
@@ -1018,16 +1135,6 @@ Future<void> _restartYomitanApiServerIfEnabled(
   try {
     await settingsContext.appModel.startYomitanApiServer();
   } on SyncServerPortInUseException {
-    final BuildContext ctx = settingsContext.context;
-    if (!ctx.mounted) return;
-    ScaffoldMessenger.of(ctx).showSnackBar(
-      SnackBar(
-        content: Text(
-          _yomitanApiPortInUseMessage(
-            settingsContext.appModel.yomitanApiPort,
-          ),
-        ),
-      ),
-    );
+    _showYomitanPortConflictSnackBar(settingsContext);
   }
 }

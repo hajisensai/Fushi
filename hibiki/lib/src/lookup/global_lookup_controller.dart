@@ -9,7 +9,7 @@
 // The main Dart engine owns the dictionary, so this controller does the lookup
 // (AppModel.searchDictionary -> popupJson), pushes it to the native overlay
 // (GlobalLookupChannel), resolves gaiji bytes (image:// via HoshiDicts) and the
-// deferred audio bridge calls (resolveWordAudio / playWordAudio).
+// deferred audio bridge calls (resolveWordAudio / queryLocalAudio).
 
 import 'dart:async';
 import 'dart:io';
@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/lookup/clipboard_history_payload.dart';
+import 'package:hibiki/src/lookup/desktop_lookup_router.dart';
 import 'package:hibiki/src/lookup/effective_lookup_size.dart';
 import 'package:hibiki/src/lookup/global_lookup_channel.dart';
 import 'package:hibiki/src/lookup/global_lookup_layout.dart';
@@ -109,6 +110,15 @@ class GlobalLookupController {
   // revealed once at its final size (no on-screen jitter). False = still
   // off-screen / awaiting reveal. Reset per lookup.
   bool _revealed = false;
+  // BUG-1099 — 当前这张瞬态卡是否为**用户显式动作**的产物：台词浮窗/面板释义/悬浮
+  // 字幕点词开出的卡（[lookupText] 且非被动流），或用户在卡内点词压出的子卡
+  // （[_lookupNested]）。为 true 且卡还在屏上时，被动剪贴板流不再重建 root——
+  // 否则 [_lookupExternal] 会把 _lastSentWidth/_lastSentHeight 打回 -1、_revealed 清
+  // false 并 `_stack = [新 root]`，auto-size 窗口跟着新 root 的小内容缩下去，正是用户
+  // 报的「查完词后剪贴板一更新，释义被清空缩回去」。
+  // 不会永久粘住：真正的用户关闭（点外/前台钩子/Esc）走 [_onOverlayHidden] 复位，
+  // 任何显式意图（热键/点词）也会重新置位。
+  bool _userOwnedCard = false;
   Timer? _revealSafety;
   // TODO-1079 (B) — ready-driven reveal safety cadence. Each tick re-checks
   // isWebViewReady before revealing; a not-yet-ready surface reschedules up to
@@ -398,6 +408,10 @@ class GlobalLookupController {
         glog('hotkey: empty selection — abort');
         return;
       }
+      // BUG-1099：全局热键是用户最显式的意图，这张卡归用户所有——之后到达的被动
+      // 剪贴板流不得把它整帧重建掉。热键直接走 _lookupExternal（不经 lookupText），
+      // 故所有权在这里置位。
+      _userOwnedCard = true;
       // 用户 2026-07-12 — 手动快捷键查词不显示整句横幅（框）：整句仍传下去供
       // 制卡 `{sentence}` 兜底（sentenceContext），但 showSentenceBanner:false
       // 让 root 卡不贴横幅。只有剪切板自动唤出的瞬态窗（dispatcher）才带横幅。
@@ -419,18 +433,37 @@ class GlobalLookupController {
   /// falls back to its existing in-app route — a tap is never silently lost.
   /// 真机第 5 轮 — [anchorScreenRect]（屏幕逻辑 px）：给出时卡片锚定在该矩形
   /// 下方（剪贴板面板释义点击=被点文字处），null 保持 OS 光标语义。
+  /// BUG-1099 — [passiveStream]：本次文本来自环境剪贴板监听（galgame 台词流 /
+  /// 外部 texthooker），不是用户对 Hibiki 的显式动作。用户自己点出来的卡还在屏上时，
+  /// 被动流**整条丢弃**（不重建 root、不清空已测尺寸、不动窗口），卡原地不动直到用户
+  /// 自己关掉它；关掉后（[_onOverlayHidden]）下一条被动流照常开新卡。
+  ///
+  /// 这里比面板更保守（面板会把新句刷进横幅）：瞬态卡是锚在被点词旁的一次性卡片，
+  /// 把横幅换成一句无关的新台词既看不懂，又会把制卡 `{sentence}` 上下文
+  /// （[_currentSentence]）换成用户根本没在看的那句，做出错卡。
   Future<bool> lookupText(
     String text, {
     String sentence = '',
     Rect? anchorScreenRect,
     bool showSentenceBanner = true,
+    bool passiveStream = false,
     OverlayMiningHandler? miningHandler,
   }) async {
     final String term = text.trim();
     if (!isSupported || !_started || _appModel == null || term.isEmpty) {
       return false;
     }
-    glog('lookupText: "$term"');
+    if (keepUserOwnedCardForPassiveStream(
+      passiveStream: passiveStream,
+      userOwnedCard: _userOwnedCard,
+      visible: _revealed,
+    )) {
+      glog('lookupText: passive stream dropped (user-owned card kept)');
+      return true;
+    }
+    // 显式意图开的卡归用户所有；被动流开的卡不归（下一条流可以正常替换它）。
+    _userOwnedCard = !passiveStream;
+    glog('lookupText: "$term" passive=$passiveStream');
     // TODO-1268 / BUG — mirror _onHotKey's TODO-1079(D) preamble on the
     // programmatic (desktop floating-lyric tap) path: AWAIT a leading
     // hide(notify:false) so the overlay collapses to a confirmed-hidden state
@@ -742,6 +775,9 @@ class GlobalLookupController {
   void _onOverlayHidden() {
     _revealSafety?.cancel();
     _revealed = false;
+    // BUG-1099：用户真把卡关了 = 放弃这次查词，所有权随之释放，下一条被动剪贴板
+    // 流照常开新卡（保护不会永久粘住）。
+    _userOwnedCard = false;
     _lastSentWidth = -1;
     _lastSentHeight = -1;
     _lastSentDx = 0;
@@ -1062,6 +1098,9 @@ class GlobalLookupController {
       // child renders (app-external parity with the in-app popup, which marks the
       // clicked word in the parent via DictionaryPopupWebView.highlightSelection).
       final int parentIndex = _stack.length - 1;
+      // BUG-1099：卡内点词=用户显式动作，这张卡（及其级联）从此归用户所有，
+      // 被动剪贴板流不得再把它整帧重建掉。置位放在 await 之前，挡住在途竞争。
+      _userOwnedCard = true;
       final DictionarySearchResult result = await model.searchDictionary(
         searchTerm: query,
         searchWithWildcards: false,

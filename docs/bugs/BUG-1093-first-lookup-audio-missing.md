@@ -1,0 +1,12 @@
+## BUG-1093 · 第一次查词音频容易没有：WebView autoplay 拦截+兜底失效
+- **报告**：2026-07-25（用户：第一次查词音频容易没有；BUG-1015 预热修复落地后仍复现）
+- **真实性**：✅ 真 bug。三条根因链（Windows 专属组合）：
+  1. **autoplay 被平台策略静默拦截**：自 `9855c3e4f`（perf: 查词单词发音统一走 WebView `<audio>`）起，app 内自动发音由 `autoReadWordUnified` 驱动弹窗 `audio.play()`。Dart 侧虽下发 `mediaPlaybackRequiresUserGesture: false`（`dictionary_popup_webview.dart`），但 **Windows fork 根本不解析该 key**（`packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview_settings.cpp:17-27` 仅 11 个键），也无人传 `--autoplay-policy` 浏览器参数（fork `in_app_webview.cpp` 默认环境 options=nullptr；`hibiki/windows/runner/global_lookup_window.cpp:967` 同样没传）。Chromium autoplay gate 是 **per-document sticky user activation**：四个查词表面全用常驻热槽（document 不重载），首次自动发音时 document 从未被点击 → `audio.play()` reject `NotAllowedError` 且被 `popup.js` `.catch(() => false)` 吞掉 → 无声；用户手点一次弹窗后 activation 粘住 → 之后全正常。低内存模式无热槽 → 每次都是新 document → 每次都哑。Android/iOS/macOS 的 inappwebview 都真实接了该设置，只有 Windows 掉坑。
+  2. **兜底永不触发 + 零日志**：`dictionary_popup_webview.dart` 旧 `playWordAudioUrl` 用 `evaluateJavascript` 发起播放后**无条件 `return true`**（不 await JS Promise、不读结果）→ `autoReadWordUnified` 判定「WebView 播了」直接 return，media_kit 兜底永不触发；失败全程无任何日志。
+  3. **BUG-1015 修在旁路**：当时按「media_kit 冷启动吞首帧」定根因做了静音预热（`desktop_audio_playback.dart warmUp()`），但 in-app 自动发音两天前已切走 WebView 路径，预热只保护 app 外浮窗与「WebView 未就绪」兜底（而兜底因根因 2 实际不可达）——「已修复」与「用户仍复现」自洽。
+- **[x] ① 已修复** — 三层根因修复（commit 417ba3436）：
+  - fork `in_app_webview.cpp` 默认环境 + `global_lookup_window.cpp` 浮窗环境统一加 `--autoplay-policy=no-user-gesture-required`（WebView2 无 per-view 等价设置，环境级参数是唯一落点；全部 WebView 渲染的都是第一方可信内容）。
+  - `playWordAudioUrl` 改为经 `wordAudioPlayed` 桥回传 JS 真实 `audio.play()` 结果（token + Completer + 5s 超时），失败/超时返回 false。
+  - `autoReadWordUnified` 解析一次 ref 供两条播放路径共用（兜底不再二次解析：避免二次开库/远端请求/二次冷却打点）；WebView 失败记 `ErrorLogService.logDiagnostic` 后真实回落 `TtsChannel.playAudioRef`（受 BUG-1015 预热保护）。
+- **[x] ② 已加自动化测试** — `hibiki/test/utils/misc/first_lookup_audio_autoplay_guard_test.dart`（fork/浮窗 autoplay 参数 + 桥回传 + 超时兜底 + 回落日志四组源码接线守卫）；更新 `hibiki/test/utils/misc/lookup_audio_volume_wiring_static_test.dart`（兜底断言改为「同一 ref 直走 playAudioRef」）。
+- **备注**：症状为「第一次没有、点过/查过就正常」（sticky activation）与「低内存模式每次没有」（每次新 document）。真机验收路径：Windows 冷启动 → 不碰弹窗 → 划词第一次即应出声；对照组：app 外浮窗（走 Dart/media_kit + warmUp）第一次本就有声。相关剩余项（未在本轮修）：远端音源首次 DNS/TLS 慢超时进 45s 冷却（`word_audio_resolver.dart`）、`hibikiRemote` 死配对无冷却每次硬等 HTTP 超时（`hibiki_remote_lookup_client.dart _postLookup` 捕获层才能区分「不可达」与「无音频」）。

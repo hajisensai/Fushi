@@ -13,6 +13,11 @@ import 'package:hibiki/src/utils/misc/resumable_downloader.dart';
 // 资产的镜像前缀照 video_shader_downloader 先例本地列）。
 import 'package:hibiki/utils.dart';
 
+/// 统一日志出口（与同目录 `magpie_installer.dart` 的 `[magpie]` 同范式）。安装器的关键路径
+/// 要么全静默（后台自更新），要么只有一句笼统 toast；用户报「装不上」时若这里零留痕，根本
+/// 无从判断卡在网络、侧车、校验还是换入 —— 供应链每一步都必须能事后定位。
+void _log(String message) => debugPrint('[gal-helper] $message');
+
 /// galgame 引擎-hook 注入器 helper 的固定发布 tag（CI workflow `voice-hook-helper.yml`
 /// 反复 upsert 同一 prerelease，asset 名 voice_hook_<arch>.zip + 同名 .sha256 侧车）。
 const String kGalgameHelperReleaseTag = 'voice-hook-helper';
@@ -39,6 +44,48 @@ List<String> galgameHelperCandidateUrls(String url) => <String>[
       url,
       for (final String prefix in kGalgameHelperProxyPrefixes) '$prefix$url',
     ];
+
+/// sha256 侧车**唯一**可信来源的主机白名单（GitHub 自己的域）。
+///
+/// 为什么侧车不能和 zip 走同一批第三方 GFW 镜像（[kGalgameHelperProxyPrefixes]）：镜像是他人
+/// 控制的完整中间人，一旦它同时供应 zip 和 `.sha256`，就能给出「篡改过的 zip + 与之匹配的
+/// 摘要」，校验退化成走过场 —— 等于没有校验。而这个包里装的是 **进程注入器 exe + 会被注入
+/// 进用户游戏进程的 hook DLL**，被换掉一次就是任意代码执行。所以摘要必须来自我们信任的源
+/// （直连 GitHub），zip 本体则可以随便走镜像：它的内容已被直连拿到的摘要独立钉死，镜像改一个
+/// 字节都会在校验时炸掉。
+///
+/// `objects.` / `release-assets.` 是 GitHub release 资产 302 的落点，属重定向链的合法一环。
+const List<String> kGalgameHelperTrustedSidecarHosts = <String>[
+  'github.com',
+  'api.github.com',
+  'objects.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+  'raw.githubusercontent.com',
+];
+
+/// **纯函数**：该 URL 是否是可信侧车来源（https + 主机在
+/// [kGalgameHelperTrustedSidecarHosts] 内）。任何镜像前缀套出来的 URL
+/// （`https://ghfast.top/https://github.com/...`）主机都是镜像自己，一律判否。
+bool galgameHelperIsTrustedSidecarUrl(String url) {
+  final Uri? uri = Uri.tryParse(url);
+  if (uri == null || uri.scheme.toLowerCase() != 'https') return false;
+  return kGalgameHelperTrustedSidecarHosts.contains(uri.host.toLowerCase());
+}
+
+/// **纯函数**：取某架构 sha256 侧车的候选 URL —— **只有直连，绝不含镜像**（与
+/// [galgameHelperCandidateUrls] 的 zip 候选刻意不同，理由见
+/// [kGalgameHelperTrustedSidecarHosts]）。直连不可用（自定义 repo/tag 拼出非 GitHub 主机）
+/// 时列表为空，安装路径据此硬失败：宁可装不上，也不装未校验的注入器。
+List<String> galgameHelperSidecarUrls(
+  String arch, {
+  String repo = kGalgameHelperRepo,
+  String tag = kGalgameHelperReleaseTag,
+}) {
+  final String url = galgameHelperSha256Url(arch, repo: repo, tag: tag);
+  return galgameHelperIsTrustedSidecarUrl(url)
+      ? <String>[url]
+      : const <String>[];
+}
 
 /// 按目标游戏位数选注入器架构目录名：32 位游戏→x86，否则→x64（注入 DLL 位数必须匹配目标进程）。
 String galgameHelperArch({required bool is32Bit}) => is32Bit ? 'x86' : 'x64';
@@ -113,6 +160,72 @@ String? parseSha256Sidecar(String content) {
 bool sha256Matches(String expected, String actual) =>
     expected.trim().toLowerCase() == actual.trim().toLowerCase();
 
+/// 一次 helper 安装尝试的失败分类。
+///
+/// 旧实现只有一个 bool：用户看到的永远是「下载失败」，而真正致命的一类（**产物下下来了但
+/// 无法证明可信**）被静默当成成功照装。这两件事必须分开：一类重试有用（网络），一类重试
+/// 无用且绝不能装（校验）。
+enum GalgameHelperInstallFailure {
+  /// 用户主动取消（静默，不当错误）。
+  canceled,
+
+  /// 下载失败：直连与所有镜像都拿不到 zip（离线、全被墙、404）。可重试。
+  downloadFailed,
+
+  /// **完整性校验失败**：拿不到直连 GitHub 的 sha256 侧车（含侧车缺失/被墙/内容非法），
+  /// 或下到的 zip 与侧车摘要不符。语义是「东西不可信」或「无法证明可信」，此时一律**不
+  /// 安装** —— 这个包里是要注入用户游戏进程的原生代码。
+  verificationFailed,
+
+  /// 校验通过之后的步骤失败（解压 / staging 清单不全 / 换入 / 复检）。
+  installFailed,
+}
+
+/// 安装失败的分类载体：把「哪一步炸的」从安装核心一路带到 UI 层，免得三条调用路径只看得到
+/// 一个笼统的 false。
+@immutable
+class GalgameHelperInstallException implements Exception {
+  const GalgameHelperInstallException(this.failure, this.message);
+
+  /// 该失败对应的分类。
+  final GalgameHelperInstallFailure failure;
+
+  /// 人类可读的失败原因（已写进日志，这里再带一份便于上层拼提示）。
+  final String message;
+
+  @override
+  String toString() =>
+      'GalgameHelperInstallException(${failure.name}): $message';
+}
+
+/// 校验前置门：拿不到可信 sha256 就**放弃安装**（抛 [GalgameHelperInstallException]）。
+///
+/// 这是本安装器的安全底线。产物走的是可被完整中间人替换的第三方镜像，摘要是唯一能把内容钉死
+/// 的东西；旧实现在这里降级成「取不到就只校验 size」——size 是攻击者随手就能对齐的量，等于
+/// 任何一个镜像都能把任意 injector.exe / hook DLL 装进用户机器并注入游戏进程。
+///
+/// 抽成顶层函数是为了在任何平台都能被测（真实安装路径只在 Windows 跑）。
+String galgameHelperRequireVerifiedSha(String? sha, String arch) {
+  final String? parsed = sha == null ? null : parseSha256Sidecar(sha);
+  if (parsed == null) {
+    throw GalgameHelperInstallException(
+      GalgameHelperInstallFailure.verificationFailed,
+      '$arch: no trusted sha256 sidecar (direct GitHub only); '
+      'refusing to install an unverified injector/hook package',
+    );
+  }
+  return parsed;
+}
+
+/// **纯函数**：镜像轮询全灭时的失败分类。中途只要出现过 sha256 不符（内容与直连摘要对不
+/// 上），就报 [GalgameHelperInstallFailure.verificationFailed] —— 那是投毒/损坏，不是网络不通。
+GalgameHelperInstallFailure galgameHelperClassifyDownloadFailure({
+  required bool sawIntegrityFailure,
+}) =>
+    sawIntegrityFailure
+        ? GalgameHelperInstallFailure.verificationFailed
+        : GalgameHelperInstallFailure.downloadFailed;
+
 /// 已装 helper 的版本标记文件名：装成功后在 `voice_hook/<arch>/` 写入该 zip 的 sha256，供下次
 /// app 启动比对 release 侧车判断是否有新版（后台自动更新）。放在 arch 目录内，随 helper 一起
 /// 被覆盖/清理。
@@ -122,6 +235,12 @@ String galgameHelperMarkerName() => 'installed.sha256';
 /// 交互路径，所以给「直连 + 5 镜像」逐个轮询留充分时间；对照旧实现把更新绑在游戏启动
 /// 关键路径上被迫设的 6s 自残上限（弱网必然超时 → 永远静默放弃、helper 停在旧版）。
 const Duration kGalgameHelperBackgroundShaTimeout = Duration(seconds: 90);
+
+/// 交互安装路径取 sha256 侧车的总预算。**必须有上限**：没有它，直连被 GFW 静默丢包时这里会
+/// 一直悬着，用户点了「下载」既等不到成功也等不到失败。取比后台短——交互路径背后有人在等，
+/// 而侧车只走直连（无镜像轮询，见 [galgameHelperSidecarUrls]），45s 足够覆盖一次带重定向的
+/// 慢连接。
+const Duration kGalgameHelperInteractiveShaTimeout = Duration(seconds: 45);
 
 /// 换入时旧文件的改名后缀：`<name>.stale`（占用时递增 `.stale1`…）。被进程映射的 DLL
 /// 在 Windows 下**可改名不可覆盖**，改名让位是被占用文件的唯一安全换法。
@@ -282,8 +401,10 @@ class GalgameHelperInstaller {
     for (final String arch in const <String>['x86', 'x64']) {
       try {
         await installer._updateArchSilently(arch);
-      } catch (_) {
-        // 后台更新是锦上添花：静默放弃本架构，继续下一个。
+      } catch (e) {
+        // 后台更新是锦上添花：静默放弃本架构，继续下一个。但必须留痕，否则「一直不更新」
+        // 无从查（尤其分不清是网络、侧车不可信还是换入被占用）。
+        _log('background update skipped ($arch): $e');
       }
     }
   }
@@ -302,13 +423,15 @@ class GalgameHelperInstaller {
     client.idleTimeout = const Duration(seconds: 60);
     await applyUpdateProxy(client);
     try {
-      final String? remoteSha = await _fetchSha256(client, arch).timeout(
-        kGalgameHelperBackgroundShaTimeout,
-        onTimeout: () => null,
+      final String? remoteSha = await fetchSha256Sidecar(
+        client,
+        urls: galgameHelperSidecarUrls(arch),
+        timeout: kGalgameHelperBackgroundShaTimeout,
       );
       if (!galgameHelperNeedsUpdate(localSha, remoteSha)) {
         return; // 已最新 / 取不到远端：沿用现有
       }
+      _log('background update: $arch $localSha -> $remoteSha');
       await _installCore(
         client: client,
         arch: arch,
@@ -555,9 +678,21 @@ class GalgameHelperInstaller {
       closeDialog();
       if (_canceled) {
         // 用户主动取消：静默（不当作错误）。
+        _log('install canceled by user ($arch)');
         return false;
       }
-      HibikiToast.show(msg: t.galgame_helper_download_failed(error: '$e'));
+      final GalgameHelperInstallFailure failure =
+          e is GalgameHelperInstallException
+              ? e.failure
+              // 非分类异常（解压/换入/IO）统归安装失败：校验早在下载环节就硬门过了。
+              : GalgameHelperInstallFailure.installFailed;
+      _log('install failed ($arch, ${failure.name}): $e');
+      // 「无法证明产物可信」必须说人话：用户否则会以为是网络抖动而无限重试。
+      HibikiToast.show(
+        msg: failure == GalgameHelperInstallFailure.verificationFailed
+            ? t.galgame_helper_verification_failed
+            : t.galgame_helper_download_failed(error: '$e'),
+      );
       return false;
     } finally {
       client.close(force: true);
@@ -566,11 +701,13 @@ class GalgameHelperInstaller {
     }
   }
 
-  /// UI 无关的安装核心（交互路径与后台静默路径共用）：取 sha256 侧车（[expectedSha] 已取到
-  /// 则复用，不重复请求）→ 下载 zip（镜像回退 + Range 续传 + size/sha256 校验）→ 解压到
-  /// staging 临时目录并校验清单 → [galgameHelperSwapInstall] 换入（经 [_extractionGate]
-  /// 与启动路径串行）→ 复检安装 → 写装机标记。任一步失败抛异常，由调用方决定提示或静默；
-  /// 失败时保留 zip/part 供下次续传，staging 一律清理。
+  /// UI 无关的安装核心（交互路径与后台静默路径共用）：**先**从直连 GitHub 取 sha256 侧车
+  /// （[expectedSha] 已取到则复用，不重复请求；取不到即硬失败）→ 下载 zip（镜像回退 +
+  /// Range 续传 + size/sha256 校验）→ 解压到 staging 临时目录并校验清单 →
+  /// [galgameHelperSwapInstall] 换入（经 [_extractionGate] 与启动路径串行）→ 复检安装 →
+  /// 写装机标记。任一步失败抛异常（供应链相关的抛
+  /// [GalgameHelperInstallException]），由调用方决定提示或静默；失败时保留 zip/part 供下次
+  /// 续传，staging 一律清理。
   Future<void> _installCore({
     required HttpClient client,
     required String arch,
@@ -578,8 +715,17 @@ class GalgameHelperInstaller {
     String? expectedSha,
     ResumableDownloadProgress? onProgress,
   }) async {
-    // 1) 取 sha256 侧车（校验完整性用；取不到则跳过 sha256，仍靠 size 兜底）。
-    expectedSha ??= await _fetchSha256(client, arch);
+    // 1) 摘要必须**先于**任何下载拿到：没有它就没有判断产物真伪的依据，那就干脆别下。
+    //    侧车只走直连 GitHub（galgameHelperSidecarUrls），绝不与 zip 同源镜像。
+    final String sha = galgameHelperRequireVerifiedSha(
+      expectedSha ??
+          await fetchSha256Sidecar(
+            client,
+            urls: galgameHelperSidecarUrls(arch),
+            timeout: kGalgameHelperInteractiveShaTimeout,
+          ),
+      arch,
+    );
 
     // 2) 下载 zip（ResumableDownloader 自带 Range 续传 + size/sha256 校验 + 原子 promote）。
     final Directory tmp = Directory.systemTemp;
@@ -588,11 +734,11 @@ class GalgameHelperInstaller {
     final File part = File('${dest.path}.part');
     final File zip = await _downloadZip(
       client: client,
-      arch: arch,
+      candidates: galgameHelperCandidateUrls(galgameHelperDownloadUrl(arch)),
       dest: dest,
       part: part,
       expectedSize: expectedSize,
-      expectedSha256: expectedSha,
+      expectedSha256: sha,
       onProgress: onProgress ?? (int _, int? __) {},
     );
 
@@ -605,7 +751,9 @@ class GalgameHelperInstaller {
       final List<String> missingFromPackage =
           galgameHelperMissingFiles(arch, extractedRootFiles);
       if (missingFromPackage.isNotEmpty) {
-        throw StateError(
+        // 摘要对得上但清单不全 = 发布包本身有问题（不是投毒）。仍然不换入。
+        throw GalgameHelperInstallException(
+          GalgameHelperInstallFailure.installFailed,
           'helper package incomplete ($arch): '
           'missing ${missingFromPackage.join(', ')}',
         );
@@ -617,45 +765,75 @@ class GalgameHelperInstaller {
 
       final List<String> missingAfterExtract = _missingInstalledFiles(arch);
       if (missingAfterExtract.isNotEmpty) {
-        throw StateError(
+        throw GalgameHelperInstallException(
+          GalgameHelperInstallFailure.installFailed,
           'helper install incomplete ($arch): '
           'missing ${missingAfterExtract.join(', ')}',
         );
       }
 
-      // 记录本次已装 zip 的 sha256 作自动更新比对基线；无 sha 侧车时不写标记（下次不自动更新，
-      // 保守）。写标记失败不影响安装成功（best-effort）。
-      if (expectedSha != null) {
-        try {
-          await _markerFile(arch).writeAsString(expectedSha, flush: true);
-        } catch (_) {}
+      // 记录本次已装 zip 的 sha256 作自动更新比对基线（校验已是硬门，sha 必然非空）。
+      // 写标记失败不影响安装成功（best-effort），但要留痕：写不成 = 下次不会自动更新。
+      try {
+        await _markerFile(arch).writeAsString(sha, flush: true);
+      } catch (e) {
+        _log('marker write failed ($arch): $e');
       }
+
+      _log('installed $arch (sha256 $sha)');
 
       // 清理临时 zip（best-effort；失败路径不清，保留续传现场）。
       try {
         if (await zip.exists()) await zip.delete();
         if (await part.exists()) await part.delete();
-      } catch (_) {}
+      } catch (e) {
+        _log('temp cleanup failed ($arch): $e');
+      }
     } finally {
       try {
         if (staging.existsSync()) staging.deleteSync(recursive: true);
-      } catch (_) {}
+      } catch (e) {
+        _log('staging cleanup failed ($arch): $e');
+      }
     }
   }
 
-  /// 逐镜像候选下载 zip；全部失败则抛最后一个异常。
-  Future<File> _downloadZip({
+  /// 逐镜像候选下载 zip。zip **本体**可以随便走镜像：内容已被 [expectedSha256]（来自直连
+  /// GitHub 的侧车）钉死，镜像改一个字节都会在校验时炸掉。全部候选失败则抛分类过的
+  /// [GalgameHelperInstallException] —— 中途出现过 sha256 不符就是 verificationFailed
+  /// （投毒/损坏，重试无用），纯连不上才是 downloadFailed（重试有用）。
+  /// [candidates] 可注入仅为测试用（生产调用点传 [galgameHelperCandidateUrls] 的结果）。
+  @visibleForTesting
+  Future<File> downloadZip({
     required HttpClient client,
-    required String arch,
+    required List<String> candidates,
     required File dest,
     required File part,
     required int? expectedSize,
-    required String? expectedSha256,
+    required String expectedSha256,
+    required ResumableDownloadProgress onProgress,
+  }) =>
+      _downloadZip(
+        client: client,
+        candidates: candidates,
+        dest: dest,
+        part: part,
+        expectedSize: expectedSize,
+        expectedSha256: expectedSha256,
+        onProgress: onProgress,
+      );
+
+  Future<File> _downloadZip({
+    required HttpClient client,
+    required List<String> candidates,
+    required File dest,
+    required File part,
+    required int? expectedSize,
+    required String expectedSha256,
     required ResumableDownloadProgress onProgress,
   }) async {
-    final List<String> candidates =
-        galgameHelperCandidateUrls(galgameHelperDownloadUrl(arch));
     Object? lastError;
+    bool sawIntegrityFailure = false;
     for (final String url in candidates) {
       if (_canceled) throw StateError('canceled');
       try {
@@ -672,35 +850,96 @@ class GalgameHelperInstaller {
         return await downloader.download();
       } catch (e) {
         lastError = e;
+        if (e is ResumableDownloadIntegrityException) {
+          // 这条镜像给的内容与直连摘要对不上：损坏或投毒。换下一个，但记住见过。
+          sawIntegrityFailure = true;
+          _log('download integrity FAILED from $url: $e');
+        } else {
+          _log('download failed from $url: $e');
+        }
         if (_canceled) rethrow;
         // 换下一个镜像前清掉可能不一致的 part（不同镜像 body 不可续）。
         try {
           if (await part.exists()) await part.delete();
-        } catch (_) {}
+        } catch (e) {
+          _log('part cleanup failed: $e');
+        }
       }
     }
-    throw Exception(lastError?.toString() ?? 'no download candidate');
+    final GalgameHelperInstallFailure failure =
+        galgameHelperClassifyDownloadFailure(
+      sawIntegrityFailure: sawIntegrityFailure,
+    );
+    final String reason = lastError?.toString() ?? 'no download candidate';
+    _log('all ${candidates.length} download candidates exhausted '
+        '(${failure.name}): $reason');
+    throw GalgameHelperInstallException(failure, reason);
   }
 
-  /// 取 sha256 侧车文本并解析出摘要；任何失败返回 null（降级为只做 size 校验）。
-  Future<String?> _fetchSha256(HttpClient client, String arch) async {
-    final List<String> candidates =
-        galgameHelperCandidateUrls(galgameHelperSha256Url(arch));
-    for (final String url in candidates) {
+  /// 取 sha256 侧车文本并解析出摘要。
+  ///
+  /// **只走 [galgameHelperSidecarUrls] 给的直连 URL**（生产调用点如此），并逐跳校验重定向
+  /// 没有离开可信主机 —— 侧车一旦允许从第三方镜像取，镜像就能同时供应「篡改的 zip + 匹配的
+  /// 摘要」，校验退化成走过场。取不到一律返回 null，由 [galgameHelperRequireVerifiedSha]
+  /// 把 null 变成硬失败（绝不降级成「只校验 size」）。[timeout] 是**总**预算：没有它，直连
+  /// 被静默丢包时这里会一直悬着。[isTrusted] 仅测试注入（生产用默认值，有源码守卫）。
+  @visibleForTesting
+  Future<String?> fetchSha256Sidecar(
+    HttpClient client, {
+    required List<String> urls,
+    Duration? timeout,
+    bool Function(String url) isTrusted = galgameHelperIsTrustedSidecarUrl,
+  }) {
+    final Future<String?> job = _fetchSha256(client, urls, isTrusted);
+    if (timeout == null) return job;
+    return job.timeout(timeout, onTimeout: () {
+      _log('sidecar fetch timed out after $timeout');
+      return null;
+    });
+  }
+
+  Future<String?> _fetchSha256(
+    HttpClient client,
+    List<String> urls,
+    bool Function(String url) isTrusted,
+  ) async {
+    if (urls.isEmpty) {
+      _log('no trusted sidecar source available (direct GitHub only)');
+      return null;
+    }
+    for (final String url in urls) {
       if (_canceled) return null;
+      if (!isTrusted(url)) {
+        _log('sidecar source rejected (untrusted host): $url');
+        continue;
+      }
       try {
-        final HttpClientRequest req = await client.getUrl(Uri.parse(url));
+        final Uri base = Uri.parse(url);
+        final HttpClientRequest req = await client.getUrl(base);
         final HttpClientResponse resp = await req.close();
+        // 重定向链也必须留在可信主机内，否则一次 302 就能把摘要来源换成任何人。
+        final Uri? untrustedHop = resp.redirects
+            .map((RedirectInfo hop) => base.resolveUri(hop.location))
+            .cast<Uri?>()
+            .firstWhere((Uri? hop) => !isTrusted(hop.toString()),
+                orElse: () => null);
+        if (untrustedHop != null) {
+          await resp.drain<void>();
+          _log('sidecar redirect left trusted hosts: ${untrustedHop.host}');
+          continue;
+        }
         if (resp.statusCode != 200) {
           await resp.drain<void>();
+          _log('sidecar HTTP ${resp.statusCode}: $url');
           continue;
         }
         final String body =
             await resp.transform(const SystemEncoding().decoder).join();
         final String? sha = parseSha256Sidecar(body);
         if (sha != null) return sha;
-      } catch (_) {
-        // 试下一个镜像
+        _log('sidecar body has no valid sha256 digest: $url');
+      } catch (e) {
+        _log('sidecar fetch failed from $url: $e');
       }
     }
     return null;
@@ -723,8 +962,8 @@ class GalgameHelperInstaller {
           await resp.drain<void>();
           final int len = resp.contentLength;
           if (resp.statusCode == 200 && len > 0) return len;
-        } catch (_) {
-          // 试下一个镜像
+        } catch (e) {
+          _log('size probe failed from $url: $e'); // 试下一个镜像
         }
       }
       return null;
@@ -768,11 +1007,20 @@ class GalgameHelperInstaller {
       if (!entry.isFile) continue;
       final String relativePath =
           entry.name.replaceAll('/', p.separator).replaceAll('\\', p.separator);
-      if (relativePath.isEmpty || p.isAbsolute(relativePath)) continue;
+      if (relativePath.isEmpty || p.isAbsolute(relativePath)) {
+        _log('extract: skipped absolute/empty entry "${entry.name}"');
+        continue;
+      }
       final String outputPath = p.normalize(p.join(targetRoot, relativePath));
-      if (!p.isWithin(targetRoot, outputPath)) continue;
+      if (!p.isWithin(targetRoot, outputPath)) {
+        _log('extract: skipped zip-slip entry "${entry.name}"');
+        continue;
+      }
       final Object? content = entry.content;
-      if (content is! List<int>) continue;
+      if (content is! List<int>) {
+        _log('extract: skipped unreadable entry "${entry.name}"');
+        continue;
+      }
       final File out = File(outputPath);
       await out.parent.create(recursive: true);
       await out.writeAsBytes(content, flush: true);

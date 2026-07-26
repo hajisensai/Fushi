@@ -68,6 +68,7 @@ class GalgameEntry {
     required this.exePath,
     required this.workdir,
     required this.addedAt,
+    this.launchArgs = '',
     this.coverPath,
     this.playStatus = GalgamePlayStatus.unset,
     this.primarySource,
@@ -92,6 +93,17 @@ class GalgameEntry {
   /// 工作目录（默认为 exe 所在目录）。多数 KiriKiri 等引擎按 exe 目录解析资源，
   /// 由 injector 拉起游戏时设定；此处随条目持久化，供未来按需使用。
   final String workdir;
+
+  /// 启动游戏时追加给 exe 的命令行参数，是**用户原样输入的一整行**
+  /// （如 `-windowed --save="D:\My Saves"`）；空串 = 不带任何参数（默认）。
+  ///
+  /// 拆分成 argv 的时机在启动那一刻（[launchArgumentTokens]），不在存储层：存原文
+  /// 才能原样回显给用户继续编辑。
+  final String launchArgs;
+
+  /// [launchArgs] 按 Windows 规则拆出的 argv token 列表；injector 侧一个 token 对应
+  /// 一个 `--arg`。空串 → 空列表 → 启动命令行与旧版逐字节相同。
+  List<String> get launchArgumentTokens => parseGameLaunchArguments(launchArgs);
 
   /// 可选封面图绝对路径（null = 用默认游戏图标）。
   final String? coverPath;
@@ -180,6 +192,7 @@ class GalgameEntry {
     String? name,
     String? exePath,
     String? workdir,
+    String? launchArgs,
     String? coverPath,
     GalgamePlayStatus? playStatus,
     String? primarySource,
@@ -196,6 +209,7 @@ class GalgameEntry {
       name: name ?? this.name,
       exePath: exePath ?? this.exePath,
       workdir: workdir ?? this.workdir,
+      launchArgs: launchArgs ?? this.launchArgs,
       coverPath: coverPath ?? this.coverPath,
       addedAt: addedAt,
       playStatus: playStatus ?? this.playStatus,
@@ -285,6 +299,90 @@ String galgameNameFromExe(String exePath) {
 
 /// 路径归一成大小写无关的比较键（Windows 路径大小写不敏感、分隔符 `\\`/`/` 等价）。
 String _exePathKey(String path) => path.replaceAll('/', '\\').toLowerCase();
+
+/// 按 exe 路径在库里找条目；找不到返回 null。路径比较走与去重同一套归一
+/// （[_exePathKey]），所以 `D:/Games/a.exe` 与 `D:\games\A.EXE` 认作同一个游戏。
+///
+/// 存在的理由：捕获工作台的「启动并捕获」只拿到一个裸 exe 路径、不经过游戏库条目。
+/// 同一个 exe 就是同一个游戏，两条入口必须用同一份启动参数 —— 否则「从库里启动能跑、
+/// 从工作台启动就崩」这种只差一个 `-nodx9` 的差异，用户根本无从判断。纯函数。
+GalgameEntry? findGalgameByExePath(
+  List<GalgameEntry> games,
+  String exePath,
+) {
+  if (exePath.isEmpty) return null;
+  final String key = _exePathKey(exePath);
+  for (final GalgameEntry game in games) {
+    if (_exePathKey(game.exePath) == key) return game;
+  }
+  return null;
+}
+
+/// 把用户输入的一整行启动参数拆成 argv token，规则与 Windows `CommandLineToArgvW`
+/// 一致（injector 侧再按同一套规则逐个重新转义写进 `lpCommandLine`，往返无损）：
+///
+/// - 空格/制表符分隔 token；引号内的空白属于 token 内容；
+/// - `2n` 个反斜杠 + `"` → `n` 个反斜杠，并切换「引号内」状态；
+/// - `2n+1` 个反斜杠 + `"` → `n` 个反斜杠 + 一个**字面**引号；
+/// - 不接 `"` 的反斜杠是普通字符（Windows 路径里的 `\` 才不会被吃掉）；
+/// - 引号内紧跟的第二个 `"` 产生一个字面引号并留在引号内（`""` 转义）。
+///
+/// 这是纯函数，不做 trim 以外的「智能」修正：用户写错的参数应当原样传给游戏并由
+/// 游戏报错，而不是被 Hibiki 猜着改。
+List<String> parseGameLaunchArguments(String raw) {
+  final List<String> tokens = <String>[];
+  final StringBuffer current = StringBuffer();
+  bool inToken = false;
+  bool inQuotes = false;
+  int i = 0;
+  while (i < raw.length) {
+    final String c = raw[i];
+    if (!inQuotes && (c == ' ' || c == '\t' || c == '\n' || c == '\r')) {
+      if (inToken) {
+        tokens.add(current.toString());
+        current.clear();
+        inToken = false;
+      }
+      i++;
+      continue;
+    }
+    inToken = true;
+    if (c == r'\') {
+      int backslashes = 0;
+      while (i < raw.length && raw[i] == r'\') {
+        backslashes++;
+        i++;
+      }
+      if (i < raw.length && raw[i] == '"') {
+        current.write(r'\' * (backslashes ~/ 2));
+        if (backslashes.isEven) {
+          inQuotes = !inQuotes;
+        } else {
+          current.write('"');
+        }
+        i++;
+      } else {
+        // 后面不是引号：反斜杠全是字面量（`D:\Saves\` 不能被吃掉）。
+        current.write(r'\' * backslashes);
+      }
+      continue;
+    }
+    if (c == '"') {
+      if (inQuotes && i + 1 < raw.length && raw[i + 1] == '"') {
+        current.write('"'); // `""` 在引号内 = 一个字面引号，且仍在引号内。
+        i += 2;
+        continue;
+      }
+      inQuotes = !inQuotes;
+      i++;
+      continue;
+    }
+    current.write(c);
+    i++;
+  }
+  if (inToken) tokens.add(current.toString());
+  return tokens;
+}
 
 /// 从一批拖入的文件路径里筛出**可新增**的游戏 exe：只认 `.exe` 扩展名
 /// （大小写无关），去掉批内重复与已在 [existing] 库里的路径。保序。纯函数。

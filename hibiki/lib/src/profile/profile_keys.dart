@@ -52,6 +52,12 @@ class ProfileKeys {
     // different profile must not silently redirect AniList/Nyaa/Jimaku.
     'download_network_proxy_mode',
     'download_custom_proxy',
+    // TODO-1961: the download folder (and the history of folders we still have
+    // to recognise) describes this device's disks, not a reading profile.
+    // Snapshotting it would make a profile switch redirect downloads onto a
+    // path that may not even exist on this machine.
+    'download_save_root',
+    'download_save_root_history',
     // TODO-855: the monotonic prefs-version counter is the cross-process signal
     // the :popup process reads to decide whether to refresh its warm-reuse
     // pref cache. It must stay app-global and monotonic — snapshotting it
