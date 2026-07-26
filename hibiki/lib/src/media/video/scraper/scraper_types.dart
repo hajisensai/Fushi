@@ -10,7 +10,7 @@
 /// 本文件只放跨模块共享的纯数据类型，**不放任何实现逻辑**；
 /// 各层实现见同目录 `filename_parser.dart` / `title_normalizer.dart` /
 /// `offline_index.dart` / `match_scorer.dart` / `bangumi_client.dart` /
-/// `tmdb_client.dart` / `sidecar_scanner.dart` / `poster_scraper_service.dart`。
+/// `tmdb_client.dart` / `sidecar_scanner.dart` / `cover_scraper_service.dart`。
 library;
 
 /// 从文件名/目录名解析出的结构化信息（解析层输出）。

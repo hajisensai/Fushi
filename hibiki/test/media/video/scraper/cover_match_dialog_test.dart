@@ -10,12 +10,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
-import 'package:hibiki/src/media/video/cover_ui/poster_match_dialog.dart';
+import 'package:hibiki/src/media/video/cover_ui/cover_match_dialog.dart';
 import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
 import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
-import 'package:hibiki/src/media/video/scraper/poster_downloader.dart';
-import 'package:hibiki/src/media/video/scraper/poster_scraper_service.dart';
+import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
+import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
@@ -36,13 +36,13 @@ final List<int> _fakePng = <int>[
 /// 桩 service：搜索返回固定候选、应用为纯内存记账（无真实网络/文件 IO，纯 microtask，
 /// pumpAndSettle 即可驱动，避免 runAsync 触发 Image.network 真实请求挂起）。评分/解析
 /// 仍走真实实现（置信度徽标真出）。
-class _StubScraperService extends PosterScraperService {
+class _StubScraperService extends CoverScraperService {
   _StubScraperService({
     required super.repository,
     required super.coverMetaStore,
     required super.aliasCache,
     required super.bangumiClient,
-    required super.posterDownloader,
+    required super.coverDownloader,
     required this.candidates,
     super.coversDirectory,
   });
@@ -144,7 +144,7 @@ void main() {
                 },
               )),
         ),
-        posterDownloader: PosterDownloader(
+        coverDownloader: CoverDownloader(
           client: MockClient((http.Request req) async => http.Response.bytes(
                 _fakePng,
                 200,
@@ -190,12 +190,12 @@ void main() {
     final _StubScraperService service = buildService();
     bool applied = false;
 
-    // 经 showPosterMatchDialog 真开一个 dialog route（使 Navigator.pop 有路可退）。
+    // 经 showCoverMatchDialog 真开一个 dialog route（使 Navigator.pop 有路可退）。
     await tester.pumpWidget(wrap(
       Builder(
         builder: (BuildContext ctx) => Center(
           child: ElevatedButton(
-            onPressed: () => showPosterMatchDialog(
+            onPressed: () => showCoverMatchDialog(
               context: ctx,
               service: service,
               book: book,

@@ -8,8 +8,8 @@ import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
 import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
 import 'package:hibiki/src/media/video/scraper/offline_index.dart';
-import 'package:hibiki/src/media/video/scraper/poster_downloader.dart';
-import 'package:hibiki/src/media/video/scraper/poster_scraper_service.dart';
+import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
+import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart'
@@ -96,12 +96,12 @@ void main() {
   OfflineIndex offlineWith(OfflineAnimeRecord record) =>
       OfflineIndex(<OfflineAnimeRecord>[record]);
 
-  PosterScraperService build({
+  CoverScraperService build({
     OfflineIndex? offline,
     BangumiClient? bangumi,
     bool enableSidecar = false,
   }) =>
-      PosterScraperService(
+      CoverScraperService(
         repository: repo,
         coverMetaStore: coverMeta,
         aliasCache: aliasCache,
@@ -117,7 +117,7 @@ void main() {
                 ),
               ),
             ),
-        posterDownloader: PosterDownloader(client: _pngClient()),
+        coverDownloader: CoverDownloader(client: _pngClient()),
         offlineIndex: offline,
         enableSidecar: enableSidecar,
         coversDirectory: tmp,
@@ -133,7 +133,7 @@ void main() {
   });
 
   test('目录候选出 title、文件候选出 episode（合并解析）', () {
-    final PosterScraperService svc = build();
+    final CoverScraperService svc = build();
     final ParsedMediaName? parsed = svc.parseForPath(
       p.join('anime', '进击的巨人 第三季', '[组] 进击的巨人 - 04 [1080p].mkv'),
     );
@@ -157,7 +157,7 @@ void main() {
       bookUid: 'video/aot',
       videoPath: p.join('anime', '进击的巨人', '进击的巨人 - 04.mkv'),
     );
-    final PosterScraperService svc = build(
+    final CoverScraperService svc = build(
       offline: offlineWith(const OfflineAnimeRecord(
         title: '进击的巨人',
         synonyms: <String>['Attack on Titan'],
@@ -247,7 +247,7 @@ void main() {
       bookUid: 'video/preview',
       videoPath: p.join('anime', '进击的巨人', '进击的巨人 - 04.mkv'),
     );
-    final PosterScraperService svc = build(
+    final CoverScraperService svc = build(
       offline: offlineWith(const OfflineAnimeRecord(
         title: '进击的巨人',
         type: ScrapeEntryType.tv,
@@ -276,7 +276,7 @@ void main() {
     await coverMeta.set(
         'video/manual', const CoverMeta(origin: CoverOrigin.manual));
 
-    final PosterScraperService svc = build(
+    final CoverScraperService svc = build(
       offline: offlineWith(const OfflineAnimeRecord(
         title: '进击的巨人',
         type: ScrapeEntryType.tv,
@@ -310,7 +310,7 @@ void main() {
       bookUid: 'video/manual_apply',
       videoPath: p.join('anime', 'X', 'X - 01.mkv'),
     );
-    final PosterScraperService svc = build();
+    final CoverScraperService svc = build();
     const ScrapeCandidate candidate = ScrapeCandidate(
       source: ScrapeSource.bangumi,
       entryId: '999',
@@ -365,14 +365,14 @@ void main() {
       bookUid: 'video/sidecar_evict',
       videoPath: video.path,
     );
-    final PosterScraperService svc = build(enableSidecar: true);
+    final CoverScraperService svc = build(enableSidecar: true);
 
     // 首次刮削落封面，模拟卡片渲染（双键入缓存）。
     final ScrapeOutcome first = await svc.scrapeOne(book);
     final String coverPath = (first as ScrapeApplied).coverPath;
     await populateBothCoverKeys(coverPath);
 
-    // 再次刮削命中同一 poster.jpg，_copyLocalPoster 覆盖同一路径 → 双键驱逐。
+    // 再次刮削命中同一 poster.jpg，_copySidecarCover 覆盖同一路径 → 双键驱逐。
     final ScrapeOutcome second = await svc.scrapeOne(book);
     expect((second as ScrapeApplied).coverPath, coverPath,
         reason: '同 uid 恒落同一路径（覆盖写）');
@@ -409,7 +409,7 @@ void main() {
       candidate: candidate,
     );
 
-    // 首成员走 downloadPoster、其余成员走 copy 分发：两条路径都必须驱逐。
+    // 首成员走 downloadCover、其余成员走 copy 分发：两条路径都必须驱逐。
     for (final String dest in dests) {
       await expectBothCoverKeysEvicted(dest);
     }

@@ -12,13 +12,13 @@
 /// * 串行，一次只跑一本；本本之间 [_perBookDelay] 间隔。
 /// * 每本每进程只尝试一次（[_attempted]）——网络不通/条目查不到时，不会每次进
 ///   视频页都把整库重刷一遍。用户手动「重新刮削」走弹窗，不受此限。
-/// * 同一 subject 的详情请求由 [PosterScraperService] 内部缓存压成一次。
+/// * 同一 subject 的详情请求由 [CoverScraperService] 内部缓存压成一次。
 /// * 远端/流媒体书天然不参与（无本地文件名可解析）。
 library;
 
 import 'dart:async';
 
-import 'package:hibiki/src/media/video/scraper/poster_scraper_service.dart';
+import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart' show VideoBookRow;
 
@@ -27,7 +27,7 @@ import 'package:hibiki_core/hibiki_core.dart' show VideoBookRow;
 class VideoScrapeAutoService {
   VideoScrapeAutoService({
     required VideoBookRepository repository,
-    required Future<PosterScraperService> Function() serviceFactory,
+    required Future<CoverScraperService> Function() serviceFactory,
     bool Function()? isEnabled,
     Duration perBookDelay = _perBookDelay,
   })  : _repo = repository,
@@ -40,7 +40,7 @@ class VideoScrapeAutoService {
   static const Duration _perBookDelay = Duration(milliseconds: 600);
 
   final VideoBookRepository _repo;
-  final Future<PosterScraperService> Function() _serviceFactory;
+  final Future<CoverScraperService> Function() _serviceFactory;
 
   /// 总闸（`AppModel.videoAutoScrape`）。每轮 [sweep] **进场时**读一次，而不是构造
   /// 时读死：用户在设置里关掉后，下一轮就该立刻不再出网，不必重建服务。null =
@@ -59,7 +59,7 @@ class VideoScrapeAutoService {
   bool _disposed = false;
 
   /// 复用同一个 service 实例，让它内部的条目详情缓存跨轮次生效。
-  PosterScraperService? _service;
+  CoverScraperService? _service;
 
   /// 本本之间节流用的可取消定时器 + 它的唤醒信号。
   ///
@@ -80,7 +80,7 @@ class VideoScrapeAutoService {
   /// 扫一遍 [books]，对「本地 + 还没有条目资料 + 本进程没试过」的书跑刮削。
   ///
   /// 幂等且可重复调用：已在跑时直接返回（不排队、不并发）。全程不抛——单本失败
-  /// 由 [PosterScraperService.scrapeLibrary] 收成 `ScrapeFailed` 继续下一本，整轮
+  /// 由 [CoverScraperService.scrapeLibrary] 收成 `ScrapeFailed` 继续下一本，整轮
   /// 异常只吞在本方法边界（后台静默任务不该把页面搞崩），下次进页面自然重试。
   Future<void> sweep(List<VideoBookRow> books) async {
     if (_running || _disposed) return;
@@ -91,7 +91,7 @@ class VideoScrapeAutoService {
       final List<VideoBookRow> pending = await _pending(books);
       if (pending.isEmpty || _disposed) return;
 
-      final PosterScraperService service = _service ??= await _serviceFactory();
+      final CoverScraperService service = _service ??= await _serviceFactory();
       if (_disposed) return;
 
       for (final VideoBookRow book in pending) {
@@ -140,7 +140,7 @@ class VideoScrapeAutoService {
     ];
   }
 
-  /// 本地文件视频判据：与 [PosterScraperService] 一致（http/https = 远端/流媒体）。
+  /// 本地文件视频判据：与 [CoverScraperService] 一致（http/https = 远端/流媒体）。
   static bool _isLocal(VideoBookRow book) {
     final String path = book.videoPath;
     return path.isNotEmpty &&
@@ -150,7 +150,7 @@ class VideoScrapeAutoService {
 
   /// 忘掉某本的「本进程已尝试」记录，让下一轮 [sweep] 重新刮它（用户点「重新刮削」）。
   ///
-  /// 同时丢弃缓存的 [PosterScraperService] 实例：它内部记着「这个 subject 的详情
+  /// 同时丢弃缓存的 [CoverScraperService] 实例：它内部记着「这个 subject 的详情
   /// 拉失败过」的负缓存，不丢就会让手动重刮直接被负缓存短路、什么也不发生。下次
   /// sweep 由工厂重建（代价是重读一次离线索引，用户手动动作的低频路径，可接受）。
   void forget(String bookUid) {

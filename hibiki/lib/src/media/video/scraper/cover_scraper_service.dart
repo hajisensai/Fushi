@@ -23,14 +23,14 @@ import 'package:hibiki/src/media/video/scraper/filename_parser.dart';
 import 'package:hibiki/src/media/video/scraper/match_scorer.dart';
 import 'package:hibiki/src/media/video/scraper/offline_db_downloader.dart';
 import 'package:hibiki/src/media/video/scraper/offline_index.dart';
-import 'package:hibiki/src/media/video/scraper/poster_downloader.dart';
+import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/scraper/sidecar_scanner.dart';
 import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
+import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_storage.dart';
-import 'package:hibiki/src/utils/cover_image.dart' show evictLocalCoverCache;
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+import 'package:hibiki/src/media/video/video_cover_extractor.dart'
     show videoCoverFileName;
 import 'package:hibiki_core/hibiki_core.dart' show VideoBookRow;
 import 'package:path/path.dart' as p;
@@ -129,13 +129,13 @@ class BatchScrapeProgress {
 // ─────────────────────────── 编排服务 ───────────────────────────
 
 /// 海报刮削编排服务（构造注入全部协作者，便于测试用假实现）。
-class PosterScraperService {
-  PosterScraperService({
+class CoverScraperService {
+  CoverScraperService({
     required VideoBookRepository repository,
     required CoverMetaStore coverMetaStore,
     required AliasCache aliasCache,
     required BangumiClient bangumiClient,
-    required PosterDownloader posterDownloader,
+    required CoverDownloader coverDownloader,
     TmdbClient? tmdbClient,
     OfflineIndex? offlineIndex,
     bool enableSidecar = true,
@@ -144,7 +144,7 @@ class PosterScraperService {
         _coverMeta = coverMetaStore,
         _aliasCache = aliasCache,
         _bangumi = bangumiClient,
-        _downloader = posterDownloader,
+        _downloader = coverDownloader,
         _tmdb = tmdbClient,
         _offline = offlineIndex,
         _enableSidecar = enableSidecar,
@@ -154,7 +154,7 @@ class PosterScraperService {
   final CoverMetaStore _coverMeta;
   final AliasCache _aliasCache;
   final BangumiClient _bangumi;
-  final PosterDownloader _downloader;
+  final CoverDownloader _downloader;
   final TmdbClient? _tmdb;
   final OfflineIndex? _offline;
   final bool _enableSidecar;
@@ -189,7 +189,7 @@ class PosterScraperService {
       final SidecarResult sidecar = await SidecarScanner.scan(path);
       final File? poster = sidecar.posterFile;
       if (poster != null) {
-        final String coverPath = await _copyLocalPoster(poster, book.bookUid);
+        final String coverPath = await _copySidecarCover(poster, book.bookUid);
         await _repo.updateCover(book.bookUid, coverPath);
         await _coverMeta.set(
           book.bookUid,
@@ -379,10 +379,12 @@ class PosterScraperService {
       );
       for (final String uid in bookUids.skip(1)) {
         final String dest = p.join(covers.path, videoCoverFileName(uid));
-        await File(firstCover).copy(dest);
-        // 同路径覆盖写：驱逐旧解码缓存（双键，BUG-1118）。首成员已由
-        // _applyCandidate → downloadPoster 落盘时驱逐。
-        await evictLocalCoverCache(dest);
+        // 统一收口：原子拷贝 + 双键驱逐（BUG-1118）。首成员已由
+        // _applyCandidate → downloadCover 落盘时经同一收口驱逐。
+        await MediaCoverService.applyCoverFile(
+          source: File(firstCover),
+          destPath: dest,
+        );
         await _repo.updateCover(uid, dest);
         await _coverMeta.set(uid, meta);
       }
@@ -585,7 +587,7 @@ class PosterScraperService {
     required ScrapeCandidate candidate,
     String? aliasKey,
   }) async {
-    final String coverPath = await _downloader.downloadPoster(
+    final String coverPath = await _downloader.downloadCover(
       url: candidate.posterUrl,
       bookUid: bookUid,
       coversDirectory: _coversDirectory,
@@ -609,20 +611,14 @@ class PosterScraperService {
     return coverPath;
   }
 
-  /// 把本地 sidecar 海报文件复制为封面（`.tmp`+rename 到 covers 目录，文件名走
+  /// 把本地 sidecar 海报文件复制为封面（统一收口 [MediaCoverService.applyCoverFile]：
+  /// `.tmp`+rename 原子落到 covers 目录 + 双键驱逐（BUG-1118），文件名走
   /// [videoCoverFileName] 约定，与下载/抽帧同目录同命名）。返回封面绝对路径。
-  Future<String> _copyLocalPoster(File poster, String bookUid) async {
+  Future<String> _copySidecarCover(File poster, String bookUid) async {
     final Directory covers = await _coversDir();
     await covers.create(recursive: true);
     final String finalPath = p.join(covers.path, videoCoverFileName(bookUid));
-    final File tmp = File('$finalPath.tmp');
-    if (await tmp.exists()) await tmp.delete();
-    await poster.copy(tmp.path);
-    final File finalFile = File(finalPath);
-    if (await finalFile.exists()) await finalFile.delete();
-    await tmp.rename(finalPath);
-    // 同路径覆盖写：驱逐旧解码缓存（双键，BUG-1118），否则 UI 重建仍显示旧封面。
-    await evictLocalCoverCache(finalPath);
+    await MediaCoverService.applyCoverFile(source: poster, destPath: finalPath);
     return finalPath;
   }
 

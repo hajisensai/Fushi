@@ -4,7 +4,7 @@
 /// `setOverrideThumbnailFromMediaItem` 的缩略图目录，视频走 video_covers 等）。
 /// 含 Content-Type / 字节魔数双重「是不是图片」校验，避免把错误页（text/html）当封面。
 ///
-/// 说明：视频侧 `poster_downloader.dart` 有一份等价的下载+魔数逻辑，落地目录不同。待
+/// 说明：视频侧 `cover_downloader.dart` 有一份等价的下载+魔数逻辑，落地目录不同。待
 /// P3「封面服务统一」时让它也复用本工具；本文件先服务书籍刮削（P1b）。
 library;
 

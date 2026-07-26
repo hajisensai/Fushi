@@ -26,7 +26,6 @@ import 'package:hibiki/src/pages/implementations/galgame_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart'
     show DialogDangerAction, DialogQuickAction, MediaItemDialogFrame;
-import 'package:hibiki/src/utils/cover_image.dart' show evictLocalCoverCache;
 import 'package:hibiki/utils.dart';
 
 // 游戏进合集（统一媒体库）：mediaType 用 [MediaKind.game]（P5 枚举地基，取代旧
@@ -237,12 +236,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
 
   /// 把新封面路径写回条目并刷新。
   ///
-  /// 必须先驱逐旧解码缓存：换封面常常落在**同一个** `<id>.<ext>` 路径上，不驱逐的话
-  /// UI 重建会命中旧解码，用户看到的还是换之前那张图（与视频封面同一个坑，见
-  /// `setVideoCoverFromPickedFile`）。卡片经 [ShelfFileCover] 走降采样键，裸
-  /// FileImage 键与 ResizeImage 键都要清（[evictLocalCoverCache]）。
+  /// 旧解码缓存驱逐（换封面常落同一 `<id>.<ext>` 路径，双键：裸 FileImage +
+  /// ResizeImage）已由落盘收口 `MediaCoverService.applyCoverFile/applyCoverBytes`
+  /// 在 `saveGameCover*` 内结构性保证，本方法只负责回填 DB + 刷新。
   Future<void> _applyCover(GalgameEntry game, String coverPath) async {
-    await evictLocalCoverCache(coverPath);
     // 后台补齐期间用户可能已删掉这条：仓储按 id 更新，行不在就是空操作。
     if (_repo.byId(game.id) == null) return;
     await _repo.setCoverPath(game.id, coverPath);

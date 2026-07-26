@@ -4,7 +4,7 @@
 // 裸 FileImage 键 + resizedFileImage 的 ResizeImage 键是两个不同的 ImageCache
 // key，只清其一则走另一条渲染路径的卡片重建仍命中旧解码。本文件从
 // test/media/media_cover_service_test.dart 提取五个断言 helper，供刮削链路
-// （poster_downloader / poster_scraper_service）等其它落盘点的测试复用。
+// （cover_downloader / cover_scraper_service）等其它落盘点的测试复用。
 
 import 'dart:async';
 import 'dart:io';

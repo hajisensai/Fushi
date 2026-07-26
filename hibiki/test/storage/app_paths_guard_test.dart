@@ -167,20 +167,29 @@ void main() {
     });
 
     test(
-        'desktop_audio_clipper.dart extractVideoCover 封面写路径经 '
+        'video_cover_extractor.dart extractVideoCover 封面写路径经 '
         'AppPaths.videoCoversDirectory', () {
-      final String src = read('lib/src/utils/misc/desktop_audio_clipper.dart');
-      // extractVideoCover(:594) 封面目录经 AppPaths.videoCoversDirectory()——同上跟随
+      // 审计 §1-A：封面抽取从 desktop_audio_clipper.dart 迁到
+      // media/video/video_cover_extractor.dart，守卫跟着实现走。
+      final String src = read('lib/src/media/video/video_cover_extractor.dart');
+      // extractVideoCover 封面目录经 AppPaths.videoCoversDirectory()——同上跟随
       // 数据根，不落回平台 Documents。
       expect(src.contains('AppPaths.videoCoversDirectory'), isTrue,
           reason: 'extractVideoCover 封面目录必须经 AppPaths.videoCoversDirectory 解析');
-      // 封面写路径同样不得回退直连 documents/support 数据根；本文件其余 ffmpeg 逻辑无
-      // path_provider 合法用途（video_clips 导出走调用方传入的 outputPath，不在此文件
-      // 直连数据根）。
+      // 封面写路径同样不得回退直连 documents/support 数据根。
       expect(src.contains('getApplicationDocumentsDirectory'), isFalse,
           reason: '封面写路径不得直连 getApplicationDocumentsDirectory，必须经 AppPaths');
       expect(src.contains('getApplicationSupportDirectory'), isFalse,
           reason: '封面写路径不得直连 getApplicationSupportDirectory，必须经 AppPaths');
+      // 原宿主文件（音频剪辑工具）也不得回退直连数据根（迁移后其不应再包含封面
+      // 目录解析逻辑）。
+      final String clipper =
+          read('lib/src/utils/misc/desktop_audio_clipper.dart');
+      expect(clipper.contains('getApplicationDocumentsDirectory'), isFalse,
+          reason:
+              'desktop_audio_clipper 不得直连 getApplicationDocumentsDirectory');
+      expect(clipper.contains('getApplicationSupportDirectory'), isFalse,
+          reason: 'desktop_audio_clipper 不得直连 getApplicationSupportDirectory');
     });
   });
 }

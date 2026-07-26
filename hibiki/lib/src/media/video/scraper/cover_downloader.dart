@@ -14,18 +14,18 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
 import 'package:hibiki/src/media/video/video_import_dialog.dart'
     show videoCoverFileName;
 import 'package:hibiki/src/media/video/video_storage.dart';
-import 'package:hibiki/src/utils/cover_image.dart' show evictLocalCoverCache;
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 /// 海报下载器。构造注入 [http.Client]（默认自建），测试用 mock client。
-class PosterDownloader {
-  PosterDownloader({http.Client? client}) : _client = client ?? http.Client();
+class CoverDownloader {
+  CoverDownloader({http.Client? client}) : _client = client ?? http.Client();
 
   final http.Client _client;
 
@@ -37,10 +37,9 @@ class PosterDownloader {
   /// - [coversDirectory]：缺省取 [VideoStorage.coversDir]（生产路径）；测试注入临时目录。
   /// - 校验：HTTP 2xx + 图片内容（`Content-Type` 以 `image/` 开头，或字节魔数是
   ///   JPEG/PNG/WebP）。非图片（如 `text/html` 错误页）→ 抛 [ScrapeNetworkException]。
-  /// - 原子落地：先写 `<name>.tmp` 再 rename 覆盖正式文件；失败**不动旧封面**、不留 .tmp。
-  /// - 落盘后已双键驱逐旧解码缓存（MediaCoverService「同路径覆盖写必须驱逐」不变量，
-  ///   见 [evictLocalCoverCache]）。
-  Future<String> downloadPoster({
+  /// - 落盘走统一收口 [MediaCoverService.applyCoverBytes]：原子 `.tmp`+rename
+  ///   （失败**不动旧封面**、不留 .tmp）+ 双键驱逐旧解码缓存（BUG-1118 不变量）。
+  Future<String> downloadCover({
     required String url,
     required String bookUid,
     Directory? coversDirectory,
@@ -50,7 +49,6 @@ class PosterDownloader {
     await coversDir.create(recursive: true);
     final String finalPath =
         p.join(coversDir.path, videoCoverFileName(bookUid));
-    final File tmpFile = File('$finalPath.tmp');
 
     final http.Response response;
     try {
@@ -77,26 +75,13 @@ class PosterDownloader {
       );
     }
 
-    // 原子落地：先写 .tmp，再删旧正式文件后 rename（Windows rename 不覆盖）。
+    // 统一收口：原子落地（.tmp+rename，失败不动旧封面）+ 双键驱逐（BUG-1118）。
     try {
-      if (await tmpFile.exists()) await tmpFile.delete();
-      await tmpFile.writeAsBytes(bytes, flush: true);
-      final File finalFile = File(finalPath);
-      if (await finalFile.exists()) await finalFile.delete();
-      await tmpFile.rename(finalPath);
+      await MediaCoverService.applyCoverBytes(
+          bytes: bytes, destPath: finalPath);
     } catch (e) {
-      // 写盘/替换失败：清 .tmp、不动旧封面，抛统一异常。
-      try {
-        if (await tmpFile.exists()) await tmpFile.delete();
-      } catch (_) {
-        // .tmp 清理失败不掩盖原始写盘异常。
-      }
-      throw ScrapeNetworkException('Poster write failed: $e');
+      throw ScrapeNetworkException('Cover write failed: $e');
     }
-
-    // 同路径覆盖写：驱逐旧解码缓存（裸 FileImage + ResizeImage 双键），否则
-    // UI 重建仍命中换图前的旧封面（BUG-1118）。
-    await evictLocalCoverCache(finalPath);
 
     return finalPath;
   }

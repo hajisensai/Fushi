@@ -18,6 +18,7 @@ import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
+import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -753,6 +754,12 @@ class _BookImportDialogState extends State<BookImportDialog>
     }
   }
 
+  /// 把封面图写进 EPUB **解压目录内**（`<extractDir>/cover<ext>`）并落库相对名
+  /// `coverPath`——这是「EPUB 包内容的一部分」，不是三岛的独立封面文件
+  /// （thumbnails/ / video_covers/ / game_covers/），目录与键派生都不同。
+  /// 写盘仍走统一收口 [MediaCoverService.applyCoverFile]：导入时 extractDir 是
+  /// 新目录、该路径此前从未被解码（驱逐是空操作），但收口保证将来任何「同路径
+  /// 重写封面」的调用形态都自动满足「写盘→双键驱逐」不变量。
   Future<void> _applyCoverToEpub(String bookKey, {String? sourcePath}) async {
     final String source = sourcePath ?? _coverPath!;
     // Locate the extracted dir via the stored extract_dir column (the on-disk
@@ -762,7 +769,10 @@ class _BookImportDialogState extends State<BookImportDialog>
     final String extractDir = row.extractDir;
     final String ext = p.extension(source);
     final String dest = p.join(extractDir, 'cover$ext');
-    await File(source).copy(dest);
+    await MediaCoverService.applyCoverFile(
+      source: File(source),
+      destPath: dest,
+    );
     await (widget.db.update(widget.db.epubBooks)
           ..where((tbl) => tbl.bookKey.equals(bookKey)))
         .write(EpubBooksCompanion(coverPath: Value('cover$ext')));

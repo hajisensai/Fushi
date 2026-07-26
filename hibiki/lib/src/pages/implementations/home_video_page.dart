@@ -17,16 +17,16 @@ import 'package:hibiki/src/media/drag_drop/card_drop_registry.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
-import 'package:hibiki/src/media/video/cover_ui/poster_cover_image.dart';
-import 'package:hibiki/src/media/video/cover_ui/poster_match_dialog.dart';
+import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:hibiki/src/media/video/cover_ui/cover_match_dialog.dart';
 import 'package:hibiki/src/media/video/cover_ui/scrape_info_dialog.dart';
 import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
 import 'package:hibiki/src/media/video/scraper/auto_scrape_service.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
 import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
 import 'package:hibiki/src/media/video/scraper/offline_index.dart';
-import 'package:hibiki/src/media/video/scraper/poster_downloader.dart';
-import 'package:hibiki/src/media/video/scraper/poster_scraper_service.dart';
+import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
+import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
 import 'package:hibiki/src/media/media_cover_service.dart';
@@ -61,7 +61,7 @@ import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/pages/implementations/video_statistics_page.dart';
 import 'package:hibiki/src/sync/deletion_prompt.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/manual_sync_ui.dart';
 import 'package:hibiki/src/sync/remote_download_progress_badge.dart';
@@ -464,7 +464,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     // 互联已从 backendType 解耦成独立开关，可与云备份并存：互联启用且已配对时用它的
     // live 库；未启用则本方法返 null，`_loadRemoteVideos` 回退云视频占位卡。
     if (!await syncRepo.isInterconnectEnabled()) return null;
-    final HibikiClientSyncBackend backend = HibikiClientSyncBackend.instance;
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
     if (!await backend.restoreAuth(syncRepo)) return null;
     return backend;
   }
@@ -1549,7 +1549,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             icon: Icons.image_search,
             onPressed: () {
               Navigator.pop(dialogContext);
-              _openPosterMatch(book);
+              _openCoverMatch(book);
             },
           ),
           DialogQuickAction(
@@ -1621,7 +1621,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       context,
       adaptivePageRoute<void>(
         context: context,
-        builder: (_) => TagPickerPage(videoBookUid: book.bookUid),
+        builder: (_) => TagPickerPage(
+          media: MediaRef(kind: MediaKind.video, entryKey: book.bookUid),
+        ),
       ),
     );
     if (mounted) _refreshAfterTagChange();
@@ -1685,8 +1687,8 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// TMDB key（偏好）+ 离线索引（有则装载）。返回初始 service、离线重建工厂、目录。
   Future<
       ({
-        PosterScraperService service,
-        PosterScraperService Function(OfflineIndex offline) rebuild,
+        CoverScraperService service,
+        CoverScraperService Function(OfflineIndex offline) rebuild,
         Directory scraperDir,
       })> _scraperBundle() async {
     final Directory covers = await VideoStorage.coversDir();
@@ -1697,18 +1699,18 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         .read(appProvider)
         .prefsRepo
         .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String;
-    PosterScraperService make(OfflineIndex? offline) => PosterScraperService(
+    CoverScraperService make(OfflineIndex? offline) => CoverScraperService(
           repository: widget.repo,
           coverMetaStore: CoverMetaStore(covers),
           aliasCache: AliasCache(scraperDir),
           bangumiClient: BangumiClient(),
-          posterDownloader: PosterDownloader(),
+          coverDownloader: CoverDownloader(),
           tmdbClient: tmdbKey.isEmpty ? null : TmdbClient(apiKey: tmdbKey),
           offlineIndex: offline,
           coversDirectory: covers,
         );
     final OfflineIndex? offline =
-        await PosterScraperService.loadOfflineIndex(scraperDir);
+        await CoverScraperService.loadOfflineIndex(scraperDir);
     return (
       service: make(offline),
       rebuild: (OfflineIndex o) => make(o),
@@ -1732,16 +1734,16 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   }
 
   /// 长按菜单「在线匹配海报」：组装 service → 弹单本匹配弹窗（预填解析标题）。
-  Future<void> _openPosterMatch(VideoBookRow book) async {
+  Future<void> _openCoverMatch(VideoBookRow book) async {
     final ({
-      PosterScraperService service,
-      PosterScraperService Function(OfflineIndex offline) rebuild,
+      CoverScraperService service,
+      CoverScraperService Function(OfflineIndex offline) rebuild,
       Directory scraperDir,
     }) bundle = await _scraperBundle();
     if (!mounted) return;
     final List<String> members = await _collectionMemberUids(book.bookUid);
     if (!mounted) return;
-    await showPosterMatchDialog(
+    await showCoverMatchDialog(
       context: context,
       service: bundle.service,
       book: book,
@@ -2590,9 +2592,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       if (local == null) continue;
       final String? cover = local.coverPath;
       if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
-        // 2:3 竖版槽位：横版截帧由 [PosterCoverImage] 用「模糊同图垫底 + contain
+        // 2:3 竖版槽位：横版截帧由 [PortraitCoverImage] 用「模糊同图垫底 + contain
         // 前景」填充；解码上限与旧 cacheWidth 同源（resizedFileImage 默认 720）。
-        return PosterCoverImage(
+        return PortraitCoverImage(
           image: resizedFileImage(File(cover)),
           errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
             icon: Icons.movie_outlined,
@@ -2674,7 +2676,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         children: <Widget>[
           // BUG-926：与本地卡同因——封面从 Expanded 改为固定 AspectRatio，标题浮动
           // 高度不再反灌封面区。主网格统一 2:3 竖版海报（用户拍板 2026-07-24），
-          // 横版截帧由 [PosterCoverImage] 模糊垫底填充。
+          // 横版截帧由 [PortraitCoverImage] 模糊垫底填充。
           AspectRatio(
             aspectRatio: 2 / 3,
             child: Stack(
@@ -2747,7 +2749,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// [poster] = true：主网格 2:3 竖版槽位，走 [PosterCoverImage]（横版截帧模糊
+  /// [poster] = true：主网格 2:3 竖版槽位，走 [PortraitCoverImage]（横版截帧模糊
   /// 垫底 + contain 前景）；false：对话框等 16:9 语境保持原 contain + 衬底渲染。
   Widget _buildRemoteVideoCover(RemoteVideoInfo video, {bool poster = false}) {
     final String safeKey = _safeRemoteKey(video.id);
@@ -2758,7 +2760,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       // contain 让非 16:9 源完整显示不裁切，露出的空带由 [_coverBacking] 垫
       // surfaceContainer 衬底（不再透出卡片底色的突兀白/黑边）。
       if (poster) {
-        return PosterCoverImage(
+        return PortraitCoverImage(
           image: FileImage(File(coverPath)),
           imageKey: coverKey,
           errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
@@ -2789,7 +2791,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       final RemoteCoverImage remoteImage =
           RemoteCoverImage(coverUrl, fetcher, cacheKey: video.id);
       if (poster) {
-        return PosterCoverImage(
+        return PortraitCoverImage(
           image: remoteImage,
           imageKey: coverKey,
           errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
@@ -2899,7 +2901,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// * 「信息」→ 弹基本元数据（标题 + 是否含字幕）。
   ///
   /// 删除：远端视频是 host/client 模型（client 不存视频，只从 host 流式播放），
-  /// [RemoteVideoClient] / [HibikiClientSyncBackend] 均无 deleteRemoteVideo 能力，
+  /// [RemoteVideoClient] / [InterconnectSyncBackend] 均无 deleteRemoteVideo 能力，
   /// 故不提供删除动作（真实能力边界，非掩盖）。
   void _showRemoteVideoDialog(RemoteVideoInfo video) {
     showAppDialog<void>(
@@ -3216,7 +3218,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
           // 不足时多出的空间灌进封面区，contain 封面上下留空隙（标题短或无进度时才
           // 现，故「时有时无」）。改为固定 AspectRatio：封面比例恒定，与标题长短彻底
           // 解耦。主网格统一 2:3 竖版海报（Kazumi 式，用户拍板 2026-07-24），横版
-          // 截帧由 [PosterCoverImage] 模糊垫底填充，无黑边/变形。
+          // 截帧由 [PortraitCoverImage] 模糊垫底填充，无黑边/变形。
           AspectRatio(
             aspectRatio: 2 / 3,
             child: Stack(
@@ -3442,7 +3444,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     );
   }
 
-  /// [poster] = true：主网格 2:3 竖版槽位，走 [PosterCoverImage]（横版截帧模糊
+  /// [poster] = true：主网格 2:3 竖版槽位，走 [PortraitCoverImage]（横版截帧模糊
   /// 垫底 + contain 前景）；false：hero / 长按菜单等 16:9 语境保持原渲染。
   Widget _buildCover(VideoBookRow book, {bool poster = false}) {
     final String? cover = book.coverPath;
@@ -3458,7 +3460,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     }
     if (poster) {
       // 解码上限与下方 cacheWidth 同源（resizedFileImage 默认 720，BUG-959）。
-      return PosterCoverImage(
+      return PortraitCoverImage(
         image: resizedFileImage(File(cover)),
         errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
           icon: Icons.movie_outlined,

@@ -18,7 +18,6 @@ import 'package:hibiki/src/mining/metadata/galgame_metadata_merge.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
 import 'package:hibiki/src/pages/implementations/games_library_page.dart'
     show formatGalgameDate, galgamePlayStatusLabel;
-import 'package:hibiki/src/utils/cover_image.dart' show evictLocalCoverCache;
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki/src/pages/implementations/stat_shared.dart'
     show formatStatTime;
@@ -924,8 +923,9 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
 
   /// 刮削成功后的封面落地（决策纯函数 [shouldAutoDownloadScrapedCover] 可单测）：
   /// 读**重载后**的最新条目（合并层已按优先级/手选源算好 coverUrl），无可用封面
-  /// 文件才下载；成功后驱逐旧解码缓存（裸 FileImage 键 + 降采样键都清）、写
-  /// coverPath 并复用 `t.games_cover_updated` 提示。
+  /// 文件才下载；落盘（含双键驱逐旧解码缓存）由 [downloadGalgameCoverToFile] →
+  /// `MediaCoverService.applyCoverBytes` 收口结构性保证，随后写 coverPath 并复用
+  /// `t.games_cover_updated` 提示。
   Future<void> _maybeDownloadScrapedCover() async {
     final GalgameEntry? latest = widget.repo.byId(widget.game.id);
     if (latest == null) return;
@@ -945,7 +945,6 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
       url: coverUrl!,
     );
     if (saved == null) return; // 失败静默：原因已进 debug 日志。
-    await evictLocalCoverCache(saved);
     // 下载期间条目可能已被移除：仓储按 id 更新，行不在就不写。
     if (widget.repo.byId(latest.id) == null) return;
     await widget.repo.setCoverPath(latest.id, saved);
@@ -1079,7 +1078,7 @@ class _ScrapeQueryDialogState extends State<_ScrapeQueryDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(t.game_scrape_title),
+      title: Text(t.games_scrape),
       content: TextField(
         controller: _controller,
         autofocus: true,

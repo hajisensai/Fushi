@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
-import 'package:hibiki/src/media/video/scraper/poster_downloader.dart';
+import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart'
     show videoCoverFileName;
 import 'package:http/http.dart' as http;
@@ -20,7 +20,7 @@ final List<int> _fakePng = <int>[
 ];
 
 void main() {
-  // downloadPoster 落盘后走 evictLocalCoverCache（需要 PaintingBinding）。
+  // downloadCover 落盘后走 evictLocalCoverCache（需要 PaintingBinding）。
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory tempDir;
@@ -42,7 +42,7 @@ void main() {
       );
     });
     const String bookUid = 'video/playlist/鬼滅';
-    final String path = await PosterDownloader(client: client).downloadPoster(
+    final String path = await CoverDownloader(client: client).downloadCover(
       url: 'https://img/poster.png',
       bookUid: bookUid,
       coversDirectory: tempDir,
@@ -63,7 +63,7 @@ void main() {
       // 无 content-type 头，靠魔数嗅探。
       return http.Response.bytes(_fakePng, 200);
     });
-    final String path = await PosterDownloader(client: client).downloadPoster(
+    final String path = await CoverDownloader(client: client).downloadCover(
       url: 'https://img/x',
       bookUid: 'uid1',
       coversDirectory: tempDir,
@@ -81,7 +81,7 @@ void main() {
     });
     const String bookUid = 'uid2';
     await expectLater(
-      PosterDownloader(client: client).downloadPoster(
+      CoverDownloader(client: client).downloadCover(
         url: 'https://img/notimage',
         bookUid: bookUid,
         coversDirectory: tempDir,
@@ -98,7 +98,7 @@ void main() {
         MockClient((http.Request req) async => http.Response('nf', 404));
     const String bookUid = 'uid3';
     await expectLater(
-      PosterDownloader(client: client).downloadPoster(
+      CoverDownloader(client: client).downloadCover(
         url: 'https://img/404',
         bookUid: bookUid,
         coversDirectory: tempDir,
@@ -124,7 +124,7 @@ void main() {
         headers: const <String, String>{'content-type': 'image/jpeg'},
       );
     });
-    final String path = await PosterDownloader(client: client).downloadPoster(
+    final String path = await CoverDownloader(client: client).downloadCover(
       url: 'https://img/new',
       bookUid: 'uid4',
       coversDirectory: tempDir,
@@ -142,9 +142,9 @@ void main() {
         headers: const <String, String>{'content-type': 'image/png'},
       );
     });
-    final PosterDownloader downloader = PosterDownloader(client: client);
+    final CoverDownloader downloader = CoverDownloader(client: client);
 
-    final String path = await downloader.downloadPoster(
+    final String path = await downloader.downloadCover(
       url: 'https://img/first.png',
       bookUid: 'uid_evict',
       coversDirectory: tempDir,
@@ -153,7 +153,7 @@ void main() {
     await populateBothCoverKeys(path);
 
     // 二次下载覆盖同一路径 → 双键必须被驱逐，否则 UI 重建仍显示旧封面。
-    final String again = await downloader.downloadPoster(
+    final String again = await downloader.downloadCover(
       url: 'https://img/second.png',
       bookUid: 'uid_evict',
       coversDirectory: tempDir,

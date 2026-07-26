@@ -9,7 +9,7 @@ import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+import 'package:hibiki/src/media/video/video_cover_extractor.dart'
     show downloadVideoCoverToPath, extractVideoCover, videoCoverFileName;
 
 /// 把下载完成的视频路径按解析集号升序排（集号缺失排末尾，同集按文件名）。纯函数，

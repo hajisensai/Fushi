@@ -16,17 +16,18 @@ import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
-import 'package:hibiki/src/utils/cover_image.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:hibiki/src/media/media_cover_service.dart';
+import 'package:hibiki/src/media/video/video_cover_extractor.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:path/path.dart' as p;
-// TODO-817 M1c: videoCoverFileName / extractVideoCover 已下沉到
-// desktop_audio_clipper.dart（ffmpeg 封面抽取的归宿，使扫描器无需 import UI 层）；
-// 从这里 re-export 让既有调用点（home_video_page / playlist_book_uid_test）零改动。
-export 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+// TODO-817 M1c → 审计 §1-A: videoCoverFileName / extractVideoCover 已下沉到
+// media/video/video_cover_extractor.dart（视频封面抽取的归宿，使扫描器无需
+// import UI 层）；从这里 re-export 让既有调用点（home_video_page /
+// source_library_scanner / playlist_book_uid_test）零改动。
+export 'package:hibiki/src/media/video/video_cover_extractor.dart'
     show videoCoverFileName, extractVideoCover, extractPlaylistCover;
 
 /// 为 m3u8 播放列表生成跨设备稳定 bookUid：`video/playlist/<sanitize(文件名)>`。
@@ -85,9 +86,8 @@ String uniqueVideoBookUid(String base, Set<String> existingKeys) {
 /// 时自动截图同一路径（同一 [videoCoverFileName]），所以 DB 里的 `coverPath`
 /// 字符串不变；而 [FileImage] 按 `(path, scale)` 而非内容/mtime 缓存解码，覆盖
 /// 同名文件后必须驱逐旧条目，否则 UI 重建时命中旧解码、用户重设封面后看到的
-/// 还是旧图（直到缓存淘汰或重启）。驱逐走 [evictLocalCoverCache]：裸 FileImage
-/// 键与 `resizedFileImage` 的 ResizeImage 键是两个不同 key，只清前者的话走降
-/// 采样渲染的卡片（ShelfFileCover 等）仍命中旧解码。
+/// 还是旧图。写盘与双键驱逐（裸 FileImage 键 + ResizeImage 键）由统一收口
+/// [MediaCoverService.applyCoverFile] 结构性保证。
 ///
 /// [coversDirectory] 是测试接缝：默认经唯一入口 [AppPaths] 派生
 /// `<documents>/video_covers`（TODO-935 E0），测试传临时目录即可断言真实落盘。
@@ -101,8 +101,10 @@ Future<String> setVideoCoverFromPickedFile({
       coversDirectory ?? await AppPaths.videoCoversDirectory();
   await coverDir.create(recursive: true);
   final String dest = p.join(coverDir.path, videoCoverFileName(bookUid));
-  await File(pickedPath).copy(dest);
-  await evictLocalCoverCache(dest);
+  await MediaCoverService.applyCoverFile(
+    source: File(pickedPath),
+    destPath: dest,
+  );
   await repo.updateCover(bookUid, dest);
   return dest;
 }

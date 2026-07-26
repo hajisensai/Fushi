@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki/src/media/video/scraper/poster_scraper_service.dart';
+import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
 import 'package:hibiki/src/models/app_model.dart';
@@ -19,16 +19,16 @@ const String kVideoScraperTmdbApiKeyPref = 'video_scraper_tmdb_api_key';
 /// （[collectionMemberUids] 长度 > 1）时底部出「同时应用到本合集全部 N 集」勾选。
 ///
 /// TMDB 无 key 时点该分段展开 key 输入行并存偏好（[kVideoScraperTmdbApiKeyPref]）。
-Future<void> showPosterMatchDialog({
+Future<void> showCoverMatchDialog({
   required BuildContext context,
-  required PosterScraperService service,
+  required CoverScraperService service,
   required VideoBookRow book,
   required List<String> collectionMemberUids,
   required VoidCallback onApplied,
 }) {
   return showAppDialog<void>(
     context: context,
-    builder: (BuildContext ctx) => PosterMatchDialog(
+    builder: (BuildContext ctx) => CoverMatchDialog(
       service: service,
       book: book,
       collectionMemberUids: collectionMemberUids,
@@ -38,8 +38,8 @@ Future<void> showPosterMatchDialog({
 }
 
 /// 单本在线匹配海报对话框主体（导出便于 widget 测试直接构造）。
-class PosterMatchDialog extends ConsumerStatefulWidget {
-  const PosterMatchDialog({
+class CoverMatchDialog extends ConsumerStatefulWidget {
+  const CoverMatchDialog({
     super.key,
     required this.service,
     required this.book,
@@ -47,7 +47,7 @@ class PosterMatchDialog extends ConsumerStatefulWidget {
     required this.onApplied,
   });
 
-  final PosterScraperService service;
+  final CoverScraperService service;
   final VideoBookRow book;
 
   /// 本合集全部成员 uid（含 [book] 自身）；长度 > 1 才显示合集应用勾选。
@@ -57,10 +57,10 @@ class PosterMatchDialog extends ConsumerStatefulWidget {
   final VoidCallback onApplied;
 
   @override
-  ConsumerState<PosterMatchDialog> createState() => _PosterMatchDialogState();
+  ConsumerState<CoverMatchDialog> createState() => _CoverMatchDialogState();
 }
 
-class _PosterMatchDialogState extends ConsumerState<PosterMatchDialog> {
+class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   late final TextEditingController _queryCtrl;
   late final TextEditingController _tmdbKeyCtrl;
   late ScrapeSource _source;
@@ -235,7 +235,7 @@ class _PosterMatchDialogState extends ConsumerState<PosterMatchDialog> {
             ),
             if (showCollectionToggle)
               CheckboxListTile(
-                key: const ValueKey<String>('poster_match_apply_collection'),
+                key: const ValueKey<String>('cover_match_apply_collection'),
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,

@@ -18,8 +18,8 @@ import 'package:flutter/material.dart';
 ///
 /// 宽高比判定不异步 decode 整图：前景 [Image] 与尺寸探测共用同一个
 /// [ImageProvider]（同一 [ImageStream]），零额外解码成本。
-class PosterCoverImage extends StatefulWidget {
-  const PosterCoverImage({
+class PortraitCoverImage extends StatefulWidget {
+  const PortraitCoverImage({
     super.key,
     required this.image,
     this.imageKey,
@@ -43,10 +43,10 @@ class PosterCoverImage extends StatefulWidget {
   static const double backdropBlurSigma = 14;
 
   @override
-  State<PosterCoverImage> createState() => _PosterCoverImageState();
+  State<PortraitCoverImage> createState() => _PortraitCoverImageState();
 }
 
-class _PosterCoverImageState extends State<PosterCoverImage> {
+class _PortraitCoverImageState extends State<PortraitCoverImage> {
   ImageStream? _stream;
   ImageStreamListener? _listener;
 
@@ -61,7 +61,7 @@ class _PosterCoverImageState extends State<PosterCoverImage> {
   }
 
   @override
-  void didUpdateWidget(PosterCoverImage oldWidget) {
+  void didUpdateWidget(PortraitCoverImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.image != oldWidget.image) {
       _aspect = null;
@@ -117,7 +117,7 @@ class _PosterCoverImageState extends State<PosterCoverImage> {
     }
     final double? aspect = _aspect;
     final bool landscape =
-        aspect != null && aspect > PosterCoverImage.portraitAspectThreshold;
+        aspect != null && aspect > PortraitCoverImage.portraitAspectThreshold;
     final Widget foreground = Image(
       key: widget.imageKey,
       image: widget.image,
@@ -136,8 +136,8 @@ class _PosterCoverImageState extends State<PosterCoverImage> {
           // 垫底：同图放大模糊（blur 溢出由外层 ClipRect 收口）。
           ImageFiltered(
             imageFilter: ImageFilter.blur(
-              sigmaX: PosterCoverImage.backdropBlurSigma,
-              sigmaY: PosterCoverImage.backdropBlurSigma,
+              sigmaX: PortraitCoverImage.backdropBlurSigma,
+              sigmaY: PortraitCoverImage.backdropBlurSigma,
             ),
             child: Image(
               image: widget.image,
