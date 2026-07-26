@@ -1,5 +1,9 @@
 # hibiki-log-collector
 
+> 目录原名 `server/`（2026-07 改名 `services/log-backend/` 消歧）：本目录与 app 同步层的
+> `hibiki_sync_server.dart`、`SyncBackendType.hibikiServer` **无任何关系**——那是局域网
+> 互联/同步；这里只是崩溃/报错日志的独立部署接收端。
+
 ## 1. 简介
 
 Hibiki app 报错日志上传的接收端：部署在自有 Linux 服务器、前挂腾讯 EdgeOne 反代，对上传的日志**只当哑字节存取、绝不执行/解释**（写盘、原样读回，无任何 eval / 反序列化 / exec）。
@@ -9,7 +13,7 @@ Hibiki app 报错日志上传的接收端：部署在自有 Linux 服务器、�
 仅依赖 Go 标准库，零第三方依赖，编译产物是单文件静态二进制。
 
 ```bash
-cd server/log-collector && go build -o hibiki-log-collector .
+cd services/log-backend/log-collector && go build -o hibiki-log-collector .
 ```
 
 交叉编译到 Linux（在 Windows/macOS 上为目标服务器出包）：

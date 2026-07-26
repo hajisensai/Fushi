@@ -4,7 +4,10 @@ CF 边缘上的报错日志接收端点，**零服务器、免备案、免费额
 
 存储用 D1 而非 Workers KV：**D1 强一致**（上传后立刻可在列表读到，KV 是最终一致），写入上限更高（约 10 万次/天，免绑卡），且天然支持按 SQL 做保留数清理。
 
-这是 Go 自有服务器版（`server/log-collector/`）的**无服务器替代方案**，两者择一部署即可。
+这是 Go 自有服务器版（`services/log-backend/log-collector/`）的**无服务器替代方案**，两者择一部署即可。
+
+> 目录原名 `server/`（2026-07 改名 `services/log-backend/` 消歧）：与 app 同步层的
+> `hibiki_sync_server.dart`、`SyncBackendType.hibikiServer` 无任何关系。
 
 ## 安全模型
 
@@ -28,7 +31,7 @@ CF 边缘上的报错日志接收端点，**零服务器、免备案、免费额
 ## 部署步骤
 
 ```bash
-cd server/cf-worker
+cd services/log-backend/cf-worker
 npm install
 
 # 登录 Cloudflare
@@ -88,7 +91,7 @@ vitest 在 Node 下直接 `import worker from '../src/worker.js'` 调 `worker.fe
 
 ## 与 Go 自有服务器版对比
 
-| 维度 | CF Worker 版（本目录） | Go 源站版（`server/log-collector/`） |
+| 维度 | CF Worker 版（本目录） | Go 源站版（`../log-collector/`） |
 |---|---|---|
 | 服务器 | 零服务器 | 需自有服务器 |
 | 备案 | 免（CF 边缘） | 视部署而定 |
