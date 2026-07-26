@@ -936,8 +936,8 @@ void FloatingLyricWindow::Render() {
                                         text_layout_.GetAddressOf());
     }
     if (text_layout_ != nullptr) {
-      // BUG-1095: overflow still CLIPS (there is no scrolling in a layered
-      // Direct2D strip), but WHICH end gets clipped matters. With the paragraph
+      // BUG-1095: with scrolling added (phase 2) the strip no longer loses the
+      // tail for good, but WHICH end is off-screen first still matters. With the paragraph
       // vertically centred, an over-long caption loses its head AND its tail
       // symmetrically — the user cannot even start reading. Top-align the hook
       // caption the moment it no longer fits, so reading order is preserved and
