@@ -53,6 +53,13 @@ typedef CompletedVideoTrackingProgress = ({
   int evidenceAt,
 });
 
+typedef PersistedBookTrackingProgress = ({
+  String mediaKey,
+  int localProgress,
+  bool completed,
+  int evidenceAt,
+});
+
 class PendingTrackingUpdate {
   const PendingTrackingUpdate({
     required this.outbox,
@@ -301,6 +308,55 @@ class MediaTrackingRepository {
         mediaKey: mapping.mediaKey,
         localProgress: highestCompletedIndex,
         completed: highestCompletedIndex == items.length - 1,
+        evidenceAt: evidenceAt,
+      ));
+    }
+    return result;
+  }
+
+  /// 从阅读位置和书籍完成标记恢复自 [afterMs] 之后的可靠阅读事件。
+  ///
+  /// chapter 模式按已完成章节数恢复；volume 模式在读时用 -1 配合卷号 offset，
+  /// 只报告“此前卷数”，当前卷读完才用 0 把本卷计入，避免刚打开第 N 卷就误报 N 卷。
+  Future<List<PersistedBookTrackingProgress>>
+      loadPersistedBookTrackingProgress({
+    required int afterMs,
+  }) async {
+    final List<MediaTrackingMappingRow> mappings = await listMappings();
+    final List<PersistedBookTrackingProgress> result =
+        <PersistedBookTrackingProgress>[];
+    for (final MediaTrackingMappingRow mapping in mappings) {
+      if (mapping.provider != kTrackingProviderBangumi ||
+          mapping.mediaType != TrackingMediaType.book.value) {
+        continue;
+      }
+      final EpubBookRow? book = await _db.getEpubBook(mapping.mediaKey);
+      if (book == null) continue;
+      final ReaderPositionRow? position =
+          await _db.getReaderPosition(mapping.mediaKey);
+      final DateTime? completedAt = book.completedAt;
+      if (position == null && completedAt == null) continue;
+      final int localEvidenceAt = math.max(
+        position?.updatedAt ?? 0,
+        completedAt?.millisecondsSinceEpoch ?? 0,
+      );
+      final int evidenceAt = math.max(mapping.updatedAt, localEvidenceAt);
+      if (evidenceAt <= afterMs) continue;
+
+      final bool isVolume =
+          mapping.progressMode == TrackingProgressMode.volume.value;
+      final bool completed = completedAt != null;
+      final int localProgress;
+      if (isVolume) {
+        localProgress = completed ? 0 : -1;
+      } else {
+        localProgress = (position?.sectionIndex ?? 0) +
+            ((position?.normCharOffset ?? 0) >= 9990 ? 1 : 0);
+      }
+      result.add((
+        mediaKey: mapping.mediaKey,
+        localProgress: localProgress,
+        completed: completed,
         evidenceAt: evidenceAt,
       ));
     }

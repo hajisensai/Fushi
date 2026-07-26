@@ -92,6 +92,27 @@ int _int(dynamic value, [int fallback = 0]) {
 
 String _string(dynamic value) => value is String ? value : '';
 
+BangumiSubject? _parseBangumiSubjectValue(dynamic item) {
+  final Map<String, dynamic>? value = _map(item);
+  if (value == null) return null;
+  final int id = _int(value['id']);
+  final int type = _int(value['type']);
+  if (id <= 0 || (type != 1 && type != 2)) return null;
+  final Map<String, dynamic>? images = _map(value['images']);
+  return BangumiSubject(
+    id: id,
+    type: type,
+    name: _string(value['name']),
+    nameCn: _string(value['name_cn']),
+    platform: _string(value['platform']),
+    episodeCount: _int(value['eps']),
+    volumeCount: _int(value['volumes']),
+    coverUrl: _string(images?['medium']).isNotEmpty
+        ? _string(images?['medium'])
+        : null,
+  );
+}
+
 List<BangumiSubject> parseBangumiSubjectSearch(String body) {
   final dynamic decoded = jsonDecode(body);
   final Map<String, dynamic>? root = _map(decoded);
@@ -99,28 +120,16 @@ List<BangumiSubject> parseBangumiSubjectSearch(String body) {
   if (data is! List) return const <BangumiSubject>[];
   final List<BangumiSubject> subjects = <BangumiSubject>[];
   for (final dynamic item in data) {
-    final Map<String, dynamic>? value = _map(item);
-    if (value == null) continue;
-    final int id = _int(value['id']);
-    final int type = _int(value['type']);
-    if (id <= 0 || (type != 1 && type != 2)) continue;
-    final Map<String, dynamic>? images = _map(value['images']);
-    subjects.add(
-      BangumiSubject(
-        id: id,
-        type: type,
-        name: _string(value['name']),
-        nameCn: _string(value['name_cn']),
-        platform: _string(value['platform']),
-        episodeCount: _int(value['eps']),
-        volumeCount: _int(value['volumes']),
-        coverUrl: _string(images?['medium']).isNotEmpty
-            ? _string(images?['medium'])
-            : null,
-      ),
-    );
+    final BangumiSubject? subject = _parseBangumiSubjectValue(item);
+    if (subject != null) subjects.add(subject);
   }
   return subjects;
+}
+
+BangumiSubject parseBangumiSubject(String body) {
+  final BangumiSubject? subject = _parseBangumiSubjectValue(jsonDecode(body));
+  if (subject == null) throw const FormatException('Invalid Bangumi subject');
+  return subject;
 }
 
 BangumiUser parseBangumiUser(String body) {
@@ -177,6 +186,8 @@ abstract interface class BangumiTrackingApi {
     required String keyword,
     required int subjectType,
   });
+
+  Future<BangumiSubject> getSubject(int subjectId);
 
   Future<BangumiUserCollection?> getCollection(
     String username,
@@ -254,6 +265,16 @@ class BangumiApiClient implements BangumiTrackingApi {
     );
     _require(response, const <int>{200});
     return parseBangumiSubjectSearch(_body(response));
+  }
+
+  @override
+  Future<BangumiSubject> getSubject(int subjectId) async {
+    final http.Response response = await _client.get(
+      Uri.parse('$apiBase/v0/subjects/$subjectId'),
+      headers: _headers,
+    );
+    _require(response, const <int>{200});
+    return parseBangumiSubject(_body(response));
   }
 
   @override

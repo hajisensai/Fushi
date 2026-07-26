@@ -12,6 +12,8 @@ import 'package:hibiki_core/hibiki_core.dart';
 const String kBangumiAccessTokenPref = 'media_tracking_bangumi_access_token';
 const String kVideoTrackingReconcileWatermarkPref =
     'media_tracking_video_reconcile_watermark_v1';
+const String kBookTrackingReconcileWatermarkPref =
+    'media_tracking_book_reconcile_watermark_v1';
 
 typedef BangumiApiFactory = BangumiTrackingApi Function(String accessToken);
 
@@ -135,6 +137,7 @@ class MediaTrackingService {
     if (previous != normalized) {
       // 新账号必须从全部本地已完成事实重新对齐，不能继承旧账号的校正水位。
       await _preferences.setPref(kVideoTrackingReconcileWatermarkPref, 0);
+      await _preferences.setPref(kBookTrackingReconcileWatermarkPref, 0);
     }
   }
 
@@ -233,11 +236,11 @@ class MediaTrackingService {
     if (mapping == null) return;
     final bool isVolume =
         mapping.progressMode == TrackingProgressMode.volume.value;
-    if (isVolume && !completed) return;
     await _enqueueAndSync(
       mediaType: TrackingMediaType.book,
       mediaKey: bookKey,
-      localProgress: isVolume ? 0 : completedChapterCount,
+      // 卷模式的 offset 就是当前卷号：在读时减一只报告此前已读卷，读完才计入本卷。
+      localProgress: isVolume ? (completed ? 0 : -1) : completedChapterCount,
       completed: completed,
     );
   }
@@ -431,6 +434,7 @@ class MediaTrackingService {
     required bool force,
   }) async {
     await _reconcileCompletedVideoProgress();
+    await _reconcilePersistedBookProgress();
     return _sync(force: force);
   }
 
@@ -464,6 +468,39 @@ class MediaTrackingService {
     if (nextWatermark != watermark) {
       await _preferences.setPref(
         kVideoTrackingReconcileWatermarkPref,
+        nextWatermark,
+      );
+    }
+  }
+
+  Future<void> _reconcilePersistedBookProgress() async {
+    if (!isConfigured) return;
+    final Object? stored = _preferences.getPref(
+      kBookTrackingReconcileWatermarkPref,
+      defaultValue: 0,
+    );
+    final int watermark = stored is int ? stored : int.tryParse('$stored') ?? 0;
+    final List<PersistedBookTrackingProgress> progress =
+        await _repository.loadPersistedBookTrackingProgress(
+      afterMs: watermark,
+    );
+    int nextWatermark = watermark;
+    for (final PersistedBookTrackingProgress item in progress) {
+      await _repository.enqueueProgress(
+        mediaType: TrackingMediaType.book,
+        mediaKey: item.mediaKey,
+        localProgress: item.localProgress,
+        completed: item.completed,
+      );
+      nextWatermark =
+          item.evidenceAt > nextWatermark ? item.evidenceAt : nextWatermark;
+    }
+    if (progress.isEmpty) {
+      nextWatermark = DateTime.now().millisecondsSinceEpoch;
+    }
+    if (nextWatermark != watermark) {
+      await _preferences.setPref(
+        kBookTrackingReconcileWatermarkPref,
         nextWatermark,
       );
     }
@@ -611,14 +648,25 @@ class MediaTrackingService {
     if (outbox.progress > remoteProgress) {
       payload[progressField] = outbox.progress;
     }
-    if (outbox.completed &&
-        collection?.type != 2 &&
-        collection?.type != 4 &&
-        collection?.type != 5) {
-      payload['type'] = 2;
+
+    // 书籍状态与真实阅读语义对齐：
+    // - chapter：本地整本完成才是「读过」；
+    // - volume：只有已读卷数达到 Bangumi 总卷数才是「读过」，单卷读完仍是「在读」；
+    // - 已经「读过」的条目重读不降级，其余任何阅读事件都切为「在读」。
+    final bool reachesLastUnit;
+    if (isVolume) {
+      final BangumiSubject subject = await api.getSubject(mapping.subjectId);
+      reachesLastUnit = outbox.completed &&
+          subject.volumeCount > 0 &&
+          outbox.progress >= subject.volumeCount;
+    } else {
+      reachesLastUnit = outbox.completed;
     }
+    final int currentType = collection?.type ?? 3;
+    final int targetType = currentType == 2 || reachesLastUnit ? 2 : 3;
+    if (currentType != targetType) payload['type'] = targetType;
     if (collection == null) {
-      payload.putIfAbsent('type', () => 3);
+      payload['type'] = targetType;
       await api.createCollection(mapping.subjectId, payload: payload);
     } else if (payload.isNotEmpty) {
       await api.patchCollection(mapping.subjectId, payload: payload);

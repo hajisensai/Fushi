@@ -10,6 +10,15 @@ import 'package:hibiki_core/hibiki_core.dart';
 class _FakeBangumiApi implements BangumiTrackingApi {
   BangumiUserCollection? collection;
   List<BangumiEpisode> episodes = const <BangumiEpisode>[];
+  BangumiSubject subject = const BangumiSubject(
+    id: 88,
+    type: 1,
+    name: 'Remote book',
+    nameCn: '',
+    platform: '书籍',
+    episodeCount: 0,
+    volumeCount: 0,
+  );
   Exception? error;
   final List<Map<String, dynamic>> creates = <Map<String, dynamic>>[];
   final List<Map<String, dynamic>> patches = <Map<String, dynamic>>[];
@@ -36,6 +45,12 @@ class _FakeBangumiApi implements BangumiTrackingApi {
   }) async {
     searches.add((keyword: keyword, subjectType: subjectType));
     return searchResults;
+  }
+
+  @override
+  Future<BangumiSubject> getSubject(int subjectId) async {
+    _throwIfNeeded();
+    return subject;
   }
 
   @override
@@ -437,6 +452,199 @@ void main() {
     expect(api.patches.single, isNot(contains('ep_status')));
   });
 
+  test('starting a novel promotes wish to reading before chapter one ends',
+      () async {
+    await repository.saveMapping(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'novel',
+      mediaTitle: 'Novel',
+      kind: TrackingKind.novel,
+      subjectId: 88,
+      subjectName: 'Remote novel',
+      progressMode: TrackingProgressMode.chapter,
+      progressOffset: 0,
+    );
+    await repository.enqueueProgress(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'novel',
+      localProgress: 0,
+      completed: false,
+    );
+    api.collection = const BangumiUserCollection(
+      type: 1,
+      episodeProgress: 0,
+      volumeProgress: 0,
+    );
+
+    await service.syncNow();
+
+    expect(api.patches.single, <String, dynamic>{'type': 3});
+  });
+
+  test('partial novel progress never downgrades an already read collection',
+      () async {
+    await repository.saveMapping(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'read-novel',
+      mediaTitle: 'Read novel',
+      kind: TrackingKind.novel,
+      subjectId: 88,
+      subjectName: 'Remote novel',
+      progressMode: TrackingProgressMode.chapter,
+      progressOffset: 0,
+    );
+    await repository.enqueueProgress(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'read-novel',
+      localProgress: 2,
+      completed: false,
+    );
+    api.collection = const BangumiUserCollection(
+      type: 2,
+      episodeProgress: 0,
+      volumeProgress: 0,
+    );
+
+    await service.syncNow();
+
+    expect(api.patches.single, <String, dynamic>{'ep_status': 2});
+    expect(api.patches.single, isNot(contains('type')));
+  });
+
+  test('finishing one volume keeps a longer book subject in reading', () async {
+    await repository.saveMapping(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'volume-2',
+      mediaTitle: 'Novel volume 2',
+      kind: TrackingKind.novel,
+      subjectId: 88,
+      subjectName: 'Remote novel series',
+      progressMode: TrackingProgressMode.volume,
+      progressOffset: 2,
+    );
+    await repository.enqueueProgress(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'volume-2',
+      localProgress: 0,
+      completed: true,
+    );
+    api.subject = const BangumiSubject(
+      id: 88,
+      type: 1,
+      name: 'Remote novel series',
+      nameCn: '',
+      platform: '书籍',
+      episodeCount: 0,
+      volumeCount: 3,
+    );
+    api.collection = const BangumiUserCollection(
+      type: 1,
+      episodeProgress: 0,
+      volumeProgress: 0,
+    );
+
+    await service.syncNow();
+
+    expect(
+      api.patches.single,
+      <String, dynamic>{'vol_status': 2, 'type': 3},
+    );
+  });
+
+  test('finishing the last remote volume promotes reading to read', () async {
+    await repository.saveMapping(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'volume-3',
+      mediaTitle: 'Novel volume 3',
+      kind: TrackingKind.novel,
+      subjectId: 88,
+      subjectName: 'Remote novel series',
+      progressMode: TrackingProgressMode.volume,
+      progressOffset: 3,
+    );
+    await repository.enqueueProgress(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'volume-3',
+      localProgress: 0,
+      completed: true,
+    );
+    api.subject = const BangumiSubject(
+      id: 88,
+      type: 1,
+      name: 'Remote novel series',
+      nameCn: '',
+      platform: '书籍',
+      episodeCount: 0,
+      volumeCount: 3,
+    );
+    api.collection = const BangumiUserCollection(
+      type: 3,
+      episodeProgress: 0,
+      volumeProgress: 2,
+    );
+
+    await service.syncNow();
+
+    expect(
+      api.patches.single,
+      <String, dynamic>{'vol_status': 3, 'type': 2},
+    );
+  });
+
+  test('sync restores a legacy novel reading position after outbox was cleared',
+      () async {
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'legacy-novel',
+        title: 'Legacy novel',
+        epubPath: '/tmp/legacy.epub',
+        extractDir: '/tmp/legacy',
+        chapterCount: 8,
+        chaptersJson: '[]',
+        importedAt: 1,
+      ),
+    );
+    await db.upsertReaderPosition(
+      ReaderPositionsCompanion.insert(
+        bookKey: 'legacy-novel',
+        sectionIndex: 2,
+        normCharOffset: 5000,
+        updatedAt: 4000,
+      ),
+    );
+    await repository.saveMapping(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'legacy-novel',
+      mediaTitle: 'Legacy novel',
+      kind: TrackingKind.novel,
+      subjectId: 88,
+      subjectName: 'Remote novel',
+      progressMode: TrackingProgressMode.chapter,
+      progressOffset: 0,
+    );
+    api.collection = const BangumiUserCollection(
+      type: 1,
+      episodeProgress: 0,
+      volumeProgress: 0,
+    );
+    expect(await repository.pendingCount(), 0);
+
+    await service.syncNow();
+
+    expect(
+      api.patches.single,
+      <String, dynamic>{'ep_status': 2, 'type': 3},
+    );
+    expect(await repository.pendingCount(), 0);
+    expect(
+      preferences.getPref(
+        kBookTrackingReconcileWatermarkPref,
+        defaultValue: 0,
+      ),
+      isNonZero,
+    );
+  });
+
   test('network failure keeps the update in the durable queue', () async {
     await repository.saveMapping(
       mediaType: TrackingMediaType.book,
@@ -543,7 +751,7 @@ void main() {
     expect(api.searches.single, (keyword: '药屋少女的呢喃', subjectType: 1));
   });
 
-  test('manga volume suffix maps the volume and queues only on completion',
+  test('manga volume suffix reports previous volumes while current is reading',
       () async {
     await db.insertEpubBook(
       EpubBooksCompanion.insert(
@@ -583,8 +791,15 @@ void main() {
     expect(mapping!.kind, TrackingKind.manga.value);
     expect(mapping.progressMode, TrackingProgressMode.volume.value);
     expect(mapping.progressOffset, 3);
+    expect(await repository.pendingCount(), 1);
+    await service.syncNow();
     expect(await repository.pendingCount(), 0,
         reason: '漫画页码不能误写成 Bangumi 章节进度');
+    expect(
+      api.creates.single,
+      <String, dynamic>{'vol_status': 2, 'type': 3},
+      reason: '开始第 3 卷只代表前 2 卷已读，当前收藏应为在读',
+    );
 
     api.error = const BangumiApiException(
       statusCode: 503,

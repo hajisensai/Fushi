@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1082 条。点号进各自文件。
+> 共 1083 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1116](bugs/BUG-1116-book-tracking-status-semantics.md) | ✅ | ✅ | Bangumi 小说/漫画阅读进度未按语义切换在读与读过 |
 | [BUG-1115](bugs/BUG-1115-bangumi-watched-progress-stays-wish.md) | ✅ | ✅ | Bangumi 已有想看收藏在记录进度后未切换为在看 |
 | [BUG-1114](bugs/BUG-1114-local-rig-rate-limit-flake.md) | 🚧 | 🚧 | 内置引擎本地 rig 测试：限速对 loopback peer 不生效导致 peer 观察窗口消失（flaky） |
 | [BUG-1113](bugs/BUG-1113-galgame-no-tags.md) | 🚧 | 🚧 | 游戏没有标签：schema 缺 GalgameTagMappings 表 |

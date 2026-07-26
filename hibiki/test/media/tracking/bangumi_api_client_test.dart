@@ -78,6 +78,37 @@ void main() {
     expect(results.single.episodeCount, 28);
   });
 
+  test('getSubject reads official chapter and volume totals', () async {
+    late http.Request captured;
+    final BangumiApiClient client = BangumiApiClient(
+      accessToken: 'token',
+      userAgent: 'test-agent',
+      client: MockClient((http.Request request) async {
+        captured = request;
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<String, dynamic>{
+            'id': 7,
+            'type': 1,
+            'name': 'Novel',
+            'name_cn': '小说',
+            'platform': '书籍',
+            'eps': 24,
+            'volumes': 3,
+          })),
+          200,
+        );
+      }),
+    );
+    addTearDown(client.close);
+
+    final BangumiSubject subject = await client.getSubject(7);
+
+    expect(captured.method, 'GET');
+    expect(captured.url.path, '/v0/subjects/7');
+    expect(subject.episodeCount, 24);
+    expect(subject.volumeCount, 3);
+  });
+
   test('markEpisodesDone sends one idempotent batch patch', () async {
     late http.Request captured;
     final BangumiApiClient client = BangumiApiClient(
