@@ -49,6 +49,7 @@ import 'package:hibiki/src/media/collections/batch_combine.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/shelf_sort.dart';
+import 'package:hibiki/src/media/media_search_text.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
@@ -209,6 +210,11 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 最近观看，用户拍板）。旧 `ShelfEntries.sortOrder` 手动权重已废弃不再读取。
   ShelfSortMode _sortMode = ShelfSortMode.recent;
 
+  /// P5-A：视频库搜索词（原文，匹配时才归一化）。**刻意不持久化**——下次进
+  /// 视频库还挂着上次的搜索词只会让人以为库空了（与书架/游戏库页同一决定）。
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
+
   /// 层次 C：`'video|<uid>' → 该条目在其主折叠合集里的 sortIndex`（组内序真相源，
   /// 与详情页/播放器 `getCollectionItems` 同源——详情页拖完库页行立即同序）。
   Map<String, int> _memberSortIndex = const <String, int>{};
@@ -262,6 +268,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 
   @override
   void dispose() {
+    _searchController.dispose();
     homeShellTabNotifier.removeListener(_onShellTabActivated);
     _videoUidsSub?.cancel();
     _autoScrape?.dispose();
@@ -1881,6 +1888,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             child: Column(
               children: <Widget>[
                 if (!isCupertinoPlatform(context)) _buildPageHeader(canImport),
+                _buildVideoSearchBar(),
                 _buildTagFilterBar(allTags),
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
                 const SyncProgressBanner(),
@@ -1931,9 +1939,19 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                   collectionFilter: collectionFilter,
                 );
               }).toList();
+        // P5-A：搜索按标题匹配，归一化走与书架/游戏库页同一份
+        // [matchesMediaSearch]（全角/片假名/标点折叠），三页搜出的结果口径一致。
+        final List<VideoBookRow> searched = _searchQuery.trim().isEmpty
+            ? books
+            : books
+                .where((VideoBookRow b) => matchesMediaSearch(
+                      query: _searchQuery,
+                      titles: <String>[b.title],
+                    ))
+                .toList();
         // 排序交互重设计：卡片间序在 group 层按当前排序方式做（[_groupVideos]），
         // 这里不再预排散列表（旧 ShelfEntries.sortOrder 死权重已废弃，用户拍板）。
-        final List<VideoBookRow> ordered = books;
+        final List<VideoBookRow> ordered = searched;
         // 记录当前可见（已过滤）的本地视频，供批量「全选 / 反选」用。
         _visibleVideos = ordered;
         return FutureBuilder<_RemoteVideoState?>(
@@ -2956,6 +2974,39 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   /// 整栏**（不再「无标签隐藏」），批量选择按钮才能常驻露出（否则空标签库点不到
   /// 批量入口、无法批量删除）。组件内部「管理标签」齿轮仍只在有标签时显示，故无
   /// 标签时整栏只剩「批量选择」按钮。
+  /// P5-A 视频库搜索框。形态与书架/游戏库页一致（三个库页搜索长一个样），
+  /// 搜索词只影响本次会话、不落库。
+  Widget _buildVideoSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: SizedBox(
+        height: 40,
+        child: TextField(
+          key: const ValueKey<String>('video_search_field'),
+          controller: _searchController,
+          decoration: InputDecoration(
+            isDense: true,
+            prefixIcon: const Icon(Icons.search, size: 18),
+            hintText: t.library_search,
+            border: const OutlineInputBorder(),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            suffixIcon: _searchQuery.isEmpty
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _searchQuery = '');
+                    },
+                  ),
+          ),
+          onChanged: (String value) => setState(() => _searchQuery = value),
+        ),
+      ),
+    );
+  }
+
   Widget _buildTagFilterBar(List<BookTagRow> tags) {
     return HibikiTagFilterBar(
       tags: tags,
