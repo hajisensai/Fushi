@@ -179,6 +179,37 @@ void main() {
     expect(api.patches, isEmpty);
   });
 
+  test('episode progress uses subject-local order when Bangumi sort starts later',
+      () async {
+    await repository.saveMapping(
+      mediaType: TrackingMediaType.video,
+      mediaKey: 'episode-2',
+      mediaTitle: 'Split cour episode 2',
+      kind: TrackingKind.anime,
+      subjectId: 88,
+      subjectName: 'Split cour',
+      progressMode: TrackingProgressMode.episode,
+      progressOffset: 2,
+    );
+    await repository.enqueueProgress(
+      mediaType: TrackingMediaType.video,
+      mediaKey: 'episode-2',
+      localProgress: 0,
+      completed: false,
+    );
+    api.episodes = const <BangumiEpisode>[
+      BangumiEpisode(id: 51, type: 0, sort: 51),
+      BangumiEpisode(id: 52, type: 0, sort: 52),
+      BangumiEpisode(id: 53, type: 0, sort: 53),
+    ];
+
+    final MediaTrackingSyncResult result = await service.syncNow();
+
+    expect(result.succeeded, 1);
+    expect(api.episodePatches.single, <int>[51, 52]);
+    expect(await repository.pendingCount(), 0);
+  });
+
   test('book sync never regresses remote progress and can mark done', () async {
     await repository.saveMapping(
       mediaType: TrackingMediaType.book,

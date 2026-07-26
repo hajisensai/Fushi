@@ -159,22 +159,59 @@ class MediaTrackingService {
     required int episodeIndex,
     bool seriesCompleted = false,
   }) async {
-    final TrackingMediaType type = collectionId == null
-        ? TrackingMediaType.video
-        : TrackingMediaType.videoCollection;
-    final String key = collectionId?.toString() ?? bookUid;
-    final MediaTrackingMappingRow? mapping = await _ensureAutoVideoMapping(
+    // 已有合集映射属于用户显式配置或旧版自动映射，优先沿用且绝不改写。
+    if (collectionId != null) {
+      final MediaTrackingMappingRow? collectionMapping =
+          await _repository.findMapping(
+        mediaType: TrackingMediaType.videoCollection,
+        mediaKey: collectionId.toString(),
+      );
+      if (collectionMapping != null) {
+        await _enqueueAndSync(
+          mediaType: TrackingMediaType.videoCollection,
+          mediaKey: collectionId.toString(),
+          localProgress: episodeIndex,
+          completed: seriesCompleted,
+        );
+        return;
+      }
+    }
+
+    final AutoVideoTrackingSource? source =
+        await _repository.loadAutoVideoSource(
       bookUid: bookUid,
       collectionId: collectionId,
+    );
+    if (source == null) return;
+    final int? parsedEpisode =
+        FilenameParser.parse(source.videoTitle).episode;
+    final int parsedEpisodeNumber = parsedEpisode ?? 0;
+    // 文件名已有明确集数时按单文件建映射，避免一个本地合集混入短篇、PV 或多季后，
+    // 合集 sortIndex 被误当成 Bangumi 正片集数。无集数的电影/整季文件仍走原合集语义。
+    final bool itemScoped = parsedEpisodeNumber > 0;
+    final TrackingMediaType type = itemScoped || collectionId == null
+        ? TrackingMediaType.video
+        : TrackingMediaType.videoCollection;
+    final String key =
+        type == TrackingMediaType.video ? bookUid : collectionId.toString();
+    final MediaTrackingMappingRow? mapping = await _ensureAutoVideoMapping(
+      source: source,
       mediaType: type,
       mediaKey: key,
+      progressOffset: itemScoped ? parsedEpisodeNumber : 1,
     );
     if (mapping == null) return;
+    final int knownEpisodeCount = source.bangumiEpisodeCount ?? 0;
+    final bool itemCompletesSeries = itemScoped &&
+        knownEpisodeCount > 0 &&
+        parsedEpisodeNumber >= knownEpisodeCount;
     await _enqueueAndSync(
       mediaType: type,
       mediaKey: key,
-      localProgress: collectionId == null ? 0 : episodeIndex,
-      completed: seriesCompleted || collectionId == null,
+      localProgress: itemScoped || collectionId == null ? 0 : episodeIndex,
+      completed: itemScoped
+          ? itemCompletesSeries
+          : (seriesCompleted || collectionId == null),
     );
   }
 
@@ -198,10 +235,10 @@ class MediaTrackingService {
   }
 
   Future<MediaTrackingMappingRow?> _ensureAutoVideoMapping({
-    required String bookUid,
-    required int? collectionId,
+    required AutoVideoTrackingSource source,
     required TrackingMediaType mediaType,
     required String mediaKey,
+    required int progressOffset,
   }) async {
     final MediaTrackingMappingRow? existing = await _repository.findMapping(
       mediaType: mediaType,
@@ -211,12 +248,6 @@ class MediaTrackingService {
     return _singleFlightAutoMapping(
       '${mediaType.value}:$mediaKey',
       () async {
-        final AutoVideoTrackingSource? source =
-            await _repository.loadAutoVideoSource(
-          bookUid: bookUid,
-          collectionId: collectionId,
-        );
-        if (source == null) return null;
         final int? scrapedId = source.bangumiSubjectId;
         if (scrapedId != null && scrapedId > 0) {
           return _repository.saveMappingIfAbsent(
@@ -227,7 +258,7 @@ class MediaTrackingService {
             subjectId: scrapedId,
             subjectName: source.bangumiSubjectName ?? source.mediaTitle,
             progressMode: TrackingProgressMode.episode,
-            progressOffset: 1,
+            progressOffset: progressOffset,
           );
         }
         if (!isConfigured) return null;
@@ -250,7 +281,7 @@ class MediaTrackingService {
           subjectId: subject.id,
           subjectName: subject.displayName,
           progressMode: TrackingProgressMode.episode,
-          progressOffset: 1,
+          progressOffset: progressOffset,
         );
       },
     );
@@ -482,8 +513,11 @@ class MediaTrackingService {
     }
     final List<BangumiEpisode> episodes =
         await api.getMainEpisodes(mapping.subjectId);
+    // Bangumi 的 sort 是作品系列全局话数，不保证从 1 开始。例如分割放送的条目
+    // 可能返回 51..58；本地 progress 表示该 subject 内第 N 个正片，必须按排序后的
+    // 序位取前 N 条，而不能拿 N 与 sort 数值比较。
     final List<int> completedIds = episodes
-        .where((BangumiEpisode episode) => episode.sort <= outbox.progress)
+        .take(outbox.progress)
         .map((BangumiEpisode episode) => episode.id)
         .toList(growable: false);
     if (outbox.progress > 0 && completedIds.isEmpty) {
@@ -492,9 +526,8 @@ class MediaTrackingService {
       );
     }
     await api.markEpisodesDone(mapping.subjectId, completedIds);
-    final double lastMainEpisode = episodes.isEmpty ? 0 : episodes.last.sort;
     if (outbox.completed &&
-        outbox.progress >= lastMainEpisode &&
+        outbox.progress >= episodes.length &&
         collection?.type != 2 &&
         collection?.type != 4 &&
         collection?.type != 5) {

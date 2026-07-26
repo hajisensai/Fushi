@@ -34,8 +34,10 @@ enum TrackingProgressMode {
 
 typedef AutoVideoTrackingSource = ({
   String mediaTitle,
+  String videoTitle,
   int? bangumiSubjectId,
   String? bangumiSubjectName,
+  int? bangumiEpisodeCount,
 });
 
 typedef AutoBookTrackingSource = ({
@@ -208,11 +210,14 @@ class MediaTrackingRepository {
         : await _db.getMediaCollectionById(collectionId);
     final VideoScrapeMetaRow? scrape = await _db.getVideoScrapeMeta(bookUid);
     final bool isBangumi = scrape?.source == kTrackingProviderBangumi;
+    final String collectionTitle = collection?.name.trim() ?? '';
     return (
-      mediaTitle: collection?.name ?? video.title,
+      mediaTitle: collectionTitle.isEmpty ? video.title : collectionTitle,
+      videoTitle: video.title,
       bangumiSubjectId:
           isBangumi ? int.tryParse(scrape!.subjectId.trim()) : null,
       bangumiSubjectName: isBangumi ? scrape!.title : null,
+      bangumiEpisodeCount: isBangumi ? scrape!.episodeCount : null,
     );
   }
 
