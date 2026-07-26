@@ -28,6 +28,9 @@ void main() {
 
       screenshotCount += await _takeScreenshotSafe(binding, 'home_books_tab');
 
+      // BUG-1106：Tab 遍历前必须先开实验焦点导航开关——关闭（默认）时裸 Tab 被全局
+      // 中和成 DoNothingIntent，而集成测试跑在全新隔离根上、偏好恒为默认值。
+      await enableFocusNavigation(tester);
       final FocusDriver driver = FocusDriver(tester);
       final List<Finder> navIcons = findPrimaryNavigationTargets();
       final int tabCount = navIcons.length;
