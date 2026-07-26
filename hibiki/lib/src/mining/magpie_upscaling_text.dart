@@ -37,16 +37,16 @@ bool magpieUpscalingWorthShowing(MagpieUpscalingReport report) =>
 String magpieUpscalingStatusLabel(MagpieUpscalingReport report) =>
     switch (report.status) {
       MagpieUpscalingStatus.active => report.scalingActive
-          ? t.galgame_upscaling_status_active
-          : t.galgame_upscaling_status_manual,
-      MagpieUpscalingStatus.hotkeyOnly => t.galgame_upscaling_status_manual,
+          ? t.game_upscaling_status_active
+          : t.game_upscaling_status_manual,
+      MagpieUpscalingStatus.hotkeyOnly => t.game_upscaling_status_manual,
       MagpieUpscalingStatus.unavailable =>
-        t.galgame_upscaling_status_unavailable,
-      MagpieUpscalingStatus.failed => t.galgame_upscaling_status_failed,
+        t.game_upscaling_status_unavailable,
+      MagpieUpscalingStatus.failed => t.game_upscaling_status_failed,
       MagpieUpscalingStatus.idle ||
       MagpieUpscalingStatus.disabled ||
       MagpieUpscalingStatus.preparing =>
-        t.galgame_upscaling_status_unavailable,
+        t.game_upscaling_status_unavailable,
     };
 
 /// 「我该做什么」。返回 null 表示确实没有比状态本身更有用的话可说 —— 此时 UI 就只显示
@@ -55,11 +55,11 @@ String? magpieUpscalingActionHint(MagpieUpscalingReport report) {
   switch (report.status) {
     case MagpieUpscalingStatus.active:
       // 真的在缩放就没什么要做的；还没收到广播时按「手动」给处置。
-      return report.scalingActive ? null : t.galgame_upscaling_hint_manual;
+      return report.scalingActive ? null : t.game_upscaling_hint_manual;
     case MagpieUpscalingStatus.hotkeyOnly:
       return _hintForSkip(report);
     case MagpieUpscalingStatus.unavailable:
-      return t.galgame_upscaling_hint_not_installed;
+      return t.game_upscaling_hint_not_installed;
     case MagpieUpscalingStatus.failed:
     case MagpieUpscalingStatus.idle:
     case MagpieUpscalingStatus.disabled:
@@ -77,8 +77,8 @@ String? magpieUpscalingActionHint(MagpieUpscalingReport report) {
 String _hintForSkip(MagpieUpscalingReport report) =>
     switch (report.profileSkipReason) {
       MagpieProfileSkipReason.bootstrapFailed =>
-        t.galgame_upscaling_hint_first_run,
+        t.game_upscaling_hint_first_run,
       MagpieProfileSkipReason.externalInstance =>
-        t.galgame_upscaling_hint_external,
-      _ => t.galgame_upscaling_hint_manual,
+        t.game_upscaling_hint_external,
+      _ => t.game_upscaling_hint_manual,
     };

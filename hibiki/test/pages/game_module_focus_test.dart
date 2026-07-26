@@ -102,8 +102,8 @@ void main() {
     final Finder launchFeedback = find.byWidgetPredicate(
       (Widget w) =>
           w is Text &&
-          (w.data == t.games_exe_missing ||
-              w.data == t.games_launch_unsupported),
+          (w.data == t.game_exe_missing ||
+              w.data == t.game_launch_unsupported),
     );
     expect(launchFeedback, findsOneWidget, reason: 'ActivateIntent 必须触发游戏启动路径');
 
@@ -197,8 +197,8 @@ void main() {
     final Finder launchFeedback = find.byWidgetPredicate(
       (Widget w) =>
           w is Text &&
-          (w.data == t.games_exe_missing ||
-              w.data == t.games_launch_unsupported),
+          (w.data == t.game_exe_missing ||
+              w.data == t.game_launch_unsupported),
     );
     expect(launchFeedback, findsOneWidget,
         reason: 'ActivateIntent 必须触发最近玩过缩略图的启动路径');

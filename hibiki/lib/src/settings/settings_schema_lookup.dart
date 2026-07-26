@@ -1016,25 +1016,25 @@ SettingsDestination buildLookupDestination() {
           // Windows-only —— galgame hook 与 Magpie 都只做 Windows（见根 CLAUDE.md）。
           SettingsSegmentedItem<MagpieUpscalingMode>(
             id: 'lookup.galgame_upscaling',
-            title: t.galgame_upscaling,
-            subtitle: t.galgame_upscaling_hint,
+            title: t.game_upscaling,
+            subtitle: t.game_upscaling_hint,
             icon: Icons.aspect_ratio_outlined,
             visible: (SettingsContext settingsContext) => Platform.isWindows,
             options: <SettingsSegmentOption<MagpieUpscalingMode>>[
               SettingsSegmentOption<MagpieUpscalingMode>(
                 value: MagpieUpscalingMode.auto,
-                label: t.galgame_upscaling_auto,
-                tooltip: t.galgame_upscaling_auto,
+                label: t.game_upscaling_auto,
+                tooltip: t.game_upscaling_auto,
               ),
               SettingsSegmentOption<MagpieUpscalingMode>(
                 value: MagpieUpscalingMode.installedOnly,
-                label: t.galgame_upscaling_installed_only,
-                tooltip: t.galgame_upscaling_installed_only,
+                label: t.game_upscaling_installed_only,
+                tooltip: t.game_upscaling_installed_only,
               ),
               SettingsSegmentOption<MagpieUpscalingMode>(
                 value: MagpieUpscalingMode.off,
-                label: t.galgame_upscaling_off,
-                tooltip: t.galgame_upscaling_off,
+                label: t.game_upscaling_off,
+                tooltip: t.game_upscaling_off,
               ),
             ],
             selected: (SettingsContext settingsContext) =>

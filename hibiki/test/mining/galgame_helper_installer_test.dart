@@ -565,7 +565,7 @@ void main() {
     });
 
     test('校验失败有专属用户可读提示（不与「下载失败」混为一谈）', () {
-      expect(src, contains('t.galgame_helper_verification_failed'));
+      expect(src, contains('t.game_helper_verification_failed'));
     });
 
     test('可信主机白名单与 magpie 安装器共用同一份真值（安全清单不得复制）', () {

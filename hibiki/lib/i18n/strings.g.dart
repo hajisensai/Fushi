@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 43826 (2578 per locale)
+/// Strings: 43741 (2573 per locale)
 ///
-/// Built on 2026-07-26 at 18:10 UTC
+/// Built on 2026-07-26 at 19:41 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -1193,41 +1193,40 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get gal_hook_text_font_size => 'Galgame caption font size';
   String get gal_hook_text_font_size_hint =>
       'Drag the overlay\'s corner to resize the window; the caption size is set here.';
-  String get galgame_helper_download => 'Download';
-  String galgame_helper_download_failed({required Object error}) =>
+  String get game_helper_download => 'Download';
+  String game_helper_download_failed({required Object error}) =>
       'Engine component download failed: ${error}';
-  String get galgame_helper_downloading => 'Downloading engine component…';
-  String get galgame_helper_install_incomplete =>
+  String get game_helper_downloading => 'Downloading engine component…';
+  String get game_helper_install_incomplete =>
       'Engine component install incomplete, please retry';
-  String galgame_helper_needed_body({required Object size}) =>
+  String game_helper_needed_body({required Object size}) =>
       'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
-  String get galgame_helper_needed_title => 'Galgame engine component required';
-  String get galgame_helper_size_unknown => 'unknown size';
-  String get galgame_helper_verification_failed =>
+  String get game_helper_needed_title => 'Galgame engine component required';
+  String get game_helper_size_unknown => 'unknown size';
+  String get game_helper_verification_failed =>
       'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
-  String get galgame_upscaling => 'Game window upscaling';
-  String get galgame_upscaling_auto => 'Auto';
-  String get galgame_upscaling_download_body =>
+  String get game_upscaling => 'Game window upscaling';
+  String get game_upscaling_auto => 'Auto';
+  String get game_upscaling_download_body =>
       'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
-  String get galgame_upscaling_download_title => 'Download Magpie upscaler?';
-  String get galgame_upscaling_hint =>
+  String get game_upscaling_download_title => 'Download Magpie upscaler?';
+  String get game_upscaling_hint =>
       'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
-  String get galgame_upscaling_hint_external =>
+  String get game_upscaling_hint_external =>
       'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
-  String get galgame_upscaling_hint_first_run =>
+  String get game_upscaling_hint_first_run =>
       'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
-  String get galgame_upscaling_hint_manual =>
+  String get game_upscaling_hint_manual =>
       'Press Win+Shift+A to upscale the game window.';
-  String get galgame_upscaling_hint_not_installed =>
+  String get game_upscaling_hint_not_installed =>
       'Magpie is not installed. Set window upscaling to Auto to download it.';
-  String get galgame_upscaling_installed_only => 'Installed only';
-  String get galgame_upscaling_off => 'Off';
-  String get galgame_upscaling_status_active => 'Window upscaling is on';
-  String get galgame_upscaling_status_failed =>
-      'Window upscaling could not start';
-  String get galgame_upscaling_status_manual =>
+  String get game_upscaling_installed_only => 'Installed only';
+  String get game_upscaling_off => 'Off';
+  String get game_upscaling_status_active => 'Window upscaling is on';
+  String get game_upscaling_status_failed => 'Window upscaling could not start';
+  String get game_upscaling_status_manual =>
       'Window upscaling is ready, but did not start on its own';
-  String get galgame_upscaling_status_unavailable =>
+  String get game_upscaling_status_unavailable =>
       'Window upscaling is not available';
   String get game_audio_backend_engine => 'Engine PCM';
   String get game_audio_backend_loopback => 'System loopback (mixed)';
@@ -1479,52 +1478,51 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get game_window_bound => 'Bound';
   String get game_window_missing => 'Not bound';
   String get games => 'Games';
-  String get games_add => 'Add game';
-  String get games_already_added => 'This game is already in the library';
-  String get games_auto_cover => 'Fetch cover automatically';
-  String get games_cover_not_found =>
+  String get game_add => 'Add game';
+  String get game_already_added => 'This game is already in the library';
+  String get game_auto_cover => 'Fetch cover automatically';
+  String get game_cover_not_found =>
       'No usable cover found in the game folder or executable';
-  String get games_cover_searching => 'Looking for a cover...';
-  String get games_cover_updated => 'Cover updated';
-  String games_drop_imported({required Object count}) =>
+  String get game_cover_searching => 'Looking for a cover...';
+  String get game_cover_updated => 'Cover updated';
+  String game_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
-  String get games_drop_no_exe => 'No new game .exe among the dropped files';
-  String get games_empty => 'No games added yet';
-  String get games_exe_missing => 'Game executable not found';
-  String get games_filter => 'Filter';
-  String get games_filter_all => 'All';
-  String get games_filter_hide_nsfw => 'Hide adult titles';
-  String get games_filter_local_only => 'Has local file';
-  String get games_filter_metadata_only => 'Metadata only';
-  String get games_filter_reset => 'Clear filters';
-  String get games_filter_source => 'Availability';
-  String get games_filter_status => 'Play status';
-  String get games_filter_tags => 'Tags';
-  String get games_launch_unsupported =>
+  String get game_drop_no_exe => 'No new game .exe among the dropped files';
+  String get game_empty => 'No games added yet';
+  String get game_exe_missing => 'Game executable not found';
+  String get game_filter => 'Filter';
+  String get game_filter_hide_nsfw => 'Hide adult titles';
+  String get game_filter_local_only => 'Has local file';
+  String get game_filter_metadata_only => 'Metadata only';
+  String get game_filter_reset => 'Clear filters';
+  String get game_filter_source => 'Availability';
+  String get game_filter_status => 'Play status';
+  String get game_filter_tags => 'Tags';
+  String get game_launch_unsupported =>
       'Launching games is only supported on Windows';
-  String get games_never_played => 'Never played';
-  String get games_no_match => 'No games match the current filters';
-  String get games_play_status => 'Play status';
-  String get games_remove => 'Remove';
-  String get games_rename => 'Rename';
-  String get games_rename_label => 'Game name';
-  String get games_scrape => 'Fetch metadata';
-  String get games_search => 'Search games';
-  String get games_set_cover => 'Set cover';
-  String get games_sort => 'Sort';
-  String get games_sort_added => 'Date added';
-  String get games_sort_last_played => 'Last played';
-  String get games_sort_name => 'Name';
-  String get games_sort_release => 'Release date';
-  String get games_sort_site_score => 'Site rating';
-  String get games_sort_user_rating => 'My rating';
-  String get games_status_dropped => 'Dropped';
-  String get games_status_on_hold => 'On hold';
-  String get games_status_played => 'Played';
-  String get games_status_playing => 'Playing';
-  String get games_status_unset => 'Not set';
-  String get games_status_want_to_play => 'Want to play';
-  String get games_view_detail => 'View details';
+  String get game_never_played => 'Never played';
+  String get game_no_match => 'No games match the current filters';
+  String get game_play_status => 'Play status';
+  String get game_remove => 'Remove';
+  String get game_rename => 'Rename';
+  String get game_rename_label => 'Game name';
+  String get game_scrape => 'Fetch metadata';
+  String get game_search => 'Search games';
+  String get game_set_cover => 'Set cover';
+  String get game_sort => 'Sort';
+  String get game_sort_added => 'Date added';
+  String get game_sort_last_played => 'Last played';
+  String get game_sort_name => 'Name';
+  String get game_sort_release => 'Release date';
+  String get game_sort_site_score => 'Site rating';
+  String get game_sort_user_rating => 'My rating';
+  String get game_status_dropped => 'Dropped';
+  String get game_status_on_hold => 'On hold';
+  String get game_status_played => 'Played';
+  String get game_status_playing => 'Playing';
+  String get game_status_unset => 'Not set';
+  String get game_status_want_to_play => 'Want to play';
+  String get game_view_detail => 'View details';
   String get global_context_capture => 'Capture selection context';
   String get global_context_capture_hint =>
       'Read surrounding text from the foreground app to show the current sentence (Windows only)';
@@ -2619,13 +2617,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get sync_video_files => 'Upload video files';
   String get sync_video_files_warning => 'Video files can be very large.';
   String get sync_webdav_missing_fields => 'Missing fields';
-  String get sync_webdav_password => 'Password';
-  String get sync_webdav_test => 'Test connection';
   String sync_webdav_test_failed({required Object message}) =>
       'Connection failed: ${message}';
-  String get sync_webdav_test_success => 'Connection successful';
   String get sync_webdav_url => 'Server URL';
-  String get sync_webdav_username => 'Username';
   String tag_added_to_book({required Object name}) =>
       'Tag "${name}" added to book.';
   String tag_added_to_collection({required Object name}) =>
@@ -5233,63 +5227,62 @@ class _StringsAr extends _StringsEn {
   String get gal_hook_text_font_size_hint =>
       'Drag the overlay\'s corner to resize the window; the caption size is set here.';
   @override
-  String get galgame_helper_download => 'Download';
+  String get game_helper_download => 'Download';
   @override
-  String galgame_helper_download_failed({required Object error}) =>
+  String game_helper_download_failed({required Object error}) =>
       'Engine component download failed: ${error}';
   @override
-  String get galgame_helper_downloading => 'Downloading engine component…';
+  String get game_helper_downloading => 'Downloading engine component…';
   @override
-  String get galgame_helper_install_incomplete =>
+  String get game_helper_install_incomplete =>
       'Engine component install incomplete, please retry';
   @override
-  String galgame_helper_needed_body({required Object size}) =>
+  String game_helper_needed_body({required Object size}) =>
       'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
   @override
-  String get galgame_helper_needed_title => 'Galgame engine component required';
+  String get game_helper_needed_title => 'Galgame engine component required';
   @override
-  String get galgame_helper_size_unknown => 'unknown size';
+  String get game_helper_size_unknown => 'unknown size';
   @override
-  String get galgame_helper_verification_failed =>
+  String get game_helper_verification_failed =>
       'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
   @override
-  String get galgame_upscaling => 'Game window upscaling';
+  String get game_upscaling => 'Game window upscaling';
   @override
-  String get galgame_upscaling_auto => 'Auto';
+  String get game_upscaling_auto => 'Auto';
   @override
-  String get galgame_upscaling_download_body =>
+  String get game_upscaling_download_body =>
       'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
   @override
-  String get galgame_upscaling_download_title => 'Download Magpie upscaler?';
+  String get game_upscaling_download_title => 'Download Magpie upscaler?';
   @override
-  String get galgame_upscaling_hint =>
+  String get game_upscaling_hint =>
       'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
   @override
-  String get galgame_upscaling_hint_external =>
+  String get game_upscaling_hint_external =>
       'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_first_run =>
+  String get game_upscaling_hint_first_run =>
       'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
   @override
-  String get galgame_upscaling_hint_manual =>
+  String get game_upscaling_hint_manual =>
       'Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_not_installed =>
+  String get game_upscaling_hint_not_installed =>
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
-  String get galgame_upscaling_installed_only => 'Installed only';
+  String get game_upscaling_installed_only => 'Installed only';
   @override
-  String get galgame_upscaling_off => 'Off';
+  String get game_upscaling_off => 'Off';
   @override
-  String get galgame_upscaling_status_active => 'Window upscaling is on';
+  String get game_upscaling_status_active => 'Window upscaling is on';
   @override
-  String get galgame_upscaling_status_failed =>
-      'Window upscaling could not start';
+  String get game_upscaling_status_failed => 'Window upscaling could not start';
   @override
-  String get galgame_upscaling_status_manual =>
+  String get game_upscaling_status_manual =>
       'Window upscaling is ready, but did not start on its own';
   @override
-  String get galgame_upscaling_status_unavailable =>
+  String get game_upscaling_status_unavailable =>
       'Window upscaling is not available';
   @override
   String get game_audio_backend_engine => 'Engine PCM';
@@ -5744,94 +5737,92 @@ class _StringsAr extends _StringsEn {
   @override
   String get games => 'Games';
   @override
-  String get games_add => 'Add game';
+  String get game_add => 'Add game';
   @override
-  String get games_already_added => 'This game is already in the library';
+  String get game_already_added => 'This game is already in the library';
   @override
-  String get games_auto_cover => 'Fetch cover automatically';
+  String get game_auto_cover => 'Fetch cover automatically';
   @override
-  String get games_cover_not_found =>
+  String get game_cover_not_found =>
       'No usable cover found in the game folder or executable';
   @override
-  String get games_cover_searching => 'Looking for a cover...';
+  String get game_cover_searching => 'Looking for a cover...';
   @override
-  String get games_cover_updated => 'Cover updated';
+  String get game_cover_updated => 'Cover updated';
   @override
-  String games_drop_imported({required Object count}) =>
+  String game_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
   @override
-  String get games_drop_no_exe => 'No new game .exe among the dropped files';
+  String get game_drop_no_exe => 'No new game .exe among the dropped files';
   @override
-  String get games_empty => 'No games added yet';
+  String get game_empty => 'No games added yet';
   @override
-  String get games_exe_missing => 'Game executable not found';
+  String get game_exe_missing => 'Game executable not found';
   @override
-  String get games_filter => 'Filter';
+  String get game_filter => 'Filter';
   @override
-  String get games_filter_all => 'All';
+  String get game_filter_hide_nsfw => 'Hide adult titles';
   @override
-  String get games_filter_hide_nsfw => 'Hide adult titles';
+  String get game_filter_local_only => 'Has local file';
   @override
-  String get games_filter_local_only => 'Has local file';
+  String get game_filter_metadata_only => 'Metadata only';
   @override
-  String get games_filter_metadata_only => 'Metadata only';
+  String get game_filter_reset => 'Clear filters';
   @override
-  String get games_filter_reset => 'Clear filters';
+  String get game_filter_source => 'Availability';
   @override
-  String get games_filter_source => 'Availability';
+  String get game_filter_status => 'Play status';
   @override
-  String get games_filter_status => 'Play status';
+  String get game_filter_tags => 'Tags';
   @override
-  String get games_filter_tags => 'Tags';
-  @override
-  String get games_launch_unsupported =>
+  String get game_launch_unsupported =>
       'Launching games is only supported on Windows';
   @override
-  String get games_never_played => 'Never played';
+  String get game_never_played => 'Never played';
   @override
-  String get games_no_match => 'No games match the current filters';
+  String get game_no_match => 'No games match the current filters';
   @override
-  String get games_play_status => 'Play status';
+  String get game_play_status => 'Play status';
   @override
-  String get games_remove => 'Remove';
+  String get game_remove => 'Remove';
   @override
-  String get games_rename => 'Rename';
+  String get game_rename => 'Rename';
   @override
-  String get games_rename_label => 'Game name';
+  String get game_rename_label => 'Game name';
   @override
-  String get games_scrape => 'Fetch metadata';
+  String get game_scrape => 'Fetch metadata';
   @override
-  String get games_search => 'Search games';
+  String get game_search => 'Search games';
   @override
-  String get games_set_cover => 'Set cover';
+  String get game_set_cover => 'Set cover';
   @override
-  String get games_sort => 'Sort';
+  String get game_sort => 'Sort';
   @override
-  String get games_sort_added => 'Date added';
+  String get game_sort_added => 'Date added';
   @override
-  String get games_sort_last_played => 'Last played';
+  String get game_sort_last_played => 'Last played';
   @override
-  String get games_sort_name => 'Name';
+  String get game_sort_name => 'Name';
   @override
-  String get games_sort_release => 'Release date';
+  String get game_sort_release => 'Release date';
   @override
-  String get games_sort_site_score => 'Site rating';
+  String get game_sort_site_score => 'Site rating';
   @override
-  String get games_sort_user_rating => 'My rating';
+  String get game_sort_user_rating => 'My rating';
   @override
-  String get games_status_dropped => 'Dropped';
+  String get game_status_dropped => 'Dropped';
   @override
-  String get games_status_on_hold => 'On hold';
+  String get game_status_on_hold => 'On hold';
   @override
-  String get games_status_played => 'Played';
+  String get game_status_played => 'Played';
   @override
-  String get games_status_playing => 'Playing';
+  String get game_status_playing => 'Playing';
   @override
-  String get games_status_unset => 'Not set';
+  String get game_status_unset => 'Not set';
   @override
-  String get games_status_want_to_play => 'Want to play';
+  String get game_status_want_to_play => 'Want to play';
   @override
-  String get games_view_detail => 'View details';
+  String get game_view_detail => 'View details';
   @override
   String get global_context_capture => 'Capture selection context';
   @override
@@ -7843,18 +7834,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get sync_webdav_missing_fields => 'حقول ناقصة';
   @override
-  String get sync_webdav_password => 'كلمة المرور';
-  @override
-  String get sync_webdav_test => 'اختبار الاتصال';
-  @override
   String sync_webdav_test_failed({required Object message}) =>
       'فشل الاتصال: ${message}';
   @override
-  String get sync_webdav_test_success => 'نجح الاتصال';
-  @override
   String get sync_webdav_url => 'عنوان الخادم';
-  @override
-  String get sync_webdav_username => 'اسم المستخدم';
   @override
   String tag_added_to_book({required Object name}) =>
       'تمت إضافة الوسم "${name}" إلى الكتاب.';
@@ -11120,63 +11103,62 @@ class _StringsDe extends _StringsEn {
   String get gal_hook_text_font_size_hint =>
       'Drag the overlay\'s corner to resize the window; the caption size is set here.';
   @override
-  String get galgame_helper_download => 'Download';
+  String get game_helper_download => 'Download';
   @override
-  String galgame_helper_download_failed({required Object error}) =>
+  String game_helper_download_failed({required Object error}) =>
       'Engine component download failed: ${error}';
   @override
-  String get galgame_helper_downloading => 'Downloading engine component…';
+  String get game_helper_downloading => 'Downloading engine component…';
   @override
-  String get galgame_helper_install_incomplete =>
+  String get game_helper_install_incomplete =>
       'Engine component install incomplete, please retry';
   @override
-  String galgame_helper_needed_body({required Object size}) =>
+  String game_helper_needed_body({required Object size}) =>
       'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
   @override
-  String get galgame_helper_needed_title => 'Galgame engine component required';
+  String get game_helper_needed_title => 'Galgame engine component required';
   @override
-  String get galgame_helper_size_unknown => 'unknown size';
+  String get game_helper_size_unknown => 'unknown size';
   @override
-  String get galgame_helper_verification_failed =>
+  String get game_helper_verification_failed =>
       'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
   @override
-  String get galgame_upscaling => 'Game window upscaling';
+  String get game_upscaling => 'Game window upscaling';
   @override
-  String get galgame_upscaling_auto => 'Auto';
+  String get game_upscaling_auto => 'Auto';
   @override
-  String get galgame_upscaling_download_body =>
+  String get game_upscaling_download_body =>
       'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
   @override
-  String get galgame_upscaling_download_title => 'Download Magpie upscaler?';
+  String get game_upscaling_download_title => 'Download Magpie upscaler?';
   @override
-  String get galgame_upscaling_hint =>
+  String get game_upscaling_hint =>
       'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
   @override
-  String get galgame_upscaling_hint_external =>
+  String get game_upscaling_hint_external =>
       'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_first_run =>
+  String get game_upscaling_hint_first_run =>
       'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
   @override
-  String get galgame_upscaling_hint_manual =>
+  String get game_upscaling_hint_manual =>
       'Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_not_installed =>
+  String get game_upscaling_hint_not_installed =>
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
-  String get galgame_upscaling_installed_only => 'Installed only';
+  String get game_upscaling_installed_only => 'Installed only';
   @override
-  String get galgame_upscaling_off => 'Off';
+  String get game_upscaling_off => 'Off';
   @override
-  String get galgame_upscaling_status_active => 'Window upscaling is on';
+  String get game_upscaling_status_active => 'Window upscaling is on';
   @override
-  String get galgame_upscaling_status_failed =>
-      'Window upscaling could not start';
+  String get game_upscaling_status_failed => 'Window upscaling could not start';
   @override
-  String get galgame_upscaling_status_manual =>
+  String get game_upscaling_status_manual =>
       'Window upscaling is ready, but did not start on its own';
   @override
-  String get galgame_upscaling_status_unavailable =>
+  String get game_upscaling_status_unavailable =>
       'Window upscaling is not available';
   @override
   String get game_audio_backend_engine => 'Engine PCM';
@@ -11631,94 +11613,92 @@ class _StringsDe extends _StringsEn {
   @override
   String get games => 'Games';
   @override
-  String get games_add => 'Add game';
+  String get game_add => 'Add game';
   @override
-  String get games_already_added => 'This game is already in the library';
+  String get game_already_added => 'This game is already in the library';
   @override
-  String get games_auto_cover => 'Fetch cover automatically';
+  String get game_auto_cover => 'Fetch cover automatically';
   @override
-  String get games_cover_not_found =>
+  String get game_cover_not_found =>
       'No usable cover found in the game folder or executable';
   @override
-  String get games_cover_searching => 'Looking for a cover...';
+  String get game_cover_searching => 'Looking for a cover...';
   @override
-  String get games_cover_updated => 'Cover updated';
+  String get game_cover_updated => 'Cover updated';
   @override
-  String games_drop_imported({required Object count}) =>
+  String game_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
   @override
-  String get games_drop_no_exe => 'No new game .exe among the dropped files';
+  String get game_drop_no_exe => 'No new game .exe among the dropped files';
   @override
-  String get games_empty => 'No games added yet';
+  String get game_empty => 'No games added yet';
   @override
-  String get games_exe_missing => 'Game executable not found';
+  String get game_exe_missing => 'Game executable not found';
   @override
-  String get games_filter => 'Filter';
+  String get game_filter => 'Filter';
   @override
-  String get games_filter_all => 'All';
+  String get game_filter_hide_nsfw => 'Hide adult titles';
   @override
-  String get games_filter_hide_nsfw => 'Hide adult titles';
+  String get game_filter_local_only => 'Has local file';
   @override
-  String get games_filter_local_only => 'Has local file';
+  String get game_filter_metadata_only => 'Metadata only';
   @override
-  String get games_filter_metadata_only => 'Metadata only';
+  String get game_filter_reset => 'Clear filters';
   @override
-  String get games_filter_reset => 'Clear filters';
+  String get game_filter_source => 'Availability';
   @override
-  String get games_filter_source => 'Availability';
+  String get game_filter_status => 'Play status';
   @override
-  String get games_filter_status => 'Play status';
+  String get game_filter_tags => 'Tags';
   @override
-  String get games_filter_tags => 'Tags';
-  @override
-  String get games_launch_unsupported =>
+  String get game_launch_unsupported =>
       'Launching games is only supported on Windows';
   @override
-  String get games_never_played => 'Never played';
+  String get game_never_played => 'Never played';
   @override
-  String get games_no_match => 'No games match the current filters';
+  String get game_no_match => 'No games match the current filters';
   @override
-  String get games_play_status => 'Play status';
+  String get game_play_status => 'Play status';
   @override
-  String get games_remove => 'Remove';
+  String get game_remove => 'Remove';
   @override
-  String get games_rename => 'Rename';
+  String get game_rename => 'Rename';
   @override
-  String get games_rename_label => 'Game name';
+  String get game_rename_label => 'Game name';
   @override
-  String get games_scrape => 'Fetch metadata';
+  String get game_scrape => 'Fetch metadata';
   @override
-  String get games_search => 'Search games';
+  String get game_search => 'Search games';
   @override
-  String get games_set_cover => 'Set cover';
+  String get game_set_cover => 'Set cover';
   @override
-  String get games_sort => 'Sort';
+  String get game_sort => 'Sort';
   @override
-  String get games_sort_added => 'Date added';
+  String get game_sort_added => 'Date added';
   @override
-  String get games_sort_last_played => 'Last played';
+  String get game_sort_last_played => 'Last played';
   @override
-  String get games_sort_name => 'Name';
+  String get game_sort_name => 'Name';
   @override
-  String get games_sort_release => 'Release date';
+  String get game_sort_release => 'Release date';
   @override
-  String get games_sort_site_score => 'Site rating';
+  String get game_sort_site_score => 'Site rating';
   @override
-  String get games_sort_user_rating => 'My rating';
+  String get game_sort_user_rating => 'My rating';
   @override
-  String get games_status_dropped => 'Dropped';
+  String get game_status_dropped => 'Dropped';
   @override
-  String get games_status_on_hold => 'On hold';
+  String get game_status_on_hold => 'On hold';
   @override
-  String get games_status_played => 'Played';
+  String get game_status_played => 'Played';
   @override
-  String get games_status_playing => 'Playing';
+  String get game_status_playing => 'Playing';
   @override
-  String get games_status_unset => 'Not set';
+  String get game_status_unset => 'Not set';
   @override
-  String get games_status_want_to_play => 'Want to play';
+  String get game_status_want_to_play => 'Want to play';
   @override
-  String get games_view_detail => 'View details';
+  String get game_view_detail => 'View details';
   @override
   String get global_context_capture => 'Capture selection context';
   @override
@@ -13749,18 +13729,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get sync_webdav_missing_fields => 'Fehlende Felder';
   @override
-  String get sync_webdav_password => 'Passwort';
-  @override
-  String get sync_webdav_test => 'Verbindung testen';
-  @override
   String sync_webdav_test_failed({required Object message}) =>
       'Verbindung fehlgeschlagen: ${message}';
   @override
-  String get sync_webdav_test_success => 'Verbindung erfolgreich';
-  @override
   String get sync_webdav_url => 'Server-URL';
-  @override
-  String get sync_webdav_username => 'Benutzername';
   @override
   String tag_added_to_book({required Object name}) =>
       'Tag "${name}" zum Buch hinzugefügt.';
@@ -17048,63 +17020,62 @@ class _StringsEs extends _StringsEn {
   String get gal_hook_text_font_size_hint =>
       'Drag the overlay\'s corner to resize the window; the caption size is set here.';
   @override
-  String get galgame_helper_download => 'Download';
+  String get game_helper_download => 'Download';
   @override
-  String galgame_helper_download_failed({required Object error}) =>
+  String game_helper_download_failed({required Object error}) =>
       'Engine component download failed: ${error}';
   @override
-  String get galgame_helper_downloading => 'Downloading engine component…';
+  String get game_helper_downloading => 'Downloading engine component…';
   @override
-  String get galgame_helper_install_incomplete =>
+  String get game_helper_install_incomplete =>
       'Engine component install incomplete, please retry';
   @override
-  String galgame_helper_needed_body({required Object size}) =>
+  String game_helper_needed_body({required Object size}) =>
       'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
   @override
-  String get galgame_helper_needed_title => 'Galgame engine component required';
+  String get game_helper_needed_title => 'Galgame engine component required';
   @override
-  String get galgame_helper_size_unknown => 'unknown size';
+  String get game_helper_size_unknown => 'unknown size';
   @override
-  String get galgame_helper_verification_failed =>
+  String get game_helper_verification_failed =>
       'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
   @override
-  String get galgame_upscaling => 'Game window upscaling';
+  String get game_upscaling => 'Game window upscaling';
   @override
-  String get galgame_upscaling_auto => 'Auto';
+  String get game_upscaling_auto => 'Auto';
   @override
-  String get galgame_upscaling_download_body =>
+  String get game_upscaling_download_body =>
       'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
   @override
-  String get galgame_upscaling_download_title => 'Download Magpie upscaler?';
+  String get game_upscaling_download_title => 'Download Magpie upscaler?';
   @override
-  String get galgame_upscaling_hint =>
+  String get game_upscaling_hint =>
       'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
   @override
-  String get galgame_upscaling_hint_external =>
+  String get game_upscaling_hint_external =>
       'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_first_run =>
+  String get game_upscaling_hint_first_run =>
       'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
   @override
-  String get galgame_upscaling_hint_manual =>
+  String get game_upscaling_hint_manual =>
       'Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_not_installed =>
+  String get game_upscaling_hint_not_installed =>
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
-  String get galgame_upscaling_installed_only => 'Installed only';
+  String get game_upscaling_installed_only => 'Installed only';
   @override
-  String get galgame_upscaling_off => 'Off';
+  String get game_upscaling_off => 'Off';
   @override
-  String get galgame_upscaling_status_active => 'Window upscaling is on';
+  String get game_upscaling_status_active => 'Window upscaling is on';
   @override
-  String get galgame_upscaling_status_failed =>
-      'Window upscaling could not start';
+  String get game_upscaling_status_failed => 'Window upscaling could not start';
   @override
-  String get galgame_upscaling_status_manual =>
+  String get game_upscaling_status_manual =>
       'Window upscaling is ready, but did not start on its own';
   @override
-  String get galgame_upscaling_status_unavailable =>
+  String get game_upscaling_status_unavailable =>
       'Window upscaling is not available';
   @override
   String get game_audio_backend_engine => 'Engine PCM';
@@ -17559,94 +17530,92 @@ class _StringsEs extends _StringsEn {
   @override
   String get games => 'Games';
   @override
-  String get games_add => 'Add game';
+  String get game_add => 'Add game';
   @override
-  String get games_already_added => 'This game is already in the library';
+  String get game_already_added => 'This game is already in the library';
   @override
-  String get games_auto_cover => 'Fetch cover automatically';
+  String get game_auto_cover => 'Fetch cover automatically';
   @override
-  String get games_cover_not_found =>
+  String get game_cover_not_found =>
       'No usable cover found in the game folder or executable';
   @override
-  String get games_cover_searching => 'Looking for a cover...';
+  String get game_cover_searching => 'Looking for a cover...';
   @override
-  String get games_cover_updated => 'Cover updated';
+  String get game_cover_updated => 'Cover updated';
   @override
-  String games_drop_imported({required Object count}) =>
+  String game_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
   @override
-  String get games_drop_no_exe => 'No new game .exe among the dropped files';
+  String get game_drop_no_exe => 'No new game .exe among the dropped files';
   @override
-  String get games_empty => 'No games added yet';
+  String get game_empty => 'No games added yet';
   @override
-  String get games_exe_missing => 'Game executable not found';
+  String get game_exe_missing => 'Game executable not found';
   @override
-  String get games_filter => 'Filter';
+  String get game_filter => 'Filter';
   @override
-  String get games_filter_all => 'All';
+  String get game_filter_hide_nsfw => 'Hide adult titles';
   @override
-  String get games_filter_hide_nsfw => 'Hide adult titles';
+  String get game_filter_local_only => 'Has local file';
   @override
-  String get games_filter_local_only => 'Has local file';
+  String get game_filter_metadata_only => 'Metadata only';
   @override
-  String get games_filter_metadata_only => 'Metadata only';
+  String get game_filter_reset => 'Clear filters';
   @override
-  String get games_filter_reset => 'Clear filters';
+  String get game_filter_source => 'Availability';
   @override
-  String get games_filter_source => 'Availability';
+  String get game_filter_status => 'Play status';
   @override
-  String get games_filter_status => 'Play status';
+  String get game_filter_tags => 'Tags';
   @override
-  String get games_filter_tags => 'Tags';
-  @override
-  String get games_launch_unsupported =>
+  String get game_launch_unsupported =>
       'Launching games is only supported on Windows';
   @override
-  String get games_never_played => 'Never played';
+  String get game_never_played => 'Never played';
   @override
-  String get games_no_match => 'No games match the current filters';
+  String get game_no_match => 'No games match the current filters';
   @override
-  String get games_play_status => 'Play status';
+  String get game_play_status => 'Play status';
   @override
-  String get games_remove => 'Remove';
+  String get game_remove => 'Remove';
   @override
-  String get games_rename => 'Rename';
+  String get game_rename => 'Rename';
   @override
-  String get games_rename_label => 'Game name';
+  String get game_rename_label => 'Game name';
   @override
-  String get games_scrape => 'Fetch metadata';
+  String get game_scrape => 'Fetch metadata';
   @override
-  String get games_search => 'Search games';
+  String get game_search => 'Search games';
   @override
-  String get games_set_cover => 'Set cover';
+  String get game_set_cover => 'Set cover';
   @override
-  String get games_sort => 'Sort';
+  String get game_sort => 'Sort';
   @override
-  String get games_sort_added => 'Date added';
+  String get game_sort_added => 'Date added';
   @override
-  String get games_sort_last_played => 'Last played';
+  String get game_sort_last_played => 'Last played';
   @override
-  String get games_sort_name => 'Name';
+  String get game_sort_name => 'Name';
   @override
-  String get games_sort_release => 'Release date';
+  String get game_sort_release => 'Release date';
   @override
-  String get games_sort_site_score => 'Site rating';
+  String get game_sort_site_score => 'Site rating';
   @override
-  String get games_sort_user_rating => 'My rating';
+  String get game_sort_user_rating => 'My rating';
   @override
-  String get games_status_dropped => 'Dropped';
+  String get game_status_dropped => 'Dropped';
   @override
-  String get games_status_on_hold => 'On hold';
+  String get game_status_on_hold => 'On hold';
   @override
-  String get games_status_played => 'Played';
+  String get game_status_played => 'Played';
   @override
-  String get games_status_playing => 'Playing';
+  String get game_status_playing => 'Playing';
   @override
-  String get games_status_unset => 'Not set';
+  String get game_status_unset => 'Not set';
   @override
-  String get games_status_want_to_play => 'Want to play';
+  String get game_status_want_to_play => 'Want to play';
   @override
-  String get games_view_detail => 'View details';
+  String get game_view_detail => 'View details';
   @override
   String get global_context_capture => 'Capture selection context';
   @override
@@ -19689,18 +19658,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get sync_webdav_missing_fields => 'Faltan campos';
   @override
-  String get sync_webdav_password => 'Contraseña';
-  @override
-  String get sync_webdav_test => 'Probar conexión';
-  @override
   String sync_webdav_test_failed({required Object message}) =>
       'Error de conexión: ${message}';
   @override
-  String get sync_webdav_test_success => 'Conexión correcta';
-  @override
   String get sync_webdav_url => 'URL del servidor';
-  @override
-  String get sync_webdav_username => 'Usuario';
   @override
   String tag_added_to_book({required Object name}) =>
       'Etiqueta "${name}" añadida al libro.';
@@ -22999,63 +22960,62 @@ class _StringsFr extends _StringsEn {
   String get gal_hook_text_font_size_hint =>
       'Drag the overlay\'s corner to resize the window; the caption size is set here.';
   @override
-  String get galgame_helper_download => 'Download';
+  String get game_helper_download => 'Download';
   @override
-  String galgame_helper_download_failed({required Object error}) =>
+  String game_helper_download_failed({required Object error}) =>
       'Engine component download failed: ${error}';
   @override
-  String get galgame_helper_downloading => 'Downloading engine component…';
+  String get game_helper_downloading => 'Downloading engine component…';
   @override
-  String get galgame_helper_install_incomplete =>
+  String get game_helper_install_incomplete =>
       'Engine component install incomplete, please retry';
   @override
-  String galgame_helper_needed_body({required Object size}) =>
+  String game_helper_needed_body({required Object size}) =>
       'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
   @override
-  String get galgame_helper_needed_title => 'Galgame engine component required';
+  String get game_helper_needed_title => 'Galgame engine component required';
   @override
-  String get galgame_helper_size_unknown => 'unknown size';
+  String get game_helper_size_unknown => 'unknown size';
   @override
-  String get galgame_helper_verification_failed =>
+  String get game_helper_verification_failed =>
       'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
   @override
-  String get galgame_upscaling => 'Game window upscaling';
+  String get game_upscaling => 'Game window upscaling';
   @override
-  String get galgame_upscaling_auto => 'Auto';
+  String get game_upscaling_auto => 'Auto';
   @override
-  String get galgame_upscaling_download_body =>
+  String get game_upscaling_download_body =>
       'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
   @override
-  String get galgame_upscaling_download_title => 'Download Magpie upscaler?';
+  String get game_upscaling_download_title => 'Download Magpie upscaler?';
   @override
-  String get galgame_upscaling_hint =>
+  String get game_upscaling_hint =>
       'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
   @override
-  String get galgame_upscaling_hint_external =>
+  String get game_upscaling_hint_external =>
       'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_first_run =>
+  String get game_upscaling_hint_first_run =>
       'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
   @override
-  String get galgame_upscaling_hint_manual =>
+  String get game_upscaling_hint_manual =>
       'Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_not_installed =>
+  String get game_upscaling_hint_not_installed =>
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
-  String get galgame_upscaling_installed_only => 'Installed only';
+  String get game_upscaling_installed_only => 'Installed only';
   @override
-  String get galgame_upscaling_off => 'Off';
+  String get game_upscaling_off => 'Off';
   @override
-  String get galgame_upscaling_status_active => 'Window upscaling is on';
+  String get game_upscaling_status_active => 'Window upscaling is on';
   @override
-  String get galgame_upscaling_status_failed =>
-      'Window upscaling could not start';
+  String get game_upscaling_status_failed => 'Window upscaling could not start';
   @override
-  String get galgame_upscaling_status_manual =>
+  String get game_upscaling_status_manual =>
       'Window upscaling is ready, but did not start on its own';
   @override
-  String get galgame_upscaling_status_unavailable =>
+  String get game_upscaling_status_unavailable =>
       'Window upscaling is not available';
   @override
   String get game_audio_backend_engine => 'Engine PCM';
@@ -23510,94 +23470,92 @@ class _StringsFr extends _StringsEn {
   @override
   String get games => 'Games';
   @override
-  String get games_add => 'Add game';
+  String get game_add => 'Add game';
   @override
-  String get games_already_added => 'This game is already in the library';
+  String get game_already_added => 'This game is already in the library';
   @override
-  String get games_auto_cover => 'Fetch cover automatically';
+  String get game_auto_cover => 'Fetch cover automatically';
   @override
-  String get games_cover_not_found =>
+  String get game_cover_not_found =>
       'No usable cover found in the game folder or executable';
   @override
-  String get games_cover_searching => 'Looking for a cover...';
+  String get game_cover_searching => 'Looking for a cover...';
   @override
-  String get games_cover_updated => 'Cover updated';
+  String get game_cover_updated => 'Cover updated';
   @override
-  String games_drop_imported({required Object count}) =>
+  String game_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
   @override
-  String get games_drop_no_exe => 'No new game .exe among the dropped files';
+  String get game_drop_no_exe => 'No new game .exe among the dropped files';
   @override
-  String get games_empty => 'No games added yet';
+  String get game_empty => 'No games added yet';
   @override
-  String get games_exe_missing => 'Game executable not found';
+  String get game_exe_missing => 'Game executable not found';
   @override
-  String get games_filter => 'Filter';
+  String get game_filter => 'Filter';
   @override
-  String get games_filter_all => 'All';
+  String get game_filter_hide_nsfw => 'Hide adult titles';
   @override
-  String get games_filter_hide_nsfw => 'Hide adult titles';
+  String get game_filter_local_only => 'Has local file';
   @override
-  String get games_filter_local_only => 'Has local file';
+  String get game_filter_metadata_only => 'Metadata only';
   @override
-  String get games_filter_metadata_only => 'Metadata only';
+  String get game_filter_reset => 'Clear filters';
   @override
-  String get games_filter_reset => 'Clear filters';
+  String get game_filter_source => 'Availability';
   @override
-  String get games_filter_source => 'Availability';
+  String get game_filter_status => 'Play status';
   @override
-  String get games_filter_status => 'Play status';
+  String get game_filter_tags => 'Tags';
   @override
-  String get games_filter_tags => 'Tags';
-  @override
-  String get games_launch_unsupported =>
+  String get game_launch_unsupported =>
       'Launching games is only supported on Windows';
   @override
-  String get games_never_played => 'Never played';
+  String get game_never_played => 'Never played';
   @override
-  String get games_no_match => 'No games match the current filters';
+  String get game_no_match => 'No games match the current filters';
   @override
-  String get games_play_status => 'Play status';
+  String get game_play_status => 'Play status';
   @override
-  String get games_remove => 'Remove';
+  String get game_remove => 'Remove';
   @override
-  String get games_rename => 'Rename';
+  String get game_rename => 'Rename';
   @override
-  String get games_rename_label => 'Game name';
+  String get game_rename_label => 'Game name';
   @override
-  String get games_scrape => 'Fetch metadata';
+  String get game_scrape => 'Fetch metadata';
   @override
-  String get games_search => 'Search games';
+  String get game_search => 'Search games';
   @override
-  String get games_set_cover => 'Set cover';
+  String get game_set_cover => 'Set cover';
   @override
-  String get games_sort => 'Sort';
+  String get game_sort => 'Sort';
   @override
-  String get games_sort_added => 'Date added';
+  String get game_sort_added => 'Date added';
   @override
-  String get games_sort_last_played => 'Last played';
+  String get game_sort_last_played => 'Last played';
   @override
-  String get games_sort_name => 'Name';
+  String get game_sort_name => 'Name';
   @override
-  String get games_sort_release => 'Release date';
+  String get game_sort_release => 'Release date';
   @override
-  String get games_sort_site_score => 'Site rating';
+  String get game_sort_site_score => 'Site rating';
   @override
-  String get games_sort_user_rating => 'My rating';
+  String get game_sort_user_rating => 'My rating';
   @override
-  String get games_status_dropped => 'Dropped';
+  String get game_status_dropped => 'Dropped';
   @override
-  String get games_status_on_hold => 'On hold';
+  String get game_status_on_hold => 'On hold';
   @override
-  String get games_status_played => 'Played';
+  String get game_status_played => 'Played';
   @override
-  String get games_status_playing => 'Playing';
+  String get game_status_playing => 'Playing';
   @override
-  String get games_status_unset => 'Not set';
+  String get game_status_unset => 'Not set';
   @override
-  String get games_status_want_to_play => 'Want to play';
+  String get game_status_want_to_play => 'Want to play';
   @override
-  String get games_view_detail => 'View details';
+  String get game_view_detail => 'View details';
   @override
   String get global_context_capture => 'Capture selection context';
   @override
@@ -25644,18 +25602,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get sync_webdav_missing_fields => 'Champs manquants';
   @override
-  String get sync_webdav_password => 'Mot de passe';
-  @override
-  String get sync_webdav_test => 'Tester la connexion';
-  @override
   String sync_webdav_test_failed({required Object message}) =>
       'Échec de la connexion : ${message}';
   @override
-  String get sync_webdav_test_success => 'Connexion réussie';
-  @override
   String get sync_webdav_url => 'URL du serveur';
-  @override
-  String get sync_webdav_username => 'Nom d\'utilisateur';
   @override
   String tag_added_to_book({required Object name}) =>
       'Tag "${name}" ajouté au livre.';
@@ -28919,63 +28869,62 @@ class _StringsId extends _StringsEn {
   String get gal_hook_text_font_size_hint =>
       'Drag the overlay\'s corner to resize the window; the caption size is set here.';
   @override
-  String get galgame_helper_download => 'Download';
+  String get game_helper_download => 'Download';
   @override
-  String galgame_helper_download_failed({required Object error}) =>
+  String game_helper_download_failed({required Object error}) =>
       'Engine component download failed: ${error}';
   @override
-  String get galgame_helper_downloading => 'Downloading engine component…';
+  String get game_helper_downloading => 'Downloading engine component…';
   @override
-  String get galgame_helper_install_incomplete =>
+  String get game_helper_install_incomplete =>
       'Engine component install incomplete, please retry';
   @override
-  String galgame_helper_needed_body({required Object size}) =>
+  String game_helper_needed_body({required Object size}) =>
       'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
   @override
-  String get galgame_helper_needed_title => 'Galgame engine component required';
+  String get game_helper_needed_title => 'Galgame engine component required';
   @override
-  String get galgame_helper_size_unknown => 'unknown size';
+  String get game_helper_size_unknown => 'unknown size';
   @override
-  String get galgame_helper_verification_failed =>
+  String get game_helper_verification_failed =>
       'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
   @override
-  String get galgame_upscaling => 'Game window upscaling';
+  String get game_upscaling => 'Game window upscaling';
   @override
-  String get galgame_upscaling_auto => 'Auto';
+  String get game_upscaling_auto => 'Auto';
   @override
-  String get galgame_upscaling_download_body =>
+  String get game_upscaling_download_body =>
       'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
   @override
-  String get galgame_upscaling_download_title => 'Download Magpie upscaler?';
+  String get game_upscaling_download_title => 'Download Magpie upscaler?';
   @override
-  String get galgame_upscaling_hint =>
+  String get game_upscaling_hint =>
       'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
   @override
-  String get galgame_upscaling_hint_external =>
+  String get game_upscaling_hint_external =>
       'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_first_run =>
+  String get game_upscaling_hint_first_run =>
       'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
   @override
-  String get galgame_upscaling_hint_manual =>
+  String get game_upscaling_hint_manual =>
       'Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_not_installed =>
+  String get game_upscaling_hint_not_installed =>
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
-  String get galgame_upscaling_installed_only => 'Installed only';
+  String get game_upscaling_installed_only => 'Installed only';
   @override
-  String get galgame_upscaling_off => 'Off';
+  String get game_upscaling_off => 'Off';
   @override
-  String get galgame_upscaling_status_active => 'Window upscaling is on';
+  String get game_upscaling_status_active => 'Window upscaling is on';
   @override
-  String get galgame_upscaling_status_failed =>
-      'Window upscaling could not start';
+  String get game_upscaling_status_failed => 'Window upscaling could not start';
   @override
-  String get galgame_upscaling_status_manual =>
+  String get game_upscaling_status_manual =>
       'Window upscaling is ready, but did not start on its own';
   @override
-  String get galgame_upscaling_status_unavailable =>
+  String get game_upscaling_status_unavailable =>
       'Window upscaling is not available';
   @override
   String get game_audio_backend_engine => 'Engine PCM';
@@ -29430,94 +29379,92 @@ class _StringsId extends _StringsEn {
   @override
   String get games => 'Games';
   @override
-  String get games_add => 'Add game';
+  String get game_add => 'Add game';
   @override
-  String get games_already_added => 'This game is already in the library';
+  String get game_already_added => 'This game is already in the library';
   @override
-  String get games_auto_cover => 'Fetch cover automatically';
+  String get game_auto_cover => 'Fetch cover automatically';
   @override
-  String get games_cover_not_found =>
+  String get game_cover_not_found =>
       'No usable cover found in the game folder or executable';
   @override
-  String get games_cover_searching => 'Looking for a cover...';
+  String get game_cover_searching => 'Looking for a cover...';
   @override
-  String get games_cover_updated => 'Cover updated';
+  String get game_cover_updated => 'Cover updated';
   @override
-  String games_drop_imported({required Object count}) =>
+  String game_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
   @override
-  String get games_drop_no_exe => 'No new game .exe among the dropped files';
+  String get game_drop_no_exe => 'No new game .exe among the dropped files';
   @override
-  String get games_empty => 'No games added yet';
+  String get game_empty => 'No games added yet';
   @override
-  String get games_exe_missing => 'Game executable not found';
+  String get game_exe_missing => 'Game executable not found';
   @override
-  String get games_filter => 'Filter';
+  String get game_filter => 'Filter';
   @override
-  String get games_filter_all => 'All';
+  String get game_filter_hide_nsfw => 'Hide adult titles';
   @override
-  String get games_filter_hide_nsfw => 'Hide adult titles';
+  String get game_filter_local_only => 'Has local file';
   @override
-  String get games_filter_local_only => 'Has local file';
+  String get game_filter_metadata_only => 'Metadata only';
   @override
-  String get games_filter_metadata_only => 'Metadata only';
+  String get game_filter_reset => 'Clear filters';
   @override
-  String get games_filter_reset => 'Clear filters';
+  String get game_filter_source => 'Availability';
   @override
-  String get games_filter_source => 'Availability';
+  String get game_filter_status => 'Play status';
   @override
-  String get games_filter_status => 'Play status';
+  String get game_filter_tags => 'Tags';
   @override
-  String get games_filter_tags => 'Tags';
-  @override
-  String get games_launch_unsupported =>
+  String get game_launch_unsupported =>
       'Launching games is only supported on Windows';
   @override
-  String get games_never_played => 'Never played';
+  String get game_never_played => 'Never played';
   @override
-  String get games_no_match => 'No games match the current filters';
+  String get game_no_match => 'No games match the current filters';
   @override
-  String get games_play_status => 'Play status';
+  String get game_play_status => 'Play status';
   @override
-  String get games_remove => 'Remove';
+  String get game_remove => 'Remove';
   @override
-  String get games_rename => 'Rename';
+  String get game_rename => 'Rename';
   @override
-  String get games_rename_label => 'Game name';
+  String get game_rename_label => 'Game name';
   @override
-  String get games_scrape => 'Fetch metadata';
+  String get game_scrape => 'Fetch metadata';
   @override
-  String get games_search => 'Search games';
+  String get game_search => 'Search games';
   @override
-  String get games_set_cover => 'Set cover';
+  String get game_set_cover => 'Set cover';
   @override
-  String get games_sort => 'Sort';
+  String get game_sort => 'Sort';
   @override
-  String get games_sort_added => 'Date added';
+  String get game_sort_added => 'Date added';
   @override
-  String get games_sort_last_played => 'Last played';
+  String get game_sort_last_played => 'Last played';
   @override
-  String get games_sort_name => 'Name';
+  String get game_sort_name => 'Name';
   @override
-  String get games_sort_release => 'Release date';
+  String get game_sort_release => 'Release date';
   @override
-  String get games_sort_site_score => 'Site rating';
+  String get game_sort_site_score => 'Site rating';
   @override
-  String get games_sort_user_rating => 'My rating';
+  String get game_sort_user_rating => 'My rating';
   @override
-  String get games_status_dropped => 'Dropped';
+  String get game_status_dropped => 'Dropped';
   @override
-  String get games_status_on_hold => 'On hold';
+  String get game_status_on_hold => 'On hold';
   @override
-  String get games_status_played => 'Played';
+  String get game_status_played => 'Played';
   @override
-  String get games_status_playing => 'Playing';
+  String get game_status_playing => 'Playing';
   @override
-  String get games_status_unset => 'Not set';
+  String get game_status_unset => 'Not set';
   @override
-  String get games_status_want_to_play => 'Want to play';
+  String get game_status_want_to_play => 'Want to play';
   @override
-  String get games_view_detail => 'View details';
+  String get game_view_detail => 'View details';
   @override
   String get global_context_capture => 'Capture selection context';
   @override
@@ -31541,18 +31488,10 @@ class _StringsId extends _StringsEn {
   @override
   String get sync_webdav_missing_fields => 'Ada kolom yang belum diisi';
   @override
-  String get sync_webdav_password => 'Kata sandi';
-  @override
-  String get sync_webdav_test => 'Uji koneksi';
-  @override
   String sync_webdav_test_failed({required Object message}) =>
       'Koneksi gagal: ${message}';
   @override
-  String get sync_webdav_test_success => 'Koneksi berhasil';
-  @override
   String get sync_webdav_url => 'URL server';
-  @override
-  String get sync_webdav_username => 'Nama pengguna';
   @override
   String tag_added_to_book({required Object name}) =>
       'Tag "${name}" ditambahkan ke buku.';
@@ -34822,63 +34761,62 @@ class _StringsIt extends _StringsEn {
   String get gal_hook_text_font_size_hint =>
       'Drag the overlay\'s corner to resize the window; the caption size is set here.';
   @override
-  String get galgame_helper_download => 'Download';
+  String get game_helper_download => 'Download';
   @override
-  String galgame_helper_download_failed({required Object error}) =>
+  String game_helper_download_failed({required Object error}) =>
       'Engine component download failed: ${error}';
   @override
-  String get galgame_helper_downloading => 'Downloading engine component…';
+  String get game_helper_downloading => 'Downloading engine component…';
   @override
-  String get galgame_helper_install_incomplete =>
+  String get game_helper_install_incomplete =>
       'Engine component install incomplete, please retry';
   @override
-  String galgame_helper_needed_body({required Object size}) =>
+  String game_helper_needed_body({required Object size}) =>
       'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
   @override
-  String get galgame_helper_needed_title => 'Galgame engine component required';
+  String get game_helper_needed_title => 'Galgame engine component required';
   @override
-  String get galgame_helper_size_unknown => 'unknown size';
+  String get game_helper_size_unknown => 'unknown size';
   @override
-  String get galgame_helper_verification_failed =>
+  String get game_helper_verification_failed =>
       'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
   @override
-  String get galgame_upscaling => 'Game window upscaling';
+  String get game_upscaling => 'Game window upscaling';
   @override
-  String get galgame_upscaling_auto => 'Auto';
+  String get game_upscaling_auto => 'Auto';
   @override
-  String get galgame_upscaling_download_body =>
+  String get game_upscaling_download_body =>
       'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
   @override
-  String get galgame_upscaling_download_title => 'Download Magpie upscaler?';
+  String get game_upscaling_download_title => 'Download Magpie upscaler?';
   @override
-  String get galgame_upscaling_hint =>
+  String get game_upscaling_hint =>
       'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
   @override
-  String get galgame_upscaling_hint_external =>
+  String get game_upscaling_hint_external =>
       'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_first_run =>
+  String get game_upscaling_hint_first_run =>
       'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
   @override
-  String get galgame_upscaling_hint_manual =>
+  String get game_upscaling_hint_manual =>
       'Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_not_installed =>
+  String get game_upscaling_hint_not_installed =>
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
-  String get galgame_upscaling_installed_only => 'Installed only';
+  String get game_upscaling_installed_only => 'Installed only';
   @override
-  String get galgame_upscaling_off => 'Off';
+  String get game_upscaling_off => 'Off';
   @override
-  String get galgame_upscaling_status_active => 'Window upscaling is on';
+  String get game_upscaling_status_active => 'Window upscaling is on';
   @override
-  String get galgame_upscaling_status_failed =>
-      'Window upscaling could not start';
+  String get game_upscaling_status_failed => 'Window upscaling could not start';
   @override
-  String get galgame_upscaling_status_manual =>
+  String get game_upscaling_status_manual =>
       'Window upscaling is ready, but did not start on its own';
   @override
-  String get galgame_upscaling_status_unavailable =>
+  String get game_upscaling_status_unavailable =>
       'Window upscaling is not available';
   @override
   String get game_audio_backend_engine => 'Engine PCM';
@@ -35333,94 +35271,92 @@ class _StringsIt extends _StringsEn {
   @override
   String get games => 'Games';
   @override
-  String get games_add => 'Add game';
+  String get game_add => 'Add game';
   @override
-  String get games_already_added => 'This game is already in the library';
+  String get game_already_added => 'This game is already in the library';
   @override
-  String get games_auto_cover => 'Fetch cover automatically';
+  String get game_auto_cover => 'Fetch cover automatically';
   @override
-  String get games_cover_not_found =>
+  String get game_cover_not_found =>
       'No usable cover found in the game folder or executable';
   @override
-  String get games_cover_searching => 'Looking for a cover...';
+  String get game_cover_searching => 'Looking for a cover...';
   @override
-  String get games_cover_updated => 'Cover updated';
+  String get game_cover_updated => 'Cover updated';
   @override
-  String games_drop_imported({required Object count}) =>
+  String game_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
   @override
-  String get games_drop_no_exe => 'No new game .exe among the dropped files';
+  String get game_drop_no_exe => 'No new game .exe among the dropped files';
   @override
-  String get games_empty => 'No games added yet';
+  String get game_empty => 'No games added yet';
   @override
-  String get games_exe_missing => 'Game executable not found';
+  String get game_exe_missing => 'Game executable not found';
   @override
-  String get games_filter => 'Filter';
+  String get game_filter => 'Filter';
   @override
-  String get games_filter_all => 'All';
+  String get game_filter_hide_nsfw => 'Hide adult titles';
   @override
-  String get games_filter_hide_nsfw => 'Hide adult titles';
+  String get game_filter_local_only => 'Has local file';
   @override
-  String get games_filter_local_only => 'Has local file';
+  String get game_filter_metadata_only => 'Metadata only';
   @override
-  String get games_filter_metadata_only => 'Metadata only';
+  String get game_filter_reset => 'Clear filters';
   @override
-  String get games_filter_reset => 'Clear filters';
+  String get game_filter_source => 'Availability';
   @override
-  String get games_filter_source => 'Availability';
+  String get game_filter_status => 'Play status';
   @override
-  String get games_filter_status => 'Play status';
+  String get game_filter_tags => 'Tags';
   @override
-  String get games_filter_tags => 'Tags';
-  @override
-  String get games_launch_unsupported =>
+  String get game_launch_unsupported =>
       'Launching games is only supported on Windows';
   @override
-  String get games_never_played => 'Never played';
+  String get game_never_played => 'Never played';
   @override
-  String get games_no_match => 'No games match the current filters';
+  String get game_no_match => 'No games match the current filters';
   @override
-  String get games_play_status => 'Play status';
+  String get game_play_status => 'Play status';
   @override
-  String get games_remove => 'Remove';
+  String get game_remove => 'Remove';
   @override
-  String get games_rename => 'Rename';
+  String get game_rename => 'Rename';
   @override
-  String get games_rename_label => 'Game name';
+  String get game_rename_label => 'Game name';
   @override
-  String get games_scrape => 'Fetch metadata';
+  String get game_scrape => 'Fetch metadata';
   @override
-  String get games_search => 'Search games';
+  String get game_search => 'Search games';
   @override
-  String get games_set_cover => 'Set cover';
+  String get game_set_cover => 'Set cover';
   @override
-  String get games_sort => 'Sort';
+  String get game_sort => 'Sort';
   @override
-  String get games_sort_added => 'Date added';
+  String get game_sort_added => 'Date added';
   @override
-  String get games_sort_last_played => 'Last played';
+  String get game_sort_last_played => 'Last played';
   @override
-  String get games_sort_name => 'Name';
+  String get game_sort_name => 'Name';
   @override
-  String get games_sort_release => 'Release date';
+  String get game_sort_release => 'Release date';
   @override
-  String get games_sort_site_score => 'Site rating';
+  String get game_sort_site_score => 'Site rating';
   @override
-  String get games_sort_user_rating => 'My rating';
+  String get game_sort_user_rating => 'My rating';
   @override
-  String get games_status_dropped => 'Dropped';
+  String get game_status_dropped => 'Dropped';
   @override
-  String get games_status_on_hold => 'On hold';
+  String get game_status_on_hold => 'On hold';
   @override
-  String get games_status_played => 'Played';
+  String get game_status_played => 'Played';
   @override
-  String get games_status_playing => 'Playing';
+  String get game_status_playing => 'Playing';
   @override
-  String get games_status_unset => 'Not set';
+  String get game_status_unset => 'Not set';
   @override
-  String get games_status_want_to_play => 'Want to play';
+  String get game_status_want_to_play => 'Want to play';
   @override
-  String get games_view_detail => 'View details';
+  String get game_view_detail => 'View details';
   @override
   String get global_context_capture => 'Capture selection context';
   @override
@@ -37458,18 +37394,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get sync_webdav_missing_fields => 'Campi mancanti';
   @override
-  String get sync_webdav_password => 'Password';
-  @override
-  String get sync_webdav_test => 'Prova connessione';
-  @override
   String sync_webdav_test_failed({required Object message}) =>
       'Connessione non riuscita: ${message}';
   @override
-  String get sync_webdav_test_success => 'Connessione riuscita';
-  @override
   String get sync_webdav_url => 'URL del server';
-  @override
-  String get sync_webdav_username => 'Nome utente';
   @override
   String tag_added_to_book({required Object name}) =>
       'Etichetta "${name}" aggiunta al libro.';
@@ -40695,63 +40623,62 @@ class _StringsJa extends _StringsEn {
   String get gal_hook_text_font_size_hint =>
       'Drag the overlay\'s corner to resize the window; the caption size is set here.';
   @override
-  String get galgame_helper_download => 'Download';
+  String get game_helper_download => 'Download';
   @override
-  String galgame_helper_download_failed({required Object error}) =>
+  String game_helper_download_failed({required Object error}) =>
       'Engine component download failed: ${error}';
   @override
-  String get galgame_helper_downloading => 'Downloading engine component…';
+  String get game_helper_downloading => 'Downloading engine component…';
   @override
-  String get galgame_helper_install_incomplete =>
+  String get game_helper_install_incomplete =>
       'Engine component install incomplete, please retry';
   @override
-  String galgame_helper_needed_body({required Object size}) =>
+  String game_helper_needed_body({required Object size}) =>
       'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
   @override
-  String get galgame_helper_needed_title => 'Galgame engine component required';
+  String get game_helper_needed_title => 'Galgame engine component required';
   @override
-  String get galgame_helper_size_unknown => 'unknown size';
+  String get game_helper_size_unknown => 'unknown size';
   @override
-  String get galgame_helper_verification_failed =>
+  String get game_helper_verification_failed =>
       'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
   @override
-  String get galgame_upscaling => 'Game window upscaling';
+  String get game_upscaling => 'Game window upscaling';
   @override
-  String get galgame_upscaling_auto => 'Auto';
+  String get game_upscaling_auto => 'Auto';
   @override
-  String get galgame_upscaling_download_body =>
+  String get game_upscaling_download_body =>
       'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
   @override
-  String get galgame_upscaling_download_title => 'Download Magpie upscaler?';
+  String get game_upscaling_download_title => 'Download Magpie upscaler?';
   @override
-  String get galgame_upscaling_hint =>
+  String get game_upscaling_hint =>
       'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
   @override
-  String get galgame_upscaling_hint_external =>
+  String get game_upscaling_hint_external =>
       'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_first_run =>
+  String get game_upscaling_hint_first_run =>
       'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
   @override
-  String get galgame_upscaling_hint_manual =>
+  String get game_upscaling_hint_manual =>
       'Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_not_installed =>
+  String get game_upscaling_hint_not_installed =>
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
-  String get galgame_upscaling_installed_only => 'Installed only';
+  String get game_upscaling_installed_only => 'Installed only';
   @override
-  String get galgame_upscaling_off => 'Off';
+  String get game_upscaling_off => 'Off';
   @override
-  String get galgame_upscaling_status_active => 'Window upscaling is on';
+  String get game_upscaling_status_active => 'Window upscaling is on';
   @override
-  String get galgame_upscaling_status_failed =>
-      'Window upscaling could not start';
+  String get game_upscaling_status_failed => 'Window upscaling could not start';
   @override
-  String get galgame_upscaling_status_manual =>
+  String get game_upscaling_status_manual =>
       'Window upscaling is ready, but did not start on its own';
   @override
-  String get galgame_upscaling_status_unavailable =>
+  String get game_upscaling_status_unavailable =>
       'Window upscaling is not available';
   @override
   String get game_audio_backend_engine => 'Engine PCM';
@@ -41206,94 +41133,92 @@ class _StringsJa extends _StringsEn {
   @override
   String get games => 'Games';
   @override
-  String get games_add => 'Add game';
+  String get game_add => 'Add game';
   @override
-  String get games_already_added => 'This game is already in the library';
+  String get game_already_added => 'This game is already in the library';
   @override
-  String get games_auto_cover => 'Fetch cover automatically';
+  String get game_auto_cover => 'Fetch cover automatically';
   @override
-  String get games_cover_not_found =>
+  String get game_cover_not_found =>
       'No usable cover found in the game folder or executable';
   @override
-  String get games_cover_searching => 'Looking for a cover...';
+  String get game_cover_searching => 'Looking for a cover...';
   @override
-  String get games_cover_updated => 'Cover updated';
+  String get game_cover_updated => 'Cover updated';
   @override
-  String games_drop_imported({required Object count}) =>
+  String game_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
   @override
-  String get games_drop_no_exe => 'No new game .exe among the dropped files';
+  String get game_drop_no_exe => 'No new game .exe among the dropped files';
   @override
-  String get games_empty => 'No games added yet';
+  String get game_empty => 'No games added yet';
   @override
-  String get games_exe_missing => 'Game executable not found';
+  String get game_exe_missing => 'Game executable not found';
   @override
-  String get games_filter => 'Filter';
+  String get game_filter => 'Filter';
   @override
-  String get games_filter_all => 'All';
+  String get game_filter_hide_nsfw => 'Hide adult titles';
   @override
-  String get games_filter_hide_nsfw => 'Hide adult titles';
+  String get game_filter_local_only => 'Has local file';
   @override
-  String get games_filter_local_only => 'Has local file';
+  String get game_filter_metadata_only => 'Metadata only';
   @override
-  String get games_filter_metadata_only => 'Metadata only';
+  String get game_filter_reset => 'Clear filters';
   @override
-  String get games_filter_reset => 'Clear filters';
+  String get game_filter_source => 'Availability';
   @override
-  String get games_filter_source => 'Availability';
+  String get game_filter_status => 'Play status';
   @override
-  String get games_filter_status => 'Play status';
+  String get game_filter_tags => 'Tags';
   @override
-  String get games_filter_tags => 'Tags';
-  @override
-  String get games_launch_unsupported =>
+  String get game_launch_unsupported =>
       'Launching games is only supported on Windows';
   @override
-  String get games_never_played => 'Never played';
+  String get game_never_played => 'Never played';
   @override
-  String get games_no_match => 'No games match the current filters';
+  String get game_no_match => 'No games match the current filters';
   @override
-  String get games_play_status => 'Play status';
+  String get game_play_status => 'Play status';
   @override
-  String get games_remove => 'Remove';
+  String get game_remove => 'Remove';
   @override
-  String get games_rename => 'Rename';
+  String get game_rename => 'Rename';
   @override
-  String get games_rename_label => 'Game name';
+  String get game_rename_label => 'Game name';
   @override
-  String get games_scrape => 'Fetch metadata';
+  String get game_scrape => 'Fetch metadata';
   @override
-  String get games_search => 'Search games';
+  String get game_search => 'Search games';
   @override
-  String get games_set_cover => 'Set cover';
+  String get game_set_cover => 'Set cover';
   @override
-  String get games_sort => 'Sort';
+  String get game_sort => 'Sort';
   @override
-  String get games_sort_added => 'Date added';
+  String get game_sort_added => 'Date added';
   @override
-  String get games_sort_last_played => 'Last played';
+  String get game_sort_last_played => 'Last played';
   @override
-  String get games_sort_name => 'Name';
+  String get game_sort_name => 'Name';
   @override
-  String get games_sort_release => 'Release date';
+  String get game_sort_release => 'Release date';
   @override
-  String get games_sort_site_score => 'Site rating';
+  String get game_sort_site_score => 'Site rating';
   @override
-  String get games_sort_user_rating => 'My rating';
+  String get game_sort_user_rating => 'My rating';
   @override
-  String get games_status_dropped => 'Dropped';
+  String get game_status_dropped => 'Dropped';
   @override
-  String get games_status_on_hold => 'On hold';
+  String get game_status_on_hold => 'On hold';
   @override
-  String get games_status_played => 'Played';
+  String get game_status_played => 'Played';
   @override
-  String get games_status_playing => 'Playing';
+  String get game_status_playing => 'Playing';
   @override
-  String get games_status_unset => 'Not set';
+  String get game_status_unset => 'Not set';
   @override
-  String get games_status_want_to_play => 'Want to play';
+  String get game_status_want_to_play => 'Want to play';
   @override
-  String get games_view_detail => 'View details';
+  String get game_view_detail => 'View details';
   @override
   String get global_context_capture => 'Capture selection context';
   @override
@@ -43258,18 +43183,10 @@ class _StringsJa extends _StringsEn {
   @override
   String get sync_webdav_missing_fields => '未入力の項目があります';
   @override
-  String get sync_webdav_password => 'パスワード';
-  @override
-  String get sync_webdav_test => '接続テスト';
-  @override
   String sync_webdav_test_failed({required Object message}) =>
       '接続に失敗しました: ${message}';
   @override
-  String get sync_webdav_test_success => '接続に成功しました';
-  @override
   String get sync_webdav_url => 'サーバーURL';
-  @override
-  String get sync_webdav_username => 'ユーザー名';
   @override
   String tag_added_to_book({required Object name}) => 'タグ「${name}」を本に追加しました。';
   @override
@@ -46440,63 +46357,62 @@ class _StringsKo extends _StringsEn {
   String get gal_hook_text_font_size_hint =>
       'Drag the overlay\'s corner to resize the window; the caption size is set here.';
   @override
-  String get galgame_helper_download => 'Download';
+  String get game_helper_download => 'Download';
   @override
-  String galgame_helper_download_failed({required Object error}) =>
+  String game_helper_download_failed({required Object error}) =>
       'Engine component download failed: ${error}';
   @override
-  String get galgame_helper_downloading => 'Downloading engine component…';
+  String get game_helper_downloading => 'Downloading engine component…';
   @override
-  String get galgame_helper_install_incomplete =>
+  String get game_helper_install_incomplete =>
       'Engine component install incomplete, please retry';
   @override
-  String galgame_helper_needed_body({required Object size}) =>
+  String game_helper_needed_body({required Object size}) =>
       'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
   @override
-  String get galgame_helper_needed_title => 'Galgame engine component required';
+  String get game_helper_needed_title => 'Galgame engine component required';
   @override
-  String get galgame_helper_size_unknown => 'unknown size';
+  String get game_helper_size_unknown => 'unknown size';
   @override
-  String get galgame_helper_verification_failed =>
+  String get game_helper_verification_failed =>
       'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
   @override
-  String get galgame_upscaling => 'Game window upscaling';
+  String get game_upscaling => 'Game window upscaling';
   @override
-  String get galgame_upscaling_auto => 'Auto';
+  String get game_upscaling_auto => 'Auto';
   @override
-  String get galgame_upscaling_download_body =>
+  String get game_upscaling_download_body =>
       'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
   @override
-  String get galgame_upscaling_download_title => 'Download Magpie upscaler?';
+  String get game_upscaling_download_title => 'Download Magpie upscaler?';
   @override
-  String get galgame_upscaling_hint =>
+  String get game_upscaling_hint =>
       'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
   @override
-  String get galgame_upscaling_hint_external =>
+  String get game_upscaling_hint_external =>
       'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_first_run =>
+  String get game_upscaling_hint_first_run =>
       'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
   @override
-  String get galgame_upscaling_hint_manual =>
+  String get game_upscaling_hint_manual =>
       'Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_not_installed =>
+  String get game_upscaling_hint_not_installed =>
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
-  String get galgame_upscaling_installed_only => 'Installed only';
+  String get game_upscaling_installed_only => 'Installed only';
   @override
-  String get galgame_upscaling_off => 'Off';
+  String get game_upscaling_off => 'Off';
   @override
-  String get galgame_upscaling_status_active => 'Window upscaling is on';
+  String get game_upscaling_status_active => 'Window upscaling is on';
   @override
-  String get galgame_upscaling_status_failed =>
-      'Window upscaling could not start';
+  String get game_upscaling_status_failed => 'Window upscaling could not start';
   @override
-  String get galgame_upscaling_status_manual =>
+  String get game_upscaling_status_manual =>
       'Window upscaling is ready, but did not start on its own';
   @override
-  String get galgame_upscaling_status_unavailable =>
+  String get game_upscaling_status_unavailable =>
       'Window upscaling is not available';
   @override
   String get game_audio_backend_engine => 'Engine PCM';
@@ -46951,94 +46867,92 @@ class _StringsKo extends _StringsEn {
   @override
   String get games => 'Games';
   @override
-  String get games_add => 'Add game';
+  String get game_add => 'Add game';
   @override
-  String get games_already_added => 'This game is already in the library';
+  String get game_already_added => 'This game is already in the library';
   @override
-  String get games_auto_cover => 'Fetch cover automatically';
+  String get game_auto_cover => 'Fetch cover automatically';
   @override
-  String get games_cover_not_found =>
+  String get game_cover_not_found =>
       'No usable cover found in the game folder or executable';
   @override
-  String get games_cover_searching => 'Looking for a cover...';
+  String get game_cover_searching => 'Looking for a cover...';
   @override
-  String get games_cover_updated => 'Cover updated';
+  String get game_cover_updated => 'Cover updated';
   @override
-  String games_drop_imported({required Object count}) =>
+  String game_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
   @override
-  String get games_drop_no_exe => 'No new game .exe among the dropped files';
+  String get game_drop_no_exe => 'No new game .exe among the dropped files';
   @override
-  String get games_empty => 'No games added yet';
+  String get game_empty => 'No games added yet';
   @override
-  String get games_exe_missing => 'Game executable not found';
+  String get game_exe_missing => 'Game executable not found';
   @override
-  String get games_filter => 'Filter';
+  String get game_filter => 'Filter';
   @override
-  String get games_filter_all => 'All';
+  String get game_filter_hide_nsfw => 'Hide adult titles';
   @override
-  String get games_filter_hide_nsfw => 'Hide adult titles';
+  String get game_filter_local_only => 'Has local file';
   @override
-  String get games_filter_local_only => 'Has local file';
+  String get game_filter_metadata_only => 'Metadata only';
   @override
-  String get games_filter_metadata_only => 'Metadata only';
+  String get game_filter_reset => 'Clear filters';
   @override
-  String get games_filter_reset => 'Clear filters';
+  String get game_filter_source => 'Availability';
   @override
-  String get games_filter_source => 'Availability';
+  String get game_filter_status => 'Play status';
   @override
-  String get games_filter_status => 'Play status';
+  String get game_filter_tags => 'Tags';
   @override
-  String get games_filter_tags => 'Tags';
-  @override
-  String get games_launch_unsupported =>
+  String get game_launch_unsupported =>
       'Launching games is only supported on Windows';
   @override
-  String get games_never_played => 'Never played';
+  String get game_never_played => 'Never played';
   @override
-  String get games_no_match => 'No games match the current filters';
+  String get game_no_match => 'No games match the current filters';
   @override
-  String get games_play_status => 'Play status';
+  String get game_play_status => 'Play status';
   @override
-  String get games_remove => 'Remove';
+  String get game_remove => 'Remove';
   @override
-  String get games_rename => 'Rename';
+  String get game_rename => 'Rename';
   @override
-  String get games_rename_label => 'Game name';
+  String get game_rename_label => 'Game name';
   @override
-  String get games_scrape => 'Fetch metadata';
+  String get game_scrape => 'Fetch metadata';
   @override
-  String get games_search => 'Search games';
+  String get game_search => 'Search games';
   @override
-  String get games_set_cover => 'Set cover';
+  String get game_set_cover => 'Set cover';
   @override
-  String get games_sort => 'Sort';
+  String get game_sort => 'Sort';
   @override
-  String get games_sort_added => 'Date added';
+  String get game_sort_added => 'Date added';
   @override
-  String get games_sort_last_played => 'Last played';
+  String get game_sort_last_played => 'Last played';
   @override
-  String get games_sort_name => 'Name';
+  String get game_sort_name => 'Name';
   @override
-  String get games_sort_release => 'Release date';
+  String get game_sort_release => 'Release date';
   @override
-  String get games_sort_site_score => 'Site rating';
+  String get game_sort_site_score => 'Site rating';
   @override
-  String get games_sort_user_rating => 'My rating';
+  String get game_sort_user_rating => 'My rating';
   @override
-  String get games_status_dropped => 'Dropped';
+  String get game_status_dropped => 'Dropped';
   @override
-  String get games_status_on_hold => 'On hold';
+  String get game_status_on_hold => 'On hold';
   @override
-  String get games_status_played => 'Played';
+  String get game_status_played => 'Played';
   @override
-  String get games_status_playing => 'Playing';
+  String get game_status_playing => 'Playing';
   @override
-  String get games_status_unset => 'Not set';
+  String get game_status_unset => 'Not set';
   @override
-  String get games_status_want_to_play => 'Want to play';
+  String get game_status_want_to_play => 'Want to play';
   @override
-  String get games_view_detail => 'View details';
+  String get game_view_detail => 'View details';
   @override
   String get global_context_capture => 'Capture selection context';
   @override
@@ -48999,18 +48913,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get sync_webdav_missing_fields => '입력하지 않은 항목이 있습니다';
   @override
-  String get sync_webdav_password => '비밀번호';
-  @override
-  String get sync_webdav_test => '연결 테스트';
-  @override
   String sync_webdav_test_failed({required Object message}) =>
       '연결 실패: ${message}';
   @override
-  String get sync_webdav_test_success => '연결 성공';
-  @override
   String get sync_webdav_url => '서버 URL';
-  @override
-  String get sync_webdav_username => '사용자 이름';
   @override
   String tag_added_to_book({required Object name}) =>
       '태그 "${name}"이(가) 책에 추가되었습니다.';
@@ -52237,63 +52143,62 @@ class _StringsNl extends _StringsEn {
   String get gal_hook_text_font_size_hint =>
       'Drag the overlay\'s corner to resize the window; the caption size is set here.';
   @override
-  String get galgame_helper_download => 'Download';
+  String get game_helper_download => 'Download';
   @override
-  String galgame_helper_download_failed({required Object error}) =>
+  String game_helper_download_failed({required Object error}) =>
       'Engine component download failed: ${error}';
   @override
-  String get galgame_helper_downloading => 'Downloading engine component…';
+  String get game_helper_downloading => 'Downloading engine component…';
   @override
-  String get galgame_helper_install_incomplete =>
+  String get game_helper_install_incomplete =>
       'Engine component install incomplete, please retry';
   @override
-  String galgame_helper_needed_body({required Object size}) =>
+  String game_helper_needed_body({required Object size}) =>
       'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
   @override
-  String get galgame_helper_needed_title => 'Galgame engine component required';
+  String get game_helper_needed_title => 'Galgame engine component required';
   @override
-  String get galgame_helper_size_unknown => 'unknown size';
+  String get game_helper_size_unknown => 'unknown size';
   @override
-  String get galgame_helper_verification_failed =>
+  String get game_helper_verification_failed =>
       'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
   @override
-  String get galgame_upscaling => 'Game window upscaling';
+  String get game_upscaling => 'Game window upscaling';
   @override
-  String get galgame_upscaling_auto => 'Auto';
+  String get game_upscaling_auto => 'Auto';
   @override
-  String get galgame_upscaling_download_body =>
+  String get game_upscaling_download_body =>
       'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
   @override
-  String get galgame_upscaling_download_title => 'Download Magpie upscaler?';
+  String get game_upscaling_download_title => 'Download Magpie upscaler?';
   @override
-  String get galgame_upscaling_hint =>
+  String get game_upscaling_hint =>
       'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
   @override
-  String get galgame_upscaling_hint_external =>
+  String get game_upscaling_hint_external =>
       'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_first_run =>
+  String get game_upscaling_hint_first_run =>
       'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
   @override
-  String get galgame_upscaling_hint_manual =>
+  String get game_upscaling_hint_manual =>
       'Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_not_installed =>
+  String get game_upscaling_hint_not_installed =>
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
-  String get galgame_upscaling_installed_only => 'Installed only';
+  String get game_upscaling_installed_only => 'Installed only';
   @override
-  String get galgame_upscaling_off => 'Off';
+  String get game_upscaling_off => 'Off';
   @override
-  String get galgame_upscaling_status_active => 'Window upscaling is on';
+  String get game_upscaling_status_active => 'Window upscaling is on';
   @override
-  String get galgame_upscaling_status_failed =>
-      'Window upscaling could not start';
+  String get game_upscaling_status_failed => 'Window upscaling could not start';
   @override
-  String get galgame_upscaling_status_manual =>
+  String get game_upscaling_status_manual =>
       'Window upscaling is ready, but did not start on its own';
   @override
-  String get galgame_upscaling_status_unavailable =>
+  String get game_upscaling_status_unavailable =>
       'Window upscaling is not available';
   @override
   String get game_audio_backend_engine => 'Engine PCM';
@@ -52748,94 +52653,92 @@ class _StringsNl extends _StringsEn {
   @override
   String get games => 'Games';
   @override
-  String get games_add => 'Add game';
+  String get game_add => 'Add game';
   @override
-  String get games_already_added => 'This game is already in the library';
+  String get game_already_added => 'This game is already in the library';
   @override
-  String get games_auto_cover => 'Fetch cover automatically';
+  String get game_auto_cover => 'Fetch cover automatically';
   @override
-  String get games_cover_not_found =>
+  String get game_cover_not_found =>
       'No usable cover found in the game folder or executable';
   @override
-  String get games_cover_searching => 'Looking for a cover...';
+  String get game_cover_searching => 'Looking for a cover...';
   @override
-  String get games_cover_updated => 'Cover updated';
+  String get game_cover_updated => 'Cover updated';
   @override
-  String games_drop_imported({required Object count}) =>
+  String game_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
   @override
-  String get games_drop_no_exe => 'No new game .exe among the dropped files';
+  String get game_drop_no_exe => 'No new game .exe among the dropped files';
   @override
-  String get games_empty => 'No games added yet';
+  String get game_empty => 'No games added yet';
   @override
-  String get games_exe_missing => 'Game executable not found';
+  String get game_exe_missing => 'Game executable not found';
   @override
-  String get games_filter => 'Filter';
+  String get game_filter => 'Filter';
   @override
-  String get games_filter_all => 'All';
+  String get game_filter_hide_nsfw => 'Hide adult titles';
   @override
-  String get games_filter_hide_nsfw => 'Hide adult titles';
+  String get game_filter_local_only => 'Has local file';
   @override
-  String get games_filter_local_only => 'Has local file';
+  String get game_filter_metadata_only => 'Metadata only';
   @override
-  String get games_filter_metadata_only => 'Metadata only';
+  String get game_filter_reset => 'Clear filters';
   @override
-  String get games_filter_reset => 'Clear filters';
+  String get game_filter_source => 'Availability';
   @override
-  String get games_filter_source => 'Availability';
+  String get game_filter_status => 'Play status';
   @override
-  String get games_filter_status => 'Play status';
+  String get game_filter_tags => 'Tags';
   @override
-  String get games_filter_tags => 'Tags';
-  @override
-  String get games_launch_unsupported =>
+  String get game_launch_unsupported =>
       'Launching games is only supported on Windows';
   @override
-  String get games_never_played => 'Never played';
+  String get game_never_played => 'Never played';
   @override
-  String get games_no_match => 'No games match the current filters';
+  String get game_no_match => 'No games match the current filters';
   @override
-  String get games_play_status => 'Play status';
+  String get game_play_status => 'Play status';
   @override
-  String get games_remove => 'Remove';
+  String get game_remove => 'Remove';
   @override
-  String get games_rename => 'Rename';
+  String get game_rename => 'Rename';
   @override
-  String get games_rename_label => 'Game name';
+  String get game_rename_label => 'Game name';
   @override
-  String get games_scrape => 'Fetch metadata';
+  String get game_scrape => 'Fetch metadata';
   @override
-  String get games_search => 'Search games';
+  String get game_search => 'Search games';
   @override
-  String get games_set_cover => 'Set cover';
+  String get game_set_cover => 'Set cover';
   @override
-  String get games_sort => 'Sort';
+  String get game_sort => 'Sort';
   @override
-  String get games_sort_added => 'Date added';
+  String get game_sort_added => 'Date added';
   @override
-  String get games_sort_last_played => 'Last played';
+  String get game_sort_last_played => 'Last played';
   @override
-  String get games_sort_name => 'Name';
+  String get game_sort_name => 'Name';
   @override
-  String get games_sort_release => 'Release date';
+  String get game_sort_release => 'Release date';
   @override
-  String get games_sort_site_score => 'Site rating';
+  String get game_sort_site_score => 'Site rating';
   @override
-  String get games_sort_user_rating => 'My rating';
+  String get game_sort_user_rating => 'My rating';
   @override
-  String get games_status_dropped => 'Dropped';
+  String get game_status_dropped => 'Dropped';
   @override
-  String get games_status_on_hold => 'On hold';
+  String get game_status_on_hold => 'On hold';
   @override
-  String get games_status_played => 'Played';
+  String get game_status_played => 'Played';
   @override
-  String get games_status_playing => 'Playing';
+  String get game_status_playing => 'Playing';
   @override
-  String get games_status_unset => 'Not set';
+  String get game_status_unset => 'Not set';
   @override
-  String get games_status_want_to_play => 'Want to play';
+  String get game_status_want_to_play => 'Want to play';
   @override
-  String get games_view_detail => 'View details';
+  String get game_view_detail => 'View details';
   @override
   String get global_context_capture => 'Capture selection context';
   @override
@@ -54866,18 +54769,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get sync_webdav_missing_fields => 'Ontbrekende velden';
   @override
-  String get sync_webdav_password => 'Wachtwoord';
-  @override
-  String get sync_webdav_test => 'Verbinding testen';
-  @override
   String sync_webdav_test_failed({required Object message}) =>
       'Verbinding mislukt: ${message}';
   @override
-  String get sync_webdav_test_success => 'Verbinding geslaagd';
-  @override
   String get sync_webdav_url => 'Server-URL';
-  @override
-  String get sync_webdav_username => 'Gebruikersnaam';
   @override
   String tag_added_to_book({required Object name}) =>
       'Tag "${name}" toegevoegd aan boek.';
@@ -58154,63 +58049,62 @@ class _StringsPtBr extends _StringsEn {
   String get gal_hook_text_font_size_hint =>
       'Drag the overlay\'s corner to resize the window; the caption size is set here.';
   @override
-  String get galgame_helper_download => 'Download';
+  String get game_helper_download => 'Download';
   @override
-  String galgame_helper_download_failed({required Object error}) =>
+  String game_helper_download_failed({required Object error}) =>
       'Engine component download failed: ${error}';
   @override
-  String get galgame_helper_downloading => 'Downloading engine component…';
+  String get game_helper_downloading => 'Downloading engine component…';
   @override
-  String get galgame_helper_install_incomplete =>
+  String get game_helper_install_incomplete =>
       'Engine component install incomplete, please retry';
   @override
-  String galgame_helper_needed_body({required Object size}) =>
+  String game_helper_needed_body({required Object size}) =>
       'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
   @override
-  String get galgame_helper_needed_title => 'Galgame engine component required';
+  String get game_helper_needed_title => 'Galgame engine component required';
   @override
-  String get galgame_helper_size_unknown => 'unknown size';
+  String get game_helper_size_unknown => 'unknown size';
   @override
-  String get galgame_helper_verification_failed =>
+  String get game_helper_verification_failed =>
       'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
   @override
-  String get galgame_upscaling => 'Game window upscaling';
+  String get game_upscaling => 'Game window upscaling';
   @override
-  String get galgame_upscaling_auto => 'Auto';
+  String get game_upscaling_auto => 'Auto';
   @override
-  String get galgame_upscaling_download_body =>
+  String get game_upscaling_download_body =>
       'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
   @override
-  String get galgame_upscaling_download_title => 'Download Magpie upscaler?';
+  String get game_upscaling_download_title => 'Download Magpie upscaler?';
   @override
-  String get galgame_upscaling_hint =>
+  String get game_upscaling_hint =>
       'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
   @override
-  String get galgame_upscaling_hint_external =>
+  String get game_upscaling_hint_external =>
       'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_first_run =>
+  String get game_upscaling_hint_first_run =>
       'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
   @override
-  String get galgame_upscaling_hint_manual =>
+  String get game_upscaling_hint_manual =>
       'Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_not_installed =>
+  String get game_upscaling_hint_not_installed =>
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
-  String get galgame_upscaling_installed_only => 'Installed only';
+  String get game_upscaling_installed_only => 'Installed only';
   @override
-  String get galgame_upscaling_off => 'Off';
+  String get game_upscaling_off => 'Off';
   @override
-  String get galgame_upscaling_status_active => 'Window upscaling is on';
+  String get game_upscaling_status_active => 'Window upscaling is on';
   @override
-  String get galgame_upscaling_status_failed =>
-      'Window upscaling could not start';
+  String get game_upscaling_status_failed => 'Window upscaling could not start';
   @override
-  String get galgame_upscaling_status_manual =>
+  String get game_upscaling_status_manual =>
       'Window upscaling is ready, but did not start on its own';
   @override
-  String get galgame_upscaling_status_unavailable =>
+  String get game_upscaling_status_unavailable =>
       'Window upscaling is not available';
   @override
   String get game_audio_backend_engine => 'Engine PCM';
@@ -58665,94 +58559,92 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get games => 'Games';
   @override
-  String get games_add => 'Add game';
+  String get game_add => 'Add game';
   @override
-  String get games_already_added => 'This game is already in the library';
+  String get game_already_added => 'This game is already in the library';
   @override
-  String get games_auto_cover => 'Fetch cover automatically';
+  String get game_auto_cover => 'Fetch cover automatically';
   @override
-  String get games_cover_not_found =>
+  String get game_cover_not_found =>
       'No usable cover found in the game folder or executable';
   @override
-  String get games_cover_searching => 'Looking for a cover...';
+  String get game_cover_searching => 'Looking for a cover...';
   @override
-  String get games_cover_updated => 'Cover updated';
+  String get game_cover_updated => 'Cover updated';
   @override
-  String games_drop_imported({required Object count}) =>
+  String game_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
   @override
-  String get games_drop_no_exe => 'No new game .exe among the dropped files';
+  String get game_drop_no_exe => 'No new game .exe among the dropped files';
   @override
-  String get games_empty => 'No games added yet';
+  String get game_empty => 'No games added yet';
   @override
-  String get games_exe_missing => 'Game executable not found';
+  String get game_exe_missing => 'Game executable not found';
   @override
-  String get games_filter => 'Filter';
+  String get game_filter => 'Filter';
   @override
-  String get games_filter_all => 'All';
+  String get game_filter_hide_nsfw => 'Hide adult titles';
   @override
-  String get games_filter_hide_nsfw => 'Hide adult titles';
+  String get game_filter_local_only => 'Has local file';
   @override
-  String get games_filter_local_only => 'Has local file';
+  String get game_filter_metadata_only => 'Metadata only';
   @override
-  String get games_filter_metadata_only => 'Metadata only';
+  String get game_filter_reset => 'Clear filters';
   @override
-  String get games_filter_reset => 'Clear filters';
+  String get game_filter_source => 'Availability';
   @override
-  String get games_filter_source => 'Availability';
+  String get game_filter_status => 'Play status';
   @override
-  String get games_filter_status => 'Play status';
+  String get game_filter_tags => 'Tags';
   @override
-  String get games_filter_tags => 'Tags';
-  @override
-  String get games_launch_unsupported =>
+  String get game_launch_unsupported =>
       'Launching games is only supported on Windows';
   @override
-  String get games_never_played => 'Never played';
+  String get game_never_played => 'Never played';
   @override
-  String get games_no_match => 'No games match the current filters';
+  String get game_no_match => 'No games match the current filters';
   @override
-  String get games_play_status => 'Play status';
+  String get game_play_status => 'Play status';
   @override
-  String get games_remove => 'Remove';
+  String get game_remove => 'Remove';
   @override
-  String get games_rename => 'Rename';
+  String get game_rename => 'Rename';
   @override
-  String get games_rename_label => 'Game name';
+  String get game_rename_label => 'Game name';
   @override
-  String get games_scrape => 'Fetch metadata';
+  String get game_scrape => 'Fetch metadata';
   @override
-  String get games_search => 'Search games';
+  String get game_search => 'Search games';
   @override
-  String get games_set_cover => 'Set cover';
+  String get game_set_cover => 'Set cover';
   @override
-  String get games_sort => 'Sort';
+  String get game_sort => 'Sort';
   @override
-  String get games_sort_added => 'Date added';
+  String get game_sort_added => 'Date added';
   @override
-  String get games_sort_last_played => 'Last played';
+  String get game_sort_last_played => 'Last played';
   @override
-  String get games_sort_name => 'Name';
+  String get game_sort_name => 'Name';
   @override
-  String get games_sort_release => 'Release date';
+  String get game_sort_release => 'Release date';
   @override
-  String get games_sort_site_score => 'Site rating';
+  String get game_sort_site_score => 'Site rating';
   @override
-  String get games_sort_user_rating => 'My rating';
+  String get game_sort_user_rating => 'My rating';
   @override
-  String get games_status_dropped => 'Dropped';
+  String get game_status_dropped => 'Dropped';
   @override
-  String get games_status_on_hold => 'On hold';
+  String get game_status_on_hold => 'On hold';
   @override
-  String get games_status_played => 'Played';
+  String get game_status_played => 'Played';
   @override
-  String get games_status_playing => 'Playing';
+  String get game_status_playing => 'Playing';
   @override
-  String get games_status_unset => 'Not set';
+  String get game_status_unset => 'Not set';
   @override
-  String get games_status_want_to_play => 'Want to play';
+  String get game_status_want_to_play => 'Want to play';
   @override
-  String get games_view_detail => 'View details';
+  String get game_view_detail => 'View details';
   @override
   String get global_context_capture => 'Capture selection context';
   @override
@@ -60783,18 +60675,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get sync_webdav_missing_fields => 'Campos faltando';
   @override
-  String get sync_webdav_password => 'Senha';
-  @override
-  String get sync_webdav_test => 'Testar conexão';
-  @override
   String sync_webdav_test_failed({required Object message}) =>
       'Falha na conexão: ${message}';
   @override
-  String get sync_webdav_test_success => 'Conexão bem-sucedida';
-  @override
   String get sync_webdav_url => 'URL do servidor';
-  @override
-  String get sync_webdav_username => 'Nome de usuário';
   @override
   String tag_added_to_book({required Object name}) =>
       'Tag "${name}" adicionada ao livro.';
@@ -64068,63 +63952,62 @@ class _StringsRu extends _StringsEn {
   String get gal_hook_text_font_size_hint =>
       'Drag the overlay\'s corner to resize the window; the caption size is set here.';
   @override
-  String get galgame_helper_download => 'Download';
+  String get game_helper_download => 'Download';
   @override
-  String galgame_helper_download_failed({required Object error}) =>
+  String game_helper_download_failed({required Object error}) =>
       'Engine component download failed: ${error}';
   @override
-  String get galgame_helper_downloading => 'Downloading engine component…';
+  String get game_helper_downloading => 'Downloading engine component…';
   @override
-  String get galgame_helper_install_incomplete =>
+  String get game_helper_install_incomplete =>
       'Engine component install incomplete, please retry';
   @override
-  String galgame_helper_needed_body({required Object size}) =>
+  String game_helper_needed_body({required Object size}) =>
       'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
   @override
-  String get galgame_helper_needed_title => 'Galgame engine component required';
+  String get game_helper_needed_title => 'Galgame engine component required';
   @override
-  String get galgame_helper_size_unknown => 'unknown size';
+  String get game_helper_size_unknown => 'unknown size';
   @override
-  String get galgame_helper_verification_failed =>
+  String get game_helper_verification_failed =>
       'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
   @override
-  String get galgame_upscaling => 'Game window upscaling';
+  String get game_upscaling => 'Game window upscaling';
   @override
-  String get galgame_upscaling_auto => 'Auto';
+  String get game_upscaling_auto => 'Auto';
   @override
-  String get galgame_upscaling_download_body =>
+  String get game_upscaling_download_body =>
       'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
   @override
-  String get galgame_upscaling_download_title => 'Download Magpie upscaler?';
+  String get game_upscaling_download_title => 'Download Magpie upscaler?';
   @override
-  String get galgame_upscaling_hint =>
+  String get game_upscaling_hint =>
       'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
   @override
-  String get galgame_upscaling_hint_external =>
+  String get game_upscaling_hint_external =>
       'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_first_run =>
+  String get game_upscaling_hint_first_run =>
       'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
   @override
-  String get galgame_upscaling_hint_manual =>
+  String get game_upscaling_hint_manual =>
       'Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_not_installed =>
+  String get game_upscaling_hint_not_installed =>
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
-  String get galgame_upscaling_installed_only => 'Installed only';
+  String get game_upscaling_installed_only => 'Installed only';
   @override
-  String get galgame_upscaling_off => 'Off';
+  String get game_upscaling_off => 'Off';
   @override
-  String get galgame_upscaling_status_active => 'Window upscaling is on';
+  String get game_upscaling_status_active => 'Window upscaling is on';
   @override
-  String get galgame_upscaling_status_failed =>
-      'Window upscaling could not start';
+  String get game_upscaling_status_failed => 'Window upscaling could not start';
   @override
-  String get galgame_upscaling_status_manual =>
+  String get game_upscaling_status_manual =>
       'Window upscaling is ready, but did not start on its own';
   @override
-  String get galgame_upscaling_status_unavailable =>
+  String get game_upscaling_status_unavailable =>
       'Window upscaling is not available';
   @override
   String get game_audio_backend_engine => 'Engine PCM';
@@ -64579,94 +64462,92 @@ class _StringsRu extends _StringsEn {
   @override
   String get games => 'Games';
   @override
-  String get games_add => 'Add game';
+  String get game_add => 'Add game';
   @override
-  String get games_already_added => 'This game is already in the library';
+  String get game_already_added => 'This game is already in the library';
   @override
-  String get games_auto_cover => 'Fetch cover automatically';
+  String get game_auto_cover => 'Fetch cover automatically';
   @override
-  String get games_cover_not_found =>
+  String get game_cover_not_found =>
       'No usable cover found in the game folder or executable';
   @override
-  String get games_cover_searching => 'Looking for a cover...';
+  String get game_cover_searching => 'Looking for a cover...';
   @override
-  String get games_cover_updated => 'Cover updated';
+  String get game_cover_updated => 'Cover updated';
   @override
-  String games_drop_imported({required Object count}) =>
+  String game_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
   @override
-  String get games_drop_no_exe => 'No new game .exe among the dropped files';
+  String get game_drop_no_exe => 'No new game .exe among the dropped files';
   @override
-  String get games_empty => 'No games added yet';
+  String get game_empty => 'No games added yet';
   @override
-  String get games_exe_missing => 'Game executable not found';
+  String get game_exe_missing => 'Game executable not found';
   @override
-  String get games_filter => 'Filter';
+  String get game_filter => 'Filter';
   @override
-  String get games_filter_all => 'All';
+  String get game_filter_hide_nsfw => 'Hide adult titles';
   @override
-  String get games_filter_hide_nsfw => 'Hide adult titles';
+  String get game_filter_local_only => 'Has local file';
   @override
-  String get games_filter_local_only => 'Has local file';
+  String get game_filter_metadata_only => 'Metadata only';
   @override
-  String get games_filter_metadata_only => 'Metadata only';
+  String get game_filter_reset => 'Clear filters';
   @override
-  String get games_filter_reset => 'Clear filters';
+  String get game_filter_source => 'Availability';
   @override
-  String get games_filter_source => 'Availability';
+  String get game_filter_status => 'Play status';
   @override
-  String get games_filter_status => 'Play status';
+  String get game_filter_tags => 'Tags';
   @override
-  String get games_filter_tags => 'Tags';
-  @override
-  String get games_launch_unsupported =>
+  String get game_launch_unsupported =>
       'Launching games is only supported on Windows';
   @override
-  String get games_never_played => 'Never played';
+  String get game_never_played => 'Never played';
   @override
-  String get games_no_match => 'No games match the current filters';
+  String get game_no_match => 'No games match the current filters';
   @override
-  String get games_play_status => 'Play status';
+  String get game_play_status => 'Play status';
   @override
-  String get games_remove => 'Remove';
+  String get game_remove => 'Remove';
   @override
-  String get games_rename => 'Rename';
+  String get game_rename => 'Rename';
   @override
-  String get games_rename_label => 'Game name';
+  String get game_rename_label => 'Game name';
   @override
-  String get games_scrape => 'Fetch metadata';
+  String get game_scrape => 'Fetch metadata';
   @override
-  String get games_search => 'Search games';
+  String get game_search => 'Search games';
   @override
-  String get games_set_cover => 'Set cover';
+  String get game_set_cover => 'Set cover';
   @override
-  String get games_sort => 'Sort';
+  String get game_sort => 'Sort';
   @override
-  String get games_sort_added => 'Date added';
+  String get game_sort_added => 'Date added';
   @override
-  String get games_sort_last_played => 'Last played';
+  String get game_sort_last_played => 'Last played';
   @override
-  String get games_sort_name => 'Name';
+  String get game_sort_name => 'Name';
   @override
-  String get games_sort_release => 'Release date';
+  String get game_sort_release => 'Release date';
   @override
-  String get games_sort_site_score => 'Site rating';
+  String get game_sort_site_score => 'Site rating';
   @override
-  String get games_sort_user_rating => 'My rating';
+  String get game_sort_user_rating => 'My rating';
   @override
-  String get games_status_dropped => 'Dropped';
+  String get game_status_dropped => 'Dropped';
   @override
-  String get games_status_on_hold => 'On hold';
+  String get game_status_on_hold => 'On hold';
   @override
-  String get games_status_played => 'Played';
+  String get game_status_played => 'Played';
   @override
-  String get games_status_playing => 'Playing';
+  String get game_status_playing => 'Playing';
   @override
-  String get games_status_unset => 'Not set';
+  String get game_status_unset => 'Not set';
   @override
-  String get games_status_want_to_play => 'Want to play';
+  String get game_status_want_to_play => 'Want to play';
   @override
-  String get games_view_detail => 'View details';
+  String get game_view_detail => 'View details';
   @override
   String get global_context_capture => 'Capture selection context';
   @override
@@ -66696,18 +66577,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get sync_webdav_missing_fields => 'Не заполнены поля';
   @override
-  String get sync_webdav_password => 'Пароль';
-  @override
-  String get sync_webdav_test => 'Проверить соединение';
-  @override
   String sync_webdav_test_failed({required Object message}) =>
       'Ошибка соединения: ${message}';
   @override
-  String get sync_webdav_test_success => 'Соединение установлено';
-  @override
   String get sync_webdav_url => 'URL сервера';
-  @override
-  String get sync_webdav_username => 'Имя пользователя';
   @override
   String tag_added_to_book({required Object name}) =>
       'Тег "${name}" добавлен к книге.';
@@ -69952,63 +69825,62 @@ class _StringsTh extends _StringsEn {
   String get gal_hook_text_font_size_hint =>
       'Drag the overlay\'s corner to resize the window; the caption size is set here.';
   @override
-  String get galgame_helper_download => 'Download';
+  String get game_helper_download => 'Download';
   @override
-  String galgame_helper_download_failed({required Object error}) =>
+  String game_helper_download_failed({required Object error}) =>
       'Engine component download failed: ${error}';
   @override
-  String get galgame_helper_downloading => 'Downloading engine component…';
+  String get game_helper_downloading => 'Downloading engine component…';
   @override
-  String get galgame_helper_install_incomplete =>
+  String get game_helper_install_incomplete =>
       'Engine component install incomplete, please retry';
   @override
-  String galgame_helper_needed_body({required Object size}) =>
+  String game_helper_needed_body({required Object size}) =>
       'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
   @override
-  String get galgame_helper_needed_title => 'Galgame engine component required';
+  String get game_helper_needed_title => 'Galgame engine component required';
   @override
-  String get galgame_helper_size_unknown => 'unknown size';
+  String get game_helper_size_unknown => 'unknown size';
   @override
-  String get galgame_helper_verification_failed =>
+  String get game_helper_verification_failed =>
       'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
   @override
-  String get galgame_upscaling => 'Game window upscaling';
+  String get game_upscaling => 'Game window upscaling';
   @override
-  String get galgame_upscaling_auto => 'Auto';
+  String get game_upscaling_auto => 'Auto';
   @override
-  String get galgame_upscaling_download_body =>
+  String get game_upscaling_download_body =>
       'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
   @override
-  String get galgame_upscaling_download_title => 'Download Magpie upscaler?';
+  String get game_upscaling_download_title => 'Download Magpie upscaler?';
   @override
-  String get galgame_upscaling_hint =>
+  String get game_upscaling_hint =>
       'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
   @override
-  String get galgame_upscaling_hint_external =>
+  String get game_upscaling_hint_external =>
       'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_first_run =>
+  String get game_upscaling_hint_first_run =>
       'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
   @override
-  String get galgame_upscaling_hint_manual =>
+  String get game_upscaling_hint_manual =>
       'Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_not_installed =>
+  String get game_upscaling_hint_not_installed =>
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
-  String get galgame_upscaling_installed_only => 'Installed only';
+  String get game_upscaling_installed_only => 'Installed only';
   @override
-  String get galgame_upscaling_off => 'Off';
+  String get game_upscaling_off => 'Off';
   @override
-  String get galgame_upscaling_status_active => 'Window upscaling is on';
+  String get game_upscaling_status_active => 'Window upscaling is on';
   @override
-  String get galgame_upscaling_status_failed =>
-      'Window upscaling could not start';
+  String get game_upscaling_status_failed => 'Window upscaling could not start';
   @override
-  String get galgame_upscaling_status_manual =>
+  String get game_upscaling_status_manual =>
       'Window upscaling is ready, but did not start on its own';
   @override
-  String get galgame_upscaling_status_unavailable =>
+  String get game_upscaling_status_unavailable =>
       'Window upscaling is not available';
   @override
   String get game_audio_backend_engine => 'Engine PCM';
@@ -70463,94 +70335,92 @@ class _StringsTh extends _StringsEn {
   @override
   String get games => 'Games';
   @override
-  String get games_add => 'Add game';
+  String get game_add => 'Add game';
   @override
-  String get games_already_added => 'This game is already in the library';
+  String get game_already_added => 'This game is already in the library';
   @override
-  String get games_auto_cover => 'Fetch cover automatically';
+  String get game_auto_cover => 'Fetch cover automatically';
   @override
-  String get games_cover_not_found =>
+  String get game_cover_not_found =>
       'No usable cover found in the game folder or executable';
   @override
-  String get games_cover_searching => 'Looking for a cover...';
+  String get game_cover_searching => 'Looking for a cover...';
   @override
-  String get games_cover_updated => 'Cover updated';
+  String get game_cover_updated => 'Cover updated';
   @override
-  String games_drop_imported({required Object count}) =>
+  String game_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
   @override
-  String get games_drop_no_exe => 'No new game .exe among the dropped files';
+  String get game_drop_no_exe => 'No new game .exe among the dropped files';
   @override
-  String get games_empty => 'No games added yet';
+  String get game_empty => 'No games added yet';
   @override
-  String get games_exe_missing => 'Game executable not found';
+  String get game_exe_missing => 'Game executable not found';
   @override
-  String get games_filter => 'Filter';
+  String get game_filter => 'Filter';
   @override
-  String get games_filter_all => 'All';
+  String get game_filter_hide_nsfw => 'Hide adult titles';
   @override
-  String get games_filter_hide_nsfw => 'Hide adult titles';
+  String get game_filter_local_only => 'Has local file';
   @override
-  String get games_filter_local_only => 'Has local file';
+  String get game_filter_metadata_only => 'Metadata only';
   @override
-  String get games_filter_metadata_only => 'Metadata only';
+  String get game_filter_reset => 'Clear filters';
   @override
-  String get games_filter_reset => 'Clear filters';
+  String get game_filter_source => 'Availability';
   @override
-  String get games_filter_source => 'Availability';
+  String get game_filter_status => 'Play status';
   @override
-  String get games_filter_status => 'Play status';
+  String get game_filter_tags => 'Tags';
   @override
-  String get games_filter_tags => 'Tags';
-  @override
-  String get games_launch_unsupported =>
+  String get game_launch_unsupported =>
       'Launching games is only supported on Windows';
   @override
-  String get games_never_played => 'Never played';
+  String get game_never_played => 'Never played';
   @override
-  String get games_no_match => 'No games match the current filters';
+  String get game_no_match => 'No games match the current filters';
   @override
-  String get games_play_status => 'Play status';
+  String get game_play_status => 'Play status';
   @override
-  String get games_remove => 'Remove';
+  String get game_remove => 'Remove';
   @override
-  String get games_rename => 'Rename';
+  String get game_rename => 'Rename';
   @override
-  String get games_rename_label => 'Game name';
+  String get game_rename_label => 'Game name';
   @override
-  String get games_scrape => 'Fetch metadata';
+  String get game_scrape => 'Fetch metadata';
   @override
-  String get games_search => 'Search games';
+  String get game_search => 'Search games';
   @override
-  String get games_set_cover => 'Set cover';
+  String get game_set_cover => 'Set cover';
   @override
-  String get games_sort => 'Sort';
+  String get game_sort => 'Sort';
   @override
-  String get games_sort_added => 'Date added';
+  String get game_sort_added => 'Date added';
   @override
-  String get games_sort_last_played => 'Last played';
+  String get game_sort_last_played => 'Last played';
   @override
-  String get games_sort_name => 'Name';
+  String get game_sort_name => 'Name';
   @override
-  String get games_sort_release => 'Release date';
+  String get game_sort_release => 'Release date';
   @override
-  String get games_sort_site_score => 'Site rating';
+  String get game_sort_site_score => 'Site rating';
   @override
-  String get games_sort_user_rating => 'My rating';
+  String get game_sort_user_rating => 'My rating';
   @override
-  String get games_status_dropped => 'Dropped';
+  String get game_status_dropped => 'Dropped';
   @override
-  String get games_status_on_hold => 'On hold';
+  String get game_status_on_hold => 'On hold';
   @override
-  String get games_status_played => 'Played';
+  String get game_status_played => 'Played';
   @override
-  String get games_status_playing => 'Playing';
+  String get game_status_playing => 'Playing';
   @override
-  String get games_status_unset => 'Not set';
+  String get game_status_unset => 'Not set';
   @override
-  String get games_status_want_to_play => 'Want to play';
+  String get game_status_want_to_play => 'Want to play';
   @override
-  String get games_view_detail => 'View details';
+  String get game_view_detail => 'View details';
   @override
   String get global_context_capture => 'Capture selection context';
   @override
@@ -72562,18 +72432,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get sync_webdav_missing_fields => 'ข้อมูลไม่ครบ';
   @override
-  String get sync_webdav_password => 'รหัสผ่าน';
-  @override
-  String get sync_webdav_test => 'ทดสอบการเชื่อมต่อ';
-  @override
   String sync_webdav_test_failed({required Object message}) =>
       'เชื่อมต่อไม่สำเร็จ: ${message}';
   @override
-  String get sync_webdav_test_success => 'เชื่อมต่อสำเร็จ';
-  @override
   String get sync_webdav_url => 'URL เซิร์ฟเวอร์';
-  @override
-  String get sync_webdav_username => 'ชื่อผู้ใช้';
   @override
   String tag_added_to_book({required Object name}) =>
       'เพิ่มแท็ก "${name}" ในหนังสือแล้ว';
@@ -75824,63 +75686,62 @@ class _StringsTr extends _StringsEn {
   String get gal_hook_text_font_size_hint =>
       'Drag the overlay\'s corner to resize the window; the caption size is set here.';
   @override
-  String get galgame_helper_download => 'Download';
+  String get game_helper_download => 'Download';
   @override
-  String galgame_helper_download_failed({required Object error}) =>
+  String game_helper_download_failed({required Object error}) =>
       'Engine component download failed: ${error}';
   @override
-  String get galgame_helper_downloading => 'Downloading engine component…';
+  String get game_helper_downloading => 'Downloading engine component…';
   @override
-  String get galgame_helper_install_incomplete =>
+  String get game_helper_install_incomplete =>
       'Engine component install incomplete, please retry';
   @override
-  String galgame_helper_needed_body({required Object size}) =>
+  String game_helper_needed_body({required Object size}) =>
       'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
   @override
-  String get galgame_helper_needed_title => 'Galgame engine component required';
+  String get game_helper_needed_title => 'Galgame engine component required';
   @override
-  String get galgame_helper_size_unknown => 'unknown size';
+  String get game_helper_size_unknown => 'unknown size';
   @override
-  String get galgame_helper_verification_failed =>
+  String get game_helper_verification_failed =>
       'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
   @override
-  String get galgame_upscaling => 'Game window upscaling';
+  String get game_upscaling => 'Game window upscaling';
   @override
-  String get galgame_upscaling_auto => 'Auto';
+  String get game_upscaling_auto => 'Auto';
   @override
-  String get galgame_upscaling_download_body =>
+  String get game_upscaling_download_body =>
       'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
   @override
-  String get galgame_upscaling_download_title => 'Download Magpie upscaler?';
+  String get game_upscaling_download_title => 'Download Magpie upscaler?';
   @override
-  String get galgame_upscaling_hint =>
+  String get game_upscaling_hint =>
       'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
   @override
-  String get galgame_upscaling_hint_external =>
+  String get game_upscaling_hint_external =>
       'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_first_run =>
+  String get game_upscaling_hint_first_run =>
       'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
   @override
-  String get galgame_upscaling_hint_manual =>
+  String get game_upscaling_hint_manual =>
       'Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_not_installed =>
+  String get game_upscaling_hint_not_installed =>
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
-  String get galgame_upscaling_installed_only => 'Installed only';
+  String get game_upscaling_installed_only => 'Installed only';
   @override
-  String get galgame_upscaling_off => 'Off';
+  String get game_upscaling_off => 'Off';
   @override
-  String get galgame_upscaling_status_active => 'Window upscaling is on';
+  String get game_upscaling_status_active => 'Window upscaling is on';
   @override
-  String get galgame_upscaling_status_failed =>
-      'Window upscaling could not start';
+  String get game_upscaling_status_failed => 'Window upscaling could not start';
   @override
-  String get galgame_upscaling_status_manual =>
+  String get game_upscaling_status_manual =>
       'Window upscaling is ready, but did not start on its own';
   @override
-  String get galgame_upscaling_status_unavailable =>
+  String get game_upscaling_status_unavailable =>
       'Window upscaling is not available';
   @override
   String get game_audio_backend_engine => 'Engine PCM';
@@ -76335,94 +76196,92 @@ class _StringsTr extends _StringsEn {
   @override
   String get games => 'Games';
   @override
-  String get games_add => 'Add game';
+  String get game_add => 'Add game';
   @override
-  String get games_already_added => 'This game is already in the library';
+  String get game_already_added => 'This game is already in the library';
   @override
-  String get games_auto_cover => 'Fetch cover automatically';
+  String get game_auto_cover => 'Fetch cover automatically';
   @override
-  String get games_cover_not_found =>
+  String get game_cover_not_found =>
       'No usable cover found in the game folder or executable';
   @override
-  String get games_cover_searching => 'Looking for a cover...';
+  String get game_cover_searching => 'Looking for a cover...';
   @override
-  String get games_cover_updated => 'Cover updated';
+  String get game_cover_updated => 'Cover updated';
   @override
-  String games_drop_imported({required Object count}) =>
+  String game_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
   @override
-  String get games_drop_no_exe => 'No new game .exe among the dropped files';
+  String get game_drop_no_exe => 'No new game .exe among the dropped files';
   @override
-  String get games_empty => 'No games added yet';
+  String get game_empty => 'No games added yet';
   @override
-  String get games_exe_missing => 'Game executable not found';
+  String get game_exe_missing => 'Game executable not found';
   @override
-  String get games_filter => 'Filter';
+  String get game_filter => 'Filter';
   @override
-  String get games_filter_all => 'All';
+  String get game_filter_hide_nsfw => 'Hide adult titles';
   @override
-  String get games_filter_hide_nsfw => 'Hide adult titles';
+  String get game_filter_local_only => 'Has local file';
   @override
-  String get games_filter_local_only => 'Has local file';
+  String get game_filter_metadata_only => 'Metadata only';
   @override
-  String get games_filter_metadata_only => 'Metadata only';
+  String get game_filter_reset => 'Clear filters';
   @override
-  String get games_filter_reset => 'Clear filters';
+  String get game_filter_source => 'Availability';
   @override
-  String get games_filter_source => 'Availability';
+  String get game_filter_status => 'Play status';
   @override
-  String get games_filter_status => 'Play status';
+  String get game_filter_tags => 'Tags';
   @override
-  String get games_filter_tags => 'Tags';
-  @override
-  String get games_launch_unsupported =>
+  String get game_launch_unsupported =>
       'Launching games is only supported on Windows';
   @override
-  String get games_never_played => 'Never played';
+  String get game_never_played => 'Never played';
   @override
-  String get games_no_match => 'No games match the current filters';
+  String get game_no_match => 'No games match the current filters';
   @override
-  String get games_play_status => 'Play status';
+  String get game_play_status => 'Play status';
   @override
-  String get games_remove => 'Remove';
+  String get game_remove => 'Remove';
   @override
-  String get games_rename => 'Rename';
+  String get game_rename => 'Rename';
   @override
-  String get games_rename_label => 'Game name';
+  String get game_rename_label => 'Game name';
   @override
-  String get games_scrape => 'Fetch metadata';
+  String get game_scrape => 'Fetch metadata';
   @override
-  String get games_search => 'Search games';
+  String get game_search => 'Search games';
   @override
-  String get games_set_cover => 'Set cover';
+  String get game_set_cover => 'Set cover';
   @override
-  String get games_sort => 'Sort';
+  String get game_sort => 'Sort';
   @override
-  String get games_sort_added => 'Date added';
+  String get game_sort_added => 'Date added';
   @override
-  String get games_sort_last_played => 'Last played';
+  String get game_sort_last_played => 'Last played';
   @override
-  String get games_sort_name => 'Name';
+  String get game_sort_name => 'Name';
   @override
-  String get games_sort_release => 'Release date';
+  String get game_sort_release => 'Release date';
   @override
-  String get games_sort_site_score => 'Site rating';
+  String get game_sort_site_score => 'Site rating';
   @override
-  String get games_sort_user_rating => 'My rating';
+  String get game_sort_user_rating => 'My rating';
   @override
-  String get games_status_dropped => 'Dropped';
+  String get game_status_dropped => 'Dropped';
   @override
-  String get games_status_on_hold => 'On hold';
+  String get game_status_on_hold => 'On hold';
   @override
-  String get games_status_played => 'Played';
+  String get game_status_played => 'Played';
   @override
-  String get games_status_playing => 'Playing';
+  String get game_status_playing => 'Playing';
   @override
-  String get games_status_unset => 'Not set';
+  String get game_status_unset => 'Not set';
   @override
-  String get games_status_want_to_play => 'Want to play';
+  String get game_status_want_to_play => 'Want to play';
   @override
-  String get games_view_detail => 'View details';
+  String get game_view_detail => 'View details';
   @override
   String get global_context_capture => 'Capture selection context';
   @override
@@ -78440,18 +78299,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get sync_webdav_missing_fields => 'Eksik alanlar';
   @override
-  String get sync_webdav_password => 'Parola';
-  @override
-  String get sync_webdav_test => 'Bağlantıyı test et';
-  @override
   String sync_webdav_test_failed({required Object message}) =>
       'Bağlantı başarısız: ${message}';
   @override
-  String get sync_webdav_test_success => 'Bağlantı başarılı';
-  @override
   String get sync_webdav_url => 'Sunucu URL\'si';
-  @override
-  String get sync_webdav_username => 'Kullanıcı adı';
   @override
   String tag_added_to_book({required Object name}) =>
       '"${name}" etiketi kitaba eklendi.';
@@ -81703,63 +81554,62 @@ class _StringsVi extends _StringsEn {
   String get gal_hook_text_font_size_hint =>
       'Drag the overlay\'s corner to resize the window; the caption size is set here.';
   @override
-  String get galgame_helper_download => 'Download';
+  String get game_helper_download => 'Download';
   @override
-  String galgame_helper_download_failed({required Object error}) =>
+  String game_helper_download_failed({required Object error}) =>
       'Engine component download failed: ${error}';
   @override
-  String get galgame_helper_downloading => 'Downloading engine component…';
+  String get game_helper_downloading => 'Downloading engine component…';
   @override
-  String get galgame_helper_install_incomplete =>
+  String get game_helper_install_incomplete =>
       'Engine component install incomplete, please retry';
   @override
-  String galgame_helper_needed_body({required Object size}) =>
+  String game_helper_needed_body({required Object size}) =>
       'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
   @override
-  String get galgame_helper_needed_title => 'Galgame engine component required';
+  String get game_helper_needed_title => 'Galgame engine component required';
   @override
-  String get galgame_helper_size_unknown => 'unknown size';
+  String get game_helper_size_unknown => 'unknown size';
   @override
-  String get galgame_helper_verification_failed =>
+  String get game_helper_verification_failed =>
       'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
   @override
-  String get galgame_upscaling => 'Game window upscaling';
+  String get game_upscaling => 'Game window upscaling';
   @override
-  String get galgame_upscaling_auto => 'Auto';
+  String get game_upscaling_auto => 'Auto';
   @override
-  String get galgame_upscaling_download_body =>
+  String get game_upscaling_download_body =>
       'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
   @override
-  String get galgame_upscaling_download_title => 'Download Magpie upscaler?';
+  String get game_upscaling_download_title => 'Download Magpie upscaler?';
   @override
-  String get galgame_upscaling_hint =>
+  String get game_upscaling_hint =>
       'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
   @override
-  String get galgame_upscaling_hint_external =>
+  String get game_upscaling_hint_external =>
       'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_first_run =>
+  String get game_upscaling_hint_first_run =>
       'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
   @override
-  String get galgame_upscaling_hint_manual =>
+  String get game_upscaling_hint_manual =>
       'Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_not_installed =>
+  String get game_upscaling_hint_not_installed =>
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
-  String get galgame_upscaling_installed_only => 'Installed only';
+  String get game_upscaling_installed_only => 'Installed only';
   @override
-  String get galgame_upscaling_off => 'Off';
+  String get game_upscaling_off => 'Off';
   @override
-  String get galgame_upscaling_status_active => 'Window upscaling is on';
+  String get game_upscaling_status_active => 'Window upscaling is on';
   @override
-  String get galgame_upscaling_status_failed =>
-      'Window upscaling could not start';
+  String get game_upscaling_status_failed => 'Window upscaling could not start';
   @override
-  String get galgame_upscaling_status_manual =>
+  String get game_upscaling_status_manual =>
       'Window upscaling is ready, but did not start on its own';
   @override
-  String get galgame_upscaling_status_unavailable =>
+  String get game_upscaling_status_unavailable =>
       'Window upscaling is not available';
   @override
   String get game_audio_backend_engine => 'Engine PCM';
@@ -82214,94 +82064,92 @@ class _StringsVi extends _StringsEn {
   @override
   String get games => 'Games';
   @override
-  String get games_add => 'Add game';
+  String get game_add => 'Add game';
   @override
-  String get games_already_added => 'This game is already in the library';
+  String get game_already_added => 'This game is already in the library';
   @override
-  String get games_auto_cover => 'Fetch cover automatically';
+  String get game_auto_cover => 'Fetch cover automatically';
   @override
-  String get games_cover_not_found =>
+  String get game_cover_not_found =>
       'No usable cover found in the game folder or executable';
   @override
-  String get games_cover_searching => 'Looking for a cover...';
+  String get game_cover_searching => 'Looking for a cover...';
   @override
-  String get games_cover_updated => 'Cover updated';
+  String get game_cover_updated => 'Cover updated';
   @override
-  String games_drop_imported({required Object count}) =>
+  String game_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
   @override
-  String get games_drop_no_exe => 'No new game .exe among the dropped files';
+  String get game_drop_no_exe => 'No new game .exe among the dropped files';
   @override
-  String get games_empty => 'No games added yet';
+  String get game_empty => 'No games added yet';
   @override
-  String get games_exe_missing => 'Game executable not found';
+  String get game_exe_missing => 'Game executable not found';
   @override
-  String get games_filter => 'Filter';
+  String get game_filter => 'Filter';
   @override
-  String get games_filter_all => 'All';
+  String get game_filter_hide_nsfw => 'Hide adult titles';
   @override
-  String get games_filter_hide_nsfw => 'Hide adult titles';
+  String get game_filter_local_only => 'Has local file';
   @override
-  String get games_filter_local_only => 'Has local file';
+  String get game_filter_metadata_only => 'Metadata only';
   @override
-  String get games_filter_metadata_only => 'Metadata only';
+  String get game_filter_reset => 'Clear filters';
   @override
-  String get games_filter_reset => 'Clear filters';
+  String get game_filter_source => 'Availability';
   @override
-  String get games_filter_source => 'Availability';
+  String get game_filter_status => 'Play status';
   @override
-  String get games_filter_status => 'Play status';
+  String get game_filter_tags => 'Tags';
   @override
-  String get games_filter_tags => 'Tags';
-  @override
-  String get games_launch_unsupported =>
+  String get game_launch_unsupported =>
       'Launching games is only supported on Windows';
   @override
-  String get games_never_played => 'Never played';
+  String get game_never_played => 'Never played';
   @override
-  String get games_no_match => 'No games match the current filters';
+  String get game_no_match => 'No games match the current filters';
   @override
-  String get games_play_status => 'Play status';
+  String get game_play_status => 'Play status';
   @override
-  String get games_remove => 'Remove';
+  String get game_remove => 'Remove';
   @override
-  String get games_rename => 'Rename';
+  String get game_rename => 'Rename';
   @override
-  String get games_rename_label => 'Game name';
+  String get game_rename_label => 'Game name';
   @override
-  String get games_scrape => 'Fetch metadata';
+  String get game_scrape => 'Fetch metadata';
   @override
-  String get games_search => 'Search games';
+  String get game_search => 'Search games';
   @override
-  String get games_set_cover => 'Set cover';
+  String get game_set_cover => 'Set cover';
   @override
-  String get games_sort => 'Sort';
+  String get game_sort => 'Sort';
   @override
-  String get games_sort_added => 'Date added';
+  String get game_sort_added => 'Date added';
   @override
-  String get games_sort_last_played => 'Last played';
+  String get game_sort_last_played => 'Last played';
   @override
-  String get games_sort_name => 'Name';
+  String get game_sort_name => 'Name';
   @override
-  String get games_sort_release => 'Release date';
+  String get game_sort_release => 'Release date';
   @override
-  String get games_sort_site_score => 'Site rating';
+  String get game_sort_site_score => 'Site rating';
   @override
-  String get games_sort_user_rating => 'My rating';
+  String get game_sort_user_rating => 'My rating';
   @override
-  String get games_status_dropped => 'Dropped';
+  String get game_status_dropped => 'Dropped';
   @override
-  String get games_status_on_hold => 'On hold';
+  String get game_status_on_hold => 'On hold';
   @override
-  String get games_status_played => 'Played';
+  String get game_status_played => 'Played';
   @override
-  String get games_status_playing => 'Playing';
+  String get game_status_playing => 'Playing';
   @override
-  String get games_status_unset => 'Not set';
+  String get game_status_unset => 'Not set';
   @override
-  String get games_status_want_to_play => 'Want to play';
+  String get game_status_want_to_play => 'Want to play';
   @override
-  String get games_view_detail => 'View details';
+  String get game_view_detail => 'View details';
   @override
   String get global_context_capture => 'Capture selection context';
   @override
@@ -84317,18 +84165,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get sync_webdav_missing_fields => 'Thiếu thông tin';
   @override
-  String get sync_webdav_password => 'Mật khẩu';
-  @override
-  String get sync_webdav_test => 'Kiểm tra kết nối';
-  @override
   String sync_webdav_test_failed({required Object message}) =>
       'Kết nối thất bại: ${message}';
   @override
-  String get sync_webdav_test_success => 'Kết nối thành công';
-  @override
   String get sync_webdav_url => 'URL máy chủ';
-  @override
-  String get sync_webdav_username => 'Tên đăng nhập';
   @override
   String tag_added_to_book({required Object name}) =>
       'Đã thêm thẻ "${name}" vào sách.';
@@ -87443,59 +87283,59 @@ class _StringsZhCn extends _StringsEn {
   String get gal_hook_text_font_size_hint =>
       '拖动浮窗右下角只改窗口大小（换来更多可见行），字号在这里单独设置。';
   @override
-  String get galgame_helper_download => '下载';
+  String get game_helper_download => '下载';
   @override
-  String galgame_helper_download_failed({required Object error}) =>
+  String game_helper_download_failed({required Object error}) =>
       '引擎组件下载失败：${error}';
   @override
-  String get galgame_helper_downloading => '正在下载引擎组件…';
+  String get game_helper_downloading => '正在下载引擎组件…';
   @override
-  String get galgame_helper_install_incomplete => '引擎组件安装不完整，请重试';
+  String get game_helper_install_incomplete => '引擎组件安装不完整，请重试';
   @override
-  String galgame_helper_needed_body({required Object size}) =>
+  String game_helper_needed_body({required Object size}) =>
       '启动 galgame 需要引擎-hook 注入器组件（约 ${size}）。它含进程注入代码，与主程序分离分发以避免杀软误报。现在下载吗？';
   @override
-  String get galgame_helper_needed_title => '需要下载 galgame 引擎组件';
+  String get game_helper_needed_title => '需要下载 galgame 引擎组件';
   @override
-  String get galgame_helper_size_unknown => '大小未知';
+  String get game_helper_size_unknown => '大小未知';
   @override
-  String get galgame_helper_verification_failed =>
+  String get game_helper_verification_failed =>
       '引擎组件已被拒绝安装：无法校验其完整性（GitHub 上的 .sha256 校验文件不可达、缺失或与下载内容不符）。为避免装入被篡改的注入器代码，本次安装已终止。';
   @override
-  String get galgame_upscaling => '游戏窗口超分';
+  String get game_upscaling => '游戏窗口超分';
   @override
-  String get galgame_upscaling_auto => '自动';
+  String get game_upscaling_auto => '自动';
   @override
-  String get galgame_upscaling_download_body =>
+  String get game_upscaling_download_body =>
       '游戏窗口超分需要 Magpie（约 10 MB，GPL-3.0，由我们自行从源码编译）。现在下载吗？';
   @override
-  String get galgame_upscaling_download_title => '下载 Magpie 超分组件？';
+  String get game_upscaling_download_title => '下载 Magpie 超分组件？';
   @override
-  String get galgame_upscaling_hint =>
+  String get game_upscaling_hint =>
       '使用 Magpie 在 galgame hook 会话期间对游戏窗口做超分。「自动」会在首次使用时按需下载 Magpie。';
   @override
-  String get galgame_upscaling_hint_external =>
+  String get game_upscaling_hint_external =>
       '你的电脑上已经开着一个 Magpie，Hibiki 没有去动它。按 Win+Shift+A 就能放大游戏窗口。';
   @override
-  String get galgame_upscaling_hint_first_run =>
+  String get game_upscaling_hint_first_run =>
       '这次 Magpie 还在做首次初始化。现在按 Win+Shift+A 就能放大；下次启动游戏会自动放大。';
   @override
-  String get galgame_upscaling_hint_manual => '按 Win+Shift+A 放大游戏窗口。';
+  String get game_upscaling_hint_manual => '按 Win+Shift+A 放大游戏窗口。';
   @override
-  String get galgame_upscaling_hint_not_installed =>
+  String get game_upscaling_hint_not_installed =>
       '没有安装 Magpie。把「游戏窗口超分」改成「自动」即可下载。';
   @override
-  String get galgame_upscaling_installed_only => '仅用已装';
+  String get game_upscaling_installed_only => '仅用已装';
   @override
-  String get galgame_upscaling_off => '关闭';
+  String get game_upscaling_off => '关闭';
   @override
-  String get galgame_upscaling_status_active => '窗口超分已开启';
+  String get game_upscaling_status_active => '窗口超分已开启';
   @override
-  String get galgame_upscaling_status_failed => '窗口超分没能启动';
+  String get game_upscaling_status_failed => '窗口超分没能启动';
   @override
-  String get galgame_upscaling_status_manual => '窗口超分已就绪，但没有自动开始';
+  String get game_upscaling_status_manual => '窗口超分已就绪，但没有自动开始';
   @override
-  String get galgame_upscaling_status_unavailable => '窗口超分暂时用不了';
+  String get game_upscaling_status_unavailable => '窗口超分暂时用不了';
   @override
   String get game_audio_backend_engine => '引擎 PCM';
   @override
@@ -87920,91 +87760,89 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get games => '游戏';
   @override
-  String get games_add => '添加游戏';
+  String get game_add => '添加游戏';
   @override
-  String get games_already_added => '该游戏已在库中';
+  String get game_already_added => '该游戏已在库中';
   @override
-  String get games_auto_cover => '自动获取封面';
+  String get game_auto_cover => '自动获取封面';
   @override
-  String get games_cover_not_found => '游戏目录和程序图标里都没找到可用封面';
+  String get game_cover_not_found => '游戏目录和程序图标里都没找到可用封面';
   @override
-  String get games_cover_searching => '正在查找封面...';
+  String get game_cover_searching => '正在查找封面...';
   @override
-  String get games_cover_updated => '封面已更新';
+  String get game_cover_updated => '封面已更新';
   @override
-  String games_drop_imported({required Object count}) => '已添加 ${count} 个游戏';
+  String game_drop_imported({required Object count}) => '已添加 ${count} 个游戏';
   @override
-  String get games_drop_no_exe => '拖入的文件里没有新的游戏 .exe';
+  String get game_drop_no_exe => '拖入的文件里没有新的游戏 .exe';
   @override
-  String get games_empty => '还没有添加游戏';
+  String get game_empty => '还没有添加游戏';
   @override
-  String get games_exe_missing => '找不到游戏可执行文件';
+  String get game_exe_missing => '找不到游戏可执行文件';
   @override
-  String get games_filter => '筛选';
+  String get game_filter => '筛选';
   @override
-  String get games_filter_all => '全部';
+  String get game_filter_hide_nsfw => '隐藏成人向';
   @override
-  String get games_filter_hide_nsfw => '隐藏成人向';
+  String get game_filter_local_only => '有本地 exe';
   @override
-  String get games_filter_local_only => '有本地 exe';
+  String get game_filter_metadata_only => '仅元数据';
   @override
-  String get games_filter_metadata_only => '仅元数据';
+  String get game_filter_reset => '清除筛选';
   @override
-  String get games_filter_reset => '清除筛选';
+  String get game_filter_source => '条目来源';
   @override
-  String get games_filter_source => '条目来源';
+  String get game_filter_status => '游玩状态';
   @override
-  String get games_filter_status => '游玩状态';
+  String get game_filter_tags => '标签';
   @override
-  String get games_filter_tags => '标签';
+  String get game_launch_unsupported => '启动游戏仅支持 Windows 桌面';
   @override
-  String get games_launch_unsupported => '启动游戏仅支持 Windows 桌面';
+  String get game_never_played => '未游玩';
   @override
-  String get games_never_played => '未游玩';
+  String get game_no_match => '没有符合当前筛选的游戏';
   @override
-  String get games_no_match => '没有符合当前筛选的游戏';
+  String get game_play_status => '游玩状态';
   @override
-  String get games_play_status => '游玩状态';
+  String get game_remove => '移除';
   @override
-  String get games_remove => '移除';
+  String get game_rename => '重命名';
   @override
-  String get games_rename => '重命名';
+  String get game_rename_label => '游戏名称';
   @override
-  String get games_rename_label => '游戏名称';
+  String get game_scrape => '刮削元数据';
   @override
-  String get games_scrape => '刮削元数据';
+  String get game_search => '搜索游戏';
   @override
-  String get games_search => '搜索游戏';
+  String get game_set_cover => '设置封面';
   @override
-  String get games_set_cover => '设置封面';
+  String get game_sort => '排序';
   @override
-  String get games_sort => '排序';
+  String get game_sort_added => '添加时间';
   @override
-  String get games_sort_added => '添加时间';
+  String get game_sort_last_played => '最后游玩';
   @override
-  String get games_sort_last_played => '最后游玩';
+  String get game_sort_name => '名称';
   @override
-  String get games_sort_name => '名称';
+  String get game_sort_release => '发行日';
   @override
-  String get games_sort_release => '发行日';
+  String get game_sort_site_score => '站点评分';
   @override
-  String get games_sort_site_score => '站点评分';
+  String get game_sort_user_rating => '我的评分';
   @override
-  String get games_sort_user_rating => '我的评分';
+  String get game_status_dropped => '弃坑';
   @override
-  String get games_status_dropped => '弃坑';
+  String get game_status_on_hold => '搁置';
   @override
-  String get games_status_on_hold => '搁置';
+  String get game_status_played => '玩过';
   @override
-  String get games_status_played => '玩过';
+  String get game_status_playing => '在玩';
   @override
-  String get games_status_playing => '在玩';
+  String get game_status_unset => '未设置';
   @override
-  String get games_status_unset => '未设置';
+  String get game_status_want_to_play => '想玩';
   @override
-  String get games_status_want_to_play => '想玩';
-  @override
-  String get games_view_detail => '查看详情';
+  String get game_view_detail => '查看详情';
   @override
   String get global_context_capture => '抓取选中文本上下文';
   @override
@@ -89886,18 +89724,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get sync_webdav_missing_fields => '缺少字段';
   @override
-  String get sync_webdav_password => '密码';
-  @override
-  String get sync_webdav_test => '测试连接';
-  @override
   String sync_webdav_test_failed({required Object message}) =>
       '连接失败: ${message}';
   @override
-  String get sync_webdav_test_success => '连接成功';
-  @override
   String get sync_webdav_url => '服务器地址';
-  @override
-  String get sync_webdav_username => '用户名';
   @override
   String tag_added_to_book({required Object name}) => '标签「${name}」已添加到书籍。';
   @override
@@ -92973,63 +92803,62 @@ class _StringsZhHk extends _StringsEn {
   String get gal_hook_text_font_size_hint =>
       'Drag the overlay\'s corner to resize the window; the caption size is set here.';
   @override
-  String get galgame_helper_download => 'Download';
+  String get game_helper_download => 'Download';
   @override
-  String galgame_helper_download_failed({required Object error}) =>
+  String game_helper_download_failed({required Object error}) =>
       'Engine component download failed: ${error}';
   @override
-  String get galgame_helper_downloading => 'Downloading engine component…';
+  String get game_helper_downloading => 'Downloading engine component…';
   @override
-  String get galgame_helper_install_incomplete =>
+  String get game_helper_install_incomplete =>
       'Engine component install incomplete, please retry';
   @override
-  String galgame_helper_needed_body({required Object size}) =>
+  String game_helper_needed_body({required Object size}) =>
       'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
   @override
-  String get galgame_helper_needed_title => 'Galgame engine component required';
+  String get game_helper_needed_title => 'Galgame engine component required';
   @override
-  String get galgame_helper_size_unknown => 'unknown size';
+  String get game_helper_size_unknown => 'unknown size';
   @override
-  String get galgame_helper_verification_failed =>
+  String get game_helper_verification_failed =>
       'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
   @override
-  String get galgame_upscaling => 'Game window upscaling';
+  String get game_upscaling => 'Game window upscaling';
   @override
-  String get galgame_upscaling_auto => 'Auto';
+  String get game_upscaling_auto => 'Auto';
   @override
-  String get galgame_upscaling_download_body =>
+  String get game_upscaling_download_body =>
       'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
   @override
-  String get galgame_upscaling_download_title => 'Download Magpie upscaler?';
+  String get game_upscaling_download_title => 'Download Magpie upscaler?';
   @override
-  String get galgame_upscaling_hint =>
+  String get game_upscaling_hint =>
       'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
   @override
-  String get galgame_upscaling_hint_external =>
+  String get game_upscaling_hint_external =>
       'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_first_run =>
+  String get game_upscaling_hint_first_run =>
       'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
   @override
-  String get galgame_upscaling_hint_manual =>
+  String get game_upscaling_hint_manual =>
       'Press Win+Shift+A to upscale the game window.';
   @override
-  String get galgame_upscaling_hint_not_installed =>
+  String get game_upscaling_hint_not_installed =>
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
-  String get galgame_upscaling_installed_only => 'Installed only';
+  String get game_upscaling_installed_only => 'Installed only';
   @override
-  String get galgame_upscaling_off => 'Off';
+  String get game_upscaling_off => 'Off';
   @override
-  String get galgame_upscaling_status_active => 'Window upscaling is on';
+  String get game_upscaling_status_active => 'Window upscaling is on';
   @override
-  String get galgame_upscaling_status_failed =>
-      'Window upscaling could not start';
+  String get game_upscaling_status_failed => 'Window upscaling could not start';
   @override
-  String get galgame_upscaling_status_manual =>
+  String get game_upscaling_status_manual =>
       'Window upscaling is ready, but did not start on its own';
   @override
-  String get galgame_upscaling_status_unavailable =>
+  String get game_upscaling_status_unavailable =>
       'Window upscaling is not available';
   @override
   String get game_audio_backend_engine => 'Engine PCM';
@@ -93484,94 +93313,92 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get games => 'Games';
   @override
-  String get games_add => 'Add game';
+  String get game_add => 'Add game';
   @override
-  String get games_already_added => 'This game is already in the library';
+  String get game_already_added => 'This game is already in the library';
   @override
-  String get games_auto_cover => 'Fetch cover automatically';
+  String get game_auto_cover => 'Fetch cover automatically';
   @override
-  String get games_cover_not_found =>
+  String get game_cover_not_found =>
       'No usable cover found in the game folder or executable';
   @override
-  String get games_cover_searching => 'Looking for a cover...';
+  String get game_cover_searching => 'Looking for a cover...';
   @override
-  String get games_cover_updated => 'Cover updated';
+  String get game_cover_updated => 'Cover updated';
   @override
-  String games_drop_imported({required Object count}) =>
+  String game_drop_imported({required Object count}) =>
       'Added ${count} game(s)';
   @override
-  String get games_drop_no_exe => 'No new game .exe among the dropped files';
+  String get game_drop_no_exe => 'No new game .exe among the dropped files';
   @override
-  String get games_empty => 'No games added yet';
+  String get game_empty => 'No games added yet';
   @override
-  String get games_exe_missing => 'Game executable not found';
+  String get game_exe_missing => 'Game executable not found';
   @override
-  String get games_filter => 'Filter';
+  String get game_filter => 'Filter';
   @override
-  String get games_filter_all => 'All';
+  String get game_filter_hide_nsfw => 'Hide adult titles';
   @override
-  String get games_filter_hide_nsfw => 'Hide adult titles';
+  String get game_filter_local_only => 'Has local file';
   @override
-  String get games_filter_local_only => 'Has local file';
+  String get game_filter_metadata_only => 'Metadata only';
   @override
-  String get games_filter_metadata_only => 'Metadata only';
+  String get game_filter_reset => 'Clear filters';
   @override
-  String get games_filter_reset => 'Clear filters';
+  String get game_filter_source => 'Availability';
   @override
-  String get games_filter_source => 'Availability';
+  String get game_filter_status => 'Play status';
   @override
-  String get games_filter_status => 'Play status';
+  String get game_filter_tags => 'Tags';
   @override
-  String get games_filter_tags => 'Tags';
-  @override
-  String get games_launch_unsupported =>
+  String get game_launch_unsupported =>
       'Launching games is only supported on Windows';
   @override
-  String get games_never_played => 'Never played';
+  String get game_never_played => 'Never played';
   @override
-  String get games_no_match => 'No games match the current filters';
+  String get game_no_match => 'No games match the current filters';
   @override
-  String get games_play_status => 'Play status';
+  String get game_play_status => 'Play status';
   @override
-  String get games_remove => 'Remove';
+  String get game_remove => 'Remove';
   @override
-  String get games_rename => 'Rename';
+  String get game_rename => 'Rename';
   @override
-  String get games_rename_label => 'Game name';
+  String get game_rename_label => 'Game name';
   @override
-  String get games_scrape => 'Fetch metadata';
+  String get game_scrape => 'Fetch metadata';
   @override
-  String get games_search => 'Search games';
+  String get game_search => 'Search games';
   @override
-  String get games_set_cover => 'Set cover';
+  String get game_set_cover => 'Set cover';
   @override
-  String get games_sort => 'Sort';
+  String get game_sort => 'Sort';
   @override
-  String get games_sort_added => 'Date added';
+  String get game_sort_added => 'Date added';
   @override
-  String get games_sort_last_played => 'Last played';
+  String get game_sort_last_played => 'Last played';
   @override
-  String get games_sort_name => 'Name';
+  String get game_sort_name => 'Name';
   @override
-  String get games_sort_release => 'Release date';
+  String get game_sort_release => 'Release date';
   @override
-  String get games_sort_site_score => 'Site rating';
+  String get game_sort_site_score => 'Site rating';
   @override
-  String get games_sort_user_rating => 'My rating';
+  String get game_sort_user_rating => 'My rating';
   @override
-  String get games_status_dropped => 'Dropped';
+  String get game_status_dropped => 'Dropped';
   @override
-  String get games_status_on_hold => 'On hold';
+  String get game_status_on_hold => 'On hold';
   @override
-  String get games_status_played => 'Played';
+  String get game_status_played => 'Played';
   @override
-  String get games_status_playing => 'Playing';
+  String get game_status_playing => 'Playing';
   @override
-  String get games_status_unset => 'Not set';
+  String get game_status_unset => 'Not set';
   @override
-  String get games_status_want_to_play => 'Want to play';
+  String get game_status_want_to_play => 'Want to play';
   @override
-  String get games_view_detail => 'View details';
+  String get game_view_detail => 'View details';
   @override
   String get global_context_capture => 'Capture selection context';
   @override
@@ -95510,18 +95337,10 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get sync_webdav_missing_fields => '缺少欄位';
   @override
-  String get sync_webdav_password => '密碼';
-  @override
-  String get sync_webdav_test => '測試連線';
-  @override
   String sync_webdav_test_failed({required Object message}) =>
       '連線失敗：${message}';
   @override
-  String get sync_webdav_test_success => '連線成功';
-  @override
   String get sync_webdav_url => '伺服器網址';
-  @override
-  String get sync_webdav_username => '用戶名稱';
   @override
   String tag_added_to_book({required Object name}) => '標籤「${name}」已新增至書籍。';
   @override
@@ -98486,53 +98305,53 @@ extension on _StringsEn {
         return 'Galgame caption font size';
       case 'gal_hook_text_font_size_hint':
         return 'Drag the overlay\'s corner to resize the window; the caption size is set here.';
-      case 'galgame_helper_download':
+      case 'game_helper_download':
         return 'Download';
-      case 'galgame_helper_download_failed':
+      case 'game_helper_download_failed':
         return ({required Object error}) =>
             'Engine component download failed: ${error}';
-      case 'galgame_helper_downloading':
+      case 'game_helper_downloading':
         return 'Downloading engine component…';
-      case 'galgame_helper_install_incomplete':
+      case 'game_helper_install_incomplete':
         return 'Engine component install incomplete, please retry';
-      case 'galgame_helper_needed_body':
+      case 'game_helper_needed_body':
         return ({required Object size}) =>
             'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
-      case 'galgame_helper_needed_title':
+      case 'game_helper_needed_title':
         return 'Galgame engine component required';
-      case 'galgame_helper_size_unknown':
+      case 'game_helper_size_unknown':
         return 'unknown size';
-      case 'galgame_helper_verification_failed':
+      case 'game_helper_verification_failed':
         return 'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
-      case 'galgame_upscaling':
+      case 'game_upscaling':
         return 'Game window upscaling';
-      case 'galgame_upscaling_auto':
+      case 'game_upscaling_auto':
         return 'Auto';
-      case 'galgame_upscaling_download_body':
+      case 'game_upscaling_download_body':
         return 'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
-      case 'galgame_upscaling_download_title':
+      case 'game_upscaling_download_title':
         return 'Download Magpie upscaler?';
-      case 'galgame_upscaling_hint':
+      case 'game_upscaling_hint':
         return 'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
-      case 'galgame_upscaling_hint_external':
+      case 'game_upscaling_hint_external':
         return 'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_first_run':
+      case 'game_upscaling_hint_first_run':
         return 'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
-      case 'galgame_upscaling_hint_manual':
+      case 'game_upscaling_hint_manual':
         return 'Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_not_installed':
+      case 'game_upscaling_hint_not_installed':
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
-      case 'galgame_upscaling_installed_only':
+      case 'game_upscaling_installed_only':
         return 'Installed only';
-      case 'galgame_upscaling_off':
+      case 'game_upscaling_off':
         return 'Off';
-      case 'galgame_upscaling_status_active':
+      case 'game_upscaling_status_active':
         return 'Window upscaling is on';
-      case 'galgame_upscaling_status_failed':
+      case 'game_upscaling_status_failed':
         return 'Window upscaling could not start';
-      case 'galgame_upscaling_status_manual':
+      case 'game_upscaling_status_manual':
         return 'Window upscaling is ready, but did not start on its own';
-      case 'galgame_upscaling_status_unavailable':
+      case 'game_upscaling_status_unavailable':
         return 'Window upscaling is not available';
       case 'game_audio_backend_engine':
         return 'Engine PCM';
@@ -98938,91 +98757,89 @@ extension on _StringsEn {
         return 'Not bound';
       case 'games':
         return 'Games';
-      case 'games_add':
+      case 'game_add':
         return 'Add game';
-      case 'games_already_added':
+      case 'game_already_added':
         return 'This game is already in the library';
-      case 'games_auto_cover':
+      case 'game_auto_cover':
         return 'Fetch cover automatically';
-      case 'games_cover_not_found':
+      case 'game_cover_not_found':
         return 'No usable cover found in the game folder or executable';
-      case 'games_cover_searching':
+      case 'game_cover_searching':
         return 'Looking for a cover...';
-      case 'games_cover_updated':
+      case 'game_cover_updated':
         return 'Cover updated';
-      case 'games_drop_imported':
+      case 'game_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
-      case 'games_drop_no_exe':
+      case 'game_drop_no_exe':
         return 'No new game .exe among the dropped files';
-      case 'games_empty':
+      case 'game_empty':
         return 'No games added yet';
-      case 'games_exe_missing':
+      case 'game_exe_missing':
         return 'Game executable not found';
-      case 'games_filter':
+      case 'game_filter':
         return 'Filter';
-      case 'games_filter_all':
-        return 'All';
-      case 'games_filter_hide_nsfw':
+      case 'game_filter_hide_nsfw':
         return 'Hide adult titles';
-      case 'games_filter_local_only':
+      case 'game_filter_local_only':
         return 'Has local file';
-      case 'games_filter_metadata_only':
+      case 'game_filter_metadata_only':
         return 'Metadata only';
-      case 'games_filter_reset':
+      case 'game_filter_reset':
         return 'Clear filters';
-      case 'games_filter_source':
+      case 'game_filter_source':
         return 'Availability';
-      case 'games_filter_status':
+      case 'game_filter_status':
         return 'Play status';
-      case 'games_filter_tags':
+      case 'game_filter_tags':
         return 'Tags';
-      case 'games_launch_unsupported':
+      case 'game_launch_unsupported':
         return 'Launching games is only supported on Windows';
-      case 'games_never_played':
+      case 'game_never_played':
         return 'Never played';
-      case 'games_no_match':
+      case 'game_no_match':
         return 'No games match the current filters';
-      case 'games_play_status':
+      case 'game_play_status':
         return 'Play status';
-      case 'games_remove':
+      case 'game_remove':
         return 'Remove';
-      case 'games_rename':
+      case 'game_rename':
         return 'Rename';
-      case 'games_rename_label':
+      case 'game_rename_label':
         return 'Game name';
-      case 'games_scrape':
+      case 'game_scrape':
         return 'Fetch metadata';
-      case 'games_search':
+      case 'game_search':
         return 'Search games';
-      case 'games_set_cover':
+      case 'game_set_cover':
         return 'Set cover';
-      case 'games_sort':
+      case 'game_sort':
         return 'Sort';
-      case 'games_sort_added':
+      case 'game_sort_added':
         return 'Date added';
-      case 'games_sort_last_played':
+      case 'game_sort_last_played':
         return 'Last played';
-      case 'games_sort_name':
+      case 'game_sort_name':
         return 'Name';
-      case 'games_sort_release':
+      case 'game_sort_release':
         return 'Release date';
-      case 'games_sort_site_score':
+      case 'game_sort_site_score':
         return 'Site rating';
-      case 'games_sort_user_rating':
+      case 'game_sort_user_rating':
         return 'My rating';
-      case 'games_status_dropped':
+      case 'game_status_dropped':
         return 'Dropped';
-      case 'games_status_on_hold':
+      case 'game_status_on_hold':
         return 'On hold';
-      case 'games_status_played':
+      case 'game_status_played':
         return 'Played';
-      case 'games_status_playing':
+      case 'game_status_playing':
         return 'Playing';
-      case 'games_status_unset':
+      case 'game_status_unset':
         return 'Not set';
-      case 'games_status_want_to_play':
+      case 'game_status_want_to_play':
         return 'Want to play';
-      case 'games_view_detail':
+      case 'game_view_detail':
         return 'View details';
       case 'global_context_capture':
         return 'Capture selection context';
@@ -100873,18 +100690,10 @@ extension on _StringsEn {
         return 'Video files can be very large.';
       case 'sync_webdav_missing_fields':
         return 'Missing fields';
-      case 'sync_webdav_password':
-        return 'Password';
-      case 'sync_webdav_test':
-        return 'Test connection';
       case 'sync_webdav_test_failed':
         return ({required Object message}) => 'Connection failed: ${message}';
-      case 'sync_webdav_test_success':
-        return 'Connection successful';
       case 'sync_webdav_url':
         return 'Server URL';
-      case 'sync_webdav_username':
-        return 'Username';
       case 'tag_added_to_book':
         return ({required Object name}) => 'Tag "${name}" added to book.';
       case 'tag_added_to_collection':
@@ -103751,53 +103560,53 @@ extension on _StringsAr {
         return 'Galgame caption font size';
       case 'gal_hook_text_font_size_hint':
         return 'Drag the overlay\'s corner to resize the window; the caption size is set here.';
-      case 'galgame_helper_download':
+      case 'game_helper_download':
         return 'Download';
-      case 'galgame_helper_download_failed':
+      case 'game_helper_download_failed':
         return ({required Object error}) =>
             'Engine component download failed: ${error}';
-      case 'galgame_helper_downloading':
+      case 'game_helper_downloading':
         return 'Downloading engine component…';
-      case 'galgame_helper_install_incomplete':
+      case 'game_helper_install_incomplete':
         return 'Engine component install incomplete, please retry';
-      case 'galgame_helper_needed_body':
+      case 'game_helper_needed_body':
         return ({required Object size}) =>
             'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
-      case 'galgame_helper_needed_title':
+      case 'game_helper_needed_title':
         return 'Galgame engine component required';
-      case 'galgame_helper_size_unknown':
+      case 'game_helper_size_unknown':
         return 'unknown size';
-      case 'galgame_helper_verification_failed':
+      case 'game_helper_verification_failed':
         return 'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
-      case 'galgame_upscaling':
+      case 'game_upscaling':
         return 'Game window upscaling';
-      case 'galgame_upscaling_auto':
+      case 'game_upscaling_auto':
         return 'Auto';
-      case 'galgame_upscaling_download_body':
+      case 'game_upscaling_download_body':
         return 'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
-      case 'galgame_upscaling_download_title':
+      case 'game_upscaling_download_title':
         return 'Download Magpie upscaler?';
-      case 'galgame_upscaling_hint':
+      case 'game_upscaling_hint':
         return 'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
-      case 'galgame_upscaling_hint_external':
+      case 'game_upscaling_hint_external':
         return 'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_first_run':
+      case 'game_upscaling_hint_first_run':
         return 'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
-      case 'galgame_upscaling_hint_manual':
+      case 'game_upscaling_hint_manual':
         return 'Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_not_installed':
+      case 'game_upscaling_hint_not_installed':
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
-      case 'galgame_upscaling_installed_only':
+      case 'game_upscaling_installed_only':
         return 'Installed only';
-      case 'galgame_upscaling_off':
+      case 'game_upscaling_off':
         return 'Off';
-      case 'galgame_upscaling_status_active':
+      case 'game_upscaling_status_active':
         return 'Window upscaling is on';
-      case 'galgame_upscaling_status_failed':
+      case 'game_upscaling_status_failed':
         return 'Window upscaling could not start';
-      case 'galgame_upscaling_status_manual':
+      case 'game_upscaling_status_manual':
         return 'Window upscaling is ready, but did not start on its own';
-      case 'galgame_upscaling_status_unavailable':
+      case 'game_upscaling_status_unavailable':
         return 'Window upscaling is not available';
       case 'game_audio_backend_engine':
         return 'Engine PCM';
@@ -104203,91 +104012,89 @@ extension on _StringsAr {
         return 'Not bound';
       case 'games':
         return 'Games';
-      case 'games_add':
+      case 'game_add':
         return 'Add game';
-      case 'games_already_added':
+      case 'game_already_added':
         return 'This game is already in the library';
-      case 'games_auto_cover':
+      case 'game_auto_cover':
         return 'Fetch cover automatically';
-      case 'games_cover_not_found':
+      case 'game_cover_not_found':
         return 'No usable cover found in the game folder or executable';
-      case 'games_cover_searching':
+      case 'game_cover_searching':
         return 'Looking for a cover...';
-      case 'games_cover_updated':
+      case 'game_cover_updated':
         return 'Cover updated';
-      case 'games_drop_imported':
+      case 'game_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
-      case 'games_drop_no_exe':
+      case 'game_drop_no_exe':
         return 'No new game .exe among the dropped files';
-      case 'games_empty':
+      case 'game_empty':
         return 'No games added yet';
-      case 'games_exe_missing':
+      case 'game_exe_missing':
         return 'Game executable not found';
-      case 'games_filter':
+      case 'game_filter':
         return 'Filter';
-      case 'games_filter_all':
-        return 'All';
-      case 'games_filter_hide_nsfw':
+      case 'game_filter_hide_nsfw':
         return 'Hide adult titles';
-      case 'games_filter_local_only':
+      case 'game_filter_local_only':
         return 'Has local file';
-      case 'games_filter_metadata_only':
+      case 'game_filter_metadata_only':
         return 'Metadata only';
-      case 'games_filter_reset':
+      case 'game_filter_reset':
         return 'Clear filters';
-      case 'games_filter_source':
+      case 'game_filter_source':
         return 'Availability';
-      case 'games_filter_status':
+      case 'game_filter_status':
         return 'Play status';
-      case 'games_filter_tags':
+      case 'game_filter_tags':
         return 'Tags';
-      case 'games_launch_unsupported':
+      case 'game_launch_unsupported':
         return 'Launching games is only supported on Windows';
-      case 'games_never_played':
+      case 'game_never_played':
         return 'Never played';
-      case 'games_no_match':
+      case 'game_no_match':
         return 'No games match the current filters';
-      case 'games_play_status':
+      case 'game_play_status':
         return 'Play status';
-      case 'games_remove':
+      case 'game_remove':
         return 'Remove';
-      case 'games_rename':
+      case 'game_rename':
         return 'Rename';
-      case 'games_rename_label':
+      case 'game_rename_label':
         return 'Game name';
-      case 'games_scrape':
+      case 'game_scrape':
         return 'Fetch metadata';
-      case 'games_search':
+      case 'game_search':
         return 'Search games';
-      case 'games_set_cover':
+      case 'game_set_cover':
         return 'Set cover';
-      case 'games_sort':
+      case 'game_sort':
         return 'Sort';
-      case 'games_sort_added':
+      case 'game_sort_added':
         return 'Date added';
-      case 'games_sort_last_played':
+      case 'game_sort_last_played':
         return 'Last played';
-      case 'games_sort_name':
+      case 'game_sort_name':
         return 'Name';
-      case 'games_sort_release':
+      case 'game_sort_release':
         return 'Release date';
-      case 'games_sort_site_score':
+      case 'game_sort_site_score':
         return 'Site rating';
-      case 'games_sort_user_rating':
+      case 'game_sort_user_rating':
         return 'My rating';
-      case 'games_status_dropped':
+      case 'game_status_dropped':
         return 'Dropped';
-      case 'games_status_on_hold':
+      case 'game_status_on_hold':
         return 'On hold';
-      case 'games_status_played':
+      case 'game_status_played':
         return 'Played';
-      case 'games_status_playing':
+      case 'game_status_playing':
         return 'Playing';
-      case 'games_status_unset':
+      case 'game_status_unset':
         return 'Not set';
-      case 'games_status_want_to_play':
+      case 'game_status_want_to_play':
         return 'Want to play';
-      case 'games_view_detail':
+      case 'game_view_detail':
         return 'View details';
       case 'global_context_capture':
         return 'Capture selection context';
@@ -106134,18 +105941,10 @@ extension on _StringsAr {
         return 'Video files can be very large.';
       case 'sync_webdav_missing_fields':
         return 'حقول ناقصة';
-      case 'sync_webdav_password':
-        return 'كلمة المرور';
-      case 'sync_webdav_test':
-        return 'اختبار الاتصال';
       case 'sync_webdav_test_failed':
         return ({required Object message}) => 'فشل الاتصال: ${message}';
-      case 'sync_webdav_test_success':
-        return 'نجح الاتصال';
       case 'sync_webdav_url':
         return 'عنوان الخادم';
-      case 'sync_webdav_username':
-        return 'اسم المستخدم';
       case 'tag_added_to_book':
         return ({required Object name}) =>
             'تمت إضافة الوسم "${name}" إلى الكتاب.';
@@ -109016,53 +108815,53 @@ extension on _StringsDe {
         return 'Galgame caption font size';
       case 'gal_hook_text_font_size_hint':
         return 'Drag the overlay\'s corner to resize the window; the caption size is set here.';
-      case 'galgame_helper_download':
+      case 'game_helper_download':
         return 'Download';
-      case 'galgame_helper_download_failed':
+      case 'game_helper_download_failed':
         return ({required Object error}) =>
             'Engine component download failed: ${error}';
-      case 'galgame_helper_downloading':
+      case 'game_helper_downloading':
         return 'Downloading engine component…';
-      case 'galgame_helper_install_incomplete':
+      case 'game_helper_install_incomplete':
         return 'Engine component install incomplete, please retry';
-      case 'galgame_helper_needed_body':
+      case 'game_helper_needed_body':
         return ({required Object size}) =>
             'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
-      case 'galgame_helper_needed_title':
+      case 'game_helper_needed_title':
         return 'Galgame engine component required';
-      case 'galgame_helper_size_unknown':
+      case 'game_helper_size_unknown':
         return 'unknown size';
-      case 'galgame_helper_verification_failed':
+      case 'game_helper_verification_failed':
         return 'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
-      case 'galgame_upscaling':
+      case 'game_upscaling':
         return 'Game window upscaling';
-      case 'galgame_upscaling_auto':
+      case 'game_upscaling_auto':
         return 'Auto';
-      case 'galgame_upscaling_download_body':
+      case 'game_upscaling_download_body':
         return 'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
-      case 'galgame_upscaling_download_title':
+      case 'game_upscaling_download_title':
         return 'Download Magpie upscaler?';
-      case 'galgame_upscaling_hint':
+      case 'game_upscaling_hint':
         return 'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
-      case 'galgame_upscaling_hint_external':
+      case 'game_upscaling_hint_external':
         return 'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_first_run':
+      case 'game_upscaling_hint_first_run':
         return 'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
-      case 'galgame_upscaling_hint_manual':
+      case 'game_upscaling_hint_manual':
         return 'Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_not_installed':
+      case 'game_upscaling_hint_not_installed':
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
-      case 'galgame_upscaling_installed_only':
+      case 'game_upscaling_installed_only':
         return 'Installed only';
-      case 'galgame_upscaling_off':
+      case 'game_upscaling_off':
         return 'Off';
-      case 'galgame_upscaling_status_active':
+      case 'game_upscaling_status_active':
         return 'Window upscaling is on';
-      case 'galgame_upscaling_status_failed':
+      case 'game_upscaling_status_failed':
         return 'Window upscaling could not start';
-      case 'galgame_upscaling_status_manual':
+      case 'game_upscaling_status_manual':
         return 'Window upscaling is ready, but did not start on its own';
-      case 'galgame_upscaling_status_unavailable':
+      case 'game_upscaling_status_unavailable':
         return 'Window upscaling is not available';
       case 'game_audio_backend_engine':
         return 'Engine PCM';
@@ -109468,91 +109267,89 @@ extension on _StringsDe {
         return 'Not bound';
       case 'games':
         return 'Games';
-      case 'games_add':
+      case 'game_add':
         return 'Add game';
-      case 'games_already_added':
+      case 'game_already_added':
         return 'This game is already in the library';
-      case 'games_auto_cover':
+      case 'game_auto_cover':
         return 'Fetch cover automatically';
-      case 'games_cover_not_found':
+      case 'game_cover_not_found':
         return 'No usable cover found in the game folder or executable';
-      case 'games_cover_searching':
+      case 'game_cover_searching':
         return 'Looking for a cover...';
-      case 'games_cover_updated':
+      case 'game_cover_updated':
         return 'Cover updated';
-      case 'games_drop_imported':
+      case 'game_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
-      case 'games_drop_no_exe':
+      case 'game_drop_no_exe':
         return 'No new game .exe among the dropped files';
-      case 'games_empty':
+      case 'game_empty':
         return 'No games added yet';
-      case 'games_exe_missing':
+      case 'game_exe_missing':
         return 'Game executable not found';
-      case 'games_filter':
+      case 'game_filter':
         return 'Filter';
-      case 'games_filter_all':
-        return 'All';
-      case 'games_filter_hide_nsfw':
+      case 'game_filter_hide_nsfw':
         return 'Hide adult titles';
-      case 'games_filter_local_only':
+      case 'game_filter_local_only':
         return 'Has local file';
-      case 'games_filter_metadata_only':
+      case 'game_filter_metadata_only':
         return 'Metadata only';
-      case 'games_filter_reset':
+      case 'game_filter_reset':
         return 'Clear filters';
-      case 'games_filter_source':
+      case 'game_filter_source':
         return 'Availability';
-      case 'games_filter_status':
+      case 'game_filter_status':
         return 'Play status';
-      case 'games_filter_tags':
+      case 'game_filter_tags':
         return 'Tags';
-      case 'games_launch_unsupported':
+      case 'game_launch_unsupported':
         return 'Launching games is only supported on Windows';
-      case 'games_never_played':
+      case 'game_never_played':
         return 'Never played';
-      case 'games_no_match':
+      case 'game_no_match':
         return 'No games match the current filters';
-      case 'games_play_status':
+      case 'game_play_status':
         return 'Play status';
-      case 'games_remove':
+      case 'game_remove':
         return 'Remove';
-      case 'games_rename':
+      case 'game_rename':
         return 'Rename';
-      case 'games_rename_label':
+      case 'game_rename_label':
         return 'Game name';
-      case 'games_scrape':
+      case 'game_scrape':
         return 'Fetch metadata';
-      case 'games_search':
+      case 'game_search':
         return 'Search games';
-      case 'games_set_cover':
+      case 'game_set_cover':
         return 'Set cover';
-      case 'games_sort':
+      case 'game_sort':
         return 'Sort';
-      case 'games_sort_added':
+      case 'game_sort_added':
         return 'Date added';
-      case 'games_sort_last_played':
+      case 'game_sort_last_played':
         return 'Last played';
-      case 'games_sort_name':
+      case 'game_sort_name':
         return 'Name';
-      case 'games_sort_release':
+      case 'game_sort_release':
         return 'Release date';
-      case 'games_sort_site_score':
+      case 'game_sort_site_score':
         return 'Site rating';
-      case 'games_sort_user_rating':
+      case 'game_sort_user_rating':
         return 'My rating';
-      case 'games_status_dropped':
+      case 'game_status_dropped':
         return 'Dropped';
-      case 'games_status_on_hold':
+      case 'game_status_on_hold':
         return 'On hold';
-      case 'games_status_played':
+      case 'game_status_played':
         return 'Played';
-      case 'games_status_playing':
+      case 'game_status_playing':
         return 'Playing';
-      case 'games_status_unset':
+      case 'game_status_unset':
         return 'Not set';
-      case 'games_status_want_to_play':
+      case 'game_status_want_to_play':
         return 'Want to play';
-      case 'games_view_detail':
+      case 'game_view_detail':
         return 'View details';
       case 'global_context_capture':
         return 'Capture selection context';
@@ -111412,19 +111209,11 @@ extension on _StringsDe {
         return 'Video files can be very large.';
       case 'sync_webdav_missing_fields':
         return 'Fehlende Felder';
-      case 'sync_webdav_password':
-        return 'Passwort';
-      case 'sync_webdav_test':
-        return 'Verbindung testen';
       case 'sync_webdav_test_failed':
         return ({required Object message}) =>
             'Verbindung fehlgeschlagen: ${message}';
-      case 'sync_webdav_test_success':
-        return 'Verbindung erfolgreich';
       case 'sync_webdav_url':
         return 'Server-URL';
-      case 'sync_webdav_username':
-        return 'Benutzername';
       case 'tag_added_to_book':
         return ({required Object name}) =>
             'Tag "${name}" zum Buch hinzugefügt.';
@@ -114300,53 +114089,53 @@ extension on _StringsEs {
         return 'Galgame caption font size';
       case 'gal_hook_text_font_size_hint':
         return 'Drag the overlay\'s corner to resize the window; the caption size is set here.';
-      case 'galgame_helper_download':
+      case 'game_helper_download':
         return 'Download';
-      case 'galgame_helper_download_failed':
+      case 'game_helper_download_failed':
         return ({required Object error}) =>
             'Engine component download failed: ${error}';
-      case 'galgame_helper_downloading':
+      case 'game_helper_downloading':
         return 'Downloading engine component…';
-      case 'galgame_helper_install_incomplete':
+      case 'game_helper_install_incomplete':
         return 'Engine component install incomplete, please retry';
-      case 'galgame_helper_needed_body':
+      case 'game_helper_needed_body':
         return ({required Object size}) =>
             'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
-      case 'galgame_helper_needed_title':
+      case 'game_helper_needed_title':
         return 'Galgame engine component required';
-      case 'galgame_helper_size_unknown':
+      case 'game_helper_size_unknown':
         return 'unknown size';
-      case 'galgame_helper_verification_failed':
+      case 'game_helper_verification_failed':
         return 'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
-      case 'galgame_upscaling':
+      case 'game_upscaling':
         return 'Game window upscaling';
-      case 'galgame_upscaling_auto':
+      case 'game_upscaling_auto':
         return 'Auto';
-      case 'galgame_upscaling_download_body':
+      case 'game_upscaling_download_body':
         return 'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
-      case 'galgame_upscaling_download_title':
+      case 'game_upscaling_download_title':
         return 'Download Magpie upscaler?';
-      case 'galgame_upscaling_hint':
+      case 'game_upscaling_hint':
         return 'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
-      case 'galgame_upscaling_hint_external':
+      case 'game_upscaling_hint_external':
         return 'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_first_run':
+      case 'game_upscaling_hint_first_run':
         return 'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
-      case 'galgame_upscaling_hint_manual':
+      case 'game_upscaling_hint_manual':
         return 'Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_not_installed':
+      case 'game_upscaling_hint_not_installed':
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
-      case 'galgame_upscaling_installed_only':
+      case 'game_upscaling_installed_only':
         return 'Installed only';
-      case 'galgame_upscaling_off':
+      case 'game_upscaling_off':
         return 'Off';
-      case 'galgame_upscaling_status_active':
+      case 'game_upscaling_status_active':
         return 'Window upscaling is on';
-      case 'galgame_upscaling_status_failed':
+      case 'game_upscaling_status_failed':
         return 'Window upscaling could not start';
-      case 'galgame_upscaling_status_manual':
+      case 'game_upscaling_status_manual':
         return 'Window upscaling is ready, but did not start on its own';
-      case 'galgame_upscaling_status_unavailable':
+      case 'game_upscaling_status_unavailable':
         return 'Window upscaling is not available';
       case 'game_audio_backend_engine':
         return 'Engine PCM';
@@ -114752,91 +114541,89 @@ extension on _StringsEs {
         return 'Not bound';
       case 'games':
         return 'Games';
-      case 'games_add':
+      case 'game_add':
         return 'Add game';
-      case 'games_already_added':
+      case 'game_already_added':
         return 'This game is already in the library';
-      case 'games_auto_cover':
+      case 'game_auto_cover':
         return 'Fetch cover automatically';
-      case 'games_cover_not_found':
+      case 'game_cover_not_found':
         return 'No usable cover found in the game folder or executable';
-      case 'games_cover_searching':
+      case 'game_cover_searching':
         return 'Looking for a cover...';
-      case 'games_cover_updated':
+      case 'game_cover_updated':
         return 'Cover updated';
-      case 'games_drop_imported':
+      case 'game_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
-      case 'games_drop_no_exe':
+      case 'game_drop_no_exe':
         return 'No new game .exe among the dropped files';
-      case 'games_empty':
+      case 'game_empty':
         return 'No games added yet';
-      case 'games_exe_missing':
+      case 'game_exe_missing':
         return 'Game executable not found';
-      case 'games_filter':
+      case 'game_filter':
         return 'Filter';
-      case 'games_filter_all':
-        return 'All';
-      case 'games_filter_hide_nsfw':
+      case 'game_filter_hide_nsfw':
         return 'Hide adult titles';
-      case 'games_filter_local_only':
+      case 'game_filter_local_only':
         return 'Has local file';
-      case 'games_filter_metadata_only':
+      case 'game_filter_metadata_only':
         return 'Metadata only';
-      case 'games_filter_reset':
+      case 'game_filter_reset':
         return 'Clear filters';
-      case 'games_filter_source':
+      case 'game_filter_source':
         return 'Availability';
-      case 'games_filter_status':
+      case 'game_filter_status':
         return 'Play status';
-      case 'games_filter_tags':
+      case 'game_filter_tags':
         return 'Tags';
-      case 'games_launch_unsupported':
+      case 'game_launch_unsupported':
         return 'Launching games is only supported on Windows';
-      case 'games_never_played':
+      case 'game_never_played':
         return 'Never played';
-      case 'games_no_match':
+      case 'game_no_match':
         return 'No games match the current filters';
-      case 'games_play_status':
+      case 'game_play_status':
         return 'Play status';
-      case 'games_remove':
+      case 'game_remove':
         return 'Remove';
-      case 'games_rename':
+      case 'game_rename':
         return 'Rename';
-      case 'games_rename_label':
+      case 'game_rename_label':
         return 'Game name';
-      case 'games_scrape':
+      case 'game_scrape':
         return 'Fetch metadata';
-      case 'games_search':
+      case 'game_search':
         return 'Search games';
-      case 'games_set_cover':
+      case 'game_set_cover':
         return 'Set cover';
-      case 'games_sort':
+      case 'game_sort':
         return 'Sort';
-      case 'games_sort_added':
+      case 'game_sort_added':
         return 'Date added';
-      case 'games_sort_last_played':
+      case 'game_sort_last_played':
         return 'Last played';
-      case 'games_sort_name':
+      case 'game_sort_name':
         return 'Name';
-      case 'games_sort_release':
+      case 'game_sort_release':
         return 'Release date';
-      case 'games_sort_site_score':
+      case 'game_sort_site_score':
         return 'Site rating';
-      case 'games_sort_user_rating':
+      case 'game_sort_user_rating':
         return 'My rating';
-      case 'games_status_dropped':
+      case 'game_status_dropped':
         return 'Dropped';
-      case 'games_status_on_hold':
+      case 'game_status_on_hold':
         return 'On hold';
-      case 'games_status_played':
+      case 'game_status_played':
         return 'Played';
-      case 'games_status_playing':
+      case 'game_status_playing':
         return 'Playing';
-      case 'games_status_unset':
+      case 'game_status_unset':
         return 'Not set';
-      case 'games_status_want_to_play':
+      case 'game_status_want_to_play':
         return 'Want to play';
-      case 'games_view_detail':
+      case 'game_view_detail':
         return 'View details';
       case 'global_context_capture':
         return 'Capture selection context';
@@ -116695,18 +116482,10 @@ extension on _StringsEs {
         return 'Video files can be very large.';
       case 'sync_webdav_missing_fields':
         return 'Faltan campos';
-      case 'sync_webdav_password':
-        return 'Contraseña';
-      case 'sync_webdav_test':
-        return 'Probar conexión';
       case 'sync_webdav_test_failed':
         return ({required Object message}) => 'Error de conexión: ${message}';
-      case 'sync_webdav_test_success':
-        return 'Conexión correcta';
       case 'sync_webdav_url':
         return 'URL del servidor';
-      case 'sync_webdav_username':
-        return 'Usuario';
       case 'tag_added_to_book':
         return ({required Object name}) =>
             'Etiqueta "${name}" añadida al libro.';
@@ -119585,53 +119364,53 @@ extension on _StringsFr {
         return 'Galgame caption font size';
       case 'gal_hook_text_font_size_hint':
         return 'Drag the overlay\'s corner to resize the window; the caption size is set here.';
-      case 'galgame_helper_download':
+      case 'game_helper_download':
         return 'Download';
-      case 'galgame_helper_download_failed':
+      case 'game_helper_download_failed':
         return ({required Object error}) =>
             'Engine component download failed: ${error}';
-      case 'galgame_helper_downloading':
+      case 'game_helper_downloading':
         return 'Downloading engine component…';
-      case 'galgame_helper_install_incomplete':
+      case 'game_helper_install_incomplete':
         return 'Engine component install incomplete, please retry';
-      case 'galgame_helper_needed_body':
+      case 'game_helper_needed_body':
         return ({required Object size}) =>
             'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
-      case 'galgame_helper_needed_title':
+      case 'game_helper_needed_title':
         return 'Galgame engine component required';
-      case 'galgame_helper_size_unknown':
+      case 'game_helper_size_unknown':
         return 'unknown size';
-      case 'galgame_helper_verification_failed':
+      case 'game_helper_verification_failed':
         return 'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
-      case 'galgame_upscaling':
+      case 'game_upscaling':
         return 'Game window upscaling';
-      case 'galgame_upscaling_auto':
+      case 'game_upscaling_auto':
         return 'Auto';
-      case 'galgame_upscaling_download_body':
+      case 'game_upscaling_download_body':
         return 'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
-      case 'galgame_upscaling_download_title':
+      case 'game_upscaling_download_title':
         return 'Download Magpie upscaler?';
-      case 'galgame_upscaling_hint':
+      case 'game_upscaling_hint':
         return 'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
-      case 'galgame_upscaling_hint_external':
+      case 'game_upscaling_hint_external':
         return 'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_first_run':
+      case 'game_upscaling_hint_first_run':
         return 'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
-      case 'galgame_upscaling_hint_manual':
+      case 'game_upscaling_hint_manual':
         return 'Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_not_installed':
+      case 'game_upscaling_hint_not_installed':
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
-      case 'galgame_upscaling_installed_only':
+      case 'game_upscaling_installed_only':
         return 'Installed only';
-      case 'galgame_upscaling_off':
+      case 'game_upscaling_off':
         return 'Off';
-      case 'galgame_upscaling_status_active':
+      case 'game_upscaling_status_active':
         return 'Window upscaling is on';
-      case 'galgame_upscaling_status_failed':
+      case 'game_upscaling_status_failed':
         return 'Window upscaling could not start';
-      case 'galgame_upscaling_status_manual':
+      case 'game_upscaling_status_manual':
         return 'Window upscaling is ready, but did not start on its own';
-      case 'galgame_upscaling_status_unavailable':
+      case 'game_upscaling_status_unavailable':
         return 'Window upscaling is not available';
       case 'game_audio_backend_engine':
         return 'Engine PCM';
@@ -120037,91 +119816,89 @@ extension on _StringsFr {
         return 'Not bound';
       case 'games':
         return 'Games';
-      case 'games_add':
+      case 'game_add':
         return 'Add game';
-      case 'games_already_added':
+      case 'game_already_added':
         return 'This game is already in the library';
-      case 'games_auto_cover':
+      case 'game_auto_cover':
         return 'Fetch cover automatically';
-      case 'games_cover_not_found':
+      case 'game_cover_not_found':
         return 'No usable cover found in the game folder or executable';
-      case 'games_cover_searching':
+      case 'game_cover_searching':
         return 'Looking for a cover...';
-      case 'games_cover_updated':
+      case 'game_cover_updated':
         return 'Cover updated';
-      case 'games_drop_imported':
+      case 'game_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
-      case 'games_drop_no_exe':
+      case 'game_drop_no_exe':
         return 'No new game .exe among the dropped files';
-      case 'games_empty':
+      case 'game_empty':
         return 'No games added yet';
-      case 'games_exe_missing':
+      case 'game_exe_missing':
         return 'Game executable not found';
-      case 'games_filter':
+      case 'game_filter':
         return 'Filter';
-      case 'games_filter_all':
-        return 'All';
-      case 'games_filter_hide_nsfw':
+      case 'game_filter_hide_nsfw':
         return 'Hide adult titles';
-      case 'games_filter_local_only':
+      case 'game_filter_local_only':
         return 'Has local file';
-      case 'games_filter_metadata_only':
+      case 'game_filter_metadata_only':
         return 'Metadata only';
-      case 'games_filter_reset':
+      case 'game_filter_reset':
         return 'Clear filters';
-      case 'games_filter_source':
+      case 'game_filter_source':
         return 'Availability';
-      case 'games_filter_status':
+      case 'game_filter_status':
         return 'Play status';
-      case 'games_filter_tags':
+      case 'game_filter_tags':
         return 'Tags';
-      case 'games_launch_unsupported':
+      case 'game_launch_unsupported':
         return 'Launching games is only supported on Windows';
-      case 'games_never_played':
+      case 'game_never_played':
         return 'Never played';
-      case 'games_no_match':
+      case 'game_no_match':
         return 'No games match the current filters';
-      case 'games_play_status':
+      case 'game_play_status':
         return 'Play status';
-      case 'games_remove':
+      case 'game_remove':
         return 'Remove';
-      case 'games_rename':
+      case 'game_rename':
         return 'Rename';
-      case 'games_rename_label':
+      case 'game_rename_label':
         return 'Game name';
-      case 'games_scrape':
+      case 'game_scrape':
         return 'Fetch metadata';
-      case 'games_search':
+      case 'game_search':
         return 'Search games';
-      case 'games_set_cover':
+      case 'game_set_cover':
         return 'Set cover';
-      case 'games_sort':
+      case 'game_sort':
         return 'Sort';
-      case 'games_sort_added':
+      case 'game_sort_added':
         return 'Date added';
-      case 'games_sort_last_played':
+      case 'game_sort_last_played':
         return 'Last played';
-      case 'games_sort_name':
+      case 'game_sort_name':
         return 'Name';
-      case 'games_sort_release':
+      case 'game_sort_release':
         return 'Release date';
-      case 'games_sort_site_score':
+      case 'game_sort_site_score':
         return 'Site rating';
-      case 'games_sort_user_rating':
+      case 'game_sort_user_rating':
         return 'My rating';
-      case 'games_status_dropped':
+      case 'game_status_dropped':
         return 'Dropped';
-      case 'games_status_on_hold':
+      case 'game_status_on_hold':
         return 'On hold';
-      case 'games_status_played':
+      case 'game_status_played':
         return 'Played';
-      case 'games_status_playing':
+      case 'game_status_playing':
         return 'Playing';
-      case 'games_status_unset':
+      case 'game_status_unset':
         return 'Not set';
-      case 'games_status_want_to_play':
+      case 'game_status_want_to_play':
         return 'Want to play';
-      case 'games_view_detail':
+      case 'game_view_detail':
         return 'View details';
       case 'global_context_capture':
         return 'Capture selection context';
@@ -121980,19 +121757,11 @@ extension on _StringsFr {
         return 'Video files can be very large.';
       case 'sync_webdav_missing_fields':
         return 'Champs manquants';
-      case 'sync_webdav_password':
-        return 'Mot de passe';
-      case 'sync_webdav_test':
-        return 'Tester la connexion';
       case 'sync_webdav_test_failed':
         return ({required Object message}) =>
             'Échec de la connexion : ${message}';
-      case 'sync_webdav_test_success':
-        return 'Connexion réussie';
       case 'sync_webdav_url':
         return 'URL du serveur';
-      case 'sync_webdav_username':
-        return 'Nom d\'utilisateur';
       case 'tag_added_to_book':
         return ({required Object name}) => 'Tag "${name}" ajouté au livre.';
       case 'tag_added_to_collection':
@@ -124868,53 +124637,53 @@ extension on _StringsId {
         return 'Galgame caption font size';
       case 'gal_hook_text_font_size_hint':
         return 'Drag the overlay\'s corner to resize the window; the caption size is set here.';
-      case 'galgame_helper_download':
+      case 'game_helper_download':
         return 'Download';
-      case 'galgame_helper_download_failed':
+      case 'game_helper_download_failed':
         return ({required Object error}) =>
             'Engine component download failed: ${error}';
-      case 'galgame_helper_downloading':
+      case 'game_helper_downloading':
         return 'Downloading engine component…';
-      case 'galgame_helper_install_incomplete':
+      case 'game_helper_install_incomplete':
         return 'Engine component install incomplete, please retry';
-      case 'galgame_helper_needed_body':
+      case 'game_helper_needed_body':
         return ({required Object size}) =>
             'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
-      case 'galgame_helper_needed_title':
+      case 'game_helper_needed_title':
         return 'Galgame engine component required';
-      case 'galgame_helper_size_unknown':
+      case 'game_helper_size_unknown':
         return 'unknown size';
-      case 'galgame_helper_verification_failed':
+      case 'game_helper_verification_failed':
         return 'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
-      case 'galgame_upscaling':
+      case 'game_upscaling':
         return 'Game window upscaling';
-      case 'galgame_upscaling_auto':
+      case 'game_upscaling_auto':
         return 'Auto';
-      case 'galgame_upscaling_download_body':
+      case 'game_upscaling_download_body':
         return 'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
-      case 'galgame_upscaling_download_title':
+      case 'game_upscaling_download_title':
         return 'Download Magpie upscaler?';
-      case 'galgame_upscaling_hint':
+      case 'game_upscaling_hint':
         return 'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
-      case 'galgame_upscaling_hint_external':
+      case 'game_upscaling_hint_external':
         return 'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_first_run':
+      case 'game_upscaling_hint_first_run':
         return 'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
-      case 'galgame_upscaling_hint_manual':
+      case 'game_upscaling_hint_manual':
         return 'Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_not_installed':
+      case 'game_upscaling_hint_not_installed':
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
-      case 'galgame_upscaling_installed_only':
+      case 'game_upscaling_installed_only':
         return 'Installed only';
-      case 'galgame_upscaling_off':
+      case 'game_upscaling_off':
         return 'Off';
-      case 'galgame_upscaling_status_active':
+      case 'game_upscaling_status_active':
         return 'Window upscaling is on';
-      case 'galgame_upscaling_status_failed':
+      case 'game_upscaling_status_failed':
         return 'Window upscaling could not start';
-      case 'galgame_upscaling_status_manual':
+      case 'game_upscaling_status_manual':
         return 'Window upscaling is ready, but did not start on its own';
-      case 'galgame_upscaling_status_unavailable':
+      case 'game_upscaling_status_unavailable':
         return 'Window upscaling is not available';
       case 'game_audio_backend_engine':
         return 'Engine PCM';
@@ -125320,91 +125089,89 @@ extension on _StringsId {
         return 'Not bound';
       case 'games':
         return 'Games';
-      case 'games_add':
+      case 'game_add':
         return 'Add game';
-      case 'games_already_added':
+      case 'game_already_added':
         return 'This game is already in the library';
-      case 'games_auto_cover':
+      case 'game_auto_cover':
         return 'Fetch cover automatically';
-      case 'games_cover_not_found':
+      case 'game_cover_not_found':
         return 'No usable cover found in the game folder or executable';
-      case 'games_cover_searching':
+      case 'game_cover_searching':
         return 'Looking for a cover...';
-      case 'games_cover_updated':
+      case 'game_cover_updated':
         return 'Cover updated';
-      case 'games_drop_imported':
+      case 'game_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
-      case 'games_drop_no_exe':
+      case 'game_drop_no_exe':
         return 'No new game .exe among the dropped files';
-      case 'games_empty':
+      case 'game_empty':
         return 'No games added yet';
-      case 'games_exe_missing':
+      case 'game_exe_missing':
         return 'Game executable not found';
-      case 'games_filter':
+      case 'game_filter':
         return 'Filter';
-      case 'games_filter_all':
-        return 'All';
-      case 'games_filter_hide_nsfw':
+      case 'game_filter_hide_nsfw':
         return 'Hide adult titles';
-      case 'games_filter_local_only':
+      case 'game_filter_local_only':
         return 'Has local file';
-      case 'games_filter_metadata_only':
+      case 'game_filter_metadata_only':
         return 'Metadata only';
-      case 'games_filter_reset':
+      case 'game_filter_reset':
         return 'Clear filters';
-      case 'games_filter_source':
+      case 'game_filter_source':
         return 'Availability';
-      case 'games_filter_status':
+      case 'game_filter_status':
         return 'Play status';
-      case 'games_filter_tags':
+      case 'game_filter_tags':
         return 'Tags';
-      case 'games_launch_unsupported':
+      case 'game_launch_unsupported':
         return 'Launching games is only supported on Windows';
-      case 'games_never_played':
+      case 'game_never_played':
         return 'Never played';
-      case 'games_no_match':
+      case 'game_no_match':
         return 'No games match the current filters';
-      case 'games_play_status':
+      case 'game_play_status':
         return 'Play status';
-      case 'games_remove':
+      case 'game_remove':
         return 'Remove';
-      case 'games_rename':
+      case 'game_rename':
         return 'Rename';
-      case 'games_rename_label':
+      case 'game_rename_label':
         return 'Game name';
-      case 'games_scrape':
+      case 'game_scrape':
         return 'Fetch metadata';
-      case 'games_search':
+      case 'game_search':
         return 'Search games';
-      case 'games_set_cover':
+      case 'game_set_cover':
         return 'Set cover';
-      case 'games_sort':
+      case 'game_sort':
         return 'Sort';
-      case 'games_sort_added':
+      case 'game_sort_added':
         return 'Date added';
-      case 'games_sort_last_played':
+      case 'game_sort_last_played':
         return 'Last played';
-      case 'games_sort_name':
+      case 'game_sort_name':
         return 'Name';
-      case 'games_sort_release':
+      case 'game_sort_release':
         return 'Release date';
-      case 'games_sort_site_score':
+      case 'game_sort_site_score':
         return 'Site rating';
-      case 'games_sort_user_rating':
+      case 'game_sort_user_rating':
         return 'My rating';
-      case 'games_status_dropped':
+      case 'game_status_dropped':
         return 'Dropped';
-      case 'games_status_on_hold':
+      case 'game_status_on_hold':
         return 'On hold';
-      case 'games_status_played':
+      case 'game_status_played':
         return 'Played';
-      case 'games_status_playing':
+      case 'game_status_playing':
         return 'Playing';
-      case 'games_status_unset':
+      case 'game_status_unset':
         return 'Not set';
-      case 'games_status_want_to_play':
+      case 'game_status_want_to_play':
         return 'Want to play';
-      case 'games_view_detail':
+      case 'game_view_detail':
         return 'View details';
       case 'global_context_capture':
         return 'Capture selection context';
@@ -127257,18 +127024,10 @@ extension on _StringsId {
         return 'Video files can be very large.';
       case 'sync_webdav_missing_fields':
         return 'Ada kolom yang belum diisi';
-      case 'sync_webdav_password':
-        return 'Kata sandi';
-      case 'sync_webdav_test':
-        return 'Uji koneksi';
       case 'sync_webdav_test_failed':
         return ({required Object message}) => 'Koneksi gagal: ${message}';
-      case 'sync_webdav_test_success':
-        return 'Koneksi berhasil';
       case 'sync_webdav_url':
         return 'URL server';
-      case 'sync_webdav_username':
-        return 'Nama pengguna';
       case 'tag_added_to_book':
         return ({required Object name}) => 'Tag "${name}" ditambahkan ke buku.';
       case 'tag_added_to_collection':
@@ -130140,53 +129899,53 @@ extension on _StringsIt {
         return 'Galgame caption font size';
       case 'gal_hook_text_font_size_hint':
         return 'Drag the overlay\'s corner to resize the window; the caption size is set here.';
-      case 'galgame_helper_download':
+      case 'game_helper_download':
         return 'Download';
-      case 'galgame_helper_download_failed':
+      case 'game_helper_download_failed':
         return ({required Object error}) =>
             'Engine component download failed: ${error}';
-      case 'galgame_helper_downloading':
+      case 'game_helper_downloading':
         return 'Downloading engine component…';
-      case 'galgame_helper_install_incomplete':
+      case 'game_helper_install_incomplete':
         return 'Engine component install incomplete, please retry';
-      case 'galgame_helper_needed_body':
+      case 'game_helper_needed_body':
         return ({required Object size}) =>
             'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
-      case 'galgame_helper_needed_title':
+      case 'game_helper_needed_title':
         return 'Galgame engine component required';
-      case 'galgame_helper_size_unknown':
+      case 'game_helper_size_unknown':
         return 'unknown size';
-      case 'galgame_helper_verification_failed':
+      case 'game_helper_verification_failed':
         return 'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
-      case 'galgame_upscaling':
+      case 'game_upscaling':
         return 'Game window upscaling';
-      case 'galgame_upscaling_auto':
+      case 'game_upscaling_auto':
         return 'Auto';
-      case 'galgame_upscaling_download_body':
+      case 'game_upscaling_download_body':
         return 'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
-      case 'galgame_upscaling_download_title':
+      case 'game_upscaling_download_title':
         return 'Download Magpie upscaler?';
-      case 'galgame_upscaling_hint':
+      case 'game_upscaling_hint':
         return 'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
-      case 'galgame_upscaling_hint_external':
+      case 'game_upscaling_hint_external':
         return 'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_first_run':
+      case 'game_upscaling_hint_first_run':
         return 'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
-      case 'galgame_upscaling_hint_manual':
+      case 'game_upscaling_hint_manual':
         return 'Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_not_installed':
+      case 'game_upscaling_hint_not_installed':
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
-      case 'galgame_upscaling_installed_only':
+      case 'game_upscaling_installed_only':
         return 'Installed only';
-      case 'galgame_upscaling_off':
+      case 'game_upscaling_off':
         return 'Off';
-      case 'galgame_upscaling_status_active':
+      case 'game_upscaling_status_active':
         return 'Window upscaling is on';
-      case 'galgame_upscaling_status_failed':
+      case 'game_upscaling_status_failed':
         return 'Window upscaling could not start';
-      case 'galgame_upscaling_status_manual':
+      case 'game_upscaling_status_manual':
         return 'Window upscaling is ready, but did not start on its own';
-      case 'galgame_upscaling_status_unavailable':
+      case 'game_upscaling_status_unavailable':
         return 'Window upscaling is not available';
       case 'game_audio_backend_engine':
         return 'Engine PCM';
@@ -130592,91 +130351,89 @@ extension on _StringsIt {
         return 'Not bound';
       case 'games':
         return 'Games';
-      case 'games_add':
+      case 'game_add':
         return 'Add game';
-      case 'games_already_added':
+      case 'game_already_added':
         return 'This game is already in the library';
-      case 'games_auto_cover':
+      case 'game_auto_cover':
         return 'Fetch cover automatically';
-      case 'games_cover_not_found':
+      case 'game_cover_not_found':
         return 'No usable cover found in the game folder or executable';
-      case 'games_cover_searching':
+      case 'game_cover_searching':
         return 'Looking for a cover...';
-      case 'games_cover_updated':
+      case 'game_cover_updated':
         return 'Cover updated';
-      case 'games_drop_imported':
+      case 'game_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
-      case 'games_drop_no_exe':
+      case 'game_drop_no_exe':
         return 'No new game .exe among the dropped files';
-      case 'games_empty':
+      case 'game_empty':
         return 'No games added yet';
-      case 'games_exe_missing':
+      case 'game_exe_missing':
         return 'Game executable not found';
-      case 'games_filter':
+      case 'game_filter':
         return 'Filter';
-      case 'games_filter_all':
-        return 'All';
-      case 'games_filter_hide_nsfw':
+      case 'game_filter_hide_nsfw':
         return 'Hide adult titles';
-      case 'games_filter_local_only':
+      case 'game_filter_local_only':
         return 'Has local file';
-      case 'games_filter_metadata_only':
+      case 'game_filter_metadata_only':
         return 'Metadata only';
-      case 'games_filter_reset':
+      case 'game_filter_reset':
         return 'Clear filters';
-      case 'games_filter_source':
+      case 'game_filter_source':
         return 'Availability';
-      case 'games_filter_status':
+      case 'game_filter_status':
         return 'Play status';
-      case 'games_filter_tags':
+      case 'game_filter_tags':
         return 'Tags';
-      case 'games_launch_unsupported':
+      case 'game_launch_unsupported':
         return 'Launching games is only supported on Windows';
-      case 'games_never_played':
+      case 'game_never_played':
         return 'Never played';
-      case 'games_no_match':
+      case 'game_no_match':
         return 'No games match the current filters';
-      case 'games_play_status':
+      case 'game_play_status':
         return 'Play status';
-      case 'games_remove':
+      case 'game_remove':
         return 'Remove';
-      case 'games_rename':
+      case 'game_rename':
         return 'Rename';
-      case 'games_rename_label':
+      case 'game_rename_label':
         return 'Game name';
-      case 'games_scrape':
+      case 'game_scrape':
         return 'Fetch metadata';
-      case 'games_search':
+      case 'game_search':
         return 'Search games';
-      case 'games_set_cover':
+      case 'game_set_cover':
         return 'Set cover';
-      case 'games_sort':
+      case 'game_sort':
         return 'Sort';
-      case 'games_sort_added':
+      case 'game_sort_added':
         return 'Date added';
-      case 'games_sort_last_played':
+      case 'game_sort_last_played':
         return 'Last played';
-      case 'games_sort_name':
+      case 'game_sort_name':
         return 'Name';
-      case 'games_sort_release':
+      case 'game_sort_release':
         return 'Release date';
-      case 'games_sort_site_score':
+      case 'game_sort_site_score':
         return 'Site rating';
-      case 'games_sort_user_rating':
+      case 'game_sort_user_rating':
         return 'My rating';
-      case 'games_status_dropped':
+      case 'game_status_dropped':
         return 'Dropped';
-      case 'games_status_on_hold':
+      case 'game_status_on_hold':
         return 'On hold';
-      case 'games_status_played':
+      case 'game_status_played':
         return 'Played';
-      case 'games_status_playing':
+      case 'game_status_playing':
         return 'Playing';
-      case 'games_status_unset':
+      case 'game_status_unset':
         return 'Not set';
-      case 'games_status_want_to_play':
+      case 'game_status_want_to_play':
         return 'Want to play';
-      case 'games_view_detail':
+      case 'game_view_detail':
         return 'View details';
       case 'global_context_capture':
         return 'Capture selection context';
@@ -132533,19 +132290,11 @@ extension on _StringsIt {
         return 'Video files can be very large.';
       case 'sync_webdav_missing_fields':
         return 'Campi mancanti';
-      case 'sync_webdav_password':
-        return 'Password';
-      case 'sync_webdav_test':
-        return 'Prova connessione';
       case 'sync_webdav_test_failed':
         return ({required Object message}) =>
             'Connessione non riuscita: ${message}';
-      case 'sync_webdav_test_success':
-        return 'Connessione riuscita';
       case 'sync_webdav_url':
         return 'URL del server';
-      case 'sync_webdav_username':
-        return 'Nome utente';
       case 'tag_added_to_book':
         return ({required Object name}) =>
             'Etichetta "${name}" aggiunta al libro.';
@@ -135414,53 +135163,53 @@ extension on _StringsJa {
         return 'Galgame caption font size';
       case 'gal_hook_text_font_size_hint':
         return 'Drag the overlay\'s corner to resize the window; the caption size is set here.';
-      case 'galgame_helper_download':
+      case 'game_helper_download':
         return 'Download';
-      case 'galgame_helper_download_failed':
+      case 'game_helper_download_failed':
         return ({required Object error}) =>
             'Engine component download failed: ${error}';
-      case 'galgame_helper_downloading':
+      case 'game_helper_downloading':
         return 'Downloading engine component…';
-      case 'galgame_helper_install_incomplete':
+      case 'game_helper_install_incomplete':
         return 'Engine component install incomplete, please retry';
-      case 'galgame_helper_needed_body':
+      case 'game_helper_needed_body':
         return ({required Object size}) =>
             'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
-      case 'galgame_helper_needed_title':
+      case 'game_helper_needed_title':
         return 'Galgame engine component required';
-      case 'galgame_helper_size_unknown':
+      case 'game_helper_size_unknown':
         return 'unknown size';
-      case 'galgame_helper_verification_failed':
+      case 'game_helper_verification_failed':
         return 'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
-      case 'galgame_upscaling':
+      case 'game_upscaling':
         return 'Game window upscaling';
-      case 'galgame_upscaling_auto':
+      case 'game_upscaling_auto':
         return 'Auto';
-      case 'galgame_upscaling_download_body':
+      case 'game_upscaling_download_body':
         return 'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
-      case 'galgame_upscaling_download_title':
+      case 'game_upscaling_download_title':
         return 'Download Magpie upscaler?';
-      case 'galgame_upscaling_hint':
+      case 'game_upscaling_hint':
         return 'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
-      case 'galgame_upscaling_hint_external':
+      case 'game_upscaling_hint_external':
         return 'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_first_run':
+      case 'game_upscaling_hint_first_run':
         return 'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
-      case 'galgame_upscaling_hint_manual':
+      case 'game_upscaling_hint_manual':
         return 'Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_not_installed':
+      case 'game_upscaling_hint_not_installed':
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
-      case 'galgame_upscaling_installed_only':
+      case 'game_upscaling_installed_only':
         return 'Installed only';
-      case 'galgame_upscaling_off':
+      case 'game_upscaling_off':
         return 'Off';
-      case 'galgame_upscaling_status_active':
+      case 'game_upscaling_status_active':
         return 'Window upscaling is on';
-      case 'galgame_upscaling_status_failed':
+      case 'game_upscaling_status_failed':
         return 'Window upscaling could not start';
-      case 'galgame_upscaling_status_manual':
+      case 'game_upscaling_status_manual':
         return 'Window upscaling is ready, but did not start on its own';
-      case 'galgame_upscaling_status_unavailable':
+      case 'game_upscaling_status_unavailable':
         return 'Window upscaling is not available';
       case 'game_audio_backend_engine':
         return 'Engine PCM';
@@ -135866,91 +135615,89 @@ extension on _StringsJa {
         return 'Not bound';
       case 'games':
         return 'Games';
-      case 'games_add':
+      case 'game_add':
         return 'Add game';
-      case 'games_already_added':
+      case 'game_already_added':
         return 'This game is already in the library';
-      case 'games_auto_cover':
+      case 'game_auto_cover':
         return 'Fetch cover automatically';
-      case 'games_cover_not_found':
+      case 'game_cover_not_found':
         return 'No usable cover found in the game folder or executable';
-      case 'games_cover_searching':
+      case 'game_cover_searching':
         return 'Looking for a cover...';
-      case 'games_cover_updated':
+      case 'game_cover_updated':
         return 'Cover updated';
-      case 'games_drop_imported':
+      case 'game_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
-      case 'games_drop_no_exe':
+      case 'game_drop_no_exe':
         return 'No new game .exe among the dropped files';
-      case 'games_empty':
+      case 'game_empty':
         return 'No games added yet';
-      case 'games_exe_missing':
+      case 'game_exe_missing':
         return 'Game executable not found';
-      case 'games_filter':
+      case 'game_filter':
         return 'Filter';
-      case 'games_filter_all':
-        return 'All';
-      case 'games_filter_hide_nsfw':
+      case 'game_filter_hide_nsfw':
         return 'Hide adult titles';
-      case 'games_filter_local_only':
+      case 'game_filter_local_only':
         return 'Has local file';
-      case 'games_filter_metadata_only':
+      case 'game_filter_metadata_only':
         return 'Metadata only';
-      case 'games_filter_reset':
+      case 'game_filter_reset':
         return 'Clear filters';
-      case 'games_filter_source':
+      case 'game_filter_source':
         return 'Availability';
-      case 'games_filter_status':
+      case 'game_filter_status':
         return 'Play status';
-      case 'games_filter_tags':
+      case 'game_filter_tags':
         return 'Tags';
-      case 'games_launch_unsupported':
+      case 'game_launch_unsupported':
         return 'Launching games is only supported on Windows';
-      case 'games_never_played':
+      case 'game_never_played':
         return 'Never played';
-      case 'games_no_match':
+      case 'game_no_match':
         return 'No games match the current filters';
-      case 'games_play_status':
+      case 'game_play_status':
         return 'Play status';
-      case 'games_remove':
+      case 'game_remove':
         return 'Remove';
-      case 'games_rename':
+      case 'game_rename':
         return 'Rename';
-      case 'games_rename_label':
+      case 'game_rename_label':
         return 'Game name';
-      case 'games_scrape':
+      case 'game_scrape':
         return 'Fetch metadata';
-      case 'games_search':
+      case 'game_search':
         return 'Search games';
-      case 'games_set_cover':
+      case 'game_set_cover':
         return 'Set cover';
-      case 'games_sort':
+      case 'game_sort':
         return 'Sort';
-      case 'games_sort_added':
+      case 'game_sort_added':
         return 'Date added';
-      case 'games_sort_last_played':
+      case 'game_sort_last_played':
         return 'Last played';
-      case 'games_sort_name':
+      case 'game_sort_name':
         return 'Name';
-      case 'games_sort_release':
+      case 'game_sort_release':
         return 'Release date';
-      case 'games_sort_site_score':
+      case 'game_sort_site_score':
         return 'Site rating';
-      case 'games_sort_user_rating':
+      case 'game_sort_user_rating':
         return 'My rating';
-      case 'games_status_dropped':
+      case 'game_status_dropped':
         return 'Dropped';
-      case 'games_status_on_hold':
+      case 'game_status_on_hold':
         return 'On hold';
-      case 'games_status_played':
+      case 'game_status_played':
         return 'Played';
-      case 'games_status_playing':
+      case 'game_status_playing':
         return 'Playing';
-      case 'games_status_unset':
+      case 'game_status_unset':
         return 'Not set';
-      case 'games_status_want_to_play':
+      case 'game_status_want_to_play':
         return 'Want to play';
-      case 'games_view_detail':
+      case 'game_view_detail':
         return 'View details';
       case 'global_context_capture':
         return 'Capture selection context';
@@ -137795,18 +137542,10 @@ extension on _StringsJa {
         return 'Video files can be very large.';
       case 'sync_webdav_missing_fields':
         return '未入力の項目があります';
-      case 'sync_webdav_password':
-        return 'パスワード';
-      case 'sync_webdav_test':
-        return '接続テスト';
       case 'sync_webdav_test_failed':
         return ({required Object message}) => '接続に失敗しました: ${message}';
-      case 'sync_webdav_test_success':
-        return '接続に成功しました';
       case 'sync_webdav_url':
         return 'サーバーURL';
-      case 'sync_webdav_username':
-        return 'ユーザー名';
       case 'tag_added_to_book':
         return ({required Object name}) => 'タグ「${name}」を本に追加しました。';
       case 'tag_added_to_collection':
@@ -140662,53 +140401,53 @@ extension on _StringsKo {
         return 'Galgame caption font size';
       case 'gal_hook_text_font_size_hint':
         return 'Drag the overlay\'s corner to resize the window; the caption size is set here.';
-      case 'galgame_helper_download':
+      case 'game_helper_download':
         return 'Download';
-      case 'galgame_helper_download_failed':
+      case 'game_helper_download_failed':
         return ({required Object error}) =>
             'Engine component download failed: ${error}';
-      case 'galgame_helper_downloading':
+      case 'game_helper_downloading':
         return 'Downloading engine component…';
-      case 'galgame_helper_install_incomplete':
+      case 'game_helper_install_incomplete':
         return 'Engine component install incomplete, please retry';
-      case 'galgame_helper_needed_body':
+      case 'game_helper_needed_body':
         return ({required Object size}) =>
             'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
-      case 'galgame_helper_needed_title':
+      case 'game_helper_needed_title':
         return 'Galgame engine component required';
-      case 'galgame_helper_size_unknown':
+      case 'game_helper_size_unknown':
         return 'unknown size';
-      case 'galgame_helper_verification_failed':
+      case 'game_helper_verification_failed':
         return 'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
-      case 'galgame_upscaling':
+      case 'game_upscaling':
         return 'Game window upscaling';
-      case 'galgame_upscaling_auto':
+      case 'game_upscaling_auto':
         return 'Auto';
-      case 'galgame_upscaling_download_body':
+      case 'game_upscaling_download_body':
         return 'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
-      case 'galgame_upscaling_download_title':
+      case 'game_upscaling_download_title':
         return 'Download Magpie upscaler?';
-      case 'galgame_upscaling_hint':
+      case 'game_upscaling_hint':
         return 'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
-      case 'galgame_upscaling_hint_external':
+      case 'game_upscaling_hint_external':
         return 'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_first_run':
+      case 'game_upscaling_hint_first_run':
         return 'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
-      case 'galgame_upscaling_hint_manual':
+      case 'game_upscaling_hint_manual':
         return 'Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_not_installed':
+      case 'game_upscaling_hint_not_installed':
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
-      case 'galgame_upscaling_installed_only':
+      case 'game_upscaling_installed_only':
         return 'Installed only';
-      case 'galgame_upscaling_off':
+      case 'game_upscaling_off':
         return 'Off';
-      case 'galgame_upscaling_status_active':
+      case 'game_upscaling_status_active':
         return 'Window upscaling is on';
-      case 'galgame_upscaling_status_failed':
+      case 'game_upscaling_status_failed':
         return 'Window upscaling could not start';
-      case 'galgame_upscaling_status_manual':
+      case 'game_upscaling_status_manual':
         return 'Window upscaling is ready, but did not start on its own';
-      case 'galgame_upscaling_status_unavailable':
+      case 'game_upscaling_status_unavailable':
         return 'Window upscaling is not available';
       case 'game_audio_backend_engine':
         return 'Engine PCM';
@@ -141114,91 +140853,89 @@ extension on _StringsKo {
         return 'Not bound';
       case 'games':
         return 'Games';
-      case 'games_add':
+      case 'game_add':
         return 'Add game';
-      case 'games_already_added':
+      case 'game_already_added':
         return 'This game is already in the library';
-      case 'games_auto_cover':
+      case 'game_auto_cover':
         return 'Fetch cover automatically';
-      case 'games_cover_not_found':
+      case 'game_cover_not_found':
         return 'No usable cover found in the game folder or executable';
-      case 'games_cover_searching':
+      case 'game_cover_searching':
         return 'Looking for a cover...';
-      case 'games_cover_updated':
+      case 'game_cover_updated':
         return 'Cover updated';
-      case 'games_drop_imported':
+      case 'game_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
-      case 'games_drop_no_exe':
+      case 'game_drop_no_exe':
         return 'No new game .exe among the dropped files';
-      case 'games_empty':
+      case 'game_empty':
         return 'No games added yet';
-      case 'games_exe_missing':
+      case 'game_exe_missing':
         return 'Game executable not found';
-      case 'games_filter':
+      case 'game_filter':
         return 'Filter';
-      case 'games_filter_all':
-        return 'All';
-      case 'games_filter_hide_nsfw':
+      case 'game_filter_hide_nsfw':
         return 'Hide adult titles';
-      case 'games_filter_local_only':
+      case 'game_filter_local_only':
         return 'Has local file';
-      case 'games_filter_metadata_only':
+      case 'game_filter_metadata_only':
         return 'Metadata only';
-      case 'games_filter_reset':
+      case 'game_filter_reset':
         return 'Clear filters';
-      case 'games_filter_source':
+      case 'game_filter_source':
         return 'Availability';
-      case 'games_filter_status':
+      case 'game_filter_status':
         return 'Play status';
-      case 'games_filter_tags':
+      case 'game_filter_tags':
         return 'Tags';
-      case 'games_launch_unsupported':
+      case 'game_launch_unsupported':
         return 'Launching games is only supported on Windows';
-      case 'games_never_played':
+      case 'game_never_played':
         return 'Never played';
-      case 'games_no_match':
+      case 'game_no_match':
         return 'No games match the current filters';
-      case 'games_play_status':
+      case 'game_play_status':
         return 'Play status';
-      case 'games_remove':
+      case 'game_remove':
         return 'Remove';
-      case 'games_rename':
+      case 'game_rename':
         return 'Rename';
-      case 'games_rename_label':
+      case 'game_rename_label':
         return 'Game name';
-      case 'games_scrape':
+      case 'game_scrape':
         return 'Fetch metadata';
-      case 'games_search':
+      case 'game_search':
         return 'Search games';
-      case 'games_set_cover':
+      case 'game_set_cover':
         return 'Set cover';
-      case 'games_sort':
+      case 'game_sort':
         return 'Sort';
-      case 'games_sort_added':
+      case 'game_sort_added':
         return 'Date added';
-      case 'games_sort_last_played':
+      case 'game_sort_last_played':
         return 'Last played';
-      case 'games_sort_name':
+      case 'game_sort_name':
         return 'Name';
-      case 'games_sort_release':
+      case 'game_sort_release':
         return 'Release date';
-      case 'games_sort_site_score':
+      case 'game_sort_site_score':
         return 'Site rating';
-      case 'games_sort_user_rating':
+      case 'game_sort_user_rating':
         return 'My rating';
-      case 'games_status_dropped':
+      case 'game_status_dropped':
         return 'Dropped';
-      case 'games_status_on_hold':
+      case 'game_status_on_hold':
         return 'On hold';
-      case 'games_status_played':
+      case 'game_status_played':
         return 'Played';
-      case 'games_status_playing':
+      case 'game_status_playing':
         return 'Playing';
-      case 'games_status_unset':
+      case 'game_status_unset':
         return 'Not set';
-      case 'games_status_want_to_play':
+      case 'game_status_want_to_play':
         return 'Want to play';
-      case 'games_view_detail':
+      case 'game_view_detail':
         return 'View details';
       case 'global_context_capture':
         return 'Capture selection context';
@@ -143045,18 +142782,10 @@ extension on _StringsKo {
         return 'Video files can be very large.';
       case 'sync_webdav_missing_fields':
         return '입력하지 않은 항목이 있습니다';
-      case 'sync_webdav_password':
-        return '비밀번호';
-      case 'sync_webdav_test':
-        return '연결 테스트';
       case 'sync_webdav_test_failed':
         return ({required Object message}) => '연결 실패: ${message}';
-      case 'sync_webdav_test_success':
-        return '연결 성공';
       case 'sync_webdav_url':
         return '서버 URL';
-      case 'sync_webdav_username':
-        return '사용자 이름';
       case 'tag_added_to_book':
         return ({required Object name}) => '태그 "${name}"이(가) 책에 추가되었습니다.';
       case 'tag_added_to_collection':
@@ -145922,53 +145651,53 @@ extension on _StringsNl {
         return 'Galgame caption font size';
       case 'gal_hook_text_font_size_hint':
         return 'Drag the overlay\'s corner to resize the window; the caption size is set here.';
-      case 'galgame_helper_download':
+      case 'game_helper_download':
         return 'Download';
-      case 'galgame_helper_download_failed':
+      case 'game_helper_download_failed':
         return ({required Object error}) =>
             'Engine component download failed: ${error}';
-      case 'galgame_helper_downloading':
+      case 'game_helper_downloading':
         return 'Downloading engine component…';
-      case 'galgame_helper_install_incomplete':
+      case 'game_helper_install_incomplete':
         return 'Engine component install incomplete, please retry';
-      case 'galgame_helper_needed_body':
+      case 'game_helper_needed_body':
         return ({required Object size}) =>
             'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
-      case 'galgame_helper_needed_title':
+      case 'game_helper_needed_title':
         return 'Galgame engine component required';
-      case 'galgame_helper_size_unknown':
+      case 'game_helper_size_unknown':
         return 'unknown size';
-      case 'galgame_helper_verification_failed':
+      case 'game_helper_verification_failed':
         return 'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
-      case 'galgame_upscaling':
+      case 'game_upscaling':
         return 'Game window upscaling';
-      case 'galgame_upscaling_auto':
+      case 'game_upscaling_auto':
         return 'Auto';
-      case 'galgame_upscaling_download_body':
+      case 'game_upscaling_download_body':
         return 'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
-      case 'galgame_upscaling_download_title':
+      case 'game_upscaling_download_title':
         return 'Download Magpie upscaler?';
-      case 'galgame_upscaling_hint':
+      case 'game_upscaling_hint':
         return 'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
-      case 'galgame_upscaling_hint_external':
+      case 'game_upscaling_hint_external':
         return 'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_first_run':
+      case 'game_upscaling_hint_first_run':
         return 'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
-      case 'galgame_upscaling_hint_manual':
+      case 'game_upscaling_hint_manual':
         return 'Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_not_installed':
+      case 'game_upscaling_hint_not_installed':
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
-      case 'galgame_upscaling_installed_only':
+      case 'game_upscaling_installed_only':
         return 'Installed only';
-      case 'galgame_upscaling_off':
+      case 'game_upscaling_off':
         return 'Off';
-      case 'galgame_upscaling_status_active':
+      case 'game_upscaling_status_active':
         return 'Window upscaling is on';
-      case 'galgame_upscaling_status_failed':
+      case 'game_upscaling_status_failed':
         return 'Window upscaling could not start';
-      case 'galgame_upscaling_status_manual':
+      case 'game_upscaling_status_manual':
         return 'Window upscaling is ready, but did not start on its own';
-      case 'galgame_upscaling_status_unavailable':
+      case 'game_upscaling_status_unavailable':
         return 'Window upscaling is not available';
       case 'game_audio_backend_engine':
         return 'Engine PCM';
@@ -146374,91 +146103,89 @@ extension on _StringsNl {
         return 'Not bound';
       case 'games':
         return 'Games';
-      case 'games_add':
+      case 'game_add':
         return 'Add game';
-      case 'games_already_added':
+      case 'game_already_added':
         return 'This game is already in the library';
-      case 'games_auto_cover':
+      case 'game_auto_cover':
         return 'Fetch cover automatically';
-      case 'games_cover_not_found':
+      case 'game_cover_not_found':
         return 'No usable cover found in the game folder or executable';
-      case 'games_cover_searching':
+      case 'game_cover_searching':
         return 'Looking for a cover...';
-      case 'games_cover_updated':
+      case 'game_cover_updated':
         return 'Cover updated';
-      case 'games_drop_imported':
+      case 'game_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
-      case 'games_drop_no_exe':
+      case 'game_drop_no_exe':
         return 'No new game .exe among the dropped files';
-      case 'games_empty':
+      case 'game_empty':
         return 'No games added yet';
-      case 'games_exe_missing':
+      case 'game_exe_missing':
         return 'Game executable not found';
-      case 'games_filter':
+      case 'game_filter':
         return 'Filter';
-      case 'games_filter_all':
-        return 'All';
-      case 'games_filter_hide_nsfw':
+      case 'game_filter_hide_nsfw':
         return 'Hide adult titles';
-      case 'games_filter_local_only':
+      case 'game_filter_local_only':
         return 'Has local file';
-      case 'games_filter_metadata_only':
+      case 'game_filter_metadata_only':
         return 'Metadata only';
-      case 'games_filter_reset':
+      case 'game_filter_reset':
         return 'Clear filters';
-      case 'games_filter_source':
+      case 'game_filter_source':
         return 'Availability';
-      case 'games_filter_status':
+      case 'game_filter_status':
         return 'Play status';
-      case 'games_filter_tags':
+      case 'game_filter_tags':
         return 'Tags';
-      case 'games_launch_unsupported':
+      case 'game_launch_unsupported':
         return 'Launching games is only supported on Windows';
-      case 'games_never_played':
+      case 'game_never_played':
         return 'Never played';
-      case 'games_no_match':
+      case 'game_no_match':
         return 'No games match the current filters';
-      case 'games_play_status':
+      case 'game_play_status':
         return 'Play status';
-      case 'games_remove':
+      case 'game_remove':
         return 'Remove';
-      case 'games_rename':
+      case 'game_rename':
         return 'Rename';
-      case 'games_rename_label':
+      case 'game_rename_label':
         return 'Game name';
-      case 'games_scrape':
+      case 'game_scrape':
         return 'Fetch metadata';
-      case 'games_search':
+      case 'game_search':
         return 'Search games';
-      case 'games_set_cover':
+      case 'game_set_cover':
         return 'Set cover';
-      case 'games_sort':
+      case 'game_sort':
         return 'Sort';
-      case 'games_sort_added':
+      case 'game_sort_added':
         return 'Date added';
-      case 'games_sort_last_played':
+      case 'game_sort_last_played':
         return 'Last played';
-      case 'games_sort_name':
+      case 'game_sort_name':
         return 'Name';
-      case 'games_sort_release':
+      case 'game_sort_release':
         return 'Release date';
-      case 'games_sort_site_score':
+      case 'game_sort_site_score':
         return 'Site rating';
-      case 'games_sort_user_rating':
+      case 'game_sort_user_rating':
         return 'My rating';
-      case 'games_status_dropped':
+      case 'game_status_dropped':
         return 'Dropped';
-      case 'games_status_on_hold':
+      case 'game_status_on_hold':
         return 'On hold';
-      case 'games_status_played':
+      case 'game_status_played':
         return 'Played';
-      case 'games_status_playing':
+      case 'game_status_playing':
         return 'Playing';
-      case 'games_status_unset':
+      case 'game_status_unset':
         return 'Not set';
-      case 'games_status_want_to_play':
+      case 'game_status_want_to_play':
         return 'Want to play';
-      case 'games_view_detail':
+      case 'game_view_detail':
         return 'View details';
       case 'global_context_capture':
         return 'Capture selection context';
@@ -148314,18 +148041,10 @@ extension on _StringsNl {
         return 'Video files can be very large.';
       case 'sync_webdav_missing_fields':
         return 'Ontbrekende velden';
-      case 'sync_webdav_password':
-        return 'Wachtwoord';
-      case 'sync_webdav_test':
-        return 'Verbinding testen';
       case 'sync_webdav_test_failed':
         return ({required Object message}) => 'Verbinding mislukt: ${message}';
-      case 'sync_webdav_test_success':
-        return 'Verbinding geslaagd';
       case 'sync_webdav_url':
         return 'Server-URL';
-      case 'sync_webdav_username':
-        return 'Gebruikersnaam';
       case 'tag_added_to_book':
         return ({required Object name}) => 'Tag "${name}" toegevoegd aan boek.';
       case 'tag_added_to_collection':
@@ -151199,53 +150918,53 @@ extension on _StringsPtBr {
         return 'Galgame caption font size';
       case 'gal_hook_text_font_size_hint':
         return 'Drag the overlay\'s corner to resize the window; the caption size is set here.';
-      case 'galgame_helper_download':
+      case 'game_helper_download':
         return 'Download';
-      case 'galgame_helper_download_failed':
+      case 'game_helper_download_failed':
         return ({required Object error}) =>
             'Engine component download failed: ${error}';
-      case 'galgame_helper_downloading':
+      case 'game_helper_downloading':
         return 'Downloading engine component…';
-      case 'galgame_helper_install_incomplete':
+      case 'game_helper_install_incomplete':
         return 'Engine component install incomplete, please retry';
-      case 'galgame_helper_needed_body':
+      case 'game_helper_needed_body':
         return ({required Object size}) =>
             'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
-      case 'galgame_helper_needed_title':
+      case 'game_helper_needed_title':
         return 'Galgame engine component required';
-      case 'galgame_helper_size_unknown':
+      case 'game_helper_size_unknown':
         return 'unknown size';
-      case 'galgame_helper_verification_failed':
+      case 'game_helper_verification_failed':
         return 'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
-      case 'galgame_upscaling':
+      case 'game_upscaling':
         return 'Game window upscaling';
-      case 'galgame_upscaling_auto':
+      case 'game_upscaling_auto':
         return 'Auto';
-      case 'galgame_upscaling_download_body':
+      case 'game_upscaling_download_body':
         return 'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
-      case 'galgame_upscaling_download_title':
+      case 'game_upscaling_download_title':
         return 'Download Magpie upscaler?';
-      case 'galgame_upscaling_hint':
+      case 'game_upscaling_hint':
         return 'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
-      case 'galgame_upscaling_hint_external':
+      case 'game_upscaling_hint_external':
         return 'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_first_run':
+      case 'game_upscaling_hint_first_run':
         return 'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
-      case 'galgame_upscaling_hint_manual':
+      case 'game_upscaling_hint_manual':
         return 'Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_not_installed':
+      case 'game_upscaling_hint_not_installed':
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
-      case 'galgame_upscaling_installed_only':
+      case 'game_upscaling_installed_only':
         return 'Installed only';
-      case 'galgame_upscaling_off':
+      case 'game_upscaling_off':
         return 'Off';
-      case 'galgame_upscaling_status_active':
+      case 'game_upscaling_status_active':
         return 'Window upscaling is on';
-      case 'galgame_upscaling_status_failed':
+      case 'game_upscaling_status_failed':
         return 'Window upscaling could not start';
-      case 'galgame_upscaling_status_manual':
+      case 'game_upscaling_status_manual':
         return 'Window upscaling is ready, but did not start on its own';
-      case 'galgame_upscaling_status_unavailable':
+      case 'game_upscaling_status_unavailable':
         return 'Window upscaling is not available';
       case 'game_audio_backend_engine':
         return 'Engine PCM';
@@ -151651,91 +151370,89 @@ extension on _StringsPtBr {
         return 'Not bound';
       case 'games':
         return 'Games';
-      case 'games_add':
+      case 'game_add':
         return 'Add game';
-      case 'games_already_added':
+      case 'game_already_added':
         return 'This game is already in the library';
-      case 'games_auto_cover':
+      case 'game_auto_cover':
         return 'Fetch cover automatically';
-      case 'games_cover_not_found':
+      case 'game_cover_not_found':
         return 'No usable cover found in the game folder or executable';
-      case 'games_cover_searching':
+      case 'game_cover_searching':
         return 'Looking for a cover...';
-      case 'games_cover_updated':
+      case 'game_cover_updated':
         return 'Cover updated';
-      case 'games_drop_imported':
+      case 'game_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
-      case 'games_drop_no_exe':
+      case 'game_drop_no_exe':
         return 'No new game .exe among the dropped files';
-      case 'games_empty':
+      case 'game_empty':
         return 'No games added yet';
-      case 'games_exe_missing':
+      case 'game_exe_missing':
         return 'Game executable not found';
-      case 'games_filter':
+      case 'game_filter':
         return 'Filter';
-      case 'games_filter_all':
-        return 'All';
-      case 'games_filter_hide_nsfw':
+      case 'game_filter_hide_nsfw':
         return 'Hide adult titles';
-      case 'games_filter_local_only':
+      case 'game_filter_local_only':
         return 'Has local file';
-      case 'games_filter_metadata_only':
+      case 'game_filter_metadata_only':
         return 'Metadata only';
-      case 'games_filter_reset':
+      case 'game_filter_reset':
         return 'Clear filters';
-      case 'games_filter_source':
+      case 'game_filter_source':
         return 'Availability';
-      case 'games_filter_status':
+      case 'game_filter_status':
         return 'Play status';
-      case 'games_filter_tags':
+      case 'game_filter_tags':
         return 'Tags';
-      case 'games_launch_unsupported':
+      case 'game_launch_unsupported':
         return 'Launching games is only supported on Windows';
-      case 'games_never_played':
+      case 'game_never_played':
         return 'Never played';
-      case 'games_no_match':
+      case 'game_no_match':
         return 'No games match the current filters';
-      case 'games_play_status':
+      case 'game_play_status':
         return 'Play status';
-      case 'games_remove':
+      case 'game_remove':
         return 'Remove';
-      case 'games_rename':
+      case 'game_rename':
         return 'Rename';
-      case 'games_rename_label':
+      case 'game_rename_label':
         return 'Game name';
-      case 'games_scrape':
+      case 'game_scrape':
         return 'Fetch metadata';
-      case 'games_search':
+      case 'game_search':
         return 'Search games';
-      case 'games_set_cover':
+      case 'game_set_cover':
         return 'Set cover';
-      case 'games_sort':
+      case 'game_sort':
         return 'Sort';
-      case 'games_sort_added':
+      case 'game_sort_added':
         return 'Date added';
-      case 'games_sort_last_played':
+      case 'game_sort_last_played':
         return 'Last played';
-      case 'games_sort_name':
+      case 'game_sort_name':
         return 'Name';
-      case 'games_sort_release':
+      case 'game_sort_release':
         return 'Release date';
-      case 'games_sort_site_score':
+      case 'game_sort_site_score':
         return 'Site rating';
-      case 'games_sort_user_rating':
+      case 'game_sort_user_rating':
         return 'My rating';
-      case 'games_status_dropped':
+      case 'game_status_dropped':
         return 'Dropped';
-      case 'games_status_on_hold':
+      case 'game_status_on_hold':
         return 'On hold';
-      case 'games_status_played':
+      case 'game_status_played':
         return 'Played';
-      case 'games_status_playing':
+      case 'game_status_playing':
         return 'Playing';
-      case 'games_status_unset':
+      case 'game_status_unset':
         return 'Not set';
-      case 'games_status_want_to_play':
+      case 'game_status_want_to_play':
         return 'Want to play';
-      case 'games_view_detail':
+      case 'game_view_detail':
         return 'View details';
       case 'global_context_capture':
         return 'Capture selection context';
@@ -153591,18 +153308,10 @@ extension on _StringsPtBr {
         return 'Video files can be very large.';
       case 'sync_webdav_missing_fields':
         return 'Campos faltando';
-      case 'sync_webdav_password':
-        return 'Senha';
-      case 'sync_webdav_test':
-        return 'Testar conexão';
       case 'sync_webdav_test_failed':
         return ({required Object message}) => 'Falha na conexão: ${message}';
-      case 'sync_webdav_test_success':
-        return 'Conexão bem-sucedida';
       case 'sync_webdav_url':
         return 'URL do servidor';
-      case 'sync_webdav_username':
-        return 'Nome de usuário';
       case 'tag_added_to_book':
         return ({required Object name}) => 'Tag "${name}" adicionada ao livro.';
       case 'tag_added_to_collection':
@@ -156477,53 +156186,53 @@ extension on _StringsRu {
         return 'Galgame caption font size';
       case 'gal_hook_text_font_size_hint':
         return 'Drag the overlay\'s corner to resize the window; the caption size is set here.';
-      case 'galgame_helper_download':
+      case 'game_helper_download':
         return 'Download';
-      case 'galgame_helper_download_failed':
+      case 'game_helper_download_failed':
         return ({required Object error}) =>
             'Engine component download failed: ${error}';
-      case 'galgame_helper_downloading':
+      case 'game_helper_downloading':
         return 'Downloading engine component…';
-      case 'galgame_helper_install_incomplete':
+      case 'game_helper_install_incomplete':
         return 'Engine component install incomplete, please retry';
-      case 'galgame_helper_needed_body':
+      case 'game_helper_needed_body':
         return ({required Object size}) =>
             'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
-      case 'galgame_helper_needed_title':
+      case 'game_helper_needed_title':
         return 'Galgame engine component required';
-      case 'galgame_helper_size_unknown':
+      case 'game_helper_size_unknown':
         return 'unknown size';
-      case 'galgame_helper_verification_failed':
+      case 'game_helper_verification_failed':
         return 'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
-      case 'galgame_upscaling':
+      case 'game_upscaling':
         return 'Game window upscaling';
-      case 'galgame_upscaling_auto':
+      case 'game_upscaling_auto':
         return 'Auto';
-      case 'galgame_upscaling_download_body':
+      case 'game_upscaling_download_body':
         return 'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
-      case 'galgame_upscaling_download_title':
+      case 'game_upscaling_download_title':
         return 'Download Magpie upscaler?';
-      case 'galgame_upscaling_hint':
+      case 'game_upscaling_hint':
         return 'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
-      case 'galgame_upscaling_hint_external':
+      case 'game_upscaling_hint_external':
         return 'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_first_run':
+      case 'game_upscaling_hint_first_run':
         return 'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
-      case 'galgame_upscaling_hint_manual':
+      case 'game_upscaling_hint_manual':
         return 'Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_not_installed':
+      case 'game_upscaling_hint_not_installed':
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
-      case 'galgame_upscaling_installed_only':
+      case 'game_upscaling_installed_only':
         return 'Installed only';
-      case 'galgame_upscaling_off':
+      case 'game_upscaling_off':
         return 'Off';
-      case 'galgame_upscaling_status_active':
+      case 'game_upscaling_status_active':
         return 'Window upscaling is on';
-      case 'galgame_upscaling_status_failed':
+      case 'game_upscaling_status_failed':
         return 'Window upscaling could not start';
-      case 'galgame_upscaling_status_manual':
+      case 'game_upscaling_status_manual':
         return 'Window upscaling is ready, but did not start on its own';
-      case 'galgame_upscaling_status_unavailable':
+      case 'game_upscaling_status_unavailable':
         return 'Window upscaling is not available';
       case 'game_audio_backend_engine':
         return 'Engine PCM';
@@ -156929,91 +156638,89 @@ extension on _StringsRu {
         return 'Not bound';
       case 'games':
         return 'Games';
-      case 'games_add':
+      case 'game_add':
         return 'Add game';
-      case 'games_already_added':
+      case 'game_already_added':
         return 'This game is already in the library';
-      case 'games_auto_cover':
+      case 'game_auto_cover':
         return 'Fetch cover automatically';
-      case 'games_cover_not_found':
+      case 'game_cover_not_found':
         return 'No usable cover found in the game folder or executable';
-      case 'games_cover_searching':
+      case 'game_cover_searching':
         return 'Looking for a cover...';
-      case 'games_cover_updated':
+      case 'game_cover_updated':
         return 'Cover updated';
-      case 'games_drop_imported':
+      case 'game_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
-      case 'games_drop_no_exe':
+      case 'game_drop_no_exe':
         return 'No new game .exe among the dropped files';
-      case 'games_empty':
+      case 'game_empty':
         return 'No games added yet';
-      case 'games_exe_missing':
+      case 'game_exe_missing':
         return 'Game executable not found';
-      case 'games_filter':
+      case 'game_filter':
         return 'Filter';
-      case 'games_filter_all':
-        return 'All';
-      case 'games_filter_hide_nsfw':
+      case 'game_filter_hide_nsfw':
         return 'Hide adult titles';
-      case 'games_filter_local_only':
+      case 'game_filter_local_only':
         return 'Has local file';
-      case 'games_filter_metadata_only':
+      case 'game_filter_metadata_only':
         return 'Metadata only';
-      case 'games_filter_reset':
+      case 'game_filter_reset':
         return 'Clear filters';
-      case 'games_filter_source':
+      case 'game_filter_source':
         return 'Availability';
-      case 'games_filter_status':
+      case 'game_filter_status':
         return 'Play status';
-      case 'games_filter_tags':
+      case 'game_filter_tags':
         return 'Tags';
-      case 'games_launch_unsupported':
+      case 'game_launch_unsupported':
         return 'Launching games is only supported on Windows';
-      case 'games_never_played':
+      case 'game_never_played':
         return 'Never played';
-      case 'games_no_match':
+      case 'game_no_match':
         return 'No games match the current filters';
-      case 'games_play_status':
+      case 'game_play_status':
         return 'Play status';
-      case 'games_remove':
+      case 'game_remove':
         return 'Remove';
-      case 'games_rename':
+      case 'game_rename':
         return 'Rename';
-      case 'games_rename_label':
+      case 'game_rename_label':
         return 'Game name';
-      case 'games_scrape':
+      case 'game_scrape':
         return 'Fetch metadata';
-      case 'games_search':
+      case 'game_search':
         return 'Search games';
-      case 'games_set_cover':
+      case 'game_set_cover':
         return 'Set cover';
-      case 'games_sort':
+      case 'game_sort':
         return 'Sort';
-      case 'games_sort_added':
+      case 'game_sort_added':
         return 'Date added';
-      case 'games_sort_last_played':
+      case 'game_sort_last_played':
         return 'Last played';
-      case 'games_sort_name':
+      case 'game_sort_name':
         return 'Name';
-      case 'games_sort_release':
+      case 'game_sort_release':
         return 'Release date';
-      case 'games_sort_site_score':
+      case 'game_sort_site_score':
         return 'Site rating';
-      case 'games_sort_user_rating':
+      case 'game_sort_user_rating':
         return 'My rating';
-      case 'games_status_dropped':
+      case 'game_status_dropped':
         return 'Dropped';
-      case 'games_status_on_hold':
+      case 'game_status_on_hold':
         return 'On hold';
-      case 'games_status_played':
+      case 'game_status_played':
         return 'Played';
-      case 'games_status_playing':
+      case 'game_status_playing':
         return 'Playing';
-      case 'games_status_unset':
+      case 'game_status_unset':
         return 'Not set';
-      case 'games_status_want_to_play':
+      case 'game_status_want_to_play':
         return 'Want to play';
-      case 'games_view_detail':
+      case 'game_view_detail':
         return 'View details';
       case 'global_context_capture':
         return 'Capture selection context';
@@ -158870,18 +158577,10 @@ extension on _StringsRu {
         return 'Video files can be very large.';
       case 'sync_webdav_missing_fields':
         return 'Не заполнены поля';
-      case 'sync_webdav_password':
-        return 'Пароль';
-      case 'sync_webdav_test':
-        return 'Проверить соединение';
       case 'sync_webdav_test_failed':
         return ({required Object message}) => 'Ошибка соединения: ${message}';
-      case 'sync_webdav_test_success':
-        return 'Соединение установлено';
       case 'sync_webdav_url':
         return 'URL сервера';
-      case 'sync_webdav_username':
-        return 'Имя пользователя';
       case 'tag_added_to_book':
         return ({required Object name}) => 'Тег "${name}" добавлен к книге.';
       case 'tag_added_to_collection':
@@ -161750,53 +161449,53 @@ extension on _StringsTh {
         return 'Galgame caption font size';
       case 'gal_hook_text_font_size_hint':
         return 'Drag the overlay\'s corner to resize the window; the caption size is set here.';
-      case 'galgame_helper_download':
+      case 'game_helper_download':
         return 'Download';
-      case 'galgame_helper_download_failed':
+      case 'game_helper_download_failed':
         return ({required Object error}) =>
             'Engine component download failed: ${error}';
-      case 'galgame_helper_downloading':
+      case 'game_helper_downloading':
         return 'Downloading engine component…';
-      case 'galgame_helper_install_incomplete':
+      case 'game_helper_install_incomplete':
         return 'Engine component install incomplete, please retry';
-      case 'galgame_helper_needed_body':
+      case 'game_helper_needed_body':
         return ({required Object size}) =>
             'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
-      case 'galgame_helper_needed_title':
+      case 'game_helper_needed_title':
         return 'Galgame engine component required';
-      case 'galgame_helper_size_unknown':
+      case 'game_helper_size_unknown':
         return 'unknown size';
-      case 'galgame_helper_verification_failed':
+      case 'game_helper_verification_failed':
         return 'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
-      case 'galgame_upscaling':
+      case 'game_upscaling':
         return 'Game window upscaling';
-      case 'galgame_upscaling_auto':
+      case 'game_upscaling_auto':
         return 'Auto';
-      case 'galgame_upscaling_download_body':
+      case 'game_upscaling_download_body':
         return 'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
-      case 'galgame_upscaling_download_title':
+      case 'game_upscaling_download_title':
         return 'Download Magpie upscaler?';
-      case 'galgame_upscaling_hint':
+      case 'game_upscaling_hint':
         return 'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
-      case 'galgame_upscaling_hint_external':
+      case 'game_upscaling_hint_external':
         return 'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_first_run':
+      case 'game_upscaling_hint_first_run':
         return 'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
-      case 'galgame_upscaling_hint_manual':
+      case 'game_upscaling_hint_manual':
         return 'Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_not_installed':
+      case 'game_upscaling_hint_not_installed':
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
-      case 'galgame_upscaling_installed_only':
+      case 'game_upscaling_installed_only':
         return 'Installed only';
-      case 'galgame_upscaling_off':
+      case 'game_upscaling_off':
         return 'Off';
-      case 'galgame_upscaling_status_active':
+      case 'game_upscaling_status_active':
         return 'Window upscaling is on';
-      case 'galgame_upscaling_status_failed':
+      case 'game_upscaling_status_failed':
         return 'Window upscaling could not start';
-      case 'galgame_upscaling_status_manual':
+      case 'game_upscaling_status_manual':
         return 'Window upscaling is ready, but did not start on its own';
-      case 'galgame_upscaling_status_unavailable':
+      case 'game_upscaling_status_unavailable':
         return 'Window upscaling is not available';
       case 'game_audio_backend_engine':
         return 'Engine PCM';
@@ -162202,91 +161901,89 @@ extension on _StringsTh {
         return 'Not bound';
       case 'games':
         return 'Games';
-      case 'games_add':
+      case 'game_add':
         return 'Add game';
-      case 'games_already_added':
+      case 'game_already_added':
         return 'This game is already in the library';
-      case 'games_auto_cover':
+      case 'game_auto_cover':
         return 'Fetch cover automatically';
-      case 'games_cover_not_found':
+      case 'game_cover_not_found':
         return 'No usable cover found in the game folder or executable';
-      case 'games_cover_searching':
+      case 'game_cover_searching':
         return 'Looking for a cover...';
-      case 'games_cover_updated':
+      case 'game_cover_updated':
         return 'Cover updated';
-      case 'games_drop_imported':
+      case 'game_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
-      case 'games_drop_no_exe':
+      case 'game_drop_no_exe':
         return 'No new game .exe among the dropped files';
-      case 'games_empty':
+      case 'game_empty':
         return 'No games added yet';
-      case 'games_exe_missing':
+      case 'game_exe_missing':
         return 'Game executable not found';
-      case 'games_filter':
+      case 'game_filter':
         return 'Filter';
-      case 'games_filter_all':
-        return 'All';
-      case 'games_filter_hide_nsfw':
+      case 'game_filter_hide_nsfw':
         return 'Hide adult titles';
-      case 'games_filter_local_only':
+      case 'game_filter_local_only':
         return 'Has local file';
-      case 'games_filter_metadata_only':
+      case 'game_filter_metadata_only':
         return 'Metadata only';
-      case 'games_filter_reset':
+      case 'game_filter_reset':
         return 'Clear filters';
-      case 'games_filter_source':
+      case 'game_filter_source':
         return 'Availability';
-      case 'games_filter_status':
+      case 'game_filter_status':
         return 'Play status';
-      case 'games_filter_tags':
+      case 'game_filter_tags':
         return 'Tags';
-      case 'games_launch_unsupported':
+      case 'game_launch_unsupported':
         return 'Launching games is only supported on Windows';
-      case 'games_never_played':
+      case 'game_never_played':
         return 'Never played';
-      case 'games_no_match':
+      case 'game_no_match':
         return 'No games match the current filters';
-      case 'games_play_status':
+      case 'game_play_status':
         return 'Play status';
-      case 'games_remove':
+      case 'game_remove':
         return 'Remove';
-      case 'games_rename':
+      case 'game_rename':
         return 'Rename';
-      case 'games_rename_label':
+      case 'game_rename_label':
         return 'Game name';
-      case 'games_scrape':
+      case 'game_scrape':
         return 'Fetch metadata';
-      case 'games_search':
+      case 'game_search':
         return 'Search games';
-      case 'games_set_cover':
+      case 'game_set_cover':
         return 'Set cover';
-      case 'games_sort':
+      case 'game_sort':
         return 'Sort';
-      case 'games_sort_added':
+      case 'game_sort_added':
         return 'Date added';
-      case 'games_sort_last_played':
+      case 'game_sort_last_played':
         return 'Last played';
-      case 'games_sort_name':
+      case 'game_sort_name':
         return 'Name';
-      case 'games_sort_release':
+      case 'game_sort_release':
         return 'Release date';
-      case 'games_sort_site_score':
+      case 'game_sort_site_score':
         return 'Site rating';
-      case 'games_sort_user_rating':
+      case 'game_sort_user_rating':
         return 'My rating';
-      case 'games_status_dropped':
+      case 'game_status_dropped':
         return 'Dropped';
-      case 'games_status_on_hold':
+      case 'game_status_on_hold':
         return 'On hold';
-      case 'games_status_played':
+      case 'game_status_played':
         return 'Played';
-      case 'games_status_playing':
+      case 'game_status_playing':
         return 'Playing';
-      case 'games_status_unset':
+      case 'game_status_unset':
         return 'Not set';
-      case 'games_status_want_to_play':
+      case 'game_status_want_to_play':
         return 'Want to play';
-      case 'games_view_detail':
+      case 'game_view_detail':
         return 'View details';
       case 'global_context_capture':
         return 'Capture selection context';
@@ -164137,18 +163834,10 @@ extension on _StringsTh {
         return 'Video files can be very large.';
       case 'sync_webdav_missing_fields':
         return 'ข้อมูลไม่ครบ';
-      case 'sync_webdav_password':
-        return 'รหัสผ่าน';
-      case 'sync_webdav_test':
-        return 'ทดสอบการเชื่อมต่อ';
       case 'sync_webdav_test_failed':
         return ({required Object message}) => 'เชื่อมต่อไม่สำเร็จ: ${message}';
-      case 'sync_webdav_test_success':
-        return 'เชื่อมต่อสำเร็จ';
       case 'sync_webdav_url':
         return 'URL เซิร์ฟเวอร์';
-      case 'sync_webdav_username':
-        return 'ชื่อผู้ใช้';
       case 'tag_added_to_book':
         return ({required Object name}) => 'เพิ่มแท็ก "${name}" ในหนังสือแล้ว';
       case 'tag_added_to_collection':
@@ -167019,53 +166708,53 @@ extension on _StringsTr {
         return 'Galgame caption font size';
       case 'gal_hook_text_font_size_hint':
         return 'Drag the overlay\'s corner to resize the window; the caption size is set here.';
-      case 'galgame_helper_download':
+      case 'game_helper_download':
         return 'Download';
-      case 'galgame_helper_download_failed':
+      case 'game_helper_download_failed':
         return ({required Object error}) =>
             'Engine component download failed: ${error}';
-      case 'galgame_helper_downloading':
+      case 'game_helper_downloading':
         return 'Downloading engine component…';
-      case 'galgame_helper_install_incomplete':
+      case 'game_helper_install_incomplete':
         return 'Engine component install incomplete, please retry';
-      case 'galgame_helper_needed_body':
+      case 'game_helper_needed_body':
         return ({required Object size}) =>
             'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
-      case 'galgame_helper_needed_title':
+      case 'game_helper_needed_title':
         return 'Galgame engine component required';
-      case 'galgame_helper_size_unknown':
+      case 'game_helper_size_unknown':
         return 'unknown size';
-      case 'galgame_helper_verification_failed':
+      case 'game_helper_verification_failed':
         return 'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
-      case 'galgame_upscaling':
+      case 'game_upscaling':
         return 'Game window upscaling';
-      case 'galgame_upscaling_auto':
+      case 'game_upscaling_auto':
         return 'Auto';
-      case 'galgame_upscaling_download_body':
+      case 'game_upscaling_download_body':
         return 'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
-      case 'galgame_upscaling_download_title':
+      case 'game_upscaling_download_title':
         return 'Download Magpie upscaler?';
-      case 'galgame_upscaling_hint':
+      case 'game_upscaling_hint':
         return 'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
-      case 'galgame_upscaling_hint_external':
+      case 'game_upscaling_hint_external':
         return 'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_first_run':
+      case 'game_upscaling_hint_first_run':
         return 'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
-      case 'galgame_upscaling_hint_manual':
+      case 'game_upscaling_hint_manual':
         return 'Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_not_installed':
+      case 'game_upscaling_hint_not_installed':
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
-      case 'galgame_upscaling_installed_only':
+      case 'game_upscaling_installed_only':
         return 'Installed only';
-      case 'galgame_upscaling_off':
+      case 'game_upscaling_off':
         return 'Off';
-      case 'galgame_upscaling_status_active':
+      case 'game_upscaling_status_active':
         return 'Window upscaling is on';
-      case 'galgame_upscaling_status_failed':
+      case 'game_upscaling_status_failed':
         return 'Window upscaling could not start';
-      case 'galgame_upscaling_status_manual':
+      case 'game_upscaling_status_manual':
         return 'Window upscaling is ready, but did not start on its own';
-      case 'galgame_upscaling_status_unavailable':
+      case 'game_upscaling_status_unavailable':
         return 'Window upscaling is not available';
       case 'game_audio_backend_engine':
         return 'Engine PCM';
@@ -167471,91 +167160,89 @@ extension on _StringsTr {
         return 'Not bound';
       case 'games':
         return 'Games';
-      case 'games_add':
+      case 'game_add':
         return 'Add game';
-      case 'games_already_added':
+      case 'game_already_added':
         return 'This game is already in the library';
-      case 'games_auto_cover':
+      case 'game_auto_cover':
         return 'Fetch cover automatically';
-      case 'games_cover_not_found':
+      case 'game_cover_not_found':
         return 'No usable cover found in the game folder or executable';
-      case 'games_cover_searching':
+      case 'game_cover_searching':
         return 'Looking for a cover...';
-      case 'games_cover_updated':
+      case 'game_cover_updated':
         return 'Cover updated';
-      case 'games_drop_imported':
+      case 'game_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
-      case 'games_drop_no_exe':
+      case 'game_drop_no_exe':
         return 'No new game .exe among the dropped files';
-      case 'games_empty':
+      case 'game_empty':
         return 'No games added yet';
-      case 'games_exe_missing':
+      case 'game_exe_missing':
         return 'Game executable not found';
-      case 'games_filter':
+      case 'game_filter':
         return 'Filter';
-      case 'games_filter_all':
-        return 'All';
-      case 'games_filter_hide_nsfw':
+      case 'game_filter_hide_nsfw':
         return 'Hide adult titles';
-      case 'games_filter_local_only':
+      case 'game_filter_local_only':
         return 'Has local file';
-      case 'games_filter_metadata_only':
+      case 'game_filter_metadata_only':
         return 'Metadata only';
-      case 'games_filter_reset':
+      case 'game_filter_reset':
         return 'Clear filters';
-      case 'games_filter_source':
+      case 'game_filter_source':
         return 'Availability';
-      case 'games_filter_status':
+      case 'game_filter_status':
         return 'Play status';
-      case 'games_filter_tags':
+      case 'game_filter_tags':
         return 'Tags';
-      case 'games_launch_unsupported':
+      case 'game_launch_unsupported':
         return 'Launching games is only supported on Windows';
-      case 'games_never_played':
+      case 'game_never_played':
         return 'Never played';
-      case 'games_no_match':
+      case 'game_no_match':
         return 'No games match the current filters';
-      case 'games_play_status':
+      case 'game_play_status':
         return 'Play status';
-      case 'games_remove':
+      case 'game_remove':
         return 'Remove';
-      case 'games_rename':
+      case 'game_rename':
         return 'Rename';
-      case 'games_rename_label':
+      case 'game_rename_label':
         return 'Game name';
-      case 'games_scrape':
+      case 'game_scrape':
         return 'Fetch metadata';
-      case 'games_search':
+      case 'game_search':
         return 'Search games';
-      case 'games_set_cover':
+      case 'game_set_cover':
         return 'Set cover';
-      case 'games_sort':
+      case 'game_sort':
         return 'Sort';
-      case 'games_sort_added':
+      case 'game_sort_added':
         return 'Date added';
-      case 'games_sort_last_played':
+      case 'game_sort_last_played':
         return 'Last played';
-      case 'games_sort_name':
+      case 'game_sort_name':
         return 'Name';
-      case 'games_sort_release':
+      case 'game_sort_release':
         return 'Release date';
-      case 'games_sort_site_score':
+      case 'game_sort_site_score':
         return 'Site rating';
-      case 'games_sort_user_rating':
+      case 'game_sort_user_rating':
         return 'My rating';
-      case 'games_status_dropped':
+      case 'game_status_dropped':
         return 'Dropped';
-      case 'games_status_on_hold':
+      case 'game_status_on_hold':
         return 'On hold';
-      case 'games_status_played':
+      case 'game_status_played':
         return 'Played';
-      case 'games_status_playing':
+      case 'game_status_playing':
         return 'Playing';
-      case 'games_status_unset':
+      case 'game_status_unset':
         return 'Not set';
-      case 'games_status_want_to_play':
+      case 'game_status_want_to_play':
         return 'Want to play';
-      case 'games_view_detail':
+      case 'game_view_detail':
         return 'View details';
       case 'global_context_capture':
         return 'Capture selection context';
@@ -169407,18 +169094,10 @@ extension on _StringsTr {
         return 'Video files can be very large.';
       case 'sync_webdav_missing_fields':
         return 'Eksik alanlar';
-      case 'sync_webdav_password':
-        return 'Parola';
-      case 'sync_webdav_test':
-        return 'Bağlantıyı test et';
       case 'sync_webdav_test_failed':
         return ({required Object message}) => 'Bağlantı başarısız: ${message}';
-      case 'sync_webdav_test_success':
-        return 'Bağlantı başarılı';
       case 'sync_webdav_url':
         return 'Sunucu URL\'si';
-      case 'sync_webdav_username':
-        return 'Kullanıcı adı';
       case 'tag_added_to_book':
         return ({required Object name}) => '"${name}" etiketi kitaba eklendi.';
       case 'tag_added_to_collection':
@@ -172289,53 +171968,53 @@ extension on _StringsVi {
         return 'Galgame caption font size';
       case 'gal_hook_text_font_size_hint':
         return 'Drag the overlay\'s corner to resize the window; the caption size is set here.';
-      case 'galgame_helper_download':
+      case 'game_helper_download':
         return 'Download';
-      case 'galgame_helper_download_failed':
+      case 'game_helper_download_failed':
         return ({required Object error}) =>
             'Engine component download failed: ${error}';
-      case 'galgame_helper_downloading':
+      case 'game_helper_downloading':
         return 'Downloading engine component…';
-      case 'galgame_helper_install_incomplete':
+      case 'game_helper_install_incomplete':
         return 'Engine component install incomplete, please retry';
-      case 'galgame_helper_needed_body':
+      case 'game_helper_needed_body':
         return ({required Object size}) =>
             'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
-      case 'galgame_helper_needed_title':
+      case 'game_helper_needed_title':
         return 'Galgame engine component required';
-      case 'galgame_helper_size_unknown':
+      case 'game_helper_size_unknown':
         return 'unknown size';
-      case 'galgame_helper_verification_failed':
+      case 'game_helper_verification_failed':
         return 'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
-      case 'galgame_upscaling':
+      case 'game_upscaling':
         return 'Game window upscaling';
-      case 'galgame_upscaling_auto':
+      case 'game_upscaling_auto':
         return 'Auto';
-      case 'galgame_upscaling_download_body':
+      case 'game_upscaling_download_body':
         return 'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
-      case 'galgame_upscaling_download_title':
+      case 'game_upscaling_download_title':
         return 'Download Magpie upscaler?';
-      case 'galgame_upscaling_hint':
+      case 'game_upscaling_hint':
         return 'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
-      case 'galgame_upscaling_hint_external':
+      case 'game_upscaling_hint_external':
         return 'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_first_run':
+      case 'game_upscaling_hint_first_run':
         return 'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
-      case 'galgame_upscaling_hint_manual':
+      case 'game_upscaling_hint_manual':
         return 'Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_not_installed':
+      case 'game_upscaling_hint_not_installed':
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
-      case 'galgame_upscaling_installed_only':
+      case 'game_upscaling_installed_only':
         return 'Installed only';
-      case 'galgame_upscaling_off':
+      case 'game_upscaling_off':
         return 'Off';
-      case 'galgame_upscaling_status_active':
+      case 'game_upscaling_status_active':
         return 'Window upscaling is on';
-      case 'galgame_upscaling_status_failed':
+      case 'game_upscaling_status_failed':
         return 'Window upscaling could not start';
-      case 'galgame_upscaling_status_manual':
+      case 'game_upscaling_status_manual':
         return 'Window upscaling is ready, but did not start on its own';
-      case 'galgame_upscaling_status_unavailable':
+      case 'game_upscaling_status_unavailable':
         return 'Window upscaling is not available';
       case 'game_audio_backend_engine':
         return 'Engine PCM';
@@ -172741,91 +172420,89 @@ extension on _StringsVi {
         return 'Not bound';
       case 'games':
         return 'Games';
-      case 'games_add':
+      case 'game_add':
         return 'Add game';
-      case 'games_already_added':
+      case 'game_already_added':
         return 'This game is already in the library';
-      case 'games_auto_cover':
+      case 'game_auto_cover':
         return 'Fetch cover automatically';
-      case 'games_cover_not_found':
+      case 'game_cover_not_found':
         return 'No usable cover found in the game folder or executable';
-      case 'games_cover_searching':
+      case 'game_cover_searching':
         return 'Looking for a cover...';
-      case 'games_cover_updated':
+      case 'game_cover_updated':
         return 'Cover updated';
-      case 'games_drop_imported':
+      case 'game_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
-      case 'games_drop_no_exe':
+      case 'game_drop_no_exe':
         return 'No new game .exe among the dropped files';
-      case 'games_empty':
+      case 'game_empty':
         return 'No games added yet';
-      case 'games_exe_missing':
+      case 'game_exe_missing':
         return 'Game executable not found';
-      case 'games_filter':
+      case 'game_filter':
         return 'Filter';
-      case 'games_filter_all':
-        return 'All';
-      case 'games_filter_hide_nsfw':
+      case 'game_filter_hide_nsfw':
         return 'Hide adult titles';
-      case 'games_filter_local_only':
+      case 'game_filter_local_only':
         return 'Has local file';
-      case 'games_filter_metadata_only':
+      case 'game_filter_metadata_only':
         return 'Metadata only';
-      case 'games_filter_reset':
+      case 'game_filter_reset':
         return 'Clear filters';
-      case 'games_filter_source':
+      case 'game_filter_source':
         return 'Availability';
-      case 'games_filter_status':
+      case 'game_filter_status':
         return 'Play status';
-      case 'games_filter_tags':
+      case 'game_filter_tags':
         return 'Tags';
-      case 'games_launch_unsupported':
+      case 'game_launch_unsupported':
         return 'Launching games is only supported on Windows';
-      case 'games_never_played':
+      case 'game_never_played':
         return 'Never played';
-      case 'games_no_match':
+      case 'game_no_match':
         return 'No games match the current filters';
-      case 'games_play_status':
+      case 'game_play_status':
         return 'Play status';
-      case 'games_remove':
+      case 'game_remove':
         return 'Remove';
-      case 'games_rename':
+      case 'game_rename':
         return 'Rename';
-      case 'games_rename_label':
+      case 'game_rename_label':
         return 'Game name';
-      case 'games_scrape':
+      case 'game_scrape':
         return 'Fetch metadata';
-      case 'games_search':
+      case 'game_search':
         return 'Search games';
-      case 'games_set_cover':
+      case 'game_set_cover':
         return 'Set cover';
-      case 'games_sort':
+      case 'game_sort':
         return 'Sort';
-      case 'games_sort_added':
+      case 'game_sort_added':
         return 'Date added';
-      case 'games_sort_last_played':
+      case 'game_sort_last_played':
         return 'Last played';
-      case 'games_sort_name':
+      case 'game_sort_name':
         return 'Name';
-      case 'games_sort_release':
+      case 'game_sort_release':
         return 'Release date';
-      case 'games_sort_site_score':
+      case 'game_sort_site_score':
         return 'Site rating';
-      case 'games_sort_user_rating':
+      case 'game_sort_user_rating':
         return 'My rating';
-      case 'games_status_dropped':
+      case 'game_status_dropped':
         return 'Dropped';
-      case 'games_status_on_hold':
+      case 'game_status_on_hold':
         return 'On hold';
-      case 'games_status_played':
+      case 'game_status_played':
         return 'Played';
-      case 'games_status_playing':
+      case 'game_status_playing':
         return 'Playing';
-      case 'games_status_unset':
+      case 'game_status_unset':
         return 'Not set';
-      case 'games_status_want_to_play':
+      case 'game_status_want_to_play':
         return 'Want to play';
-      case 'games_view_detail':
+      case 'game_view_detail':
         return 'View details';
       case 'global_context_capture':
         return 'Capture selection context';
@@ -174677,18 +174354,10 @@ extension on _StringsVi {
         return 'Video files can be very large.';
       case 'sync_webdav_missing_fields':
         return 'Thiếu thông tin';
-      case 'sync_webdav_password':
-        return 'Mật khẩu';
-      case 'sync_webdav_test':
-        return 'Kiểm tra kết nối';
       case 'sync_webdav_test_failed':
         return ({required Object message}) => 'Kết nối thất bại: ${message}';
-      case 'sync_webdav_test_success':
-        return 'Kết nối thành công';
       case 'sync_webdav_url':
         return 'URL máy chủ';
-      case 'sync_webdav_username':
-        return 'Tên đăng nhập';
       case 'tag_added_to_book':
         return ({required Object name}) => 'Đã thêm thẻ "${name}" vào sách.';
       case 'tag_added_to_collection':
@@ -177545,52 +177214,52 @@ extension on _StringsZhCn {
         return 'Galgame 台词浮窗字号';
       case 'gal_hook_text_font_size_hint':
         return '拖动浮窗右下角只改窗口大小（换来更多可见行），字号在这里单独设置。';
-      case 'galgame_helper_download':
+      case 'game_helper_download':
         return '下载';
-      case 'galgame_helper_download_failed':
+      case 'game_helper_download_failed':
         return ({required Object error}) => '引擎组件下载失败：${error}';
-      case 'galgame_helper_downloading':
+      case 'game_helper_downloading':
         return '正在下载引擎组件…';
-      case 'galgame_helper_install_incomplete':
+      case 'game_helper_install_incomplete':
         return '引擎组件安装不完整，请重试';
-      case 'galgame_helper_needed_body':
+      case 'game_helper_needed_body':
         return ({required Object size}) =>
             '启动 galgame 需要引擎-hook 注入器组件（约 ${size}）。它含进程注入代码，与主程序分离分发以避免杀软误报。现在下载吗？';
-      case 'galgame_helper_needed_title':
+      case 'game_helper_needed_title':
         return '需要下载 galgame 引擎组件';
-      case 'galgame_helper_size_unknown':
+      case 'game_helper_size_unknown':
         return '大小未知';
-      case 'galgame_helper_verification_failed':
+      case 'game_helper_verification_failed':
         return '引擎组件已被拒绝安装：无法校验其完整性（GitHub 上的 .sha256 校验文件不可达、缺失或与下载内容不符）。为避免装入被篡改的注入器代码，本次安装已终止。';
-      case 'galgame_upscaling':
+      case 'game_upscaling':
         return '游戏窗口超分';
-      case 'galgame_upscaling_auto':
+      case 'game_upscaling_auto':
         return '自动';
-      case 'galgame_upscaling_download_body':
+      case 'game_upscaling_download_body':
         return '游戏窗口超分需要 Magpie（约 10 MB，GPL-3.0，由我们自行从源码编译）。现在下载吗？';
-      case 'galgame_upscaling_download_title':
+      case 'game_upscaling_download_title':
         return '下载 Magpie 超分组件？';
-      case 'galgame_upscaling_hint':
+      case 'game_upscaling_hint':
         return '使用 Magpie 在 galgame hook 会话期间对游戏窗口做超分。「自动」会在首次使用时按需下载 Magpie。';
-      case 'galgame_upscaling_hint_external':
+      case 'game_upscaling_hint_external':
         return '你的电脑上已经开着一个 Magpie，Hibiki 没有去动它。按 Win+Shift+A 就能放大游戏窗口。';
-      case 'galgame_upscaling_hint_first_run':
+      case 'game_upscaling_hint_first_run':
         return '这次 Magpie 还在做首次初始化。现在按 Win+Shift+A 就能放大；下次启动游戏会自动放大。';
-      case 'galgame_upscaling_hint_manual':
+      case 'game_upscaling_hint_manual':
         return '按 Win+Shift+A 放大游戏窗口。';
-      case 'galgame_upscaling_hint_not_installed':
+      case 'game_upscaling_hint_not_installed':
         return '没有安装 Magpie。把「游戏窗口超分」改成「自动」即可下载。';
-      case 'galgame_upscaling_installed_only':
+      case 'game_upscaling_installed_only':
         return '仅用已装';
-      case 'galgame_upscaling_off':
+      case 'game_upscaling_off':
         return '关闭';
-      case 'galgame_upscaling_status_active':
+      case 'game_upscaling_status_active':
         return '窗口超分已开启';
-      case 'galgame_upscaling_status_failed':
+      case 'game_upscaling_status_failed':
         return '窗口超分没能启动';
-      case 'galgame_upscaling_status_manual':
+      case 'game_upscaling_status_manual':
         return '窗口超分已就绪，但没有自动开始';
-      case 'galgame_upscaling_status_unavailable':
+      case 'game_upscaling_status_unavailable':
         return '窗口超分暂时用不了';
       case 'game_audio_backend_engine':
         return '引擎 PCM';
@@ -177996,91 +177665,89 @@ extension on _StringsZhCn {
         return '未绑定';
       case 'games':
         return '游戏';
-      case 'games_add':
+      case 'game_add':
         return '添加游戏';
-      case 'games_already_added':
+      case 'game_already_added':
         return '该游戏已在库中';
-      case 'games_auto_cover':
+      case 'game_auto_cover':
         return '自动获取封面';
-      case 'games_cover_not_found':
+      case 'game_cover_not_found':
         return '游戏目录和程序图标里都没找到可用封面';
-      case 'games_cover_searching':
+      case 'game_cover_searching':
         return '正在查找封面...';
-      case 'games_cover_updated':
+      case 'game_cover_updated':
         return '封面已更新';
-      case 'games_drop_imported':
+      case 'game_drop_imported':
         return ({required Object count}) => '已添加 ${count} 个游戏';
-      case 'games_drop_no_exe':
+      case 'game_drop_no_exe':
         return '拖入的文件里没有新的游戏 .exe';
-      case 'games_empty':
+      case 'game_empty':
         return '还没有添加游戏';
-      case 'games_exe_missing':
+      case 'game_exe_missing':
         return '找不到游戏可执行文件';
-      case 'games_filter':
+      case 'game_filter':
         return '筛选';
-      case 'games_filter_all':
-        return '全部';
-      case 'games_filter_hide_nsfw':
+      case 'game_filter_hide_nsfw':
         return '隐藏成人向';
-      case 'games_filter_local_only':
+      case 'game_filter_local_only':
         return '有本地 exe';
-      case 'games_filter_metadata_only':
+      case 'game_filter_metadata_only':
         return '仅元数据';
-      case 'games_filter_reset':
+      case 'game_filter_reset':
         return '清除筛选';
-      case 'games_filter_source':
+      case 'game_filter_source':
         return '条目来源';
-      case 'games_filter_status':
+      case 'game_filter_status':
         return '游玩状态';
-      case 'games_filter_tags':
+      case 'game_filter_tags':
         return '标签';
-      case 'games_launch_unsupported':
+      case 'game_launch_unsupported':
         return '启动游戏仅支持 Windows 桌面';
-      case 'games_never_played':
+      case 'game_never_played':
         return '未游玩';
-      case 'games_no_match':
+      case 'game_no_match':
         return '没有符合当前筛选的游戏';
-      case 'games_play_status':
+      case 'game_play_status':
         return '游玩状态';
-      case 'games_remove':
+      case 'game_remove':
         return '移除';
-      case 'games_rename':
+      case 'game_rename':
         return '重命名';
-      case 'games_rename_label':
+      case 'game_rename_label':
         return '游戏名称';
-      case 'games_scrape':
+      case 'game_scrape':
         return '刮削元数据';
-      case 'games_search':
+      case 'game_search':
         return '搜索游戏';
-      case 'games_set_cover':
+      case 'game_set_cover':
         return '设置封面';
-      case 'games_sort':
+      case 'game_sort':
         return '排序';
-      case 'games_sort_added':
+      case 'game_sort_added':
         return '添加时间';
-      case 'games_sort_last_played':
+      case 'game_sort_last_played':
         return '最后游玩';
-      case 'games_sort_name':
+      case 'game_sort_name':
         return '名称';
-      case 'games_sort_release':
+      case 'game_sort_release':
         return '发行日';
-      case 'games_sort_site_score':
+      case 'game_sort_site_score':
         return '站点评分';
-      case 'games_sort_user_rating':
+      case 'game_sort_user_rating':
         return '我的评分';
-      case 'games_status_dropped':
+      case 'game_status_dropped':
         return '弃坑';
-      case 'games_status_on_hold':
+      case 'game_status_on_hold':
         return '搁置';
-      case 'games_status_played':
+      case 'game_status_played':
         return '玩过';
-      case 'games_status_playing':
+      case 'game_status_playing':
         return '在玩';
-      case 'games_status_unset':
+      case 'game_status_unset':
         return '未设置';
-      case 'games_status_want_to_play':
+      case 'game_status_want_to_play':
         return '想玩';
-      case 'games_view_detail':
+      case 'game_view_detail':
         return '查看详情';
       case 'global_context_capture':
         return '抓取选中文本上下文';
@@ -179919,18 +179586,10 @@ extension on _StringsZhCn {
         return '视频文件可能非常大。';
       case 'sync_webdav_missing_fields':
         return '缺少字段';
-      case 'sync_webdav_password':
-        return '密码';
-      case 'sync_webdav_test':
-        return '测试连接';
       case 'sync_webdav_test_failed':
         return ({required Object message}) => '连接失败: ${message}';
-      case 'sync_webdav_test_success':
-        return '连接成功';
       case 'sync_webdav_url':
         return '服务器地址';
-      case 'sync_webdav_username':
-        return '用户名';
       case 'tag_added_to_book':
         return ({required Object name}) => '标签「${name}」已添加到书籍。';
       case 'tag_added_to_collection':
@@ -182774,53 +182433,53 @@ extension on _StringsZhHk {
         return 'Galgame caption font size';
       case 'gal_hook_text_font_size_hint':
         return 'Drag the overlay\'s corner to resize the window; the caption size is set here.';
-      case 'galgame_helper_download':
+      case 'game_helper_download':
         return 'Download';
-      case 'galgame_helper_download_failed':
+      case 'game_helper_download_failed':
         return ({required Object error}) =>
             'Engine component download failed: ${error}';
-      case 'galgame_helper_downloading':
+      case 'game_helper_downloading':
         return 'Downloading engine component…';
-      case 'galgame_helper_install_incomplete':
+      case 'game_helper_install_incomplete':
         return 'Engine component install incomplete, please retry';
-      case 'galgame_helper_needed_body':
+      case 'game_helper_needed_body':
         return ({required Object size}) =>
             'Launching a galgame needs the engine-hook injector component (about ${size}). It contains process-injection code and ships separately from the app to avoid antivirus false positives. Download it now?';
-      case 'galgame_helper_needed_title':
+      case 'game_helper_needed_title':
         return 'Galgame engine component required';
-      case 'galgame_helper_size_unknown':
+      case 'game_helper_size_unknown':
         return 'unknown size';
-      case 'galgame_helper_verification_failed':
+      case 'game_helper_verification_failed':
         return 'Engine component blocked: its checksum could not be verified (the .sha256 file from GitHub is unreachable, missing, or does not match). Hibiki refuses to install unverified injector code.';
-      case 'galgame_upscaling':
+      case 'game_upscaling':
         return 'Game window upscaling';
-      case 'galgame_upscaling_auto':
+      case 'game_upscaling_auto':
         return 'Auto';
-      case 'galgame_upscaling_download_body':
+      case 'game_upscaling_download_body':
         return 'Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?';
-      case 'galgame_upscaling_download_title':
+      case 'game_upscaling_download_title':
         return 'Download Magpie upscaler?';
-      case 'galgame_upscaling_hint':
+      case 'game_upscaling_hint':
         return 'Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.';
-      case 'galgame_upscaling_hint_external':
+      case 'game_upscaling_hint_external':
         return 'A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_first_run':
+      case 'game_upscaling_hint_first_run':
         return 'Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.';
-      case 'galgame_upscaling_hint_manual':
+      case 'game_upscaling_hint_manual':
         return 'Press Win+Shift+A to upscale the game window.';
-      case 'galgame_upscaling_hint_not_installed':
+      case 'game_upscaling_hint_not_installed':
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
-      case 'galgame_upscaling_installed_only':
+      case 'game_upscaling_installed_only':
         return 'Installed only';
-      case 'galgame_upscaling_off':
+      case 'game_upscaling_off':
         return 'Off';
-      case 'galgame_upscaling_status_active':
+      case 'game_upscaling_status_active':
         return 'Window upscaling is on';
-      case 'galgame_upscaling_status_failed':
+      case 'game_upscaling_status_failed':
         return 'Window upscaling could not start';
-      case 'galgame_upscaling_status_manual':
+      case 'game_upscaling_status_manual':
         return 'Window upscaling is ready, but did not start on its own';
-      case 'galgame_upscaling_status_unavailable':
+      case 'game_upscaling_status_unavailable':
         return 'Window upscaling is not available';
       case 'game_audio_backend_engine':
         return 'Engine PCM';
@@ -183226,91 +182885,89 @@ extension on _StringsZhHk {
         return 'Not bound';
       case 'games':
         return 'Games';
-      case 'games_add':
+      case 'game_add':
         return 'Add game';
-      case 'games_already_added':
+      case 'game_already_added':
         return 'This game is already in the library';
-      case 'games_auto_cover':
+      case 'game_auto_cover':
         return 'Fetch cover automatically';
-      case 'games_cover_not_found':
+      case 'game_cover_not_found':
         return 'No usable cover found in the game folder or executable';
-      case 'games_cover_searching':
+      case 'game_cover_searching':
         return 'Looking for a cover...';
-      case 'games_cover_updated':
+      case 'game_cover_updated':
         return 'Cover updated';
-      case 'games_drop_imported':
+      case 'game_drop_imported':
         return ({required Object count}) => 'Added ${count} game(s)';
-      case 'games_drop_no_exe':
+      case 'game_drop_no_exe':
         return 'No new game .exe among the dropped files';
-      case 'games_empty':
+      case 'game_empty':
         return 'No games added yet';
-      case 'games_exe_missing':
+      case 'game_exe_missing':
         return 'Game executable not found';
-      case 'games_filter':
+      case 'game_filter':
         return 'Filter';
-      case 'games_filter_all':
-        return 'All';
-      case 'games_filter_hide_nsfw':
+      case 'game_filter_hide_nsfw':
         return 'Hide adult titles';
-      case 'games_filter_local_only':
+      case 'game_filter_local_only':
         return 'Has local file';
-      case 'games_filter_metadata_only':
+      case 'game_filter_metadata_only':
         return 'Metadata only';
-      case 'games_filter_reset':
+      case 'game_filter_reset':
         return 'Clear filters';
-      case 'games_filter_source':
+      case 'game_filter_source':
         return 'Availability';
-      case 'games_filter_status':
+      case 'game_filter_status':
         return 'Play status';
-      case 'games_filter_tags':
+      case 'game_filter_tags':
         return 'Tags';
-      case 'games_launch_unsupported':
+      case 'game_launch_unsupported':
         return 'Launching games is only supported on Windows';
-      case 'games_never_played':
+      case 'game_never_played':
         return 'Never played';
-      case 'games_no_match':
+      case 'game_no_match':
         return 'No games match the current filters';
-      case 'games_play_status':
+      case 'game_play_status':
         return 'Play status';
-      case 'games_remove':
+      case 'game_remove':
         return 'Remove';
-      case 'games_rename':
+      case 'game_rename':
         return 'Rename';
-      case 'games_rename_label':
+      case 'game_rename_label':
         return 'Game name';
-      case 'games_scrape':
+      case 'game_scrape':
         return 'Fetch metadata';
-      case 'games_search':
+      case 'game_search':
         return 'Search games';
-      case 'games_set_cover':
+      case 'game_set_cover':
         return 'Set cover';
-      case 'games_sort':
+      case 'game_sort':
         return 'Sort';
-      case 'games_sort_added':
+      case 'game_sort_added':
         return 'Date added';
-      case 'games_sort_last_played':
+      case 'game_sort_last_played':
         return 'Last played';
-      case 'games_sort_name':
+      case 'game_sort_name':
         return 'Name';
-      case 'games_sort_release':
+      case 'game_sort_release':
         return 'Release date';
-      case 'games_sort_site_score':
+      case 'game_sort_site_score':
         return 'Site rating';
-      case 'games_sort_user_rating':
+      case 'game_sort_user_rating':
         return 'My rating';
-      case 'games_status_dropped':
+      case 'game_status_dropped':
         return 'Dropped';
-      case 'games_status_on_hold':
+      case 'game_status_on_hold':
         return 'On hold';
-      case 'games_status_played':
+      case 'game_status_played':
         return 'Played';
-      case 'games_status_playing':
+      case 'game_status_playing':
         return 'Playing';
-      case 'games_status_unset':
+      case 'game_status_unset':
         return 'Not set';
-      case 'games_status_want_to_play':
+      case 'game_status_want_to_play':
         return 'Want to play';
-      case 'games_view_detail':
+      case 'game_view_detail':
         return 'View details';
       case 'global_context_capture':
         return 'Capture selection context';
@@ -185153,18 +184810,10 @@ extension on _StringsZhHk {
         return 'Video files can be very large.';
       case 'sync_webdav_missing_fields':
         return '缺少欄位';
-      case 'sync_webdav_password':
-        return '密碼';
-      case 'sync_webdav_test':
-        return '測試連線';
       case 'sync_webdav_test_failed':
         return ({required Object message}) => '連線失敗：${message}';
-      case 'sync_webdav_test_success':
-        return '連線成功';
       case 'sync_webdav_url':
         return '伺服器網址';
-      case 'sync_webdav_username':
-        return '用戶名稱';
       case 'tag_added_to_book':
         return ({required Object name}) => '標籤「${name}」已新增至書籍。';
       case 'tag_added_to_collection':

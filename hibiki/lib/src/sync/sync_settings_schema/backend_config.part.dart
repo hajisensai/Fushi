@@ -240,7 +240,7 @@ class _WebDavConfigWidget extends StatelessWidget {
         username: username,
         password: password,
       );
-      return t.sync_webdav_test_success;
+      return t.sync_connection_success;
     } catch (e) {
       // SyncAuthError / SyncBackendError / anything else all render the same
       // friendly detail (the former three catch arms were identical).
@@ -259,8 +259,8 @@ class _WebDavConfigWidget extends StatelessWidget {
           hint: 'https://cloud.example.com/remote.php/dav/files/user',
           keyboardType: TextInputType.url,
         ),
-        _CredentialFieldSpec(label: t.sync_webdav_username),
-        _CredentialFieldSpec(label: t.sync_webdav_password, obscure: true),
+        _CredentialFieldSpec(label: t.sync_username),
+        _CredentialFieldSpec(label: t.sync_password, obscure: true),
       ],
       load: _load,
       save: _save,
@@ -270,7 +270,7 @@ class _WebDavConfigWidget extends StatelessWidget {
         children: <Widget>[
           const Icon(Icons.wifi_find, size: 18),
           const SizedBox(width: 8),
-          Text(t.sync_webdav_test),
+          Text(t.sync_test_connection),
         ],
       ),
     );

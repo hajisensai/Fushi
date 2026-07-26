@@ -75,7 +75,7 @@ void main() {
     await pumpHome(tester, appModel);
 
     expect(tester.takeException(), isNull);
-    expect(find.text(t.games_empty), findsOneWidget);
+    expect(find.text(t.game_empty), findsOneWidget);
   });
 
   testWidgets('KPI strip renders total games and labels',

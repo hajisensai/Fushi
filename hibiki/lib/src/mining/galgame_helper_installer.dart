@@ -502,7 +502,7 @@ class GalgameHelperInstaller {
       );
       if (!repaired || _missingInstalledFiles(arch).isNotEmpty) {
         if (context.mounted) {
-          HibikiToast.show(msg: t.galgame_helper_install_incomplete);
+          HibikiToast.show(msg: t.game_helper_install_incomplete);
         }
         return false;
       }
@@ -514,7 +514,7 @@ class GalgameHelperInstaller {
     // 要等好几秒对话框才出现，是「点了没反应」的根因）。大小仅作展示，先填「大小未知」，探测
     // 在后台并发进行，返回后就地更新对话框里的「约 N MB」。
     final ValueNotifier<String> sizeText =
-        ValueNotifier<String>(t.galgame_helper_size_unknown);
+        ValueNotifier<String>(t.game_helper_size_unknown);
     // sizeText.dispose() 后不得再写其 value（debug 下会 assert）。用本地守卫记录对话框是否已关闭；
     // Dart 单线程事件循环下 then 回调与 dispose 后的代码不会真并发，简单 bool 守卫即安全。
     bool dialogClosed = false;
@@ -547,7 +547,7 @@ class GalgameHelperInstaller {
     if (!ok) return false;
 
     if (_missingInstalledFiles(arch).isNotEmpty) {
-      HibikiToast.show(msg: t.galgame_helper_install_incomplete);
+      HibikiToast.show(msg: t.game_helper_install_incomplete);
       return false;
     }
     return true;
@@ -572,7 +572,7 @@ class GalgameHelperInstaller {
           ),
           scrollable: false,
           child: HibikiModalSheetFrame(
-            title: t.galgame_helper_needed_title,
+            title: t.game_helper_needed_title,
             scrollable: true,
             bodyPadding: EdgeInsets.fromLTRB(
               tokens.spacing.card,
@@ -589,7 +589,7 @@ class GalgameHelperInstaller {
             body: ValueListenableBuilder<String>(
               valueListenable: sizeText,
               builder: (BuildContext _, String size, Widget? __) => Text(
-                t.galgame_helper_needed_body(size: size),
+                t.game_helper_needed_body(size: size),
                 style: tokens.type.listSubtitle,
               ),
             ),
@@ -607,7 +607,7 @@ class GalgameHelperInstaller {
                   context: ctx,
                   isDefaultAction: true,
                   onPressed: () => Navigator.pop(ctx, true),
-                  child: Text(t.galgame_helper_download),
+                  child: Text(t.game_helper_download),
                 ),
               ],
             ),
@@ -687,8 +687,8 @@ class GalgameHelperInstaller {
       // 「无法证明产物可信」必须说人话：用户否则会以为是网络抖动而无限重试。
       HibikiToast.show(
         msg: failure == GalgameHelperInstallFailure.verificationFailed
-            ? t.galgame_helper_verification_failed
-            : t.galgame_helper_download_failed(error: '$e'),
+            ? t.game_helper_verification_failed
+            : t.game_helper_download_failed(error: '$e'),
       );
       return false;
     } finally {
@@ -1052,7 +1052,7 @@ class _HelperDownloadDialog extends StatelessWidget {
       ),
       scrollable: false,
       child: HibikiModalSheetFrame(
-        title: t.galgame_helper_downloading,
+        title: t.game_helper_downloading,
         scrollable: false,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,

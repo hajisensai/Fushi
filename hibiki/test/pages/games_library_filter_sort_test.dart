@@ -129,8 +129,8 @@ void main() {
     // 谁都不命中时给「没有符合筛选」的空态，而不是空库文案。
     await tester.enterText(find.byType(TextField), 'zzzz');
     await tester.pumpAndSettle();
-    expect(find.text(t.games_no_match), findsOneWidget);
-    expect(find.text(t.games_empty), findsNothing);
+    expect(find.text(t.game_no_match), findsOneWidget);
+    expect(find.text(t.game_empty), findsNothing);
   });
 
   testWidgets('排序切换：按名称升序 → 再点同项翻成降序', (WidgetTester tester) async {
@@ -143,7 +143,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    await pickSort(t.games_sort_name);
+    await pickSort(t.game_sort_name);
     // 'alpha' < '贝塔物语'（归一化后按码位比较），升序时排在前面。
     expect(
       tester.getTopLeft(cardTitle('alpha')).dx,
@@ -151,7 +151,7 @@ void main() {
     );
 
     // 再点当前维度 = 翻转方向。
-    await pickSort(t.games_sort_name);
+    await pickSort(t.game_sort_name);
     expect(
       tester.getTopLeft(cardTitle('alpha')).dx,
       greaterThan(tester.getTopLeft(cardTitle('贝塔物语')).dx),

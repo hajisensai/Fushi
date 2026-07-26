@@ -65,8 +65,8 @@ class _MagpieDownloadDialogState extends State<_MagpieDownloadDialog> {
         : '\n\n${HibikiByteFormat.bytes(bytes)} '
             '(${widget.prompt.arch})';
     return AlertDialog(
-      title: Text(t.galgame_upscaling_download_title),
-      content: Text('${t.galgame_upscaling_download_body}$size'),
+      title: Text(t.game_upscaling_download_title),
+      content: Text('${t.game_upscaling_download_body}$size'),
       actions: <Widget>[
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
