@@ -21,6 +21,7 @@ import 'package:hibiki/src/pages/implementations/games_library_page.dart'
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki/src/pages/implementations/stat_shared.dart'
     show formatStatTime;
+import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
 
 /// galgame 详情页（契约 §4.2）：头部常驻 + 统计 / 简介 / 编辑三个 tab。
@@ -51,7 +52,9 @@ class GalgameDetailPage extends ConsumerStatefulWidget {
 }
 
 class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
-    with SingleTickerProviderStateMixin {
+    with
+        SingleTickerProviderStateMixin,
+        HibikiPagePlaceholders<GalgameDetailPage> {
   late final AppModel _appModel = ref.read(appProvider);
   late final GalgameRepository _repo = _appModel.galgameRepo;
   late final TabController _tabs = TabController(
@@ -183,7 +186,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     if (_loading) {
       return Scaffold(
         appBar: AppBar(),
-        body: const Center(child: CircularProgressIndicator()),
+        body: buildLoading(),
       );
     }
     if (game == null) {
@@ -545,7 +548,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
               theme,
               t.game_stat_last_played,
               game.lastPlayedMs <= 0
-                  ? t.games_never_played
+                  ? t.game_never_played
                   : formatGalgameDate(
                       DateTime.fromMillisecondsSinceEpoch(game.lastPlayedMs)),
             ),
@@ -925,7 +928,7 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
   /// 读**重载后**的最新条目（合并层已按优先级/手选源算好 coverUrl），无可用封面
   /// 文件才下载；落盘（含双键驱逐旧解码缓存）由 [downloadGalgameCoverToFile] →
   /// `MediaCoverService.applyCoverBytes` 收口结构性保证，随后写 coverPath 并复用
-  /// `t.games_cover_updated` 提示。
+  /// `t.game_cover_updated` 提示。
   Future<void> _maybeDownloadScrapedCover() async {
     final GalgameEntry? latest = widget.repo.byId(widget.game.id);
     if (latest == null) return;
@@ -950,7 +953,7 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
     await widget.repo.setCoverPath(latest.id, saved);
     await widget.onSaved();
     if (!mounted) return;
-    HibikiToast.show(msg: t.games_cover_updated);
+    HibikiToast.show(msg: t.game_cover_updated);
   }
 
   @override
@@ -964,7 +967,7 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
               child: OutlinedButton.icon(
                 onPressed: _scraping ? null : () => unawaited(_scrape()),
                 icon: const Icon(Icons.cloud_download_outlined),
-                label: Text(t.games_scrape),
+                label: Text(t.game_scrape),
               ),
             ),
             const SizedBox(width: 12),
@@ -1078,7 +1081,7 @@ class _ScrapeQueryDialogState extends State<_ScrapeQueryDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(t.games_scrape),
+      title: Text(t.game_scrape),
       content: TextField(
         controller: _controller,
         autofocus: true,

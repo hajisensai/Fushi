@@ -16,6 +16,7 @@ import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/galgame_repository.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/pages/base_module_tab_page.dart';
 import 'package:hibiki/src/pages/implementations/activity_feed.dart';
 import 'package:hibiki/src/pages/implementations/home_page.dart';
 import 'package:hibiki/src/pages/implementations/home_video_page.dart'
@@ -43,7 +44,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// [_kDashboardMaxWidth] 居中；窄屏单列堆叠。书与阅读位置走 Riverpod provider
 /// （响应式）；视频与活动事件在 [initState] 一次性异步载入到本地状态（视频列表天然是
 /// Future）。
-class HomeDashboardPage extends ConsumerStatefulWidget {
+class HomeDashboardPage extends BaseModuleTabPage {
   const HomeDashboardPage({
     super.key,
     required this.videoRepo,
@@ -64,7 +65,8 @@ class HomeDashboardPage extends ConsumerStatefulWidget {
   )? openVideoOverride;
 
   @override
-  ConsumerState<HomeDashboardPage> createState() => _HomeDashboardPageState();
+  BaseModuleTabPageState<HomeDashboardPage> createState() =>
+      _HomeDashboardPageState();
 }
 
 /// 「继续」统一列表的单条：书 / 视频 / 游戏归一到同一结构，按 [recentMs] 倒序混排。
@@ -245,7 +247,8 @@ class _DailyGoalDialogState extends State<_DailyGoalDialog> {
 /// 仪表盘内容最大宽度（逻辑像素）：超宽屏限宽居中，避免每个区块被拉成大片空白。
 const double _kDashboardMaxWidth = 1600;
 
-class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
+class _HomeDashboardPageState
+    extends BaseModuleTabPageState<HomeDashboardPage> {
   /// 「继续」横滑行：卡片封面等高，书竖版 5:7 / 视频横版 16:9 由宽度区分（同一行
   /// 混排不同宽度，Jellyfin 式）。行总高 = 封面 + 标题/副标题两行文字块。
   static const double _kContinueCoverHeight = 132;
@@ -742,9 +745,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     }
     for (final VideoBookRow v in standaloneVideos) {
       if (v.lastPositionMs > 0 && v.completedAt == null) {
-        final int recent = _videoWatchAtByUid[v.bookUid] ??
-            v.importedAt?.millisecondsSinceEpoch ??
-            0;
+        final int recent = _videoWatchAtByUid[v.bookUid] ?? v.importedAt ?? 0;
         entries.add(
           _videoContinueEntry(v, collectionName: null, recentMs: recent),
         );
@@ -762,7 +763,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         if (at > recent) recent = at;
       }
       if (recent == 0) {
-        recent = resume.importedAt?.millisecondsSinceEpoch ?? 0;
+        recent = resume.importedAt ?? 0;
       }
       entries.add(_videoContinueEntry(
         resume,
@@ -925,7 +926,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       ));
     }
     for (final VideoBookRow v in _videos) {
-      final int addedMs = v.importedAt?.millisecondsSinceEpoch ?? 0;
+      final int addedMs = v.importedAt ?? 0;
       if (addedMs <= 0) continue;
       entries.add(_ContinueEntry(
         kind: MediaKind.video,

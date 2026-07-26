@@ -2,9 +2,9 @@ import 'dart:async' show StreamSubscription, unawaited;
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
-// BUG-994：监听全局 tab 信号，切回视频 tab 自动重拉远端。
-import 'package:hibiki/src/pages/implementations/home_page.dart'
-    show homeShellTabNotifier, HomeTab;
+// BUG-994：shellTab 覆写用（切回视频 tab 自动重拉远端，监听收口在基类）。
+import 'package:hibiki/src/pages/base_module_tab_page.dart';
+import 'package:hibiki/src/pages/implementations/home_page.dart' show HomeTab;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -115,7 +115,7 @@ Future<void> openLocalVideoBook({
 /// 标签：视频书与书架（EPUB/SRT）**共用同一套标签系统**（共享 `BookTags` 标签池
 /// + `video_book_tag_mappings` 映射）。顶部有标签筛选栏（共享 [selectedTagIdsProvider]，
 /// 与书架联动），卡片渲染所挂标签，长按弹菜单（编辑标签 / 设置封面 / 删除）。
-class HomeVideoPage extends ConsumerStatefulWidget {
+class HomeVideoPage extends BaseModuleTabPage {
   const HomeVideoPage({
     required this.repo,
     this.remoteVideoClientLoader,
@@ -142,10 +142,10 @@ class HomeVideoPage extends ConsumerStatefulWidget {
   static void Function()? debugRefreshVideos;
 
   @override
-  ConsumerState<HomeVideoPage> createState() => _HomeVideoPageState();
+  BaseModuleTabPageState<HomeVideoPage> createState() => _HomeVideoPageState();
 }
 
-class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
+class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Future<List<VideoBookRow>>? _future;
   Future<_RemoteVideoState?>? _remoteFuture;
   RemoteVideoClient? _remoteVideoClient;
@@ -246,30 +246,29 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     // BUG-793：订阅 videoBooks 表，任意导入路径落库后自动刷新库页。
     _videoUidsSub =
         widget.repo.watchVideoBookUids().listen(_onVideoUidsChanged);
-    // BUG-994：顶层 tab IndexedStack 保活后，切回视频 tab 不再隐式重拉远端 → 远端视频
-    // 要手动下拉刷新才出来（与书架 BUG-816 同病）。监听全局 tab 信号，切回视频 tab 时
-    // 自动重拉一次远端视频（_lastRemoteState 缓存顶住 waiting、不闪屏）。
-    homeShellTabNotifier.addListener(_onShellTabActivated);
     assert(() {
       HomeVideoPage.debugRefreshVideos = _refresh;
       return true;
     }());
   }
 
-  /// 切回视频 tab 时自动重拉远端视频（BUG-994）。非视频 tab 的切换忽略。
-  void _onShellTabActivated() {
-    if (!mounted) return;
-    if (homeShellTabNotifier.value == HomeTab.video) {
-      setState(() {
-        _remoteFuture = _loadRemoteVideos();
-      });
-    }
+  // BUG-994：顶层 tab 保活后，切回视频 tab 不再隐式重拉远端 → 远端视频要手动
+  // 下拉刷新才出来（与书架 BUG-816 同病）。shell tab 信号监听三件套已收口到
+  // BaseModuleTabPageState（shellTab / onTabActivated），切回视频 tab 时自动
+  // 重拉一次远端视频（_lastRemoteState 缓存顶住 waiting、不闪屏）。
+  @override
+  HomeTab get shellTab => HomeTab.video;
+
+  @override
+  void onTabActivated() {
+    setState(() {
+      _remoteFuture = _loadRemoteVideos();
+    });
   }
 
   @override
   void dispose() {
     _searchController.dispose();
-    homeShellTabNotifier.removeListener(_onShellTabActivated);
     _videoUidsSub?.cancel();
     _autoScrape?.dispose();
     assert(() {
@@ -1360,7 +1359,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       embeddedSubtitleTrack: subtitle.source == null
           ? const Value<int?>(0)
           : const Value<int?>(null),
-      importedAt: Value(DateTime.now()),
+      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
     if (subtitle.cues.isNotEmpty) {
       await widget.repo.saveCues(bookUid: bookUid, cues: subtitle.cues);
@@ -1412,7 +1411,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
       videoPath: Value(dest.path),
       // 云视频无外挂字幕：回退内嵌默认轨（与 _registerDownloadedVideo 无字幕分支一致）。
       embeddedSubtitleTrack: const Value<int?>(0),
-      importedAt: Value(DateTime.now()),
+      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
     // tags 稳健档：合并云清单携带的标签 LWW 时钟（删除/改名传播、防复活）。空则 no-op。
     if (video.tagsAddedAt.isNotEmpty || video.tagTombstones.isNotEmpty) {
@@ -1921,7 +1920,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
                 : _videosCache;
         if (loaded == null) {
           // 仅首载（无缓存）显示加载圈；后续刷新用旧数据顶住，不闪屏。
-          return const Center(child: CircularProgressIndicator());
+          return buildLoading();
         }
         final List<VideoBookRow> all = loaded;
         final Set<String>? filter =
@@ -2389,7 +2388,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
         CollectionOrderingItem<_VideoSlot>(
           mediaType: MediaKind.video,
           entryKey: book.bookUid,
-          importedAt: book.importedAt?.millisecondsSinceEpoch ?? 0,
+          importedAt: book.importedAt ?? 0,
           payload: _VideoSlot(local: book),
         ),
     ];

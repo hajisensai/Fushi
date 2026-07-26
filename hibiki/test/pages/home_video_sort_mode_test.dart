@@ -106,21 +106,21 @@ void main() {
       title: const Value('Beta'),
       videoPath: const Value('/abs/beta.mp4'),
       lastPositionMs: const Value(60000),
-      importedAt: Value(DateTime(2026, 1, 2)),
+      importedAt: Value(DateTime(2026, 1, 2).millisecondsSinceEpoch),
     ));
     // Alpha 第10话：导入最新（1/3），无观看记录。
     await db.upsertVideoBook(VideoBooksCompanion(
       bookUid: const Value('video/a10'),
       title: const Value('Alpha 第10话'),
       videoPath: const Value('/abs/a10.mp4'),
-      importedAt: Value(DateTime(2026, 1, 3)),
+      importedAt: Value(DateTime(2026, 1, 3).millisecondsSinceEpoch),
     ));
     // Alpha 第9话：导入最旧（1/1），无观看记录。
     await db.upsertVideoBook(VideoBooksCompanion(
       bookUid: const Value('video/a9'),
       title: const Value('Alpha 第9话'),
       videoPath: const Value('/abs/a9.mp4'),
-      importedAt: Value(DateTime(2026, 1, 1)),
+      importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
     ));
     await db.addVideoWatchStatistic(
       title: 'Beta',

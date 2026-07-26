@@ -80,7 +80,7 @@ void main() {
       bookUid: Value(uid),
       title: Value(title),
       videoPath: Value('/abs/$uid.mp4'),
-      importedAt: Value(DateTime(2026, 1, 1)),
+      importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
     ));
   }
 

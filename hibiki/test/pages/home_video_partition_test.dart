@@ -73,13 +73,13 @@ void main() {
       bookUid: const Value('video/ep1'),
       title: const Value('第1集'),
       videoPath: const Value('/abs/ep1.mp4'),
-      importedAt: Value(DateTime(2026, 1, 4)),
+      importedAt: Value(DateTime(2026, 1, 4).millisecondsSinceEpoch),
     ));
     await db.upsertVideoBook(VideoBooksCompanion(
       bookUid: const Value('video/ep2'),
       title: const Value('第2集'),
       videoPath: const Value('/abs/ep2.mp4'),
-      importedAt: Value(DateTime(2026, 1, 2)),
+      importedAt: Value(DateTime(2026, 1, 2).millisecondsSinceEpoch),
     ));
     final int collectionId = await db.createMediaCollection(
       '某番剧',
@@ -94,7 +94,7 @@ void main() {
       bookUid: const Value('video/looseA'),
       title: const Value('Loose New'),
       videoPath: const Value('/abs/loose_a.mp4'),
-      importedAt: Value(DateTime(2026, 1, 5)),
+      importedAt: Value(DateTime(2026, 1, 5).millisecondsSinceEpoch),
     ));
     await db.addVideoWatchStatistic(
       title: 'Loose New',
@@ -109,7 +109,7 @@ void main() {
       bookUid: const Value('video/looseB'),
       title: const Value('Loose Old'),
       videoPath: const Value('/abs/loose_b.mp4'),
-      importedAt: Value(DateTime(2026, 1, 3)),
+      importedAt: Value(DateTime(2026, 1, 3).millisecondsSinceEpoch),
     ));
   });
 

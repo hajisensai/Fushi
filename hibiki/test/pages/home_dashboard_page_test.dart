@@ -528,7 +528,7 @@ void main() {
       bookUid: const Value('recent-v'),
       title: const Value('新导入的视频'),
       videoPath: const Value('/abs/recent.mp4'),
-      importedAt: Value(DateTime.now()),
+      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
 
     await tester.pumpWidget(buildApp());
@@ -895,7 +895,7 @@ void main() {
       bookUid: const Value('recent-added-v'),
       title: const Value('刚导入的视频'),
       videoPath: const Value('/abs/recent-added.mp4'),
-      importedAt: Value(DateTime.now()),
+      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
   }
 
