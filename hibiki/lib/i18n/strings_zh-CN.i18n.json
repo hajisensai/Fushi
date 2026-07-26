@@ -933,7 +933,6 @@
   "game_scrape_no_result": "没有找到匹配条目",
   "game_scrape_pick": "选择匹配的条目",
   "game_scrape_query": "标题或源 ID",
-  "game_scrape_title": "刮削元数据",
   "game_session_events": "会话事件",
   "game_session_idle": "尚未开始捕获",
   "game_session_listening": "正在监听",

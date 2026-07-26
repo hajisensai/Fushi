@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 43843 (2579 per locale)
+/// Strings: 43826 (2578 per locale)
 ///
-/// Built on 2026-07-26 at 17:36 UTC
+/// Built on 2026-07-26 at 18:10 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -1415,7 +1415,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get game_scrape_no_result => 'No matching entry found';
   String get game_scrape_pick => 'Pick the matching entry';
   String get game_scrape_query => 'Title or source ID';
-  String get game_scrape_title => 'Fetch metadata';
   String get game_session_events => 'Session events';
   String get game_session_idle => 'Capture has not started';
   String get game_session_listening => 'Listening';
@@ -5625,8 +5624,6 @@ class _StringsAr extends _StringsEn {
   String get game_scrape_pick => 'Pick the matching entry';
   @override
   String get game_scrape_query => 'Title or source ID';
-  @override
-  String get game_scrape_title => 'Fetch metadata';
   @override
   String get game_session_events => 'Session events';
   @override
@@ -11514,8 +11511,6 @@ class _StringsDe extends _StringsEn {
   String get game_scrape_pick => 'Pick the matching entry';
   @override
   String get game_scrape_query => 'Title or source ID';
-  @override
-  String get game_scrape_title => 'Fetch metadata';
   @override
   String get game_session_events => 'Session events';
   @override
@@ -17444,8 +17439,6 @@ class _StringsEs extends _StringsEn {
   String get game_scrape_pick => 'Pick the matching entry';
   @override
   String get game_scrape_query => 'Title or source ID';
-  @override
-  String get game_scrape_title => 'Fetch metadata';
   @override
   String get game_session_events => 'Session events';
   @override
@@ -23398,8 +23391,6 @@ class _StringsFr extends _StringsEn {
   @override
   String get game_scrape_query => 'Title or source ID';
   @override
-  String get game_scrape_title => 'Fetch metadata';
-  @override
   String get game_session_events => 'Session events';
   @override
   String get game_session_idle => 'Capture has not started';
@@ -29320,8 +29311,6 @@ class _StringsId extends _StringsEn {
   @override
   String get game_scrape_query => 'Title or source ID';
   @override
-  String get game_scrape_title => 'Fetch metadata';
-  @override
   String get game_session_events => 'Session events';
   @override
   String get game_session_idle => 'Capture has not started';
@@ -35225,8 +35214,6 @@ class _StringsIt extends _StringsEn {
   @override
   String get game_scrape_query => 'Title or source ID';
   @override
-  String get game_scrape_title => 'Fetch metadata';
-  @override
   String get game_session_events => 'Session events';
   @override
   String get game_session_idle => 'Capture has not started';
@@ -41100,8 +41087,6 @@ class _StringsJa extends _StringsEn {
   @override
   String get game_scrape_query => 'Title or source ID';
   @override
-  String get game_scrape_title => 'Fetch metadata';
-  @override
   String get game_session_events => 'Session events';
   @override
   String get game_session_idle => 'Capture has not started';
@@ -46846,8 +46831,6 @@ class _StringsKo extends _StringsEn {
   String get game_scrape_pick => 'Pick the matching entry';
   @override
   String get game_scrape_query => 'Title or source ID';
-  @override
-  String get game_scrape_title => 'Fetch metadata';
   @override
   String get game_session_events => 'Session events';
   @override
@@ -52645,8 +52628,6 @@ class _StringsNl extends _StringsEn {
   String get game_scrape_pick => 'Pick the matching entry';
   @override
   String get game_scrape_query => 'Title or source ID';
-  @override
-  String get game_scrape_title => 'Fetch metadata';
   @override
   String get game_session_events => 'Session events';
   @override
@@ -58565,8 +58546,6 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get game_scrape_query => 'Title or source ID';
   @override
-  String get game_scrape_title => 'Fetch metadata';
-  @override
   String get game_session_events => 'Session events';
   @override
   String get game_session_idle => 'Capture has not started';
@@ -64481,8 +64460,6 @@ class _StringsRu extends _StringsEn {
   @override
   String get game_scrape_query => 'Title or source ID';
   @override
-  String get game_scrape_title => 'Fetch metadata';
-  @override
   String get game_session_events => 'Session events';
   @override
   String get game_session_idle => 'Capture has not started';
@@ -70367,8 +70344,6 @@ class _StringsTh extends _StringsEn {
   @override
   String get game_scrape_query => 'Title or source ID';
   @override
-  String get game_scrape_title => 'Fetch metadata';
-  @override
   String get game_session_events => 'Session events';
   @override
   String get game_session_idle => 'Capture has not started';
@@ -76240,8 +76215,6 @@ class _StringsTr extends _StringsEn {
   String get game_scrape_pick => 'Pick the matching entry';
   @override
   String get game_scrape_query => 'Title or source ID';
-  @override
-  String get game_scrape_title => 'Fetch metadata';
   @override
   String get game_session_events => 'Session events';
   @override
@@ -82122,8 +82095,6 @@ class _StringsVi extends _StringsEn {
   @override
   String get game_scrape_query => 'Title or source ID';
   @override
-  String get game_scrape_title => 'Fetch metadata';
-  @override
   String get game_session_events => 'Session events';
   @override
   String get game_session_idle => 'Capture has not started';
@@ -87836,8 +87807,6 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get game_scrape_query => '标题或源 ID';
   @override
-  String get game_scrape_title => '刮削元数据';
-  @override
   String get game_session_events => '会话事件';
   @override
   String get game_session_idle => '尚未开始捕获';
@@ -93396,8 +93365,6 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get game_scrape_query => 'Title or source ID';
   @override
-  String get game_scrape_title => 'Fetch metadata';
-  @override
   String get game_session_events => 'Session events';
   @override
   String get game_session_idle => 'Capture has not started';
@@ -98861,8 +98828,6 @@ extension on _StringsEn {
         return 'Pick the matching entry';
       case 'game_scrape_query':
         return 'Title or source ID';
-      case 'game_scrape_title':
-        return 'Fetch metadata';
       case 'game_session_events':
         return 'Session events';
       case 'game_session_idle':
@@ -104128,8 +104093,6 @@ extension on _StringsAr {
         return 'Pick the matching entry';
       case 'game_scrape_query':
         return 'Title or source ID';
-      case 'game_scrape_title':
-        return 'Fetch metadata';
       case 'game_session_events':
         return 'Session events';
       case 'game_session_idle':
@@ -109395,8 +109358,6 @@ extension on _StringsDe {
         return 'Pick the matching entry';
       case 'game_scrape_query':
         return 'Title or source ID';
-      case 'game_scrape_title':
-        return 'Fetch metadata';
       case 'game_session_events':
         return 'Session events';
       case 'game_session_idle':
@@ -114681,8 +114642,6 @@ extension on _StringsEs {
         return 'Pick the matching entry';
       case 'game_scrape_query':
         return 'Title or source ID';
-      case 'game_scrape_title':
-        return 'Fetch metadata';
       case 'game_session_events':
         return 'Session events';
       case 'game_session_idle':
@@ -119968,8 +119927,6 @@ extension on _StringsFr {
         return 'Pick the matching entry';
       case 'game_scrape_query':
         return 'Title or source ID';
-      case 'game_scrape_title':
-        return 'Fetch metadata';
       case 'game_session_events':
         return 'Session events';
       case 'game_session_idle':
@@ -125253,8 +125210,6 @@ extension on _StringsId {
         return 'Pick the matching entry';
       case 'game_scrape_query':
         return 'Title or source ID';
-      case 'game_scrape_title':
-        return 'Fetch metadata';
       case 'game_session_events':
         return 'Session events';
       case 'game_session_idle':
@@ -130527,8 +130482,6 @@ extension on _StringsIt {
         return 'Pick the matching entry';
       case 'game_scrape_query':
         return 'Title or source ID';
-      case 'game_scrape_title':
-        return 'Fetch metadata';
       case 'game_session_events':
         return 'Session events';
       case 'game_session_idle':
@@ -135803,8 +135756,6 @@ extension on _StringsJa {
         return 'Pick the matching entry';
       case 'game_scrape_query':
         return 'Title or source ID';
-      case 'game_scrape_title':
-        return 'Fetch metadata';
       case 'game_session_events':
         return 'Session events';
       case 'game_session_idle':
@@ -141053,8 +141004,6 @@ extension on _StringsKo {
         return 'Pick the matching entry';
       case 'game_scrape_query':
         return 'Title or source ID';
-      case 'game_scrape_title':
-        return 'Fetch metadata';
       case 'game_session_events':
         return 'Session events';
       case 'game_session_idle':
@@ -146315,8 +146264,6 @@ extension on _StringsNl {
         return 'Pick the matching entry';
       case 'game_scrape_query':
         return 'Title or source ID';
-      case 'game_scrape_title':
-        return 'Fetch metadata';
       case 'game_session_events':
         return 'Session events';
       case 'game_session_idle':
@@ -151594,8 +151541,6 @@ extension on _StringsPtBr {
         return 'Pick the matching entry';
       case 'game_scrape_query':
         return 'Title or source ID';
-      case 'game_scrape_title':
-        return 'Fetch metadata';
       case 'game_session_events':
         return 'Session events';
       case 'game_session_idle':
@@ -156874,8 +156819,6 @@ extension on _StringsRu {
         return 'Pick the matching entry';
       case 'game_scrape_query':
         return 'Title or source ID';
-      case 'game_scrape_title':
-        return 'Fetch metadata';
       case 'game_session_events':
         return 'Session events';
       case 'game_session_idle':
@@ -162149,8 +162092,6 @@ extension on _StringsTh {
         return 'Pick the matching entry';
       case 'game_scrape_query':
         return 'Title or source ID';
-      case 'game_scrape_title':
-        return 'Fetch metadata';
       case 'game_session_events':
         return 'Session events';
       case 'game_session_idle':
@@ -167420,8 +167361,6 @@ extension on _StringsTr {
         return 'Pick the matching entry';
       case 'game_scrape_query':
         return 'Title or source ID';
-      case 'game_scrape_title':
-        return 'Fetch metadata';
       case 'game_session_events':
         return 'Session events';
       case 'game_session_idle':
@@ -172692,8 +172631,6 @@ extension on _StringsVi {
         return 'Pick the matching entry';
       case 'game_scrape_query':
         return 'Title or source ID';
-      case 'game_scrape_title':
-        return 'Fetch metadata';
       case 'game_session_events':
         return 'Session events';
       case 'game_session_idle':
@@ -177949,8 +177886,6 @@ extension on _StringsZhCn {
         return '选择匹配的条目';
       case 'game_scrape_query':
         return '标题或源 ID';
-      case 'game_scrape_title':
-        return '刮削元数据';
       case 'game_session_events':
         return '会话事件';
       case 'game_session_idle':
@@ -183181,8 +183116,6 @@ extension on _StringsZhHk {
         return 'Pick the matching entry';
       case 'game_scrape_query':
         return 'Title or source ID';
-      case 'game_scrape_title':
-        return 'Fetch metadata';
       case 'game_session_events':
         return 'Session events';
       case 'game_session_idle':

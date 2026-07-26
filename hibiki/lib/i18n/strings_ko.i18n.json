@@ -933,7 +933,6 @@
   "game_scrape_no_result": "No matching entry found",
   "game_scrape_pick": "Pick the matching entry",
   "game_scrape_query": "Title or source ID",
-  "game_scrape_title": "Fetch metadata",
   "game_session_events": "Session events",
   "game_session_idle": "Capture has not started",
   "game_session_listening": "Listening",

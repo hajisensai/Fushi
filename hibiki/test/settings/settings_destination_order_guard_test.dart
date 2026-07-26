@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 数据与设备/系统）。
 ///
 /// 这是「用户决策过的位置」（2026-07-26 用户拍板，取代阶段 G 纯任务优先排序）：
-/// 外观置顶；内容块内相关项相邻（阅读→听书、视频→下载）；查词/制卡是跨媒体
+/// 外观置顶；内容块内相关项相邻（阅读→听书、视频→下载→游戏）；查词/制卡是跨媒体
 /// 横切工具排内容之后；Profile / 同步备份 / 互联 / 系统殿后。锁死顺序让未来漂移
 /// 必须是有意为之（改 `buildSettingsSchema` 时同步改本守卫）。用源码顺序断言
 /// （零 harness 依赖：无需构造 SettingsContext + AppModel 即可校验列表次序）。
@@ -29,6 +29,7 @@ void main() {
       'buildListeningDestination()',
       'buildVideoDestination()',
       'buildDownloadsDestination()',
+      'buildGameDestination()',
       'buildLookupDestination()',
       'buildCardCreationDestination()',
       'buildProfilesDestination()',

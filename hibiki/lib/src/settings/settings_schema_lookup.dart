@@ -159,7 +159,22 @@ SettingsDestination buildLookupDestination() {
           // 定义（互联音频源 hibikiRemote 就在该对话框里管，故互联分类也提供入口）。
           buildManageAudioSourcesItem(),
           // 浏览器扩展「安装助手」已独立成桌面专属顶层页（BrowserExtensionPage，仅桌面
-          // 出现），不再埋在查词设置里；那里除安装引导外还有连接检测与版本信息。
+          // 出现），复杂正文（安装引导 + 连接检测 + 版本信息）不再埋在查词设置里；这里
+          // 保留一条可搜索的导航项直达该页（审计 K：独立成页后设置搜索完全搜不到它）。
+          SettingsNavigationItem(
+            id: 'lookup.browser_extension',
+            title: t.nav_browser_extension,
+            icon: Icons.extension_outlined,
+            showIcon: true,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop,
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const BrowserExtensionPage(),
+              );
+            },
+          ),
         ],
       ),
       // 原「查词行为」19+ 项平铺长列表，按职责拆为四组：查词触发 / 外部集成 /

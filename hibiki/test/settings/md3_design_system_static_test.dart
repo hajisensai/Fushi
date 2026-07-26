@@ -984,7 +984,7 @@ void main() {
       // 「使用」按钮，以及「一并应用到合集 N 集」的内容勾选行——是视频子系统的
       // 瞬态搜索结果内容对话框，非普通页面 chrome，同 anki_mined_card_action_sheet /
       // sentence_context_dialog 的内容对话框豁免类。
-      'lib/src/media/video/cover_ui/poster_match_dialog.dart':
+      'lib/src/media/video/cover_ui/cover_match_dialog.dart':
           'Poster-scrape online-match dialog renders candidate poster rows as '
               'search-result content (portrait thumbnail clip + confidence '
               'badge + broken-image fallback surface + an "apply to N collection '
