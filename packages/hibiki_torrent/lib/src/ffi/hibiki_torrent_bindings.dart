@@ -402,6 +402,53 @@ class HibikiTorrentBindings {
   late final _ht_remove_torrent = _ht_remove_torrentPtr.asFunction<
       int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)>();
 
+  /// 引擎侧给种子内第 file_index 个文件改名（做种不断）；同步等回执最多
+  /// timeout_ms。返回 malloc JSON（ht_free_string 释放）。
+  ffi.Pointer<ffi.Char> ht_rename_file(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+    int file_index,
+    ffi.Pointer<ffi.Char> new_path,
+    int timeout_ms,
+  ) {
+    return _ht_rename_file(
+        session, info_hash, file_index, new_path, timeout_ms);
+  }
+
+  late final _ht_rename_filePtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+              ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>,
+              ffi.Int,
+              ffi.Pointer<ffi.Char>,
+              ffi.Int)>>('ht_rename_file');
+  late final _ht_rename_file = _ht_rename_filePtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>, int, ffi.Pointer<ffi.Char>, int)>();
+
+  /// 引擎侧把种子内容整体移动到 new_save_path（做种不断；目标已存在则整体
+  /// 失败，绝不覆盖）。返回 malloc JSON（ht_free_string 释放）。
+  ffi.Pointer<ffi.Char> ht_move_storage(
+    ffi.Pointer<ffi.Void> session,
+    ffi.Pointer<ffi.Char> info_hash,
+    ffi.Pointer<ffi.Char> new_save_path,
+    int timeout_ms,
+  ) {
+    return _ht_move_storage(session, info_hash, new_save_path, timeout_ms);
+  }
+
+  late final _ht_move_storagePtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+              ffi.Pointer<ffi.Void>,
+              ffi.Pointer<ffi.Char>,
+              ffi.Pointer<ffi.Char>,
+              ffi.Int)>>('ht_move_storage');
+  late final _ht_move_storage = _ht_move_storagePtr.asFunction<
+      ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Char>, int)>();
+
   /// 把所有已有元数据的种子的 resume data 落盘到 out_dir；同步等待最多
   /// timeout_ms（<=0 取默认 5000）。返回 malloc JSON（ht_free_string 释放）。
   ffi.Pointer<ffi.Char> ht_save_resume_data(

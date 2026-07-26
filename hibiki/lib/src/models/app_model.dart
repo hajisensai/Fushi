@@ -47,6 +47,7 @@ import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/download_network_proxy.dart';
+import 'package:hibiki/src/media/torrent/download_relocate_service.dart';
 import 'package:hibiki/src/media/torrent/download_save_root.dart';
 import 'package:hibiki/src/media/torrent/embedded_torrent_host.dart';
 import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
@@ -3279,6 +3280,23 @@ class AppModel with ChangeNotifier {
     // BUG-1053 修复后的行为逐字节一致。
     await _restoreEmbeddedTorrentSession(store);
   }
+
+  /// TODO-1961-c+d：下载内容改名 / 移动（引擎侧动，做种不断；库路径同步迁移）。
+  ///
+  /// 后端工厂复用 [_torrentBackendFor]，所以内置引擎与外接 qb 两条路都走得通；
+  /// 库迁移走 [VideoBookRepository.migrateMediaPaths]。两步的原子性由
+  /// [DownloadRelocateService] 保证（引擎失败则库不动）。
+  DownloadRelocateService get downloadRelocateService =>
+      DownloadRelocateService(
+        backendFactory: () => _torrentBackendFor(
+            effectiveTorrentConfig(prefsRepo.qbConnectionConfig)),
+        migrateLibraryPaths: ({
+          required String fromPath,
+          required String toPath,
+        }) =>
+            VideoBookRepository(database)
+                .migrateMediaPaths(fromPath: fromPath, toPath: toPath),
+      );
 
   /// 刷新 [_animeDownloadPlanIds]（resume 剪枝的真相源）并返回它。
   /// 返回值非空：调用过一次之后哨兵就不再是 null。
