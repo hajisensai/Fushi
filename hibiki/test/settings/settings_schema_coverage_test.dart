@@ -96,19 +96,19 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Online catalog URL':
       'test/media/manga/online/mokuro_moe_client_test.dart',
   // 专项 unit/widget 生效探针（docs/specs/2026-06-03-t4-effect-probes-plan.md T1–T9）
-  'reading/Text Orientation': 'test/reader/reader_content_styles_test.dart',
-  'reading/Font Kerning (Vertical)':
+  'reading/Text orientation': 'test/reader/reader_content_styles_test.dart',
+  'reading/Font kerning (vertical)':
       'test/reader/reader_content_styles_test.dart',
-  'reading/VPAL (Vertical Alt)': 'test/reader/reader_content_styles_test.dart',
-  'appearance/Design System': 'test/models/theme_notifier_test.dart',
+  'reading/VPAL (vertical alt)': 'test/reader/reader_content_styles_test.dart',
+  'appearance/Design system': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
-  'reading/Spread Mode': 'test/epub/epub_spread_map_test.dart',
+  'reading/Spread mode': 'test/epub/epub_spread_map_test.dart',
   // 阶段 G 重排后，「模式」分区（含 view_mode）在设置页排在「排版」分区（含
   // page_columns）之前，覆盖 harness 焦点遍历会先把 view_mode 从 paginated 切走，
   // 随后驱动 page_columns 时 reader 已非翻页态、T1 reader CSS 探针看不到 column-count
   // 变化（多列模型只在 _paginatedLayoutCss）。page_columns 的 CSS 生效（翻页态发
   // column-count、连续/VN 态不发）与 paginated-only 可见性由专项测试咬住。
-  'reading/Columns per Page':
+  'reading/Columns per page':
       'test/settings/page_columns_paginated_only_test.dart',
   // TODO-1128：合并插图页到正文（reading_display.merge_image_pages）。结构性布局键，
   // 焦点遍历能切到并写穿 DB（changed=true），但生效点在 reader 分页布局（
@@ -179,7 +179,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/anki/remote_mining_anki_repository_test.dart + '
           'test/sync/forwarded_mine_payload_test.dart + '
           'test/sync/hibiki_remote_mining_service_test.dart',
-  'system/Low Memory Mode': 'test/models/app_model_low_memory_mode_test.dart',
+  'system/Low memory mode': 'test/models/app_model_low_memory_mode_test.dart',
   'system/Keyboard & gamepad focus navigation':
       'test/shortcuts/global_space_no_activate_test.dart + main.dart 门控安装 HibikiFocusRoot/Ring',
   'lookup/Swipe dismiss sensitivity':
@@ -205,8 +205,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Capture selection context':
       'test/lookup/sentence_extraction_test.dart',
   'system/Enable debug log': 'test/utils/misc/debug_log_service_test.dart',
-  'syncBackup/Auto Sync': 'test/sync/sync_gating_test.dart',
-  'syncBackup/Sync Statistics': 'test/sync/sync_gating_test.dart',
+  'syncBackup/Auto sync': 'test/sync/sync_gating_test.dart',
+  'syncBackup/Sync statistics': 'test/sync/sync_gating_test.dart',
   'syncBackup/Upload book files': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync dictionaries': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync audiobook files': 'test/sync/sync_orchestrator_test.dart',
@@ -241,7 +241,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/video/video_asbplayer_config_test.dart + test/pages/video_settings_schema_guard_test.dart',
   'video/Seek seconds':
       'test/media/video/video_asbplayer_config_test.dart + test/media/video/video_seek_relative_test.dart',
-  'video/Subtitle Pause Playback Mode':
+  'video/Subtitle pause playback mode':
       'test/media/video/video_asbplayer_config_test.dart',
   'video/Quality enhancement':
       'test/media/video/video_mpv_config_test.dart + test/media/video/video_shader_manager_test.dart',
@@ -329,7 +329,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'downloads/Ban relative progress cheat':
       'test/media/torrent/anime_download_config_backend_test.dart',
   // 设备/集成 backlog（消费点真机/WebView/Android-only，widget 测不到）
-  'reading/Spread Direction': 'DEVICE: spread page order in WebView',
+  'reading/Spread direction': 'DEVICE: spread page order in WebView',
   'reading/Highlight text on tap': 'DEVICE: WebView onTap lookup',
   // TODO-1029：开关显示名改为「悬浮控制栏」(en: 'Floating control bar')，覆盖 map
   // 的 key 按渲染英文标签命名，故同步改名。生效=WebView onTapEmpty 收 chrome（设备）
@@ -360,7 +360,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Keep screen awake': 'DEVICE: WakelockPlus channel',
   'reading/Volume button page turning': 'DEVICE: native VolumeKeyChannel',
   'reading/Invert volume buttons': 'DEVICE: native volume-key direction',
-  'lookup/Pause on Lookup': 'DEVICE: audiobook pause on selection',
+  'lookup/Pause on lookup': 'DEVICE: audiobook pause on selection',
   // TODO-756b：悬停即查词（视频 onCharHover 门控 + 阅读器 window.__hoverAutoLookup
   // JS 门控）。change/persist/restore 经 DB 由本测试守，运行时悬停查词分流由
   // 行为测试 test/media/video/video_subtitle_hover_lookup_test.dart 覆盖。
@@ -436,9 +436,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/audiobook/floating_lyric_context_pref_test.dart + test/media/audiobook/floating_lyric_context_test.dart + DEVICE: native strip multi-line context + current-line highlight (Android FloatingLyricService / Windows floating_lyric_window)',
   'listening/Tap floating subtitle to look up':
       'test/media/audiobook/floating_lyric_click_through_guard_test.dart + DEVICE: native strip tap lookup',
-  'listening/Volume Key Sentence Navigation':
+  'listening/Volume key sentence navigation':
       'DEVICE: native volume-key cue nav',
-  'system/Update Channel': 'DEVICE: Android-only UpdateChecker (beta/stable)',
+  'system/Update channel': 'DEVICE: Android-only UpdateChecker (beta/stable)',
   "system/Don't remind me about updates": 'DEVICE: Android-only UpdateChecker',
   'system/Auto-install updates': 'DEVICE: Android-only UpdateChecker install',
   'appearance/Reverse navigation bar': 'WIDGET-TODO: HomePage nav order',

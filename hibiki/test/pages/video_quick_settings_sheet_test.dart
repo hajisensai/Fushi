@@ -201,7 +201,8 @@ void main() {
     expect(t.video_settings_cat_shaders, 'Image enhancement');
     expect(t.video_shader_quality_tier, 'Quality enhancement');
     // 五档面向用户的标签是朴素词，不暴露陌生着色器名。
-    expect(t.video_shader_tier_off, 'Off');
+    // 「无着色器」档语义是 None（zh 无 / ja なし），非开关 Off——与其余档并列为档位名。
+    expect(t.video_shader_tier_off, 'None');
     expect(t.video_shader_tier_low, 'Low');
     expect(t.video_shader_tier_medium, 'Medium');
     expect(t.video_shader_tier_high, 'High');
