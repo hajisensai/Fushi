@@ -5,12 +5,15 @@
 //  ③ readText 读回内容
 //  ④ NetworkSourceFileSystem / NetworkSourceConfig 构造正确（isLocal false、
 //     isSftp 路由、凭据注入）；真实 SFTP/FTP I/O 需要服务器，由扫描器路由测试覆盖。
-//  ⑤ 命名守卫：SourceFileSystem 不与既有 abstract class MediaSource 撞名
+//  ⑤ 命名守卫（命名统一 §1-F / Phase 3.2）：来源库域（media/source_library/）与
+//     UI 媒体源 abstract class MediaSource（media/media_source.dart + media/sources/）
+//     是两个无关体系——本域不得声明 MediaSource* 前缀类型，旧歧义目录
+//     media/source/、media/source_types/ 不得复活
 
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/source/source_file_system.dart';
+import 'package:hibiki/src/media/source_library/source_file_system.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
@@ -203,7 +206,7 @@ void main() {
         'lib',
         'src',
         'media',
-        'source',
+        'source_library',
         'source_file_system.dart',
       ));
       final String text = src.readAsStringSync();
@@ -215,6 +218,45 @@ void main() {
           RegExp(r'^(abstract )?class MediaSource', multiLine: true);
       expect(mediaSourceDecl.hasMatch(text), isFalse,
           reason: '不得在本文件声明 MediaSource 类（已存在于 media_source.dart）');
+    });
+
+    // 命名统一 §1-F / Phase 3.2 防回潮守卫：
+    // 「来源库」域（media/source_library/，TODO-817 扫描根）与 jidoujisho 血统的
+    // UI 媒体源体系（media/media_source.dart 的 abstract class MediaSource +
+    // media/sources/ 各实现）只差一个词却语义无关。历史上来源库曾住在
+    // media/source/（与 media/sources/ 只差一个 s）且类名带 MediaSource 前缀
+    // （MediaSourceScanner / MediaSourceCredentialStore），已整体改名。此守卫钉死
+    // 新格局，防止旧目录复活或来源库域再次出现 MediaSource* 前缀类型。
+    test('防回潮：旧歧义目录不复活，source_library 域不得声明 MediaSource* 类型', () {
+      final String mediaDir =
+          p.join(Directory.current.path, 'lib', 'src', 'media');
+      expect(Directory(p.join(mediaDir, 'source')).existsSync(), isFalse,
+          reason: '来源库已改名 media/source_library/，禁止再建与 media/sources/ '
+              '只差一个 s 的 media/source/ 目录');
+      expect(Directory(p.join(mediaDir, 'source_types')).existsSync(), isFalse,
+          reason: 'source_types/ 单文件目录已并入 media/sources/，禁止复活');
+
+      // source_library/ 域内禁止声明任何 MediaSource* 前缀类型（class/mixin/enum/
+      // typedef/extension type）。MediaSourceRow 只能来自 hibiki_core 的 drift
+      // 生成层（DB 契约），消费侧一律用 SourceLibraryRow 别名。
+      final RegExp forbiddenDecl = RegExp(
+        r'^(?:abstract |base |final |sealed |interface )*'
+        r'(?:class|mixin|enum|typedef|extension type) +MediaSource',
+        multiLine: true,
+      );
+      final Directory sourceLibrary =
+          Directory(p.join(mediaDir, 'source_library'));
+      expect(sourceLibrary.existsSync(), isTrue,
+          reason: '来源库域目录 media/source_library/ 必须存在');
+      for (final FileSystemEntity entity
+          in sourceLibrary.listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) {
+          continue;
+        }
+        expect(forbiddenDecl.hasMatch(entity.readAsStringSync()), isFalse,
+            reason: '来源库域不得声明 MediaSource* 前缀类型（与 UI 媒体源撞名）：'
+                '${entity.path}');
+      }
     });
   });
 }

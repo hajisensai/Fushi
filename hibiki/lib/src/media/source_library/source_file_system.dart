@@ -4,13 +4,18 @@
 // MediaSources.transport）共用一套扫描契约：列目录、找同名 sidecar、读文本、
 // 把网络文件落到本地临时盘。M1b 扫描器据此实现 local，TODO-1274 接入 SFTP/FTP/WebDAV。
 //
-// 🔴 命名红线：本接口必须叫 [SourceFileSystem]，绝不能叫 MediaSource*——仓库已有
-// `abstract class MediaSource`（UI 源/标签页概念，hibiki/lib/src/media/media_source.dart）
-// 和 drift 生成行类 MediaSourceRow，重名会撞符号。守卫测试钉死。
+// 🔴 命名红线（守卫测试钉死：test/media/source_library/source_file_system_test.dart）：
+// 「来源库」域（本目录 media/source_library/）与 jidoujisho 血统的 UI 媒体源
+// `abstract class MediaSource`（媒体源/标签页概念，hibiki/lib/src/media/media_source.dart，
+// 实现在 media/sources/）是两个语义无关的体系。本域类型一律用 SourceLibrary* /
+// Source* 前缀（SourceLibraryScanner / SourceLibraryCredentialStore /
+// [SourceFileSystem]），**绝不能再声明 MediaSource* 前缀的新类型**，重名会撞符号。
+// 唯一例外是 drift 生成行类 MediaSourceRow（DB 层 @DataClassName，表名/列名/落库值
+// 不动），消费侧统一用别名 SourceLibraryRow（source_library_row.dart）。
 //
 // [NetworkSourceFileSystem] 复用 sync 子系统同款传输栈（dartssh2 for SFTP,
 // ftpconnect for FTP, WebDavOps for WebDAV）；凭据不落 configJson，由
-// MediaSourceCredentialStore 解析后经 [NetworkSourceConfig] 注入（凭据红线）。
+// SourceLibraryCredentialStore 解析后经 [NetworkSourceConfig] 注入（凭据红线）。
 
 import 'dart:convert';
 import 'dart:io';
@@ -157,7 +162,7 @@ class LocalSourceFileSystem implements SourceFileSystem {
   }
 }
 
-/// 网络来源连接配置（运行时值对象）。密码/私钥由 MediaSourceCredentialStore 解析后
+/// 网络来源连接配置（运行时值对象）。密码/私钥由 SourceLibraryCredentialStore 解析后
 /// 注入，绝不落 configJson（凭据红线）。
 @immutable
 class NetworkSourceConfig {

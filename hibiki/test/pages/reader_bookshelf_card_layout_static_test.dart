@@ -286,7 +286,7 @@ void main() {
 
     // ③ reader_media_source.dart 不再含 176 / 250 字面量（改成了书比例常量）。
     final String mediaSource = File(
-      'lib/src/media/source_types/reader_media_source.dart',
+      'lib/src/media/sources/reader_media_source.dart',
     ).readAsStringSync();
     expect(
       mediaSource,

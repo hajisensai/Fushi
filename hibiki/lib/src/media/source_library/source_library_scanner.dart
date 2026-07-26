@@ -1,18 +1,19 @@
-// TODO-817 M1b source-library scanner: scans one MediaSource (local folder root)
-// into many books/videos, backfilling sourceId on insert, then writes the
-// media-count / scan-time / scan-error back onto MediaSources.
+// TODO-817 M1b source-library scanner: scans one source library (local folder
+// root, row = SourceLibraryRow) into many books/videos, backfilling sourceId on
+// insert, then writes the media-count / scan-time / scan-error back onto the
+// MediaSources table.
 //
 // [planScanFromFileList] is a pure function (no IO): it takes a SourceFileEntry
 // list and classifies into epub / video / subtitle, associating each video with
 // its same-stem sidecar subtitle via the existing sidecar pure function.
-// [MediaSourceScanner.scan] is the thin IO orchestration: list via
+// [SourceLibraryScanner.scan] is the thin IO orchestration: list via
 // SourceFileSystem (M1b wires only LocalSourceFileSystem) -> planScanFromFileList
 // -> reuse existing importers (EpubImporter.importFromPath /
 // VideoBookRepository.saveVideoBook) with sourceId -> updateMediaSourceScanResult.
 //
 // TODO-1274: network transport (SFTP/FTP/WebDAV) is now wired for BOOK sources —
 // the transport is resolved from the row (local vs SFTP/FTP/WebDAV built from
-// configJson + MediaSourceCredentialStore), and remote EPUBs are downloaded via
+// configJson + SourceLibraryCredentialStore), and remote EPUBs are downloaded via
 // copyToLocal before import. Routing is transport-agnostic here: any non-'local'
 // transport builds a NetworkSourceFileSystem which dispatches SFTP/FTP/WebDAV
 // internally, so [buildNetworkFileSystem] needs no per-transport branch. Network
@@ -34,8 +35,9 @@ import 'package:hibiki/src/media/audiobook/audiobook_alignment_service.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
-import 'package:hibiki/src/media/source/media_source_credential_store.dart';
-import 'package:hibiki/src/media/source/source_file_system.dart';
+import 'package:hibiki/src/media/source_library/source_file_system.dart';
+import 'package:hibiki/src/media/source_library/source_library_credential_store.dart';
+import 'package:hibiki/src/media/source_library/source_library_row.dart';
 import 'package:hibiki/src/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:hibiki/src/sync/ttu_filename.dart';
@@ -243,22 +245,22 @@ ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
   return ScanPlan(books: books, videos: videos, playlists: playlists);
 }
 
-/// Source-library scanner: scans one [MediaSourceRow] root, inserts the media
+/// Source-library scanner: scans one [SourceLibraryRow] root, inserts the media
 /// owned by this source, and writes back the scan result.
-class MediaSourceScanner {
-  MediaSourceScanner(this._db) : _videoRepo = VideoBookRepository(_db);
+class SourceLibraryScanner {
+  SourceLibraryScanner(this._db) : _videoRepo = VideoBookRepository(_db);
 
   final HibikiDatabase _db;
   final VideoBookRepository _videoRepo;
 
   /// 从来源行解析文件系统：local → LocalSourceFileSystem；网络 → 解出连接参数
-  /// （configJson）+ 凭据（MediaSourceCredentialStore）构造 NetworkSourceFileSystem。
-  Future<SourceFileSystem> _resolveFileSystem(MediaSourceRow source) async {
+  /// （configJson）+ 凭据（SourceLibraryCredentialStore）构造 NetworkSourceFileSystem。
+  Future<SourceFileSystem> _resolveFileSystem(SourceLibraryRow source) async {
     if (source.transport == 'local') {
       return const LocalSourceFileSystem();
     }
-    final MediaSourceSecret secret =
-        await MediaSourceCredentialStore(_db).readSecret(source.id);
+    final SourceLibrarySecret secret =
+        await SourceLibraryCredentialStore(_db).readSecret(source.id);
     return buildNetworkFileSystem(
       transport: source.transport,
       config: decodeSourceConfig(source.configJson),
@@ -297,7 +299,7 @@ class MediaSourceScanner {
   /// Scans one source library.
   ///
   /// [fs] defaults to [LocalSourceFileSystem] (M1b connects only locally); tests
-  /// inject a local impl over a real temp dir. Routes by [MediaSourceRow.mediaKind]
+  /// inject a local impl over a real temp dir. Routes by [SourceLibraryRow.mediaKind]
   /// ('book' | 'video'):
   /// - 'book': each EPUB -> [EpubImporter.importFromPath] (with sourceId).
   /// - 'video': each video -> [VideoBookRepository.saveVideoBook] (with sourceId)
@@ -307,7 +309,7 @@ class MediaSourceScanner {
   /// media count / timestamp; any throw records its text in lastScanError
   /// (mediaCount reflects the count successfully inserted before the failure).
   Future<void> scan(
-    MediaSourceRow source, {
+    SourceLibraryRow source, {
     SourceFileSystem? fs,
   }) async {
     final SourceFileSystem files = fs ?? await _resolveFileSystem(source);
@@ -341,7 +343,7 @@ class MediaSourceScanner {
       }
     } catch (e, stack) {
       scanError = e.toString();
-      debugPrint('MediaSourceScanner.scan failed for '
+      debugPrint('SourceLibraryScanner.scan failed for '
           'source ${source.id} (${source.rootPath}): $e\n$stack');
     } finally {
       // 关闭网络连接（本地/注入的 fake 无需关闭）。
@@ -416,7 +418,7 @@ class MediaSourceScanner {
         // 把它补挂成有声书——否则新增的 .srt/.mp3 被静默忽略。仅当该书尚未挂任何有声书
         // 时才对齐，保证重复重扫幂等、不重跑 matcher、不覆盖用户手动重匹配。
         await _attachSidecarAudiobookToExisting(item, e.title, fs);
-        debugPrint('MediaSourceScanner skip duplicate book '
+        debugPrint('SourceLibraryScanner skip duplicate book '
             '${e.title} (${item.epubPath})');
       }
     }
@@ -536,7 +538,7 @@ class MediaSourceScanner {
               bookUid: bookUid,
             );
           } catch (e) {
-            debugPrint('MediaSourceScanner cover extract failed for '
+            debugPrint('SourceLibraryScanner cover extract failed for '
                 '$bookUid: $e');
           }
         }
@@ -673,7 +675,7 @@ class MediaSourceScanner {
               await _videoRepo.updateCover(result.episodeUids.first, coverPath);
             }
           } catch (e) {
-            debugPrint('MediaSourceScanner playlist cover extract failed for '
+            debugPrint('SourceLibraryScanner playlist cover extract failed for '
                 '${result.collectionId}: $e');
           }
         }

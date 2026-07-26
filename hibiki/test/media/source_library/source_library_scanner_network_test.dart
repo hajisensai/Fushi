@@ -14,8 +14,9 @@ import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/epub/epub_storage.dart';
-import 'package:hibiki/src/media/source/media_source_scanner.dart';
-import 'package:hibiki/src/media/source/source_file_system.dart';
+import 'package:hibiki/src/media/source_library/source_file_system.dart';
+import 'package:hibiki/src/media/source_library/source_library_row.dart';
+import 'package:hibiki/src/media/source_library/source_library_scanner.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -112,7 +113,7 @@ void main() {
 
   group('buildNetworkFileSystem (routing, no IO)', () {
     test('local → LocalSourceFileSystem', () {
-      final SourceFileSystem fs = MediaSourceScanner.buildNetworkFileSystem(
+      final SourceFileSystem fs = SourceLibraryScanner.buildNetworkFileSystem(
         transport: 'local',
         config: const <String, Object?>{},
       );
@@ -121,7 +122,7 @@ void main() {
     });
 
     test('sftp → NetworkSourceFileSystem with injected params + secret', () {
-      final SourceFileSystem fs = MediaSourceScanner.buildNetworkFileSystem(
+      final SourceFileSystem fs = SourceLibraryScanner.buildNetworkFileSystem(
         transport: 'sftp',
         config: const <String, Object?>{
           'host': 'ssh.example.com',
@@ -142,7 +143,7 @@ void main() {
     });
 
     test('ftp default port 21 + useTls when host config omits port', () {
-      final SourceFileSystem fs = MediaSourceScanner.buildNetworkFileSystem(
+      final SourceFileSystem fs = SourceLibraryScanner.buildNetworkFileSystem(
         transport: 'ftp',
         config: const <String, Object?>{
           'host': 'ftp.example.com',
@@ -157,7 +158,7 @@ void main() {
     });
 
     test('sftp default port 22 when omitted; empty secret → null fields', () {
-      final SourceFileSystem fs = MediaSourceScanner.buildNetworkFileSystem(
+      final SourceFileSystem fs = SourceLibraryScanner.buildNetworkFileSystem(
         transport: 'sftp',
         config: const <String, Object?>{'host': 'h', 'username': 'u'},
         password: '',
@@ -172,7 +173,7 @@ void main() {
     test('webdav → NetworkSourceFileSystem，username 注入 + isWebDav 路由', () {
       // WebDAV 的 configJson 只存 username（URL 即 rootPath，另行传入 host/port 仅
       // 为字段对齐，NetworkSourceFileSystem 忽略）；密码经凭据存储注入。
-      final SourceFileSystem fs = MediaSourceScanner.buildNetworkFileSystem(
+      final SourceFileSystem fs = SourceLibraryScanner.buildNetworkFileSystem(
         transport: 'webdav',
         config: const <String, Object?>{'username': 'reader'},
         password: 'pw',
@@ -202,13 +203,13 @@ void main() {
       ),
       createdAt: 1000,
     ));
-    final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+    final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
     // No credentials configured / no server contacted: the video guard throws
     // BEFORE any network I/O, so this is deterministic and offline.
-    await MediaSourceScanner(db).scan(source);
+    await SourceLibraryScanner(db).scan(source);
 
-    final MediaSourceRow after = (await db.getMediaSourceById(sid))!;
+    final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
     expect(after.lastScanError, isNotNull,
         reason:
             'network video sources are unsupported and must record an error');
@@ -262,10 +263,10 @@ void main() {
         transport: const Value('sftp'),
         createdAt: 1000,
       ));
-      final MediaSourceRow source = (await db.getMediaSourceById(sid))!;
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
-        await MediaSourceScanner(db).scan(source, fs: fs);
+        await SourceLibraryScanner(db).scan(source, fs: fs);
       });
 
       // The remote EPUB was downloaded (copyToLocal invoked) before import.
@@ -278,7 +279,7 @@ void main() {
       expect(books.single.sourceId, sid,
           reason: 'scanned remote book must be backfilled with its source id');
 
-      final MediaSourceRow after = (await db.getMediaSourceById(sid))!;
+      final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
       expect(after.mediaCount, 1);
       expect(after.lastScanError, isNull);
     });

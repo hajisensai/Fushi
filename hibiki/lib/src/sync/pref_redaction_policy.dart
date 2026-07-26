@@ -54,7 +54,7 @@ abstract final class PrefRedactionPolicy {
   ///
   /// `media_source_secret_<sourceId>` 是网络来源（SFTP/FTP）的登录密码与私钥
   /// PEM，base64 存 `preferences`、与来源行一一对应（见
-  /// `MediaSourceCredentialStore`）。它其实也被 `secret` 子串命中，这里显式列
+  /// `SourceLibraryCredentialStore`）。它其实也被 `secret` 子串命中，这里显式列
   /// 出是为了把「整族按 id 展开」这件事写在判定里，而不是靠子串巧合。
   static const List<String> sensitiveKeyPrefixes = <String>[
     'media_source_secret_',

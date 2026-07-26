@@ -846,7 +846,7 @@ Future<String?> downloadVideoCoverToPath({
 /// 默认 10s 避开黑场片头）。两路输出同一 outputPath，书架显示逻辑不变。
 ///
 /// TODO-817 M1c：从 `video_import_dialog.dart` 下沉到此，让扫描器
-/// （`media_source_scanner.dart`）直接调用而不引入 UI 层依赖；行为零变化。
+/// （`source_library_scanner.dart`）直接调用而不引入 UI 层依赖；行为零变化。
 Future<String?> extractVideoCover({
   required String videoPath,
   required String bookUid,

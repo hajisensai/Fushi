@@ -645,8 +645,13 @@ class MinedSentences extends Table {
 ///
 /// 🔴 凭据红线：[configJson] **绝不裸存明文密码**。本地来源恒 NULL；网络来源（SFTP/
 /// FTP，TODO-1274 已接入）只存**非敏感连接参数** JSON（host/port/username/useTls）；
-/// 密码/私钥经 MediaSourceCredentialStore 以 base64 单独落 Preferences（键
+/// 密码/私钥经 SourceLibraryCredentialStore 以 base64 单独落 Preferences（键
 /// `media_source_secret_<id>`，按行 id 隐式引用），绝不进入 configJson。
+///
+/// 生成行类名 `MediaSourceRow` 是 DB 层历史命名（改名需动 database.g.dart 与全部
+/// DAO 签名，不值得）；app 消费侧统一用别名 `SourceLibraryRow`
+/// （hibiki/lib/src/media/source_library/source_library_row.dart），与 UI 媒体源
+/// `abstract class MediaSource`（jidoujisho 血统）区分。表名/列名/落库值不动。
 @DataClassName('MediaSourceRow')
 class MediaSources extends Table {
   IntColumn get id => integer().autoIncrement()();
