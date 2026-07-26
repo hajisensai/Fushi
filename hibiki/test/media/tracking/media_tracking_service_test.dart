@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
@@ -13,6 +14,9 @@ class _FakeBangumiApi implements BangumiTrackingApi {
   final List<Map<String, dynamic>> creates = <Map<String, dynamic>>[];
   final List<Map<String, dynamic>> patches = <Map<String, dynamic>>[];
   final List<List<int>> episodePatches = <List<int>>[];
+  List<BangumiSubject> searchResults = const <BangumiSubject>[];
+  final List<({String keyword, int subjectType})> searches =
+      <({String keyword, int subjectType})>[];
 
   void _throwIfNeeded() {
     final Exception? value = error;
@@ -29,8 +33,10 @@ class _FakeBangumiApi implements BangumiTrackingApi {
   Future<List<BangumiSubject>> searchSubjects({
     required String keyword,
     required int subjectType,
-  }) async =>
-      const <BangumiSubject>[];
+  }) async {
+    searches.add((keyword: keyword, subjectType: subjectType));
+    return searchResults;
+  }
 
   @override
   Future<BangumiUserCollection?> getCollection(
@@ -228,5 +234,187 @@ void main() {
 
     expect(result.failed, 1);
     expect(await repository.pendingCount(), 1);
+  });
+
+  test('video completion reuses scraped Bangumi subject and creates mapping',
+      () async {
+    await db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video-1',
+        title: '葬送的芙莉莲 01',
+        videoPath: r'C:\Anime\Frieren\01.mkv',
+      ),
+    );
+    await db.upsertVideoScrapeMeta(
+      VideoScrapeMetaCompanion.insert(
+        bookUid: 'video-1',
+        source: 'bangumi',
+        subjectId: '400602',
+        title: '葬送的芙莉莲',
+        scrapedAt: DateTime.now(),
+      ),
+    );
+
+    await service.recordVideoCompleted(
+      bookUid: 'video-1',
+      episodeIndex: 0,
+    );
+    await service.syncNow();
+
+    final MediaTrackingMappingRow? mapping = await repository.findMapping(
+      mediaType: TrackingMediaType.video,
+      mediaKey: 'video-1',
+    );
+    expect(mapping, isNotNull);
+    expect(mapping!.subjectId, 400602);
+    expect(mapping.subjectName, '葬送的芙莉莲');
+    expect(mapping.progressMode, TrackingProgressMode.episode.value);
+    expect(api.searches, isEmpty, reason: '已刮出的 Bangumi id 不应重复搜索');
+  });
+
+  test('novel progress creates a unique exact-title chapter mapping', () async {
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'novel-key',
+        title: '药屋少女的呢喃',
+        epubPath: '/tmp/novel.epub',
+        extractDir: '/tmp/novel',
+        chapterCount: 12,
+        chaptersJson: '[]',
+        importedAt: 1,
+      ),
+    );
+    api.searchResults = const <BangumiSubject>[
+      BangumiSubject(
+        id: 225878,
+        type: 1,
+        name: '薬屋のひとりごと',
+        nameCn: '药屋少女的呢喃',
+        platform: '书籍',
+        episodeCount: 12,
+        volumeCount: 1,
+      ),
+    ];
+
+    await service.recordBookProgress(
+      bookKey: 'novel-key',
+      completedChapterCount: 3,
+      completed: false,
+    );
+    await service.syncNow();
+
+    final MediaTrackingMappingRow? mapping = await repository.findMapping(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'novel-key',
+    );
+    expect(mapping, isNotNull);
+    expect(mapping!.kind, TrackingKind.novel.value);
+    expect(mapping.progressMode, TrackingProgressMode.chapter.value);
+    expect(mapping.progressOffset, 0);
+    expect(api.searches.single, (keyword: '药屋少女的呢喃', subjectType: 1));
+  });
+
+  test('manga volume suffix maps the volume and queues only on completion',
+      () async {
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'manga-key',
+        title: '迷宫饭 第3卷',
+        epubPath: '/tmp/manga/manga.json',
+        extractDir: '/tmp/manga',
+        chapterCount: 200,
+        chaptersJson: '[]',
+        importedAt: 1,
+        format: const Value<String>('manga'),
+      ),
+    );
+    api.searchResults = const <BangumiSubject>[
+      BangumiSubject(
+        id: 110993,
+        type: 1,
+        name: 'ダンジョン飯',
+        nameCn: '迷宫饭',
+        platform: '漫画',
+        episodeCount: 0,
+        volumeCount: 14,
+      ),
+    ];
+
+    await service.recordBookProgress(
+      bookKey: 'manga-key',
+      completedChapterCount: 80,
+      completed: false,
+    );
+
+    final MediaTrackingMappingRow? mapping = await repository.findMapping(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'manga-key',
+    );
+    expect(mapping, isNotNull);
+    expect(mapping!.kind, TrackingKind.manga.value);
+    expect(mapping.progressMode, TrackingProgressMode.volume.value);
+    expect(mapping.progressOffset, 3);
+    expect(await repository.pendingCount(), 0,
+        reason: '漫画页码不能误写成 Bangumi 章节进度');
+
+    api.error = const BangumiApiException(
+      statusCode: 503,
+      message: 'keep queued',
+    );
+    await service.recordBookProgress(
+      bookKey: 'manga-key',
+      completedChapterCount: 200,
+      completed: true,
+    );
+    await service.syncNow();
+    expect(await repository.pendingCount(), 1);
+  });
+
+  test('ambiguous exact-title book results are not auto-mapped', () async {
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'ambiguous-key',
+        title: '同名作品',
+        epubPath: '/tmp/ambiguous.epub',
+        extractDir: '/tmp/ambiguous',
+        chapterCount: 2,
+        chaptersJson: '[]',
+        importedAt: 1,
+      ),
+    );
+    api.searchResults = const <BangumiSubject>[
+      BangumiSubject(
+        id: 1,
+        type: 1,
+        name: '同名作品',
+        nameCn: '',
+        platform: '书籍',
+        episodeCount: 0,
+        volumeCount: 0,
+      ),
+      BangumiSubject(
+        id: 2,
+        type: 1,
+        name: '同名作品',
+        nameCn: '',
+        platform: '书籍',
+        episodeCount: 0,
+        volumeCount: 0,
+      ),
+    ];
+
+    await service.recordBookProgress(
+      bookKey: 'ambiguous-key',
+      completedChapterCount: 1,
+      completed: false,
+    );
+
+    expect(
+      await repository.findMapping(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'ambiguous-key',
+      ),
+      isNull,
+    );
   });
 }

@@ -2692,7 +2692,6 @@
   "media_tracking_pending": "待同步记录",
   "media_tracking_mappings": "条目映射",
   "media_tracking_add_mapping": "添加映射",
-  "media_tracking_no_mappings": "尚无映射。添加后即可自动记录。",
   "media_tracking_local_item": "本地条目",
   "media_tracking_kind": "分类",
   "media_tracking_progress_mode": "进度单位",
@@ -2710,5 +2709,6 @@
   "media_tracking_manga": "漫画",
   "media_tracking_episode": "集",
   "media_tracking_chapter": "话",
-  "media_tracking_volume": "卷"
+  "media_tracking_volume": "卷",
+  "media_tracking_no_mappings": "暂无手动映射。首次看完一集或产生阅读进度时会自动匹配；歧义条目可在此手动添加。"
 }

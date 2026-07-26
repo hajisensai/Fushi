@@ -32,6 +32,17 @@ enum TrackingProgressMode {
   final String value;
 }
 
+typedef AutoVideoTrackingSource = ({
+  String mediaTitle,
+  int? bangumiSubjectId,
+  String? bangumiSubjectName,
+});
+
+typedef AutoBookTrackingSource = ({
+  String title,
+  String format,
+});
+
 class PendingTrackingUpdate {
   const PendingTrackingUpdate({
     required this.outbox,
@@ -130,6 +141,85 @@ class MediaTrackingRepository {
       ),
     );
     return existing.id;
+  }
+
+  /// 自动识别只能补空白，绝不覆盖用户已经确认或手工修正过的映射。
+  ///
+  /// 唯一键冲突用 `insertOrIgnore` 收敛并发：播放器完成回调、阅读 debounce 和设置页
+  /// 手工保存可能同时到达；最终以先落库者为准，自动路径不会把人工选择改回去。
+  Future<MediaTrackingMappingRow> saveMappingIfAbsent({
+    required TrackingMediaType mediaType,
+    required String mediaKey,
+    required String mediaTitle,
+    required TrackingKind kind,
+    required int subjectId,
+    required String subjectName,
+    required TrackingProgressMode progressMode,
+    required int progressOffset,
+    String provider = kTrackingProviderBangumi,
+  }) async {
+    final MediaTrackingMappingRow? existing = await findMapping(
+      mediaType: mediaType,
+      mediaKey: mediaKey,
+      provider: provider,
+    );
+    if (existing != null) return existing;
+    if (mediaKey.trim().isEmpty || subjectId <= 0 || progressOffset < 0) {
+      throw ArgumentError('Invalid automatic media tracking mapping');
+    }
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await _db.into(_db.mediaTrackingMappings).insert(
+          MediaTrackingMappingsCompanion.insert(
+            provider: Value<String>(provider),
+            mediaType: mediaType.value,
+            mediaKey: mediaKey,
+            mediaTitle: mediaTitle,
+            kind: kind.value,
+            subjectId: subjectId,
+            subjectName: subjectName,
+            progressMode: progressMode.value,
+            progressOffset: Value<int>(progressOffset),
+            createdAt: now,
+            updatedAt: now,
+          ),
+          mode: InsertMode.insertOrIgnore,
+        );
+    final MediaTrackingMappingRow? saved = await findMapping(
+      mediaType: mediaType,
+      mediaKey: mediaKey,
+      provider: provider,
+    );
+    if (saved == null) {
+      throw StateError('Automatic media tracking mapping was not persisted');
+    }
+    return saved;
+  }
+
+  /// 播放完成时用于自动映射的本地事实。优先返回视频刮削已确认的 Bangumi id；
+  /// TMDB/offlineDb/manualUrl 的 id 不是 Bangumi subject id，必须丢弃，不能串源误写。
+  Future<AutoVideoTrackingSource?> loadAutoVideoSource({
+    required String bookUid,
+    int? collectionId,
+  }) async {
+    final VideoBookRow? video = await _db.getVideoBookByBookUid(bookUid);
+    if (video == null) return null;
+    final MediaCollectionRow? collection = collectionId == null
+        ? null
+        : await _db.getMediaCollectionById(collectionId);
+    final VideoScrapeMetaRow? scrape = await _db.getVideoScrapeMeta(bookUid);
+    final bool isBangumi = scrape?.source == kTrackingProviderBangumi;
+    return (
+      mediaTitle: collection?.name ?? video.title,
+      bangumiSubjectId:
+          isBangumi ? int.tryParse(scrape!.subjectId.trim()) : null,
+      bangumiSubjectName: isBangumi ? scrape!.title : null,
+    );
+  }
+
+  Future<AutoBookTrackingSource?> loadAutoBookSource(String bookKey) async {
+    final EpubBookRow? book = await _db.getEpubBook(bookKey);
+    if (book == null) return null;
+    return (title: book.title, format: book.format);
   }
 
   Future<void> deleteMapping(int id) =>

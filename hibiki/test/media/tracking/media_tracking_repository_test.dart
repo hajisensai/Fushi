@@ -44,6 +44,35 @@ void main() {
     expect(row.kind, 'manga');
   });
 
+  test('automatic mapping never overwrites an existing manual choice',
+      () async {
+    await repository.saveMapping(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'manual-book',
+      mediaTitle: 'Manual',
+      kind: TrackingKind.novel,
+      subjectId: 10,
+      subjectName: 'Chosen manually',
+      progressMode: TrackingProgressMode.chapter,
+      progressOffset: 0,
+    );
+
+    final MediaTrackingMappingRow row = await repository.saveMappingIfAbsent(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'manual-book',
+      mediaTitle: 'Automatic',
+      kind: TrackingKind.manga,
+      subjectId: 99,
+      subjectName: 'Guessed automatically',
+      progressMode: TrackingProgressMode.volume,
+      progressOffset: 3,
+    );
+
+    expect(row.subjectId, 10);
+    expect(row.subjectName, 'Chosen manually');
+    expect(row.progressMode, TrackingProgressMode.chapter.value);
+  });
+
   test('outbox merges with max progress and completed OR', () async {
     await repository.saveMapping(
       mediaType: TrackingMediaType.videoCollection,

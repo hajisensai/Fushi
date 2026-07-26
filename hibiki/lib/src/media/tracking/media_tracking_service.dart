@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_repository.dart';
+import 'package:hibiki/src/media/video/scraper/filename_parser.dart';
+import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
+import 'package:hibiki/src/media/video/scraper/title_normalizer.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -24,6 +27,65 @@ class MediaTrackingSyncResult {
   final bool unauthorized;
 
   bool get isSuccess => failed == 0 && !unauthorized;
+}
+
+typedef _PreparedTrackingTitle = ({
+  String query,
+  int? volumeNumber,
+});
+
+final RegExp _trackingVolumeSuffix = RegExp(
+  r'\s*[-–—:：]?\s*(?:(?:vol(?:ume)?\.?|第)\s*(\d{1,3})\s*(?:卷|巻)?|(\d{1,3})\s*(?:卷|巻))\s*$',
+  caseSensitive: false,
+);
+
+_PreparedTrackingTitle _prepareTrackingTitle(String rawTitle) {
+  final String title = rawTitle.trim();
+  final RegExpMatch? match = _trackingVolumeSuffix.firstMatch(title);
+  if (match == null) return (query: title, volumeNumber: null);
+  final int? volumeNumber =
+      int.tryParse(match.group(1) ?? match.group(2) ?? '');
+  final String base = title.substring(0, match.start).trim();
+  return (
+    query: base.isEmpty ? title : base,
+    volumeNumber: volumeNumber,
+  );
+}
+
+BangumiSubject? _uniqueHighConfidenceSubject(
+  String query,
+  List<BangumiSubject> subjects,
+) {
+  if (query.trim().isEmpty || subjects.isEmpty) return null;
+  final String normalizedQuery = TitleNormalizer.normalize(query);
+  final List<({BangumiSubject subject, double score, bool exact})> scored =
+      <({BangumiSubject subject, double score, bool exact})>[
+    for (final BangumiSubject subject in subjects)
+      (
+        subject: subject,
+        score: <double>[
+          TitleNormalizer.similarity(query, subject.name),
+          TitleNormalizer.similarity(query, subject.nameCn),
+        ].reduce((double a, double b) => a > b ? a : b),
+        exact: <String>[subject.name, subject.nameCn]
+            .map(TitleNormalizer.normalize)
+            .where((String value) => value.isNotEmpty)
+            .contains(normalizedQuery),
+      ),
+  ]..sort((a, b) => b.score.compareTo(a.score));
+  final ({BangumiSubject subject, double score, bool exact}) best =
+      scored.first;
+  if (best.exact) {
+    final int exactMatches = scored
+        .where((entry) => entry.exact)
+        .map((entry) => entry.subject.id)
+        .toSet()
+        .length;
+    return exactMatches == 1 ? best.subject : null;
+  }
+  if (best.score < 0.92) return null;
+  if (scored.length > 1 && best.score - scored[1].score < 0.08) return null;
+  return best.subject;
 }
 
 /// 将播放/阅读事件先可靠写入本地 outbox，再以单调方式同步到 Bangumi。
@@ -51,6 +113,11 @@ class MediaTrackingService {
   Future<MediaTrackingSyncResult>? _syncInFlight;
   final Map<String, ({int progress, bool completed})> _lastQueued =
       <String, ({int progress, bool completed})>{};
+  final Map<String, Future<MediaTrackingMappingRow?>> _autoMappingInFlight =
+      <String, Future<MediaTrackingMappingRow?>>{};
+  final Map<String, int> _autoMappingMissAt = <String, int>{};
+
+  static const Duration _autoMappingMissRetry = Duration(minutes: 10);
 
   String get accessToken =>
       (_preferences.getPref(kBangumiAccessTokenPref, defaultValue: '')
@@ -96,6 +163,13 @@ class MediaTrackingService {
         ? TrackingMediaType.video
         : TrackingMediaType.videoCollection;
     final String key = collectionId?.toString() ?? bookUid;
+    final MediaTrackingMappingRow? mapping = await _ensureAutoVideoMapping(
+      bookUid: bookUid,
+      collectionId: collectionId,
+      mediaType: type,
+      mediaKey: key,
+    );
+    if (mapping == null) return;
     await _enqueueAndSync(
       mediaType: type,
       mediaKey: key,
@@ -109,10 +183,8 @@ class MediaTrackingService {
     required int completedChapterCount,
     required bool completed,
   }) async {
-    final MediaTrackingMappingRow? mapping = await _repository.findMapping(
-      mediaType: TrackingMediaType.book,
-      mediaKey: bookKey,
-    );
+    final MediaTrackingMappingRow? mapping =
+        await _ensureAutoBookMapping(bookKey);
     if (mapping == null) return;
     final bool isVolume =
         mapping.progressMode == TrackingProgressMode.volume.value;
@@ -123,6 +195,152 @@ class MediaTrackingService {
       localProgress: isVolume ? 0 : completedChapterCount,
       completed: completed,
     );
+  }
+
+  Future<MediaTrackingMappingRow?> _ensureAutoVideoMapping({
+    required String bookUid,
+    required int? collectionId,
+    required TrackingMediaType mediaType,
+    required String mediaKey,
+  }) async {
+    final MediaTrackingMappingRow? existing = await _repository.findMapping(
+      mediaType: mediaType,
+      mediaKey: mediaKey,
+    );
+    if (existing != null) return existing;
+    return _singleFlightAutoMapping(
+      '${mediaType.value}:$mediaKey',
+      () async {
+        final AutoVideoTrackingSource? source =
+            await _repository.loadAutoVideoSource(
+          bookUid: bookUid,
+          collectionId: collectionId,
+        );
+        if (source == null) return null;
+        final int? scrapedId = source.bangumiSubjectId;
+        if (scrapedId != null && scrapedId > 0) {
+          return _repository.saveMappingIfAbsent(
+            mediaType: mediaType,
+            mediaKey: mediaKey,
+            mediaTitle: source.mediaTitle,
+            kind: TrackingKind.anime,
+            subjectId: scrapedId,
+            subjectName: source.bangumiSubjectName ?? source.mediaTitle,
+            progressMode: TrackingProgressMode.episode,
+            progressOffset: 1,
+          );
+        }
+        if (!isConfigured) return null;
+
+        final ParsedMediaName parsed = FilenameParser.parse(source.mediaTitle);
+        final String query =
+            parsed.title.isEmpty ? source.mediaTitle : parsed.title;
+        final List<BangumiSubject> subjects = await searchSubjects(
+          keyword: query,
+          kind: TrackingKind.anime,
+        );
+        final BangumiSubject? subject =
+            _uniqueHighConfidenceSubject(query, subjects);
+        if (subject == null) return null;
+        return _repository.saveMappingIfAbsent(
+          mediaType: mediaType,
+          mediaKey: mediaKey,
+          mediaTitle: source.mediaTitle,
+          kind: TrackingKind.anime,
+          subjectId: subject.id,
+          subjectName: subject.displayName,
+          progressMode: TrackingProgressMode.episode,
+          progressOffset: 1,
+        );
+      },
+    );
+  }
+
+  Future<MediaTrackingMappingRow?> _ensureAutoBookMapping(
+    String bookKey,
+  ) async {
+    final MediaTrackingMappingRow? existing = await _repository.findMapping(
+      mediaType: TrackingMediaType.book,
+      mediaKey: bookKey,
+    );
+    if (existing != null) return existing;
+    if (!isConfigured) return null;
+    return _singleFlightAutoMapping(
+      '${TrackingMediaType.book.value}:$bookKey',
+      () async {
+        final AutoBookTrackingSource? source =
+            await _repository.loadAutoBookSource(bookKey);
+        if (source == null) return null;
+        final TrackingKind kind =
+            source.format == 'manga' ? TrackingKind.manga : TrackingKind.novel;
+        final _PreparedTrackingTitle prepared =
+            _prepareTrackingTitle(source.title);
+        final List<BangumiSubject> subjects = await searchSubjects(
+          keyword: prepared.query,
+          kind: kind,
+        );
+        final BangumiSubject? subject =
+            _uniqueHighConfidenceSubject(prepared.query, subjects);
+        if (subject == null) return null;
+        final bool trackAsVolume =
+            kind == TrackingKind.manga || prepared.volumeNumber != null;
+        return _repository.saveMappingIfAbsent(
+          mediaType: TrackingMediaType.book,
+          mediaKey: bookKey,
+          mediaTitle: source.title,
+          kind: kind,
+          subjectId: subject.id,
+          subjectName: subject.displayName,
+          progressMode: trackAsVolume
+              ? TrackingProgressMode.volume
+              : TrackingProgressMode.chapter,
+          progressOffset: trackAsVolume ? (prepared.volumeNumber ?? 1) : 0,
+        );
+      },
+    );
+  }
+
+  Future<MediaTrackingMappingRow?> _singleFlightAutoMapping(
+    String key,
+    Future<MediaTrackingMappingRow?> Function() resolve,
+  ) {
+    final Future<MediaTrackingMappingRow?>? running = _autoMappingInFlight[key];
+    if (running != null) return running;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int? missedAt = _autoMappingMissAt[key];
+    if (missedAt != null &&
+        now - missedAt < _autoMappingMissRetry.inMilliseconds) {
+      return Future<MediaTrackingMappingRow?>.value(null);
+    }
+
+    Future<MediaTrackingMappingRow?> run() async {
+      try {
+        final MediaTrackingMappingRow? result = await resolve();
+        if (result == null) {
+          _autoMappingMissAt[key] = DateTime.now().millisecondsSinceEpoch;
+        } else {
+          _autoMappingMissAt.remove(key);
+        }
+        return result;
+      } catch (error, stackTrace) {
+        _autoMappingMissAt[key] = DateTime.now().millisecondsSinceEpoch;
+        ErrorLogService.instance.log(
+          'MediaTrackingService.autoMap',
+          error,
+          stackTrace,
+        );
+        return null;
+      }
+    }
+
+    late final Future<MediaTrackingMappingRow?> future;
+    future = run().whenComplete(() {
+      if (identical(_autoMappingInFlight[key], future)) {
+        _autoMappingInFlight.remove(key);
+      }
+    });
+    _autoMappingInFlight[key] = future;
+    return future;
   }
 
   Future<void> _enqueueAndSync({

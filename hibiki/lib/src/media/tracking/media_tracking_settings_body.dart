@@ -534,8 +534,9 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                   ),
                 ),
                 for (final BangumiSubject subject in _results)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
+                  HibikiListItem(
+                    density: HibikiListDensity.compact,
+                    padding: EdgeInsets.zero,
                     leading: subject.coverUrl == null
                         ? const Icon(Icons.auto_stories_outlined)
                         : Image.network(

@@ -2692,7 +2692,6 @@
   "media_tracking_pending": "Pending updates",
   "media_tracking_mappings": "Item mappings",
   "media_tracking_add_mapping": "Add mapping",
-  "media_tracking_no_mappings": "No mappings yet. Add one to enable automatic tracking.",
   "media_tracking_local_item": "Local item",
   "media_tracking_kind": "Category",
   "media_tracking_progress_mode": "Progress unit",
@@ -2710,5 +2709,6 @@
   "media_tracking_manga": "Manga",
   "media_tracking_episode": "Episode",
   "media_tracking_chapter": "Chapter",
-  "media_tracking_volume": "Volume"
+  "media_tracking_volume": "Volume",
+  "media_tracking_no_mappings": "No manual mappings yet. Hibiki matches automatically on the first completed episode or reading progress; add ambiguous items here."
 }
