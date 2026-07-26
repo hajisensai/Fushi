@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
-import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 
 /// BUG-014：同步对比对话框把「良性 skipped」误报成「同步错误：<书名>」。
 /// 根因是分类只看 [SyncResult.skipped]，没看 [SyncBookResult.error]。

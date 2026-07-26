@@ -10,6 +10,7 @@ import 'package:hibiki/src/sync/sync_orchestrator.dart'
     show isReservedSyncFolderName;
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -48,8 +49,8 @@ class _RecordingBackend implements SyncBackend {
   }
 
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async =>
-      const DriveSyncFiles(progress: null, statistics: null, audioBook: null);
+  Future<SyncFileTrio> listSyncFiles(String folderId) async =>
+      const SyncFileTrio(progress: null, statistics: null, audioBook: null);
 
   @override
   Future<void> updateProgressFile({
@@ -111,7 +112,7 @@ class _RecordingBackend implements SyncBackend {
   @override
   Future<void> refreshAuth() async {}
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async =>
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async =>
       throw UnimplementedError();
   @override
   Future<TtuProgress> getProgressFile(String fileId) async =>
@@ -123,7 +124,8 @@ class _RecordingBackend implements SyncBackend {
   Future<TtuAudioBook> getAudioBookFile(String fileId) async =>
       throw UnimplementedError();
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async =>
+  Future<SyncFileRef?> findContentFile(
+          String folderId, String fileName) async =>
       throw UnimplementedError();
   @override
   Future<void> downloadContentFile({
@@ -133,7 +135,7 @@ class _RecordingBackend implements SyncBackend {
   }) async =>
       throw UnimplementedError();
   @override
-  void cacheBookFolderIds(List<DriveFile> folders) =>
+  void cacheBookFolderIds(List<SyncFileRef> folders) =>
       throw UnimplementedError();
   @override
   void evictFolderId(String folderId) {}

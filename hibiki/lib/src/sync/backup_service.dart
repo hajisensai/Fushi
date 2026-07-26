@@ -22,7 +22,7 @@ import 'package:sqlite3/sqlite3.dart' as sqlite;
 /// rows FK into each other, so it is ALWAYS exported as one consistent blob;
 /// only the bulky sidecar file trees below are individually selectable.
 ///
-/// When [BackupService.exportBackup] is called with a [categories] set, only the
+/// When [BackupService.createBackup] is called with a [categories] set, only the
 /// listed trees are packed; an unselected tree's root is skipped exactly as if
 /// the user had no such content. A null set means "everything" (the legacy
 /// all-in export), so existing callers are unchanged.
@@ -566,7 +566,7 @@ class BackupService {
         'AND key NOT IN ($notIn)';
   }
 
-  /// Predicate for the keep-THIS-device-settings restore ([_restoreSettingsLayer],
+  /// Predicate for the keep-THIS-device-settings restore ([_reapplySettingsLayer],
   /// the `importSettings=false` overwrite path). Restores from bak every pref row
   /// EXCEPT the ones that are CONTENT and must follow the imported backup:
   ///   - `audiobook_pos_*`      -> reading progress (the `progress` category)
@@ -582,7 +582,7 @@ class BackupService {
   /// [_applyPreservedConfig], so this wholesale restore is the ONLY place the
   /// device's own (never-exported) sync config is preserved — excluding `sync_*`
   /// here would drop it. Same content-vs-settings split as the export strip and
-  /// [_restoreExcludedSettingsLayers], so the two restore paths stay symmetric.
+  /// [_reapplyExcludedSettingsLayers], so the two restore paths stay symmetric.
   static final String _keepDeviceSettingsPrefPredicate =
       _buildKeepDeviceSettingsPrefPredicate();
 
@@ -630,7 +630,7 @@ class BackupService {
   /// files; videos = packed video files ([BackupMeta.videoFiles], else leaf
   /// files); localAudio = `local_audio_<n>.db` files (the `-wal`/`-shm` siblings
   /// are not separate databases).
-  static BackupContentSummary summarizeBackupArchive(
+  static BackupContentSummary summarizeBackupEntries(
     Iterable<String> archiveFileNames,
     BackupMeta? meta, {
     int? dbVideoBookCount,
@@ -714,7 +714,7 @@ class BackupService {
   /// Reads a backup ZIP's central directory (never its file bodies) and returns
   /// the "what's inside" manifest for the import dialog (TODO-1358). Streams like
   /// [validateBackup]; returns an empty summary on any read error.
-  Future<BackupContentSummary> summarizeBackupZip(String zipPath) async {
+  Future<BackupContentSummary> summarizeBackupFile(String zipPath) async {
     InputFileStream? input;
     try {
       input = InputFileStream(zipPath);
@@ -741,12 +741,12 @@ class BackupService {
         dbVideoBookCount = peek?.videos;
         dbAudiobookCount = peek?.audiobooks;
       }
-      return summarizeBackupArchive(names, meta,
+      return summarizeBackupEntries(names, meta,
           dbVideoBookCount: dbVideoBookCount,
           dbAudiobookCount: dbAudiobookCount);
     } catch (e, st) {
       debugPrint(
-          'BackupService.summarizeBackupZip failed for $zipPath: $e\n$st');
+          'BackupService.summarizeBackupFile failed for $zipPath: $e\n$st');
       return const BackupContentSummary();
     } finally {
       await input?.close();
@@ -755,7 +755,7 @@ class BackupService {
 
   /// Streams the backup's `hibiki.db` blob (the small metadata DB — media lives
   /// in separate zip entries) to a temp file and returns its `video_books` and
-  /// `audiobooks` row counts, or null on any failure. Used by [summarizeBackupZip]
+  /// `audiobooks` row counts, or null on any failure. Used by [summarizeBackupFile]
   /// to offer the video / audiobooks import toggles for OLD backups that predate
   /// [BackupMeta.videoBookCount] / [BackupMeta.audiobookCount] (BUG-779 / BUG-781).
   /// Reuses the isolate-backed [_extractEntriesStreaming] so a large metadata DB
@@ -810,7 +810,7 @@ class BackupService {
   /// content roots (TODO-1358). Counts are the natural unit per category; a root
   /// this service was built without counts as zero. Reads only counts, so it is
   /// cheap even on a large library.
-  Future<BackupContentSummary> summarizeExportContent() async {
+  Future<BackupContentSummary> summarizeLiveContent() async {
     final int books = (await _db.getAllEpubBooks()).length;
     final int audiobooks = (await _db.getAllAudiobooks()).length;
     final int videos = (await _db.allVideoBooks()).length;
@@ -947,7 +947,7 @@ class BackupService {
   /// from the DB copy so restore never resurrects a "ghost video" with no file)
   /// AND their `videos/` content. Ignored when the [BackupCategory.videos]
   /// category itself is excluded (then no video rows or files travel at all).
-  Future<BackupMeta> exportBackup(
+  Future<BackupMeta> createBackup(
     String outputPath, {
     Set<BackupCategory>? categories,
     Set<String>? bookKeys,
@@ -1044,7 +1044,7 @@ class BackupService {
       // profiles) live only in the DB blob, so when the user unticks any of
       // them the matching rows are DELETEd from the standalone DB COPY (never
       // the live user DB). Excluding settings/profiles is made safe on import
-      // by _restoreExcludedSettingsLayers preserving the LOCAL layer from bak.
+      // by _reapplyExcludedSettingsLayers preserving the LOCAL layer from bak.
       final bool includeProgress = wants(BackupCategory.progress);
       final bool includeStatistics = wants(BackupCategory.statistics);
       final bool includeSettings = wants(BackupCategory.settings);
@@ -1418,12 +1418,12 @@ class BackupService {
   /// baselines. Runs inline during import while both DBs are at the current
   /// schema (bak is a copy of the live DB), so `SELECT *` columns align. No-op
   /// (logged) if bak is gone.
-  static Future<void> _restoreDeviceLocalTablesFromBak(
+  static Future<void> _reapplyDeviceLocalTablesFromBak(
     String dbDirectory,
     String bakPath,
   ) async {
     if (!File(bakPath).existsSync()) {
-      debugPrint('BackupService._restoreDeviceLocalTablesFromBak: '
+      debugPrint('BackupService._reapplyDeviceLocalTablesFromBak: '
           'pre-restore.bak missing — local pairing/baselines could not be '
           'preserved on import.');
       return;
@@ -1445,7 +1445,7 @@ class BackupService {
     } catch (e, st) {
       // Best-effort preservation: a corrupt/unreadable imported DB must not
       // abort the whole restore (the primary overwrite already landed).
-      debugPrint('BackupService._restoreDeviceLocalTablesFromBak failed: '
+      debugPrint('BackupService._reapplyDeviceLocalTablesFromBak failed: '
           '$e\n$st');
     } finally {
       try {
@@ -1695,7 +1695,7 @@ class BackupService {
   ///  - `audio_source_configs` localAudio entries -> `localAudio` (option B:
   ///    only the `kind == 'localAudio'` entries carrying this device's absolute
   ///    `.db` paths are dropped; remote audio-source entries are kept).
-  /// Mirrored on an overwrite import by [_restoreExcludedContentRegistry].
+  /// Mirrored on an overwrite import by [_reapplyExcludedContentRegistry].
   static Future<void> _stripExcludedContentRegistry(
     String dbDirectory, {
     required bool stripFavorites,
@@ -1768,27 +1768,27 @@ class BackupService {
   /// from bak (the device keeps its own audio setup when localAudio was
   /// excluded), which subsumes the export-side B-filter. No-op (logged) if bak
   /// is gone.
-  static Future<void> _restoreExcludedContentRegistry(
+  static Future<void> _reapplyExcludedContentRegistry(
     String dbDirectory,
     String bakPath, {
-    required bool restoreFavorites,
-    required bool restoreFonts,
-    required bool restoreLocalAudio,
+    required bool reapplyFavorites,
+    required bool reapplyFonts,
+    required bool reapplyLocalAudio,
   }) async {
     final List<String> keys = <String>[
-      if (restoreFavorites) _favoriteSentencesPrefKey,
-      if (restoreFonts) ...<String>[
+      if (reapplyFavorites) _favoriteSentencesPrefKey,
+      if (reapplyFonts) ...<String>[
         _fontCatalogPrefKey,
         ..._legacyFontPrefKeys
       ],
-      if (restoreLocalAudio) ...<String>[
+      if (reapplyLocalAudio) ...<String>[
         _localAudioDbsPrefKey,
         _audioSourceConfigsPrefKey,
       ],
     ];
     if (keys.isEmpty) return;
     if (!File(bakPath).existsSync()) {
-      debugPrint('BackupService._restoreExcludedContentRegistry: '
+      debugPrint('BackupService._reapplyExcludedContentRegistry: '
           'pre-restore.bak missing — local favorites/fonts/audio registry could '
           'not be preserved for a category-excluded backup.');
       return;
@@ -1810,7 +1810,7 @@ class BackupService {
       await db.customStatement('DETACH DATABASE crbak');
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } catch (e, st) {
-      debugPrint('BackupService._restoreExcludedContentRegistry failed: '
+      debugPrint('BackupService._reapplyExcludedContentRegistry failed: '
           '$e\n$st');
     } finally {
       try {
@@ -1846,7 +1846,7 @@ class BackupService {
     }
   }
 
-  /// Settings-layer tables restored from THIS device when [importBackupFiles]
+  /// Settings-layer tables restored from THIS device when [restoreBackup]
   /// runs with importSettings=false. Order matters: `profiles` first (FK target
   /// of the rest). `preferences` is handled separately (audiobook positions are
   /// content and follow the backup). No content table FKs into these, and
@@ -1858,7 +1858,9 @@ class BackupService {
     'book_profiles',
   ];
 
-  /// Import a backup, replacing the current database files.
+  /// Restore a backup (overwrite mode), replacing the current database files.
+  /// 用户视角的「恢复备份」顶层入口；merge 模式见 [mergeRestoreBackup]，内部
+  /// 子步骤一律 reapply* 动词（restore 保留给本顶层语义）。
   ///
   /// This is a static method because the database must already be closed
   /// before calling — the caller is responsible for closing the DB first.
@@ -1874,8 +1876,8 @@ class BackupService {
   ///   current schema, then the settings layer is copied back from
   ///   pre-restore.bak (both at current schema → column-aligned, FK-safe). The
   ///   sidecar + bak written before the overwrite are a crash-recovery net so
-  ///   [recoverPendingImport] can finish the restore if this crashes mid-way.
-  static Future<void> importBackupFiles({
+  ///   [recoverPendingRestore] can finish the restore if this crashes mid-way.
+  static Future<void> restoreBackup({
     required String dbDirectory,
     required String zipPath,
     bool importSettings = true,
@@ -1928,12 +1930,12 @@ class BackupService {
           meta?.excludedCategories.contains(BackupCategory.localAudio.name) ??
               false;
 
-      final String? dictionaryRestoreDirectory = dictionaryResourceDirectory;
-      List<MapEntry<ArchiveFile, String>>? dictionaryRestorePlan;
-      if (dictionaryRestoreDirectory != null) {
-        dictionaryRestorePlan = _buildDictionaryRestorePlan(
+      final String? dictionaryReapplyDirectory = dictionaryResourceDirectory;
+      List<MapEntry<ArchiveFile, String>>? dictionaryReapplyPlan;
+      if (dictionaryReapplyDirectory != null) {
+        dictionaryReapplyPlan = _buildDictionaryReapplyPlan(
           archive: archive,
-          dictionaryResourceDirectory: dictionaryRestoreDirectory,
+          dictionaryResourceDirectory: dictionaryReapplyDirectory,
         );
       }
       // BUG-454: a backup exported WITHOUT the dictionary category carries no
@@ -2025,29 +2027,29 @@ class BackupService {
       );
 
       if (effectiveHasDictionaries &&
-          dictionaryRestorePlan != null &&
-          dictionaryRestoreDirectory != null) {
+          dictionaryReapplyPlan != null &&
+          dictionaryReapplyDirectory != null) {
         // Backup carries dictionaries → replace this device's resources with
         // the backup's (the DB overwrite already brought the matching rows).
-        await _restoreDictionaryResources(
+        await _reapplyDictionaryResources(
           zipPath: zipPath,
-          restorePlan: dictionaryRestorePlan,
-          dictionaryResourceDirectory: dictionaryRestoreDirectory,
+          reapplyPlan: dictionaryReapplyPlan,
+          dictionaryResourceDirectory: dictionaryReapplyDirectory,
           onBytes: reportBytes,
         );
       } else if (!effectiveHasDictionaries &&
           haveCurrent &&
-          dictionaryRestoreDirectory != null) {
+          dictionaryReapplyDirectory != null) {
         // BUG-454: backup has NO dictionaries → keep this device's. The DB was
         // just overwritten with the backup's (dictionary tables empty), so
         // re-seat the local dictionary rows from pre-restore.bak. The resource
         // FILES on disk were never touched (we skipped the unconditional wipe
-        // in _restoreDictionaryResources), so rows + files stay consistent.
+        // in _reapplyDictionaryResources), so rows + files stay consistent.
         // Gated on a managed dictionary dir: the live app always supplies it;
         // a null dir means the caller isn't managing dictionaries at all, so
         // there is nothing to preserve (and bak may not even be a real DB in
         // such minimal call sites).
-        await _restoreDictionaryTablesFromBak(dbDirectory, bakPath);
+        await _reapplyDictionaryTablesFromBak(dbDirectory, bakPath);
       }
 
       // 2b) Restore the book + audiobook content trees (full-data backup).
@@ -2060,25 +2062,25 @@ class BackupService {
       try {
         if (booksRootDirectory != null &&
             wants(BackupCategory.books) &&
-            await _prepareTreeRestore(
+            await _prepareTreeReapply(
                 zipPath, archive, _booksPrefix, booksRootDirectory,
                 onBytes: reportBytes)) {
           toCommit.add(booksRootDirectory);
         }
         if (effAudiobooksRoot != null &&
-            await _prepareTreeRestore(
+            await _prepareTreeReapply(
                 zipPath, archive, _audiobooksPrefix, effAudiobooksRoot,
                 onBytes: reportBytes)) {
           toCommit.add(effAudiobooksRoot);
         }
         if (effFontsRoot != null &&
-            await _prepareTreeRestore(
+            await _prepareTreeReapply(
                 zipPath, archive, _fontsPrefix, effFontsRoot,
                 onBytes: reportBytes)) {
           toCommit.add(effFontsRoot);
         }
         if (effVideosRoot != null &&
-            await _prepareTreeRestore(
+            await _prepareTreeReapply(
                 zipPath, archive, _videosPrefix, effVideosRoot,
                 onBytes: reportBytes)) {
           toCommit.add(effVideosRoot);
@@ -2110,7 +2112,7 @@ class BackupService {
       //     backup carries no localAudio/ prefix the existing local-audio DBs
       //     are left untouched (same preserve-on-absent contract as the trees).
       if (wants(BackupCategory.localAudio)) {
-        await _restoreLocalAudioFiles(zipPath, archive, dbDirectory,
+        await _reapplyLocalAudioFiles(zipPath, archive, dbDirectory,
             onBytes: reportBytes);
       }
 
@@ -2123,11 +2125,11 @@ class BackupService {
         // Runs before the sync re-apply so _applyPreservedConfig stays the
         // authoritative last word on sync config (and clears the folder cache).
         if ((backupSettingsExcluded || backupProfilesExcluded) && haveCurrent) {
-          await _restoreExcludedSettingsLayers(
+          await _reapplyExcludedSettingsLayers(
             dbDirectory,
             bakPath,
-            restoreSettings: backupSettingsExcluded,
-            restoreProfiles: backupProfilesExcluded,
+            reapplySettings: backupSettingsExcluded,
+            reapplyProfiles: backupProfilesExcluded,
           );
         }
         // Re-apply device-local sync config (preferences is schema-stable).
@@ -2136,7 +2138,7 @@ class BackupService {
         }
       } else if (haveCurrent) {
         // Keep this device's whole settings layer.
-        await _restoreSettingsLayer(dbDirectory);
+        await _reapplySettingsLayer(dbDirectory);
       }
 
       // 3a) BUG-816: the export wipes device-local tables (LAN pairing token +
@@ -2145,16 +2147,16 @@ class BackupService {
       //     branches) — else the overwrite would wipe the device's pairings and
       //     baselines. No-op on a fresh install (no bak).
       if (haveCurrent) {
-        await _restoreDeviceLocalTablesFromBak(dbDirectory, bakPath);
+        await _reapplyDeviceLocalTablesFromBak(dbDirectory, bakPath);
         // BUG-816: preserve THIS device's content-registry prefs from bak when
         // the backup excluded their owning category (books/fonts/localAudio) —
         // runs in both importSettings branches, mirroring the export strip.
-        await _restoreExcludedContentRegistry(
+        await _reapplyExcludedContentRegistry(
           dbDirectory,
           bakPath,
-          restoreFavorites: backupBooksExcluded,
-          restoreFonts: backupFontsExcluded,
-          restoreLocalAudio: backupLocalAudioExcluded,
+          reapplyFavorites: backupBooksExcluded,
+          reapplyFonts: backupFontsExcluded,
+          reapplyLocalAudio: backupLocalAudioExcluded,
         );
       }
 
@@ -2235,16 +2237,16 @@ class BackupService {
   /// MERGE a backup into the current database instead of overwriting it
   /// (TODO-888). The device keeps everything it has; the backup only ADDS what
   /// is missing and MAX-unions statistics, so re-importing the same backup is
-  /// idempotent. Unlike [importBackupFiles] this NEVER touches the destructive
+  /// idempotent. Unlike [restoreBackup] this NEVER touches the destructive
   /// overwrite path (`writeAsBytes`) or the two-phase tree swap; content trees
   /// are restored copy-if-absent (existing files are never replaced or deleted).
   ///
   /// The caller must close the app's DB first (same contract as
-  /// [importBackupFiles]); this opens its own connections. Crash safety: the
+  /// [restoreBackup]); this opens its own connections. Crash safety: the
   /// whole row merge is ONE [HibikiDatabase.transaction] (rolled back on any
   /// failure) plus a `pre-merge.bak` snapshot for manual recovery, and a
-  /// `mode:'merge'` sidecar so [recoverPendingImport] cleans up temp files.
-  static Future<void> mergeImportBackupFiles({
+  /// `mode:'merge'` sidecar so [recoverPendingRestore] cleans up temp files.
+  static Future<void> mergeRestoreBackup({
     required String dbDirectory,
     required String zipPath,
     Set<BackupCategory>? categories,
@@ -2375,7 +2377,7 @@ class BackupService {
       // Local-audio DBs are copy-if-absent into the support directory (never
       // overwrite the device's own local_audio_*.db files).
       if (wants(BackupCategory.localAudio)) {
-        await _restoreLocalAudioFiles(zipPath, archive, dbDirectory,
+        await _reapplyLocalAudioFiles(zipPath, archive, dbDirectory,
             overwrite: false, onBytes: reportBytes);
       }
 
@@ -2417,7 +2419,7 @@ class BackupService {
   /// import is never blocked by a preview problem. The content trees are NOT
   /// extracted (only row counts matter), so this stays cheap even for a
   /// multi-GB backup.
-  static Future<BackupMergePreview?> previewMergeImport({
+  static Future<BackupMergePreview?> previewMergeRestore({
     required HibikiDatabase liveDb,
     required String dbDirectory,
     required String zipPath,
@@ -2476,7 +2478,7 @@ class BackupService {
     } catch (e, st) {
       // Never block the import on a preview failure — fall back to a generic
       // confirm dialog.
-      debugPrint('BackupService.previewMergeImport failed: $e\n$st');
+      debugPrint('BackupService.previewMergeRestore failed: $e\n$st');
       return null;
     } finally {
       await _safeDelete(tmpSrc);
@@ -2488,7 +2490,7 @@ class BackupService {
   /// Copies every file under `<prefix>/` in [archive] into [targetRootPath],
   /// SKIPPING any whose destination already exists (the merge-import invariant:
   /// never delete or overwrite the device's own content). Reuses the same path
-  /// traversal safety checks as the overwrite path's [_buildTreeRestorePlan].
+  /// traversal safety checks as the overwrite path's [_buildTreeReapplyPlan].
   static Future<void> _copyTreeIfAbsent(
     String zipPath,
     Archive archive,
@@ -2496,7 +2498,7 @@ class BackupService {
     String targetRootPath, {
     void Function(int deltaBytes)? onBytes,
   }) async {
-    final List<MapEntry<ArchiveFile, String>> plan = _buildTreeRestorePlan(
+    final List<MapEntry<ArchiveFile, String>> plan = _buildTreeReapplyPlan(
       archive: archive,
       prefix: prefix,
       targetRootPath: targetRootPath,
@@ -2517,7 +2519,7 @@ class BackupService {
   /// true when a merge sidecar was present (and was handled), false otherwise.
   /// The DB itself is untouched: the merge transaction is all-or-nothing, so the
   /// live DB is already consistent regardless of when a crash happened.
-  static Future<bool> recoverMergeImport(String dbDirectory) async {
+  static Future<bool> recoverMergeRestore(String dbDirectory) async {
     final File sidecar = File(p.join(dbDirectory, _mergeSidecar));
     if (!sidecar.existsSync()) return false;
     try {
@@ -2530,7 +2532,7 @@ class BackupService {
         await _safeDelete('$mergeSrc-shm');
       }
     } catch (e, st) {
-      debugPrint('BackupService.recoverMergeImport failed: $e\n$st');
+      debugPrint('BackupService.recoverMergeRestore failed: $e\n$st');
     }
     await _safeDelete(p.join(dbDirectory, _mergeSrcName));
     await _safeDelete(p.join(dbDirectory, '$_mergeSrcName-wal'));
@@ -2544,15 +2546,15 @@ class BackupService {
   /// Handles both: (a) re-applying device-local sync prefs if a full-restore
   /// import crashed mid-way; (b) restoring this device's settings layer for a
   /// keep-settings import. No-op when no sidecar is present.
-  static Future<void> recoverPendingImport(String dbDirectory) async {
+  static Future<void> recoverPendingRestore(String dbDirectory) async {
     // MERGE import (TODO-888) leaves its own sidecar. The row merge ran in ONE
     // Drift transaction, so the live DB is already consistent whether or not we
     // crashed (the transaction either committed or rolled back) — there is
     // NOTHING to apply to the DB, only leftover temp files to sweep. Handle it
     // first + return so a 'merge' marker can never fall through to the legacy
-    // bare-map prefs path and get mis-applied. (recoverMergeImport is reused by
+    // bare-map prefs path and get mis-applied. (recoverMergeRestore is reused by
     // tests; keep the sweep there.)
-    if (await recoverMergeImport(dbDirectory)) return;
+    if (await recoverMergeRestore(dbDirectory)) return;
 
     final sidecar = File(p.join(dbDirectory, _preserveSidecar));
     if (!sidecar.existsSync()) return;
@@ -2560,7 +2562,7 @@ class BackupService {
       final raw = await sidecar.readAsString();
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
       if (decoded['mode'] == 'settings') {
-        await _restoreSettingsLayer(dbDirectory);
+        await _reapplySettingsLayer(dbDirectory);
       } else {
         // 'prefs' mode, or a legacy bare-map sidecar (no 'mode' field).
         // TODO-1193: preserve the LOCAL settings/profiles layer from bak first
@@ -2569,11 +2571,11 @@ class BackupService {
         final bool preserveSettings = decoded['preserveSettings'] == true;
         final bool preserveProfiles = decoded['preserveProfiles'] == true;
         if (preserveSettings || preserveProfiles) {
-          await _restoreExcludedSettingsLayers(
+          await _reapplyExcludedSettingsLayers(
             dbDirectory,
             p.join(dbDirectory, '$_dbName.pre-restore.bak'),
-            restoreSettings: preserveSettings,
-            restoreProfiles: preserveProfiles,
+            reapplySettings: preserveSettings,
+            reapplyProfiles: preserveProfiles,
           );
         }
         final Map<String, dynamic> prefsRaw =
@@ -2583,7 +2585,7 @@ class BackupService {
       }
     } catch (e, st) {
       // Corrupt sidecar: drop it rather than blocking startup forever.
-      debugPrint('BackupService.recoverPendingImport failed: $e\n$st');
+      debugPrint('BackupService.recoverPendingRestore failed: $e\n$st');
     }
     await _safeDelete(sidecar.path);
     await _safeDelete(p.join(dbDirectory, '$_dbName.pre-restore.bak'));
@@ -2593,7 +2595,7 @@ class BackupService {
   /// pre-restore.bak into the freshly-imported DB, keeping the backup's content.
   /// Runs at startup, so both DBs are at the current schema → `SELECT *` columns
   /// align. audiobook positions are content and stay from the backup.
-  static Future<void> _restoreSettingsLayer(String dbDirectory) async {
+  static Future<void> _reapplySettingsLayer(String dbDirectory) async {
     final String bakPath = p.join(dbDirectory, '$_dbName.pre-restore.bak');
     if (!File(bakPath).existsSync()) {
       // bak is the only copy of this device's settings layer (the main DB was
@@ -2601,7 +2603,7 @@ class BackupService {
       // surface it loudly rather than silently dropping the user's settings.
       // (Normal flow restores inline while bak definitely exists; reaching here
       // means a crash + external deletion of bak before the next launch.)
-      debugPrint('BackupService._restoreSettingsLayer: pre-restore.bak missing '
+      debugPrint('BackupService._reapplySettingsLayer: pre-restore.bak missing '
           '— local settings/profiles could not be preserved on import.');
       return;
     }
@@ -2639,25 +2641,25 @@ class BackupService {
   /// backup that UNTICKED the `settings` / `profiles` category never wipes this
   /// device's settings/profiles to empty (TODO-1193). The exact mirror of the
   /// export strip:
-  ///  - [restoreSettings]: the pure-settings preference rows
+  ///  - [reapplySettings]: the pure-settings preference rows
   ///    ([settingsPrefPredicate]) — progress / favorites / content-registry /
   ///    sync prefs stay from the backup (they are content or handled elsewhere).
-  ///  - [restoreProfiles]: the four profile-layer tables (child-first DELETE
+  ///  - [reapplyProfiles]: the four profile-layer tables (child-first DELETE
   ///    then parent-first INSERT for FK-safety).
   /// Runs while both DBs are at the current schema (bak is a copy of the live
   /// DB), so `SELECT *` columns align. No-op (logged) if bak is gone.
-  static Future<void> _restoreExcludedSettingsLayers(
+  static Future<void> _reapplyExcludedSettingsLayers(
     String dbDirectory,
     String bakPath, {
-    required bool restoreSettings,
-    required bool restoreProfiles,
+    required bool reapplySettings,
+    required bool reapplyProfiles,
   }) async {
-    if (!restoreSettings && !restoreProfiles) return;
+    if (!reapplySettings && !reapplyProfiles) return;
     if (!File(bakPath).existsSync()) {
       // bak is the only copy of this device's settings/profiles after the
       // overwrite. Missing it means a crash + external deletion before this ran;
       // surface loudly rather than silently wiping the layer to empty.
-      debugPrint('BackupService._restoreExcludedSettingsLayers: '
+      debugPrint('BackupService._reapplyExcludedSettingsLayers: '
           'pre-restore.bak missing — local settings/profiles could not be '
           'preserved for a settings/profiles-excluded backup.');
       return;
@@ -2668,14 +2670,14 @@ class BackupService {
           bakPath.replaceAll(r'\', '/').replaceAll("'", "''");
       await db.customStatement("ATTACH DATABASE '$safeBak' AS setbak");
       await db.transaction(() async {
-        if (restoreSettings) {
+        if (reapplySettings) {
           await db.customStatement(
               'DELETE FROM preferences WHERE $settingsPrefPredicate');
           await db.customStatement(
               'INSERT INTO preferences SELECT * FROM setbak.preferences '
               'WHERE $settingsPrefPredicate');
         }
-        if (restoreProfiles) {
+        if (reapplyProfiles) {
           // Child-first DELETE so an enforced FK to `profiles` never blocks the
           // wipe; parent-first INSERT ([_settingsLayerTables]) so children land
           // after their profile row.
@@ -2709,7 +2711,7 @@ class BackupService {
   /// snapshot) into the freshly-overwritten DB in [dbDirectory]. Runs inline
   /// during import while both DBs are at the current schema (bak is a copy of
   /// the live DB), so `SELECT *` columns align. No-op (logged) if bak is gone.
-  static Future<void> _restoreDictionaryTablesFromBak(
+  static Future<void> _reapplyDictionaryTablesFromBak(
     String dbDirectory,
     String bakPath,
   ) async {
@@ -2717,7 +2719,7 @@ class BackupService {
       // bak is the only copy of this device's dictionary rows after the
       // overwrite. Missing it means a crash + external deletion before this
       // ran; surface loudly rather than silently dropping the dictionaries.
-      debugPrint('BackupService._restoreDictionaryTablesFromBak: '
+      debugPrint('BackupService._reapplyDictionaryTablesFromBak: '
           'pre-restore.bak missing — local dictionaries could not be '
           'preserved on import.');
       return;
@@ -3159,13 +3161,13 @@ class BackupService {
     }).toList();
   }
 
-  static List<MapEntry<ArchiveFile, String>> _buildDictionaryRestorePlan({
+  static List<MapEntry<ArchiveFile, String>> _buildDictionaryReapplyPlan({
     required Archive archive,
     required String dictionaryResourceDirectory,
   }) {
     final Directory targetRoot = Directory(dictionaryResourceDirectory);
     final String canonicalRoot = p.canonicalize(targetRoot.path);
-    final List<MapEntry<ArchiveFile, String>> restorePlan =
+    final List<MapEntry<ArchiveFile, String>> reapplyPlan =
         <MapEntry<ArchiveFile, String>>[];
     for (final ArchiveFile file in _dictionaryResourceFiles(archive)) {
       final String rawName = file.name.replaceAll(r'\', '/');
@@ -3187,14 +3189,14 @@ class BackupService {
           !p.isWithin(canonicalRoot, canonicalTarget)) {
         throw FormatException('Invalid dictionary resource path: ${file.name}');
       }
-      restorePlan.add(MapEntry<ArchiveFile, String>(file, targetPath));
+      reapplyPlan.add(MapEntry<ArchiveFile, String>(file, targetPath));
     }
-    return restorePlan;
+    return reapplyPlan;
   }
 
-  static Future<void> _restoreDictionaryResources({
+  static Future<void> _reapplyDictionaryResources({
     required String zipPath,
-    required List<MapEntry<ArchiveFile, String>> restorePlan,
+    required List<MapEntry<ArchiveFile, String>> reapplyPlan,
     required String dictionaryResourceDirectory,
     void Function(int deltaBytes)? onBytes,
   }) async {
@@ -3205,7 +3207,7 @@ class BackupService {
     await targetRoot.create(recursive: true);
     await _extractEntriesStreaming(
       zipPath: zipPath,
-      entries: restorePlan
+      entries: reapplyPlan
           .map((MapEntry<ArchiveFile, String> e) =>
               MapEntry<String, String>(e.key.name, e.value))
           .toList(),
@@ -3226,7 +3228,7 @@ class BackupService {
   ///
   /// [overwrite] true (overwrite import) replaces an existing same-named file;
   /// false (merge import) keeps the device's own file (copy-if-absent).
-  static Future<void> _restoreLocalAudioFiles(
+  static Future<void> _reapplyLocalAudioFiles(
     String zipPath,
     Archive archive,
     String dbDirectory, {
@@ -3262,7 +3264,7 @@ class BackupService {
   /// Files in [archive] under `<prefix>/`, validated against path traversal and
   /// mapped to absolute targets under [targetRootPath]. Mirrors the dictionary
   /// plan's safety checks (reject absolute / `..` escapes, `p.isWithin` gate).
-  static List<MapEntry<ArchiveFile, String>> _buildTreeRestorePlan({
+  static List<MapEntry<ArchiveFile, String>> _buildTreeReapplyPlan({
     required Archive archive,
     required String prefix,
     required String targetRootPath,
@@ -3320,7 +3322,7 @@ class BackupService {
   /// Splitting write (slow, GB-scale, failure-prone) from the swap (fast rename)
   /// lets the caller stage ALL trees before committing ANY — a write failure
   /// then swaps nothing and leaves every existing tree intact (review W2).
-  static Future<bool> _prepareTreeRestore(
+  static Future<bool> _prepareTreeReapply(
     String zipPath,
     Archive archive,
     String prefix,
@@ -3328,7 +3330,7 @@ class BackupService {
     void Function(int deltaBytes)? onBytes,
   }) async {
     final String tmpRoot = _importTmpPath(targetRootPath);
-    final List<MapEntry<ArchiveFile, String>> plan = _buildTreeRestorePlan(
+    final List<MapEntry<ArchiveFile, String>> plan = _buildTreeReapplyPlan(
       archive: archive,
       prefix: prefix,
       targetRootPath: tmpRoot,
@@ -3665,7 +3667,7 @@ class BackupService {
   ) {
     final String? relativePath = sourcePathToArchiveRelative[oldPath];
     if (relativePath == null) return oldPath;
-    return _restoredVideoPath(newVideosRoot, relativePath);
+    return _reappliedVideoPath(newVideosRoot, relativePath);
   }
 
   static String? _rebaseVideoPlaylistJson(
@@ -3697,7 +3699,7 @@ class BackupService {
     }
   }
 
-  static String _restoredVideoPath(
+  static String _reappliedVideoPath(
     String videosRoot,
     String archiveRelativePath,
   ) {
@@ -3923,6 +3925,129 @@ class BackupService {
     final String date = HibikiTimeFormat.dayKey(DateTime.now());
     return 'hibiki-backup-$date.hibiki.zip';
   }
+
+  // ── 旧名兼容转发（命名统一 §1-H：备份动词按用户视角统一 create/restore）────
+  //
+  // 用户视角的「创建备份 / 恢复备份」此前在代码里叫 export/import*，与 DB 内部
+  // 子步骤的 restore* 撞词。顶层 API 改名后保留下列 @Deprecated 转发（外部/并行
+  // 分支调用点平滑迁移）；内部子步骤已全部 restore*→reapply*，无转发。
+
+  /// 旧名兼容：已改名 [createBackup]。
+  @Deprecated('已改名 createBackup（用户视角动词），请改用新名')
+  Future<BackupMeta> exportBackup(
+    String outputPath, {
+    Set<BackupCategory>? categories,
+    Set<String>? bookKeys,
+    Set<String>? videoKeys,
+  }) =>
+      createBackup(
+        outputPath,
+        categories: categories,
+        bookKeys: bookKeys,
+        videoKeys: videoKeys,
+      );
+
+  /// 旧名兼容：已改名 [restoreBackup]。
+  @Deprecated('已改名 restoreBackup（用户视角动词），请改用新名')
+  static Future<void> importBackupFiles({
+    required String dbDirectory,
+    required String zipPath,
+    bool importSettings = true,
+    Set<BackupCategory>? categories,
+    String? dictionaryResourceDirectory,
+    String? booksRootDirectory,
+    String? audiobooksRootDirectory,
+    String? fontsRootDirectory,
+    String? videosRootDirectory,
+    void Function(double progress)? onProgress,
+  }) =>
+      restoreBackup(
+        dbDirectory: dbDirectory,
+        zipPath: zipPath,
+        importSettings: importSettings,
+        categories: categories,
+        dictionaryResourceDirectory: dictionaryResourceDirectory,
+        booksRootDirectory: booksRootDirectory,
+        audiobooksRootDirectory: audiobooksRootDirectory,
+        fontsRootDirectory: fontsRootDirectory,
+        videosRootDirectory: videosRootDirectory,
+        onProgress: onProgress,
+      );
+
+  /// 旧名兼容：已改名 [mergeRestoreBackup]。
+  @Deprecated('已改名 mergeRestoreBackup（用户视角动词），请改用新名')
+  static Future<void> mergeImportBackupFiles({
+    required String dbDirectory,
+    required String zipPath,
+    Set<BackupCategory>? categories,
+    String? dictionaryResourceDirectory,
+    String? booksRootDirectory,
+    String? audiobooksRootDirectory,
+    String? fontsRootDirectory,
+    String? videosRootDirectory,
+    void Function(double progress)? onProgress,
+  }) =>
+      mergeRestoreBackup(
+        dbDirectory: dbDirectory,
+        zipPath: zipPath,
+        categories: categories,
+        dictionaryResourceDirectory: dictionaryResourceDirectory,
+        booksRootDirectory: booksRootDirectory,
+        audiobooksRootDirectory: audiobooksRootDirectory,
+        fontsRootDirectory: fontsRootDirectory,
+        videosRootDirectory: videosRootDirectory,
+        onProgress: onProgress,
+      );
+
+  /// 旧名兼容：已改名 [summarizeBackupEntries]（入参是归档条目名列表而非
+  /// `Archive` 对象，旧名易误导）。
+  @Deprecated('已改名 summarizeBackupEntries，请改用新名')
+  static BackupContentSummary summarizeBackupArchive(
+    Iterable<String> archiveFileNames,
+    BackupMeta? meta, {
+    int? dbVideoBookCount,
+    int? dbAudiobookCount,
+  }) =>
+      summarizeBackupEntries(
+        archiveFileNames,
+        meta,
+        dbVideoBookCount: dbVideoBookCount,
+        dbAudiobookCount: dbAudiobookCount,
+      );
+
+  /// 旧名兼容：已改名 [summarizeBackupFile]。
+  @Deprecated('已改名 summarizeBackupFile，请改用新名')
+  Future<BackupContentSummary> summarizeBackupZip(String zipPath) =>
+      summarizeBackupFile(zipPath);
+
+  /// 旧名兼容：已改名 [summarizeLiveContent]（摘要对象是**现库内容**而非任何
+  /// 备份文件，与上两者本就不同义，旧名 Export 前缀掩盖了这一点）。
+  @Deprecated('已改名 summarizeLiveContent，请改用新名')
+  Future<BackupContentSummary> summarizeExportContent() =>
+      summarizeLiveContent();
+
+  /// 旧名兼容：已改名 [previewMergeRestore]。
+  @Deprecated('已改名 previewMergeRestore，请改用新名')
+  static Future<BackupMergePreview?> previewMergeImport({
+    required HibikiDatabase liveDb,
+    required String dbDirectory,
+    required String zipPath,
+  }) =>
+      previewMergeRestore(
+        liveDb: liveDb,
+        dbDirectory: dbDirectory,
+        zipPath: zipPath,
+      );
+
+  /// 旧名兼容：已改名 [recoverMergeRestore]。
+  @Deprecated('已改名 recoverMergeRestore，请改用新名')
+  static Future<bool> recoverMergeImport(String dbDirectory) =>
+      recoverMergeRestore(dbDirectory);
+
+  /// 旧名兼容：已改名 [recoverPendingRestore]。
+  @Deprecated('已改名 recoverPendingRestore，请改用新名')
+  static Future<void> recoverPendingImport(String dbDirectory) =>
+      recoverPendingRestore(dbDirectory);
 }
 
 /// Sendable request for the background extract worker (records with a `List` and

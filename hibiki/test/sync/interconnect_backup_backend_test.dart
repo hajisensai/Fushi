@@ -2,7 +2,7 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -15,7 +15,7 @@ HibikiDatabase _testDb() =>
 /// 用户诉求：「hibiki 互联里面加一个按钮，把备份后端设置为 hibiki 互联」。
 ///
 /// 互联解耦（PR#223）后 hibikiServer 从后端选择器里被摘掉，「备份写到已配对设备而不是
-/// 云盘」这条能力还在（[resolveSyncBackend] 仍解析成 [HibikiClientSyncBackend]）但没有
+/// 云盘」这条能力还在（[resolveSyncBackend] 仍解析成 [InterconnectSyncBackend]）但没有
 /// 入口。互联页新增的按钮走 [applyBackupBackendChange] 把它放回来，本测试守住这条路径的
 /// 两个真实落点：切换副作用、以及切换后同步通道的归属。
 void main() {
@@ -69,7 +69,7 @@ void main() {
       final List<SyncChannel> channels = await enabledSyncChannelBackends(repo);
 
       expect(channels, hasLength(1), reason: '同一单例后端不得跑两遍');
-      expect(channels.single.backend, isA<HibikiClientSyncBackend>());
+      expect(channels.single.backend, isA<InterconnectSyncBackend>());
       // 关键：这条通道跑的是互联链路，分资产开关就必须读互联专属上传开关，否则用户在
       // 互联页看到的四个上传开关会被静默忽略、改由云备份开关决定。
       expect(channels.single.isInterconnect, isTrue);
@@ -88,7 +88,7 @@ void main() {
       expect(channels, hasLength(2));
       expect(channels[0].isInterconnect, isFalse);
       expect(channels[1].isInterconnect, isTrue);
-      expect(channels[1].backend, isA<HibikiClientSyncBackend>());
+      expect(channels[1].backend, isA<InterconnectSyncBackend>());
     });
 
     test('互联未启用时只有云通道', () async {

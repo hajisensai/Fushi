@@ -1,4 +1,4 @@
-import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 
 /// 三方判定结果：要么给出自动同步方向，要么标记为冲突（需用户裁决）。
 class ProgressResolution {

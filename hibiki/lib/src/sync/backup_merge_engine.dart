@@ -924,7 +924,7 @@ class BackupMergeEngine {
 
   /// The audio-source registry prefs are CONTENT config, not device settings:
   /// the local-audio `.db` files they reference DO travel in the backup (packed
-  /// under `localAudio/` and copied by [BackupService.mergeImportBackupFiles]),
+  /// under `localAudio/` and copied by [BackupService.mergeRestoreBackup]),
   /// so their config must travel too — otherwise the restored files are orphaned
   /// and "音频来源" is silently lost on a merge (the pref-non-merge default
   /// dropped them). Adopt the backup's value when the device has none/an empty

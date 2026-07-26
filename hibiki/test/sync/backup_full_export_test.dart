@@ -78,7 +78,7 @@ void main() {
       audiobooksRootDirectory: srcAudio,
     );
     final String zipPath = p.join(src.path, 'backup.zip');
-    final meta = await service.exportBackup(zipPath);
+    final meta = await service.createBackup(zipPath);
     await srcDb.close();
 
     // Meta records the source roots; the zip carries both trees.
@@ -98,7 +98,7 @@ void main() {
     final String dstAudio = p.join(dst.path, 'audiobooks');
     Directory(dstDbDir).createSync(recursive: true);
 
-    await BackupService.importBackupFiles(
+    await BackupService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zipPath,
       booksRootDirectory: dstBooks,
@@ -144,7 +144,7 @@ void main() {
       db: srcDb,
       dbDirectory: srcDbDir,
       appVersion: '1.0.0',
-    ).exportBackup(zipPath);
+    ).createBackup(zipPath);
     await srcDb.close();
 
     final String dstDbDir = p.join(dst.path, 'db');
@@ -152,7 +152,7 @@ void main() {
     Directory(dstDbDir).createSync(recursive: true);
     await writeFile(p.join(dstBooks, 'Existing', 'keep.epub'), 'KEEP');
 
-    await BackupService.importBackupFiles(
+    await BackupService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zipPath,
       booksRootDirectory: dstBooks,
@@ -186,7 +186,7 @@ void main() {
       dbDirectory: srcDbDir,
       appVersion: '1.0.0',
       booksRootDirectory: srcBooks,
-    ).exportBackup(zipPath);
+    ).createBackup(zipPath);
     await srcDb.close();
 
     // Destination has stale leftovers from a previously-crashed import.
@@ -198,7 +198,7 @@ void main() {
     await writeFile(
         '$dstBooks.import-tmp${Platform.pathSeparator}junk.txt', 'x');
 
-    await BackupService.importBackupFiles(
+    await BackupService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zipPath,
       booksRootDirectory: dstBooks,

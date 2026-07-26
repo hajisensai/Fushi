@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
@@ -228,7 +228,7 @@ HibikiDatabase _testDb() =>
     HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// 把 url + token 写库，restoreAuth + authenticate，返回配好的 backend。
-Future<HibikiClientSyncBackend> _buildBackend({
+Future<InterconnectSyncBackend> _buildBackend({
   required String base,
   required String token,
 }) async {
@@ -241,8 +241,8 @@ Future<HibikiClientSyncBackend> _buildBackend({
   await repo.setHibikiClientToken(token);
 
   // fake probe：直接返回 true，不做真实探测（server 已在运行）。
-  final HibikiClientSyncBackend backend =
-      HibikiClientSyncBackend.withProbe((String url, String tok) async => true);
+  final InterconnectSyncBackend backend =
+      InterconnectSyncBackend.withProbe((String url, String tok) async => true);
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -273,7 +273,7 @@ void main() {
   // ── listRemoteBooks ───────────────────────────────────────────────────────
 
   test('listRemoteBooks returns book from host', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
 
     final List<RemoteBookInfo> result = await backend.listRemoteBooks();
@@ -288,7 +288,7 @@ void main() {
   // ── getRemoteBook ─────────────────────────────────────────────────────────
 
   test('getRemoteBook downloads EPUB bytes to destination file', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_book_dl');
     final File dest = File('${tmp.path}/neko.epub');
@@ -308,7 +308,7 @@ void main() {
       'bookKey': bookKey,
       'hasContent': true,
     }));
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp =
         Directory.systemTemp.createTempSync('hbk_book_dl_special');
@@ -332,7 +332,7 @@ void main() {
   // ── putRemoteBook ─────────────────────────────────────────────────────────
 
   test('putRemoteBook uploads CJK-named file content to host', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_book_ul');
     final File src = File('${tmp.path}/新書.epub');
@@ -347,7 +347,7 @@ void main() {
   // ── deleteRemoteBook ──────────────────────────────────────────────────────
 
   test('deleteRemoteBook sends DELETE to host', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
 
     await backend.deleteRemoteBook('吾輩は猫である');
@@ -366,8 +366,8 @@ void main() {
     // 故意用错误 token。
     await repo.setHibikiClientToken('wrong-token');
 
-    final HibikiClientSyncBackend backend =
-        HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+    final InterconnectSyncBackend backend =
+        InterconnectSyncBackend.withProbe((String u, String t) async => true);
     await backend.restoreAuth(repo);
     // 只 restoreAuth 跳过 authenticate，让真实 token 错误由第一次 HTTP 操作暴露。
     await expectLater(
@@ -379,7 +379,7 @@ void main() {
   // ── progress callback ─────────────────────────────────────────────────────
 
   test('getRemoteBook reports progress callback', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_book_prog');
     final File dest = File('${tmp.path}/neko_prog.epub');
@@ -398,7 +398,7 @@ void main() {
   // ── 进度 live 端点（TODO-767 / BUG-417）──────────────────────────────────
 
   test('putRemoteBookProgress 上报后 remoteBookProgress 拉回一致', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
 
     await backend.putRemoteBookProgress(
@@ -422,7 +422,7 @@ void main() {
   });
 
   test('remoteBookProgress 未知书 → empty（host 无记录返回 0/0，不抛）', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final RemoteBookProgress read =
         await backend.remoteBookProgress('UnknownBook');
@@ -431,7 +431,7 @@ void main() {
   });
 
   test('CJK bookKey 经 URL 编码往返一致', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     await backend.putRemoteBookProgress(
       '吾輩は猫である',
@@ -447,7 +447,7 @@ void main() {
   });
 
   test('上报旧时间戳不回退 host 新进度（host 端取较新）', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     await backend.putRemoteBookProgress(
       'BookKey2',
@@ -489,7 +489,7 @@ void main() {
     addTearDown(() async => legacyServer.stop());
     final String legacyBase = 'http://127.0.0.1:${legacyServer.port}';
 
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: legacyBase, token: token);
 
     final RemoteBookProgress read = await backend.remoteBookProgress('AnyBook');

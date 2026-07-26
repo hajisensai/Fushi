@@ -2,15 +2,16 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 /// End-to-end interop for the Hibiki P2P path (the Windows-host server ↔
 /// Android-client scenario): a REAL [HibikiSyncServer] and the REAL
-/// [HibikiClientSyncBackend] do a full upload → download round-trip over a
+/// [InterconnectSyncBackend] do a full upload → download round-trip over a
 /// loopback socket. Exercises the exact protocol both ends use; the only thing
 /// it doesn't cover is the emulator's 10.0.2.2 network hop (checked separately).
 void main() {
@@ -42,7 +43,7 @@ void main() {
     ]);
     await repo.setHibikiClientToken(token);
 
-    final HibikiClientSyncBackend backend = HibikiClientSyncBackend.instance;
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
     backend.clearCache();
     addTearDown(backend.clearCache);
 
@@ -67,15 +68,15 @@ void main() {
     backend.clearCache();
     expect(await backend.restoreAuth(repo), isTrue);
     final String root2 = await backend.findOrCreateRootFolder();
-    final List<DriveFile> books = await backend.listBooks(root2);
+    final List<SyncFileRef> books = await backend.listBooks(root2);
     // sanitizeTtuFilename 不改大小写（只处理尾部空格/点、`*`、非法字符百分号编码），
     // 故文件夹名保持原标题大小写 'TestBook'。服务器对真实读写路径不再 canonicalize
     // 小写化（见 hibiki_sync_server 的 fsPath），跨平台一致。
-    expect(books.map((DriveFile f) => f.name), contains('TestBook'),
+    expect(books.map((SyncFileRef f) => f.name), contains('TestBook'),
         reason: 'the uploaded book folder should be visible to another device');
     final String folder2 = await backend.ensureBookFolder(
         bookTitle: 'TestBook', rootFolderId: root2);
-    final DriveSyncFiles files = await backend.listSyncFiles(folder2);
+    final SyncFileTrio files = await backend.listSyncFiles(folder2);
     expect(files.progress, isNotNull,
         reason: 'the uploaded progress file should be listed');
     final TtuProgress got = await backend.getProgressFile(files.progress!.id);

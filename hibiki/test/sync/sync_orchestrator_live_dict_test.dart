@@ -1,6 +1,6 @@
 /// Task 5：orchestrator 分流集成测试。
 ///
-/// 用例 A：互联（HibikiClientSyncBackend）走 live 路径——调用 host 的
+/// 用例 A：互联（InterconnectSyncBackend）走 live 路径——调用 host 的
 ///   /api/library/dictionaries 端点，绝不创建 __dictionaries__ 文件夹。
 /// 用例 B：非 HibikiClient 后端（FakeSyncBackend）仍走 staged 路径——
 ///   仍会调用 ensureNamespace(__dictionaries__)。
@@ -16,13 +16,14 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -54,8 +55,8 @@ Future<void> _seedDictionary(
   File(p.join(dir.path, 'blobs.bin')).writeAsBytesSync(<int>[1, 2, 3]);
 }
 
-/// 构造并认证一个 [HibikiClientSyncBackend]，fake probe 总返回 true。
-Future<HibikiClientSyncBackend> _buildClientBackend({
+/// 构造并认证一个 [InterconnectSyncBackend]，fake probe 总返回 true。
+Future<InterconnectSyncBackend> _buildClientBackend({
   required String base,
   required String token,
 }) async {
@@ -65,8 +66,8 @@ Future<HibikiClientSyncBackend> _buildClientBackend({
     HibikiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
-  final HibikiClientSyncBackend backend =
-      HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+  final InterconnectSyncBackend backend =
+      InterconnectSyncBackend.withProbe((String u, String t) async => true);
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -138,7 +139,7 @@ class _FakeSyncBackend implements SyncBackend {
       _store.ensureFolder(rootFolderId, bookTitle);
 
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async =>
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async =>
       throw UnimplementedError();
   @override
   Future<bool> get isAuthenticated async => true;
@@ -155,7 +156,7 @@ class _FakeSyncBackend implements SyncBackend {
   @override
   Future<void> refreshAuth() async {}
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async =>
+  Future<SyncFileTrio> listSyncFiles(String folderId) async =>
       throw UnimplementedError();
   @override
   Future<TtuProgress> getProgressFile(String fileId) async =>
@@ -203,7 +204,8 @@ class _FakeSyncBackend implements SyncBackend {
   }) async =>
       throw UnimplementedError();
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async =>
+  Future<SyncFileRef?> findContentFile(
+          String folderId, String fileName) async =>
       throw UnimplementedError();
   @override
   void clearCache() {}
@@ -215,7 +217,7 @@ class _FakeSyncBackend implements SyncBackend {
   @override
   Map<String, String> get cachedFolderIds => const <String, String>{};
   @override
-  void cacheBookFolderIds(List<DriveFile> folders) {}
+  void cacheBookFolderIds(List<SyncFileRef> folders) {}
 
   @override
   void evictFolderId(String folderId) {}
@@ -233,7 +235,7 @@ void main() {
     if (work.existsSync()) await work.delete(recursive: true);
   });
 
-  // ── 用例 A：互联 live（HibikiClientSyncBackend）──────────────────────────
+  // ── 用例 A：互联 live（InterconnectSyncBackend）──────────────────────────
 
   group('用例A: 互联 live 路径', () {
     late HibikiSyncServer server;
@@ -280,7 +282,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_pull'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final SyncOrchestrator orch =
@@ -308,7 +310,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_push'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final SyncOrchestrator orch =
@@ -333,7 +335,7 @@ void main() {
           Directory(p.join(work.path, 'local_dicts_ns'))..createSync();
 
       final Directory tmp = Directory(p.join(work.path, 'tmp'))..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final SyncOrchestrator orch =
@@ -358,7 +360,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_rt'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final SyncOrchestrator orch =

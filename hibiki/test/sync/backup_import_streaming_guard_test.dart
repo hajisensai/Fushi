@@ -1,6 +1,6 @@
 // TODO-1183: 守卫手机备份「导入/恢复」OOM 崩溃根因修复不回退。
 //
-// 根因：importBackupFiles/mergeImportBackupFiles 每处把整个解压条目读进一个
+// 根因：restoreBackup/mergeRestoreBackup 每处把整个解压条目读进一个
 // List<int>（`dest.writeAsBytes(archiveFile.content as List<int>)`），6.2GB 的
 // local_audio DB → >6GB 单次 Uint8List → 手机 OOM；且跑在 UI isolate，进度条冻结
 // 像「卡死」；失败还走 completeBackupImport 显绿✓「成功」误导用户。
@@ -40,9 +40,7 @@ void main() {
               '走 rawContent 分块流式（archive 3.6.1 writeContent 会 materialize）');
     });
 
-    test(
-        'backup_service：importBackupFiles/mergeImportBackupFiles 暴露 onProgress',
-        () {
+    test('backup_service：restoreBackup/mergeRestoreBackup 暴露 onProgress', () {
       final String src = read('lib/src/sync/backup_service.dart');
       expect(src.contains('void Function(double progress)? onProgress'), isTrue,
           reason: '导入必须能把确定进度回报给遮罩');

@@ -16,7 +16,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     // 注：两源同时展示（互联对端 + 云盘 远端书合并去重）留作后续，本轮先「有互联走
     // 互联，否则走云」——满足「选了云备份仍能看到互联对端」的核心诉求。
     if (await syncRepo.isInterconnectEnabled()) {
-      final HibikiClientSyncBackend backend = HibikiClientSyncBackend.instance;
+      final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
       if (await backend.restoreAuth(syncRepo)) return backend;
     }
 
@@ -156,12 +156,12 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
   /// * 「下载」→ 复用 [_downloadRemoteBook]（与短按、封面下载按钮同一入口，
   ///   内部已对重复下载去重）。
   /// * 「信息」→ 弹基本元数据（书名 + 是否含有声书）。
-  /// * 「删除远端」→ 仅当远端后端支持删除（[HibikiClientSyncBackend] 互联后端，
+  /// * 「删除远端」→ 仅当远端后端支持删除（[InterconnectSyncBackend] 互联后端，
   ///   有 deleteRemoteBook/deleteRemoteAudiobook）才显示；云盘后端
   ///   （[CloudRemoteBookClient]）无此能力，按类型门控隐藏（真实能力边界）。
   void _showRemoteBookDialog(RemoteBookInfo book) {
     final RemoteBookClient? client = _remoteBookClient;
-    final bool canDelete = client is HibikiClientSyncBackend;
+    final bool canDelete = client is InterconnectSyncBackend;
     showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
@@ -227,10 +227,10 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
   }
 
   /// 删除互联后端上的远端书（含其有声书），删完刷新远端列表。仅互联后端可达
-  /// （[HibikiClientSyncBackend.deleteRemoteBook] / [deleteRemoteAudiobook]）。
+  /// （[InterconnectSyncBackend.deleteRemoteBook] / [deleteRemoteAudiobook]）。
   Future<void> _confirmDeleteRemoteBook(
     RemoteBookInfo book,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
@@ -500,7 +500,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
 
     // 有声书播放断点 → prefs（与 resume/播放写键空间同源，见 sync sweep）。
     // `remoteAudiobookPosition` 仅互联后端具备（live API），故此段按类型门控。
-    if (book.hasAudiobook && client is HibikiClientSyncBackend) {
+    if (book.hasAudiobook && client is InterconnectSyncBackend) {
       try {
         final ({int positionMs, int updatedAtMs}) pos =
             await client.remoteAudiobookPosition(book.downloadId);
@@ -522,7 +522,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
   /// EPUB 导入成功后，按需补下该书的有声书包（750a 手动下载补音频）。
   ///
   /// 仅当远端书带有声书（[RemoteBookInfo.hasAudiobook]）才动作；下载经
-  /// [HibikiClientSyncBackend.getRemoteAudiobook]（live API 仅存在于互联后端，
+  /// [InterconnectSyncBackend.getRemoteAudiobook]（live API 仅存在于互联后端，
   /// 云盘后端 [CloudRemoteBookClient] 无此能力，按类型分支跳过——这是真实能力
   /// 边界，非掩盖性特例）。解包经 [SyncAssetPackageService.importAudioDatabasePackage]，
   /// 用刚导入的本地 EPUB 的 [localBookKey] 作 `bookKeyOverride` 把音频绑定到本地书。
@@ -552,7 +552,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     // 跳过（真实能力边界）。注入钩子缺省时才据此门控。
     if (injectedFetch == null &&
         injectedImport == null &&
-        client is! HibikiClientSyncBackend) {
+        client is! InterconnectSyncBackend) {
       return;
     }
 
@@ -566,7 +566,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
         audioTmp = await injectedFetch(remoteBookKey);
       } else {
         audioTmp = await _remoteAudiobookDestination(book);
-        await (client as HibikiClientSyncBackend).getRemoteAudiobook(
+        await (client as InterconnectSyncBackend).getRemoteAudiobook(
           remoteBookKey,
           audioTmp,
           onProgress: (double progress) {
@@ -611,7 +611,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
   Future<List<RemoteAudiobookInfo>> _loadStandaloneRemoteSrtAudiobooks(
     RemoteBookClient client,
   ) async {
-    if (client is! HibikiClientSyncBackend) {
+    if (client is! InterconnectSyncBackend) {
       return const <RemoteAudiobookInfo>[];
     }
     List<RemoteAudiobookInfo> all;
@@ -720,7 +720,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
   /// 只互联后端可达（云盘无 live 有声书 API）。完成后刷新书架（占位卡按 uid dedup 隐藏）。
   Future<void> _downloadRemoteSrtAudiobook(RemoteAudiobookInfo book) async {
     final RemoteBookClient? client = _remoteBookClient;
-    if (client is! HibikiClientSyncBackend) {
+    if (client is! InterconnectSyncBackend) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(t.remote_book_unavailable)),

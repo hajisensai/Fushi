@@ -15,7 +15,7 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -43,7 +43,7 @@ Future<void> _seedReading(
       lastStatisticModified: modified,
     ));
 
-Future<HibikiClientSyncBackend> _buildClientBackend({
+Future<InterconnectSyncBackend> _buildClientBackend({
   required String base,
   required String token,
 }) async {
@@ -53,8 +53,8 @@ Future<HibikiClientSyncBackend> _buildClientBackend({
     HibikiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
-  final HibikiClientSyncBackend backend =
-      HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+  final InterconnectSyncBackend backend =
+      InterconnectSyncBackend.withProbe((String u, String t) async => true);
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -162,7 +162,7 @@ void main() {
     );
 
     final Directory tmp = Directory(p.join(work.path, 't1'))..createSync();
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildClientBackend(base: base, token: token);
     final SyncOrchestrator orch =
         _orchestrator(db: localDb, backend: backend, tmp: tmp);
@@ -213,7 +213,7 @@ void main() {
         sourceType: 'book', dateKey: '2026-06-01', count: 3);
 
     final Directory tmp = Directory(p.join(work.path, 't2'))..createSync();
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildClientBackend(base: base, token: token);
     final SyncOrchestrator orch =
         _orchestrator(db: localDb, backend: backend, tmp: tmp);
@@ -235,7 +235,7 @@ void main() {
         sourceType: 'book', dateKey: '2026-06-01', count: 7);
 
     final Directory tmp = Directory(p.join(work.path, 't3'))..createSync();
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildClientBackend(base: base, token: token);
     final SyncOrchestrator orch =
         _orchestrator(db: localDb, backend: backend, tmp: tmp);

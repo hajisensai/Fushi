@@ -56,7 +56,7 @@ void main() {
       dbDirectory: dbDir,
       appVersion: '2.0.0',
       booksRootDirectory: books,
-    ).exportBackup(zip);
+    ).createBackup(zip);
     await src.close();
     return zip;
   }
@@ -77,7 +77,7 @@ void main() {
     // Every category EXCEPT statistics.
     final Set<BackupCategory> categories = BackupCategory.values.toSet()
       ..remove(BackupCategory.statistics);
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
       categories: categories,
@@ -101,7 +101,7 @@ void main() {
 
     final Set<BackupCategory> categories = BackupCategory.values.toSet()
       ..remove(BackupCategory.books);
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
       categories: categories,
@@ -132,7 +132,7 @@ void main() {
     final String curDbDir = p.join(curRoot.path, 'support');
     Directory(curDbDir).createSync(recursive: true);
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
       booksRootDirectory: p.join(curRoot.path, 'documents', 'hoshi_books'),

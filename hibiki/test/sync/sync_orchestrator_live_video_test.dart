@@ -13,7 +13,7 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
@@ -25,7 +25,7 @@ import 'package:path/path.dart' as p;
 HibikiDatabase _memDb() =>
     HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
-Future<HibikiClientSyncBackend> _buildClientBackend({
+Future<InterconnectSyncBackend> _buildClientBackend({
   required String base,
   required String token,
 }) async {
@@ -35,8 +35,8 @@ Future<HibikiClientSyncBackend> _buildClientBackend({
     HibikiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
-  final HibikiClientSyncBackend backend =
-      HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+  final InterconnectSyncBackend backend =
+      InterconnectSyncBackend.withProbe((String u, String t) async => true);
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -127,7 +127,7 @@ void main() {
           const Value<String?>('[{"path":"/a.mp4"},{"path":"/b.mp4"}]'),
     ));
 
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildClientBackend(base: base, token: token);
     final SyncRunReport report =
         await _orchestrator(db: localDb, backend: backend, tmp: work).run();

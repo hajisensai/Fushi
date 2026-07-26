@@ -84,9 +84,9 @@ void main() {
       final String src =
           File('lib/src/models/app_model.dart').readAsStringSync();
       expect(src.contains('backend.deleteRemoteDictionary'), isTrue,
-          reason: '删除传播必须对 HibikiClientSyncBackend 调 live DELETE 端点');
-      expect(src.contains('backend is HibikiClientSyncBackend'), isTrue,
-          reason: '必须有 is HibikiClientSyncBackend 分流判定');
+          reason: '删除传播必须对 InterconnectSyncBackend 调 live DELETE 端点');
+      expect(src.contains('backend is InterconnectSyncBackend'), isTrue,
+          reason: '必须有 is InterconnectSyncBackend 分流判定');
     });
   });
 

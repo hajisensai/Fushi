@@ -328,7 +328,7 @@ void main() {
     // host 预置「明镜」词典（CJK 名）
     lib.dicts.add(const RemoteDictionaryInfo(name: '明镜', type: 'term'));
     final HttpClient c = HttpClient();
-    // client 用 Uri.encodeComponent 编码 CJK 名，与 HibikiClientSyncBackend 一致
+    // client 用 Uri.encodeComponent 编码 CJK 名，与 InterconnectSyncBackend 一致
     final String encodedName = Uri.encodeComponent('明镜');
     final HttpClientRequest req = await c
         .getUrl(Uri.parse('$base/api/library/dictionaries/$encodedName'));

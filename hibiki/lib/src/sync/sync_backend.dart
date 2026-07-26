@@ -4,13 +4,14 @@ import 'dart:typed_data';
 import 'package:hibiki/src/sync/dropbox_sync_backend.dart';
 import 'package:hibiki/src/sync/ftp_sync_backend.dart';
 import 'package:hibiki/src/sync/google_drive_sync_backend.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/obfuscating_sync_backend.dart';
 import 'package:hibiki/src/sync/onedrive_sync_backend.dart';
 import 'package:hibiki/src/sync/sftp_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/src/sync/webdav_sync_backend.dart';
 
@@ -95,7 +96,7 @@ abstract class SyncBackend implements SyncAssetStore {
   // ── Folder operations ─────────────────────────────────────────────
 
   Future<String> findOrCreateRootFolder();
-  Future<List<DriveFile>> listBooks(String rootFolderId);
+  Future<List<SyncFileRef>> listBooks(String rootFolderId);
   Future<String> ensureBookFolder({
     required String bookTitle,
     required String rootFolderId,
@@ -104,7 +105,7 @@ abstract class SyncBackend implements SyncAssetStore {
 
   // ── Metadata sync (JSON) ──────────────────────────────────────────
 
-  Future<DriveSyncFiles> listSyncFiles(String folderId);
+  Future<SyncFileTrio> listSyncFiles(String folderId);
   Future<TtuProgress> getProgressFile(String fileId);
   Future<List<TtuStatistics>> getStatsFile(String fileId);
   Future<TtuAudioBook> getAudioBookFile(String fileId);
@@ -137,7 +138,7 @@ abstract class SyncBackend implements SyncAssetStore {
     required File destination,
     void Function(double progress)? onProgress,
   });
-  Future<DriveFile?> findContentFile(String folderId, String fileName);
+  Future<SyncFileRef?> findContentFile(String folderId, String fileName);
 
   // ── Cache ─────────────────────────────────────────────────────────
 
@@ -148,7 +149,7 @@ abstract class SyncBackend implements SyncAssetStore {
   });
   String? get cachedRootFolderId;
   Map<String, String> get cachedFolderIds;
-  void cacheBookFolderIds(List<DriveFile> folders);
+  void cacheBookFolderIds(List<SyncFileRef> folders);
 
   /// 删除某本书的远端文件夹（[folderId] = `ensureBookFolder` 返回的定位符）后，
   /// 把它从书名→folderId 缓存里逐出（按值反查，删所有指向 [folderId] 的条目）。
@@ -176,19 +177,19 @@ mixin SyncAssetStoreDefaults on SyncBackend {
   //
   // Path-style backends (WebDAV, Hibiki interconnect) probe existence with a
   // HEAD rather than findContentFile, so they still override findAsset; nothing
-  // else diverges. The lone readiness difference — HibikiClientSyncBackend must
+  // else diverges. The lone readiness difference — InterconnectSyncBackend must
   // settle on a reachable host before any per-asset op — is funnelled through
   // the [ensureAssetReady] hook (default no-op) instead of duplicated call sites.
 
   /// Protected readiness hook awaited before the default [putAsset] / [getAsset]
   /// forward. Default no-op; a backend that must settle a session first
-  /// (HibikiClientSyncBackend → resolve a reachable host) overrides it.
+  /// (InterconnectSyncBackend → resolve a reachable host) overrides it.
   Future<void> ensureAssetReady() async {}
 
   @override
   Future<AssetEntry?> findAsset(String namespaceId, String name) async {
     // Delegates to the already-locking findContentFile; do not re-wrap.
-    final DriveFile? file = await findContentFile(namespaceId, name);
+    final SyncFileRef? file = await findContentFile(namespaceId, name);
     if (file == null) return null;
     return AssetEntry(id: file.id, name: file.name);
   }
@@ -240,7 +241,7 @@ SyncBackend resolveSyncBackend(SyncBackendType type) {
       // 局域网双端（hibiki 自有 server）不是「防扫盘」场景：两端都是用户自己的
       // 设备/服务，混淆只会徒增开销并破坏 hibiki client/server 的字节协议契约，
       // 所以 hibikiServer 直接返回裸后端，不包 ObfuscatingSyncBackend（TODO-623 A1）。
-      return HibikiClientSyncBackend.instance;
+      return InterconnectSyncBackend.instance;
     case SyncBackendType.oneDrive:
       raw = OneDriveSyncBackend.instance;
     case SyncBackendType.dropbox:

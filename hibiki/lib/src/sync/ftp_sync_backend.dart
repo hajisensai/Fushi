@@ -11,6 +11,7 @@ import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 
 class FtpSyncBackend extends SyncBackend
@@ -193,7 +194,7 @@ class FtpSyncBackend extends SyncBackend
       });
 
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) =>
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) =>
       _opLock.withLock(() async {
         await _ensureConnected();
         try {
@@ -201,7 +202,7 @@ class FtpSyncBackend extends SyncBackend
           final entries = await _client!.listDirectoryContent();
           return entries
               .where((e) => e.type == FTPEntryType.dir)
-              .map((e) => DriveFile(
+              .map((e) => SyncFileRef(
                     id: '$rootFolderId/${e.name}',
                     name: e.name,
                   ))
@@ -273,7 +274,7 @@ class FtpSyncBackend extends SyncBackend
   // ── Metadata sync ─────────────────────────────────────────────────
 
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) =>
+  Future<SyncFileTrio> listSyncFiles(String folderId) =>
       _opLock.withLock(() async {
         await _ensureConnected();
         try {
@@ -281,10 +282,10 @@ class FtpSyncBackend extends SyncBackend
           final entries = await _client!.listDirectoryContent();
           final files = entries
               .where((e) => e.type == FTPEntryType.file)
-              .map((e) => DriveFile(id: '$folderId/${e.name}', name: e.name))
+              .map((e) => SyncFileRef(id: '$folderId/${e.name}', name: e.name))
               .toList();
 
-          return DriveSyncFiles(
+          return SyncFileTrio(
             progress: findSyncFileByPrefix(files, 'progress_'),
             statistics: findSyncFileByPrefix(files, 'statistics_'),
             audioBook: findSyncFileByPrefix(files, 'audioBook_'),
@@ -404,14 +405,14 @@ class FtpSyncBackend extends SyncBackend
       });
 
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) =>
+  Future<SyncFileRef?> findContentFile(String folderId, String fileName) =>
       _opLock.withLock(() async {
         await _ensureConnected();
         try {
           await _client!.changeDirectory(folderId);
           final exists = await _client!.existFile(fileName);
           if (!exists) return null;
-          return DriveFile(id: '$folderId/$fileName', name: fileName);
+          return SyncFileRef(id: '$folderId/$fileName', name: fileName);
         } catch (e) {
           if (e is SyncBackendError || e is SyncAuthError) rethrow;
           _resetConnection();

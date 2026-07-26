@@ -65,10 +65,10 @@ void main() {
           BackupService(db: db, dbDirectory: dbDir, appVersion: '1.0.0');
 
       final BackupMeta withAb =
-          await service.exportBackup(p.join(src.path, 'with.zip'));
+          await service.createBackup(p.join(src.path, 'with.zip'));
       expect(withAb.audiobookCount, 2);
 
-      final BackupMeta noAb = await service.exportBackup(
+      final BackupMeta noAb = await service.createBackup(
         p.join(src.path, 'without.zip'),
         categories: BackupCategory.values.toSet()
           ..remove(BackupCategory.audiobooks),
@@ -78,7 +78,7 @@ void main() {
     });
   });
 
-  group('summarizeBackupArchive audiobook visibility', () {
+  group('summarizeBackupEntries audiobook visibility', () {
     BackupMeta metaWith({int? audiobookCount}) => BackupMeta(
           appVersion: '1.0.0',
           schemaVersion: 1,
@@ -90,7 +90,7 @@ void main() {
 
     test('meta.audiobookCount>0 shows audiobooks even with NO packed files',
         () {
-      final BackupContentSummary s = BackupService.summarizeBackupArchive(
+      final BackupContentSummary s = BackupService.summarizeBackupEntries(
         <String>['hibiki.db'],
         metaWith(audiobookCount: 3),
       );
@@ -99,7 +99,7 @@ void main() {
     });
 
     test('meta.audiobookCount==0 hides audiobooks (unticked new backup)', () {
-      final BackupContentSummary s = BackupService.summarizeBackupArchive(
+      final BackupContentSummary s = BackupService.summarizeBackupEntries(
         <String>['hibiki.db'],
         metaWith(audiobookCount: 0),
         dbAudiobookCount: 9, // authoritative meta 0 wins over any peek
@@ -108,7 +108,7 @@ void main() {
     });
 
     test('old backup (meta lacks the field) falls back to the DB peek', () {
-      final BackupContentSummary s = BackupService.summarizeBackupArchive(
+      final BackupContentSummary s = BackupService.summarizeBackupEntries(
         <String>['hibiki.db'],
         metaWith(), // audiobookCount == null
         dbAudiobookCount: 2,
@@ -119,7 +119,7 @@ void main() {
   });
 
   test(
-      'summarizeBackupZip peeks the DB blob so an OLD backup (audiobook rows, no '
+      'summarizeBackupFile peeks the DB blob so an OLD backup (audiobook rows, no '
       'files, no meta count) still offers the audiobooks toggle (BUG-781)',
       () async {
     final String oldDbDir = p.join(src.path, 'olddb');
@@ -149,7 +149,7 @@ void main() {
         HibikiDatabase.forTesting(NativeDatabase.memory());
     final BackupService service =
         BackupService(db: dummy, dbDirectory: src.path, appVersion: '1.0.0');
-    final BackupContentSummary summary = await service.summarizeBackupZip(zip);
+    final BackupContentSummary summary = await service.summarizeBackupFile(zip);
     await dummy.close();
 
     expect(summary.has(BackupCategory.audiobooks), isTrue,
@@ -167,7 +167,7 @@ void main() {
       final BackupService service =
           BackupService(db: db, dbDirectory: dbDir, appVersion: '1.0.0');
       final String zip = p.join(src.path, 'ab.zip');
-      await service.exportBackup(zip);
+      await service.createBackup(zip);
       await db.close();
       return zip;
     }
@@ -178,7 +178,7 @@ void main() {
       final String dstDbDir = p.join(dst.path, 'db');
       Directory(dstDbDir).createSync(recursive: true);
 
-      await BackupService.importBackupFiles(
+      await BackupService.restoreBackup(
         dbDirectory: dstDbDir,
         zipPath: zip,
         categories: BackupCategory.values.toSet()
@@ -195,7 +195,7 @@ void main() {
       final String dstDbDir = p.join(dst.path, 'db');
       Directory(dstDbDir).createSync(recursive: true);
 
-      await BackupService.importBackupFiles(
+      await BackupService.restoreBackup(
         dbDirectory: dstDbDir,
         zipPath: zip, // null categories = restore everything (incl. audiobooks)
       );

@@ -54,11 +54,11 @@ void main() {
       db: srcDb,
       dbDirectory: srcDir.path,
       appVersion: '2.0.0',
-    ).exportBackup(zipPath); // strips secrets from the copy
+    ).createBackup(zipPath); // strips secrets from the copy
     await srcDb.close();
 
     // ── Import the backup into this device (DB already closed) ──
-    await BackupService.importBackupFiles(
+    await BackupService.restoreBackup(
       dbDirectory: currentDir.path,
       zipPath: zipPath,
     );
@@ -88,7 +88,7 @@ void main() {
         isFalse);
   });
 
-  test('recoverPendingImport re-applies a leftover sidecar then clears it',
+  test('recoverPendingRestore re-applies a leftover sidecar then clears it',
       () async {
     final dir = await _tempDir('hibiki_recover_');
     addTearDown(() => cleanupTempDir(dir));
@@ -106,7 +106,7 @@ void main() {
       }),
     );
 
-    await BackupService.recoverPendingImport(dir.path);
+    await BackupService.recoverPendingRestore(dir.path);
 
     final db2 = HibikiDatabase(dir.path);
     addTearDown(db2.close);
@@ -175,11 +175,11 @@ void main() {
       dbDirectory: srcDir.path,
       appVersion: '2.0.0',
       dictionaryResourceDirectory: srcDictResDir.path,
-    ).exportBackup(zipPath, categories: <BackupCategory>{BackupCategory.books});
+    ).createBackup(zipPath, categories: <BackupCategory>{BackupCategory.books});
     await srcDb.close();
 
     // ── Overwrite-import into this device (DB closed first) ──
-    await BackupService.importBackupFiles(
+    await BackupService.restoreBackup(
       dbDirectory: currentDir.path,
       zipPath: zipPath,
       dictionaryResourceDirectory: dictResDir.path,
@@ -252,10 +252,10 @@ void main() {
       dbDirectory: srcDir.path,
       appVersion: '2.0.0',
       dictionaryResourceDirectory: srcDictResDir.path,
-    ).exportBackup(zipPath); // null categories = everything, includes dict
+    ).createBackup(zipPath); // null categories = everything, includes dict
     await srcDb2.close();
 
-    await BackupService.importBackupFiles(
+    await BackupService.restoreBackup(
       dbDirectory: currentDir.path,
       zipPath: zipPath,
       dictionaryResourceDirectory: dictResDir.path,

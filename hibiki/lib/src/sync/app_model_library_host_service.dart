@@ -337,7 +337,7 @@ class AppModelLibraryHostService
         title: r.title,
         bookKey: r.bookKey,
         hasContent: resolveExtractedEpubRoot(r.extractDir) != null,
-        hasCover: coverPath != null,
+        hasEmbeddedCover: coverPath != null,
         coverPath: coverPath,
         hasAudiobook: audiobookKeys.contains(r.bookKey),
         tags: tagsByBookKey[r.bookKey] ?? const <String>[],

@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/sync/book_exit_sync_scope.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
@@ -15,7 +15,7 @@ import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
-import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -89,7 +89,7 @@ void logSyncReportErrors(SyncRunReport report) {
 /// 当成互斥单选项，现已解耦成独立开关）。两条通道各用自己的后端实例、各自认证成功
 /// 才真正跑（未配置的通道在 [_runSyncChannel] 里 no-op）。
 ///
-/// 去重：互联后端 [HibikiClientSyncBackend] 是单例；若用户把「备份后端」也选成互联
+/// 去重：互联后端 [InterconnectSyncBackend] 是单例；若用户把「备份后端」也选成互联
 /// （互联页的「用互联做备份后端」按钮），云通道解析出的就是同一单例，只保留一条，
 /// 避免同一通道跑两遍。
 /// 一条待跑的同步通道：后端实例 + 它是不是互联通道。isInterconnect 决定分资产开关
@@ -107,10 +107,10 @@ Future<List<SyncChannel>> enabledSyncChannelBackends(
   final SyncBackend cloud = resolveSyncBackend(await repo.getBackendType());
   // isInterconnect 由后端身份决定，不由「它排在云通道那一格」决定：备份后端被选成
   // 互联时只剩这一条通道，它跑的就是互联链路（SyncOrchestrator 内部同样按
-  // `backend is HibikiClientSyncBackend` 判断），分资产开关必须跟着读互联专属的
+  // `backend is InterconnectSyncBackend` 判断），分资产开关必须跟着读互联专属的
   // 上传开关——否则用户在互联页看到的四个上传开关会被静默忽略、改由云备份开关决定。
   final List<SyncChannel> channels = <SyncChannel>[
-    SyncChannel(cloud, isInterconnect: cloud is HibikiClientSyncBackend),
+    SyncChannel(cloud, isInterconnect: cloud is InterconnectSyncBackend),
   ];
   if (await repo.isInterconnectEnabled()) {
     final SyncBackend interconnect =

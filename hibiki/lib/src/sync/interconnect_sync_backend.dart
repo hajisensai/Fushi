@@ -16,6 +16,7 @@ import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/tls/hibiki_pinning_http.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/src/sync/webdav_ops.dart';
 
@@ -61,10 +62,10 @@ Future<bool> _pinnedReachabilityProbe(
       baseUrl: WebDavOps.normalizeUrl(url),
       username: 'hibiki',
       password: token,
-      connectionTimeout: HibikiClientSyncBackend.probeTimeout,
+      connectionTimeout: InterconnectSyncBackend.probeTimeout,
       pinnedFingerprint: fingerprint,
     );
-    await ops.testConnection().timeout(HibikiClientSyncBackend.probeTimeout);
+    await ops.testConnection().timeout(InterconnectSyncBackend.probeTimeout);
     return true;
   } on SyncAuthError {
     rethrow;
@@ -88,9 +89,9 @@ Future<bool> _defaultHibikiProbe(String url, String token) async {
       password: token,
       // Bound the socket connect itself (WebDavOps defaults to 60s); the outer
       // .timeout only bounds the awaited future, not the underlying connect.
-      connectionTimeout: HibikiClientSyncBackend.probeTimeout,
+      connectionTimeout: InterconnectSyncBackend.probeTimeout,
     );
-    await ops.testConnection().timeout(HibikiClientSyncBackend.probeTimeout);
+    await ops.testConnection().timeout(InterconnectSyncBackend.probeTimeout);
     return true;
   } on SyncAuthError {
     rethrow;
@@ -112,16 +113,16 @@ Future<bool> _defaultHibikiProbe(String url, String token) async {
 /// Uses the WebDAV protocol (same as [WebDavSyncBackend]) but stores
 /// credentials in dedicated keys to avoid collision with the user's
 /// standalone WebDAV config.
-class HibikiClientSyncBackend extends SyncBackend
+class InterconnectSyncBackend extends SyncBackend
     with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults
     implements RemoteBookClient, RemoteVideoClient, RemoteCoverFetcher {
-  HibikiClientSyncBackend._({HibikiProbe? probe})
+  InterconnectSyncBackend._({HibikiProbe? probe})
       : _probe = probe ?? _defaultHibikiProbe;
-  static final HibikiClientSyncBackend instance = HibikiClientSyncBackend._();
+  static final InterconnectSyncBackend instance = InterconnectSyncBackend._();
 
   /// Test seam: inject a fake reachability probe.
   @visibleForTesting
-  HibikiClientSyncBackend.withProbe(HibikiProbe probe) : _probe = probe;
+  InterconnectSyncBackend.withProbe(HibikiProbe probe) : _probe = probe;
 
   /// How long to wait for a single address probe before treating it as
   /// unreachable and trying the next candidate. Short so LAN-first failover
@@ -294,11 +295,11 @@ class HibikiClientSyncBackend extends SyncBackend
   }
 
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async {
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async {
     final entries = await _ops!.propfindChildren(rootFolderId);
     return entries
         .where((e) => e.isCollection && e.href != rootFolderId)
-        .map((e) => DriveFile(id: e.href, name: e.displayName))
+        .map((e) => SyncFileRef(id: e.href, name: e.displayName))
         .toList();
   }
 
@@ -338,15 +339,15 @@ class HibikiClientSyncBackend extends SyncBackend
   // ── Metadata sync ─────────────────────────────────────────────────
 
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async {
+  Future<SyncFileTrio> listSyncFiles(String folderId) async {
     final entries = await _ops!.propfindChildren(folderId);
     final files = entries
         .where((e) => !e.isCollection && e.href != folderId)
-        .map((e) => DriveFile(id: e.href, name: e.displayName))
+        .map((e) => SyncFileRef(id: e.href, name: e.displayName))
         .toList();
 
     // HBK-AUDIT-085: route through the single canonical matcher in sync_utils.
-    return DriveSyncFiles(
+    return SyncFileTrio(
       progress: findSyncFileByPrefix(files, 'progress_'),
       statistics: findSyncFileByPrefix(files, 'statistics_'),
       audioBook: findSyncFileByPrefix(files, 'audioBook_'),
@@ -508,11 +509,11 @@ class HibikiClientSyncBackend extends SyncBackend
   }
 
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async {
+  Future<SyncFileRef?> findContentFile(String folderId, String fileName) async {
     final path = '$folderId${Uri.encodeComponent(fileName)}';
     final exists = await _ops!.headFile(path);
     if (!exists) return null;
-    return DriveFile(id: path, name: fileName);
+    return SyncFileRef(id: path, name: fileName);
   }
 
   // ── Cache ─────────────────────────────────────────────────────────

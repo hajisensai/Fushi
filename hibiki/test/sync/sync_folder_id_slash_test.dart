@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
-import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/webdav_sync_backend.dart';
 
 // BUG-845: a path-style backend addresses a child file as `folderId + fileName`
@@ -24,7 +24,8 @@ const String _slashlessBookHref = 'https://dav.example.com/hibiki-data/屍人荘
 void main() {
   group('ensureFolderIdTrailingSlash', () {
     test('appends a missing slash and leaves an existing one', () {
-      expect(ensureFolderIdTrailingSlash(_slashlessBookHref), '$_slashlessBookHref/');
+      expect(ensureFolderIdTrailingSlash(_slashlessBookHref),
+          '$_slashlessBookHref/');
       expect(ensureFolderIdTrailingSlash('$_slashlessBookHref/'),
           '$_slashlessBookHref/');
     });
@@ -37,7 +38,7 @@ void main() {
 
     test('cacheBookFolderIds normalizes a slash-less server href', () {
       backend.cacheBookFolderIds(
-          const [DriveFile(id: _slashlessBookHref, name: '屍人荘の殺人')]);
+          const [SyncFileRef(id: _slashlessBookHref, name: '屍人荘の殺人')]);
       expect(backend.cachedFolderIds['屍人荘の殺人'], '$_slashlessBookHref/');
     });
 
@@ -46,7 +47,8 @@ void main() {
         rootFolderId: 'https://dav.example.com/hibiki-data',
         titleToFolderId: const {'屍人荘の殺人': _slashlessBookHref},
       );
-      expect(backend.cachedRootFolderId, 'https://dav.example.com/hibiki-data/');
+      expect(
+          backend.cachedRootFolderId, 'https://dav.example.com/hibiki-data/');
       expect(backend.cachedFolderIds['屍人荘の殺人'], '$_slashlessBookHref/');
     });
 
@@ -55,7 +57,7 @@ void main() {
         'in-folder, not fused into the root', () async {
       // Seed the cache the way a compare/list flow does — with a raw href.
       backend.cacheBookFolderIds(
-          const [DriveFile(id: _slashlessBookHref, name: '屍人荘の殺人')]);
+          const [SyncFileRef(id: _slashlessBookHref, name: '屍人荘の殺人')]);
 
       final String folderId = await backend.ensureBookFolder(
         bookTitle: '屍人荘の殺人',
@@ -75,15 +77,15 @@ void main() {
     });
   });
 
-  group('HibikiClientSyncBackend folderId trailing-slash invariant', () {
-    final HibikiClientSyncBackend backend = HibikiClientSyncBackend.instance;
+  group('InterconnectSyncBackend folderId trailing-slash invariant', () {
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
     setUp(backend.clearCache);
     tearDown(backend.clearCache);
 
     test('cacheBookFolderIds + ensureBookFolder cache-hit stay slashed',
         () async {
       backend.cacheBookFolderIds(
-          const [DriveFile(id: _slashlessBookHref, name: '屍人荘の殺人')]);
+          const [SyncFileRef(id: _slashlessBookHref, name: '屍人荘の殺人')]);
       expect(backend.cachedFolderIds['屍人荘の殺人'], '$_slashlessBookHref/');
 
       final String folderId = await backend.ensureBookFolder(
@@ -98,7 +100,8 @@ void main() {
         rootFolderId: 'https://dav.example.com/hibiki-data',
         titleToFolderId: const {'屍人荘の殺人': _slashlessBookHref},
       );
-      expect(backend.cachedRootFolderId, 'https://dav.example.com/hibiki-data/');
+      expect(
+          backend.cachedRootFolderId, 'https://dav.example.com/hibiki-data/');
       expect(backend.cachedFolderIds['屍人荘の殺人'], '$_slashlessBookHref/');
     });
   });

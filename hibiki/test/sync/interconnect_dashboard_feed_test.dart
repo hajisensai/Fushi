@@ -5,7 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/activity_feed.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
@@ -195,7 +195,7 @@ void main() {
         HibikiClientUrl(url: 'http://127.0.0.1:${server.port}', enabled: true),
       ]);
       await repo.setHibikiClientToken(token);
-      final HibikiClientSyncBackend backend = HibikiClientSyncBackend.withProbe(
+      final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
           (String url, String tok) async => true);
       await backend.restoreAuth(repo);
 
@@ -382,7 +382,7 @@ void main() {
     test('copyWith 保留/覆盖 kind', () {
       const RemoteBookInfo srt = RemoteBookInfo(
           title: 's', hasContent: true, bookKey: 's', kind: MediaKind.srt);
-      expect(srt.copyWith(hasCover: true).kind, MediaKind.srt);
+      expect(srt.copyWith(hasEmbeddedCover: true).kind, MediaKind.srt);
       expect(srt.copyWith(kind: MediaKind.epub).kind, MediaKind.epub);
     });
   });

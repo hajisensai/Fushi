@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -55,7 +55,7 @@ void main() {
     ]);
     await repo.setHibikiClientToken(token);
 
-    final HibikiClientSyncBackend backend = HibikiClientSyncBackend.instance;
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
     backend.clearCache();
     addTearDown(backend.clearCache);
 

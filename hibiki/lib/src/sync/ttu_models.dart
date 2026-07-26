@@ -1,8 +1,12 @@
 import 'dart:convert';
 
-/// ッツ Ebook Reader / Hoshi Reader 兼容的 Google Drive 同步数据模型。
+/// ッツ Ebook Reader / Hoshi Reader 兼容的同步数据模型。
 ///
-/// JSON 字段名与 ッツ/Hoshi 格式一致，保证三方互通。
+/// **本文件只含ッツ外部 wire 契约**（[TtuProgress] / [TtuStatistics] /
+/// [TtuAudioBook]）：JSON 字段名与 ッツ/Hoshi 格式一致，保证三方互通。
+/// 这里的任何改名/字段增删都是跨 app 协议变更，需与ッツ/Hoshi 三方协商，
+/// 不得在本仓单方面进行。**与ッツ无关的内部类型禁止住在本文件**——通用远端
+/// 文件句柄与内部枚举已迁至 `sync_file_ref.dart`（命名统一轮 §1-H）。
 
 class TtuProgress {
   TtuProgress({
@@ -134,36 +138,4 @@ class TtuAudioBook {
       TtuAudioBook.fromJson(jsonDecode(source) as Map<String, dynamic>);
 
   String encode() => jsonEncode(toJson());
-}
-
-class DriveFile {
-  const DriveFile({required this.id, required this.name});
-
-  final String id;
-  final String name;
-
-  factory DriveFile.fromJson(Map<String, dynamic> json) => DriveFile(
-        id: json['id'] as String,
-        name: json['name'] as String,
-      );
-}
-
-class DriveSyncFiles {
-  const DriveSyncFiles({this.progress, this.statistics, this.audioBook});
-
-  final DriveFile? progress;
-  final DriveFile? statistics;
-  final DriveFile? audioBook;
-}
-
-enum SyncDirection { importFromTtu, exportToTtu, synced }
-
-enum StatisticsSyncMode { merge, replace }
-
-enum SyncResult {
-  synced,
-  imported,
-  exported,
-  skipped,
-  conflict,
 }

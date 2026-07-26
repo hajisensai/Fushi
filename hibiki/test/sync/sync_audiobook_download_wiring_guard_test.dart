@@ -28,7 +28,7 @@ void main() {
           reason: '书架远端下载必须在 EPUB 导入后接有声书下载');
       // 经互联后端的 live API 下载有声书包。
       expect(src, contains('getRemoteAudiobook('),
-          reason: '有声书包必须经 HibikiClientSyncBackend.getRemoteAudiobook 下载');
+          reason: '有声书包必须经 InterconnectSyncBackend.getRemoteAudiobook 下载');
       // 经既有解包原语导入，且用本地 bookKey 作 override 绑定。
       expect(src, contains('importAudioDatabasePackage('),
           reason: '有声书包必须经 importAudioDatabasePackage 解包落盘');
@@ -54,7 +54,7 @@ void main() {
       expect(src, contains('_downloadLiveAudiobookFor('),
           reason: '互联对比下载远端独有书必须在 EPUB 导入后接有声书下载');
       expect(src, contains('getRemoteAudiobook('),
-          reason: '有声书包必须经 HibikiClientSyncBackend.getRemoteAudiobook 下载');
+          reason: '有声书包必须经 InterconnectSyncBackend.getRemoteAudiobook 下载');
       expect(src, contains('importAudioDatabasePackage('),
           reason: '有声书包必须经 importAudioDatabasePackage 解包落盘');
       expect(src, contains('bookKeyOverride:'),
@@ -82,7 +82,7 @@ void main() {
               '不能再 push-only');
       // Pull 经 live API 下载有声书包。
       expect(src, contains('backend.getRemoteAudiobook('),
-          reason: 'toPull 必须经 HibikiClientSyncBackend.getRemoteAudiobook 下载');
+          reason: 'toPull 必须经 InterconnectSyncBackend.getRemoteAudiobook 下载');
       // Pull 经既有解包原语落盘，并用本地 bookKey 作 override 绑定。
       expect(src, contains('importAudioDatabasePackage('),
           reason: 'toPull 必须经 importAudioDatabasePackage 解包落盘');

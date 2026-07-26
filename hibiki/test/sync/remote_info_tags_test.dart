@@ -59,7 +59,7 @@ void main() {
         hasContent: true,
         tags: <String>['a'],
       );
-      expect(info.copyWith(hasCover: true).tags, <String>['a']);
+      expect(info.copyWith(hasEmbeddedCover: true).tags, <String>['a']);
       expect(info.copyWith(tags: <String>['b', 'c']).tags, <String>['b', 'c']);
     });
   });

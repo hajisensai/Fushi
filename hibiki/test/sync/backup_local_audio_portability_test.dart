@@ -130,13 +130,12 @@ void main() {
       final BackupService service =
           BackupService(db: db, dbDirectory: srcDbDir, appVersion: '1.0.0');
       final String zip = p.join(src.path, 'la.zip');
-      await service.exportBackup(zip, categories: {BackupCategory.localAudio});
+      await service.createBackup(zip, categories: {BackupCategory.localAudio});
       await db.close();
 
       final String dstDbDir = p.join(dst.path, 'db');
       Directory(dstDbDir).createSync(recursive: true);
-      await BackupService.importBackupFiles(
-          dbDirectory: dstDbDir, zipPath: zip);
+      await BackupService.restoreBackup(dbDirectory: dstDbDir, zipPath: zip);
 
       expect(File(p.join(dstDbDir, 'local_audio_111.db')).existsSync(), isTrue);
 
@@ -194,15 +193,14 @@ void main() {
       // Empty set = every category unticked, including localAudio → the
       // local-audio registry (which holds this device's absolute `.db` paths)
       // must be stripped from the exported DB copy (BUG-816).
-      await service.exportBackup(zip, categories: <BackupCategory>{});
+      await service.createBackup(zip, categories: <BackupCategory>{});
       await db.close();
 
       final String dstDbDir = p.join(dst.path, 'db');
       Directory(dstDbDir).createSync(recursive: true);
       // Fresh device (no current DB), so there is nothing to preserve from bak;
       // the imported registry is simply absent.
-      await BackupService.importBackupFiles(
-          dbDirectory: dstDbDir, zipPath: zip);
+      await BackupService.restoreBackup(dbDirectory: dstDbDir, zipPath: zip);
 
       final HibikiDatabase restored = HibikiDatabase(dstDbDir);
       try {

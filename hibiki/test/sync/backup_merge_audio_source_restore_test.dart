@@ -35,7 +35,7 @@ void main() {
     addTearDown(() => cleanupTempDir(zipDir));
     final String zip = p.join(zipDir.path, 'b.zip');
     await BackupService(db: src, dbDirectory: srcDbDir, appVersion: '2.0.0')
-        .exportBackup(zip);
+        .createBackup(zip);
     await src.close();
 
     // ── fresh target "device": an empty-placeholder registry (like a
@@ -51,7 +51,7 @@ void main() {
     await seed.setPref('audio_source_configs', 'j:[]');
     await seed.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
     );
@@ -92,7 +92,7 @@ void main() {
     addTearDown(() => cleanupTempDir(zipDir));
     final String zip = p.join(zipDir.path, 'b.zip');
     await BackupService(db: src, dbDirectory: srcDbDir, appVersion: '2.0.0')
-        .exportBackup(zip);
+        .createBackup(zip);
     await src.close();
 
     final Directory curRoot =
@@ -105,7 +105,7 @@ void main() {
         'j:[{"kind":"localAudio","label":"DEVICE_OWN"}]');
     await seed.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
     );

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:hibiki/src/sync/ttu_models.dart' show DriveFile;
+import 'package:hibiki/src/sync/sync_file_ref.dart' show SyncFileRef;
 import 'package:hibiki_core/hibiki_core.dart' show mimeTypeForFilePath;
 
 /// The single sync root folder name used by every backend (cloud + LAN).
@@ -32,7 +32,7 @@ class AsyncMutex {
   }
 }
 
-DriveFile? findSyncFileByPrefix(List<DriveFile> files, String prefix) {
+SyncFileRef? findSyncFileByPrefix(List<SyncFileRef> files, String prefix) {
   for (final f in files) {
     if (f.name.startsWith(prefix)) return f;
   }
@@ -89,8 +89,8 @@ mixin SyncFolderCache {
 
   Map<String, String> get cachedFolderIds => Map.unmodifiable(folderIdCache);
 
-  void cacheBookFolderIds(List<DriveFile> folders) {
-    for (final DriveFile f in folders) {
+  void cacheBookFolderIds(List<SyncFileRef> folders) {
+    for (final SyncFileRef f in folders) {
       folderIdCache[f.name] = normalizeFolderId(f.id);
     }
   }

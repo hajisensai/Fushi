@@ -11,6 +11,7 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -79,16 +80,15 @@ class _FakeSyncBackend implements SyncBackend {
   @override
   Future<String> findOrCreateRootFolder() async => 'root';
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async =>
-      <DriveFile>[DriveFile(id: folderId, name: bookTitle)];
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async =>
+      <SyncFileRef>[SyncFileRef(id: folderId, name: bookTitle)];
   @override
-  void cacheBookFolderIds(List<DriveFile> folders) {}
+  void cacheBookFolderIds(List<SyncFileRef> folders) {}
 
   @override
   void evictFolderId(String folderId) {}
   @override
-  Future<DriveSyncFiles> listSyncFiles(String f) async =>
-      const DriveSyncFiles();
+  Future<SyncFileTrio> listSyncFiles(String f) async => const SyncFileTrio();
   @override
   Future<String> ensureNamespace(String name) async => name;
   @override
@@ -187,7 +187,8 @@ class _FakeSyncBackend implements SyncBackend {
   }) async =>
       throw UnimplementedError();
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async =>
+  Future<SyncFileRef?> findContentFile(
+          String folderId, String fileName) async =>
       throw UnimplementedError();
   @override
   Future<AssetEntry?> findAsset(String namespaceId, String name) async =>

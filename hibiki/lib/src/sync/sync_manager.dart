@@ -10,6 +10,7 @@ import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_progress_resolver.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -425,7 +426,7 @@ class SyncManager {
   SyncDirection _determineSyncDirection({
     required int? localUpdatedAt,
     required double? localProgress,
-    required DriveFile? remoteProgressFile,
+    required SyncFileRef? remoteProgressFile,
     required List<ChapterCharInfo> chapters,
   }) {
     final int? remoteTimestamp = remoteProgressFile != null

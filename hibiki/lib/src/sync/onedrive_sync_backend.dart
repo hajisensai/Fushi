@@ -12,6 +12,7 @@ import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -298,11 +299,11 @@ class OneDriveSyncBackend extends SyncBackend
   }
 
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async {
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async {
     final items = await _listChildren('/me/drive/items/$rootFolderId/children');
     return items
         .where((item) => item.containsKey('folder'))
-        .map((item) => DriveFile(
+        .map((item) => SyncFileRef(
               id: item['id'] as String,
               name: item['name'] as String,
             ))
@@ -366,17 +367,17 @@ class OneDriveSyncBackend extends SyncBackend
   // ── Metadata sync ─────────────────────────────────────────────────
 
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async {
+  Future<SyncFileTrio> listSyncFiles(String folderId) async {
     final items = await _listChildren('/me/drive/items/$folderId/children');
     final files = items
         .where((item) => !item.containsKey('folder'))
-        .map((item) => DriveFile(
+        .map((item) => SyncFileRef(
               id: item['id'] as String,
               name: item['name'] as String,
             ))
         .toList();
 
-    return DriveSyncFiles(
+    return SyncFileTrio(
       progress: findSyncFileByPrefix(files, 'progress_'),
       statistics: findSyncFileByPrefix(files, 'statistics_'),
       audioBook: findSyncFileByPrefix(files, 'audioBook_'),
@@ -481,11 +482,11 @@ class OneDriveSyncBackend extends SyncBackend
   }
 
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async {
+  Future<SyncFileRef?> findContentFile(String folderId, String fileName) async {
     final items = await _listChildren('/me/drive/items/$folderId/children');
     for (final item in items) {
       if (item['name'] == fileName) {
-        return DriveFile(
+        return SyncFileRef(
             id: item['id'] as String, name: item['name'] as String);
       }
     }

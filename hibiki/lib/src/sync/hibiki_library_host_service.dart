@@ -5,6 +5,16 @@ import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
+// ── 术语约定（命名统一轮审计词表）────────────────────────────────────────────
+//
+// 本文件（及互联域）的角色词汇统一如下，doc 注释里的「host …」均按此读：
+// * **peer / 对端**：已配对的另一台设备（对称概念，不指角色）。
+// * **host**：一次交互里**提供库**的角色（开着内嵌 server、被拉取清单/内容的一侧）。
+// * **client**：一次交互里消费库的角色（拉清单、下载、上报进度的一侧）。
+// * **Remote\***：从消费端视角描述「对端数据」的 wire DTO——类名的 Remote 指
+//   「对端（通常是 host 角色）的条目」，`RemoteBookInfo` = 对端 host 书库里的一本书。
+//   host 端 materialize 自己的库为同一 DTO 下发，client 端 fromJson 消费。
+
 // ── 键集 union diff（本地音频 / 有声书 / 词典共享）──────────────────────────
 
 /// 按字符串键 union 的双向同步 diff 结果。
@@ -221,7 +231,7 @@ class RemoteBookInfo {
     required this.title,
     required this.hasContent,
     this.bookKey,
-    this.hasCover = false,
+    this.hasEmbeddedCover = false,
     this.coverUrl,
     this.coverPath,
     this.hasAudiobook = false,
@@ -251,7 +261,12 @@ class RemoteBookInfo {
   final String title;
   final bool hasContent;
   final String? bookKey;
-  final bool hasCover;
+
+  /// host 端存在**书内封面文件**（EPUB 内嵌封面解析到磁盘存在的绝对路径，见
+  /// [resolveEpubCoverFilePath]）。注意与 wire key `'hasCover'` 同名不同义：wire
+  /// 上写的是 [hasDisplayCover]（内嵌封面 ∨ coverUrl ∨ coverPath 任一可用），
+  /// 本字段只是其中「内嵌封面」一支——故 Dart 侧改名消歧，wire key 不动。
+  final bool hasEmbeddedCover;
   final String? coverUrl;
   final String? coverPath;
 
@@ -277,7 +292,7 @@ class RemoteBookInfo {
   String get downloadId => _isNonEmpty(bookKey) ? bookKey! : title;
 
   bool get hasDisplayCover =>
-      hasCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
+      hasEmbeddedCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
 
   Map<String, Object?> toJson() => <String, Object?>{
         'title': title,
@@ -297,7 +312,7 @@ class RemoteBookInfo {
 
   RemoteBookInfo copyWith({
     String? bookKey,
-    bool? hasCover,
+    bool? hasEmbeddedCover,
     String? coverUrl,
     String? coverPath,
     bool? hasAudiobook,
@@ -313,7 +328,7 @@ class RemoteBookInfo {
         title: title,
         hasContent: hasContent,
         bookKey: bookKey ?? this.bookKey,
-        hasCover: hasCover ?? this.hasCover,
+        hasEmbeddedCover: hasEmbeddedCover ?? this.hasEmbeddedCover,
         coverUrl: coverUrl ?? this.coverUrl,
         coverPath: coverPath ?? this.coverPath,
         hasAudiobook: hasAudiobook ?? this.hasAudiobook,
@@ -333,7 +348,9 @@ class RemoteBookInfo {
       title: json['title']?.toString() ?? '',
       hasContent: json['hasContent'] == true,
       bookKey: _jsonString(json['bookKey']),
-      hasCover: json['hasCover'] == true ||
+      // wire `hasCover` 是对端的 hasDisplayCover；解码侧无从区分「内嵌」与「其它
+      // 来源」，与 coverUrl/coverPath 一并折进本字段（客户端只消费 hasDisplayCover）。
+      hasEmbeddedCover: json['hasCover'] == true ||
           _isNonEmpty(coverUrl) ||
           _isNonEmpty(coverPath),
       coverUrl: coverUrl,
@@ -592,6 +609,49 @@ List<RemoteBookInfo> dedupeRemoteBooks({
 
 // ── 视频 ──────────────────────────────────────────────────────────────────────
 
+/// 播放断点 prefs 键「三件套」生成器：位置键、时间戳键、位置键→id 逆解析。
+///
+/// 视频（`video_remote_position_*`）与有声书（`audiobook_pos_*`）的断点键结构
+/// 完全同构——`<prefix><id>` 位置键（毫秒）、`<prefix>at_<id>` 时间戳键（epoch
+/// 毫秒）、以及从位置键反解 id（**必须排除更长前缀的时间戳键**，否则会把
+/// `<prefix>at_<id>` 误当成以 `at_` 开头的 id）。历史上两组三件套逐字复制（连
+/// 上述坑注释都是复制的），命名统一轮收口成本类；**键字符串逐字节不变**，由
+/// `position_pref_keys_guard_test.dart` 守卫锁死。
+class PositionPrefKeys {
+  const PositionPrefKeys(this.positionPrefix);
+
+  /// 位置键前缀（`video_remote_position_` / `audiobook_pos_`）。
+  final String positionPrefix;
+
+  /// 时间戳键前缀：`<positionPrefix>at_`。
+  String get atPrefix => '${positionPrefix}at_';
+
+  /// [id] 的位置键（值 = 断点毫秒）。
+  String positionKey(String id) => '$positionPrefix$id';
+
+  /// [id] 的「最后更新时间」键（值 = epoch 毫秒；LWW 冲突解决用，见
+  /// [resolvePositionLww]）。
+  String atKey(String id) => '$atPrefix$id';
+
+  /// [positionKey] 的逆：从位置键反解 id；时间戳键（更长前缀 [atPrefix]）、
+  /// 非本键空间、空 id 一律返回 null。
+  String? idFromPositionKey(String key) {
+    if (key.startsWith(atPrefix)) return null;
+    if (!key.startsWith(positionPrefix)) return null;
+    final String id = key.substring(positionPrefix.length);
+    return id.isEmpty ? null : id;
+  }
+}
+
+/// 视频远端断点三件套（TODO-559/653）。前缀冻结：`video_remote_position_`。
+const PositionPrefKeys videoRemotePositionPrefKeys =
+    PositionPrefKeys('video_remote_position_');
+
+/// 有声书断点三件套（BUG-471）。前缀冻结：`audiobook_pos_`（与
+/// `AudiobookRepository._kPositionMsKeyPrefix` 同公式）。
+const PositionPrefKeys audiobookPositionPrefKeys =
+    PositionPrefKeys('audiobook_pos_');
+
 /// 视频远端断点位置 prefs key（TODO-559/653）——单一真相源，host service 与
 /// video_hibiki_page `_remotePositionPrefKey` 共用同一公式。
 ///
@@ -599,12 +659,12 @@ List<RemoteBookInfo> dedupeRemoteBooks({
 /// Drift `preferences` 表。host 自己播放该视频时也用同一 key，故 host 上的这条 prefs
 /// 即跨设备进度的真相源。
 String videoRemotePositionPrefKey(String bookUid) =>
-    'video_remote_position_$bookUid';
+    videoRemotePositionPrefKeys.positionKey(bookUid);
 
 /// [videoRemotePositionPrefKey] 对应的「最后更新时间」prefs key（epoch 毫秒）。
 /// 冲突解决「取较新时间戳」需要它（见 [resolvePositionLww]）。
 String videoRemotePositionAtPrefKey(String bookUid) =>
-    'video_remote_position_at_$bookUid';
+    videoRemotePositionPrefKeys.atKey(bookUid);
 
 /// 远端**播放列表按集**断点位置 prefs key（TODO-885）——单一真相源，host service 与
 /// video_hibiki_page 共用同一公式。
@@ -625,16 +685,9 @@ String videoRemotePositionEpisodeAtPrefKey(String bookUid, int episodeIndex) =>
 
 /// [videoRemotePositionPrefKey] 的逆：从位置 prefs key 反解出 bookUid，非该 key 返回
 /// null。用于全量同步枚举「本地看过的流式视频 uid」（无 VideoBooks 行也有此 prefs，
-/// TODO-816 断点①）。必须排除更长前缀的时间戳键 [videoRemotePositionAtPrefKey]
-/// （`video_remote_position_at_<uid>`），否则会把时间戳键误当成 uid 以 `at_` 开头。
-String? videoUidFromRemotePositionPrefKey(String key) {
-  const String atPrefix = 'video_remote_position_at_';
-  const String posPrefix = 'video_remote_position_';
-  if (key.startsWith(atPrefix)) return null;
-  if (!key.startsWith(posPrefix)) return null;
-  final String uid = key.substring(posPrefix.length);
-  return uid.isEmpty ? null : uid;
-}
+/// TODO-816 断点①）。时间戳键的排除见 [PositionPrefKeys.idFromPositionKey]。
+String? videoUidFromRemotePositionPrefKey(String key) =>
+    videoRemotePositionPrefKeys.idFromPositionKey(key);
 
 /// 播放位置跨设备冲突解决——「取较新时间戳」last-write-wins（LWW）。
 ///
@@ -692,25 +745,19 @@ String? videoUidFromRemotePositionPrefKey(String key) {
 
 /// 有声书播放位置 pref key（毫秒）——单一真相源，host service 与
 /// `AudiobookRepository._kPositionMsKeyPrefix` 共用同一公式。
-String audiobookPositionPrefKey(String bookKey) => 'audiobook_pos_$bookKey';
+String audiobookPositionPrefKey(String bookKey) =>
+    audiobookPositionPrefKeys.positionKey(bookKey);
 
 /// [audiobookPositionPrefKey] 对应的「最后更新时间」pref key（epoch 毫秒）——与
 /// `AudiobookRepository._kPositionAtMsKeyPrefix` 同公式。冲突解决「取较新时间戳」用它。
 String audiobookPositionAtPrefKey(String bookKey) =>
-    'audiobook_pos_at_$bookKey';
+    audiobookPositionPrefKeys.atKey(bookKey);
 
 /// [audiobookPositionPrefKey] 的逆：从位置 pref key 反解出 bookKey，非该 key 返回
-/// null。用于全量同步枚举「本地有有声书播放进度的 bookKey」。必须排除更长前缀的
-/// 时间戳键 [audiobookPositionAtPrefKey]（`audiobook_pos_at_<bookKey>`），否则会把
-/// 时间戳键误当成以 `at_` 开头的 bookKey。
-String? audiobookKeyFromPositionPrefKey(String key) {
-  const String atPrefix = 'audiobook_pos_at_';
-  const String posPrefix = 'audiobook_pos_';
-  if (key.startsWith(atPrefix)) return null;
-  if (!key.startsWith(posPrefix)) return null;
-  final String bookKey = key.substring(posPrefix.length);
-  return bookKey.isEmpty ? null : bookKey;
-}
+/// null。用于全量同步枚举「本地有有声书播放进度的 bookKey」。时间戳键的排除见
+/// [PositionPrefKeys.idFromPositionKey]。
+String? audiobookKeyFromPositionPrefKey(String key) =>
+    audiobookPositionPrefKeys.idFromPositionKey(key);
 
 /// 旧名兼容：有声书进度 LWW（BUG-471）已并入 [resolvePositionLww]。
 @Deprecated('已并入 resolvePositionLww（与 resolveVideoPositionSync 逐字节相同），请改用新名')
@@ -727,21 +774,9 @@ String? audiobookKeyFromPositionPrefKey(String key) {
       remoteUpdatedAtMs: remoteUpdatedAtMs,
     );
 
-/// host 实时视频的清单条目（只读，不同步——视频文件通常过大，不走同步管道）。
-///
-/// [id] 即 `VideoBooks.bookUid`，从文件名派生的稳定字符串（如 `video/my_film`
-/// 或 `video/playlist/series`）。host 服务用 id 反查 DB 行拿真实路径，客户端
-/// 持 id 请求流式传输时 **server 只做 DB 查询，绝不接受外部传入的文件路径**。
-///
-/// [sizeBytes] 对单视频是当前集文件大小（字节）；播放列表取第一集大小；
-///             文件不存在或无法 stat 时为 null。
-/// [durationMs] DB 无 duration 列，此字段留给后续任务由 ffprobe/libmpv 填充；
-///              目前恒为 null（占位）。
-/// [hasSubtitle] host 能找到可下载/可查词的文本字幕时为 true；
-///               包括当前集 sidecar 或容器内封文本轨，不包括 PGS/DVD 等图形轨。
-/// [subtitleFileName] host 找到的 sidecar 字幕文件名（含真实扩展名），供 client
-///                    下载到本地临时文件时保留 `.ass/.ssa/.vtt/.srt` 解析语义。
-///                    内封字幕的临时下载名在 [RemoteVideoEmbeddedSubtitleTrack.fileName]。
+/// host 视频容器内封字幕轨的清单条目（[RemoteVideoInfo.embeddedSubtitleTracks]
+/// 的元素）：[streamIndex]/[codec] 定位轨道，[isText] 区分文本轨与图形轨，
+/// [url]/[fileName] 是 client 侧下载该轨转出文本时的定位与落地名。
 class RemoteVideoEmbeddedSubtitleTrack {
   const RemoteVideoEmbeddedSubtitleTrack({
     required this.streamIndex,
@@ -824,6 +859,21 @@ class RemoteVideoEpisode {
       );
 }
 
+/// host 实时视频的清单条目（只读，不同步——视频文件通常过大，不走同步管道）。
+///
+/// [id] 即 `VideoBooks.bookUid`，从文件名派生的稳定字符串（如 `video/my_film`
+/// 或 `video/playlist/series`）。host 服务用 id 反查 DB 行拿真实路径，client
+/// 持 id 请求流式传输时 **host 只做 DB 查询，绝不接受外部传入的文件路径**。
+///
+/// [sizeBytes] 对单视频是当前集文件大小（字节）；播放列表取第一集大小；
+///             文件不存在或无法 stat 时为 null。
+/// [durationMs] DB 无 duration 列，此字段留给后续任务由 ffprobe/libmpv 填充；
+///              目前恒为 null（占位）。
+/// [hasSubtitle] host 能找到可下载/可查词的文本字幕时为 true；
+///               包括当前集 sidecar 或容器内封文本轨，不包括 PGS/DVD 等图形轨。
+/// [subtitleFileName] host 找到的 sidecar 字幕文件名（含真实扩展名），供 client
+///                    下载到本地临时文件时保留 `.ass/.ssa/.vtt/.srt` 解析语义。
+///                    内封字幕的临时下载名在 [RemoteVideoEmbeddedSubtitleTrack.fileName]。
 class RemoteVideoInfo {
   const RemoteVideoInfo({
     required this.id,

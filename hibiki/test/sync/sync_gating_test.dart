@@ -10,6 +10,7 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'temp_dir_cleanup.dart';
@@ -20,9 +21,9 @@ HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
 /// so we can observe which sync channels each gate opens. Unrelated members
 /// throw so an accidental code-path change fails loudly.
 class _RecordingExportBackend implements SyncBackend {
-  _RecordingExportBackend({this.remoteFiles = const DriveSyncFiles()});
+  _RecordingExportBackend({this.remoteFiles = const SyncFileTrio()});
 
-  final DriveSyncFiles remoteFiles;
+  final SyncFileTrio remoteFiles;
 
   int updateStatsCalls = 0;
   int updateProgressCalls = 0;
@@ -43,7 +44,7 @@ class _RecordingExportBackend implements SyncBackend {
       'folder';
 
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async => remoteFiles;
+  Future<SyncFileTrio> listSyncFiles(String folderId) async => remoteFiles;
 
   @override
   Future<void> updateProgressFile({
@@ -87,7 +88,7 @@ class _RecordingExportBackend implements SyncBackend {
   @override
   Map<String, String> get cachedFolderIds => const <String, String>{};
   @override
-  void cacheBookFolderIds(List<DriveFile> folders) {}
+  void cacheBookFolderIds(List<SyncFileRef> folders) {}
 
   @override
   void evictFolderId(String folderId) {}
@@ -139,7 +140,7 @@ class _RecordingExportBackend implements SyncBackend {
   @override
   Future<void> refreshAuth() async {}
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async =>
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async =>
       throw UnimplementedError();
   @override
   Future<TtuProgress> getProgressFile(String fileId) async => TtuProgress(
@@ -169,7 +170,8 @@ class _RecordingExportBackend implements SyncBackend {
   }
 
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async =>
+  Future<SyncFileRef?> findContentFile(
+          String folderId, String fileName) async =>
       throw UnimplementedError();
 }
 
@@ -249,8 +251,8 @@ void main() {
       final EpubBookRow book = await _seedBookWithPosition(db);
 
       final backend = _RecordingExportBackend(
-        remoteFiles: const DriveSyncFiles(
-          statistics: DriveFile(id: 'remote-stats', name: 'statistics.json'),
+        remoteFiles: const SyncFileTrio(
+          statistics: SyncFileRef(id: 'remote-stats', name: 'statistics.json'),
         ),
       );
       final manager = SyncManager(db: db, backend: backend);
@@ -275,8 +277,8 @@ void main() {
       final EpubBookRow book = await _seedBookWithPosition(db);
 
       final backend = _RecordingExportBackend(
-        remoteFiles: const DriveSyncFiles(
-          statistics: DriveFile(id: 'remote-stats', name: 'statistics.json'),
+        remoteFiles: const SyncFileTrio(
+          statistics: SyncFileRef(id: 'remote-stats', name: 'statistics.json'),
         ),
       );
       final manager = SyncManager(db: db, backend: backend);
@@ -302,8 +304,8 @@ void main() {
       final EpubBookRow book = await _seedBookWithPosition(db);
 
       final backend = _RecordingExportBackend(
-        remoteFiles: const DriveSyncFiles(
-          progress: DriveFile(
+        remoteFiles: const SyncFileTrio(
+          progress: SyncFileRef(
             id: 'remote-progress',
             name: 'progress_1_6_2000_0.8.json',
           ),
@@ -342,8 +344,8 @@ void main() {
       // 误判「位置不同」→ 走 import/export 重传（spurious），把云端原值改写成近似；修后
       // 先把远端分数投影到存储网格再比 → 相等 → synced，云端原值原样保留。
       final backend = _RecordingExportBackend(
-        remoteFiles: const DriveSyncFiles(
-          progress: DriveFile(
+        remoteFiles: const SyncFileTrio(
+          progress: SyncFileRef(
               id: 'remote-progress', name: 'progress_1_6_1000_0.5005.json'),
         ),
       );
@@ -363,7 +365,7 @@ void main() {
     });
   });
 
-  group('exportBackup includes dictionary resources whenever present', () {
+  group('createBackup includes dictionary resources whenever present', () {
     // Full-data backup packs everything that exists on disk: the dictionary
     // resources are no longer gated on the sync-dictionary toggle. (Absence of
     // the resource files still strips the dictionary DB rows — covered in
@@ -399,7 +401,7 @@ void main() {
         // sync-dictionary gate no longer applies to local backup).
         await SyncRepository(onDiskDb).setSyncDictionaryEnabled(false);
         final String offPath = '${outDir.path}/off.zip';
-        await service.exportBackup(offPath);
+        await service.createBackup(offPath);
         final offArchive =
             ZipDecoder().decodeBytes(await File(offPath).readAsBytes());
         expect(offArchive.findFile('dictionaryResources/JMdict/blobs.bin'),
@@ -408,7 +410,7 @@ void main() {
         // Toggle ON: also included.
         await SyncRepository(onDiskDb).setSyncDictionaryEnabled(true);
         final String onPath = '${outDir.path}/on.zip';
-        await service.exportBackup(onPath);
+        await service.createBackup(onPath);
         final onArchive =
             ZipDecoder().decodeBytes(await File(onPath).readAsBytes());
         expect(onArchive.findFile('dictionaryResources/JMdict/blobs.bin'),

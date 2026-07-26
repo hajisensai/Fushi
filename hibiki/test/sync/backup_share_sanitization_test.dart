@@ -139,7 +139,7 @@ void main() {
         'all categories)', () async {
       final built = await buildSensitiveSource();
       final String zip = p.join(work.path, 'all.zip');
-      await built.service.exportBackup(zip); // null = every category
+      await built.service.createBackup(zip); // null = every category
       await built.db.close();
 
       final HibikiDatabase ex = await openBackupDb(zip);
@@ -155,7 +155,7 @@ void main() {
       final built = await buildSensitiveSource();
       final String zip = p.join(work.path, 'nobooks.zip');
       await built.service
-          .exportBackup(zip, categories: allExcept(BackupCategory.books));
+          .createBackup(zip, categories: allExcept(BackupCategory.books));
       await built.db.close();
 
       final HibikiDatabase ex = await openBackupDb(zip);
@@ -166,7 +166,7 @@ void main() {
     test('favorites survive when books ticked', () async {
       final built = await buildSensitiveSource();
       final String zip = p.join(work.path, 'books.zip');
-      await built.service.exportBackup(zip,
+      await built.service.createBackup(zip,
           categories: <BackupCategory>{BackupCategory.books});
       await built.db.close();
 
@@ -180,7 +180,7 @@ void main() {
       final built = await buildSensitiveSource();
       final String zip = p.join(work.path, 'nofonts.zip');
       await built.service
-          .exportBackup(zip, categories: allExcept(BackupCategory.fonts));
+          .createBackup(zip, categories: allExcept(BackupCategory.fonts));
       await built.db.close();
 
       final HibikiDatabase ex = await openBackupDb(zip);
@@ -195,7 +195,7 @@ void main() {
       final built = await buildSensitiveSource();
       final String zip = p.join(work.path, 'noaudio.zip');
       await built.service
-          .exportBackup(zip, categories: allExcept(BackupCategory.localAudio));
+          .createBackup(zip, categories: allExcept(BackupCategory.localAudio));
       await built.db.close();
 
       final HibikiDatabase ex = await openBackupDb(zip);
@@ -215,7 +215,7 @@ void main() {
       final built = await buildSensitiveSource();
       final String zip = p.join(work.path, 'nosettings.zip');
       await built.service
-          .exportBackup(zip, categories: allExcept(BackupCategory.settings));
+          .createBackup(zip, categories: allExcept(BackupCategory.settings));
       await built.db.close();
 
       final HibikiDatabase ex = await openBackupDb(zip);
@@ -227,7 +227,7 @@ void main() {
     test('sync toggles survive when settings ticked', () async {
       final built = await buildSensitiveSource();
       final String zip = p.join(work.path, 'withsettings.zip');
-      await built.service.exportBackup(zip,
+      await built.service.createBackup(zip,
           categories: <BackupCategory>{BackupCategory.settings});
       await built.db.close();
 
@@ -243,7 +243,7 @@ void main() {
     Future<String> buildBackup(Set<BackupCategory>? cats) async {
       final built = await buildSensitiveSource(favMarker: 'srcfav');
       final String zip = p.join(work.path, 'src_${seq++}.zip');
-      await built.service.exportBackup(zip, categories: cats);
+      await built.service.createBackup(zip, categories: cats);
       await built.db.close();
       return zip;
     }
@@ -264,7 +264,7 @@ void main() {
           ]));
       await cur0.close();
 
-      await BackupService.importBackupFiles(
+      await BackupService.restoreBackup(
         dbDirectory: curDbDir,
         zipPath: zip,
         importSettings: true,

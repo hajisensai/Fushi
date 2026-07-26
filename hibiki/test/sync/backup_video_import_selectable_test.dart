@@ -69,10 +69,10 @@ void main() {
           BackupService(db: db, dbDirectory: dbDir, appVersion: '1.0.0');
 
       final BackupMeta withVideos =
-          await service.exportBackup(p.join(src.path, 'with.zip'));
+          await service.createBackup(p.join(src.path, 'with.zip'));
       expect(withVideos.videoBookCount, 2);
 
-      final BackupMeta noVideos = await service.exportBackup(
+      final BackupMeta noVideos = await service.createBackup(
         p.join(src.path, 'without.zip'),
         categories: BackupCategory.values.toSet()
           ..remove(BackupCategory.videos),
@@ -82,7 +82,7 @@ void main() {
     });
   });
 
-  group('summarizeBackupArchive video visibility', () {
+  group('summarizeBackupEntries video visibility', () {
     BackupMeta metaWith({int? videoBookCount}) => BackupMeta(
           appVersion: '1.0.0',
           schemaVersion: 1,
@@ -93,7 +93,7 @@ void main() {
         );
 
     test('meta.videoBookCount>0 shows videos even with NO packed files', () {
-      final BackupContentSummary s = BackupService.summarizeBackupArchive(
+      final BackupContentSummary s = BackupService.summarizeBackupEntries(
         <String>['hibiki.db', 'backup_meta.json'],
         metaWith(videoBookCount: 3),
       );
@@ -102,7 +102,7 @@ void main() {
     });
 
     test('meta.videoBookCount==0 hides videos (unticked new backup)', () {
-      final BackupContentSummary s = BackupService.summarizeBackupArchive(
+      final BackupContentSummary s = BackupService.summarizeBackupEntries(
         <String>['hibiki.db'],
         metaWith(videoBookCount: 0),
         dbVideoBookCount: 9, // authoritative meta 0 must win over any peek
@@ -111,7 +111,7 @@ void main() {
     });
 
     test('old backup (meta lacks the field) falls back to the DB peek', () {
-      final BackupContentSummary s = BackupService.summarizeBackupArchive(
+      final BackupContentSummary s = BackupService.summarizeBackupEntries(
         <String>['hibiki.db'],
         metaWith(), // videoBookCount == null
         dbVideoBookCount: 2,
@@ -122,7 +122,7 @@ void main() {
   });
 
   test(
-      'summarizeBackupZip peeks the DB blob so an OLD backup (video rows, no '
+      'summarizeBackupFile peeks the DB blob so an OLD backup (video rows, no '
       'files, no meta count) still offers the video toggle (BUG-779)',
       () async {
     // Build the user's exact scenario: a backup whose hibiki.db carries
@@ -161,7 +161,7 @@ void main() {
         HibikiDatabase.forTesting(NativeDatabase.memory());
     final BackupService service =
         BackupService(db: dummy, dbDirectory: src.path, appVersion: '1.0.0');
-    final BackupContentSummary summary = await service.summarizeBackupZip(zip);
+    final BackupContentSummary summary = await service.summarizeBackupFile(zip);
     await dummy.close();
 
     expect(summary.has(BackupCategory.videos), isTrue,
@@ -188,7 +188,7 @@ void main() {
       final BackupService service =
           BackupService(db: db, dbDirectory: dbDir, appVersion: '1.0.0');
       final String zip = p.join(src.path, 'videos.zip');
-      await service.exportBackup(zip);
+      await service.createBackup(zip);
       await db.close();
       return zip;
     }
@@ -198,7 +198,7 @@ void main() {
       final String dstDbDir = p.join(dst.path, 'db');
       Directory(dstDbDir).createSync(recursive: true);
 
-      await BackupService.importBackupFiles(
+      await BackupService.restoreBackup(
         dbDirectory: dstDbDir,
         zipPath: zip,
         categories: BackupCategory.values.toSet()
@@ -215,7 +215,7 @@ void main() {
       final String dstDbDir = p.join(dst.path, 'db');
       Directory(dstDbDir).createSync(recursive: true);
 
-      await BackupService.importBackupFiles(
+      await BackupService.restoreBackup(
         dbDirectory: dstDbDir,
         zipPath: zip, // null categories = restore everything (incl. videos)
       );

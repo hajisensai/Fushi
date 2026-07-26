@@ -5,6 +5,7 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_obfuscator.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 
 /// 「防扫盘」字节混淆装饰器（TODO-623 A1）。
@@ -105,7 +106,7 @@ class ObfuscatingSyncBackend extends SyncBackend {
   Future<String> findOrCreateRootFolder() => _inner.findOrCreateRootFolder();
 
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) =>
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) =>
       _inner.listBooks(rootFolderId);
 
   @override
@@ -125,7 +126,7 @@ class ObfuscatingSyncBackend extends SyncBackend {
   // ── Metadata sync (JSON, 纯委托 — A2 follow-up) ───────────────────
 
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) =>
+  Future<SyncFileTrio> listSyncFiles(String folderId) =>
       _inner.listSyncFiles(folderId);
 
   @override
@@ -208,7 +209,7 @@ class ObfuscatingSyncBackend extends SyncBackend {
   }
 
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) =>
+  Future<SyncFileRef?> findContentFile(String folderId, String fileName) =>
       _inner.findContentFile(folderId, fileName);
 
   // ── Cache（纯委托） ───────────────────────────────────────────────
@@ -231,7 +232,7 @@ class ObfuscatingSyncBackend extends SyncBackend {
   Map<String, String> get cachedFolderIds => _inner.cachedFolderIds;
 
   @override
-  void cacheBookFolderIds(List<DriveFile> folders) =>
+  void cacheBookFolderIds(List<SyncFileRef> folders) =>
       _inner.cacheBookFolderIds(folders);
 
   @override

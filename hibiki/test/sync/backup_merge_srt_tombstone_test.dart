@@ -47,7 +47,7 @@ void main() {
       dbDirectory: dbDir,
       appVersion: '2.0.0',
       booksRootDirectory: books,
-    ).exportBackup(zip);
+    ).createBackup(zip);
     await src.close();
     return zip;
   }
@@ -85,7 +85,7 @@ void main() {
     await seed.deleteEpubBook('B1', tombstone: true);
     await seed.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
     );
@@ -126,7 +126,7 @@ void main() {
         ));
     final String zip = p.join(srcRoot.path, 'b.zip');
     await BackupService(db: src, dbDirectory: srcDbDir, appVersion: '2.0.0')
-        .exportBackup(zip);
+        .createBackup(zip);
     await src.close();
 
     final Directory curRoot =
@@ -147,7 +147,7 @@ void main() {
     await seed.deleteEpubBook('Other', tombstone: true); // unrelated tombstone
     await seed.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
     );

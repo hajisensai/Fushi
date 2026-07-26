@@ -12,6 +12,7 @@ import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -69,7 +70,7 @@ class FakeSyncBackend implements SyncBackend {
 
   // ── Unreached members ─────────────────────────────────────────────
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async =>
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async =>
       throw UnimplementedError();
   @override
   Future<bool> get isAuthenticated async => true;
@@ -86,7 +87,7 @@ class FakeSyncBackend implements SyncBackend {
   @override
   Future<void> refreshAuth() async {}
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async =>
+  Future<SyncFileTrio> listSyncFiles(String folderId) async =>
       throw UnimplementedError();
   @override
   Future<TtuProgress> getProgressFile(String fileId) async =>
@@ -134,7 +135,8 @@ class FakeSyncBackend implements SyncBackend {
   }) async =>
       throw UnimplementedError();
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async =>
+  Future<SyncFileRef?> findContentFile(
+          String folderId, String fileName) async =>
       throw UnimplementedError();
   @override
   void clearCache() {}
@@ -146,7 +148,7 @@ class FakeSyncBackend implements SyncBackend {
   @override
   Map<String, String> get cachedFolderIds => const <String, String>{};
   @override
-  void cacheBookFolderIds(List<DriveFile> folders) {}
+  void cacheBookFolderIds(List<SyncFileRef> folders) {}
 
   @override
   void evictFolderId(String folderId) {}

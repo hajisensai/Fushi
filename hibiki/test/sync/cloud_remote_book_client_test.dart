@@ -9,6 +9,7 @@ import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart'
     show kSyncDictionaryNamespace, kSyncLocalAudioNamespace;
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 
 /// 可控的 fake：根文件夹下若干书文件夹（[folders]，含名字），每个文件夹的子项由
@@ -24,7 +25,7 @@ class _ControllableSyncBackend implements SyncBackend {
   });
 
   /// 根 listBooks 返回的文件夹（id+name）。
-  final List<DriveFile> folders;
+  final List<SyncFileRef> folders;
 
   /// folderId → 子项。缺省视为空文件夹。
   final Map<String, List<AssetEntry>> childrenByFolder;
@@ -37,16 +38,16 @@ class _ControllableSyncBackend implements SyncBackend {
 
   final List<String> listChildrenCalls = <String>[];
   final List<String> getAssetCalls = <String>[];
-  final List<DriveFile> cachedFolders = <DriveFile>[];
+  final List<SyncFileRef> cachedFolders = <SyncFileRef>[];
 
   int _inFlightListChildren = 0;
   int maxConcurrentListChildren = 0;
 
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async => folders;
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async => folders;
 
   @override
-  void cacheBookFolderIds(List<DriveFile> folders) {
+  void cacheBookFolderIds(List<SyncFileRef> folders) {
     cachedFolders
       ..clear()
       ..addAll(folders);
@@ -106,7 +107,7 @@ class _ControllableSyncBackend implements SyncBackend {
   }) async =>
       throw UnimplementedError();
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async =>
+  Future<SyncFileTrio> listSyncFiles(String folderId) async =>
       throw UnimplementedError();
   @override
   Future<TtuProgress> getProgressFile(String fileId) async =>
@@ -154,7 +155,8 @@ class _ControllableSyncBackend implements SyncBackend {
   }) async =>
       throw UnimplementedError();
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async =>
+  Future<SyncFileRef?> findContentFile(
+          String folderId, String fileName) async =>
       throw UnimplementedError();
   @override
   Future<String> ensureNamespace(String name) async =>
@@ -224,9 +226,9 @@ void main() {
         'maps folders → RemoteBookInfo with bookKey=folderId, hasContent probe',
         () async {
       final backend = _ControllableSyncBackend(
-        folders: <DriveFile>[
-          DriveFile(id: 'fid_a', name: 'Book A'),
-          DriveFile(id: 'fid_b', name: 'Book B'),
+        folders: <SyncFileRef>[
+          SyncFileRef(id: 'fid_a', name: 'Book A'),
+          SyncFileRef(id: 'fid_b', name: 'Book B'),
         ],
         childrenByFolder: <String, List<AssetEntry>>{
           'fid_a': <AssetEntry>[_epub('asset_a', 'Book A.epub')],
@@ -245,7 +247,7 @@ void main() {
       expect(a.bookKey, 'fid_a');
       expect(a.downloadId, 'fid_a'); // downloadId == bookKey == folderId
       expect(a.hasContent, isTrue);
-      expect(a.hasCover, isFalse);
+      expect(a.hasEmbeddedCover, isFalse);
       expect(a.coverUrl, isNull);
       expect(a.hasAudiobook, isFalse);
       expect(b.bookKey, 'fid_b');
@@ -255,10 +257,10 @@ void main() {
     test('filters reserved namespaces (__dictionaries__/__local_audio__)',
         () async {
       final backend = _ControllableSyncBackend(
-        folders: <DriveFile>[
-          DriveFile(id: 'dictNs', name: kSyncDictionaryNamespace),
-          DriveFile(id: 'audioNs', name: kSyncLocalAudioNamespace),
-          DriveFile(id: 'fid_real', name: 'Real Book'),
+        folders: <SyncFileRef>[
+          SyncFileRef(id: 'dictNs', name: kSyncDictionaryNamespace),
+          SyncFileRef(id: 'audioNs', name: kSyncLocalAudioNamespace),
+          SyncFileRef(id: 'fid_real', name: 'Real Book'),
         ],
         childrenByFolder: <String, List<AssetEntry>>{
           'fid_real': <AssetEntry>[_epub('asset_real', 'Real Book.epub')],
@@ -283,7 +285,7 @@ void main() {
         'keeps throwing (BUG-699 / TODO-1384: no fail-open ghost book)',
         () async {
       final backend = _ControllableSyncBackend(
-        folders: <DriveFile>[DriveFile(id: 'fid_x', name: 'Flaky Book')],
+        folders: <SyncFileRef>[SyncFileRef(id: 'fid_x', name: 'Flaky Book')],
         childrenByFolder: const <String, List<AssetEntry>>{},
         throwOnListChildrenFor: <String>{'fid_x'},
       );
@@ -312,7 +314,9 @@ void main() {
         'retry (BUG-699 / TODO-1384)', () async {
       // 首次列举抛出（瞬时抖动），重试成功并看到 .epub → 真书仍被确证有内容。
       final backend = _FlakyThenOkSyncBackend(
-        folders: <DriveFile>[DriveFile(id: 'fid_r', name: 'Recovering Book')],
+        folders: <SyncFileRef>[
+          SyncFileRef(id: 'fid_r', name: 'Recovering Book')
+        ],
         epubChildById: <String, List<AssetEntry>>{
           'fid_r': <AssetEntry>[_epub('asset_r', 'Recovering Book.epub')],
         },
@@ -331,13 +335,13 @@ void main() {
 
     test('content probe respects concurrency cap (≤ contentProbeConcurrency)',
         () async {
-      final List<DriveFile> many = <DriveFile>[
-        for (int i = 0; i < 10; i++) DriveFile(id: 'fid_$i', name: 'Book $i'),
+      final List<SyncFileRef> many = <SyncFileRef>[
+        for (int i = 0; i < 10; i++) SyncFileRef(id: 'fid_$i', name: 'Book $i'),
       ];
       final backend = _ControllableSyncBackend(
         folders: many,
         childrenByFolder: <String, List<AssetEntry>>{
-          for (final DriveFile f in many)
+          for (final SyncFileRef f in many)
             f.id: <AssetEntry>[_epub('a_${f.id}', '${f.name}.epub')],
         },
         listChildrenDelay: const Duration(milliseconds: 20),
@@ -361,7 +365,7 @@ void main() {
     test('downloads first .epub asset via getAsset, no second import',
         () async {
       final backend = _ControllableSyncBackend(
-        folders: <DriveFile>[DriveFile(id: 'fid_dl', name: 'DL Book')],
+        folders: <SyncFileRef>[SyncFileRef(id: 'fid_dl', name: 'DL Book')],
         childrenByFolder: <String, List<AssetEntry>>{
           'fid_dl': <AssetEntry>[
             _epub('cover', 'cover.jpg'),
@@ -390,7 +394,7 @@ void main() {
 
     test('throws when folder has no .epub content', () async {
       final backend = _ControllableSyncBackend(
-        folders: <DriveFile>[DriveFile(id: 'fid_empty', name: 'Empty')],
+        folders: <SyncFileRef>[SyncFileRef(id: 'fid_empty', name: 'Empty')],
         childrenByFolder: <String, List<AssetEntry>>{
           'fid_empty': <AssetEntry>[_epub('cover', 'cover.jpg')],
         },

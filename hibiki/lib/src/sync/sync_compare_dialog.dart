@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/position_converter.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
@@ -18,7 +18,7 @@ import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_progress_resolver.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
-import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -162,11 +162,11 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
   // folders under the root; they are not books and must not appear as phantom
   // compare entries.
   final remoteBooks = (await backend.listBooks(rootId))
-      .where((DriveFile f) => !isReservedSyncFolderName(f.name))
+      .where((SyncFileRef f) => !isReservedSyncFolderName(f.name))
       .toList();
   backend.cacheBookFolderIds(remoteBooks);
   final List<RemoteBookInfo> liveBooks =
-      backend is HibikiClientSyncBackend ? await backend.listRemoteBooks() : [];
+      backend is InterconnectSyncBackend ? await backend.listRemoteBooks() : [];
   final localBooks = await db.getAllEpubBooks();
 
   final allTitles = <String>{};
@@ -176,7 +176,7 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     allTitles.add(b.title);
   }
 
-  final remoteByTitle = <String, DriveFile>{};
+  final remoteByTitle = <String, SyncFileRef>{};
   for (final f in remoteBooks) {
     remoteByTitle[f.name] = f;
     final cleaned = _unsanitize(f.name);
@@ -616,7 +616,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         final syncAudioBook = await repo.isSyncAudioBookEnabled();
         // BUG-988：手动解决冲突并应用时，互联通道读互联专属上传开关、云通道读共享开关，
         // 与自动同步一致——否则「互联内容开、云内容关」时互联冲突的内容传输会被误跳过。
-        final syncContent = widget.backend is HibikiClientSyncBackend
+        final syncContent = widget.backend is InterconnectSyncBackend
             ? await repo.isInterconnectSyncContentEnabled()
             : await repo.isSyncContentEnabled();
 
@@ -747,7 +747,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   /// `bookKeyOverride` 解包落盘。[audioDatabaseRoot] 为 null（调用方未注入根目录）
   /// 时跳过有声书补下，只保留 EPUB（旧行为）。
   Future<void> _downloadLiveAudiobookFor(
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
     SyncCompareEntry entry,
     String localBookKey,
   ) async {
@@ -797,9 +797,9 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   Future<bool> _downloadRemoteOnlyBook(SyncCompareEntry entry) async {
     if (!entry.isDownloadableRemoteOnly) return false;
     if (entry.remoteLiveTitle != null &&
-        widget.backend is HibikiClientSyncBackend) {
-      final HibikiClientSyncBackend backend =
-          widget.backend as HibikiClientSyncBackend;
+        widget.backend is InterconnectSyncBackend) {
+      final InterconnectSyncBackend backend =
+          widget.backend as InterconnectSyncBackend;
       final Directory dir = _resolveTempDir();
       if (!dir.existsSync()) dir.createSync(recursive: true);
       final File tmp = File(

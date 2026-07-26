@@ -13,6 +13,7 @@ import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_transient_error.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 
 class GoogleDriveError implements Exception {
@@ -237,10 +238,10 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
     });
   }
 
-  Future<List<DriveFile>> listBooks(String rootFolder) async {
+  Future<List<SyncFileRef>> listBooks(String rootFolder) async {
     final q = _escapeQuery(rootFolder);
     return _call((api) async {
-      final results = <DriveFile>[];
+      final results = <SyncFileRef>[];
       String? pageToken;
 
       do {
@@ -255,7 +256,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
           pageToken: pageToken,
         );
         if (list.files != null) {
-          results.addAll(list.files!.map(_toDriveFile));
+          results.addAll(list.files!.map(_toSyncFileRef));
         }
         pageToken = list.nextPageToken;
       } while (pageToken != null);
@@ -358,8 +359,8 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
 
   /// List all direct children (files + folders) under [parentId] as
   /// [AssetEntry]s, with [AssetEntry.isFolder] derived from the Drive
-  /// mimeType. DriveFile carries no mimeType, so we map straight from the
-  /// raw `drive.File` here instead of widening DriveFile.
+  /// mimeType. SyncFileRef carries no mimeType, so we map straight from the
+  /// raw `drive.File` here instead of widening SyncFileRef.
   Future<List<AssetEntry>> listChildrenRaw(String parentId) async {
     final qParent = _escapeQuery(parentId);
     return _call((api) async {
@@ -413,7 +414,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
 
   // ── Sync file operations ──────────────────────────────────────────
 
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async {
+  Future<SyncFileTrio> listSyncFiles(String folderId) async {
     final q = _escapeQuery(folderId);
     return _call((api) async {
       final list = await api.files.list(
@@ -423,8 +424,8 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
         $fields: 'files(id,name)',
       );
 
-      final files = list.files?.map(_toDriveFile).toList() ?? [];
-      return DriveSyncFiles(
+      final files = list.files?.map(_toSyncFileRef).toList() ?? [];
+      return SyncFileTrio(
         progress: _findByPrefix(files, 'progress_'),
         statistics: _findByPrefix(files, 'statistics_'),
         audioBook: _findByPrefix(files, 'audioBook_'),
@@ -641,7 +642,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
     });
   }
 
-  Future<DriveFile?> findContentFile(
+  Future<SyncFileRef?> findContentFile(
     String folderId,
     String fileName,
   ) async {
@@ -675,7 +676,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
     }
   }
 
-  Future<DriveFile?> _findFile(String folderId, String fileName) async {
+  Future<SyncFileRef?> _findFile(String folderId, String fileName) async {
     final qFolder = _escapeQuery(folderId);
     final qName = _escapeQuery(fileName);
     return _call((api) async {
@@ -685,7 +686,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
         $fields: 'files(id,name)',
       );
       if (list.files != null && list.files!.isNotEmpty) {
-        return _toDriveFile(list.files!.first);
+        return _toSyncFileRef(list.files!.first);
       }
       return null;
     });
@@ -701,10 +702,10 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
 
   static String _escapeQuery(String value) => value.replaceAll("'", "\\'");
 
-  static DriveFile _toDriveFile(drive.File f) =>
-      DriveFile(id: f.id!, name: f.name!);
+  static SyncFileRef _toSyncFileRef(drive.File f) =>
+      SyncFileRef(id: f.id!, name: f.name!);
 
-  static DriveFile? _findByPrefix(List<DriveFile> files, String prefix) {
+  static SyncFileRef? _findByPrefix(List<SyncFileRef> files, String prefix) {
     for (final f in files) {
       if (f.name.startsWith(prefix)) return f;
     }

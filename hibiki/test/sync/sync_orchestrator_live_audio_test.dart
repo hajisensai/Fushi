@@ -1,13 +1,13 @@
 /// Task T3.4：orchestrator 音频 live 同步集成测试。
 ///
-/// 用例 A：互联（HibikiClientSyncBackend）+ syncLocalAudio=true
+/// 用例 A：互联（InterconnectSyncBackend）+ syncLocalAudio=true
 ///   → 本地音频经 live 端点双向（pull/push），不经 `__local_audio__` 暂存路径。
 /// 用例 B：互联 + syncAudioBookFiles=true
 ///   → 有声书包经 live 端点上传本端独有包，不自动拉取远端独有包，
 ///     也不经 `audiobook.hibikiaudio` 书文件夹暂存。
 /// 用例 C：互联 + 开关关（syncLocalAudio=false / syncAudioBookFiles=false）
 ///   → 对应 live 方法不被调用（计数器=0）。
-/// 用例 D：云后端（非 HibikiClientSyncBackend）
+/// 用例 D：云后端（非 InterconnectSyncBackend）
 ///   → 仍走原 syncLocalAudioPackages / syncAudiobookPackages（__local_audio__ 路径）。
 library;
 
@@ -22,13 +22,14 @@ import 'package:hibiki/src/models/local_audio_manager.dart'
 import 'package:hibiki/src/models/local_audio_source_pref.dart'
     show LocalAudioSourcePref;
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -98,8 +99,8 @@ Future<void> _seedHostBookWithContent({
   );
 }
 
-/// 构造并认证一个 [HibikiClientSyncBackend]，fake probe 总返回 true。
-Future<HibikiClientSyncBackend> _buildClientBackend({
+/// 构造并认证一个 [InterconnectSyncBackend]，fake probe 总返回 true。
+Future<InterconnectSyncBackend> _buildClientBackend({
   required String base,
   required String token,
 }) async {
@@ -109,8 +110,8 @@ Future<HibikiClientSyncBackend> _buildClientBackend({
     HibikiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
-  final HibikiClientSyncBackend backend =
-      HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+  final InterconnectSyncBackend backend =
+      InterconnectSyncBackend.withProbe((String u, String t) async => true);
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -191,11 +192,11 @@ class _FakeSyncBackend implements SyncBackend {
   }) =>
       _store.ensureFolder(rootFolderId, bookTitle);
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async =>
-      const DriveSyncFiles(progress: null, statistics: null, audioBook: null);
+  Future<SyncFileTrio> listSyncFiles(String folderId) async =>
+      const SyncFileTrio(progress: null, statistics: null, audioBook: null);
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async =>
-      const <DriveFile>[];
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async =>
+      const <SyncFileRef>[];
   @override
   Future<bool> get isAuthenticated async => true;
   @override
@@ -249,7 +250,8 @@ class _FakeSyncBackend implements SyncBackend {
     void Function(double progress)? onProgress,
   }) async {}
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async =>
+  Future<SyncFileRef?> findContentFile(
+          String folderId, String fileName) async =>
       null;
   @override
   void clearCache() {}
@@ -261,7 +263,7 @@ class _FakeSyncBackend implements SyncBackend {
   @override
   Map<String, String> get cachedFolderIds => const <String, String>{};
   @override
-  void cacheBookFolderIds(List<DriveFile> folders) {}
+  void cacheBookFolderIds(List<SyncFileRef> folders) {}
 
   @override
   void evictFolderId(String folderId) {}
@@ -359,7 +361,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_pull'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final List<String> imported = <String>[];
@@ -421,7 +423,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_push'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final SyncOrchestrator orch = _audioOrchestrator(
@@ -446,7 +448,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_no_staging'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final SyncOrchestrator orch = _audioOrchestrator(
@@ -560,7 +562,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_ab_pull'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final SyncOrchestrator orch = _audioOrchestrator(
@@ -603,7 +605,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_ab_pull_ok'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final SyncOrchestrator orch = _audioOrchestrator(
@@ -670,7 +672,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_ab_push'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final SyncOrchestrator orch = _audioOrchestrator(
@@ -782,7 +784,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_b2_full'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final SyncOrchestrator orch = _audioOrchestrator(
@@ -820,7 +822,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_b2_text'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final SyncOrchestrator orch = _audioOrchestrator(
@@ -886,7 +888,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_c_audio'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final SyncOrchestrator orch = _audioOrchestrator(
@@ -1058,7 +1060,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_e_live_ok'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
       final SyncOrchestrator orch = _audioOrchestrator(
         db: localDb,
@@ -1081,7 +1083,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_e_live_skip'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
       final SyncOrchestrator orch = _audioOrchestrator(
         db: localDb,

@@ -7,6 +7,7 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -52,7 +53,7 @@ class _AlwaysRetryableBackend implements SyncBackend {
   @override
   Future<void> refreshAuth() async {}
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async =>
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async =>
       throw UnimplementedError();
   @override
   Future<String> ensureBookFolder({
@@ -62,7 +63,7 @@ class _AlwaysRetryableBackend implements SyncBackend {
   }) async =>
       throw UnimplementedError();
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async =>
+  Future<SyncFileTrio> listSyncFiles(String folderId) async =>
       throw UnimplementedError();
   @override
   Future<TtuProgress> getProgressFile(String fileId) async =>
@@ -110,10 +111,11 @@ class _AlwaysRetryableBackend implements SyncBackend {
   }) async =>
       throw UnimplementedError();
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async =>
+  Future<SyncFileRef?> findContentFile(
+          String folderId, String fileName) async =>
       throw UnimplementedError();
   @override
-  void cacheBookFolderIds(List<DriveFile> folders) =>
+  void cacheBookFolderIds(List<SyncFileRef> folders) =>
       throw UnimplementedError();
 
   @override

@@ -17,7 +17,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_sidecar.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
@@ -53,7 +53,7 @@ AppModelLibraryHostService _hostService({
       videoSubtitleLangCode: 'ja',
     );
 
-Future<HibikiClientSyncBackend> _clientBackend({
+Future<InterconnectSyncBackend> _clientBackend({
   required String base,
   required String token,
 }) async {
@@ -63,8 +63,8 @@ Future<HibikiClientSyncBackend> _clientBackend({
     HibikiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
-  final HibikiClientSyncBackend backend =
-      HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+  final InterconnectSyncBackend backend =
+      InterconnectSyncBackend.withProbe((String u, String t) async => true);
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -236,7 +236,7 @@ void main() {
         videoPath: vid.path,
       ));
 
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _clientBackend(base: base, token: token);
       final SyncRunReport report =
           await _orchestrator(db: localDb, backend: backend, tmp: work).run();
@@ -283,7 +283,7 @@ void main() {
         videoPath: vid.path,
       ));
 
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _clientBackend(base: base, token: token);
       // 第一轮：本地还没有字幕 → host 只有视频。
       await _orchestrator(db: localDb, backend: backend, tmp: work).run();
@@ -316,7 +316,7 @@ void main() {
           req.response.close();
         });
       });
-      final HibikiClientSyncBackend backend = await _clientBackend(
+      final InterconnectSyncBackend backend = await _clientBackend(
           base: 'http://127.0.0.1:${old.port}', token: token);
       final File sub = File(p.join(work.path, 'x.srt'))
         ..writeAsStringSync(_srtContent);

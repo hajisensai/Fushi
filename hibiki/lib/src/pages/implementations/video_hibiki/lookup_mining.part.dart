@@ -288,7 +288,7 @@ extension _VideoLookupMining on _VideoHibikiPageState {
     // 补丁）按指纹接受自签流抽音频/帧，绕过「Protocol not found」。非 Hibiki host（本地 /
     // YouTube / 直链）为 null，不钉扎。
     final RemoteVideoClient? remoteClient = _effectiveRemoteClient;
-    final String? mediaSourceTlsPin = remoteClient is HibikiClientSyncBackend
+    final String? mediaSourceTlsPin = remoteClient is InterconnectSyncBackend
         ? remoteClient.activeFingerprintSha256
         : null;
     // BUG-1004：互联 host（LAN Hibiki 库）远端流——注入「host 端裁音频段」裁切器：host 用
@@ -303,8 +303,8 @@ extension _VideoLookupMining on _VideoHibikiPageState {
       required int endMs,
       required String outputPath,
     })? remoteAudioClipper;
-    if (remoteClient is HibikiClientSyncBackend && remoteInfo != null) {
-      final HibikiClientSyncBackend backend = remoteClient;
+    if (remoteClient is InterconnectSyncBackend && remoteInfo != null) {
+      final InterconnectSyncBackend backend = remoteClient;
       final String remoteId = remoteInfo.id;
       final int episode = _currentEpisode;
       final int? audioIdx = controller.currentAudioStreamIndex;

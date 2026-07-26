@@ -7,12 +7,12 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart'
     show isReservedSyncFolderName;
-import 'package:hibiki/src/sync/ttu_models.dart' show DriveFile;
+import 'package:hibiki/src/sync/sync_file_ref.dart' show SyncFileRef;
 
 /// 把任意云盘备份后端（Google Drive / WebDAV / OneDrive / Dropbox / FTP / SFTP）
 /// 的远端书库适配成书架页的 [RemoteBookClient] 契约（TODO-665 阶段1）。
 ///
-/// 与局域网互联（`HibikiClientSyncBackend`）不同：云盘备份没有 host 实时库 API，
+/// 与局域网互联（`InterconnectSyncBackend`）不同：云盘备份没有 host 实时库 API，
 /// 远端书就是根文件夹下每本书一个子文件夹，文件夹内含 `<bookKey>.epub` 内容资产
 /// （由同步上传产生）。本适配器把「根文件夹列子项 → 过滤保留区 → 探测每本是否含
 /// .epub 内容 → 组装 [RemoteBookInfo]」收敛成 [listRemoteBooks]，把「按 folderId
@@ -56,9 +56,9 @@ class CloudRemoteBookClient implements RemoteBookClient {
 
   @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async {
-    final List<DriveFile> folders = await backend.listBooks(rootFolderId);
-    final List<DriveFile> bookFolders = <DriveFile>[
-      for (final DriveFile f in folders)
+    final List<SyncFileRef> folders = await backend.listBooks(rootFolderId);
+    final List<SyncFileRef> bookFolders = <SyncFileRef>[
+      for (final SyncFileRef f in folders)
         if (!isReservedSyncFolderName(f.name)) f,
     ];
     // 与对比弹窗一致：把书名→folderId 写进后端缓存（后续删除/上传按缓存定位）。
@@ -74,7 +74,7 @@ class CloudRemoteBookClient implements RemoteBookClient {
           // folderId 复用为 downloadId：getRemoteBook 据此 listChildren 取 .epub。
           // 去重按 title 进行（dedupeRemoteBooks），bookKey=folderId 不污染去重。
           bookKey: bookFolders[i].id,
-          hasCover: false,
+          hasEmbeddedCover: false,
           coverUrl: null,
           hasAudiobook: false,
         ),
@@ -83,7 +83,7 @@ class CloudRemoteBookClient implements RemoteBookClient {
 
   /// 并发（≤[contentProbeConcurrency]）探测每个书文件夹是否含 `.epub` 内容资产，
   /// 返回与 [folders] 等长、同序的结果。
-  Future<List<bool>> _probeContentBounded(List<DriveFile> folders) async {
+  Future<List<bool>> _probeContentBounded(List<SyncFileRef> folders) async {
     final List<bool> results =
         List<bool>.filled(folders.length, false, growable: false);
     int next = 0;
