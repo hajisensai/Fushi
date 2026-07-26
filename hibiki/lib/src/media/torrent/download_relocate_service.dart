@@ -43,16 +43,22 @@ class DownloadRelocateService {
     if (trimmed.isEmpty) {
       return const RelocateOutcome.engineFailed('new name is empty');
     }
-    final String normalized = p.normalize(trimmed);
-    final List<String> segments = p.split(normalized);
-    if (p.isAbsolute(normalized) ||
+    // 种子内路径跨平台固定用 POSIX `/`；只有拼进本地 save root 时才转成
+    // 宿主分隔符。否则 Windows 会把传给 qB/libtorrent 的路径改成 `\`。
+    final String normalized =
+        p.posix.normalize(trimmed.replaceAll(r'\', '/'));
+    final List<String> segments = p.posix.split(normalized);
+    if (p.posix.isAbsolute(normalized) ||
+        p.windows.rootPrefix(trimmed).isNotEmpty ||
         normalized == '.' ||
         segments.isEmpty ||
         segments.first == '..') {
       return const RelocateOutcome.engineFailed(
           'new name must stay inside the torrent');
     }
-    if (p.equals(normalized, p.normalize(currentRelativePath))) {
+    final String normalizedCurrent =
+        p.posix.normalize(currentRelativePath.replaceAll(r'\', '/'));
+    if (normalized == normalizedCurrent) {
       // 名字没变：不打扰引擎，也不动库。
       return const RelocateOutcome.unchanged();
     }
@@ -60,7 +66,7 @@ class DownloadRelocateService {
       op: (TorrentBackend backend) =>
           backend.renameFile(infoHash, fileIndex, normalized),
       fromPath: p.join(saveRoot, currentRelativePath),
-      toPath: p.join(saveRoot, normalized),
+      toPath: p.joinAll(<String>[saveRoot, ...segments]),
     );
   }
 

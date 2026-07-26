@@ -318,7 +318,9 @@ void main() {
 
       // 库里存的是绝对路径，所以重映射必须在绝对路径坐标系里做。
       expect(seenFrom, p.join(root, 'old.mkv'));
-      expect(seenTo, p.join(root, 'S1/new.mkv'));
+      expect(seenTo, p.join(root, 'S1', 'new.mkv'));
+      expect(backend.calls.single, 'rename(abc,2,S1/new.mkv)',
+          reason: '种子内路径跨平台固定使用 POSIX 分隔符');
     });
   });
 }
