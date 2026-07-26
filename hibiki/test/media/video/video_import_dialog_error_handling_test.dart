@@ -12,17 +12,19 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// BUG-1117 守卫：VideoImportDialog 四个导入方法（_doImport / _importStreamUrl /
 /// _importPlaylistFromPath / _pickFolder）此前是 `try{}finally{}` 无 catch，
 /// 导入异常逃逸 async zone（三处调用点还是 fire-and-forget），用户只见 spinner
-/// 停住、无任何提示。修复后异常必须被 catch：ErrorLogService 落日志 + toast 提示，
-/// `_busy` 在 finally 复位。
+/// 停住、无任何提示。修复后异常必须被捕获：ErrorLogService 落日志 + toast 提示，
+/// `importing` 在 finally 复位——该模式现已结构化为 `ImportFlowMixin.runImport`
+/// 模板（审计 §1-K），四个方法全部改走模板，行为不变。
 ///
 /// 两层守卫：
 /// 1) **widget 行为层**：注入 `listAll()` 必抛的仓库（四条导入路径都先经
 ///    `_uniqueBookUid → repo.listAll()`，在进 ffmpeg 前确定性触发 catch），断言
-///    异常不再逃逸 zone（`takeException() == null`，修复前此断言红）且 `_busy`
+///    异常不再逃逸 zone（`takeException() == null`，修复前此断言红）且 `importing`
 ///    已复位（确认按钮恢复可用、spinner 消失）。
-/// 2) **源码扫描层**：对 4 个 catch 块各断言 `ErrorLogService.instance.log(...)`
-///    存在，覆盖 widget 测试驱动不到的 `_importPlaylistFromPath` / `_pickFolder`
-///    （依赖 FilePicker / 目录选择器静态入口，无法在 widget 测试注入）。
+/// 2) **源码扫描层**：对 4 个方法各断言以对应 logTag 走 `runImport(` 模板，
+///    覆盖 widget 测试驱动不到的 `_importPlaylistFromPath` / `_pickFolder`
+///    （依赖 FilePicker / 目录选择器静态入口，无法在 widget 测试注入）；模板
+///    体内的 catch/log/toast 契约由 import_flow_mixin_test.dart 守卫。
 void main() {
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
@@ -99,7 +101,7 @@ void main() {
     });
   });
 
-  group('source guard: all four import methods have a logging catch block', () {
+  group('source guard: all four import methods route through runImport', () {
     late String source;
 
     setUpAll(() {
@@ -109,37 +111,50 @@ void main() {
     });
 
     // _importPlaylistFromPath / _pickFolder 依赖 FilePicker / 目录选择器静态入口，
-    // widget 测试驱动不到，靠源码扫描锁住 catch 块存在。
+    // widget 测试驱动不到，靠源码扫描锁住「以对应 logTag 走 runImport 模板」。
     for (final String tag in const <String>[
       'VideoImportDialog.import', // _doImport
       'VideoImportDialog.importStream', // _importStreamUrl
       'VideoImportDialog.importPlaylist', // _importPlaylistFromPath
       'VideoImportDialog.pickFolder', // _pickFolder
     ]) {
-      test('catch block logs to ErrorLogService with tag $tag', () {
-        // dart format 会把长 tag 的调用折行，故用允许空白的正则而非裸 contains。
+      test('import method routes through runImport with tag $tag', () {
+        // dart format 可能折行，故用允许空白的正则而非裸 contains。
         expect(
-          RegExp("ErrorLogService\\.instance\\s*\\.log\\(\\s*'${RegExp.escape(tag)}'")
-              .hasMatch(source),
+          RegExp("logTag:\\s*'${RegExp.escape(tag)}',").hasMatch(source),
           isTrue,
-          reason: '导入方法的 catch 块必须以 $tag 落 ErrorLogService，'
+          reason: '导入方法必须以 logTag $tag 走 ImportFlowMixin.runImport 模板'
+              '（模板保证 catch 落日志 + toast + importing 复位），'
               '否则导入异常回到静默逃逸（BUG-1117 回归）',
         );
       });
     }
 
-    test('no bare try/finally remains (every finally is preceded by catch)',
+    test('no handwritten try/finally or direct ErrorLogService call remains',
         () {
-      // 文件内每个 `} finally {` 前都应有对应 catch——防止未来新增导入方法
-      // 复制旧的 try{}finally{} 形态回归。
-      final int finallyCount = '} finally {'.allMatches(source).length;
-      final int catchCount =
-          RegExp(r'\} catch \(e, stack\) \{').allMatches(source).length;
+      // 四方法收敛到 runImport 后，本文件不应再出现手写 finally 或直接
+      // ErrorLogService 调用——防止未来新增导入方法复制旧的 try{}finally{}
+      // 形态（无 catch，异常静默逃逸 async zone）回归。
       expect(
-        catchCount >= finallyCount,
-        isTrue,
-        reason: '存在无 catch 的 try/finally（finally=$finallyCount, '
-            'catch=$catchCount）：导入异常会静默逃逸 async zone',
+        source.contains('} finally {'),
+        isFalse,
+        reason: '新增导入方法必须走 ImportFlowMixin.runImport 模板，'
+            '不要手写 try/finally（BUG-1117 回归风险）',
+      );
+      expect(
+        source.contains('ErrorLogService.instance.log('),
+        isFalse,
+        reason: '导入错误日志统一由 runImport 模板落，不在本文件手写',
+      );
+      // 模板体内 catch 在 finally 之前、且落日志 + toast——锁在 mixin 源码上。
+      final String mixinSource =
+          File('lib/src/media/import/import_flow_mixin.dart')
+              .readAsStringSync();
+      expect(
+        mixinSource.indexOf('} catch (e, stack) {'),
+        allOf(isNonNegative, lessThan(mixinSource.indexOf('} finally {'))),
+        reason: 'runImport 模板必须 catch 后 finally（catch 落日志/提示、'
+            'finally 复位 importing）',
       );
     });
   });

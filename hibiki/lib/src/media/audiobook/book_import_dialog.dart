@@ -12,10 +12,12 @@ import 'package:path/path.dart' as p;
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
-import 'package:hibiki/src/media/audiobook/import_dialog_progress_mixin.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_alignment_service.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
+import 'package:hibiki/src/media/import/audiobook_health_summary.dart';
+import 'package:hibiki/src/media/import/import_dialog_frame.dart';
+import 'package:hibiki/src/media/import/import_flow_mixin.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
 import 'package:hibiki/src/media/media_cover_service.dart';
@@ -83,7 +85,7 @@ class BookImportDialog extends StatefulWidget {
 }
 
 class _BookImportDialogState extends State<BookImportDialog>
-    with ImportDialogProgressMixin<BookImportDialog> {
+    with ImportFlowMixin<BookImportDialog> {
   final TextEditingController _titleCtrl = TextEditingController();
   final TextEditingController _authorCtrl = TextEditingController();
 
@@ -197,7 +199,7 @@ class _BookImportDialogState extends State<BookImportDialog>
   void dispose() {
     _titleCtrl.dispose();
     _authorCtrl.dispose();
-    // 进度 ValueNotifier 由 ImportDialogProgressMixin.dispose() 经 super 链释放。
+    // 进度 ValueNotifier 由 ImportFlowMixin.dispose() 经 super 链释放。
     super.dispose();
   }
 
@@ -829,51 +831,46 @@ class _BookImportDialogState extends State<BookImportDialog>
       return;
     }
 
-    setState(() => importing = true);
-    reportProgress(0, '');
+    // 失败日志/toast/importing 复位收敛到 ImportFlowMixin.runImport 模板；
+    // 同名弹窗选「否」不是错误，走 isCancelled 分支只提示取消并 pop(false)。
+    await runImport(
+      logTag: 'BookImportDialog.import',
+      debugMessage: (Object e) => 'BookImportDialog error: $e',
+      isCancelled: (Object e) => e is DuplicateImportCancelledException,
+      onCancelled: () {
+        if (mounted) {
+          HibikiToast.show(msg: t.book_import_duplicate_cancelled);
+          Navigator.pop(context, false);
+        }
+      },
+      action: () async {
+        reportProgress(0, '');
+        final String? authorText =
+            _authorCtrl.text.trim().isEmpty ? null : _authorCtrl.text.trim();
 
-    try {
-      final String? authorText =
-          _authorCtrl.text.trim().isEmpty ? null : _authorCtrl.text.trim();
+        debugPrint(
+            '[hibiki-import] route: epub=$_epubPath sub=$_subtitlePath audio=${_audioPaths.length} files');
+        String? tail;
+        if (_epubPath != null && _hasSubtitles) {
+          debugPrint('[hibiki-import] → _importEpubWithAlignment');
+          tail = await _importEpubWithAlignment(title: title);
+        } else if (_hasSubtitles) {
+          debugPrint('[hibiki-import] → _importSubtitleBook');
+          await _importSubtitleBook(title: title, author: authorText);
+        } else {
+          debugPrint('[hibiki-import] → _importEpubOnly');
+          await _importEpubOnly(title: title);
+        }
 
-      debugPrint(
-          '[hibiki-import] route: epub=$_epubPath sub=$_subtitlePath audio=${_audioPaths.length} files');
-      String? tail;
-      if (_epubPath != null && _hasSubtitles) {
-        debugPrint('[hibiki-import] → _importEpubWithAlignment');
-        tail = await _importEpubWithAlignment(title: title);
-      } else if (_hasSubtitles) {
-        debugPrint('[hibiki-import] → _importSubtitleBook');
-        await _importSubtitleBook(title: title, author: authorText);
-      } else {
-        debugPrint('[hibiki-import] → _importEpubOnly');
-        await _importEpubOnly(title: title);
-      }
-
-      if (mounted) {
-        final String msg = tail == null
-            ? t.srt_import_success
-            : '${t.srt_import_success} · $tail';
-        HibikiToast.show(msg: msg);
-        Navigator.pop(context, true);
-      }
-    } on DuplicateImportCancelledException {
-      // 用户在同名弹窗选了"否"——取消这本书，不是错误。
-      if (mounted) {
-        HibikiToast.show(msg: t.book_import_duplicate_cancelled);
-        Navigator.pop(context, false);
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log('BookImportDialog.import', e, stack);
-      debugPrint('BookImportDialog error: $e');
-      if (mounted) {
-        HibikiToast.show(msg: '${t.srt_import_error}: $e');
-      }
-    } finally {
-      if (mounted) {
-        setState(() => importing = false);
-      }
-    }
+        if (mounted) {
+          final String msg = tail == null
+              ? t.srt_import_success
+              : '${t.srt_import_success} · $tail';
+          HibikiToast.show(msg: msg);
+          Navigator.pop(context, true);
+        }
+      },
+    );
   }
 
   Future<void> _importSubtitleBook({
@@ -1139,62 +1136,6 @@ class _BookImportDialogState extends State<BookImportDialog>
       AudiobookStorage.ensurePersistDir(key);
 }
 
-/// 两个导入对话框逐字相同的外框脚手架（HibikiDialogFrame 560/0.86 +
-/// HibikiModalSheetFrame 同 padding + Wrap footer，空 actions 时无 footer）。
-/// 标题渲染两态刻意各异——book 在 body 里渲 Widget 标题（2 行省略），audiobook
-/// 用 sheet 的 [title] 槽——由调用方各自保留，不在此归一。
-class ImportDialogFrame extends StatelessWidget {
-  const ImportDialogFrame({
-    required this.leadingIcon,
-    required this.body,
-    required this.actions,
-    this.title,
-    super.key,
-  });
-
-  final IconData leadingIcon;
-  final String? title;
-  final Widget body;
-  final List<Widget> actions;
-
-  @override
-  Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-
-    return HibikiDialogFrame(
-      maxWidth: 560,
-      maxHeightFactor: 0.86,
-      scrollable: false,
-      child: HibikiModalSheetFrame(
-        title: title,
-        leadingIcon: leadingIcon,
-        bodyPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          0,
-          tokens.spacing.card,
-          tokens.spacing.gap,
-        ),
-        footerPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          tokens.spacing.gap,
-          tokens.spacing.card,
-          tokens.spacing.card,
-        ),
-        scrollable: true,
-        body: body,
-        footer: actions.isEmpty
-            ? null
-            : Wrap(
-                alignment: WrapAlignment.end,
-                spacing: tokens.spacing.gap,
-                runSpacing: tokens.spacing.gap,
-                children: actions,
-              ),
-      ),
-    );
-  }
-}
-
 @visibleForTesting
 class BookImportDialogFrame extends StatelessWidget {
   const BookImportDialogFrame({
@@ -1232,22 +1173,6 @@ class BookImportDialogFrame extends StatelessWidget {
       ),
       actions: actions,
     );
-  }
-}
-
-/// 把 [AudiobookHealth] 压成一段 toast 尾巴；notApplicable/unrun/running 返回
-/// null 省掉冗余提示。两个导入对话框共用（原各持一份逐字相同副本）。
-String? summarizeAudiobookHealth(AudiobookHealth h) {
-  switch (h.kind) {
-    case HealthKind.ok:
-    case HealthKind.partial:
-    case HealthKind.failed:
-      final int pct = h.ratePct ?? 0;
-      return t.health_match_summary(pct: pct);
-    case HealthKind.notApplicable:
-    case HealthKind.unrun:
-    case HealthKind.running:
-      return null;
   }
 }
 
@@ -1292,46 +1217,4 @@ enum ImportTitleSource {
     return (text: derived, source: incoming);
   }
   return (text: currentText, source: currentSource);
-}
-
-/// TODO-894：为一条 EPUB-backed 有声书补写配对的 srt_books 行。
-///
-/// EPUB-backed 路径（[BookImportDialog._importEpubWithAlignment]）只写 Audiobooks
-/// 行，但 push 两条消费路径（`sync_orchestrator.dart` live push 与
-/// `syncAudiobookPackages`）都靠 `srt_books.book_key == audiobooks.book_key` 找配对
-/// 的 SrtBook，缺它整本永不上传。导入路径与 backfill 迁移共用同一稳定派生 uid
-/// `srtbook_epub_<bookKey>`：同 bookKey 恒定 → 经 upsert-on-uid 幂等（重复导入覆盖
-/// 同行，绝不落第二行）。禁用 `DateTime.now()` 做 uid（破幂等）。
-///
-/// cover_path 刻意留空——export 打包不依赖 srtBook.coverPath（封面来自 epub_books /
-/// audiobook 落盘文件），新导入与 backfill 两路径对此保持同一策略。
-String epubBackedSrtBookUid(String bookKey) => 'srtbook_epub_$bookKey';
-
-Future<void> writeEpubBackedSrtBook({
-  required SrtBookRepository repo,
-  required String bookKey,
-  required String title,
-  required String? author,
-  required String srtPath,
-  required List<String> audioPaths,
-}) async {
-  final String uid = epubBackedSrtBookUid(bookKey);
-  // Re-import of the same bookKey must update the existing paired row in place
-  // (idempotent), not collide on UNIQUE(uid). upsertSrtBook resolves on the
-  // `id` PK, so carry the existing row's id when present.
-  final SrtBook? existing = await repo.findByUid(uid);
-  final SrtBook book = SrtBook()
-    ..id = existing?.id
-    ..uid = uid
-    ..title = title
-    ..srtPath = srtPath
-    ..importedAt = DateTime.now().millisecondsSinceEpoch
-    ..bookKey = bookKey;
-  if (audioPaths.isNotEmpty) {
-    book.audioPaths = List<String>.of(audioPaths);
-  }
-  if (author != null) {
-    book.author = author;
-  }
-  await repo.save(book);
 }

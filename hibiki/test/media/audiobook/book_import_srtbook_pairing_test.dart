@@ -17,7 +17,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
+import 'package:hibiki/src/media/import/epub_backed_srt_book.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 

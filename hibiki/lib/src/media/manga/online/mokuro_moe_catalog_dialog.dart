@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/media/import/import_dialog_frame.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:hibiki/src/media/media_search_text.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_volume_downloader.dart';
@@ -287,14 +288,14 @@ class _MokuroMoeCatalogDialogState
   }
 
   Widget _buildDialog(HibikiDesignTokens tokens) {
-    return AlertDialog(
-      title: Text(
-        _stage == _CatalogStage.browse
-            ? t.manga_online_catalog_title
-            : (_series?.name ?? t.manga_online_catalog_title),
-        overflow: TextOverflow.ellipsis,
-      ),
-      content: SizedBox(
+    // 外框走统一 ImportDialogFrame（审计 §1-K：与书/有声书/视频导入同一 chrome）；
+    // 浏览/系列/下载三阶段的内容与动作按钮不变（标题槽自带单行省略）。
+    return ImportDialogFrame(
+      leadingIcon: Icons.cloud_download_outlined,
+      title: _stage == _CatalogStage.browse
+          ? t.manga_online_catalog_title
+          : (_series?.name ?? t.manga_online_catalog_title),
+      body: SizedBox(
         width: 560,
         height: 440,
         child: _stage == _CatalogStage.browse
