@@ -92,7 +92,7 @@ final videoBookTagMapProvider =
   for (final m in mappings) {
     final tag = tagById[m.tagId];
     if (tag != null) {
-      result.putIfAbsent(m.videoBookUid, () => []).add(tag);
+      result.putIfAbsent(m.bookUid, () => []).add(tag);
     }
   }
   return result;

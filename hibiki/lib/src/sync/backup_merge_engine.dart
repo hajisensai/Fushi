@@ -818,15 +818,15 @@ class BackupMergeEngine {
       'WHERE m.srt_book_id = ts.id AND m.tag_id = tt.id)',
     );
     await _db.customStatement(
-      'INSERT INTO video_book_tag_mappings (video_book_uid, tag_id) '
-      'SELECT sm.video_book_uid, tt.id '
+      'INSERT INTO video_book_tag_mappings (book_uid, tag_id) '
+      'SELECT sm.book_uid, tt.id '
       'FROM $_srcAlias.video_book_tag_mappings AS sm '
       'JOIN $_srcAlias.book_tags AS st ON st.id = sm.tag_id '
       'JOIN book_tags AS tt ON tt.name = st.name '
       'WHERE EXISTS (SELECT 1 FROM video_books AS v '
-      'WHERE v.book_uid = sm.video_book_uid) '
+      'WHERE v.book_uid = sm.book_uid) '
       'AND NOT EXISTS (SELECT 1 FROM video_book_tag_mappings AS m '
-      'WHERE m.video_book_uid = sm.video_book_uid AND m.tag_id = tt.id)',
+      'WHERE m.book_uid = sm.book_uid AND m.tag_id = tt.id)',
     );
   }
 

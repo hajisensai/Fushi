@@ -538,14 +538,13 @@ void main() {
 
     test('BUG-996: lastPositionMs 回退用 importedAt 作下界时间戳', () async {
       // host 本机播放只写 lastPositionMs（无 remote_position prefs），但行有 importedAt。
-      final DateTime imported =
-          DateTime.fromMillisecondsSinceEpoch(1700000000000);
+      const int importedMs = 1700000000000;
       await db.upsertVideoBook(VideoBooksCompanion.insert(
         bookUid: 'video/legacy',
         title: 'Legacy',
         videoPath: '/tmp/legacy.mp4',
         lastPositionMs: const Value(900746),
-        importedAt: Value(imported),
+        importedAt: const Value(importedMs),
       ));
       final AppModelLibraryHostService svc = _makeService(db: db, tmp: tmp);
 
@@ -553,7 +552,7 @@ void main() {
           await svc.getVideoPosition('video/legacy');
       expect(progress.positionMs, 900746);
       // BUG-996：不再恒 0——用 importedAt 作下界戳，host 真进度不被无效本地断点吃掉。
-      expect(progress.updatedAtMs, imported.millisecondsSinceEpoch);
+      expect(progress.updatedAtMs, importedMs);
     });
 
     test('prefs progress wins over lastPositionMs', () async {

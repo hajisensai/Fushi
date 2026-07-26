@@ -227,7 +227,7 @@ void main() {
         bookUid: const Value('video/manual'),
         title: const Value('Manual'),
         videoPath: const Value('/m/manual.mp4'),
-        importedAt: Value(DateTime.now()),
+        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ));
 
       final VideoBookRow? row = await repo.getByBookUid('video/manual');
@@ -252,7 +252,7 @@ void main() {
           bookUid: const Value('video/scanned'),
           title: const Value('Scanned'),
           videoPath: const Value('/srv/vids/scanned.mp4'),
-          importedAt: Value(DateTime.now()),
+          importedAt: Value(DateTime.now().millisecondsSinceEpoch),
         ),
         sourceId: sid,
       );

@@ -127,7 +127,7 @@ void main() {
         bookUid: 'vid-uid',
         title: 'MyVideo',
         videoPath: '/tmp/v.mp4',
-        importedAt: Value(DateTime.now()),
+        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ));
       final int tagId = await db.getOrCreateTagByName('アニメ');
       await db.addTagToVideoBook('vid-uid', tagId);

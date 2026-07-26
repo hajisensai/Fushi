@@ -165,7 +165,7 @@ void main() {
         bookUid: 'video/ep1',
         title: 'Ep1',
         videoPath: '/tmp/ep1.mp4',
-        importedAt: Value(DateTime.now()),
+        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ));
       final int cid =
           await db.createMediaCollection('番剧', collectionType: 'playlist');
@@ -192,7 +192,7 @@ void main() {
         bookUid: 'video/probe',
         title: 'Probe',
         videoPath: video.path,
-        importedAt: Value(DateTime.now()),
+        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ));
 
       final List<RemoteVideoInfo> videos = await buildSvc(db).listVideos();

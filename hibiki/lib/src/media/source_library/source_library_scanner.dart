@@ -316,9 +316,20 @@ class SourceLibraryScanner {
     int mediaCount = 0;
     String? scanError;
     try {
+      // 值域显式化（命名统一 Phase 3.4）：落库串经 SourceLibraryKind 严格解析，
+      // 未知串在这里立刻失败（与旧 else 分支同语义），下方分派改穷尽 switch。
+      final SourceLibraryKind? kind =
+          SourceLibraryKind.tryParse(source.mediaKind);
+      if (kind == null) {
+        throw ArgumentError.value(
+          source.mediaKind,
+          'mediaKind',
+          'Unsupported media kind for scan (expected book | video)',
+        );
+      }
       // 网络视频来源不受支持：远端 SFTP/FTP 路径不可被播放器直接播放（只支持网络
       // 「书」来源——EPUB 小体积、扫描时下载后导入）。
-      if (!files.isLocal && source.mediaKind == 'video') {
+      if (!files.isLocal && kind == SourceLibraryKind.video) {
         throw StateError('Network video sources are not supported');
       }
       final List<SourceFileEntry> entries = await files.listFiles(
@@ -327,19 +338,14 @@ class SourceLibraryScanner {
       );
       final ScanPlan plan = planScanFromFileList(entries);
 
-      if (source.mediaKind == 'book') {
-        mediaCount = await _importBooks(plan, source.id, files);
-      } else if (source.mediaKind == 'video') {
-        // Video source imports both single videos and m3u8/m3u playlists
-        // (TODO-1237).
-        mediaCount = await _importVideos(plan, source.id, files);
-        mediaCount += await _importPlaylists(plan, source.id, files);
-      } else {
-        throw ArgumentError.value(
-          source.mediaKind,
-          'mediaKind',
-          'Unsupported media kind for scan (expected book | video)',
-        );
+      switch (kind) {
+        case SourceLibraryKind.book:
+          mediaCount = await _importBooks(plan, source.id, files);
+        case SourceLibraryKind.video:
+          // Video source imports both single videos and m3u8/m3u playlists
+          // (TODO-1237).
+          mediaCount = await _importVideos(plan, source.id, files);
+          mediaCount += await _importPlaylists(plan, source.id, files);
       }
     } catch (e, stack) {
       scanError = e.toString();
@@ -554,7 +560,7 @@ class SourceLibraryScanner {
             embeddedSubtitleTrack: subtitleSource == null
                 ? const Value<int?>(0)
                 : const Value<int?>(null),
-            importedAt: Value(DateTime.now()),
+            importedAt: Value(DateTime.now().millisecondsSinceEpoch),
           ),
           sourceId: sourceId,
         );

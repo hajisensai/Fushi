@@ -88,7 +88,7 @@ Future<void> _seedVideo(
       title: Value(bookUid),
       videoPath: Value('/srv/$bookUid.mp4'),
       sourceId: Value(sourceId),
-      importedAt: Value(DateTime.now()),
+      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
 
 /// 插入一条归属 [sourceId] 的 EPUB 条目（TODO-1036 累计计数用）。
@@ -175,7 +175,7 @@ void main() {
       title: const Value('Owned'),
       videoPath: const Value('/srv/anime/owned.mp4'),
       sourceId: Value(sid),
-      importedAt: Value(DateTime.now()),
+      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
     await _pumpDialog(tester, db, 'video');
 

@@ -987,7 +987,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
             title: Value(p.basenameWithoutExtension(videoPath)),
             videoPath: Value(videoPath),
             coverPath: Value<String?>(coverPath),
-            importedAt: Value(DateTime.now()),
+            importedAt: Value(DateTime.now().millisecondsSinceEpoch),
           ));
         }
       }

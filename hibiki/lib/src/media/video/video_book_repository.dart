@@ -211,7 +211,7 @@ class VideoBookRepository {
             videoPath: Value(e.path),
             lastPositionMs: Value(e.positionMs),
             embeddedSubtitleTrack: const Value<int?>(0),
-            importedAt: Value(DateTime.now()),
+            importedAt: Value(DateTime.now().millisecondsSinceEpoch),
           ),
           sourceId: sourceId,
         );
@@ -284,7 +284,7 @@ class VideoBookRepository {
             videoPath: Value(e.path),
             lastPositionMs: Value(e.positionMs),
             embeddedSubtitleTrack: const Value<int?>(0),
-            importedAt: Value(DateTime.now()),
+            importedAt: Value(DateTime.now().millisecondsSinceEpoch),
           ),
           sourceId: sourceId,
         );

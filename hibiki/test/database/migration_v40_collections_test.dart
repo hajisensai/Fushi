@@ -75,14 +75,14 @@ CREATE TABLE media_collection_items (
       collectionType: 'playlist',
       mediaType: 'video',
       entryKey: 'v9',
-      removedAt: 1234,
+      deletedAt: 1234,
     );
     await db.upsertCollectionMemberTombstone(
       collectionName: '已删合集',
       collectionType: 'collection',
       mediaType: HibikiDatabase.collectionTombstoneSentinel,
       entryKey: HibikiDatabase.collectionTombstoneSentinel,
-      removedAt: 5678,
+      deletedAt: 5678,
     );
     final List<CollectionMemberTombstoneRow> rows =
         await db.getAllCollectionMemberTombstones();
@@ -90,24 +90,24 @@ CREATE TABLE media_collection_items (
     final CollectionMemberTombstoneRow member =
         rows.firstWhere((r) => r.entryKey == 'v9');
     expect(member.collectionName, '旧合集');
-    expect(member.removedAt, 1234);
+    expect(member.deletedAt, 1234);
     final CollectionMemberTombstoneRow sentinel = rows.firstWhere(
         (r) => r.entryKey == HibikiDatabase.collectionTombstoneSentinel);
     expect(sentinel.collectionName, '已删合集');
-    expect(sentinel.removedAt, 5678);
+    expect(sentinel.deletedAt, 5678);
 
-    // upsert 幂等：同键重写刷新 removedAt 而非报错/加行。
+    // upsert 幂等：同键重写刷新 deletedAt 而非报错/加行。
     await db.upsertCollectionMemberTombstone(
       collectionName: '旧合集',
       collectionType: 'playlist',
       mediaType: 'video',
       entryKey: 'v9',
-      removedAt: 9999,
+      deletedAt: 9999,
     );
     final List<CollectionMemberTombstoneRow> after =
         await db.getAllCollectionMemberTombstones();
     expect(after, hasLength(2));
-    expect(after.firstWhere((r) => r.entryKey == 'v9').removedAt, 9999);
+    expect(after.firstWhere((r) => r.entryKey == 'v9').deletedAt, 9999);
   });
 
   test('user_version 升到当前 schemaVersion', () async {
@@ -116,6 +116,6 @@ CREATE TABLE media_collection_items (
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 56);
+    expect(db.schemaVersion, 57);
   });
 }

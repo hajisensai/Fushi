@@ -278,7 +278,7 @@ void main() {
         bookUid: const Value('video/test_ep'),
         title: const Value('测试视频'),
         videoPath: const Value('/tmp/test_ep.mkv'),
-        importedAt: Value(DateTime.now()),
+        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ));
     });
 

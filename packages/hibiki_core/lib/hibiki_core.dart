@@ -8,6 +8,7 @@ export 'src/database/media_ref.dart';
 export 'src/database/media_source_util.dart';
 export 'src/database/pref_codec.dart';
 export 'src/database/profile_media_kind.dart';
+export 'src/database/source_library_kind.dart';
 export 'src/database/stat_source_kind.dart';
 export 'src/database/sync_tombstone_kind.dart';
 export 'src/database/tables.dart';

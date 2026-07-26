@@ -17,7 +17,8 @@ void main() {
       title: title ?? uid,
       lastPositionMs: positionMs,
       completed: completed,
-      importedAt: importedAt,
+      // v57：VideoBooks.importedAt 统一 int 毫秒；测试助手仍收 DateTime 便于表达。
+      importedAt: importedAt?.millisecondsSinceEpoch,
     );
   }
 

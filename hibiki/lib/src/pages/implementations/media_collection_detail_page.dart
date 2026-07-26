@@ -129,8 +129,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// AppBar「排序」菜单：按名称（natural，卷1<卷2<卷10）/ 按导入时间（旧→新 =
   /// 原始加入时序）一键重排。菜单外壳共享 [buildDetailSortMenu]。
   Widget _buildSortMenu() {
-    int importedMsOf(VideoBookRow r) =>
-        r.importedAt?.millisecondsSinceEpoch ?? 0;
+    int importedMsOf(VideoBookRow r) => r.importedAt ?? 0;
     return buildDetailSortMenu(
       onSortByTitle: () => _applyOneKeySort(
         (VideoBookRow a, VideoBookRow b) => naturalCompare(a.title, b.title),

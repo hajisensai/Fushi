@@ -284,7 +284,7 @@ class AppModelLibraryHostService
         in await _db.getAllVideoBookTagMappings()) {
       final String? name = nameById[m.tagId];
       if (name == null) continue;
-      (result[m.videoBookUid] ??= <String>[]).add(name);
+      (result[m.bookUid] ??= <String>[]).add(name);
     }
     return result;
   }
@@ -884,8 +884,8 @@ class AppModelLibraryHostService
     final List<VideoBookRow> rows = await _db.allVideoBooks();
     // 按 importedAt 降序（null 排最后）
     rows.sort((VideoBookRow a, VideoBookRow b) {
-      final DateTime? ta = a.importedAt;
-      final DateTime? tb = b.importedAt;
+      final int? ta = a.importedAt;
+      final int? tb = b.importedAt;
       if (ta == null && tb == null) return 0;
       if (ta == null) return 1;
       if (tb == null) return -1;
@@ -1209,8 +1209,7 @@ class AppModelLibraryHostService
     // 进度在跨设备 LWW 里恒输给任何带 now 戳的本地断点（client 一旦碰过就再也拉不回
     // host 的桌面新进度）。用 importedAt 作「进度至少和导入一样旧」的可辩护下界戳——
     // client 真更近才看过仍会赢（语义可接受），但 client 无有效断点时 host 能续上。
-    final int rowAt =
-        rowPos > 0 ? (row?.importedAt?.millisecondsSinceEpoch ?? 0) : 0;
+    final int rowAt = rowPos > 0 ? (row?.importedAt ?? 0) : 0;
     return resolvePositionLww(
       localPositionMs: prefsPos,
       localUpdatedAtMs: prefsAt,
@@ -1288,7 +1287,7 @@ class AppModelLibraryHostService
         videoPath: Value(dest.path),
         // 无外挂字幕上传：回退内嵌默认轨（与 client 下载无字幕分支一致）。
         embeddedSubtitleTrack: const Value<int?>(0),
-        importedAt: Value(DateTime.now()),
+        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ));
     });
     // 封面 best-effort，与建行解耦：抽帧走 ffmpeg 慢，失败留空占位（移动端无 ffmpeg

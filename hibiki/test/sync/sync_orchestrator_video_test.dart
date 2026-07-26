@@ -61,7 +61,7 @@ Future<String> _seedLocalVideo(
     title: title,
     videoPath: vid.path,
     coverPath: coverPath == null ? const Value.absent() : Value(coverPath),
-    importedAt: Value(DateTime.fromMillisecondsSinceEpoch(1000)),
+    importedAt: Value(1000),
   ));
   return uid;
 }

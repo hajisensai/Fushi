@@ -27,19 +27,19 @@ void main() {
       bookUid: const Value('video/beta'),
       title: const Value('Beta'),
       videoPath: const Value('/abs/beta.mp4'),
-      importedAt: Value(DateTime(2026, 1, 2)),
+      importedAt: Value(DateTime(2026, 1, 2).millisecondsSinceEpoch),
     ));
     await db.upsertVideoBook(VideoBooksCompanion(
       bookUid: const Value('video/a10'),
       title: const Value('Alpha 第10话'),
       videoPath: const Value('/abs/a10.mp4'),
-      importedAt: Value(DateTime(2026, 1, 3)),
+      importedAt: Value(DateTime(2026, 1, 3).millisecondsSinceEpoch),
     ));
     await db.upsertVideoBook(VideoBooksCompanion(
       bookUid: const Value('video/a9'),
       title: const Value('Alpha 第9话'),
       videoPath: const Value('/abs/a9.mp4'),
-      importedAt: Value(DateTime(2026, 1, 1)),
+      importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
     ));
     collectionId = await db.createMediaCollection(
       '某番剧',

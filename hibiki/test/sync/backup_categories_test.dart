@@ -839,7 +839,7 @@ void main() {
         collectionType: 'collection',
         mediaType: 'epub',
         entryKey: 'X',
-        removedAt: 1);
+        deletedAt: 1);
   }
 
   test(

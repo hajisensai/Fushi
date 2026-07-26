@@ -461,7 +461,7 @@ void main() {
     final List<VideoBookTagMappingRow> mappings =
         await db.getAllVideoBookTagMappings();
     expect(mappings, hasLength(1));
-    expect(mappings.single.videoBookUid, 'video/1');
+    expect(mappings.single.bookUid, 'video/1');
   });
 
   // ── TODO-063 视频批量选择（标签栏旁的「选择」+ 批量打标签/删除）──────────

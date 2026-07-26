@@ -1065,7 +1065,7 @@ class SyncOrchestrator {
             title: v.title,
             videoAsset: assetName,
             sizeBytes: size,
-            importedAtMs: v.importedAt?.millisecondsSinceEpoch ?? 0,
+            importedAtMs: v.importedAt ?? 0,
             coverAsset: coverAsset ?? priorEntry?.coverAsset,
             tagsAddedAt: mergedTagAddedAt,
             tagTombstones: mergedTagTombstones,
