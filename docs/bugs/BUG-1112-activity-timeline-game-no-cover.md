@@ -1,0 +1,16 @@
+## BUG-1112 · 活动时间轴游戏条目只有图标没有封面
+- **报告**：2026-07-26（用户：「活动里面没有封面，名字也不一样」）
+- **真实性**：✅ 真 bug，且是**写死的**，不是取图失败：
+  - `hibiki/lib/src/pages/implementations/home_dashboard_page.dart` 的 `_activityLeading`（修复前）只有 `kActivityMediaVideo` 与 `kActivityMediaBook` 两个封面分支，游戏落到末尾的回退分支。该函数自己的注释就写明「查不到（已删/远端 display-only 行/**游戏**/导入无封面）回退原类型图标」——游戏是被显式列进回退清单的。
+  - 但游戏封面一直有：`GalgameEntry.coverPath`（本机文件，目录扫描 / exe 内嵌图标 / 刮削下载三种来源都落成本地文件），且活动行的 `mediaKey` 就是 `galgames.id`，反查即可。
+- **关于「名字也不一样」**：同批查证结论是**已修但未发版**——P4 改名门面已让时间轴按 `galgames.id` 反查库内显示名（`_gameDisplayTitle` → `displayTitleForGame`），改名/刮削后同步。该改动在 PR#431，用户报告时尚未合入 develop，故其版本上仍显示落库时的标题快照。本条不重复修。
+- **[x] ① 已修复** — `_activityLeading` 新增 `kActivityMediaGame` 分支：按 `mediaKey` 反查 `_games` 拿 `coverPath`，走新增的 `_gameCover`（与视频封面同形态：`Image.file` + 占位兜底），尺寸取与书相同的竖版 40×56。同时抽出 `_gameById` 复用，消掉 `_gameDisplayTitle` 里原有的一处线性查找重复。
+- **[x] ① 已修复（审查补）：点游戏活动条落错 tab** — 加封面让游戏行变得「可点」，但 `_openActivityEntry` 当时只有 video / book 两个分支，游戏直接掉进末尾 else → 切到**视频 tab**（与同一页「继续」区游戏卡切游戏 tab 的行为自相矛盾）。改为按媒体种类分派：read/book → 书架、game → 游戏、其余 → 视频。判据只看事件身份（`kActivityGame` / `kActivityMediaGame`），不要求库里还有这行——游戏被删了，去游戏 tab 也比去视频 tab 对。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/home_dashboard_page_test.dart`
+  - 「活动时间轴的游戏条目渲染封面，不再只有回退图标」：塞真实 1x1 PNG 作封面，断言时间轴出现 `FileImage`（修复前游戏走图标分支，不会有任何 `Image.file`）。
+  - 「点活动时间轴的游戏条切到『游戏』tab，不再落到视频 tab」。
+- **备注**：
+  - 测试必须用**真实可解码**的文件——`Image.file` 对不存在或损坏的文件走 errorBuilder，断言不到 `FileImage`。
+  - 封面断言必须收进「活动」区块（测试侧 `inSection` 助手）：同一只游戏在「继续」「最近添加」里各有一张 `_gameCover`，裸 `FileImage` 谓词是**实测过的假阳性**——把 `_activityLeading` 的 game 分支删光仍全绿。改后已 mutation 复验（删分支 → 本条红）。
+  - 真机复测（时间轴实际渲染）待补。
+  - 同批：[BUG-1111](BUG-1111-dashboard-continue-recent-missing-games.md)、[BUG-1113](BUG-1113-galgame-no-tags.md)。

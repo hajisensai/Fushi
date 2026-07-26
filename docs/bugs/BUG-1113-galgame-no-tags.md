@@ -1,0 +1,11 @@
+## BUG-1113 · 游戏没有标签：schema 缺 GalgameTagMappings 表
+- **报告**：2026-07-26（用户：「游戏的标签呢」「全是因为各个地方代码不统一」）
+- **真实性**：✅ 真缺口（**schema 级**，不是 UI 忘接）：
+  - `packages/hibiki_core/lib/src/database/tables.dart` 里标签映射表只有四张：`BookTagMappings` / `SrtBookTagMappings` / `VideoBookTagMappings` / `CollectionTagMappings`，**没有游戏的**。
+  - 标签池 `BookTags` 是共享的，筛选 UI（`tag_filter_bar.dart` / `tag_filter_sheet.dart` / `selectedTagIdsProvider`）也已是书架与视频页共用——即上层早已统一，唯独游戏没有落表就接不进来。
+  - 因此这条**不能靠改 UI 修**：要加表 + schema 迁移，属独立工程。
+- **[ ] ① 未修复** — 需要：新增 `GalgameTagMappings`(gameId → tagId，FK cascade 对齐 `GalgameSources`/`GalgameSessions` 的做法) + schema 版本迁移；游戏库页接入既有 `tag_filter_bar` / `tag_filter_sheet`；标签管理页把游戏纳入统计；同步/备份侧确认标签墓碑（`BookTagMembershipTombstones`）是否需要覆盖游戏——注意游戏是**本机局域身份**（`galgames.id`），跨端同步语义要先定，不能照抄书的做法。
+- **[ ] ② 未加自动化测试** —
+- **备注**：
+  - 本条**刻意不与** [BUG-1111](BUG-1111-dashboard-continue-recent-missing-games.md) / [BUG-1112](BUG-1112-activity-timeline-game-no-cover.md) 同 PR：那两条是纯展示层收口（无 schema 变更），本条要动 schema + 迁移 + 同步语义，混在一起会让一个 PR 同时承担「不可逆的 DB 迁移」和「UI 改动」两种风险。
+  - 跨端同步语义是先决问题：对端没有对应 `galgames` 行时，游戏标签成员该静默忽略还是不同步，需先定契约。
