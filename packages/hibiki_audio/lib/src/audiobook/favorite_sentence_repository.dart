@@ -11,6 +11,35 @@ const String kFavoriteSentenceSourceVideo = 'video';
 const String kFavoriteSentenceSourceAudiobook = 'audiobook';
 const String kFavoriteSentenceSourceLyrics = 'lyrics';
 
+/// 收藏句来源的**内存态**枚举（BUG-1120）。持久化 JSON 的 `source` 字段仍存
+/// 上面四个原字符串常量（wire 契约字节不变），本枚举只在读取后解析使用，
+/// 供 UI 层穷尽 switch——消除「video vs 其它」的 bool 降维把 audiobook/lyrics
+/// 静默展示成书的问题。
+enum SentenceSourceKind {
+  book(kFavoriteSentenceSourceBook),
+  video(kFavoriteSentenceSourceVideo),
+  audiobook(kFavoriteSentenceSourceAudiobook),
+  lyrics(kFavoriteSentenceSourceLyrics);
+
+  const SentenceSourceKind(this.dbValue);
+
+  /// 落库字符串（与 `kFavoriteSentenceSource*` 常量逐字节一致）。
+  final String dbValue;
+
+  /// 严格解析：精确匹配四个落库值之一，未知/null → null（由调用方决定回退）。
+  static SentenceSourceKind? tryParse(String? raw) {
+    for (final SentenceSourceKind kind in SentenceSourceKind.values) {
+      if (kind.dbValue == raw) return kind;
+    }
+    return null;
+  }
+}
+
+/// 宽松解析：未知串/null/空串一律回退 [SentenceSourceKind.book]，与
+/// [FavoriteSentence.fromJson] 对旧条目缺 `source` 字段的向后兼容默认一致。
+SentenceSourceKind sentenceSourceKindOf(String? raw) =>
+    SentenceSourceKind.tryParse(raw) ?? SentenceSourceKind.book;
+
 /// 收藏句删除传播墓碑的 mediaType（与收藏词 `'favoriteword'` 并列）。存进统一表
 /// [HibikiDatabase.writeSyncDeletionTombstone]，供 aggregate 并集抑制复活 + orchestrator
 /// 逐条确认删对端两条通道共用。
