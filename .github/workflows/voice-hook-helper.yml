@@ -137,7 +137,12 @@ jobs:
 
       # 固定 tag `voice-hook-helper` 反复 upsert 同一 release（softprops 有则更新、无则创建，同名
       # asset 自动覆盖）；prerelease + 非 Latest。
+      # 分支守卫：只有 main 才允许 upsert 那个**所有用户都会自更新拉取**的固定 tag
+      # release。此前本步骤无任何条件，于是在功能分支上 workflow_dispatch 一次，就会把
+      # 未经审查的 helper 直接推给全部用户（客户端按同一 tag + sha 比对自更新）。构建与
+      # 双架构 ctest 仍在任意分支照跑，只是不发布——这样 PR 分支能安全地验证构建门。
       - name: Publish helper release
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: voice-hook-helper

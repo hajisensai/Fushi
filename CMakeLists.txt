@@ -160,6 +160,16 @@ add_executable(hibiki_launch_failure_policy_test
 target_include_directories(hibiki_launch_failure_policy_test PRIVATE "include")
 add_test(NAME hibiki_launch_failure_policy_test COMMAND hibiki_launch_failure_policy_test)
 
+# launch 命令行组装（根因回归：含空格/引号的 --arg 在游戏侧被拆成多个 argv）。
+# 断言逐字节输出 + 真过 CommandLineToArgvW 反解。
+add_executable(hibiki_launch_command_line_test
+  "tests/launch_command_line_test.cpp"
+)
+target_include_directories(hibiki_launch_command_line_test PRIVATE "include")
+target_compile_definitions(hibiki_launch_command_line_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(hibiki_launch_command_line_test PRIVATE shell32)
+add_test(NAME hibiki_launch_command_line_test COMMAND hibiki_launch_command_line_test)
+
 # Siglus 文件夹签名识别（根因回归：改名 Siglus exe 被早注入弹掉）。纯逻辑，注入假文件表。
 add_executable(hibiki_siglus_launch_test
   "tests/siglus_launch_test.cpp"

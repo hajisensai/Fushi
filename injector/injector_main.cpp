@@ -20,6 +20,7 @@
 #include "voice_hook_session.h"
 #include "child_process_policy.h"
 #include "ffmpeg_runtime.h"
+#include "launch_command_line.h"
 #include "launch_failure_policy.h"
 #include "locale_emulator_launch.h"
 #include "siglus_launch.h"
@@ -1878,12 +1879,11 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     }
   }
 
-  // 构造命令行：exe 加引号防路径含空格；CreateProcessW 要求缓冲可写。
-  std::wstring cmdline = L"\"" + exe + L"\"";
-  for (const std::wstring& a : extra_args) {
-    cmdline += L" ";
-    cmdline += a;
-  }
+  // 构造命令行：首 token 必须是 exe 自身（CreateProcessW 约定），用户参数按 Windows
+  // 反解规则逐个转义 —— 直接空格拼接会让含空格/引号的参数在游戏侧被拆成多个 argv。
+  // CreateProcessW 要求缓冲可写。
+  const std::wstring cmdline =
+      hibiki_voice_hook::BuildLaunchCommandLine(exe, extra_args);
   const auto make_command_buffer = [&cmdline]() {
     std::vector<wchar_t> buffer(cmdline.begin(), cmdline.end());
     buffer.push_back(L'\0');
