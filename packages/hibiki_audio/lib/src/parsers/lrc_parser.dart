@@ -3,6 +3,7 @@ import 'dart:io';
 import '../audiobook/audiobook_model.dart';
 import '../audiobook/srt_book_repository.dart' show SrtBookRepository;
 import 'srt_parser.dart';
+import 'strip_html_tags.dart';
 import 'text_file_io.dart';
 
 /// 解析 LRC（歌词）字幕文件，产出 [AudioCue] 列表。
@@ -33,9 +34,6 @@ class LrcParser {
 
   /// 时间标签正则：`[MM:SS.xx]`、`[MM:SS.xxx]`、`[HH:MM:SS.xx]` 等。
   static final RegExp _timedTag = RegExp(r'\[(\d+(?::\d{2})+[.,]\d{1,3})\]');
-
-  /// 增强 LRC 词级时间标签：`<MM:SS.xx>`，解析时剥离。
-  static final RegExp _wordTag = RegExp('<[^>]+>');
 
   /// 元数据标签：`[letters:anything]`（tag 全为字母）。
   static final RegExp _metaTag = RegExp(r'^\[([a-zA-Z]+):[^\]]*\]$');
@@ -95,8 +93,9 @@ class LrcParser {
 
       // 将所有时间标签从行中移除，剩余部分即为文本
       String rawText = trimmed.replaceAll(_timedTag, '');
-      // 再剥离增强 LRC 词级时间标签 <MM:SS.xx>
-      rawText = rawText.replaceAll(_wordTag, '').trim();
+      // 再剥离增强 LRC 词级时间标签 <MM:SS.xx>（与 HTML 标签同形，
+      // 共享 [stripHtmlTags]）
+      rawText = stripHtmlTags(rawText);
 
       if (rawText.isEmpty) continue;
 
