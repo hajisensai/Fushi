@@ -6,6 +6,8 @@
 /// （与 union-only 的安全取舍一致）。纯 Dart：零 IO、零 Flutter 依赖，便于单测。
 library;
 
+import 'package:hibiki_core/hibiki_core.dart' show fnv1a32Utf16PairHex;
+
 /// 用户在删除某资产时选择的传播范围（源设备弹窗采集）。
 ///
 /// - [keepLocalOnly]：只删本机，不写传播墓碑——其他设备保留（仍走本机原有防复活语义）。
@@ -116,7 +118,7 @@ String deletionTombstoneAssetName(String mediaType, String itemKey) {
   String cleaned = itemKey.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
   if (cleaned.isEmpty) cleaned = 'item';
   if (cleaned.length > 80) cleaned = cleaned.substring(0, 80);
-  return '${mediaType}__${cleaned}_${_stableHashHex(itemKey)}.json';
+  return '${mediaType}__${cleaned}_${fnv1a32Utf16PairHex(itemKey)}.json';
 }
 
 /// 一条删除墓碑标记的 JSON 载荷。
@@ -150,16 +152,4 @@ Map<String, Object?> deletionTombstoneJson(
   final List<String> parts = key.split('\u0000');
   if (parts.length != 3) return null;
   return (expression: parts[0], reading: parts[1], sourceType: parts[2]);
-}
-
-/// FNV-1a 32-bit 稳定哈希（确定性、无外部依赖，仅用于资产名去歧义，非安全用途）。
-String _stableHashHex(String s) {
-  int hash = 0x811c9dc5;
-  for (final int c in s.codeUnits) {
-    hash = (hash ^ (c & 0xff)) & 0xffffffff;
-    hash = (hash * 0x01000193) & 0xffffffff;
-    hash = (hash ^ ((c >> 8) & 0xff)) & 0xffffffff;
-    hash = (hash * 0x01000193) & 0xffffffff;
-  }
-  return hash.toRadixString(16).padLeft(8, '0');
 }

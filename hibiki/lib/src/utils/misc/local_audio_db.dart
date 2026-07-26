@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:hibiki_core/hibiki_core.dart' show fnv1a32Hex;
 import 'package:sqlite3/sqlite3.dart';
 
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -247,6 +249,24 @@ class LocalAudioDb {
     final String key = _localAudioCacheKey(file: file, source: source);
     final File out = File('${cacheDir.path}/local_audio_$key$ext');
     if (out.existsSync()) return out.path;
+    // BUG-1124 迁移：旧弱口径键名的缓存副本原地改名到新键名（对齐
+    // AudiobookStorage.ensurePersistDir 的 renameSync 先例）。保住「源库已被
+    // 移除时缓存副本仍可复用」的既有语义；ASCII 键新旧同值，不进本分支。
+    final String legacyKey = _legacyLocalAudioCacheKey(
+      file: file,
+      source: source,
+    );
+    if (legacyKey != key) {
+      final File legacy = File('${cacheDir.path}/local_audio_$legacyKey$ext');
+      if (legacy.existsSync()) {
+        try {
+          legacy.renameSync(out.path);
+          return out.path;
+        } catch (_) {
+          // 改名失败（并发占用等）：落回正常提取路径重新写盘，不致命。
+        }
+      }
+    }
     if (dbPath.isEmpty || !File(dbPath).existsSync()) return null;
     Database? db;
     try {
@@ -298,11 +318,21 @@ class LocalAudioDb {
   }
 }
 
-String _localAudioCacheKey({required String file, required String source}) {
-  int hash = 0x811c9dc5;
-  for (final int codeUnit in '$source\n$file'.codeUnits) {
-    hash ^= codeUnit;
-    hash = (hash * 0x01000193) & 0xffffffff;
-  }
-  return hash.toRadixString(16).padLeft(8, '0');
-}
+/// `(source, file)` → 缓存文件名键：FNV-1a 32 位、UTF-8 逐字节强口径。
+///
+/// BUG-1124 根因修复：旧实现把 16 位 UTF-16 码元整体 XOR 进哈希（FNV-1a 的
+/// 字节口径被喂宽单元，CJK 每字符扩散轮数 3→1），真实碰撞对如
+/// `jpod\n肌陒衎柚.mp3` 与 `jpod\n汅肘鹾圃.mp3` 同键 → 两个不同词条共用一个
+/// 缓存文件，后查的词永远播放先查词条的音频。UTF-8 逐字节口径与
+/// [AudiobookStorage] 一致（hibiki_core 单一真相源）。ASCII 键两口径同值，
+/// 存量 ASCII 缓存零迁移；CJK 旧键由 [LocalAudioDb.extractBlob] 惰性 rename。
+String _localAudioCacheKey({required String file, required String source}) =>
+    fnv1a32Hex(utf8.encode('$source\n$file'));
+
+/// BUG-1124 前的弱口径旧键（16 位码元整体 XOR），仅供 [LocalAudioDb.extractBlob]
+/// 的惰性迁移路径定位旧缓存文件；新代码不得再用。
+String _legacyLocalAudioCacheKey({
+  required String file,
+  required String source,
+}) =>
+    fnv1a32Hex('$source\n$file'.codeUnits);

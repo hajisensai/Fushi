@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:hibiki_core/hibiki_core.dart' show fnv1a32Hex;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:just_audio/just_audio.dart';
@@ -66,15 +67,10 @@ abstract final class AudiobookStorage {
     return out;
   }
 
-  static String _stableHash(String input) {
-    final List<int> bytes = utf8.encode(input);
-    int h = 0x811c9dc5;
-    for (final int b in bytes) {
-      h ^= b;
-      h = (h * 0x01000193) & 0xFFFFFFFF;
-    }
-    return h.toRadixString(16).padLeft(8, '0');
-  }
+  /// FNV-1a 32 位（UTF-8 逐字节），委托 hibiki_core 单一真相源；输出与历史手写
+  /// 副本逐字节一致（金标锁在 hibiki_core 的 stable_hash_test.dart）——哈希已
+  /// 固化进 `<docs>/audiobooks/<hash>/` 持久目录名，不得漂移。
+  static String _stableHash(String input) => fnv1a32Hex(utf8.encode(input));
 
   static Future<Directory> ensurePersistDir(String bookUid) async {
     final Directory docs = await _documentsRoot();
