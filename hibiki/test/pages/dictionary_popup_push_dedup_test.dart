@@ -200,6 +200,72 @@ void main() {
       expect(secondPush, contains('別'));
       expect(secondPush, contains('window.renderPopup()'));
     });
+
+    testWidgets(
+        'BUG-717 ③: the fixed in-app i18n/reset block is sent once, then '
+        'omitted; a static-relevant pref flip resends BOTH static + extras',
+        (WidgetTester tester) async {
+      final appModel = PushDedupAppModel();
+      final ResultHolder holder = ResultHolder(makeResult('語'));
+      await tester.pumpWidget(
+        wrapPopup(
+          appModel: appModel,
+          popup: MutableResultPopupWebView(holder: holder),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(harness.pushCount, 1);
+      String lastPushScript() => harness.scripts
+          .lastWhere((String s) => s.contains('window.lookupEntries'));
+      // 首推：静态段 + in-app 固定块（__hoshiResetPopupScroll / i18nCtx）都下发。
+      expect(lastPushScript(), contains('window.i18nCtx'),
+          reason: '首推必须带 in-app 固定块（新页面无 window.* 状态）');
+      expect(lastPushScript(), contains('window.__hoshiResetPopupScroll ='));
+      await harness.firePopupRendered();
+
+      final DictionaryPopupWebViewState state =
+          tester.state<DictionaryPopupWebViewState>(
+              find.byType(MutableResultPopupWebView));
+
+      // 第二推（设置未变）：固定块与静态段一起省略——它此前每次查词重发 1-2KB。
+      holder.value = makeResult('別');
+      expect(state.refreshCurrentResult(), isTrue);
+      await tester.pump();
+      expect(harness.pushCount, 2);
+      final String secondPush = lastPushScript();
+      expect(secondPush, isNot(contains('window.i18nCtx')),
+          reason: '设置未变时固定 i18n 块不得重复注入（并入静态段失效节奏）');
+      expect(secondPush, isNot(contains('window.__hoshiResetPopupScroll =')));
+      expect(secondPush, contains('window.renderPopup()'));
+      await harness.firePopupRendered();
+
+      // 偏好翻转 → builder memo 失效换 revision → 第三推重发静态段 + 固定块。
+      appModel.collapseDictionariesValue = true;
+      holder.value = makeResult('猫');
+      expect(state.refreshCurrentResult(), isTrue);
+      await tester.pump();
+      expect(harness.pushCount, 3);
+      final String thirdPush = lastPushScript();
+      expect(thirdPush, contains('window.collapseDictionaries = true'),
+          reason: '偏好变化必须随下一次推送重发静态段（新值生效）');
+      expect(thirdPush, contains('window.dictionaryStyles'));
+      expect(thirdPush, contains('window.i18nCtx'), reason: '固定块随静态段版本一起重发');
+      await harness.firePopupRendered();
+
+      // 语言切换 → memo 键含 locale → 第四推重发（i18n 文案不得陈旧）。
+      LocaleSettings.setLocale(AppLocale.ja);
+      addTearDown(() => LocaleSettings.setLocale(AppLocale.en));
+      holder.value = makeResult('犬');
+      expect(state.refreshCurrentResult(), isTrue);
+      await tester.pump();
+      expect(harness.pushCount, 4);
+      final String fourthPush = lastPushScript();
+      expect(fourthPush, contains('window.dictionaryStyles'),
+          reason: '语言切换必须失效静态段（内嵌 i18n 文案）');
+      expect(fourthPush, contains('window.i18nCtx'),
+          reason: '语言切换必须重发固定 i18n 块，弹窗文案随语言更新');
+    });
   });
 
   group('BUG-712 P1 host cover release on already-rendered result', () {
@@ -449,8 +515,10 @@ class PushDedupAppModel extends AppModel {
   bool get harmonicFrequency => false;
   @override
   bool get showExpressionTags => false;
+  // BUG-717 ③：可变，供「偏好翻转 → 静态段重发」用例驱动 memo 失效。
+  bool collapseDictionariesValue = false;
   @override
-  bool get collapseDictionaries => false;
+  bool get collapseDictionaries => collapseDictionariesValue;
   @override
   List<Dictionary> get dictionaries => const <Dictionary>[];
   @override

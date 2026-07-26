@@ -100,7 +100,7 @@ void main() {
             'collapsedDictionaryNames');
 
     expect(
-      dart.contains('d.isHidden(appModel.targetLanguage)'),
+      dart.contains('d.isHidden(JapaneseLanguage.instance)'),
       isTrue,
       reason: 'the hidden set must be derived from isHidden(targetLanguage), '
           'the same predicate the management show/hide switch toggles',

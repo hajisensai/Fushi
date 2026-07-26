@@ -242,4 +242,116 @@ void main() {
         reason: '缓存命中不得绕过调用方更小的 maxFileBytes 上限');
     expect(rejected.fontFaces, isEmpty);
   });
+
+  // ── BUG-717 ③: fontListFingerprint（build 最终产物 memo 的键） ────────
+  //
+  // popup_settings_injection 对 dictionaryFontStyleJs 的 MB 级最终串做 memo，
+  // 键就是本指纹：语义必须与 _dataUrlCache 的 (path, mtime, size) 内容键一致
+  // ——失效不足会让弹窗吃到陈旧字体注入，这里钉死各失效路径。
+
+  group('BUG-717 ③ fontListFingerprint', () {
+    test('same font state yields the same key; system fonts keyed by name', () {
+      final List<Map<String, dynamic>> fonts = <Map<String, dynamic>>[
+        _e('Noto Sans JP'),
+      ];
+      expect(
+        DictionaryFontCss.fontListFingerprint(fonts),
+        DictionaryFontCss.fontListFingerprint(fonts),
+      );
+      expect(
+        DictionaryFontCss.fontListFingerprint(<Map<String, dynamic>>[
+          _e('Other Font'),
+        ]),
+        isNot(DictionaryFontCss.fontListFingerprint(fonts)),
+        reason: '换系统字体名必须换键',
+      );
+    });
+
+    test('mtime bump changes the key (file overwrite invalidates)', () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('hibiki_fp_mtime');
+      addTearDown(() async {
+        if (dir.existsSync()) await dir.delete(recursive: true);
+      });
+      final File f = File('${dir.path}/Fp.ttf');
+      await f.writeAsBytes(<int>[0x00, 0x01]);
+      final List<Map<String, dynamic>> fonts = <Map<String, dynamic>>[
+        _e('Fp', path: f.path),
+      ];
+      final String before = DictionaryFontCss.fontListFingerprint(fonts);
+      expect(DictionaryFontCss.fontListFingerprint(fonts), before,
+          reason: '文件未动，键必须稳定（否则 memo 永不命中）');
+
+      await f.setLastModified(DateTime.now().add(const Duration(seconds: 2)));
+      expect(DictionaryFontCss.fontListFingerprint(fonts), isNot(before),
+          reason: '原地覆盖（mtime 变）必须换键——与 data:URL 缓存同失效');
+    });
+
+    test('missing file keys differently from an existing one', () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('hibiki_fp_missing');
+      addTearDown(() async {
+        if (dir.existsSync()) await dir.delete(recursive: true);
+      });
+      final File f = File('${dir.path}/Gone.ttf');
+      final List<Map<String, dynamic>> fonts = <Map<String, dynamic>>[
+        _e('Gone', path: f.path),
+      ];
+      final String missing = DictionaryFontCss.fontListFingerprint(fonts);
+      await f.writeAsBytes(<int>[0x00, 0x01]);
+      expect(DictionaryFontCss.fontListFingerprint(fonts), isNot(missing),
+          reason: '文件从缺失恢复可读必须换键（缺字体的降级串不得钉死）');
+    });
+
+    test('enabled toggle and empty names follow build()\'s filter', () {
+      final String enabledKey =
+          DictionaryFontCss.fontListFingerprint(<Map<String, dynamic>>[
+        _e('Toggle'),
+      ]);
+      final String disabledKey =
+          DictionaryFontCss.fontListFingerprint(<Map<String, dynamic>>[
+        _e('Toggle', enabled: false),
+      ]);
+      expect(disabledKey, isNot(enabledKey), reason: '启用开关翻转必须换键');
+      expect(
+        DictionaryFontCss.fontListFingerprint(<Map<String, dynamic>>[
+          _e('   '),
+          _e('Toggle', enabled: false),
+        ]),
+        disabledKey,
+        reason: '空名/禁用条目不参与键（与 build 的过滤一致）',
+      );
+    });
+
+    test('entry boundaries are unambiguous (no concat collision)', () {
+      expect(
+        DictionaryFontCss.fontListFingerprint(<Map<String, dynamic>>[
+          _e('ab'),
+          _e('c'),
+        ]),
+        isNot(DictionaryFontCss.fontListFingerprint(<Map<String, dynamic>>[
+          _e('a'),
+          _e('bc'),
+        ])),
+        reason: '条目边界必须有分隔符，拼接歧义会让不同字体集撞键',
+      );
+    });
+
+    test('allowedDirectories participate in the key', () {
+      final List<Map<String, dynamic>> fonts = <Map<String, dynamic>>[
+        _e('Noto Sans JP'),
+      ];
+      expect(
+        DictionaryFontCss.fontListFingerprint(
+          fonts,
+          allowedDirectories: <String>['/a'],
+        ),
+        isNot(DictionaryFontCss.fontListFingerprint(
+          fonts,
+          allowedDirectories: <String>['/b'],
+        )),
+        reason: '白名单目录改变可内联集合，必须换键',
+      );
+    });
+  });
 }
