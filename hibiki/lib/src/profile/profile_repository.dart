@@ -424,14 +424,16 @@ class ProfileRepository {
     return value;
   }
 
-  /// 字体配置的持久化 key（与 backup_service 同源；见
-  /// `BackupService._fontCatalogPrefKey` / `_legacyFontPrefKeys`）。
-  static const String _fontCatalogPrefKey = 'src:reader_ttu:font_catalog';
-  static const List<String> _legacyFontPrefKeys = <String>[
-    'src:reader_ttu:custom_fonts',
-    'src:reader_ttu:app_ui_fonts',
-    'src:reader_ttu:dict_fonts',
-    'src:reader_ttu:video_sub_fonts',
+  /// 字体配置的持久化 key（与 backup_service 同一组值；那边因 const 上下文
+  /// 保留字面量并由 `db_source_pref_key_test` 锁一致）。这里经单一真相编码器
+  /// [dbSourcePrefKey] 生成，不再硬编码 `src:reader_ttu:` 格式。
+  static final String _fontCatalogPrefKey =
+      dbSourcePrefKey('reader_ttu', 'font_catalog');
+  static final List<String> _legacyFontPrefKeys = <String>[
+    dbSourcePrefKey('reader_ttu', 'custom_fonts'),
+    dbSourcePrefKey('reader_ttu', 'app_ui_fonts'),
+    dbSourcePrefKey('reader_ttu', 'dict_fonts'),
+    dbSourcePrefKey('reader_ttu', 'video_sub_fonts'),
   ];
 
   /// 解析并校验一个导出 JSON 字符串。坏文件 / 魔数不符 / 版本不兼容 / 结构非法

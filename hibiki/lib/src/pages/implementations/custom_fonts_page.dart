@@ -576,9 +576,10 @@ class CustomFontsPage extends BasePage {
   BasePageState createState() => _CustomFontsPageState();
 }
 
-const String _readerSettingsPrefix = 'src:reader_ttu:';
-
-String _readerPrefKey(String shortKey) => '$_readerSettingsPrefix$shortKey';
+/// 阅读器设置的 DB 偏好 key：经单一真相编码器 [dbSourcePrefKey]（`reader_ttu`
+/// 是冻结的历史 sourceId，旧数据兼容，勿改）。
+String _readerPrefKey(String shortKey) =>
+    dbSourcePrefKey('reader_ttu', shortKey);
 
 class _CustomFontsPageState extends BasePageState {
   ReaderSettings? _settings;
@@ -821,7 +822,7 @@ class _CustomFontsPageState extends BasePageState {
         final ext = p.extension(entry.name);
         final destPath = p.join(
           _fontsDir.path,
-          '${overrideName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')}_${DateTime.now().millisecondsSinceEpoch}$ext',
+          '${safeWindowsFileName(overrideName)}_${DateTime.now().millisecondsSinceEpoch}$ext',
         );
         File(destPath).writeAsBytesSync(entry.content as List<int>);
         final fontEntry = CustomFontCatalogRow(
