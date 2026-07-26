@@ -40,6 +40,7 @@ import 'package:hibiki/src/media/collections/add_to_collection_dialog.dart';
 import 'package:hibiki/src/media/collections/batch_combine.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/shelf_sort.dart';
+import 'package:hibiki/src/media/media_search_text.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/series_shelf_card.dart';
@@ -200,6 +201,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Future<void>? _shelfMapsFuture;
   ShelfSortMode _sortMode = ShelfSortMode.recent;
 
+  /// P5-A：书架搜索词（原文，匹配时才归一化）。**刻意不持久化**——下次进书架还
+  /// 挂着上次的搜索词只会让人以为书没了（与游戏库页同一决定）。
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
+
   /// 层次 C：`'mediaType|entryKey' → 该条目在其主折叠合集里的 sortIndex`（组内序
   /// 真相源，与详情页 `getCollectionItems` 同源）。
   Map<String, int> _memberSortIndex = const <String, int>{};
@@ -331,6 +337,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   void dispose() {
+    _searchController.dispose();
     mediaType.tabRefreshNotifier.removeListener(_reloadShelfMapsOnTabRefresh);
     homeShellTabNotifier.removeListener(_onShellTabActivated);
     assert(() {
@@ -397,6 +404,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             child: Column(
               children: [
                 if (!isCupertinoPlatform(context)) _buildPageHeader(),
+                _buildSearchBar(),
                 _buildTagBar(allTags.valueOrNull ?? const []),
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
                 const SyncProgressBanner(),
@@ -407,7 +415,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                       _remoteBooksFuture ??= _loadRemoteBooks();
                       _shelfMapsFuture ??= _loadShelfMaps();
                       final Set<String>? filterSet = filteredIds.valueOrNull;
-                      final List<MediaItem> filtered;
+                      List<MediaItem> filtered;
                       if (filterSet == null) {
                         filtered = bookList;
                       } else {
@@ -422,6 +430,22 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                             primaryCollectionId: _primaryCollectionByEntry[
                                 MediaKind.epub.compositeKey(key)],
                             collectionFilter: tagCollectionFilter,
+                          );
+                        }).toList();
+                      }
+                      // P5-A：搜索按**显示名 + DB 原名**双口径匹配——改过名的书
+                      // 用户既可能记得新名也可能记得旧名，只匹配其一都会「搜不到
+                      // 明明在书架上的书」。归一化走与游戏库页同一份
+                      // [matchesMediaSearch]（全角/片假名/标点折叠）。
+                      if (_searchQuery.trim().isNotEmpty) {
+                        filtered = filtered.where((MediaItem item) {
+                          return matchesMediaSearch(
+                            query: _searchQuery,
+                            titles: <String>[
+                              ReaderHibikiSource.instance
+                                  .getDisplayTitleFromMediaItem(item),
+                              item.title,
+                            ],
                           );
                         }).toList();
                       }
@@ -632,6 +656,39 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     if (!ids.remove(collectionId)) ids.add(collectionId);
     unawaited(prefs.setCollapsedCollectionIds(ids));
     setState(() {});
+  }
+
+  /// P5-A 书架搜索框。形态与游戏库页工具条一致（三个库页搜索长一个样），
+  /// 搜索词只影响本次会话、不落库。
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: SizedBox(
+        height: 40,
+        child: TextField(
+          key: const ValueKey<String>('shelf_search_field'),
+          controller: _searchController,
+          decoration: InputDecoration(
+            isDense: true,
+            prefixIcon: const Icon(Icons.search, size: 18),
+            hintText: t.library_search,
+            border: const OutlineInputBorder(),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            suffixIcon: _searchQuery.isEmpty
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _searchQuery = '');
+                    },
+                  ),
+          ),
+          onChanged: (String value) => setState(() => _searchQuery = value),
+        ),
+      ),
+    );
   }
 
   String _sortModeLabel(ShelfSortMode mode) => switch (mode) {

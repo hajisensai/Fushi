@@ -541,7 +541,7 @@ void main() {
       cover: writeAppOwnedAsset(
         dirName: VideoStorage.coversDirName,
         fileName: 'video_1.png',
-        text: 'cover-one',
+        bytes: _kOnePixelPng,
       ),
       subtitle: writeAppOwnedAsset(
         dirName: VideoStorage.subtitlesDirName,
@@ -555,7 +555,7 @@ void main() {
       cover: writeAppOwnedAsset(
         dirName: VideoStorage.coversDirName,
         fileName: 'video_2.png',
-        text: 'cover-two',
+        bytes: _kOnePixelPng,
       ),
       subtitle: writeAppOwnedAsset(
         dirName: VideoStorage.subtitlesDirName,
@@ -608,7 +608,7 @@ void main() {
       cover: writeAppOwnedAsset(
         dirName: VideoStorage.coversDirName,
         fileName: 'video_1.png',
-        text: 'cover-one',
+        bytes: _kOnePixelPng,
       ),
       subtitle: sharedSubtitle,
     );
@@ -618,7 +618,7 @@ void main() {
       cover: writeAppOwnedAsset(
         dirName: VideoStorage.coversDirName,
         fileName: 'video_2.png',
-        text: 'cover-two',
+        bytes: _kOnePixelPng,
       ),
       subtitle: writeAppOwnedAsset(
         dirName: VideoStorage.subtitlesDirName,
@@ -632,7 +632,7 @@ void main() {
       cover: writeAppOwnedAsset(
         dirName: VideoStorage.coversDirName,
         fileName: 'video_3.png',
-        text: 'cover-three',
+        bytes: _kOnePixelPng,
       ),
       subtitle: sharedSubtitle,
     );
@@ -688,7 +688,7 @@ void main() {
       cover: writeAppOwnedAsset(
         dirName: VideoStorage.coversDirName,
         fileName: 'video_1.png',
-        text: 'cover-one',
+        bytes: _kOnePixelPng,
       ),
       subtitle: writeAppOwnedAsset(
         dirName: VideoStorage.subtitlesDirName,
@@ -702,7 +702,7 @@ void main() {
       cover: writeAppOwnedAsset(
         dirName: VideoStorage.coversDirName,
         fileName: 'video_2.png',
-        text: 'cover-two',
+        bytes: _kOnePixelPng,
       ),
       subtitle: writeAppOwnedAsset(
         dirName: VideoStorage.subtitlesDirName,
@@ -816,3 +816,18 @@ void main() {
     );
   });
 }
+
+/// 合法 1x1 PNG：封面 fixture 必须是**真能解码**的图片。此前写的是纯文本
+/// （'cover-one'），只因当时布局下封面没被绘制才没暴露；P5-A 加了库页搜索框后
+/// 布局变化让封面真的进了绘制，Image.file 解码即抛 'Invalid image data'。
+const List<int> _kOnePixelPng = <int>[
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
+  0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+  0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
+  0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+  0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+  0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+  0x42, 0x60, 0x82,
+];
