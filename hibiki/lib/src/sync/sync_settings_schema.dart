@@ -253,11 +253,10 @@ SettingsDestination buildSyncBackupDestination() {
                   .setSyncAudioBookFilesEnabled(value);
             },
           ),
-          // 上传视频文件（多端库联合视图 §2.6）：默认关。云后端走 syncVideoAssets 的
+          // 同步视频文件（多端库联合视图 §2.6）：默认关。云后端走 syncVideoAssets 的
           // `__videos__` 伪装资产（run() 非互联分支）；互联（hibikiServer）走
-          // _syncVideosLive 的 host 上传端点（client→host）。两条通道同为 upload-only
-          // （host→client 仍按需流式/下载，且与本开关正交——客户端手动浏览/下载远端视频
-          // 只看 show_remote_entries，从不受此开关门控）。可见性同上两个上传开关。
+          // _syncVideosLive 的 host API。两条通道均双向补齐单文件视频；客户端手动浏览
+          // 远端条目仍只看 show_remote_entries，不受本开关门控。可见性同上两个开关。
           SettingsSwitchItem(
             id: 'sync.video_files',
             title: t.sync_video_files,

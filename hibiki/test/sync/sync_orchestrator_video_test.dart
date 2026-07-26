@@ -31,6 +31,8 @@ SyncOrchestrator _orchestrator(
       dictionaryResourceRoot: tmp,
       audioDatabaseRoot: tmp,
       tempDir: tmp,
+      videoDownloadRoot: Directory(p.join(tmp.path, 'remote_videos')),
+      videoSubtitleRoot: Directory(p.join(tmp.path, 'video_subtitles')),
       syncStats: false,
       syncAudioBookPosition: false,
       syncContent: false,
@@ -249,7 +251,7 @@ void main() {
           reason: 'no uploadable local bytes → nothing published');
     });
 
-    test('upload-only union keeps another device\'s remote-only entry',
+    test('remote-only entry is downloaded while union keeps both devices',
         () async {
       final FakeAssetStore store = FakeAssetStore();
       final FakeSyncBackend backend = FakeSyncBackend(store);
@@ -270,6 +272,13 @@ void main() {
           ),
         ]).toJson(),
       );
+      final File remoteVideo = File(p.join(tmp.path, 'from-b.mp4'))
+        ..writeAsBytesSync(List<int>.filled(42, 7));
+      await store.putAsset(
+        kSyncVideosNamespace,
+        'video_FromB_00000000.mp4',
+        remoteVideo,
+      );
 
       // Device A syncs its own local video.
       await _seedLocalVideo(db, tmp, uid: 'video/FromA', title: 'FromA');
@@ -277,13 +286,20 @@ void main() {
       await _orchestrator(db, backend, tmp, syncVideoFiles: true)
           .syncVideoAssets(report);
       expect(report.errors, isEmpty, reason: report.errors.join(' | '));
+      expect(report.videosImported, 1);
+      final VideoBookRow? pulled =
+          await db.getVideoBookByBookUid('video/FromB');
+      expect(pulled, isNotNull);
+      expect(
+          File(pulled!.videoPath).readAsBytesSync(), List<int>.filled(42, 7));
 
       final Set<String> uids =
           (await CloudRemoteVideoClient(backend: store).listRemoteVideos())
               .map((RemoteVideoManifestEntry e) => e.uid)
               .toSet();
       expect(uids, containsAll(<String>['video/FromA', 'video/FromB']),
-          reason: 'upload-only union must not drop the remote-only entry');
+          reason:
+              'bidirectional union must keep and download the remote entry');
     });
   });
 

@@ -4,9 +4,12 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:hibiki/src/epub/book_css_repository.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
+import 'package:hibiki/src/media/video/video_import_dialog.dart'
+    show parseSubtitleCues;
 import 'package:hibiki/src/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
 import 'package:hibiki/src/models/local_audio_manager.dart';
+import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/collection_sync_engine.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
@@ -23,7 +26,11 @@ import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/src/sync/video_manifest.dart';
 import 'package:hibiki_audio/hibiki_audio.dart'
-    show FavoriteSentence, FavoriteSentenceRepository;
+    show
+        AudioCue,
+        FavoriteSentence,
+        FavoriteSentenceRepository,
+        readTextWithEncoding;
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -240,8 +247,8 @@ class SyncRunReport {
   /// 本轮真正搬动过的资产条数（两个方向合计，不含书籍进度/合集这类元数据）。
   ///
   /// 0 且 [errors] 也空 = 这一轮**什么都没传**。对逐条传输的调用方（对比框）这不是
-  /// 成功：该通道对这一条根本没有可走的传输路径（例如云后端的视频是 upload-only，
-  /// 远端独有的视频它拉不回来）。没有这个判据就只能靠「没报错」认定成功，于是按钮
+  /// 成功：该通道对这一条根本没有可走的传输路径（例如多集播放列表尚无单文件传输
+  /// 路径）。没有这个判据就只能靠「没报错」认定成功，于是按钮
   /// 点完提示「已传输」而实际毫无动作——比没有这个按钮更糟。
   int get assetsTransferred =>
       dictionariesImported +
@@ -304,21 +311,19 @@ class SyncRunReport {
 
 /// Orchestrates sync across any [SyncBackend].
 ///
-/// Layers the three previously-missing capabilities on top of the existing
+/// Layers the previously-missing capabilities on top of the existing
 /// per-book [SyncManager] (progress / stats / content / audiobook position),
 /// which is left unchanged:
-///   1. upload local book files when enabled;
+///   1. sync book files in both directions when enabled;
 ///   2. dictionary packages (push/pull in the `__dictionaries__` namespace);
-///   3. sync local audiobook packages when enabled (interconnect: bidirectional,
-///      see [_syncAudiobooksLive]; cloud backend: upload-only).
+///   3. sync local audiobook packages in both directions when enabled;
+///   4. sync single-file videos in both directions when enabled.
 ///
-/// Book content switches are upload-only: remote-only EPUBs stay remote until the
-/// user explicitly downloads them from the compare or interconnect UI. Audiobooks
-/// over the interconnect live API are bidirectional (TODO-809) but pull only into
-/// books the device already owns (no orphan audiobook rows; remote audiobooks for
-/// unknown books still wait for manual download). Deletes are never propagated.
-/// Dictionaries and local-audio sources remain union-synced because they are
-/// separate opt-in sharing pools.
+/// The large-file switches default off. Once enabled, they describe actual
+/// bidirectional sync: remote-only EPUBs and videos are downloaded into the local
+/// library, and audiobook packages are pulled after their EPUB exists. Standalone
+/// SRT audiobooks can be pulled without an EPUB because their stable identity is
+/// the SRT uid. Deletes remain a separate tombstone/confirmation flow.
 class SyncOrchestrator {
   SyncOrchestrator({
     required HibikiDatabase db,
@@ -336,6 +341,9 @@ class SyncOrchestrator {
     required this.syncLocalAudio,
     this.localAudioEntries = const <LocalAudioDbEntry>[],
     this.onLocalAudioImported,
+    this.importRemoteBookFile,
+    this.videoDownloadRoot,
+    this.videoSubtitleRoot,
     this.statsSyncMode = StatisticsSyncMode.merge,
     this.assetScope,
     this.onProgress,
@@ -352,6 +360,17 @@ class SyncOrchestrator {
   final Directory _audioDatabaseRoot;
   final Directory _tempDir;
   final SyncAssetPackageService _packages;
+
+  /// Persistent destinations for automatically pulled remote videos/subtitles.
+  ///
+  /// Production callers leave these null and use [AppPaths]. Tests inject
+  /// temporary directories so a pull never touches the developer's real library.
+  final Directory? videoDownloadRoot;
+  final Directory? videoSubtitleRoot;
+
+  /// Optional test seam for the live EPUB importer. Production uses
+  /// [EpubImporter.importFromPath].
+  final Future<String> Function(File file, String title)? importRemoteBookFile;
 
   /// This device's stable id (SyncRepository.getOrCreateDeviceId). Names this
   /// device's own snapshot asset in the cloud `__aggregate__` namespace so two
@@ -384,7 +403,7 @@ class SyncOrchestrator {
   ///
   /// 「本地 vs 远端」对比框用它把**这一整套已验证的传输实现**收窄到用户点的那一条
   /// 上，而不是在对话框里另写一份上传/下载。清单读-合并-回写、同尺寸幂等判据、
-  /// upload-only 与墓碑语义全在这里；再写一份必然与它漂开。
+  /// 双向补齐与墓碑语义全在这里；再写一份必然与它漂开。
   final Map<SyncAssetKind, Set<String>>? assetScope;
 
   /// [identity] 是否落在 [kind] 维度的作用域内。未设 [assetScope] 时恒 true。
@@ -475,7 +494,7 @@ class SyncOrchestrator {
     } else if (syncContent) {
       try {
         if (await manager.exportBookContentIfMissing(book)) {
-          report.recordBookPushed(sanitizeTtuFilename(book.title));
+          report.recordBookPushed(book.bookKey);
         }
       } catch (e) {
         report.errors.add('push book content "${book.title}": $e');
@@ -510,10 +529,9 @@ class SyncOrchestrator {
     return report;
   }
 
-  /// Runs the full sweep. File-content switches are upload-only: remote-only
-  /// books/audiobooks stay remote until the user explicitly downloads them.
-  /// Existing local books still go through [SyncManager], so progress,
-  /// statistics, and audiobook-position conflicts remain visible.
+  /// Runs the full sweep. Every enabled file-content dimension is
+  /// bidirectional: remote-only content is pulled before the metadata sweep so
+  /// newly imported books can immediately receive progress and audiobook data.
   Future<SyncRunReport> run() async {
     final SyncRunReport report = SyncRunReport();
     final String root = await _backend.findOrCreateRootFolder();
@@ -527,13 +545,11 @@ class SyncOrchestrator {
     // remote state.
     await pruneRootSpill(root, report);
 
-    // 书籍文件开关是上传语义：只把本端已有 epub 内容补到远端。
-    // 远端独有书不会在自动同步中导入本机，必须通过 compare/interconnect UI 点击下载。
     final SyncBackend b = _backend;
     final bool isInterconnect = b is HibikiClientSyncBackend;
 
     if (isInterconnect) {
-      // 互联内容（epub）走 live 端点，仅当 syncContent 开时执行。
+      // 互联内容（epub）走 live 端点，仅当 syncContent 开时双向补齐。
       // 元数据（进度/统计/有声书位置）由下方 SyncManager 以 syncContent=false 处理。
       if (syncContent) {
         await _syncBooksContentLive(report, b);
@@ -565,14 +581,15 @@ class SyncOrchestrator {
           fileFraction: f),
     );
 
-    // 云后端的书内容也必须独立于“阅读进度往哪边走”的裁决。否则未读书（两端进度
-    // 均空）或进度已一致时 SyncManager 会提前返回，缺失的 EPUB 永远不会上传。
-    // 与互联 live sweep 对齐：先做 upload-only 内容补齐，随后元数据同步关闭内容门。
+    // 云后端的书内容也必须独立于“阅读进度往哪边走”的裁决。先拉远端独有 EPUB，
+    // 再补传本地独有 EPUB，随后让所有本地书进入元数据同步。否则未读书（两端进度
+    // 均空）或进度已一致时 SyncManager 会提前返回，内容永远不会被搬动。
     if (!isInterconnect && syncContent) {
+      await importRemoteBooks(root, report);
       for (final EpubBookRow book in await _db.getAllEpubBooks()) {
         try {
           if (await manager.exportBookContentIfMissing(book)) {
-            report.recordBookPushed(sanitizeTtuFilename(book.title));
+            report.recordBookPushed(book.bookKey);
           }
         } catch (e) {
           report.errors.add('push book content "${book.title}": $e');
@@ -602,15 +619,12 @@ class SyncOrchestrator {
     if (isInterconnect) {
       if (syncLocalAudio) await _syncLocalAudioLive(report, b);
       if (syncAudioBookFiles) await _syncAudiobooksLive(report, b);
-      // 互联视频文件 live push（client→host）：单文件本地视频经 host 上传端点注册进
-      // host 视频库。与云后端 syncVideoAssets 同为 syncVideoFiles 开关驱动、同为
-      // upload-only（host→client 仍走按需流式/下载）。
+      // 互联视频文件走 host live API 双向补齐。
       if (syncVideoFiles) await _syncVideosLive(report, b);
     } else {
       if (syncLocalAudio) await syncLocalAudioPackages(report);
       if (syncAudioBookFiles) await syncAudiobookPackages(root, report);
-      // 云视频资产上传（多端库联合视图 §2.6）：仅云后端走 __videos__ 伪装资产。互联
-      // 视频文件走上面 _syncVideosLive 的 host API 上传，不走此云后端分支。
+      // 云视频资产双向同步（多端库联合视图 §2.6）：仅云后端走 __videos__ 资产。
       if (syncVideoFiles) await syncVideoAssets(report);
     }
 
@@ -1131,7 +1145,7 @@ class SyncOrchestrator {
   /// **本地单文件**视频（流媒体 URL / 多集播放列表跳过——它们没有可上传的单个本地
   /// 字节，见 [_isUploadableLocalVideo]）推到 sync 根 `__videos__/` 命名空间：
   /// - 资产名按 bookUid 安全编码 + 原扩展名（[videoAssetName]）；
-  /// - 远端已存在**同尺寸**跳过（upload-only，删除不传播——远端不删本地、本地删除
+  /// - 远端已存在**同尺寸**跳过（双向并集，删除不传播——远端不删本地、本地删除
   ///   也不删远端，与书内容 [_syncBooksContentLive] / 有声书包同律）；
   /// - 封面（若有本地文件）作独立资产一并上传（[videoCoverAssetName]）。
   ///
@@ -1174,11 +1188,25 @@ class SyncOrchestrator {
       }
 
       // 合并清单起点 = 远端既有条目（按 uid 索引；本地在库的 uid 下面覆盖，远端独有
-      // 的 uid 原样保留——upload-only 并集，绝不因本地缺这条而从清单里抹掉它）。
+      // 的 uid 原样保留——双向并集，绝不因本地缺这条而从清单里抹掉它）。
       final Map<String, RemoteVideoManifestEntry> byUid =
           <String, RemoteVideoManifestEntry>{
         for (final RemoteVideoManifestEntry e in remote.videos) e.uid: e,
       };
+
+      // 先拉远端独有项，再枚举本地上传项。这样同一轮里刚拉下来的行会参与下面的
+      // 幂等判定，但因清单同 uid/同尺寸不会反向重传。
+      final List<VideoBookRow> beforePull = await _db.allVideoBooks();
+      final Set<String> usableLocalUids = <String>{
+        for (final VideoBookRow v in beforePull)
+          if (_hasUsableLocalVideo(v)) v.bookUid,
+      };
+      await _pullCloudVideos(
+        namespaceId: ns,
+        remoteEntries: remote.videos,
+        usableLocalUids: usableLocalUids,
+        report: report,
+      );
 
       // 稳定顺序（uid 升序）遍历本地可上传视频，进度分母 = 可上传视频数。
       final List<VideoBookRow> localVideos = <VideoBookRow>[
@@ -1218,7 +1246,7 @@ class SyncOrchestrator {
             }
           }
 
-          // 视频文件：远端已存在同尺寸跳过（upload-only 幂等）。跳过判据**不能**用
+          // 视频文件：远端已存在同尺寸跳过（双向幂等）。跳过判据**不能**用
           // 远端资产的物理尺寸——`resolveSyncBackend` 无条件包 ObfuscatingSyncBackend，
           // 上传体 = 8 字节 magic + XOR 正文（远端尺寸 = 明文 + 8，永不等于本地明文
           // size），且 Dropbox/WebDAV/FTP 的 listChildren 根本不报 sizeBytes（null）。
@@ -1290,6 +1318,127 @@ class SyncOrchestrator {
   /// 一条 `VideoBooks` 行是否是可作为单文件上传的**本地**视频（[syncVideoAssets] 用）。
   bool _isUploadableLocalVideo(VideoBookRow v) => isUploadableLocalVideo(v);
 
+  bool _hasUsableLocalVideo(VideoBookRow row) {
+    final String path = row.videoPath;
+    if (path.isEmpty) return false;
+    final String lower = path.toLowerCase();
+    if (lower.startsWith('http://') || lower.startsWith('https://')) {
+      return true;
+    }
+    return File(path).existsSync();
+  }
+
+  Future<Directory> _videoDownloadsDirectory() async {
+    final Directory dir =
+        videoDownloadRoot ?? await AppPaths.remoteVideosDirectory();
+    await dir.create(recursive: true);
+    return dir;
+  }
+
+  Future<Directory> _videoSubtitlesDirectory() async {
+    final Directory dir =
+        videoSubtitleRoot ?? await AppPaths.videoSubtitlesDirectory();
+    await dir.create(recursive: true);
+    return dir;
+  }
+
+  String _safeRemoteMediaName(String value) =>
+      value.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+
+  String _remoteVideoExtension(String remoteName) {
+    final String extension = p.extension(remoteName);
+    return extension.isEmpty ? '.mp4' : extension;
+  }
+
+  Future<void> _pullCloudVideos({
+    required String namespaceId,
+    required List<RemoteVideoManifestEntry> remoteEntries,
+    required Set<String> usableLocalUids,
+    required SyncRunReport report,
+  }) async {
+    final List<RemoteVideoManifestEntry> toPull = <RemoteVideoManifestEntry>[
+      for (final RemoteVideoManifestEntry entry in remoteEntries)
+        if (!usableLocalUids.contains(entry.uid) &&
+            _inScope(SyncAssetKind.video, entry.uid))
+          entry,
+    ];
+    if (toPull.isEmpty) return;
+    final Directory destinationRoot = await _videoDownloadsDirectory();
+    for (int index = 0; index < toPull.length; index++) {
+      final RemoteVideoManifestEntry entry = toPull[index];
+      _emit(
+        SyncPhase.videos,
+        itemIndex: index,
+        itemTotal: toPull.length,
+        title: entry.title,
+      );
+      File? destination;
+      File? coverDestination;
+      try {
+        final AssetEntry? videoAsset =
+            await _backend.findAsset(namespaceId, entry.videoAsset);
+        if (videoAsset == null) {
+          throw SyncBackendError(
+              'remote video asset missing: ${entry.videoAsset}');
+        }
+        final String safeUid = _safeRemoteMediaName(entry.uid);
+        destination = File(p.join(
+          destinationRoot.path,
+          '$safeUid${_remoteVideoExtension(entry.videoAsset)}',
+        ));
+        await _backend.getAsset(
+          videoAsset.id,
+          destination,
+          onProgress: (double f) => _emit(
+            SyncPhase.videos,
+            itemIndex: index,
+            itemTotal: toPull.length,
+            title: entry.title,
+            fileFraction: f,
+          ),
+        );
+
+        final String? coverAssetName = entry.coverAsset;
+        if (coverAssetName != null && coverAssetName.isNotEmpty) {
+          final AssetEntry? coverAsset =
+              await _backend.findAsset(namespaceId, coverAssetName);
+          if (coverAsset != null) {
+            coverDestination = File(p.join(
+              destinationRoot.path,
+              '$safeUid.cover${p.extension(coverAssetName).isEmpty ? '.jpg' : p.extension(coverAssetName)}',
+            ));
+            await _backend.getAsset(coverAsset.id, coverDestination);
+          }
+        }
+
+        await _db.upsertVideoBook(VideoBooksCompanion(
+          bookUid: Value(entry.uid),
+          title: Value(entry.title),
+          videoPath: Value(destination.path),
+          coverPath: Value<String?>(coverDestination?.path),
+          embeddedSubtitleTrack: const Value<int?>(0),
+          importedAt: Value(
+            entry.importedAtMs > 0
+                ? DateTime.fromMillisecondsSinceEpoch(entry.importedAtMs)
+                : DateTime.now(),
+          ),
+        ));
+        if (entry.tagsAddedAt.isNotEmpty || entry.tagTombstones.isNotEmpty) {
+          await _db.mergeRemoteVideoTags(
+            entry.uid,
+            remoteAddedAt: entry.tagsAddedAt,
+            remoteTombstones: entry.tagTombstones,
+          );
+        }
+        report.videosImported++;
+      } catch (e) {
+        report.errors.add('cloud pull video "${entry.title}": $e');
+        _safeDelete(destination);
+        _safeDelete(coverDestination);
+      }
+    }
+  }
+
   /// Folds the per-book sweep results into [SyncRunReport]: genuine three-way
   /// forks go to [SyncRunReport.conflicts], and books whose data this device
   /// pushed outward are tallied into [SyncRunReport.booksPushed].
@@ -1357,8 +1506,6 @@ class SyncOrchestrator {
           backend: _backend,
           folderId: folder.id,
           tempDir: _tempDir,
-          // 下载远端书文件夹时一并补下其有声书包（修复云有声书「只上传拿不回」缺口）。
-          audioDatabaseRoot: _audioDatabaseRoot,
           onProgress: (double f) => _emit(SyncPhase.books,
               itemIndex: i,
               itemTotal: total,
@@ -1373,11 +1520,12 @@ class SyncOrchestrator {
     }
   }
 
-  /// 互联书籍内容 live 上传。
+  /// 互联书籍内容 live 双向同步。
   ///
   /// 直打对端 `/api/library/books` 端点，按 `sanitizeTtuFilename(title)` 只处理
   /// toPush：本端有 && 远端无 → `repackageExtractedEpub` 重打包 →
-  /// `putRemoteBook` 上传。远端独有书籍留给 compare/interconnect UI 手动下载。
+  /// `putRemoteBook` 上传；toPull：远端有内容 && 本端无 →
+  /// `getRemoteBook` 下载并经 [EpubImporter] 入库。
   ///
   /// 仅当 client syncContent 开时由 [run] 调用。进度走 [SyncPhase.books]，
   /// 临时文件 finally 清理，逐项错误进 [report.errors] 不中断整体。
@@ -1401,6 +1549,10 @@ class SyncOrchestrator {
       for (final RemoteBookInfo r in remoteBooks)
         sanitizeTtuFilename(r.title): r.hasContent,
     };
+    final Map<String, RemoteBookInfo> remoteByKey = <String, RemoteBookInfo>{
+      for (final RemoteBookInfo r in remoteBooks)
+        sanitizeTtuFilename(r.title): r,
+    };
 
     // 按 sanitizeTtuFilename(title) union 计算 diff。
     final BookSyncDiff diff = computeBookSyncDiff(
@@ -1414,8 +1566,62 @@ class SyncOrchestrator {
         sanitizeTtuFilename(b.title): b.title,
     };
 
-    final int total = diff.toPush.length;
+    // 退书轻量同步只处理传入的本地书，不能顺带把整个远端书库拉进来。
+    final Set<String> toPull =
+        onlyBook == null ? diff.toPull : const <String>{};
+    final int total = diff.toPush.length + toPull.length;
     int index = 0;
+
+    // ── Pull：远端独有 → 下载并导入本地 ───────────────────────────────────────
+    for (final String key in toPull) {
+      final RemoteBookInfo remote = remoteByKey[key]!;
+      final String title = remote.title;
+      _emit(SyncPhase.books, itemIndex: index, itemTotal: total, title: title);
+      File? tmp;
+      try {
+        tmp = _tmpFile('.epub');
+        await backend.getRemoteBook(
+          title,
+          tmp,
+          onProgress: (double f) => _emit(
+            SyncPhase.books,
+            itemIndex: index,
+            itemTotal: total,
+            title: title,
+            fileFraction: f,
+          ),
+        );
+        final String localBookKey = importRemoteBookFile != null
+            ? await importRemoteBookFile!(tmp, title)
+            : await EpubImporter.importFromPath(
+                db: _db,
+                filePath: tmp.path,
+                fileName: '$title.epub',
+                skipIfExists: true,
+              );
+        if (remote.tagsAddedAt.isNotEmpty ||
+            remote.tagTombstones.isNotEmpty ||
+            remote.tags.isNotEmpty) {
+          final Map<String, int> remoteAddedAt = remote.tagsAddedAt.isNotEmpty
+              ? remote.tagsAddedAt
+              : <String, int>{
+                  for (final String name in remote.tags)
+                    if (name.isNotEmpty) name: 1,
+                };
+          await _db.mergeRemoteBookTags(
+            localBookKey,
+            remoteAddedAt: remoteAddedAt,
+            remoteTombstones: remote.tagTombstones,
+          );
+        }
+        report.booksImported++;
+      } catch (e) {
+        report.errors.add('live pull book "$title": $e');
+      } finally {
+        _safeDelete(tmp);
+      }
+      index++;
+    }
 
     // ── Push：本端独有 → 重打包并上传 ───────────────────────────────────────
     for (final String key in diff.toPush) {
@@ -2095,12 +2301,10 @@ class SyncOrchestrator {
   /// - Pull（远端有 ∧ 本端无有声书）→ `getRemoteAudiobook` 下载 →
   ///   `importAudioDatabasePackage` 解包落盘。
   ///
-  /// **Pull 防孤儿约束**：`importAudioDatabasePackage` 只 upsert Audiobooks/SrtBooks
-  /// 行，不创建 EpubBooks 行。故只对「本端已有同 bookKey 的 EPUB、但当前缺音频」的
-  /// 远端项拉取——否则会落下没有书可绑的孤儿有声书行（这正是历史上选 push-only 的
-  /// 动机）。无对应本地 EPUB 的远端有声书跳过并记一条 info 级 error，留给手动下载
-  /// （书架远端书卡 / 同步对比对话框）补音频。拉取时用本地 EPUB 的 bookKey 作
-  /// `bookKeyOverride`，保证写入行与本地 EPUB 字节相等可配对（徽章亮）。
+  /// **Pull 防孤儿约束**：EPUB 配对包只在本端已有同 bookKey 的 EPUB 后拉取；
+  /// [run] 会先拉书内容，所以开启两项开关时远端独有有声书能在同一轮完整落地。
+  /// standalone SRT 包不依赖 EPUB，按 uid 直接拉取。拉取 EPUB 配对包时用本地
+  /// bookKey 作 `bookKeyOverride`，保证写入行与 EPUB 精确配对。
   ///
   /// 仅当 client syncAudioBookFiles 开且 isInterconnect 时由 [run] 调用。
   /// 进度走 [SyncPhase.audiobooks]，临时文件 finally 清理，逐项错误进 report.errors 不中断。
@@ -2111,28 +2315,40 @@ class SyncOrchestrator {
     final List<RemoteAudiobookInfo> remoteAudiobooks =
         await backend.listRemoteAudiobooks();
     final List<AudiobookRow> localAudiobooks = await _db.getAllAudiobooks();
+    final List<SrtBookRow> localSrtBooks = await _db.getAllSrtBooks();
     final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
 
-    final Set<String> localKeys = <String>{
-      for (final AudiobookRow ab in localAudiobooks) ab.bookKey,
+    final Set<String> pairedKeys = <String>{
+      for (final AudiobookRow ab in localAudiobooks) ab.bookKey
     };
-    // 纯 SRT（standalone）远端有声书（bookKey 空、身份=uid）**不进自动 union**：与
-    // 远端独有 EPUB 一样是「手动下载才落地」（TODO-1291 / 书架远端占位卡），自动
-    // sweep 只处理 srt-backed（bookKey 非空）有声书文件补拉，避免把独有 standalone
-    // 书自动灌进对端，也避免空 bookKey 污染 diff。
-    final Set<String> remoteKeys = <String>{
+    final Set<String> pairedSrtKeys = <String>{
+      for (final SrtBookRow srt in localSrtBooks)
+        if (srt.bookKey.isNotEmpty) srt.bookKey,
+    };
+    for (final String key in pairedKeys.difference(pairedSrtKeys)) {
+      if (_inScope(SyncAssetKind.audiobook, key)) {
+        report.errors
+            .add('live push audiobook "$key": srtBook not found, skipping');
+      }
+    }
+    final Map<String, SrtBookRow> localByIdentity = <String, SrtBookRow>{
+      for (final SrtBookRow srt in localSrtBooks)
+        if (srt.bookKey.isEmpty ||
+            (pairedKeys.contains(srt.bookKey) && srt.bookKey.isNotEmpty))
+          (srt.bookKey.isNotEmpty ? srt.bookKey : srt.uid): srt,
+    };
+    final Map<String, RemoteAudiobookInfo> remoteByIdentity =
+        <String, RemoteAudiobookInfo>{
       for (final RemoteAudiobookInfo r in remoteAudiobooks)
-        if (r.bookKey.isNotEmpty) r.bookKey,
+        if (r.identity.isNotEmpty) r.identity: r,
     };
-    // 本端已有 EPUB 的 bookKey 集合：Pull 只对「本端有书但缺音频」的远端项动作，
-    // 避免落下无 EpubBooks 行可绑的孤儿有声书（importAudioDatabasePackage 不建书行）。
     final Set<String> localBookKeys = <String>{
       for (final EpubBookRow b in localBooks) b.bookKey,
     };
 
     final AudiobookSyncDiff rawDiff = computeAudiobookSyncDiff(
-      localKeys: localKeys,
-      remoteKeys: remoteKeys,
+      localKeys: localByIdentity.keys.toSet(),
+      remoteKeys: remoteByIdentity.keys.toSet(),
     );
     final AudiobookSyncDiff diff = AudiobookSyncDiff(
       toPull: <String>{
@@ -2145,22 +2361,14 @@ class SyncOrchestrator {
       },
     );
 
-    // toPullAudioOnly（场景B）= 远端有 ∧ 本端无有声书 ∧ 本端已有同 bookKey
-    // EPUB → 只补音频不重导 EPUB。这是「同步有声书文件」开关下**唯一**的 pull
-    // 语义：只对本端已在库的书补/拉其音频文件。
-    //
-    // TODO-1291（用户决策 A · 解耦）：远端独有（本端完全没有这本书）的书
-    // **不**在自动同步里导入/灌书架，即便远端书带有声书且 hasContent。这类书回归
-    // 手动下载入口（compare 对比页 / 书架远端卡），与本类文档契约（见类头
-    // :126-130「remote-only EPUBs stay remote until the user explicitly
-    // downloads them」）一致。历史 TODO-873 的 toPullFullBook 自动灌书路径已在此
-    // 摘除——它把「开启同步有声书文件」误当成「自动把远端独有书拉进书架」。
-    final List<String> toPullAudioOnly = <String>[
+    final List<String> toPull = <String>[
       for (final String key in diff.toPull)
-        if (localBookKeys.contains(key)) key,
+        if (remoteByIdentity[key]!.isStandaloneSrt ||
+            localBookKeys.contains(remoteByIdentity[key]!.bookKey))
+          key,
     ];
 
-    final int total = diff.toPush.length + toPullAudioOnly.length;
+    final int total = diff.toPush.length + toPull.length;
     int index = 0;
 
     // ── Push：本端独有 → 打包并上传 ─────────────────────────────────────────
@@ -2169,7 +2377,7 @@ class SyncOrchestrator {
           itemIndex: index, itemTotal: total, title: key);
       File? tmp;
       try {
-        final SrtBookRow? srt = await _db.getSrtBookByBookKey(key);
+        final SrtBookRow? srt = localByIdentity[key];
         if (srt == null) {
           report.errors
               .add('live push audiobook "$key": srtBook not found, skipping');
@@ -2178,9 +2386,9 @@ class SyncOrchestrator {
         }
         tmp = _tmpFile('.hibikiaudio');
         await _packages.exportAudioDatabasePackage(
-          bookKey: key,
           srtBookUid: srt.uid,
           outputFile: tmp,
+          bookKey: srt.bookKey.isEmpty ? null : srt.bookKey,
         );
         await backend.putRemoteAudiobook(
           key,
@@ -2197,10 +2405,11 @@ class SyncOrchestrator {
       index++;
     }
 
-    // ── Pull A（场景B）：远端有、本端有书但缺音频 → 下载并解包落盘 ────────────
-    for (final String key in toPullAudioOnly) {
+    // ── Pull：EPUB 配对包补音频；standalone SRT 直接按 uid 落地 ────────────────
+    for (final String key in toPull) {
+      final RemoteAudiobookInfo remote = remoteByIdentity[key]!;
       _emit(SyncPhase.audiobooks,
-          itemIndex: index, itemTotal: total, title: key);
+          itemIndex: index, itemTotal: total, title: remote.title ?? key);
       File? tmp;
       try {
         tmp = _tmpFile('.hibikiaudio');
@@ -2212,11 +2421,19 @@ class SyncOrchestrator {
         );
         // 用本地 EPUB 的 bookKey 作 override：远端 key 已等于本地 EPUB 的 bookKey
         // （toPull 已由 localBookKeys 筛过），显式 override 保写入行与 EPUB 可配对。
-        await _packages.importAudioDatabasePackage(
-          packageFile: tmp,
-          audioDatabaseRoot: _audioDatabaseRoot,
-          bookKeyOverride: key,
-        );
+        if (remote.isStandaloneSrt) {
+          await _packages.importAudioDatabasePackage(
+            packageFile: tmp,
+            audioDatabaseRoot: _audioDatabaseRoot,
+          );
+        } else {
+          final String key = remote.bookKey;
+          await _packages.importAudioDatabasePackage(
+            packageFile: tmp,
+            audioDatabaseRoot: _audioDatabaseRoot,
+            bookKeyOverride: key,
+          );
+        }
         report.audiobooksImported++;
       } catch (e) {
         report.errors.add('live pull audiobook "$key": $e');
@@ -2227,17 +2444,17 @@ class SyncOrchestrator {
     }
   }
 
-  /// 互联视频文件 live push（client→host，TODO §2.6「后续批」接线）。
+  /// 互联视频文件 live 双向同步。
   ///
   /// 直打对端 host 上传端点：枚举本地可上传单文件视频（[_isUploadableLocalVideo]，
   /// 排除流媒体 / 多集播放列表），对 host 尚无（按 bookUid）或尺寸不同的推上去。视频
   /// 身份键是 `VideoBooks.bookUid`（= host 端 [RemoteVideoInfo.id]，两端同源派生），故
   /// 直接按 uid union，重复上传同一视频 host 端 upsert 覆盖同一行、不产生重复。
   ///
-  /// **upload-only**：host→client 方向仍是按需流式播放 / 手动下载（视频 GB 级不进
-  /// 自动 pull），与云后端 [syncVideoAssets] 同律。互联 host 上传字节未混淆（与
-  /// [putRemoteAudiobook] 同为裸 octet-stream），故 host 清单 [RemoteVideoInfo.sizeBytes]
-  /// == 本地明文尺寸，可直接按尺寸判幂等（不必像云后端那样绕物理尺寸走清单）。
+  /// host→client 会把远端独有单视频下载、登记本地库并补字幕/标签；client→host
+  /// 保持原有单文件上传。互联 host 上传字节未混淆（与 [putRemoteAudiobook] 同为裸
+  /// octet-stream），故 host 清单 [RemoteVideoInfo.sizeBytes] == 本地明文尺寸，
+  /// 可直接按尺寸判幂等（不必像云后端那样绕物理尺寸走清单）。
   ///
   /// 仅当 client syncVideoFiles 开且 isInterconnect 时由 [run] 调用。进度走
   /// [SyncPhase.videos]，逐项错误进 report.errors 不中断，[report.videosExported] 计上传数。
@@ -2245,10 +2462,21 @@ class SyncOrchestrator {
     SyncRunReport report,
     HibikiClientSyncBackend backend,
   ) async {
+    final List<RemoteVideoInfo> remoteVideos = await backend.listRemoteVideos();
+    final Set<String> usableLocalUids = <String>{
+      for (final VideoBookRow row in await _db.allVideoBooks())
+        if (_hasUsableLocalVideo(row)) row.bookUid,
+    };
+    await _pullLiveVideos(
+      backend: backend,
+      remoteVideos: remoteVideos,
+      usableLocalUids: usableLocalUids,
+      report: report,
+    );
+
     // host 既有视频（uid → 清单条目；sizeBytes null=host 无法 stat）。
     final Map<String, RemoteVideoInfo> hostByUid = <String, RemoteVideoInfo>{
-      for (final RemoteVideoInfo info in await backend.listRemoteVideos())
-        info.id: info,
+      for (final RemoteVideoInfo info in remoteVideos) info.id: info,
     };
 
     // 稳定顺序（uid 升序）遍历本地可上传视频，先算出真正要传的（host 无 / 尺寸不同），
@@ -2331,6 +2559,117 @@ class SyncOrchestrator {
         }
       }
       index++;
+    }
+  }
+
+  Future<void> _pullLiveVideos({
+    required HibikiClientSyncBackend backend,
+    required List<RemoteVideoInfo> remoteVideos,
+    required Set<String> usableLocalUids,
+    required SyncRunReport report,
+  }) async {
+    final List<RemoteVideoInfo> toPull = <RemoteVideoInfo>[
+      for (final RemoteVideoInfo info in remoteVideos)
+        if (!info.isPlaylist &&
+            !usableLocalUids.contains(info.id) &&
+            _inScope(SyncAssetKind.video, info.id))
+          info,
+    ];
+    if (toPull.isEmpty) return;
+    final Directory destinationRoot = await _videoDownloadsDirectory();
+    final Directory subtitleRoot = await _videoSubtitlesDirectory();
+    for (int index = 0; index < toPull.length; index++) {
+      final RemoteVideoInfo info = toPull[index];
+      _emit(
+        SyncPhase.videos,
+        itemIndex: index,
+        itemTotal: toPull.length,
+        title: info.title,
+      );
+      final String safeUid = _safeRemoteMediaName(info.id);
+      File? destination;
+      File? subtitleDestination;
+      try {
+        destination = File(p.join(
+          destinationRoot.path,
+          '$safeUid${_remoteVideoExtension(info.title)}',
+        ));
+        await backend.downloadRemoteVideo(
+          info.id,
+          destination,
+          onProgress: (double f) => _emit(
+            SyncPhase.videos,
+            itemIndex: index,
+            itemTotal: toPull.length,
+            title: info.title,
+            fileFraction: f,
+          ),
+        );
+
+        String? subtitleSource;
+        String? subtitleFormat;
+        List<AudioCue> subtitleCues = const <AudioCue>[];
+        if (info.hasSubtitle) {
+          final String rawExtension =
+              p.extension(info.subtitleFileName ?? '').toLowerCase();
+          final String extension =
+              <String>{'.ass', '.ssa', '.vtt', '.srt'}.contains(rawExtension)
+                  ? rawExtension.substring(1)
+                  : 'srt';
+          subtitleDestination =
+              File(p.join(subtitleRoot.path, '$safeUid.$extension'));
+          await backend.getRemoteVideoSubtitle(
+            info.id,
+            subtitleDestination,
+          );
+          subtitleSource = subtitleDestination.path;
+          subtitleFormat = extension;
+          subtitleCues = parseSubtitleCues(
+            content: await readTextWithEncoding(subtitleDestination),
+            format: extension,
+            bookUid: info.id,
+          );
+        }
+
+        await _db.upsertVideoBook(VideoBooksCompanion(
+          bookUid: Value(info.id),
+          title: Value(info.title),
+          videoPath: Value(destination.path),
+          subtitleSource: Value<String?>(subtitleSource),
+          subtitleFormat: Value<String?>(subtitleFormat),
+          embeddedSubtitleTrack: subtitleSource == null
+              ? const Value<int?>(0)
+              : const Value<int?>(null),
+          delayMs: Value(info.delayMs),
+          importedAt: Value(DateTime.now()),
+        ));
+        if (subtitleCues.isNotEmpty) {
+          await _db.replaceCuesForBook(
+            info.id,
+            subtitleCues.map(AudioCue.toCompanion).toList(),
+          );
+        }
+        if (info.tagsAddedAt.isNotEmpty ||
+            info.tagTombstones.isNotEmpty ||
+            info.tags.isNotEmpty) {
+          final Map<String, int> remoteAddedAt = info.tagsAddedAt.isNotEmpty
+              ? info.tagsAddedAt
+              : <String, int>{
+                  for (final String name in info.tags)
+                    if (name.isNotEmpty) name: 1,
+                };
+          await _db.mergeRemoteVideoTags(
+            info.id,
+            remoteAddedAt: remoteAddedAt,
+            remoteTombstones: info.tagTombstones,
+          );
+        }
+        report.videosImported++;
+      } catch (e) {
+        report.errors.add('live pull video "${info.title}": $e');
+        _safeDelete(destination);
+        _safeDelete(subtitleDestination);
+      }
     }
   }
 
@@ -2498,10 +2837,9 @@ class SyncOrchestrator {
     }
   }
 
-  /// Uploads the audiobook package (`audiobook.hibikiaudio`) inside each
-  /// book's folder. A book with a local audiobook absent remotely is pushed;
-  /// a remote package for a local book without audiobook is left untouched for
-  /// explicit manual download flows.
+  /// Bidirectionally syncs the audiobook package (`audiobook.hibikiaudio`)
+  /// inside each book's folder. A local-only package is pushed; a remote-only
+  /// package is downloaded and bound to the existing local EPUB bookKey.
   Future<void> syncAudiobookPackages(String root, SyncRunReport report) async {
     // A real "files transferred" denominator would need a findAsset network
     // round-trip per book before the loop; instead progress is keyed on the
@@ -2547,6 +2885,25 @@ class SyncOrchestrator {
                   title: book.title,
                   fileFraction: f));
           report.audiobooksExported++;
+        } else if (!hasLocal && existing != null) {
+          tmp = _tmpFile('.hibikiaudio');
+          await _backend.getAsset(
+            existing.id,
+            tmp,
+            onProgress: (double f) => _emit(
+              SyncPhase.audiobooks,
+              itemIndex: i,
+              itemTotal: total,
+              title: book.title,
+              fileFraction: f,
+            ),
+          );
+          await _packages.importAudioDatabasePackage(
+            packageFile: tmp,
+            audioDatabaseRoot: _audioDatabaseRoot,
+            bookKeyOverride: bookKey,
+          );
+          report.audiobooksImported++;
         }
       } catch (e) {
         report.errors.add('audiobook "${book.title}": $e');

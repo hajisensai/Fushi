@@ -53,6 +53,8 @@ SyncOrchestrator _orchestrator({
       dictionaryResourceRoot: tmp,
       audioDatabaseRoot: tmp,
       tempDir: tmp,
+      videoDownloadRoot: Directory(p.join(tmp.path, 'remote_videos')),
+      videoSubtitleRoot: Directory(p.join(tmp.path, 'video_subtitles')),
       syncStats: false,
       syncAudioBookPosition: false,
       syncContent: false,
@@ -148,5 +150,35 @@ void main() {
         await _orchestrator(db: localDb, backend: backend, tmp: work).run();
     expect((await hostDb.allVideoBooks()).length, 1);
     expect(report2.videosExported, 0);
+  });
+
+  test('host 远端独有单视频会自动下载并登记到本地库', () async {
+    final File hostedFile = File(p.join(hostUploads.path, 'remote-only.mp4'))
+      ..writeAsBytesSync(<int>[9, 8, 7, 6, 5]);
+    await hostDb.upsertVideoBook(VideoBooksCompanion.insert(
+      bookUid: 'video/remote-only',
+      title: 'Remote Only',
+      videoPath: hostedFile.path,
+    ));
+
+    final HibikiDatabase localDb = _memDb();
+    addTearDown(localDb.close);
+    final HibikiClientSyncBackend backend =
+        await _buildClientBackend(base: base, token: token);
+
+    final SyncRunReport report =
+        await _orchestrator(db: localDb, backend: backend, tmp: work).run();
+
+    expect(report.errors, isEmpty, reason: report.errors.join(' | '));
+    expect(report.videosImported, 1);
+    final VideoBookRow? pulled =
+        await localDb.getVideoBookByBookUid('video/remote-only');
+    expect(pulled, isNotNull);
+    expect(File(pulled!.videoPath).readAsBytesSync(), <int>[9, 8, 7, 6, 5]);
+
+    final SyncRunReport second =
+        await _orchestrator(db: localDb, backend: backend, tmp: work).run();
+    expect(second.videosImported, 0, reason: '已下载视频不应重复拉取');
+    expect((await localDb.allVideoBooks()).length, 1);
   });
 }

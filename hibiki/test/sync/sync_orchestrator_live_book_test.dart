@@ -1,7 +1,7 @@
 /// Task T2.4：orchestrator 书籍内容 live 同步集成测试。
 ///
 /// 用例 A：互联（HibikiClientSyncBackend）+ syncContent=true
-///   → 走 live 端点上传本端 epub，不自动拉取远端独有书，也不经书文件夹暂存路径。
+///   → 走 live 端点双向补齐 epub，不经书文件夹暂存路径。
 /// 用例 B：互联 + syncContent=false
 ///   → 不传任何 epub 内容（booksImported=0、无 toPull/toPush 动作），
 ///   但元数据路径仍正常运行。
@@ -105,6 +105,14 @@ SyncOrchestrator _bookOrchestrator({
       dictionaryResourceRoot: tmp,
       audioDatabaseRoot: tmp,
       tempDir: tmp,
+      importRemoteBookFile: (File file, String title) async {
+        await _seedBook(
+          db: db,
+          title: title,
+          extractDir: p.join(tmp.path, 'imported_$title'),
+        );
+        return title;
+      },
       syncStats: false,
       syncAudioBookPosition: false,
       syncContent: syncContent,
@@ -261,9 +269,9 @@ void main() {
     if (work.existsSync()) await work.delete(recursive: true);
   });
 
-  // ── 用例 A：互联 live + syncContent=true（上传语义）──────────────────────
+  // ── 用例 A：互联 live + syncContent=true（双向语义）──────────────────────
 
-  group('用例A: 互联 live 上传路径（syncContent=true）', () {
+  group('用例A: 互联 live 双向路径（syncContent=true）', () {
     late HibikiSyncServer server;
     late HibikiDatabase hostDb;
     late String serverBase;
@@ -304,7 +312,7 @@ void main() {
 
     tearDown(() async => server.stop());
 
-    test('本地无 BookY，syncContent=true → 不自动拉取远端独有 BookY', () async {
+    test('本地无 BookY，syncContent=true → 自动拉取远端独有 BookY', () async {
       // 本地：只有 BookX，没有 BookY
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);
@@ -326,13 +334,12 @@ void main() {
       await orch.syncBooksContentLiveForTest(report, backend);
 
       expect(report.errors, isEmpty,
-          reason: 'live book upload 无错误: ${report.errors}');
-      expect(report.booksImported, 0,
-          reason: 'Upload book files 不能把远端独有 BookY 自动拉到本机');
+          reason: 'live book sync 无错误: ${report.errors}');
+      expect(report.booksImported, 1, reason: '同步书籍文件必须把远端独有 BookY 拉到本机');
       final List<EpubBookRow> localBooks = await localDb.getAllEpubBooks();
       expect(
         localBooks.map((EpubBookRow b) => b.title),
-        isNot(contains('BookY')),
+        contains('BookY'),
       );
     });
 
@@ -369,7 +376,7 @@ void main() {
       );
     });
 
-    test('upload-only：本地 BookX，host BookY → 只推 BookX，不拉 BookY', () async {
+    test('双向：本地 BookX，host BookY → 推 BookX 且拉 BookY', () async {
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);
       final String localExtractX = p.join(work.path, 'local_extract_X_rt');
@@ -390,8 +397,8 @@ void main() {
       await orch.syncBooksContentLiveForTest(report, backend);
 
       expect(report.errors, isEmpty,
-          reason: 'upload-only errors: ${report.errors}');
-      expect(report.booksImported, 0, reason: 'BookY 不应被自动 pull');
+          reason: 'bidirectional errors: ${report.errors}');
+      expect(report.booksImported, 1, reason: 'BookY 应被自动 pull');
 
       // host 含 BookX
       final List<EpubBookRow> hostBooks = await hostDb.getAllEpubBooks();
@@ -399,7 +406,7 @@ void main() {
       final List<EpubBookRow> localBooks = await localDb.getAllEpubBooks();
       expect(
         localBooks.map((EpubBookRow b) => b.title),
-        isNot(contains('BookY')),
+        contains('BookY'),
       );
     });
 
@@ -525,7 +532,7 @@ void main() {
       expect(backend.uploadedContentNames, contains('CloudBook.epub'),
           reason: '即使两端都没有阅读进度，也要独立补上传缺失 EPUB');
       expect(report.booksPushed, 1);
-      // 云路径不自动拉取远端独有书。
+      // 该 fake 的 listBooks 为空，因此本轮没有远端独有书可拉。
       expect(report.booksImported, 0);
     });
   });

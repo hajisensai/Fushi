@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1080 条。点号进各自文件。
+> 共 1081 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1118](bugs/BUG-1118-sync-does-not-pull.md) | ✅ | ✅ | 同步开关开启后书籍/有声书/视频仍不会自动拉取 |
 | [BUG-1117](bugs/BUG-1117-sync-summary-drops-uploads.md) | ✅ | ✅ | 同步漏传与摘要漏报：未读书不上传、互联退书绕过 live、视频/书出站不可见 |
 | [BUG-1116](bugs/BUG-1116-compare-slow-serial-io.md) | ✅ | ✅ | 本地vs远端加载慢：per-book 串行 DB 查询 + 重复远端目录探测 |
 | [BUG-1115](bugs/BUG-1115-compare-missing-asset-dimensions.md) | ✅ | ✅ | 本地vs远端对比框缺有声书/音频数据库/视频三个维度 |

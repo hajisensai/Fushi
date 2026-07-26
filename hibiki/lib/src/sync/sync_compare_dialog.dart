@@ -368,11 +368,17 @@ Future<_RemoteBookData> _fetchRemoteBookData(
       for (final AssetEntry child in children)
         if (!child.isFolder) DriveFile(id: child.id, name: child.name),
     ];
-    final DriveSyncFiles syncFiles = DriveSyncFiles(
-      progress: findSyncFileByPrefix(files, 'progress_'),
-      statistics: findSyncFileByPrefix(files, 'statistics_'),
-      audioBook: findSyncFileByPrefix(files, 'audioBook_'),
-    );
+    // A few legacy/test adapters expose the TTU metadata through
+    // listSyncFiles but cannot enumerate generic children. Keep that adapter
+    // boundary working without adding an extra RTT for normal non-empty book
+    // folders.
+    final DriveSyncFiles syncFiles = files.isEmpty
+        ? await backend.listSyncFiles(folderId)
+        : DriveSyncFiles(
+            progress: findSyncFileByPrefix(files, 'progress_'),
+            statistics: findSyncFileByPrefix(files, 'statistics_'),
+            audioBook: findSyncFileByPrefix(files, 'audioBook_'),
+          );
 
     double? progress;
     int? updatedAt;
@@ -948,7 +954,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   /// 传输单条资产：本端独有 → 上传；远端独有 → 下载。
   ///
   /// **复用编排器**（[SyncOrchestrator.assetScope] 收窄到这一条），而不是在对话框里
-  /// 另写一份上传/下载。清单读-合并-回写、同尺寸幂等判据、upload-only 与墓碑语义都在
+  /// 另写一份上传/下载。清单读-合并-回写、同尺寸幂等判据、双向补齐与墓碑语义都在
   /// 编排器里；再写一份必然与它漂开，而漂开的那份会悄悄传错或反复重传大文件。
   /// 云/互联走的也是编排器内部同一套分流，故「各个后端都支持」是同一条代码路径保证的。
   Future<void> _transferAsset(SyncAssetEntry e) async {
@@ -1009,7 +1015,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
 
       if (!mounted) return;
       // 三种结局分清楚：报错 / 真的传了 / 一条都没传（该通道对这条没有传输路径，
-      // 例如云后端视频是 upload-only，远端独有的视频它拉不回来）。第三种绝不能当
+      // 例如多集播放列表没有单文件传输路径）。第三种绝不能当
       // 成功——行不能标成「两端都有」，提示也得如实说传不了。
       final bool moved = report.assetsTransferred > 0;
       setState(() {

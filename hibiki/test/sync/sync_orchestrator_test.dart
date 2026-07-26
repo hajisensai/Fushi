@@ -319,7 +319,7 @@ void main() {
     expect(second.errors, isEmpty);
   });
 
-  test('audiobook package uploads without pulling remote-only package',
+  test('audiobook package syncs bidirectionally for an existing EPUB book',
       () async {
     final FakeAssetStore store = FakeAssetStore();
     final FakeSyncBackend backend = FakeSyncBackend(store);
@@ -412,15 +412,12 @@ void main() {
     final SyncRunReport second = SyncRunReport();
     await orch(tgtDb, tgtAudioRoot).syncAudiobookPackages('root', second);
     expect(second.errors, isEmpty, reason: second.errors.join(' | '));
-    expect(second.audiobooksImported, 0,
-        reason: 'Upload audiobook files 不能自动拉取远端独有有声书包');
+    expect(second.audiobooksImported, 1, reason: '同步有声书文件必须自动拉取远端独有包');
 
-    // The remote-only package stays remote; explicit manual download is a
-    // separate flow.
     expect(tgtKey, srcKey); // bookKey is stable across devices
-    expect(await tgtDb.getAudiobookByBookKey(tgtKey), isNull);
-    expect(await tgtDb.getSrtBookByBookKey(tgtKey), isNull);
-    expect(await tgtDb.getCuesForBook(tgtKey), isEmpty);
+    expect(await tgtDb.getAudiobookByBookKey(tgtKey), isNotNull);
+    expect(await tgtDb.getSrtBookByBookKey(tgtKey), isNotNull);
+    expect(await tgtDb.getCuesForBook(tgtKey), isNotEmpty);
 
     final SyncRunReport targetUpload = SyncRunReport();
     await orch(srcDb, srcAudioRoot).syncAudiobookPackages('root', targetUpload);

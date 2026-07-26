@@ -3,7 +3,7 @@
 /// 用例 A：互联（HibikiClientSyncBackend）+ syncLocalAudio=true
 ///   → 本地音频经 live 端点双向（pull/push），不经 `__local_audio__` 暂存路径。
 /// 用例 B：互联 + syncAudioBookFiles=true
-///   → 有声书包经 live 端点上传本端独有包，不自动拉取远端独有包，
+///   → 有声书包经 live 端点双向补齐（含 standalone SRT uid），
 ///     也不经 `audiobook.hibikiaudio` 书文件夹暂存。
 /// 用例 C：互联 + 开关关（syncLocalAudio=false / syncAudioBookFiles=false）
 ///   → 对应 live 方法不被调用（计数器=0）。
@@ -11,6 +11,7 @@
 ///   → 仍走原 syncLocalAudioPackages / syncAudiobookPackages（__local_audio__ 路径）。
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
@@ -123,8 +124,10 @@ SyncOrchestrator _audioOrchestrator({
   required Directory tmp,
   bool syncLocalAudio = false,
   bool syncAudioBookFiles = false,
+  bool syncContent = false,
   List<LocalAudioDbEntry> localAudioEntries = const <LocalAudioDbEntry>[],
   Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported,
+  Future<String> Function(File file, String title)? importRemoteBookFile,
 }) =>
     SyncOrchestrator(
       db: db,
@@ -134,12 +137,13 @@ SyncOrchestrator _audioOrchestrator({
       tempDir: tmp,
       syncStats: false,
       syncAudioBookPosition: false,
-      syncContent: false,
+      syncContent: syncContent,
       syncAudioBookFiles: syncAudioBookFiles,
       syncDictionary: false,
       syncLocalAudio: syncLocalAudio,
       localAudioEntries: localAudioEntries,
       onLocalAudioImported: onLocalAudioImported,
+      importRemoteBookFile: importRemoteBookFile,
     );
 
 // ── Fake staged backend（云路径用）────────────────────────────────────────────
@@ -476,7 +480,7 @@ void main() {
     });
   });
 
-  // ── 用例 B：互联 live + syncAudioBookFiles=true（上传语义）───────────────
+  // ── 用例 B：互联 live + syncAudioBookFiles=true（双向语义）───────────────
 
   group('用例B: 互联 live 上传路径（syncAudioBookFiles=true）', () {
     late HibikiSyncServer server;
@@ -554,7 +558,7 @@ void main() {
 
     tearDown(() async => server.stop());
 
-    test('本地无 HostAudioBook 有声书 → 不自动拉取远端独有有声书', () async {
+    test('仅有声书维度且本地无 EPUB → 不造孤儿有声书', () async {
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
@@ -574,8 +578,7 @@ void main() {
 
       expect(report.errors, isEmpty,
           reason: 'live audiobook upload 无错误: ${report.errors}');
-      expect(report.audiobooksImported, 0,
-          reason: 'Upload audiobook files 不能把远端独有有声书自动拉到本机');
+      expect(report.audiobooksImported, 0, reason: '未同步 EPUB 时不能导入无书可绑的有声书包');
       expect(await localDb.getAudiobookByBookKey('HostAudioBook'), isNull);
     });
 
@@ -687,11 +690,51 @@ void main() {
       expect(report.audiobooksExported, 1,
           reason: 'LocalAudioBook 有声书应被推送到 host');
     });
+
+    test('pull：host 远端独有 standalone SRT 有声书按 uid 自动拉取', () async {
+      final File standaloneAudio = File(p.join(work.path, 'standalone.mp3'))
+        ..writeAsBytesSync(<int>[1, 3, 5, 7]);
+      final File standaloneSrt = File(p.join(work.path, 'standalone.srt'))
+        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nstandalone\n');
+      await hostDb.upsertSrtBook(SrtBooksCompanion.insert(
+        uid: 'standalone-remote-uid',
+        title: 'Standalone Remote',
+        audioPathsJson: Value<String?>(jsonEncode(<String>[
+          standaloneAudio.path,
+        ])),
+        srtPath: standaloneSrt.path,
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+        bookKey: const Value(''),
+      ));
+
+      final HibikiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      final Directory tmp = Directory(p.join(work.path, 'tmp_standalone_pull'))
+        ..createSync();
+      final HibikiClientSyncBackend backend =
+          await _buildClientBackend(base: serverBase, token: token);
+      final SyncOrchestrator orch = _audioOrchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: tmp,
+        syncAudioBookFiles: true,
+      );
+      final SyncRunReport report = SyncRunReport();
+
+      await orch.syncAudiobooksLiveForTest(report, backend);
+
+      expect(report.errors, isEmpty, reason: report.errors.join(' | '));
+      expect(report.audiobooksImported, 1);
+      final SrtBookRow? pulled =
+          await localDb.getSrtBookByUid('standalone-remote-uid');
+      expect(pulled, isNotNull);
+      expect(pulled!.bookKey, isEmpty);
+    });
   });
 
   // ── 用例 B2：互联 live + 远端-only 带有声书**不再**自动灌 EPUB+音频（TODO-1291 决策 A）─
 
-  group('用例B2: 远端-only 带有声书 → 不自动下载/灌书架，等手动下载（TODO-1291）', () {
+  group('用例B2: 远端-only 书籍与有声书在同轮自动落地', () {
     late HibikiSyncServer server;
     late HibikiDatabase hostDb;
     late String serverBase;
@@ -771,9 +814,7 @@ void main() {
 
     tearDown(() async => server.stop());
 
-    test(
-        'TODO-1291 解耦：远端-only 带有声书的书 → sweep 后本地**不**新增 '
-        'EpubBooks/Audiobooks 行（不自动灌书架，等手动下载）', () async {
+    test('开启书籍+有声书同步 → 远端-only EPUB 与音频同轮拉取', () async {
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
@@ -789,32 +830,36 @@ void main() {
         db: localDb,
         backend: backend,
         tmp: tmp,
+        syncContent: true,
         syncAudioBookFiles: true,
+        importRemoteBookFile: (File file, String title) async {
+          await _seedHostBookWithContent(
+            db: localDb,
+            title: title,
+            bookKey: title,
+            extractDir: p.join(tmp.path, 'imported_$title'),
+          );
+          return title;
+        },
       );
-      final SyncRunReport report = SyncRunReport();
-      await orch.syncAudiobooksLiveForTest(report, backend);
+      final SyncRunReport report = await orch.run();
 
       expect(report.errors, isEmpty,
-          reason: 'remote-only 解耦 sweep 无错误: ${report.errors}');
-      // 决策 A：开启「同步有声书文件」不再把远端独有书自动拉进书架。
-      expect(report.booksImported, 0,
-          reason: '远端-only 书绝不应在自动同步里被灌入书架（TODO-1291 决策 A）');
-      expect(report.audiobooksImported, 0, reason: '本地没有这本书时不应自动拉其音频（等手动下载）');
+          reason: 'remote-only 双向 sweep 无错误: ${report.errors}');
+      expect(report.booksImported, 2, reason: '带音频和纯文本两本远端书都应自动拉取');
+      expect(report.audiobooksImported, 1, reason: '远端书导入后应在同一轮继续拉取对应音频');
 
       final List<EpubBookRow> localBooks = await localDb.getAllEpubBooks();
-      expect(localBooks, isEmpty, reason: '本地书架不应新增远端-only 书');
       expect(localBooks.map((EpubBookRow b) => b.title),
-          isNot(contains(remoteOnlyTitle)),
-          reason: '远端-only 带有声书的书不应落本地书架');
+          containsAll(<String>[remoteOnlyTitle, textOnlyTitle]));
 
       final List<AudiobookRow> localAudiobooks =
           await localDb.getAllAudiobooks();
-      expect(localAudiobooks, isEmpty, reason: '不灌书架 → 不应出现任何 Audiobooks 行');
-      expect(await localDb.getAudiobookByBookKey(remoteOnlyKey), isNull,
-          reason: '远端-only 书的音频不应被自动导入');
+      expect(localAudiobooks, hasLength(1));
+      expect(await localDb.getAudiobookByBookKey(remoteOnlyKey), isNotNull);
     });
 
-    test('回归：远端-only 纯文本书（无有声书）→ sweep 后本地仍无此书（守边界）', () async {
+    test('仅开有声书文件、未开书籍内容 → 不凭音频包造孤儿 EPUB', () async {
       final HibikiDatabase localDb = _memDb();
       addTearDown(localDb.close);
 
@@ -833,13 +878,12 @@ void main() {
       await orch.syncAudiobooksLiveForTest(report, backend);
 
       expect(report.errors, isEmpty, reason: '无错误: ${report.errors}');
-      // TODO-1291 决策 A：带有声书的远端-only 书也不再自动灌，纯文本书更不该进本地。
-      expect(report.booksImported, 0, reason: '任何远端-only 书都不应被自动灌（TODO-1291）');
+      expect(report.booksImported, 0, reason: '书籍内容开关关闭时不应导入 EPUB');
       final List<EpubBookRow> localBooks = await localDb.getAllEpubBooks();
       expect(
         localBooks.map((EpubBookRow b) => b.title),
         isNot(contains(textOnlyTitle)),
-        reason: '纯文本远端书（不在 listRemoteAudiobooks）不应被自动灌',
+        reason: '仅有声书维度不能导入纯文本远端书',
       );
     });
   });
