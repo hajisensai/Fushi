@@ -5,7 +5,12 @@
 //   ① hook 模式不再按窗高缩放字号（三个缩放常量必须消失）；
 //   ② hook 分支的缩放系数恒为 1.0f，即直接用 style_.font_size；
 //   ③ 有声书歌词条的历史行为（按窗高缩放）不得被顺手砍掉；
-//   ④ 溢出时 hook 台词顶端对齐（保住阅读起点，只丢句尾）。
+//   ④ 溢出时 hook 台词顶端对齐（保住阅读起点）。
+//
+// 注：第一阶段写的“溢出仍是硬裁”已经过时——第二阶段给这个浮窗加了真正的
+// 垂直滚动（滚轮 + 指示条），句尾不再永久丢失，见
+// hibiki/test/build/gal_overlay_scroll_guard_test.dart。顶端对齐从“止损”变成了
+// 滚动能成立的前提：排版必须从 text_rect_.top 起画，滚动才等于平移绘制原点。
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -57,7 +62,8 @@ void main() {
     expect(
       src.contains('DWRITE_PARAGRAPH_ALIGNMENT_NEAR'),
       isTrue,
-      reason: '溢出仍是硬裁（分层窗无滚动），但必须裁句尾而不是把头尾一起裁掉',
+      reason: '顶端对齐是滚动的前提（排版从 text_rect_.top 起画，滚动 = 平移绘制原点）；'
+          '改回居中会让滚动偏移与实际排版对不上，且未滚动时头尾一起被裁',
     );
     expect(
       src.contains('metrics.height > text_rect_.height'),

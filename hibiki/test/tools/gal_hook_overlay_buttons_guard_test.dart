@@ -75,6 +75,11 @@ void main() {
     // 设置项 gal_hook_text_font_size 单独控制（旧的按高度缩放让「拖高一点」变成
     // 「字也跟着变」，两个诉求被绑死）。守卫从「必须缩放」翻转为「必须不缩放」。
     final String source = window.readAsStringSync();
+    expect(
+      source.contains('kHookTextBaseHeightForFontDip'),
+      isFalse,
+      reason: '这个常量就是「拖高浮窗 = 放大台词」的耦合来源，不得回来',
+    );
     final int scaleAt = source.indexOf('const float height_scale');
     expect(scaleAt, greaterThan(0), reason: '非 hook 的歌词条仍按高度缩放，该表达式应当还在');
     final String scaleExpr = source.substring(scaleAt, scaleAt + 400);
@@ -85,7 +90,7 @@ void main() {
     );
     // 有声书歌词条的「拖高放大」不受影响：非 hook 分支仍拿实时高度算比例。
     expect(
-      scaleExpr.contains('strip_height_dip_'),
+      scaleExpr.contains('strip_height_dip_ / kBaseStripHeightForFontDip'),
       isTrue,
       reason: '非 hook 分支仍须按实时窗口高度缩放字号',
     );
