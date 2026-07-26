@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
+const vm = require('node:vm');
 const { decide, nextRate } = require('./video-shortcuts.js');
 
 // asb 移植：视频页快捷键判定矩阵。decide 是纯函数：ev={key,code,ctrl,shift,alt,editable}，
@@ -24,9 +26,13 @@ test('←/→/↑：无字幕轨一律放行（站点自己的 5s 快进/音量�
   assert.strictEqual(decide(ev({ key: 'ArrowUp' }), noTrack), null);
 });
 
-test('Shift+P/O/F/S：切换播放模式与面板（无轨也可用）', () => {
+test('Shift+P/O/F/S：仅有 Hibiki 字幕轨时切换播放模式与面板', () => {
   const noTrack = { enabled: true, hasVideo: true, hasTrack: false };
-  assert.deepStrictEqual(decide(ev({ shift: true, code: 'KeyP' }), noTrack), { action: 'toggle-autopause' });
+  assert.strictEqual(decide(ev({ shift: true, code: 'KeyP' }), noTrack), null);
+  assert.strictEqual(decide(ev({ shift: true, code: 'KeyO' }), noTrack), null);
+  assert.strictEqual(decide(ev({ shift: true, code: 'KeyF' }), noTrack), null);
+  assert.strictEqual(decide(ev({ shift: true, code: 'KeyS' }), noTrack), null);
+  assert.deepStrictEqual(decide(ev({ shift: true, code: 'KeyP' }), CTX), { action: 'toggle-autopause' });
   assert.deepStrictEqual(decide(ev({ shift: true, code: 'KeyO' }), CTX), { action: 'toggle-condensed' });
   assert.deepStrictEqual(decide(ev({ shift: true, code: 'KeyF' }), CTX), { action: 'toggle-fastforward' });
   assert.deepStrictEqual(decide(ev({ shift: true, code: 'KeyS' }), CTX), { action: 'toggle-panel' });
@@ -69,4 +75,49 @@ test('nextRate：0.25 步进、clamp 0.25–4', () => {
   assert.strictEqual(nextRate(0.25, -0.25), 0.25);
   assert.strictEqual(nextRate(4, 0.25), 4);
   assert.strictEqual(nextRate(undefined, 0.25), 1.25); // 坏输入按 1x 起步
+});
+
+test('runtime leaves site Shift shortcuts untouched without a Hibiki track', () => {
+  const source = fs.readFileSync(require.resolve('./video-shortcuts.js'), 'utf8');
+  let keydown;
+  const fakeWindow = {
+    addEventListener(type, handler) {
+      if (type === 'keydown') keydown = handler;
+    },
+  };
+  const context = {
+    self: fakeWindow,
+    window: fakeWindow,
+    document: {
+      querySelector(selector) {
+        return selector === 'video' ? { playbackRate: 1 } : null;
+      },
+    },
+    chrome: {
+      storage: {
+        local: { get: () => Promise.resolve({ videoShortcutsEnabled: true }) },
+        onChanged: { addListener() {} },
+      },
+    },
+  };
+  vm.runInNewContext(source, context);
+  assert.strictEqual(typeof keydown, 'function');
+
+  for (const code of ['KeyP', 'KeyO', 'KeyF', 'KeyS']) {
+    let prevented = false;
+    let stopped = false;
+    keydown({
+      key: code.slice(-1),
+      code,
+      shiftKey: true,
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      target: null,
+      preventDefault() { prevented = true; },
+      stopPropagation() { stopped = true; },
+    });
+    assert.strictEqual(prevented, false, `${code} must remain available to the site`);
+    assert.strictEqual(stopped, false, `${code} must continue propagating`);
+  }
 });

@@ -36,6 +36,7 @@
     }
     if (ev.ctrl) return null;
     if (ev.shift) {
+      if (!ctx.hasTrack) return null;
       if (code === 'KeyP') return { action: 'toggle-autopause' };
       if (code === 'KeyO') return { action: 'toggle-condensed' };
       if (code === 'KeyF') return { action: 'toggle-fastforward' };

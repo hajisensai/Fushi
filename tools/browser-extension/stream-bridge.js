@@ -4,7 +4,8 @@
 // window.hibikiEpisodeCues（`${host+path}|${label}` 轨）。字幕面板 / 覆盖层 / 查词 / 快捷键
 // 零站点特例地消费这些轨。
 //
-// 四类手法全部来自 asbplayer（extension/src/entrypoints/*-page.ts，MIT）：
+// 四类手法全部来自 asbplayer（extension/src/entrypoints/*-page.ts，MIT；
+// 完整版权与许可文本见随扩展分发的 THIRD_PARTY_LICENSES.md）：
 //   · TVer / Bilibili.tv —— JSON.parse 纯透传 hook，从站点自己的播放数据里嗅探字幕轨；
 //   · Hulu JP —— XMLHttpRequest load 旁路读响应（播放元数据带 tracks）；
 //   · Prime Video —— 捕获 GetVodPlaybackResources 请求（URL+body），原样重放一次拿

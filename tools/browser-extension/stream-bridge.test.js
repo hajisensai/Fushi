@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
+const path = require('node:path');
 const A = require('./stream-bridge.js');
 
 // asb 移植：通用流媒体字幕桥的纯函数 track 提取器。样例 JSON 形状逐一对照
@@ -106,4 +108,19 @@ test('siteForHost：站点路由（含 amazon 各区域 + primevideo）', () => 
   assert.strictEqual(A.siteForHost('www.bilibili.com'), null); // 大陆站 API 不同，未适配
   assert.strictEqual(A.siteForHost('www.hulu.com'), null);     // 美国站未适配
   assert.strictEqual(A.siteForHost('example.com'), null);
+});
+
+test('asbplayer MIT notice is retained in source and bundled extension', () => {
+  const sourceNotice = path.join(__dirname, 'THIRD_PARTY_LICENSES.md');
+  const bundledNotice = path.resolve(
+    __dirname,
+    '../../hibiki/assets/browser_extension/THIRD_PARTY_LICENSES.md',
+  );
+  const expected = 'Copyright (c) 2020-2026 asbplayer authors';
+  assert.match(fs.readFileSync(sourceNotice, 'utf8'), /MIT License/);
+  assert.match(fs.readFileSync(sourceNotice, 'utf8'), new RegExp(expected.replace(/[()]/g, '\\$&')));
+  assert.strictEqual(
+    fs.readFileSync(bundledNotice, 'utf8'),
+    fs.readFileSync(sourceNotice, 'utf8'),
+  );
 });

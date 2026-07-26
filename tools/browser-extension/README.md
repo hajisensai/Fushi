@@ -15,6 +15,7 @@ Anki 能力——一切经本机 Hibiki 桌面 App 内置的 yomitan API server�
 | `video-shortcuts.js` | 隔离 | 视频页快捷键判定（纯函数）+ 绑定；动作交 subtitle-panel 执行 |
 | `netflix-bridge.js` | MAIN | Netflix 专用：JSON.parse hook 抓整集字幕 + 官方 player.seek（避开 DRM M7375） |
 | `stream-bridge.js` | MAIN | 通用流媒体字幕桥（asb 移植）：TVer / Bilibili.tv / Hulu JP / Prime Video 整集字幕拦截 |
+| `THIRD_PARTY_LICENSES.md` | — | 随扩展分发的第三方版权与许可文本（当前含 asbplayer MIT） |
 | `subtitle-adapters.js` | 隔离 | 纯函数字幕解析器：WebVTT/SRT、TTML、Bilibili JSON + Netflix 取词/标题 |
 | `bridge-shim.js` | 隔离 | 垫掉 app 内 WebView 桥（`flutter_inappwebview.callHandler`）→ chrome 消息，复用 vendor/popup.js |
 | `scan.js` | 隔离 | 取词纯函数（词窗扩展/句子抽取） |
@@ -35,7 +36,7 @@ scripts/generate-content-css.mjs ──▶ 两处 vendor/content.css
 ```
 
 - **任何改动后跑 `node scripts/sync-mirrors.mjs`**（或 `--check` 只校验）。`*.test.js`、
-  `scripts/`、`README.md` 不进 bundle。
+  `scripts/`、`README.md` 不进 bundle；`THIRD_PARTY_LICENSES.md` 必须进入 bundle 与安装目录。
 - Dart 守卫（`hibiki/test/build/browser_extension_*` 等 30+ 个）会把「两镜像字节一致」当
   最后防线，漏同步 CI 必红。
 - 新增文件放本目录**平级**（或 `vendor/`）——`hibiki/pubspec.yaml` 只声明了这两层 asset 目录。
@@ -109,14 +110,14 @@ hook 安装；② `manifest.json` 的 stream-bridge matches 加域名；③ 新�
 |---|---|
 | ← / → | 上一句 / 下一句字幕（仅当前视频有字幕轨时接管） |
 | ↑ | 回当前句句首重播 |
-| Shift+P / O / F | 开关 自动暂停 / 精简播放 / 快进无字幕段 |
-| Shift+S | 开关字幕列表面板 |
+| Shift+P / O / F | 开关 自动暂停 / 精简播放 / 快进无字幕段（当前视频有 Hibiki 字幕轨时） |
+| Shift+S | 开关字幕列表面板（当前视频有 Hibiki 字幕轨时） |
 | Ctrl+Shift+← / → / ↓ | 字幕偏移 −100ms / ＋100ms / 重置 |
 | Ctrl+Shift+Z | 复制当前字幕句（配合 Hibiki 剪贴板监看即查词） |
 | Ctrl+Shift+[ / ] | 播放速度 −0.25x / ＋0.25x（0.25–4x） |
 
 与 asbplayer 默认键位对齐（asb 用 hotkeys-js + 可改键；这里是固定键位 + 纯函数判定，站点
-输入框/可编辑区一律放行，无轨时方向键放行给站点原生行为）。
+输入框/可编辑区一律放行；无轨时方向键及 Shift+P/O/F/S 均放行给站点原生行为）。
 
 ## 测试
 
