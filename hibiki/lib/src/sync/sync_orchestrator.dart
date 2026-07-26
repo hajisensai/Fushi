@@ -836,7 +836,7 @@ class SyncOrchestrator {
         remoteTombstones
             .putIfAbsent(parsed.mediaType, () => <String>{})
             .add(parsed.itemKey);
-        final String k = '${parsed.mediaType} ${parsed.itemKey}';
+        final String k = '${parsed.mediaType}\u0000${parsed.itemKey}';
         // 同资产多标记取较新 deletedAt（理论上主键唯一，防御性取 max）。
         final int? prev = remoteDeletedAt[k];
         if (prev == null || parsed.deletedAt > prev) {
@@ -859,7 +859,7 @@ class SyncOrchestrator {
       );
       for (final DeletionPropagationCandidate c in raw) {
         if (c.direction != DeletionPropagationDirection.deleteLocal) continue;
-        final int? at = remoteDeletedAt['${c.mediaType} ${c.itemKey}'];
+        final int? at = remoteDeletedAt['${c.mediaType}\u0000${c.itemKey}'];
         if (at == null || at <= baseline) continue; // 旧闻 / 已处理，不再弹。
         report.deletionCandidates.add(c);
         if (at > report.deletionTombstonesHighWaterMs) {
@@ -891,7 +891,7 @@ class SyncOrchestrator {
         remoteTombstones
             .putIfAbsent(r.mediaType, () => <String>{})
             .add(r.itemKey);
-        final String k = '${r.mediaType} ${r.itemKey}';
+        final String k = '${r.mediaType}\u0000${r.itemKey}';
         final int? prev = remoteDeletedAt[k];
         if (prev == null || r.deletedAt > prev) {
           remoteDeletedAt[k] = r.deletedAt;
@@ -912,7 +912,7 @@ class SyncOrchestrator {
       );
       for (final DeletionPropagationCandidate c in raw) {
         if (c.direction != DeletionPropagationDirection.deleteLocal) continue;
-        final int? at = remoteDeletedAt['${c.mediaType} ${c.itemKey}'];
+        final int? at = remoteDeletedAt['${c.mediaType}\u0000${c.itemKey}'];
         if (at == null || at <= baseline) continue;
         report.deletionCandidates.add(c);
         if (at > report.deletionTombstonesHighWaterMs) {
