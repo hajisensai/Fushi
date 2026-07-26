@@ -1,7 +1,7 @@
 ## BUG-1125 · home-video-sanitize-missing-backslash
 - **报告**：2026-07-26（全库命名统一审计 G1 发现，非用户报告）
 - **真实性**：✅ 真 bug（根因 `hibiki/lib/src/pages/implementations/home_video_page.dart:1475`（修复前行号，`_downloadRemoteSubtitleForBook`）：字幕落点的手写清洗字符集 `[\/:*?"<>|]` 只写了 `\/`——raw 串里这是「被冗余转义的正斜杠」，字符类**不含反斜杠**；而同文件封面落点 `_cloudCoverDestination`（原 1454 行）用的是全集 `[\\/:*?"<>|]`）
-- **[x] ① 已修复** — 全仓 Windows 文件名安全化收敛到共享 helper `hibiki/lib/src/utils/misc/safe_file_name.dart`（`safeWindowsFileName`，统一字符集 `[\\/:*?"<>|\x00-\x1f]`），字幕/封面/下载落点三处全部改走 helper，字符集不可能再抄漏（`<pending-commit>`）
+- **[x] ① 已修复** — 全仓 Windows 文件名安全化收敛到共享 helper `hibiki/lib/src/utils/misc/safe_file_name.dart`（`safeWindowsFileName`，统一字符集 `[\\/:*?"<>|\x00-\x1f]`），字幕/封面/下载落点三处全部改走 helper，字符集不可能再抄漏（``eb6976f00``）
 - **[x] ② 已加自动化测试** — `hibiki/test/utils/misc/safe_file_name_test.dart`（含 `\` 输入的行为回归）+ `hibiki/test/tools/safe_file_name_guard_test.dart`（源码扫描守卫：lib/ 下禁止再手写该字符类的任何排列变体）
 - **备注**：同批收敛的其余手写副本（desktop_audio_clipper / custom_fonts / collections / profile_management / sync_asset_package / manga_storage / update_checker_download / video_screenshot_filename / hibiki_manga_ocr_host）对全部现实输入输出逐字节不变，见命名统一分支说明。
 
