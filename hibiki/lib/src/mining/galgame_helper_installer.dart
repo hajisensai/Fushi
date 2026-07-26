@@ -22,11 +22,20 @@ void _log(String message) => debugPrint('[gal-helper] $message');
 /// 反复 upsert 同一 prerelease，asset 名 voice_hook_<arch>.zip + 同名 .sha256 侧车）。
 const String kGalgameHelperReleaseTag = 'voice-hook-helper';
 
-/// helper 所在的**独立仓库** slug（不是主 app 仓库 [kGitHubRepo]）。injector + hook DLL 含
-/// 进程注入代码会被杀软报毒，故物理隔离到独立仓库单独构建/分发（见该仓库 README）；且独立仓库
-/// 默认分支上的 `voice-hook-helper.yml` 可正常 workflow_dispatch 刷新 release（主仓库那份因不在
-/// 默认分支无法 dispatch，是迁出独立仓库的根因）。
-const String kGalgameHelperRepo = 'hajisensai/hibiki-hook';
+/// helper release 所在的仓库 slug。helper 源码已合回本仓库（`native/galgame_hook/`），
+/// 产物也由本仓库的 `voice-hook-helper.yml` 发布，故这里指向主仓库。
+///
+/// 当初迁出独立仓库的两条理由现在都不成立：
+/// - 「injector + hook DLL 必被杀软报毒」是自 C.1 起从未验证的预防性判断。实测（Defender
+///   签名 1.455.357.0、实时保护开启、runner 全盘排除项已解除）对全部 13 个文件与两个 zip
+///   零检出，同轮 EICAR 阳性对照正常报出——见 hibiki-hook#8 的 av-selfscan。
+/// - 「主仓库的 workflow 不在默认分支、无法 workflow_dispatch」是当时真正的迁出根因，
+///   合仓后 workflow 就在默认分支 develop 上，该问题自动消失。
+///
+/// **不要改回独立仓库 slug**：老版本 app 里这个常量被编译成 `hajisensai/hibiki-hook`，
+/// 它们会继续从那个仓库的固定 tag 取 helper。那个仓库与其 release 必须保留不删，
+/// 老客户端才不会断供（Never break userspace）；新版本一律走本仓库。
+const String kGalgameHelperRepo = 'hajisensai/hibiki';
 
 /// gh 加速代理前缀（GFW 兜底；raw release 资产可走镜像，与 update_checker 的
 /// updateCheckProxyPrefixes / video_shader_downloader 的 _kGhProxyPrefixes 同范式、同名单）。

@@ -19,15 +19,18 @@ name: voice-hook-helper
 
 on:
   workflow_dispatch:
-  # push 自动重发：main 上任何影响产物的提交都自动重建并 upsert 同一 prerelease，
+  # push 自动重发：develop 上任何影响 helper 产物的提交都自动重建并 upsert 同一 prerelease，
   # 杜绝「修复已合入但 release 忘了重发、客户端 sha 对比一致永不自更」的漏发事故
   # （2026-07-21 两个注入修复合入后 release 停在 init 版两天，实锤过一次）。
-  # 文档改动不触发（paths-ignore）；固定 tag prerelease、非 Latest，不碰正式发布通道。
+  #
+  # 合仓后必须用 paths **白名单**而不是原来的 paths-ignore：helper 现在住在 Hibiki 主仓库里，
+  # 沿用 paths-ignore 会让主仓库任何一次非文档提交都去重建并重发 helper release。
+  # 本 workflow 自身改动也要触发（否则改了发布逻辑却发不出去）。
   push:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
+    branches: [develop]
+    paths:
+      - 'native/galgame_hook/**'
+      - '.github/workflows/voice-hook-helper.yml'
 
 # 同一时刻只跑一份发布（push 连发时后车顶掉前车，避免并发 upsert 同一 release 竞态）。
 concurrency:
@@ -43,6 +46,11 @@ jobs:
     defaults:
       run:
         shell: pwsh
+        # helper 源码合仓后住在 native/galgame_hook/，各 run 步骤内的相对路径
+        # （cmake -S . / tools/*.py / dist/**）因此保持与独立仓库时代完全一致。
+        # 注意：softprops/action-gh-release 的 files: 不吃 working-directory，
+        # 那里必须写仓库根起算的完整路径。
+        working-directory: native/galgame_hook
     steps:
       - uses: actions/checkout@v6
 
@@ -137,25 +145,28 @@ jobs:
 
       # 固定 tag `voice-hook-helper` 反复 upsert 同一 release（softprops 有则更新、无则创建，同名
       # asset 自动覆盖）；prerelease + 非 Latest。
-      # 分支守卫：只有 main 才允许 upsert 那个**所有用户都会自更新拉取**的固定 tag
+      # 分支守卫：只有 develop（本仓库默认分支）才允许 upsert 那个**所有用户都会自更新拉取**的固定 tag
       # release。此前本步骤无任何条件，于是在功能分支上 workflow_dispatch 一次，就会把
       # 未经审查的 helper 直接推给全部用户（客户端按同一 tag + sha 比对自更新）。构建与
       # 双架构 ctest 仍在任意分支照跑，只是不发布——这样 PR 分支能安全地验证构建门。
       - name: Publish helper release
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/develop'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: voice-hook-helper
           target_commitish: ${{ github.sha }}
           name: Galgame voice hook helper
           body: |
-            Galgame 引擎-hook 注入器 helper（独立分发组件，含进程注入代码，杀软可能报毒——预期行为）。
+            Galgame 引擎-hook 注入器 helper（含进程注入代码：CreateRemoteThread/WriteProcessMemory）。
             Hibiki 开 galgame 需要注入器却缺失时按需下载对应架构 zip，解压到 voice_hook/<arch>/。
             本 release 为 prerelease、非 Latest，不属于主 app 安装包。
+
+            杀软说明：Windows Defender（签名 1.455.357.0）实扫全部文件与 zip 均无检出，
+            见 hibiki-hook#8 的 av-selfscan 实测。国产杀软（360/火绒等）未验证，若被拦为误报。
           prerelease: true
           make_latest: false
           files: |
-            dist/voice_hook_x64.zip
-            dist/voice_hook_x86.zip
-            dist/voice_hook_x64.zip.sha256
-            dist/voice_hook_x86.zip.sha256
+            native/galgame_hook/dist/voice_hook_x64.zip
+            native/galgame_hook/dist/voice_hook_x86.zip
+            native/galgame_hook/dist/voice_hook_x64.zip.sha256
+            native/galgame_hook/dist/voice_hook_x86.zip.sha256
