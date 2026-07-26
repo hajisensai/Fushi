@@ -31,6 +31,28 @@ void main() {
     });
   });
 
+  group('HibikiTimeFormat.dayKey / hourMinute / dateHourMinute', () {
+    test('dayKey 零填充月/日', () {
+      expect(HibikiTimeFormat.dayKey(DateTime(2026, 7, 5)), '2026-07-05');
+      expect(HibikiTimeFormat.dayKey(DateTime(2026, 12, 31)), '2026-12-31');
+    });
+
+    test('hourMinute 恒补零（24 小时制）', () {
+      expect(HibikiTimeFormat.hourMinute(DateTime(2026, 7, 5, 9, 3)), '09:03');
+      expect(
+        HibikiTimeFormat.hourMinute(DateTime(2026, 7, 5, 21, 41)),
+        '21:41',
+      );
+    });
+
+    test('dateHourMinute = dayKey + 空格 + hourMinute', () {
+      expect(
+        HibikiTimeFormat.dateHourMinute(DateTime(2026, 7, 5, 9, 3)),
+        '2026-07-05 09:03',
+      );
+    });
+  });
+
   group('HibikiTimeFormat.getVideoDurationText', () {
     test('zero duration shows 0:00 with padding', () {
       expect(

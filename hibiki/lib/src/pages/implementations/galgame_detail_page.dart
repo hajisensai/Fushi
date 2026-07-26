@@ -737,12 +737,12 @@ String formatGalgameDurationAxis(double ms) =>
     formatStatDurationAxis(ms.round());
 
 /// 一条会话的时间范围文案：`2026-07-24 21:03 → 22:41`。
+/// 委托 [HibikiTimeFormat]（G5 收敛：起点 = dateHourMinute，终点 = hourMinute）。
 String formatGalgameSessionRange(GalgameSessionRow row) {
   final DateTime start = DateTime.fromMillisecondsSinceEpoch(row.startMs);
   final DateTime end = DateTime.fromMillisecondsSinceEpoch(row.endMs);
-  String hm(DateTime v) =>
-      '${v.hour.toString().padLeft(2, '0')}:${v.minute.toString().padLeft(2, '0')}';
-  return '${formatGalgameDate(start)} ${hm(start)} → ${hm(end)}';
+  return '${HibikiTimeFormat.dateHourMinute(start)} → '
+      '${HibikiTimeFormat.hourMinute(end)}';
 }
 
 /// 编辑 tab：改显示名 / 简介 / 标签 / 开发商 / 日期 / NSFW / 我的评分 / 我的评价，

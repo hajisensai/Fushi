@@ -46,9 +46,13 @@ class HibikiTimeFormat {
   static String dayKey(DateTime date) =>
       '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
+  /// 本地化无关的 `HH:mm`（时/分恒补零，24 小时制）。
+  static String hourMinute(DateTime time) =>
+      '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+
   /// 本地化无关的 `yyyy-MM-dd HH:mm`（不引 intl，跨 17 语言一致）。
   static String dateHourMinute(DateTime time) =>
-      '${dayKey(time)} ${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+      '${dayKey(time)} ${hourMinute(time)}';
 
   /// Used to display duration on video history items.
   static String getVideoDurationText(Duration duration) {

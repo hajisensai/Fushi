@@ -962,11 +962,9 @@ String? galgameSortValueLabel(GalgameEntry game, GalgameSortField field) {
   }
 }
 
-/// `YYYY-MM-DD` 本地日期（与 `galgame_sessions.dateKey` 同格式）。
-String formatGalgameDate(DateTime value) {
-  String two(int n) => n.toString().padLeft(2, '0');
-  return '${value.year}-${two(value.month)}-${two(value.day)}';
-}
+/// `YYYY-MM-DD` 本地日期（与 `galgame_sessions.dateKey` 同格式）。委托
+/// [HibikiTimeFormat.dayKey]（G5 收敛）。
+String formatGalgameDate(DateTime value) => HibikiTimeFormat.dayKey(value);
 
 /// 重命名输入对话框：内容自身持有 [TextEditingController] 并在 State.dispose
 /// 释放（路由完全退出后由框架回收，修过早 dispose）。确认返回 trimmed 名称。

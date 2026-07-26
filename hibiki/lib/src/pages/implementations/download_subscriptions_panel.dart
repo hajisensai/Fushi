@@ -119,9 +119,7 @@ class _DownloadSubscriptionsPanelState
     if (milliseconds == null) return t.download_subscription_never_checked;
     final DateTime value =
         DateTime.fromMillisecondsSinceEpoch(milliseconds).toLocal();
-    String two(int number) => number.toString().padLeft(2, '0');
-    return '${value.year}-${two(value.month)}-${two(value.day)} '
-        '${two(value.hour)}:${two(value.minute)}';
+    return HibikiTimeFormat.dateHourMinute(value);
   }
 
   @override
