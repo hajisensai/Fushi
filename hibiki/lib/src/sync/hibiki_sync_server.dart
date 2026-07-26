@@ -1954,6 +1954,31 @@ class HibikiSyncServer {
       }
     }
 
+    // DELETE /api/library/videos/<id> — 从 host 实时库删除视频。上传进 host 管理目录
+    // 的副本一并回收；host 原本登记的外部源文件只删库记录。
+    if (method == 'DELETE' && reqPath.startsWith('/api/library/videos/')) {
+      const String prefix = '/api/library/videos/';
+      final String id = reqPath.substring(prefix.length);
+      if (id.isEmpty || id.contains('..') || id.contains('\\')) {
+        return shelf.Response(400, body: 'Invalid video id');
+      }
+      final HibikiVideoDeleteHostService? videoDelete =
+          svc is HibikiVideoDeleteHostService
+              ? svc as HibikiVideoDeleteHostService
+              : null;
+      if (videoDelete == null) {
+        return shelf.Response(501, body: 'Video deletion is not supported');
+      }
+      try {
+        await videoDelete.deleteVideo(id);
+        return shelf.Response(200);
+      } on ArgumentError catch (e) {
+        return shelf.Response(400, body: 'Invalid video id: $e');
+      } on StateError {
+        return shelf.Response.notFound('Video not found');
+      }
+    }
+
     // PUT /api/library/videos/<id> — client→host 上传本地视频文件并注册进 host 视频库
     // （syncVideoFiles 开关驱动的 live push）。走到此处的 PUT 必是「裸 id 无 suffix」：
     // 所有带 suffix 的端点（cover/streamurl/stream/subtitle/position）已在上方消化（非

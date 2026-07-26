@@ -2672,5 +2672,17 @@
   "galgame_upscaling_hint_external": "A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.",
   "galgame_upscaling_hint_manual": "Press Win+Shift+A to upscale the game window.",
   "galgame_upscaling_hint_not_installed": "Magpie is not installed. Set window upscaling to Auto to download it.",
-  "game_health_upscaling": "Window upscaling"
+  "game_health_upscaling": "Window upscaling",
+  "sync_compare_videos": "Videos",
+  "sync_compare_audiobooks": "Audiobooks",
+  "sync_compare_local_audio_dbs": "Audio databases",
+  "sync_compare_upload": "Upload",
+  "sync_compare_present": "Present",
+  "sync_compare_absent": "Not present",
+  "sync_compare_delete_local_audio_db": "Delete remote audio database",
+  "sync_compare_delete_video": "Delete remote video",
+  "sync_compare_transferred": "Transferred $name",
+  "sync_now_books_out": "↑$count books",
+  "sync_now_videos_out": "↑$count videos",
+  "sync_compare_transfer_unsupported": "This channel can't transfer that item; use the library page instead"
 }

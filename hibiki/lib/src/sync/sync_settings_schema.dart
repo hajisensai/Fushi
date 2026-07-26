@@ -316,6 +316,12 @@ SettingsDestination buildSyncBackupDestination() {
               audioDatabaseRoot: Directory(
                 p.join(ctx.appModel.appDirectory.path, 'audiobooks'),
               ),
+              // 有声书/音频数据库/视频三维要能显示并逐条上传下载，需要与
+              // SyncOrchestrator 同一套注入（同步层不依赖 AppModel）。
+              tempDir: ctx.appModel.temporaryDirectory,
+              localAudioEntries: ctx.appModel.localAudioDbs,
+              dictionaryResourceRoot: ctx.appModel.dictionaryResourceDirectory,
+              onLocalAudioImported: ctx.appModel.importSyncedLocalAudioDb,
             ),
           ),
         ],

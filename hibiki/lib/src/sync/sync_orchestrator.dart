@@ -117,6 +117,50 @@ Future<bool> deleteRemoteDictionaryAsset(
   return true;
 }
 
+/// 同步里「按身份键并集对齐」的四类资产维度。
+///
+/// 书籍不在其中：书有进度/统计/冲突三态裁决，是真正不同的东西。这四类的语义完全
+/// 一样——本端有没有、远端有没有、缺的那边补上——所以共用一套作用域词汇
+/// （[SyncOrchestrator.assetScope]）和一套对比行渲染。
+enum SyncAssetKind {
+  /// 词典包（`__dictionaries__/<name>.hibikidict`，互联走 host 词典清单）。
+  /// 身份键 = 词典名。
+  dictionary,
+
+  /// 有声书包（云：书文件夹内 `audiobook.hibikiaudio`；互联：host 有声书清单，
+  /// 含无 EPUB 配对的纯 SRT standalone 有声书）。身份键 = bookKey 或 SRT uid。
+  audiobook,
+
+  /// 本地音频来源数据库（`__local_audio__/<displayName>.hibikiaudiolib`）。
+  /// 身份键 = displayName。
+  localAudioDb,
+
+  /// 视频文件（云：`__videos__/` + `videos.json` 清单；互联：host 视频库）。
+  /// 身份键 = `VideoBooks.bookUid`。
+  video,
+}
+
+/// 一条 `VideoBooks` 行是否是可作为单文件上传的**本地**视频。
+///
+/// 排除：流媒体（`streamSpecJson` 非空 / `videoPath` 为 http(s) URL）——无本地字节
+/// 可传；多集播放列表（`playlistJson` 非空）——单文件资产模型装不下多集（多集上传
+/// 是后续批的接缝，见 §2.6 seam）。
+///
+/// 顶层函数而非编排器私有方法：本地vs远端对比框要用**同一个**谓词枚举「可上传的
+/// 本地视频」，否则对比框列出的候选与同步实际会传的集合会漂开——用户看到一行「本端
+/// 独有」却永远传不上去。
+bool isUploadableLocalVideo(VideoBookRow v) {
+  if (v.streamSpecJson != null) return false;
+  if (v.playlistJson != null) return false;
+  final String path = v.videoPath;
+  if (path.isEmpty) return false;
+  final String lower = path.toLowerCase();
+  if (lower.startsWith('http://') || lower.startsWith('https://')) {
+    return false;
+  }
+  return true;
+}
+
 /// One sync item judged a genuine fork (both sides moved off the common-ancestor
 /// baseline) and therefore skipped instead of auto-resolved. Carries everything
 /// a later resolution prompt needs, including both versions so [fingerprint] can
@@ -158,6 +202,18 @@ class SyncRunReport {
   /// （export-only），不产生本地导入，故不计入 [needsLocalLibraryRefresh]——与
   /// [audiobooksExported] / [dictionariesExported] 同律。
   int videosExported = 0;
+  int videosImported = 0;
+
+  /// 本轮把数据**推给远端**的书本数（进度/统计/内容出站，见 [_collectBookResults]）。
+  /// 纯出站，不产生本地导入，故不计入 [needsLocalLibraryRefresh]——与
+  /// [videosExported] / [dictionariesExported] 同律。
+  int booksPushed = 0;
+  final Set<String> _pushedBookIdentities = <String>{};
+
+  /// 同一轮里一本书的内容与进度都出站时只计一本，避免摘要把一次书同步报成两本。
+  void recordBookPushed(String identity) {
+    if (_pushedBookIdentities.add(identity)) booksPushed++;
+  }
 
   /// Book reading positions pulled from the interconnect host into this device's
   /// local `reader_positions` this run (host→local, newer-wins). A progress-only
@@ -180,6 +236,22 @@ class SyncRunReport {
   /// 手动序 LWW 落进本地 DB 的合集条目数）。>0 时书架合集行/详情页需要刷新，
   /// 故计入 [needsLocalLibraryRefresh]。
   int collectionsUpdated = 0;
+
+  /// 本轮真正搬动过的资产条数（两个方向合计，不含书籍进度/合集这类元数据）。
+  ///
+  /// 0 且 [errors] 也空 = 这一轮**什么都没传**。对逐条传输的调用方（对比框）这不是
+  /// 成功：该通道对这一条根本没有可走的传输路径（例如云后端的视频是 upload-only，
+  /// 远端独有的视频它拉不回来）。没有这个判据就只能靠「没报错」认定成功，于是按钮
+  /// 点完提示「已传输」而实际毫无动作——比没有这个按钮更糟。
+  int get assetsTransferred =>
+      dictionariesImported +
+      dictionariesExported +
+      audiobooksImported +
+      audiobooksExported +
+      localAudioImported +
+      localAudioExported +
+      videosExported +
+      videosImported;
 
   final List<String> errors = <String>[];
   final List<SyncConflict> conflicts = <SyncConflict>[];
@@ -204,6 +276,7 @@ class SyncRunReport {
       dictionariesImported > 0 ||
       audiobooksImported > 0 ||
       localAudioImported > 0 ||
+      videosImported > 0 ||
       localBookProgressPulled > 0 ||
       collectionsUpdated > 0;
 
@@ -218,6 +291,8 @@ class SyncRunReport {
     localAudioImported += other.localAudioImported;
     localAudioExported += other.localAudioExported;
     videosExported += other.videosExported;
+    videosImported += other.videosImported;
+    booksPushed += other.booksPushed;
     localBookProgressPulled += other.localBookProgressPulled;
     rootSpillFilesRemoved += other.rootSpillFilesRemoved;
     collectionsUpdated += other.collectionsUpdated;
@@ -262,6 +337,7 @@ class SyncOrchestrator {
     this.localAudioEntries = const <LocalAudioDbEntry>[],
     this.onLocalAudioImported,
     this.statsSyncMode = StatisticsSyncMode.merge,
+    this.assetScope,
     this.onProgress,
   })  : _db = db,
         _backend = backend,
@@ -303,6 +379,21 @@ class SyncOrchestrator {
 
   final StatisticsSyncMode statsSyncMode;
 
+  /// 只处理身份键落在这里的资产（按维度）；null = 不限，即自动同步的全量语义
+  /// （逐字节不变）。某维度在表里缺席 = 该维度整体跳过。
+  ///
+  /// 「本地 vs 远端」对比框用它把**这一整套已验证的传输实现**收窄到用户点的那一条
+  /// 上，而不是在对话框里另写一份上传/下载。清单读-合并-回写、同尺寸幂等判据、
+  /// upload-only 与墓碑语义全在这里；再写一份必然与它漂开。
+  final Map<SyncAssetKind, Set<String>>? assetScope;
+
+  /// [identity] 是否落在 [kind] 维度的作用域内。未设 [assetScope] 时恒 true。
+  bool _inScope(SyncAssetKind kind, String identity) {
+    final Map<SyncAssetKind, Set<String>>? scope = assetScope;
+    if (scope == null) return true;
+    return scope[kind]?.contains(identity) ?? false;
+  }
+
   /// Optional progress sink (manual sync only). Null for background auto-sync,
   /// which keeps its old silent behaviour.
   final SyncProgressCallback? onProgress;
@@ -330,6 +421,93 @@ class SyncOrchestrator {
   File _tmpFile(String suffix) {
     _tmpCounter++;
     return File(p.join(_tempDir.path, 'hibiki_sync_$_tmpCounter$suffix'));
+  }
+
+  /// 只跑**一个**资产维度的一轮同步，供「本地 vs 远端」对比框的逐条上传/下载用。
+  ///
+  /// 与 [run] 共用每个维度的同一份实现（含云/互联分流），只是不做书籍 sweep、进度、
+  /// 合集、墓碑那些整轮动作——用户点的是某一条资产，不该顺带跑一整轮全量同步。
+  /// 配合 [assetScope] 把该维度收窄到那一条。
+  ///
+  /// 返回的报告里 [SyncRunReport.errors] 非空即该条传输失败（逐项错误不抛异常，与
+  /// 整轮 sweep 同纪律），调用方据此决定是提示成功还是如实报错。
+  Future<SyncRunReport> runAssetDimension(SyncAssetKind kind) async {
+    final SyncRunReport report = SyncRunReport();
+    final SyncBackend b = _backend;
+    final bool isInterconnect = b is HibikiClientSyncBackend;
+    switch (kind) {
+      case SyncAssetKind.dictionary:
+        await syncDictionaries(report);
+      case SyncAssetKind.localAudioDb:
+        if (isInterconnect) {
+          await _syncLocalAudioLive(report, b);
+        } else {
+          await syncLocalAudioPackages(report);
+        }
+      case SyncAssetKind.audiobook:
+        if (isInterconnect) {
+          await _syncAudiobooksLive(report, b);
+        } else {
+          await syncAudiobookPackages(
+              await _backend.findOrCreateRootFolder(), report);
+        }
+      case SyncAssetKind.video:
+        if (isInterconnect) {
+          await _syncVideosLive(report, b);
+        } else {
+          await syncVideoAssets(report);
+        }
+    }
+    return report;
+  }
+
+  /// 退出一本书时的轻量同步。云后端与互联都先独立补内容，再同步该书元数据；
+  /// 互联额外走 live 阅读/有声书进度端点，避免只写 WebDAV 文件箱而 host 实时库无感。
+  Future<SyncRunReport> runBookAfterClose(EpubBookRow book) async {
+    final SyncRunReport report = SyncRunReport();
+    final SyncManager manager = SyncManager(db: _db, backend: _backend);
+    final SyncBackend backend = _backend;
+
+    if (backend is HibikiClientSyncBackend) {
+      if (syncContent) {
+        await _syncBooksContentLive(report, backend, onlyBook: book);
+      }
+    } else if (syncContent) {
+      try {
+        if (await manager.exportBookContentIfMissing(book)) {
+          report.recordBookPushed(sanitizeTtuFilename(book.title));
+        }
+      } catch (e) {
+        report.errors.add('push book content "${book.title}": $e');
+      }
+    }
+
+    final SyncBookResult result = await manager.syncBook(
+      book: book,
+      syncStats: syncStats,
+      statsSyncMode: statsSyncMode,
+      syncAudioBook: syncAudioBookPosition,
+      syncContent: false,
+    );
+    _collectBookResults(<SyncBookResult>[result], report);
+
+    if (backend is HibikiClientSyncBackend) {
+      await _syncBookProgressLive(report, backend, onlyBook: book);
+      if (syncAudioBookPosition) {
+        try {
+          final bool hostHasAudiobook =
+              (await backend.listRemoteAudiobooks()).any(
+            (RemoteAudiobookInfo info) => info.identity == book.bookKey,
+          );
+          if (hostHasAudiobook) {
+            await _syncOneAudiobookProgressLive(book.bookKey, backend);
+          }
+        } catch (e) {
+          report.errors.add('live audiobook progress "${book.bookKey}": $e');
+        }
+      }
+    }
+    return report;
   }
 
   /// Runs the full sweep. File-content switches are upload-only: remote-only
@@ -374,12 +552,10 @@ class SyncOrchestrator {
     // 互联下有声书文件走 syncAudioBookFiles（hibikiaudio 包路径），不走此处，
     // 故互联分支传 syncContent=false 不会丢失音频同步。Phase 3 如需独立接管
     // 音频文件 live 同步，请参考本方法的分流模式扩展。
-    final bool managerSyncContent = isInterconnect ? false : syncContent;
-
     int readingDone = 0;
     int readingTotal = 0;
     String? readingTitle;
-    final List<SyncBookResult> bookResults = await SyncManager(
+    final SyncManager manager = SyncManager(
       db: _db,
       backend: _backend,
       onContentProgress: (double f) => _emit(SyncPhase.readingData,
@@ -387,11 +563,28 @@ class SyncOrchestrator {
           itemTotal: readingTotal,
           title: readingTitle,
           fileFraction: f),
-    ).syncAllBooks(
+    );
+
+    // 云后端的书内容也必须独立于“阅读进度往哪边走”的裁决。否则未读书（两端进度
+    // 均空）或进度已一致时 SyncManager 会提前返回，缺失的 EPUB 永远不会上传。
+    // 与互联 live sweep 对齐：先做 upload-only 内容补齐，随后元数据同步关闭内容门。
+    if (!isInterconnect && syncContent) {
+      for (final EpubBookRow book in await _db.getAllEpubBooks()) {
+        try {
+          if (await manager.exportBookContentIfMissing(book)) {
+            report.recordBookPushed(sanitizeTtuFilename(book.title));
+          }
+        } catch (e) {
+          report.errors.add('push book content "${book.title}": $e');
+        }
+      }
+    }
+
+    final List<SyncBookResult> bookResults = await manager.syncAllBooks(
       syncStats: syncStats,
       statsSyncMode: statsSyncMode,
       syncAudioBook: syncAudioBookPosition,
-      syncContent: managerSyncContent,
+      syncContent: false,
       onBookProgress: (int done, int total, String title) {
         readingDone = done;
         readingTotal = total;
@@ -400,7 +593,7 @@ class SyncOrchestrator {
             itemIndex: done, itemTotal: total, title: title);
       },
     );
-    _collectConflicts(bookResults, report);
+    _collectBookResults(bookResults, report);
 
     if (syncDictionary) await syncDictionaries(report);
 
@@ -990,7 +1183,9 @@ class SyncOrchestrator {
       // 稳定顺序（uid 升序）遍历本地可上传视频，进度分母 = 可上传视频数。
       final List<VideoBookRow> localVideos = <VideoBookRow>[
         for (final VideoBookRow v in await _db.allVideoBooks())
-          if (_isUploadableLocalVideo(v)) v,
+          if (_isUploadableLocalVideo(v) &&
+              _inScope(SyncAssetKind.video, v.bookUid))
+            v,
       ]..sort(
           (VideoBookRow a, VideoBookRow b) => a.bookUid.compareTo(b.bookUid));
       final int total = localVideos.length;
@@ -1093,40 +1288,39 @@ class SyncOrchestrator {
   }
 
   /// 一条 `VideoBooks` 行是否是可作为单文件上传的**本地**视频（[syncVideoAssets] 用）。
-  ///
-  /// 排除：流媒体（`streamSpecJson` 非空 / `videoPath` 为 http(s) URL）——无本地字节
-  /// 可传；多集播放列表（`playlistJson` 非空）——单文件资产模型装不下多集（多集上传
-  /// 是后续批的接缝，见 §2.6 seam）。
-  bool _isUploadableLocalVideo(VideoBookRow v) {
-    if (v.streamSpecJson != null) return false;
-    if (v.playlistJson != null) return false;
-    final String path = v.videoPath;
-    if (path.isEmpty) return false;
-    final String lower = path.toLowerCase();
-    if (lower.startsWith('http://') || lower.startsWith('https://')) {
-      return false;
-    }
-    return true;
-  }
+  bool _isUploadableLocalVideo(VideoBookRow v) => isUploadableLocalVideo(v);
 
-  /// Folds the per-book sweep results into [SyncRunReport.conflicts]. Only
-  /// [SyncResult.conflict] rows are collected; everything else (imported /
-  /// exported / synced / skipped) is left to the existing per-phase tallies
-  /// and is NOT counted here. A conflict carries the four fields filled by
-  /// [SyncManager] when it detects a genuine three-way fork.
-  void _collectConflicts(
+  /// Folds the per-book sweep results into [SyncRunReport]: genuine three-way
+  /// forks go to [SyncRunReport.conflicts], and books whose data this device
+  /// pushed outward are tallied into [SyncRunReport.booksPushed].
+  ///
+  /// 出站方向以前一个都不计——于是「本机把 N 本书的数据推上去了」在报告里完全没有
+  /// 痕迹，手动同步摘要恒显示「无新增」，用户据此以为**什么都没上传**。
+  ///
+  /// 只加出站计数、**不碰** [SyncRunReport.booksImported]：那个计数器的既有语义是
+  /// 「有新书落进本地库」，并驱动 [SyncRunReport.needsLocalLibraryRefresh]；把「远端
+  /// 进度较新」的每一本都算进去会把它变成每轮必触发的刷新风暴。
+  void _collectBookResults(
     List<SyncBookResult> results,
     SyncRunReport report,
   ) {
     for (final SyncBookResult result in results) {
-      if (result.direction != SyncResult.conflict) continue;
-      report.conflicts.add(SyncConflict(
-        assetKey: result.conflictAssetKey!,
-        dimension: result.conflictDimension!,
-        title: result.title,
-        localVersion: result.conflictLocalVersion,
-        remoteVersion: result.conflictRemoteVersion,
-      ));
+      switch (result.direction) {
+        case SyncResult.conflict:
+          report.conflicts.add(SyncConflict(
+            assetKey: result.conflictAssetKey!,
+            dimension: result.conflictDimension!,
+            title: result.title,
+            localVersion: result.conflictLocalVersion,
+            remoteVersion: result.conflictRemoteVersion,
+          ));
+        case SyncResult.exported:
+          report.recordBookPushed(sanitizeTtuFilename(result.title));
+        case SyncResult.imported:
+        case SyncResult.synced:
+        case SyncResult.skipped:
+          break;
+      }
     }
   }
 
@@ -1192,10 +1386,13 @@ class SyncOrchestrator {
   /// 若后续需要互联书籍删除传播，参考词典删除传播（BUG-086）扩展此方法。
   Future<void> _syncBooksContentLive(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
-  ) async {
+    HibikiClientSyncBackend backend, {
+    EpubBookRow? onlyBook,
+  }) async {
     final List<RemoteBookInfo> remoteBooks = await backend.listRemoteBooks();
-    final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
+    final List<EpubBookRow> localBooks = onlyBook == null
+        ? await _db.getAllEpubBooks()
+        : <EpubBookRow>[onlyBook];
 
     final Set<String> localKeys = <String>{
       for (final EpubBookRow b in localBooks) sanitizeTtuFilename(b.title),
@@ -1258,6 +1455,7 @@ class SyncOrchestrator {
               title: title,
               fileFraction: f),
         );
+        report.recordBookPushed(key);
       } catch (e) {
         report.errors.add('live push book "$title": $e');
       } finally {
@@ -1282,9 +1480,12 @@ class SyncOrchestrator {
   /// 逐本错误进 [report.errors] 不中断整体。
   Future<void> _syncBookProgressLive(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
-  ) async {
-    final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
+    HibikiClientSyncBackend backend, {
+    EpubBookRow? onlyBook,
+  }) async {
+    final List<EpubBookRow> localBooks = onlyBook == null
+        ? await _db.getAllEpubBooks()
+        : <EpubBookRow>[onlyBook];
     for (final EpubBookRow book in localBooks) {
       try {
         final RemoteBookProgress remote =
@@ -1613,10 +1814,18 @@ class SyncOrchestrator {
       },
     );
 
-    final int total = diff.toPull.length + diff.toPush.length;
+    final List<String> toPull = <String>[
+      for (final String n in diff.toPull)
+        if (_inScope(SyncAssetKind.dictionary, n)) n,
+    ];
+    final List<String> toPush = <String>[
+      for (final String n in diff.toPush)
+        if (_inScope(SyncAssetKind.dictionary, n)) n,
+    ];
+    final int total = toPull.length + toPush.length;
     int index = 0;
 
-    for (final String name in diff.toPull) {
+    for (final String name in toPull) {
       _emit(SyncPhase.dictionaries,
           itemIndex: index, itemTotal: total, title: name);
       File? tmp;
@@ -1641,7 +1850,7 @@ class SyncOrchestrator {
       index++;
     }
 
-    for (final String name in diff.toPush) {
+    for (final String name in toPush) {
       _emit(SyncPhase.dictionaries,
           itemIndex: index, itemTotal: total, title: name);
       File? tmp;
@@ -1687,14 +1896,20 @@ class SyncOrchestrator {
     // Resolve both sides' work first so progress has a real denominator.
     final List<DictionaryMetaRow> toPush = <DictionaryMetaRow>[
       for (final DictionaryMetaRow d in localDicts)
-        if (!remoteNames.contains(d.name)) d,
+        if (!remoteNames.contains(d.name) &&
+            _inScope(SyncAssetKind.dictionary, d.name))
+          d,
     ];
     final List<AssetEntry> toPull = <AssetEntry>[
       for (final AssetEntry e in remote)
         if (!e.isFolder &&
             e.name.endsWith(_dictionaryAssetSuffix) &&
             !localNames.contains(e.name
-                .substring(0, e.name.length - _dictionaryAssetSuffix.length)))
+                .substring(0, e.name.length - _dictionaryAssetSuffix.length)) &&
+            _inScope(
+                SyncAssetKind.dictionary,
+                e.name.substring(
+                    0, e.name.length - _dictionaryAssetSuffix.length)))
           e,
     ];
     final int total = toPush.length + toPull.length;
@@ -1781,9 +1996,19 @@ class SyncOrchestrator {
       for (final RemoteLocalAudioInfo r in remoteEntries) r.displayName,
     };
 
-    final LocalAudioSyncDiff diff = computeLocalAudioSyncDiff(
+    final LocalAudioSyncDiff rawDiff = computeLocalAudioSyncDiff(
       localNames: localNames,
       remoteNames: remoteNames,
+    );
+    final LocalAudioSyncDiff diff = LocalAudioSyncDiff(
+      toPull: <String>{
+        for (final String n in rawDiff.toPull)
+          if (_inScope(SyncAssetKind.localAudioDb, n)) n,
+      },
+      toPush: <String>{
+        for (final String n in rawDiff.toPush)
+          if (_inScope(SyncAssetKind.localAudioDb, n)) n,
+      },
     );
 
     final int total = diff.toPull.length + diff.toPush.length;
@@ -1905,9 +2130,19 @@ class SyncOrchestrator {
       for (final EpubBookRow b in localBooks) b.bookKey,
     };
 
-    final AudiobookSyncDiff diff = computeAudiobookSyncDiff(
+    final AudiobookSyncDiff rawDiff = computeAudiobookSyncDiff(
       localKeys: localKeys,
       remoteKeys: remoteKeys,
+    );
+    final AudiobookSyncDiff diff = AudiobookSyncDiff(
+      toPull: <String>{
+        for (final String k in rawDiff.toPull)
+          if (_inScope(SyncAssetKind.audiobook, k)) k,
+      },
+      toPush: <String>{
+        for (final String k in rawDiff.toPush)
+          if (_inScope(SyncAssetKind.audiobook, k)) k,
+      },
     );
 
     // toPullAudioOnly（场景B）= 远端有 ∧ 本端无有声书 ∧ 本端已有同 bookKey
@@ -2021,7 +2256,9 @@ class SyncOrchestrator {
     // 推；host 已有视频但清单报无外挂字幕 ⇒ 只补推字幕（不重传视频）。
     final List<VideoBookRow> localVideos = <VideoBookRow>[
       for (final VideoBookRow v in await _db.allVideoBooks())
-        if (_isUploadableLocalVideo(v)) v,
+        if (_isUploadableLocalVideo(v) &&
+            _inScope(SyncAssetKind.video, v.bookUid))
+          v,
     ]..sort((VideoBookRow a, VideoBookRow b) => a.bookUid.compareTo(b.bookUid));
 
     final Map<String, List<String>?> sidecarDirCache =
@@ -2172,7 +2409,9 @@ class SyncOrchestrator {
     // push side also drops libraries whose DB file is gone (nothing to send).
     final List<LocalAudioDbEntry> toPush = <LocalAudioDbEntry>[
       for (final LocalAudioDbEntry d in localAudioEntries)
-        if (!remoteNames.contains(d.displayName) && File(d.path).existsSync())
+        if (!remoteNames.contains(d.displayName) &&
+            File(d.path).existsSync() &&
+            _inScope(SyncAssetKind.localAudioDb, d.displayName))
           d,
     ];
     final List<AssetEntry> toPull = <AssetEntry>[
@@ -2180,7 +2419,11 @@ class SyncOrchestrator {
         if (!e.isFolder &&
             e.name.endsWith(_localAudioAssetSuffix) &&
             !localNames.contains(e.name
-                .substring(0, e.name.length - _localAudioAssetSuffix.length)))
+                .substring(0, e.name.length - _localAudioAssetSuffix.length)) &&
+            _inScope(
+                SyncAssetKind.localAudioDb,
+                e.name.substring(
+                    0, e.name.length - _localAudioAssetSuffix.length)))
           e,
     ];
     final int total = toPush.length + toPull.length;
@@ -2275,6 +2518,7 @@ class SyncOrchestrator {
       // sync root and scatter the .hibikiaudio package into hibiki-data/ instead
       // of the per-book folder. (requireBookFolderName is the precise backstop.)
       if (book.bookKey.isEmpty) continue;
+      if (!_inScope(SyncAssetKind.audiobook, book.bookKey)) continue;
       File? tmp;
       try {
         final String bookKey = book.bookKey;

@@ -647,6 +647,46 @@ void main() {
       expect(File(row.videoPath).lengthSync(), 200);
     });
 
+    test('删除上传视频会删库记录并回收 host 管理目录', () async {
+      final Directory uploads = Directory(p.join(tmp.path, 'remote_videos'))
+        ..createSync(recursive: true);
+      final AppModelLibraryHostService svc =
+          _makeService(db: db, tmp: tmp, uploadedVideoRoot: uploads);
+      await svc.importVideo(
+        File(p.join(tmp.path, 'delete.bin'))..writeAsBytesSync(<int>[1, 2]),
+        id: 'video/delete',
+        title: 'Delete',
+        originalFileName: 'delete.mp4',
+      );
+      final VideoBookRow row =
+          await db.getVideoBookByBookUid('video/delete') as VideoBookRow;
+      final Directory ownedDir = File(row.videoPath).parent;
+
+      await svc.deleteVideo('video/delete');
+
+      expect(await db.getVideoBookByBookUid('video/delete'), isNull);
+      expect(ownedDir.existsSync(), isFalse);
+    });
+
+    test('删除外部登记视频只删库记录，不删除用户源文件', () async {
+      final Directory uploads = Directory(p.join(tmp.path, 'remote_videos'))
+        ..createSync(recursive: true);
+      final File external = File(p.join(tmp.path, 'user-source.mp4'))
+        ..writeAsBytesSync(<int>[7, 8, 9]);
+      await db.upsertVideoBook(VideoBooksCompanion(
+        bookUid: const Value<String>('video/external'),
+        title: const Value<String>('External'),
+        videoPath: Value<String>(external.path),
+      ));
+      final AppModelLibraryHostService svc =
+          _makeService(db: db, tmp: tmp, uploadedVideoRoot: uploads);
+
+      await svc.deleteVideo('video/external');
+
+      expect(await db.getVideoBookByBookUid('video/external'), isNull);
+      expect(external.existsSync(), isTrue);
+    });
+
     test('best-effort 抽取封面回写 coverPath', () async {
       final Directory uploads = Directory(p.join(tmp.path, 'remote_videos'))
         ..createSync(recursive: true);

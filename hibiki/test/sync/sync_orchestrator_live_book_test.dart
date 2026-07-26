@@ -120,6 +120,7 @@ class _FakeSyncBackend implements SyncBackend {
   final FakeAssetStore _store;
 
   bool ensureBookFolderCalled = false;
+  final Set<String> uploadedContentNames = <String>{};
 
   @override
   Future<String> ensureNamespace(String name) => _store.ensureNamespace(name);
@@ -217,7 +218,10 @@ class _FakeSyncBackend implements SyncBackend {
     required String fileName,
     required File file,
     void Function(double progress)? onProgress,
-  }) async {}
+  }) async {
+    uploadedContentNames.add(fileName);
+  }
+
   @override
   Future<void> downloadContentFile({
     required String fileId,
@@ -226,7 +230,9 @@ class _FakeSyncBackend implements SyncBackend {
   }) async {}
   @override
   Future<DriveFile?> findContentFile(String folderId, String fileName) async =>
-      null;
+      uploadedContentNames.contains(fileName)
+          ? DriveFile(id: '$folderId/$fileName', name: fileName)
+          : null;
   @override
   void clearCache() {}
   @override
@@ -516,6 +522,9 @@ void main() {
       // 关键断言：云路径调用了 ensureBookFolder（SyncManager 进度路径走书文件夹）
       // 而非 live 端点（FakeSyncBackend 没有 listRemoteBooks，调用它会抛）
       expect(report.errors, isEmpty, reason: '云后端路径运行无错误: ${report.errors}');
+      expect(backend.uploadedContentNames, contains('CloudBook.epub'),
+          reason: '即使两端都没有阅读进度，也要独立补上传缺失 EPUB');
+      expect(report.booksPushed, 1);
       // 云路径不自动拉取远端独有书。
       expect(report.booksImported, 0);
     });

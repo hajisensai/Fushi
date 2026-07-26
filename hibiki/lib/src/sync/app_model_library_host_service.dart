@@ -46,7 +46,10 @@ import 'package:path/path.dart' as p;
 ///
 /// T2/T3 后续接线任务会在 AppModel 初始化时传入真实值。
 class AppModelLibraryHostService
-    implements HibikiLibraryHostService, DeletionTombstoneHost {
+    implements
+        HibikiLibraryHostService,
+        HibikiVideoDeleteHostService,
+        DeletionTombstoneHost {
   AppModelLibraryHostService({
     required HibikiDatabase db,
     required Directory dictionaryResourceRoot,
@@ -1306,6 +1309,32 @@ class AppModelLibraryHostService
         }
       }
     }
+  }
+
+  @override
+  Future<void> deleteVideo(String id) async {
+    _assertSafeVideoId(id);
+    await _runExclusive(() async {
+      final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+      if (row == null) throw StateError('unknown video: $id');
+
+      final Directory? root = _uploadedVideoRoot;
+      Directory? ownedDir;
+      if (root != null && row.videoPath.isNotEmpty) {
+        final String rootPath = p.normalize(p.absolute(root.path));
+        final String filePath = p.normalize(p.absolute(row.videoPath));
+        final String parentPath = p.dirname(filePath);
+        if (p.isWithin(rootPath, filePath) &&
+            p.equals(p.dirname(parentPath), rootPath)) {
+          ownedDir = Directory(parentPath);
+        }
+      }
+
+      await _db.deleteVideoBook(id);
+      if (ownedDir != null && ownedDir.existsSync()) {
+        ownedDir.deleteSync(recursive: true);
+      }
+    });
   }
 
   /// 接收 client 上传的视频外挂字幕并落到视频同目录（BUG-964，client→host live push）。

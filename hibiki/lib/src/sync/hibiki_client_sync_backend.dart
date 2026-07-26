@@ -1377,6 +1377,26 @@ class HibikiClientSyncBackend extends SyncBackend
     }
   }
 
+  /// 删除 host 实时库中的视频。id 按 URI path segment 编码；404 视为已收敛。
+  Future<void> deleteRemoteVideo(String id) async {
+    await _ensureResolved();
+    final HttpClientRequest request = await _ops!.buildRequest(
+      'DELETE',
+      '$_apiBase/api/library/videos/${_encodeVideoId(id)}',
+    );
+    final HttpClientResponse response = await request.close();
+    await response.drain<void>();
+    if (response.statusCode == 200 ||
+        response.statusCode == 204 ||
+        response.statusCode == 404) {
+      return;
+    }
+    _ops!.checkStatus(
+      response.statusCode,
+      'DELETE /api/library/videos/$id',
+    );
+  }
+
   /// ResumableDownloader 的注入缝：用 [client] 发一次带 [headers]（含 Range/If-Range）
   /// 的 GET，包成 [ResumableDownloadResponse]。token stream URL 自带鉴权，无需额外头。
   Future<ResumableDownloadResponse> _openResumableRequest(

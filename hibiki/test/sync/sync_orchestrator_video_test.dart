@@ -441,5 +441,38 @@ void main() {
         throwsA(isA<SyncBackendError>()),
       );
     });
+
+    test('delete resolves uid through manifest and removes video + cover',
+        () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final String ns = await store.ensureNamespace(kSyncVideosNamespace);
+      final File video = File('${work.path}/delete.mp4')
+        ..writeAsBytesSync(<int>[1, 2, 3]);
+      final File cover = File('${work.path}/delete.jpg')
+        ..writeAsBytesSync(<int>[4, 5]);
+      await store.putAsset(ns, 'video.mp4', video);
+      await store.putAsset(ns, 'cover.jpg', cover);
+      await store.putJsonAsset(
+        ns,
+        kSyncVideosManifestName,
+        const RemoteVideoManifest(videos: <RemoteVideoManifestEntry>[
+          RemoteVideoManifestEntry(
+            uid: 'video/delete',
+            title: 'Delete me',
+            videoAsset: 'video.mp4',
+            coverAsset: 'cover.jpg',
+            sizeBytes: 3,
+          ),
+        ]).toJson(),
+      );
+
+      final CloudRemoteVideoClient client =
+          CloudRemoteVideoClient(backend: store);
+      await client.deleteRemoteVideo('video/delete');
+
+      expect(await client.listRemoteVideos(), isEmpty);
+      expect(await store.findAsset(ns, 'video.mp4'), isNull);
+      expect(await store.findAsset(ns, 'cover.jpg'), isNull);
+    });
   });
 }

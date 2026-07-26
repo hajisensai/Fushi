@@ -401,6 +401,23 @@ class SyncRepository {
   Future<void> setAudiobookPosition(String bookKey, int positionMs) =>
       _db.setPrefTyped<int>('$_keyAudiobookPositionPrefix$bookKey', positionMs);
 
+  /// 一次取回全部书的有声书播放位置（bookKey -> 毫秒），跳过无记录/值损坏的键。
+  ///
+  /// 对比对话框逐本 [getAudiobookPosition] 是 N 次串行查询；这里一次前缀查询取回。
+  Future<Map<String, int>> getAllAudiobookPositions() async {
+    final Map<String, String> raw =
+        await _db.getPrefsWithPrefix(_keyAudiobookPositionPrefix);
+    final Map<String, int> out = <String, int>{};
+    raw.forEach((String bookKey, String encoded) {
+      // 前缀查询也会拿到 `audiobook_pos_at_<bookKey>`；去掉公共前缀后它以
+      // `at_` 开头，属于更新时间而不是一本名为 `at_*` 的书。
+      if (bookKey.startsWith('at_') || bookKey.isEmpty) return;
+      final int ms = PrefCodec.decode<int>(encoded, 0);
+      if (ms > 0) out[bookKey] = ms;
+    });
+    return out;
+  }
+
   // ── WebDAV credentials ────────────────────────────────────────────
 
   Future<String?> getWebDavUrl() => _getStringOrNull(_keyWebDavUrl);

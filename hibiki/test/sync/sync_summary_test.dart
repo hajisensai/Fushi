@@ -46,6 +46,30 @@ void main() {
       // 失败计数（2）出现在串中。
       expect(s, contains('2'));
     });
+
+    // 出站两项此前根本不进摘要：一轮把视频/书都推上去的同步照样显示「无新增」，
+    // 用户据此认定「有些没上传」。这两条锁住它们必须可见。
+    test('uploaded videos show up in the summary', () {
+      final String s = summarizeSyncReport(SyncRunReport()..videosExported = 3);
+      expect(s, contains('↑3'));
+      expect(_seps(s), 1, reason: '单类别只占一段');
+    });
+
+    test('pushed books show up in the summary', () {
+      final String s = summarizeSyncReport(SyncRunReport()..booksPushed = 4);
+      expect(s, contains('↑4'));
+    });
+
+    test('a purely outbound run no longer reads as "no changes"', () {
+      final String noChanges = summarizeSyncReport(SyncRunReport());
+      final String outbound = summarizeSyncReport(SyncRunReport()
+        ..booksPushed = 2
+        ..videosExported = 1);
+      expect(outbound, isNot(equals(noChanges)));
+      expect(outbound, contains('↑2'));
+      expect(outbound, contains('↑1'));
+      expect(_seps(outbound), 2, reason: '两个出站类别各占一段');
+    });
   });
 
   group('SyncRunReport.needsLocalLibraryRefresh', () {
@@ -66,6 +90,10 @@ void main() {
         (SyncRunReport()..localAudioImported = 1).needsLocalLibraryRefresh,
         isTrue,
       );
+      expect(
+        (SyncRunReport()..videosImported = 1).needsLocalLibraryRefresh,
+        isTrue,
+      );
     });
 
     test('is false when sync only exported or changed remote data', () {
@@ -74,10 +102,18 @@ void main() {
         (SyncRunReport()
               ..dictionariesExported = 1
               ..audiobooksExported = 1
-              ..localAudioExported = 1)
+              ..localAudioExported = 1
+              // 纯出站计数不得触发本地库刷新（否则每轮同步都白刷一遍书架）。
+              ..booksPushed = 5
+              ..videosExported = 5)
             .needsLocalLibraryRefresh,
         isFalse,
       );
     });
+  });
+
+  test('manual video download counts as a real asset transfer', () {
+    final SyncRunReport report = SyncRunReport()..videosImported = 1;
+    expect(report.assetsTransferred, 1);
   });
 }

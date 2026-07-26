@@ -2112,6 +2112,29 @@ class HibikiDatabase extends _$HibikiDatabase {
     return Map.fromEntries(rows.map((r) => MapEntry(r.key, r.value)));
   }
 
+  /// 按前缀批量读偏好（原始编码值，key 已剥掉 [prefix]）。
+  ///
+  /// 用于「一族按 id 分键」的偏好（如 `audiobook_pos_<bookKey>`）：逐条
+  /// [getPrefTyped] 是 N 次串行查询。这里一次 LIKE 取回该族全部行，调用方在内存
+  /// 里查表。**不用** [getAllPrefs]：偏好表里混着 token / folder-cache 这类大 blob，
+  /// 全表取回的反而更贵。
+  Future<Map<String, String>> getPrefsWithPrefix(String prefix) async {
+    if (prefix.isEmpty) return getAllPrefs();
+    // LIKE 通配符必须转义：`audiobook_pos_` 里的 `_` 是 LIKE 的单字符通配，不转义
+    // 会匹配到同长度的无关键。Drift 的 like() 不带 ESCAPE 子句，故走 customSelect。
+    final String pattern =
+        '${prefix.replaceAllMapped(RegExp(r'[%_\\]'), (Match m) => '\\${m[0]}')}%';
+    final List<QueryRow> rows = await customSelect(
+      "SELECT key, value FROM preferences WHERE key LIKE ? ESCAPE '\\'",
+      variables: <Variable<Object>>[Variable<String>(pattern)],
+      readsFrom: <ResultSetImplementation<dynamic, dynamic>>{preferences},
+    ).get();
+    return <String, String>{
+      for (final QueryRow r in rows)
+        r.read<String>('key').substring(prefix.length): r.read<String>('value'),
+    };
+  }
+
   Future<void> migrateLegacyBookmarkPreferences() async {
     if (!await _tableExists('preferences')) {
       return;
@@ -5423,6 +5446,19 @@ class HibikiDatabase extends _$HibikiDatabase {
               t.assetKey.equals(assetKey) & t.dimension.equals(dimension)))
         .getSingleOrNull();
     return row?.baseVersion;
+  }
+
+  /// 批量读某维度下全部资产的基线版本（assetKey -> baseVersion）。
+  ///
+  /// 对比对话框要为**每一本**书读一次 `progress` 基线；逐本 [getSyncBaseline] 是
+  /// N 次串行查询，书多时直接主导加载耗时。按维度一次取回让调用方在内存里查表。
+  Future<Map<String, int>> getSyncBaselinesByDimension(String dimension) async {
+    final List<SyncBaselineRow> rows = await (select(syncBaselines)
+          ..where((t) => t.dimension.equals(dimension)))
+        .get();
+    return <String, int>{
+      for (final SyncBaselineRow r in rows) r.assetKey: r.baseVersion,
+    };
   }
 
   /// 写/更新基线版本（主键 assetKey+dimension upsert）。

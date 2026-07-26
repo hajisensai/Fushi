@@ -784,6 +784,25 @@ class SyncManager {
     }
   }
 
+  /// 把一本本地书缺失的内容独立补到远端，不依赖阅读进度的同步裁决。
+  ///
+  /// 旧路径只在进度判为 export 时调用 [_exportContentIfMissing]；未读书（两端进度
+  /// 都为空）或进度已经一致会提前返回，导致开启“上传书籍文件”仍不上传 EPUB。
+  /// 返回 true 表示本次确实新上传了 EPUB；标签/音频 sidecar 仍由同一实现补齐。
+  Future<bool> exportBookContentIfMissing(EpubBookRow book) async {
+    final String root = await _backend.findOrCreateRootFolder();
+    final String folderId = await _backend.ensureBookFolder(
+      bookTitle: book.title,
+      rootFolderId: root,
+    );
+    final String fileName = '${sanitizeTtuFilename(book.title)}.epub';
+    final bool missingBefore =
+        await _backend.findContentFile(folderId, fileName) == null;
+    await _exportContentIfMissing(book: book, folderId: folderId);
+    if (!missingBefore) return false;
+    return await _backend.findContentFile(folderId, fileName) != null;
+  }
+
   static const _audioExtensions = {
     '.mp3',
     '.m4a',

@@ -18,6 +18,11 @@ import 'package:hibiki/utils.dart';
 String summarizeSyncReport(SyncRunReport r) {
   final List<String> parts = <String>[
     if (r.booksImported > 0) t.sync_now_books_in(count: r.booksImported),
+    // 出站两项此前完全没进摘要：视频计数器早就有（videosExported），书籍出站根本
+    // 没人统计。于是一轮把书和视频都推上去的同步，摘要照样说「无新增」——用户当然
+    // 会觉得「有些没上传」。
+    if (r.booksPushed > 0) t.sync_now_books_out(count: r.booksPushed),
+    if (r.videosExported > 0) t.sync_now_videos_out(count: r.videosExported),
     if (r.dictionariesImported > 0)
       t.sync_now_dicts_in(count: r.dictionariesImported),
     if (r.dictionariesExported > 0)

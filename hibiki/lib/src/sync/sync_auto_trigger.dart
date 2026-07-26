@@ -10,12 +10,10 @@ import 'package:hibiki/src/sync/book_exit_sync_scope.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
-import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
-import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -587,15 +585,23 @@ Future<void> _runAutoSync({
         await backend.restoreAuth(repo);
         if (!await backend.isAuthenticated) continue;
 
-        final manager = SyncManager(db: db, backend: backend);
-        final result = await manager.syncBook(
-          book: book,
+        final SyncOrchestrator orchestrator = SyncOrchestrator(
+          db: db,
+          backend: backend,
+          dictionaryResourceRoot: Directory.systemTemp,
+          audioDatabaseRoot: Directory.systemTemp,
+          tempDir: Directory.systemTemp,
+          deviceId: await repo.getOrCreateDeviceId(),
           syncStats: syncStats,
-          statsSyncMode: StatisticsSyncMode.merge,
-          syncAudioBook: syncAudioBook,
+          syncAudioBookPosition: syncAudioBook,
           syncContent:
               channel.isInterconnect ? interconnectSyncContent : syncContent,
+          syncAudioBookFiles: false,
+          syncVideoFiles: false,
+          syncDictionary: false,
+          syncLocalAudio: false,
         );
+        final SyncRunReport report = await orchestrator.runBookAfterClose(book);
 
         // TODO-132 诉求B：退出书同步静默——不再弹 imported/exported「同步成功」
         // SnackBar（打断用户、让用户误以为「必须等同步成功条才能离开」=卡手）。
@@ -603,23 +609,9 @@ Future<void> _runAutoSync({
         // **冲突**仍经下方 onReport → presentAutoConflicts 弹对话框（不是 SnackBar）。
         // messenger 参数保留（签名兼容，背景/app-open 路径本就传 null）。
 
-        // Surface a genuine fork to the caller as a one-conflict report so the
-        // book-exit flow can prompt resolution. The single-book path runs
-        // SyncManager.syncBook (not the orchestrator), so build the report here
-        // from the conflict fields SyncManager fills on SyncResult.conflict.
-        if (onReport != null) {
-          final SyncRunReport report = SyncRunReport();
-          if (result.direction == SyncResult.conflict) {
-            report.conflicts.add(SyncConflict(
-              assetKey: result.conflictAssetKey!,
-              dimension: result.conflictDimension!,
-              title: result.title,
-              localVersion: result.conflictLocalVersion,
-              remoteVersion: result.conflictRemoteVersion,
-            ));
-          }
-          onReport(report, backend);
-        }
+        // Orchestrator 把该书的真分叉原样收进 report，退出书流程继续由调用方提示解决。
+        logSyncReportErrors(report);
+        onReport?.call(report, backend);
       }
     });
   } catch (e) {

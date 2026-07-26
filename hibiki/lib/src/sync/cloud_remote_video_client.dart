@@ -84,3 +84,45 @@ class CloudRemoteVideoClient {
     await backend.getAsset(asset.id, destination, onProgress: onProgress);
   }
 }
+
+/// 云视频业务删除。作为 extension 提供，避免给现有测试/插件里 `implements
+/// CloudRemoteVideoClient` 的轻量 fake 增加破坏性的必实现成员。
+extension CloudRemoteVideoDeletion on CloudRemoteVideoClient {
+  Future<void> deleteRemoteVideo(String uid) async {
+    final String ns = await backend.ensureNamespace(kSyncVideosNamespace);
+    final List<RemoteVideoManifestEntry> current = await listRemoteVideos();
+    RemoteVideoManifestEntry? target;
+    final List<RemoteVideoManifestEntry> remaining =
+        <RemoteVideoManifestEntry>[];
+    for (final RemoteVideoManifestEntry entry in current) {
+      if (entry.uid == uid) {
+        target = entry;
+      } else {
+        remaining.add(entry);
+      }
+    }
+    if (target == null) {
+      throw SyncBackendError('remote video not found in manifest: $uid');
+    }
+
+    final AssetEntry? manifest =
+        await backend.findAsset(ns, kSyncVideosManifestName);
+    if (manifest == null) {
+      throw SyncBackendError('remote video manifest missing');
+    }
+    await backend.putJsonAsset(
+      ns,
+      kSyncVideosManifestName,
+      RemoteVideoManifest(videos: remaining).toJson(),
+    );
+
+    final List<String> assetNames = <String>[
+      target.videoAsset,
+      if (target.coverAsset != null) target.coverAsset!,
+    ];
+    for (final String name in assetNames) {
+      final AssetEntry? asset = await backend.findAsset(ns, name);
+      if (asset != null) await backend.deleteAsset(asset.id);
+    }
+  }
+}

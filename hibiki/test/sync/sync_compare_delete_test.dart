@@ -72,14 +72,26 @@ class _FakeSyncBackend implements SyncBackend {
       // Only the audioBook field is populated, so _fetchRemoteBookData touches
       // getAudioBookFile but never getProgressFile/getStatsFile.
       ? const DriveSyncFiles(
-          audioBook: DriveFile(id: audioAssetId, name: 'audiobook.hibikiaudio'),
+          audioBook: DriveFile(
+            id: 'audio-position-json',
+            name: 'audioBook_1_6_123.json',
+          ),
         )
       : const DriveSyncFiles();
   @override
   Future<String> ensureNamespace(String name) async => name;
   @override
   Future<List<AssetEntry>> listChildren(String namespaceId) async =>
-      namespaceId == _dictNs ? dictAssets : const <AssetEntry>[];
+      namespaceId == _dictNs
+          ? dictAssets
+          : (withAudio
+              ? const <AssetEntry>[
+                  AssetEntry(
+                    id: audioAssetId,
+                    name: 'audiobook.hibikiaudio',
+                  ),
+                ]
+              : const <AssetEntry>[]);
   @override
   void restoreCache(
       {String? rootFolderId, Map<String, String>? titleToFolderId}) {}
@@ -310,11 +322,14 @@ void main() {
     )..withAudio = true;
     await pumpDialog(tester, fake);
 
-    expect(find.text('BookA'), findsOneWidget);
+    // 该书带远端有声书，于是「BookA」在两处出现：书籍行（进度/统计维度）与
+    // 有声书区里它自己的一行（音频包在不在两端 + 传输入口）。二者是不同维度，
+    // 不是重复渲染；这里断言两处都在，并把删除动作定位到**书籍行**那一个。
+    expect(find.text('BookA'), findsNWidgets(2));
 
     await tapDeleteAndConfirm(
       tester,
-      rowDeleteIcon: find.byIcon(Icons.delete_outline),
+      rowDeleteIcon: find.byIcon(Icons.delete_outline).first,
       menuLabel: t.sync_compare_delete_audiobook,
     );
 
@@ -327,11 +342,12 @@ void main() {
     // The book folder was never touched.
     expect(fake.deletedIds, isNot(contains('folderX')));
     // Unlike a whole-book delete, the row survives — only the audiobook
-    // sub-action is cleared (_copyWithoutAudio optimistic refresh).
+    // sub-action is cleared (_copyWithoutAudio optimistic refresh). 有声书区那一行
+    // 也随之消失（两端都没有的资产不是对比项），故只剩书籍行这一处 BookA。
     expect(find.text('BookA'), findsOneWidget);
 
     // Re-open the row overflow: the audiobook item is gone, the book item stays.
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.tap(find.byIcon(Icons.delete_outline).first);
     await tester.pumpAndSettle();
     expect(find.text(t.sync_compare_delete_audiobook), findsNothing);
     expect(find.text(t.sync_compare_delete_book), findsOneWidget);

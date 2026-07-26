@@ -16,7 +16,8 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 const List<int> _coverBytes = <int>[0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4];
 
-class _FakeLibraryService implements HibikiLibraryHostService {
+class _FakeLibraryService
+    implements HibikiLibraryHostService, HibikiVideoDeleteHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
   Future<File?> clipVideoAudio(String id,
@@ -115,6 +116,15 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   final List<({String id, String title, String? fileName, List<int> bytes})>
       uploaded =
       <({String id, String title, String? fileName, List<int> bytes})>[];
+  final List<String> deleted = <String>[];
+
+  @override
+  Future<void> deleteVideo(String id) async {
+    if (id != videoId && !uploaded.any((u) => u.id == id)) {
+      throw StateError('unknown video');
+    }
+    deleted.add(id);
+  }
 
   @override
   Future<bool> videoExists(String id) async =>
@@ -342,6 +352,13 @@ void main() {
     expect(rec.title, '映画タイトル'); // 非 ASCII 标题经 header 往返正确
     expect(rec.fileName, '映画.mp4'); // 原始文件名保留（供 host 保扩展名）
     expect(rec.bytes, <int>[10, 20, 30, 40, 50]); // 字节流完整送达
+  });
+
+  test('deleteRemoteVideo calls host live DELETE endpoint', () async {
+    final HibikiClientSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+    await backend.deleteRemoteVideo(_FakeLibraryService.videoId);
+    expect(library.deleted, contains(_FakeLibraryService.videoId));
   });
 
   test('remoteVideoStreamUrls returns directly playable token stream URL',

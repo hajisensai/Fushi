@@ -1372,6 +1372,12 @@ abstract class HibikiLibraryHostService {
       CollectionManifest incoming);
 }
 
+/// 可选的视频删除能力。独立于 [HibikiLibraryHostService]，让旧 host/fake 保持兼容；
+/// server 仅在实现此接口时暴露 DELETE，旧实现返回 501。
+abstract interface class HibikiVideoDeleteHostService {
+  Future<void> deleteVideo(String id);
+}
+
 /// host 端「列删除墓碑」的**可选**能力（显式确认式删除传播，host→client 消费方向）。
 /// 与 [HibikiLibraryHostService] 分开：不是每个 host 实现（尤其测试 fake）都需要它，
 /// 塞进主接口会强制全部实现者补方法（Never break userspace）。真实 host

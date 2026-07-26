@@ -17,7 +17,8 @@ DateTime _uniqueSubtitleCacheMtime(String seed) {
 /// Fake 库服务：视频方法真实、其他方法存根。
 ///
 /// 包含一个 id 含斜杠的视频（bookUid = `video/sample`），指向临时视频文件和字幕文件。
-class _FakeLibraryService implements HibikiLibraryHostService {
+class _FakeLibraryService
+    implements HibikiLibraryHostService, HibikiVideoDeleteHostService {
   @override
   Future<List<RemoteActivityEvent>> listActivityEvents(
           {int limit = 100}) async =>
@@ -113,6 +114,15 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 
   final List<({String id, String title, String? fileName})> uploaded =
       <({String id, String title, String? fileName})>[];
+  final List<String> deleted = <String>[];
+
+  @override
+  Future<void> deleteVideo(String id) async {
+    if (id != videoId && !uploaded.any((u) => u.id == id)) {
+      throw StateError('unknown video');
+    }
+    deleted.add(id);
+  }
 
   @override
   Future<bool> videoExists(String id) async =>
@@ -370,6 +380,18 @@ void main() {
     expect(first['id'], 'video/sample', reason: 'id 含斜杠应被正确序列化');
     expect(first['title'], 'Sample Video');
     expect(first['hasSubtitle'], true);
+    c.close();
+  });
+
+  test('DELETE /api/library/videos/<id> 命中实时库业务删除', () async {
+    final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
+    final HttpClient c = HttpClient();
+    final HttpClientRequest req =
+        await c.deleteUrl(Uri.parse('$base/api/library/videos/$encodedId'));
+    req.headers.set('authorization', authHeader());
+    final HttpClientResponse res = await req.close();
+    expect(res.statusCode, 200);
+    expect(lib.deleted, contains(_FakeLibraryService.videoId));
     c.close();
   });
 
