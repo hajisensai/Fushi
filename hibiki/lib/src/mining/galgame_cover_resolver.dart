@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:hibiki/src/media/media_extensions.dart';
 import 'package:hibiki/src/mining/galgame_exe_icon.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:image/image.dart' as img;
@@ -32,15 +33,12 @@ class GameCoverCandidate {
   String toString() => 'GameCoverCandidate($path, score: $score)';
 }
 
-/// 允许作为封面来源的图片扩展名（小写，含点）。
-const Set<String> kGameCoverImageExtensions = <String>{
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.webp',
-  '.bmp',
-  '.ico',
-};
+/// 允许作为封面来源的图片扩展名（小写，含点）＝图片扩展名基集显式增删：
+/// − `.gif`（动图不作封面，落盘归一化也不认它，维持既有行为）；
+/// ＋ `.ico`（galgame 目录常见现成图标文件，可作候选并原样落盘）。
+final Set<String> kGameCoverImageExtensions = Set<String>.unmodifiable(
+  <String>{...kImageExtensionsBase, '.ico'}..remove('.gif'),
+);
 
 /// 封面像素下限：小于它的图当封面会糊成一团（多数是 UI 素材 / 小图标）。
 const int kGameCoverMinPixels = 180;

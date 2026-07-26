@@ -13,6 +13,8 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
+import 'package:hibiki/src/media/media_extensions.dart';
+
 /// sidecar 扫描结果：命中的海报文件 + 从 NFO 解析出的元数据。
 ///
 /// 全部字段可空；无任何资产时返回全 null 实例（[SidecarResult.empty]）。
@@ -55,13 +57,15 @@ class SidecarScanner {
     'cover'
   ];
 
-  /// 海报图扩展名（含点，按此顺序取用）。
-  static const List<String> _imageExts = <String>[
-    '.jpg',
-    '.jpeg',
-    '.png',
-    '.webp',
-  ];
+  /// 海报图扩展名（含点，按此顺序取用）＝图片扩展名基集顺序，显式去掉
+  /// `.gif` / `.bmp`（Jellyfin / Kodi 生态 sidecar 海报惯例只产
+  /// jpg / jpeg / png / webp，动图更不宜作海报；const Set 基集按书写顺序
+  /// 迭代，`.jpg` 最优先维持既有行为）。
+  static final List<String> _imageExts = List<String>.unmodifiable(
+    kImageExtensionsBase.where(
+      (String ext) => ext != '.gif' && ext != '.bmp',
+    ),
+  );
 
   /// 扫描 [videoFilePath] 所在目录，识别海报图与 NFO 元数据。
   ///

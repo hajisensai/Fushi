@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import 'package:hibiki/src/utils/misc/hibiki_share.dart';
 import 'package:hibiki/src/epub/epub_book.dart' show fallbackMimeType;
+import 'package:hibiki/src/media/media_extensions.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart'
     show ReaderHibikiSource;
 import 'package:hibiki/src/reader/image_reveal_key.dart';
@@ -112,13 +113,10 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
     }
   }
 
-  static const Set<String> _imageExtensions = {
-    '.jpg',
-    '.jpeg',
-    '.png',
-    '.gif',
-    '.webp',
-    '.bmp',
+  /// 插图抽取白名单＝图片扩展名基集 ＋ `.svg`（EPUB 插画可为矢量图，
+  /// 沿既有白名单保留，按字节交给查看器处理）。
+  static final Set<String> _imageExtensions = <String>{
+    ...kImageExtensionsBase,
     '.svg',
   };
 
