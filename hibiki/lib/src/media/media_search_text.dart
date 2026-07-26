@@ -10,6 +10,9 @@
 /// 中点、长音符）不再挡住命中。
 library;
 
+import 'package:hibiki_core/hibiki_core.dart'
+    show fullwidthAsciiToHalfwidth, katakanaToHiragana;
+
 /// 搜索归一化：全角 ASCII → 半角、大写 → 小写、片假名 → 平假名、丢掉空白与常见
 /// 标点。目的是让「Fate／stay night」「fate stay night」「ＦＡＴＥ・ｓｔａｙ」
 /// 互相能命中，而不引入任何模糊匹配依赖。
@@ -20,19 +23,14 @@ String normalizeMediaSearchText(String raw) {
   if (raw.isEmpty) return '';
   final StringBuffer out = StringBuffer();
   for (final int code in raw.runes) {
-    int c = code;
-    // 全角 ASCII（U+FF01..U+FF5E）→ 半角。
-    if (c >= 0xFF01 && c <= 0xFF5E) {
-      c -= 0xFEE0;
-    }
+    // 全角 ASCII（U+FF01..U+FF5E）→ 半角（共享原语，范围外原样）。
+    int c = fullwidthAsciiToHalfwidth(code);
     // 全角空格 → 视作空白（下面被丢弃）。
     if (c == 0x3000) {
       continue;
     }
-    // 片假名 → 平假名（基本区）。
-    if (c >= 0x30A1 && c <= 0x30F6) {
-      c -= 0x60;
-    }
+    // 片假名 → 平假名（基本区，共享原语）。
+    c = katakanaToHiragana(c);
     final String ch = String.fromCharCode(c);
     if (_isDroppedSearchChar(ch, c)) {
       continue;

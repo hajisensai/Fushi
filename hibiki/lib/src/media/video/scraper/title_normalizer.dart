@@ -9,6 +9,8 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:hibiki_core/hibiki_core.dart' show fullwidthAsciiToHalfwidth;
+
 /// 标题归一化与相似度工具。
 class TitleNormalizer {
   const TitleNormalizer._();
@@ -24,9 +26,9 @@ class TitleNormalizer {
       // 全角空格 → 半角空格。
       if (r == 0x3000) {
         r = 0x20;
-      } else if (r >= 0xFF01 && r <= 0xFF5E) {
-        // 全角 ASCII 区（！Ａ１：等）整段平移到半角。
-        r = r - 0xFEE0;
+      } else {
+        // 全角 ASCII 区（！Ａ１：等）整段平移到半角（共享原语，范围外原样）。
+        r = fullwidthAsciiToHalfwidth(r);
       }
       // 繁体/日文变体 → 简体（单字映射，覆盖动画标题高频字）。
       final String ch = String.fromCharCode(r);
