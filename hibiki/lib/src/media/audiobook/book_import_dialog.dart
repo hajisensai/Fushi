@@ -277,18 +277,14 @@ class _BookImportDialogState extends State<BookImportDialog>
     }
   }
 
-  /// 打开漫画「在线目录」（O1 mokuro.moe 目录源）：完全照 [_openOcrWizard] 范式，
-  /// 有导入发生（返回成功卷数 > 0）则连同关闭本导入框并回传 true，让书架刷新。
-  /// barrier 不可点关：导入计数经显式关闭按钮回传，点空白会丢「需刷新」信号。
+  /// 打开漫画「在线目录」（O1 mokuro.moe 目录源）。下载/导入在共享队列后台
+  /// 进行（统一下载中心，关对话框不中断），书架刷新由书架页的队列监听触发，
+  /// 本导入框不再需要「导入发生则连带关闭回传」。
   Future<void> _openOnlineCatalog() async {
-    final int? imported = await showAppDialog<int>(
+    await showAppDialog<void>(
       context: context,
-      barrierDismissible: false,
       builder: (_) => MokuroMoeCatalogDialog(db: widget.db),
     );
-    if (imported != null && imported > 0 && mounted) {
-      Navigator.pop(context, true);
-    }
   }
 
   /// 拖文件进本对话框 → 分类 → 按字段覆盖（仅填命中类，不清用户已选）。

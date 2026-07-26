@@ -21,6 +21,7 @@ import 'package:hibiki/src/media/display_title.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
+import 'package:hibiki/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_feature_flags.dart';
 import 'package:hibiki/src/media/video/video_import_dialog.dart';
@@ -311,6 +312,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // 重跑（本 State 存活、future 非 null）。这里显式监听刷新信号重载映射，使后台
     // 合集同步落库后书架立即成组（否则合集不渲染，直到重启 app）。
     mediaType.tabRefreshNotifier.addListener(_reloadShelfMapsOnTabRefresh);
+    // 统一下载中心：mokuro.moe 卷经共享队列后台落库（可能在「在线目录」对话框
+    // 关闭后才完成）。监听队列 importedCount 增量失效书架 provider，取代旧的
+    // 「对话框关闭回传导入数」信号（该信号已随对话框改队列化而移除）。
+    _mokuroQueue = ref.read(appProvider).mokuroMoeDownloadQueue;
+    _mokuroImportedSeen = _mokuroQueue!.importedCount;
+    _mokuroQueue!.addListener(_onMokuroQueueChanged);
     // BUG-992：顶层 tab IndexedStack 保活（BUG-750）后，切回书架不再隐式重拉远端书 →
     // 远端占位卡 + 书库概览总数要等用户手动下拉刷新才补齐。监听全局 tab 信号，切回
     // 书架 tab 时自动重拉一次远端（缓存 _lastRemoteState 顶住 waiting、不闪屏）。
@@ -335,10 +342,24 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     });
   }
 
+  /// mokuro.moe 共享下载队列（app 级；initState 挂监听、dispose 摘除）。
+  MokuroMoeDownloadQueue? _mokuroQueue;
+  int _mokuroImportedSeen = 0;
+
+  void _onMokuroQueueChanged() {
+    if (!mounted) return;
+    final int imported = _mokuroQueue?.importedCount ?? 0;
+    if (imported == _mokuroImportedSeen) return;
+    _mokuroImportedSeen = imported;
+    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(srtBooksProvider);
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
     mediaType.tabRefreshNotifier.removeListener(_reloadShelfMapsOnTabRefresh);
+    _mokuroQueue?.removeListener(_onMokuroQueueChanged);
     homeShellTabNotifier.removeListener(_onShellTabActivated);
     assert(() {
       ReaderHibikiHistoryPage.debugOpenBook = null;
@@ -575,18 +596,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     ref.invalidate(srtBooksProvider);
   }
 
-  /// 打开漫画「在线目录」对话框；有导入发生（返回成功卷数 > 0）则刷新书架
-  /// （照 [_openManageSources] 的失效范式）。barrier 不可点关：导入结果经显式
-  /// 关闭按钮回传，避免点空白丢「需刷新」信号。
+  /// 打开漫画「在线目录」对话框。下载/导入在共享队列后台进行（统一下载中心，
+  /// 关对话框不中断）；书架刷新由 initState 挂的队列监听按 importedCount 增量
+  /// 触发，不再依赖对话框关闭回传。
   Future<void> _openOnlineCatalog() async {
-    final int? imported = await showAppDialog<int>(
+    await showAppDialog<void>(
       context: context,
-      barrierDismissible: false,
       builder: (_) => MokuroMoeCatalogDialog(db: appModel.database),
     );
-    if (!mounted || imported == null || imported <= 0) return;
-    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
-    ref.invalidate(srtBooksProvider);
   }
 
   void _openCollections() {

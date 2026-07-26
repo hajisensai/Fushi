@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
+import 'package:hibiki/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_volume_downloader.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -50,8 +51,8 @@ void main() {
     await db.close();
   });
 
-  /// 照 `manga_import_dialog_test.dart` 的 TranslationProvider 壳（+ ProviderScope，
-  /// 对话框是 ConsumerStatefulWidget；clientOverride 非 null 时不会触达 appProvider）。
+  /// TranslationProvider 壳（+ ProviderScope，对话框是 ConsumerStatefulWidget；
+  /// clientOverride/queueOverride 非 null 时不会触达 appProvider）。
   Widget wrap(Widget child) {
     return ProviderScope(
       child: TranslationProvider(
@@ -60,10 +61,36 @@ void main() {
     );
   }
 
+  /// 注入 runner 的测试队列：记录调用、回传受控事件流。
+  ({
+    MokuroMoeDownloadQueue queue,
+    List<(String, String)> calls,
+    List<StreamController<MokuroMoeVolumeDownloadEvent>> ctrls,
+  }) makeQueue() {
+    final List<(String, String)> calls = <(String, String)>[];
+    final List<StreamController<MokuroMoeVolumeDownloadEvent>> ctrls =
+        <StreamController<MokuroMoeVolumeDownloadEvent>>[];
+    final MokuroMoeDownloadQueue queue = MokuroMoeDownloadQueue(
+      db: db,
+      clientFactory: () => MokuroMoeClient(),
+      runnerOverride: (
+          {required String seriesName, required String volumeName}) {
+        calls.add((seriesName, volumeName));
+        final StreamController<MokuroMoeVolumeDownloadEvent> c =
+            StreamController<MokuroMoeVolumeDownloadEvent>();
+        ctrls.add(c);
+        return c.stream;
+      },
+    );
+    return (queue: queue, calls: calls, ctrls: ctrls);
+  }
+
   testWidgets('browse：目录加载后渲染系列，搜索大小写不敏感过滤', (WidgetTester tester) async {
+    final q = makeQueue();
     await tester.pumpWidget(wrap(MokuroMoeCatalogDialog(
       db: db,
       clientOverride: _FakeClient(_library),
+      queueOverride: q.queue,
     )));
     await tester.pumpAndSettle();
 
@@ -74,14 +101,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('よつばと!'), findsOneWidget);
     expect(find.text('ヨコハマ買い出し紀行'), findsNothing);
+    q.queue.dispose();
   });
 
   testWidgets('browse：加载失败显示错误 + 重试按钮，重试后恢复', (WidgetTester tester) async {
+    final q = makeQueue();
     final _FakeClient client = _FakeClient(_library)
       ..libraryError = Exception('boom');
     await tester.pumpWidget(wrap(MokuroMoeCatalogDialog(
       db: db,
       clientOverride: client,
+      queueOverride: q.queue,
     )));
     await tester.pumpAndSettle();
 
@@ -91,37 +121,17 @@ void main() {
     await tester.tap(find.text(t.retry));
     await tester.pumpAndSettle();
     expect(find.text('よつばと!'), findsOneWidget);
+    q.queue.dispose();
   });
 
-  testWidgets('series → 选卷 → 下载：进度渲染、完成标记 ✓、关闭回传导入数',
+  testWidgets('series → 选卷 → 入队：runner 起卷、进度渲染、完成标记 ✓',
       (WidgetTester tester) async {
-    final StreamController<MokuroMoeVolumeDownloadEvent> events =
-        StreamController<MokuroMoeVolumeDownloadEvent>();
-    final List<(String, String)> runnerCalls = <(String, String)>[];
-    int? popResult;
-
-    await tester.pumpWidget(wrap(Builder(
-      builder: (BuildContext context) => Center(
-        child: ElevatedButton(
-          onPressed: () async {
-            popResult = await showDialog<int>(
-              context: context,
-              builder: (_) => MokuroMoeCatalogDialog(
-                db: db,
-                clientOverride: _FakeClient(_library),
-                runnerOverride: (
-                    {required String seriesName, required String volumeName}) {
-                  runnerCalls.add((seriesName, volumeName));
-                  return events.stream;
-                },
-              ),
-            );
-          },
-          child: const Text('open'),
-        ),
-      ),
+    final q = makeQueue();
+    await tester.pumpWidget(wrap(MokuroMoeCatalogDialog(
+      db: db,
+      clientOverride: _FakeClient(_library),
+      queueOverride: q.queue,
     )));
-    await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
     // 进入 series 阶段。
@@ -136,15 +146,15 @@ void main() {
     );
     expect(downloadBtn.onPressed, isNull);
 
-    // 选第 1 卷 → 下载。
+    // 选第 1 卷 → 入队（下载在共享队列后台执行，对话框停在 series 阶段可继续选）。
     await tester.tap(find.text('よつばと! 第01巻'));
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.manga_online_download_selected));
     await tester.pump();
-    expect(runnerCalls.single, ('よつばと!', 'よつばと! 第01巻'));
+    expect(q.calls.single, ('よつばと!', 'よつばと! 第01巻'));
 
-    // CBZ 字节进度 → 进度条 + 阶段文案。
-    events.add(const MokuroMoeVolumeDownloadEvent(
+    // CBZ 字节进度 → 内联面板进度条 + 阶段文案（面板 + 当前卷 subtitle 两处一致）。
+    q.ctrls[0].add(const MokuroMoeVolumeDownloadEvent(
       stage: MokuroMoeDownloadStage.downloadingCbz,
       receivedBytes: 512 * 1024,
       totalBytes: 1024 * 1024,
@@ -152,22 +162,51 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(find.byType(LinearProgressIndicator), findsOneWidget);
-    // 阶段文案出现在进度面板 + 当前卷 subtitle（两处一致）。
     expect(find.textContaining(t.manga_online_stage_cbz), findsWidgets);
 
-    // 完成 → 回 series 阶段，该卷标 ✓（不可再选），无复选框残留选中。
-    events.add(const MokuroMoeVolumeDownloadEvent(
+    // 完成 → 该卷标 ✓（不可再选），无复选框残留选中；面板随队列清空收起。
+    q.ctrls[0].add(const MokuroMoeVolumeDownloadEvent(
       stage: MokuroMoeDownloadStage.done,
       bookKey: 'yotsubato-01',
     ));
-    await events.close();
+    await q.ctrls[0].close();
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.check_circle), findsOneWidget);
     expect(find.text(t.manga_online_downloaded), findsOneWidget);
+    expect(q.queue.importedCount, 1);
+    q.queue.dispose();
+  });
 
-    // 关闭回传本次成功导入卷数。
-    await tester.tap(find.text(t.dialog_close));
+  testWidgets('统一下载中心：关闭对话框不中断队列下载（任务在后台走完并计数）', (WidgetTester tester) async {
+    final q = makeQueue();
+    await tester.pumpWidget(wrap(MokuroMoeCatalogDialog(
+      db: db,
+      clientOverride: _FakeClient(_library),
+      queueOverride: q.queue,
+    )));
     await tester.pumpAndSettle();
-    expect(popResult, 1);
+
+    await tester.tap(find.text('よつばと!'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('よつばと! 第01巻'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.manga_online_download_selected));
+    await tester.pump();
+    expect(q.calls, hasLength(1));
+
+    // 「关闭对话框」：整树替换（dispose 对话框 State）。队列不被取消。
+    await tester.pumpWidget(wrap(const SizedBox.shrink()));
+    await tester.pumpAndSettle();
+    expect(q.queue.runningTask, isNotNull);
+
+    q.ctrls[0].add(const MokuroMoeVolumeDownloadEvent(
+      stage: MokuroMoeDownloadStage.done,
+      bookKey: 'yotsubato-01',
+    ));
+    await q.ctrls[0].close();
+    await tester.pumpAndSettle();
+    expect(q.queue.tasks.single.status, MokuroMoeTaskStatus.done);
+    expect(q.queue.importedCount, 1);
+    q.queue.dispose();
   });
 }

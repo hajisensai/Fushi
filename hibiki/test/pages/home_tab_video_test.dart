@@ -10,12 +10,13 @@ import 'package:hibiki/src/pages/implementations/home_page.dart';
 /// DB；此处验证它的「生效」= tab 的出现/位置。
 void main() {
   group('homeActiveTabs', () {
-    test('关闭实验视频：无视频/下载 tab，顺序为 首页→书架→词典→游戏→设置', () {
+    test('关闭实验视频：无视频 tab；下载 tab 恒在（统一下载中心），顺序为 首页→书架→下载→词典→游戏→设置', () {
       final List<HomeTab> tabs =
           homeActiveTabs(videoEnabled: false, gamesEnabled: true);
       expect(tabs, <HomeTab>[
         HomeTab.home,
         HomeTab.books,
+        HomeTab.downloads,
         HomeTab.dictionaries,
         HomeTab.games,
         HomeTab.settings,
@@ -50,16 +51,14 @@ void main() {
       expect(dict, equals(downloads + 1));
     });
 
-    test('视频开关增删 视频+下载 两个 tab（同门控），不动其它 tab 顺序', () {
+    test('视频开关只增删视频 tab（下载 tab 不随动，统一下载中心），不动其它 tab 顺序', () {
       final List<HomeTab> off =
           homeActiveTabs(videoEnabled: false, gamesEnabled: true);
       final List<HomeTab> on =
           homeActiveTabs(videoEnabled: true, gamesEnabled: true);
-      // 去掉视频+下载后两者应完全一致（这两个是仅有的差异）。
+      // 去掉视频后两者应完全一致（视频是仅有的差异；下载恒在）。
       expect(
-        on
-            .where((HomeTab t) => t != HomeTab.video && t != HomeTab.downloads)
-            .toList(),
+        on.where((HomeTab t) => t != HomeTab.video).toList(),
         equals(off),
       );
     });
