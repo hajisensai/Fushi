@@ -1497,14 +1497,19 @@ class _SessionOverviewCard extends StatelessWidget {
                 // 降级原因：优先显示结构化失败的可执行处置（「游戏以管理员身份运行，
                 // 请同样以管理员身份启动 Hibiki」之类）。旧实现把 `engine_attach_failed`
                 // 这种内部代码原样甩给用户，等于什么都没说。没有结构化原因时才退回代码。
-                if (!compact && state.fallbackReason != null)
+                //
+                // **窄屏也必须显示**：右侧 _StatusPill 在 compact 下照常亮「已降级」，
+                // 若同时把原因藏掉，用户看到的就是「出事了 + 不告诉你出了什么事」，
+                // 比两个都不显示更难排查。compact 要省的是次要信息（采样率/声道/位深，
+                // 见上面的 format），不是唯一的诊断线索。只收窄行数，不整行丢弃。
+                if (state.fallbackReason != null)
                   Text(
                     // BUG-1100：先看注入失败的可执行处置，再看降级原因自己的人话文案；
                     // 两张表都没有才回退内部代码。
                     galHookFailureLabel(state.injectorFailure) ??
                         galHookFallbackLabel(state.fallbackReason!) ??
                         state.fallbackReason!,
-                    maxLines: 3,
+                    maxLines: compact ? 2 : 3,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.tertiary,

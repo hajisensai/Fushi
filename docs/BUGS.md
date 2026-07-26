@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1076 条。点号进各自文件。
+> 共 1077 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1109](bugs/BUG-1109-narrow-screen-hides-degrade-reason.md) | ✅ | ✅ | 捕获工作台窄屏时藏掉降级原因，只留一个「已降级」徽章 |
 | [BUG-1109](bugs/BUG-1109-gal-mining-audio-truncated-tail.md) | ✅ | ✅ | galgame 制卡音频尾部被截断：引擎 PCM 首取即冻结 + 资源 dump 写完前就转码 |
 | [BUG-1108](bugs/BUG-1108-shelf-continue-hero-raw-title.md) | ✅ | ✅ | 改名后书架继续阅读条仍显示旧名 |
 | [BUG-1107](bugs/BUG-1107-reading-stats-phantom-chars-lost-duration.md) | ✅ | ✅ | 阅读统计速度爆表：幻象字数+纯时长行被拒 |
