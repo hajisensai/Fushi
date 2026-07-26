@@ -2,6 +2,13 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'package:hibiki/src/media/media_extensions.dart';
+
+/// 视频扩展名表已收敛到共享真相源 [kVideoExtensions]（media_extensions.dart，
+/// 与刮削端 `FilenameParser` 同表）；此处 re-export 维持既有引用面（导入对话框 /
+/// 目录扫描 / torrent 选片 / 拖放同步守卫测试）。
+export 'package:hibiki/src/media/media_extensions.dart' show kVideoExtensions;
+
 /// 从视频文件名解析出的元信息：系列名 + 季 + 集号（Jellyfin / anitomy 式轻量实现）。
 ///
 /// [series] 永不为空（识别不出集号时整名作系列，按单片处理）。[season] / [episode]
@@ -45,27 +52,6 @@ final RegExp _dashNumber = RegExp(r'-\s*(\d{1,4})(?=\s|$)');
 
 /// 结尾裸集号 `Title 12`。
 final RegExp _trailingNumber = RegExp(r'^(.*?\S)\s+(\d{1,4})\s*$');
-
-/// 视频文件扩展名（小写，含点）。
-const Set<String> kVideoExtensions = <String>{
-  '.mp4',
-  '.mkv',
-  '.avi',
-  '.mov',
-  '.webm',
-  '.m4v',
-  '.ts',
-  '.m2ts',
-  '.mts',
-  '.flv',
-  '.wmv',
-  '.mpg',
-  '.mpeg',
-  '.ogv',
-  '.rmvb',
-  '.rm',
-  '.vob',
-};
 
 /// 解析视频文件名（可带或不带扩展名）→ [VideoNameInfo]。纯函数，无 IO。
 ///

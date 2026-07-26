@@ -156,7 +156,7 @@ void main() {
       kDragVideoExtensions,
       equals(scan),
       reason:
-          '视频扩展名漂移：更新 kDragVideoExtensions 与 kVideoExtensions（video_filename_parser.dart）保持一致',
+          '视频扩展名漂移：更新 kDragVideoExtensions 与 kVideoExtensions（media_extensions.dart）保持一致',
     );
   });
 

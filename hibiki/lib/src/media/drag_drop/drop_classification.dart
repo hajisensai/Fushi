@@ -27,9 +27,9 @@ const Set<String> kDragSubtitleExtensions = <String>{
   'lrc',
 };
 
-/// 视频扩展名（不带点，小写）。镜像 [kVideoExtensions]（video_filename_parser.dart，
-/// 文件夹扫描用的权威列表），守卫测试钉死两者同步——否则拖入 .mts/.vob/.rmvb 等容器
-/// 格式的视频会被分到 unknown，识别不出（TODO-558 / BUG-326）。
+/// 视频扩展名（不带点，小写）。镜像 [kVideoExtensions]（media_extensions.dart
+/// 共享真相源，文件夹扫描 / 刮削同用一份），守卫测试钉死两者同步——否则拖入
+/// .mts/.vob/.rmvb 等容器格式的视频会被分到 unknown，识别不出（TODO-558 / BUG-326）。
 const Set<String> kDragVideoExtensions = <String>{
   'mp4',
   'mkv',

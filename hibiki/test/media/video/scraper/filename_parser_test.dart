@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/media_extensions.dart';
 import 'package:hibiki/src/media/video/scraper/filename_parser.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 
@@ -321,6 +322,20 @@ void main() {
       expect(p.title, 'Spice and Wolf');
       expect(p.season, 2);
       expect(p.episode, 1);
+    });
+  });
+
+  group('扩展名剥离与导入共用 kVideoExtensions（G10 第一步）', () {
+    test('导入认的每个扩展名刮削端都能剥掉（.rmvb 不再留在标题里）', () {
+      for (final String ext in kVideoExtensions) {
+        final ParsedMediaName p = FilenameParser.parse('孤独のグルメ$ext');
+        expect(p.title, '孤独のグルメ', reason: '$ext 是可导入的视频扩展名，刮削剥不掉会拉低搜索相似度');
+      }
+    });
+
+    test('扩展名大小写不敏感', () {
+      expect(FilenameParser.parse('タイトル.MKV').title, 'タイトル');
+      expect(FilenameParser.parse('タイトル.Rmvb').title, 'タイトル');
     });
   });
 }

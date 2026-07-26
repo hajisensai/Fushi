@@ -6,6 +6,7 @@
 /// 纯 Dart 标准库实现，不依赖任何 pub 包。
 library;
 
+import 'package:hibiki/src/media/media_extensions.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 
 /// 一个被摘出的括号块：内容 + 它前面的括号外文本（用于判断「标题之后」）。
@@ -115,14 +116,15 @@ class FilenameParser {
 
   // ─────────────────────────── 扩展名 / 括号块扫描 ───────────────────────────
 
-  /// 常见视频扩展名（结尾剥离，大小写不敏感）。
-  static final RegExp _videoExtension = RegExp(
-    r'\.(mkv|mp4|avi|ts|webm|m2ts|wmv|flv|mov)$',
-    caseSensitive: false,
-  );
-
-  static String _stripExtension(String name) =>
-      name.replaceFirst(_videoExtension, '');
+  /// 结尾剥离视频扩展名（大小写不敏感）。扩展名表与导入 / 目录扫描共用
+  /// [kVideoExtensions]（G10 第一步）：此前这里另手写一张只有 9 项的小表，
+  /// `.rmvb` 等能导入的格式剥不掉、扩展名留在标题里拉低刮削搜索相似度。
+  static String _stripExtension(String name) {
+    final int dot = name.lastIndexOf('.');
+    if (dot <= 0) return name;
+    final String ext = name.substring(dot).toLowerCase();
+    return kVideoExtensions.contains(ext) ? name.substring(0, dot) : name;
+  }
 
   /// 支持的括号对（半角 + 全角）。
   static const Map<String, String> _bracketPairs = <String, String>{
