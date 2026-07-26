@@ -339,22 +339,28 @@ SettingsDestination buildSyncBackupDestination() {
           ),
         ],
       ),
-      // Group 6: Data storage location — desktop only (TODO-935 E2), appended last so the
-      // existing five-section index contract above is untouched. 移动端沙箱固定，整个 section 用 isDesktopPlatform 门控隐藏；桌面选新目录后走
-      // 已实现的 DataRootMigrator 整目录迁移 + 迁移成功后自动重启。
-      SettingsSection(
-        title: t.settings_section_data_storage,
+    ],
+  );
+}
+
+/// 桌面端「数据存储位置」小节（TODO-935 E2）。历史上挂在同步备份大类尾部，
+/// 2026-07-26 用户拍板挪到「系统」大类展示——数据根是设备级存储配置，与备份无关。
+/// 构建函数留在本库（[_DataRootWidget] 是本库私有 part），由
+/// `settings_schema_system.dart` 调用；item id 保持 'sync.data_storage_location'
+/// 不变（历史命名前缀，搜索/导航锚点，仅换展示分类）。移动端沙箱固定，整个
+/// section 用 isDesktopPlatform 门控隐藏；桌面选新目录后走已实现的
+/// DataRootMigrator 整目录迁移 + 迁移成功后自动重启。
+SettingsSection buildDataStorageLocationSection() {
+  return SettingsSection(
+    title: t.settings_section_data_storage,
+    visible: (SettingsContext ctx) => isDesktopPlatform,
+    collapsedByDefault: true,
+    items: <SettingsItem>[
+      SettingsCustomItem(
+        id: 'sync.data_storage_location',
+        icon: Icons.folder_special_outlined,
         visible: (SettingsContext ctx) => isDesktopPlatform,
-        collapsedByDefault: true,
-        items: <SettingsItem>[
-          SettingsCustomItem(
-            id: 'sync.data_storage_location',
-            icon: Icons.folder_special_outlined,
-            visible: (SettingsContext ctx) => isDesktopPlatform,
-            builder: (SettingsContext ctx) =>
-                _DataRootWidget(settingsContext: ctx),
-          ),
-        ],
+        builder: (SettingsContext ctx) => _DataRootWidget(settingsContext: ctx),
       ),
     ],
   );

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_schema_card_creation.dart';
+import 'package:hibiki/src/settings/settings_schema_system.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_settings_schema.dart';
 
@@ -35,17 +36,19 @@ void main() {
     List<String> idsOf(SettingsSection s) =>
         s.items.map((SettingsItem i) => i.id).toList();
 
-    test(
-        'regroups into four intent-based sections + a desktop data-storage tail',
-        () {
+    test('regroups into four intent-based sections', () {
       // 互联（client 配置 / LAN 发现 / host 模式）已拆到独立的
-      // buildInterconnectDestination（见下方 group），同步分类剩：
-      // method / content / actions / backup + 桌面 data-storage 尾巴。
-      expect(dest.sections, hasLength(5));
-      // The appended section is desktop-gated and carries only the data-root row.
-      expect(dest.sections[4].visible, isNotNull,
-          reason: 'data-storage section must be desktop-only gated');
-      expect(idsOf(dest.sections[4]), <String>['sync.data_storage_location']);
+      // buildInterconnectDestination（见下方 group），「数据存储位置」已挪到
+      // 「系统」大类展示（buildDataStorageLocationSection，见下方 group），
+      // 同步分类剩：method / content / actions / backup。
+      expect(dest.sections, hasLength(4));
+      expect(
+        dest.sections
+            .expand((SettingsSection s) => s.items)
+            .where((SettingsItem i) => i.id == 'sync.data_storage_location'),
+        isEmpty,
+        reason: '数据存储位置不再挂在同步备份大类',
+      );
     });
 
     test('group 1 (sync method) holds selector + scoped account/config', () {
@@ -265,6 +268,29 @@ void main() {
       final String fn = src.substring(fnAt, fnAt + 1200);
       expect(fn, contains('setInterconnectEnabled(true)'),
           reason: 'picking 互联 must flip the interconnect master toggle on');
+    });
+  });
+
+  group('buildDataStorageLocationSection placement', () {
+    test('the data-storage section now lives in the system destination', () {
+      // 用户拍板（2026-07-26）：数据根是设备级存储配置，与备份无关，从同步备份
+      // 大类挪到「系统」展示；item id 'sync.data_storage_location' 保持不变
+      // （历史命名前缀，搜索/导航锚点）。
+      final SettingsSection section = buildDataStorageLocationSection();
+      expect(section.visible, isNotNull,
+          reason: 'data-storage section must be desktop-only gated');
+      expect(
+        section.items.map((SettingsItem i) => i.id),
+        <String>['sync.data_storage_location'],
+      );
+      final SettingsDestination system = buildSystemDestination();
+      expect(
+        system.sections
+            .expand((SettingsSection s) => s.items)
+            .where((SettingsItem i) => i.id == 'sync.data_storage_location'),
+        hasLength(1),
+        reason: '系统大类必须恰好承载一份数据存储位置行',
+      );
     });
   });
 

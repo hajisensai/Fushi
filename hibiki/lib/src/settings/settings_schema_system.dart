@@ -5,6 +5,8 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
+import 'package:hibiki/src/sync/sync_settings_schema.dart'
+    show buildDataStorageLocationSection;
 import 'package:hibiki/src/utils/misc/crash_dump_locator.dart';
 import 'package:hibiki/src/utils/misc/platform_updater.dart';
 import 'package:hibiki/utils.dart';
@@ -101,6 +103,10 @@ SettingsDestination buildSystemDestination() {
           ),
         ],
       ),
+      // 「数据存储位置」从同步备份大类挪来（用户拍板：数据根是设备级存储配置，
+      // 与备份无关）。构建函数在 sync_settings_schema（行 widget 是该库私有 part），
+      // item id 'sync.data_storage_location' 不变。
+      buildDataStorageLocationSection(),
       SettingsSection(
         title: t.section_update,
         // 更新分区在所有平台可见（至少能「检查→打开发布页」）；自动安装开关
