@@ -325,6 +325,34 @@ void main() {
     });
   });
 
+  group('自导入端引擎并入的规则（G10 第二步）', () {
+    test('无「第」的 N話/N集 简写', () {
+      final ParsedMediaName ja = FilenameParser.parse('Show 12話.mkv');
+      expect(ja.title, 'Show');
+      expect(ja.episode, 12);
+      final ParsedMediaName zh = FilenameParser.parse('某番 08集.mp4');
+      expect(zh.title, '某番');
+      expect(zh.episode, 8);
+    });
+
+    test('EP 与数字间可有空格（Ep 3）', () {
+      final ParsedMediaName p = FilenameParser.parse('Show Ep 3.mkv');
+      expect(p.title, 'Show');
+      expect(p.episode, 3);
+    });
+
+    test('第N巻 卷号当集数（OVA/光盘）', () {
+      expect(FilenameParser.parse('OVA 第2巻.mkv').episode, 2);
+      expect(FilenameParser.parse('[组名] 某作品 [第3巻].mkv').episode, 3);
+    });
+
+    test('年份连写不受 N話 简写误伤', () {
+      // `2016年12話数` 这类连写：`年` 不是分隔边界，不得把 12 当集数。
+      final ParsedMediaName p = FilenameParser.parse('某番 2016年12話数解说.mkv');
+      expect(p.episode, isNull);
+    });
+  });
+
   group('扩展名剥离与导入共用 kVideoExtensions（G10 第一步）', () {
     test('导入认的每个扩展名刮削端都能剥掉（.rmvb 不再留在标题里）', () {
       for (final String ext in kVideoExtensions) {

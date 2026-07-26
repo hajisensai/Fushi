@@ -121,10 +121,11 @@ void main() {
       expect(c.total, 4);
     });
 
-    test('batch 优先：区间存在时区间末位被解析成单集号也按 batch 处理', () {
+    test('区间种子按 batch 处理；引擎不再把区间末位误读成单集号', () {
       final NyaaTorrent t = _torrent('Show 01-04');
-      // 标题同时解析出「单集号」（区间末位）与区间——区间才是真相。
-      expect(t.episode, isNotNull);
+      // G10 第二步前的旧引擎会把 `01-04` 的末位 04 误解析成单集号（当时靠
+      // 「区间优先」掩盖）；统一到刮削引擎后 `\s- N` 需要空格边界，区间就是区间。
+      expect(t.episode, isNull);
       expect(t.episodeRange, (1, 4));
       final ({int covered, int? total}) c = jimakuCoverageFor(t, index);
       expect(c.total, 4);
