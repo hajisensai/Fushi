@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1070 条。点号进各自文件。
+> 共 1072 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1106](bugs/BUG-1106-desktop-settings-smoke-focus-gate-broken.md) | ✅ | ✅ | `desktop_settings_smoke_test.dart`（Windows 离屏 itest 默认门）在全新 profile 上必红 |
+| [BUG-1105](bugs/BUG-1105-inapp-popup-webview2-status-bar-url.md) | ✅ | ✅ | app 内查词弹窗仍会冒 WebView2 链接地址预览（BUG-1097 只修了一半） |
 | [BUG-1103](bugs/BUG-1103-helper-supply-chain.md) | ✅ | ✅ | galgame helper 安装器：sha256 侧车拉不到就不校验照装 + 侧车与产物同源第三方镜像（注入器/hook DLL 供应链后门） |
 | [BUG-1102](bugs/BUG-1102-gal-audio-track-panel-dead-controls.md) | ✅ | ✅ | 兼容性诊断页「活跃音轨」面板全无效：选轨/排除点了没反应，空轨照样占位 |
 | [BUG-1101](bugs/BUG-1101-gal-loopback-line-audio-off-by-one.md) | ✅ | ✅ | 降级到系统 Loopback 时逐行语音永远配到上一句 |
