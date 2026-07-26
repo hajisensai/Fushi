@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqlite3/common.dart' show CommonDatabase;
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
+import '../utils/ttu_sanitize.dart';
 import '../utils/video_book_uid.dart';
 import 'media_kind.dart';
 import 'pref_codec.dart';
@@ -5443,30 +5444,15 @@ class HibikiDatabase extends _$HibikiDatabase {
   // the migration's int-extraction matches what buildLegacyBookUid produced.
   static const String _kLegacyUidPrefix = 'reader_ttu/hoshi://book/';
 
-  /// VERBATIM copy of `sanitizeTtuFilename` from
-  /// hibiki/lib/src/sync/ttu_filename.dart. hibiki_core cannot depend on the
-  /// app package, so the body is inlined here. Both MUST stay byte-identical:
-  /// the migrated bookKey has to equal the key sync/folder code derives from
-  /// the same title, or cross-device identity drifts. A source guard
-  /// (book_key_guard_test) locks the two bodies together.
-  static String _sanitizeBookKey(String title) {
-    String result = title;
-    if (result.endsWith(' ')) {
-      result = '${result.substring(0, result.length - 1)}~ttu-spc~';
-    }
-    if (result.endsWith('.')) {
-      result = '${result.substring(0, result.length - 1)}~ttu-dend~';
-    }
-    result = result.replaceAll('*', '~ttu-star~');
-    result = result.replaceAllMapped(
-      RegExp(r'[/?\<>\\:|%"]'),
-      (match) => match[0]!
-          .codeUnits
-          .map((c) => '%${c.toRadixString(16).toUpperCase().padLeft(2, '0')}')
-          .join(),
-    );
-    return result;
-  }
+  /// Delegates to the core-local copy of `sanitizeTtuFilename`
+  /// (`../utils/ttu_sanitize.dart`). hibiki_core cannot depend on the app
+  /// package, so the core copy stands in for the app truth source
+  /// `hibiki/lib/src/sync/ttu_filename.dart`. Core copy and app copy MUST
+  /// stay byte-identical: the migrated bookKey has to equal the key
+  /// sync/folder code derives from the same title, or cross-device identity
+  /// drifts. A source guard (book_key_guard_test) plus the behavioral
+  /// parity test (video_book_uid_core_parity_test) lock the two together.
+  static String _sanitizeBookKey(String title) => sanitizeTtuFilename(title);
 
   /// Re-keys every book + all reading data from the autoincrement int id to
   /// bookKey = sanitizeTtuFilename(title). Lossless: builds an id→key map (with
