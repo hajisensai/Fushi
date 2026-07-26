@@ -1,7 +1,6 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/media/video/subtitle_delay_input_debounce.dart';
 import 'package:hibiki/src/media/video/subtitle_waveform_align_panel.dart';
 import 'package:hibiki/src/media/video/video_quick_settings_host.dart';
 import 'package:hibiki/utils.dart';
@@ -45,31 +44,24 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
   int? _delayDragMs;
 
   /// 数值输入框「边键入边生效」的去抖（BUG-918）：键入即去抖提交（350ms 停手后
-  /// [_commitDelay]，与滑条 / ± 按钮同源、实时生效），不要求按回车；[syncField:false]
-  /// 不回写文本，保住光标与退格。
-  Timer? _delayInputDebounce;
+  /// [_commitDelay]，与滑条 / ± 按钮同源、实时生效），不要求按回车。与波形对轴放大
+  /// 视图共享 [SubtitleDelayInputDebounce]（原两处逐行拷贝已抽出）。
+  late final SubtitleDelayInputDebounce _delayInput =
+      SubtitleDelayInputDebounce(
+    controller: _delayController,
+    isMounted: () => mounted,
+    currentDelayMs: () => _delayMs,
+    commit: _commitDelay,
+  );
 
   /// 一键自动对轴进行中（TODO-701）：按钮显示 spinner 并禁用，防重入。
   bool _autoAligning = false;
 
   @override
   void dispose() {
-    _delayInputDebounce?.cancel();
+    _delayInput.dispose();
     _delayController.dispose();
     super.dispose();
-  }
-
-  /// 数值输入框 onChanged：解析成功就去抖 350ms 后走 [_commitDelay] 实时生效（BUG-918）。
-  /// 空 / 只有正负号等未成形输入解析失败 → 不提交、不回退（保留用户正在敲的中间态）。
-  void _onDelayInputChanged(String raw) {
-    _delayInputDebounce?.cancel();
-    final int? parsed = int.tryParse(raw.trim());
-    if (parsed == null) return;
-    _delayInputDebounce = Timer(const Duration(milliseconds: 350), () {
-      if (!mounted) return;
-      // syncField:false —— 键入过程中不回写输入框文本，避免光标弹到行尾、退格错位。
-      _commitDelay(parsed, syncField: false);
-    });
   }
 
   /// 字幕调轴权威提交：滑条 / ± 按钮 / 数值输入框三处共享。clamp 到 ±[_subtitleSyncClampMs]
@@ -79,7 +71,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
     final int clamped = next.clamp(-_subtitleSyncClampMs, _subtitleSyncClampMs);
     // 权威提交路径取消任何待触发的键入去抖，免得一个陈旧的键入值在按钮点击后姗姗迟到
     // 覆盖掉刚设的值（BUG-918）。
-    if (syncField) _delayInputDebounce?.cancel();
+    if (syncField) _delayInput.cancelPending();
     setState(() => _delayMs = clamped);
     if (syncField && _delayController.text != '$clamped') {
       _delayController.text = '$clamped';
@@ -229,18 +221,10 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
             labelText: t.video_setting_subtitle_sync_input,
             keyboardType: const TextInputType.numberWithOptions(signed: true),
             textInputAction: TextInputAction.done,
-            // 边键入边去抖生效（BUG-918）：不再要求按回车，退格 / 键入实时反映到延迟。
-            onChanged: _onDelayInputChanged,
-            onSubmitted: (String raw) {
-              _delayInputDebounce?.cancel();
-              final int? parsed = int.tryParse(raw.trim());
-              if (parsed == null) {
-                // 非法输入 → 回退到当前权威值，不改延迟。
-                _delayController.text = '$_delayMs';
-                return;
-              }
-              _commitDelay(parsed);
-            },
+            // 边键入边去抖生效（BUG-918）：不再要求按回车，退格 / 键入实时反映到延迟；
+            // 回车立即提交，非法输入回退当前权威值（共享 [SubtitleDelayInputDebounce]）。
+            onChanged: _delayInput.onChanged,
+            onSubmitted: _delayInput.onSubmitted,
           ),
           // TODO-1051 阶段B / TODO-1207：音频波形对轴入口（有字幕 cue + 可抽波形时才挂）。
           // 调轴经 onCommitDelay 写回权威 [_delayMs]（同源、零第二套状态）；拿不到波形
