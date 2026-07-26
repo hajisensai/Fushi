@@ -482,7 +482,7 @@ String? pickPairedGameResource({
       );
 }
 
-/// 资源语音 dump 文件的**写入收敛门**（BUG-1107）。
+/// 资源语音 dump 文件的**写入收敛门**（BUG-1109）。
 ///
 /// hook DLL 在游戏读取语音资源时把原件写进 dump 目录：文件**出现**不等于**写完**。
 /// 一看见文件就转码（[EngineHookGalAudioSource.grabPairedVoiceBytes]）或试听
@@ -496,7 +496,13 @@ String? pickPairedGameResource({
 /// 采样间隔长，两次相同只能证明「这一瞬间没在写」，照样会放行一个写到一半的文件。要
 /// 求一整段静默期才是「写完了」的可落地近似。真正的根治要 hook 侧写 `.part` 再原子
 /// rename（在独立仓 `hajisensai/hibiki-hook`，本仓消费端够不着），所以这里是消费端能
-/// 做到的最强判据，且对已经写完的文件只多花一个静默期。
+/// 做到的最强判据。
+///
+/// [staleAge] 是「早就写完了」的短路：dump 目录里绝大多数原件是历史文件（翻回旧台词
+/// 试听、同一句重复播放），mtime 已经老过 [staleAge] 就直接放行，不必每次都白付一个
+/// 静默期。阈值刻意远大于 [quietPeriod]：Windows 上正在被写的文件其目录项时间戳更新
+/// 是懒惰的（句柄未关闭时按路径 stat 可能读到偏旧的 mtime），阈值太小会把「正在写」
+/// 误判成「早写完」，反而把本函数短路成空操作。单句语音的落盘突发远短于 2s。
 ///
 /// 到 [timeout] 仍在增长就 fail-open 用当前内容（Never break：宁可短一点，也不能一声
 /// 不出）。stat 失败（文件被 [EngineHookGalAudioSource.pruneVoiceDump] 清掉等）立即
@@ -506,15 +512,23 @@ Future<void> awaitStableVoiceDumpFile(
   Duration pollInterval = const Duration(milliseconds: 60),
   Duration quietPeriod = const Duration(milliseconds: 240),
   Duration timeout = const Duration(milliseconds: 1500),
+  Duration staleAge = const Duration(seconds: 2),
 }) async {
   final Stopwatch elapsed = Stopwatch()..start();
   int previous = -1;
   Duration lastChange = Duration.zero;
   while (elapsed.elapsed < timeout) {
     final int size;
+    final DateTime modified;
     try {
-      size = file.lengthSync();
+      final FileStat stat = file.statSync();
+      if (stat.type == FileSystemEntityType.notFound) return;
+      size = stat.size;
+      modified = stat.modified;
     } catch (_) {
+      return;
+    }
+    if (size > 0 && DateTime.now().difference(modified) >= staleAge) {
       return;
     }
     if (size != previous) {
@@ -1496,7 +1510,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     return (file != null && file.existsSync()) ? file.path : null;
   }
 
-  /// [pairedVoiceFilePathForResourceId] 的**等写完**版本（BUG-1107）：试听走的是原件，
+  /// [pairedVoiceFilePathForResourceId] 的**等写完**版本（BUG-1109）：试听走的是原件，
   /// hook 还在写就播会听到被截断的半句。等文件大小停止增长后再交出路径；等待期间文件被
   /// 清理掉则返回 null（与同步版对缺文件的语义一致）。
   Future<String?> settledPairedVoiceFilePathForResourceId(
@@ -1524,7 +1538,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
           )
         : _voiceFileForResourceId(resourceId);
     if (picked == null) return null;
-    // BUG-1107：hook 可能还在往这个文件里写。转码截断的原件会得到「有音频但少一截」
+    // BUG-1109：hook 可能还在往这个文件里写。转码截断的原件会得到「有音频但少一截」
     // 的卡，比报错更难发现，所以先等它写完。
     await awaitStableVoiceDumpFile(picked);
     return transcodeVoiceOggToMiningAudio(

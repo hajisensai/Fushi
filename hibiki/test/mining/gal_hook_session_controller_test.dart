@@ -772,7 +772,7 @@ void main() {
       }) =>
           engine,
       textPollInterval: const Duration(milliseconds: 5),
-      // 本例守的是「首取即冻结 + 制卡复用缓存」这半条契约，与 BUG-1107 的增长收敛无关。
+      // 本例守的是「首取即冻结 + 制卡复用缓存」这半条契约，与 BUG-1109 的增长收敛无关。
       // 关掉收敛让 grab 次数确定为 1，否则断言会随机器快慢抖动（收敛见
       // gal_utterance_settle_test.dart）。
       utteranceSettleMax: Duration.zero,
