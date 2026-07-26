@@ -9,6 +9,7 @@ import 'package:hibiki/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_volume_downloader.dart';
+import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 /// fake client：内存数据，零网络（封面留空走占位图标路径）。
@@ -207,6 +208,59 @@ void main() {
     await tester.pumpAndSettle();
     expect(q.queue.tasks.single.status, MokuroMoeTaskStatus.done);
     expect(q.queue.importedCount, 1);
+    q.queue.dispose();
+  });
+
+  testWidgets('reopen does not report historical completed tasks as newly done',
+      (WidgetTester tester) async {
+    final q = makeQueue();
+    q.queue.enqueue(
+      seriesName: _library.first.name,
+      volumeNames: <String>[_library.first.volumes.first.name],
+    );
+    q.ctrls[0].add(const MokuroMoeVolumeDownloadEvent(
+      stage: MokuroMoeDownloadStage.done,
+      bookKey: 'historical-volume',
+    ));
+    await q.ctrls[0].close();
+    expect(q.queue.tasks.single.status, MokuroMoeTaskStatus.done);
+
+    final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+    HibikiToast.navigatorKey = navKey;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: TranslationProvider(
+          child: MaterialApp(
+            navigatorKey: navKey,
+            home: Scaffold(
+              body: MokuroMoeCatalogDialog(
+                db: db,
+                clientOverride: _FakeClient(_library),
+                queueOverride: q.queue,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    q.queue.enqueue(
+      seriesName: _library.first.name,
+      volumeNames: <String>[_library.first.volumes.last.name],
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      find.text(t.manga_ocr_wizard_done),
+      findsNothing,
+      reason:
+          'Reopening must seed historical done tasks before listening to the shared queue.',
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
     q.queue.dispose();
   });
 }

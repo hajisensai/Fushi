@@ -80,6 +80,13 @@ class _MokuroMoeCatalogDialogState
         );
     _queue =
         widget.queueOverride ?? ref.read(appProvider).mokuroMoeDownloadQueue;
+    // The app-level queue outlives this dialog. Existing done tasks are
+    // history, not completion transitions for the newly opened instance.
+    _seenDone.addAll(
+      _queue.tasks.where(
+        (MokuroMoeDownloadTask task) => task.status == MokuroMoeTaskStatus.done,
+      ),
+    );
     _queue.addListener(_onQueueChanged);
     unawaited(_loadLibrary());
     unawaited(_loadExistingBooks());
