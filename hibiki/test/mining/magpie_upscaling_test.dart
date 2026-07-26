@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/mining/magpie_upscaling.dart';
 import 'package:hibiki/src/mining/magpie_upscaling_service.dart';
 import 'package:hibiki/src/mining/magpie_upscaling_text.dart';
+import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:path/path.dart' as p;
 
 /// 一份「Magpie 已经跑过一次、配置完整」的最小 config。
@@ -53,6 +54,9 @@ class FakeBridge implements MagpieWin32Bridge {
   bool running;
   int quitBroadcasts = 0;
 
+  /// 广播 QUIT 之后的副作用钩子（模拟「它真的退了」，免得测试干等满宽限）。
+  void Function()? onQuit;
+
   @override
   MagpieWindowIdentity? identityForWindow(int hwnd) => identity;
 
@@ -62,6 +66,7 @@ class FakeBridge implements MagpieWin32Bridge {
   @override
   bool broadcastQuit() {
     quitBroadcasts++;
+    onQuit?.call();
     return true;
   }
 }
@@ -867,6 +872,182 @@ void main() {
     });
   });
 
+  group('启动期对账：把上次留下的孤儿关回去', () {
+    /// 造一条我们建的、开着自动缩放的孤儿 profile。
+    Map<String, dynamic> orphanConfig({
+      String name = '${kMagpieHibikiProfilePrefix}sakura.exe',
+      int autoScale = kMagpieAutoScaleFullscreen,
+      List<Map<String, dynamic>> alsoUserProfiles =
+          const <Map<String, dynamic>>[],
+    }) =>
+        baseConfig(extraProfiles: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'name': name,
+            'packaged': false,
+            'pathRule': kGame.executablePath,
+            'classNameRule': kGame.windowClassName,
+            'autoScale': autoScale,
+            'scalingMode': 0,
+          },
+          ...alsoUserProfiles,
+        ]);
+
+    test('按名字前缀批量关，用户自己的 profile 一个字段都不碰', () {
+      final Map<String, dynamic> config =
+          orphanConfig(alsoUserProfiles: <Map<String, dynamic>>[
+        <String, dynamic>{
+          'name': 'My own game',
+          'packaged': false,
+          'pathRule': r'D:\Games\other.exe',
+          'classNameRule': 'OtherClass',
+          'autoScale': kMagpieAutoScaleFullscreen,
+          'scalingMode': 3,
+        },
+      ]);
+      final MagpieProfileWriteResult result =
+          magpieConfigWithHibikiAutoScaleCleared(config: config);
+      expect(result.applied, isTrue);
+      final List<Object?> profiles =
+          result.config!['profiles']! as List<Object?>;
+      expect((profiles[1]! as Map<Object?, Object?>)['autoScale'],
+          kMagpieAutoScaleDisabled);
+      final Map<Object?, Object?> user = profiles[2]! as Map<Object?, Object?>;
+      expect(user['autoScale'], kMagpieAutoScaleFullscreen,
+          reason: '用户自己建的 profile 不是我们的孤儿，绝不许动');
+      expect(user['scalingMode'], 3);
+    });
+
+    test('没有孤儿 -> alreadySatisfied（调用方据此一个字节都不写）', () {
+      expect(
+        magpieConfigWithHibikiAutoScaleCleared(config: baseConfig()).skipReason,
+        MagpieProfileSkipReason.alreadySatisfied,
+      );
+      expect(
+        magpieConfigWithHibikiAutoScaleCleared(
+          config: orphanConfig(autoScale: kMagpieAutoScaleDisabled),
+        ).skipReason,
+        MagpieProfileSkipReason.alreadySatisfied,
+      );
+    });
+
+    test('默认 profile（第 0 项）永远不被当成我们的', () {
+      final Map<String, dynamic> config = baseConfig();
+      (config['profiles']! as List<Object?>)[0] = <String, dynamic>{
+        'name': '${kMagpieHibikiProfilePrefix}fake',
+        'autoScale': kMagpieAutoScaleFullscreen,
+        'scalingMode': 0,
+      };
+      expect(
+        magpieConfigWithHibikiAutoScaleCleared(config: config).skipReason,
+        MagpieProfileSkipReason.alreadySatisfied,
+      );
+    });
+
+    test('profiles 缺失 -> schemaMismatch，不猜着写', () {
+      expect(
+        magpieConfigWithHibikiAutoScaleCleared(
+          config: <String, dynamic>{'theme': 1},
+        ).skipReason,
+        MagpieProfileSkipReason.schemaMismatch,
+      );
+    });
+
+    group('服务侧编排', () {
+      late Directory tmp;
+      late String configPath;
+
+      setUp(() {
+        tmp = Directory.systemTemp.createTempSync('magpie_reconcile_test_');
+        configPath = p.join(tmp.path, 'config', 'config.json');
+      });
+
+      tearDown(() {
+        try {
+          if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      MagpieUpscalingService build({
+        required FakeBridge bridge,
+        bool bundledRunning = false,
+        bool isWindows = true,
+      }) =>
+          MagpieUpscalingService(
+            modeReader: () => MagpieUpscalingMode.off,
+            bridge: bridge,
+            configPathOverride: configPath,
+            hibikiExecutablePath: kHibikiExe,
+            isWindowsOverride: isWindows,
+            bundledMagpieRunningProbe: () => bundledRunning,
+            processLauncher: (String exe, List<String> args) async =>
+                throw StateError('对账绝不许起进程'),
+          );
+
+      void writeConfig(Map<String, dynamic> config) {
+        File(configPath)
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync(jsonEncode(config));
+      }
+
+      int autoScaleOfOrphan() {
+        final Map<String, dynamic> config = jsonDecode(
+          File(configPath).readAsStringSync(),
+        ) as Map<String, dynamic>;
+        final List<Object?> profiles = config['profiles']! as List<Object?>;
+        return (profiles[1]! as Map<Object?, Object?>)['autoScale']! as int;
+      }
+
+      test('上次没收干净的 profile 在启动时被关回去', () async {
+        writeConfig(orphanConfig());
+        final FakeBridge bridge = FakeBridge();
+        await build(bridge: bridge).reconcileOrphansOnStartup();
+        expect(autoScaleOfOrphan(), kMagpieAutoScaleDisabled);
+      });
+
+      test('确证是我们那个孤儿进程时先请它退出，再改配置', () async {
+        writeConfig(orphanConfig());
+        final FakeBridge bridge = FakeBridge(running: true);
+        // 两条正向证据齐了：互斥体在 + 我们的 exe 映像被占用。
+        final MagpieUpscalingService service =
+            build(bridge: bridge, bundledRunning: true);
+        // 广播之后互斥体立刻消失，模拟它真的退了（不然要等满宽限）。
+        bridge.onQuit = () => bridge.running = false;
+        await service.reconcileOrphansOnStartup();
+        expect(bridge.quitBroadcasts, 1);
+        expect(autoScaleOfOrphan(), kMagpieAutoScaleDisabled);
+      });
+
+      test('只有互斥体在、认不出是我们的 -> 绝不广播 QUIT（那是用户的 Magpie）', () async {
+        writeConfig(orphanConfig());
+        final FakeBridge bridge = FakeBridge(running: true);
+        await build(bridge: bridge).reconcileOrphansOnStartup();
+        expect(bridge.quitBroadcasts, 0);
+        // 配置仍然要复原：它可能被那个实例退出时覆盖，下次启动再对一次。
+        expect(autoScaleOfOrphan(), kMagpieAutoScaleDisabled);
+      });
+
+      test('没有孤儿 -> 零写入、零广播（不与别的实例抢配置）', () async {
+        writeConfig(baseConfig());
+        final String before = File(configPath).readAsStringSync();
+        final FakeBridge bridge = FakeBridge(running: true);
+        await build(bridge: bridge, bundledRunning: true)
+            .reconcileOrphansOnStartup();
+        expect(bridge.quitBroadcasts, 0);
+        expect(File(configPath).readAsStringSync(), before);
+      });
+
+      test('非 Windows / 没有配置文件 -> 空操作，不抛', () async {
+        final FakeBridge bridge = FakeBridge(running: true);
+        await build(bridge: bridge, isWindows: false)
+            .reconcileOrphansOnStartup();
+        expect(bridge.quitBroadcasts, 0);
+        // 配置文件压根不存在。
+        await build(bridge: bridge).reconcileOrphansOnStartup();
+        expect(bridge.quitBroadcasts, 0);
+      });
+    });
+  });
+
   group('源码守卫：钉住三个读源码挖出来的硬约束', () {
     late String pureSource;
     late String serviceSource;
@@ -971,21 +1152,60 @@ void main() {
       }
     });
 
-    test('会话挂钩是 fire-and-forget，绝不阻塞 _setState', () {
+    test('开与关必须由同一个判据驱动（不许再各挂各的调用点）', () {
+      // 这条守卫钉的是 PR#430 审查判定的根因：开挂在状态跃迁、关挂在方法调用点，
+      // 于是早退分支漏关、keepBinding 吃掉开边沿、正常退出留孤儿。修法是把两边
+      // 都收进 _syncMagpieUpscaling 一个函数，判据是 magpieUpscalingTargetHwnd。
+      expect(sessionSource.contains('static int? magpieUpscalingTargetHwnd('),
+          isTrue,
+          reason: '共同判据必须是可单测的纯函数');
+      expect(sessionSource.contains('  void _syncMagpieUpscaling() {'), isTrue);
+      final int setStateIndex =
+          sessionSource.indexOf('void _setState(GalHookSessionState next) {');
+      expect(setStateIndex, greaterThan(0));
+      expect(sessionSource.indexOf('_syncMagpieUpscaling();', setStateIndex),
+          greaterThan(setStateIndex),
+          reason: '_setState 必须调对齐函数，而不是自己挑一侧挂钩');
+
+      // 关的挂钩只能出现在对齐函数与退出收尾里，不许散回 stopCapture。
+      final int stopCaptureIndex =
+          sessionSource.indexOf('Future<void> stopCapture(');
+      final int stopCaptureEnd =
+          sessionSource.indexOf('static bool sameTrackMembership(');
+      expect(stopCaptureIndex, greaterThan(0));
+      expect(stopCaptureEnd, greaterThan(stopCaptureIndex));
       expect(
-        sessionSource.contains('unawaited(_notifyMagpieWindowReady('),
-        isTrue,
-        reason: '窗口就绪挂钩必须 unawaited，否则会拖慢每一次状态更新',
+        sessionSource
+            .substring(stopCaptureIndex, stopCaptureEnd)
+            .contains('_notifyMagpieSessionEnded'),
+        isFalse,
+        reason: 'stopCapture 里再手写一次关闭，就又长回「某条早退分支漏关」',
       );
     });
 
-    test('会话收尾挂钩排在 _stopSources 之前（此时 boundWindow 还在）', () {
-      final int notifyIndex =
-          sessionSource.indexOf('await _notifyMagpieSessionEnded();');
-      expect(notifyIndex, greaterThan(0));
-      final int stopIndex =
-          sessionSource.indexOf('await _stopSources();', notifyIndex);
-      expect(stopIndex, greaterThan(notifyIndex));
+    test('正常退出必须收干净：注入即登记 ExitFlushRegistry', () {
+      // close() 在 hibiki/lib 里零调用，桌面点 X 走 exit(0)。不登记退出链，
+      // detached 起的 Magpie 会活过 Hibiki，配置里的 autoScale 也留着。
+      final int attachIndex =
+          sessionSource.indexOf('void attachMagpieUpscaling(');
+      expect(attachIndex, greaterThan(0));
+      expect(
+        sessionSource.indexOf(
+            'ExitFlushRegistry.instance.register(shutdownMagpieUpscaling)',
+            attachIndex),
+        greaterThan(attachIndex),
+        reason: '登记必须就在注入点上，放到调用方就会有人漏掉',
+      );
+      expect(sessionSource.contains('ExitFlushRegistry.instance.unregister('),
+          isTrue,
+          reason: 'close 必须注销，否则留悬垂闭包');
+    });
+
+    test('退出路径的 QUIT 宽限必须小于退出链单来源上限（2s）', () {
+      expect(kMagpieExitQuitGrace.inMilliseconds,
+          lessThan(ExitFlushRegistry.perCallbackTimeout.inMilliseconds),
+          reason: '等得比注册表还久 = 超时放行 + exit(0)，进程照样留成孤儿');
+      expect(kMagpieExitQuitGrace, lessThan(kMagpieQuitGrace));
     });
 
     test('BUG-1076 契约：确认回调之前不 await 体积探测', () {

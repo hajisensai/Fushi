@@ -127,13 +127,17 @@ class GalHookTextOverlayController extends ChangeNotifier {
     );
     // 窗口超分编排器：唯一的注入点。策略惰性读偏好（用户中途改设置下一局就生效），
     // 下载确认走全局 navigator。未注入时会话侧全是 `?.` 空操作，故这里失败也不致命。
-    _session.attachMagpieUpscaling(
-      MagpieUpscalingService(
-        modeReader: () => appModel.galgameUpscalingMode,
-        confirmDownload: (MagpieDownloadPrompt prompt) =>
-            confirmMagpieDownload(appModel, prompt),
-      ),
+    final MagpieUpscalingService magpie = MagpieUpscalingService(
+      modeReader: () => appModel.galgameUpscalingMode,
+      confirmDownload: (MagpieDownloadPrompt prompt) =>
+          confirmMagpieDownload(appModel, prompt),
     );
+    _session.attachMagpieUpscaling(magpie);
+    // 启动期对账：上次崩溃 / 被任务管理器结束时，退出清理根本没跑过，配置里会留着
+    // `autoScale=Fullscreen` 的 `Hibiki: ` profile（外加可能还活着的 Magpie 进程）。
+    // 不对账 = 用户下次不经 Hibiki 双击游戏也被自动全屏超分。fire-and-forget：它自身
+    // 不抛，且没孤儿时是一次读文件的零成本早退。
+    unawaited(magpie.reconcileOrphansOnStartup());
     _loadPreferences(appModel);
     GalHookTextOverlayChannel.setEventHandlers(
       onLookupText: _onLookupText,

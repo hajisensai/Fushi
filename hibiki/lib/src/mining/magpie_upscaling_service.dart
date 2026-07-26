@@ -43,6 +43,14 @@ const String kMagpieUpscalingModePrefKey = 'galgame_magpie_upscaling_mode';
 /// `IsAlwaysRunAsAdmin` 会自我提权重启），我们的广播会被 UIPI 静默丢掉。
 const Duration kMagpieQuitGrace = Duration(seconds: 3);
 
+/// **进程退出路径**专用的 QUIT 宽限。
+///
+/// 必须显著小于 `ExitFlushRegistry.perCallbackTimeout`（2s）：退出清理总共只有 2 秒，
+/// 用 [kMagpieQuitGrace] 的 3 秒等下去，注册表会先超时放行、`exit(0)` 照样把我们起的
+/// Magpie 留成孤儿 —— 那正是这条链路要修的 bug。600ms 之后直接 kill；被 kill 的 Magpie
+/// 没机会回存配置，反而让我们随后的 profile 复原写更稳。
+const Duration kMagpieExitQuitGrace = Duration(milliseconds: 600);
+
 /// 会话结束后重写配置前的静置：Magpie 退出时会把内存里的配置回存
 /// （`AppSettings::SaveAsync`），我们必须等它写完再改，否则改动被覆盖。
 const Duration kMagpieConfigSettleDelay = Duration(milliseconds: 400);
@@ -176,6 +184,7 @@ class MagpieUpscalingService extends ChangeNotifier {
     String? configPathOverride,
     bool? isWindowsOverride,
     Duration? bootstrapTimeout,
+    bool Function()? bundledMagpieRunningProbe,
   })  : _modeReader = modeReader,
         _confirmDownload = confirmDownload,
         _bridge = bridge,
@@ -185,7 +194,8 @@ class MagpieUpscalingService extends ChangeNotifier {
             hibikiExecutablePath ?? _safeResolvedExecutable(),
         _configPathOverride = configPathOverride,
         _isWindows = isWindowsOverride ?? Platform.isWindows,
-        _bootstrapTimeout = bootstrapTimeout ?? kMagpieBootstrapTimeout;
+        _bootstrapTimeout = bootstrapTimeout ?? kMagpieBootstrapTimeout,
+        _bundledMagpieRunningProbe = bundledMagpieRunningProbe;
 
   final MagpieUpscalingMode Function() _modeReader;
   final Future<bool> Function(MagpieDownloadPrompt prompt)? _confirmDownload;
@@ -199,6 +209,10 @@ class MagpieUpscalingService extends ChangeNotifier {
 
   /// 预热等待上限；仅测试注入，生产恒为 [kMagpieBootstrapTimeout]。
   final Duration _bootstrapTimeout;
+
+  /// 「**我们那份** Magpie 正在跑」的正向探测；null = 用默认的 exe 映像占用判据。
+  /// 仅测试注入（真实判据要有装好的 exe，单测环境造不出来）。
+  final bool Function()? _bundledMagpieRunningProbe;
 
   /// 我们自己起的那个 Magpie。**只有它才允许被 QUIT / kill**。
   MagpieProcessHandle? _ownedProcess;
@@ -259,7 +273,81 @@ class MagpieUpscalingService extends ChangeNotifier {
       _serialize(() => _start(hwnd));
 
   /// 会话结束时调用。没启动过超分时是空操作。
-  Future<void> onSessionEnded() => _serialize(_stop);
+  ///
+  /// [urgent] = 进程正在退出（退出链每个来源只有 2s）：把 QUIT 宽限压到
+  /// [kMagpieExitQuitGrace]，超时就直接 kill 我们自己起的那个 PID。
+  Future<void> onSessionEnded({bool urgent = false}) =>
+      _serialize(() => _stop(urgent: urgent));
+
+  /// **启动期对账**：把上一次进程留下的超分孤儿关回去。
+  ///
+  /// 为什么必须有：退出清理只在「最好情况」下跑得完 —— 崩溃、断电、任务管理器结束
+  /// 进程都不会跑。孤儿有两样：① 配置里 `autoScale=Fullscreen` 的 `Hibiki: ` profile
+  /// （留着就等于「用户下次不经 Hibiki 双击游戏也被自动全屏超分」，那是我们没被授权
+  /// 做的事）；② 我们 detached 起的 Magpie 进程本体。
+  ///
+  /// 顺序不能反：Magpie 退出时会把内存里的配置整份回存（`AppSettings::SaveAsync`），
+  /// 必须先让它退出再改配置，否则改动被覆盖。
+  ///
+  /// 🔴 「这个 Magpie 是不是我们的」要**两条正向证据同时成立**才算：装了我们的产物，
+  /// 且我们那份 exe 的映像文件正被占用（Windows 上运行中的 exe 不允许以写方式打开）。
+  /// 只有单实例互斥体在**不算数** —— 那可能是用户自己装的 Magpie，硬约束 3 说了绝不动。
+  /// 证据不足时只改配置、不发 QUIT（配置可能被那个实例退出时覆盖，下次启动再对一次）。
+  ///
+  /// 全程吞异常：对账失败不该让 app 启动出任何声响。
+  Future<void> reconcileOrphansOnStartup() async {
+    if (!_isWindows) return;
+    try {
+      Map<String, dynamic>? config = await _readConfig();
+      if (config == null) return;
+      // 先算一遍：没有孤儿就**一个字节都不写、更不发 QUIT**。
+      if (!magpieConfigWithHibikiAutoScaleCleared(config: config).applied) {
+        return;
+      }
+      if (_safeIsMagpieRunning() && _isBundledMagpieRunning()) {
+        try {
+          _win32.broadcastQuit();
+        } catch (_) {}
+        await _waitForMagpieGone();
+        await Future<void>.delayed(kMagpieConfigSettleDelay);
+        config = await _readConfig();
+        if (config == null) return;
+      }
+      final MagpieProfileWriteResult result =
+          magpieConfigWithHibikiAutoScaleCleared(config: config);
+      if (result.applied) await _writeConfig(result.config!);
+    } catch (_) {
+      // 对账是 best-effort：下次启动还会再对一次。
+    }
+  }
+
+  /// 「我们那份 Magpie 正在跑」的正向判据。
+  ///
+  /// Windows 把运行中进程的映像文件以 `FILE_SHARE_READ | FILE_SHARE_DELETE` 打开，
+  /// 任何写访问都拿 `ERROR_SHARING_VIOLATION`。以 append 打开**不写一个字节**，零副作用。
+  /// 打不开 = 正在跑；文件不存在 = 我们压根没装过，肯定不是我们的。
+  bool _isBundledMagpieRunning() {
+    final bool Function()? probe = _bundledMagpieRunningProbe;
+    if (probe != null) return probe();
+    try {
+      final File file = File(MagpieInstaller.executablePath());
+      if (!file.existsSync()) return false;
+      file.openSync(mode: FileMode.append).closeSync();
+      return false;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// 轮询等孤儿 Magpie 真的退出。**拿不到它的 PID**（那是上个进程的句柄），所以只能
+  /// 等、不能 kill；超时就带着「可能还在跑」继续往下写配置。
+  Future<void> _waitForMagpieGone() async {
+    final DateTime deadline = DateTime.now().add(kMagpieQuitGrace);
+    while (DateTime.now().isBefore(deadline)) {
+      if (!_safeIsMagpieRunning()) return;
+      await Future<void>.delayed(kMagpieBootstrapPollInterval);
+    }
+  }
 
   Future<void> _serialize(Future<void> Function() job) {
     final Future<void> run = _gate.then((_) => job());
@@ -539,7 +627,8 @@ class MagpieUpscalingService extends ChangeNotifier {
   /// profile 显示名。带 `Hibiki` 前缀是为了让用户在 Magpie 的 UI 里一眼认出「这条是谁加的」。
   String _profileNameFor(MagpieWindowIdentity identity) {
     final String base = identity.executablePath.split(RegExp(r'[\\/]')).last;
-    return 'Hibiki: ${base.isEmpty ? identity.windowClassName : base}';
+    return '$kMagpieHibikiProfilePrefix'
+        '${base.isEmpty ? identity.windowClassName : base}';
   }
 
   Future<Map<String, dynamic>?> _readConfig() async {
@@ -562,16 +651,27 @@ class MagpieUpscalingService extends ChangeNotifier {
     );
   }
 
-  Future<void> _stop() async {
+  Future<void> _stop({bool urgent = false}) async {
     _unlistenScalingEvents();
     final MagpieProcessHandle? owned = _ownedProcess;
+    final bool hasProfileToRestore = _appliedIdentity != null;
     _ownedProcess = null;
+    if (owned == null && !hasProfileToRestore) {
+      // 从没起过进程、也没写过 profile：没有任何要收的东西。直接回 idle ——
+      // 别付那 400ms 静置的钱（退出链每个来源只有 2s），更不能广播 QUIT
+      // （会误杀用户自己开的 Magpie）。
+      _report = const MagpieUpscalingReport(status: MagpieUpscalingStatus.idle);
+      return;
+    }
     if (owned != null) {
       // 先礼后兵：广播 QUIT 让它自己收（能正常清理缩放窗口），超时再 kill。
       try {
         _win32.broadcastQuit();
       } catch (_) {}
-      await _waitForExit(owned);
+      await _waitForExit(
+        owned,
+        grace: urgent ? kMagpieExitQuitGrace : kMagpieQuitGrace,
+      );
     }
     // 必须在 Magpie 真的退出**之后**再改配置：它退出时会把内存里的设置整份回存
     // （`AppSettings::SaveAsync`），提前改一定被覆盖。
@@ -580,9 +680,12 @@ class MagpieUpscalingService extends ChangeNotifier {
     _report = const MagpieUpscalingReport(status: MagpieUpscalingStatus.idle);
   }
 
-  Future<void> _waitForExit(MagpieProcessHandle process) async {
+  Future<void> _waitForExit(
+    MagpieProcessHandle process, {
+    Duration grace = kMagpieQuitGrace,
+  }) async {
     try {
-      await process.exitCode.timeout(kMagpieQuitGrace);
+      await process.exitCode.timeout(grace);
     } catch (_) {
       // 超时（或拿不到 exitCode：detached 启动在部分平台上就是这样）→ 强杀。
       // 只杀我们自己起的这一个 PID，绝不按进程名扫。

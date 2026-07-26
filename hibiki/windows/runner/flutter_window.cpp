@@ -2010,8 +2010,10 @@ void FlutterWindow::RegisterMagpieChannel() {
 
 void FlutterWindow::NotifyMagpieScalingChanged(WPARAM wparam, LPARAM lparam) {
   // WndProc 跑在 platform 线程，InvokeMethod 可直接调用。channel 在 OnCreate 建好
-  // 前（极早期消息）可能为空，null 保护后静默忽略。
-  if (!magpie_channel_) {
+  // 前（极早期消息）可能为空；**退出期**则是引擎先被拆掉、窗口还在收广播消息，此时
+  // channel 指针虽非空但底下的 messenger 已随 flutter_controller_ 一起销毁 ——
+  // 两个都要判，否则退出期收到一条 Magpie 广播就是 use-after-free。
+  if (!flutter_controller_ || !magpie_channel_) {
     return;
   }
   // Magpie 广播语义（state = wParam）：

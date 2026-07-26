@@ -35,6 +35,15 @@ import '../helpers/test_platform_services.dart';
 /// 让覆盖测试不对「别处已覆盖」的项裸喊 UNVERIFIED/FAIL，且强制每个 changed
 /// 但未 effect-verified 的设置都必须有去处（no silent caps）。
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // galgame 窗口超分三态开关（PR#430）。写 prefsRepo（changed=true），生效点整条在
+  // 本进程之外 —— 改写 Magpie 自己的 config.json、拉起 / 收掉一个独立的 Magpie 进程、
+  // 由它去做全屏缩放，widget harness 里没有任何可探的渲染输入；而且它 Windows-only，
+  // CI（Linux）连控件都不该渲染。由三层专项测试咬住：三态 → 后端裁决的纯函数、
+  // profile 增量改写的每一条降级分支、以及「开/关对称」的生命周期编排（含退出清理、
+  // 启动期孤儿对账、第二局仍能拉起），外加 native 广播监听的源码守卫。
+  'lookup/Game window upscaling': 'test/mining/magpie_upscaling_test.dart + '
+      'test/mining/magpie_native_guard_test.dart + '
+      'test/mining/magpie_installer_test.dart',
   // BUG-1095：galgame Hook 台词浮窗字号。写 prefsRepo（changed=true），生效点在
   // runner 自有的 Win32 分层浮窗（Direct2D/DirectWrite 直绘，不是 Flutter widget
   // 树），本进程内没有任何可探的渲染输入，故无适用探针；由三层专项测试咬住：

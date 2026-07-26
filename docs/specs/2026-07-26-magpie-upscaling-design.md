@@ -336,17 +336,29 @@ UWP XAML Islands + WinUI 2.8（**没有 C#，没有 WinUI 3**）。
 | 1 | import 区 | `magpie_upscaling_service.dart` |
 | 2 | 字段区（`_activityDatabaseResolver` 之后） | `MagpieUpscalingService? _magpieUpscaling;` |
 | 3 | `attachActivityDatabase` 之后 | `attachMagpieUpscaling(...)` setter（同一注入范式） |
-| 4 | `_setState` | 「`boundWindow` 从 null 变非 null」跃迁 → `unawaited(_notifyMagpieWindowReady(hwnd))` |
-| 5 | `stopCapture` 的 `await _stopSources();` **之前** | `await _notifyMagpieSessionEnded();` |
-| 6 | `close()` 的 `await _stopSources();` **之前** | 同上 |
+| 4 | `magpieUpscalingTargetHwnd(state)`（静态纯函数） | 开与关**唯一**的共同判据：`boundWindow != null && phase != idle` |
+| 5 | `_setState` | 只调 `_syncMagpieUpscaling()`；由它按判据的差 fire-and-forget 派开 / 关边沿 |
+| 6 | `close()` / `ExitFlushRegistry` | `shutdownMagpieUpscaling()`（`urgent`，等队列排空） |
 
-**为什么收在 `_setState` 而不是四条绑窗路径各挂一次**：launch 自动绑定 / 迟到重绑 /
-手动 `bindWindow` / attach 四条路径的唯一公共事实就是「窗口从无变有」。收在状态跃迁上
-既不漏也不重，而且 PR#423 改的是降级升格 / 延迟冻结 / 逐行选轨，都不动 `_setState` 的
-这两行，冲突面接近零。
+**为什么开与关必须同源（PR#430 审查修复）**：初版把「开」挂在 `_setState` 的窗口
+「无 → 有」跃迁上、把「关」挂在 `stopCapture` / `close` 的方法调用点上。两边判据不同源，
+立刻长出三个特殊情况：
+
+1. `stopCapture` 的 `phase == idle && _audioSource == null` **早退分支**在通知结束之前
+   就 `return` —— 而 `bindWindow` 在 idle 时已经过 `_setState` 把 Magpie 拉起来了 → 孤儿。
+2. `stopCapture` 默认 `keepBinding: true` **保留 `boundWindow`** → 「无 → 有」跃迁第二局
+   永远不会再发生 → 第二局起超分静默失效。
+3. `close()` 在 `hibiki/lib` 里**一次都没被调用过**（桌面点 X 走 `exit(0)`）→ 正常退出
+   必留孤儿。
+
+修法不是给三处各打一个补丁，而是把两边收回同一个纯函数判据：**会话真的在跑且绑了窗口**。
+判据一样，就没有分支可漏——因为压根没有分支。「只在窗口列表里选中一个窗口」（phase 仍
+idle）不再拉起超分，那本来也不该动用户的显示。
 
 注入唯一发生在 `gal_hook_text_overlay_controller.dart` 的 `start()`（`attachActivityDatabase`
-紧邻，+9 行）。不注入 = 全链路 `?.` 空操作，会话行为与没有超分时逐字节一致。
+紧邻）。`attachMagpieUpscaling` **同时**把 `shutdownMagpieUpscaling` 登记进
+`ExitFlushRegistry` —— 登记点必须就在注入点上，放到调用方就会有人漏掉。不注入 = 全链路
+`?.` 空操作，会话行为与没有超分时逐字节一致。
 
 ## 3. 三个陷阱各自怎么处理的
 
@@ -413,12 +425,28 @@ onGameWindowReady(hwnd)
   ├─ 【必须在拉起之前】写 autoScale profile（best-effort）
   └─ Process.start(Magpie.exe, ['-t'])          ← 静默、只驻托盘
 
-onSessionEnded()
+onSessionEnded({urgent})
+  ├─ 没起过进程也没写过 profile → 直接回 idle（零成本，且绝不广播 QUIT）
   ├─ broadcastQuit()（best-effort）
-  ├─ 等 3s，超时 kill —— 只 kill 我们自己起的那个 PID
+  ├─ 等 3s（`urgent` 时 600ms），超时 kill —— 只 kill 我们自己起的那个 PID
   ├─ 静置 400ms                                  ← 见下
   └─ 把 autoScale 关回 Disabled
+
+reconcileOrphansOnStartup()                      ← app 启动时一次，见下
+  ├─ 读配置；没有开着的 `Hibiki: ` profile → 零写入零广播早退
+  ├─ 【两条正向证据齐了才动】互斥体在 AND 我们那份 exe 映像被占用
+  │    └─ broadcastQuit() → 轮询等它消失 → 静置 400ms → 重读配置
+  └─ 把所有 `Hibiki: ` profile 的 autoScale 批量关回 Disabled
 ```
+
+`urgent` 的存在理由：退出链 `ExitFlushRegistry.perCallbackTimeout` 只给每个来源 2 秒。
+用 3 秒宽限等下去，注册表会先超时放行、`exit(0)` 照样把 Magpie 留成孤儿 —— 等于没修。
+
+**为什么还要启动期对账**：退出清理只在「最好情况」下跑得完；崩溃、断电、任务管理器结束
+进程都不会跑。留下的 `autoScale=Fullscreen` 就是「用户下次**不经 Hibiki** 双击游戏也被
+自动全屏超分」，那是我们没被授权做的事。「是不是我们的 Magpie」只认两条正向证据同时成立
+（装了我们的产物 + 我们那份 exe 的映像文件正被占用）——只有单实例互斥体在**不算数**，
+那可能是用户自己装的 Magpie，硬约束 3 说了绝不动。
 
 三条时序理由（都有源码依据）：
 
@@ -494,7 +522,8 @@ if (configText.empty()) {
 风险与代价（如实）：
 
 - 只在配置没就绪时发生，**第二局起零开销**（只多读一次文件）。
-- 整条 `onGameWindowReady` 是从 `_setState` 里 `unawaited` 调的，**预热不阻塞会话**。
+- 整条 `onGameWindowReady` 是从 `_syncMagpieUpscaling` 里 fire-and-forget 调的，
+  **预热不阻塞会话**（但每条边沿都进串行队列，退出路径 `await` 它排空）。
 - 预热实例必须收干净，否则单实例互斥体会把后面真正那次启动挡掉 —— 收尾放在 `finally`，
   且有源码守卫测试钉住。
 - Magpie 若坏到永远写不出配置，每局白付 8s（有上限、自清理、不影响会话）。此时降级原因是

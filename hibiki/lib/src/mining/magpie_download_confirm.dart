@@ -25,6 +25,9 @@ Future<bool> confirmMagpieDownload(
   if (context == null) return false;
   final bool? agreed = await showDialog<bool>(
     context: context,
+    // 🔴 不许点外部关掉：`_downloadDeclined` 是**整个 app 生命周期**的一次性旗子，
+    // 误关一次就等于这次运行里再也不问、超分永久不可用。要拒绝必须显式点「取消」。
+    barrierDismissible: false,
     builder: (BuildContext dialogContext) =>
         _MagpieDownloadDialog(prompt: prompt),
   );
