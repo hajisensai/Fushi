@@ -1,8 +1,7 @@
 import 'dart:typed_data';
 
-import 'package:path/path.dart' as p;
-
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:hibiki/src/utils/misc/audio_mime.dart';
 
 /// TODO-1335 ②：把 `resolveLookupAudioUrl` 解析出的单词音频 URL/路径归一成字节 +
 /// contentType，供浏览器扩展 `/api/lookup/audio`（以及 `HibikiSyncServer` 同款端点）经本地
@@ -42,32 +41,16 @@ Future<RemoteAudioLookup?> remoteAudioLookupFromResolvedUrl(
   );
 }
 
-/// 按文件扩展名推 audio content-type（本地文件 / 无响应头时用）。未知扩展回退
-/// `application/octet-stream`（浏览器仍能按嗅探播放常见音频）。
-String remoteAudioContentTypeForPath(String filePath) {
-  switch (p.extension(filePath).toLowerCase()) {
-    case '.mp3':
-      return 'audio/mpeg';
-    case '.m4a':
-    case '.m4b':
-    case '.mp4':
-    case '.aac':
-      return 'audio/mp4';
-    case '.ogg':
-    case '.oga':
-      return 'audio/ogg';
-    case '.opus':
-      return 'audio/opus';
-    case '.wav':
-      return 'audio/wav';
-    case '.flac':
-      return 'audio/flac';
-    case '.webm':
-      return 'audio/webm';
-    default:
-      return 'application/octet-stream';
-  }
-}
+/// 按文件扩展名推 audio content-type（本地文件 / 无响应头时用）。映射与弹窗
+/// `data:` URL 侧共用同一张 [kAudioMimeByExtension]（audio_mime.dart，`.opus`
+/// 按 RFC 7845 → audio/ogg）；未知扩展兜底 `application/octet-stream`——HTTP
+/// 响应头诚实报未知，浏览器按字节嗅探仍能播常见音频（与 `data:` URL 侧的
+/// audio/mpeg 兜底是刻意的消费端差异，见 audio_mime.dart 注释）。
+String remoteAudioContentTypeForPath(String filePath) =>
+    audioMimeForPathWithFallback(
+      filePath,
+      fallback: 'application/octet-stream',
+    );
 
 /// 远程下载的 content-type：优先取响应头里的 `audio/*`（去掉 `; charset` 等参数），缺失/非
 /// 音频类型时从 [uri] 路径扩展名兜底（Forvo/jpod 的 URL 常带扩展名）。

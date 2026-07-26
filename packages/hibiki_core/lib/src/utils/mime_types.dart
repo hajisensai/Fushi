@@ -15,9 +15,10 @@
 ///
 /// 本表取 6 份覆盖面的**并集**（6 份之间无互相矛盾的映射）。前 5 份已改为直接查本表；
 /// hibiki_anki 是无 hibiki_core 依赖的独立模块，其副本改为本表的**镜像**，由
-/// `hibiki/test/sync/mime_types_test.dart` 守卫锁定逐项一致。音频专用的
-/// `remote_audio_lookup_bytes.dart`（`.mp4/.aac/.webm → audio/*` 是查词音频语境的
-/// 刻意映射）与 manga 页 jpeg 兜底的图片服务不属本表，见各自注释。
+/// `hibiki/test/sync/mime_types_test.dart` 守卫锁定逐项一致。单词音频语境的
+/// `kAudioMimeByExtension`（hibiki `utils/misc/audio_mime.dart`，
+/// `.mp4/.aac/.webm → audio/*` 是刻意收窄，`audio_mime_test.dart` 锁定与本表的
+/// 分歧集合）与 manga 页 jpeg 兜底的图片服务不属本表，见各自注释。
 library;
 
 /// 扩展名（小写、不含点）→ MIME 单一映射表。
