@@ -40,6 +40,11 @@ import 'test_helpers.dart';
 /// routing and focus behaviour match the real app; only the WebView and the
 /// gamepad-A boundary are bypassed.
 ///
+/// BUG-1106 守卫（test/tools/itest_focus_navigation_prerequisite_guard_test.dart）
+/// 不覆盖本文件：它不走 `app.main()`，而是自己 pumpWidget 一个裸 [MaterialApp]，
+/// 根本没挂 main.dart 的 `wrapWithGlobalNavigation`，所以裸 Tab 不会被中和成
+/// DoNothingIntent，Flutter 原生遍历直接可用，无需先开实验焦点导航开关。
+///
 /// Run (PowerShell, from hibiki/):
 ///   $env:HIBIKI_TEST_HIDDEN = "1"
 ///   flutter test integration_test/reader_settings_layout_reachability_test.dart -d windows

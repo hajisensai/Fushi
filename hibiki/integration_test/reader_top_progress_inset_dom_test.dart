@@ -79,6 +79,9 @@ void main() {
           reason: '本测试需挤压（非悬浮）模式——挤压模式才会占 18px 预留，'
               '正是 BUG-470 关心的首载 inset 缺口场景。');
 
+      // BUG-1106：Tab 遍历前必须先开实验焦点导航开关——关闭（默认）时裸 Tab 被全局
+      // 中和成 DoNothingIntent，而集成测试跑在全新隔离根上、偏好恒为默认值。
+      await enableFocusNavigation(tester);
       final FocusDriver driver = FocusDriver(tester);
 
       // Books 标签置前 + 始终导入一本全新 EPUB（无有声书）并打开它，确定性走分页章节

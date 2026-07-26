@@ -49,6 +49,9 @@ void main() {
       expect(await waitForHome(tester), isTrue, reason: 'Home within 90s');
       await tester.pump(const Duration(seconds: 2));
 
+      // BUG-1106：Tab 遍历前必须先开实验焦点导航开关——关闭（默认）时裸 Tab 被全局
+      // 中和成 DoNothingIntent，而集成测试跑在全新隔离根上、偏好恒为默认值。
+      await enableFocusNavigation(tester);
       final FocusDriver driver = FocusDriver(tester);
 
       // Always import a FRESH EPUB (no audiobook) and open that exact book, so

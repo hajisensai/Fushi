@@ -1,7 +1,41 @@
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'package:hibiki/src/models/app_model.dart' show AppModel, appProvider;
+
+/// 打开实验「键盘/手柄焦点导航」总开关，并等树按新开关重建。
+///
+/// **BUG-1106（本文件所有 Tab 遍历 API 的前置条件）**：开关关闭（默认）时
+/// `wrapWithGlobalNavigation` 把裸 Tab / Shift+Tab 中和成 `DoNothingIntent`，
+/// 停掉 `WidgetsApp` 内建的焦点遍历——这是用户裁定的正确产品默认（TODO-112）。
+/// 集成测试每次跑在全新 GUID 隔离根上（`tool/run_windows_itest.ps1`），偏好恒为
+/// 默认值，于是 [FocusDriver.reachAll] / [FocusDriver.focusUntil] /
+/// [FocusDriver.focusWidget] 的合成 Tab 一步都走不动，表现为「reached 1 targets」
+/// 而不是几十个。
+///
+/// 所以：**任何 `app.main()` 起真 app 又靠 Tab 遍历的用例，第一次遍历前必须调这里**。
+/// 源码扫描守卫 `test/tools/itest_focus_navigation_prerequisite_guard_test.dart`
+/// 把这条契约钉死。
+Future<AppModel> enableFocusNavigation(WidgetTester tester) async {
+  final ProviderContainer container = ProviderScope.containerOf(
+    tester.element(find.byType(MaterialApp).first),
+  );
+  final AppModel appModel = container.read(appProvider);
+  // 偏好落 Drift，初始化没完成时写入会丢；与 readyAppModel 同一等待范式。
+  for (int i = 0; i < 120 && !appModel.isInitialised; i++) {
+    await tester.pump(const Duration(milliseconds: 500));
+  }
+  await appModel.setExperimentalFocusNavigationEnabled(true);
+  // 开关翻转后 shortcuts 层重建，等几帧再取焦点目标（有界 pump，禁 pumpAndSettle）。
+  for (int i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 250));
+  }
+  return appModel;
+}
 
 /// 用真实焦点系统驱动 UI，只发 in-engine 合成按键（绝不 tester.tap 坐标点击）。
 ///

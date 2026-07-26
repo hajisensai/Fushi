@@ -139,6 +139,9 @@ void main() {
             '${viewBtns.evaluate().length}) all present');
 
         // ── 断言 2：焦点驱动到「查看」→ Activate → 打开只读 note viewer ──
+        // BUG-1106：Tab 遍历前必须先开实验焦点导航开关——关闭（默认）时裸 Tab 被全局
+        // 中和成 DoNothingIntent，而集成测试跑在全新隔离根上、偏好恒为默认值。
+        await enableFocusNavigation(tester);
         final FocusDriver driver = FocusDriver(tester);
         // 焦点落到第一枚 open_in_new（查看）按钮子树 —— 焦点可达是硬要求（禁坐标点击）。
         final Finder firstView = viewBtns.first;
