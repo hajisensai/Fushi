@@ -43,6 +43,8 @@ import 'package:hibiki/src/models/clipboard_history_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
+import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
+import 'package:hibiki/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/download_network_proxy.dart';
 import 'package:hibiki/src/media/torrent/download_save_root.dart';
@@ -3042,6 +3044,17 @@ class AppModel with ChangeNotifier {
   AnimeDownloadSubscriptionStore? get animeDownloadSubscriptionStore =>
       _animeDownloadSubscriptionStore;
 
+  /// mokuro.moe 卷下载队列（懒建，app 生命周期常驻）：「在线目录」对话框只
+  /// 负责 enqueue，「下载」页任务 tab 与对话框共同观察本实例——关对话框不
+  /// 中断下载（统一下载中心）。书架页监听 importedCount 增量刷新书列表。
+  MokuroMoeDownloadQueue? _mokuroMoeDownloadQueue;
+  MokuroMoeDownloadQueue get mokuroMoeDownloadQueue =>
+      _mokuroMoeDownloadQueue ??= MokuroMoeDownloadQueue(
+        db: database,
+        clientFactory: () =>
+            MokuroMoeClient(baseUrl: mangaOnlineCatalogBaseUrl),
+      );
+
   AnimeDownloadSubscriptionService? _animeDownloadSubscriptionService;
   AnimeDownloadSubscriptionService? get animeDownloadSubscriptionService =>
       _animeDownloadSubscriptionService;
@@ -4642,6 +4655,8 @@ class AppModel with ChangeNotifier {
     unawaited(stopYomitanApiServer());
     _animeDownloadService?.stop();
     _animeDownloadSubscriptionService?.stop();
+    _mokuroMoeDownloadQueue?.dispose();
+    _mokuroMoeDownloadQueue = null;
     _prefsRepo?.removeListener(notifyListeners);
     if (_themeListenerAdded) {
       themeNotifier.removeListener(notifyListeners);

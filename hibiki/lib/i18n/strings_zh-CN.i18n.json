@@ -2673,5 +2673,10 @@
   "galgame_upscaling_hint_manual": "按 Win+Shift+A 放大游戏窗口。",
   "galgame_upscaling_hint_not_installed": "没有安装 Magpie。把「游戏窗口超分」改成「自动」即可下载。",
   "game_health_upscaling": "窗口超分",
-  "library_search": "搜索库"
+  "library_search": "搜索库",
+  "manga_online_queue_added": "已加入下载队列",
+  "manga_online_queue_section": "漫画目录下载",
+  "download_clear_finished": "清除已完成",
+  "download_status_queued": "排队中",
+  "download_status_cancelled": "已取消"
 }

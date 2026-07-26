@@ -2673,5 +2673,10 @@
   "galgame_upscaling_hint_manual": "Press Win+Shift+A to upscale the game window.",
   "galgame_upscaling_hint_not_installed": "Magpie is not installed. Set window upscaling to Auto to download it.",
   "game_health_upscaling": "Window upscaling",
-  "library_search": "Search library"
+  "library_search": "Search library",
+  "manga_online_queue_added": "Added to download queue",
+  "manga_online_queue_section": "Manga catalog downloads",
+  "download_clear_finished": "Clear finished",
+  "download_status_queued": "Queued",
+  "download_status_cancelled": "Cancelled"
 }

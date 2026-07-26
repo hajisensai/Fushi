@@ -6,52 +6,51 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
+import 'package:hibiki/src/media/manga/online/mokuro_moe_download_queue.dart';
+import 'package:hibiki/src/media/manga/online/mokuro_moe_progress_labels.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_volume_downloader.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/utils.dart';
 
-/// 测试注入口：替换真实 [MokuroMoeVolumeDownloader.run]（widget 测试绕网络/DB）。
-typedef MokuroMoeVolumeRunner = Stream<MokuroMoeVolumeDownloadEvent> Function({
-  required String seriesName,
-  required String volumeName,
-});
-
-/// mokuro.moe「在线目录」对话框（O1）：浏览/搜索系列 → 选卷 → 顺序逐卷
-/// 下载（断点续传）→ 现有 `.mokuro` 导入链落库。
+/// mokuro.moe「在线目录」对话框（O1）：浏览/搜索系列 → 选卷 → 入队
+/// [MokuroMoeDownloadQueue]（app 级共享队列，统一下载中心）。
+///
+/// 对话框只负责浏览与 enqueue：下载在队列里后台执行，**关闭对话框不中断**；
+/// 进度既在本对话框内联面板显示，也与「下载」页任务 tab 同源可见。书架刷新
+/// 不再依赖关闭回传——书架页直接监听队列的 importedCount 增量。
 ///
 /// 照 [MangaOcrWizardDialog] 范式：依赖全构造注入（[clientOverride] /
-/// [runnerOverride] 供 widget 测试绕网络），阶段机 [_CatalogStage]，dispose
-/// 取消订阅。关闭时 `Navigator.pop(context, <int 本次成功导入卷数>)`——调用方
-/// 据 `> 0` 决定是否刷新书架。
+/// [queueOverride] 供 widget 测试绕网络/DB），dispose 只摘监听不动队列。
 class MokuroMoeCatalogDialog extends ConsumerStatefulWidget {
   const MokuroMoeCatalogDialog({
     required this.db,
     this.clientOverride,
-    this.runnerOverride,
+    this.queueOverride,
     super.key,
   });
 
-  /// 目标数据库（漫画行写入此处）。
+  /// 目标数据库（查已在库书目用；下载落库由队列持有的 db 完成）。
   final HibikiDatabase db;
 
   /// 测试用 client（null = 按偏好 base URL 构造真实 client）。
   final MokuroMoeClient? clientOverride;
 
-  /// 测试用下载编排（null = 真实 [MokuroMoeVolumeDownloader]）。
-  final MokuroMoeVolumeRunner? runnerOverride;
+  /// 测试用队列（null = 取 [AppModel.mokuroMoeDownloadQueue] 共享实例）。
+  final MokuroMoeDownloadQueue? queueOverride;
 
   @override
   ConsumerState<MokuroMoeCatalogDialog> createState() =>
       _MokuroMoeCatalogDialogState();
 }
 
-/// 对话框所处阶段。
-enum _CatalogStage { browse, series, downloading }
+/// 对话框所处阶段（下载不再是阶段——它在共享队列里后台进行）。
+enum _CatalogStage { browse, series }
 
 class _MokuroMoeCatalogDialogState
     extends ConsumerState<MokuroMoeCatalogDialog> {
   late final MokuroMoeClient _client;
+  late final MokuroMoeDownloadQueue _queue;
   final TextEditingController _searchCtrl = TextEditingController();
 
   _CatalogStage _stage = _CatalogStage.browse;
@@ -66,21 +65,11 @@ class _MokuroMoeCatalogDialogState
   MokuroMoeSeries? _series;
   final Set<String> _selectedVolumes = <String>{};
 
-  /// 已在库的书身份 key（`sanitizeTtuFilename(title)`；含本次会话新导入的）。
+  /// 已在库的书身份 key（`sanitizeTtuFilename(title)`；含队列本次新导入的）。
   final Set<String> _existingBookKeys = <String>{};
 
-  // downloading。
-  StreamSubscription<MokuroMoeVolumeDownloadEvent>? _sub;
-  MokuroMoeVolumeDownloader? _activeDownloader;
-  bool _cancelRequested = false;
-  String? _activeVolume;
-  MokuroMoeVolumeDownloadEvent? _lastEvent;
-  int _queueIndex = 0;
-  int _queueTotal = 0;
-  String? _downloadError;
-
-  /// 本次会话成功导入（新建行）的卷数——关闭时回传给调用方。
-  int _importedCount = 0;
+  /// 已处理过完成回调的任务（防重复计 ✓/重复 toast——队列每次 notify 都全量扫）。
+  final Set<MokuroMoeDownloadTask> _seenDone = <MokuroMoeDownloadTask>{};
 
   @override
   void initState() {
@@ -89,18 +78,44 @@ class _MokuroMoeCatalogDialogState
         MokuroMoeClient(
           baseUrl: ref.read(appProvider).mangaOnlineCatalogBaseUrl,
         );
+    _queue =
+        widget.queueOverride ?? ref.read(appProvider).mokuroMoeDownloadQueue;
+    // The app-level queue outlives this dialog. Existing done tasks are
+    // history, not completion transitions for the newly opened instance.
+    _seenDone.addAll(
+      _queue.tasks.where(
+        (MokuroMoeDownloadTask task) => task.status == MokuroMoeTaskStatus.done,
+      ),
+    );
+    _queue.addListener(_onQueueChanged);
     unawaited(_loadLibrary());
     unawaited(_loadExistingBooks());
   }
 
   @override
   void dispose() {
-    // 对话框被任何途径关掉（Esc/barrier/pop）都不能留下后台孤儿下载：
-    // cancel 保留 .part，下次打开同卷续传。
-    _activeDownloader?.cancel();
-    unawaited(_sub?.cancel());
+    // 只摘监听：队列是 app 级服务，下载继续（统一下载中心语义）。
+    _queue.removeListener(_onQueueChanged);
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  /// 队列广播：完成的任务标 ✓（写进 _existingBookKeys，与书架身份同源）并
+  /// toast 一次；其余变更（进度/状态）只触发重绘。
+  void _onQueueChanged() {
+    if (!mounted) return;
+    bool completed = false;
+    for (final MokuroMoeDownloadTask task in _queue.tasks) {
+      if (task.status != MokuroMoeTaskStatus.done) continue;
+      if (!_seenDone.add(task)) continue;
+      _existingBookKeys.add(sanitizeTtuFilename(task.title));
+      _selectedVolumes.remove(task.volumeName);
+      completed = true;
+    }
+    setState(() {});
+    if (completed) {
+      HibikiToast.show(msg: t.manga_ocr_wizard_done);
+    }
   }
 
   Future<void> _loadLibrary() async {
@@ -153,7 +168,6 @@ class _MokuroMoeCatalogDialogState
     setState(() {
       _series = series;
       _selectedVolumes.clear();
-      _downloadError = null;
       _stage = _CatalogStage.series;
     });
   }
@@ -162,131 +176,31 @@ class _MokuroMoeCatalogDialogState
     setState(() {
       _series = null;
       _selectedVolumes.clear();
-      _downloadError = null;
       _stage = _CatalogStage.browse;
     });
   }
 
-  Future<void> _downloadSelected() async {
+  /// 所选卷入队共享下载队列（保持卷序），toast 提示后清空选择。下载/落库
+  /// 全在队列后台进行——本对话框可继续浏览或直接关闭。
+  void _enqueueSelected() {
     final MokuroMoeSeries? series = _series;
     if (series == null || _selectedVolumes.isEmpty) return;
-    final List<String> queue = series.volumes
+    final List<String> volumes = series.volumes
         .map((MokuroMoeVolume v) => v.name)
         .where(_selectedVolumes.contains)
         .toList();
-    setState(() {
-      _stage = _CatalogStage.downloading;
-      _cancelRequested = false;
-      _downloadError = null;
-      _queueIndex = 0;
-      _queueTotal = queue.length;
-    });
-    for (int i = 0; i < queue.length; i++) {
-      if (!mounted || _cancelRequested) break;
-      setState(() {
-        _queueIndex = i;
-        _activeVolume = queue[i];
-        _lastEvent = null;
-      });
-      final bool ok = await _runVolume(series.name, queue[i]);
-      if (!mounted) return;
-      if (!ok) break; // 失败/取消即停队列（错误已展示；续传靠 .part）。
-    }
-    if (!mounted) return;
-    setState(() {
-      _activeVolume = null;
-      _activeDownloader = null;
-      _stage = _CatalogStage.series;
-    });
+    _queue.enqueue(seriesName: series.name, volumeNames: volumes);
+    setState(() => _selectedVolumes.clear());
+    HibikiToast.show(msg: t.manga_online_queue_added);
   }
 
-  /// 跑一卷；成功（含「已在库跳过」）返回 true。
-  Future<bool> _runVolume(String seriesName, String volumeName) {
-    final Completer<bool> completer = Completer<bool>();
-    final Stream<MokuroMoeVolumeDownloadEvent> stream;
-    if (widget.runnerOverride != null) {
-      _activeDownloader = null;
-      stream = widget.runnerOverride!(
-          seriesName: seriesName, volumeName: volumeName);
-    } else {
-      final MokuroMoeVolumeDownloader downloader =
-          MokuroMoeVolumeDownloader(client: _client);
-      _activeDownloader = downloader;
-      stream = downloader.run(
-        db: widget.db,
-        seriesName: seriesName,
-        volumeName: volumeName,
-      );
-    }
-    _sub = stream.listen(
-      (MokuroMoeVolumeDownloadEvent event) {
-        if (!mounted) return;
-        setState(() {
-          _lastEvent = event;
-          if (event.stage == MokuroMoeDownloadStage.done) {
-            // 新建行与「已在库」都标记 ✓（不可重复下）；只有新建行计数。
-            _existingBookKeys.add(_volumeKey(volumeName));
-            _selectedVolumes.remove(volumeName);
-            if (!event.skippedExisting && event.bookKey != null) {
-              _importedCount++;
-            }
-          }
-        });
-        if (event.stage == MokuroMoeDownloadStage.done) {
-          HibikiToast.show(msg: t.manga_ocr_wizard_done);
-        }
-      },
-      onError: (Object e) {
-        if (mounted && e is! MokuroMoeDownloadCancelled) {
-          setState(() => _downloadError = '${t.manga_online_failed}: $e');
-        }
-        if (!completer.isCompleted) completer.complete(false);
-      },
-      onDone: () {
-        if (!completer.isCompleted) {
-          completer.complete(_lastEvent?.stage == MokuroMoeDownloadStage.done);
-        }
-      },
-    );
-    return completer.future;
-  }
-
-  void _cancelDownload() {
-    _cancelRequested = true;
-    final MokuroMoeVolumeDownloader? downloader = _activeDownloader;
-    if (downloader != null) {
-      downloader.cancel();
-    } else {
-      // 注入 runner（测试）没有 cancel 通道：直接掐订阅结束本卷。
-      unawaited(_sub?.cancel());
-      setState(() {
-        _activeVolume = null;
-        _stage = _CatalogStage.series;
-      });
-    }
-  }
-
-  void _close() => Navigator.pop(context, _importedCount);
+  void _close() => Navigator.pop(context);
 
   // ── UI ───────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    // Esc/返回键关闭也必须带上 _importedCount 回传（否则调用方拿 null，
-    // 已导入的卷丢失书架刷新信号）——统一拦下来走 _close。
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (bool didPop, Object? result) {
-        if (!didPop) {
-          _close();
-        }
-      },
-      child: _buildDialog(tokens),
-    );
-  }
-
-  Widget _buildDialog(HibikiDesignTokens tokens) {
     return AlertDialog(
       title: Text(
         _stage == _CatalogStage.browse
@@ -411,53 +325,46 @@ class _MokuroMoeCatalogDialogState
   Widget _buildSeries(HibikiDesignTokens tokens) {
     final MokuroMoeSeries? series = _series;
     if (series == null) return const SizedBox.shrink();
-    final bool downloading = _stage == _CatalogStage.downloading;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        if (downloading) _buildDownloadPanel(tokens),
-        if (_downloadError != null)
-          Padding(
-            padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-            child: Text(
-              _downloadError!,
-              style: tokens.type.listSubtitle
-                  .copyWith(color: Theme.of(context).colorScheme.error),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
+        if (_queue.hasUnfinished) _buildQueuePanel(tokens),
         Expanded(
           child: ListView.builder(
             itemCount: series.volumes.length,
             itemBuilder: (BuildContext context, int index) =>
-                _buildVolumeRow(tokens, series.volumes[index], downloading),
+                _buildVolumeRow(tokens, series.volumes[index]),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildVolumeRow(
-    HibikiDesignTokens tokens,
-    MokuroMoeVolume volume,
-    bool downloading,
-  ) {
+  Widget _buildVolumeRow(HibikiDesignTokens tokens, MokuroMoeVolume volume) {
+    final MokuroMoeSeries? series = _series;
     final bool imported = _isImported(volume.name);
-    final bool active = downloading && _activeVolume == volume.name;
-    final Widget? subtitle = imported
-        ? Text(t.manga_online_downloaded, style: tokens.type.listSubtitle)
-        : (active
-            ? Text(_stageLabel(),
-                style: tokens.type.listSubtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis)
-            : null);
+    final MokuroMoeDownloadTask? pending =
+        series == null ? null : _queue.pendingTask(series.name, volume.name);
+    final String? subtitleText = imported
+        ? t.manga_online_downloaded
+        : switch (pending?.status) {
+            MokuroMoeTaskStatus.running =>
+              mokuroMoeStageLabel(pending!.lastEvent),
+            MokuroMoeTaskStatus.queued => t.download_status_queued,
+            _ => null,
+          };
+    final Widget? subtitle = subtitleText == null
+        ? null
+        : Text(subtitleText,
+            style: tokens.type.listSubtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis);
+    final bool selectable = !imported && pending == null;
     // 手排行（MD3 tokens 间距），不走 ListTile（MD3 守卫：普通 chrome 统一走
     // 共享 tokens 布局）。
     return InkWell(
       borderRadius: tokens.radii.controlRadius,
-      onTap: imported || downloading
+      onTap: !selectable
           ? null
           : () => setState(() {
                 if (!_selectedVolumes.remove(volume.name)) {
@@ -476,7 +383,7 @@ class _MokuroMoeCatalogDialogState
             else
               Checkbox(
                 value: _selectedVolumes.contains(volume.name),
-                onChanged: downloading
+                onChanged: !selectable
                     ? null
                     : (bool? checked) => setState(() {
                           if (checked == true) {
@@ -507,72 +414,46 @@ class _MokuroMoeCatalogDialogState
     );
   }
 
-  Widget _buildDownloadPanel(HibikiDesignTokens tokens) {
+  /// 共享队列的内联进度面板（有未完成任务时显示）：`x/y · 当前卷阶段` +
+  /// 进度条 + 取消当前卷。与「下载」页任务 tab 同源（同队列 + 同换算）。
+  Widget _buildQueuePanel(HibikiDesignTokens tokens) {
+    final MokuroMoeDownloadTask? running = _queue.runningTask;
+    final String label = running == null
+        ? t.download_status_queued
+        : '${running.title} · ${mokuroMoeStageLabel(running.lastEvent)}';
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Text(
-            '${t.manga_online_queue_progress(done: _queueIndex + 1, total: _queueTotal)}'
-            ' · ${_stageLabel()}',
-            style: tokens.type.listSubtitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  // 「第 x / y 卷」：x = 已收尾数 + 当前执行中的这卷（保持原语义）。
+                  '${t.manga_online_queue_progress(done: _queue.finishedCount + (running != null ? 1 : 0), total: _queue.totalCount)}'
+                  ' · $label',
+                  style: tokens.type.listSubtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (running != null)
+                HibikiIconButton(
+                  tooltip: t.dialog_cancel,
+                  icon: Icons.close,
+                  size: 18,
+                  onTap: () => _queue.cancel(running),
+                ),
+            ],
           ),
           SizedBox(height: tokens.spacing.gap / 2),
-          LinearProgressIndicator(value: _progressValue()),
+          LinearProgressIndicator(
+              value: mokuroMoeProgressValue(running?.lastEvent)),
         ],
       ),
     );
   }
-
-  /// 当前卷的确定性进度（0..1）；未知总量阶段回 null（转圈条）。
-  double? _progressValue() {
-    final MokuroMoeVolumeDownloadEvent? event = _lastEvent;
-    if (event == null) return null;
-    switch (event.stage) {
-      case MokuroMoeDownloadStage.downloadingCbz:
-        final int? total = event.totalBytes;
-        if (total == null || total <= 0) return null;
-        return (event.receivedBytes / total).clamp(0.0, 1.0);
-      case MokuroMoeDownloadStage.importing:
-        if (event.pagesTotal <= 0) return null;
-        return (event.pagesDone / event.pagesTotal).clamp(0.0, 1.0);
-      case MokuroMoeDownloadStage.done:
-        return 1;
-      case MokuroMoeDownloadStage.downloadingMokuro:
-      case MokuroMoeDownloadStage.extracting:
-        return null;
-    }
-  }
-
-  String _stageLabel() {
-    final MokuroMoeVolumeDownloadEvent? event = _lastEvent;
-    switch (event?.stage) {
-      case null:
-      case MokuroMoeDownloadStage.downloadingMokuro:
-        return t.manga_online_stage_mokuro;
-      case MokuroMoeDownloadStage.downloadingCbz:
-        final int received = event!.receivedBytes;
-        final int? total = event.totalBytes;
-        final String bytes = total != null && total > 0
-            ? '${_mb(received)} / ${_mb(total)} MB'
-            : '${_mb(received)} MB';
-        return '${t.manga_online_stage_cbz} $bytes';
-      case MokuroMoeDownloadStage.extracting:
-        return t.manga_online_stage_extract;
-      case MokuroMoeDownloadStage.importing:
-        return event!.pagesTotal > 0
-            ? t.manga_ocr_wizard_page_progress(
-                done: event.pagesDone, total: event.pagesTotal)
-            : t.manga_ocr_wizard_importing;
-      case MokuroMoeDownloadStage.done:
-        return t.manga_ocr_wizard_done;
-    }
-  }
-
-  static String _mb(int bytes) => (bytes / (1024 * 1024)).toStringAsFixed(1);
 
   List<Widget> _buildActions() {
     switch (_stage) {
@@ -593,21 +474,13 @@ class _MokuroMoeCatalogDialogState
           ),
           adaptiveDialogAction(
             context: context,
-            onPressed: _selectedVolumes.isEmpty ? null : _downloadSelected,
+            onPressed: _selectedVolumes.isEmpty ? null : _enqueueSelected,
             child: Text(t.manga_online_download_selected),
           ),
           adaptiveDialogAction(
             context: context,
             onPressed: _close,
             child: Text(t.dialog_close),
-          ),
-        ];
-      case _CatalogStage.downloading:
-        return <Widget>[
-          adaptiveDialogAction(
-            context: context,
-            onPressed: _cancelDownload,
-            child: Text(t.dialog_cancel),
           ),
         ];
     }
