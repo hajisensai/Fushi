@@ -158,6 +158,30 @@ HT_EXPORT int ht_remove_torrent(void* session, const char* info_hash,
                                 int delete_files);
 
 // 释放本库返回的 char* 串；传 NULL 为 no-op。
+// TODO-1961-a：把当前 session 里**所有已有元数据**的种子的 resume data 落盘到
+// [out_dir]（每种子一个 `<infohash>.resume`，先写 .tmp 再 rename，绝不留半个
+// 文件）。resume 里带 info dict，故磁力添加的种子重启后无需再取元数据。
+//
+// 同步语义：发出请求后最多阻塞 [timeout_ms] 毫秒等回执（<=0 取默认 5000），
+// 期间靠 wait_for_alert 挂起而**不是** sleep 轮询。收齐即提前返回，通常几十
+// 毫秒内完成。调用方应在退出前与周期性（如每分钟）各调一次。
+//
+// 返回 JSON：{"ok":true,"saved":N,"failed":M,"timed_out":K}。
+// `timed_out` > 0 表示这么多种子在预算内没回执，本次没存（下轮再存即可，
+// 不是错误）。session 为 NULL / out_dir 为空 → {"ok":false,...}。
+HT_EXPORT char* ht_save_resume_data(void* session, const char* out_dir,
+                                    int timeout_ms);
+
+// TODO-1961-a：把 [dir] 下所有 `*.resume` 读回来重新 add 进 session
+// （启动时调用 = 「继续上次的下载与做种」）。目录不存在视为首次运行，返回
+// added=0 而非错误。坏文件逐个跳过并计入 failed，绝不因一个坏文件整批失败。
+//
+// add 语义与 ht_add_magnet 一致：清 paused 旗标，加回来即开始跑。已在 session
+// 里的重复种子按成功计（幂等，可重复调用）。
+//
+// 返回 JSON：{"ok":true,"added":N,"failed":M,"ids":["<infohash>",...]}。
+HT_EXPORT char* ht_load_resume_dir(void* session, const char* dir);
+
 HT_EXPORT void ht_free_string(char* s);
 
 #ifdef __cplusplus

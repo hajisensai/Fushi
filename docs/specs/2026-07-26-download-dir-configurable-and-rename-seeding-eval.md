@@ -84,12 +84,13 @@ Dart 侧也没有任何「启动时重新 add 已有种子」的路径（`addTor
 
 ## 4. 建议的后续 TODO（按依赖顺序）
 
-1. **TODO-1961-a｜内置引擎 resume data 持久化**
+1. **TODO-1961-a｜内置引擎 resume data 持久化** —— ✅ **已落地**（见下「6. a/b 落地记录」）
    `save_resume_data` + 启动重新 add。没有它，②、以及「重启后继续做种」「重启后续传」
    全都立不住。这是最高性价比的一步，且**不需要**改名功能就能独立交付价值。
-2. **TODO-1961-b｜FFI 通用 alert 泵**
-   把 `ht_poll_piece_events` 泛化成 `ht_poll_alerts`（或并列新增），为一切异步操作提供
-   完成信号。resume data 也需要它（`save_resume_data_alert`）。
+2. **TODO-1961-b｜FFI alert 分派收割** —— ✅ **已落地**（随 a 一起，见下）
+   原计划「把 `ht_poll_piece_events` 泛化成 `ht_poll_alerts`」。实际做法更进一步：
+   问题不在于「缺一条通用通道」，而在于 **`pop_alerts` 是破坏性的，却有多个消费者**。
+   故改成「一个 session 一个收割点 + 按类型分派进各自队列」，加通道不再需要动契约。
 3. **TODO-1961-c｜`ht_rename_file` / `ht_move_storage` + Dart 绑定 + qb 后端对齐**
 4. **TODO-1961-d｜库路径迁移 API**
    `updateVideoPath` + 字幕 sidecar 路径同步更新；与 c 在同一个用户操作里原子完成
@@ -107,3 +108,47 @@ Dart 侧也没有任何「启动时重新 add 已有种子」的路径（`addTor
 - 下载根从「单个 final 字符串」变成「活动根 + 历史根集合」，且 `EmbeddedTorrentHost`
   支持**就地**换活动根（不重建 session）。②-c 真正实现时，`move_storage` 的目标根
   可以直接取 `saveRoots.active`。
+
+## 6. a/b 落地记录（2026-07-26）
+
+第 3 节那个「会改变优先级的前提」已经消除：内置引擎现在有 resume data 了。
+
+### 改了什么
+
+| 层 | 改动 |
+|---|---|
+| C++ | 句柄从裸 `lt::session*` 换成 `ht_session_ctx`（拥有 session + 已收割 alert 队列）；新增唯一收割点 `drain_alerts` 按类型分派；`alert_mask` 加 `storage`；新增 `ht_save_resume_data` / `ht_load_resume_dir` |
+| FFI | `hibiki_torrent_bindings.dart` 手写镜像补两个函数（本机无 LLVM，ffigen 跑不了；`ffigen.yaml` 本就声明手写镜像等价） |
+| Dart 包 | `EmbeddedTorrentSession.saveResumeData` / `loadResumeDir` + `HtResumeSaveResult` |
+| app | `EmbeddedTorrentHost` 持 `resumeDir`，open 时 `restoreFromResume`、每分钟节流保存、dispose 前强制保存；`AppModel` 接线并在启动时按需恢复 |
+
+### 两个必须守住的不变量（都有测试）
+
+1. **计划是真相源**：resume 目录只是计划集合的落盘镜像。load 与 save 之后都按
+   `keepIds` 剪枝，用户删掉的任务不会靠残留 `.resume` 复活成「UI 里看不见、却在
+   后台占带宽做种」的幽灵种子。
+   守卫：`hibiki/test/media/torrent/embedded_torrent_host_test.dart`
+   「resume snapshot persists live torrents and prunes plans the user deleted」。
+2. **BUG-1053 的边界不许破**：启动时**只有**「resume 目录里存在属于现存计划的
+   `.resume`」才建 session。没下载过东西的用户永远不建 session、不绑端口、不起 DHT。
+   实现见 `AppModel._restoreEmbeddedTorrentSession`。
+
+### 端到端证据
+
+`packages/hibiki_torrent/test/resume_persistence_test.dart`：本地 rig 下完 →
+存 resume → **关掉整个 session** → 新 session（`enableDht: false`、不调
+`connectPeer`、纯 btih 磁力无 tracker，即**全程零 peer**）→ `loadResumeDir` →
+种子回来、`hasMetadata` 为真、`numPeers == 0`、每个 piece 都在、进入做种态。
+零 peer 是这个测试的全部说服力：完成度只可能来自磁盘，不可能是重下的。
+
+### 还没做的（c/d/e 原样保留）
+
+「用户改名 / 移动后不掐做种」仍未实现 —— 那要 `ht_rename_file` /
+`ht_move_storage`（c）与库路径迁移 API（d）成对落地，UI 入口是 e。
+本轮只是把它们的前置依赖补上了。
+
+### 顺带记录
+
+跑既有测试时发现 `embedded_pipeline_test.dart` 的 ip_filter 用例本地 flaky
+（基线与改动后同为 1/5 通过，已用对照实验排除本轮改动）。根因与影响面见
+[BUG-1111](../bugs/BUG-1111-local-rig-rate-limit-flake.md)。

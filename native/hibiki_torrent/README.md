@@ -38,6 +38,7 @@ hibiki/lib/src/media/torrent/
 `ht_connect_peer` / `ht_list_torrents` / `ht_torrent_files` /
 `ht_torrent_pieces` / `ht_poll_piece_events` / `ht_set_piece_deadline` /
 `ht_apply_first_last_priority` / `ht_remove_torrent`。
+持久化（TODO-1961-a）：`ht_save_resume_data` / `ht_load_resume_dir`。
 出参 JSON 一律 `ht_free_string` 释放；详细契约见 `hibiki_torrent.h` 注释。
 
 ### 关键语义（踩过的坑，别再踩）
@@ -51,6 +52,14 @@ hibiki/lib/src/media/torrent/
 - **Windows 依赖 DLL 搜索**：`DynamicLibrary.open` 不把目标 DLL 所在目录
   纳入其依赖搜索路径；`EmbeddedTorrentEngine.open` 会先预载同目录的
   vcpkg applocal 依赖（torrent-rasterbar/ssl/crypto）再开主库。
+- **alert 只有一个收割点**：`pop_alerts` 是破坏性的（取走即从 libtorrent 消失）。
+  bridge 内 `ht_session_ctx` 持有分派后的队列，**唯一**的收割入口是
+  `drain_alerts`，各 poll 函数只读自己的队列。新增任何需要 alert 的能力时，
+  往 `drain_alerts` 里加一个分支，**绝不要**再写第二处 `pop_alerts` ——
+  两个消费者会静默吃掉彼此的事件。
+- **resume data 只对已有元数据的种子有意义**：磁力刚加时没有 info dict，
+  `ht_save_resume_data` 会跳过这类种子（存了也重建不出来）。保存时带
+  `save_info_dict`，故恢复后无需再向 DHT/peer 取元数据。
 - **firstLastPiecePrio 无 add 期开关**：元数据未就绪无从提优；
   `ht_apply_first_last_priority` 在元数据就绪后调用（返回 0 = 未就绪，
   轮询重试；`EmbeddedTorrentBackend` 已在 listTorrents 轮询里补应用）。
@@ -87,6 +96,23 @@ HIBIKI_TORRENT_LIB=... flutter test test/media/torrent/embedded_torrent_backend_
 # 真实网络手动冒烟（真机验收）：
 dart run tool/download_harness.dart <dll> "<magnet>" <saveDir>
 ```
+
+### CI 覆盖缺口（已知，未解决）
+
+所有需要真 DLL 的用例（`packages/hibiki_torrent/test/*`、`hibiki` 侧的
+`embedded_torrent_backend_test.dart` / `embedded_torrent_host_test.dart`）在 CI
+上**一次都没跑过**，原因有两层，都不是「加个环境变量」能解决的：
+
+1. `HIBIKI_TORRENT_LIB` 在任何 workflow 里都不存在 → 这些用例整组 skip。
+2. 真单测门（`release.yml` 的 *Run unit tests*）跑在 `ubuntu-latest`，而随包的
+   预编译产物是 Windows DLL；`Run package tests` 的包列表里也**没有**
+   `packages/hibiki_torrent`。
+
+要真正补上，得在 CI 上构建 Linux 版 libtorrent 2.x + 本 bridge（`.so`），是独立
+任务，不该混进功能 PR。在那之前，**任何必须守住的不变量都不能只靠要 DLL 的
+用例**——把它做成不依赖 native 的纯 Dart 用例（例：`pruneResumeFiles` 的
+「计划 id 未加载时拒绝剪枝」守卫在 `hibiki/test/media/torrent/
+resume_prune_guard_test.dart`，无 DLL 也跑）。
 
 ## ffigen 重生成绑定
 
