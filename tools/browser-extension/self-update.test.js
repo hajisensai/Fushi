@@ -112,3 +112,29 @@ test('action-popup 渲染 stale 提示并随 storage 实时显隐', () => {
   assert.match(js, /chrome\.storage\.local\.get\(\['hibikiUpdateStale'\]/);
   assert.match(js, /changes\.hibikiUpdateStale/);
 });
+
+// ── describeUpdateState（options 页「版本与更新」卡片文案）──
+
+test('describeUpdateState: stale → 警示 + 双指纹', () => {
+  const s = selfUpdate.describeUpdateState(
+    { build: 'aaaa1111bbbb2222' },
+    { remote: 'cccc3333dddd4444', local: 'aaaa1111bbbb2222' });
+  assert.equal(s.tone, 'warn');
+  assert.ok(s.detail.includes('cccc3333'), '提示需含最新指纹短形式');
+  assert.ok(s.detail.includes('aaaa1111'), '提示需含当前指纹短形式');
+  assert.ok(s.detail.includes('重新加载'), '必须指引手动重载');
+});
+
+test('describeUpdateState: 无 build（开发副本）→ 不参与自动更新', () => {
+  const s = selfUpdate.describeUpdateState({ host: '127.0.0.1' }, null);
+  assert.equal(s.tone, 'neutral');
+  assert.equal(s.build, '');
+  assert.ok(s.title.includes('开发副本'));
+});
+
+test('describeUpdateState: 正常 → 自动更新说明 + build', () => {
+  const s = selfUpdate.describeUpdateState({ build: 'aaaa1111bbbb2222' }, null);
+  assert.equal(s.tone, 'ok');
+  assert.equal(s.build, 'aaaa1111bbbb2222');
+  assert.ok(s.detail.includes('自动重载'));
+});
