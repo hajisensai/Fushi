@@ -185,6 +185,35 @@ void main() {
     });
   });
 
+  group('external episode completion callback', () {
+    test('fires once at 90% and resets only when the episode changes',
+        () async {
+      int completed = 0;
+      final _FakeSource src = _FakeSource()
+        ..positionMs = 90
+        ..durationMs = 100;
+      final VideoWatchTracker tracker = VideoWatchTracker(
+        title: 'A',
+        bookUid: 'u1',
+        addStat: (_, __, ___, ____) {},
+        markCompleted: (_) async {},
+        onEpisodeCompleted: () => completed++,
+      )..attach(src);
+
+      tracker.start();
+      await tracker.stop();
+      tracker.start();
+      await tracker.stop();
+      expect(completed, 1);
+
+      tracker.onEpisodeChanged();
+      tracker.start();
+      await tracker.stop();
+      expect(completed, 2);
+      tracker.dispose();
+    });
+  });
+
   group('recordActivity (v49 首页 Activity 事件流)', () {
     test('一次观看 session 结束落一条活动事件，携带累积净观看时长', () async {
       final List<(String, String, int, int)> events =

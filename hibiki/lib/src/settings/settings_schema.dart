@@ -6,6 +6,7 @@ import 'package:hibiki/src/settings/settings_schema_card_creation.dart';
 import 'package:hibiki/src/settings/settings_schema_downloads.dart';
 import 'package:hibiki/src/settings/settings_schema_listening.dart';
 import 'package:hibiki/src/settings/settings_schema_lookup.dart';
+import 'package:hibiki/src/settings/settings_schema_tracking.dart';
 import 'package:hibiki/src/settings/settings_schema_profiles.dart';
 import 'package:hibiki/src/settings/settings_schema_reading.dart';
 import 'package:hibiki/src/settings/settings_schema_system.dart';
@@ -24,6 +25,7 @@ List<SettingsDestination> buildSettingsSchema(SettingsContext context) {
     buildReadingDestination(),
     buildListeningDestination(),
     buildVideoDestination(),
+    buildMediaTrackingDestination(),
     // 「下载」大类：内联既有 torrent 设置组件（详见 buildDownloadsDestination）。
     buildDownloadsDestination(),
     buildLookupDestination(),
