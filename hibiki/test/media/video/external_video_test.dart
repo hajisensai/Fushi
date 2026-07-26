@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/media_extensions.dart';
 import 'package:hibiki/src/media/video/external_video.dart';
 
 void main() {
@@ -18,6 +19,18 @@ void main() {
       for (final String path in ok) {
         expect(isSupportedVideoFile(path), isTrue, reason: path);
       }
+    });
+
+    test('白名单 = kVideoExtensions ∪ {3gp}（防第三份表再漂移）', () {
+      // 能导入的每个扩展名都能从 app 外打开（此前 .rmvb/.rm/.vob 漂移缺失）。
+      for (final String ext in kVideoExtensions) {
+        expect(isSupportedVideoFile('D:/v/a$ext'), isTrue,
+            reason: '$ext 可导入但不可外开：外开白名单与 kVideoExtensions 漂移');
+      }
+      // 显式差异项：.3gp 只在外开白名单（导入表暂不收录，见 external_video.dart）。
+      expect(isSupportedVideoFile('D:/v/a.3gp'), isTrue);
+      expect(kVideoExtensions.contains('.3gp'), isFalse,
+          reason: '.3gp 已进导入表，请把 external_video.dart 的显式增项与本断言一并清理');
     });
 
     test('非视频扩展名一律拒绝', () {

@@ -36,9 +36,12 @@
 
 ## 支持的扩展名
 
-`isSupportedVideoFile`（`external_video.dart`）白名单：
-`mkv mp4 m4v avi webm mov ts m2ts mts flv wmv mpg mpeg ogv 3gp`。
-不在表内的扩展名一律拒绝，避免把词典 zip / EPUB 误当视频打开。
+`isSupportedVideoFile`（`external_video.dart`）白名单派生自共享真相源
+`kVideoExtensions`（`media_extensions.dart`，导入 / 目录扫描 / 刮削同表）
+∪ 显式增项 `3gp`（历史上只在外开白名单，导入表暂不收录）。此前这里手写第三份
+整表并已漂移（`.rmvb` 能导入却不能外开）；防漂移守卫见
+`test/media/video/external_video_test.dart`。不在表内的扩展名一律拒绝，
+避免把词典 zip / EPUB 误当视频打开。
 
 ## Windows 文件关联
 
