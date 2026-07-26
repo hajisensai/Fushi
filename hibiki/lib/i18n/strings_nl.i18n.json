@@ -2672,5 +2672,6 @@
   "galgame_upscaling_hint_external": "A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.",
   "galgame_upscaling_hint_manual": "Press Win+Shift+A to upscale the game window.",
   "galgame_upscaling_hint_not_installed": "Magpie is not installed. Set window upscaling to Auto to download it.",
-  "game_health_upscaling": "Window upscaling"
+  "game_health_upscaling": "Window upscaling",
+  "library_search": "Search library"
 }

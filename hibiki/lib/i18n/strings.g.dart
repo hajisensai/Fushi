@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 45458 (2674 per locale)
+/// Strings: 45475 (2675 per locale)
 ///
-/// Built on 2026-07-26 at 02:35 UTC
+/// Built on 2026-07-26 at 05:27 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3553,6 +3553,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get galgame_upscaling_hint_not_installed =>
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   String get game_health_upscaling => 'Window upscaling';
+  String get library_search => 'Search library';
 }
 
 // Path: <root>
@@ -9626,6 +9627,8 @@ class _StringsAr extends _StringsEn {
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
   String get game_health_upscaling => 'Window upscaling';
+  @override
+  String get library_search => 'Search library';
 }
 
 // Path: <root>
@@ -15772,6 +15775,8 @@ class _StringsDe extends _StringsEn {
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
   String get game_health_upscaling => 'Window upscaling';
+  @override
+  String get library_search => 'Search library';
 }
 
 // Path: <root>
@@ -21934,6 +21939,8 @@ class _StringsEs extends _StringsEn {
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
   String get game_health_upscaling => 'Window upscaling';
+  @override
+  String get library_search => 'Search library';
 }
 
 // Path: <root>
@@ -28107,6 +28114,8 @@ class _StringsFr extends _StringsEn {
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
   String get game_health_upscaling => 'Window upscaling';
+  @override
+  String get library_search => 'Search library';
 }
 
 // Path: <root>
@@ -34207,6 +34216,8 @@ class _StringsId extends _StringsEn {
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
   String get game_health_upscaling => 'Window upscaling';
+  @override
+  String get library_search => 'Search library';
 }
 
 // Path: <root>
@@ -40355,6 +40366,8 @@ class _StringsIt extends _StringsEn {
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
   String get game_health_upscaling => 'Window upscaling';
+  @override
+  String get library_search => 'Search library';
 }
 
 // Path: <root>
@@ -46308,6 +46321,8 @@ class _StringsJa extends _StringsEn {
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
   String get game_health_upscaling => 'Window upscaling';
+  @override
+  String get library_search => 'Search library';
 }
 
 // Path: <root>
@@ -52264,6 +52279,8 @@ class _StringsKo extends _StringsEn {
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
   String get game_health_upscaling => 'Window upscaling';
+  @override
+  String get library_search => 'Search library';
 }
 
 // Path: <root>
@@ -58390,6 +58407,8 @@ class _StringsNl extends _StringsEn {
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
   String get game_health_upscaling => 'Window upscaling';
+  @override
+  String get library_search => 'Search library';
 }
 
 // Path: <root>
@@ -64531,6 +64550,8 @@ class _StringsPtBr extends _StringsEn {
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
   String get game_health_upscaling => 'Window upscaling';
+  @override
+  String get library_search => 'Search library';
 }
 
 // Path: <root>
@@ -70655,6 +70676,8 @@ class _StringsRu extends _StringsEn {
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
   String get game_health_upscaling => 'Window upscaling';
+  @override
+  String get library_search => 'Search library';
 }
 
 // Path: <root>
@@ -76724,6 +76747,8 @@ class _StringsTh extends _StringsEn {
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
   String get game_health_upscaling => 'Window upscaling';
+  @override
+  String get library_search => 'Search library';
 }
 
 // Path: <root>
@@ -82825,6 +82850,8 @@ class _StringsTr extends _StringsEn {
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
   String get game_health_upscaling => 'Window upscaling';
+  @override
+  String get library_search => 'Search library';
 }
 
 // Path: <root>
@@ -88913,6 +88940,8 @@ class _StringsVi extends _StringsEn {
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
   String get game_health_upscaling => 'Window upscaling';
+  @override
+  String get library_search => 'Search library';
 }
 
 // Path: <root>
@@ -94579,6 +94608,8 @@ class _StringsZhCn extends _StringsEn {
       '没有安装 Magpie。把「游戏窗口超分」改成「自动」即可下载。';
   @override
   String get game_health_upscaling => '窗口超分';
+  @override
+  String get library_search => '搜索库';
 }
 
 // Path: <root>
@@ -100450,6 +100481,8 @@ class _StringsZhHk extends _StringsEn {
       'Magpie is not installed. Set window upscaling to Auto to download it.';
   @override
   String get game_health_upscaling => 'Window upscaling';
+  @override
+  String get library_search => 'Search library';
 }
 
 /// Flat map(s) containing all translations.
@@ -105911,6 +105944,8 @@ extension on _StringsEn {
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
       case 'game_health_upscaling':
         return 'Window upscaling';
+      case 'library_search':
+        return 'Search library';
       default:
         return null;
     }
@@ -111370,6 +111405,8 @@ extension on _StringsAr {
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
       case 'game_health_upscaling':
         return 'Window upscaling';
+      case 'library_search':
+        return 'Search library';
       default:
         return null;
     }
@@ -116850,6 +116887,8 @@ extension on _StringsDe {
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
       case 'game_health_upscaling':
         return 'Window upscaling';
+      case 'library_search':
+        return 'Search library';
       default:
         return null;
     }
@@ -122329,6 +122368,8 @@ extension on _StringsEs {
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
       case 'game_health_upscaling':
         return 'Window upscaling';
+      case 'library_search':
+        return 'Search library';
       default:
         return null;
     }
@@ -127814,6 +127855,8 @@ extension on _StringsFr {
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
       case 'game_health_upscaling':
         return 'Window upscaling';
+      case 'library_search':
+        return 'Search library';
       default:
         return null;
     }
@@ -133281,6 +133324,8 @@ extension on _StringsId {
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
       case 'game_health_upscaling':
         return 'Window upscaling';
+      case 'library_search':
+        return 'Search library';
       default:
         return null;
     }
@@ -138763,6 +138808,8 @@ extension on _StringsIt {
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
       case 'game_health_upscaling':
         return 'Window upscaling';
+      case 'library_search':
+        return 'Search library';
       default:
         return null;
     }
@@ -144207,6 +144254,8 @@ extension on _StringsJa {
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
       case 'game_health_upscaling':
         return 'Window upscaling';
+      case 'library_search':
+        return 'Search library';
       default:
         return null;
     }
@@ -149655,6 +149704,8 @@ extension on _StringsKo {
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
       case 'game_health_upscaling':
         return 'Window upscaling';
+      case 'library_search':
+        return 'Search library';
       default:
         return null;
     }
@@ -155130,6 +155181,8 @@ extension on _StringsNl {
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
       case 'game_health_upscaling':
         return 'Window upscaling';
+      case 'library_search':
+        return 'Search library';
       default:
         return null;
     }
@@ -160602,6 +160655,8 @@ extension on _StringsPtBr {
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
       case 'game_health_upscaling':
         return 'Window upscaling';
+      case 'library_search':
+        return 'Search library';
       default:
         return null;
     }
@@ -166079,6 +166134,8 @@ extension on _StringsRu {
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
       case 'game_health_upscaling':
         return 'Window upscaling';
+      case 'library_search':
+        return 'Search library';
       default:
         return null;
     }
@@ -171540,6 +171597,8 @@ extension on _StringsTh {
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
       case 'game_health_upscaling':
         return 'Window upscaling';
+      case 'library_search':
+        return 'Search library';
       default:
         return null;
     }
@@ -177010,6 +177069,8 @@ extension on _StringsTr {
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
       case 'game_health_upscaling':
         return 'Window upscaling';
+      case 'library_search':
+        return 'Search library';
       default:
         return null;
     }
@@ -182475,6 +182536,8 @@ extension on _StringsVi {
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
       case 'game_health_upscaling':
         return 'Window upscaling';
+      case 'library_search':
+        return 'Search library';
       default:
         return null;
     }
@@ -187897,6 +187960,8 @@ extension on _StringsZhCn {
         return '没有安装 Magpie。把「游戏窗口超分」改成「自动」即可下载。';
       case 'game_health_upscaling':
         return '窗口超分';
+      case 'library_search':
+        return '搜索库';
       default:
         return null;
     }
@@ -193336,6 +193401,8 @@ extension on _StringsZhHk {
         return 'Magpie is not installed. Set window upscaling to Auto to download it.';
       case 'game_health_upscaling':
         return 'Window upscaling';
+      case 'library_search':
+        return 'Search library';
       default:
         return null;
     }
