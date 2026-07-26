@@ -329,8 +329,7 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
 
   /// 文件名安全化：去掉路径分隔符与控制字符，保证可落盘。
   String _sanitizeFileName(String name) {
-    final String cleaned =
-        name.replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), '_').trim();
+    final String cleaned = safeWindowsFileName(name).trim();
     return cleaned.isEmpty ? 'profile' : cleaned;
   }
 

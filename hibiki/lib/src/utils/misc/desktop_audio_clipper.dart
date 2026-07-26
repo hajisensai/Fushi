@@ -9,6 +9,7 @@ import 'package:hibiki/src/media/video/video_clip_exporter.dart'
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:http/http.dart' as http;
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
+import 'package:hibiki/src/utils/misc/safe_file_name.dart';
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
@@ -800,7 +801,7 @@ Future<String?> extractVideoFrameViaFfmpeg({
 /// 抽取的自然归宿），使来源库扫描器（[extractVideoCover]）无需 import UI 层。
 /// `video_import_dialog.dart` re-export 本符号，保持既有调用点零改动。
 String videoCoverFileName(String bookUid) {
-  final String safe = bookUid.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+  final String safe = safeWindowsFileName(bookUid);
   return '$safe.jpg';
 }
 

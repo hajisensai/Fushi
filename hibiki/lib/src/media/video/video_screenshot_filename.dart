@@ -1,5 +1,7 @@
 import 'package:path/path.dart' as p;
 
+import 'package:hibiki/src/utils/misc/safe_file_name.dart';
+
 const int _maxScreenshotSourceRunes = 80;
 
 /// Builds the default JPEG basename for a video screenshot.
@@ -59,8 +61,9 @@ String _safeScreenshotSourceStem(String? sourcePathOrTitle) {
   final String leaf =
       raw.isEmpty ? '' : p.posix.basename(raw.replaceAll(r'\', '/'));
   final String stem = p.posix.basenameWithoutExtension(leaf);
-  final String cleaned = stem
-      .replaceAll(RegExp(r'[\x00-\x1F<>:"/\\|?*]+'), '_')
+  // G1 收敛：黑名单替换走共享 helper（逐字符 → `_`），紧随的 `_+` 折叠使输出与
+  // 旧手写 `[...]+ → _`（整段 → 单个 `_`）对全部输入逐字节一致。
+  final String cleaned = safeWindowsFileName(stem)
       .replaceAll(RegExp(r'_+'), '_')
       .replaceAll(RegExp(r'\s+'), ' ')
       .replaceAll(RegExp(r'^[_. ]+|[_. ]+$'), '');

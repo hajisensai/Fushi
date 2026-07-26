@@ -29,6 +29,7 @@ import 'package:shelf/shelf.dart' as shelf;
 import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart'
     show kMangaOcrOutDirName;
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
+import 'package:hibiki/src/utils/misc/safe_file_name.dart';
 import 'package:hibiki_core/hibiki_core.dart' show fnv1a64Hex;
 
 /// 任务状态机（wire 值即枚举名）。pending → uploading → running →
@@ -392,7 +393,9 @@ class MangaOcrHostJobManager {
     if (raw.startsWith('/') || raw.startsWith('\\')) return null;
     final List<String> segments = raw.split(RegExp(r'[\\/]+'));
     if (segments.isEmpty || segments.length > 4) return null;
-    final RegExp invalid = RegExp(r'[<>:"|?*\x00-\x1F]');
+    // G1 收敛：校验字符集共享 [windowsUnsafeFileNameChars]（段内不可能再含
+    // `\ /`——已按其切分，判定与旧手写 `[<>:"|?*\x00-\x1F]` 逐段等价）。
+    final RegExp invalid = windowsUnsafeFileNameChars;
     for (final String segment in segments) {
       if (segment.isEmpty || segment == '.' || segment == '..') return null;
       if (invalid.hasMatch(segment)) return null;

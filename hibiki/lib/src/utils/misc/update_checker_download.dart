@@ -139,11 +139,12 @@ class _UpdateDownloadStagingPaths {
   final File metadataFile;
 }
 
+/// 更新资产落盘名：取叶子名 → [safeWindowsFileName]（G1 收敛；GitHub 资产名本就
+/// 不含非法字符，现实输入下与旧手写版逐字节一致）→ 折叠连续 `-` → 去首尾 `.`/空格。
 @visibleForTesting
 String safeUpdateAssetFileName(String name) {
   final String leaf = name.replaceAll(r'\', '/').split('/').last.trim();
-  final String sanitized = leaf
-      .replaceAll(RegExp(r'[<>:"/\\|?*]'), '-')
+  final String sanitized = safeWindowsFileName(leaf)
       .replaceAll(RegExp(r'-{2,}'), '-')
       .replaceAll(RegExp(r'^[. ]+|[. ]+$'), '');
   return sanitized.isEmpty ? 'hibiki-update.bin' : sanitized;

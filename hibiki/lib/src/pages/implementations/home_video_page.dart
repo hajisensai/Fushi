@@ -1451,7 +1451,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
   Future<File> _cloudCoverDestination(String bookUid) async {
     final Directory dir = await AppPaths.remoteVideosDirectory();
     await dir.create(recursive: true);
-    final String safeUid = bookUid.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final String safeUid = safeWindowsFileName(bookUid);
     return File(p.join(dir.path, '$safeUid.cover.jpg'));
   }
 
@@ -1472,7 +1472,10 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     // TODO-935 E0：经唯一入口 [AppPaths] 派生 `<documents>/video_subtitles`。
     final Directory dir = await AppPaths.videoSubtitlesDirectory();
     await dir.create(recursive: true);
-    final String safeUid = video.id.replaceAll(RegExp(r'[\/:*?"<>|]'), '_');
+    // BUG-1125：旧手写字符集漏了反斜杠（`[\/:*?"<>|]` 只转义了 `/`），id 含 `\`
+    // 时字幕会落到与封面（[_cloudCoverDestination] 走全集）不同的目录。统一走
+    // 共享 helper 根修。
+    final String safeUid = safeWindowsFileName(video.id);
     final File subDest = File(p.join(dir.path, '$safeUid.$ext'));
     await client.getRemoteVideoSubtitle(video.id, subDest);
     final String content = await readTextWithEncoding(subDest);
@@ -1500,8 +1503,7 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
     // TODO-935 E0：经唯一入口 [AppPaths] 派生 `<documents>/remote_videos`。
     final Directory dir = await AppPaths.remoteVideosDirectory();
     await dir.create(recursive: true);
-    final String safeTitle =
-        video.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final String safeTitle = safeWindowsFileName(video.title);
     final String fileName =
         safeTitle.toLowerCase().endsWith('.mp4') ? safeTitle : '$safeTitle.mp4';
     return File(p.join(dir.path, fileName));

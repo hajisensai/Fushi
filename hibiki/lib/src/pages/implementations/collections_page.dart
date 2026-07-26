@@ -1023,7 +1023,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   /// 把书名/标题清洗成安全文件名（去掉路径分隔符和保留字符），用于默认导出文件名。
   String _sanitizeFileName(String name) {
-    final String cleaned = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+    final String cleaned = safeWindowsFileName(name).trim();
     return cleaned.isEmpty ? 'export' : cleaned;
   }
 
