@@ -45,6 +45,14 @@ typedef AutoBookTrackingSource = ({
   String format,
 });
 
+typedef CompletedVideoTrackingProgress = ({
+  TrackingMediaType mediaType,
+  String mediaKey,
+  int localProgress,
+  bool completed,
+  int evidenceAt,
+});
+
 class PendingTrackingUpdate {
   const PendingTrackingUpdate({
     required this.outbox,
@@ -225,6 +233,78 @@ class MediaTrackingRepository {
     final EpubBookRow? book = await _db.getEpubBook(bookKey);
     if (book == null) return null;
     return (title: book.title, format: book.format);
+  }
+
+  /// 返回自 [afterMs] 之后新增或重新映射的本地已完成视频进度。
+  ///
+  /// 旧版只在跨过 90% 阈值的瞬间发同步事件；状态语义修正后，已经完成且 outbox
+  /// 早已清空的条目不会再自然触发。这里从 `completed_at` 的本地事实重建一次增量，
+  /// 同时把 mapping.updatedAt 纳入 evidence，使“给旧完成条目新增/修改映射”也会补发。
+  Future<List<CompletedVideoTrackingProgress>>
+      loadCompletedVideoTrackingProgress({
+    required int afterMs,
+  }) async {
+    final List<MediaTrackingMappingRow> mappings = await listMappings();
+    final List<CompletedVideoTrackingProgress> result =
+        <CompletedVideoTrackingProgress>[];
+
+    for (final MediaTrackingMappingRow mapping in mappings) {
+      if (mapping.provider != kTrackingProviderBangumi ||
+          mapping.progressMode != TrackingProgressMode.episode.value) {
+        continue;
+      }
+
+      if (mapping.mediaType == TrackingMediaType.video.value) {
+        final VideoBookRow? video =
+            await _db.getVideoBookByBookUid(mapping.mediaKey);
+        final DateTime? completedAt = video?.completedAt;
+        if (completedAt == null) continue;
+        final int evidenceAt =
+            math.max(mapping.updatedAt, completedAt.millisecondsSinceEpoch);
+        if (evidenceAt <= afterMs) continue;
+        result.add((
+          mediaType: TrackingMediaType.video,
+          mediaKey: mapping.mediaKey,
+          localProgress: 0,
+          completed: true,
+          evidenceAt: evidenceAt,
+        ));
+        continue;
+      }
+
+      if (mapping.mediaType != TrackingMediaType.videoCollection.value) {
+        continue;
+      }
+      final int? collectionId = int.tryParse(mapping.mediaKey);
+      if (collectionId == null) continue;
+      final List<MediaCollectionItemRow> items =
+          (await _db.getCollectionItems(collectionId))
+              .where((MediaCollectionItemRow item) =>
+                  item.mediaType == MediaKind.video.dbValue)
+              .toList(growable: false);
+      int highestCompletedIndex = -1;
+      int latestCompletedAt = 0;
+      for (int index = 0; index < items.length; index++) {
+        final VideoBookRow? video =
+            await _db.getVideoBookByBookUid(items[index].entryKey);
+        final DateTime? completedAt = video?.completedAt;
+        if (completedAt == null) continue;
+        highestCompletedIndex = index;
+        latestCompletedAt =
+            math.max(latestCompletedAt, completedAt.millisecondsSinceEpoch);
+      }
+      if (highestCompletedIndex < 0) continue;
+      final int evidenceAt = math.max(mapping.updatedAt, latestCompletedAt);
+      if (evidenceAt <= afterMs) continue;
+      result.add((
+        mediaType: TrackingMediaType.videoCollection,
+        mediaKey: mapping.mediaKey,
+        localProgress: highestCompletedIndex,
+        completed: highestCompletedIndex == items.length - 1,
+        evidenceAt: evidenceAt,
+      ));
+    }
+    return result;
   }
 
   Future<void> deleteMapping(int id) =>

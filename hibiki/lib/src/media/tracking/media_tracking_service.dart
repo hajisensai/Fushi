@@ -10,6 +10,8 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 const String kBangumiAccessTokenPref = 'media_tracking_bangumi_access_token';
+const String kVideoTrackingReconcileWatermarkPref =
+    'media_tracking_video_reconcile_watermark_v1';
 
 typedef BangumiApiFactory = BangumiTrackingApi Function(String accessToken);
 
@@ -126,8 +128,15 @@ class MediaTrackingService {
 
   bool get isConfigured => accessToken.isNotEmpty;
 
-  Future<void> setAccessToken(String value) =>
-      _preferences.setPref(kBangumiAccessTokenPref, value.trim());
+  Future<void> setAccessToken(String value) async {
+    final String normalized = value.trim();
+    final String previous = accessToken;
+    await _preferences.setPref(kBangumiAccessTokenPref, normalized);
+    if (previous != normalized) {
+      // 新账号必须从全部本地已完成事实重新对齐，不能继承旧账号的校正水位。
+      await _preferences.setPref(kVideoTrackingReconcileWatermarkPref, 0);
+    }
+  }
 
   Future<BangumiUser> validateAccessToken(String token) async {
     final BangumiTrackingApi api = _apiFactory(token.trim());
@@ -183,8 +192,7 @@ class MediaTrackingService {
       collectionId: collectionId,
     );
     if (source == null) return;
-    final int? parsedEpisode =
-        FilenameParser.parse(source.videoTitle).episode;
+    final int? parsedEpisode = FilenameParser.parse(source.videoTitle).episode;
     final int parsedEpisodeNumber = parsedEpisode ?? 0;
     // 文件名已有明确集数时按单文件建映射，避免一个本地合集混入短篇、PV 或多季后，
     // 合集 sortIndex 被误当成 Bangumi 正片集数。无集数的电影/整季文件仍走原合集语义。
@@ -412,11 +420,53 @@ class MediaTrackingService {
   Future<MediaTrackingSyncResult> syncNow({bool force = false}) {
     final Future<MediaTrackingSyncResult>? running = _syncInFlight;
     if (running != null) return running;
-    final Future<MediaTrackingSyncResult> run = _sync(force: force);
+    final Future<MediaTrackingSyncResult> run = _reconcileAndSync(force: force);
     _syncInFlight = run;
     return run.whenComplete(() {
       if (identical(_syncInFlight, run)) _syncInFlight = null;
     });
+  }
+
+  Future<MediaTrackingSyncResult> _reconcileAndSync({
+    required bool force,
+  }) async {
+    await _reconcileCompletedVideoProgress();
+    return _sync(force: force);
+  }
+
+  Future<void> _reconcileCompletedVideoProgress() async {
+    if (!isConfigured) return;
+    final Object? stored = _preferences.getPref(
+      kVideoTrackingReconcileWatermarkPref,
+      defaultValue: 0,
+    );
+    final int watermark = stored is int ? stored : int.tryParse('$stored') ?? 0;
+    final List<CompletedVideoTrackingProgress> progress =
+        await _repository.loadCompletedVideoTrackingProgress(
+      afterMs: watermark,
+    );
+
+    int nextWatermark = watermark;
+    for (final CompletedVideoTrackingProgress item in progress) {
+      await _repository.enqueueProgress(
+        mediaType: item.mediaType,
+        mediaKey: item.mediaKey,
+        localProgress: item.localProgress,
+        completed: item.completed,
+      );
+      nextWatermark =
+          item.evidenceAt > nextWatermark ? item.evidenceAt : nextWatermark;
+    }
+    // 即使当前无完成条目也推进水位；以后完成时间或新 mapping.updatedAt 会越过它。
+    if (progress.isEmpty) {
+      nextWatermark = DateTime.now().millisecondsSinceEpoch;
+    }
+    if (nextWatermark != watermark) {
+      await _preferences.setPref(
+        kVideoTrackingReconcileWatermarkPref,
+        nextWatermark,
+      );
+    }
   }
 
   Future<MediaTrackingSyncResult> _sync({required bool force}) async {
@@ -526,14 +576,21 @@ class MediaTrackingService {
       );
     }
     await api.markEpisodesDone(mapping.subjectId, completedIds);
-    if (outbox.completed &&
-        outbox.progress >= episodes.length &&
-        collection?.type != 2 &&
-        collection?.type != 4 &&
-        collection?.type != 5) {
+    // 观看进度与收藏状态必须保持同一语义：
+    // - 已经「看过」的条目重看前面集数时不降级；
+    // - 本次进度到达该 subject 最后一集即「看过」；
+    // - 其余有效进度统一为「在看」，包括原先的想看/搁置/抛弃。
+    //
+    // collection == null 时上方已经创建为「在看」(3)，只需在最后一集补升为
+    // 「看过」(2)；已有收藏则仅在目标状态不同后 PATCH。
+    final bool reachesLastEpisode =
+        episodes.isNotEmpty && outbox.progress >= episodes.length;
+    final int currentType = collection?.type ?? 3;
+    final int targetType = currentType == 2 || reachesLastEpisode ? 2 : 3;
+    if (currentType != targetType) {
       await api.patchCollection(
         mapping.subjectId,
-        payload: const <String, dynamic>{'type': 2},
+        payload: <String, dynamic>{'type': targetType},
       );
     }
   }

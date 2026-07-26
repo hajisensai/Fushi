@@ -179,7 +179,205 @@ void main() {
     expect(api.patches, isEmpty);
   });
 
-  test('episode progress uses subject-local order when Bangumi sort starts later',
+  test('watching a partial subject promotes wish to doing', () async {
+    await repository.saveMapping(
+      mediaType: TrackingMediaType.video,
+      mediaKey: 'episode-2',
+      mediaTitle: 'Anime episode 2',
+      kind: TrackingKind.anime,
+      subjectId: 88,
+      subjectName: 'Remote anime',
+      progressMode: TrackingProgressMode.episode,
+      progressOffset: 2,
+    );
+    await repository.enqueueProgress(
+      mediaType: TrackingMediaType.video,
+      mediaKey: 'episode-2',
+      localProgress: 0,
+      completed: false,
+    );
+    api.collection = const BangumiUserCollection(
+      type: 1,
+      episodeProgress: 0,
+      volumeProgress: 0,
+    );
+    api.episodes = const <BangumiEpisode>[
+      BangumiEpisode(id: 11, type: 0, sort: 1),
+      BangumiEpisode(id: 12, type: 0, sort: 2),
+      BangumiEpisode(id: 13, type: 0, sort: 3),
+    ];
+
+    await service.syncNow();
+
+    expect(api.episodePatches.single, <int>[11, 12]);
+    expect(api.patches.single, <String, dynamic>{'type': 3});
+  });
+
+  test('reaching the last subject episode promotes doing to watched', () async {
+    await repository.saveMapping(
+      mediaType: TrackingMediaType.video,
+      mediaKey: 'last-episode',
+      mediaTitle: 'Anime last episode',
+      kind: TrackingKind.anime,
+      subjectId: 88,
+      subjectName: 'Remote anime',
+      progressMode: TrackingProgressMode.episode,
+      progressOffset: 3,
+    );
+    await repository.enqueueProgress(
+      mediaType: TrackingMediaType.video,
+      mediaKey: 'last-episode',
+      localProgress: 0,
+      completed: false,
+    );
+    api.collection = const BangumiUserCollection(
+      type: 3,
+      episodeProgress: 2,
+      volumeProgress: 0,
+    );
+    api.episodes = const <BangumiEpisode>[
+      BangumiEpisode(id: 11, type: 0, sort: 1),
+      BangumiEpisode(id: 12, type: 0, sort: 2),
+      BangumiEpisode(id: 13, type: 0, sort: 3),
+    ];
+
+    await service.syncNow();
+
+    expect(api.episodePatches.single, <int>[11, 12, 13]);
+    expect(api.patches.single, <String, dynamic>{'type': 2});
+  });
+
+  test('rewatching an earlier episode never downgrades watched to doing',
+      () async {
+    await repository.saveMapping(
+      mediaType: TrackingMediaType.video,
+      mediaKey: 'episode-2',
+      mediaTitle: 'Anime episode 2',
+      kind: TrackingKind.anime,
+      subjectId: 88,
+      subjectName: 'Remote anime',
+      progressMode: TrackingProgressMode.episode,
+      progressOffset: 2,
+    );
+    await repository.enqueueProgress(
+      mediaType: TrackingMediaType.video,
+      mediaKey: 'episode-2',
+      localProgress: 0,
+      completed: false,
+    );
+    api.collection = const BangumiUserCollection(
+      type: 2,
+      episodeProgress: 3,
+      volumeProgress: 0,
+    );
+    api.episodes = const <BangumiEpisode>[
+      BangumiEpisode(id: 11, type: 0, sort: 1),
+      BangumiEpisode(id: 12, type: 0, sort: 2),
+      BangumiEpisode(id: 13, type: 0, sort: 3),
+    ];
+
+    await service.syncNow();
+
+    expect(api.episodePatches.single, <int>[11, 12]);
+    expect(api.patches, isEmpty);
+  });
+
+  test('sync repairs a completed legacy video whose outbox was already empty',
+      () async {
+    final DateTime completedAt = DateTime.fromMillisecondsSinceEpoch(2000);
+    await db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'legacy-episode-2',
+        title: 'Legacy anime 02',
+        videoPath: r'C:\Anime\Legacy\02.mkv',
+        completedAt: Value<DateTime?>(completedAt),
+      ),
+    );
+    await repository.saveMapping(
+      mediaType: TrackingMediaType.video,
+      mediaKey: 'legacy-episode-2',
+      mediaTitle: 'Legacy anime 02',
+      kind: TrackingKind.anime,
+      subjectId: 88,
+      subjectName: 'Remote anime',
+      progressMode: TrackingProgressMode.episode,
+      progressOffset: 2,
+    );
+    expect(await repository.pendingCount(), 0);
+    api.collection = const BangumiUserCollection(
+      type: 1,
+      episodeProgress: 0,
+      volumeProgress: 0,
+    );
+    api.episodes = const <BangumiEpisode>[
+      BangumiEpisode(id: 11, type: 0, sort: 1),
+      BangumiEpisode(id: 12, type: 0, sort: 2),
+      BangumiEpisode(id: 13, type: 0, sort: 3),
+    ];
+
+    final MediaTrackingSyncResult result = await service.syncNow();
+
+    expect(result.succeeded, 1);
+    expect(api.episodePatches.single, <int>[11, 12]);
+    expect(api.patches.single, <String, dynamic>{'type': 3});
+    expect(await repository.pendingCount(), 0);
+    expect(
+      preferences.getPref(
+        kVideoTrackingReconcileWatermarkPref,
+        defaultValue: 0,
+      ),
+      isNonZero,
+    );
+  });
+
+  test('completed collection reconciliation uses its highest completed member',
+      () async {
+    final int collectionId = await db.createMediaCollection('Legacy playlist');
+    for (int index = 0; index < 3; index++) {
+      final String uid = 'legacy-collection-$index';
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: uid,
+          title: 'Episode ${index + 1}',
+          videoPath: 'C:/Anime/Legacy/${index + 1}.mkv',
+          completedAt: index < 2
+              ? Value<DateTime?>(
+                  DateTime.fromMillisecondsSinceEpoch(3000 + index),
+                )
+              : const Value<DateTime?>.absent(),
+        ),
+      );
+      await db.addToCollection(collectionId, MediaKind.video, uid);
+    }
+    await repository.saveMapping(
+      mediaType: TrackingMediaType.videoCollection,
+      mediaKey: '$collectionId',
+      mediaTitle: 'Legacy playlist',
+      kind: TrackingKind.anime,
+      subjectId: 88,
+      subjectName: 'Remote anime',
+      progressMode: TrackingProgressMode.episode,
+      progressOffset: 1,
+    );
+    api.collection = const BangumiUserCollection(
+      type: 1,
+      episodeProgress: 0,
+      volumeProgress: 0,
+    );
+    api.episodes = const <BangumiEpisode>[
+      BangumiEpisode(id: 11, type: 0, sort: 1),
+      BangumiEpisode(id: 12, type: 0, sort: 2),
+      BangumiEpisode(id: 13, type: 0, sort: 3),
+    ];
+
+    await service.syncNow();
+
+    expect(api.episodePatches.single, <int>[11, 12]);
+    expect(api.patches.single, <String, dynamic>{'type': 3});
+  });
+
+  test(
+      'episode progress uses subject-local order when Bangumi sort starts later',
       () async {
     await repository.saveMapping(
       mediaType: TrackingMediaType.video,
