@@ -20,6 +20,7 @@ import 'package:hibiki/src/sync/interconnect_device_name.dart';
 import 'package:hibiki/src/sync/hibiki_remote_api_handlers.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_pairing_protocol.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
+import 'package:hibiki_core/hibiki_core.dart' show mimeTypeForFilePath;
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
@@ -2514,66 +2515,12 @@ class HibikiSyncServer {
     });
   }
 
-  static String _guessContentType(String filePath) {
-    final ext = p.extension(filePath).toLowerCase();
-    switch (ext) {
-      case '.json':
-        return 'application/json';
-      case '.epub':
-        return 'application/epub+zip';
-      case '.mp3':
-        return 'audio/mpeg';
-      case '.m4a':
-      case '.m4b':
-        return 'audio/mp4';
-      case '.ogg':
-        return 'audio/ogg';
-      case '.flac':
-        return 'audio/flac';
-      case '.jpg':
-      case '.jpeg':
-        return 'image/jpeg';
-      case '.png':
-        return 'image/png';
-      // ── 视频格式（P4-1）──────────────────────────────────────────────────────
-      case '.mp4':
-      case '.m4v':
-        return 'video/mp4';
-      case '.mkv':
-        return 'video/x-matroska';
-      case '.webm':
-        return 'video/webm';
-      case '.avi':
-        return 'video/x-msvideo';
-      case '.mov':
-        return 'video/quicktime';
-      case '.ts':
-      case '.m2ts':
-      case '.mts':
-        return 'video/mp2t';
-      case '.flv':
-        return 'video/x-flv';
-      case '.wmv':
-        return 'video/x-ms-wmv';
-      case '.mpg':
-      case '.mpeg':
-        return 'video/mpeg';
-      case '.ogv':
-        return 'video/ogg';
-      case '.3gp':
-        return 'video/3gpp';
-      // ── 字幕格式 ──────────────────────────────────────────────────────────────
-      case '.srt':
-        return 'text/plain; charset=utf-8';
-      case '.ass':
-      case '.ssa':
-        return 'text/plain; charset=utf-8';
-      case '.vtt':
-        return 'text/vtt; charset=utf-8';
-      default:
-        return 'application/octet-stream';
-    }
-  }
+  /// MIME 推断收敛到 hibiki_core 单一映射表 [mimeTypeForFilePath]（命名统一轮 G8）。
+  /// 旧本地 switch 副本缺 `.webp` → webp 封面按 application/octet-stream 下发，
+  /// 对端 WebView 拒绝内联渲染（BUG-1122）；查共享表后随表修复。保留薄 shim 供
+  /// 本文件既有调用方。
+  static String _guessContentType(String filePath) =>
+      mimeTypeForFilePath(filePath);
 
   static String _xmlEscape(String s) => s
       .replaceAll('&', '&amp;')

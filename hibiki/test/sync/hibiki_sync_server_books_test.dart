@@ -8,6 +8,12 @@ import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 
 const List<int> _coverBytes = <int>[0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4];
 
+/// RIFF....WEBP 魔数（BUG-1122 回归：webp 封面必须按 image/webp 下发）。
+const List<int> _webpCoverBytes = <int>[
+  0x52, 0x49, 0x46, 0x46, 0x08, 0x00, 0x00, 0x00, //
+  0x57, 0x45, 0x42, 0x50,
+];
+
 /// Fake service：dict 方法存根（不抛，返回空），books 方法真实记录调用。
 class _FakeLibraryService implements HibikiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
@@ -307,6 +313,49 @@ void main() {
       },
     );
     expect(body, _coverBytes);
+    c.close();
+  });
+
+  test(
+      'BUG-1122: .webp book cover is served as image/webp, '
+      'not application/octet-stream', () async {
+    final File cover = File(
+      '${Directory.systemTemp.createTempSync('hbk_book_cover_webp').path}'
+      '/cover.webp',
+    )..writeAsBytesSync(_webpCoverBytes);
+    lib.books[0] = RemoteBookInfo.fromJson(<String, Object?>{
+      'title': 'Sample',
+      'hasContent': true,
+      'coverPath': cover.path,
+    });
+    addTearDown(() => cover.parent.deleteSync(recursive: true));
+
+    final HttpClient c = HttpClient();
+    final HttpClientRequest listReq =
+        await c.getUrl(Uri.parse('$base/api/library/books'));
+    listReq.headers.set('authorization', authHeader());
+    final HttpClientResponse listRes = await listReq.close();
+    expect(listRes.statusCode, 200);
+    final List<dynamic> json =
+        jsonDecode(await listRes.transform(utf8.decoder).join())
+            as List<dynamic>;
+    final Map<dynamic, dynamic> first = json.first as Map<dynamic, dynamic>;
+    expect(first['hasCover'], true);
+    final Uri coverUri = Uri.parse(first['coverUrl'] as String);
+
+    final HttpClientRequest coverReq = await c.getUrl(coverUri);
+    coverReq.headers.set('authorization', authHeader());
+    final HttpClientResponse coverRes = await coverReq.close();
+    expect(coverRes.statusCode, 200);
+    expect(coverRes.headers.contentType?.mimeType, 'image/webp');
+    final List<int> body = await coverRes.fold<List<int>>(
+      <int>[],
+      (List<int> acc, List<int> chunk) {
+        acc.addAll(chunk);
+        return acc;
+      },
+    );
+    expect(body, _webpCoverBytes);
     c.close();
   });
 

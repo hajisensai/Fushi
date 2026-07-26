@@ -8,6 +8,8 @@
 ///    rewrites <img src> to that http endpoint).
 library;
 
+import 'package:hibiki_core/hibiki_core.dart' show mimeTypeForFilePath;
+
 /// Normalizes a dictionary media relative path: backslashes -> slashes, and
 /// strips leading ./ and /. Matches what HoshiDicts.getMediaFile expects.
 String normalizeDictionaryMediaPath(String path) {
@@ -17,23 +19,8 @@ String normalizeDictionaryMediaPath(String path) {
 /// Content-Type by file extension. Unknown extensions fall back to
 /// application/octet-stream. Includes image/svg+xml (the main gaiji/accent
 /// format).
-String dictionaryMediaMimeType(String path) {
-  final String ext = path.split('.').last.toLowerCase();
-  switch (ext) {
-    case 'png':
-      return 'image/png';
-    case 'jpg':
-    case 'jpeg':
-      return 'image/jpeg';
-    case 'gif':
-      return 'image/gif';
-    case 'webp':
-      return 'image/webp';
-    case 'svg':
-      return 'image/svg+xml';
-    case 'css':
-      return 'text/css';
-    default:
-      return 'application/octet-stream';
-  }
-}
+///
+/// 命名统一轮 G8：查 hibiki_core 单一 MIME 映射表 [mimeTypeForFilePath]（旧本地
+/// switch 副本之一）。保留旧名薄 shim 供两处消费端（app 内 scheme handler 与
+/// sync server 的 /api/media/dictionary 端点）。
+String dictionaryMediaMimeType(String path) => mimeTypeForFilePath(path);

@@ -8,5 +8,6 @@ export 'src/database/pref_codec.dart';
 export 'src/database/tables.dart';
 export 'src/models/hibiki_text_selection.dart';
 export 'src/utils/jp_codepoint_fold.dart';
+export 'src/utils/mime_types.dart';
 export 'src/utils/stable_hash.dart';
 export 'src/utils/video_book_uid.dart';
