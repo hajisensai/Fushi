@@ -16,6 +16,10 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// 同源，一处落盘（`reorderCollectionItems`）三处同序。
 
 /// 一个待分组条目的最小身份 + 排序回退键 + 渲染载荷。
+///
+/// 命名统一 Phase 3.3：身份二元组语义收口进 hibiki_core 的 [MediaRef]——
+/// 复合键经 [ref] 视图生成（字段本体仍留在本类：Dart const 构造的初始化列表
+/// 不允许用参数新建 const 对象，存 [MediaRef] 会丢 const 构造）。
 class CollectionOrderingItem<T> {
   const CollectionOrderingItem({
     required this.mediaType,
@@ -24,11 +28,14 @@ class CollectionOrderingItem<T> {
     required this.payload,
   });
 
-  /// 媒体种类（合集/书架值域，复合键经 [MediaKind.compositeKey] 生成）。
+  /// 媒体种类（合集/书架值域）。
   final MediaKind mediaType;
 
   /// 稳定身份：epub=bookKey / srt=uid / video=bookUid。
   final String entryKey;
+
+  /// 统一媒体身份视图（复合键 [MediaRef.compositeKey] 的真相源）。
+  MediaRef get ref => MediaRef(kind: mediaType, entryKey: entryKey);
 
   /// 组内排序回退键（importedAt 毫秒；无 sortIndex 行时按此倒序）。
   final int importedAt;
@@ -54,9 +61,6 @@ class CollectionGroup<T> {
   /// 封面 = 组内序首成员（散条目即其唯一成员）。
   CollectionOrderingItem<T> get coverItem => items.first;
 }
-
-String _composite(MediaKind mediaType, String entryKey) =>
-    mediaType.compositeKey(entryKey);
 
 /// 标签筛选下判断一个媒体条目是否应存活到 [groupByCollections] 折叠阶段。
 ///
@@ -98,10 +102,9 @@ List<CollectionGroup<T>> groupByCollections<T>({
 }) {
   const int noSortIndex = 1 << 30;
   int sortIndexOf(CollectionOrderingItem<T> it) =>
-      memberSortIndex[_composite(it.mediaType, it.entryKey)] ?? noSortIndex;
+      memberSortIndex[it.ref.compositeKey] ?? noSortIndex;
   int? collectionIdOf(CollectionOrderingItem<T> it) {
-    final int? cid =
-        primaryCollectionIdByEntry[_composite(it.mediaType, it.entryKey)];
+    final int? cid = primaryCollectionIdByEntry[it.ref.compositeKey];
     if (cid == null || !collectionsById.containsKey(cid)) return null;
     return cid;
   }

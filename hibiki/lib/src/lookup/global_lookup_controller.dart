@@ -37,7 +37,8 @@ import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
-import 'package:hibiki_core/hibiki_core.dart' show mimeTypeForFilePath;
+import 'package:hibiki_core/hibiki_core.dart'
+    show kStatSourceBook, mimeTypeForFilePath;
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:path/path.dart' as p;

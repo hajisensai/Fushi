@@ -9,6 +9,10 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 /// 一条书架 / 视频选择键解码后的稳定身份 `(mediaType, entryKey)`。
 /// 直接喂 [HibikiDatabase.addToCollection] / [HibikiDatabase.upsertShelfOrder]。
+///
+/// 命名统一 Phase 3.3：身份二元组语义收口进 hibiki_core 的 [MediaRef]——
+/// `==` / [hashCode] 委托 [ref] 视图（字段本体仍留在本类：Dart const 构造的
+/// 初始化列表不允许用参数新建 const 对象，存 [MediaRef] 会丢 const 构造）。
 class ShelfEntryRef {
   const ShelfEntryRef({required this.mediaType, required this.entryKey});
 
@@ -18,14 +22,14 @@ class ShelfEntryRef {
   /// 稳定身份：本地 = bookKey / srtUid / videoBookUid。
   final String entryKey;
 
-  @override
-  bool operator ==(Object other) =>
-      other is ShelfEntryRef &&
-      other.mediaType == mediaType &&
-      other.entryKey == entryKey;
+  /// 统一媒体身份视图（比较 / 序列化的真相源）。
+  MediaRef get ref => MediaRef(kind: mediaType, entryKey: entryKey);
 
   @override
-  int get hashCode => Object.hash(mediaType, entryKey);
+  bool operator ==(Object other) => other is ShelfEntryRef && other.ref == ref;
+
+  @override
+  int get hashCode => ref.hashCode;
 
   @override
   String toString() => 'ShelfEntryRef($mediaType, $entryKey)';

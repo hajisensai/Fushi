@@ -13,6 +13,7 @@ import '../utils/ttu_sanitize.dart';
 import '../utils/video_book_uid.dart';
 import 'media_kind.dart';
 import 'pref_codec.dart';
+import 'sync_tombstone_kind.dart';
 import 'tables.dart';
 
 part 'database.g.dart';
@@ -3822,7 +3823,7 @@ class HibikiDatabase extends _$HibikiDatabase {
         if (existing != null) return false;
         // 删除传播：重新收藏同 (expression,reading,sourceType) → 清其 sync 删除墓碑，
         // 防「取消了又收藏、墓碑还在」被 aggregate 抑制或跨端误删（范式仿插书清碑）。
-        await clearSyncDeletionTombstone('favoriteword',
+        await clearSyncDeletionTombstone(SyncTombstoneKind.favoriteword.dbValue,
             favoriteWordItemKey(expression, reading, sourceType));
         // TODO-1252：[bookKey] / [title] 记「首次收藏归属书」——收藏时若在阅读器 / 视频
         // 页有书上下文则传入，供 per-book/video tile 聚合；无书来源保持 null / ''（只进
@@ -3864,7 +3865,7 @@ class HibikiDatabase extends _$HibikiDatabase {
         .go();
     if (removed > 0 && propagateDeletion) {
       await writeSyncDeletionTombstone(
-          'favoriteword',
+          SyncTombstoneKind.favoriteword.dbValue,
           favoriteWordItemKey(expression, reading, sourceType),
           DateTime.now().millisecondsSinceEpoch);
     }

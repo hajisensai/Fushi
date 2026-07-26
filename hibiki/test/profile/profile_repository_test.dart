@@ -248,22 +248,24 @@ void main() {
       final b = await repo.createProfile('B');
       final c = await repo.createProfile('C');
       await repo.setActiveProfileId(c);
-      await repo.setMediaTypeBinding('reader', b);
+      // 命名统一 Phase 3.4：绑定 API 收口为 ProfileMediaKind（落库串不变）。
+      await repo.setMediaTypeBinding(ProfileMediaKind.epub, b);
       await repo.setBookProfile('book/1', a);
 
       expect(
-          await repo.resolveProfileId(bookUid: 'book/1', mediaType: 'reader'),
+          await repo.resolveProfileId(
+              bookUid: 'book/1', mediaType: ProfileMediaKind.epub),
           a); // book binding wins
       expect(
           await repo.resolveProfileId(
-              bookUid: 'book/none', mediaType: 'reader'),
+              bookUid: 'book/none', mediaType: ProfileMediaKind.epub),
           b); // mediaType wins when no book binding
       expect(await repo.resolveProfileId(bookUid: null, mediaType: null),
           c); // active fallback
       expect(
           await repo.resolveProfileId(
-              bookUid: 'book/none', mediaType: 'unbound'),
-          c); // full fallthrough to active
+              bookUid: 'book/none', mediaType: ProfileMediaKind.lyrics),
+          c); // full fallthrough to active (kind bound to nothing)
     });
 
     test('deleteProfile of the active profile reassigns AND applies remaining',

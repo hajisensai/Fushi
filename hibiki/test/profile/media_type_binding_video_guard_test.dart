@@ -33,7 +33,9 @@ void main() {
         reason: 'TODO-1063 binding UI lives in this file');
     final String src = bindingUi.readAsStringSync();
 
-    // All five bindable media-type keys must be present as binding rows.
+    // All five bindable media-type kinds must be present as binding rows.
+    // (命名统一 Phase 3.4：绑定行以 ProfileMediaKind 枚举成员传入，落库串由
+    // dbValue 钉死——见 hibiki_core profile_media_kind.dart 的值域守卫。)
     for (final String mediaType in <String>[
       'epub',
       'srtbook',
@@ -42,7 +44,8 @@ void main() {
       'video',
     ]) {
       expect(
-        src.contains('_buildMediaTypeRow(') && src.contains("'$mediaType'"),
+        src.contains('_buildMediaTypeRow(') &&
+            src.contains('ProfileMediaKind.$mediaType'),
         isTrue,
         reason: 'binding row for "$mediaType" missing — video (TODO-1063) or a '
             'sibling type was dropped from the media-type binding list',
@@ -61,13 +64,15 @@ void main() {
     expect(videoPage.existsSync(), isTrue);
     final String src = videoPage.readAsStringSync();
 
-    // Guard against dead UI: opening a video must resolve the 'video' binding.
+    // Guard against dead UI: opening a video must resolve the video binding.
     expect(
-      src.contains('resolveProfileId(') && src.contains("mediaType: 'video'"),
+      src.contains('resolveProfileId(') &&
+          src.contains('mediaType: ProfileMediaKind.video'),
       isTrue,
       reason:
-          'video page must call resolveProfileId(mediaType: \'video\') so the '
-          'media-type binding actually takes effect (else it is dead UI)',
+          'video page must call resolveProfileId(mediaType: ProfileMediaKind'
+          '.video) so the media-type binding actually takes effect (else it '
+          'is dead UI)',
     );
     expect(
       src.contains('_resolveAndApplyVideoProfile()'),

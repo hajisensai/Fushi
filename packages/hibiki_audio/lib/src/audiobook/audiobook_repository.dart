@@ -63,8 +63,9 @@ class AudiobookRepository {
   Future<void> saveAudiobook(Audiobook audiobook) async {
     await _db.upsertAudiobook(_audiobookToCompanion(audiobook));
     // 删除传播：重新导入同 bookKey 的有声书 → 清其 sync 删除墓碑，防「删了又加、墓碑
-    // 还在」误判（范式仿书/视频的插入清墓碑）。mediaType 用纯字符串，无 app 层依赖。
-    await _db.clearSyncDeletionTombstone('audiobook', audiobook.bookKey);
+    // 还在」误判（范式仿书/视频的插入清墓碑）。落库串走 core 的 SyncTombstoneKind。
+    await _db.clearSyncDeletionTombstone(
+        SyncTombstoneKind.audiobook.dbValue, audiobook.bookKey);
     debugPrint('[hibiki-audiobook] saveAudiobook bookKey=${audiobook.bookKey}');
   }
 
@@ -81,7 +82,9 @@ class AudiobookRepository {
     if (propagateDeletion) {
       try {
         await _db.writeSyncDeletionTombstone(
-            'audiobook', bookKey, DateTime.now().millisecondsSinceEpoch);
+            SyncTombstoneKind.audiobook.dbValue,
+            bookKey,
+            DateTime.now().millisecondsSinceEpoch);
       } catch (_) {
         // best-effort：记账失败不影响有声书已删。
       }

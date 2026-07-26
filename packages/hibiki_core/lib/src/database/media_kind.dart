@@ -5,13 +5,17 @@
 /// `CollectionMemberTombstones.mediaType`。定义在 hibiki_core 是因为它是
 /// **schema 值域的一部分**（同 activity_event_types.dart 的理由）。
 ///
-/// ⚠️ 与本仓其它 6 个字符串值域**互不通用**，混编即数据事故：
-/// - 活动事件域（`kActivityMediaBook='book'` 等，activity_event_types.dart）——
-///   注意 `book` ≠ `epub`；
+/// ⚠️ 与本仓其它 6 个字符串值域**互不通用**，混编即数据事故（跨域换算走
+/// media_kind_mappings.dart 的显式映射表，不得手写）：
+/// - 活动事件域（`ActivityMediaKind` / `kActivityMediaBook='book'` 等，
+///   activity_event_types.dart）——注意 `book` ≠ `epub`；
 /// - 来源库域（`MediaSources.mediaKind`）；
-/// - Profile 绑定域（含 `'srtbook'`）——注意 `srtbook` ≠ `srt`；
-/// - 删除墓碑域（`SyncDeletionTombstones.assetType`）;
-/// - 统计来源域（`kStatSourceVideo` 等）；
+/// - Profile 绑定域（`ProfileMediaKind`，profile_media_kind.dart）——注意
+///   `srtbook` ≠ `srt`；
+/// - 删除墓碑域（`SyncTombstoneKind`，sync_tombstone_kind.dart，
+///   `SyncDeletionTombstones.mediaType`）；
+/// - 统计来源域（`StatSourceKind` / `kStatSourceVideo` 等，
+///   stat_source_kind.dart）；
 /// - 文件扩展名 / MIME / Anki tag。
 library;
 

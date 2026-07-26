@@ -21,7 +21,7 @@ import 'package:hibiki/src/pages/implementations/home_page.dart';
 import 'package:hibiki/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
 import 'package:hibiki/src/pages/implementations/stat_shared.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_cover_image.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -521,7 +521,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     final SyncRepository syncRepo = SyncRepository(appModel.database);
     // 互联是独立开关（已与云备份后端解耦），未启用/未配对直接跳过。
     if (!await syncRepo.isInterconnectEnabled()) return;
-    final HibikiClientSyncBackend backend = HibikiClientSyncBackend.instance;
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
     if (!await backend.restoreAuth(syncRepo)) return;
     try {
       final List<RemoteBookInfo> remoteBooks = await backend.listRemoteBooks();
@@ -1843,18 +1843,19 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         final String title =
             ReaderHibikiSource.instance.overrideTitleForBookKey(bookKey) ??
                 entry.title;
-        // 书事件的 mediaKey 无类型标记：epub 键优先，standalone SRT（mediaKey=
-        // uid）回退 srt 键；都不中就是散卡。
-        final String? collectionName = statCollectionName(
-              MediaKind.epub.compositeKey(bookKey),
-              _primaryCollectionByEntry,
-              _collectionNamesById,
-            ) ??
-            statCollectionName(
-              MediaKind.srt.compositeKey(bookKey),
-              _primaryCollectionByEntry,
-              _collectionNamesById,
-            );
+        // 书事件的 mediaKey 无类型标记：按 core 跨域映射表
+        // [shelfKindsOfActivityMedia] 的既定顺序（epub 键优先，standalone SRT
+        // （mediaKey=uid）回退 srt 键）逐一试探；都不中就是散卡。
+        String? collectionName;
+        for (final MediaKind shelfKind
+            in shelfKindsOfActivityMedia(ActivityMediaKind.book)) {
+          collectionName = statCollectionName(
+            shelfKind.compositeKey(bookKey),
+            _primaryCollectionByEntry,
+            _collectionNamesById,
+          );
+          if (collectionName != null) break;
+        }
         return collectionName == null ? title : '$collectionName - $title';
       }
       return entry.title;

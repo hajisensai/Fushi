@@ -7,27 +7,24 @@ import 'package:hibiki/src/pages/implementations/tag_management_page.dart';
 import 'package:hibiki/utils.dart';
 
 class TagPickerPage extends ConsumerStatefulWidget {
-  /// 四种目标四选一，共用同一标签池，按非空字段分派：
-  /// EPUB 书传 [bookKey]；SRT 书传 [srtBookId] 且 [isSrtBook]=true；视频书传
-  /// [videoBookUid]；合集传 [collectionId]（media_collections 主键）。
+  /// 两种目标二选一，共用同一标签池：媒体条目传 [media]（统一媒体身份
+  /// [MediaRef]：epub=bookKey / srt=SrtBooks.uid / video=bookUid；game 无标签
+  /// 体系，不支持）；合集传 [collectionId]（media_collections 主键）。
+  ///
+  /// 命名统一 Phase 3.3：取代旧的 bookKey / srtBookId / videoBookUid 三个可空
+  /// 参数 + isSrtBook bool 分派链。
+  // game 无标签体系：不在 const 构造里 assert（const 求值不允许读属性），由
+  // 运行时分派 switch 的 game 分支抛 UnsupportedError 拦截。
   const TagPickerPage({
-    this.bookKey,
-    this.srtBookId,
-    this.videoBookUid,
+    this.media,
     this.collectionId,
-    this.isSrtBook = false,
     super.key,
   }) : assert(
-          collectionId != null ||
-              videoBookUid != null ||
-              (isSrtBook ? srtBookId != null : bookKey != null),
-          'one of: collectionId / videoBookUid / srtBookId / bookKey',
+          (media != null) ^ (collectionId != null),
+          'exactly one of: media / collectionId',
         );
-  final String? bookKey;
-  final int? srtBookId;
-  final String? videoBookUid;
+  final MediaRef? media;
   final int? collectionId;
-  final bool isSrtBook;
 
   @override
   ConsumerState<TagPickerPage> createState() => _TagPickerPageState();
@@ -45,38 +42,68 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
 
   HibikiDatabase get _db => ref.read(appProvider).database;
 
-  bool get _isVideo => widget.videoBookUid != null;
-
-  bool get _isCollection => widget.collectionId != null;
-
-  /// 读当前媒体已挂的标签（按媒体类型分派到对应 DB 查询）。
-  Future<List<BookTagRow>> _currentTags() {
-    if (_isCollection) return _db.getTagsForCollection(widget.collectionId!);
-    if (_isVideo) return _db.getTagsForVideoBook(widget.videoBookUid!);
-    if (widget.isSrtBook) return _db.getTagsForSrtBook(widget.srtBookId!);
-    return _db.getTagsForBook(widget.bookKey!);
+  /// SRT 书标签映射按 SrtBooks 整型主键落库；[MediaRef.entryKey]（= uid）在此
+  /// 解析成行 id（构造点只持有稳定 uid，不强迫调用方先查 id）。
+  Future<int> _srtBookIdOf(String uid) async {
+    final SrtBookRow? row = await _db.getSrtBookByUid(uid);
+    if (row == null) {
+      throw StateError('TagPickerPage: srt book not found for uid $uid');
+    }
+    return row.id;
   }
 
-  Future<void> _addTag(int tagId) {
-    if (_isCollection) {
-      return _db.addTagToCollection(widget.collectionId!, tagId);
+  /// 读当前目标已挂的标签（合集直取；媒体按 [MediaKind] 穷尽分派）。
+  Future<List<BookTagRow>> _currentTags() async {
+    final int? collectionId = widget.collectionId;
+    if (collectionId != null) return _db.getTagsForCollection(collectionId);
+    final MediaRef media = widget.media!;
+    switch (media.kind) {
+      case MediaKind.epub:
+        return _db.getTagsForBook(media.entryKey);
+      case MediaKind.srt:
+        return _db.getTagsForSrtBook(await _srtBookIdOf(media.entryKey));
+      case MediaKind.video:
+        return _db.getTagsForVideoBook(media.entryKey);
+      case MediaKind.game:
+        throw UnsupportedError('game entries have no tag picker');
     }
-    if (_isVideo) return _db.addTagToVideoBook(widget.videoBookUid!, tagId);
-    if (widget.isSrtBook) return _db.addTagToSrtBook(widget.srtBookId!, tagId);
-    return _db.addTagToBook(widget.bookKey!, tagId);
   }
 
-  Future<void> _removeTag(int tagId) {
-    if (_isCollection) {
-      return _db.removeTagFromCollection(widget.collectionId!, tagId);
+  Future<void> _addTag(int tagId) async {
+    final int? collectionId = widget.collectionId;
+    if (collectionId != null) {
+      return _db.addTagToCollection(collectionId, tagId);
     }
-    if (_isVideo) {
-      return _db.removeTagFromVideoBook(widget.videoBookUid!, tagId);
+    final MediaRef media = widget.media!;
+    switch (media.kind) {
+      case MediaKind.epub:
+        return _db.addTagToBook(media.entryKey, tagId);
+      case MediaKind.srt:
+        return _db.addTagToSrtBook(await _srtBookIdOf(media.entryKey), tagId);
+      case MediaKind.video:
+        return _db.addTagToVideoBook(media.entryKey, tagId);
+      case MediaKind.game:
+        throw UnsupportedError('game entries have no tag picker');
     }
-    if (widget.isSrtBook) {
-      return _db.removeTagFromSrtBook(widget.srtBookId!, tagId);
+  }
+
+  Future<void> _removeTag(int tagId) async {
+    final int? collectionId = widget.collectionId;
+    if (collectionId != null) {
+      return _db.removeTagFromCollection(collectionId, tagId);
     }
-    return _db.removeTagFromBook(widget.bookKey!, tagId);
+    final MediaRef media = widget.media!;
+    switch (media.kind) {
+      case MediaKind.epub:
+        return _db.removeTagFromBook(media.entryKey, tagId);
+      case MediaKind.srt:
+        return _db.removeTagFromSrtBook(
+            await _srtBookIdOf(media.entryKey), tagId);
+      case MediaKind.video:
+        return _db.removeTagFromVideoBook(media.entryKey, tagId);
+      case MediaKind.game:
+        throw UnsupportedError('game entries have no tag picker');
+    }
   }
 
   Future<void> _load() async {
