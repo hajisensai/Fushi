@@ -1,15 +1,15 @@
-# hibiki_voice_hook —— galgame 引擎级 voice hook（C 阶段，独立可选组件）
+# hibiki_voice_hook —— galgame 引擎级 voice hook（C 阶段，隔离 helper）
 
-本仓库是主 app [`hajisensai/hibiki`](https://github.com/hajisensai/hibiki) 的 native 采集组件（独立可选，单独分发）。galgame 一键制卡（[docs/specs/galgame-mining](https://github.com/hajisensai/hibiki/blob/develop/docs/specs/galgame-mining/design.md)）C 阶段：从游戏引擎在**混音之前**截取角色语音的干净音轨，回传 Hibiki 做一键制卡。
+本目录是主 app [`hajisensai/hibiki`](https://github.com/hajisensai/hibiki) 的 native 采集组件。galgame 一键制卡（[docs/specs/galgame-mining](https://github.com/hajisensai/hibiki/blob/develop/docs/specs/galgame-mining/design.md)）C 阶段：从游戏引擎在**混音之前**截取角色语音的干净音轨，回传 Hibiki 做一键制卡。
 
-## ⚠️ 部署红线：与 hibiki.exe 物理隔离
+## 部署边界：不链接进 hibiki.exe
 
-注入用的 `CreateRemoteThread` / `WriteProcessMemory` 是杀软启发式的「代码注入」特征，**必然报毒**。因此这套组件：
+注入用的 `CreateRemoteThread` / `WriteProcessMemory` 只存在于 helper 二进制。因此这套组件：
 
-- **单独构建、单独分发**（按需下载的可选组件），**绝不编进 `hibiki.exe` 本体**——否则整个 app 分发口碑受污染。本目录的 CMake **不被 `hibiki/windows` 引用**。
+- **单独构建，绝不链接进 `hibiki.exe` 本体**。`tools/build_distribution.ps1` 输出的 x64/x86 校验 zip 随 Windows 主包进入 `galgame_helper/`，也发布到固定 prerelease 供旧包与后台更新。
 - Hibiki 主进程把 `hibiki_voice_injector.exe` 当**子进程**拉起，通过共享内存（[`include/voice_hook_ipc.h`](include/voice_hook_ipc.h)）消费干净语音——被标记的注入代码只待在这个隔离二进制里。
 - 许可：Hibiki 与本组件均 **GPLv3**（与 LunaTranslator/LunaHook 同）。
-- 缓解报毒：代码签名改善声誉分（挡不住启发式）；引导用户加杀软白名单（galgame texthook 用户对此有预期）。
+- 杀软证据：Windows Defender（签名 1.455.357.0）实扫全部文件与 zip 零检出，同轮 EICAR 阳性对照正常报出；国产杀软仍未验证。
 
 ## 组成
 

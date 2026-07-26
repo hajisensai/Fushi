@@ -1,12 +1,11 @@
 cmake_minimum_required(VERSION 3.14)
 project(hibiki_voice_hook LANGUAGES C CXX)
 
-# galgame 一键制卡 C 阶段 —— 引擎级 voice hook 的**独立可选 helper 组件**。
+# galgame 一键制卡 C 阶段 —— 引擎级 voice hook 的隔离 helper 组件。
 #
-# 部署红线（docs/specs/galgame-mining）：这套 injector + hook DLL 与 hibiki.exe **物理隔离、
-# 分离构建/分发**。注入用的 CreateRemoteThread/WriteProcessMemory 必被杀软启发式报毒，编进主
-# 程序会污染整个 app 的分发口碑；隔离成独立组件把污染面锁死在这里。**故本 CMake 不被
-# hibiki/windows 引用**，单独 configure/build，产物按需下载分发。
+# 部署边界（docs/specs/galgame-mining）：injector + hook DLL 不链接进 hibiki.exe，保持独立
+# 子进程/DLL。`tools/build_distribution.ps1` 单独 configure/build；校验 zip 随 Windows 主包
+# 交付以支持离线首装，并同步发布到固定 release 供旧包/后台更新。
 #
 # 32/64 位分开构建（galgame 多为 32 位；DLL 位数必须匹配目标进程）：
 #   x64: cmake -S . -B build/x64 -A x64      && cmake --build build/x64 --config Release

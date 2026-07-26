@@ -138,6 +138,12 @@ Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'hibiki-*-
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'hibiki-*-macos.zip' 'desktop workflow must upload macOS zip assets'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'hibiki-*-ios.ipa' 'desktop workflow must upload iOS IPA assets'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'Publish mirror update manifest (Apple assets)' 'Apple release assets must merge into the update manifest'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'native/galgame_hook/tools/build_distribution.ps1 -RunTests' 'Windows releases must build the bundled offline galgame helper from the in-tree source'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'Release\galgame_helper' 'Windows installer payload must contain both helper archives and sidecars'
+
+$multiplatformWorkflow = Read-RepoFile '.github/workflows/build-multiplatform.yml'
+Require-Text '.github/workflows/build-multiplatform.yml' $multiplatformWorkflow 'native/galgame_hook/tools/build_distribution.ps1 -RunTests' 'Windows CI must exercise the same bundled helper build as release'
+Require-Text '.github/workflows/build-multiplatform.yml' $multiplatformWorkflow 'Debug\galgame_helper' 'Windows debug bundle must exercise the offline helper payload layout'
 
 $buildDoc = Read-RepoFile 'docs/agent/build.md'
 Require-Text 'docs/agent/build.md' $buildDoc 'cross-workflow release sequence' 'durable docs must describe the shared sequence rule'

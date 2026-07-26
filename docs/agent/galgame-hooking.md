@@ -6,7 +6,7 @@
 
 ## 1. 边界与开工条件
 
-- native 采集组件在本仓 `native/galgame_hook/`（源码已合仓）。**产物边界不变且是硬规则：绝不编进 `Hibiki.exe`**，只由根 `.github/workflows/voice-hook-helper.yml` 单独构建成 `voice_hook_<arch>.zip` 发布，app 按需下载解压到 `voice_hook/<arch>/`。
+- native 采集组件在本仓 `native/galgame_hook/`（源码已合仓）。**进程/链接边界不变且是硬规则：绝不链接进 `Hibiki.exe`**。`tools/build_distribution.ps1` 单独构建 `voice_hook_<arch>.zip`；两架构 zip + `.sha256` 随 Windows 主包进入 `galgame_helper/` 供离线首装，同时由根 `.github/workflows/voice-hook-helper.yml` 发布供旧包与后台更新。app 校验后解压到 `voice_hook/<arch>/`，helper 仍以隔离子进程/DLL 运行。
 - 合仓的依据：迁出独立仓库的真正根因是「主仓库那份 workflow 不在默认分支、无法 workflow_dispatch」，合仓后 workflow 就在 develop 上，问题消失；而「必被杀软报毒」经实测证伪（Defender 签名 1.455.357.0 对全部文件与 zip 零检出，同轮 EICAR 阳性对照正常报出，见 hibiki-hook#8）。国产杀软未验证，若被拦按误报处理。
 - 消费端（IPC 消费、文本与音频配对、制卡 UI）与 native 采集实现现在同仓，**改 IPC 契约必须两侧在同一个 PR 里落地**——这正是合仓要消除的版本不同步。引擎支持矩阵唯一真相源是 `native/galgame_hook/docs/engine-support.md`（由同目录 `engine-support.yaml` 自动生成），不得另存副本。
 - 一引擎一任务、一独立 worktree；批量引擎任务只负责排队和汇总，不在同一实现任务里交叉试错。worktree 先运行 `tool/setup_worktree.ps1`，并按根 `CLAUDE.md` 登记 ownership。
@@ -150,4 +150,4 @@ ctest --test-dir build-x86 -C Release --output-on-failure
 
 ## 8. 提交与交接
 
-native 能力、Hibiki 消费端和进度文档分别提交，避免把无行为变化重构与能力扩展混成一个提交。交接报告列出两仓提交哈希、全部验证命令、真实样本证据、仍未验证项和后续候选。许可方面，文本优先复用隔离分发的 LunaHook（GPLv3）；资源格式可参考 GARbro（MIT），保留必要署名与许可证；禁止 vendoring NonCommercial 或其他受限许可的二进制和数据。
+native 能力、Hibiki 消费端和进度文档可按审查边界拆提交，但同一 IPC 契约变更必须在一个 PR 内同时落两侧；不要把无行为变化重构与能力扩展混成一个提交。交接报告列出主仓提交哈希、全部验证命令、真实样本证据、仍未验证项和后续候选。许可方面，文本优先复用隔离运行的 LunaHook（GPLv3）；资源格式可参考 GARbro（MIT），保留必要署名与许可证；禁止 vendoring NonCommercial 或其他受限许可的二进制和数据。

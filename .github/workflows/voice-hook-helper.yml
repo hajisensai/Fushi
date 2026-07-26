@@ -1,20 +1,15 @@
-# galgame 引擎-hook 注入器 helper 的打包/分发 workflow（独立仓库 hajisensai/hibiki-hook）。
+# galgame 引擎-hook 注入器 helper 的打包/分发 workflow（Hibiki 主仓同源构建）。
 #
-# 部署红线（CMakeLists.txt / 原 hibiki docs/specs/galgame-mining）：这套 injector + hook DLL
-# 含 CreateRemoteThread/WriteProcessMemory 注入代码，必被杀软启发式报毒。故与 hibiki 主 app
-# 物理隔离到本独立仓库，单独构建/分发；hibiki 运行时按需从本仓库固定 tag release 下载对应
-# 架构 zip，解压到 <app目录>\voice_hook\<arch>\。
+# injector + hook DLL 仍与 Hibiki.exe 保持进程/链接边界；同一组 zip 同时进入 Windows 主包，
+# 解决离线首装，并发布到固定 tag 供旧包与后台更新使用。
 #
-# 与主发布流的隔离：
-# - 本仓库只放 helper，默认分支即本 workflow 所在分支，workflow_dispatch 可正常触发
-#   （旧版在 hibiki 仓库因 workflow 不在默认分支无法 dispatch，故迁出独立仓库根治）。
-# - 发布到固定 tag `voice-hook-helper` 的 prerelease、非 Latest release。
+# 发布到固定 tag `voice-hook-helper` 的 prerelease、非 Latest release。
 #
 # 每架构分发 4 个核心文件（injector.exe + hook.dll + LunaHook<arch>.dll + LunaHost<arch>.dll）。
 # x86 包另带 Locale Emulator 2.5.0.1 的 LoaderDll.dll / LocaleEmulator.dll 与 LGPL 文本，供
 # Hibiki 自动以日语 CP932 挂起启动旧式非 Unicode galgame；不运行安装器、不改系统区域设置。
 # 打成 voice_hook_<arch>.zip（文件平铺在 zip 根）+ .sha256 侧车供 app 校验完整性。app 下载 URL：
-#   https://github.com/hajisensai/hibiki-hook/releases/download/voice-hook-helper/voice_hook_<arch>.zip
+#   https://github.com/hajisensai/hibiki/releases/download/voice-hook-helper/voice_hook_<arch>.zip
 name: voice-hook-helper
 
 on:
@@ -69,79 +64,9 @@ jobs:
           python tests/evidence_contract_test.py
           python tests/galhook_workflow_test.py
 
-      # 32/64 位分开构建（DLL 位数必须匹配目标游戏进程）。windows-2022 runner 自带
-      # Visual Studio 2022 + CMake，多配置生成器用 -A x64 / -A Win32 选架构平台。
-      - name: Configure & build (x64)
-        run: |
-          cmake -S . -B build/x64 -A x64
-          cmake --build build/x64 --config Release
-          ctest --test-dir build/x64 -C Release --output-on-failure
-
-      - name: Configure & build (x86)
-        run: |
-          cmake -S . -B build/x86 -A Win32
-          cmake --build build/x86 --config Release
-          ctest --test-dir build/x86 -C Release --output-on-failure
-
-      # 只挑分发所需文件（诊断用 ring_probe / luna_symcheck 不分发）。CMake POST_BUILD
-      # 已把 vendored LunaHook<arch>.dll / LunaHost<arch>.dll 拷进各 arch 的 Release 目录。
-      - name: Stage helper files
-        run: |
-          $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force -Path dist/x64, dist/x86 | Out-Null
-          Copy-Item build/x64/Release/hibiki_voice_injector.exe dist/x64/
-          Copy-Item build/x64/Release/hibiki_voice_hook.dll      dist/x64/
-          Copy-Item build/x64/Release/LunaHook64.dll             dist/x64/
-          Copy-Item build/x64/Release/LunaHost64.dll             dist/x64/
-          Copy-Item build/x86/Release/hibiki_voice_injector.exe dist/x86/
-          Copy-Item build/x86/Release/hibiki_voice_hook.dll      dist/x86/
-          Copy-Item build/x86/Release/LunaHook32.dll             dist/x86/
-          Copy-Item build/x86/Release/LunaHost32.dll             dist/x86/
-
-          # Locale Emulator 官方 v2.5.0.1（LGPL-3.0）。旧式非 Unicode galgame 基本是 x86，
-          # x64 helper 不加载这组 32 位 DLL。固定版本 + SHA-256，防供应链漂移。
-          $leUrl = 'https://github.com/xupefei/Locale-Emulator/releases/download/v2.5.0.1/Locale.Emulator.2.5.0.1.zip'
-          $leZip = Join-Path $env:RUNNER_TEMP 'Locale.Emulator.2.5.0.1.zip'
-          $leDir = Join-Path $env:RUNNER_TEMP 'Locale.Emulator.2.5.0.1'
-          Invoke-WebRequest -Uri $leUrl -OutFile $leZip
-          $expectedLeSha = '808ff584426d52cc775ad6406da00622f454be95bd4c8fbca42eef4b7235ad5c'
-          $actualLeSha = (Get-FileHash $leZip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actualLeSha -ne $expectedLeSha) {
-            throw "Locale Emulator SHA-256 mismatch: $actualLeSha"
-          }
-          Expand-Archive -LiteralPath $leZip -DestinationPath $leDir -Force
-          Copy-Item (Join-Path $leDir 'LoaderDll.dll') dist/x86/
-          Copy-Item (Join-Path $leDir 'LocaleEmulator.dll') dist/x86/
-          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/xupefei/Locale-Emulator/v2.5.0.1/COPYING.LESSER' `
-            -OutFile dist/x86/LocaleEmulator-LGPL-3.0.txt
-
-      # 契约守卫：x64 4 个核心文件；x86 再加两枚 LE DLL 与 LGPL 文本。
-      - name: Verify staged files per arch
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $expected = @{
-            x64 = @('hibiki_voice_injector.exe', 'hibiki_voice_hook.dll', 'LunaHook64.dll', 'LunaHost64.dll')
-            x86 = @('hibiki_voice_injector.exe', 'hibiki_voice_hook.dll', 'LunaHook32.dll', 'LunaHost32.dll', 'LoaderDll.dll', 'LocaleEmulator.dll', 'LocaleEmulator-LGPL-3.0.txt')
-          }
-          foreach ($arch in $expected.Keys) {
-            $actual = @(Get-ChildItem "dist/$arch" -File | ForEach-Object Name | Sort-Object)
-            $wanted = @($expected[$arch] | Sort-Object)
-            if (Compare-Object $wanted $actual) {
-              throw "arch $arch staged files differ: $($actual -join ', ')"
-            }
-          }
-
-      # 打 zip（文件平铺在 zip 根）+ 产出 sha256 侧车（小写十六进制），供 app 下载后校验完整性。
-      - name: Zip + sha256
-        run: |
-          $ErrorActionPreference = 'Stop'
-          foreach ($arch in 'x64', 'x86') {
-            $zip = "dist/voice_hook_$arch.zip"
-            Compress-Archive -Path "dist/$arch/*" -DestinationPath $zip -Force
-            $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
-            Set-Content -Path "$zip.sha256" -Value $hash -NoNewline
-            Write-Host "$arch sha256=$hash"
-          }
+      # release 与 Windows 主包必须共用同一打包脚本和文件清单，避免离线资产与在线 release 漂移。
+      - name: Build, test and package helper (x64 + x86)
+        run: ./tools/build_distribution.ps1 -RunTests
 
       # 固定 tag `voice-hook-helper` 反复 upsert 同一 release（softprops 有则更新、无则创建，同名
       # asset 自动覆盖）；prerelease + 非 Latest。
@@ -158,8 +83,8 @@ jobs:
           name: Galgame voice hook helper
           body: |
             Galgame 引擎-hook 注入器 helper（含进程注入代码：CreateRemoteThread/WriteProcessMemory）。
-            Hibiki 开 galgame 需要注入器却缺失时按需下载对应架构 zip，解压到 voice_hook/<arch>/。
-            本 release 为 prerelease、非 Latest，不属于主 app 安装包。
+            Windows 主包已随附同源归档用于离线首装；本 release 供旧包下载与已安装版本后台更新。
+            本 release 为 prerelease、非 Latest。
 
             杀软说明：Windows Defender（签名 1.455.357.0）实扫全部文件与 zip 均无检出，
             见 hibiki-hook#8 的 av-selfscan 实测。国产杀软（360/火绒等）未验证，若被拦为误报。

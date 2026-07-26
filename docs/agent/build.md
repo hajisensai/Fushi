@@ -70,12 +70,12 @@ Flutter 3.44.0 下部分上游依赖未适配，两种补法并存（对个别�
 
 > `carousel_slider` / `fading_edge_scrollview` / `network_to_file_image` 两边都有：`dependency_overrides` 生效，pub-cache 同名补丁因版本对不上被自动跳过，以 vendored 为准。
 
-## galgame 引擎-hook 注入器 helper（同仓源码，独立产物）
+## galgame 引擎-hook 注入器 helper（同仓源码，隔离二进制随 Windows 主包）
 
 galgame 一键制卡的引擎-hook 注入器（injector.exe + hook.dll + vendored LunaHook/Host DLL）含
 `CreateRemoteThread`/`WriteProcessMemory`。**源码在本仓 `native/galgame_hook/`**（与
-`native/hoshidicts/`、`native/hibiki_torrent/` 同级），**但产物绝不编进 `Hibiki.exe`、绝不进主 app
-安装包**——这条产物边界是硬规则，源码同仓不改变它。
+`native/hoshidicts/`、`native/hibiki_torrent/` 同级）。helper 绝不链接进 `Hibiki.exe`，运行时仍是
+隔离子进程/DLL；但两架构的校验 zip 随 Windows 主包进入 `galgame_helper/`，从而离线首装可用。
 
 > 历史：这套组件曾整体迁到独立仓库 `hajisensai/hibiki-hook`。迁出的真正根因是 CI——主仓库那份
 > workflow 不在默认分支，GitHub 不暴露 `workflow_dispatch` 入口，release 从没被产出过；合仓后
@@ -96,14 +96,18 @@ galgame 一键制卡的引擎-hook 注入器（injector.exe + hook.dll + vendore
   **prerelease、`make_latest: false`**。发布步骤有 `if: github.ref == 'refs/heads/develop'` 分支守卫
   ——只有默认分支能 upsert 那个所有用户都会自更新拉取的 release；PR 分支照跑构建与双架构
   ctest，但不发布。
+- **主包内置**：`native/galgame_hook/tools/build_distribution.ps1 -RunTests` 是固定 release 与
+  Windows 主包共用的唯一组包入口，输出 x64/x86 zip + `.sha256`。`build-multiplatform.yml` 把它们
+  放进 Debug bundle 的 `galgame_helper/` 验证布局；`release-desktop.yml` 放进 Release bundle 的同名
+  目录，Inno Setup 的 `recursesubdirs` 将其纳入安装器。`check_release_policy.ps1` 守卫这条链，禁止
+  后续“构建仍绿但安装器漏带 helper”。
 - **稳定下载 URL**（按 tag 而非 run 号；app 端 slug 为 `kGalgameHelperRepo = 'hajisensai/hibiki'`）：
   `https://github.com/hajisensai/hibiki/releases/download/voice-hook-helper/voice_hook_<arch>.zip`（+ `.sha256`）。
 - **老客户端不断供**：已发布版本的 app 把 `hajisensai/hibiki-hook` 编进了常量，会继续从那个仓库取
   helper。**`hajisensai/hibiki-hook` 仓库与其 `voice-hook-helper` release 必须保留、不得删除**
   （Never break userspace）；它只作为老客户端的下载宿主冻结，新开发一律在本仓 `native/galgame_hook/`。
-- **app 端按需下载**：开 galgame 需要注入器却缺失时，`GalgameHelperInstaller`（`hibiki/lib/src/mining/
-  galgame_helper_installer.dart`）弹确认对话框（标大小）→ 下载对应架构 zip（走系统代理 + gh 镜像回退
-  + sha256 校验）→ 解压到 app 目录下的 `voice_hook/<arch>/` → 继续启动。幂等：已存在跳过。
-  sha256 侧车只信 GitHub 自己的域（镜像可供 zip，但摘要必须来自可信源，否则校验退化成走过场）。
-  **已知缺口**：离线（或 GitHub 与全部镜像均不可达）时 helper 装不上，galgame 制卡直接不可用，
-  且当前没有「从本地 zip 安装」入口。
+- **app 端安装/更新**：开 galgame 需要注入器却缺失时，`GalgameHelperInstaller`（`hibiki/lib/src/mining/
+  galgame_helper_installer.dart`）先读取 exe 同级 `galgame_helper/voice_hook_<arch>.zip` 与侧车，校验
+  SHA-256 后解压/换入 `voice_hook/<arch>/`，全程零网络、零下载确认；正式 Windows 主包必须命中此路。
+  开发构建/旧包没有随包归档时，才回退原有确认框 → 系统代理/gh 镜像下载 → 可信 GitHub 侧车校验。
+  已安装版本的后台更新仍走固定 release；离线取不到更新时保留当前完整版本，不阻塞游戏启动。

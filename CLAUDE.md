@@ -34,7 +34,7 @@
 - 词典：Dart 封装 `packages/hibiki_dictionary/lib/src/engine/hoshidicts.dart` + FFI 绑定 `lib/src/ffi/hoshidicts_ffi_bindings.dart`；C++ 引擎源码全在 `native/hoshidicts/`（包内已无 C++），`hoshidicts_external/` 是 vendored 第三方，上游同步基线见 `native/hoshidicts/UPSTREAM.md`。
 - 有声书：`packages/hibiki_audio/` + `hibiki/lib/src/media/audiobook/`（导入入口 `book_import_dialog.dart` / `audiobook_import_dialog.dart`）。
 - 互联/同步：`hibiki/lib/src/sync/`（`interconnect_*.dart`、`aggregate_sync_service.dart`、`backup_*`）。
-- galgame 制卡：Flutter 侧 `hibiki/lib/src/lookup/`（overlay 浮窗）+ `hibiki/lib/src/mining/galgame_*`；C++ hook（injector + hook DLL + vendored LunaHook）在本仓 `native/galgame_hook/`，由根 `.github/workflows/voice-hook-helper.yml` 单独构建成 helper zip 发布，**不编进 `Hibiki.exe`**。
+- galgame 制卡：Flutter 侧 `hibiki/lib/src/lookup/`（overlay 浮窗）+ `hibiki/lib/src/mining/galgame_*`；C++ hook（injector + hook DLL + vendored LunaHook）在本仓 `native/galgame_hook/`。`tools/build_distribution.ps1` 单独构建两架构 helper zip；zip 随 Windows 主包进入 `galgame_helper/` 供离线首装，同时由根 `.github/workflows/voice-hook-helper.yml` 发布供旧包/后台更新。helper **不链接进 `Hibiki.exe`**，运行时仍是隔离子进程/DLL。
 - 浏览器扩展：`tools/browser-extension/`（注意是根级 `tools/`，与 `tool/` 不同目录）。
 - 工具脚本归属：根 `tool/` = `setup_worktree.ps1` / `bootstrap.ps1` / `bug.dart` / `check_release_policy.ps1` / `run_mac_itest.ps1`；`hibiki/tool/` = `i18n_sync.dart` / `run_windows_itest.ps1` / `comprehensive_test_runner.dart`。
 - 审查报告：`docs/reviews/YYYY-MM-DD-project-review.md`；已复现回归：`docs/REGRESSION_BUGS.md`（本地，不入库）；测试证据：`.codex-test/`（不入库）。
@@ -54,12 +54,12 @@
 ## Galgame Hook 硬规则
 
 - Galgame 文本/语音 Hook、LunaHook、helper、adapter、引擎适配和制卡 E2E 默认**只做 Windows 端**。允许范围是 Windows Hibiki、Windows x86/x64 注入器/helper/hook，以及 Windows 链路必需的共享代码和平台无关测试；禁止修改、构建、运行、打包、发布或宣称支持 Android、iOS、macOS、Linux 的 galgame 实现。只有用户明确变更平台范围时才能越过此边界，通用的多平台构建或集成测试说明不得自动扩大 galgame 任务范围。
-- 任何 galgame 文本/语音 Hook、LunaHook、helper、adapter、引擎适配或支持声明，开工前必须完整阅读 [docs/agent/galgame-hooking.md](docs/agent/galgame-hooking.md)；一引擎一任务、一独立 worktree，两仓改动分别提交。
+- 任何 galgame 文本/语音 Hook、LunaHook、helper、adapter、引擎适配或支持声明，开工前必须完整阅读 [docs/agent/galgame-hooking.md](docs/agent/galgame-hooking.md)；一引擎一任务、一独立 worktree。native 与消费端现在同仓，IPC 契约变更必须在同一个 PR 内同步两侧。
 - 写代码前必须在用户原始安装与启动路径建立身份/时序台账：启动器与真实游戏 PID/父子关系、架构、exe/module/helper/DLL 实际路径与 SHA-256、注入/附着策略，以及进程出现、模块加载、首次资源访问和首次音频的时间。imports、模块名、DLL 已加载或 Hook installed 只算候选证据。
 - 能力阶段必须分开记录：`process_found → helper_ready → ipc_ready → text_ready → resource/pcm_ready → paired → e2e_verified`；不得用前一阶段推断后一阶段，也不得把 ready、捕获、纯人声分类、哈希一致和端到端混成一个“成功”。
 - 每轮只修原始路径上第一个未通过边界。引擎/保护壳/加载时序特例必须收进 profile/adapter；共享中间件不得仅凭 DLL 名启用，且须有跨引擎负向测试。
 - Loopback 只是显式降级，不能证明引擎 Hook、逐句配对或纯人声已验证；任何必需测试、双架构构建、replay 或真机门被跳过/阻塞，只能标 `implemented_unverified`，不得宣称“已支持/已修好”。
-- 支持升级必须回到原始启动路径完成“当前文本 → 对应语音 → 当前画面 → 真卡写入”E2E；宣称原始逐句资源时还须记录与源 entry 的字节哈希一致性，并只通过 hibiki-hook 的真相源更新支持状态。
+- 支持升级必须回到原始启动路径完成“当前文本 → 对应语音 → 当前画面 → 真卡写入”E2E；宣称原始逐句资源时还须记录与源 entry 的字节哈希一致性，并只通过 `native/galgame_hook/engine-support.yaml` 真相源更新支持状态。
 
 ## i18n 纪律
 
@@ -89,7 +89,7 @@
 | 要做的事 | 看这里 |
 |---|---|
 | 加功能/修 bug/合并的分级快车道：难度分级、子代理分工、并行时间线、验证分级 | [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md) |
-| 5 平台构建 / Melos / bootstrap + 依赖补丁机制 / 发布通道与版本号规则 / galgame hook 注入器独立分发 | [docs/agent/build.md](docs/agent/build.md) |
+| 5 平台构建 / Melos / bootstrap + 依赖补丁机制 / 发布通道与版本号规则 / galgame helper Windows 随包与在线更新 | [docs/agent/build.md](docs/agent/build.md) |
 | 模拟器集成测试三层架构 / 焦点驱动（禁坐标点击）/ AnkiDroid provisioning / ADB 降级 / DB 查询 / 测试素材 | [docs/agent/integration-testing.md](docs/agent/integration-testing.md) |
 | 持续审查模式 / docs/reviews 报告格式 / 回归记录 | [docs/agent/review-process.md](docs/agent/review-process.md) |
 | reader_hibiki 构成 / TTU 残留辨析 / WebView / 恢复 / 分页 / 有声书遮挡调试 | [docs/agent/reader-debugging.md](docs/agent/reader-debugging.md) |

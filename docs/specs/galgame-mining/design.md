@@ -69,7 +69,7 @@
 
 ## C 阶段任务（第二里程碑，干净语音，逐引擎，独立可选组件）
 
-组件现位于独立仓 `hajisensai/hibiki-hook`（本设计早期的 `native/galgame_voice_hook/` 路径是迁出前历史名称）；独立 CMake 构建，**不被 hibiki/windows 引用**——部署红线见下。当前实施流程以 [Galgame Hook 引擎适配 SOP](../../agent/galgame-hooking.md) 为准。
+组件现位于本仓 `native/galgame_hook/`（本设计早期的 `native/galgame_voice_hook/` 路径是历史名称）；独立 CMake 构建，helper 不链接进 `Hibiki.exe`。两架构校验 zip 随 Windows 主包交付并保留固定 release 更新源。当前实施流程以 [Galgame Hook 引擎适配 SOP](../../agent/galgame-hooking.md) 为准。
 
 | # | 任务 | 状态 |
 |---|---|---|
@@ -78,13 +78,12 @@
 | C.3 | 逐引擎覆盖（KiriKiri / Siglus / Artemis / Unity …），其余自动回退 A | 🟡 Siglus 已支持 Enigma-safe 延迟附着 + OVK 干净逐句 Ogg + raw-only 制卡；其余继续 |
 | C.4 | `EngineHookGalAudioSource`（Dart 实现 `GalAudioSource`）：Hibiki 拉起 injector 子进程、读共享内存/原始逐句 Ogg，接同一个波形选区 + 制卡出口 | ✅ KiriKiriZ PCM + Siglus raw-only Ogg 接回已验证 |
 
-## 部署形态（许可 + 报毒隔离）
+## 部署形态（许可 + 进程隔离）
 
 - Hibiki 与 LunaTranslator/LunaHook **同为 GPLv3**，复制/链接合法（保留 GPLv3 + 署名 + 源码可得）。
 - **文本（LunaHook）**：作为**隔离子进程**跑、消费其输出，不把源码静态编进 `Hibiki.exe`。可选组件。
-- **音频注入（C）**：injector + 音频 hook DLL 打包成**独立可选 helper 组件**，和主程序**分离分发**（按需下载）。
-  - 理由：`CreateRemoteThread`/`WriteProcessMemory`/DLL 注入是杀软启发式的「代码注入」特征，**必然报毒**。编进本体会污染整个 app 的分发口碑；隔离成独立组件把污染面锁死在该组件。
-  - 缓解：代码签名改善声誉分（挡不住启发式）；引导用户加杀软白名单（galgame texthook 用户对此有预期）。
+- **音频注入（C）**：injector + 音频 hook DLL 打包成独立 helper zip，随 Windows 主包交付以支持离线首装；helper 不链接进主程序，仍以隔离子进程/DLL 运行。
+  - 证据：Defender 实扫全部文件与 zip 零检出，EICAR 阳性对照正常；国产杀软尚未验证。
 - **进程边界消费**：被标记的代码只待在隔离二进制里，主程序通过共享内存/管道拿结果。
 
 ## 验证门（CLAUDE.md 纪律）
