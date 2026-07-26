@@ -202,6 +202,16 @@ class FloatingLyricWindow {
 
   float ScaleForDpi(float value) const;
 
+  // BUG-1095 (第二阶段) — hook 台词的垂直滚动。
+  //
+  // 这是个分层窗 + Direct2D 自绘的条，没有任何系统滚动条：文本超出
+  // text_rect_ 时曾经只能硬裁（见 Render 里的 PushAxisAlignedClip）。ScrollBy
+  // 把滚动偏移推进 |delta_px| 物理像素并夹到 [0, scroll_max_px_]，返回
+  // true 表示偏移真的变了（调用方据此决定要不要吞掉 WM_MOUSEWHEEL）。
+  // 非 hook 模式、穿透模式、没有溢出时恒为 no-op，歌词条与剪贴板文本
+  // 窗逐像素不变。
+  bool ScrollBy(float delta_px);
+
   // Minimum visible margin (in 96-DPI logical px) that must always stay inside
   // the target monitor's work area, so the strip can never be dragged or
   // restored entirely off-screen (TODO-832). Run through ScaleForDpi before use
@@ -274,6 +284,13 @@ class FloatingLyricWindow {
   Labels labels_;
 
   TextLayoutRect text_rect_;
+
+  // BUG-1095 (第二阶段) — hook 台词的垂直滚动状态，单位是客户区物理 px。
+  // scroll_max_px_ 每帧由 Render 依据实测排版高度重算（0 = 没有溢出，整支滚动
+  // 关闭），scroll_offset_px_ 随之重新夹紧——字号 / 窗高 / 文本任一变化都不会
+  // 把偏移留在旧行程外。
+  float scroll_offset_px_ = 0.0f;
+  float scroll_max_px_ = 0.0f;
 
   // Press / drag / resize state for moving and sizing the strip.
   //

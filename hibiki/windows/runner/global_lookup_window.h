@@ -265,6 +265,11 @@ class GlobalLookupWindow {
   // swallows it) so the "app-external lookup shows no popup" cause is visible.
   void ReportOverlayError(const std::string& message, HRESULT hr);
   void ConfigureWebView();
+  // BUG-1104 — 把「这个 HWND 当前的 DPI」推给 WebView2 控制器（BoundsMode /
+  // ShouldDetectMonitorScaleChanges / RasterizationScale）。composition 与
+  // windowed 两条创建路径、以及 WM_DPICHANGED 都只走这一个入口，两条路径的
+  // DPI 行为因此不可能再漂开。
+  void ApplyDpiScale();
   std::wstring LoadAdapterScript() const;
   // TODO-867 P3c — reads global_lookup_host.js for top-level injection.
   std::wstring LoadHostScript() const;

@@ -1059,21 +1059,11 @@ void GlobalLookupWindow::EnsureWebView() {
                                 controller2->put_DefaultBackgroundColor(
                                     transparent);
                               }
-                              // BoundsMode=RAW_PIXELS + rasterization scale 按 DPI。
-                              UINT dpi = GetDpiForWindow(hwnd_);
-                              if (dpi == 0) {
-                                dpi = 96;
-                              }
-                              wil::com_ptr<ICoreWebView2Controller3> controller3;
-                              if (SUCCEEDED(controller_->QueryInterface(
-                                      IID_PPV_ARGS(&controller3)))) {
-                                controller3->put_BoundsMode(
-                                    COREWEBVIEW2_BOUNDS_MODE_USE_RAW_PIXELS);
-                                controller3->put_ShouldDetectMonitorScaleChanges(
-                                    FALSE);
-                                controller3->put_RasterizationScale(
-                                    static_cast<double>(dpi) / 96.0);
-                              }
+                              // BUG-1104 — BoundsMode=RAW_PIXELS + 按窗口 DPI
+                              // 钉死光栅缩放。原来这段是 composition 路径的内联
+                              // 代码，windowed 回退路径没有对应物；现在两条路径
+                              // 共用 ApplyDpiScale()。
+                              ApplyDpiScale();
                               // WebView 的 visual 挂到 DComp 视觉树 → Commit 上桌面。
                               composition_controller_->put_RootVisualTarget(
                                   dcomp_visual_.get());
@@ -1166,6 +1156,13 @@ void GlobalLookupWindow::EnsureWebView() {
                         COREWEBVIEW2_COLOR transparent = {0, 0, 0, 0};
                         controller2->put_DefaultBackgroundColor(transparent);
                       }
+                      // BUG-1104 — windowed 回退路径过去**完全没有** DPI 处理：
+                      // composition 路径钉了 RasterizationScale 并关掉自动探测，
+                      // 这条路径却任由 WebView2 自己探测 monitor scale。于是同一
+                      // 个窗在两条路径下位图缩放的真值来源不同，多屏 / 非 100%
+                      // 缩放时可以差一档，亚像素取整误差被放大（BUG-1098 备注里
+                      // 记的“放大器”）。统一到同一个入口。
+                      ApplyDpiScale();
                       RECT rc;
                       GetClientRect(hwnd_, &rc);
                       controller_->put_Bounds(rc);
@@ -1203,6 +1200,39 @@ void GlobalLookupWindow::EnsureWebView() {
         "CreateCoreWebView2EnvironmentWithOptions call failed (sync)",
         create_hr);
   }
+}
+
+// BUG-1104 — 两条 WebView2 创建路径的 DPI 处理必须同源。
+//
+// 窗口坐标、shell 卡矩形、commitLayerShift 的 CSS px 换算，全部按
+// GetDpiForWindow(hwnd_) 算；而 WebView2 默认打开 ShouldDetectMonitorScaleChanges，
+// 自己去探测 monitor scale。这是两个独立的真值来源——单屏 100% 时恰好相等，多屏
+// 或非 100% 缩放时可以差一档，差出来的就是被放大的亚像素取整误差。composition
+// 路径当年已经钉死了这一项，windowed 回退路径没有，于是同一个窗走哪条路径出来
+// 的渲染都不完全一样。
+//
+// 解法是消除“两个来源”，而不是给 windowed 打补丁：真值只有一个——这个 HWND 的
+// DPI，两条创建路径和 WM_DPICHANGED 都从这里读。关掉自动探测之后跟随 DPI 变化
+// 就成了我们自己的责任，见 HandleMessage 的 WM_DPICHANGED。
+//
+// 老 runtime 拿不到 ICoreWebView2Controller3 时直接返回：保持它自己的默认行为，
+// 绝不半套地只设一项。
+void GlobalLookupWindow::ApplyDpiScale() {
+  if (!controller_ || hwnd_ == nullptr) {
+    return;
+  }
+  UINT dpi = GetDpiForWindow(hwnd_);
+  if (dpi == 0) {
+    dpi = 96;
+  }
+  wil::com_ptr<ICoreWebView2Controller3> controller3;
+  if (FAILED(controller_->QueryInterface(IID_PPV_ARGS(&controller3))) ||
+      controller3 == nullptr) {
+    return;
+  }
+  controller3->put_BoundsMode(COREWEBVIEW2_BOUNDS_MODE_USE_RAW_PIXELS);
+  controller3->put_ShouldDetectMonitorScaleChanges(FALSE);
+  controller3->put_RasterizationScale(static_cast<double>(dpi) / 96.0);
 }
 
 void GlobalLookupWindow::ConfigureWebView() {
@@ -1828,6 +1858,43 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       // border supplies the card frame, this region supplies the rounded corners.
       ApplyRoundedRegion();
       return 0;
+    case WM_DPICHANGED: {
+      // BUG-1104 — 窗口被拖到另一块缩放不同的显示器（或用户改了缩放）。
+      //
+      // 两条创建路径都关掉了 WebView2 的自动 monitor-scale 探测（理由见
+      // ApplyDpiScale），所以跟随 DPI 变化是**我们的**责任；不处理的话光栅缩放
+      // 会永远停在建窗那一刻所在的那块屏上——而这个窗是开机预热、整个 app 会话
+      // 只隐藏不销毁的长命窗口，"建窗那一刻" 可能是几小时前的事。
+      //
+      // lparam 是系统按新 DPI 算好的建议矩形，照单全收是官方契约（窗口的物理
+      // 观感大小不变）。SWP_NOZORDER | SWP_NOACTIVATE 保证不动 Z 序、不抢焦点；
+      // 且不带任何“显示窗口”标志，所以预热期的隐藏窗口不会凭空出现在桌面上
+      // （守卫 global_lookup_dpi_scale_guard_test.dart ③ 就是盯这一点）。
+      const RECT* suggested = reinterpret_cast<const RECT*>(lparam);
+      if (suggested != nullptr && hwnd_ != nullptr) {
+        SetWindowPos(hwnd_, nullptr, suggested->left, suggested->top,
+                     suggested->right - suggested->left,
+                     suggested->bottom - suggested->top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+      }
+      ApplyDpiScale();
+      // 上面的 SetWindowPos 若真改了尺寸会触发 WM_SIZE 走同样的收尾；尺寸没变时
+      // 不会，所以这里显式再收一次（幂等）。
+      if (controller_) {
+        RECT rc;
+        GetClientRect(hwnd_, &rc);
+        controller_->put_Bounds(rc);
+      }
+      if (composition_active_) {
+        if (dcomp_device_ != nullptr) {
+          dcomp_device_->Commit();
+        }
+      } else {
+        // 圆角区域的直径按 DPI 算（ApplyRoundedRegion），换屏必须重算。
+        ApplyRoundedRegion();
+      }
+      return 0;
+    }
     case WM_ENTERSIZEMOVE:
       // Phase C（弹窗尺寸精细化 2026-07-13）— 进入模态 move/size 循环（面板拖动/调整，
       // 或 —— Phase C 起 —— 瞬态覆盖窗拖右下角 grip）。瞬态窗平时按 shell 卡矩形裁剪
