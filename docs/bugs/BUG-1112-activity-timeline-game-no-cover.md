@@ -1,4 +1,4 @@
-## BUG-1111 · 活动时间轴游戏条目只有图标没有封面
+## BUG-1112 · 活动时间轴游戏条目只有图标没有封面
 - **报告**：2026-07-26（用户：「活动里面没有封面，名字也不一样」）
 - **真实性**：✅ 真 bug，且是**写死的**，不是取图失败：
   - `hibiki/lib/src/pages/implementations/home_dashboard_page.dart` 的 `_activityLeading`（修复前）只有 `kActivityMediaVideo` 与 `kActivityMediaBook` 两个封面分支，游戏落到末尾的回退分支。该函数自己的注释就写明「查不到（已删/远端 display-only 行/**游戏**/导入无封面）回退原类型图标」——游戏是被显式列进回退清单的。
@@ -9,4 +9,4 @@
 - **备注**：
   - 测试必须用**真实可解码**的文件——`Image.file` 对不存在或损坏的文件走 errorBuilder，断言不到 `FileImage`。
   - 真机复测（时间轴实际渲染）待补。
-  - 同批：[BUG-1110](BUG-1110-dashboard-continue-recent-missing-games.md)、[BUG-1112](BUG-1112-galgame-no-tags.md)。
+  - 同批：[BUG-1111](BUG-1111-dashboard-continue-recent-missing-games.md)、[BUG-1113](BUG-1113-galgame-no-tags.md)。

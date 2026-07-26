@@ -533,7 +533,7 @@ void main() {
     );
   });
 
-  /// BUG-1110/BUG-1111 公共装配：塞一个游戏行；[playedAt] 非空则再塞一条游玩会话
+  /// BUG-1111/BUG-1112 公共装配：塞一个游戏行；[playedAt] 非空则再塞一条游玩会话
   /// （仓储的 lastPlayedMs 由 `galgame_sessions` 现算，不是 `galgames` 上的列）。
   Future<void> seedGame({
     required String id,
@@ -561,7 +561,7 @@ void main() {
     }
   }
 
-  testWidgets('BUG-1110：玩过的游戏进「继续」区，且「游戏」筛选档只留游戏', (WidgetTester tester) async {
+  testWidgets('BUG-1111：玩过的游戏进「继续」区，且「游戏」筛选档只留游戏', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -616,7 +616,7 @@ void main() {
     expect(find.text('某视频'), findsNothing);
   });
 
-  testWidgets('BUG-1110：新添加的游戏进「最近添加」（类型 · 相对时间）', (WidgetTester tester) async {
+  testWidgets('BUG-1111：新添加的游戏进「最近添加」（类型 · 相对时间）', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -637,7 +637,7 @@ void main() {
     );
   });
 
-  testWidgets('BUG-1111：活动时间轴的游戏条目渲染封面，不再只有回退图标', (WidgetTester tester) async {
+  testWidgets('BUG-1112：活动时间轴的游戏条目渲染封面，不再只有回退图标', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -675,7 +675,7 @@ void main() {
       (Widget w) => w is Image && w.image is FileImage,
     );
     expect(fileImages, findsWidgets,
-        reason: '游戏活动条应渲染 galgames.coverPath 封面（BUG-1111）');
+        reason: '游戏活动条应渲染 galgames.coverPath 封面（BUG-1112）');
   });
 
   /// 合集 Next-Up 三态的公共装配：合集「进击的巨人」+ 两集独立行 E1/E2。
@@ -978,7 +978,7 @@ void main() {
   });
 }
 
-/// 1x1 透明 PNG：BUG-1111 需要一个**真实可解码**的封面文件（`Image.file` 对不存在
+/// 1x1 透明 PNG：BUG-1112 需要一个**真实可解码**的封面文件（`Image.file` 对不存在
 /// 或损坏的文件走 errorBuilder，断言不到 FileImage）。
 const List<int> _kOnePixelPng = <int>[
   0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
