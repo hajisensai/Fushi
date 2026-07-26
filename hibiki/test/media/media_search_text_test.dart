@@ -81,6 +81,40 @@ void main() {
     });
   });
 
+  group('filterByMediaSearch（G6：泛型列表筛选，三个漏网搜索框共用）', () {
+    test('空/纯空白查询原样返回（同一 List 实例，不重建）', () {
+      final List<String> items = <String>['a', 'b'];
+      expect(
+          identical(filterByMediaSearch(items, '', (String s) => [s]), items),
+          isTrue);
+      expect(
+          identical(
+              filterByMediaSearch(items, ' 　 ', (String s) => [s]), items),
+          isTrue);
+    });
+
+    test('按归一化口径过滤：片假名/全角差异不挡命中', () {
+      final List<String> items = <String>['フェイト', 'ＦＡＴＥ', 'unrelated'];
+      expect(filterByMediaSearch(items, 'ふぇいと', (String s) => [s]),
+          <String>['フェイト']);
+      expect(filterByMediaSearch(items, 'fate', (String s) => [s]),
+          <String>['ＦＡＴＥ']);
+    });
+
+    test('多标题任一命中即留', () {
+      final List<List<String>> items = <List<String>>[
+        <String>['原名', 'alias-hit'],
+        <String>['原名2', '别名2'],
+      ];
+      expect(
+        filterByMediaSearch(items, 'aliashit', (List<String> t) => t),
+        <List<String>>[
+          <String>['原名', 'alias-hit'],
+        ],
+      );
+    });
+  });
+
   test('游戏侧 normalizeGalgameSearchText 委托后与共享实现逐字符一致', () {
     for (final String s in <String>[
       'Fate／stay night',

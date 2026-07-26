@@ -59,6 +59,25 @@ bool matchesMediaSearch({
   return false;
 }
 
+/// 泛型列表筛选：按 [matchesMediaSearch] 同一口径过滤 [items]（G6：mokuro.moe
+/// 在线目录 / jimaku 字幕 / 字体筛选三个搜索框此前是裸
+/// `toLowerCase().contains`，同一批日文标题在库页能搜到、在这些框搜不到）。
+/// 空/纯空白查询原样返回。纯函数，便于单测。
+///
+/// [titles] 返回该条目的全部可搜文案（文件名 / 系列名 / 别名…），任一命中即留。
+List<T> filterByMediaSearch<T>(
+  List<T> items,
+  String query,
+  Iterable<String> Function(T) titles,
+) {
+  final String needle = normalizeMediaSearchText(query);
+  if (needle.isEmpty) return items;
+  return items
+      .where((T it) => titles(it)
+          .any((String t) => normalizeMediaSearchText(t).contains(needle)))
+      .toList(growable: false);
+}
+
 /// 归一化时丢弃的字符：空白 + 常见分隔/装饰标点（含日文全角标点）。
 bool _isDroppedSearchChar(String ch, int code) {
   if (code <= 0x20) return true; // 控制字符与空格

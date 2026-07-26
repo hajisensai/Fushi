@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
+import 'package:hibiki/src/media/media_search_text.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_volume_downloader.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
@@ -142,11 +143,10 @@ class _MokuroMoeCatalogDialogState
 
   List<MokuroMoeSeries> get _filteredSeries {
     final List<MokuroMoeSeries> all = _library ?? const <MokuroMoeSeries>[];
-    final String q = _query.trim().toLowerCase();
-    if (q.isEmpty) return all;
-    return all
-        .where((MokuroMoeSeries s) => s.name.toLowerCase().contains(q))
-        .toList();
+    // G6：与库页搜索同一归一化口径——「ふぇいと」要能命中「フェイト」，此前
+    // 裸 toLowerCase 子串让同一批日文标题在书架能搜到、在这里搜不到。
+    return filterByMediaSearch(
+        all, _query, (MokuroMoeSeries s) => <String>[s.name]);
   }
 
   void _openSeries(MokuroMoeSeries series) {
