@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:hibiki/src/media/media_search_text.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
 import 'package:hibiki/src/media/video/jimaku_client.dart';
+import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
 
 /// 一条可下载的 Jimaku 字幕候选：所属条目名 + 文件。
@@ -149,7 +150,8 @@ class JimakuSubtitleDialog extends StatefulWidget {
   State<JimakuSubtitleDialog> createState() => _JimakuSubtitleDialogState();
 }
 
-class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
+class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
+    with HibikiPagePlaceholders<JimakuSubtitleDialog> {
   late final TextEditingController _apiKeyCtrl =
       TextEditingController(text: widget.initialApiKey);
   late final TextEditingController _queryCtrl =
@@ -569,7 +571,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
   /// 滚动，保留 BUG-279 不变量。
   Widget _buildResultsArea(ThemeData theme) {
     if (_searching) {
-      return const Center(child: CircularProgressIndicator());
+      return buildLoading();
     }
     if (_searched && _candidates.isEmpty) {
       return Center(

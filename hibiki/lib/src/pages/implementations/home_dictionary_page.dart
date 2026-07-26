@@ -47,10 +47,11 @@ class HomeDictionaryPage extends BaseTabPage {
   final ValueNotifier<int>? focusSignal;
 
   @override
-  BaseTabPageState<BaseTabPage> createState() => _HomeDictionaryPageState();
+  BaseTabPageState<HomeDictionaryPage> createState() =>
+      _HomeDictionaryPageState();
 }
 
-class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
+class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     with DictionaryPageMixin
     implements HomeDictionarySearchDebug {
   @override
@@ -119,8 +120,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
     appModelNoUpdate.dictionaryEntriesNotifier
         .addListener(_onDictionaryEntriesChanged);
     _searchFocusNode.addListener(_onFocusChanged);
-    final HomeDictionaryPage w = widget as HomeDictionaryPage;
-    w.focusSignal?.addListener(_onFocusSignal);
+    widget.focusSignal?.addListener(_onFocusSignal);
     DesktopLookupService.instance.addListener(_onDesktopLookupPending);
     // TODO-1394 方案B：恢复 1385（BUG-700）的页级引用计数生命周期——本页挂载时
     // start()、卸载时 stop()（受 desktopClipboardEnabled 门控）；跨 600px 断点重建时
@@ -264,8 +264,7 @@ class _HomeDictionaryPageState<T extends BaseTabPage> extends BaseTabPageState
 
   @override
   void dispose() {
-    final HomeDictionaryPage w = widget as HomeDictionaryPage;
-    w.focusSignal?.removeListener(_onFocusSignal);
+    widget.focusSignal?.removeListener(_onFocusSignal);
     DesktopLookupService.instance.removeListener(_onDesktopLookupPending);
     // TODO-1394 方案B：恢复 1385 页级 stop（refcount -1）。app 级 hold 仍保 watcher 在
     // tab 卸载后为剪贴板独立面板/瞬态去向运行（见 initState）。BUG-1020：stop 与本页自己

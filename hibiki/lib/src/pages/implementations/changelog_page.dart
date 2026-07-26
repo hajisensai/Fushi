@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
 
 /// 「查看更新日志」页（TODO-1310）：应用内在线拉取本仓库全部 GitHub releases，
@@ -30,7 +31,8 @@ class ChangelogPage extends StatefulWidget {
   State<ChangelogPage> createState() => _ChangelogPageState();
 }
 
-class _ChangelogPageState extends State<ChangelogPage> {
+class _ChangelogPageState extends State<ChangelogPage>
+    with HibikiPagePlaceholders<ChangelogPage> {
   bool _loading = true;
   List<Map<String, dynamic>> _releases = const <Map<String, dynamic>>[];
 
@@ -88,7 +90,7 @@ class _ChangelogPageState extends State<ChangelogPage> {
 
   Widget _buildBody(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return buildLoading();
     }
     if (_releases.isEmpty) {
       return _ChangelogEmptyState(

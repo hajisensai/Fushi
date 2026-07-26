@@ -65,8 +65,14 @@ void main() {
 
   test('BUG-992/818: 保活的书架/视频页必须监听 tab 信号，切回时自动重拉远端', () {
     // 保活 → initState 只跑一次 → 远端列表不会因切回而重拉（本文件顶注释所述）。
-    // 补偿：两页各监听全局 homeShellTabNotifier，切回自己的 tab 时重拉远端一次，
-    // 否则别的设备新增/首载失败的远端条目要用户手动下拉才出来（BUG-992 书架 / BUG-994 视频）。
+    // 补偿：切回自己的 tab 时重拉远端一次，否则别的设备新增/首载失败的远端条目要
+    // 用户手动下拉才出来（BUG-992 书架 / BUG-994 视频）。
+    //
+    // 视频侧（BUG-994）：homeShellTabNotifier 监听三件套已收口到
+    // BaseModuleTabPageState（shellTab / onTabActivated，审计 Phase 3.6），视频页
+    // 只声明覆写；守卫改锁「基类接线（含 dispose 防泄漏）+ 页面覆写」两半。
+    final String moduleTabSrc =
+        File('lib/src/pages/base_module_tab_page.dart').readAsStringSync();
     final String videoSrc =
         File('lib/src/pages/implementations/home_video_page.dart')
             .readAsStringSync();
@@ -74,12 +80,15 @@ void main() {
         File('lib/src/pages/implementations/reader_hibiki_history_page.dart')
             .readAsStringSync();
 
-    expect(videoSrc.contains('homeShellTabNotifier.addListener'), isTrue,
-        reason: 'BUG-994：视频页必须监听 tab 信号');
-    expect(videoSrc.contains('homeShellTabNotifier.removeListener'), isTrue,
-        reason: 'BUG-994：视频页 dispose 必须移除监听（防泄漏）');
-    expect(RegExp(r'HomeTab\.video').hasMatch(videoSrc), isTrue,
-        reason: 'BUG-994：切回视频 tab（HomeTab.video）才重拉');
+    expect(moduleTabSrc.contains('homeShellTabNotifier.addListener'), isTrue,
+        reason: 'BUG-994：模块 tab 基类必须监听 tab 信号');
+    expect(moduleTabSrc.contains('homeShellTabNotifier.removeListener'), isTrue,
+        reason: 'BUG-994：模块 tab 基类 dispose 必须移除监听（防泄漏）');
+    expect(RegExp(r'HomeTab get shellTab => HomeTab\.video').hasMatch(videoSrc),
+        isTrue,
+        reason: 'BUG-994：视频页必须声明 shellTab = HomeTab.video（切回才重拉）');
+    expect(videoSrc.contains('void onTabActivated()'), isTrue,
+        reason: 'BUG-994：视频页必须覆写 onTabActivated 重拉远端');
 
     expect(bookSrc.contains('homeShellTabNotifier.addListener'), isTrue,
         reason: 'BUG-992：书架页必须监听 tab 信号');

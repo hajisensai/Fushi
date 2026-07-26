@@ -27,6 +27,7 @@ import 'package:hibiki/src/media/source_library/source_library_scanner.dart';
 import 'package:hibiki/src/sync/ftp_sync_backend.dart';
 import 'package:hibiki/src/sync/sftp_sync_backend.dart';
 import 'package:hibiki/src/sync/webdav_sync_backend.dart';
+import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -42,7 +43,8 @@ class MediaSourcesDialog extends ConsumerStatefulWidget {
   ConsumerState<MediaSourcesDialog> createState() => _MediaSourcesDialogState();
 }
 
-class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
+class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog>
+    with HibikiPagePlaceholders<MediaSourcesDialog> {
   /// null = 仍在加载；非 null = 已加载（可能为空列表）。
   List<SourceLibraryRow>? _rows;
 
@@ -167,12 +169,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
   Widget _buildBody(HibikiDesignTokens tokens) {
     final List<SourceLibraryRow>? rows = _rows;
     if (rows == null) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return buildLoading(padding: const EdgeInsets.all(24));
     }
     if (rows.isEmpty) {
       return Center(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
 
 /// 编辑「单个本地音频库」的子来源：拖拽调整优先级顺序 + 逐源启用/禁用。
@@ -42,7 +43,8 @@ class LocalAudioSourcesDialog extends StatefulWidget {
       _LocalAudioSourcesDialogState();
 }
 
-class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog> {
+class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog>
+    with HibikiPagePlaceholders<LocalAudioSourcesDialog> {
   List<LocalAudioSourcePref>? _prefs; // null = 仍在枚举
 
   @override
@@ -120,12 +122,7 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog> {
   Widget _buildBody(HibikiDesignTokens tokens) {
     final List<LocalAudioSourcePref>? prefs = _prefs;
     if (prefs == null) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return buildLoading(padding: const EdgeInsets.all(24));
     }
     if (prefs.isEmpty) {
       return Center(

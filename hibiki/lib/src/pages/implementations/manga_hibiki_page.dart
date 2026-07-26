@@ -1534,7 +1534,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       );
     }
     if (_bookRow == null || _imagesDir == null || _payload == null) {
-      return const Center(child: CircularProgressIndicator());
+      return buildLoading();
     }
     // 平台无关的「内容已加载」标记：非 Linux 是原生 WebView，Linux 是无后端占位
     // （`manga_webview` key 仅存在于前者，随宿主平台变化）。加载成功的普适可观察

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
 
 /// BUG-763/766「制卡·选择句子上下文」**app 原生顶层对话框**。
@@ -41,7 +42,8 @@ class SentenceContextDialog extends StatefulWidget {
   State<SentenceContextDialog> createState() => _SentenceContextDialogState();
 }
 
-class _SentenceContextDialogState extends State<SentenceContextDialog> {
+class _SentenceContextDialogState extends State<SentenceContextDialog>
+    with HibikiPagePlaceholders<SentenceContextDialog> {
   List<String> _prev = const <String>[];
   List<String> _next = const <String>[];
   String _current = '';
@@ -321,10 +323,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog> {
       content: SizedBox(
         width: 460,
         child: _loading
-            ? const SizedBox(
-                height: 80,
-                child: Center(child: CircularProgressIndicator()),
-              )
+            ? SizedBox(height: 80, child: buildLoading())
             : Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,

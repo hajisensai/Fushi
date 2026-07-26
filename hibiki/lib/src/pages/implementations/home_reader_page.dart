@@ -7,10 +7,10 @@ class HomeReaderPage extends BaseTabPage {
   const HomeReaderPage({super.key});
 
   @override
-  BaseTabPageState<BaseTabPage> createState() => _HomeReaderPageState();
+  BaseTabPageState<HomeReaderPage> createState() => _HomeReaderPageState();
 }
 
-class _HomeReaderPageState<T extends BaseTabPage> extends BaseTabPageState {
+class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
   @override
   MediaType get mediaType => ReaderMediaType.instance;
 }

@@ -171,7 +171,8 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
         ),
       ],
       body: _loading
-          ? buildLoading()
+          // BasePage 家族历史样式（25×25 主色圈），参数化保留、视觉不变。
+          ? buildLoading(size: 25, color: theme.colorScheme.primary)
           : _error != null
               ? buildError(error: _error)
               : !_hasData

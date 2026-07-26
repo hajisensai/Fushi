@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
-import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 
 /// A page template which assumes use of [BasePageState] by which all pages
 /// in the app will conveniently share base functionality.
@@ -19,7 +19,8 @@ abstract class BasePage extends ConsumerStatefulWidget {
 /// A base class for providing all pages in the app with a collection
 /// of shared functions and variables. In large part, this was implemented to
 /// define shortcuts for common lengthy methods across UI code.
-abstract class BasePageState<T extends BasePage> extends ConsumerState<T> {
+abstract class BasePageState<T extends BasePage> extends ConsumerState<T>
+    with HibikiPagePlaceholders<T> {
   late final AppModel _cachedAppModel;
   late final CreatorModel _cachedCreatorModel;
 
@@ -63,44 +64,8 @@ abstract class BasePageState<T extends BasePage> extends ConsumerState<T> {
   // from State). Subclasses must provide it; a missing override is now a
   // compile error instead of a runtime UnimplementedError (HBK-AUDIT-036).
 
-  /// Standard error message for use across the application.
-  /// General widget for showing an error or a retry screen.
-  ///
-  /// 主文案是通用错误提示（i18n），原始异常串降级为折叠 detail（此前直接
-  /// `'$error'` 上屏，用户看到的是 SqliteException(...) 原文）；调用方传了
-  /// [refresh] 就渲染重试按钮（此前该参数被静默丢弃，页面没有任何恢复入口）。
-  Widget buildError({
-    Object? error,
-    StackTrace? stack,
-    Function()? refresh,
-  }) {
-    return Center(
-      child: HibikiPlaceholderMessage(
-        icon: Icons.error_outline,
-        message: t.error_load_failed,
-        detail: error != null ? '$error' : null,
-        action: refresh != null
-            ? FilledButton.tonalIcon(
-                onPressed: () => refresh(),
-                icon: const Icon(Icons.refresh),
-                label: Text(t.retry),
-              )
-            : null,
-      ),
-    );
-  }
-
-  /// Standard loading circle for use across the application.
-  Widget buildLoading() {
-    return Center(
-      child: SizedBox(
-        height: 25,
-        width: 25,
-        child: adaptiveIndicator(
-          context: context,
-          color: theme.colorScheme.primary,
-        ),
-      ),
-    );
-  }
+  // buildError / buildLoading 已提为 [HibikiPagePlaceholders] mixin（审计
+  // §1-K「页面骨架两套」）：自立骨架页不必挂 BasePage 也能复用同一份占位。
+  // BasePage 家族历史的 25×25 主色加载圈由各调用点以
+  // `buildLoading(size: 25, color: theme.colorScheme.primary)` 保留。
 }

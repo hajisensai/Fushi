@@ -473,7 +473,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                         );
                       },
                     ),
-                    loading: () => buildLoading(),
+                    // BasePage 家族历史样式（25×25 主色圈），参数化保留、视觉不变。
+                    loading: () => buildLoading(
+                        size: 25, color: theme.colorScheme.primary),
                   ),
                 ),
                 if (_selectionMode) _buildBatchActionBar(),

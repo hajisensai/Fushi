@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/src/epub/book_css_repository.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
 
 class BookCssEditorPage extends ConsumerStatefulWidget {
@@ -15,7 +16,8 @@ class BookCssEditorPage extends ConsumerStatefulWidget {
   ConsumerState<BookCssEditorPage> createState() => _BookCssEditorPageState();
 }
 
-class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage> {
+class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
+    with HibikiPagePlaceholders<BookCssEditorPage> {
   late BookCssRepository _repo;
   List<CssFileEntry> _entries = [];
   int _selectedIndex = 0;
@@ -290,7 +292,7 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage> {
     if (_loading) {
       return HibikiToolScaffold(
         title: t.book_css_editor_title,
-        body: const Center(child: CircularProgressIndicator()),
+        body: buildLoading(),
       );
     }
     if (_entries.isEmpty) {
