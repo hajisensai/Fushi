@@ -1,8 +1,10 @@
 ## BUG-1116 · Bangumi 小说/漫画阅读进度未按语义切换在读与读过
 - **报告**：2026-07-27（用户：番剧状态语义修复后，要求小说部分同样支持）
-- **真实性**：✅ 真 bug。`hibiki/lib/src/media/tracking/media_tracking_service.dart:635` 修复前只有 `outbox.completed` 才尝试切「读过」，任何未完成阅读都不会把已有「想读 / 搁置 / 抛弃」切为「在读」；volume 模式又把“当前本地卷读完”直接当成“整个 Bangumi 条目读完”，多卷小说/漫画会过早变成「读过」。此外，已清空 outbox 的历史阅读位置没有补偿路径。
-- **[x] ① 已修复** — `hibiki/lib/src/media/tracking/media_tracking_service.dart:229` 在卷模式开始阅读时只上报此前已读卷；`:635` 让 chapter 模式整本完成才切「读过」、volume 模式按 Bangumi 总卷数判断最后一卷，其余阅读事件统一切「在读」，既有「读过」不降级。`hibiki/lib/src/media/tracking/bangumi_api_client.dart:271` 通过官方 `GET /v0/subjects/{subject_id}` 读取 `volumes`；`hibiki/lib/src/media/tracking/media_tracking_repository.dart:322` 与 service `:476` 从历史阅读位置/完成标记增量恢复可靠事件，更换 token 时重置独立校正水位。
-- **[x] ② 已加自动化测试** — `hibiki/test/media/tracking/media_tracking_service_test.dart:455` 覆盖首章未结束即想读→在读，`:484` 覆盖既有读过不降级，`:514` 覆盖完成中间卷仍在读，`:554` 覆盖最后一卷→读过，`:594` 覆盖 outbox 已清空的历史小说进度恢复；`hibiki/test/media/tracking/bangumi_api_client_test.dart:81` 覆盖官方条目详情的章节/卷数解析。
+- **真实性**：✅ 真 bug。第一阶段修复前只有 `outbox.completed` 才尝试切「读过」，未完成阅读不会把已有「想读 / 搁置 / 抛弃」切为「在读」；volume 模式又把“当前本地卷读完”误当成“整个 Bangumi 条目读完”。继续实测后还确认了四个独立问题：Bangumi 的书籍搜索会同时返回同名小说与漫画、`… 01 (MFブックス)` 这种真实书名无法提取卷号、只同步 `ep_status` 或 `vol_status` 会丢失另一维进度、EPUB spine 文件数也不等于逻辑章节数。
+- **[x] ① 状态语义已修复** — `hibiki/lib/src/media/tracking/media_tracking_service.dart:250` 在卷模式开始阅读时只上报此前已读卷；`:744` 让章节伴随映射只更新 `ep_status`，主卷映射只更新 `vol_status` 并决定收藏状态。开始阅读会把「想读 / 搁置 / 抛弃」切为「在读」，到达 Bangumi 最后一章或最后一卷才切「读过」，既有「读过」不会因重读早期内容降级。`:525` 将同一阅读事件追加的章、卷任务收拢到一个同步链，避免队列尚未排空时后台同步提前结束。
+- **[x] ② 小说章/卷双进度与自动映射已修复** — `hibiki/lib/src/media/tracking/media_tracking_service.dart:41` 支持裸卷号及尾随出版社括号，`:64` 按 platform 区分同名小说和漫画，`:384` 为多卷小说自动维护内部章节伴随映射；跳卷时无法证明累计章节基线则不猜测 `ep_status`。`hibiki/lib/src/media/tracking/media_tracking_repository.dart:95` 按 EPUB TOC 估算已完成逻辑章节，`:338` 从阅读位置恢复章节进度；设置页隐藏内部伴随映射，删除主映射会一并删除它。实现提交：`fee70fa4f`。
+- **[x] ③ 已加自动化测试** — `hibiki/test/media/tracking/media_tracking_service_test.dart:455` 覆盖想读→在读，`:484` 覆盖读过不降级，`:514` 覆盖完成中间卷仍在读，`:554` 覆盖最后一卷→读过，`:594` 覆盖历史位置恢复，`:754` 覆盖真实 `01 (MFブックス)` 格式、同名小说/漫画筛选及章/卷双写，`:894` 覆盖漫画卷进度，`:957` 覆盖仍有歧义时拒绝自动映射；`hibiki/test/media/tracking/media_tracking_repository_test.dart:17` 与 `:43` 覆盖 TOC 逻辑章节计数。
 - **备注**：
-  - 当前真实库没有 `media_type='book'` 的 Bangumi 映射，因此本轮没有可直接写入真实账号的小说候选；不为测试凭空创建映射，避免污染用户收藏。
-  - Windows debug 应用已通过 Computer Use 启动到现有小说阅读页；启动校正水位已写入，小说映射与待同步队列均为 0，没有产生意外的远端写入。
+  - 用户明确允许污染真实 Bangumi 收藏。用本地《無職転生 ～異世界行ったら本気だす～ 01 (MFブックス)》自动匹配官方小说条目 `101114`（262 章 / 26 卷），Computer Use 在 Windows Debug App 中打开阅读器并翻页后，真实远端从「想读」变为「在读」，逻辑章节进度为 11、卷进度为 0。
+  - 对真实收藏逐一设置并由 App 启动同步验证：「搁置」→「在读」、「抛弃」→「在读」；已有「读过」保持「读过」，不会因第 1 卷局部进度降级。最终用可靠队列完成到 `type=2 / ep_status=262 / vol_status=26`，待同步队列为 0。
+  - 最终提交重建后再次通过 Computer Use 打开第 1 卷并翻页，远端仍保持「读过 / 262 章 / 26 卷」，证明完成态不会被早期卷重读降级；按用户授权保留该真实收藏终态，不恢复测试前状态。
