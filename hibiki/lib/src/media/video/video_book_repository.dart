@@ -12,6 +12,7 @@ import 'package:hibiki/src/media/video/external_video.dart'
 import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart'
     show ScrapeInfoboxEntry, ScrapeMetadata, ScrapeSource, ScrapeTag;
+import 'package:hibiki/src/media/video/video_path_migration.dart';
 import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -385,6 +386,55 @@ class VideoBookRepository {
           ? const Value.absent()
           : Value<String?>(subtitleSource),
     ));
+  }
+
+  /// TODO-1961-d：把库里落在 [fromPath] 下的路径整体重映射到 [toPath]，
+  /// 返回实际改动的行数。
+  ///
+  /// 引擎侧改名 / 移动（TODO-1961-c）之后必须**立刻**调这个 —— 两件事成对完成，
+  /// 缺一即断：只改引擎 = 做种保住了但库里全是死路径；只改库 = 库对了但引擎按
+  /// 旧路径读盘，做种当场断。
+  ///
+  /// 三列（videoPath / subtitleSource / secondarySubtitleSource）各自判断，
+  /// 哨兵值（`embedded:<n>` / `off:`）与流媒体 URL 一律不动，规则见
+  /// [remapVideoBookPaths]。整批在一个事务里写，中途失败不会留下改了一半的库。
+  Future<int> migrateMediaPaths({
+    required String fromPath,
+    required String toPath,
+  }) async {
+    if (fromPath.trim().isEmpty || toPath.trim().isEmpty) return 0;
+    final List<VideoBookRow> rows = await _db.allVideoBooks();
+    final Map<String, VideoPathRemap> pending = <String, VideoPathRemap>{};
+    for (final VideoBookRow row in rows) {
+      final VideoPathRemap remap = remapVideoBookPaths(
+        videoPath: row.videoPath,
+        subtitleSource: row.subtitleSource,
+        secondarySubtitleSource: row.secondarySubtitleSource,
+        fromPath: fromPath,
+        toPath: toPath,
+      );
+      if (!remap.isEmpty) pending[row.bookUid] = remap;
+    }
+    if (pending.isEmpty) return 0;
+    await _db.transaction(() async {
+      for (final MapEntry<String, VideoPathRemap> entry in pending.entries) {
+        final VideoPathRemap remap = entry.value;
+        await (_db.update(_db.videoBooks)
+              ..where((tbl) => tbl.bookUid.equals(entry.key)))
+            .write(VideoBooksCompanion(
+          videoPath: remap.videoPath == null
+              ? const Value.absent()
+              : Value<String>(remap.videoPath!),
+          subtitleSource: remap.subtitleSource == null
+              ? const Value.absent()
+              : Value<String?>(remap.subtitleSource),
+          secondarySubtitleSource: remap.secondarySubtitleSource == null
+              ? const Value.absent()
+              : Value<String?>(remap.secondarySubtitleSource),
+        ));
+      }
+    });
+    return pending.length;
   }
 
   /// 更新播放列表当前集索引（多集导航切集后持久化）。

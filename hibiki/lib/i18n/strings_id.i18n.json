@@ -2680,5 +2680,14 @@
   "download_status_queued": "Queued",
   "download_status_cancelled": "Cancelled",
   "game_waveform_select_title": "Select audio range",
-  "game_waveform_range_label": "$start - $end (selected $duration / total $total)"
+  "game_waveform_range_label": "$start - $end (selected $duration / total $total)",
+  "anime_download_relocate": "Rename / move",
+  "anime_download_relocate_rename_title": "Rename file",
+  "anime_download_relocate_move_title": "Move to folder",
+  "anime_download_relocate_hint": "Hibiki renames/moves through the download engine, so seeding is not interrupted. Renaming in Explorer can never be recovered.",
+  "anime_download_relocate_ok": "Renamed / moved; $rows library entries updated",
+  "anime_download_relocate_engine_failed": "Failed, nothing changed: $reason",
+  "anime_download_relocate_library_failed": "Files moved, but the library still points at the old path: $reason",
+  "anime_download_relocate_no_files": "This task has no files to rename yet (metadata not ready)",
+  "anime_download_relocate_pick_folder": "Choose destination folder"
 }

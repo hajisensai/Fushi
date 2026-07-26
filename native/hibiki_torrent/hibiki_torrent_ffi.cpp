@@ -117,6 +117,30 @@ struct PieceEvent {
 // 「进度提示」，丢了不影响正确性（真相在 ht_torrent_pieces 的位图里）。
 constexpr std::size_t kMaxQueuedPieceEvents = 4096;
 
+// TODO-1961-c：一次异步存储操作（改名 / 移动）的回执槽。
+//
+// `pending` 是「已发出、还没回执」；`ok` 只有在 `pending == 0` 时才有意义。
+// `detail` 成功时装新路径（move）、失败时装引擎给的错误串 —— 失败原因必须原样
+// 带回 Dart，不能吞成一个光秃秃的 false（用户要知道是「目标已存在」还是
+// 「权限不足」）。
+struct StorageOp {
+  int pending = 0;
+  bool ok = false;
+  std::string detail;
+
+  void arm() {
+    pending = 1;
+    ok = false;
+    detail.clear();
+  }
+
+  void settle(bool success, std::string message) {
+    if (pending > 0) pending--;
+    ok = success;
+    detail = std::move(message);
+  }
+};
+
 // session 句柄的真身：拥有 lt::session + 已收割待取的 alert 队列。
 //
 // TODO-1961-b：为什么必须有队列 —— `pop_alerts` 是**破坏性**的（取走即从
@@ -141,6 +165,13 @@ struct ht_session_ctx {
 
   // 本轮 save_resume_data 失败的个数（诊断用，随每轮保存清零）。
   int resume_failed = 0;
+
+  // TODO-1961-c：改名 / 移动的回执槽。两者都是**异步**的：调用只是把请求排进
+  // libtorrent，成没成只能从 file_renamed_alert / file_rename_failed_alert /
+  // storage_moved_alert / storage_moved_failed_alert 得知。同一时刻只允许一个
+  // 在飞（Dart 侧是同步 FFI 调用，天然串行），故一个槽足够，不必建队列。
+  StorageOp rename_op;
+  StorageOp move_op;
 };
 
 ht_session_ctx* as_ctx(void* session) {
@@ -196,7 +227,41 @@ void drain_alerts(ht_session_ctx* ctx) {
       ctx->resume_failed++;
       continue;
     }
+    // TODO-1961-c：改名 / 移动的回执。
+    if (const auto* fr = lt::alert_cast<lt::file_renamed_alert>(a)) {
+      ctx->rename_op.settle(true, fr->new_name());
+      continue;
+    }
+    if (const auto* rf = lt::alert_cast<lt::file_rename_failed_alert>(a)) {
+      ctx->rename_op.settle(false, rf->error.message());
+      continue;
+    }
+    if (const auto* sm = lt::alert_cast<lt::storage_moved_alert>(a)) {
+      ctx->move_op.settle(true, sm->storage_path());
+      continue;
+    }
+    if (const auto* mf = lt::alert_cast<lt::storage_moved_failed_alert>(a)) {
+      ctx->move_op.settle(false, mf->error.message());
+      continue;
+    }
   }
+}
+
+// 等一个异步存储操作落地（或超时）。挂在 wait_for_alert 上，**不** sleep 轮询。
+// 返回 true = 已落地（成没成看 op.ok）；false = 超时。
+bool await_storage_op(ht_session_ctx* ctx, const StorageOp& op, int timeout_ms) {
+  const int budget_ms = timeout_ms > 0 ? timeout_ms : 15000;
+  const std::chrono::steady_clock::time_point deadline =
+      std::chrono::steady_clock::now() + std::chrono::milliseconds(budget_ms);
+  while (op.pending > 0) {
+    const std::chrono::steady_clock::time_point now =
+        std::chrono::steady_clock::now();
+    if (now >= deadline) return false;
+    ctx->ses.wait_for_alert(
+        std::chrono::duration_cast<lt::time_duration>(deadline - now));
+    drain_alerts(ctx);
+  }
+  return true;
 }
 
 // 按小写十六进制 infohash 找种子；找不到返回无效 handle。
@@ -851,6 +916,71 @@ HT_EXPORT int ht_remove_torrent(void* session, const char* info_hash,
     return 1;
   } catch (...) {
     return 0;
+  }
+}
+
+HT_EXPORT char* ht_rename_file(void* session, const char* info_hash,
+                               int file_index, const char* new_path,
+                               int timeout_ms) {
+  if (session == nullptr) return json_error("session is null");
+  if (new_path == nullptr || *new_path == '\0') {
+    return json_error("new_path is empty");
+  }
+  if (file_index < 0) return json_error("file_index is negative");
+  try {
+    ht_session_ctx* ctx = as_ctx(session);
+    lt::torrent_handle h = find_torrent(&ctx->ses, info_hash);
+    if (!h.is_valid()) return json_error("torrent not found");
+    if (!h.torrent_file()) return json_error("no metadata");
+
+    // 先把之前可能残留的回执清掉再发，避免读到上一次的结果。
+    drain_alerts(ctx);
+    ctx->rename_op.arm();
+    h.rename_file(lt::file_index_t(file_index), std::string(new_path));
+    if (!await_storage_op(ctx, ctx->rename_op, timeout_ms)) {
+      return json_error("rename timed out");
+    }
+    if (!ctx->rename_op.ok) return json_error(ctx->rename_op.detail);
+    std::string out = "{\"ok\":true,";
+    append_json_str_field(out, "path", ctx->rename_op.detail);
+    out += '}';
+    return dup_string(out);
+  } catch (const std::exception& e) {
+    return json_error(e.what());
+  } catch (...) {
+    return json_error("unknown error in ht_rename_file");
+  }
+}
+
+HT_EXPORT char* ht_move_storage(void* session, const char* info_hash,
+                                const char* new_save_path, int timeout_ms) {
+  if (session == nullptr) return json_error("session is null");
+  if (new_save_path == nullptr || *new_save_path == '\0') {
+    return json_error("new_save_path is empty");
+  }
+  try {
+    ht_session_ctx* ctx = as_ctx(session);
+    lt::torrent_handle h = find_torrent(&ctx->ses, info_hash);
+    if (!h.is_valid()) return json_error("torrent not found");
+
+    drain_alerts(ctx);
+    ctx->move_op.arm();
+    // fail_if_exist：目标已有同名文件就**整体失败**，绝不覆盖用户数据、也绝不
+    // 「跳过已存在的、搬走其余的」留下半个内容目录。用户拿到明确错误后自己决定
+    // （libtorrent 的默认 always_replace_files 会直接覆盖，对用户数据太危险）。
+    h.move_storage(std::string(new_save_path), lt::move_flags_t::fail_if_exist);
+    if (!await_storage_op(ctx, ctx->move_op, timeout_ms)) {
+      return json_error("move timed out");
+    }
+    if (!ctx->move_op.ok) return json_error(ctx->move_op.detail);
+    std::string out = "{\"ok\":true,";
+    append_json_str_field(out, "path", ctx->move_op.detail);
+    out += '}';
+    return dup_string(out);
+  } catch (const std::exception& e) {
+    return json_error(e.what());
+  } catch (...) {
+    return json_error("unknown error in ht_move_storage");
   }
 }
 

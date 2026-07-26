@@ -117,6 +117,24 @@ class EmbeddedTorrentBackend implements TorrentBackend {
   }
 
   @override
+  Future<TorrentStorageResult> renameFile(
+    String torrentId,
+    int fileIndex,
+    String newPath,
+  ) async =>
+      _toStorageResult(_session.renameFile(torrentId, fileIndex, newPath));
+
+  @override
+  Future<TorrentStorageResult> moveStorage(
+    String torrentId,
+    String newSavePath,
+  ) async =>
+      _toStorageResult(_session.moveStorage(torrentId, newSavePath));
+
+  static TorrentStorageResult _toStorageResult(HtStorageOpResult r) =>
+      TorrentStorageResult(ok: r.ok, path: r.path, error: r.error);
+
+  @override
   void close() {
     if (_closesSession) _session.close();
   }

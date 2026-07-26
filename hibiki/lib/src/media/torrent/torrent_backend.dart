@@ -110,6 +110,44 @@ abstract interface class TorrentBackend {
   /// 列某个种子内的文件；[torrentId] 是 infohash。
   Future<List<TorrentFileEntry>> listFiles(String torrentId);
 
+  /// TODO-1961-c：给种子内的一个文件改名（[newPath] 是种子内相对路径，可含
+  /// 子目录，分隔符 `/`）。**必须走后端**而不是 `File.rename` —— 引擎按自己
+  /// 记的路径读盘上传，绕过它改名 = 当场掐断做种。
+  ///
+  /// 与本接口其它方法不同，这里返回 [TorrentStorageResult] 而不是 bool：
+  /// 失败原因（目标已存在 / 权限不足）必须能原样呈现给用户。
+  Future<TorrentStorageResult> renameFile(
+    String torrentId,
+    int fileIndex,
+    String newPath,
+  );
+
+  /// TODO-1961-c：把种子内容整体移动到 [newSavePath]。同样必须走后端。
+  /// 目标已存在同名文件时应当失败而不是覆盖用户数据。
+  Future<TorrentStorageResult> moveStorage(
+    String torrentId,
+    String newSavePath,
+  );
+
   /// 释放底层连接资源。
   void close();
+}
+
+/// 改名 / 移动的结果。失败时 [error] 必须带上可读原因（后端原文优先）。
+class TorrentStorageResult {
+  const TorrentStorageResult({required this.ok, this.path, this.error});
+
+  const TorrentStorageResult.failure(String reason)
+      : ok = false,
+        path = null,
+        error = reason;
+
+  /// 是否成功落地。
+  final bool ok;
+
+  /// 成功时的新路径（改名 = 种子内相对路径；移动 = 新的 save_path）。
+  final String? path;
+
+  /// 失败原因。调用方**必须**反馈给用户，不得静默吞掉。
+  final String? error;
 }
