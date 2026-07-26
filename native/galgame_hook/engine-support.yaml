@@ -1,0 +1,1349 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-07-23",
+  "source_baseline": {
+    "repository": "hajisensai/hibiki",
+    "document": "docs/specs/galgame-mining/engine-adapter-plan.md",
+    "section": "1. 当前真相"
+  },
+  "generated_document": "docs/engine-support.md",
+  "status_definitions": {
+    "verified": "已在真实游戏原始路径验证所列能力；只覆盖明确列出的版本与能力。",
+    "partial": "至少一条采集路径已真机验证，但仍有关键能力限制或未验证实现。",
+    "implemented_unverified": "代码已存在，但没有足够的真实游戏证据，不能宣称支持。",
+    "unavailable": "当前没有对应实现。"
+  },
+  "engines": [
+    {
+      "id": "siglus",
+      "display_name": "SiglusEngine",
+      "aliases": ["Siglus 3", "VisualArt's Siglus"],
+      "family": {
+        "id": "visualarts",
+        "relation": "VisualArt's / Key 系引擎"
+      },
+      "detection": {
+        "executable_names": {
+          "values": ["SiglusEngine.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "anemoi 正式版，hibiki handoff 2026-07-19"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x86"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "anemoi SiglusEngine 1.1.141.3"
+          }
+        },
+        "directory_files_all": {
+          "values": ["Gameexe.dat", "Scene.pck"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "renamed Siglus executable regression fixed by hibiki-hook d1601b9"
+          }
+        },
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": ["dsound.dll"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "anemoi used DirectSound through CoCreateInstance"
+          }
+        },
+        "resource_extensions": {
+          "values": [".ovk"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "anemoi koe/*.ovk entries exported byte-identically"
+          }
+        },
+        "hashes": {
+          "values": [
+            {
+              "algorithm": "sha256",
+              "scope": "game_executable",
+              "value": "D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059",
+              "version": "1.1.141.3"
+            }
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "hibiki handoff 2026-07-19"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "normal_launch_then_delayed_attach_after_game_window",
+        "attach": "supported",
+        "follow_child_processes": false,
+        "notes": [
+          "CREATE_SUSPENDED early injection can trigger Enigma Internal Protection Error.",
+          "Renamed executables use the Gameexe.dat + Scene.pck directory signature."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "engine_exact_utf16_hook",
+            "status": "implemented_unverified",
+            "verification": "The current hook contains the Siglus exact-text path, but P0 has no matching real-game evidence record."
+          },
+          {
+            "kind": "luna_hook",
+            "status": "implemented_unverified",
+            "verification": "Generic Luna integration exists; version-specific Siglus verification is not recorded in the P0 baseline."
+          }
+        ],
+        "codepage": "utf-16le for the exact engine path",
+        "thread_selection_hint": "Prefer the engine exact-text source when observed; otherwise select the stable Luna dialogue thread."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "resource_audio",
+            "format": "Ogg/Vorbis entries in koe/*.ovk",
+            "status": "verified",
+            "clean_voice": true
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "44100 Hz / stereo / signed 16-bit in the verified sample",
+            "status": "verified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "verified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "anemoi 正式版",
+          "engine_version": "SiglusEngine 1.1.141.3",
+          "architecture": "x86",
+          "executable_sha256": "D94C94EB132FB1FCD6C20F35DD16552ED1301708B7A83DE07B275AD26C97D059",
+          "verified_on": "2026-07-19",
+          "evidence": "Two OVK voice entries were exported byte-identically; delayed launch/attach and DirectSound PCM were exercised on the original path."
+        }
+      ],
+      "current_status": "verified",
+      "known_limitations": [
+        "Verification is specific to the recorded x86 sample and OVK layout.",
+        "Late attach may miss the DirectSound format; raw OVK voice remains the preferred path.",
+        "The exact-text hook is implemented but is not promoted to verified by this baseline."
+      ],
+      "adapter_path": "hook/adapters/siglus_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": [
+        "tests/siglus_ovk_test.cpp",
+        "tests/siglus_launch_test.cpp",
+        "tests/siglus_text_test.cpp"
+      ]
+    },
+    {
+      "id": "reallive",
+      "display_name": "RealLive / old VisualArt's",
+      "aliases": ["RealLive", "VisualArt's RealLive"],
+      "family": {
+        "id": "visualarts",
+        "relation": "older sibling of the verified Siglus OVK path"
+      },
+      "detection": {
+        "executable_names": {"values": [], "evidence": null},
+        "pe_architectures": {"values": [], "evidence": null},
+        "directory_files_all": {"values": [], "evidence": null},
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {"values": [], "evidence": null},
+        "resource_extensions": {
+          "values": [".ovk"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "anemoi VisualArt's/Siglus koe/*.ovk proves the shared container path only; it is not RealLive compatibility evidence"
+          }
+        },
+        "hashes": {"values": [], "evidence": null}
+      },
+      "process_strategy": {
+        "launch": "profile_pending_real_sample",
+        "attach": "generic_attach_available",
+        "follow_child_processes": false,
+        "notes": [
+          "No executable or directory signature is enabled until measured from a real RealLive sample.",
+          "The generic OVK file hook can observe a strictly validated container without turning that observation into an engine identity claim."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_hook",
+            "status": "implemented_unverified",
+            "verification": "A RealLive dialogue-thread fixture and real sample are still required."
+          }
+        ],
+        "codepage": "game-specific",
+        "thread_selection_hint": "Select a stable RealLive/Luna dialogue thread after real-sample probing."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "visual_arts_ovk_resource",
+            "format": "strict u32 count + 16-byte entries + complete Ogg/EOS",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
+            "kind": "xaudio2_or_directsound_pcm",
+            "format": "generic source PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "Format sharing with verified Siglus OVK is not evidence that a RealLive title is compatible.",
+        "NWK/KOE/NWA remain unevaluated because no real old VisualArt's sample is available; no parser or support claim is added for them.",
+        "A real original-path run must add executable/module hashes, text-thread evidence and byte-identity proof before promotion."
+      ],
+      "adapter_path": "hook/adapters/reallive_adapter.inc",
+      "fixture_paths": ["tests/fixtures/reallive_replay.json"],
+      "test_paths": ["tests/reallive_adapter_test.cpp"]
+    },
+    {
+      "id": "kirikiri_z",
+      "display_name": "KiriKiri2 / KiriKiriZ",
+      "aliases": ["吉里吉里2", "Kirikiri 2", "吉里吉里Z", "Kirikiri Z"],
+      "family": {"id": "kirikiri", "relation": "KiriKiri family"},
+      "detection": {
+        "executable_names": {
+          "values": ["otomeki.exe", "isekai-elf-sample.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "otomeki.exe KiriKiriZ run (2026-07-18) and official BABEL KiriKiri2 experience version run (2026-07-23)"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x86"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Both recorded KiriKiriZ and KiriKiri2 samples are x86"
+          }
+        },
+        "directory_files_all": {"values": [], "evidence": null},
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": ["dsound.dll", "wuvorbis.dll"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "DirectSound was observed in otomeki.exe; the official BABEL experience version loaded wuvorbis.dll from the KiriKiri temp plugin directory"
+          }
+        },
+        "resource_extensions": {
+          "values": [".xp3", ".ogg"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "The official BABEL experience version ships data.xp3/plugin.xp3 and opens Ogg through wuvorbis"
+          }
+        },
+        "hashes": {
+          "values": ["2280115774277789CA15760CD25E29E82560B928FC7994763F7EBEBF7461D92A"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "SHA-256 of isekai-elf-sample.exe from the developer-hosted experience version"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "limited_after_audio_device_creation",
+        "follow_child_processes": false,
+        "notes": [
+          "The verified KiriKiriZ game creates its DirectSound device during startup, so post-hoc attach misses the output object.",
+          "KiriKiri2 uses the Borland register ABI internally; the adapter hooks the stable stdcall TVPCreateIStream boundary and the wuvorbis C callback boundary instead of calling BCB C++ vtables from MSVC."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "Generic Luna plumbing exists; the P0 baseline does not record a versioned text-thread replay."
+          }
+        ],
+        "codepage": "game-specific",
+        "thread_selection_hint": "Reject metadata/per-character noise and select the stable dialogue thread manually when auto-selection is ambiguous."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "kirikiri_resource_stream",
+            "format": "TVPCreateIStream / complete Ogg from wuvorbis callbacks",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
+            "kind": "kirikiri_decoder_pcm",
+            "format": "wuvorbis / wuopus decoder output when available",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "44100 Hz / stereo / signed 16-bit in the verified sample",
+            "status": "verified",
+            "clean_voice": false
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "verified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "otomeki.exe sample",
+          "engine_version": "not recorded",
+          "architecture": "x86",
+          "executable_sha256": null,
+          "verified_on": "2026-07-18",
+          "evidence": "Hibiki launched the game through the x86 injector and read three seconds of non-silent 44100/2/16 PCM through the real shared-memory channel."
+        },
+        {
+          "name": "異世界で猫耳聖女とツンデレエルフ 体験版",
+          "engine_version": "KiriKiri2 (Borland/BCB register ABI)",
+          "architecture": "x86",
+          "executable_sha256": "2280115774277789CA15760CD25E29E82560B928FC7994763F7EBEBF7461D92A",
+          "verified_on": "2026-07-23",
+          "evidence": "Developer-hosted experience version launched under Japanese CP932; the BCB resource hook and wuvorbis open/read hooks installed, Luna connected, and non-silent 44100/2/16 decoder PCM reached shared memory. A voiced dialogue line was not traversed, so clean per-line Ogg remains unverified."
+        }
+      ],
+      "current_status": "partial",
+      "known_limitations": [
+        "The verified KiriKiriZ sample software-mixes into one DirectSound output stream, so captured PCM is equivalent to loopback and includes BGM/SE.",
+        "KiriKiri2 BCB resource and decoder hooks install on the recorded official sample, but a voiced dialogue line has not yet been traversed; clean per-line Ogg is not claimed.",
+        "The older KiriKiriZ sample executable hash and engine version were not recorded; executable name alone is not a reusable engine signature."
+      ],
+      "adapter_path": "hook/adapters/kirikiri_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": ["tests/resource_audio_ready_test.cpp"]
+    },
+    {
+      "id": "xaudio2_directsound",
+      "display_name": "XAudio2 / DirectSound generic capture",
+      "aliases": ["XAudio2", "DirectSound", "Windows source PCM"],
+      "family": {"id": "windows_audio_api", "relation": "generic audio backend"},
+      "detection": {
+        "executable_names": {"values": [], "evidence": null},
+        "pe_architectures": {
+          "values": ["x86", "x64"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "Both helper architectures build; x86 KiriKiriZ/Siglus paths were exercised on real games."
+          }
+        },
+        "directory_files_all": {"values": [], "evidence": null},
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": ["xaudio2_9.dll", "xaudio2_8.dll", "dsound.dll"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "The shipped generic adapters resolve these loaded modules; DirectSound was observed on the recorded x86 samples."
+          }
+        },
+        "resource_extensions": {"values": [], "evidence": null},
+        "hashes": {"values": [], "evidence": null}
+      },
+      "process_strategy": {
+        "launch": "create_suspended_preferred",
+        "attach": "supported_for_objects_created_after_attach",
+        "follow_child_processes": false,
+        "notes": [
+          "Early injection is required when an engine creates its only audio device/source voices during startup."
+        ]
+      },
+      "text": {
+        "capabilities": [],
+        "codepage": "not_applicable",
+        "thread_selection_hint": "Text selection belongs to the engine/Luna profile, not the audio backend."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "xaudio2_source_voice_pcm",
+            "format": "source-voice PCM",
+            "status": "verified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "directsound_buffer_pcm",
+            "format": "secondary/output buffer PCM",
+            "status": "verified",
+            "clean_voice": "engine_dependent"
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "Recorded real-game set",
+          "engine_version": "mixed",
+          "architecture": "x86 verified; x64 build covered",
+          "executable_sha256": null,
+          "verified_on": "2026-07-18/19",
+          "evidence": "The generic capture path produced non-silent PCM on the KiriKiriZ and Siglus samples; the baseline also records XAudio2 real-game verification without a versioned sample hash."
+        }
+      ],
+      "current_status": "verified",
+      "known_limitations": [
+        "A backend hit does not prove clean voice: software-mixed buffers can be equivalent to loopback.",
+        "Attach cannot retroactively hook already-created engine/source objects.",
+        "The P0 baseline does not contain a named, hashed XAudio2 sample, so compatibility must be re-verified per engine."
+      ],
+      "adapter_path": "hook/adapters/windows_audio_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": ["tests/session_reuse_test.cpp"]
+    },
+    {
+      "id": "renpy_ffmpeg",
+      "display_name": "Ren'Py / FFmpeg",
+      "aliases": ["Ren'Py", "libavcodec", "libavformat", "FFmpeg 54"],
+      "family": {"id": "renpy", "relation": "versioned FFmpeg runtime"},
+      "detection": {
+        "executable_names": {
+          "values": ["Sakura Swim Club.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Sakura Swim Club full-card run recorded in hibiki handoff 2026-07-18"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x86"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "Recorded Ren'Py sample launches a child python.exe targeted by the legacy hook"
+          }
+        },
+        "directory_files_all": {"values": [], "evidence": null},
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": ["avcodec-54.dll", "avformat-54.dll"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "The existing adapter targets the recorded legacy Ren'Py/FFmpeg runtime; the sample did not produce an adapter hit"
+          }
+        },
+        "resource_extensions": {"values": [], "evidence": null},
+        "hashes": {"values": [], "evidence": null}
+      },
+      "process_strategy": {
+        "launch": "launcher_then_scored_game_child",
+        "attach": "implemented_for_target_process_only",
+        "follow_child_processes": true,
+        "notes": [
+          "The recorded top-level executable is a launcher and the real game is a child python process.",
+          "Ren'Py directory signatures enable automatic child following; descendants are scored by python executable name and loaded avcodec/avformat modules."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "No versioned text-thread replay is recorded for the sample."
+          }
+        ],
+        "codepage": "game-specific",
+        "thread_selection_hint": "Select the child python process and its stable dialogue thread, not the launcher."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "ffmpeg_resource_event",
+            "format": "signature-checked OGG/WAV/Opus/FLAC/M4A from any versioned avformat module",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
+            "kind": "ffmpeg54_decoder_pcm",
+            "format": "libavcodec/libavformat major 54 decoded PCM",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "verified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "Sakura Swim Club",
+          "engine_version": "Ren'Py version not recorded",
+          "architecture": "x86 child python process",
+          "executable_sha256": null,
+          "verified_on": "2026-07-18",
+          "evidence": "The end-to-end card path succeeded through process loopback; the engine adapter did not hit, so this is not evidence of FFmpeg adapter compatibility."
+        }
+      ],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "Generic avformat resource capture only accepts local, standalone OGG/WAV/Opus/FLAC/M4A files; archive/custom AVIO URLs fall through to PCM or loopback.",
+        "Only the optional decoded-PCM compatibility path interprets libavcodec/libavformat major 54 hand-maintained layouts; modern majors never use those offsets.",
+        "The selected injector/DLL architecture must match the followed game child; a launcher that crosses x86/x64 still requires selecting the child's architecture upstream.",
+        "The real sample fell back to loopback; no clean decoder-level voice claim is made."
+      ],
+      "adapter_path": "hook/adapters/renpy_adapter.inc",
+      "fixture_paths": ["tests/fixtures/workflow_replay.json"],
+      "test_paths": [
+        "tests/ffmpeg_runtime_test.cpp",
+        "tests/child_process_policy_test.cpp",
+        "tests/resource_audio_ready_test.cpp"
+      ]
+    },
+    {
+      "id": "tyrano_nwjs",
+      "display_name": "TyranoScript / NW.js",
+      "aliases": ["TyranoScript 5", "TyranoBuilder", "NW.js"],
+      "family": {"id": "tyrano", "relation": "NW.js packaged TyranoScript runtime"},
+      "detection": {
+        "executable_names": {
+          "values": ["kaerimichi.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "かえりみち official free Windows release from novelgame.jp, verified 2026-07-23"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x64"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "kaerimichi.exe PE/COFF x86-64 runtime observation"
+          }
+        },
+        "directory_files_all": {
+          "values": ["resources/app.asar", "ffmpeg.dll"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official sample package layout and live module inventory"
+          }
+        },
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": ["ffmpeg.dll"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "Monolithic Chromium FFmpeg exports avformat_open_input and is loaded in the visible NW.js process"
+          }
+        },
+        "resource_extensions": {
+          "values": [".ogg", ".m4a"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "app.asar contains paired OGG/M4A voice members under data/sound/v_*"
+          }
+        },
+        "hashes": {
+          "values": [
+            "kaerimichi.exe sha256:B12A54AA1F76C7EE7308B40885ACE4534679798F79ED81909524260FB667F80D",
+            "app.asar sha256:46867519C7896B7DFB753BB3381C040970B1F0FFA226E3511751414D8E1FCED7"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Local SHA-256 of the official かえりみち Windows release, 2026-07-23"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "inject_visible_nwjs_process_before_resume",
+        "attach": "requires_attach_before_app_asar_open",
+        "follow_child_processes": false,
+        "notes": [
+          "The verified build creates renderer, GPU, network and audio-service children, but the exact ASAR voice read and clean resource export were observed in the visible root process.",
+          "Launch mode injects before resume and is the supported path; late attach cannot recover an app.asar handle that was already opened."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "The live run exposed Tyrano text in process diagnostics, but no stable production thread-selection replay was recorded."
+          }
+        ],
+        "codepage": "UTF-8/Unicode",
+        "thread_selection_hint": "Prefer a stable complete-line renderer thread; ignore CSS, resource-path and per-character noise."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "tyrano_asar_voice_resource",
+            "format": "exact signature-checked OGG/M4A member from data/sound/v_*",
+            "status": "verified",
+            "clean_voice": true
+          },
+          {
+            "kind": "ffmpeg_resource_event",
+            "format": "monolithic Chromium ffmpeg.dll avformat boundary",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "verified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "かえりみち",
+          "engine_version": "TyranoScript 5 / NW.js; package product version 1.0.1",
+          "architecture": "x64",
+          "executable_sha256": "B12A54AA1F76C7EE7308B40885ACE4534679798F79ED81909524260FB667F80D",
+          "verified_on": "2026-07-23",
+          "evidence": "Official free full-voice sample. The first voiced line exported d_a_1.ogg (58,597 bytes); SHA-256 9C94CE6BE59B788E35F299379001C50E82D55CAF02B54EB0A63B9FB4C079AAF9 exactly matched the corresponding app.asar member."
+        }
+      ],
+      "current_status": "partial",
+      "known_limitations": [
+        "Clean resource capture currently recognizes the Tyrano convention data/sound/v_* and OGG/M4A members; projects using custom voice directories or encrypted archives need another profile.",
+        "The verified build captures from the visible root process. NW.js builds that perform archive reads only in a child process still require explicit child targeting until injector-wide descendant propagation is implemented.",
+        "Audio is verified, but stable automatic Tyrano text-thread selection remains unverified."
+      ],
+      "adapter_path": "hook/adapters/tyrano_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": []
+    },
+    {
+      "id": "bgi_ethornell",
+      "display_name": "BGI / Ethornell",
+      "aliases": ["BURIKO General Interpreter", "Ethornell"],
+      "family": {"id": "bgi", "relation": "BURIKO ARC20 runtime"},
+      "detection": {
+        "executable_names": {
+          "values": ["BGI.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "AUGUST official 千の刃濤、桃花染の皇姫 Web trial, inspected 2026-07-23"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x86"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official trial BGI.exe PE/COFF static probe"
+          }
+        },
+        "directory_files_all": {
+          "values": ["BGI.exe", "BGI.hvl", "data03110.arc"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official trial package layout"
+          }
+        },
+        "pe_imports": {
+          "values": ["DSOUND.dll", "KERNEL32.dll"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official trial BGI.exe import table"
+          }
+        },
+        "runtime_modules": {"values": [], "evidence": null},
+        "resource_extensions": {
+          "values": [".arc", ".ogg"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "data03110.arc has a BURIKO ARC20 index and 146 bw-wrapped Ogg members"
+          }
+        },
+        "hashes": {
+          "values": [
+            "BGI.exe sha256:03BBBD0F98AF6C050924448070198D5DF180925819E57AD446FB9F6EC88BC2C1",
+            "data03110.arc sha256:8EB51113AD99FCB6A8AC953C25E8F25431B3590CEA0B6C50EE722E8B1D8C4162",
+            "official trial zip sha256:470FD6C7F16980F226232925AD3E6216A4A14B1E46C6B5965706296430835E4F"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Local SHA-256 of the developer-authorized DLsite trial and its BGI.exe, 2026-07-23"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "supported_before_voice_archive_open",
+        "follow_child_processes": false,
+        "notes": [
+          "The shared kernel file detour is installed before the game resumes, then only data031*.arc handles are tracked.",
+          "A pre-install live launch observed kDiagBgiArcHooksReady (hookdiag 0x01000401) before BGI.exe exited; no voice capture is inferred from readiness alone.",
+          "This official package uses an administrator-marked installer; static format proof is complete, but a post-install voiced-line run is still required."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "Generic Luna plumbing is present; no stable BGI dialogue thread has been selected on the official sample yet."
+          }
+        ],
+        "codepage": "CP932 / game-specific",
+        "thread_selection_hint": "Select a stable complete-line Luna thread after the installed game reaches dialogue."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "bgi_arc20_voice_resource",
+            "format": "complete Ogg after the 64-byte BGI bw wrapper in data031*.arc",
+            "status": "implemented_unverified",
+            "clean_voice": "not_verified"
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "generic DirectSound fallback",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "The official trial archive and BGI wrapper were measured directly, but the adapter has not yet crossed a voiced line in the installed game, so clean voice is not claimed.",
+        "The initial profile intentionally tracks data031*.arc only; BGI titles that use another archive number require measured evidence before widening the classifier.",
+        "The callback only queues bounded metadata. ARC index parsing, Ogg validation and disk output run on the hook worker."
+      ],
+      "adapter_path": "hook/adapters/bgi_ethornell_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": []
+    },
+    {
+      "id": "artemis_pfs",
+      "display_name": "Artemis Engine / PF8",
+      "aliases": ["Artemis Engine", "Artemis", "PF8"],
+      "family": {"id": "artemis", "relation": "iarsys runtime with PF6/PF8 archives"},
+      "detection": {
+        "executable_names": {
+          "values": ["アマナツ体験版.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "あざらしそふと official アマナツ trial, verified 2026-07-23"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x64"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official trial executable PE/COFF x86-64 static and live observation"
+          }
+        },
+        "directory_files_all": {
+          "values": ["iarsys64.dll", "*.pfs"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official trial portable package contains iarsys64.dll and a same-title PF8 archive"
+          }
+        },
+        "pe_imports": {
+          "values": ["DSOUND.dll", "KERNEL32.dll"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official trial executable import table"
+          }
+        },
+        "runtime_modules": {
+          "values": ["iarsys64.dll"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "Official trial launched through the x64 Hibiki injector and exposed the Artemis runtime next to the executable"
+          }
+        },
+        "resource_extensions": {
+          "values": [".pfs", ".ogg"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "PF8 index contains 797 Ogg voice members under sound/vo and sound/sysse/vo"
+          }
+        },
+        "hashes": {
+          "values": [
+            "trial executable sha256:C0C14E5215541D531AC3C68C208BB514C0EF1A36CBCA6F133872A3DDF37A92E2",
+            "trial PF8 sha256:A61E2A66056A7A9D196A8CD4D537B417D0996231103B64502FB514F0E3B8B402",
+            "official trial zip sha256:46B5BE9C24C71A3A5709312E25CEAF7E3A6638E6F5FE108C809445F2FDFED553"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Local SHA-256 of the developer-authorized official trial package, executable and PF8, 2026-07-23"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "requires_attach_before_target_pfs_open",
+        "follow_child_processes": false,
+        "notes": [
+          "The PF8 index and SHA-1 XOR key are parsed once on HookWorker before the suspended game resumes.",
+          "ReadFile callbacks only match an immutable sorted voice-range table and enqueue fixed-size metadata; file IO, decryption, Ogg validation and output run on the worker.",
+          "The live run set hookdiag 0x0c000021, including both Artemis-ready and Artemis-captured diagnostics."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "The resource-audio run disabled Luna; no stable Artemis dialogue thread is claimed."
+          }
+        ],
+        "codepage": "Unicode / game-specific",
+        "thread_selection_hint": "Select a stable complete-line dialogue thread after enabling Luna on the target title."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "artemis_pf8_voice_resource",
+            "format": "complete SHA-1-XOR-decrypted Ogg member from sound/vo or sound/sysse/vo",
+            "status": "verified",
+            "clean_voice": true
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "generic DirectSound fallback",
+            "status": "verified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "verified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "アマナツ 体験版",
+          "engine_version": "Artemis Engine PF8; title version 1.0.0",
+          "architecture": "x64",
+          "executable_sha256": "C0C14E5215541D531AC3C68C208BB514C0EF1A36CBCA6F133872A3DDF37A92E2",
+          "verified_on": "2026-07-23",
+          "evidence": "Official developer trial. Real title-screen playback exported yas_00108.ogg (17,039 bytes, SHA-256 EACCA1330C73EA131E04AC5F2456868D97F98037FC0012DFA344ED255FDF84F5) and kaz_00239.ogg (41,208 bytes, SHA-256 81FF8F2C736E514001B1CEF6BC325B4DA4DC7E8C42CFC3D4D9BFDDEE69F59CBF); both exactly matched the corresponding decrypted PF8 members."
+        }
+      ],
+      "current_status": "partial",
+      "known_limitations": [
+        "Clean capture is verified for PF8 Ogg members in sound/vo and sound/sysse/vo; PF6 parsing is implemented but lacks a real-sample playback run.",
+        "The adapter publishes the first PFS containing recognized voice entries; multi-PFS titles that split voices across archives need measured evidence before widening the implementation.",
+        "Audio is verified, but stable automatic Artemis text-thread selection remains unverified."
+      ],
+      "adapter_path": "hook/adapters/artemis_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": []
+    },
+    {
+      "id": "catsystem2",
+      "display_name": "CatSystem2 / KIF INT",
+      "aliases": ["CatSystem2", "CS2", "KIF INT"],
+      "family": {"id": "catsystem2", "relation": "ARES ADV runtime and KIF archives"},
+      "detection": {
+        "executable_names": {
+          "values": ["cs2_open.exe", "cs2.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "ARES official CatSystem2 starter kit v3.01, verified 2026-07-23"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x86"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official cs2_open.exe PE/COFF i386 static and live observation"
+          }
+        },
+        "directory_files_all": {
+          "values": ["config/startup.xml", "*.int"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official packaged starter-kit replay layout"
+          }
+        },
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {"values": [], "evidence": null},
+        "resource_extensions": {
+          "values": [".int", ".ogg"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official MakeInt.exe produced pcm_d.int with a named Ogg member that cs2_open.exe played through the pcm command"
+          }
+        },
+        "hashes": {
+          "values": [
+            "official starter zip sha256:5D6230D0B947A71737DC55BF5E282D410B35011327E8890E4DDBD520263F32D3",
+            "cs2_open.exe sha256:D1889D60DBE3350B068605F94A49AE8E93EB388CE66E7ABC36607EED2EDA7010",
+            "replay pcm_d.int sha256:B1437440DD0C9A3D92570F57C855A4F6552F22546D39C4CCF92CB1E76A94AABC"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Local SHA-256 of the official starter kit and the legally generated local replay archive, 2026-07-23"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "requires_attach_before_target_pcm_archive_open",
+        "follow_child_processes": false,
+        "notes": [
+          "All unencrypted pcm_*.int indices are parsed on HookWorker before process resume.",
+          "ReadFile callbacks only match immutable archive/range tables and enqueue fixed-size metadata; file IO, Ogg validation and output run on the worker.",
+          "The verified replay set hookdiag 0x30000001, including both CatSystem2-ready and CatSystem2-captured diagnostics."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "The resource-audio replay disabled Luna; no stable CatSystem2 dialogue thread is claimed."
+          }
+        ],
+        "codepage": "CP932 / game-specific",
+        "thread_selection_hint": "Select a stable complete-line dialogue thread after enabling Luna on a target title."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "catsystem2_unencrypted_kif_voice_resource",
+            "format": "complete Ogg member from unencrypted pcm_*.int",
+            "status": "verified",
+            "clean_voice": true
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "generic source PCM fallback; 22050 Hz mono signed 16-bit in the replay",
+            "status": "verified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "verified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "CatSystem2 入門セット v3.01 — local voice replay",
+          "engine_version": "cs2_open.exe 2.6.1.67",
+          "architecture": "x86",
+          "executable_sha256": "D1889D60DBE3350B068605F94A49AE8E93EB388CE66E7ABC36607EED2EDA7010",
+          "verified_on": "2026-07-23",
+          "evidence": "ARES official engine and MakeInt tool with a locally generated 4.183220-second TTS voice. Real pcm playback exported D0213_02_001.ogg (26,897 bytes, SHA-256 D3D7C4A1F08B2A82DB1B4E4416B257B88047A774CAD8EBB6DDFD0728A5BA9E00), exactly matching both the source and KIF member. This verifies the unencrypted developer KIF path, not encrypted commercial-title compatibility."
+        }
+      ],
+      "current_status": "partial",
+      "known_limitations": [
+        "Encrypted commercial KIF archives containing __key__.dat use title-specific Blowfish material and are deliberately rejected; no commercial-title resource-audio claim is made.",
+        "Only Ogg members in pcm_*.int are classified as voice; loose developer-mode files and non-Ogg voice formats fall back to source PCM or loopback.",
+        "Audio is verified for the official starter-kit replay, but stable automatic CatSystem2 text-thread selection remains unverified."
+      ],
+      "adapter_path": "hook/adapters/catsystem2_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": []
+    },
+    {
+      "id": "malie_libp",
+      "display_name": "Malie System / LIBP CFI",
+      "aliases": ["Malie", "Malie System", "LIBP", "CFI"],
+      "family": {
+        "id": "malie",
+        "relation": "Greenwood Malie runtime and title-keyed LIBP archives"
+      },
+      "detection": {
+        "executable_names": {
+          "values": ["malie.exe", "malie_dsp.exe", "malie_fabla.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Steam app 644540 build 21665074, verified 2026-07-23"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x86"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official malie.exe PE/COFF i386, Malie System 1.0.0.5"
+          }
+        },
+        "directory_files_all": {
+          "values": ["malie.exe", "data2.dat"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Official Steam free common-route installation"
+          }
+        },
+        "pe_imports": {
+          "values": [
+            "CreateFileA",
+            "CreateFileW",
+            "ReadFile",
+            "CreateFileMappingA",
+            "MapViewOfFile"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "malie.exe import table and live file-I/O diagnostics"
+          }
+        },
+        "runtime_modules": {"values": [], "evidence": null},
+        "resource_extensions": {
+          "values": [".dat", ".ogg"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "data2.dat contains 20,434 CFI-encrypted data\\voice\\*.ogg members"
+          }
+        },
+        "hashes": {
+          "values": [
+            "malie.exe sha256:CFDAA598422245A36B2333F1E923C8E808412D0360C86EF83D914ADF4D6EA926",
+            "data2.dat sha256:D900B788306D1F7016FDAA592D3839E0E0845529435B1E8D73931E9D3F17AB39",
+            "GARbro 1.5.44 Formats.dat sha256:6AFB3BFD04FA1CD6D4616A1D36B21B8BE6E58B9FF475462A43D370EEAC4A37C3"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Local SHA-256 of the official Steam sample and GARbro release database, 2026-07-23"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "ready_but_preloaded_voice_requires_restart",
+        "follow_child_processes": false,
+        "notes": [
+          "Steam protocol launch can expose the process after Malie has already opened and prefetched data2.dat. The verified run used the explicit --force-direct-launch option, which inherits SteamAppId/SteamGameId only into a CREATE_SUSPENDED child and preserves the default Steam strategy otherwise.",
+          "LIBP index parsing and CFI decryption run on HookWorker. ReadFile and mapped-file callbacks only resolve bounded handle metadata, match immutable ranges, and enqueue fixed-size tasks.",
+          "The verified run set hookdiag 0xC0000001 and hookio 0x00000013: startup hooks ready, Malie ready, archive handle tracked, read range observed, voice range queued, and clean voice captured."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "The resource-audio run disabled Luna; no stable Malie dialogue thread is claimed."
+          }
+        ],
+        "codepage": "CP932 / localized build dependent",
+        "thread_selection_hint": "Select a complete-line Malie dialogue thread after enabling Luna on a supported title."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "malie_libp_cfi_voice_resource",
+            "format": "complete decrypted Ogg member from title-scoped data2.dat",
+            "status": "verified",
+            "clean_voice": true
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "generic source PCM fallback",
+            "status": "verified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "verified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "Dies irae ~Amantes amentes~ — free common route",
+          "engine_version": "Malie System 1.0.0.5; Steam build 21665074",
+          "architecture": "x86",
+          "executable_sha256": "CFDAA598422245A36B2333F1E923C8E808412D0360C86EF83D914ADF4D6EA926",
+          "verified_on": "2026-07-23",
+          "evidence": "Official free Steam release. Suspended direct launch captured v_ma2056.ogg (62,028 bytes, 44.1 kHz mono Vorbis, SHA-256 4FEFD3841D465BE76DBC41566E0BC26EDBA09F189EC533C213A450FA8A777FAD), exactly matching the corresponding GARbro-decrypted data\\voice\\ma\\v_ma2056.ogg member at offset 737,280."
+        }
+      ],
+      "current_status": "partial",
+      "known_limitations": [
+        "CFI keys and rotation words are title/version specific. This implementation is deliberately limited to the measured non-HD Dies irae ~Amantes amentes~ scheme; HD, 4:3 patch, and other Malie titles require separate evidence.",
+        "Only data2.dat is classified as voice for the verified title. data1.dat BGM and data3.dat environment Ogg files are deliberately excluded.",
+        "Default Steam protocol attach can miss startup-prefetched resource reads. Clean capture is verified with explicit --force-direct-launch; titles that reject inherited AppID direct launch retain DirectSound/loopback fallback.",
+        "Audio is verified, but stable automatic Malie text-thread selection remains unverified."
+      ],
+      "adapter_path": "hook/adapters/malie_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": []
+    },
+    {
+      "id": "qlie_filepack",
+      "display_name": "QLIE / FilePack",
+      "aliases": ["QLIE", "FilePackVer3.1", "wuvorbis QLIE"],
+      "family": {
+        "id": "qlie",
+        "relation": "Warmth / AMUSE CRAFT QLIE runtime and FilePack archives"
+      },
+      "detection": {
+        "executable_names": {
+          "values": ["美少女万華鏡_体験版.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "美少女万華鏡 -理と迷宮の少女- 体験版 1.01, verified 2026-07-23"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x86"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Measured trial executable PE/COFF i386"
+          }
+        },
+        "directory_files_all": {
+          "values": ["DLL/wuvorbis.dll", "GameData/data0.pack"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Measured trial directory; data0.pack tail contains FilePackVer3.1"
+          }
+        },
+        "pe_imports": {
+          "values": [],
+          "evidence": null
+        },
+        "runtime_modules": {
+          "values": ["wuvorbis.dll"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "Live x86 process invoked wu_ov_open_callbacks and wu_ov_read; the wu_ov_read_float export was present and its detour reached hook-ready state"
+          }
+        },
+        "resource_extensions": {
+          "values": [".pack", ".ogg"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "GameData/data*.pack with GARbro-extracted character voice Ogg members"
+          }
+        },
+        "hashes": {
+          "values": [
+            "美少女万華鏡_体験版.exe sha256:E40C01C7611F1868F7057E534B3AA61316E9639481D1447267BF8645DEEB789B",
+            "wuvorbis.dll sha256:60996D622B30DC0AF15BD85A1B701F84FC8A34E7A8F1877C917E0EB63FA9EB2B",
+            "data0.pack sha256:A9E1C3EFECA180891C8C788A226391CD0DD96E34E127C9CEA1F2894C68B1A2A7"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Local SHA-256 of the measured trial files, 2026-07-23"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection_with_optional_japanese_locale",
+        "attach": "verified_live_attach_for_new_decoder_instances",
+        "follow_child_processes": false,
+        "notes": [
+          "The QLIE profile requires both DLL/wuvorbis.dll and a data0.pack tail containing FilePackVer, so unrelated KiriKiri titles using the same decoder export surface retain their existing adapter.",
+          "QLIE encrypted pack datasources are not eagerly rewound or copied. The adapter captures decoded per-source output from wu_ov_read and wu_ov_read_float before engine mixing.",
+          "The float callback converts planar samples to interleaved signed 16-bit PCM in a fixed thread-local buffer; it performs bounded conversion and ring writes only, with no heap allocation, file I/O, waits, or sleeps."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "The live run verified audio and visible Japanese dialogue, but did not establish a stable automatic QLIE dialogue thread."
+          }
+        ],
+        "codepage": "CP932",
+        "thread_selection_hint": "Select the stable complete-line QLIE dialogue thread; launch old non-Unicode titles with the optional Japanese-locale path."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "qlie_wuvorbis_per_source_pcm",
+            "format": "44.1 kHz per-decoder signed 16-bit PCM from wu_ov_read",
+            "status": "verified",
+            "clean_voice": true
+          },
+          {
+            "kind": "qlie_wuvorbis_float_per_source_pcm",
+            "format": "planar float from wu_ov_read_float, chunk-converted to interleaved signed 16-bit PCM",
+            "status": "implemented_unverified",
+            "clean_voice": true
+          },
+          {
+            "kind": "directsound_pcm",
+            "format": "generic source PCM fallback",
+            "status": "verified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "verified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "美少女万華鏡 -理と迷宮の少女- 体験版",
+          "engine_version": "QLIE FilePackVer3.1; trial version 1.01",
+          "architecture": "x86",
+          "executable_sha256": "E40C01C7611F1868F7057E534B3AA61316E9639481D1447267BF8645DEEB789B",
+          "verified_on": "2026-07-23",
+          "evidence": "Live attach captured separate decoder sources while a voiced line was displayed. The mono 44.1 kHz capture segment matched the beginning of GARbro-extracted syou0005.ogg decoded PCM at zero lag with normalized waveform correlation 0.99964, while simultaneous stereo BGM remained on different source handles. This verifies clean pre-mix voice PCM, not original compressed Ogg bytes."
+        }
+      ],
+      "current_status": "partial",
+      "known_limitations": [
+        "The verified path emits decoded PCM rather than the original compressed Ogg member; Hibiki must package or encode the selected utterance for card storage.",
+        "Only the measured x86 wuvorbis/FilePackVer3.1 title is verified. Other QLIE versions, alternate decoder DLLs, and non-Ogg voice formats require their own samples.",
+        "The measured voice path invoked wu_ov_read. The wu_ov_read_float detour was installed successfully but its capture path still needs a title that actually invokes that export.",
+        "Live attach captures decoder instances created after injection and can miss a line already playing at attach time; early launch injection remains preferred.",
+        "Stable automatic text-thread selection is not yet verified for this title."
+      ],
+      "adapter_path": "hook/adapters/qlie_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": [
+        "tests/qlie_pack_test.cpp",
+        "tests/adapter_structure_test.py"
+      ]
+    },
+    {
+      "id": "unity_il2cpp",
+      "display_name": "Unity IL2CPP",
+      "aliases": ["Unity", "UnityPlayer IL2CPP"],
+      "family": {"id": "unity", "relation": "IL2CPP runtime"},
+      "detection": {
+        "executable_names": {
+          "values": ["manosaba.exe"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "manosaba_game runtime recorded in hibiki-hook README"
+          }
+        },
+        "pe_architectures": {
+          "values": ["x64"],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "manosaba_game Unity IL2CPP sample"
+          }
+        },
+        "directory_files_all": {
+          "values": [
+            "UnityPlayer.dll",
+            "GameAssembly.dll",
+            "*_Data/il2cpp_data/Metadata/global-metadata.dat"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "manosaba_game directory inspection recorded in hibiki-hook README"
+          }
+        },
+        "pe_imports": {"values": [], "evidence": null},
+        "runtime_modules": {
+          "values": ["UnityPlayer.dll", "GameAssembly.dll"],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "manosaba_game Unity IL2CPP sample"
+          }
+        },
+        "resource_extensions": {"values": [], "evidence": null},
+        "hashes": {"values": [], "evidence": null}
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "supported_with_reduced_audio_coverage",
+        "follow_child_processes": false,
+        "notes": [
+          "Early launch catches source voices created during startup; attach keeps the Luna text helper even when engine audio falls back."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "luna_pc_hooks",
+            "status": "verified",
+            "verification": "PC hooks are auto-enabled for the recorded Unity IL2CPP layout."
+          },
+          {
+            "kind": "unity_tmp_events",
+            "status": "verified",
+            "verification": "The baseline records TMP/text and AudioClip resource pairing on a real IL2CPP sample."
+          }
+        ],
+        "codepage": "utf-16 / managed strings",
+        "thread_selection_hint": "Prefer the stable TMP/Luna dialogue source; keep text active when audio falls back to loopback."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "unity_audioclip_resource",
+            "format": "AudioClip / StreamingAssets resource extraction",
+            "status": "verified",
+            "clean_voice": true
+          },
+          {
+            "kind": "xaudio2_source_voice_pcm",
+            "format": "source-voice PCM fallback",
+            "status": "verified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "verified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [
+        {
+          "name": "manosaba_game / manosaba.exe",
+          "engine_version": "Unity IL2CPP (version not recorded)",
+          "architecture": "x64",
+          "executable_sha256": null,
+          "verified_on": "2026-07-18",
+          "evidence": "Real directory/runtime signatures and the AudioClip/TMP/resource-pairing path are recorded; the helper release includes the x64 unity_audio_runtime."
+        }
+      ],
+      "current_status": "verified",
+      "known_limitations": [
+        "Unity Mono is a separate Phase 4 target and is not covered by this IL2CPP claim.",
+        "The verified sample version and executable hash were not recorded.",
+        "Attach after startup may miss source voices and must retain loopback fallback."
+      ],
+      "adapter_path": "hook/adapters/unity_adapter.inc",
+      "fixture_paths": [],
+      "test_paths": [
+        "tests/unity_event_cursor_test.cpp",
+        "tests/il2cpp_thread_scope_test.cpp",
+        "tests/resource_audio_ready_test.cpp"
+      ]
+    }
+  ]
+}

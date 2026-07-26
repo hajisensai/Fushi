@@ -2,17 +2,18 @@
 
 本流程用于 Hibiki 的日语学习制卡功能：从用户本地、合法取得的游戏中采集当前文本、逐句语音和画面，供用户制作 Anki 卡片。它不用于复制或分发游戏内容。
 
-总设计见 [design.md](../specs/galgame-mining/design.md)，阶段计划与完成证据见 [engine-adapter-plan.md](../specs/galgame-mining/engine-adapter-plan.md)，当前支持状态以 hibiki-hook 的 `engine-support.yaml` 为唯一真相源。
+总设计见 [design.md](../specs/galgame-mining/design.md)，阶段计划与完成证据见 [engine-adapter-plan.md](../specs/galgame-mining/engine-adapter-plan.md)，当前支持状态以 `native/galgame_hook/engine-support.yaml` 为唯一真相源。
 
 ## 1. 边界与开工条件
 
-- native 采集组件在独立仓库 `hajisensai/hibiki-hook`，不得重新放回 Hibiki，也不得编进 `Hibiki.exe`。
-- Hibiki 仓只负责稳定 IPC 的消费、文本与音频配对、制卡 UI 和本 SOP；引擎支持矩阵不在本仓保存副本，直接看 hibiki-hook 的 [`docs/engine-support.md`](https://github.com/hajisensai/hibiki-hook/blob/main/docs/engine-support.md)（由 `engine-support.yaml` 自动生成，唯一真相源）。
-- 一引擎一任务、一独立 worktree；批量引擎任务只负责排队和汇总，不在同一实现任务里交叉试错。两仓分别使用独立 worktree 和提交；Hibiki worktree 先运行 `tool/setup_worktree.ps1`，并按根 `CLAUDE.md` 登记 ownership。
+- native 采集组件在本仓 `native/galgame_hook/`（源码已合仓）。**进程/链接边界不变且是硬规则：绝不链接进 `Hibiki.exe`**。`tools/build_distribution.ps1` 单独构建 `voice_hook_<arch>.zip`；两架构 zip + `.sha256` 随 Windows 主包进入 `galgame_helper/` 供离线首装，同时由根 `.github/workflows/voice-hook-helper.yml` 发布供旧包与后台更新。app 校验后解压到 `voice_hook/<arch>/`，helper 仍以隔离子进程/DLL 运行。
+- 合仓的依据：迁出独立仓库的真正根因是「主仓库那份 workflow 不在默认分支、无法 workflow_dispatch」，合仓后 workflow 就在 develop 上，问题消失；而「必被杀软报毒」经实测证伪（Defender 签名 1.455.357.0 对全部文件与 zip 零检出，同轮 EICAR 阳性对照正常报出，见 hibiki-hook#8）。国产杀软未验证，若被拦按误报处理。
+- 消费端（IPC 消费、文本与音频配对、制卡 UI）与 native 采集实现现在同仓，**改 IPC 契约必须两侧在同一个 PR 里落地**——这正是合仓要消除的版本不同步。引擎支持矩阵唯一真相源是 `native/galgame_hook/docs/engine-support.md`（由同目录 `engine-support.yaml` 自动生成），不得另存副本。
+- 一引擎一任务、一独立 worktree；批量引擎任务只负责排队和汇总，不在同一实现任务里交叉试错。worktree 先运行 `tool/setup_worktree.ps1`，并按根 `CLAUDE.md` 登记 ownership。
 - 先记录游戏名、版本、exe 架构、启动器与真实游戏进程关系、原始失败路径；没有真实样本证据时只能标记 `implemented_unverified`，不得写成“已支持”。
 - 不收集、提交或上传游戏 exe、脚本、图片、语音、归档密钥等受版权或敏感内容。诊断包也遵守同一边界。
 
-下文命令均在 hibiki-hook 根目录运行。Windows 入口统一为：
+下文命令均在 `native/galgame_hook/` 下运行。Windows 入口统一为：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tool/galhook.ps1 <command> ...
@@ -112,7 +113,7 @@ fixture 包含 `config`、按时间排序的 `events` 和 `expected`。至少覆
 
 ## 6. native 与 Hibiki 验证门
 
-hibiki-hook 至少执行：
+在 `native/galgame_hook/` 下至少执行：
 
 ```powershell
 python tools/generate_engine_support.py --check
@@ -145,8 +146,8 @@ ctest --test-dir build-x86 -C Release --output-on-failure
 - 原始逐句资源时的格式、大小/哈希一致性证据；否则明确说明是否含混音；
 - 失败、降级与已知限制，以及证据日期。
 
-证据只保存元数据、哈希、结构化事件和必要截图；截图先检查个人信息与版权范围，禁止把游戏素材作为测试资产提交。随后更新 hibiki-hook 的 `engine-support.yaml`，运行生成器更新 hibiki-hook 的 `docs/engine-support.md`（唯一真相源，Hibiki 不再另存副本）。状态只能按证据从 `implemented_unverified` 提升为已验证。
+证据只保存元数据、哈希、结构化事件和必要截图；截图先检查个人信息与版权范围，禁止把游戏素材作为测试资产提交。随后更新 `native/galgame_hook/engine-support.yaml`，运行生成器更新 `native/galgame_hook/docs/engine-support.md`（唯一真相源，不得另存副本）。状态只能按证据从 `implemented_unverified` 提升为已验证。
 
 ## 8. 提交与交接
 
-native 能力、Hibiki 消费端和进度文档分别提交，避免把无行为变化重构与能力扩展混成一个提交。交接报告列出两仓提交哈希、全部验证命令、真实样本证据、仍未验证项和后续候选。许可方面，文本优先复用隔离分发的 LunaHook（GPLv3）；资源格式可参考 GARbro（MIT），保留必要署名与许可证；禁止 vendoring NonCommercial 或其他受限许可的二进制和数据。
+native 能力、Hibiki 消费端和进度文档可按审查边界拆提交，但同一 IPC 契约变更必须在一个 PR 内同时落两侧；不要把无行为变化重构与能力扩展混成一个提交。交接报告列出主仓提交哈希、全部验证命令、真实样本证据、仍未验证项和后续候选。许可方面，文本优先复用隔离运行的 LunaHook（GPLv3）；资源格式可参考 GARbro（MIT），保留必要署名与许可证；禁止 vendoring NonCommercial 或其他受限许可的二进制和数据。

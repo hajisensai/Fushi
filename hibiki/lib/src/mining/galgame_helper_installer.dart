@@ -2,13 +2,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/utils/misc/resumable_downloader.dart';
-// applyUpdateProxy（走系统代理）经 utils.dart 复用自更新子系统。helper 仓库 slug 用本地
-// [kGalgameHelperRepo]（独立仓库，非主 app 仓库）。镜像回退候选 URL 用本地纯函数
+// applyUpdateProxy（走系统代理）经 utils.dart 复用自更新子系统。helper release 仓库 slug 用
+// 本地 [kGalgameHelperRepo]。镜像回退候选 URL 用本地纯函数
 // galgameHelperCandidateUrls（updateCheckUrls 是 @visibleForTesting 不可生产用；raw release
 // 资产的镜像前缀照 video_shader_downloader 先例本地列）。
 import 'package:hibiki/utils.dart';
@@ -22,11 +23,25 @@ void _log(String message) => debugPrint('[gal-helper] $message');
 /// 反复 upsert 同一 prerelease，asset 名 voice_hook_<arch>.zip + 同名 .sha256 侧车）。
 const String kGalgameHelperReleaseTag = 'voice-hook-helper';
 
-/// helper 所在的**独立仓库** slug（不是主 app 仓库 [kGitHubRepo]）。injector + hook DLL 含
-/// 进程注入代码会被杀软报毒，故物理隔离到独立仓库单独构建/分发（见该仓库 README）；且独立仓库
-/// 默认分支上的 `voice-hook-helper.yml` 可正常 workflow_dispatch 刷新 release（主仓库那份因不在
-/// 默认分支无法 dispatch，是迁出独立仓库的根因）。
-const String kGalgameHelperRepo = 'hajisensai/hibiki-hook';
+/// helper release 所在的仓库 slug。helper 源码已合回本仓库（`native/galgame_hook/`），
+/// 产物也由本仓库的 `voice-hook-helper.yml` 发布，故这里指向主仓库。
+///
+/// 当初迁出独立仓库的两条理由现在都不成立：
+/// - 「injector + hook DLL 必被杀软报毒」是自 C.1 起从未验证的预防性判断。实测（Defender
+///   签名 1.455.357.0、实时保护开启、runner 全盘排除项已解除）对全部 13 个文件与两个 zip
+///   零检出，同轮 EICAR 阳性对照正常报出——见 hibiki-hook#8 的 av-selfscan。
+/// - 「主仓库的 workflow 不在默认分支、无法 workflow_dispatch」是当时真正的迁出根因，
+///   合仓后 workflow 就在默认分支 develop 上，该问题自动消失。
+///
+/// **不要改回独立仓库 slug**：老版本 app 里这个常量被编译成 `hajisensai/hibiki-hook`，
+/// 它们会继续从那个仓库的固定 tag 取 helper。那个仓库与其 release 必须保留不删，
+/// 老客户端才不会断供（Never break userspace）；新版本一律走本仓库。
+const String kGalgameHelperRepo = 'hajisensai/hibiki';
+
+/// Windows 主包内随附的 helper 归档目录名。发布 workflow 把两架构 zip 与各自 `.sha256`
+/// 侧车复制到 `hibiki.exe` 同级的这个目录，Inno Setup 递归纳入安装包。helper 仍是独立
+/// 子进程/DLL，不链接进 `Hibiki.exe`；这里只改变交付介质，让首装不依赖网络。
+const String kGalgameHelperBundledDirectoryName = 'galgame_helper';
 
 /// gh 加速代理前缀（GFW 兜底；raw release 资产可走镜像，与 update_checker 的
 /// updateCheckProxyPrefixes / video_shader_downloader 的 _kGhProxyPrefixes 同范式、同名单）。
@@ -366,13 +381,21 @@ String formatDownloadSize(int bytes) {
   return '${(bytes / 1024).toStringAsFixed(0)} KB';
 }
 
-/// 缺失注入器时的「按需下载」安装器（方案 B）：弹确认对话框（标大小）→ 用户确认 →
-/// 下载对应架构 zip（走系统代理 + 镜像回退 + sha256 校验）→ staging 解压校验 → 换入
-/// exe 同级 voice_hook/<arch>/ → 复检。仅 Windows；用户取消或任一步失败均返回 false
-/// （调用方中止启动、已给提示，Never break）。已装 helper 的自动更新不在这里——见
+/// 缺失注入器时的安装器：优先从 Windows 主包内 `galgame_helper/` 的已校验归档零网络安装；
+/// 开发/旧包没有归档时才弹确认框并走系统代理 + 镜像下载 + GitHub 侧车校验。两条来源共用
+/// staging 清单验证与原子换入，落点都是 exe 同级 `voice_hook/<arch>/`。仅 Windows；用户
+/// 取消或任一步失败均返回 false（调用方中止启动、已给提示，Never break）。已装 helper
+/// 的自动更新不在这里——见
 /// [updateInstalledHelpersInBackground]（app 启动后台静默更新，BUG-1076）。
 class GalgameHelperInstaller {
-  GalgameHelperInstaller();
+  GalgameHelperInstaller({
+    Directory? bundledDirectory,
+    Directory Function(String arch)? installDirectory,
+  })  : _bundledDirectoryOverride = bundledDirectory,
+        _installDirectoryOverride = installDirectory;
+
+  final Directory? _bundledDirectoryOverride;
+  final Directory Function(String arch)? _installDirectoryOverride;
 
   /// 取消令牌：用户在进度对话框点「取消」时置位，并强制关闭下载 client 中断在途请求。
   bool _canceled = false;
@@ -447,8 +470,17 @@ class GalgameHelperInstaller {
   /// GalHookSessionController 注入器解析的读取落点一致）。安装包 Inno Setup
   /// 默认装到 {localappdata}\Hibiki（PrivilegesRequired=lowest），此目录用户可写、无需提权。
   Directory _archDir(String arch) {
+    final Directory Function(String arch)? override = _installDirectoryOverride;
+    if (override != null) return override(arch);
     final String exeDir = File(Platform.resolvedExecutable).parent.path;
     return Directory(p.join(exeDir, 'voice_hook', arch));
+  }
+
+  Directory _bundledDirectory() {
+    final Directory? override = _bundledDirectoryOverride;
+    if (override != null) return override;
+    final String exeDir = File(Platform.resolvedExecutable).parent.path;
+    return Directory(p.join(exeDir, kGalgameHelperBundledDirectoryName));
   }
 
   /// 目标架构已装版本标记文件（内容 = 已装 zip 的 sha256）。
@@ -494,6 +526,21 @@ class GalgameHelperInstaller {
       // 网络探测，也就不存在旧实现在这里抢 6s 的自残上限。
       return true;
     }
+
+    // 正式 Windows 主包随附两架构 zip：先从本地、带 SHA-256 侧车的归档安装，首装/修复
+    // 都不触网、不弹「下载」确认框。开发构建或旧包没有该目录时返回 false，继续沿用下面
+    // 的可信 GitHub 侧车 + 镜像下载兜底；随包归档损坏也只记录并回退网络，不会安装坏包。
+    try {
+      if (await _installBundledHelper(arch)) {
+        final List<String> missingAfterBundle = _missingInstalledFiles(arch);
+        if (missingAfterBundle.isEmpty) return true;
+        _log('bundled install incomplete ($arch): '
+            '${missingAfterBundle.join(', ')}');
+      }
+    } catch (e) {
+      _log('bundled install rejected ($arch), falling back to network: $e');
+    }
+    if (!context.mounted) return false;
 
     // 旧安装可能只有 injector，缺 Luna 或 Locale Emulator。直接用当前发布包修复；
     // x86 缺转区组件时不得回退到普通区域启动非 Unicode 游戏。
@@ -742,7 +789,71 @@ class GalgameHelperInstaller {
       onProgress: onProgress ?? (int _, int? __) {},
     );
 
-    // 3) 解压到 staging 临时目录（保留 x64 unity_audio_runtime/ 子目录结构），先在
+    await _installVerifiedZip(
+      arch: arch,
+      zip: zip,
+      sha: sha,
+      part: part,
+      deleteArchiveOnSuccess: true,
+      sourceLabel: 'network',
+    );
+  }
+
+  /// 从主包内的归档安装。返回 false 只表示当前构建没有随附该架构归档（开发/旧包），调用方
+  /// 可回退网络；只要 zip 或侧车任一存在，就必须完整校验，残缺/摘要不符会抛校验失败。
+  Future<bool> _installBundledHelper(String arch) async {
+    final Directory bundle = _bundledDirectory();
+    final File zip = File(p.join(bundle.path, galgameHelperZipName(arch)));
+    final File sidecar = File('${zip.path}.sha256');
+    final bool hasZip = zip.existsSync();
+    final bool hasSidecar = sidecar.existsSync();
+    if (!hasZip && !hasSidecar) return false;
+    if (!hasZip || !hasSidecar) {
+      throw GalgameHelperInstallException(
+        GalgameHelperInstallFailure.verificationFailed,
+        'bundled helper incomplete ($arch): zip=$hasZip sidecar=$hasSidecar',
+      );
+    }
+
+    final String sha = galgameHelperRequireVerifiedSha(
+      await sidecar.readAsString(),
+      arch,
+    );
+    final String actualSha = sha256.convert(await zip.readAsBytes()).toString();
+    if (!sha256Matches(sha, actualSha)) {
+      throw GalgameHelperInstallException(
+        GalgameHelperInstallFailure.verificationFailed,
+        'bundled helper sha256 mismatch ($arch): '
+        'expected $sha, actual $actualSha',
+      );
+    }
+
+    await _installVerifiedZip(
+      arch: arch,
+      zip: zip,
+      sha: sha,
+      deleteArchiveOnSuccess: false,
+      sourceLabel: 'bundle',
+    );
+    return true;
+  }
+
+  /// 测试入口：验证随包归档的校验、清单、换入与标记全链路，不经过 UI/网络。
+  @visibleForTesting
+  Future<bool> installBundledHelperForTesting(String arch) =>
+      _installBundledHelper(arch);
+
+  /// 已通过 SHA-256 的 zip 共用安装尾段：解压到 staging → 清单验证 → 原子换入 → 标记。
+  /// 网络临时归档成功后清理；主包内归档必须保留，供另一架构或后续修复继续使用。
+  Future<void> _installVerifiedZip({
+    required String arch,
+    required File zip,
+    required String sha,
+    required bool deleteArchiveOnSuccess,
+    required String sourceLabel,
+    File? part,
+  }) async {
+    // 解压到 staging 临时目录（保留 x64 unity_audio_runtime/ 子目录结构），先在
     //    staging 里验完清单再换入——坏包/缺文件在触碰安装目录之前就被拒。
     final Directory staging =
         await Directory.systemTemp.createTemp('hibiki_voice_hook_staging_');
@@ -780,14 +891,16 @@ class GalgameHelperInstaller {
         _log('marker write failed ($arch): $e');
       }
 
-      _log('installed $arch (sha256 $sha)');
+      _log('installed $arch from $sourceLabel (sha256 $sha)');
 
-      // 清理临时 zip（best-effort；失败路径不清，保留续传现场）。
-      try {
-        if (await zip.exists()) await zip.delete();
-        if (await part.exists()) await part.delete();
-      } catch (e) {
-        _log('temp cleanup failed ($arch): $e');
+      if (deleteArchiveOnSuccess) {
+        // 清理网络临时 zip（best-effort；失败路径不清，保留续传现场）。
+        try {
+          if (await zip.exists()) await zip.delete();
+          if (part != null && await part.exists()) await part.delete();
+        } catch (e) {
+          _log('temp cleanup failed ($arch): $e');
+        }
       }
     } finally {
       try {
