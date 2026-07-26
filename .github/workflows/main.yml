@@ -13,6 +13,9 @@ on:
     paths:
       - 'hibiki/**'
       - 'packages/**'
+      # C ABI bridge 源码：只改 native/ 的 PR 以前触发不了任何构建，
+      # 编译挂了要等下一个不相关改动才暴露。
+      - 'native/**'
       - 'ci/**'
       - '.github/workflows/**'
       - 'melos.yaml'

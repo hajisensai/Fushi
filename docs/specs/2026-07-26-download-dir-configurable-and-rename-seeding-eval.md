@@ -91,11 +91,11 @@ Dart 侧也没有任何「启动时重新 add 已有种子」的路径（`addTor
    原计划「把 `ht_poll_piece_events` 泛化成 `ht_poll_alerts`」。实际做法更进一步：
    问题不在于「缺一条通用通道」，而在于 **`pop_alerts` 是破坏性的，却有多个消费者**。
    故改成「一个 session 一个收割点 + 按类型分派进各自队列」，加通道不再需要动契约。
-3. **TODO-1961-c｜`ht_rename_file` / `ht_move_storage` + Dart 绑定 + qb 后端对齐**
-4. **TODO-1961-d｜库路径迁移 API**
+3. **TODO-1961-c｜`ht_rename_file` / `ht_move_storage` + Dart 绑定 + qb 后端对齐** —— ✅ **已落地**
+4. **TODO-1961-d｜库路径迁移 API** —— ✅ **已落地**
    `updateVideoPath` + 字幕 sidecar 路径同步更新；与 c 在同一个用户操作里原子完成
    （引擎移动成功 → 库改路径；引擎失败 → 库不动）。
-5. **TODO-1961-e｜UI：下载页「重命名 / 移动」入口**
+5. **TODO-1961-e｜UI：下载页「重命名 / 移动」入口** —— ✅ **已落地**
    让用户在 Hibiki 内做这件事，而不是在资源管理器里改完再来救。
    资源管理器里手动改名**永远**救不回来（app 收不到通知），这一点应当在设置页说明里写清。
 
@@ -141,11 +141,57 @@ Dart 侧也没有任何「启动时重新 add 已有种子」的路径（`addTor
 种子回来、`hasMetadata` 为真、`numPeers == 0`、每个 piece 都在、进入做种态。
 零 peer 是这个测试的全部说服力：完成度只可能来自磁盘，不可能是重下的。
 
-### 还没做的（c/d/e 原样保留）
+## 7. c/d/e 落地记录（2026-07-26，同批）
 
-「用户改名 / 移动后不掐做种」仍未实现 —— 那要 `ht_rename_file` /
-`ht_move_storage`（c）与库路径迁移 API（d）成对落地，UI 入口是 e。
-本轮只是把它们的前置依赖补上了。
+用户明确选了「**在 Hibiki 内改名/移动**」这条路（另一条「在资源管理器里改完希望
+app 跟上」技术上救不回来，见第 8 节）。第 2 节选定的路线 C 全部实现。
+
+### 改了什么
+
+| 层 | 改动 |
+|---|---|
+| C++ (c) | `ht_rename_file` / `ht_move_storage`；`drain_alerts` 增加 `file_renamed` / `file_rename_failed` / `storage_moved` / `storage_moved_failed` 四种回执分派；`StorageOp` 回执槽 + `await_storage_op` 统一等待 |
+| Dart 包 (c) | `EmbeddedTorrentSession.renameFile/moveStorage` + `HtStorageOpResult` |
+| 后端契约 (c) | `TorrentBackend.renameFile/moveStorage` + `TorrentStorageResult`；内置引擎直通，外接 qb 走 `renameFile` / `setLocation`（qb 认旧相对路径，故 backend 先用文件列表把下标翻成路径） |
+| 库 (d) | `video_path_migration.dart`（纯函数重映射规则）+ `VideoBookRepository.migrateMediaPaths`（三列、一个事务） |
+| 编排 (c+d) | `DownloadRelocateService`：引擎先动、成了再迁库 |
+| UI (e) | 下载任务行「重命名 / 移动」入口 + `_RelocateDialog`（移动整个任务 / 逐文件改名）；8 个 i18n key × 17 语言 |
+
+### 关键判断
+
+- **`move_storage` 用 `fail_if_exist`**。libtorrent 默认是 `always_replace_files`
+  —— 直接覆盖目标同名文件，对用户数据太危险；`dont_replace` 则会静默跳过已存在
+  的文件、留下搬了一半的内容目录。只有「目标非空就整体失败、让用户自己决定」是
+  可接受的默认。守卫：`rename_move_seeding_test.dart` 的
+  「refuses to overwrite an existing file at the destination」用例断言占位文件
+  一个字节没变、源内容也还在。
+- **失败态必须是「什么都没变」**。所以顺序是引擎先、库后：引擎那步才是会失败的
+  一步（目标已存在 / 权限 / 超时），它失败就直接返回，库一个字节不动。反过来
+  先改库的话，引擎一失败库就指向一个磁盘上不存在的路径。
+- **字幕列的哨兵绝不能当路径重写**。`subtitleSource` 是四态编码
+  （绝对路径 / `embedded:<n>` / `off:` / null），把 `embedded:0` 当路径拼一遍
+  就是静默损坏。`remapMediaPath` 逐个排除哨兵与流媒体 URL，且路径比较一律走
+  `package:path`（手写 `startsWith` 会让 `D:\a` 误匹配 `D:\ab`）。
+- **三种结局不能混为一谈**：`success` / `engineFailed`（磁盘与库都没动）/
+  `libraryFailed`（磁盘动了、库没跟上）。最后一种必须如实告诉用户，不能当成功。
+
+### 证据
+
+- `packages/hibiki_torrent/test/rename_move_seeding_test.dart`（5 用例）：改名 /
+  改到子目录 / 移动，每一项都断言**磁盘上真的变了 + 旧路径消失 + 每个 piece 还在
+  + 仍处于做种态**。做种态是关键：引擎要是丢了数据，libtorrent 会掉出 seeding
+  并把 piece 标成缺失。
+- `hibiki/test/media/torrent/download_relocate_service_test.dart`（15 用例）：
+  重映射规则的全部边界 + 原子性（引擎失败时库一个字节不动 / 库失败不许报成功 /
+  目标同现状时两边都不打扰）。
+
+## 8. 明确做不到的事
+
+用户**在资源管理器里**改名或移动下载内容，Hibiki **永远**无法自动跟上：app 收不到
+任何文件系统通知，等下一轮轮询时引擎按旧路径读盘已经失败了。这一点写进了改名
+对话框的说明文案（`anime_download_relocate_hint`）。能给的最好结果是本轮实现的
+「在 app 内改名/移动」；将来若要缓解手动改名的后果，方向是「检测到文件失踪时提示
+用户手动重新定位」，那是另一个独立能力，不属于本 TODO。
 
 ### 顺带记录
 

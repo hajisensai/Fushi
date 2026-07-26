@@ -2673,5 +2673,21 @@
   "galgame_upscaling_hint_manual": "按 Win+Shift+A 放大游戏窗口。",
   "galgame_upscaling_hint_not_installed": "没有安装 Magpie。把「游戏窗口超分」改成「自动」即可下载。",
   "game_health_upscaling": "窗口超分",
-  "library_search": "搜索库"
+  "library_search": "搜索库",
+  "manga_online_queue_added": "已加入下载队列",
+  "manga_online_queue_section": "漫画目录下载",
+  "download_clear_finished": "清除已完成",
+  "download_status_queued": "排队中",
+  "download_status_cancelled": "已取消",
+  "game_waveform_select_title": "选择音频范围",
+  "game_waveform_range_label": "$start - $end（时长 $duration / 共 $total）",
+  "anime_download_relocate": "重命名 / 移动",
+  "anime_download_relocate_rename_title": "重命名文件",
+  "anime_download_relocate_move_title": "移动到文件夹",
+  "anime_download_relocate_hint": "Hibiki 通过下载引擎改名/移动，因此不会掐断做种。在资源管理器里改名则永远无法挽回。",
+  "anime_download_relocate_ok": "已改名 / 移动，同步更新 $rows 个库条目",
+  "anime_download_relocate_engine_failed": "失败，磁盘与库都未改动：$reason",
+  "anime_download_relocate_library_failed": "文件已移动，但库仍指向旧路径：$reason",
+  "anime_download_relocate_no_files": "该任务还没有可改名的文件（元数据未就绪）",
+  "anime_download_relocate_pick_folder": "选择目标文件夹"
 }

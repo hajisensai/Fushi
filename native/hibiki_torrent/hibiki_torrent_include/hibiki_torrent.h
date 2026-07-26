@@ -158,6 +158,33 @@ HT_EXPORT int ht_remove_torrent(void* session, const char* info_hash,
                                 int delete_files);
 
 // 释放本库返回的 char* 串；传 NULL 为 no-op。
+// TODO-1961-c：把种子内第 [file_index] 个文件改名成 [new_path]（种子内相对
+// 路径，可含子目录；分隔符用 '/'）。**引擎侧改名**，所以做种不断 —— 引擎自己
+// 知道数据换了名字，继续从新名字读盘上传。
+//
+// 同步语义：libtorrent 的 rename_file 是异步的（回执走 file_renamed_alert /
+// file_rename_failed_alert），本函数挂在 wait_for_alert 上等回执，最多
+// [timeout_ms] 毫秒（<=0 取默认 15000）。
+//
+// 返回 {"ok":true,"path":"<种子内新相对路径>"}；失败
+// {"ok":false,"error":"..."}，error 原样带回引擎给的原因（如目标已存在、
+// 权限不足），调用方必须显示给用户，不得吞掉。
+HT_EXPORT char* ht_rename_file(void* session, const char* info_hash,
+                               int file_index, const char* new_path,
+                               int timeout_ms);
+
+// TODO-1961-c：把种子的内容整体移动到 [new_save_path]（新的 save_path）。
+// 同样是**引擎侧移动**，做种不断。
+//
+// 用 libtorrent 的 `fail_if_exist`：目标已有同名文件就整体失败，**绝不覆盖**
+// 用户数据，也绝不「跳过已存在的、搬走其余的」留下半个内容目录。
+// （libtorrent 默认的 always_replace_files 会直接覆盖，对用户数据太危险。）
+//
+// 同步语义同 ht_rename_file（回执走 storage_moved_alert /
+// storage_moved_failed_alert）。返回 {"ok":true,"path":"<新 save_path>"}。
+HT_EXPORT char* ht_move_storage(void* session, const char* info_hash,
+                                const char* new_save_path, int timeout_ms);
+
 // TODO-1961-a：把当前 session 里**所有已有元数据**的种子的 resume data 落盘到
 // [out_dir]（每种子一个 `<infohash>.resume`，先写 .tmp 再 rename，绝不留半个
 // 文件）。resume 里带 info dict，故磁力添加的种子重启后无需再取元数据。

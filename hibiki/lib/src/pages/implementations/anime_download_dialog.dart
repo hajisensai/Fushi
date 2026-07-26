@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
@@ -11,6 +12,7 @@ import 'package:hibiki/src/media/torrent/anime_download_matching.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
 import 'package:hibiki/src/media/torrent/anime_download_service.dart';
 import 'package:hibiki/src/media/torrent/anime_download_subscription.dart';
+import 'package:hibiki/src/media/torrent/download_relocate_service.dart';
 import 'package:hibiki/src/media/torrent/nyaa_client.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
@@ -761,6 +763,77 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
         ref.read(appProvider).animeDownloadPlanStore;
     if (store == null) return;
     await store.delete(plan.id);
+    await _reloadPlans();
+  }
+
+  /// TODO-1961-e：改名 / 移动入口。
+  ///
+  /// 为什么必须在 app 里做：引擎按自己记的路径读盘上传，用户在资源管理器里改名
+  /// 之后 app 收不到任何通知，等下一轮轮询时文件已经不见了 —— 那种情况**永远**
+  /// 救不回来。走这里则由引擎自己改（做种不断），库路径同步迁移。
+  Future<void> _relocatePlan(AnimeDownloadPlan plan) async {
+    final AppModel appModel = ref.read(appProvider);
+    final QbConnectionConfig config =
+        effectiveTorrentConfig(appModel.qbConnectionConfig);
+    // 先拿这个种子的当前快照（save_path + 文件列表）：改名要文件下标与旧相对
+    // 路径，移动要旧 save_path，都得从后端现问，不能猜。
+    final TorrentBackend backend = appModel.createTorrentBackend(config);
+    TorrentSnapshot? snapshot;
+    List<TorrentFileEntry> files = const <TorrentFileEntry>[];
+    try {
+      for (final TorrentSnapshot t in await backend.listTorrents(
+          category: config.category.isEmpty ? null : config.category)) {
+        if (t.hash.toLowerCase() == plan.id.toLowerCase()) {
+          snapshot = t;
+          break;
+        }
+      }
+      if (snapshot != null) files = await backend.listFiles(snapshot.hash);
+    } catch (_) {
+      snapshot = null;
+    } finally {
+      backend.close();
+    }
+    if (!mounted) return;
+    if (snapshot == null || snapshot.savePath.isEmpty) {
+      _snack(t.anime_download_relocate_no_files);
+      return;
+    }
+
+    final _RelocateChoice? choice = await showDialog<_RelocateChoice>(
+      context: context,
+      builder: (BuildContext context) =>
+          _RelocateDialog(snapshot: snapshot!, files: files),
+    );
+    if (choice == null || !mounted) return;
+
+    final DownloadRelocateService service = appModel.downloadRelocateService;
+    final RelocateOutcome outcome = choice.isMove
+        ? await service.moveTorrent(
+            infoHash: plan.id,
+            currentSaveRoot: snapshot.savePath,
+            newSaveRoot: choice.value,
+          )
+        : await service.renameFile(
+            infoHash: plan.id,
+            fileIndex: choice.fileIndex!,
+            currentRelativePath: choice.currentRelativePath!,
+            newRelativePath: choice.value,
+            saveRoot: snapshot.savePath,
+          );
+    if (!mounted) return;
+    switch (outcome.status) {
+      case RelocateStatus.success:
+        _snack(t.anime_download_relocate_ok(rows: '${outcome.rowsMigrated}'));
+      case RelocateStatus.unchanged:
+        break;
+      case RelocateStatus.engineFailed:
+        _snack(t.anime_download_relocate_engine_failed(
+            reason: outcome.error ?? ''));
+      case RelocateStatus.libraryFailed:
+        _snack(t.anime_download_relocate_library_failed(
+            reason: outcome.error ?? ''));
+    }
     await _reloadPlans();
   }
 
@@ -1770,6 +1843,12 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
               onTap: () => _retryPlan(plan),
             ),
           HibikiIconButton(
+            tooltip: t.anime_download_relocate,
+            icon: Icons.drive_file_move_outline,
+            size: 20,
+            onTap: () => _relocatePlan(plan),
+          ),
+          HibikiIconButton(
             tooltip: t.anime_download_delete,
             icon: Icons.delete_outline,
             size: 20,
@@ -1877,6 +1956,161 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// TODO-1961-e：用户在改名/移动对话框里做出的选择。
+class _RelocateChoice {
+  const _RelocateChoice.move(this.value)
+      : isMove = true,
+        fileIndex = null,
+        currentRelativePath = null;
+
+  const _RelocateChoice.rename({
+    required this.value,
+    required int this.fileIndex,
+    required String this.currentRelativePath,
+  }) : isMove = false;
+
+  /// true = 移动整个种子到 [value]（新 save_path）；false = 把某个文件改成 [value]。
+  final bool isMove;
+
+  /// 移动 = 目标目录绝对路径；改名 = 种子内新相对路径。
+  final String value;
+
+  /// 改名时的文件下标（移动时为 null）。
+  final int? fileIndex;
+
+  /// 改名时该文件当前的种子内相对路径（移动时为 null）。
+  final String? currentRelativePath;
+}
+
+/// 改名 / 移动对话框：上半是「移动整个任务到某目录」，下半是逐文件改名。
+///
+/// 刻意**不**做成两个入口：用户想的是「整理这个下载」，移动和改名是同一件事的
+/// 两个面，放一个弹窗里他一眼能看到自己有哪些文件、现在在哪。
+class _RelocateDialog extends StatefulWidget {
+  const _RelocateDialog({required this.snapshot, required this.files});
+
+  final TorrentSnapshot snapshot;
+  final List<TorrentFileEntry> files;
+
+  @override
+  State<_RelocateDialog> createState() => _RelocateDialogState();
+}
+
+class _RelocateDialogState extends State<_RelocateDialog> {
+  /// 逐文件的改名输入框（key = 文件下标），初值 = 当前种子内相对路径。
+  late final Map<int, TextEditingController> _controllers =
+      <int, TextEditingController>{
+    for (final TorrentFileEntry f in widget.files)
+      f.index: TextEditingController(text: f.name),
+  };
+
+  @override
+  void dispose() {
+    for (final TextEditingController c in _controllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _pickDestination() async {
+    final String? picked = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: t.anime_download_relocate_pick_folder,
+    );
+    if (picked == null || picked.trim().isEmpty || !mounted) return;
+    Navigator.pop(context, _RelocateChoice.move(picked.trim()));
+  }
+
+  void _submitRename(TorrentFileEntry file) {
+    final String next = _controllers[file.index]?.text.trim() ?? '';
+    if (next.isEmpty) return;
+    Navigator.pop(
+      context,
+      _RelocateChoice.rename(
+        value: next,
+        fileIndex: file.index,
+        currentRelativePath: file.name,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return AlertDialog(
+      title: Text(t.anime_download_relocate),
+      content: SizedBox(
+        width: 520,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              // 为什么必须在 app 里改名，而不是去资源管理器 —— 说清楚，否则用户
+              // 改完再来问「怎么做种断了」。
+              Text(
+                t.anime_download_relocate_hint,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.outline),
+              ),
+              const SizedBox(height: 16),
+              Text(t.anime_download_relocate_move_title,
+                  style: theme.textTheme.titleSmall),
+              const SizedBox(height: 6),
+              Text(widget.snapshot.savePath, style: theme.textTheme.bodySmall),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.tonalIcon(
+                  onPressed: _pickDestination,
+                  icon: const Icon(Icons.folder_open_outlined, size: 18),
+                  label: Text(t.anime_download_relocate_pick_folder),
+                ),
+              ),
+              if (widget.files.isNotEmpty) ...<Widget>[
+                const Divider(height: 28),
+                Text(t.anime_download_relocate_rename_title,
+                    style: theme.textTheme.titleSmall),
+                const SizedBox(height: 6),
+                for (final TorrentFileEntry file in widget.files)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: TextField(
+                            controller: _controllers[file.index],
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                            ),
+                            onSubmitted: (_) => _submitRename(file),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        HibikiIconButton(
+                          tooltip: t.anime_download_relocate_rename_title,
+                          icon: Icons.drive_file_rename_outline,
+                          size: 20,
+                          onTap: () => _submitRename(file),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(t.dialog_cancel),
+        ),
+      ],
     );
   }
 }

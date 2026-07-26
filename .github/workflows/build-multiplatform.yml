@@ -16,6 +16,9 @@ on:
     paths: &multiplatform_paths
       - 'hibiki/**'
       - 'packages/**'
+      # C ABI bridge 源码：只改 native/ 的 PR 以前触发不了任何构建，
+      # 编译挂了要等下一个不相关改动才暴露。
+      - 'native/**'
       - 'ci/**'
       - 'third_party/**'
       - '.github/workflows/build-multiplatform.yml'
@@ -725,6 +728,27 @@ jobs:
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libtorrent:x64-windows
           if ($LASTEXITCODE -ne 0) { throw "vcpkg install libtorrent failed" }
           powershell -ExecutionPolicy Bypass -File native/hibiki_torrent/build_windows_dll.ps1 -VcpkgRoot "$env:VCPKG_INSTALLATION_ROOT"
+      # `packages/hibiki_torrent` 的测试是**唯一**会真正 dlopen 这个 bridge、
+      # 把 Dart FFI 绑定按真实 ABI 调一遍的地方；它们要 HIBIKI_TORRENT_LIB 指向
+      # 已构建的 DLL，所以在 Linux 上永远整组 skip，main.yml / release.yml 的
+      # 包测试清单里也没收录这个包 —— 换句话说，改 C ABI 在 CI 里原本无人可挡。
+      #
+      # 这个 job 上面刚好已经把 DLL 编出来了，跑一遍近乎零边际成本，且这是唯一
+      # 能验证「新 DLL + 新绑定」真能对上的地方（纯文本层的漂移由
+      # hibiki/test/media/torrent/torrent_ffi_bindings_parity_guard_test.dart
+      # 在所有平台兜底）。
+      - name: Run hibiki_torrent FFI tests against the freshly built DLL
+        shell: pwsh
+        working-directory: packages/hibiki_torrent
+        env:
+          HIBIKI_TORRENT_LIB: ${{ github.workspace }}\native\hibiki_torrent\prebuilt\windows-x64\hibiki_torrent_ffi.dll
+        run: |
+          if (-not (Test-Path -LiteralPath $env:HIBIKI_TORRENT_LIB)) {
+            throw "DLL not found at $env:HIBIKI_TORRENT_LIB — the build step above should have produced it"
+          }
+          dart pub get
+          dart test
+          if ($LASTEXITCODE -ne 0) { throw "hibiki_torrent FFI tests failed" }
       # Windows is the ONLY platform that renders EPUB via the forked
       # flutter_inappwebview_windows C++ plugin; an MSVC/native break here was
       # previously invisible to CI (the audit: Windows never built anywhere).

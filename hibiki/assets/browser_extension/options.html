@@ -48,6 +48,27 @@
               </span>
               <span class="switch"><input id="subtitleAutoScroll" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
+            <label class="setting-row" for="subtitleOverlayAllTracks">
+              <span class="setting-copy">
+                <strong>所有字幕轨都用扩展覆盖层显示</strong>
+                <small>站点检测到的字幕轨也叠到视频上，配合防剧透模糊与悬停暂停使用。</small>
+              </span>
+              <span class="switch"><input id="subtitleOverlayAllTracks" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="subtitleOverlayBlur">
+              <span class="setting-copy">
+                <strong>防剧透模糊</strong>
+                <small>覆盖层字幕默认模糊，鼠标悬停即清晰——先听再看。</small>
+              </span>
+              <span class="switch"><input id="subtitleOverlayBlur" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="subtitleHoverPause">
+              <span class="setting-copy">
+                <strong>悬停字幕时暂停</strong>
+                <small>鼠标移到覆盖层字幕上自动暂停，移开继续播放，方便查词。</small>
+              </span>
+              <span class="switch"><input id="subtitleHoverPause" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
           </div>
         </section>
 
@@ -73,6 +94,27 @@
               </span>
               <span class="switch"><input id="subtitleCondensedPlayback" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
+            <label class="setting-row" for="subtitleAutoPauseAtStart">
+              <span class="setting-copy">
+                <strong>自动暂停改在句首</strong>
+                <small>开启「自动暂停」时改为每句开播即暂停（先猜再听），默认是句尾暂停。</small>
+              </span>
+              <span class="switch"><input id="subtitleAutoPauseAtStart" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="subtitleFastForwardPlayback">
+              <span class="setting-copy">
+                <strong>快进无字幕段</strong>
+                <small>无字幕区间以 2.7 倍速播过（保留画面连续性），进句自动恢复原速。</small>
+              </span>
+              <span class="switch"><input id="subtitleFastForwardPlayback" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="videoShortcutsEnabled">
+              <span class="setting-copy">
+                <strong>视频页快捷键</strong>
+                <small>←/→ 上一句/下一句 · ↑ 重播本句 · Shift+P/O/F 暂停/精简/快进 · Shift+S 面板 · Ctrl+Shift+←/→/↓ 偏移 · Ctrl+Shift+Z 复制字幕 · Ctrl+Shift+[ ] 变速。</small>
+              </span>
+              <span class="switch"><input id="videoShortcutsEnabled" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
           </div>
         </section>
 
@@ -80,17 +122,23 @@
           <div class="section-heading compact">
             <div>
               <p class="section-kicker">站点适配</p>
-              <h2 id="site-heading">Netflix</h2>
+              <h2 id="site-heading">流媒体站点</h2>
             </div>
           </div>
           <div class="setting-list">
             <label class="setting-row" for="nfHideNext">
               <span class="setting-copy">
-                <strong>隐藏“下一集”和分级遮挡</strong>
+                <strong>Netflix：隐藏“下一集”和分级遮挡</strong>
                 <small>避免剧末按钮、后播层和开场分级标识进入制卡截图。</small>
               </span>
               <span class="switch"><input id="nfHideNext" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
+            <div class="setting-row">
+              <span class="setting-copy">
+                <strong>整集字幕自动检测</strong>
+                <small>Netflix、YouTube、TVer、Bilibili.tv、Hulu（日本）、Prime Video 播放时自动抓取整集字幕进字幕列表；其它站点走通用采集（原生字幕轨收割 + 实时采样）。</small>
+              </span>
+            </div>
           </div>
         </section>
       </main>
@@ -136,6 +184,12 @@
           </form>
         </details>
 
+        <div class="tip" id="updateCard">
+          <strong id="updTitle">版本与更新</strong>
+          <p id="updDetail">正在读取扩展版本信息…</p>
+          <code id="updBuild"></code>
+        </div>
+
         <div class="tip">
           <strong>加载自己的字幕</strong>
           <p>开启字幕列表后，点侧栏中的“＋”，或直接把字幕文件拖到视频上。</p>
@@ -147,6 +201,7 @@
   <div class="save-toast" id="status" role="status" aria-live="polite"></div>
   <script src="hibiki-defaults.js"></script>
   <script src="connection-diagnostics.js"></script>
+  <script src="self-update.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

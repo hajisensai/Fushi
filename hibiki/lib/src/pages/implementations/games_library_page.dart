@@ -277,7 +277,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
 
   /// 弹状态选择对话框（菜单顺序：想玩 → 在玩 → 玩过 → 搁置 → 弃坑 + 未设置）。
   Future<void> _promptPlayStatus(GalgameEntry game) async {
-    final GalgamePlayStatus? picked = await showDialog<GalgamePlayStatus>(
+    final GalgamePlayStatus? picked = await showAppDialog<GalgamePlayStatus>(
       context: context,
       builder: (BuildContext ctx) => SimpleDialog(
         title: Text(t.games_play_status),
@@ -399,7 +399,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 在 `showDialog` 返回后立即 `controller.dispose()`，此时退出动画尚未结束、
   /// TextField 还挂在树上，属于过早释放。
   Future<String?> _promptName({required String initial}) {
-    return showDialog<String>(
+    return showAppDialog<String>(
       context: context,
       builder: (BuildContext ctx) => _RenameGameDialog(initial: initial),
     );
@@ -583,12 +583,14 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   }
 
   /// 筛选面板：状态 / 本地·在线 / 标签多选 / NSFW 隐藏。改动即时生效并持久化。
+  /// 走 [adaptiveModalSheet] + [HibikiModalSheetFrame]（与标签筛选面板同一 MD3
+  /// sheet 骨架），间距/文字全走 [HibikiDesignTokens]。
   Future<void> _showFilterSheet() async {
     final List<String> allTags = collectGalgameTags(_games);
-    await showModalBottomSheet<void>(
+    await adaptiveModalSheet<void>(
       context: context,
-      isScrollControlled: true,
       builder: (BuildContext ctx) {
+        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
         return StatefulBuilder(
           builder: (BuildContext ctx, StateSetter setSheetState) {
             void apply(GalgameLibraryView next) {
@@ -596,112 +598,108 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
               _setView(next);
             }
 
-            return SafeArea(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: Text(
-                            t.games_filter,
-                            style: Theme.of(ctx).textTheme.titleMedium,
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () => apply(_view.clearFilters()),
-                          child: Text(t.games_filter_reset),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(t.games_filter_status,
-                        style: Theme.of(ctx).textTheme.labelLarge),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: <Widget>[
-                        HibikiSelectableChip(
-                          label: t.games_filter_all,
-                          selected: _view.status == null,
-                          onSelected: (_) =>
-                              apply(_view.copyWith(clearStatus: true)),
-                        ),
-                        for (final GalgamePlayStatus status
-                            in <GalgamePlayStatus>[
-                          ...kGalgamePlayStatusMenuOrder,
-                          GalgamePlayStatus.unset,
-                        ])
-                          HibikiSelectableChip(
-                            label: galgamePlayStatusLabel(status),
-                            selected: _view.status == status,
-                            onSelected: (bool selected) => apply(
-                              selected
-                                  ? _view.copyWith(status: status)
-                                  : _view.copyWith(clearStatus: true),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(t.games_filter_source,
-                        style: Theme.of(ctx).textTheme.labelLarge),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: <Widget>[
-                        for (final GalgameLocalFilter filter
-                            in GalgameLocalFilter.values)
-                          HibikiSelectableChip(
-                            label: galgameLocalFilterLabel(filter),
-                            selected: _view.localFilter == filter,
-                            onSelected: (_) =>
-                                apply(_view.copyWith(localFilter: filter)),
-                          ),
-                      ],
-                    ),
-                    if (allTags.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: 16),
-                      Text(t.games_filter_tags,
-                          style: Theme.of(ctx).textTheme.labelLarge),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: <Widget>[
-                          for (final String tag in allTags)
-                            HibikiSelectableChip(
-                              label: tag,
-                              selected: _view.tags.contains(tag),
-                              onSelected: (bool selected) {
-                                final Set<String> next =
-                                    Set<String>.of(_view.tags);
-                                if (selected) {
-                                  next.add(tag);
-                                } else {
-                                  next.remove(tag);
-                                }
-                                apply(_view.copyWith(tags: next));
-                              },
-                            ),
-                        ],
+            Widget sectionLabel(String text) => Padding(
+                  padding: EdgeInsets.only(
+                    top: tokens.spacing.gap * 2,
+                    bottom: tokens.spacing.gap,
+                  ),
+                  child: Text(text, style: tokens.type.sectionLabel),
+                );
+
+            return HibikiModalSheetFrame(
+              title: t.games_filter,
+              leadingIcon: Icons.filter_alt_outlined,
+              scrollable: true,
+              bodyPadding:
+                  EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+              body: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  sectionLabel(t.games_filter_status),
+                  Wrap(
+                    spacing: tokens.spacing.gap,
+                    runSpacing: tokens.spacing.gap,
+                    children: <Widget>[
+                      HibikiSelectableChip(
+                        label: t.games_filter_all,
+                        selected: _view.status == null,
+                        onSelected: (_) =>
+                            apply(_view.copyWith(clearStatus: true)),
                       ),
+                      for (final GalgamePlayStatus status
+                          in <GalgamePlayStatus>[
+                        ...kGalgamePlayStatusMenuOrder,
+                        GalgamePlayStatus.unset,
+                      ])
+                        HibikiSelectableChip(
+                          label: galgamePlayStatusLabel(status),
+                          selected: _view.status == status,
+                          onSelected: (bool selected) => apply(
+                            selected
+                                ? _view.copyWith(status: status)
+                                : _view.copyWith(clearStatus: true),
+                          ),
+                        ),
                     ],
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(t.games_filter_hide_nsfw),
-                      value: _view.hideNsfw,
-                      onChanged: (bool value) =>
-                          apply(_view.copyWith(hideNsfw: value)),
+                  ),
+                  sectionLabel(t.games_filter_source),
+                  Wrap(
+                    spacing: tokens.spacing.gap,
+                    runSpacing: tokens.spacing.gap,
+                    children: <Widget>[
+                      for (final GalgameLocalFilter filter
+                          in GalgameLocalFilter.values)
+                        HibikiSelectableChip(
+                          label: galgameLocalFilterLabel(filter),
+                          selected: _view.localFilter == filter,
+                          onSelected: (_) =>
+                              apply(_view.copyWith(localFilter: filter)),
+                        ),
+                    ],
+                  ),
+                  if (allTags.isNotEmpty) ...<Widget>[
+                    sectionLabel(t.games_filter_tags),
+                    Wrap(
+                      spacing: tokens.spacing.gap,
+                      runSpacing: tokens.spacing.gap,
+                      children: <Widget>[
+                        for (final String tag in allTags)
+                          HibikiSelectableChip(
+                            label: tag,
+                            selected: _view.tags.contains(tag),
+                            onSelected: (bool selected) {
+                              final Set<String> next =
+                                  Set<String>.of(_view.tags);
+                              if (selected) {
+                                next.add(tag);
+                              } else {
+                                next.remove(tag);
+                              }
+                              apply(_view.copyWith(tags: next));
+                            },
+                          ),
+                      ],
                     ),
                   ],
-                ),
+                  SizedBox(height: tokens.spacing.gap),
+                  AdaptiveSettingsSwitchRow(
+                    title: t.games_filter_hide_nsfw,
+                    value: _view.hideNsfw,
+                    onChanged: (bool value) =>
+                        apply(_view.copyWith(hideNsfw: value)),
+                  ),
+                  SizedBox(height: tokens.spacing.gap),
+                ],
+              ),
+              footer: Row(
+                children: <Widget>[
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => apply(_view.clearFilters()),
+                    child: Text(t.games_filter_reset),
+                  ),
+                ],
               ),
             );
           },
@@ -991,24 +989,51 @@ class _RenameGameDialogState extends State<_RenameGameDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(t.games_rename),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        decoration: InputDecoration(labelText: t.games_rename_label),
-        onSubmitted: (String v) => Navigator.of(context).pop(v.trim()),
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.games_rename,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: HibikiTextField(
+          controller: _controller,
+          labelText: t.games_rename_label,
+          autofocus: true,
+          onSubmitted: (String v) => Navigator.of(context).pop(v.trim()),
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: () =>
+                  Navigator.of(context).pop(_controller.text.trim()),
+              child: Text(t.dialog_ok),
+            ),
+          ],
+        ),
       ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(t.dialog_cancel),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
-          child: Text(t.dialog_ok),
-        ),
-      ],
     );
   }
 }

@@ -89,10 +89,10 @@ void main() {
       expect(HomeTab.values, contains(HomeTab.downloads));
     });
 
-    test('下载 tab 与视频同门控：视频关则不出现', () {
+    test('下载 tab 恒在（统一下载中心）：视频关也出现', () {
       expect(
         homeActiveTabs(videoEnabled: false),
-        isNot(contains(HomeTab.downloads)),
+        contains(HomeTab.downloads),
       );
     });
 
