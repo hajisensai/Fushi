@@ -215,7 +215,13 @@ def _append_unique(path: Path, line: str) -> None:
     current = path.read_text(encoding="utf-8") if path.exists() else ""
     if line not in current:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(current.rstrip() + "\n" + line + "\n", encoding="utf-8", newline="\n")
+        # `path` is assembled only from the explicitly selected local --root
+        # and an ENGINE_ID-validated filename; there is no lower-trust input.
+        path.write_text(  # NOSONAR
+            current.rstrip() + "\n" + line + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
 
 
 def command_new(args: argparse.Namespace) -> int:

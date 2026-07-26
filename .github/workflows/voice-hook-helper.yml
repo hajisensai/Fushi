@@ -76,7 +76,7 @@ jobs:
       # 双架构 ctest 仍在任意分支照跑，只是不发布——这样 PR 分支能安全地验证构建门。
       - name: Publish helper release
         if: github.ref == 'refs/heads/develop'
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: voice-hook-helper
           target_commitish: ${{ github.sha }}

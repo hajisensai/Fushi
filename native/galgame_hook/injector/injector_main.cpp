@@ -1767,12 +1767,18 @@ bool ReadSmallUtf8File(const std::wstring& path, std::wstring* out) {
                             nullptr);
   if (file == INVALID_HANDLE_VALUE) return false;
   LARGE_INTEGER size = {};
-  if (!GetFileSizeEx(file, &size) || size.QuadPart <= 0 ||
-      size.QuadPart > 2 * 1024 * 1024) {
+  if (!GetFileSizeEx(file, &size)) {
     CloseHandle(file);
     return false;
   }
-  std::vector<char> bytes(static_cast<size_t>(size.QuadPart));
+  LONGLONG file_size = 0;
+  static_assert(sizeof(file_size) == sizeof(size));
+  std::memcpy(&file_size, &size, sizeof(file_size));
+  if (file_size <= 0 || file_size > 2 * 1024 * 1024) {
+    CloseHandle(file);
+    return false;
+  }
+  std::vector<char> bytes(static_cast<size_t>(file_size));
   DWORD read = 0;
   const bool ok = ReadFile(file, bytes.data(), static_cast<DWORD>(bytes.size()),
                            &read, nullptr) != FALSE &&

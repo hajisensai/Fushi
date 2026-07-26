@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstring>
+
 #include "../qlie_pack.h"
 
 namespace hibiki_voice_hook {
@@ -17,11 +19,19 @@ inline bool HasQliePackSignature(const std::wstring& path) {
   uint8_t tail[96] = {};
   DWORD read = 0;
   bool found = false;
-  if (GetFileSizeEx(file, &size) && size.QuadPart >= 16) {
+  if (GetFileSizeEx(file, &size)) {
+    LONGLONG file_size = 0;
+    static_assert(sizeof(file_size) == sizeof(size));
+    std::memcpy(&file_size, &size, sizeof(file_size));
+    if (file_size < 16) {
+      CloseHandle(file);
+      return false;
+    }
     const DWORD bytes = static_cast<DWORD>(
-        (std::min)(size.QuadPart, static_cast<LONGLONG>(sizeof(tail))));
+        (std::min)(file_size, static_cast<LONGLONG>(sizeof(tail))));
+    const LONGLONG offset_value = file_size - bytes;
     LARGE_INTEGER offset = {};
-    offset.QuadPart = size.QuadPart - bytes;
+    std::memcpy(&offset, &offset_value, sizeof(offset));
     if (SetFilePointerEx(file, offset, nullptr, FILE_BEGIN) &&
         ReadFile(file, tail, bytes, &read, nullptr) && read == bytes) {
       found = qlie::ContainsFilePackSignature(tail, read);

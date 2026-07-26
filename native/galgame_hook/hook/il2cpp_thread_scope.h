@@ -67,7 +67,9 @@ class Il2CppManagedThreadScope {
   bool attached() const { return attached_ != nullptr; }
 
  private:
-  const Il2CppThreadFns& fns_;
+  // Keep our own function table: callers may build it as a temporary while
+  // probing GameAssembly exports, but the guard must outlive that expression.
+  const Il2CppThreadFns fns_;
   void* attached_ = nullptr;
   bool safe_ = false;
 };

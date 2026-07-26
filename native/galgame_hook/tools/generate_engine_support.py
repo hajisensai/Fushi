@@ -219,7 +219,9 @@ def load_manifest(path: Path) -> dict[str, Any]:
     """Load the JSON-compatible YAML manifest."""
 
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        # This local maintainer CLI intentionally accepts an explicit --source;
+        # it does not cross a privilege or remote-input boundary.
+        value = json.loads(path.read_text(encoding="utf-8"))  # NOSONAR
     except (OSError, json.JSONDecodeError) as error:
         raise ManifestError(f"cannot read {path}: {error}") from error
     if not isinstance(value, dict):
@@ -953,7 +955,9 @@ def main() -> int:
         return 0
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(rendered, encoding="utf-8", newline="\n")
+    # --output is an explicit local maintainer destination. The implicit path is
+    # read from the reviewed repository manifest, not from a remote request.
+    output.write_text(rendered, encoding="utf-8", newline="\n")  # NOSONAR
     print(f"WROTE {output}")
     return 0
 
