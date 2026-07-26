@@ -155,7 +155,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       HibikiToast.show(msg: t.game_no_tracks);
       return;
     }
-    final int? picked = await showDialog<int>(
+    final int? picked = await showAppDialog<int>(
       context: context,
       builder: (BuildContext dialogContext) => SimpleDialog(
         title: Text(t.game_line_track_dialog_title),
@@ -437,7 +437,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       ...windows
           .where((ExternalWindowInfo w) => gamePid == null || w.pid != gamePid),
     ];
-    final ExternalWindowInfo? picked = await showDialog<ExternalWindowInfo>(
+    final ExternalWindowInfo? picked = await showAppDialog<ExternalWindowInfo>(
       context: context,
       builder: (BuildContext ctx) => SimpleDialog(
         title: Text(t.external_window_select),

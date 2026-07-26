@@ -258,6 +258,47 @@ void main() {
       'HibikiDialogFrame(',
       'PopupDictionaryPage(',
     ],
+    // galgame 弹窗 MD3 收口：统一走 showAppDialog 入口（MD3 弹窗动画 + Cupertino
+    // 分支）+ 共享对话框骨架（HibikiDialogFrame + HibikiModalSheetFrame）+
+    // adaptiveDialogAction（肯定动作 FilledButton 强调），与同子系统
+    // galgame_helper_installer 的确认/进度框同一套样板；波形选区框文案改走 i18n，
+    // 游戏库筛选面板改走 adaptiveModalSheet + HibikiModalSheetFrame。
+    'lib/src/mining/galgame_waveform_select_dialog.dart': <String>[
+      'showAppDialog<GalWaveformRange>(',
+      'HibikiDialogFrame',
+      'HibikiModalSheetFrame',
+      'adaptiveDialogAction',
+      't.game_waveform_select_title',
+      't.game_waveform_range_label',
+    ],
+    'lib/src/mining/magpie_download_confirm.dart': <String>[
+      'showAppDialog<bool>(',
+      'HibikiDialogFrame',
+      'HibikiModalSheetFrame',
+      'adaptiveDialogAction',
+    ],
+    'lib/src/pages/implementations/galgame_detail_page.dart': <String>[
+      'showAppDialog<String>(',
+      'showAppDialog<SourceCandidate>(',
+      'HibikiDialogFrame',
+      'HibikiModalSheetFrame',
+      'HibikiTextField',
+      'adaptiveDialogAction',
+    ],
+    'lib/src/pages/implementations/games_library_page.dart': <String>[
+      'showAppDialog<GalgamePlayStatus>(',
+      'showAppDialog<String>(',
+      'adaptiveModalSheet<void>(',
+      'HibikiDialogFrame',
+      'HibikiModalSheetFrame',
+      'HibikiTextField',
+      'adaptiveDialogAction',
+      'AdaptiveSettingsSwitchRow',
+    ],
+    'lib/src/pages/implementations/texthooker_page.dart': <String>[
+      'showAppDialog<int>(',
+      'showAppDialog<ExternalWindowInfo>(',
+    ],
   };
 
   test('MD3 design token and shared component files exist', () {
@@ -548,6 +589,30 @@ void main() {
       'lib/src/models/app_model.dart': <String>[
         '=> Dialog(',
         'child: ConstrainedBox(',
+      ],
+      // galgame 弹窗 MD3 收口的反向锁：不再裸 showDialog / AlertDialog /
+      // 手搓 showModalBottomSheet；波形选区框不再硬编码中文文案。
+      'lib/src/mining/galgame_waveform_select_dialog.dart': <String>[
+        'showDialog<',
+        'AlertDialog(',
+        '选择音频范围',
+      ],
+      'lib/src/mining/magpie_download_confirm.dart': <String>[
+        'showDialog<',
+        'AlertDialog(',
+      ],
+      'lib/src/pages/implementations/galgame_detail_page.dart': <String>[
+        'showDialog<',
+        'AlertDialog(',
+      ],
+      'lib/src/pages/implementations/games_library_page.dart': <String>[
+        'showDialog<',
+        'AlertDialog(',
+        'showModalBottomSheet<',
+        'SwitchListTile(',
+      ],
+      'lib/src/pages/implementations/texthooker_page.dart': <String>[
+        'showDialog<',
       ],
     };
 

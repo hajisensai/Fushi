@@ -2678,5 +2678,7 @@
   "manga_online_queue_section": "漫画目录下载",
   "download_clear_finished": "清除已完成",
   "download_status_queued": "排队中",
-  "download_status_cancelled": "已取消"
+  "download_status_cancelled": "已取消",
+  "game_waveform_select_title": "选择音频范围",
+  "game_waveform_range_label": "$start - $end（时长 $duration / 共 $total）"
 }
