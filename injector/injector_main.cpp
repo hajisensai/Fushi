@@ -973,6 +973,64 @@ bool SetTargetProcessSuspended(HANDLE target, bool suspended) {
   return fn != nullptr && fn(target) >= 0;
 }
 
+// 恢复一个以 CREATE_SUSPENDED 创建出来的游戏，[stage] 只用于诊断。
+//
+// **为什么不能只信线程句柄**：Locale Emulator 路径下进程不是 injector 自己创建的，而是
+// LoaderDll 的 `LeCreateProcess` 代创建，主线程句柄来自它回填的
+// `LeProcessInformation::hThread`（见 CreateJapaneseLocaleProcess），该句柄不保证可用。
+// 实测样本「屋上の百合霊さん」（x86 Unity，日语 locale 路径）：injector 打印了
+// `LAUNCH pid=` 与 `OK hooked`、rc==0，但游戏主线程数小时后仍是 Suspended、窗口从未
+// 出现；外部对该主线程调**一次** ResumeThread 返回 1（返回值即调用前的挂起计数）→
+// 计数从未被减过，窗口随即出现。也就是说那唯一一次 ResumeThread 落空了。
+// 因此这里以进程级 NtResumeProcess 作**确定性回退**，不把第三方回填的句柄当作前提。
+//
+// **恢复必须循环到挂起计数归零**，这正是本 bug 的根因所在：ResumeThread 的返回值是调用
+// 前的挂起计数，它只把计数 -1。Locale Emulator 路径下计数**不是 1 而是 2**——除了
+// CREATE_SUSPENDED 本身，LoaderDll 为了在 kernel32 初始化前装入 LocaleEmulator.dll 还会
+// 自己挂一次。旧实现只调一次 ResumeThread：计数 2→1，线程**仍然挂起**，而返回值不是 -1
+// 所以旧代码判为成功、rc=0、照常打印 OK hooked。用户看到的就是「点了启动没反应、游戏
+// 没打开」（实测样本：屋上の百合霊さん，x86 Unity + 日语 locale，两次独立复现）。
+// 上界防止句柄异常时无限循环；仍未归零则退到进程级 NtResumeProcess。
+bool ResumeLaunchedGame(HANDLE process, HANDLE thread, const char* stage) {
+  if (thread != nullptr) {
+    DWORD initial_count = 0;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+      const DWORD previous = ResumeThread(thread);
+      if (previous == static_cast<DWORD>(-1)) {
+        fprintf(stderr,
+                "[resume] %s ResumeThread failed: %lu; falling back to "
+                "NtResumeProcess\n",
+                stage, GetLastError());
+        break;
+      }
+      if (attempt == 0) initial_count = previous;
+      if (previous <= 1) {
+        // 把首次计数和总次数都记下来：只报最后一次的 1 会把「原本挂了几层」这个关键
+        // 事实藏掉，而它正是判断本回归是否复发的唯一依据。
+        fprintf(stderr,
+                "[resume] %s primary thread resumed (initial suspend count=%lu, "
+                "resume calls=%d)\n",
+                stage, initial_count, attempt + 1);
+        return true;
+      }
+    }
+  } else {
+    // 这条分支就是本 bug 的现场：旧代码在此**静默跳过整个 resume**，随后照常打印
+    // OK hooked，injector 报成功而游戏永久挂起。现在它是一条显式诊断 + 确定性回退。
+    fprintf(stderr,
+            "[resume] %s no primary thread handle (Locale Emulator returned "
+            "none); using process-wide NtResumeProcess\n",
+            stage);
+  }
+  if (SetTargetProcessSuspended(process, false)) {
+    fprintf(stderr, "[resume] %s resumed process-wide via NtResumeProcess\n",
+            stage);
+    return true;
+  }
+  fprintf(stderr, "[resume] %s NtResumeProcess failed\n", stage);
+  return false;
+}
+
 // attach 与 launch 共用的注入编排。target=目标进程句柄，pid=目标 pid（命名共享内存/事件）。
 // resume_thread!=nullptr（launch 模式）时：注入完成后 ResumeThread 让挂起的游戏跑起来，再等就绪
 // 事件——保证 hook 在游戏调 DirectSoundCreate/WinMain 之前就装好。hold_process 在 --hold 时决定
@@ -982,11 +1040,18 @@ bool SetTargetProcessSuspended(HANDLE target, bool suspended) {
 // [reason_out] 回报结构化失败原因；[resumed_out] 回报「挂起的游戏主线程是否已经被本函数
 // 恢复」——这是**事实**，不能再像旧实现那样从返回码推断（rc==2 的两个来源都发生在
 // ResumeThread 之前，却被注释当成已恢复，于是游戏被永久留在挂起态）。
+//
+// [created_suspended] 才是「本函数是否必须恢复游戏」的真值，[resume_thread] 只是恢复的
+// **首选手段**。旧实现用 `resume_thread != nullptr` 同时表达这两件事，于是一个 nullptr
+// 承载了两种互斥含义：「本策略不需要 resume」（Siglus/follow-child：进程没被挂起创建）
+// 与「本该 resume 但句柄没拿到」（Locale Emulator 未回填 hThread）。后者被静默当成前者
+// 跳过，游戏永久挂起而 injector 照报 OK hooked。拆成两个参数就消掉了这个二义性。
 int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
                  DWORD wait_ms, bool hold, HANDLE resume_thread,
                  HANDLE hold_process, const LunaOptions& luna,
                  hibiki_voice_hook::LaunchFailureReason* reason_out = nullptr,
-                 bool* resumed_out = nullptr) {
+                 bool* resumed_out = nullptr,
+                 bool created_suspended = false) {
   using hibiki_voice_hook::LaunchFailureReason;
   if (reason_out != nullptr) *reason_out = LaunchFailureReason::kNone;
   if (resumed_out != nullptr) *resumed_out = false;
@@ -1154,15 +1219,22 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
             removed, expected_removed);
     return true;
   };
-  if (resume_thread != nullptr) {
-    const ULONGLONG deadline = GetTickCount64() + wait_ms;
+  if (created_suspended) {
+    // 挂起窗口只用总预算的一部分：与宿主超时同时到期会让 injector 在被 kill 时恰好还没
+    // resume，游戏永久挂起（见 SuspendedStartupWaitBudgetMs 的说明）。
+    const unsigned long startup_budget_ms =
+        hibiki_voice_hook::SuspendedStartupWaitBudgetMs(wait_ms);
+    const ULONGLONG deadline = GetTickCount64() + startup_budget_ms;
     while ((header->hook_diagnostics & kDiagStartupAudioHooksReady) == 0 &&
            GetTickCount64() < deadline) {
       Sleep(1);
     }
     if ((header->hook_diagnostics & kDiagStartupAudioHooksReady) == 0) {
       fprintf(stderr,
-              "startup audio hook readiness timed out; resuming game with text/late-hook fallback\n");
+              "startup audio hook readiness timed out after %lu ms (total "
+              "wait budget %lu ms); resuming game with text/late-hook "
+              "fallback\n",
+              startup_budget_ms, wait_ms);
     }
 
     // 精确 profile 标记了危险自动 hook 时，必须在游戏线程挂起期间启动 Luna，
@@ -1187,8 +1259,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
 
     // 只有游戏内 DLL 完成首轮音频导出 hook 后才允许游戏主线程继续。
     // Unity 会在启动早期创建 XAudio2 engine/source voice，提前恢复会永久错过这些对象。
-    if (ResumeThread(resume_thread) == static_cast<DWORD>(-1)) {
-      fprintf(stderr, "ResumeThread failed: %lu\n", GetLastError());
+    if (!ResumeLaunchedGame(target, resume_thread, "post-injection")) {
       CloseHandle(ready);
       UnmapViewOfFile(header);
       CloseHandle(mapping);
@@ -1980,20 +2051,30 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
          sizeof(void*) == 8 ? "x64" : "x86");
   fflush(stdout);
 
+  // 进程当前是否处于挂起态，是一个**事实**，只有一个来源：普通路径看 creation_flags；
+  // 而 locale 路径下 LoaderDll 无论调用方传什么都会叠加 CREATE_SUSPENDED
+  // （CreateJapaneseLocaleProcess 里的 `creation_flags | CREATE_SUSPENDED`），所以只要
+  // 走了 locale 就一定是挂起态——旧代码算 created_suspended 时漏了这一半。
+  const bool launched_suspended = hibiki_voice_hook::LaunchedProcessIsSuspended(
+      (creation_flags & CREATE_SUSPENDED) != 0, locale_launched);
+  bool resumed_before_discovery = false;
+
   const auto locale_resume_policy =
       hibiki_voice_hook::SelectLocaleThreadResumePolicy(
           locale_launched, delayed_siglus, follow_children);
   if (locale_resume_policy ==
       hibiki_voice_hook::LocaleThreadResumePolicy::kBeforeProcessDiscovery) {
-    if (ResumeThread(pi.hThread) == static_cast<DWORD>(-1)) {
+    if (!ResumeLaunchedGame(pi.hProcess, pi.hThread, "pre-discovery")) {
       fprintf(stderr,
-              "[locale] ResumeThread before process discovery failed: %lu\n",
-              GetLastError());
+              "[locale] failed to resume the game before process discovery\n");
+      ReportFailureReason(hibiki_voice_hook::LaunchFailureReason::kResumeFailed,
+                          1);
       TerminateProcess(pi.hProcess, 1);
       CloseHandle(pi.hThread);
       CloseHandle(pi.hProcess);
       return 1;
     }
+    resumed_before_discovery = true;
   }
 
   if (delayed_siglus &&
@@ -2041,34 +2122,39 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
   ApplyLunaProfiles(target_exe, target_pid, effective_luna.profile_path,
                     &effective_luna);
 
-  // 复用 attach 同一套编排；普通 launch 的 resume_thread=pi.hThread（注入后放行），
-  // Siglus 已正常运行故为 nullptr；hold_process 让 --hold 挂到游戏退出。
+  // 复用 attach 同一套编排。resume 的**意图**由 must_resume_after_injection 表达（进程被
+  // 挂起创建且还没被 pre-discovery 恢复），句柄只是首选手段——句柄拿不到时
+  // ResumeLaunchedGame 会退到进程级 NtResumeProcess，绝不再静默跳过。
+  // hold_process 让 --hold 挂到游戏退出。
+  const bool must_resume_after_injection =
+      hibiki_voice_hook::MustResumeAfterInjection(launched_suspended,
+                                                 resumed_before_discovery);
   hibiki_voice_hook::LaunchFailureReason reason =
       hibiki_voice_hook::LaunchFailureReason::kNone;
   bool resumed = false;
-  const int rc = RunInjection(
-      target_process, target_pid, dll_path, wait_ms, hold,
-      (delayed_siglus || follow_children) ? nullptr : pi.hThread,
-      target_process, effective_luna, &reason, &resumed);
+  const int rc = RunInjection(target_process, target_pid, dll_path, wait_ms,
+                              hold, pi.hThread, target_process, effective_luna,
+                              &reason, &resumed, must_resume_after_injection);
 
   // 失败后的进程处置以**事实**为准（是否 CREATE_SUSPENDED、是否已恢复），不再按返回码
   // 猜测。旧实现：rc==1 一律 TerminateProcess（杀掉用户明明要玩的游戏）；rc==2 依据
   // 「超时但已 Resume」的注释放着不管——而 rc==2 的两个来源（就绪事件超时、旧映射不可
   // 复用）都发生在 ResumeThread 之前，游戏于是被永久留在挂起态：进程在、窗口永不出现，
   // 用户看到的就是「启动失败」。现在任何失败都至少让游戏以无 hook 方式跑起来。
-  const bool created_suspended =
-      (creation_flags & CREATE_SUSPENDED) != 0 && !delayed_siglus &&
-      !follow_children;
+  // created_suspended 与上面 must_resume_after_injection 同源（launched_suspended），
+  // 不再自己重算一套口径——旧实现这里漏了 locale 路径，且 pre-discovery 已恢复的情形
+  // 也要算作「已恢复」。
+  const bool created_suspended = launched_suspended;
+  const bool already_resumed = resumed || resumed_before_discovery;
   if (rc != 0) {
     hibiki_voice_hook::LaunchedProcessDisposition disposition =
         hibiki_voice_hook::DecideLaunchedProcessDisposition(created_suspended,
-                                                            resumed, reason);
+                                                            already_resumed,
+                                                            reason);
     if (disposition ==
         hibiki_voice_hook::LaunchedProcessDisposition::kResumeDegraded) {
-      if (ResumeThread(pi.hThread) == static_cast<DWORD>(-1)) {
-        fprintf(stderr,
-                "[launch] hook failed and resuming the game failed: %lu\n",
-                GetLastError());
+      if (!ResumeLaunchedGame(pi.hProcess, pi.hThread, "degraded")) {
+        fprintf(stderr, "[launch] hook failed and resuming the game failed\n");
         reason = hibiki_voice_hook::LaunchFailureReason::kResumeFailed;
         disposition =
             hibiki_voice_hook::LaunchedProcessDisposition::kTerminate;
