@@ -554,7 +554,10 @@
           st.hoverPaused = false;
           var v = videoEl();
           if (v && typeof v.play === 'function') {
-            try { v.play(); } catch (_) {}
+            var resumed = v.play();
+            if (resumed && typeof resumed.catch === 'function') {
+              resumed.catch(function () {});
+            }
           }
         }
       });

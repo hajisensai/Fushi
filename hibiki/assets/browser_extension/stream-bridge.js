@@ -157,12 +157,10 @@
   function fetchTrack(track) {
     if (!track || !track.url || seenUrls[track.url]) return;
     seenUrls[track.url] = 1;
-    try {
-      fetch(track.url, { credentials: 'include' })
-        .then(function (r) { return r.text(); })
-        .then(function (text) { if (text) postCues(track.label, track.format, text); })
-        .catch(function () {});
-    } catch (_) {}
+    fetch(track.url, { credentials: 'include' })
+      .then(function (r) { return r.text(); })
+      .then(function (text) { if (text) postCues(track.label, track.format, text); })
+      .catch(function () {});
   }
   function fetchTracks(tracks) {
     if (!tracks) return;
@@ -229,17 +227,15 @@
       var slot = captured[titleId];
       if (!slot || !slot.url || !slot.body || slot.done) return;
       slot.done = true;
-      try {
-        fetch(slot.url, {
-          method: 'POST',
-          body: slot.body,
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (json) { fetchTracks(A.amazonTracks(json)); })
-          .catch(function () {});
-      } catch (_) {}
+      fetch(slot.url, {
+        method: 'POST',
+        body: slot.body,
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (json) { fetchTracks(A.amazonTracks(json)); })
+        .catch(function () {});
     }
     var origOpen = window.XMLHttpRequest.prototype.open;
     window.XMLHttpRequest.prototype.open = function () {
