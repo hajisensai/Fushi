@@ -7,7 +7,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/mining/magpie_installer.dart';
 import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/utils.dart';
 
 /// 弹出确认框，返回用户是否同意下载。
 ///
@@ -23,7 +23,7 @@ Future<bool> confirmMagpieDownload(
 ) async {
   final BuildContext? context = appModel.navigatorKey.currentContext;
   if (context == null) return false;
-  final bool? agreed = await showDialog<bool>(
+  final bool? agreed = await showAppDialog<bool>(
     context: context,
     // 🔴 不许点外部关掉：`_downloadDeclined` 是**整个 app 生命周期**的一次性旗子，
     // 误关一次就等于这次运行里再也不问、超分永久不可用。要拒绝必须显式点「取消」。
@@ -58,24 +58,53 @@ class _MagpieDownloadDialogState extends State<_MagpieDownloadDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final int? bytes = _sizeBytes;
     final String size = bytes == null
         ? ''
         : '\n\n${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB '
             '(${widget.prompt.arch})';
-    return AlertDialog(
-      title: Text(t.galgame_upscaling_download_title),
-      content: Text('${t.galgame_upscaling_download_body}$size'),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: Text(t.dialog_cancel),
+    return HibikiDialogFrame(
+      maxWidth: 440,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.galgame_upscaling_download_title,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
         ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          child: Text(t.dialog_ok),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
         ),
-      ],
+        body: Text(
+          '${t.galgame_upscaling_download_body}$size',
+          style: tokens.type.listSubtitle,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(t.dialog_ok),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

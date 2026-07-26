@@ -855,7 +855,7 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
   /// 刮削：输入标题或源 ID → 搜索 → 多结果让用户选 → 取详情 → 落库。
   Future<void> _scrape() async {
     if (_scraping) return; // 再入守卫：一次刮削含多次网络往返。
-    final String? query = await showDialog<String>(
+    final String? query = await showAppDialog<String>(
       context: context,
       builder: (BuildContext ctx) => _ScrapeQueryDialog(
         initial: _name.text.trim().isEmpty
@@ -876,7 +876,7 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
       }
       SourceCandidate? picked = result.candidates.length == 1
           ? result.candidates.first
-          : await showDialog<SourceCandidate>(
+          : await showAppDialog<SourceCandidate>(
               context: context,
               builder: (BuildContext ctx) =>
                   _SourcePickerDialog(candidates: result.candidates),
@@ -1078,24 +1078,51 @@ class _ScrapeQueryDialogState extends State<_ScrapeQueryDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(t.game_scrape_title),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        decoration: InputDecoration(labelText: t.game_scrape_query),
-        onSubmitted: (String v) => Navigator.of(context).pop(v.trim()),
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return HibikiDialogFrame(
+      maxWidth: 420,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.game_scrape_title,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: HibikiTextField(
+          controller: _controller,
+          labelText: t.game_scrape_query,
+          autofocus: true,
+          onSubmitted: (String v) => Navigator.of(context).pop(v.trim()),
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: () =>
+                  Navigator.of(context).pop(_controller.text.trim()),
+              child: Text(t.dialog_ok),
+            ),
+          ],
+        ),
       ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(t.dialog_cancel),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
-          child: Text(t.dialog_ok),
-        ),
-      ],
     );
   }
 }

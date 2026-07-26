@@ -2678,5 +2678,7 @@
   "manga_online_queue_section": "Manga catalog downloads",
   "download_clear_finished": "Clear finished",
   "download_status_queued": "Queued",
-  "download_status_cancelled": "Cancelled"
+  "download_status_cancelled": "Cancelled",
+  "game_waveform_select_title": "Select audio range",
+  "game_waveform_range_label": "$start - $end (selected $duration / total $total)"
 }
