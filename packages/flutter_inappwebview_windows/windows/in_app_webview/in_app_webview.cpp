@@ -246,7 +246,7 @@ namespace flutter_inappwebview_plugin
       webView2Settings->put_IsZoomControlEnabled(settings->supportZoom);
       webView2Settings->put_AreDevToolsEnabled(settings->isInspectable);
       webView2Settings->put_AreDefaultContextMenusEnabled(!settings->disableContextMenu);
-      // BUG-1103 / BUG-1097: kill WebView2's own link-preview status bar.
+      // BUG-1105 / BUG-1097: kill WebView2's own link-preview status bar.
       //
       // Hovering a dictionary cross-reference (Yomitan structured content writes
       // the target straight into href) makes WebView2 paint the URL in the
@@ -1631,7 +1631,7 @@ namespace flutter_inappwebview_plugin
         webView2Settings->put_AreDefaultContextMenusEnabled(!newSettings->disableContextMenu);
       }
 
-      // BUG-1103 / BUG-1097: re-assert the status-bar kill on every settings
+      // BUG-1105: re-assert the status-bar kill on every settings
       // push, for the same unconditional reason as in prepare() above. Dart may
       // call setSettings at any point in a WebView's life (the popup re-pushes
       // InAppWebViewSettings on theme / zoom changes); keeping the assertion

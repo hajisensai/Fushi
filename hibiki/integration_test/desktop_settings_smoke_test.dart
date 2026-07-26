@@ -67,7 +67,7 @@ void main() {
       expect(homeReady, isTrue, reason: 'Home must render within 90s');
       await tester.pump(const Duration(seconds: 2));
 
-      // 焦点驱动前置（BUG-1103）：实验焦点导航开关关闭（默认）时，Tab 被全局
+      // 焦点驱动前置（BUG-1106）：实验焦点导航开关关闭（默认）时，Tab 被全局
       // 中和成 DoNothingIntent（TODO-112 / BUG-196，见
       // lib/src/shortcuts/global_navigation.dart 里 experimentalFocusNavigation
       // 为 false 时对 Tab 的映射），FocusDriver.reachAll 一步也走不动、只会返回
