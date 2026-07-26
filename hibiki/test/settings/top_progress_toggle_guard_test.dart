@@ -73,7 +73,8 @@ void main() {
 
     // ReaderSettings 路径用 value.toString() 落盘（无类型前缀），与
     // ReaderHibikiSource.setPreference 的 PrefCodec('b:false') 编码不同，但
-    // 同一 DB key；decode 端两者皆兼容（heuristic 读 'false'）。
+    // 同一 DB key；decode 端两者皆兼容——BUG-1116 后 ReaderSettings 与
+    // MediaSource 读侧均走 PrefCodec.decodeUntyped（标签值 + 裸值都认）。
     final Map<String, String> prefs = await db.getAllPrefs();
     expect(prefs['src:reader_ttu:show_top_progress_bar'], 'false',
         reason: 'key 实际落 src:reader_ttu:show_top_progress_bar');

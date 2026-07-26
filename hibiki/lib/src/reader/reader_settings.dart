@@ -126,15 +126,12 @@ class ReaderSettings {
     }
   }
 
-  static dynamic _parseValue(String raw) {
-    if (raw == 'true') return true;
-    if (raw == 'false') return false;
-    final int? asInt = int.tryParse(raw);
-    if (asInt != null) return asInt;
-    final double? asDouble = double.tryParse(raw);
-    if (asDouble != null) return asDouble;
-    return raw;
-  }
+  /// BUG-1116：读侧统一走 [PrefCodec.decodeUntyped]，兼容两种历史写入格式：
+  /// MediaSource.setPreference 写入的 PrefCodec 标签值（'b:false' / 'd:22.0'
+  /// 等）+ 本类 [_set] 的裸 `toString()` 旧值。decodeUntyped 的非标签分支与
+  /// 旧启发式（true/false → int → double → string）逐行等价，是严格超集，
+  /// 旧裸值行为逐字节不变。
+  static dynamic _parseValue(String raw) => PrefCodec.decodeUntyped(raw);
 
   // ── Display settings (same Hive keys as old ReaderTtuSource) ──────
 
