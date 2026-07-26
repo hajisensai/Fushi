@@ -365,6 +365,15 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
         'playlist=${p.basename(m3u8Path)}',
       );
       Navigator.pop(context, firstUid);
+    } catch (e, stack) {
+      // 补 catch（BUG-1117）：此前 try/finally 无 catch，解析/落库异常逃逸 async
+      // zone——用户只见 spinner 停住无任何提示。范式对齐 BookImportDialog.import。
+      ErrorLogService.instance
+          .log('VideoImportDialog.importPlaylist', e, stack);
+      debugPrint('[hibiki-drop] [video-import] importPlaylist failed: $e');
+      if (mounted) {
+        HibikiToast.show(msg: '${t.srt_import_error}: $e');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -411,6 +420,13 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
             content: Text(t.video_import_folder_done(count: importedCount))),
       );
       Navigator.pop(context, lastBookUid);
+    } catch (e, stack) {
+      // 补 catch（BUG-1117）：扫描/分组/落库异常此前静默逃逸，用户无感知。
+      ErrorLogService.instance.log('VideoImportDialog.pickFolder', e, stack);
+      debugPrint('[hibiki-drop] [video-import] pickFolder failed: $e');
+      if (mounted) {
+        HibikiToast.show(msg: '${t.srt_import_error}: $e');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -550,6 +566,14 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
         'video=${p.basename(videoPath)} subtitle=${subtitlePath == null ? 'none' : p.basename(subtitlePath)}',
       );
       Navigator.pop(context, bookUid);
+    } catch (e, stack) {
+      // 补 catch（BUG-1117）：字幕解析/封面抽取/落库异常此前静默逃逸 async zone，
+      // 用户只见 spinner 停住。落日志 + toast 提示，范式对齐 BookImportDialog.import。
+      ErrorLogService.instance.log('VideoImportDialog.import', e, stack);
+      debugPrint('[hibiki-drop] [video-import] import failed: $e');
+      if (mounted) {
+        HibikiToast.show(msg: '${t.srt_import_error}: $e');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -616,6 +640,14 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
         'url=$url',
       );
       Navigator.pop(context, bookUid);
+    } catch (e, stack) {
+      // 补 catch（BUG-1117）：流解析/落库异常此前静默逃逸（拖 URL 自动导入是
+      // fire-and-forget 调用，异常必然无人接），落日志 + toast 提示。
+      ErrorLogService.instance.log('VideoImportDialog.importStream', e, stack);
+      debugPrint('[hibiki-drop] [video-import] importStream failed: $e');
+      if (mounted) {
+        HibikiToast.show(msg: '${t.srt_import_error}: $e');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
