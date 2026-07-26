@@ -6,6 +6,7 @@ library;
 
 import 'dart:convert';
 
+import 'package:hibiki/src/media/media_search_text.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 
 /// 排序维度（契约 §4.1）。[key] 是持久化字符串，**不可随意改**。
@@ -173,111 +174,17 @@ class GalgameLibraryView {
   }
 }
 
-/// 搜索归一化：全角 ASCII → 半角、大写 → 小写、片假名 → 平假名、丢掉空白与常见
-/// 标点。目的是让「Fate／stay night」「fate stay night」「ＦＡＴＥ・ｓｔａｙ」
-/// 互相能命中，而不引入任何模糊匹配依赖。
-///
-/// 片假名折叠只做基本区（U+30A1..U+30F6 平移 -0x60），长音符 `ー`、中点 `・`
-/// 这类连接符直接丢弃——它们在标题里出现与否全凭排版习惯。
-String normalizeGalgameSearchText(String raw) {
-  if (raw.isEmpty) return '';
-  final StringBuffer out = StringBuffer();
-  for (final int code in raw.runes) {
-    int c = code;
-    // 全角 ASCII（U+FF01..U+FF5E）→ 半角。
-    if (c >= 0xFF01 && c <= 0xFF5E) {
-      c -= 0xFEE0;
-    }
-    // 全角空格 → 视作空白（下面被丢弃）。
-    if (c == 0x3000) {
-      continue;
-    }
-    // 片假名 → 平假名（基本区）。
-    if (c >= 0x30A1 && c <= 0x30F6) {
-      c -= 0x60;
-    }
-    final String ch = String.fromCharCode(c);
-    if (_isDroppedSearchChar(ch, c)) {
-      continue;
-    }
-    out.write(ch.toLowerCase());
-  }
-  return out.toString();
-}
-
-/// 归一化时丢弃的字符：空白 + 常见分隔/装饰标点（含日文全角标点）。
-bool _isDroppedSearchChar(String ch, int code) {
-  if (code <= 0x20) return true; // 控制字符与空格
-  return _kDroppedSearchChars.contains(ch);
-}
-
-/// 见 [_isDroppedSearchChar]。
-
-const Set<String> _kDroppedSearchChars = <String>{
-  '!',
-  '"',
-  '#',
-  '\$',
-  '%',
-  '&',
-  "'",
-  '(',
-  ')',
-  '*',
-  '+',
-  ',',
-  '-',
-  '.',
-  '/',
-  ':',
-  ';',
-  '<',
-  '=',
-  '>',
-  '?',
-  '@',
-  '[',
-  '\\',
-  ']',
-  '^',
-  '_',
-  '`',
-  '{',
-  '|',
-  '}',
-  '~',
-  '・',
-  'ー',
-  '、',
-  '。',
-  '「',
-  '」',
-  '『',
-  '』',
-  '〜',
-  '＝',
-  '−',
-  '–',
-  '—',
-  '“',
-  '”',
-  '‘',
-  '’',
-  '…',
-};
+/// 搜索归一化。**实现已上提到媒体层** [normalizeMediaSearchText]（P5-A：书架 /
+/// 视频 / 游戏三个库页共用同一口径），这里保留原名做委托——它是本文件的公开
+/// API，已被游戏库页与其单测引用，改名没有收益只会破坏调用方。
+String normalizeGalgameSearchText(String raw) => normalizeMediaSearchText(raw);
 
 /// 某条游戏是否命中搜索词：对 [GalgameEntry.searchTitles] 全部标题做归一化子串匹配。
 /// 空查询恒命中。纯函数。
-bool matchesGalgameSearch(GalgameEntry entry, String query) {
-  final String needle = normalizeGalgameSearchText(query);
-  if (needle.isEmpty) return true;
-  for (final String title in entry.searchTitles) {
-    if (normalizeGalgameSearchText(title).contains(needle)) {
-      return true;
-    }
-  }
-  return false;
-}
+///
+/// P5-A：判定逻辑收口到共享的 [matchesMediaSearch]，与书架/视频页同一口径。
+bool matchesGalgameSearch(GalgameEntry entry, String query) =>
+    matchesMediaSearch(query: query, titles: entry.searchTitles);
 
 /// 某条游戏是否通过筛选（不含搜索）。纯函数。
 bool matchesGalgameFilters(GalgameEntry entry, GalgameLibraryView view) {
