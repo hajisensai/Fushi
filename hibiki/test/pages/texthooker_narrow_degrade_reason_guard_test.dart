@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-1109 守卫：窄屏（compact）状态卡不得把降级原因整行藏掉。
+/// BUG-1110 守卫：窄屏（compact）状态卡不得把降级原因整行藏掉。
 ///
 /// 原实现是 `if (!compact && state.fallbackReason != null)` —— 窗口宽度不足 840px
 /// 时降级原因**完全不渲染**。而同一张卡右侧的 `_StatusPill` 在 compact 下照常亮
@@ -30,7 +30,7 @@ void main() {
     cardSource = source.substring(start, end);
   });
 
-  test('降级原因不再被 compact 整行丢弃（BUG-1109）', () {
+  test('降级原因不再被 compact 整行丢弃（BUG-1110）', () {
     expect(
       cardSource.contains('if (state.fallbackReason != null)'),
       isTrue,
@@ -39,11 +39,11 @@ void main() {
     expect(
       cardSource.contains('!compact && state.fallbackReason != null'),
       isFalse,
-      reason: '窄屏藏掉降级原因正是 BUG-1109，不得回退',
+      reason: '窄屏藏掉降级原因正是 BUG-1110，不得回退',
     );
   });
 
-  test('compact 只收窄行数，不丢弃内容（BUG-1109）', () {
+  test('compact 只收窄行数，不丢弃内容（BUG-1110）', () {
     expect(
       cardSource.contains('maxLines: compact ? 2 : 3'),
       isTrue,
@@ -51,7 +51,7 @@ void main() {
     );
   });
 
-  test('compact 省掉的是次要信息而非诊断线索（BUG-1109）', () {
+  test('compact 省掉的是次要信息而非诊断线索（BUG-1110）', () {
     // 采样率/声道/位深这类次要信息仍可以在窄屏省掉——这是 compact 的正当用途。
     expect(
       cardSource
@@ -61,7 +61,7 @@ void main() {
     );
   });
 
-  test('降级徽章与降级原因的显示条件必须对称（BUG-1109）', () {
+  test('降级徽章与降级原因的显示条件必须对称（BUG-1110）', () {
     // 不对称正是这个 bug 的本质：徽章无条件亮，原因却被藏。
     final int pill = cardSource.indexOf('_StatusPill(');
     expect(pill, greaterThanOrEqualTo(0), reason: '找不到 _StatusPill');
