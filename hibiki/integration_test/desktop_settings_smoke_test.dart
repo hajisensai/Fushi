@@ -1,10 +1,12 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 
 import 'helpers/effect_probes.dart';
@@ -64,6 +66,23 @@ void main() {
       final bool homeReady = await waitForHome(tester);
       expect(homeReady, isTrue, reason: 'Home must render within 90s');
       await tester.pump(const Duration(seconds: 2));
+
+      // 焦点驱动前置（BUG-1103）：实验焦点导航开关关闭（默认）时，Tab 被全局
+      // 中和成 DoNothingIntent（TODO-112 / BUG-196，见
+      // lib/src/shortcuts/global_navigation.dart 里 experimentalFocusNavigation
+      // 为 false 时对 Tab 的映射），FocusDriver.reachAll 一步也走不动、只会返回
+      // 起点这 1 个节点，下面 >=3 的断言必红。run_windows_itest.ps1 每次都开一个
+      // 全新隔离数据根，偏好永远是默认值，所以这里必须显式打开开关——**不要删**，
+      // 删掉这段这条门在全新 profile 上会重新变成必红。与 app_smoke_test /
+      // comprehensive_settings_test 同范式。
+      final ProviderContainer container = ProviderScope.containerOf(
+        tester.element(find.byType(MaterialApp).first),
+      );
+      final AppModel appModel = container.read(appProvider);
+      await appModel.setExperimentalFocusNavigationEnabled(true);
+      for (int i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 250));
+      }
 
       // 2) Focus traversal works on the live UI (synthetic Tab only).
       final FocusDriver driver = FocusDriver(tester);
