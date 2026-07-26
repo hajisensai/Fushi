@@ -1,21 +1,22 @@
-## BUG-1092 · Locale Emulator 启动的游戏永久停在挂起态：窗口永不出现，injector 却报 OK hooked
-- **报告**：2026-07-25（用户：「点启动游戏没反应，游戏没打开」。同一轮报告里「没有报错提醒」这一半另记 [BUG-1089](BUG-1089-gal-launch-silent-no-feedback.md)，「事件乱码」记 [BUG-1091](BUG-1091-gal-injector-diagnostics-mojibake.md)）
-- **样本**：`D:\APP\GalGame\屋上の百合霊さん\屋上の百合霊さんフルコーラス.exe`（x86，Unity，非 Siglus），走日语 locale 路径。
-- **真实性**：✅ 真 bug，**根因在 native（独立仓 `hibiki-voice-hook`），本仓只记账**。
-  - **现场硬证据（本机实测，非推断）**：
-    - injector stdout 有 `LAUNCH pid=109292 arch=x86` 与 `OK hooked pid=109292 hooked=1`，stderr 有 `[locale] launched with Japanese CP932 via Locale Emulator pid=109292` → **injector 自认为完全成功（rc==0）**。
-    - 但游戏进程数小时后仍在，`MainWindowHandle=0`，`Get-Process` 显示主线程 `WaitReason=Suspended`（4 线程，另两个 `ExecutionDelay`），CPU 时间 1:55 来自注入的 hook 线程。
-    - 对该主线程 P/Invoke 调用**一次** `ResumeThread`，**返回值 = 1**。返回值即调用前的挂起计数 → **计数一直是 1，从未被减过**。调用后线程立即转 `WaitReason=UserRequest`，`MainWindowHandle` 由 0 变为非 0，游戏正常启动出画面。
-    - 这条实证**证伪**了「LE 让挂起计数叠加到 >1、所以需要多次 resume」的假说：计数是 1，说明 injector 那唯一一次 `ResumeThread` **根本没作用在这个线程上**。
-  - **native 根因**（运行版 = worktree 分支 `launch-no-suspended-zombie`，比主线 `d1601b9` 领先 27 commit；主线不含 `[locale]` 代码，故现场跑的是该分支产物）：
-    - 本次输入判定：`delayed_siglus=false`（非 Siglus，`IsSiglusGame` 需 basename == `SiglusEngine.exe` 或同目录同时有 `Gameexe.dat`+`Scene.pck`，见 `include/siglus_launch.h:19-31`）、`follow_children=false`、`japanese_locale=true` → `creation_flags = CREATE_SUSPENDED`（`injector/injector_main.cpp:1921-1922`）。
-    - 进程由 **LoaderDll 的 `LeCreateProcess` 代创建**（`injector_main.cpp:1372-1376`），且 injector 在该调用上**又叠加了一次** `CREATE_SUSPENDED`（`:1375`）；主线程句柄来自 LE 回填 `process_information->hThread = le_process.hThread`（`:1379`）。`CreateJapaneseLocaleProcess` 自身不做任何 resume（全文件 `ResumeThread` 只在 `:1189 / :1988 / :2068`）。
-    - `SelectLocaleThreadResumePolicy(true, false, false)` → `kAfterEarlyInjection`（`injector/locale_emulator_launch.h:83-92`，测试 `tests/locale_emulator_launch_test.cpp:45-47` 已锁定该映射）。该策略在 `RunLaunch` 里**没有**任何 resume 使用点，把责任交给 `RunInjection`，实参为 `pi.hThread`（`:2049-2052`）。
-    - `RunInjection` 的 resume 整块被 `if (resume_thread != nullptr)` 包裹（`:1156`–`:1246`），`ResumeThread` 在 `:1189`；而 `OK hooked` 的 printf 在 **`:1248`，在该块之外**。因此 **`resume_thread` 为空（或指向非游戏主线程）时整块被静默跳过——无任何 stderr——控制流照常落到 `:1248` 打印 `OK hooked`，rc=0，进 `--hold` 循环**。这正是「injector 报成功、游戏永久挂起」的机制。
-    - **最小根因**：`kAfterEarlyInjection` 策略把 resume 责任交给 `RunInjection` 并传入 LE 回填的 `le_process.hThread`，但该句柄不是游戏真实挂起主线程的可 resume 句柄；`:1156` 的空判据让唯一一次 resume 被静默跳过，挂起计数永远停在 1。
-  - **未定死的分支（诚实边界）**：`le_process.hThread` 究竟是 **null**（→ 整块跳过）还是**非空但不是游戏主线程**（→ resume 了错的线程），因 LoaderDll 是第三方二进制、本仓无源码，无法从静态代码定死；两者的可观测症状完全一致（计数恒为 1、无 stderr、`OK hooked` 照打）。现场 stderr 干净（无 `ResumeThread failed`）**倾向 null 分支**，但这是推断，需在 native 加一行诊断打印 `pi.hThread` 才能定死。
-  - **与 BUG-1066 的区别**：BUG-1066 修的是 **rc≠0**（注入/就绪失败）时别留挂起僵尸——`DecideLaunchedProcessDisposition` 被 `if (rc != 0)` 守卫（`:2062`）包裹。本次 **rc==0**，该守卫根本不进，所以 BUG-1066 的修复覆盖不到这条 locale 特有路径。这是新洞，不是旧修复回归。
-  - **测试覆盖缺口**：`tests/locale_emulator_launch_test.cpp` 只验「策略枚举选对了」，从不触碰 `LeCreateProcess` 的 hThread 出参语义，也从不断言「游戏主线程挂起计数被减到 0」。本次现场组合完全没有守卫。
-- **[ ] ① 未修复** — 修复须在独立仓 `hibiki-voice-hook` 完成，**本轮未做**，原因如实记录：跨仓改动 + 必须重新构建 x86/x64 并发布 helper release 用户才拿得到 + 需回到用户原始启动路径做真机 E2E，不是本轮 Dart 侧改动能覆盖的范围。建议方向（未实施）：① 不再把 LE 回填的 `hThread` 当可靠 resume 句柄，改为按 pid 确定性恢复（该文件已有 `NtResumeProcess` 封装 `:970-972`）或按 `dwProcessId` 枚举真实主线程再 resume，并**校验挂起计数确实降到 0**；② 把 `:1156` 的「resume_thread 为空」从静默跳过改成**硬失败并回报结构化 `ERR reason=`**——在应当 resume 的策略下静默不 resume 却打印 `OK hooked` 是不可接受的说谎。
-- **[ ] ② 未加自动化测试** — 待 native 修复时补：针对 `locale_launched=true + 非 Siglus + 非 follow-child + hold`，注入 `LeCreateProcess` stub 分别回填 `hThread=null` 与「非主线程句柄」两个变体，断言 `RunInjection` **不得**在未真正 resume 游戏主线程的情况下返回成功 / 打印 `OK hooked`。
-- **备注**：**用户侧当前可用的绕过办法**：本次是用外部 `ResumeThread` 手工救活的（进程仍在时可救，不用重启游戏）。修好前，若点启动后游戏窗口没出现，可关掉残留进程重试；BUG-1089 的修复已让这种情况至少**明确提示**「游戏进程已启动但窗口一直没有出现」而不再静默。状态：`root_caused_unfixed`（根因已定位到 native `file:line`，修复与真机验证未做）。
+## BUG-1092 · galgame 启动后留下永久挂起的僵尸进程：窗口永不出现，injector 却报 OK hooked
+- **报告**：2026-07-25（用户：「点启动游戏没反应，游戏没打开」。同一轮报告里「没有报错提醒」记 [BUG-1087](BUG-1087-gal-launch-silent-no-feedback.md)，「事件乱码」记 [BUG-1088](BUG-1088-gal-injector-diagnostics-mojibake.md)）
+- **样本**：`屋上の百合霊さんフルコーラス.exe`，x86 Unity，SHA-256 `F460F9DEB9B4A8C1132CDCFC99D107C66360AEAEB42F9ADED7EF9F8A80B35760`，614400 字节。走日语 locale（Locale Emulator）路径。用户 helper 组件均为 2026-07-25 21:48 安装，injector SHA-256 前缀 `928266015AE21744`。
+- **真实性**：✅ 现象真实（**两次独立实证**），但**产生路径未复现**，根因未完全定死。
+  - **已实证的现象**：两个游戏进程（pid 138556 @07-25 13:37、pid 53332 @07-26 09:58）长时间存活，`MainWindowHandle=0`、仅 4 线程、主线程 `WaitReason=Suspended`。对主线程外部调用一次 `ResumeThread` 后线程转 `UserRequest`、窗口立即出现 → 进程确实卡在挂起态，游戏代码从未运行。
+  - 🔴 **未能复现产生路径**：三次真机运行——① 用户机器上的原版 injector、② 本轮修复版、③ 与 Hibiki 完全一致的参数（`--launch … --hold --wait-ms 30000 --japanese-locale --luna-hook-profile <store>`）——**游戏每次都正常启动**，窗口出现、22 线程、`responding=True`、`[luna] connected`。也就是说原版 injector 在这条路径上**会**正确 resume。
+  - **前一轮结论已被证伪，此处修正**：曾据「外部对僵尸主线程调一次 `ResumeThread` 返回 1」推断「挂起计数从未被减过、LE 未回填 `hThread`、resume 被静默跳过」。实测日志为 `[resume] post-injection primary thread resumed (initial suspend count=1, resume calls=1)` → **LE 确实回填了有效句柄，计数就是 1，单次 resume 足够**。那个返回 1 是 injector 已经减过一次之后的残值。同样被排除的假说：guarded-luna 挂起窗口——用户的 `luna_hook_profiles.tsv` 只有注释头+表头、**零条目**，`blocked_hook_codes` 为空，该路径不进入。
+  - **定位到的两个结构性缺陷**（确定成立，与能否复现无关，见下）：
+    1. **挂起窗口与宿主超时同源、同时到期**：Hibiki 的 `buildEngineHookInjectorArguments` 把 `--wait-ms` 与自身 `_readyTimeout` 同源下发（都是 30000ms），而 injector 又拿同一个值作为「让游戏停在挂起态等 startup audio hook 就绪」的上限。两侧同时到期：Dart 侧 `EngineHookGalAudioSource.stop()` 里 `_injector?.kill()` 一超时就杀 injector，而 injector 可能恰好还停在那个等待里、尚未执行 `ResumeThread` → `CREATE_SUSPENDED` 的游戏被永久留在挂起态。**被外部杀死时 BUG-1066 那套 `DecideLaunchedProcessDisposition` 根本没有代码会执行**，指望它兜底是错的。这是本现象目前最强的候选路径。
+    2. **恢复动作过于脆弱且会说谎**：`ResumeThread` 只把挂起计数 -1，旧实现只调一次并把「返回值非 -1」当成功；整个 resume 块由 `resume_thread != nullptr` 把门，而这个 `nullptr` 同时承载「本策略不需要 resume」（Siglus/follow-child）与「本该 resume 但句柄没拿到」两种互斥含义，后者被静默当成前者跳过，而 `OK hooked` 的 printf 就在该块**外面** → injector 报成功、游戏永久挂起。
+- **[x] ① 已修复（native，独立仓 PR hajisensai/hibiki-hook#7，分支 `fix/locale-resume-not-applied`，commit `e2ebde4`）** — 关闭上述两个缺陷：
+  - 新增纯函数 `SuspendedStartupWaitBudgetMs`：挂起窗口只取总预算 1/4、上限 5s，绝不与宿主超时同时到期（启动期 hook 由注入线程装、与游戏主线程是否运行无关，正常几百毫秒就绪）。
+  - 新增 `ResumeLaunchedGame`：循环 resume 到挂起计数归零（不假设计数恒为 1）、记录**首次**计数与调用次数、句柄无效时退到进程级 `NtResumeProcess`、两者都失败才 `kResumeFailed`，**绝不静默跳过**；三个 resume 点（pre-discovery / post-injection / degraded）统一走它。
+  - 新增纯函数 `LaunchedProcessIsSuspended` / `MustResumeAfterInjection`：用显式的 `created_suspended` 表达「是否必须恢复」，句柄降级为首选手段，消掉 `nullptr` 的二义性。顺带修正 `created_suspended` 口径——旧算法漏了 locale 路径（LoaderDll 无条件叠加 `CREATE_SUSPENDED`，所以只要走 locale 就一定是挂起态，即使 `creation_flags` 为 0）。
+- **[x] ② 已加自动化测试** — `tests/launch_failure_policy_test.cpp` 新增断言：locale 挂起事实（`LaunchedProcessIsSuspended(false, true)` 必须为真——旧算法漏的那一半）、恢复责任的三种组合、预算不变式（`SuspendedStartupWaitBudgetMs(30000)==5000`，且 0–60000 全域扫描 `budget <= total`）、以及 locale 挂起 + 注入失败 + 未恢复必须判 `kResumeDegraded`。x86 `ctest` **21/21 通过**；x64 两个策略测试构建并运行 **exit=0**。
+- **备注 / 未验证项（如实记录）**：
+  - **僵尸产生路径未复现**，故根因未定死；上面缺陷 1 是最强候选但缺直接证据。若现象复发，关键证据是新日志里的 `[resume] … (initial suspend count=N, resume calls=M)` 与 `startup audio hook readiness timed out after X ms (total wait budget Y ms)`。
+  - **x64 完整 `cmake --build` / `ctest` 被环境阻断**：`unity_audio_extract` 要求 `net8.0`，本机只有 .NET SDK 6.0.428（`NETSDK1045`）。已确认该阻断在干净的 `origin/main` 上同样存在，与本改动无关。装上 .NET 8 SDK 即可补齐这道门。
+  - `tools/generate_luna_profiles.py --check` **exit=1**，同样在干净 `origin/main` 上复现 → 预先存在，与本改动无关。
+  - **未从 Hibiki app UI 走完整 E2E**（台词 → 对应语音 → 画面 → 真卡写入）；真机验证是命令行直调 injector。按 galgame SOP 状态为 `implemented_unverified`。
+  - 修复要用户拿到必须**重新构建并发布 helper release**（合并 main 后 CI 自动重建）。真机验证期间曾临时换入自建 injector，**结束时已恢复用户原文件并校验 SHA 一致（`928266015AE21744`）**，备份已删除，无残留游戏进程。
+  - BUG-1087 的修复已让这种情况至少**明确提示**「游戏进程已启动，但窗口一直没有出现」，不再静默。

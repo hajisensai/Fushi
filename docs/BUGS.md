@@ -42,7 +42,7 @@
 | [BUG-1095](bugs/BUG-1095-gal-overlay-font-size-coupled-to-window-height.md) | ✅ | ✅ | galgame 台词浮窗拖动窗口时字号跟着变，「放不下」怎么拖都放不下 |
 | [BUG-1094](bugs/BUG-1094-gal-manual-recapture-fixed-8s.md) | ✅ | ✅ | 手动录音 ⏺ 固定 8 秒自动关闭，且回取长度被同一个错误常量夹住 |
 | [BUG-1093](bugs/BUG-1093-first-lookup-audio-missing.md) | ✅ | ✅ | 第一次查词音频容易没有：WebView autoplay 拦截+兜底失效 |
-| [BUG-1092](bugs/BUG-1092-gal-locale-resume-skipped.md) | 🚧 | 🚧 | Locale Emulator 启动的游戏永久停在挂起态：窗口永不出现，injector 却报 OK hooked |
+| [BUG-1092](bugs/BUG-1092-gal-locale-resume-skipped.md) | ✅ | ✅ | galgame 启动后留下永久挂起的僵尸进程：窗口永不出现，injector 却报 OK hooked |
 | [BUG-1091](bugs/BUG-1091-gal-injector-diagnostics-mojibake.md) | ✅ | ✅ | injector 诊断按系统代码页解码：会话事件乱码且中文失败分类永久失配 |
 | [BUG-1090](bugs/BUG-1090-audio-source-url-not-editable.md) | ✅ | ✅ | 管理音频来源弹窗里已有远端 URL 无法编辑，只能删了重加 |
 | [BUG-1089](bugs/BUG-1089-gal-launch-silent-no-feedback.md) | ✅ | ✅ | 点启动游戏无任何提示：注入降级/窗口未出现都静默走成功路径 |
