@@ -7,7 +7,7 @@
   - `_pickFolder` — `video_import_dialog.dart:387-416`
   - 加重因素：三处调用点是 **fire-and-forget**（`initState` postFrameCallback `:225`/`:235`、`_handleDialogDrop:697` 不 await），异常必然逃逸 async zone、无人接住——解析/落库/封面抽取任何一步抛错，用户只见确认按钮里的 spinner 停住（finally 复位 `_busy`）、无任何提示、无日志。
   - 对照组：同类导入对话框 `book_import_dialog.dart:856-866` 早有完整范式（`catch (e, stack)` → `ErrorLogService.instance.log` → `debugPrint` → mounted 时 `HibikiToast.show('${t.srt_import_error}: $e')`），video 侧漏抄。
-- **[x] ① 已修复** — `<pending-commit>`
+- **[x] ① 已修复** — `f3acac3e8`
   - 四个方法各在 `} finally {` 前补一个 catch 块，照抄 BookImportDialog 范式：`ErrorLogService.instance.log('VideoImportDialog.<tag>', e, stack)` + `debugPrint` + mounted 时 `HibikiToast.show(msg: '${t.srt_import_error}: $e')`。四个 tag：`VideoImportDialog.import` / `.importStream` / `.importPlaylist` / `.pickFolder`。
   - 纯增量：不动 finally（`_busy` 复位保持原样）、不动 pop/落库顺序；复用既有 i18n key `srt_import_error`（零新 key）；`utils.dart` barrel 已导出 ErrorLogService/HibikiToast，零新增 import。
 - **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_import_dialog_error_handling_test.dart`
