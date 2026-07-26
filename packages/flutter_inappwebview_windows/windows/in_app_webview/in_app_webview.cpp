@@ -246,6 +246,26 @@ namespace flutter_inappwebview_plugin
       webView2Settings->put_IsZoomControlEnabled(settings->supportZoom);
       webView2Settings->put_AreDevToolsEnabled(settings->isInspectable);
       webView2Settings->put_AreDefaultContextMenusEnabled(!settings->disableContextMenu);
+      // BUG-1103 / BUG-1097: kill WebView2's own link-preview status bar.
+      //
+      // Hovering a dictionary cross-reference (Yomitan structured content writes
+      // the target straight into href) makes WebView2 paint the URL in the
+      // bottom-left corner of the WebView. The runner's own native lookup
+      // overlay was fixed for this in windows/runner/global_lookup_window.cpp,
+      // but the IN-APP popup / reader / dictionary tab render the very same
+      // popup.js through THIS fork, so they showed the same stray address.
+      //
+      // Deliberately UNCONDITIONAL — not a missing knob. Exposing it as a
+      // setting would need a matching Dart field in
+      // flutter_inappwebview_platform_interface, which lives in pub-cache and is
+      // NOT forked here (only this windows package is vendored). And no Hibiki
+      // surface wants a browser status bar: every WebView in this app renders
+      // EPUB / dictionary content, never a browsing chrome.
+      //
+      // put_IsStatusBarEnabled is on the BASE ICoreWebView2Settings, so the
+      // get_Settings pointer above is enough — no QueryInterface for a newer
+      // interface version.
+      webView2Settings->put_IsStatusBarEnabled(FALSE);
 
       wil::com_ptr<ICoreWebView2Settings2> webView2Settings2;
       if (succeededOrLog(webView2Settings->QueryInterface(IID_PPV_ARGS(&webView2Settings2)))) {
@@ -1610,6 +1630,14 @@ namespace flutter_inappwebview_plugin
       if (fl_map_contains_not_null(newSettingsMap, "disableContextMenu") && settings->disableContextMenu != newSettings->disableContextMenu) {
         webView2Settings->put_AreDefaultContextMenusEnabled(!newSettings->disableContextMenu);
       }
+
+      // BUG-1103 / BUG-1097: re-assert the status-bar kill on every settings
+      // push, for the same unconditional reason as in prepare() above. Dart may
+      // call setSettings at any point in a WebView's life (the popup re-pushes
+      // InAppWebViewSettings on theme / zoom changes); keeping the assertion
+      // here means the link-preview can never come back through a code path that
+      // re-derives settings, and it costs one idempotent COM call.
+      webView2Settings->put_IsStatusBarEnabled(FALSE);
 
       wil::com_ptr<ICoreWebView2Settings2> webView2Settings2;
       if (succeededOrLog(webView2Settings->QueryInterface(IID_PPV_ARGS(&webView2Settings2)))) {
