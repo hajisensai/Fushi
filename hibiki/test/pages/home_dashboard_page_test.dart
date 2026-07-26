@@ -533,6 +533,151 @@ void main() {
     );
   });
 
+  /// BUG-1110/BUG-1111 公共装配：塞一个游戏行；[playedAt] 非空则再塞一条游玩会话
+  /// （仓储的 lastPlayedMs 由 `galgame_sessions` 现算，不是 `galgames` 上的列）。
+  Future<void> seedGame({
+    required String id,
+    required String name,
+    required DateTime addedAt,
+    DateTime? playedAt,
+    String? coverPath,
+  }) async {
+    await db.upsertGalgame(GalgamesCompanion(
+      id: Value(id),
+      name: Value(name),
+      exePath: Value('/abs/$id.exe'),
+      workdir: const Value('/abs'),
+      addedAt: Value(addedAt.millisecondsSinceEpoch),
+      coverPath: Value(coverPath),
+    ));
+    if (playedAt != null) {
+      await db.insertGalgameSession(GalgameSessionsCompanion(
+        gameId: Value(id),
+        startMs: Value(playedAt.millisecondsSinceEpoch - 60000),
+        endMs: Value(playedAt.millisecondsSinceEpoch),
+        durationSeconds: const Value(60),
+        dateKey: Value(HibikiTimeFormat.dayKey(playedAt)),
+      ));
+    }
+  }
+
+  testWidgets('BUG-1110：玩过的游戏进「继续」区，且「游戏」筛选档只留游戏', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final DateTime now = DateTime.now();
+    // 在看的视频（进继续区）+ 玩过的游戏（本条修复前**结构上进不来**）。
+    // 刻意不设 importedAt：让视频只出现在「继续」区，不进「最近添加」——否则
+    // 下面按文本断言「游戏档滤掉视频」会被「最近添加」里的同名卡干扰。
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('v-1'),
+      title: Value('某视频'),
+      videoPath: Value('/abs/v1.mp4'),
+      lastPositionMs: Value(5000),
+    ));
+    await seedGame(
+      id: 'g-1',
+      name: '某游戏',
+      addedAt: now.subtract(const Duration(days: 3)),
+      playedAt: now,
+    );
+
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.home_continue), findsOneWidget);
+    // 游戏出现在「继续」区（修复前恒不出现）。
+    expect(find.text('某游戏'), findsWidgets);
+
+    // 「游戏」筛选档存在（与热力图同一组档位），点它只剩游戏、视频被滤掉。
+    // 页面上有两组档位：热力图（置顶）在前、「继续」在后——必须点后者，
+    // 点 .first 改的是热力图筛选，继续区纹丝不动。
+    // 必须锁到「继续」区块自己的 chip：页面上共有三组档位（热力图 / 继续 /
+    // 活动时间轴）都含「游戏」档，且游戏卡的状态副标题本身也是「游戏」——
+    // 按裸文本或按树序取都会点错。`_sectionCard` 外层是 DecoratedBox，
+    // find.ancestor 由近及远，第一个即本区块卡。
+    final Finder continueCard = find
+        .ancestor(
+          of: find.text(t.home_continue),
+          matching: find.byType(DecoratedBox),
+        )
+        .first;
+    final Finder gameChip = find.descendant(
+      of: continueCard,
+      matching: find.widgetWithText(ChoiceChip, t.home_filter_game),
+    );
+    expect(gameChip, findsOneWidget);
+    await tester.tap(gameChip);
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('某游戏'), findsWidgets);
+    expect(find.text('某视频'), findsNothing);
+  });
+
+  testWidgets('BUG-1110：新添加的游戏进「最近添加」（类型 · 相对时间）', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 只添加、没玩过：不进「继续」，只进「最近添加」（与视频「只导入」同口径）。
+    await seedGame(id: 'g-2', name: '刚加的游戏', addedAt: DateTime.now());
+
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.home_recently_added), findsOneWidget);
+    expect(find.text('刚加的游戏'), findsWidgets);
+    expect(
+      find.text('${t.home_filter_game} · ${t.activity_just_now}'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('BUG-1111：活动时间轴的游戏条目渲染封面，不再只有回退图标', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 真封面文件：1x1 PNG（Image.file 需要真实可解码文件）。
+    final File cover = File('${storeDir.path}/g3_cover.png')
+      ..writeAsBytesSync(_kOnePixelPng);
+
+    final DateTime now = DateTime.now();
+    await seedGame(
+      id: 'g-3',
+      name: '有封面的游戏',
+      addedAt: now,
+      playedAt: now,
+      coverPath: cover.path,
+    );
+    // 时间轴的游戏行：mediaKey = galgames.id（据此反查封面）。
+    await db.addActivityEvent(
+      eventType: kActivityGame,
+      mediaType: kActivityMediaGame,
+      title: '有封面的游戏',
+      dateKey: HibikiTimeFormat.dayKey(now),
+      timestampMs: now.millisecondsSinceEpoch,
+      mediaKey: 'g-3',
+      durationMs: 60000,
+    );
+
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    // 修复前游戏走「回退原类型图标」分支，时间轴上不会有任何 Image.file。
+    final Finder fileImages = find.byWidgetPredicate(
+      (Widget w) => w is Image && w.image is FileImage,
+    );
+    expect(fileImages, findsWidgets,
+        reason: '游戏活动条应渲染 galgames.coverPath 封面（BUG-1111）');
+  });
+
   /// 合集 Next-Up 三态的公共装配：合集「进击的巨人」+ 两集独立行 E1/E2。
   Future<int> seedCollectionTwoEpisodes({
     required VideoBooksCompanion e1,
@@ -832,3 +977,17 @@ void main() {
     expect(find.byType(StatContributionHeatmap), findsOneWidget);
   });
 }
+
+/// 1x1 透明 PNG：BUG-1111 需要一个**真实可解码**的封面文件（`Image.file` 对不存在
+/// 或损坏的文件走 errorBuilder，断言不到 FileImage）。
+const List<int> _kOnePixelPng = <int>[
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
+  0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+  0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
+  0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+  0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+  0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+  0x42, 0x60, 0x82,
+];

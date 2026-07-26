@@ -67,11 +67,17 @@ class HomeDashboardPage extends ConsumerStatefulWidget {
   ConsumerState<HomeDashboardPage> createState() => _HomeDashboardPageState();
 }
 
-/// 「继续」统一列表的单条：书与视频归一到同一结构，按 [recentMs] 倒序混排。
-/// [book]/[video]/[remote] 恰有一个非空（本地书 / 本地视频 / 互联 host 条目）。
+/// 「继续」统一列表的单条：书 / 视频 / 游戏归一到同一结构，按 [recentMs] 倒序混排。
+/// [book]/[video]/[game]/[remote] 恰有一个非空（本地书 / 本地视频 / 本地游戏 /
+/// 互联 host 条目）。
+///
+/// BUG-1110：此前这里是 `final bool isVideo`——**二元标志结构上装不下第三种媒体**，
+/// 于是「继续」「最近添加」只能由 books + videos 两个来源构造，游戏被永久排除在
+/// 首页之外（用户报「首页的继续里面没有游戏」）。改用 [MediaKind]（P5 枚举地基）
+/// 后第三种媒体才有位置；新增媒体种类也不再需要动这个结构。
 class _ContinueEntry {
   const _ContinueEntry({
-    required this.isVideo,
+    required this.kind,
     required this.title,
     required this.recentMs,
     this.percent = 0,
@@ -80,10 +86,23 @@ class _ContinueEntry {
     this.subtitleOverride,
     this.book,
     this.video,
+    this.game,
     this.remote,
   });
 
-  final bool isVideo;
+  /// 本条的媒体种类。书按真实身份区分 [MediaKind.epub] / [MediaKind.srt]
+  /// （两者在本区块行为一致，经 [isBook] 归并），不再用一个 bool 硬编码二元。
+  final MediaKind kind;
+
+  /// 视频分支（横版封面 / 直接续播）。
+  bool get isVideo => kind == MediaKind.video;
+
+  /// 书分支（竖版封面 / openMedia）：EPUB 与 SRT 在本区块完全同行为。
+  bool get isBook => kind == MediaKind.epub || kind == MediaKind.srt;
+
+  /// 游戏分支（竖版封面 / 跳游戏 tab）。
+  bool get isGame => kind == MediaKind.game;
+
   final String title;
 
   /// 最近活动时刻（epoch 毫秒），仅用于混排排序。
@@ -105,6 +124,10 @@ class _ContinueEntry {
   final String? subtitleOverride;
   final MediaItem? book;
   final VideoBookRow? video;
+
+  /// 本地游戏（BUG-1110）。游戏是**本机局域身份**（`galgames.id`），不参与互联
+  /// 远端补位——对端没有对应行，拿过来也打不开。
+  final GalgameEntry? game;
 
   /// 互联 host 上的在读书/在看视频（本地无此条目时的远端补位，「继续也走互联」）。
   final RemoteContinueCandidate? remote;
@@ -682,7 +705,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         final int percent =
             ((item.position / item.duration) * 100).clamp(0, 100).round();
         entries.add(_ContinueEntry(
-          isVideo: false,
+          kind: _bookMediaKind(item),
           // BUG-1018 (A1)：书名走与书架卡同一 override 通道（编辑对话框改名后
           // 首页「继续」区同步显示新名），不直接读 DB 原名。
           title: ReaderHibikiSource.instance.getDisplayTitleFromMediaItem(item),
@@ -747,11 +770,30 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         recentMs: recent,
       ));
     }
+    // BUG-1110：在玩的游戏。判据是「玩过」（lastPlayedMs>0）——游戏没有「读完/
+    // 看完」这种完成度概念（`galgames` 无 completedAt，时长/次数由
+    // `galgame_sessions` 现算），所以不做「未完成」过滤；排序与取前 N 由下面统一
+    // 的 recentMs 倒序 + take(10) 兜住，不会淹没书与视频。
+    for (final GalgameEntry g in _games) {
+      if (g.lastPlayedMs <= 0) continue;
+      entries.add(_ContinueEntry(
+        kind: MediaKind.game,
+        // 与库页/时间轴同一显示名口径（改名/刮削后首页同步）。
+        title: g.displayName,
+        recentMs: g.lastPlayedMs,
+        collectionName: statCollectionName(
+          MediaKind.game.compositeKey(g.id),
+          _primaryCollectionByEntry,
+          _collectionNamesById,
+        ),
+        game: g,
+      ));
+    }
     // 互联 host 的远端补位（本地无同 key/uid 的在读书/在看视频），与本地条目
     // 按最近活动时刻统一混排（「继续也走互联」）。
     for (final RemoteContinueCandidate c in _remoteContinue) {
       entries.add(_ContinueEntry(
-        isVideo: c.isVideo,
+        kind: c.isVideo ? MediaKind.video : MediaKind.epub,
         title: c.title,
         recentMs: c.recentMs,
         percent: c.percent,
@@ -767,9 +809,13 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         .where((_ContinueEntry e) {
           switch (_continueFilter) {
             case 1:
-              return !e.isVideo;
+              // BUG-1110：旧实现是 `!e.isVideo`——二元取反，游戏一旦进列表就会被
+              // 误算进「阅读」。按种类正面判定。
+              return e.isBook;
             case 2:
               return e.isVideo;
+            case 3:
+              return e.isGame;
             default:
               return true;
           }
@@ -788,6 +834,8 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
           (0, t.home_filter_all),
           (1, t.home_filter_read),
           (2, t.home_filter_watch),
+          // BUG-1110：与下方热力图筛选同一组档位（复用既有 key，不新增 i18n）。
+          (3, t.home_filter_game),
         ],
       ),
       child: filtered.isEmpty
@@ -848,7 +896,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
           bookKey == null ? 0 : (_epubImportedAtByKey[bookKey] ?? 0);
       if (addedMs <= 0) continue;
       entries.add(_ContinueEntry(
-        isVideo: false,
+        kind: _bookMediaKind(item),
         // BUG-1018 (A1)：与继续卡同一 override 显示名通道。
         title: ReaderHibikiSource.instance.getDisplayTitleFromMediaItem(item),
         recentMs: addedMs,
@@ -866,7 +914,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       final int addedMs = v.importedAt?.millisecondsSinceEpoch ?? 0;
       if (addedMs <= 0) continue;
       entries.add(_ContinueEntry(
-        isVideo: true,
+        kind: MediaKind.video,
         title: v.title,
         recentMs: addedMs,
         collectionName: statCollectionName(
@@ -879,6 +927,25 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         video: v,
       ));
     }
+    // BUG-1110：游戏也进「最近添加」。addedAt 即 `galgames.id` 的微秒时间戳来源
+    // （添加时刻），与书的 importedAt / 视频的 importedAt 同量纲，可直接混排。
+    for (final GalgameEntry g in _games) {
+      final int addedMs = g.addedAt.millisecondsSinceEpoch;
+      if (addedMs <= 0) continue;
+      entries.add(_ContinueEntry(
+        kind: MediaKind.game,
+        title: g.displayName,
+        recentMs: addedMs,
+        collectionName: statCollectionName(
+          MediaKind.game.compositeKey(g.id),
+          _primaryCollectionByEntry,
+          _collectionNamesById,
+        ),
+        subtitleOverride:
+            '${t.home_filter_game} · ${_relativeTimeLabel(addedMs, now)}',
+        game: g,
+      ));
+    }
     if (entries.isEmpty) return null;
     entries.sort((_ContinueEntry a, _ContinueEntry b) =>
         b.recentMs.compareTo(a.recentMs));
@@ -889,6 +956,14 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       child: _continueCardsRow(tokens, appModel, top),
     );
   }
+
+  /// 书 [MediaItem] 的真实媒体种类：standalone SRT 书身份是
+  /// `hoshi://srtbook/<uid>`（BUG-1018 A3），其余按 EPUB。两者在「继续/最近添加」
+  /// 区块行为一致（[_ContinueEntry.isBook]），但身份不该被抹平成同一个值。
+  MediaKind _bookMediaKind(MediaItem item) =>
+      ReaderHibikiSource.parseSrtBookUid(item.mediaIdentifier) != null
+          ? MediaKind.srt
+          : MediaKind.epub;
 
   /// 书 [MediaItem] → 合集归属键：epub 用 bookKey（'epub|<bookKey>'），standalone
   /// SRT 书身份是 `hoshi://srtbook/<uid>`（BUG-1018 A3）→ 'srt|<uid>'；识别不出
@@ -915,7 +990,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     required int recentMs,
   }) {
     return _ContinueEntry(
-      isVideo: true,
+      kind: MediaKind.video,
       title: v.title,
       recentMs: recentMs,
       progress: videoWatchFraction(
@@ -969,11 +1044,18 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     AppModel appModel,
     _ContinueEntry entry,
   ) {
+    // 视频是横版 16:9，书与游戏都是竖版封面（galgame 封面同为竖版海报）。
     final double coverWidth =
         entry.isVideo ? _kContinueVideoCoverWidth : _kContinueBookCoverWidth;
-    String status = entry.isVideo
-        ? t.home_filter_watch
-        : '${t.home_filter_read} · ${entry.percent}%';
+    // BUG-1110：游戏没有阅读百分比（无完成度概念），状态段只标类型，不能套用
+    // 书的「阅读 · x%」——否则一律显示「阅读 · 0%」。
+    String status = switch (entry.kind) {
+      MediaKind.video => t.home_filter_watch,
+      MediaKind.game => t.home_filter_game,
+      MediaKind.epub ||
+      MediaKind.srt =>
+        '${t.home_filter_read} · ${entry.percent}%',
+    };
     if (entry.remote != null) {
       // 标明设备来源：优先 host 设备名（配对时存下），取不到回退通用「远端」。
       status = '$status · ${_remoteDeviceName ?? t.home_remote_source}';
@@ -1051,6 +1133,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   ) {
     if (entry.remote != null) return _remoteCover(tokens, entry);
     if (entry.isVideo) return _videoCover(tokens, entry.video!);
+    if (entry.isGame) return _gameCover(tokens, entry.game!);
     return FadeInImage(
       placeholder: MemoryImage(kTransparentImage),
       image: ReaderHibikiSource.instance.getDisplayThumbnailFromMediaItem(
@@ -1095,6 +1178,22 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     return _coverPlaceholder(tokens, Icons.movie_outlined);
   }
 
+  /// 游戏封面（BUG-1110 / BUG-1111）：`galgames.coverPath` 存在则 [Image.file]，
+  /// 否则占位图标。与 [_videoCover] 同一形态——封面是本机文件路径（目录扫描 /
+  /// exe 内嵌图标 / 刮削下载三种来源都落成本地文件），不走网络取图。
+  Widget _gameCover(HibikiDesignTokens tokens, GalgameEntry game) {
+    final String? path = game.coverPath;
+    if (path != null && path.isNotEmpty && File(path).existsSync()) {
+      return Image.file(
+        File(path),
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) =>
+            _coverPlaceholder(tokens, Icons.videogame_asset_outlined),
+      );
+    }
+    return _coverPlaceholder(tokens, Icons.videogame_asset_outlined);
+  }
+
   /// 封面占位：中性底色 + 图标。
   Widget _coverPlaceholder(HibikiDesignTokens tokens, IconData icon) {
     return DecoratedBox(
@@ -1118,6 +1217,13 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     }
     if (entry.isVideo) {
       await _openLocalVideo(entry.video!.bookUid);
+      return;
+    }
+    // BUG-1110：游戏卡点击**切到游戏 tab**，不直接拉起游戏。启动 galgame 要走
+    // 位数探测 / helper 确认下载 / 注入会话（`GamesLibraryPage._launchGame`，
+    // 数秒且可能弹窗），从首页静默触发是危险的误操作面；库页才是启动入口。
+    if (entry.isGame) {
+      homeShellTabNotifier.value = HomeTab.games;
       return;
     }
     final MediaItem item = entry.book!;
@@ -1407,16 +1513,18 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
   /// 游戏活动标题 → 显示名（P4）：先按 [mediaKey]（galgames.id）精确命中，
   /// 再按「落库时的标题快照 == 库内条目任一已知名」兜底（老事件无 mediaKey），
   /// 最后回落快照原文。查找委托 [displayTitleForGame]。
-  String _gameDisplayTitle(String rawTitle, {String? mediaKey}) {
-    GalgameEntry? entry;
-    if (mediaKey != null && mediaKey.isNotEmpty) {
-      for (final GalgameEntry g in _games) {
-        if (g.id == mediaKey) {
-          entry = g;
-          break;
-        }
-      }
+  /// 按 `galgames.id` 反查本页已加载的游戏；找不到返回 null（已删除条目的历史
+  /// 活动行仍会渲染，只是没有封面/新名可用）。
+  GalgameEntry? _gameById(String? id) {
+    if (id == null || id.isEmpty) return null;
+    for (final GalgameEntry g in _games) {
+      if (g.id == id) return g;
     }
+    return null;
+  }
+
+  String _gameDisplayTitle(String rawTitle, {String? mediaKey}) {
+    GalgameEntry? entry = _gameById(mediaKey);
     if (entry == null) {
       for (final GalgameEntry g in _games) {
         if (g.name == rawTitle ||
@@ -1762,6 +1870,21 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
               width: 68,
               height: 40,
               child: _videoCover(tokens, video),
+            ),
+          );
+        }
+      } else if (entry.mediaType == kActivityMediaGame) {
+        // BUG-1111：游戏此前被硬编码进「回退图标」分支，时间轴上只有一个小图标，
+        // 而书与视频都有封面（用户报「活动里面没有封面」）。游戏封面就在
+        // `galgames.coverPath`（本机文件），按 mediaKey = galgames.id 反查即可。
+        final GalgameEntry? game = _gameById(key);
+        if (game != null) {
+          return ClipRRect(
+            borderRadius: HibikiBorderRadius.card,
+            child: SizedBox(
+              width: 40,
+              height: 56,
+              child: _gameCover(tokens, game),
             ),
           );
         }

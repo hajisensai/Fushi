@@ -1,0 +1,21 @@
+## BUG-1110 · 首页继续与最近添加装不下游戏：_ContinueEntry 用 isVideo 二元标志
+- **报告**：2026-07-26（用户：「首页的继续里面没有游戏。最近添加里面。」「全是因为各个地方代码不统一」）
+- **真实性**：✅ 真 bug，**结构性根因不是漏写分支**：
+  - `hibiki/lib/src/pages/implementations/home_dashboard_page.dart` 的 `_ContinueEntry`（修复前）字段是 `final bool isVideo`——**二元标志在结构上就装不下第三种媒体**。「继续」`_buildContinueSection` 与「最近添加」`_buildRecentlyAddedSection` 都只从 `books` + `_videos` 两个来源构造条目，游戏被永久排除，不是某处忘了加 if。
+  - 连带：筛选分段 `_continueFilter` 只有 全部/阅读/观看 三档，且「阅读」档判据是 `!e.isVideo`——**二元取反**，游戏一旦进列表就会被误算进「阅读」。
+  - 对照：同页热力图（`reading_activity` 区块）早已有「游戏」档（`kActivityGame` 日聚合），说明数据侧一直是齐的（`galgames` + `galgame_sessions`），缺的只是这个展示结构。
+  - 相关：游戏封面/最后游玩/添加时间三项数据都在 `GalgameEntry`（`coverPath` / `lastPlayedMs` / `addedAt`），无需新增 schema。
+- **[x] ① 已修复** —
+  - `_ContinueEntry.isVideo`(bool) 改为 `kind`([MediaKind]，P5 枚举地基) + 新增 `game` 字段；派生 `isBook` / `isVideo` / `isGame` 三个 getter。书按真实身份区分 `epub` / `srt`（新增 `_bookMediaKind`），不再把身份抹平。
+  - 「继续」纳入在玩的游戏：判据 `lastPlayedMs > 0`。游戏**没有完成度概念**（`galgames` 无 completedAt），所以不做「未完成」过滤；淹没风险由既有的 recentMs 倒序 + take(10) 兜住。
+  - 「最近添加」纳入游戏：`addedAt` 与书 `importedAt` / 视频 `importedAt` 同量纲，直接混排。
+  - 筛选档：「阅读」判据由 `!e.isVideo` 改为正面判定 `e.isBook`；新增第 4 档「游戏」，复用既有 i18n key `home_filter_game`（与热力图同一组档位，不新增 key）。
+  - 卡片渲染：游戏走竖版封面宽度（同书）；状态段用类型名而非书的「阅读 · x%」（否则一律显示「阅读 · 0%」）；新增 `_gameCover` 读 `galgames.coverPath`。
+  - 点击：游戏卡**切到游戏 tab**，不直接拉起游戏——启动 galgame 要走位数探测/helper 确认下载/注入会话（数秒且可能弹窗），从首页静默触发是危险的误操作面。
+- **[x] ② 已加自动化测试** — `hibiki/test/pages/home_dashboard_page_test.dart`
+  - 「玩过的游戏进『继续』区，且『游戏』筛选档只留游戏」（含筛选把视频滤掉的断言）
+  - 「新添加的游戏进『最近添加』（类型 · 相对时间）」
+- **备注**：
+  - 测试定位 chip 必须锁到「继续」区块自己的卡（`_sectionCard` 外层 `DecoratedBox`）：页面上共三组档位（热力图 / 继续 / 活动时间轴）都含「游戏」档，且游戏卡状态副标题本身就是「游戏」，按裸文本或树序取都会点错。
+  - 真机复测（首页三区块实际渲染）待补。
+  - 同批用户反馈的另两条独立建档：[BUG-1111](BUG-1111-activity-timeline-game-no-cover.md)（活动时间轴游戏无封面）、[BUG-1112](BUG-1112-galgame-no-tags.md)（游戏没有标签，schema 缺表）。
