@@ -1,4 +1,4 @@
-## BUG-1111 · 内置引擎本地 rig 测试：限速对 loopback peer 不生效导致 peer 观察窗口消失（flaky）
+## BUG-1114 · 内置引擎本地 rig 测试：限速对 loopback peer 不生效导致 peer 观察窗口消失（flaky）
 
 - **报告**：2026-07-26（agent 在 TODO-1961-a 改动中跑既有测试时发现）
 - **真实性**：✅ 真 bug（既有缺陷，**不是** TODO-1961-a 引入）
