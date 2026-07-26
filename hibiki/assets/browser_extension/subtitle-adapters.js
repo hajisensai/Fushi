@@ -172,6 +172,22 @@ function parseTtml(xml) {
   return out;
 }
 
+// Bilibili.tv 字幕 JSON（asb 伪扩展名 bbjson）→ cues。形状：{body:[{from,to,content}]}，
+// from/to 是秒（浮点）。与其它解析器同约：纯函数、坏输入回空数组。
+function parseBilibiliJson(text) {
+  const out = [];
+  let data = null;
+  try { data = JSON.parse(String(text || '')); } catch (_) { return out; }
+  const body = data && Array.isArray(data.body) ? data.body : [];
+  for (const item of body) {
+    if (!item || typeof item.from !== 'number' || typeof item.to !== 'number') continue;
+    const t = String(item.content || '').trim();
+    if (!t) continue;
+    out.push({ startMs: Math.round(item.from * 1000), endMs: Math.round(item.to * 1000), text: t });
+  }
+  return out;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     extractNetflixCueText,
@@ -183,6 +199,7 @@ if (typeof module !== 'undefined' && module.exports) {
     stripCueTags,
     parseWebVtt,
     parseTtml,
+    parseBilibiliJson,
     netflixDocumentTitle,
   };
 }

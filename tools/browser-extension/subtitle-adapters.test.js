@@ -8,6 +8,7 @@ const {
   stripCueTags,
   parseWebVtt,
   parseTtml,
+  parseBilibiliJson,
   netflixDocumentTitle,
 } = require('./subtitle-adapters.js');
 
@@ -170,4 +171,35 @@ test('netflixDocumentTitle falls back to document.title minus Netflix suffix', (
 test('netflixDocumentTitle null/empty doc -> empty string', () => {
   assert.strictEqual(netflixDocumentTitle(null), '');
   assert.strictEqual(netflixDocumentTitle(nfDoc(null, '')), '');
+});
+
+// ── asb 移植：stream-bridge 送来的两种新格式 ──
+
+test('parseBilibiliJson: body[{from,to,content}] 秒 → cues 毫秒', () => {
+  const text = JSON.stringify({
+    body: [
+      { from: 1.5, to: 3.25, content: 'こんにちは' },
+      { from: 4, to: 5, content: '  ' },      // 空白句丢弃
+      { from: 'x', to: 6, content: '坏行' },   // 非数值丢弃
+      { from: 6.1, to: 7.9, content: '次の句' },
+    ],
+  });
+  const cues = parseBilibiliJson(text);
+  assert.strictEqual(cues.length, 2);
+  assert.deepStrictEqual(cues[0], { startMs: 1500, endMs: 3250, text: 'こんにちは' });
+  assert.deepStrictEqual(cues[1], { startMs: 6100, endMs: 7900, text: '次の句' });
+});
+
+test('parseBilibiliJson: 坏 JSON / 无 body → 空数组', () => {
+  assert.deepStrictEqual(parseBilibiliJson('not json'), []);
+  assert.deepStrictEqual(parseBilibiliJson('{}'), []);
+  assert.deepStrictEqual(parseBilibiliJson(''), []);
+});
+
+// Bilibili srt 轨直接走 parseWebVtt：SRT 块（序号行 + 逗号毫秒）本就兼容。
+test('parseWebVtt 兼容 SRT 块（bilibili srt 轨复用同一解析器）', () => {
+  const srt = '1\n00:00:01,000 --> 00:00:02,500\n走り出した\n\n2\n00:00:04,000 --> 00:00:05,000\nこんにちは\n';
+  const cues = parseWebVtt(srt);
+  assert.strictEqual(cues.length, 2);
+  assert.deepStrictEqual(cues[0], { startMs: 1000, endMs: 2500, text: '走り出した' });
 });
