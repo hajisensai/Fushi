@@ -35,10 +35,18 @@
     langSelect: null, builtLang: null, builtLen: -1, builtCues: null,
     pushedEl: null, prevWidth: '', prevWidthPriority: '', tickTimer: null,
     pushSuspended: false, enabled: false,
-    // B（外挂字幕）：用户主动打开面板（即使暂无轨也不自动拆）；已加载外挂轨的原始 cue + 时轴偏移。
-    forceOpen: false, extTracks: Object.create(null), offsetBar: null, offsetLabel: null,
+    // B（外挂字幕）：用户主动打开面板（即使暂无轨也不自动拆）。
+    forceOpen: false, offsetBar: null, offsetLabel: null,
     overlayEnabled: true, dragDropEnabled: true, autoPause: false, condensedPlayback: false,
     overlayEl: null, overlayCue: null, dropHint: null, lastCondensedTargetMs: -1,
+    // asb 移植：任意轨（检测轨/外挂轨）的读取侧时轴偏移。store 永远存原始 cue，偏移只在
+    // 面板/覆盖层/快捷键**读取时**套用——provider（textTracks 收割 / live 采样 / 整集拦截）
+    // 增量刷新 store 不会与偏移打架。key = `${videoKey}|${lang}`，会话内记忆。
+    trackOffsets: Object.create(null), builtOffset: 0,
+    // asb 移植：句首自动暂停 / 快进无字幕段 / 悬停暂停 / 覆盖层防剧透模糊 / 全轨覆盖层。
+    autoPauseAtStart: false, fastForward: false, hoverPause: false,
+    overlayBlur: false, overlayAllTracks: false,
+    hoverPaused: false, overlayHovered: false, ffSavedRate: -1, lastAutoPauseIdx: -1,
   };
   var EXT_PREFIX = '外挂:';
 
@@ -134,6 +142,30 @@
       return a.lang < b.lang ? -1 : (a.lang > b.lang ? 1 : 0);
     });
     return out;
+  }
+
+  // ── asb 移植：读取侧时轴偏移（任意轨，subtitle-controller.ts offset() 的无破坏版） ──
+  function activeTrackKey() {
+    return st.activeLang ? (videoKey() + '|' + st.activeLang) : null;
+  }
+  function trackOffset(key) {
+    return (key && st.trackOffsets[key]) || 0;
+  }
+  function shiftedCues(base, off) {
+    if (!off) return base;
+    var out = [];
+    for (var i = 0; i < base.length; i++) {
+      var c = base[i];
+      out.push({
+        startMs: Math.max(0, c.startMs + off),
+        endMs: Math.max(0, c.endMs + off),
+        text: c.text,
+      });
+    }
+    return out;
+  }
+  function fmtOffset(ms) {
+    return (ms >= 0 ? '+' : '') + (ms / 1000).toFixed(1) + 's';
   }
 
   function cueIndexAt(cues, t) {
@@ -256,7 +288,7 @@
     st.langSelect = langSelect;
     header.appendChild(langSelect);
 
-    // B（asb 招牌）：外挂字幕时轴偏移条——仅当前轨是外挂字幕时显示。−/＋ 微调让字幕对齐视频。
+    // asb 移植：字幕时轴偏移条——任意当前轨（检测轨/外挂轨）都可偏移。−/＋ 微调让字幕对齐视频。
     var offsetBar = document.createElement('div');
     offsetBar.className = 'hibiki-sub-offset';
     offsetBar.style.display = 'none';
@@ -321,13 +353,37 @@
     st.autoScroll = c.subtitleAutoScroll !== false;
     st.autoPause = c.subtitleAutoPause === true;
     st.condensedPlayback = c.subtitleCondensedPlayback === true;
+    // asb 移植的扩展偏好（全部默认关，除快捷键在 video-shortcuts.js 自持默认开）。
+    st.autoPauseAtStart = c.subtitleAutoPauseAtStart === true;
+    st.fastForward = c.subtitleFastForwardPlayback === true;
+    st.hoverPause = c.subtitleHoverPause === true;
+    st.overlayBlur = c.subtitleOverlayBlur === true;
+    st.overlayAllTracks = c.subtitleOverlayAllTracks === true;
     if (!st.overlayEnabled) hideSubtitleOverlay();
+  }
+
+  // 当前偏好快照（快捷键 toggle 用：改一个键、其余保持现值，绝不把用户已关的项刷回默认）。
+  function prefsSnapshot() {
+    return {
+      subtitleOverlayEnabled: st.overlayEnabled,
+      subtitleDragDropEnabled: st.dragDropEnabled,
+      subtitleAutoScroll: st.autoScroll,
+      subtitleAutoPause: st.autoPause,
+      subtitleCondensedPlayback: st.condensedPlayback,
+      subtitleAutoPauseAtStart: st.autoPauseAtStart,
+      subtitleFastForwardPlayback: st.fastForward,
+      subtitleHoverPause: st.hoverPause,
+      subtitleOverlayBlur: st.overlayBlur,
+      subtitleOverlayAllTracks: st.overlayAllTracks,
+    };
   }
 
   function readSubtitlePreferences() {
     var keys = [
       'subtitleOverlayEnabled', 'subtitleDragDropEnabled', 'subtitleAutoScroll',
       'subtitleAutoPause', 'subtitleCondensedPlayback',
+      'subtitleAutoPauseAtStart', 'subtitleFastForwardPlayback', 'subtitleHoverPause',
+      'subtitleOverlayBlur', 'subtitleOverlayAllTracks',
     ];
     try {
       var p = chrome.storage.local.get(keys);
@@ -364,9 +420,12 @@
   function rebuildList(tracks) {
     var active = null;
     for (var i = 0; i < tracks.length; i++) if (tracks[i].lang === st.activeLang) active = tracks[i];
-    st.cues = active ? active.cues : [];
-    if (st.builtLang === st.activeLang && st.builtLen === st.cues.length &&
-        st.builtCues === st.cues) {
+    // asb 移植：偏移在读取侧套用——store 里 base cues 不动，st.cues 是（必要时）平移后的视图。
+    var base = active ? active.cues : [];
+    var off = trackOffset(active ? active.key : null);
+    st.cues = shiftedCues(base, off);
+    if (st.builtLang === st.activeLang && st.builtLen === base.length &&
+        st.builtCues === base && st.builtOffset === off) {
       // BUG-1029：live cue 逐字扩长时数组和长度都不变。沿用行节点，只刷新文本/时间戳；
       // 这样不会重建长列表，也不会把每个中间快照追加成一行。
       for (var n = 0; n < st.cues.length; n++) {
@@ -395,7 +454,8 @@
       list.appendChild(empty);
       st.builtLang = st.activeLang;
       st.builtLen = 0;
-      st.builtCues = st.cues;
+      st.builtCues = base;
+      st.builtOffset = off;
       return;
     }
     var frag = document.createDocumentFragment();
@@ -404,8 +464,9 @@
     }
     list.appendChild(frag);
     st.builtLang = st.activeLang;
-    st.builtLen = st.cues.length;
-    st.builtCues = st.cues;
+    st.builtLen = base.length;
+    st.builtCues = base;
+    st.builtOffset = off;
   }
 
   function buildRow(cue, idx) {
@@ -474,11 +535,41 @@
           });
         }
       });
+      // asb 移植：悬停暂停（pause-on-hover）——鼠标进覆盖层即暂停，方便查词；移出且确实是
+      // 因悬停而暂停时恢复播放（用户自己按的暂停不动）。防剧透模糊（blur）同一对监听里处理。
+      el.addEventListener('mouseenter', function () {
+        st.overlayHovered = true;
+        applyOverlayBlur(el);
+        if (st.hoverPause) {
+          var v = videoEl();
+          if (v && !v.paused && typeof v.pause === 'function') {
+            try { v.pause(); st.hoverPaused = true; } catch (_) {}
+          }
+        }
+      });
+      el.addEventListener('mouseleave', function () {
+        st.overlayHovered = false;
+        applyOverlayBlur(el);
+        if (st.hoverPaused) {
+          st.hoverPaused = false;
+          var v = videoEl();
+          if (v && typeof v.play === 'function') {
+            try { v.play(); } catch (_) {}
+          }
+        }
+      });
       st.overlayEl = el;
     }
     var parent = parentForOverlay();
     if (st.overlayEl.parentNode !== parent) parent.appendChild(st.overlayEl);
     return st.overlayEl;
+  }
+
+  // asb 移植：防剧透模糊——覆盖层默认糊住，悬停即清晰（顺带触发悬停暂停，看+查一体）。
+  function applyOverlayBlur(el) {
+    if (!el || !el.style) return;
+    var blurred = st.overlayBlur && !st.overlayHovered;
+    try { el.style.filter = blurred ? 'blur(6px)' : ''; } catch (_) {}
   }
 
   function hideSubtitleOverlay() {
@@ -487,7 +578,10 @@
   }
 
   function updateSubtitleOverlay(cue) {
-    if (!st.overlayEnabled || !isExternalLang(st.activeLang) || !cue) {
+    // 外挂轨恒显示；检测轨（站点自带字幕）默认不重复叠字，除非用户开了「全轨覆盖层」
+    // （overlayAllTracks，配合防剧透模糊/悬停暂停使用）。
+    if (!st.overlayEnabled || !cue ||
+        (!isExternalLang(st.activeLang) && !st.overlayAllTracks)) {
       hideSubtitleOverlay();
       return;
     }
@@ -502,6 +596,7 @@
     el.style.left = (rect.left + rect.width / 2) + 'px';
     el.style.top = (rect.top + rect.height * 0.84) + 'px';
     el.style.maxWidth = Math.max(240, rect.width * 0.9) + 'px';
+    applyOverlayBlur(el);
   }
 
   function firstCueAfter(ms) {
@@ -517,11 +612,23 @@
     var video = videoEl();
     if (!video) return;
     var previous = st.currentIndex;
-    if (st.autoPause && previous >= 0 && idx < 0 &&
+    // 自动暂停·句尾（既有默认）：上一句刚结束、尚未进入下一句时暂停。
+    if (st.autoPause && !st.autoPauseAtStart && previous >= 0 && idx < 0 &&
         nowMs >= st.cues[previous].endMs && typeof video.pause === 'function') {
       try { video.pause(); } catch (_) {}
       return;
     }
+    // asb 移植（AutoPausePreference.atStart）：自动暂停·句首——新句刚开播（<400ms，避免
+    // seek 进句中被误暂停）时暂停一次；同一句只暂停一次（用户继续播放后不再回按）。
+    if (st.autoPause && st.autoPauseAtStart && idx >= 0 && idx !== previous &&
+        idx !== st.lastAutoPauseIdx && nowMs - st.cues[idx].startMs < 400 &&
+        !video.paused && typeof video.pause === 'function') {
+      try { video.pause(); } catch (_) {}
+      st.lastAutoPauseIdx = idx;
+      return;
+    }
+    if (idx < 0) st.lastAutoPauseIdx = -1;
+    applyFastForward(video, idx, nowMs);
     if (!st.condensedPlayback || st.autoPause || idx >= 0 || video.paused) {
       if (idx >= 0) st.lastCondensedTargetMs = -1;
       return;
@@ -532,6 +639,27 @@
     if (target - nowMs < 800 || target === st.lastCondensedTargetMs) return;
     st.lastCondensedTargetMs = target;
     seekTo(target);
+  }
+
+  // asb 移植（fastForward 播放模式）：无字幕区间倍速播过（asb 默认 2.7x），进句恢复原速。
+  // 与精简播放（直接跳过）互斥——精简开启时优先跳过；自动暂停开启时两者都不动。
+  function applyFastForward(video, idx, nowMs) {
+    var eligible = st.fastForward && !st.autoPause && !st.condensedPlayback &&
+        typeof video.playbackRate === 'number';
+    var inGap = false;
+    if (eligible && idx < 0 && !video.paused && st.cues.length) {
+      var next = firstCueAfter(nowMs + 250);
+      if (next >= 0 && st.cues[next].startMs - nowMs >= 800) inGap = true;
+    }
+    if (inGap) {
+      if (st.ffSavedRate < 0) {
+        st.ffSavedRate = video.playbackRate > 0 ? video.playbackRate : 1;
+        try { video.playbackRate = 2.7; } catch (_) {}
+      }
+    } else if (st.ffSavedRate >= 0) {
+      try { video.playbackRate = st.ffSavedRate; } catch (_) {}
+      st.ffSavedRate = -1;
+    }
   }
 
   function ensureMounted() {
@@ -652,8 +780,10 @@
     if (!base.length) { toast('字幕为空'); return; }
     var label = EXT_PREFIX + String(filename).replace(/\|/g, '_');
     var key = videoKey() + '|' + label;
-    st.extTracks[key] = { baseCues: base, offsetMs: 0 };
-    writeExternalTrack(key);
+    // 外挂轨与检测轨同构：store 存原始 cue，偏移走统一的读取侧 trackOffsets（重新加载即归零）。
+    var store = window.hibikiEpisodeCues || (window.hibikiEpisodeCues = Object.create(null));
+    store[key] = base;
+    delete st.trackOffsets[key];
     st.activeLang = label;
     st.builtLang = null;
     st.forceOpen = true;
@@ -724,53 +854,138 @@
     }
     for (var i = 0; i < files.length; i++) loadSubtitleFile(files[i]);
   }, true);
-  // 把外挂轨（原始 cue + 当前偏移）写进 store，供面板/查词消费。偏移让字幕对齐视频时轴。
-  function writeExternalTrack(key) {
-    var t = st.extTracks[key];
-    if (!t) return;
-    var store = window.hibikiEpisodeCues || (window.hibikiEpisodeCues = Object.create(null));
-    var out = [];
-    for (var i = 0; i < t.baseCues.length; i++) {
-      var c = t.baseCues[i];
-      out.push({
-        startMs: Math.max(0, c.startMs + t.offsetMs),
-        endMs: Math.max(0, c.endMs + t.offsetMs),
-        text: c.text,
-      });
-    }
-    store[key] = out;
-  }
-  function activeExternalKey() {
-    if (!isExternalLang(st.activeLang)) return null;
-    var key = videoKey() + '|' + st.activeLang;
-    return st.extTracks[key] ? key : null;
-  }
+  // asb 移植：偏移操作对**任意当前轨**生效（读取侧 trackOffsets，见 st 定义处注释）。
   function nudgeOffset(deltaMs) {
-    var key = activeExternalKey();
+    var key = activeTrackKey();
     if (!key) return;
-    st.extTracks[key].offsetMs += deltaMs;
-    writeExternalTrack(key);
+    st.trackOffsets[key] = (st.trackOffsets[key] || 0) + deltaMs;
     st.builtLang = null; // 时间戳变了 → 强制列表重建
     refresh();
   }
   function resetOffset() {
-    var key = activeExternalKey();
+    var key = activeTrackKey();
     if (!key) return;
-    st.extTracks[key].offsetMs = 0;
-    writeExternalTrack(key);
+    delete st.trackOffsets[key];
     st.builtLang = null;
     refresh();
   }
   function updateOffsetBar() {
     if (!st.offsetBar) return;
-    var key = activeExternalKey();
-    if (!key) { st.offsetBar.style.display = 'none'; return; }
+    var key = activeTrackKey();
+    if (!key || !st.cues.length) { st.offsetBar.style.display = 'none'; return; }
     st.offsetBar.style.display = '';
-    var ms = st.extTracks[key].offsetMs;
-    if (st.offsetLabel) {
-      st.offsetLabel.textContent = (ms >= 0 ? '+' : '') + (ms / 1000).toFixed(1) + 's';
-    }
+    if (st.offsetLabel) st.offsetLabel.textContent = fmtOffset(trackOffset(key));
   }
+
+  // ── asb 移植：快捷键执行端 ──
+  // video-shortcuts.js（同隔离世界、本文件之后加载）判定按键 → 调这里执行。面板持有轨/偏移/
+  // 模式状态，所以动作收敛在本文件；面板未打开（甚至未启用）时快捷键也要能用——此时隐式选
+  // 当前视频的第一条轨。返回 true = 已接管（调用方 preventDefault），false = 放行给站点。
+  function lastCueStartBefore(ms) {
+    var lo = 0, hi = st.cues.length - 1, ans = -1;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (st.cues[mid].startMs < ms) { ans = mid; lo = mid + 1; } else { hi = mid - 1; }
+    }
+    return ans;
+  }
+  // 面板没开时 st.cues 可能为空/过期：从 store 重取当前轨（含读取侧偏移）。
+  function recomputeShortcutCues() {
+    var tracks = tracksForVideo();
+    var active = null;
+    for (var i = 0; i < tracks.length; i++) if (tracks[i].lang === st.activeLang) active = tracks[i];
+    if (!active && tracks.length) { st.activeLang = tracks[0].lang; active = tracks[0]; }
+    st.cues = active ? shiftedCues(active.cues, trackOffset(active.key)) : [];
+  }
+  function shortcutSeekPrev() {
+    if (!st.cues.length) return false;
+    // 上一句：开播 >600ms 时先回本句句首（与播放器「上一曲」惯例一致），再按一次才到上一句。
+    var i = lastCueStartBefore(videoTimeMs() - 600);
+    if (i < 0) return false;
+    seekTo(st.cues[i].startMs);
+    return true;
+  }
+  function shortcutSeekNext() {
+    if (!st.cues.length) return false;
+    var i = firstCueAfter(videoTimeMs());
+    if (i < 0) return false;
+    seekTo(st.cues[i].startMs);
+    return true;
+  }
+  function shortcutReplay() {
+    if (!st.cues.length) return false;
+    var now = videoTimeMs();
+    var idx = cueIndexAt(st.cues, now);
+    if (idx < 0) idx = lastCueStartBefore(now);
+    if (idx < 0) return false;
+    seekTo(st.cues[idx].startMs);
+    return true;
+  }
+  function shortcutOffset(deltaMs) {
+    var key = activeTrackKey();
+    if (!key || !st.cues.length) return false;
+    if (deltaMs === 0) delete st.trackOffsets[key];
+    else st.trackOffsets[key] = (st.trackOffsets[key] || 0) + deltaMs;
+    if (st.panel && st.panel.parentNode && !st.hidden) { st.builtLang = null; refresh(); }
+    else recomputeShortcutCues();
+    toast('字幕偏移 ' + fmtOffset(trackOffset(key)));
+    return true;
+  }
+  function shortcutCopyCue() {
+    if (!st.cues.length) return false;
+    var now = videoTimeMs();
+    var idx = cueIndexAt(st.cues, now);
+    if (idx < 0) idx = lastCueStartBefore(now);
+    if (idx < 0) return false;
+    var text = st.cues[idx].text;
+    try {
+      if (typeof navigator === 'undefined' || !navigator.clipboard ||
+          typeof navigator.clipboard.writeText !== 'function') return false;
+      navigator.clipboard.writeText(text);
+    } catch (_) { return false; }
+    toast('已复制字幕：' + (text.length > 30 ? text.slice(0, 30) + '…' : text));
+    return true;
+  }
+  function togglePref(key, label) {
+    var snap = prefsSnapshot();
+    var next = snap[key] !== true;
+    snap[key] = next;
+    applySubtitlePreferences(snap); // 先行生效（无 chrome 环境的单测同样生效）
+    try { var patch = {}; patch[key] = next; chrome.storage.local.set(patch); } catch (_) {}
+    toast(label + (next ? '：开' : '：关'));
+    return true;
+  }
+  function shortcutTogglePanel() {
+    if (!st.enabled) {
+      st.forceOpen = true;
+      try { chrome.storage.local.set({ netflixSubtitlePanel: true }); } catch (_) {}
+      applyEnabled(true);
+    } else if (st.hidden || !st.panel || !st.panel.parentNode) {
+      st.forceOpen = true;
+      showPanel();
+    } else {
+      hidePanel();
+    }
+    return true;
+  }
+  window.hibikiSubtitleShortcut = function (action) {
+    if (!videoEl()) return false;
+    if (!st.cues.length) recomputeShortcutCues();
+    switch (action) {
+      case 'prev-cue': return shortcutSeekPrev();
+      case 'next-cue': return shortcutSeekNext();
+      case 'replay-cue': return shortcutReplay();
+      case 'offset-minus': return shortcutOffset(-100);
+      case 'offset-plus': return shortcutOffset(100);
+      case 'offset-reset': return shortcutOffset(0);
+      case 'copy-cue': return shortcutCopyCue();
+      case 'toggle-autopause': return togglePref('subtitleAutoPause', '自动暂停');
+      case 'toggle-condensed': return togglePref('subtitleCondensedPlayback', '精简播放');
+      case 'toggle-fastforward': return togglePref('subtitleFastForwardPlayback', '快进无字幕段');
+      case 'toggle-panel': return shortcutTogglePanel();
+    }
+    return false;
+  };
 
   // TODO-1219 P3：Netflix 批量录制（content.js hibikiRunNetflixBatch）录整标签页前调用，撤销推挤让
   // 播放器全宽（录制画面不带面板黑边）；录完调 resume 重挂。挂起期间 applyPush 被 pushSuspended 门控。
@@ -808,20 +1023,19 @@
     chrome.storage.onChanged.addListener(function (changes, area) {
       if (area !== 'local' || !changes) return;
       if (changes[SETTING_KEY]) applyEnabled(changes[SETTING_KEY].newValue === true);
-      var prefs = {};
+      // 以当前值快照为底、只覆盖真正变化的键——单键变更绝不把其它偏好刷回默认。
+      var prefs = prefsSnapshot();
       var changed = false;
-      var keys = ['subtitleOverlayEnabled', 'subtitleDragDropEnabled', 'subtitleAutoScroll', 'subtitleAutoPause', 'subtitleCondensedPlayback'];
+      var keys = [
+        'subtitleOverlayEnabled', 'subtitleDragDropEnabled', 'subtitleAutoScroll',
+        'subtitleAutoPause', 'subtitleCondensedPlayback',
+        'subtitleAutoPauseAtStart', 'subtitleFastForwardPlayback', 'subtitleHoverPause',
+        'subtitleOverlayBlur', 'subtitleOverlayAllTracks',
+      ];
       for (var i = 0; i < keys.length; i++) {
         if (changes[keys[i]]) { prefs[keys[i]] = changes[keys[i]].newValue; changed = true; }
       }
-      if (changed) {
-        prefs.subtitleOverlayEnabled = prefs.subtitleOverlayEnabled == null ? st.overlayEnabled : prefs.subtitleOverlayEnabled;
-        prefs.subtitleDragDropEnabled = prefs.subtitleDragDropEnabled == null ? st.dragDropEnabled : prefs.subtitleDragDropEnabled;
-        prefs.subtitleAutoScroll = prefs.subtitleAutoScroll == null ? st.autoScroll : prefs.subtitleAutoScroll;
-        prefs.subtitleAutoPause = prefs.subtitleAutoPause == null ? st.autoPause : prefs.subtitleAutoPause;
-        prefs.subtitleCondensedPlayback = prefs.subtitleCondensedPlayback == null ? st.condensedPlayback : prefs.subtitleCondensedPlayback;
-        applySubtitlePreferences(prefs);
-      }
+      if (changed) applySubtitlePreferences(prefs);
     });
   } catch (_) {}
 
