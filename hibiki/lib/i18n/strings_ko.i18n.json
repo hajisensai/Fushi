@@ -2663,5 +2663,14 @@
   "galgame_upscaling_installed_only": "Installed only",
   "galgame_upscaling_off": "Off",
   "galgame_upscaling_download_title": "Download Magpie upscaler?",
-  "galgame_upscaling_download_body": "Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?"
+  "galgame_upscaling_download_body": "Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?",
+  "galgame_upscaling_status_active": "Window upscaling is on",
+  "galgame_upscaling_status_manual": "Window upscaling is ready, but did not start on its own",
+  "galgame_upscaling_status_unavailable": "Window upscaling is not available",
+  "galgame_upscaling_status_failed": "Window upscaling could not start",
+  "galgame_upscaling_hint_first_run": "Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.",
+  "galgame_upscaling_hint_external": "A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.",
+  "galgame_upscaling_hint_manual": "Press Win+Shift+A to upscale the game window.",
+  "galgame_upscaling_hint_not_installed": "Magpie is not installed. Set window upscaling to Auto to download it.",
+  "game_health_upscaling": "Window upscaling"
 }

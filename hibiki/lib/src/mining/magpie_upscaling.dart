@@ -131,8 +131,13 @@ MagpieBackend resolveMagpieBackend({
 /// 让用户自己按热键（默认 Win+Shift+A）」，绝不让会话启动失败。
 enum MagpieProfileSkipReason {
   /// 配置结构与我们已验证的 schema 不符：没有 `profiles` 数组，或第 0 项不是对象。
-  /// 也覆盖「配置还是我们写的 0 字节便携标记」——Magpie 还没跑过第一次。
   schemaMismatch,
+
+  /// 预热失败：Magpie 没能及时把默认配置（含 `scalingModes`）生成出来。
+  ///
+  /// 这是「第一次用」路径上唯一可能剩下的降级原因 —— 我们装完写的是 0 字节便携标记，
+  /// 必须先静默跑一次 Magpie 让它自己生成完整配置，才谈得上写 profile。
+  bootstrapFailed,
 
   /// `scalingModes` 缺失或为空：此时任何 profile 的 `scalingMode` 都会被钳到 -1，
   /// 缩放必报 `InvalidScalingMode`（`AppSettings.cpp:990-993` → `ScalingService.cpp:324`）。
@@ -141,6 +146,10 @@ enum MagpieProfileSkipReason {
   /// 游戏窗口的 exe 路径或窗口类名拿不到。两者**都不允许为空**：空了整条 profile 会被
   /// `AppSettings::_LoadProfile` 直接丢弃（返回 false）。
   missingWindowIdentity,
+
+  /// 机器上已经跑着一个不是我们起的 Magpie：我们有意不碰它的配置（位置未知、且它退出时
+  /// 会整份回写覆盖我们的改动），也不替用户关掉重开。
+  externalInstance,
 
   /// 目标是 Hibiki 自己 —— 硬禁令，见 [magpieProfileTargetAllowed]。
   forbiddenTarget,

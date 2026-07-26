@@ -7,12 +7,14 @@
 //
 // 外加一组**源码守卫**，钉住三个读源码挖出来的硬约束，防止后人「顺手优化」掉。
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/mining/magpie_upscaling.dart';
 import 'package:hibiki/src/mining/magpie_upscaling_service.dart';
+import 'package:hibiki/src/mining/magpie_upscaling_text.dart';
 import 'package:path/path.dart' as p;
 
 /// 一份「Magpie 已经跑过一次、配置完整」的最小 config。
@@ -61,6 +63,25 @@ class FakeBridge implements MagpieWin32Bridge {
   bool broadcastQuit() {
     quitBroadcasts++;
     return true;
+  }
+}
+
+/// 假进程句柄：默认「立刻退出」，让收束路径不必真等 [kMagpieQuitGrace]。
+class FakeProcessHandle implements MagpieProcessHandle {
+  FakeProcessHandle({bool exitImmediately = true}) {
+    if (exitImmediately) _exit.complete(0);
+  }
+
+  final Completer<int> _exit = Completer<int>();
+  bool killed = false;
+
+  @override
+  Future<int> get exitCode => _exit.future;
+
+  @override
+  void kill() {
+    killed = true;
+    if (!_exit.isCompleted) _exit.complete(-1);
   }
 }
 
@@ -546,7 +567,10 @@ void main() {
       required MagpieUpscalingMode mode,
       FakeBridge? bridge,
       List<String>? launched,
+      List<FakeProcessHandle>? handles,
       bool isWindows = true,
+      bool launchThrows = true,
+      Duration bootstrapTimeout = const Duration(milliseconds: 600),
     }) =>
         MagpieUpscalingService(
           modeReader: () => mode,
@@ -554,9 +578,15 @@ void main() {
           configPathOverride: configPath,
           hibikiExecutablePath: kHibikiExe,
           isWindowsOverride: isWindows,
+          bootstrapTimeout: bootstrapTimeout,
           processLauncher: (String exe, List<String> args) async {
             launched?.add('$exe ${args.join(' ')}');
-            throw const ProcessException('magpie', <String>[], 'fake', 0);
+            if (launchThrows) {
+              throw const ProcessException('magpie', <String>[], 'fake', 0);
+            }
+            final FakeProcessHandle handle = FakeProcessHandle();
+            handles?.add(handle);
+            return handle;
           },
         );
 
@@ -649,6 +679,194 @@ void main() {
     });
   });
 
+  group('首次使用的预热（消灭「装完第一次没反应」）', () {
+    late Directory tmp;
+    late String configPath;
+
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('magpie_bootstrap_test_');
+      configPath = p.join(tmp.path, 'config', 'config.json');
+    });
+
+    tearDown(() {
+      try {
+        if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    /// 造一个「Magpie 已装」的假安装目录不现实（`MagpieInstaller.executablePath()`
+    /// 指向真实 exe 同级），所以这里直接测预热的**判据**：配置就绪时不该再起预热进程。
+    test('配置已就绪 → 不预热，直接进入写 profile（第二局起零额外开销）', () async {
+      File(configPath)
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync(jsonEncode(baseConfig()));
+      final List<String> launched = <String>[];
+      final MagpieUpscalingService service = MagpieUpscalingService(
+        modeReader: () => MagpieUpscalingMode.installedOnly,
+        bridge: FakeBridge(running: true), // 直接走「别人开着」早退，验证不预热
+        configPathOverride: configPath,
+        hibikiExecutablePath: kHibikiExe,
+        isWindowsOverride: true,
+        processLauncher: (String exe, List<String> args) async {
+          launched.add(exe);
+          return FakeProcessHandle();
+        },
+      );
+      await service.onGameWindowReady(hwnd: 1);
+      expect(launched, isEmpty);
+    });
+
+    test('0 字节便携标记等价于「配置没就绪」—— 不能被当成有效配置', () async {
+      File(configPath)
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync('');
+      // 0 字节文件存在，但里面没有 scalingModes；此时写 profile 必踩 -1 钳位陷阱，
+      // 所以纯函数层必须拒绝。
+      final MagpieProfileWriteResult result = magpieConfigWithAutoScaleProfile(
+        config: <String, dynamic>{},
+        identity: kGame,
+        profileName: 'x',
+        hibikiExecutablePath: kHibikiExe,
+      );
+      expect(result.applied, isFalse);
+      expect(result.skipReason, MagpieProfileSkipReason.noScalingModes);
+    });
+
+    test('预热失败有独立的降级原因（不再笼统报 schemaMismatch）', () {
+      // bootstrapFailed 必须是个独立枚举项：UI 要据它说「第一次要先跑一次 Magpie」，
+      // 而 schemaMismatch 说的是「上游改了格式」，两者对用户的含义完全不同。
+      expect(
+        MagpieProfileSkipReason.values,
+        contains(MagpieProfileSkipReason.bootstrapFailed),
+      );
+      expect(
+        MagpieProfileSkipReason.bootstrapFailed,
+        isNot(MagpieProfileSkipReason.schemaMismatch),
+      );
+    });
+  });
+
+  group('用户可见文案：说人话，不甩内部枚举名', () {
+    MagpieUpscalingReport report(
+      MagpieUpscalingStatus status, {
+      MagpieProfileSkipReason? skip,
+      bool scaling = false,
+    }) =>
+        MagpieUpscalingReport(
+          status: status,
+          profileSkipReason: skip,
+          scalingActive: scaling,
+        );
+
+    test('用户自己关掉 / 没在跑 → 整行不显示（不制造噪音）', () {
+      expect(
+        magpieUpscalingWorthShowing(report(MagpieUpscalingStatus.disabled)),
+        isFalse,
+      );
+      expect(
+        magpieUpscalingWorthShowing(report(MagpieUpscalingStatus.idle)),
+        isFalse,
+      );
+      expect(
+        magpieUpscalingWorthShowing(report(MagpieUpscalingStatus.preparing)),
+        isFalse,
+      );
+    });
+
+    test('需要用户知道的状态都显示', () {
+      for (final MagpieUpscalingStatus status in <MagpieUpscalingStatus>[
+        MagpieUpscalingStatus.active,
+        MagpieUpscalingStatus.hotkeyOnly,
+        MagpieUpscalingStatus.unavailable,
+        MagpieUpscalingStatus.failed,
+      ]) {
+        expect(magpieUpscalingWorthShowing(report(status)), isTrue,
+            reason: '$status 应该显示');
+      }
+    });
+
+    test('🔴 任何状态的文案都不含内部枚举名（BUG-1100 的教训）', () {
+      // 把所有内部标识符列出来，挨个确认它们不会出现在用户看到的字符串里。
+      final List<String> internal = <String>[
+        ...MagpieUpscalingStatus.values
+            .map((MagpieUpscalingStatus e) => e.name),
+        ...MagpieProfileSkipReason.values
+            .map((MagpieProfileSkipReason e) => e.name),
+        'MagpieUpscalingStatus',
+        'MagpieProfileSkipReason',
+      ];
+      for (final MagpieUpscalingStatus status in MagpieUpscalingStatus.values) {
+        for (final MagpieProfileSkipReason? skip in <MagpieProfileSkipReason?>[
+          null,
+          ...MagpieProfileSkipReason.values
+        ]) {
+          final MagpieUpscalingReport r = report(status, skip: skip);
+          final String text =
+              '${magpieUpscalingStatusLabel(r)} ${magpieUpscalingActionHint(r) ?? ''}';
+          expect(text.trim(), isNotEmpty);
+          for (final String token in internal) {
+            expect(
+              text.contains(token),
+              isFalse,
+              reason: '「$text」泄漏了内部标识符 $token',
+            );
+          }
+        }
+      }
+    });
+
+    test('首次初始化失败 → 给「下次就自动了」的专属处置，而不是通用话', () {
+      final String? firstRun = magpieUpscalingActionHint(report(
+        MagpieUpscalingStatus.hotkeyOnly,
+        skip: MagpieProfileSkipReason.bootstrapFailed,
+      ));
+      final String? generic = magpieUpscalingActionHint(report(
+        MagpieUpscalingStatus.hotkeyOnly,
+        skip: MagpieProfileSkipReason.schemaMismatch,
+      ));
+      expect(firstRun, isNotNull);
+      expect(generic, isNotNull);
+      expect(firstRun, isNot(generic), reason: '「第一次要先初始化」和「上游改了格式」对用户是两回事');
+    });
+
+    test('别人的 Magpie 开着 → 专属处置（这种情况永远不会自己好）', () {
+      final String? external = magpieUpscalingActionHint(report(
+        MagpieUpscalingStatus.hotkeyOnly,
+        skip: MagpieProfileSkipReason.externalInstance,
+      ));
+      final String? generic = magpieUpscalingActionHint(report(
+        MagpieUpscalingStatus.hotkeyOnly,
+        skip: MagpieProfileSkipReason.schemaMismatch,
+      ));
+      expect(external, isNotNull);
+      expect(external, isNot(generic));
+    });
+
+    test('每条降级都给得出处置（只说状态不说怎么办等于没说）', () {
+      for (final MagpieProfileSkipReason skip
+          in MagpieProfileSkipReason.values) {
+        expect(
+          magpieUpscalingActionHint(
+            report(MagpieUpscalingStatus.hotkeyOnly, skip: skip),
+          ),
+          isNotNull,
+          reason: '$skip 降级时必须告诉用户怎么办',
+        );
+      }
+    });
+
+    test('真的在缩放 → 状态与「还没开始」区分得开，且不再催用户按热键', () {
+      final MagpieUpscalingReport on =
+          report(MagpieUpscalingStatus.active, scaling: true);
+      final MagpieUpscalingReport pending =
+          report(MagpieUpscalingStatus.active);
+      expect(magpieUpscalingStatusLabel(on),
+          isNot(magpieUpscalingStatusLabel(pending)));
+      expect(magpieUpscalingActionHint(on), isNull);
+      expect(magpieUpscalingActionHint(pending), isNotNull);
+    });
+  });
+
   group('源码守卫：钉住三个读源码挖出来的硬约束', () {
     late String pureSource;
     late String serviceSource;
@@ -695,6 +913,30 @@ void main() {
       // 代码里不该出现 Windowed(2) 这个自动缩放取值。
       expect(pureSource.contains('kMagpieAutoScaleWindowed'), isFalse);
       expect(serviceSource.contains('AutoScaleWindowed'), isFalse);
+    });
+
+    test('预热必须排在「写 profile」之前（否则第一局永远没有 scalingModes 可用）', () {
+      final int bootstrapIndex =
+          serviceSource.indexOf('await _ensureConfigMaterialized();');
+      final int applyIndex =
+          serviceSource.indexOf('await _applyAutoScaleProfile(hwnd);');
+      expect(bootstrapIndex, greaterThan(0),
+          reason: '预热步骤被删掉了 —— 首次使用会退回「装完没反应」');
+      expect(applyIndex, greaterThan(0));
+      expect(bootstrapIndex, lessThan(applyIndex));
+    });
+
+    test('预热起的进程必须被收掉（不能留游离 Magpie 顶掉单实例互斥体）', () {
+      final int bootstrapIndex =
+          serviceSource.indexOf('Future<void> _ensureConfigMaterialized()');
+      expect(bootstrapIndex, greaterThan(0));
+      final int endIndex = serviceSource.indexOf(
+          'Future<void> _waitForConfig()', bootstrapIndex);
+      final String body = serviceSource.substring(bootstrapIndex, endIndex);
+      expect(body.contains('_waitForExit(warmup)'), isTrue,
+          reason: '预热实例必须等它真的退出');
+      expect(body.contains('finally'), isTrue,
+          reason: '收尾必须在 finally 里，超时/异常都不能漏掉进程');
     });
 
     test('配置必须在拉起 Magpie 之前写（Magpie 只在启动时读一次，无文件监视）', () {

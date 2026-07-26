@@ -1885,6 +1885,10 @@ class GalHookSessionController extends ChangeNotifier {
     _magpieUpscaling = service;
   }
 
+  /// 窗口超分编排器（UI 订阅它显示超分状态）。未注入 / 非 Windows 时为 null，
+  /// 调用方据此整行不显示。
+  MagpieUpscalingService? get magpieUpscaling => _magpieUpscaling;
+
   /// 开始一段游戏活动记账：先把上一段残留 flush（防上次异常未落），再复位累计器并
   /// 绑定本会话的游戏标题/稳定 id。会话开始（attach / launch）时调用。
   void _beginActivitySession({required String title, String? mediaKey}) {

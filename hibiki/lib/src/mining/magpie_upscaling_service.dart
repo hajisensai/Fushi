@@ -47,6 +47,17 @@ const Duration kMagpieQuitGrace = Duration(seconds: 3);
 /// （`AppSettings::SaveAsync`），我们必须等它写完再改，否则改动被覆盖。
 const Duration kMagpieConfigSettleDelay = Duration(milliseconds: 400);
 
+/// 预热（bootstrap）等 Magpie 自己生成完整配置的上限。
+///
+/// `AppSettings::Initialize()` 读到 0 字节配置就走 `configText.empty()` 分支，当场
+/// `_SetDefaultScalingModes()` + `SaveAsync()`（`AppSettings.cpp:243-246`）。`SaveAsync`
+/// 只是 `resume_background()` 后直接写盘，**没有防抖也没有定时器**（`:287-293`），所以
+/// 正常情况几百毫秒内就落盘。8 秒是给冷启动 + 杀软扫描留的余量。
+const Duration kMagpieBootstrapTimeout = Duration(seconds: 8);
+
+/// 预热轮询配置文件的间隔。
+const Duration kMagpieBootstrapPollInterval = Duration(milliseconds: 150);
+
 /// 超分在本次会话里的实际状态。UI 与诊断读它，**不参与任何控制流判断**。
 enum MagpieUpscalingStatus {
   /// 没在跑。
@@ -109,6 +120,31 @@ class MagpieUpscalingReport {
       'skip=$profileSkipReason, scaling=$scalingActive, detail=$detail)';
 }
 
+/// 我们起的那个 Magpie 进程的最小句柄。
+///
+/// 抽出这层**只为可测**：真实 `Process` 没法在单测里造，导致「启动之后」的整条收束路径
+/// （QUIT → 等退出 → 超时 kill → 复原配置）此前一行都没被覆盖。
+abstract class MagpieProcessHandle {
+  /// 进程退出码。detached 启动在部分平台上永远不完成 —— 调用方必须自己加超时。
+  Future<int> get exitCode;
+
+  /// 强杀。**只允许对我们自己起的进程调用**。
+  void kill();
+}
+
+/// 真实实现：包一层 `dart:io` 的 [Process]。
+class _RealProcessHandle implements MagpieProcessHandle {
+  _RealProcessHandle(this._process);
+
+  final Process _process;
+
+  @override
+  Future<int> get exitCode => _process.exitCode;
+
+  @override
+  void kill() => _process.kill(ProcessSignal.sigkill);
+}
+
 /// Win32 边界的可注入抽象：**这一层存在的唯一理由是让上面的编排逻辑能在非 Windows 上单测**。
 /// 真实实现是 [MagpieWindowsBridge]，只有它碰 `dart:ffi`。
 abstract class MagpieWin32Bridge {
@@ -126,17 +162,20 @@ abstract class MagpieWin32Bridge {
 ///
 /// 生命周期与会话一一对应：[onGameWindowReady] 开，[onSessionEnded] 收。两个方法都
 /// **绝不抛异常**——超分是锦上添花，任何失败都只降级、不影响 hook 会话本身。
-class MagpieUpscalingService {
+class MagpieUpscalingService extends ChangeNotifier {
   MagpieUpscalingService({
     required MagpieUpscalingMode Function() modeReader,
     Future<bool> Function(MagpieDownloadPrompt prompt)? confirmDownload,
     MagpieWin32Bridge? bridge,
     MagpieInstaller Function()? installerFactory,
-    Future<Process> Function(String executable, List<String> arguments)?
-        processLauncher,
+    Future<MagpieProcessHandle> Function(
+      String executable,
+      List<String> arguments,
+    )? processLauncher,
     String? hibikiExecutablePath,
     String? configPathOverride,
     bool? isWindowsOverride,
+    Duration? bootstrapTimeout,
   })  : _modeReader = modeReader,
         _confirmDownload = confirmDownload,
         _bridge = bridge,
@@ -145,19 +184,24 @@ class MagpieUpscalingService {
         _hibikiExecutablePath =
             hibikiExecutablePath ?? _safeResolvedExecutable(),
         _configPathOverride = configPathOverride,
-        _isWindows = isWindowsOverride ?? Platform.isWindows;
+        _isWindows = isWindowsOverride ?? Platform.isWindows,
+        _bootstrapTimeout = bootstrapTimeout ?? kMagpieBootstrapTimeout;
 
   final MagpieUpscalingMode Function() _modeReader;
   final Future<bool> Function(MagpieDownloadPrompt prompt)? _confirmDownload;
   final MagpieWin32Bridge? _bridge;
   final MagpieInstaller Function() _installerFactory;
-  final Future<Process> Function(String, List<String>) _processLauncher;
+  final Future<MagpieProcessHandle> Function(String, List<String>)
+      _processLauncher;
   final String _hibikiExecutablePath;
   final String? _configPathOverride;
   final bool _isWindows;
 
+  /// 预热等待上限；仅测试注入，生产恒为 [kMagpieBootstrapTimeout]。
+  final Duration _bootstrapTimeout;
+
   /// 我们自己起的那个 Magpie。**只有它才允许被 QUIT / kill**。
-  Process? _ownedProcess;
+  MagpieProcessHandle? _ownedProcess;
 
   /// 本次会话写进配置的身份，收尾时按它把 autoScale 关回去。
   MagpieWindowIdentity? _appliedIdentity;
@@ -168,11 +212,21 @@ class MagpieUpscalingService {
   /// 同一时刻只允许一条编排在跑（开/收互斥），避免收尾与启动交叉。
   Future<void> _gate = Future<void>.value();
 
-  MagpieUpscalingReport _report =
+  MagpieUpscalingReport _reportValue =
       const MagpieUpscalingReport(status: MagpieUpscalingStatus.idle);
 
-  /// 当前状态（UI / 诊断读）。
-  MagpieUpscalingReport get report => _report;
+  /// 当前状态。UI 直接把本服务当 [Listenable] 订阅即可。
+  MagpieUpscalingReport get report => _reportValue;
+
+  /// 内部读写口。**所有** `_report = ...` 赋值都走这里，写完立刻 notify ——
+  /// 这样以后新增赋值点的人不会忘记通知 UI（「状态变了界面不动」是个太容易犯的错）。
+  MagpieUpscalingReport get _report => _reportValue;
+
+  set _report(MagpieUpscalingReport value) {
+    if (identical(_reportValue, value)) return;
+    _reportValue = value;
+    notifyListeners();
+  }
 
   MagpieWin32Bridge get _win32 => _bridge ?? MagpieWindowsBridge.instance;
 
@@ -184,11 +238,17 @@ class MagpieUpscalingService {
     }
   }
 
-  static Future<Process> _defaultLauncher(
+  static Future<MagpieProcessHandle> _defaultLauncher(
     String executable,
     List<String> arguments,
-  ) =>
-      Process.start(executable, arguments, mode: ProcessStartMode.detached);
+  ) async =>
+      _RealProcessHandle(
+        await Process.start(
+          executable,
+          arguments,
+          mode: ProcessStartMode.detached,
+        ),
+      );
 
   /// 便携配置文件路径（`<install>/config/config.json`）。
   String get _configPath =>
@@ -245,6 +305,7 @@ class MagpieUpscalingService {
     if (externalRunning) {
       _report = const MagpieUpscalingReport(
         status: MagpieUpscalingStatus.hotkeyOnly,
+        profileSkipReason: MagpieProfileSkipReason.externalInstance,
         detail: 'an existing Magpie instance is already running; '
             'left untouched, user can scale with its own hotkey',
       );
@@ -254,6 +315,14 @@ class MagpieUpscalingService {
     _report = const MagpieUpscalingReport(
       status: MagpieUpscalingStatus.preparing,
     );
+
+    // 🔴 首次使用的预热：我们装完写的是 0 字节便携标记，里面没有 `scalingModes`，
+    // 而没有 scalingModes 就不能写 profile（`scalingMode` 会被钳到 -1 → 缩放报
+    // `InvalidScalingMode`）。若不预热，**第一局游戏必然只能按热键**。
+    //
+    // 预热做的事：静默跑一次 Magpie 让它自己把默认配置（含 7 个 scalingModes）写出来，
+    // 再退出。这样第一局就能直接自动缩放，而不是让用户以为「装完没反应」。
+    await _ensureConfigMaterialized();
 
     // 配置必须在**拉起 Magpie 之前**写：Magpie 只在启动时读一次 config.json，全仓没有任何
     // 文件监视（无 ReadDirectoryChanges / FindFirstChangeNotification）。
@@ -366,6 +435,55 @@ class MagpieUpscalingService {
     }
   }
 
+  /// 预热：确保 `config.json` 里已经有 Magpie 自己生成的完整配置（关键是 `scalingModes`）。
+  ///
+  /// 已经就绪时**零成本直接返回**（只读一次文件），所以第二局起不会再付这份开销。
+  ///
+  /// 为什么必须由 Magpie 自己生成而不是我们手写：`scalingModes` 是 7 套带效果参数的缩放
+  /// 算法配置，手写等于猜上游的私有 schema —— 那正是设计文档 §3.2 明令禁止的事。让它自己
+  /// 跑一次是唯一既正确又零 schema 猜测的办法。
+  ///
+  /// 任何一步失败都静默返回：调用方随后读配置仍会失败，自然降级为热键模式。
+  Future<void> _ensureConfigMaterialized() async {
+    try {
+      if (await _readConfig() != null) return; // 早就好了
+      final String exe = MagpieInstaller.executablePath();
+      if (!File(exe).existsSync()) return;
+
+      final MagpieProcessHandle warmup =
+          await _processLauncher(exe, <String>[kMagpieSilentLaunchArg]);
+      try {
+        await _waitForConfig();
+      } finally {
+        // 预热实例必须收干净：它是我们起的，绝不能留一个游离的 Magpie 在跑，
+        // 否则下面「真正」那次启动会被单实例互斥体挡掉。
+        try {
+          _win32.broadcastQuit();
+        } catch (_) {}
+        await _waitForExit(warmup);
+        await Future<void>.delayed(kMagpieConfigSettleDelay);
+      }
+    } catch (_) {
+      // 预热是纯优化：失败只意味着这一局退回热键模式，不影响会话。
+    }
+  }
+
+  /// 轮询等配置文件变得可用（非空且能解析）。超时就返回，由调用方降级。
+  Future<void> _waitForConfig() async {
+    final DateTime deadline = DateTime.now().add(_bootstrapTimeout);
+    while (DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(kMagpieBootstrapPollInterval);
+      Map<String, dynamic>? config;
+      try {
+        config = await _readConfig();
+      } catch (_) {
+        config = null; // 可能正读到半写状态，下一轮再试
+      }
+      final Object? modes = config?['scalingModes'];
+      if (modes is List && modes.isNotEmpty) return;
+    }
+  }
+
   /// **best-effort** 写自动缩放 profile。返回 null 表示写成功；返回原因表示降级为「只启动
   /// 不配置」。任何异常都被吞成 [MagpieProfileSkipReason.schemaMismatch]。
   Future<MagpieProfileSkipReason?> _applyAutoScaleProfile(int hwnd) async {
@@ -375,7 +493,9 @@ class MagpieUpscalingService {
         return MagpieProfileSkipReason.missingWindowIdentity;
       }
       final Map<String, dynamic>? config = await _readConfig();
-      if (config == null) return MagpieProfileSkipReason.schemaMismatch;
+      // 走到这里还读不出配置，说明预热没成功（0 字节标记还在，或 Magpie 起不来）。
+      // 这是「第一次用」路径上最常见的降级，单独给个原因让 UI 能说人话。
+      if (config == null) return MagpieProfileSkipReason.bootstrapFailed;
 
       final MagpieProfileWriteResult result = magpieConfigWithAutoScaleProfile(
         config: config,
@@ -427,7 +547,7 @@ class MagpieUpscalingService {
 
   Future<void> _stop() async {
     _unlistenScalingEvents();
-    final Process? owned = _ownedProcess;
+    final MagpieProcessHandle? owned = _ownedProcess;
     _ownedProcess = null;
     if (owned != null) {
       // 先礼后兵：广播 QUIT 让它自己收（能正常清理缩放窗口），超时再 kill。
@@ -443,14 +563,14 @@ class MagpieUpscalingService {
     _report = const MagpieUpscalingReport(status: MagpieUpscalingStatus.idle);
   }
 
-  Future<void> _waitForExit(Process process) async {
+  Future<void> _waitForExit(MagpieProcessHandle process) async {
     try {
       await process.exitCode.timeout(kMagpieQuitGrace);
     } catch (_) {
       // 超时（或拿不到 exitCode：detached 启动在部分平台上就是这样）→ 强杀。
       // 只杀我们自己起的这一个 PID，绝不按进程名扫。
       try {
-        process.kill(ProcessSignal.sigkill);
+        process.kill();
       } catch (_) {}
     }
   }

@@ -448,11 +448,98 @@ onSessionEnded()
    但「Magpie 读到我们写的 profile → 50ms 轮询命中 → 真的全屏缩放起来」这一步是纯推理。
    尤其 `classNameRule` 取值是否与 Magpie 的 `ParseClassName` 结果一致（它对 WPF /
    RPGMakerMZ / TeknoParrot 三类窗口有特殊解析，`ProfileService.cpp:87-99`）**未验证**。
-3. **首次使用必然降级为热键模式**。我们写的便携 config 是 0 字节，Magpie 第一次跑完才会
-   生成含 `scalingModes` 的完整配置。所以：第一局游戏 = `hotkeyOnly`，第二局起才可能
-   `active`。这是陷阱 2 与「不手写 scalingModes」两条约束的必然结果，不是 bug，但**用户
-   感知上是「第一次装完没反应」**，UI 上目前没有任何提示。
+3. ~~**首次使用必然降级为热键模式**~~ → **已修**，见 §7 的预热（bootstrap）。
 4. **查词浮窗与缩放窗口的实际共存**未验证（§3.1 推断失焦不结束缩放，但没在真机上看过）。
 5. `-t` 静默模式下 `HWND_BROADCAST` 的 QUIT 能否投达未验证（有 kill 兜底，不阻塞）。
 6. 设置项落在「查词 → 外部集成」分组里（`lookup.galgame_upscaling`），不是独立的「游戏」
    设置页 —— 本仓目前**没有** galgame 设置 destination，新建一个的改动面远大于收益。
+
+---
+
+# 阶段二追加：消灭「装完第一次没反应」（2026-07-26）
+
+上一轮自报的两条缺口（§6.3 首次必然热键模式、§6 的「`scalingActive` 接上了 native 回传却
+没有任何 UI 消费」）本轮一并修掉。**能绕掉的约束就绕掉，绕不掉的才做提示。**
+
+## 7. 预热（bootstrap）——把「第一局只能按热键」从必然变成异常
+
+### 为什么原来必然降级
+
+我们装完写的是 0 字节 `config\config.json`（陷阱 2 要求）。它里面没有 `scalingModes`，
+而没有 `scalingModes` 就不能写 profile —— `scalingMode` 会被钳到 -1
+（`AppSettings.cpp:990-993`），缩放直接报 `InvalidScalingMode`（`ScalingService.cpp:324`）。
+于是第一局必然 `hotkeyOnly`。
+
+### 绕开的办法（可行性已从源码坐实）
+
+`AppSettings::Initialize()` 读到空配置就**当场**灌默认值并回存：
+
+```cpp
+if (configText.empty()) {
+    Logger::Get().Info("配置文件为空");
+    _SetDefaultScalingModes();   // 7 套缩放模式
+    _SetDefaultShortcuts();
+    SaveAsync();                 // AppSettings.cpp:243-246
+    return true;
+}
+```
+
+而 `SaveAsync()` 只是 `resume_background()` 之后直接 `_Save(data)`
+（`AppSettings.cpp:287-293`）—— **没有防抖、没有定时器**，正常几百毫秒内落盘。
+
+所以 `MagpieUpscalingService._ensureConfigMaterialized()` 做的事是：配置没就绪时**先静默跑
+一次** `Magpie.exe -t` 让它自己把完整配置写出来，轮询等到 `scalingModes` 非空（上限 8s），
+再把这个预热实例收掉，然后才写 profile、才真正启动。第一局就能自动缩放。
+
+风险与代价（如实）：
+
+- 只在配置没就绪时发生，**第二局起零开销**（只多读一次文件）。
+- 整条 `onGameWindowReady` 是从 `_setState` 里 `unawaited` 调的，**预热不阻塞会话**。
+- 预热实例必须收干净，否则单实例互斥体会把后面真正那次启动挡掉 —— 收尾放在 `finally`，
+  且有源码守卫测试钉住。
+- Magpie 若坏到永远写不出配置，每局白付 8s（有上限、自清理、不影响会话）。此时降级原因是
+  新增的 `MagpieProfileSkipReason.bootstrapFailed`，UI 会说人话。
+- **仍未真机验证**：`-t` 静默启动能否在无人值守下走完 `AppSettings::Initialize()` 并落盘，
+  是按源码推断的，没在真机上看过。
+
+## 8. 用户可见的超分状态
+
+`magpie_upscaling_text.dart`：枚举 → 人话，范式与 `gal_hook_failure_text.dart` 逐条对齐
+（纯模型不依赖 i18n；诊断保留机器可读 `name`；**返回 null 表示无话可说，绝不编造处置**）。
+硬纪律：绝不把 `bootstrapFailed` / `schemaMismatch` 这类内部枚举名甩到界面上 —— 那正是
+`engine_pcm_unavailable` 当初被原样显示给用户的老毛病。有一条穷举测试遍历所有
+`status × skipReason` 组合，断言用户可见字符串**不含任何**内部标识符。
+
+落点：捕获工作台的**健康卡**（`texthooker_page.dart` 的 `_CaptureHealthCard`），紧挨着
+「窗口」那一行 —— 说的是同一个游戏窗口，而且浮窗的「打开工作台」按钮就导航到这里
+（`gal_hook_text_overlay_controller.dart:441`），用户想知道「超分到底开没开」时第一眼看的
+就是这张卡。
+
+两行结构（`_UpscalingHealthRows`）：
+
+| 行 | 内容 |
+|---|---|
+| 状态行 | 复用既有 `_HealthRow`（label + value + `ready` 二值），与其余五行同构 |
+| 处置行 | 单独一行，因为 `_HealthRow.value` 是 `maxLines: 1` 的右对齐短值，装不下一句话 |
+
+文案分三种降级，因为对用户是三件不同的事：
+
+- **首次初始化**（`bootstrapFailed`）：「这次 Magpie 还在做首次初始化。现在按 Win+Shift+A
+  就能放大；下次启动游戏会自动放大。」—— 会自己好。
+- **已有别的 Magpie 在跑**（`externalInstance`）：「你的电脑上已经开着一个 Magpie，Hibiki
+  没有去动它。」—— 永远不会自己好，得让用户知道是我们有意不碰。
+- **其余**：只给通用处置，不瞎解释。
+
+另外 `active` 分两种说法：native 的 `MagpieScalingChanged` 广播回填 `scalingActive` 之前，
+我们只知道「已按自动缩放配置拉起了 Magpie」，**不知道它真的放大了没有**，此时说的是「已就绪
+但没有自动开始」。收到广播才敢说「已开启」。**不拿意图冒充结果。**
+
+`MagpieUpscalingService` 因此改成 `ChangeNotifier`：所有 `_report = ...` 走一个私有 setter，
+写完立刻 `notifyListeners()`，UI 用 `ListenableBuilder` 订阅。这样以后新增赋值点的人不会忘
+记通知（「状态变了界面不动」太容易犯）。
+
+## 9. 本轮仍未解决
+
+- 真机验证依然为零（§6.1 / §6.2 原样成立）。预热、状态卡、文案全部只有单测与源码证据。
+- 预热失败时每局多花 8s 的上限没有做「连续失败就不再试」的记忆 —— 现在每局都会重试一次。
+  真机验证前不加这个记忆是有意的：先看它到底会不会失败，再决定要不要退避。
