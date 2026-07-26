@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anti_leech.dart';
 import 'package:hibiki/src/media/torrent/download_save_root.dart';
@@ -57,6 +58,32 @@ class EmbeddedTorrentHost {
   /// 启动时的文件校验补回来（校验只读盘，不重下）。
   static const Duration resumeSaveInterval = Duration(minutes: 1);
 
+  /// 周期保存时给 native 的等待预算（毫秒）。
+  ///
+  /// `ht_save_resume_data` 是**主 isolate 同步 FFI**：这段时间 UI 完全冻结。
+  /// native 侧收齐回执即返回，预算只是最坏情况上限——但最坏情况每分钟发生一次，
+  /// 5s（native 默认）是不可接受的卡顿。没收齐的种子下一轮再存，盘上仍是上一轮
+  /// 的 resume，不丢数据。彻底不阻塞需要把 session 挪进独立 isolate（session
+  /// 指针不可跨 isolate 并发访问），是另一个量级的改动，本轮只压住最坏情况。
+  static const int periodicSaveTimeoutMs = 1500;
+
+  /// 退出前最后一次保存的等待预算（毫秒）：比周期保存宽（这是最后机会），
+  /// 但仍远小于 native 默认 5s —— 退出卡 5s 用户会以为 app 挂死。
+  static const int shutdownSaveTimeoutMs = 2500;
+
+  /// 是否已经用**真实**计划集合恢复过一次（[restoreFromResume] 拿到非 null
+  /// keepIds 时置位）。启动竞态下 host 可能先于计划加载被建出来，那次 open
+  /// 会跳过恢复，真相源到位后由 AppModel 据此补做。
+  bool _hasRestored = false;
+  bool get hasRestored => _hasRestored;
+
+  /// 最近一次 resume 保存的引擎回执（诊断用；从未保存过为 null）。
+  HtResumeSaveResult? _lastResumeSaveResult;
+  HtResumeSaveResult? get lastResumeSaveResult => _lastResumeSaveResult;
+
+  /// 本会话是否已记过一条「首次保存成功」日志（避免每分钟刷屏）。
+  bool _loggedFirstResumeSave = false;
+
   /// 下载根集合：[TorrentSaveRoots.active] 收新任务，历史根只参与列表过滤。
   /// TODO-1961：**非 final** —— 用户在设置里改下载目录时 [setActiveSaveRoot] 就地
   /// 换活动根，旧根降级为历史根。不能重建 host 来换根：重建 = 销毁 session =
@@ -96,7 +123,7 @@ class EmbeddedTorrentHost {
     required String baseSavePath,
     Iterable<String> legacySavePaths = const <String>[],
     required String resumeDir,
-    Set<String> restoreIds = const <String>{},
+    Set<String>? restoreIds,
     String listenInterfaces = '0.0.0.0:6881',
     bool enableDht = true,
     int Function()? clockMs,
@@ -161,52 +188,46 @@ class EmbeddedTorrentHost {
   /// 仅测试用：清掉 [probeAvailable] 的缓存。
   static void resetAvailabilityProbeForTesting() => _availabilityCache = null;
 
-  /// TODO-1961-a：resume 目录里**无主**（不在 [keepIds] 里）的文件全删。
-  ///
-  /// 唯一的剪枝入口，load 与 save 之后都走它 —— 「计划集合」是真相源，resume
-  /// 目录只是它的落盘镜像。不这样做的后果很具体：用户删掉一个下载任务后，
-  /// 残留的 `.resume` 会在下次启动把种子加回来，UI 里看不见它，却在后台占带宽
-  /// 做种。异常静默吞（剪枝失败不该打断下载）。
-  int _pruneResumeFiles(Set<String> keepIds) {
-    int removed = 0;
-    try {
-      final Directory dir = Directory(_resumeDir);
-      if (!dir.existsSync()) return 0;
-      for (final FileSystemEntity entity in dir.listSync()) {
-        if (entity is! File || !entity.path.endsWith('.resume')) continue;
-        final String id = p.basenameWithoutExtension(entity.path).toLowerCase();
-        if (keepIds.contains(id)) continue;
-        try {
-          entity.deleteSync();
-          removed++;
-        } on FileSystemException {
-          // 单个删不掉不影响其它。
-        }
-      }
-    } on FileSystemException {
-      return removed;
-    }
-    return removed;
-  }
+  /// 见顶层 [pruneResumeFiles]（宿主内唯一的剪枝入口）。
+  int _pruneResumeFiles(Set<String>? keepIds) =>
+      pruneResumeFiles(resumeDir: _resumeDir, keepIds: keepIds);
 
   /// TODO-1961-a：把上次会话存下的种子加回来（续传 + 继续做种）。
   /// 先按 [keepIds] 剪枝再加载，保证被删计划的种子不会复活。
   /// 返回真正加回来的种子数。
-  int restoreFromResume(Set<String> keepIds) {
+  ///
+  /// [keepIds] 为 null = 计划集合尚未加载：**既不剪枝也不加载**（见
+  /// [pruneResumeFiles] 的哨兵约定）。不加载是因为没有真相源就无法判断哪些
+  /// `.resume` 属于已被删掉的计划，加回来就是幽灵做种；真相源到位后由
+  /// `AppModel._restoreEmbeddedTorrentSession` 看着 [hasRestored] 补一次。
+  int restoreFromResume(Set<String>? keepIds) {
+    if (keepIds == null) {
+      debugPrint('[torrent] resume restore skipped: plan ids not loaded yet');
+      return 0;
+    }
     _pruneResumeFiles(keepIds);
+    _hasRestored = true;
     try {
-      return _session.loadResumeDir(_resumeDir).length;
-    } on Object {
+      final List<String> ids = _session.loadResumeDir(_resumeDir);
+      if (ids.isNotEmpty) {
+        debugPrint('[torrent] restored ${ids.length} torrent(s) from resume');
+      }
+      return ids.length;
+    } on Object catch (e) {
+      debugPrint('[torrent] resume restore failed: $e');
       return 0;
     }
   }
 
   /// TODO-1961-a：把当前所有种子的 resume data 落盘（每 [resumeSaveInterval]
   /// 至多一次；[force] 忽略节流，退出前用）。保存后按 [keepIds] 剪枝，
-  /// 把本轮写出的无主种子文件一并清掉。
+  /// 把本轮写出的无主种子文件一并清掉；[keepIds] 为 null 时**只保存不剪枝**
+  /// （保存是非破坏性的，剪枝不是——见 [pruneResumeFiles]）。
   ///
-  /// 返回本轮实际落盘的种子数（被节流跳过时返回 null）。
-  int? saveResumeSnapshot(Set<String> keepIds, {bool force = false}) {
+  /// 返回本轮实际落盘的种子数（被节流跳过时返回 null，出错返回 0）。
+  /// 失败/超时/异常一律 [debugPrint]：resume 长期写不进去是「重启后所有下载
+  /// 蒸发」的前兆，静默吞掉等于让用户和开发者都看不见它坏了。
+  int? saveResumeSnapshot(Set<String>? keepIds, {bool force = false}) {
     final int nowMs = _clockMs();
     if (!force &&
         _lastResumeSaveMs != 0 &&
@@ -214,11 +235,31 @@ class EmbeddedTorrentHost {
       return null;
     }
     _lastResumeSaveMs = nowMs;
+    final Stopwatch sw = Stopwatch()..start();
     try {
-      final HtResumeSaveResult result = _session.saveResumeData(_resumeDir);
+      final HtResumeSaveResult result = _session.saveResumeData(
+        _resumeDir,
+        timeoutMs: force ? shutdownSaveTimeoutMs : periodicSaveTimeoutMs,
+      );
+      sw.stop();
+      _lastResumeSaveResult = result;
+      if (result.failed > 0 || result.timedOut > 0) {
+        debugPrint('[torrent] resume save: ${result.saved} saved, '
+            '${result.failed} failed, ${result.timedOut} timed out '
+            '(${sw.elapsedMilliseconds}ms)');
+      } else if (!_loggedFirstResumeSave && result.saved > 0) {
+        _loggedFirstResumeSave = true;
+        debugPrint('[torrent] resume save: ${result.saved} saved '
+            '(${sw.elapsedMilliseconds}ms)');
+      } else if (sw.elapsedMilliseconds >= 500) {
+        // 主 isolate 同步 FFI：卡这么久 UI 是真冻住的，必须留痕。
+        debugPrint('[torrent] resume save blocked the UI isolate for '
+            '${sw.elapsedMilliseconds}ms (${result.saved} saved)');
+      }
       _pruneResumeFiles(keepIds);
       return result.saved;
-    } on Object {
+    } on Object catch (e) {
+      debugPrint('[torrent] resume save threw: $e');
       return 0;
     }
   }
@@ -423,10 +464,61 @@ class EmbeddedTorrentHost {
   /// TODO-1961-a：关 session **之前**强制存一次 resume —— 这是「下次启动能
   /// 续传/继续做种」的最后一道保存点，节流在这里必须让路（[force]）。
   /// [keepIds] 同 [saveResumeSnapshot]：当前仍存在的计划 id 集合。
-  void dispose({Set<String> keepIds = const <String>{}}) {
+  void dispose({Set<String>? keepIds}) {
     saveResumeSnapshot(keepIds, force: true);
     _session.close();
   }
+}
+
+/// TODO-1961-a：resume 目录里**无主**（不在 [keepIds] 里）的文件全删，返回删除数。
+///
+/// 唯一的剪枝入口（load 与 save 之后都走它）—— 「计划集合」是真相源，resume
+/// 目录只是它的落盘镜像。不剪枝的后果很具体：用户删掉一个下载任务后，残留的
+/// `.resume` 会在下次启动把种子加回来，UI 里看不见它，却在后台占带宽做种。
+///
+/// **[keepIds] 为 null = 计划集合尚未加载 → 拒绝剪枝，返回 -1。**
+/// 这个哨兵必须能与「真的一个计划都没有」（空集合 → 全删，合法）区分开：把两者
+/// 混为一谈，启动竞态里一次「还没加载完」的剪枝就会用空集合删光用户所有
+/// `.resume`（= 全部下载/做种任务永久蒸发，且 UI 上无声无息）。
+///
+/// 顶层函数而非 [EmbeddedTorrentHost] 私有方法，是为了让这条不变量能在**没有
+/// 原生 DLL 的环境**（含 CI）里被直接测到——host 的行为层用例要 DLL，永远 skip。
+///
+/// 单个文件删不掉不影响其它；目录不存在返回 0。
+///
+/// [keepIds] 内部按小写比对（infohash 的大小写只是书写差异）——调用方大小写
+/// 不一致时的后果是「全都不匹配 → 全删」，太贵，不能靠约定。
+int pruneResumeFiles({
+  required String resumeDir,
+  required Set<String>? keepIds,
+}) {
+  if (keepIds == null) {
+    debugPrint('[torrent] resume prune refused: plan ids not loaded yet');
+    return -1;
+  }
+  final Set<String> keep = <String>{
+    for (final String id in keepIds) id.toLowerCase(),
+  };
+  int removed = 0;
+  try {
+    final Directory dir = Directory(resumeDir);
+    if (!dir.existsSync()) return 0;
+    for (final FileSystemEntity entity in dir.listSync()) {
+      if (entity is! File || !entity.path.endsWith('.resume')) continue;
+      final String id = p.basenameWithoutExtension(entity.path).toLowerCase();
+      if (keep.contains(id)) continue;
+      try {
+        entity.deleteSync();
+        removed++;
+      } on FileSystemException catch (e) {
+        debugPrint('[torrent] resume prune failed for ${entity.path}: $e');
+      }
+    }
+  } on FileSystemException catch (e) {
+    debugPrint('[torrent] resume prune aborted: $e');
+    return removed;
+  }
+  return removed;
 }
 
 /// 平台默认内置 DLL 路径解析：flutter runner 把 native 依赖放在可执行文件

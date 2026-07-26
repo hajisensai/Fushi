@@ -3073,7 +3073,12 @@ class AppModel with ChangeNotifier {
   /// 当前仍存在的计划 id 集合（= infohash）。resume 剪枝的真相源：不在这个集合
   /// 里的 `.resume` 文件一律删，否则用户删掉的任务会在下次启动复活成一个 UI 里
   /// 看不见、却在后台做种的种子。每轮 tick 与启动时刷新。
-  Set<String> _animeDownloadPlanIds = const <String>{};
+  ///
+  /// **null = 尚未从计划仓库加载过**，绝不能退化成空集合：空集合是「用户真的
+  /// 一个计划都没有」的合法取值，会让剪枝删光所有 `.resume`。两者混为一谈时，
+  /// 启动竞态里一次早到的剪枝就会把用户全部下载/做种任务永久蒸发
+  /// （见 [pruneResumeFiles] 的哨兵与 [startAnimeDownloadService] 的顺序注释）。
+  Set<String>? _animeDownloadPlanIds;
 
   /// 启动时用户配置的下载目录不可用（不存在且建不出/写不进）时记下原因与路径，
   /// 设置页据此显示警告。**不静默**：回退默认根这件事必须让用户看见。
@@ -3218,6 +3223,15 @@ class AppModel with ChangeNotifier {
     );
     _embeddedTorrentResumeDir = path.join(baseDir.path, 'resume');
 
+    // 🔴 顺序不可调换：下面两个 service 的 `..start()` 会**立刻** tick →
+    // `_torrentBackendFor` → `_ensureEmbeddedTorrentHost()` → `open()` →
+    // `restoreFromResume(restoreIds)` → 剪枝。计划 id 还没加载时那次剪枝的
+    // keepIds 会是「空集合」，于是把用户**所有** `.resume` 删光 —— 目标功能
+    // （重启后续传/继续做种）被反向实现成一次静默的数据销毁。
+    // 兜底见 [pruneResumeFiles] 的 null 哨兵：真被后来的重构调乱顺序，剪枝会
+    // 拒绝执行而不是删光；但正确顺序才是第一道防线，别指望兜底。
+    await _refreshAnimeDownloadPlanIds(store);
+
     _animeDownloadService = AnimeDownloadService(
       store: store,
       configProvider: () =>
@@ -3254,13 +3268,15 @@ class AppModel with ChangeNotifier {
   }
 
   /// 刷新 [_animeDownloadPlanIds]（resume 剪枝的真相源）并返回它。
+  /// 返回值非空：调用过一次之后哨兵就不再是 null。
   Future<Set<String>> _refreshAnimeDownloadPlanIds(
       AnimeDownloadPlanStore store) async {
     final List<AnimeDownloadPlan> plans = await store.loadAll();
-    _animeDownloadPlanIds = <String>{
+    final Set<String> ids = <String>{
       for (final AnimeDownloadPlan plan in plans) plan.id.toLowerCase(),
     };
-    return _animeDownloadPlanIds;
+    _animeDownloadPlanIds = ids;
+    return ids;
   }
 
   /// TODO-1961-a：启动时按需恢复上次的内置引擎会话。
@@ -3277,9 +3293,8 @@ class AppModel with ChangeNotifier {
       if (!await dir.exists()) return;
       await for (final FileSystemEntity entity in dir.list()) {
         if (entity is! File || !entity.path.endsWith('.resume')) continue;
-        final String id = path
-            .basenameWithoutExtension(entity.path)
-            .toLowerCase();
+        final String id =
+            path.basenameWithoutExtension(entity.path).toLowerCase();
         if (planIds.contains(id)) {
           hasRestorable = true;
           break;
@@ -3289,7 +3304,11 @@ class AppModel with ChangeNotifier {
       return;
     }
     if (!hasRestorable) return;
-    _ensureEmbeddedTorrentHost();
+    final EmbeddedTorrentHost? host = _ensureEmbeddedTorrentHost();
+    // host 已经被别处（下载服务 tick）先建出来时，那次 open 可能因为计划 id
+    // 还没加载而跳过了恢复（[EmbeddedTorrentHost.hasRestored] = false）。
+    // 真相源到位了就在这里补做一次，别让「本次启动不续传」变成常态。
+    if (host != null && !host.hasRestored) host.restoreFromResume(planIds);
   }
 
   /// TODO-1961-a：周期性把 resume data 落盘（host 内部按
@@ -3300,8 +3319,10 @@ class AppModel with ChangeNotifier {
     if (host == null || store == null) return;
     try {
       host.saveResumeSnapshot(await _refreshAnimeDownloadPlanIds(store));
-    } catch (_) {
-      // 保存失败不打断下载轮询；下轮再试。
+    } catch (e) {
+      // 保存失败不打断下载轮询（下轮再试），但必须留痕：resume 长期写不进去
+      // 等于「重启后所有下载蒸发」，静默吞掉用户和开发者都看不见。
+      debugPrint('[torrent] resume snapshot tick failed: $e');
     }
   }
 

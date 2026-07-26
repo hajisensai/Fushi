@@ -97,6 +97,23 @@ HIBIKI_TORRENT_LIB=... flutter test test/media/torrent/embedded_torrent_backend_
 dart run tool/download_harness.dart <dll> "<magnet>" <saveDir>
 ```
 
+### CI 覆盖缺口（已知，未解决）
+
+所有需要真 DLL 的用例（`packages/hibiki_torrent/test/*`、`hibiki` 侧的
+`embedded_torrent_backend_test.dart` / `embedded_torrent_host_test.dart`）在 CI
+上**一次都没跑过**，原因有两层，都不是「加个环境变量」能解决的：
+
+1. `HIBIKI_TORRENT_LIB` 在任何 workflow 里都不存在 → 这些用例整组 skip。
+2. 真单测门（`release.yml` 的 *Run unit tests*）跑在 `ubuntu-latest`，而随包的
+   预编译产物是 Windows DLL；`Run package tests` 的包列表里也**没有**
+   `packages/hibiki_torrent`。
+
+要真正补上，得在 CI 上构建 Linux 版 libtorrent 2.x + 本 bridge（`.so`），是独立
+任务，不该混进功能 PR。在那之前，**任何必须守住的不变量都不能只靠要 DLL 的
+用例**——把它做成不依赖 native 的纯 Dart 用例（例：`pruneResumeFiles` 的
+「计划 id 未加载时拒绝剪枝」守卫在 `hibiki/test/media/torrent/
+resume_prune_guard_test.dart`，无 DLL 也跑）。
+
 ## ffigen 重生成绑定
 
 `lib/src/ffi/hibiki_torrent_bindings.dart` 由 `ffigen.yaml` 对 `hibiki_torrent.h`

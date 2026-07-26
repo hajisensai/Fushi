@@ -151,4 +151,4 @@ Dart 侧也没有任何「启动时重新 add 已有种子」的路径（`addTor
 
 跑既有测试时发现 `embedded_pipeline_test.dart` 的 ip_filter 用例本地 flaky
 （基线与改动后同为 1/5 通过，已用对照实验排除本轮改动）。根因与影响面见
-[BUG-1109](../bugs/BUG-1109-local-rig-rate-limit-flake.md)。
+[BUG-1111](../bugs/BUG-1111-local-rig-rate-limit-flake.md)。
