@@ -39,10 +39,9 @@ void main() {
     await db.close();
   });
 
-  group('resolveAudiobookPositionSync 纯函数', () {
+  group('resolvePositionLww 纯函数（有声书侧）', () {
     test('remote 时间戳更新 → 取 remote', () {
-      final ({int positionMs, int updatedAtMs}) w =
-          resolveAudiobookPositionSync(
+      final ({int positionMs, int updatedAtMs}) w = resolvePositionLww(
         localPositionMs: 1000,
         localUpdatedAtMs: 10,
         remotePositionMs: 5000,
@@ -53,8 +52,7 @@ void main() {
     });
 
     test('local 时间戳更新 → 取 local', () {
-      final ({int positionMs, int updatedAtMs}) w =
-          resolveAudiobookPositionSync(
+      final ({int positionMs, int updatedAtMs}) w = resolvePositionLww(
         localPositionMs: 9000,
         localUpdatedAtMs: 99,
         remotePositionMs: 1,
@@ -65,8 +63,7 @@ void main() {
     });
 
     test('时间戳相等 → 取较大位置（听得更远者胜）', () {
-      final ({int positionMs, int updatedAtMs}) w =
-          resolveAudiobookPositionSync(
+      final ({int positionMs, int updatedAtMs}) w = resolvePositionLww(
         localPositionMs: 200,
         localUpdatedAtMs: 7,
         remotePositionMs: 800,
@@ -77,8 +74,7 @@ void main() {
     });
 
     test('两侧都无时间戳（0）→ 取较大位置（旧数据降级）', () {
-      final ({int positionMs, int updatedAtMs}) w =
-          resolveAudiobookPositionSync(
+      final ({int positionMs, int updatedAtMs}) w = resolvePositionLww(
         localPositionMs: 300,
         localUpdatedAtMs: 0,
         remotePositionMs: 0,

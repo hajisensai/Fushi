@@ -246,7 +246,7 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   }) async {
     final ({int positionMs, int updatedAtMs}) current =
         videoPositions[id] ?? (positionMs: 0, updatedAtMs: 0);
-    videoPositions[id] = resolveVideoPositionSync(
+    videoPositions[id] = resolvePositionLww(
       localPositionMs: current.positionMs,
       localUpdatedAtMs: current.updatedAtMs,
       remotePositionMs: positionMs < 0 ? 0 : positionMs,

@@ -93,42 +93,42 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   // ══════════════════════════════════════════════════════════════════════════
-  // computeLocalAudioSyncDiff 纯函数
+  // computeKeyUnionDiff 纯函数（本地音频 displayName）
   // ══════════════════════════════════════════════════════════════════════════
 
-  group('computeLocalAudioSyncDiff', () {
+  group('computeKeyUnionDiff（本地音频 displayName）', () {
     test('union by displayName: pull remote-only, push local-only, skip shared',
         () {
-      final LocalAudioSyncDiff diff = computeLocalAudioSyncDiff(
-        localNames: <String>{'NHK', 'Forvo'},
-        remoteNames: <String>{'Forvo', 'JapanesePod101'},
+      final SyncKeyDiff diff = computeKeyUnionDiff(
+        localKeys: <String>{'NHK', 'Forvo'},
+        remoteKeys: <String>{'Forvo', 'JapanesePod101'},
       );
       expect(diff.toPull, <String>{'JapanesePod101'});
       expect(diff.toPush, <String>{'NHK'});
     });
 
     test('两端均空 → 空 diff', () {
-      final LocalAudioSyncDiff diff = computeLocalAudioSyncDiff(
-        localNames: <String>{},
-        remoteNames: <String>{},
+      final SyncKeyDiff diff = computeKeyUnionDiff(
+        localKeys: <String>{},
+        remoteKeys: <String>{},
       );
       expect(diff.toPull, isEmpty);
       expect(diff.toPush, isEmpty);
     });
 
     test('本端全在远端 → toPush 为空', () {
-      final LocalAudioSyncDiff diff = computeLocalAudioSyncDiff(
-        localNames: <String>{'A', 'B'},
-        remoteNames: <String>{'A', 'B', 'C'},
+      final SyncKeyDiff diff = computeKeyUnionDiff(
+        localKeys: <String>{'A', 'B'},
+        remoteKeys: <String>{'A', 'B', 'C'},
       );
       expect(diff.toPush, isEmpty);
       expect(diff.toPull, <String>{'C'});
     });
 
     test('远端全在本端 → toPull 为空', () {
-      final LocalAudioSyncDiff diff = computeLocalAudioSyncDiff(
-        localNames: <String>{'A', 'B'},
-        remoteNames: <String>{'A'},
+      final SyncKeyDiff diff = computeKeyUnionDiff(
+        localKeys: <String>{'A', 'B'},
+        remoteKeys: <String>{'A'},
       );
       expect(diff.toPull, isEmpty);
       expect(diff.toPush, <String>{'B'});
@@ -136,13 +136,13 @@ void main() {
   });
 
   // ══════════════════════════════════════════════════════════════════════════
-  // computeAudiobookSyncDiff 纯函数
+  // computeKeyUnionDiff 纯函数（有声书 bookKey）
   // ══════════════════════════════════════════════════════════════════════════
 
-  group('computeAudiobookSyncDiff', () {
+  group('computeKeyUnionDiff（有声书 bookKey）', () {
     test('union by bookKey: pull remote-only, push local-only, skip shared',
         () {
-      final AudiobookSyncDiff diff = computeAudiobookSyncDiff(
+      final SyncKeyDiff diff = computeKeyUnionDiff(
         localKeys: <String>{'book-a', 'book-b'},
         remoteKeys: <String>{'book-b', 'book-c'},
       );
@@ -151,7 +151,7 @@ void main() {
     });
 
     test('两端均空 → 空 diff', () {
-      final AudiobookSyncDiff diff = computeAudiobookSyncDiff(
+      final SyncKeyDiff diff = computeKeyUnionDiff(
         localKeys: <String>{},
         remoteKeys: <String>{},
       );
@@ -160,7 +160,7 @@ void main() {
     });
 
     test('两端共有所有 → 两侧均为空', () {
-      final AudiobookSyncDiff diff = computeAudiobookSyncDiff(
+      final SyncKeyDiff diff = computeKeyUnionDiff(
         localKeys: <String>{'x', 'y'},
         remoteKeys: <String>{'x', 'y'},
       );
@@ -289,10 +289,13 @@ void main() {
 
       final AppModelLibraryHostService svc = _buildSvc(db: db);
       final List<RemoteAudiobookInfo> list = await svc.listAudiobooks();
-      final Map<String, RemoteAudiobookInfo> byIdentity = <String,
-          RemoteAudiobookInfo>{for (final RemoteAudiobookInfo a in list) a.identity: a};
+      final Map<String, RemoteAudiobookInfo> byIdentity =
+          <String, RemoteAudiobookInfo>{
+        for (final RemoteAudiobookInfo a in list) a.identity: a
+      };
 
-      expect(byIdentity.keys, containsAll(<String>['ttu-42', 'srt-standalone-1']));
+      expect(
+          byIdentity.keys, containsAll(<String>['ttu-42', 'srt-standalone-1']));
       expect(byIdentity['ttu-42']!.isStandaloneSrt, isFalse);
       final RemoteAudiobookInfo standalone = byIdentity['srt-standalone-1']!;
       expect(standalone.isStandaloneSrt, isTrue);
@@ -308,8 +311,7 @@ void main() {
       expect(await svc.audiobookExists('nonexistent'), isFalse);
     });
 
-    test('exportAudiobook(uid) 打纯 SRT 包（无 audiobook 段）并可导入落 SrtBook',
-        () async {
+    test('exportAudiobook(uid) 打纯 SRT 包（无 audiobook 段）并可导入落 SrtBook', () async {
       await insertStandalone('srt-standalone-2', 'Standalone2');
       final AppModelLibraryHostService svc = _buildSvc(db: db);
 

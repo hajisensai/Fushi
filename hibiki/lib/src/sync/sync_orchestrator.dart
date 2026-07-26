@@ -1346,7 +1346,7 @@ class SyncOrchestrator {
   /// 修复：同步基底统一为 uid 集合 = 「本地 VideoBooks 行 uid」∪「本地有
   /// `video_remote_position_<uid>` prefs 的 uid（哪怕无行）」，只对 host 也有的 uid 同步。
   /// 每个 uid 的本地进度统一从 prefs（带时间戳）取，并与 `VideoBooks.lastPositionMs`
-  /// （旧数据，无独立时间戳记 0）经 [resolveVideoPositionSync] 取较新作为本地真相；
+  /// （旧数据，无独立时间戳记 0）经 [resolvePositionLww] 取较新作为本地真相；
   /// 与 host 进度再比对。胜者新于 host → PUT；胜者不同于本地 → 写回 prefs，**仅当本地
   /// 存在 VideoBooks 行时**才一并更新 `lastPositionMs`（流式视频绝不强建行污染书架）。
   ///
@@ -1394,7 +1394,7 @@ class SyncOrchestrator {
   ///
   /// [rowPositionByUid] 含本地 VideoBooks 行时表示书架视频（写回需更新 lastPositionMs）；
   /// 不含则为流式视频（只写 prefs，不建行）。本地进度统一从 prefs 取并与 lastPositionMs
-  /// 经 [resolveVideoPositionSync] 取较新。
+  /// 经 [resolvePositionLww] 取较新。
   Future<void> _syncOneVideoProgressLive(
     String uid,
     RemoteVideoInfo hostInfo,
@@ -1413,7 +1413,7 @@ class SyncOrchestrator {
     final int? rowPos = rowPositionByUid[uid];
     final int localPositionMs = rowPos ?? prefsPos;
 
-    final ({int positionMs, int updatedAtMs}) winner = resolveVideoPositionSync(
+    final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
       localPositionMs: localPositionMs,
       localUpdatedAtMs: prefsAt,
       remotePositionMs: hostInfo.positionMs,
@@ -1456,7 +1456,7 @@ class SyncOrchestrator {
   /// 同步基底 = 「本地有 `audiobook_pos_<key>` prefs 的 bookKey」∪「本地 Audiobooks
   /// 行的 bookKey」，只对 host 也有的 bookKey 同步（host 无该有声书时其 PUT 端点
   /// 404 / 闸门 no-op，且 GET 无真相可拉，跳过省一次网络）。每个 bookKey 比对本地
-  /// prefs 进度与 host 进度，[resolveAudiobookPositionSync]「取较新时间戳」选胜者；
+  /// prefs 进度与 host 进度，[resolvePositionLww]「取较新时间戳」选胜者；
   /// 胜者新于 host → PUT 上报；胜者不同于本地 → 写回本地 prefs。
   ///
   /// 逐条错误进 [report.errors] 不中断整体。
@@ -1497,7 +1497,7 @@ class SyncOrchestrator {
   /// 同步单个有声书 [bookKey] 的进度（[_syncAudiobookProgressLive] 的循环体）。
   ///
   /// 本地进度真相 = `audiobook_pos_<bookKey>`（位置）+ `audiobook_pos_at_<bookKey>`
-  /// （时间戳，旧数据无记 0）；与 host 进度经 [resolveAudiobookPositionSync] 取较新。
+  /// （时间戳，旧数据无记 0）；与 host 进度经 [resolvePositionLww] 取较新。
   Future<void> _syncOneAudiobookProgressLive(
     String bookKey,
     HibikiClientSyncBackend backend,
@@ -1509,8 +1509,7 @@ class SyncOrchestrator {
     final ({int positionMs, int updatedAtMs}) host =
         await backend.remoteAudiobookPosition(bookKey);
 
-    final ({int positionMs, int updatedAtMs}) winner =
-        resolveAudiobookPositionSync(
+    final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
       localPositionMs: localPos,
       localUpdatedAtMs: localAt,
       remotePositionMs: host.positionMs,
@@ -1604,11 +1603,9 @@ class SyncOrchestrator {
     final List<RemoteDictionaryInfo> remoteDicts =
         await backend.listRemoteDictionaries();
 
-    final DictionarySyncDiff diff = computeDictionarySyncDiff(
-      localNames: <String>{
-        for (final DictionaryMetaRow d in localDicts) d.name
-      },
-      remoteNames: <String>{
+    final SyncKeyDiff diff = computeKeyUnionDiff(
+      localKeys: <String>{for (final DictionaryMetaRow d in localDicts) d.name},
+      remoteKeys: <String>{
         for (final RemoteDictionaryInfo d in remoteDicts) d.name
       },
     );
@@ -1781,9 +1778,9 @@ class SyncOrchestrator {
       for (final RemoteLocalAudioInfo r in remoteEntries) r.displayName,
     };
 
-    final LocalAudioSyncDiff diff = computeLocalAudioSyncDiff(
-      localNames: localNames,
-      remoteNames: remoteNames,
+    final SyncKeyDiff diff = computeKeyUnionDiff(
+      localKeys: localNames,
+      remoteKeys: remoteNames,
     );
 
     final int total = diff.toPull.length + diff.toPush.length;
@@ -1905,7 +1902,7 @@ class SyncOrchestrator {
       for (final EpubBookRow b in localBooks) b.bookKey,
     };
 
-    final AudiobookSyncDiff diff = computeAudiobookSyncDiff(
+    final SyncKeyDiff diff = computeKeyUnionDiff(
       localKeys: localKeys,
       remoteKeys: remoteKeys,
     );

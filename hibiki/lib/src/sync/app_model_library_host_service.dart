@@ -819,7 +819,7 @@ class AppModelLibraryHostService
   /// 与远端 resume 路径统一写此键空间，见 [AudiobookRepository.updatePositionMs]）。
   ///
   /// 向后兼容：旧数据只写位置不写时间戳，缺时间戳时记 0，被任何带时间戳的对端进度
-  /// 在 [resolveAudiobookPositionSync] 中盖过——既能读出旧本机播放位置，又不让无时间戳
+  /// 在 [resolvePositionLww] 中盖过——既能读出旧本机播放位置，又不让无时间戳
   /// 旧值盖过更新的对端进度。
   @override
   Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
@@ -838,7 +838,7 @@ class AppModelLibraryHostService
   /// `audiobook_pos_` pref（与视频 [putVideoPosition]「视频不存在不写脏」、书
   /// [putBookProgress]「书不存在不写孤儿行」同语义）。
   ///
-  /// 冲突解决「取较新时间戳」（[resolveAudiobookPositionSync]）：仅当 [updatedAtMs]
+  /// 冲突解决「取较新时间戳」（[resolvePositionLww]）：仅当 [updatedAtMs]
   /// 严格新于 host 已存时间戳才覆盖。负位置 clamp 0。
   @override
   Future<void> putAudiobookPosition(
@@ -856,8 +856,7 @@ class AppModelLibraryHostService
     }
     final ({int positionMs, int updatedAtMs}) current =
         await getAudiobookPosition(bookKey);
-    final ({int positionMs, int updatedAtMs}) winner =
-        resolveAudiobookPositionSync(
+    final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
       localPositionMs: current.positionMs,
       localUpdatedAtMs: current.updatedAtMs,
       remotePositionMs: positionMs < 0 ? 0 : positionMs,
@@ -1020,8 +1019,7 @@ class AppModelLibraryHostService
     // 语义与 [getVideoPosition]\(id, episodeIndex: 0\) 完全一致：prefs 断点（本机/
     // 远端播放统一键）与旧 `VideoBooks.lastPositionMs`（时间戳 0）取较新——只是行
     // 已在手、prefs 已批量预取，不再逐行发查询。
-    final ({int positionMs, int updatedAtMs}) progress =
-        resolveVideoPositionSync(
+    final ({int positionMs, int updatedAtMs}) progress = resolvePositionLww(
       localPositionMs: PrefCodec.decode<int>(
           prefs[videoRemotePositionPrefKey(row.bookUid)] ?? '', 0),
       localUpdatedAtMs: PrefCodec.decode<int>(
@@ -1191,7 +1189,7 @@ class AppModelLibraryHostService
   ///
   /// 向后兼容：TODO-816 之前 host 本机播放只写 `VideoBooks.lastPositionMs`、不写 prefs，
   /// 那部分旧进度在 prefs 里缺失。故 prefs 无记录时回退查 `VideoBooks.lastPositionMs`
-  /// （旧数据无独立时间戳记 0），与 prefs 经 [resolveVideoPositionSync] 取较新——既能读
+  /// （旧数据无独立时间戳记 0），与 prefs 经 [resolvePositionLww] 取较新——既能读
   /// 出旧本机播放进度（client 跨设备恢复），又不让无时间戳的旧值盖过更新的 prefs 进度。
   @override
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(
@@ -1213,7 +1211,7 @@ class AppModelLibraryHostService
     // client 真更近才看过仍会赢（语义可接受），但 client 无有效断点时 host 能续上。
     final int rowAt =
         rowPos > 0 ? (row?.importedAt?.millisecondsSinceEpoch ?? 0) : 0;
-    return resolveVideoPositionSync(
+    return resolvePositionLww(
       localPositionMs: prefsPos,
       localUpdatedAtMs: prefsAt,
       remotePositionMs: rowPos,
@@ -1223,7 +1221,7 @@ class AppModelLibraryHostService
 
   /// 把 client 上报的 [id] 视频断点写入 host（TODO-653）。
   ///
-  /// 冲突解决「取较新时间戳」（[resolveVideoPositionSync]）：仅当 [updatedAtMs] 严格
+  /// 冲突解决「取较新时间戳」（[resolvePositionLww]）：仅当 [updatedAtMs] 严格
   /// 新于 host 已存时间戳才覆盖，避免旧设备滞后上报回退新进度。负位置 clamp 0。
   @override
   Future<void> putVideoPosition(
@@ -1234,7 +1232,7 @@ class AppModelLibraryHostService
   }) async {
     final ({int positionMs, int updatedAtMs}) current =
         await getVideoPosition(id, episodeIndex: episodeIndex);
-    final ({int positionMs, int updatedAtMs}) winner = resolveVideoPositionSync(
+    final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
       localPositionMs: current.positionMs,
       localUpdatedAtMs: current.updatedAtMs,
       remotePositionMs: positionMs < 0 ? 0 : positionMs,

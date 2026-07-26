@@ -1,15 +1,15 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 
-/// TODO-653 视频播放进度跨设备同步——冲突解决纯函数守卫。
+/// TODO-653 视频/有声书播放进度跨设备同步——冲突解决纯函数守卫。
 ///
-/// [resolveVideoPositionSync] 是 host PUT 端点与 client 恢复共用的「取较新时间戳」
-/// last-write-wins 仲裁，与有声书进度的 `SyncManager._determineSyncDirection` 同范式
-/// （取较新者；时间戳相等时取较大位置，"看得更远者胜"）。
+/// [resolvePositionLww] 是 host PUT 端点与 client 恢复共用的「取较新时间戳」
+/// last-write-wins 仲裁（历史 resolveVideoPositionSync / resolveAudiobookPositionSync
+/// 逐字节相同，命名统一轮合并；取较新者，时间戳相等时取较大位置，"看/听得更远者胜"）。
 void main() {
-  group('resolveVideoPositionSync', () {
+  group('resolvePositionLww', () {
     test('较新远端时间戳胜出（跨设备：B 设备恢复到 A 的进度）', () {
-      final ({int positionMs, int updatedAtMs}) r = resolveVideoPositionSync(
+      final ({int positionMs, int updatedAtMs}) r = resolvePositionLww(
         localPositionMs: 120000,
         localUpdatedAtMs: 1000,
         remotePositionMs: 600000,
@@ -20,7 +20,7 @@ void main() {
     });
 
     test('较新本地时间戳胜出（旧 host 不回退本端新进度）', () {
-      final ({int positionMs, int updatedAtMs}) r = resolveVideoPositionSync(
+      final ({int positionMs, int updatedAtMs}) r = resolvePositionLww(
         localPositionMs: 900000,
         localUpdatedAtMs: 3000,
         remotePositionMs: 600000,
@@ -31,7 +31,7 @@ void main() {
     });
 
     test('时间戳相等时取较大位置（看得更远者胜）', () {
-      final ({int positionMs, int updatedAtMs}) r = resolveVideoPositionSync(
+      final ({int positionMs, int updatedAtMs}) r = resolvePositionLww(
         localPositionMs: 300000,
         localUpdatedAtMs: 5000,
         remotePositionMs: 700000,
@@ -42,7 +42,7 @@ void main() {
     });
 
     test('两侧都无记录（0/0）返回较大位置（默认 0）', () {
-      final ({int positionMs, int updatedAtMs}) r = resolveVideoPositionSync(
+      final ({int positionMs, int updatedAtMs}) r = resolvePositionLww(
         localPositionMs: 0,
         localUpdatedAtMs: 0,
         remotePositionMs: 0,
@@ -53,7 +53,7 @@ void main() {
     });
 
     test('本地有进度、远端无记录：本地胜出（首次跨设备前不被 0 抹掉）', () {
-      final ({int positionMs, int updatedAtMs}) r = resolveVideoPositionSync(
+      final ({int positionMs, int updatedAtMs}) r = resolvePositionLww(
         localPositionMs: 450000,
         localUpdatedAtMs: 1700000000000,
         remotePositionMs: 0,
@@ -64,7 +64,7 @@ void main() {
     });
 
     test('远端有进度、本地无记录：远端胜出（新装设备拉到 host 进度）', () {
-      final ({int positionMs, int updatedAtMs}) r = resolveVideoPositionSync(
+      final ({int positionMs, int updatedAtMs}) r = resolvePositionLww(
         localPositionMs: 0,
         localUpdatedAtMs: 0,
         remotePositionMs: 360000,
@@ -72,6 +72,33 @@ void main() {
       );
       expect(r.positionMs, 360000);
       expect(r.updatedAtMs, 1700000000000);
+    });
+  });
+
+  group('旧名 @Deprecated 转发（并发分支兼容）', () {
+    test('resolveVideoPositionSync 委托 resolvePositionLww', () {
+      // ignore: deprecated_member_use_from_same_package
+      final ({int positionMs, int updatedAtMs}) r = resolveVideoPositionSync(
+        localPositionMs: 120000,
+        localUpdatedAtMs: 1000,
+        remotePositionMs: 600000,
+        remoteUpdatedAtMs: 2000,
+      );
+      expect(r.positionMs, 600000);
+      expect(r.updatedAtMs, 2000);
+    });
+
+    test('resolveAudiobookPositionSync 委托 resolvePositionLww', () {
+      final ({int positionMs, int updatedAtMs}) r =
+          // ignore: deprecated_member_use_from_same_package
+          resolveAudiobookPositionSync(
+        localPositionMs: 300000,
+        localUpdatedAtMs: 5000,
+        remotePositionMs: 700000,
+        remoteUpdatedAtMs: 5000,
+      );
+      expect(r.positionMs, 700000);
+      expect(r.updatedAtMs, 5000);
     });
   });
 

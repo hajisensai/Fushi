@@ -10,23 +10,34 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
-  group('computeDictionarySyncDiff', () {
+  group('computeKeyUnionDiff（词典名）', () {
     test('union by name: pull remote-only, push local-only, skip shared', () {
-      final DictionarySyncDiff diff = computeDictionarySyncDiff(
-        localNames: <String>{'JMdict', '明镜'},
-        remoteNames: <String>{'明镜', 'NHK'},
+      final SyncKeyDiff diff = computeKeyUnionDiff(
+        localKeys: <String>{'JMdict', '明镜'},
+        remoteKeys: <String>{'明镜', 'NHK'},
       );
       expect(diff.toPull, <String>{'NHK'});
       expect(diff.toPush, <String>{'JMdict'});
     });
 
     test('empty both sides -> empty diff', () {
-      final DictionarySyncDiff diff = computeDictionarySyncDiff(
-        localNames: <String>{},
-        remoteNames: <String>{},
+      final SyncKeyDiff diff = computeKeyUnionDiff(
+        localKeys: <String>{},
+        remoteKeys: <String>{},
       );
       expect(diff.toPull, isEmpty);
       expect(diff.toPush, isEmpty);
+    });
+
+    test('旧名 computeDictionarySyncDiff @Deprecated 转发委托同一实现', () {
+      final SyncKeyDiff diff =
+          // ignore: deprecated_member_use_from_same_package
+          computeDictionarySyncDiff(
+        localNames: <String>{'JMdict', '明镜'},
+        remoteNames: <String>{'明镜', 'NHK'},
+      );
+      expect(diff.toPull, <String>{'NHK'});
+      expect(diff.toPush, <String>{'JMdict'});
     });
   });
 
