@@ -1,4 +1,4 @@
-## BUG-1110 · 首页继续与最近添加装不下游戏：_ContinueEntry 用 isVideo 二元标志
+## BUG-1111 · 首页继续与最近添加装不下游戏：_ContinueEntry 用 isVideo 二元标志
 - **报告**：2026-07-26（用户：「首页的继续里面没有游戏。最近添加里面。」「全是因为各个地方代码不统一」）
 - **真实性**：✅ 真 bug，**结构性根因不是漏写分支**：
   - `hibiki/lib/src/pages/implementations/home_dashboard_page.dart` 的 `_ContinueEntry`（修复前）字段是 `final bool isVideo`——**二元标志在结构上就装不下第三种媒体**。「继续」`_buildContinueSection` 与「最近添加」`_buildRecentlyAddedSection` 都只从 `books` + `_videos` 两个来源构造条目，游戏被永久排除，不是某处忘了加 if。
@@ -12,10 +12,13 @@
   - 筛选档：「阅读」判据由 `!e.isVideo` 改为正面判定 `e.isBook`；新增第 4 档「游戏」，复用既有 i18n key `home_filter_game`（与热力图同一组档位，不新增 key）。
   - 卡片渲染：游戏走竖版封面宽度（同书）；状态段用类型名而非书的「阅读 · x%」（否则一律显示「阅读 · 0%」）；新增 `_gameCover` 读 `galgames.coverPath`。
   - 点击：游戏卡**切到游戏 tab**，不直接拉起游戏——启动 galgame 要走位数探测/helper 确认下载/注入会话（数秒且可能弹窗），从首页静默触发是危险的误操作面。
+  - 合集收敛（审查补）：游戏按主折叠合集归组，**一个合集在继续区最多一张卡**（新增 `_gameContinueEntry`）。此前每个游戏各出一条，而合集成员卡标题恒取合集名——同合集 N 个游戏会排出 N 张同名卡把继续区刷屏。游戏无 completedAt 不能照抄视频的 Next-Up 推进，续玩目标取组内 `lastPlayedMs` 最大的一部（与该单元 recentMs 同源）。
 - **[x] ② 已加自动化测试** — `hibiki/test/pages/home_dashboard_page_test.dart`
   - 「玩过的游戏进『继续』区，且『游戏』筛选档只留游戏」（含筛选把视频滤掉的断言）
   - 「新添加的游戏进『最近添加』（类型 · 相对时间）」
+  - 「同合集的多个游戏在『继续』区收敛成一张卡」
 - **备注**：
   - 测试定位 chip 必须锁到「继续」区块自己的卡（`_sectionCard` 外层 `DecoratedBox`）：页面上共三组档位（热力图 / 继续 / 活动时间轴）都含「游戏」档，且游戏卡状态副标题本身就是「游戏」，按裸文本或树序取都会点错。
+  - **同一只游戏同时出现在「继续」「最近添加」「活动」三个区块**，所以断言本身也必须收进区块（新增测试侧 `inSection(title, matcher)` 助手）。首版用裸 `find.text` 是**实测过的假阳性**：把继续区的游戏循环整段删掉，断言仍被「最近添加」那张卡兜住而全绿。改后已 mutation 复验（删循环 → 本条红）。
   - 真机复测（首页三区块实际渲染）待补。
-  - 同批用户反馈的另两条独立建档：[BUG-1111](BUG-1111-activity-timeline-game-no-cover.md)（活动时间轴游戏无封面）、[BUG-1112](BUG-1112-galgame-no-tags.md)（游戏没有标签，schema 缺表）。
+  - 同批用户反馈的另两条独立建档：[BUG-1112](BUG-1112-activity-timeline-game-no-cover.md)（活动时间轴游戏无封面）、[BUG-1113](BUG-1113-galgame-no-tags.md)（游戏没有标签，schema 缺表）。

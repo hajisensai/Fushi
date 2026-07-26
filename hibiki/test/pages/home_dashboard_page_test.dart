@@ -119,6 +119,17 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
   }
 
+  /// 区块作用域 finder：`_sectionCard` 最外层是 DecoratedBox，`find.ancestor` 由近及
+  /// 远，第一个即本区块卡。**断言不收进区块就会被另一个区块里的同名文本 /
+  /// 同款封面兜住**——游戏同时出现在「继续」「最近添加」「活动」三处，裸
+  /// `find.text` / 裸 FileImage 谓词会让本文件的游戏用例变成假阳性（把被测分支删光
+  /// 仍全绿）。
+  Finder sectionCard(String title) => find
+      .ancestor(of: find.text(title), matching: find.byType(DecoratedBox))
+      .first;
+  Finder inSection(String title, Finder matching) =>
+      find.descendant(of: sectionCard(title), matching: matching);
+
   Future<void> seedSampleData() async {
     final DateTime now = DateTime.now();
     final String todayKey = HibikiTimeFormat.dayKey(now);
@@ -533,7 +544,7 @@ void main() {
     );
   });
 
-  /// BUG-1110/BUG-1111 公共装配：塞一个游戏行；[playedAt] 非空则再塞一条游玩会话
+  /// BUG-1111/BUG-1112 公共装配：塞一个游戏行；[playedAt] 非空则再塞一条游玩会话
   /// （仓储的 lastPlayedMs 由 `galgame_sessions` 现算，不是 `galgames` 上的列）。
   Future<void> seedGame({
     required String id,
@@ -561,7 +572,7 @@ void main() {
     }
   }
 
-  testWidgets('BUG-1110：玩过的游戏进「继续」区，且「游戏」筛选档只留游戏', (WidgetTester tester) async {
+  testWidgets('BUG-1111：玩过的游戏进「继续」区，且「游戏」筛选档只留游戏', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -589,34 +600,67 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text(t.home_continue), findsOneWidget);
-    // 游戏出现在「继续」区（修复前恒不出现）。
-    expect(find.text('某游戏'), findsWidgets);
+    // 游戏出现在「继续」区（修复前恒不出现）。断言必须收进本区块：同一只游戏
+    // 的 addedAt 也落在「最近添加」，裸 find.text('某游戏') 会被那张卡兜住——把继续
+    // 区的游戏循环删光也照样绿（实测过的假阳性）。
+    expect(inSection(t.home_continue, find.text('某游戏')), findsOneWidget);
 
     // 「游戏」筛选档存在（与热力图同一组档位），点它只剩游戏、视频被滤掉。
-    // 页面上有两组档位：热力图（置顶）在前、「继续」在后——必须点后者，
-    // 点 .first 改的是热力图筛选，继续区纹丝不动。
-    // 必须锁到「继续」区块自己的 chip：页面上共有三组档位（热力图 / 继续 /
-    // 活动时间轴）都含「游戏」档，且游戏卡的状态副标题本身也是「游戏」——
-    // 按裸文本或按树序取都会点错。`_sectionCard` 外层是 DecoratedBox，
-    // find.ancestor 由近及远，第一个即本区块卡。
-    final Finder continueCard = find
-        .ancestor(
-          of: find.text(t.home_continue),
-          matching: find.byType(DecoratedBox),
-        )
-        .first;
-    final Finder gameChip = find.descendant(
-      of: continueCard,
-      matching: find.widgetWithText(ChoiceChip, t.home_filter_game),
+    // 页面上共有三组档位（热力图 / 继续 / 活动时间轴）都含「游戏」档，且游戏卡
+    // 的状态副标题本身也是「游戏」——按裸文本或按树序取都会点错。
+    final Finder gameChip = inSection(
+      t.home_continue,
+      find.widgetWithText(ChoiceChip, t.home_filter_game),
     );
     expect(gameChip, findsOneWidget);
     await tester.tap(gameChip);
     await tester.pump(const Duration(milliseconds: 200));
-    expect(find.text('某游戏'), findsWidgets);
-    expect(find.text('某视频'), findsNothing);
+    expect(inSection(t.home_continue, find.text('某游戏')), findsOneWidget);
+    expect(inSection(t.home_continue, find.text('某视频')), findsNothing);
   });
 
-  testWidgets('BUG-1110：新添加的游戏进「最近添加」（类型 · 相对时间）', (WidgetTester tester) async {
+  testWidgets('BUG-1111：同合集的多个游戏在「继续」区收敛成一张卡（与视频侧同口径）',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final DateTime now = DateTime.now();
+    await seedGame(
+      id: 'gc-1',
+      name: '游戏A',
+      addedAt: now.subtract(const Duration(days: 9)),
+      playedAt: now.subtract(const Duration(days: 2)),
+    );
+    await seedGame(
+      id: 'gc-2',
+      name: '游戏B',
+      addedAt: now.subtract(const Duration(days: 8)),
+      playedAt: now,
+    );
+    final int cid = await db.createMediaCollection('某系列');
+    await db.addToCollection(cid, MediaKind.game, 'gc-1');
+    await db.addToCollection(cid, MediaKind.game, 'gc-2');
+
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    // 一合集一卡：标题=合集名，只出一张（不收敛时这里是两张同名卡）。
+    expect(inSection(t.home_continue, find.text('某系列')), findsOneWidget);
+    // 续玩目标=组内最近玩过的那部（副标题=条目名 · 状态）。
+    expect(
+      inSection(t.home_continue, find.text('游戏B · ${t.home_filter_game}')),
+      findsOneWidget,
+    );
+    expect(
+      inSection(t.home_continue, find.text('游戏A · ${t.home_filter_game}')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('BUG-1111：新添加的游戏进「最近添加」（类型 · 相对时间）', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -637,7 +681,7 @@ void main() {
     );
   });
 
-  testWidgets('BUG-1111：活动时间轴的游戏条目渲染封面，不再只有回退图标', (WidgetTester tester) async {
+  testWidgets('BUG-1112：活动时间轴的游戏条目渲染封面，不再只有回退图标', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -671,11 +715,51 @@ void main() {
 
     expect(tester.takeException(), isNull);
     // 修复前游戏走「回退原类型图标」分支，时间轴上不会有任何 Image.file。
-    final Finder fileImages = find.byWidgetPredicate(
-      (Widget w) => w is Image && w.image is FileImage,
+    // 必须收进「活动」区块：同一只游戏同时在「继续」与「最近添加」里各有一张
+    // `_gameCover`，裸 FileImage 谓词会被它们兜住——把 _activityLeading 的 game 分支
+    // 删光也照样绿（实测过的假阳性）。
+    final Finder fileImages = inSection(
+      t.home_activity,
+      find.byWidgetPredicate((Widget w) => w is Image && w.image is FileImage),
     );
-    expect(fileImages, findsWidgets,
-        reason: '游戏活动条应渲染 galgames.coverPath 封面（BUG-1111）');
+    expect(fileImages, findsOneWidget,
+        reason: '游戏活动条应渲染 galgames.coverPath 封面（BUG-1112）');
+  });
+
+  testWidgets('BUG-1112：点活动时间轴的游戏条切到「游戏」tab，不再落到视频 tab',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final HomeTab tabBefore = homeShellTabNotifier.value;
+    addTearDown(() => homeShellTabNotifier.value = tabBefore);
+
+    final DateTime now = DateTime.now();
+    await seedGame(id: 'g-4', name: '点开的游戏', addedAt: now, playedAt: now);
+    await db.addActivityEvent(
+      eventType: kActivityGame,
+      mediaType: kActivityMediaGame,
+      title: '点开的游戏',
+      dateKey: HibikiTimeFormat.dayKey(now),
+      timestampMs: now.millisecondsSinceEpoch,
+      mediaKey: 'g-4',
+      durationMs: 60000,
+    );
+
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    // 同名文本在「继续」「最近添加」也各有一张卡，点击必须锁到活动区那一条。
+    final Finder activityRow = inSection(t.home_activity, find.text('点开的游戏'));
+    expect(activityRow, findsOneWidget);
+    await tester.tap(activityRow);
+    await tester.pump();
+
+    // 修复前游戏条没分支，直接掉进 else → HomeTab.video。
+    expect(homeShellTabNotifier.value, HomeTab.games);
+    expect(tester.takeException(), isNull);
   });
 
   /// 合集 Next-Up 三态的公共装配：合集「进击的巨人」+ 两集独立行 E1/E2。
@@ -978,7 +1062,7 @@ void main() {
   });
 }
 
-/// 1x1 透明 PNG：BUG-1111 需要一个**真实可解码**的封面文件（`Image.file` 对不存在
+/// 1x1 透明 PNG：BUG-1112 需要一个**真实可解码**的封面文件（`Image.file` 对不存在
 /// 或损坏的文件走 errorBuilder，断言不到 FileImage）。
 const List<int> _kOnePixelPng = <int>[
   0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
