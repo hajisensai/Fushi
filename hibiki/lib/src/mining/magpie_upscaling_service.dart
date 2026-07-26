@@ -425,6 +425,23 @@ class MagpieUpscalingService extends ChangeNotifier {
           detail: 'user declined the download',
         );
         return false;
+      case MagpieInstallResult.downloadFailed:
+        // 可重试：直连与所有镜像都没拿到 zip（离线 / 被墙 / 404）。**不**置
+        // _downloadDeclined —— 那面旗子的语义是「用户说了不要」，网络不通不是用户的意思，
+        // 下一局仍应再试一次。
+        _report = MagpieUpscalingReport(
+          status: MagpieUpscalingStatus.failed,
+          detail: 'install result: ${result.name} (retryable)',
+        );
+        return false;
+      case MagpieInstallResult.verificationFailed:
+        // 拿不到直连 GitHub 的 sha256 侧车，或 zip 与侧车摘要不符：东西下下来了但**不可信**。
+        // 与 downloadFailed 分开报，免得把「不可信」和「没下到」混成一句话。
+        _report = MagpieUpscalingReport(
+          status: MagpieUpscalingStatus.failed,
+          detail: 'install result: ${result.name} (integrity)',
+        );
+        return false;
       case MagpieInstallResult.failed:
       case MagpieInstallResult.unsupportedPlatform:
         _report = MagpieUpscalingReport(
