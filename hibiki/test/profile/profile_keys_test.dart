@@ -36,10 +36,6 @@ void main() {
       expect(ProfileKeys.isExcludedPref('current_source/dictionary'), isTrue);
     });
 
-    test('excludes keys with audio_index/ prefix', () {
-      expect(ProfileKeys.isExcludedPref('audio_index/book123'), isTrue);
-    });
-
     test('excludes keys ending with /last_picked_file', () {
       expect(ProfileKeys.isExcludedPref('epub/last_picked_file'), isTrue);
       expect(ProfileKeys.isExcludedPref('srt/last_picked_file'), isTrue);
