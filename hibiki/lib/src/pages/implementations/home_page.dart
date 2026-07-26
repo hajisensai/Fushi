@@ -1,3 +1,4 @@
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -283,7 +284,7 @@ class _HomePageState extends BasePageState<HomePage>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (appModel.isFirstTimeSetup) {
         appModel.setLastSelectedDictionaryFormat(
-            appModel.targetLanguage.standardFormat);
+            JapaneseLanguage.instance.standardFormat);
         appModel.setFirstTimeSetupFlag();
       }
 
@@ -374,7 +375,7 @@ class _HomePageState extends BasePageState<HomePage>
     if (AppLifecycleState.resumed == state) {
       debugPrint('Lifecycle Resumed');
       appModel.searchDictionary(
-        searchTerm: appModel.targetLanguage.helloWorld,
+        searchTerm: JapaneseLanguage.instance.helloWorld,
         searchWithWildcards: false,
         useCache: false,
       );

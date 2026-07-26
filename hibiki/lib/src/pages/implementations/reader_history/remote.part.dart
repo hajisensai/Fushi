@@ -423,7 +423,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
           'ReaderHibikiHistoryPage.downloadRemoteAudiobook', e.cause, stack);
       _rebuild(() => _downloadingBooks.remove(book.title));
       if (!mounted) return;
-      ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+      ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
       _refreshSrtBooks();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(t.remote_book_audiobook_download_failed)),
@@ -454,7 +454,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       }
     }
     if (!mounted) return;
-    ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
     _refreshSrtBooks();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(t.remote_book_downloaded)),

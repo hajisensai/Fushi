@@ -279,7 +279,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       final int highlightCount = lookupHighlightCharCount(
         result: dictionaryResult,
         searchTerm: searchTerm,
-        language: appModel.targetLanguage,
+        language: JapaneseLanguage.instance,
       );
 
       final bool arEnabled = ReaderHibikiSource.instance.autoReadOnLookup;

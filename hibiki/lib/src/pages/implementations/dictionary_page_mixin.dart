@@ -889,7 +889,7 @@ mixin DictionaryPageMixin {
     return lookupHighlightCharCount(
       result: result,
       searchTerm: trimmed,
-      language: mixinAppModel.targetLanguage,
+      language: JapaneseLanguage.instance,
     );
   }
 

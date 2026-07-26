@@ -13,7 +13,7 @@ import 'package:hibiki/src/utils/misc/popup_channel.dart';
 
 String _extractWord(AppModel appModel, String text, int charIndex) {
   if (charIndex < 0 || !appModel.isInitialised) return text;
-  final String word = appModel.targetLanguage.wordFromIndex(
+  final String word = JapaneseLanguage.instance.wordFromIndex(
     text: text,
     index: charIndex,
   );

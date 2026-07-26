@@ -1,3 +1,4 @@
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -112,7 +113,7 @@ Future<String> seedReaderBook(
   );
   debugPrint('[fixture] Seeded reader book key=$bookKey ($fileName)');
 
-  container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+  container.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
 
   final Finder bookEntries = find.byWidgetPredicate((Widget w) {
     final Key? key = w.key;
@@ -310,7 +311,7 @@ Future<String> seedAudiobook(
   await repo.saveCues(bookKey: bookKey, cues: cues);
   debugPrint('[fixture] Saved audiobook meta + ${cues.length} cues');
 
-  container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+  container.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
 
   final Finder bookEntries = find.byWidgetPredicate((Widget w) {
     final Key? key = w.key;

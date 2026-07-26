@@ -551,7 +551,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     }
     if (!mounted) return;
     _refreshSrtBooks();
-    ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
     ref.invalidate(bookTagMapProvider);
     ref.invalidate(srtBookTagMapProvider);
     // 解散后合集映射失效，重取（合集行随之消失）。
@@ -760,7 +760,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     await SrtBookRepository(appModel.database).delete(book.uid);
     if (mounted) {
       _refreshSrtBooks();
-      ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+      ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
       _rebuild(() {});
     }
   }
@@ -825,7 +825,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       return;
     }
     _refreshSrtBooks();
-    ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
     _rebuild(() {});
   }
 
@@ -987,7 +987,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     );
     if (imported == true && mounted) {
       _refreshSrtBooks();
-      ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+      ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
     }
   }
 

@@ -38,7 +38,7 @@ void main() {
     // 空态兜底回退到 books 参数。
     expect(
       body.contains(RegExp(
-          r'final List<MediaItem> allEpubBooksForBorrow\s*=\s*\n?\s*ref\.read\(hibikiBooksProvider\(appModel\.targetLanguage\)\)\.valueOrNull\s*\?\?')),
+          r'final List<MediaItem> allEpubBooksForBorrow\s*=\s*\n?\s*ref\.read\(hibikiBooksProvider\(JapaneseLanguage\.instance\)\)\.valueOrNull\s*\?\?')),
       isTrue,
       reason: '借用映射源须为 ref.read(hibikiBooksProvider(...)) 全量列表，'
           'valueOrNull 为空时回退 books',

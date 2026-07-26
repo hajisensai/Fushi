@@ -1,3 +1,4 @@
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -483,7 +484,7 @@ Future<String> _seedTestBook(WidgetTester tester) async {
   );
   debugPrint('[M1] Imported test EPUB as book key=$bookKey');
 
-  container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+  container.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
   // Bounded pump instead of pumpAndSettle: off-screen the shelf keeps
   // scheduling frames (cover image loads / periodic providers), so an
   // unbounded pumpAndSettle never reaches quiescence and silently eats the

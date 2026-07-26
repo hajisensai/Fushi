@@ -1226,7 +1226,7 @@ class _DictionaryDialogPageState extends BasePageState {
   }) {
     DictionaryFormat dictionaryFormat =
         appModel.dictionaryFormats[dictionary.formatKey]!;
-    final bool enabled = !dictionary.isHidden(appModel.targetLanguage);
+    final bool enabled = !dictionary.isHidden(JapaneseLanguage.instance);
     final ColorScheme scheme = theme.colorScheme;
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final Color titleColor =
@@ -1419,9 +1419,9 @@ class _DictionaryDialogPageState extends BasePageState {
   // 直接切换、无需先开菜单再选（对齐用户参考的 hsa 体验，并按用户诉求把它放到
   // 行最左）。折叠语义 = 查词弹窗里该词典释义默认折叠（见 dictionary_popup_webview
   // 注入 collapsedDictionaryNames）；持久化仍走既有 Dictionary.collapsedLanguages
-  // （按 targetLanguage 区分），不改后端逻辑。
+  // （按阅读语言 JapaneseLanguage.instance 区分），不改后端逻辑。
   Widget _buildDictionaryCollapseButton(Dictionary dictionary) {
-    final bool collapsed = dictionary.isCollapsed(appModel.targetLanguage);
+    final bool collapsed = dictionary.isCollapsed(JapaneseLanguage.instance);
     final String tooltip = collapsed ? t.options_expand : t.options_collapse;
     return HibikiIconButton(
       // 已折叠 → 展开图标（点了会展开）；已展开 → 折叠图标（点了会折叠）。

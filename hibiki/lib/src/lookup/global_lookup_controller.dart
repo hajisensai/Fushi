@@ -1083,7 +1083,7 @@ class GlobalLookupController {
       // on a bad index / non-positive count.
       final int highlightCount = result.entries.isEmpty
           ? 0
-          : model.targetLanguage.getFinalHighlightLength(
+          : JapaneseLanguage.instance.getFinalHighlightLength(
               result: result,
               searchTerm: query,
             );
