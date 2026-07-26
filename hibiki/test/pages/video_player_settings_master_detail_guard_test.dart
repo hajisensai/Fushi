@@ -274,10 +274,11 @@ void main() {
     final String shaderSource =
         File('lib/src/pages/implementations/video_shader_dialog.dart')
             .readAsStringSync();
+    // 锚点不带行尾 `{`：State 类挂 HibikiPagePlaceholders mixin 后声明折行。
     final String managerWidget = _between(
       shaderSource,
       'class VideoShaderManagerView extends StatefulWidget {',
-      'class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {',
+      'class _VideoShaderManagerViewState extends State<VideoShaderManagerView>',
     );
     final String buildMethod = _between(
       shaderSource,
