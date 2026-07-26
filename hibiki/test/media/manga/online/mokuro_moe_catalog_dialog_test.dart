@@ -50,8 +50,8 @@ void main() {
     await db.close();
   });
 
-  /// 照 `manga_import_dialog_test.dart` 的 TranslationProvider 壳（+ ProviderScope，
-  /// 对话框是 ConsumerStatefulWidget；clientOverride 非 null 时不会触达 appProvider）。
+  /// TranslationProvider 壳（+ ProviderScope，对话框是 ConsumerStatefulWidget；
+  /// clientOverride 非 null 时不会触达 appProvider）。
   Widget wrap(Widget child) {
     return ProviderScope(
       child: TranslationProvider(
