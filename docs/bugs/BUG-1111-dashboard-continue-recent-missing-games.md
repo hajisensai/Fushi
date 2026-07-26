@@ -1,4 +1,4 @@
-## BUG-1110 · 首页继续与最近添加装不下游戏：_ContinueEntry 用 isVideo 二元标志
+## BUG-1111 · 首页继续与最近添加装不下游戏：_ContinueEntry 用 isVideo 二元标志
 - **报告**：2026-07-26（用户：「首页的继续里面没有游戏。最近添加里面。」「全是因为各个地方代码不统一」）
 - **真实性**：✅ 真 bug，**结构性根因不是漏写分支**：
   - `hibiki/lib/src/pages/implementations/home_dashboard_page.dart` 的 `_ContinueEntry`（修复前）字段是 `final bool isVideo`——**二元标志在结构上就装不下第三种媒体**。「继续」`_buildContinueSection` 与「最近添加」`_buildRecentlyAddedSection` 都只从 `books` + `_videos` 两个来源构造条目，游戏被永久排除，不是某处忘了加 if。
@@ -18,4 +18,4 @@
 - **备注**：
   - 测试定位 chip 必须锁到「继续」区块自己的卡（`_sectionCard` 外层 `DecoratedBox`）：页面上共三组档位（热力图 / 继续 / 活动时间轴）都含「游戏」档，且游戏卡状态副标题本身就是「游戏」，按裸文本或树序取都会点错。
   - 真机复测（首页三区块实际渲染）待补。
-  - 同批用户反馈的另两条独立建档：[BUG-1111](BUG-1111-activity-timeline-game-no-cover.md)（活动时间轴游戏无封面）、[BUG-1112](BUG-1112-galgame-no-tags.md)（游戏没有标签，schema 缺表）。
+  - 同批用户反馈的另两条独立建档：[BUG-1112](BUG-1112-activity-timeline-game-no-cover.md)（活动时间轴游戏无封面）、[BUG-1113](BUG-1113-galgame-no-tags.md)（游戏没有标签，schema 缺表）。

@@ -71,7 +71,7 @@ class HomeDashboardPage extends ConsumerStatefulWidget {
 /// [book]/[video]/[game]/[remote] 恰有一个非空（本地书 / 本地视频 / 本地游戏 /
 /// 互联 host 条目）。
 ///
-/// BUG-1110：此前这里是 `final bool isVideo`——**二元标志结构上装不下第三种媒体**，
+/// BUG-1111：此前这里是 `final bool isVideo`——**二元标志结构上装不下第三种媒体**，
 /// 于是「继续」「最近添加」只能由 books + videos 两个来源构造，游戏被永久排除在
 /// 首页之外（用户报「首页的继续里面没有游戏」）。改用 [MediaKind]（P5 枚举地基）
 /// 后第三种媒体才有位置；新增媒体种类也不再需要动这个结构。
@@ -125,7 +125,7 @@ class _ContinueEntry {
   final MediaItem? book;
   final VideoBookRow? video;
 
-  /// 本地游戏（BUG-1110）。游戏是**本机局域身份**（`galgames.id`），不参与互联
+  /// 本地游戏（BUG-1111）。游戏是**本机局域身份**（`galgames.id`），不参与互联
   /// 远端补位——对端没有对应行，拿过来也打不开。
   final GalgameEntry? game;
 
@@ -770,7 +770,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         recentMs: recent,
       ));
     }
-    // BUG-1110：在玩的游戏。判据是「玩过」（lastPlayedMs>0）——游戏没有「读完/
+    // BUG-1111：在玩的游戏。判据是「玩过」（lastPlayedMs>0）——游戏没有「读完/
     // 看完」这种完成度概念（`galgames` 无 completedAt，时长/次数由
     // `galgame_sessions` 现算），所以不做「未完成」过滤；排序与取前 N 由下面统一
     // 的 recentMs 倒序 + take(10) 兜住，不会淹没书与视频。
@@ -809,7 +809,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         .where((_ContinueEntry e) {
           switch (_continueFilter) {
             case 1:
-              // BUG-1110：旧实现是 `!e.isVideo`——二元取反，游戏一旦进列表就会被
+              // BUG-1111：旧实现是 `!e.isVideo`——二元取反，游戏一旦进列表就会被
               // 误算进「阅读」。按种类正面判定。
               return e.isBook;
             case 2:
@@ -834,7 +834,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
           (0, t.home_filter_all),
           (1, t.home_filter_read),
           (2, t.home_filter_watch),
-          // BUG-1110：与下方热力图筛选同一组档位（复用既有 key，不新增 i18n）。
+          // BUG-1111：与下方热力图筛选同一组档位（复用既有 key，不新增 i18n）。
           (3, t.home_filter_game),
         ],
       ),
@@ -927,7 +927,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
         video: v,
       ));
     }
-    // BUG-1110：游戏也进「最近添加」。addedAt 即 `galgames.id` 的微秒时间戳来源
+    // BUG-1111：游戏也进「最近添加」。addedAt 即 `galgames.id` 的微秒时间戳来源
     // （添加时刻），与书的 importedAt / 视频的 importedAt 同量纲，可直接混排。
     for (final GalgameEntry g in _games) {
       final int addedMs = g.addedAt.millisecondsSinceEpoch;
@@ -1047,7 +1047,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     // 视频是横版 16:9，书与游戏都是竖版封面（galgame 封面同为竖版海报）。
     final double coverWidth =
         entry.isVideo ? _kContinueVideoCoverWidth : _kContinueBookCoverWidth;
-    // BUG-1110：游戏没有阅读百分比（无完成度概念），状态段只标类型，不能套用
+    // BUG-1111：游戏没有阅读百分比（无完成度概念），状态段只标类型，不能套用
     // 书的「阅读 · x%」——否则一律显示「阅读 · 0%」。
     String status = switch (entry.kind) {
       MediaKind.video => t.home_filter_watch,
@@ -1178,7 +1178,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     return _coverPlaceholder(tokens, Icons.movie_outlined);
   }
 
-  /// 游戏封面（BUG-1110 / BUG-1111）：`galgames.coverPath` 存在则 [Image.file]，
+  /// 游戏封面（BUG-1111 / BUG-1112）：`galgames.coverPath` 存在则 [Image.file]，
   /// 否则占位图标。与 [_videoCover] 同一形态——封面是本机文件路径（目录扫描 /
   /// exe 内嵌图标 / 刮削下载三种来源都落成本地文件），不走网络取图。
   Widget _gameCover(HibikiDesignTokens tokens, GalgameEntry game) {
@@ -1219,7 +1219,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       await _openLocalVideo(entry.video!.bookUid);
       return;
     }
-    // BUG-1110：游戏卡点击**切到游戏 tab**，不直接拉起游戏。启动 galgame 要走
+    // BUG-1111：游戏卡点击**切到游戏 tab**，不直接拉起游戏。启动 galgame 要走
     // 位数探测 / helper 确认下载 / 注入会话（`GamesLibraryPage._launchGame`，
     // 数秒且可能弹窗），从首页静默触发是危险的误操作面；库页才是启动入口。
     if (entry.isGame) {
@@ -1874,7 +1874,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
           );
         }
       } else if (entry.mediaType == kActivityMediaGame) {
-        // BUG-1111：游戏此前被硬编码进「回退图标」分支，时间轴上只有一个小图标，
+        // BUG-1112：游戏此前被硬编码进「回退图标」分支，时间轴上只有一个小图标，
         // 而书与视频都有封面（用户报「活动里面没有封面」）。游戏封面就在
         // `galgames.coverPath`（本机文件），按 mediaKey = galgames.id 反查即可。
         final GalgameEntry? game = _gameById(key);

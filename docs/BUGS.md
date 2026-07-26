@@ -27,13 +27,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1078 条。点号进各自文件。
+> 共 1080 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1112](bugs/BUG-1112-galgame-no-tags.md) | 🚧 | 🚧 | 游戏没有标签：schema 缺 GalgameTagMappings 表 |
-| [BUG-1111](bugs/BUG-1111-activity-timeline-game-no-cover.md) | ✅ | ✅ | 活动时间轴游戏条目只有图标没有封面 |
-| [BUG-1110](bugs/BUG-1110-dashboard-continue-recent-missing-games.md) | ✅ | ✅ | 首页继续与最近添加装不下游戏：_ContinueEntry 用 isVideo 二元标志 |
+| [BUG-1113](bugs/BUG-1113-galgame-no-tags.md) | 🚧 | 🚧 | 游戏没有标签：schema 缺 GalgameTagMappings 表 |
+| [BUG-1112](bugs/BUG-1112-activity-timeline-game-no-cover.md) | ✅ | ✅ | 活动时间轴游戏条目只有图标没有封面 |
+| [BUG-1111](bugs/BUG-1111-dashboard-continue-recent-missing-games.md) | ✅ | ✅ | 首页继续与最近添加装不下游戏：_ContinueEntry 用 isVideo 二元标志 |
+| [BUG-1110](bugs/BUG-1110-narrow-screen-hides-degrade-reason.md) | ✅ | ✅ | 捕获工作台窄屏时藏掉降级原因，只留一个「已降级」徽章 |
+| [BUG-1109](bugs/BUG-1109-gal-mining-audio-truncated-tail.md) | ✅ | ✅ | galgame 制卡音频尾部被截断：引擎 PCM 首取即冻结 + 资源 dump 写完前就转码 |
 | [BUG-1108](bugs/BUG-1108-shelf-continue-hero-raw-title.md) | ✅ | ✅ | 改名后书架继续阅读条仍显示旧名 |
 | [BUG-1107](bugs/BUG-1107-reading-stats-phantom-chars-lost-duration.md) | ✅ | ✅ | 阅读统计速度爆表：幻象字数+纯时长行被拒 |
 | [BUG-1106](bugs/BUG-1106-desktop-settings-smoke-focus-gate-broken.md) | ✅ | ✅ | `desktop_settings_smoke_test.dart`（Windows 离屏 itest 默认门）在全新 profile 上必红 |
