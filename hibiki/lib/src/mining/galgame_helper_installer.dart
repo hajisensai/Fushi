@@ -357,13 +357,10 @@ bool galgameHelperNeedsUpdate(String? localSha, String? remoteSha) {
 }
 
 /// 把字节数格式化成人类可读大小（用于确认对话框「约 N MB」）。
+/// 非正数返回空串（调用方以此隐藏大小段）；正数委托 [HibikiByteFormat]（G4 收敛）。
 String formatDownloadSize(int bytes) {
   if (bytes <= 0) return '';
-  const double mb = 1024 * 1024;
-  if (bytes >= mb) {
-    return '${(bytes / mb).toStringAsFixed(1)} MB';
-  }
-  return '${(bytes / 1024).toStringAsFixed(0)} KB';
+  return HibikiByteFormat.bytes(bytes);
 }
 
 /// 缺失注入器时的「按需下载」安装器（方案 B）：弹确认对话框（标大小）→ 用户确认 →

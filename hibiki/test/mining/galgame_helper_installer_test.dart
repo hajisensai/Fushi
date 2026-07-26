@@ -102,7 +102,8 @@ void main() {
   group('formatDownloadSize', () {
     test('MB / KB / 非正数', () {
       expect(formatDownloadSize(12 * 1024 * 1024), '12.0 MB');
-      expect(formatDownloadSize(512 * 1024), '512 KB');
+      // G4 收敛后统一走 HibikiByteFormat（KB 档也带 1 位小数）。
+      expect(formatDownloadSize(512 * 1024), '512.0 KB');
       expect(formatDownloadSize(0), '');
       expect(formatDownloadSize(-1), '');
     });

@@ -557,8 +557,8 @@ class _MokuroMoeCatalogDialogState
         final int received = event!.receivedBytes;
         final int? total = event.totalBytes;
         final String bytes = total != null && total > 0
-            ? '${_mb(received)} / ${_mb(total)} MB'
-            : '${_mb(received)} MB';
+            ? '${HibikiByteFormat.bytes(received)} / ${HibikiByteFormat.bytes(total)}'
+            : HibikiByteFormat.bytes(received);
         return '${t.manga_online_stage_cbz} $bytes';
       case MokuroMoeDownloadStage.extracting:
         return t.manga_online_stage_extract;
@@ -571,8 +571,6 @@ class _MokuroMoeCatalogDialogState
         return t.manga_ocr_wizard_done;
     }
   }
-
-  static String _mb(int bytes) => (bytes / (1024 * 1024)).toStringAsFixed(1);
 
   List<Widget> _buildActions() {
     switch (_stage) {

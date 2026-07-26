@@ -28,8 +28,10 @@ export 'src/utils/components/settings_shared.dart';
 export 'src/utils/app_ui_scale.dart';
 export 'src/utils/popup_theme_css.dart';
 
+export 'src/utils/misc/hibiki_byte_format.dart';
 export 'src/utils/misc/hibiki_color.dart';
 export 'src/utils/misc/hibiki_time_format.dart';
+export 'src/utils/misc/safe_file_name.dart';
 export 'src/utils/misc/hibiki_audio_handler.dart';
 export 'package:hibiki_core/src/models/hibiki_text_selection.dart';
 export 'src/utils/misc/volume_key_channel.dart';

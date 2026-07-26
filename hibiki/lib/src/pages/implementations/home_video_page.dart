@@ -3484,18 +3484,9 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
 }
 
 /// 远端视频信息弹窗的文件大小格式化（UI 巡检 PR-4）：1024 进制 B/KB/MB/GB，
-/// 保留 1 位小数（B 档不带小数）。纯函数，测试同源。
-String formatRemoteVideoSize(int bytes) {
-  if (bytes < 1024) return '$bytes B';
-  const List<String> units = <String>['KB', 'MB', 'GB'];
-  double value = bytes / 1024;
-  int unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  return '${value.toStringAsFixed(1)} ${units[unitIndex]}';
-}
+/// 保留 1 位小数（B 档不带小数）。委托 [HibikiByteFormat]（G4 收敛），纯函数，
+/// 测试同源。
+String formatRemoteVideoSize(int bytes) => HibikiByteFormat.bytes(bytes);
 
 /// 视频批量打标签的三态意图：保持不变 / 添加该标签 / 移除该标签。
 enum _VideoBatchTagIntent { keep, add, remove }

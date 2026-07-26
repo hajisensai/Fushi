@@ -7,6 +7,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/mining/magpie_installer.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/utils/misc/hibiki_byte_format.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 
 /// 弹出确认框，返回用户是否同意下载。
@@ -61,7 +62,7 @@ class _MagpieDownloadDialogState extends State<_MagpieDownloadDialog> {
     final int? bytes = _sizeBytes;
     final String size = bytes == null
         ? ''
-        : '\n\n${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB '
+        : '\n\n${HibikiByteFormat.bytes(bytes)} '
             '(${widget.prompt.arch})';
     return AlertDialog(
       title: Text(t.galgame_upscaling_download_title),
