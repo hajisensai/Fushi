@@ -9,6 +9,9 @@ import 'package:hibiki/src/media/video/video_import_dialog.dart'
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
+import 'package:transparent_image/transparent_image.dart';
+
+import '../../../helpers/cover_cache_test_helpers.dart';
 
 /// 最小合法 PNG 魔数字节（89 50 4E 47 0D 0A 1A 0A + 少量填充）。
 final List<int> _fakePng = <int>[
@@ -17,6 +20,9 @@ final List<int> _fakePng = <int>[
 ];
 
 void main() {
+  // downloadPoster 落盘后走 evictLocalCoverCache（需要 PaintingBinding）。
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late Directory tempDir;
 
   setUp(() async {
@@ -125,5 +131,34 @@ void main() {
     );
     expect(path, finalPath);
     expect(File(path).readAsBytesSync(), _fakePng); // 已覆盖
+  });
+
+  test('二次下载覆盖同路径后双键驱逐旧解码缓存（BUG-1118）', () async {
+    // kTransparentImage 是真实可解码 PNG（_fakePng 只有魔数、解不了码）。
+    final MockClient client = MockClient((http.Request req) async {
+      return http.Response.bytes(
+        kTransparentImage,
+        200,
+        headers: const <String, String>{'content-type': 'image/png'},
+      );
+    });
+    final PosterDownloader downloader = PosterDownloader(client: client);
+
+    final String path = await downloader.downloadPoster(
+      url: 'https://img/first.png',
+      bookUid: 'uid_evict',
+      coversDirectory: tempDir,
+    );
+    // 模拟卡片渲染：两个键都解码进缓存。
+    await populateBothCoverKeys(path);
+
+    // 二次下载覆盖同一路径 → 双键必须被驱逐，否则 UI 重建仍显示旧封面。
+    final String again = await downloader.downloadPoster(
+      url: 'https://img/second.png',
+      bookUid: 'uid_evict',
+      coversDirectory: tempDir,
+    );
+    expect(again, path, reason: '同 uid 恒落同一路径（覆盖写）');
+    await expectBothCoverKeysEvicted(path);
   });
 }

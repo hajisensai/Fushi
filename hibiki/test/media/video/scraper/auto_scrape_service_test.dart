@@ -64,6 +64,9 @@ String _subjectBody() => jsonEncode(<String, Object?>{
     });
 
 void main() {
+  // 刮削落盘点走 evictLocalCoverCache（需要 PaintingBinding）。
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late HibikiDatabase db;
   late VideoBookRepository repo;
   late Directory tmp;

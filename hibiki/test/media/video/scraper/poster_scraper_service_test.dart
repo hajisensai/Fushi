@@ -12,10 +12,15 @@ import 'package:hibiki/src/media/video/scraper/poster_downloader.dart';
 import 'package:hibiki/src/media/video/scraper/poster_scraper_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/media/video/video_import_dialog.dart'
+    show videoCoverFileName;
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
+import 'package:transparent_image/transparent_image.dart';
+
+import '../../../helpers/cover_cache_test_helpers.dart';
 
 /// 最小合法 PNG 魔数字节。
 final List<int> _fakePng = <int>[
@@ -53,6 +58,9 @@ MockClient _pngClient() => MockClient((http.Request req) async {
     });
 
 void main() {
+  // 刮削落盘点走 evictLocalCoverCache（需要 PaintingBinding）。
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late HibikiDatabase db;
   late VideoBookRepository repo;
   late Directory tmp;
@@ -341,5 +349,69 @@ void main() {
     expect(events, hasLength(2));
     expect(events[0].outcome, isA<ScrapeFailed>());
     expect(events[1].outcome, isA<ScrapeFailed>());
+  });
+
+  test('sidecar 覆盖已有封面后双键驱逐旧解码缓存（BUG-1118）', () async {
+    final Directory lib = await Directory.systemTemp.createTemp('sidecar_ev_');
+    addTearDown(() async {
+      if (await lib.exists()) await lib.delete(recursive: true);
+    });
+    final File video = File(p.join(lib.path, 'My Show - 01.mkv'));
+    await video.writeAsBytes(<int>[0, 1, 2, 3]);
+    // kTransparentImage 是真实可解码 PNG（缓存 populate 需要真解码）。
+    await File(p.join(lib.path, 'poster.jpg')).writeAsBytes(kTransparentImage);
+
+    final VideoBookRow book = await seed(
+      bookUid: 'video/sidecar_evict',
+      videoPath: video.path,
+    );
+    final PosterScraperService svc = build(enableSidecar: true);
+
+    // 首次刮削落封面，模拟卡片渲染（双键入缓存）。
+    final ScrapeOutcome first = await svc.scrapeOne(book);
+    final String coverPath = (first as ScrapeApplied).coverPath;
+    await populateBothCoverKeys(coverPath);
+
+    // 再次刮削命中同一 poster.jpg，_copyLocalPoster 覆盖同一路径 → 双键驱逐。
+    final ScrapeOutcome second = await svc.scrapeOne(book);
+    expect((second as ScrapeApplied).coverPath, coverPath,
+        reason: '同 uid 恒落同一路径（覆盖写）');
+    await expectBothCoverKeysEvicted(coverPath);
+  });
+
+  test('applyCandidateToBooks 合集分发：每个成员封面路径均双键驱逐（BUG-1118）', () async {
+    await seed(
+      bookUid: 'video/coll_1',
+      videoPath: p.join('anime', 'Y', 'Y - 01.mkv'),
+    );
+    await seed(
+      bookUid: 'video/coll_2',
+      videoPath: p.join('anime', 'Y', 'Y - 02.mkv'),
+    );
+    // 预置旧封面（可解码）并把双键解码进缓存，模拟换图前卡片已渲染过。
+    final List<String> dests = <String>[
+      p.join(tmp.path, videoCoverFileName('video/coll_1')),
+      p.join(tmp.path, videoCoverFileName('video/coll_2')),
+    ];
+    for (final String dest in dests) {
+      await File(dest).writeAsBytes(kTransparentImage);
+      await populateBothCoverKeys(dest);
+    }
+
+    const ScrapeCandidate candidate = ScrapeCandidate(
+      source: ScrapeSource.bangumi,
+      entryId: '888',
+      title: 'Y',
+      posterUrl: 'https://img/y.png',
+    );
+    await build().applyCandidateToBooks(
+      bookUids: <String>['video/coll_1', 'video/coll_2'],
+      candidate: candidate,
+    );
+
+    // 首成员走 downloadPoster、其余成员走 copy 分发：两条路径都必须驱逐。
+    for (final String dest in dests) {
+      await expectBothCoverKeysEvicted(dest);
+    }
   });
 }

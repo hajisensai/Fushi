@@ -19,6 +19,7 @@ import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
 import 'package:hibiki/src/media/video/video_import_dialog.dart'
     show videoCoverFileName;
 import 'package:hibiki/src/media/video/video_storage.dart';
+import 'package:hibiki/src/utils/cover_image.dart' show evictLocalCoverCache;
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
@@ -37,6 +38,8 @@ class PosterDownloader {
   /// - 校验：HTTP 2xx + 图片内容（`Content-Type` 以 `image/` 开头，或字节魔数是
   ///   JPEG/PNG/WebP）。非图片（如 `text/html` 错误页）→ 抛 [ScrapeNetworkException]。
   /// - 原子落地：先写 `<name>.tmp` 再 rename 覆盖正式文件；失败**不动旧封面**、不留 .tmp。
+  /// - 落盘后已双键驱逐旧解码缓存（MediaCoverService「同路径覆盖写必须驱逐」不变量，
+  ///   见 [evictLocalCoverCache]）。
   Future<String> downloadPoster({
     required String url,
     required String bookUid,
@@ -90,6 +93,10 @@ class PosterDownloader {
       }
       throw ScrapeNetworkException('Poster write failed: $e');
     }
+
+    // 同路径覆盖写：驱逐旧解码缓存（裸 FileImage + ResizeImage 双键），否则
+    // UI 重建仍命中换图前的旧封面（BUG-1118）。
+    await evictLocalCoverCache(finalPath);
 
     return finalPath;
   }

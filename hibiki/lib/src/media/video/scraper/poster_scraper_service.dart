@@ -29,6 +29,7 @@ import 'package:hibiki/src/media/video/scraper/sidecar_scanner.dart';
 import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_storage.dart';
+import 'package:hibiki/src/utils/cover_image.dart' show evictLocalCoverCache;
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
     show videoCoverFileName;
 import 'package:hibiki_core/hibiki_core.dart' show VideoBookRow;
@@ -379,6 +380,9 @@ class PosterScraperService {
       for (final String uid in bookUids.skip(1)) {
         final String dest = p.join(covers.path, videoCoverFileName(uid));
         await File(firstCover).copy(dest);
+        // 同路径覆盖写：驱逐旧解码缓存（双键，BUG-1118）。首成员已由
+        // _applyCandidate → downloadPoster 落盘时驱逐。
+        await evictLocalCoverCache(dest);
         await _repo.updateCover(uid, dest);
         await _coverMeta.set(uid, meta);
       }
@@ -617,6 +621,8 @@ class PosterScraperService {
     final File finalFile = File(finalPath);
     if (await finalFile.exists()) await finalFile.delete();
     await tmp.rename(finalPath);
+    // 同路径覆盖写：驱逐旧解码缓存（双键，BUG-1118），否则 UI 重建仍显示旧封面。
+    await evictLocalCoverCache(finalPath);
     return finalPath;
   }
 
