@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1073 条。点号进各自文件。
+> 共 1074 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1107](bugs/BUG-1107-gal-mining-audio-truncated-tail.md) | ✅ | ✅ | galgame 制卡音频尾部被截断：引擎 PCM 首取即冻结 + 资源 dump 写完前就转码 |
 | [BUG-1106](bugs/BUG-1106-desktop-settings-smoke-focus-gate-broken.md) | ✅ | ✅ | `desktop_settings_smoke_test.dart`（Windows 离屏 itest 默认门）在全新 profile 上必红 |
 | [BUG-1105](bugs/BUG-1105-inapp-popup-webview2-status-bar-url.md) | ✅ | ✅ | app 内查词弹窗仍会冒 WebView2 链接地址预览（BUG-1097 只修了一半） |
 | [BUG-1104](bugs/BUG-1104-lookup-overlay-webview2-dpi-inconsistent.md) | ✅ | ✅ | 查词浮窗两条 WebView2 创建路径的 DPI 处理不一致（且无 WM_DPICHANGED） |

@@ -482,6 +482,51 @@ String? pickPairedGameResource({
       );
 }
 
+/// 资源语音 dump 文件的**写入收敛门**（BUG-1107）。
+///
+/// hook DLL 在游戏读取语音资源时把原件写进 dump 目录：文件**出现**不等于**写完**。
+/// 一看见文件就转码（[EngineHookGalAudioSource.grabPairedVoiceBytes]）或试听
+/// （[EngineHookGalAudioSource.pairedVoiceFilePathForResourceId]），在流式落盘的引擎下
+/// 只会拿到前半段——OGG 是分页容器，截断的文件照样能解码出前半段，于是表现为「有音频，
+/// 但莫名少一截」而不是报错。
+///
+/// 因此转码/试听前先盯着文件大小，直到它**静默** [quietPeriod] 这么久才算写完。
+///
+/// 判据刻意不是「连续两次采样一致」：hook 是分块写的，块与块之间的间隙很容易比一个
+/// 采样间隔长，两次相同只能证明「这一瞬间没在写」，照样会放行一个写到一半的文件。要
+/// 求一整段静默期才是「写完了」的可落地近似。真正的根治要 hook 侧写 `.part` 再原子
+/// rename（在独立仓 `hajisensai/hibiki-hook`，本仓消费端够不着），所以这里是消费端能
+/// 做到的最强判据，且对已经写完的文件只多花一个静默期。
+///
+/// 到 [timeout] 仍在增长就 fail-open 用当前内容（Never break：宁可短一点，也不能一声
+/// 不出）。stat 失败（文件被 [EngineHookGalAudioSource.pruneVoiceDump] 清掉等）立即
+/// 返回，交调用方按缺文件处理。
+Future<void> awaitStableVoiceDumpFile(
+  File file, {
+  Duration pollInterval = const Duration(milliseconds: 60),
+  Duration quietPeriod = const Duration(milliseconds: 240),
+  Duration timeout = const Duration(milliseconds: 1500),
+}) async {
+  final Stopwatch elapsed = Stopwatch()..start();
+  int previous = -1;
+  Duration lastChange = Duration.zero;
+  while (elapsed.elapsed < timeout) {
+    final int size;
+    try {
+      size = file.lengthSync();
+    } catch (_) {
+      return;
+    }
+    if (size != previous) {
+      previous = size;
+      lastChange = elapsed.elapsed;
+    } else if (size > 0 && elapsed.elapsed - lastChange >= quietPeriod) {
+      return;
+    }
+    await Future<void>.delayed(pollInterval);
+  }
+}
+
 /// 旧资源名为 `<tick>_<basename>`；具有运行时顺序证据的引擎可写
 /// `<tick>_hibiki_textseq<textSeq>_<basename>`，把资源绑定到稳定的
 /// TextSlot::seq。
@@ -1451,6 +1496,19 @@ class EngineHookGalAudioSource implements GalAudioSource {
     return (file != null && file.existsSync()) ? file.path : null;
   }
 
+  /// [pairedVoiceFilePathForResourceId] 的**等写完**版本（BUG-1107）：试听走的是原件，
+  /// hook 还在写就播会听到被截断的半句。等文件大小停止增长后再交出路径；等待期间文件被
+  /// 清理掉则返回 null（与同步版对缺文件的语义一致）。
+  Future<String?> settledPairedVoiceFilePathForResourceId(
+    String resourceId,
+  ) async {
+    final String? path = pairedVoiceFilePathForResourceId(resourceId);
+    if (path == null) return null;
+    final File file = File(path);
+    await awaitStableVoiceDumpFile(file);
+    return file.existsSync() ? path : null;
+  }
+
   Future<Uint8List?> grabPairedVoiceBytes(
     int textTsMs, {
     required String outputExtension,
@@ -1466,6 +1524,9 @@ class EngineHookGalAudioSource implements GalAudioSource {
           )
         : _voiceFileForResourceId(resourceId);
     if (picked == null) return null;
+    // BUG-1107：hook 可能还在往这个文件里写。转码截断的原件会得到「有音频但少一截」
+    // 的卡，比报错更难发现，所以先等它写完。
+    await awaitStableVoiceDumpFile(picked);
     return transcodeVoiceOggToMiningAudio(
       oggPath: picked.path,
       tempDir: Directory.systemTemp.path,
