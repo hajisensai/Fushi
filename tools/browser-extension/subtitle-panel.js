@@ -554,10 +554,7 @@
           st.hoverPaused = false;
           var v = videoEl();
           if (v && typeof v.play === 'function') {
-            var resumed = v.play();
-            if (resumed && typeof resumed.catch === 'function') {
-              resumed.catch(function () {});
-            }
+            Promise.resolve(v.play()).catch(function () {});
           }
         }
       });
@@ -941,11 +938,9 @@
     if (idx < 0) idx = lastCueStartBefore(now);
     if (idx < 0) return false;
     var text = st.cues[idx].text;
-    try {
-      if (typeof navigator === 'undefined' || !navigator.clipboard ||
-          typeof navigator.clipboard.writeText !== 'function') return false;
-      navigator.clipboard.writeText(text);
-    } catch (_) { return false; }
+    if (typeof navigator === 'undefined' || !navigator.clipboard ||
+        typeof navigator.clipboard.writeText !== 'function') return false;
+    Promise.resolve(navigator.clipboard.writeText(text)).catch(function () {});
     toast('已复制字幕：' + (text.length > 30 ? text.slice(0, 30) + '…' : text));
     return true;
   }
