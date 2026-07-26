@@ -19,8 +19,15 @@ class MokuroMoeTasksSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final AppModel appModel = ref.read(appProvider);
+    // DownloadsPage is also rendered by lightweight widget-test/AppModel seams
+    // before the database is opened. Do not make an empty optional task section
+    // force-create its database-backed queue during that pre-init window.
+    if (queueOverride == null && !appModel.isDatabaseReady) {
+      return const SizedBox.shrink();
+    }
     final MokuroMoeDownloadQueue queue =
-        queueOverride ?? ref.read(appProvider).mokuroMoeDownloadQueue;
+        queueOverride ?? appModel.mokuroMoeDownloadQueue;
     return ListenableBuilder(
       listenable: queue,
       builder: (BuildContext context, Widget? _) {
