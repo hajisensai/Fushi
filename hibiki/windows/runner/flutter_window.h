@@ -115,6 +115,23 @@ class FlutterWindow : public Win32Window {
       window_capture_channel_;
   void RegisterWindowCaptureChannel();
 
+  // Magpie 缩放状态监听（仅 Windows）：Magpie 通过
+  // RegisterWindowMessage(L"MagpieScalingChanged") 向所有顶层窗口广播缩放状态。
+  // runner 收到后经此 channel 把 onScalingChanged 单向推给 Dart（见
+  // lib/src/mining/magpie_scaling_channel.dart）。纯 native -> Dart，不注册
+  // MethodCallHandler。
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      magpie_channel_;
+  void RegisterMagpieChannel();
+
+  // RegisterWindowMessageW(L"MagpieScalingChanged") 拿到的运行时消息号。
+  // 0 = 尚未注册 / 注册失败，MessageHandler 据此永不误匹配。
+  UINT magpie_scaling_message_ = 0;
+
+  // 把一条 MagpieScalingChanged 广播翻译成 Dart 事件推出去。channel 未建好时
+  // 静默 no-op。
+  void NotifyMagpieScalingChanged(WPARAM wparam, LPARAM lparam);
+
   // galgame 一键制卡 A 阶段（docs/specs/galgame-mining，仅 Windows）：WASAPI loopback
   // 采集系统混音进环形缓冲。start/stop 管采集，grabRecent 拉最近 N 毫秒 PCM。
   // 见 audio_loopback_capture.cpp / .h。

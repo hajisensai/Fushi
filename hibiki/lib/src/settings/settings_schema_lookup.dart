@@ -9,6 +9,7 @@ import 'package:hibiki/src/lookup/clipboard_panel_controller.dart';
 import 'package:hibiki/src/lookup/clipboard_text_overlay_controller.dart';
 import 'package:hibiki/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
+import 'package:hibiki/src/mining/magpie_upscaling.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
@@ -992,6 +993,42 @@ SettingsDestination buildLookupDestination() {
               } else {
                 await TexthookerWsClientManager.instance.stop();
               }
+              settingsContext.refresh();
+            },
+          ),
+          // 窗口超分挂在 texthooker 旁边：galgame hook 目前唯一进 settings schema 的
+          // 开关就是它，新建一整个「游戏」destination 的代价远大于收益。
+          // Windows-only —— galgame hook 与 Magpie 都只做 Windows（见根 CLAUDE.md）。
+          SettingsSegmentedItem<MagpieUpscalingMode>(
+            id: 'lookup.galgame_upscaling',
+            title: t.galgame_upscaling,
+            subtitle: t.galgame_upscaling_hint,
+            icon: Icons.aspect_ratio_outlined,
+            visible: (SettingsContext settingsContext) => Platform.isWindows,
+            options: <SettingsSegmentOption<MagpieUpscalingMode>>[
+              SettingsSegmentOption<MagpieUpscalingMode>(
+                value: MagpieUpscalingMode.auto,
+                label: t.galgame_upscaling_auto,
+                tooltip: t.galgame_upscaling_auto,
+              ),
+              SettingsSegmentOption<MagpieUpscalingMode>(
+                value: MagpieUpscalingMode.installedOnly,
+                label: t.galgame_upscaling_installed_only,
+                tooltip: t.galgame_upscaling_installed_only,
+              ),
+              SettingsSegmentOption<MagpieUpscalingMode>(
+                value: MagpieUpscalingMode.off,
+                label: t.galgame_upscaling_off,
+                tooltip: t.galgame_upscaling_off,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galgameUpscalingMode,
+            onChanged: (
+              SettingsContext settingsContext,
+              MagpieUpscalingMode value,
+            ) async {
+              await settingsContext.appModel.setGalgameUpscalingMode(value);
               settingsContext.refresh();
             },
           ),

@@ -103,6 +103,7 @@ import 'package:hibiki/src/mining/galgame_repository.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/mining/immersion_capture_channel.dart';
+import 'package:hibiki/src/mining/magpie_upscaling.dart';
 import 'package:hibiki/src/mining/youtube_clip_miner.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
@@ -2977,6 +2978,13 @@ class AppModel with ChangeNotifier {
     // 内置引擎资源限制即时生效（用户在设置里改限速/连接数后不必重启）。
     _applyEmbeddedTorrentLimits(config);
   }
+
+  /// galgame 窗口超分策略（三态）。
+  MagpieUpscalingMode get galgameUpscalingMode =>
+      magpieUpscalingModeFromKey(prefsRepo.galgameUpscalingMode);
+
+  Future<void> setGalgameUpscalingMode(MagpieUpscalingMode mode) =>
+      prefsRepo.setGalgameUpscalingMode(magpieUpscalingModeToKey(mode));
 
   DownloadNetworkProxyConfig get downloadNetworkProxyConfig =>
       DownloadNetworkProxyConfig(

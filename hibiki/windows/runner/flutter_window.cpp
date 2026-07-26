@@ -544,6 +544,7 @@ bool FlutterWindow::OnCreate() {
   RegisterWindowCaptureChannel();
   RegisterAudioLoopbackChannel();
   RegisterVoiceHookChannel();
+  RegisterMagpieChannel();
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   return true;
@@ -1980,6 +1981,61 @@ void FlutterWindow::RegisterVoiceHookChannel() {
       });
 }
 
+// Magpie 缩放状态监听（仅 Windows）。Magpie 用 RegisterWindowMessage 注册的广播消息
+// "MagpieScalingChanged" 通知全系统顶层窗口缩放状态变化；本 runner 只读不回，收到后
+// 经 app.hibiki.reader/magpie channel 把事件推给 Dart。
+void FlutterWindow::RegisterMagpieChannel() {
+  magpie_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), "app.hibiki.reader/magpie",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  // 广播消息号只注册一次：同一字符串在全系统映射到同一个消息号，Magpie 侧
+  // RegisterWindowMessage 同名即可对上。
+  magpie_scaling_message_ = RegisterWindowMessageW(L"MagpieScalingChanged");
+  if (magpie_scaling_message_ == 0) {
+    // 注册失败只丢监听能力（Dart 侧收不到事件、按未缩放处理），绝不能让 OnCreate
+    // 失败把整个 app 拖挂。
+    return;
+  }
+
+  // UIPI：Magpie 可能以与本进程不同的完整性级别运行，跨完整性级别的窗口消息默认被
+  // 消息过滤器丢弃。对这一条消息显式放行；失败同样忽略（同级别时本来就收得到）。
+  const HWND hwnd = GetHandle();
+  if (hwnd != nullptr) {
+    ChangeWindowMessageFilterEx(hwnd, magpie_scaling_message_, MSGFLT_ALLOW,
+                                nullptr);
+  }
+}
+
+void FlutterWindow::NotifyMagpieScalingChanged(WPARAM wparam, LPARAM lparam) {
+  // WndProc 跑在 platform 线程，InvokeMethod 可直接调用。channel 在 OnCreate 建好
+  // 前（极早期消息）可能为空；**退出期**则是引擎先被拆掉、窗口还在收广播消息，此时
+  // channel 指针虽非空但底下的 messenger 已随 flutter_controller_ 一起销毁 ——
+  // 两个都要判，否则退出期收到一条 Magpie 广播就是 use-after-free。
+  if (!flutter_controller_ || !magpie_channel_) {
+    return;
+  }
+  // Magpie 广播语义（state = wParam）：
+  //   1                  -> 缩放开始，或源窗口重新回到前台；lParam = 缩放窗口 HWND。
+  //   0 且 lParam == 0   -> 缩放窗口 WM_DESTROY，缩放**真正结束**。
+  //   0 且 lParam != 0   -> 仅源窗口切到后台，**缩放仍在跑**：必须仍算缩放中，
+  //                         否则一切走到后台就被误判成「已退出缩放」。
+  //   2 / 3              -> 窗口模式下位置/大小变化 / 用户开始拖动；不改变缩放态，
+  //                         原样透传给 Dart。
+  const bool scaling = (wparam == 0) ? (lparam != 0) : true;
+  flutter::EncodableMap map{
+      {flutter::EncodableValue("state"),
+       flutter::EncodableValue(static_cast<int>(wparam))},
+      {flutter::EncodableValue("handle"),
+       flutter::EncodableValue(static_cast<int64_t>(lparam))},
+      {flutter::EncodableValue("scaling"), flutter::EncodableValue(scaling)},
+  };
+  magpie_channel_->InvokeMethod(
+      "onScalingChanged",
+      std::make_unique<flutter::EncodableValue>(std::move(map)));
+}
+
 void FlutterWindow::NotifySystemColorChanged() {
   // TODO-1092: 把「系统强调色/主题色已变」事件推给 Dart。WndProc 跑在 platform
   // 线程，InvokeMethod 可直接调用。channel 在 OnCreate 建好前（极早期消息）可能为
@@ -2082,6 +2138,14 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     if (result) {
       return *result;
     }
+  }
+
+  // Magpie 缩放状态广播。RegisterWindowMessage 得到的消息号是运行时值，不能写成
+  // case 标签，只能在 switch 之前判；magpie_scaling_message_ == 0 表示没注册成功，
+  // 此时不做任何匹配。收到后**不消费**（不 return），因为这是系统广播，落到下面的
+  // 默认处理，保持既有消息语义不变。
+  if (magpie_scaling_message_ != 0 && message == magpie_scaling_message_) {
+    NotifyMagpieScalingChanged(wparam, lparam);
   }
 
   switch (message) {

@@ -43,6 +43,7 @@ import 'package:hibiki/src/lookup/desktop_lookup_dispatcher.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:hibiki/src/mining/galgame_helper_installer.dart';
+import 'package:hibiki/src/mining/magpie_installer.dart';
 import 'package:hibiki/src/startup/desktop_window_placement.dart';
 import 'package:hibiki/src/storage/data_root_migration_view.dart';
 import 'package:hibiki/src/startup/loading_watchdog_view.dart';
@@ -426,6 +427,9 @@ void main([List<String> args = const <String>[]]) {
     // 不再绑在「点启动游戏」那一刻抢 6s——游戏启动路径在安装完整时零网络。方法自身
     // Windows 早退 + 全静默，任何失败留到下次启动再试。
     unawaited(GalgameHelperInstaller.updateInstalledHelpersInBackground());
+    // 同理，Magpie（窗口超分）的后台静默自更新。只做「已装 → 最新」：未安装/无装机
+    // 标记/残缺一律不动（首装属于交互路径，要用户确认）。非 Windows 自身早退。
+    unawaited(MagpieInstaller.updateInstalledMagpieInBackground());
 
     /// Capture Flutter framework errors with full details.
     FlutterError.onError = (details) {

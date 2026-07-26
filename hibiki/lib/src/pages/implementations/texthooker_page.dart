@@ -12,6 +12,8 @@ import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
+import 'package:hibiki/src/mining/magpie_upscaling_service.dart';
+import 'package:hibiki/src/mining/magpie_upscaling_text.dart';
 import 'package:hibiki/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
@@ -1645,6 +1647,9 @@ class _CaptureHealthCard extends StatelessWidget {
                   state.hasWindow ? t.game_window_bound : t.game_window_missing,
               ready: state.hasWindow,
             ),
+            // 窗口超分：与上面的「窗口」相邻，因为说的是同一个游戏窗口。整行在用户
+            // 关掉超分 / 没在跑时自动消失，不给不关心的人制造噪音。
+            const _UpscalingHealthRows(),
             _HealthRow(
               label: t.game_health_text,
               value: endpoints.isEmpty
@@ -1673,6 +1678,60 @@ class _CaptureHealthCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 健康卡里的「窗口超分」两行：状态行 + 可执行处置行。
+///
+/// 为什么处置要单独一行而不是塞进 `_HealthRow.value`：`value` 是 `maxLines: 1` 的右对齐
+/// 短值，装不下「按 Win+Shift+A，下次启动就自动放大了」这种话。而只说「未开启」不说
+/// 怎么办，正是「装完第一次没反应」变成用户报 bug 的原因。
+///
+/// 文案一律经 `magpie_upscaling_text.dart` 翻成人话，**绝不把 `bootstrapFailed` 这类
+/// 内部枚举名甩到界面上**（同 `gal_hook_failure_text.dart` 的纪律）。
+class _UpscalingHealthRows extends StatelessWidget {
+  const _UpscalingHealthRows();
+
+  @override
+  Widget build(BuildContext context) {
+    final MagpieUpscalingService? service =
+        GalHookSessionController.instance.magpieUpscaling;
+    // 没注入编排器（非 Windows / 测试替身）时整块不存在。
+    if (service == null) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: service,
+      builder: (BuildContext context, Widget? child) {
+        final MagpieUpscalingReport report = service.report;
+        if (!magpieUpscalingWorthShowing(report)) {
+          return const SizedBox.shrink();
+        }
+        // 只有真的收到 Magpie 的「缩放开始」广播才算就绪。拉起了进程不等于放大了，
+        // 不拿意图冒充结果。
+        final bool on = report.status == MagpieUpscalingStatus.active &&
+            report.scalingActive;
+        final String? hint = magpieUpscalingActionHint(report);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            _HealthRow(
+              label: t.game_health_upscaling,
+              value: magpieUpscalingStatusLabel(report),
+              ready: on,
+            ),
+            if (hint != null)
+              Padding(
+                padding: const EdgeInsets.only(left: 25, bottom: 6),
+                child: Text(
+                  hint,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.tertiary,
+                      ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

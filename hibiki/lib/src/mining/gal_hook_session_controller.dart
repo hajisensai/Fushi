@@ -10,7 +10,9 @@ import 'package:hibiki/src/mining/galgame_audio_source.dart';
 import 'package:hibiki/src/mining/galgame_hook_code_profile.dart';
 import 'package:hibiki/src/mining/serial_job_queue.dart';
 import 'package:hibiki/src/mining/galgame_system_ui_filter.dart';
+import 'package:hibiki/src/mining/magpie_upscaling_service.dart';
 import 'package:hibiki/src/mining/window_capture_channel.dart';
+import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client.dart';
 import 'package:hibiki/src/sync/texthooker_ws_client_manager.dart';
@@ -525,6 +527,23 @@ class GalHookSessionController extends ChangeNotifier {
   /// 避免 start 时急切解引用未初始化的 late 字段。
   HibikiDatabase? Function()? _activityDatabaseResolver;
 
+  /// 由桌面启动流程注入的窗口超分编排器（见 [attachMagpieUpscaling]）。
+  ///
+  /// 可空是刻意的：超分是**纯附加能力**，未注入（测试替身、非 Windows、用户没开）时
+  /// 整条链路是 `?.` 空操作，会话行为与没有它时逐字节一致。
+  MagpieUpscalingService? _magpieUpscaling;
+
+  /// 已经告诉超分编排器「挂上去」的窗口 hwnd；null = 当前没挂。
+  /// 开与关都只看它和 [magpieUpscalingTargetHwnd] 判据之间的差。
+  int? _magpieArmedHwnd;
+
+  /// 超分开 / 关边沿的串行队列。状态更新永不 await 它（超分不许拖慢 UI），但退出与
+  /// [close] 路径 await 它排空，保证「先关干净再让进程死」。
+  Future<void> _magpieWork = Future<void>.value();
+
+  /// 登记进 [ExitFlushRegistry] 的退出清理回调；未注入超分时为 null。
+  ExitFlushCallback? _magpieExitFlush;
+
   /// 当前会话归属的游戏显示名（窗口标题 / 可执行文件名）；null = 无可归属标题。
   String? _activityGameTitle;
 
@@ -1009,6 +1028,8 @@ class GalHookSessionController extends ChangeNotifier {
       'session.stop_listening',
       'Stopping listeners and helper; injected game code may remain until exit',
     );
+    // 超分的关闭**不在这里手写**：它跟着下面 phase → idle 的状态跃迁自动发生
+    // （见 [_syncMagpieUpscaling]）。手写调用点正是早退分支漏关的根因。
     await _stopSources();
     _setState(
       _state.copyWith(
@@ -1856,6 +1877,12 @@ class GalHookSessionController extends ChangeNotifier {
     _activityCharCounter.reset();
     _textService.removeListener(_onTextBufferChanged);
     _endpointListenable.removeListener(_onEndpointStatusChanged);
+    final ExitFlushCallback? exitFlush = _magpieExitFlush;
+    if (exitFlush != null) {
+      ExitFlushRegistry.instance.unregister(exitFlush);
+      _magpieExitFlush = null;
+    }
+    await shutdownMagpieUpscaling();
     await _stopSources();
     dispose();
   }
@@ -1866,6 +1893,21 @@ class GalHookSessionController extends ChangeNotifier {
   void attachActivityDatabase(HibikiDatabase? Function() resolve) {
     _activityDatabaseResolver = resolve;
   }
+
+  /// 注入窗口超分编排器（桌面启动流程 [GalHookTextOverlayController.start] 调用一次）。
+  ///
+  /// 不注入 = 完全没有超分，会话逻辑不受任何影响。
+  void attachMagpieUpscaling(MagpieUpscalingService service) {
+    _magpieUpscaling = service;
+    // **注入即登记退出清理**：桌面点 X 走 `exit(0)`，没有任何 dispose / close 会帮我们
+    // 收。登记点必须就在这里而不是调用方，否则「以后谁再注入一次」就又会漏掉。
+    _magpieExitFlush ??=
+        ExitFlushRegistry.instance.register(shutdownMagpieUpscaling);
+  }
+
+  /// 窗口超分编排器（UI 订阅它显示超分状态）。未注入 / 非 Windows 时为 null，
+  /// 调用方据此整行不显示。
+  MagpieUpscalingService? get magpieUpscaling => _magpieUpscaling;
 
   /// 开始一段游戏活动记账：先把上一段残留 flush（防上次异常未落），再复位累计器并
   /// 绑定本会话的游戏标题/稳定 id。会话开始（attach / launch）时调用。
@@ -2980,9 +3022,88 @@ class GalHookSessionController extends ChangeNotifier {
     _record(GalHookEventSeverity.error, stage, code, message, details: details);
   }
 
+  /// 超分**此刻应该挂在哪个游戏窗口上** —— 开与关唯一的共同判据。
+  ///
+  /// 这是本轮修复的核心。此前「开」挂在 `_setState` 的窗口「无 → 有」跃迁上、「关」
+  /// 挂在 `stopCapture` / `close` 的方法调用点上，两边判据不同源，于是长出三个特殊
+  /// 情况：① `stopCapture` 的 idle 早退分支在通知结束之前就 return，Magpie 成孤儿；
+  /// ② `keepBinding: true` 保留 `boundWindow`，「无 → 有」跃迁第二局永远不再发生，
+  /// 超分静默失效；③ 正常退出根本没人调 `close`。把两边收回同一个纯函数判据后，这三
+  /// 类特殊情况一次性消失 —— 没有分支可漏，因为压根没有分支。
+  ///
+  /// 判据本身：**会话真的在跑**（phase 不是 idle）**且**绑定了游戏窗口。只在窗口列表
+  /// 里选中一个窗口（phase 仍 idle）不算 —— 那时用户还没开始玩，没有理由动他的显示。
+  @visibleForTesting
+  static int? magpieUpscalingTargetHwnd(GalHookSessionState state) {
+    final ExternalWindowInfo? window = state.boundWindow;
+    if (window == null) return null;
+    if (state.phase == GalHookSessionPhase.idle) return null;
+    return window.hwnd;
+  }
+
   void _setState(GalHookSessionState next) {
     _state = next;
+    _syncMagpieUpscaling();
     notifyListeners();
+  }
+
+  /// 把超分的实际状态对齐到 [magpieUpscalingTargetHwnd]。开与关走**同一条**路，所以
+  /// 不存在「某条早退分支忘了关」。fire-and-forget（超分绝不阻塞状态更新），但每条
+  /// 边沿都排进 [_magpieWork]，退出 / [close] 可以 await 它真的收完。
+  void _syncMagpieUpscaling() {
+    final int? target = magpieUpscalingTargetHwnd(_state);
+    final int? armed = _magpieArmedHwnd;
+    if (target == armed) return;
+    _magpieArmedHwnd = target;
+    // 换窗口 = 先关旧的再开新的，顺序由队列保证。
+    if (armed != null) _enqueueMagpieWork(_notifyMagpieSessionEnded);
+    if (target != null) {
+      _enqueueMagpieWork(() => _notifyMagpieWindowReady(target));
+    }
+  }
+
+  /// 仅测试：等超分的开 / 关边沿队列排空。生产代码不该 await 它（那会让状态更新
+  /// 等在一个跨进程操作上），退出路径用 [shutdownMagpieUpscaling]。
+  @visibleForTesting
+  Future<void> get magpieUpscalingSettled => _magpieWork;
+
+  /// 仅测试：当前挂着超分的窗口 hwnd（null = 没挂）。
+  @visibleForTesting
+  int? get magpieArmedHwnd => _magpieArmedHwnd;
+
+  void _enqueueMagpieWork(Future<void> Function() job) {
+    final Future<void> next = _magpieWork.then((_) => job());
+    _magpieWork = next.catchError((Object _) {});
+    unawaited(next);
+  }
+
+  /// 退出 / 销毁前把超分收干净，并**等它真的收完**。
+  ///
+  /// 为什么必须显式登记进 [ExitFlushRegistry]：桌面点 X 走 `exit(0)` 快杀，[close] 在
+  /// hibiki/lib 里一次都没被调用过。不接这一步，我们 detached 起的 Magpie 会活过 Hibiki
+  /// 的死亡，配置里那条 `autoScale=Fullscreen` 也留着 —— 用户下次**不经 Hibiki**双击
+  /// 游戏就被自动全屏超分，那是我们没被授权做的事。
+  Future<void> shutdownMagpieUpscaling() async {
+    if (_magpieArmedHwnd != null) {
+      _magpieArmedHwnd = null;
+      _enqueueMagpieWork(() => _notifyMagpieSessionEnded(urgent: true));
+    }
+    await _magpieWork;
+  }
+
+  /// 把「游戏窗口就绪」转给超分编排器。**吞掉一切异常**：超分是锦上添花，它出问题
+  /// 不能让 hook 会话跟着倒。
+  Future<void> _notifyMagpieWindowReady(int hwnd) async {
+    try {
+      await _magpieUpscaling?.onGameWindowReady(hwnd: hwnd);
+    } catch (_) {}
+  }
+
+  /// 会话收尾时关掉超分（关 autoScale profile + 退出我们自己起的 Magpie）。同样吞异常。
+  Future<void> _notifyMagpieSessionEnded({bool urgent = false}) async {
+    try {
+      await _magpieUpscaling?.onSessionEnded(urgent: urgent);
+    } catch (_) {}
   }
 
   void _record(
