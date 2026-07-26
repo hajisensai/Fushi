@@ -1,3 +1,4 @@
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' show Rect;
@@ -514,7 +515,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       HibikiToast.show(msg: t.game_hook_line_unavailable);
       return;
     }
-    final String term = model.targetLanguage
+    final String term = JapaneseLanguage.instance
         .wordFromIndex(text: entry.text, index: index)
         .trim();
     if (term.isEmpty) return;

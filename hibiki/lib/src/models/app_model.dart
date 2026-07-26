@@ -465,7 +465,7 @@ class AppModel with ChangeNotifier {
       localAudioStagingDir: temporaryDirectory,
       onLocalAudioImported: importSyncedLocalAudioDb,
       audioDatabaseRoot: Directory('${appDirectory.path}/audiobooks'),
-      videoSubtitleLangCode: targetLanguage.languageCode,
+      videoSubtitleLangCode: JapaneseLanguage.instance.languageCode,
       // client→host 视频上传（syncVideoFiles 开关驱动）：落 <documents>/remote_videos
       // （与 client 下载远端视频落点一致，AppPaths.remoteVideosDirectory 同目录）。
       uploadedVideoRoot: Directory('${appDirectory.path}/remote_videos'),
@@ -1330,7 +1330,7 @@ class AppModel with ChangeNotifier {
         type: d.type,
         path: p,
         exists: Directory(p).existsSync(),
-        hidden: d.isHidden(targetLanguage),
+        hidden: d.isHidden(JapaneseLanguage.instance),
         hasKanji: d.metadata['hasKanji'] == 'true',
       ));
     }
@@ -1359,7 +1359,7 @@ class AppModel with ChangeNotifier {
           type: dictList[i].type,
           path: paths[i],
           exists: existsResults[i],
-          hidden: dictList[i].isHidden(targetLanguage),
+          hidden: dictList[i].isHidden(JapaneseLanguage.instance),
           hasKanji: dictList[i].metadata['hasKanji'] == 'true',
         ),
     ];
@@ -1451,7 +1451,7 @@ class AppModel with ChangeNotifier {
   /// Get the app-wide text style.
   ///
   /// The UI font follows the *display* language ([appLocale]), not the pinned
-  /// Japanese reading language ([targetLanguage]). With no user custom font,
+  /// Japanese reading language (直取 JapaneseLanguage.instance). With no user custom font,
   /// [fontFamily] is left null so the platform resolves the correct regional
   /// glyphs for the UI locale (e.g. Simplified-Chinese glyphs for `zh-CN`)
   /// instead of the Japanese kanji variants the old `NotoSansJP` + `ja`-locale
@@ -2018,7 +2018,8 @@ class AppModel with ChangeNotifier {
           platformServices.createAnkiRepository();
       final profileRepo = ProfileRepository(_database, ankiRepo);
       dictRepo = DictionaryRepository(_database,
-          onCacheRebuild: _rebuildDictPathsCache);
+          onCacheRebuild: _rebuildDictPathsCache,
+          isLowMemory: () => prefsRepo.lowMemoryMode);
       mediaHistoryRepo = MediaHistoryRepository(_database);
       clipboardHistoryRepo = ClipboardHistoryRepository(_database);
 
@@ -2100,7 +2101,7 @@ class AppModel with ChangeNotifier {
       );
 
       await Future.wait(<Future<void>>[
-        targetLanguage.initialise(),
+        JapaneseLanguage.instance.initialise(),
         injectAssetLicenses(),
         _seedBuiltInTags(),
         _localAudioManager.bindForNativeHandler(clearMissingPath: true),
@@ -2174,10 +2175,11 @@ class AppModel with ChangeNotifier {
       );
 
       debugPrint('[Hibiki] init: search preload (parallel)');
-      final String warmupChar = targetLanguage.helloWorld.substring(0, 1);
+      final String warmupChar =
+          JapaneseLanguage.instance.helloWorld.substring(0, 1);
       unawaited(Future.wait(<Future<void>>[
         searchDictionary(
-          searchTerm: targetLanguage.helloWorld,
+          searchTerm: JapaneseLanguage.instance.helloWorld,
           searchWithWildcards: false,
           useCache: false,
         ),
@@ -2339,7 +2341,8 @@ class AppModel with ChangeNotifier {
       prefsRepo.addListener(notifyListeners);
 
       dictRepo = DictionaryRepository(_database,
-          onCacheRebuild: _rebuildDictPathsCache);
+          onCacheRebuild: _rebuildDictPathsCache,
+          isLowMemory: () => prefsRepo.lowMemoryMode);
       await dictRepo.loadFromDb();
 
       mediaHistoryRepo = MediaHistoryRepository(_database);
@@ -2396,7 +2399,7 @@ class AppModel with ChangeNotifier {
       populateEnhancements();
 
       await Future.wait(<Future<void>>[
-        targetLanguage.initialise(),
+        JapaneseLanguage.instance.initialise(),
         ReaderHibikiSource.instance.initialise(),
         Future.wait(<Future<void>>[
           for (Field field in globalFields)
@@ -2701,23 +2704,16 @@ class AppModel with ChangeNotifier {
         linkColor: linkColor,
       );
 
-  /// The lookup/segmentation language. Only one language is registered
-  /// (Japanese) and there is no picker, so this returns the sole registered
-  /// language directly — no persisted `target_language` pref, no `late`
-  /// [languages] map lookup that could miss and crash.
-  ///
-  /// Returning [JapaneseLanguage.instance] directly (instead of
-  /// `languages.values.first`) removes the init-window race: [languages] is a
-  /// `late` field only assigned in [populateLanguages] partway through
-  /// [initialise], so any widget that rebuilds during early init (before
-  /// [populateLanguages]) and reads [targetLanguage] would throw
-  /// `LateInitializationError`. [populateLanguages] registers exactly this one
-  /// instance, so the value is identical at every point in the lifecycle.
-  Language get targetLanguage => JapaneseLanguage.instance;
+  // targetLanguage getter 已删（2026-07-26，用户指令）：它恒返回
+  // JapaneseLanguage.instance，是个假装可配置的间接层（语言选择从未有 UI，
+  // en/zh 子类与 setter 已于 2026-06-05 删除）。日语专属功能（振假名/音高/
+  // 字体/字幕语言码/helloWorld 预热等）现直接引用 JapaneseLanguage.instance。
+  // 注意：查词流水线语言无关（18 语言变换表全量加载是有意设计），从不经过
+  // 这个概念。守卫：test/models/target_language_removed_guard_test.dart。
 
   String get lastSelectedDeckName => prefsRepo.lastSelectedDeckName;
 
-  /// Get the target language from persisted preferences.
+  /// Get the last selected dictionary format from persisted preferences.
   DictionaryFormat get lastSelectedDictionaryFormat {
     String firstDictionaryFormatName = dictionaryFormats.values.first.uniqueKey;
     String lastDictionaryFormatName = _getPref(
@@ -3499,11 +3495,13 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  void toggleDictionaryCollapsed(Dictionary dictionary) => dictRepo
-      .toggleDictionaryCollapsed(dictionary, targetLanguage.languageCode);
+  void toggleDictionaryCollapsed(Dictionary dictionary) =>
+      dictRepo.toggleDictionaryCollapsed(
+          dictionary, JapaneseLanguage.instance.languageCode);
 
   void toggleDictionaryHidden(Dictionary dictionary) {
-    dictRepo.toggleDictionaryHidden(dictionary, targetLanguage.languageCode);
+    dictRepo.toggleDictionaryHidden(
+        dictionary, JapaneseLanguage.instance.languageCode);
     // toggleDictionaryHidden persists the dict, which fires _onCacheRebuild
     // (_rebuildDictPathsCache) and reloads the engine WITHOUT the now-hidden
     // freq/pitch dictionary. But a popupJson cached while the dict was still
@@ -4018,7 +4016,7 @@ class AppModel with ChangeNotifier {
       return;
     }
 
-    segmentedText ??= targetLanguage.textToWords(sourceText);
+    segmentedText ??= JapaneseLanguage.instance.textToWords(sourceText);
     final ctx = _ctx;
     if (ctx == null) return;
     await showAppDialog(
@@ -4994,11 +4992,19 @@ class AppModel with ChangeNotifier {
   ) async {
     // 远端音频是否查询由「管理音频来源」对话框里的 hibikiRemote 源 enabled 决定
     // （resolveConfigured 只在该源 enabled 时才调用这里）；与词典远端开关 remoteLookupEnabled 无关。
+    // await 必须收进 try：原实现直接 return 未 await 的 Future，catch 只能抓同步
+    // throw，异步错误全部漏出成 uncaught。
     try {
-      return HibikiRemoteLookupClient(
+      return await HibikiRemoteLookupClient(
         repo: SyncRepository(_database),
         httpClient: _remoteLookupClient,
       ).lookupAudioUrl(expression: expression, reading: reading);
+    } on RemoteLookupUnreachableError catch (e, stack) {
+      // 全部配对候选传输层不可达：记一次日志后 rethrow，让 WordAudioResolver 把
+      // hibiki-remote 源计入 45s 失败冷却（冷却窗内短路，不再重入、不刷屏）。
+      // 「可达但无音频」不走这里，仍正常返回 null。
+      ErrorLogService.instance.log('remoteAudioLookup', e, stack);
+      rethrow;
     } catch (e, stack) {
       ErrorLogService.instance.log('remoteAudioLookup', e, stack);
       return null;

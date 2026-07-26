@@ -419,7 +419,7 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
     final String searchTerm = floatingLyricSearchTerm(
       text: text,
       index: index,
-      word: appModel.targetLanguage.wordFromIndex(text: text, index: index),
+      word: JapaneseLanguage.instance.wordFromIndex(text: text, index: index),
     );
     if (searchTerm.isEmpty) return;
     if (!DesktopLookupService.isDesktop) return;

@@ -64,6 +64,7 @@ import 'package:hibiki/src/media/video/external_video.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
     show extractVideoCover;
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:hibiki_core/hibiki_core.dart'
@@ -361,6 +362,11 @@ void main([List<String> args = const <String>[]]) {
     // 用户还在看主页/书架时就把冷启动成本吃掉：~500-1500ms。
     // 移动端可直接预热；桌面端（WebView2）必须等首帧渲染、Flutter view
     // 已挂载后再构造 HeadlessInAppWebView，否则会崩 WebView2。
+
+    // Windows/iOS 弹窗内联资产（popup.html/js/css ~300KB）异步预读：把 4 次
+    // 同步读盘从「第一次查词」路径挪到启动空闲期（内部平台门控，其它平台 no-op）。
+    unawaited(DictionaryPopupWebViewState.preloadInlinePopupAssets());
+
     final bool isMobilePlatform = Platform.isAndroid || Platform.isIOS;
     final bool isDesktopPlatform =
         Platform.isWindows || Platform.isLinux || Platform.isMacOS;
@@ -1087,7 +1093,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
         if (marker != null) PresentStallLog.clearRestartMarker(marker);
       }
     }
-    // Fields like locales/targetLanguage/theme are late and only available
+    // Fields like locales/theme are late and only available
     // after initialise() completes. Return a minimal app while loading and
     // render the spinner directly instead of going through LoadingPage.
     //

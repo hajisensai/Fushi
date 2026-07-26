@@ -242,11 +242,19 @@ class DictionaryPopupWebViewState
   /// the popup is open — see [didChangeDependencies].
   String? _lastThemeVarsJs;
 
-  /// BUG-712 ③：最近一次已注入的静态设置负载（[PopupStaticSettingsJs.combined]）。
-  /// 热槽 WebView 的 `window.*` 状态跨渲染持久，静态段（主题/字体/词典样式/自定义
-  /// CSS/开关/名单）只在串内容变化时随下一次推送重发；每次查词只发 entries +
-  /// renderPopup。页面重载（onLoadStop）时置 null 强制重发（新页面无状态）。
-  String? _lastSentStaticSettingsJs;
+  /// BUG-712 ③ / BUG-717 ③：最近一次已注入的静态设置负载的版本号
+  /// （[PopupStaticSettingsJs.revision]）。热槽 WebView 的 `window.*` 状态跨渲染
+  /// 持久，静态段（主题/字体/词典样式/自定义 CSS/开关/名单）只在版本变化时随
+  /// 下一次推送重发；每次查词只发 entries + renderPopup。原来这里常驻整个 MB 级
+  /// 串做全串比较，现在只存 int（builder 侧按输入 memo，同内容 ⇒ 同 revision）。
+  /// 页面重载（onLoadStop）时置 null 强制重发（新页面无状态）。
+  int? _lastSentStaticRevision;
+
+  /// BUG-717 ③：最近一次已注入的 in-app 固定块（`__hoshiResetPopupScroll` 钩子 +
+  /// 句子上下文 i18n 文案 + `sentenceContextPreviewEnabled`）的键。该块只随静态段
+  /// 版本（含语言切换——locale 在 builder 的 memo 键里）与 preview 回调的有无变化，
+  /// 此前每次查词都重发约 1-2KB。页面重载时同样置 null。
+  ({int revision, bool preview})? _lastSentInAppExtrasKey;
 
   Future<T> _guardJsBridge<T>(
     String logTag,
@@ -795,10 +803,11 @@ JSON.stringify((function(){
     // in-app theme-vars string for the live theme-switch dedup in
     // didChangeDependencies.
     //
-    // BUG-712 ③：静态段与词条段分开注入——静态段串级比对，变了才重发（热槽
-    // WebView 的 window.* 跨渲染持久，真实词典下重复注入是数十 KB 的纯浪费）；
-    // 每次查词只发 entries + renderPopup。任何主题/设置/词典集变化都会让静态串
-    // 不同 → 自动随下一次推送重发。
+    // BUG-712 ③：静态段与词条段分开注入——静态段变了才重发（热槽 WebView 的
+    // window.* 跨渲染持久，真实词典下重复注入是数十 KB 的纯浪费）；每次查词只发
+    // entries + renderPopup。任何主题/设置/词典集变化都会换 revision → 自动随
+    // 下一次推送重发。BUG-717 ③：比较从 MB 级全串换成 revision 整数（builder 按
+    // 输入 memo，同内容 ⇒ 同实例同 revision），combined 只在真要发时才拼一次。
     final PopupStaticSettingsJs staticSettings = buildPopupStaticSettingsJs(
       appModel: appModel,
       theme: Theme.of(context),
@@ -809,11 +818,27 @@ JSON.stringify((function(){
             widget.onSetSentenceContext != null,
       ),
     );
-    final String staticSettingsJs = staticSettings.combined;
-    final bool staticChanged = staticSettingsJs != _lastSentStaticSettingsJs;
+    final bool staticChanged =
+        staticSettings.revision != _lastSentStaticRevision;
     if (staticChanged) {
-      _lastSentStaticSettingsJs = staticSettingsJs;
+      _lastSentStaticRevision = staticSettings.revision;
     }
+    final String staticSettingsJs =
+        staticChanged ? staticSettings.combined : '';
+    // BUG-717 ③：in-app 固定块（__hoshiResetPopupScroll 钩子 + 句子上下文 i18n +
+    // sentenceContextPreviewEnabled）并入静态段的失效节奏：随静态段版本重发
+    // （语言切换 → builder memo 键含 locale → 新 revision → 必然重发），另跟踪
+    // preview 回调有无（宿主换回调时也要刷新）。原来每次查词都重发这 1-2KB。
+    final bool sentencePreviewEnabled = widget.onSentenceContextPreview != null;
+    final ({int revision, bool preview}) extrasKey =
+        (revision: staticSettings.revision, preview: sentencePreviewEnabled);
+    final bool extrasChanged = extrasKey != _lastSentInAppExtrasKey;
+    if (extrasChanged) {
+      _lastSentInAppExtrasKey = extrasKey;
+    }
+    final String inAppExtrasJs = extrasChanged
+        ? _inAppStaticExtrasJs(sentencePreviewEnabled: sentencePreviewEnabled)
+        : '';
     final String entriesJs = buildPopupEntriesJs(widget.result);
     _lastThemeVarsJs = _themeVariablesJs();
     final bool popupInstantScroll = appModel.popupInstantScroll;
@@ -837,10 +862,22 @@ JSON.stringify((function(){
           window.renderPopup();
         ''';
     _controller!.evaluateJavascript(source: '''
-      ${staticChanged ? staticSettingsJs : ''}
+      $staticSettingsJs
+      $inAppExtrasJs
       $entriesJs
       ${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};
       window.__hibikiRenderToken = $renderToken;
+      $beforeRenderJs
+      ${needsScrollCheck ? _scrollCheckJs : ""}
+    ''');
+  }
+
+  /// BUG-717 ③：in-app 专属的固定注入块。内容与拆分前逐字节一致，只是不再每次
+  /// 查词重发——注入时机由 [_lastSentInAppExtrasKey]（静态段 revision + preview
+  /// 回调有无）门控，热槽 WebView 的 window.* 跨渲染持久。语言切换经静态段
+  /// revision 失效（builder memo 键含 locale），文案随之重发。
+  String _inAppStaticExtrasJs({required bool sentencePreviewEnabled}) {
+    return '''
       window.__hoshiResetPopupScroll = function() {
         window.scrollTo(0, 0);
         document.documentElement.scrollTop = 0;
@@ -857,7 +894,7 @@ JSON.stringify((function(){
       // 恒 false）的新特性门控——宿主接入了预览回调（reader/有声书/视频，supportsSentenceDraft
       // 为真）才为真，popup.js 据此渲染「调整上下文」按钮。app 外 / 悬浮独立窗不走本注入块，
       // 该 flag undefined → 按钮不渲染。
-      window.sentenceContextPreviewEnabled = ${widget.onSentenceContextPreview != null};
+      window.sentenceContextPreviewEnabled = $sentencePreviewEnabled;
       // Niratan「制卡前调整·选择句子上下文」模态文案（popup.js 无自带 i18n，靠宿主注入）。
       window.i18nCtx = {
         adjust: ${jsonEncode(t.popup_ctx_adjust_button)},
@@ -875,9 +912,7 @@ JSON.stringify((function(){
         confirm: ${jsonEncode(t.popup_ctx_confirm)},
         cancel: ${jsonEncode(t.popup_ctx_cancel)},
       };
-      $beforeRenderJs
-      ${needsScrollCheck ? _scrollCheckJs : ""}
-    ''');
+''';
   }
 
   /// Ensures the current [widget.result] is (or will be) rendered in the WebView.
@@ -932,10 +967,19 @@ JSON.stringify((function(){
     // 永久降级到不可靠的 file:// 路径，失败时下次唤起自然重试。
     if (_inlineCss != null) return;
     try {
-      _inlineCss = _readPopupAsset('popup.css');
-      _inlineDictMediaJs = _readPopupAsset('dict-media.js');
-      _inlineSelectionJs = _readPopupAsset('selection.js');
-      _inlinePopupJs = _readPopupAsset('popup.js');
+      // BUG-717 ②：四个文件全部读成功后再原子赋值——原实现逐个赋值，第一个
+      // 成功后若后续抛异常，_inlineCss 非空闩死重试、其余恒 null，内联路径
+      // 永久失效（静默降级 file://）。
+      final String css = _readPopupAsset('popup.css');
+      final String dictMediaJs = _readPopupAsset('dict-media.js');
+      final String selectionJs = _readPopupAsset('selection.js');
+      final String popupJs = _readPopupAsset('popup.js');
+      _assignInlinePopupAssets(
+        css: css,
+        dictMediaJs: dictMediaJs,
+        selectionJs: selectionJs,
+        popupJs: popupJs,
+      );
     } catch (e, stack) {
       debugPrint('[PopupWebView] Popup asset inlining failed, '
           'falling back to file:// URL loading: $e');
@@ -944,15 +988,82 @@ JSON.stringify((function(){
     }
   }
 
+  /// BUG-717 ②：内联资产的异步预读钩子，供启动 / WebView 预热路径在首个弹窗
+  /// build 之前调用（幂等，多次调用共享同一 Future），把 4 次同步读盘挪出 UI
+  /// 帧。不需要内联资产的平台（非 Windows/iOS）与已装载时为 no-op。
+  ///
+  /// 注意 widget 自身不在 initState 里 kick：initState 与首次 build 同帧，同步
+  /// 兜底（[_ensureInlinePopupAssetsLoaded]）必然先跑赢，在 initState 发起只会
+  /// 产生一次多余 IO，且真实文件 IO 在 widget 测试的 FakeAsync 里完成时序不可
+  /// 控。同步兜底始终保留，内联语义不降级；异步路径若晚到则让位（同 isolate 内
+  /// 检查-赋值原子，无撕裂）。失败静默：同步兜底仍在，且这里自行记日志。
+  static Future<void>? _inlineAssetsPreload;
+
+  static Future<void> preloadInlinePopupAssets() {
+    if (!_shouldInlinePopupAssets || _inlineCss != null) {
+      return Future<void>.value();
+    }
+    return _inlineAssetsPreload ??= _preloadInlinePopupAssets();
+  }
+
+  static Future<void> _preloadInlinePopupAssets() async {
+    try {
+      final String css = await _readPopupAssetAsync('popup.css');
+      final String dictMediaJs = await _readPopupAssetAsync('dict-media.js');
+      final String selectionJs = await _readPopupAssetAsync('selection.js');
+      final String popupJs = await _readPopupAssetAsync('popup.js');
+      if (_inlineCss != null) return; // 同步兜底路径已先完成。
+      _assignInlinePopupAssets(
+        css: css,
+        dictMediaJs: dictMediaJs,
+        selectionJs: selectionJs,
+        popupJs: popupJs,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('PopupWebView._preloadInlinePopupAssets', e, stack);
+    } finally {
+      // 允许失败后下次调用重试（与同步路径的「失败不闩死」语义一致）。
+      _inlineAssetsPreload = null;
+    }
+  }
+
+  static void _assignInlinePopupAssets({
+    required String css,
+    required String dictMediaJs,
+    required String selectionJs,
+    required String popupJs,
+  }) {
+    // BUG-717 ②：`</style` 转义从每次 _buildInlinePopupHtml 挪到装载时一次
+    // （css 只在 <style> 里使用；产物字节与原实现一致）。
+    _inlineCss = css.replaceAll('</style', r'<\/style');
+    _inlineDictMediaJs = dictMediaJs;
+    _inlineSelectionJs = selectionJs;
+    _inlinePopupJs = popupJs;
+    _inlineHtmlCacheKey = null;
+    _inlineHtmlCache = null;
+  }
+
+  // BUG-717 ②：内联 popup HTML（约 300KB，含 69KB css）按 (themeAttr, bgHex)
+  // 单槽 memo。它此前在每次 build()（拖拽调整弹窗大小时每个指针事件一次）重拼
+  // 并对 css 做整串 replaceAll；InAppWebView 只在创建平台视图时消费 initialData，
+  // 重复构造是纯浪费。键覆盖两个真实输入：主题明暗与词典底色（换主题/改底色
+  // 换键重建）；资产重载（_assignInlinePopupAssets）清空 memo。
+  static String? _inlineHtmlCacheKey;
+  static String? _inlineHtmlCache;
+
   static String _buildInlinePopupHtml({
     required String themeAttr,
     required String bgHex,
   }) {
-    return '<!DOCTYPE html>'
+    final String cacheKey = '$themeAttr|$bgHex';
+    final String? cached = _inlineHtmlCache;
+    if (cached != null && cacheKey == _inlineHtmlCacheKey) return cached;
+    final String html = '<!DOCTYPE html>'
         '<html data-theme="$themeAttr" style="--background-color:$bgHex">'
         '<head>'
         '<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">'
-        '<style>${_inlineCss!.replaceAll('</style', r'<\/style')}</style>'
+        '<style>$_inlineCss</style>'
         '<script>$_inlineDictMediaJs</script>'
         '<script>$_inlineSelectionJs</script>'
         '<script>$_inlinePopupJs</script>'
@@ -964,12 +1075,57 @@ JSON.stringify((function(){
         '<div class="overlay-content"></div>'
         '</div>'
         '</body></html>';
+    _inlineHtmlCacheKey = cacheKey;
+    _inlineHtmlCache = html;
+    return html;
   }
 
+  /// 测试专用：注入假内联资产并清空 HTML memo（供 memo 命中/失效用例驱动）。
+  @visibleForTesting
+  static void debugSetInlinePopupAssets({
+    required String css,
+    required String dictMediaJs,
+    required String selectionJs,
+    required String popupJs,
+  }) {
+    _assignInlinePopupAssets(
+      css: css,
+      dictMediaJs: dictMediaJs,
+      selectionJs: selectionJs,
+      popupJs: popupJs,
+    );
+  }
+
+  /// 测试专用：清空内联资产与 HTML memo，回到「未装载」初始态。
+  @visibleForTesting
+  static void debugResetInlinePopupAssets() {
+    _inlineCss = null;
+    _inlineDictMediaJs = null;
+    _inlineSelectionJs = null;
+    _inlinePopupJs = null;
+    _inlineHtmlCacheKey = null;
+    _inlineHtmlCache = null;
+    _inlineAssetsPreload = null;
+  }
+
+  /// 测试专用：构造当前内联资产下的 popup HTML（走生产 memo 路径）。
+  @visibleForTesting
+  static String debugBuildInlinePopupHtml({
+    required String themeAttr,
+    required String bgHex,
+  }) =>
+      _buildInlinePopupHtml(themeAttr: themeAttr, bgHex: bgHex);
+
+  static String _popupAssetFilePath(String name) =>
+      Uri.parse(webViewAssetUrl('assets/popup/$name')).toFilePath();
+
   static String _readPopupAsset(String name) {
-    final content = File(
-      Uri.parse(webViewAssetUrl('assets/popup/$name')).toFilePath(),
-    ).readAsStringSync();
+    final content = File(_popupAssetFilePath(name)).readAsStringSync();
+    return content.replaceAll('</script', r'<\/script');
+  }
+
+  static Future<String> _readPopupAssetAsync(String name) async {
+    final String content = await File(_popupAssetFilePath(name)).readAsString();
     return content.replaceAll('</script', r'<\/script');
   }
 
@@ -1703,9 +1859,10 @@ JSON.stringify((function(){
       },
       onLoadStop: (controller, url) {
         _ready = true;
-        // BUG-712 ③：页面（重）加载后 window.* 状态清零，静态设置负载必须随下一次
-        // 推送整体重发——重置串级比对基线。
-        _lastSentStaticSettingsJs = null;
+        // BUG-712 ③：页面（重）加载后 window.* 状态清零，静态设置负载与 in-app
+        // 固定块必须随下一次推送整体重发——重置版本比对基线。
+        _lastSentStaticRevision = null;
+        _lastSentInAppExtrasKey = null;
         debugPrint('[popup-perf] webview loadStop $url');
         // Inject the same char caret as the reader (selection.js, a head script,
         // has already defined window.hoshiSelection by load-stop). It stays

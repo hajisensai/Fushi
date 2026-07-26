@@ -1,3 +1,4 @@
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'dart:async' show unawaited;
 import 'dart:io';
 
@@ -342,11 +343,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   @override
   Widget build(BuildContext context) {
     final AsyncValue<List<MediaItem>> books =
-        ref.watch(hibikiBooksProvider(appModel.targetLanguage));
+        ref.watch(hibikiBooksProvider(JapaneseLanguage.instance));
     assert(() {
       ReaderHibikiHistoryPage.debugOpenBook = (String mediaId) async {
         final List<MediaItem> items = ref
-                .read(hibikiBooksProvider(appModel.targetLanguage))
+                .read(hibikiBooksProvider(JapaneseLanguage.instance))
                 .valueOrNull ??
             const <MediaItem>[];
         MediaItem? target;
@@ -444,7 +445,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                       refresh: () {
                         _refreshSrtBooks();
                         ref.invalidate(
-                          hibikiBooksProvider(appModel.targetLanguage),
+                          hibikiBooksProvider(JapaneseLanguage.instance),
                         );
                       },
                     ),
@@ -546,7 +547,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       builder: (_) => const MediaSourcesDialog(mediaKind: 'book'),
     );
     if (!mounted) return;
-    ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
     ref.invalidate(srtBooksProvider);
   }
 
@@ -560,7 +561,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       builder: (_) => MokuroMoeCatalogDialog(db: appModel.database),
     );
     if (!mounted || imported == null || imported <= 0) return;
-    ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
     ref.invalidate(srtBooksProvider);
   }
 
@@ -946,7 +947,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // → 合集成员丢封面（BUG-937 让被筛合集能带命中成员显示后暴露此缺陷）。此处已 watch
     // 于上层 build（filteredBookIdsProvider 之上的 hibikiBooksProvider），read 全量安全。
     final List<MediaItem> allEpubBooksForBorrow =
-        ref.read(hibikiBooksProvider(appModel.targetLanguage)).valueOrNull ??
+        ref.read(hibikiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
             books;
     final Map<String, String> epubCoverUrisByBookKey = {};
     // TODO-1191：`allEpubBooksForBorrow` 是 hibikiBooksProvider 的全部 EpubBooks 行；
@@ -1616,7 +1617,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 ),
               );
               if (imported == true) {
-                ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+                ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
                 ref.invalidate(srtBooksProvider);
               }
             },

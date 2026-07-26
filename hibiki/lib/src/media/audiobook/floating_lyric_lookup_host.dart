@@ -1,3 +1,4 @@
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
@@ -140,7 +141,7 @@ class _FloatingLyricLookupHostState
     final String trimmed = req.text.trim();
     if (trimmed.isEmpty) return;
     _ensureWarmPopup();
-    final String word = _appModel.targetLanguage
+    final String word = JapaneseLanguage.instance
         .wordFromIndex(text: req.text, index: req.index)
         .trim();
     final String searchTerm = word.isNotEmpty ? word : trimmed;

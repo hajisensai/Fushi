@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/models/audio_source_config.dart';
+import 'package:hibiki/src/sync/hibiki_remote_lookup_client.dart'
+    show RemoteLookupUnreachableError;
 import 'package:hibiki/src/utils/misc/word_audio_resolver.dart';
 
 void main() {
@@ -428,6 +430,201 @@ void main() {
           ),
           isFalse,
           reason: '可达源回 404 不得触发 host 冷却（回归：会让整段时间该源全哑）',
+        );
+      });
+    });
+
+    // hibikiRemote（互联配对）源接入与 remoteAudio 同一套失败冷却：配对设备
+    // 全部候选传输层不可达（RemoteLookupUnreachableError）才计冷却；「可达但
+    // 无音频」（null）绝不冷却。
+    group('hibikiRemote transport-failure cooldown', () {
+      List<AudioSourceConfig> hibikiOnly() => <AudioSourceConfig>[
+            AudioSourceConfig.hibikiRemote(enabled: true),
+          ];
+
+      test(
+          'an unreachable paired peer enters the cooldown window, is '
+          'short-circuited within it, then retried after expiry', () async {
+        DateTime now = DateTime(2026, 1, 1, 12, 0, 0);
+        WordAudioResolver.debugSetNowProvider(() => now);
+
+        int remoteCalls = 0;
+        final resolver = WordAudioResolver(
+          queryLocalAudio: (_, __) async => null,
+          extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
+          queryRemoteAudio: (_, __) async {
+            remoteCalls++;
+            throw RemoteLookupUnreachableError('all candidates down');
+          },
+        );
+
+        // 第 1 次：真正打到死配对，失败并记录冷却。
+        await resolver.resolveConfigured(
+          expression: 'a',
+          reading: 'a',
+          sources: hibikiOnly(),
+        );
+        expect(remoteCalls, 1);
+        expect(
+          WordAudioResolver.isRemoteSourceInCooldown(
+            WordAudioResolver.hibikiRemoteCooldownKey,
+          ),
+          isTrue,
+        );
+
+        // 冷却窗内（+10s < 45s）：短路，queryRemoteAudio 不被调用。
+        now = now.add(const Duration(seconds: 10));
+        await resolver.resolveConfigured(
+          expression: 'a',
+          reading: 'a',
+          sources: hibikiOnly(),
+        );
+        expect(remoteCalls, 1, reason: '冷却窗内不应再调用 queryRemoteAudio');
+
+        // 冷却窗过后（+50s > 45s）：放行重试。
+        now = now.add(const Duration(seconds: 50));
+        await resolver.resolveConfigured(
+          expression: 'a',
+          reading: 'a',
+          sources: hibikiOnly(),
+        );
+        expect(remoteCalls, 2, reason: '冷却过期后应再次尝试');
+      });
+
+      test('an unreachable peer does not block later sources in the same pass',
+          () async {
+        bool nextTried = false;
+        final resolver = WordAudioResolver(
+          queryLocalAudio: (_, __) async => null,
+          extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
+          queryRemoteAudio: (_, __) async =>
+              throw RemoteLookupUnreachableError('all candidates down'),
+          fetchAudioSourceList: (url) async {
+            nextTried = true;
+            return const <String>['https://cdn.test/fallback.mp3'];
+          },
+        );
+
+        final String? result = await resolver.resolveConfigured(
+          expression: 'a',
+          reading: 'a',
+          sources: <AudioSourceConfig>[
+            AudioSourceConfig.hibikiRemote(enabled: true),
+            AudioSourceConfig.remoteAudio(
+              url: 'https://alive.test/audio?term={term}',
+            ),
+          ],
+        );
+
+        expect(nextTried, isTrue);
+        expect(result, 'https://cdn.test/fallback.mp3');
+      });
+
+      test(
+          'a reachable peer with no audio for this word (null) does NOT '
+          'enter cooldown', () async {
+        int remoteCalls = 0;
+        final resolver = WordAudioResolver(
+          queryLocalAudio: (_, __) async => null,
+          extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
+          queryRemoteAudio: (_, __) async {
+            remoteCalls++;
+            return null; // 设备在，只是这个词没音频。
+          },
+        );
+
+        await resolver.resolveConfigured(
+          expression: 'なし',
+          reading: 'なし',
+          sources: hibikiOnly(),
+        );
+        expect(
+          WordAudioResolver.isRemoteSourceInCooldown(
+            WordAudioResolver.hibikiRemoteCooldownKey,
+          ),
+          isFalse,
+          reason: '可达但无音频不得冷却，否则设备有音频的下一个词也被短路成静音',
+        );
+
+        // 立刻再查仍应真打到配对设备，不被短路。
+        await resolver.resolveConfigured(
+          expression: 'なし',
+          reading: 'なし',
+          sources: hibikiOnly(),
+        );
+        expect(remoteCalls, 2);
+      });
+
+      test('a subsequent success clears the cooldown', () async {
+        DateTime now = DateTime(2026, 1, 1, 12, 0, 0);
+        WordAudioResolver.debugSetNowProvider(() => now);
+
+        bool shouldFail = true;
+        int remoteCalls = 0;
+        final resolver = WordAudioResolver(
+          queryLocalAudio: (_, __) async => null,
+          extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
+          queryRemoteAudio: (_, __) async {
+            remoteCalls++;
+            if (shouldFail) {
+              throw RemoteLookupUnreachableError('all candidates down');
+            }
+            return 'https://peer.test/audio?id=1';
+          },
+        );
+
+        // 失败 -> 记冷却。
+        await resolver.resolveConfigured(
+          expression: 'a',
+          reading: 'a',
+          sources: hibikiOnly(),
+        );
+        expect(remoteCalls, 1);
+
+        // 冷却过期后恢复，且这次成功。
+        now = now.add(const Duration(seconds: 50));
+        shouldFail = false;
+        final String? ok = await resolver.resolveConfigured(
+          expression: 'a',
+          reading: 'a',
+          sources: hibikiOnly(),
+        );
+        expect(remoteCalls, 2);
+        expect(ok, 'https://peer.test/audio?id=1');
+
+        // 成功已清冷却：立刻再查（时钟不推进）仍应真打到配对设备。
+        final String? again = await resolver.resolveConfigured(
+          expression: 'a',
+          reading: 'a',
+          sources: hibikiOnly(),
+        );
+        expect(remoteCalls, 3, reason: '成功后冷却应被清除，不再短路');
+        expect(again, 'https://peer.test/audio?id=1');
+      });
+
+      test(
+          'legacy resolve() swallows unreachability (skip semantics, no '
+          'cooldown bookkeeping)', () async {
+        final resolver = WordAudioResolver(
+          queryLocalAudio: (_, __) async => null,
+          extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
+          queryRemoteAudio: (_, __) async =>
+              throw RemoteLookupUnreachableError('all candidates down'),
+        );
+
+        final String? result = await resolver.resolve(
+          expression: 'a',
+          reading: 'a',
+          sources: const <String>[WordAudioResolver.hibikiRemoteAudioUrl],
+        );
+
+        expect(result, isNull);
+        expect(
+          WordAudioResolver.isRemoteSourceInCooldown(
+            WordAudioResolver.hibikiRemoteCooldownKey,
+          ),
+          isFalse,
+          reason: '冷却只由 resolveConfigured 管理，传统 resolve 不记冷却',
         );
       });
     });

@@ -120,7 +120,7 @@ class AppModelLibraryHostService
   // ── 视频（P4-1）──────────────────────────────────────────────────────────────
 
   /// 视频 sidecar 字幕匹配的目标语言代码（默认 'ja'）。
-  /// 生产传 AppModel.targetLanguage.langCode（P4 接线任务完成后注入真实值）。
+  /// 生产传 JapaneseLanguage.instance.languageCode（P4 接线任务完成后注入真实值）。
   final String _videoSubtitleLangCode;
 
   /// client→host 上传视频的落盘根目录（可选；null 时 [importVideo] 抛 [UnsupportedError]）。

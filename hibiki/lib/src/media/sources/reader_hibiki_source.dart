@@ -344,7 +344,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
     required AppModel appModel,
     required WidgetRef ref,
   }) async {
-    ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
     // BUG-777：阅读中位置持续落库刷新 updatedAt，关书回书架时 recency 映射与
     // 书列表同点失效，继续阅读 hero /「最近阅读」排序立即反映本次阅读。
     ref.invalidate(bookLastReadAtProvider);
@@ -428,7 +428,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
           ),
         );
         if (imported == true) {
-          ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+          ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
           ref.invalidate(srtBooksProvider);
         }
       },

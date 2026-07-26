@@ -94,6 +94,58 @@ class DictionaryFontCss {
   /// payload; CJK fonts above this are skipped (system-name fonts are unaffected).
   static const int _defaultMaxFileBytes = 8 * 1024 * 1024;
 
+  /// BUG-717 ③：启用字体条目的内容指纹，供上层对 [build] 的**最终产物**做 memo。
+  ///
+  /// 键语义与 [_dataUrlCache]（(path, mtime, size) 内容键）完全一致：
+  ///   - 系统字体条目：`name`；
+  ///   - 文件字体条目：`name + path + mtimeUs:size`（文件缺失记 `missing`，
+  ///     stat 异常记 `err`——两者都会在文件恢复可读时换键，自动失效）；
+  ///   - 禁用 / 空名条目不参与（与 [build] 的过滤一致：切换启用状态即换键）；
+  ///   - 白名单目录参与键（目录变化改变可内联集合）。
+  /// 只做 statSync 不读文件内容，热路径成本是每个字体条目一次 stat。
+  static String fontListFingerprint(
+    Iterable<Map<String, dynamic>> fonts, {
+    Iterable<String> allowedDirectories = const <String>[],
+  }) {
+    final StringBuffer buffer = StringBuffer();
+    for (final Map<String, dynamic> e in fonts) {
+      if (!(e['enabled'] as bool? ?? true)) continue;
+      final String? name = e['name'] as String?;
+      if (name == null || name.trim().isEmpty) continue;
+      buffer
+        ..write(name)
+        ..write('\u0001');
+      final String? fontPath = e['path'] as String?;
+      if (fontPath == null) {
+        buffer.write('sys\u0002');
+        continue;
+      }
+      buffer
+        ..write(fontPath)
+        ..write('\u0001');
+      try {
+        final FileStat stat = FileStat.statSync(fontPath);
+        buffer.write(stat.type == FileSystemEntityType.notFound
+            ? 'missing'
+            : '${stat.modified.microsecondsSinceEpoch}:${stat.size}');
+      } catch (_) {
+        buffer.write('err');
+      }
+      buffer.write('\u0002');
+    }
+    buffer
+      ..write('|roots:')
+      ..writeAll(allowedDirectories, '\u0001');
+    return buffer.toString();
+  }
+
+  /// [_inlineFontDataUrl] 读盘/编码异常的累计计数。指纹（stat 结果）不携带
+  /// 「stat 成功但读文件失败」这种瞬时信息，上层 memo 用「build 前后计数未变」
+  /// 判定本次产物无瞬时降级、可安全缓存；有失败则跳过缓存，下次查词自然重试
+  /// （与 [_dataUrlCache] 「失败不缓存」同语义）。
+  static int get inlineFailureCount => _inlineFailureCount;
+  static int _inlineFailureCount = 0;
+
   /// (mtime, size) 内容键的进程内缓存：同一字体文件只读盘 + base64 一次。
   /// 每次查词推结果都会重建注入串（in-app 弹窗 / 全局查词栈 / 剪贴板面板共用
   /// [build]），导入字体无缓存时每次数十 ms 的同步读盘+编码是查词热路径的纯
@@ -123,6 +175,7 @@ class DictionaryFontCss {
       _dataUrlCache[path] = (mtimeUs: mtimeUs, size: length, dataUrl: dataUrl);
       return dataUrl;
     } catch (e, stack) {
+      _inlineFailureCount++;
       ErrorLogService.instance.log('DictionaryFontCss.inline', e, stack);
       return null;
     }

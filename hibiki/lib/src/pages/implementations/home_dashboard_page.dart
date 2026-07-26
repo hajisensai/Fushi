@@ -1,3 +1,4 @@
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -506,9 +507,10 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
       final List<RemoteActivityEvent> remoteActivity =
           await backend.listRemoteActivity(limit: 200);
       if (!mounted) return;
-      final List<MediaItem> books =
-          ref.read(hibikiBooksProvider(appModel.targetLanguage)).valueOrNull ??
-              const <MediaItem>[];
+      final List<MediaItem> books = ref
+              .read(hibikiBooksProvider(JapaneseLanguage.instance))
+              .valueOrNull ??
+          const <MediaItem>[];
       final Set<String> localBookKeys = <String>{
         for (final MediaItem item in books)
           ReaderHibikiSource.parseBookKey(item.mediaIdentifier) ??
@@ -558,7 +560,7 @@ class _HomeDashboardPageState extends ConsumerState<HomeDashboardPage> {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final AppModel appModel = ref.watch(appProvider);
     final List<MediaItem> books =
-        ref.watch(hibikiBooksProvider(appModel.targetLanguage)).valueOrNull ??
+        ref.watch(hibikiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
             const <MediaItem>[];
     final Map<String, int> lastReadByKey =
         ref.watch(bookLastReadAtProvider).valueOrNull ?? const <String, int>{};

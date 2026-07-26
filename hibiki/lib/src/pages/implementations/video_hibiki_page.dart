@@ -1,3 +1,4 @@
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
@@ -1639,7 +1640,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   }
 
   /// app 当前目标学习语言代码（如 `'ja'`/`'ko'`），用于 sidecar 字幕语言优先检测。
-  String get _targetLangCode => appModel.targetLanguage.locale.languageCode;
+  String get _targetLangCode => JapaneseLanguage.instance.locale.languageCode;
 
   @override
   void initState() {

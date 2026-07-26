@@ -1,6 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 
-import 'package:drift/drift.dart' hide isNotNull;
+import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_client.dart';
@@ -276,5 +277,161 @@ void main() {
     // 明文候选由注入的共享 client 服务（keep-alive 行为零变化）。
     expect(injectedClientHosts, <String>['plain']);
     expect(pinnedFactoryCalledForPlain, isFalse);
+  });
+
+  // ── 可达性信号：区分「配对设备死了」与「设备在但这个词没音频」 ──────────
+  group('audio lookup reachability signal', () {
+    test(
+        'all candidates failing at the transport layer throws '
+        'RemoteLookupUnreachableError (connection refused + timeout)',
+        () async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = await _repo(
+        db: db,
+        urls: const <HibikiClientUrl>[
+          HibikiClientUrl(url: 'http://refused:8765'),
+          HibikiClientUrl(url: 'http://slow:8765'),
+        ],
+      );
+      final List<String> requestedHosts = <String>[];
+      final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+        repo: repo,
+        timeout: const Duration(milliseconds: 50),
+        httpClient: MockClient((http.Request request) async {
+          requestedHosts.add(request.url.host);
+          if (request.url.host == 'refused') {
+            throw const SocketException('Connection refused');
+          }
+          // 超过 client timeout 才回：以 TimeoutException 形态计传输失败。
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+          return http.Response('late', 200);
+        }),
+      );
+
+      await expectLater(
+        client.lookupAudioUrl(expression: '猫', reading: 'ねこ'),
+        throwsA(isA<RemoteLookupUnreachableError>()),
+      );
+      // 两个候选都真被尝试过，一个响应都没拿到。
+      expect(requestedHosts, <String>['refused', 'slow']);
+    });
+
+    test(
+        'a reachable candidate answering 404 means "no audio" (null), even '
+        'when other candidates are transport-dead', () async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = await _repo(
+        db: db,
+        urls: const <HibikiClientUrl>[
+          HibikiClientUrl(url: 'http://dead:8765'),
+          HibikiClientUrl(url: 'http://alive:8765'),
+        ],
+      );
+      final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+        repo: repo,
+        httpClient: MockClient((http.Request request) async {
+          if (request.url.host == 'dead') {
+            throw const SocketException('Connection refused');
+          }
+          return http.Response('missing', 404);
+        }),
+      );
+
+      final String? url = await client.lookupAudioUrl(
+        expression: '猫',
+        reading: 'ねこ',
+      );
+
+      // 拿到过 HTTP 响应 = 设备可达，绝不能抛 unreachable。
+      expect(url, isNull);
+    });
+
+    test('200 with an empty audio url is reachable-no-audio (null, no throw)',
+        () async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = await _repo(
+        db: db,
+        urls: const <HibikiClientUrl>[
+          HibikiClientUrl(url: 'http://alive:8765'),
+        ],
+      );
+      final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+        repo: repo,
+        httpClient: MockClient((http.Request request) async {
+          return http.Response.bytes(
+            utf8.encode(jsonEncode(<String, dynamic>{
+              'type': 'audioResult',
+              'url': '',
+            })),
+            200,
+            headers: const <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
+          );
+        }),
+      );
+
+      final String? url = await client.lookupAudioUrl(
+        expression: '猫',
+        reading: 'ねこ',
+      );
+
+      expect(url, isNull);
+    });
+
+    test('no paired candidates configured returns null instead of throwing',
+        () async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = await _repo(
+        db: db,
+        urls: const <HibikiClientUrl>[],
+      );
+      final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+        repo: repo,
+        httpClient: MockClient((http.Request request) async {
+          fail('no request should be issued without candidates');
+        }),
+      );
+
+      final String? url = await client.lookupAudioUrl(
+        expression: '猫',
+        reading: 'ねこ',
+      );
+
+      // 未配对不是「设备不可达」：按无结果处理，不得触发上层冷却。
+      expect(url, isNull);
+    });
+
+    test(
+        'dictionary lookup keeps returning null when all candidates are '
+        'unreachable (dictionary path unchanged)', () async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = await _repo(
+        db: db,
+        urls: const <HibikiClientUrl>[
+          HibikiClientUrl(url: 'http://dead:8765'),
+        ],
+      );
+      final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+        repo: repo,
+        httpClient: MockClient((http.Request request) async {
+          throw const SocketException('Connection refused');
+        }),
+      );
+
+      final DictionarySearchResult? result = await client.searchDictionary(
+        term: '猫',
+        wildcards: false,
+        maximumTerms: 10,
+      );
+
+      // 只有音频路径消费不可达信号；词典查词维持「失败返回 null」零行为变化。
+      expect(result, isNull);
+    });
   });
 }

@@ -1,3 +1,4 @@
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -75,7 +76,7 @@ void main() {
         fileName: 'todo375_regression.epub',
       );
       debugPrint('[t375] imported bookKey=$bookKey');
-      container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+      container.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
       await tester.pumpAndSettle();
 
       // Start from a clean baseline so charOffset assertions are unambiguous.

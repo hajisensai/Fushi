@@ -1,3 +1,4 @@
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/creator.dart';
@@ -43,7 +44,7 @@ class SentencePickerEnhancement extends Enhancement {
     }
 
     appModel.openExampleSentenceDialog(
-      exampleSentences: appModel.targetLanguage
+      exampleSentences: JapaneseLanguage.instance
           .getSentences(sourceText)
           .map((e) => e.trim())
           .where((e) => e.isNotEmpty)
@@ -52,7 +53,7 @@ class SentencePickerEnhancement extends Enhancement {
         creatorModel.setSentenceAndCloze(
           HibikiTextSelection(
             text: selection
-                .join(appModel.targetLanguage.isSpaceDelimited ? ' ' : '')
+                .join(JapaneseLanguage.instance.isSpaceDelimited ? ' ' : '')
                 .trim(),
           ),
         );

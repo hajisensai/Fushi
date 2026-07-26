@@ -1,3 +1,4 @@
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -51,7 +52,7 @@ class MangaHibikiSource extends ReaderMediaSource {
     required WidgetRef ref,
   }) async {
     // 与 EPUB/PDF 源同点失效：关书回书架时刷新书列表与「最近阅读」recency。
-    ref.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
     ref.invalidate(bookLastReadAtProvider);
   }
 

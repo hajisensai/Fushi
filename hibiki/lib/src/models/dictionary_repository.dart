@@ -15,8 +15,12 @@ import 'package:hibiki/src/utils/misc/lru_cache.dart';
 /// subscribed to it, so the reactive base was dead theatre. AppModel pokes its
 /// own ad-hoc notifiers after mutations instead (HBK-AUDIT-065).
 class DictionaryRepository {
-  DictionaryRepository(this._db, {VoidCallback? onCacheRebuild})
-      : _onCacheRebuild = onCacheRebuild {
+  DictionaryRepository(
+    this._db, {
+    VoidCallback? onCacheRebuild,
+    bool Function()? isLowMemory,
+  })  : _onCacheRebuild = onCacheRebuild,
+        _isLowMemory = isLowMemory ?? _neverLowMemory {
     // 查词历史持久化改为 debounce 写穿后，进程退出前必须 flush pending 变更
     // （桌面点 X 快杀 / Android 退后台的保留式 flush 都走这条注册表）。
     _historyExitFlush =
@@ -25,14 +29,36 @@ class DictionaryRepository {
 
   final HibikiDatabase _db;
   final VoidCallback? _onCacheRebuild;
+
+  /// 低内存模式信号（读 pref，惰性求值：主进程构造发生在 prefs 加载之前，
+  /// 只能在每次缓存写入时现查）。未接线（旧调用点/测试）时视为非低内存。
+  final bool Function() _isLowMemory;
   late final ExitFlushCallback _historyExitFlush;
+
+  static bool _neverLowMemory() => false;
+
+  /// 查词缓存的估算字节上限（BUG 背景：单条 DictionarySearchResult 含
+  /// popupJson 实测 54-231KB，纯条数 2000 封顶可涨到几百 MB 常驻）。条数
+  /// 2000 保留作兜底；低内存模式收紧到 8MB，并在写入时随开关动态生效。
+  static const int searchCacheMaxBytes = 32 << 20; // 32 MB
+  static const int searchCacheMaxBytesLowMemory = 8 << 20; // 8 MB
+  static const int ffiLookupCacheMaxBytes = 32 << 20; // 32 MB
+  static const int ffiLookupCacheMaxBytesLowMemory = 8 << 20; // 8 MB
 
   List<Dictionary> _dictionariesCache = [];
   final List<DictionarySearchResult> _dictionaryHistoryResults = [];
   final LruCache<String, DictionarySearchResult> _dictionarySearchCache =
-      LruCache<String, DictionarySearchResult>(2000);
+      LruCache<String, DictionarySearchResult>(
+    2000,
+    maxBytes: searchCacheMaxBytes,
+    sizeOf: estimateDictionarySearchResultBytes,
+  );
   final LruCache<String, List<HoshiLookupResult>> _ffiLookupCache =
-      LruCache<String, List<HoshiLookupResult>>(2000);
+      LruCache<String, List<HoshiLookupResult>>(
+    2000,
+    maxBytes: ffiLookupCacheMaxBytes,
+    sizeOf: estimateHoshiLookupResultsBytes,
+  );
 
   // ── getters ──────────────────────────────────────────────────────────
 
@@ -235,6 +261,10 @@ class DictionaryRepository {
       _dictionarySearchCache[searchTerm];
 
   void cacheSearchResult(String searchTerm, DictionarySearchResult result) {
+    // 低内存开关可在运行期翻转（AppModel.setLowMemoryMode），每次写入前
+    // 现查并应用上限：调小会立即淘汰到预算内，翻回则恢复大上限。
+    _dictionarySearchCache.maxBytes =
+        _isLowMemory() ? searchCacheMaxBytesLowMemory : searchCacheMaxBytes;
     _dictionarySearchCache[searchTerm] = result;
   }
 
@@ -242,6 +272,9 @@ class DictionaryRepository {
       _ffiLookupCache[searchTerm];
 
   void cacheFfiLookup(String searchTerm, List<HoshiLookupResult> results) {
+    _ffiLookupCache.maxBytes = _isLowMemory()
+        ? ffiLookupCacheMaxBytesLowMemory
+        : ffiLookupCacheMaxBytes;
     _ffiLookupCache[searchTerm] = results;
   }
 
@@ -347,4 +380,79 @@ class DictionaryRepository {
     _dictionarySearchCache.clear();
     _ffiLookupCache.clear();
   }
+}
+
+// ── cache size estimation (top-level, unit-testable) ───────────────────
+//
+// 只服务 LruCache 的字节封顶决策，不追求精确 shallow-size：Dart String 为
+// UTF-16，每字符按 2 字节计；每个对象/列表再加固定开销。宁可高估。
+
+/// 每个 Dart 对象/列表头 + 字段引用的粗估固定开销（字节）。
+const int _kObjectOverheadBytes = 64;
+
+/// 粗估一条 [DictionarySearchResult] 的常驻字节数。大头是 [popupJson]
+/// （实测 54-231KB）与各 entry 的 meaning JSON。
+int estimateDictionarySearchResultBytes(DictionarySearchResult result) {
+  int chars = result.searchTerm.length + (result.popupJson?.length ?? 0);
+  int overhead = _kObjectOverheadBytes;
+  for (final DictionaryEntry entry in result.entries) {
+    chars += entry.dictionaryName.length +
+        entry.word.length +
+        entry.reading.length +
+        entry.meaning.length +
+        entry.extra.length;
+    overhead += _kObjectOverheadBytes;
+  }
+  for (final HoshiKanjiResult kanji in result.kanjiResults) {
+    chars += kanji.character.length +
+        kanji.onyomi.length +
+        kanji.kunyomi.length +
+        kanji.radical.length +
+        kanji.dictName.length;
+    for (final String meaning in kanji.meanings) {
+      chars += meaning.length;
+    }
+    overhead += _kObjectOverheadBytes;
+  }
+  return chars * 2 + overhead;
+}
+
+/// 粗估一次 FFI lookup 结果列表（[HoshiLookupResult]，已 marshal 成 Dart
+/// 对象）的常驻字节数：把所有可得字符串长度按 UTF-16 累加 + 对象开销。
+int estimateHoshiLookupResultsBytes(List<HoshiLookupResult> results) {
+  int chars = 0;
+  int overhead = _kObjectOverheadBytes; // 外层列表本身。
+  for (final HoshiLookupResult result in results) {
+    overhead += _kObjectOverheadBytes;
+    chars += result.matched.length + result.deinflected.length;
+    for (final HoshiTransformGroup group in result.trace) {
+      overhead += _kObjectOverheadBytes;
+      chars += group.name.length + group.description.length;
+    }
+    final HoshiTermResult term = result.term;
+    chars += term.expression.length + term.reading.length + term.rules.length;
+    for (final HoshiGlossaryEntry glossary in term.glossaries) {
+      overhead += _kObjectOverheadBytes;
+      chars += glossary.dictName.length +
+          glossary.glossary.length +
+          glossary.definitionTags.length +
+          glossary.termTags.length;
+    }
+    for (final HoshiFrequencyEntry freq in term.frequencies) {
+      overhead += _kObjectOverheadBytes;
+      chars += freq.dictName.length;
+      for (final HoshiFrequency f in freq.frequencies) {
+        overhead += _kObjectOverheadBytes;
+        chars += f.displayValue.length;
+      }
+    }
+    for (final HoshiPitchEntry pitch in term.pitches) {
+      overhead += _kObjectOverheadBytes + pitch.pitchPositions.length * 8;
+      chars += pitch.dictName.length;
+      for (final String transcription in pitch.transcriptions) {
+        chars += transcription.length;
+      }
+    }
+  }
+  return chars * 2 + overhead;
 }

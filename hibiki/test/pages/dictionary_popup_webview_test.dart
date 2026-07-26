@@ -121,11 +121,7 @@ void main() {
       );
 
       // TODO-895 / BUG-712 ③: the entries / kanji / no-results flags live in the
-      // single source of truth popup_settings_injection.dart. Since BUG-712 ③ the
-      // in-app push splits it: `$entriesJs`（词条+汉字卡，每次推送必发）与
-      // `${staticChanged ? staticSettingsJs : ''}`（静态设置负载，串级比对变了才
-      // 重发），两者都必须先于 load-more vs scroll-reset 的 `$beforeRenderJs` +
-      // renderPopup()，空结果 / kanji-only 负载才能到达 renderPopup。
+      // single source of truth popup_settings_injection.dart.
       final String injection = File(
         'lib/src/pages/implementations/popup_settings_injection.dart',
       ).readAsStringSync();
@@ -143,17 +139,68 @@ void main() {
       expect(pushStart, greaterThanOrEqualTo(0));
       final String pushBody = source.substring(pushStart);
 
-      final int staticAt =
-          pushBody.indexOf(r"${staticChanged ? staticSettingsJs : ''}");
-      final int entriesJsAt = pushBody.indexOf(r'$entriesJs');
-      final int beforeRenderAt = pushBody.indexOf(r'$beforeRenderJs');
+      // BUG-712 ③ / BUG-717 ③：in-app 推送把负载分成「每次必发」与「变了才发」两
+      // 类。这里钉的是**契约语义**而不是某一版的模板文本——BUG-717 ③ 已把三元条件
+      // 从模板插值（`\${staticChanged ? staticSettingsJs : ''}`）上提到赋值处
+      // （`\$staticSettingsJs` + 条件在 staticSettingsJs 的定义里），钉字面量的守卫
+      // 只会随重构假红。真正不能变的两件事：
+      //   (a) 静态设置负载受「本次产物 revision != 上次已发 revision」门控，未变时
+      //       负载为空串（不重发 MB 级串），且门控命中后必须推进已发 revision；
+      //   (b) 注入顺序 static → in-app extras → entries → beforeRender(+renderPopup)，
+      //       空结果 / kanji-only 负载才能到达 renderPopup。
+
+      // (a) 条件语义：判据是 revision 比较，不是别的东西。
+      expect(
+        pushBody,
+        matches(RegExp(
+          r'final\s+bool\s+staticChanged\s*=\s*'
+          r'staticSettings\.revision\s*!=\s*_lastSentStaticRevision\s*;',
+        )),
+        reason: '静态段是否重发只能由产物 revision 与「上次已发 revision」的比较决定'
+            '（BUG-717 ③ 用整数比较取代了 MB 级全串比对）',
+      );
+      // 门控命中后必须推进已发 revision，否则每次推送都重发 = 去重失效。
+      expect(
+        pushBody,
+        matches(RegExp(
+          r'if\s*\(\s*staticChanged\s*\)\s*\{\s*'
+          r'_lastSentStaticRevision\s*=\s*staticSettings\.revision\s*;',
+        )),
+        reason: '只有真发出去时才推进 _lastSentStaticRevision——'
+            '无条件推进会让下一次真变更被静默吞掉',
+      );
+      // 未变时负载必须是空串（两种等价写法都放行）。
+      expect(
+        pushBody,
+        matches(RegExp(
+          r'final\s+String\s+staticSettingsJs\s*=\s*(?:'
+          r"staticChanged\s*\?\s*staticSettings\.combined\s*:\s*''"
+          r"|!staticChanged\s*\?\s*''\s*:\s*staticSettings\.combined"
+          r')\s*;',
+        )),
+        reason: '静态段未变时注入串必须为空——把 staticSettings.combined 无条件塞进'
+            '推送就等于回退到「每次查词重发整段设置」',
+      );
+
+      // (b) 注入顺序：只看真正下发的那段模板，避免被声明顺序蒙混。
+      final int evalAt =
+          pushBody.indexOf('_controller!.evaluateJavascript(source:');
+      expect(evalAt, greaterThanOrEqualTo(0));
+      final String evalTemplate = pushBody.substring(evalAt);
+      final int staticAt = evalTemplate.indexOf(r'$staticSettingsJs');
+      final int extrasAt = evalTemplate.indexOf(r'$inAppExtrasJs');
+      final int entriesJsAt = evalTemplate.indexOf(r'$entriesJs');
+      final int beforeRenderAt = evalTemplate.indexOf(r'$beforeRenderJs');
       expect(staticAt, greaterThanOrEqualTo(0),
           reason:
-              'the static settings payload must be emitted into the WebView '
-              'push whenever its content changed (theme/settings/dictionaries)');
-      expect(entriesJsAt, greaterThan(staticAt),
+              'the (conditional) static settings payload must be emitted into '
+              'the WebView push');
+      expect(extrasAt, greaterThan(staticAt),
+          reason: 'BUG-717 ③ 的 in-app 固定块（重置钩子 / 句子上下文 i18n）跟在静态'
+              '段之后，同属「变了才发」的一半');
+      expect(entriesJsAt, greaterThan(extrasAt),
           reason: 'the entries/kanji/no-results payload must be emitted into '
-              'EVERY WebView push, after the (conditional) static payload');
+              'EVERY WebView push, after the (conditional) static payloads');
       expect(beforeRenderAt, greaterThan(entriesJsAt),
           reason: 'both payloads must precede the load-more / scroll-reset '
               'beforeRenderJs so empty and kanji-only payloads reach '

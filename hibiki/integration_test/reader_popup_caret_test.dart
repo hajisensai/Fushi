@@ -1,3 +1,4 @@
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -343,7 +344,7 @@ Future<String> _seedTestBook(WidgetTester tester, AppModel appModel) async {
   final ProviderContainer container = ProviderScope.containerOf(
     tester.element(find.byType(MaterialApp).first),
   );
-  container.invalidate(hibikiBooksProvider(appModel.targetLanguage));
+  container.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
   await tester.pumpAndSettle();
   return bookKey;
 }

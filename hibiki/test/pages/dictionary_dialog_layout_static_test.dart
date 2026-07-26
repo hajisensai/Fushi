@@ -349,8 +349,8 @@ void main() {
     expect(btnSource, contains('setState(() {})'));
 
     // ③ 图标随状态切换，状态可一览。
-    expect(
-        btnSource, contains('dictionary.isCollapsed(appModel.targetLanguage)'));
+    expect(btnSource,
+        contains('dictionary.isCollapsed(JapaneseLanguage.instance)'));
     expect(btnSource, contains('Icons.unfold_more'));
     expect(btnSource, contains('Icons.unfold_less'));
     expect(btnSource, contains('t.options_expand'));

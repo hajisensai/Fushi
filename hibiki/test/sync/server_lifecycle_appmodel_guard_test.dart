@@ -69,7 +69,7 @@ void main() {
           src.indexOf('removeLocalAudioEntry:', factory);
       expect(removeLocalAudio, greaterThan(factory));
       final int languageArg = src.indexOf(
-        'videoSubtitleLangCode: targetLanguage.languageCode',
+        'videoSubtitleLangCode: JapaneseLanguage.instance.languageCode',
         factory,
       );
       expect(languageArg, greaterThan(factory),

@@ -128,7 +128,7 @@ void main() {
           .hasMatch(primaryMaterialAppSource),
       isFalse,
       reason:
-          'changing MaterialApp to locale: appModel.targetLanguage.locale must '
+          'changing MaterialApp to locale: JapaneseLanguage.instance.locale must '
           'fail this guard',
     );
     expect(

@@ -117,7 +117,23 @@ String _themeVariablesJs({
 /// `data:` URL `@font-face` for imported files). Returns an empty string when no
 /// dictionary font is configured. Shared so the app-outside window applies the
 /// SAME font the in-app popup does.
-String dictionaryFontStyleJs(AppModel appModel) {
+String dictionaryFontStyleJs(AppModel appModel) =>
+    _dictionaryFontStyleJsMemo(appModel).js;
+
+/// BUG-717 ③：[dictionaryFontStyleJs] 最终产物的进程内 memo。
+///
+/// 导入字体走 `data:` URL 内联，最终 JS 串是 MB 级；此前每次查词都重建
+/// （join + jsonEncode 全串转义扫描 + 模板插值 = 数遍 MB 拷贝，全在 UI isolate），
+/// 而 in-app 热槽的串级比对随后把它整个丢弃。memo 键 =
+/// [DictionaryFontCss.fontListFingerprint]（启用条目的 (name, path, mtime, size)
+/// 指纹 + 白名单目录，与 build 内部 data:URL 缓存同键同失效语义）：换字体 /
+/// 停启用 / 文件原地覆盖 / 导入换路径 / 目录变化都会换键重建；命中时返回同一
+/// 实例，零拷贝。瞬时读盘失败（[DictionaryFontCss.inlineFailureCount] 变化）的
+/// 降级产物不进 memo，下次查词自然重试。
+String? _fontStyleJsMemoKey;
+String _fontStyleJsMemoValue = '';
+
+({String cacheKey, String js}) _dictionaryFontStyleJsMemo(AppModel appModel) {
   // BUG: `ReaderHibikiSource.readerSettings` is only populated while a book /
   // reader is open. In the app-external clipboard-lookup flow (VN / game, no
   // book), it is null, so the user's configured dictionary font was never
@@ -133,19 +149,30 @@ String dictionaryFontStyleJs(AppModel appModel) {
   // app-external lookup flow the DB is always open by then, so the font applies.
   final ReaderSettings? settings = ReaderHibikiSource.readerSettings ??
       (appModel.isDatabaseReady ? ReaderSettings(appModel.database) : null);
-  if (settings == null) return '';
-  final ({String fontFamily, String fontFaces}) css = DictionaryFontCss.build(
-    settings.dictionaryFonts,
-    allowedDirectories: <String>[
-      p.join(appModel.appDirectory.path, 'custom_fonts'),
-    ],
+  if (settings == null) return const (cacheKey: 'no-settings', js: '');
+  final List<Map<String, dynamic>> fonts = settings.dictionaryFonts;
+  final List<String> allowedDirectories = <String>[
+    p.join(appModel.appDirectory.path, 'custom_fonts'),
+  ];
+  final String cacheKey = DictionaryFontCss.fontListFingerprint(
+    fonts,
+    allowedDirectories: allowedDirectories,
   );
-  if (css.fontFamily.isEmpty) return '';
-  final String styleCss = '${css.fontFaces}\n'
-      'html, body { font-family: ${css.fontFamily}, '
-      '"Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif !important; }';
-  final String styleJson = jsonEncode(styleCss);
-  return '''
+  if (cacheKey == _fontStyleJsMemoKey) {
+    return (cacheKey: cacheKey, js: _fontStyleJsMemoValue);
+  }
+  final int inlineFailuresBefore = DictionaryFontCss.inlineFailureCount;
+  final ({String fontFamily, String fontFaces}) css = DictionaryFontCss.build(
+    fonts,
+    allowedDirectories: allowedDirectories,
+  );
+  String js = '';
+  if (css.fontFamily.isNotEmpty) {
+    final String styleCss = '${css.fontFaces}\n'
+        'html, body { font-family: ${css.fontFamily}, '
+        '"Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif !important; }';
+    final String styleJson = jsonEncode(styleCss);
+    js = '''
       (function(){
         var el = document.getElementById('hoshi-dict-font');
         if (!el) {
@@ -155,6 +182,12 @@ String dictionaryFontStyleJs(AppModel appModel) {
         }
         el.textContent = $styleJson;
       })();''';
+  }
+  if (DictionaryFontCss.inlineFailureCount == inlineFailuresBefore) {
+    _fontStyleJsMemoKey = cacheKey;
+    _fontStyleJsMemoValue = js;
+  }
+  return (cacheKey: cacheKey, js: js);
 }
 
 /// TODO-867 P3c F1 / TODO-895 D6: the app-outside icon-font override. Forces the
@@ -204,14 +237,26 @@ const String _globalLookupIconFontJs = '''
 // isWindowsPlatform），触屏确无原生选区消费者，正当性成立；弹窗恰相反。
 
 /// BUG-712 ③：静态设置负载的两半（词条行在原模板里插在 head 与 tail 之间）。
-/// [combined] 供 in-app 热槽路径做串级比对去重（变了才重发）；head+entries+tail
-/// 的拼接顺序与拆分前的单模板逐字节一致，合并调用方（全局查词栈 / 剪贴板面板）
-/// 输出不变。
+/// head+entries+tail 的拼接顺序与拆分前的单模板逐字节一致，合并调用方
+/// （全局查词栈 / 剪贴板面板）输出不变。
+///
+/// BUG-717 ③：[revision] 是产物的单调版本号——[buildPopupStaticSettingsJs] 每次
+/// **真正重建**时全局 +1，memo 命中返回同一实例（同 revision）。in-app 热槽路径
+/// 用 revision 整数比较代替原来的 [combined] MB 级全串比较判断「静态段是否要
+/// 重发」，也不再常驻整串副本。
 class PopupStaticSettingsJs {
-  const PopupStaticSettingsJs({required this.head, required this.tail});
+  const PopupStaticSettingsJs({
+    required this.head,
+    required this.tail,
+    required this.revision,
+  });
 
   final String head;
   final String tail;
+
+  /// 单调递增的产物版本：同 revision ⇒ 同实例 ⇒ 同内容。只由
+  /// [buildPopupStaticSettingsJs] 分配。
+  final int revision;
 
   String get combined => '$head$tail';
 }
@@ -299,9 +344,81 @@ String popupEntryWheelBindingsJson(
   });
 }
 
+/// BUG-717 ③：[buildPopupStaticSettingsJs] 的产物 memo（按 options 组合分槽，
+/// in-app / mobile-external / global-lookup 三类调用方互不冲刷）。命中判据是
+/// 产物的**全部输入**的廉价投影：小串直接 ==（Dart == 先走 identical 短路）、
+/// 词典样式 JSON 用 identical（[DictionaryPopupWebViewState.dictionaryStylesJson]
+/// 以 HoshiDicts.dictionaryStyles 的 map 实例身份缓存，内容变 ⇒ 新实例）、MB 级
+/// 字体串用其指纹键。任一输入变化 ⇒ 重建 + 新 revision（宁可失效过度）：
+///   - 换字体：fontCacheKey（(name,path,mtime,size) 指纹）；
+///   - 改主题（明暗/取色/eink/词典列数/覆盖底色）：themeVarsJs 小串；
+///   - 改偏好（zoom 输入/滚轮速度/绑定/音源/音量/开关/折叠隐藏名单/自定义 CSS）：
+///     各自的标量或小串；
+///   - 切语言：localeTag（head 内嵌全部 i18n 文案）；
+///   - 换词典集：stylesJson 身份 + 折叠/隐藏名单。
+class _PopupStaticSettingsMemo {
+  const _PopupStaticSettingsMemo({
+    required this.themeVarsJs,
+    required this.fontCacheKey,
+    required this.appUiScale,
+    required this.dictionaryFontSize,
+    required this.popupWheelSpeed,
+    required this.wheelBindingsJson,
+    required this.audioSourcesJson,
+    required this.lookupAudioVolume,
+    required this.localeTag,
+    required this.deduplicatePitchAccents,
+    required this.harmonicFrequency,
+    required this.showExpressionTags,
+    required this.collapseDictionaries,
+    required this.autoExpandRows,
+    required this.collapsedNames,
+    required this.hiddenNames,
+    required this.stylesJson,
+    required this.globalDictCSS,
+    required this.customDictCSSJson,
+    required this.product,
+  });
+
+  final String themeVarsJs;
+  final String fontCacheKey;
+  final double appUiScale;
+  final double dictionaryFontSize;
+  final double popupWheelSpeed;
+  final String wheelBindingsJson;
+  final String audioSourcesJson;
+  final String lookupAudioVolume;
+  final String localeTag;
+  final bool deduplicatePitchAccents;
+  final bool harmonicFrequency;
+  final bool showExpressionTags;
+  final bool collapseDictionaries;
+  final int autoExpandRows;
+  final String collapsedNames;
+  final String hiddenNames;
+  final String stylesJson;
+  final String globalDictCSS;
+  final String customDictCSSJson;
+  final PopupStaticSettingsJs product;
+}
+
+final Map<String, _PopupStaticSettingsMemo> _staticSettingsMemo =
+    <String, _PopupStaticSettingsMemo>{};
+int _staticSettingsRevision = 0;
+
+/// 测试专用：清空本文件的进程内 memo（字体注入串 + 静态设置产物），避免用例间
+/// 互相污染。revision 计数不重置（单调性是契约）。
+@visibleForTesting
+void debugResetPopupSettingsInjectionCaches() {
+  _fontStyleJsMemoKey = null;
+  _fontStyleJsMemoValue = '';
+  _staticSettingsMemo.clear();
+}
+
 /// 静态设置负载（主题变量/词典字体/图标字体覆盖/zoom/开关/名单/词典样式/自定义
-/// CSS）：只随主题、设置、词典集变化，不随查词变化。in-app 路径对 [PopupStaticSettingsJs.combined]
-/// 做串级比对，变了才随下一次推送重发。
+/// CSS）：只随主题、设置、词典集变化，不随查词变化。in-app 路径按产物
+/// [PopupStaticSettingsJs.revision] 去重，变了才随下一次推送重发（BUG-717 ③：
+/// 原先命中后仍有 4~5 遍 MB 级串拷贝/转义/比较，现在命中路径零 MB 级操作）。
 PopupStaticSettingsJs buildPopupStaticSettingsJs({
   required AppModel appModel,
   required ThemeData theme,
@@ -313,21 +430,62 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     globalLookup: options.globalLookup,
     mobileExternal: options.mobileExternal,
   );
-  final String fontStyleJs = dictionaryFontStyleJs(appModel);
+  final ({String cacheKey, String js}) fontStyle =
+      _dictionaryFontStyleJsMemo(appModel);
+  final String wheelBindingsJson = popupEntryWheelBindingsJson(
+    appModel.shortcutRegistry,
+    theme.platform,
+  );
+  final String audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
+  final String lookupAudioVolume = ReaderHibikiSource
+      .instance.lookupAudioVolumeGain
+      .clamp(0.0, 1.0)
+      .toStringAsFixed(4);
+  final String localeTag = LocaleSettings.currentLocale.languageTag;
+
+  final String stylesJson = DictionaryPopupWebViewState.dictionaryStylesJson();
+  final String collapsedNames = jsonEncode(appModel.dictionaries
+      .where((d) => d.isCollapsed(JapaneseLanguage.instance))
+      .map((d) => d.name)
+      .toList());
+  final String hiddenNames = jsonEncode(appModel.dictionaries
+      .where((d) => d.isHidden(JapaneseLanguage.instance))
+      .map((d) => d.name)
+      .toList());
+  final String globalDictCSS = appModel.globalDictCSS;
+  final String customDictCSSJson = jsonEncode(appModel.customDictCSS);
+
+  final String slotKey = '${options.globalLookup}|${options.mobileExternal}'
+      '|${options.sentenceDraftEnabled}';
+  final _PopupStaticSettingsMemo? cached = _staticSettingsMemo[slotKey];
+  if (cached != null &&
+      cached.themeVarsJs == themeVarsJs &&
+      cached.fontCacheKey == fontStyle.cacheKey &&
+      cached.appUiScale == appModel.appUiScale &&
+      cached.dictionaryFontSize == appModel.dictionaryFontSize &&
+      cached.popupWheelSpeed == appModel.popupWheelSpeed &&
+      cached.wheelBindingsJson == wheelBindingsJson &&
+      cached.audioSourcesJson == audioSourcesJson &&
+      cached.lookupAudioVolume == lookupAudioVolume &&
+      cached.localeTag == localeTag &&
+      cached.deduplicatePitchAccents == appModel.deduplicatePitchAccents &&
+      cached.harmonicFrequency == appModel.harmonicFrequency &&
+      cached.showExpressionTags == appModel.showExpressionTags &&
+      cached.collapseDictionaries == appModel.collapseDictionaries &&
+      cached.autoExpandRows == appModel.popupAutoExpandDictionaries &&
+      cached.collapsedNames == collapsedNames &&
+      cached.hiddenNames == hiddenNames &&
+      identical(cached.stylesJson, stylesJson) &&
+      cached.globalDictCSS == globalDictCSS &&
+      cached.customDictCSSJson == customDictCSSJson) {
+    return cached.product;
+  }
+
+  final String fontStyleJs = fontStyle.js;
   final double zoom = DictionaryPopupWebViewState.popupContentZoom(
     appUiScale: appModel.appUiScale,
     dictionaryFontSize: appModel.dictionaryFontSize,
   );
-
-  final String stylesJson = DictionaryPopupWebViewState.dictionaryStylesJson();
-  final String collapsedNames = jsonEncode(appModel.dictionaries
-      .where((d) => d.isCollapsed(appModel.targetLanguage))
-      .map((d) => d.name)
-      .toList());
-  final String hiddenNames = jsonEncode(appModel.dictionaries
-      .where((d) => d.isHidden(appModel.targetLanguage))
-      .map((d) => d.name)
-      .toList());
 
   final String iconFontJs = options.globalLookup ? _globalLookupIconFontJs : '';
 
@@ -349,10 +507,10 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // popupPrevEntry，默认 Alt+滚轮下/上）。popup.js 的 wheel 监听读它，命中即调
     // hoshiFocusDictionaryEntryMove 并吃掉该事件（不滚动内容）。三种 in-app 弹窗
     // 都经此 head 注入；浏览器扩展没有这条注入通道，用 popup.js 里的同款默认值。
-    window.__hoshiEntryWheelBindings = ${popupEntryWheelBindingsJson(appModel.shortcutRegistry, theme.platform)};
-    window.audioSources = ${jsonEncode(appModel.enabledAudioSources)};
+    window.__hoshiEntryWheelBindings = $wheelBindingsJson;
+    window.audioSources = $audioSourcesJson;
     window.needsAudio = true;
-    window.lookupAudioVolume = ${ReaderHibikiSource.instance.lookupAudioVolumeGain.clamp(0.0, 1.0).toStringAsFixed(4)};
+    window.lookupAudioVolume = $lookupAudioVolume;
     window.i18nNoAudioAvailable = ${jsonEncode(t.popup_no_audio_available)};
     // BUG-1064：点已制卡 ✓ 的「卡片已在 Anki 中」操作面板归属。
     // true  = 宿主自己接了 `minedCardAction` JS handler，会弹 Flutter 居中对话框
@@ -390,8 +548,35 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.hiddenDictionaryNames = $hiddenNames;
 ''';
   final String tail = '''    window.dictionaryStyles = $stylesJson;
-    window.globalDictCSS = ${jsonEncode(appModel.globalDictCSS)};
-    window.customDictCSS = ${jsonEncode(appModel.customDictCSS)};
+    window.globalDictCSS = ${jsonEncode(globalDictCSS)};
+    window.customDictCSS = $customDictCSSJson;
 ''';
-  return PopupStaticSettingsJs(head: head, tail: tail);
+  final PopupStaticSettingsJs product = PopupStaticSettingsJs(
+    head: head,
+    tail: tail,
+    revision: ++_staticSettingsRevision,
+  );
+  _staticSettingsMemo[slotKey] = _PopupStaticSettingsMemo(
+    themeVarsJs: themeVarsJs,
+    fontCacheKey: fontStyle.cacheKey,
+    appUiScale: appModel.appUiScale,
+    dictionaryFontSize: appModel.dictionaryFontSize,
+    popupWheelSpeed: appModel.popupWheelSpeed,
+    wheelBindingsJson: wheelBindingsJson,
+    audioSourcesJson: audioSourcesJson,
+    lookupAudioVolume: lookupAudioVolume,
+    localeTag: localeTag,
+    deduplicatePitchAccents: appModel.deduplicatePitchAccents,
+    harmonicFrequency: appModel.harmonicFrequency,
+    showExpressionTags: appModel.showExpressionTags,
+    collapseDictionaries: appModel.collapseDictionaries,
+    autoExpandRows: appModel.popupAutoExpandDictionaries,
+    collapsedNames: collapsedNames,
+    hiddenNames: hiddenNames,
+    stylesJson: stylesJson,
+    globalDictCSS: globalDictCSS,
+    customDictCSSJson: customDictCSSJson,
+    product: product,
+  );
+  return product;
 }

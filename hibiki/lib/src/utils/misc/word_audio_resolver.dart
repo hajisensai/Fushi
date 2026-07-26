@@ -5,6 +5,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/models/audio_source_config.dart';
+import 'package:hibiki/src/sync/hibiki_remote_lookup_client.dart'
+    show RemoteLookupUnreachableError;
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// 弱网下的连接超时上限：从 5s 放宽到 8s，减少慢握手被误判为失败（TODO-1057）。
@@ -45,6 +47,10 @@ class WordAudioResolver {
       'http://localhost:8765/localaudio/get/?term={term}&reading={reading}';
   static const String hibikiRemoteAudioUrl = 'hibiki://remote-audio';
 
+  /// hibikiRemote（互联配对）源在失败冷却表里的固定 key：配对候选是一组设备
+  /// 地址、整体成败一体，不按单个候选 host 拆分冷却。
+  static const String hibikiRemoteCooldownKey = 'hibiki-remote';
+
   final LocalAudioQuery queryLocalAudio;
   final IndexedLocalAudioQuery queryLocalAudioByDbIndex;
   final LocalAudioExtractor extractLocalAudio;
@@ -60,18 +66,12 @@ class WordAudioResolver {
       if (template == localAudioUrl) {
         final String? path = await _resolveLocal(expression, reading);
         if (path != null && path.isNotEmpty) return path;
-        final String? remote = await queryRemoteAudio?.call(
-          expression,
-          reading,
-        );
+        final String? remote = await _queryRemoteLegacy(expression, reading);
         if (remote != null && remote.isNotEmpty) return remote;
         continue;
       }
       if (template == hibikiRemoteAudioUrl) {
-        final String? remote = await queryRemoteAudio?.call(
-          expression,
-          reading,
-        );
+        final String? remote = await _queryRemoteLegacy(expression, reading);
         if (remote != null && remote.isNotEmpty) return remote;
         continue;
       }
@@ -107,10 +107,25 @@ class WordAudioResolver {
 
       switch (source.kind) {
         case AudioSourceKind.hibikiRemote:
-          final String? remote = await queryRemoteAudio?.call(
-            expression,
-            reading,
-          );
+          final RemoteAudioQuery? query = queryRemoteAudio;
+          if (query == null) continue;
+          // 与 remoteAudio 源同一套失败冷却（TODO-1057/BUG-488）：配对设备上次
+          // 全部不可达且仍在冷却窗内则直接短路——不发请求、不再记日志，也不让
+          // 死配对每次查词硬等 N 个候选 × 超时。
+          if (isRemoteSourceInCooldown(hibikiRemoteCooldownKey)) {
+            continue;
+          }
+          final String? remote;
+          try {
+            remote = await query(expression, reading);
+          } on RemoteLookupUnreachableError {
+            // 传输层确认全部候选不可达（AppModel 已记过一次日志）：计入冷却并
+            // 跳到下一源；「可达但无音频」返回 null，不走这里。
+            _markRemoteSourceFailed(hibikiRemoteCooldownKey);
+            continue;
+          }
+          // 成功抵达（含合法「无音频」null）：清除冷却，恢复其优先级。
+          _markRemoteSourceOk(hibikiRemoteCooldownKey);
           if (remote != null && remote.isNotEmpty) return remote;
         case AudioSourceKind.localAudio:
           final int dbIndex = localDbIndex;
@@ -149,6 +164,17 @@ class WordAudioResolver {
       }
     }
     return null;
+  }
+
+  /// 传统 [resolve] 路径的远端查询：保持既有「失败即跳过」语义——配对设备不可
+  /// 达（[RemoteLookupUnreachableError]）吞成 null 继续下一源，不记冷却（冷却
+  /// 只由 [resolveConfigured] 管理，与 remoteAudio 源的既有分工一致）。
+  Future<String?> _queryRemoteLegacy(String expression, String reading) async {
+    try {
+      return await queryRemoteAudio?.call(expression, reading);
+    } on RemoteLookupUnreachableError {
+      return null;
+    }
   }
 
   Future<String?> _resolveLocal(String expression, String reading) async {

@@ -11,6 +11,7 @@
 // false 或控制器未 start 时本路由返回 false，由调用方回落各自原路由——点词永不
 // 静默丢失。
 
+import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/models/app_model.dart';
 
@@ -45,7 +46,7 @@ Future<bool> tryFloatingLyricGlobalLookup({
   final String searchTerm = floatingLyricSearchTerm(
     text: text,
     index: index,
-    word: appModel.targetLanguage.wordFromIndex(text: text, index: index),
+    word: JapaneseLanguage.instance.wordFromIndex(text: text, index: index),
   );
   if (searchTerm.isEmpty) {
     return false;
