@@ -332,6 +332,14 @@ class GalHookSessionController extends ChangeNotifier {
     // 因此台词到达后先延后这么久再冻结，让本句语音真的进环。默认 4s 覆盖绝大多数单句
     // 语音；文本仍立刻上屏，只有音频后补。
     Duration loopbackFreezeDelay = const Duration(milliseconds: 4000),
+    // BUG-1109：引擎 PCM 的整句拼接窗口在 native 是前向的（`[ts-200, ts+6000]`），
+    // 但台词一到就读，窗口的前向部分还是空的——只能拼到这句语音**已提交给混音器**的
+    // 开头。因此按这个间隔重取，把更长的结果写回缓存（见 [_settleLineUtterance]）。
+    Duration utteranceSettleInterval = const Duration(milliseconds: 250),
+    // 收敛上限：与 native 拼接窗口的前向长度（ts+6000）对齐，超过就不可能再拼到新段。
+    // 也是收敛的**唯一**时长判据：缓存单调变长，「连续 N 轮没变长」只会被句中的长停顿
+    // 骗成早收敛，删掉它比调参更正确（收敛提前收手只靠下一句到达 / 会话与用户裁决）。
+    Duration utteranceSettleMax = const Duration(milliseconds: 6000),
     List<Duration> engineRetryBackoff = kGalEngineRetryBackoff,
     Listenable? endpointListenable,
     List<TexthookerEndpointStatus> Function()? endpointStatusLoader,
@@ -357,6 +365,8 @@ class GalHookSessionController extends ChangeNotifier {
         _windowRebindInterval = windowRebindInterval,
         _trackRefreshInterval = trackRefreshInterval,
         _loopbackFreezeDelay = loopbackFreezeDelay,
+        _utteranceSettleInterval = utteranceSettleInterval,
+        _utteranceSettleMax = utteranceSettleMax,
         _engineRetryBackoff = engineRetryBackoff,
         _endpointListenable =
             endpointListenable ?? TexthookerWsClientManager.instance,
@@ -405,6 +415,8 @@ class GalHookSessionController extends ChangeNotifier {
   final Duration _windowRebindInterval;
   final Duration _trackRefreshInterval;
   final Duration _loopbackFreezeDelay;
+  final Duration _utteranceSettleInterval;
+  final Duration _utteranceSettleMax;
   final List<Duration> _engineRetryBackoff;
   final Listenable _endpointListenable;
   final List<TexthookerEndpointStatus> Function() _endpointStatusLoader;
@@ -1208,7 +1220,9 @@ class GalHookSessionController extends ChangeNotifier {
     final String? resourceId =
         _isUserAdjudicated(lineId) ? null : _resourceIdForLine(lineId);
     if (engine != null && resourceId != null) {
-      final String? path = engine.pairedVoiceFilePathForResourceId(resourceId);
+      // BUG-1109：hook 可能还在写这个原件，直接播会听到被截断的半句。
+      final String? path =
+          await engine.settledPairedVoiceFilePathForResourceId(resourceId);
       if (path != null) {
         return GalTrackPreview(filePath: path, durationMs: 0);
       }
@@ -2679,29 +2693,144 @@ class GalHookSessionController extends ChangeNotifier {
     required GalHookedLine line,
     required bool resourceReady,
   }) {
-    unawaited(_audioQueue.enqueue<bool>(
-      () async {
-        await _attachLineAudio(
+    unawaited(() async {
+      await _audioQueue.enqueue<bool>(
+        () async {
+          await _attachLineAudio(
+            engine: engine,
+            entry: entry,
+            line: line,
+            resourceReady: resourceReady,
+          );
+          return true;
+        },
+        buildFailure: (Object error, StackTrace stack) => false,
+        onError: (Object error, StackTrace stack) => _record(
+          GalHookEventSeverity.error,
+          'match',
+          'audio.line_attach_exception',
+          'Line audio attach job failed',
+          details: <String, Object?>{
+            'lineId': entry.id,
+            'error': '$error',
+          },
+        ),
+      );
+      // BUG-1109：首取只拿到这句语音的开头，剩下的段还没进环。收敛必须在队列**之外**
+      // 等待（队列里 sleep 会堵住后续台词抓取和制卡），只有单次 grab 入队。
+      try {
+        await _settleLineUtterance(
           engine: engine,
           entry: entry,
           line: line,
           resourceReady: resourceReady,
         );
-        return true;
-      },
-      buildFailure: (Object error, StackTrace stack) => false,
-      onError: (Object error, StackTrace stack) => _record(
-        GalHookEventSeverity.error,
-        'match',
-        'audio.line_attach_exception',
-        'Line audio attach job failed',
-        details: <String, Object?>{
-          'lineId': entry.id,
-          'error': '$error',
-        },
-      ),
-    ));
+      } catch (error) {
+        _record(
+          GalHookEventSeverity.error,
+          'match',
+          'audio.utterance_settle_exception',
+          'Utterance settle loop failed',
+          details: <String, Object?>{
+            'lineId': entry.id,
+            'error': '$error',
+          },
+        );
+      }
+    }());
   }
+
+  /// 引擎 PCM 逐句语音的**增长收敛**（BUG-1109）。
+  ///
+  /// native `VoiceHookReader::GrabUtterance` 的拼接窗口是 `[ts-200, ts+6000]`
+  /// （`windows/runner/voice_hook_reader.cpp`）——**前向 6 秒**是有意设计，等的就是这句
+  /// 语音后续的段。但文本轮询 80ms 一跳，台词一到就读时窗口的前向部分还是空的，只能拼到
+  /// 游戏**当时已经提交给混音器**的那一小段。整段一次性提交的引擎看不出问题；分块流式提交
+  /// 的引擎必然缺尾巴。而 [_lineVoiceCache] 先到先得、制卡只读缓存，于是这句语音**永远**
+  /// 停在被截断的版本，隔多久制卡都一样。
+  ///
+  /// 修法与 [_scheduleLoopbackFreeze] 同纪律（前向等待、等待在队列外）：按
+  /// [_utteranceSettleInterval] 重取，每轮把**更长**的结果写回缓存——制卡随时都能取到
+  /// 当前最完整的一段，不需要额外的收束通道。收敛只终止于两者之一：
+  /// - [_canSettleLine] 不再成立（下一句到达 / 会话或音源换走 / 用户裁决 / 资源升格）；
+  /// - 到 [_utteranceSettleMax]（越过 native 窗口，不可能再有新段）。
+  ///
+  /// 刻意**没有**「连续 N 轮没变长就算播完」：缓存单调变长，句中一个 >2 轮的停顿
+  /// （换气、演出停顿）就会把收敛骗停在半句上，而多跑到上限的代价只是几次 grab。
+  Future<void> _settleLineUtterance({
+    required EngineHookGalAudioSource engine,
+    required TexthookerLineEntry entry,
+    required GalHookedLine line,
+    required bool resourceReady,
+  }) async {
+    // 资源语音（原始 OGG/WAV）走的是文件链，与 PCM 环无关；Loopback 会话有自己的
+    // 延迟冻结。只有「本会话确实在用这个 engine 的 PCM」时才需要收敛。
+    if (resourceReady || !identical(_audioSource, engine)) {
+      return;
+    }
+    int bestBytes = _lineVoiceCache[entry.id]?.pcm.length ?? 0;
+    final Stopwatch elapsed = Stopwatch()..start();
+    while (elapsed.elapsed < _utteranceSettleMax) {
+      if (!_canSettleLine(engine: engine, entry: entry, line: line)) {
+        return;
+      }
+      await Future<void>.delayed(_utteranceSettleInterval);
+      // 判据必须在**每个** await 之后复查：只在 delay 之前查一次时，下一句在 delay
+      // 期间到达仍会多抓一次，把下一句的段拼进上一句（BUG-1109 审查实测）。
+      if (!_canSettleLine(engine: engine, entry: entry, line: line)) {
+        return;
+      }
+      final GalAudioSlice? next = await _audioQueue.enqueue<GalAudioSlice?>(
+        () => engine.grabUtterance(line.timestampMs),
+        buildFailure: (Object error, StackTrace stack) => null,
+      );
+      if (next == null || next.isEmpty || next.pcm.length <= bestBytes) {
+        continue;
+      }
+      // grab 期间也可能夹一次 stop / 补录 / 选轨 / 资源升格。
+      if (!_canSettleLine(engine: engine, entry: entry, line: line)) {
+        return;
+      }
+      bestBytes = next.pcm.length;
+      _lineVoiceCache[entry.id] = next;
+      _trimCache(_lineVoiceCache);
+      _textService.updateLineAudio(
+        entry.id,
+        status: TexthookerLineAudioStatus.matched,
+        backend: 'engine_pcm',
+        durationMs: (next.pcm.length * 1000) ~/ next.format.byteRate,
+      );
+    }
+  }
+
+  /// 收敛循环每次 await 之后的存活判据（BUG-1109）。任一不成立就必须收手——收敛是
+  /// 「best-effort 补齐」，绝不能反过来盖掉旧会话、用户裁决或更权威的音源。
+  ///
+  /// 判据都要**每轮**复查，不能只在进入循环前查一次：循环里的每个 await 都可能夹进
+  /// 一次下一句到达、一次补录、一次延迟资源升格。
+  bool _canSettleLine({
+    required EngineHookGalAudioSource engine,
+    required TexthookerLineEntry entry,
+    required GalHookedLine line,
+  }) =>
+      engine == _engineSource &&
+      identical(_audioSource, engine) &&
+      isLineInCurrentSession(entry) &&
+      // 下一句台词已经到了 = 这句语音要么播完、要么被玩家跳过。再等下去，下一句的段
+      // 会落进同一个 `[ts-200, ts+6000]` 窗口被拼进上一句。
+      _lastTextSeq <= line.seq &&
+      // 补录窗口开着 = 用户正在为某行重录，此刻这行的状态由用户裁决拥有。窗口期内
+      // `_manualRecaptureLines` 还没写（只有 [finishLineRecapture] 才 add），所以
+      // `_isUserAdjudicated` 兜不住这一段，必须与 [_promoteLateEnginePcm] 的
+      // `_recapturingLineId != null` 守卫对称显式挡掉，否则收敛会把「录音中」刷成
+      // matched/engine_pcm。
+      _recapturingLineId == null &&
+      !_isUserAdjudicated(entry.id) &&
+      // 这行已被延迟资源匹配升格成 game_resource（已配到原件，或正等着配）：原件永远
+      // 优先于 PCM 拼接，收敛绝不能把 backend 改回 engine_pcm。与 [_cacheLoopbackForLine]
+      // 里的同名判据同纪律。
+      _resourceIdForLine(entry.id) == null &&
+      !_pendingResourceMatches.containsKey(entry.id);
 
   /// 逐行语音抓取（原先内联在 [_pollHookedText] 循环里的三条降级分支，语义不变）：
   /// 引擎 PCM 整句 → 时间窗碎片 → loopback 环冻结 → 明确 missing。
@@ -2871,8 +3000,9 @@ class GalHookSessionController extends ChangeNotifier {
   /// `grabRecent(backMs)` 的语义是**当前时刻往前** backMs，纯后向、零前向等待
   /// （契约见 [GalAudioSource.grabRecent]）。galgame 的时序恒为「文本先绘制 → 语音随后
   /// 播放」，所以在台词到达那一刻抓，窗口里装的全是**上一句** + BGM，一个本句采样都没有
-  /// ——错位一句是旧实现的设计必然，不是抖动。引擎 PCM 路径早就用的是前向窗口
-  /// （`grabUtterance`，native `[ts-200, ts+6000]`），Loopback 必须对称：记下 t0，等到
+  /// ——错位一句是旧实现的设计必然，不是抖动。引擎 PCM 路径的 native 窗口本就是前向的
+  /// （`grabUtterance`，`[ts-200, ts+6000]`；但**调用时刻**同样太早，见 BUG-1109 的
+  /// [_settleLineUtterance]），Loopback 必须对称：记下 t0，等到
   /// t0+[_loopbackFreezeDelay] 再回取 `delay + preRoll`，等价于取 `[t0-preRoll, t0+delay]`。
   ///
   /// 等待刻意放在串行音频队列**之外**：在队列里 sleep 会把后续台词的抓取和制卡一起堵住。
