@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/media/torrent/download_network_proxy.dart';
 
-/// 用户报：挂着代理搜 Nyaa，「发现」页只出
+/// BUG-1141：用户报：挂着代理搜 Nyaa，「发现」页只出
 /// `TimeoutException after 0:00:20.000000: Future not completed` + 「请点重试」。
 ///
 /// 根因不是网络断，是发现链路（AniList / Nyaa / Jimaku）三家都在墙外，`auto`
@@ -18,7 +18,7 @@ import 'package:hibiki/src/media/torrent/download_network_proxy.dart';
 ///   B. 两个消费方不得再出现裸 `Duration(seconds: N)` 形式的 `.timeout(...)`，
 ///      否则常量就被架空了。
 void main() {
-  group('下载发现链路超时（代理下 20s 太短）', () {
+  group('BUG-1141 下载发现链路超时（代理下 20s 太短）', () {
     test('A. 共享常量至少 60s，且是唯一真相源', () {
       expect(
         kDownloadDiscoveryTimeout.inSeconds,

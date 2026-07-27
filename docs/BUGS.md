@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1139](bugs/BUG-1139-download-discovery-timeout-too-short.md) | ✅ | ✅ | 代理下「发现」搜索 20s 超时太短，请求本可成功却被掐断 |
+| [BUG-1141](bugs/BUG-1141-download-discovery-timeout-too-short.md) | ✅ | ✅ | 代理下「发现」搜索 20s 超时太短，请求本可成功却被掐断 |
 | [BUG-1137](bugs/BUG-1137-gal-mining-video-tag.md) | ✅ | ✅ | gal 制卡分类标签误标 video：来源枚举缺 game 且默认值静默兜底 |
 | [BUG-1136](bugs/BUG-1136-ios-reader-scroll-lookup.md) | ✅ | ✅ | iPhone 阅读滑动被误判为点词查词 |
 | [BUG-1135](bugs/BUG-1135-gal-clipnear-bypasses-track-exclusion.md) | ✅ | ✅ | gal 制卡兜底 grabClipNear 绕过选轨/排除集——排除的 BGM 轨会从兜底混回卡片 |
