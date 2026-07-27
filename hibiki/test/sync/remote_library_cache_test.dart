@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/remote_library_cache.dart';
 
-/// BUG-1175 根因守卫：远端库列表的 TTL 缓存 + in-flight 去重 + 显式失效。
+/// BUG-1180 根因守卫：远端库列表的 TTL 缓存 + in-flight 去重 + 显式失效。
 ///
 /// 症状——每切一次页面（书架 / 视频 / 首页），互联对端的条目清单就被完整重拉一遍。
 /// 真根因：远端列表**没有任何缓存层**（只有封面图有磁盘缓存），而书架与视频页为了让

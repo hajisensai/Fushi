@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// 远端库列表（互联对端 / 云盘）的统一读取入口：TTL 缓存 + in-flight 去重 + 显式失效。
 ///
-/// **为什么需要它（BUG-1175）**——远端条目列表此前在每个消费方裸调 `client.listX()`：
+/// **为什么需要它（BUG-1180）**——远端条目列表此前在每个消费方裸调 `client.listX()`：
 /// 书架（`reader_history/remote.part.dart`）、漫画书架（同一 State 类的另一实例）、
 /// 视频页（`home_video_page.dart`）、首页 dashboard（`home_dashboard_page.dart`）各一份。
 /// 而书架/视频页为了让对端新增内容可见（BUG-992/994）各注册了「切回本 tab 就重拉」的

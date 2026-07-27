@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1143 条。点号进各自文件。
+> 共 1147 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1183](bugs/BUG-1183-restore-auth-invalidates-session.md) | ✅ | ✅ | restoreAuth 无条件作废已解析地址，每次切页面重跑全候选探测 |
+| [BUG-1182](bugs/BUG-1182-show-remote-entries-gate-too-late.md) | ✅ | ✅ | 关闭「显示远端条目」仍全额拉取远端列表后丢弃 |
+| [BUG-1181](bugs/BUG-1181-manga-shelf-fetches-remote-books.md) | ✅ | ✅ | 漫画书架实例误拉远端书，切到书架触发双倍网络 |
+| [BUG-1180](bugs/BUG-1180-interconnect-remote-list-no-cache.md) | ✅ | ✅ | 互联远端库列表零缓存，每次切页面全额重拉 |
 | [BUG-1179](bugs/BUG-1179-updater-diagnostics-before-validation.md) | ✅ | ✅ | Windows 更新器在校验安装包前就全机枚举进程，坏包也要等十几秒 |
 | [BUG-1178](bugs/BUG-1178-manifest-race-test-cascade.md) | ✅ | ✅ | update-manifest 竞态测试超时会级联带红兄弟用例 |
 | [BUG-1177](bugs/BUG-1177-ankimobile-end-task-timing.md) | ✅ | ✅ | AnkiMobile 制卡测试用 10ms 定时假设等真实 I/O，36% 概率红 |

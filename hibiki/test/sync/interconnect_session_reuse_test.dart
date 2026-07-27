@@ -5,7 +5,7 @@ import 'package:hibiki/src/sync/sync_backend.dart' show SyncBackendError;
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
-/// BUG-1178 根因守卫：`restoreAuth` 不得无条件作废已解析的地址。
+/// BUG-1183 根因守卫：`restoreAuth` 不得无条件作废已解析的地址。
 ///
 /// 症状——每切一次页面，互联请求都要先把全部候选地址重探测一遍才发真正的业务请求。
 /// 真根因：`_loadConfig` 末尾无条件 `_sessionResolved = false`，而 `restoreAuth` 是
@@ -44,7 +44,7 @@ void main() {
     // 模拟「切到另一个页面」——该页面的 _resolveRemoteXClient 会先 restoreAuth。
     expect(await backend.restoreAuth(repo), isTrue);
     await backend.authenticate(repo: repo);
-    expect(probes, 1, reason: 'BUG-1178：配置没变就不该把已探明可达的地址作废重探');
+    expect(probes, 1, reason: 'BUG-1183：配置没变就不该把已探明可达的地址作废重探');
 
     // 再切两次页面，仍不该重探。
     await backend.restoreAuth(repo);

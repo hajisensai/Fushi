@@ -35,11 +35,11 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
 
   /// 是否应该去问远端要书列表。
   ///
-  /// BUG-1176：漫画书架（`mangaOnly`）和书架是**同一个 State 类**的两个实例，都注册了
+  /// BUG-1181：漫画书架（`mangaOnly`）和书架是**同一个 State 类**的两个实例，都注册了
   /// [_onShellTabActivated]，且该回调判的是 `== HomeTab.books`。于是切到书架会触发两次
   /// 完整拉取，漫画那次的结果在 build 里被 `!_mangaOnly` 直接丢掉——纯浪费一整轮网络。
   ///
-  /// BUG-1177：`showRemoteEntries` 开关此前只在 build 的 `showRemote` 处生效（本文件
+  /// BUG-1182：`showRemoteEntries` 开关此前只在 build 的 `showRemote` 处生效（本文件
   /// 上游 `reader_hibiki_history_page.dart` 的 remote 门控），拉取照发不误。关掉「显示
   /// 远端条目」的用户仍然全额付网络代价，只是结果被丢弃。门控前移到取数之前。
   /// 用 `appModelNoUpdate`（不 watch）：本门控只读 prefsRepo，与 AppModel 的通知无关；
@@ -57,7 +57,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     _remoteBookClient = client;
     if (client == null) return null;
     try {
-      // BUG-1175：经共享缓存取清单——切回书架 tab（[_onShellTabActivated]）不再必然
+      // BUG-1180：经共享缓存取清单——切回书架 tab（[_onShellTabActivated]）不再必然
       // 打一轮网络，TTL 内直接复用；首页 dashboard 刚拉过的同一份列表也在这里命中。
       // 缓存只包住「问对端要清单」这一步，下面的本地库查询与去重仍每次照跑，所以本地
       // 新增/删除的书立即反映在混排网格里。
@@ -101,7 +101,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
 
   /// 非强制的远端书重载：切回书架 tab（BUG-992）、本地有声书列表变动等「可能只是本地
   /// 变了」的信号走这里。远端清单本身经 [RemoteLibraryCache] 的 TTL 判断是否真要联网，
-  /// 所以切页面不会再变成一轮网络往返（BUG-1175）。要**强制**穿透缓存只有一个入口：
+  /// 所以切页面不会再变成一轮网络往返（BUG-1180）。要**强制**穿透缓存只有一个入口：
   /// 用户显式下拉刷新（[_pullToRefreshBooks]）。
   void _refreshRemoteBooks() {
     _rebuild(() {
@@ -134,7 +134,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     ref.invalidate(srtBooksProvider);
     _batchAudiobookInfoFuture = null;
     _batchAudiobookInfoResult = const <String, _AudiobookInfo>{};
-    // 显式下拉 = 用户要最新的：强制穿透 [RemoteLibraryCache] 的 TTL（BUG-1175）。
+    // 显式下拉 = 用户要最新的：强制穿透 [RemoteLibraryCache] 的 TTL（BUG-1180）。
     final Future<_RemoteBookState?> future = _loadRemoteBooks(
       forceRefresh: true,
     );
@@ -654,7 +654,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     }
     List<RemoteAudiobookInfo> all;
     try {
-      // BUG-1175：与书清单同缓存策略——切回 tab 不再重打这一枪。
+      // BUG-1180：与书清单同缓存策略——切回 tab 不再重打这一枪。
       all = await _remoteCache.read(
         key: RemoteLibraryCacheKeys.audiobooks,
         forceRefresh: forceRefresh,

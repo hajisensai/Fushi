@@ -528,7 +528,7 @@ class _HomeDashboardPageState
     final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
     if (!await backend.restoreAuth(syncRepo)) return;
     try {
-      // BUG-1175：首页不在 `_keepAliveTabs` 里，每次切回首页整页重建 → 这三个请求
+      // BUG-1180：首页不在 `_keepAliveTabs` 里，每次切回首页整页重建 → 这三个请求
       // 原本每次都重发；`_scheduleReload` 的 400ms 防抖重载还会再走一遍。改为
       // ① 过共享 TTL 缓存（书/视频清单与书架、视频页同槽，谁先拉到谁受益），
       // ② 三个请求并行而不是串行（原本是三次完整往返首尾相接）。

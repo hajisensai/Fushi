@@ -1,4 +1,4 @@
-## BUG-1177 · 关闭「显示远端条目」仍全额拉取远端列表后丢弃
+## BUG-1182 · 关闭「显示远端条目」仍全额拉取远端列表后丢弃
 
 - **报告**：2026-07-28（用户：互联切页面重新拉取，排查时发现）
 - **真实性**：✅ 真 bug。`showRemoteEntries`
@@ -28,10 +28,10 @@
     与非 build 回调里调用会触发「initState 完成前依赖 InheritedWidget」断言。
 
 - **[x] ② 已加自动化测试** — `hibiki/test/pages/reader_remote_interconnect_test.dart`
-  的「BUG-1177: 关闭「显示远端条目」后根本不联网（而不是拉完再丢）」：
+  的「BUG-1182: 关闭「显示远端条目」后根本不联网（而不是拉完再丢）」：
   先 `setShowRemoteEntries(false)` 挂载，断言 `listRemoteBooksCalls == 0` 且占位卡不在场；
   再翻回 true，断言重新取数且占位卡出现（覆盖上面那条「翻转后不重建」的附带缺陷）。
 
-- **备注**：与 [BUG-1175](BUG-1175-interconnect-remote-list-no-cache.md) 同一轮排查发现。
+- **备注**：与 [BUG-1180](BUG-1180-interconnect-remote-list-no-cache.md) 同一轮排查发现。
   首页 dashboard 的远端拉取**未**纳入本开关——该开关的语义是「库页主网格的占位卡」，
   首页的「继续」与活动流是另一套口径，扩大范围属于行为变更，不在本轮。

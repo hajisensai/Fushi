@@ -1,4 +1,4 @@
-## BUG-1176 · 漫画书架实例误拉远端书，切到书架触发双倍网络
+## BUG-1181 · 漫画书架实例误拉远端书，切到书架触发双倍网络
 
 - **报告**：2026-07-28（用户：互联切页面重新拉取，排查时发现）
 - **真实性**：✅ 真 bug。漫画书架就是 `ReaderHibikiHistoryPage(mangaOnly: true)`
@@ -26,9 +26,9 @@
      经过漫画实例时同样不联网，不依赖调用方自觉。
 
 - **[x] ② 已加自动化测试** — `hibiki/test/pages/reader_remote_interconnect_test.dart`
-  的「BUG-1176: 漫画书架实例从不拉远端书（它根本不消费）」：以 `mangaOnly: true` 挂载，
+  的「BUG-1181: 漫画书架实例从不拉远端书（它根本不消费）」：以 `mangaOnly: true` 挂载，
   断言首帧 `listRemoteBooksCalls == 0`，再把 `homeShellTabNotifier` 切到 `HomeTab.books`
   后仍为 0。
 
-- **备注**：与 [BUG-1175](BUG-1175-interconnect-remote-list-no-cache.md) 同一轮排查发现；
+- **备注**：与 [BUG-1180](BUG-1180-interconnect-remote-list-no-cache.md) 同一轮排查发现；
   即便有了 TTL 缓存，这条也该修——漫画实例连缓存都不该去读。

@@ -152,7 +152,7 @@ class InterconnectSyncBackend extends SyncBackend
   String? _token;
   bool _sessionResolved = false;
 
-  /// 上一次 [_loadConfig] 读到的配置身份（见 [_sessionSignature]）。BUG-1178：用它
+  /// 上一次 [_loadConfig] 读到的配置身份（见 [_sessionSignature]）。BUG-1183：用它
   /// 判断 `restoreAuth` 是否真需要作废已解析的地址。null = 还没读过配置。
   String? _configSignature;
 
@@ -190,7 +190,7 @@ class InterconnectSyncBackend extends SyncBackend
         .where((HibikiClientUrl u) => u.enabled)
         .toList();
     final String? token = await repo.getHibikiClientToken();
-    // BUG-1178：这里原本无条件 `_sessionResolved = false`，而 [restoreAuth] 又是每个
+    // BUG-1183：这里原本无条件 `_sessionResolved = false`，而 [restoreAuth] 又是每个
     // 消费方（书架 / 视频页 / 首页 dashboard）取 client 的必经之路，且本类是**单例**。
     // 净效果：每切一次页面就把已经探明可达的地址作废一次，下一次网络操作要重跑
     // [resolveReachableHibikiCandidate] 的全候选串行探测（https 候选还要各做一次带
@@ -295,7 +295,7 @@ class InterconnectSyncBackend extends SyncBackend
     _candidates = const <HibikiClientUrl>[];
     _token = null;
     _sessionResolved = false;
-    // 登出后配置身份归零，下次 restoreAuth 必然重探测（BUG-1178）。
+    // 登出后配置身份归零，下次 restoreAuth 必然重探测（BUG-1183）。
     _configSignature = null;
     await repo.setHibikiClientUrls(const <HibikiClientUrl>[]);
     // Also wipe the legacy single-url key, else getHibikiClientUrls would
