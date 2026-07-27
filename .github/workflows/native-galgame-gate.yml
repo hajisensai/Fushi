@@ -1,0 +1,52 @@
+# galgame_hook 单一真相源守卫的 **PR 阶段** 门。
+#
+# 补的缺口：这组守卫（engine-support 生成物 / luna profile 生成物 / vendored
+# LunaHook DLL 完整性 / manifest schema / adapter 结构 / evidence 契约 /
+# workflow 契约）此前**只**挂在 voice-hook-helper.yml 上，而那个 workflow 的
+# 触发是 `workflow_dispatch` + `push: develop`。也就是说：改 engine-support.yaml、
+# adapter 骨架或 luna profile 的 PR，在合进 develop 之前从未被这些守卫检查过，
+# 红了要等 push 之后才知道 —— 那时已经进主干。
+#
+# 注意：C++ 编译与双架构 ctest **不在**本 workflow 的职责内，它们已经由
+# build-multiplatform.yml 的 windows job 在 PR 上跑（`pull_request` + paths 含
+# `native/**` -> `build_distribution.ps1 -RunTests`）。这里只补那条真正缺失的、
+# 且成本近乎为零的静态守卫链，不重复跑已有覆盖。
+#
+# 平台范围：galgame 相关一律只做 Windows 端（仓库硬规则）。本 workflow 跑在
+# ubuntu-latest 只是因为这七条守卫全是平台无关的静态校验（Python stdlib +
+# pwsh 的 Get-FileHash/ConvertFrom-Json），**不构建、不运行、不发布任何
+# 非 Windows 的 galgame 产物**，也不构成对其它平台的支持声明。
+name: native-galgame-gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['main', 'develop']
+    paths:
+      - 'native/galgame_hook/**'
+      - '.github/workflows/native-galgame-gate.yml'
+
+# 全程只读：不构建产物、不碰任何 release/tag/发布通道。
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  guards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      # 单一入口，内部 Invoke-Checked 逐条断言退出码。不加 continue-on-error：
+      # 任何一条守卫失败都必须把这个 job 打红。
+      - name: Run galgame_hook source-of-truth guards
+        shell: pwsh
+        run: ./native/galgame_hook/tools/run_guards.ps1
