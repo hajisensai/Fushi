@@ -456,7 +456,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             autofocus: true,
             minLines: 8,
             maxLines: 16,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(fontFamily: 'monospace'),
             decoration: const InputDecoration(
               hintText: '.front-vocab { color: #8ab4f8; }',
             ),
