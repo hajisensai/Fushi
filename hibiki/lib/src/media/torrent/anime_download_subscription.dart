@@ -9,6 +9,8 @@ import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
+import 'package:hibiki/src/media/torrent/download_network_proxy.dart'
+    show kDownloadDiscoveryTimeout;
 import 'package:hibiki/src/media/torrent/nyaa_client.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/video/jimaku_batch.dart';
@@ -404,7 +406,7 @@ class AnimeDownloadSubscriptionService {
             category: subscription.category,
             filter: subscription.trustedOnly ? '2' : '0',
           )
-          .timeout(const Duration(seconds: 20));
+          .timeout(kDownloadDiscoveryTimeout);
     } finally {
       client.close();
     }
@@ -433,7 +435,7 @@ class AnimeDownloadSubscriptionService {
     try {
       final List<JimakuFile> files = await jimaku
           .listFiles(subscription.jimakuEntryId!, episode: episode)
-          .timeout(const Duration(seconds: 20));
+          .timeout(kDownloadDiscoveryTimeout);
       final JimakuFile? selected = pickBestSubtitleFile(
         files,
         episode: episode,
@@ -442,7 +444,7 @@ class AnimeDownloadSubscriptionService {
       if (selected == null) return const <PlanSubtitle>[];
       final bytes = await jimaku
           .downloadFile(selected.url)
-          .timeout(const Duration(seconds: 20));
+          .timeout(kDownloadDiscoveryTimeout);
       if (bytes == null) return const <PlanSubtitle>[];
       await destination.create(recursive: true);
       final String fileName = p.basename(selected.name);

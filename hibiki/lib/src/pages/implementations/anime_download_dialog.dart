@@ -12,6 +12,8 @@ import 'package:hibiki/src/media/torrent/anime_download_matching.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
 import 'package:hibiki/src/media/torrent/anime_download_service.dart';
 import 'package:hibiki/src/media/torrent/anime_download_subscription.dart';
+import 'package:hibiki/src/media/torrent/download_network_proxy.dart'
+    show kDownloadDiscoveryTimeout;
 import 'package:hibiki/src/media/torrent/download_relocate_service.dart';
 import 'package:hibiki/src/media/torrent/nyaa_client.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
@@ -234,7 +236,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         client: await ref.read(appProvider).createDownloadHttpClient(),
       );
       final List<AniListMedia> media =
-          await anilist.searchAnime(query).timeout(const Duration(seconds: 20));
+          await anilist.searchAnime(query).timeout(kDownloadDiscoveryTimeout);
       if (!mounted) return;
       setState(() {
         _animeMatches = media;
@@ -325,7 +327,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             category: _category,
             filter: _trustedOnly ? '2' : '0',
           )
-          .timeout(const Duration(seconds: 20));
+          .timeout(kDownloadDiscoveryTimeout);
       final List<NyaaTorrent> sorted = List<NyaaTorrent>.of(results)
         ..sort(_compareTorrents);
       if (!mounted) return;
@@ -435,12 +437,12 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       // 回退逻辑收敛在 JimakuClient.searchEntries（与字幕对话框同源）。
       final List<JimakuEntry> entries = await jimaku
           .searchEntries(anilistId: anilistId, queryFallbacks: queries)
-          .timeout(const Duration(seconds: 20));
+          .timeout(kDownloadDiscoveryTimeout);
       final List<JimakuFile> files = entries.isEmpty
           ? const <JimakuFile>[]
           : await jimaku
               .listFiles(entries.first.id, episode: episode)
-              .timeout(const Duration(seconds: 20));
+              .timeout(kDownloadDiscoveryTimeout);
       // 用户可能已换番：结果只落到仍选中的那个番上。
       if (!mounted || _selectedMedia?.id != guardId) return;
       setState(() {
@@ -493,7 +495,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       );
       final List<JimakuFile> files = await jimaku
           .listFiles(entry.id, episode: _jimakuSearchEpisode)
-          .timeout(const Duration(seconds: 20));
+          .timeout(kDownloadDiscoveryTimeout);
       if (!mounted || _selectedMedia?.id != media.id) return;
       setState(() {
         _jimakuFiles = files;
