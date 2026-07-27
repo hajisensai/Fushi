@@ -1,4 +1,4 @@
-## BUG-1146 · 字幕 <rt> 注音被拼进正文，污染查词/制卡 sentence/字数统计
+## BUG-1161 · 字幕 <rt> 注音被拼进正文，污染查词/制卡 sentence/字数统计
 
 - **报告**：2026-07-27（用户：审查 galgame 注音 PR 时顺带发现的既有真 bug）
 - **真实性**：✅ 真 bug。根因 `packages/hibiki_audio/lib/src/parsers/strip_html_tags.dart:15`（修复前）——
@@ -63,6 +63,12 @@
     `RegExp(r'<[^>]+>')`，且 `markup` 恒为 null），等价于旧行为。
 
   这两条要不要并进同一口径是独立决策（需各自的真实样本），本条不夹带。
+
+  已核过、**不构成新反例**的：PR#474 带进来的 manga 多引擎 OCR（`hibiki/lib/src/ocr/`）产出的是
+  图像识别出的裸文本，全模块无 HTML 标签 / ruby 剥离逻辑（`manga_ocr_tokenizer.dart` 只做空白与
+  省略号归一），不另起一套正文口径。全仓 `RegExp(r'<[^>]+>')` 形态的标签剥离只剩上面两处
+  （YouTube）+ `hibiki_anki` 的 `previewFromFieldValue`（后者故意换成空格，见 `strip_html_tags.dart`
+  注释）。
 
 - **备注**：本条只修「注音不进正文」。**没有**把注音抬成可渲染的旁注区间——字幕渲染层
   （`SubtitleMarkup` / video 字幕绘制）目前无 ruby 绘制能力，产出无人消费的区间属于投机。

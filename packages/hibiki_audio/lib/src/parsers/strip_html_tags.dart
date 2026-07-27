@@ -4,7 +4,7 @@
 /// 注音（振假名）标注元素：`<rt>` 是读音本身，`<rp>` 是给不支持 ruby 的渲染器看的
 /// 回退括号，`<rtc>` 是读音容器。三者的**内容都不是正文**——只有 ruby base 是。
 /// 光删标签保留内容会把读音拼进正文（`<ruby>震<rt>ふる</rt></ruby>` → `震ふる`），
-/// 污染查词 / 制卡 sentence / 字数统计，故整段丢弃（BUG-1146）。
+/// 污染查词 / 制卡 sentence / 字数统计，故整段丢弃（BUG-1161）。
 ///
 /// 元素集合与 EPUB 侧 `EpubBook._removeRubyAnnotations`（`querySelectorAll('rt, rp, rtc')`
 /// 逐个 remove）相同：`rt` / `rp` / `rtc` 三者内容都丢、只留 ruby base。阅读器 JS 的

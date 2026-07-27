@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_audio/src/parsers/strip_html_tags.dart';
 
-/// BUG-1146：`stripHtmlTags` 曾经无差别「删标签留内容」，把注音（振假名）读音拼进
+/// BUG-1161：`stripHtmlTags` 曾经无差别「删标签留内容」，把注音（振假名）读音拼进
 /// 正文（`<ruby>震<rt>ふる</rt></ruby>` → `震ふる`），污染查词 / 制卡 sentence /
 /// 字数统计。元素集合与 EPUB 侧 `EpubBook._removeRubyAnnotations` 相同（`rt`/`rp`/`rtc`
 /// 丢注音、留基准）；阅读器 JS `isFurigana()` 不含 `rtc`，合法 HTML 下结果收敛（BUG-711）。

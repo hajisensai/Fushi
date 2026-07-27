@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
-/// BUG-1146 端到端护栏：注音（振假名）读音不得进入 cue 正文。
+/// BUG-1161 端到端护栏：注音（振假名）读音不得进入 cue 正文。
 ///
 /// `AudioCue.text` 是查词 / 制卡 sentence / 字数统计的唯一坐标系，`<rt>` 里的读音混进去
 /// 会让 `震ふる` 这种拼接串成为「用户看到并被制卡」的句子。三个走 `stripHtmlTags` 的
