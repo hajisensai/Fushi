@@ -16,6 +16,10 @@ typedef DictMediaByteLoader = Uint8List? Function(
 /// 读取本地文件字节（封面/音频临时文件）。默认走 `dart:io File`；文件缺失返回 null。
 typedef LocalFileByteLoader = Future<Uint8List?> Function(String path);
 
+/// BUG-1185：把「已配对主机拒绝了互联 token」上报给用户可见的通道（toast）。
+/// 注入而非直接调 UI，是为了让 repository 保持无 Flutter 依赖、可纯 Dart 单测。
+typedef RemoteMiningAuthReporter = void Function(String message);
+
 /// 「制卡到服务端」的 Anki 仓库包装：把 [mineEntry]/[isDuplicate] 经互联链路转发给已配对
 /// 主机（主机用它自己的 Anki 后端 + 字段映射/牌组落卡），其余**配置类**方法
 /// （[fetchConfiguration]/[createDeck]/[createNoteType]）委派给包装的本地仓库 [_local]，
@@ -36,15 +40,27 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     required RemoteMineSender client,
     DictMediaByteLoader? dictMediaLoader,
     LocalFileByteLoader? fileByteLoader,
+    RemoteMiningAuthReporter? onAuthRejected,
   })  : _local = local,
         _client = client,
         _dictMediaLoader = dictMediaLoader ?? _defaultDictMediaLoader,
-        _fileByteLoader = fileByteLoader ?? _defaultFileByteLoader;
+        _fileByteLoader = fileByteLoader ?? _defaultFileByteLoader,
+        _onAuthRejected = onAuthRejected;
+
+  /// 主机拒绝互联 token 时给用户看的话。制卡失败与查重失败共用同一句，
+  /// 因为它们是同一个 token 被同一台主机拒绝。
+  static const String tokenRejectedMessage =
+      'The paired device rejected the interconnect token. Re-pair the device.';
 
   final BaseAnkiRepository _local;
   final RemoteMineSender _client;
   final DictMediaByteLoader _dictMediaLoader;
   final LocalFileByteLoader _fileByteLoader;
+  final RemoteMiningAuthReporter? _onAuthRejected;
+
+  /// 同一个 repository 实例只报一次「token 被拒」——查重是每次查词都跑的高频路径，
+  /// 逐次弹 toast 会刷屏。provider 在开关/配对变化时会重建实例，届时自然重新提示。
+  bool _authRejectedReported = false;
 
   static Uint8List? _defaultDictMediaLoader(String dictionary, String path) =>
       HoshiDicts.instance.getMediaFile(dictionary, path);
@@ -73,7 +89,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
       return _outcomeFromResponse(json);
     } on SyncAuthError {
       return MineOutcome.failure(
-        'The paired device rejected the interconnect token. Re-pair the device.',
+        tokenRejectedMessage,
         errorCode: AnkiErrorCode.connectionUnknown,
       );
     } catch (e, st) {
@@ -86,10 +102,30 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     }
   }
 
+  /// BUG-1185：远端查重。可重试失败仍 fail-soft（client 层已降级为
+  /// [RemoteDuplicateCheck.notDuplicate]），绝不让远端抖动阻断查词。
+  ///
+  /// token 被主机拒绝时查重**根本没执行**：这不是「不重复」，是「不知道」。基类
+  /// [BaseAnkiRepository.isDuplicate] 的 `Future<bool>` 契约（一路铺到 popup.js 的
+  /// ✓/➕ 两态按钮）表达不了第三态，所以在这一层把它**报给用户**——用户至少知道
+  /// 「配对已失效、查重结果不可信」，而不是静默收到一个错误答案。返回值仍取 false
+  /// （保持 ➕ 可点）：用户真按下去时 [mineEntry] 会用同一句话明确失败，不会悄悄多出
+  /// 一张重复卡；若反过来谎报 true，用户只会以为卡已做好并就此走开。
   @override
-  Future<bool> isDuplicate(String expression, String reading) {
-    // fail-soft：客户端已在 client 层吞异常回 false，绝不让远端查重阻断查词。
-    return _client.isDuplicate(expression: expression, reading: reading);
+  Future<bool> isDuplicate(String expression, String reading) async {
+    final RemoteDuplicateCheck check =
+        await _client.isDuplicate(expression: expression, reading: reading);
+    if (check == RemoteDuplicateCheck.authRejected) {
+      _reportAuthRejectedOnce();
+      return false;
+    }
+    return check == RemoteDuplicateCheck.duplicate;
+  }
+
+  void _reportAuthRejectedOnce() {
+    if (_authRejectedReported) return;
+    _authRejectedReported = true;
+    _onAuthRejected?.call(tokenRejectedMessage);
   }
 
   Future<ForwardedMinePayload> _buildForwardedPayload({

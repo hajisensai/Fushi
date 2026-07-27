@@ -339,6 +339,12 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   return RemoteMiningAnkiRepository(
     local: local,
     client: appModel.createRemoteMiningClient(),
+    // BUG-1185：主机拒绝互联 token 时查重根本没跑成。bool 契约表达不了「不知道」，
+    // 所以在这里把它变成用户可见的失败提示，而不是让用户收到一个静默的「不重复」。
+    onAuthRejected: (String message) => HibikiToast.showMine(
+      msg: message,
+      status: MineToastStatus.failed,
+    ),
   );
 });
 
