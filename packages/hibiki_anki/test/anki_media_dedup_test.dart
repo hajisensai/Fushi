@@ -147,14 +147,38 @@ void main() {
   });
 
   group('AnkiSettings 媒体去重字段', () {
-    test('只留「上次跑过」的时刻，没有任何自动开关', () {
+    // 用户后来要求「加一个可以打开的自动处理」，所以开关存在——但**默认必须
+    // 是关的**（方案 A 的核心：Hibiki 不主动帮你省空间），而且「自动直接删除」
+    // 是独立的第二个开关，打开自动处理不等于授权自动删。
+    test('两个自动开关默认都关，时刻字段默认为空', () {
       const AnkiSettings fresh = AnkiSettings();
       expect(fresh.lastMediaDedupAtMs, isNull);
-      expect(fresh.toJson().containsKey('mediaDedupAutoEnabled'), isFalse);
+      expect(fresh.lastMediaDedupScanAtMs, isNull);
+      expect(fresh.mediaDedupAutoEnabled, isFalse);
+      expect(fresh.mediaDedupAutoDelete, isFalse);
+    });
 
-      final AnkiSettings round = AnkiSettings.fromJson(
-          fresh.copyWith(lastMediaDedupAtMs: 123).toJson());
+    test('JSON 往返保住开关状态；旧 JSON 缺键回落到关', () {
+      const AnkiSettings fresh = AnkiSettings();
+      final AnkiSettings round = AnkiSettings.fromJson(fresh
+          .copyWith(
+            lastMediaDedupAtMs: 123,
+            lastMediaDedupScanAtMs: 456,
+            mediaDedupAutoEnabled: true,
+            mediaDedupAutoDelete: true,
+          )
+          .toJson());
       expect(round.lastMediaDedupAtMs, 123);
+      expect(round.lastMediaDedupScanAtMs, 456);
+      expect(round.mediaDedupAutoEnabled, isTrue);
+      expect(round.mediaDedupAutoDelete, isTrue);
+
+      final AnkiSettings legacy = AnkiSettings.fromJson(<String, dynamic>{
+        'lastMediaDedupAtMs': 7,
+      });
+      expect(legacy.lastMediaDedupAtMs, 7);
+      expect(legacy.mediaDedupAutoEnabled, isFalse);
+      expect(legacy.mediaDedupAutoDelete, isFalse);
     });
   });
 }

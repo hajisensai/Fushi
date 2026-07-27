@@ -6,6 +6,8 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/utils.dart';
 
 import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:hibiki/src/anki/anki_media_dedup_dialogs.dart';
+import 'package:hibiki/src/anki/lapis_backup_retention.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/anki/lapis_template_service.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart'
@@ -111,13 +113,12 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                 icon: Icons.format_size_outlined,
                 showIcon: true,
                 selected: settings.lapisFontScalePercent,
-                options: const [
-                  AdaptiveSettingsPickerOption(value: 80, label: '80%'),
-                  AdaptiveSettingsPickerOption(value: 90, label: '90%'),
-                  AdaptiveSettingsPickerOption(value: 100, label: '100%'),
-                  AdaptiveSettingsPickerOption(value: 110, label: '110%'),
-                  AdaptiveSettingsPickerOption(value: 125, label: '125%'),
-                  AdaptiveSettingsPickerOption(value: 150, label: '150%'),
+                // 档位表来自 hibiki_anki 的单一真相源：从备份恢复时
+                // splitLapisUserSectionBody 会优先反解出这些档位，选择器与
+                // 反解各写一份迟早漂成「显示了一个档位表里没有的值」。
+                options: <AdaptiveSettingsPickerOption<int>>[
+                  for (final int p in kLapisFontScalePresets)
+                    AdaptiveSettingsPickerOption<int>(value: p, label: '$p%'),
                 ],
                 onChanged: (int v) => vm.setLapisFontScalePercent(v),
               ),
@@ -158,12 +159,33 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           ),
         // 媒体存储优化：字节级去重（只删字节相同的多余副本，绝不重编码）。
         // 需要与 Anki 同机（本机可直读 collection.media），后端不支持时整区隐藏。
-        // 用户拍板方案 A：**没有任何自动/周期路径**，只有这里的手动触发，且
-        // 真删前必须先看干跑清单并确认。
+        // 用户拍板方案 A：默认不跑；自动处理是一个**默认关**的开关，打开之后
+        // 也只是自动干跑并提示，真删仍要用户确认——除非再显式打开「自动直接
+        // 删除」。手动触发同样先看干跑清单再确认。
         if (vm.supportsMediaMaintenance)
           AdaptiveSettingsSection(
             title: t.anki_dedup_section,
             children: [
+              AdaptiveSettingsSwitchRow(
+                icon: Icons.autorenew_outlined,
+                showIcon: true,
+                title: t.anki_dedup_auto,
+                subtitle: t.anki_dedup_auto_hint,
+                value: settings.mediaDedupAutoEnabled,
+                onChanged: (bool v) => vm.setMediaDedupAutoEnabled(v),
+              ),
+              // 从属开关：自动处理关着的时候它无意义，置灰而不是隐藏——隐藏
+              // 会让用户以为「打开自动 = 直接删」。
+              AdaptiveSettingsSwitchRow(
+                icon: Icons.delete_forever_outlined,
+                showIcon: true,
+                title: t.anki_dedup_auto_delete,
+                subtitle: t.anki_dedup_auto_delete_hint,
+                value: settings.mediaDedupAutoDelete,
+                onChanged: settings.mediaDedupAutoEnabled
+                    ? (bool v) => vm.setMediaDedupAutoDelete(v)
+                    : null,
+              ),
               AdaptiveSettingsRow(
                 icon: Icons.search_outlined,
                 showIcon: true,
@@ -580,11 +602,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     setState(() => _lapisBusy = true);
     try {
-      final File? file = await vm.lapisTemplateService.backupNow();
+      final LapisBackupOutcome? outcome =
+          await vm.lapisTemplateService.backupNow();
       messenger.showSnackBar(SnackBar(
-        content: Text(file == null
-            ? t.anki_lapis_not_found
-            : t.anki_lapis_backup_done(path: file.path)),
+        content: Text(_lapisBackupMessage(outcome)),
       ));
     } catch (e) {
       messenger.showSnackBar(
@@ -675,7 +696,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   Future<void> _scanMediaDedup(AnkiViewModel vm) async {
     final AnkiMediaDedupReport? plan = await _runDedupPass(vm, dryRun: true);
     if (plan == null || !mounted) return;
-    await _showDedupPlanDialog(plan, offerDelete: false);
+    await showAnkiMediaDedupPlanDialog(context, plan, offerDelete: false);
   }
 
   /// 「立即去重」：**永远先干跑**，把「删哪些文件、各占多少空间、保留的是哪
@@ -684,11 +705,12 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   Future<void> _runMediaDedup(AnkiViewModel vm) async {
     final AnkiMediaDedupReport? plan = await _runDedupPass(vm, dryRun: true);
     if (plan == null || !mounted) return;
-    final bool confirmed = await _showDedupPlanDialog(plan, offerDelete: true);
+    final bool confirmed =
+        await showAnkiMediaDedupPlanDialog(context, plan, offerDelete: true);
     if (!confirmed || !mounted) return;
     final AnkiMediaDedupReport? result = await _runDedupPass(vm, dryRun: false);
     if (result == null || !mounted) return;
-    await _showDedupReportDialog(result);
+    await showAnkiMediaDedupReportDialog(context, result);
   }
 
   /// 跑一遍去重（干跑或真跑）。后端不支持 / 出错时给出提示并返回 null。
@@ -715,130 +737,28 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     return report;
   }
 
-  /// 干跑清单弹窗。[offerDelete] = 提供「删除这些文件」确认按钮（返回 true 才
-  /// 执行真删）；false 时只是只读报告。没有可删的东西时不给删除按钮。
-  Future<bool> _showDedupPlanDialog(
-    AnkiMediaDedupReport plan, {
-    required bool offerDelete,
-  }) async {
-    if (plan.deletions.isEmpty) {
-      await showDialog<void>(
-        context: context,
-        builder: (BuildContext context) => AlertDialog(
-          title: Text(t.anki_dedup_plan_title),
-          content: Text(t.anki_dedup_report_clean),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(t.dialog_ok),
-            ),
-          ],
-        ),
-      );
-      return false;
+  /// 手动备份的提示文案：顺带告诉用户按保留策略清理了几份旧备份（删除不可
+  /// 逆，必须让用户看得见结果）。
+  String _lapisBackupMessage(LapisBackupOutcome? outcome) {
+    if (outcome == null) return t.anki_lapis_not_found;
+    if (outcome.prunedCount == 0) {
+      return t.anki_lapis_backup_done(path: outcome.file.path);
     }
-    final bool? ok = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: Text(t.anki_dedup_plan_title),
-        content: SizedBox(
-          width: 420,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(t.anki_dedup_plan_intro(
-                  count: '${plan.duplicatesRemoved}',
-                  size: _formatBytes(plan.bytesSaved),
-                )),
-                const SizedBox(height: 12),
-                for (final MediaDedupDeletion d in plan.deletions)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(t.anki_dedup_plan_entry(
-                      file: d.filename,
-                      size: _formatBytes(d.bytes),
-                      canonical: d.canonical,
-                    )),
-                  ),
-                const SizedBox(height: 12),
-                Text(offerDelete
-                    ? t.anki_dedup_plan_journal
-                    : t.anki_dedup_report_dry_note),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          if (!offerDelete)
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(t.dialog_ok),
-            ),
-          if (offerDelete) ...[
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(t.dialog_cancel),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(t.anki_dedup_plan_delete),
-            ),
-          ],
-        ],
-      ),
+    return t.anki_lapis_backup_done_pruned(
+      path: outcome.file.path,
+      count: '${outcome.prunedCount}',
     );
-    return ok == true;
-  }
-
-  /// 真跑之后的结果报告。
-  Future<void> _showDedupReportDialog(AnkiMediaDedupReport result) async {
-    final String body = result.groupCount == 0
-        ? t.anki_dedup_report_clean
-        : t.anki_dedup_report_body(
-            groups: '${result.groupCount}',
-            removed: '${result.duplicatesRemoved}',
-            size: _formatBytes(result.bytesSaved),
-            notes: '${result.notesRewritten}',
-            models: '${result.modelsRewritten}',
-            skipped: '${result.skipped}',
-          );
-    await showDialog<void>(
-      context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: Text(t.anki_dedup_report_title),
-        content: Text(body),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(t.dialog_ok),
-          ),
-        ],
-      ),
-    );
-  }
-
-  static String _formatBytes(int bytes) {
-    if (bytes >= 1024 * 1024) {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
-    if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '$bytes B';
   }
 
   /// 备份文件名 `lapis-<ISO时间戳(冒号→'-')>.json` → 本地可读时间标签；
-  /// 解析失败原样显示文件名主体（仍可区分）。
+  /// 解析失败原样显示文件名主体（仍可区分）。时刻解析走
+  /// [parseLapisBackupTimestamp]——保留策略用的是同一份判据，两处各写一个
+  /// 正则就会出现「界面认得出、清理认不出（于是永不删）」这种静默错位。
   String _lapisBackupLabel(File f) {
-    final String raw = f.uri.pathSegments.last
-        .replaceFirst('lapis-', '')
-        .replaceFirst('.json', '');
-    final String iso = raw.replaceFirstMapped(
-      RegExp(r'T(\d{2})-(\d{2})-(\d{2})'),
-      (Match m) => 'T${m[1]}:${m[2]}:${m[3]}',
-    );
-    final DateTime? dt = DateTime.tryParse(iso)?.toLocal();
-    return dt != null ? dt.toString().split('.').first : raw;
+    final String name = f.uri.pathSegments.last;
+    final DateTime? dt = parseLapisBackupTimestamp(name)?.toLocal();
+    if (dt != null) return dt.toString().split('.').first;
+    return name.replaceFirst('lapis-', '').replaceFirst('.json', '');
   }
 
   Widget _buildDeckDropdown(AnkiSettings settings, AnkiViewModel vm) {
