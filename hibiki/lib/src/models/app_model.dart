@@ -63,6 +63,8 @@ import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:hibiki/src/media/tracking/media_tracking_repository.dart';
+import 'package:hibiki/src/media/tracking/media_tracking_service.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki/src/sync/deletion_prompt.dart';
@@ -722,6 +724,20 @@ class AppModel with ChangeNotifier {
 
   /// Media history and search history, extracted for testability.
   late MediaHistoryRepository mediaHistoryRepo;
+
+  /// 番剧/小说/漫画进度的可靠 Bangumi 同步入口。
+  MediaTrackingService? _mediaTrackingService;
+  MediaTrackingService get mediaTrackingService =>
+      _mediaTrackingService ??= MediaTrackingService(
+        repository: MediaTrackingRepository(_database),
+        preferences: prefsRepo,
+        userAgent: _mediaTrackingUserAgent,
+      );
+
+  String _mediaTrackingAppVersion = 'unknown';
+  String get _mediaTrackingUserAgent =>
+      'hajisensai/Hibiki/$_mediaTrackingAppVersion '
+      '(https://github.com/hajisensai/hibiki)';
 
   /// Dictionary metadata, history, and search caches.
   late DictionaryRepository dictRepo;
@@ -1997,6 +2013,7 @@ class AppModel with ChangeNotifier {
 
       /// Prepare entities that may be repeatedly used at runtime.
       _packageInfo = await PackageInfo.fromPlatform();
+      _mediaTrackingAppVersion = _packageInfo.version;
       await platformServices.init();
 
       debugPrint('[Hibiki] init: directories (early, needed for DB)');
@@ -2044,6 +2061,12 @@ class AppModel with ChangeNotifier {
       ]);
       prefsRepo.addListener(notifyListeners);
       _applyMemoryPolicy();
+      _mediaTrackingService = MediaTrackingService(
+        repository: MediaTrackingRepository(_database),
+        preferences: prefsRepo,
+        userAgent: _mediaTrackingUserAgent,
+      );
+      unawaited(mediaTrackingService.syncNow());
 
       final Map<String, String> prefsSnapshot = prefsRepo.prefsSnapshot;
 
@@ -2337,6 +2360,7 @@ class AppModel with ChangeNotifier {
     try {
       debugPrint('[Hibiki-popup] init: PackageInfo + DeviceInfo');
       _packageInfo = await PackageInfo.fromPlatform();
+      _mediaTrackingAppVersion = _packageInfo.version;
       await platformServices.init();
 
       debugPrint('[Hibiki-popup] init: directories');
@@ -2351,6 +2375,11 @@ class AppModel with ChangeNotifier {
       _prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
       prefsRepo.addListener(notifyListeners);
+      _mediaTrackingService = MediaTrackingService(
+        repository: MediaTrackingRepository(_database),
+        preferences: prefsRepo,
+        userAgent: _mediaTrackingUserAgent,
+      );
 
       dictRepo = DictionaryRepository(_database,
           onCacheRebuild: _rebuildDictPathsCache,

@@ -1063,13 +1063,19 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     // _persistPosition，故两条路径统一由此接线；临时跳转已被上方 _suppressPositionPersist
     // 提前返回，不会误触发。widget.bookKey 即当前书（有声书会话为其配对 EpubBooks 行）。
     final EpubBook? book = _book;
-    if (book != null &&
+    final bool completed = book != null &&
         book.chapters.isNotEmpty &&
         section >= book.chapters.length - 1 &&
-        progress >= 0.999) {
+        progress >= 0.999;
+    if (completed) {
       await appModel.database
           .markEpubBookCompletedIfUnset(widget.bookKey, DateTime.now());
     }
+    await appModel.mediaTrackingService.recordBookProgress(
+      bookKey: widget.bookKey,
+      completedChapterCount: section + (progress >= 0.999 ? 1 : 0),
+      completed: completed,
+    );
   }
 
   void _syncPositionFromCurrentCue() {

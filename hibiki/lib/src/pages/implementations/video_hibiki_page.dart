@@ -2873,6 +2873,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         ),
         markCompleted: (String uid) =>
             db.markVideoCompleted(uid, DateTime.now()),
+        onEpisodeCompleted: () =>
+            appModel.mediaTrackingService.recordVideoCompleted(
+          bookUid: widget.bookUid,
+          collectionId: widget.playlistCollectionId,
+          episodeIndex: _currentEpisode,
+          seriesCompleted:
+              _episodes.isNotEmpty && _currentEpisode == _episodes.length - 1,
+        ),
         addHourly: (String dateKey, int hour, int deltaMs) =>
             db.addVideoHourlyWatchTime(
           dateKey: dateKey,

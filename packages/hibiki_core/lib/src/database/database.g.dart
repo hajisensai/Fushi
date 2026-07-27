@@ -18191,6 +18191,1044 @@ class VideoScrapeMetaCompanion extends UpdateCompanion<VideoScrapeMetaRow> {
   }
 }
 
+class $MediaTrackingMappingsTable extends MediaTrackingMappings
+    with TableInfo<$MediaTrackingMappingsTable, MediaTrackingMappingRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaTrackingMappingsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _providerMeta =
+      const VerificationMeta('provider');
+  @override
+  late final GeneratedColumn<String> provider = GeneratedColumn<String>(
+      'provider', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('bangumi'));
+  static const VerificationMeta _mediaTypeMeta =
+      const VerificationMeta('mediaType');
+  @override
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>(
+      'media_type', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _mediaKeyMeta =
+      const VerificationMeta('mediaKey');
+  @override
+  late final GeneratedColumn<String> mediaKey = GeneratedColumn<String>(
+      'media_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _mediaTitleMeta =
+      const VerificationMeta('mediaTitle');
+  @override
+  late final GeneratedColumn<String> mediaTitle = GeneratedColumn<String>(
+      'media_title', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+      'kind', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _subjectIdMeta =
+      const VerificationMeta('subjectId');
+  @override
+  late final GeneratedColumn<int> subjectId = GeneratedColumn<int>(
+      'subject_id', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _subjectNameMeta =
+      const VerificationMeta('subjectName');
+  @override
+  late final GeneratedColumn<String> subjectName = GeneratedColumn<String>(
+      'subject_name', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _progressModeMeta =
+      const VerificationMeta('progressMode');
+  @override
+  late final GeneratedColumn<String> progressMode = GeneratedColumn<String>(
+      'progress_mode', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _progressOffsetMeta =
+      const VerificationMeta('progressOffset');
+  @override
+  late final GeneratedColumn<int> progressOffset = GeneratedColumn<int>(
+      'progress_offset', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(1));
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+      'updated_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        provider,
+        mediaType,
+        mediaKey,
+        mediaTitle,
+        kind,
+        subjectId,
+        subjectName,
+        progressMode,
+        progressOffset,
+        createdAt,
+        updatedAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_tracking_mappings';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<MediaTrackingMappingRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('provider')) {
+      context.handle(_providerMeta,
+          provider.isAcceptableOrUnknown(data['provider']!, _providerMeta));
+    }
+    if (data.containsKey('media_type')) {
+      context.handle(_mediaTypeMeta,
+          mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta));
+    } else if (isInserting) {
+      context.missing(_mediaTypeMeta);
+    }
+    if (data.containsKey('media_key')) {
+      context.handle(_mediaKeyMeta,
+          mediaKey.isAcceptableOrUnknown(data['media_key']!, _mediaKeyMeta));
+    } else if (isInserting) {
+      context.missing(_mediaKeyMeta);
+    }
+    if (data.containsKey('media_title')) {
+      context.handle(
+          _mediaTitleMeta,
+          mediaTitle.isAcceptableOrUnknown(
+              data['media_title']!, _mediaTitleMeta));
+    } else if (isInserting) {
+      context.missing(_mediaTitleMeta);
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+          _kindMeta, kind.isAcceptableOrUnknown(data['kind']!, _kindMeta));
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('subject_id')) {
+      context.handle(_subjectIdMeta,
+          subjectId.isAcceptableOrUnknown(data['subject_id']!, _subjectIdMeta));
+    } else if (isInserting) {
+      context.missing(_subjectIdMeta);
+    }
+    if (data.containsKey('subject_name')) {
+      context.handle(
+          _subjectNameMeta,
+          subjectName.isAcceptableOrUnknown(
+              data['subject_name']!, _subjectNameMeta));
+    } else if (isInserting) {
+      context.missing(_subjectNameMeta);
+    }
+    if (data.containsKey('progress_mode')) {
+      context.handle(
+          _progressModeMeta,
+          progressMode.isAcceptableOrUnknown(
+              data['progress_mode']!, _progressModeMeta));
+    } else if (isInserting) {
+      context.missing(_progressModeMeta);
+    }
+    if (data.containsKey('progress_offset')) {
+      context.handle(
+          _progressOffsetMeta,
+          progressOffset.isAcceptableOrUnknown(
+              data['progress_offset']!, _progressOffsetMeta));
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {provider, mediaType, mediaKey},
+      ];
+  @override
+  MediaTrackingMappingRow map(Map<String, dynamic> data,
+      {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaTrackingMappingRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      provider: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}provider'])!,
+      mediaType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}media_type'])!,
+      mediaKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}media_key'])!,
+      mediaTitle: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}media_title'])!,
+      kind: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}kind'])!,
+      subjectId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}subject_id'])!,
+      subjectName: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}subject_name'])!,
+      progressMode: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}progress_mode'])!,
+      progressOffset: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}progress_offset'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}created_at'])!,
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}updated_at'])!,
+    );
+  }
+
+  @override
+  $MediaTrackingMappingsTable createAlias(String alias) {
+    return $MediaTrackingMappingsTable(attachedDatabase, alias);
+  }
+}
+
+class MediaTrackingMappingRow extends DataClass
+    implements Insertable<MediaTrackingMappingRow> {
+  final int id;
+  final String provider;
+  final String mediaType;
+  final String mediaKey;
+  final String mediaTitle;
+  final String kind;
+  final int subjectId;
+  final String subjectName;
+  final String progressMode;
+
+  /// 本地 0-based 序号加此偏移后得到远端 1-based 进度。单卷书可直接把卷号填在
+  /// offset，并在完成事件里传 localProgress=0。
+  final int progressOffset;
+  final int createdAt;
+  final int updatedAt;
+  const MediaTrackingMappingRow(
+      {required this.id,
+      required this.provider,
+      required this.mediaType,
+      required this.mediaKey,
+      required this.mediaTitle,
+      required this.kind,
+      required this.subjectId,
+      required this.subjectName,
+      required this.progressMode,
+      required this.progressOffset,
+      required this.createdAt,
+      required this.updatedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['provider'] = Variable<String>(provider);
+    map['media_type'] = Variable<String>(mediaType);
+    map['media_key'] = Variable<String>(mediaKey);
+    map['media_title'] = Variable<String>(mediaTitle);
+    map['kind'] = Variable<String>(kind);
+    map['subject_id'] = Variable<int>(subjectId);
+    map['subject_name'] = Variable<String>(subjectName);
+    map['progress_mode'] = Variable<String>(progressMode);
+    map['progress_offset'] = Variable<int>(progressOffset);
+    map['created_at'] = Variable<int>(createdAt);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  MediaTrackingMappingsCompanion toCompanion(bool nullToAbsent) {
+    return MediaTrackingMappingsCompanion(
+      id: Value(id),
+      provider: Value(provider),
+      mediaType: Value(mediaType),
+      mediaKey: Value(mediaKey),
+      mediaTitle: Value(mediaTitle),
+      kind: Value(kind),
+      subjectId: Value(subjectId),
+      subjectName: Value(subjectName),
+      progressMode: Value(progressMode),
+      progressOffset: Value(progressOffset),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory MediaTrackingMappingRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaTrackingMappingRow(
+      id: serializer.fromJson<int>(json['id']),
+      provider: serializer.fromJson<String>(json['provider']),
+      mediaType: serializer.fromJson<String>(json['mediaType']),
+      mediaKey: serializer.fromJson<String>(json['mediaKey']),
+      mediaTitle: serializer.fromJson<String>(json['mediaTitle']),
+      kind: serializer.fromJson<String>(json['kind']),
+      subjectId: serializer.fromJson<int>(json['subjectId']),
+      subjectName: serializer.fromJson<String>(json['subjectName']),
+      progressMode: serializer.fromJson<String>(json['progressMode']),
+      progressOffset: serializer.fromJson<int>(json['progressOffset']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'provider': serializer.toJson<String>(provider),
+      'mediaType': serializer.toJson<String>(mediaType),
+      'mediaKey': serializer.toJson<String>(mediaKey),
+      'mediaTitle': serializer.toJson<String>(mediaTitle),
+      'kind': serializer.toJson<String>(kind),
+      'subjectId': serializer.toJson<int>(subjectId),
+      'subjectName': serializer.toJson<String>(subjectName),
+      'progressMode': serializer.toJson<String>(progressMode),
+      'progressOffset': serializer.toJson<int>(progressOffset),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  MediaTrackingMappingRow copyWith(
+          {int? id,
+          String? provider,
+          String? mediaType,
+          String? mediaKey,
+          String? mediaTitle,
+          String? kind,
+          int? subjectId,
+          String? subjectName,
+          String? progressMode,
+          int? progressOffset,
+          int? createdAt,
+          int? updatedAt}) =>
+      MediaTrackingMappingRow(
+        id: id ?? this.id,
+        provider: provider ?? this.provider,
+        mediaType: mediaType ?? this.mediaType,
+        mediaKey: mediaKey ?? this.mediaKey,
+        mediaTitle: mediaTitle ?? this.mediaTitle,
+        kind: kind ?? this.kind,
+        subjectId: subjectId ?? this.subjectId,
+        subjectName: subjectName ?? this.subjectName,
+        progressMode: progressMode ?? this.progressMode,
+        progressOffset: progressOffset ?? this.progressOffset,
+        createdAt: createdAt ?? this.createdAt,
+        updatedAt: updatedAt ?? this.updatedAt,
+      );
+  MediaTrackingMappingRow copyWithCompanion(
+      MediaTrackingMappingsCompanion data) {
+    return MediaTrackingMappingRow(
+      id: data.id.present ? data.id.value : this.id,
+      provider: data.provider.present ? data.provider.value : this.provider,
+      mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
+      mediaKey: data.mediaKey.present ? data.mediaKey.value : this.mediaKey,
+      mediaTitle:
+          data.mediaTitle.present ? data.mediaTitle.value : this.mediaTitle,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      subjectId: data.subjectId.present ? data.subjectId.value : this.subjectId,
+      subjectName:
+          data.subjectName.present ? data.subjectName.value : this.subjectName,
+      progressMode: data.progressMode.present
+          ? data.progressMode.value
+          : this.progressMode,
+      progressOffset: data.progressOffset.present
+          ? data.progressOffset.value
+          : this.progressOffset,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaTrackingMappingRow(')
+          ..write('id: $id, ')
+          ..write('provider: $provider, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('mediaTitle: $mediaTitle, ')
+          ..write('kind: $kind, ')
+          ..write('subjectId: $subjectId, ')
+          ..write('subjectName: $subjectName, ')
+          ..write('progressMode: $progressMode, ')
+          ..write('progressOffset: $progressOffset, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      provider,
+      mediaType,
+      mediaKey,
+      mediaTitle,
+      kind,
+      subjectId,
+      subjectName,
+      progressMode,
+      progressOffset,
+      createdAt,
+      updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaTrackingMappingRow &&
+          other.id == this.id &&
+          other.provider == this.provider &&
+          other.mediaType == this.mediaType &&
+          other.mediaKey == this.mediaKey &&
+          other.mediaTitle == this.mediaTitle &&
+          other.kind == this.kind &&
+          other.subjectId == this.subjectId &&
+          other.subjectName == this.subjectName &&
+          other.progressMode == this.progressMode &&
+          other.progressOffset == this.progressOffset &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class MediaTrackingMappingsCompanion
+    extends UpdateCompanion<MediaTrackingMappingRow> {
+  final Value<int> id;
+  final Value<String> provider;
+  final Value<String> mediaType;
+  final Value<String> mediaKey;
+  final Value<String> mediaTitle;
+  final Value<String> kind;
+  final Value<int> subjectId;
+  final Value<String> subjectName;
+  final Value<String> progressMode;
+  final Value<int> progressOffset;
+  final Value<int> createdAt;
+  final Value<int> updatedAt;
+  const MediaTrackingMappingsCompanion({
+    this.id = const Value.absent(),
+    this.provider = const Value.absent(),
+    this.mediaType = const Value.absent(),
+    this.mediaKey = const Value.absent(),
+    this.mediaTitle = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.subjectId = const Value.absent(),
+    this.subjectName = const Value.absent(),
+    this.progressMode = const Value.absent(),
+    this.progressOffset = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  });
+  MediaTrackingMappingsCompanion.insert({
+    this.id = const Value.absent(),
+    this.provider = const Value.absent(),
+    required String mediaType,
+    required String mediaKey,
+    required String mediaTitle,
+    required String kind,
+    required int subjectId,
+    required String subjectName,
+    required String progressMode,
+    this.progressOffset = const Value.absent(),
+    required int createdAt,
+    required int updatedAt,
+  })  : mediaType = Value(mediaType),
+        mediaKey = Value(mediaKey),
+        mediaTitle = Value(mediaTitle),
+        kind = Value(kind),
+        subjectId = Value(subjectId),
+        subjectName = Value(subjectName),
+        progressMode = Value(progressMode),
+        createdAt = Value(createdAt),
+        updatedAt = Value(updatedAt);
+  static Insertable<MediaTrackingMappingRow> custom({
+    Expression<int>? id,
+    Expression<String>? provider,
+    Expression<String>? mediaType,
+    Expression<String>? mediaKey,
+    Expression<String>? mediaTitle,
+    Expression<String>? kind,
+    Expression<int>? subjectId,
+    Expression<String>? subjectName,
+    Expression<String>? progressMode,
+    Expression<int>? progressOffset,
+    Expression<int>? createdAt,
+    Expression<int>? updatedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (provider != null) 'provider': provider,
+      if (mediaType != null) 'media_type': mediaType,
+      if (mediaKey != null) 'media_key': mediaKey,
+      if (mediaTitle != null) 'media_title': mediaTitle,
+      if (kind != null) 'kind': kind,
+      if (subjectId != null) 'subject_id': subjectId,
+      if (subjectName != null) 'subject_name': subjectName,
+      if (progressMode != null) 'progress_mode': progressMode,
+      if (progressOffset != null) 'progress_offset': progressOffset,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+    });
+  }
+
+  MediaTrackingMappingsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? provider,
+      Value<String>? mediaType,
+      Value<String>? mediaKey,
+      Value<String>? mediaTitle,
+      Value<String>? kind,
+      Value<int>? subjectId,
+      Value<String>? subjectName,
+      Value<String>? progressMode,
+      Value<int>? progressOffset,
+      Value<int>? createdAt,
+      Value<int>? updatedAt}) {
+    return MediaTrackingMappingsCompanion(
+      id: id ?? this.id,
+      provider: provider ?? this.provider,
+      mediaType: mediaType ?? this.mediaType,
+      mediaKey: mediaKey ?? this.mediaKey,
+      mediaTitle: mediaTitle ?? this.mediaTitle,
+      kind: kind ?? this.kind,
+      subjectId: subjectId ?? this.subjectId,
+      subjectName: subjectName ?? this.subjectName,
+      progressMode: progressMode ?? this.progressMode,
+      progressOffset: progressOffset ?? this.progressOffset,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (provider.present) {
+      map['provider'] = Variable<String>(provider.value);
+    }
+    if (mediaType.present) {
+      map['media_type'] = Variable<String>(mediaType.value);
+    }
+    if (mediaKey.present) {
+      map['media_key'] = Variable<String>(mediaKey.value);
+    }
+    if (mediaTitle.present) {
+      map['media_title'] = Variable<String>(mediaTitle.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (subjectId.present) {
+      map['subject_id'] = Variable<int>(subjectId.value);
+    }
+    if (subjectName.present) {
+      map['subject_name'] = Variable<String>(subjectName.value);
+    }
+    if (progressMode.present) {
+      map['progress_mode'] = Variable<String>(progressMode.value);
+    }
+    if (progressOffset.present) {
+      map['progress_offset'] = Variable<int>(progressOffset.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaTrackingMappingsCompanion(')
+          ..write('id: $id, ')
+          ..write('provider: $provider, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('mediaKey: $mediaKey, ')
+          ..write('mediaTitle: $mediaTitle, ')
+          ..write('kind: $kind, ')
+          ..write('subjectId: $subjectId, ')
+          ..write('subjectName: $subjectName, ')
+          ..write('progressMode: $progressMode, ')
+          ..write('progressOffset: $progressOffset, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MediaTrackingOutboxTable extends MediaTrackingOutbox
+    with TableInfo<$MediaTrackingOutboxTable, MediaTrackingOutboxRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaTrackingOutboxTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _mappingIdMeta =
+      const VerificationMeta('mappingId');
+  @override
+  late final GeneratedColumn<int> mappingId = GeneratedColumn<int>(
+      'mapping_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'UNIQUE REFERENCES media_tracking_mappings (id) ON DELETE CASCADE'));
+  static const VerificationMeta _progressMeta =
+      const VerificationMeta('progress');
+  @override
+  late final GeneratedColumn<int> progress = GeneratedColumn<int>(
+      'progress', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _completedMeta =
+      const VerificationMeta('completed');
+  @override
+  late final GeneratedColumn<bool> completed = GeneratedColumn<bool>(
+      'completed', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("completed" IN (0, 1))'),
+      defaultValue: const Constant(false));
+  static const VerificationMeta _attemptCountMeta =
+      const VerificationMeta('attemptCount');
+  @override
+  late final GeneratedColumn<int> attemptCount = GeneratedColumn<int>(
+      'attempt_count', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _nextAttemptAtMeta =
+      const VerificationMeta('nextAttemptAt');
+  @override
+  late final GeneratedColumn<int> nextAttemptAt = GeneratedColumn<int>(
+      'next_attempt_at', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _lastErrorMeta =
+      const VerificationMeta('lastError');
+  @override
+  late final GeneratedColumn<String> lastError = GeneratedColumn<String>(
+      'last_error', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+      'updated_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        mappingId,
+        progress,
+        completed,
+        attemptCount,
+        nextAttemptAt,
+        lastError,
+        updatedAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_tracking_outbox';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<MediaTrackingOutboxRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('mapping_id')) {
+      context.handle(_mappingIdMeta,
+          mappingId.isAcceptableOrUnknown(data['mapping_id']!, _mappingIdMeta));
+    } else if (isInserting) {
+      context.missing(_mappingIdMeta);
+    }
+    if (data.containsKey('progress')) {
+      context.handle(_progressMeta,
+          progress.isAcceptableOrUnknown(data['progress']!, _progressMeta));
+    } else if (isInserting) {
+      context.missing(_progressMeta);
+    }
+    if (data.containsKey('completed')) {
+      context.handle(_completedMeta,
+          completed.isAcceptableOrUnknown(data['completed']!, _completedMeta));
+    }
+    if (data.containsKey('attempt_count')) {
+      context.handle(
+          _attemptCountMeta,
+          attemptCount.isAcceptableOrUnknown(
+              data['attempt_count']!, _attemptCountMeta));
+    }
+    if (data.containsKey('next_attempt_at')) {
+      context.handle(
+          _nextAttemptAtMeta,
+          nextAttemptAt.isAcceptableOrUnknown(
+              data['next_attempt_at']!, _nextAttemptAtMeta));
+    }
+    if (data.containsKey('last_error')) {
+      context.handle(_lastErrorMeta,
+          lastError.isAcceptableOrUnknown(data['last_error']!, _lastErrorMeta));
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  MediaTrackingOutboxRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaTrackingOutboxRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      mappingId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}mapping_id'])!,
+      progress: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}progress'])!,
+      completed: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}completed'])!,
+      attemptCount: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}attempt_count'])!,
+      nextAttemptAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}next_attempt_at'])!,
+      lastError: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}last_error']),
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}updated_at'])!,
+    );
+  }
+
+  @override
+  $MediaTrackingOutboxTable createAlias(String alias) {
+    return $MediaTrackingOutboxTable(attachedDatabase, alias);
+  }
+}
+
+class MediaTrackingOutboxRow extends DataClass
+    implements Insertable<MediaTrackingOutboxRow> {
+  final int id;
+  final int mappingId;
+  final int progress;
+  final bool completed;
+  final int attemptCount;
+  final int nextAttemptAt;
+  final String? lastError;
+  final int updatedAt;
+  const MediaTrackingOutboxRow(
+      {required this.id,
+      required this.mappingId,
+      required this.progress,
+      required this.completed,
+      required this.attemptCount,
+      required this.nextAttemptAt,
+      this.lastError,
+      required this.updatedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['mapping_id'] = Variable<int>(mappingId);
+    map['progress'] = Variable<int>(progress);
+    map['completed'] = Variable<bool>(completed);
+    map['attempt_count'] = Variable<int>(attemptCount);
+    map['next_attempt_at'] = Variable<int>(nextAttemptAt);
+    if (!nullToAbsent || lastError != null) {
+      map['last_error'] = Variable<String>(lastError);
+    }
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  MediaTrackingOutboxCompanion toCompanion(bool nullToAbsent) {
+    return MediaTrackingOutboxCompanion(
+      id: Value(id),
+      mappingId: Value(mappingId),
+      progress: Value(progress),
+      completed: Value(completed),
+      attemptCount: Value(attemptCount),
+      nextAttemptAt: Value(nextAttemptAt),
+      lastError: lastError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastError),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory MediaTrackingOutboxRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaTrackingOutboxRow(
+      id: serializer.fromJson<int>(json['id']),
+      mappingId: serializer.fromJson<int>(json['mappingId']),
+      progress: serializer.fromJson<int>(json['progress']),
+      completed: serializer.fromJson<bool>(json['completed']),
+      attemptCount: serializer.fromJson<int>(json['attemptCount']),
+      nextAttemptAt: serializer.fromJson<int>(json['nextAttemptAt']),
+      lastError: serializer.fromJson<String?>(json['lastError']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'mappingId': serializer.toJson<int>(mappingId),
+      'progress': serializer.toJson<int>(progress),
+      'completed': serializer.toJson<bool>(completed),
+      'attemptCount': serializer.toJson<int>(attemptCount),
+      'nextAttemptAt': serializer.toJson<int>(nextAttemptAt),
+      'lastError': serializer.toJson<String?>(lastError),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  MediaTrackingOutboxRow copyWith(
+          {int? id,
+          int? mappingId,
+          int? progress,
+          bool? completed,
+          int? attemptCount,
+          int? nextAttemptAt,
+          Value<String?> lastError = const Value.absent(),
+          int? updatedAt}) =>
+      MediaTrackingOutboxRow(
+        id: id ?? this.id,
+        mappingId: mappingId ?? this.mappingId,
+        progress: progress ?? this.progress,
+        completed: completed ?? this.completed,
+        attemptCount: attemptCount ?? this.attemptCount,
+        nextAttemptAt: nextAttemptAt ?? this.nextAttemptAt,
+        lastError: lastError.present ? lastError.value : this.lastError,
+        updatedAt: updatedAt ?? this.updatedAt,
+      );
+  MediaTrackingOutboxRow copyWithCompanion(MediaTrackingOutboxCompanion data) {
+    return MediaTrackingOutboxRow(
+      id: data.id.present ? data.id.value : this.id,
+      mappingId: data.mappingId.present ? data.mappingId.value : this.mappingId,
+      progress: data.progress.present ? data.progress.value : this.progress,
+      completed: data.completed.present ? data.completed.value : this.completed,
+      attemptCount: data.attemptCount.present
+          ? data.attemptCount.value
+          : this.attemptCount,
+      nextAttemptAt: data.nextAttemptAt.present
+          ? data.nextAttemptAt.value
+          : this.nextAttemptAt,
+      lastError: data.lastError.present ? data.lastError.value : this.lastError,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaTrackingOutboxRow(')
+          ..write('id: $id, ')
+          ..write('mappingId: $mappingId, ')
+          ..write('progress: $progress, ')
+          ..write('completed: $completed, ')
+          ..write('attemptCount: $attemptCount, ')
+          ..write('nextAttemptAt: $nextAttemptAt, ')
+          ..write('lastError: $lastError, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, mappingId, progress, completed,
+      attemptCount, nextAttemptAt, lastError, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaTrackingOutboxRow &&
+          other.id == this.id &&
+          other.mappingId == this.mappingId &&
+          other.progress == this.progress &&
+          other.completed == this.completed &&
+          other.attemptCount == this.attemptCount &&
+          other.nextAttemptAt == this.nextAttemptAt &&
+          other.lastError == this.lastError &&
+          other.updatedAt == this.updatedAt);
+}
+
+class MediaTrackingOutboxCompanion
+    extends UpdateCompanion<MediaTrackingOutboxRow> {
+  final Value<int> id;
+  final Value<int> mappingId;
+  final Value<int> progress;
+  final Value<bool> completed;
+  final Value<int> attemptCount;
+  final Value<int> nextAttemptAt;
+  final Value<String?> lastError;
+  final Value<int> updatedAt;
+  const MediaTrackingOutboxCompanion({
+    this.id = const Value.absent(),
+    this.mappingId = const Value.absent(),
+    this.progress = const Value.absent(),
+    this.completed = const Value.absent(),
+    this.attemptCount = const Value.absent(),
+    this.nextAttemptAt = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  });
+  MediaTrackingOutboxCompanion.insert({
+    this.id = const Value.absent(),
+    required int mappingId,
+    required int progress,
+    this.completed = const Value.absent(),
+    this.attemptCount = const Value.absent(),
+    this.nextAttemptAt = const Value.absent(),
+    this.lastError = const Value.absent(),
+    required int updatedAt,
+  })  : mappingId = Value(mappingId),
+        progress = Value(progress),
+        updatedAt = Value(updatedAt);
+  static Insertable<MediaTrackingOutboxRow> custom({
+    Expression<int>? id,
+    Expression<int>? mappingId,
+    Expression<int>? progress,
+    Expression<bool>? completed,
+    Expression<int>? attemptCount,
+    Expression<int>? nextAttemptAt,
+    Expression<String>? lastError,
+    Expression<int>? updatedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (mappingId != null) 'mapping_id': mappingId,
+      if (progress != null) 'progress': progress,
+      if (completed != null) 'completed': completed,
+      if (attemptCount != null) 'attempt_count': attemptCount,
+      if (nextAttemptAt != null) 'next_attempt_at': nextAttemptAt,
+      if (lastError != null) 'last_error': lastError,
+      if (updatedAt != null) 'updated_at': updatedAt,
+    });
+  }
+
+  MediaTrackingOutboxCompanion copyWith(
+      {Value<int>? id,
+      Value<int>? mappingId,
+      Value<int>? progress,
+      Value<bool>? completed,
+      Value<int>? attemptCount,
+      Value<int>? nextAttemptAt,
+      Value<String?>? lastError,
+      Value<int>? updatedAt}) {
+    return MediaTrackingOutboxCompanion(
+      id: id ?? this.id,
+      mappingId: mappingId ?? this.mappingId,
+      progress: progress ?? this.progress,
+      completed: completed ?? this.completed,
+      attemptCount: attemptCount ?? this.attemptCount,
+      nextAttemptAt: nextAttemptAt ?? this.nextAttemptAt,
+      lastError: lastError ?? this.lastError,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (mappingId.present) {
+      map['mapping_id'] = Variable<int>(mappingId.value);
+    }
+    if (progress.present) {
+      map['progress'] = Variable<int>(progress.value);
+    }
+    if (completed.present) {
+      map['completed'] = Variable<bool>(completed.value);
+    }
+    if (attemptCount.present) {
+      map['attempt_count'] = Variable<int>(attemptCount.value);
+    }
+    if (nextAttemptAt.present) {
+      map['next_attempt_at'] = Variable<int>(nextAttemptAt.value);
+    }
+    if (lastError.present) {
+      map['last_error'] = Variable<String>(lastError.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaTrackingOutboxCompanion(')
+          ..write('id: $id, ')
+          ..write('mappingId: $mappingId, ')
+          ..write('progress: $progress, ')
+          ..write('completed: $completed, ')
+          ..write('attemptCount: $attemptCount, ')
+          ..write('nextAttemptAt: $nextAttemptAt, ')
+          ..write('lastError: $lastError, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $GalgamesTable extends Galgames
     with TableInfo<$GalgamesTable, GalgameRow> {
   @override
@@ -19668,6 +20706,10 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
       $ClipboardHistoryTable(this);
   late final $VideoScrapeMetaTable videoScrapeMeta =
       $VideoScrapeMetaTable(this);
+  late final $MediaTrackingMappingsTable mediaTrackingMappings =
+      $MediaTrackingMappingsTable(this);
+  late final $MediaTrackingOutboxTable mediaTrackingOutbox =
+      $MediaTrackingOutboxTable(this);
   late final $GalgamesTable galgames = $GalgamesTable(this);
   late final $GalgameSourcesTable galgameSources = $GalgameSourcesTable(this);
   late final $GalgameSessionsTable galgameSessions =
@@ -19724,6 +20766,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         activityEvents,
         clipboardHistory,
         videoScrapeMeta,
+        mediaTrackingMappings,
+        mediaTrackingOutbox,
         galgames,
         galgameSources,
         galgameSessions
@@ -19855,6 +20899,13 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('video_scrape_meta', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('media_tracking_mappings',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('media_tracking_outbox', kind: UpdateKind.delete),
             ],
           ),
           WritePropagation(
@@ -32312,6 +33363,704 @@ typedef $$VideoScrapeMetaTableProcessedTableManager = ProcessedTableManager<
     (VideoScrapeMetaRow, $$VideoScrapeMetaTableReferences),
     VideoScrapeMetaRow,
     PrefetchHooks Function({bool bookUid})>;
+typedef $$MediaTrackingMappingsTableCreateCompanionBuilder
+    = MediaTrackingMappingsCompanion Function({
+  Value<int> id,
+  Value<String> provider,
+  required String mediaType,
+  required String mediaKey,
+  required String mediaTitle,
+  required String kind,
+  required int subjectId,
+  required String subjectName,
+  required String progressMode,
+  Value<int> progressOffset,
+  required int createdAt,
+  required int updatedAt,
+});
+typedef $$MediaTrackingMappingsTableUpdateCompanionBuilder
+    = MediaTrackingMappingsCompanion Function({
+  Value<int> id,
+  Value<String> provider,
+  Value<String> mediaType,
+  Value<String> mediaKey,
+  Value<String> mediaTitle,
+  Value<String> kind,
+  Value<int> subjectId,
+  Value<String> subjectName,
+  Value<String> progressMode,
+  Value<int> progressOffset,
+  Value<int> createdAt,
+  Value<int> updatedAt,
+});
+
+final class $$MediaTrackingMappingsTableReferences extends BaseReferences<
+    _$HibikiDatabase, $MediaTrackingMappingsTable, MediaTrackingMappingRow> {
+  $$MediaTrackingMappingsTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$MediaTrackingOutboxTable,
+      List<MediaTrackingOutboxRow>> _mediaTrackingOutboxRefsTable(
+          _$HibikiDatabase db) =>
+      MultiTypedResultKey.fromTable(db.mediaTrackingOutbox,
+          aliasName:
+              'media_tracking_mappings__id__media_tracking_outbox__mapping_id');
+
+  $$MediaTrackingOutboxTableProcessedTableManager get mediaTrackingOutboxRefs {
+    final manager =
+        $$MediaTrackingOutboxTableTableManager($_db, $_db.mediaTrackingOutbox)
+            .filter((f) => f.mappingId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_mediaTrackingOutboxRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
+}
+
+class $$MediaTrackingMappingsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $MediaTrackingMappingsTable> {
+  $$MediaTrackingMappingsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get provider => $composableBuilder(
+      column: $table.provider, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mediaKey => $composableBuilder(
+      column: $table.mediaKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mediaTitle => $composableBuilder(
+      column: $table.mediaTitle, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get kind => $composableBuilder(
+      column: $table.kind, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get subjectId => $composableBuilder(
+      column: $table.subjectId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get subjectName => $composableBuilder(
+      column: $table.subjectName, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get progressMode => $composableBuilder(
+      column: $table.progressMode, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get progressOffset => $composableBuilder(
+      column: $table.progressOffset,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+
+  Expression<bool> mediaTrackingOutboxRefs(
+      Expression<bool> Function($$MediaTrackingOutboxTableFilterComposer f) f) {
+    final $$MediaTrackingOutboxTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.mediaTrackingOutbox,
+        getReferencedColumn: (t) => t.mappingId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaTrackingOutboxTableFilterComposer(
+              $db: $db,
+              $table: $db.mediaTrackingOutbox,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+}
+
+class $$MediaTrackingMappingsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $MediaTrackingMappingsTable> {
+  $$MediaTrackingMappingsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get provider => $composableBuilder(
+      column: $table.provider, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mediaKey => $composableBuilder(
+      column: $table.mediaKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get mediaTitle => $composableBuilder(
+      column: $table.mediaTitle, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+      column: $table.kind, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get subjectId => $composableBuilder(
+      column: $table.subjectId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get subjectName => $composableBuilder(
+      column: $table.subjectName, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get progressMode => $composableBuilder(
+      column: $table.progressMode,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get progressOffset => $composableBuilder(
+      column: $table.progressOffset,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$MediaTrackingMappingsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $MediaTrackingMappingsTable> {
+  $$MediaTrackingMappingsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get provider =>
+      $composableBuilder(column: $table.provider, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaKey =>
+      $composableBuilder(column: $table.mediaKey, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaTitle => $composableBuilder(
+      column: $table.mediaTitle, builder: (column) => column);
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<int> get subjectId =>
+      $composableBuilder(column: $table.subjectId, builder: (column) => column);
+
+  GeneratedColumn<String> get subjectName => $composableBuilder(
+      column: $table.subjectName, builder: (column) => column);
+
+  GeneratedColumn<String> get progressMode => $composableBuilder(
+      column: $table.progressMode, builder: (column) => column);
+
+  GeneratedColumn<int> get progressOffset => $composableBuilder(
+      column: $table.progressOffset, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  Expression<T> mediaTrackingOutboxRefs<T extends Object>(
+      Expression<T> Function($$MediaTrackingOutboxTableAnnotationComposer a)
+          f) {
+    final $$MediaTrackingOutboxTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.mediaTrackingOutbox,
+            getReferencedColumn: (t) => t.mappingId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$MediaTrackingOutboxTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.mediaTrackingOutbox,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
+}
+
+class $$MediaTrackingMappingsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $MediaTrackingMappingsTable,
+    MediaTrackingMappingRow,
+    $$MediaTrackingMappingsTableFilterComposer,
+    $$MediaTrackingMappingsTableOrderingComposer,
+    $$MediaTrackingMappingsTableAnnotationComposer,
+    $$MediaTrackingMappingsTableCreateCompanionBuilder,
+    $$MediaTrackingMappingsTableUpdateCompanionBuilder,
+    (MediaTrackingMappingRow, $$MediaTrackingMappingsTableReferences),
+    MediaTrackingMappingRow,
+    PrefetchHooks Function({bool mediaTrackingOutboxRefs})> {
+  $$MediaTrackingMappingsTableTableManager(
+      _$HibikiDatabase db, $MediaTrackingMappingsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaTrackingMappingsTableFilterComposer(
+                  $db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaTrackingMappingsTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MediaTrackingMappingsTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> provider = const Value.absent(),
+            Value<String> mediaType = const Value.absent(),
+            Value<String> mediaKey = const Value.absent(),
+            Value<String> mediaTitle = const Value.absent(),
+            Value<String> kind = const Value.absent(),
+            Value<int> subjectId = const Value.absent(),
+            Value<String> subjectName = const Value.absent(),
+            Value<String> progressMode = const Value.absent(),
+            Value<int> progressOffset = const Value.absent(),
+            Value<int> createdAt = const Value.absent(),
+            Value<int> updatedAt = const Value.absent(),
+          }) =>
+              MediaTrackingMappingsCompanion(
+            id: id,
+            provider: provider,
+            mediaType: mediaType,
+            mediaKey: mediaKey,
+            mediaTitle: mediaTitle,
+            kind: kind,
+            subjectId: subjectId,
+            subjectName: subjectName,
+            progressMode: progressMode,
+            progressOffset: progressOffset,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> provider = const Value.absent(),
+            required String mediaType,
+            required String mediaKey,
+            required String mediaTitle,
+            required String kind,
+            required int subjectId,
+            required String subjectName,
+            required String progressMode,
+            Value<int> progressOffset = const Value.absent(),
+            required int createdAt,
+            required int updatedAt,
+          }) =>
+              MediaTrackingMappingsCompanion.insert(
+            id: id,
+            provider: provider,
+            mediaType: mediaType,
+            mediaKey: mediaKey,
+            mediaTitle: mediaTitle,
+            kind: kind,
+            subjectId: subjectId,
+            subjectName: subjectName,
+            progressMode: progressMode,
+            progressOffset: progressOffset,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$MediaTrackingMappingsTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({mediaTrackingOutboxRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (mediaTrackingOutboxRefs) db.mediaTrackingOutbox
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (mediaTrackingOutboxRefs)
+                    await $_getPrefetchedData<
+                            MediaTrackingMappingRow,
+                            $MediaTrackingMappingsTable,
+                            MediaTrackingOutboxRow>(
+                        currentTable: table,
+                        referencedTable: $$MediaTrackingMappingsTableReferences
+                            ._mediaTrackingOutboxRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$MediaTrackingMappingsTableReferences(
+                                    db, table, p0)
+                                .mediaTrackingOutboxRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.mappingId == item.id),
+                        typedResults: items)
+                ];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$MediaTrackingMappingsTableProcessedTableManager
+    = ProcessedTableManager<
+        _$HibikiDatabase,
+        $MediaTrackingMappingsTable,
+        MediaTrackingMappingRow,
+        $$MediaTrackingMappingsTableFilterComposer,
+        $$MediaTrackingMappingsTableOrderingComposer,
+        $$MediaTrackingMappingsTableAnnotationComposer,
+        $$MediaTrackingMappingsTableCreateCompanionBuilder,
+        $$MediaTrackingMappingsTableUpdateCompanionBuilder,
+        (MediaTrackingMappingRow, $$MediaTrackingMappingsTableReferences),
+        MediaTrackingMappingRow,
+        PrefetchHooks Function({bool mediaTrackingOutboxRefs})>;
+typedef $$MediaTrackingOutboxTableCreateCompanionBuilder
+    = MediaTrackingOutboxCompanion Function({
+  Value<int> id,
+  required int mappingId,
+  required int progress,
+  Value<bool> completed,
+  Value<int> attemptCount,
+  Value<int> nextAttemptAt,
+  Value<String?> lastError,
+  required int updatedAt,
+});
+typedef $$MediaTrackingOutboxTableUpdateCompanionBuilder
+    = MediaTrackingOutboxCompanion Function({
+  Value<int> id,
+  Value<int> mappingId,
+  Value<int> progress,
+  Value<bool> completed,
+  Value<int> attemptCount,
+  Value<int> nextAttemptAt,
+  Value<String?> lastError,
+  Value<int> updatedAt,
+});
+
+final class $$MediaTrackingOutboxTableReferences extends BaseReferences<
+    _$HibikiDatabase, $MediaTrackingOutboxTable, MediaTrackingOutboxRow> {
+  $$MediaTrackingOutboxTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $MediaTrackingMappingsTable _mappingIdTable(_$HibikiDatabase db) =>
+      db.mediaTrackingMappings.createAlias(
+          'media_tracking_outbox__mapping_id__media_tracking_mappings__id');
+
+  $$MediaTrackingMappingsTableProcessedTableManager get mappingId {
+    final $_column = $_itemColumn<int>('mapping_id')!;
+
+    final manager = $$MediaTrackingMappingsTableTableManager(
+            $_db, $_db.mediaTrackingMappings)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_mappingIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$MediaTrackingOutboxTableFilterComposer
+    extends Composer<_$HibikiDatabase, $MediaTrackingOutboxTable> {
+  $$MediaTrackingOutboxTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get progress => $composableBuilder(
+      column: $table.progress, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get completed => $composableBuilder(
+      column: $table.completed, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get attemptCount => $composableBuilder(
+      column: $table.attemptCount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get nextAttemptAt => $composableBuilder(
+      column: $table.nextAttemptAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get lastError => $composableBuilder(
+      column: $table.lastError, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+
+  $$MediaTrackingMappingsTableFilterComposer get mappingId {
+    final $$MediaTrackingMappingsTableFilterComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.mappingId,
+            referencedTable: $db.mediaTrackingMappings,
+            getReferencedColumn: (t) => t.id,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$MediaTrackingMappingsTableFilterComposer(
+                  $db: $db,
+                  $table: $db.mediaTrackingMappings,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return composer;
+  }
+}
+
+class $$MediaTrackingOutboxTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $MediaTrackingOutboxTable> {
+  $$MediaTrackingOutboxTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get progress => $composableBuilder(
+      column: $table.progress, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get completed => $composableBuilder(
+      column: $table.completed, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get attemptCount => $composableBuilder(
+      column: $table.attemptCount,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get nextAttemptAt => $composableBuilder(
+      column: $table.nextAttemptAt,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get lastError => $composableBuilder(
+      column: $table.lastError, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+
+  $$MediaTrackingMappingsTableOrderingComposer get mappingId {
+    final $$MediaTrackingMappingsTableOrderingComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.mappingId,
+            referencedTable: $db.mediaTrackingMappings,
+            getReferencedColumn: (t) => t.id,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$MediaTrackingMappingsTableOrderingComposer(
+                  $db: $db,
+                  $table: $db.mediaTrackingMappings,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return composer;
+  }
+}
+
+class $$MediaTrackingOutboxTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $MediaTrackingOutboxTable> {
+  $$MediaTrackingOutboxTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get progress =>
+      $composableBuilder(column: $table.progress, builder: (column) => column);
+
+  GeneratedColumn<bool> get completed =>
+      $composableBuilder(column: $table.completed, builder: (column) => column);
+
+  GeneratedColumn<int> get attemptCount => $composableBuilder(
+      column: $table.attemptCount, builder: (column) => column);
+
+  GeneratedColumn<int> get nextAttemptAt => $composableBuilder(
+      column: $table.nextAttemptAt, builder: (column) => column);
+
+  GeneratedColumn<String> get lastError =>
+      $composableBuilder(column: $table.lastError, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  $$MediaTrackingMappingsTableAnnotationComposer get mappingId {
+    final $$MediaTrackingMappingsTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.mappingId,
+            referencedTable: $db.mediaTrackingMappings,
+            getReferencedColumn: (t) => t.id,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$MediaTrackingMappingsTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.mediaTrackingMappings,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return composer;
+  }
+}
+
+class $$MediaTrackingOutboxTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $MediaTrackingOutboxTable,
+    MediaTrackingOutboxRow,
+    $$MediaTrackingOutboxTableFilterComposer,
+    $$MediaTrackingOutboxTableOrderingComposer,
+    $$MediaTrackingOutboxTableAnnotationComposer,
+    $$MediaTrackingOutboxTableCreateCompanionBuilder,
+    $$MediaTrackingOutboxTableUpdateCompanionBuilder,
+    (MediaTrackingOutboxRow, $$MediaTrackingOutboxTableReferences),
+    MediaTrackingOutboxRow,
+    PrefetchHooks Function({bool mappingId})> {
+  $$MediaTrackingOutboxTableTableManager(
+      _$HibikiDatabase db, $MediaTrackingOutboxTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaTrackingOutboxTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaTrackingOutboxTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MediaTrackingOutboxTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<int> mappingId = const Value.absent(),
+            Value<int> progress = const Value.absent(),
+            Value<bool> completed = const Value.absent(),
+            Value<int> attemptCount = const Value.absent(),
+            Value<int> nextAttemptAt = const Value.absent(),
+            Value<String?> lastError = const Value.absent(),
+            Value<int> updatedAt = const Value.absent(),
+          }) =>
+              MediaTrackingOutboxCompanion(
+            id: id,
+            mappingId: mappingId,
+            progress: progress,
+            completed: completed,
+            attemptCount: attemptCount,
+            nextAttemptAt: nextAttemptAt,
+            lastError: lastError,
+            updatedAt: updatedAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required int mappingId,
+            required int progress,
+            Value<bool> completed = const Value.absent(),
+            Value<int> attemptCount = const Value.absent(),
+            Value<int> nextAttemptAt = const Value.absent(),
+            Value<String?> lastError = const Value.absent(),
+            required int updatedAt,
+          }) =>
+              MediaTrackingOutboxCompanion.insert(
+            id: id,
+            mappingId: mappingId,
+            progress: progress,
+            completed: completed,
+            attemptCount: attemptCount,
+            nextAttemptAt: nextAttemptAt,
+            lastError: lastError,
+            updatedAt: updatedAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$MediaTrackingOutboxTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({mappingId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (mappingId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.mappingId,
+                    referencedTable: $$MediaTrackingOutboxTableReferences
+                        ._mappingIdTable(db),
+                    referencedColumn: $$MediaTrackingOutboxTableReferences
+                        ._mappingIdTable(db)
+                        .id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$MediaTrackingOutboxTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $MediaTrackingOutboxTable,
+    MediaTrackingOutboxRow,
+    $$MediaTrackingOutboxTableFilterComposer,
+    $$MediaTrackingOutboxTableOrderingComposer,
+    $$MediaTrackingOutboxTableAnnotationComposer,
+    $$MediaTrackingOutboxTableCreateCompanionBuilder,
+    $$MediaTrackingOutboxTableUpdateCompanionBuilder,
+    (MediaTrackingOutboxRow, $$MediaTrackingOutboxTableReferences),
+    MediaTrackingOutboxRow,
+    PrefetchHooks Function({bool mappingId})>;
 typedef $$GalgamesTableCreateCompanionBuilder = GalgamesCompanion Function({
   required String id,
   required String name,
@@ -33443,6 +35192,10 @@ class $HibikiDatabaseManager {
       $$ClipboardHistoryTableTableManager(_db, _db.clipboardHistory);
   $$VideoScrapeMetaTableTableManager get videoScrapeMeta =>
       $$VideoScrapeMetaTableTableManager(_db, _db.videoScrapeMeta);
+  $$MediaTrackingMappingsTableTableManager get mediaTrackingMappings =>
+      $$MediaTrackingMappingsTableTableManager(_db, _db.mediaTrackingMappings);
+  $$MediaTrackingOutboxTableTableManager get mediaTrackingOutbox =>
+      $$MediaTrackingOutboxTableTableManager(_db, _db.mediaTrackingOutbox);
   $$GalgamesTableTableManager get galgames =>
       $$GalgamesTableTableManager(_db, _db.galgames);
   $$GalgameSourcesTableTableManager get galgameSources =>

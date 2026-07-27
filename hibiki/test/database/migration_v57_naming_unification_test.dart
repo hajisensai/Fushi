@@ -149,12 +149,12 @@ CREATE TABLE book_tag_membership_tombstones (
     return rows.map((r) => r.read<String>('name')).toSet();
   }
 
-  test('v57：user_version 升到 57，三张表落新列名、旧列名消失', () async {
+  test('v57：三张表落新列名、旧列名消失，并升到当前 user_version', () async {
     final HibikiDatabase db = await openV56Db();
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 57, reason: 'v57 = 命名统一 Phase 4 三项迁移');
+    expect(db.schemaVersion, 58, reason: 'v57 = 命名统一 Phase 4；v58 = 外部媒体自动记录');
 
     final Set<String> mapping = await columnsOf(db, 'video_book_tag_mappings');
     expect(mapping, contains('book_uid'));

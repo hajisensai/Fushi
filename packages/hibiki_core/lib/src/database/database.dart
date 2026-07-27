@@ -390,6 +390,8 @@ _MergedTagState _mergeTagClocks(
   ActivityEvents,
   ClipboardHistory,
   VideoScrapeMeta,
+  MediaTrackingMappings,
+  MediaTrackingOutbox,
   Galgames,
   GalgameSources,
   GalgameSessions,
@@ -411,7 +413,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 57;
+  int get schemaVersion => 58;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1197,6 +1199,17 @@ class HibikiDatabase extends _$HibikiDatabase {
               }
             } finally {
               await customStatement('PRAGMA foreign_keys = ON');
+            }
+          }
+          if (from < 58) {
+            // v58：外部媒体自动记录。两张新表只追加、不改写任何既有书/视频/进度：
+            // mapping 保存稳定的 Bangumi 映射，outbox 保存离线可恢复的单调进度队列。
+            // 先建父表再建带 FK 的队列表；fresh DB 由 createAll 一次建齐。
+            if (!await _tableExists('media_tracking_mappings')) {
+              await m.createTable(mediaTrackingMappings);
+            }
+            if (!await _tableExists('media_tracking_outbox')) {
+              await m.createTable(mediaTrackingOutbox);
             }
           }
         },

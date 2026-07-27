@@ -72,10 +72,12 @@ class VideoWatchTracker {
     FutureOr<void> Function(String title, String bookUid, String dateKey,
             int timestampMs, int durationMs, int subtitleChars)?
         recordActivity,
+    FutureOr<void> Function()? onEpisodeCompleted,
   })  : _addStat = addStat,
         _markCompleted = markCompleted,
         _addHourly = addHourly,
-        _recordActivity = recordActivity;
+        _recordActivity = recordActivity,
+        _onEpisodeCompleted = onEpisodeCompleted;
 
   final String title;
   final String bookUid;
@@ -91,6 +93,7 @@ class VideoWatchTracker {
   /// 行噪声，故活动事件在 session 累积后**只落一行**（总时长 + 总字幕字数）。
   final FutureOr<void> Function(String title, String bookUid, String dateKey,
       int timestampMs, int durationMs, int subtitleChars)? _recordActivity;
+  final FutureOr<void> Function()? _onEpisodeCompleted;
 
   static const Duration _interval = Duration(seconds: 60);
 
@@ -99,6 +102,7 @@ class VideoWatchTracker {
   DateTime? _tickStart;
   final Set<int> _countedIndices = <int>{};
   bool _completed = false;
+  bool _episodeCompletionReported = false;
 
   /// v49 session 累积：本次观看的净观看时长（[_flush] 里过滤挂起后累加）与字幕字数，
   /// [stop] 时聚合成一条活动事件后清零（幂等：二次 stop 见 0 不重复写）。
@@ -145,9 +149,10 @@ class VideoWatchTracker {
     }
   }
 
-  /// 换集：清空字幕去重集（新集字幕从头计），完成标记不变（按整本书）。
+  /// 换集：清空字幕去重集与外部单集完成门闩；本地 book 完成标记仍按整本书保持。
   void onEpisodeChanged() {
     _countedIndices.clear();
+    _episodeCompletionReported = false;
   }
 
   void dispose() {
@@ -202,6 +207,14 @@ class VideoWatchTracker {
       if (shouldMarkCompleted(s.positionMs, s.durationMs, _completed)) {
         _completed = true;
         await _markCompleted(bookUid);
+      }
+      if (shouldMarkCompleted(
+        s.positionMs,
+        s.durationMs,
+        _episodeCompletionReported,
+      )) {
+        _episodeCompletionReported = true;
+        await _onEpisodeCompleted?.call();
       }
     } catch (e, st) {
       ErrorLogService.instance.log('VideoWatchTracker.flush', e, st);

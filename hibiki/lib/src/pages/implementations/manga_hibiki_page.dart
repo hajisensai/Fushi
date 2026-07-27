@@ -1295,13 +1295,24 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     }
     // 翻到最后一页 → 幂等写「已读完」（判据用总页数）。
     final int pageCount = _payload?.images.length ?? 0;
-    if (pageCount > 0 && page >= pageCount - 1) {
+    final bool completed = pageCount > 0 && page >= pageCount - 1;
+    if (completed) {
       try {
         await db.markEpubBookCompletedIfUnset(widget.bookKey, DateTime.now());
       } catch (e, stack) {
         ErrorLogService.instance.log('MangaHibikiPage.markCompleted', e, stack);
       }
     }
+    // 漫画没有 Bangumi 的“页”进度：自动映射会按卷记录，只有翻到最后一页才入队；
+    // 若用户手工选择了“话”，则 page+1 仍作为其明确选择下的本地进度来源。
+    // 部分页面测试用轻量 AppModel 覆写 database getter，但不会走完整 initialise；
+    // 此时只保留原有本地页码写入，不触碰依赖正式数据库生命周期的自动记录服务。
+    if (!appModel.isDatabaseReady) return;
+    await appModel.mediaTrackingService.recordBookProgress(
+      bookKey: widget.bookKey,
+      completedChapterCount: page + 1,
+      completed: completed,
+    );
   }
 
   Future<void> _flushPosition() async {
