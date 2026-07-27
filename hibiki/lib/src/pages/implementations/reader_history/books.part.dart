@@ -73,6 +73,10 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       dragBookId: srtBookId,
       onTagDropped:
           srtBookId == null ? null : (tag) => _addTagToSrtBook(srtBookId, tag),
+      // 拖卡进合集：SRT 的合集身份是 **uid**，不是上面打标签用的 int 主键
+      // `srtBookId`（`_addSrtToCollection` 同源）——两者不可混用。
+      dragMediaRef: MediaRef(kind: MediaKind.srt, entryKey: book.uid),
+      dragLabel: displayTitle,
       onTap: () => _openSrtBook(book),
       onLongPress: () =>
           _showSrtBookDialog(book, removeFromCollection: removeFromCollection),

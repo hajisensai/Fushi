@@ -51,6 +51,7 @@ import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/shelf_sort.dart';
 import 'package:hibiki/src/media/media_search_text.dart';
+import 'package:hibiki/src/media/collections/collection_drag.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
@@ -1683,6 +1684,30 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     await _loadLibraryMaps();
   }
 
+  /// 把视频卡拖到合集封面卡上 = 把该视频加入本合集（`CollectionDropTarget`）。
+  ///
+  /// `addToCollection` 幂等，但静默 no-op 对用户是「拖了没反应」——先查成员给
+  /// 「已在该合集」的明确提示，再落库；成功后走 [_loadLibraryMaps] 同款刷新。
+  Future<void> _addMediaToCollection(
+      int collectionId, MediaRef mediaRef) async {
+    final HibikiDatabase db = ref.read(appProvider).database;
+    final List<MediaCollectionItemRow> items =
+        await db.getCollectionItems(collectionId);
+    final bool already = items.any(
+      (MediaCollectionItemRow it) =>
+          it.mediaType == mediaRef.dbMediaType &&
+          it.entryKey == mediaRef.entryKey,
+    );
+    if (already) {
+      HibikiToast.show(msg: t.collection_already_has_item);
+      return;
+    }
+    await db.addToCollection(collectionId, mediaRef.kind, mediaRef.entryKey);
+    if (!mounted) return;
+    await _loadLibraryMaps();
+    HibikiToast.show(msg: t.batch_add_to_collection_success(n: 1));
+  }
+
   Future<void> _editTags(VideoBookRow book) async {
     await Navigator.push(
       context,
@@ -2651,11 +2676,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
     // 选择态下禁用标签拖放命中（与散卡一致：避免选卡时误触拖标签）。
     if (_selectionMode) return card;
-    return BookDragTarget(
-      bookId: 'collection:${collection.id}',
-      onTagDropped: (BookTagRow tag) =>
-          _addTagToVideoCollection(collection.id, tag),
-      child: card,
+    // 视频合集是封面卡（不是 CollectionShelfRow 行头——`unified_collections_
+    // architecture_guard_test` 明令禁止视频页回退用行式布局），故接收端直接包在
+    // 卡上：拖视频卡落到合集封面 = 加入该合集。
+    return CollectionDropTarget(
+      onMediaDropped: (MediaRef mediaRef) =>
+          _addMediaToCollection(collection.id, mediaRef),
+      child: BookDragTarget(
+        bookId: 'collection:${collection.id}',
+        onTagDropped: (BookTagRow tag) =>
+            _addTagToVideoCollection(collection.id, tag),
+        child: card,
+      ),
     );
   }
 
@@ -3451,7 +3483,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           );
     return CardDropZone<VideoBookRow>(
       meta: book,
-      child: card,
+      // 拖卡进合集：拖拽源包在标签 drop target 外（这张卡既能被拖走、也能接住
+      // 落下的标签，泛型不同互不干扰）；多选态不建拖拽源。
+      child: MediaCardDraggable(
+        mediaRef: MediaRef(kind: MediaKind.video, entryKey: book.bookUid),
+        label: book.title,
+        enabled: !_selectionMode,
+        child: card,
+      ),
     );
   }
 

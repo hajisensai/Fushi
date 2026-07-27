@@ -207,6 +207,8 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
     String? selectionKey,
     Object? dragBookId,
     void Function(BookTagRow tag)? onTagDropped,
+    MediaRef? dragMediaRef,
+    String? dragLabel,
   }) {
     final bool selected =
         selectionKey != null && _selectedKeys.contains(selectionKey);
@@ -267,14 +269,25 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
       onLongPress: _selectionMode ? null : onLongPress,
       child: interactiveCard,
     );
-    if (dragBookId == null || onTagDropped == null || _selectionMode) {
-      return card;
+    Widget result = card;
+    if (dragBookId != null && onTagDropped != null && !_selectionMode) {
+      result = BookDragTarget(
+        bookId: dragBookId,
+        onTagDropped: onTagDropped,
+        child: result,
+      );
     }
-    return BookDragTarget(
-      bookId: dragBookId,
-      onTagDropped: onTagDropped,
-      child: card,
-    );
+    // 拖卡进合集：拖拽源包在标签 drop target **外面**——两者方向相反（这张卡既能
+    // 被拖走、也能接住落下的标签），泛型不同互不干扰；Draggable 只加 Listener，
+    // 不改变布局（`book_drag_target_layout_test.dart` 的等尺寸断言仍成立）。
+    if (dragMediaRef != null && !_selectionMode) {
+      result = MediaCardDraggable(
+        mediaRef: dragMediaRef,
+        label: dragLabel ?? '',
+        child: result,
+      );
+    }
+    return result;
   }
 
   /// 块2：合集行头整选勾选框（选=选中整个合集）。与散卡 [_bookCardShell] 的封面

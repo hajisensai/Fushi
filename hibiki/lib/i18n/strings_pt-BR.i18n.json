@@ -2682,5 +2682,6 @@
   "video_scrape_search_failed": "Search failed. Tap Search to retry.",
   "scrape_reason_network": "Could not get a valid response from the cover source. Check your network and retry.",
   "scrape_reason_server": "The cover source returned an error. Try again later or pick another candidate.",
-  "common_more_actions": "More actions"
+  "common_more_actions": "More actions",
+  "collection_already_has_item": "This item is already in the collection."
 }

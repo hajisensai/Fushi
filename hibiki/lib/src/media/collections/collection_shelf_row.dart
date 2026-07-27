@@ -4,6 +4,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
+import 'package:hibiki/src/media/collections/collection_drag.dart';
 import 'package:hibiki/utils.dart';
 
 /// 统一合集 UI v2 Phase C：合集独占一行（Jellyfin/Netflix 行式布局）。
@@ -34,6 +35,7 @@ class CollectionShelfRow extends StatefulWidget {
     this.selectionCheckbox,
     this.onToggleSelected,
     this.onTagDropped,
+    this.onMediaDropped,
     this.tags,
     this.onContextMenu,
     super.key,
@@ -90,6 +92,11 @@ class CollectionShelfRow extends StatefulWidget {
   /// 手势一致；成员卡区各成员卡自带书级 drop target，与行头区不重叠）。null（默认）时
   /// 行头不接收拖放。合集详情页 AppBar 的打标签按钮是另一条等价入口。
   final void Function(BookTagRow tag)? onTagDropped;
+
+  /// 把**媒体卡**拖到行头 = 把该条目加入本合集（与 [onTagDropped] 的标签拖放并存，
+  /// 靠 payload 泛型分流：`MediaRef` 走这里、`BookTagRow` 走 [onTagDropped]，
+  /// 两个 DragTarget 互不误接）。null（默认）时行头不接收卡片拖放。
+  final void Function(MediaRef ref)? onMediaDropped;
 
   /// 该合集已打的标签（行头下方展示 chip 列，与书/视频卡的标签列同形）。null/空时
   /// 不占位。调用方 `ref.watch(collectionTagMapProvider)` 后传该合集的列表；打标签
@@ -307,6 +314,17 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
     final void Function(BookTagRow tag)? onTagDropped = widget.onTagDropped;
     if (onTagDropped != null) {
       result = _wrapTagDropTarget(context, tokens, result, onTagDropped);
+    }
+    // 把媒体卡拖到行头 = 加入本合集。与上面的标签 DragTarget 嵌套并存，靠 payload
+    // 泛型分流（`MediaRef` vs `BookTagRow`），无运行时判别分支。
+    final void Function(MediaRef ref)? onMediaDropped = widget.onMediaDropped;
+    if (onMediaDropped != null) {
+      result = CollectionDropTarget(
+        onMediaDropped: onMediaDropped,
+        alignment: AlignmentDirectional.centerEnd,
+        borderRadius: tokens.radii.controlRadius,
+        child: result,
+      );
     }
     return result;
   }
