@@ -87,7 +87,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     try {
       results = await _resolveCandidates(keyword);
     } catch (e, stack) {
-      // BUG-1174：失败要有出口。界面出可见失败行，原始原因落错误日志（用户可在
+      // BUG-1176：失败要有出口。界面出可见失败行，原始原因落错误日志（用户可在
       // 「错误日志」页查看/上传），不静默塌缩成空列表。
       ErrorLogService.instance.log('BookCoverScrapeDialog.search', e, stack);
       failure = e;

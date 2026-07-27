@@ -87,8 +87,8 @@ void main() {
     expect(find.text('Yotsuba to!'), findsOneWidget);
   });
 
-  // BUG-1174：失败行此前只说「失败了」，没有任何可行动原因，原始原因也没有出口。
-  testWidgets('BUG-1174 搜索失败带可行动原因 + 落错误日志', (WidgetTester tester) async {
+  // BUG-1176：失败行此前只说「失败了」，没有任何可行动原因，原始原因也没有出口。
+  testWidgets('BUG-1176 搜索失败带可行动原因 + 落错误日志', (WidgetTester tester) async {
     final BookMetadataScraper scraper = BookMetadataScraper(
       client: MockClient(
           (http.Request req) async => throw http.ClientException('down')),
@@ -112,7 +112,7 @@ void main() {
     );
   });
 
-  testWidgets('BUG-1174 源站 HTTP 500 给出「源站报错」而非「检查网络」',
+  testWidgets('BUG-1176 源站 HTTP 500 给出「源站报错」而非「检查网络」',
       (WidgetTester tester) async {
     final BookMetadataScraper scraper = BookMetadataScraper(
       client: MockClient((http.Request req) async => http.Response('', 500)),

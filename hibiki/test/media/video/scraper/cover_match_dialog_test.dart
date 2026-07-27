@@ -238,9 +238,9 @@ void main() {
     expect(find.text(t.video_scrape_use), findsNothing);
   });
 
-  // BUG-1174：搜索失败曾被 `catch (_)` 吞成空表，界面显示「无匹配」——用户无从分辨
+  // BUG-1176：搜索失败曾被 `catch (_)` 吞成空表，界面显示「无匹配」——用户无从分辨
   // 「搜不到」与「搜不了」，也拿不到任何可上报的原因。失败必须有出口。
-  testWidgets('BUG-1174 搜索失败出可见错误行（非「无匹配」）+ 可行动原因 + 落错误日志，且可重试',
+  testWidgets('BUG-1176 搜索失败出可见错误行（非「无匹配」）+ 可行动原因 + 落错误日志，且可重试',
       (WidgetTester tester) async {
     final VideoBookRow book = await seed();
     final _StubScraperService service = buildService()
@@ -276,7 +276,7 @@ void main() {
     expect(service.searchCalls, 2);
   });
 
-  testWidgets('BUG-1174 源站带 HTTP 状态码时给出「源站报错」而非「检查网络」',
+  testWidgets('BUG-1176 源站带 HTTP 状态码时给出「源站报错」而非「检查网络」',
       (WidgetTester tester) async {
     final VideoBookRow book = await seed();
     final _StubScraperService service = buildService()

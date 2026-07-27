@@ -74,7 +74,7 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   bool _searching = false;
   bool _searched = false;
 
-  /// 上一次搜索失败的异常（null = 没失败）。BUG-1174：「搜不到」和「搜不了」是两回
+  /// 上一次搜索失败的异常（null = 没失败）。BUG-1176：「搜不到」和「搜不了」是两回
   /// 事，失败必须有出口——失败态在结果区显示错误行 + 可行动原因，绝不塌缩成
   /// 「无匹配」空态骗用户以为条目不存在。
   Object? _searchFailure;
