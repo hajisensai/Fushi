@@ -271,6 +271,10 @@ void main() {
       );
       // 兜底路径与外链路径必须共用同一份引擎源码，不能各造一份。
       expect(webview.contains('source: readerEngineSource(),'), isTrue);
+      // install 自己抛错不得回落：引擎已经在，重跑同一份代码只会把监听器装两遍。
+      final String boot = ReaderEngineScript.bootInvocation(_sampleConfig());
+      expect(boot.contains('try { window.__hoshiEngine.install(C); }'), isTrue,
+          reason: 'install 抛错必须就地 catch，不能冒泡成 engine-missing 触发重装');
     });
   });
 

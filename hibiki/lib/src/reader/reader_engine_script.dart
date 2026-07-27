@@ -66,12 +66,18 @@ class ReaderEngineScript {
   /// 返回值是表达式（IIFE），`evaluateJavascript` 会把它的返回值带回 Dart，
   /// 供 [bootOk] / [bootEngineMissing] 判定。
   static String bootInvocation(ReaderEngineConfig config) {
+    // install 的抛错**不**回落到内联兜底：兜底解决的是「引擎不在」，引擎已经在的情况下
+    // 把同一份代码再跑一遍只会把事件监听器装两遍。就地 console.error（与两个 shell 的
+    // boot try/catch 同款），BUG-1017 的 microtask 照样摘 cloak，与改动前一致。
     return '(function(){'
         'var C = ${config.toJsLiteral()};'
         'window.__hoshiReaderConfig = C;'
         'if (!window.__hoshiEngine || typeof window.__hoshiEngine.install !== "function")'
         ' return "$bootEngineMissing";'
-        'window.__hoshiEngine.install(C);'
+        'try { window.__hoshiEngine.install(C); }'
+        ' catch (e) { try { if (window.console && console.error)'
+        ' console.error("[HoshiReader] engine install failed", e); }'
+        ' catch (_ignored) {} }'
         'return "$bootOk";'
         '})()';
   }
