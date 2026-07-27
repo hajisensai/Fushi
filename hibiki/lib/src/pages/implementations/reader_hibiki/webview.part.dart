@@ -299,6 +299,16 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   }) {
     String html = utf8.decode(rawData, allowMalformed: true);
     html = ReaderResourceSanitizer.sanitizeXhtml(html);
+    // TODO-perf（跨章·图片）：离屏插图不该拖住 window.load —— 属性必须写进 HTML 源码
+    // 才对本次加载生效（JS 侧那次 lazy 跑在 load 之后，来不及，见 markImagesLazy）。
+    // 纯图片章整章 eager：它的分页几何要靠插图真实撑开（TODO-1349）。判据用 EpubBook
+    // 的 isImageOnlyChapter（比 JS 侧「正文无任何可匹配字符」宽松），保证这里 eager 的
+    // 集合是 JS 侧 eager 集合的超集，不会倒挂。放在合并注入之前，故 .hoshi-merged-image
+    // 里的前导插图天然保持 eager（TODO-1339）。
+    html = ReaderResourceSanitizer.markImagesLazy(
+      html,
+      eagerAll: _isImageOnlyChapterCached(chapterIndex),
+    );
     // TODO-1128 / TODO-1174: when this text chapter absorbs the preceding
     // single-image chapters (merge-image on), prepend their <img> to the *start*
     // of the flow before the reader style is injected, so the illustrations
@@ -422,6 +432,62 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         }
       }
     });
+  }
+
+  /// [EpubBook.isImageOnlyChapter] 要 parse 整章 HTML，而章节 HTML 在一次阅读会话里
+  /// 不变，故按章号记忆化。章号非法 / 书未就绪时返回 true（保守走 eager，宁可慢一点也
+  /// 不冒「该 eager 的图被挂 lazy」导致分页几何塌缩的风险）。
+  bool _isImageOnlyChapterCached(int chapterIndex) {
+    if (chapterIndex < 0) return true;
+    final EpubBook? book = _book;
+    if (book == null) return true;
+    final bool? cached = _imageOnlyChapterCache[chapterIndex];
+    if (cached != null) return cached;
+    final bool value = book.isImageOnlyChapter(chapterIndex);
+    _imageOnlyChapterCache[chapterIndex] = value;
+    return value;
+  }
+
+  /// TODO-perf（跨章·图片）：把下一章的插图预热进 WebView 的 HTTP 缓存。
+  ///
+  /// 实测（`[chapter-perf]`，1600×2400 PNG × 3~4 张的章节）：**首次**进入带插图的章
+  /// docLoad 689~717ms，其中 `nav.dcl` 只有 15~20ms——DOM 早就解析完了，剩下 670ms
+  /// 全是在等图片读盘+解码；而**再次**进入同一章只要 66ms，因为图片命中了 WebView 缓存
+  /// （图片响应带 `Cache-Control: max-age=3600`，见 [_readerResourcePayload]）。
+  /// 遮罩正好盖住这整段（setup 脚本挂在 `window.load` 之后），所以带插图的跨章体感是
+  /// 「翻一下要大半秒」。
+  ///
+  /// 这里在**当前章已经读起来之后**，用一个隐藏的 `new Image()` 把下一章的图按同样的
+  /// URL 请求一遍：走的是同一个 `hoshi.local` 拦截器、同一份缓存条目，等用户真的翻过去
+  /// 时那些图已经在缓存里。纯预热，不改 DOM、不参与任何几何计算；失败静默（预热不到就
+  /// 退回原来的现付现取）。
+  void _prefetchAdjacentChapterImages(int index) {
+    final EpubBook? book = _book;
+    final InAppWebViewController? controller = _controller;
+    if (book == null || controller == null) return;
+    if (index < 0 || index >= book.chapters.length) return;
+    final List<String> srcs = book.chapterImageSrcs(index);
+    if (srcs.isEmpty) return;
+    final String chapterDir =
+        p.posix.dirname(normalizeHref(book.chapters[index].href));
+    final List<String> urls = <String>[];
+    for (final String src in srcs) {
+      final String trimmed = src.trim();
+      if (trimmed.isEmpty) continue;
+      // data: / 绝对 URL 不经我们的拦截器，预热无意义。
+      if (trimmed.startsWith('data:') || trimmed.contains('://')) continue;
+      urls.add(ReaderHibikiSource.epubUrl(
+          p.posix.normalize(p.posix.join(chapterDir, trimmed))));
+    }
+    if (urls.isEmpty) return;
+    final String json = jsonEncode(urls);
+    unawaited(controller
+        .evaluateJavascript(
+          source: '(function(){try{var u=$json;'
+              'for(var i=0;i<u.length;i++){var im=new Image();'
+              'im.decoding="async";im.src=u[i];}}catch(e){}})();',
+        )
+        .catchError((Object _) => null));
   }
 
   static bool _isValidFontData(Uint8List data) => isValidFontData(data);

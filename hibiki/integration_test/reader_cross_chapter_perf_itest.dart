@@ -56,10 +56,14 @@ void main() {
           .setPref('src:reader_ttu:ttu_writing_mode', 'horizontal-tb');
       await ReaderHibikiSource.readerSettings?.refreshFromDb();
 
+      // 带**真实体量**插图（1600×2400 PNG）的书：合成 fixture 原来的「图片章」是内联
+      // SVG，解码几乎免费，跨章计时里完全测不到图片这一段——而真实书的整页插图正是
+      // 用户感知「跨章要半秒」的主因。withRealImages 追加两章：纯整页插图（eager 路径）
+      // 与图文混排（lazy 路径）。
       final String bookKey = await EpubImporter.import(
         db: appModel.database,
-        bytes: EpubGenerator().generate(),
-        fileName: 'perf_cross_chapter.epub',
+        bytes: const EpubGenerator(withRealImages: true).generate(),
+        fileName: 'perf_cross_chapter_images.epub',
       );
 
       final ReaderHibikiSource source = ReaderHibikiSource.instance;
@@ -112,8 +116,10 @@ void main() {
       // 恢复，与前进的章首恢复是两条不同的 JS restore 路径）。章体量差异很大
       // （420 markers 长章 / 5 markers 短章 / 图片章 / ruby 章 / 500 markers 最长章），
       // 逐章日志里的 `chapter=N` 可用来看耗时是否随章体量线性增长。
-      const int forwardTurns = 7;
-      const int backwardTurns = 7;
+      // 10 章：前 8 章同旧 fixture（文本/短章/SVG/ruby），第 9、10 章是真实插图章。
+      // 一路前进到末章再退回来，日志里的 chapter=8/9 就是带真实插图的两章。
+      const int forwardTurns = 9;
+      const int backwardTurns = 9;
       // 落点正确性基线：跨章不只要快，还必须落对章、落对位置（前进=章首、
       // 后退=章末）。每次跨章后读真实 DOM（baseURI = 当前章文档）与 JS 侧
       // calculateProgress()，任何优化都必须保住这两条。
@@ -152,7 +158,12 @@ void main() {
         }
         // 让新章 settle（重锚/进度刷新等尾沿）跑完，并越过 450ms 跨章冷却窗，
         // 避免下一次 onBoundarySwipe 被当成同一手势的残余惯性丢弃。
-        await tester.pump(const Duration(milliseconds: 1500));
+        //
+        // 同时这段停留就是「用户在读当前章」的时间窗——下一章插图的预热
+        // （_prefetchAdjacentChapterImages）正是在这里跑。真实阅读一章是几十秒，
+        // 预热有充足时间；测试里取 4s，够几张 1600×2400 PNG 读盘+解码跑完，
+        // 让带插图章的跨章测到「预热已就绪」这个真实稳态而不是半路状态。
+        await tester.pump(const Duration(seconds: 4));
 
         final String to = await currentChapterFile();
         final double progress = await currentProgress();
