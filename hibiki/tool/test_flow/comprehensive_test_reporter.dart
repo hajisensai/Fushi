@@ -54,7 +54,12 @@ class ComprehensiveReport {
 
   final List<ScenarioReport> entries;
 
-  bool get hasFailures => entries.any((ScenarioReport entry) {
+  /// An empty report counts as a failure: zero executed scenarios means
+  /// nothing was verified, and that must never be indistinguishable from a
+  /// passing run.
+  bool get hasFailures =>
+      entries.isEmpty ||
+      entries.any((ScenarioReport entry) {
         return entry.status == ScenarioStatus.failed ||
             entry.status == ScenarioStatus.blocked;
       });
