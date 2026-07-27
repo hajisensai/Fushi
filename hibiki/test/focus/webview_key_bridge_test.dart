@@ -1,3 +1,9 @@
+// 覆盖边界（勿误读）：本文件只验 reader 侧 JS 载荷的**语义**——生成函数返回的那个字符串
+// 里有什么、行为契约对不对。它证明不了这个载荷真的被拼进最终注入 WebView 的 setup 脚本。
+// 「装配完整性」（每个子载荷都被拼进去、压缩后还在）由
+// test/reader/reader_script_compactor_test.dart 的「setup 装配完整性」一组集中守——
+// 那里删掉模板中的 $caretJs / $selectionJs / $longPressDragJs 会立刻转红，本文件不会。
+// 改这里前先分清你要锁的是语义还是注入，别在本文件里重造装配断言。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/focus/webview_key_bridge.dart';
 
