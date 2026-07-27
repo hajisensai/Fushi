@@ -747,6 +747,10 @@
       // no-results card (the old hasContent body>0 heuristic could reveal before
       // the theme CSS painted). The MutationObserver / safety timer stay as
       // belt-and-braces (a render that never signals still reveals via safety).
+      // BUG-1139 ③ 陷阱提示：只吃 handler 名，**故意丢掉 args[0]**。那个数字是
+      // popup.js 的 __hibikiScrollHeight()，在 CSS `zoom` 下是未乘 z 的 layout px，
+      // 与 shell 几何（host CSS px）不同单位。谁将来拿它去定尺寸，必须先过
+      // frameContentZoom 换算 —— 尺寸的唯一真值是 measureAndReport 的 overlaySize。
       try {
         if (message && typeof message === 'object' &&
             message.handler === 'popupRendered') {
@@ -1817,6 +1821,30 @@
     postToHost('overlaySize', [dpr, box]);
   }
 
+  // BUG-1139 ③ — 卡片 iframe 的 documentElement 上挂着 CSS `zoom`
+  // （popup_settings_injection 的 head 注入 `= appUiScale × dictionaryFontSize/16`）。
+  // 标准化 CSS zoom 下 scrollHeight/offsetHeight 返回的是**未乘 z 的 layout px**，
+  // 而卡片实际画出 layout × z —— popup.js 的 popupCurrentZoom + `visualStep / z`
+  // 正是同一语义的另一半。z 取不到（未注入 / 非法 / 跨域抛错）一律回落 1。
+  function frameContentZoom(record) {
+    try {
+      var doc = record.iframe.contentDocument;
+      var docEl = doc && doc.documentElement;
+      var z = (docEl && docEl.style) ? parseFloat(docEl.style.zoom) : NaN;
+      return (isFinite(z) && z > 0) ? z : 1;
+    } catch (e) {
+      return 1;
+    }
+  }
+
+  // BUG-1139 ③ — 返回值必须与 shell 几何同单位：**未缩放的 host CSS px**
+  // （host 文档自身从不设 zoom，shell.style.left/top/width/height 都是这个单位）。
+  // 所以 iframe 里量到的 layout px 要先乘回 z，否则 z>1 时 measureAndReport 会把
+  // shell 高度收到只有内容视觉高度的 1/z，union bbox 的 maxBottom 与 shellRects
+  // （→ window region / ApplyRoundedRegion）跟着矮一截，卡片底部被窗口边缘裁掉、
+  // 裁口外直接露出底下的应用 —— 正是本 bug 的原始症状。
+  // Math.ceil 只防子像素短一格；z=1（默认 16px 字号 + 100% 界面大小）时
+  // scrollHeight/offsetHeight 本就是整数，换算是恒等变换，行为逐字节不变。
   function measureContentHeight(record) {
     try {
       var doc = record.iframe.contentDocument;
@@ -1825,10 +1853,14 @@
       }
       var body = doc.body;
       var docEl = doc.documentElement;
-      return Math.max(
+      var layoutPx = Math.max(
         body.scrollHeight || 0,
         body.offsetHeight || 0,
         docEl ? (docEl.scrollHeight || 0) : 0);
+      if (layoutPx <= 0) {
+        return 0;
+      }
+      return Math.ceil(layoutPx * frameContentZoom(record));
     } catch (e) {
       return 0;
     }

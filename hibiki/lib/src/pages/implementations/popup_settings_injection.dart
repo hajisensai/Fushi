@@ -230,12 +230,11 @@ const String _globalLookupIconFontJs = '''
 /// 「词典字号」这一唯一真值 → 整栈重渲，避免 JS 与 Dart 两处各写一份 zoom。代价是
 /// 每档多一次 Dart 往返（约 1~2 帧）。
 ///
-/// ⚠️ 别把这条读成「几何已经对了」（BUG-1139 ③ 未闭环）：重渲后字号最终仍只落到本
-/// 文件下方那行 `documentElement.style.zoom`，本仓没有任何一处用 dictionaryFontSize
-/// 生成 font-size CSS，所以这是 CSS zoom 而非按字号重排。而 host 的
-/// measureContentHeight（global_lookup_host.js:1820-1834）读的是 CSS `zoom` 下未乘 z 的
-/// layout px 且不做补偿，覆盖窗的窗口/region 尺寸公式里也没有字号分量 ——
-/// 放大后窗口宽度不变、高度在未触卡上限时仍会偏小 z 倍。
+/// 注意这里生效的是 CSS zoom 而非按字号重排：重渲后字号最终落到本文件下方那行
+/// `documentElement.style.zoom`，本仓没有任何一处用 dictionaryFontSize 生成
+/// font-size CSS。几何链能跟上是因为 BUG-1139 ③ —— host 的 measureContentHeight
+/// （global_lookup_host.js 的 frameContentZoom）把 CSS `zoom` 下未乘 z 的 layout px
+/// 换算回 host CSS px，窗口高度与 window region 才对得上内容的视觉高度。
 ///
 /// 步进本身不在 JS 里算：只回传**净档数**（rAF 内合帧累加，一次快滚不会打出十几次
 /// 往返），夹紧与步长仍归 Dart 的 `steppedPopupZoomFontSize` / `clampPopupZoomFontSize`

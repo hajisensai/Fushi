@@ -131,6 +131,26 @@ void main() {
           reason: 'Ctrl+滚轮注入必须由 globalLookup 门控');
     });
 
+    test('host 测高把 iframe layout px 换算回 host CSS px（③ 几何闭环）', () {
+      // 行为级断言在 node harness（global_lookup_host_test.mjs 的 Z1，负向验证过：
+      // 去掉换算即 exit 1）。那个 harness 不在 CI 里跑，所以这里补一条 CI 可见的
+      // 源码守卫，防止有人把换算删掉后 CI 依然全绿。
+      final String host = _repoFile('hibiki/assets/popup/global_lookup_host.js')
+          .readAsStringSync();
+      expect(host.contains('function frameContentZoom('), isTrue,
+          reason: '缺 zoom 读取：iframe 的 documentElement.style.zoom 是唯一来源');
+      expect(host.contains('layoutPx * frameContentZoom(record)'), isTrue,
+          reason: 'measureContentHeight 必须把 layout px 乘回 z，'
+              '否则 z>1 时 window region 比内容矮 1/z，卡片底部又被裁');
+      // 换算必须落在 measureContentHeight 内 —— 它是 measureAndReport 唯一的
+      // 内容高度来源（bbox maxBottom + shellRects 都吃它）。
+      final int measureAt = host.indexOf('function measureContentHeight(');
+      expect(measureAt, greaterThan(0));
+      expect(host.indexOf('layoutPx * frameContentZoom(record)'),
+          greaterThan(measureAt),
+          reason: '换算必须在 measureContentHeight 里，别散到调用方');
+    });
+
     test('瞬态覆盖窗与剪贴板面板都接了这根 handler（两表面绝不漂开）', () {
       for (final String path in <String>[
         'hibiki/lib/src/lookup/global_lookup_controller.dart',

@@ -861,14 +861,11 @@ class GlobalLookupController {
       return;
     }
     // BUG-1139 — Ctrl+滚轮内容缩放：改「词典字号」这一唯一真值后整栈重渲。
-    // ⚠️ 已知未闭环（BUG-1139 ③）：字号最终只落到注入 head 的
-    // `documentElement.style.zoom`，而几何链对 CSS zoom 零补偿——
-    // measureContentHeight（global_lookup_host.js:1820-1834）读的是未乘 z 的
-    // layout px，且 :1722-1725 只允许把高度往小里收；窗口物理尺寸公式
-    // （下面 _renderStack 的 cardW/cardH = overlaySize × appUiScale）里也没有
-    // 字号分量。所以放大后窗口宽度不变、高度可能仍偏小 z 倍。这不是本次改动引入的
-    // （head 那行 zoom 一直在），但 Ctrl+滚轮让用户能交互式滚进该区间。
-    // 真正闭环需要给 measureContentHeight 补 × zoom，或让 cardW/cardH 乘 fs/16。
+    // 字号最终落到注入 head 的 `documentElement.style.zoom`（CSS zoom，不是重排）。
+    // 几何跟得上靠 BUG-1139 ③：host 的 measureContentHeight 用 frameContentZoom
+    // 把 iframe 的 layout px 换算回 host CSS px，union bbox 的 maxBottom 与
+    // shellRects（→ window region）才是内容的真实视觉高度。宽度不需要补偿——
+    // iframe 是 shell 的 100%，z 只压缩它内部的布局视口再画回来，视觉上始终铺满。
     if (maybeHandleOverlayZoomFontStep(
       model: _appModel,
       handler: handler,
