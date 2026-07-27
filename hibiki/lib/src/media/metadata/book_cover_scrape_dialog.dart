@@ -130,9 +130,9 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       try {
         direct = await _scraper.fetchById(keyword);
       } catch (e) {
-        // 界面上静默：这是尽力而为的第二路，关键词搜索（上一行，未 guard）失败才会
-        // 冒泡成可见失败态，所以这里吞掉不会让任何真失败消失。仍落诊断日志，
-        // 否则「数字关键词结果时多时少」无从查起。
+        // 界面上静默：这是尽力而为的第二路，本分支上方那次关键词搜索（未 guard）
+        // 失败才会冒泡成可见失败态，所以这里吞掉不会让任何真失败消失。仍落诊断
+        // 日志，否则「数字关键词结果时多时少」无从查起。
         direct = null;
         ErrorLogService.instance.logDiagnostic(
           'BookCoverScrapeDialog.fetchById',
