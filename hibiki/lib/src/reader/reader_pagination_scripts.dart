@@ -3139,8 +3139,7 @@ $_sharedJs
     if (charOffset <= 0) {
       this.scrollToChapterStart();
       this.registerImageLateAnchor({progress: 0});
-    }
-    else {
+    } else {
       // BUG-492 (TODO-1053 Bug A) 越界兜底：护住旧脏收藏记录。写入端曾把某句错记成
       // 相邻章 sectionIndex（_currentChapter 漂移），恢复端忠实加载该错章 DOM 后，本 charOffset
       // 是「另一章」的绝对偏移，在当前（错）章内可能超出本章可匹配字符总数 →

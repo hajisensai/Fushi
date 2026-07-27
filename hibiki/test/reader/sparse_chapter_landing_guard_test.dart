@@ -48,41 +48,49 @@ void main() {
 
     test('continuous restoreProgress(>=0.99) registers reanchor + force-loads',
         () {
+      // BUG-1140 第二轮：重锚资格的登记收敛到 registerImageLateAnchor（三种语义锚统一），
+      // 章末分支的语义不变——登记 + 强制 load + 落章末，三件事仍在同一条链上。
       expect(
           continuous.contains(
-              'this.__imgReanchorProgress = progress; this.forceLoadPendingImages(); this.scrollToChapterEnd();'),
+              'this.registerImageLateAnchor({progress: progress}); this.forceLoadPendingImages(); this.scrollToChapterEnd();'),
           isTrue,
           reason: '连续 restoreProgress 章末分支须置重锚资格 + 强制 load + 落章末');
     });
 
     test('image load callback reanchors continuous via scrollToChapterEnd', () {
-      // 判别必须先查 scrollToChapterEnd（连续独有），再回退 scrollToProgressPaged（两 shell 共有）。
+      // BUG-1140 第二轮：分派从 load 回调内联搬进共享的 reapplyImageLateAnchor，
+      // 但「连续判别必须先于分页」这条不变——scrollToProgressPaged 两 shell 都有，
+      // 用它判别会让连续误走分页分支不重锚。
       for (final String shell in <String>[paged, continuous]) {
-        final int endIdx =
-            shell.indexOf("typeof r.scrollToChapterEnd === 'function'");
+        expect(shell.contains('r.reapplyImageLateAnchor()'), isTrue,
+            reason: 'load 回调须触发语义重锚');
+        final int reapplyIdx =
+            shell.indexOf('reapplyImageLateAnchor: function');
+        expect(reapplyIdx, greaterThan(0));
+        final int contIdx =
+            shell.indexOf('this._isContinuousShell()', reapplyIdx);
         final int pagedIdx =
-            shell.indexOf("typeof r.scrollToProgressPaged === 'function'");
-        expect(endIdx, greaterThan(0),
-            reason: 'load 回调须有连续重锚分支（scrollToChapterEnd 判别）');
-        expect(pagedIdx, greaterThan(0),
-            reason: 'load 回调须保留分页重锚分支（scrollToProgressPaged）');
-        expect(endIdx < pagedIdx, isTrue,
-            reason:
-                'scrollToChapterEnd 判别须在 scrollToProgressPaged 之前（否则连续误走分页分支不重锚）');
+            shell.indexOf('this.scrollToProgressPaged(rctx, p)', reapplyIdx);
+        expect(contIdx, greaterThan(0),
+            reason: 'reapply 须有连续分支（_isContinuousShell 判别）');
+        expect(pagedIdx, greaterThan(0), reason: 'reapply 须保留分页分支');
+        expect(contIdx < pagedIdx, isTrue,
+            reason: '连续判别须在分页 scrollToProgressPaged 之前');
+        expect(shell.contains("typeof this.scrollToChapterEnd === 'function'"),
+            isTrue,
+            reason: '判别判据必须是连续独有的 scrollToChapterEnd');
+        expect(
+            shell.contains('if (p >= 0.99) this.scrollToChapterEnd();'), isTrue,
+            reason: '连续重锚分支须在 >=0.99 时调 scrollToChapterEnd');
       }
-      expect(
-          continuous.contains(
-              'if (r.__imgReanchorProgress >= 0.99) r.scrollToChapterEnd();'),
-          isTrue,
-          reason: '连续重锚分支须在 >=0.99 时调 scrollToChapterEnd');
     });
 
-    test('continuous paginate clears __imgReanchorProgress', () {
+    test('continuous paginate clears the image late anchor', () {
       final int pIdx = continuous.indexOf('paginate: function(direction) {');
       expect(pIdx, greaterThan(0));
       final String window =
           continuous.substring(pIdx, (pIdx + 200).clamp(0, continuous.length));
-      expect(window.contains('this.__imgReanchorProgress = null;'), isTrue,
+      expect(window.contains('this.clearImageLateAnchor();'), isTrue,
           reason: '连续 paginate 须清重锚资格（避免尾图 late-load 拽回用户已翻走的位置）');
     });
 
