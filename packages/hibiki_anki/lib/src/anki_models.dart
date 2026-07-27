@@ -172,7 +172,6 @@ class AnkiSettings {
     this.lapisFontScalePercent = 100,
     this.lapisCustomCss = '',
     this.lapisAppliedCssSha,
-    this.mediaDedupAutoEnabled = true,
     this.lastMediaDedupAtMs,
   });
 
@@ -207,7 +206,6 @@ class AnkiSettings {
         lapisFontScalePercent: json['lapisFontScalePercent'] as int? ?? 100,
         lapisCustomCss: json['lapisCustomCss'] as String? ?? '',
         lapisAppliedCssSha: json['lapisAppliedCssSha'] as String?,
-        mediaDedupAutoEnabled: json['mediaDedupAutoEnabled'] as bool? ?? true,
         lastMediaDedupAtMs: json['lastMediaDedupAtMs'] as int?,
       );
   final int? selectedDeckId;
@@ -252,11 +250,10 @@ class AnkiSettings {
   /// 与「被用户手改（不得静默覆盖）」。
   final String? lapisAppliedCssSha;
 
-  /// 是否启用每 7 天一次的媒体字节级去重（只删字节完全相同的多余副本，
-  /// 引用改写干净后才删；绝不重编码）。
-  final bool mediaDedupAutoEnabled;
-
-  /// 上次媒体去重完成时刻（epoch ms）。null = 从未跑过。
+  /// 上次媒体字节级去重完成时刻（epoch ms）。null = 从未跑过。
+  ///
+  /// 去重**只有用户在设置页手动触发**这一条路径（先出干跑报告、确认后才删），
+  /// 没有任何后台自动调度；这个时刻只是「上次跑过」的记录。
   final int? lastMediaDedupAtMs;
 
   bool get isConfigured => selectedDeckId != null && selectedNoteTypeId != null;
@@ -291,7 +288,6 @@ class AnkiSettings {
     String? lapisCustomCss,
     String? lapisAppliedCssSha,
     bool clearLapisAppliedCssSha = false,
-    bool? mediaDedupAutoEnabled,
     int? lastMediaDedupAtMs,
   }) =>
       AnkiSettings(
@@ -321,8 +317,6 @@ class AnkiSettings {
         lapisAppliedCssSha: clearLapisAppliedCssSha
             ? null
             : (lapisAppliedCssSha ?? this.lapisAppliedCssSha),
-        mediaDedupAutoEnabled:
-            mediaDedupAutoEnabled ?? this.mediaDedupAutoEnabled,
         lastMediaDedupAtMs: lastMediaDedupAtMs ?? this.lastMediaDedupAtMs,
       );
 
@@ -349,7 +343,6 @@ class AnkiSettings {
         'lapisFontScalePercent': lapisFontScalePercent,
         'lapisCustomCss': lapisCustomCss,
         'lapisAppliedCssSha': lapisAppliedCssSha,
-        'mediaDedupAutoEnabled': mediaDedupAutoEnabled,
         'lastMediaDedupAtMs': lastMediaDedupAtMs,
       };
 }

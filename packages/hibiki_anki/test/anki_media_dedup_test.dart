@@ -4,20 +4,45 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 void main() {
   group('planMediaDedupGroups', () {
     test('哈希相同的分成一组，单文件不产出，输出确定有序', () {
-      final List<MediaDedupGroup> groups =
-          planMediaDedupGroups(<String, String>{
-        'b.jpg': 'h1',
-        'a.jpg': 'h1',
-        'c.jpg': 'h2',
-        'z.png': 'h3',
-        'y.png': 'h3',
-        'x.png': 'h3',
-      });
+      final List<MediaDedupGroup> groups = planMediaDedupGroups(
+        <String, String>{
+          'b.jpg': 'h1',
+          'a.jpg': 'h1',
+          'c.jpg': 'h2',
+          'z.png': 'h3',
+          'y.png': 'h3',
+          'x.png': 'h3',
+        },
+        sizes: <String, int>{
+          'b.jpg': 10,
+          'a.jpg': 10,
+          'c.jpg': 20,
+          'z.png': 30,
+          'y.png': 30,
+          'x.png': 30,
+        },
+      );
       expect(groups, hasLength(2));
       expect(groups[0].canonical, 'a.jpg');
       expect(groups[0].duplicates, <String>['b.jpg']);
       expect(groups[1].canonical, 'x.png');
       expect(groups[1].duplicates, <String>['y.png', 'z.png']);
+    });
+
+    test('哈希撞车但字节数不同 → 绝不归为一组', () {
+      final List<MediaDedupGroup> groups = planMediaDedupGroups(
+        <String, String>{'a.jpg': 'same', 'b.jpg': 'same'},
+        sizes: <String, int>{'a.jpg': 10, 'b.jpg': 11},
+      );
+      expect(groups, isEmpty);
+    });
+
+    test('缺字节数的条目直接丢弃（长度未知不判等）', () {
+      final List<MediaDedupGroup> groups = planMediaDedupGroups(
+        <String, String>{'a.jpg': 'h', 'b.jpg': 'h'},
+        sizes: <String, int>{'a.jpg': 10},
+      );
+      expect(groups, isEmpty);
     });
   });
 
@@ -75,35 +100,60 @@ void main() {
     });
   });
 
-  group('shouldRunPeriodicMediaDedup', () {
-    const int day = 24 * 60 * 60 * 1000;
-
-    test('从未跑过 → 到期', () {
-      expect(shouldRunPeriodicMediaDedup(lastRunMs: null, nowMs: 0), isTrue);
+  group('textReferencesMediaName', () {
+    test('CSS url() / @import / 相对引用都算引用', () {
+      expect(
+          textReferencesMediaName('src: url(_f.woff2);', '_f.woff2'), isTrue);
+      expect(
+          textReferencesMediaName("@import '_base.css';", '_base.css'), isTrue);
+      expect(textReferencesMediaName('url("./_f.woff2")', '_f.woff2'), isTrue);
     });
 
-    test('不满 7 天不跑，满 7 天跑', () {
-      expect(
-        shouldRunPeriodicMediaDedup(lastRunMs: 0, nowMs: 6 * day),
-        isFalse,
+    test('边界安全：更长的名字不算引用', () {
+      expect(textReferencesMediaName('url(_f.woff2.bak)', '_f.woff2'), isFalse);
+      expect(textReferencesMediaName('url(x_f.woff2)', '_f.woff2'), isFalse);
+    });
+  });
+
+  group('isReferencingMediaFile', () {
+    test('只把会引用别人的文本格式算进扫描面', () {
+      expect(isReferencingMediaFile('_style.CSS'), isTrue);
+      expect(isReferencingMediaFile('a.js'), isTrue);
+      expect(isReferencingMediaFile('a.svg'), isTrue);
+      expect(isReferencingMediaFile('a.jpg'), isFalse);
+      expect(isReferencingMediaFile('a.woff2'), isFalse);
+      expect(isReferencingMediaFile('noext'), isFalse);
+      expect(isReferencingMediaFile('trailing.'), isFalse);
+    });
+  });
+
+  group('AnkiMediaDedupReport', () {
+    test('数量与字节数从明细派生，JSON 带逐条清单', () {
+      const AnkiMediaDedupReport report = AnkiMediaDedupReport(
+        dryRun: true,
+        groupCount: 1,
+        deletions: <MediaDedupDeletion>[
+          MediaDedupDeletion(filename: 'b.jpg', canonical: 'a.jpg', bytes: 30),
+          MediaDedupDeletion(filename: 'c.jpg', canonical: 'a.jpg', bytes: 12),
+        ],
+        notesRewritten: 2,
+        modelsRewritten: 0,
+        skipped: 1,
       );
-      expect(
-        shouldRunPeriodicMediaDedup(lastRunMs: 0, nowMs: 7 * day),
-        isTrue,
-      );
+      expect(report.duplicatesRemoved, 2);
+      expect(report.bytesSaved, 42);
+      expect(report.toJson()['deletions'], hasLength(2));
     });
   });
 
   group('AnkiSettings 媒体去重字段', () {
-    test('默认开启 + JSON 往返', () {
+    test('只留「上次跑过」的时刻，没有任何自动开关', () {
       const AnkiSettings fresh = AnkiSettings();
-      expect(fresh.mediaDedupAutoEnabled, isTrue);
       expect(fresh.lastMediaDedupAtMs, isNull);
+      expect(fresh.toJson().containsKey('mediaDedupAutoEnabled'), isFalse);
 
-      final AnkiSettings round = AnkiSettings.fromJson(fresh
-          .copyWith(mediaDedupAutoEnabled: false, lastMediaDedupAtMs: 123)
-          .toJson());
-      expect(round.mediaDedupAutoEnabled, isFalse);
+      final AnkiSettings round = AnkiSettings.fromJson(
+          fresh.copyWith(lastMediaDedupAtMs: 123).toJson());
       expect(round.lastMediaDedupAtMs, 123);
     });
   });

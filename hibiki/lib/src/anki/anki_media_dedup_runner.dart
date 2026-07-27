@@ -1,30 +1,24 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/storage/app_paths.dart';
 
-/// Anki 媒体字节级去重的应用层编排：journal 落盘 + 上次运行时间持久化 +
-/// 启动周期触发（每 7 天）。
+/// Anki 媒体字节级去重的应用层编排：journal 落盘 + 上次运行时间持久化。
+///
+/// **没有任何自动/周期触发路径**（用户拍板方案 A）：唯一入口是设置页的手动
+/// 触发，而且必须先跑 [runNow] 的干跑拿到删除清单、由用户在弹窗里确认之后，
+/// 才会以 `dryRun: false` 再跑一次真删。Hibiki 不会在用户没点之前动任何文件。
 ///
 /// 真实的扫描/改写/删除在 `BaseAnkiRepository.runMediaDedup`
 /// （AnkiConnect 实现）；本类只负责「每次真实改写/删除前把可回溯记录写进
-/// `<supportRoot>/backups/media_dedup/<时间戳>.jsonl`」这条保险带，以及
-/// check-due 周期门。
+/// `<supportRoot>/backups/media_dedup/<时间戳>.jsonl`」这条保险带。
 class AnkiMediaDedupRunner {
   AnkiMediaDedupRunner(this._repository);
 
   final BaseAnkiRepository _repository;
-
-  /// 启动周期触发的会话级闸门（HomePage 重建不重跑）。
-  static bool _ranThisSession = false;
-
-  /// 测试用：重置会话级闸门。
-  @visibleForTesting
-  static void resetSessionGate() => _ranThisSession = false;
 
   Future<Directory> journalDirectory() async {
     final Directory support = await AppPaths.supportRootDirectory();
@@ -34,8 +28,9 @@ class AnkiMediaDedupRunner {
     return dir;
   }
 
-  /// 跑一轮去重（设置页手动入口与周期触发共用）。[dryRun] = 只扫描不改动
-  /// （不写 journal、不更新时间戳）。后端不支持返回 null。
+  /// 跑一轮去重。[dryRun] = 只扫描规划、不改动任何东西（不写 journal、不更新
+  /// 时间戳），产出的 `AnkiMediaDedupReport.deletions` 就是给用户看的删除清单。
+  /// 后端不支持返回 null。
   Future<AnkiMediaDedupReport?> runNow({required bool dryRun}) async {
     if (!_repository.supportsMediaMaintenance) return null;
     if (dryRun) return _repository.runMediaDedup(dryRun: true);
@@ -63,30 +58,6 @@ class AnkiMediaDedupRunner {
       await sink.close();
       // 这一轮啥也没改（无重复/全跳过）：不留空 journal 文件。
       if (!wroteAny && await journal.exists()) await journal.delete();
-    }
-  }
-
-  /// 启动周期触发：开关开启 + 距上次 ≥7 天才真正跑。Anki 未运行/不可达是
-  /// 常态，静默跳过（时间戳不更新，下次启动再试）。
-  Future<void> maybeRunPeriodic() async {
-    if (_ranThisSession) return;
-    _ranThisSession = true;
-    if (!_repository.supportsMediaMaintenance) return;
-    final AnkiSettings settings = await _repository.loadSettings();
-    if (!settings.mediaDedupAutoEnabled) return;
-    if (!shouldRunPeriodicMediaDedup(
-      lastRunMs: settings.lastMediaDedupAtMs,
-      nowMs: DateTime.now().millisecondsSinceEpoch,
-    )) {
-      return;
-    }
-    try {
-      final AnkiMediaDedupReport? report = await runNow(dryRun: false);
-      if (report != null) {
-        debugPrint('AnkiMediaDedupRunner.periodic: ${report.toJson()}');
-      }
-    } catch (e) {
-      debugPrint('AnkiMediaDedupRunner.periodic: skipped (unreachable?): $e');
     }
   }
 }

@@ -1,8 +1,9 @@
-/// Anki 媒体字节级去重的纯函数层：分组规划、规范名选择、引用改写、周期判定。
+/// Anki 媒体字节级去重的纯函数层：分组规划、规范名选择、引用改写/探测。
 ///
-/// 范围（用户拍板）：**只去重、只删字节完全相同的多余副本**——引用全部改指
-/// 到保留的那一份之后再删副本，零信息损失。**绝不重编码/压缩任何文件**
-/// （画质一个字节都不动），也不做按年龄的清理。
+/// 范围（用户拍板方案 A）：**默认不跑、手动触发、先出干跑报告让用户确认**；
+/// 只删字节完全相同的多余副本——引用全部改指到保留的那一份之后再删，零信息
+/// 损失。**绝不重编码/压缩任何文件**（画质一个字节都不动），也不做按年龄的
+/// 清理，更没有任何后台自动删除路径。
 ///
 /// 「重复代码」也天然覆盖：模板资产（`_` 前缀的 js/css/字体）同样按字节去重，
 /// 模板/styling 里的引用一并改写。
@@ -20,16 +21,54 @@ class MediaDedupGroup {
   final List<String> duplicates;
 }
 
-/// 从「文件名 → 内容哈希」规划去重组（哈希相同 = 字节相同；调用方只对
-/// 「大小相同的候选」计算哈希，这里不关心怎么算的）。单文件组不产出。
-/// 组内与组间均按文件名排序，输出确定性可测。
-List<MediaDedupGroup> planMediaDedupGroups(Map<String, String> nameToHash) {
-  final Map<String, List<String>> byHash = <String, List<String>>{};
+/// 一条「删除某个多余副本」的计划/结果：干跑时 = 将要删，实跑时 = 已删。
+///
+/// 用户确认弹窗直接渲染这个列表——「删哪些文件、各占多少空间、保留的是哪
+/// 一份」三样都在这里，用户点确认前心里有数。
+class MediaDedupDeletion {
+  const MediaDedupDeletion({
+    required this.filename,
+    required this.canonical,
+    required this.bytes,
+  });
+
+  /// 被删除（或将被删除）的多余副本文件名。
+  final String filename;
+
+  /// 保留下来的那一份文件名——所有引用都会改指到它。
+  final String canonical;
+
+  /// [filename] 占用的字节数（= 释放的空间）。
+  final int bytes;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'filename': filename,
+        'canonical': canonical,
+        'bytes': bytes,
+      };
+}
+
+/// 从「文件名 → 内容哈希」+「文件名 → 字节数」规划去重组。
+///
+/// 分组键是 **(字节数, 内容哈希)** 而不是裸哈希：调用方只对「大小相同的候选」
+/// 算哈希，长度本就是判等的一部分；把它显式并进分组键，即使调用方哪天喂进
+/// 跨大小的哈希表、或哈希被截断，也不可能把不同长度的文件归成一组。单文件组
+/// 不产出。组内与组间均按文件名排序，输出确定性可测。
+///
+/// [sizes] 必须覆盖 [nameToHash] 的每个键；缺失的条目直接丢弃（宁可不去重，
+/// 也不在长度未知的情况下判等）。
+List<MediaDedupGroup> planMediaDedupGroups(
+  Map<String, String> nameToHash, {
+  required Map<String, int> sizes,
+}) {
+  final Map<String, List<String>> byIdentity = <String, List<String>>{};
   for (final MapEntry<String, String> e in nameToHash.entries) {
-    byHash.putIfAbsent(e.value, () => <String>[]).add(e.key);
+    final int? size = sizes[e.key];
+    if (size == null) continue;
+    byIdentity.putIfAbsent('$size:${e.value}', () => <String>[]).add(e.key);
   }
   final List<MediaDedupGroup> groups = <MediaDedupGroup>[];
-  for (final List<String> names in byHash.values) {
+  for (final List<String> names in byIdentity.values) {
     if (names.length < 2) continue;
     final String canonical = chooseCanonicalMediaName(names);
     final List<String> dupes = (names.toList()..remove(canonical))..sort();
@@ -59,28 +98,55 @@ String chooseCanonicalMediaName(List<String> names) {
   return sorted.first;
 }
 
-/// 把文本（笔记字段 / 卡模板 / styling）里对 [from] 的引用改写为 [to]。
+/// 文件名边界安全的引用匹配正则：[filename] 前后都不能紧邻文件名合法字符
+/// （字母/数字/`.`/`_`/`-`），否则 `a.jpg` 会误伤 `ba.jpg` / `a.jpg.bak`。
 ///
-/// 只在**文件名边界**上替换：前后不能紧邻文件名合法字符（字母/数字/./_/-），
-/// 否则 `a.jpg` 会误伤 `ba.jpg` / `a.jpg.bak` 这类名字。覆盖
-/// `src="a.jpg"`、`[sound:a.jpg]`、`url(a.jpg)` 等全部引用形态（它们的边界
-/// 字符都不在文件名字符集里）。
+/// 覆盖 `src="a.jpg"`、`[sound:a.jpg]`、`url(a.jpg)`、`url("./a.jpg")`、
+/// `@import 'a.css'` 等全部引用形态——它们的边界字符（引号/括号/斜杠/冒号/
+/// 空白）都不在文件名字符集里。
+RegExp mediaReferencePattern(String filename) => RegExp(
+      '(?<![A-Za-z0-9._-])${RegExp.escape(filename)}(?![A-Za-z0-9._-])',
+    );
+
+/// 把文本（笔记字段 / 卡模板 / styling / 媒体文件正文）里对 [from] 的引用
+/// 改写为 [to]。只在文件名边界上替换，见 [mediaReferencePattern]。
 String rewriteMediaReferences(String text, String from, String to) {
   if (from == to || !text.contains(from)) return text;
-  final RegExp pattern = RegExp(
-    '(?<![A-Za-z0-9._-])${RegExp.escape(from)}(?![A-Za-z0-9._-])',
-  );
-  return text.replaceAll(pattern, to);
+  return text.replaceAll(mediaReferencePattern(from), to);
 }
 
-/// 周期去重的到期判定（默认每 7 天）。[lastRunMs] null = 从未跑过 → 到期。
-bool shouldRunPeriodicMediaDedup({
-  required int? lastRunMs,
-  required int nowMs,
-  Duration interval = const Duration(days: 7),
-}) {
-  if (lastRunMs == null) return true;
-  return nowMs - lastRunMs >= interval.inMilliseconds;
+/// [text] 里是否存在对 [filename] 的引用（边界安全，与 [rewriteMediaReferences]
+/// 同一判据——凡是会被改写的形态都能被探到）。
+bool textReferencesMediaName(String text, String filename) =>
+    text.contains(filename) && mediaReferencePattern(filename).hasMatch(text);
+
+/// 会在**媒体文件内部**携带对其它媒体文件引用的文本格式。
+///
+/// 必须扫这一层的根因：本模块优先保留 `_` 前缀的模板资产（见
+/// [chooseCanonicalMediaName]），而 `_x.css` 里的 `url(_font.woff2)` /
+/// `@import` 既不在笔记字段里、也不在卡模板/styling 里——只扫那三处会判定
+/// 「无引用」而把仍在用的字体静默删掉。
+///
+/// 只列真正会引用别的资源的文本格式：图片/音频/字体不引用别人，无需读盘；
+/// 这个集合直接决定去重要多读多少字节。
+const Set<String> kReferencingMediaExtensions = <String>{
+  'css',
+  'less',
+  'scss',
+  'js',
+  'mjs',
+  'html',
+  'htm',
+  'xhtml',
+  'svg',
+};
+
+/// [filename] 是否属于 [kReferencingMediaExtensions]（大小写不敏感）。
+bool isReferencingMediaFile(String filename) {
+  final int dot = filename.lastIndexOf('.');
+  if (dot < 0 || dot == filename.length - 1) return false;
+  return kReferencingMediaExtensions
+      .contains(filename.substring(dot + 1).toLowerCase());
 }
 
 /// 一轮去重的结果汇总（UI 报告 + 日志）。
@@ -88,8 +154,7 @@ class AnkiMediaDedupReport {
   const AnkiMediaDedupReport({
     required this.dryRun,
     required this.groupCount,
-    required this.duplicatesRemoved,
-    required this.bytesSaved,
+    required this.deletions,
     required this.notesRewritten,
     required this.modelsRewritten,
     required this.skipped,
@@ -101,11 +166,8 @@ class AnkiMediaDedupReport {
   /// 重复组数（每组 ≥2 个字节相同的文件）。
   final int groupCount;
 
-  /// 实际删除（dryRun 时 = 将会删除）的多余副本数。
-  final int duplicatesRemoved;
-
-  /// 删除副本释放（dryRun 时 = 将会释放）的字节数。
-  final int bytesSaved;
+  /// 实际删除（[dryRun] 时 = 将会删除）的多余副本逐条明细。
+  final List<MediaDedupDeletion> deletions;
 
   /// 引用被改写的笔记数（去重计数）。
   final int notesRewritten;
@@ -116,6 +178,13 @@ class AnkiMediaDedupReport {
   /// 因引用清不干净等原因跳过删除的副本数（宁可留着也不冒险）。
   final int skipped;
 
+  /// 实际删除（[dryRun] 时 = 将会删除）的多余副本数。
+  int get duplicatesRemoved => deletions.length;
+
+  /// 删除副本释放（[dryRun] 时 = 将会释放）的字节数。
+  int get bytesSaved =>
+      deletions.fold<int>(0, (int sum, MediaDedupDeletion d) => sum + d.bytes);
+
   Map<String, dynamic> toJson() => <String, dynamic>{
         'dryRun': dryRun,
         'groupCount': groupCount,
@@ -124,5 +193,8 @@ class AnkiMediaDedupReport {
         'notesRewritten': notesRewritten,
         'modelsRewritten': modelsRewritten,
         'skipped': skipped,
+        'deletions': deletions
+            .map((MediaDedupDeletion d) => d.toJson())
+            .toList(growable: false),
       };
 }

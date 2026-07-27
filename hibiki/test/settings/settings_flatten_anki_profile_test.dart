@@ -185,11 +185,11 @@ void main() {
     //    并入一个无条件显示的区块。未配置 Anki 时它们也都露出——故恰有三个 SwitchRow。
     //    TODO-1650 把旧「压缩制卡媒体」开关换成「图片/GIF 清晰度 + 音频质量」两滑块，
     //    紧随其后的独立无标题区（同样无条件显示）。
-    expect(find.byType(AdaptiveSettingsSwitchRow), findsNWidgets(4),
-        reason: 'TODO-135 方案A 三开关（hibiki / 来源分类 / 自动添加书名）+ 媒体去重'
-            '周期开关（AnkiConnect 桌面端露出），未配置 Anki 时都应显示（旧「压缩」'
-            '开关已换成两滑块，不再是 SwitchRow；「制卡到已配对设备」已移到 Hibiki '
-            '互联分类）');
+    expect(find.byType(AdaptiveSettingsSwitchRow), findsNWidgets(3),
+        reason: 'TODO-135 方案A 三开关（hibiki / 来源分类 / 自动添加书名），未配置 Anki '
+            '时都应显示（旧「压缩」开关已换成两滑块，不再是 SwitchRow；「制卡到已配对'
+            '设备」已移到 Hibiki 互联分类）。媒体去重区只有两个可点行、没有开关——'
+            '方案 A 没有任何自动/周期路径，不存在可拨的自动开关。');
     expect(find.byType(AdaptiveSettingsSliderRow), findsNWidgets(2),
         reason: 'TODO-1650「图片/GIF 清晰度」+「音频质量」两滑块应无条件显示');
     expect(find.textContaining('Image / GIF quality'), findsOneWidget,

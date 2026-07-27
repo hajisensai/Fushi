@@ -272,12 +272,6 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   /// 与当前仓库绑定的去重编排器（无状态，随用随建）。
   AnkiMediaDedupRunner get mediaDedupRunner =>
       AnkiMediaDedupRunner(_repository);
-
-  Future<void> setMediaDedupAutoEnabled(bool value) async {
-    final updated = await _repository
-        .updateSettings((s) => s.copyWith(mediaDedupAutoEnabled: value));
-    state = state.copyWith(settings: updated);
-  }
 }
 
 /// 把用户敲/粘进 AnkiConnect **主机**字段的自由文本规范化成裸主机 + 可选端口。

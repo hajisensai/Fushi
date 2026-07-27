@@ -14,7 +14,6 @@ import 'package:macos_ui/macos_ui.dart'
         MacosBackButton,
         MacosIcon;
 import 'package:flutter/services.dart' hide ModifierKey;
-import 'package:hibiki/src/anki/anki_media_dedup_runner.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart'
     show ankiRepositoryProvider;
 import 'package:hibiki/src/anki/lapis_template_service.dart';
@@ -324,13 +323,6 @@ class _HomePageState extends BasePageState<HomePage>
             .maybeAutoMigrateOnStartup()
             .catchError((Object e, StackTrace s) {
           ErrorLogService.instance.log('HomePage.lapisAutoMigrate', e, s);
-        }));
-        // 媒体字节级去重周期触发（每 7 天，开关可关；只删字节相同的多余
-        // 副本，绝不重编码）。同为每进程一次、Anki 不可达静默跳过。
-        unawaited(AnkiMediaDedupRunner(ref.read(ankiRepositoryProvider))
-            .maybeRunPeriodic()
-            .catchError((Object e, StackTrace s) {
-          ErrorLogService.instance.log('HomePage.mediaDedupPeriodic', e, s);
         }));
       }
     });
