@@ -20,7 +20,7 @@ void main() {
       reason: '必须从 ReaderSettings.isContinuousMode 注入 continuousMode 标志',
     );
     expect(
-      source.contains(r'var hoshiContinuousMode = $continuousMode;'),
+      source.contains(r'var hoshiContinuousMode = C.continuousMode;'),
       isTrue,
       reason: 'setup 脚本必须把 continuousMode 注入成 JS 变量 hoshiContinuousMode',
     );

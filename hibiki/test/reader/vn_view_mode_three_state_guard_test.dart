@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 
 /// TODO-909 源码守卫（源码扫描，沿用仓库既有 `File(...).readAsStringSync()` +
 /// `contains` 模式）。
@@ -15,7 +16,6 @@ import 'package:flutter_test/flutter_test.dart';
 /// 本守卫只锁源码结构不回退。
 void main() {
   late String settings;
-  late String shell;
   late String styles;
   late String schema;
   late String webview;
@@ -23,9 +23,6 @@ void main() {
 
   setUpAll(() {
     settings = File('lib/src/reader/reader_settings.dart').readAsStringSync();
-    shell = File(
-      'lib/src/reader/reader_pagination_scripts.dart',
-    ).readAsStringSync();
     styles = File(
       'lib/src/reader/reader_content_styles.dart',
     ).readAsStringSync();
@@ -76,31 +73,33 @@ void main() {
     );
 
     test(
-      'shellScript routes VN to ReaderVisualNovelScripts before the '
-      'paginated/continuous branches',
+      'the engine routes VN before the paginated/continuous branches '
+      '(BUG-1140 第二阶段①：分流从 Dart 注入期搬到 JS 运行时)',
       () {
-        final String code = _stripLineComments(shell);
+        // 改动前：Dart 的 shellScript 按 vnMode/continuousMode 三选一**插值**出一份
+        // shell。现在 Dart 只决定嵌哪一份 shell，运行时分流点是引擎里的
+        // window.__hoshiInstallShell（读 C）—— 判据与顺序必须逐条保留。
+        final String engine = ReaderPaginationScripts.engineShell(
+            vnMode: true, continuousMode: false);
+        final int vnIdx = engine.indexOf('if (C.vnMode)');
+        final int contIdx = engine.indexOf('if (C.continuousMode)');
+        expect(vnIdx, isNonNegative, reason: 'engine must branch on C.vnMode');
+        expect(contIdx, isNonNegative,
+            reason: 'engine must branch on C.continuousMode');
+        expect(vnIdx < contIdx, isTrue,
+            reason: 'vnMode branch must precede continuousMode branch');
         expect(
-          code.contains('bool vnMode = false'),
+          engine.contains('window.__hoshiShells.vn = function(C)'),
           isTrue,
-          reason: 'shellScript must accept a vnMode flag',
+          reason: 'the VN engine must carry the VN shell installer',
         );
+        // Dart 侧只按 view-mode 选嵌哪一份 shell（memoize 的 key），运行时分流仍读
+        // C —— 不得回到「把 progress / charOffset 之类 per-nav 值插进 shell」的老路。
         expect(
-          code.contains('if (vnMode) {'),
+          _stripLineComments(webview)
+              .contains('ReaderPaginationScripts.engineShell('),
           isTrue,
-          reason: 'shellScript must branch on vnMode first',
-        );
-        expect(
-          code.contains('ReaderVisualNovelScripts.vnShellScript('),
-          isTrue,
-          reason: 'VN branch must delegate to the VN shell',
-        );
-        final int vnIdx = code.indexOf('if (vnMode) {');
-        final int contIdx = code.indexOf('if (continuousMode) {');
-        expect(
-          vnIdx >= 0 && contIdx >= 0 && vnIdx < contIdx,
-          isTrue,
-          reason: 'vnMode branch must precede continuousMode branch',
+          reason: 'webview must build the engine through engineShell(mode)',
         );
       },
     );
@@ -185,9 +184,14 @@ void main() {
       'blank-tap advance',
       () {
         expect(
-          webview.contains('vnMode: s.isVnMode'),
+          webview.contains('final bool vnMode = s.isVnMode;'),
           isTrue,
-          reason: 'webview must select the VN shell from view-mode',
+          reason: 'webview must derive VN mode from view-mode',
+        );
+        expect(
+          webview.contains('vnMode: vnMode,'),
+          isTrue,
+          reason: 'VN mode must reach the engine through ReaderEngineConfig',
         );
         // TODO-909 M0: reveal 渐显是 M1 功能。M0 强制 vnRevealSpeed=0，避免新屏停在
         // revealComplete=false 时 forward 翻屏命中 paginate 的 "revealed" 分支，与
@@ -197,17 +201,13 @@ void main() {
           isTrue,
           reason: 'M0 must define the reveal-speed force-zero constant',
         );
+
         expect(
           webview.contains(
-            'final int vnRevealSpeed = vnMode ? vnRevealSpeedM0ForceZero : 0;',
+            'vnRevealSpeed: vnMode ? vnRevealSpeedM0ForceZero : 0,',
           ),
           isTrue,
-          reason: 'M0 must force VN reveal speed to 0 at the wire point',
-        );
-        expect(
-          webview.contains('vnRevealSpeed: vnRevealSpeed,'),
-          isTrue,
-          reason: 'webview must forward the M0-forced reveal speed into shell',
+          reason: 'webview must forward the M0-forced reveal speed into config',
         );
         // M0 must NOT wire the live setting through (that is the M1 default 45).
         expect(

@@ -61,7 +61,7 @@ void main() {
       'reader page swipe threshold is parameterized, not a hard-coded literal 72',
       () {
     // Source-scan guard: the swipe-detection branch must read the
-    // sensitivity-scaled $swipeDistThreshold, not the old literal threshold.
+    // sensitivity-scaled C.swipeDistThreshold, not the old literal threshold.
     // If someone reverts to `absDx >= 72`, this fails.
     // TODO-589 batch8: swipe 阈值/连续模式 wheel(setup 脚本)已搬到
     // reader_hibiki/webview.part.dart，改读「主壳 + 全部 part」合并语料。
@@ -69,7 +69,7 @@ void main() {
 
     expect(
       src,
-      contains(r'absDx >= $swipeDistThreshold'),
+      contains('absDx >= C.swipeDistThreshold'),
       reason:
           'swipe distance threshold must use the injected sensitivity value',
     );

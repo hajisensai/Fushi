@@ -762,79 +762,39 @@ class ReaderPaginationScripts {
     return null;
   }
 
-  static String shellScript({
-    double initialProgress = 0.0,
-    int initialCharOffset = -1,
-    // BUG-461：收藏句跳转的句尾绝对字符偏移（句首 [initialCharOffset] + 句长）。仅连续
-    // 模式横排用它把整句对齐进可见区（句尾不被阅读底栏切）。<0 / 不传 = 单点句首锚（旧）。
-    int initialCharOffsetEnd = -1,
-    bool continuousMode = false,
-    // TODO-909: VN is the third view-mode. It is mutually exclusive with
-    // [continuousMode] (VN is a page-flip stage, not native scroll). When true
-    // it overrides [continuousMode] and selects the VN shell.
-    bool vnMode = false,
-    int fontSize = ReaderLayoutDefaults.fontSizePx,
-    String? sasayakiCuesJson,
-    String? initialFragment,
-    double chromeTopInset = 0.0,
-    double chromeBottomInset = 0.0,
-    double? dartPageWidth,
-    double? dartPageHeight,
-    bool blurImages = false,
-    String revealedKeysJson = '[]',
-    int vnRevealSpeed = 0,
-    String vnScreenMode = 'block',
-    int vnSentencesPerScreen = 1,
-    bool vnPreserveDialogue = false,
-    bool vnMergeCrossScreenSasayakiCues = false,
-    // 跨章分段计时总开关。默认 false = 生产；JS 侧 perfMark / perfSnapshot 零开销。
-    bool perfTraceEnabled = false,
+  /// 三种 view-mode 的 shell 源码，按模式选一份（零 per-nav 插值）。
+  ///
+  /// 改动前是 `shellScript({initialProgress, chromeTopInset, sasayakiCuesJson, …})`
+  /// —— 每次导航把当次参数插进源码，产出一份全新字符串，Dart 侧每章都要重新拼装 +
+  /// 压缩近万行。现在每种 shell 被包成一个只读取运行时 config 的安装函数，源码在一个
+  /// 进程里逐字不变，于是可以 memoize（见 `readerEngineSource`）。
+  ///
+  /// 每个 shell 函数体与改动前对应 shell 的 IIFE 内容逐字对应（`$x` → `C.x`），
+  /// 词法作用域自洽：shell 顶层只声明 `_hoshiBootInitialize`，其余全部写 `window.*`
+  /// 全局，与外层手势层之间没有任何跨作用域引用（守卫
+  /// `test/reader/reader_engine_static_source_guard_test.dart`）。
+  static String engineShell({
+    required bool vnMode,
+    required bool continuousMode,
   }) {
-    if (vnMode) {
-      return ReaderVisualNovelScripts.vnShellScript(
-        initialProgress: initialProgress,
-        initialCharOffset: initialCharOffset,
-        sasayakiCuesJson: sasayakiCuesJson,
-        initialFragment: initialFragment,
-        blurImages: blurImages,
-        revealSpeed: vnRevealSpeed,
-        screenMode: vnScreenMode,
-        sentencesPerScreen: vnSentencesPerScreen,
-        preserveDialogue: vnPreserveDialogue,
-        mergeCrossScreenSasayakiCues: vnMergeCrossScreenSasayakiCues,
-      );
-    }
-    if (continuousMode) {
-      return _continuousShellScript(
-        initialProgress: initialProgress,
-        initialCharOffset: initialCharOffset,
-        initialCharOffsetEnd: initialCharOffsetEnd,
-        sasayakiCuesJson: sasayakiCuesJson,
-        initialFragment: initialFragment,
-        chromeTopInset: chromeTopInset,
-        chromeBottomInset: chromeBottomInset,
-        dartPageWidth: dartPageWidth,
-        dartPageHeight: dartPageHeight,
-        blurImages: blurImages,
-        revealedKeysJson: revealedKeysJson,
-        perfTraceEnabled: perfTraceEnabled,
-      );
-    }
-    return _paginatedShellScript(
-      initialProgress: initialProgress,
-      initialCharOffset: initialCharOffset,
-      fontSize: fontSize,
-      sasayakiCuesJson: sasayakiCuesJson,
-      initialFragment: initialFragment,
-      chromeTopInset: chromeTopInset,
-      chromeBottomInset: chromeBottomInset,
-      dartPageWidth: dartPageWidth,
-      dartPageHeight: dartPageHeight,
-      blurImages: blurImages,
-      revealedKeysJson: revealedKeysJson,
-      perfTraceEnabled: perfTraceEnabled,
-    );
+    final String shell = vnMode
+        ? ReaderVisualNovelScripts.vnShellScript()
+        : (continuousMode ? continuousShellSource() : paginatedShellSource());
+    return '''<script>
+window.__hoshiShells = {};
+${_stripShellScriptTags(shell)}
+window.__hoshiInstallShell = function(C) {
+  if (C.vnMode) return window.__hoshiShells.vn(C);
+  if (C.continuousMode) return window.__hoshiShells.continuous(C);
+  return window.__hoshiShells.paginated(C);
+};
+</script>''';
   }
+
+  /// 三个 shell 各自仍以 `<script>…</script>` 形式返回（它们的单测按这个形状钉着），
+  /// 拼进引擎时剥掉外层标签。
+  static String _stripShellScriptTags(String js) =>
+      js.replaceAll('<script>', '').replaceAll('</script>', '').trim();
 
   // ── Shared JS (properties + methods used by both modes) ────────────
 
@@ -1668,6 +1628,41 @@ class ReaderPaginationScripts {
 
   // ── Shared init logic (viewport + SVG + images) ────────────────────
 
+  /// BUG-1140 第二阶段①：恢复锚的三选一从「Dart 注入期挑一条语句」搬到运行时。
+  ///
+  /// 优先级与旧的 Dart 三元式逐条相同：`initialFragment` 非空 → `jumpToFragment`；
+  /// 否则 `initialCharOffset >= 0` → `restoreToCharOffset`；否则 `restoreProgress`。
+  /// 分页 shell 只用单点句首锚（旧实现也只传一个参数）。
+  static const String _paginatedInitialRestoreJs = '''
+    if (C.initialFragment !== null && C.initialFragment !== undefined) {
+      window.hoshiReader.jumpToFragment(C.initialFragment);
+    } else if (C.initialCharOffset >= 0) {
+      window.hoshiReader.restoreToCharOffset(C.initialCharOffset);
+    } else {
+      window.hoshiReader.restoreProgress(C.initialProgress);
+    }''';
+
+  /// 连续 shell 版：多一条 BUG-461 的句尾区间对齐分支（`initialCharOffsetEnd >
+  /// initialCharOffset` 时透传句尾偏移），其余与 [_paginatedInitialRestoreJs] 相同。
+  static const String _continuousInitialRestoreJs = '''
+    if (C.initialFragment !== null && C.initialFragment !== undefined) {
+      window.hoshiReader.jumpToFragment(C.initialFragment);
+    } else if (C.initialCharOffset >= 0) {
+      if (C.initialCharOffsetEnd > C.initialCharOffset) {
+        window.hoshiReader.restoreToCharOffset(C.initialCharOffset, C.initialCharOffsetEnd);
+      } else {
+        window.hoshiReader.restoreToCharOffset(C.initialCharOffset);
+      }
+    } else {
+      window.hoshiReader.restoreProgress(C.initialProgress);
+    }''';
+
+  /// 有声书 cue 下发：旧实现「有 cue 才注入这一行」，现在「有 cue 才调用」。
+  static const String _sharedSasayakiInitJs = '''
+    if (C.sasayakiCues !== null && C.sasayakiCues !== undefined) {
+      window.hoshiReader.applySasayakiCues(C.sasayakiCues);
+    }''';
+
   static const String _sharedInitViewport = '''
   var viewport = document.querySelector('meta[name="viewport"]');
   if (viewport) { viewport.remove(); }
@@ -1685,19 +1680,9 @@ class ReaderPaginationScripts {
   /// 图片合并注入的前导插图（`.hoshi-merged-image`）保持 eager（不被挂 lazy），
   /// 从而 firstContentEdge 计入全部前导图、章首锚不跳过第一张。
   @visibleForTesting
-  static String initImagesScriptForTesting({
-    bool blurImages = false,
-    String revealedKeysJson = '[]',
-  }) =>
-      _sharedInitImages(
-        blurImages: blurImages,
-        revealedKeysJson: revealedKeysJson,
-      );
+  static String initImagesScriptForTesting() => _sharedInitImages();
 
-  static String _sharedInitImages({
-    bool blurImages = false,
-    String revealedKeysJson = '[]',
-  }) {
+  static String _sharedInitImages() {
     // TODO-1289：图片防剧透遮罩「点击揭开后又恢复」根因——揭开只删 DOM `blurred`
     // class，章节 (重)载 / 布局设置切换（writing mode / 分栏 / view mode / spread /
     // blur 开关，均经 _reloadWithCurrentSettings→_loadChapterDirectly）会重跑
@@ -1706,21 +1691,27 @@ class ReaderPaginationScripts {
     // baseURI 解析成绝对 URL）注入成 map，_hoshiBlurImage 命中则跳过重新遮罩。揭开
     // 状态的真相源是 Dart 侧 _revealedImageKeys（内存会话集），经 onImageRevealed
     // 回传持久，重载时再嵌入这里。domStorageEnabled=false 故不用 localStorage。
-    final String blurFn = blurImages
-        ? '''
+    // BUG-1140 第二阶段①：整块从「blurImages 为假时**整段不注入**」改成「函数照常
+    // 定义、副作用照常受 C.blurImages 门控」。行为等价：`window.__hoshiMarkImageRevealed`
+    // / `window.__hoshiImageRevealKey` 两个全局仍**只在开了防剧透遮罩时**才挂上
+    // （caret / 有声书桥接都用 `if (window.__hoshiImageRevealKey && …)` 探测），
+    // `_hoshiBlurImage` 也仍只在开关为真时被调用。
+    const String blurFn = '''
   var _hoshiRevealedKeys = Object.create(null);
-  (function() {
-    var keys = $revealedKeysJson;
-    if (keys && keys.length) {
-      for (var i = 0; i < keys.length; i++) { _hoshiRevealedKeys[keys[i]] = true; }
+  if (C.blurImages) {
+    var __hoshiKeys = C.revealedKeys;
+    if (__hoshiKeys && __hoshiKeys.length) {
+      for (var i = 0; i < __hoshiKeys.length; i++) { _hoshiRevealedKeys[__hoshiKeys[i]] = true; }
     }
-  })();
+  }
   // TODO-1367：暴露给有声书桥接（audiobook_bridge）——音频跟随读过某张图时把它的稳定
   // reveal key 登记进本活集，日后该图（含尚未 load 的懒图）真正 load 走 _hoshiBlurImage
   // 时命中 key 跳过遮罩，与点击 / 手柄揭开同一套「已揭开不再遮罩」真相源（会话内存活集）。
-  window.__hoshiMarkImageRevealed = function(key) {
-    if (key) _hoshiRevealedKeys[key] = true;
-  };
+  if (C.blurImages) {
+    window.__hoshiMarkImageRevealed = function(key) {
+      if (key) _hoshiRevealedKeys[key] = true;
+    };
+  }
   // BUG-898：稳定 reveal key 归一到「extractDir 相对、decode、正斜杠」路径（如
   // OEBPS/images/foo.jpg），与图片库磁盘 File 的相对路径、Dart ImageRevealKey.normalize
   // 完全一致 —— 三端（阅读器 WebView / 图片库 / Drift 持久表）共享同一 key，才能双向同步。
@@ -1746,15 +1737,16 @@ class ReaderPaginationScripts {
       return path.substring(i + pfx.length);
     } catch (e) { return raw; }
   }
-  window.__hoshiImageRevealKey = _hoshiImageRevealKey;
+  if (C.blurImages) {
+    window.__hoshiImageRevealKey = _hoshiImageRevealKey;
+  }
   function _hoshiBlurImage(element) {
     var key = _hoshiImageRevealKey(element);
     if (key && _hoshiRevealedKeys[key]) return;
     element.classList.add('blurred');
-  }'''
-        : '';
-    final String blurSvgCall = blurImages ? '_hoshiBlurImage(svg);' : '';
-    final String blurImgCall = blurImages ? '_hoshiBlurImage(img);' : '';
+  }''';
+    const String blurSvgCall = 'if (C.blurImages) _hoshiBlurImage(svg);';
+    const String blurImgCall = 'if (C.blurImages) _hoshiBlurImage(img);';
     return '''
 $blurFn
   Array.from(document.querySelectorAll('svg')).forEach(function(svg) {
@@ -1895,46 +1887,29 @@ if (document.readyState === 'complete') {
 
   // ── Paginated mode ─────────────────────────────────────────────────
 
-  static String _paginatedShellScript({
-    required double initialProgress,
-    int initialCharOffset = -1,
-    int fontSize = ReaderLayoutDefaults.fontSizePx,
-    String? sasayakiCuesJson,
-    String? initialFragment,
-    double chromeTopInset = 0.0,
-    double chromeBottomInset = 0.0,
-    double? dartPageWidth,
-    double? dartPageHeight,
-    bool blurImages = false,
-    String revealedKeysJson = '[]',
-    bool perfTraceEnabled = false,
-  }) {
+  /// 分页 shell 的静态源码（零 per-nav 插值，全部参数改由运行时 `C` 读取）。
+  static String paginatedShellSource() {
     // BUG-162: 优先精确字符偏移恢复（restoreToCharOffset），无精确锚（旧存档）才
     // 回退粗粒度 restoreProgress；书签/fragment 跳转仍走 jumpToFragment。
-    final String initialRestoreScript = initialFragment != null
-        ? 'window.hoshiReader.jumpToFragment(${_jsStringLiteral(initialFragment)});'
-        : (initialCharOffset >= 0
-            ? 'window.hoshiReader.restoreToCharOffset($initialCharOffset);'
-            : 'window.hoshiReader.restoreProgress($initialProgress);');
-
-    final String sasayakiInit = sasayakiCuesJson != null
-        ? 'window.hoshiReader.applySasayakiCues($sasayakiCuesJson);'
-        : '';
+    // BUG-1140 第二阶段①：三选一从「Dart 注入期挑一条语句」改成「运行时按同一优先级
+    // 读 C 分派」。判据逐条对齐旧实现（fragment 非空 > charOffset >= 0 > progress）。
+    const String initialRestoreScript = _paginatedInitialRestoreJs;
+    const String sasayakiInit = _sharedSasayakiInitJs;
 
     const int bottomOverlapPx = ReaderLayoutDefaults.bottomOverlapPx;
     const double imageWidthRatio = ReaderLayoutDefaults.imageWidthViewportRatio;
     const String spacerHeight = ReaderLayoutDefaults.trailingSpacerHeightCss;
     const String spacerWidth = ReaderLayoutDefaults.trailingSpacerWidthCss;
 
-    final String initImages = _sharedInitImages(
-        blurImages: blurImages, revealedKeysJson: revealedKeysJson);
+    final String initImages = _sharedInitImages();
 
     return '''<script>
+window.__hoshiShells.paginated = function(C) {
 window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
 window.hoshiReader = {
-  // 跨章分段计时总开关（Dart [ReaderChapterPerfTrace.enabled] 注入期写死）。
+  // 跨章分段计时总开关（Dart [ReaderChapterPerfTrace.enabled] → C.perfTraceEnabled）。
   // false = 生产路径，perfMark / perfSnapshot 零开销。
-  _perfOn: $perfTraceEnabled,
+  _perfOn: C.perfTraceEnabled === true,
   pageHeight: 0,
   pageWidth: 0,
   // TODO-734：纯视口高 V（不含 bottomOverlap=O）。竖排列高几何唯一用它（见
@@ -2641,13 +2616,13 @@ window.hoshiReader.initialize = function() {
   if (window.hoshiReader.didInitialize) return;
   window.hoshiReader.didInitialize = true;
   this.perfMark('initStart');
-  document.documentElement.style.setProperty('--chrome-top-inset', '${chromeTopInset}px');
-  document.documentElement.style.setProperty('--chrome-bottom-inset', '${chromeBottomInset}px');
+  document.documentElement.style.setProperty('--chrome-top-inset', C.chromeTopInset + 'px');
+  document.documentElement.style.setProperty('--chrome-bottom-inset', C.chromeBottomInset + 'px');
 $_sharedInitViewport
   // TODO-736 B-1：存图片宽比值供 _resetImageMaxVars 读（_sharedJs 不插值，见那里注释）。
   this._imageWidthRatio = $imageWidthRatio;
-  var dartW = ${dartPageWidth != null ? '${dartPageWidth.round()}' : 'null'};
-  var dartH = ${dartPageHeight != null ? '${dartPageHeight.round()}' : 'null'};
+  var dartW = C.dartPageWidth;
+  var dartH = C.dartPageHeight;
   var pageWidth = dartW || window.innerWidth;
   // TODO-734：viewportHeight = 纯视口高 V（不加 bottomOverlap）。pageHeight = V + O
   // 仍供图片虚高/scrollHeight 用。竖排列高几何（CSS column-width + JS contentBox）
@@ -2725,51 +2700,31 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   });
 };
 $_sharedInitBoot
+};
 </script>''';
   }
 
   // ── Continuous mode ────────────────────────────────────────────────
 
-  static String _continuousShellScript({
-    required double initialProgress,
-    int initialCharOffset = -1,
-    int initialCharOffsetEnd = -1,
-    String? sasayakiCuesJson,
-    String? initialFragment,
-    double chromeTopInset = 0.0,
-    double chromeBottomInset = 0.0,
-    double? dartPageWidth,
-    double? dartPageHeight,
-    bool blurImages = false,
-    String revealedKeysJson = '[]',
-    bool perfTraceEnabled = false,
-  }) {
+  /// 连续 shell 的静态源码（零 per-nav 插值，全部参数改由运行时 `C` 读取）。
+  static String continuousShellSource() {
     // BUG-162: 同分页——优先精确字符偏移恢复，旧存档回退分数。BUG-461：收藏句跳转带句尾
     // 偏移（initialCharOffsetEnd>句首）时透传给 restoreToCharOffset 做整句区间对齐。
-    final String restoreCharScript = initialCharOffsetEnd > initialCharOffset
-        ? 'window.hoshiReader.restoreToCharOffset($initialCharOffset, $initialCharOffsetEnd);'
-        : 'window.hoshiReader.restoreToCharOffset($initialCharOffset);';
-    final String initialRestoreScript = initialFragment != null
-        ? 'window.hoshiReader.jumpToFragment(${_jsStringLiteral(initialFragment)});'
-        : (initialCharOffset >= 0
-            ? restoreCharScript
-            : 'window.hoshiReader.restoreProgress($initialProgress);');
-
-    final String sasayakiInit = sasayakiCuesJson != null
-        ? 'window.hoshiReader.applySasayakiCues($sasayakiCuesJson);'
-        : '';
+    // BUG-1140 第二阶段①：判据整体搬到运行时，逐条对齐旧的 Dart 三元式。
+    const String initialRestoreScript = _continuousInitialRestoreJs;
+    const String sasayakiInit = _sharedSasayakiInitJs;
 
     const double imageWidthRatio = ReaderLayoutDefaults.imageWidthViewportRatio;
 
-    final String initImages = _sharedInitImages(
-        blurImages: blurImages, revealedKeysJson: revealedKeysJson);
+    final String initImages = _sharedInitImages();
 
     return '''<script>
+window.__hoshiShells.continuous = function(C) {
 window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
 window.hoshiReader = {
-  // 跨章分段计时总开关（Dart [ReaderChapterPerfTrace.enabled] 注入期写死）。
+  // 跨章分段计时总开关（Dart [ReaderChapterPerfTrace.enabled] → C.perfTraceEnabled）。
   // false = 生产路径，perfMark / perfSnapshot 零开销。
-  _perfOn: $perfTraceEnabled,
+  _perfOn: C.perfTraceEnabled === true,
   // TODO-734：连续模式不用竖排分页几何（无 column），故 initialize/updatePageSize
   // 不注入 --reader-viewport-height、getScrollContext 也不引用它。但属性仍声明 0
   // （补点2 防 stale）：两个 hoshiReader 实例属性表保持对齐，避免误读 undefined。
@@ -3281,12 +3236,12 @@ window.hoshiReader.initialize = function() {
   if (window.hoshiReader.didInitialize) return;
   window.hoshiReader.didInitialize = true;
   this.perfMark('initStart');
-  document.documentElement.style.setProperty('--chrome-top-inset', '${chromeTopInset}px');
-  document.documentElement.style.setProperty('--chrome-bottom-inset', '${chromeBottomInset}px');
+  document.documentElement.style.setProperty('--chrome-top-inset', C.chromeTopInset + 'px');
+  document.documentElement.style.setProperty('--chrome-bottom-inset', C.chromeBottomInset + 'px');
 $_sharedInitViewport
   // TODO-736 B-1：存图片宽比值供 _resetImageMaxVars 读（_sharedJs 不插值，见那里注释）。
   this._imageWidthRatio = $imageWidthRatio;
-  var dartH = ${dartPageHeight != null ? '${dartPageHeight.round()}' : 'null'};
+  var dartH = C.dartPageHeight;
   var contHeight = dartH || window.innerHeight;
   document.documentElement.style.setProperty('--hoshi-continuous-height', contHeight + 'px');
   var __imgBox = this._imageMaxBox();
@@ -3402,14 +3357,14 @@ window.hoshiReader.updatePageSize = function(cssWidth, cssHeight) {
   // 边界手势只保留触摸(touchstart/touchend)给手机。鼠标拖动选词到边界不再误跨章。
 })();
 $_sharedInitBoot
+};
 </script>''';
   }
 
-  // 注意：ReaderVisualNovelScripts._jsStringLiteral 是另一份独立实现（手写转义、
-  // 单引号输出）。两侧输出字节形式各被测试钉死（本文件双引号 →
-  // test/reader/reader_pagination_scripts_test.dart；VN 单引号 →
-  // test/reader/vn_shell_smoke_test.dart），刻意不共享；改任一侧转义逻辑时必须
-  // 同步核对另一侧仍是语法安全的 JS 字符串字面量转义。
+  // BUG-1140 第二阶段①：VN 侧那份手写转义的 `_jsStringLiteral` 已随「shell 不再插值」
+  // 一并删除（VN shell 不再从 Dart 造 JS 字符串字面量）。本实现仍供
+  // highlightSasayakiCue / scrollToSearchMatch 这类**调用式**注入使用，
+  // 输出字节形式由 test/reader/reader_pagination_scripts_test.dart 钉死。
   static String _jsStringLiteral(String value) {
     return jsonEncode(value);
   }

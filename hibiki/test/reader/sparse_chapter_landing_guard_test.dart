@@ -25,10 +25,9 @@ import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 /// 懒加载 / BUG-661 纯图片章 eager）。
 void main() {
   String norm(String s) => s.replaceAll(RegExp(r'\s+'), ' ');
-  final String paged =
-      norm(ReaderPaginationScripts.shellScript(initialProgress: 0.99));
-  final String continuous = norm(ReaderPaginationScripts.shellScript(
-      continuousMode: true, initialProgress: 0.99));
+  final String paged = norm(ReaderPaginationScripts.paginatedShellSource());
+  final String continuous =
+      norm(ReaderPaginationScripts.continuousShellSource());
 
   group('BUG-671 sparse cover chapter backward-turn lands at chapter end', () {
     test('forceLoadPendingImages exists and flips lazy -> eager (both shells)',

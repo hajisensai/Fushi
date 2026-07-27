@@ -12,29 +12,20 @@ import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 
 void main() {
   test('VN shell builds and contains the object + restore + deps', () {
-    final String shell = ReaderVisualNovelScripts.vnShellScript(
-      initialCharOffset: 1234,
-      revealSpeed: 45,
-      screenMode: 'block',
-    );
+    final String shell = ReaderVisualNovelScripts.vnShellScript();
     expect(shell.contains('<script>'), isTrue);
     expect(shell.contains('window.hoshiReader = {'), isTrue);
     expect(shell.contains('global.hoshiReaderTextSemantics'), isTrue);
     expect(shell.contains('global.hoshiReaderVnContentStream'), isTrue);
     expect(shell.contains('global.hoshiReaderVnRangeMap'), isTrue);
     expect(shell.contains('global.hoshiReaderMediaSemantics'), isTrue);
-    expect(shell.contains('restoreToCharOffset(1234)'), isTrue);
-    expect(shell.contains('revealSpeed: 45'), isTrue);
-    expect(shell.contains("screenMode: 'block'"), isTrue);
+    // BUG-1140 第二阶段①：恢复锚 / reveal 参数不再插进源码，改由运行时读 C。
+    expect(shell.contains('restoreToCharOffset(C.initialCharOffset)'), isTrue);
+    expect(shell.contains('revealSpeed: C.vnRevealSpeed,'), isTrue);
+    expect(shell.contains('screenMode: C.vnScreenMode,'), isTrue);
     expect(shell.contains("callHandler('onRestoreComplete')"), isTrue);
-    // dispatch via shellScript(vnMode:true) reaches the VN shell.
-    final String viaShell = ReaderPaginationScripts.shellScript(
-      vnMode: true,
-      initialCharOffset: 7,
-      vnRevealSpeed: 45,
-    );
-    expect(viaShell.contains('window.hoshiReader = {'), isTrue);
-    expect(viaShell.contains('restoreToCharOffset(7)'), isTrue);
+    // 整份 shell 被包成运行时可复用的安装函数（引擎静态化的前提）。
+    expect(shell.contains('window.__hoshiShells.vn = function(C) {'), isTrue);
   });
 
   // TODO-909 M0 reveal contract. reveal（打字渐显）是 M1 功能；M0 在 webview 的
@@ -47,16 +38,14 @@ void main() {
   test(
       'M0 reveal speed 0 makes every screen complete on render (no '
       '"revealed" paginate path)', () {
-    final String shell0 = ReaderPaginationScripts.shellScript(
-      vnMode: true,
-      // M0 wire point forces this to 0 (see webview.part.dart
-      // vnRevealSpeedM0ForceZero); assert the shell carries it through.
-      vnRevealSpeed: 0,
-    );
+    final String shell0 = ReaderVisualNovelScripts.vnShellScript();
+    // M0 的 revealSpeed=0 强制点搬到 Dart 侧 config 组装处（webview.part.dart 的
+    // vnRevealSpeedM0ForceZero，由 vn_view_mode_three_state_guard 钉住）；shell 这边
+    // 只需保证它读的是运行时值、没有把任何 M1 默认值写死进源码。
     expect(
-      shell0.contains('revealSpeed: 0'),
+      shell0.contains('revealSpeed: C.vnRevealSpeed,'),
       isTrue,
-      reason: 'M0 shell must carry revealSpeed: 0',
+      reason: 'VN shell must read the reveal speed from the runtime config',
     );
     expect(
       shell0.contains('revealSpeed: 45'),
@@ -209,7 +198,7 @@ void main() {
   // 那些逻辑只存在于 VN shell，分页 shell 的图片处理仍走自己的 _sharedInitImages。
   test('BUG-513: paginated shell is unchanged (VN-only promoteBlockImages)',
       () {
-    final String paginated = ReaderPaginationScripts.shellScript();
+    final String paginated = ReaderPaginationScripts.paginatedShellSource();
     expect(
       paginated.contains('this.promoteBlockImages('),
       isFalse,
@@ -232,14 +221,13 @@ void main() {
   // 连累 cloak 移除。headless WebView 跑不到真实 cloak 时序，这里钉死源码顺序契约。
   test('BUG-718: charOffset-restore shim is defined BEFORE the boot calls it',
       () {
-    const int offset = 22059;
-    final String shell =
-        ReaderVisualNovelScripts.vnShellScript(initialCharOffset: offset);
-    // boot must restore by charOffset for a saved position.
-    final int bootCall =
-        shell.indexOf('window.hoshiReader.restoreToCharOffset($offset)');
+    final String shell = ReaderVisualNovelScripts.vnShellScript();
+    // boot must restore by charOffset for a saved position（现在读运行时 C）。
+    final int bootCall = shell
+        .indexOf('window.hoshiReader.restoreToCharOffset(C.initialCharOffset)');
     expect(bootCall, greaterThanOrEqualTo(0),
-        reason: 'charOffset restore must call restoreToCharOffset($offset)');
+        reason:
+            'charOffset restore must call restoreToCharOffset(C.initialCharOffset)');
     // the host-compat shim that defines restoreToCharOffset must appear earlier
     // in the script than the boot call site (so it is not undefined when called).
     final int shimDef = shell.indexOf('vn.restoreToCharOffset = ');
@@ -258,16 +246,15 @@ void main() {
         reason: 'boot (load listener) must come after the shim IIFE');
     expect(shell.substring(loadListener).contains('try {'), isTrue,
         reason: 'boot restore must be wrapped in try/catch');
-    // dispatch via shellScript(vnMode:true, initialCharOffset:) keeps the order.
-    final String viaShell = ReaderPaginationScripts.shellScript(
-      vnMode: true,
-      initialCharOffset: offset,
-    );
-    expect(
-      viaShell.indexOf('vn.restoreToCharOffset = ') <
-          viaShell.indexOf('window.hoshiReader.restoreToCharOffset($offset)'),
-      isTrue,
-      reason: 'dispatched VN shell must keep shim-before-boot ordering',
-    );
+    // 引擎里三种 shell 并存时，VN 那份仍保持 shim-before-boot 顺序。
+    final String engine = ReaderPaginationScripts.engineShell(
+        vnMode: true, continuousMode: false);
+    final int engShim = engine.indexOf('vn.restoreToCharOffset = ');
+    final int engBoot = engine.indexOf(
+        'window.hoshiReader.restoreToCharOffset(C.initialCharOffset)', engShim);
+    expect(engShim, greaterThanOrEqualTo(0));
+    expect(engBoot, greaterThan(engShim),
+        reason:
+            'engine-assembled VN shell must keep shim-before-boot ordering');
   });
 }

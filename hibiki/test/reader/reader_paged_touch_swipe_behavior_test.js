@@ -46,7 +46,7 @@ const source = fs.readFileSync(readerPath, 'utf8');
 // Extract the self-contained handler slice: from the continuous-mode flag down
 // to (but excluding) the non-left mouse seek listener. Every function the
 // handlers call is declared inside this slice, so it runs standalone.
-const sliceStart = source.indexOf('var hoshiContinuousMode = $continuousMode;');
+const sliceStart = source.indexOf('var hoshiContinuousMode = C.continuousMode;');
 assert.ok(sliceStart >= 0, 'missing handler slice start marker');
 const sliceEndMarker = '// 非左键';
 const sliceEnd = source.indexOf(sliceEndMarker, sliceStart);
@@ -141,29 +141,30 @@ function makeHarness(continuousMode) {
     getComputedStyle: windowObj.getComputedStyle,
   };
 
-  let prepared = rawSlice
-    // TODO-806: [806-TAP] 探针门控用 Dart 注入期插值 ${DebugLogService.instance.enabled}，
-    // 抽出的裸 JS 没替换会让 node 见到 `if (${...}) {` 语法报错。production 默认 off，
-    // 这里固定替成 false（探针整段不进 JS），与默认行为一致、不影响 swipe 断言。
-    .replace(/\$\{DebugLogService\.instance\.enabled\}/g, 'false')
-    .replace(/\$continuousMode/g, continuousMode ? 'true' : 'false')
+  // BUG-1140 第二阶段①：整段 setup 从「Dart 注入期插值」改成「运行时读 config」，
+  // 于是这里不再需要一张字符串替身表——切片本身就是一段读 `C` 的代码，直接把
+  // 同名 config 传进去即可（少一层「替身表漏一项就语法报错」的脆弱耦合）。
+  // tapSlop 仍是 Dart 编译期常量插值（不随导航变化，故留在源码里），单独替换。
+  const config = {
+    continuousMode: !!continuousMode,
     // TODO-909: VN flags default false here (this harness exercises the paged
     // path); keeps the slice self-contained when VN tap-advance was added.
-    .replace(/\$vnMode/g, 'false')
-    .replace(/\$vnClickAdvance/g, 'false')
-    .replace(/\$hoverAutoLookup/g, 'false')
-    .replace(/\$swipeDistThreshold/g, '44')
-    .replace(/\$swipeFastDistThreshold/g, '22')
-    .replace(/\$tapSlop/g, '10')
-    // BUG-712 ①: the tap-gate mirror line
-    // `window.__hoshiTapGate = { chrome: $_showChrome, lookup:
-    // ${ReaderHibikiSource.instance.highlightOnTap}, maxLen: 400 };` is emitted
-    // in the setup slice; stub both Dart interpolations to a valid bool so the
-    // raw JS parses. The gate governs tap-to-lookup, orthogonal to the paged
-    // swipe assertion, so a neutral `true` is fine.
-    .replace(/\$\{ReaderHibikiSource\.instance\.highlightOnTap\}/g, 'true')
-    .replace(/\$_showChrome/g, 'true');
-  prepared = '(function(){\n' + prepared + '\n})();';
+    vnMode: false,
+    vnClickAdvance: false,
+    hoverAutoLookup: false,
+    swipeDistThreshold: 44,
+    swipeFastDistThreshold: 22,
+    scanNonJapaneseText: false,
+    // TODO-806: [806-TAP] probe defaults off, matching production.
+    debugLogging: false,
+    // BUG-712 (1): the tap-gate mirror governs tap-to-lookup, orthogonal to the
+    // paged swipe assertion, so neutral values are fine.
+    highlightOnTap: true,
+    showChrome: true,
+  };
+  const prepared = '(function(C){\n'
+    + rawSlice.replace(/\$tapSlop/g, '10')
+    + '\n})(' + JSON.stringify(config) + ');';
 
   vm.createContext(sandbox);
   vm.runInContext(prepared, sandbox, { filename: 'reader-handlers.js' });

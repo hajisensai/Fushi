@@ -9,7 +9,7 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 ///
 /// 数据流：`FavoriteSentence.normCharLength` → `_CollectionItem.normCharLength` →
 /// `Bookmark.charAnchorLength` → 阅读器 `_initialCharOffsetEnd`(charAnchor+len) →
-/// `ReaderPaginationScripts.shellScript(initialCharOffsetEnd:)` → 连续 shell
+/// `ReaderPaginationScripts.paginatedShellSource()` → 连续 shell
 /// `restoreToCharOffset(start, end)` → 连续 `scrollToCharOffset(start, endCharOffset)`
 /// 句尾区间对齐。
 ///
@@ -35,18 +35,21 @@ void main() {
         reason: '阅读器 restore 必须读 bm.charAnchorLength');
     expect(pageSrc.contains('_initialCharOffsetEnd'), isTrue,
         reason: '阅读器必须算句尾绝对偏移 _initialCharOffsetEnd');
-    expect(pageSrc.contains('initialCharOffsetEnd:'), isTrue,
-        reason: 'shellScript 调用必须把 _initialCharOffsetEnd 传给 JS');
+    expect(pageSrc.contains('initialCharOffsetEnd: _initialCharOffsetEnd,'),
+        isTrue,
+        reason: 'BUG-1140 第二阶段①后改由 ReaderEngineConfig 下发，'
+            '仍必须把 _initialCharOffsetEnd 传给 JS');
   });
 
   test('shellScript / 连续 shell 接受并透传 initialCharOffsetEnd (BUG-461)', () {
-    expect(jsSrc.contains('int initialCharOffsetEnd = -1'), isTrue,
-        reason:
-            'shellScript 与 _continuousShellScript 必须接受 initialCharOffsetEnd 参数');
-    // 连续 shell 在句尾>句首时调带两参的 restoreToCharOffset。
+    // BUG-1140 第二阶段①：句尾锚从「Dart 注入期插值」改成「运行时读 C」，
+    // 判据本身（句尾>句首才走两参 restore）必须原样保留。
+    expect(
+        jsSrc.contains('C.initialCharOffsetEnd > C.initialCharOffset'), isTrue,
+        reason: '连续 shell 必须保留「句尾>句首」的两参 restore 判据');
     expect(
       jsSrc.contains(
-          r'restoreToCharOffset($initialCharOffset, $initialCharOffsetEnd)'),
+          'restoreToCharOffset(C.initialCharOffset, C.initialCharOffsetEnd)'),
       isTrue,
       reason: '连续 shell 必须在有句尾锚时调 restoreToCharOffset(start, end)',
     );

@@ -8,7 +8,7 @@ import '../pages/reader_hibiki_page_source_corpus.dart';
 ///
 /// 守护两件事：
 /// - A. JS 端 onTap 发射点有 `[806-TAP]` 调试探针，且**门控**在
-///   `${DebugLogService.instance.enabled}` 后（DebugLogService 注入期门控开关），
+///   `C.debugLogging` 后（DebugLogService 注入期门控开关），
 ///   口径注释写明 = WebView CSS 视口像素。撤回探针或去掉门控即红。
 /// - B. `onDismissBarrierHover` 用 WebView 的 RenderBox `globalToLocal` 把全局
 ///   指针位置映成 WebView 局部坐标（与 onShiftHover 口径一致），**不再**把
@@ -23,7 +23,7 @@ void main() {
           reason: 'onTap 框选坐标探针被移除——日志里又没有标明口径的真实点击坐标。');
 
       // 探针必须落在注入期门控块内：截取探针前后一小段，断言门控开关在 console.log
-      // 之前出现（gate 用 `${DebugLogService.instance.enabled}` 在拼 JS 字符串时
+      // 之前出现（gate 用 `C.debugLogging` 在拼 JS 字符串时
       // 决定是否注入这段）。
       final int probeIdx = src.indexOf("console.log('[806-TAP]");
       expect(probeIdx, greaterThan(0),
@@ -31,9 +31,9 @@ void main() {
       final String window =
           src.substring((probeIdx - 400).clamp(0, src.length), probeIdx);
       expect(
-        window.contains(r'if (${DebugLogService.instance.enabled})'),
+        window.contains(r'if (C.debugLogging)'),
         isTrue,
-        reason: '[806-TAP] 探针必须门控在 \${DebugLogService.instance.enabled} 后，'
+        reason: '[806-TAP] 探针必须门控在 C.debugLogging 后，'
             '默认 off，开调试日志才注入打印（沿用 DebugLogService 同开关，别新造）。',
       );
 

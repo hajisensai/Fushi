@@ -157,10 +157,16 @@ load 回调分派顺序）、`test/reader/reader_image_lazy_pipeline_guard_test.
 
 ### 仍未做（下一步，风险与收益都更大）
 
-- `evalSetupScript` 剩余 ~24ms 是**每次跨章重新编译整份引擎 JS**：`evaluateJavascript` 的字符串没有 V8 code
-  cache。正解是把引擎改成 `<script src>` 外链（走 hoshi.local 拦截器 + 强缓存）或 UserScript 注册一次，
-  让 WebView 复用编译结果。阻碍：`initialize` 的参数化程度很高（insets / pageWidth / progress / charOffset /
-  fragment / sasayakiCues 每次导航都可能不同），要先把 per-nav 参数从脚本里剥成运行时读取。
+- ~~`evalSetupScript` 剩余 ~24ms 是每次跨章重新编译整份引擎 JS~~ —— **这条机理经探针实测为假，已作废**。
+  拆开测的结果：**平台通道固定往返 ~7.5ms**（发 2 字符 7.5ms vs 发 147459 字符 9.0ms —— 载荷相关成本只有
+  ~1.5ms）、**JS 编译 ~1.0ms**、**执行 ~6ms**。也就是说这段耗时的大头是**一次跨进程往返**，不是编译，
+  更不是字节数。
+  推论：任何「让 WebView 复用编译结果」的方案（`<script src>` 外链 / UserScript 注册一次）**收益上限只有
+  1.5~2.5ms**，占跨章总时长的 1~2%——不值得为它引入外链资源、强缓存与失效约定这套复杂度。
+  另有一条平台事实：`CustomSchemeResponse` 只有 `data` / `contentType` / `contentEncoding` 三个字段、
+  **没有 headers**，本仓 `_loadResourceWithCustomScheme` 正是把带 `Cache-Control` 的 `response.headers`
+  整个丢掉——**iOS/macOS 上强缓存在类型层面就无法表达**，那条路在移动端必然每章 cache miss。
+  真正值得下手的是**减少每次跨章 `evaluateJavascript` 的往返次数**，以及 `docLoad`。
 - `docLoad` 32ms 里有相当一部分是在等 `window.load`（含全部子资源）：`nav.dcl` 中位数 13ms vs `nav.load` 19ms。
   引擎若能在 DOMContentLoaded 就位，这段可与子资源加载并行。
 - 更彻底的方案是「下一章预渲染」（双 WebView 交替），可把顺序阅读的跨章压到一帧，但内存与状态同步成本高。
