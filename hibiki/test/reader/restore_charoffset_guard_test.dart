@@ -44,18 +44,25 @@ void main() {
     final int defs = 'restoreToCharOffset: '.allMatches(jsSrc).length;
     expect(defs, greaterThanOrEqualTo(2),
         reason: '分页 + 连续都必须定义 restoreToCharOffset（复用精确 scrollToCharOffset）');
-    expect(jsSrc.contains('initialCharOffset'), isTrue,
+    expect(jsSrc.contains('C.initialCharOffset'), isTrue,
         reason:
-            'shell builder 必须接受 initialCharOffset 并在 >=0 时走 restoreToCharOffset');
+            'shell 必须读运行时 C.initialCharOffset 并在 >=0 时走 restoreToCharOffset');
   });
 
   test('恢复脚本在 initialCharOffset>=0 时优先精确路径 (BUG-162)', () {
-    // 两处 initialRestoreScript 三元都应：有 charOffset 走 restoreToCharOffset，
-    // 否则回退 restoreProgress（旧存档兼容）。
+    // BUG-1140 第二阶段①：三选一从 Dart 注入期三元式搬到 JS 运行时（读 C），
+    // 判据与优先级必须逐条保留：有 charOffset 走 restoreToCharOffset，
+    // 否则回退 restoreProgress（旧存档兼容）。分页 + 连续各一份。
     final int branches =
-        'restoreToCharOffset(\$initialCharOffset)'.allMatches(jsSrc).length;
+        'restoreToCharOffset(C.initialCharOffset)'.allMatches(jsSrc).length;
     expect(branches, greaterThanOrEqualTo(2),
         reason: '分页 + 连续的恢复脚本都必须在 initialCharOffset>=0 时调 restoreToCharOffset');
+    expect('C.initialCharOffset >= 0'.allMatches(jsSrc).length,
+        greaterThanOrEqualTo(2),
+        reason: '两个 shell 都必须保留 initialCharOffset>=0 的优先判据');
+    expect('restoreProgress(C.initialProgress)'.allMatches(jsSrc).length,
+        greaterThanOrEqualTo(2),
+        reason: '两个 shell 都必须保留旧存档的粗粒度回退');
   });
 
   test(
@@ -65,7 +72,7 @@ void main() {
         reason: 'repo.save 必须带 charOffset');
     expect(pageSrc.contains('saved.charOffset'), isTrue,
         reason: '恢复必须读 saved.charOffset 作精确锚');
-    expect(pageSrc.contains('initialCharOffset:'), isTrue,
-        reason: 'shellScript 必须把 _initialCharOffset 传给 JS');
+    expect(pageSrc.contains('initialCharOffset: _initialCharOffset,'), isTrue,
+        reason: 'ReaderEngineConfig 必须把 _initialCharOffset 传给 JS');
   });
 }

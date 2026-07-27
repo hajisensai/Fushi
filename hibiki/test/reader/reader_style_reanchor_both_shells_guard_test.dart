@@ -28,9 +28,7 @@ void main() {
     test(
         '${shell.label} shell defines beginStyleReanchor + commitStyleReanchor',
         () {
-      final String script = ReaderPaginationScripts.shellScript(
-        continuousMode: shell.continuousMode,
-      );
+      final String script = ReaderPaginationScripts.paginatedShellSource();
       expect(
         script.contains('beginStyleReanchor: function'),
         isTrue,
@@ -48,8 +46,7 @@ void main() {
   }
 
   test('beginStyleReanchorInvocation 目标方法在分页脚本里真实可解析', () {
-    final String paginated =
-        ReaderPaginationScripts.shellScript(continuousMode: false);
+    final String paginated = ReaderPaginationScripts.paginatedShellSource();
     // 调用点用 typeof === 'function' 门控；脚本里必须存在同名函数定义，否则门控恒假。
     expect(
       ReaderPaginationScripts.beginStyleReanchorInvocation('"body{}"')

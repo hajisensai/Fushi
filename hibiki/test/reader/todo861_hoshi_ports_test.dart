@@ -111,10 +111,8 @@ void main() {
       );
       expect(src, isNot(contains('window.scanNonJapaneseText = true;')),
           reason: '注入端必须读 pref，不能回退硬编码 true');
-      expect(
-          src,
-          contains(
-              r'window.scanNonJapaneseText = ${appModel.scanNonJapaneseText};'));
+      expect(src,
+          contains(r'window.scanNonJapaneseText = C.scanNonJapaneseText;'));
     });
 
     test('② selection 消费端仍含 scanNonJapaneseText === false 分支', () {

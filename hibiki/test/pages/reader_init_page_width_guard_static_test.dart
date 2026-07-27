@@ -11,7 +11,7 @@ import 'reader_hibiki_page_source_corpus.dart';
 /// postFrame 调 `_syncPageSize`，于是 `w != _lastSyncedWidth` 恒为 false、初始校验恒 no-op。
 ///
 /// 修复不变式（任一退回 → 红）：
-/// 1. `_buildReaderSetupScript` 必须把 JS 实际分页用的 `screenSize` 记进 `_paginatedWidth/Height`。
+/// 1. `_buildReaderEngineConfig` 必须把 JS 实际分页用的 `screenSize` 记进 `_paginatedWidth/Height`。
 /// 2. content-ready 收尾（`_onChapterLoadComplete` / `_onRestoreComplete`）的同步基线必须取
 ///    `_paginatedWidth/Height`（= JS 已分页的宽高），不得用 content-ready 那一刻的当前
 ///    MediaQuery（`screen.width` / `screenSync.width`）抹平差值。
@@ -25,20 +25,20 @@ void main() {
       () {
     final String setup = _functionSource(
       src,
-      '  String _buildReaderSetupScript(',
+      '  ReaderEngineConfig _buildReaderEngineConfig(',
       '  // ── ',
     );
     expect(
       setup,
       contains('_paginatedWidth = screenSize.width'),
       reason:
-          'setup 脚本必须把 dartPageWidth 用的 screenSize.width 记进 _paginatedWidth，'
+          'per-nav config 必须把 dartPageWidth 用的 screenSize.width 记进 _paginatedWidth，'
           '作为 content-ready 后的「已分页基线」。',
     );
     expect(
       setup,
       contains('_paginatedHeight = screenSize.height'),
-      reason: 'setup 脚本必须同步记录 _paginatedHeight。',
+      reason: 'per-nav config 必须同步记录 _paginatedHeight。',
     );
   });
 

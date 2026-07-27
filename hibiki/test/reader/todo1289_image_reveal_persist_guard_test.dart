@@ -16,7 +16,7 @@ import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 /// 重跑 initialize→_sharedInitImages 无条件重加 `blurred`，把揭开状态冲掉。修复把
 /// 「本次会话已揭开」的稳定 key 注入分页脚本，`_hoshiBlurImage` 命中即跳过重新遮罩；
 /// 揭开状态由 Dart 会话集经 `onImageRevealed` 回传持久。这些守卫锁住三条不变量：
-///   1. 分页/连续脚本在 blurImages=true 时消费 revealedKeysJson 并跳过已揭开图片；
+///   1. 分页/连续脚本在 C.blurImages 为真时消费 C.revealedKeys 并跳过已揭开图片；
 ///   2. 揭开 key 计算器 `window.__hoshiImageRevealKey` 暴露给点击/焦点两条揭开路径；
 ///   3. 点击（webview.part.dart）与键盘/手柄（caret）揭开都回传 onImageRevealed。
 String _read(String relPath) => File(relPath).readAsStringSync();
@@ -24,13 +24,11 @@ String _read(String relPath) => File(relPath).readAsStringSync();
 void main() {
   group('TODO-1289 分页脚本消费已揭开集（不再无条件重新遮罩）', () {
     test('blurImages=true 时嵌入 revealedKeys 并让 _hoshiBlurImage 跳过命中项', () {
-      final String js = ReaderPaginationScripts.shellScript(
-        blurImages: true,
-        revealedKeysJson: '["hoshi.local/cover.jpg"]',
-      );
+      final String js = ReaderPaginationScripts.paginatedShellSource();
       // 已揭开集被嵌入并建成查找表。
       expect(js, contains('var _hoshiRevealedKeys = Object.create(null);'));
-      expect(js, contains('["hoshi.local/cover.jpg"]'));
+      // BUG-1140 第二阶段①：已揭开集不再插进源码，改由运行时 C.revealedKeys 读。
+      expect(js, contains('var __hoshiKeys = C.revealedKeys;'));
       // 遮罩前先看 key 是否已揭开——命中直接 return，不再重加 blurred。
       expect(js, contains('if (key && _hoshiRevealedKeys[key]) return;'));
       // 揭开 key 计算器暴露给点击/焦点揭开路径复用。
@@ -39,25 +37,34 @@ void main() {
     });
 
     test('连续模式同样透传 revealedKeys（重排/重载不复原遮罩）', () {
-      final String js = ReaderPaginationScripts.shellScript(
-        continuousMode: true,
-        blurImages: true,
-        revealedKeysJson: '["hoshi.local/pic.png"]',
-      );
+      final String js = ReaderPaginationScripts.continuousShellSource();
       expect(js, contains('var _hoshiRevealedKeys = Object.create(null);'));
-      expect(js, contains('["hoshi.local/pic.png"]'));
+      expect(js, contains('var __hoshiKeys = C.revealedKeys;'));
       expect(js, contains('if (key && _hoshiRevealedKeys[key]) return;'));
     });
 
-    test('blurImages=false 时不注入遮罩/揭开逻辑（边界，零行为变化）', () {
-      final String js = ReaderPaginationScripts.shellScript(blurImages: false);
-      expect(js, isNot(contains('_hoshiBlurImage')));
-      expect(js, isNot(contains('_hoshiRevealedKeys')));
-    });
-
-    test('默认 revealedKeysJson 为空数组（首开无已揭开项）', () {
-      final String js = ReaderPaginationScripts.shellScript(blurImages: true);
-      expect(js, contains('var keys = [];'));
+    test('blurImages=false 时不装遮罩/揭开副作用（边界，零行为变化）', () {
+      // 改动前是「blurImages 为假整段不注入」；引擎静态化后函数照常定义，
+      // **副作用**（重新遮罩、两个 window 全局的暴露）仍受同一个开关门控。
+      final String js = ReaderPaginationScripts.paginatedShellSource();
+      expect(js, contains('if (C.blurImages) _hoshiBlurImage(svg);'));
+      expect(js, contains('if (C.blurImages) _hoshiBlurImage(img);'));
+      expect(
+        js,
+        contains('window.__hoshiImageRevealKey = _hoshiImageRevealKey;'),
+        reason: '揭开 key 计算器仍要暴露给点击/焦点揭开路径复用',
+      );
+      // 两个 window 全局只在开了防剧透遮罩时才挂上（caret / 有声书桥接都靠这个
+      // 全局在不在来探测），否则行为与改动前不一致。
+      final int gate = js.indexOf('if (C.blurImages) {');
+      final int export =
+          js.indexOf('window.__hoshiImageRevealKey = _hoshiImageRevealKey;');
+      expect(gate, isNonNegative);
+      expect(export, greaterThan(gate),
+          reason: '揭开 key 计算器的 window 暴露必须落在 C.blurImages 门控之内');
+      final int markExport =
+          js.indexOf('window.__hoshiMarkImageRevealed = function(key)');
+      expect(markExport, greaterThan(gate), reason: '会话内揭开登记同样受同一个开关门控');
     });
   });
 
@@ -78,10 +85,10 @@ void main() {
       // 注册处理器把 key 收进会话内存集。
       expect(src, contains("handlerName: 'onImageRevealed'"));
       expect(src, contains('_revealedImageKeys.add(key)'));
-      // 构建章节 HTML 时把会话集嵌回分页脚本。
+      // BUG-1140 第二阶段①：会话集不再嵌进脚本源码，改随每章 config 下发。
       expect(
         src,
-        contains('revealedKeysJson: jsonEncode(_revealedImageKeys.toList())'),
+        contains('revealedKeys: _revealedImageKeys.toList(),'),
       );
     });
 

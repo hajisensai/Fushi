@@ -120,8 +120,7 @@ void main() {
 
   group('翻页/边界手势对拖选让路（消歧守卫）', () {
     test('连续模式边界跨章手势见到拖选标志即让路（不误跨章）', () {
-      final String js =
-          ReaderPaginationScripts.shellScript(continuousMode: true);
+      final String js = ReaderPaginationScripts.continuousShellSource();
       expect(js, contains('if (window.__hoshiTextSelectDragActive) return;'),
           reason: '_bEnd（跨章）必须在拖选进行时让路');
     });

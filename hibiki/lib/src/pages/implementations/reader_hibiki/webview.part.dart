@@ -3,7 +3,7 @@ part of '../reader_hibiki_page.dart';
 
 /// webview (EPUB WebView 构建 / hoshi.local 资源拦截 + 净化 / 单 IIFE setup 脚本)
 /// 域 helper，经 part-of 抽出（TODO-589 batch8·最后一批）；与主壳共享私有作用域。
-/// 行为保持：方法体逐字搬运（含 _buildReaderSetupScript 整段内联 JS 模板字符串的
+/// 行为保持：方法体逐字搬运（含引擎源码构造器整段内联 JS 模板字符串的
 /// 反引号/转义/缩进/$ 插值，做过提取前后字节级对比自证），仅做下列扩展不可直接
 /// 表达的等价转发改写：
 ///   (a) `_buildWebView`/`_onChapterLoadComplete` 里两处 `setState(` 改走主壳的
@@ -529,133 +529,162 @@ extension _ReaderWebView on _ReaderHibikiPageState {
 
   static bool _isValidFontData(Uint8List data) => isValidFontData(data);
 
-  static String _buildFuriganaJs(String mode) {
-    switch (mode) {
-      case 'partial':
-        return '''
-  document.addEventListener('click', function(e) {
-    var sel = window.getSelection();
-    if (sel && !sel.isCollapsed) return;
-    var node = e.target;
-    while (node && node !== document.body) {
-      if (node.tagName === 'RUBY') {
-        node.classList.toggle('show-rt');
-        return;
+  /// BUG-1140 第二阶段①：三种 furigana 模式的监听器全部随引擎发一份，运行时按
+  /// `C.furiganaMode` 选一个装（旧实现在 Dart 侧按 `s.furiganaMode` 三选一插值，
+  /// 那会让引擎源码随设置变化 → 外链缓存与编译复用同时失效）。
+  ///
+  /// 值域与分支判据逐条对齐旧的 `switch (mode)`：`partial` 装 click 切换单个 ruby、
+  /// `toggle` 装 dblclick 切换整页、其余（含 `off`）什么都不装。
+  static String _buildFuriganaJs() {
+    return '''
+  if (C.furiganaMode === 'partial') {
+    document.addEventListener('click', function(e) {
+      var sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return;
+      var node = e.target;
+      while (node && node !== document.body) {
+        if (node.tagName === 'RUBY') {
+          node.classList.toggle('show-rt');
+          return;
+        }
+        node = node.parentElement;
       }
-      node = node.parentElement;
-    }
-  }, true);''';
-      case 'toggle':
-        return '''
-  document.addEventListener('dblclick', function() {
-    var sel = window.getSelection();
-    if (sel && !sel.isCollapsed) return;
-    document.body.classList.toggle('show-all-rt');
-  });''';
-      default:
-        return '';
-    }
+    }, true);
+  } else if (C.furiganaMode === 'toggle') {
+    document.addEventListener('dblclick', function() {
+      var sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return;
+      document.body.classList.toggle('show-all-rt');
+    });
+  }''';
   }
 
   // ── Single IIFE setup script (mirrors Hoshi Android's readerSetupScript) ──
 
-  String _buildReaderSetupScript({String? sasayakiCuesJson}) {
+  /// BUG-1140 第二阶段①：本次导航的引擎参数。
+  ///
+  /// 这里聚齐的就是**改动前逐个插进脚本源码的那些值**——现在改成一份小 JSON 随
+  /// boot 下发，引擎运行时读取。新增 per-nav 参数一律加在这里，不得回到脚本里插值。
+  ReaderEngineConfig _buildReaderEngineConfig({String? sasayakiCuesJson}) {
     final ReaderSettings s = _settings!;
     // TODO-113: 滑动翻页距离阈值随灵敏度系数缩放。基础值 44px（纯距离触发）/ 22px
     // （配合速度的快速短滑触发），系数 1.0 = 默认「轻快」手感，越大越迟钝（需滑得更远）。
     final ({int dist, int fastDist}) swipeThresholds =
         ReaderSettings.swipePageTurnDistThresholds(s.swipePageTurnSensitivity);
-    final int swipeDistThreshold = swipeThresholds.dist;
-    final int swipeFastDistThreshold = swipeThresholds.fastDist;
-    // 查词「原地轻点」的完整触摸轨迹半径（固定，不随灵敏度缩放）：与翻页距离阈值
-    // 解耦；任一 move 越界后本次手势永久归为 pan，不能因松手回到起点又变回查词 tap。
-    const int tapSlop = ReaderSettings.tapSlopPx;
     // BUG-239: 连续模式靠原生滚动（滚动轴 = 书写轴），章间切换走边界手势 IIFE。
     // _gestureEnd 的 onSwipe（90% 整屏跳页）只在分页模式有意义；连续模式回传会与
     // 原生滚动产生轴向冲突，故注入 continuousMode 标志在 _gestureEnd 内门控。
     final bool continuousMode = s.isContinuousMode;
+    // TODO-909: select the VN shell when view-mode == 'vn'. VN is mutually
+    // exclusive with continuous (it is a page-flip stage, not native scroll),
+    // so continuousMode stays false here.
+    final bool vnMode = s.isVnMode;
     // TODO-909 M0: VN blank-tap advance. hoshi default clickAdvance=false
     // (commit `42c0bab`); M0 force-enables the tap binding so the device Gate
     // can verify click-to-advance. M1 falls back to s.visualNovelClickAdvance.
-    final bool vnMode = s.isVnMode;
     const bool vnClickAdvanceM0ForceOn = true; // M1: s.visualNovelClickAdvance
-    final bool vnClickAdvance = vnMode && vnClickAdvanceM0ForceOn;
     // TODO-909 M0: reveal（打字渐显）是 M1 功能。在 M0 强制 revealSpeed=0，使每屏
     // renderScreen 即 revealComplete=true、paginate 只返 "scrolled"/"limit"。否则
     // revealSpeed>0 时新屏停在 revealComplete=false，forward 翻屏会命中 paginate 的
     // `if(!revealComplete) completeCurrentReveal(); return "revealed"` 分支，而
     // Dart 的 _didScroll（chrome.part.dart）只认 "scrolled" 为真 → 误判章节边界
-    // 触发 _handlePageTurnLimit 跨章。M1 去掉本强制、改走 s.visualNovelRevealSpeed
-    // 即可放开渐显。
+    // 触发 _handlePageTurnLimit 跨章。M1 去掉本强制、改走 s.visualNovelRevealSpeed。
     const int vnRevealSpeedM0ForceZero = 0; // M1: s.visualNovelRevealSpeed
-    final int vnRevealSpeed = vnMode ? vnRevealSpeedM0ForceZero : 0;
-    // TODO-756b：是否“鼠标悬停即自动查词”。注入为 JS 全局初值，mousemove 监听器
-    // 据此跳过 Shift 门控（纯悬停查词）。live 变更经 _applyHoverAutoLookupLive
-    // 改同一全局，无需整章重注入。
-    final bool hoverAutoLookup = ReaderHibikiSource.instance.hoverAutoLookup;
-    final String selectionJs = ReaderSelectionScripts.source();
-    // TODO-1317: mobile long-press drag-select gesture IIFE (own touch
-    // listeners, coordinates via window.__hoshiTextSelectDragActive).
-    final String longPressDragJs =
-        ReaderSelectionScripts.longPressDragGestureScript();
     final Size screenSize = MediaQuery.of(context).size;
     // BUG-111: 这就是 JS 分页用的权威宽高（dartPageWidth/Height）。记下来作为
     // content-ready 后的「已分页基线」，供 _syncPageSize 与 settle 后的真实视口比对。
     _paginatedWidth = screenSize.width;
     _paginatedHeight = screenSize.height;
+    return ReaderEngineConfig(
+      continuousMode: continuousMode,
+      vnMode: vnMode,
+      vnClickAdvance: vnMode && vnClickAdvanceM0ForceOn,
+      scanNonJapaneseText: appModel.scanNonJapaneseText,
+      // TODO-756b：是否“鼠标悬停即自动查词”。live 变更经 _applyHoverAutoLookupLive
+      // 改同一个 JS 全局，无需整章重注入。
+      hoverAutoLookup: ReaderHibikiSource.instance.hoverAutoLookup,
+      highlightOnTap: ReaderHibikiSource.instance.highlightOnTap,
+      showChrome: _showChrome,
+      debugLogging: DebugLogService.instance.enabled,
+      swipeDistThreshold: swipeThresholds.dist,
+      swipeFastDistThreshold: swipeThresholds.fastDist,
+      furiganaMode: s.furiganaMode,
+      caretColor: _caretRingColorCss(),
+      caretInsetTop: _readerTopOffset,
+      // TODO-975：与 chromeBottomInset 同源 _readerBottomReserve（悬浮 0 / 挤压含底栏）。
+      caretInsetBottom: _readerBottomReserve,
+      initialProgress: _initialProgress,
+      initialCharOffset: _initialCharOffset,
+      // BUG-461: 收藏句跳转的句尾锚（连续模式横排整句对齐进可见区）；非跳转/无句长 = -1。
+      initialCharOffsetEnd: _initialCharOffsetEnd,
+      initialFragment: _initialFragment,
+      chromeTopInset: _readerTopOffset,
+      // TODO-975：单一真相源 _readerBottomReserve（悬浮态 0 / 挤压态含底栏高 + 系统
+      // inset），取代旧 `_showChrome ? height+inset : inset` 三元式。
+      chromeBottomInset: _readerBottomReserve,
+      dartPageWidth: screenSize.width,
+      dartPageHeight: screenSize.height,
+      blurImages: s.blurImages,
+      // TODO-1289：把本次会话已揭开的防剧透图 key 下发，重载时不再重新遮罩。
+      revealedKeys: _revealedImageKeys.toList(),
+      // TODO-perf（跨章）：JS 侧埋点与 Dart 侧同一个开关。生产下恒 false，
+      // perfMark / perfSnapshot 在 JS 里直接 early-return。
+      perfTraceEnabled: ReaderChapterPerfTrace.enabled,
+      vnRevealSpeed: vnMode ? vnRevealSpeedM0ForceZero : 0,
+      vnScreenMode: s.visualNovelScreenMode,
+      vnSentencesPerScreen: s.visualNovelSentencesPerScreen,
+      vnPreserveDialogue: s.visualNovelPreserveDialogueBubbles,
+      vnMergeCrossScreenSasayakiCues: s.visualNovelMergeCrossScreenSasayakiCues,
+      sasayakiCuesJson: sasayakiCuesJson,
+    );
+  }
+
+  /// 阅读器引擎的**静态**源码（零 per-nav 插值），按 view-mode 分三份。
+  ///
+  /// 原名 `_buildReaderSetupScript({sasayakiCuesJson})`——每次跨章把 insets /
+  /// pageWidth / progress / charOffset / fragment / cue 列表逐个插进源码，于是**每次
+  /// 导航都要重新拼装近万行、再整份过一遍 [ReaderScriptCompactor]**（实测
+  /// `buildSetupScript` 中位数 9ms，纯 Dart 侧固定开销，与章节体量无关）。
+  ///
+  /// 现在整段 body 是 `window.__hoshiEngine.install(C)` 的函数体，per-nav 参数一律
+  /// 运行时读 `C`（[ReaderEngineConfig]）。源码只依赖 view-mode 与编译期常量，一个
+  /// 进程里逐字不变，于是可以按模式 memoize（[readerEngineSource]）：拼装 + 压缩从
+  /// 每章一次降为每模式一次。
+  ///
+  /// **注入方式与执行时刻都没变**：仍是 Dart 在 `onLoadStop` 之后一次
+  /// `evaluateJavascript(引擎源码 + boot)`，同一时刻、同一同步执行序、同一次平台通道
+  /// 往返。本改动**不碰**注入通道本身——实测那条通道的固定往返约 7.5ms、与载荷大小
+  /// 几乎无关（发 2 字符 7.5ms vs 发 147459 字符 9.0ms），要压它得减少往返次数而不是
+  /// 减少字节数，属另一件事。
+  ///
+  /// 因为不再读任何实例状态，本方法是 static + memoized。
+  static String _buildReaderEngineSource({
+    required bool vnMode,
+    required bool continuousMode,
+  }) {
+    const int tapSlop = ReaderSettings.tapSlopPx;
+    final String selectionJs = ReaderSelectionScripts.source();
+    // TODO-1317: mobile long-press drag-select gesture IIFE (own touch
+    // listeners, coordinates via window.__hoshiTextSelectDragActive).
+    final String longPressDragJs =
+        ReaderSelectionScripts.longPressDragGestureScript();
+    // 只嵌当前 view-mode 那一份 shell（注入体量与改动前一致）；运行时分流点仍在 JS
+    // 侧读 C，Dart 不再把 per-nav 值插值进 shell。
     final String paginationJs = _stripScriptTags(
-      ReaderPaginationScripts.shellScript(
-        initialProgress: _initialProgress,
-        initialCharOffset: _initialCharOffset,
-        // BUG-461: 收藏句跳转的句尾锚（连续模式横排整句对齐进可见区）；非跳转/无句长 = -1。
-        initialCharOffsetEnd: _initialCharOffsetEnd,
-        continuousMode: s.isContinuousMode,
-        // TODO-909: select the VN shell when view-mode == 'vn'. VN is mutually
-        // exclusive with continuous (it is a page-flip stage, not native
-        // scroll), so continuousMode stays false here.
-        vnMode: s.isVnMode,
-        fontSize: s.fontSize.round(),
-        initialFragment: _initialFragment,
-        sasayakiCuesJson: sasayakiCuesJson,
-        chromeTopInset: _readerTopOffset,
-        // TODO-975：单一真相源 _readerBottomReserve（悬浮态 0 / 挤压态含底栏高 + 系统
-        // inset），取代旧 `_showChrome ? height+inset : inset` 三元式。
-        chromeBottomInset: _readerBottomReserve,
-        dartPageWidth: screenSize.width,
-        dartPageHeight: screenSize.height,
-        blurImages: s.blurImages,
-        // TODO-1289：把本次会话已揭开的防剧透图 key 嵌入分页脚本，重载时不再重新遮罩。
-        revealedKeysJson: jsonEncode(_revealedImageKeys.toList()),
-        vnRevealSpeed: vnRevealSpeed,
-        vnScreenMode: s.visualNovelScreenMode,
-        vnSentencesPerScreen: s.visualNovelSentencesPerScreen,
-        vnPreserveDialogue: s.visualNovelPreserveDialogueBubbles,
-        vnMergeCrossScreenSasayakiCues:
-            s.visualNovelMergeCrossScreenSasayakiCues,
-        // TODO-perf（跨章）：JS 侧埋点与 Dart 侧同一个开关。生产下恒 false，
-        // perfMark / perfSnapshot 在 JS 里直接 early-return（不读 performance、不
-        // stringify），不在热路径上留无条件开销。
-        perfTraceEnabled: ReaderChapterPerfTrace.enabled,
+      ReaderPaginationScripts.engineShell(
+        vnMode: vnMode,
+        continuousMode: continuousMode,
       ),
     );
 
-    final String furiganaJs = _buildFuriganaJs(s.furiganaMode);
+    // 三种 furigana 模式的监听器全部随引擎发，运行时按 C.furiganaMode 选一个装。
+    final String furiganaJs = _buildFuriganaJs();
 
     final String caretJs = ReaderCaretScripts.source();
-    // TODO-975：与 chromeBottomInset 同源 _readerBottomReserve（悬浮 0 / 挤压含底栏）。
-    final double caretBottomInset = _readerBottomReserve;
-    final String caretInit = ReaderCaretScripts.initInvocation(
-      color: _caretRingColorCss(),
-      insetTop: _readerTopOffset,
-      insetBottom: caretBottomInset,
-    );
 
-    // TODO-perf（跨章）：整段 setup 脚本每次跨章都要跨 platform channel 传给 WebView 再
-    // 解析执行（实测 evalSetupScript 中位数 25~40ms，与章节体量无关 = 纯固定开销）。
-    // 注入前剥掉整行注释与空行（见 ReaderScriptCompactor）——传的是同一份语义的脚本，
-    // 只是不再把给人看的中文注释也编组、传输、解析一遍。
-    return ReaderScriptCompactor.compact('''
-(function() {
+    return '''
+window.__hoshiEngine = {
+install: function(C) {
   // BUG-1017: guarantee the `#hoshi-cloak` FOUC guard is always removed, even if
   // any synchronous statement in this setup IIFE throws before the tail reaches
   // its removal (below). Without this a single unhandled sync error anywhere in
@@ -666,19 +695,27 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   Promise.resolve().then(function() {
     try { var c = document.getElementById('hoshi-cloak'); if (c) c.remove(); } catch (_ignored) {}
   });
-  window.scanNonJapaneseText = ${appModel.scanNonJapaneseText};
+  window.scanNonJapaneseText = C.scanNonJapaneseText;
   $selectionJs
   $paginationJs
+  window.__hoshiInstallShell(C);
   $caretJs
-  $caretInit;
+  // TODO-975：insetBottom 与 chromeBottomInset 同源 _readerBottomReserve
+  // （悬浮 0 / 挤压含底栏），由 Dart 侧算好放进 C。
+  window.hoshiCaret.init({
+    color: C.caretColor,
+    insetTop: C.caretInsetTop,
+    insetBottom: C.caretInsetBottom,
+    scopeSelector: null
+  });
   $furiganaJs
   // BUG-239: 连续模式不让 _gestureEnd 回传 onSwipe（交给原生滚动 + 边界 IIFE），
   // 消除横向滑动 90% 跳页与原生滚动的轴向冲突；分页模式照旧水平滑动翻页。
-  var hoshiContinuousMode = $continuousMode;
+  var hoshiContinuousMode = C.continuousMode;
   // TODO-909 M0: VN-mode blank-tap advance flag (see Dart above).
-  var hoshiVnMode = $vnMode;
-  var hoshiVnClickAdvance = $vnClickAdvance;
-  window.__hoverAutoLookup = $hoverAutoLookup;
+  var hoshiVnMode = C.vnMode;
+  var hoshiVnClickAdvance = C.vnClickAdvance;
+  window.__hoverAutoLookup = C.hoverAutoLookup;
   var startX = 0, startY = 0, startTime = 0, hasStart = false;
   var gestureExceededTapSlop = false;
   var imageLongPressTimer = null;
@@ -848,8 +885,8 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     var velocity = absDx / Math.max(1, elapsed) * 1000;
     var horizontalEnough = absDx > absDy;
     var distanceEnough =
-        absDx >= $swipeDistThreshold ||
-        (absDx >= $swipeFastDistThreshold && velocity >= 900);
+        absDx >= C.swipeDistThreshold ||
+        (absDx >= C.swipeFastDistThreshold && velocity >= 900);
     if (horizontalEnough && distanceEnough) {
       return dx < 0 ? 'left' : 'right';
     }
@@ -950,7 +987,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   // 上限）。Dart 是唯一写者：本脚本注入时带当前真值，之后 chrome 翻转与设置热更新由
   // _syncTapGateJs 刷新。tap 手势据此在 JS 侧直接 selectText（见 _gestureEnd 的 tap
   // 分支），砍掉 onTap→Dart→evaluateJavascript 的整个来回。
-  window.__hoshiTapGate = { chrome: $_showChrome, lookup: ${ReaderHibikiSource.instance.highlightOnTap}, maxLen: 400 };
+  window.__hoshiTapGate = { chrome: C.showChrome, lookup: C.highlightOnTap, maxLen: 400 };
   function _gestureEnd(x, y, e) {
     if (!hasStart) return;
     // TODO-1317: a mobile long-press drag-select owns this gesture (finalized
@@ -982,7 +1019,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     var velocity = absDx / Math.max(1, elapsed) * 1000;
     // BUG-239: 连续模式（hoshiContinuousMode）不在此回传 onSwipe——原生滚动沿书写轴
     // 翻屏，到边界由 onBoundarySwipe 跨章；此处的水平 onSwipe 只属分页模式。
-    if (!hoshiContinuousMode && absDx > absDy && (absDx >= $swipeDistThreshold || (absDx >= $swipeFastDistThreshold && velocity >= 900))) {
+    if (!hoshiContinuousMode && absDx > absDy && (absDx >= C.swipeDistThreshold || (absDx >= C.swipeFastDistThreshold && velocity >= 900))) {
       if (e && e.preventDefault) e.preventDefault();
       if (dx < 0) {
         window.flutter_inappwebview.callHandler('onSwipe', 'left');
@@ -1012,12 +1049,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         if (e && e.preventDefault) e.preventDefault();
         window.hoshiReader.paginate('forward');
       } else {
-        // TODO-806 [806-TAP] 框选点击坐标取证探针（默认 off，由 DebugLogService 门控
-        // 注入：${DebugLogService.instance.enabled} 为 false 时整段不进 JS）。打印 onTap
+        // TODO-806 [806-TAP] 框选点击坐标取证探针（默认 off，由 DebugLogService 门控：
+        // C.debugLogging 为 false 时整段跳过，不打日志）。打印 onTap
         // 实际回传的点击坐标，口径=WebView CSS 视口像素（e.clientX/clientY），**不是** OS
         // 屏幕坐标——差一个 devicePixelRatio + 页面在屏内的偏移，这条标明口径以正本清源。
         // 走 console.log → onConsoleMessage → debugPrint → DebugLogService 环形缓冲。
-        if (${DebugLogService.instance.enabled}) {
+        if (C.debugLogging) {
           try {
             console.log('[806-TAP] clientX=' + x + ' clientY=' + y
               + ' shift=' + !!(e && e.shiftKey)
@@ -1419,11 +1456,11 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     // 旗在此 return 挡掉、永不回传落库（见下方）。无需再区分「是否用户驱动」。
     function _reportReaderScroll() {
       var r = window.hoshiReader;
-      // TODO-151/164 / BUG-225 诊断：默认 off（${DebugLogService.instance.enabled}
-      // 由 DebugLogService 门控注入），开了才打印。reanchorPending=true 会早返回不回传，
+      // TODO-151/164 / BUG-225 诊断：默认 off（C.debugLogging 由 DebugLogService
+      // 下发），开了才打印。reanchorPending=true 会早返回不回传，
       // hasBridge=false 说明 callHandler 不可用——便于真机定位「滚动了但进度没动」哪一链断。
       // console.log 经 onConsoleMessage → debugPrint → DebugLogService 环形缓冲。
-      if (${DebugLogService.instance.enabled}) {
+      if (C.debugLogging) {
         console.log('[ReaderDiag] scroll report'
           + ' reanchorPending=' + (r ? r._reanchorPending === true : 'noReader')
           + ' hasBridge=' + !!(window.flutter_inappwebview && window.flutter_inappwebview.callHandler));
@@ -1456,9 +1493,43 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
   $longPressDragJs
   var cloak = document.getElementById('hoshi-cloak');
   if (cloak) cloak.remove();
-})();
-''');
+}
+};
+''';
   }
+
+  /// 引擎源码只依赖 view-mode 与编译期常量，一个进程里逐字不变——每种模式建一次就够。
+  /// 拼装 + 压缩要扫近万行（实测 9ms），绝不能每次跨章重跑。
+  static final Map<String, String> _cachedEngineSource = <String, String>{};
+
+  /// 注入用的引擎源码（按 view-mode memoized）。
+  ///
+  /// 注入前剥掉整行注释与空行（见 [ReaderScriptCompactor]）——传的是同一份语义的
+  /// 脚本，只是不再把给人看的中文注释也编组、传输、解析一遍。
+  static String readerEngineSource({
+    required bool vnMode,
+    required bool continuousMode,
+  }) {
+    final String key =
+        vnMode ? 'vn' : (continuousMode ? 'continuous' : 'paged');
+    return _cachedEngineSource.putIfAbsent(
+      key,
+      () => ReaderScriptCompactor.compact(
+        _buildReaderEngineSource(
+          vnMode: vnMode,
+          continuousMode: continuousMode,
+        ),
+      ),
+    );
+  }
+
+  /// 每次导航下发的那一小份：config + 一次 install 调用。
+  ///
+  /// 与引擎源码拼在**同一次** `evaluateJavascript` 里发出去（往返次数不变）；
+  /// 分开写只是为了让引擎那半边可以 memoize。
+  static String readerEngineBoot(ReaderEngineConfig config) =>
+      'window.__hoshiReaderConfig = ${config.toJsLiteral()};'
+      'window.__hoshiEngine.install(window.__hoshiReaderConfig);';
 
   static String _stripScriptTags(String js) {
     return js
@@ -2276,8 +2347,17 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       if (_currentChapter != chapterSnapshot || _navigateGeneration != gen) {
         return;
       }
+      // per-nav 参数走 config，引擎源码按 view-mode memoized。两半拼成**一次**
+      // evaluateJavascript 发出去——注入通道与执行时刻都与改动前逐字相同，省掉的是
+      // Dart 侧每章重新拼装 + 压缩近万行（实测 buildSetupScript 中位数 9ms）。
+      final ReaderEngineConfig engineConfig =
+          _buildReaderEngineConfig(sasayakiCuesJson: sasayakiCuesJson);
+      final String engineSource = readerEngineSource(
+        vnMode: engineConfig.vnMode,
+        continuousMode: engineConfig.continuousMode,
+      );
       final String setupScript =
-          _buildReaderSetupScript(sasayakiCuesJson: sasayakiCuesJson);
+          '$engineSource\n${readerEngineBoot(engineConfig)}';
       ReaderChapterPerfTrace.mark('buildSetupScript');
       ReaderChapterPerfTrace.noteSize('setupChars', setupScript.length);
       await controller.evaluateJavascript(source: setupScript);
@@ -2328,3 +2408,37 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     }
   }
 }
+
+/// 静态引擎源码的公开入口（默认分页模式）。
+///
+/// 守卫测试用它断言「引擎里确实含有全部载荷」「引擎与导航状态无关」——这条链路
+/// 此前完全没有：所有脚本守卫都只断言各 builder 的返回值，没人断言那些返回值真的
+/// 进了注入物，漏装一个载荷 ~100 条测试照样全绿。
+String readerHibikiEngineSource({
+  bool vnMode = false,
+  bool continuousMode = false,
+}) =>
+    _ReaderWebView.readerEngineSource(
+      vnMode: vnMode,
+      continuousMode: continuousMode,
+    );
+
+/// 每次导航下发的那一小份（config + install 调用），供守卫测试断言它不含引擎本体。
+String readerHibikiEngineBoot(ReaderEngineConfig config) =>
+    _ReaderWebView.readerEngineBoot(config);
+
+/// 压缩**之前**的引擎源码 = 生产上真正交给 [ReaderScriptCompactor] 的那份。
+///
+/// 给压缩器守卫测试用：它要证明压缩器对**真实最终注入载荷**只删空行与整行注释、
+/// 幂等、扫完词法状态干净。此前那份「最终拼装脚本」是把 `webview.part.dart` 的三引号
+/// 模板抠出来、按一张手写替身表重建的——那张表是查找表，**新增**插值会 StateError
+/// （响亮），**删掉**一个载荷完全静默：整份注入物少一块，压缩覆盖跟着少一块，而没有
+/// 一条测试会红。现在直接向生产代码要同一份对象，那个不对称从根上没有了。
+String readerHibikiEngineSourceUncompacted({
+  bool vnMode = false,
+  bool continuousMode = false,
+}) =>
+    _ReaderWebView._buildReaderEngineSource(
+      vnMode: vnMode,
+      continuousMode: continuousMode,
+    );

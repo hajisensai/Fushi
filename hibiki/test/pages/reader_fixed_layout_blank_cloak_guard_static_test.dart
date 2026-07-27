@@ -58,11 +58,11 @@ void main() {
         read('lib/src/pages/implementations/reader_hibiki/webview.part.dart');
 
     // 顶部幂等 microtask 兜底摘 cloak：Promise.resolve().then 里 getElementById('hoshi-cloak').remove()。
-    // 只按 IIFE 起始的模板串定位（不绑定 return 表达式的写法）——setup 脚本注入前会
-    // 过一层 ReaderScriptCompactor.compact(...)，本守卫钉的是 IIFE 内容，与是否包了
-    // 压缩器无关。
-    final int iifeStart = src.indexOf("'''\n(function() {");
-    expect(iifeStart, greaterThan(-1), reason: '找不到 reader-setup IIFE');
+    // BUG-1140 第二阶段①：整段 setup 由 IIFE 变成 `window.__hoshiEngine.install(C)`
+    // 的函数体（外链静态引擎，执行时刻不变）。按 install 签名定位，不绑定外层写法
+    // ——本守卫钉的是函数体内容，与是否包了压缩器 / 是不是 IIFE 无关。
+    final int iifeStart = src.indexOf('install: function(C) {');
+    expect(iifeStart, greaterThan(-1), reason: '找不到 reader-setup install 函数体');
     final String iife = src.substring(iifeStart);
     expect(iife.contains('Promise.resolve().then(function() {'), isTrue,
         reason: 'IIFE 顶部必须排 microtask 兜底（任意抛点后仍摘 cloak）');

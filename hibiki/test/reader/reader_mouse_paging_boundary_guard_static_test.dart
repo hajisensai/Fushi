@@ -16,7 +16,7 @@ void main() {
     source = readReaderPageSource();
     setupScript = _between(
       source,
-      r'var hoshiContinuousMode = $continuousMode;',
+      r'var hoshiContinuousMode = C.continuousMode;',
       'window.hoshiProgressDetails = function()',
     );
   });

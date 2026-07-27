@@ -64,13 +64,12 @@ void main() {
 
   group('BUG-025 _sharedInitImages SVG promotion', () {
     test('paginated shell promotes large <svg><image> to block-img', () {
-      final String js = ReaderPaginationScripts.shellScript();
+      final String js = ReaderPaginationScripts.paginatedShellSource();
       _expectSvgPromotion(js);
     });
 
     test('continuous shell promotes large <svg><image> to block-img', () {
-      final String js =
-          ReaderPaginationScripts.shellScript(continuousMode: true);
+      final String js = ReaderPaginationScripts.continuousShellSource();
       _expectSvgPromotion(js);
     });
   });
