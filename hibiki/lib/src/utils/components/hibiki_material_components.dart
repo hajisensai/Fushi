@@ -1117,14 +1117,27 @@ class HibikiAppBarAction {
 /// [alwaysVisible] 放最高频、必须一眼可点的动作（如排序）；[collapsible] 里的
 /// 在宽屏逐个平铺，窄屏收进一个 [PopupMenuButton]。折叠后动作一个都没少，只是
 /// 多一次点击——比标题消失划算得多。
-List<Widget> narrowAwareAppBarActions(
-  BuildContext context, {
+///
+/// BUG-1186：判「窄」必须用**这条 AppBar 实际拿到的约束宽**，不是 `MediaQuery`
+/// 的整窗宽。页面嵌进分栏 / 受限宽容器 / 对话框时，整窗很宽而本行很窄，按整窗判
+/// 定就永远不折叠，标题照样被挤没——与 [HibikiToolScaffold] 里 BUG-1184 修掉的
+/// 是同一类错误（那边已改用 [LayoutBuilder] 的局部约束）。
+///
+/// [availableWidth] 故意做成必填、且不提供「取不到就退回整窗宽」的默认值：有默认
+/// 值就等于给这个 bug 留了一条随时能走回去的路。调用点把该 AppBar 包进
+/// [LayoutBuilder]（或包住整个 [Scaffold]——appBar 与 Scaffold 同宽）后把
+/// `constraints.maxWidth` 传进来即可。
+///
+/// 注意这里比的是**逻辑像素**：动作按钮的固有宽（[IconButton] 48）也是逻辑像素，
+/// 「几个按钮塞得下」纯粹是逻辑坐标系里的几何问题，不需要像
+/// [windowSizeClassReal] 那样按 UI 缩放还原真实物理宽。
+List<Widget> narrowAwareAppBarActions({
+  required double availableWidth,
   required List<HibikiAppBarAction> collapsible,
   List<Widget> alwaysVisible = const <Widget>[],
   double narrowWidth = 480,
 }) {
-  final double width = MediaQuery.sizeOf(context).width;
-  final bool narrow = width.isFinite && width < narrowWidth;
+  final bool narrow = availableWidth.isFinite && availableWidth < narrowWidth;
   if (!narrow || collapsible.length < 2) {
     return <Widget>[
       ...alwaysVisible,

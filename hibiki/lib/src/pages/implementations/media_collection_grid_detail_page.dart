@@ -312,29 +312,12 @@ class _MediaCollectionGridDetailPageState
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final List<({MediaCollectionItemRow row, Widget card})> members =
-        <({MediaCollectionItemRow row, Widget card})>[
-      for (final MediaCollectionItemRow r in _rows)
-        if (widget.memberCardBuilder(
-          r.mediaType,
-          r.entryKey,
-          onRemoveFromCollection: () => _removeMember(r),
-        )
-            case final Widget card)
-          (row: r, card: card),
-    ];
-    _visibleRows = <MediaCollectionItemRow>[
-      for (final ({MediaCollectionItemRow row, Widget card}) m in members)
-        m.row,
-    ];
-    return Scaffold(
-      appBar: AppBar(
+  /// [availableWidth] 是这条 AppBar 实际拿到的约束宽（由 [LayoutBuilder] 下发）。
+  AppBar _buildAppBar(double availableWidth) => AppBar(
         title: Text(_name, maxLines: 1, overflow: TextOverflow.ellipsis),
         // BUG-1184：同合集详情页——窄屏把次要动作收进溢出菜单，给合集名让出宽度。
         actions: narrowAwareAppBarActions(
-          context,
+          availableWidth: availableWidth,
           alwaysVisible: <Widget>[_buildSortMenu()],
           collapsible: <HibikiAppBarAction>[
             HibikiAppBarAction(
@@ -353,6 +336,33 @@ class _MediaCollectionGridDetailPageState
               onPressed: _delete,
             ),
           ],
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final List<({MediaCollectionItemRow row, Widget card})> members =
+        <({MediaCollectionItemRow row, Widget card})>[
+      for (final MediaCollectionItemRow r in _rows)
+        if (widget.memberCardBuilder(
+          r.mediaType,
+          r.entryKey,
+          onRemoveFromCollection: () => _removeMember(r),
+        )
+            case final Widget card)
+          (row: r, card: card),
+    ];
+    _visibleRows = <MediaCollectionItemRow>[
+      for (final ({MediaCollectionItemRow row, Widget card}) m in members)
+        m.row,
+    ];
+    return Scaffold(
+      // BUG-1186：折叠判据取这条 AppBar 的局部约束宽，不是整窗宽（同合集详情页）。
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) =>
+              _buildAppBar(constraints.maxWidth),
         ),
       ),
       body: SafeArea(

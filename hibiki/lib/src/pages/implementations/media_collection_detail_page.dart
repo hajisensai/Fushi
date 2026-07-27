@@ -240,17 +240,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         child: Icon(Icons.movie_outlined, color: cs.onSurfaceVariant, size: 20),
       );
 
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return Scaffold(
-      appBar: AppBar(
+  /// [availableWidth] 是这条 AppBar 实际拿到的约束宽（由 [LayoutBuilder] 下发）。
+  AppBar _buildAppBar(double availableWidth) => AppBar(
         title: Text(_name, maxLines: 1, overflow: TextOverflow.ellipsis),
         // BUG-1184：5 个动作 + 返回键在 320dp 上吃掉约 296px，合集名只剩二十几像素、
         // 等于完全看不见。窄屏把后 4 个收进溢出菜单，排序保持一眼可点。
         actions: narrowAwareAppBarActions(
-          context,
+          availableWidth: availableWidth,
           alwaysVisible: <Widget>[_buildSortMenu()],
           collapsible: <HibikiAppBarAction>[
             HibikiAppBarAction(
@@ -274,6 +270,23 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               onPressed: _delete,
             ),
           ],
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    return Scaffold(
+      // BUG-1186：动作要不要折叠，得看这条 AppBar 自己拿到多宽，而不是整窗多宽。
+      // 包一层 [LayoutBuilder] 把局部约束喂给 [narrowAwareAppBarActions]；高度就是
+      // [AppBar] 无 bottom 时的默认 preferredSize（kToolbarHeight），Scaffold 仍会
+      // 自己叠上状态栏 padding，行为与直接挂 AppBar 完全一致。
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) =>
+              _buildAppBar(constraints.maxWidth),
         ),
       ),
       body: SafeArea(
