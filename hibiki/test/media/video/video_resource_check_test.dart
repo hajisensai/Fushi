@@ -108,6 +108,36 @@ void main() {
       expect(p.equals(relocated!, current.path), isTrue);
     });
 
+    test(
+        'BUG-1115: repairs stale paths when the documents root is nested under '
+        'the container Documents (<Documents>/Hibiki/data)', () async {
+      // 新安装的 documents 根不再是容器的 `Documents` 本身，而是它下面的
+      // `Hibiki/data`。旧路径里 `Documents/` 之后的相对段**已经包含** `Hibiki/data`，
+      // 基准若取 documents 根就会把它拼两遍，重定位永远落空。
+      final Directory dir =
+          await Directory.systemTemp.createTemp('bug1111_relocate_nested');
+      addTearDown(() => dir.delete(recursive: true));
+      final Directory currentDocs = Directory(
+        '${dir.path}/Containers/Data/Application/NEW/Documents/Hibiki/data',
+      )..createSync(recursive: true);
+      final File current = File('${currentDocs.path}/video_covers/cover.jpg')
+        ..createSync(recursive: true);
+      final String stale = '${dir.path}/Containers/Data/Application/OLD/'
+          'Documents/Hibiki/data/video_covers/cover.jpg';
+
+      expect(await File(stale).exists(), isFalse);
+
+      final String? relocated = await relocateMissingAppDocumentPath(
+        stale,
+        documentsRoot: currentDocs,
+      );
+      expect(relocated, isNotNull, reason: '容器 UUID 变化后应能重定位到新容器下的同一相对路径');
+      expect(p.equals(relocated!, current.path), isTrue);
+      // 防回归：绝不产出 `.../Hibiki/data/Hibiki/data/...` 这种拼两遍的路径。
+      expect(relocated.contains('Hibiki${p.separator}data${p.separator}Hibiki'),
+          isFalse);
+    });
+
     test('does not repoint arbitrary user Documents paths', () async {
       final Directory dir =
           await Directory.systemTemp.createTemp('todo897_no_relocate');

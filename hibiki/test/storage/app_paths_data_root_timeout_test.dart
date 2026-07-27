@@ -23,7 +23,15 @@ void main() {
   late Directory tmp;
   late Directory fakeTemp;
 
+  /// BUG-1115：默认 documents 根 = `<平台 Documents>/Hibiki/data`。本文件 mock 的 support
+  /// 根下没有 `hibiki.db`，故 resolve() 一律判为**全新安装** → 新布局。
+  String nestedDefaultDocs() => p.joinAll(<String>[
+        p.join(tmp.path, 'default_documents'),
+        ...AppPaths.defaultDocumentsChildSegments,
+      ]);
+
   setUp(() {
+    AppPaths.debugResetDocumentsLayoutCache();
     tmp = Directory.systemTemp.createTempSync('hibiki_dataroot_timeout_');
     fakeTemp = Directory(p.join(tmp.path, 'systemp'))..createSync();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -44,6 +52,7 @@ void main() {
 
   tearDown(() {
     AppPaths.debugDataRootReader = null;
+    AppPaths.debugResetDocumentsLayoutCache();
     // 静态开关必须每个 test 复位，否则跨 test 泄漏（一个 test 置 true 会污染后续）。
     AppPaths.forceDefaultRootForSession = false;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -85,8 +94,7 @@ void main() {
     AppPaths.forceDefaultRootForSession = true;
 
     final AppPaths paths = await AppPaths.resolve();
-    expect(
-        paths.documentsRoot.path, equals(p.join(tmp.path, 'default_documents')),
+    expect(paths.documentsRoot.path, equals(nestedDefaultDocs()),
         reason: '用户显式选择后应退回默认根打开（空态），而不是抛异常');
     expect(paths.supportRoot.path, equals(p.join(tmp.path, 'default_support')));
   });
@@ -94,8 +102,7 @@ void main() {
   test('未配置自定义根（普通默认用户）→ 不抛，正常用默认根', () async {
     AppPaths.debugDataRootReader = () async => null;
     final AppPaths paths = await AppPaths.resolve();
-    expect(
-        paths.documentsRoot.path, equals(p.join(tmp.path, 'default_documents')),
+    expect(paths.documentsRoot.path, equals(nestedDefaultDocs()),
         reason: '无自定义根配置的用户不受 BUG-815 预检影响');
   });
 

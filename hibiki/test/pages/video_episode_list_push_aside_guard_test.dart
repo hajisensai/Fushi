@@ -173,6 +173,25 @@ void main() {
     );
   });
 
+  test('剧集面板封面统一走 resolveMediaCoverImage，兼容本地与互联成员', () {
+    expect(src.contains('this.coverPath,'), isTrue,
+        reason: '_PlaylistEpisodeRef 应承载本地封面路径');
+    expect(src.contains('this.coverUrl,'), isTrue,
+        reason: '_PlaylistEpisodeRef 应承载互联封面 URL');
+    expect(src.contains('this.coverCacheKey,'), isTrue,
+        reason: '_PlaylistEpisodeRef 应承载远端稳定缓存键');
+    expect(src.contains('coverPath: er.coverPath'), isTrue,
+        reason: '本地合集成员应把 video_books.coverPath 带进面板');
+    expect(src.contains('coverUrl: m.coverUrl'), isTrue,
+        reason: '互联合集成员应把 RemoteVideoInfo.coverUrl 带进面板');
+    expect(src.contains('coverCacheKey: m.id'), isTrue,
+        reason: '互联封面应使用 RemoteVideoInfo.id 作稳定缓存键');
+    expect(src.contains('resolveMediaCoverImage('), isTrue,
+        reason: '封面来源应统一走显示侧解析器，不在剧集面板手写来源分支');
+    expect(src.contains('episodes: _episodePanelEntries()'), isTrue,
+        reason: 'VideoEpisodePanel 应接收解析后的标题与封面条目');
+  });
+
   test('剧集列表 push-aside 也门控控制条 / rail 可见性（与字幕列表一致）', () {
     // _applyControlsVisibilityFromMediaKit 的 gated 应含 _episodeListVisible。
     final int start =

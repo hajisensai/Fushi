@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:hibiki_core/hibiki_core.dart' show hibikiDatabaseFileName;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,9 +17,10 @@ import 'package:hibiki/src/utils/misc/platform_utils.dart';
 /// 根」真相源——后续 E1（数据迁移）/E2（设置 UI）/E3（重启换根）无从下手。
 ///
 /// [AppPaths] 把三个根的解析收敛到这里：
-///   - [documentsRoot] —— 内容/书库根（`getApplicationDocumentsDirectory`，
-///     Windows = `%USERPROFILE%\Documents`）。EPUB 正文、有声书音频、视频封面/字幕、
-///     词典资源、缩略图等用户数据都派生自它。
+///   - [documentsRoot] —— 内容/书库根。EPUB 正文、有声书音频、视频封面/字幕、词典资源、
+///     缩略图等用户数据都派生自它。默认（未配置自定义数据根）落平台 Documents 下的
+///     Hibiki 专属容器 `<Documents>/Hibiki/data`；**老安装**仍锚定历史扁平布局
+///     `<Documents>` 本身（见 [_resolveDefaultDocumentsRoot]）。
 ///   - [supportRoot] —— 数据库根（`getApplicationSupportDirectory`，
 ///     Windows = `%APPDATA%\<pkg>`）。`hibiki.db` 与 per-source local-audio DB 落这里。
 ///   - [tempRoot] —— 可丢弃的临时目录（`getTemporaryDirectory`）。
@@ -81,6 +84,12 @@ class AppPaths {
         throw DataRootUnavailableException(configuredPath: configured);
       }
     }
+    // BUG-1115：默认 documents 布局的判定**只在这里**做一次（启动期，真实异步环境）。
+    // 判定要探测文件系统，绝不能塞进 [_resolveDocumentsRoot]——那条路径会被运行时的静态
+    // 便捷层（`documentsSubdirectory` 等）高频调用，其中就包括 widget 测试里的封面/资源
+    // 解析：`testWidgets` 跑在 FakeAsync 上，真实文件 IO 的 future 在那里永不完成、
+    // `.timeout()` 还会留下 pending timer，整批页面测试会挂死或报「Timer is still pending」。
+    await _ensureDocumentsLayoutDecided();
     final Directory documents = await _resolveDocumentsRoot();
     final Directory support = await _resolveSupportRoot();
     final Directory temp = await _resolveTempRoot();
@@ -106,6 +115,41 @@ class AppPaths {
 
   /// `<dataRoot>` 下「数据库/支持」子目录名。
   static const String _dataRootSupportChild = 'support';
+
+  /// BUG-1115：**默认** documents 根的布局键（SharedPreferences，与 [dataRootPrefKey]
+  /// 同一通道，DB 打开前可读）。值只有两个：[_layoutFlat] / [_layoutNested]。
+  ///
+  /// 一经写入就是本机的**永久锚点**，不再重新探测：布局若随「Documents 里此刻有没有某个
+  /// 目录」漂移，同一台机器两次启动就可能解析出两个不同的内容根 = 用户书库凭空消失。
+  static const String documentsLayoutPrefKey = 'documents_layout';
+
+  /// 历史扁平布局：documents 根 = 平台 `Documents` **本身**，16 个 Hibiki 子目录直接摊在
+  /// 用户文档根下。老安装锚定于此（零迁移，见 [_resolveDefaultDocumentsRoot]）。
+  static const String _layoutFlat = 'flat';
+
+  /// 当前默认布局：documents 根 = `<Documents>/Hibiki/data`（Hibiki 专属容器）。
+  static const String _layoutNested = 'nested';
+
+  /// [_layoutNested] 下平台 Documents 到 documents 根的相对路径段。
+  ///
+  /// 为什么是 `Hibiki/data` 而不是 `Hibiki`：`<Documents>/Hibiki` 已经是**用户可见导出
+  /// 目录**（`DesktopDirectoryService.getHibikiExportDirectory` /
+  /// `IosDirectoryService`，卡片导出物落点，刻意不随数据根走）。数据根取它下面的
+  /// `data/`，用户文档根下只多出一个 `Hibiki/` 伞，内部数据与导出物各占一层、互不淹没。
+  static const List<String> defaultDocumentsChildSegments = <String>[
+    'Hibiki',
+    'data',
+  ];
+
+  /// 本进程已判定的默认布局（true=扁平老布局）。由 [_ensureDocumentsLayoutDecided] 在
+  /// 启动期写一次，之后所有解析共用——布局在一次运行里必须恒定。
+  static bool? _legacyFlatDocumentsRoot;
+
+  /// 仅供测试：清掉进程内布局判定，让同一测试文件里的多个用例能各自注入不同的
+  /// prefs / 老安装痕迹（生产永不调用——布局在一次运行里恒定）。
+  @visibleForTesting
+  static void debugResetDocumentsLayoutCache() =>
+      _legacyFlatDocumentsRoot = null;
 
   /// 测试注入钩子：覆盖「读 SharedPreferences 的 data_root」这一步，使 [AppPaths] 的
   /// dataRoot 派生在纯 Dart 单测里可断言（无需平台 SharedPreferences 通道）。返回 null
@@ -193,7 +237,95 @@ class AppPaths {
     if (dataRoot != null) {
       return Directory(p.join(dataRoot.path, _dataRootDocumentsChild));
     }
-    return getApplicationDocumentsDirectory();
+    return _resolveDefaultDocumentsRoot();
+  }
+
+  /// BUG-1115：无自定义数据根时的 documents 根。
+  ///
+  /// 历史上这里直接返回平台 `Documents`，于是 [hibikiOwnedDocumentsEntries] 那 16 个目录
+  /// 全摊在用户文档根下（TODO-935 E0 收敛十几处 `getApplicationDocumentsDirectory()` 时
+  /// 刻意保持零迁移，把「默认根 = 共享用户目录」固化成了常态）。现在默认改为 Hibiki 专属
+  /// 容器 `<Documents>/Hibiki/data`；**老安装保持扁平布局不动**（见
+  /// [_useLegacyFlatDocumentsRoot]），一个字节都不搬。
+  ///
+  /// 老用户要收进子目录，走设置里的「数据存储位置」（[DataRootMigrator] 会连 DB 里的绝对
+  /// 路径一起 rebase）；这里绝不自动迁移——启动期搬整个书库既慢又可能被文件锁半途打断。
+  static Future<Directory> _resolveDefaultDocumentsRoot() async {
+    final Directory platformDocuments =
+        await getApplicationDocumentsDirectory();
+    if (await _useLegacyFlatDocumentsRoot()) return platformDocuments;
+    return Directory(p.joinAll(<String>[
+      platformDocuments.path,
+      ...defaultDocumentsChildSegments,
+    ]));
+  }
+
+  /// 本机默认布局是否为历史扁平布局。**纯读取、绝不探测文件系统**（见 [resolve] 里对
+  /// FakeAsync 的说明）：本进程已判定 → 用判定值；否则读 prefs 里的锚点；连锚点都没有 →
+  /// **扁平老布局**。
+  ///
+  /// 最后那个兜底是保守的一半：没有判定依据时退回 BUG-1115 之前的行为，绝不擅自把一个
+  /// 可能装了满库的机器切到新布局（那会让书库、有声书、词典资源在 UI 上集体消失——文件
+  /// 还在、DB 里的绝对路径也还指向旧位置，但静态派生点全去了新目录）。生产上
+  /// [AppPaths.resolve] 恒在启动最早期跑完 [_ensureDocumentsLayoutDecided]，所以真正走到
+  /// 这个兜底的只有「没跑过 resolve 的测试夹具」。
+  static Future<bool> _useLegacyFlatDocumentsRoot() async {
+    final bool? decided = _legacyFlatDocumentsRoot;
+    if (decided != null) return decided;
+    final SharedPreferences? prefs = await _prefsOrNull();
+    return prefs?.getString(documentsLayoutPrefKey) != _layoutNested;
+  }
+
+  /// 判定 + 固化默认布局。**唯一做探测 IO 的地方**，只由 [resolve] 在启动期调用一次；
+  /// 已判定（本进程判过 / prefs 有锚点）就直接沿用，不再探测。
+  ///
+  /// 判据是 support 根下有没有 `hibiki.db`——即「这台机器上是否已经有一个跑过的安装」。
+  /// 刻意**不**看 Documents 里有没有 `videos` / `browser` / `thumbnails` 这类目录：那些
+  /// 名字在用户自己的文档目录里撞名概率不低，全新安装会被误判成老安装、继续摊开。
+  /// support 根是平台固定落点（`%APPDATA%\<pkg>`），不随本次改动移动，判据稳定。
+  ///
+  /// 探测失败 / 超时一律当**老安装**（保守，同 [_useLegacyFlatDocumentsRoot] 的兜底）。
+  static Future<void> _ensureDocumentsLayoutDecided() async {
+    if (_legacyFlatDocumentsRoot != null) return;
+    final SharedPreferences? prefs = await _prefsOrNull();
+    final String? stored = prefs?.getString(documentsLayoutPrefKey);
+    if (stored == _layoutFlat || stored == _layoutNested) {
+      _legacyFlatDocumentsRoot = stored == _layoutFlat;
+      return;
+    }
+    final bool flat = await _existingInstallHasDatabase();
+    _legacyFlatDocumentsRoot = flat;
+    // 固化锚点（best-effort）。写失败只意味着下次启动再探一次，不改变本次结果——而下次
+    // 探测的判据（hibiki.db 是否存在）此时只会更成立，不会翻转成新布局。
+    try {
+      await prefs?.setString(
+          documentsLayoutPrefKey, flat ? _layoutFlat : _layoutNested);
+    } catch (e) {
+      debugPrint('AppPaths: 固化 documents 布局失败（下次启动重新判定）: $e');
+    }
+  }
+
+  /// support 根下是否已有主库文件 = 本机已存在跑过的安装。与 [_probeDataRootExists] 同一
+  /// 纪律：**只准异步 `exists()` + 超时**，绝不 `existsSync()`（这条路径同样在启动最早期
+  /// 的主 isolate 上跑）。超时/抛错都按「老安装」处理（保守）。
+  static Future<bool> _existingInstallHasDatabase() async {
+    try {
+      final Directory support = await _resolveSupportRoot();
+      return await File(p.join(support.path, hibikiDatabaseFileName))
+          .exists()
+          .timeout(const Duration(seconds: 2), onTimeout: () => true);
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// SharedPreferences 实例；平台通道不可用（纯 Dart 单测 / 极端启动早期）返回 null。
+  static Future<SharedPreferences?> _prefsOrNull() async {
+    try {
+      return await SharedPreferences.getInstance();
+    } catch (_) {
+      return null;
+    }
   }
 
   static Future<Directory> _resolveSupportRoot() async {
@@ -223,9 +355,12 @@ class AppPaths {
 
   /// TODO-1226：documents 根顶层**属于 Hibiki 的目录名全集**（数据根迁移白名单）。
   ///
-  /// 默认数据根时 documents 根 = 整个用户 `Documents`（共享目录，含用户自己的文件和
-  /// shell junction）。迁移引擎对共享根**只搬这份白名单里的顶层项**，绝不整树搬移 /
-  /// 整树删除用户 `Documents`。每一项都必须对应仓库里一个真实的派生点：
+  /// **老安装（[_layoutFlat]）** 的 documents 根 = 整个用户 `Documents`（共享目录，含
+  /// 用户自己的文件和 shell junction）。迁移引擎对共享根**只搬这份白名单里的顶层项**，
+  /// 绝不整树搬移 / 整树删除用户 `Documents`。BUG-1115 之后新装走
+  /// `<Documents>/Hibiki/data`（Hibiki 专属根，迁移走整树语义），白名单对它不生效——但
+  /// 老安装可能永远停在扁平布局，故白名单及其守卫**长期有效**，新增
+  /// `<documents>/<child>` 派生点仍必须收进来。每一项都必须对应仓库里一个真实的派生点：
   ///
   ///  - `audiobooks` —— [audiobooksDirectory]；`AppModel` 各处
   ///    `join(appDirectory, 'audiobooks')`；`AudiobookStorage.ensurePersistDir`。
@@ -269,6 +404,35 @@ class AppPaths {
     'dictionaryImportWorkingDirectory',
     'webArchive',
   };
+
+  /// BUG-1115：[newDataRoot] 落在**共享** documents 根（老安装的扁平布局 = 平台
+  /// `Documents`）内部时，它是否是一个安全的迁移目标。
+  ///
+  /// 一般规则是「新数据根不能位于旧数据目录内部」（自我嵌套 → 边搬边把目标搬进自己）。
+  /// 但共享根是个例外：那里的迁移是**白名单选择性搬移**——只有
+  /// [hibikiOwnedDocumentsEntries] 里的顶层项会被搬走，别的顶层项一律不碰。所以只要新根
+  /// 的顶层段不是白名单里的名字，它在搬移中就是个旁观者，`Documents\Hibiki` 这种「把散
+  /// 落的 16 个目录收进一个自己的子目录」的迁移是安全的，不该被一刀切拒绝。
+  ///
+  /// 顶层段比较**大小写不敏感**：`p.canonicalize` 在 Windows 上会把路径转小写，直接与
+  /// 白名单原样比对会让 `Documents\hibikiExport` 漏网（它其实是白名单项，会被搬走 →
+  /// 目标边搬边消失）。小写比较在 Linux 上只会更保守（多拒绝几个），不会放行危险目标。
+  /// [ownedEntries] 是本次搬移真正生效的白名单（引擎传
+  /// `DataRootMigrationRequest.documentsTopLevelIncludeNames`，UI 传默认全集）——判定必须
+  /// 与实际会被搬走的顶层项同源，否则两边对「哪些名字会消失」的认知会漂开。
+  static bool isSafeNestedTargetInSharedDocuments({
+    required String sharedDocumentsRoot,
+    required String newDataRoot,
+    Set<String> ownedEntries = hibikiOwnedDocumentsEntries,
+  }) {
+    final String canonRoot = p.canonicalize(sharedDocumentsRoot);
+    final String canonNew = p.canonicalize(newDataRoot);
+    if (!p.isWithin(canonRoot, canonNew)) return false;
+    final String firstSegment =
+        p.split(p.relative(canonNew, from: canonRoot)).first.toLowerCase();
+    return !ownedEntries
+        .any((String owned) => owned.toLowerCase() == firstSegment);
+  }
 
   // ---- 静态便捷层（给无 AppModel 实例的 static 存储助手） ----
 

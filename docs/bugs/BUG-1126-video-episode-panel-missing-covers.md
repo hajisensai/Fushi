@@ -1,0 +1,18 @@
+## BUG-1126 · 视频剧集侧栏只传标题导致本地与互联封面全部丢失
+- **报告**：2026-07-26（用户：「封面的互联写了吗，把这些封面、名字等来源统一，不要每个地方编码一堆。比如视频里面的剧集列表，少了封面。」）
+- **真实性**：✅ 真 bug，且是数据结构层恒丢，不是图片加载偶发失败：
+  - `hibiki/lib/src/pages/implementations/video_hibiki_page.dart:357` 的 `_PlaylistEpisodeRef` 修复前只有 `bookUid/title/path`；本地 `VideoBookRow.coverPath` 与互联 `RemoteVideoInfo.coverUrl/id` 在组装播放列表时都被丢弃。
+  - `hibiki/lib/src/media/video/video_episode_panel.dart:13` 的 `VideoEpisodePanel` 修复前只接收 `List<String> episodeTitles`，接口本身装不下封面，因此任一本地或互联合集都只能渲染「序号 + 标题」。
+  - 互联取图能力此前已存在（`RemoteCoverImage` + `RemoteCoverFetcher` + 稳定 cacheKey），缺的是把远端成员封面身份带到面板并复用统一的显示侧来源解析器；旧 `RemoteVideoEpisode` 单行 playlist 模型确实不下发封面，仍应安全退回纯序号。
+- **[x] ① 已修复** —
+  - 新增 `hibiki/lib/src/media/media_cover_source.dart`，统一“书 override 链 / 互联钉扎取图 / 本机封面文件”的 `ImageProvider` 来源优先级；与写入侧 `MediaCoverService`、渲染侧 `PosterCoverImage` 分工，不在各面板重写远端/本地分支。
+  - `_PlaylistEpisodeRef` 增加 `coverPath/coverUrl/coverCacheKey`：本地合集从 `VideoBookRow.coverPath` 带入；互联合集从 `RemoteVideoInfo.coverUrl/id` 带入。
+  - `episode.part.dart:227` 的 `_episodePanelEntries` 统一调用 `resolveMediaCoverImage`；`VideoEpisodePanel` 改接 `VideoEpisodeEntry(title, cover)` 并显示 56×32 缩略图。无封面或加载失败仍保留序号/播放标记与电影占位图标。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/media/media_cover_source_test.dart`：验证互联优先级与稳定缓存键、互联 fetcher 不可用时回退本地、无封面与按媒体类型占位。
+  - `hibiki/test/media/video/video_episode_panel_test.dart`：真实 widget 断言剧集封面出现在对应 `ListTile`，尺寸为 56×32，既有点击/高亮/空态/大字号序号测试全部迁移到结构化条目。
+  - `hibiki/test/pages/video_episode_list_push_aside_guard_test.dart`：源码守卫本地与互联封面字段没有在播放列表组装时再次丢失，且面板来源必须走 `resolveMediaCoverImage`。
+- **备注**：
+  - 定向与相邻守卫共 30 项测试已通过；全量 `flutter analyze --no-pub` 通过。
+  - 设备肉眼复测待补：需打开一个带封面的本地视频合集与一个互联合集，确认右侧剧集面板缩略图、当前集高亮与窄栏标题布局。
+  - 本条只修剧集列表的真实缺口并建立显示侧统一入口；其它既有封面消费点后续迁移时应复用该入口，不再新增手写来源分支。

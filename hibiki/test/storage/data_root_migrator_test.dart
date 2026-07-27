@@ -598,6 +598,101 @@ void main() {
       }
     });
 
+    test('BUG-1115：目标是共享根内的非白名单子目录（Documents\\Hibiki）→ 允许并搬成', () async {
+      // 老安装唯一自然的整理路径：把散落在共享 Documents 根下的 Hibiki 目录收进
+      // `Documents\Hibiki`。旧实现按「新根位于旧根内部」一律拒绝，用户无路可走。
+      // 白名单搬移只动白名单顶层项，`Hibiki` 不在白名单里 → 全程是旁观者。
+      await seedDb();
+      final File userDoc = File(p.join(oldDocsPath, 'my_essay.docx'))
+        ..writeAsStringSync('user data, do not touch');
+
+      final String newDataRoot = p.join(oldDocsPath, 'Hibiki');
+      String? wrote;
+      final (Directory newDocs, Directory newSupport) =
+          await const DataRootMigrator().migrate(DataRootMigrationRequest(
+        oldDocumentsRoot: oldDocs,
+        oldSupportRoot: oldSupport,
+        newDataRoot: newDataRoot,
+        closeResources: () async {},
+        writeDataRootPref: (String r) async => wrote = r,
+        documentsTopLevelIncludeNames: const <String>{
+          'hoshi_books',
+          'audiobooks',
+          'video_covers',
+        },
+      ));
+
+      // 新根就在旧共享根内部，数据齐全。
+      expect(p.isWithin(oldDocsPath, newDocs.path), isTrue);
+      expect(
+          File(p.join(newDocs.path, 'hoshi_books', 'Bk', 'a.html'))
+              .existsSync(),
+          isTrue);
+      expect(
+          File(p.join(newDocs.path, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
+          isTrue);
+      // 白名单项已离开共享根顶层——文档根不再摊着 Hibiki 的目录。
+      expect(
+          Directory(p.join(oldDocsPath, 'hoshi_books')).existsSync(), isFalse);
+      expect(
+          Directory(p.join(oldDocsPath, 'audiobooks')).existsSync(), isFalse);
+      expect(
+          Directory(p.join(oldDocsPath, 'video_covers')).existsSync(), isFalse);
+      // 共享根本体与用户文件原样保留。
+      expect(oldDocs.existsSync(), isTrue);
+      expect(userDoc.readAsStringSync(), equals('user data, do not touch'));
+      // pref 已写，DB 路径 rebase 到新根。
+      expect(wrote, equals(newDataRoot));
+      final HibikiDatabase db = HibikiDatabase(newSupport.path);
+      try {
+        final EpubBookRow b = (await db.getAllEpubBooks()).single;
+        expect(b.epubPath, startsWith(newDocs.path));
+      } finally {
+        await db.close();
+      }
+    });
+
+    test('BUG-1115：白名单项本身当目标仍被拒（会被搬走 → 目标边搬边消失）', () async {
+      await seedDb();
+      await expectLater(
+        const DataRootMigrator().migrate(DataRootMigrationRequest(
+          oldDocumentsRoot: oldDocs,
+          oldSupportRoot: oldSupport,
+          newDataRoot: p.join(oldDocsPath, 'audiobooks'),
+          closeResources: () async {},
+          writeDataRootPref: (String r) async {},
+          documentsTopLevelIncludeNames: const <String>{
+            'hoshi_books',
+            'audiobooks',
+          },
+        )),
+        throwsA(isA<DataRootMigrationException>()),
+      );
+      // 旧根一字未动。
+      expect(
+          File(p.join(oldDocsPath, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
+          isTrue);
+    });
+
+    test('BUG-1115：专属根（整树语义）下嵌套目标仍被拒——整树搬移会把目标一起搬走', () async {
+      await seedDb();
+      await expectLater(
+        const DataRootMigrator().migrate(DataRootMigrationRequest(
+          oldDocumentsRoot: oldDocs,
+          oldSupportRoot: oldSupport,
+          newDataRoot: p.join(oldDocsPath, 'Hibiki'),
+          closeResources: () async {},
+          writeDataRootPref: (String r) async {},
+          // null = Hibiki 专属根、整树搬移语义。
+          documentsTopLevelIncludeNames: null,
+        )),
+        throwsA(isA<DataRootMigrationException>()),
+      );
+      expect(
+          File(p.join(oldDocsPath, 'hoshi_books', 'Bk', 'a.html')).existsSync(),
+          isTrue);
+    });
+
     test('白名单模式回滚：pref 写失败 → 白名单项搬回 Documents，用户文件不动、新根子树清理', () async {
       await seedDb();
       final File userDoc = File(p.join(oldDocsPath, 'keep.txt'))

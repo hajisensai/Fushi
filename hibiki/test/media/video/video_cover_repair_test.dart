@@ -24,6 +24,7 @@ void main() {
   late HibikiDatabase db;
 
   setUp(() {
+    AppPaths.debugResetDocumentsLayoutCache();
     tmp = Directory.systemTemp.createTempSync('hibiki_cover_repair_');
     docs = Directory(p.join(tmp.path, 'documents'))
       ..createSync(recursive: true);
@@ -51,6 +52,7 @@ void main() {
   tearDown(() async {
     await db.close();
     AppPaths.debugDataRootReader = null;
+    AppPaths.debugResetDocumentsLayoutCache();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
@@ -60,8 +62,10 @@ void main() {
   });
 
   test('listForShelf 把指向旧空位置的封面自愈回写到当前 video_covers 里的同名文件', () async {
-    // 当前根下有真实封面文件（迁移把它搬到这里）。
-    final Directory coversDir = Directory(p.join(docs.path, 'video_covers'))
+    // 当前根下有真实封面文件（迁移把它搬到这里）。BUG-1115：目录经 AppPaths 解析而不是
+    // 硬拼 `<Documents>/video_covers`——默认 documents 根已是 `<Documents>/Hibiki/data`，
+    // 夹具必须与产品侧自愈查的目录同源，否则测的是一个产品里不存在的位置。
+    final Directory coversDir = await AppPaths.videoCoversDirectory()
       ..createSync(recursive: true);
     final String realCover = p.join(coversDir.path, 'video_Bk.jpg');
     File(realCover).writeAsBytesSync(<int>[1, 2, 3]);
@@ -88,7 +92,7 @@ void main() {
   });
 
   test('封面文件在当前根也不存在 → 不改写，保持原值（真删除的封面留占位）', () async {
-    Directory(p.join(docs.path, 'video_covers')).createSync(recursive: true);
+    (await AppPaths.videoCoversDirectory()).createSync(recursive: true);
     final String staleCover =
         p.join(tmp.path, 'old_documents', 'video_covers', 'gone.jpg');
     await db.upsertVideoBook(VideoBooksCompanion.insert(
@@ -104,7 +108,7 @@ void main() {
   });
 
   test('封面文件本就存在于存储路径 → 原样返回，不触发写', () async {
-    final Directory coversDir = Directory(p.join(docs.path, 'video_covers'))
+    final Directory coversDir = await AppPaths.videoCoversDirectory()
       ..createSync(recursive: true);
     final String good = p.join(coversDir.path, 'video_Ok.jpg');
     File(good).writeAsBytesSync(<int>[9]);

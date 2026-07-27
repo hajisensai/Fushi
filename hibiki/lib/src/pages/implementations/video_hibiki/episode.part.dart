@@ -218,6 +218,30 @@ extension _VideoEpisode on _VideoHibikiPageState {
   /// [_subtitleJumpSidePanel] 同结构：[AnimatedSize] 让列宽在 0 ↔ panelWidth 平滑伸缩，
   /// 可见时渲染 [VideoEpisodePanel]，隐藏时收成 0（[ClipRect] + [OverflowBox] 保证伸缩
   /// 动画里内容布局稳定）。与字幕列表互斥，故两列同时只有一列非零宽。
+  /// 把内部集表示 [_PlaylistEpisodeRef] 解析成面板要的 [VideoEpisodeEntry]。
+  ///
+  /// 封面来源判断**不在这里手写分支**——统一走 [resolveMediaCoverImage]：本地集给
+  /// `coverPath`、互联远端集给 `coverUrl` + 稳定缓存键，解析器按固定优先级出图。
+  /// 旧单行 playlist 远端模型（`RemoteVideoEpisode`）不下发封面，两者皆空 →
+  /// 返回 null，面板退回纯序号形态。
+  List<VideoEpisodeEntry> _episodePanelEntries() {
+    final RemoteCoverFetcher? fetcher =
+        remoteCoverFetcherFor(widget.remoteClient ?? _resolvedStreamClient);
+    return <VideoEpisodeEntry>[
+      for (final _PlaylistEpisodeRef e in _episodes)
+        VideoEpisodeEntry(
+          title: e.title,
+          cover: resolveMediaCoverImage(
+            kind: MediaKind.video,
+            localPath: e.coverPath,
+            remoteUrl: e.coverUrl,
+            remoteFetcher: fetcher,
+            remoteCacheKey: e.coverCacheKey,
+          ),
+        ),
+    ];
+  }
+
   Widget _episodeSidePanel(bool visible) {
     final ColorScheme cs = _videoChromeColorScheme(context);
     final double screenWidth = MediaQuery.sizeOf(context).width;
@@ -245,10 +269,7 @@ extension _VideoEpisode on _VideoHibikiPageState {
                       left: false,
                       child: VideoEpisodePanel(
                         key: const ValueKey<String>('video-episode-panel'),
-                        episodeTitles: <String>[
-                          for (final _PlaylistEpisodeRef e in _episodes)
-                            e.title,
-                        ],
+                        episodes: _episodePanelEntries(),
                         currentIndex: _currentEpisode,
                         onTapEpisode: _handleEpisodeListTap,
                         onClose: _closeEpisodeList,

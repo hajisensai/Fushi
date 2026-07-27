@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:transparent_image/transparent_image.dart';
 
 import 'package:hibiki/src/media/video/video_episode_panel.dart';
 
 void main() {
   Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
-  List<String> episodes(int n) => <String>[
-        for (int i = 0; i < n; i++) 'Episode ${i + 1}',
+  List<VideoEpisodeEntry> episodes(
+    int n, {
+    ImageProvider? cover,
+  }) =>
+      <VideoEpisodeEntry>[
+        for (int i = 0; i < n; i++)
+          VideoEpisodeEntry(title: 'Episode ${i + 1}', cover: cover),
       ];
 
   testWidgets('lists episodes; tap reports the episode index (TODO-638)',
@@ -15,7 +21,7 @@ void main() {
     final List<int> tapped = <int>[];
     await tester.pumpWidget(wrap(
       VideoEpisodePanel(
-        episodeTitles: episodes(3),
+        episodes: episodes(3),
         currentIndex: 1,
         onTapEpisode: tapped.add,
         onClose: () {},
@@ -38,7 +44,7 @@ void main() {
       '(TODO-638)', (WidgetTester tester) async {
     await tester.pumpWidget(wrap(
       VideoEpisodePanel(
-        episodeTitles: episodes(3),
+        episodes: episodes(3),
         currentIndex: 1,
         onTapEpisode: (_) {},
         onClose: () {},
@@ -75,7 +81,7 @@ void main() {
     int closed = 0;
     await tester.pumpWidget(wrap(
       VideoEpisodePanel(
-        episodeTitles: episodes(2),
+        episodes: episodes(2),
         currentIndex: 0,
         onTapEpisode: (_) {},
         onClose: () => closed++,
@@ -94,7 +100,7 @@ void main() {
       (WidgetTester tester) async {
     await tester.pumpWidget(wrap(
       VideoEpisodePanel(
-        episodeTitles: const <String>[],
+        episodes: const <VideoEpisodeEntry>[],
         currentIndex: -1,
         onTapEpisode: (_) {},
         onClose: () {},
@@ -118,7 +124,7 @@ void main() {
     const double largeFontSize = 42; // 14 * appUiScale(3.0)
     await tester.pumpWidget(wrap(
       VideoEpisodePanel(
-        episodeTitles: episodes(12),
+        episodes: episodes(12),
         currentIndex: 0, // 当前集 0 用 play_arrow；序号从「2」起全是显式 Text。
         onTapEpisode: (_) {},
         onClose: () {},
@@ -155,5 +161,31 @@ void main() {
     final SizedBox box = tester.widget<SizedBox>(leadingBox.first);
     expect(box.width, isNotNull);
     expect(box.width!, greaterThanOrEqualTo(largeFontSize + 12));
+  });
+
+  testWidgets('renders an episode cover next to the indicator',
+      (WidgetTester tester) async {
+    final MemoryImage cover = MemoryImage(kTransparentImage);
+    await tester.pumpWidget(wrap(
+      VideoEpisodePanel(
+        episodes: episodes(2, cover: cover),
+        currentIndex: 0,
+        onTapEpisode: (_) {},
+        onClose: () {},
+        colorScheme: const ColorScheme.light(),
+        title: 'Episodes',
+        emptyHint: 'No episodes',
+      ),
+    ));
+
+    final Finder firstTile = find.ancestor(
+      of: find.text('Episode 1'),
+      matching: find.byType(ListTile),
+    );
+    final Finder image =
+        find.descendant(of: firstTile, matching: find.byType(Image));
+    expect(image, findsOneWidget);
+    expect(tester.widget<Image>(image).image, same(cover));
+    expect(tester.getSize(image), const Size(56, 32));
   });
 }
