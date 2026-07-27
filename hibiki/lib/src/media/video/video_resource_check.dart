@@ -62,8 +62,17 @@ Future<String?> relocateMissingAppDocumentPath(
 
   final Directory root =
       documentsRoot ?? await AppPaths.documentsRootDirectory();
+  // BUG-1115：[relative] 是相对**容器的 `Documents/`** 的，所以基准必须也是容器的
+  // `Documents/`，而不是 documents 根本身。老安装（扁平布局）两者恰好相等；新安装的
+  // documents 根是 `<container>/Documents/Hibiki/data`，直接拼会把 `Hibiki/data` 拼两
+  // 遍（`.../Documents/Hibiki/data/Hibiki/data/...`），重定位永远落空。
+  final List<String> rootSegments = p.split(p.normalize(root.path));
+  final int rootDocumentsIndex = _iosAppDocumentsIndex(rootSegments);
+  final String base = rootDocumentsIndex < 0
+      ? root.path
+      : p.joinAll(rootSegments.sublist(0, rootDocumentsIndex + 1));
   final String relative = p.joinAll(staleSegments.sublist(documentsIndex + 1));
-  final String candidate = p.normalize(p.join(root.path, relative));
+  final String candidate = p.normalize(p.join(base, relative));
   if (p.equals(p.normalize(trimmed), candidate)) return null;
   return await File(candidate).exists() ? candidate : null;
 }

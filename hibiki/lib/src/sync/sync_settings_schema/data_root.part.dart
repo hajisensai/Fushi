@@ -21,19 +21,30 @@ enum DataRootTargetRejection {
 /// 纯函数：在不触碰文件系统搬移的前提下判断 [newDataRoot] 是否可作为迁移目标。
 /// [existsAndHasFiles] 注入目录是否存在且含文件的判定（生产传真实 FS 探测，测试传
 /// 桩），保持本函数无 IO 依赖、可纯测。
+///
+/// BUG-1115：[sharedDocumentsRoot] 为真表示 [oldDocumentsRoot] 是**共享**的平台
+/// `Documents`（老安装的扁平布局）。此时迁移是白名单选择性搬移，把新根设在它下面的一个
+/// 非白名单子目录（典型：`Documents\Hibiki`，即用户把散落的 16 个目录收进自己的子目录）
+/// 是安全的，不再按 [DataRootTargetRejection.insideCurrentRoot] 一刀切拒绝。
 DataRootTargetRejection? validateDataRootTarget({
   required String newDataRoot,
   required String oldDocumentsRoot,
   required String oldSupportRoot,
   required bool Function(String absolutePath) existsAndHasFiles,
   String? executablePath,
+  bool sharedDocumentsRoot = false,
 }) {
   final String canonNew = p.canonicalize(newDataRoot);
   final String canonDocs = p.canonicalize(oldDocumentsRoot);
   final String canonSupport = p.canonicalize(oldSupportRoot);
+  final bool nestedInSharedDocuments = sharedDocumentsRoot &&
+      AppPaths.isSafeNestedTargetInSharedDocuments(
+        sharedDocumentsRoot: oldDocumentsRoot,
+        newDataRoot: newDataRoot,
+      );
   if (canonNew == canonDocs ||
       canonNew == canonSupport ||
-      p.isWithin(canonDocs, canonNew) ||
+      (p.isWithin(canonDocs, canonNew) && !nestedInSharedDocuments) ||
       p.isWithin(canonSupport, canonNew)) {
     return DataRootTargetRejection.insideCurrentRoot;
   }
@@ -110,8 +121,10 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     final AppModel appModel = widget.settingsContext.appModel;
     String? defaultRootPath;
     try {
-      // appDirectory 是 documents 根；默认根时其父目录即平台数据目录，展示更直观。
-      defaultRootPath = appModel.appDirectory.parent.path;
+      // BUG-1115：显示 documents 根**本身**（内容真正落的地方）。旧实现显示它的父目录，
+      // 那在扁平老布局下是用户主目录（`C:\Users\<name>`，根本不是数据位置），在
+      // `<Documents>/Hibiki/data` 新布局下则是导出目录 `Hibiki` —— 两种都误导。
+      defaultRootPath = appModel.appDirectory.path;
     } on Error {
       defaultRootPath = null; // late 未初始化 → 只显示「默认位置」不带路径。
     }
@@ -133,6 +146,23 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     final String oldDocs = appModel.appDirectory.path;
     final String oldSupport = appModel.databaseDirectory.path;
 
+    // TODO-1226：判定旧 documents 根是否就是**共享的平台 Documents**（老安装的扁平布局）。
+    // 不看 data_root pref（pref 存了失效路径时 AppPaths 仍回退默认根，此时按 pref 判
+    // 会把共享 Documents 误当专属根整树搬走）——直接与平台 Documents 实路径比对。
+    // 探测失败按共享处理：宁可少搬（白名单），绝不整搬/整删共享目录。
+    //
+    // BUG-1115：这个判定必须在**校验之前**拿到——共享根下的非白名单子目录
+    // （`Documents\Hibiki`）是合法目标，校验要据此放行。
+    bool sharedDocumentsRoot;
+    try {
+      final Directory platformDocuments =
+          await getApplicationDocumentsDirectory();
+      sharedDocumentsRoot = p.equals(oldDocs, platformDocuments.path);
+    } catch (_) {
+      sharedDocumentsRoot = true;
+    }
+    if (!mounted) return;
+
     // 触发前纯校验：自我迁移 / 目标非空，直接报错，不进确认弹窗。
     final DataRootTargetRejection? rejection = validateDataRootTarget(
       newDataRoot: picked,
@@ -140,6 +170,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       oldSupportRoot: oldSupport,
       existsAndHasFiles: _dirExistsAndHasFiles,
       executablePath: Platform.resolvedExecutable,
+      sharedDocumentsRoot: sharedDocumentsRoot,
     );
     if (rejection != null) {
       if (mounted) {
@@ -165,20 +196,6 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       }
       return;
     }
-
-    // TODO-1226：判定旧 documents 根是否就是**共享的平台 Documents**（默认数据根）。
-    // 不看 data_root pref（pref 存了失效路径时 AppPaths 仍回退默认根，此时按 pref 判
-    // 会把共享 Documents 误当专属根整树搬走）——直接与平台 Documents 实路径比对。
-    // 探测失败按共享处理：宁可少搬（白名单），绝不整搬/整删共享目录。
-    bool sharedDocumentsRoot;
-    try {
-      final Directory platformDocuments =
-          await getApplicationDocumentsDirectory();
-      sharedDocumentsRoot = p.equals(oldDocs, platformDocuments.path);
-    } catch (_) {
-      sharedDocumentsRoot = true;
-    }
-    if (!mounted) return;
 
     setState(() => _migrating = true);
     // TODO-959: 先把全屏迁移遮罩顶上来，再让引擎 closeResources（含 closeDatabase 置

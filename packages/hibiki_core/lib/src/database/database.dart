@@ -274,9 +274,14 @@ Future<void> _rebuildSidecar(File dbFile) async {
       '(main .db untouched, .corrupt-bak-$stamp snapshot kept)');
 }
 
+/// 主库在 support 根下的文件名。唯一真相源：除了 [_openDb] 自身，app 层判定「这台机器
+/// 上是否已经有一个跑过的 Hibiki 安装」时也要认这个文件（见 `AppPaths` 的默认 documents
+/// 布局判据），故抽成导出常量而不是各处重复字面量。
+const String hibikiDatabaseFileName = 'hibiki.db';
+
 LazyDatabase _openDb(String dbDirectory, {bool isMainProcess = true}) {
   return LazyDatabase(() async {
-    final file = File(p.join(dbDirectory, 'hibiki.db'));
+    final file = File(p.join(dbDirectory, hibikiDatabaseFileName));
     return _openWithRecovery(file, allowSidecarDelete: isMainProcess);
   });
 }

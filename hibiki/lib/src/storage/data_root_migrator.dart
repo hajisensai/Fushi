@@ -258,9 +258,21 @@ class DataRootMigrator {
     Directory newSupport,
   ) async {
     final String canonNew = p.canonicalize(req.newDataRoot);
+    // BUG-1115：共享 documents 根（白名单选择性搬移）下的**非白名单**子目录是安全目标
+    // ——搬移只动白名单顶层项，新根在整个过程里是旁观者。这让老安装能把散落在用户
+    // `Documents` 根下的 16 个 Hibiki 目录一键收进 `Documents\Hibiki`。白名单为 null
+    // （Hibiki 专属根、整树搬移语义）时不适用：那时新根真会被连同整棵树搬走。
+    final Set<String>? whitelist = req.documentsTopLevelIncludeNames;
+    final bool nestedInSharedDocuments = whitelist != null &&
+        AppPaths.isSafeNestedTargetInSharedDocuments(
+          sharedDocumentsRoot: req.oldDocumentsRoot.path,
+          newDataRoot: req.newDataRoot,
+          ownedEntries: whitelist,
+        );
     if (canonNew == p.canonicalize(req.oldDocumentsRoot.path) ||
         canonNew == p.canonicalize(req.oldSupportRoot.path) ||
-        p.isWithin(p.canonicalize(req.oldDocumentsRoot.path), canonNew) ||
+        (p.isWithin(p.canonicalize(req.oldDocumentsRoot.path), canonNew) &&
+            !nestedInSharedDocuments) ||
         p.isWithin(p.canonicalize(req.oldSupportRoot.path), canonNew)) {
       throw const DataRootMigrationException('新数据根不能位于旧数据目录内部');
     }
