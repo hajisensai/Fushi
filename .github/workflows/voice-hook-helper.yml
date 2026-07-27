@@ -54,15 +54,18 @@ jobs:
           python-version: '3.13'
 
       # P0 单一真相源守卫：schema/真实样本证据必须有效，生成文档不得漂移。
+      #
+      # 这七条守卫以前是内联在一个多行 `run:` 里的，那是**假绿**：`shell: pwsh`
+      # 只把最后一条命令的退出码交给 Actions，前六条失败被整个吞掉。实锤——
+      # `include/luna_hook_profiles.inc` 从子树导入（bc094b89b）起就与
+      # `config/luna_hook_profiles.tsv` 漂移，`generate_luna_profiles.py --check`
+      # 一直返回 1，而 run 30217258807 的本步骤照样显示 success。
+      #
+      # 现在统一走 tools/run_guards.ps1（内部 Invoke-Checked 逐条断言退出码），
+      # 同一个脚本也是 native-galgame-gate.yml 的 PR 门 —— 一处修好两处生效，
+      # 且不会再出现「这里加了守卫、那边忘了同步」。
       - name: Verify engine support manifest
-        run: |
-          python tools/generate_engine_support.py --check
-          python tools/generate_luna_profiles.py --check
-          ./tools/sync_lunahook.ps1
-          python tests/engine_support_manifest_test.py
-          python tests/adapter_structure_test.py
-          python tests/evidence_contract_test.py
-          python tests/galhook_workflow_test.py
+        run: ./tools/run_guards.ps1
 
       # release 与 Windows 主包必须共用同一打包脚本和文件清单，避免离线资产与在线 release 漂移。
       - name: Build, test and package helper (x64 + x86)
