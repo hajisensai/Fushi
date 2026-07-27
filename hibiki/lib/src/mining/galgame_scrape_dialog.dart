@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:hibiki_core/hibiki_core.dart' show GalgameSourceRow;
@@ -19,8 +20,8 @@ import 'package:hibiki/utils.dart';
 /// 一步到位：打开即按当前显示名自动首搜，搜索框可改词重搜，候选带封面缩略图 +
 /// `源 · ID · 发行日` 副行，每行「使用」行内转圈；点「使用」= `fetchById` 补全
 /// → [GalgameRepository.saveScrapeResult]（多源 primarySource 记 mixed 规则不变）
-/// → **封面与元数据一起落**（显式语义：覆盖现有封面，见
-/// [shouldDownloadExplicitScrapedCover]）。
+/// → **封面与元数据一起落**（遵守游戏岛封面纪律：只在无可用封面文件时下载，
+/// 既有封面绝不覆盖，见 [shouldAutoDownloadScrapedCover]）。
 ///
 /// 返回 true = 已成功落库（调用方据此刷新库页 / 重载详情页）；false/取消 = 无写库。
 Future<bool> showGalgameScrapeDialog({
@@ -100,7 +101,7 @@ Uri? _tryParseEntryUrl(String input) {
 /// 落库一条**用户显式选中**的候选（库页与详情页共用，取代旧 `_scrape()` 的落库段）：
 /// `fetchById` 补全 draft → [GalgameRepository.saveScrapeResult]（多源快照时
 /// primarySource 记 [kGalgamePrimarySourceMixed]，单源记该源 key——规则不变）→
-/// 显式封面下载（覆盖现有封面；下载失败静默降级，不影响返回值）。
+/// 封面下载（**只在该游戏还没有可用封面文件时**；下载失败静默降级，不影响返回值）。
 ///
 /// 返回 false = 该 ID 在源上未找到（draft 为 null）；网络/解析失败由
 /// [GalgameMetadataException] 上抛给调用方提示。
@@ -128,7 +129,7 @@ Future<bool> applyGalgameScrapeCandidate({
     primarySource:
         sources.length > 1 ? kGalgamePrimarySourceMixed : candidate.source.key,
   );
-  await _downloadExplicitCover(
+  await _downloadScrapedCover(
     repo: repo,
     gameId: gameId,
     draft: draft,
@@ -137,19 +138,33 @@ Future<bool> applyGalgameScrapeCandidate({
   return true;
 }
 
-/// 显式路径的封面落地：优先 draft 的完整封面 URL，缺了退回候选缩略图 URL；
-/// 有 URL 就下载并覆盖 coverPath（用户点名选了这条 = 封面也要这条）。下载失败
-/// 静默降级不打断（原因由 [downloadGalgameCoverToFile] 记 debug 日志）。
-Future<void> _downloadExplicitCover({
+/// 刮削候选落地后的封面补齐：优先 draft 的完整封面 URL，缺了退回候选缩略图 URL。
+///
+/// 决策走 [shouldAutoDownloadScrapedCover]——游戏岛只有「封面文件是否存在」这一条
+/// 保护判据（无 [CoverOrigin] 元数据），所以**已有可用封面一律不覆盖**，用户手选
+/// 的封面不会被刮削悄悄换掉。想换封面走卡菜单的「选择封面图片」/「自动封面」。
+/// 下载失败静默降级不打断（原因由 [downloadGalgameCoverToFile] 记 debug 日志）。
+Future<void> _downloadScrapedCover({
   required GalgameRepository repo,
   required String gameId,
   required GalgameMetadataDraft draft,
   required SourceCandidate candidate,
 }) async {
+  // 读**落库后**的最新条目：saveScrapeResult 可能刚写过 coverPath。
+  final GalgameEntry? latest = repo.byId(gameId);
+  if (latest == null) return;
+  final String? existing = latest.coverPath;
+  final bool hasUsableCoverFile =
+      existing != null && existing.isNotEmpty && File(existing).existsSync();
   final String? coverUrl = (draft.coverUrl?.trim().isNotEmpty ?? false)
       ? draft.coverUrl
       : candidate.coverUrl;
-  if (!shouldDownloadExplicitScrapedCover(coverUrl: coverUrl)) return;
+  if (!shouldAutoDownloadScrapedCover(
+    hasUsableCoverFile: hasUsableCoverFile,
+    coverUrl: coverUrl,
+  )) {
+    return;
+  }
   final String? saved = await downloadGalgameCoverToFile(
     gameId: gameId,
     url: coverUrl!,

@@ -955,7 +955,6 @@
   "game_scrape_applied": "元数据已更新",
   "game_scrape_failed": "元数据获取失败",
   "game_scrape_no_result": "没有找到匹配条目",
-  "game_scrape_pick": "选择匹配的条目",
   "game_scrape_query": "标题或源 ID",
   "game_search": "搜索游戏",
   "game_session_events": "会话事件",
@@ -2687,5 +2686,10 @@
   "manga_page_number_hint": "页码（1-${total}）",
   "manga_import_direct": "直接导入",
   "manga_library": "漫画",
-  "manga_import_action": "导入漫画"
+  "manga_import_action": "导入漫画",
+  "game_scrape_search": "搜索",
+  "game_scrape_use": "使用",
+  "game_scrape_search_failed": "搜索失败，请检查网络后重试",
+  "game_remove_confirm": "从库中移除此游戏？不会删除磁盘上的游戏文件。",
+  "delete_collection_also_games": "同时把其中的游戏移出库（不会删除磁盘上的游戏文件）"
 }

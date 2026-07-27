@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:hibiki/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
+import 'package:hibiki/src/media/manga/manga_module.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_tasks_section.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
@@ -30,11 +30,14 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
   late bool _showSettings = widget.initialShowSettings;
 
   /// 漫画「在线目录」入口（统一下载中心：书/漫画获取入口与 torrent 并列）。
+  ///
+  /// 书架页与书籍导入框的旧入口已收敛到这里，故本页是
+  /// [MangaModule.openOnlineCatalog] 的唯一消费方——目录弹窗的构造统一收在
+  /// 漫画模块里，不在页面层直接 new 它。
   Future<void> _openMangaCatalog() async {
-    await showAppDialog<void>(
+    await MangaModule.openOnlineCatalog(
       context: context,
-      builder: (_) =>
-          MokuroMoeCatalogDialog(db: ref.read(appProvider).database),
+      db: ref.read(appProvider).database,
     );
   }
 

@@ -45,35 +45,29 @@ void main() {
     });
   });
 
-  group('shouldDownloadExplicitScrapedCover', () {
-    test('用户显式选中候选：有 URL 即下载（即使已有封面也覆盖）', () {
-      // 显式路径的签名里根本没有 hasUsableCoverFile——「是否已有封面」不参与
-      // 决策，这正是与隐式路径的分界：显式选择 = 用户点名要这条，封面一起换。
+  group('刷削不覆盖用户现有封面（游戏岛封面纪律）', () {
+    // 回归守卫：统一刷削弹窗的「使用」曾被改成无条件覆盖封面（与
+    // media_cover_service.dart 的纪律表相矛）。游戏岛没有 CoverOrigin
+    // 元数据，「封面文件是否存在」是唯一保护判据，刷削两条路径
+    // （详情页自动 / 弹窗显式使用）必须共用同一约束。
+    test('已有可用封面 + 有 URL → 不下载（无论哪条刷削路径）', () {
       expect(
-        shouldDownloadExplicitScrapedCover(
+        shouldAutoDownloadScrapedCover(
+          hasUsableCoverFile: true,
+          coverUrl: 'https://example.com/cover.jpg',
+        ),
+        isFalse,
+      );
+    });
+
+    test('没有可用封面 + 有 URL → 下载补齐', () {
+      expect(
+        shouldAutoDownloadScrapedCover(
+          hasUsableCoverFile: false,
           coverUrl: 'https://example.com/cover.jpg',
         ),
         isTrue,
       );
-    });
-
-    test('无 URL / 空白 URL → 不下载', () {
-      expect(shouldDownloadExplicitScrapedCover(coverUrl: null), isFalse);
-      expect(shouldDownloadExplicitScrapedCover(coverUrl: '   '), isFalse);
-    });
-
-    test('显式覆盖 vs 隐式不覆盖：同一「已有封面 + 有 URL」情形两函数分道', () {
-      const String url = 'https://example.com/cover.jpg';
-      // 隐式（自动刮削路径）：已有可用封面绝不覆盖。
-      expect(
-        shouldAutoDownloadScrapedCover(
-          hasUsableCoverFile: true,
-          coverUrl: url,
-        ),
-        isFalse,
-      );
-      // 显式（统一刮削弹窗「使用」）：照样下载覆盖。
-      expect(shouldDownloadExplicitScrapedCover(coverUrl: url), isTrue);
     });
   });
 

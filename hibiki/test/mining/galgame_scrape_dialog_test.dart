@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -129,6 +131,69 @@ void main() {
     // 弹窗以 true 关闭（调用方据此刷新）。
     expect(await applied(), isTrue);
     expect(find.byType(GalgameScrapeDialog), findsNothing);
+    await tester.pump(const Duration(seconds: 4)); // 放掉桌面 toast 计时器
+  });
+
+  testWidgets('已有可用封面时点「使用」不碰网络、不覆盖封面（游戏岛封面纪律）', (WidgetTester tester) async {
+    // 回归守卫：本弹窗曾把「使用」改成无条件下载并覆盖 coverPath，直接
+    // 盖掉用户手选的封面（游戏岛无 CoverOrigin 保护、无确认、无备份、不可撤销），
+    // 与 media_cover_service.dart 的封面纪律表直接矛盾。
+    //
+    // “没覆盖”光看 coverPath 不算数——下载失败也会保留旧值。这里把 HttpClient
+    // 构造堆成地雷（[_ExplodingHttpOverrides]）：只要走到下载就抛，落库会被弹窗
+    // 的 catch 接住→弹窗不关。因此「弹窗以 true 关闭」= 一次网络都没发。
+    final HttpOverrides? previous = HttpOverrides.current;
+    HttpOverrides.global = _ExplodingHttpOverrides();
+    addTearDown(() => HttpOverrides.global = previous);
+
+    final Directory dir = Directory.systemTemp.createTempSync('gal_cover_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final File cover = File('${dir.path}/manual.png')
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    final (GalgameRepository repo, GalgameEntry game) = await buildRepo();
+    await repo.setCoverPath('g1', cover.path);
+
+    const String url = 'https://example.invalid/should-not-be-fetched.jpg';
+    final _FakeAdapter bgm = _FakeAdapter(GalgameMetadataSource.bgm)
+      ..results = const <SourceCandidate>[
+        SourceCandidate(
+          source: GalgameMetadataSource.bgm,
+          externalId: '4885',
+          coverUrl: url,
+        ),
+      ]
+      ..draft = const GalgameMetadataDraft(
+        name: 'alpha',
+        externalId: '4885',
+        coverUrl: url,
+      );
+    final GalgameScrapeController controller =
+        GalgameScrapeController(adapters: <GalgameMetadataAdapter>[bgm]);
+    final Future<bool?> Function() applied = await pumpDialogOpener(
+      tester,
+      repo: repo,
+      game: repo.byId('g1')!,
+      controller: controller,
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.game_scrape_use));
+    await tester.pumpAndSettle();
+
+    // 元数据落了、弹窗正常关闭（= 没碰网络）、封面原封不动。
+    expect(await repo.sourcesOf('g1'), hasLength(1));
+    expect(
+      find.byType(GalgameScrapeDialog),
+      findsNothing,
+      reason: '已有可用封面时不得发封面下载请求（发了就会抛、弹窗不会关）。',
+    );
+    expect(await applied(), isTrue);
+    expect(
+      repo.byId('g1')!.coverPath,
+      cover.path,
+      reason: '刷削绝不得覆盖用户已有的封面文件。',
+    );
+    expect(cover.readAsBytesSync(), <int>[1, 2, 3]);
     await tester.pump(const Duration(seconds: 4)); // 放掉桌面 toast 计时器
   });
 
@@ -333,4 +398,13 @@ class _FakeAdapter implements GalgameMetadataAdapter {
 
   @override
   void close() {}
+}
+
+/// 构造 HttpClient 即抛：用来证明某条路径**一次网络都没发**（比断言结果没变强，
+/// 后者被「下载失败也保留旧值」掩盖）。
+class _ExplodingHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    throw StateError('unexpected network access');
+  }
 }
