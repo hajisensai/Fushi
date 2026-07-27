@@ -479,6 +479,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       AnkiSettings settings, AnkiViewModel vm) async {
     final TextEditingController controller =
         TextEditingController(text: settings.lapisCustomCss);
+    try {
+      await _showLapisCustomCssDialog(controller, vm);
+    } finally {
+      // 保存路径抛错（写偏好失败）时也必须释放 controller，否则 Flutter 的
+      // leak tracking 会把它记成泄漏，且每次打开都多留一个 listener。
+      controller.dispose();
+    }
+  }
+
+  Future<void> _showLapisCustomCssDialog(
+      TextEditingController controller, AnkiViewModel vm) async {
     final String? result = await showDialog<String>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
@@ -512,7 +523,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       ),
     );
     if (result != null) await vm.setLapisCustomCss(result);
-    controller.dispose();
   }
 
   Future<void> _applyLapisStyling(AnkiViewModel vm,
@@ -585,6 +595,18 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   }
 
   Future<void> _restoreLapisBackup(AnkiViewModel vm) async {
+    // 在第一个 await 之前就占住 _lapisBusy：列备份是异步的，这段窗口里
+    // `_lapisBusy ? null : ...` 的门还是开的，第二次点击能进来并开出第二条
+    // 恢复流程，两条流程写同一个 note type。占位必须先于任何 await。
+    setState(() => _lapisBusy = true);
+    try {
+      await _runRestoreLapisBackup(vm);
+    } finally {
+      if (mounted) setState(() => _lapisBusy = false);
+    }
+  }
+
+  Future<void> _runRestoreLapisBackup(AnkiViewModel vm) async {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     final List<File> backups = await vm.lapisTemplateService.listBackups();
     if (!mounted) return;
@@ -625,18 +647,28 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       ),
     );
     if (ok != true || !mounted) return;
-    setState(() => _lapisBusy = true);
+    // 两步都可能失败，两步的失败都必须让用户看见：把「第一个失败」收进
+    // failure，最后统一出一条 snackbar。刷新**不能**放 finally——finally 里的
+    // await 抛出就成了没人接的异步异常（页面继续显示恢复前的值，用户只看到
+    // 什么都没发生），正是本 PR 要修的「谎报」同一类问题。
+    Object? failure;
     try {
       await vm.lapisTemplateService.restoreBackup(chosen);
-      await vm.refreshSettingsFromStore();
-      messenger
-          .showSnackBar(SnackBar(content: Text(t.anki_lapis_restore_done)));
     } catch (e) {
-      messenger.showSnackBar(
-          SnackBar(content: Text(t.anki_lapis_restore_failed(error: '$e'))));
-    } finally {
-      if (mounted) setState(() => _lapisBusy = false);
+      failure = e;
     }
+    // 成功失败都要刷：restoreBackup 在卡模板失败前已经把 styling 与 settings
+    // 写穿了，只刷成功路径会让页面继续显示恢复前的字号/自定义 CSS。
+    try {
+      await vm.refreshSettingsFromStore();
+    } catch (e) {
+      failure ??= e; // 恢复本身的错更接近根因，优先呈现它。
+    }
+    messenger.showSnackBar(SnackBar(
+      content: Text(failure == null
+          ? t.anki_lapis_restore_done
+          : t.anki_lapis_restore_failed(error: '$failure')),
+    ));
   }
 
   /// 「扫描重复（不改动）」：只跑干跑并把清单摊给用户看，不提供删除按钮。

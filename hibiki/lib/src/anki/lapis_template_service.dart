@@ -174,6 +174,10 @@ class LapisTemplateService {
   ///   里，`lapisFontScalePercent` 归 100），期望态 == 恢复态。
   /// - 备份无用户区段 → 清空客制化并**清掉指纹**：若恢复的是出厂基线，漂移
   ///   判定本就允许升级；若是手改快照，判定变 foreignEdit，自动迁移不再动它。
+  ///
+  /// 写入顺序 styling → 对齐 settings → 卡模板：三步任意一步失败都抛给调用方
+  /// 提示，**不静默降级成「恢复成功」**。卡模板失败时 styling 与 settings 已一致
+  /// （非半态），只是卡模板仍是旧的，用户可重试恢复。
   Future<void> restoreBackup(File file) async {
     final AnkiNoteTypeDefinition? def = await readBackup(file);
     if (def == null) {
@@ -188,9 +192,10 @@ class LapisTemplateService {
     final bool stylingOk =
         await _repository.updateNoteTypeStyling(def.name, def.css);
     if (!stylingOk) throw StateError('Backend rejected styling update');
-    if (def.templates.isNotEmpty) {
-      await _repository.updateNoteTypeTemplates(def.name, def.templates);
-    }
+    // styling 一旦落地，Hibiki 侧客制化状态必须**立刻**对齐：settings 里
+    // lapisCustomCss / lapisAppliedCssSha 描述的就是 styling，晚一步对齐就有一段
+    // 「Anki 是恢复态、Hibiki 期望态还是旧的」窗口，下次启动的漂移判定读到过期
+    // 期望态。所以对齐排在卡模板写入之前——卡模板失败不该连累 styling 状态。
     final String? body = extractLapisUserSectionBody(def.css);
     await _repository.updateSettings((AnkiSettings s) => s.copyWith(
           lapisFontScalePercent: 100,
@@ -198,6 +203,15 @@ class LapisTemplateService {
           lapisAppliedCssSha: body != null ? lapisCssSha256(def.css) : null,
           clearLapisAppliedCssSha: body == null,
         ));
+    // 卡模板（settings 不持有其状态）单独写。返回 false = 后端拒写，必须上抛
+    // 让 UI 报「恢复失败」——吞掉它会把「只恢复了 styling」谎报成完整恢复。
+    if (def.templates.isNotEmpty) {
+      final bool templatesOk =
+          await _repository.updateNoteTypeTemplates(def.name, def.templates);
+      if (!templatesOk) {
+        throw StateError('Backend rejected card template update');
+      }
+    }
   }
 
   /// 备份 [def] → 推送 [css] → 记指纹。写模板的唯一通道（备份门在这里）。
