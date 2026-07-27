@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-1138 源码守卫：跨章提速的三个确定性结构不许被悄悄退回去。
+/// BUG-1140 源码守卫：跨章提速的三个确定性结构不许被悄悄退回去。
 ///
 /// 背景：这次提速删掉的是**空等**——两处 `_settleAndNotify` 里回调体为空、只为再拖
 /// 16ms 才通知 Dart 的第二层 `setTimeout`；同时把「新章可见之后的收尾」挪出遮罩那一帧。
@@ -48,7 +48,7 @@ void main() {
     for (final String body in bodies) {
       expect('setTimeout('.allMatches(body).length, 1,
           reason: '_settleAndNotify 里出现了不止一层 setTimeout —— 第二层历史上是**空等**，'
-              '删它正是 BUG-1138 的提速主体。要加回来必须先在 BUG 文档里说明它等的是什么。');
+              '删它正是 BUG-1140 的提速主体。要加回来必须先在 BUG 文档里说明它等的是什么。');
     }
   });
 

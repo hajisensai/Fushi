@@ -31,7 +31,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1138](bugs/BUG-1138-cross-chapter-turn-latency.md) | ✅ | ✅ | 跨章翻页耗时实测与提速（遮罩口径） |
+| [BUG-1140](bugs/BUG-1140-cross-chapter-turn-latency.md) | ✅ | ✅ | 跨章翻页耗时实测与提速（遮罩口径） |
 | [BUG-1137](bugs/BUG-1137-gal-mining-video-tag.md) | ✅ | ✅ | gal 制卡分类标签误标 video：来源枚举缺 game 且默认值静默兜底 |
 | [BUG-1136](bugs/BUG-1136-ios-reader-scroll-lookup.md) | ✅ | ✅ | iPhone 阅读滑动被误判为点词查词 |
 | [BUG-1135](bugs/BUG-1135-gal-clipnear-bypasses-track-exclusion.md) | ✅ | ✅ | gal 制卡兜底 grabClipNear 绕过选轨/排除集——排除的 BGM 轨会从兜底混回卡片 |
