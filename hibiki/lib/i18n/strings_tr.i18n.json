@@ -113,7 +113,7 @@
   "anki_settings_label": "Anki ayarları",
   "anki_tag_default_section": "Varsayılan etiketler",
   "anki_tag_include_category": "Kaynak kategorisi etiketi ekle",
-  "anki_tag_include_category_hint": "Kitaplara \"book\", videolara \"video\"",
+  "anki_tag_include_category_hint": "Kitaplara \"book\", videolara \"video\", oyunlara \"game\"",
   "anki_tag_include_hibiki": "\"hibiki\" etiketi ekle",
   "anki_tag_include_hibiki_hint": "Hibiki ile çıkarılan her kartı işaretle",
   "anki_tags": "Etiketler",

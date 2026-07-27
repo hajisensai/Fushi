@@ -5,6 +5,8 @@ import 'package:hibiki_anki/hibiki_anki.dart' show AnkiMiningSource;
 import 'package:hibiki/src/mining/external_window_mining.dart';
 
 /// TODO-1162 外部窗口挖矿 M0：`buildExternalWindowRequest` 纯函数契约。
+/// BUG-1137：`source` 已改必填（曾默认 video 把 gal 卡误标成视频标签），
+/// 各用例显式声明来源并断言原样透传。
 void main() {
   group('buildExternalWindowRequest', () {
     test('有截图字节 -> providedCoverBytes=截图，PNG 名，无音频不中止', () {
@@ -13,6 +15,7 @@ void main() {
         sentence: '彼は走る',
         screenshotBytes: Uint8List.fromList([1, 2, 3]),
         documentTitle: 'ある galgame',
+        source: AnkiMiningSource.game,
       );
       expect(req.providedCoverBytes, [1, 2, 3]);
       expect(req.providedCoverName, 'external_window.png');
@@ -26,8 +29,8 @@ void main() {
       expect(req.clipStartMs, 0);
       expect(req.clipEndMs, 0);
       expect(req.hasRange, false);
-      // 外部窗口挖矿归「视频/沉浸」来源标签。
-      expect(req.source, AnkiMiningSource.video);
+      // BUG-1137：gal Hook 场景卡归「游戏」来源标签，不再吃 video 默认值。
+      expect(req.source, AnkiMiningSource.game);
     });
 
     test('截图为 null（抓帧失败）-> providedCoverBytes=null 且无名（引擎将 fail-open 中止）', () {
@@ -35,6 +38,7 @@ void main() {
         fields: const {'expression': 'テスト'},
         sentence: 'これはテスト',
         screenshotBytes: null,
+        source: AnkiMiningSource.game,
       );
       expect(req.providedCoverBytes, isNull);
       expect(req.providedCoverName, isNull);
@@ -66,6 +70,7 @@ void main() {
         sentence: '君の声',
         screenshotBytes: Uint8List.fromList([9, 9]),
         audioBytes: Uint8List.fromList([1, 2, 3, 4]),
+        source: AnkiMiningSource.game,
       );
       expect(req.providedAudioBytes, [1, 2, 3, 4]);
       // 桌面/Android 默认 aac；iOS m4a。两种都以 galgame_audio. 前缀。
@@ -80,6 +85,7 @@ void main() {
         sentence: '君の声',
         audioBytes: Uint8List.fromList([1, 2]),
         audioName: 'custom_voice.m4a',
+        source: AnkiMiningSource.game,
       );
       expect(req.providedAudioName, 'custom_voice.m4a');
     });
@@ -90,6 +96,7 @@ void main() {
         sentence: '君の声',
         screenshotBytes: Uint8List.fromList([9]),
         audioBytes: Uint8List(0),
+        source: AnkiMiningSource.game,
       );
       expect(req.providedAudioBytes, isNull);
       expect(req.providedAudioName, isNull);

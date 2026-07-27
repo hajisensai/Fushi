@@ -116,6 +116,7 @@ class GalHookMiningCoordinator {
     required MiningMediaCompression compression,
     required BaseAnkiRepository repo,
     int? updateNoteId,
+    bool addTitleTag = false,
   }) {
     // 串行化 + 永不毒化（BUG-956）：单次制卡异常（含错误日志自身抛）不得让后续制卡永久挂起。
     return _miningQueue.enqueue<GalHookMiningResult>(
@@ -125,6 +126,7 @@ class GalHookMiningCoordinator {
         compression: compression,
         repo: repo,
         updateNoteId: updateNoteId,
+        addTitleTag: addTitleTag,
       ),
       buildFailure: (Object error, StackTrace stack) =>
           GalHookMiningResult(failureReason: error.toString()),
@@ -142,6 +144,7 @@ class GalHookMiningCoordinator {
     required MiningMediaCompression compression,
     required BaseAnkiRepository repo,
     required int? updateNoteId,
+    required bool addTitleTag,
   }) async {
     final TexthookerLineEntry? entry = _lineLookup(lineId);
     if (entry == null || !_lineValidator(entry)) {
@@ -231,6 +234,12 @@ class GalHookMiningCoordinator {
               sentenceAudioMissing ? null : 'galgame_audio.$audioExtension',
           documentTitle:
               window.title.isEmpty ? 'External window' : window.title,
+          // BUG-1137：gal 场景卡归「游戏」分类标签（曾吃默认 video 被误标）。
+          source: AnkiMiningSource.game,
+          // 「自动添加书名到标签」开启时把游戏窗口标题作为标题标签（与 reader 书名 /
+          // video 番名同语义，同走 sanitizeTitleTag 清洗去重）。
+          bookTitleTag:
+              addTitleTag && window.title.isNotEmpty ? window.title : null,
           updateNoteId: updateNoteId,
         ),
         compression: compression,

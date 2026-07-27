@@ -43,7 +43,7 @@ class ForwardedMinePayload {
   final String? documentTitle;
   final int? sentenceOffset;
 
-  /// `AnkiMiningSource.name`（`'book'` / `'video'`）；null = 不追加分类标签。
+  /// `AnkiMiningSource.name`（`'book'` / `'video'` / `'game'`）；null = 不追加分类标签。
   final String? source;
   final String? bookTitleTag;
 

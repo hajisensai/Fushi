@@ -113,7 +113,7 @@
   "anki_settings_label": "Anki 設定",
   "anki_tag_default_section": "デフォルトのタグ",
   "anki_tag_include_category": "ソース分類タグを追加",
-  "anki_tag_include_category_hint": "書籍には「book」、動画には「video」",
+  "anki_tag_include_category_hint": "書籍には「book」、動画には「video」、ゲームには「game」",
   "anki_tag_include_hibiki": "「hibiki」タグを追加",
   "anki_tag_include_hibiki_hint": "Hibiki で作成したすべてのカードに目印を付けます",
   "anki_tags": "タグ",

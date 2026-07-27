@@ -113,7 +113,7 @@
   "anki_settings_label": "Anki 설정",
   "anki_tag_default_section": "기본 태그",
   "anki_tag_include_category": "소스 분류 태그 추가",
-  "anki_tag_include_category_hint": "책은 \"book\", 비디오는 \"video\"",
+  "anki_tag_include_category_hint": "책은 \"book\", 비디오는 \"video\", 게임은 \"game\"",
   "anki_tag_include_hibiki": "\"hibiki\" 태그 추가",
   "anki_tag_include_hibiki_hint": "Hibiki로 만든 모든 카드에 표시합니다",
   "anki_tags": "태그",

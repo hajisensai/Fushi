@@ -267,7 +267,11 @@ mixin DictionaryPageMixin {
   /// 把统计来源标识（[kStatSourceBook]/[kStatSourceVideo]）映射成 [AnkiMiningSource]，
   /// 用于给制出的卡片追加分类标签（书籍→`book`，视频→`video`）。未知来源返回
   /// [AnkiMiningSource.book]（保守归书籍，与默认 [dictionarySourceType] 一致）。
-  AnkiMiningSource get _miningSource => dictionarySourceType == kStatSourceVideo
+  ///
+  /// 可覆写（BUG-1137）：统计来源与制卡分类标签是两个维度——texthooker 页统计仍归
+  /// 书籍桶，但制出的卡应打 `game` 分类标签，故覆写本 getter 而非动统计口径。
+  @protected
+  AnkiMiningSource get miningSource => dictionarySourceType == kStatSourceVideo
       ? AnkiMiningSource.video
       : AnkiMiningSource.book;
 
@@ -275,7 +279,7 @@ mixin DictionaryPageMixin {
     final repo = ref.read(ankiRepositoryProvider);
     final miningContext = AnkiMiningContext(
       sentence: fields['sentence'] ?? '',
-      source: _miningSource,
+      source: miningSource,
     );
     // TODO-1325 #6：制卡可能要走网络（AnkiConnect）+ 下音频，先弹「制卡中…」蓝色
     // pending toast 给即时反馈；结果 toast 会顶替它。
@@ -321,7 +325,7 @@ mixin DictionaryPageMixin {
     final repo = ref.read(ankiRepositoryProvider);
     final miningContext = AnkiMiningContext(
       sentence: fields['sentence'] ?? '',
-      source: _miningSource,
+      source: miningSource,
     );
     // TODO-1325 #6：覆写同样先弹 pending。
     HibikiToast.showMine(

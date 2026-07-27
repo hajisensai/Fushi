@@ -113,7 +113,7 @@
   "anki_settings_label": "Anki-Einstellungen",
   "anki_tag_default_section": "Standard-Tags",
   "anki_tag_include_category": "Tag für Quellkategorie hinzufügen",
-  "anki_tag_include_category_hint": "Bücher erhalten „book“, Videos „video“",
+  "anki_tag_include_category_hint": "Bücher erhalten „book“, Videos „video“, Spiele „game“",
   "anki_tag_include_hibiki": "Tag „hibiki“ hinzufügen",
   "anki_tag_include_hibiki_hint": "Jede von Hibiki erstellte Karte kennzeichnen",
   "anki_tags": "Tags",

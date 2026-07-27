@@ -108,6 +108,7 @@ void main() {
       final _FakeRepo repo = _FakeRepo();
       final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
         ImmersionMiningRequest(
+          source: AnkiMiningSource.video,
           fields: const <String, String>{'expression': '走る'},
           mediaSource: videoPath,
           clipStartMs: 1000,
