@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1169](bugs/BUG-1169-gal-launch-failed-reason-release-assert.md) | ✅ | ✅ | release 剥离 assert 后 failed(none) 被判成启动成功 |
 | [BUG-1162](bugs/BUG-1162-torrent-pipeline-disk-flush-race.md) | ✅ | ✅ | hibiki_torrent 端到端测试在字节落盘前就比对，CI Windows 约 24% 概率红 |
 | [BUG-1157](bugs/BUG-1157-test-runner-zero-test-false-green.md) | ✅ | ✅ | 全量测试入口把「零测试执行」当成通过（native asset 构建失败被伪装成绿） |
 | [BUG-1156](bugs/BUG-1156-manga-spread-cropped-janky.md) | ✅ | ✅ | 漫画双页图片裁切且翻页卡顿 |

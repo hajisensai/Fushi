@@ -205,11 +205,74 @@ void main() {
   // 失败」——零可执行信息。原因是在 `return false` 那一刻丢的，下游补丁救不回来
   // （下游只拿得到一个比特），所以修在返回类型上。
   group('启动失败必须带原因 (BUG-1142)', () {
-    test('失败结果不允许把原因留空', () {
+    // BUG-1169：上一版把「没有原因的失败」交给 `assert` 拦。assert 只活在 debug/test，
+    // release 会被整个剥掉——用户实际在跑的构建里，`failed(none)` 的 `launched` 会读成
+    // true，一次失败的启动被当成成功报出去：界面说启动了，游戏没起来，还没有任何原因。
+    // 所以下面这一组**刻意不用 `throwsA(isA<AssertionError>())`**：那种断言只有在 assert
+    // 生效时才成立，等于用「本 bug 里失效的那个机制」去证明自己没事。改成断言值域与
+    // 返回值本身，assert 在不在都一样红。
+    test('失败原因值域里不得存在「未失败」哨兵（assert 剥离后仍成立）', () {
+      final List<String> names = GalHookLaunchFailureReason.values
+          .map((GalHookLaunchFailureReason reason) => reason.name)
+          .toList();
       expect(
-        () => GalHookLaunchResult.failed(GalHookLaunchFailureReason.none),
-        throwsA(isA<AssertionError>()),
-        reason: '「没有原因的失败」正是本 bug 的形态，必须在构造处就挡掉',
+        names,
+        isNot(contains('none')),
+        reason: '哨兵一旦回到值域，failed(none) 又能被构造，'
+            '而 release 里没有 assert 兜底 —— 失败会被读成成功',
+      );
+      expect(
+        names,
+        isNot(contains('success')),
+        reason: '换个名字的哨兵是同一个洞',
+      );
+    });
+
+    test('每个可构造的失败原因都不能被判成启动成功（assert 剥离后仍成立）', () {
+      expect(
+        GalHookLaunchFailureReason.values,
+        isNotEmpty,
+        reason: '值域空了这条守卫就变成空转，必须先保证它真的在遍历',
+      );
+      for (final GalHookLaunchFailureReason reason
+          in GalHookLaunchFailureReason.values) {
+        final GalHookLaunchResult result = GalHookLaunchResult.failed(reason);
+        expect(
+          result.launched,
+          isFalse,
+          reason: '$reason 是失败，launched 读成 true 就等于把失败播报成成功',
+        );
+        expect(
+          classifyGalHookLaunchOutcome(
+            result: result,
+            hasBoundWindow: true,
+            injectorFailure: GalHookInjectorFailure.none,
+          ),
+          isNot(GalHookLaunchOutcome.running),
+          reason: '$reason 绝不能分级成「注入成功、窗口已绑定」',
+        );
+      }
+    });
+
+    test('源码守卫：失败构造器不得靠 assert 拦非法原因', () {
+      final File source =
+          File('lib/src/mining/gal_hook_session_controller.dart');
+      expect(source.existsSync(), isTrue, reason: '测试须在 hibiki/ 下运行才能读到源码');
+      final String code = source.readAsStringSync();
+      final int start = code.indexOf('const GalHookLaunchResult.failed(');
+      expect(start, greaterThan(-1), reason: '失败构造器没了，本守卫失去锚点');
+      final int end = code.indexOf('bool get launched', start);
+      expect(end, greaterThan(start));
+      expect(
+        code.substring(start, end).contains('assert('),
+        isFalse,
+        reason: 'assert 在 release 被剥离，非法状态必须由类型系统挡掉而不是运行期断言'
+            '（BUG-1169）',
+      );
+      expect(
+        RegExp(r'bool get launched => reason == null;').hasMatch(code),
+        isTrue,
+        reason: '成功的唯一表示是「没有失败原因」；换回哨兵比较就把洞开回来了',
       );
     });
 
@@ -237,7 +300,6 @@ void main() {
     test('每个失败原因都有确定分级，不留未定义组合', () {
       for (final GalHookLaunchFailureReason reason
           in GalHookLaunchFailureReason.values) {
-        if (reason == GalHookLaunchFailureReason.none) continue;
         expect(
           classifyGalHookLaunchOutcome(
             result: GalHookLaunchResult.failed(reason),

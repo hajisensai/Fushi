@@ -170,10 +170,11 @@ GalTrackEmptyHint galTrackEmptyHintFor(GalHookAudioBackend backend) =>
 ///
 /// 原因是在 `return false` 那一刻被丢掉的，任何下游补丁都救不回来（下游只能拿到一个
 /// 比特）。所以修在返回类型上：**每条失败出口必须携带一个原因，由编译期强制**。
+/// 本枚举**只列失败**，刻意不含 `none` 之类「未失败」哨兵（BUG-1169）：成功由
+/// [GalHookLaunchResult.reason] 取 `null` 表达。哨兵留在值域里就等于允许构造
+/// `failed(none)`——一个 `launched` 读起来是 `true` 的失败。当初拦住它的只有一个
+/// `assert`，而 release 构建会把 assert 整个剥掉：最需要它的那个构建里它恰好不在。
 enum GalHookLaunchFailureReason {
-  /// 未失败。
-  none,
-
   /// 非 Windows 平台，整条 Hook 链不可用。
   unsupportedPlatform,
 
@@ -197,28 +198,39 @@ enum GalHookLaunchFailureReason {
 @immutable
 class GalHookLaunchResult {
   /// 启动成功（含「游戏在跑但音频降级」——那仍然是启动成功，降级由 outcome 分级表达）。
-  const GalHookLaunchResult.launched()
-      : reason = GalHookLaunchFailureReason.none,
-        diagnostics = const GalHookInjectorDiagnostics();
+  const GalHookLaunchResult.launched() : this._();
 
-  /// 启动未成功。[reason] 不得为 [GalHookLaunchFailureReason.none]——那正是本 bug 的
-  /// 形态：一个没有原因的失败。
+  /// 启动未成功。[reason] 形参是**非空**的 [GalHookLaunchFailureReason]：该枚举已不含
+  /// 「未失败」哨兵，`null` 又被空安全在编译期挡住，所以「没有原因的失败」在这里
+  /// 根本构造不出来（BUG-1169）。这是类型约束而非运行期检查，不随 release 剥离 assert
+  /// 而失效——上一版的 `assert` 恰恰在用户实际运行的构建里不存在。
   const GalHookLaunchResult.failed(
-    this.reason, {
-    this.diagnostics = const GalHookInjectorDiagnostics(),
-  }) : assert(
-          reason != GalHookLaunchFailureReason.none,
-          'failed() 必须给出真实原因；启动成功请用 GalHookLaunchResult.launched()',
-        );
+    GalHookLaunchFailureReason reason, {
+    GalHookInjectorDiagnostics diagnostics = const GalHookInjectorDiagnostics(),
+  }) : this._(reason: reason, diagnostics: diagnostics);
 
-  final GalHookLaunchFailureReason reason;
+  /// 唯一的生成式构造器。私有：外部只能经 [launched]（reason 恒为 null）或
+  /// [failed]（reason 恒非 null）二选一进入，两条路都写不出第三种状态。
+  const GalHookLaunchResult._({
+    this.reason,
+    this.diagnostics = const GalHookInjectorDiagnostics(),
+  });
+
+  /// 失败原因；`null` **就是**「启动成功」这一个事实的唯一表示。
+  ///
+  /// 用 `null` 而不是枚举里的哨兵值：哨兵会同时出现在 `failed()` 的入参值域和
+  /// `launched` 的判据里，两边一旦对不上就产生「读起来像成功的失败」。`null` 只能由
+  /// [GalHookLaunchResult.launched] 写入，失败构造器压根拿不到它。
+  final GalHookLaunchFailureReason? reason;
 
   /// injector 的结构化诊断（分类原因 + 退出码 + stderr 尾部原文）。
   /// 即便 [GalHookInjectorFailure] 归类不出来，这里的 stderr 尾部仍是唯一的一手证据，
   /// 必须让它到达用户和日志，而不是像旧实现那样停在 controller 内部。
   final GalHookInjectorDiagnostics diagnostics;
 
-  bool get launched => reason == GalHookLaunchFailureReason.none;
+  /// 启动是否成功。判据是「没有失败原因」，而**每一个**失败原因都让它为 false——
+  /// 这由值域本身保证（枚举里没有任何值代表成功），不依赖任何运行期断言。
+  bool get launched => reason == null;
 }
 
 /// 一次「启动游戏」结束后**必须**告知用户的结果分级（BUG-1089，纯函数可单测）。
