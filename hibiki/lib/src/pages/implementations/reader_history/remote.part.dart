@@ -33,12 +33,39 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     );
   }
 
-  Future<_RemoteBookState?> _loadRemoteBooks() async {
+  /// 是否应该去问远端要书列表。
+  ///
+  /// BUG-1181：漫画书架（`mangaOnly`）和书架是**同一个 State 类**的两个实例，都注册了
+  /// [_onShellTabActivated]，且该回调判的是 `== HomeTab.books`。于是切到书架会触发两次
+  /// 完整拉取，漫画那次的结果在 build 里被 `!_mangaOnly` 直接丢掉——纯浪费一整轮网络。
+  ///
+  /// BUG-1182：`showRemoteEntries` 开关此前只在 build 的 `showRemote` 处生效（本文件
+  /// 上游 `reader_hibiki_history_page.dart` 的 remote 门控），拉取照发不误。关掉「显示
+  /// 远端条目」的用户仍然全额付网络代价，只是结果被丢弃。门控前移到取数之前。
+  /// 用 `appModelNoUpdate`（不 watch）：本门控只读 prefsRepo，与 AppModel 的通知无关；
+  /// 而本 getter 会在 prefsRepo 回调等非 build 时机被调用，那里 `ref.watch` 非法。
+  bool get _shouldLoadRemoteBooks =>
+      !_mangaOnly && appModelNoUpdate.prefsRepo.showRemoteEntries;
+
+  Future<_RemoteBookState?> _loadRemoteBooks(
+      {bool forceRefresh = false}) async {
+    if (!_shouldLoadRemoteBooks) {
+      _remoteBookClient = null;
+      return null;
+    }
     final RemoteBookClient? client = await _resolveRemoteBookClient();
     _remoteBookClient = client;
     if (client == null) return null;
     try {
-      final List<RemoteBookInfo> books = await client.listRemoteBooks();
+      // BUG-1180：经共享缓存取清单——切回书架 tab（[_onShellTabActivated]）不再必然
+      // 打一轮网络，TTL 内直接复用；首页 dashboard 刚拉过的同一份列表也在这里命中。
+      // 缓存只包住「问对端要清单」这一步，下面的本地库查询与去重仍每次照跑，所以本地
+      // 新增/删除的书立即反映在混排网格里。
+      final List<RemoteBookInfo> books = await _remoteCache.read(
+        key: RemoteLibraryCacheKeys.books,
+        forceRefresh: forceRefresh,
+        fetch: client.listRemoteBooks,
+      );
       // #6: 远端与本地是同一本书时（同 bookKey）不在混排网格重复展示（只显示本地卡）。
       final List<EpubBookRow> localBooks =
           await appModel.database.getAllEpubBooks();
@@ -50,7 +77,10 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       // 有声书，只留 standalone（bookKey 空、身份=uid）且本地无同 uid SrtBook 的项，
       // 作为可下载占位卡。云盘后端无此 API → 空列表（占位卡不出现，与能力边界一致）。
       final List<RemoteAudiobookInfo> remoteSrt =
-          await _loadStandaloneRemoteSrtAudiobooks(client);
+          await _loadStandaloneRemoteSrtAudiobooks(
+        client,
+        forceRefresh: forceRefresh,
+      );
       return _RemoteBookState(
         books: dedupeRemoteBooks(
           remote: withContent,
@@ -69,6 +99,10 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     }
   }
 
+  /// 非强制的远端书重载：切回书架 tab（BUG-992）、本地有声书列表变动等「可能只是本地
+  /// 变了」的信号走这里。远端清单本身经 [RemoteLibraryCache] 的 TTL 判断是否真要联网，
+  /// 所以切页面不会再变成一轮网络往返（BUG-1180）。要**强制**穿透缓存只有一个入口：
+  /// 用户显式下拉刷新（[_pullToRefreshBooks]）。
   void _refreshRemoteBooks() {
     _rebuild(() {
       _remoteBooksFuture = _loadRemoteBooks();
@@ -100,7 +134,10 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     ref.invalidate(srtBooksProvider);
     _batchAudiobookInfoFuture = null;
     _batchAudiobookInfoResult = const <String, _AudiobookInfo>{};
-    final Future<_RemoteBookState?> future = _loadRemoteBooks();
+    // 显式下拉 = 用户要最新的：强制穿透 [RemoteLibraryCache] 的 TTL（BUG-1180）。
+    final Future<_RemoteBookState?> future = _loadRemoteBooks(
+      forceRefresh: true,
+    );
     _rebuild(() {
       _remoteBooksFuture = future;
       // 合集折叠映射也一并重载：下拉刷新前若后台同步落了新合集成员，只失效书列表
@@ -609,14 +646,20 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
   /// 只留 standalone（bookKey 空、身份=uid）且本地无同 uid SrtBook 的项作占位卡。
   /// 云盘后端无此能力 → 空列表（占位卡不出现，与真实能力边界一致，不静默 fail-open）。
   Future<List<RemoteAudiobookInfo>> _loadStandaloneRemoteSrtAudiobooks(
-    RemoteBookClient client,
-  ) async {
+    RemoteBookClient client, {
+    bool forceRefresh = false,
+  }) async {
     if (client is! InterconnectSyncBackend) {
       return const <RemoteAudiobookInfo>[];
     }
     List<RemoteAudiobookInfo> all;
     try {
-      all = await client.listRemoteAudiobooks();
+      // BUG-1180：与书清单同缓存策略——切回 tab 不再重打这一枪。
+      all = await _remoteCache.read(
+        key: RemoteLibraryCacheKeys.audiobooks,
+        forceRefresh: forceRefresh,
+        fetch: client.listRemoteAudiobooks,
+      );
     } catch (e) {
       debugPrint('[reader-shelf] remote audiobook list failed: $e');
       return const <RemoteAudiobookInfo>[];

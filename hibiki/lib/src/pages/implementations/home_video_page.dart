@@ -69,6 +69,7 @@ import 'package:hibiki/src/sync/remote_download_progress_badge.dart';
 import 'package:hibiki/src/sync/interconnect_download_manager.dart';
 import 'package:hibiki/src/sync/cloud_remote_video_client.dart';
 import 'package:hibiki/src/sync/remote_cover_image.dart';
+import 'package:hibiki/src/sync/remote_library_cache.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_progress_banner.dart';
@@ -150,6 +151,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Future<List<VideoBookRow>>? _future;
   Future<_RemoteVideoState?>? _remoteFuture;
   RemoteVideoClient? _remoteVideoClient;
+
+  /// 远端清单的共享 TTL 缓存（BUG-1180）。与书架 / 首页 dashboard 同一实例
+  /// （app 级 provider），切 tab 不再必然重打一轮网络。
+  RemoteLibraryCache get _remoteCache => ref.read(remoteLibraryCacheProvider);
 
   /// BUG-793：视频库 uid 集合监听。列表是一次性 FutureBuilder + 保活 tab，无此
   /// 订阅时非本页发起的导入（外部「用 Hibiki 打开」等直接落库不 _refresh 的路径）
@@ -247,6 +252,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // BUG-793：订阅 videoBooks 表，任意导入路径落库后自动刷新库页。
     _videoUidsSub =
         widget.repo.watchVideoBookUids().listen(_onVideoUidsChanged);
+    // BUG-1182：「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经
+    // AppModel 通知，本页不会因它重建 → 门控翻转后既不重取也不重渲染。显式订阅。
+    // 用 appModelNoUpdate：initState 里读 appModel 会走 ref.watch，触发
+    // 「initState 完成前依赖 InheritedWidget」断言。
+    // （门控基线已由上面的 _loadRemoteVideos() 首帧取数写入 _remoteGateAtLastLoad。）
+    appModelNoUpdate.prefsRepo.addListener(_onPrefsChangedForRemoteGate);
     assert(() {
       HomeVideoPage.debugRefreshVideos = _refresh;
       return true;
@@ -272,6 +283,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _searchController.dispose();
     _videoUidsSub?.cancel();
     _autoScrape?.dispose();
+    appModelNoUpdate.prefsRepo.removeListener(_onPrefsChangedForRemoteGate);
     assert(() {
       HomeVideoPage.debugRefreshVideos = null;
       return true;
@@ -334,7 +346,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       announceBusy: false,
     );
     if (!mounted) return;
-    final Future<_RemoteVideoState?> remote = _loadRemoteVideos();
+    // 显式下拉 = 用户要最新的：强制穿透 [RemoteLibraryCache] 的 TTL（BUG-1180）。
+    final Future<_RemoteVideoState?> remote = _loadRemoteVideos(
+      forceRefresh: true,
+    );
     if (mounted) {
       setState(() {
         _future = widget.repo.listForShelf();
@@ -489,14 +504,52 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     return CloudRemoteVideoClient(backend: backend);
   }
 
-  Future<_RemoteVideoState?> _loadRemoteVideos() async {
+  /// 是否应该去问远端要视频清单。
+  ///
+  /// BUG-1182：`showRemoteEntries` 开关此前只在渲染期的 [_visibleRemoteVideos] 生效，
+  /// 拉取照发不误——关掉「显示远端条目」的用户仍全额付网络代价，只是结果被丢弃。
+  /// 门控前移到取数之前。
+  bool get _shouldLoadRemoteVideos =>
+      appModelNoUpdate.prefsRepo.showRemoteEntries;
+
+  /// 上一次取数时 [_shouldLoadRemoteVideos] 的值（BUG-1182），用于识别开关翻转。
+  bool _remoteGateAtLastLoad = true;
+
+  /// prefsRepo 变更回调：只关心「显示远端条目」门控是否翻转。其余偏好变动一概忽略
+  /// ——prefsRepo 的通知很频繁，不能每次都去动远端 future。
+  void _onPrefsChangedForRemoteGate() {
+    if (!mounted) return;
+    final bool gate = _shouldLoadRemoteVideos;
+    if (gate == _remoteGateAtLastLoad) return;
+    _remoteGateAtLastLoad = gate;
+    setState(() {
+      _remoteFuture = _loadRemoteVideos();
+    });
+  }
+
+  Future<_RemoteVideoState?> _loadRemoteVideos({
+    bool forceRefresh = false,
+  }) async {
+    _remoteGateAtLastLoad = _shouldLoadRemoteVideos;
+    if (!_shouldLoadRemoteVideos) {
+      _remoteVideoClient = null;
+      _cloudRemoteVideoClient = null;
+      return null;
+    }
     final RemoteVideoClient? client = await _resolveRemoteVideoClient();
     _remoteVideoClient = client;
     if (client != null) {
       // 互联后端：host live 库直接下发 RemoteVideoInfo。
       _cloudRemoteVideoClient = null;
       try {
-        final List<RemoteVideoInfo> videos = await client.listRemoteVideos();
+        // BUG-1180：经共享缓存取清单——切回视频 tab（[onTabActivated]）不再必然打一轮
+        // 网络，TTL 内直接复用。缓存只包住「问对端要清单」这一步，下面的本地库查询与
+        // 去重仍每次照跑，本地新增/删除的视频立即反映在混排网格里。
+        final List<RemoteVideoInfo> videos = await _remoteCache.read(
+          key: RemoteLibraryCacheKeys.videos,
+          forceRefresh: forceRefresh,
+          fetch: client.listRemoteVideos,
+        );
         // #6: 远端与本地是同一视频时（同 bookUid）不在混排网格重复展示。
         final List<VideoBookRow> localVideos = await widget.repo.listAll();
         final Set<String> localUids =
@@ -525,8 +578,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     try {
       // 清单不存在（从未有设备上传）→ listRemoteVideos 返回空表；结构非法
       // （FormatException）向上抛，此处 catch → 本轮云视频不可用（= 只剩本地语义）。
-      final List<RemoteVideoManifestEntry> entries =
-          await cloud.listRemoteVideos();
+      // BUG-1180：云清单同样过缓存。云盘 `videos.json` 的读取代价不比互联低（要
+      // ensureNamespace + findAsset + getJsonAsset 三次往返），切页面重读同样冤枉。
+      final List<RemoteVideoManifestEntry> entries = await _remoteCache.read(
+        key: RemoteLibraryCacheKeys.cloudVideos,
+        forceRefresh: forceRefresh,
+        fetch: cloud.listRemoteVideos,
+      );
       final List<RemoteVideoInfo> videos = <RemoteVideoInfo>[
         for (final RemoteVideoManifestEntry e in entries)
           _cloudManifestToRemoteVideoInfo(e),
@@ -810,7 +868,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       context: context,
       builder: (_) => const MediaSourcesDialog(mediaKind: 'video'),
     );
-    // 管理互联源可能新增/切换/移除远端 host，远端清单需重拉。
+    // 注意：本对话框管的是**扫描根**（本地目录 / SFTP / FTP 源库），改不了互联对端，
+    // 所以这里不做远端缓存失效——换对端的失效由 [remoteLibraryCacheProvider] 订阅
+    // `InterconnectSyncBackend.sessionIdentityRevision` 统一处理（BUG-1180）。
+    // 这里仍传 remote: true，是因为扫描可能让本地与远端的去重结果变化。
     if (mounted) _refresh(remote: true);
   }
 

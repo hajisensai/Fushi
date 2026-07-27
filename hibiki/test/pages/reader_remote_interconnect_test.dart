@@ -91,7 +91,7 @@ void main() {
     await db.close();
   });
 
-  Widget buildApp() => ProviderScope(
+  Widget buildApp({bool mangaOnly = false}) => ProviderScope(
         overrides: <Override>[
           appProvider.overrideWith((ref) => appModel),
           hibikiBooksProvider.overrideWith(
@@ -109,6 +109,7 @@ void main() {
                 child ?? const SizedBox.shrink(),
             home: Scaffold(
               body: ReaderHibikiHistoryPage(
+                mangaOnly: mangaOnly,
                 remoteBookClientLoader: () async => remoteClient,
                 remoteBookDownloadDestination: (RemoteBookInfo book) async =>
                     File(
@@ -519,24 +520,93 @@ void main() {
     );
   });
 
-  testWidgets('BUG-992: 切回书架 tab 自动重拉远端书（不必手动下拉刷新）',
+  testWidgets('BUG-992/1175: 切回书架 tab 远端卡在场，且 TTL 内不重打网络',
       (WidgetTester tester) async {
+    // BUG-992 当初断言的是「切回 tab 后 listRemoteBooks 调用次数增加」——那是实现
+    // 细节，不是用户诉求。用户要的是「切回书架能看到远端占位卡」，而**不是**「每切
+    // 一次页面就联网一次」（后者正是 BUG-1180 的症状）。清单现在过 RemoteLibraryCache
+    // 的 TTL：切回 tab 仍然重新组装（本地库变化立即反映），但 TTL 内不再打网络。
+    // 这里把断言换成用户可见的不变式 + 「不得重复联网」的新约束。
     homeShellTabNotifier.value = HomeTab.books;
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
     // 首帧懒加载已拉一次。
     expect(remoteClient.listRemoteBooksCalls, greaterThanOrEqualTo(1));
     final int before = remoteClient.listRemoteBooksCalls;
+    final Finder remoteCard =
+        find.byKey(const ValueKey<String>('remote_book_card_Remote_Book'));
+    expect(remoteCard, findsOneWidget);
 
-    // 切到别的 tab（不重拉）再切回书架（自动重拉）。
+    // 切到别的 tab 再切回书架。
     homeShellTabNotifier.value = HomeTab.video;
     await tester.pump();
     expect(remoteClient.listRemoteBooksCalls, before, reason: '切到非书架 tab 不应重拉');
 
     homeShellTabNotifier.value = HomeTab.books;
     await tester.pumpAndSettle();
+    expect(remoteCard, findsOneWidget,
+        reason: 'BUG-992：切回书架 tab 远端占位卡必须仍在场（不必手动下拉刷新）');
+    expect(remoteClient.listRemoteBooksCalls, before,
+        reason: 'BUG-1180：TTL 内切回 tab 不得再问对端要一次清单');
+  });
+
+  testWidgets('BUG-1180: 下拉刷新强制穿透缓存（用户要最新的就必须联网）', (WidgetTester tester) async {
+    homeShellTabNotifier.value = HomeTab.books;
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    final int before = remoteClient.listRemoteBooksCalls;
+
+    await tester.fling(
+      find.byType(RefreshIndicator).first,
+      const Offset(0, 300),
+      1000,
+    );
+    await tester.pumpAndSettle();
+
     expect(remoteClient.listRemoteBooksCalls, greaterThan(before),
-        reason: 'BUG-992：切回书架 tab 应自动重拉远端书');
+        reason: '显式下拉刷新是强制入口，必须穿透 TTL 重新联网');
+  });
+
+  testWidgets('BUG-1181: 漫画书架实例从不拉远端书（它根本不消费）', (WidgetTester tester) async {
+    // 漫画书架就是 ReaderHibikiHistoryPage(mangaOnly: true)——与书架**同一个 State
+    // 类**。它此前也注册了 homeShellTabNotifier 监听，且回调判的是 `== HomeTab.books`，
+    // 于是切到书架时两个实例各拉一遍远端书，漫画那份在 build 里被 `!_mangaOnly` 丢掉。
+    homeShellTabNotifier.value = HomeTab.manga;
+    await tester.pumpWidget(buildApp(mangaOnly: true));
+    await tester.pumpAndSettle();
+    expect(remoteClient.listRemoteBooksCalls, 0,
+        reason: '漫画书架不渲染远端书占位卡，首帧就不该联网');
+
+    // 切到书架 tab：漫画实例仍在树上（保活），但不得被 books 信号带着一起拉。
+    homeShellTabNotifier.value = HomeTab.books;
+    await tester.pumpAndSettle();
+    expect(remoteClient.listRemoteBooksCalls, 0,
+        reason: 'BUG-1181：漫画实例不得响应书架 tab 信号去拉远端书');
+  });
+
+  testWidgets('BUG-1182: 关闭「显示远端条目」后根本不联网（而不是拉完再丢）',
+      (WidgetTester tester) async {
+    await appModel.prefsRepo.setShowRemoteEntries(false);
+    homeShellTabNotifier.value = HomeTab.books;
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    expect(remoteClient.listRemoteBooksCalls, 0,
+        reason: '开关关闭时门控必须在取数之前，不能拉完再在渲染期丢弃');
+    expect(
+      find.byKey(const ValueKey<String>('remote_book_card_Remote_Book')),
+      findsNothing,
+    );
+
+    // 开关翻回来：`??=` 不会自己重跑，门控翻转必须触发重新取数，否则用户要下拉刷新。
+    await appModel.prefsRepo.setShowRemoteEntries(true);
+    await tester.pumpAndSettle();
+    expect(remoteClient.listRemoteBooksCalls, greaterThanOrEqualTo(1),
+        reason: 'BUG-1182：开关从关翻到开必须重新取数');
+    expect(
+      find.byKey(const ValueKey<String>('remote_book_card_Remote_Book')),
+      findsOneWidget,
+    );
   });
 
   testWidgets(
