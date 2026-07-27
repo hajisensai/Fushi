@@ -362,6 +362,41 @@ class AnkiConnectService {
     });
   }
 
+  // ── 媒体维护（字节级去重）────────────────────────────────────────────
+  // getMediaDirPath / findNotes 读取类幂等；deleteMediaFile 同名重删是 no-op，
+  // 也幂等——均不列入 [_nonIdempotentActions]。
+
+  /// Anki 当前 profile 的 collection.media 绝对路径（本机扫描用，避免把
+  /// 整个媒体库经 base64 拉过 HTTP）。
+  Future<String> getMediaDirPath() async {
+    final result = await _request('getMediaDirPath');
+    if (result is! String || result.isEmpty) {
+      throw AnkiConnectException(
+        'Unexpected AnkiConnect response for getMediaDirPath',
+      );
+    }
+    return result;
+  }
+
+  /// 删除媒体文件（按文件名）。只在引用已全部改写干净后调用。
+  Future<void> deleteMediaFile(String filename) async {
+    await _request('deleteMediaFile', {'filename': filename});
+  }
+
+  /// 按任意 Anki 搜索式查 note id（去重用 `"<文件名>"` 全字段文本检索）。
+  Future<List<int>> findNotesByQuery(String query) async {
+    final result = await _request('findNotes', {'query': query});
+    if (result is! List) {
+      throw AnkiConnectException(
+        'Unexpected AnkiConnect response for findNotes (expected a list)',
+      );
+    }
+    return result.map((dynamic id) {
+      if (id is int) return id;
+      return int.parse(id.toString());
+    }).toList();
+  }
+
   Future<void> createModel(AnkiNoteTypeTemplate template) async {
     await _request('createModel', {
       'modelName': template.name,

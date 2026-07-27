@@ -2651,5 +2651,17 @@
   "anki_lapis_restore_empty": "还没有备份。",
   "anki_lapis_restore_confirm": "用该备份覆盖 Anki 里的 Lapis 模板？当前状态会先自动备份。",
   "anki_lapis_restore_done": "模板已恢复。",
-  "anki_lapis_restore_failed": "恢复失败：$error"
+  "anki_lapis_restore_failed": "恢复失败：$error",
+  "anki_dedup_section": "Anki 媒体存储优化",
+  "anki_dedup_auto": "每周自动媒体去重",
+  "anki_dedup_auto_hint": "找出字节完全相同的重复媒体文件，把所有引用统一指向一份后删除多余副本。绝不重编码、不降画质。",
+  "anki_dedup_scan": "扫描重复项（不做改动）",
+  "anki_dedup_run": "立即去重",
+  "anki_dedup_run_confirm": "改写引用并删除字节完全相同的重复文件？操作记录会先写入备份目录。",
+  "anki_dedup_report_title": "媒体去重报告",
+  "anki_dedup_report_body": "$groups 组重复；多余副本 $removed 个（$size）；改写笔记 $notes 张、模板 $models 个；跳过 $skipped 个。",
+  "anki_dedup_report_dry_note": "仅扫描——未做任何改动。",
+  "anki_dedup_report_clean": "没有发现字节完全相同的重复文件。",
+  "anki_dedup_failed": "去重失败：$error",
+  "anki_dedup_unavailable": "需要本机运行 Anki（AnkiConnect）。"
 }

@@ -2651,5 +2651,17 @@
   "anki_lapis_restore_empty": "No backups yet.",
   "anki_lapis_restore_confirm": "Overwrite the Lapis template in Anki with this backup? The current state is backed up first.",
   "anki_lapis_restore_done": "Template restored.",
-  "anki_lapis_restore_failed": "Restore failed: $error"
+  "anki_lapis_restore_failed": "Restore failed: $error",
+  "anki_dedup_section": "Anki media storage optimization",
+  "anki_dedup_auto": "Deduplicate media weekly",
+  "anki_dedup_auto_hint": "Finds byte-identical duplicate media files, points every reference at one copy, then deletes the extras. Never re-encodes anything.",
+  "anki_dedup_scan": "Scan for duplicates (no changes)",
+  "anki_dedup_run": "Deduplicate now",
+  "anki_dedup_run_confirm": "Rewrite references and delete byte-identical duplicate files? A journal is written to the backup folder first.",
+  "anki_dedup_report_title": "Media deduplication report",
+  "anki_dedup_report_body": "$groups duplicate groups; $removed extra copies ($size); $notes notes and $models note types rewritten; $skipped skipped.",
+  "anki_dedup_report_dry_note": "Scan only - nothing was changed.",
+  "anki_dedup_report_clean": "No byte-identical duplicates found.",
+  "anki_dedup_failed": "Deduplication failed: $error",
+  "anki_dedup_unavailable": "Requires Anki running on this machine (AnkiConnect)."
 }

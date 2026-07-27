@@ -168,6 +168,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'packages/hibiki_anki/test/mining_tag_and_parallel_test.dart',
   'cardCreation/Add source category tag':
       'packages/hibiki_anki/test/mining_tag_and_parallel_test.dart',
+  // 媒体字节级去重周期开关：与上两行同理写 AnkiSettings（经 SharedPreferences，
+  // 非本测试的内存 DB），故 changed=false；周期判定/分组规划/引用改写行为本体
+  // 由 hibiki_anki 纯函数测试咬住，编排（journal + 时间戳 + 会话闸门）在
+  // AnkiMediaDedupRunner。
+  'cardCreation/Deduplicate media weekly':
+      'packages/hibiki_anki/test/anki_media_dedup_test.dart',
   // PR#343: 互联「制卡到服务端」开关。写 prefsRepo mine_to_server（changed=true），
   // 生效点在 ankiRepositoryProvider——开关开时把本地仓库包一层 RemoteMiningAnkiRepository，
   // mineEntry/isDuplicate 经互联链路转发到已配对主机（用主机 Anki 落卡），配置类方法仍委派

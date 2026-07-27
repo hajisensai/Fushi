@@ -43,6 +43,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// type，互斥防重入。
   bool _lapisBusy = false;
 
+  /// 媒体去重在途标记（扫描/执行互斥防重入）。
+  bool _dedupBusy = false;
+
   @override
   Widget build(BuildContext context) {
     final uiState = ref.watch(ankiViewModelProvider);
@@ -150,6 +153,44 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                 showIcon: true,
                 title: t.anki_lapis_restore,
                 onTap: _lapisBusy ? null : () => _restoreLapisBackup(vm),
+              ),
+            ],
+          ),
+        // 媒体存储优化：字节级去重（只删字节相同的多余副本，绝不重编码）。
+        // 需要与 Anki 同机（本机可直读 collection.media），后端不支持时整区隐藏。
+        if (vm.supportsMediaMaintenance)
+          AdaptiveSettingsSection(
+            title: t.anki_dedup_section,
+            children: [
+              AdaptiveSettingsSwitchRow(
+                icon: Icons.filter_none_outlined,
+                showIcon: true,
+                title: t.anki_dedup_auto,
+                subtitle: t.anki_dedup_auto_hint,
+                value: settings.mediaDedupAutoEnabled,
+                onChanged: vm.setMediaDedupAutoEnabled,
+              ),
+              AdaptiveSettingsRow(
+                icon: Icons.search_outlined,
+                showIcon: true,
+                title: t.anki_dedup_scan,
+                trailing: _dedupBusy
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child:
+                            adaptiveIndicator(context: context, strokeWidth: 2),
+                      )
+                    : null,
+                onTap:
+                    _dedupBusy ? null : () => _runMediaDedup(vm, dryRun: true),
+              ),
+              AdaptiveSettingsRow(
+                icon: Icons.cleaning_services_outlined,
+                showIcon: true,
+                title: t.anki_dedup_run,
+                onTap:
+                    _dedupBusy ? null : () => _runMediaDedup(vm, dryRun: false),
               ),
             ],
           ),
@@ -603,6 +644,81 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     } finally {
       if (mounted) setState(() => _lapisBusy = false);
     }
+  }
+
+  Future<void> _runMediaDedup(AnkiViewModel vm, {required bool dryRun}) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    if (!dryRun) {
+      final bool? ok = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext context) => AlertDialog(
+          title: Text(t.anki_dedup_run),
+          content: Text(t.anki_dedup_run_confirm),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(t.dialog_cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(t.dialog_ok),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
+    setState(() => _dedupBusy = true);
+    final AnkiMediaDedupReport? report;
+    try {
+      report = await vm.mediaDedupRunner.runNow(dryRun: dryRun);
+    } catch (e) {
+      messenger.showSnackBar(
+          SnackBar(content: Text(t.anki_dedup_failed(error: '$e'))));
+      return;
+    } finally {
+      if (mounted) setState(() => _dedupBusy = false);
+    }
+    if (!mounted) return;
+    // try 块内赋值的局部变量 flow analysis 不做空促断：拷进非空局部再用。
+    final AnkiMediaDedupReport? nullable = report;
+    if (nullable == null) {
+      messenger.showSnackBar(SnackBar(content: Text(t.anki_dedup_unavailable)));
+      return;
+    }
+    final AnkiMediaDedupReport result = nullable;
+    final String body = result.groupCount == 0
+        ? t.anki_dedup_report_clean
+        : t.anki_dedup_report_body(
+            groups: '${result.groupCount}',
+            removed: '${result.duplicatesRemoved}',
+            size: _formatBytes(result.bytesSaved),
+            notes: '${result.notesRewritten}',
+            models: '${result.modelsRewritten}',
+            skipped: '${result.skipped}',
+          );
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text(t.anki_dedup_report_title),
+        content: Text(
+            result.dryRun ? '$body\n\n${t.anki_dedup_report_dry_note}' : body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(t.dialog_ok),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _formatBytes(int bytes) {
+    if (bytes >= 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '$bytes B';
   }
 
   /// 备份文件名 `lapis-<ISO时间戳(冒号→'-')>.json` → 本地可读时间标签；

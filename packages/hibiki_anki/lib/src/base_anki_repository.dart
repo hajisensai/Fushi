@@ -4,6 +4,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'anki_media_dedup.dart';
 import 'anki_models.dart';
 import 'anki_note_type_definition.dart';
 import 'lapis_note_type.dart';
@@ -193,6 +194,24 @@ abstract class BaseAnkiRepository {
   Future<bool> updateNoteTypeTemplates(
           String modelName, List<AnkiCardTemplate> templates) async =>
       false;
+
+  // ── 媒体存储优化（字节级去重，见 anki_media_dedup.dart）────────────────
+
+  /// 本后端能否做媒体字节级去重。需要**本机可直读** collection.media +
+  /// 全库检索 + 字段/模板改写；默认 false，仅 AnkiConnect（Anki 与 Hibiki
+  /// 同机）支持。
+  bool get supportsMediaMaintenance => false;
+
+  /// 跑一轮媒体字节级去重：找出字节完全相同的文件组 → 把笔记字段与卡模板/
+  /// styling 里的引用统一改指保留份 → 复核引用清干净后删除多余副本。
+  /// **绝不重编码任何文件**。[dryRun] = 只扫描规划，不改动。[onJournal] 在
+  /// 每次真实改写/删除**之前**收到一条可回溯记录（调用方负责落盘）。
+  /// **默认实现 = 优雅降级**：返回 null。
+  Future<AnkiMediaDedupReport?> runMediaDedup({
+    bool dryRun = false,
+    Future<void> Function(Map<String, dynamic> entry)? onJournal,
+  }) async =>
+      null;
 
   @protected
   AnkiDeck selectDeckAfterFetch(List<AnkiDeck> decks, AnkiSettings current) =>

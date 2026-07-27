@@ -4,9 +4,11 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:collection/collection.dart';
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../anki_media_dedup.dart';
 import '../anki_models.dart';
 import '../anki_note_type_definition.dart';
 import '../base_anki_repository.dart';
@@ -921,6 +923,178 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final service = await _getService();
     await service.updateModelTemplates(modelName, templates);
     return true;
+  }
+
+  // ── 媒体存储优化（字节级去重）──────────────────────────────────────
+
+  @override
+  bool get supportsMediaMaintenance => true;
+
+  @override
+  Future<AnkiMediaDedupReport?> runMediaDedup({
+    bool dryRun = false,
+    Future<void> Function(Map<String, dynamic> entry)? onJournal,
+  }) async {
+    final service = await _getService();
+    final String mediaPath = await service.getMediaDirPath();
+    final Directory mediaDir = Directory(mediaPath);
+    // AnkiConnect 在远程主机上时拿到的路径本机不存在——按不支持处理，绝不
+    // 盲扫错误目录。
+    if (!mediaDir.existsSync()) return null;
+
+    // 1) 按大小初筛（大小不同不可能字节相同），只对大小撞车的候选算 sha256。
+    final Map<String, int> sizes = <String, int>{};
+    await for (final FileSystemEntity entity
+        in mediaDir.list(followLinks: false)) {
+      if (entity is! File) continue;
+      final String name = entity.uri.pathSegments.last;
+      if (name.isEmpty) continue;
+      sizes[name] = await entity.length();
+    }
+    final Map<int, List<String>> bySize = <int, List<String>>{};
+    sizes.forEach(
+        (String n, int s) => bySize.putIfAbsent(s, () => <String>[]).add(n));
+    final Map<String, String> nameToHash = <String, String>{};
+    for (final MapEntry<int, List<String>> entry in bySize.entries) {
+      if (entry.value.length < 2) continue;
+      for (final String name in entry.value) {
+        final Uint8List bytes =
+            await File('${mediaDir.path}${Platform.pathSeparator}$name')
+                .readAsBytes();
+        nameToHash[name] = crypto.sha256.convert(bytes).toString();
+      }
+    }
+    final List<MediaDedupGroup> groups = planMediaDedupGroups(nameToHash);
+
+    // 2) 模板/styling 快照一次抓全（随改写更新，避免每个副本重复拉取）。
+    final List<String> modelNames = await service.getModelNames();
+    final Map<String, List<AnkiCardTemplate>> modelTemplates =
+        <String, List<AnkiCardTemplate>>{};
+    final Map<String, String> modelCss = <String, String>{};
+    for (final String m in modelNames) {
+      modelTemplates[m] = await service.modelTemplates(m);
+      modelCss[m] = await service.modelStyling(m);
+    }
+
+    int duplicatesRemoved = 0;
+    int bytesSaved = 0;
+    int skippedCount = 0;
+    final Set<int> notesRewritten = <int>{};
+    final Set<String> modelsRewritten = <String>{};
+
+    for (final MediaDedupGroup group in groups) {
+      for (final String dupe in group.duplicates) {
+        // 保守原则：任何一处引用改不干净就不删这份副本（宁可留着）。
+        bool cleanupOk = true;
+
+        // a) 笔记字段引用：全库文本检索该文件名 → 边界安全改写。
+        final List<int> ids = await service.findNotesByQuery('"$dupe"');
+        for (final int id in ids) {
+          final Map<String, String>? fields = await service.notesInfo(id);
+          if (fields == null) {
+            cleanupOk = false;
+            continue;
+          }
+          final Map<String, String> changed = <String, String>{};
+          final Map<String, String> before = <String, String>{};
+          fields.forEach((String key, String value) {
+            final String rewritten =
+                rewriteMediaReferences(value, dupe, group.canonical);
+            if (rewritten != value) {
+              changed[key] = rewritten;
+              before[key] = value;
+            }
+          });
+          if (changed.isEmpty) {
+            // 检索命中但边界改写不动它：引用形态无法识别（或恰是别的更长
+            // 文件名的子串，检索分不出来）——不删这份副本。
+            cleanupOk = false;
+            continue;
+          }
+          if (!dryRun) {
+            await onJournal?.call(<String, dynamic>{
+              'type': 'noteFields',
+              'noteId': id,
+              'from': dupe,
+              'to': group.canonical,
+              'before': before,
+            });
+            await service.updateNoteFields(id, changed);
+          }
+          notesRewritten.add(id);
+        }
+
+        // b) 卡模板/styling 引用（模板资产 js/css/字体的「重复代码」走这里）。
+        for (final String m in modelNames) {
+          final List<AnkiCardTemplate> tmpls = modelTemplates[m]!;
+          bool templatesChanged = false;
+          final List<AnkiCardTemplate> newTmpls =
+              tmpls.map((AnkiCardTemplate tpl) {
+            final String front =
+                rewriteMediaReferences(tpl.front, dupe, group.canonical);
+            final String back =
+                rewriteMediaReferences(tpl.back, dupe, group.canonical);
+            if (front != tpl.front || back != tpl.back) {
+              templatesChanged = true;
+            }
+            return AnkiCardTemplate(name: tpl.name, front: front, back: back);
+          }).toList();
+          final String css = modelCss[m]!;
+          final String newCss =
+              rewriteMediaReferences(css, dupe, group.canonical);
+          final bool cssChanged = newCss != css;
+          if (!templatesChanged && !cssChanged) continue;
+          if (!dryRun) {
+            await onJournal?.call(<String, dynamic>{
+              'type': 'model',
+              'model': m,
+              'from': dupe,
+              'to': group.canonical,
+            });
+            if (templatesChanged) {
+              await service.updateModelTemplates(m, newTmpls);
+            }
+            if (cssChanged) await service.updateModelStyling(m, newCss);
+          }
+          modelTemplates[m] = newTmpls;
+          modelCss[m] = newCss;
+          modelsRewritten.add(m);
+        }
+
+        // c) 复核干净才删；dryRun 只计数。
+        if (dryRun) {
+          if (!cleanupOk) {
+            skippedCount++;
+            continue;
+          }
+        } else {
+          final List<int> remaining = await service.findNotesByQuery('"$dupe"');
+          if (!cleanupOk || remaining.isNotEmpty) {
+            skippedCount++;
+            continue;
+          }
+          await onJournal?.call(<String, dynamic>{
+            'type': 'delete',
+            'filename': dupe,
+            'canonical': group.canonical,
+            'bytes': sizes[dupe],
+          });
+          await service.deleteMediaFile(dupe);
+        }
+        duplicatesRemoved++;
+        bytesSaved += sizes[dupe] ?? 0;
+      }
+    }
+
+    return AnkiMediaDedupReport(
+      dryRun: dryRun,
+      groupCount: groups.length,
+      duplicatesRemoved: duplicatesRemoved,
+      bytesSaved: bytesSaved,
+      notesRewritten: notesRewritten.length,
+      modelsRewritten: modelsRewritten.length,
+      skipped: skippedCount,
+    );
   }
 
   Future<String?> _storeLocalMedia(

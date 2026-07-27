@@ -172,6 +172,8 @@ class AnkiSettings {
     this.lapisFontScalePercent = 100,
     this.lapisCustomCss = '',
     this.lapisAppliedCssSha,
+    this.mediaDedupAutoEnabled = true,
+    this.lastMediaDedupAtMs,
   });
 
   factory AnkiSettings.fromJson(Map<String, dynamic> json) => AnkiSettings(
@@ -205,6 +207,8 @@ class AnkiSettings {
         lapisFontScalePercent: json['lapisFontScalePercent'] as int? ?? 100,
         lapisCustomCss: json['lapisCustomCss'] as String? ?? '',
         lapisAppliedCssSha: json['lapisAppliedCssSha'] as String?,
+        mediaDedupAutoEnabled: json['mediaDedupAutoEnabled'] as bool? ?? true,
+        lastMediaDedupAtMs: json['lastMediaDedupAtMs'] as int?,
       );
   final int? selectedDeckId;
   final String? selectedDeckName;
@@ -248,6 +252,13 @@ class AnkiSettings {
   /// 与「被用户手改（不得静默覆盖）」。
   final String? lapisAppliedCssSha;
 
+  /// 是否启用每 7 天一次的媒体字节级去重（只删字节完全相同的多余副本，
+  /// 引用改写干净后才删；绝不重编码）。
+  final bool mediaDedupAutoEnabled;
+
+  /// 上次媒体去重完成时刻（epoch ms）。null = 从未跑过。
+  final int? lastMediaDedupAtMs;
+
   bool get isConfigured => selectedDeckId != null && selectedNoteTypeId != null;
 
   AnkiNoteType? get selectedNoteType =>
@@ -280,6 +291,8 @@ class AnkiSettings {
     String? lapisCustomCss,
     String? lapisAppliedCssSha,
     bool clearLapisAppliedCssSha = false,
+    bool? mediaDedupAutoEnabled,
+    int? lastMediaDedupAtMs,
   }) =>
       AnkiSettings(
         selectedDeckId: selectedDeckId ?? this.selectedDeckId,
@@ -308,6 +321,9 @@ class AnkiSettings {
         lapisAppliedCssSha: clearLapisAppliedCssSha
             ? null
             : (lapisAppliedCssSha ?? this.lapisAppliedCssSha),
+        mediaDedupAutoEnabled:
+            mediaDedupAutoEnabled ?? this.mediaDedupAutoEnabled,
+        lastMediaDedupAtMs: lastMediaDedupAtMs ?? this.lastMediaDedupAtMs,
       );
 
   Map<String, dynamic> toJson() => {
@@ -333,6 +349,8 @@ class AnkiSettings {
         'lapisFontScalePercent': lapisFontScalePercent,
         'lapisCustomCss': lapisCustomCss,
         'lapisAppliedCssSha': lapisAppliedCssSha,
+        'mediaDedupAutoEnabled': mediaDedupAutoEnabled,
+        'lastMediaDedupAtMs': lastMediaDedupAtMs,
       };
 }
 
