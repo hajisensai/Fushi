@@ -19,6 +19,7 @@
   - 故映射表**刻意不带 `addedAt`**（书/视频那一列是 LWW-element-set 的 add 时钟，只为同步裁决而存在），`BookTagMembershipTombstones` 也不覆盖游戏。范式对齐 `CollectionTagMappings`（同样无时钟无墓碑）。
   - 全量备份恢复走整库文件拷贝，本表随之原样还原，无需额外工作。
   - 将来若真要同步游戏标签，先决条件是先给游戏一个跨设备稳定身份（内容派生 key）；在那之前加时钟只会让人误以为它在同步。
+- **⚠️ schema 版本撞号（落地前必读）**：PR#451（`codex/media-auto-tracking`，Bangumi 自动记录，同为 draft）**也占了 schemaVersion 57**，其 `if (from < 57)` 建 `media_tracking_mappings` / `media_tracking_outbox`。两套迁移互不相干（不同表、无共用列），仅版本号需串行化：谁先合谁占 57，**后落地的一方改成 58**（`schemaVersion => 58` + `if (from < 58)` + 各迁移测试里的版本字面量）。
 - **备注**：
   - 本条**刻意不与** [BUG-1111](BUG-1111-dashboard-continue-recent-missing-games.md) / [BUG-1112](BUG-1112-activity-timeline-game-no-cover.md) 同 PR：那两条是纯展示层收口（无 schema 变更），本条要动 schema + 迁移 + 同步语义，混在一起会让一个 PR 同时承担「不可逆的 DB 迁移」和「UI 改动」两种风险。
   - 游戏有**两套标签**，本次刻意不合并：① 用户标签（本 BUG，共享 `BookTags` 彩色标签池，与书/字幕书/视频/合集同一份）；② 元数据标签（bgm/vndb 刮削来的作品标签，存 `GalgameSources.dataJson` + `Galgames.customDataJson`，由库页筛选面板按名筛）。后者动辄上百个且随刮削变动，塞进共享池会污染书/视频的手工标签。两条轴 AND 生效。
