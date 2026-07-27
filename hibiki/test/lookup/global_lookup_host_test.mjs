@@ -124,6 +124,12 @@ function makeElement(tag) {
       // layout px -> host CSS px, so the stub must expose a real style bag.
       documentElement: { scrollHeight: 0, style: { zoom: '' } },
       _hasGlossary: false,
+      // BUG-1166 W1 — 记录 host 派发进本帧的合成 WheelEvent，好断言修饰键真的抵达。
+      _dispatched: [],
+      dispatchEvent(evt) {
+        el.contentDocument._dispatched.push(evt);
+        return true;
+      },
       querySelector(sel) {
         if (sel === '.glossary-content') {
           return el.contentDocument._hasGlossary ? { tagName: 'DIV' } : null;
@@ -2170,6 +2176,54 @@ function historyOverlayIn(shell) {
   host.measureAndReport();
   assert.strictEqual(lastBox().height, 200,
     'BUG-1139 ③: 非法 zoom 回落 1（绝不产生 0/NaN 几何）');
+}
+
+// W1 (BUG-1166) — handleGlobalWheel 把 Ctrl/Alt 作为**显式 flag** 派发进命中的那张
+// 卡片；落在卡片外不派发。这是本修复的行为级证据：修饰键过不了「合成 WM_MOUSEWHEEL」
+// 那道边界（Chromium 读 GetKeyState），所以必须以数据形式抵达 JS 层。
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 100, height: 100 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 300, top: 0, width: 100, height: 100 }, settingsJs: '' },
+    ],
+  });
+  const iframeOf = (idx) => shellsOf(document)[idx].children.find((c) => c.tagName === 'IFRAME');
+
+  // Ctrl+滚轮上滚落在 frame-0 上。
+  const hit = host.handleGlobalWheel(50, 50, -120, true, false, false);
+  assert.strictEqual(hit, true, 'BUG-1166: 落在卡片上的滚轮被派发');
+  const got = iframeOf(0).contentDocument._dispatched;
+  assert.strictEqual(got.length, 1, 'BUG-1166: 命中帧收到恰好一条 wheel');
+  assert.strictEqual(got[0].type, 'wheel', 'BUG-1166: 事件类型是 wheel');
+  assert.strictEqual(got[0].ctrlKey, true,
+    'BUG-1166: ctrlKey 必须显式带到 JS —— 丢了它 PR#462 的 Ctrl+滚轮缩放就静默失效');
+  assert.strictEqual(got[0].altKey, false, 'BUG-1166: 未按 Alt 时 altKey 为 false');
+  assert.strictEqual(got[0].deltaY, -120,
+    'BUG-1166: deltaY 用 DOM 约定（上滚为负），与真滚轮同构');
+  assert.strictEqual(got[0].bubbles, true,
+    'BUG-1166: 必须冒泡 —— 缩放监听挂在 window 上，不冒泡就收不到');
+  assert.strictEqual(got[0].cancelable, true,
+    'BUG-1166: 必须可取消 —— 下游要 preventDefault');
+  assert.strictEqual(iframeOf(1).contentDocument._dispatched.length, 0,
+    'BUG-1166: 没被命中的帧不该收到');
+
+  // Alt+滚轮下滚落在 frame-1 上。
+  const hit2 = host.handleGlobalWheel(350, 50, 120, false, true, false);
+  assert.strictEqual(hit2, true, 'BUG-1166: 第二张卡也能命中');
+  const got2 = iframeOf(1).contentDocument._dispatched;
+  assert.strictEqual(got2.length, 1, 'BUG-1166: 只派发给命中的那一帧');
+  assert.strictEqual(got2[0].altKey, true,
+    'BUG-1166: altKey 必须显式带到 JS —— WM_MOUSEWHEEL 结构上没有 ALT 位，'
+    + '不显式带就永远丢，Alt+滚轮换词条会静默退化成普通滚动');
+  assert.strictEqual(got2[0].deltaY, 120, 'BUG-1166: 下滚为正');
+
+  // 卡片之间的缝隙：不派发（那儿用户看到的是底下的应用/游戏）。
+  const miss = host.handleGlobalWheel(200, 50, -120, true, false, false);
+  assert.strictEqual(miss, false, 'BUG-1166: 卡片外不派发');
+  assert.strictEqual(iframeOf(0).contentDocument._dispatched.length, 1,
+    'BUG-1166: 缝隙滚轮不该误投给任何一帧');
 }
 
 console.log('global_lookup_host_test: PASS');

@@ -203,6 +203,90 @@ void GlobalLookupWindow::HandleGlobalClick(POINT screen_pt,
   }
 }
 
+// BUG-1166 — 钩子吞下来的滚轮，在窗口线程还原成一条真滚轮消息交给 WebView2。
+//
+// 为什么不能把它 PostMessage 回 hwnd_ 了事：windowed 模式下 WebView2 的输入落在
+// **子 HWND** 上，本窗的 WndProc 对 WM_MOUSEWHEEL 只会走 DefWindowProc（顶层窗
+// 的 DefWindowProc 不往下传），卡片一样滚不动。所以按模式各走各的既有输入路。
+void GlobalLookupWindow::HandleGlobalWheel(POINT screen_pt,
+                                           const hibiki::MouseHookWheel& wheel) {
+  if (!IsShowing() || hwnd_ == nullptr || wheel.delta == 0) return;
+  const UINT message = wheel.horizontal ? WM_MOUSEHWHEEL : WM_MOUSEWHEEL;
+  // 与真滚轮消息同构：wparam 高字 = delta / 低字 = MK_* 修饰键；
+  // lparam = **屏幕**坐标（WM_MOUSEWHEEL 的契约，ForwardCompositionMouse 也按此
+  // 做 ScreenToClient）。
+  const WPARAM wparam = MAKEWPARAM(static_cast<WORD>(wheel.keys),
+                                   static_cast<WORD>(wheel.delta));
+  const LPARAM lparam = MAKELPARAM(static_cast<WORD>(screen_pt.x),
+                                   static_cast<WORD>(screen_pt.y));
+  // ── 分流点（复审推翻原始假设后的根因修复）──────────────────────────────
+  // 带 Ctrl / Alt 的滚轮**不能**走下面任何一条「合成 WM_MOUSEWHEEL」的路：
+  // WebView2/Chromium 取修饰键读的是 GetKeyState 而非 wparam 的 MK_ 位，而合成消息
+  // 不更新键状态表（详见 low_level_mouse_hook.h 的 MouseHookWheel 注释）。结果就是
+  // e.ctrlKey / e.altKey 恒 false —— PR#462（BUG-1139）刚修好的 Ctrl+滚轮缩放会
+  // 静默退化成普通滚动，Alt+滚轮换词条（弹窗 WheelBinding）更是结构上带不过去。
+  //
+  // 所以把修饰键当**数据**显式送进 web 层，由已有的 JS 监听按用户绑定自行判定：
+  //   Ctrl → _globalLookupZoomWheelJs → callHandler('popupZoomFontStep')
+  //          → jsMessage → Dart maybeHandleOverlayZoomFontStep（PR#462 原链路整条复用）
+  //   Alt  → popup.js popupEntryWheelAction（绑定真值 __hoshiEntryWheelBindings 在 JS，
+  //          用户可改键位，C++ 不得复制这份语义 —— 这里只做传输，不做策略）
+  // 裸滚轮 / 仅 Shift 不绕道：那条原生路本来就是对的，绕道反而丢掉浏览器自己的
+  // 平滑滚动与 Shift→deltaX 横滚转换。
+  if (wheel.ctrl || wheel.alt) {
+    ForwardGlobalWheelToHost(screen_pt, wheel);
+    return;
+  }
+  if (composition_active_) {
+    ForwardCompositionMouse(message, wparam, lparam);
+    return;
+  }
+  // windowed：投给光标真正压着的那个窗（= 没被吞时系统本来会投的那个）。
+  // WindowFromPoint 认不出来（跨进程子窗层级异常）就退回第一个子窗，仍认不出
+  // 就投给本窗——最坏情况是这一格滚轮被丢掉，但游戏依旧收不到，不会回退成穿透。
+  HWND hit = WindowFromPoint(screen_pt);
+  if (hit == nullptr || (hit != hwnd_ && !IsChild(hwnd_, hit))) {
+    hit = GetWindow(hwnd_, GW_CHILD);
+  }
+  if (hit == nullptr) hit = hwnd_;
+  PostMessage(hit, message, wparam, lparam);
+}
+
+// BUG-1166 — 带修饰键的滚轮：把「坐标 + 方向 + 修饰键」作为**数据**交给 host JS，
+// 由 host 派发一条带显式 ctrlKey/altKey/shiftKey 的 WheelEvent 到命中的那张卡片。
+//
+// 与 ForwardGlobalClickToHost 同一条既有边界约定（屏幕物理 px → 窗口内 CSS px），
+// 复用同一套 dpr 换算：host 侧的几何真值全程是 CSS px。
+void GlobalLookupWindow::ForwardGlobalWheelToHost(
+    POINT screen_pt, const hibiki::MouseHookWheel& wheel) {
+  if (webview_ == nullptr || hwnd_ == nullptr || wheel.delta == 0) {
+    return;
+  }
+  RECT rc;
+  GetWindowRect(hwnd_, &rc);
+  UINT dpi = GetDpiForWindow(hwnd_);
+  if (dpi == 0) {
+    dpi = 96;
+  }
+  const double dpr = static_cast<double>(dpi) / 96.0;
+  const double local_x = static_cast<double>(screen_pt.x - rc.left) / dpr;
+  const double local_y = static_cast<double>(screen_pt.y - rc.top) / dpr;
+  // Win32 delta 与 DOM delta **方向相反**：WM_MOUSEWHEEL 正值 = 向前/向上滚，
+  // 而 DOM 的 WheelEvent.deltaY 向上滚是负值。在这里一次转成 DOM 约定，
+  // 让 JS 侧（popupEntryWheelAction 的 deltaY 符号、缩放的 deltaY<0 = 放大）
+  // 与真滚轮完全同构，JS 不需要知道自己收的是合成事件。
+  const double dom_delta_y = -static_cast<double>(wheel.delta);
+  std::wstring script =
+      L"window.__globalLookupHost && "
+      L"window.__globalLookupHost.handleGlobalWheel(" +
+      std::to_wstring(local_x) + L", " + std::to_wstring(local_y) + L", " +
+      std::to_wstring(dom_delta_y) + L", " +
+      std::wstring(wheel.ctrl ? L"true" : L"false") + L", " +
+      std::wstring(wheel.alt ? L"true" : L"false") + L", " +
+      std::wstring((wheel.keys & MK_SHIFT) != 0 ? L"true" : L"false") + L");";
+  webview_->ExecuteScript(script.c_str(), nullptr);
+}
+
 GlobalLookupWindow::GlobalLookupWindow() = default;
 
 GlobalLookupWindow::~GlobalLookupWindow() {
@@ -1873,6 +1957,12 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       // 落在本窗口 rect 内）。真正的决策（关闭 / 转发给 host）在这里做，钩子线程
       // 只搬坐标：那条线程必须随时能返回，否则整个系统的鼠标输入都跟着它排队。
       HandleGlobalClick(hibiki::UnpackMouseHookPoint(wparam), lparam != 0);
+      return 0;
+    case hibiki::kLowLevelMouseWheelMessage:
+      // BUG-1166 — 钩子线程已把这一格滚轮从输入流里吞掉（游戏收不到了），这里负责
+      // 让卡片照常滚。同样是钩子线程只搬数据、窗口线程做事。
+      HandleGlobalWheel(hibiki::UnpackMouseHookPoint(wparam),
+                        hibiki::UnpackMouseHookWheel(lparam));
       return 0;
     case WM_SIZE:
       if (controller_) {

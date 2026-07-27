@@ -38,6 +38,9 @@
 #include <string>
 #include <vector>
 
+// BUG-1166 — 滚轮载荷类型（hibiki::MouseHookWheel）来自钩子线程的消息契约。
+#include "low_level_mouse_hook.h"
+
 class GlobalLookupWindow {
  public:
   // Resolves the bytes for a custom-scheme resource request (image://...).
@@ -215,6 +218,18 @@ class GlobalLookupWindow {
   // 落在窗口外 -> 关闭浮窗；落在窗口内 -> 交给 web host 自己命中测试。跑在窗口线程，
   // 钩子线程只搬坐标，不碰任何 C++ 对象。
   void HandleGlobalClick(POINT screen_pt, bool inside_window);
+  // BUG-1166 — 处理钩子线程投递过来的「落在卡片上的滚轮」（钩子已把它从输入流里
+  // 吞掉，见 low_level_mouse_hook.h）。这里把它还原成一条真 WM_MOUSEWHEEL 交给
+  // WebView2：composition 实例经 SendMouseInput，windowed 实例投给光标压着的
+  // WebView2 子窗——两条路都是各自模式下 WebView 本来就在收输入的那条路。
+  void HandleGlobalWheel(POINT screen_pt, const hibiki::MouseHookWheel& wheel);
+  // BUG-1166 — 带 Ctrl/Alt 的滚轮的落地点。修饰键过不了「合成 WM_MOUSEWHEEL」那道
+  // 边界（Chromium 读 GetKeyState，合成消息不更新键状态表），所以把修饰键当数据交给
+  // host JS 合成一条带显式 flag 的 WheelEvent，交由既有的 JS 监听按**用户绑定**判定
+  // （Ctrl→缩放走 popupZoomFontStep 回 Dart；Alt→换词条留在 popup.js）。
+  // C++ 只做传输，不复制任何绑定语义。
+  void ForwardGlobalWheelToHost(POINT screen_pt,
+                                const hibiki::MouseHookWheel& wheel);
   LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
   int OffscreenX() const;
   // TODO-867 P2: round the window corners to match popup.css's card radius.
