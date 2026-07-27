@@ -79,9 +79,9 @@ void main() {
       expect(t.fastDist, 11);
     });
 
-    test('tapSlopPx is a fixed 28 and NOT scaled by sensitivity', () {
-      // 查词半径与翻页距离阈值解耦：无论灵敏度怎么调，原地轻点判定恒为 28px。
-      expect(ReaderSettings.tapSlopPx, 28);
+    test('tapSlopPx is a fixed 10 and NOT scaled by sensitivity', () {
+      // 查词轨迹半径与翻页距离阈值解耦：无论灵敏度怎么调，原地轻点判定恒为 10px。
+      expect(ReaderSettings.tapSlopPx, 10);
     });
   });
 }

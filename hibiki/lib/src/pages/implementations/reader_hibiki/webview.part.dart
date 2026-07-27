@@ -464,7 +464,8 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         ReaderSettings.swipePageTurnDistThresholds(s.swipePageTurnSensitivity);
     final int swipeDistThreshold = swipeThresholds.dist;
     final int swipeFastDistThreshold = swipeThresholds.fastDist;
-    // 查词「原地轻点」半径（固定，不随灵敏度缩放）：与翻页距离阈值解耦，杜绝短滑误查词。
+    // 查词「原地轻点」的完整触摸轨迹半径（固定，不随灵敏度缩放）：与翻页距离阈值
+    // 解耦；任一 move 越界后本次手势永久归为 pan，不能因松手回到起点又变回查词 tap。
     const int tapSlop = ReaderSettings.tapSlopPx;
     // BUG-239: 连续模式靠原生滚动（滚动轴 = 书写轴），章间切换走边界手势 IIFE。
     // _gestureEnd 的 onSwipe（90% 整屏跳页）只在分页模式有意义；连续模式回传会与
@@ -568,6 +569,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   var hoshiVnClickAdvance = $vnClickAdvance;
   window.__hoverAutoLookup = $hoverAutoLookup;
   var startX = 0, startY = 0, startTime = 0, hasStart = false;
+  var gestureExceededTapSlop = false;
   var imageLongPressTimer = null;
   var imageLongPressConsumed = false;
   var imageLongPressStartX = 0, imageLongPressStartY = 0;
@@ -579,10 +581,24 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   var _hoshiReaderMouseDragPageDirection = null;
   var _hoshiReaderMouseDragSwipeSent = false;
   var _hoshiReaderMouseDragIgnoreTouchEnd = false;
-  function _gestureStart(x, y) { hasStart = true; startX = x; startY = y; startTime = Date.now();
+  function _gestureStart(x, y) {
+    hasStart = true;
+    startX = x;
+    startY = y;
+    startTime = Date.now();
+    gestureExceededTapSlop = false;
     // TODO-1317: a fresh gesture (touch-start or mouse pointerdown) never
     // inherits a prior drag-select's flag; the drag-select timer re-arms it.
-    window.__hoshiTextSelectDragActive = false; }
+    window.__hoshiTextSelectDragActive = false;
+  }
+  function _gestureTrackMovement(x, y) {
+    if (!hasStart || gestureExceededTapSlop) return;
+    var tapDx = x - startX;
+    var tapDy = y - startY;
+    if ((tapDx * tapDx + tapDy * tapDy) > ($tapSlop * $tapSlop)) {
+      gestureExceededTapSlop = true;
+    }
+  }
   // TODO-909 M0: a VN tap is "blank" when the user tapped margin/gap rather than
   // a word (blank -> paginate forward; word -> onTap lookup).
   // BUG-748: caretPositionFromPoint/caretRangeFromPoint CLAMP to the nearest
@@ -842,6 +858,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       if (e && e.preventDefault) e.preventDefault();
       return;
     }
+    // BUG-iPhone 滑动误查词：必须在 hasStart 清掉前记录松手点，并结合每次
+    // touchmove/pointermove 留下的最大轨迹位移。只看最终 dx/dy 会把“已滚动后回到
+    // 起点附近”的手势重新判成 tap。
+    _gestureTrackMovement(x, y);
     hasStart = false;
     var dx = x - startX;
     var dy = y - startY;
@@ -858,13 +878,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       } else {
         window.flutter_inappwebview.callHandler('onSwipe', 'right');
       }
-    } else if (absDx <= $tapSlop && absDy <= $tapSlop) {
+    } else if (!gestureExceededTapSlop) {
       // BUG-手机翻短了会查词：查词框与翻页距离阈值**解耦**。旧判据把上界取成
       // swipe 距离阈值（72px），于是任何够不到翻页阈值的横滑（如 50px）都落进这里被
-      // 当成点词。改成固定的「原地轻点」半径 $tapSlop（28px，两轴各 ≤）：只有真正
-      // 原地轻点才查词；横向主导、超出此半径却够不到翻页阈值的短滑落到本 if 之外
-      // → **空操作**（既不翻页也不查词），彻底切断短滑误查词。TODO-971 真正治好慢
-      // 点词的是去掉 500ms 时限（保留），不是把框放大到 72（那步是副作用，现回收）。
+      // 当成点词。现在只允许完整触摸轨迹始终停在 $tapSlop px 径向半径内：正常手指
+      // 抖动仍是 tap；任何 touchmove/pointermove 曾越界都永久归为 pan，即使松手回到
+      // 起点附近也不查词。横向主导、够不到翻页阈值的短滑则落到本 if 之外 → 空操作。
       var tapEl = document.elementFromPoint(x, y);
       if (_hoshiRevealBlurredImage(tapEl)) {
         if (e && e.preventDefault) e.preventDefault();
@@ -952,8 +971,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     }, 550);
   }, {passive: true});
   document.addEventListener('touchmove', function(e) {
-    if (!imageLongPressTimer || !e.touches || !e.touches.length) return;
+    if (!e.touches || !e.touches.length) return;
     var t = e.touches[0];
+    // WKWebView 的 PointerEvent 序列不可作为唯一真相；直接从 TouchEvent 记录完整
+    // 轨迹，确保连续滚动/短促 flick 都会取消 tap 查词候选。
+    _gestureTrackMovement(t.clientX, t.clientY);
+    if (!imageLongPressTimer) return;
     var dx = t.clientX - imageLongPressStartX;
     var dy = t.clientY - imageLongPressStartY;
     if ((dx * dx + dy * dy) > 144) clearImageLongPressTimer();
@@ -985,6 +1008,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     _gestureStart(e.clientX, e.clientY);
   }, {passive: true});
   document.addEventListener('pointermove', function(e) {
+    _gestureTrackMovement(e.clientX, e.clientY);
     // TODO-553: pointermove 的 button 恒 -1，不能用 _hoshiReaderPointerEngages
     // （它查 button===0）；分页模式触摸只需在此直接放行回 touch swipe 路径。
     if (e.pointerType === 'touch' && !hoshiContinuousMode) return;
