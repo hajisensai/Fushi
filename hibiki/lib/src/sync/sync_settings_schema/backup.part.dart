@@ -442,22 +442,34 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Row(
+                  // BUG-1177：计数 + 全选/全不选原先是 Row + Spacer，在窄屏对话框里
+                  // （文案更长的语言、四位数计数）三者相加超过可用宽 → RenderFlex
+                  // overflow。改 Wrap：放得下仍是「计数左、按钮右」，放不下就换行。
+                  Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
                     children: <Widget>[
                       Text('${sel.length} / ${keys.length}',
                           style: Theme.of(ctx).textTheme.bodySmall),
-                      const Spacer(),
-                      adaptiveDialogAction(
-                        context: ctx,
-                        onPressed: () => setLocal(() => sel
-                          ..clear()
-                          ..addAll(keys)),
-                        child: Text(t.backup_export_select_all),
-                      ),
-                      adaptiveDialogAction(
-                        context: ctx,
-                        onPressed: () => setLocal(sel.clear),
-                        child: Text(t.backup_export_select_none),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: <Widget>[
+                          adaptiveDialogAction(
+                            context: ctx,
+                            onPressed: () => setLocal(() => sel
+                              ..clear()
+                              ..addAll(keys)),
+                            child: Text(t.backup_export_select_all),
+                          ),
+                          adaptiveDialogAction(
+                            context: ctx,
+                            onPressed: () => setLocal(sel.clear),
+                            child: Text(t.backup_export_select_none),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -557,22 +569,34 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Row(
+                  // BUG-1177：计数 + 全选/全不选原先是 Row + Spacer，在窄屏对话框里
+                  // （文案更长的语言、四位数计数）三者相加超过可用宽 → RenderFlex
+                  // overflow。改 Wrap：放得下仍是「计数左、按钮右」，放不下就换行。
+                  Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 4,
                     children: <Widget>[
                       Text('${sel.length} / ${keys.length}',
                           style: Theme.of(ctx).textTheme.bodySmall),
-                      const Spacer(),
-                      adaptiveDialogAction(
-                        context: ctx,
-                        onPressed: () => setLocal(() => sel
-                          ..clear()
-                          ..addAll(keys)),
-                        child: Text(t.backup_export_select_all),
-                      ),
-                      adaptiveDialogAction(
-                        context: ctx,
-                        onPressed: () => setLocal(sel.clear),
-                        child: Text(t.backup_export_select_none),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: <Widget>[
+                          adaptiveDialogAction(
+                            context: ctx,
+                            onPressed: () => setLocal(() => sel
+                              ..clear()
+                              ..addAll(keys)),
+                            child: Text(t.backup_export_select_all),
+                          ),
+                          adaptiveDialogAction(
+                            context: ctx,
+                            onPressed: () => setLocal(sel.clear),
+                            child: Text(t.backup_export_select_none),
+                          ),
+                        ],
                       ),
                     ],
                   ),

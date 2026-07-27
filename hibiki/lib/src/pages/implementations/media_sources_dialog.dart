@@ -146,14 +146,19 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog>
           // （local_audio_sources_dialog）一致修法——此前独漏此层。
           child: SingleChildScrollView(child: _buildBody(tokens)),
         ),
-        footer: Row(
+        // BUG-1177：这是全仓唯一一个还用 Row 的 [HibikiModalSheetFrame] 页脚（其余
+        // 十几处都已是 Wrap），窄屏对话框里两个按钮相加就会溢出。与其余页脚对齐。
+        footer: Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 4,
           children: <Widget>[
             adaptiveDialogAction(
               context: context,
               onPressed: _addSource,
               child: Text(t.media_source_add),
             ),
-            const Spacer(),
             adaptiveDialogAction(
               context: context,
               isDefaultAction: true,
@@ -354,7 +359,9 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog>
               children: <Widget>[
                 const Icon(Icons.folder_outlined),
                 const SizedBox(width: 16),
-                Text(t.media_source_add_local_folder),
+                // BUG-1177：紧邻的「网络来源」选项已用 Expanded，这条漏了——窄屏 +
+                // 长本地化文案时裸 Text 直接把 Row 撑溢出。
+                Expanded(child: Text(t.media_source_add_local_folder)),
               ],
             ),
           ),

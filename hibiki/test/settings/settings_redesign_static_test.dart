@@ -524,7 +524,15 @@ void main() {
     expect(shared, contains('kSettingsRowSubtitleMaxLines'));
     expect(shared,
         contains('maxLines: titleMaxLines ?? kSettingsRowTitleMaxLines'));
-    expect(shared, contains('maxLines: kSettingsRowSubtitleMaxLines'));
+    // BUG-1177：说明文字（subtitle）**不再**硬钳 kSettingsRowSubtitleMaxLines。
+    // 旧契约是「一律 3 行 + ellipsis」，窄屏上把说明尾部（路径、警告、生效条件）
+    // 直接吃掉；设置行只有 minHeight、行高自由，这个上限纯属自伤。新契约：默认
+    // 不限行数，调用点需要压缩时显式传 subtitleMaxLines（此时该常量仍是推荐值）。
+    expect(shared, contains('maxLines: subtitleMaxLines'),
+        reason: 'subtitle line count must come from the opt-in override, not a '
+            'hard-coded clamp that truncates long help text on narrow screens');
+    expect(shared, isNot(contains('maxLines: kSettingsRowSubtitleMaxLines')),
+        reason: 'the old unconditional 3-line clamp must stay gone (BUG-1177)');
     expect(shared, contains('kSettingsPickerDefaultWidth'));
     expect(shared, contains('kSettingsPickerMinInlineWidth'));
     expect(shared, contains('trailingFlexible: !cupertino && !controlBelow'));

@@ -1045,16 +1045,21 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
             Text(t.sync_server_token,
                 style: Theme.of(context).textTheme.labelSmall),
             const SizedBox(height: 4),
+            // BUG-1177：令牌是等宽长串，原先硬钳 2 行且无 ellipsis —— 窄屏上尾部被
+            // 直接切掉且毫无提示。令牌必须整串可见（用户要照着输/核对），去掉行数上限。
             SelectableText(
               _token ?? '',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     fontFamily: 'monospace',
                   ),
-              maxLines: 2,
             ),
             const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            // BUG-1177：两个 icon+label 按钮此前用 Row，窄屏（尤其英文/德文文案更长）
+            // 合计宽度超过设置面板宽 → 真 RenderFlex overflow。改 Wrap 自然换行。
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 4,
               children: <Widget>[
                 TextButton.icon(
                   onPressed: () {
@@ -1066,7 +1071,6 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                   icon: const Icon(Icons.copy, size: 18),
                   label: Text(t.sync_server_copy_token),
                 ),
-                const SizedBox(width: 8),
                 TextButton.icon(
                   onPressed: _regenerateToken,
                   icon: const Icon(Icons.refresh, size: 18),

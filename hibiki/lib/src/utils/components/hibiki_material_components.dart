@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -1085,10 +1087,7 @@ class HibikiDialogFrame extends StatelessWidget {
     super.key,
     this.maxWidth = 420,
     this.maxHeightFactor = 0.82,
-    this.insetPadding = const EdgeInsets.symmetric(
-      horizontal: 40,
-      vertical: 24,
-    ),
+    this.insetPadding,
     this.padding = EdgeInsets.zero,
     this.scrollable = true,
   });
@@ -1096,21 +1095,40 @@ class HibikiDialogFrame extends StatelessWidget {
   final Widget child;
   final double maxWidth;
   final double maxHeightFactor;
-  final EdgeInsets insetPadding;
+
+  /// 对话框与屏幕边缘的留白。null = 按屏宽自适应（见 [_resolveInsetPadding]）。
+  ///
+  /// BUG-1177：此前默认硬编码 `horizontal: 40`。窄屏上这 80px 是纯损失——320dp 的
+  /// 手机上对话框正文只剩 240px，再扣掉 [HibikiModalSheetFrame] 的头部内边距和
+  /// 52px 的图标徽标，标题只剩约 144px，于是几乎所有对话框标题都被省略成「…」。
+  /// 40 这个值只对宽屏合理（且宽屏本来就被 [maxWidth] 420 兜住，边距几乎不起作用），
+  /// 真正需要它自适应的恰恰是窄屏。少数已经手动传 `tokens.spacing.card` 绕开该默认
+  /// 值的调用点即是佐证——现在默认值自己就做对了，不必每处再记得覆盖。
+  final EdgeInsets? insetPadding;
   final EdgeInsetsGeometry padding;
   final bool scrollable;
+
+  /// 屏幕越窄，边距越小：320dp 上取 16（与卡片内边距同级），随屏宽线性放大到宽屏
+  /// 的 40 为止。用比例而非断点，避免在某个宽度上突然跳变。
+  EdgeInsets _resolveInsetPadding(double screenWidth) {
+    if (insetPadding != null) return insetPadding!;
+    final double horizontal =
+        screenWidth.isFinite ? (screenWidth * 0.05).clamp(16.0, 40.0) : 40.0;
+    return EdgeInsets.symmetric(horizontal: horizontal, vertical: 24);
+  }
 
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final double screenHeight = MediaQuery.sizeOf(context).height;
+    final Size screenSize = MediaQuery.sizeOf(context);
+    final double screenHeight = screenSize.height;
     final Widget padded = Padding(
       padding: padding,
       child: child,
     );
     return Dialog(
       clipBehavior: Clip.antiAlias,
-      insetPadding: insetPadding,
+      insetPadding: _resolveInsetPadding(screenSize.width),
       shape: RoundedRectangleBorder(borderRadius: tokens.radii.dialogRadius),
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -1777,11 +1795,25 @@ class _HibikiPageHeaderRow extends StatelessWidget {
         }
         children.add(titleChild);
         if (actions != null) {
-          // 动作区可用宽上界：整行宽减去动作前 gap（title [Expanded] 允许被压到 0）。
+          // 动作区可用宽上界：整行宽减去动作前 gap，**再减去留给标题的保底宽**。
           // leading（含右 gap）作为非弹性子项另行占位，不计入此上界——它在 Row 里已被
           // 独立扣除；这里只需保证「gap + 动作区」不超过整行宽即可避免 overflow。
+          //
+          // BUG-1177：原先只保证不 overflow，标题作为 [Expanded] 被允许压到 0。窄屏上
+          // 4~5 个动作按钮就能把标题吃干净——不报错，但页面标题（合集名、书名）彻底
+          // 消失，用户只看到一排图标。动作区本就套着横向滚动视图，被限宽后是「滚动」
+          // 而不是「丢失」；标题被压到 0 才是真的丢失。所以保底给标题留几个字的宽度，
+          // 超出的动作让它滚。保底值随文字缩放走，并且不超过行宽的三分之一，免得动作
+          // 很少时反而挤到按钮。
+          final double titleFloor = constraints.maxWidth.isFinite
+              ? math.min(
+                  96.0 * MediaQuery.textScalerOf(context).scale(1),
+                  constraints.maxWidth / 3,
+                )
+              : 0.0;
           final double maxActionsWidth = constraints.maxWidth.isFinite
-              ? (constraints.maxWidth - actionsGap).clamp(0.0, double.infinity)
+              ? (constraints.maxWidth - actionsGap - titleFloor)
+                  .clamp(0.0, double.infinity)
               : double.infinity;
           // 带 label 的动作是否展开成药丸：按**页头本地可用宽**（而非整窗宽）判定，经
           // UI 缩放还原真实宽后仅 expanded（≥840）才展开。桌面带导航栏 / 分栏时整窗
@@ -1986,35 +2018,59 @@ class HibikiToolScaffold extends StatelessWidget {
               ),
               child: SizedBox(
                 height: 44,
-                child: Row(
-                  children: <Widget>[
-                    if (effectiveLeading != null) ...<Widget>[
-                      SizedBox.square(
-                        dimension: 40,
-                        child: effectiveLeading,
-                      ),
-                      SizedBox(width: tokens.spacing.gap / 2),
-                    ],
-                    Expanded(
-                      child: _buildTitle(tokens),
-                    ),
-                    if (actions.isNotEmpty) ...<Widget>[
-                      SizedBox(width: tokens.spacing.gap / 2),
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: MediaQuery.sizeOf(context).width * 0.48,
-                        ),
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          reverse: true,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: actions,
+                // BUG-1177：动作区上界原先取 `MediaQuery.sizeOf(context).width * 0.48`
+                // ——**整窗宽**。这个脚手架并不总是占满窗口（嵌在分栏/对话框/受限宽面板
+                // 里时更常见），此时 0.48×整窗可以超过本行的真实可用宽，Row 直接右溢出。
+                // 与 [_HibikiPageHeaderRow] 同一类错误，那边已按本地约束修过；这里改用
+                // LayoutBuilder 的局部约束，并同样给标题留保底宽，超出的动作横向滚动。
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final double gapHalf = tokens.spacing.gap / 2;
+                    final double leadingWidth =
+                        effectiveLeading != null ? 40 + gapHalf : 0;
+                    final double titleFloor = constraints.maxWidth.isFinite
+                        ? math.min(
+                            96.0 * MediaQuery.textScalerOf(context).scale(1),
+                            constraints.maxWidth / 3,
+                          )
+                        : 0.0;
+                    final double maxActionsWidth = constraints.maxWidth.isFinite
+                        ? (constraints.maxWidth -
+                                leadingWidth -
+                                gapHalf -
+                                titleFloor)
+                            .clamp(0.0, double.infinity)
+                        : double.infinity;
+                    return Row(
+                      children: <Widget>[
+                        if (effectiveLeading != null) ...<Widget>[
+                          SizedBox.square(
+                            dimension: 40,
+                            child: effectiveLeading,
                           ),
+                          SizedBox(width: gapHalf),
+                        ],
+                        Expanded(
+                          child: _buildTitle(tokens),
                         ),
-                      ),
-                    ],
-                  ],
+                        if (actions.isNotEmpty) ...<Widget>[
+                          SizedBox(width: gapHalf),
+                          ConstrainedBox(
+                            constraints:
+                                BoxConstraints(maxWidth: maxActionsWidth),
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              reverse: true,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: actions,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
