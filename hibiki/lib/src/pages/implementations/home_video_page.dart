@@ -680,30 +680,34 @@ class _HomeVideoPageState extends ConsumerState<HomeVideoPage> {
             : t.batch_delete_mixed_confirm(n: mediaCount, m: collectionCount);
     // 混选/纯解散不删媒体本体 → 不展示同步删除选项（合集解散走合集传播机制）；
     // 纯删媒体才有意义提供「从所有设备删除」。
-    final DeleteScope? scope = collectionCount == 0
-        ? await showDeleteScopeConfirm(context,
-            title: t.dialog_delete, message: message)
-        : await showAppDialog<DeleteScope>(
-            context: context,
-            builder: (BuildContext ctx) => AlertDialog(
-              title: Text(t.dialog_delete),
-              content: Text(message),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, null),
-                  child: Text(t.dialog_cancel),
-                ),
-                TextButton(
-                  onPressed: () =>
-                      Navigator.pop(ctx, DeleteScope.keepLocalOnly),
-                  child: Text(
-                    t.dialog_delete,
-                    style: TextStyle(color: Theme.of(ctx).colorScheme.error),
-                  ),
-                ),
-              ],
+    // 不能写成三元表达式：两分支各含 await 时 analyzer 视互为 async gap，
+    // 两处 context 都报 use_build_context_synchronously（CI warning 致命）。
+    final DeleteScope? scope;
+    if (collectionCount == 0) {
+      scope = await showDeleteScopeConfirm(context,
+          title: t.dialog_delete, message: message);
+    } else {
+      scope = await showAppDialog<DeleteScope>(
+        context: context,
+        builder: (BuildContext ctx) => AlertDialog(
+          title: Text(t.dialog_delete),
+          content: Text(message),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, null),
+              child: Text(t.dialog_cancel),
             ),
-          );
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, DeleteScope.keepLocalOnly),
+              child: Text(
+                t.dialog_delete,
+                style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     if (scope == null || !mounted) return;
 
     final HibikiDatabase db = ref.read(appProvider).database;
