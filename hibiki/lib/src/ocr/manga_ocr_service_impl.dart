@@ -19,6 +19,7 @@
 library;
 
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:isolate';
 
@@ -97,9 +98,12 @@ abstract interface class MangaOcrVolumeJob {
 
 /// 整卷任务 runner 接口（生产 = isolate；测试 = 进程内 fake）。
 abstract interface class MangaOcrVolumeJobRunner {
+  /// [onAcceleration] 在会话建成后回报本次真正生效的执行后端与降级原因；
+  /// 只回报一次（BUG-1163）。
   MangaOcrVolumeJob start(
     MangaOcrVolumeJobRequest request, {
     required void Function(int pagesDone, int pagesTotal) onProgress,
+    void Function(MangaOcrAcceleration acceleration)? onAcceleration,
   });
 }
 
@@ -114,6 +118,11 @@ class _JobProgressMessage {
   const _JobProgressMessage(this.pagesDone, this.pagesTotal);
   final int pagesDone;
   final int pagesTotal;
+}
+
+class _JobAccelerationMessage {
+  const _JobAccelerationMessage(this.acceleration);
+  final MangaOcrAcceleration acceleration;
 }
 
 class _JobDoneMessage {
@@ -168,11 +177,20 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
       BackgroundIsolateBinaryMessenger.ensureInitialized(token);
     }
     final OrtOcrSessionFactory factory = OrtOcrSessionFactory();
+    final List<String> degradeReasons = <String>[];
     bool cudaAvailable = false;
     try {
       cudaAvailable = await factory.isCudaAvailable();
-    } catch (_) {
+    } catch (error) {
+      // BUG-1163：探测失败也是降级（有 N 卡也会退到 DirectML/CPU），
+      // 必须留痕，不能 catch (_) 吞掉。
       cudaAvailable = false;
+      degradeReasons.add('CUDA provider probe failed: $error');
+      developer.log(
+        'manga OCR CUDA provider probe failed; assuming unavailable',
+        name: kOcrLogName,
+        error: error,
+      );
     }
     final OcrPlatform platform = resolveOcrPlatform(Platform.operatingSystem);
     final List<OcrExecutionProvider> detectionProviders =
@@ -188,18 +206,48 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
       cudaAvailable: cudaAvailable,
     );
 
+    OcrExecutionProvider detectionEffective = detectionProviders.first;
+    OcrExecutionProvider recognitionEffective = recognitionProviders.first;
+    void record(String role, OcrProviderResolution resolution) {
+      if (!resolution.didFallBack) return;
+      degradeReasons.add('$role: ${resolution.requested.first.name} -> '
+          '${resolution.effective.name} (${resolution.fallbackReason})');
+    }
+
     detector = TextDetector(await factory.createSession(
       args.modelPaths.detectorPath,
       providers: detectionProviders,
+      onProviderResolved: (OcrProviderResolution resolution) {
+        detectionEffective = resolution.effective;
+        record('detector', resolution);
+      },
     ));
     final OcrSession encoder = await factory.createSession(
       args.modelPaths.encoderPath,
       providers: recognitionProviders,
+      onProviderResolved: (OcrProviderResolution resolution) {
+        recognitionEffective = resolution.effective;
+        record('recognition encoder', resolution);
+      },
     );
     final OcrSession decoder = await factory.createSession(
       args.modelPaths.decoderPath,
       providers: recognitionProviders,
+      onProviderResolved: (OcrProviderResolution resolution) {
+        recognitionEffective = resolution.effective;
+        record('recognition decoder', resolution);
+      },
     );
+    final MangaOcrAcceleration acceleration = MangaOcrAcceleration(
+      detection: detectionEffective,
+      recognition: recognitionEffective,
+      degradeReasons: List<String>.unmodifiable(degradeReasons),
+    );
+    developer.log(
+      'manga OCR volume job acceleration: $acceleration',
+      name: kOcrLogName,
+    );
+    args.events.send(_JobAccelerationMessage(acceleration));
     final MangaOcrTokenizer tokenizer = MangaOcrTokenizer.fromVocabText(
       await File(args.modelPaths.vocabPath).readAsString(),
     );
@@ -242,17 +290,19 @@ class IsolateMangaOcrVolumeJobRunner implements MangaOcrVolumeJobRunner {
   MangaOcrVolumeJob start(
     MangaOcrVolumeJobRequest request, {
     required void Function(int pagesDone, int pagesTotal) onProgress,
+    void Function(MangaOcrAcceleration acceleration)? onAcceleration,
   }) {
-    final _IsolateVolumeJob job = _IsolateVolumeJob(onProgress);
+    final _IsolateVolumeJob job = _IsolateVolumeJob(onProgress, onAcceleration);
     job.spawn(request);
     return job;
   }
 }
 
 class _IsolateVolumeJob implements MangaOcrVolumeJob {
-  _IsolateVolumeJob(this._onProgress);
+  _IsolateVolumeJob(this._onProgress, this._onAcceleration);
 
   final void Function(int pagesDone, int pagesTotal) _onProgress;
+  final void Function(MangaOcrAcceleration acceleration)? _onAcceleration;
   final Completer<String> _completer = Completer<String>();
   final ReceivePort _events = ReceivePort();
   SendPort? _control;
@@ -287,6 +337,12 @@ class _IsolateVolumeJob implements MangaOcrVolumeJob {
       _control = message.controlPort;
       if (_cancelRequested) {
         message.controlPort.send(_kJobCancelMessage);
+      }
+      return;
+    }
+    if (message is _JobAccelerationMessage) {
+      if (!_completer.isCompleted) {
+        _onAcceleration?.call(message.acceleration);
       }
       return;
     }
@@ -437,6 +493,7 @@ class MangaOcrServiceImpl implements MangaOcrService {
     MangaOcrVolumeJob? job;
     bool cancelled = false;
     int lastTotal = 0;
+    MangaOcrAcceleration? acceleration;
 
     controller.onListen = () {
       unawaited(() async {
@@ -464,9 +521,16 @@ class MangaOcrServiceImpl implements MangaOcrService {
               lastTotal = total;
               if (!controller.isClosed) {
                 controller.add(
-                  MangaOcrVolumeEvent.page(pagesDone: done, pagesTotal: total),
+                  MangaOcrVolumeEvent.page(
+                    pagesDone: done,
+                    pagesTotal: total,
+                    acceleration: acceleration,
+                  ),
                 );
               }
+            },
+            onAcceleration: (MangaOcrAcceleration resolved) {
+              acceleration = resolved;
             },
           );
           final String mangaJsonPath = await job!.result;
@@ -474,6 +538,7 @@ class MangaOcrServiceImpl implements MangaOcrService {
             controller.add(MangaOcrVolumeEvent.finished(
               pagesTotal: lastTotal,
               mangaJsonPath: mangaJsonPath,
+              acceleration: acceleration,
             ));
           }
         } on OcrCancelledException {

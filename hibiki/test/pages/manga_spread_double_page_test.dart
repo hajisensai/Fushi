@@ -40,6 +40,20 @@ class _MangaTestAppModel extends AppModel {
 
   @override
   double get appUiScale => 1.0;
+
+  // PR#474 把跨页偏好/阅读方向/缩放从运行时常量改成 AppModel 持久化偏好，
+  // 这三个 getter 会走 `prefsRepo`；测试 AppModel 从不跑 initialise()，不覆写
+  // 会在 `_loadBook` 里抛 null-check 并让页面卡在加载态。姊妹测试
+  // manga_hibiki_page_test.dart 已补，这里当时漏了（BUG-1164）。
+  // 取值与实现字段默认值一致，守卫语义与 PR#474 前等价。
+  @override
+  String get mangaSpreadPreference => 'auto';
+
+  @override
+  String get mangaReadingDirection => 'rtl';
+
+  @override
+  int get mangaZoomPercent => 100;
 }
 
 Widget _harness(AppModel appModel, String bookKey) {

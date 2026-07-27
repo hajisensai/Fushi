@@ -1088,6 +1088,13 @@ void main() {
               'the sentence preview in short landscape windows (BUG-922); '
               'mining-subsystem content dialog, not ordinary page chrome — same '
               'reviewed exception class as anki_mined_card_action_sheet.',
+      // PR#474 的 Google Lens 引擎是 manga.json 的**新生产者**：它写的
+      // `MokuroBlock.fontSize` 与 mokuro_payload / manga_ocr_folder_job 里被
+      // 豁免的是同一个数据字段（气泡文字尺寸，落盘给 overlay 用），文件本身
+      // 零 UI。属既有 reviewed 豁免类跟随新生产者，不是放宽判据。
+      'lib/src/media/manga/ocr/google_lens_ocr_service.dart':
+          'Writes the MokuroBlock.fontSize data field for Lens-produced '
+              'manga.json blocks; pure data layer, no UI typography.',
       'lib/src/creator/fields/image_field.dart':
           'Anki image-field renderer uses OCR/image coordinate typography.',
       'lib/src/pages/implementations/dictionary_dialog_import_page.dart':

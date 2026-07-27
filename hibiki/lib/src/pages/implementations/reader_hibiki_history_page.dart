@@ -83,6 +83,24 @@ part 'reader_history/dialogs.part.dart';
 /// derived per-instance ids) precisely so anchors can point at them by name.
 const HibikiFocusId kShelfImportFocusId = HibikiFocusId('reader-shelf-import');
 
+/// 库页条目分流：漫画独立书架只收 manga 源条目，普通书架反向排除它们。
+///
+/// PR#474 让同一个页面按 `mangaOnly` 服务两个入口。这条分流是用户直接可见的
+/// （漫画从普通书架消失、只在漫画书架出现），提成纯函数后两侧共用同一个谓词：
+/// 写反任何一侧都会同时破坏「漫画不在普通书架露出」和「漫画书架非空」，
+/// 也就不可能只坏一半而没人发现（BUG-1164）。
+///
+/// 用一次相等判断代替两个分支：两页的条件天然互补，不需要 if/else。
+List<MediaItem> filterShelfEntriesByMangaSplit(
+  List<MediaItem> books, {
+  required bool mangaOnly,
+}) =>
+    books
+        .where((MediaItem item) =>
+            (item.mediaSourceIdentifier == MangaHibikiSource.kUniqueKey) ==
+            mangaOnly)
+        .toList();
+
 class ReaderHibikiHistoryPage extends HistoryReaderPage {
   const ReaderHibikiHistoryPage({
     this.mangaOnly = false,
@@ -450,15 +468,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                           ? Future<_RemoteBookState?>.value(null)
                           : _loadRemoteBooks();
                       _shelfMapsFuture ??= _loadShelfMaps();
-                      final List<MediaItem> shelfBooks = bookList
-                          .where(
-                            (MediaItem item) => _mangaOnly
-                                ? item.mediaSourceIdentifier ==
-                                    MangaHibikiSource.kUniqueKey
-                                : item.mediaSourceIdentifier !=
-                                    MangaHibikiSource.kUniqueKey,
-                          )
-                          .toList();
+                      final List<MediaItem> shelfBooks =
+                          filterShelfEntriesByMangaSplit(
+                        bookList,
+                        mangaOnly: _mangaOnly,
+                      );
                       final Set<String>? filterSet = filteredIds.valueOrNull;
                       List<MediaItem> filtered;
                       if (filterSet == null) {
@@ -1034,11 +1048,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // 进度 / 「查看插画」门控，若以筛选子集构建，关联 EPUB 未命中同一标签即被筛掉 → 借不到
     // → 合集成员丢封面（BUG-937 让被筛合集能带命中成员显示后暴露此缺陷）。此处已 watch
     // 于上层 build（filteredBookIdsProvider 之上的 hibikiBooksProvider），read 全量安全。
-    final List<MediaItem> allEpubBooksForBorrow = _mangaOnly
-        ? books
-        : ref
-                .read(hibikiBooksProvider(JapaneseLanguage.instance))
-                .valueOrNull ??
+    // BUG-1164：PR#474 曾在这里插一个 `_mangaOnly ? books :` 三元，把借用源换成
+    // 筛选后的列表。它零收益（mangaOnly 下 buildBody 把 srtBooks 写死成空，三张
+    // 借用映射的消费方全是 SRT 卡，漫画书架上一个消费者都没有）却在 mangaOnly
+    // 分支上破了上面这条不变量，等 mangaOnly 将来接 SRT 就复发丢封面。已删除。
+    final List<MediaItem> allEpubBooksForBorrow =
+        ref.read(hibikiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
             books;
     final Map<String, String> epubCoverUrisByBookKey = {};
     // TODO-1191：`allEpubBooksForBorrow` 是 hibikiBooksProvider 的全部 EpubBooks 行；

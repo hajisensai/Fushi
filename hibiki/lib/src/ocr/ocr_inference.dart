@@ -62,6 +62,41 @@ abstract interface class OcrSessionFactory {
 /// 执行后端（execution provider）。
 enum OcrExecutionProvider { cuda, directml, coreml, cpu }
 
+/// 一次会话创建实际落到哪个执行后端，以及（若发生）降级原因。
+///
+/// 粒度就是插件边界能给出的粒度：`flutter_onnxruntime` 只回报「整张 provider
+/// 列表被接受」或「被拒绝」，不告诉我们 ORT 内部最终选中的 EP。因此
+/// [effective] 的语义是「本次真正提交给 ORT 的首选 provider」——列表被接受时
+/// 是 [requested] 的首项，被拒绝并回退时是 [OcrExecutionProvider.cpu]。
+///
+/// 存在的唯一理由：降级路径必须显式可观测。把 GPU 静默换成 CPU 会让用户在
+/// 整卷 OCR 这种耗时任务上误判性能，本仓不允许无声降级。
+class OcrProviderResolution {
+  const OcrProviderResolution({
+    required this.requested,
+    required this.effective,
+    this.fallbackReason,
+  });
+
+  /// 调用方按平台策略请求的 provider 列表（首项为首选）。
+  final List<OcrExecutionProvider> requested;
+
+  /// 本次会话真正提交给 ORT 的首选 provider。
+  final OcrExecutionProvider effective;
+
+  /// 降级原因；null 表示未降级。
+  final String? fallbackReason;
+
+  bool get didFallBack => fallbackReason != null;
+
+  @override
+  String toString() {
+    if (!didFallBack) return 'OcrProviderResolution(${effective.name})';
+    final String from = requested.isEmpty ? 'none' : requested.first.name;
+    return 'OcrProviderResolution($from -> ${effective.name}: $fallbackReason)';
+  }
+}
+
 /// 模型种类：检测（单次前向）与识别（自回归解码）的 EP 策略不同。
 enum OcrModelKind { detection, recognition }
 

@@ -282,10 +282,10 @@ String mangaPageDivHtml(MokuroImage page, String imgSrc,
 /// translateX 只显示当前跨页；webtoon → 竖向堆叠 + 滚动。内联选词 JS + 一个
 /// 手势机（swipe→翻页 / scroll→滚动报告 / tap→选词或放大）。
 ///
-/// OCR 框有两条明确的查词入口：单击调用
-/// `hoshiSelection.selectText(e.clientX, e.clientY, 40, false)`，Shift 悬停调用同函数
-/// 且 `fromHover=true`。两者都保留 maxLength=40 的四参契约。
-/// 漏 maxLength → 扫描循环 gate `< undefined` 恒假 → text 恒空 →
+/// OCR 框有两条明确的查词入口（单击 / Shift 悬停），都走同一个字级选词函数
+/// `_selectOcrChar()`：命中层先定位到字符节点，再调
+/// `hoshiSelection.selectFromPosition(node, 0, 40, x, y)`。第三个参数是
+/// maxLength，漏传 → 扫描循环 gate `< undefined` 恒假 → text 恒空 →
 /// onTextSelected 永不触发（查词哑火）。Task 19 的内联选区 JS 只注入
 /// ReaderSelectionScripts 的定义。手势机与选词 pointerup 共存；裸图单击保持 no-op。
 ///

@@ -1002,7 +1002,7 @@ class _HomePageState extends BasePageState<HomePage>
       case HomeTab.books:
         return const HomeReaderPage();
       case HomeTab.manga:
-        return const MangaShelfPage();
+        return const MangaLibraryPage();
     }
   }
 

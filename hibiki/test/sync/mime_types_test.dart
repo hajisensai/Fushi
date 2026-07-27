@@ -155,8 +155,12 @@ void main() {
       final Directory root = _repoRoot();
       // 允许保留的例外（各自注释说明了不并表的原因）：
       // - manga_hibiki_page.dart：漫画图片服务，刻意 jpeg 兜底（非 octet-stream）。
+      //   PR#474 把实现从 `pages/implementations/` 搬到 `media/manga/reader/`
+      //   （旧路径只剩 3 行 re-export shim），`_mangaMimeForPath` 逐字未变，
+      //   所以豁免**跟随文件移动**，不是新开豁免；旧路径同时移出名单，免得
+      //   将来真有人在那条路径上新写一份 switch 却被这条陈旧条目放行。
       const Set<String> allowlist = <String>{
-        'hibiki/lib/src/pages/implementations/manga_hibiki_page.dart',
+        'hibiki/lib/src/media/manga/reader/manga_hibiki_page.dart',
       };
       final RegExp caseRe =
           RegExp(r"case\s+'\.?(?:png|jpe?g|webp|gif|svg)'\s*:");

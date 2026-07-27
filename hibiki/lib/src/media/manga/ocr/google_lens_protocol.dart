@@ -17,6 +17,126 @@ const int kGoogleLensMaximumCachedPageBytes = 32 * 1024 * 1024;
 const int kGoogleLensMaximumRegionsPerPage = 100000;
 const String kGoogleLensEngineSignature = 'google-lens-v1-ja';
 
+/// Chromium Lens overlay protobuf 的字段号真值表（BUG-1163 配套）。
+///
+/// 这些数字以前散在 [GoogleLensProtocol.makeRequest] / `decodeResponse` 里当
+/// 魔数用，测试 fixture 又各抄了一份 —— 抄错也没人发现。收口到这里之后，
+/// 唯一的外部锚点是 `test/media/manga/ocr/google_lens_wire_contract_test.dart`：
+/// 那份测试用**与本实现无血缘关系**的第三方 protoc 产物核对每一个字段号，
+/// 实现写错就红。fixture 一律引用本表，不再自带假设。
+///
+/// 命名对齐 Chromium `third_party/lens_server_proto/` 里的 message/field 名。
+class GoogleLensWireFields {
+  const GoogleLensWireFields._();
+
+  // ── 请求侧 ──────────────────────────────────────────────────────────
+  /// `LensOverlayServerRequest.objects_request`
+  static const int serverRequestObjectsRequest = 1;
+
+  /// `LensOverlayObjectsRequest.request_context`
+  static const int objectsRequestRequestContext = 1;
+
+  /// `LensOverlayObjectsRequest.image_data`（2 号是 reserved，不要写成 2）
+  static const int objectsRequestImageData = 3;
+
+  /// `LensOverlayRequestContext.request_id`（1/2 号是 reserved）
+  static const int requestContextRequestId = 3;
+
+  /// `LensOverlayRequestContext.client_context`
+  static const int requestContextClientContext = 4;
+
+  /// `LensOverlayRequestId.uuid`
+  static const int requestIdUuid = 1;
+
+  /// `LensOverlayRequestId.sequence_id`
+  static const int requestIdSequenceId = 2;
+
+  /// `LensOverlayRequestId.image_sequence_id`
+  static const int requestIdImageSequenceId = 3;
+
+  /// `LensOverlayClientContext.platform`
+  static const int clientContextPlatform = 1;
+
+  /// `LensOverlayClientContext.surface`
+  static const int clientContextSurface = 2;
+
+  /// `LensOverlayClientContext.locale_context`
+  static const int clientContextLocaleContext = 4;
+
+  /// `LocaleContext.language`
+  static const int localeContextLanguage = 1;
+
+  /// `LocaleContext.region`
+  static const int localeContextRegion = 2;
+
+  /// `LocaleContext.time_zone`
+  static const int localeContextTimeZone = 3;
+
+  /// `ImageData.payload`
+  static const int imageDataPayload = 1;
+
+  /// `ImageData.image_metadata`（2 号是 reserved）
+  static const int imageDataImageMetadata = 3;
+
+  /// `ImagePayload.image_bytes`
+  static const int imagePayloadImageBytes = 1;
+
+  /// `ImageMetadata.width`
+  static const int imageMetadataWidth = 1;
+
+  /// `ImageMetadata.height`
+  static const int imageMetadataHeight = 2;
+
+  // ── 响应侧 ──────────────────────────────────────────────────────────
+  /// `LensOverlayServerResponse.objects_response`
+  static const int serverResponseObjectsResponse = 2;
+
+  /// `LensOverlayObjectsResponse.text`
+  static const int objectsResponseText = 3;
+
+  /// `Text.text_layout`
+  static const int textTextLayout = 1;
+
+  /// `TextLayout.paragraphs`
+  static const int textLayoutParagraphs = 1;
+
+  /// `TextLayout.Paragraph.lines`
+  static const int paragraphLines = 2;
+
+  /// `TextLayout.Paragraph.geometry`
+  static const int paragraphGeometry = 3;
+
+  /// `TextLayout.Line.words`
+  static const int lineWords = 1;
+
+  /// `TextLayout.Line.geometry`
+  static const int lineGeometry = 2;
+
+  /// `TextLayout.Word.plain_text`
+  static const int wordPlainText = 2;
+
+  /// `TextLayout.Word.text_separator`
+  static const int wordTextSeparator = 3;
+
+  /// `Geometry.bounding_box`
+  static const int geometryBoundingBox = 1;
+
+  /// `CenterRotatedBox.center_x`
+  static const int boxCenterX = 1;
+
+  /// `CenterRotatedBox.center_y`
+  static const int boxCenterY = 2;
+
+  /// `CenterRotatedBox.width`
+  static const int boxWidth = 3;
+
+  /// `CenterRotatedBox.height`
+  static const int boxHeight = 4;
+
+  /// `CenterRotatedBox.rotation_z`
+  static const int boxRotationZ = 5;
+}
+
 class GoogleLensProtocolException implements Exception {
   const GoogleLensProtocolException([this.message = 'invalid Lens protobuf']);
 
@@ -111,30 +231,40 @@ class GoogleLensProtocol {
   }) {
     final int resolvedRequestId = requestId ?? _randomRequestId();
     final _ProtobufWriter root = _ProtobufWriter();
-    root.message(1, (_ProtobufWriter objects) {
-      objects.message(1, (_ProtobufWriter context) {
-        context.message(3, (_ProtobufWriter id) {
-          id.uint(1, resolvedRequestId);
-          id.uint(2, 1);
-          id.uint(3, 1);
+    root.message(GoogleLensWireFields.serverRequestObjectsRequest,
+        (_ProtobufWriter objects) {
+      objects.message(GoogleLensWireFields.objectsRequestRequestContext,
+          (_ProtobufWriter context) {
+        context.message(GoogleLensWireFields.requestContextRequestId,
+            (_ProtobufWriter id) {
+          id.uint(GoogleLensWireFields.requestIdUuid, resolvedRequestId);
+          id.uint(GoogleLensWireFields.requestIdSequenceId, 1);
+          id.uint(GoogleLensWireFields.requestIdImageSequenceId, 1);
         });
-        context.message(4, (_ProtobufWriter client) {
-          client.uint(1, 3);
-          client.uint(2, 4);
-          client.message(4, (_ProtobufWriter locale) {
-            locale.string(1, language);
-            locale.string(2, 'US');
-            locale.string(3, 'America/New_York');
+        context.message(GoogleLensWireFields.requestContextClientContext,
+            (_ProtobufWriter client) {
+          // Platform.WEB = 3、Surface.CHROMIUM = 4（Chromium 的枚举值）。
+          client.uint(GoogleLensWireFields.clientContextPlatform, 3);
+          client.uint(GoogleLensWireFields.clientContextSurface, 4);
+          client.message(GoogleLensWireFields.clientContextLocaleContext,
+              (_ProtobufWriter locale) {
+            locale.string(GoogleLensWireFields.localeContextLanguage, language);
+            locale.string(GoogleLensWireFields.localeContextRegion, 'US');
+            locale.string(
+                GoogleLensWireFields.localeContextTimeZone, 'America/New_York');
           });
         });
       });
-      objects.message(3, (_ProtobufWriter image) {
-        image.message(1, (_ProtobufWriter payload) {
-          payload.bytes(1, imageData);
+      objects.message(GoogleLensWireFields.objectsRequestImageData,
+          (_ProtobufWriter image) {
+        image.message(GoogleLensWireFields.imageDataPayload,
+            (_ProtobufWriter payload) {
+          payload.bytes(GoogleLensWireFields.imagePayloadImageBytes, imageData);
         });
-        image.message(3, (_ProtobufWriter metadata) {
-          metadata.uint(1, width);
-          metadata.uint(2, height);
+        image.message(GoogleLensWireFields.imageDataImageMetadata,
+            (_ProtobufWriter metadata) {
+          metadata.uint(GoogleLensWireFields.imageMetadataWidth, width);
+          metadata.uint(GoogleLensWireFields.imageMetadataHeight, height);
         });
       });
     });
@@ -146,24 +276,30 @@ class GoogleLensProtocol {
     String language = 'ja',
   }) {
     final _ProtobufMessage root = _ProtobufMessage(data);
-    final List<_ProtobufMessage> paragraphs =
-        root.firstMessage(2)?.firstMessage(3)?.firstMessage(1)?.messages(1) ??
-            <_ProtobufMessage>[];
+    final List<_ProtobufMessage> paragraphs = root
+            .firstMessage(GoogleLensWireFields.serverResponseObjectsResponse)
+            ?.firstMessage(GoogleLensWireFields.objectsResponseText)
+            ?.firstMessage(GoogleLensWireFields.textTextLayout)
+            ?.messages(GoogleLensWireFields.textLayoutParagraphs) ??
+        <_ProtobufMessage>[];
     final List<GoogleLensParagraph> result = <GoogleLensParagraph>[];
     int regionCount = 0;
     for (final _ProtobufMessage paragraph in paragraphs) {
       final List<_RecognizedLine> lines = <_RecognizedLine>[];
-      final List<_ProtobufMessage> rawLines = paragraph.messages(2);
+      final List<_ProtobufMessage> rawLines =
+          paragraph.messages(GoogleLensWireFields.paragraphLines);
       for (int lineIndex = 0; lineIndex < rawLines.length; lineIndex++) {
         final _ProtobufMessage line = rawLines[lineIndex];
         final String rawText = line
-            .messages(1)
-            .map(
-                (_ProtobufMessage word) => '${word.string(2)}${word.string(3)}')
+            .messages(GoogleLensWireFields.lineWords)
+            .map((_ProtobufMessage word) =>
+                '${word.string(GoogleLensWireFields.wordPlainText)}'
+                '${word.string(GoogleLensWireFields.wordTextSeparator)}')
             .join();
         final String text = _normalize(rawText, language);
-        final _LensGeometry? geometry =
-            line.firstMessage(2)?.let(_readGeometry);
+        final _LensGeometry? geometry = line
+            .firstMessage(GoogleLensWireFields.lineGeometry)
+            ?.let(_readGeometry);
         if (text.isEmpty || geometry == null) {
           continue;
         }
@@ -178,8 +314,9 @@ class GoogleLensProtocol {
       if (lines.isEmpty) {
         continue;
       }
-      final _LensGeometry? paragraphGeometry =
-          paragraph.firstMessage(3)?.let(_readGeometry);
+      final _LensGeometry? paragraphGeometry = paragraph
+          .firstMessage(GoogleLensWireFields.paragraphGeometry)
+          ?.let(_readGeometry);
       final bool isVertical = paragraphGeometry?.isVertical == true ||
           lines
                       .where((_RecognizedLine line) => line.geometry.isVertical)
@@ -300,11 +437,12 @@ class GoogleLensProtocol {
   }
 
   static _LensGeometry? _readGeometry(_ProtobufMessage message) {
-    final _ProtobufMessage? box = message.firstMessage(1);
-    final double? centerX = box?.float32(1);
-    final double? centerY = box?.float32(2);
-    final double? width = box?.float32(3);
-    final double? height = box?.float32(4);
+    final _ProtobufMessage? box =
+        message.firstMessage(GoogleLensWireFields.geometryBoundingBox);
+    final double? centerX = box?.float32(GoogleLensWireFields.boxCenterX);
+    final double? centerY = box?.float32(GoogleLensWireFields.boxCenterY);
+    final double? width = box?.float32(GoogleLensWireFields.boxWidth);
+    final double? height = box?.float32(GoogleLensWireFields.boxHeight);
     if (centerX == null ||
         centerY == null ||
         width == null ||
@@ -313,7 +451,8 @@ class GoogleLensProtocol {
         height <= 0) {
       return null;
     }
-    final double rotation = box?.float32(5) ?? 0;
+    final double rotation =
+        box?.float32(GoogleLensWireFields.boxRotationZ) ?? 0;
     final double cosine = math.cos(rotation).abs();
     final double sine = math.sin(rotation).abs();
     final double halfWidth = (width * cosine + height * sine) / 2;

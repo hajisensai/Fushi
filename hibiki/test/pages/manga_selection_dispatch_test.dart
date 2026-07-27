@@ -103,7 +103,8 @@ void main() {
       expect(src.contains('addEventListener("pointerup"'), isFalse);
     });
 
-    test('唯一 pointerup 监听只在 manga_overlay_html，且 selectText 为四参', () {
+    test('唯一 pointerup 监听只在 manga_overlay_html，且选词调用显式传 maxLength',
+        () {
       final File overlay = File(
         'lib/src/media/manga/manga_overlay_html.dart',
       );
@@ -114,13 +115,22 @@ void main() {
               "addEventListener('pointerup'".allMatches(src).length;
       expect(pointerupCount, 1,
           reason: 'manga_overlay_html.dart 必须持有唯一的 pointerup 监听');
-      // develop 的 selectText 是四参 (x, y, maxLength, fromHover)：漏 maxLength 会让
-      // 扫描循环 gate `< undefined` 恒假 → text 恒空 → onTextSelected 永不触发。
-      expect(
-          RegExp(r'hoshiSelection\.selectText\(\s*x\s*,\s*y\s*,\s*40\s*,\s*false\s*\)')
-              .hasMatch(src),
-          isTrue,
-          reason: 'selectText 必须四参调用 (x, y, 40, false)');
+      // 这条守卫防的是「选词调用漏传 maxLength → 扫描循环 gate `< undefined`
+      // 恒假 → text 恒空 → onTextSelected 永不触发」。
+      //
+      // PR#474 把 OCR 命中层从「按坐标猜节点」的 `selectText(x, y, 40, false)`
+      // 换成字级路径：命中层自己定位到字符节点，再直接调
+      // `selectFromPosition(node, offset, maxLength, x, y)`
+      // （`reader_selection_scripts.dart:1036`）。选词入口换了函数，但
+      // **maxLength 仍是必传参数、漏传仍然会哑火**，危险一点没变，所以这里换靶
+      // 不放宽：仍然要求全文件恰好一处选词调用，且 maxLength 显式写成 40。
+      final RegExp selectRe = RegExp(
+        r'selection\.selectFromPosition\(\s*node\s*,\s*0\s*,\s*40\s*,\s*x\s*,\s*y\s*\)',
+      );
+      expect(selectRe.allMatches(src).length, 1,
+          reason: '选词必须是唯一调用点，且显式传 maxLength=40');
+      expect(src.contains('hoshiSelection.selectText('), isFalse,
+          reason: '旧的按坐标猜节点入口已下线，不得复活成第二条选词路径');
     });
   });
 }

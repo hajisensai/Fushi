@@ -1,5 +1,6 @@
 import 'package:hibiki/src/media/manga/mokuro_payload.dart';
 import 'package:hibiki/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 
 /// 阅读器持有的非模态整卷 OCR 任务。订阅 [events] 才真正启动底层识别；
 /// 取消订阅会沿用各执行器既有的取消语义，在页边界停止并保留逐页缓存。
@@ -25,6 +26,7 @@ class MangaOcrBackgroundEvent {
     required this.pagesTotal,
     this.pageIndex,
     this.page,
+    this.acceleration,
   })  : resultPath = null,
         external = false,
         finished = false;
@@ -33,6 +35,7 @@ class MangaOcrBackgroundEvent {
     required this.pagesTotal,
     required String this.resultPath,
     required this.external,
+    this.acceleration,
   })  : pagesDone = pagesTotal,
         pageIndex = null,
         page = null,
@@ -45,4 +48,7 @@ class MangaOcrBackgroundEvent {
   final String? resultPath;
   final bool external;
   final bool finished;
+
+  /// 本地 ONNX 引擎实际生效的推理加速状态；其它引擎为 null（BUG-1163）。
+  final MangaOcrAcceleration? acceleration;
 }

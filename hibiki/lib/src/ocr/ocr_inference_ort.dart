@@ -4,6 +4,7 @@
 /// 算法层不 import 本文件（依赖 `ocr_inference.dart` 的抽象）。
 library;
 
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -11,6 +12,13 @@ import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 import 'package:flutter/services.dart';
 
 import 'package:hibiki/src/ocr/ocr_inference.dart';
+
+/// 本子系统统一的 `dart:developer` 日志通道名。
+///
+/// 用 `dart:developer` 而不是 `debugPrint`：整卷 OCR 跑在 `Isolate.spawn` 出来
+/// 的后台 isolate 里，那里没有 Flutter binding，`debugPrint` 的节流实现依赖
+/// binding 的 Timer 调度；`developer.log` 在任何 isolate 都可直接用。
+const String kOcrLogName = 'hibiki.ocr';
 
 /// 本平台是否内置 ONNX Runtime native 库（本地 OCR 推理是否可用）。
 ///
@@ -44,18 +52,69 @@ OrtProvider _toOrtProvider(OcrExecutionProvider provider) {
 /// 之前抛 `PlatformException(INVALID_PROVIDER, ...)`。调用层已经把 CPU 放在 EP
 /// 列表尾部，因此这里把插件边界的“拒绝整个列表”还原成 ORT 预期的逐级后备语义。
 /// 只捕获明确的 `INVALID_PROVIDER`；模型损坏、shape 错误和推理异常仍原样上抛。
+///
+/// [onResolved] 在会话建成后**必定**被调用一次，回报本次真正生效的 provider
+/// 与降级原因（BUG-1163）：降级不允许静默发生，调用层据此写日志并把状态送到
+/// UI。回调本身抛出的异常不影响会话创建结果，只落日志。
 Future<T> createOcrSessionWithProviderFallback<T>({
   required List<OcrExecutionProvider> providers,
   required Future<T> Function(List<OcrExecutionProvider> providers) create,
+  void Function(OcrProviderResolution resolution)? onResolved,
 }) async {
+  final OcrExecutionProvider preferred =
+      providers.isEmpty ? OcrExecutionProvider.cpu : providers.first;
   try {
-    return await create(providers);
+    final T session = await create(providers);
+    _notifyResolved(
+      onResolved,
+      OcrProviderResolution(requested: providers, effective: preferred),
+    );
+    return session;
   } on PlatformException catch (error) {
     final bool canFallbackToCpu = error.code == 'INVALID_PROVIDER' &&
         providers.length > 1 &&
         providers.contains(OcrExecutionProvider.cpu);
     if (!canFallbackToCpu) rethrow;
-    return create(const <OcrExecutionProvider>[OcrExecutionProvider.cpu]);
+    final T session =
+        await create(const <OcrExecutionProvider>[OcrExecutionProvider.cpu]);
+    _notifyResolved(
+      onResolved,
+      OcrProviderResolution(
+        requested: providers,
+        effective: OcrExecutionProvider.cpu,
+        fallbackReason:
+            '${error.code}: ${error.message ?? 'provider rejected by plugin'}',
+      ),
+    );
+    return session;
+  }
+}
+
+void _notifyResolved(
+  void Function(OcrProviderResolution resolution)? onResolved,
+  OcrProviderResolution resolution,
+) {
+  if (resolution.didFallBack) {
+    developer.log(
+      'OCR execution provider fell back: $resolution',
+      name: kOcrLogName,
+    );
+  } else {
+    developer.log(
+      'OCR execution provider resolved: $resolution',
+      name: kOcrLogName,
+    );
+  }
+  if (onResolved == null) return;
+  try {
+    onResolved(resolution);
+  } catch (error, stack) {
+    developer.log(
+      'OCR provider resolution callback threw',
+      name: kOcrLogName,
+      error: error,
+      stackTrace: stack,
+    );
   }
 }
 
@@ -101,6 +160,10 @@ class OrtOcrSessionFactory implements OcrSessionFactory {
 
   /// 探测本机可用 EP（用于决定 `cudaAvailable` 再喂给
   /// [selectOcrExecutionProviders]）。
+  ///
+  /// 探测本身失败是一条真实的降级路径（有 N 卡也会退到 DirectML/CPU），
+  /// 不允许调用方 `catch (_)` 静默吞掉——所以这里不吞异常，由调用方捕获后
+  /// 记进可观测的降级说明（BUG-1163）。
   Future<bool> isCudaAvailable() async {
     final List<OrtProvider> providers = await _runtime.getAvailableProviders();
     return providers.contains(OrtProvider.CUDA);
@@ -110,10 +173,12 @@ class OrtOcrSessionFactory implements OcrSessionFactory {
   Future<OcrSession> createSession(
     String modelPath, {
     required List<OcrExecutionProvider> providers,
+    void Function(OcrProviderResolution resolution)? onProviderResolved,
   }) async {
     final OrtSession session =
         await createOcrSessionWithProviderFallback<OrtSession>(
       providers: providers,
+      onResolved: onProviderResolved,
       create: (List<OcrExecutionProvider> effectiveProviders) =>
           _runtime.createSession(
         modelPath,
