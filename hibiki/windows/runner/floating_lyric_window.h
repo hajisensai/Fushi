@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+#include "hook_toolbar_window.h"
+
 // A standalone always-on-top "QQ Music style" desktop lyric strip.
 //
 // This is a self-owned Win32 layered top-level window — NOT a Flutter view and
@@ -165,6 +167,12 @@ class FloatingLyricWindow {
   // Android FloatingLyricService position lock — drag-only restriction).
   void SetLocked(bool locked);
   bool IsLocked() const { return locked_; }
+  // BUG-951 — galgame hook mode only. Pass-through makes the overlay BODY
+  // click-through for real (WS_EX_TRANSPARENT, the only cross-process
+  // mechanism), and hands the toolbar to a separate always-clickable window so
+  // the user is never locked out. Non-hook instances keep their historical
+  // behaviour: the flag is stored, no ex-style is touched, no second window is
+  // created.
   void SetPassThrough(bool enabled);
   bool IsPassThrough() const { return pass_through_; }
   // Restores a physical-pixel window rectangle before the next Show. Invalid
@@ -201,6 +209,37 @@ class FloatingLyricWindow {
 
   // Returns the control action at the client point, or empty when none.
   std::string ControlActionAt(float x, float y);
+
+  // Runs a toolbar action. Single dispatcher shared by the in-body toolbar
+  // (WM_LBUTTONDOWN) and the standalone pass-through toolbar window, so a
+  // button behaves identically no matter which window the click landed in.
+  void DispatchControlAction(const std::string& action);
+
+  // ── BUG-951: pass-through as two windows ─────────────────────────────────
+  //
+  // Applies the CURRENT pass-through intent to the OS. This is the only place
+  // that decides whether the body is click-through, and it enforces the
+  // invariant that makes the whole design safe: the body only ever goes
+  // click-through AFTER the always-clickable toolbar window is on screen. If
+  // that window cannot be created the body stays interactive and pass_through_
+  // is dropped back to false — better to ignore the toggle than to strand the
+  // user behind an overlay they can no longer click.
+  void ApplyPassThroughExStyle();
+  // Adds / removes WS_EX_TRANSPARENT on the body window. Called ONLY from
+  // ApplyPassThroughExStyle (see the guard test).
+  void SetBodyExTransparent(bool enabled);
+  // Toolbar geometry, derived from the body's own control-row constants so the
+  // floating buttons land exactly where the in-body toolbar drew them.
+  hook_toolbar::Layout ComputePassThroughToolbarLayout() const;
+  hook_toolbar::Style ToolbarStyle() const;
+  hook_toolbar::States ToolbarStates() const;
+  // Pushes geometry / colours / states to the toolbar window (no-op when it is
+  // not showing, and a no-op repaint when nothing changed).
+  void SyncPassThroughToolbar();
+  // Moves the body window to |x|,|y| (screen physical px), clamped to the work
+  // area, and drags the toolbar along. Used by the toolbar's own drag: while
+  // pass-through is on the body receives no mouse input at all.
+  void MoveBodyTo(int x, int y);
 
   // True when the client point falls inside the bottom-right resize grip — used
   // by WM_NCHITTEST to hand the corner to the system resize loop.
@@ -265,6 +304,12 @@ class FloatingLyricWindow {
   bool text_only_ = false;
   bool hook_text_mode_ = false;
   bool pass_through_ = false;
+  // Mirrors the WS_EX_TRANSPARENT bit currently on hwnd_ so the ex-style is
+  // only rewritten when it actually changes.
+  bool ex_transparent_ = false;
+  // The toolbar's callbacks are bound lazily on first use (the toolbar object
+  // itself is inert until pass-through is switched on).
+  bool toolbar_callbacks_bound_ = false;
   bool hovered_ = false;
   bool tracking_mouse_leave_ = false;
   // Position lock: drag disabled, everything else (lookup + controls) still
@@ -334,6 +379,10 @@ class FloatingLyricWindow {
   // 样式变化时一起 Reset，下一帧按新字号重建。
   Microsoft::WRL::ComPtr<IDWriteTextFormat> ruby_format_;
   Microsoft::WRL::ComPtr<IDWriteTextLayout> text_layout_;
+
+  // BUG-951: the always-clickable toolbar used while the body is click-through.
+  // Only ever created / shown for hook_text_mode_ instances in pass-through.
+  HookToolbarWindow pass_through_toolbar_;
 
   LookupCallback on_lookup_;
   ContextLookupCallback on_context_lookup_;

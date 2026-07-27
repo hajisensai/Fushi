@@ -29,6 +29,7 @@ add_executable(${BINARY_NAME} WIN32
   "floating_lyric_window.cpp"
   "foreground_selection.cpp"
   "global_lookup_window.cpp"
+  "hook_toolbar_window.cpp"
   "low_level_mouse_hook.cpp"
   "main.cpp"
   "utils.cpp"
