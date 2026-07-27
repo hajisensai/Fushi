@@ -1767,12 +1767,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
               // Tap handed OS focus to the WebView; reclaim it so ESC still
               // exits after a tap-to-toggle-chrome (BUG-136). _toggleChrome()
               // here does not move focus to the bar, so the reader keeps it.
-              _reclaimReaderFocusAfterGesture();
+              _focusOwnership.reclaim(FocusReclaimCause.gesture);
               return;
             }
             if (!shiftKey && !ReaderHibikiSource.instance.highlightOnTap) {
               // Tap consumed without a selection/popup — reclaim reader focus.
-              _reclaimReaderFocusAfterGesture();
+              _focusOwnership.reclaim(FocusReclaimCause.gesture);
               return;
             }
             final double x = _ReaderHibikiPageState._toDouble(args[0]) ?? 0;
@@ -1826,7 +1826,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             }
             // Tap on empty space handed OS focus to the WebView; reclaim it so
             // ESC still exits the book afterward (BUG-136).
-            _reclaimReaderFocusAfterGesture();
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
           },
         );
 
@@ -1852,7 +1852,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             } else {
               _toggleChrome();
             }
-            _reclaimReaderFocusAfterGesture();
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
           },
         );
 
@@ -1862,7 +1862,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             if (args.isEmpty || _lyricsMode) return;
             // The swipe/wheel gesture handed OS focus to the WebView; reclaim it
             // so ESC still exits the book after a page turn (BUG-136).
-            _reclaimReaderFocusAfterGesture();
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
             final String dir = args[0] as String;
             final bool invert =
                 ReaderHibikiSource.instance.invertSwipeDirection;
@@ -1895,7 +1895,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           handlerName: 'onWheelPaginate',
           callback: (List<dynamic> args) {
             if (args.isEmpty || _lyricsMode) return;
-            _reclaimReaderFocusAfterGesture();
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
             final String dir = args[0] as String;
             final int throttleMs =
                 ReaderHibikiSource.instance.wheelPageTurnInterval;
@@ -1922,7 +1922,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             final ShortcutAction? action = _resolveWebViewSpaceAction();
             if (action == null) return;
             _executeShortcutAction(action);
-            _reclaimReaderFocusAfterGesture();
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
           },
         );
 
@@ -1940,7 +1940,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             }
             // Boundary swipe → chapter turn also stole focus to the WebView
             // (BUG-136); reclaim it so ESC keeps exiting after a chapter flip.
-            _reclaimReaderFocusAfterGesture();
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
             final String dir = args[0] as String;
             // TODO-737 节流分流（4 必补点 #1）：连续滚轮跨章直接调
             // _handlePageTurnLimit、**绕过 _paginate 入口闸门**，否则归一节流后连续
@@ -2057,7 +2057,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
               // 初始 HTML 漏了底栏预留）。
               _reapplyChromeInsetsAfterFirstLoad();
               // TODO-700 T3：spread 内容就绪确定性落焦到正文（门控见 helper）。
-              _settleFocusOnContentReady();
+              _focusOwnership.reclaim(FocusReclaimCause.contentReady);
             }
           },
         );

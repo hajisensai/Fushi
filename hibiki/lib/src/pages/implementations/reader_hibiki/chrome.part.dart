@@ -919,9 +919,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     // `moveFocusToChrome` path is gone): the bar is a touch/mouse + key-glyph
     // surface, not a directional-nav destination. Keeping focus on the content
     // means directional keys keep turning the page and hidden shortcuts are
-    // never short-circuited by a focused bar. requestFocus() is a cheap no-op
-    // when the content already holds focus.
-    _focusNode.requestFocus();
+    // never short-circuited by a focused bar. The reclaim is a cheap no-op when
+    // the content already holds focus.
+    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
   }
 
   Future<void> _applyChromeInsets() async {
@@ -1225,7 +1225,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   // bar stays operable by touch/mouse but is never a directional-nav destination,
   // so it can neither steal a hidden shortcut nor strand the page-turn keys.
   // _chromeFocusScope is kept as the bar's structural scope; its `.hasFocus` is
-  // now always false, which [_reclaimReaderFocusAfterGesture] relies on. The
+  // now always false, which [_canOwnReaderFocus] 的 gesture 分支 relies on. The
   // audiobook bar passes a ValueKey so element identity survives the play-bar ↔
   // settings-bar swap; the settings bar passes none (as before).
   Widget _wrapBottomChromeBar({Key? key, required Widget bar}) {

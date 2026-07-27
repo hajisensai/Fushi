@@ -31,7 +31,7 @@ void main() {
     );
   });
 
-  test('_toggleChrome only flips chrome + insets + requestFocus', () {
+  test('_toggleChrome only flips chrome + insets + focus reclaim', () {
     final int start = chrome.indexOf('void _toggleChrome()');
     expect(start, isNonNegative);
     final int end = chrome.indexOf('\n  }', start);
@@ -39,7 +39,7 @@ void main() {
     final String body = codeOnly(chrome.substring(start, end));
     expect(body, contains('_showChrome = !_showChrome'));
     expect(body, contains('_applyChromeInsets()'));
-    expect(body, contains('_focusNode.requestFocus()'));
+    expect(body, contains('_focusOwnership.reclaim(FocusReclaimCause'));
     // Must NOT resurrect the removed moveFocusToChrome path or touch the chrome
     // focus scope directly.
     expect(body, isNot(contains('moveFocusToChrome')));

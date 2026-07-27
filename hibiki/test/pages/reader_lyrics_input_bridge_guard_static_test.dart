@@ -56,7 +56,8 @@ void main() {
     final int start = src.indexOf("handlerName: 'onLyricsTapEmpty'");
     expect(start, greaterThanOrEqualTo(0));
     final String body = src.substring(start, start + 600);
-    expect(body, contains('_reclaimReaderFocusAfterGesture()'));
+    expect(
+        body, contains('_focusOwnership.reclaim(FocusReclaimCause.gesture)'));
     expect(
       body,
       anyOf(
@@ -71,7 +72,7 @@ void main() {
       () {
     final String src = readReaderPageSource();
 
-    // BUG-767 回归守卫：BUG-755 曾在歌词就绪分支 `_reclaimReaderFocusAfterGesture()`
+    // BUG-767 回归守卫：BUG-755 曾在歌词就绪分支回收焦点
     // 想让 ESC 从进入即可用，但桌面 loadData 后强夺 Flutter 焦点会顶焦原生 WebView2、
     // 重置滚动（→ 高亮看似回第一句）并抖动，叠加重载路径成持续闪烁。故歌词就绪分支
     // **必须不再**在 loadData 后强夺焦（ESC 改由任一交互后的 reclaim 覆盖）。
@@ -81,7 +82,8 @@ void main() {
     expect(end, greaterThan(m));
     final String lyricsBranch = src.substring(m, end);
     expect(lyricsBranch, contains('_lyricsPageReady = true;'));
-    expect(lyricsBranch, isNot(contains('_reclaimReaderFocusAfterGesture()')));
+    expect(lyricsBranch,
+        isNot(contains('_focusOwnership.reclaim(FocusReclaimCause.gesture)')));
   });
 
   test(

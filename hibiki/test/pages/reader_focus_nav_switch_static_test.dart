@@ -126,13 +126,17 @@ void main() {
       return f.readAsStringSync();
     }
 
-    test('reader_hibiki_page 定义 _settleFocusOnContentReady 且正确门控', () {
+    test('reader_hibiki_page 定义 _canOwnReaderFocus 且正确门控内容就绪落焦', () {
       final String src =
           read('lib/src/pages/implementations/reader_hibiki_page.dart');
-      expect(src.contains('void _settleFocusOnContentReady('), isTrue,
-          reason: '缺确定性落焦 helper');
+      expect(src.contains('bool _canOwnReaderFocus(FocusReclaimCause cause)'),
+          isTrue,
+          reason: '缺统一焦点判据');
+      expect(src.contains('PageFocusOwnership _focusOwnership'), isTrue,
+          reason: '缺确定性落焦的单一所有者');
       // 门控：光标态 / 弹窗 / 歌词态不抢。
-      final int start = src.indexOf('void _settleFocusOnContentReady(');
+      final int start =
+          src.indexOf('bool _canOwnReaderFocus(FocusReclaimCause cause)');
       final int end = src.indexOf('\n  }', start);
       final String body = src.substring(start, end);
       expect(body.contains('_caretActive') || body.contains('_caretSurface'),
@@ -144,18 +148,23 @@ void main() {
               body.contains('_hasVisiblePopup'),
           isTrue,
           reason: 'helper 必须门控弹窗态');
-      expect(body.contains('_focusNode.requestFocus()'), isTrue);
       expect(body.contains('_readerContentReady'), isTrue);
     });
 
-    test('内容就绪三落点调用 _settleFocusOnContentReady（不含歌词路径）', () {
+    test('内容就绪三落点回收焦点（不含歌词路径）', () {
       final String nav = read(
           'lib/src/pages/implementations/reader_hibiki/navigation.part.dart');
       final String web =
           read('lib/src/pages/implementations/reader_hibiki/webview.part.dart');
-      expect(nav.contains('_settleFocusOnContentReady()'), isTrue,
+      expect(
+          nav.contains(
+              '_focusOwnership.reclaim(FocusReclaimCause.contentReady)'),
+          isTrue,
           reason: 'navigation.part 内容就绪点应落焦');
-      expect(web.contains('_settleFocusOnContentReady()'), isTrue,
+      expect(
+          web.contains(
+              '_focusOwnership.reclaim(FocusReclaimCause.contentReady)'),
+          isTrue,
           reason: 'webview.part spreadReady 应落焦');
     });
   });
@@ -235,10 +244,10 @@ void main() {
       'onBoundarySwipe', // 边界手势 → 翻章
       'onTapEmpty', // 点空白切底栏
     ]) {
-      test("'$handler' 回调体内调用 _reclaimReaderFocusAfterGesture()", () {
+      test("'$handler' 回调体内回收焦点（FocusReclaimCause.gesture）", () {
         final String body = _handlerCallbackBody(code, handler);
         expect(
-          body.contains('_reclaimReaderFocusAfterGesture()'),
+          body.contains('_focusOwnership.reclaim(FocusReclaimCause.gesture)'),
           isTrue,
           reason: "'$handler' 回调丢了夺回焦点的调用 —— 该手势翻页/切栏后 ESC "
               '将无法退出书籍（BUG-136）。',
@@ -249,7 +258,7 @@ void main() {
     test("'onTap' 回调（切栏/无选区分支）夺回焦点", () {
       final String body = _handlerCallbackBody(code, 'onTap');
       expect(
-        body.contains('_reclaimReaderFocusAfterGesture()'),
+        body.contains('_focusOwnership.reclaim(FocusReclaimCause.gesture)'),
         isTrue,
         reason: 'onTap 点击切底栏后 ESC 必须仍能退出书籍（BUG-136）。',
       );
@@ -260,7 +269,7 @@ void main() {
       expect(
         code.contains('shouldReclaimReaderFocusAfterGesture('),
         isTrue,
-        reason: '_reclaimReaderFocusAfterGesture 应调用纯谓词 '
+        reason: '_canOwnReaderFocus 的 gesture 分支应调用纯谓词 '
             'shouldReclaimReaderFocusAfterGesture 决定是否夺回焦点。',
       );
     });
