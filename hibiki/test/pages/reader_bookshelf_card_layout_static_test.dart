@@ -27,11 +27,17 @@ void main() {
       contains('Column('),
       reason: 'the shared card layout separates cover and title footer',
     );
+    // BUG-1177：footer 高度改为按当前文字缩放算出（ShelfCardFooter.heightFor），
+    // 不再是死的 kShelfTitleFooterHeight。原意图「长书名不得撑动网格」依然成立——
+    // 高度只随**字号设置**变化，与标题长短无关，同一屏内所有卡仍逐像素等高；
+    // 40px 那个死值在 textScale≥1.25 时装不下两行 12sp，会把书名第二行切掉。
     expect(
       layout,
-      contains('height: kShelfTitleFooterHeight'),
-      reason: 'the footer height must stay stable across long titles',
+      contains('height: ShelfCardFooter.heightFor(context)'),
+      reason: 'the footer height must stay stable across long titles while '
+          'still growing with the text scale (BUG-1177)',
     );
+    expect(layout, isNot(contains('height: kShelfTitleFooterHeight')));
     expect(
       layout,
       contains('ShelfCardFooter(title: title)'),

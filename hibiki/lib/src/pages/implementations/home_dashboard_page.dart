@@ -263,18 +263,14 @@ class _HomeDashboardPageState
   /// 本来也该随文字缩放走——旧的 196 在 textScale≥1.5 时连「单行标题 + 副标题」
   /// 都装不下，会直接竖向溢出。
   double _continueRowHeight(BuildContext context, HibikiDesignTokens tokens) {
-    final TextScaler scaler = MediaQuery.textScalerOf(context);
-    final double titleSize = tokens.type.listTitle.fontSize ?? 14.0;
-    final double metaSize = tokens.type.metadata.fontSize ?? 12.0;
-    const double lineFactor = 1.3;
-    final double titleLine = scaler.scale(titleSize) * lineFactor;
-    final double metaLine = scaler.scale(metaSize) * lineFactor;
+    final double titleLine = textLineHeight(context, tokens.type.listTitle);
+    final double metaLine = textLineHeight(context, tokens.type.metadata);
     return _kContinueCoverHeight +
         tokens.spacing.gap / 2 +
         titleLine * 2 +
         tokens.spacing.gap / 4 +
         metaLine +
-        2; // 行高取整余量
+        kTextBlockSlack;
   }
 
   /// 「继续」分段筛选：0=全部，1=阅读，2=观看。

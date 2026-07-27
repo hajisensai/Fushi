@@ -118,11 +118,12 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
           // metadata 字号文字毫无关系。窄屏 cell（320dp 屏上约 134×218）只剩约 48px，
           // textScale 稍大两行就装不下、下半截被 Container 裁掉。改为「比例值与两行
           // 文字实际所需高度取大者」：宽松时维持原来的 25% 观感，紧时按需长高。
-          final double titleLine = MediaQuery.textScalerOf(context)
-                  .scale(tokens.type.metadata.fontSize ?? 12.0) *
-              1.3;
-          final double needed =
-              titleLine * 2 + tokens.spacing.gap / 4 + tokens.spacing.gap / 2;
+          final double titleLine =
+              textLineHeight(context, tokens.type.metadata);
+          final double needed = titleLine * 2 +
+              tokens.spacing.gap / 4 +
+              tokens.spacing.gap / 2 +
+              kTextBlockSlack;
           final double bandHeight = constraints.maxHeight.isFinite
               ? math.max(constraints.maxHeight * 0.25, needed)
               : needed;

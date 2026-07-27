@@ -858,13 +858,12 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 20 字以上，一行只看得到开头六七个字。改为按真实行高算：封面保持精确 3:4，
   /// 标题块按两行 titleSmall + 内边距算出，并随文字缩放变化。两处共用此公式。
   static double _gameCardExtent(BuildContext context, double cardWidth) {
-    final TextScaler scaler = MediaQuery.textScalerOf(context);
-    final double titleSize =
-        Theme.of(context).textTheme.titleSmall?.fontSize ?? 14.0;
-    // 行高系数与 Text 默认一致（未指定 height 时按字体 metrics，约 1.3）。
-    final double titleLine = scaler.scale(titleSize) * 1.3;
+    final double titleLine = textLineHeight(
+      context,
+      Theme.of(context).textTheme.titleSmall ?? const TextStyle(fontSize: 14),
+    );
     // 标题 padding 8(top)+2(bottom)（见 GalgamePosterCard 的 titleText）。
-    return cardWidth * 4 / 3 + titleLine * 2 + 10;
+    return cardWidth * 4 / 3 + titleLine * 2 + 10 + kTextBlockSlack;
   }
 
   /// 游戏海报网格（对齐 ReinaManager 库页：3:4 竖版海报卡，见

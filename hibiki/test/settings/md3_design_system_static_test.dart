@@ -1236,7 +1236,15 @@ void main() {
     expect(cardLayout, contains('tokens.spacing'));
     // 巡检 PR-3：footer 提取到共享 ShelfCardFooter（与 SeriesShelfCard 共用）。
     expect(cardLayout, contains('ShelfCardFooter(title: title)'));
-    expect(cardLayout, contains('height: kShelfTitleFooterHeight'));
+    // BUG-1177：footer 高度改为随文字缩放算出（ShelfCardFooter.heightFor），不再是
+    // 死的 kShelfTitleFooterHeight——40px 装两行 12sp，textScale≥1.25 时书名第二行
+    // 的下半截被 SizedBox 切掉。封面区是 Expanded，footer 长高只是等量压缩封面。
+    expect(
+      cardLayout,
+      contains('height: ShelfCardFooter.heightFor(context)'),
+      reason: 'footer 高度必须随文字缩放走，不得退回固定像素（BUG-1177）',
+    );
+    expect(cardLayout, isNot(contains('height: kShelfTitleFooterHeight')));
     expect(cardLayout, contains('PositionedDirectional('));
     expect(cardLayout, contains('tokens.spacing.gap * 0.75'));
     expect(cardLayout, isNot(contains('_titleOverlay(title)')));

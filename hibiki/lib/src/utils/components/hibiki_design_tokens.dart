@@ -1,5 +1,24 @@
 import 'package:flutter/material.dart';
 
+/// 预留文字块高度时统一加的余量（行高取整、字体 metrics 与理论值的零头）。
+const double kTextBlockSlack = 4.0;
+
+/// 一行 [style] 文字在当前文字缩放下占的实际高度。
+///
+/// BUG-1177：有一类布局必须**先给出**「能放下 N 行文字」的固定高度——网格的
+/// `mainAxisExtent`、横滑行的 `SizedBox`、卡片封面下方的文字块，Flutter 都要求
+/// 高度先于内容确定。此前每个这样的地方各自猜一个行高系数（最常见的错法是硬编码
+/// 1.3），而 MD3 排版里 `bodyLarge` 的行高是 1.5、`labelMedium` 是 1.33——猜低了
+/// 就竖向溢出，表现为「书名第二行的下半截被切掉」。
+///
+/// 这里统一读 [TextStyle.height] 的真实值，只有当 style 自己没声明行高时才退回一个
+/// 偏保守（宁可高一点）的系数。配合 [kTextBlockSlack] 使用。
+double textLineHeight(BuildContext context, TextStyle style) {
+  final double fontSize = style.fontSize ?? 14.0;
+  final double factor = style.height ?? 1.4;
+  return MediaQuery.textScalerOf(context).scale(fontSize) * factor;
+}
+
 class HibikiDesignTokens {
   const HibikiDesignTokens({
     required this.radii,

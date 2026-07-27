@@ -35,13 +35,9 @@ class ShelfCardFooter extends StatelessWidget {
   /// 等量压缩封面、不会撑破网格，所以这里让高度跟着文字缩放走。
   static double heightFor(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final double fontSize = tokens.type.metadata.fontSize ?? 12.0;
-    final double lineHeightFactor = tokens.type.metadata.height ?? 1.3;
-    final double lineHeight =
-        MediaQuery.textScalerOf(context).scale(fontSize) * lineHeightFactor;
+    final double lineHeight = textLineHeight(context, tokens.type.metadata);
     final double topPad = tokens.spacing.gap / 2;
-    // 两行 + 上内边距 + 1px 余量（行高取整误差）。
-    return math.max(height, topPad + lineHeight * 2 + 1);
+    return math.max(height, topPad + lineHeight * 2 + kTextBlockSlack);
   }
 
   final String title;

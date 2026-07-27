@@ -3185,17 +3185,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 标题预留、但绝大多数卡用不到」的最坏情况余量，代价是长标题永远显示不全。现在
   /// 高度按需算出（默认字号约 66，仍远小于当年的 83），长标题真的用得上第二行。
   static double _videoCardTextBlock(BuildContext context) {
-    final TextScaler scaler = MediaQuery.textScalerOf(context);
-    final ThemeData theme = Theme.of(context);
-    final double titleSize = theme.textTheme.bodyMedium?.fontSize ?? 14.0;
-    final double metaSize =
-        HibikiDesignTokens.of(context).type.metadata.fontSize ?? 12.0;
-    // 行高系数与 Text 默认一致（未指定 height 时按字体 metrics，约 1.3）。
-    const double lineFactor = 1.3;
-    final double titleLine = scaler.scale(titleSize) * lineFactor;
-    final double metaLine = scaler.scale(metaSize) * lineFactor;
+    final double titleLine = textLineHeight(
+      context,
+      Theme.of(context).textTheme.bodyMedium ?? const TextStyle(fontSize: 14),
+    );
+    final double metaLine =
+        textLineHeight(context, HibikiDesignTokens.of(context).type.metadata);
     // 标题 padding 6(top)+2(bottom)，进度行 padding 0(top)+6(bottom)。
-    return titleLine * 2 + 8 + metaLine + 6;
+    return titleLine * 2 + 8 + metaLine + 6 + kTextBlockSlack;
   }
 
   /// 视频库主 [SliverGrid]（TODO-654：随主 [CustomScrollView] 滚动）：合集封面
