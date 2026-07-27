@@ -183,6 +183,19 @@ void main() {
     );
     expect(assets.length, 2);
   });
+
+  test('production retry backoff stays polite to the real GitHub remote', () {
+    // BUG-1178 guard: this suite lowers MANIFEST_RETRY_BACKOFF_MS so a local
+    // bare repo is not slept on for 3s per race. That seam must never be used
+    // to make CI "faster" by hammering github.com -- the DEFAULT stays 3000ms.
+    final String source = File(
+      p.join(
+          Directory.current.parent.path, 'tool', 'publish_update_manifest.sh'),
+    ).readAsStringSync();
+    expect(source,
+        contains(r'RETRY_BACKOFF_MS="${MANIFEST_RETRY_BACKOFF_MS:-3000}"'),
+        reason: 'default publish retry backoff must remain 3000ms');
+  });
 }
 
 String _io(ProcessResult r) =>
@@ -195,6 +208,16 @@ class _Fixture {
   final Directory root;
   final File script;
   final String originUrl;
+
+  /// Publish subprocesses that have been started but not yet reaped.
+  ///
+  /// A test that times out abandons its `await` but NOT the OS process: bash
+  /// keeps running with [root] as its working directory. On Windows a
+  /// directory that is any live process's CWD cannot be deleted, so the
+  /// abandoned child used to make [dispose] throw and keep burning CPU while
+  /// sibling tests ran -- one timeout cascaded into a spray of unrelated
+  /// failures. Owning the handles lets [dispose] kill survivors instead.
+  final Set<Process> _running = <Process>{};
 
   static const String defaultTag = 'v0.11.1-debug.5633+3cf5905';
   static const String defaultVersion = '0.11.1-debug.5633';
@@ -238,8 +261,12 @@ class _Fixture {
     String tag = defaultTag,
     String version = defaultVersion,
     int releaseSequence = defaultSeq,
-  }) {
+  }) async {
     final Map<String, String> env = <String, String>{
+      // The script's 3s production backoff is politeness toward a real GitHub
+      // remote; this fixture pushes to a local bare repo. Keep the retry
+      // semantics (re-fetch tip, re-merge, never clobber) and drop the wait.
+      'MANIFEST_RETRY_BACKOFF_MS': '50',
       'CHANNEL': 'debug',
       'TAG': tag,
       'PRERELEASE': 'true',
@@ -257,14 +284,20 @@ class _Fixture {
       'GIT_COMMITTER_NAME': 'Test',
       'GIT_COMMITTER_EMAIL': 'test@example.com',
     };
-    return Process.run(
+    final Process process = await Process.start(
       'bash',
       <String>[script.path],
       environment: env,
       workingDirectory: root.path,
-      stdoutEncoding: utf8,
-      stderrEncoding: utf8,
     );
+    _running.add(process);
+    final Future<String> out = process.stdout.transform(utf8.decoder).join();
+    final Future<String> err = process.stderr.transform(utf8.decoder).join();
+    final int exitCode = await process.exitCode;
+    // Only drop the handle once the process has really exited; if this test is
+    // killed by a timeout mid-await, `dispose` must still find it.
+    _running.remove(process);
+    return ProcessResult(process.pid, exitCode, await out, await err);
   }
 
   Future<Map<String, dynamic>> _finalManifest() async {
@@ -305,8 +338,18 @@ class _Fixture {
   }
 
   Future<void> dispose() async {
-    if (root.existsSync()) {
+    for (final Process process in _running.toList(growable: false)) {
+      process.kill(ProcessSignal.sigkill);
+    }
+    _running.clear();
+    if (!root.existsSync()) return;
+    try {
       await root.delete(recursive: true);
+    } on FileSystemException {
+      // Best effort. A grandchild git process can still hold a handle for a
+      // moment on Windows; systemTemp is reaped by the OS anyway. Throwing here
+      // would convert one test's failure into a tearDown error that also fails
+      // the surrounding group -- exactly the cascade this fixture must not have.
     }
   }
 }

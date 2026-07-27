@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -181,6 +182,11 @@ void main() {
 
     final events = <String>[];
     final launched = <Uri>[];
+    // The media server teardown is asynchronous (`Timer.run` -> HttpServer.close
+    // -> recursive delete of a real temp dir), so its duration is real I/O and
+    // cannot be predicted. Await the end-of-background-task callback itself --
+    // that IS the completion signal we are asserting on.
+    final Completer<void> backgroundTaskEnded = Completer<void>();
     final repo = AnkiMobileRepository(
       openUrl: (uri) async {
         expect(events, contains('begin-background-task'));
@@ -195,6 +201,7 @@ void main() {
       },
       endMediaImportBackgroundTask: () async {
         events.add('end-background-task');
+        if (!backgroundTaskEnded.isCompleted) backgroundTaskEnded.complete();
       },
     );
     await repo.saveSettings(const AnkiSettings(
@@ -266,7 +273,7 @@ void main() {
       expect(value, isNot(contains(temp.path)));
       expect(value, isNot(contains('hoshi_dict_0.svg')));
     }
-    await Future<void>.delayed(const Duration(milliseconds: 10));
+    await backgroundTaskEnded.future;
     expect(events, <String>[
       'begin-background-task',
       'open-ankimobile',
@@ -287,6 +294,10 @@ void main() {
     });
 
     final launched = <Uri>[];
+    // Same rule as above: wait for the real "server torn down" signal instead of
+    // guessing a duration that must exceed lifetime + HttpServer.close +
+    // recursive temp-dir delete.
+    final Completer<void> backgroundTaskEnded = Completer<void>();
     final repo = AnkiMobileRepository(
       openUrl: (uri) async {
         launched.add(uri);
@@ -295,7 +306,9 @@ void main() {
       readInfoForAddingJson: () async => null,
       mediaServerLifetime: const Duration(milliseconds: 500),
       beginMediaImportBackgroundTask: () async {},
-      endMediaImportBackgroundTask: () async {},
+      endMediaImportBackgroundTask: () async {
+        if (!backgroundTaskEnded.isCompleted) backgroundTaskEnded.complete();
+      },
     );
     await repo.saveSettings(const AnkiSettings(
       selectedDeckId: 0,
@@ -352,7 +365,7 @@ void main() {
     expect(statusLine, startsWith('HTTP/1.1 200'));
     expect(responseBytes, bytes);
 
-    await Future<void>.delayed(const Duration(milliseconds: 550));
+    await backgroundTaskEnded.future;
   });
 }
 

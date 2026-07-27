@@ -513,6 +513,33 @@ class WindowsInstaller {
         currentExecutablePath ?? Platform.resolvedExecutable;
     final Directory currentInstallDir = File(resolvedExecutablePath).parent;
     final bool hasInjectedDiagnostics = collectDiagnostics != null;
+
+    // Validate the downloaded file BEFORE collecting diagnostics. Diagnostics
+    // shell out to `reg`, `powershell Get-CimInstance` and `tasklist /M` (a
+    // whole-machine module enumeration that costs seconds); spending that on a
+    // download we are about to delete is pure waste, and it made the user wait
+    // ~10s just to be told "update failed". Failing fast here also means the
+    // handoff marker is never written for an installer that can never launch.
+    final File installer = File(installerPath);
+    try {
+      if (!installer.existsSync()) {
+        throw UpdateInstallerException('installer not found: $installerPath');
+      }
+      final List<int> header = await _readHeaderBytes(installer);
+      if (!isWindowsExecutableHeader(header)) {
+        // 下载的不是真正的安装器（多半是代理返回的 HTML/损坏文件）：删掉脏文件，
+        // 抛错让上层提示「更新失败」并保留 app 存活，而不是硬启动一个坏 exe。
+        try {
+          installer.deleteSync();
+        } catch (_) {/* best-effort cleanup */}
+        throw UpdateInstallerException(
+            'downloaded file is not a Windows executable: $installerPath');
+      }
+    } catch (e, stack) {
+      await _markLaunchFailed(handoffMarkerFile, e, clock(), stack);
+      rethrow;
+    }
+
     final WindowsInstallerDiagnostics rawDiagnostics =
         collectDiagnostics != null
             ? await collectDiagnostics()
@@ -558,21 +585,7 @@ class WindowsInstaller {
       );
     }
 
-    final File installer = File(installerPath);
     try {
-      if (!installer.existsSync()) {
-        throw UpdateInstallerException('installer not found: $installerPath');
-      }
-      final List<int> header = await _readHeaderBytes(installer);
-      if (!isWindowsExecutableHeader(header)) {
-        // 下载的不是真正的安装器（多半是代理返回的 HTML/损坏文件）：删掉脏文件，
-        // 抛错让上层提示「更新失败」并保留 app 存活，而不是硬启动一个坏 exe。
-        try {
-          installer.deleteSync();
-        } catch (_) {/* best-effort cleanup */}
-        throw UpdateInstallerException(
-            'downloaded file is not a Windows executable: $installerPath');
-      }
       if (Platform.isWindows) {
         await ensureWindowsInstallTargetWritable(Directory(targetInstallDir));
       }
