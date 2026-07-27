@@ -152,6 +152,10 @@ class InterconnectSyncBackend extends SyncBackend
   String? _token;
   bool _sessionResolved = false;
 
+  /// 上一次 [_loadConfig] 读到的配置身份（见 [_sessionSignature]）。BUG-1178：用它
+  /// 判断 `restoreAuth` 是否真需要作废已解析的地址。null = 还没读过配置。
+  String? _configSignature;
+
   WebDavOps? _ops;
   // TODO-961 M1: 当前选中地址的钉扎指纹（https 走 pinned client；http=null）。
   String? _activeFingerprint;
@@ -182,11 +186,44 @@ class InterconnectSyncBackend extends SyncBackend
   Future<String?> get currentEmail async => 'hibiki';
 
   Future<void> _loadConfig(SyncRepository repo) async {
-    _candidates = (await repo.getHibikiClientUrls())
+    final List<HibikiClientUrl> candidates = (await repo.getHibikiClientUrls())
         .where((HibikiClientUrl u) => u.enabled)
         .toList();
-    _token = await repo.getHibikiClientToken();
-    _sessionResolved = false;
+    final String? token = await repo.getHibikiClientToken();
+    // BUG-1178：这里原本无条件 `_sessionResolved = false`，而 [restoreAuth] 又是每个
+    // 消费方（书架 / 视频页 / 首页 dashboard）取 client 的必经之路，且本类是**单例**。
+    // 净效果：每切一次页面就把已经探明可达的地址作废一次，下一次网络操作要重跑
+    // [resolveReachableHibikiCandidate] 的全候选串行探测（https 候选还要各做一次带
+    // 指纹钉扎的 TLS 握手），三个页面之间还互相踩。
+    //
+    // 会话该不该重来，取决于**配置是否真的变了**——地址集合、启用状态、钉扎指纹、
+    // 令牌。没变就保留已解析地址；变了才作废。地址失联的换路由径由 [clearCache]
+    // 负责（SyncManager 重试前调用），与本处正交、不受影响。
+    final String signature = _sessionSignature(candidates, token);
+    if (signature != _configSignature) {
+      _configSignature = signature;
+      _sessionResolved = false;
+    }
+    _candidates = candidates;
+    _token = token;
+  }
+
+  /// 会话身份指纹：只包含影响「该连哪个地址、用什么凭据」的字段。`deviceName`
+  /// 是纯展示名，改它不该触发全候选重探测，故不进签名。
+  static String _sessionSignature(
+    List<HibikiClientUrl> candidates,
+    String? token,
+  ) {
+    // 换行做分隔符：URL 与指纹里都不可能出现裸换行，不会拼出歧义签名。
+    final StringBuffer buffer = StringBuffer(token ?? '');
+    for (final HibikiClientUrl candidate in candidates) {
+      buffer
+        ..write('\n')
+        ..write(candidate.url)
+        ..write('\n')
+        ..write(candidate.fingerprintSha256 ?? '');
+    }
+    return buffer.toString();
   }
 
   /// Builds a provisional [WebDavOps] on the first well-formed candidate so
@@ -258,6 +295,8 @@ class InterconnectSyncBackend extends SyncBackend
     _candidates = const <HibikiClientUrl>[];
     _token = null;
     _sessionResolved = false;
+    // 登出后配置身份归零，下次 restoreAuth 必然重探测（BUG-1178）。
+    _configSignature = null;
     await repo.setHibikiClientUrls(const <HibikiClientUrl>[]);
     // Also wipe the legacy single-url key, else getHibikiClientUrls would
     // migrate it back on the next read.
