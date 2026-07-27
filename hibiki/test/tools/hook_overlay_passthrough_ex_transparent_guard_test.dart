@@ -100,6 +100,35 @@ void main() {
         reason: 'Hide 必须清掉透明位，避免重新 show 继承陈旧命中态');
   });
 
+  test('⑥ SetTimer 失败时不得进穿透态（否则没有 tick 能再清掉透明位）', () {
+    expect(
+      RegExp(r'bool\s+FloatingLyricWindow::StartPassThroughCursorPoll')
+          .hasMatch(src),
+      isTrue,
+      reason: '轮询启动必须能上报失败，否则调用方无从得知',
+    );
+    expect(
+      src.contains('void FloatingLyricWindow::AbortPassThroughWithoutPoll()'),
+      isTrue,
+      reason: 'SetTimer 失败后必须有一条退路：'
+          '置上 WS_EX_TRANSPARENT 却没有 tick 能清掉它 = 把用户锁死在穿透态',
+    );
+    // SetPassThrough 与 Show 两个启动点都必须真的处理失败。
+    expect(
+      'AbortPassThroughWithoutPoll();'.allMatches(src).length,
+      greaterThanOrEqualTo(2),
+      reason: 'SetPassThrough 和 Show 两条启动路径都要处理 SetTimer 失败',
+    );
+    final int abortStart =
+        src.indexOf('void FloatingLyricWindow::AbortPassThroughWithoutPoll()');
+    final int abortEnd = src.indexOf('\n}', abortStart);
+    final String abortBody = src.substring(abortStart, abortEnd);
+    expect(abortBody.contains('pass_through_ = false;'), isTrue,
+        reason: '退路必须真的把穿透态摸下来，而不是只清个 ex-style');
+    expect(abortBody.contains('ApplyPassThroughHitTest(true);'), isTrue,
+        reason: '退路必须把点击还给浮窗');
+  });
+
   test('⑤ 恢复带几何只有一份（WM_NCHITTEST 与轮询不得各算各的）', () {
     expect(
       RegExp(r'bool\s+FloatingLyricWindow::PassThroughRecoveryContainsClientY')

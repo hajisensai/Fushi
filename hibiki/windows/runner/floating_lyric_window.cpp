@@ -337,7 +337,9 @@ bool FloatingLyricWindow::Show(HWND owner) {
   // BUG-951: "show" carries passThrough, so SetPassThrough usually runs while
   // hwnd_ is still null on the first show. Arm the poll here, once the window
   // really exists.
-  StartPassThroughCursorPoll();
+  if (!StartPassThroughCursorPoll()) {
+    AbortPassThroughWithoutPoll();
+  }
   RequestRender();
   return true;
 }
@@ -554,16 +556,33 @@ void FloatingLyricWindow::UpdatePassThroughFromCursor() {
   }
 }
 
-void FloatingLyricWindow::StartPassThroughCursorPoll() {
-  if (hwnd_ == nullptr || !pass_through_ || !hook_text_mode_) {
-    return;
+bool FloatingLyricWindow::StartPassThroughCursorPoll() {
+  if (!pass_through_ || !hook_text_mode_) {
+    return true;  // Nothing to arm; not a failure.
   }
-  if (!pass_through_poll_active_ &&
-      SetTimer(hwnd_, kPassThroughPollTimerId, kPassThroughPollIntervalMs,
-               nullptr) != 0) {
+  if (hwnd_ == nullptr) {
+    // SetPassThrough usually runs before the first Show(). Nothing has been
+    // applied yet (ApplyPassThroughHitTest is a no-op on a null window), and
+    // Show() arms the poll once the window exists.
+    return true;
+  }
+  if (!pass_through_poll_active_) {
+    if (SetTimer(hwnd_, kPassThroughPollTimerId, kPassThroughPollIntervalMs,
+                 nullptr) == 0) {
+      // Do NOT fall through to UpdatePassThroughFromCursor(): setting
+      // WS_EX_TRANSPARENT here would be a one-way door.
+      return false;
+    }
     pass_through_poll_active_ = true;
   }
   UpdatePassThroughFromCursor();
+  return true;
+}
+
+void FloatingLyricWindow::AbortPassThroughWithoutPoll() {
+  pass_through_ = false;
+  StopPassThroughCursorPoll();
+  ApplyPassThroughHitTest(true);
 }
 
 void FloatingLyricWindow::StopPassThroughCursorPoll() {
@@ -585,7 +604,9 @@ void FloatingLyricWindow::SetPassThrough(bool enabled) {
   }
   if (pass_through_ && hook_text_mode_) {
     // May be called before Show() has created the window; Show() re-arms.
-    StartPassThroughCursorPoll();
+    if (!StartPassThroughCursorPoll()) {
+      AbortPassThroughWithoutPoll();
+    }
   } else {
     StopPassThroughCursorPoll();
     // Leaving pass-through must always hand the window its own clicks back,

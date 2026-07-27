@@ -151,9 +151,6 @@ class FloatingLyricWindow {
   bool IsLocked() const { return locked_; }
   void SetPassThrough(bool enabled);
   bool IsPassThrough() const { return pass_through_; }
-  // BUG-951 test seam: is WS_EX_TRANSPARENT currently applied? Pass-through is
-  // only genuinely cross-process while this bit is set.
-  bool IsExTransparentForTesting() const { return ex_transparent_; }
   // Restores a physical-pixel window rectangle before the next Show. Invalid
   // rectangles are ignored and Show uses its DPI-aware default.
   void SetInitialBounds(int left, int top, int width, int height);
@@ -195,8 +192,15 @@ class FloatingLyricWindow {
   // WS_EX_TRANSPARENT window receives no mouse messages, so entering the band
   // is only observable by polling.
   void UpdatePassThroughFromCursor();
-  void StartPassThroughCursorPoll();
+  // Returns false ONLY when the poll could not be armed (SetTimer failed).
+  // "Nothing to arm" (not in pass-through, or window not created yet - Show()
+  // re-arms) is success: nothing has been applied in that case.
+  bool StartPassThroughCursorPoll();
   void StopPassThroughCursorPoll();
+  // No tick means no way back: once WS_EX_TRANSPARENT is set nothing could ever
+  // clear it again and the user is locked inside an overlay whose own toolbar
+  // is unclickable. Refuse to enter pass-through at all instead.
+  void AbortPassThroughWithoutPoll();
 
   // Geometry of the lyric text area in client (DIP-equivalent physical px),
   // computed during the last Render. Used for tap hit-testing.
