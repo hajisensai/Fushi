@@ -101,6 +101,14 @@ constexpr uint32_t kHookTextMinCatchAlpha = 5;  // ~2%, invisible but hittable
 // 指示条压不到任何一个字，也就不必为它缩窄换行宽度——缩窄宽度会反过来改变
 // metrics.height，从而改变可滚行程，形成回环。轨道底端让开右下角 resize grip，
 // 免得两个可拖拽的东西叠在同一块像素上。
+// BUG-951 - pass-through cursor poll. A WS_EX_TRANSPARENT window gets no mouse
+// messages at all, so the only way to notice the cursor entering the top
+// recovery band is to ask. One tick per display frame is enough for a hover
+// affordance and costs a GetCursorPos plus two compares; the timer only exists
+// while pass-through is actually on.
+constexpr UINT_PTR kPassThroughPollTimerId = 1;
+constexpr UINT kPassThroughPollIntervalMs = 16;
+
 constexpr float kScrollBarWidthDip = 4.0f;
 constexpr float kScrollBarMinThumbDip = 16.0f;
 constexpr float kScrollWheelStepDip = 40.0f;
@@ -126,6 +134,7 @@ UINT32 GlyphLength(const wchar_t* glyph) {
 FloatingLyricWindow::FloatingLyricWindow() = default;
 
 FloatingLyricWindow::~FloatingLyricWindow() {
+  StopPassThroughCursorPoll();
   if (hwnd_ != nullptr) {
     DestroyWindow(hwnd_);
     hwnd_ = nullptr;
@@ -325,6 +334,12 @@ bool FloatingLyricWindow::Show(HWND owner) {
   SetWindowPos(hwnd_, topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
   visible_ = true;
+  // BUG-951: "show" carries passThrough, so SetPassThrough usually runs while
+  // hwnd_ is still null on the first show. Arm the poll here, once the window
+  // really exists.
+  if (!StartPassThroughCursorPoll()) {
+    AbortPassThroughWithoutPoll();
+  }
   RequestRender();
   return true;
 }
@@ -334,6 +349,11 @@ void FloatingLyricWindow::Hide() {
   hovered_ = false;
   tracking_mouse_leave_ = false;
   dragging_ = false;
+  // BUG-951: a hidden window has no cursor to track. Drop the timer, and clear
+  // WS_EX_TRANSPARENT so a re-Show never starts from a stale hit-test state
+  // (Show -> StartPassThroughCursorPoll re-applies it from the live cursor).
+  StopPassThroughCursorPoll();
+  ApplyPassThroughHitTest(true);
   if (hwnd_ != nullptr) {
     ShowWindow(hwnd_, SW_HIDE);
   }
@@ -478,6 +498,100 @@ void FloatingLyricWindow::SetLocked(bool locked) {
   RequestRender();
 }
 
+bool FloatingLyricWindow::PassThroughRecoveryContainsClientY(
+    float client_y) const {
+  // The band is exactly the strip Render() paints (t_top + t_btn) and exactly
+  // the row ControlActionAt() accepts, so "visible toolbar", "clickable
+  // toolbar" and "not click-through" are one rectangle by construction.
+  return client_y >= 0.0f &&
+         client_y <= ScaleForDpi(kControlsTopDip + kButtonSizeDip);
+}
+
+void FloatingLyricWindow::ApplyPassThroughHitTest(bool interactive) {
+  if (hwnd_ == nullptr) {
+    return;
+  }
+  const bool want_transparent = !interactive;
+  if (ex_transparent_ == want_transparent) {
+    return;
+  }
+  LONG_PTR ex = GetWindowLongPtr(hwnd_, GWL_EXSTYLE);
+  ex = want_transparent
+           ? (ex | static_cast<LONG_PTR>(WS_EX_TRANSPARENT))
+           : (ex & ~static_cast<LONG_PTR>(WS_EX_TRANSPARENT));
+  SetWindowLongPtr(hwnd_, GWL_EXSTYLE, ex);
+  // A bare SetWindowLongPtr is NOT committed until the frame is recalculated -
+  // without this the bit reads back changed while hit-testing still uses the
+  // old value.
+  SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                   SWP_FRAMECHANGED);
+  ex_transparent_ = want_transparent;
+}
+
+void FloatingLyricWindow::UpdatePassThroughFromCursor() {
+  if (hwnd_ == nullptr || !pass_through_ || !hook_text_mode_) {
+    return;
+  }
+  // A press or drag that began in the band owns the mouse until it ends;
+  // turning the window transparent underneath a live gesture would strand it.
+  if (pressed_ || dragging_) {
+    return;
+  }
+  POINT cursor = {};
+  RECT rc = {};
+  if (!GetCursorPos(&cursor) || !GetWindowRect(hwnd_, &rc)) {
+    return;
+  }
+  const bool interactive =
+      PtInRect(&rc, cursor) != FALSE &&
+      PassThroughRecoveryContainsClientY(static_cast<float>(cursor.y - rc.top));
+  ApplyPassThroughHitTest(interactive);
+  // The toolbar only draws (Render) and only accepts hits (ControlActionAt)
+  // while hovered_; drive it from the poll rather than from WM_MOUSEMOVE, which
+  // the window cannot receive while it is transparent.
+  if (hovered_ != interactive) {
+    hovered_ = interactive;
+    RequestRender();
+  }
+}
+
+bool FloatingLyricWindow::StartPassThroughCursorPoll() {
+  if (!pass_through_ || !hook_text_mode_) {
+    return true;  // Nothing to arm; not a failure.
+  }
+  if (hwnd_ == nullptr) {
+    // SetPassThrough usually runs before the first Show(). Nothing has been
+    // applied yet (ApplyPassThroughHitTest is a no-op on a null window), and
+    // Show() arms the poll once the window exists.
+    return true;
+  }
+  if (!pass_through_poll_active_) {
+    if (SetTimer(hwnd_, kPassThroughPollTimerId, kPassThroughPollIntervalMs,
+                 nullptr) == 0) {
+      // Do NOT fall through to UpdatePassThroughFromCursor(): setting
+      // WS_EX_TRANSPARENT here would be a one-way door.
+      return false;
+    }
+    pass_through_poll_active_ = true;
+  }
+  UpdatePassThroughFromCursor();
+  return true;
+}
+
+void FloatingLyricWindow::AbortPassThroughWithoutPoll() {
+  pass_through_ = false;
+  StopPassThroughCursorPoll();
+  ApplyPassThroughHitTest(true);
+}
+
+void FloatingLyricWindow::StopPassThroughCursorPoll() {
+  if (hwnd_ != nullptr && pass_through_poll_active_) {
+    KillTimer(hwnd_, kPassThroughPollTimerId);
+  }
+  pass_through_poll_active_ = false;
+}
+
 void FloatingLyricWindow::SetPassThrough(bool enabled) {
   if (pass_through_ == enabled) {
     return;
@@ -487,6 +601,17 @@ void FloatingLyricWindow::SetPassThrough(bool enabled) {
   dragging_ = false;
   if (GetCapture() == hwnd_) {
     ReleaseCapture();
+  }
+  if (pass_through_ && hook_text_mode_) {
+    // May be called before Show() has created the window; Show() re-arms.
+    if (!StartPassThroughCursorPoll()) {
+      AbortPassThroughWithoutPoll();
+    }
+  } else {
+    StopPassThroughCursorPoll();
+    // Leaving pass-through must always hand the window its own clicks back,
+    // whatever the cursor happens to be doing.
+    ApplyPassThroughHitTest(true);
   }
   RequestRender();
 }
@@ -609,6 +734,13 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
         }
       }
       return 0;
+    }
+    case WM_TIMER: {
+      if (wparam == kPassThroughPollTimerId) {
+        UpdatePassThroughFromCursor();
+        return 0;
+      }
+      return DefWindowProc(hwnd_, message, wparam, lparam);
     }
     case WM_MOUSELEAVE: {
       tracking_mouse_leave_ = false;
@@ -737,12 +869,15 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       POINT screen = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
       POINT client = screen;
       ScreenToClient(hwnd_, &client);
-      if (hook_text_mode_ && pass_through_) {
-        const float recovery_height =
-            ScaleForDpi(kControlsTopDip + kButtonSizeDip);
-        if (static_cast<float>(client.y) > recovery_height) {
-          return HTTRANSPARENT;
-        }
+      // BUG-951: the real cross-process pass-through is WS_EX_TRANSPARENT,
+      // applied by UpdatePassThroughFromCursor - while the body is transparent
+      // this case is not even reached. HTTRANSPARENT stays only as the
+      // same-thread fallback covering the one poll tick between the cursor
+      // leaving the recovery band and the bit being set: declining the click is
+      // strictly better than swallowing it into a word lookup nobody asked for.
+      if (hook_text_mode_ && pass_through_ &&
+          !PassThroughRecoveryContainsClientY(static_cast<float>(client.y))) {
+        return HTTRANSPARENT;
       }
       if (ResizeGripContains(static_cast<float>(client.x),
                              static_cast<float>(client.y))) {
