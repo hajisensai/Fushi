@@ -92,7 +92,12 @@ class _TrackFakeEngine extends EngineHookGalAudioSource {
   }
 
   @override
-  Future<GalAudioSlice?> grabClipNear(int tsMs, {int tolMs = 8000}) async =>
+  Future<GalAudioSlice?> grabClipNear(
+    int tsMs, {
+    int tolMs = 8000,
+    int? sourcePtr,
+    List<int>? exclude,
+  }) async =>
       null;
 
   @override

@@ -99,7 +99,13 @@ class VoiceHookReader {
   // **按句取语音**：找时间戳与 [ts_ms] 最近（且差 <= [tolerance_ms]）的语音 clip，把它那段 PCM
   // 从音频环形拷进 [out]（clip 已被环形覆盖则跳过）。找不到则 [out] 空、返回 ok=false。
   // 这是「该句的语音」自动选取——替代手动波形选区。
+  //   - [target_source] 非 0：只考虑该源的 clip（用户手动选定的语音轨）。
+  //   - [exclude_sources]：这些源的 clip 一律跳过（用户标记的 BGM）。本方法是
+  //     [GrabUtterance] 的兜底，兜底若不认排除集，用户排除的 BGM 会从这里绕回制卡
+  //     ——两个入口必须遵守同一份选轨/排除契约。
   VoiceHookStatus GrabClipNear(uint64_t ts_ms, uint64_t tolerance_ms,
+                               uint64_t target_source,
+                               const std::vector<uint64_t>& exclude_sources,
                                std::vector<uint8_t>& out);
 
   // **按句取「整句」语音**（[GrabClipNear] 的整句版，替代 ~125ms 碎片）：游戏多条 source voice

@@ -1,0 +1,12 @@
+## BUG-1135 · gal 制卡兜底 grabClipNear 绕过选轨/排除集——排除的 BGM 轨会从兜底混回卡片
+- **报告**：2026-07-27（用户：「怎么保证不会混入错误音频」——排查捕获工作台防混入链路时发现）
+- **真实性**：✅ 真 bug（代码路径直接可证，native 注释自己写明「交调用方回退」而回退不认排除集）：
+  - 制卡/逐行取音链 `hibiki/lib/src/mining/gal_hook_session_controller.dart`（`_captureAudioBytesNow` 与 `_attachLineAudio`）都是 `grabUtterance(ts) ?? grabClipNear(ts)`；
+  - `grabUtterance` 尊重 `selectedAudioSourcePtr` / `excludedAudioSourcePtrs`（native `VoiceHookReader::GrabUtterance`，全被排除时返回空「交调用方回退」）；
+  - 旧 `grabClipNear`（`galgame_audio_source.dart` → native `VoiceHookReader::GrabClipNear`）**不带任何源过滤**，从任意轨取最近 clip——用户在工作台排除了 BGM 轨后，只要该句在语音轨窗口内没抓到 PCM，兜底就把 BGM clip 塞进卡片，排除功能被自己的降级链拆台。
+- **[x] ① 已修复** — `GrabClipNear` 增加 `target_source` / `exclude_sources` 参数并与 `GrabUtterance` 同契约过滤（`hibiki/windows/runner/voice_hook_reader.cpp` / `.h`、`flutter_window.cpp` 的 `grabClipNear` handler 解析 `sourcePtr`/`exclude`）；Dart 侧 `grabClipNear` 缺省沿用 `selectedAudioSourcePtr` / `excludedAudioSourcePtrs`（`galgame_audio_source.dart`），两处调用点自动获得同一契约。method channel 契约变更两侧同 PR 落地。
+- **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_capture_audio_integrity_test.dart`：假 method channel 断言 `grabClipNear` 调用携带当前排除集与选轨；及排除后兜底不返回被排除源的 clip。
+- **备注**：
+  - 同轮相邻加固（非本 bug 本体）：无配音句与疑似漏抓分类（`line_has_no_voice`）、超长切片门（`slice_overlong_suspect`）、会话音轨面板入口上移、跨会话记忆（弱指纹）。**记忆恢复语音轨的取舍**：初版刻意只恢复排除、不自动选轨（怕指纹漂了静默配错音）；用户明确要求「每个游戏默认持久化音轨」后改为也恢复，安全性由三点兜住——被排除的轨不得同时被恢复成语音轨、恢复各记结构化事件、逐句音轨面板实时显示本句实际用的是哪条轨且一键可改。
+  - 撞号风险：PR#447 占用了另一含义的 BUG-1115，PR#449 占用 1115/1116——本条开在 1118（本分支基于 PR#452，1115-1117 已被其占用）；合并/rebase 时按纪律重核号段。
+  - 后续同批（用户 2026-07-27 追加）：捕获工作台右栏「最新台词 + 健康状态」两张只读卡换成**逐句音轨面板**（按该行自己的时间戳取快照，排除 BGM 不再是盲操作）；同标签文本线程补可区分后缀（用户实拍 6 条线程全叫 `CodeX · 0x459f50`）；每游戏持久化文本线程 / 语音轨 / 排除集（`GalCaptureMemory`）。
