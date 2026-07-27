@@ -2630,5 +2630,6 @@
   "game_line_recapture_stop": "Finish recapture",
   "game_line_tracks": "Tracks for this line",
   "game_line_tracks_hint": "Preview each track at this line's moment, then exclude the BGM ones",
-  "game_line_track_use": "Use for this line"
+  "game_line_track_use": "Use for this line",
+  "game_user_tags_title": "My tags"
 }

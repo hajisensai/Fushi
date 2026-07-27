@@ -54,7 +54,7 @@
 | [BUG-1116](bugs/BUG-1116-reader-settings-prefcodec-one-way.md) | ✅ | ✅ | reader-settings-prefcodec-one-way |
 | [BUG-1115](bugs/BUG-1115-default-documents-root-flat.md) | ✅ | ✅ | 默认数据根时 16 个 Hibiki 目录直接摊在用户文档根下 |
 | [BUG-1114](bugs/BUG-1114-local-rig-rate-limit-flake.md) | 🚧 | 🚧 | 内置引擎本地 rig 测试：限速对 loopback peer 不生效导致 peer 观察窗口消失（flaky） |
-| [BUG-1113](bugs/BUG-1113-galgame-no-tags.md) | 🚧 | 🚧 | 游戏没有标签：schema 缺 GalgameTagMappings 表 |
+| [BUG-1113](bugs/BUG-1113-galgame-no-tags.md) | ✅ | ✅ | 游戏没有标签：schema 缺 GalgameTagMappings 表 |
 | [BUG-1112](bugs/BUG-1112-activity-timeline-game-no-cover.md) | ✅ | ✅ | 活动时间轴游戏条目只有图标没有封面 |
 | [BUG-1111](bugs/BUG-1111-dashboard-continue-recent-missing-games.md) | ✅ | ✅ | 首页继续与最近添加装不下游戏：_ContinueEntry 用 isVideo 二元标志 |
 | [BUG-1110](bugs/BUG-1110-narrow-screen-hides-degrade-reason.md) | ✅ | ✅ | 捕获工作台窄屏时藏掉降级原因，只留一个「已降级」徽章 |

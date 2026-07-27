@@ -214,6 +214,62 @@ void main() {
           games, const GalgameLibraryView(sortField: GalgameSortField.name));
       expect(out.map((GalgameEntry g) => g.id).toList(), <String>['a', 'z']);
     });
+
+    // BUG-1113：共享用户标签筛出的 id 白名单（DB 查询结果）与页内元数据标签筛选
+    // 是两条正交轴，都在这个纯函数里收口，同时生效。
+    test('allowedIds 为 null = 不过滤（未选任何用户标签时的行为不变）', () {
+      final List<GalgameEntry> games = <GalgameEntry>[
+        entry(id: 'a', name: 'alpha'),
+        entry(id: 'b', name: 'beta'),
+      ];
+      final List<GalgameEntry> out = applyGalgameLibraryView(
+        games,
+        const GalgameLibraryView(sortField: GalgameSortField.name),
+      );
+      expect(out.map((GalgameEntry g) => g.id).toList(), <String>['a', 'b']);
+    });
+
+    test('allowedIds 只保留白名单内的游戏，空集 = 一个都不留', () {
+      final List<GalgameEntry> games = <GalgameEntry>[
+        entry(id: 'a', name: 'alpha'),
+        entry(id: 'b', name: 'beta'),
+      ];
+      expect(
+        applyGalgameLibraryView(
+          games,
+          const GalgameLibraryView(sortField: GalgameSortField.name),
+          allowedIds: <String>{'b'},
+        ).map((GalgameEntry g) => g.id).toList(),
+        <String>['b'],
+      );
+      expect(
+        applyGalgameLibraryView(
+          games,
+          const GalgameLibraryView(sortField: GalgameSortField.name),
+          allowedIds: <String>{},
+        ),
+        isEmpty,
+      );
+    });
+
+    test('allowedIds 与元数据标签/搜索是 AND 关系，不互相覆盖', () {
+      final List<GalgameEntry> games = <GalgameEntry>[
+        entry(id: 'a', name: 'alpha', tags: <String>['学园']),
+        entry(id: 'b', name: 'alphabet', tags: <String>['学园']),
+        entry(id: 'c', name: 'alpha2'),
+      ];
+      final List<GalgameEntry> out = applyGalgameLibraryView(
+        games,
+        const GalgameLibraryView(
+          search: 'alpha',
+          tags: <String>{'学园'},
+          sortField: GalgameSortField.name,
+        ),
+        allowedIds: <String>{'b', 'c'},
+      );
+      // a 被 allowedIds 挡掉；c 没有元数据标签「学园」被挡掉；只剩 b 三条都过。
+      expect(out.map((GalgameEntry g) => g.id).toList(), <String>['b']);
+    });
   });
 
   group('视图偏好编解码', () {

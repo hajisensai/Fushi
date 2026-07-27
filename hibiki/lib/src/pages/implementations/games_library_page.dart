@@ -26,6 +26,9 @@ import 'package:hibiki/src/pages/implementations/galgame_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart'
     show DialogDangerAction, DialogQuickAction, MediaItemDialogFrame;
+import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
+import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart';
+import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
 import 'package:hibiki/utils.dart';
 
 // 游戏进合集（统一媒体库）：mediaType 用 [MediaKind.game]（P5 枚举地基，取代旧
@@ -141,7 +144,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   }
 
   /// 当前要渲染的列表（筛选 + 搜索 + 排序，纯函数）。
-  List<GalgameEntry> get _visible => applyGalgameLibraryView(_games, _view);
+  List<GalgameEntry> _visibleFor(Set<String>? allowedIds) =>
+      applyGalgameLibraryView(_games, _view, allowedIds: allowedIds);
 
   /// 添加游戏：文件选择器选一个 `.exe`，以文件名去扩展名作默认名，追加进列表。
   ///
@@ -460,7 +464,11 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final List<GalgameEntry> visible = _visible;
+    final List<BookTagRow> allTags =
+        ref.watch(allTagsProvider).valueOrNull ?? const <BookTagRow>[];
+    final Set<String>? allowedIds =
+        ref.watch(filteredGameIdsProvider).valueOrNull;
+    final List<GalgameEntry> visible = _visibleFor(allowedIds);
     final Widget grid = _games.isEmpty
         ? _buildEmpty(context)
         : (visible.isEmpty
@@ -473,6 +481,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       child: Column(
         children: <Widget>[
           if (_games.isNotEmpty) _buildToolbar(context),
+          if (_games.isNotEmpty) _buildTagFilterBar(allTags),
           Expanded(child: grid),
         ],
       ),
@@ -577,6 +586,47 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         ],
       ),
     );
+  }
+
+  Widget _buildTagFilterBar(List<BookTagRow> tags) {
+    return HibikiTagFilterBar(
+      tags: tags,
+      onToggleFilter: _toggleTagFilter,
+      onReorder: _reorderTags,
+      onTagsChanged: () => ref.invalidate(gameTagMapProvider),
+    );
+  }
+
+  void _toggleTagFilter(int tagId) {
+    final Set<int> next = Set<int>.from(ref.read(selectedTagIdsProvider));
+    if (!next.remove(tagId)) next.add(tagId);
+    ref.read(selectedTagIdsProvider.notifier).state = next;
+  }
+
+  Future<void> _reorderTags(int oldIndex, int newIndex) async {
+    final List<BookTagRow>? tags = ref.read(allTagsProvider).valueOrNull;
+    if (tags == null) return;
+    final List<BookTagRow> reordered = List<BookTagRow>.from(tags);
+    final BookTagRow moved = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, moved);
+    await _appModel.database
+        .reorderTags(reordered.map((BookTagRow tag) => tag.id).toList());
+    ref.invalidate(allTagsProvider);
+  }
+
+  Future<void> _openTagPicker(GalgameEntry game) async {
+    await Navigator.push(
+      context,
+      adaptivePageRoute(
+        context: context,
+        builder: (_) => TagPickerPage(
+          media: MediaRef(kind: MediaKind.game, entryKey: game.id),
+        ),
+      ),
+    );
+    ref.invalidate(allTagsProvider);
+    ref.invalidate(gameTagMapProvider);
+    ref.invalidate(filteredGameIdsProvider);
   }
 
   /// 筛选面板：状态 / 本地·在线 / 标签多选 / NSFW 隐藏。改动即时生效并持久化。
@@ -882,6 +932,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       onDetail: () => unawaited(_openDetail(game)),
       onScrape: () => unawaited(_openDetail(game, initialTab: 2)),
       onAddToCollection: () => unawaited(_addGameToCollection(game)),
+      onEditTags: () => unawaited(_openTagPicker(game)),
     );
   }
 }
@@ -1051,6 +1102,7 @@ class _GameCard extends StatelessWidget {
     required this.onDetail,
     required this.onScrape,
     required this.onAddToCollection,
+    required this.onEditTags,
     this.sortLabel,
   });
 
@@ -1068,6 +1120,7 @@ class _GameCard extends StatelessWidget {
   final VoidCallback onDetail;
   final VoidCallback onScrape;
   final VoidCallback onAddToCollection;
+  final VoidCallback onEditTags;
 
   /// 长按 / 右键的上下文菜单：与书卡/视频卡同款 [MediaItemDialogFrame]（封面块 +
   /// 快捷动作 chips + 底部危险区），替代旧手搓 SimpleDialog。菜单项与封面溢出菜单
@@ -1176,6 +1229,12 @@ class _GameCard extends StatelessWidget {
           danger: false,
         ),
         (
+          action: 'tags',
+          label: t.tag_label,
+          icon: Icons.sell_outlined,
+          danger: false,
+        ),
+        (
           action: 'remove',
           label: t.game_remove,
           icon: Icons.delete_outline,
@@ -1199,6 +1258,8 @@ class _GameCard extends StatelessWidget {
         onAutoCover();
       case 'collect':
         onAddToCollection();
+      case 'tags':
+        onEditTags();
       case 'remove':
         onRemove();
     }

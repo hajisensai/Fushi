@@ -1292,3 +1292,37 @@ class GalgameSessions extends Table {
   /// 与其它统计表 dateKey 同源，避免读取端为分组反算。
   TextColumn get dateKey => text()();
 }
+
+// ── galgame_tag_mappings ────────────────────────────────────────────
+/// v57（BUG-1113「游戏没有标签」）：游戏 ↔ **用户标签** 多对多映射。标签定义复用
+/// 共享的 [BookTags]，与 EPUB（[BookTagMappings]）、SRT（[SrtBookTagMappings]）、
+/// 视频（[VideoBookTagMappings]）、合集（[CollectionTagMappings]）**同一个标签池**
+/// ——这正是本表存在的理由：上层筛选栏 / 标签管理页早已是四种媒体共用，唯独游戏
+/// 没有落表，于是接不进来（不是 UI 忘接，是 schema 缺口）。
+///
+/// 与游戏**元数据标签**（bgm/vndb 刮削来的字符串，存 [GalgameSources].dataJson +
+/// [Galgames].customDataJson，由 `galgame_library_query.dart` 按名筛选）是两个正交
+/// 维度，刻意不合并：元数据标签是外部事实、动辄上百个且随刮削变动，塞进用户标签池
+/// 会污染书/视频共享的那份手工标签。
+///
+/// **刻意不带 `addedAt`**（对比 [BookTagMappings] / [VideoBookTagMappings]）：那一列
+/// 是 LWW-element-set 的 add 时钟，只为跨端同步裁决而存在。游戏身份 [Galgames].id 是
+/// 添加时刻微秒戳，**本机局域身份**——`galgames` 整张表既不进 live-sync 清单也不进
+/// 备份合并导入，故游戏标签同样不跨端传播、不需要墓碑（[BookTagMembershipTombstones]
+/// 不覆盖游戏）。全量备份恢复走整库文件拷贝，本表随之原样还原。加一个没有消费者的
+/// 时钟列只会让人误以为它在同步。同款取舍见 [CollectionTagMappings]。
+///
+/// 删游戏 / 删标签经外键 cascade 自动清理本表。
+@DataClassName('GalgameTagMappingRow')
+class GalgameTagMappings extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get gameId =>
+      text().references(Galgames, #id, onDelete: KeyAction.cascade)();
+  IntColumn get tagId =>
+      integer().references(BookTags, #id, onDelete: KeyAction.cascade)();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {gameId, tagId},
+      ];
+}
