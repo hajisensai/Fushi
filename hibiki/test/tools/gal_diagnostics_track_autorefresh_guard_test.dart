@@ -18,6 +18,10 @@ void main() {
   final String pageSrc =
       File('lib/src/pages/implementations/game_diagnostics_page.dart')
           .readAsStringSync();
+  // 轨列表体（解释态/门控/逐轨操作）抽成了诊断页与捕获工作台共用的组件，
+  // 断言跟着搬到共享组件文件，诊断页只再守「有没有接上共享组件」。
+  final String panelSrc =
+      File('lib/src/mining/gal_audio_tracks_panel.dart').readAsStringSync();
 
   test('controller：激活/backend 迁移路径接线 _syncTrackAutoRefresh（BUG-1027 ①）', () {
     expect(
@@ -86,11 +90,14 @@ void main() {
     final int tracksCardAt = pageSrc.indexOf('class _AudioTracksCard');
     expect(tracksCardAt, greaterThan(0));
     final String tracksCard = pageSrc.substring(tracksCardAt);
-    expect(tracksCard.contains('galTrackEmptyHintFor'), isTrue,
+    expect(tracksCard.contains('GalAudioTracksPanel('), isTrue,
+        reason: '诊断页音轨卡片必须接共享面板组件，不许再写第二份轨列表');
+
+    expect(panelSrc.contains('galTrackEmptyHintFor'), isTrue,
         reason: '空轨解释态必须按 audioBackend 分支（纯函数 galTrackEmptyHintFor）');
-    expect(tracksCard.contains('game_tracks_resource_mode_hint'), isTrue,
+    expect(panelSrc.contains('game_tracks_resource_mode_hint'), isTrue,
         reason: 'gameResource 空轨必须显示资源模式解释而非通用「尚无音轨数据」');
-    expect(tracksCard.contains('game_tracks_loopback_hint'), isTrue,
+    expect(panelSrc.contains('game_tracks_loopback_hint'), isTrue,
         reason: '纯 Loopback 空轨必须显示回环无逐轨枚举的解释');
   });
 
