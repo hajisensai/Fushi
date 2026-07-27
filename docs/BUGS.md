@@ -27,10 +27,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1098 条。点号进各自文件。
+> 共 1101 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1134](bugs/BUG-1134-gal-line-track-preview-timestamp.md) | ✅ | ✅ | 逐句选轨试听与确认使用了不同台词时间戳 |
+| [BUG-1133](bugs/BUG-1133-gal-capture-parallel-text-duplicate.md) | ✅ | ✅ | 全部文本线程把同一台词显示两遍 |
+| [BUG-1132](bugs/BUG-1132-gal-capture-stale-text-thread.md) | ✅ | ✅ | 捕获工作台混入上次进程的 TextRender 文本线程 |
 | [BUG-1131](bugs/BUG-1131-book-tracking-status-semantics.md) | ✅ | ✅ | Bangumi 小说/漫画阅读进度未按语义切换在读与读过 |
 | [BUG-1130](bugs/BUG-1130-bangumi-watched-progress-stays-wish.md) | ✅ | ✅ | Bangumi 已有想看收藏在记录进度后未切换为在看 |
 | [BUG-1129](bugs/BUG-1129-gal-textthread-list-luna-parity.md) | ✅ | ✅ | 文本线程列表对齐 Luna 选择文本：预览折叠/排序/重名消歧 + TextRender 0 行 |
