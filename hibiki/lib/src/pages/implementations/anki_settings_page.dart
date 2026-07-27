@@ -613,18 +613,28 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       ),
     );
     if (ok != true || !mounted) return;
+    // 两步都可能失败，两步的失败都必须让用户看见：把「第一个失败」收进
+    // failure，最后统一出一条 snackbar。刷新**不能**放 finally——finally 里的
+    // await 抛出就成了没人接的异步异常（页面继续显示恢复前的值，用户只看到
+    // 什么都没发生），正是本 PR 要修的「谎报」同一类问题。
+    Object? failure;
     try {
       await vm.lapisTemplateService.restoreBackup(chosen);
-      messenger
-          .showSnackBar(SnackBar(content: Text(t.anki_lapis_restore_done)));
     } catch (e) {
-      messenger.showSnackBar(
-          SnackBar(content: Text(t.anki_lapis_restore_failed(error: '$e'))));
-    } finally {
-      // 失败也要刷：restoreBackup 在卡模板失败前已经把 styling 与 settings 写
-      // 穿了，只刷成功路径会让页面继续显示恢复前的字号/自定义 CSS。
-      await vm.refreshSettingsFromStore();
+      failure = e;
     }
+    // 成功失败都要刷：restoreBackup 在卡模板失败前已经把 styling 与 settings
+    // 写穿了，只刷成功路径会让页面继续显示恢复前的字号/自定义 CSS。
+    try {
+      await vm.refreshSettingsFromStore();
+    } catch (e) {
+      failure ??= e; // 恢复本身的错更接近根因，优先呈现它。
+    }
+    messenger.showSnackBar(SnackBar(
+      content: Text(failure == null
+          ? t.anki_lapis_restore_done
+          : t.anki_lapis_restore_failed(error: '$failure')),
+    ));
   }
 
   /// 备份文件名 `lapis-<ISO时间戳(冒号→'-')>.json` → 本地可读时间标签；

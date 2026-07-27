@@ -80,6 +80,9 @@ void main() {
         for (final String name in baselines.keys)
           if (!css.contains('--$name:')) name,
       ];
+      // 前瞻风险留痕：本断言把「pc-/mobile- 前缀 + px 取值 == 字号」制度化了。
+      // 上游若新增非字号的 px 变量（如 --pc-main-picture-size），正确做法是给
+      // buildLapisFontScaleCss 加排除表并在这里显式豁免，**不是**把守卫改绿。
       expect(missing, isEmpty, reason: '这些 Lapis 字号变量没被缩放覆盖: $missing');
       // 释义字号显式断言基准与缩放结果（pc 20px、mobile 16px @125%）。
       expect(baselines['pc-main-def-size'], 20);

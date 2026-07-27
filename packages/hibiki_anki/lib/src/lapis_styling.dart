@@ -29,15 +29,21 @@ const String lapisUserCssEndMarker = '/* HIBIKI-LAPIS-USER END */';
 ///
 /// 上游 Lapis 的字号变量命名**不统一**：多数叫 `--pc-*-font-size` /
 /// `--mobile-*-font-size`，但释义字号叫 `--pc-main-def-size` /
-/// `--mobile-main-def-size`（没有 `font-` 中缀）。所以判据是「以 `-size` 结尾」，
-/// `font-` 只是可选中缀——只认 `font-size` 会静默漏掉释义字号，界面缩放对释义
-/// 不生效，与「Scales every Lapis font size」的文案不符（本函数原始缺陷）。
+/// `--mobile-main-def-size`（没有 `font-` 中缀）。所以判据只是「以 `-size`
+/// 结尾」（`[a-z-]*` already 吃掉 `font-`，不需要额外分组）——只认 `font-size`
+/// 会静默漏掉释义字号，界面缩放对释义不生效，与「Scales every Lapis font size」
+/// 的文案不符（本函数原始缺陷）。
 /// 守卫见 `lapis_styling_test.dart`：断言 vendored CSS 里**每一个** px 取值的
 /// `--pc-*` / `--mobile-*` 变量都被本函数覆盖，vendored 升级新增变量即打红。
+///
+/// **上游同步须留意的前瞻风险**：本函数 + 守卫一起把「`pc-`/`mobile-` 前缀 +
+/// px 取值 == 字号」制度化了。上游若新增 `--pc-main-picture-size: 240px` 这类
+/// **非字号**变量，正则会误伤把它一起缩放，守卫还会反过来强制要求它被纳入。
+/// 同步 vendored Lapis 时必须人工过一遍新增的 `--pc-*` / `--mobile-*` px 变量：
+/// 真是字号就放行，不是字号就得给本函数加排除表，别顺手把守卫改绿。
 String buildLapisFontScaleCss(int percent) {
   if (percent == 100) return '';
-  final RegExp pattern =
-      RegExp(r'--((?:pc|mobile)-[a-z-]*(?:font-)?size):\s*(\d+)px');
+  final RegExp pattern = RegExp(r'--((?:pc|mobile)-[a-z-]*size):\s*(\d+)px');
   final List<String> lines = <String>[];
   final Set<String> seen = <String>{};
   for (final RegExpMatch m in pattern.allMatches(LapisNoteType.css)) {
