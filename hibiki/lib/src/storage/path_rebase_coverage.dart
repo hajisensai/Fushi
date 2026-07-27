@@ -13,6 +13,8 @@ library;
 
 import 'package:flutter/foundation.dart';
 
+import 'package:hibiki/src/media/media_source.dart' show dbSourcePrefKey;
+
 /// 一个持久化字段在数据根迁移里的处置。
 enum PathRebaseKind {
   /// 落在 **documents（内容/书库）根**下的绝对路径 —— 迁移必须 rebase 到新 documents 根。
@@ -332,20 +334,28 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
 
 /// Drift preferences（以及它在 profile_settings 里的每 Profile 快照副本）中承载路径的
 /// 键。守卫比对 preferences_repository.dart 里的路径形 key 字面量。
-const List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
+/// **不是 const**：字体 key 必须经单一真相编码器 [dbSourcePrefKey] 生成，绝不硬编码
+/// media_source 的私有 key 前缀格式（守卫 `test/media/db_source_pref_key_test.dart`）。
+final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
   PathRebasePref(
-      'src:reader_ttu:font_catalog',
+      dbSourcePrefKey('reader_ttu', 'font_catalog'),
       PathRebaseKind.documentsRooted,
       PathValueShape.fontCatalogJson,
       '自定义字体 catalog，path 落 <documents>/custom_fonts。无 PrefCodec tag。'),
-  PathRebasePref('src:reader_ttu:custom_fonts', PathRebaseKind.documentsRooted,
-      PathValueShape.fontListJson, '旧影子字体列表，path 落 <documents>/custom_fonts。'),
-  PathRebasePref('src:reader_ttu:app_ui_fonts', PathRebaseKind.documentsRooted,
-      PathValueShape.fontListJson, '同上（App UI 字体）。'),
-  PathRebasePref('src:reader_ttu:dict_fonts', PathRebaseKind.documentsRooted,
-      PathValueShape.fontListJson, '同上（词典字体）。'),
   PathRebasePref(
-      'src:reader_ttu:video_sub_fonts',
+      dbSourcePrefKey('reader_ttu', 'custom_fonts'),
+      PathRebaseKind.documentsRooted,
+      PathValueShape.fontListJson,
+      '旧影子字体列表，path 落 <documents>/custom_fonts。'),
+  PathRebasePref(
+      dbSourcePrefKey('reader_ttu', 'app_ui_fonts'),
+      PathRebaseKind.documentsRooted,
+      PathValueShape.fontListJson,
+      '同上（App UI 字体）。'),
+  PathRebasePref(dbSourcePrefKey('reader_ttu', 'dict_fonts'),
+      PathRebaseKind.documentsRooted, PathValueShape.fontListJson, '同上（词典字体）。'),
+  PathRebasePref(
+      dbSourcePrefKey('reader_ttu', 'video_sub_fonts'),
       PathRebaseKind.documentsRooted,
       PathValueShape.fontListJson,
       '同上（视频字幕字体）。'),

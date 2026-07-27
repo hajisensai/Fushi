@@ -186,9 +186,10 @@ void main() {
     expect(keys.length, equals(kPathRebasePrefs.length), reason: '有重复声明');
   });
 
-  test('字体 pref key 的硬编码字面值与 dbSourcePrefKey 编码器一致', () {
-    // 声明里必须写展开后的字面值（守卫按字面值比对源码），所以字面值与编码器的一致性
-    // 要在这里钉死——与 backup_service.dart 的同款做法一致。
+  test('字体 pref key 由 dbSourcePrefKey 编码器生成且已登记', () {
+    // BUG-1174：声明表用编码器生成 key（不硬编码 media_source 私有前缀格式，见
+    // db_source_pref_key_test）。这里断言编码器产出的 5 个字体 key 确实都在表里——
+    // 编码格式若变化，两侧会同步变化而不会静默漏登记。
     for (final String body in <String>[
       'font_catalog',
       'custom_fonts',

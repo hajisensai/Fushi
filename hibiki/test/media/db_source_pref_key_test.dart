@@ -58,7 +58,9 @@ void main() {
       final String pr =
           File('lib/src/profile/profile_repository.dart').readAsStringSync();
       final String dm =
-          File('lib/src/storage/data_root_migrator.dart').readAsStringSync();
+          // BUG-1174：字体 key 组连同其余承载路径的 pref 一起搬进了声明式覆盖表；
+          // data_root_migrator 现在只消费 kPathRebasePrefs，不再自持 key 常量。
+          File('lib/src/storage/path_rebase_coverage.dart').readAsStringSync();
       expect(rs, contains("dbSourcePrefKey('reader_ttu', '')"),
           reason: 'ReaderSettings._prefix 应转调编码器');
       expect(rs.contains("'src:reader_ttu:'"), isFalse,
