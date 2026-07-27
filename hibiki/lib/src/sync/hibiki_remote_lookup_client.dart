@@ -1,9 +1,7 @@
 import 'dart:convert';
 
-import 'package:hibiki/src/sync/sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_post_transport.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/sync/tls/hibiki_pinning_http.dart';
-import 'package:hibiki/src/sync/webdav_ops.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:http/http.dart' as http;
 
@@ -23,46 +21,30 @@ class RemoteLookupUnreachableError implements Exception {
   String toString() => 'RemoteLookupUnreachableError: $message';
 }
 
-/// [HibikiRemoteLookupClient._postLookup] 的结局：`json` 为拿到并解析成功的响应
-/// 体；`allUnreachable` 仅当「至少发起过一次请求且所有候选都没拿到任何 HTTP
-/// 响应」时为 true——未配对/无 token/候选 URL 全畸形都不算不可达。
-typedef _PostLookupOutcome = ({
-  Map<String, dynamic>? json,
-  bool allUnreachable
-});
-
 class HibikiRemoteLookupClient {
   HibikiRemoteLookupClient({
     required SyncRepository repo,
     http.Client? httpClient,
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
     Duration timeout = const Duration(seconds: 3),
-  })  : _repo = repo,
-        _httpClient = httpClient ?? http.Client(),
-        _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
+  })  : _transport = InterconnectPostTransport(
+          repo: repo,
+          httpClient: httpClient,
+          pinnedClientFactory: pinnedClientFactory,
+        ),
         _timeout = timeout;
 
-  final SyncRepository _repo;
-
-  /// 明文 http 候选共用的 client（生产由 AppModel 注入 keep-alive client 复用连接，
-  /// TODO-744）。**绝不**用于带指纹的 https 候选——那必须走钉扎 client
-  /// （TODO-961 gap①：注入生产 client 不得旁路证书钉扎）。
-  final http.Client _httpClient;
-
-  /// https 候选的钉扎 client 工厂（每候选一个、用完即关）。默认真钉扎
-  /// [createPinnedHttpPackageClient]；测试注入 MockClient 工厂即可拦截。
-  final http.Client Function(String expectedFingerprint) _pinnedClientFactory;
+  /// 候选轮询 / 鉴权 / 指纹钉扎 / socket 回收统一由 [InterconnectPostTransport]
+  /// 承担——本类只管端点、超时与响应体的语义解析。
+  final InterconnectPostTransport _transport;
   final Duration _timeout;
-
-  static http.Client _defaultPinnedClient(String expectedFingerprint) =>
-      createPinnedHttpPackageClient(expectedFingerprint: expectedFingerprint);
 
   Future<DictionarySearchResult?> searchDictionary({
     required String term,
     required bool wildcards,
     required int maximumTerms,
   }) async {
-    final _PostLookupOutcome outcome = await _postLookup(
+    final InterconnectPostOutcome outcome = await _postLookup(
       path: '/api/lookup/dictionary',
       body: <String, dynamic>{
         'term': term,
@@ -110,7 +92,7 @@ class HibikiRemoteLookupClient {
     required String expression,
     required String reading,
   }) async {
-    final _PostLookupOutcome outcome = await _postLookup(
+    final InterconnectPostOutcome outcome = await _postLookup(
       path: '/api/lookup/audio',
       body: <String, dynamic>{
         'expression': expression,
@@ -129,88 +111,15 @@ class HibikiRemoteLookupClient {
     return (url == null || url.isEmpty) ? null : url;
   }
 
-  Future<_PostLookupOutcome> _postLookup({
+  Future<InterconnectPostOutcome> _postLookup({
     required String path,
     required Map<String, dynamic> body,
-  }) async {
-    final List<HibikiClientUrl> candidates = (await _repo.getHibikiClientUrls())
-        .where((HibikiClientUrl u) => u.enabled)
-        .toList(growable: false);
-    final String? token = await _repo.getHibikiClientToken();
-    if (candidates.isEmpty || token == null || token.isEmpty) {
-      // 未配对/未启用/无 token：不是「设备不可达」，按「无结果」处理。
-      return (json: null, allUnreachable: false);
-    }
-
-    bool attempted = false;
-    bool anyResponse = false;
-    for (final HibikiClientUrl candidate in candidates) {
-      final Uri? uri = _lookupUri(candidate.url, path);
-      if (uri == null) continue;
-      // TODO-961 M1/gap①: https 带指纹的候选**始终**走钉扎 client，与是否注入了
-      // 外部 client 无关（注入的 keep-alive client 只服务明文 http 候选，行为零变化）。
-      final String? fp = candidate.fingerprintSha256;
-      final bool usePinned =
-          uri.isScheme('https') && fp != null && fp.isNotEmpty;
-      final http.Client client =
-          usePinned ? _pinnedClientFactory(fp) : _httpClient;
-      attempted = true;
-      try {
-        final http.Response response = await client
-            .post(
-              uri,
-              headers: <String, String>{
-                'Authorization':
-                    'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
-                'Content-Type': 'application/json',
-              },
-              body: jsonEncode(body),
-            )
-            .timeout(_timeout);
-        // 拿到任何 HTTP 响应（含 401/404/405/非 2xx/坏 JSON 体）都算「可达」；
-        // 传输层失败（连接拒绝/超时/DNS）根本走不到这一行，落在 catch 里。
-        anyResponse = true;
-        if (response.statusCode == 401) {
-          throw SyncAuthError('Hibiki server rejected remote lookup token');
-        }
-        if (response.statusCode == 404 || response.statusCode == 405) {
-          continue;
-        }
-        if (response.statusCode < 200 || response.statusCode >= 300) {
-          continue;
-        }
-        final dynamic decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) {
-          return (json: decoded, allUnreachable: false);
-        }
-        if (decoded is Map) {
-          return (
-            json: Map<String, dynamic>.from(decoded),
-            allUnreachable: false,
-          );
-        }
-      } on SyncAuthError {
-        rethrow;
-      } catch (_) {
-        continue;
-      } finally {
-        // 每候选独立 pinned client 用完即关，所有出口（return/continue/throw）统一
-        // 经 finally 回收，不泄漏 socket；共享 _httpClient 绝不在此关闭。
-        if (usePinned) client.close();
-      }
-    }
-    // 走到这里没有任何候选给出可用结果；只有「试过且一个响应都没拿到」才算
-    // 全部不可达（传输层失败），可达但无结果仍是普通 null。
-    return (json: null, allUnreachable: attempted && !anyResponse);
-  }
-
-  Uri? _lookupUri(String baseUrl, String path) {
-    try {
-      final Uri base = Uri.parse(WebDavOps.normalizeUrl(baseUrl));
-      return base
-          .replace(path: path, queryParameters: const <String, String>{});
-    } catch (_) {
-      return null;
-    }
+  }) {
+    return _transport.post(
+      path: path,
+      body: body,
+      timeout: _timeout,
+      authErrorMessage: 'Hibiki server rejected remote lookup token',
+    );
   }
 }
