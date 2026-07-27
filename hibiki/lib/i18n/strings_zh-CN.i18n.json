@@ -2683,6 +2683,7 @@
   "scrape_reason_network": "没能从封面源取到有效响应，请检查网络后重试。",
   "scrape_reason_server": "封面源返回了错误，请稍后重试或换一个候选。",
   "common_more_actions": "更多操作",
+
   "collection_already_has_item": "该条目已在这个合集里。",
   "drag_drop_manga_archive_unsupported": "无法导入 .cbr/.rar 漫画压缩包，请转成 .cbz 或图片文件夹。"
 }

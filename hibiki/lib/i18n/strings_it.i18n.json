@@ -2683,6 +2683,7 @@
   "scrape_reason_network": "Could not get a valid response from the cover source. Check your network and retry.",
   "scrape_reason_server": "The cover source returned an error. Try again later or pick another candidate.",
   "common_more_actions": "More actions",
+
   "collection_already_has_item": "This item is already in the collection.",
   "drag_drop_manga_archive_unsupported": "Can't import .cbr/.rar comic archives — repack as .cbz or a folder of images."
 }
