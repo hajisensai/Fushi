@@ -363,7 +363,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
                   index: index,
                   child: HibikiListItem(
                     padding: EdgeInsets.zero,
-                    // BUG-1177：标题是对端 URL，右侧还有一排控件；单行 ellipsis 在窄屏
+                    // BUG-1184：标题是对端 URL，右侧还有一排控件；单行 ellipsis 在窄屏
                     // 上只显示得到 `http…`，等于认不出是哪台设备。行高自由，放宽两行。
                     titleMaxLines: 2,
                     title: Text(
@@ -1048,7 +1048,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
             Text(t.sync_server_token,
                 style: Theme.of(context).textTheme.labelSmall),
             const SizedBox(height: 4),
-            // BUG-1177：令牌是等宽长串，原先硬钳 2 行且无 ellipsis —— 窄屏上尾部被
+            // BUG-1184：令牌是等宽长串，原先硬钳 2 行且无 ellipsis —— 窄屏上尾部被
             // 直接切掉且毫无提示。令牌必须整串可见（用户要照着输/核对），去掉行数上限。
             SelectableText(
               _token ?? '',
@@ -1057,7 +1057,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                   ),
             ),
             const SizedBox(height: 8),
-            // BUG-1177：两个 icon+label 按钮此前用 Row，窄屏（尤其英文/德文文案更长）
+            // BUG-1184：两个 icon+label 按钮此前用 Row，窄屏（尤其英文/德文文案更长）
             // 合计宽度超过设置面板宽 → 真 RenderFlex overflow。改 Wrap 自然换行。
             Wrap(
               alignment: WrapAlignment.end,
@@ -1097,7 +1097,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
               ..._pairedPeers.map(
                 (HibikiPairedPeerRow peer) => HibikiListItem(
                   padding: EdgeInsets.zero,
-                  // BUG-1177：设备名由用户自定义，可以很长；行高自由，放宽两行。
+                  // BUG-1184：设备名由用户自定义，可以很长；行高自由，放宽两行。
                   titleMaxLines: 2,
                   title: Text(
                     (peer.deviceName != null &&
@@ -1392,7 +1392,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
           for (final HibikiDevice device in _devices)
             HibikiListItem(
               leading: const Icon(Icons.devices_outlined, size: 20),
-              // BUG-1177：发现到的设备名 + WebDAV URL 都可能超出窄屏一行。
+              // BUG-1184：发现到的设备名 + WebDAV URL 都可能超出窄屏一行。
               titleMaxLines: 2,
               title: Text(device.name),
               subtitle: Text(device.webDavUrl),

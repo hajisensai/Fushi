@@ -247,7 +247,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     return Scaffold(
       appBar: AppBar(
         title: Text(_name, maxLines: 1, overflow: TextOverflow.ellipsis),
-        // BUG-1177：5 个动作 + 返回键在 320dp 上吃掉约 296px，合集名只剩二十几像素、
+        // BUG-1184：5 个动作 + 返回键在 320dp 上吃掉约 296px，合集名只剩二十几像素、
         // 等于完全看不见。窄屏把后 4 个收进溢出菜单，排序保持一眼可点。
         actions: narrowAwareAppBarActions(
           context,

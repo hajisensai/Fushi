@@ -114,7 +114,7 @@ class SeriesShelfCard extends StatelessWidget {
                   ),
                 ),
                 SizedBox(
-                  // BUG-1177：与散书卡同步，随文字缩放变高，防止系列名第二行被裁。
+                  // BUG-1184：与散书卡同步，随文字缩放变高，防止系列名第二行被裁。
                   height: ShelfCardFooter.heightFor(context),
                   child: ShelfCardFooter(title: name),
                 ),

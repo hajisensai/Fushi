@@ -1023,7 +1023,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
 
   /// 内容类型分段条 + 下载按钮。
   ///
-  /// BUG-1177：原本是 `Row(Expanded(SegmentedButton 三段), 下载按钮)`。下载按钮不可
+  /// BUG-1184：原本是 `Row(Expanded(SegmentedButton 三段), 下载按钮)`。下载按钮不可
   /// 压缩，分段条拿到的是「剩余宽/3」——360dp 上每段只剩约 48px，`自动/视频/书`
   /// 三个标签全被裁成半个字。这里按**估算宽度**（随文案与文字缩放变化，不写死断点）
   /// 判断放不放得下：放得下维持原来的一行；放不下就让分段条独占一行、按钮换到下一
@@ -1843,7 +1843,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       density: HibikiListDensity.compact,
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       subtitleMaxLines: 3,
-      // BUG-1177：番剧名 + 种子名都很长，而这一行右侧还挂着最多 3 个操作按钮，窄屏
+      // BUG-1184：番剧名 + 种子名都很长，而这一行右侧还挂着最多 3 个操作按钮，窄屏
       // 上标题只剩百来像素。行高自由（在可滚动列表里，只有 minHeight 下限），放宽到
       // 两行；种子名同样从死板的单行放宽到两行。
       titleMaxLines: 2,

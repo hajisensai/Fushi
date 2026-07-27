@@ -168,7 +168,7 @@ class HibikiListItem extends StatefulWidget {
 
   /// 标题最多几行，默认 1。
   ///
-  /// BUG-1177 调查记录：曾把默认值改成 2（因为列表项承载的正是书名、视频名、词典名
+  /// BUG-1184 调查记录：曾把默认值改成 2（因为列表项承载的正是书名、视频名、词典名
   /// 这类长文本，单行 ellipsis 在窄屏上只看得到开头几个字）。**该改动已回退**：
   /// 本组件自身行高虽只有 minHeight 下限，但相当多调用点把它放在固定高度的容器里
   /// （golden `list_tile_narrow` 即在 150×80 的盒子里复现出 overflow 红条），窄容器
@@ -1109,7 +1109,7 @@ class HibikiAppBarAction {
 
 /// 窄屏下把次要 AppBar 动作折进「更多」溢出菜单，把宽度让回给标题。
 ///
-/// BUG-1177：合集详情、网格详情、texthooker 这些页面的 AppBar 各挂了 4~5 个动作。
+/// BUG-1184：合集详情、网格详情、texthooker 这些页面的 AppBar 各挂了 4~5 个动作。
 /// Material 的 AppBar 先满足 actions 的固有宽度，再把剩下的给 title——320dp 上
 /// 5 个动作 + 返回键就吃掉约 296px，标题只剩二十几像素，合集名/书名彻底看不见
 /// （不报错，就是没了）。动作数量本身是合理的，错的是「无论屏多窄都全部平铺」。
@@ -1177,7 +1177,7 @@ class HibikiDialogFrame extends StatelessWidget {
 
   /// 对话框与屏幕边缘的留白。null = 按屏宽自适应（见 [_resolveInsetPadding]）。
   ///
-  /// BUG-1177：此前默认硬编码 `horizontal: 40`。窄屏上这 80px 是纯损失——320dp 的
+  /// BUG-1184：此前默认硬编码 `horizontal: 40`。窄屏上这 80px 是纯损失——320dp 的
   /// 手机上对话框正文只剩 240px，再扣掉 [HibikiModalSheetFrame] 的头部内边距和
   /// 52px 的图标徽标，标题只剩约 144px，于是几乎所有对话框标题都被省略成「…」。
   /// 40 这个值只对宽屏合理（且宽屏本来就被 [maxWidth] 420 兜住，边距几乎不起作用），
@@ -1878,7 +1878,7 @@ class _HibikiPageHeaderRow extends StatelessWidget {
           // leading（含右 gap）作为非弹性子项另行占位，不计入此上界——它在 Row 里已被
           // 独立扣除；这里只需保证「gap + 动作区」不超过整行宽即可避免 overflow。
           //
-          // BUG-1177：原先只保证不 overflow，标题作为 [Expanded] 被允许压到 0。窄屏上
+          // BUG-1184：原先只保证不 overflow，标题作为 [Expanded] 被允许压到 0。窄屏上
           // 4~5 个动作按钮就能把标题吃干净——不报错，但页面标题（合集名、书名）彻底
           // 消失，用户只看到一排图标。动作区本就套着横向滚动视图，被限宽后是「滚动」
           // 而不是「丢失」；标题被压到 0 才是真的丢失。所以保底给标题留几个字的宽度，
@@ -2097,7 +2097,7 @@ class HibikiToolScaffold extends StatelessWidget {
               ),
               child: SizedBox(
                 height: 44,
-                // BUG-1177：动作区上界原先取 `MediaQuery.sizeOf(context).width * 0.48`
+                // BUG-1184：动作区上界原先取 `MediaQuery.sizeOf(context).width * 0.48`
                 // ——**整窗宽**。这个脚手架并不总是占满窗口（嵌在分栏/对话框/受限宽面板
                 // 里时更常见），此时 0.48×整窗可以超过本行的真实可用宽，Row 直接右溢出。
                 // 与 [_HibikiPageHeaderRow] 同一类错误，那边已按本地约束修过；这里改用

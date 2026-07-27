@@ -549,7 +549,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
     return Padding(
       padding: EdgeInsets.all(tokens.spacing.card),
-      // BUG-1177：原先是两个写死的双列 Row，没有窄屏回退（同页的 _buildMidSection
+      // BUG-1184：原先是两个写死的双列 Row，没有窄屏回退（同页的 _buildMidSection
       // 早就有 wide 标志会堆叠，汇总卡一直漏了）。320dp 屏上每格只剩约 132px、
       // 扣掉卡片内边距只有约 100px 的文字宽，而每个面板要放 7 行「标签: 数值」——
       // 每一行都被迫折成两三行，读起来像一团乱码。窄屏改单列。

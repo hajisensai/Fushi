@@ -258,7 +258,7 @@ class _HomeDashboardPageState
 
   /// 「继续」横滑行的总高：封面 + 两行标题 + 一行副标题 + 行间距。
   ///
-  /// BUG-1177：原先是死常量 196，配合标题 `maxLines: 1`。书封宽只有 94px，一行
+  /// BUG-1184：原先是死常量 196，配合标题 `maxLines: 1`。书封宽只有 94px，一行
   /// 只显示得到日文书名的五六个字。放宽到两行就必须同步抬高行高，而且这个高度
   /// 本来也该随文字缩放走——旧的 196 在 textScale≥1.5 时连「单行标题 + 副标题」
   /// 都装不下，会直接竖向溢出。
@@ -1176,7 +1176,7 @@ class _HomeDashboardPageState
             SizedBox(height: tokens.spacing.gap / 2),
             Text(
               title,
-              // BUG-1177：书封宽只有 94px，单行放不下日文书名（行高已按两行算出，
+              // BUG-1184：书封宽只有 94px，单行放不下日文书名（行高已按两行算出，
               // 见 [_continueRowHeight]）。
               maxLines: 2,
               overflow: TextOverflow.ellipsis,

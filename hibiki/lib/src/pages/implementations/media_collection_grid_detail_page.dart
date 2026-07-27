@@ -332,7 +332,7 @@ class _MediaCollectionGridDetailPageState
     return Scaffold(
       appBar: AppBar(
         title: Text(_name, maxLines: 1, overflow: TextOverflow.ellipsis),
-        // BUG-1177：同合集详情页——窄屏把次要动作收进溢出菜单，给合集名让出宽度。
+        // BUG-1184：同合集详情页——窄屏把次要动作收进溢出菜单，给合集名让出宽度。
         actions: narrowAwareAppBarActions(
           context,
           alwaysVisible: <Widget>[_buildSortMenu()],

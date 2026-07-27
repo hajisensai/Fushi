@@ -442,7 +442,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  // BUG-1177：计数 + 全选/全不选原先是 Row + Spacer，在窄屏对话框里
+                  // BUG-1184：计数 + 全选/全不选原先是 Row + Spacer，在窄屏对话框里
                   // （文案更长的语言、四位数计数）三者相加超过可用宽 → RenderFlex
                   // overflow。改 Wrap：放得下仍是「计数左、按钮右」，放不下就换行。
                   Wrap(
@@ -569,7 +569,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  // BUG-1177：计数 + 全选/全不选原先是 Row + Spacer，在窄屏对话框里
+                  // BUG-1184：计数 + 全选/全不选原先是 Row + Spacer，在窄屏对话框里
                   // （文案更长的语言、四位数计数）三者相加超过可用宽 → RenderFlex
                   // overflow。改 Wrap：放得下仍是「计数左、按钮右」，放不下就换行。
                   Wrap(

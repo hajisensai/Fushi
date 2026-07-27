@@ -214,7 +214,7 @@ class _MokuroMoeCatalogDialogState
       title: _stage == _CatalogStage.browse
           ? t.manga_online_catalog_title
           : (_series?.name ?? t.manga_online_catalog_title),
-      // BUG-1177：正文原先是死的 560×440。宽度会被对话框约束钳住（无害），但**高度**
+      // BUG-1184：正文原先是死的 560×440。宽度会被对话框约束钳住（无害），但**高度**
       // 440 是硬的——矮窗口 / 手机横屏下超出对话框可用高度就直接溢出。改为不超过屏高
       // 的六成，宽屏行为不变。
       body: SizedBox(

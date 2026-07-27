@@ -852,7 +852,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
 
   /// 游戏卡总高 = 3:4 竖版海报封面高（[cardWidth] × 4/3）+ 标题块。
   ///
-  /// BUG-1177：此前网格用死比例 `childAspectRatio: 0.62`、合集横排行又单独抄了一遍
+  /// BUG-1184：此前网格用死比例 `childAspectRatio: 0.62`、合集横排行又单独抄了一遍
   /// `cardWidth / 0.62`。0.62 是按「3:4 封面 + **一行**标题」估出来的，于是窄屏上
   /// 文字区只剩约 0.28×卡宽（320dp 屏上 ≈38px），连两行都放不下——galgame 名普遍
   /// 20 字以上，一行只看得到开头六七个字。改为按真实行高算：封面保持精确 3:4，
@@ -927,7 +927,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                 crossAxisCount: columns,
                 mainAxisSpacing: spacing,
                 crossAxisSpacing: spacing,
-                // BUG-1177：原先是死比例 0.62（按「3:4 封面 + 一行标题」估）。窄屏
+                // BUG-1184：原先是死比例 0.62（按「3:4 封面 + 一行标题」估）。窄屏
                 // 上卡宽只有约 136px，文字区按比例只剩 38px，物理上放不下两行——
                 // galgame 名普遍 20 字以上，单行等于只看得到开头几个字。改为按真实
                 // 行高算出卡高（封面仍是精确的 3:4，不再被文字区挤压变形）。
@@ -959,7 +959,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     double cardWidth,
   ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    // BUG-1177：与散卡网格共用同一个 extent 公式，行内卡与网格卡逐像素同形
+    // BUG-1184：与散卡网格共用同一个 extent 公式，行内卡与网格卡逐像素同形
     // （此前两处各写一遍 0.62，改几何时极易漏掉一处）。
     final double rowHeight = _gameCardExtent(context, cardWidth);
     return Padding(

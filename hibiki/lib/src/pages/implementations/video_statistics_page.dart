@@ -248,7 +248,7 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
 
     return Padding(
       padding: EdgeInsets.all(tokens.spacing.card),
-      // BUG-1177：与阅读统计页同款——写死的双列在 320dp 上每格只剩约 100px 文字宽，
+      // BUG-1184：与阅读统计页同款——写死的双列在 320dp 上每格只剩约 100px 文字宽，
       // 每行「标签: 数值」都被迫折行。窄屏改单列。
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {

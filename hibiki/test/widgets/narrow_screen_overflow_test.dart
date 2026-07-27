@@ -6,7 +6,7 @@ import 'package:hibiki/src/utils/components/shelf_card_widgets.dart';
 
 import 'widget_test_helpers.dart';
 
-/// BUG-1177 回归守卫：窄屏 / 小窗口下内容被「显示不全」的几条根因。
+/// BUG-1184 回归守卫：窄屏 / 小窗口下内容被「显示不全」的几条根因。
 ///
 /// 共同的错误模式是把「不抛 RenderFlex overflow」当成了目标——文字被钳成固定行数、
 /// 控件被钳进固定像素、标题被允许压到 0 宽，都不会报错，但用户就是看不全内容。
@@ -50,7 +50,7 @@ void main() {
         subtitle.maxLines,
         isNull,
         reason: '说明文字的职责就是解释配置项，截断等于失效；设置行行高本就自由，'
-            '不该有固定行数上限（BUG-1177）',
+            '不该有固定行数上限（BUG-1184）',
       );
     });
 
@@ -122,7 +122,7 @@ void main() {
         isStacked(tester),
         isTrue,
         reason: '修复前 flexible trailing 被 `!trailingFlexible` 排除在堆叠判定外，'
-            '永远与标题并排五五分宽，标题只剩一半（BUG-1177）',
+            '永远与标题并排五五分宽，标题只剩一半（BUG-1184）',
       );
     });
 
@@ -180,7 +180,7 @@ void main() {
         find.byType(SingleChildScrollView),
         findsOneWidget,
         reason: '窄屏放不下时必须可横向滚动，而不是让 Material 把标签钳成半个词'
-            '（BUG-1177）',
+            '（BUG-1184）',
       );
       expect(tester.takeException(), isNull);
     });
@@ -211,7 +211,7 @@ void main() {
         dialog.insetPadding!.horizontal,
         32,
         reason: '320dp 上左右各 40 会让正文只剩 240px，标题普遍被省略成「…」'
-            '（BUG-1177）',
+            '（BUG-1184）',
       );
     });
 
@@ -288,7 +288,7 @@ void main() {
       );
       await tester.pump();
 
-      expect(built.length, 1, reason: '三个动作必须折成一个溢出菜单（BUG-1177）');
+      expect(built.length, 1, reason: '三个动作必须折成一个溢出菜单（BUG-1184）');
       expect(find.byType(PopupMenuButton<int>), findsOneWidget);
       // 折叠后动作一个都不能少：菜单里必须仍能找到全部三条。
       await tester.tap(find.byType(PopupMenuButton<int>));
@@ -370,7 +370,7 @@ void main() {
         scaled,
         greaterThan(baseline),
         reason: '大字号下 footer 必须长高，否则书名第二行的下半截被 SizedBox 切掉'
-            '（BUG-1177）',
+            '（BUG-1184）',
       );
     });
   });

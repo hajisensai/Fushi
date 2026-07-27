@@ -114,7 +114,7 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
           ),
         ),
         LayoutBuilder(builder: (context, constraints) {
-          // BUG-1177：标题条高度原先是 `maxHeight * 0.25` 的纯比例值，与里面那两行
+          // BUG-1184：标题条高度原先是 `maxHeight * 0.25` 的纯比例值，与里面那两行
           // metadata 字号文字毫无关系。窄屏 cell（320dp 屏上约 134×218）只剩约 48px，
           // textScale 稍大两行就装不下、下半截被 Container 裁掉。改为「比例值与两行
           // 文字实际所需高度取大者」：宽松时维持原来的 25% 观感，紧时按需长高。

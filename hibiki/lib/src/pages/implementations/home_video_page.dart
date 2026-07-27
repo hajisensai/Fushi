@@ -2626,7 +2626,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
                   child: Text(
                     collection.name,
-                    // BUG-1177：与同网格的散卡标题同规格（两行）。
+                    // BUG-1184：与同网格的散卡标题同规格（两行）。
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium,
@@ -2812,7 +2812,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   child: Text(
                     video.title,
-                    // BUG-1177：远端视频占位卡与本地散卡同规格（两行）。
+                    // BUG-1184：远端视频占位卡与本地散卡同规格（两行）。
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium,
@@ -3175,7 +3175,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 封面下方文字块的实际高度：两行标题 + 一行观看进度 + 上下内边距，随文字缩放走。
   ///
-  /// BUG-1177：此前是死常量 [_kVideoCardTextBlock]（52），配合标题 `maxLines: 1`。
+  /// BUG-1184：此前是死常量 [_kVideoCardTextBlock]（52），配合标题 `maxLines: 1`。
   /// 视频名（尤其日文剧名带季数/话数）单行 ellipsis 在窄屏卡上只剩几个字——卡宽在
   /// 360dp 手机上只有约 154px。放宽到两行就必须同步抬高文字块，否则两行标题会顶掉
   /// 进度行并溢出。这里按真实行高算，而不是再猜一个常量：大字号下文字块自动变高，
@@ -3411,7 +3411,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
                   child: Text(
                     book.title,
-                    // BUG-1177：窄屏卡宽只有约 154px，单行放不下一个日文剧名。
+                    // BUG-1184：窄屏卡宽只有约 154px，单行放不下一个日文剧名。
                     // 文字块高度已按两行标题算出（[_videoCardTextBlock]）。
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,

@@ -40,7 +40,7 @@ const int kSettingsRowTitleMaxLines = 2;
 
 /// 说明文字（subtitle）在**显式要求压缩**时的推荐行数上限。
 ///
-/// BUG-1177 起这不再是默认值：[AdaptiveSettingsRow] 默认不钳说明文字的行数
+/// BUG-1184 起这不再是默认值：[AdaptiveSettingsRow] 默认不钳说明文字的行数
 /// （见 [AdaptiveSettingsRow.subtitleMaxLines]），因为设置行行高本就自由，
 /// 硬钳 3 行只会在窄屏上把说明尾部（往往是路径、警告、生效条件）吃掉。
 /// 只有密度敏感、确实需要固定行数的列表才显式传这个常量。
@@ -439,7 +439,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
   /// Overrides how many lines the subtitle (说明文字) may occupy before
   /// ellipsizing. Null = 不限行数：说明文字整段显示。
   ///
-  /// BUG-1177：此前说明文字硬钳 [kSettingsRowSubtitleMaxLines]（3 行）+ ellipsis，
+  /// BUG-1184：此前说明文字硬钳 [kSettingsRowSubtitleMaxLines]（3 行）+ ellipsis，
   /// 且没有 [titleMaxLines] 那样的逃生口。设置行本身只有 minHeight 约束、行高自由，
   /// 所以这个上限不是为了防溢出，纯粹是自伤——窄屏上 label 被 `Expanded` 压窄，
   /// 一条稍长的说明（尤其带路径/警告拼接的那些）第 4 行起直接被吃掉，用户看不到
@@ -496,7 +496,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
     final double iconExtra = (showIcon && icon != null) ? 42.0 : 0.0;
     final Widget content = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        // BUG-1177：flexible trailing 此前被排除在堆叠判定外（`!trailingFlexible`），
+        // BUG-1184：flexible trailing 此前被排除在堆叠判定外（`!trailingFlexible`），
         // 理由是它「会自己 shrink-and-scroll，不会溢出」。不溢出 ≠ 看得清：flexible
         // trailing 与 `Expanded` 标题按 flex 五五分整行宽，360dp 上标题只剩 ~130px，
         // 于是标题被压成两行省略号、控件也缩进一条窄滚动条——两边都读不了。窄到放不下
@@ -1047,7 +1047,7 @@ class _SegmentedStripHost extends StatelessWidget {
 /// [AdaptiveSettingsSegmentedRow] 那种设置行）的自适应 [SegmentedButton]。
 /// 装得下就按自然宽度铺开，装不下就横向滚动，永不把尾部分段裁到画布外。
 ///
-/// BUG-1177：下载设置等页面直接写了裸 `SegmentedButton`。Material 的分段布局把
+/// BUG-1184：下载设置等页面直接写了裸 `SegmentedButton`。Material 的分段布局把
 /// 每段宽度钳到 `可用宽 / 段数`（framework `segmented_button.dart` 的
 /// `_calculateHorizontalChildSize`），所以窄屏上**不会**抛 overflow，而是静默
 /// 把标签裁字——`qBittorrent`、`Built-in engine (desktop only)` 这类不可断行的
@@ -1919,7 +1919,7 @@ class _SettingsLabel extends StatelessWidget {
                   .textTheme
                   .bodySmall
                   ?.copyWith(color: subtitleColor),
-              // BUG-1177：null = 不钳行数，说明文字整段显示（见
+              // BUG-1184：null = 不钳行数，说明文字整段显示（见
               // [AdaptiveSettingsRow.subtitleMaxLines]）。仍保留 ellipsis，
               // 只在调用点显式传有限值时才生效。
               overflow: TextOverflow.ellipsis,

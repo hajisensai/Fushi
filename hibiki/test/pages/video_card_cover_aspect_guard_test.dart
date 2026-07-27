@@ -52,23 +52,23 @@ void main() {
             '文字块高度浮动、把空隙灌回封面区（BUG-928 回归）',
       );
 
-      // BUG-1177 起标题改为两行（原 BUG-943 要求单行，见下方 text block 用例里
+      // BUG-1184 起标题改为两行（原 BUG-943 要求单行，见下方 text block 用例里
       // 记录的权衡）：窄屏卡宽只有约 154px，单行 ellipsis 放不下一个日文剧名。
       expect(
         body,
         contains('maxLines: 2'),
         reason: '$name 标题必须 maxLines: 2——窄屏卡宽约 154px，单行放不下常见的'
-            '日文剧名（BUG-1177）',
+            '日文剧名（BUG-1184）',
       );
     }
   });
 
-  // BUG-943 与 BUG-1177 的权衡，明确记录在此，便于日后一句话回退：
+  // BUG-943 与 BUG-1184 的权衡，明确记录在此，便于日后一句话回退：
   //
   // - BUG-943（用户实报「底部多显示了一块」）的根因是文字块**死钳 83px**——那是
   //   「2 行标题 + 进度行」的最坏情况预留，而绝大多数卡是单行标题、无进度，于是
   //   底部常驻约 50px 空白。当时的修法是把常量收敛到 52 并把标题钳成单行。
-  // - BUG-1177（用户实报窄屏「书/视频的名字显示不全」）暴露了那次修法的代价：
+  // - BUG-1184（用户实报窄屏「书/视频的名字显示不全」）暴露了那次修法的代价：
   //   360dp 手机上卡宽只有约 154px，单行 ellipsis 只显示得到日文剧名的开头几个字。
   //
   // 现在文字块高度**按真实行高算出**（_videoCardTextBlock），不再是任何一个猜出来
@@ -77,14 +77,14 @@ void main() {
   // 能显示第二行必须付的最小代价。本用例守住的是「不得回到最坏预留」这条底线。
   test(
       'video card text block is computed from real line heights, not a '
-      'worst-case constant — BUG-943 / BUG-1177', () {
+      'worst-case constant — BUG-943 / BUG-1184', () {
     final String source = File(path).readAsStringSync();
 
     expect(
       source,
       isNot(contains('_kVideoCardTextBlock =')),
       reason: '文字块高度不得再退回硬编码常量——它必须随字号/文字缩放算出，否则'
-          '大字号下要么裁字（BUG-1177）要么留空白（BUG-943）',
+          '大字号下要么裁字（BUG-1184）要么留空白（BUG-943）',
     );
     expect(
       source,

@@ -28,7 +28,7 @@ class ShelfCardFooter extends StatelessWidget {
 
   /// 按当前文字缩放算出的 footer 高度，下限为基准的 [height]。
   ///
-  /// BUG-1177：footer 高度原先是死的 40px，而里面要放两行 metadata 字号的书名。
+  /// BUG-1184：footer 高度原先是死的 40px，而里面要放两行 metadata 字号的书名。
   /// 默认字号下两行约 31px + 上内边距 4px 勉强塞得下；系统字号一放大（textScale
   /// ≥1.25，小屏用户很常见的设置）两行就要 43px 以上，第二行的下半截被 SizedBox
   /// 直接切掉——书名看起来像被咬了一口。卡片封面区是 [Expanded]，footer 变高只是

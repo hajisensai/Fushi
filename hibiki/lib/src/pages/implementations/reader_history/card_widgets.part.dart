@@ -361,7 +361,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
           ),
         ),
         SizedBox(
-          // BUG-1177：随文字缩放变高，否则大字号下书名第二行被裁（见 [heightFor]）。
+          // BUG-1184：随文字缩放变高，否则大字号下书名第二行被裁（见 [heightFor]）。
           height: ShelfCardFooter.heightFor(context),
           child: ShelfCardFooter(title: title),
         ),

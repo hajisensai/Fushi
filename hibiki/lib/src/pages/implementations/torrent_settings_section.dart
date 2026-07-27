@@ -288,7 +288,7 @@ class _TorrentSettingsSectionState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _sectionLabel(theme, t.download_network_proxy_section),
-        // BUG-1177：窄屏下裸 SegmentedButton 会把每段钳到「可用宽/段数」并静默裁字，
+        // BUG-1184：窄屏下裸 SegmentedButton 会把每段钳到「可用宽/段数」并静默裁字，
         // 统一改走 [HibikiSegmentedStrip]（装不下就横向滚动，标签永远完整）。
         HibikiSegmentedStrip<DownloadNetworkProxyMode>(
           segments: <ButtonSegment<DownloadNetworkProxyMode>>[
@@ -334,7 +334,7 @@ class _TorrentSettingsSectionState
         const Divider(height: 24),
 
         // 后端二选一。标签是 `qBittorrent` / `Built-in engine (desktop only)` 这类
-        // 不可断行的长词，窄屏裸 SegmentedButton 会直接裁字（BUG-1177）。
+        // 不可断行的长词，窄屏裸 SegmentedButton 会直接裁字（BUG-1184）。
         HibikiSegmentedStrip<String>(
           segments: <ButtonSegment<String>>[
             ButtonSegment<String>(
