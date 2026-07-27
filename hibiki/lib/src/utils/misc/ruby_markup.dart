@@ -37,9 +37,6 @@ class RubySpan {
 
   int get end => start + length;
 
-  RubySpan shifted(int delta) =>
-      RubySpan(start: start + delta, length: length, ruby: ruby);
-
   /// MethodChannel 载荷（native 侧按同名字段解包，见 windows/runner/flutter_window.cpp）。
   Map<String, Object?> toChannelMap() => <String, Object?>{
         'start': start,
@@ -80,9 +77,15 @@ class RubyMarkupText {
   ///
   /// 管线里文本还会被继续加工（`trim()`、`_capLookupInput` 的尾部截断、去重返回
   /// trim 过的串），每处都可能让下标漂移。与其在每个加工点各写一遍偏移修正，不如
-  /// 统一走这一个函数：[candidate] 必须是 [text] 的**连续子串**（trim 和截断都满足），
+  /// 统一走这一个函数：[candidate] 必须是 [text] 经 **trim 和/或尾部截断** 得到的子串，
   /// 命中就整体平移并丢掉越界区间；一旦不是子串（说明发生了预期外的改写）就**退回
   /// 无注音**——宁可不显示振假名，也绝不显示错位的振假名。
+  ///
+  /// 这个前置条件不是随口一提：下面用 `indexOf` 取**首个**匹配，只有「trim + 前缀
+  /// 截断」这一类 candidate 才保证首个匹配就是真实偏移（candidate 的首字符非空白，
+  /// 而它前面被切掉的全是空白，更早的匹配不可能存在）。将来若有人改成传中段或后缀
+  /// 子串（例如打字机式增量），`indexOf` 会挑到错误的重复位置，注音就会平移到别的
+  /// 字上——那种改法必须同时把真实偏移显式传进来。
   RubyMarkupText rebase(String candidate) {
     if (candidate == text) return this;
     if (spans.isEmpty) return RubyMarkupText.plain(candidate);
@@ -178,9 +181,13 @@ final RegExp _bracketReadingPattern = RegExp(r'\[([^\[\]]*)\]');
 
 const int _kMaxRubyReadingLength = 16;
 
+/// 平假名（含濁点/半濁点/繰り返し記号）+ 長音符 `ー`：振假名**读音**的字母表。
+bool _isHiraganaRune(int rune) =>
+    (rune >= 0x3041 && rune <= 0x309F) || rune == 0x30FC;
+
 bool _isKanaRune(int rune) =>
     // 平假名（含濁点/半濁点/繰り返し記号）
-    (rune >= 0x3041 && rune <= 0x309F) ||
+    _isHiraganaRune(rune) ||
     // 片假名（含長音符 ー / 中黒 ・）
     (rune >= 0x30A0 && rune <= 0x30FF) ||
     // 半角片假名
@@ -188,10 +195,20 @@ bool _isKanaRune(int rune) =>
 
 /// 歧义形式的保险丝：注音必须是一串不太长的假名。真实注音永远满足；而普通文本里
 /// 恰好出现的 `《…》`（书名号）、`[…]`（编号/时间）几乎必然不满足，于是被原样留下。
-bool _isRubyReading(String reading) {
+///
+/// [hiraganaOnly] 收紧到只认平假名，给方括号式用。两种歧义形式的误伤面差一个数量级：
+/// `《》` 在日文里几乎专用于注音，义训片假名读音（`本気《マジ》`）是轻小说常规写法，
+/// 必须认；而 `[]` 是普通文本里最通用的定界符，「汉字 + 片假名方括号」恰恰是外来语
+/// 标签的高频写法（`配信[アーカイブ]`、`限定[コラボ]`、`第1話[ネタバレ]`）。片假名是
+/// 外来语**标签**的字母表，不是振假名**读音**的字母表；方括号式若认片假名，这些普通
+/// 文本的括号内容会直接从正文里消失，违反本模块「认不出的标记原样保留，绝不猜着删」
+/// 的底线。
+bool _isRubyReading(String reading, {bool hiraganaOnly = false}) {
   if (reading.isEmpty || reading.length > _kMaxRubyReadingLength) return false;
   for (final int rune in reading.runes) {
-    if (!_isKanaRune(rune)) return false;
+    if (hiraganaOnly ? !_isHiraganaRune(rune) : !_isKanaRune(rune)) {
+      return false;
+    }
   }
   return true;
 }
@@ -310,7 +327,8 @@ RubyMarkupText parseRubyMarkup(String raw) {
           unit == 0x300A ? _bareAozoraPattern : _bracketReadingPattern;
       final Match? match = pattern.matchAsPrefix(raw, i);
       final String reading = match?.group(1) ?? '';
-      if (match != null && _isRubyReading(reading)) {
+      if (match != null &&
+          _isRubyReading(reading, hiraganaOnly: unit == 0x5B /* [ */)) {
         final int floor = spans.isEmpty ? 0 : spans.last.end;
         final int start = _lookbackBaseStart(out, floor);
         if (start < out.length) {

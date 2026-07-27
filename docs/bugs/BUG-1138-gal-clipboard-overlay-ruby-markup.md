@@ -11,9 +11,10 @@
 - **[x] ① 已修复** — 新增纯函数解析器 `hibiki/lib/src/utils/misc/ruby_markup.dart`（`parseRubyMarkup` → `RubyMarkupText{text, spans}`，抄字幕侧 `parseSubtitleMarkup` 的「正文不加不减 + 旁路下标区间」范式，坐标单位改用 **UTF-16 code unit** 以对齐 DirectWrite `HitTestPoint`）。
   - 剥离点选在**文本成为下游唯一坐标系之前**：gal hook 在 `texthooker_service.dart` 的 `appendLine`，剪切板在 `desktop_lookup_service.dart` 的 `_queueLookupRequest`（三个来源共同收口，且必须先于按字素截断，否则截断会把标记拦腰切断）。放到显示层剥会让 `gal_hook_text_overlay_controller.dart:541` 的 `entry.text != text` 守卫恒真，点字直接弹「行不可用」。
   - native 渲染复用既有 `HitTestTextRange`（与高亮背景框同一套几何）在基准字上方画小号假名，并用 `SetLineSpacing` 加高行盒让位：`text_` 里不含任何注音字符，**点字 index / 高亮 range / dim range 三个既有契约零改动**。`rubySpans` 缺省即完全走老路径，逐像素与今天一致。
+  - **歧义方括号式只认平假名**（审查期发现并修）：`_isRubyReading` 早期版本对 `[…]` 也放行片假名读音，于是「汉字 + 片假名方括号」这类**普通日文标签**会被当注音，括号内容直接从正文里删掉——实测 `配信[アーカイブ]の話` → `配信の話`（丢 7 字）、`限定[コラボ]グッズ` → `限定グッズ`。剪贴板链路喂进来的是任意文本，撞车概率不低，且这与本模块「认不出的标记原样保留，绝不猜着删」的底线直接冲突。现方括号式要求读音全平假名；`《》` 不受影响（义训片假名读音 `本気《マジ》` 是轻小说常规写法，必须继续认）。
   - 支持语法：`<rふる>震</r>`（截图实例 / BGI 系）、`<ruby>震<rt>ふる</rt></ruby>`（含 `<rb>`/`<rp>`/`<rtc>`）、`｜震《ふる》`、裸 `震《ふる》`、`震[ふる]`。歧义形式（裸 `《》`、`[かな]`）要求「注音全假名 + 前面紧挨汉字串」；认不出的标记一律原样保留，绝不猜着删。
 - **[x] ② 已加自动化测试** —
-  - `hibiki/test/utils/ruby_markup_test.dart`（28 项）：语法矩阵、误伤防御（`<red>`、`《LONDON》`、`[2026/07/27]`）、混排偏移、`rebase` 偏移守恒。
+  - `hibiki/test/utils/ruby_markup_test.dart`（31 项）：语法矩阵、误伤防御（`<red>`、`《LONDON》`、`[2026/07/27]`、**片假名标签 `配信[アーカイブ]` 等 4 例不许吃正文**）、平假名读音收紧后仍认、`《》` 义训片假名仍认、混排偏移、`rebase` 偏移守恒。
   - `hibiki/test/sync/ruby_markup_pipeline_test.dart`（10 项）：两条链路上 `entry.text` / `request.text` 确为纯基准文本且区间对齐、无注音时零变化、`copyWith` 不丢注音、字数口径修正。
   - `hibiki/test/build/overlay_ruby_render_guard_test.dart`（4 项）：C++ 无法在 Dart 测试里执行，故在源码层锁死「复用 HitTestTextRange 不自建排版」「`text_` 不含注音、`CharIndexAt` 仍直回 `textPosition`」「无注音时不走任何注音分支」「两通道解包 + 越界区间丢弃 + 缺省参数」。
 - **备注**：

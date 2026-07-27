@@ -175,6 +175,35 @@ void main() {
       expect(parsed.text, raw);
       expect(parsed.hasRuby, isFalse);
     });
+
+    // 方括号式只认平假名读音。片假名是外来语**标签**的字母表：日文里「汉字 +
+    // 片假名方括号」是标签的高频写法，一旦当成注音，括号内容会被从正文里删掉，
+    // 而剪贴板链路喂进来的是任意文本，撞车概率不低。这一组钉死「宁可不显示注音，
+    // 也绝不吃掉正文」。
+    test('方括号里是片假名标签时原样保留（不吃掉正文）', () {
+      for (final String raw in <String>[
+        '配信[アーカイブ]の話',
+        '限定[コラボ]グッズ',
+        '第1話[ネタバレ]注意',
+        '新作[リメイク]',
+      ]) {
+        final RubyMarkupText parsed = parseRubyMarkup(raw);
+        expect(parsed.text, raw, reason: '$raw 的括号内容不许从正文里消失');
+        expect(parsed.hasRuby, isFalse, reason: '$raw 不是注音');
+      }
+    });
+
+    test('平假名读音仍照常认（收紧不误杀真注音）', () {
+      final RubyMarkupText parsed = parseRubyMarkup('注[ちゅう]を読む');
+      expect(parsed.text, '注を読む');
+      expectSpan(parsed, 0, base: '注', ruby: 'ちゅう');
+    });
+
+    test('裸《》仍认义训片假名读音（轻小说常规写法，不被收紧波及）', () {
+      final RubyMarkupText parsed = parseRubyMarkup('本気《マジ》で');
+      expect(parsed.text, '本気で');
+      expectSpan(parsed, 0, base: '本気', ruby: 'マジ');
+    });
   });
 
   group('混排与偏移', () {
