@@ -1,9 +1,24 @@
 /// 漫画 P3：导入书对话框「OCR 导入漫画」入口 gating。
 ///
-/// - 桌面：恒显示（内置 OCR / 外部 mokuro CLI 都是桌面工具）。
-/// - 移动端（ocrEntryDesktopOverride=false 模拟）：默认隐藏；异步探测到具备漫画
-///   OCR 能力的已配对 host（capabilities.mangaOcr.supported）后亮出入口；探测
-///   不到（未配对 / 老 host 无字段）保持隐藏——版本 skew 零破坏。
+/// ## 判据换靶（PR#474，BUG-1164）
+///
+/// 旧判据是「移动端默认隐藏，探测到具备 `capabilities.mangaOcr.supported` 的
+/// 已配对 host 后才亮出入口」。它防的是**在移动端亮出一个点了必然失败的入口**
+/// ——当时移动端一条可用引擎都没有（内置 ONNX 与外部 mokuro CLI 都是桌面工具），
+/// 唯一出路是借已配对 host 代跑。
+///
+/// PR#474 引入 Google Lens 引擎后这个前提消失了：`MangaModule.openOcrImportWizard`
+/// 无条件注入 `lensRunner: GoogleLensMangaOcrService()`（只有 `externalRunner`
+/// 还带 desktop 三元），移动端在向导里就有可用引擎。继续沿用旧判据会**藏起一个
+/// 真能用的功能**，所以判据换靶而不是放宽：
+///
+/// - 两端都必须亮出入口（能力已全平台可用）；
+/// - 两端 `probeCalls` 都必须是 0 —— 入口不再依赖探测，也**不许**为了决定渲染
+///   一个按钮而偷偷发一次局域网探测请求。这条比旧判据更严（旧判据允许移动端发
+///   一次探测），把「渲染决策不产生网络副作用」钉死。
+///
+/// 已配对 host 代跑本身没有下线：runner 仍经构造注入并透传给向导，由用户在
+/// 向导里显式选 `pairedHost` 引擎时才使用。
 library;
 
 import 'package:drift/native.dart';
@@ -86,19 +101,21 @@ void main() {
     expect(runner.probeCalls, 0, reason: '桌面入口不依赖探测');
   });
 
-  testWidgets('mobile: entry appears once a capable paired host is probed',
+  testWidgets('mobile: entry is visible because Lens works on every platform',
       (WidgetTester tester) async {
     final _FakeRemoteRunner runner = _FakeRemoteRunner(target: _capableTarget);
     await pumpDialog(tester, desktop: false, runner: runner);
-    expect(runner.probeCalls, 1);
     expect(find.text(t.manga_ocr_wizard_title), findsOneWidget);
+    expect(runner.probeCalls, 0,
+        reason: '入口不再依赖探测，渲染决策不得产生网络副作用');
   });
 
-  testWidgets('mobile: entry stays hidden without a capable host',
+  testWidgets('mobile: entry stays visible without any paired host',
       (WidgetTester tester) async {
     final _FakeRemoteRunner runner = _FakeRemoteRunner(target: null);
     await pumpDialog(tester, desktop: false, runner: runner);
-    expect(runner.probeCalls, 1);
-    expect(find.text(t.manga_ocr_wizard_title), findsNothing);
+    expect(find.text(t.manga_ocr_wizard_title), findsOneWidget,
+        reason: '没有已配对 host 也有 Google Lens 可用，不能藏起入口');
+    expect(runner.probeCalls, 0);
   });
 }

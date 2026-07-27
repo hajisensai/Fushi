@@ -59,14 +59,17 @@ class _FakeRunner implements MangaOcrVolumeJobRunner {
   final List<MangaOcrVolumeJobRequest> requests = <MangaOcrVolumeJobRequest>[];
   _FakeJob? lastJob;
   void Function(int, int)? lastOnProgress;
+  void Function(MangaOcrAcceleration)? lastOnAcceleration;
 
   @override
   MangaOcrVolumeJob start(
     MangaOcrVolumeJobRequest request, {
     required void Function(int pagesDone, int pagesTotal) onProgress,
+    void Function(MangaOcrAcceleration acceleration)? onAcceleration,
   }) {
     requests.add(request);
     lastOnProgress = onProgress;
+    lastOnAcceleration = onAcceleration;
     return lastJob = _FakeJob();
   }
 }
@@ -206,6 +209,62 @@ void main() {
       expect(streamError, isNull, reason: '取消不是错误');
       expect(events.map((MangaOcrVolumeEvent e) => e.finished),
           isNot(contains(true)));
+    });
+
+    // BUG-1163：EP 降级不允许静默。runner 回报的加速状态必须挂到每一个
+    // 进度事件和 finished 事件上，UI 才有东西可显示。
+    test('加速状态随每个事件回传，降级原因不丢', () async {
+      writeAllModels();
+      final _FakeRunner runner = _FakeRunner();
+      final MangaOcrServiceImpl impl = service(runner);
+
+      final List<MangaOcrVolumeEvent> events = <MangaOcrVolumeEvent>[];
+      final Future<void> done =
+          impl.ocrFolder(imageDirPath: 'D:/vol1').forEach(events.add);
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.lastOnAcceleration, isNotNull,
+          reason: '服务必须订阅加速回调，否则降级无从观测');
+
+      // 加速状态尚未回报前先来一页进度：该页只能是 null，不能瞎猜成 GPU。
+      runner.lastOnProgress!(1, 2);
+      runner.lastOnAcceleration!(const MangaOcrAcceleration(
+        detection: OcrExecutionProvider.cpu,
+        recognition: OcrExecutionProvider.cpu,
+        degradeReasons: <String>['detector: directml -> cpu (INVALID_PROVIDER)'],
+      ));
+      runner.lastOnProgress!(2, 2);
+      runner.lastJob!.completer.complete('D:/vol1/manga_ocr_out/manga.json');
+      await done;
+
+      expect(events[0].acceleration, isNull);
+      final MangaOcrAcceleration? mid = events[1].acceleration;
+      expect(mid, isNotNull);
+      expect(mid!.degraded, isTrue);
+      expect(mid.label, 'CPU');
+      expect(mid.degradeReasons.single, contains('INVALID_PROVIDER'));
+      expect(events.last.finished, isTrue);
+      expect(events.last.acceleration?.degraded, isTrue,
+          reason: 'finished 事件也要带上降级状态，收尾提示才能显示');
+    });
+
+    test('未降级时加速状态不报降级', () async {
+      writeAllModels();
+      final _FakeRunner runner = _FakeRunner();
+      final MangaOcrServiceImpl impl = service(runner);
+      final List<MangaOcrVolumeEvent> events = <MangaOcrVolumeEvent>[];
+      final Future<void> done =
+          impl.ocrFolder(imageDirPath: 'D:/vol1').forEach(events.add);
+      await Future<void>.delayed(Duration.zero);
+      runner.lastOnAcceleration!(const MangaOcrAcceleration(
+        detection: OcrExecutionProvider.cuda,
+        recognition: OcrExecutionProvider.cpu,
+      ));
+      runner.lastOnProgress!(1, 1);
+      runner.lastJob!.completer.complete('D:/vol1/manga_ocr_out/manga.json');
+      await done;
+
+      expect(events.first.acceleration!.degraded, isFalse);
+      expect(events.first.acceleration!.label, 'CUDA/CPU');
     });
 
     test('任务失败：error 事件结束流', () async {

@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:hibiki/src/ocr/ocr_inference.dart';
+
 /// 漫画整卷 OCR 服务的稳定接口（设计 docs/specs/2026-07-24-manga-ocr-design.md §5.3 生产者 B）。
 ///
 /// UI 层（设置页 / OCR 导入向导）只依赖本接口；真实实现（ONNX 流水线 +
@@ -67,17 +69,56 @@ class MangaOcrDownloadEvent {
   final bool done;
 }
 
+/// 一次本地整卷 OCR 实际生效的推理加速状态。
+///
+/// BUG-1163：GPU EP 被插件拒绝时实现会静默重建 CPU 会话，用户在耗时的整卷
+/// OCR 上完全看不出自己在跑 CPU。这个值对象是把那条降级路径抬到接口面上的
+/// 唯一载体——它随每个 [MangaOcrVolumeEvent] 一起回传，UI 必须展示。
+///
+/// 注意 [degraded] 只表示**非预期**降级（EP 被拒 / EP 探测失败）。按平台策略
+/// 本来就该走 CPU 的组合（例如 Windows 无 CUDA 时识别模型走 CPU）不算降级。
+class MangaOcrAcceleration {
+  const MangaOcrAcceleration({
+    required this.detection,
+    required this.recognition,
+    this.degradeReasons = const <String>[],
+  });
+
+  /// 检测模型实际生效的执行后端。
+  final OcrExecutionProvider detection;
+
+  /// 识别模型（encoder/decoder）实际生效的执行后端。
+  final OcrExecutionProvider recognition;
+
+  /// 非空表示发生过非预期降级，逐条给出原因（EP 拒绝码 / 探测异常）。
+  final List<String> degradeReasons;
+
+  bool get degraded => degradeReasons.isNotEmpty;
+
+  /// 展示用短标签：两个模型同后端时只显示一个。
+  String get label => detection == recognition
+      ? detection.name.toUpperCase()
+      : '${detection.name.toUpperCase()}/${recognition.name.toUpperCase()}';
+
+  @override
+  String toString() => degraded
+      ? 'MangaOcrAcceleration($label, degraded: ${degradeReasons.join('; ')})'
+      : 'MangaOcrAcceleration($label)';
+}
+
 /// 整卷 OCR 进度事件。
 class MangaOcrVolumeEvent {
   const MangaOcrVolumeEvent.page({
     required this.pagesDone,
     required this.pagesTotal,
+    this.acceleration,
   })  : mangaJsonPath = null,
         finished = false;
 
   const MangaOcrVolumeEvent.finished({
     required this.pagesTotal,
     required String this.mangaJsonPath,
+    this.acceleration,
   })  : pagesDone = pagesTotal,
         finished = true;
 
@@ -87,4 +128,7 @@ class MangaOcrVolumeEvent {
   /// finished 事件携带产出的 manga.json 绝对路径。
   final String? mangaJsonPath;
   final bool finished;
+
+  /// 本次任务实际生效的推理加速状态；null = 该引擎不做本地推理（云端/远端）。
+  final MangaOcrAcceleration? acceleration;
 }

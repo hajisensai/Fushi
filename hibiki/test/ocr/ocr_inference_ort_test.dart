@@ -9,12 +9,14 @@ void main() {
   test('unsupported DirectML provider retries once with CPU', () async {
     final List<List<OcrExecutionProvider>> attempts =
         <List<OcrExecutionProvider>>[];
+    final List<OcrProviderResolution> resolutions = <OcrProviderResolution>[];
 
     final String result = await createOcrSessionWithProviderFallback<String>(
       providers: const <OcrExecutionProvider>[
         OcrExecutionProvider.directml,
         OcrExecutionProvider.cpu,
       ],
+      onResolved: resolutions.add,
       create: (List<OcrExecutionProvider> providers) async {
         attempts.add(List<OcrExecutionProvider>.from(providers));
         if (providers.contains(OcrExecutionProvider.directml)) {
@@ -38,6 +40,43 @@ void main() {
         <OcrExecutionProvider>[OcrExecutionProvider.cpu],
       ],
     );
+    // BUG-1163：降级不允许静默——回退必须回报一次，且带上可读原因。
+    expect(resolutions, hasLength(1));
+    expect(resolutions.single.didFallBack, isTrue);
+    expect(resolutions.single.effective, OcrExecutionProvider.cpu);
+    expect(resolutions.single.requested.first, OcrExecutionProvider.directml);
+    expect(resolutions.single.fallbackReason, contains('INVALID_PROVIDER'));
+    expect(resolutions.single.fallbackReason, contains('DIRECT_ML'));
+  });
+
+  test('successful session reports the provider it actually used', () async {
+    final List<OcrProviderResolution> resolutions = <OcrProviderResolution>[];
+
+    await createOcrSessionWithProviderFallback<String>(
+      providers: const <OcrExecutionProvider>[
+        OcrExecutionProvider.cuda,
+        OcrExecutionProvider.cpu,
+      ],
+      onResolved: resolutions.add,
+      create: (List<OcrExecutionProvider> providers) async => 'cuda-session',
+    );
+
+    expect(resolutions, hasLength(1),
+        reason: '不降级也要回报，否则 UI 无法显示当前在跑什么');
+    expect(resolutions.single.didFallBack, isFalse);
+    expect(resolutions.single.effective, OcrExecutionProvider.cuda);
+    expect(resolutions.single.fallbackReason, isNull);
+  });
+
+  test('a throwing observer never breaks session creation', () async {
+    final String result = await createOcrSessionWithProviderFallback<String>(
+      providers: const <OcrExecutionProvider>[OcrExecutionProvider.cpu],
+      onResolved: (OcrProviderResolution resolution) =>
+          throw StateError('observer exploded'),
+      create: (List<OcrExecutionProvider> providers) async => 'cpu-session',
+    );
+
+    expect(result, 'cpu-session');
   });
 
   test('non-provider session errors are not hidden by CPU fallback', () async {

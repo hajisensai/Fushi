@@ -1801,35 +1801,15 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 漫画云端手写识别（Gemini）总开关。**默认关**；关着时零网络调用（红线），
-  /// 只影响补扫结果卡片是否显示「云端重试」与请求闸门。
-  bool get mangaCloudOcrEnabled =>
-      getPref('manga_cloud_ocr_enabled', defaultValue: false) as bool;
-
-  Future<void> setMangaCloudOcrEnabled(bool value) async {
-    await setPref('manga_cloud_ocr_enabled', value);
-    notifyListeners();
-  }
-
-  /// Gemini API key（用户自备；设置区密文显示）。空串=未设，云端重试不可用。
-  String get mangaCloudOcrApiKey =>
-      getPref('manga_cloud_ocr_api_key', defaultValue: '') as String;
-
-  Future<void> setMangaCloudOcrApiKey(String value) async {
-    await setPref('manga_cloud_ocr_api_key', value);
-    notifyListeners();
-  }
-
-  /// 旧版单框 Gemini 识别模型名。
-  ///
-  /// 仅保留偏好键以兼容已有数据；漫画模块已改为整页 OCR，不再展示此配置。
-  String get mangaCloudOcrModel =>
-      getPref('manga_cloud_ocr_model', defaultValue: '') as String;
-
-  Future<void> setMangaCloudOcrModel(String value) async {
-    await setPref('manga_cloud_ocr_model', value);
-    notifyListeners();
-  }
+  // 旧版单框 Gemini 云端识别的三对 getter/setter（`manga_cloud_ocr_enabled` /
+  // `manga_cloud_ocr_api_key` / `manga_cloud_ocr_model`）随 PR#474 删掉框选补扫
+  // 实现后已零消费方，本轮一并清掉（BUG-1164）。
+  //
+  // ⚠️ 存量设备的 Drift `preferences` 行**不删**（没有迁移方案就别动持久化数据），
+  // 而 `manga_cloud_ocr_api_key` 仍然留在
+  // `sync/pref_redaction_policy.dart` 的 `sensitiveKeys` 里 —— 老用户库里已经写
+  // 过的那个 key 必须继续被备份/Profile 快照/Profile 分享三条出境通道剔除。
+  // 删代码不等于删数据，脱敏名单不能跟着删。
 
   /// galgame 窗口超分策略（`auto` / `installed_only` / `off`）。
   ///

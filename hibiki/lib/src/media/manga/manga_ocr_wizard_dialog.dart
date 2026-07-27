@@ -348,6 +348,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
           pagesTotal: event.pagesTotal,
           resultPath: event.mangaJsonPath!,
           external: false,
+          acceleration: event.acceleration,
         );
         continue;
       }
@@ -367,6 +368,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
         pagesTotal: event.pagesTotal,
         pageIndex: pageIndex,
         page: page,
+        acceleration: event.acceleration,
       );
     }
   }
@@ -932,8 +934,8 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
 
   Widget _folderRow(bool busy) {
     if (widget.existingBook != null) {
-      return ListTile(
-        contentPadding: EdgeInsets.zero,
+      return HibikiListItem(
+        padding: EdgeInsets.zero,
         leading: const Icon(Icons.menu_book_outlined),
         title: Text(widget.existingBook!.title),
         subtitle: Text(p.basename(widget.existingBook!.extractDir)),

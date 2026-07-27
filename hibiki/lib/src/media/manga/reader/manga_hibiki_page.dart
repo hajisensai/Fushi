@@ -18,6 +18,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/media/manga/manga_module.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_background_job.dart';
+import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 import 'package:hibiki/src/media/manga/manga_overlay_html.dart';
 import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
 import 'package:hibiki/src/media/manga/manga_spread_model.dart';
@@ -107,6 +108,36 @@ class MangaTurnQueue {
       _draining = false;
     }
   }
+}
+
+/// 窗口文档 generation 闸门（BUG-1153）。
+///
+/// WebView2 的 `loadData` Future 只证明导航被受理，旧文档可能还要多显示一帧、
+/// 或迟到一次 `onLoadStop`。每份窗口文档都嵌了一个单调递增的 generation
+/// （`window.__mangaDocumentGeneration`），收尾回调必须先用它证明「这份文档就是
+/// 我刚请求的那一份」，否则整套解锁/平移/记进度都会作用在错的文档上。
+///
+/// 这里是纯函数，是为了让「旧 generation 被丢弃」这条不变量能被真正断言，而不是
+/// 只断言 HTML 里写了个数字。
+class MangaWindowGeneration {
+  const MangaWindowGeneration._();
+
+  /// 把 JS 回报的 `window.__mangaDocumentGeneration` 解析成 int。
+  ///
+  /// WebView 桥在不同平台上分别回 num / String，解析不出一律 null（fail-closed，
+  /// 后续比较必然不等，回调被丢弃）。
+  static int? parse(Object? raw) => switch (raw) {
+        final num value => value.round(),
+        final String value => int.tryParse(value),
+        _ => null,
+      };
+
+  /// 回报值与 [current] 严格相等才放行。
+  ///
+  /// 严格相等而不是 `>=`：既要丢掉迟到的旧文档（更小），也要丢掉解析失败与任何
+  /// 对不上号的值。
+  static bool isCurrent(Object? rawGeneration, int current) =>
+      parse(rawGeneration) == current;
 }
 
 /// 漫画选区 payload 的纯分发核心。页面方法 `processMangaSelection` 接真实回调
@@ -219,8 +250,8 @@ Future<int?> showMangaPageJumpDialog(
 ///
 /// 选词接线（防串框契约 ERRATA H2/C1）：本页注册**恰好一个**
 /// `onTextSelected` Dart handler；全工程唯一的 pointerup 选词监听内嵌在
-/// [mangaWindowDocument]（调 `hoshiSelection.selectText(x, y, 40, false)` 四参，
-/// 漏 maxLength 会让扫描 gate 恒假、查词全程哑火），本页绝不再注册第二个。
+/// [mangaWindowDocument]（调 `hoshiSelection.selectFromPosition(node, 0, 40, x, y)`，
+/// 第三参 maxLength 漏传会让扫描 gate 恒假、查词全程哑火），本页绝不再注册第二个。
 class MangaHibikiPage extends BaseSourcePage {
   const MangaHibikiPage({
     super.key,
@@ -509,6 +540,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   bool _wholeVolumeOcrRunning = false;
   int _wholeVolumeOcrDone = 0;
   int _wholeVolumeOcrTotal = 0;
+
+  /// 本次整卷 OCR 实际生效的推理加速状态（BUG-1163：降级必须看得见）。
+  MangaOcrAcceleration? _wholeVolumeOcrAcceleration;
+
+  /// 降级提示只弹一次，避免逐页事件刷屏。
+  bool _wholeVolumeOcrDegradeNotified = false;
   StreamSubscription<void>? _wholeVolumeOcrSubscription;
   String? _debugOcrHitOrientation;
   String? _debugOcrHitCharacter;
@@ -1229,6 +1266,8 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         _wholeVolumeOcrRunning = true;
         _wholeVolumeOcrDone = 0;
         _wholeVolumeOcrTotal = 0;
+        _wholeVolumeOcrAcceleration = null;
+        _wholeVolumeOcrDegradeNotified = false;
       });
       _wholeVolumeOcrSubscription =
           job.events.asyncMap(_handleWholeVolumeOcrEvent).listen(
@@ -1268,6 +1307,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     MangaOcrBackgroundEvent event,
   ) async {
     if (!mounted) return;
+    _observeWholeVolumeOcrAcceleration(event.acceleration);
     if (event.finished) {
       await _finishWholeVolumeOcr(event);
       return;
@@ -1292,6 +1332,26 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       _payload = MokuroPayload(images: images, ocr: current.ocr);
     });
     await _replacePageOcrOverlay(pageIndex, page);
+  }
+
+  /// 记录并（首次）提示本次任务真正生效的执行后端。
+  ///
+  /// BUG-1163：GPU EP 被插件拒绝时实现会静默重建 CPU 会话；不提示的话用户在
+  /// 整卷 OCR 上只会觉得「怎么这么慢」，无从判断自己根本没在用 GPU。
+  void _observeWholeVolumeOcrAcceleration(
+    MangaOcrAcceleration? acceleration,
+  ) {
+    if (acceleration == null) return;
+    if (identical(acceleration, _wholeVolumeOcrAcceleration)) return;
+    setState(() => _wholeVolumeOcrAcceleration = acceleration);
+    if (!acceleration.degraded || _wholeVolumeOcrDegradeNotified) return;
+    _wholeVolumeOcrDegradeNotified = true;
+    HibikiToast.show(
+      msg: t.manga_ocr_acceleration_degraded(
+        engine: acceleration.label,
+        reason: acceleration.degradeReasons.join('; '),
+      ),
+    );
   }
 
   Future<void> _replacePageOcrOverlay(
@@ -1846,10 +1906,16 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         // Niratan 风格整页 OCR：直接选择引擎并识别整卷，不进入框选模式。
         Tooltip(
           message: _wholeVolumeOcrRunning && _wholeVolumeOcrTotal > 0
-              ? t.manga_ocr_wizard_page_progress(
-                  done: _wholeVolumeOcrDone,
-                  total: _wholeVolumeOcrTotal,
-                )
+              ? <String>[
+                  t.manga_ocr_wizard_page_progress(
+                    done: _wholeVolumeOcrDone,
+                    total: _wholeVolumeOcrTotal,
+                  ),
+                  if (_wholeVolumeOcrAcceleration != null)
+                    t.manga_ocr_acceleration_status(
+                      engine: _wholeVolumeOcrAcceleration!.label,
+                    ),
+                ].join('\n')
               : t.manga_ocr_wizard_run,
           child: IconButton(
             key: const ValueKey<String>('manga_full_ocr_button'),
@@ -1882,6 +1948,20 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
                   ),
             ),
           ),
+        // BUG-1163：当前真正生效的执行后端常驻显示，降级时标红。
+        if (_wholeVolumeOcrRunning && _wholeVolumeOcrAcceleration != null)
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: Text(
+              _wholeVolumeOcrAcceleration!.label,
+              key: const ValueKey<String>('manga_ocr_acceleration_label'),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: _wholeVolumeOcrAcceleration!.degraded
+                        ? Colors.amberAccent
+                        : Colors.white70,
+                  ),
+            ),
+          ),
         if (kDebugMode && _debugOcrHitOrientation != null)
           Container(
             key: const ValueKey<String>('manga_ocr_hit_debug'),
@@ -1890,7 +1970,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
             decoration: BoxDecoration(
               color: Colors.black87,
               border: Border.all(color: Colors.lightGreenAccent),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: HibikiBorderRadius.chip,
             ),
             child: Text(
               '${_debugOcrHitOrientation == 'vertical' ? '竖排' : '横排'}'
@@ -2101,12 +2181,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     } catch (_) {
       return;
     }
-    final int? generation = switch (rawGeneration) {
-      final num value => value.round(),
-      final String value => int.tryParse(value),
-      _ => null,
-    };
-    if (generation != _windowGeneration) {
+    if (!MangaWindowGeneration.isCurrent(rawGeneration, _windowGeneration)) {
       return;
     }
     await controller.evaluateJavascript(

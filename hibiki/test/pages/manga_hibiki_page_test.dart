@@ -11,7 +11,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
+import 'package:hibiki/src/media/manga/manga_overlay_html.dart';
 import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
+import 'package:hibiki/src/media/manga/mokuro_payload.dart';
 import 'package:hibiki/src/media/media_item.dart';
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 import 'package:hibiki/src/pages/implementations/manga_hibiki_page.dart';
@@ -350,6 +352,63 @@ void main() {
 
     expect(selected, 1);
     expect(tester.takeException(), isNull);
+  });
+
+  // BUG-1153：原守卫只验「HTML 里写了 generation」，不验丢弃。这一组验的是
+  // 真正的丢弃判据——迟到的旧文档回调必须被拒，收尾步骤一步都不能跑。
+  group('窗口 generation 闸门丢弃旧文档回调', () {
+    test('只有与当前 generation 严格相等的回报才放行', () {
+      expect(MangaWindowGeneration.isCurrent(7, 7), isTrue);
+      expect(MangaWindowGeneration.isCurrent(7.0, 7), isTrue,
+          reason: 'WebView 桥可能把整数回成 double');
+      expect(MangaWindowGeneration.isCurrent('7', 7), isTrue,
+          reason: '部分平台的 evaluateJavascript 回字符串');
+    });
+
+    test('迟到的旧 generation 被丢弃', () {
+      // 场景：第 7 代文档的 onLoadStop 在第 8 代已经发起后才到。
+      expect(MangaWindowGeneration.isCurrent(7, 8), isFalse);
+      expect(MangaWindowGeneration.isCurrent('7', 8), isFalse);
+      expect(MangaWindowGeneration.isCurrent(0, 3), isFalse,
+          reason: '首个文档的迟到回调同样不能解锁第 3 代');
+    });
+
+    test('对不上号或解析不出的回报一律 fail-closed', () {
+      expect(MangaWindowGeneration.isCurrent(9, 8), isFalse,
+          reason: '比当前更大同样是对不上号，不能放行');
+      expect(MangaWindowGeneration.isCurrent(null, 8), isFalse);
+      expect(MangaWindowGeneration.isCurrent('undefined', 8), isFalse);
+      expect(MangaWindowGeneration.isCurrent(<String>['8'], 8), isFalse);
+      expect(MangaWindowGeneration.parse('not a number'), isNull);
+      expect(MangaWindowGeneration.isCurrent(null, 0), isFalse,
+          reason: '解析失败绝不能因为默认值 0 而误判成第 0 代');
+    });
+
+    test('相邻两代文档带的 generation 标记必须不同，闸门才有可区分的依据', () {
+      String documentFor(int generation) => mangaWindowDocument(
+            <MokuroImage>[
+              const MokuroImage(
+                url: 'p.jpg',
+                size: Size(100, 200),
+                blocks: <MokuroBlock>[],
+              ),
+            ],
+            <String>['p.jpg'],
+            mode: MangaReadingMode.spread,
+            spreadDirection: 'rtl',
+            inlineSelectionJs: '',
+            currentSpread: 0,
+            documentGeneration: generation,
+          );
+
+      expect(documentFor(7).contains('window.__mangaDocumentGeneration=7;'),
+          isTrue);
+      expect(documentFor(8).contains('window.__mangaDocumentGeneration=8;'),
+          isTrue);
+      expect(documentFor(7).contains('window.__mangaDocumentGeneration=8;'),
+          isFalse,
+          reason: '旧文档不能携带新 generation，否则闸门永远放行');
+    });
   });
 
   test('webtoon 进度经 ReaderPositions 写穿：charOffset 千分比往返', () async {
