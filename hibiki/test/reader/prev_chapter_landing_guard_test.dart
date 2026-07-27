@@ -53,10 +53,7 @@ void main() {
     test(
         'continuous restoreProgress routes progress>=0.99 to scrollToChapterEnd',
         () {
-      final String continuous = ReaderPaginationScripts.shellScript(
-        continuousMode: true,
-        initialProgress: 0.99,
-      );
+      final String continuous = ReaderPaginationScripts.continuousShellSource();
       final String n = norm(continuous);
       // 连续 restoreProgress 里 progress>=0.99 分支必须走 scrollToChapterEnd。
       expect(
@@ -70,10 +67,7 @@ void main() {
 
     test('image-only chapter keeps <img> eager (paginated + continuous)', () {
       for (final bool continuous in <bool>[false, true]) {
-        final String shell = ReaderPaginationScripts.shellScript(
-          continuousMode: continuous,
-          initialProgress: 0.99,
-        );
+        final String shell = ReaderPaginationScripts.paginatedShellSource();
         final String n = norm(shell);
         // 纯图片章检测存在。
         expect(n.contains('__hoshiImageOnlyChapter'), isTrue,
@@ -93,7 +87,7 @@ void main() {
         () {
       // 纯图片章检测用 ttuRegex（有文本即短路→非纯图片→仍 lazy）。守卫接线在场即可，
       // 行为（文本章 lazy）由 integration/headless 端到端断言。
-      final String n = norm(ReaderPaginationScripts.shellScript());
+      final String n = norm(ReaderPaginationScripts.paginatedShellSource());
       expect(n.contains("setAttribute('loading', 'lazy')"), isTrue,
           reason: '普通图仍须 lazy 分支在场（不回退 TODO-1074）');
       expect(n.contains('ttuRegex.test(document.body.textContent'), isTrue,

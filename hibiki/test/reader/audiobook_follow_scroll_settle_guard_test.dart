@@ -35,9 +35,9 @@ void main() {
   /// 取 `_continuousShellScript` 函数体（连续模式那份 hoshiReader），避免误把分页 shell
   /// 的滚动函数当成命中。从签名起到下一个顶层 `static String` 声明之间。
   String continuousShellBody() {
-    final int start = scripts.indexOf('static String _continuousShellScript(');
+    final int start = scripts.indexOf('static String continuousShellSource(');
     expect(start, greaterThanOrEqualTo(0),
-        reason: '找不到 _continuousShellScript 定义');
+        reason: '找不到 continuousShellSource 定义');
     final int next = scripts.indexOf('\n  static ', start + 1);
     final int end = next >= 0 ? next : scripts.length;
     return scripts.substring(start, end);

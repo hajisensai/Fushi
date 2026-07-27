@@ -394,7 +394,7 @@ class ReaderSettings {
 
   /// 翻页滑动灵敏度系数（TODO-113）。1.0 = 默认手感；<1 更灵敏（更短的滑动即可
   /// 翻页），>1 更迟钝（需滑得更远）。系数缩放 JS 端 `_gestureEnd` 的基础距离阈值
-  /// （44px / 快速短滑 22px），见 reader_hibiki_page.dart `_buildReaderSetupScript`。
+  /// （44px / 快速短滑 22px），见 webview.part.dart `_buildReaderEngineConfig`。
   static double normalizeSwipePageTurnSensitivity(num value) =>
       value.toDouble().clamp(0.3, 2.0).toDouble();
 

@@ -38,73 +38,31 @@ import 'package:hibiki/src/reader/reader_content_styles.dart'
 class ReaderVisualNovelScripts {
   ReaderVisualNovelScripts._();
 
-  /// Returns the full `<script>...</script>` shell for VN mode.
-  static String vnShellScript({
-    double initialProgress = 0.0,
-    int initialCharOffset = -1,
-    String? sasayakiCuesJson,
-    String? initialFragment,
-    bool blurImages = false,
-    int revealSpeed = 0,
-    String screenMode = 'block',
-    int sentencesPerScreen = 1,
-    bool preserveDialogue = false,
-    bool mergeCrossScreenSasayakiCues = false,
-  }) {
-    final String screenModeLiteral = _jsStringLiteral(screenMode);
-    final String initialFragmentLiteral =
-        initialFragment != null ? _jsStringLiteral(initialFragment) : 'null';
-    final String sasayakiCuesJsonLiteral = sasayakiCuesJson ?? 'null';
-    final String initialRestoreScript = initialFragment != null
-        ? 'window.hoshiReader.jumpToFragment($initialFragmentLiteral);'
-        : (initialCharOffset >= 0
-            ? 'window.hoshiReader.restoreToCharOffset($initialCharOffset);'
-            : 'window.hoshiReader.restoreProgress($initialProgress);');
-    return _shell(
-      initialProgress: initialProgress,
-      initialFragmentLiteral: initialFragmentLiteral,
-      sasayakiCuesJson: sasayakiCuesJsonLiteral,
-      blurImages: blurImages,
-      revealSpeed: revealSpeed,
-      screenModeLiteral: screenModeLiteral,
-      sentencesPerScreen: sentencesPerScreen,
-      preserveDialogue: preserveDialogue,
-      mergeCrossScreenSasayakiCues: mergeCrossScreenSasayakiCues,
-      initialRestoreScript: initialRestoreScript,
-    );
-  }
+  /// VN shell 的静态源码（`<script>…</script>`，零 per-nav 插值）。
+  ///
+  /// BUG-1140 第二阶段①：原来 `vnShellScript({initialProgress, revealSpeed, …})`
+  /// 把每次导航的参数插进源码；现在整段被包成 `window.__hoshiShells.vn = function(C)`，
+  /// 参数由运行时读 `C`。恢复锚三选一的优先级与旧 Dart 三元式逐条相同。
+  static String vnShellScript() => _shell();
 
-  // 注意：ReaderPaginationScripts._jsStringLiteral 是另一份独立实现（jsonEncode、
-  // 双引号输出）。两侧输出字节形式各被测试钉死（本文件单引号 →
-  // test/reader/vn_shell_smoke_test.dart；分页双引号 →
-  // test/reader/reader_pagination_scripts_test.dart），刻意不共享；本实现已转义
-  // 单引号字面量全部语法破坏字符（\ ' \n \r），改动时必须保持 JS 语法安全。
-  static String _jsStringLiteral(String value) {
-    final String escaped = value
-        .replaceAll(r'\', r'\\')
-        .replaceAll("'", r"\'")
-        .replaceAll('\n', r'\n')
-        .replaceAll('\r', r'\r');
-    return "'$escaped'";
-  }
+  /// 恢复锚三选一的运行时分派（旧实现在 Dart 侧三元式挑一条语句）。
+  static const String _initialRestoreJs = '''
+    if (C.initialFragment !== null && C.initialFragment !== undefined) {
+      window.hoshiReader.jumpToFragment(C.initialFragment);
+    } else if (C.initialCharOffset >= 0) {
+      window.hoshiReader.restoreToCharOffset(C.initialCharOffset);
+    } else {
+      window.hoshiReader.restoreProgress(C.initialProgress);
+    }''';
 
-  static String _shell({
-    required double initialProgress,
-    required String initialFragmentLiteral,
-    required String sasayakiCuesJson,
-    required bool blurImages,
-    required int revealSpeed,
-    required String screenModeLiteral,
-    required int sentencesPerScreen,
-    required bool preserveDialogue,
-    required bool mergeCrossScreenSasayakiCues,
-    required String initialRestoreScript,
-  }) {
+  static String _shell() {
+    const String initialRestoreScript = _initialRestoreJs;
     // TODO-1085 (BUG-513): single source of truth for the image viewport ratio,
     // shared with the paginated shell (ReaderLayoutDefaults.imageWidthViewportRatio),
     // consumed by applyImageMaxVars below.
     const double imageWidthRatio = ReaderLayoutDefaults.imageWidthViewportRatio;
     return '''<script>
+window.__hoshiShells.vn = function(C) {
 (function(global) {
   'use strict';
 
@@ -802,14 +760,14 @@ class ReaderVisualNovelScripts {
 })(window);
 
 window.hoshiReader = {
-  revealSpeed: $revealSpeed,
-  screenMode: $screenModeLiteral,
-  sentencesPerScreen: $sentencesPerScreen,
-  preserveDialogue: $preserveDialogue,
-  mergeCrossScreenSasayakiCues: $mergeCrossScreenSasayakiCues,
-  initialSasayakiCues: $sasayakiCuesJson,
-  initialProgress: $initialProgress,
-  initialFragment: $initialFragmentLiteral,
+  revealSpeed: C.vnRevealSpeed,
+  screenMode: C.vnScreenMode,
+  sentencesPerScreen: C.vnSentencesPerScreen,
+  preserveDialogue: C.vnPreserveDialogue,
+  mergeCrossScreenSasayakiCues: C.vnMergeCrossScreenSasayakiCues,
+  initialSasayakiCues: C.sasayakiCues,
+  initialProgress: C.initialProgress,
+  initialFragment: C.initialFragment,
   initialHighlights: [],
   nativeSelectionActive: false,
   activeCueId: null,
@@ -2330,7 +2288,7 @@ window.hoshiReader = {
   },
   setupReaderImage: function(element, src, wrap, blurElement) {
     return window.hoshiReaderMediaSemantics.setupReaderImage(element, src, {
-      blurImages: $blurImages,
+      blurImages: C.blurImages,
       imageBridge: window.HoshiReaderImage,
       wrap: wrap,
       blurElement: blurElement
@@ -2349,7 +2307,7 @@ window.hoshiReader = {
     // applyImageMaxVars) drive their size. Gaiji glyph images are left inline.
     this.promoteBlockImages(scope);
     return window.hoshiReaderMediaSemantics.setupReaderImages(scope, {
-      blurImages: $blurImages,
+      blurImages: C.blurImages,
       imageBridge: window.HoshiReaderImage,
       waitForImages: false
     });
@@ -3041,6 +2999,7 @@ if (document.readyState === 'complete') {
     try { if (window.console && console.error) console.error('[HoshiVN] boot restore failed', e); } catch (_ignored) {}
   }
 }
+};
 </script>''';
   }
 }

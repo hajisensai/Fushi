@@ -16,6 +16,7 @@ import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki/src/reader/reader_chrome_floating.dart';
+import 'package:hibiki/src/reader/reader_engine_script.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
@@ -190,6 +191,17 @@ class ReaderHibikiSource extends ReaderMediaSource {
       return '$kResourceScheme://$kHost/epub/$encoded';
     }
     return 'https://$kHost/epub/$encoded';
+  }
+
+  // BUG-1140 第二阶段①：静态引擎脚本的 URL。[version] 是引擎源码的内容哈希，参与
+  // 路径 → 引擎源码一变 URL 就变，旧缓存条目自然失效（`immutable` 强缓存才敢开）。
+  // 与 [epubUrl] / [fontUrl] 同一套 host / scheme 分派（iOS/macOS 走自定义 scheme）。
+  static String engineUrl(String version) {
+    final String encoded = Uri.encodeComponent(version);
+    if (Platform.isMacOS || Platform.isIOS) {
+      return '$kResourceScheme://$kHost${ReaderEngineScript.pathPrefix}$encoded.js';
+    }
+    return 'https://$kHost${ReaderEngineScript.pathPrefix}$encoded.js';
   }
 
   static String fontUrl(String path) {

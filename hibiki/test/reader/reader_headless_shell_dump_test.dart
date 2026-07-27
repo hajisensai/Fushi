@@ -17,18 +17,8 @@ import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 /// 本测试永远 pass——它只是把真 shell 落盘，不断言渲染行为（那由 headless probe 断言）。
 void main() {
   test('dump paginated + continuous horizontal shell to systemTemp', () {
-    final String paginated = ReaderPaginationScripts.shellScript(
-      initialProgress: 0.0,
-      initialCharOffset: -1,
-      continuousMode: false,
-      vnMode: false,
-    );
-    final String continuous = ReaderPaginationScripts.shellScript(
-      initialProgress: 0.0,
-      initialCharOffset: -1,
-      continuousMode: true,
-      vnMode: false,
-    );
+    final String paginated = ReaderPaginationScripts.paginatedShellSource();
+    final String continuous = ReaderPaginationScripts.continuousShellSource();
     final String tmp = Directory.systemTemp.path;
     File('$tmp/hoshi_shell_paginated.html').writeAsStringSync(paginated);
     File('$tmp/hoshi_shell_continuous.html').writeAsStringSync(continuous);

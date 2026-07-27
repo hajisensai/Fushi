@@ -40,7 +40,7 @@ void main() {
       final String body = src.substring(idx, idx + 1300);
       // JS 门控用 Dart 插值的 DebugLogService.instance.enabled 渲染成字面 true/false。
       expect(
-        body.contains('if (\${DebugLogService.instance.enabled})'),
+        body.contains('if (C.debugLogging)'),
         isTrue,
         reason: 'JS 诊断 console.log 须由 DebugLogService.enabled 门控（默认 off）',
       );
