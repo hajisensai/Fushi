@@ -20631,6 +20631,234 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
   }
 }
 
+class $GalgameTagMappingsTable extends GalgameTagMappings
+    with TableInfo<$GalgameTagMappingsTable, GalgameTagMappingRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $GalgameTagMappingsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _gameIdMeta = const VerificationMeta('gameId');
+  @override
+  late final GeneratedColumn<String> gameId = GeneratedColumn<String>(
+      'game_id', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES galgames (id) ON DELETE CASCADE'));
+  static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
+  @override
+  late final GeneratedColumn<int> tagId = GeneratedColumn<int>(
+      'tag_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES book_tags (id) ON DELETE CASCADE'));
+  @override
+  List<GeneratedColumn> get $columns => [id, gameId, tagId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'galgame_tag_mappings';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<GalgameTagMappingRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('game_id')) {
+      context.handle(_gameIdMeta,
+          gameId.isAcceptableOrUnknown(data['game_id']!, _gameIdMeta));
+    } else if (isInserting) {
+      context.missing(_gameIdMeta);
+    }
+    if (data.containsKey('tag_id')) {
+      context.handle(
+          _tagIdMeta, tagId.isAcceptableOrUnknown(data['tag_id']!, _tagIdMeta));
+    } else if (isInserting) {
+      context.missing(_tagIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {gameId, tagId},
+      ];
+  @override
+  GalgameTagMappingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return GalgameTagMappingRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      gameId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}game_id'])!,
+      tagId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}tag_id'])!,
+    );
+  }
+
+  @override
+  $GalgameTagMappingsTable createAlias(String alias) {
+    return $GalgameTagMappingsTable(attachedDatabase, alias);
+  }
+}
+
+class GalgameTagMappingRow extends DataClass
+    implements Insertable<GalgameTagMappingRow> {
+  final int id;
+  final String gameId;
+  final int tagId;
+  const GalgameTagMappingRow(
+      {required this.id, required this.gameId, required this.tagId});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['game_id'] = Variable<String>(gameId);
+    map['tag_id'] = Variable<int>(tagId);
+    return map;
+  }
+
+  GalgameTagMappingsCompanion toCompanion(bool nullToAbsent) {
+    return GalgameTagMappingsCompanion(
+      id: Value(id),
+      gameId: Value(gameId),
+      tagId: Value(tagId),
+    );
+  }
+
+  factory GalgameTagMappingRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return GalgameTagMappingRow(
+      id: serializer.fromJson<int>(json['id']),
+      gameId: serializer.fromJson<String>(json['gameId']),
+      tagId: serializer.fromJson<int>(json['tagId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'gameId': serializer.toJson<String>(gameId),
+      'tagId': serializer.toJson<int>(tagId),
+    };
+  }
+
+  GalgameTagMappingRow copyWith({int? id, String? gameId, int? tagId}) =>
+      GalgameTagMappingRow(
+        id: id ?? this.id,
+        gameId: gameId ?? this.gameId,
+        tagId: tagId ?? this.tagId,
+      );
+  GalgameTagMappingRow copyWithCompanion(GalgameTagMappingsCompanion data) {
+    return GalgameTagMappingRow(
+      id: data.id.present ? data.id.value : this.id,
+      gameId: data.gameId.present ? data.gameId.value : this.gameId,
+      tagId: data.tagId.present ? data.tagId.value : this.tagId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GalgameTagMappingRow(')
+          ..write('id: $id, ')
+          ..write('gameId: $gameId, ')
+          ..write('tagId: $tagId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, gameId, tagId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is GalgameTagMappingRow &&
+          other.id == this.id &&
+          other.gameId == this.gameId &&
+          other.tagId == this.tagId);
+}
+
+class GalgameTagMappingsCompanion
+    extends UpdateCompanion<GalgameTagMappingRow> {
+  final Value<int> id;
+  final Value<String> gameId;
+  final Value<int> tagId;
+  const GalgameTagMappingsCompanion({
+    this.id = const Value.absent(),
+    this.gameId = const Value.absent(),
+    this.tagId = const Value.absent(),
+  });
+  GalgameTagMappingsCompanion.insert({
+    this.id = const Value.absent(),
+    required String gameId,
+    required int tagId,
+  })  : gameId = Value(gameId),
+        tagId = Value(tagId);
+  static Insertable<GalgameTagMappingRow> custom({
+    Expression<int>? id,
+    Expression<String>? gameId,
+    Expression<int>? tagId,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (gameId != null) 'game_id': gameId,
+      if (tagId != null) 'tag_id': tagId,
+    });
+  }
+
+  GalgameTagMappingsCompanion copyWith(
+      {Value<int>? id, Value<String>? gameId, Value<int>? tagId}) {
+    return GalgameTagMappingsCompanion(
+      id: id ?? this.id,
+      gameId: gameId ?? this.gameId,
+      tagId: tagId ?? this.tagId,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (gameId.present) {
+      map['game_id'] = Variable<String>(gameId.value);
+    }
+    if (tagId.present) {
+      map['tag_id'] = Variable<int>(tagId.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GalgameTagMappingsCompanion(')
+          ..write('id: $id, ')
+          ..write('gameId: $gameId, ')
+          ..write('tagId: $tagId')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -20714,6 +20942,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $GalgameSourcesTable galgameSources = $GalgameSourcesTable(this);
   late final $GalgameSessionsTable galgameSessions =
       $GalgameSessionsTable(this);
+  late final $GalgameTagMappingsTable galgameTagMappings =
+      $GalgameTagMappingsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -20770,7 +21000,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         mediaTrackingOutbox,
         galgames,
         galgameSources,
-        galgameSessions
+        galgameSessions,
+        galgameTagMappings
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -20920,6 +21151,20 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('galgame_sessions', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('galgames',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('galgame_tag_mappings', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('book_tags',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('galgame_tag_mappings', kind: UpdateKind.delete),
             ],
           ),
         ],
@@ -25109,6 +25354,23 @@ final class $$BookTagsTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$GalgameTagMappingsTable,
+      List<GalgameTagMappingRow>> _galgameTagMappingsRefsTable(
+          _$HibikiDatabase db) =>
+      MultiTypedResultKey.fromTable(db.galgameTagMappings,
+          aliasName: 'book_tags__id__galgame_tag_mappings__tag_id');
+
+  $$GalgameTagMappingsTableProcessedTableManager get galgameTagMappingsRefs {
+    final manager =
+        $$GalgameTagMappingsTableTableManager($_db, $_db.galgameTagMappings)
+            .filter((f) => f.tagId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_galgameTagMappingsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$BookTagsTableFilterComposer
@@ -25219,6 +25481,27 @@ class $$BookTagsTableFilterComposer
                   $removeJoinBuilderFromRootComposer:
                       $removeJoinBuilderFromRootComposer,
                 ));
+    return f(composer);
+  }
+
+  Expression<bool> galgameTagMappingsRefs(
+      Expression<bool> Function($$GalgameTagMappingsTableFilterComposer f) f) {
+    final $$GalgameTagMappingsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.galgameTagMappings,
+        getReferencedColumn: (t) => t.tagId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgameTagMappingsTableFilterComposer(
+              $db: $db,
+              $table: $db.galgameTagMappings,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return f(composer);
   }
 }
@@ -25360,6 +25643,28 @@ class $$BookTagsTableAnnotationComposer
                 ));
     return f(composer);
   }
+
+  Expression<T> galgameTagMappingsRefs<T extends Object>(
+      Expression<T> Function($$GalgameTagMappingsTableAnnotationComposer a) f) {
+    final $$GalgameTagMappingsTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.galgameTagMappings,
+            getReferencedColumn: (t) => t.tagId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$GalgameTagMappingsTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.galgameTagMappings,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
 }
 
 class $$BookTagsTableTableManager extends RootTableManager<
@@ -25377,7 +25682,8 @@ class $$BookTagsTableTableManager extends RootTableManager<
         {bool bookTagMappingsRefs,
         bool srtBookTagMappingsRefs,
         bool videoBookTagMappingsRefs,
-        bool collectionTagMappingsRefs})> {
+        bool collectionTagMappingsRefs,
+        bool galgameTagMappingsRefs})> {
   $$BookTagsTableTableManager(_$HibikiDatabase db, $BookTagsTable table)
       : super(TableManagerState(
           db: db,
@@ -25424,14 +25730,16 @@ class $$BookTagsTableTableManager extends RootTableManager<
               {bookTagMappingsRefs = false,
               srtBookTagMappingsRefs = false,
               videoBookTagMappingsRefs = false,
-              collectionTagMappingsRefs = false}) {
+              collectionTagMappingsRefs = false,
+              galgameTagMappingsRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (bookTagMappingsRefs) db.bookTagMappings,
                 if (srtBookTagMappingsRefs) db.srtBookTagMappings,
                 if (videoBookTagMappingsRefs) db.videoBookTagMappings,
-                if (collectionTagMappingsRefs) db.collectionTagMappings
+                if (collectionTagMappingsRefs) db.collectionTagMappings,
+                if (galgameTagMappingsRefs) db.galgameTagMappings
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
@@ -25487,6 +25795,19 @@ class $$BookTagsTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem: (item,
                                 referencedItems) =>
                             referencedItems.where((e) => e.tagId == item.id),
+                        typedResults: items),
+                  if (galgameTagMappingsRefs)
+                    await $_getPrefetchedData<BookTagRow, $BookTagsTable,
+                            GalgameTagMappingRow>(
+                        currentTable: table,
+                        referencedTable: $$BookTagsTableReferences
+                            ._galgameTagMappingsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$BookTagsTableReferences(db, table, p0)
+                                .galgameTagMappingsRefs,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.tagId == item.id),
                         typedResults: items)
                 ];
               },
@@ -25510,7 +25831,8 @@ typedef $$BookTagsTableProcessedTableManager = ProcessedTableManager<
         {bool bookTagMappingsRefs,
         bool srtBookTagMappingsRefs,
         bool videoBookTagMappingsRefs,
-        bool collectionTagMappingsRefs})>;
+        bool collectionTagMappingsRefs,
+        bool galgameTagMappingsRefs})>;
 typedef $$BookTagMappingsTableCreateCompanionBuilder = BookTagMappingsCompanion
     Function({
   Value<int> id,
@@ -34125,6 +34447,23 @@ final class $$GalgamesTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$GalgameTagMappingsTable,
+      List<GalgameTagMappingRow>> _galgameTagMappingsRefsTable(
+          _$HibikiDatabase db) =>
+      MultiTypedResultKey.fromTable(db.galgameTagMappings,
+          aliasName: 'galgames__id__galgame_tag_mappings__game_id');
+
+  $$GalgameTagMappingsTableProcessedTableManager get galgameTagMappingsRefs {
+    final manager =
+        $$GalgameTagMappingsTableTableManager($_db, $_db.galgameTagMappings)
+            .filter((f) => f.gameId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_galgameTagMappingsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$GalgamesTableFilterComposer
@@ -34207,6 +34546,27 @@ class $$GalgamesTableFilterComposer
             $$GalgameSessionsTableFilterComposer(
               $db: $db,
               $table: $db.galgameSessions,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> galgameTagMappingsRefs(
+      Expression<bool> Function($$GalgameTagMappingsTableFilterComposer f) f) {
+    final $$GalgameTagMappingsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.galgameTagMappings,
+        getReferencedColumn: (t) => t.gameId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgameTagMappingsTableFilterComposer(
+              $db: $db,
+              $table: $db.galgameTagMappings,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -34350,6 +34710,28 @@ class $$GalgamesTableAnnotationComposer
             ));
     return f(composer);
   }
+
+  Expression<T> galgameTagMappingsRefs<T extends Object>(
+      Expression<T> Function($$GalgameTagMappingsTableAnnotationComposer a) f) {
+    final $$GalgameTagMappingsTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.galgameTagMappings,
+            getReferencedColumn: (t) => t.gameId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$GalgameTagMappingsTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.galgameTagMappings,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
 }
 
 class $$GalgamesTableTableManager extends RootTableManager<
@@ -34364,7 +34746,9 @@ class $$GalgamesTableTableManager extends RootTableManager<
     (GalgameRow, $$GalgamesTableReferences),
     GalgameRow,
     PrefetchHooks Function(
-        {bool galgameSourcesRefs, bool galgameSessionsRefs})> {
+        {bool galgameSourcesRefs,
+        bool galgameSessionsRefs,
+        bool galgameTagMappingsRefs})> {
   $$GalgamesTableTableManager(_$HibikiDatabase db, $GalgamesTable table)
       : super(TableManagerState(
           db: db,
@@ -34440,12 +34824,15 @@ class $$GalgamesTableTableManager extends RootTableManager<
                   (e.readTable(table), $$GalgamesTableReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: (
-              {galgameSourcesRefs = false, galgameSessionsRefs = false}) {
+              {galgameSourcesRefs = false,
+              galgameSessionsRefs = false,
+              galgameTagMappingsRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (galgameSourcesRefs) db.galgameSources,
-                if (galgameSessionsRefs) db.galgameSessions
+                if (galgameSessionsRefs) db.galgameSessions,
+                if (galgameTagMappingsRefs) db.galgameTagMappings
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
@@ -34475,6 +34862,19 @@ class $$GalgamesTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem: (item,
                                 referencedItems) =>
                             referencedItems.where((e) => e.gameId == item.id),
+                        typedResults: items),
+                  if (galgameTagMappingsRefs)
+                    await $_getPrefetchedData<GalgameRow, $GalgamesTable,
+                            GalgameTagMappingRow>(
+                        currentTable: table,
+                        referencedTable: $$GalgamesTableReferences
+                            ._galgameTagMappingsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$GalgamesTableReferences(db, table, p0)
+                                .galgameTagMappingsRefs,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.gameId == item.id),
                         typedResults: items)
                 ];
               },
@@ -34495,7 +34895,9 @@ typedef $$GalgamesTableProcessedTableManager = ProcessedTableManager<
     (GalgameRow, $$GalgamesTableReferences),
     GalgameRow,
     PrefetchHooks Function(
-        {bool galgameSourcesRefs, bool galgameSessionsRefs})>;
+        {bool galgameSourcesRefs,
+        bool galgameSessionsRefs,
+        bool galgameTagMappingsRefs})>;
 typedef $$GalgameSourcesTableCreateCompanionBuilder = GalgameSourcesCompanion
     Function({
   required String gameId,
@@ -35089,6 +35491,322 @@ typedef $$GalgameSessionsTableProcessedTableManager = ProcessedTableManager<
     (GalgameSessionRow, $$GalgameSessionsTableReferences),
     GalgameSessionRow,
     PrefetchHooks Function({bool gameId})>;
+typedef $$GalgameTagMappingsTableCreateCompanionBuilder
+    = GalgameTagMappingsCompanion Function({
+  Value<int> id,
+  required String gameId,
+  required int tagId,
+});
+typedef $$GalgameTagMappingsTableUpdateCompanionBuilder
+    = GalgameTagMappingsCompanion Function({
+  Value<int> id,
+  Value<String> gameId,
+  Value<int> tagId,
+});
+
+final class $$GalgameTagMappingsTableReferences extends BaseReferences<
+    _$HibikiDatabase, $GalgameTagMappingsTable, GalgameTagMappingRow> {
+  $$GalgameTagMappingsTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $GalgamesTable _gameIdTable(_$HibikiDatabase db) =>
+      db.galgames.createAlias('galgame_tag_mappings__game_id__galgames__id');
+
+  $$GalgamesTableProcessedTableManager get gameId {
+    final $_column = $_itemColumn<String>('game_id')!;
+
+    final manager = $$GalgamesTableTableManager($_db, $_db.galgames)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_gameIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $BookTagsTable _tagIdTable(_$HibikiDatabase db) =>
+      db.bookTags.createAlias('galgame_tag_mappings__tag_id__book_tags__id');
+
+  $$BookTagsTableProcessedTableManager get tagId {
+    final $_column = $_itemColumn<int>('tag_id')!;
+
+    final manager = $$BookTagsTableTableManager($_db, $_db.bookTags)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_tagIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$GalgameTagMappingsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $GalgameTagMappingsTable> {
+  $$GalgameTagMappingsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  $$GalgamesTableFilterComposer get gameId {
+    final $$GalgamesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.gameId,
+        referencedTable: $db.galgames,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgamesTableFilterComposer(
+              $db: $db,
+              $table: $db.galgames,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$BookTagsTableFilterComposer get tagId {
+    final $$BookTagsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tagId,
+        referencedTable: $db.bookTags,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$BookTagsTableFilterComposer(
+              $db: $db,
+              $table: $db.bookTags,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$GalgameTagMappingsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $GalgameTagMappingsTable> {
+  $$GalgameTagMappingsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  $$GalgamesTableOrderingComposer get gameId {
+    final $$GalgamesTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.gameId,
+        referencedTable: $db.galgames,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgamesTableOrderingComposer(
+              $db: $db,
+              $table: $db.galgames,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$BookTagsTableOrderingComposer get tagId {
+    final $$BookTagsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tagId,
+        referencedTable: $db.bookTags,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$BookTagsTableOrderingComposer(
+              $db: $db,
+              $table: $db.bookTags,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$GalgameTagMappingsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $GalgameTagMappingsTable> {
+  $$GalgameTagMappingsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  $$GalgamesTableAnnotationComposer get gameId {
+    final $$GalgamesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.gameId,
+        referencedTable: $db.galgames,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgamesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.galgames,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$BookTagsTableAnnotationComposer get tagId {
+    final $$BookTagsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tagId,
+        referencedTable: $db.bookTags,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$BookTagsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.bookTags,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$GalgameTagMappingsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $GalgameTagMappingsTable,
+    GalgameTagMappingRow,
+    $$GalgameTagMappingsTableFilterComposer,
+    $$GalgameTagMappingsTableOrderingComposer,
+    $$GalgameTagMappingsTableAnnotationComposer,
+    $$GalgameTagMappingsTableCreateCompanionBuilder,
+    $$GalgameTagMappingsTableUpdateCompanionBuilder,
+    (GalgameTagMappingRow, $$GalgameTagMappingsTableReferences),
+    GalgameTagMappingRow,
+    PrefetchHooks Function({bool gameId, bool tagId})> {
+  $$GalgameTagMappingsTableTableManager(
+      _$HibikiDatabase db, $GalgameTagMappingsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$GalgameTagMappingsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$GalgameTagMappingsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$GalgameTagMappingsTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> gameId = const Value.absent(),
+            Value<int> tagId = const Value.absent(),
+          }) =>
+              GalgameTagMappingsCompanion(
+            id: id,
+            gameId: gameId,
+            tagId: tagId,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String gameId,
+            required int tagId,
+          }) =>
+              GalgameTagMappingsCompanion.insert(
+            id: id,
+            gameId: gameId,
+            tagId: tagId,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$GalgameTagMappingsTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({gameId = false, tagId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (gameId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.gameId,
+                    referencedTable:
+                        $$GalgameTagMappingsTableReferences._gameIdTable(db),
+                    referencedColumn:
+                        $$GalgameTagMappingsTableReferences._gameIdTable(db).id,
+                  ) as T;
+                }
+                if (tagId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.tagId,
+                    referencedTable:
+                        $$GalgameTagMappingsTableReferences._tagIdTable(db),
+                    referencedColumn:
+                        $$GalgameTagMappingsTableReferences._tagIdTable(db).id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$GalgameTagMappingsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $GalgameTagMappingsTable,
+    GalgameTagMappingRow,
+    $$GalgameTagMappingsTableFilterComposer,
+    $$GalgameTagMappingsTableOrderingComposer,
+    $$GalgameTagMappingsTableAnnotationComposer,
+    $$GalgameTagMappingsTableCreateCompanionBuilder,
+    $$GalgameTagMappingsTableUpdateCompanionBuilder,
+    (GalgameTagMappingRow, $$GalgameTagMappingsTableReferences),
+    GalgameTagMappingRow,
+    PrefetchHooks Function({bool gameId, bool tagId})>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -35202,4 +35920,6 @@ class $HibikiDatabaseManager {
       $$GalgameSourcesTableTableManager(_db, _db.galgameSources);
   $$GalgameSessionsTableTableManager get galgameSessions =>
       $$GalgameSessionsTableTableManager(_db, _db.galgameSessions);
+  $$GalgameTagMappingsTableTableManager get galgameTagMappings =>
+      $$GalgameTagMappingsTableTableManager(_db, _db.galgameTagMappings);
 }

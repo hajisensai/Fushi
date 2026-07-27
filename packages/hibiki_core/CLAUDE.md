@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-共享核心模块：定义 Drift SQLite 数据库 schema（50 张表，当前 schemaVersion=55）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
+共享核心模块：定义 Drift SQLite 数据库 schema（53 张表，当前 schemaVersion=59）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
 
 ## 入口与启动
 
@@ -26,7 +26,7 @@
 
 ## 数据模型
 
-50 张 Drift 表（按功能分组，以 `database.dart` 的 `@DriftDatabase(tables: [...])` 注册清单为准）：
+53 张 Drift 表（按功能分组，以 `database.dart` 的 `@DriftDatabase(tables: [...])` 注册清单为准）：
 
 | 分组 | 表名 |
 |------|------|
@@ -49,7 +49,7 @@
 | 收藏/制卡 | `FavoriteWords`, `MiningStatistics`, `MinedSentences`, `LookupMiningCounters` |
 | 合集/系列 | `MediaCollections`, `MediaCollectionItems`, `Series`, `ShelfEntries` |
 | 互联 | `HibikiPairedPeers` |
-| 游戏库 | `Galgames`, `GalgameSources`, `GalgameSessions` |
+| 游戏库 | `Galgames`, `GalgameSources`, `GalgameSessions`, `GalgameTagMappings` |
 | 删除墓碑 | `BookTombstones`, `StatisticsTombstones`, `CollectionMemberTombstones`, `BookTagMembershipTombstones`, `SyncDeletionTombstones` |
 
 新增表（相对旧文档的 28 张补齐的 18 张）用途：
@@ -75,8 +75,9 @@
 - `Galgames` -- v55 galgame 游戏库真相源，取代旧偏好 key `galgame_library` 的 6 字段 JSON；TEXT 主键沿用旧微秒时间戳（封面文件名与之绑定）。
 - `GalgameSources` -- 游戏元数据源纵表（`(gameId, source)` 复合键 + JSON 快照 + 上提的 score/rank），加数据源零 schema 变更。
 - `GalgameSessions` -- 游玩会话事实表，由前台窗口计时器写入（脱离 hook 文本）。**刻意无统计投影表**，时长/次数/最后游玩一律现算 GROUP BY。
+- `GalgameTagMappings` -- v59（BUG-1113）游戏 ↔ 用户标签映射（复用共享 `BookTags` 池）。**无 `addedAt` 时钟、无移除墓碑**：游戏是本机局域身份，整套游戏数据不进 live-sync 也不进备份合并导入，标签跟随宿主不跨端传播。与游戏**元数据标签**（bgm/vndb 刮削字符串）是两条正交轴。
 
-迁移策略：`onUpgrade` 逐版本增量迁移（v1->v55），支持降级时自动备份并重建。
+迁移策略：`onUpgrade` 逐版本增量迁移（v1->v57），支持降级时自动备份并重建。
 
 ## 测试与质量
 

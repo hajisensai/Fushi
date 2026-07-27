@@ -2630,5 +2630,6 @@
   "game_line_recapture_stop": "完成补录",
   "game_line_tracks": "本句音轨",
   "game_line_tracks_hint": "按本句时刻试听各轨，确认是 BGM 就排除",
-  "game_line_track_use": "用于本句"
+  "game_line_track_use": "用于本句",
+  "game_user_tags_title": "我的标签"
 }

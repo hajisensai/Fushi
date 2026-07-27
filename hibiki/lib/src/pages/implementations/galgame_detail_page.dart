@@ -18,6 +18,9 @@ import 'package:hibiki/src/mining/metadata/galgame_metadata_merge.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
 import 'package:hibiki/src/pages/implementations/games_library_page.dart'
     show formatGalgameDate, galgamePlayStatusLabel;
+import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart'
+    show allTagsProvider, filteredGameIdsProvider, gameTagMapProvider;
+import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki/src/pages/implementations/stat_shared.dart'
     show formatStatTime;
@@ -85,6 +88,9 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   /// 折叠前展示的标签上限（契约 §2）。
   static const int _kTagLimit = 40;
 
+  /// 本游戏挂的共享用户标签，与 bgm/vndb 元数据标签分开。
+  List<BookTagRow> _userTags = const <BookTagRow>[];
+
   bool _loading = true;
 
   @override
@@ -114,6 +120,8 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     }
     final List<GalgameSessionRow> sessions = await _repo.sessions(game.id);
     final List<GalgameSourceRow> sources = await _repo.sourcesOf(game.id);
+    final List<BookTagRow> userTags =
+        await _appModel.database.getTagsForGame(game.id);
     final Map<String, int> daily = await _loadRange(game.id, _rangeDays);
     final String todayKey = formatGalgameDate(DateTime.now());
     final Map<String, int> today = await _repo.dailySeconds(
@@ -126,6 +134,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
       _game = game;
       _sessions = sessions;
       _sources = sources;
+      _userTags = userTags;
       _dailyRange = daily;
       _todaySeconds = today[todayKey] ?? 0;
       _loading = false;
@@ -339,6 +348,51 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     );
   }
 
+  Widget _userTagsCell(BuildContext context, GalgameEntry game) {
+    return _metaCell(
+      context,
+      t.game_user_tags_title,
+      Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          for (final BookTagRow tag in _userTags)
+            HibikiTagChip(
+              label: tag.name,
+              color: Color(tag.colorValue),
+              tone: HibikiTagChipTone.surface,
+            ),
+          HibikiActionChip(
+            label: t.tag_manage,
+            icon: Icons.sell_outlined,
+            onPressed: () => unawaited(_editUserTags(game)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editUserTags(GalgameEntry game) async {
+    await Navigator.push(
+      context,
+      adaptivePageRoute(
+        context: context,
+        builder: (_) => TagPickerPage(
+          media: MediaRef(kind: MediaKind.game, entryKey: game.id),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    final List<BookTagRow> tags =
+        await _appModel.database.getTagsForGame(game.id);
+    if (!mounted) return;
+    setState(() => _userTags = tags);
+    ref.invalidate(allTagsProvider);
+    ref.invalidate(gameTagMapProvider);
+    ref.invalidate(filteredGameIdsProvider);
+  }
+
   /// 元信息网格：每项「粗体 label + 下方 value」，flex-wrap（契约 §2）。
   Widget _metaGrid(BuildContext context, GalgameEntry game) {
     final GalgameMetadataDraft meta = game.metadata;
@@ -361,6 +415,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
             '${meta.averageHours!.toStringAsFixed(1)} h'),
       if (meta.rank != null)
         _metaTextCell(context, t.game_meta_ranking, '#${meta.rank}'),
+      _userTagsCell(context, game),
     ];
     return Wrap(runSpacing: 4, children: cells);
   }

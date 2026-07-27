@@ -268,13 +268,20 @@ int _compareTitleThenId(GalgameEntry a, GalgameEntry b) {
 }
 
 /// 筛选 + 搜索 + 排序，一步得到库页要渲染的列表。纯函数，不改入参。
+///
+/// [allowedIds] 是**用户标签**（共享 [BookTags] 池，BUG-1113）筛出的游戏 id 白名单：
+/// null = 没选任何用户标签 = 不过滤；非 null = 只保留集合内的游戏。它来自 DB 查询
+/// （`getGameIdsForAllTags`）而不是 [GalgameLibraryView] 里的元数据标签集，两条轴
+/// 正交、可同时生效；在这里收口是为了让库页只有一处过滤逻辑，不必在页面里再筛一遍。
 List<GalgameEntry> applyGalgameLibraryView(
   List<GalgameEntry> games,
-  GalgameLibraryView view,
-) {
+  GalgameLibraryView view, {
+  Set<String>? allowedIds,
+}) {
   final List<GalgameEntry> out = <GalgameEntry>[
     for (final GalgameEntry game in games)
-      if (matchesGalgameFilters(game, view) &&
+      if ((allowedIds == null || allowedIds.contains(game.id)) &&
+          matchesGalgameFilters(game, view) &&
           matchesGalgameSearch(game, view.search))
         game,
   ];

@@ -8,13 +8,11 @@ import 'package:hibiki/utils.dart';
 
 class TagPickerPage extends ConsumerStatefulWidget {
   /// 两种目标二选一，共用同一标签池：媒体条目传 [media]（统一媒体身份
-  /// [MediaRef]：epub=bookKey / srt=SrtBooks.uid / video=bookUid；game 无标签
-  /// 体系，不支持）；合集传 [collectionId]（media_collections 主键）。
+  /// [MediaRef]：epub=bookKey / srt=SrtBooks.uid / video=bookUid /
+  /// game=galgames.id）；合集传 [collectionId]（media_collections 主键）。
   ///
   /// 命名统一 Phase 3.3：取代旧的 bookKey / srtBookId / videoBookUid 三个可空
   /// 参数 + isSrtBook bool 分派链。
-  // game 无标签体系：不在 const 构造里 assert（const 求值不允许读属性），由
-  // 运行时分派 switch 的 game 分支抛 UnsupportedError 拦截。
   const TagPickerPage({
     this.media,
     this.collectionId,
@@ -65,7 +63,7 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
       case MediaKind.video:
         return _db.getTagsForVideoBook(media.entryKey);
       case MediaKind.game:
-        throw UnsupportedError('game entries have no tag picker');
+        return _db.getTagsForGame(media.entryKey);
     }
   }
 
@@ -83,7 +81,7 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
       case MediaKind.video:
         return _db.addTagToVideoBook(media.entryKey, tagId);
       case MediaKind.game:
-        throw UnsupportedError('game entries have no tag picker');
+        return _db.addTagToGame(media.entryKey, tagId);
     }
   }
 
@@ -102,7 +100,7 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
       case MediaKind.video:
         return _db.removeTagFromVideoBook(media.entryKey, tagId);
       case MediaKind.game:
-        throw UnsupportedError('game entries have no tag picker');
+        return _db.removeTagFromGame(media.entryKey, tagId);
     }
   }
 

@@ -395,6 +395,7 @@ _MergedTagState _mergeTagClocks(
   Galgames,
   GalgameSources,
   GalgameSessions,
+  GalgameTagMappings,
 ])
 class HibikiDatabase extends _$HibikiDatabase {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
@@ -413,7 +414,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 58;
+  int get schemaVersion => 59;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1212,6 +1213,14 @@ class HibikiDatabase extends _$HibikiDatabase {
               await m.createTable(mediaTrackingOutbox);
             }
           }
+          if (from < 59) {
+            // v59（BUG-1113「游戏没有标签」）：把游戏接进共享 BookTags 标签池。
+            // 纯新增映射表；游戏与标签均为本机局域数据，不进入 live-sync。
+            if (!await _tableExists('galgame_tag_mappings')) {
+              await m.createTable(galgameTagMappings);
+            }
+            await _ensureIndexes();
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -1311,8 +1320,8 @@ class HibikiDatabase extends _$HibikiDatabase {
       // tag_id lookups: countBooksForTag on each mapping table runs
       // `WHERE tag_id IN (...) GROUP BY <owner> HAVING COUNT(DISTINCT tag_id)`.
       // The existing indexes only cover the owner-key side (book_key / etc.),
-      // leaving the tag_id filter to a full scan. Add a tag_id index to all
-      // three mapping tables.
+      // leaving the tag_id filter to a full scan. Add a tag_id index to every
+      // mapping table.
       [
         'book_tag_mappings',
         'CREATE INDEX IF NOT EXISTS idx_book_tag_mappings_tag_id '
@@ -1327,6 +1336,16 @@ class HibikiDatabase extends _$HibikiDatabase {
         'video_book_tag_mappings',
         'CREATE INDEX IF NOT EXISTS idx_video_book_tag_mappings_tag_id '
             'ON video_book_tag_mappings (tag_id)'
+      ],
+      [
+        'galgame_tag_mappings',
+        'CREATE INDEX IF NOT EXISTS idx_galgame_tag_mappings_tag_id '
+            'ON galgame_tag_mappings (tag_id)'
+      ],
+      [
+        'galgame_tag_mappings',
+        'CREATE INDEX IF NOT EXISTS idx_galgame_tag_mappings_game_id '
+            'ON galgame_tag_mappings (game_id)'
       ],
       // favorite_words is filtered by source_type ('book' | 'video') in
       // getFavoritesBySource; the table had no index on it.
@@ -4841,13 +4860,13 @@ class HibikiDatabase extends _$HibikiDatabase {
         }
       });
 
-  /// 某标签下的书数量 = EPUB + 有声书(SRT) + 视频三张映射表各自命中该 tagId 的行数之和。
-  /// 标签是三种媒体共享的**同一标签池**，每张映射表按 {bookX, tagId} 唯一，其行数即该
-  /// 类型下被打此标签的书数；不同媒体类型互不重叠，直接相加即总书数。
+  /// 某标签下的条目数量 = EPUB + 有声书(SRT) + 视频 + 游戏四张映射表各自命中该
+  /// tagId 的行数之和。
   ///
   /// BUG（用户报「标签管理器显示 0 本，实际 2 本」）：旧实现只 COUNT `book_tag_mappings`
   /// （EPUB）一张表，给有声书 / 视频打的标签在管理器里恒显示 0——卡片走分类型正确查询能
-  /// 显示标签，计数却漏了另外两张表。
+  /// 显示标签，计数却漏了另外两张表。BUG-1113 同型：游戏也必须计入。
+  /// 合集刻意不计：合集是容器而非条目。
   Future<int> countBooksForTag(int tagId) async {
     final epubCnt = countAll();
     final epubRow = await (selectOnly(bookTagMappings)
@@ -4864,10 +4883,16 @@ class HibikiDatabase extends _$HibikiDatabase {
           ..where(videoBookTagMappings.tagId.equals(tagId))
           ..addColumns([videoCnt]))
         .getSingle();
+    final gameCnt = countAll();
+    final gameRow = await (selectOnly(galgameTagMappings)
+          ..where(galgameTagMappings.tagId.equals(tagId))
+          ..addColumns([gameCnt]))
+        .getSingle();
     final int epub = epubRow.read(epubCnt) ?? 0;
     final int srt = srtRow.read(srtCnt) ?? 0;
     final int video = videoRow.read(videoCnt) ?? 0;
-    return epub + srt + video;
+    final int game = gameRow.read(gameCnt) ?? 0;
+    return epub + srt + video + game;
   }
 
   // ── srt book tags ───────────────────────────────────────────────
@@ -5004,6 +5029,70 @@ class HibikiDatabase extends _$HibikiDatabase {
     ).get();
     return rows.map((row) => row.read<int>('collection_id')).toSet();
   }
+
+  // ── 游戏标签（v59 / BUG-1113；复用 BookTags 池；仅本机）──────────────
+
+  Future<List<BookTagRow>> getTagsForGame(String gameId) {
+    final query = select(bookTags).join([
+      innerJoin(
+        galgameTagMappings,
+        galgameTagMappings.tagId.equalsExp(bookTags.id),
+      ),
+    ])
+      ..where(galgameTagMappings.gameId.equals(gameId))
+      ..orderBy([OrderingTerm.asc(bookTags.createdAt)]);
+    return query.map((row) => row.readTable(bookTags)).get();
+  }
+
+  Future<void> addTagToGame(String gameId, int tagId) async {
+    await into(galgameTagMappings).insert(
+      GalgameTagMappingsCompanion.insert(gameId: gameId, tagId: tagId),
+      mode: InsertMode.insertOrIgnore,
+    );
+  }
+
+  Future<void> removeTagFromGame(String gameId, int tagId) async {
+    await (delete(galgameTagMappings)
+          ..where((t) => t.gameId.equals(gameId) & t.tagId.equals(tagId)))
+        .go();
+  }
+
+  Future<void> setTagsForGame(String gameId, Set<int> tagIds) =>
+      transaction(() async {
+        final List<GalgameTagMappingRow> existing =
+            await (select(galgameTagMappings)
+                  ..where((t) => t.gameId.equals(gameId)))
+                .get();
+        final Set<int> existingTagIds =
+            existing.map((GalgameTagMappingRow e) => e.tagId).toSet();
+        for (final int tagId in existingTagIds.difference(tagIds)) {
+          await removeTagFromGame(gameId, tagId);
+        }
+        for (final int tagId in tagIds.difference(existingTagIds)) {
+          await addTagToGame(gameId, tagId);
+        }
+      });
+
+  Future<Set<String>> getGameIdsForAllTags(Set<int> tagIds) async {
+    if (tagIds.isEmpty) return <String>{};
+    final int tagCount = tagIds.length;
+    final String placeholders = List.generate(tagCount, (_) => '?').join(',');
+    final List<Variable> variables = <Variable>[
+      ...tagIds.map((id) => Variable<int>(id)),
+      Variable<int>(tagCount),
+    ];
+    final rows = await customSelect(
+      'SELECT game_id FROM galgame_tag_mappings '
+      'WHERE tag_id IN ($placeholders) '
+      'GROUP BY game_id '
+      'HAVING COUNT(DISTINCT tag_id) = ?',
+      variables: variables,
+    ).get();
+    return rows.map((row) => row.read<String>('game_id')).toSet();
+  }
+
+  Future<List<GalgameTagMappingRow>> getAllGameTagMappings() =>
+      select(galgameTagMappings).get();
 
   Future<void> setTagsForVideoBook(String videoBookUid, Set<int> tagIds) =>
       transaction(() async {
