@@ -17,7 +17,7 @@ class _FakeSender implements RemoteMineSender {
   final bool throwAuth;
   ForwardedMinePayload? captured;
   final List<List<String>> dupCalls = <List<String>>[];
-  bool dupResult = false;
+  RemoteDuplicateCheck dupResult = RemoteDuplicateCheck.notDuplicate;
 
   @override
   Future<Map<String, dynamic>?> mineForward(
@@ -28,7 +28,7 @@ class _FakeSender implements RemoteMineSender {
   }
 
   @override
-  Future<bool> isDuplicate(
+  Future<RemoteDuplicateCheck> isDuplicate(
       {required String expression, required String reading}) async {
     dupCalls.add(<String>[expression, reading]);
     return dupResult;
@@ -175,11 +175,46 @@ void main() {
     });
 
     test('isDuplicate 走远端发送器', () async {
-      final _FakeSender sender = _FakeSender(null)..dupResult = true;
+      final _FakeSender sender = _FakeSender(null)
+        ..dupResult = RemoteDuplicateCheck.duplicate;
       final RemoteMiningAnkiRepository repo =
           RemoteMiningAnkiRepository(local: _FakeLocal(), client: sender);
       expect(await repo.isDuplicate('猫', 'ねこ'), isTrue);
       expect(sender.dupCalls.single, <String>['猫', 'ねこ']);
+    });
+
+    // BUG-1185：token 被主机拒绝 = 查重根本没跑成。旧实现把它压成「不重复」静默
+    // 交给用户；现在必须报出来（bool 契约仍回 false，但用户看得见失败提示）。
+    test('BUG-1185 查重遇 token 被拒 → 上报用户，不静默', () async {
+      final _FakeSender sender = _FakeSender(null)
+        ..dupResult = RemoteDuplicateCheck.authRejected;
+      final List<String> reported = <String>[];
+      final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+        local: _FakeLocal(),
+        client: sender,
+        onAuthRejected: reported.add,
+      );
+
+      expect(await repo.isDuplicate('猫', 'ねこ'), isFalse);
+      expect(reported.single, RemoteMiningAnkiRepository.tokenRejectedMessage);
+
+      // 查重是每次查词都跑的高频路径：同一实例只提示一次，不刷屏。
+      await repo.isDuplicate('犬', 'いぬ');
+      expect(reported.length, 1);
+    });
+
+    // 可重试失败（client 已降级成 notDuplicate）不该被误报成鉴权失败。
+    test('BUG-1185 可重试失败仍 fail-soft，不误报 token 被拒', () async {
+      final _FakeSender sender = _FakeSender(null)
+        ..dupResult = RemoteDuplicateCheck.notDuplicate;
+      final List<String> reported = <String>[];
+      final RemoteMiningAnkiRepository repo = RemoteMiningAnkiRepository(
+        local: _FakeLocal(),
+        client: sender,
+        onAuthRejected: reported.add,
+      );
+      expect(await repo.isDuplicate('猫', 'ねこ'), isFalse);
+      expect(reported, isEmpty);
     });
 
     test('配置类方法委派本地（设置页仍能配置本地 Anki）', () async {
