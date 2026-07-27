@@ -341,7 +341,50 @@ class TexthookerService extends ChangeNotifier {
     }
     final List<TexthookerTextThread> result = byKey.values.toList()
       ..sort(_compareTextThreads);
-    return List<TexthookerTextThread>.unmodifiable(result);
+    return List<TexthookerTextThread>.unmodifiable(
+      disambiguateThreadLabels(result),
+    );
+  }
+
+  /// 同标签线程补可区分后缀。
+  ///
+  /// 标签 = `hookName · 0x<线程地址>`（见 `GalHookedLine.textThreadLabel`），而同一个
+  /// hook 常有多条并行线程只在 ctx/ctx2 上不同——ctx 没透出到 Dart，于是下拉里出现
+  /// 一串**完全相同**的 `CodeX · 0x459f50`，用户只能靠行数猜哪条是自己要的。
+  /// 这里给重名的每条补上 key 里那段线程 id 的短哈希（`· #1a2b`），让它们至少可指认；
+  /// 唯一的标签保持原样，不给不重名的线程加噪音。
+  @visibleForTesting
+  static List<TexthookerTextThread> disambiguateThreadLabels(
+    List<TexthookerTextThread> threads,
+  ) {
+    final Map<String, int> labelCounts = <String, int>{};
+    for (final TexthookerTextThread thread in threads) {
+      labelCounts[thread.label] = (labelCounts[thread.label] ?? 0) + 1;
+    }
+    if (!labelCounts.values.any((int count) => count > 1)) return threads;
+    return <TexthookerTextThread>[
+      for (final TexthookerTextThread thread in threads)
+        if ((labelCounts[thread.label] ?? 0) <= 1)
+          thread
+        else
+          TexthookerTextThread(
+            key: thread.key,
+            label: '${thread.label} · #${_threadKeySuffix(thread.key)}',
+            hookCode: thread.hookCode,
+            nativeThreadId: thread.nativeThreadId,
+            lineCount: thread.lineCount,
+            latestAt: thread.latestAt,
+            latestText: thread.latestText,
+            audioLineCount: thread.audioLineCount,
+          ),
+    ];
+  }
+
+  /// 线程 key（`<来源>:<线程 id 十六进制>`）里取末 4 位十六进制作可指认后缀。
+  static String _threadKeySuffix(String key) {
+    final int colon = key.lastIndexOf(':');
+    final String tail = colon >= 0 ? key.substring(colon + 1) : key;
+    return tail.length <= 4 ? tail : tail.substring(tail.length - 4);
   }
 
   /// 线程列表排序：**有台词的线程恒排在 0 行线程之前**，其次句音行数多者优先，

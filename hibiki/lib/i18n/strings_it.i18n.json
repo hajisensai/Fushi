@@ -2627,5 +2627,8 @@
   "game_line_audio_overlong_hint": "Far longer than a single line; may include BGM or other mixed audio",
   "game_line_audio_loopback_hint": "System-mix fallback; may include BGM",
   "game_line_recapture": "Recapture voice",
-  "game_line_recapture_stop": "Finish recapture"
+  "game_line_recapture_stop": "Finish recapture",
+  "game_line_tracks": "Tracks for this line",
+  "game_line_tracks_hint": "Preview each track at this line's moment, then exclude the BGM ones",
+  "game_line_track_use": "Use for this line"
 }

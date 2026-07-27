@@ -55,7 +55,7 @@ Map<String, String> injectActiveSentence(
 /// 消除嵌入/独立两套按钮定义的特殊分支。
 enum _GalHookToolbarMenuAction {
   audioFallback,
-  manageTracks,
+  health,
   showOverlay,
   externalWindow,
 }
@@ -238,138 +238,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     HibikiToast.show(
       msg: applied ? t.game_line_track_applied : t.game_line_track_failed,
     );
-  }
-
-  /// 捕获工作台内的「排除音轨」对话框：列出会话当前音轨，逐轨试听 + 标记为 BGM /
-  /// 恢复。复用会话已有的 `setTrackExcluded`（诊断页同一通道）。排除某条 BGM 轨后，
-  /// 自动选源在**任何一句**（尤其是没有语音的那一句）都不会再选它——这正是「没音频
-  /// 时不读到 BGM」的直接手段，无需改 native。
-  ///
-  /// 排除集合只在**引擎 PCM** 后端参与取音（资源原件走逐句文件、纯 loopback 是整机单
-  /// 流，都不消费排除集合）；因此非引擎 PCM 时给出说明而非让用户点一个不生效的开关，
-  /// 与诊断页 `galTrackSelectionAffectsCapture` 门控口径一致。
-  Future<void> _showTrackManagerDialog() async {
-    unawaited(_session.refreshAudioTracks());
-    await showAppDialog<void>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AnimatedBuilder(
-          animation: _session,
-          builder: (BuildContext context, _) {
-            final GalHookSessionState state = _session.state;
-            final bool effective =
-                galTrackSelectionAffectsCapture(state.audioBackend);
-            final List<GalAudioTrack> tracks = state.audioTracks;
-            return AlertDialog(
-              title: Text(t.game_track_exclusion_title),
-              content: SizedBox(
-                width: 360,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Text(
-                      t.game_track_exclusion_hint,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    if (!effective) ...<Widget>[
-                      const SizedBox(height: 8),
-                      Text(
-                        t.game_tracks_pcm_only_hint,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.tertiary,
-                            ),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    if (tracks.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: Text(t.game_no_tracks),
-                      )
-                    else
-                      Flexible(
-                        child: ListView(
-                          shrinkWrap: true,
-                          children: <Widget>[
-                            for (final GalAudioTrack track in tracks)
-                              _buildTrackManagerTile(track, effective, state),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: Text(t.dialog_close),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-    if (_previewingLineId != null && mounted) {
-      // 对话框里的试听走的是共享播放器；关闭对话框顺手停掉，避免残留播放。
-      await DesktopAudioPlayback.stop();
-    }
-  }
-
-  Widget _buildTrackManagerTile(
-    GalAudioTrack track,
-    bool effective,
-    GalHookSessionState state,
-  ) {
-    final bool excluded =
-        state.excludedAudioSourcePtrs.contains(track.sourcePtr);
-    final bool silent = track.clipCount <= 0;
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      enabled: !silent,
-      leading: Icon(excluded ? Icons.music_off_outlined : Icons.graphic_eq),
-      title: Text(
-        '${t.game_track_voice} ${track.orderIndex + 1} · '
-        '${track.format.sampleRate} Hz · ${track.format.channels} ch',
-      ),
-      subtitle: Text(
-        <String>[
-          '${t.game_track_clips} ${track.clipCount}',
-          '${t.game_track_energy} ${track.avgEnergy.toStringAsFixed(1)}',
-          if (silent) t.game_track_no_clips,
-        ].join(' · '),
-      ),
-      trailing: Wrap(
-        spacing: 4,
-        children: <Widget>[
-          HibikiIconButton(
-            icon: Icons.play_circle_outline,
-            tooltip: t.game_track_preview,
-            onTap: () => unawaited(_previewTrackInDialog(track.sourcePtr)),
-          ),
-          HibikiIconButton(
-            icon: excluded ? Icons.undo : Icons.music_off_outlined,
-            tooltip: excluded ? t.game_track_restore : t.game_track_exclude_bgm,
-            enabled: effective,
-            onTap: () => _session.setTrackExcluded(track.sourcePtr, !excluded),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 选轨对话框里的逐轨试听：复用诊断页同一条 `exportTrackPreview` 通道。
-  Future<void> _previewTrackInDialog(int sourcePtr) async {
-    final GalTrackPreview? preview =
-        await _session.exportTrackPreview(sourcePtr);
-    if (preview == null) {
-      HibikiToast.show(msg: t.game_track_preview_failed);
-      return;
-    }
-    if (!await DesktopAudioPlayback.playFile(preview.filePath)) {
-      HibikiToast.show(msg: t.game_track_preview_failed);
-    }
   }
 
   /// 选轨对话框里的逐轨试听：与确认选择共用当前行时间戳，避免试听偷播最新一句。
@@ -1147,8 +1015,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         switch (action) {
           case _GalHookToolbarMenuAction.audioFallback:
             _session.setAllowAudioFallback(!state.allowAudioFallback);
-          case _GalHookToolbarMenuAction.manageTracks:
-            unawaited(_showTrackManagerDialog());
+          case _GalHookToolbarMenuAction.health:
+            unawaited(_showHealthDialog());
           case _GalHookToolbarMenuAction.showOverlay:
             unawaited(GalHookTextOverlayController.instance.showManually());
           case _GalHookToolbarMenuAction.externalWindow:
@@ -1162,12 +1030,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           checked: state.allowAudioFallback,
           child: Text(t.game_audio_fallback_allow),
         ),
-        // 排除音轨：把 BGM/环境音轨标记为排除，自动选源便不再把它当成语音——
-        // 一句没有语音时不会再误读到 BGM（用户实拍反馈）。诊断页已有逐轨排除，
-        // 但排查语音配对时用户就在工作台，把入口也放到这里。
+        // 健康状态从右栏常驻卡改为按需打开：它是「偶尔查一眼」的静态信息，
+        // 不值得长期占着逐句操作要用的横向空间（完整版仍在「兼容性诊断」页签）。
         PopupMenuItem<_GalHookToolbarMenuAction>(
-          value: _GalHookToolbarMenuAction.manageTracks,
-          child: Text(t.game_manage_tracks),
+          value: _GalHookToolbarMenuAction.health,
+          child: Text(t.game_health),
         ),
         if (Platform.isWindows)
           PopupMenuItem<_GalHookToolbarMenuAction>(
@@ -1181,6 +1048,43 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             child: Text(t.external_window_mining),
           ),
       ],
+    );
+  }
+
+  /// 会话健康状态对话框（原右栏常驻卡的新家）。内容仍是 [_CaptureHealthCard]，
+  /// 随会话状态实时刷新；Anki 配置态来自 app 级 AnkiViewModel（BUG-1007 的接线）。
+  Future<void> _showHealthDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(t.game_health),
+        content: SizedBox(
+          width: 460,
+          child: ListenableBuilder(
+            listenable: _session,
+            builder: (BuildContext context, Widget? child) =>
+                SingleChildScrollView(
+              child: _CaptureHealthCard(
+                state: _session.state,
+                endpoints: _session.endpointStatuses,
+                // BUG-1007 根因修复：健康卡 Anki 行此前写死「未配置」，不反映真实
+                // 配置。接 app 级 AnkiViewModel 的已配置判定（牌组 + 笔记类型均已选）。
+                ankiConfigured: ref.watch(
+                  ankiViewModelProvider.select(
+                    (AnkiUiState uiState) => uiState.isConfigured,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(t.dialog_close),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1204,12 +1108,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     String? selectedTextThreadKey,
   ) {
     final GalHookSessionState state = _session.state;
-    // BUG-1007 根因修复：健康卡 Anki 行此前写死「未配置」，不反映真实配置。
-    // 接 app 级 AnkiViewModel 的已配置判定（牌组 + 笔记类型均已选中）。
-    final bool ankiConfigured = ref.watch(
-      ankiViewModelProvider
-          .select((AnkiUiState uiState) => uiState.isConfigured),
-    );
     return Column(
       children: <Widget>[
         _buildExperimentalBanner(context),
@@ -1225,13 +1123,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   textThreads,
                   selectedTextThreadKey,
                 );
-                final Widget latest = _LatestLineCard(
+                // 右栏改成逐句音轨面板（原「最新台词」只读卡 + 「健康状态」静态卡
+                // 让位）：正文与音频元信息并进本面板，健康状态移到工具栏「更多」→
+                // 对话框（同页签栏的「兼容性诊断」也有完整版），把这块常驻空间还给
+                // 「听 → 判断 → 排除 BGM」这条真正需要反复操作的动线。
+                final Widget lineTracks = _LineTracksCard(
+                  session: _session,
                   line: _selectedOrLatestLine(lines),
-                );
-                final Widget health = _CaptureHealthCard(
-                  state: state,
-                  endpoints: _session.endpointStatuses,
-                  ankiConfigured: ankiConfigured,
                 );
                 if (box.maxWidth >= 1280) {
                   return Column(
@@ -1242,11 +1140,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: <Widget>[
-                            Expanded(flex: 5, child: live),
+                            Expanded(flex: 7, child: live),
                             const SizedBox(width: 12),
-                            Expanded(flex: 3, child: latest),
-                            const SizedBox(width: 12),
-                            Expanded(flex: 3, child: health),
+                            Expanded(flex: 4, child: lineTracks),
                           ],
                         ),
                       ),
@@ -1264,24 +1160,15 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                           children: <Widget>[
                             Expanded(flex: 2, child: live),
                             const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: <Widget>[
-                                  Expanded(child: latest),
-                                  const SizedBox(height: 12),
-                                  Expanded(child: health),
-                                ],
-                              ),
-                            ),
+                            Expanded(child: lineTracks),
                           ],
                         ),
                       ),
                     ],
                   );
                 }
-                // 窄屏不再整块丢弃 latest/health 两面板（巡检 G7），折叠成
-                // 可展开区放在实时行下方，默认收起不抢纵向空间。
+                // 窄屏不整块丢弃逐句音轨面板（巡检 G7），折叠成可展开区放在实时行
+                // 下方，默认收起不抢纵向空间。
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
@@ -1289,24 +1176,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     const SizedBox(height: 12),
                     Expanded(child: live),
                     ExpansionTile(
-                      title: Text(t.game_latest_line),
+                      title: Text(t.game_line_tracks),
                       tilePadding: EdgeInsets.zero,
                       children: <Widget>[
-                        // 上限高度：卡片内自带 SingleChildScrollView，超长台词
+                        // 上限高度：卡片内自带 SingleChildScrollView，超长台词/多轨
                         // 在卡内滚动而不是把实时行区挤到 0。
                         ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 280),
-                          child: latest,
-                        ),
-                      ],
-                    ),
-                    ExpansionTile(
-                      title: Text(t.game_health),
-                      tilePadding: EdgeInsets.zero,
-                      children: <Widget>[
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 280),
-                          child: health,
+                          constraints: const BoxConstraints(maxHeight: 320),
+                          child: lineTracks,
                         ),
                       ],
                     ),
@@ -1496,6 +1373,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                       _session.selectTextThread(
                         selectedThread?.nativeThreadId,
                         threadKey: selectedThread?.key,
+                        // 用户亲自选的线程记进本游戏记忆，下次开同一个游戏自动选回。
+                        remember: true,
                       ),
                     );
                   },
@@ -1845,74 +1724,217 @@ class _SessionOverviewCard extends StatelessWidget {
   }
 }
 
-class _LatestLineCard extends StatelessWidget {
-  const _LatestLineCard({required this.line});
+/// 逐句音轨面板：右栏的常驻主面板（取代原「最新台词」只读卡）。
+///
+/// 「哪条轨是 BGM」是**逐句**才能判断的事——会话级音轨快照用最近一条台词的时间戳，
+/// 用户看着它排除 BGM 等于盲操作。本面板按**当前选中行自己的时间戳**取快照
+/// （[GalHookSessionController.tracksForLine]），于是每条轨的片段数/能量都是这一句
+/// 说话瞬间的真实情况：试听→确认是 BGM→当场排除，排除立刻对后续所有句生效并
+/// 记进本游戏记忆。同时保留原「最新台词」的核心信息（正文 + 音频来源/时长），
+/// 不丢可读性。
+class _LineTracksCard extends StatefulWidget {
+  const _LineTracksCard({required this.session, required this.line});
 
+  final GalHookSessionController session;
   final TexthookerLineEntry? line;
 
   @override
+  State<_LineTracksCard> createState() => _LineTracksCardState();
+}
+
+class _LineTracksCardState extends State<_LineTracksCard> {
+  List<GalAudioTrack> _tracks = const <GalAudioTrack>[];
+
+  /// 已取过快照的行 id：同一行不重复拉，换行才重取。
+  String? _tracksLineId;
+  bool _loading = false;
+  int? _previewingSourcePtr;
+  Timer? _previewResetTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncTracks();
+  }
+
+  @override
+  void didUpdateWidget(_LineTracksCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncTracks();
+  }
+
+  @override
+  void dispose() {
+    _previewResetTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _syncTracks({bool force = false}) async {
+    final TexthookerLineEntry? line = widget.line;
+    if (line == null) {
+      if (_tracks.isNotEmpty || _tracksLineId != null) {
+        setState(() {
+          _tracks = const <GalAudioTrack>[];
+          _tracksLineId = null;
+        });
+      }
+      return;
+    }
+    if (!force && _tracksLineId == line.id) return;
+    if (_loading) return;
+    _loading = true;
+    final List<GalAudioTrack> tracks =
+        await widget.session.tracksForLine(line.id);
+    _loading = false;
+    if (!mounted) return;
+    setState(() {
+      _tracks = tracks;
+      _tracksLineId = line.id;
+    });
+  }
+
+  Future<void> _preview(String lineId, GalAudioTrack track) async {
+    if (_previewingSourcePtr == track.sourcePtr) {
+      _previewResetTimer?.cancel();
+      setState(() => _previewingSourcePtr = null);
+      await DesktopAudioPlayback.stop();
+      return;
+    }
+    final GalTrackPreview? preview =
+        await widget.session.exportLineTrackPreview(lineId, track.sourcePtr);
+    if (!mounted) return;
+    if (preview == null) {
+      HibikiToast.show(msg: t.game_track_preview_failed);
+      return;
+    }
+    final bool started = await DesktopAudioPlayback.playFile(preview.filePath);
+    if (!mounted) return;
+    if (!started) {
+      HibikiToast.show(msg: t.game_track_preview_failed);
+      return;
+    }
+    _previewResetTimer?.cancel();
+    setState(() => _previewingSourcePtr = track.sourcePtr);
+    _previewResetTimer = Timer(
+      Duration(milliseconds: preview.durationMs + 300),
+      () {
+        if (mounted) setState(() => _previewingSourcePtr = null);
+      },
+    );
+  }
+
+  Future<void> _useForLine(String lineId, int sourcePtr) async {
+    final bool applied = await widget.session.setLineVoiceTrack(
+      lineId,
+      sourcePtr,
+    );
+    if (!mounted) return;
+    HibikiToast.show(
+      msg: applied ? t.game_line_track_applied : t.game_line_track_failed,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final TexthookerLineEntry? value = line;
+    final TexthookerLineEntry? line = widget.line;
+    final GalHookSessionState state = widget.session.state;
+    final int? lineVoicePtr =
+        line == null ? null : widget.session.lineVoiceSourcePtr(line.id);
     return HibikiCard(
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                const Icon(Icons.subtitles_outlined, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    t.game_latest_line,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(Icons.graphic_eq, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  t.game_line_tracks,
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            if (value == null)
-              Text(t.game_no_active_line)
-            else ...<Widget>[
-              Text(
-                value.text,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      height: 1.6,
-                    ),
               ),
-              const SizedBox(height: 14),
-              _MetadataRow(
-                label: t.game_health_text,
-                value: value.sourceLabel ??
-                    texthookerLineSourceLabel(
-                      value.source,
-                    ),
+              HibikiIconButton(
+                icon: Icons.refresh,
+                tooltip: t.game_refresh_tracks,
+                size: 18,
+                focusId: const HibikiFocusId('game-line-tracks-refresh'),
+                onTap: () => unawaited(_syncTracks(force: true)),
               ),
-              _MetadataRow(
-                label: t.game_health_audio,
-                value: value.audioBackend ??
-                    texthookerLineAudioStatusLabel(value.audioStatus),
-              ),
-              if (value.audioResourceId != null)
-                _MetadataRow(
-                  label: t.game_audio_resource_id,
-                  value: value.audioResourceId!,
-                ),
-              if (value.audioDurationMs != null)
-                // 值是时长不是格式，标签用 game_audio_duration（巡检 G7）。
-                _MetadataRow(
-                  label: t.game_audio_duration,
-                  value:
-                      '${(value.audioDurationMs! / 1000).toStringAsFixed(2)}s',
-                ),
-              if (value.fallbackReason != null)
-                _MetadataRow(
-                  label: t.game_line_audio_fallback,
-                  value: value.fallbackReason!,
-                ),
             ],
-          ],
-        ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  if (line == null)
+                    Text(t.game_no_active_line)
+                  else ...<Widget>[
+                    // 正文 + 音频元信息：原「最新台词」卡的核心内容，不因换面板丢失。
+                    Text(
+                      line.text,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            height: 1.5,
+                          ),
+                    ),
+                    const SizedBox(height: 10),
+                    _MetadataRow(
+                      label: t.game_health_audio,
+                      value: line.audioBackend ??
+                          texthookerLineAudioStatusLabel(line.audioStatus),
+                    ),
+                    if (line.audioDurationMs != null)
+                      _MetadataRow(
+                        label: t.game_audio_duration,
+                        value:
+                            '${(line.audioDurationMs! / 1000).toStringAsFixed(2)}s',
+                      ),
+                    if (line.fallbackReason != null)
+                      _MetadataRow(
+                        label: t.game_line_audio_fallback,
+                        value: line.fallbackReason!,
+                      ),
+                    const Divider(height: 24),
+                    Text(
+                      t.game_line_tracks_hint,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    if (_tracks.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Text(t.game_no_tracks),
+                      )
+                    else
+                      for (final GalAudioTrack track in _tracks)
+                        GalTrackTile(
+                          track: track,
+                          // 这里的「选中」是**本句**用哪条轨，不是会话级默认选源。
+                          selected: lineVoicePtr == track.sourcePtr,
+                          excluded: state.excludedAudioSourcePtrs
+                              .contains(track.sourcePtr),
+                          previewing: _previewingSourcePtr == track.sourcePtr,
+                          // 逐行选轨与逐行排除都绕开「当前后端是否消费会话级选源」
+                          // 那道自动门（它防的是自动误配），只要有 engine 就能用。
+                          selectable: widget.session.hasEngineSource,
+                          selectTooltip: t.game_line_track_use,
+                          onSelect: () =>
+                              unawaited(_useForLine(line.id, track.sourcePtr)),
+                          onPreview: () => unawaited(_preview(line.id, track)),
+                          onToggleExcluded: (bool excluded) => widget.session
+                              .setTrackExcluded(track.sourcePtr, excluded),
+                        ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

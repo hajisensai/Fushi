@@ -2627,5 +2627,8 @@
   "game_line_audio_overlong_hint": "远超单句时长，可能混入 BGM 或其它混音",
   "game_line_audio_loopback_hint": "整机混音兜底，可能混入 BGM",
   "game_line_recapture": "补录语音",
-  "game_line_recapture_stop": "完成补录"
+  "game_line_recapture_stop": "完成补录",
+  "game_line_tracks": "本句音轨",
+  "game_line_tracks_hint": "按本句时刻试听各轨，确认是 BGM 就排除",
+  "game_line_track_use": "用于本句"
 }

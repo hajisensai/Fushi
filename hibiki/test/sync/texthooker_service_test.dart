@@ -362,4 +362,43 @@ void main() {
       reason: '只折叠同一渲染瞬间、不同 Hook 线程双写的那一份',
     );
   });
+
+  test('同标签文本线程补可区分后缀，唯一标签保持原样', () {
+    // 用户实拍：下拉里 6 条线程全叫 `CodeX · 0x459f50`——同一 hook 的并行线程只在
+    // ctx/ctx2 上不同，而 ctx 没透出到 Dart，标签完全撞车，只能靠行数猜。
+    final DateTime now = DateTime(2026, 7, 27, 12);
+    final List<TexthookerTextThread> threads = <TexthookerTextThread>[
+      TexthookerTextThread(
+        key: 'luna:1a2b3c4d',
+        label: 'CodeX · 0x459f50',
+        lineCount: 160,
+        latestAt: now,
+      ),
+      TexthookerTextThread(
+        key: 'luna:99ff00e1',
+        label: 'CodeX · 0x459f50',
+        lineCount: 2,
+        latestAt: now,
+      ),
+      TexthookerTextThread(
+        key: 'luna:5566',
+        label: 'GetGlyphOutlineA · 0x755ebf10',
+        lineCount: 7,
+        latestAt: now,
+      ),
+    ];
+    final List<TexthookerTextThread> disambiguated =
+        TexthookerService.disambiguateThreadLabels(threads);
+    expect(disambiguated[0].label, 'CodeX · 0x459f50 · #3c4d');
+    expect(disambiguated[1].label, 'CodeX · 0x459f50 · #00e1');
+    expect(
+      disambiguated[2].label,
+      'GetGlyphOutlineA · 0x755ebf10',
+      reason: '不重名的线程不加后缀噪音',
+    );
+    // key / 行数等身份字段不得被改写。
+    expect(disambiguated.map((t) => t.key).toList(),
+        threads.map((t) => t.key).toList());
+    expect(disambiguated[0].lineCount, 160);
+  });
 }

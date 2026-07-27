@@ -134,27 +134,30 @@ class GalHookTextOverlayController extends ChangeNotifier {
           confirmMagpieDownload(appModel, prompt),
     );
     _session.attachMagpieUpscaling(magpie);
-    // 跨会话 BGM 排除记忆：真值落偏好表（每游戏一个 key，值为指纹 JSON 数组）。
-    // source_ptr 跨启动会变，能持久化的只有弱指纹（orderIndex+格式），错排除
-    // 可在音轨面板一键恢复且恢复会同步删除记忆——见 session 侧注释。
-    _session.attachTrackExclusionMemory(
+    // 每游戏捕获选择记忆（文本线程 / 语音轨 / BGM 排除集）：真值落偏好表，每游戏
+    // 一个 key，值是 [GalCaptureMemory] 的 JSON。会话内 id（source_ptr、native
+    // thread_id）跨启动全都会变，能持久化的只有弱指纹——错恢复可在工作台一键改，
+    // 且用户一改就同步覆盖记忆，见 session 侧注释。
+    _session.attachCaptureMemory(
       load: (String gameKey) {
         final Object? stored = appModel.prefsRepo
-            .getPref('gal_excluded_tracks::$gameKey', defaultValue: '');
-        if (stored is! String || stored.isEmpty) return const <String>[];
+            .getPref('gal_capture_memory::$gameKey', defaultValue: '');
+        if (stored is! String || stored.isEmpty) {
+          return const GalCaptureMemory();
+        }
         try {
           final Object? decoded = jsonDecode(stored);
-          if (decoded is List) {
-            return decoded.whereType<String>().toList(growable: false);
+          if (decoded is Map) {
+            return GalCaptureMemory.fromJson(decoded.cast<Object?, Object?>());
           }
         } catch (_) {}
-        return const <String>[];
+        return const GalCaptureMemory();
       },
-      save: (String gameKey, List<String> fingerprints) {
+      save: (String gameKey, GalCaptureMemory memory) {
         unawaited(
           appModel.prefsRepo.setPref(
-            'gal_excluded_tracks::$gameKey',
-            jsonEncode(fingerprints),
+            'gal_capture_memory::$gameKey',
+            jsonEncode(memory.toJson()),
           ),
         );
       },

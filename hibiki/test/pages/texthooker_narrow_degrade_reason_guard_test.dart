@@ -25,7 +25,7 @@ void main() {
     final int start = source.indexOf('class _SessionOverviewCard');
     expect(start, greaterThanOrEqualTo(0),
         reason: '找不到 _SessionOverviewCard，测试锚点过期');
-    final int end = source.indexOf('class _LatestLineCard', start);
+    final int end = source.indexOf('class _LineTracksCard', start);
     expect(end, greaterThan(start), reason: '找不到类体结束锚点');
     cardSource = source.substring(start, end);
   });

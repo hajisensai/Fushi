@@ -102,6 +102,7 @@ class GalTrackTile extends StatelessWidget {
     required this.onSelect,
     required this.onPreview,
     required this.onToggleExcluded,
+    this.selectTooltip,
   });
 
   final GalAudioTrack track;
@@ -118,6 +119,10 @@ class GalTrackTile extends StatelessWidget {
   final VoidCallback onSelect;
   final VoidCallback onPreview;
   final ValueChanged<bool> onToggleExcluded;
+
+  /// 「设为语音轨」按钮的文案。会话面板是「选为会话语音轨」，逐句面板是「用于本句」
+  /// ——同一个控件两种作用域，文案必须说清改的是哪个，否则用户以为点了会话级。
+  final String? selectTooltip;
 
   @override
   Widget build(BuildContext context) {
@@ -163,7 +168,7 @@ class GalTrackTile extends StatelessWidget {
           ),
           HibikiIconButton(
             icon: selected ? Icons.check_circle : Icons.circle_outlined,
-            tooltip: t.game_track_select_as_voice,
+            tooltip: selectTooltip ?? t.game_track_select_as_voice,
             enabled: selectable && !excluded,
             onTap: onSelect,
           ),

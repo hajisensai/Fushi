@@ -196,17 +196,19 @@ void main() {
         endpoints: endpoints,
         engine: engine,
       );
-      final Map<String, List<String>> store = <String, List<String>>{
-        r'd:\games\fake.exe': <String>[
-          GalHookSessionController.trackFingerprint(
-            track(sourcePtr: 0x999, orderIndex: 1),
-          ),
-        ],
+      final Map<String, GalCaptureMemory> store = <String, GalCaptureMemory>{
+        r'd:\games\fake.exe': GalCaptureMemory(
+          excludedTrackFingerprints: <String>[
+            GalHookSessionController.trackFingerprint(
+              track(sourcePtr: 0x999, orderIndex: 1),
+            ),
+          ],
+        ),
       };
-      controller.attachTrackExclusionMemory(
-        load: (String gameKey) => store[gameKey] ?? const <String>[],
-        save: (String gameKey, List<String> fingerprints) =>
-            store[gameKey] = fingerprints,
+      controller.attachCaptureMemory(
+        load: (String gameKey) => store[gameKey] ?? const GalCaptureMemory(),
+        save: (String gameKey, GalCaptureMemory memory) =>
+            store[gameKey] = memory,
       );
 
       await controller.launchGame(r'D:\Games\fake.exe');
@@ -222,18 +224,134 @@ void main() {
       // 用户说这条轨不是 BGM：恢复后记忆必须删掉，下次会话不得再自动排除。
       controller.setTrackExcluded(0x200, false);
       expect(controller.state.excludedAudioSourcePtrs, isEmpty);
-      expect(store[r'd:\games\fake.exe'], isEmpty);
+      expect(
+        store[r'd:\games\fake.exe']!.excludedTrackFingerprints,
+        isEmpty,
+      );
 
       // 重新排除另一条轨：指纹写回。
       controller.setTrackExcluded(0x100, true);
       expect(
-        store[r'd:\games\fake.exe'],
+        store[r'd:\games\fake.exe']!.excludedTrackFingerprints,
         <String>[
           GalHookSessionController.trackFingerprint(
             track(sourcePtr: 0x100, orderIndex: 0),
           ),
         ],
       );
+
+      // 会话语音轨也按同一份记忆持久化（用户明确要求「每个游戏默认持久化音轨」）。
+      controller.selectVoiceTrack(0x100);
+      expect(
+        store[r'd:\games\fake.exe']!.voiceTrackFingerprint,
+        GalHookSessionController.trackFingerprint(
+          track(sourcePtr: 0x100, orderIndex: 0),
+        ),
+      );
+      controller.selectVoiceTrack(0);
+      expect(
+        store[r'd:\games\fake.exe']!.voiceTrackFingerprint,
+        isNull,
+        reason: '改回自动选源要清掉记忆，否则下次仍被钉在旧轨上',
+      );
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
+    test('语音轨记忆按指纹恢复；被排除的轨不得同时当语音轨', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final _FakeEngine engine = _FakeEngine(readyFormat: kPcm)
+        ..tracks = <GalAudioTrack>[
+          track(sourcePtr: 0x100, orderIndex: 0),
+          track(sourcePtr: 0x200, orderIndex: 1),
+        ];
+      final GalHookSessionController controller = build(
+        service: service,
+        endpoints: endpoints,
+        engine: engine,
+      );
+      final String voiceFp = GalHookSessionController.trackFingerprint(
+        track(sourcePtr: 0x777, orderIndex: 1),
+      );
+      controller.attachCaptureMemory(
+        load: (String gameKey) => GalCaptureMemory(
+          // 同一条轨既在排除集又是记忆里的语音轨：排除必须赢。
+          excludedTrackFingerprints: <String>[voiceFp],
+          voiceTrackFingerprint: voiceFp,
+        ),
+        save: (String gameKey, GalCaptureMemory memory) {},
+      );
+      await controller.launchGame(r'D:\Games\fake.exe');
+      await waitUntil(
+        () => controller.state.excludedAudioSourcePtrs.isNotEmpty,
+      );
+      expect(controller.state.excludedAudioSourcePtrs, <int>{0x200});
+      expect(
+        controller.state.selectedAudioSourcePtr,
+        0,
+        reason: '被排除的轨不能被记忆恢复成语音轨，否则排除等于没排',
+      );
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
+    test('文本线程记忆：指纹匹配且够行数才恢复，用户手选覆盖记忆', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final _FakeEngine engine = _FakeEngine(readyFormat: kPcm);
+      final GalHookSessionController controller = build(
+        service: service,
+        endpoints: endpoints,
+        engine: engine,
+      );
+      final Map<String, GalCaptureMemory> store = <String, GalCaptureMemory>{
+        r'd:\games\fake.exe': const GalCaptureMemory(
+          textThreadFingerprint: 'code:HB4@459F50',
+        ),
+      };
+      controller.attachCaptureMemory(
+        load: (String gameKey) => store[gameKey] ?? const GalCaptureMemory(),
+        save: (String gameKey, GalCaptureMemory memory) =>
+            store[gameKey] = memory,
+      );
+      await controller.launchGame(r'D:\Games\fake.exe');
+
+      // 前两行不足门限（3 行）：不得恢复，避免开局蹦一行的 UI 线程把选择钉死。
+      for (int i = 1; i <= 2; i++) {
+        engine.enqueue(
+          GalHookedLine(
+            seq: i,
+            timestampMs: 1000 * i,
+            text: 'せりふ$i',
+            threadId: 7,
+            hookName: 'CodeX',
+            hookCode: 'HB4@459F50',
+          ),
+        );
+      }
+      await waitUntil(() => service.entries.length >= 2);
+      expect(controller.selectedTextThreadKey, isNull);
+
+      // 第三行到达 -> 达到门限，按指纹恢复。
+      engine.enqueue(
+        const GalHookedLine(
+          seq: 3,
+          timestampMs: 3000,
+          text: 'せりふ3',
+          threadId: 7,
+          hookName: 'CodeX',
+          hookCode: 'HB4@459F50',
+        ),
+      );
+      await waitUntil(() => controller.selectedTextThreadKey != null);
+      expect(controller.selectedTextThreadKey, isNotNull);
+
+      // 用户改选「全部」：记忆被清掉，不再自动恢复。
+      await controller.selectTextThread(null, remember: true);
+      expect(store[r'd:\games\fake.exe']!.textThreadFingerprint, isNull);
 
       await controller.close();
       endpoints.dispose();

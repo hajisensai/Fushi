@@ -66,13 +66,79 @@ enum GalTrackEmptyHint { generic, resourceMode, loopbackMode }
 /// [kGalOverlongSliceSuspectReason] 让 UI 亮黄提醒，而不是静默当正常语音。
 const int kGalOverlongSliceSuspectMs = 20000;
 
-/// 跨会话 BGM 排除记忆的持久化端口（真值放偏好表，由
-/// [GalHookSessionController.attachTrackExclusionMemory] 注入）。gameKey 是
-/// 启动 exe 全路径小写；指纹见 [GalHookSessionController.trackFingerprint]。
-typedef GalTrackExclusionLoad = List<String> Function(String gameKey);
-typedef GalTrackExclusionSave = void Function(
+/// 每个游戏的捕获选择记忆（跨会话持久化的真值放偏好表）。
+///
+/// 三项都用**弱指纹**而非会话内 id：`source_ptr` 每次启动都变、native 文本
+/// `thread_id` 混了 processId 同样每次都变，能跨会话锚住的只有
+/// [GalHookSessionController.trackFingerprint]（音轨创建序 + PCM 格式）与
+/// [GalHookSessionController.textThreadFingerprint]（LunaHook 的 hook code /
+/// 标签）。指纹可能漂或撞，因此恢复必须是**可见且一键可改**的：三项恢复各记一条
+/// 结构化事件，且工作台面板实时显示当前生效的选择。
+@immutable
+class GalCaptureMemory {
+  const GalCaptureMemory({
+    this.excludedTrackFingerprints = const <String>[],
+    this.voiceTrackFingerprint,
+    this.textThreadFingerprint,
+  });
+
+  factory GalCaptureMemory.fromJson(Map<Object?, Object?> json) {
+    final Object? excluded = json['excludedTracks'];
+    return GalCaptureMemory(
+      excludedTrackFingerprints: excluded is List
+          ? excluded.whereType<String>().toList(growable: false)
+          : const <String>[],
+      voiceTrackFingerprint: json['voiceTrack'] as String?,
+      textThreadFingerprint: json['textThread'] as String?,
+    );
+  }
+
+  /// 用户标记为 BGM 的音轨指纹集合。
+  final List<String> excludedTrackFingerprints;
+
+  /// 用户选定的会话语音轨指纹；null = 自动选源。
+  final String? voiceTrackFingerprint;
+
+  /// 用户选定的文本线程指纹；null = 自动选线程。
+  final String? textThreadFingerprint;
+
+  bool get isEmpty =>
+      excludedTrackFingerprints.isEmpty &&
+      voiceTrackFingerprint == null &&
+      textThreadFingerprint == null;
+
+  GalCaptureMemory copyWith({
+    List<String>? excludedTrackFingerprints,
+    String? voiceTrackFingerprint,
+    String? textThreadFingerprint,
+    bool clearVoiceTrack = false,
+    bool clearTextThread = false,
+  }) =>
+      GalCaptureMemory(
+        excludedTrackFingerprints:
+            excludedTrackFingerprints ?? this.excludedTrackFingerprints,
+        voiceTrackFingerprint: clearVoiceTrack
+            ? null
+            : voiceTrackFingerprint ?? this.voiceTrackFingerprint,
+        textThreadFingerprint: clearTextThread
+            ? null
+            : textThreadFingerprint ?? this.textThreadFingerprint,
+      );
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'excludedTracks': excludedTrackFingerprints,
+        if (voiceTrackFingerprint != null) 'voiceTrack': voiceTrackFingerprint,
+        if (textThreadFingerprint != null) 'textThread': textThreadFingerprint,
+      };
+}
+
+/// [GalCaptureMemory] 的持久化端口（由
+/// [GalHookSessionController.attachCaptureMemory] 注入）。gameKey 是启动 exe
+/// 全路径小写——只有 launch 路径有稳定游戏身份，attach（绑窗口）没有，不猜。
+typedef GalCaptureMemoryLoad = GalCaptureMemory Function(String gameKey);
+typedef GalCaptureMemorySave = void Function(
   String gameKey,
-  List<String> fingerprints,
+  GalCaptureMemory memory,
 );
 
 /// 会话级选轨 / 排除是否真的影响取音（纯函数，可单测）。
@@ -544,13 +610,23 @@ class GalHookSessionController extends ChangeNotifier {
 
   final Map<String, GalAudioSlice> _lineVoiceCache = <String, GalAudioSlice>{};
 
-  // 跨会话 BGM 排除记忆（见 [attachTrackExclusionMemory]）。
-  GalTrackExclusionLoad? _exclusionMemoryLoad;
-  GalTrackExclusionSave? _exclusionMemorySave;
-  bool _exclusionMemoryApplied = false;
-  bool _exclusionMemoryLoaded = false;
-  String? _exclusionMemoryGameKey;
-  final Set<String> _persistedExclusionFps = <String>{};
+  // 每游戏捕获选择记忆（见 [attachCaptureMemory]）。
+  GalCaptureMemoryLoad? _captureMemoryLoad;
+  GalCaptureMemorySave? _captureMemorySave;
+  bool _captureMemoryLoaded = false;
+  String? _captureMemoryGameKey;
+  GalCaptureMemory _captureMemory = const GalCaptureMemory();
+
+  /// 音轨记忆（排除集 + 语音轨）已对本会话首个非空快照应用过。
+  bool _trackMemoryApplied = false;
+
+  /// 文本线程记忆已在本会话应用过（或用户已手动选过线程）——两者都终止自动恢复。
+  bool _textThreadMemoryApplied = false;
+
+  /// 记忆恢复文本线程所需的最小行数：native 线程 id 混了 processId，跨会话不稳定，
+  /// 同一 hook 往往有多条并行线程共用同一指纹，只能靠「真的在出台词」来消歧。
+  /// 门限设 3 行而不是 1 行，避免开局个别 UI 线程抢先蹦一行就把选择钉死。
+  static const int _textThreadRestoreMinLines = 3;
   final Map<String, int> _lineTimestampCache = <String, int>{};
   final Map<String, int> _lineTextEventIdCache = <String, int>{};
   final Map<String, ({int timestampMs, int textEventId})>
@@ -1103,7 +1179,7 @@ class GalHookSessionController extends ChangeNotifier {
         excludedAudioSourcePtrs: const <int>{},
       ),
     );
-    _resetExclusionMemorySession();
+    _resetCaptureMemorySession();
     _record(
       GalHookEventSeverity.success,
       'session',
@@ -1144,9 +1220,9 @@ class GalHookSessionController extends ChangeNotifier {
     final bool membershipChanged =
         !sameTrackMembership(_state.audioTracks, tracks);
     _setState(_state.copyWith(audioTracks: tracks));
-    if (tracks.isNotEmpty && !_exclusionMemoryApplied) {
-      _exclusionMemoryApplied = true;
-      _applyPersistedExclusions(engine, tracks);
+    if (tracks.isNotEmpty && !_trackMemoryApplied) {
+      _trackMemoryApplied = true;
+      _applyTrackMemory(engine, tracks);
     }
     // BUG-1027：刷新已由定时器/状态迁移自动驱动，只有轨成员变化才记事件，
     // 避免 5s 一条「已刷新」把事件日志淹掉。
@@ -1542,6 +1618,7 @@ class GalHookSessionController extends ChangeNotifier {
     }
     engine.selectedAudioSourcePtr = sourcePtr;
     _setState(_state.copyWith(selectedAudioSourcePtr: sourcePtr));
+    _persistVoiceTrack(sourcePtr);
     _record(
       GalHookEventSeverity.success,
       'audio',
@@ -1553,9 +1630,14 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
+  /// 选择文本线程。
+  ///
+  /// [remember] = true（用户在 UI 里主动选）时把选择写进每游戏记忆，并锁死本会话的
+  /// 自动恢复；记忆恢复自身调用时传 false，免得把「恢复」当成一次新的用户选择再写回。
   Future<bool> selectTextThread(
     int? threadId, {
     String? threadKey,
+    bool remember = false,
   }) async {
     final EngineHookGalAudioSource? engine = _engineSource;
     // WebSocket/剪贴板等外部 Hook 线程没有 native helper，也仍需由 app 级状态
@@ -1567,6 +1649,18 @@ class GalHookSessionController extends ChangeNotifier {
           threadKey == null || threadKey.isEmpty ? null : threadKey;
       _selectedNativeTextThreadId =
           threadId == null || threadId == 0 ? null : threadId;
+      if (remember) {
+        // 用户已亲自表态：本会话不再自动恢复，并把这次选择记成新的真值。
+        _textThreadMemoryApplied = true;
+        TexthookerTextThread? chosen;
+        for (final TexthookerTextThread thread in _textService.textThreads) {
+          if (thread.key == _selectedTextThreadKey) {
+            chosen = thread;
+            break;
+          }
+        }
+        _persistTextThread(chosen);
+      }
     }
     _record(
       selected ? GalHookEventSeverity.success : GalHookEventSeverity.warning,
@@ -1675,6 +1769,31 @@ class GalHookSessionController extends ChangeNotifier {
     return true;
   }
 
+  /// **这一句**当前生效的音轨（用户逐行选轨的结果）；null = 未逐行指定，走会话
+  /// 级选轨 / 自动选源。捕获工作台的逐句音轨面板据此显示"本句用的是哪条轨"。
+  int? lineVoiceSourcePtr(String lineId) => _lineVoiceSourcePtr[lineId];
+
+  /// 取**这一句时刻**的音轨快照（工作台逐句音轨面板的数据源）。
+  ///
+  /// 与会话级 [refreshAudioTracks] 的区别只在时间戳：那个用最近一条台词的 ts
+  /// 做会话级概览，这里必须用该行自己的 ts——不然用户看到的能量/片段数属于别的
+  /// 句子，"排除这句里的 BGM"就成了盲操作。行不属于当前会话 / 无时间戳时返回空。
+  Future<List<GalAudioTrack>> tracksForLine(String lineId) async {
+    final EngineHookGalAudioSource? engine = _engineSource;
+    final TexthookerLineEntry? entry = _textService.entryById(lineId);
+    final int timestamp = _lineTimestampCache[lineId] ?? 0;
+    if (engine == null ||
+        entry == null ||
+        !isLineInCurrentSession(entry) ||
+        timestamp <= 0) {
+      return const <GalAudioTrack>[];
+    }
+    final List<GalAudioTrack> tracks = await engine.listAudioTracks(timestamp);
+    // await 期间会话可能已停止/重启：旧 engine 的快照不落地（同 BUG-950 范式）。
+    if (engine != _engineSource) return const <GalAudioTrack>[];
+    return tracks;
+  }
+
   /// 本行的语音是否由用户显式裁决过（手动补录或逐行选轨）。自动配对一律让路。
   bool _isUserAdjudicated(String lineId) =>
       _manualRecaptureLines.contains(lineId) ||
@@ -1708,15 +1827,15 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
-  /// 注入跨会话 BGM 排除记忆的持久化端口（桌面启动流程
+  /// 注入每游戏捕获选择记忆的持久化端口（桌面启动流程
   /// [GalHookTextOverlayController.start] 调用一次，真值落偏好表）。不注入 =
-  /// 排除只活在会话内，行为与旧版一致。
-  void attachTrackExclusionMemory({
-    required GalTrackExclusionLoad load,
-    required GalTrackExclusionSave save,
+  /// 选择只活在会话内，行为与旧版一致。
+  void attachCaptureMemory({
+    required GalCaptureMemoryLoad load,
+    required GalCaptureMemorySave save,
   }) {
-    _exclusionMemoryLoad = load;
-    _exclusionMemorySave = save;
+    _captureMemoryLoad = load;
+    _captureMemorySave = save;
   }
 
   /// 音轨的跨会话弱指纹。`source_ptr` 只在会话内稳定（跨启动是新指针），能锚的只有
@@ -1729,89 +1848,202 @@ class GalHookSessionController extends ChangeNotifier {
       '${track.format.channels}:${track.format.bitsPerSample}:'
       '${track.format.isFloat ? 1 : 0}';
 
-  String? _exclusionGameKey() {
+  /// 文本线程的跨会话弱指纹。native `thread_id` 混了 processId（injector 侧
+  /// FNV-1a），跨启动必变；能锚的只有 LunaHook 的 hook code（同一 hook 稳定）。
+  /// 没有 hook code 的来源（GDI / Unity / WebSocket）退回标签。
+  ///
+  /// 同一 hook code 常有多条并行线程（ctx/ctx2 不同，未透出到 Dart），因此指纹
+  /// **不足以唯一定位线程**——恢复时还要靠「谁真的在出台词」消歧，见
+  /// [_maybeRestoreTextThread]。
+  @visibleForTesting
+  static String? textThreadFingerprint(TexthookerTextThread thread) {
+    final String? code = thread.hookCode?.trim();
+    if (code != null && code.isNotEmpty) return 'code:$code';
+    final String label = thread.label.trim();
+    return label.isEmpty ? null : 'label:$label';
+  }
+
+  String? _captureMemoryKeyForGame() {
     final String? exe = _state.launchExe;
     if (exe == null || exe.isEmpty) return null;
     return exe.toLowerCase();
   }
 
-  /// 惰性加载当前游戏的持久化排除指纹（每会话一次）。没有游戏身份（窗口附着、
-  /// 非启动路径）就没有记忆——宁可少记，不猜身份。
-  bool _ensureExclusionMemoryLoaded() {
-    if (_exclusionMemoryLoaded) return _exclusionMemoryGameKey != null;
-    _exclusionMemoryLoaded = true;
-    final GalTrackExclusionLoad? load = _exclusionMemoryLoad;
-    final String? gameKey = _exclusionGameKey();
+  /// 惰性加载当前游戏的记忆（每会话一次）。没有游戏身份（窗口附着、非启动路径）
+  /// 就没有记忆——宁可少记，不猜身份。
+  bool _ensureCaptureMemoryLoaded() {
+    if (_captureMemoryLoaded) return _captureMemoryGameKey != null;
+    _captureMemoryLoaded = true;
+    final GalCaptureMemoryLoad? load = _captureMemoryLoad;
+    final String? gameKey = _captureMemoryKeyForGame();
     if (load == null || gameKey == null) return false;
-    _exclusionMemoryGameKey = gameKey;
-    _persistedExclusionFps
-      ..clear()
-      ..addAll(load(gameKey));
+    _captureMemoryGameKey = gameKey;
+    _captureMemory = load(gameKey);
     return true;
   }
 
-  /// 首个非空音轨快照到达时，把上次会话的排除按指纹套回当前轨。只应用一次：
-  /// 环形越新鲜 orderIndex 越贴近真实创建序，越晚匹配越容易漂。
-  void _applyPersistedExclusions(
+  void _saveCaptureMemory(GalCaptureMemory memory) {
+    _captureMemory = memory;
+    final GalCaptureMemorySave? save = _captureMemorySave;
+    final String? gameKey = _captureMemoryGameKey;
+    if (save == null || gameKey == null) return;
+    save(gameKey, memory);
+  }
+
+  /// 首个非空音轨快照到达时，把上次会话的排除集与语音轨按指纹套回当前轨。
+  /// 只应用一次：环形越新鲜 orderIndex 越贴近真实创建序，越晚匹配越容易漂。
+  void _applyTrackMemory(
     EngineHookGalAudioSource engine,
     List<GalAudioTrack> tracks,
   ) {
-    if (!_ensureExclusionMemoryLoaded() || _persistedExclusionFps.isEmpty) {
-      return;
-    }
-    int applied = 0;
+    if (!_ensureCaptureMemoryLoaded() || _captureMemory.isEmpty) return;
+    final Set<String> excludedFps =
+        _captureMemory.excludedTrackFingerprints.toSet();
+    final String? voiceFp = _captureMemory.voiceTrackFingerprint;
+    int excluded = 0;
+    int? restoredVoicePtr;
     for (final GalAudioTrack track in tracks) {
-      if (!_persistedExclusionFps.contains(trackFingerprint(track))) continue;
-      if (!engine.excludedAudioSourcePtrs.add(track.sourcePtr)) continue;
-      applied++;
+      final String fingerprint = trackFingerprint(track);
+      if (excludedFps.contains(fingerprint) &&
+          engine.excludedAudioSourcePtrs.add(track.sourcePtr)) {
+        excluded++;
+      }
+      if (voiceFp != null && fingerprint == voiceFp) {
+        restoredVoicePtr ??= track.sourcePtr;
+      }
     }
-    if (applied == 0) return;
+    // 被排除的轨不能同时是语音轨（用户后来把它标成了 BGM）：排除优先。
+    if (restoredVoicePtr != null &&
+        engine.excludedAudioSourcePtrs.contains(restoredVoicePtr)) {
+      restoredVoicePtr = null;
+    }
+    if (excluded == 0 && restoredVoicePtr == null) return;
+    if (restoredVoicePtr != null) {
+      engine.selectedAudioSourcePtr = restoredVoicePtr;
+    }
     _setState(
       _state.copyWith(
         excludedAudioSourcePtrs: Set<int>.unmodifiable(
           engine.excludedAudioSourcePtrs,
         ),
+        selectedAudioSourcePtr:
+            restoredVoicePtr ?? _state.selectedAudioSourcePtr,
       ),
     );
     _record(
       GalHookEventSeverity.info,
       'audio',
-      'audio.track_exclusions_restored',
-      'Restored BGM track exclusions from the previous session',
-      details: <String, Object?>{'count': applied},
+      'audio.track_memory_restored',
+      'Restored per-game track choices from the previous session',
+      details: <String, Object?>{
+        'excluded': excluded,
+        if (restoredVoicePtr != null) 'voiceSourcePtr': restoredVoicePtr,
+      },
     );
   }
 
   /// 用户显式排除/恢复后同步持久化。恢复会把指纹从记忆里删掉——用户说了这条轨
   /// 不是 BGM，下次会话不得再自动排除它。
   void _persistTrackExclusion(int sourcePtr, bool excluded) {
-    if (!_ensureExclusionMemoryLoaded()) return;
-    final GalTrackExclusionSave? save = _exclusionMemorySave;
-    final String? gameKey = _exclusionMemoryGameKey;
-    if (save == null || gameKey == null) return;
-    GalAudioTrack? track;
-    for (final GalAudioTrack candidate in _state.audioTracks) {
-      if (candidate.sourcePtr == sourcePtr) {
-        track = candidate;
-        break;
-      }
-    }
-    if (track == null) return; // 快照里已不存在的轨谈不上指纹。
-    final String fingerprint = trackFingerprint(track);
+    if (!_ensureCaptureMemoryLoaded()) return;
+    final String? fingerprint = _fingerprintForSourcePtr(sourcePtr);
+    if (fingerprint == null) return; // 快照里已不存在的轨谈不上指纹。
+    final Set<String> fingerprints =
+        _captureMemory.excludedTrackFingerprints.toSet();
     final bool changed = excluded
-        ? _persistedExclusionFps.add(fingerprint)
-        : _persistedExclusionFps.remove(fingerprint);
-    if (changed) {
-      save(gameKey, _persistedExclusionFps.toList()..sort());
+        ? fingerprints.add(fingerprint)
+        : fingerprints.remove(fingerprint);
+    if (!changed) return;
+    _saveCaptureMemory(
+      _captureMemory.copyWith(
+        excludedTrackFingerprints: fingerprints.toList()..sort(),
+      ),
+    );
+  }
+
+  /// 用户显式选定/取消会话语音轨后同步持久化（0 = 自动选源，清掉记忆）。
+  void _persistVoiceTrack(int sourcePtr) {
+    if (!_ensureCaptureMemoryLoaded()) return;
+    if (sourcePtr == 0) {
+      if (_captureMemory.voiceTrackFingerprint == null) return;
+      _saveCaptureMemory(_captureMemory.copyWith(clearVoiceTrack: true));
+      return;
     }
+    final String? fingerprint = _fingerprintForSourcePtr(sourcePtr);
+    if (fingerprint == null ||
+        _captureMemory.voiceTrackFingerprint == fingerprint) {
+      return;
+    }
+    _saveCaptureMemory(
+      _captureMemory.copyWith(voiceTrackFingerprint: fingerprint),
+    );
+  }
+
+  String? _fingerprintForSourcePtr(int sourcePtr) {
+    for (final GalAudioTrack track in _state.audioTracks) {
+      if (track.sourcePtr == sourcePtr) return trackFingerprint(track);
+    }
+    return null;
+  }
+
+  /// 每次线程目录变动时尝试恢复上次会话选定的文本线程。
+  ///
+  /// 只在**用户本会话尚未手动选过**且恢复尚未发生时生效，且要求候选线程已出
+  /// [_textThreadRestoreMinLines] 行——指纹只能锚到 hook 而锚不到具体并行线程
+  /// （ctx 未透出），靠「谁真的在出台词」消歧。选中后本会话不再自动改，避免
+  /// 行数此消彼长导致选择反复跳动。
+  void _maybeRestoreTextThread() {
+    if (_textThreadMemoryApplied || _selectedTextThreadKey != null) return;
+    if (!_ensureCaptureMemoryLoaded()) return;
+    final String? wanted = _captureMemory.textThreadFingerprint;
+    if (wanted == null) return;
+    TexthookerTextThread? best;
+    for (final TexthookerTextThread thread in _textService.textThreads) {
+      if (textThreadFingerprint(thread) != wanted) continue;
+      if (thread.lineCount < _textThreadRestoreMinLines) continue;
+      if (best == null || thread.lineCount > best.lineCount) best = thread;
+    }
+    if (best == null) return;
+    _textThreadMemoryApplied = true;
+    unawaited(
+      selectTextThread(best.nativeThreadId, threadKey: best.key).then((
+        bool selected,
+      ) {
+        if (!selected) return;
+        _record(
+          GalHookEventSeverity.info,
+          'text',
+          'text.thread_memory_restored',
+          'Restored the text thread remembered for this game',
+          details: <String, Object?>{'threadKey': best!.key},
+        );
+      }),
+    );
+  }
+
+  /// 用户显式选定/取消文本线程后同步持久化（null = 自动，清掉记忆）。
+  void _persistTextThread(TexthookerTextThread? thread) {
+    if (!_ensureCaptureMemoryLoaded()) return;
+    final String? fingerprint =
+        thread == null ? null : textThreadFingerprint(thread);
+    if (fingerprint == null) {
+      if (_captureMemory.textThreadFingerprint == null) return;
+      _saveCaptureMemory(_captureMemory.copyWith(clearTextThread: true));
+      return;
+    }
+    if (_captureMemory.textThreadFingerprint == fingerprint) return;
+    _saveCaptureMemory(
+      _captureMemory.copyWith(textThreadFingerprint: fingerprint),
+    );
   }
 
   /// 会话结束时复位记忆的会话内状态（持久化真值不动）。
-  void _resetExclusionMemorySession() {
-    _exclusionMemoryApplied = false;
-    _exclusionMemoryLoaded = false;
-    _exclusionMemoryGameKey = null;
-    _persistedExclusionFps.clear();
+  void _resetCaptureMemorySession() {
+    _trackMemoryApplied = false;
+    _textThreadMemoryApplied = false;
+    _captureMemoryLoaded = false;
+    _captureMemoryGameKey = null;
+    _captureMemory = const GalCaptureMemory();
   }
 
   Future<Uint8List?> captureAudioBytes({
@@ -2827,6 +3059,8 @@ class GalHookSessionController extends ChangeNotifier {
             textSignalReceived: true,
           ),
         );
+        // 行数变了才值得重评：恢复要求候选线程已出够行数（见 [_maybeRestoreTextThread]）。
+        _maybeRestoreTextThread();
       }
     } finally {
       _pollInFlight = false;

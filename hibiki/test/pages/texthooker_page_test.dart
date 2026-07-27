@@ -197,15 +197,17 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.textContaining('Live lines'), findsOneWidget);
+      // 右栏常驻面板已从「最新台词 + 健康状态」两张只读卡换成逐句音轨面板
+      // （排除 BGM 要按本句时刻判断，见 _LineTracksCard）；健康状态移入工具栏
+      // 「更多」菜单的对话框，不再常驻。
+      expect(find.text('Health status'), findsNothing);
       if (size.width >= 840) {
-        expect(find.text('Latest line'), findsOneWidget);
-        expect(find.text('Health status'), findsOneWidget);
+        expect(find.text('Tracks for this line'), findsOneWidget);
         expect(find.byType(ExpansionTile), findsNothing);
       } else {
-        // 窄屏不再丢弃两面板：折叠为可展开区（默认收起，仅标题可见）。
-        expect(find.byType(ExpansionTile), findsNWidgets(2));
-        expect(find.text('Latest line'), findsOneWidget);
-        expect(find.text('Health status'), findsOneWidget);
+        // 窄屏不丢弃面板：折叠为可展开区（默认收起，仅标题可见）。
+        expect(find.byType(ExpansionTile), findsOneWidget);
+        expect(find.text('Tracks for this line'), findsOneWidget);
       }
     });
   }
