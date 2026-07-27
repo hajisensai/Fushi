@@ -22,14 +22,22 @@ const String lapisUserCssBeginMarker = '/* HIBIKI-LAPIS-USER BEGIN */';
 /// 用户客制化区段结束标记。
 const String lapisUserCssEndMarker = '/* HIBIKI-LAPIS-USER END */';
 
-/// 从 vendored Lapis CSS 里提取全部字号变量（`--pc-*-font-size` /
-/// `--mobile-*-font-size`）并按 [percent]（百分比，100 = 原样）缩放，产出一个
-/// `:root` 覆写块。基准值直接解析自 [LapisNoteType.css]（单一真相源），vendored
-/// 版本升级后无需改这里。[percent] == 100 或未解析到任何变量时返回空串。
+/// 从 vendored Lapis CSS 里提取全部字号变量并按 [percent]（百分比，100 = 原样）
+/// 缩放，产出一个 `:root` 覆写块。基准值直接解析自 [LapisNoteType.css]（单一
+/// 真相源），vendored 版本升级后无需改这里。[percent] == 100 或未解析到任何变量
+/// 时返回空串。
+///
+/// 上游 Lapis 的字号变量命名**不统一**：多数叫 `--pc-*-font-size` /
+/// `--mobile-*-font-size`，但释义字号叫 `--pc-main-def-size` /
+/// `--mobile-main-def-size`（没有 `font-` 中缀）。所以判据是「以 `-size` 结尾」，
+/// `font-` 只是可选中缀——只认 `font-size` 会静默漏掉释义字号，界面缩放对释义
+/// 不生效，与「Scales every Lapis font size」的文案不符（本函数原始缺陷）。
+/// 守卫见 `lapis_styling_test.dart`：断言 vendored CSS 里**每一个** px 取值的
+/// `--pc-*` / `--mobile-*` 变量都被本函数覆盖，vendored 升级新增变量即打红。
 String buildLapisFontScaleCss(int percent) {
   if (percent == 100) return '';
   final RegExp pattern =
-      RegExp(r'--((?:pc|mobile)-[a-z-]*font-size):\s*(\d+)px');
+      RegExp(r'--((?:pc|mobile)-[a-z-]*(?:font-)?size):\s*(\d+)px');
   final List<String> lines = <String>[];
   final Set<String> seen = <String>{};
   for (final RegExpMatch m in pattern.allMatches(LapisNoteType.css)) {

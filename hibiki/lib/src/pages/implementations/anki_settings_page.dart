@@ -445,6 +445,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       AnkiSettings settings, AnkiViewModel vm) async {
     final TextEditingController controller =
         TextEditingController(text: settings.lapisCustomCss);
+    try {
+      await _showLapisCustomCssDialog(controller, vm);
+    } finally {
+      // 保存路径抛错（写偏好失败）时也必须释放 controller，否则 Flutter 的
+      // leak tracking 会把它记成泄漏，且每次打开都多留一个 listener。
+      controller.dispose();
+    }
+  }
+
+  Future<void> _showLapisCustomCssDialog(
+      TextEditingController controller, AnkiViewModel vm) async {
     final String? result = await showDialog<String>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
@@ -478,7 +489,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       ),
     );
     if (result != null) await vm.setLapisCustomCss(result);
-    controller.dispose();
   }
 
   Future<void> _applyLapisStyling(AnkiViewModel vm,
@@ -551,6 +561,18 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   }
 
   Future<void> _restoreLapisBackup(AnkiViewModel vm) async {
+    // 在第一个 await 之前就占住 _lapisBusy：列备份是异步的，这段窗口里
+    // `_lapisBusy ? null : ...` 的门还是开的，第二次点击能进来并开出第二条
+    // 恢复流程，两条流程写同一个 note type。占位必须先于任何 await。
+    setState(() => _lapisBusy = true);
+    try {
+      await _runRestoreLapisBackup(vm);
+    } finally {
+      if (mounted) setState(() => _lapisBusy = false);
+    }
+  }
+
+  Future<void> _runRestoreLapisBackup(AnkiViewModel vm) async {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     final List<File> backups = await vm.lapisTemplateService.listBackups();
     if (!mounted) return;
@@ -591,17 +613,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       ),
     );
     if (ok != true || !mounted) return;
-    setState(() => _lapisBusy = true);
     try {
       await vm.lapisTemplateService.restoreBackup(chosen);
-      await vm.refreshSettingsFromStore();
       messenger
           .showSnackBar(SnackBar(content: Text(t.anki_lapis_restore_done)));
     } catch (e) {
       messenger.showSnackBar(
           SnackBar(content: Text(t.anki_lapis_restore_failed(error: '$e'))));
     } finally {
-      if (mounted) setState(() => _lapisBusy = false);
+      // 失败也要刷：restoreBackup 在卡模板失败前已经把 styling 与 settings 写
+      // 穿了，只刷成功路径会让页面继续显示恢复前的字号/自定义 CSS。
+      await vm.refreshSettingsFromStore();
     }
   }
 
