@@ -156,6 +156,18 @@ class InterconnectSyncBackend extends SyncBackend
   /// 判断 `restoreAuth` 是否真需要作废已解析的地址。null = 还没读过配置。
   String? _configSignature;
 
+  /// 对端身份（地址集合 / 钉扎指纹 / 令牌）真的变了时自增。
+  ///
+  /// BUG-1180：远端**清单缓存**必须跟着作废，否则换对端后 TTL 内还会拿上一台 host 的
+  /// 清单渲染（点下载还会向新 host 要一个它根本没有的条目）。
+  ///
+  /// 为什么挂在这里而不是各个「改配置」的 UI 调用点——改对端的入口有四处
+  /// （设置页 `_persistUrls` / `_saveToken`、局域网配对的两处 token 落库），而
+  /// [_sessionSignature] 的比对已经是**唯一**权威的「对端身份变了」判据，且
+  /// [restoreAuth] 是所有远端读取的必经前置。挂在这里 = 四个入口加任何将来新增的
+  /// 入口全部自动覆盖，不依赖每个调用点记得手动失效（这正是本 bug 的成因）。
+  final ValueNotifier<int> sessionIdentityRevision = ValueNotifier<int>(0);
+
   WebDavOps? _ops;
   // TODO-961 M1: 当前选中地址的钉扎指纹（https 走 pinned client；http=null）。
   String? _activeFingerprint;
@@ -203,6 +215,10 @@ class InterconnectSyncBackend extends SyncBackend
     if (signature != _configSignature) {
       _configSignature = signature;
       _sessionResolved = false;
+      // BUG-1180：身份变了 = 远端清单缓存里的东西属于**上一个**对端，必须作废。
+      // 监听者同步收到通知，所以本次 restoreAuth 返回时缓存已经是空的，紧随其后的
+      // 那次 read() 必然重新向新对端取数。
+      sessionIdentityRevision.value++;
     }
     _candidates = candidates;
     _token = token;

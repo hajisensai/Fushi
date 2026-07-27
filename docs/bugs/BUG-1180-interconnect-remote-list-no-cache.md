@@ -33,13 +33,30 @@
   `home_dashboard_page.dart` 的 `_loadRemoteDashboardData`（顺带把三个串行请求改成
   `Future.wait` 并行）。
 
-  **强制穿透只有显式入口**：下拉刷新（两页的 `_pullToRefresh*` 传 `forceRefresh: true`）
-  与「管理来源」（`_openManageSources` 先 `invalidateAll()`，换了对端不能拿旧清单渲染）。
+  **强制穿透**：用户显式下拉刷新（两页的 `_pullToRefresh*` 传 `forceRefresh: true`）。
+
+  **换对端自动失效**：`remoteLibraryCacheProvider` 订阅
+  `InterconnectSyncBackend.sessionIdentityRevision`——该版本号在 `_loadConfig` 判定
+  对端身份（地址集合 / 钉扎指纹 / 令牌）真变时自增，收到即 `invalidateAll()`。
+  因为 `restoreAuth` 是所有远端读取的必经前置，失效必定发生在下一次 `read()` 之前。
+
+  > ⚠️ 本条最初写的是「『管理来源』（`_openManageSources` 先 `invalidateAll()`）」，
+  > **与代码不符**：`_openManageSources` 打开的 `MediaSourcesDialog` 管的是扫描根
+  > （本地目录 / SFTP / FTP 源库），对互联对端的引用数为 0，**改不了对端**；而真正
+  > 改对端的四处（设置页 `_persistUrls` / `_saveToken`、局域网配对的两处 token 落库）
+  > 当时一处失效都没有 → 换对端后 TTL 内仍渲染上一台 host 的清单，点下载还会向新
+  > host 要一个它没有的条目。改法不是把 `invalidateAll()` 补到那四个调用点（那正是
+  > 「每加一个入口就要记得手动失效」的老毛病），而是订阅唯一权威的身份判据。
 
   缓存只包住「问对端要清单」这一层，本地 DB 查询与去重仍每次照跑——本地新增/删除的
   条目立即反映在混排网格里，BUG-992/994 的用户可见语义不受影响。
 
 - **[x] ② 已加自动化测试** —
+  - `hibiki/test/sync/interconnect_session_reuse_test.dart`：「BUG-1180: 换对端地址 /
+    换令牌自增会话身份版本号」「配置没变不自增」——钉后端半边；
+    `remote_library_cache_test.dart` 的「BUG-1180: 缓存随对端身份变化自动失效
+    （provider 已订阅）」——钉接线半边。两半各自可负向验证（去掉 `_loadConfig` 的
+    自增 → 前者红；去掉 provider 的 `addListener` → 后者红）。
   - `hibiki/test/sync/remote_library_cache_test.dart`（12 例）：TTL 命中 / TTL 过期重取 /
     forceRefresh 穿透 / in-flight 去重 / 失败不缓存且下次重试 / 失败保留上次成功值 /
     单 key 失效不牵连别域 / invalidateAll / 在途请求被失效后不写回 /

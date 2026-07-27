@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/remote_library_cache.dart';
 
 /// BUG-1180 根因守卫：远端库列表的 TTL 缓存 + in-flight 去重 + 显式失效。
@@ -222,5 +224,30 @@ void main() {
       RemoteLibraryCacheKeys.videos,
       isNot(RemoteLibraryCacheKeys.cloudVideos),
     );
+  });
+
+  /// BUG-1180 接线守卫：provider 必须订阅「对端身份变了」的信号并整体失效。
+  ///
+  /// 这条钉的是**接线**，不是缓存类自身的 `invalidateAll`（那条在上面）。删掉
+  /// `remoteLibraryCacheProvider` 里的 `addListener(onIdentityChanged)` 本条即红——
+  /// 前一版正是漏了这根线，唯一的 `invalidateAll()` 还挂在改不了对端的「源库」
+  /// 对话框上，换对端后 TTL 内仍然渲染上一台 host 的清单。
+  test('BUG-1180: 缓存随对端身份变化自动失效（provider 已订阅）', () async {
+    final ProviderContainer container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final RemoteLibraryCache scoped =
+        container.read(remoteLibraryCacheProvider);
+    await scoped.read(
+      key: RemoteLibraryCacheKeys.books,
+      fetch: () async => <String>['host-a 的书'],
+    );
+    expect(scoped.isFresh(RemoteLibraryCacheKeys.books), isTrue);
+
+    // 模拟「对端身份变了」——真实路径是 restoreAuth 里 _sessionSignature 比对失败。
+    InterconnectSyncBackend.instance.sessionIdentityRevision.value++;
+
+    expect(scoped.isFresh(RemoteLibraryCacheKeys.books), isFalse,
+        reason: 'BUG-1180：换对端后不得再拿上一台 host 的清单渲染');
   });
 }

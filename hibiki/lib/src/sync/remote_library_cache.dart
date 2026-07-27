@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 
 /// 远端库列表（互联对端 / 云盘）的统一读取入口：TTL 缓存 + in-flight 去重 + 显式失效。
 ///
@@ -22,9 +24,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// 反映在混排网格里，只有「问对端要清单」这一步被 TTL 挡住，BUG-992/994 的用户可见
 /// 语义（切回 tab 远端卡在场）不受影响。
 ///
-/// **失效由调用方显式驱动**：下拉刷新、管理互联源、配对变更、同步跑完 →
-/// [invalidate]/[invalidateAll]。缓存不试图从 client 身份推断对端是否换人，那种推断
-/// 在多地址候选 + 单例 backend 的现实下必然出错。
+/// **失效有两条路**：① 用户显式下拉刷新 → [read] 传 `forceRefresh: true`；
+/// ② 对端身份变了 → [remoteLibraryCacheProvider] 订阅
+/// `InterconnectSyncBackend.sessionIdentityRevision` 自动 [invalidateAll]。
+/// 缓存类自身不试图从 client 身份推断对端是否换人（那种推断在多地址候选 + 单例
+/// backend 的现实下必然出错），判据由 backend 给，本类只负责照做。
 class RemoteLibraryCache {
   RemoteLibraryCache({
     this.defaultTtl = const Duration(seconds: 60),
@@ -138,9 +142,22 @@ class _CacheSlot {
 ///
 /// 用 provider 而不是全局单例，是为了测试隔离——每个 `ProviderScope` 一份新缓存，
 /// widget 测试之间不会互相看到对方的远端列表。
-final remoteLibraryCacheProvider = Provider<RemoteLibraryCache>(
-  (ref) => RemoteLibraryCache(),
-);
+///
+/// **换对端自动失效（BUG-1180）**：订阅
+/// [InterconnectSyncBackend.sessionIdentityRevision]——它在对端身份（地址集合 /
+/// 钉扎指纹 / 令牌）真变时自增。改对端的入口有四处（设置页改地址、改令牌、局域网
+/// 配对的两处 token 落库），靠每处记得手动 `invalidateAll()` 必然漏（本 bug 的
+/// 前一版就漏光了，唯一那处还挂在改不了对端的「源库」对话框上）。订阅唯一的身份
+/// 判据 = 所有入口自动覆盖。
+final remoteLibraryCacheProvider = Provider<RemoteLibraryCache>((ref) {
+  final RemoteLibraryCache cache = RemoteLibraryCache();
+  final ValueNotifier<int> revision =
+      InterconnectSyncBackend.instance.sessionIdentityRevision;
+  void onIdentityChanged() => cache.invalidateAll();
+  revision.addListener(onIdentityChanged);
+  ref.onDispose(() => revision.removeListener(onIdentityChanged));
+  return cache;
+});
 
 /// 远端列表的缓存 key。集中在一处而不是散在各页面字符串字面量里——新增媒体域时
 /// 这里加一个常量/函数，编译器就能在所有消费点保证拼写一致。

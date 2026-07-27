@@ -868,9 +868,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       context: context,
       builder: (_) => const MediaSourcesDialog(mediaKind: 'video'),
     );
-    // 管理互联源可能新增/切换/移除远端 host，远端清单需重拉。换了对端后旧缓存全部
-    // 作废（BUG-1180）——否则 TTL 内还会拿上一台 host 的清单渲染。
-    _remoteCache.invalidateAll();
+    // 注意：本对话框管的是**扫描根**（本地目录 / SFTP / FTP 源库），改不了互联对端，
+    // 所以这里不做远端缓存失效——换对端的失效由 [remoteLibraryCacheProvider] 订阅
+    // `InterconnectSyncBackend.sessionIdentityRevision` 统一处理（BUG-1180）。
+    // 这里仍传 remote: true，是因为扫描可能让本地与远端的去重结果变化。
     if (mounted) _refresh(remote: true);
   }
 

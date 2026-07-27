@@ -141,6 +141,61 @@ void main() {
     expect(probes, 1, reason: '展示名是纯 UI 字段，改它不该引发一轮全候选探测');
   });
 
+  // ── BUG-1180：换对端必须让远端清单缓存失效 ────────────────────────────
+  //
+  // 这两条钉的是「换对端后旧清单不得被沿用」。分两半各自可负向验证：
+  //   ① 后端半边——身份变了必须自增 `sessionIdentityRevision`（去掉 `_loadConfig`
+  //      里的自增 → 本组三条全红）。
+  //   ② 接线半边——provider 必须订阅它并 `invalidateAll`（去掉 provider 里的
+  //      addListener → 「缓存随对端身份变化失效」红）。
+
+  test('BUG-1180: 换对端地址自增会话身份版本号', () async {
+    final InterconnectSyncBackend backend =
+        InterconnectSyncBackend.withProbe((String url, String token) async {
+      return true;
+    });
+    await backend.restoreAuth(repo);
+    final int before = backend.sessionIdentityRevision.value;
+
+    await repo.setHibikiClientUrls(<HibikiClientUrl>[
+      const HibikiClientUrl(url: 'http://192.168.1.99:8384'),
+    ]);
+    await backend.restoreAuth(repo);
+
+    expect(backend.sessionIdentityRevision.value, greaterThan(before),
+        reason: 'BUG-1180：换了对端，远端清单缓存必须收到失效信号');
+  });
+
+  test('BUG-1180: 换令牌自增会话身份版本号', () async {
+    final InterconnectSyncBackend backend =
+        InterconnectSyncBackend.withProbe((String url, String token) async {
+      return true;
+    });
+    await backend.restoreAuth(repo);
+    final int before = backend.sessionIdentityRevision.value;
+
+    await repo.setHibikiClientToken('token-b');
+    await backend.restoreAuth(repo);
+
+    expect(backend.sessionIdentityRevision.value, greaterThan(before),
+        reason: '令牌是对端身份的一部分（局域网配对就是这么落库的）');
+  });
+
+  test('BUG-1180: 配置没变不自增（否则每次切页面都白白清空缓存）', () async {
+    final InterconnectSyncBackend backend =
+        InterconnectSyncBackend.withProbe((String url, String token) async {
+      return true;
+    });
+    await backend.restoreAuth(repo);
+    final int before = backend.sessionIdentityRevision.value;
+
+    await backend.restoreAuth(repo);
+    await backend.restoreAuth(repo);
+
+    expect(backend.sessionIdentityRevision.value, before,
+        reason: '配置没变还清缓存，等于把 BUG-1180 的缓存收益全退回去');
+  });
+
   test('signOut 后配置身份归零，下次连接必然重探', () async {
     int probes = 0;
     final InterconnectSyncBackend backend =
