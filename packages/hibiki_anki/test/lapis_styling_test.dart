@@ -62,6 +62,35 @@ void main() {
       expect(css, contains('--mobile-sentence-font-size:'));
     });
 
+    test('覆盖 vendored CSS 里每一个 px 取值的 pc/mobile 变量（漏一个即红）', () {
+      // 守卫 PR#457 审查 §10-1 的原始缺陷：正则只认 `font-size`，把上游命名
+      // 例外 `--pc-main-def-size` / `--mobile-main-def-size` 漏在缩放之外，
+      // 释义字号不跟随「界面缩放」。判据不写死变量清单，而是直接从
+      // LapisNoteType.css 反推：**所有** px 取值的 --pc-* / --mobile-* 变量
+      // 都必须出现在缩放块里，vendored 升级新增变量同样会打红。
+      final RegExp declared =
+          RegExp(r'--((?:pc|mobile)-[a-z0-9-]+):\s*(\d+)px');
+      final Map<String, int> baselines = <String, int>{
+        for (final RegExpMatch m in declared.allMatches(LapisNoteType.css))
+          m.group(1)!: int.parse(m.group(2)!),
+      };
+      expect(baselines, isNotEmpty);
+      final String css = buildLapisFontScaleCss(125);
+      final List<String> missing = <String>[
+        for (final String name in baselines.keys)
+          if (!css.contains('--$name:')) name,
+      ];
+      // 前瞻风险留痕：本断言把「pc-/mobile- 前缀 + px 取值 == 字号」制度化了。
+      // 上游若新增非字号的 px 变量（如 --pc-main-picture-size），正确做法是给
+      // buildLapisFontScaleCss 加排除表并在这里显式豁免，**不是**把守卫改绿。
+      expect(missing, isEmpty, reason: '这些 Lapis 字号变量没被缩放覆盖: $missing');
+      // 释义字号显式断言基准与缩放结果（pc 20px、mobile 16px @125%）。
+      expect(baselines['pc-main-def-size'], 20);
+      expect(baselines['mobile-main-def-size'], 16);
+      expect(css, contains('--pc-main-def-size: 25px;'));
+      expect(css, contains('--mobile-main-def-size: 20px;'));
+    });
+
     test('缩放值有下限保护（不会缩成 0px）', () {
       // 1% 时最小的 16px 变量 → 0.16 → round 0 → clamp 1。
       expect(buildLapisFontScaleCss(1), contains(': 1px;'));

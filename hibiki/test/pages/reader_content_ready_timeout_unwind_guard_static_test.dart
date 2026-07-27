@@ -47,16 +47,22 @@ void main() {
         reason: '超时回调应强制置内容就绪摘掉遮罩');
 
     // ② 同一超时回调里必须解开导航态，否则 _paginationInFlight 恒真、翻页永久卡死。
-    expect(body.contains('_isNavigatingToChapter = false;'), isTrue,
-        reason: '超时回调必须清 _isNavigatingToChapter（否则 _paginationInFlight 恒真）');
+    // 解开导航态的唯一途径是 _failNavigation()（③ 钉住它确实清了三样东西）。此处
+    // **不再**要求回调里另有一行裸 `_isNavigatingToChapter = false;`——那行与
+    // _failNavigation 内部完全重复，当年只为满足本断言而保留，删掉不改变任何行为。
     expect(body.contains('_failNavigation();'), isTrue,
-        reason: '超时回调必须 _failNavigation 清 _restoreInFlight 并收尾 completer');
+        reason: '超时回调必须 _failNavigation 清导航态（含 _isNavigatingToChapter / '
+            '_restoreInFlight）并收尾 completer');
 
-    // ③ _failNavigation helper 自身仍复位 restoreInFlight 并 complete/清空 completer。
+    // ③ _failNavigation helper 自身仍复位导航/恢复旗并 complete/清空 completer。
+    // 断言下移到 helper 内部后，「超时回调解开导航态」这一不变量依然被完整钉住。
     final int failStart = src.indexOf('void _failNavigation() {');
     expect(failStart, greaterThan(-1), reason: '找不到 _failNavigation helper');
     final int failEnd = src.indexOf('\n  }', failStart);
     final String failBody = src.substring(failStart, failEnd);
+    expect(failBody.contains('_isNavigatingToChapter = false;'), isTrue,
+        reason: '_failNavigation 必须清 _isNavigatingToChapter（否则 '
+            '_paginationInFlight 恒真、翻页永久卡死）');
     expect(failBody.contains('_restoreInFlight = false;'), isTrue,
         reason: '_failNavigation 必须清 _restoreInFlight');
     expect(failBody.contains('_restoreCompleter!.complete(false);'), isTrue,
