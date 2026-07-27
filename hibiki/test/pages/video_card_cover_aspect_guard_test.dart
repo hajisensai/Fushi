@@ -52,36 +52,54 @@ void main() {
             '文字块高度浮动、把空隙灌回封面区（BUG-928 回归）',
       );
 
-      // BUG-943（续 BUG-926）：标题必须单行——2 行预留在绝大多数单行标题卡下把底部撑出
-      // 约 50px 空白块（用户实报「底部多显示了一块」）。
+      // BUG-1177 起标题改为两行（原 BUG-943 要求单行，见下方 text block 用例里
+      // 记录的权衡）：窄屏卡宽只有约 154px，单行 ellipsis 放不下一个日文剧名。
       expect(
         body,
-        contains('maxLines: 1'),
-        reason: '$name 标题必须 maxLines: 1，避免 2 行预留在单行标题卡下留底部空白',
-      );
-      expect(
-        body,
-        isNot(contains('maxLines: 2')),
-        reason: '$name 不得回退到 maxLines: 2 的两行标题预留（BUG-943（续 BUG-926）空白回归）',
+        contains('maxLines: 2'),
+        reason: '$name 标题必须 maxLines: 2——窄屏卡宽约 154px，单行放不下常见的'
+            '日文剧名（BUG-1177）',
       );
     }
   });
 
+  // BUG-943 与 BUG-1177 的权衡，明确记录在此，便于日后一句话回退：
+  //
+  // - BUG-943（用户实报「底部多显示了一块」）的根因是文字块**死钳 83px**——那是
+  //   「2 行标题 + 进度行」的最坏情况预留，而绝大多数卡是单行标题、无进度，于是
+  //   底部常驻约 50px 空白。当时的修法是把常量收敛到 52 并把标题钳成单行。
+  // - BUG-1177（用户实报窄屏「书/视频的名字显示不全」）暴露了那次修法的代价：
+  //   360dp 手机上卡宽只有约 154px，单行 ellipsis 只显示得到日文剧名的开头几个字。
+  //
+  // 现在文字块高度**按真实行高算出**（_videoCardTextBlock），不再是任何一个猜出来
+  // 的常量：默认字号下约 66px，比当年的最坏预留 83 小得多，比 52 多约 14px。也就是
+  // 说 BUG-943 抱怨的 50px 空白并没有回归，只是短标题卡多了约 14px——这是让长标题
+  // 能显示第二行必须付的最小代价。本用例守住的是「不得回到最坏预留」这条底线。
   test(
-      'video card text block stays compact (no worst-case reservation) '
-      '— BUG-943（续 BUG-926）', () {
+      'video card text block is computed from real line heights, not a '
+      'worst-case constant — BUG-943 / BUG-1177', () {
     final String source = File(path).readAsStringSync();
-    final RegExpMatch? m = RegExp(r'_kVideoCardTextBlock\s*=\s*(\d+(?:\.\d+)?)')
-        .firstMatch(source);
-    expect(m, isNotNull, reason: '找不到 _kVideoCardTextBlock 常量');
-    final double block = double.parse(m!.group(1)!);
-    // 单行标题 + 单行进度 + 内边距约 52；旧值 83 是「2 行标题 + 进度行」最坏预留，
-    // 单行标题无进度卡下底部常驻约 50px 空白（用户实报）。守住紧凑上限。
+
     expect(
-      block,
-      lessThanOrEqualTo(60),
-      reason: '_kVideoCardTextBlock 不得回退到最坏预留（如 83），否则视频卡底部'
-          '再次出现约 50px 常驻空白块（BUG-943（续 BUG-926））',
+      source,
+      isNot(contains('_kVideoCardTextBlock =')),
+      reason: '文字块高度不得再退回硬编码常量——它必须随字号/文字缩放算出，否则'
+          '大字号下要么裁字（BUG-1177）要么留空白（BUG-943）',
+    );
+    expect(
+      source,
+      contains('static double _videoCardTextBlock(BuildContext context)'),
+      reason: '文字块高度必须由 _videoCardTextBlock(context) 按真实行高算出',
+    );
+    // 两行标题 + 一行进度 + 内边距：默认字号（14/12sp、行高约 1.3）下约 66px，
+    // 必须明显小于当年的最坏预留 83，否则就是 BUG-943 的空白回归。
+    const double titleLine = 14.0 * 1.3;
+    const double metaLine = 12.0 * 1.3;
+    const double computed = titleLine * 2 + 8 + metaLine + 6;
+    expect(
+      computed,
+      lessThan(83),
+      reason: '按公式算出的文字块高度必须小于 BUG-943 当年的最坏预留 83px',
     );
   });
 }

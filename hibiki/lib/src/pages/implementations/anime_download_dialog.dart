@@ -1843,6 +1843,10 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       density: HibikiListDensity.compact,
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       subtitleMaxLines: 3,
+      // BUG-1177：番剧名 + 种子名都很长，而这一行右侧还挂着最多 3 个操作按钮，窄屏
+      // 上标题只剩百来像素。行高自由（在可滚动列表里，只有 minHeight 下限），放宽到
+      // 两行；种子名同样从死板的单行放宽到两行。
+      titleMaxLines: 2,
       leading: statusIcon,
       title: Text(plan.seriesTitle),
       subtitle: Column(
@@ -1850,7 +1854,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         children: <Widget>[
           Text(
             plan.torrentTitle,
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall,
           ),

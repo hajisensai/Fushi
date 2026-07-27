@@ -165,6 +165,15 @@ class HibikiListItem extends StatefulWidget {
   final double? minHeight;
   final HibikiListDensity density;
   final EdgeInsetsGeometry? padding;
+
+  /// 标题最多几行，默认 1。
+  ///
+  /// BUG-1177 调查记录：曾把默认值改成 2（因为列表项承载的正是书名、视频名、词典名
+  /// 这类长文本，单行 ellipsis 在窄屏上只看得到开头几个字）。**该改动已回退**：
+  /// 本组件自身行高虽只有 minHeight 下限，但相当多调用点把它放在固定高度的容器里
+  /// （golden `list_tile_narrow` 即在 150×80 的盒子里复现出 overflow 红条），窄容器
+  /// 里标题一换行就会撑破父容器。所以放宽必须逐调用点显式进行——只在父容器高度自由
+  /// 的地方传 `titleMaxLines: 2`，而不是改默认值连带影响每一个既有调用点。
   final int titleMaxLines;
   final int subtitleMaxLines;
   final HibikiFocusId? focusId;

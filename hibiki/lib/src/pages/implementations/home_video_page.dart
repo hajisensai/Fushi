@@ -2626,7 +2626,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
                   child: Text(
                     collection.name,
-                    maxLines: 1,
+                    // BUG-1177：与同网格的散卡标题同规格（两行）。
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
@@ -2811,7 +2812,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   child: Text(
                     video.title,
-                    maxLines: 1,
+                    // BUG-1177：远端视频占位卡与本地散卡同规格（两行）。
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
@@ -3165,17 +3167,36 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   /// 视频卡总高 = 2:3 竖版海报封面高（[cardWidth] × 3/2）+ 文字块
-  /// [_kVideoCardTextBlock]。主网格统一 Kazumi 式竖版海报（用户拍板 2026-07-24），
+  /// （[_videoCardTextBlock]）。主网格统一 Kazumi 式竖版海报（用户拍板 2026-07-24），
   /// 卡变窄时封面等比缩，不出现固定卡高下的封面上下留白。合集封面卡与散卡同处
   /// 一个网格、共用此 [mainAxisExtent]，逐像素同尺寸。
-  static double _videoCardExtent(double cardWidth) =>
-      cardWidth * 3 / 2 + _kVideoCardTextBlock;
+  static double _videoCardExtent(double cardWidth, double textBlock) =>
+      cardWidth * 3 / 2 + textBlock;
 
-  /// 视频卡封面下方文字块的固定高度：单行标题 + 单行观看进度 + 内边距（BUG-943：
-  /// 旧值 83 为「2 行标题 + 进度行」的最坏预留，但绝大多数卡是单行标题、无进度，
-  /// 底部常驻约 50px 空白。收敛为紧凑固定高：标题 `maxLines: 1`、进度行用 Flexible
-  /// 内收，无进度时仅剩约一行的常规内边距，不再是显眼空块）。
-  static const double _kVideoCardTextBlock = 52;
+  /// 封面下方文字块的实际高度：两行标题 + 一行观看进度 + 上下内边距，随文字缩放走。
+  ///
+  /// BUG-1177：此前是死常量 [_kVideoCardTextBlock]（52），配合标题 `maxLines: 1`。
+  /// 视频名（尤其日文剧名带季数/话数）单行 ellipsis 在窄屏卡上只剩几个字——卡宽在
+  /// 360dp 手机上只有约 154px。放宽到两行就必须同步抬高文字块，否则两行标题会顶掉
+  /// 进度行并溢出。这里按真实行高算，而不是再猜一个常量：大字号下文字块自动变高，
+  /// 不会像固定值那样在 textScale≥1.2 时把进度行切掉一半。
+  ///
+  /// 与 BUG-943（旧值 83 → 52，消除卡底常驻空白）不冲突：那次收敛掉的是「为两行
+  /// 标题预留、但绝大多数卡用不到」的最坏情况余量，代价是长标题永远显示不全。现在
+  /// 高度按需算出（默认字号约 66，仍远小于当年的 83），长标题真的用得上第二行。
+  static double _videoCardTextBlock(BuildContext context) {
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final ThemeData theme = Theme.of(context);
+    final double titleSize = theme.textTheme.bodyMedium?.fontSize ?? 14.0;
+    final double metaSize =
+        HibikiDesignTokens.of(context).type.metadata.fontSize ?? 12.0;
+    // 行高系数与 Text 默认一致（未指定 height 时按字体 metrics，约 1.3）。
+    const double lineFactor = 1.3;
+    final double titleLine = scaler.scale(titleSize) * lineFactor;
+    final double metaLine = scaler.scale(metaSize) * lineFactor;
+    // 标题 padding 6(top)+2(bottom)，进度行 padding 0(top)+6(bottom)。
+    return titleLine * 2 + 8 + metaLine + 6;
+  }
 
   /// 视频库主 [SliverGrid]（TODO-654：随主 [CustomScrollView] 滚动）：合集封面
   /// 卡在前、散卡在后的**单一**网格（[cells] 已按此序拼好）。
@@ -3192,7 +3213,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // 窄卡不再残留固定 218 的封面上下留白。
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: cardLayout.columns,
-          mainAxisExtent: _videoCardExtent(cardLayout.cardWidth),
+          mainAxisExtent: _videoCardExtent(
+            cardLayout.cardWidth,
+            _videoCardTextBlock(context),
+          ),
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
         ),
@@ -3390,7 +3414,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
                   child: Text(
                     book.title,
-                    maxLines: 1,
+                    // BUG-1177：窄屏卡宽只有约 154px，单行放不下一个日文剧名。
+                    // 文字块高度已按两行标题算出（[_videoCardTextBlock]）。
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),

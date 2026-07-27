@@ -58,15 +58,27 @@ class MokuroMoeTasksSection extends ConsumerWidget {
                 ],
               ),
             ),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 220),
-              child: ListView.builder(
-                shrinkWrap: true,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                itemCount: tasks.length,
-                itemBuilder: (BuildContext context, int index) =>
-                    _buildTaskRow(context, theme, queue, tasks[index]),
-              ),
+            // BUG-1177：任务列表原先死钳 maxHeight 220。它是 Column 里的**非弹性**
+            // 兄弟，而同一列里还有别的内容和一个 Expanded 主体；小屏（手机横屏、矮
+            // 窗口）上 220 + 头部 + 分隔线就能把 Expanded 压成负高度 → 竖向 RenderFlex
+            // overflow。改为在有界高度下取可用高的四成（下限 120，仍不超过原来的
+            // 220），无界高度时退回原值。
+            LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final double maxHeight = constraints.maxHeight.isFinite
+                    ? (constraints.maxHeight * 0.4).clamp(120.0, 220.0)
+                    : 220.0;
+                return ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxHeight),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    itemCount: tasks.length,
+                    itemBuilder: (BuildContext context, int index) =>
+                        _buildTaskRow(context, theme, queue, tasks[index]),
+                  ),
+                );
+              },
             ),
             const Divider(height: 1),
           ],
@@ -118,6 +130,9 @@ class MokuroMoeTasksSection extends ConsumerWidget {
       density: HibikiListDensity.compact,
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       subtitleMaxLines: 2,
+      // BUG-1177：漫画标题（常带卷号/作者）在窄屏单行只看得到开头几个字；这一行在
+      // 可滚动列表里，行高自由。
+      titleMaxLines: 2,
       leading: statusIcon,
       title: Text(task.title),
       subtitle: Text(

@@ -363,9 +363,12 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
                   index: index,
                   child: HibikiListItem(
                     padding: EdgeInsets.zero,
+                    // BUG-1177：标题是对端 URL，右侧还有一排控件；单行 ellipsis 在窄屏
+                    // 上只显示得到 `http…`，等于认不出是哪台设备。行高自由，放宽两行。
+                    titleMaxLines: 2,
                     title: Text(
                       u.url,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: u.enabled
@@ -1094,12 +1097,14 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
               ..._pairedPeers.map(
                 (HibikiPairedPeerRow peer) => HibikiListItem(
                   padding: EdgeInsets.zero,
+                  // BUG-1177：设备名由用户自定义，可以很长；行高自由，放宽两行。
+                  titleMaxLines: 2,
                   title: Text(
                     (peer.deviceName != null &&
                             peer.deviceName!.trim().isNotEmpty)
                         ? peer.deviceName!
                         : t.sync_paired_peer_unknown,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                   subtitle: (peer.lastSeenIp != null &&
@@ -1387,6 +1392,8 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
           for (final HibikiDevice device in _devices)
             HibikiListItem(
               leading: const Icon(Icons.devices_outlined, size: 20),
+              // BUG-1177：发现到的设备名 + WebDAV URL 都可能超出窄屏一行。
+              titleMaxLines: 2,
               title: Text(device.name),
               subtitle: Text(device.webDavUrl),
               trailing: _pairingUrl == device.webDavUrl
