@@ -69,4 +69,23 @@ void main() {
     expect(after, contains('body{color:blue}'),
         reason: '资产重装载必须清空 HTML memo，不得回吐旧 css 的产物');
   });
+
+  test('host navigation bridge is gated, idempotent, and captures page keys',
+      () {
+    final String enabled =
+        DictionaryPopupWebViewState.debugHostNavigationKeyScript(true);
+    final String disabled =
+        DictionaryPopupWebViewState.debugHostNavigationKeyScript(false);
+
+    expect(enabled, contains('__hibikiHostNavigationKeysEnabled = true'));
+    expect(disabled, contains('__hibikiHostNavigationKeysEnabled = false'));
+    expect(enabled, contains('__hibikiHostNavigationKeysInstalled'));
+    expect(enabled, contains("'ArrowLeft'"));
+    expect(enabled, contains("'ArrowRight'"));
+    expect(enabled, contains("'Escape'"));
+    expect(enabled, contains('preventDefault()'));
+    expect(enabled, contains('stopImmediatePropagation()'));
+    expect(enabled, contains("callHandler('hostNavigationKey', key)"));
+    expect(enabled, contains("addEventListener('keydown'"));
+  });
 }

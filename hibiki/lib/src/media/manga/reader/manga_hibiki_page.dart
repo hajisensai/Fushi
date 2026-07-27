@@ -6,6 +6,7 @@ import 'dart:math' as math;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -58,6 +59,8 @@ Rect mangaSelectionRectFromPayload(
     height: 1,
   );
 }
+
+enum MangaReaderInputAction { previous, next, dismissDictionary }
 
 /// 漫画选区 payload 的纯分发核心。页面方法 `processMangaSelection` 接真实回调
 /// （setCurrentSentence / searchDictionaryResult）；这个接缝让词/句/矩形契约可以在
@@ -191,6 +194,69 @@ class MangaHibikiPage extends BaseSourcePage {
     final bool rtl = direction == 'rtl';
     return rightKey == rtl ? 'prev' : 'next';
   }
+
+  static MangaReaderInputAction? keyInputAction({
+    required LogicalKeyboardKey key,
+    required bool dictionaryShown,
+    required MangaReadingMode mode,
+    required String direction,
+  }) {
+    if (dictionaryShown && key == LogicalKeyboardKey.escape) {
+      return MangaReaderInputAction.dismissDictionary;
+    }
+    if (key == LogicalKeyboardKey.arrowRight ||
+        key == LogicalKeyboardKey.arrowLeft) {
+      final String turn = horizontalKeyTurn(
+        direction: direction,
+        rightKey: key == LogicalKeyboardKey.arrowRight,
+      );
+      return turn == 'next'
+          ? MangaReaderInputAction.next
+          : MangaReaderInputAction.previous;
+    }
+    if (dictionaryShown || mode == MangaReadingMode.webtoon) {
+      return null;
+    }
+    if (key == LogicalKeyboardKey.arrowDown ||
+        key == LogicalKeyboardKey.space ||
+        key == LogicalKeyboardKey.pageDown) {
+      return MangaReaderInputAction.next;
+    }
+    if (key == LogicalKeyboardKey.arrowUp || key == LogicalKeyboardKey.pageUp) {
+      return MangaReaderInputAction.previous;
+    }
+    return null;
+  }
+
+  static MangaReaderInputAction? wheelInputAction(Offset delta) {
+    final double dominant =
+        delta.dy.abs() >= delta.dx.abs() ? delta.dy : delta.dx;
+    if (dominant.abs() < 2) return null;
+    return dominant > 0
+        ? MangaReaderInputAction.next
+        : MangaReaderInputAction.previous;
+  }
+
+  /// Native WebView2 owns keyboard focus while the user is reading. Forward
+  /// navigation keys from the manga document to Dart so page turns do not
+  /// depend on the platform view bubbling key events through Flutter.
+  @visibleForTesting
+  static const String navigationKeyBridgeScript = '''
+(function(){
+  if (window.__hibikiMangaNavigationKeysInstalled) return;
+  window.__hibikiMangaNavigationKeysInstalled = true;
+  document.addEventListener('keydown', function(e) {
+    if (e.repeat) return;
+    var key = e.key === 'Esc' ? 'Escape' : e.key;
+    if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'Escape') return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    try {
+      window.flutter_inappwebview.callHandler('onMangaNavigationKey', key);
+    } catch (err) {}
+  }, true);
+})();
+''';
 
   /// 纯路径解析 + 穿越守卫。[relative] 在 [imagesRoot] 内解析到存在的文件时返回
   /// 规范绝对路径，否则 null（越界/缺文件都不 serve）。从 WebView 路径抽出，安全
@@ -884,40 +950,83 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   /// 桌面键盘翻页（webtoon 交 WebView 原生竖滚，方向键一律 ignored）。
   ///
   /// - 只认 KeyDownEvent；KeyRepeatEvent（按住）丢弃，按住方向键不堆翻页风暴。
-  /// - 查词弹窗显示时 return ignored，让方向键/空格到弹窗（词典导航/关闭）。
+  /// - 查词弹窗显示时，左右键关闭弹窗并翻页，Escape 只关闭弹窗；避免原生词典
+  ///   WebView 持焦后把翻页键吞掉或让 Escape 落到外层退书。
   KeyEventResult _handleReaderKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) {
       return KeyEventResult.ignored;
     }
-    if (isDictionaryShown) {
-      return KeyEventResult.ignored;
+    final MangaReaderInputAction? action = MangaHibikiPage.keyInputAction(
+      key: event.logicalKey,
+      dictionaryShown: isDictionaryShown,
+      mode: _mode,
+      direction: _spreadDirection,
+    );
+    if (action == null) return KeyEventResult.ignored;
+    _executeReaderInputAction(action);
+    return KeyEventResult.handled;
+  }
+
+  MangaReaderInputAction? _lastReaderInputAction;
+  DateTime? _lastReaderInputAt;
+
+  void _executeReaderInputAction(MangaReaderInputAction action) {
+    final DateTime now = DateTime.now();
+    if (_lastReaderInputAction == action &&
+        _lastReaderInputAt != null &&
+        now.difference(_lastReaderInputAt!) <
+            const Duration(milliseconds: 60)) {
+      return;
     }
-    final LogicalKeyboardKey key = event.logicalKey;
-    if (key == LogicalKeyboardKey.arrowRight ||
-        key == LogicalKeyboardKey.arrowLeft) {
-      final String turn = MangaHibikiPage.horizontalKeyTurn(
-        direction: _spreadDirection,
-        rightKey: key == LogicalKeyboardKey.arrowRight,
-      );
-      unawaited(_mode == MangaReadingMode.webtoon
-          ? _jumpToPageAnchor(turn)
-          : _onMangaTurn(turn));
-      return KeyEventResult.handled;
+    _lastReaderInputAction = action;
+    _lastReaderInputAt = now;
+    if (action == MangaReaderInputAction.dismissDictionary) {
+      clearDictionaryResult();
+      return;
     }
-    if (_mode == MangaReadingMode.webtoon) {
-      return KeyEventResult.ignored;
-    }
-    if (key == LogicalKeyboardKey.arrowDown ||
-        key == LogicalKeyboardKey.space ||
-        key == LogicalKeyboardKey.pageDown) {
-      unawaited(_onMangaTurn('next'));
-      return KeyEventResult.handled;
-    }
-    if (key == LogicalKeyboardKey.arrowUp || key == LogicalKeyboardKey.pageUp) {
-      unawaited(_onMangaTurn('prev'));
-      return KeyEventResult.handled;
-    }
-    return KeyEventResult.ignored;
+    if (isDictionaryShown) clearDictionaryResult();
+    final String turn = action == MangaReaderInputAction.next ? 'next' : 'prev';
+    unawaited(_mode == MangaReadingMode.webtoon
+        ? _jumpToPageAnchor(turn)
+        : _onMangaTurn(turn));
+  }
+
+  @override
+  bool get capturesDictionaryPopupNavigationKeys => true;
+
+  @override
+  void onDictionaryPopupNavigationKey(String key) {
+    _handleNativeNavigationKey(key);
+  }
+
+  void _handleNativeNavigationKey(String key) {
+    final LogicalKeyboardKey? logicalKey = switch (key) {
+      'ArrowLeft' => LogicalKeyboardKey.arrowLeft,
+      'ArrowRight' => LogicalKeyboardKey.arrowRight,
+      'Escape' || 'Esc' => LogicalKeyboardKey.escape,
+      _ => null,
+    };
+    if (logicalKey == null) return;
+    final MangaReaderInputAction? action = MangaHibikiPage.keyInputAction(
+      key: logicalKey,
+      dictionaryShown: isDictionaryShown,
+      mode: _mode,
+      direction: _spreadDirection,
+    );
+    if (action != null) _executeReaderInputAction(action);
+  }
+
+  @override
+  void onDismissBarrierPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    final MangaReaderInputAction? action =
+        MangaHibikiPage.wheelInputAction(event.scrollDelta);
+    if (action == null) return;
+    clearDictionaryResult();
+    final String turn = action == MangaReaderInputAction.next ? 'next' : 'prev';
+    unawaited(_mode == MangaReadingMode.webtoon
+        ? _jumpToPageAnchor(turn)
+        : _onMangaTurn(turn));
   }
 
   /// webtoon 滚动报告：从 JS 量得的视口更新页内 fraction + 当前页/spread。
@@ -1537,30 +1646,30 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         // 全出血 sibling，calcPopupPosition 才能把 JS getClientRects 视口坐标直接
         // 当屏幕坐标（弹窗坐标契约）。buildDictionary() 绝不嵌进有 padding/偏移/
         // 滚动的子树。
-        body: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            // 桌面键盘/焦点兜底翻页：WebView JS 手势机管触摸/鼠标滑动，这里给方向键。
-            Positioned.fill(
-              child: Focus(
-                autofocus: true,
-                onKeyEvent: _handleReaderKey,
-                child: _buildBody(),
+        // 键盘兜底必须包住正文、chrome 和词典弹层。旧结构只包正文 WebView，
+        // 词典 WebView 获得焦点后变成 sibling，左右键/Escape 不再经过本处理器。
+        body: Focus(
+          autofocus: true,
+          onKeyEvent: _handleReaderKey,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              Positioned.fill(child: _buildBody()),
+              // 顶部 chrome：页码指示 + 阅读模式切换。
+              if (_bookRow != null && !_loadFailed)
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: SafeArea(child: _buildTopChrome()),
+                ),
+              // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
+              // WebView 持焦后会吞掉翻页键。
+              Positioned.fill(
+                key: const ValueKey<String>('manga_dictionary_host'),
+                child: buildDictionary(),
               ),
-            ),
-            // 顶部 chrome：页码指示 + 阅读模式切换。
-            if (_bookRow != null && !_loadFailed)
-              Positioned(
-                top: 0,
-                right: 0,
-                child: SafeArea(child: _buildTopChrome()),
-              ),
-            // 查词弹窗层：必须在树里，否则查到结果也不显示。
-            Positioned.fill(
-              key: const ValueKey<String>('manga_dictionary_host'),
-              child: buildDictionary(),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1782,6 +1891,13 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
           },
         );
         controller.addJavaScriptHandler(
+          handlerName: 'onMangaNavigationKey',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty || args[0] is! String) return;
+            _handleNativeNavigationKey(args[0] as String);
+          },
+        );
+        controller.addJavaScriptHandler(
           handlerName: 'onMangaContextMenu',
           callback: (List<dynamic> args) {
             if (args.isEmpty || args[0] is! String) return;
@@ -1857,6 +1973,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     if (generation != _windowGeneration) {
       return;
     }
+    await controller.evaluateJavascript(
+      source: MangaHibikiPage.navigationKeyBridgeScript,
+    );
     if (_mode == MangaReadingMode.webtoon) {
       await controller.evaluateJavascript(
         source: 'window.__mangaScrollToSpread && '

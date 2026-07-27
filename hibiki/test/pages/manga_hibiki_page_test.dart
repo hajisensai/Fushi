@@ -5,10 +5,12 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
+import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
 import 'package:hibiki/src/media/media_item.dart';
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 import 'package:hibiki/src/pages/implementations/manga_hibiki_page.dart';
@@ -156,6 +158,17 @@ void main() {
     // 词典弹窗层已接进树（buildDictionary 在空栈时收缩，但宿主 key 必须在）。
     expect(find.byKey(const ValueKey<String>('manga_dictionary_host')),
         findsOneWidget);
+    final Iterable<Focus> keyboardAncestors = tester.widgetList<Focus>(
+      find.ancestor(
+        of: find.byKey(const ValueKey<String>('manga_dictionary_host')),
+        matching: find.byType(Focus),
+      ),
+    );
+    expect(
+      keyboardAncestors.any((Focus focus) => focus.onKeyEvent != null),
+      isTrue,
+      reason: '词典 WebView 必须位于漫画翻页键处理器的 Focus 子树内',
+    );
   });
 
   testWidgets('有书行时加载 manga.json 并恢复已存页码（真实进度读穿）', (WidgetTester tester) async {
@@ -358,5 +371,72 @@ void main() {
     expect(
         MangaHibikiPage.charOffsetToWebtoonFraction(restored.charOffset), 0.75,
         reason: 'webtoon 页内滚动位置必须经 charOffset 千分比写穿并无损恢复');
+  });
+
+  test('查词弹窗显示后仍解析左右翻页、Escape 只关闭弹窗', () {
+    expect(
+      MangaHibikiPage.keyInputAction(
+        key: LogicalKeyboardKey.arrowRight,
+        dictionaryShown: true,
+        mode: MangaReadingMode.spread,
+        direction: 'ltr',
+      ),
+      MangaReaderInputAction.next,
+    );
+    expect(
+      MangaHibikiPage.keyInputAction(
+        key: LogicalKeyboardKey.arrowLeft,
+        dictionaryShown: true,
+        mode: MangaReadingMode.spread,
+        direction: 'rtl',
+      ),
+      MangaReaderInputAction.next,
+    );
+    expect(
+      MangaHibikiPage.keyInputAction(
+        key: LogicalKeyboardKey.escape,
+        dictionaryShown: true,
+        mode: MangaReadingMode.spread,
+        direction: 'ltr',
+      ),
+      MangaReaderInputAction.dismissDictionary,
+    );
+    expect(
+      MangaHibikiPage.keyInputAction(
+        key: LogicalKeyboardKey.space,
+        dictionaryShown: true,
+        mode: MangaReadingMode.spread,
+        direction: 'ltr',
+      ),
+      isNull,
+      reason: '词典内容仍保留自己的空格键语义',
+    );
+  });
+
+  test('查词弹窗外的滚轮按主轴解析前后翻页', () {
+    expect(
+      MangaHibikiPage.wheelInputAction(const Offset(0, 120)),
+      MangaReaderInputAction.next,
+    );
+    expect(
+      MangaHibikiPage.wheelInputAction(const Offset(-120, 1)),
+      MangaReaderInputAction.previous,
+    );
+    expect(
+      MangaHibikiPage.wheelInputAction(const Offset(0, 1)),
+      isNull,
+      reason: '过滤触控板噪声',
+    );
+  });
+
+  test('漫画正文按键桥接只捕获导航键并保持幂等', () {
+    const String script = MangaHibikiPage.navigationKeyBridgeScript;
+    expect(script, contains('__hibikiMangaNavigationKeysInstalled'));
+    expect(script, contains("'ArrowLeft'"));
+    expect(script, contains("'ArrowRight'"));
+    expect(script, contains("'Escape'"));
+    expect(script, contains('preventDefault()'));
+    expect(script, contains('stopImmediatePropagation()'));
+    expect(script, contains("callHandler('onMangaNavigationKey', key)"));
   });
 }
