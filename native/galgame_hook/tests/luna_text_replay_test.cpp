@@ -56,6 +56,72 @@ int main(int argc, char** argv) {
     return 8;
   }
 
+  // BUG-1144：带 ruby 的台词被 KiriKiriZ 分别以 base（汉字）和 ruby（假名）两种形式
+  // 送进同一 hook 面，叠上完整行双写后收到的是 `A A B B A A`。整串既不是二倍重复
+  // （前半 AAB != 后半 BAA），也不是等长游程伪影，旧实现整串放行 → 一句话出现六遍。
+  std::wstring ruby_variant = single_line;
+  ruby_variant[1] = L'り';  // 同长度的注音变体（模拟「李空」→「りく」）
+  if (ruby_variant == single_line) return 20;
+  const std::wstring ruby_double_write = single_line + single_line +
+                                         ruby_variant + ruby_variant +
+                                         single_line + single_line;
+  const int ruby_normalized =
+      hibiki_voice_hook::LunaNormalizedTextLengthForHook(
+          "EmbedKrkrZ", ruby_double_write.c_str(),
+          static_cast<int>(ruby_double_write.size()));
+  if (ruby_normalized != static_cast<int>(single_line.size()) ||
+      std::wstring(ruby_double_write.c_str(),
+                   ruby_double_write.c_str() + ruby_normalized) != single_line) {
+    return 21;
+  }
+  // 折叠只对 EmbedKrkrZ 生效，其它引擎的同形串必须原样保留。
+  if (hibiki_voice_hook::LunaNormalizedTextLengthForHook(
+          "OtherEngine", ruby_double_write.c_str(),
+          static_cast<int>(ruby_double_write.size())) !=
+      static_cast<int>(ruby_double_write.size())) {
+    return 22;
+  }
+  // 正常台词（无重复开头）绝不能被折叠。
+  if (hibiki_voice_hook::LunaNormalizedTextLengthForHook(
+          "EmbedKrkrZ", single_line.c_str(),
+          static_cast<int>(single_line.size())) !=
+      static_cast<int>(single_line.size())) {
+    return 23;
+  }
+
+  // BUG-1143：手动/记忆选定线程后，同一 hook 面（同 addr+hookcode，ctx/ctx2 不同）的
+  // 其余调用路径必须继续放行，否则剧情一换调用路径整段台词就被丢弃。
+  {
+    hibiki_voice_hook::LunaTextSelector face_selector;
+    const uint64_t selected_thread = 1001, sibling_thread = 1002;
+    const uint64_t other_thread = 2001;
+    const uint64_t face = 77, other_face = 88;
+    const std::wstring hook = L"HB0@0:test.exe";
+    if (!face_selector.ShouldWrite(hook, selected_thread, false,
+                                   selected_thread, face)) {
+      return 24;  // 选定线程自己当然要放行
+    }
+    if (!face_selector.ShouldWrite(hook, sibling_thread, false, selected_thread,
+                                   face)) {
+      return 25;  // 同 hook 面、不同 ctx → 必须放行（本 bug 的核心回归点）
+    }
+    if (face_selector.ShouldWrite(hook, other_thread, false, selected_thread,
+                                  other_face)) {
+      return 26;  // 不同 hook 面 → 仍须挡掉，选择才有意义
+    }
+    if (face_selector.ShouldWrite(hook, sibling_thread, true, selected_thread,
+                                  face)) {
+      return 27;  // 伪影门在选择之前，放宽粒度不得让伪影漏进来
+    }
+  }
+  {
+    // face 未知（调用方给 0）时退回精确 thread_id 匹配，与旧实现语义一致。
+    hibiki_voice_hook::LunaTextSelector legacy_selector;
+    if (legacy_selector.ShouldWrite(L"HB0@0:test.exe", 1002, false, 1001, 0)) {
+      return 28;
+    }
+  }
+
   std::ifstream input(argv[1]);
   if (!input) return 2;
   hibiki_voice_hook::LunaTextSelector selector;

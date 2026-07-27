@@ -457,6 +457,24 @@ uint64_t LunaTextThreadId(const wchar_t* hookcode, const char* hookname,
   return hash == 0 ? 1 : hash;
 }
 
+// hook「面」id：与 LunaTextThreadId 同源，但**刻意不含 ctx/ctx2**（BUG-1143）。
+// 同一个 hook 点在不同调用路径下 ctx/ctx2 会变，thread_id 随之变；用于展示和诊断时
+// 这种区分是必要的，用于「用户选定了哪条线程」的过滤时则过细，会把同一 hook 面的
+// 其余调用路径整段丢弃。face 只锚 hook 身份（进程 + 地址 + hookcode/hookname）。
+uint64_t LunaTextFaceId(const wchar_t* hookcode, const char* hookname,
+                        const LunaThreadParam& tp) {
+  uint64_t hash = 1469598103934665603ull;
+  hash = Fnv1a64(hash, &tp.processId, sizeof(tp.processId));
+  hash = Fnv1a64(hash, &tp.addr, sizeof(tp.addr));
+  if (hookcode != nullptr) {
+    hash = Fnv1a64(hash, hookcode, wcslen(hookcode) * sizeof(wchar_t));
+  }
+  if (hookname != nullptr) {
+    hash = Fnv1a64(hash, hookname, strlen(hookname));
+  }
+  return hash == 0 ? 1 : hash;
+}
+
 void WriteLunaTextEvent(SharedHeader* header, const wchar_t* hookcode,
                         const char* hookname, const LunaThreadParam& tp,
                         uint64_t thread_id, uint32_t event_kind,
@@ -548,7 +566,7 @@ bool g_lunaSelectCsInit = false;
 // hook 累计干净行达阈值即锁定为赢家，之后只写赢家的行；赢家按 clean_count 最高 + 占比
 // clean/(clean+dirty) >= 0.5 重选，可随游戏切换重新评估。
 bool LunaShouldWriteLine(const wchar_t* hookcode, uint64_t thread_id,
-                         bool is_artifact) {
+                         bool is_artifact, uint64_t face_id) {
   const uint64_t manually_selected = g_luna.header == nullptr
                                          ? 0
                                          : static_cast<uint64_t>(
@@ -575,7 +593,7 @@ bool LunaShouldWriteLine(const wchar_t* hookcode, uint64_t thread_id,
       (hookcode != nullptr) ? std::wstring(hookcode) : std::wstring();
   EnterCriticalSection(&g_lunaSelectCs);
   const bool should_write = g_lunaTextSelector.ShouldWrite(
-      key, thread_id, is_artifact, manually_selected);
+      key, thread_id, is_artifact, manually_selected, face_id);
   LeaveCriticalSection(&g_lunaSelectCs);
   return should_write;
 }
@@ -640,7 +658,8 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
       const bool artifact =
           hibiki_voice_hook::LunaTextIsArtifact(text, normalized_len);
       const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
-      if (LunaShouldWriteLine(hookcode, thread_id, artifact)) {
+      const uint64_t face_id = LunaTextFaceId(hookcode, hookname, tp);
+      if (LunaShouldWriteLine(hookcode, thread_id, artifact, face_id)) {
         WriteLunaTextLine(g_luna.header, hookcode, hookname, tp, thread_id, text,
                           normalized_len);
         // 一旦 LunaHook 写出干净行，标记 LunaHook 权威：游戏内 GDI 文本 hook 让位不再写文本，

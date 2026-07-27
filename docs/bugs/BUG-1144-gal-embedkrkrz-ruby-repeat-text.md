@@ -1,0 +1,13 @@
+## BUG-1144 · EmbedKrkrZ ruby 双写产生重复台词，折叠只认精确二倍全部漏过
+- **报告**：2026-07-27（用户：截图反馈——游戏内只有一句「李空って、やぎ座だっけ？　みずがめ座？」，hook 浮窗与捕获工作台实时台词却显示成六段拼接）
+- **真实性**：✅ 真 bug。收到的串是 `A A B B A A`——A = 汉字版「李空って…」、B = 注音版「りくって…」。带 ruby 的「李空(りく)」被 KiriKiriZ 分别以 base 和 ruby 两种形式送进同一个 hook 面，再叠上 `EmbedKrkrZ` 这条 hook 固有的完整行双写，一次事件回传六段。三道现有防线逐一漏过：
+  - `native/galgame_hook/include/luna_text_selector.h:16-23`（修复前）`LunaNormalizedTextLength` 只认**整串恰好二倍**（前半 == 后半）。这里前半 `AAB` != 后半 `BAA`，不折叠。
+  - 同文件 `:33-59` `LunaTextIsArtifact` 三条判据（整串二倍 / 等长游程 / 相邻同字符占比 ≥30%）对日文正常字面的短语级重复一条都不命中——这串脏文本被判成 **clean**，不但原样写进文本环，还给 EmbedKrkrZ 累加了一次干净计数、帮它在线程选择器里锁定成赢家。
+  - `hibiki/lib/src/sync/texthooker_service.dart:49` `foldRepeatedTextForPreview`（BUG-1129 引入）能折 `ABAB→AB`，但两头都够不着：唯一调用点在 `:14` 的线程下拉**预览**，行文本与 hook 浮窗根本不过它；且 `_foldWholeStringRepetition:57` 要求整串是**严格周期**，`AABBAA` 不是周期串，接上也折不掉。
+- **[x] ① 已修复** — `native/galgame_hook/include/luna_text_selector.h`：`LunaNormalizedTextLength` 由「整串恰好二倍」改为「**开头**二倍即取第一份」——找最小的 k（`k >= kLunaMinFoldedLineChars(=4)` 且 `2k <= len`）使 `text[0,k) == text[k,2k)`，返回 k。语义仍是原注释写的 "preserve a view of the first complete line"，只是不再要求这份重复铺满整串：真身是第一个完整句，后面跟的是同句的哪种 ruby 变体都不影响该结论。「整串恰好二倍」是本判据在 `2k == len` 时的特例，旧行为被完整覆盖。
+  - **在 native 侧修而非 Dart 侧**：文本环是浮窗、实时台词列表、制卡内容的共同上游，在此折叠才是根治，且不必去动「预览折叠不改制卡内容」那条既有纪律。
+  - 折叠仍只对 `EmbedKrkrZ` 生效（`LunaNormalizedTextLengthForHook:44-49` 的 hook 名门控未变），其它引擎不受影响。
+- **[x] ② 已加自动化测试** — `native/galgame_hook/tests/luna_text_replay_test.cpp` 新增三条：`A A B B A A` 六段拼接折成单句 A（修复前在返回码 21 处失败）、同形串在非 EmbedKrkrZ 引擎下原样保留、正常台词不被折叠。既有三条断言（精确二倍折半 / 其它引擎不折 / `AABBCC` 每字伪影不折）逐条验算后仍成立，`AABBCC` 因 `k>=4 且 2k<=6` 无解而继续返回全长。
+- **验证**：native x64 + x86 `ctest -R luna_text` 均通过。
+- **未验证（`implemented_unverified`）**：与 BUG-1143 同样受本机环境阻断（.NET SDK 6 无法构建 net8.0 的 `hibiki_unity_audio_runtime`，完整 ALL 构建与 injector 二进制未重建），**真机未复测**。需用户在原始路径重跑确认浮窗只剩一句。
+- **相关**：BUG-1143（同源，同一 hook 面多调用上下文导致的文本丢失与音频降级）、BUG-1129（预览折叠，其备注指出双写折叠只对 EmbedKrkrZ 硬编码生效）。
