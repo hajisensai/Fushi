@@ -51,6 +51,8 @@ import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/reader/reader_caret_scripts.dart';
+import 'package:hibiki/src/reader/reader_chapter_perf_trace.dart';
+import 'package:hibiki/src/reader/reader_script_compactor.dart';
 import 'package:hibiki/src/reader/reader_chrome_scaler.dart';
 import 'package:hibiki/src/reader/reader_lyrics_caret_scripts.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
