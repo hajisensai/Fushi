@@ -496,6 +496,16 @@ class ClipboardPanelController {
     )) {
       return;
     }
+    // BUG-1139 — Ctrl+滚轮内容缩放：改「词典字号」这一唯一真值后整栈重渲，排版按新
+    // 字号真实重排（面板窗尺寸固定，卡片高度变化沿既有 _rerender 链路生效）。
+    if (maybeHandleOverlayZoomFontStep(
+      model: model,
+      handler: handler,
+      message: message,
+      onFontSizeChanged: () => unawaited(_rerender()),
+    )) {
+      return;
+    }
     switch (handler) {
       case 'windowMoved':
         // 拖动/调整结束（native 模态循环返回后报最终 rect，物理 px）。

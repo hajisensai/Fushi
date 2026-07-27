@@ -27,11 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1105 条。点号进各自文件。
+> 共 1106 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1140](bugs/BUG-1140-cross-chapter-turn-latency.md) | ✅ | ✅ | 跨章翻页耗时实测与提速（遮罩口径） |
+| [BUG-1139](bugs/BUG-1139-overlay-ctrl-wheel-zoom.md) | ✅ | ✅ | app 外查词浮窗 Ctrl+滚轮触发 WebView2 原生页面缩放，窗口/region 几何按 zoom=1 计算导致卡片被切、露出底下应用 |
 | [BUG-1137](bugs/BUG-1137-gal-mining-video-tag.md) | ✅ | ✅ | gal 制卡分类标签误标 video：来源枚举缺 game 且默认值静默兜底 |
 | [BUG-1136](bugs/BUG-1136-ios-reader-scroll-lookup.md) | ✅ | ✅ | iPhone 阅读滑动被误判为点词查词 |
 | [BUG-1135](bugs/BUG-1135-gal-clipnear-bypasses-track-exclusion.md) | ✅ | ✅ | gal 制卡兜底 grabClipNear 绕过选轨/排除集——排除的 BGM 轨会从兜底混回卡片 |

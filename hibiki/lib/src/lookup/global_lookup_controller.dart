@@ -860,6 +860,17 @@ class GlobalLookupController {
       _onOverlayResized(message);
       return;
     }
+    // BUG-1139 — Ctrl+滚轮内容缩放：改「词典字号」这一唯一真值后整栈重渲。窗口与
+    // region 的新尺寸由重渲后的 host measureAndReport → overlaySize 正常推导，
+    // 不需要任何 zoom 感知的几何补偿（原生 WebView2 缩放已在 C++ 侧关掉）。
+    if (maybeHandleOverlayZoomFontStep(
+      model: _appModel,
+      handler: handler,
+      message: message,
+      onFontSizeChanged: () => unawaited(_renderStack()),
+    )) {
+      return;
+    }
     // BUG-1127 — 浮窗 iframe realm 回报自动发音 `audio.play()` 真实结果
     // （args = [token, ok]，host 包裹桥盖 __frameId 后原样转发）。完成对应
     // pending Completer；过期 token（已超时回落）直接忽略。

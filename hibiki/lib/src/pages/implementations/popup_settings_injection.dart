@@ -217,6 +217,55 @@ const String _globalLookupIconFontJs = '''
       }
     })();''';
 
+/// BUG-1139：**app 外**两个裸 WebView2 表面（瞬态查词覆盖窗 + 常驻剪贴板面板）的
+/// Ctrl+滚轮内容缩放。in-app 弹窗有自己的一份（dictionary_popup_webview 的
+/// `_zoomWheelJs`，就地改 `documentElement.style.zoom` 拿即时反馈），app 外**没有**，
+/// 于是 Ctrl+滚轮一路落到 WebView2 自带的页面缩放上——而覆盖窗整条几何链（host 报的
+/// bbox/shellRects、Dart 的窗口物理尺寸、C++ 的 window region）全按 zoom=1 的 CSS px
+/// 算，ZoomFactor 不在其中任何一环，内容放大而窗口/region 不变 → 卡片被窗口边缘切掉、
+/// 露出底下的应用。原生缩放已在 `global_lookup_window.cpp ConfigureWebView` 关掉，
+/// 这里把 Ctrl+滚轮接回**唯一真值**「词典字号」。
+///
+/// 与 in-app 的关键差异（有意为之）：这里**不在 JS 侧就地改 zoom**。CSS `zoom` 下
+/// `body.scrollHeight` 仍是未乘 z 的 CSS px，而 host 的 measureContentHeight 正是读它
+/// 报卡片高度——就地缩放会让高度被系统性报小 z 倍，等于把几何链的老毛病换个地方复发。
+/// 走 Dart 改字号 → 整栈重渲，排版按新字号真实重排，高度/bbox/region 沿现有链路自然
+/// 更新，几何链一行不用动。代价是每档多一次 Dart 往返（约 1~2 帧），换的是零几何风险。
+///
+/// 步进本身不在 JS 里算：只回传**净档数**（rAF 内合帧累加，一次快滚不会打出十几次
+/// 往返），夹紧与步长仍归 Dart 的 `steppedPopupZoomFontSize` / `clampPopupZoomFontSize`
+/// 单一同源（TODO-1353 已有守卫），JS 侧不再镜像一份 8..72 边界。
+/// `__hoshiZoomWheelInstalled` 与 in-app 那份同名：同一个 realm 永远只装一套。
+const String _globalLookupZoomWheelJs = '''
+    (function(){
+      if (window.__hoshiZoomWheelInstalled) return;
+      window.__hoshiZoomWheelInstalled = true;
+      var pendingSteps = 0;
+      var flushScheduled = false;
+      function flushZoomSteps(){
+        flushScheduled = false;
+        var steps = pendingSteps;
+        pendingSteps = 0;
+        if (!steps) return;
+        try {
+          window.flutter_inappwebview.callHandler('popupZoomFontStep', steps);
+        } catch (err) {}
+      }
+      window.addEventListener('wheel', function(e){
+        if (!e.ctrlKey) return;
+        if (!e.deltaY) return;
+        e.preventDefault();
+        pendingSteps += (e.deltaY < 0 ? 1 : -1);
+        if (flushScheduled) return;
+        flushScheduled = true;
+        if (typeof requestAnimationFrame === 'function') {
+          requestAnimationFrame(flushZoomSteps);
+        } else {
+          setTimeout(flushZoomSteps, 16);
+        }
+      }, { passive: false });
+    })();''';
+
 // BUG-926：撤回 BUG-762 引入的触屏全量禁选注入（旧常量在粗指针 media query 下对整棵
 // body 子树强制 user-select:none !important）。
 // 该规则以 !important 碾平了 popup.css 已精细分区的选区设计（正文
@@ -488,11 +537,17 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   );
 
   final String iconFontJs = options.globalLookup ? _globalLookupIconFontJs : '';
+  // BUG-1139：Ctrl+滚轮内容缩放只装给 app 外裸 WebView2 表面。in-app 三个表面由
+  // dictionary_popup_webview 的 _zoomWheelJs 在 onLoadStop 装同名 guard 的另一套
+  // （就地 zoom + 即时反馈），两边永不同装。
+  final String zoomWheelJs =
+      options.globalLookup ? _globalLookupZoomWheelJs : '';
 
   final String head = '''
     $themeVarsJs
     $fontStyleJs
     $iconFontJs
+    $zoomWheelJs
     document.documentElement.style.zoom = '${zoom.toStringAsFixed(4)}';
     // TODO-1353: Ctrl+滚轮缩放查词内容需要在 JS 侧就地重算 zoom（即时反馈），故把
     // 当前「界面大小」系数与「词典字号」暴露给弹窗（与上面 zoom 同源，每次注入刷新为
