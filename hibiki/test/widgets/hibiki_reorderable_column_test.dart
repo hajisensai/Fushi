@@ -419,4 +419,69 @@ void main() {
     expect(reorders, isEmpty, reason: 'a stationary click must not reorder');
     expect(order, <String>['A', 'B', 'C']);
   });
+
+  testWidgets(
+      '按住在视口底边缘带会自动滚动外层 SingleChildScrollView'
+      '（长列表里第 1 项才够得到第 N 项）', (WidgetTester tester) async {
+    // 此前本组件缺边缘自动滚动（2D 姊妹件 HibikiReorderableGrid 早就有）：列表长
+    // 于视口时，把某行拖到视口边缘列表不会跟着滚，用户只能在**当前可见范围**内
+    // 重排——第 1 项永远拖不到第 30 项。
+    final ScrollController controller = ScrollController();
+    addTearDown(controller.dispose);
+    // 12 项 × 60 高 = 内容高 720、视口 240 → 必须自动滚动才够得到底部。
+    final List<String> order = <String>[for (int i = 0; i < 12; i++) 'i$i'];
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: 300,
+            height: 240,
+            child: SingleChildScrollView(
+              controller: controller,
+              child: _Harness(items: order, onReorder: (_, __) {}),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.pump();
+    expect(controller.offset, 0);
+
+    final Rect viewport = tester.getRect(find.byType(SingleChildScrollView));
+    final TestGesture gesture =
+        await tester.startGesture(tester.getCenter(find.text('i0')));
+    await tester.pump(const Duration(milliseconds: 600)); // 长按起拖
+    // 按住在视口底边缘带内且不再移动，纯靠帧步进推进滚动。
+    await gesture.moveTo(Offset(viewport.center.dx, viewport.bottom - 8));
+    await tester.pump(); // 处理 move → 排下一帧的自动滚动
+    for (int i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+
+    expect(controller.offset, greaterThan(0),
+        reason: '指针按在底边缘带应驱动最近的祖先 Scrollable 自动向下滚动');
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('无祖先 Scrollable 时自动滚动降级为不滚（不得抛异常）', (WidgetTester tester) async {
+    final List<String> order = <String>['A', 'B', 'C'];
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: _Harness(items: order, onReorder: (_, __) {}),
+      ),
+    ));
+    await tester.pump();
+
+    final TestGesture gesture =
+        await tester.startGesture(tester.getCenter(find.text('A')));
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.dragFrom(const Offset(150, 10), const Offset(0, 0));
+    await tester.pump(const Duration(milliseconds: 16));
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+  });
 }

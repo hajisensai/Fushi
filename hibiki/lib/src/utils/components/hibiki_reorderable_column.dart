@@ -87,6 +87,24 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
   double _grabDy = 0; // 抓取点相对被拖行顶部的本地偏移
   final Map<int, double> _heights = <int, double>{}; // 原始 index → 行高
 
+  // ── 拖拽近视口边缘自动滚动（本列表常挂在 SingleChildScrollView 内，行数超一屏时
+  //    需能把浮层拖到视口外的槽位；此前缺这段，长列表里第 1 项**拖不到**第 30 项，
+  //    只能拖到当前可见范围的边界）。起拖时抓最近的祖先 [ScrollableState]，指针进入
+  //    视口上/下边缘带就按帧步进 [ScrollPosition.jumpTo]，滚动后用最近一次指针全局
+  //    坐标重跑 [_updateDrag]（`globalToLocal` 已消滚动位移，浮层/目标槽随内容自洽）。
+  //    无祖先 Scrollable（如离屏测试）时 [_scrollable] 为 null，整段降级为不滚动。
+  //    与 2D 姊妹件 [HibikiReorderableGrid] 同款实现。──
+  ScrollableState? _scrollable;
+  Offset _lastPointerGlobal = Offset.zero;
+  double _autoScrollStepSigned = 0; // 当前每帧步进（含方向）；0 = 不滚
+  bool _autoScrollScheduled = false;
+
+  /// 触发自动滚动的视口上/下边缘带宽（指针进入即滚）。
+  static const double _autoScrollEdge = 64.0;
+
+  /// 自动滚动每帧步进（像素）。
+  static const double _autoScrollStep = 16.0;
+
   @override
   void initState() {
     super.initState();
@@ -98,6 +116,7 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.itemCount != widget.itemCount) {
       _resetDisplay();
+      _stopAutoScroll();
       _dragOriginal = null;
     }
   }
@@ -154,6 +173,8 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
     final int di = _display.indexOf(original);
     final double top = _slotTop(di);
     final double localY = _localY(globalPosition);
+    _scrollable = context.findAncestorStateOfType<ScrollableState>();
+    _lastPointerGlobal = globalPosition;
     setState(() {
       _dragOriginal = original;
       _dragStartDi = di;
@@ -165,6 +186,8 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
   void _updateDrag(Offset globalPosition) {
     final int? dragged = _dragOriginal;
     if (dragged == null) return;
+    _lastPointerGlobal = globalPosition;
+    _maybeAutoScroll(globalPosition);
     final double draggedH = _heightOf(dragged);
     final double maxTop = (_totalHeight - draggedH).clamp(0.0, double.infinity);
     final double newTop =
@@ -200,6 +223,7 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
   void _endDrag() {
     final int? dragged = _dragOriginal;
     if (dragged == null) return;
+    _stopAutoScroll();
     final int from = _dragStartDi; // 起拖时的 display 下标（= 父列表中的起始位置）
     final int to = _display.indexOf(dragged);
     setState(() {
@@ -207,6 +231,64 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
       _display = List<int>.generate(widget.itemCount, (int i) => i);
     });
     if (to != from) widget.onReorder(from, to);
+  }
+
+  /// 指针近视口边缘则设定本帧步进并驱动帧循环；离开边缘带 / 到滚动界则停。
+  void _maybeAutoScroll(Offset globalPosition) {
+    final ScrollableState? sc = _scrollable;
+    if (sc == null || !sc.mounted) {
+      _autoScrollStepSigned = 0;
+      return;
+    }
+    final RenderObject? ro = sc.context.findRenderObject();
+    if (ro is! RenderBox || !ro.hasSize) {
+      _autoScrollStepSigned = 0;
+      return;
+    }
+    // 仅纵向 Scrollable 参与（横向祖先误滚防御）。
+    if (sc.position.axis != Axis.vertical) {
+      _autoScrollStepSigned = 0;
+      return;
+    }
+    final ScrollPosition pos = sc.position;
+    // 完整变换取**屏幕**矩形：本组件运行在 HibikiAppUiScale 的祖先缩放之下
+    //（BUG-778），`localToGlobal(zero) & size` 把缩放后的原点和未缩放的布局
+    // 尺寸混拼——scale<1 时底边高估、边缘带够不到（自动滚动失效），scale>1
+    // 时边缘带侵入视口中部（误触发）。transformRect 连尺寸一起过变换。
+    final Rect viewport = MatrixUtils.transformRect(
+        ro.getTransformTo(null), Offset.zero & ro.size);
+    double step = 0;
+    if (globalPosition.dy < viewport.top + _autoScrollEdge &&
+        pos.pixels > pos.minScrollExtent) {
+      step = -_autoScrollStep;
+    } else if (globalPosition.dy > viewport.bottom - _autoScrollEdge &&
+        pos.pixels < pos.maxScrollExtent) {
+      step = _autoScrollStep;
+    }
+    _autoScrollStepSigned = step;
+    if (step != 0 && !_autoScrollScheduled) {
+      _autoScrollScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback(_autoScrollTick);
+    }
+  }
+
+  /// 帧回调：滚动一步 → 用最近一次指针坐标重跑拖拽（浮层/目标槽随内容自洽）→
+  /// 重新评估边缘带决定是否续帧。拖拽已结束 / 已 unmount / 已到滚动界即停。
+  void _autoScrollTick(Duration _) {
+    _autoScrollScheduled = false;
+    if (!mounted || _dragOriginal == null || _autoScrollStepSigned == 0) return;
+    final ScrollableState? sc = _scrollable;
+    if (sc == null || !sc.mounted) return;
+    final ScrollPosition pos = sc.position;
+    final double next = (pos.pixels + _autoScrollStepSigned)
+        .clamp(pos.minScrollExtent, pos.maxScrollExtent);
+    if (next != pos.pixels) pos.jumpTo(next);
+    _updateDrag(_lastPointerGlobal);
+  }
+
+  void _stopAutoScroll() {
+    _autoScrollStepSigned = 0;
+    _scrollable = null;
   }
 
   @override
@@ -255,6 +337,7 @@ class _HibikiReorderableColumnState extends State<HibikiReorderableColumn> {
   /// 区分，避免取消时误提交一次重排；并守 mounted 防 dispose 期 setState。
   void _cancelDrag() {
     if (_dragOriginal == null) return;
+    _stopAutoScroll();
     if (!mounted) {
       _dragOriginal = null;
       return;
