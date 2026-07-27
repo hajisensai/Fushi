@@ -123,14 +123,16 @@ void main() {
       // 落点正确性基线：跨章不只要快，还必须落对章、落对位置（前进=章首、
       // 后退=章末）。每次跨章后读真实 DOM（baseURI = 当前章文档）与 JS 侧
       // calculateProgress()，任何优化都必须保住这两条。
+      // 注意：一律走 `ReaderHibikiPage.debugEvaluateJavascript` 的**当下**值，不缓存
+      // 闭包——中段落点用例会 pop + 重新 push 阅读器，缓存的旧引用指向已销毁的控制器。
       Future<String> currentChapterFile() async {
-        final dynamic raw =
-            await runInWebView!("(document.baseURI || '').split('/').pop()");
+        final dynamic raw = await ReaderHibikiPage.debugEvaluateJavascript!(
+            "(document.baseURI || '').split('/').pop()");
         return raw?.toString() ?? '';
       }
 
       Future<double> currentProgress() async {
-        final dynamic raw = await runInWebView!(
+        final dynamic raw = await ReaderHibikiPage.debugEvaluateJavascript!(
             'window.hoshiReader ? window.hoshiReader.calculateProgress() : -1');
         if (raw is num) return raw.toDouble();
         return double.tryParse(raw?.toString() ?? '') ?? -1;
@@ -159,11 +161,12 @@ void main() {
         // 让新章 settle（重锚/进度刷新等尾沿）跑完，并越过 450ms 跨章冷却窗，
         // 避免下一次 onBoundarySwipe 被当成同一手势的残余惯性丢弃。
         //
-        // 同时这段停留就是「用户在读当前章」的时间窗——下一章插图的预热
-        // （_prefetchAdjacentChapterImages）正是在这里跑。真实阅读一章是几十秒，
-        // 预热有充足时间；测试里取 4s，够几张 1600×2400 PNG 读盘+解码跑完，
-        // 让带插图章的跨章测到「预热已就绪」这个真实稳态而不是半路状态。
-        await tester.pump(const Duration(seconds: 4));
+        // 停留时长保持 1500ms 不动：这个值的判据是「settle 尾沿 + 冷却窗」，不是
+        // 「预热跑完」。把它拉长到 4s 会让每次跨章都稳稳命中下一章插图预热 —— 那是把
+        // 测量条件调到最有利于新代码的稳态，测出来的数字不再代表用户快速翻章 /
+        // 目录跳转时的表现。预热命中与否的差异应当从逐次 `[chapter-perf]` 的分布里读，
+        // 不该由测试的等待时长预先决定。
+        await tester.pump(const Duration(milliseconds: 1500));
 
         final String to = await currentChapterFile();
         final double progress = await currentProgress();
@@ -182,6 +185,102 @@ void main() {
       }
 
       ReaderChapterPerfTrace.enabled = false;
+
+      // ── 中段落点回归（BUG-1140 第二轮审查）──────────────────────────────
+      //
+      // 上面的循环只断言「前进落章首 / 后退落章末」，恰好是两个已被
+      // forceLoadPendingImages / scroll-0 天然安全覆盖的分支。真正新增风险的是
+      // **章内中段**的精确字符锚恢复：`loading="lazy"` 提前写进 HTML 源码后，恢复
+      // 必然跑在插图 decode 之前，锚换算用的是「插图 0×0」的塌缩布局；插图随后 load、
+      // 几何后移，冻结的 scrollTop 就指向别的内容，而进度轮询会把这个漂掉的读数落库。
+      //
+      // 这里走**真实的退出重进路径**（pop 阅读器 → 重新 push 同一本书），在图文混排
+      // 的真实插图章中段取锚，重进后要求落回同一位置。容差自校准：用同一章、同一版式
+      // 下「翻一页」实测跨过的字符数当上界 —— 漂一张整页插图 ≥ 一页，必然超出。
+      Future<int> firstVisibleChar() async {
+        final dynamic raw = await ReaderHibikiPage.debugEvaluateJavascript!(
+            'window.hoshiReader ? window.hoshiReader.getFirstVisibleCharOffset() : -1');
+        if (raw is num) return raw.toInt();
+        return int.tryParse(raw?.toString() ?? '') ?? -1;
+      }
+
+      Future<void> swipe(String dir) async {
+        final int before = ReaderChapterPerfTrace.completed.length;
+        await ReaderHibikiPage.debugEvaluateJavascript!(
+          "window.flutter_inappwebview.callHandler('onBoundarySwipe', '$dir');",
+        );
+        for (int p = 0; p < 1500; p++) {
+          await tester.pump(const Duration(milliseconds: 20));
+          if (ReaderChapterPerfTrace.completed.length > before) break;
+        }
+        await tester.pump(const Duration(milliseconds: 1200));
+      }
+
+      // 回到图文混排的真实插图章（fixture 最后一章 chapter_10_photo_text）。
+      for (int i = 0; i < forwardTurns; i++) {
+        await swipe('forward');
+      }
+      final String midChapter = await currentChapterFile();
+      debugPrint('[xchapter-mid] landed chapter=$midChapter');
+
+      // 翻进章内中段（不是章首、不是章末）。
+      for (int i = 0; i < 3; i++) {
+        await ReaderHibikiPage.debugEvaluateJavascript!(
+            "window.hoshiReader.paginate('forward');");
+        await tester.pump(const Duration(milliseconds: 400));
+      }
+      final int anchorChar = await firstVisibleChar();
+      // 位置落库走 500ms 去抖 + 进度轮询，留足窗口。
+      await tester.pump(const Duration(seconds: 3));
+      debugPrint('[xchapter-mid] anchor char=$anchorChar in $midChapter');
+
+      // 退出重进：真实的「关书 → 再开」恢复路径。
+      navigator.pop();
+      await tester.pump(const Duration(seconds: 2));
+      for (int i = 0;
+          i < 40 && ReaderHibikiPage.debugEvaluateJavascript != null;
+          i++) {
+        await tester.pump(const Duration(milliseconds: 250));
+      }
+      unawaited(navigator.push<void>(MaterialPageRoute<void>(
+        builder: (_) => source.buildLaunchPage(item: item),
+      )));
+      await tester.pump(const Duration(seconds: 3));
+      bool reopened = false;
+      for (int i = 0; i < 140; i++) {
+        await tester.pump(const Duration(milliseconds: 500));
+        if (find.byKey(contentReadyKey).evaluate().isNotEmpty) {
+          reopened = true;
+          break;
+        }
+      }
+      expect(reopened, isTrue, reason: '重进后阅读器必须就绪');
+      // 留出插图真正 load + 语义重锚落定的窗口（重锚由图片 load 事件驱动）。
+      await tester.pump(const Duration(seconds: 5));
+
+      final String restoredChapter = await currentChapterFile();
+      final int restoredChar = await firstVisibleChar();
+      // 自校准容差：同章同版式下翻一页跨过多少字符。
+      await ReaderHibikiPage
+          .debugEvaluateJavascript!("window.hoshiReader.paginate('forward');");
+      await tester.pump(const Duration(milliseconds: 600));
+      final int nextPageChar = await firstVisibleChar();
+      final int pageSpan = (nextPageChar - restoredChar).abs();
+      debugPrint('[xchapter-mid] restored chapter=$restoredChapter '
+          'char=$restoredChar anchor=$anchorChar pageSpan=$pageSpan');
+
+      expect(restoredChapter, equals(midChapter), reason: '重进必须落回同一章');
+      expect(anchorChar, greaterThan(0), reason: '中段锚必须非章首，否则这条用例测不到中段落点');
+      expect(restoredChar, greaterThan(0),
+          reason: '重进落点不得塌缩回章首（插图 0×0 塌缩布局的典型症状）');
+      // restoreToCharOffset 把锚所在页对齐到页首 → 首可见字符 <= 锚，且相差不超过一页。
+      expect(restoredChar, lessThanOrEqualTo(anchorChar + 1),
+          reason: '恢复落点不应越过锚');
+      if (pageSpan > 0) {
+        expect(anchorChar - restoredChar, lessThanOrEqualTo(pageSpan),
+            reason: '重进落点与中段锚的偏差必须在一页之内——超出即恢复算在了'
+                '插图未 decode 的塌缩布局上（BUG-1140 第二轮）');
+      }
 
       final List<Map<String, int>> runs = ReaderChapterPerfTrace.completed;
       debugPrint('[xchapter-perf] turns=${runs.length}');

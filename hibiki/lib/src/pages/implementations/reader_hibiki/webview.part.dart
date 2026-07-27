@@ -303,8 +303,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     // 才对本次加载生效（JS 侧那次 lazy 跑在 load 之后，来不及，见 markImagesLazy）。
     // 纯图片章整章 eager：它的分页几何要靠插图真实撑开（TODO-1349）。判据用 EpubBook
     // 的 isImageOnlyChapter（比 JS 侧「正文无任何可匹配字符」宽松），保证这里 eager 的
-    // 集合是 JS 侧 eager 集合的超集，不会倒挂。放在合并注入之前，故 .hoshi-merged-image
-    // 里的前导插图天然保持 eager（TODO-1339）。
+    // 集合是 JS 侧 eager 集合的超集，不会倒挂。合并注入的前导插图自带显式
+    // `loading="eager"`（见 [_injectMergedChapterImages]），故 TODO-1339 的 eager 不依赖
+    // 本行与注入行的先后顺序；守卫 `test/reader/reader_image_lazy_pipeline_guard_test.dart`。
     html = ReaderResourceSanitizer.markImagesLazy(
       html,
       eagerAll: _isImageOnlyChapterCached(chapterIndex),
@@ -370,9 +371,16 @@ extension _ReaderWebView on _ReaderHibikiPageState {
             ? src
             : ReaderHibikiSource.epubUrl(
                 p.posix.normalize(p.posix.join(chapterDir, src)));
+        // TODO-1339 / BUG-1140 第二轮：显式 `loading="eager"`。这些前导插图是章首
+        // **结构性**内容（firstContentEdge 只计入非零尺寸媒体，挂 lazy 会让章首锚跳过
+        // 第一张）。JS 侧靠 `.hoshi-merged-image` 放行，Dart 侧原本只靠「markImagesLazy
+        // 排在本方法之前」这一条**调用顺序**——谁把两行调个个儿，守卫全绿而 bug 复活。
+        // 写成显式 loading 属性后 [ReaderResourceSanitizer.markImagesLazy] 的
+        // 「已有 loading= 就尊重原书」分支会跳过它们，顺序不再是正确性的承重墙。
         figures.write(
           '<div class="hoshi-merged-image">'
-          '<img src="${htmlEscape.convert(absoluteUrl)}" class="block-img"/>'
+          '<img src="${htmlEscape.convert(absoluteUrl)}" class="block-img" '
+          'loading="eager"/>'
           '</div>',
         );
       }
@@ -461,6 +469,13 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   /// URL 请求一遍：走的是同一个 `hoshi.local` 拦截器、同一份缓存条目，等用户真的翻过去
   /// 时那些图已经在缓存里。纯预热，不改 DOM、不参与任何几何计算；失败静默（预热不到就
   /// 退回原来的现付现取）。
+  ///
+  /// **配额**（PR#469 审查）：预热是把整解码后的位图塞进 WebView 图片缓存，整页插图书
+  /// （1600×2400 PNG × N）在移动端是实打实的内存压力，而 HTML 预取那边早有
+  /// `_kChapterHtmlCacheLimit` LRU 上限。这里同样封顶：最多
+  /// [_ReaderHibikiPageState._kImagePrefetchMaxCount] 张、累计原始字节不超过
+  /// [_ReaderHibikiPageState._kImagePrefetchMaxBytes]（按磁盘文件大小计，读 stat 不读内容），
+  /// 超出即停——预热本就是尽力而为，少热几张只是少省一点，不影响正确性。
   void _prefetchAdjacentChapterImages(int index) {
     final EpubBook? book = _book;
     final InAppWebViewController? controller = _controller;
@@ -468,16 +483,21 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     if (index < 0 || index >= book.chapters.length) return;
     final List<String> srcs = book.chapterImageSrcs(index);
     if (srcs.isEmpty) return;
+    final String? extractDir = _extractDir;
     final String chapterDir =
         p.posix.dirname(normalizeHref(book.chapters[index].href));
     final List<String> urls = <String>[];
+    int budget = _ReaderHibikiPageState._kImagePrefetchMaxBytes;
     for (final String src in srcs) {
+      if (urls.length >= _ReaderHibikiPageState._kImagePrefetchMaxCount) break;
+      if (budget <= 0) break;
       final String trimmed = src.trim();
       if (trimmed.isEmpty) continue;
       // data: / 绝对 URL 不经我们的拦截器，预热无意义。
       if (trimmed.startsWith('data:') || trimmed.contains('://')) continue;
-      urls.add(ReaderHibikiSource.epubUrl(
-          p.posix.normalize(p.posix.join(chapterDir, trimmed))));
+      final String rel = p.posix.normalize(p.posix.join(chapterDir, trimmed));
+      budget -= _imageFileSizeBytes(extractDir, rel);
+      urls.add(ReaderHibikiSource.epubUrl(rel));
     }
     if (urls.isEmpty) return;
     final String json = jsonEncode(urls);
@@ -488,6 +508,23 @@ extension _ReaderWebView on _ReaderHibikiPageState {
               'im.decoding="async";im.src=u[i];}}catch(e){}})();',
         )
         .catchError((Object _) => null));
+  }
+
+  /// 预热配额用的磁盘体量（只 stat 不读内容）。解出的路径必须仍在 extractDir 内
+  /// （与 [_chapterFilePath] 同一条越界判据）；解析不到就按 0 计——配额是保护，不是
+  /// 正确性依赖，宁可少扣也不因为一次 stat 失败把整章预热掐掉。
+  int _imageFileSizeBytes(String? extractDir, String relativeHref) {
+    if (extractDir == null) return 0;
+    try {
+      final String root = p.canonicalize(extractDir);
+      final String filePath = p.canonicalize(p.join(root, relativeHref));
+      if (!p.isWithin(root, filePath)) return 0;
+      final File file = File(filePath);
+      if (!file.existsSync()) return 0;
+      return file.lengthSync();
+    } catch (_) {
+      return 0;
+    }
   }
 
   static bool _isValidFontData(Uint8List data) => isValidFontData(data);

@@ -94,13 +94,20 @@ before / after 两轮均在无并发负载下跑。`xchapter-rebased`（rebase �
 
 补了真实体量的素材（`integration_test/helpers/generate_test_image.dart` 生成 1600×2400 RGB PNG，
 渐变叠低频噪声：像素数决定解码成本、噪声决定压缩后体积），`EpubGenerator(withRealImages: true)`
-追加两章——纯整页插图章（3 张）与图文混排章（4 张）。实测（18 次跨章）：
+追加两章——纯整页插图章（3 张）与图文混排章（4 张）。实测（Windows 离屏 itest、debug build、
+同机同书、18 次跨章的单点值，非中位数）：
 
-| 章 | 原始 | 修复后 |
+| 章 | 原始 | 改后 |
 |---|---|---|
-| 图文混排章 首次（4 张插图） | **849ms**（docLoad 717ms） | **101ms**（docLoad 29ms） |
-| 纯整页插图章 首次（3 张插图） | **879ms**（docLoad 689ms） | 355~541ms（不稳定，见下） |
+| 图文混排章 首次（4 张插图）**遮罩时长** | **849ms**（docLoad 717ms） | **101ms**（docLoad 29ms） |
+| 纯整页插图章 首次（3 张插图）**遮罩时长** | **879ms**（docLoad 689ms） | 355~541ms（不稳定，见下） |
 | total 中位数 | 184ms | **132ms** |
+
+**这个数字的性质必须说清楚，别当成 8 倍加速**：849→101ms 量的是「遮罩出现到撤除」，而本轮
+修复的本质是**把插图解码从遮罩之前挪到遮罩之后**——总的读盘+解码工作量一点没少，只是不再
+串在「新章可见」的关键路径上。用户拿到的是「翻页立刻见到文字」，插图在章内异步补上；
+不是「机器少干了 8 倍的活」。诚实的表述是：**跨章遮罩时长 849→101ms（插图解码转入章内异步）**。
+`total 中位数 184→132ms` 才是覆盖全部章型的整体口径，收益远没有标题数字那么夸张。
 
 **根因**：`nav.dcl` 只有 15~20ms 而 `nav.load` 687~717ms——DOM 早就解析完了，剩下 670ms 全是在等
 图片读盘+解码，而遮罩正好盖住这整段（setup 脚本挂在 `window.load` 之后才注入）。
@@ -114,16 +121,39 @@ window.load」——**但它跑得太晚**：脚本在 `load` 之后注入，浏
    写进标签，属性才对本次加载生效。保持 eager 的例外与 JS 侧同款且更保守（这里 eager 的集合是
    JS 侧的超集，不会出现「Dart 挂 lazy 而 JS 想 eager」的倒挂）：纯图片章整章 eager（分页几何要靠
    插图真实撑开，TODO-1349）、`gaiji` 内联小图 eager、原书已写 `loading=` 的尊重原值。
-2. `_prefetchAdjacentChapterImages` —— 跨章落地后用隐藏 `new Image()` 把下一章插图按同样 URL 请求
-   一遍，走同一个拦截器与同一份缓存条目（图片响应本就带 `max-age=3600`）。**位置很关键**：必须挂在
-   遮罩撤除之后的收尾块；第一版挂在 `_onChapterLoadComplete`（遮罩之前），parse 整章 HTML +
-   读几张大 PNG 全压在热路径上，实测把 `jsInitRestore` 顶到 520ms、`overlayGone` 顶到 312ms——
-   成本只是换了个口袋。挪到遮罩后即回落到 36ms / 69ms。
+2. `_prefetchAdjacentChapterImages` —— 跨章落地后用隐藏 `new Image()` 把**阅读方向上**下一章的
+   插图按同样 URL 请求一遍，走同一个拦截器与同一份缓存条目（图片响应本就带 `max-age=3600`）。
+   **位置很关键**：必须挂在遮罩撤除之后的收尾块；第一版挂在 `_onChapterLoadComplete`（遮罩之前），
+   parse 整章 HTML + 读几张大 PNG 全压在热路径上，实测把 `jsInitRestore` 顶到 520ms、
+   `overlayGone` 顶到 312ms——成本只是换了个口袋。挪到遮罩后即回落到 36ms / 69ms。
+   预热带**配额**（`_kImagePrefetchMaxCount` 4 张 / `_kImagePrefetchMaxBytes` 8MB，按磁盘字节计），
+   方向由 `_beginNavigation` 采样（倒着读时预热上一章，而不是刚离开的那一章）。
+3. **迟到图片的语义重锚**（`reader_pagination_scripts.dart` `registerImageLateAnchor` /
+   `reapplyImageLateAnchor`）—— 第 1 条把「插图未 decode」变成了恢复时刻的**常态**，于是恢复
+   把语义锚（char / progress / fragment）换算成 scrollTop 时用的是「插图 0×0」的塌缩布局；
+   插图随后 load、几何后移，冻结的 scrollTop 指向别的内容，进度轮询还会把这个漂掉的读数落库。
+   原有的 `__imgReanchorProgress` 只覆盖章首(0)/章末(≥0.99) 两个粗粒度分支，中段 progress 与
+   精确字符锚**完全裸奔**。现在三种锚全部登记，图片 load 后按同一个语义锚重算落点——终态与
+   「插图本来就在」等价；重锚走既有 `onReaderScroll` 通道把**修正后**的位置落库。
+   用户翻页（`paginate`）清资格，不把已翻走的位置拽回。
+4. 合并前导插图（TODO-1339）的 eager 改成**显式** `loading="eager"` 属性，不再依赖
+   `markImagesLazy` 与 `_injectMergedChapterImages` 的调用顺序。
 
 **未解决 / 如实说明**：纯整页插图章仍要 355~541ms 且不稳定。它按设计不能挂 lazy（分页几何依赖插图
 真实尺寸），只能靠预热覆盖，而预热是否命中取决于用户在上一章停留多久、以及 WebView 缓存是否保留
 （实测同章二次进入有时 109ms 命中、有时 330ms 未命中，样本内不稳定）。要根治仍得让 setup 脚本不等
 `window.load`（见下「仍未做」第一项）——那样图片解码与恢复可以并行，而不是串行等完再开始。
+
+图文混排章的 101ms **是否依赖预热命中**同样没有单独拆开量：itest 里每次跨章后停留 1500ms
+（判据是 settle 尾沿 + 450ms 跨章冷却窗，不是「等预热跑完」），快速连翻 / 目录跳转时预热必然
+不命中，那种情况下的数字未单独测量。**不要**把 itest 的等待时长调长去凑一个更好看的稳态数字。
+
+守卫：`test/reader/chapter_jump_late_load_reanchor_test.dart`（三种语义锚都登记 + 翻页清资格 +
+load 回调分派顺序）、`test/reader/reader_image_lazy_pipeline_guard_test.dart`（Dart 侧 lazy 流水线
+——既有三条图片守卫全是扫 JS 源码的，管不到 Dart 侧这份判定）、
+`test/reader/reader_image_lazy_markup_test.dart`（`markImagesLazy` 字符串改写）。
+行为端：`integration_test/reader_cross_chapter_perf_itest.dart` 的「中段落点回归」用例
+（真实退出重进 → 图文混排插图章中段锚 → 重进落点偏差必须在一页之内）。
 
 ### 仍未做（下一步，风险与收益都更大）
 

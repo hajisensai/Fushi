@@ -1035,6 +1035,68 @@ class ReaderPaginationScripts {
       imgs[i].setAttribute('loading', 'eager');
     }
   },
+  // ── 迟到图片的语义重锚（TODO-1229 案B 的一般化 · BUG-1140 第二轮）─────────
+  //
+  // 恢复落点由「章内**语义锚**」定义：精确字符偏移（restoreToCharOffset）、粗粒度
+  // progress（restoreProgress —— progressStops 同样是字符域）、或 fragment 目标元素。
+  // 这三种锚本身与图片是否已 decode 无关，但把锚**换算成 scroll** 的那一步依赖当下
+  // 几何：锚之前若有尚未 load 的懒图（0×0），换算结果就少了那些图的高度。图片随后
+  // load、几何后移，冻结的 scroll 便指向别的内容——用户看到的位置漂了，随后
+  // onReaderScroll 还会把这个漂掉的读数落库。
+  //
+  // 修法不是「恢复前等图片」（那正是要消除的整个加载周期），而是**图片 load 后按同一个
+  // 语义锚重算一次**：终态与「图片本来就在」等价。仅在恢复落地后、用户尚未翻页的窗口内
+  // 有效（paginate 清资格），且只由真正改变几何的 block 图 load 触发。重锚是程序化滚动，
+  // 走既有 onReaderScroll 通道把**修正后**的位置落库（既有 >=0.99 章末重锚同一条路）。
+  registerImageLateAnchor: function(anchor) {
+    this.clearImageLateAnchor();
+    if (!anchor) return;
+    if (typeof anchor.charOffset === 'number') {
+      this.__imgReanchorCharOffset = anchor.charOffset;
+      this.__imgReanchorCharOffsetEnd = anchor.endCharOffset;
+    } else if (typeof anchor.progress === 'number') {
+      this.__imgReanchorProgress = anchor.progress;
+    } else if (anchor.fragment) {
+      this.__imgReanchorFragment = anchor.fragment;
+    }
+  },
+  clearImageLateAnchor: function() {
+    this.__imgReanchorProgress = null;
+    this.__imgReanchorCharOffset = null;
+    this.__imgReanchorCharOffsetEnd = -1;
+    this.__imgReanchorFragment = null;
+  },
+  // 连续 shell 独有 scrollToChapterEnd —— 与既有重锚回调同一条判别（不能用
+  // scrollToProgressPaged，那是 _sharedJs 两 shell 都有的，连续会误走分页分支）。
+  _isContinuousShell: function() {
+    return typeof this.scrollToChapterEnd === 'function';
+  },
+  reapplyImageLateAnchor: function() {
+    var co = this.__imgReanchorCharOffset;
+    if (typeof co === 'number' && co > 0) {
+      if (this._isContinuousShell()) {
+        this.scrollToCharOffset(co, this.__imgReanchorCharOffsetEnd);
+      } else {
+        this.scrollToCharOffset(co);
+      }
+      return true;
+    }
+    if (this.__imgReanchorFragment) {
+      return this.alignToFragmentTarget(this.__imgReanchorFragment);
+    }
+    var p = this.__imgReanchorProgress;
+    if (typeof p !== 'number') return false;
+    if (this._isContinuousShell()) {
+      if (p >= 0.99) this.scrollToChapterEnd();
+      else if (p <= 0) this.scrollToChapterStart();
+      else this.scrollToProgressContinuous(p);
+      return true;
+    }
+    var rctx = this.getScrollContext();
+    if (!rctx || rctx.pageSize <= 0) return false;
+    this.scrollToProgressPaged(rctx, p);
+    return true;
+  },
   notifyRestoreComplete: function() {
     this.perfMark('restoreDone');
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
@@ -1787,24 +1849,13 @@ $blurFn
         if (_hoshiClassifyBlockImg(img)) {
           var r = window.hoshiReader;
           if (r && r.paginationMetrics !== undefined) r.paginationMetrics = null;
-          // TODO-1229 案B：懒加载 block 图 load 后整章几何后移，冻结的 restore scrollTop
-          // 错一行（Chromium 只在 scrollTop=0 自愈）。若最近落点是章首/章末粗粒度语义
-          // 且其后无用户翻页(__imgReanchorProgress 非 null)，用刚失效的 metrics 重建几何
-          // 后重放 scrollToProgressPaged 语义重锚。属程序化滚动，不污染 TODO-798
-          // userDriven 因果门；有用户输入(paginate 已清资格)则不动。
-          if (r && r.__imgReanchorProgress != null) {
-            // TODO-1349（续）：判别连续 vs 分页用 scrollToChapterEnd（连续 shell 独有）——
-            // scrollToProgressPaged 在 _sharedJs 里两 shell 都有，不能用它判别（否则连续误走
-            // 分页分支，getScrollContext.pageSize 非分页量纲 → 不重锚，停章首）。
-            if (typeof r.scrollToChapterEnd === 'function') {
-              // 连续模式：尾部懒图 load 后重锚到章末；章首(<=0)不重锚——内容向下增长不移动 scroll 0。
-              if (r.__imgReanchorProgress >= 0.99) r.scrollToChapterEnd();
-            } else if (typeof r.scrollToProgressPaged === 'function') {
-              var rctx = r.getScrollContext();
-              if (rctx && rctx.pageSize > 0) {
-                r.scrollToProgressPaged(rctx, r.__imgReanchorProgress);
-              }
-            }
+          // TODO-1229 案B / BUG-1140 第二轮：懒加载 block 图 load 后整章几何后移，冻结的
+          // restore scrollTop 错位（Chromium 只在 scrollTop=0 自愈）。按本次恢复登记的
+          // **语义锚**（char / progress / fragment）重算一次落点，终态与「图片本来就在」
+          // 等价。属程序化滚动，不污染 TODO-798 userDriven 因果门；有用户输入
+          // （paginate 已 clearImageLateAnchor）则不动。三种锚的分派见 reapplyImageLateAnchor。
+          if (r && typeof r.reapplyImageLateAnchor === 'function') {
+            r.reapplyImageLateAnchor();
           }
         }
       });
@@ -2287,10 +2338,14 @@ $_sharedJs
     // 图 load 后 __imgReanchorProgress 回调按含真实尾图几何的 maxScroll 重锚。
     if (progress >= 0.99) this.forceLoadPendingImages();
     this.scrollToProgressPaged(context, progress);
-    // TODO-1229 案B：记录本次是章首(0)/章末(>=0.99)粗粒度 progress 落点，允许懒加载
-    // block 图 load 后（整章几何后移、冻结 scrollTop 错一行）语义重锚。中段 progress 与
-    // 精确 char 锚不登记（重锚到粗 progress 反更差）。任一用户翻页(paginate)清资格。
-    this.__imgReanchorProgress = (progress <= 0 || progress >= 0.99) ? progress : null;
+    // BUG-1140 第二轮：登记本次 progress 落点供懒图 load 后语义重锚，**含中段**。
+    // 旧实现只登记章首(0)/章末(>=0.99)，理由是「中段重锚到粗 progress 反更差」——那成立
+    // 的前提是恢复时几何已终态（initialize 挂在 window.load，图片必已 decode），中段重锚
+    // 只会把已经正确的位置白抖一下。把 loading="lazy" 写进 HTML 源码之后这个前提没了：
+    // 恢复跑在图片 decode 之前，中段落点同样会被随后 load 的图顶走。progressStops 是字符域，
+    // 按同一 progress 重算 = 落回同一批字符所在页，严格优于停在漂掉的 scroll 上。
+    // 任一用户翻页(paginate)清资格。
+    this.registerImageLateAnchor({progress: progress});
     var pos = this.getPagePosition(context);
     this._settleAndNotify(context, pos);
   },
@@ -2312,34 +2367,49 @@ $_sharedJs
     // 重锚时不再跳页）。>0 的精确锚行为不变。
     if (charOffset <= 0 || !this.charOffsetInRange(charOffset)) {
       this.scrollToProgressPaged(context, 0);
+      this.registerImageLateAnchor({progress: 0});
     } else {
       this.scrollToCharOffset(charOffset);
+      // BUG-1140 第二轮：字符锚是**布局无关**的真相，迟到图片 load 后按同一个 charOffset
+      // 重算即回到「图片本来就在」的落点。旧实现在这里什么都不登记 → 精确锚恢复（退出重进 /
+      // 收藏跳转 / 有声书 seek 落中段）在图文混排章完全裸奔，位置漂了还会被落库。
+      this.registerImageLateAnchor({charOffset: charOffset});
     }
     var pos = this.getPagePosition(context);
     this._settleAndNotify(context, pos);
   },
-  jumpToFragment: async function(fragment) {
-    await document.fonts.ready;
+  // fragment 落点的纯几何对齐（jumpToFragment 与迟到图片重锚共用同一份换算，避免
+  // 重锚复制一份会漂开的算法）。命中返 true 并已 setPagePosition，未命中返 false。
+  alignToFragmentTarget: function(fragment) {
     var context = this.getScrollContext();
     var rawFragment = (fragment || '').trim();
     var target = rawFragment && (document.getElementById(rawFragment) || document.getElementsByName(rawFragment)[0]);
-    if (context.pageSize <= 0 || !target) {
+    if (context.pageSize <= 0 || !target) return false;
+    var rect = this.getRect(target);
+    var currentScroll = this.getPagePosition(context);
+    var anchor = (context.vertical ? rect.top : rect.left) + currentScroll;
+    this.setPagePosition(context, this.alignToPage(context, anchor));
+    return true;
+  },
+  jumpToFragment: async function(fragment) {
+    await document.fonts.ready;
+    var context = this.getScrollContext();
+    if (!this.alignToFragmentTarget(fragment)) {
+      this.clearImageLateAnchor();
       this.registerSnapScroll(this.getPagePosition(context));
       this.notifyRestoreComplete();
       return false;
     }
-    var rect = this.getRect(target);
-    var currentScroll = this.getPagePosition(context);
-    var anchor = (context.vertical ? rect.top : rect.left) + currentScroll;
-    var targetScroll = this.alignToPage(context, anchor);
-    this.setPagePosition(context, targetScroll);
-    this._settleAndNotify(context, targetScroll);
+    // BUG-1140 第二轮：目录/内链跳转同样在图片 decode 之前落点，登记 fragment 锚让迟到
+    // 图片 load 后按同一个目标元素重新对齐。
+    this.registerImageLateAnchor({fragment: fragment});
+    this._settleAndNotify(context, this.getPagePosition(context));
     return true;
   },
   paginate: function(direction) {
     // TODO-1229 案B：用户翻页即放弃图片 late-load 重锚资格——避免把用户已翻走的位置
-    // 拽回章首/章末（重锚只在恢复落地后、用户尚未翻页的窗口内有效）。
-    this.__imgReanchorProgress = null;
+    // 拽回恢复锚（重锚只在恢复落地后、用户尚未翻页的窗口内有效）。
+    this.clearImageLateAnchor();
     var context = this.getScrollContext();
     if (context.pageSize <= 0) return "limit";
     var currentScroll = this.getPagePosition(context);
@@ -2830,7 +2900,10 @@ $_sharedJs
     await document.fonts.ready;
     var self = this;
     if (progress <= 0) {
-      this.__imgReanchorProgress = null;
+      // BUG-1140 第二轮：章首也登记。内容向下增长不移动 scroll 0，重锚
+      // scrollToChapterStart 幂等；但章首之前若有前导插图（合并注入 / 封面），图 load
+      // 后正文整体下移，不重锚就会停在图与正文之间的错位。
+      this.registerImageLateAnchor({progress: 0});
       this.scrollToChapterStart();
       setTimeout(function() {
         self.scrollToChapterStart();
@@ -2847,7 +2920,7 @@ $_sharedJs
       // TODO-1349（续）：登记章末重锚资格 + 强制 load 尾部懒图（打破鸡生蛋，见
       // forceLoadPendingImages）。16ms 双发太快等不到图 load，故尾图 load 后由
       // _sharedInitImages 的 load 回调重锚 scrollToChapterEnd（连续分支）落到含尾图的真实章末。
-      this.__imgReanchorProgress = progress;
+      this.registerImageLateAnchor({progress: progress});
       this.forceLoadPendingImages();
       this.scrollToChapterEnd();
       setTimeout(function() {
@@ -2856,26 +2929,34 @@ $_sharedJs
       }, 16);
       return;
     }
-    this.__imgReanchorProgress = null;
+    // BUG-1140 第二轮：中段 progress 同样登记（理由见分页版 restoreProgress 长注释）。
+    this.registerImageLateAnchor({progress: progress});
     this.scrollToProgressContinuous(progress);
     this._settleAndNotify();
   },
-  jumpToFragment: async function(fragment) {
-    await document.fonts.ready;
+  // fragment 落点的纯几何对齐（jumpToFragment 与迟到图片重锚共用），见分页版同名方法。
+  alignToFragmentTarget: function(fragment) {
     var rawFragment = (fragment || '').trim();
     var target = rawFragment && (document.getElementById(rawFragment) || document.getElementsByName(rawFragment)[0]);
-    if (!target) {
+    if (!target) return false;
+    target.scrollIntoView();
+    return true;
+  },
+  jumpToFragment: async function(fragment) {
+    await document.fonts.ready;
+    if (!this.alignToFragmentTarget(fragment)) {
+      this.clearImageLateAnchor();
       this.notifyRestoreComplete();
       return false;
     }
-    target.scrollIntoView();
+    this.registerImageLateAnchor({fragment: fragment});
     this._settleAndNotify();
     return true;
   },
   paginate: function(direction) {
-    // TODO-1349（续）：用户翻页即放弃章末尾图 late-load 重锚资格（镜像分页 paginate），
-    // 避免尾图 load 回调把用户已翻走的位置拽回章末。
-    this.__imgReanchorProgress = null;
+    // TODO-1349（续）：用户翻页即放弃 late-load 重锚资格（镜像分页 paginate），
+    // 避免图 load 回调把用户已翻走的位置拽回恢复锚。
+    this.clearImageLateAnchor();
     var vertical = this.isVertical();
     var root = document.scrollingElement || document.documentElement;
     var before = vertical ? window.scrollX : root.scrollTop;
@@ -3055,7 +3136,10 @@ $_sharedJs
     await document.fonts.ready;
     // TODO-1229 (BUG-594)：charOffset 0 == 章首（0 字已读）。连续模式章首插图同理不得越过，
     // scrollToChapterStart 滚到顶（含前导图），与 restoreProgress 章首语义一致。>0 走精确锚不变。
-    if (charOffset <= 0) { this.scrollToChapterStart(); }
+    if (charOffset <= 0) {
+      this.scrollToChapterStart();
+      this.registerImageLateAnchor({progress: 0});
+    }
     else {
       // BUG-492 (TODO-1053 Bug A) 越界兜底：护住旧脏收藏记录。写入端曾把某句错记成
       // 相邻章 sectionIndex（_currentChapter 漂移），恢复端忠实加载该错章 DOM 后，本 charOffset
@@ -3065,8 +3149,12 @@ $_sharedJs
       // （确定性落点），比静默停错位可诊断。锚在范围内（含新写入 / 已修数据）走精确对齐，行为不变。
       if (!this.charOffsetInRange(charOffset)) {
         this.scrollToChapterStart();
+        this.registerImageLateAnchor({progress: 0});
       } else {
         this.scrollToCharOffset(charOffset, endCharOffset);
+        // BUG-1140 第二轮：精确字符锚登记重锚资格（理由见分页版 restoreToCharOffset）。
+        this.registerImageLateAnchor(
+            {charOffset: charOffset, endCharOffset: endCharOffset});
       }
     }
     this._settleAndNotify();

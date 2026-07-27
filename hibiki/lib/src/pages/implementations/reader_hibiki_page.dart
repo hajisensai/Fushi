@@ -1225,6 +1225,18 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// （每次跨章 + 每次预取）重复解析。换书会连同本 State 一起重建。
   final Map<int, bool> _imageOnlyChapterCache = <int, bool>{};
 
+  /// TODO-perf（跨章·图片）预热配额（PR#469 审查）：`_prefetchAdjacentChapterImages`
+  /// 把整解码后的位图塞进 WebView 图片缓存，整页插图书（1600×2400 PNG × N）在移动端
+  /// 是实打实的内存压力。对齐 [_kChapterHtmlCacheLimit] 那侧的上限思路，这里按张数 +
+  /// 磁盘字节双封顶；预热是尽力而为，超配额停下只是少省一点，不影响正确性。
+  static const int _kImagePrefetchMaxCount = 4;
+  static const int _kImagePrefetchMaxBytes = 8 * 1024 * 1024;
+
+  /// TODO-perf（跨章·图片）阅读方向（PR#469 审查）：预热必须跟着用户读的方向走，写死
+  /// `+1` 会在倒着翻章时预热**刚离开的那一章**（纯反效果）。每次 [_beginNavigation]
+  /// 按目标章与当前章的相对位置更新；同章重恢复（换字号/重排版）不改方向。
+  int _chapterAdvanceDirection = 1;
+
   // BUG-270: in-flight prefetch dedup — the file path currently being warmed in
   // the background, so a navigation that lands on it does not race a second read.
   String? _prefetchingHtmlPath;
