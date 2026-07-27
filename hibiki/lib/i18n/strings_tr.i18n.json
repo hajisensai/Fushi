@@ -2678,5 +2678,8 @@
   "media_tracking_status": "Collection status",
   "media_tracking_signup": "Create a Bangumi account",
   "media_tracking_game": "Game",
-  "download_rate_limit_lan_exempt": "Does not apply within your local network; LAN transfers always run at full speed."
+  "download_rate_limit_lan_exempt": "Does not apply within your local network; LAN transfers always run at full speed.",
+  "video_scrape_search_failed": "Search failed. Tap Search to retry.",
+  "scrape_reason_network": "Could not get a valid response from the cover source. Check your network and retry.",
+  "scrape_reason_server": "The cover source returned an error. Try again later or pick another candidate."
 }

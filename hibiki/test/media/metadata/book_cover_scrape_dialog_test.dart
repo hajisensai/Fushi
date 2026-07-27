@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/metadata/book_cover_scrape_dialog.dart';
 import 'package:hibiki/src/media/metadata/book_metadata_scraper.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -84,5 +85,46 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(t.book_scrape_search_failed), findsNothing);
     expect(find.text('Yotsuba to!'), findsOneWidget);
+  });
+
+  // BUG-1174：失败行此前只说「失败了」，没有任何可行动原因，原始原因也没有出口。
+  testWidgets('BUG-1174 搜索失败带可行动原因 + 落错误日志', (WidgetTester tester) async {
+    final BookMetadataScraper scraper = BookMetadataScraper(
+      client: MockClient(
+          (http.Request req) async => throw http.ClientException('down')),
+    );
+    final int logsBefore = ErrorLogService.instance.entries.length;
+
+    await tester.pumpWidget(wrap(
+      BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.book_scrape_search_failed), findsOneWidget);
+    // 没拿到可用响应 → 「检查网络后重试」。
+    expect(find.text(t.scrape_reason_network), findsOneWidget);
+    final List<ErrorLogEntry> added =
+        ErrorLogService.instance.entries.sublist(logsBefore);
+    expect(
+      added
+          .any((ErrorLogEntry e) => e.source == 'BookCoverScrapeDialog.search'),
+      isTrue,
+    );
+  });
+
+  testWidgets('BUG-1174 源站 HTTP 500 给出「源站报错」而非「检查网络」',
+      (WidgetTester tester) async {
+    final BookMetadataScraper scraper = BookMetadataScraper(
+      client: MockClient((http.Request req) async => http.Response('', 500)),
+    );
+
+    await tester.pumpWidget(wrap(
+      BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.book_scrape_search_failed), findsOneWidget);
+    expect(find.text(t.scrape_reason_server), findsOneWidget);
+    expect(find.text(t.scrape_reason_network), findsNothing);
   });
 }

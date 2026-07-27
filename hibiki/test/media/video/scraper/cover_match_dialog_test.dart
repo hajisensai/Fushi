@@ -18,6 +18,7 @@ import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
 import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
@@ -50,13 +51,22 @@ class _StubScraperService extends CoverScraperService {
   final List<ScrapeCandidate> candidates;
   final List<String> appliedUids = <String>[];
 
+  /// 逐次出队的搜索异常（非 null 即抛）。让「第一次失败 → 重试成功」可测。
+  final List<Object?> searchErrors = <Object?>[];
+  int searchCalls = 0;
+
   @override
   Future<List<ScrapeCandidate>> searchCandidates({
     required ScrapeSource source,
     required String keyword,
     int? year,
-  }) async =>
-      candidates;
+  }) async {
+    searchCalls++;
+    final Object? error =
+        searchErrors.isEmpty ? null : searchErrors.removeAt(0);
+    if (error != null) Error.throwWithStackTrace(error, StackTrace.current);
+    return candidates;
+  }
 
   @override
   Future<void> applyCandidateToBooks({
@@ -226,5 +236,63 @@ void main() {
     expect(service.appliedUids, <String>['video/my_anime']);
     // 弹窗应用后关闭。
     expect(find.text(t.video_scrape_use), findsNothing);
+  });
+
+  // BUG-1174：搜索失败曾被 `catch (_)` 吞成空表，界面显示「无匹配」——用户无从分辨
+  // 「搜不到」与「搜不了」，也拿不到任何可上报的原因。失败必须有出口。
+  testWidgets('BUG-1174 搜索失败出可见错误行（非「无匹配」）+ 可行动原因 + 落错误日志，且可重试',
+      (WidgetTester tester) async {
+    final VideoBookRow book = await seed();
+    final _StubScraperService service = buildService()
+      ..searchErrors.add(const ScrapeNetworkException('transport down'));
+    final int logsBefore = ErrorLogService.instance.entries.length;
+
+    await tester.pumpWidget(wrap(CoverMatchDialog(
+      service: service,
+      book: book,
+      collectionMemberUids: const <String>['video/my_anime'],
+      onApplied: () {},
+    )));
+    await tester.pumpAndSettle();
+
+    // 失败态可见，且**不是**「无匹配」空态。
+    expect(find.text(t.video_scrape_search_failed), findsOneWidget);
+    expect(find.text(t.video_scrape_no_results), findsNothing);
+    // 无 statusCode = 没拿到可用响应 → 给「检查网络后重试」这一路可行动原因。
+    expect(find.text(t.scrape_reason_network), findsOneWidget);
+    // 原始原因落错误日志（用户可在「错误日志」页查看/上传）。
+    final List<ErrorLogEntry> added =
+        ErrorLogService.instance.entries.sublist(logsBefore);
+    expect(
+        added.any((ErrorLogEntry e) => e.source == 'CoverMatchDialog.search'),
+        isTrue);
+
+    // 再点「搜索」重试：失败行消失，候选正常渲染。
+    await tester.tap(find.text(t.video_scrape_search));
+    await tester.pumpAndSettle();
+    expect(find.text(t.video_scrape_search_failed), findsNothing);
+    expect(find.text(t.scrape_reason_network), findsNothing);
+    expect(find.text(t.video_scrape_confidence_high), findsOneWidget);
+    expect(service.searchCalls, 2);
+  });
+
+  testWidgets('BUG-1174 源站带 HTTP 状态码时给出「源站报错」而非「检查网络」',
+      (WidgetTester tester) async {
+    final VideoBookRow book = await seed();
+    final _StubScraperService service = buildService()
+      ..searchErrors.add(const ScrapeNetworkException('Bangumi search HTTP 503',
+          statusCode: 503));
+
+    await tester.pumpWidget(wrap(CoverMatchDialog(
+      service: service,
+      book: book,
+      collectionMemberUids: const <String>['video/my_anime'],
+      onApplied: () {},
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.video_scrape_search_failed), findsOneWidget);
+    expect(find.text(t.scrape_reason_server), findsOneWidget);
+    expect(find.text(t.scrape_reason_network), findsNothing);
   });
 }
