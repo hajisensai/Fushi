@@ -94,9 +94,11 @@ String _failedMessage(
       t.game_hook_reason_helper_missing,
     // injectionFailed 的可执行处置在 injector 诊断里，由 [injectorReason] 提供。
     GalHookLaunchFailureReason.injectionFailed => injectorReason,
-    // 这两个不会走到 failed 分支（superseded 已早退，none 不是失败），列出只为穷举。
+    // superseded 已在 [classifyGalHookLaunchOutcome] 早退，走不到 failed 分级；列出只为穷举。
     GalHookLaunchFailureReason.superseded => null,
-    GalHookLaunchFailureReason.none => null,
+    // reason == null 即「启动成功」，同样到不了 failed 分级。真到了也**只**落到下面的
+    // 兜底事实（lastError / native 诊断），绝不会因此编造一句原因（BUG-1169）。
+    null => null,
   };
   if (reasonLabel != null) return reasonLabel;
   final String base = lastError ?? t.game_capture_launch_failed;
