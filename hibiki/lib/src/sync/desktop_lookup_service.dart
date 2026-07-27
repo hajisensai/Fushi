@@ -199,6 +199,21 @@ class DesktopLookupService extends ChangeNotifier
     if (deduped == null) return;
     _lastText = deduped;
     _lastTextTime = nowTs;
+    // BUG-1145：剪贴板复制历史的唯一采集点。落在**去重通过之后**，所以被
+    // dedupeClipboard 判为自触发回声（挖词/抓选区写回）的那次不会进历史；同一段
+    // 文本超窗口再复制则如实记一条，仓库侧 [ClipboardHistoryRepository.add] 再做
+    // 「同文本去重到最新」把它移到队尾而不是堆重复行。
+    //
+    // `origin == clipboard` 是真实剪贴板变化的判据：热键（origin=hotkey）与悬浮
+    // 字幕点词（origin=explicit）都走上面 `dedupe: false` 的提前返回分支，本行不
+    // 可达；这道显式判定保证即使将来有别的来源改走去重分支，也不会把非「复制」
+    // 动作污染进复制历史（守卫见 desktop_lookup_service_test.dart 的 BUG-1145 组）。
+    //
+    // 记的是 [deduped]——注音标记已剥、超长已截断的纯基准文本，与本条链路
+    // （透明文字窗 / 悬浮面板 / 瞬态卡 / 剪贴板历史）其余消费面同一坐标系。
+    if (origin == DesktopLookupOrigin.clipboard) {
+      onClipboardCaptured?.call(deduped);
+    }
     _pendingRequest = DesktopLookupRequest(
       text: deduped,
       origin: origin,
@@ -234,6 +249,9 @@ class DesktopLookupService extends ChangeNotifier
     _pendingRequest = null;
     _lastText = null;
     _lastTextTime = null;
+    // BUG-1145：采集回调是单例上的长命字段，不清会让上一个用例装的捕获器
+    // 漏进后续用例（写到已经析构的仓库上）。生产侧不调 debugReset，行为不受影响。
+    onClipboardCaptured = null;
     // BUG-700：跑过 start()/stop() 的用例可能留下非零计数 + 已挂的 Dart 侧监听器，
     // 若不清会漏进后续用例。仅在确有累计计数时同步摘除监听并归零（未 start 的用例
     // 计数恒 0，此块跳过，行为不变）。removeListener 对未注册的监听器是安全 no-op。

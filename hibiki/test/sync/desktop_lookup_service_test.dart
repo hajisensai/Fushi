@@ -1,7 +1,10 @@
 import 'package:flutter/services.dart';
 import 'dart:io';
 
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/models/clipboard_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/desktop_foreground_guard.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
@@ -670,6 +673,179 @@ void main() {
     for (final String g in pending.characters) {
       expect(g, emoji);
     }
+  });
+
+  // BUG-1145：桌面「剪贴板复制历史」🕘 面板永远是空的。根因不是读侧——DB 表、
+  // 仓库、payload、面板 UI、i18n 全都在——而是 [DesktopLookupService.onClipboardCaptured]
+  // 这个采集回调自 24e6443bb 引入起就只有声明 + AppModel 的赋值，**零调用点**，
+  // 于是 add() 永不发生，用户每次点开都命中空态。本组是该路径的首个覆盖（此前 0
+  // 测试，正是它潜伏这么久、CI 一直绿的原因），直接打到真实
+  // [ClipboardHistoryRepository] + 内存 Drift 库上，钉死「剪贴板来源写穿到历史 /
+  // 非剪贴板来源不写 / 重复复制不堆重复行」三条契约。
+  group('剪贴板复制历史采集 (BUG-1145)', () {
+    late HibikiDatabase db;
+    late ClipboardHistoryRepository repo;
+    late DateTime fakeNow;
+
+    setUp(() {
+      // 外层 setUp 已跑过 debugReset（会把 onClipboardCaptured 清成 null），故本组的
+      // 装配必须在它之后——group 的 setUp 恒后于外层 setUp 执行。
+      db = HibikiDatabase.forTesting(NativeDatabase.memory());
+      repo = ClipboardHistoryRepository(db);
+      fakeNow = DateTime(2026, 7, 27, 9, 0, 0);
+      final DesktopLookupService service = DesktopLookupService.instance;
+      service.clock = () => fakeNow;
+      // 与 AppModel.addClipboardHistoryEntry 同构的装配（生产侧那行赋值由本组末尾的
+      // 源码守卫单独钉住）；时刻用假时钟保证顺序断言确定。
+      service.onClipboardCaptured = (String text) => repo.add(text, fakeNow);
+    });
+
+    tearDown(() async {
+      DesktopLookupService.instance.onClipboardCaptured = null;
+      DesktopLookupService.instance.clock = DateTime.now;
+      repo.dispose();
+      await db.close();
+    });
+
+    test('剪贴板复制的文本真的写进历史仓库并落库', () async {
+      final DesktopLookupService service = DesktopLookupService.instance;
+
+      service.submitText('  見る ');
+
+      // 内存层：进了仓库，且是 trim 后的纯基准文本。
+      expect(
+        repo.entries.map((ClipboardHistoryEntry e) => e.text),
+        <String>['見る'],
+        reason: '这正是 BUG-1145 的用户症状——采集点缺失时这里恒为空',
+      );
+      expect(repo.entries.single.copiedAt, fakeNow);
+      // 查词管线不受影响（采集是旁路副作用，不能吃掉原有行为）。
+      expect(service.pendingText, '見る');
+
+      // 写穿层：debounce 刷盘后真的有行落到 clipboard_history 表。
+      await repo.flushNow();
+      final List<ClipboardHistoryRow> rows = await db.getAllClipboardHistory();
+      expect(rows.map((ClipboardHistoryRow r) => r.content), <String>['見る']);
+    });
+
+    test('多次复制不同文本按时间顺序累积（队尾 = 最新）', () async {
+      final DesktopLookupService service = DesktopLookupService.instance;
+
+      service.submitText('見る');
+      fakeNow = fakeNow.add(const Duration(seconds: 5));
+      service.submitText('読む');
+      fakeNow = fakeNow.add(const Duration(seconds: 5));
+      service.submitText('走る');
+
+      expect(
+        repo.entries.map((ClipboardHistoryEntry e) => e.text),
+        <String>['見る', '読む', '走る'],
+      );
+    });
+
+    // 负向契约：热键查词 / 悬浮字幕点词是「查词」不是「复制」，不得污染复制历史。
+    // 用普通 async test 而非 testWidgets：ClipboardHistoryRepository.add 会起一个真实
+    // 的 debounce 刷盘 Timer，testWidgets 的 FakeAsync 收尾时会因「仍有 pending Timer」
+    // 直接判红（该 Timer 由 tearDown 的 repo.dispose() 取消）。
+    // 两者都走 dedupe:false 分支，压根到不了采集点；本用例守住这条边界，防止有人
+    // 把采集点上移到 _queueLookupRequest 顶部或删掉 origin 判定。
+    test('热键与悬浮字幕点词不写进复制历史', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform,
+              (MethodCall call) async {
+        if (call.method == 'Clipboard.getData') {
+          return <String, Object?>{'text': '  早い  '};
+        }
+        return null;
+      });
+
+      final DesktopLookupService service = DesktopLookupService.instance;
+
+      // ① 全局热键（origin=hotkey）。
+      await service.debugTriggerHotKey();
+      expect(service.pendingRequest?.origin, DesktopLookupOrigin.hotkey);
+      expect(service.pendingText, '早い', reason: '热键查词本身必须照常发生');
+      expect(repo.entries, isEmpty, reason: '热键查词不是「复制」，不计入复制历史');
+
+      // ② 悬浮字幕点词（origin=explicit）。
+      service.triggerLookup('良い');
+      expect(service.pendingRequest?.origin, DesktopLookupOrigin.explicit);
+      expect(service.pendingText, '良い', reason: '点词查词本身必须照常发生');
+      expect(repo.entries, isEmpty, reason: '点词查词不是「复制」，不计入复制历史');
+
+      // 只有真正的剪贴板来源才落历史（同一组里作正向对照，证明上面的空不是装配没接上）。
+      service.submitText('見る');
+      expect(
+        repo.entries.map((ClipboardHistoryEntry e) => e.text),
+        <String>['見る'],
+      );
+    });
+
+    test('去重窗口内的自触发回声不写进历史', () {
+      final DesktopLookupService service = DesktopLookupService.instance;
+
+      service.submitText('見る');
+      expect(repo.entries, hasLength(1));
+      service.clearPending();
+
+      // 窗口内（<800ms）的同词 = 挖词/抓选区写回的回声，dedupeClipboard 判 null，
+      // 采集点在其后故一并跳过。
+      fakeNow = fakeNow.add(const Duration(milliseconds: 100));
+      service.submitText('見る');
+
+      expect(service.pendingText, isNull, reason: '回声本来就不该触发查词');
+      expect(repo.entries, hasLength(1), reason: '回声更不该在历史里堆出第二条');
+    });
+
+    test('超窗口重复复制同一文本去重到最新，不堆重复行', () async {
+      final DesktopLookupService service = DesktopLookupService.instance;
+
+      service.submitText('見る');
+      fakeNow = fakeNow.add(const Duration(seconds: 5));
+      service.submitText('読む');
+      expect(
+        repo.entries.map((ClipboardHistoryEntry e) => e.text),
+        <String>['見る', '読む'],
+      );
+
+      // 用户隔了几秒再复制一次「見る」：查词要重新排队（BUG-1025），历史侧则由
+      // ClipboardHistoryRepository.add 的「同文本去重到最新」把它移到队尾，
+      // 而不是留下两条一样的行。
+      fakeNow = fakeNow.add(const Duration(seconds: 5));
+      service.submitText('見る');
+
+      expect(service.pendingText, '見る', reason: '超窗口的同词是用户显式重查，必须放行');
+      expect(
+        repo.entries.map((ClipboardHistoryEntry e) => e.text),
+        <String>['読む', '見る'],
+        reason: '同文本去重到最新：只剩一条「見る」且被移到队尾',
+      );
+      expect(repo.entries.last.copiedAt, fakeNow);
+
+      await repo.flushNow();
+      final List<ClipboardHistoryRow> rows = await db.getAllClipboardHistory();
+      expect(
+        rows.map((ClipboardHistoryRow r) => r.content),
+        <String>['読む', '見る'],
+      );
+    });
+
+    // 采集链路的另一半：AppModel 必须把 addClipboardHistoryEntry 接到回调上。
+    // 上面的行为用例是自己装的捕获器，接不上生产装配也照样绿；这条源码守卫补上
+    // 那一环，删掉赋值行即红。
+    test('AppModel 仍把 addClipboardHistoryEntry 接到 onClipboardCaptured', () {
+      final String model =
+          File('lib/src/models/app_model.dart').readAsStringSync();
+      expect(
+        // Dart RegExp 的 \s 覆盖换行，故这条能跨行匹配 app_model.dart 里
+        // `onClipboardCaptured =` 换行再接 `addClipboardHistoryEntry;` 的写法。
+        model.contains(
+          RegExp(r'onClipboardCaptured\s*=\s*addClipboardHistoryEntry'),
+        ),
+        isTrue,
+        reason: '生产侧的采集装配丢了，复制历史又会永远为空（BUG-1145）',
+      );
+    });
   });
 }
 
