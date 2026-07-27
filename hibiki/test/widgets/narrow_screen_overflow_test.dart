@@ -268,28 +268,61 @@ void main() {
           ),
         ];
 
-    testWidgets('窄屏折成单个溢出菜单，给标题让出宽度', (WidgetTester tester) async {
-      late List<Widget> built;
+    /// 照两个合集详情页的真实写法搭台：整窗宽 [windowWidth]，但这条 AppBar 只拿到
+    /// [rowWidth] 的约束（分栏 / 受限宽容器）。返回 [LayoutBuilder] 实际观测到的
+    /// 约束宽，供用例断言「喂进折叠判据的确实是局部宽而不是整窗宽」。
+    Future<double> pumpAppBar(
+      WidgetTester tester, {
+      required double windowWidth,
+      required double rowWidth,
+    }) async {
+      double observedWidth = double.nan;
       await tester.pumpWidget(
         buildTestApp(
           MediaQuery(
-            data: const MediaQueryData(size: Size(320, 640)),
-            child: Builder(
-              builder: (BuildContext context) {
-                built = narrowAwareAppBarActions(
-                  context,
-                  collapsible: actions(),
-                );
-                return Row(children: built);
-              },
+            data: MediaQueryData(size: Size(windowWidth, 900)),
+            child: Center(
+              child: SizedBox(
+                width: rowWidth,
+                height: 400,
+                child: Scaffold(
+                  appBar: PreferredSize(
+                    preferredSize: const Size.fromHeight(kToolbarHeight),
+                    child: LayoutBuilder(
+                      builder: (BuildContext context, BoxConstraints c) {
+                        observedWidth = c.maxWidth;
+                        return AppBar(
+                          title: const Text('合集名'),
+                          actions: narrowAwareAppBarActions(
+                            availableWidth: c.maxWidth,
+                            collapsible: actions(),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  body: const SizedBox.shrink(),
+                ),
+              ),
             ),
           ),
         ),
       );
       await tester.pump();
+      return observedWidth;
+    }
 
-      expect(built.length, 1, reason: '三个动作必须折成一个溢出菜单（BUG-1184）');
-      expect(find.byType(PopupMenuButton<int>), findsOneWidget);
+    testWidgets('窄屏折成单个溢出菜单，给标题让出宽度', (WidgetTester tester) async {
+      final double observed = await pumpAppBar(
+        tester,
+        windowWidth: 320,
+        rowWidth: 320,
+      );
+
+      expect(observed, 320);
+      expect(find.byType(PopupMenuButton<int>), findsOneWidget,
+          reason: '三个动作必须折成一个溢出菜单（BUG-1184）');
+      expect(find.byIcon(Icons.drive_file_rename_outline), findsNothing);
       // 折叠后动作一个都不能少：菜单里必须仍能找到全部三条。
       await tester.tap(find.byType(PopupMenuButton<int>));
       await tester.pumpAndSettle();
@@ -298,28 +331,37 @@ void main() {
       expect(find.text('删除'), findsOneWidget);
     });
 
-    testWidgets('宽屏保持逐个平铺（零行为变化）', (WidgetTester tester) async {
-      late List<Widget> built;
-      await tester.pumpWidget(
-        buildTestApp(
-          MediaQuery(
-            data: const MediaQueryData(size: Size(1200, 900)),
-            child: Builder(
-              builder: (BuildContext context) {
-                built = narrowAwareAppBarActions(
-                  context,
-                  collapsible: actions(),
-                );
-                return Row(children: built);
-              },
-            ),
-          ),
-        ),
+    testWidgets('窗口很宽但这条 AppBar 只有 360 时，仍按窄屏折叠', (WidgetTester tester) async {
+      final double observed = await pumpAppBar(
+        tester,
+        windowWidth: 1200,
+        rowWidth: 360,
       );
-      await tester.pump();
 
-      expect(built.length, 3);
+      expect(observed, 360, reason: '判据必须取 AppBar 的局部约束宽');
+      expect(
+        find.byType(PopupMenuButton<int>),
+        findsOneWidget,
+        reason: 'BUG-1186：折叠判据曾读 MediaQuery 的整窗宽（1200，不算窄），'
+            '于是分栏 / 受限宽容器里三个动作照样平铺，把合集名挤没。'
+            '真正决定塞不塞得下的是这条 AppBar 自己拿到的 360',
+      );
+      expect(find.byIcon(Icons.drive_file_rename_outline), findsNothing);
+    });
+
+    testWidgets('宽屏保持逐个平铺（零行为变化）', (WidgetTester tester) async {
+      final double observed = await pumpAppBar(
+        tester,
+        windowWidth: 1200,
+        rowWidth: 700,
+      );
+
+      expect(observed, 700);
       expect(find.byType(PopupMenuButton<int>), findsNothing);
+      expect(find.byIcon(Icons.drive_file_rename_outline), findsOneWidget,
+          reason: '宽屏必须零行为变化：三个动作逐个平铺');
+      expect(find.byIcon(Icons.sell_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.delete_outline), findsOneWidget);
     });
   });
 

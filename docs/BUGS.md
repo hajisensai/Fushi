@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1149 条。点号进各自文件。
+> 共 1150 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1186](bugs/BUG-1186-appbar-actions-collapse-uses-window-width.md) | ✅ | ✅ | AppBar 动作折叠判据读整窗宽，分栏/受限宽容器里永不折叠 |
 | [BUG-1185](bugs/BUG-1185-remote-mining-duplicate-auth-swallowed.md) | ✅ | ✅ | 远端制卡查重吞掉认证失败，静默答「不重复」 |
 | [BUG-1184](bugs/BUG-1184-narrow-screen-segmented-clipped.md) | ✅ | ✅ | 窄屏/小窗口下多处内容显示不全（说明文字、分段控件、书名、对话框标题） |
 | [BUG-1183](bugs/BUG-1183-restore-auth-invalidates-session.md) | ✅ | ✅ | restoreAuth 无条件作废已解析地址，每次切页面重跑全候选探测 |
