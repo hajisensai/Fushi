@@ -114,74 +114,80 @@ class _HibikiTagFilterBarState extends ConsumerState<HibikiTagFilterBar> {
           ),
         ),
       ),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.symmetric(
-          horizontal: tokens.spacing.rowHorizontal,
-          vertical: tokens.spacing.gap * 0.75,
-        ),
-        itemCount: widget.tags.length + trailing.length,
-        separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.gap * 0.75),
-        itemBuilder: (context, index) {
-          if (index >= widget.tags.length) {
-            return trailing[index - widget.tags.length];
-          }
-          final BookTagRow tag = widget.tags[index];
-          final bool isSelected = selectedIds.contains(tag.id);
-          if (widget.selectionMode) {
-            return _tagFilterChip(
-              tag: tag,
-              isSelected: isSelected,
-              isDimmed: false,
-              onTap: () => widget.onToggleFilter(tag.id),
-            );
-          }
-          return LongPressDraggable<BookTagRow>(
-            data: tag,
-            feedback: Material(
-              color: Colors.transparent,
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: tokens.radii.chipRadius,
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: _tagFilterChip(
-                tag: tag,
-                isSelected: true,
-                isDimmed: false,
-              ),
-            ),
-            childWhenDragging: Opacity(
-              opacity: 0.3,
-              child: _tagFilterChip(
+      // 标签多了必须横向拖动才够用，而桌面默认 dragDevices 不含鼠标（拖不动，
+      // 只能滚轮）。放开鼠标拖动与区内标签 chip 的 LongPressDraggable 不冲突：
+      // 按下即动归滚动、按住不动满 kLongPressTimeout 归拖标签。
+      child: HorizontalDragScrollable(
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.rowHorizontal,
+            vertical: tokens.spacing.gap * 0.75,
+          ),
+          itemCount: widget.tags.length + trailing.length,
+          separatorBuilder: (_, __) =>
+              SizedBox(width: tokens.spacing.gap * 0.75),
+          itemBuilder: (context, index) {
+            if (index >= widget.tags.length) {
+              return trailing[index - widget.tags.length];
+            }
+            final BookTagRow tag = widget.tags[index];
+            final bool isSelected = selectedIds.contains(tag.id);
+            if (widget.selectionMode) {
+              return _tagFilterChip(
                 tag: tag,
                 isSelected: isSelected,
                 isDimmed: false,
+                onTap: () => widget.onToggleFilter(tag.id),
+              );
+            }
+            return LongPressDraggable<BookTagRow>(
+              data: tag,
+              feedback: Material(
+                color: Colors.transparent,
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: tokens.radii.chipRadius,
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: _tagFilterChip(
+                  tag: tag,
+                  isSelected: true,
+                  isDimmed: false,
+                ),
               ),
-            ),
-            child: DragTarget<BookTagRow>(
-              onWillAcceptWithDetails: (details) => details.data.id != tag.id,
-              onAcceptWithDetails: (details) {
-                final BookTagRow draggedTag = details.data;
-                final int oldIdx =
-                    widget.tags.indexWhere((t) => t.id == draggedTag.id);
-                final int newIdx =
-                    widget.tags.indexWhere((t) => t.id == tag.id);
-                if (oldIdx != -1 && newIdx != -1) {
-                  widget.onReorder(oldIdx, newIdx);
-                }
-              },
-              builder: (context, candidateData, rejectedData) {
-                return _tagFilterChip(
+              childWhenDragging: Opacity(
+                opacity: 0.3,
+                child: _tagFilterChip(
                   tag: tag,
                   isSelected: isSelected,
-                  isDimmed: candidateData.isNotEmpty,
-                  onTap: () => widget.onToggleFilter(tag.id),
-                );
-              },
-            ),
-          );
-        },
+                  isDimmed: false,
+                ),
+              ),
+              child: DragTarget<BookTagRow>(
+                onWillAcceptWithDetails: (details) => details.data.id != tag.id,
+                onAcceptWithDetails: (details) {
+                  final BookTagRow draggedTag = details.data;
+                  final int oldIdx =
+                      widget.tags.indexWhere((t) => t.id == draggedTag.id);
+                  final int newIdx =
+                      widget.tags.indexWhere((t) => t.id == tag.id);
+                  if (oldIdx != -1 && newIdx != -1) {
+                    widget.onReorder(oldIdx, newIdx);
+                  }
+                },
+                builder: (context, candidateData, rejectedData) {
+                  return _tagFilterChip(
+                    tag: tag,
+                    isSelected: isSelected,
+                    isDimmed: candidateData.isNotEmpty,
+                    onTap: () => widget.onToggleFilter(tag.id),
+                  );
+                },
+              ),
+            );
+          },
+        ),
       ),
     );
   }

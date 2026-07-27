@@ -6,6 +6,7 @@ import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/shortcuts/visual/gamepad_button_widget.dart';
 import 'package:hibiki/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:hibiki/src/shortcuts/visual/reverse_binding_index.dart';
+import 'package:hibiki/src/utils/misc/platform_utils.dart';
 
 /// 单个手柄按钮在整图上的纯数据描述（TODO-942）。
 ///
@@ -230,9 +231,11 @@ class GamepadLayoutView extends StatelessWidget {
           );
         }
         // 窄屏：固定理想宽 + 横向滚动兜底（照 KeyboardLayoutView 的窄屏模式）。
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: _buildFigure(context, index, specs, idealFigureWidth),
+        return HorizontalDragScrollable(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: _buildFigure(context, index, specs, idealFigureWidth),
+          ),
         );
       },
     );

@@ -721,26 +721,29 @@ class VideoShaderTierSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: SegmentedButton<VideoShaderTier>(
-        segments: <ButtonSegment<VideoShaderTier>>[
-          for (final VideoShaderTierSpec spec in kVideoShaderTiers)
-            ButtonSegment<VideoShaderTier>(
-              value: spec.tier,
-              label: Text(shaderTierLabel(spec.tier)),
-            ),
-        ],
-        selected:
-            current == null ? <VideoShaderTier>{} : <VideoShaderTier>{current!},
-        emptySelectionAllowed: true,
-        showSelectedIcon: false,
-        multiSelectionEnabled: false,
-        onSelectionChanged: (Set<VideoShaderTier> selection) {
-          if (selection.isEmpty) return;
-          onSelect(selection.first);
-        },
+    return HorizontalDragScrollable(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: SegmentedButton<VideoShaderTier>(
+          segments: <ButtonSegment<VideoShaderTier>>[
+            for (final VideoShaderTierSpec spec in kVideoShaderTiers)
+              ButtonSegment<VideoShaderTier>(
+                value: spec.tier,
+                label: Text(shaderTierLabel(spec.tier)),
+              ),
+          ],
+          selected: current == null
+              ? <VideoShaderTier>{}
+              : <VideoShaderTier>{current!},
+          emptySelectionAllowed: true,
+          showSelectedIcon: false,
+          multiSelectionEnabled: false,
+          onSelectionChanged: (Set<VideoShaderTier> selection) {
+            if (selection.isEmpty) return;
+            onSelect(selection.first);
+          },
+        ),
       ),
     );
   }

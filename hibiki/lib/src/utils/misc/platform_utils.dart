@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hibiki/src/utils/app_ui_scale.dart';
@@ -63,6 +64,39 @@ ScrollPhysics desktopAwareScrollPhysics() {
   return md3Desktop
       ? const AlwaysScrollableScrollPhysics(parent: ClampingScrollPhysics())
       : const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics());
+}
+
+/// 让**横向**滚动区接受鼠标 / 触控板 / 触笔的拖动滚动。
+///
+/// Flutter 桌面的默认 `MaterialScrollBehavior.dragDevices` 不含
+/// [PointerDeviceKind.mouse]：横排合集行、标签筛选栏、分段按钮条这类横向滚动区，
+/// 用鼠标左键按住左右拖会**毫无反应**（用户实报），只能靠滚轮。这里显式放开鼠标 /
+/// 触控板 / 触笔拖动，触屏行为不变。
+///
+/// 只包横向滚动区，**刻意不做成全局 `MaterialApp.scrollBehavior`**：垂直网格若
+/// 也放开鼠标拖动滚动，会与卡片拖拽（`MediaCardDraggable` 里的 [Draggable]）抢
+/// 手势竞技场，把「拖卡进合集」变成「拖动网格滚动」。横向区没有这个冲突——横拖
+/// 归滚动、纵拖归拖卡，两者都要过 `kTouchSlop`、方向先满足者胜，正好是自然分工。
+///
+/// 同理，区内若有 `LongPressDraggable`（标签 chip）也不冲突：按下即动归滚动、
+/// 按住不动满 `kLongPressTimeout` 归拖拽。
+class HorizontalDragScrollable extends StatelessWidget {
+  const HorizontalDragScrollable({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(
+          dragDevices: const <PointerDeviceKind>{
+            PointerDeviceKind.touch,
+            PointerDeviceKind.mouse,
+            PointerDeviceKind.stylus,
+            PointerDeviceKind.trackpad,
+          },
+        ),
+        child: child,
+      );
 }
 
 enum WindowSizeClass { compact, medium, expanded }

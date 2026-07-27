@@ -1909,12 +1909,14 @@ class _HibikiPageHeaderRow extends StatelessWidget {
             ..add(
               ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: maxActionsWidth),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  physics: const ClampingScrollPhysics(),
-                  child: HibikiHeaderLabelScope(
-                    expandLabels: expandLabels,
-                    child: actions!,
+                child: HorizontalDragScrollable(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const ClampingScrollPhysics(),
+                    child: HibikiHeaderLabelScope(
+                      expandLabels: expandLabels,
+                      child: actions!,
+                    ),
                   ),
                 ),
               ),
@@ -2137,12 +2139,14 @@ class HibikiToolScaffold extends StatelessWidget {
                           ConstrainedBox(
                             constraints:
                                 BoxConstraints(maxWidth: maxActionsWidth),
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              reverse: true,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: actions,
+                            child: HorizontalDragScrollable(
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                reverse: true,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: actions,
+                                ),
                               ),
                             ),
                           ),

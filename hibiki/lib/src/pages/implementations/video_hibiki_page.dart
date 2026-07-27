@@ -4632,21 +4632,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         alignment: slot == VideoControlSlot.topRight
             ? Alignment.centerRight
             : Alignment.centerLeft,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          reverse: slot == VideoControlSlot.topRight,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: slot == VideoControlSlot.topRight
-                ? MainAxisAlignment.end
-                : MainAxisAlignment.start,
-            children: <Widget>[
-              for (final VideoControlItem item in items)
-                if (item == VideoControlItem.title)
-                  _topBarInlineTitle(slot)
-                else
-                  buttonFor(item),
-            ],
+        child: HorizontalDragScrollable(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            reverse: slot == VideoControlSlot.topRight,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: slot == VideoControlSlot.topRight
+                  ? MainAxisAlignment.end
+                  : MainAxisAlignment.start,
+              children: <Widget>[
+                for (final VideoControlItem item in items)
+                  if (item == VideoControlItem.title)
+                    _topBarInlineTitle(slot)
+                  else
+                    buttonFor(item),
+              ],
+            ),
           ),
         ),
       ),

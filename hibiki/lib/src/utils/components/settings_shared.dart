@@ -10,6 +10,7 @@ import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_dropdown.dart';
+import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/components/hibiki_focusable.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/components/hibiki_option_selection_page.dart';
@@ -1002,9 +1003,11 @@ class _SegmentedStripHost extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget scrolling = SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: strip,
+    final Widget scrolling = HorizontalDragScrollable(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: strip,
+      ),
     );
 
     // Inline strips never stretch (they would crowd the label); keep the old

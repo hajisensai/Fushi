@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -152,17 +151,9 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
           SizedBox(
             height: widget.rowHeight,
             // 桌面默认 MaterialScrollBehavior 的 dragDevices 不含鼠标——横排行用
-            // 鼠标左右拖会毫无反应（用户实报）。显式放开 mouse/trackpad/stylus
-            // 拖动；触屏行为不变。
-            child: ScrollConfiguration(
-              behavior: ScrollConfiguration.of(context).copyWith(
-                dragDevices: <PointerDeviceKind>{
-                  PointerDeviceKind.touch,
-                  PointerDeviceKind.mouse,
-                  PointerDeviceKind.stylus,
-                  PointerDeviceKind.trackpad,
-                },
-              ),
+            // 鼠标左右拖会毫无反应（用户实报）。共享件统一放开 mouse/trackpad/
+            // stylus 拖动；触屏行为不变。
+            child: HorizontalDragScrollable(
               child: ListView.separated(
                 controller: _controller,
                 scrollDirection: Axis.horizontal,
