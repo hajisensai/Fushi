@@ -206,4 +206,22 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   @override
   Future<bool> createNoteType(AnkiNoteTypeTemplate template) =>
       _local.createNoteType(template);
+
+  // Lapis 模板读写也是配置类：委派本地仓库（设置页在「制卡到已配对设备」
+  // 开启时仍配置/备份/客制化本机 Anki 的模板，与 createNoteType 同语义）。
+  @override
+  bool get supportsNoteTypeEditing => _local.supportsNoteTypeEditing;
+
+  @override
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(String modelName) =>
+      _local.readNoteTypeDefinition(modelName);
+
+  @override
+  Future<bool> updateNoteTypeStyling(String modelName, String css) =>
+      _local.updateNoteTypeStyling(modelName, css);
+
+  @override
+  Future<bool> updateNoteTypeTemplates(
+          String modelName, List<AnkiCardTemplate> templates) =>
+      _local.updateNoteTypeTemplates(modelName, templates);
 }
