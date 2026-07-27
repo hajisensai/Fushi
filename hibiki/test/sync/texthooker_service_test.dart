@@ -163,4 +163,133 @@ void main() {
     TexthookerService.instance.clear();
     expect(TexthookerService.instance.textThreads, isEmpty);
   });
+
+  test('text-bearing threads sort before freshly-discovered 0-line threads',
+      () {
+    final DateTime base = DateTime(2026, 7, 26, 12);
+    // 有台词的线程先出现（较早）……
+    TexthookerService.instance.appendLine(
+      '当前台词',
+      textThreadKey: 'luna:voice',
+      textThreadLabel: 'KiriKiriZ · 0xa74600',
+      receivedAt: base,
+    );
+    // ……随后一条 ThreadCreate 把 0 行线程的 latestAt 顶到更晚（旧排序会让它排最前）。
+    TexthookerService.instance.registerTextThread(
+      key: 'luna:empty',
+      label: 'TextRender · 0x9c7c571',
+      discoveredAt: base.add(const Duration(seconds: 5)),
+    );
+
+    final List<TexthookerTextThread> threads =
+        TexthookerService.instance.textThreads;
+    expect(threads, hasLength(2));
+    expect(threads.first.key, 'luna:voice',
+        reason: '有台词的线程必须排在刚发现的 0 行线程之前，即便后者 latestAt 更晚');
+    expect(threads.last.key, 'luna:empty');
+  });
+
+  test('threads with audio sort ahead of text-only threads of equal recency',
+      () {
+    final DateTime at = DateTime(2026, 7, 26, 13);
+    TexthookerService.instance.appendLine(
+      '无音频行',
+      textThreadKey: 'luna:textonly',
+      textThreadLabel: 'A',
+      receivedAt: at,
+    );
+    final TexthookerLineEntry withAudio = TexthookerService.instance.appendLine(
+      '有音频行',
+      textThreadKey: 'luna:withaudio',
+      textThreadLabel: 'B',
+      receivedAt: at,
+    )!;
+    TexthookerService.instance.updateLineAudio(
+      withAudio.id,
+      status: TexthookerLineAudioStatus.matched,
+    );
+
+    expect(TexthookerService.instance.textThreads.first.key, 'luna:withaudio');
+  });
+
+  group('foldRepeatedTextForPreview', () {
+    test('collapses a short unit repeated many times', () {
+      expect(foldRepeatedTextForPreview('アトリアトリアトリ'), 'アトリ');
+      expect(foldRepeatedTextForPreview('文本文本'), '文本');
+      expect(foldRepeatedTextForPreview('ABAB'), 'AB');
+    });
+
+    test('collapses long runs of one grapheme', () {
+      expect(foldRepeatedTextForPreview('靴靴靴靴靴'), '靴');
+      // 混合垃圾：长游程收成单字，可读性大幅提升（不追求完美复原）。
+      expect(
+        foldRepeatedTextForPreview('靴靴靴靴靴ををを脱脱脱'),
+        '靴を脱',
+      );
+    });
+
+    test('leaves normal Japanese sentences untouched', () {
+      const String s = '靴を脱いで裸足になったアトリの足の間を魚が泳いでいく。';
+      expect(foldRepeatedTextForPreview(s), s);
+    });
+
+    test('empty / single grapheme are returned as-is', () {
+      expect(foldRepeatedTextForPreview(''), '');
+      expect(foldRepeatedTextForPreview('あ'), 'あ');
+    });
+  });
+
+  group('collapseTexthookerPreview', () {
+    test('folds repetition before whitespace collapse and truncation', () {
+      expect(collapseTexthookerPreview('アトリアトリアトリ'), 'アトリ');
+    });
+
+    test('truncates by grapheme with an ellipsis', () {
+      final String long = 'あ' * 50;
+      final String preview = collapseTexthookerPreview(long, maxCharacters: 40);
+      // 折叠后 'あ'*50 的长游程收成单字 'あ'，不再触发截断。
+      expect(preview, 'あ');
+    });
+
+    test('a non-repeating long line is truncated to maxCharacters + ellipsis',
+        () {
+      const String base = '零一二三四五六七八九';
+      final String long = base * 5; // 50 graphemes, no run/period match
+      final String preview = collapseTexthookerPreview(long, maxCharacters: 40);
+      // base*5 恰为周期串 → 折叠成 base（10 字），因此不截断。
+      expect(preview, base);
+    });
+  });
+
+  group('assignThreadDisplayLabels', () {
+    TexthookerTextThread thread(String key, String label) =>
+        TexthookerTextThread(
+          key: key,
+          label: label,
+          lineCount: 0,
+          latestAt: DateTime(2026, 7, 26),
+        );
+
+    test('unique labels are returned unchanged', () {
+      final Map<String, String> labels =
+          assignThreadDisplayLabels(<TexthookerTextThread>[
+        thread('a', 'KiriKiriZ · 0xa74600'),
+        thread('b', 'TextRender · 0x9c7c571'),
+      ]);
+      expect(labels['a'], 'KiriKiriZ · 0xa74600');
+      expect(labels['b'], 'TextRender · 0x9c7c571');
+    });
+
+    test('duplicate labels get #N suffixes in input order', () {
+      final Map<String, String> labels =
+          assignThreadDisplayLabels(<TexthookerTextThread>[
+        thread('a', 'TextRender · 0x9c7c571'),
+        thread('b', 'TextRender · 0x9c7c571'),
+        thread('c', 'TextRender · 0x9c7c571'),
+      ]);
+      expect(labels['a'], 'TextRender · 0x9c7c571 #1');
+      expect(labels['b'], 'TextRender · 0x9c7c571 #2');
+      expect(labels['c'], 'TextRender · 0x9c7c571 #3');
+    });
+  });
 }

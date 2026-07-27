@@ -1,0 +1,9 @@
+## BUG-1129 · 文本线程列表对齐 Luna 选择文本：预览折叠/排序/重名消歧 + TextRender 0 行
+- **报告**：2026-07-26（用户：截图反馈——「全部文本线程」列表满是逐字累积垃圾预览、大量同名 `· 0` 线程、TextRender 线程 0 行）
+- **真实性**：✅ 真 bug（Dart 侧三项）。① 预览无清洗：`collapseTexthookerPreview`（`hibiki/lib/src/sync/texthooker_service.dart`）此前只 `\s+`→空格 + trim，KiriKiriZ 逐字重绘（`「「「満「満ち…`、`靴靴靴靴靴ををを…`）、EmbedKrkrZ 双写原样展示。② 排序把 0 行线程顶到最前：`textThreads` getter 只按 `latestAt` 降序，而每个 ThreadCreate 都把一条 0 行线程的 `latestAt` 顶到当下（`registerTextThread`），压过正在出台词的线程。③ 重名线程刷屏：线程 label 只含 hookName+地址（`galgame_audio_source.dart:1750-1763`），同一 hook 面在不同调用上下文（ctx/ctx2，参与 key 不参与 label）会报成多条 label 完全相同的 `TextRender · 0x… · 0`。
+- **[x] ① 已修复** — `hibiki/lib/src/sync/texthooker_service.dart`：
+  - 新增纯函数 `foldRepeatedTextForPreview`（整串周期折叠 `アトリアトリアトリ`→`アトリ` / `文本文本`→`文本` / `ABAB`→`AB`，长游程折叠 `靴靴靴靴靴`→`靴`），`collapseTexthookerPreview` 先折叠再截断——**仅用于预览展示，不改任何行文本/制卡内容**。
+  - `textThreads` 排序改 `_compareTextThreads`：有台词线程恒排在 0 行线程之前，其次句音行数多者优先，再次最近活跃者优先。
+  - 新增纯函数 `assignThreadDisplayLabels`：重名 label 追加 `#N` 序号，`texthooker_page.dart` 下拉用它渲染，消除一整列一模一样的 `TextRender · 0x… · 0`。
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/texthooker_service_test.dart` 新增：`foldRepeatedTextForPreview`（周期/长游程/正常句不动/空串）、`collapseTexthookerPreview`（折叠+截断）、`assignThreadDisplayLabels`（唯一不动 / 重名 `#N`）、排序两条（有台词优先、有音频优先）。
+- **备注**：**TextRender 0 行本身是 native/LunaHook 层问题，本轮 Dart PR 未修**——`LunaTextSelector::ShouldWrite`（`hibiki-hook/include/luna_text_selector.h:63-97`）在自动赢家锁定后只放行赢家 hookcode，且伪影门 `if (artifact) return false`（`:94`）在手动选择之前，手动选也绕不过；双写折叠只对 `EmbedKrkrZ` 硬编码生效（`:25-31`）。要让 TextRender 线程始终能出文本（对齐 Luna「选择文本」把每个线程清洗后展示、由用户选显示/内嵌），需改 hibiki-hook：`ShouldWrite` 恒放行（或加 `publish_all` 标志）并把「选哪条 / 折叠 / 丢弃」下移到 Dart，`if (artifact)` 改为置 `event_flags` 伪影位而非丢弃。该改动在独立仓库、需 x86/x64 双架构构建 + 真机验证，属后续 hibiki-hook 任务，未在本环境完成（`implemented_unverified`）。相关：BUG-960（线程目录透传）、BUG-944（线程选择器）。

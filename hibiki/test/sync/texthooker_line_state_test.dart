@@ -227,14 +227,20 @@ void main() {
 
     test('预览折叠空白并按字素簇截断', () {
       expect(collapseTexthookerPreview('  多行\n台词\t文本  '), '多行 台词 文本');
-      final String long = 'あ' * 50;
+      final String repeated = 'あ' * 50;
+      expect(collapseTexthookerPreview(repeated), 'あ',
+          reason: '逐字重绘产生的长单字游程应先折叠');
+      final String long = List<String>.generate(
+        50,
+        (int index) => String.fromCharCode(0x4e00 + index),
+      ).join();
       final String out = collapseTexthookerPreview(long);
       expect(out.characters.length, 41, reason: '40 字素 + 省略号');
       expect(out.endsWith('…'), isTrue);
       // 截断不劈开代理对（emoji 是双 code unit）。
       final String emoji = '😀' * 45;
       final String cut = collapseTexthookerPreview(emoji);
-      expect(cut.characters.take(40).every((String c) => c == '😀'), isTrue);
+      expect(cut, '😀', reason: '重复 emoji 游程也按字素簇折叠');
     });
   });
 }
