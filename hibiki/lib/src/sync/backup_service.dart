@@ -123,7 +123,11 @@ String rebasePath(String oldPath, String oldRoot, String newRoot) {
 /// importing device's root differs, so the stored absolute paths would not
 /// resolve and the fonts (shown as imported & enabled) would silently never
 /// apply (BUG-183). Import rebases them so the reader/AppFontLoader find them.
-String rebaseFontListJson(String json, String oldRoot, String newRoot) {
+String rebaseFontListJson(String json, String oldRoot, String newRoot,
+    {String Function(String path)? rewritePath}) {
+  String rewrite(String path) => rewritePath == null
+      ? rebasePath(path, oldRoot, newRoot)
+      : rewritePath(path);
   try {
     final dynamic decoded = jsonDecode(json);
     if (decoded is! List) return json;
@@ -133,7 +137,7 @@ String rebaseFontListJson(String json, String oldRoot, String newRoot) {
       if (path is! String) return e; // system font (null) or odd shape
       return <String, dynamic>{
         ...Map<String, dynamic>.from(e),
-        'path': rebasePath(path, oldRoot, newRoot),
+        'path': rewrite(path),
       };
     }).toList();
     return jsonEncode(out);
@@ -147,7 +151,11 @@ String rebaseFontListJson(String json, String oldRoot, String newRoot) {
 /// Target rows (`font_targets`) refer to catalog entries by id and do not carry
 /// paths, so preserving ids while rebasing catalog paths keeps targets valid.
 /// Malformed values are returned verbatim so a corrupt pref never aborts import.
-String rebaseFontCatalogJson(String json, String oldRoot, String newRoot) {
+String rebaseFontCatalogJson(String json, String oldRoot, String newRoot,
+    {String Function(String path)? rewritePath}) {
+  String rewrite(String path) => rewritePath == null
+      ? rebasePath(path, oldRoot, newRoot)
+      : rewritePath(path);
   try {
     final dynamic decoded = jsonDecode(json);
     if (decoded is! Map) return json;
@@ -161,7 +169,7 @@ String rebaseFontCatalogJson(String json, String oldRoot, String newRoot) {
       if (path is! String) return row;
       return <String, dynamic>{
         ...row,
-        'path': rebasePath(path, oldRoot, newRoot),
+        'path': rewrite(path),
       };
     }).toList();
     return jsonEncode(root);

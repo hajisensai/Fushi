@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1136 条。点号进各自文件。
+> 共 1137 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1174](bugs/BUG-1174-docroot-migrator-path-gaps.md) | ✅ | ✅ | 数据根迁移漏改 6 处路径 + 非幂等 + 无事务 |
 | [BUG-1173](bugs/BUG-1173-manga-ocr-cache-model-identity.md) | ✅ | ✅ | 漫画本地 OCR 缓存不含模型身份 |
 | [BUG-1172](bugs/BUG-1172-manga-lens-rotated-hit-aspect.md) | ✅ | ✅ | 漫画 Lens 旋转命中区在非方形页上算错 |
 | [BUG-1171](bugs/BUG-1171-manga-reader-progress-after-dispose.md) | ✅ | ✅ | 漫画阅读器销毁后仍写页码通知器并挂 10 秒 |
