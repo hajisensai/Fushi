@@ -298,7 +298,7 @@ class _FakeLibraryService implements HibikiLibraryHostService {
     final String key = _posKey(id, episodeIndex);
     final ({int positionMs, int updatedAtMs}) current =
         videoPositions[key] ?? (positionMs: 0, updatedAtMs: 0);
-    videoPositions[key] = resolveVideoPositionSync(
+    videoPositions[key] = resolvePositionLww(
       localPositionMs: current.positionMs,
       localUpdatedAtMs: current.updatedAtMs,
       remotePositionMs: positionMs < 0 ? 0 : positionMs,

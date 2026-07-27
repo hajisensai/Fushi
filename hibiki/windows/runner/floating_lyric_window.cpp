@@ -42,6 +42,11 @@ constexpr float kMaxStripHeightDip = 480.0f;
 // A press must travel this far (logical px) before it becomes a drag rather
 // than a word-lookup tap — lets the bar be dragged from anywhere on the text.
 constexpr float kDragThresholdDip = 6.0f;
+// 振假名相对基准字的字号比例，以及为它加高的行盒比例（相对注音字号）。
+// 0.45 是日文排版里 ruby 的常用比例（约基准的一半再收一点），行盒留 1.25 倍
+// 注音高度，假名与基准字之间因此有一条细缝，不会贴在一起。
+constexpr float kRubyFontScale = 0.45f;
+constexpr float kRubyLineGapScale = 1.25f;
 // Base logical font size the lyric text was authored at; the rendered font
 // scales with the bar height so growing the bar enlarges the text too.
 constexpr float kBaseStripHeightForFontDip = 96.0f;
@@ -346,8 +351,18 @@ bool FloatingLyricWindow::IsShowing() const {
 void FloatingLyricWindow::UpdateText(const std::wstring& text,
                                     int current_line_start,
                                     int current_line_length,
-                                    const std::string& context_id) {
+                                    const std::string& context_id,
+                                    const std::vector<RubySpan>& ruby_spans) {
   text_ = text;
+  // 注音区间只信任落在新文本范围内的那些：越界的一律丢掉，绝不让一段错位的
+  // 振假名飘在别的字上面（宁可不显示）。
+  ruby_spans_.clear();
+  const int text_length = static_cast<int>(text.size());
+  for (const RubySpan& span : ruby_spans) {
+    if (span.start < 0 || span.length <= 0 || span.ruby.empty()) continue;
+    if (span.start + span.length > text_length) continue;
+    ruby_spans_.push_back(span);
+  }
   context_id_ = context_id;
   current_line_start_ = current_line_start;
   current_line_length_ = current_line_length;
@@ -373,6 +388,7 @@ void FloatingLyricWindow::Highlight(int start, int length) {
 void FloatingLyricWindow::UpdateStyle(const Style& style) {
   style_ = style;
   text_format_.Reset();
+  ruby_format_.Reset();
   text_layout_.Reset();
   ApplyStyleWidth();
   RequestRender();
@@ -778,6 +794,7 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       // logical strip size and re-render so the text + controls follow.
       SyncStripSizeFromWindow();
       text_format_.Reset();
+      ruby_format_.Reset();
       text_layout_.Reset();
       RequestRender();
       return 0;
@@ -890,12 +907,18 @@ void FloatingLyricWindow::Render() {
   // enlarges the lyric text too. Hook mode does NOT (BUG-1095): its font size is
   // an independent user preference, so dragging the overlay taller buys visible
   // LINES instead of re-inflating the same two lines.
+  const float height_scale =
+      hook_text_mode_ ? 1.0f : strip_height_dip_ / kBaseStripHeightForFontDip;
+  const float scaled_font = static_cast<float>(style_.font_size) *
+                            std::max(0.5f, height_scale);
+  // 注音字号与行盒加高量（物理 px）。ruby_spans_ 为空时下面所有注音分支都不执行，
+  // 排版与绘制逐像素回到引入注音之前。
+  const float ruby_font_px =
+      static_cast<float>(ScaleForDpi(scaled_font * kRubyFontScale));
+  const float ruby_gap_px = ruby_font_px * kRubyLineGapScale;
+  const bool has_ruby = !ruby_spans_.empty();
+
   if (text_format_ == nullptr) {
-    const float height_scale =
-        hook_text_mode_ ? 1.0f
-                        : strip_height_dip_ / kBaseStripHeightForFontDip;
-    const float scaled_font = static_cast<float>(style_.font_size) *
-                              std::max(0.5f, height_scale);
     dwrite_factory_->CreateTextFormat(
         L"Yu Gothic UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
         DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
@@ -909,6 +932,21 @@ void FloatingLyricWindow::Render() {
                           : DWRITE_WORD_WRAPPING_NO_WRAP);
     }
     text_layout_.Reset();
+  }
+
+  // 振假名的小号 format：居中 + 不换行。注音比基准字窄时居中压在基准上方；比
+  // 基准宽时向两侧对称溢出（DrawText 不带 CLIP 选项不会自己裁，外层已经用
+  // PushAxisAlignedClip 把一切文字绘制框在 text_rect_ 里，绝不会画到控件带上）。
+  if (has_ruby && ruby_format_ == nullptr) {
+    dwrite_factory_->CreateTextFormat(
+        L"Yu Gothic UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+        DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, ruby_font_px,
+        L"", ruby_format_.GetAddressOf());
+    if (ruby_format_ != nullptr) {
+      ruby_format_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+      ruby_format_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+      ruby_format_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+    }
   }
 
   const float pad = ScaleForDpi(kHorizontalPaddingDip);
@@ -934,6 +972,25 @@ void FloatingLyricWindow::Render() {
                                         text_format_.Get(), text_rect_.width,
                                         text_rect_.height,
                                         text_layout_.GetAddressOf());
+      // 有注音就把每行的行盒整体加高、基线整体下压 ruby_gap_px：多出来的空间
+      // 正好落在每行字的**正上方**，注音画进去既不遮基准字，也不会压到上一行。
+      // 只加高、不改宽，所以自动折行的断点与没有注音时完全一致。
+      if (has_ruby && text_layout_ != nullptr) {
+        // 先问行数再按数分配：缓冲区不足时 DirectWrite 只回填 actualLineCount，
+        // 并不写入 metrics，拿一个未初始化的行高去设行距会直接把排版搞乱。
+        UINT32 line_count = 0;
+        text_layout_->GetLineMetrics(nullptr, 0, &line_count);
+        if (line_count > 0) {
+          std::vector<DWRITE_LINE_METRICS> lines(line_count);
+          if (SUCCEEDED(text_layout_->GetLineMetrics(lines.data(), line_count,
+                                                     &line_count)) &&
+              line_count > 0) {
+            text_layout_->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM,
+                                         lines[0].height + ruby_gap_px,
+                                         lines[0].baseline + ruby_gap_px);
+          }
+        }
+      }
     }
     if (text_layout_ != nullptr) {
       // BUG-1095: with scrolling added (phase 2) the strip no longer loses the
@@ -1045,6 +1102,42 @@ void FloatingLyricWindow::Render() {
       render_target_->DrawTextLayout(
           D2D1::Point2F(text_rect_.left, text_origin_y), text_layout_.Get(),
           brush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
+
+      // 振假名：画在基准字所在行盒的顶部那条留白里（行距已在建 layout 时加高）。
+      //
+      // 几何全部问 text_layout_ 要，用的是高亮背景框同一套 HitTestTextRange —— 这
+      // 意味着注音不需要任何自己的排版：折行、居中、滚动偏移怎么动，注音就怎么
+      // 跟着动。text_ 里也**不含**任何注音字符，所以 CharIndexAt 的 textPosition、
+      // Highlight 的 range、dim 的 range 三个既有契约一个都没被碰。
+      //
+      // 一段注音跨行时（基准被折行切开）只取第一个矩形：把读音压在句首那半边，
+      // 比在两行上各画半个假名可读。
+      if (has_ruby && ruby_format_ != nullptr) {
+        for (const RubySpan& span : ruby_spans_) {
+          UINT32 hit_count = 0;
+          text_layout_->HitTestTextRange(static_cast<UINT32>(span.start),
+                                         static_cast<UINT32>(span.length), 0, 0,
+                                         nullptr, 0, &hit_count);
+          if (hit_count == 0) continue;
+          std::vector<DWRITE_HIT_TEST_METRICS> boxes(hit_count);
+          if (FAILED(text_layout_->HitTestTextRange(
+                  static_cast<UINT32>(span.start),
+                  static_cast<UINT32>(span.length), 0, 0, boxes.data(),
+                  hit_count, &hit_count)) ||
+              hit_count == 0) {
+            continue;
+          }
+          const DWRITE_HIT_TEST_METRICS& box = boxes[0];
+          const D2D1_RECT_F ruby_rect = D2D1::RectF(
+              text_rect_.left + box.left, text_origin_y + box.top,
+              text_rect_.left + box.left + box.width,
+              text_origin_y + box.top + ruby_gap_px);
+          render_target_->DrawTextW(
+              span.ruby.c_str(), static_cast<UINT32>(span.ruby.size()),
+              ruby_format_.Get(), ruby_rect, brush.Get(),
+              D2D1_DRAW_TEXT_OPTIONS_NONE);
+        }
+      }
       // BUG-1070: balance the PushAxisAlignedClip that fenced the text to
       // text_rect_ (must pop before the control band / toolbar is drawn so the
       // buttons are unaffected).

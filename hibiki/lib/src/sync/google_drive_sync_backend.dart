@@ -9,6 +9,7 @@ import 'package:hibiki/src/sync/google_drive_sync_space.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 
 class GoogleDriveSyncBackend extends SyncBackend {
@@ -114,7 +115,7 @@ class GoogleDriveSyncBackend extends SyncBackend {
       _wrapErrors(() => _drive.findOrCreateRootFolder());
 
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) =>
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) =>
       _wrapErrors(() => _drive.listBooks(rootFolderId));
 
   @override
@@ -132,7 +133,7 @@ class GoogleDriveSyncBackend extends SyncBackend {
   // ── Metadata sync ─────────────────────────────────────────────────
 
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) =>
+  Future<SyncFileTrio> listSyncFiles(String folderId) =>
       _wrapErrors(() => _drive.listSyncFiles(folderId));
 
   @override
@@ -212,7 +213,7 @@ class GoogleDriveSyncBackend extends SyncBackend {
           ));
 
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) =>
+  Future<SyncFileRef?> findContentFile(String folderId, String fileName) =>
       _wrapErrors(() => _drive.findContentFile(folderId, fileName));
 
   // ── Cache ─────────────────────────────────────────────────────────
@@ -237,7 +238,7 @@ class GoogleDriveSyncBackend extends SyncBackend {
   Map<String, String> get cachedFolderIds => _drive.cachedFolderIds;
 
   @override
-  void cacheBookFolderIds(List<DriveFile> folders) =>
+  void cacheBookFolderIds(List<SyncFileRef> folders) =>
       _drive.cacheBookFolderIds(folders);
 
   @override

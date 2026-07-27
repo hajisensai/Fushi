@@ -12,6 +12,7 @@ import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_routing.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/platform/clipboard_text_overlay_channel.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
+import 'package:hibiki/src/utils/misc/ruby_markup.dart';
 
 /// 背景不透明度（0.0–1.0）→ ARGB 背景色：alpha=opacity*255 的纯黑；opacity=0 即
 /// `0x00000000` 完全透明背景（文字始终由 native textColor 决定，恒实心）。纯函数，
@@ -68,14 +69,21 @@ class ClipboardTextOverlayController {
   /// 空文本忽略（不弹空窗）。
   Future<void> update(DesktopLookupRequest request) async {
     if (!_started) return;
-    final String text = request.text.trim();
+    // 注音标记已在 DesktopLookupService 侧剥掉，这里只剩最后一次 trim；用
+    // [RubyMarkupText.trimmed] 让注音区间跟着平移，而不是各自 trim 后错位。
+    final RubyMarkupText ruby =
+        RubyMarkupText(text: request.text, spans: request.rubySpans).trimmed();
+    final String text = ruby.text;
     if (text.isEmpty) return;
     await ClipboardTextOverlayChannel.show(
       bgColor: _bgColor(),
       textColor: _textColor(),
       windowTitle: t.clipboard_text_window_title,
     );
-    await ClipboardTextOverlayChannel.updateText(text);
+    await ClipboardTextOverlayChannel.updateText(
+      text,
+      rubySpans: ruby.toChannelSpans(),
+    );
     _visible = true;
   }
 

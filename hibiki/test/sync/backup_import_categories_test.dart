@@ -12,9 +12,9 @@ import 'temp_dir_cleanup.dart';
 /// TODO-1358: the export/import dialogs describe "what is inside" a backup and
 /// the overwrite import lets the user skip restoring individual sidecar file
 /// trees. This locks down (1) the pure archive manifest counter and (2) the
-/// per-category gating of [BackupService.importBackupFiles].
+/// per-category gating of [BackupService.restoreBackup].
 void main() {
-  group('summarizeBackupArchive (pure manifest)', () {
+  group('summarizeBackupEntries (pure manifest)', () {
     test('counts distinct dirs / files per category, normalizing separators',
         () {
       final List<String> names = <String>[
@@ -36,7 +36,7 @@ void main() {
         'localAudio/local_audio_2.db',
       ];
       final BackupContentSummary s =
-          BackupService.summarizeBackupArchive(names, null);
+          BackupService.summarizeBackupEntries(names, null);
       expect(s.countFor(BackupCategory.dictionary), 2);
       expect(s.countFor(BackupCategory.books), 2);
       expect(s.countFor(BackupCategory.audiobooks), 1);
@@ -68,7 +68,7 @@ void main() {
           '/src/c.mkv': 'uid2/1-c.mkv',
         },
       );
-      final BackupContentSummary s = BackupService.summarizeBackupArchive(
+      final BackupContentSummary s = BackupService.summarizeBackupEntries(
         <String>['videos/uid1/1-a.mp4'],
         meta,
       );
@@ -77,13 +77,13 @@ void main() {
 
     test('db-only archive marks nothing present', () {
       final BackupContentSummary s =
-          BackupService.summarizeBackupArchive(<String>['hibiki.db'], null);
+          BackupService.summarizeBackupEntries(<String>['hibiki.db'], null);
       expect(s.present, isEmpty);
       expect(s.countFor(BackupCategory.books), 0);
     });
   });
 
-  group('importBackupFiles per-category gating', () {
+  group('restoreBackup per-category gating', () {
     late Directory src;
     late Directory dst;
     setUp(() async {
@@ -144,7 +144,7 @@ void main() {
         audiobooksRootDirectory: audio,
       );
       final String zip = p.join(src.path, 'all.zip');
-      await service.exportBackup(zip); // null categories = everything
+      await service.createBackup(zip); // null categories = everything
       await db.close();
 
       final String dstDbDir = p.join(dst.path, 'db');
@@ -153,7 +153,7 @@ void main() {
       final String dstVideos = p.join(dst.path, 'videos');
       Directory(dstDbDir).createSync(recursive: true);
 
-      await BackupService.importBackupFiles(
+      await BackupService.restoreBackup(
         dbDirectory: dstDbDir,
         zipPath: zip,
         categories: <BackupCategory>{BackupCategory.books},

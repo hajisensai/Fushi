@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
@@ -36,23 +37,18 @@ class HighlightBridge {
     pink:   '--hoshi-hl-pink-mark',
     purple: '--hoshi-hl-purple-mark'
   };
-  window.__hibikiHighlightBg = '#ffffff';
+  // G14：背景深/浅由 Dart 侧单一真相（ReaderContentStyles.isDarkBackground，
+  // Rec.601/0.5）算好经 applyHighlights 注入；JS 不再自带亮度公式（此前的
+  // Rec.709/0.4 与滚动条判定对同一背景色会得出不同深浅）。默认 false = 浅色，
+  // 与旧默认背景 #ffffff 的判定一致。
+  window.__hibikiHighlightBgDark = false;
   window.__hibikiCustomHighlightColor = null;
   window.__hibikiHighlightRangeMap = {};
   window.__hibikiHighlightRubyElements = [];
   window.__hibikiFallbackHighlightRubyMap = {};
 
-  function _luminance(hex) {
-    var h = hex.replace('#','');
-    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
-    var r = parseInt(h.substr(0,2),16)/255;
-    var g = parseInt(h.substr(2,2),16)/255;
-    var b = parseInt(h.substr(4,2),16)/255;
-    return 0.2126*r + 0.7152*g + 0.0722*b;
-  }
-
-  function _pickAlpha(colorName, bgLum) {
-    var dark = bgLum < 0.4;
+  function _pickAlpha(colorName) {
+    var dark = window.__hibikiHighlightBgDark === true;
     var alphas = {
       yellow: dark ? 0.45 : 0.35,
       green:  dark ? 0.40 : 0.30,
@@ -66,7 +62,7 @@ class HighlightBridge {
   function _hlColor(name) {
     if (window.__hibikiCustomHighlightColor) return window.__hibikiCustomHighlightColor;
     var rgb = BASE_COLORS[name] || BASE_COLORS.yellow;
-    var a = _pickAlpha(name, _luminance(window.__hibikiHighlightBg));
+    var a = _pickAlpha(name);
     return 'rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+a+')';
   }
 
@@ -535,11 +531,15 @@ class HighlightBridge {
           '[hoshi-hl] backfilled $backfillCount favorites via text search');
     }
     final String json = jsonEncode(payload);
-    final String escapedBg = jsonEncode(backgroundHex);
+    // G14：深/浅判定在 Dart 侧用与原生滚动条同一个单一真相
+    // （ReaderContentStyles.isDarkBackground，Rec.601/0.5）算好，注入 bool；
+    // JS 侧不再持有第二套亮度公式。
+    final bool backgroundIsDark =
+        ReaderContentStyles.isDarkBackground(backgroundHex);
     final String escapedCustom =
         customHighlightCss != null ? jsonEncode(customHighlightCss) : 'null';
     await controller.evaluateJavascript(
-      source: 'window.__hibikiHighlightBg=$escapedBg;'
+      source: 'window.__hibikiHighlightBgDark=$backgroundIsDark;'
           'window.__hibikiCustomHighlightColor=$escapedCustom;'
           'window.__hibikiApplyHighlights && window.__hibikiApplyHighlights($json);',
     );

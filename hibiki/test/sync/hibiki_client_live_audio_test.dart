@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
@@ -243,7 +243,7 @@ HibikiDatabase _testDb() =>
     HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 /// 把 url + token 写库，restoreAuth + authenticate，返回配好的 backend。
-Future<HibikiClientSyncBackend> _buildBackend({
+Future<InterconnectSyncBackend> _buildBackend({
   required String base,
   required String token,
 }) async {
@@ -256,8 +256,8 @@ Future<HibikiClientSyncBackend> _buildBackend({
   await repo.setHibikiClientToken(token);
 
   // fake probe：直接返回 true，不做真实探测（server 已在运行）。
-  final HibikiClientSyncBackend backend =
-      HibikiClientSyncBackend.withProbe((String url, String tok) async => true);
+  final InterconnectSyncBackend backend =
+      InterconnectSyncBackend.withProbe((String url, String tok) async => true);
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -292,7 +292,7 @@ void main() {
   // ── listRemoteLocalAudio ──────────────────────────────────────────────────
 
   test('listRemoteLocalAudio returns entry from host', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
 
     final List<RemoteLocalAudioInfo> result =
@@ -308,7 +308,7 @@ void main() {
 
   test('getRemoteLocalAudio downloads audio bytes to destination file',
       () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_audio_dl');
     final File dest = File('${tmp.path}/nhk.localaudio');
@@ -323,7 +323,7 @@ void main() {
   // ── putRemoteLocalAudio ───────────────────────────────────────────────────
 
   test('putRemoteLocalAudio uploads CJK-named audio to host', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_audio_ul');
     final File src = File('${tmp.path}/日本語音源.localaudio');
@@ -338,7 +338,7 @@ void main() {
   // ── deleteRemoteLocalAudio ────────────────────────────────────────────────
 
   test('deleteRemoteLocalAudio sends DELETE to host', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
 
     await backend.deleteRemoteLocalAudio('NHK ラジオ');
@@ -356,8 +356,8 @@ void main() {
     ]);
     await repo.setHibikiClientToken('wrong-token');
 
-    final HibikiClientSyncBackend backend =
-        HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+    final InterconnectSyncBackend backend =
+        InterconnectSyncBackend.withProbe((String u, String t) async => true);
     await backend.restoreAuth(repo);
     await expectLater(
       backend.listRemoteLocalAudio(),
@@ -368,7 +368,7 @@ void main() {
   // ── progress callback (local audio) ──────────────────────────────────────
 
   test('getRemoteLocalAudio reports progress callback', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_audio_prog');
     final File dest = File('${tmp.path}/nhk_prog.localaudio');
@@ -391,7 +391,7 @@ void main() {
   // ── listRemoteAudiobooks ──────────────────────────────────────────────────
 
   test('listRemoteAudiobooks returns entry from host', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
 
     final List<RemoteAudiobookInfo> result =
@@ -408,7 +408,7 @@ void main() {
 
   test('getRemoteAudiobook downloads audiobook bytes to destination file',
       () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_ab_dl');
     final File dest = File('${tmp.path}/neko_audio.audiobook');
@@ -423,7 +423,7 @@ void main() {
   // ── putRemoteAudiobook ────────────────────────────────────────────────────
 
   test('putRemoteAudiobook uploads CJK-named audiobook to host', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_ab_ul');
     final File src = File('${tmp.path}/新着有声書.audiobook');
@@ -438,7 +438,7 @@ void main() {
   // ── deleteRemoteAudiobook ─────────────────────────────────────────────────
 
   test('deleteRemoteAudiobook sends DELETE to host', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
 
     await backend.deleteRemoteAudiobook('吾輩は猫であるAudio');
@@ -456,8 +456,8 @@ void main() {
     ]);
     await repo.setHibikiClientToken('wrong-token');
 
-    final HibikiClientSyncBackend backend =
-        HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+    final InterconnectSyncBackend backend =
+        InterconnectSyncBackend.withProbe((String u, String t) async => true);
     await backend.restoreAuth(repo);
     await expectLater(
       backend.listRemoteAudiobooks(),
@@ -468,7 +468,7 @@ void main() {
   // ── progress callback (audiobooks) ───────────────────────────────────────
 
   test('getRemoteAudiobook reports progress callback', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_ab_prog');
     final File dest = File('${tmp.path}/neko_prog.audiobook');
@@ -488,7 +488,7 @@ void main() {
 
   test('putRemoteAudiobookPosition then remoteAudiobookPosition round-trips',
       () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
 
     await backend.putRemoteAudiobookPosition('吾輩は猫であるAudio', 88000, 4242);
@@ -502,7 +502,7 @@ void main() {
 
   test('remoteAudiobookPosition returns (0,0) when host has no record',
       () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final ({int positionMs, int updatedAtMs}) got =
         await backend.remoteAudiobookPosition('吾輩は猫であるAudio');

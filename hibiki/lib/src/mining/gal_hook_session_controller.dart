@@ -61,6 +61,86 @@ enum GalHookAudioBackend { none, gameResource, enginePcm, systemLoopback }
 /// 「后端是不是引擎 PCM」（[galTrackSelectionAffectsCapture]），不是「列表空不空」。
 enum GalTrackEmptyHint { generic, resourceMode, loopbackMode }
 
+/// 单句语音的合理时长上限（毫秒）。超过它的切片多半不是「一句台词」而是长段混音
+/// （典型：制卡时才收束的 loopback 回取，见 [_flushLoopbackFreeze]），入卡前换成
+/// [kGalOverlongSliceSuspectReason] 让 UI 亮黄提醒，而不是静默当正常语音。
+const int kGalOverlongSliceSuspectMs = 20000;
+
+/// 每个游戏的捕获选择记忆（跨会话持久化的真值放偏好表）。
+///
+/// 三项都用**弱指纹**而非会话内 id：`source_ptr` 每次启动都变、native 文本
+/// `thread_id` 混了 processId 同样每次都变，能跨会话锚住的只有
+/// [GalHookSessionController.trackFingerprint]（音轨创建序 + PCM 格式）与
+/// [GalHookSessionController.textThreadFingerprint]（LunaHook 的 hook code /
+/// 标签）。指纹可能漂或撞，因此恢复必须是**可见且一键可改**的：三项恢复各记一条
+/// 结构化事件，且工作台面板实时显示当前生效的选择。
+@immutable
+class GalCaptureMemory {
+  const GalCaptureMemory({
+    this.excludedTrackFingerprints = const <String>[],
+    this.voiceTrackFingerprint,
+    this.textThreadFingerprint,
+  });
+
+  factory GalCaptureMemory.fromJson(Map<Object?, Object?> json) {
+    final Object? excluded = json['excludedTracks'];
+    return GalCaptureMemory(
+      excludedTrackFingerprints: excluded is List
+          ? excluded.whereType<String>().toList(growable: false)
+          : const <String>[],
+      voiceTrackFingerprint: json['voiceTrack'] as String?,
+      textThreadFingerprint: json['textThread'] as String?,
+    );
+  }
+
+  /// 用户标记为 BGM 的音轨指纹集合。
+  final List<String> excludedTrackFingerprints;
+
+  /// 用户选定的会话语音轨指纹；null = 自动选源。
+  final String? voiceTrackFingerprint;
+
+  /// 用户选定的文本线程指纹；null = 自动选线程。
+  final String? textThreadFingerprint;
+
+  bool get isEmpty =>
+      excludedTrackFingerprints.isEmpty &&
+      voiceTrackFingerprint == null &&
+      textThreadFingerprint == null;
+
+  GalCaptureMemory copyWith({
+    List<String>? excludedTrackFingerprints,
+    String? voiceTrackFingerprint,
+    String? textThreadFingerprint,
+    bool clearVoiceTrack = false,
+    bool clearTextThread = false,
+  }) =>
+      GalCaptureMemory(
+        excludedTrackFingerprints:
+            excludedTrackFingerprints ?? this.excludedTrackFingerprints,
+        voiceTrackFingerprint: clearVoiceTrack
+            ? null
+            : voiceTrackFingerprint ?? this.voiceTrackFingerprint,
+        textThreadFingerprint: clearTextThread
+            ? null
+            : textThreadFingerprint ?? this.textThreadFingerprint,
+      );
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'excludedTracks': excludedTrackFingerprints,
+        if (voiceTrackFingerprint != null) 'voiceTrack': voiceTrackFingerprint,
+        if (textThreadFingerprint != null) 'textThread': textThreadFingerprint,
+      };
+}
+
+/// [GalCaptureMemory] 的持久化端口（由
+/// [GalHookSessionController.attachCaptureMemory] 注入）。gameKey 是启动 exe
+/// 全路径小写——只有 launch 路径有稳定游戏身份，attach（绑窗口）没有，不猜。
+typedef GalCaptureMemoryLoad = GalCaptureMemory Function(String gameKey);
+typedef GalCaptureMemorySave = void Function(
+  String gameKey,
+  GalCaptureMemory memory,
+);
+
 /// 会话级选轨 / 排除是否真的影响取音（纯函数，可单测）。
 ///
 /// 只有引擎 PCM 后端会走 `grabUtterance`，也只有它读
@@ -79,6 +159,67 @@ GalTrackEmptyHint galTrackEmptyHintFor(GalHookAudioBackend backend) =>
       GalHookAudioBackend.systemLoopback => GalTrackEmptyHint.loopbackMode,
       _ => GalTrackEmptyHint.generic,
     };
+
+/// 一次启动失败的**结构化原因**（BUG-1142）。
+///
+/// 存在的理由：[GalHookSessionController.launchGame] 曾经返回 `bool`，而它有五条
+/// `return false` 出口，其中四条**根本不设置任何原因**——会话被抢占那几条连
+/// [GalHookSessionState] 都不碰。于是 UI 只能事后去 state 里翻，翻到的是
+/// `injectorFailure == none` + `lastError == null`，最终甩给用户一句「游戏启动或捕获
+/// 失败」：一个字的可执行信息都没有，用户无法自愈，排障时也判断不出到底停在哪一步。
+///
+/// 原因是在 `return false` 那一刻被丢掉的，任何下游补丁都救不回来（下游只能拿到一个
+/// 比特）。所以修在返回类型上：**每条失败出口必须携带一个原因，由编译期强制**。
+enum GalHookLaunchFailureReason {
+  /// 未失败。
+  none,
+
+  /// 非 Windows 平台，整条 Hook 链不可用。
+  unsupportedPlatform,
+
+  /// 找不到与游戏架构匹配的 injector helper。
+  helperMissing,
+
+  /// 游戏没能起来，或早期注入失败且拿不到运行中的 PID。
+  /// native 诊断在 [GalHookLaunchResult.diagnostics] 里，必须一路带到 UI。
+  injectionFailed,
+
+  /// **这不是失败**：本次启动被更新的会话操作取代（用户又点了一次、切到附着捕获、
+  /// 或停止了捕获）。旧实现把它和真失败压成同一个 `false`，于是被取代的那次会抢先
+  /// 弹一句「启动失败」，把真正生效的那次结果盖掉——用户看到的失败其实来自一次
+  /// 已经作废的操作。
+  superseded,
+}
+
+/// [GalHookSessionController.launchGame] 的结构化结果（BUG-1142）。
+///
+/// 取代原来的 `bool`：成功只有一种，失败必须说明是哪一种，并把 native 诊断一起带走。
+@immutable
+class GalHookLaunchResult {
+  /// 启动成功（含「游戏在跑但音频降级」——那仍然是启动成功，降级由 outcome 分级表达）。
+  const GalHookLaunchResult.launched()
+      : reason = GalHookLaunchFailureReason.none,
+        diagnostics = const GalHookInjectorDiagnostics();
+
+  /// 启动未成功。[reason] 不得为 [GalHookLaunchFailureReason.none]——那正是本 bug 的
+  /// 形态：一个没有原因的失败。
+  const GalHookLaunchResult.failed(
+    this.reason, {
+    this.diagnostics = const GalHookInjectorDiagnostics(),
+  }) : assert(
+          reason != GalHookLaunchFailureReason.none,
+          'failed() 必须给出真实原因；启动成功请用 GalHookLaunchResult.launched()',
+        );
+
+  final GalHookLaunchFailureReason reason;
+
+  /// injector 的结构化诊断（分类原因 + 退出码 + stderr 尾部原文）。
+  /// 即便 [GalHookInjectorFailure] 归类不出来，这里的 stderr 尾部仍是唯一的一手证据，
+  /// 必须让它到达用户和日志，而不是像旧实现那样停在 controller 内部。
+  final GalHookInjectorDiagnostics diagnostics;
+
+  bool get launched => reason == GalHookLaunchFailureReason.none;
+}
 
 /// 一次「启动游戏」结束后**必须**告知用户的结果分级（BUG-1089，纯函数可单测）。
 ///
@@ -101,6 +242,10 @@ enum GalHookLaunchOutcome {
 
   /// 注入成功、窗口已绑定。
   running,
+
+  /// 本次启动被更新的操作取代：**不得向用户播报任何结果**。取代它的那次操作会播报
+  /// 自己的结果；这里再弹一句只会用一个作废操作的结局盖掉真实结局。
+  superseded,
 }
 
 /// 把一次启动的结果判成 [GalHookLaunchOutcome]（纯函数，无 i18n、无 IO）。
@@ -109,12 +254,17 @@ enum GalHookLaunchOutcome {
 /// `_activateTextWithLoopback`（文本 hook 就绪、音频用 Loopback）同样把 phase 设成
 /// `degraded`，但它显式把 injectorFailure 清成 [GalHookInjectorFailure.none]——那是
 /// 「有台词、音频兜底」的可接受模式，不该报成降级去烦用户。
+/// 被取代（[GalHookLaunchFailureReason.superseded]）先于一切判定：它既不是失败也不是
+/// 成功，而是「这次操作的结论已经作废」，唯一正确的处置是闭嘴。
 GalHookLaunchOutcome classifyGalHookLaunchOutcome({
-  required bool launched,
+  required GalHookLaunchResult result,
   required bool hasBoundWindow,
   required GalHookInjectorFailure injectorFailure,
 }) {
-  if (!launched) return GalHookLaunchOutcome.failed;
+  if (result.reason == GalHookLaunchFailureReason.superseded) {
+    return GalHookLaunchOutcome.superseded;
+  }
+  if (!result.launched) return GalHookLaunchOutcome.failed;
   if (!hasBoundWindow) return GalHookLaunchOutcome.windowMissing;
   if (injectorFailure != GalHookInjectorFailure.none) {
     return GalHookLaunchOutcome.degradedLoopback;
@@ -424,7 +574,27 @@ class GalHookSessionController extends ChangeNotifier {
   GalHookSessionState _state = const GalHookSessionState();
   GalHookSessionState get state => _state;
   List<TexthookerLineEntry> get lines => _textService.entries;
-  List<TexthookerTextThread> get textThreads => _textService.textThreads;
+  List<TexthookerTextThread> get textThreads =>
+      _textService.textThreadsSince(_state.sessionStartedAt);
+
+  /// 捕获工作台当前应展示的行。捕获中只看本次会话，避免上一个进程的 Luna 线程/台词
+  /// 混进当前选择；「全部线程」再折叠同一渲染瞬间的跨线程双写。底层 buffer 不删。
+  List<TexthookerLineEntry> get workbenchLines {
+    final DateTime? startedAt = _state.sessionStartedAt;
+    Iterable<TexthookerLineEntry> scoped =
+        _textService.entriesForTextThread(selectedTextThreadKey);
+    if (startedAt != null) {
+      scoped = scoped.where(
+        (TexthookerLineEntry entry) => !entry.receivedAt.isBefore(startedAt),
+      );
+    }
+    final List<TexthookerLineEntry> materialized =
+        scoped.toList(growable: false);
+    return selectedTextThreadKey == null
+        ? collapseParallelTextThreadDuplicates(materialized)
+        : List<TexthookerLineEntry>.unmodifiable(materialized);
+  }
+
   String? get selectedTextThreadKey {
     final String? selected = _selectedTextThreadKey;
     if (selected == null) return null;
@@ -509,6 +679,24 @@ class GalHookSessionController extends ChangeNotifier {
   final Map<String, DateTime> _loopbackFreezeStartedAt = <String, DateTime>{};
 
   final Map<String, GalAudioSlice> _lineVoiceCache = <String, GalAudioSlice>{};
+
+  // 每游戏捕获选择记忆（见 [attachCaptureMemory]）。
+  GalCaptureMemoryLoad? _captureMemoryLoad;
+  GalCaptureMemorySave? _captureMemorySave;
+  bool _captureMemoryLoaded = false;
+  String? _captureMemoryGameKey;
+  GalCaptureMemory _captureMemory = const GalCaptureMemory();
+
+  /// 音轨记忆（排除集 + 语音轨）已对本会话首个非空快照应用过。
+  bool _trackMemoryApplied = false;
+
+  /// 文本线程记忆已在本会话应用过（或用户已手动选过线程）——两者都终止自动恢复。
+  bool _textThreadMemoryApplied = false;
+
+  /// 记忆恢复文本线程所需的最小行数：native 线程 id 混了 processId，跨会话不稳定，
+  /// 同一 hook 往往有多条并行线程共用同一指纹，只能靠「真的在出台词」来消歧。
+  /// 门限设 3 行而不是 1 行，避免开局个别 UI 线程抢先蹦一行就把选择钉死。
+  static const int _textThreadRestoreMinLines = 3;
   final Map<String, int> _lineTimestampCache = <String, int>{};
   final Map<String, int> _lineTextEventIdCache = <String, int>{};
   final Map<String, ({int timestampMs, int textEventId})>
@@ -770,14 +958,25 @@ class GalHookSessionController extends ChangeNotifier {
   /// [launchArguments] 是用户为该游戏配置的启动参数（已按 Windows 规则拆成 argv
   /// token，见 `parseGameLaunchArguments`），[workdir] 是工作目录。两者都可省略：
   /// 省略即维持旧行为（不发 `--arg` / 不发 `--workdir`，injector 缺省用 exe 所在目录）。
-  Future<bool> launchGame(
+  Future<GalHookLaunchResult> launchGame(
     String executablePath, {
     List<String> launchArguments = const <String>[],
     String workdir = '',
   }) async {
     final int generation = ++_operationGeneration;
     await _stopSources();
-    if (!_isWindows || generation != _operationGeneration) return false;
+    // 两种早退原因必须分开：非 Windows 是「这台机器不支持」，被抢占是「这次操作作废」。
+    // 旧实现用同一个 `false` 表达，于是 UI 对二者说同一句无信息的话。
+    if (!_isWindows) {
+      return const GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.unsupportedPlatform,
+      );
+    }
+    if (generation != _operationGeneration) {
+      return const GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.superseded,
+      );
+    }
     _selectedTextThreadKey = null;
     _selectedNativeTextThreadId = null;
     _setState(
@@ -808,7 +1007,9 @@ class GalHookSessionController extends ChangeNotifier {
         details: <String, Object?>{'arch': is32Bit == true ? 'x86' : 'x64'},
         failure: GalHookInjectorFailure.helperMissing,
       );
-      return false;
+      return const GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.helperMissing,
+      );
     }
     final bool lunaPcHooks = shouldUseLunaPcHooksForExecutable(executablePath);
     _setState(_state.copyWith(phase: GalHookSessionPhase.launching));
@@ -838,7 +1039,9 @@ class GalHookSessionController extends ChangeNotifier {
     final PcmFormat? format = await engine.start();
     if (generation != _operationGeneration) {
       await engine.stop();
-      return false;
+      return const GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.superseded,
+      );
     }
     if (format == null && !engine.textHookReady) {
       final GalHookInjectorDiagnostics diagnostics = engine.lastFailure;
@@ -866,14 +1069,18 @@ class GalHookSessionController extends ChangeNotifier {
           fallbackReason: 'launch_injection_failed',
           failure: diagnostics.failure,
         );
-        if (generation != _operationGeneration) return false;
+        if (generation != _operationGeneration) {
+          return const GalHookLaunchResult.failed(
+            GalHookLaunchFailureReason.superseded,
+          );
+        }
         _startWindowRebindWatch(generation, runningPid);
         _scheduleEngineRecovery(
           generation,
           pid: runningPid,
           diagnostics: diagnostics,
         );
-        return true;
+        return const GalHookLaunchResult.launched();
       }
       _fail(
         'inject',
@@ -882,7 +1089,12 @@ class GalHookSessionController extends ChangeNotifier {
         details: diagnostics.toDetails(),
         failure: diagnostics.failure,
       );
-      return false;
+      // 诊断随结果一起返回：`diagnostics.failure` 归类不出来时（unknown），stderr 尾部
+      // 就是唯一的一手证据，绝不能停在这里。
+      return GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.injectionFailed,
+        diagnostics: diagnostics,
+      );
     }
     final int? gamePid = engine.gamePid;
     if (format != null) {
@@ -900,7 +1112,11 @@ class GalHookSessionController extends ChangeNotifier {
       engine,
       gamePid: gamePid,
     )) {
-      return false;
+      // _activateTextWithLoopback 只在会话被抢占时返回 false（音频源起不来它仍返回
+      // true，走 all_audio_sources_failed 降级）。所以这里唯一的语义就是「已作废」。
+      return const GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.superseded,
+      );
     }
     ExternalWindowInfo? window;
     if (gamePid != null) {
@@ -919,7 +1135,11 @@ class GalHookSessionController extends ChangeNotifier {
         }
       }
     }
-    if (generation != _operationGeneration) return false;
+    if (generation != _operationGeneration) {
+      return const GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.superseded,
+      );
+    }
     if (window != null) {
       _setState(_state.copyWith(boundWindow: window, gamePid: gamePid));
       _record(
@@ -950,7 +1170,7 @@ class GalHookSessionController extends ChangeNotifier {
       // gamePid 为空表示 hook 根本没拿到目标进程，没有可重试的匹配依据。
       if (gamePid != null) _startWindowRebindWatch(generation, gamePid);
     }
-    return true;
+    return const GalHookLaunchResult.launched();
   }
 
   /// launch 会话的窗口重绑监视：周期性按 [gamePid] 找顶层窗口，找到就补上绑定并把
@@ -1061,6 +1281,7 @@ class GalHookSessionController extends ChangeNotifier {
         excludedAudioSourcePtrs: const <int>{},
       ),
     );
+    _resetCaptureMemorySession();
     _record(
       GalHookEventSeverity.success,
       'session',
@@ -1101,6 +1322,10 @@ class GalHookSessionController extends ChangeNotifier {
     final bool membershipChanged =
         !sameTrackMembership(_state.audioTracks, tracks);
     _setState(_state.copyWith(audioTracks: tracks));
+    if (tracks.isNotEmpty && !_trackMemoryApplied) {
+      _trackMemoryApplied = true;
+      _applyTrackMemory(engine, tracks);
+    }
     // BUG-1027：刷新已由定时器/状态迁移自动驱动，只有轨成员变化才记事件，
     // 避免 5s 一条「已刷新」把事件日志淹掉。
     if (membershipChanged) {
@@ -1145,11 +1370,45 @@ class GalHookSessionController extends ChangeNotifier {
   /// 器可直接播（无需 ffmpeg 转码）。无 engine / 尚无台词时间戳 / 该轨窗口内无 PCM /
   /// 写盘失败时返回 null 并记结构化事件（调用方 toast 提示，不静默）。
   Future<GalTrackPreview?> exportTrackPreview(int sourcePtr) async {
-    final EngineHookGalAudioSource? engine = _engineSource;
-    if (engine == null) return null;
     final int timestamp = _lineTimestampCache.values.isEmpty
         ? 0
         : _lineTimestampCache.values.last;
+    return _exportTrackPreviewAt(sourcePtr, timestamp);
+  }
+
+  /// 逐句选轨弹窗的试听必须与确认选轨共用同一 [lineId] 时间戳。旧实现调用
+  /// [exportTrackPreview] 偷用了最新一句，导致用户能听见最新句，却为较早行确认时收到
+  /// 「该句没有音轨」。
+  Future<GalTrackPreview?> exportLineTrackPreview(
+    String lineId,
+    int sourcePtr,
+  ) async {
+    final TexthookerLineEntry? entry = _textService.entryById(lineId);
+    final int timestamp = _lineTimestampCache[lineId] ?? 0;
+    if (entry == null || !isLineInCurrentSession(entry) || timestamp <= 0) {
+      _record(
+        GalHookEventSeverity.warning,
+        'audio',
+        'audio.line_track_preview_unavailable',
+        'Per-line track preview needs a current hooked line timestamp',
+        details: <String, Object?>{
+          'lineId': lineId,
+          'sourcePtr': sourcePtr,
+          'tsMs': timestamp,
+        },
+      );
+      return null;
+    }
+    return _exportTrackPreviewAt(sourcePtr, timestamp, lineId: lineId);
+  }
+
+  Future<GalTrackPreview?> _exportTrackPreviewAt(
+    int sourcePtr,
+    int timestamp, {
+    String? lineId,
+  }) async {
+    final EngineHookGalAudioSource? engine = _engineSource;
+    if (engine == null) return null;
     final GalAudioSlice? slice = await engine.grabUtterance(
       timestamp,
       sourcePtr: sourcePtr,
@@ -1161,7 +1420,11 @@ class GalHookSessionController extends ChangeNotifier {
         'audio',
         'audio.track_preview_empty',
         'No recent PCM was available on the selected track',
-        details: <String, Object?>{'sourcePtr': sourcePtr, 'tsMs': timestamp},
+        details: <String, Object?>{
+          'sourcePtr': sourcePtr,
+          'tsMs': timestamp,
+          if (lineId != null) 'lineId': lineId,
+        },
       );
       return null;
     }
@@ -1457,6 +1720,7 @@ class GalHookSessionController extends ChangeNotifier {
     }
     engine.selectedAudioSourcePtr = sourcePtr;
     _setState(_state.copyWith(selectedAudioSourcePtr: sourcePtr));
+    _persistVoiceTrack(sourcePtr);
     _record(
       GalHookEventSeverity.success,
       'audio',
@@ -1468,9 +1732,14 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
+  /// 选择文本线程。
+  ///
+  /// [remember] = true（用户在 UI 里主动选）时把选择写进每游戏记忆，并锁死本会话的
+  /// 自动恢复；记忆恢复自身调用时传 false，免得把「恢复」当成一次新的用户选择再写回。
   Future<bool> selectTextThread(
     int? threadId, {
     String? threadKey,
+    bool remember = false,
   }) async {
     final EngineHookGalAudioSource? engine = _engineSource;
     // WebSocket/剪贴板等外部 Hook 线程没有 native helper，也仍需由 app 级状态
@@ -1482,6 +1751,18 @@ class GalHookSessionController extends ChangeNotifier {
           threadKey == null || threadKey.isEmpty ? null : threadKey;
       _selectedNativeTextThreadId =
           threadId == null || threadId == 0 ? null : threadId;
+      if (remember) {
+        // 用户已亲自表态：本会话不再自动恢复，并把这次选择记成新的真值。
+        _textThreadMemoryApplied = true;
+        TexthookerTextThread? chosen;
+        for (final TexthookerTextThread thread in _textService.textThreads) {
+          if (thread.key == _selectedTextThreadKey) {
+            chosen = thread;
+            break;
+          }
+        }
+        _persistTextThread(chosen);
+      }
     }
     _record(
       selected ? GalHookEventSeverity.success : GalHookEventSeverity.warning,
@@ -1590,6 +1871,31 @@ class GalHookSessionController extends ChangeNotifier {
     return true;
   }
 
+  /// **这一句**当前生效的音轨（用户逐行选轨的结果）；null = 未逐行指定，走会话
+  /// 级选轨 / 自动选源。捕获工作台的逐句音轨面板据此显示"本句用的是哪条轨"。
+  int? lineVoiceSourcePtr(String lineId) => _lineVoiceSourcePtr[lineId];
+
+  /// 取**这一句时刻**的音轨快照（工作台逐句音轨面板的数据源）。
+  ///
+  /// 与会话级 [refreshAudioTracks] 的区别只在时间戳：那个用最近一条台词的 ts
+  /// 做会话级概览，这里必须用该行自己的 ts——不然用户看到的能量/片段数属于别的
+  /// 句子，"排除这句里的 BGM"就成了盲操作。行不属于当前会话 / 无时间戳时返回空。
+  Future<List<GalAudioTrack>> tracksForLine(String lineId) async {
+    final EngineHookGalAudioSource? engine = _engineSource;
+    final TexthookerLineEntry? entry = _textService.entryById(lineId);
+    final int timestamp = _lineTimestampCache[lineId] ?? 0;
+    if (engine == null ||
+        entry == null ||
+        !isLineInCurrentSession(entry) ||
+        timestamp <= 0) {
+      return const <GalAudioTrack>[];
+    }
+    final List<GalAudioTrack> tracks = await engine.listAudioTracks(timestamp);
+    // await 期间会话可能已停止/重启：旧 engine 的快照不落地（同 BUG-950 范式）。
+    if (engine != _engineSource) return const <GalAudioTrack>[];
+    return tracks;
+  }
+
   /// 本行的语音是否由用户显式裁决过（手动补录或逐行选轨）。自动配对一律让路。
   bool _isUserAdjudicated(String lineId) =>
       _manualRecaptureLines.contains(lineId) ||
@@ -1613,6 +1919,7 @@ class GalHookSessionController extends ChangeNotifier {
         ),
       ),
     );
+    _persistTrackExclusion(sourcePtr, excluded);
     _record(
       GalHookEventSeverity.info,
       'audio',
@@ -1620,6 +1927,225 @@ class GalHookSessionController extends ChangeNotifier {
       excluded ? 'Audio track marked as BGM/excluded' : 'Audio track restored',
       details: <String, Object?>{'sourcePtr': sourcePtr},
     );
+  }
+
+  /// 注入每游戏捕获选择记忆的持久化端口（桌面启动流程
+  /// [GalHookTextOverlayController.start] 调用一次，真值落偏好表）。不注入 =
+  /// 选择只活在会话内，行为与旧版一致。
+  void attachCaptureMemory({
+    required GalCaptureMemoryLoad load,
+    required GalCaptureMemorySave save,
+  }) {
+    _captureMemoryLoad = load;
+    _captureMemorySave = save;
+  }
+
+  /// 音轨的跨会话弱指纹。`source_ptr` 只在会话内稳定（跨启动是新指针），能锚的只有
+  /// [GalAudioTrack.orderIndex]（创建顺序，跨启动相对稳定）+ PCM 格式。指纹可能撞/漂
+  /// ——所以记忆只恢复用户显式选择的排除项和语音轨；排除优先，恢复结果在工作台可见，
+  /// 用户可在映射漂移时立即纠正。
+  @visibleForTesting
+  static String trackFingerprint(GalAudioTrack track) =>
+      '${track.orderIndex}:${track.format.sampleRate}:'
+      '${track.format.channels}:${track.format.bitsPerSample}:'
+      '${track.format.isFloat ? 1 : 0}';
+
+  /// 文本线程的跨会话弱指纹。native `thread_id` 混了 processId（injector 侧
+  /// FNV-1a），跨启动必变；能锚的只有 LunaHook 的 hook code（同一 hook 稳定）。
+  /// 没有 hook code 的来源（GDI / Unity / WebSocket）退回标签。
+  ///
+  /// 同一 hook code 常有多条并行线程（ctx/ctx2 不同，未透出到 Dart），因此指纹
+  /// **不足以唯一定位线程**——恢复时还要靠「谁真的在出台词」消歧，见
+  /// [_maybeRestoreTextThread]。
+  @visibleForTesting
+  static String? textThreadFingerprint(TexthookerTextThread thread) {
+    final String? code = thread.hookCode?.trim();
+    if (code != null && code.isNotEmpty) return 'code:$code';
+    final String label = thread.label.trim();
+    return label.isEmpty ? null : 'label:$label';
+  }
+
+  String? _captureMemoryKeyForGame() {
+    final String? exe = _state.launchExe;
+    if (exe == null || exe.isEmpty) return null;
+    return exe.toLowerCase();
+  }
+
+  /// 惰性加载当前游戏的记忆（每会话一次）。没有游戏身份（窗口附着、非启动路径）
+  /// 就没有记忆——宁可少记，不猜身份。
+  bool _ensureCaptureMemoryLoaded() {
+    if (_captureMemoryLoaded) return _captureMemoryGameKey != null;
+    _captureMemoryLoaded = true;
+    final GalCaptureMemoryLoad? load = _captureMemoryLoad;
+    final String? gameKey = _captureMemoryKeyForGame();
+    if (load == null || gameKey == null) return false;
+    _captureMemoryGameKey = gameKey;
+    _captureMemory = load(gameKey);
+    return true;
+  }
+
+  void _saveCaptureMemory(GalCaptureMemory memory) {
+    _captureMemory = memory;
+    final GalCaptureMemorySave? save = _captureMemorySave;
+    final String? gameKey = _captureMemoryGameKey;
+    if (save == null || gameKey == null) return;
+    save(gameKey, memory);
+  }
+
+  /// 首个非空音轨快照到达时，把上次会话的排除集与语音轨按指纹套回当前轨。
+  /// 只应用一次：环形越新鲜 orderIndex 越贴近真实创建序，越晚匹配越容易漂。
+  void _applyTrackMemory(
+    EngineHookGalAudioSource engine,
+    List<GalAudioTrack> tracks,
+  ) {
+    if (!_ensureCaptureMemoryLoaded() || _captureMemory.isEmpty) return;
+    final Set<String> excludedFps =
+        _captureMemory.excludedTrackFingerprints.toSet();
+    final String? voiceFp = _captureMemory.voiceTrackFingerprint;
+    int excluded = 0;
+    int? restoredVoicePtr;
+    for (final GalAudioTrack track in tracks) {
+      final String fingerprint = trackFingerprint(track);
+      if (excludedFps.contains(fingerprint) &&
+          engine.excludedAudioSourcePtrs.add(track.sourcePtr)) {
+        excluded++;
+      }
+      if (voiceFp != null && fingerprint == voiceFp) {
+        restoredVoicePtr ??= track.sourcePtr;
+      }
+    }
+    // 被排除的轨不能同时是语音轨（用户后来把它标成了 BGM）：排除优先。
+    if (restoredVoicePtr != null &&
+        engine.excludedAudioSourcePtrs.contains(restoredVoicePtr)) {
+      restoredVoicePtr = null;
+    }
+    if (excluded == 0 && restoredVoicePtr == null) return;
+    if (restoredVoicePtr != null) {
+      engine.selectedAudioSourcePtr = restoredVoicePtr;
+    }
+    _setState(
+      _state.copyWith(
+        excludedAudioSourcePtrs: Set<int>.unmodifiable(
+          engine.excludedAudioSourcePtrs,
+        ),
+        selectedAudioSourcePtr:
+            restoredVoicePtr ?? _state.selectedAudioSourcePtr,
+      ),
+    );
+    _record(
+      GalHookEventSeverity.info,
+      'audio',
+      'audio.track_memory_restored',
+      'Restored per-game track choices from the previous session',
+      details: <String, Object?>{
+        'excluded': excluded,
+        if (restoredVoicePtr != null) 'voiceSourcePtr': restoredVoicePtr,
+      },
+    );
+  }
+
+  /// 用户显式排除/恢复后同步持久化。恢复会把指纹从记忆里删掉——用户说了这条轨
+  /// 不是 BGM，下次会话不得再自动排除它。
+  void _persistTrackExclusion(int sourcePtr, bool excluded) {
+    if (!_ensureCaptureMemoryLoaded()) return;
+    final String? fingerprint = _fingerprintForSourcePtr(sourcePtr);
+    if (fingerprint == null) return; // 快照里已不存在的轨谈不上指纹。
+    final Set<String> fingerprints =
+        _captureMemory.excludedTrackFingerprints.toSet();
+    final bool changed = excluded
+        ? fingerprints.add(fingerprint)
+        : fingerprints.remove(fingerprint);
+    if (!changed) return;
+    _saveCaptureMemory(
+      _captureMemory.copyWith(
+        excludedTrackFingerprints: fingerprints.toList()..sort(),
+      ),
+    );
+  }
+
+  /// 用户显式选定/取消会话语音轨后同步持久化（0 = 自动选源，清掉记忆）。
+  void _persistVoiceTrack(int sourcePtr) {
+    if (!_ensureCaptureMemoryLoaded()) return;
+    if (sourcePtr == 0) {
+      if (_captureMemory.voiceTrackFingerprint == null) return;
+      _saveCaptureMemory(_captureMemory.copyWith(clearVoiceTrack: true));
+      return;
+    }
+    final String? fingerprint = _fingerprintForSourcePtr(sourcePtr);
+    if (fingerprint == null ||
+        _captureMemory.voiceTrackFingerprint == fingerprint) {
+      return;
+    }
+    _saveCaptureMemory(
+      _captureMemory.copyWith(voiceTrackFingerprint: fingerprint),
+    );
+  }
+
+  String? _fingerprintForSourcePtr(int sourcePtr) {
+    for (final GalAudioTrack track in _state.audioTracks) {
+      if (track.sourcePtr == sourcePtr) return trackFingerprint(track);
+    }
+    return null;
+  }
+
+  /// 每次线程目录变动时尝试恢复上次会话选定的文本线程。
+  ///
+  /// 只在**用户本会话尚未手动选过**且恢复尚未发生时生效，且要求候选线程已出
+  /// [_textThreadRestoreMinLines] 行——指纹只能锚到 hook 而锚不到具体并行线程
+  /// （ctx 未透出），靠「谁真的在出台词」消歧。选中后本会话不再自动改，避免
+  /// 行数此消彼长导致选择反复跳动。
+  void _maybeRestoreTextThread() {
+    if (_textThreadMemoryApplied || _selectedTextThreadKey != null) return;
+    if (!_ensureCaptureMemoryLoaded()) return;
+    final String? wanted = _captureMemory.textThreadFingerprint;
+    if (wanted == null) return;
+    TexthookerTextThread? best;
+    for (final TexthookerTextThread thread in _textService.textThreads) {
+      if (textThreadFingerprint(thread) != wanted) continue;
+      if (thread.lineCount < _textThreadRestoreMinLines) continue;
+      if (best == null || thread.lineCount > best.lineCount) best = thread;
+    }
+    if (best == null) return;
+    _textThreadMemoryApplied = true;
+    unawaited(
+      selectTextThread(best.nativeThreadId, threadKey: best.key).then((
+        bool selected,
+      ) {
+        if (!selected) return;
+        _record(
+          GalHookEventSeverity.info,
+          'text',
+          'text.thread_memory_restored',
+          'Restored the text thread remembered for this game',
+          details: <String, Object?>{'threadKey': best!.key},
+        );
+      }),
+    );
+  }
+
+  /// 用户显式选定/取消文本线程后同步持久化（null = 自动，清掉记忆）。
+  void _persistTextThread(TexthookerTextThread? thread) {
+    if (!_ensureCaptureMemoryLoaded()) return;
+    final String? fingerprint =
+        thread == null ? null : textThreadFingerprint(thread);
+    if (fingerprint == null) {
+      if (_captureMemory.textThreadFingerprint == null) return;
+      _saveCaptureMemory(_captureMemory.copyWith(clearTextThread: true));
+      return;
+    }
+    if (_captureMemory.textThreadFingerprint == fingerprint) return;
+    _saveCaptureMemory(
+      _captureMemory.copyWith(textThreadFingerprint: fingerprint),
+    );
+  }
+
+  /// 会话结束时复位记忆的会话内状态（持久化真值不动）。
+  void _resetCaptureMemorySession() {
+    _trackMemoryApplied = false;
+    _textThreadMemoryApplied = false;
+    _captureMemoryLoaded = false;
+    _captureMemoryGameKey = null;
+    _captureMemory = const GalCaptureMemory();
   }
 
   Future<Uint8List?> captureAudioBytes({
@@ -1749,7 +2275,13 @@ class GalHookSessionController extends ChangeNotifier {
           await engine.grabClipNear(timestamp);
     }
     if (slice == null || slice.isEmpty) {
-      _markLineAudioMissing(lineId, 'line_audio_not_cached');
+      // 制卡时刻仍两手空空：能给证据就给证据——引擎 PCM 会话下按「该句时刻
+      // 是否有候选轨在响」区分无配音与疑似漏抓，别一律顶红标。
+      final String reason =
+          engine != null && identical(source, engine) && timestamp > 0
+              ? await _classifyEnginePcmMiss(engine, timestamp)
+              : 'line_audio_not_cached';
+      _markLineAudioMissing(lineId, reason);
       return null;
     }
     return _encodeLineSlice(
@@ -1762,6 +2294,24 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
+  /// 超长切片门（纯函数）：一句台词的语音极少超过 [kGalOverlongSliceSuspectMs]。
+  /// 超长的多半是「制卡时才收束的 loopback 回取」把几十秒混音整段塞了进来
+  /// （[_flushLoopbackFreeze] 的 backMs 上限是环容量 60s）。不丢数据——照样入卡，
+  /// 但把 fallbackReason 换成明确的可疑标注让 UI 亮黄，别让一段混着 BGM 的长音频
+  /// 顶着正常标签混过去。用户显式裁决（补录/选轨）是有意为之，不二次质疑。
+  @visibleForTesting
+  static String? sliceFallbackReasonFor({
+    required int durationMs,
+    required String? fallbackReason,
+  }) {
+    final bool userAdjudicated = fallbackReason == 'manual_recapture' ||
+        fallbackReason == 'manual_track_override';
+    if (!userAdjudicated && durationMs > kGalOverlongSliceSuspectMs) {
+      return kGalOverlongSliceSuspectReason;
+    }
+    return fallbackReason;
+  }
+
   /// 把一段冻结 PCM 切片转成制卡容器字节，并把该行标成 encoded。
   /// 制卡链路上「有切片了」之后的收尾只有这一份实现（PCM 兜底与手动补录共用）。
   Future<Uint8List?> _encodeLineSlice({
@@ -1771,6 +2321,20 @@ class GalHookSessionController extends ChangeNotifier {
     required String outputExtension,
     required String? fallbackReason,
   }) async {
+    final int durationMs = (slice.pcm.length * 1000) ~/ slice.format.byteRate;
+    final String? effectiveReason = sliceFallbackReasonFor(
+      durationMs: durationMs,
+      fallbackReason: fallbackReason,
+    );
+    if (effectiveReason != fallbackReason) {
+      _record(
+        GalHookEventSeverity.warning,
+        'encode',
+        'audio.slice_overlong',
+        'Captured slice is suspiciously long for a single line',
+        details: <String, Object?>{'lineId': lineId, 'durationMs': durationMs},
+      );
+    }
     final Directory jobDirectory = await Directory.systemTemp.createTemp(
       'hibiki-gal-mining-job-',
     );
@@ -1789,8 +2353,8 @@ class GalHookSessionController extends ChangeNotifier {
         lineId,
         status: TexthookerLineAudioStatus.encoded,
         backend: backend,
-        durationMs: (slice.pcm.length * 1000) ~/ slice.format.byteRate,
-        fallbackReason: fallbackReason,
+        durationMs: durationMs,
+        fallbackReason: effectiveReason,
       );
       _record(
         GalHookEventSeverity.success,
@@ -2597,6 +3161,8 @@ class GalHookSessionController extends ChangeNotifier {
             textSignalReceived: true,
           ),
         );
+        // 行数变了才值得重评：恢复要求候选线程已出够行数（见 [_maybeRestoreTextThread]）。
+        _maybeRestoreTextThread();
       }
     } finally {
       _pollInFlight = false;
@@ -2881,18 +3447,56 @@ class GalHookSessionController extends ChangeNotifier {
       return;
     }
     if (!resourceReady) {
+      final String reason =
+          await _classifyEnginePcmMiss(engine, line.timestampMs);
+      if (engine != _engineSource || !isLineInCurrentSession(entry)) return;
       _textService.updateLineAudio(
         entry.id,
         status: TexthookerLineAudioStatus.missing,
-        fallbackReason: 'utterance_not_found',
+        fallbackReason: reason,
       );
       _record(
-        GalHookEventSeverity.warning,
+        reason == kGalLineNoVoiceReason
+            ? GalHookEventSeverity.info
+            : GalHookEventSeverity.warning,
         'match',
-        'audio.utterance_not_found',
-        'No engine utterance matched the captured line',
+        reason == kGalLineNoVoiceReason
+            ? 'audio.line_no_voice'
+            : 'audio.utterance_not_found',
+        reason == kGalLineNoVoiceReason
+            ? 'No PCM was active at this line; treating it as unvoiced'
+            : 'No engine utterance matched the captured line',
         details: <String, Object?>{'lineId': entry.id, 'seq': line.seq},
       );
+    }
+  }
+
+  /// 引擎 PCM 窗口内没抓到这句语音时，区分「这句本来就没配音」与「疑似漏抓」。
+  ///
+  /// 证据来自 [EngineHookGalAudioSource.listAudioTracks]：`avgEnergy >= 0` 表示该轨
+  /// 在**该句文本时刻窗**（native `[ts-150, ts+450]`）内确有 16-bit clip——
+  /// - 候选轨（未被排除、且未被逐轨锁定到别的轨）在该时刻有能量 → 疑似漏抓，红标提醒；
+  /// - 候选轨全部沉默（声音只在被排除的 BGM 轨上，或根本没有）→ 判无配音，灰标不告警。
+  /// 这样旁白/选项句不再顶着「missing」红标吓人，真正的抓取失败也不会被无配音淹没。
+  Future<String> _classifyEnginePcmMiss(
+    EngineHookGalAudioSource engine,
+    int timestampMs,
+  ) async {
+    if (timestampMs <= 0) return 'utterance_not_found';
+    try {
+      final List<GalAudioTrack> tracks =
+          await engine.listAudioTracks(timestampMs);
+      final Set<int> excluded = engine.excludedAudioSourcePtrs;
+      final int selected = engine.selectedAudioSourcePtr;
+      final bool candidateActive = tracks.any(
+        (GalAudioTrack track) =>
+            !excluded.contains(track.sourcePtr) &&
+            (selected == 0 || track.sourcePtr == selected) &&
+            track.avgEnergy >= 0,
+      );
+      return candidateActive ? 'utterance_not_found' : kGalLineNoVoiceReason;
+    } catch (_) {
+      return 'utterance_not_found';
     }
   }
 

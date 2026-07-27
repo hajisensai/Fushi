@@ -1304,12 +1304,28 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// v2 **按句取语音**：取时间戳与 [tsMs]（GetTickCount64，来自 [pollText] 的行 ts）最近、差
   /// <= [tolMs] 的语音 clip PCM —— 就是「这句台词对应的那段语音」，**自动选取、替代手动波形
   /// 选区**。找不到返回 null。
-  Future<GalAudioSlice?> grabClipNear(int tsMs, {int tolMs = 8000}) async {
+  ///
+  /// 选轨/排除契约与 [grabUtterance] 一致：缺省沿用 [selectedAudioSourcePtr] /
+  /// [excludedAudioSourcePtrs]。本方法是 grabUtterance 的兜底（BUG-1118）——兜底若不认
+  /// 排除集，用户在工作台标掉的 BGM 轨会从这里绕回制卡链。
+  Future<GalAudioSlice?> grabClipNear(
+    int tsMs, {
+    int tolMs = 8000,
+    int? sourcePtr,
+    List<int>? exclude,
+  }) async {
+    final int src = sourcePtr ?? selectedAudioSourcePtr;
+    final List<int> ex = exclude ?? excludedAudioSourcePtrs.toList();
     try {
       final Map<Object?, Object?>? r =
           await _channel.invokeMethod<Map<Object?, Object?>>(
         'grabClipNear',
-        <String, Object?>{'tsMs': tsMs, 'tolMs': tolMs},
+        <String, Object?>{
+          'tsMs': tsMs,
+          'tolMs': tolMs,
+          'sourcePtr': src,
+          'exclude': ex,
+        },
       );
       if (r == null || r['error'] != null) {
         return null;

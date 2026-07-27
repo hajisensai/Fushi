@@ -185,7 +185,7 @@ void main() {
       expect(result, isNull);
     });
 
-    test('importBackupFiles writes db file and cleans wal/shm', () async {
+    test('restoreBackup writes db file and cleans wal/shm', () async {
       // Create fake existing db files
       final dbPath = '${tmpDir.path}/hibiki.db';
       final walPath = '${tmpDir.path}/hibiki.db-wal';
@@ -213,7 +213,7 @@ void main() {
       final zipPath = '${tmpDir.path}/restore.zip';
       await File(zipPath).writeAsBytes(zipData);
 
-      await BackupService.importBackupFiles(
+      await BackupService.restoreBackup(
         dbDirectory: tmpDir.path,
         zipPath: zipPath,
       );
@@ -229,7 +229,7 @@ void main() {
           isFalse);
     });
 
-    test('exportBackup produces valid zip with db and metadata', () async {
+    test('createBackup produces valid zip with db and metadata', () async {
       // Use an on-disk DB so VACUUM INTO or fallback works
       final dbDir = await Directory.systemTemp.createTemp('backup_export_');
       final onDiskDb = HibikiDatabase(dbDir.path);
@@ -252,7 +252,7 @@ void main() {
         );
 
         final outputPath = '${tmpDir.path}/export_test.zip';
-        final meta = await service.exportBackup(outputPath);
+        final meta = await service.createBackup(outputPath);
 
         expect(meta.appVersion, '2.0.0');
         expect(meta.schemaVersion, onDiskDb.schemaVersion);
@@ -270,7 +270,7 @@ void main() {
     });
 
     test(
-        'exportBackup strips sync credentials from the DB copy '
+        'createBackup strips sync credentials from the DB copy '
         '(HBK-AUDIT-012)', () async {
       final dbDir = await Directory.systemTemp.createTemp('backup_creds_');
       final onDiskDb = HibikiDatabase(dbDir.path);
@@ -287,7 +287,7 @@ void main() {
           appVersion: '2.0.0',
         );
         final outputPath = '${tmpDir.path}/creds_test.zip';
-        await service.exportBackup(outputPath);
+        await service.createBackup(outputPath);
 
         // Extract the exported DB and inspect its preferences table.
         final archive =
@@ -317,7 +317,7 @@ void main() {
       }
     });
 
-    test('exportBackup strips dictionary state without touching source DB',
+    test('createBackup strips dictionary state without touching source DB',
         () async {
       final dbDir = await Directory.systemTemp.createTemp('backup_dict_');
       final onDiskDb = HibikiDatabase(dbDir.path);
@@ -342,7 +342,7 @@ void main() {
           appVersion: '2.0.0',
         );
         final outputPath = '${tmpDir.path}/dictionary_test.zip';
-        await service.exportBackup(outputPath);
+        await service.createBackup(outputPath);
 
         expect(await onDiskDb.getAllDictionaryMetadata(), hasLength(1));
         expect(await onDiskDb.getAllDictionaryHistory(), hasLength(1));
@@ -370,7 +370,7 @@ void main() {
     });
 
     test(
-        'exportBackup keeps dictionary resources when dictionary sync is enabled',
+        'createBackup keeps dictionary resources when dictionary sync is enabled',
         () async {
       final dbDir =
           await Directory.systemTemp.createTemp('backup_dict_enabled_');
@@ -405,7 +405,7 @@ void main() {
           appVersion: '2.0.0',
         );
         final outputPath = '${tmpDir.path}/dictionary_enabled_test.zip';
-        await service.exportBackup(outputPath);
+        await service.createBackup(outputPath);
 
         final archive =
             ZipDecoder().decodeBytes(await File(outputPath).readAsBytes());
@@ -420,7 +420,7 @@ void main() {
         final restoredDictDir = await Directory.systemTemp
             .createTemp('backup_dict_enabled_resources_r_');
         await File('${restoreDir.path}/hibiki.db').writeAsBytes(dbBytes);
-        await BackupService.importBackupFiles(
+        await BackupService.restoreBackup(
           dbDirectory: restoreDir.path,
           zipPath: outputPath,
           dictionaryResourceDirectory: restoredDictDir.path,
@@ -459,7 +459,7 @@ void main() {
     });
 
     test(
-        'exportBackup strips dictionary state when enabled but resources are missing',
+        'createBackup strips dictionary state when enabled but resources are missing',
         () async {
       final dbDir =
           await Directory.systemTemp.createTemp('backup_dict_missing_');
@@ -493,7 +493,7 @@ void main() {
           appVersion: '2.0.0',
         );
         final outputPath = '${tmpDir.path}/dictionary_missing_test.zip';
-        await service.exportBackup(outputPath);
+        await service.createBackup(outputPath);
 
         final archive =
             ZipDecoder().decodeBytes(await File(outputPath).readAsBytes());
@@ -525,7 +525,7 @@ void main() {
     });
 
     test(
-        'importBackupFiles PRESERVES existing dictionary resources when the '
+        'restoreBackup PRESERVES existing dictionary resources when the '
         'backup carries none (BUG-454: an unselected-dictionary backup must '
         "not wipe this device's dictionaries)", () async {
       final srcDir =
@@ -538,7 +538,7 @@ void main() {
           appVersion: '2.0.0',
         );
         final outputPath = '${tmpDir.path}/no_dictionary_resources.zip';
-        await service.exportBackup(outputPath);
+        await service.createBackup(outputPath);
 
         final dstDir =
             await Directory.systemTemp.createTemp('backup_no_dict_dst_');
@@ -552,7 +552,7 @@ void main() {
           await File('${dstDictDir.path}/OldDict/media/old.png')
               .writeAsString('stale image');
 
-          await BackupService.importBackupFiles(
+          await BackupService.restoreBackup(
             dbDirectory: dstDir.path,
             zipPath: outputPath,
             dictionaryResourceDirectory: dstDictDir.path,
@@ -585,7 +585,7 @@ void main() {
       }
     });
 
-    test('importBackupFiles rejects invalid dictionary resource paths safely',
+    test('restoreBackup rejects invalid dictionary resource paths safely',
         () async {
       final dbBytes = utf8.encode('restored db content');
       final meta = BackupMeta(
@@ -621,7 +621,7 @@ void main() {
             .writeAsString('stale index');
 
         await expectLater(
-          BackupService.importBackupFiles(
+          BackupService.restoreBackup(
             dbDirectory: dstDir.path,
             zipPath: zipPath,
             dictionaryResourceDirectory: dstDictDir.path,
@@ -671,7 +671,7 @@ void main() {
           appVersion: '3.0.0',
         );
         final zipPath = '${tmpDir.path}/round_trip.zip';
-        final meta = await service.exportBackup(zipPath);
+        final meta = await service.createBackup(zipPath);
         expect(meta.bookCount, 1);
         expect(meta.statsCount, 1);
       } finally {
@@ -682,7 +682,7 @@ void main() {
       // Restore into a fresh directory and reopen — data must survive.
       final dstDir = await Directory.systemTemp.createTemp('backup_dst_');
       try {
-        await BackupService.importBackupFiles(
+        await BackupService.restoreBackup(
           dbDirectory: dstDir.path,
           zipPath: '${tmpDir.path}/round_trip.zip',
         );
@@ -769,14 +769,14 @@ void main() {
         db: srcDb,
         dbDirectory: srcDir.path,
         appVersion: '1.0.0',
-      ).exportBackup(zipPath);
+      ).createBackup(zipPath);
       await srcDb.close();
 
       // Import into a FRESH dir: no current DB, so the backup is applied
       // verbatim with nothing preserved — exposing exactly what the ZIP holds.
       final dstDir = await Directory.systemTemp.createTemp('hibiki_strip_dst_');
       addTearDown(() => cleanupTempDir(dstDir));
-      await BackupService.importBackupFiles(
+      await BackupService.restoreBackup(
         dbDirectory: dstDir.path,
         zipPath: zipPath,
       );
@@ -846,12 +846,12 @@ void main() {
         db: srcDb,
         dbDirectory: srcDir.path,
         appVersion: '1.0.0',
-      ).exportBackup(zipPath);
+      ).createBackup(zipPath);
       await srcDb.close();
 
       final dstDir = await Directory.systemTemp.createTemp('hibiki_ns_dst_');
       addTearDown(() => cleanupTempDir(dstDir));
-      await BackupService.importBackupFiles(
+      await BackupService.restoreBackup(
           dbDirectory: dstDir.path, zipPath: zipPath);
 
       final dstDb = HibikiDatabase(dstDir.path);
@@ -909,12 +909,12 @@ void main() {
         db: srcDb,
         dbDirectory: srcDir.path,
         appVersion: '1.0.0',
-      ).exportBackup(zipPath);
+      ).createBackup(zipPath);
       await srcDb.close();
 
       final dstDir = await Directory.systemTemp.createTemp('hibiki_ps_dst_');
       addTearDown(() => cleanupTempDir(dstDir));
-      await BackupService.importBackupFiles(
+      await BackupService.restoreBackup(
           dbDirectory: dstDir.path, zipPath: zipPath);
 
       final dstDb = HibikiDatabase(dstDir.path);
@@ -948,7 +948,7 @@ void main() {
         db: srcDb,
         dbDirectory: srcDir.path,
         appVersion: '1.0.0',
-      ).exportBackup(zipPath);
+      ).createBackup(zipPath);
       await srcDb.close();
 
       // The importing device already has its own credentials configured.
@@ -966,7 +966,7 @@ void main() {
       }
       await localDb.close();
 
-      await BackupService.importBackupFiles(
+      await BackupService.restoreBackup(
           dbDirectory: dstDir.path, zipPath: zipPath);
 
       final dstDb = HibikiDatabase(dstDir.path);
@@ -1039,16 +1039,16 @@ void main() {
         db: srcDb,
         dbDirectory: srcDir.path,
         appVersion: '1.0.0',
-      ).exportBackup(zipPath);
+      ).createBackup(zipPath);
       await srcDb.close();
 
       // ── Import keeping local settings, then simulate the startup restore ──
-      await BackupService.importBackupFiles(
+      await BackupService.restoreBackup(
         dbDirectory: curDir.path,
         zipPath: zipPath,
         importSettings: false,
       );
-      await BackupService.recoverPendingImport(curDir.path);
+      await BackupService.recoverPendingRestore(curDir.path);
 
       final after = HibikiDatabase(curDir.path);
       addTearDown(after.close);
@@ -1111,18 +1111,18 @@ void main() {
       final zipPath = '${zipDir.path}/b.zip';
       await BackupService(
               db: srcDb, dbDirectory: srcDir.path, appVersion: '1.0')
-          .exportBackup(zipPath);
+          .createBackup(zipPath);
       await srcDb.close();
 
       // Import into an EMPTY dir (no current DB) with importSettings:false.
       final dstDir = await Directory.systemTemp.createTemp('hibiki_fresh_dst_');
       addTearDown(() => cleanupTempDir(dstDir));
-      await BackupService.importBackupFiles(
+      await BackupService.restoreBackup(
         dbDirectory: dstDir.path,
         zipPath: zipPath,
         importSettings: false,
       );
-      await BackupService.recoverPendingImport(dstDir.path);
+      await BackupService.recoverPendingRestore(dstDir.path);
 
       final after = HibikiDatabase(dstDir.path);
       addTearDown(after.close);
@@ -1135,7 +1135,8 @@ void main() {
           isFalse);
     });
 
-    test('recoverPendingImport with a settings sidecar but missing bak is safe',
+    test(
+        'recoverPendingRestore with a settings sidecar but missing bak is safe',
         () async {
       final dir = await Directory.systemTemp.createTemp('hibiki_nobak_');
       addTearDown(() => cleanupTempDir(dir));
@@ -1147,7 +1148,7 @@ void main() {
       await File('${dir.path}/hibiki.db.sync-preserve.json')
           .writeAsString(jsonEncode(<String, dynamic>{'mode': 'settings'}));
 
-      await BackupService.recoverPendingImport(dir.path); // must not throw
+      await BackupService.recoverPendingRestore(dir.path); // must not throw
 
       final after = HibikiDatabase(dir.path);
       addTearDown(after.close);

@@ -7507,7 +7507,7 @@ class BookTagMappingRow extends DataClass
   final int tagId;
 
   /// 该映射被加入的毫秒戳（TODO tags-sync：LWW-element-set 的 add 时钟——与
-  /// [BookTagMembershipTombstones].removedAt 比较决定 add-wins/remove-wins，防跨设备
+  /// [BookTagMembershipTombstones].deletedAt 比较决定 add-wins/remove-wins，防跨设备
   /// 复活/误删）。旧行迁移填 0（最古 add，任何带时间戳的远端移除都能压过）。
   final int addedAt;
   const BookTagMappingRow(
@@ -9158,9 +9158,9 @@ class $VideoBooksTable extends VideoBooks
   static const VerificationMeta _importedAtMeta =
       const VerificationMeta('importedAt');
   @override
-  late final GeneratedColumn<DateTime> importedAt = GeneratedColumn<DateTime>(
+  late final GeneratedColumn<int> importedAt = GeneratedColumn<int>(
       'imported_at', aliasedName, true,
-      type: DriftSqlType.dateTime, requiredDuringInsert: false);
+      type: DriftSqlType.int, requiredDuringInsert: false);
   static const VerificationMeta _playlistJsonMeta =
       const VerificationMeta('playlistJson');
   @override
@@ -9366,7 +9366,7 @@ class $VideoBooksTable extends VideoBooks
       lastPositionMs: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}last_position_ms'])!,
       importedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.dateTime, data['${effectivePrefix}imported_at']),
+          .read(DriftSqlType.int, data['${effectivePrefix}imported_at']),
       playlistJson: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}playlist_json']),
       currentEpisode: attachedDatabase.typeMapping
@@ -9404,7 +9404,11 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
   final int? embeddedSubtitleTrack;
   final String? coverPath;
   final int lastPositionMs;
-  final DateTime? importedAt;
+
+  /// 导入时间（毫秒戳，同 [EpubBooks].importedAt / [SrtBooks].importedAt int
+  /// 范式）；null = 旧数据无导入时间。v57 前是 drift DateTime（Unix 秒存储），
+  /// v57 迁移统一为 int 毫秒。
+  final int? importedAt;
 
   /// m3u8 多集播放列表 JSON：`[{title,path}]`（绝对路径）。单视频导入时为 null。
   final String? playlistJson;
@@ -9476,7 +9480,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
     }
     map['last_position_ms'] = Variable<int>(lastPositionMs);
     if (!nullToAbsent || importedAt != null) {
-      map['imported_at'] = Variable<DateTime>(importedAt);
+      map['imported_at'] = Variable<int>(importedAt);
     }
     if (!nullToAbsent || playlistJson != null) {
       map['playlist_json'] = Variable<String>(playlistJson);
@@ -9557,7 +9561,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           serializer.fromJson<int?>(json['embeddedSubtitleTrack']),
       coverPath: serializer.fromJson<String?>(json['coverPath']),
       lastPositionMs: serializer.fromJson<int>(json['lastPositionMs']),
-      importedAt: serializer.fromJson<DateTime?>(json['importedAt']),
+      importedAt: serializer.fromJson<int?>(json['importedAt']),
       playlistJson: serializer.fromJson<String?>(json['playlistJson']),
       currentEpisode: serializer.fromJson<int>(json['currentEpisode']),
       audioTrackId: serializer.fromJson<String?>(json['audioTrackId']),
@@ -9581,7 +9585,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       'embeddedSubtitleTrack': serializer.toJson<int?>(embeddedSubtitleTrack),
       'coverPath': serializer.toJson<String?>(coverPath),
       'lastPositionMs': serializer.toJson<int>(lastPositionMs),
-      'importedAt': serializer.toJson<DateTime?>(importedAt),
+      'importedAt': serializer.toJson<int?>(importedAt),
       'playlistJson': serializer.toJson<String?>(playlistJson),
       'currentEpisode': serializer.toJson<int>(currentEpisode),
       'audioTrackId': serializer.toJson<String?>(audioTrackId),
@@ -9602,7 +9606,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           Value<int?> embeddedSubtitleTrack = const Value.absent(),
           Value<String?> coverPath = const Value.absent(),
           int? lastPositionMs,
-          Value<DateTime?> importedAt = const Value.absent(),
+          Value<int?> importedAt = const Value.absent(),
           Value<String?> playlistJson = const Value.absent(),
           int? currentEpisode,
           Value<String?> audioTrackId = const Value.absent(),
@@ -9756,7 +9760,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
   final Value<int?> embeddedSubtitleTrack;
   final Value<String?> coverPath;
   final Value<int> lastPositionMs;
-  final Value<DateTime?> importedAt;
+  final Value<int?> importedAt;
   final Value<String?> playlistJson;
   final Value<int> currentEpisode;
   final Value<String?> audioTrackId;
@@ -9817,7 +9821,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     Expression<int>? embeddedSubtitleTrack,
     Expression<String>? coverPath,
     Expression<int>? lastPositionMs,
-    Expression<DateTime>? importedAt,
+    Expression<int>? importedAt,
     Expression<String>? playlistJson,
     Expression<int>? currentEpisode,
     Expression<String>? audioTrackId,
@@ -9861,7 +9865,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       Value<int?>? embeddedSubtitleTrack,
       Value<String?>? coverPath,
       Value<int>? lastPositionMs,
-      Value<DateTime?>? importedAt,
+      Value<int?>? importedAt,
       Value<String?>? playlistJson,
       Value<int>? currentEpisode,
       Value<String?>? audioTrackId,
@@ -9927,7 +9931,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       map['last_position_ms'] = Variable<int>(lastPositionMs.value);
     }
     if (importedAt.present) {
-      map['imported_at'] = Variable<DateTime>(importedAt.value);
+      map['imported_at'] = Variable<int>(importedAt.value);
     }
     if (playlistJson.present) {
       map['playlist_json'] = Variable<String>(playlistJson.value);
@@ -9997,11 +10001,11 @@ class $VideoBookTagMappingsTable extends VideoBookTagMappings
       requiredDuringInsert: false,
       defaultConstraints:
           GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
-  static const VerificationMeta _videoBookUidMeta =
-      const VerificationMeta('videoBookUid');
+  static const VerificationMeta _bookUidMeta =
+      const VerificationMeta('bookUid');
   @override
-  late final GeneratedColumn<String> videoBookUid = GeneratedColumn<String>(
-      'video_book_uid', aliasedName, false,
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+      'book_uid', aliasedName, false,
       type: DriftSqlType.string,
       requiredDuringInsert: true,
       defaultConstraints: GeneratedColumn.constraintIsAlways(
@@ -10023,7 +10027,7 @@ class $VideoBookTagMappingsTable extends VideoBookTagMappings
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
   @override
-  List<GeneratedColumn> get $columns => [id, videoBookUid, tagId, addedAt];
+  List<GeneratedColumn> get $columns => [id, bookUid, tagId, addedAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -10038,13 +10042,11 @@ class $VideoBookTagMappingsTable extends VideoBookTagMappings
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
-    if (data.containsKey('video_book_uid')) {
-      context.handle(
-          _videoBookUidMeta,
-          videoBookUid.isAcceptableOrUnknown(
-              data['video_book_uid']!, _videoBookUidMeta));
+    if (data.containsKey('book_uid')) {
+      context.handle(_bookUidMeta,
+          bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta));
     } else if (isInserting) {
-      context.missing(_videoBookUidMeta);
+      context.missing(_bookUidMeta);
     }
     if (data.containsKey('tag_id')) {
       context.handle(
@@ -10063,7 +10065,7 @@ class $VideoBookTagMappingsTable extends VideoBookTagMappings
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
   List<Set<GeneratedColumn>> get uniqueKeys => [
-        {videoBookUid, tagId},
+        {bookUid, tagId},
       ];
   @override
   VideoBookTagMappingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
@@ -10071,8 +10073,8 @@ class $VideoBookTagMappingsTable extends VideoBookTagMappings
     return VideoBookTagMappingRow(
       id: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
-      videoBookUid: attachedDatabase.typeMapping
-          .read(DriftSqlType.string, data['${effectivePrefix}video_book_uid'])!,
+      bookUid: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}book_uid'])!,
       tagId: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}tag_id'])!,
       addedAt: attachedDatabase.typeMapping
@@ -10089,21 +10091,23 @@ class $VideoBookTagMappingsTable extends VideoBookTagMappings
 class VideoBookTagMappingRow extends DataClass
     implements Insertable<VideoBookTagMappingRow> {
   final int id;
-  final String videoBookUid;
+
+  /// 视频书外键（v57 起与被引列 [VideoBooks].bookUid 同名；旧列名 video_book_uid）。
+  final String bookUid;
   final int tagId;
 
   /// 该映射被加入的毫秒戳（LWW-element-set 的 add 时钟，见 [BookTagMappings].addedAt）。
   final int addedAt;
   const VideoBookTagMappingRow(
       {required this.id,
-      required this.videoBookUid,
+      required this.bookUid,
       required this.tagId,
       required this.addedAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    map['video_book_uid'] = Variable<String>(videoBookUid);
+    map['book_uid'] = Variable<String>(bookUid);
     map['tag_id'] = Variable<int>(tagId);
     map['added_at'] = Variable<int>(addedAt);
     return map;
@@ -10112,7 +10116,7 @@ class VideoBookTagMappingRow extends DataClass
   VideoBookTagMappingsCompanion toCompanion(bool nullToAbsent) {
     return VideoBookTagMappingsCompanion(
       id: Value(id),
-      videoBookUid: Value(videoBookUid),
+      bookUid: Value(bookUid),
       tagId: Value(tagId),
       addedAt: Value(addedAt),
     );
@@ -10123,7 +10127,7 @@ class VideoBookTagMappingRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return VideoBookTagMappingRow(
       id: serializer.fromJson<int>(json['id']),
-      videoBookUid: serializer.fromJson<String>(json['videoBookUid']),
+      bookUid: serializer.fromJson<String>(json['bookUid']),
       tagId: serializer.fromJson<int>(json['tagId']),
       addedAt: serializer.fromJson<int>(json['addedAt']),
     );
@@ -10133,26 +10137,24 @@ class VideoBookTagMappingRow extends DataClass
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'videoBookUid': serializer.toJson<String>(videoBookUid),
+      'bookUid': serializer.toJson<String>(bookUid),
       'tagId': serializer.toJson<int>(tagId),
       'addedAt': serializer.toJson<int>(addedAt),
     };
   }
 
   VideoBookTagMappingRow copyWith(
-          {int? id, String? videoBookUid, int? tagId, int? addedAt}) =>
+          {int? id, String? bookUid, int? tagId, int? addedAt}) =>
       VideoBookTagMappingRow(
         id: id ?? this.id,
-        videoBookUid: videoBookUid ?? this.videoBookUid,
+        bookUid: bookUid ?? this.bookUid,
         tagId: tagId ?? this.tagId,
         addedAt: addedAt ?? this.addedAt,
       );
   VideoBookTagMappingRow copyWithCompanion(VideoBookTagMappingsCompanion data) {
     return VideoBookTagMappingRow(
       id: data.id.present ? data.id.value : this.id,
-      videoBookUid: data.videoBookUid.present
-          ? data.videoBookUid.value
-          : this.videoBookUid,
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
       tagId: data.tagId.present ? data.tagId.value : this.tagId,
       addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
     );
@@ -10162,7 +10164,7 @@ class VideoBookTagMappingRow extends DataClass
   String toString() {
     return (StringBuffer('VideoBookTagMappingRow(')
           ..write('id: $id, ')
-          ..write('videoBookUid: $videoBookUid, ')
+          ..write('bookUid: $bookUid, ')
           ..write('tagId: $tagId, ')
           ..write('addedAt: $addedAt')
           ..write(')'))
@@ -10170,13 +10172,13 @@ class VideoBookTagMappingRow extends DataClass
   }
 
   @override
-  int get hashCode => Object.hash(id, videoBookUid, tagId, addedAt);
+  int get hashCode => Object.hash(id, bookUid, tagId, addedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is VideoBookTagMappingRow &&
           other.id == this.id &&
-          other.videoBookUid == this.videoBookUid &&
+          other.bookUid == this.bookUid &&
           other.tagId == this.tagId &&
           other.addedAt == this.addedAt);
 }
@@ -10184,31 +10186,31 @@ class VideoBookTagMappingRow extends DataClass
 class VideoBookTagMappingsCompanion
     extends UpdateCompanion<VideoBookTagMappingRow> {
   final Value<int> id;
-  final Value<String> videoBookUid;
+  final Value<String> bookUid;
   final Value<int> tagId;
   final Value<int> addedAt;
   const VideoBookTagMappingsCompanion({
     this.id = const Value.absent(),
-    this.videoBookUid = const Value.absent(),
+    this.bookUid = const Value.absent(),
     this.tagId = const Value.absent(),
     this.addedAt = const Value.absent(),
   });
   VideoBookTagMappingsCompanion.insert({
     this.id = const Value.absent(),
-    required String videoBookUid,
+    required String bookUid,
     required int tagId,
     this.addedAt = const Value.absent(),
-  })  : videoBookUid = Value(videoBookUid),
+  })  : bookUid = Value(bookUid),
         tagId = Value(tagId);
   static Insertable<VideoBookTagMappingRow> custom({
     Expression<int>? id,
-    Expression<String>? videoBookUid,
+    Expression<String>? bookUid,
     Expression<int>? tagId,
     Expression<int>? addedAt,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (videoBookUid != null) 'video_book_uid': videoBookUid,
+      if (bookUid != null) 'book_uid': bookUid,
       if (tagId != null) 'tag_id': tagId,
       if (addedAt != null) 'added_at': addedAt,
     });
@@ -10216,12 +10218,12 @@ class VideoBookTagMappingsCompanion
 
   VideoBookTagMappingsCompanion copyWith(
       {Value<int>? id,
-      Value<String>? videoBookUid,
+      Value<String>? bookUid,
       Value<int>? tagId,
       Value<int>? addedAt}) {
     return VideoBookTagMappingsCompanion(
       id: id ?? this.id,
-      videoBookUid: videoBookUid ?? this.videoBookUid,
+      bookUid: bookUid ?? this.bookUid,
       tagId: tagId ?? this.tagId,
       addedAt: addedAt ?? this.addedAt,
     );
@@ -10233,8 +10235,8 @@ class VideoBookTagMappingsCompanion
     if (id.present) {
       map['id'] = Variable<int>(id.value);
     }
-    if (videoBookUid.present) {
-      map['video_book_uid'] = Variable<String>(videoBookUid.value);
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
     }
     if (tagId.present) {
       map['tag_id'] = Variable<int>(tagId.value);
@@ -10249,7 +10251,7 @@ class VideoBookTagMappingsCompanion
   String toString() {
     return (StringBuffer('VideoBookTagMappingsCompanion(')
           ..write('id: $id, ')
-          ..write('videoBookUid: $videoBookUid, ')
+          ..write('bookUid: $bookUid, ')
           ..write('tagId: $tagId, ')
           ..write('addedAt: $addedAt')
           ..write(')'))
@@ -13872,15 +13874,15 @@ class $CollectionMemberTombstonesTable extends CollectionMemberTombstones
   late final GeneratedColumn<String> entryKey = GeneratedColumn<String>(
       'entry_key', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _removedAtMeta =
-      const VerificationMeta('removedAt');
+  static const VerificationMeta _deletedAtMeta =
+      const VerificationMeta('deletedAt');
   @override
-  late final GeneratedColumn<int> removedAt = GeneratedColumn<int>(
-      'removed_at', aliasedName, false,
+  late final GeneratedColumn<int> deletedAt = GeneratedColumn<int>(
+      'deleted_at', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
   @override
   List<GeneratedColumn> get $columns =>
-      [collectionName, collectionType, mediaType, entryKey, removedAt];
+      [collectionName, collectionType, mediaType, entryKey, deletedAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -13920,11 +13922,11 @@ class $CollectionMemberTombstonesTable extends CollectionMemberTombstones
     } else if (isInserting) {
       context.missing(_entryKeyMeta);
     }
-    if (data.containsKey('removed_at')) {
-      context.handle(_removedAtMeta,
-          removedAt.isAcceptableOrUnknown(data['removed_at']!, _removedAtMeta));
+    if (data.containsKey('deleted_at')) {
+      context.handle(_deletedAtMeta,
+          deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta));
     } else if (isInserting) {
-      context.missing(_removedAtMeta);
+      context.missing(_deletedAtMeta);
     }
     return context;
   }
@@ -13945,8 +13947,8 @@ class $CollectionMemberTombstonesTable extends CollectionMemberTombstones
           .read(DriftSqlType.string, data['${effectivePrefix}media_type'])!,
       entryKey: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}entry_key'])!,
-      removedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}removed_at'])!,
+      deletedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}deleted_at'])!,
     );
   }
 
@@ -13971,13 +13973,13 @@ class CollectionMemberTombstoneRow extends DataClass
   final String entryKey;
 
   /// 移出/删除毫秒戳（LWW 比较键；重复移出 upsert 取新）。
-  final int removedAt;
+  final int deletedAt;
   const CollectionMemberTombstoneRow(
       {required this.collectionName,
       required this.collectionType,
       required this.mediaType,
       required this.entryKey,
-      required this.removedAt});
+      required this.deletedAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -13985,7 +13987,7 @@ class CollectionMemberTombstoneRow extends DataClass
     map['collection_type'] = Variable<String>(collectionType);
     map['media_type'] = Variable<String>(mediaType);
     map['entry_key'] = Variable<String>(entryKey);
-    map['removed_at'] = Variable<int>(removedAt);
+    map['deleted_at'] = Variable<int>(deletedAt);
     return map;
   }
 
@@ -13995,7 +13997,7 @@ class CollectionMemberTombstoneRow extends DataClass
       collectionType: Value(collectionType),
       mediaType: Value(mediaType),
       entryKey: Value(entryKey),
-      removedAt: Value(removedAt),
+      deletedAt: Value(deletedAt),
     );
   }
 
@@ -14007,7 +14009,7 @@ class CollectionMemberTombstoneRow extends DataClass
       collectionType: serializer.fromJson<String>(json['collectionType']),
       mediaType: serializer.fromJson<String>(json['mediaType']),
       entryKey: serializer.fromJson<String>(json['entryKey']),
-      removedAt: serializer.fromJson<int>(json['removedAt']),
+      deletedAt: serializer.fromJson<int>(json['deletedAt']),
     );
   }
   @override
@@ -14018,7 +14020,7 @@ class CollectionMemberTombstoneRow extends DataClass
       'collectionType': serializer.toJson<String>(collectionType),
       'mediaType': serializer.toJson<String>(mediaType),
       'entryKey': serializer.toJson<String>(entryKey),
-      'removedAt': serializer.toJson<int>(removedAt),
+      'deletedAt': serializer.toJson<int>(deletedAt),
     };
   }
 
@@ -14027,13 +14029,13 @@ class CollectionMemberTombstoneRow extends DataClass
           String? collectionType,
           String? mediaType,
           String? entryKey,
-          int? removedAt}) =>
+          int? deletedAt}) =>
       CollectionMemberTombstoneRow(
         collectionName: collectionName ?? this.collectionName,
         collectionType: collectionType ?? this.collectionType,
         mediaType: mediaType ?? this.mediaType,
         entryKey: entryKey ?? this.entryKey,
-        removedAt: removedAt ?? this.removedAt,
+        deletedAt: deletedAt ?? this.deletedAt,
       );
   CollectionMemberTombstoneRow copyWithCompanion(
       CollectionMemberTombstonesCompanion data) {
@@ -14046,7 +14048,7 @@ class CollectionMemberTombstoneRow extends DataClass
           : this.collectionType,
       mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
       entryKey: data.entryKey.present ? data.entryKey.value : this.entryKey,
-      removedAt: data.removedAt.present ? data.removedAt.value : this.removedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
     );
   }
 
@@ -14057,14 +14059,14 @@ class CollectionMemberTombstoneRow extends DataClass
           ..write('collectionType: $collectionType, ')
           ..write('mediaType: $mediaType, ')
           ..write('entryKey: $entryKey, ')
-          ..write('removedAt: $removedAt')
+          ..write('deletedAt: $deletedAt')
           ..write(')'))
         .toString();
   }
 
   @override
   int get hashCode => Object.hash(
-      collectionName, collectionType, mediaType, entryKey, removedAt);
+      collectionName, collectionType, mediaType, entryKey, deletedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -14073,7 +14075,7 @@ class CollectionMemberTombstoneRow extends DataClass
           other.collectionType == this.collectionType &&
           other.mediaType == this.mediaType &&
           other.entryKey == this.entryKey &&
-          other.removedAt == this.removedAt);
+          other.deletedAt == this.deletedAt);
 }
 
 class CollectionMemberTombstonesCompanion
@@ -14082,14 +14084,14 @@ class CollectionMemberTombstonesCompanion
   final Value<String> collectionType;
   final Value<String> mediaType;
   final Value<String> entryKey;
-  final Value<int> removedAt;
+  final Value<int> deletedAt;
   final Value<int> rowid;
   const CollectionMemberTombstonesCompanion({
     this.collectionName = const Value.absent(),
     this.collectionType = const Value.absent(),
     this.mediaType = const Value.absent(),
     this.entryKey = const Value.absent(),
-    this.removedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   CollectionMemberTombstonesCompanion.insert({
@@ -14097,19 +14099,19 @@ class CollectionMemberTombstonesCompanion
     required String collectionType,
     required String mediaType,
     required String entryKey,
-    required int removedAt,
+    required int deletedAt,
     this.rowid = const Value.absent(),
   })  : collectionName = Value(collectionName),
         collectionType = Value(collectionType),
         mediaType = Value(mediaType),
         entryKey = Value(entryKey),
-        removedAt = Value(removedAt);
+        deletedAt = Value(deletedAt);
   static Insertable<CollectionMemberTombstoneRow> custom({
     Expression<String>? collectionName,
     Expression<String>? collectionType,
     Expression<String>? mediaType,
     Expression<String>? entryKey,
-    Expression<int>? removedAt,
+    Expression<int>? deletedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -14117,7 +14119,7 @@ class CollectionMemberTombstonesCompanion
       if (collectionType != null) 'collection_type': collectionType,
       if (mediaType != null) 'media_type': mediaType,
       if (entryKey != null) 'entry_key': entryKey,
-      if (removedAt != null) 'removed_at': removedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -14127,14 +14129,14 @@ class CollectionMemberTombstonesCompanion
       Value<String>? collectionType,
       Value<String>? mediaType,
       Value<String>? entryKey,
-      Value<int>? removedAt,
+      Value<int>? deletedAt,
       Value<int>? rowid}) {
     return CollectionMemberTombstonesCompanion(
       collectionName: collectionName ?? this.collectionName,
       collectionType: collectionType ?? this.collectionType,
       mediaType: mediaType ?? this.mediaType,
       entryKey: entryKey ?? this.entryKey,
-      removedAt: removedAt ?? this.removedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -14154,8 +14156,8 @@ class CollectionMemberTombstonesCompanion
     if (entryKey.present) {
       map['entry_key'] = Variable<String>(entryKey.value);
     }
-    if (removedAt.present) {
-      map['removed_at'] = Variable<int>(removedAt.value);
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<int>(deletedAt.value);
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -14170,7 +14172,7 @@ class CollectionMemberTombstonesCompanion
           ..write('collectionType: $collectionType, ')
           ..write('mediaType: $mediaType, ')
           ..write('entryKey: $entryKey, ')
-          ..write('removedAt: $removedAt, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -15381,15 +15383,15 @@ class $BookTagMembershipTombstonesTable extends BookTagMembershipTombstones
   late final GeneratedColumn<String> tagName = GeneratedColumn<String>(
       'tag_name', aliasedName, false,
       type: DriftSqlType.string, requiredDuringInsert: true);
-  static const VerificationMeta _removedAtMeta =
-      const VerificationMeta('removedAt');
+  static const VerificationMeta _deletedAtMeta =
+      const VerificationMeta('deletedAt');
   @override
-  late final GeneratedColumn<int> removedAt = GeneratedColumn<int>(
-      'removed_at', aliasedName, false,
+  late final GeneratedColumn<int> deletedAt = GeneratedColumn<int>(
+      'deleted_at', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
   @override
   List<GeneratedColumn> get $columns =>
-      [itemKey, mediaType, tagName, removedAt];
+      [itemKey, mediaType, tagName, deletedAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -15419,11 +15421,11 @@ class $BookTagMembershipTombstonesTable extends BookTagMembershipTombstones
     } else if (isInserting) {
       context.missing(_tagNameMeta);
     }
-    if (data.containsKey('removed_at')) {
-      context.handle(_removedAtMeta,
-          removedAt.isAcceptableOrUnknown(data['removed_at']!, _removedAtMeta));
+    if (data.containsKey('deleted_at')) {
+      context.handle(_deletedAtMeta,
+          deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta));
     } else if (isInserting) {
-      context.missing(_removedAtMeta);
+      context.missing(_deletedAtMeta);
     }
     return context;
   }
@@ -15441,8 +15443,8 @@ class $BookTagMembershipTombstonesTable extends BookTagMembershipTombstones
           .read(DriftSqlType.string, data['${effectivePrefix}media_type'])!,
       tagName: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}tag_name'])!,
-      removedAt: attachedDatabase.typeMapping
-          .read(DriftSqlType.int, data['${effectivePrefix}removed_at'])!,
+      deletedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}deleted_at'])!,
     );
   }
 
@@ -15454,7 +15456,7 @@ class $BookTagMembershipTombstonesTable extends BookTagMembershipTombstones
 
 class BookTagMembershipTombstoneRow extends DataClass
     implements Insertable<BookTagMembershipTombstoneRow> {
-  /// 被移除标签的宿主稳定身份：EPUB 的 bookKey / 视频的 videoBookUid（跨设备一致）。
+  /// 被移除标签的宿主稳定身份：EPUB 的 bookKey / 视频的 bookUid（跨设备一致）。
   final String itemKey;
 
   /// 宿主媒体种类：'epub' | 'video'（同名书与视频各自独立立碑/清碑）。
@@ -15464,19 +15466,19 @@ class BookTagMembershipTombstoneRow extends DataClass
   final String tagName;
 
   /// 移除毫秒戳（LWW 比较键；重复移除 upsert 取新）。
-  final int removedAt;
+  final int deletedAt;
   const BookTagMembershipTombstoneRow(
       {required this.itemKey,
       required this.mediaType,
       required this.tagName,
-      required this.removedAt});
+      required this.deletedAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['item_key'] = Variable<String>(itemKey);
     map['media_type'] = Variable<String>(mediaType);
     map['tag_name'] = Variable<String>(tagName);
-    map['removed_at'] = Variable<int>(removedAt);
+    map['deleted_at'] = Variable<int>(deletedAt);
     return map;
   }
 
@@ -15485,7 +15487,7 @@ class BookTagMembershipTombstoneRow extends DataClass
       itemKey: Value(itemKey),
       mediaType: Value(mediaType),
       tagName: Value(tagName),
-      removedAt: Value(removedAt),
+      deletedAt: Value(deletedAt),
     );
   }
 
@@ -15496,7 +15498,7 @@ class BookTagMembershipTombstoneRow extends DataClass
       itemKey: serializer.fromJson<String>(json['itemKey']),
       mediaType: serializer.fromJson<String>(json['mediaType']),
       tagName: serializer.fromJson<String>(json['tagName']),
-      removedAt: serializer.fromJson<int>(json['removedAt']),
+      deletedAt: serializer.fromJson<int>(json['deletedAt']),
     );
   }
   @override
@@ -15506,7 +15508,7 @@ class BookTagMembershipTombstoneRow extends DataClass
       'itemKey': serializer.toJson<String>(itemKey),
       'mediaType': serializer.toJson<String>(mediaType),
       'tagName': serializer.toJson<String>(tagName),
-      'removedAt': serializer.toJson<int>(removedAt),
+      'deletedAt': serializer.toJson<int>(deletedAt),
     };
   }
 
@@ -15514,12 +15516,12 @@ class BookTagMembershipTombstoneRow extends DataClass
           {String? itemKey,
           String? mediaType,
           String? tagName,
-          int? removedAt}) =>
+          int? deletedAt}) =>
       BookTagMembershipTombstoneRow(
         itemKey: itemKey ?? this.itemKey,
         mediaType: mediaType ?? this.mediaType,
         tagName: tagName ?? this.tagName,
-        removedAt: removedAt ?? this.removedAt,
+        deletedAt: deletedAt ?? this.deletedAt,
       );
   BookTagMembershipTombstoneRow copyWithCompanion(
       BookTagMembershipTombstonesCompanion data) {
@@ -15527,7 +15529,7 @@ class BookTagMembershipTombstoneRow extends DataClass
       itemKey: data.itemKey.present ? data.itemKey.value : this.itemKey,
       mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
       tagName: data.tagName.present ? data.tagName.value : this.tagName,
-      removedAt: data.removedAt.present ? data.removedAt.value : this.removedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
     );
   }
 
@@ -15537,13 +15539,13 @@ class BookTagMembershipTombstoneRow extends DataClass
           ..write('itemKey: $itemKey, ')
           ..write('mediaType: $mediaType, ')
           ..write('tagName: $tagName, ')
-          ..write('removedAt: $removedAt')
+          ..write('deletedAt: $deletedAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(itemKey, mediaType, tagName, removedAt);
+  int get hashCode => Object.hash(itemKey, mediaType, tagName, deletedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -15551,7 +15553,7 @@ class BookTagMembershipTombstoneRow extends DataClass
           other.itemKey == this.itemKey &&
           other.mediaType == this.mediaType &&
           other.tagName == this.tagName &&
-          other.removedAt == this.removedAt);
+          other.deletedAt == this.deletedAt);
 }
 
 class BookTagMembershipTombstonesCompanion
@@ -15559,37 +15561,37 @@ class BookTagMembershipTombstonesCompanion
   final Value<String> itemKey;
   final Value<String> mediaType;
   final Value<String> tagName;
-  final Value<int> removedAt;
+  final Value<int> deletedAt;
   final Value<int> rowid;
   const BookTagMembershipTombstonesCompanion({
     this.itemKey = const Value.absent(),
     this.mediaType = const Value.absent(),
     this.tagName = const Value.absent(),
-    this.removedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   BookTagMembershipTombstonesCompanion.insert({
     required String itemKey,
     required String mediaType,
     required String tagName,
-    required int removedAt,
+    required int deletedAt,
     this.rowid = const Value.absent(),
   })  : itemKey = Value(itemKey),
         mediaType = Value(mediaType),
         tagName = Value(tagName),
-        removedAt = Value(removedAt);
+        deletedAt = Value(deletedAt);
   static Insertable<BookTagMembershipTombstoneRow> custom({
     Expression<String>? itemKey,
     Expression<String>? mediaType,
     Expression<String>? tagName,
-    Expression<int>? removedAt,
+    Expression<int>? deletedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (itemKey != null) 'item_key': itemKey,
       if (mediaType != null) 'media_type': mediaType,
       if (tagName != null) 'tag_name': tagName,
-      if (removedAt != null) 'removed_at': removedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -15598,13 +15600,13 @@ class BookTagMembershipTombstonesCompanion
       {Value<String>? itemKey,
       Value<String>? mediaType,
       Value<String>? tagName,
-      Value<int>? removedAt,
+      Value<int>? deletedAt,
       Value<int>? rowid}) {
     return BookTagMembershipTombstonesCompanion(
       itemKey: itemKey ?? this.itemKey,
       mediaType: mediaType ?? this.mediaType,
       tagName: tagName ?? this.tagName,
-      removedAt: removedAt ?? this.removedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -15621,8 +15623,8 @@ class BookTagMembershipTombstonesCompanion
     if (tagName.present) {
       map['tag_name'] = Variable<String>(tagName.value);
     }
-    if (removedAt.present) {
-      map['removed_at'] = Variable<int>(removedAt.value);
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<int>(deletedAt.value);
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -15636,7 +15638,7 @@ class BookTagMembershipTombstonesCompanion
           ..write('itemKey: $itemKey, ')
           ..write('mediaType: $mediaType, ')
           ..write('tagName: $tagName, ')
-          ..write('removedAt: $removedAt, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -20629,6 +20631,234 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
   }
 }
 
+class $GalgameTagMappingsTable extends GalgameTagMappings
+    with TableInfo<$GalgameTagMappingsTable, GalgameTagMappingRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $GalgameTagMappingsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _gameIdMeta = const VerificationMeta('gameId');
+  @override
+  late final GeneratedColumn<String> gameId = GeneratedColumn<String>(
+      'game_id', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES galgames (id) ON DELETE CASCADE'));
+  static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
+  @override
+  late final GeneratedColumn<int> tagId = GeneratedColumn<int>(
+      'tag_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: true,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES book_tags (id) ON DELETE CASCADE'));
+  @override
+  List<GeneratedColumn> get $columns => [id, gameId, tagId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'galgame_tag_mappings';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<GalgameTagMappingRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('game_id')) {
+      context.handle(_gameIdMeta,
+          gameId.isAcceptableOrUnknown(data['game_id']!, _gameIdMeta));
+    } else if (isInserting) {
+      context.missing(_gameIdMeta);
+    }
+    if (data.containsKey('tag_id')) {
+      context.handle(
+          _tagIdMeta, tagId.isAcceptableOrUnknown(data['tag_id']!, _tagIdMeta));
+    } else if (isInserting) {
+      context.missing(_tagIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {gameId, tagId},
+      ];
+  @override
+  GalgameTagMappingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return GalgameTagMappingRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      gameId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}game_id'])!,
+      tagId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}tag_id'])!,
+    );
+  }
+
+  @override
+  $GalgameTagMappingsTable createAlias(String alias) {
+    return $GalgameTagMappingsTable(attachedDatabase, alias);
+  }
+}
+
+class GalgameTagMappingRow extends DataClass
+    implements Insertable<GalgameTagMappingRow> {
+  final int id;
+  final String gameId;
+  final int tagId;
+  const GalgameTagMappingRow(
+      {required this.id, required this.gameId, required this.tagId});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['game_id'] = Variable<String>(gameId);
+    map['tag_id'] = Variable<int>(tagId);
+    return map;
+  }
+
+  GalgameTagMappingsCompanion toCompanion(bool nullToAbsent) {
+    return GalgameTagMappingsCompanion(
+      id: Value(id),
+      gameId: Value(gameId),
+      tagId: Value(tagId),
+    );
+  }
+
+  factory GalgameTagMappingRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return GalgameTagMappingRow(
+      id: serializer.fromJson<int>(json['id']),
+      gameId: serializer.fromJson<String>(json['gameId']),
+      tagId: serializer.fromJson<int>(json['tagId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'gameId': serializer.toJson<String>(gameId),
+      'tagId': serializer.toJson<int>(tagId),
+    };
+  }
+
+  GalgameTagMappingRow copyWith({int? id, String? gameId, int? tagId}) =>
+      GalgameTagMappingRow(
+        id: id ?? this.id,
+        gameId: gameId ?? this.gameId,
+        tagId: tagId ?? this.tagId,
+      );
+  GalgameTagMappingRow copyWithCompanion(GalgameTagMappingsCompanion data) {
+    return GalgameTagMappingRow(
+      id: data.id.present ? data.id.value : this.id,
+      gameId: data.gameId.present ? data.gameId.value : this.gameId,
+      tagId: data.tagId.present ? data.tagId.value : this.tagId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GalgameTagMappingRow(')
+          ..write('id: $id, ')
+          ..write('gameId: $gameId, ')
+          ..write('tagId: $tagId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, gameId, tagId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is GalgameTagMappingRow &&
+          other.id == this.id &&
+          other.gameId == this.gameId &&
+          other.tagId == this.tagId);
+}
+
+class GalgameTagMappingsCompanion
+    extends UpdateCompanion<GalgameTagMappingRow> {
+  final Value<int> id;
+  final Value<String> gameId;
+  final Value<int> tagId;
+  const GalgameTagMappingsCompanion({
+    this.id = const Value.absent(),
+    this.gameId = const Value.absent(),
+    this.tagId = const Value.absent(),
+  });
+  GalgameTagMappingsCompanion.insert({
+    this.id = const Value.absent(),
+    required String gameId,
+    required int tagId,
+  })  : gameId = Value(gameId),
+        tagId = Value(tagId);
+  static Insertable<GalgameTagMappingRow> custom({
+    Expression<int>? id,
+    Expression<String>? gameId,
+    Expression<int>? tagId,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (gameId != null) 'game_id': gameId,
+      if (tagId != null) 'tag_id': tagId,
+    });
+  }
+
+  GalgameTagMappingsCompanion copyWith(
+      {Value<int>? id, Value<String>? gameId, Value<int>? tagId}) {
+    return GalgameTagMappingsCompanion(
+      id: id ?? this.id,
+      gameId: gameId ?? this.gameId,
+      tagId: tagId ?? this.tagId,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (gameId.present) {
+      map['game_id'] = Variable<String>(gameId.value);
+    }
+    if (tagId.present) {
+      map['tag_id'] = Variable<int>(tagId.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GalgameTagMappingsCompanion(')
+          ..write('id: $id, ')
+          ..write('gameId: $gameId, ')
+          ..write('tagId: $tagId')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -20712,6 +20942,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
   late final $GalgameSourcesTable galgameSources = $GalgameSourcesTable(this);
   late final $GalgameSessionsTable galgameSessions =
       $GalgameSessionsTable(this);
+  late final $GalgameTagMappingsTable galgameTagMappings =
+      $GalgameTagMappingsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -20768,7 +21000,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         mediaTrackingOutbox,
         galgames,
         galgameSources,
-        galgameSessions
+        galgameSessions,
+        galgameTagMappings
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -20918,6 +21151,20 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('galgame_sessions', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('galgames',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('galgame_tag_mappings', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('book_tags',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('galgame_tag_mappings', kind: UpdateKind.delete),
             ],
           ),
         ],
@@ -25107,6 +25354,23 @@ final class $$BookTagsTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$GalgameTagMappingsTable,
+      List<GalgameTagMappingRow>> _galgameTagMappingsRefsTable(
+          _$HibikiDatabase db) =>
+      MultiTypedResultKey.fromTable(db.galgameTagMappings,
+          aliasName: 'book_tags__id__galgame_tag_mappings__tag_id');
+
+  $$GalgameTagMappingsTableProcessedTableManager get galgameTagMappingsRefs {
+    final manager =
+        $$GalgameTagMappingsTableTableManager($_db, $_db.galgameTagMappings)
+            .filter((f) => f.tagId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_galgameTagMappingsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$BookTagsTableFilterComposer
@@ -25217,6 +25481,27 @@ class $$BookTagsTableFilterComposer
                   $removeJoinBuilderFromRootComposer:
                       $removeJoinBuilderFromRootComposer,
                 ));
+    return f(composer);
+  }
+
+  Expression<bool> galgameTagMappingsRefs(
+      Expression<bool> Function($$GalgameTagMappingsTableFilterComposer f) f) {
+    final $$GalgameTagMappingsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.galgameTagMappings,
+        getReferencedColumn: (t) => t.tagId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgameTagMappingsTableFilterComposer(
+              $db: $db,
+              $table: $db.galgameTagMappings,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return f(composer);
   }
 }
@@ -25358,6 +25643,28 @@ class $$BookTagsTableAnnotationComposer
                 ));
     return f(composer);
   }
+
+  Expression<T> galgameTagMappingsRefs<T extends Object>(
+      Expression<T> Function($$GalgameTagMappingsTableAnnotationComposer a) f) {
+    final $$GalgameTagMappingsTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.galgameTagMappings,
+            getReferencedColumn: (t) => t.tagId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$GalgameTagMappingsTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.galgameTagMappings,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
 }
 
 class $$BookTagsTableTableManager extends RootTableManager<
@@ -25375,7 +25682,8 @@ class $$BookTagsTableTableManager extends RootTableManager<
         {bool bookTagMappingsRefs,
         bool srtBookTagMappingsRefs,
         bool videoBookTagMappingsRefs,
-        bool collectionTagMappingsRefs})> {
+        bool collectionTagMappingsRefs,
+        bool galgameTagMappingsRefs})> {
   $$BookTagsTableTableManager(_$HibikiDatabase db, $BookTagsTable table)
       : super(TableManagerState(
           db: db,
@@ -25422,14 +25730,16 @@ class $$BookTagsTableTableManager extends RootTableManager<
               {bookTagMappingsRefs = false,
               srtBookTagMappingsRefs = false,
               videoBookTagMappingsRefs = false,
-              collectionTagMappingsRefs = false}) {
+              collectionTagMappingsRefs = false,
+              galgameTagMappingsRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (bookTagMappingsRefs) db.bookTagMappings,
                 if (srtBookTagMappingsRefs) db.srtBookTagMappings,
                 if (videoBookTagMappingsRefs) db.videoBookTagMappings,
-                if (collectionTagMappingsRefs) db.collectionTagMappings
+                if (collectionTagMappingsRefs) db.collectionTagMappings,
+                if (galgameTagMappingsRefs) db.galgameTagMappings
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
@@ -25485,6 +25795,19 @@ class $$BookTagsTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem: (item,
                                 referencedItems) =>
                             referencedItems.where((e) => e.tagId == item.id),
+                        typedResults: items),
+                  if (galgameTagMappingsRefs)
+                    await $_getPrefetchedData<BookTagRow, $BookTagsTable,
+                            GalgameTagMappingRow>(
+                        currentTable: table,
+                        referencedTable: $$BookTagsTableReferences
+                            ._galgameTagMappingsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$BookTagsTableReferences(db, table, p0)
+                                .galgameTagMappingsRefs,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.tagId == item.id),
                         typedResults: items)
                 ];
               },
@@ -25508,7 +25831,8 @@ typedef $$BookTagsTableProcessedTableManager = ProcessedTableManager<
         {bool bookTagMappingsRefs,
         bool srtBookTagMappingsRefs,
         bool videoBookTagMappingsRefs,
-        bool collectionTagMappingsRefs})>;
+        bool collectionTagMappingsRefs,
+        bool galgameTagMappingsRefs})>;
 typedef $$BookTagMappingsTableCreateCompanionBuilder = BookTagMappingsCompanion
     Function({
   Value<int> id,
@@ -27428,7 +27752,7 @@ typedef $$VideoBooksTableCreateCompanionBuilder = VideoBooksCompanion Function({
   Value<int?> embeddedSubtitleTrack,
   Value<String?> coverPath,
   Value<int> lastPositionMs,
-  Value<DateTime?> importedAt,
+  Value<int?> importedAt,
   Value<String?> playlistJson,
   Value<int> currentEpisode,
   Value<String?> audioTrackId,
@@ -27448,7 +27772,7 @@ typedef $$VideoBooksTableUpdateCompanionBuilder = VideoBooksCompanion Function({
   Value<int?> embeddedSubtitleTrack,
   Value<String?> coverPath,
   Value<int> lastPositionMs,
-  Value<DateTime?> importedAt,
+  Value<int?> importedAt,
   Value<String?> playlistJson,
   Value<int> currentEpisode,
   Value<String?> audioTrackId,
@@ -27482,14 +27806,14 @@ final class $$VideoBooksTableReferences
           _$HibikiDatabase db) =>
       MultiTypedResultKey.fromTable(db.videoBookTagMappings,
           aliasName:
-              'video_books__book_uid__video_book_tag_mappings__video_book_uid');
+              'video_books__book_uid__video_book_tag_mappings__book_uid');
 
   $$VideoBookTagMappingsTableProcessedTableManager
       get videoBookTagMappingsRefs {
     final manager =
         $$VideoBookTagMappingsTableTableManager($_db, $_db.videoBookTagMappings)
-            .filter((f) => f.videoBookUid.bookUid
-                .sqlEquals($_itemColumn<String>('book_uid')!));
+            .filter((f) =>
+                f.bookUid.bookUid.sqlEquals($_itemColumn<String>('book_uid')!));
 
     final cache =
         $_typedResult.readTableOrNull(_videoBookTagMappingsRefsTable($_db));
@@ -27556,7 +27880,7 @@ class $$VideoBooksTableFilterComposer
       column: $table.lastPositionMs,
       builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<DateTime> get importedAt => $composableBuilder(
+  ColumnFilters<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get playlistJson => $composableBuilder(
@@ -27606,7 +27930,7 @@ class $$VideoBooksTableFilterComposer
         composer: this,
         getCurrentColumn: (t) => t.bookUid,
         referencedTable: $db.videoBookTagMappings,
-        getReferencedColumn: (t) => t.videoBookUid,
+        getReferencedColumn: (t) => t.bookUid,
         builder: (joinBuilder,
                 {$addJoinBuilderToRootComposer,
                 $removeJoinBuilderFromRootComposer}) =>
@@ -27684,7 +28008,7 @@ class $$VideoBooksTableOrderingComposer
       column: $table.lastPositionMs,
       builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<DateTime> get importedAt => $composableBuilder(
+  ColumnOrderings<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<String> get playlistJson => $composableBuilder(
@@ -27766,7 +28090,7 @@ class $$VideoBooksTableAnnotationComposer
   GeneratedColumn<int> get lastPositionMs => $composableBuilder(
       column: $table.lastPositionMs, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get importedAt => $composableBuilder(
+  GeneratedColumn<int> get importedAt => $composableBuilder(
       column: $table.importedAt, builder: (column) => column);
 
   GeneratedColumn<String> get playlistJson => $composableBuilder(
@@ -27815,7 +28139,7 @@ class $$VideoBooksTableAnnotationComposer
             composer: this,
             getCurrentColumn: (t) => t.bookUid,
             referencedTable: $db.videoBookTagMappings,
-            getReferencedColumn: (t) => t.videoBookUid,
+            getReferencedColumn: (t) => t.bookUid,
             builder: (joinBuilder,
                     {$addJoinBuilderToRootComposer,
                     $removeJoinBuilderFromRootComposer}) =>
@@ -27887,7 +28211,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<int?> embeddedSubtitleTrack = const Value.absent(),
             Value<String?> coverPath = const Value.absent(),
             Value<int> lastPositionMs = const Value.absent(),
-            Value<DateTime?> importedAt = const Value.absent(),
+            Value<int?> importedAt = const Value.absent(),
             Value<String?> playlistJson = const Value.absent(),
             Value<int> currentEpisode = const Value.absent(),
             Value<String?> audioTrackId = const Value.absent(),
@@ -27927,7 +28251,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
             Value<int?> embeddedSubtitleTrack = const Value.absent(),
             Value<String?> coverPath = const Value.absent(),
             Value<int> lastPositionMs = const Value.absent(),
-            Value<DateTime?> importedAt = const Value.absent(),
+            Value<int?> importedAt = const Value.absent(),
             Value<String?> playlistJson = const Value.absent(),
             Value<int> currentEpisode = const Value.absent(),
             Value<String?> audioTrackId = const Value.absent(),
@@ -28012,7 +28336,7 @@ class $$VideoBooksTableTableManager extends RootTableManager<
                                 .videoBookTagMappingsRefs,
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
-                                .where((e) => e.videoBookUid == item.bookUid),
+                                .where((e) => e.bookUid == item.bookUid),
                         typedResults: items),
                   if (videoScrapeMetaRefs)
                     await $_getPrefetchedData<VideoBookRow, $VideoBooksTable,
@@ -28052,14 +28376,14 @@ typedef $$VideoBooksTableProcessedTableManager = ProcessedTableManager<
 typedef $$VideoBookTagMappingsTableCreateCompanionBuilder
     = VideoBookTagMappingsCompanion Function({
   Value<int> id,
-  required String videoBookUid,
+  required String bookUid,
   required int tagId,
   Value<int> addedAt,
 });
 typedef $$VideoBookTagMappingsTableUpdateCompanionBuilder
     = VideoBookTagMappingsCompanion Function({
   Value<int> id,
-  Value<String> videoBookUid,
+  Value<String> bookUid,
   Value<int> tagId,
   Value<int> addedAt,
 });
@@ -28069,16 +28393,15 @@ final class $$VideoBookTagMappingsTableReferences extends BaseReferences<
   $$VideoBookTagMappingsTableReferences(
       super.$_db, super.$_table, super.$_typedResult);
 
-  static $VideoBooksTable _videoBookUidTable(_$HibikiDatabase db) =>
-      db.videoBooks.createAlias(
-          'video_book_tag_mappings__video_book_uid__video_books__book_uid');
+  static $VideoBooksTable _bookUidTable(_$HibikiDatabase db) => db.videoBooks
+      .createAlias('video_book_tag_mappings__book_uid__video_books__book_uid');
 
-  $$VideoBooksTableProcessedTableManager get videoBookUid {
-    final $_column = $_itemColumn<String>('video_book_uid')!;
+  $$VideoBooksTableProcessedTableManager get bookUid {
+    final $_column = $_itemColumn<String>('book_uid')!;
 
     final manager = $$VideoBooksTableTableManager($_db, $_db.videoBooks)
         .filter((f) => f.bookUid.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_videoBookUidTable($_db));
+    final item = $_typedResult.readTableOrNull(_bookUidTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: [item]));
@@ -28114,10 +28437,10 @@ class $$VideoBookTagMappingsTableFilterComposer
   ColumnFilters<int> get addedAt => $composableBuilder(
       column: $table.addedAt, builder: (column) => ColumnFilters(column));
 
-  $$VideoBooksTableFilterComposer get videoBookUid {
+  $$VideoBooksTableFilterComposer get bookUid {
     final $$VideoBooksTableFilterComposer composer = $composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.videoBookUid,
+        getCurrentColumn: (t) => t.bookUid,
         referencedTable: $db.videoBooks,
         getReferencedColumn: (t) => t.bookUid,
         builder: (joinBuilder,
@@ -28170,10 +28493,10 @@ class $$VideoBookTagMappingsTableOrderingComposer
   ColumnOrderings<int> get addedAt => $composableBuilder(
       column: $table.addedAt, builder: (column) => ColumnOrderings(column));
 
-  $$VideoBooksTableOrderingComposer get videoBookUid {
+  $$VideoBooksTableOrderingComposer get bookUid {
     final $$VideoBooksTableOrderingComposer composer = $composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.videoBookUid,
+        getCurrentColumn: (t) => t.bookUid,
         referencedTable: $db.videoBooks,
         getReferencedColumn: (t) => t.bookUid,
         builder: (joinBuilder,
@@ -28226,10 +28549,10 @@ class $$VideoBookTagMappingsTableAnnotationComposer
   GeneratedColumn<int> get addedAt =>
       $composableBuilder(column: $table.addedAt, builder: (column) => column);
 
-  $$VideoBooksTableAnnotationComposer get videoBookUid {
+  $$VideoBooksTableAnnotationComposer get bookUid {
     final $$VideoBooksTableAnnotationComposer composer = $composerBuilder(
         composer: this,
-        getCurrentColumn: (t) => t.videoBookUid,
+        getCurrentColumn: (t) => t.bookUid,
         referencedTable: $db.videoBooks,
         getReferencedColumn: (t) => t.bookUid,
         builder: (joinBuilder,
@@ -28278,7 +28601,7 @@ class $$VideoBookTagMappingsTableTableManager extends RootTableManager<
     $$VideoBookTagMappingsTableUpdateCompanionBuilder,
     (VideoBookTagMappingRow, $$VideoBookTagMappingsTableReferences),
     VideoBookTagMappingRow,
-    PrefetchHooks Function({bool videoBookUid, bool tagId})> {
+    PrefetchHooks Function({bool bookUid, bool tagId})> {
   $$VideoBookTagMappingsTableTableManager(
       _$HibikiDatabase db, $VideoBookTagMappingsTable table)
       : super(TableManagerState(
@@ -28294,25 +28617,25 @@ class $$VideoBookTagMappingsTableTableManager extends RootTableManager<
                   $db: db, $table: table),
           updateCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            Value<String> videoBookUid = const Value.absent(),
+            Value<String> bookUid = const Value.absent(),
             Value<int> tagId = const Value.absent(),
             Value<int> addedAt = const Value.absent(),
           }) =>
               VideoBookTagMappingsCompanion(
             id: id,
-            videoBookUid: videoBookUid,
+            bookUid: bookUid,
             tagId: tagId,
             addedAt: addedAt,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
-            required String videoBookUid,
+            required String bookUid,
             required int tagId,
             Value<int> addedAt = const Value.absent(),
           }) =>
               VideoBookTagMappingsCompanion.insert(
             id: id,
-            videoBookUid: videoBookUid,
+            bookUid: bookUid,
             tagId: tagId,
             addedAt: addedAt,
           ),
@@ -28322,7 +28645,7 @@ class $$VideoBookTagMappingsTableTableManager extends RootTableManager<
                     $$VideoBookTagMappingsTableReferences(db, table, e)
                   ))
               .toList(),
-          prefetchHooksCallback: ({videoBookUid = false, tagId = false}) {
+          prefetchHooksCallback: ({bookUid = false, tagId = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -28339,14 +28662,14 @@ class $$VideoBookTagMappingsTableTableManager extends RootTableManager<
                       dynamic,
                       dynamic,
                       dynamic>>(state) {
-                if (videoBookUid) {
+                if (bookUid) {
                   state = state.withJoin(
                     currentTable: table,
-                    currentColumn: table.videoBookUid,
-                    referencedTable: $$VideoBookTagMappingsTableReferences
-                        ._videoBookUidTable(db),
+                    currentColumn: table.bookUid,
+                    referencedTable:
+                        $$VideoBookTagMappingsTableReferences._bookUidTable(db),
                     referencedColumn: $$VideoBookTagMappingsTableReferences
-                        ._videoBookUidTable(db)
+                        ._bookUidTable(db)
                         .bookUid,
                   ) as T;
                 }
@@ -28384,7 +28707,7 @@ typedef $$VideoBookTagMappingsTableProcessedTableManager
         $$VideoBookTagMappingsTableUpdateCompanionBuilder,
         (VideoBookTagMappingRow, $$VideoBookTagMappingsTableReferences),
         VideoBookTagMappingRow,
-        PrefetchHooks Function({bool videoBookUid, bool tagId})>;
+        PrefetchHooks Function({bool bookUid, bool tagId})>;
 typedef $$VideoWatchStatisticsTableCreateCompanionBuilder
     = VideoWatchStatisticsCompanion Function({
   Value<int> id,
@@ -30652,7 +30975,7 @@ typedef $$CollectionMemberTombstonesTableCreateCompanionBuilder
   required String collectionType,
   required String mediaType,
   required String entryKey,
-  required int removedAt,
+  required int deletedAt,
   Value<int> rowid,
 });
 typedef $$CollectionMemberTombstonesTableUpdateCompanionBuilder
@@ -30661,7 +30984,7 @@ typedef $$CollectionMemberTombstonesTableUpdateCompanionBuilder
   Value<String> collectionType,
   Value<String> mediaType,
   Value<String> entryKey,
-  Value<int> removedAt,
+  Value<int> deletedAt,
   Value<int> rowid,
 });
 
@@ -30688,8 +31011,8 @@ class $$CollectionMemberTombstonesTableFilterComposer
   ColumnFilters<String> get entryKey => $composableBuilder(
       column: $table.entryKey, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<int> get removedAt => $composableBuilder(
-      column: $table.removedAt, builder: (column) => ColumnFilters(column));
+  ColumnFilters<int> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnFilters(column));
 }
 
 class $$CollectionMemberTombstonesTableOrderingComposer
@@ -30715,8 +31038,8 @@ class $$CollectionMemberTombstonesTableOrderingComposer
   ColumnOrderings<String> get entryKey => $composableBuilder(
       column: $table.entryKey, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<int> get removedAt => $composableBuilder(
-      column: $table.removedAt, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<int> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
 }
 
 class $$CollectionMemberTombstonesTableAnnotationComposer
@@ -30740,8 +31063,8 @@ class $$CollectionMemberTombstonesTableAnnotationComposer
   GeneratedColumn<String> get entryKey =>
       $composableBuilder(column: $table.entryKey, builder: (column) => column);
 
-  GeneratedColumn<int> get removedAt =>
-      $composableBuilder(column: $table.removedAt, builder: (column) => column);
+  GeneratedColumn<int> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
 }
 
 class $$CollectionMemberTombstonesTableTableManager extends RootTableManager<
@@ -30779,7 +31102,7 @@ class $$CollectionMemberTombstonesTableTableManager extends RootTableManager<
             Value<String> collectionType = const Value.absent(),
             Value<String> mediaType = const Value.absent(),
             Value<String> entryKey = const Value.absent(),
-            Value<int> removedAt = const Value.absent(),
+            Value<int> deletedAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               CollectionMemberTombstonesCompanion(
@@ -30787,7 +31110,7 @@ class $$CollectionMemberTombstonesTableTableManager extends RootTableManager<
             collectionType: collectionType,
             mediaType: mediaType,
             entryKey: entryKey,
-            removedAt: removedAt,
+            deletedAt: deletedAt,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -30795,7 +31118,7 @@ class $$CollectionMemberTombstonesTableTableManager extends RootTableManager<
             required String collectionType,
             required String mediaType,
             required String entryKey,
-            required int removedAt,
+            required int deletedAt,
             Value<int> rowid = const Value.absent(),
           }) =>
               CollectionMemberTombstonesCompanion.insert(
@@ -30803,7 +31126,7 @@ class $$CollectionMemberTombstonesTableTableManager extends RootTableManager<
             collectionType: collectionType,
             mediaType: mediaType,
             entryKey: entryKey,
-            removedAt: removedAt,
+            deletedAt: deletedAt,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
@@ -31502,7 +31825,7 @@ typedef $$BookTagMembershipTombstonesTableCreateCompanionBuilder
   required String itemKey,
   required String mediaType,
   required String tagName,
-  required int removedAt,
+  required int deletedAt,
   Value<int> rowid,
 });
 typedef $$BookTagMembershipTombstonesTableUpdateCompanionBuilder
@@ -31510,7 +31833,7 @@ typedef $$BookTagMembershipTombstonesTableUpdateCompanionBuilder
   Value<String> itemKey,
   Value<String> mediaType,
   Value<String> tagName,
-  Value<int> removedAt,
+  Value<int> deletedAt,
   Value<int> rowid,
 });
 
@@ -31532,8 +31855,8 @@ class $$BookTagMembershipTombstonesTableFilterComposer
   ColumnFilters<String> get tagName => $composableBuilder(
       column: $table.tagName, builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<int> get removedAt => $composableBuilder(
-      column: $table.removedAt, builder: (column) => ColumnFilters(column));
+  ColumnFilters<int> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnFilters(column));
 }
 
 class $$BookTagMembershipTombstonesTableOrderingComposer
@@ -31554,8 +31877,8 @@ class $$BookTagMembershipTombstonesTableOrderingComposer
   ColumnOrderings<String> get tagName => $composableBuilder(
       column: $table.tagName, builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<int> get removedAt => $composableBuilder(
-      column: $table.removedAt, builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<int> get deletedAt => $composableBuilder(
+      column: $table.deletedAt, builder: (column) => ColumnOrderings(column));
 }
 
 class $$BookTagMembershipTombstonesTableAnnotationComposer
@@ -31576,8 +31899,8 @@ class $$BookTagMembershipTombstonesTableAnnotationComposer
   GeneratedColumn<String> get tagName =>
       $composableBuilder(column: $table.tagName, builder: (column) => column);
 
-  GeneratedColumn<int> get removedAt =>
-      $composableBuilder(column: $table.removedAt, builder: (column) => column);
+  GeneratedColumn<int> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
 }
 
 class $$BookTagMembershipTombstonesTableTableManager extends RootTableManager<
@@ -31614,28 +31937,28 @@ class $$BookTagMembershipTombstonesTableTableManager extends RootTableManager<
             Value<String> itemKey = const Value.absent(),
             Value<String> mediaType = const Value.absent(),
             Value<String> tagName = const Value.absent(),
-            Value<int> removedAt = const Value.absent(),
+            Value<int> deletedAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               BookTagMembershipTombstonesCompanion(
             itemKey: itemKey,
             mediaType: mediaType,
             tagName: tagName,
-            removedAt: removedAt,
+            deletedAt: deletedAt,
             rowid: rowid,
           ),
           createCompanionCallback: ({
             required String itemKey,
             required String mediaType,
             required String tagName,
-            required int removedAt,
+            required int deletedAt,
             Value<int> rowid = const Value.absent(),
           }) =>
               BookTagMembershipTombstonesCompanion.insert(
             itemKey: itemKey,
             mediaType: mediaType,
             tagName: tagName,
-            removedAt: removedAt,
+            deletedAt: deletedAt,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
@@ -34124,6 +34447,23 @@ final class $$GalgamesTableReferences
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$GalgameTagMappingsTable,
+      List<GalgameTagMappingRow>> _galgameTagMappingsRefsTable(
+          _$HibikiDatabase db) =>
+      MultiTypedResultKey.fromTable(db.galgameTagMappings,
+          aliasName: 'galgames__id__galgame_tag_mappings__game_id');
+
+  $$GalgameTagMappingsTableProcessedTableManager get galgameTagMappingsRefs {
+    final manager =
+        $$GalgameTagMappingsTableTableManager($_db, $_db.galgameTagMappings)
+            .filter((f) => f.gameId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_galgameTagMappingsRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$GalgamesTableFilterComposer
@@ -34206,6 +34546,27 @@ class $$GalgamesTableFilterComposer
             $$GalgameSessionsTableFilterComposer(
               $db: $db,
               $table: $db.galgameSessions,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return f(composer);
+  }
+
+  Expression<bool> galgameTagMappingsRefs(
+      Expression<bool> Function($$GalgameTagMappingsTableFilterComposer f) f) {
+    final $$GalgameTagMappingsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.galgameTagMappings,
+        getReferencedColumn: (t) => t.gameId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgameTagMappingsTableFilterComposer(
+              $db: $db,
+              $table: $db.galgameTagMappings,
               $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
               joinBuilder: joinBuilder,
               $removeJoinBuilderFromRootComposer:
@@ -34349,6 +34710,28 @@ class $$GalgamesTableAnnotationComposer
             ));
     return f(composer);
   }
+
+  Expression<T> galgameTagMappingsRefs<T extends Object>(
+      Expression<T> Function($$GalgameTagMappingsTableAnnotationComposer a) f) {
+    final $$GalgameTagMappingsTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.galgameTagMappings,
+            getReferencedColumn: (t) => t.gameId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$GalgameTagMappingsTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.galgameTagMappings,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
 }
 
 class $$GalgamesTableTableManager extends RootTableManager<
@@ -34363,7 +34746,9 @@ class $$GalgamesTableTableManager extends RootTableManager<
     (GalgameRow, $$GalgamesTableReferences),
     GalgameRow,
     PrefetchHooks Function(
-        {bool galgameSourcesRefs, bool galgameSessionsRefs})> {
+        {bool galgameSourcesRefs,
+        bool galgameSessionsRefs,
+        bool galgameTagMappingsRefs})> {
   $$GalgamesTableTableManager(_$HibikiDatabase db, $GalgamesTable table)
       : super(TableManagerState(
           db: db,
@@ -34439,12 +34824,15 @@ class $$GalgamesTableTableManager extends RootTableManager<
                   (e.readTable(table), $$GalgamesTableReferences(db, table, e)))
               .toList(),
           prefetchHooksCallback: (
-              {galgameSourcesRefs = false, galgameSessionsRefs = false}) {
+              {galgameSourcesRefs = false,
+              galgameSessionsRefs = false,
+              galgameTagMappingsRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (galgameSourcesRefs) db.galgameSources,
-                if (galgameSessionsRefs) db.galgameSessions
+                if (galgameSessionsRefs) db.galgameSessions,
+                if (galgameTagMappingsRefs) db.galgameTagMappings
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
@@ -34474,6 +34862,19 @@ class $$GalgamesTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem: (item,
                                 referencedItems) =>
                             referencedItems.where((e) => e.gameId == item.id),
+                        typedResults: items),
+                  if (galgameTagMappingsRefs)
+                    await $_getPrefetchedData<GalgameRow, $GalgamesTable,
+                            GalgameTagMappingRow>(
+                        currentTable: table,
+                        referencedTable: $$GalgamesTableReferences
+                            ._galgameTagMappingsRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$GalgamesTableReferences(db, table, p0)
+                                .galgameTagMappingsRefs,
+                        referencedItemsForCurrentItem: (item,
+                                referencedItems) =>
+                            referencedItems.where((e) => e.gameId == item.id),
                         typedResults: items)
                 ];
               },
@@ -34494,7 +34895,9 @@ typedef $$GalgamesTableProcessedTableManager = ProcessedTableManager<
     (GalgameRow, $$GalgamesTableReferences),
     GalgameRow,
     PrefetchHooks Function(
-        {bool galgameSourcesRefs, bool galgameSessionsRefs})>;
+        {bool galgameSourcesRefs,
+        bool galgameSessionsRefs,
+        bool galgameTagMappingsRefs})>;
 typedef $$GalgameSourcesTableCreateCompanionBuilder = GalgameSourcesCompanion
     Function({
   required String gameId,
@@ -35088,6 +35491,322 @@ typedef $$GalgameSessionsTableProcessedTableManager = ProcessedTableManager<
     (GalgameSessionRow, $$GalgameSessionsTableReferences),
     GalgameSessionRow,
     PrefetchHooks Function({bool gameId})>;
+typedef $$GalgameTagMappingsTableCreateCompanionBuilder
+    = GalgameTagMappingsCompanion Function({
+  Value<int> id,
+  required String gameId,
+  required int tagId,
+});
+typedef $$GalgameTagMappingsTableUpdateCompanionBuilder
+    = GalgameTagMappingsCompanion Function({
+  Value<int> id,
+  Value<String> gameId,
+  Value<int> tagId,
+});
+
+final class $$GalgameTagMappingsTableReferences extends BaseReferences<
+    _$HibikiDatabase, $GalgameTagMappingsTable, GalgameTagMappingRow> {
+  $$GalgameTagMappingsTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $GalgamesTable _gameIdTable(_$HibikiDatabase db) =>
+      db.galgames.createAlias('galgame_tag_mappings__game_id__galgames__id');
+
+  $$GalgamesTableProcessedTableManager get gameId {
+    final $_column = $_itemColumn<String>('game_id')!;
+
+    final manager = $$GalgamesTableTableManager($_db, $_db.galgames)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_gameIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+
+  static $BookTagsTable _tagIdTable(_$HibikiDatabase db) =>
+      db.bookTags.createAlias('galgame_tag_mappings__tag_id__book_tags__id');
+
+  $$BookTagsTableProcessedTableManager get tagId {
+    final $_column = $_itemColumn<int>('tag_id')!;
+
+    final manager = $$BookTagsTableTableManager($_db, $_db.bookTags)
+        .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_tagIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$GalgameTagMappingsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $GalgameTagMappingsTable> {
+  $$GalgameTagMappingsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  $$GalgamesTableFilterComposer get gameId {
+    final $$GalgamesTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.gameId,
+        referencedTable: $db.galgames,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgamesTableFilterComposer(
+              $db: $db,
+              $table: $db.galgames,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$BookTagsTableFilterComposer get tagId {
+    final $$BookTagsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tagId,
+        referencedTable: $db.bookTags,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$BookTagsTableFilterComposer(
+              $db: $db,
+              $table: $db.bookTags,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$GalgameTagMappingsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $GalgameTagMappingsTable> {
+  $$GalgameTagMappingsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  $$GalgamesTableOrderingComposer get gameId {
+    final $$GalgamesTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.gameId,
+        referencedTable: $db.galgames,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgamesTableOrderingComposer(
+              $db: $db,
+              $table: $db.galgames,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$BookTagsTableOrderingComposer get tagId {
+    final $$BookTagsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tagId,
+        referencedTable: $db.bookTags,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$BookTagsTableOrderingComposer(
+              $db: $db,
+              $table: $db.bookTags,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$GalgameTagMappingsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $GalgameTagMappingsTable> {
+  $$GalgameTagMappingsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  $$GalgamesTableAnnotationComposer get gameId {
+    final $$GalgamesTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.gameId,
+        referencedTable: $db.galgames,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$GalgamesTableAnnotationComposer(
+              $db: $db,
+              $table: $db.galgames,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+
+  $$BookTagsTableAnnotationComposer get tagId {
+    final $$BookTagsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.tagId,
+        referencedTable: $db.bookTags,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$BookTagsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.bookTags,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$GalgameTagMappingsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $GalgameTagMappingsTable,
+    GalgameTagMappingRow,
+    $$GalgameTagMappingsTableFilterComposer,
+    $$GalgameTagMappingsTableOrderingComposer,
+    $$GalgameTagMappingsTableAnnotationComposer,
+    $$GalgameTagMappingsTableCreateCompanionBuilder,
+    $$GalgameTagMappingsTableUpdateCompanionBuilder,
+    (GalgameTagMappingRow, $$GalgameTagMappingsTableReferences),
+    GalgameTagMappingRow,
+    PrefetchHooks Function({bool gameId, bool tagId})> {
+  $$GalgameTagMappingsTableTableManager(
+      _$HibikiDatabase db, $GalgameTagMappingsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$GalgameTagMappingsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$GalgameTagMappingsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$GalgameTagMappingsTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> gameId = const Value.absent(),
+            Value<int> tagId = const Value.absent(),
+          }) =>
+              GalgameTagMappingsCompanion(
+            id: id,
+            gameId: gameId,
+            tagId: tagId,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String gameId,
+            required int tagId,
+          }) =>
+              GalgameTagMappingsCompanion.insert(
+            id: id,
+            gameId: gameId,
+            tagId: tagId,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$GalgameTagMappingsTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({gameId = false, tagId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (gameId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.gameId,
+                    referencedTable:
+                        $$GalgameTagMappingsTableReferences._gameIdTable(db),
+                    referencedColumn:
+                        $$GalgameTagMappingsTableReferences._gameIdTable(db).id,
+                  ) as T;
+                }
+                if (tagId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.tagId,
+                    referencedTable:
+                        $$GalgameTagMappingsTableReferences._tagIdTable(db),
+                    referencedColumn:
+                        $$GalgameTagMappingsTableReferences._tagIdTable(db).id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$GalgameTagMappingsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $GalgameTagMappingsTable,
+    GalgameTagMappingRow,
+    $$GalgameTagMappingsTableFilterComposer,
+    $$GalgameTagMappingsTableOrderingComposer,
+    $$GalgameTagMappingsTableAnnotationComposer,
+    $$GalgameTagMappingsTableCreateCompanionBuilder,
+    $$GalgameTagMappingsTableUpdateCompanionBuilder,
+    (GalgameTagMappingRow, $$GalgameTagMappingsTableReferences),
+    GalgameTagMappingRow,
+    PrefetchHooks Function({bool gameId, bool tagId})>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -35201,4 +35920,6 @@ class $HibikiDatabaseManager {
       $$GalgameSourcesTableTableManager(_db, _db.galgameSources);
   $$GalgameSessionsTableTableManager get galgameSessions =>
       $$GalgameSessionsTableTableManager(_db, _db.galgameSessions);
+  $$GalgameTagMappingsTableTableManager get galgameTagMappings =>
+      $$GalgameTagMappingsTableTableManager(_db, _db.galgameTagMappings);
 }

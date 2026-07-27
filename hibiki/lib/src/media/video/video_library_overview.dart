@@ -31,7 +31,9 @@ class VideoOverviewEntry {
   final String title;
   final int lastPositionMs;
   final bool completed;
-  final DateTime? importedAt;
+
+  /// 导入毫秒戳（`VideoBooks.importedAt`，v57 起 int 毫秒）；null = 无导入时间。
+  final int? importedAt;
 }
 
 /// 概览推导结果：三格统计 + 可空 hero（继续观看候选）。
@@ -83,8 +85,10 @@ VideoLibraryOverview computeVideoLibraryOverview({
   final List<VideoOverviewEntry> standalone = <VideoOverviewEntry>[];
   for (final VideoOverviewEntry e in entries) {
     if (!e.completed) unfinished++;
-    final DateTime? imported = e.importedAt;
-    if (imported != null && now.difference(imported).inDays < 7) {
+    final int? imported = e.importedAt;
+    if (imported != null &&
+        now.difference(DateTime.fromMillisecondsSinceEpoch(imported)).inDays <
+            7) {
       recentImports++;
     }
     final int? cid = collectionByUid[e.bookUid];
@@ -170,8 +174,8 @@ int _heroRank(
     final int c = aWatched.compareTo(bWatched);
     if (c != 0) return c;
   }
-  final DateTime? ai = a.importedAt;
-  final DateTime? bi = b.importedAt;
+  final int? ai = a.importedAt;
+  final int? bi = b.importedAt;
   if (ai != null || bi != null) {
     if (ai == null) return -1;
     if (bi == null) return 1;

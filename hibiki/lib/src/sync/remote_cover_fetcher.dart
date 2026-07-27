@@ -7,7 +7,7 @@ import 'dart:typed_data';
 /// 指纹接受。`Image.network` 走 Flutter 内部 HttpClient，没有
 /// `HttpClient.badCertificateCallback`、拿不到钉扎指纹 → https 握手必失败 → 空封面
 /// （视频流/字幕已走 pinned client 故能播放，封面却漏了）。故封面必须复用互联的
-/// pinned client：实现（`HibikiClientSyncBackend`）用 `_ops.buildRequest` 发 GET，
+/// pinned client：实现（`InterconnectSyncBackend`）用 `_ops.buildRequest` 发 GET，
 /// https 走 pinned client（证书指纹相等才接受自签），明文 http 走裸 client（老路径
 /// 字节不变），并补 Basic auth。
 abstract class RemoteCoverFetcher {

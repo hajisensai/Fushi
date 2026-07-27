@@ -1,4 +1,5 @@
 import 'package:hibiki/src/sync/sync_manifest_codec.dart';
+import 'package:hibiki_core/hibiki_core.dart' show fnv1a32Utf16PairHex;
 import 'package:path/path.dart' as p;
 
 /// 云视频资产目录清单（多端库联合视图 §2.6 / 任务12）。
@@ -165,21 +166,9 @@ Map<String, int> _parseNameIntMap(Object? raw) {
   return out;
 }
 
-/// FNV-1a 32-bit 稳定哈希（确定性、无外部依赖，仅用于资产名去歧义，非安全用途）。
-/// 逐码元混入高低字节，保证不同 Unicode 码元不塌缩到同值。
-String _stableHashHex(String s) {
-  int hash = 0x811c9dc5;
-  for (final int c in s.codeUnits) {
-    hash = (hash ^ (c & 0xff)) & 0xffffffff;
-    hash = (hash * 0x01000193) & 0xffffffff;
-    hash = (hash ^ ((c >> 8) & 0xff)) & 0xffffffff;
-    hash = (hash * 0x01000193) & 0xffffffff;
-  }
-  return hash.toRadixString(16).padLeft(8, '0');
-}
-
 /// 把 [uid]（`VideoBooks.bookUid`，可含 `/`、空格、中文等）安全编码成后端资产文件名
-/// 基名：非 `[A-Za-z0-9._-]` 字符替换为 `_`，长度截到 60，再追加 uid 全串的稳定哈希。
+/// 基名：非 `[A-Za-z0-9._-]` 字符替换为 `_`，长度截到 60，再追加 uid 全串的稳定哈希
+/// （[fnv1a32Utf16PairHex]，输出与历史手写副本逐字节一致——资产名已持久化在各后端）。
 ///
 /// 追加哈希消除「不同 uid 清洗后同名」的碰撞（视频 uid 多为 `video/<标题>` 形态，仅差
 /// 特殊字符的两条会清洗成同名）；清单按真 uid 索引并记录完整资产名，故本函数无需可逆，
@@ -188,7 +177,7 @@ String _sanitizeAssetBase(String uid) {
   String cleaned = uid.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
   if (cleaned.isEmpty) cleaned = 'video';
   if (cleaned.length > 60) cleaned = cleaned.substring(0, 60);
-  return '${cleaned}_${_stableHashHex(uid)}';
+  return '${cleaned}_${fnv1a32Utf16PairHex(uid)}';
 }
 
 /// 清洗扩展名到文件系统安全形态：合法扩展名 = 点 + 纯 ASCII 字母数字（如 `.mkv`）。

@@ -11,7 +11,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 ///  ① 既有 galgames 行原样保留，新列回填空串 = 不带任何参数 = 与旧版逐字节相同的启动
 ///     命令行（Never break userspace）；
 ///  ② 新列可写可读，含空格与引号的整行原样往返（不能被 DB 层擅自转义/裁剪）；
-///  ③ user_version 升到当前 schemaVersion（56）。
+///  ③ user_version 升到当前 schemaVersion。
 void main() {
   Future<HibikiDatabase> openV55Db() async {
     final HibikiDatabase db = HibikiDatabase.forTesting(
@@ -73,7 +73,7 @@ CREATE TABLE galgame_sessions (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 56,
+    expect(db.schemaVersion, 59,
         reason: 'v56 给 galgames 加 launch_args（可配置游戏启动参数）');
 
     final GalgameRow? legacy = await db.getGalgame('legacy_game');

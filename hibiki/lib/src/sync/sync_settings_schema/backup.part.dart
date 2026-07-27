@@ -66,9 +66,9 @@ String backupCategoryDescription(BackupCategory category) {
 
 /// Every content category the user can individually skip on import (TODO-1358).
 /// Both modes now honour the full set: overwrite strips the unticked category's
-/// rows/files from the swapped-in DB ([BackupService.importBackupFiles]); merge
+/// rows/files from the swapped-in DB ([BackupService.restoreBackup]); merge
 /// skips its per-category engine steps + content-tree copy
-/// ([BackupService.mergeImportBackupFiles]). settings / profiles stay governed
+/// ([BackupService.mergeRestoreBackup]). settings / profiles stay governed
 /// by the separate "import settings and profiles" toggle (overwrite) / kept
 /// local (merge), so they are not listed here.
 const Set<BackupCategory> importSelectableCategories = <BackupCategory>{
@@ -163,7 +163,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
     );
     // TODO-1358: summarize what is on this device so the category picker shows
     // per-category counts (the database itself is always included).
-    final BackupContentSummary summary = await service.summarizeExportContent();
+    final BackupContentSummary summary = await service.summarizeLiveContent();
     if (!mounted) return;
     // Ask which sidecar trees to include (default all). Null = the user
     // cancelled the dialog -> abort the export entirely (TODO-106).
@@ -178,7 +178,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       final tmpFile = File(tmpPath);
       // Per-book selection (TODO-1195 part A) only applies when the Books
       // category is packed; excluding Books strips every book regardless.
-      await service.exportBackup(
+      await service.createBackup(
         tmpPath,
         categories: categories,
         bookKeys: categories.contains(BackupCategory.books)
@@ -677,7 +677,7 @@ class _BackupImportChoice {
 
   /// Categories to RESTORE on an overwrite import (TODO-1358): every
   /// always-restored category plus the selectable ones the user kept ticked.
-  /// Forwarded to [BackupService.importBackupFiles]; ignored for merge.
+  /// Forwarded to [BackupService.restoreBackup]; ignored for merge.
   final Set<BackupCategory> categories;
 }
 
@@ -746,7 +746,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       // TODO-1195 part B: best-effort merge preview for the confirm dialog.
       // Runs against the still-open live DB; null on any failure → generic UI.
       final BackupMergePreview? preview =
-          await BackupService.previewMergeImport(
+          await BackupService.previewMergeRestore(
         liveDb: appModel.database,
         dbDirectory: appModel.databaseDirectory.path,
         zipPath: filePath,
@@ -756,7 +756,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       // dialog (per-category counts + the restore toggles). Cheap central-dir
       // read; an empty summary just hides the manifest.
       final BackupContentSummary contentSummary =
-          await service.summarizeBackupZip(filePath);
+          await service.summarizeBackupFile(filePath);
       if (!appModel.isBackupValidatingCurrent(validatingToken)) return;
       meta = validated;
       mergePreview = preview;
@@ -805,7 +805,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
       appModel.beginBackupImport();
       // BUG-810: beginBackupImport 只 SCHEDULE 根切换到 running 遮罩（notifyListeners →
       // markNeedsBuild）。上面注释承诺「遮罩已上屏 → 关库 → 解压」，但不等这帧渲染就直接
-      // closeDatabase + importBackupFiles 的部分同步 decode/DB 工作，会在遮罩首帧 raster
+      // closeDatabase + restoreBackup 的部分同步 decode/DB 工作，会在遮罩首帧 raster
       // 前占住 UI isolate（await 微任务不 pump 帧）——于是整个复制期屏幕停在旧设置页，没有
       // 「请勿关闭」遮罩、没有进度条，直到进程重启。await endOfFrame 等这帧真正把遮罩画出来
       // 再继续（复用 validating→app 切换 [_rootContextAfterOverlay] 已依赖的同一原语）。
@@ -815,7 +815,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
         // TODO-888 merge: keep this device's library + settings, only ADD what
         // the backup carries (row-level upsert + copy-if-absent content trees).
         // Never overwrites/deletes existing data, so importSettings is moot.
-        await BackupService.mergeImportBackupFiles(
+        await BackupService.mergeRestoreBackup(
           dbDirectory: appModel.databaseDirectory.path,
           zipPath: filePath,
           // Per-category merge selection (merge mode now honours the dialog's
@@ -831,7 +831,7 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
           onProgress: appModel.reportBackupImportProgress,
         );
       } else {
-        await BackupService.importBackupFiles(
+        await BackupService.restoreBackup(
           dbDirectory: appModel.databaseDirectory.path,
           zipPath: filePath,
           importSettings: choice.importSettings,

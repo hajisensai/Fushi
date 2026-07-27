@@ -71,7 +71,9 @@ class ImmersionMiningRequest {
     this.documentTitle,
     this.audioStreamIndex,
     this.audioStreamCount,
-    this.source = AnkiMiningSource.video,
+    // BUG-1137：不给默认值。曾默认 video，gal 场景卡忘传 source 就被静默标成
+    // 视频；来源必须由每个调用点显式声明，漏传直接编译不过。
+    required this.source,
     this.bookTitleTag,
     this.collectionTag,
     this.updateNoteId,

@@ -217,14 +217,19 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
 
   static Future<bool> isShowing() => _instance.isShowingImpl();
 
+  /// [rubySpans] 是可选的注音区间（`{start, length, ruby}`，start/length 为 [text]
+  /// 的 UTF-16 下标，与 native `HitTestPoint` 回传的 index 同坐标系）。不传或传空
+  /// 时 native 完全走老渲染路径，逐像素与今天一致（never break userspace）。
   static Future<void> updateText({
     required String lineId,
     required String text,
+    List<Map<String, Object?>>? rubySpans,
   }) async {
     if (!_instance.isSupported) return;
     await _instance.channel.invokeMethod<void>('updateText', <String, Object?>{
       'lineId': lineId,
       'text': text,
+      if (rubySpans != null && rubySpans.isNotEmpty) 'rubySpans': rubySpans,
     });
   }
 

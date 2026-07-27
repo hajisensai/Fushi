@@ -29,6 +29,8 @@ import 'package:shelf/shelf.dart' as shelf;
 import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart'
     show kMangaOcrOutDirName;
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
+import 'package:hibiki/src/utils/misc/safe_file_name.dart';
+import 'package:hibiki_core/hibiki_core.dart' show fnv1a64Hex;
 
 /// 任务状态机（wire 值即枚举名）。pending → uploading → running →
 /// done | error | cancelled；running 覆盖「排队等前一任务」与「真在跑」两态
@@ -379,15 +381,10 @@ class MangaOcrHostJobManager {
     return base64UrlEncode(bytes).replaceAll('=', '');
   }
 
-  /// 卷名 → 文件系统安全的确定性目录 slug（FNV-1a 64 位十六进制）。
-  static String _stableSlug(String title) {
-    int hash = 0xcbf29ce484222325;
-    for (final int unit in utf8.encode(title)) {
-      hash ^= unit;
-      hash = (hash * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF;
-    }
-    return hash.toRadixString(16).padLeft(16, '0');
-  }
+  /// 卷名 → 文件系统安全的确定性目录 slug（FNV-1a 64 位十六进制，委托
+  /// hibiki_core 单一真相源；输出与历史手写副本逐字节一致——含负哈希带 `-`
+  /// 号的历史形态，slug 已固化进 `vol_<slug>` 断点缓存目录名，不得漂移）。
+  static String _stableSlug(String title) => fnv1a64Hex(utf8.encode(title));
 
   /// 页名校验：拆成路径段，拒绝空段、`.`/`..`、绝对路径、盘符、非法文件名字符。
   /// 返回 null = 非法。
@@ -396,7 +393,9 @@ class MangaOcrHostJobManager {
     if (raw.startsWith('/') || raw.startsWith('\\')) return null;
     final List<String> segments = raw.split(RegExp(r'[\\/]+'));
     if (segments.isEmpty || segments.length > 4) return null;
-    final RegExp invalid = RegExp(r'[<>:"|?*\x00-\x1F]');
+    // G1 收敛：校验字符集共享 [windowsUnsafeFileNameChars]（段内不可能再含
+    // `\ /`——已按其切分，判定与旧手写 `[<>:"|?*\x00-\x1F]` 逐段等价）。
+    final RegExp invalid = windowsUnsafeFileNameChars;
     for (final String segment in segments) {
       if (segment.isEmpty || segment == '.' || segment == '..') return null;
       if (invalid.hasMatch(segment)) return null;

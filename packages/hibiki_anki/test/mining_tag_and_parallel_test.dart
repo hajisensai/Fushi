@@ -209,6 +209,12 @@ void main() {
           <String>['hibiki', 'video']);
     });
 
+    // BUG-1137：gal Hook 制卡曾因来源枚举缺 game + 请求默认 video 被误标成视频。
+    test('game source -> appends both hibiki and game (AnkiConnect)', () async {
+      expect(await tagsForConnect('', source: AnkiMiningSource.game),
+          <String>['hibiki', 'game']);
+    });
+
     test('null source -> only hibiki, no category tag (AnkiConnect)', () async {
       expect(await tagsForConnect('', source: null), <String>['hibiki']);
     });
@@ -230,6 +236,8 @@ void main() {
           <String>['hibiki', 'book']);
       expect(await tagsForDroid('', source: AnkiMiningSource.video),
           <String>['hibiki', 'video']);
+      expect(await tagsForDroid('', source: AnkiMiningSource.game),
+          <String>['hibiki', 'game']);
       expect(
           await tagsForDroid('foo', source: null), <String>['foo', 'hibiki']);
     });

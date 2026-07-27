@@ -58,7 +58,7 @@ void main() {
     expect(tombs, hasLength(1), reason: '移出必须留墓碑，否则对端并集复活');
     expect(tombs.single.mediaType, 'video');
     expect(tombs.single.entryKey, 'v1');
-    expect(tombs.single.removedAt, greaterThanOrEqualTo(before));
+    expect(tombs.single.deletedAt, greaterThanOrEqualTo(before));
 
     // 重新加入 → 同键墓碑清除（允许重加，防复活不变成禁重加）。
     await db.addToCollection(c, MediaKind.video, 'v1');
@@ -101,7 +101,7 @@ void main() {
     expect(tombs, hasLength(1), reason: '只剩哨兵——残留成员墓碑一并清除');
     expect(tombs.single.mediaType, HibikiDatabase.collectionTombstoneSentinel);
     expect(tombs.single.entryKey, HibikiDatabase.collectionTombstoneSentinel);
-    expect(tombs.single.removedAt, greaterThanOrEqualTo(before));
+    expect(tombs.single.deletedAt, greaterThanOrEqualTo(before));
   });
 
   test('createMediaCollection 清同自然键合集级墓碑（重建撤销删除）', () async {
@@ -160,11 +160,11 @@ void main() {
           collectionType: 'collection',
           mediaType: 'video',
           entryKey: 'v1',
-          removedAt: 7,
+          deletedAt: 7,
         ),
       ],
     );
-    expect((await _tombsFor(db, 'C', 'collection')).single.removedAt, 7);
+    expect((await _tombsFor(db, 'C', 'collection')).single.deletedAt, 7);
     await db.replaceCollectionTombstonesFor(
         'C', 'collection', const <CollectionMemberTombstonesCompanion>[]);
     expect(await _tombsFor(db, 'C', 'collection'), isEmpty);

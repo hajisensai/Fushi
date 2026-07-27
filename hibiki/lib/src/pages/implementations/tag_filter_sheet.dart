@@ -92,7 +92,7 @@ final videoBookTagMapProvider =
   for (final m in mappings) {
     final tag = tagById[m.tagId];
     if (tag != null) {
-      result.putIfAbsent(m.videoBookUid, () => []).add(tag);
+      result.putIfAbsent(m.bookUid, () => []).add(tag);
     }
   }
   return result;
@@ -105,6 +105,37 @@ final filteredVideoBookUidsProvider = FutureProvider<Set<String>?>((ref) async {
   if (tagIds.isEmpty) return null;
   final db = ref.watch(appProvider).database;
   return db.getVideoBookUidsForAllTags(tagIds);
+});
+
+/// 游戏 → 用户标签列表（keyed by `galgames.id`）。与 [bookTagMapProvider] /
+/// [videoBookTagMapProvider] 同形，共用同一 [BookTags] 标签池（BUG-1113：游戏此前
+/// 根本没有映射表，接不进这套共享标签体系）。
+///
+/// 注意与游戏的**元数据标签**（bgm/vndb 刮削来的字符串，`GalgameEntry.tags`）区分：
+/// 那是外部事实、另一条筛选轴，由游戏库筛选面板按名筛，不进这个用户标签池。
+final gameTagMapProvider =
+    FutureProvider<Map<String, List<BookTagRow>>>((ref) async {
+  final db = ref.watch(appProvider).database;
+  final tags = await db.getAllTags();
+  final mappings = await db.getAllGameTagMappings();
+  final tagById = {for (final t in tags) t.id: t};
+  final Map<String, List<BookTagRow>> result = {};
+  for (final m in mappings) {
+    final tag = tagById[m.tagId];
+    if (tag != null) {
+      result.putIfAbsent(m.gameId, () => []).add(tag);
+    }
+  }
+  return result;
+});
+
+/// 当前标签筛选下命中的游戏 id 集合（共享 [selectedTagIdsProvider]，与书架 / 视频
+/// 联动）；无筛选时返回 null（= 不过滤）。
+final filteredGameIdsProvider = FutureProvider<Set<String>?>((ref) async {
+  final tagIds = ref.watch(selectedTagIdsProvider);
+  if (tagIds.isEmpty) return null;
+  final db = ref.watch(appProvider).database;
+  return db.getGameIdsForAllTags(tagIds);
 });
 
 /// 含【全部】选中标签的合集 id（无选中标签时 null = 不过滤）。合集卡按此显隐。

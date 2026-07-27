@@ -169,6 +169,10 @@ class AnkiSettings {
     this.ankiConnectHost = 'localhost',
     this.ankiConnectPort = 8765,
     this.ankiConnectApiKey = '',
+    this.lapisFontScalePercent = 100,
+    this.lapisCustomCss = '',
+    this.lapisAppliedCssSha,
+    this.lastMediaDedupAtMs,
   });
 
   factory AnkiSettings.fromJson(Map<String, dynamic> json) => AnkiSettings(
@@ -199,6 +203,10 @@ class AnkiSettings {
         ankiConnectHost: json['ankiConnectHost'] as String? ?? 'localhost',
         ankiConnectPort: json['ankiConnectPort'] as int? ?? 8765,
         ankiConnectApiKey: json['ankiConnectApiKey'] as String? ?? '',
+        lapisFontScalePercent: json['lapisFontScalePercent'] as int? ?? 100,
+        lapisCustomCss: json['lapisCustomCss'] as String? ?? '',
+        lapisAppliedCssSha: json['lapisAppliedCssSha'] as String?,
+        lastMediaDedupAtMs: json['lastMediaDedupAtMs'] as int?,
       );
   final int? selectedDeckId;
   final String? selectedDeckName;
@@ -230,6 +238,24 @@ class AnkiSettings {
   final int ankiConnectPort;
   final String ankiConnectApiKey;
 
+  /// Lapis 卡片字号整体缩放百分比（100 = 原样）。只影响 Hibiki 推送的
+  /// styling 用户区段，不写卡片数据。
+  final int lapisFontScalePercent;
+
+  /// 追加到 Lapis styling 用户区段的自由 CSS（客制化显示效果）。
+  final String lapisCustomCss;
+
+  /// Hibiki 上次成功推送到 Anki 的 Lapis styling 指纹（sha256）。null =
+  /// 本机从未推送。自动迁移用它区分「Anki 端还是我们写的内容（可安全更新）」
+  /// 与「被用户手改（不得静默覆盖）」。
+  final String? lapisAppliedCssSha;
+
+  /// 上次媒体字节级去重完成时刻（epoch ms）。null = 从未跑过。
+  ///
+  /// 去重**只有用户在设置页手动触发**这一条路径（先出干跑报告、确认后才删），
+  /// 没有任何后台自动调度；这个时刻只是「上次跑过」的记录。
+  final int? lastMediaDedupAtMs;
+
   bool get isConfigured => selectedDeckId != null && selectedNoteTypeId != null;
 
   AnkiNoteType? get selectedNoteType =>
@@ -258,6 +284,11 @@ class AnkiSettings {
     String? ankiConnectHost,
     int? ankiConnectPort,
     String? ankiConnectApiKey,
+    int? lapisFontScalePercent,
+    String? lapisCustomCss,
+    String? lapisAppliedCssSha,
+    bool clearLapisAppliedCssSha = false,
+    int? lastMediaDedupAtMs,
   }) =>
       AnkiSettings(
         selectedDeckId: selectedDeckId ?? this.selectedDeckId,
@@ -278,6 +309,15 @@ class AnkiSettings {
         ankiConnectHost: ankiConnectHost ?? this.ankiConnectHost,
         ankiConnectPort: ankiConnectPort ?? this.ankiConnectPort,
         ankiConnectApiKey: ankiConnectApiKey ?? this.ankiConnectApiKey,
+        lapisFontScalePercent:
+            lapisFontScalePercent ?? this.lapisFontScalePercent,
+        lapisCustomCss: lapisCustomCss ?? this.lapisCustomCss,
+        // 恢复「无标记区段」的备份时需要把指纹清回 null（视 Anki 端为来历
+        // 不明，自动迁移不再动它），?? 链表达不了清空，故给显式清空开关。
+        lapisAppliedCssSha: clearLapisAppliedCssSha
+            ? null
+            : (lapisAppliedCssSha ?? this.lapisAppliedCssSha),
+        lastMediaDedupAtMs: lastMediaDedupAtMs ?? this.lastMediaDedupAtMs,
       );
 
   Map<String, dynamic> toJson() => {
@@ -300,6 +340,10 @@ class AnkiSettings {
         'ankiConnectHost': ankiConnectHost,
         'ankiConnectPort': ankiConnectPort,
         'ankiConnectApiKey': ankiConnectApiKey,
+        'lapisFontScalePercent': lapisFontScalePercent,
+        'lapisCustomCss': lapisCustomCss,
+        'lapisAppliedCssSha': lapisAppliedCssSha,
+        'lastMediaDedupAtMs': lastMediaDedupAtMs,
       };
 }
 
@@ -416,6 +460,11 @@ enum AnkiMiningSource {
 
   /// 视频字幕查词 —— 归「视频」分类标签（写入 Anki 的标签字面量为 `video`）。
   video,
+
+  /// galgame Hook 制卡（场景卡 / texthooker 行卡）—— 归「游戏」分类标签
+  /// （写入 Anki 的标签字面量为 `game`）。BUG-1137：此前枚举没有游戏来源，
+  /// gal 制卡链路吃 `video` 默认值，卡片被误标成视频。
+  game,
 }
 
 class AnkiMiningContext {
@@ -706,33 +755,82 @@ class AnkiHandlebarOptions {
       anyFieldConsumesToken(fieldMappings, '{video-clip}');
 }
 
+/// 扩展名（小写、不含点）→ MIME（**镜像副本**，命名统一轮 G8）。
+///
+/// 真相源是 hibiki_core `kMimeTypeByExtension`（单一 MIME 映射表）。hibiki_anki
+/// 是刻意无 hibiki_core 依赖的独立模块，无法直接查那张表，故持有此逐项镜像；
+/// `hibiki/test/sync/mime_types_test.dart` 的守卫测试锁定两表完全一致——改动任一侧
+/// 必须同步另一侧，否则该测试红。
+const Map<String, String> kAnkiMimeTypeByExtension = <String, String>{
+  // ── 文档 / 容器 ──
+  'json': 'application/json',
+  'epub': 'application/epub+zip',
+  'css': 'text/css',
+  'js': 'application/javascript',
+  'xhtml': 'text/html',
+  'html': 'text/html',
+  // ── 图片 ──
+  'jpg': 'image/jpeg',
+  'jpeg': 'image/jpeg',
+  'png': 'image/png',
+  'gif': 'image/gif',
+  'webp': 'image/webp',
+  'svg': 'image/svg+xml',
+  // ── 字体 ──
+  'woff': 'font/woff',
+  'woff2': 'font/woff2',
+  'ttf': 'font/ttf',
+  'otf': 'font/otf',
+  // ── 音频 ──
+  'mp3': 'audio/mpeg',
+  'm4a': 'audio/mp4',
+  'm4b': 'audio/mp4',
+  'aac': 'audio/aac',
+  'wav': 'audio/wav',
+  'ogg': 'audio/ogg',
+  'flac': 'audio/flac',
+  // ── 视频 ──
+  'mp4': 'video/mp4',
+  'm4v': 'video/mp4',
+  'mkv': 'video/x-matroska',
+  'webm': 'video/webm',
+  'avi': 'video/x-msvideo',
+  'mov': 'video/quicktime',
+  'ts': 'video/mp2t',
+  'm2ts': 'video/mp2t',
+  'mts': 'video/mp2t',
+  'flv': 'video/x-flv',
+  'wmv': 'video/x-ms-wmv',
+  'mpg': 'video/mpeg',
+  'mpeg': 'video/mpeg',
+  'ogv': 'video/ogg',
+  '3gp': 'video/3gpp',
+  // ── 字幕 ──
+  'srt': 'text/plain; charset=utf-8',
+  'ass': 'text/plain; charset=utf-8',
+  'ssa': 'text/plain; charset=utf-8',
+  'vtt': 'text/vtt; charset=utf-8',
+};
+
+/// 按 [path] 的扩展名推断 Anki 媒体上传的 MIME；无扩展名或未知扩展名回退
+/// application/octet-stream。查 [kAnkiMimeTypeByExtension]（hibiki_core 单一
+/// MIME 表的镜像，见其 doc）。
 String mimeTypeForPath(String path) {
-  final ext = path.split('.').last.toLowerCase();
-  switch (ext) {
-    case 'mp3':
-      return 'audio/mpeg';
-    case 'aac':
-      return 'audio/aac';
-    case 'm4a':
-      return 'audio/mp4';
-    case 'wav':
-      return 'audio/wav';
-    case 'ogg':
-      return 'audio/ogg';
-    case 'png':
-      return 'image/png';
-    case 'jpg':
-    case 'jpeg':
-      return 'image/jpeg';
-    case 'gif':
-      return 'image/gif';
-    case 'webp':
-      return 'image/webp';
-    case 'svg':
-      return 'image/svg+xml';
-    default:
-      return 'application/octet-stream';
+  int slash = -1;
+  for (int i = path.length - 1; i >= 0; i--) {
+    final String c = path[i];
+    if (c == '/' || c == r'\') {
+      slash = i;
+      break;
+    }
   }
+  final String name = path.substring(slash + 1);
+  final int dot = name.lastIndexOf('.');
+  if (dot <= 0 || dot == name.length - 1) {
+    return 'application/octet-stream';
+  }
+  final String ext = name.substring(dot + 1).toLowerCase();
+  return kAnkiMimeTypeByExtension[ext] ?? 'application/octet-stream';
 }
 
 /// 制卡时词典媒体（gaiji 外字、词典内嵌图等）落盘缓存目录。

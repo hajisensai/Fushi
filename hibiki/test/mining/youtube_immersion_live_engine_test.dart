@@ -59,6 +59,7 @@ void main() {
       final _CaptureRepo repo = _CaptureRepo();
       final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
         ImmersionMiningRequest(
+          source: AnkiMiningSource.video,
           fields: const <String, String>{'expression': 'アンキ'},
           mediaSource: miningVideo,
           audioSource: miningAudio,

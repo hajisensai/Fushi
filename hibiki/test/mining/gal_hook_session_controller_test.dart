@@ -110,7 +110,10 @@ void main() {
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
     );
 
-    expect(await controller.launchGame(r'D:\anemoi\SiglusEngine.exe'), isTrue);
+    expect(
+      (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
+      isTrue,
+    );
     final TexthookerLineEntry entry = service.appendLine('siglus line')!;
     final Uint8List? bytes = await controller.captureAudioBytes(
       lineId: entry.id,
@@ -160,7 +163,10 @@ void main() {
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
     );
 
-    expect(await controller.launchGame(r'D:\anemoi\SiglusEngine.exe'), isTrue);
+    expect(
+      (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
+      isTrue,
+    );
     final TexthookerLineEntry entry = service.appendLine('late resource line')!;
     final Uint8List? bytes = await controller.captureAudioBytes(
       lineId: entry.id,
@@ -211,7 +217,10 @@ void main() {
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
     );
 
-    expect(await controller.launchGame(r'D:\anemoi\SiglusEngine.exe'), isTrue);
+    expect(
+      (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
+      isTrue,
+    );
     final TexthookerLineEntry entry = service.appendLine('resource only')!;
     controller.setAllowAudioFallback(false);
     expect(controller.state.allowAudioFallback, isFalse);
@@ -272,7 +281,7 @@ void main() {
     );
 
     try {
-      expect(await controller.launchGame(exe.path), isTrue);
+      expect((await controller.launchGame(exe.path)).launched, isTrue);
       expect(capturedLunaPcHooks, isTrue);
       final GalHookEvent launch = controller.events.firstWhere(
         (GalHookEvent event) => event.code == 'game.launch_started',
@@ -831,7 +840,10 @@ void main() {
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
     );
 
-    expect(await controller.launchGame(r'D:\anemoi\SiglusEngine.exe'), isTrue);
+    expect(
+      (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
+      isTrue,
+    );
     final TexthookerLineEntry entry = service.appendLine('siglus line')!;
     await controller.captureAudioBytes(
       lineId: entry.id,
@@ -882,7 +894,10 @@ void main() {
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
     );
 
-    expect(await controller.launchGame(r'D:\anemoi\SiglusEngine.exe'), isTrue);
+    expect(
+      (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
+      isTrue,
+    );
     expect(controller.state.boundWindow, isNull);
     expect(controller.state.phase, GalHookSessionPhase.degraded);
     expect(controller.state.fallbackReason, 'window_not_found');
@@ -939,7 +954,10 @@ void main() {
       endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
     );
 
-    expect(await controller.launchGame(r'D:\anemoi\SiglusEngine.exe'), isTrue);
+    expect(
+      (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
+      isTrue,
+    );
     await controller.stopCapture(keepBinding: false);
     windows = const <ExternalWindowInfo>[
       ExternalWindowInfo(hwnd: 34, pid: 4242, title: '天使☆騒々 RE-BOOT!'),
@@ -1481,7 +1499,9 @@ void _bug950Guard() {
 
       // 游戏确实被拉起来了（injector 回报 LAUNCH pid），只是注入没成：会话必须活着。
       expect(
-          await controller.launchGame(r'D:\gal\manosaba\manosaba.exe'), isTrue);
+        (await controller.launchGame(r'D:\gal\manosaba\manosaba.exe')).launched,
+        isTrue,
+      );
       expect(controller.state.phase, GalHookSessionPhase.degraded);
       expect(controller.state.gamePid, 20096);
       expect(controller.state.fallbackReason, 'launch_injection_failed');
@@ -1531,7 +1551,13 @@ void _bug950Guard() {
         endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
       );
 
-      expect(await controller.launchGame(r'D:\gal\x\x.exe'), isFalse);
+      final GalHookLaunchResult result =
+          await controller.launchGame(r'D:\gal\x\x.exe');
+      expect(result.launched, isFalse);
+      // BUG-1142：注入失败必须带结构化原因 + native 诊断，不能退化成无信息兜底。
+      expect(result.reason, GalHookLaunchFailureReason.injectionFailed);
+      expect(
+          result.diagnostics.failure, GalHookInjectorFailure.elevationRequired);
       expect(controller.state.phase, GalHookSessionPhase.error);
       expect(
         controller.state.injectorFailure,
@@ -1663,6 +1689,8 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   Future<GalAudioSlice?> grabClipNear(
     int tsMs, {
     int tolMs = 8000,
+    int? sourcePtr,
+    List<int>? exclude,
   }) async =>
       null;
 

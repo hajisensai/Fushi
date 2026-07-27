@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/media/media_source.dart' show dbSourcePrefKey;
 import 'package:hibiki/src/reader/font_catalog.dart';
 import 'package:hibiki/src/reader/reader_chrome_floating.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -39,7 +40,9 @@ class ReaderSettings {
   final HibikiDatabase _db;
   final Map<String, dynamic> _cache = <String, dynamic>{};
 
-  static const String _prefix = 'src:reader_ttu:';
+  /// 经单一真相编码器 [dbSourcePrefKey] 得到 `src:reader_ttu:`；`reader_ttu`
+  /// 是冻结的历史 sourceId（旧数据兼容，勿改）。
+  static final String _prefix = dbSourcePrefKey('reader_ttu', '');
 
   /// TODO-362（PR#3 响应式页边距）：正文左右两侧默认各留白 2%（百分比 = vw），每行
   /// 因此变窄；上下默认 0%（垂直预留由 chrome inset + 字号决定，见
@@ -126,15 +129,12 @@ class ReaderSettings {
     }
   }
 
-  static dynamic _parseValue(String raw) {
-    if (raw == 'true') return true;
-    if (raw == 'false') return false;
-    final int? asInt = int.tryParse(raw);
-    if (asInt != null) return asInt;
-    final double? asDouble = double.tryParse(raw);
-    if (asDouble != null) return asDouble;
-    return raw;
-  }
+  /// BUG-1116：读侧统一走 [PrefCodec.decodeUntyped]，兼容两种历史写入格式：
+  /// MediaSource.setPreference 写入的 PrefCodec 标签值（'b:false' / 'd:22.0'
+  /// 等）+ 本类 [_set] 的裸 `toString()` 旧值。decodeUntyped 的非标签分支与
+  /// 旧启发式（true/false → int → double → string）逐行等价，是严格超集，
+  /// 旧裸值行为逐字节不变。
+  static dynamic _parseValue(String raw) => PrefCodec.decodeUntyped(raw);
 
   // ── Display settings (same Hive keys as old ReaderTtuSource) ──────
 
@@ -415,15 +415,17 @@ class ReaderSettings {
   static const int baseSwipeDistPx = 44;
   static const int baseSwipeFastDistPx = 22;
 
-  /// 查词「原地轻点」判定半径（px，两轴各 ≤ 此值才算点击查词）。**固定值、不随灵敏度
-  /// 系数缩放**——它是「点」与「滑」的形状判据，不是翻页距离。
+  /// 查词「原地轻点」的触摸轨迹半径（CSS px）。**固定值、不随灵敏度系数缩放**——
+  /// 它是「点」与「滑」的意图判据，不是翻页距离。
   ///
   /// BUG-手机翻短了会查词：旧实现把查词框上界直接取成翻页距离阈值（72px），于是任何
-  /// 够不到翻页阈值的横滑都落进查词分支被当成点词。解耦后：只有两轴位移都 ≤ 28px 的
-  /// 原地轻点才查词；横向主导、超过此半径但够不到翻页阈值的短滑一律**空操作**（既不
-  /// 翻页也不查词），彻底切断「短滑误查词」。TODO-971 真正治好慢点词靠的是去掉 500ms
-  /// 时限（保留），不是把框放大到 72（那是副作用）。
-  static const int tapSlopPx = 28;
+  /// 够不到翻页阈值的横滑都落进查词分支被当成点词。
+  ///
+  /// BUG-iPhone 滑动误查词：只比较按下/松手坐标且放宽到 28px，短促滚动、惯性滚动，
+  /// 以及手指移出后回到起点都会伪装成 tap。现在以完整触摸轨迹的最大径向位移判定，
+  /// 10px 内保留自然手指抖动；一旦越界，本次手势永久归为 pan，即便松手又回到起点也
+  /// 不查词。TODO-971 的慢点词由去掉 500ms 时限保证，不需要宽松的 28px 框。
+  static const int tapSlopPx = 10;
 
   /// 把灵敏度系数 [sensitivity] 解析成 JS `_gestureEnd` 用的两个距离阈值（px）。
   /// 系数越大阈值越大（越迟钝，需滑得更远）；越小越灵敏。这是 reader 注入脚本与

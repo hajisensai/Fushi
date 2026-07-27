@@ -750,7 +750,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       future: _loadFuture,
       builder: (BuildContext context, AsyncSnapshot<_PdfBookLoad?> snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
+          return buildLoading();
         }
         final _PdfBookLoad? load = snapshot.data;
         if (load == null) {

@@ -14,6 +14,7 @@ import 'package:hibiki/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
 import 'package:hibiki/src/mining/magpie_upscaling_service.dart';
 import 'package:hibiki/src/mining/magpie_upscaling_text.dart';
+import 'package:hibiki/src/mining/gal_audio_tracks_panel.dart';
 import 'package:hibiki/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
@@ -52,7 +53,12 @@ Map<String, String> injectActiveSentence(
 
 /// 捕获工作台工具栏「更多」菜单动作：驱动 [PopupMenuButton.onSelected] 的单一枚举，
 /// 消除嵌入/独立两套按钮定义的特殊分支。
-enum _GalHookToolbarMenuAction { audioFallback, showOverlay, externalWindow }
+enum _GalHookToolbarMenuAction {
+  audioFallback,
+  health,
+  showOverlay,
+  externalWindow,
+}
 
 /// texthooker 捕获工作台：实时展示 WebSocket 收到的文本行，逐词查词 + 挖词。
 ///
@@ -157,28 +163,73 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     }
     final int? picked = await showAppDialog<int>(
       context: context,
-      builder: (BuildContext dialogContext) => SimpleDialog(
-        title: Text(t.game_line_track_dialog_title),
-        children: <Widget>[
-          for (final GalAudioTrack track in tracks)
-            ListTile(
-              leading: const Icon(Icons.graphic_eq),
-              title: Text(
-                '${t.game_track_voice} ${track.orderIndex + 1} · '
-                '${track.format.sampleRate} Hz · ${track.format.channels} ch',
+      builder: (BuildContext dialogContext) => StatefulBuilder(
+        builder: (BuildContext context, StateSetter setDialogState) =>
+            SimpleDialog(
+          title: Text(t.game_line_track_dialog_title),
+          children: <Widget>[
+            for (final GalAudioTrack track in tracks)
+              Builder(
+                builder: (BuildContext context) {
+                  final bool excluded = _session.state.excludedAudioSourcePtrs
+                      .contains(track.sourcePtr);
+                  return ListTile(
+                    leading: Icon(
+                      excluded ? Icons.music_off_outlined : Icons.graphic_eq,
+                    ),
+                    title: Text(
+                      '${t.game_track_voice} ${track.orderIndex + 1} · '
+                      '${track.format.sampleRate} Hz · '
+                      '${track.format.channels} ch',
+                    ),
+                    subtitle: Text(
+                      <String>[
+                        '${t.game_track_clips} ${track.clipCount}',
+                        '${t.game_track_energy} '
+                            '${track.avgEnergy.toStringAsFixed(1)}',
+                        if (excluded) t.game_track_bgm,
+                      ].join(' · '),
+                    ),
+                    trailing: Wrap(
+                      spacing: 4,
+                      children: <Widget>[
+                        HibikiIconButton(
+                          icon: Icons.play_circle_outline,
+                          tooltip: t.game_track_preview,
+                          onTap: () => unawaited(
+                            _previewLineTrackInDialog(
+                              line.id,
+                              track.sourcePtr,
+                            ),
+                          ),
+                        ),
+                        HibikiIconButton(
+                          icon:
+                              excluded ? Icons.undo : Icons.music_off_outlined,
+                          tooltip: excluded
+                              ? t.game_track_restore
+                              : t.game_track_exclude_bgm,
+                          onTap: () {
+                            _session.setTrackExcluded(
+                              track.sourcePtr,
+                              !excluded,
+                            );
+                            setDialogState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                    // 已明确标为 BGM 的轨不能再被误点成这句语音；仍可试听与恢复。
+                    enabled: !excluded,
+                    onTap: excluded
+                        ? null
+                        : () =>
+                            Navigator.of(dialogContext).pop(track.sourcePtr),
+                  );
+                },
               ),
-              subtitle: Text(
-                '${t.game_track_clips} ${track.clipCount} · '
-                '${t.game_track_energy} ${track.avgEnergy.toStringAsFixed(1)}',
-              ),
-              trailing: HibikiIconButton(
-                icon: Icons.play_circle_outline,
-                tooltip: t.game_track_preview,
-                onTap: () => unawaited(_previewTrackInDialog(track.sourcePtr)),
-              ),
-              onTap: () => Navigator.of(dialogContext).pop(track.sourcePtr),
-            ),
-        ],
+          ],
+        ),
       ),
     );
     if (picked == null || !mounted) return;
@@ -189,10 +240,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     );
   }
 
-  /// 选轨对话框里的逐轨试听：复用诊断页同一条 `exportTrackPreview` 通道。
-  Future<void> _previewTrackInDialog(int sourcePtr) async {
+  /// 选轨对话框里的逐轨试听：与确认选择共用当前行时间戳，避免试听偷播最新一句。
+  Future<void> _previewLineTrackInDialog(String lineId, int sourcePtr) async {
     final GalTrackPreview? preview =
-        await _session.exportTrackPreview(sourcePtr);
+        await _session.exportLineTrackPreview(lineId, sourcePtr);
     if (preview == null) {
       HibikiToast.show(msg: t.game_track_preview_failed);
       return;
@@ -200,6 +251,105 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (!await DesktopAudioPlayback.playFile(preview.filePath)) {
       HibikiToast.show(msg: t.game_track_preview_failed);
     }
+  }
+
+  /// 会话音轨对话框：内容复用 [GalAudioTracksPanel]（与诊断页同一份），随会话
+  /// 状态实时刷新。逐轨试听按最近一条台词时间戳整句抓取（与诊断页同语义——这里
+  /// 是会话级判断「哪条轨是语音/BGM」，不针对具体某句；针对某句改轨走行内改轨）。
+  Future<void> _showSessionTrackPanel() async {
+    unawaited(_session.refreshAudioTracks());
+    int? previewingPtr;
+    Timer? previewReset;
+    await showAppDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            Future<void> handlePreview(GalAudioTrack track) async {
+              if (previewingPtr == track.sourcePtr) {
+                previewReset?.cancel();
+                setDialogState(() => previewingPtr = null);
+                await DesktopAudioPlayback.stop();
+                return;
+              }
+              final GalTrackPreview? preview =
+                  await _session.exportTrackPreview(track.sourcePtr);
+              if (!dialogContext.mounted) return;
+              if (preview == null) {
+                HibikiToast.show(msg: t.game_track_preview_failed);
+                return;
+              }
+              final bool started =
+                  await DesktopAudioPlayback.playFile(preview.filePath);
+              if (!dialogContext.mounted) return;
+              if (!started) {
+                HibikiToast.show(msg: t.game_track_preview_failed);
+                return;
+              }
+              previewReset?.cancel();
+              setDialogState(() => previewingPtr = track.sourcePtr);
+              previewReset = Timer(
+                Duration(milliseconds: preview.durationMs + 300),
+                () {
+                  if (dialogContext.mounted) {
+                    setDialogState(() => previewingPtr = null);
+                  }
+                },
+              );
+            }
+
+            return AlertDialog(
+              title: Text(t.game_audio_tracks),
+              content: SizedBox(
+                width: 520,
+                child: ListenableBuilder(
+                  listenable: _session,
+                  builder: (BuildContext context, Widget? child) {
+                    return SingleChildScrollView(
+                      child: GalAudioTracksPanel(
+                        state: _session.state,
+                        onSelectVoice: _session.selectVoiceTrack,
+                        onToggleExcluded: _session.setTrackExcluded,
+                        onPreviewTrack: (GalAudioTrack track) =>
+                            unawaited(handlePreview(track)),
+                        previewingSourcePtr: previewingPtr,
+                      ),
+                    );
+                  },
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: Text(t.dialog_close),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    previewReset?.cancel();
+    unawaited(DesktopAudioPlayback.stop());
+  }
+
+  /// 行内补录开/收：missing/兜底行的一键补救。开窗后回游戏里点一次语音重播，
+  /// 再点停止（或等窗口到点自动收束）。与浮窗「重播并录音」同一条控制器出口，
+  /// 结果标注 manual_recapture，自动配对不得再覆盖（用户裁决优先）。
+  Future<void> _toggleLineRecapture(TexthookerLineEntry line) async {
+    if (_session.recapturingLineId == line.id) {
+      final bool ok = await _session.finishLineRecapture();
+      HibikiToast.show(
+        msg: ok ? t.game_hook_recapture_saved : t.game_hook_recapture_empty,
+      );
+      return;
+    }
+    final bool started = await _session.startLineRecapture(line.id);
+    HibikiToast.show(
+      msg: started
+          ? t.game_hook_recapture_started
+          : t.game_hook_recapture_unavailable,
+    );
   }
 
   /// 分词结果缓存：行文本按 id 不可变，缓存 textToWords 避免每次 rebuild 重复分词
@@ -295,6 +445,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   @visibleForTesting
   bool get debugOverlayInert => _overlayInert;
 
+  /// BUG-1137：texthooker 页制出的卡归「游戏」分类标签——外部窗口模式走
+  /// [GalHookMiningCoordinator]（自带 game 来源），fallback 纯文本卡走 mixin 的
+  /// super.onMineEntry / onUpdateEntry，也必须同标 game，不能吃默认 book。
+  /// 统计口径（[dictionarySourceType]）不动，标签与统计是两个维度。
+  @override
+  AnkiMiningSource get miningSource => AnkiMiningSource.game;
+
   @override
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final GalHookSessionState sessionState = _session.state;
@@ -361,6 +518,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       ),
       repo: repo,
       updateNoteId: updateNoteId,
+      addTitleTag: mixinAppModel.autoAddBookNameToTags,
     );
     if (result.aborted) {
       HibikiToast.showMine(
@@ -512,7 +670,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         _appModel.galgameRepo.games,
         executable,
       );
-      final bool launched = await _session.launchGame(
+      final GalHookLaunchResult result = await _session.launchGame(
         executable,
         launchArguments: known?.launchArgumentTokens ?? const <String>[],
         workdir: known?.workdir ?? '',
@@ -523,17 +681,18 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       // 主线程还挂着、根本没跑起来，说成「已运行」会让用户以为没事。
       final GalHookSessionState state = _session.state;
       final GalHookLaunchOutcome outcome = classifyGalHookLaunchOutcome(
-        launched: launched,
+        result: result,
         hasBoundWindow: state.boundWindow != null,
         injectorFailure: state.injectorFailure,
       );
-      HibikiToast.show(
-        msg: galHookLaunchOutcomeMessage(
-          outcome: outcome,
-          failure: state.injectorFailure,
-          lastError: state.lastError,
-        ),
+      // message 为 null = 本次启动已被更新的操作取代，不该播报（BUG-1142）。
+      final String? message = galHookLaunchOutcomeMessage(
+        outcome: outcome,
+        result: result,
+        failure: state.injectorFailure,
+        lastError: state.lastError,
       );
+      if (message != null) HibikiToast.show(msg: message);
     } finally {
       _launchingGalHook = false;
     }
@@ -758,11 +917,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   @override
   Widget build(BuildContext context) {
-    final TexthookerService texthooker = TexthookerService.instance;
-    final List<TexthookerTextThread> textThreads = texthooker.textThreads;
+    final List<TexthookerTextThread> textThreads = _session.textThreads;
     final String? selectedTextThreadKey = _session.selectedTextThreadKey;
-    final List<TexthookerLineEntry> lines =
-        texthooker.entriesForTextThread(selectedTextThreadKey);
+    final List<TexthookerLineEntry> lines = _session.workbenchLines;
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
     if (widget.embedded) {
       return Column(
@@ -833,6 +990,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           label: labelOf(t.game_stop_listening),
           onTap: () => unawaited(_session.stopCapture()),
         ),
+      // 会话音轨面板直达入口：排除 BGM 是会话级操作，此前只能从「某一句的
+      // 选轨对话框」绕进去（先随便找一句才能排除，入口藏反了）。
+      if (Platform.isWindows && state.isActive)
+        HibikiIconButton(
+          icon: Icons.multitrack_audio_outlined,
+          tooltip: t.game_audio_tracks,
+          label: labelOf(t.game_audio_tracks),
+          focusId: const HibikiFocusId('game-toolbar-tracks'),
+          onTap: () => unawaited(_showSessionTrackPanel()),
+        ),
       HibikiIconButton(
         icon: Icons.delete_outline,
         tooltip: t.clear,
@@ -857,6 +1024,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         switch (action) {
           case _GalHookToolbarMenuAction.audioFallback:
             _session.setAllowAudioFallback(!state.allowAudioFallback);
+          case _GalHookToolbarMenuAction.health:
+            unawaited(_showHealthDialog());
           case _GalHookToolbarMenuAction.showOverlay:
             unawaited(GalHookTextOverlayController.instance.showManually());
           case _GalHookToolbarMenuAction.externalWindow:
@@ -870,6 +1039,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           checked: state.allowAudioFallback,
           child: Text(t.game_audio_fallback_allow),
         ),
+        // 健康状态从右栏常驻卡改为按需打开：它是「偶尔查一眼」的静态信息，
+        // 不值得长期占着逐句操作要用的横向空间（完整版仍在「兼容性诊断」页签）。
+        PopupMenuItem<_GalHookToolbarMenuAction>(
+          value: _GalHookToolbarMenuAction.health,
+          child: Text(t.game_health),
+        ),
         if (Platform.isWindows)
           PopupMenuItem<_GalHookToolbarMenuAction>(
             value: _GalHookToolbarMenuAction.showOverlay,
@@ -882,6 +1057,43 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             child: Text(t.external_window_mining),
           ),
       ],
+    );
+  }
+
+  /// 会话健康状态对话框（原右栏常驻卡的新家）。内容仍是 [_CaptureHealthCard]，
+  /// 随会话状态实时刷新；Anki 配置态来自 app 级 AnkiViewModel（BUG-1007 的接线）。
+  Future<void> _showHealthDialog() async {
+    await showAppDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(t.game_health),
+        content: SizedBox(
+          width: 460,
+          child: ListenableBuilder(
+            listenable: _session,
+            builder: (BuildContext context, Widget? child) =>
+                SingleChildScrollView(
+              child: _CaptureHealthCard(
+                state: _session.state,
+                endpoints: _session.endpointStatuses,
+                // BUG-1007 根因修复：健康卡 Anki 行此前写死「未配置」，不反映真实
+                // 配置。接 app 级 AnkiViewModel 的已配置判定（牌组 + 笔记类型均已选）。
+                ankiConfigured: ref.watch(
+                  ankiViewModelProvider.select(
+                    (AnkiUiState uiState) => uiState.isConfigured,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(t.dialog_close),
+          ),
+        ],
+      ),
     );
   }
 
@@ -905,12 +1117,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     String? selectedTextThreadKey,
   ) {
     final GalHookSessionState state = _session.state;
-    // BUG-1007 根因修复：健康卡 Anki 行此前写死「未配置」，不反映真实配置。
-    // 接 app 级 AnkiViewModel 的已配置判定（牌组 + 笔记类型均已选中）。
-    final bool ankiConfigured = ref.watch(
-      ankiViewModelProvider
-          .select((AnkiUiState uiState) => uiState.isConfigured),
-    );
     return Column(
       children: <Widget>[
         _buildExperimentalBanner(context),
@@ -926,13 +1132,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   textThreads,
                   selectedTextThreadKey,
                 );
-                final Widget latest = _LatestLineCard(
+                // 右栏改成逐句音轨面板（原「最新台词」只读卡 + 「健康状态」静态卡
+                // 让位）：正文与音频元信息并进本面板，健康状态移到工具栏「更多」→
+                // 对话框（同页签栏的「兼容性诊断」也有完整版），把这块常驻空间还给
+                // 「听 → 判断 → 排除 BGM」这条真正需要反复操作的动线。
+                final Widget lineTracks = _LineTracksCard(
+                  session: _session,
                   line: _selectedOrLatestLine(lines),
-                );
-                final Widget health = _CaptureHealthCard(
-                  state: state,
-                  endpoints: _session.endpointStatuses,
-                  ankiConfigured: ankiConfigured,
                 );
                 if (box.maxWidth >= 1280) {
                   return Column(
@@ -943,11 +1149,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: <Widget>[
-                            Expanded(flex: 5, child: live),
+                            Expanded(flex: 7, child: live),
                             const SizedBox(width: 12),
-                            Expanded(flex: 3, child: latest),
-                            const SizedBox(width: 12),
-                            Expanded(flex: 3, child: health),
+                            Expanded(flex: 4, child: lineTracks),
                           ],
                         ),
                       ),
@@ -965,24 +1169,15 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                           children: <Widget>[
                             Expanded(flex: 2, child: live),
                             const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: <Widget>[
-                                  Expanded(child: latest),
-                                  const SizedBox(height: 12),
-                                  Expanded(child: health),
-                                ],
-                              ),
-                            ),
+                            Expanded(child: lineTracks),
                           ],
                         ),
                       ),
                     ],
                   );
                 }
-                // 窄屏不再整块丢弃 latest/health 两面板（巡检 G7），折叠成
-                // 可展开区放在实时行下方，默认收起不抢纵向空间。
+                // 窄屏不整块丢弃逐句音轨面板（巡检 G7），折叠成可展开区放在实时行
+                // 下方，默认收起不抢纵向空间。
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
@@ -990,24 +1185,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     const SizedBox(height: 12),
                     Expanded(child: live),
                     ExpansionTile(
-                      title: Text(t.game_latest_line),
+                      title: Text(t.game_line_tracks),
                       tilePadding: EdgeInsets.zero,
                       children: <Widget>[
-                        // 上限高度：卡片内自带 SingleChildScrollView，超长台词
+                        // 上限高度：卡片内自带 SingleChildScrollView，超长台词/多轨
                         // 在卡内滚动而不是把实时行区挤到 0。
                         ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 280),
-                          child: latest,
-                        ),
-                      ],
-                    ),
-                    ExpansionTile(
-                      title: Text(t.game_health),
-                      tilePadding: EdgeInsets.zero,
-                      children: <Widget>[
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 280),
-                          child: health,
+                          constraints: const BoxConstraints(maxHeight: 320),
+                          child: lineTracks,
                         ),
                       ],
                     ),
@@ -1043,6 +1228,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final List<TexthookerLineEntry> visibleLines = lines
         .where((TexthookerLineEntry e) => lineMatchesFilter(e, _lineFilter))
         .toList(growable: false);
+    // 重名线程（同 hookName + 地址、不同调用上下文）补 `#N` 序号，供下拉区分。
+    final Map<String, String> threadDisplayLabels =
+        assignThreadDisplayLabels(textThreads);
     return HibikiCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -1150,7 +1338,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     for (final TexthookerTextThread thread in textThreads)
                       (
                         value: thread.key,
-                        label: '${thread.label} · ${thread.lineCount}',
+                        // 同一 hook 面在不同调用上下文会报成多条同 label 线程；
+                        // assignThreadDisplayLabels 给重名线程补 `#N` 序号，避免下拉
+                        // 里出现一整列一模一样的 `TextRender · 0x… · 0`。
+                        label:
+                            '${threadDisplayLabels[thread.key] ?? thread.label}'
+                            ' · ${thread.lineCount}',
                       ),
                   ],
                   // 每条线程第二行：有音频行数 + 最近台词预览——没有预览用户
@@ -1189,6 +1382,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                       _session.selectTextThread(
                         selectedThread?.nativeThreadId,
                         threadKey: selectedThread?.key,
+                        // 用户亲自选的线程记进本游戏记忆，下次开同一个游戏自动选回。
+                        remember: true,
                       ),
                     );
                   },
@@ -1251,6 +1446,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                         canPickTrack: _session.hasEngineSource &&
                             _session.state.audioTracks.isNotEmpty &&
                             _session.isLineInCurrentSession(line),
+                        canRecapture: Platform.isWindows &&
+                            _session.state.isActive &&
+                            _session.isLineInCurrentSession(line),
+                        recapturing: _session.recapturingLineId == line.id,
                         onSelectLine: _selectLine,
                         onWordTap: _onWordTap,
                         onToggleFavorite: _toggleLineFavorite,
@@ -1258,6 +1457,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                             unawaited(_toggleLinePreview(l)),
                         onPickTrack: (TexthookerLineEntry l) =>
                             unawaited(_pickLineTrack(l)),
+                        onRecapture: (TexthookerLineEntry l) =>
+                            unawaited(_toggleLineRecapture(l)),
                       );
                     },
                   ),
@@ -1532,74 +1733,217 @@ class _SessionOverviewCard extends StatelessWidget {
   }
 }
 
-class _LatestLineCard extends StatelessWidget {
-  const _LatestLineCard({required this.line});
+/// 逐句音轨面板：右栏的常驻主面板（取代原「最新台词」只读卡）。
+///
+/// 「哪条轨是 BGM」是**逐句**才能判断的事——会话级音轨快照用最近一条台词的时间戳，
+/// 用户看着它排除 BGM 等于盲操作。本面板按**当前选中行自己的时间戳**取快照
+/// （[GalHookSessionController.tracksForLine]），于是每条轨的片段数/能量都是这一句
+/// 说话瞬间的真实情况：试听→确认是 BGM→当场排除，排除立刻对后续所有句生效并
+/// 记进本游戏记忆。同时保留原「最新台词」的核心信息（正文 + 音频来源/时长），
+/// 不丢可读性。
+class _LineTracksCard extends StatefulWidget {
+  const _LineTracksCard({required this.session, required this.line});
 
+  final GalHookSessionController session;
   final TexthookerLineEntry? line;
 
   @override
+  State<_LineTracksCard> createState() => _LineTracksCardState();
+}
+
+class _LineTracksCardState extends State<_LineTracksCard> {
+  List<GalAudioTrack> _tracks = const <GalAudioTrack>[];
+
+  /// 已取过快照的行 id：同一行不重复拉，换行才重取。
+  String? _tracksLineId;
+  bool _loading = false;
+  int? _previewingSourcePtr;
+  Timer? _previewResetTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncTracks();
+  }
+
+  @override
+  void didUpdateWidget(_LineTracksCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncTracks();
+  }
+
+  @override
+  void dispose() {
+    _previewResetTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _syncTracks({bool force = false}) async {
+    final TexthookerLineEntry? line = widget.line;
+    if (line == null) {
+      if (_tracks.isNotEmpty || _tracksLineId != null) {
+        setState(() {
+          _tracks = const <GalAudioTrack>[];
+          _tracksLineId = null;
+        });
+      }
+      return;
+    }
+    if (!force && _tracksLineId == line.id) return;
+    if (_loading) return;
+    _loading = true;
+    final List<GalAudioTrack> tracks =
+        await widget.session.tracksForLine(line.id);
+    _loading = false;
+    if (!mounted) return;
+    setState(() {
+      _tracks = tracks;
+      _tracksLineId = line.id;
+    });
+  }
+
+  Future<void> _preview(String lineId, GalAudioTrack track) async {
+    if (_previewingSourcePtr == track.sourcePtr) {
+      _previewResetTimer?.cancel();
+      setState(() => _previewingSourcePtr = null);
+      await DesktopAudioPlayback.stop();
+      return;
+    }
+    final GalTrackPreview? preview =
+        await widget.session.exportLineTrackPreview(lineId, track.sourcePtr);
+    if (!mounted) return;
+    if (preview == null) {
+      HibikiToast.show(msg: t.game_track_preview_failed);
+      return;
+    }
+    final bool started = await DesktopAudioPlayback.playFile(preview.filePath);
+    if (!mounted) return;
+    if (!started) {
+      HibikiToast.show(msg: t.game_track_preview_failed);
+      return;
+    }
+    _previewResetTimer?.cancel();
+    setState(() => _previewingSourcePtr = track.sourcePtr);
+    _previewResetTimer = Timer(
+      Duration(milliseconds: preview.durationMs + 300),
+      () {
+        if (mounted) setState(() => _previewingSourcePtr = null);
+      },
+    );
+  }
+
+  Future<void> _useForLine(String lineId, int sourcePtr) async {
+    final bool applied = await widget.session.setLineVoiceTrack(
+      lineId,
+      sourcePtr,
+    );
+    if (!mounted) return;
+    HibikiToast.show(
+      msg: applied ? t.game_line_track_applied : t.game_line_track_failed,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final TexthookerLineEntry? value = line;
+    final TexthookerLineEntry? line = widget.line;
+    final GalHookSessionState state = widget.session.state;
+    final int? lineVoicePtr =
+        line == null ? null : widget.session.lineVoiceSourcePtr(line.id);
     return HibikiCard(
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                const Icon(Icons.subtitles_outlined, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    t.game_latest_line,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(Icons.graphic_eq, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  t.game_line_tracks,
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            if (value == null)
-              Text(t.game_no_active_line)
-            else ...<Widget>[
-              Text(
-                value.text,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      height: 1.6,
-                    ),
               ),
-              const SizedBox(height: 14),
-              _MetadataRow(
-                label: t.game_health_text,
-                value: value.sourceLabel ??
-                    texthookerLineSourceLabel(
-                      value.source,
-                    ),
+              HibikiIconButton(
+                icon: Icons.refresh,
+                tooltip: t.game_refresh_tracks,
+                size: 18,
+                focusId: const HibikiFocusId('game-line-tracks-refresh'),
+                onTap: () => unawaited(_syncTracks(force: true)),
               ),
-              _MetadataRow(
-                label: t.game_health_audio,
-                value: value.audioBackend ??
-                    texthookerLineAudioStatusLabel(value.audioStatus),
-              ),
-              if (value.audioResourceId != null)
-                _MetadataRow(
-                  label: t.game_audio_resource_id,
-                  value: value.audioResourceId!,
-                ),
-              if (value.audioDurationMs != null)
-                // 值是时长不是格式，标签用 game_audio_duration（巡检 G7）。
-                _MetadataRow(
-                  label: t.game_audio_duration,
-                  value:
-                      '${(value.audioDurationMs! / 1000).toStringAsFixed(2)}s',
-                ),
-              if (value.fallbackReason != null)
-                _MetadataRow(
-                  label: t.game_line_audio_fallback,
-                  value: value.fallbackReason!,
-                ),
             ],
-          ],
-        ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  if (line == null)
+                    Text(t.game_no_active_line)
+                  else ...<Widget>[
+                    // 正文 + 音频元信息：原「最新台词」卡的核心内容，不因换面板丢失。
+                    Text(
+                      line.text,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            height: 1.5,
+                          ),
+                    ),
+                    const SizedBox(height: 10),
+                    _MetadataRow(
+                      label: t.game_health_audio,
+                      value: line.audioBackend ??
+                          texthookerLineAudioStatusLabel(line.audioStatus),
+                    ),
+                    if (line.audioDurationMs != null)
+                      _MetadataRow(
+                        label: t.game_audio_duration,
+                        value:
+                            '${(line.audioDurationMs! / 1000).toStringAsFixed(2)}s',
+                      ),
+                    if (line.fallbackReason != null)
+                      _MetadataRow(
+                        label: t.game_line_audio_fallback,
+                        value: line.fallbackReason!,
+                      ),
+                    const Divider(height: 24),
+                    Text(
+                      t.game_line_tracks_hint,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    if (_tracks.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Text(t.game_no_tracks),
+                      )
+                    else
+                      for (final GalAudioTrack track in _tracks)
+                        GalTrackTile(
+                          track: track,
+                          // 这里的「选中」是**本句**用哪条轨，不是会话级默认选源。
+                          selected: lineVoicePtr == track.sourcePtr,
+                          excluded: state.excludedAudioSourcePtrs
+                              .contains(track.sourcePtr),
+                          previewing: _previewingSourcePtr == track.sourcePtr,
+                          // 逐行选轨与逐行排除都绕开「当前后端是否消费会话级选源」
+                          // 那道自动门（它防的是自动误配），只要有 engine 就能用。
+                          selectable: widget.session.hasEngineSource,
+                          selectTooltip: t.game_line_track_use,
+                          onSelect: () =>
+                              unawaited(_useForLine(line.id, track.sourcePtr)),
+                          onPreview: () => unawaited(_preview(line.id, track)),
+                          onToggleExcluded: (bool excluded) => widget.session
+                              .setTrackExcluded(track.sourcePtr, excluded),
+                        ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1849,11 +2193,14 @@ class _TexthookerLine extends StatelessWidget {
     required this.selected,
     required this.previewingAudio,
     required this.canPickTrack,
+    required this.canRecapture,
+    required this.recapturing,
     required this.onSelectLine,
     required this.onWordTap,
     required this.onToggleFavorite,
     required this.onPreviewAudio,
     required this.onPickTrack,
+    required this.onRecapture,
   });
 
   final TexthookerLineEntry line;
@@ -1865,6 +2212,12 @@ class _TexthookerLine extends StatelessWidget {
 
   /// 是否显示「改音轨」按钮：会话有 engine helper、有音轨快照、且本行属于当前会话。
   final bool canPickTrack;
+
+  /// 是否显示「补录」按钮：Windows 会话进行中且本行属于当前会话。
+  final bool canRecapture;
+
+  /// 本行是否正开着补录窗口（按钮显示为停止收束）。
+  final bool recapturing;
   final ValueChanged<TexthookerLineEntry> onSelectLine;
   final ValueChanged<TexthookerLineEntry> onToggleFavorite;
 
@@ -1873,6 +2226,9 @@ class _TexthookerLine extends StatelessWidget {
 
   /// 为本行单独改选语音轨（自动配对配错时的用户裁决出口）。
   final ValueChanged<TexthookerLineEntry> onPickTrack;
+
+  /// 开/收本行补录窗口（missing/兜底行的一键补救，与浮窗「重播并录音」同出口）。
+  final ValueChanged<TexthookerLineEntry> onRecapture;
   final void Function(
     TexthookerLineEntry line,
     String word,
@@ -1915,7 +2271,11 @@ class _TexthookerLine extends StatelessWidget {
                   const _LineMinedChip(),
                   const SizedBox(width: 6),
                 ],
-                _LineAudioChip(status: line.audioStatus),
+                _LineAudioChip(
+                  status: line.audioStatus,
+                  backend: line.audioBackend,
+                  fallbackReason: line.fallbackReason,
+                ),
                 const SizedBox(width: 4),
                 // 行内试听已配音频（用户实拍：音频就绪却听不了）。仅 hasAudio 行显示；
                 // 试听中变停止钮。样式对齐收藏星。
@@ -1943,6 +2303,23 @@ class _TexthookerLine extends StatelessWidget {
                     size: 18,
                     focusId: HibikiFocusId('game-line-track-${line.id}'),
                     onTap: () => onPickTrack(line),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                // 行内补录：missing/兜底行的一键补救此前只在浮窗有入口，工作台里
+                // 用户对着红标没有任何补救手段。录音中变停止钮（收束并落定）。
+                if (canRecapture) ...<Widget>[
+                  HibikiIconButton(
+                    icon: recapturing
+                        ? Icons.stop_circle_outlined
+                        : Icons.mic_none_outlined,
+                    tooltip: recapturing
+                        ? t.game_line_recapture_stop
+                        : t.game_line_recapture,
+                    size: 18,
+                    enabledColor: recapturing ? colors.error : null,
+                    focusId: HibikiFocusId('game-line-recapture-${line.id}'),
+                    onTap: () => onRecapture(line),
                   ),
                   const SizedBox(width: 4),
                 ],
@@ -2025,13 +2402,46 @@ class _LineMinedChip extends StatelessWidget {
 }
 
 class _LineAudioChip extends StatelessWidget {
-  const _LineAudioChip({required this.status});
+  const _LineAudioChip({
+    required this.status,
+    this.backend,
+    this.fallbackReason,
+  });
 
   final TexthookerLineAudioStatus status;
+
+  /// 音频来源（engine_pcm / game_resource / system_loopback），用于把「整机混音
+  /// 兜底（可能混 BGM）」从正常绿标里分出来提示。
+  final String? backend;
+
+  /// 语义化 fallbackReason（见 [kGalLineNoVoiceReason] / [kGalOverlongSliceSuspectReason]）：
+  /// 「无配音」灰标不吓人、「超长可疑切片」亮黄提醒。
+  final String? fallbackReason;
 
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    // 语义化 reason 优先于通用状态：无配音是常态不是故障；超长切片是可疑不是正常。
+    if (status == TexthookerLineAudioStatus.missing &&
+        fallbackReason == kGalLineNoVoiceReason) {
+      return _chip(
+        context,
+        t.game_line_audio_no_voice,
+        colors.surfaceContainerHighest,
+        colors.onSurfaceVariant,
+      );
+    }
+    if (fallbackReason == kGalOverlongSliceSuspectReason) {
+      return Tooltip(
+        message: t.game_line_audio_overlong_hint,
+        child: _chip(
+          context,
+          t.game_line_audio_overlong,
+          colors.tertiaryContainer,
+          colors.onTertiaryContainer,
+        ),
+      );
+    }
     final (String, Color, Color) appearance = switch (status) {
       TexthookerLineAudioStatus.pending => (
           t.game_line_audio_pending,
@@ -2064,17 +2474,31 @@ class _LineAudioChip extends StatelessWidget {
           colors.onSurfaceVariant,
         ),
     };
+    final Widget chip =
+        _chip(context, appearance.$1, appearance.$2, appearance.$3);
+    // loopback 是整机混音兜底：状态标签照旧，但悬停要说清「可能混入 BGM」。
+    if (backend == 'system_loopback') {
+      return Tooltip(message: t.game_line_audio_loopback_hint, child: chip);
+    }
+    return chip;
+  }
+
+  Widget _chip(
+    BuildContext context,
+    String label,
+    Color background,
+    Color foreground,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: appearance.$2,
+        color: background,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        appearance.$1,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: appearance.$3,
-            ),
+        label,
+        style:
+            Theme.of(context).textTheme.labelSmall?.copyWith(color: foreground),
       ),
     );
   }

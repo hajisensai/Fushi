@@ -5,7 +5,7 @@
 //  (4) 移除来源 -> 确认对话框含 media_source_remove_keeps_media；确认后该来源消失，
 //      且预置的 VideoBook 仍在（FK setNull，条目保留）。
 //  (5) mediaKind='book' -> 统计文案用 media_source_count_book（N 本书）。
-//  (6) 凭据红线源码守卫（TODO-1274）：网络凭据经 MediaSourceCredentialStore 单独落库，
+//  (6) 凭据红线源码守卫（TODO-1274）：网络凭据经 SourceLibraryCredentialStore 单独落库，
 //      绝不作为列塞进来源行；configJson 的值只能来自 encodeSourceConfig（白名单剥离
 //      password/privateKey）。
 import 'dart:convert';
@@ -88,7 +88,7 @@ Future<void> _seedVideo(
       title: Value(bookUid),
       videoPath: Value('/srv/$bookUid.mp4'),
       sourceId: Value(sourceId),
-      importedAt: Value(DateTime.now()),
+      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
 
 /// 插入一条归属 [sourceId] 的 EPUB 条目（TODO-1036 累计计数用）。
@@ -175,7 +175,7 @@ void main() {
       title: const Value('Owned'),
       videoPath: const Value('/srv/anime/owned.mp4'),
       sourceId: Value(sid),
-      importedAt: Value(DateTime.now()),
+      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
     await _pumpDialog(tester, db, 'video');
 
@@ -185,8 +185,8 @@ void main() {
     expect(find.text('Removing a source does not delete imported media.'),
         findsOneWidget);
 
-    // 确认（弹窗有两个「Remove Source」文本：标题 + 确认按钮，点最后一个）。
-    await tester.tap(find.text('Remove Source').last);
+    // 确认（弹窗有两个「Remove source」文本：标题 + 确认按钮，点最后一个）。
+    await tester.tap(find.text('Remove source').last);
     await tester.pumpAndSettle();
 
     // 来源消失，但视频条目仍在（sourceId 被置 NULL）。
@@ -319,11 +319,11 @@ void main() {
       ).readAsStringSync();
     });
 
-    test('secrets go through MediaSourceCredentialStore, not the source row',
+    test('secrets go through SourceLibraryCredentialStore, not the source row',
         () {
-      // TODO-1274: 网络凭据经 MediaSourceCredentialStore 单独落 Preferences（base64），
+      // TODO-1274: 网络凭据经 SourceLibraryCredentialStore 单独落 Preferences（base64），
       // 绝不作为列塞进 insertMediaSource 的 MediaSourcesCompanion。
-      expect(src.contains('MediaSourceCredentialStore'), isTrue,
+      expect(src.contains('SourceLibraryCredentialStore'), isTrue,
           reason: '网络凭据必须走独立凭据存储');
       expect(src.contains('.saveSecret('), isTrue,
           reason: '新增网络来源必须调 saveSecret 存凭据');

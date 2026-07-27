@@ -7,7 +7,7 @@
 // 数据来自 HibikiDatabase 的 MediaSources DAO。
 //
 // 🔴 凭据红线（TODO-1274）：网络来源的连接参数（host/port/username/useTls）落
-// MediaSources.configJson；密码/私钥经 MediaSourceCredentialStore 以 base64 单独落
+// MediaSources.configJson；密码/私钥经 SourceLibraryCredentialStore 以 base64 单独落
 // Preferences（键 `media_source_secret_<id>`），绝不进入 configJson。
 //
 // 网络来源只对 'book' 开放：EPUB 小体积、扫描时下载后导入；远端 SFTP/FTP/WebDAV 视频
@@ -21,11 +21,13 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
-import 'package:hibiki/src/media/source/media_source_credential_store.dart';
-import 'package:hibiki/src/media/source/media_source_scanner.dart';
+import 'package:hibiki/src/media/source_library/source_library_credential_store.dart';
+import 'package:hibiki/src/media/source_library/source_library_row.dart';
+import 'package:hibiki/src/media/source_library/source_library_scanner.dart';
 import 'package:hibiki/src/sync/ftp_sync_backend.dart';
 import 'package:hibiki/src/sync/sftp_sync_backend.dart';
 import 'package:hibiki/src/sync/webdav_sync_backend.dart';
+import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -41,9 +43,10 @@ class MediaSourcesDialog extends ConsumerStatefulWidget {
   ConsumerState<MediaSourcesDialog> createState() => _MediaSourcesDialogState();
 }
 
-class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
+class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog>
+    with HibikiPagePlaceholders<MediaSourcesDialog> {
   /// null = 仍在加载；非 null = 已加载（可能为空列表）。
-  List<MediaSourceRow>? _rows;
+  List<SourceLibraryRow>? _rows;
 
   /// 每个来源 id → 当前**累计拥有**的媒体条目数（TODO-1036）。
   /// 与列表一起加载，避免逐行 FutureBuilder 抖动。来源不在 map 里时回退 0。
@@ -70,7 +73,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
   }
 
   Future<void> _load() async {
-    final List<MediaSourceRow> rows =
+    final List<SourceLibraryRow> rows =
         await _db.getMediaSourcesByKind(widget.mediaKind);
     final Map<int, int> counts = await _loadCumulativeCounts(rows);
     if (!mounted) return;
@@ -84,10 +87,10 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
 
   /// 一次性查出每个来源累计拥有的媒体条目数（按 mediaKind 选表）。
   Future<Map<int, int>> _loadCumulativeCounts(
-    List<MediaSourceRow> rows,
+    List<SourceLibraryRow> rows,
   ) async {
     final Map<int, int> counts = <int, int>{};
-    for (final MediaSourceRow row in rows) {
+    for (final SourceLibraryRow row in rows) {
       counts[row.id] = await _db.countMediaBySourceId(row.id, widget.mediaKind);
     }
     return counts;
@@ -164,14 +167,9 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
   }
 
   Widget _buildBody(HibikiDesignTokens tokens) {
-    final List<MediaSourceRow>? rows = _rows;
+    final List<SourceLibraryRow>? rows = _rows;
     if (rows == null) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return buildLoading(padding: const EdgeInsets.all(24));
     }
     if (rows.isEmpty) {
       return Center(
@@ -189,7 +187,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
           ValueKey<String>('media_source_${rows[index].id}'),
       onReorder: (int from, int to) {
         setState(() {
-          final MediaSourceRow item = rows.removeAt(from);
+          final SourceLibraryRow item = rows.removeAt(from);
           rows.insert(to, item);
         });
         _persistOrder();
@@ -199,7 +197,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
     );
   }
 
-  Widget _buildRow(HibikiDesignTokens tokens, MediaSourceRow row) {
+  Widget _buildRow(HibikiDesignTokens tokens, SourceLibraryRow row) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
     final TextStyle? subStyle =
@@ -276,7 +274,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
   }
 
   /// 行副标题的「位置」文案：本地=路径；网络=`TRANSPORT · user@host  rootPath`。
-  String _rowLocation(MediaSourceRow row) {
+  String _rowLocation(SourceLibraryRow row) {
     if (row.transport == 'local') {
       return row.rootPath;
     }
@@ -293,7 +291,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
     ThemeData theme,
     ColorScheme cs,
     TextStyle? subStyle,
-    MediaSourceRow row,
+    SourceLibraryRow row,
   ) {
     if (row.lastScanError != null) {
       return Text(
@@ -326,7 +324,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
 
   /// 拖拽重排后逐行回写 sortOrder（与 DAO orderBy(sortOrder, id) 对齐）。
   Future<void> _persistOrder() async {
-    final List<MediaSourceRow> rows = _rows ?? const <MediaSourceRow>[];
+    final List<SourceLibraryRow> rows = _rows ?? const <SourceLibraryRow>[];
     for (int i = 0; i < rows.length; i++) {
       await _db.updateMediaSourceSortOrder(rows[i].id, i);
     }
@@ -334,11 +332,11 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
 
   /// 计算新来源的 sortOrder（现有最大值 +1，空则 0）。
   int _nextSortOrder() {
-    final List<MediaSourceRow> existing = _rows ?? const <MediaSourceRow>[];
+    final List<SourceLibraryRow> existing = _rows ?? const <SourceLibraryRow>[];
     return existing.isEmpty
         ? 0
         : existing
-                .map((MediaSourceRow r) => r.sortOrder)
+                .map((SourceLibraryRow r) => r.sortOrder)
                 .reduce((int a, int b) => a > b ? a : b) +
             1;
   }
@@ -403,9 +401,9 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
     if (!mounted || picked == null || picked.isEmpty) return;
 
     final String norm = normalizeSourceRootPath(picked, transport: 'local');
-    final List<MediaSourceRow> existing = _rows ?? const <MediaSourceRow>[];
+    final List<SourceLibraryRow> existing = _rows ?? const <SourceLibraryRow>[];
     final bool dup = existing.any(
-        (MediaSourceRow r) => r.transport == 'local' && r.rootPath == norm);
+        (SourceLibraryRow r) => r.transport == 'local' && r.rootPath == norm);
     if (dup) {
       HibikiToast.show(msg: norm);
       return;
@@ -424,7 +422,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
     );
     await _load();
     // 插入后立即扫描新行（拿回带 scanResult 的最新行刷新统计）。
-    final MediaSourceRow? fresh = await _db.getMediaSourceById(newId);
+    final SourceLibraryRow? fresh = await _db.getMediaSourceById(newId);
     if (fresh != null) await _rescan(fresh);
   }
 
@@ -439,9 +437,9 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
 
     final String norm =
         normalizeSourceRootPath(result.remotePath, transport: result.transport);
-    final List<MediaSourceRow> existing = _rows ?? const <MediaSourceRow>[];
+    final List<SourceLibraryRow> existing = _rows ?? const <SourceLibraryRow>[];
     // 去重：同传输 + 同 host + 同 rootPath 视为同一来源。
-    final bool dup = existing.any((MediaSourceRow r) {
+    final bool dup = existing.any((SourceLibraryRow r) {
       if (r.transport != result.transport || r.rootPath != norm) return false;
       final Map<String, Object?> cfg = decodeSourceConfig(r.configJson);
       return (cfg['host'] as String?) == result.host;
@@ -474,32 +472,32 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
       ),
     );
     // 凭据单独落库（绝不进 configJson）。
-    await MediaSourceCredentialStore(_db).saveSecret(
+    await SourceLibraryCredentialStore(_db).saveSecret(
       newId,
       password: result.password,
       privateKey: result.privateKey,
     );
     await _load();
-    final MediaSourceRow? fresh = await _db.getMediaSourceById(newId);
+    final SourceLibraryRow? fresh = await _db.getMediaSourceById(newId);
     if (fresh != null) await _rescan(fresh);
   }
 
   /// 重新扫描一个来源：行级 loading → scanner.scan（内部吞异常写 lastScanError）→
   /// 重读该行刷新统计/时间/错误。
-  Future<void> _rescan(MediaSourceRow row) async {
+  Future<void> _rescan(SourceLibraryRow row) async {
     if (_scanning.contains(row.id)) return;
     setState(() => _scanning.add(row.id));
     try {
-      await MediaSourceScanner(_db).scan(row);
+      await SourceLibraryScanner(_db).scan(row);
     } finally {
-      final MediaSourceRow? updated = await _db.getMediaSourceById(row.id);
+      final SourceLibraryRow? updated = await _db.getMediaSourceById(row.id);
       if (mounted) {
         setState(() {
           _scanning.remove(row.id);
-          final List<MediaSourceRow>? rows = _rows;
+          final List<SourceLibraryRow>? rows = _rows;
           if (rows != null && updated != null) {
             final int idx =
-                rows.indexWhere((MediaSourceRow r) => r.id == row.id);
+                rows.indexWhere((SourceLibraryRow r) => r.id == row.id);
             if (idx >= 0) rows[idx] = updated;
           }
         });
@@ -510,7 +508,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
   }
 
   /// 打开来源根目录（仅 Windows 本地来源，复用仓库唯一现成的 explorer 调用）。
-  Future<void> _openFolder(MediaSourceRow row) async {
+  Future<void> _openFolder(SourceLibraryRow row) async {
     if (!Platform.isWindows || row.transport != 'local') return;
     try {
       // rootPath 由 normalizeSourceRootPath 归一化为正斜杠（跨平台一致 + dedup），
@@ -526,7 +524,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
   /// 移除来源：确认对话框强调移除来源不会删除已导入的媒体（FK setNull 自动
   /// 把归属媒体的 source_id 归 NULL，条目保留）→ 确认则 deleteMediaSource +
   /// 清除该来源的网络凭据 → 刷新。
-  Future<void> _remove(MediaSourceRow row) async {
+  Future<void> _remove(SourceLibraryRow row) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog.adaptive(
@@ -550,7 +548,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog> {
     if (!mounted || confirmed != true) return;
     await _db.deleteMediaSource(row.id);
     // 网络来源凭据随行清除（本地来源无凭据，deleteSecret 幂等无副作用）。
-    await MediaSourceCredentialStore(_db).deleteSecret(row.id);
+    await SourceLibraryCredentialStore(_db).deleteSecret(row.id);
     await _load();
   }
 }

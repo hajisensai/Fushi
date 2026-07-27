@@ -9,6 +9,7 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -24,7 +25,7 @@ class _FakeSyncBackend implements SyncBackend {
   _FakeSyncBackend({required this.books, required this.dictAssets});
 
   /// Remote book folders surfaced by [listBooks] (each becomes a deletable row).
-  List<DriveFile> books;
+  List<SyncFileRef> books;
 
   /// Remote dictionary assets surfaced under the `__dictionaries__` namespace.
   List<AssetEntry> dictAssets;
@@ -62,19 +63,20 @@ class _FakeSyncBackend implements SyncBackend {
   @override
   Future<String> findOrCreateRootFolder() async => 'root';
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async => books;
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async => books;
   @override
-  void cacheBookFolderIds(List<DriveFile> folders) {}
+  void cacheBookFolderIds(List<SyncFileRef> folders) {}
   @override
   void evictFolderId(String folderId) {}
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async => withAudio
+  Future<SyncFileTrio> listSyncFiles(String folderId) async => withAudio
       // Only the audioBook field is populated, so _fetchRemoteBookData touches
       // getAudioBookFile but never getProgressFile/getStatsFile.
-      ? const DriveSyncFiles(
-          audioBook: DriveFile(id: audioAssetId, name: 'audiobook.hibikiaudio'),
+      ? const SyncFileTrio(
+          audioBook:
+              SyncFileRef(id: audioAssetId, name: 'audiobook.hibikiaudio'),
         )
-      : const DriveSyncFiles();
+      : const SyncFileTrio();
   @override
   Future<String> ensureNamespace(String name) async => name;
   @override
@@ -162,7 +164,8 @@ class _FakeSyncBackend implements SyncBackend {
   }) async =>
       throw UnimplementedError();
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async =>
+  Future<SyncFileRef?> findContentFile(
+          String folderId, String fileName) async =>
       throw UnimplementedError();
   @override
   Future<AssetEntry?> findAsset(String namespaceId, String name) async =>
@@ -236,7 +239,7 @@ void main() {
   testWidgets('book row delete calls deleteAsset on remote folder id (folder)',
       (WidgetTester tester) async {
     final _FakeSyncBackend fake = _FakeSyncBackend(
-      books: <DriveFile>[const DriveFile(id: 'folderX', name: 'BookA')],
+      books: <SyncFileRef>[const SyncFileRef(id: 'folderX', name: 'BookA')],
       dictAssets: const <AssetEntry>[],
     );
     await pumpDialog(tester, fake);
@@ -260,7 +263,7 @@ void main() {
       (WidgetTester tester) async {
     const String assetId = '__dictionaries__/JMdict.hibikidict';
     final _FakeSyncBackend fake = _FakeSyncBackend(
-      books: const <DriveFile>[],
+      books: const <SyncFileRef>[],
       dictAssets: const <AssetEntry>[
         AssetEntry(id: assetId, name: 'JMdict.hibikidict'),
       ],
@@ -283,7 +286,7 @@ void main() {
   testWidgets('failed delete keeps the row and surfaces an error',
       (WidgetTester tester) async {
     final _FakeSyncBackend fake = _FakeSyncBackend(
-      books: <DriveFile>[const DriveFile(id: 'folderX', name: 'BookA')],
+      books: <SyncFileRef>[const SyncFileRef(id: 'folderX', name: 'BookA')],
       dictAssets: const <AssetEntry>[],
     )..failDelete = true;
     await pumpDialog(tester, fake);
@@ -305,7 +308,7 @@ void main() {
       'audiobook row delete removes only the audiobook action, keeps the book row',
       (WidgetTester tester) async {
     final _FakeSyncBackend fake = _FakeSyncBackend(
-      books: <DriveFile>[const DriveFile(id: 'folderX', name: 'BookA')],
+      books: <SyncFileRef>[const SyncFileRef(id: 'folderX', name: 'BookA')],
       dictAssets: const <AssetEntry>[],
     )..withAudio = true;
     await pumpDialog(tester, fake);

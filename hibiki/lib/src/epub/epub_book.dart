@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
+import 'package:hibiki_core/hibiki_core.dart' show mimeTypeForFilePath;
 import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart' as html_dom;
 import 'package:path/path.dart' as p;
@@ -594,33 +595,8 @@ String normalizeHref(String href) => href
     .split('?')
     .first;
 
-String fallbackMimeType(String path) {
-  switch (p.extension(path).toLowerCase()) {
-    case '.css':
-      return 'text/css';
-    case '.js':
-      return 'application/javascript';
-    case '.jpg':
-    case '.jpeg':
-      return 'image/jpeg';
-    case '.png':
-      return 'image/png';
-    case '.gif':
-      return 'image/gif';
-    case '.svg':
-      return 'image/svg+xml';
-    case '.xhtml':
-    case '.html':
-      return 'text/html';
-    case '.woff':
-      return 'font/woff';
-    case '.woff2':
-      return 'font/woff2';
-    case '.ttf':
-      return 'font/ttf';
-    case '.otf':
-      return 'font/otf';
-    default:
-      return 'application/octet-stream';
-  }
-}
+/// manifest 未声明 mediaType 时按扩展名兜底的 MIME（阅读器 WebView 拦截器 / 分享用）。
+///
+/// 命名统一轮 G8：收敛到 hibiki_core 单一映射表 [mimeTypeForFilePath]（旧本地副本
+/// 缺 `.webp` 等，EPUB 内 webp 插图曾被按 octet-stream 提供）。保留旧名薄 shim。
+String fallbackMimeType(String path) => mimeTypeForFilePath(path);

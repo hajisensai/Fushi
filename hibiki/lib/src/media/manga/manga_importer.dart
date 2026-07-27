@@ -11,19 +11,17 @@ import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/media/manga/manga_storage.dart';
 import 'package:hibiki/src/media/manga/mokuro_payload.dart';
 import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart';
+import 'package:hibiki/src/media/media_extensions.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 
-/// 已知漫画页图扩展名（mokuro 惯例）。
-const Set<String> kMangaImageExtensions = <String>{
-  '.jpg',
-  '.jpeg',
-  '.png',
-  '.webp',
-  '.gif',
-  '.bmp',
-};
+/// 已知漫画页图扩展名（mokuro 惯例）＝图片扩展名基集。
+///
+/// 与整卷 OCR 的白名单 `kMangaOcrImageExtensions`（manga_ocr_folder_job.dart）
+/// 同源取基集：导入这道关认的页图，OCR 那道关必须能扫（BUG-1121——两表曾各自
+/// 手写漂移，bmp 漫画 OCR 静默缺页），守卫测试钉死两关口径一致。
+const Set<String> kMangaImageExtensions = kImageExtensionsBase;
 
 /// 是否可作为 mokuro 漫画导入：[paths] 中至少有一个 `.mokuro` 文件，且其同级目录里有图片
 /// 来源。图片来源识别一层深，覆盖 mokuro 的两种惯例布局：

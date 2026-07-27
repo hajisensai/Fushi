@@ -117,6 +117,7 @@ void main() {
     final repo = _FakeRepo();
     final res = await build(gif: okGif, audio: okAudio, frame: okFrame).mine(
         const ImmersionMiningRequest(
+            source: AnkiMiningSource.video,
             fields: {'expression': '走る'},
             mediaSource: '/fake/video.mp4',
             clipStartMs: 1000,
@@ -156,6 +157,7 @@ void main() {
     final res =
         await build(gif: okGif, audio: trackingAudio, frame: okFrame).mine(
             ImmersionMiningRequest(
+              source: AnkiMiningSource.video,
               fields: const {'expression': '走る'},
               // 互联 host 自签 https 流：client ffmpeg 打不开，改走 host 端裁。
               mediaSource:
@@ -205,6 +207,7 @@ void main() {
     final res =
         await build(gif: okGif, audio: trackingAudio, frame: okFrame).mine(
             ImmersionMiningRequest(
+              source: AnkiMiningSource.video,
               fields: const {'expression': '走る'},
               mediaSource:
                   'https://host.example:38765/api/library/videos/v/stream?token=x',
@@ -234,6 +237,7 @@ void main() {
     final repo = _FakeRepo();
     await build(gif: nullGif, audio: nullAudio, frame: nullFrame).mine(
         ImmersionMiningRequest(
+            source: AnkiMiningSource.video,
             fields: const {'expression': 'x'},
             clipStartMs: 0,
             clipEndMs: 0,
@@ -250,6 +254,7 @@ void main() {
     final repo = _FakeRepo();
     final res = await build(gif: nullGif, audio: okAudio, frame: okFrame).mine(
         const ImmersionMiningRequest(
+            source: AnkiMiningSource.video,
             fields: {'expression': 'x'},
             mediaSource: '/v.mp4',
             clipStartMs: 0,
@@ -267,6 +272,7 @@ void main() {
     final res = await build(gif: okGif, audio: nullAudio, frame: nullFrame)
         .mine(
             const ImmersionMiningRequest(
+                source: AnkiMiningSource.video,
                 fields: {'expression': 'x'},
                 mediaSource: '/v.mp4',
                 clipStartMs: 0,
@@ -284,6 +290,7 @@ void main() {
     final res = await build(gif: nullGif, audio: nullAudio, frame: okFrame)
         .mine(
             const ImmersionMiningRequest(
+                source: AnkiMiningSource.video,
                 fields: {'expression': 'x'},
                 mediaSource: '/v.mp4',
                 clipStartMs: 0,
@@ -349,6 +356,7 @@ void main() {
             materializer: capMaterialize)
         .mine(
             const ImmersionMiningRequest(
+                source: AnkiMiningSource.video,
                 fields: {'expression': 'x'},
                 mediaSource: 'https://video-only.example/v',
                 audioSource: 'https://audio-only.example/a',
@@ -368,6 +376,7 @@ void main() {
     final repo = _FakeRepo();
     await build(gif: okGif, audio: okAudio, frame: okFrame).mine(
         const ImmersionMiningRequest(
+            source: AnkiMiningSource.video,
             fields: {'expression': 'x'},
             mediaSource: '/v.mp4',
             clipStartMs: 0,
@@ -389,6 +398,7 @@ void main() {
     final res = await build(gif: nullGif, audio: nullAudio, frame: nullFrame)
         .mine(
             ImmersionMiningRequest(
+                source: AnkiMiningSource.video,
                 fields: const {'expression': 'x'},
                 clipStartMs: 0,
                 clipEndMs: 0,
@@ -411,6 +421,7 @@ void main() {
     final res = await build(gif: nullGif, audio: nullAudio, frame: nullFrame)
         .mine(
             const ImmersionMiningRequest(
+                source: AnkiMiningSource.video,
                 fields: {'expression': 'x'},
                 clipStartMs: 0,
                 clipEndMs: 0,
@@ -449,6 +460,7 @@ void main() {
 
     final res = await build(gif: flagGif, audio: okAudio, frame: okFrame).mine(
         ImmersionMiningRequest(
+            source: AnkiMiningSource.video,
             fields: const {'expression': 'x'},
             mediaSource: '/v.mp4',
             clipStartMs: 1000,
@@ -485,6 +497,7 @@ void main() {
 
     final res = await build(gif: flagGif, audio: okAudio, frame: okFrame).mine(
         const ImmersionMiningRequest(
+            source: AnkiMiningSource.video,
             fields: {'expression': 'x'},
             mediaSource: '/v.mp4',
             clipStartMs: 1000,
@@ -506,6 +519,7 @@ void main() {
     final repo = _FakeRepo();
     final res = await build(gif: nullGif, audio: okAudio, frame: okFrame).mine(
         const ImmersionMiningRequest(
+            source: AnkiMiningSource.video,
             fields: {'expression': 'x'},
             mediaSource: '/v.mp4',
             clipStartMs: 1000,
@@ -526,6 +540,7 @@ void main() {
     final repo = _FakeRepo();
     final res = await build(gif: okGif, audio: okAudio, frame: nullFrame).mine(
         ImmersionMiningRequest(
+            source: AnkiMiningSource.video,
             fields: const {'expression': 'x'},
             mediaSource: '/v.mp4',
             clipStartMs: 1000,

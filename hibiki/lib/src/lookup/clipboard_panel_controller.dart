@@ -32,6 +32,7 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:hibiki_core/hibiki_core.dart' show kStatSourceBook;
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:path/path.dart' as p;
 
@@ -492,6 +493,21 @@ class ClipboardPanelController {
       // 剪贴板全文即句子上下文：制卡 `{sentence}` 用它兜底（JS 不发 sentence）。
       // 与句子横幅同一 `_currentSentence`，落实 spec §2 的「兼作制卡 sentence」。
       sentenceContext: _currentSentence,
+    )) {
+      return;
+    }
+    // BUG-1139 — Ctrl+滚轮内容缩放：改「词典字号」这一唯一真值后整栈重渲。
+    // 实际生效机制是注入 head 里的 `documentElement.style.zoom`
+    // （= popupContentZoom(appUiScale, fs)），**不是**按新字号重排——本仓没有任何
+    // 一处用 dictionaryFontSize 生成 font-size CSS。面板窗尺寸固定
+    // （global_lookup_host.js 在 panel 模式短路 measureAndReport），内容在 iframe 内
+    // 滚动，所以这条路径本就不走窗口收缩、没有被裁风险；瞬态覆盖窗那条的测高换算
+    // 见 BUG-1139 ③（global_lookup_host.js 的 frameContentZoom）。
+    if (maybeHandleOverlayZoomFontStep(
+      model: model,
+      handler: handler,
+      message: message,
+      onFontSizeChanged: () => unawaited(_rerender()),
     )) {
       return;
     }

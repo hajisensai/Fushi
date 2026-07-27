@@ -7,7 +7,9 @@
 > 这样并发 agent 各写各的文件，永不在同一处产生 git 冲突；撞号也只是两个不同文件名，
 > 改个名即可，不再有冲突标记手术。
 >
-> 新建一条：`dart run tool/bug.dart new <slug> [标题...]`（自动取下一个空号、生成骨架、重建索引）。
+> 新建一条：`dart run tool/bug.dart new <slug> [标题...]`（跨本地+远端分支取下一个空号、生成骨架、重建索引）。
+> 撞号了：`dart run tool/bug.dart renumber <old> <new>`（文件名 + 正文 H2 + 代码/测试引用一把改 + 自校验；
+> 别手改——只改文件名不改正文 H2 会让 `bugs_per_file_guard_test` 变红）。
 > 改完某条 bug 文件后：`dart run tool/bug.dart reindex` 重建下面的索引表。
 >
 > 每条 bug 文件里：
@@ -27,27 +29,53 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1096 条。点号进各自文件。
+> 共 1122 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1139](bugs/BUG-1139-ocr.md) | ✅ | ✅ | 漫画全卷 OCR 后密集命中层导致阅读器黑屏 |
-| [BUG-1138](bugs/BUG-1138-manga-high-frequency-turn-queue.md) | ✅ | ✅ | 漫画高频翻页跨窗口时丢失输入 |
-| [BUG-1137](bugs/BUG-1137-manga-popup-pagination-focus.md) | ✅ | ✅ | 漫画查词弹窗吞掉滚轮和左右翻页 |
-| [BUG-1136](bugs/BUG-1136-manga-page-jump-controller-lifecycle.md) | ✅ | ✅ | 漫画页码跳转关闭弹窗后红屏 |
-| [BUG-1135](bugs/BUG-1135-manga-window-generation-stale-page.md) | ✅ | ✅ | 漫画页码已翻但 WebView 仍显示旧页面 |
-| [BUG-1134](bugs/BUG-1134-manga-lens-top-left-rotated-hit-regions.md) | ✅ | ✅ | 漫画 Lens OCR 坐标上下镜像且旋转文字点词错位 |
-| [BUG-1133](bugs/BUG-1133-manga-incremental-ocr-cache-recovery.md) | ✅ | ✅ | 漫画增量 OCR 缓存重开后未恢复 |
-| [BUG-1132](bugs/BUG-1132-manga-ocr-onnx-input-contract.md) | ✅ | ✅ | 漫画 OCR 按 ONNX 元数据适配单输入模型名称 |
-| [BUG-1131](bugs/BUG-1131-windows-manga-ocr-falls-back-from-unsupported-directml-provider.md) | ✅ | ✅ | Windows 漫画本地 OCR 不支持 DirectML 时未回退 CPU |
-| [BUG-1130](bugs/BUG-1130-manga-ocr-character-hit-zoom.md) | ✅ | ✅ | 漫画 OCR 横竖排字符在缩放后查词偏移 |
-| [BUG-1129](bugs/BUG-1129-manga-ocr-coordinate-cache.md) | ✅ | ✅ | 漫画 OCR 查词坐标偏移且重启重复识别 |
-| [BUG-1128](bugs/BUG-1128-manga-ocr-blocks-reader.md) | ✅ | ✅ | 漫画 OCR 模态阻塞阅读且完成页不能立即查词 |
-| [BUG-1127](bugs/BUG-1127-manga-spread-cropped-janky.md) | ✅ | ✅ | 漫画双页图片裁切且翻页卡顿 |
+| [BUG-1155](bugs/BUG-1155-manga-popup-pagination-focus.md) | ✅ | ✅ | 漫画查词弹窗吞掉滚轮和左右翻页 |
+| [BUG-1154](bugs/BUG-1154-manga-page-jump-controller-lifecycle.md) | ✅ | ✅ | 漫画页码跳转关闭弹窗后红屏 |
+| [BUG-1153](bugs/BUG-1153-manga-window-generation-stale-page.md) | ✅ | ✅ | 漫画页码已翻但 WebView 仍显示旧页面 |
+| [BUG-1152](bugs/BUG-1152-manga-lens-top-left-rotated-hit-regions.md) | ✅ | ✅ | 漫画 Lens OCR 坐标上下镜像且旋转文字点词错位 |
+| [BUG-1151](bugs/BUG-1151-manga-incremental-ocr-cache-recovery.md) | ✅ | ✅ | 漫画增量 OCR 缓存重开后未恢复 |
+| [BUG-1150](bugs/BUG-1150-manga-ocr-onnx-input-contract.md) | ✅ | ✅ | 漫画 OCR 按 ONNX 元数据适配单输入模型名称 |
+| [BUG-1149](bugs/BUG-1149-windows-manga-ocr-falls-back-from-unsupported-directml-provider.md) | ✅ | ✅ | Windows 漫画本地 OCR 不支持 DirectML 时未回退 CPU |
+| [BUG-1148](bugs/BUG-1148-manga-ocr-character-hit-zoom.md) | ✅ | ✅ | 漫画 OCR 横竖排字符在缩放后查词偏移 |
+| [BUG-1147](bugs/BUG-1147-manga-ocr-coordinate-cache.md) | ✅ | ✅ | 漫画 OCR 查词坐标偏移且重启重复识别 |
+| [BUG-1146](bugs/BUG-1146-manga-ocr-blocks-reader.md) | ✅ | ✅ | 漫画 OCR 模态阻塞阅读且完成页不能立即查词 |
+| [BUG-1145](bugs/BUG-1145-manga-spread-cropped-janky.md) | ✅ | ✅ | 漫画双页图片裁切且翻页卡顿 |
+| [BUG-1144](bugs/BUG-1144-manga-dense-ocr-black-screen.md) | ✅ | ✅ | 漫画全卷 OCR 后密集命中层导致阅读器黑屏 |
+| [BUG-1143](bugs/BUG-1143-manga-high-frequency-turn-queue.md) | ✅ | ✅ | 漫画高频翻页跨窗口时丢失输入 |
+| [BUG-1142](bugs/BUG-1142-gal-launch-failure-unclassified.md) | ✅ | ✅ | gal 启动失败只报无信息兜底文案，失败原因在 launchGame 的 bool 返回值处被丢弃 |
+| [BUG-1141](bugs/BUG-1141-download-discovery-timeout-too-short.md) | ✅ | ✅ | 代理下「发现」搜索 20s 超时太短，请求本可成功却被掐断 |
+| [BUG-1140](bugs/BUG-1140-cross-chapter-turn-latency.md) | ✅ | ✅ | 跨章翻页耗时实测与提速（遮罩口径） |
+| [BUG-1139](bugs/BUG-1139-overlay-ctrl-wheel-zoom.md) | ✅ | ✅ | app 外查词浮窗 Ctrl+滚轮触发 WebView2 原生页面缩放，窗口/region 几何按 zoom=1 计算导致卡片被切、露出底下应用 |
+| [BUG-1138](bugs/BUG-1138-gal-clipboard-overlay-ruby-markup.md) | ✅ | ✅ | gal 台词浮窗/剪切板文字窗把注音标记当正文显示，污染查词与字数 |
+| [BUG-1137](bugs/BUG-1137-gal-mining-video-tag.md) | ✅ | ✅ | gal 制卡分类标签误标 video：来源枚举缺 game 且默认值静默兜底 |
+| [BUG-1136](bugs/BUG-1136-ios-reader-scroll-lookup.md) | ✅ | ✅ | iPhone 阅读滑动被误判为点词查词 |
+| [BUG-1135](bugs/BUG-1135-gal-clipnear-bypasses-track-exclusion.md) | ✅ | ✅ | gal 制卡兜底 grabClipNear 绕过选轨/排除集——排除的 BGM 轨会从兜底混回卡片 |
+| [BUG-1134](bugs/BUG-1134-gal-line-track-preview-timestamp.md) | ✅ | ✅ | 逐句选轨试听与确认使用了不同台词时间戳 |
+| [BUG-1133](bugs/BUG-1133-gal-capture-parallel-text-duplicate.md) | ✅ | ✅ | 全部文本线程把同一台词显示两遍 |
+| [BUG-1132](bugs/BUG-1132-gal-capture-stale-text-thread.md) | ✅ | ✅ | 捕获工作台混入上次进程的 TextRender 文本线程 |
+| [BUG-1131](bugs/BUG-1131-book-tracking-status-semantics.md) | ✅ | ✅ | Bangumi 小说/漫画阅读进度未按语义切换在读与读过 |
+| [BUG-1130](bugs/BUG-1130-bangumi-watched-progress-stays-wish.md) | ✅ | ✅ | Bangumi 已有想看收藏在记录进度后未切换为在看 |
+| [BUG-1129](bugs/BUG-1129-gal-textthread-list-luna-parity.md) | ✅ | ✅ | 文本线程列表对齐 Luna 选择文本：预览折叠/排序/重名消歧 + TextRender 0 行 |
+| [BUG-1128](bugs/BUG-1128-gal-workbench-bgm-when-no-voice.md) | ✅ | ✅ | 无语音台词误配 BGM：捕获工作台补排除音轨入口 |
+| [BUG-1127](bugs/BUG-1127-external-lookup-autoread-slow-swallowed.md) | ✅ | ✅ | app 外查词自动发音走 libmpv 慢路径且失败被静默吞掉 |
 | [BUG-1126](bugs/BUG-1126-video-episode-panel-missing-covers.md) | ✅ | ✅ | 视频剧集侧栏只传标题导致本地与互联封面全部丢失 |
+| [BUG-1125](bugs/BUG-1125-home-video-sanitize-missing-backslash.md) | ✅ | ✅ | home-video-sanitize-missing-backslash |
+| [BUG-1124](bugs/BUG-1124-local-audio-cache-weak-hash.md) | ✅ | ✅ | local-audio-cache-weak-hash |
+| [BUG-1123](bugs/BUG-1123-video-error-copy-says-bookshelf.md) | ✅ | ✅ | video-error-copy-says-bookshelf |
+| [BUG-1122](bugs/BUG-1122-sync-webp-octet-stream.md) | ✅ | ✅ | sync-webp-octet-stream |
+| [BUG-1121](bugs/BUG-1121-bmp-manga-ocr-skipped.md) | ✅ | ✅ | bmp-manga-ocr-skipped |
+| [BUG-1120](bugs/BUG-1120-favorite-sentence-kind-downcast.md) | ✅ | ✅ | favorite-sentence-kind-downcast |
+| [BUG-1119](bugs/BUG-1119-remote-continue-kind-downcast.md) | ✅ | ✅ | remote-continue-kind-downcast |
+| [BUG-1118](bugs/BUG-1118-scrape-cover-cache-not-evicted.md) | ✅ | ✅ | scrape-cover-cache-not-evicted |
+| [BUG-1117](bugs/BUG-1117-video-import-swallowed-errors.md) | ✅ | ✅ | 视频导入四方法 try/finally 无 catch：异常静默逃逸，用户只见 spinner 停住 |
+| [BUG-1116](bugs/BUG-1116-reader-settings-prefcodec-one-way.md) | ✅ | ✅ | reader-settings-prefcodec-one-way |
 | [BUG-1115](bugs/BUG-1115-default-documents-root-flat.md) | ✅ | ✅ | 默认数据根时 16 个 Hibiki 目录直接摊在用户文档根下 |
 | [BUG-1114](bugs/BUG-1114-local-rig-rate-limit-flake.md) | 🚧 | 🚧 | 内置引擎本地 rig 测试：限速对 loopback peer 不生效导致 peer 观察窗口消失（flaky） |
-| [BUG-1113](bugs/BUG-1113-galgame-no-tags.md) | 🚧 | 🚧 | 游戏没有标签：schema 缺 GalgameTagMappings 表 |
+| [BUG-1113](bugs/BUG-1113-galgame-no-tags.md) | ✅ | ✅ | 游戏没有标签：schema 缺 GalgameTagMappings 表 |
 | [BUG-1112](bugs/BUG-1112-activity-timeline-game-no-cover.md) | ✅ | ✅ | 活动时间轴游戏条目只有图标没有封面 |
 | [BUG-1111](bugs/BUG-1111-dashboard-continue-recent-missing-games.md) | ✅ | ✅ | 首页继续与最近添加装不下游戏：_ContinueEntry 用 isVideo 二元标志 |
 | [BUG-1110](bugs/BUG-1110-narrow-screen-hides-degrade-reason.md) | ✅ | ✅ | 捕获工作台窄屏时藏掉降级原因，只留一个「已降级」徽章 |

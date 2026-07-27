@@ -14,6 +14,9 @@ import 'package:macos_ui/macos_ui.dart'
         MacosBackButton,
         MacosIcon;
 import 'package:flutter/services.dart' hide ModifierKey;
+import 'package:hibiki/src/anki/anki_view_model.dart'
+    show ankiRepositoryProvider;
+import 'package:hibiki/src/anki/lapis_template_service.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/audiobook/now_listening_mini_bar.dart';
@@ -319,6 +322,17 @@ class _HomePageState extends BasePageState<HomePage>
       // [_periodicSyncInterval] 注释）。dispose 时 cancel。
       _periodicSyncTimer =
           Timer.periodic(_periodicSyncInterval, (_) => _triggerFullAutoSync());
+
+      // Lapis 模板启动自动迁移：Hibiki 基线/客制化变了且 Anki 端仍是 Hibiki
+      // 已知产物时，自动备份后推送新 styling（手改内容绝不自动覆盖，Anki 未
+      // 运行静默跳过）。服务内部有每进程一次的闸门，HomePage 重建不会重跑。
+      if (mounted) {
+        unawaited(LapisTemplateService(ref.read(ankiRepositoryProvider))
+            .maybeAutoMigrateOnStartup()
+            .catchError((Object e, StackTrace s) {
+          ErrorLogService.instance.log('HomePage.lapisAutoMigrate', e, s);
+        }));
+      }
     });
   }
 

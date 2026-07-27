@@ -5,19 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
+import 'package:hibiki/src/media/media_search_text.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
 import 'package:hibiki/src/media/video/jimaku_client.dart';
+import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
-
-/// 按关键词（大小写不敏感子串）筛选列表；空/纯空白关键词原样返回。纯函数，便于单测。
-List<T> filterByKeyword<T>(
-    List<T> items, String keyword, String Function(T) text) {
-  final String kw = keyword.trim().toLowerCase();
-  if (kw.isEmpty) return items;
-  return items
-      .where((T it) => text(it).toLowerCase().contains(kw))
-      .toList(growable: false);
-}
 
 /// 一条可下载的 Jimaku 字幕候选：所属条目名 + 文件。
 class JimakuCandidate {
@@ -158,7 +150,8 @@ class JimakuSubtitleDialog extends StatefulWidget {
   State<JimakuSubtitleDialog> createState() => _JimakuSubtitleDialogState();
 }
 
-class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
+class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
+    with HibikiPagePlaceholders<JimakuSubtitleDialog> {
   late final TextEditingController _apiKeyCtrl =
       TextEditingController(text: widget.initialApiKey);
   late final TextEditingController _queryCtrl =
@@ -578,7 +571,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog> {
   /// 滚动，保留 BUG-279 不变量。
   Widget _buildResultsArea(ThemeData theme) {
     if (_searching) {
-      return const Center(child: CircularProgressIndicator());
+      return buildLoading();
     }
     if (_searched && _candidates.isEmpty) {
       return Center(
@@ -729,8 +722,10 @@ class JimakuCandidateList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<JimakuCandidate> shown =
-        filterByKeyword(candidates, filter, (JimakuCandidate c) => c.file.name);
+    // G6：与库页搜索同一归一化口径（全角/片假名/标点差异不挡命中），不再是
+    // 裸 toLowerCase 子串。
+    final List<JimakuCandidate> shown = filterByMediaSearch(
+        candidates, filter, (JimakuCandidate c) => <String>[c.file.name]);
     // 不用 shrinkWrap：外层 [ConstrainedBox] 给了有界 maxHeight，普通 ListView 会
     // 填满该高度并在内容超出时正常滚动。shrinkWrap 反而会让它贴合内容/不产生可滚
     // 余量（maxScrollExtent=0），正是「滚不动」的来源。

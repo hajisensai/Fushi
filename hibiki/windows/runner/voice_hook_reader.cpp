@@ -354,9 +354,9 @@ bool VoiceHookReader::SelectTextThread(uint64_t thread_id) {
   return true;
 }
 
-VoiceHookStatus VoiceHookReader::GrabClipNear(uint64_t ts_ms,
-                                              uint64_t tolerance_ms,
-                                              std::vector<uint8_t>& out) {
+VoiceHookStatus VoiceHookReader::GrabClipNear(
+    uint64_t ts_ms, uint64_t tolerance_ms, uint64_t target_source,
+    const std::vector<uint64_t>& exclude_sources, std::vector<uint8_t>& out) {
   out.clear();
   ReaderState& st = State();
   std::lock_guard<std::mutex> lock(st.mutex);
@@ -382,6 +382,20 @@ VoiceHookStatus VoiceHookReader::GrabClipNear(uint64_t ts_ms,
     const auto* c = reinterpret_cast<const hibiki_voice_hook::VoiceClip*>(
         clip_base + static_cast<size_t>(idx) * sizeof(hibiki_voice_hook::VoiceClip));
     if (c->seq != seq || c->byte_len == 0 || c->byte_len > cap) {
+      continue;
+    }
+    // 选轨/排除契约与 GrabUtterance 一致：指定轨只取该轨，排除轨一律跳过。
+    if (target_source != 0 && c->source_ptr != target_source) {
+      continue;
+    }
+    bool excluded = false;
+    for (const uint64_t ex : exclude_sources) {
+      if (ex == c->source_ptr) {
+        excluded = true;
+        break;
+      }
+    }
+    if (excluded) {
       continue;
     }
     // 已被环形覆盖（写该 clip 之后又写了几乎一整圈）则跳过。

@@ -15,6 +15,7 @@ import 'dart:convert';
 
 import 'package:hibiki/src/lookup/global_lookup_log.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
@@ -105,6 +106,67 @@ bool maybeHandleOverlayDeferredBridge({
     default:
       return false;
   }
+}
+
+/// BUG-1139 — app 外两个裸 WebView2 表面的 Ctrl+滚轮内容缩放落地点（瞬态查词覆盖窗
+/// 与常驻剪贴板面板共用同一实现，与上面的 deferred 桥同一条红线：绝不复制）。
+///
+/// JS 侧（popup_settings_injection 的 `_globalLookupZoomWheelJs`）只回传 rAF 合帧后的
+/// **净档数**，步长与夹紧仍在 Dart：逐档过 [DictionaryPopupWebViewState
+/// .steppedPopupZoomFontSize]（内含 8..72 夹紧），与 in-app Ctrl+滚轮、弹窗顶栏
+/// A−/A+ 完全同一条语义，四端不可能漂开。
+///
+/// 返回 true = 已处理（调用方 `_onJsMessage` 直接 return）。字号真的变了才回调
+/// [onFontSizeChanged] 重渲：顶到 8 或 72 后继续滚不再触发无意义的整栈重渲。
+/// 重渲是几何正确性的关键一环——新字号经 buildFrameSettingsJs 重新排版后，卡片高度
+/// / bbox / window region 沿现有链路自然更新，不需要任何 zoom 感知的几何补偿。
+bool maybeHandleOverlayZoomFontStep({
+  required AppModel? model,
+  required Object? handler,
+  required Map<String, Object?> message,
+  required void Function() onFontSizeChanged,
+}) {
+  if (handler != 'popupZoomFontStep') {
+    return false;
+  }
+  if (model == null) {
+    return true;
+  }
+  final Object? args = message['args'];
+  final Object? raw = (args is List && args.isNotEmpty) ? args.first : null;
+  final int steps = raw is num ? raw.toInt() : (int.tryParse('$raw') ?? 0);
+  if (steps == 0) {
+    return true;
+  }
+  final double current = model.dictionaryFontSize;
+  final double next = zoomFontSizeAfterSteps(current, steps);
+  if (next == current) {
+    return true;
+  }
+  model.setDictionaryFontSize(next);
+  onFontSizeChanged();
+  return true;
+}
+
+/// BUG-1139 — 把「净档数」折算成新的词典字号（纯函数，直接单测）。
+///
+/// 逐档过 [DictionaryPopupWebViewState.steppedPopupZoomFontSize]（每档 ±1，内含
+/// 8..72 夹紧），而不是 `current + steps` 一步到位：步长与边界只有那一处真值，
+/// 将来改档距/改边界不会在这里留下第二份镜像。已顶到边界后继续同向滚返回原值，
+/// 调用方据此跳过整栈重渲。[steps] 为 0 或非有限的当前值时原样返回。
+double zoomFontSizeAfterSteps(double current, int steps) {
+  if (steps == 0) {
+    return current;
+  }
+  double next = current;
+  final int magnitude = steps.abs();
+  for (int i = 0; i < magnitude; i++) {
+    next = DictionaryPopupWebViewState.steppedPopupZoomFontSize(
+      next,
+      zoomIn: steps > 0,
+    );
+  }
+  return next;
 }
 
 /// The `{sentence}` value for an app-external mine/overwrite: a JS-sent

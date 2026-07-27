@@ -122,8 +122,13 @@ void main() {
       expect(i18n.contains('Pick subtitle (srt/vtt/ass)'), isFalse);
     });
 
-    test('编辑标签进入共享 TagPickerPage（videoBookUid 分支）', () {
-      expect(src.contains('TagPickerPage(videoBookUid: book.bookUid)'), isTrue);
+    test('编辑标签进入共享 TagPickerPage（video MediaRef 分支）', () {
+      // 命名统一 Phase 3.3：TagPickerPage 收口为单 MediaRef 目标参数。
+      expect(
+        src.contains(
+            'media: MediaRef(kind: MediaKind.video, entryKey: book.bookUid)'),
+        isTrue,
+      );
     });
 
     test('卡片渲染所挂标签 + 顶部标签筛选栏', () {

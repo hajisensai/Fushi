@@ -4,7 +4,9 @@ import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'anki_media_dedup.dart';
 import 'anki_models.dart';
+import 'anki_note_type_definition.dart';
 import 'lapis_note_type.dart';
 import 'lapis_preset.dart';
 
@@ -164,6 +166,53 @@ abstract class BaseAnkiRepository {
   /// exists, `true` if newly created. Throws on backend failure.
   Future<bool> createDeck(String name);
 
+  // ── note type 模板读写（Lapis 客制化/备份/自动迁移）───────────────────────
+
+  /// 本后端能否读取/覆写**已存在** note type 的卡模板与 styling。
+  ///
+  /// **默认 = false（优雅降级）**：AnkiDroid Content Provider 与 AnkiMobile
+  /// 均无改已存在模板的 API（平台边界，非本仓可修），设置页据此隐藏 Lapis
+  /// 样式客制化区。只有 [supportsNoteTypeEditing] 为 true 的后端
+  /// （AnkiConnect）才覆写下面三个方法做真实读写。
+  bool get supportsNoteTypeEditing => false;
+
+  /// 读取名为 [modelName] 的 note type 完整定义（字段/卡模板/CSS），供备份
+  /// 与漂移判定。模型不存在或后端不支持返回 `null`；后端可达性错误照抛
+  /// （调用方决定提示还是静默跳过）。**默认实现 = 优雅降级**：返回 `null`。
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
+          String modelName) async =>
+      null;
+
+  /// 覆写 [modelName] 的 styling（CSS）。返回 `false` = 后端不支持（默认
+  /// 降级）；成功返回 `true`；后端失败照抛。
+  Future<bool> updateNoteTypeStyling(String modelName, String css) async =>
+      false;
+
+  /// 覆写 [modelName] 的全部卡模板正/反面。返回 `false` = 后端不支持（默认
+  /// 降级）；成功返回 `true`；后端失败照抛。只在「从备份恢复」时使用——样式
+  /// 客制化本身只动 styling。
+  Future<bool> updateNoteTypeTemplates(
+          String modelName, List<AnkiCardTemplate> templates) async =>
+      false;
+
+  // ── 媒体存储优化（字节级去重，见 anki_media_dedup.dart）────────────────
+
+  /// 本后端能否做媒体字节级去重。需要**本机可直读** collection.media +
+  /// 全库检索 + 字段/模板改写；默认 false，仅 AnkiConnect（Anki 与 Hibiki
+  /// 同机）支持。
+  bool get supportsMediaMaintenance => false;
+
+  /// 跑一轮媒体字节级去重：找出字节完全相同的文件组 → 把笔记字段与卡模板/
+  /// styling 里的引用统一改指保留份 → 复核引用清干净后删除多余副本。
+  /// **绝不重编码任何文件**。[dryRun] = 只扫描规划，不改动。[onJournal] 在
+  /// 每次真实改写/删除**之前**收到一条可回溯记录（调用方负责落盘）。
+  /// **默认实现 = 优雅降级**：返回 null。
+  Future<AnkiMediaDedupReport?> runMediaDedup({
+    bool dryRun = false,
+    Future<void> Function(Map<String, dynamic> entry)? onJournal,
+  }) async =>
+      null;
+
   @protected
   AnkiDeck selectDeckAfterFetch(List<AnkiDeck> decks, AnkiSettings current) =>
       decks.firstWhereOrNull((d) => d.id == current.selectedDeckId) ??
@@ -217,6 +266,10 @@ abstract class BaseAnkiRepository {
   /// 或重写用户 Anki 中的既有卡片，避免碰旧数据。
   static const String videoTag = 'video';
 
+  /// galgame Hook 来源的分类标签（BUG-1137）。仅决定新制卡默认标签，既有误标
+  /// `video` 的旧卡不迁移不重写。
+  static const String gameTag = 'game';
+
   /// 把制卡来源类别映射成分类标签；`null`（未指定来源）时返回 `null`（不追加）。
   static String? _categoryTagForSource(AnkiMiningSource? source) {
     switch (source) {
@@ -224,6 +277,8 @@ abstract class BaseAnkiRepository {
         return bookTag;
       case AnkiMiningSource.video:
         return videoTag;
+      case AnkiMiningSource.game:
+        return gameTag;
       case null:
         return null;
     }
@@ -233,8 +288,8 @@ abstract class BaseAnkiRepository {
   /// **追加** [hibikiTag] 与 [source] 对应的分类标签后去重（保序）。
   ///
   /// - 追加而非覆盖：用户已配置的 tag 全部保留，只是按开关额外多 `hibiki` + 分类标签。
-  /// - 顺序：用户 tag → `hibiki` → 分类标签（`book`/`video`）。
-  /// - 去重：用户若已手动配置了 `hibiki`/`book`/`video`，不会出现两个。
+  /// - 顺序：用户 tag → `hibiki` → 分类标签（`book`/`video`/`game`）。
+  /// - 去重：用户若已手动配置了 `hibiki`/`book`/`video`/`game`，不会出现两个。
   /// - [includeHibiki]（TODO-117 开关）为 `false` 时不追加 `hibiki`。
   /// - [includeCategory]（TODO-117 开关）为 `false` 时不追加分类标签；为 `true` 但
   ///   [source] 为 `null`（未指定来源，如独立查词/悬浮窗）时本就没有分类标签可加。
@@ -287,6 +342,10 @@ abstract class BaseAnkiRepository {
   /// 去标签、折叠空白、截断到 [maxLen]。供 note viewer / 多张命中选择列表区分卡片用。
   /// 纯函数、可单测。
   static String previewFromFieldValue(String value, {int maxLen = 60}) {
+    // 标签替换成**空格**（随后统一折叠），与 hibiki_audio 字幕解析的
+    // `stripHtmlTags`（替换成空串）**故意不同**：Anki 字段 HTML 里 `<br>` /
+    // 块级标签承担换行分词，直接删空会把相邻词粘连成一个词；字幕行内标签则
+    // 紧贴正文、删空才不会在日文句中引入假空格。两份实现不强并（G11）。
     final String noTags = value.replaceAll(RegExp(r'<[^>]*>'), ' ');
     final String collapsed =
         noTags.replaceAll('&nbsp;', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();

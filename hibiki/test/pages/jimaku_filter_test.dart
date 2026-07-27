@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/media_search_text.dart';
 import 'package:hibiki/src/media/video/jimaku_client.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart';
 
@@ -8,20 +9,31 @@ JimakuCandidate _cand(String fileName) => JimakuCandidate(
     );
 
 void main() {
+  // G6：jimaku 关键词筛选并入库页同一归一化口径（filterByMediaSearch），
+  // 原本地 filterByKeyword 已删除。
   test('empty keyword keeps all', () {
     final List<String> names = <String>['a.WEBRip.srt', 'b.BD.ass'];
-    expect(filterByKeyword(names, '', (String s) => s), names);
+    expect(filterByMediaSearch(names, '', (String s) => <String>[s]), names);
   });
 
   test('case-insensitive substring match', () {
     final List<String> names = <String>['a.WEBRip.srt', 'b.BD.ass', 'c.srt'];
-    final List<String> out = filterByKeyword(names, 'webrip', (String s) => s);
+    final List<String> out =
+        filterByMediaSearch(names, 'webrip', (String s) => <String>[s]);
     expect(out, <String>['a.WEBRip.srt']);
   });
 
   test('whitespace-only keyword keeps all', () {
     final List<String> names = <String>['x', 'y'];
-    expect(filterByKeyword(names, '   ', (String s) => s), names);
+    expect(filterByMediaSearch(names, '   ', (String s) => <String>[s]), names);
+  });
+
+  test('G6: katakana/fullwidth folding matches like the library pages', () {
+    final List<String> names = <String>['フェイト 01.srt', 'other.srt'];
+    expect(
+      filterByMediaSearch(names, 'ふぇいと', (String s) => <String>[s]),
+      <String>['フェイト 01.srt'],
+    );
   });
 
   group('language filter (TODO-674)', () {

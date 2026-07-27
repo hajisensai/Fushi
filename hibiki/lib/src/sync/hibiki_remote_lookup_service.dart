@@ -55,6 +55,7 @@ abstract class HibikiRemoteHistoryService {
   void recordHistory(DictionarySearchResult result);
 }
 
+/// 对端 host 返回的单词音频查询结果（原始字节 + Content-Type，wire DTO）。
 class RemoteAudioLookup {
   const RemoteAudioLookup({
     required this.bytes,

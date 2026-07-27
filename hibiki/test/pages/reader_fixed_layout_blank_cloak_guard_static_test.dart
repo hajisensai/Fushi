@@ -58,7 +58,10 @@ void main() {
         read('lib/src/pages/implementations/reader_hibiki/webview.part.dart');
 
     // 顶部幂等 microtask 兜底摘 cloak：Promise.resolve().then 里 getElementById('hoshi-cloak').remove()。
-    final int iifeStart = src.indexOf("return '''\n(function() {");
+    // 只按 IIFE 起始的模板串定位（不绑定 return 表达式的写法）——setup 脚本注入前会
+    // 过一层 ReaderScriptCompactor.compact(...)，本守卫钉的是 IIFE 内容，与是否包了
+    // 压缩器无关。
+    final int iifeStart = src.indexOf("'''\n(function() {");
     expect(iifeStart, greaterThan(-1), reason: '找不到 reader-setup IIFE');
     final String iife = src.substring(iifeStart);
     expect(iife.contains('Promise.resolve().then(function() {'), isTrue,

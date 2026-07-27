@@ -113,7 +113,7 @@ import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_cover_fetcher.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
@@ -1768,7 +1768,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           ref.read(profileViewModelProvider.notifier);
       final int resolvedId = await profileRepo.resolveProfileId(
         bookUid: widget.bookUid,
-        mediaType: 'video',
+        mediaType: ProfileMediaKind.video,
       );
       final int currentActiveId = await profileRepo.getActiveProfileId();
       if (resolvedId != currentActiveId) {
@@ -2263,14 +2263,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   /// 远端视频开播位置（TODO-653/885）：在 host 真相（[info] 随清单带回的整书 positionMs，
   /// 仅对起播集 [episodeIndex]==currentEpisode 有意义）与本地按集 prefs 之间「取较新时间
-  /// 戳」（[resolveVideoPositionSync]）。host 进度新于本地时跨设备恢复；本地新于 host 时
+  /// 戳」（[resolvePositionLww]）。host 进度新于本地时跨设备恢复；本地新于 host 时
   /// 不被旧 host 回退。非起播集只用本地按集 prefs（host 清单只带整书/当前集进度）。
   int _resolveRemoteInitialPositionMs(RemoteVideoInfo info, int episodeIndex) {
     // host 的 info.positionMs 是整书/当前集进度，只对 host 的 currentEpisode 那集叠加；
     // 其它集 host 没带进度 → 退本地按集 prefs。
     final bool hostProgressApplies =
         !info.isPlaylist || episodeIndex == info.currentEpisode;
-    final ({int positionMs, int updatedAtMs}) winner = resolveVideoPositionSync(
+    final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
       localPositionMs: _readPersistedRemotePositionForEpisode(episodeIndex),
       localUpdatedAtMs: _readPersistedRemotePositionAtForEpisode(episodeIndex),
       remotePositionMs: hostProgressApplies ? info.positionMs : 0,
@@ -2873,6 +2873,14 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         ),
         markCompleted: (String uid) =>
             db.markVideoCompleted(uid, DateTime.now()),
+        onEpisodeCompleted: () =>
+            appModel.mediaTrackingService.recordVideoCompleted(
+          bookUid: widget.bookUid,
+          collectionId: widget.playlistCollectionId,
+          episodeIndex: _currentEpisode,
+          seriesCompleted:
+              _episodes.isNotEmpty && _currentEpisode == _episodes.length - 1,
+        ),
         addHourly: (String dateKey, int hour, int deltaMs) =>
             db.addVideoHourlyWatchTime(
           dateKey: dateKey,

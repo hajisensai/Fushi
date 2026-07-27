@@ -18,10 +18,13 @@ import 'package:hibiki/src/mining/metadata/galgame_metadata_merge.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
 import 'package:hibiki/src/pages/implementations/games_library_page.dart'
     show formatGalgameDate, galgamePlayStatusLabel;
-import 'package:hibiki/src/utils/cover_image.dart' show evictLocalCoverCache;
+import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart'
+    show allTagsProvider, filteredGameIdsProvider, gameTagMapProvider;
+import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
 import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki/src/pages/implementations/stat_shared.dart'
     show formatStatTime;
+import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
 
 /// galgame 详情页（契约 §4.2）：头部常驻 + 统计 / 简介 / 编辑三个 tab。
@@ -52,7 +55,9 @@ class GalgameDetailPage extends ConsumerStatefulWidget {
 }
 
 class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
-    with SingleTickerProviderStateMixin {
+    with
+        SingleTickerProviderStateMixin,
+        HibikiPagePlaceholders<GalgameDetailPage> {
   late final AppModel _appModel = ref.read(appProvider);
   late final GalgameRepository _repo = _appModel.galgameRepo;
   late final TabController _tabs = TabController(
@@ -83,6 +88,9 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   /// 折叠前展示的标签上限（契约 §2）。
   static const int _kTagLimit = 40;
 
+  /// 本游戏挂的共享用户标签，与 bgm/vndb 元数据标签分开。
+  List<BookTagRow> _userTags = const <BookTagRow>[];
+
   bool _loading = true;
 
   @override
@@ -112,6 +120,8 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     }
     final List<GalgameSessionRow> sessions = await _repo.sessions(game.id);
     final List<GalgameSourceRow> sources = await _repo.sourcesOf(game.id);
+    final List<BookTagRow> userTags =
+        await _appModel.database.getTagsForGame(game.id);
     final Map<String, int> daily = await _loadRange(game.id, _rangeDays);
     final String todayKey = formatGalgameDate(DateTime.now());
     final Map<String, int> today = await _repo.dailySeconds(
@@ -124,6 +134,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
       _game = game;
       _sessions = sessions;
       _sources = sources;
+      _userTags = userTags;
       _dailyRange = daily;
       _todaySeconds = today[todayKey] ?? 0;
       _loading = false;
@@ -184,7 +195,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     if (_loading) {
       return Scaffold(
         appBar: AppBar(),
-        body: const Center(child: CircularProgressIndicator()),
+        body: buildLoading(),
       );
     }
     if (game == null) {
@@ -337,6 +348,51 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     );
   }
 
+  Widget _userTagsCell(BuildContext context, GalgameEntry game) {
+    return _metaCell(
+      context,
+      t.game_user_tags_title,
+      Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          for (final BookTagRow tag in _userTags)
+            HibikiTagChip(
+              label: tag.name,
+              color: Color(tag.colorValue),
+              tone: HibikiTagChipTone.surface,
+            ),
+          HibikiActionChip(
+            label: t.tag_manage,
+            icon: Icons.sell_outlined,
+            onPressed: () => unawaited(_editUserTags(game)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editUserTags(GalgameEntry game) async {
+    await Navigator.push(
+      context,
+      adaptivePageRoute(
+        context: context,
+        builder: (_) => TagPickerPage(
+          media: MediaRef(kind: MediaKind.game, entryKey: game.id),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    final List<BookTagRow> tags =
+        await _appModel.database.getTagsForGame(game.id);
+    if (!mounted) return;
+    setState(() => _userTags = tags);
+    ref.invalidate(allTagsProvider);
+    ref.invalidate(gameTagMapProvider);
+    ref.invalidate(filteredGameIdsProvider);
+  }
+
   /// 元信息网格：每项「粗体 label + 下方 value」，flex-wrap（契约 §2）。
   Widget _metaGrid(BuildContext context, GalgameEntry game) {
     final GalgameMetadataDraft meta = game.metadata;
@@ -359,6 +415,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
             '${meta.averageHours!.toStringAsFixed(1)} h'),
       if (meta.rank != null)
         _metaTextCell(context, t.game_meta_ranking, '#${meta.rank}'),
+      _userTagsCell(context, game),
     ];
     return Wrap(runSpacing: 4, children: cells);
   }
@@ -546,7 +603,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
               theme,
               t.game_stat_last_played,
               game.lastPlayedMs <= 0
-                  ? t.games_never_played
+                  ? t.game_never_played
                   : formatGalgameDate(
                       DateTime.fromMillisecondsSinceEpoch(game.lastPlayedMs)),
             ),
@@ -737,12 +794,12 @@ String formatGalgameDurationAxis(double ms) =>
     formatStatDurationAxis(ms.round());
 
 /// 一条会话的时间范围文案：`2026-07-24 21:03 → 22:41`。
+/// 委托 [HibikiTimeFormat]（G5 收敛：起点 = dateHourMinute，终点 = hourMinute）。
 String formatGalgameSessionRange(GalgameSessionRow row) {
   final DateTime start = DateTime.fromMillisecondsSinceEpoch(row.startMs);
   final DateTime end = DateTime.fromMillisecondsSinceEpoch(row.endMs);
-  String hm(DateTime v) =>
-      '${v.hour.toString().padLeft(2, '0')}:${v.minute.toString().padLeft(2, '0')}';
-  return '${formatGalgameDate(start)} ${hm(start)} → ${hm(end)}';
+  return '${HibikiTimeFormat.dateHourMinute(start)} → '
+      '${HibikiTimeFormat.hourMinute(end)}';
 }
 
 /// 编辑 tab：改显示名 / 简介 / 标签 / 开发商 / 日期 / NSFW / 我的评分 / 我的评价，
@@ -924,8 +981,9 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
 
   /// 刮削成功后的封面落地（决策纯函数 [shouldAutoDownloadScrapedCover] 可单测）：
   /// 读**重载后**的最新条目（合并层已按优先级/手选源算好 coverUrl），无可用封面
-  /// 文件才下载；成功后驱逐旧解码缓存（裸 FileImage 键 + 降采样键都清）、写
-  /// coverPath 并复用 `t.games_cover_updated` 提示。
+  /// 文件才下载；落盘（含双键驱逐旧解码缓存）由 [downloadGalgameCoverToFile] →
+  /// `MediaCoverService.applyCoverBytes` 收口结构性保证，随后写 coverPath 并复用
+  /// `t.game_cover_updated` 提示。
   Future<void> _maybeDownloadScrapedCover() async {
     final GalgameEntry? latest = widget.repo.byId(widget.game.id);
     if (latest == null) return;
@@ -945,13 +1003,12 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
       url: coverUrl!,
     );
     if (saved == null) return; // 失败静默：原因已进 debug 日志。
-    await evictLocalCoverCache(saved);
     // 下载期间条目可能已被移除：仓储按 id 更新，行不在就不写。
     if (widget.repo.byId(latest.id) == null) return;
     await widget.repo.setCoverPath(latest.id, saved);
     await widget.onSaved();
     if (!mounted) return;
-    HibikiToast.show(msg: t.games_cover_updated);
+    HibikiToast.show(msg: t.game_cover_updated);
   }
 
   @override
@@ -965,7 +1022,7 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
               child: OutlinedButton.icon(
                 onPressed: _scraping ? null : () => unawaited(_scrape()),
                 icon: const Icon(Icons.cloud_download_outlined),
-                label: Text(t.games_scrape),
+                label: Text(t.game_scrape),
               ),
             ),
             const SizedBox(width: 12),
@@ -1083,7 +1140,7 @@ class _ScrapeQueryDialogState extends State<_ScrapeQueryDialog> {
       maxWidth: 420,
       scrollable: false,
       child: HibikiModalSheetFrame(
-        title: t.game_scrape_title,
+        title: t.game_scrape,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,

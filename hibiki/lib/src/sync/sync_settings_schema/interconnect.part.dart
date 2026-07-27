@@ -314,7 +314,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
       try {
         // 必须带上该地址钉扎的证书指纹：新版 host 默认走 https 自签证书，漏传指纹会
         // 让测试连接在 TLS 握手处失败，把可连的 host 误报成失败（TODO-1330）。
-        await HibikiClientSyncBackend.instance
+        await InterconnectSyncBackend.instance
             .testConnection(
               url: u.url,
               token: token,
@@ -1411,7 +1411,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
 // 互联从「互斥的 backendType==hibikiServer 单选」解耦成独立开关（PR#223）之后，
 // 后端选择器不再列出互联（[_isBackendSelectable] 对 hibikiServer 返回 false），
 // 于是「备份/同步写到已配对设备而不是云盘」这条路径整个从 UI 上消失了——能力还在
-// （[resolveSyncBackend] 仍把 hibikiServer 解析成 [HibikiClientSyncBackend]），只是
+// （[resolveSyncBackend] 仍把 hibikiServer 解析成 [InterconnectSyncBackend]），只是
 // 没有入口。这一行把入口放回互联自己的分类里：一个动作，把云备份通道指向对端主机。
 //
 // 退路：[_selectableBackends] 恒把当前值插回选项列表，所以设成互联之后，「同步与

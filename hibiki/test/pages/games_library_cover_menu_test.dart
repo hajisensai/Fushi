@@ -73,14 +73,14 @@ void main() {
   /// 卡片菜单应含的全部项（与 `_GameCard._menuItems` 单一真相源对账：任一处漏项
   /// 本表即断言失败）。'remove' 在长按对话框落危险区，但文案仍必须在场。
   List<String> menuLabels() => <String>[
-        t.games_view_detail,
-        t.games_play_status,
-        t.games_scrape,
-        t.games_rename,
-        t.games_set_cover,
-        t.games_auto_cover,
+        t.game_view_detail,
+        t.game_play_status,
+        t.game_scrape,
+        t.game_rename,
+        t.game_set_cover,
+        t.game_auto_cover,
         t.add_to_collection,
-        t.games_remove,
+        t.game_remove,
       ];
 
   testWidgets('溢出菜单项齐全（含设置封面 / 自动获取封面 / 加入合集）', (WidgetTester tester) async {

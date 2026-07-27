@@ -4,12 +4,16 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:collection/collection.dart';
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../anki_media_dedup.dart';
 import '../anki_models.dart';
+import '../anki_note_type_definition.dart';
 import '../base_anki_repository.dart';
 import '../lapis_note_type.dart';
+import '../lapis_styling.dart';
 import 'ankiconnect_service.dart';
 
 const int _uint32Mask = 0xffffffff;
@@ -268,6 +272,15 @@ String _sha256Hex(List<int> bytes) {
 
 int _rotr32(int value, int shift) =>
     ((value >> shift) | (value << (32 - shift))) & _uint32Mask;
+
+/// 一条笔记的字段改写计划：[before] 是改写前的原值（journal 用来回溯），
+/// [after] 是要写进 Anki 的新值。两者键集相同，只含真正会变的字段。
+class _NoteFieldRewrite {
+  const _NoteFieldRewrite({required this.before, required this.after});
+
+  final Map<String, String> before;
+  final Map<String, String> after;
+}
 
 class AnkiConnectRepository extends BaseAnkiRepository {
   AnkiConnectRepository({AnkiConnectService? service})
@@ -882,6 +895,367 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     if (existing.contains(name)) return false;
     await service.createDeck(name);
     return true;
+  }
+
+  // ── note type 模板读写（Lapis 客制化/备份/自动迁移）────────────────────
+
+  @override
+  bool get supportsNoteTypeEditing => true;
+
+  @override
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
+      String modelName) async {
+    final service = await _getService();
+    final List<String> existing = await service.getModelNames();
+    if (!existing.contains(modelName)) return null;
+    final List<String> fields = await service.getModelFields(modelName);
+    final List<AnkiCardTemplate> templates =
+        await service.modelTemplates(modelName);
+    final String css = await service.modelStyling(modelName);
+    return AnkiNoteTypeDefinition(
+      name: modelName,
+      fields: fields,
+      templates: templates,
+      css: css,
+    );
+  }
+
+  @override
+  Future<bool> updateNoteTypeStyling(String modelName, String css) async {
+    final service = await _getService();
+    await service.updateModelStyling(modelName, css);
+    return true;
+  }
+
+  @override
+  Future<bool> updateNoteTypeTemplates(
+      String modelName, List<AnkiCardTemplate> templates) async {
+    final service = await _getService();
+    await service.updateModelTemplates(modelName, templates);
+    return true;
+  }
+
+  // ── 媒体存储优化（字节级去重）──────────────────────────────────────
+
+  @override
+  bool get supportsMediaMaintenance => true;
+
+  /// 媒体目录里的一个文件（媒体目录是扁平的，文件名即相对路径）。
+  File _mediaFile(Directory mediaDir, String name) =>
+      File('${mediaDir.path}${Platform.pathSeparator}$name');
+
+  /// 媒体目录里每个文件的字节数（只 stat，不读内容）。
+  Future<Map<String, int>> _scanMediaSizes(Directory mediaDir) async {
+    final Map<String, int> sizes = <String, int>{};
+    await for (final FileSystemEntity entity
+        in mediaDir.list(followLinks: false)) {
+      if (entity is! File) continue;
+      final String name = entity.uri.pathSegments.last;
+      if (name.isEmpty) continue;
+      sizes[name] = await entity.length();
+    }
+    return sizes;
+  }
+
+  /// 只对「大小撞车」的候选算**全文件** sha256（大小不同不可能字节相同）。
+  /// 判等永远是全文件哈希 + 删除前逐字节复核，绝不用截断哈希或感知哈希。
+  Future<Map<String, String>> _hashSizeCollisions(
+    Directory mediaDir,
+    Map<String, int> sizes,
+  ) async {
+    final Map<int, List<String>> bySize = <int, List<String>>{};
+    sizes.forEach(
+        (String n, int s) => bySize.putIfAbsent(s, () => <String>[]).add(n));
+    final Map<String, String> nameToHash = <String, String>{};
+    for (final MapEntry<int, List<String>> entry in bySize.entries) {
+      if (entry.value.length < 2) continue;
+      for (final String name in entry.value) {
+        final Uint8List bytes = await _mediaFile(mediaDir, name).readAsBytes();
+        nameToHash[name] = crypto.sha256.convert(bytes).toString();
+      }
+    }
+    return nameToHash;
+  }
+
+  /// 读出所有「会引用别的资源」的文本媒体（css/js/html/svg…）正文。
+  ///
+  /// 这是引用扫描的第四个面（前三个是笔记字段 / 卡模板 / styling）。缺了它，
+  /// `_x.css` 里的 `url(_font.woff2)` 谁都查不到，而本模块又恰好优先保留 `_`
+  /// 前缀资产，结果就是把仍在用的字体静默删掉。
+  ///
+  /// 用 `allowMalformed` 解码：正文可能不是合法 UTF-8（半个序列/别的编码），
+  /// 解不动的部分变成替换字符，绝不因为一个坏文件抛异常中断整轮。
+  Future<Map<String, String>> _readReferencingMedia(
+    Directory mediaDir,
+    Iterable<String> names,
+  ) async {
+    final Map<String, String> out = <String, String>{};
+    for (final String name in names) {
+      if (!isReferencingMediaFile(name)) continue;
+      final File file = _mediaFile(mediaDir, name);
+      if (!file.existsSync()) continue;
+      out[name] = utf8.decode(await file.readAsBytes(), allowMalformed: true);
+    }
+    return out;
+  }
+
+  /// 删除前的最后一道闸：把副本与保留份**逐字节**比一遍。
+  ///
+  /// 哈希已经是全文件 sha256，这一步兜的是「扫描完到删除前文件被改动」的时间
+  /// 差，以及任何哈希实现被换弱时的兜底。读不到或有一个字节不同就绝不删。
+  Future<bool> _mediaBytesIdentical(
+    Directory mediaDir,
+    String a,
+    String b,
+  ) async {
+    final File fa = _mediaFile(mediaDir, a);
+    final File fb = _mediaFile(mediaDir, b);
+    if (!fa.existsSync() || !fb.existsSync()) return false;
+    final Uint8List ba = await fa.readAsBytes();
+    final Uint8List bb = await fb.readAsBytes();
+    if (ba.length != bb.length) return false;
+    for (int i = 0; i < ba.length; i++) {
+      if (ba[i] != bb[i]) return false;
+    }
+    return true;
+  }
+
+  /// styling 被去重改写后，把 Lapis 客制化指纹跟着对齐。
+  ///
+  /// 根因：`decideLapisStylingAction` 用 `lapisAppliedCssSha` 认「Anki 端这份
+  /// CSS 是 Hibiki 自己推的产物」。去重改写 styling 后 Anki 端内容变了而指纹
+  /// 没变，判定退化成 `foreignEdit` —— Lapis 的启动自动迁移从此**永久停手**，
+  /// 用户完全无感知（模板再也不自动更新）。改写的确实是 Hibiki 自己的产物，
+  /// 指纹理应跟着走。
+  ///
+  /// 只在改写前的内容确实等于已记录指纹时才对齐：本来就是用户手改（指纹对
+  /// 不上）就保持对不上，不伪造一个「这是我推的」。
+  Future<void> _realignLapisCssShaAfterRewrite({
+    required String modelName,
+    required String cssBefore,
+    required String cssAfter,
+  }) async {
+    if (modelName != LapisNoteType.modelName) return;
+    final AnkiSettings settings = await loadSettings();
+    final String? recorded = settings.lapisAppliedCssSha;
+    if (recorded == null || recorded != lapisCssSha256(cssBefore)) return;
+    await updateSettings((AnkiSettings s) =>
+        s.copyWith(lapisAppliedCssSha: lapisCssSha256(cssAfter)));
+  }
+
+  /// 一条笔记的字段改写计划（null = 这条笔记清不干净，整份副本不许删）。
+  Future<_NoteFieldRewrite?> _planNoteFieldRewrite(
+    AnkiConnectService service,
+    int noteId,
+    String dupe,
+    String canonical,
+  ) async {
+    final Map<String, String>? fields = await service.notesInfo(noteId);
+    if (fields == null) return null;
+    final Map<String, String> before = <String, String>{};
+    final Map<String, String> after = <String, String>{};
+    fields.forEach((String key, String value) {
+      final String rewritten = rewriteMediaReferences(value, dupe, canonical);
+      if (rewritten == value) return;
+      before[key] = value;
+      after[key] = rewritten;
+    });
+    // 检索命中却一处也改不动：引用形态无法识别（或恰是别的更长文件名的子串，
+    // 检索分不出来）——不删这份副本。
+    if (after.isEmpty) return null;
+    return _NoteFieldRewrite(before: before, after: after);
+  }
+
+  /// 干跑用：哪些 note type 的模板/styling 引用了 [dupe]（不改写，只统计）。
+  Set<String> _modelsReferencing(
+    List<String> modelNames,
+    Map<String, List<AnkiCardTemplate>> modelTemplates,
+    Map<String, String> modelCss,
+    String dupe,
+  ) {
+    final Set<String> hits = <String>{};
+    for (final String m in modelNames) {
+      final bool inTemplates = modelTemplates[m]!.any((AnkiCardTemplate tpl) =>
+          textReferencesMediaName(tpl.front, dupe) ||
+          textReferencesMediaName(tpl.back, dupe));
+      if (inTemplates || textReferencesMediaName(modelCss[m]!, dupe)) {
+        hits.add(m);
+      }
+    }
+    return hits;
+  }
+
+  @override
+  Future<AnkiMediaDedupReport?> runMediaDedup({
+    bool dryRun = false,
+    Future<void> Function(Map<String, dynamic> entry)? onJournal,
+  }) async {
+    final AnkiConnectService service = await _getService();
+    final String mediaPath = await service.getMediaDirPath();
+    final Directory mediaDir = Directory(mediaPath);
+    // AnkiConnect 在远程主机上时拿到的路径本机不存在——按不支持处理，绝不
+    // 盲扫错误目录。
+    if (!mediaDir.existsSync()) return null;
+
+    final Map<String, int> sizes = await _scanMediaSizes(mediaDir);
+    final List<MediaDedupGroup> groups = planMediaDedupGroups(
+      await _hashSizeCollisions(mediaDir, sizes),
+      sizes: sizes,
+    );
+    // 媒体文件**内部**的引用只作为「不许删」的证据：本轮不改写媒体正文，
+    // 所以只要还有人从里面引用，这份副本就留着。
+    final Map<String, String> referencingMedia =
+        await _readReferencingMedia(mediaDir, sizes.keys);
+
+    // 模板/styling 快照一次抓全（随改写更新，避免每个副本重复拉取）。
+    final List<String> modelNames = await service.getModelNames();
+    final Map<String, List<AnkiCardTemplate>> modelTemplates =
+        <String, List<AnkiCardTemplate>>{};
+    final Map<String, String> modelCss = <String, String>{};
+    for (final String m in modelNames) {
+      modelTemplates[m] = await service.modelTemplates(m);
+      modelCss[m] = await service.modelStyling(m);
+    }
+
+    int skippedCount = 0;
+    final List<MediaDedupDeletion> deletions = <MediaDedupDeletion>[];
+    final Set<int> notesRewritten = <int>{};
+    final Set<String> modelsRewritten = <String>{};
+
+    for (final MediaDedupGroup group in groups) {
+      for (final String dupe in group.duplicates) {
+        // ── 阶段一：全部判定与计划，一个字节都不写 ────────────────────
+        // 顺序是刻意的：先把所有「不许删」的证据收齐再动手。上一版把模板/
+        // styling 改写放在判定之前，跳过删除时已经把 Anki 端改脏了（Lapis
+        // 指纹随之漂掉，自动迁移永久停手）。
+        final List<int> noteIds = await service.findNotesByQuery('"$dupe"');
+        final Map<int, _NoteFieldRewrite> notePlan = <int, _NoteFieldRewrite>{};
+        bool referencesResolvable = true;
+        for (final int id in noteIds) {
+          final _NoteFieldRewrite? planned =
+              await _planNoteFieldRewrite(service, id, dupe, group.canonical);
+          if (planned == null) {
+            referencesResolvable = false;
+            continue;
+          }
+          notePlan[id] = planned;
+        }
+
+        // 媒体文件内部引用（css/js/svg 的 url()/@import/相对引用）。
+        final bool referencedByMedia = referencingMedia.entries.any(
+            (MapEntry<String, String> e) =>
+                e.key != dupe && textReferencesMediaName(e.value, dupe));
+
+        if (!referencesResolvable || referencedByMedia) {
+          skippedCount++;
+          continue;
+        }
+
+        // 字节级复核：与保留份必须逐字节相同才允许进入删除路径。
+        if (!await _mediaBytesIdentical(mediaDir, dupe, group.canonical)) {
+          skippedCount++;
+          continue;
+        }
+
+        final MediaDedupDeletion planned = MediaDedupDeletion(
+          filename: dupe,
+          canonical: group.canonical,
+          bytes: sizes[dupe] ?? 0,
+        );
+
+        if (dryRun) {
+          deletions.add(planned);
+          notesRewritten.addAll(notePlan.keys);
+          modelsRewritten.addAll(
+              _modelsReferencing(modelNames, modelTemplates, modelCss, dupe));
+          continue;
+        }
+
+        // ── 阶段二：落地。笔记字段先写，复核通过后才动模板与文件 ────────
+        for (final MapEntry<int, _NoteFieldRewrite> e in notePlan.entries) {
+          // journal 带上改写**前**的原值：这是出事后能把字段还原回去的唯一
+          // 依据，只记字段名等于没有保险带。
+          await onJournal?.call(<String, dynamic>{
+            'type': 'noteFields',
+            'noteId': e.key,
+            'from': dupe,
+            'to': group.canonical,
+            'before': e.value.before,
+          });
+          await service.updateNoteFields(e.key, e.value.after);
+          notesRewritten.add(e.key);
+        }
+
+        // 复核：字段里彻底没有这个文件名了才继续。没清干净就到此为止——
+        // 模板/styling 一个字都没动，Lapis 指纹不会漂。
+        final List<int> remaining = await service.findNotesByQuery('"$dupe"');
+        if (remaining.isNotEmpty) {
+          skippedCount++;
+          continue;
+        }
+
+        // 模板与 styling：模板先写（写坏了不影响指纹），styling 后写并当场
+        // 对齐 Lapis 指纹。
+        for (final String m in modelNames) {
+          final List<AnkiCardTemplate> tmpls = modelTemplates[m]!;
+          bool templatesChanged = false;
+          final List<AnkiCardTemplate> newTmpls =
+              tmpls.map((AnkiCardTemplate tpl) {
+            final String front =
+                rewriteMediaReferences(tpl.front, dupe, group.canonical);
+            final String back =
+                rewriteMediaReferences(tpl.back, dupe, group.canonical);
+            if (front != tpl.front || back != tpl.back) {
+              templatesChanged = true;
+            }
+            return AnkiCardTemplate(name: tpl.name, front: front, back: back);
+          }).toList();
+          final String css = modelCss[m]!;
+          final String newCss =
+              rewriteMediaReferences(css, dupe, group.canonical);
+          final bool cssChanged = newCss != css;
+          if (!templatesChanged && !cssChanged) continue;
+          await onJournal?.call(<String, dynamic>{
+            'type': 'model',
+            'model': m,
+            'from': dupe,
+            'to': group.canonical,
+          });
+          if (templatesChanged) {
+            await service.updateModelTemplates(m, newTmpls);
+            modelTemplates[m] = newTmpls;
+          }
+          if (cssChanged) {
+            await service.updateModelStyling(m, newCss);
+            modelCss[m] = newCss;
+            await _realignLapisCssShaAfterRewrite(
+              modelName: m,
+              cssBefore: css,
+              cssAfter: newCss,
+            );
+          }
+          modelsRewritten.add(m);
+        }
+
+        await onJournal?.call(<String, dynamic>{
+          'type': 'delete',
+          'filename': dupe,
+          'canonical': group.canonical,
+          'bytes': planned.bytes,
+        });
+        await service.deleteMediaFile(dupe);
+        deletions.add(planned);
+      }
+    }
+
+    return AnkiMediaDedupReport(
+      dryRun: dryRun,
+      groupCount: groups.length,
+      deletions: deletions,
+      notesRewritten: notesRewritten.length,
+      modelsRewritten: modelsRewritten.length,
+      skipped: skippedCount,
+    );
   }
 
   Future<String?> _storeLocalMedia(

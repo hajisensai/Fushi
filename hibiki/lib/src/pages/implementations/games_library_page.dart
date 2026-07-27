@@ -26,7 +26,9 @@ import 'package:hibiki/src/pages/implementations/galgame_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart'
     show DialogDangerAction, DialogQuickAction, MediaItemDialogFrame;
-import 'package:hibiki/src/utils/cover_image.dart' show evictLocalCoverCache;
+import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
+import 'package:hibiki/src/pages/implementations/tag_filter_sheet.dart';
+import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
 import 'package:hibiki/utils.dart';
 
 // 游戏进合集（统一媒体库）：mediaType 用 [MediaKind.game]（P5 枚举地基，取代旧
@@ -142,7 +144,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   }
 
   /// 当前要渲染的列表（筛选 + 搜索 + 排序，纯函数）。
-  List<GalgameEntry> get _visible => applyGalgameLibraryView(_games, _view);
+  List<GalgameEntry> _visibleFor(Set<String>? allowedIds) =>
+      applyGalgameLibraryView(_games, _view, allowedIds: allowedIds);
 
   /// 添加游戏：文件选择器选一个 `.exe`，以文件名去扩展名作默认名，追加进列表。
   ///
@@ -160,7 +163,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       return; // 用户取消
     }
     if (filterDroppedGameExes(_games, <String>[exe]).isEmpty) {
-      HibikiToast.show(msg: t.games_already_added);
+      HibikiToast.show(msg: t.game_already_added);
       return; // 已在库里：不重复添加
     }
     final GalgameEntry entry = newGalgameEntryFromExe(exe);
@@ -174,7 +177,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   Future<void> _handleDrop(List<String> paths, Offset _) async {
     final List<String> exes = filterDroppedGameExes(_games, paths);
     if (exes.isEmpty) {
-      HibikiToast.show(msg: t.games_drop_no_exe);
+      HibikiToast.show(msg: t.game_drop_no_exe);
       return;
     }
     // 批内 id 用「基准时刻 + 序号微秒」错开，避免同微秒撞 id。
@@ -186,7 +189,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     ];
     await _repo.addAll(added);
     _refresh();
-    HibikiToast.show(msg: t.games_drop_imported(count: added.length));
+    HibikiToast.show(msg: t.game_drop_imported(count: added.length));
     for (final GalgameEntry entry in added) {
       unawaited(_autoCover(entry, silent: true));
     }
@@ -197,7 +200,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// [silent] = 添加游戏后的后台补齐（成功静默、失败不打扰）；用户从菜单主动触发时
   /// 为 false，两种结局都给 toast，否则「点了没反应」无从判断。
   Future<void> _autoCover(GalgameEntry game, {bool silent = false}) async {
-    if (!silent) HibikiToast.show(msg: t.games_cover_searching);
+    if (!silent) HibikiToast.show(msg: t.game_cover_searching);
     final ResolvedGameCover? resolved = await autoResolveGameCover(
       gameId: game.id,
       gameName: game.displayName,
@@ -205,11 +208,11 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       workdir: game.workdir,
     );
     if (resolved == null) {
-      if (!silent) HibikiToast.show(msg: t.games_cover_not_found);
+      if (!silent) HibikiToast.show(msg: t.game_cover_not_found);
       return;
     }
     await _applyCover(game, resolved.path);
-    if (!silent) HibikiToast.show(msg: t.games_cover_updated);
+    if (!silent) HibikiToast.show(msg: t.game_cover_updated);
   }
 
   /// 手动设置封面：统一封面服务（P3）——[MediaCoverService.pickCoverImage] 平台
@@ -228,21 +231,19 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       sourcePath: picked.path,
     );
     if (saved == null) {
-      HibikiToast.show(msg: t.games_cover_not_found);
+      HibikiToast.show(msg: t.game_cover_not_found);
       return;
     }
     await _applyCover(game, saved);
-    HibikiToast.show(msg: t.games_cover_updated);
+    HibikiToast.show(msg: t.game_cover_updated);
   }
 
   /// 把新封面路径写回条目并刷新。
   ///
-  /// 必须先驱逐旧解码缓存：换封面常常落在**同一个** `<id>.<ext>` 路径上，不驱逐的话
-  /// UI 重建会命中旧解码，用户看到的还是换之前那张图（与视频封面同一个坑，见
-  /// `setVideoCoverFromPickedFile`）。卡片经 [ShelfFileCover] 走降采样键，裸
-  /// FileImage 键与 ResizeImage 键都要清（[evictLocalCoverCache]）。
+  /// 旧解码缓存驱逐（换封面常落同一 `<id>.<ext>` 路径，双键：裸 FileImage +
+  /// ResizeImage）已由落盘收口 `MediaCoverService.applyCoverFile/applyCoverBytes`
+  /// 在 `saveGameCover*` 内结构性保证，本方法只负责回填 DB + 刷新。
   Future<void> _applyCover(GalgameEntry game, String coverPath) async {
-    await evictLocalCoverCache(coverPath);
     // 后台补齐期间用户可能已删掉这条：仓储按 id 更新，行不在就是空操作。
     if (_repo.byId(game.id) == null) return;
     await _repo.setCoverPath(game.id, coverPath);
@@ -280,7 +281,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     final GalgamePlayStatus? picked = await showAppDialog<GalgamePlayStatus>(
       context: context,
       builder: (BuildContext ctx) => SimpleDialog(
-        title: Text(t.games_play_status),
+        title: Text(t.game_play_status),
         children: <Widget>[
           for (final GalgamePlayStatus status in <GalgamePlayStatus>[
             ...kGalgamePlayStatusMenuOrder,
@@ -412,11 +413,11 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     _launching = true;
     try {
       if (!Platform.isWindows) {
-        HibikiToast.show(msg: t.games_launch_unsupported);
+        HibikiToast.show(msg: t.game_launch_unsupported);
         return;
       }
       if (!File(game.exePath).existsSync()) {
-        HibikiToast.show(msg: t.games_exe_missing);
+        HibikiToast.show(msg: t.game_exe_missing);
         return;
       }
       final bool is32Bit =
@@ -432,7 +433,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       }
       final GalHookSessionController session =
           widget.sessionController ?? GalHookSessionController.instance;
-      final bool launched = await session.launchGame(
+      final GalHookLaunchResult result = await session.launchGame(
         game.exePath,
         launchArguments: game.launchArgumentTokens,
         workdir: game.workdir,
@@ -443,18 +444,19 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       // 既看不到游戏也看不到任何提示 —— 用户感知就是「点了没反应」。
       final GalHookSessionState state = session.state;
       final GalHookLaunchOutcome outcome = classifyGalHookLaunchOutcome(
-        launched: launched,
+        result: result,
         hasBoundWindow: state.boundWindow != null,
         injectorFailure: state.injectorFailure,
       );
-      HibikiToast.show(
-        msg: galHookLaunchOutcomeMessage(
-          outcome: outcome,
-          failure: state.injectorFailure,
-          lastError: state.lastError,
-        ),
+      // message 为 null = 本次启动已被更新的操作取代，不该播报（BUG-1142）。
+      final String? message = galHookLaunchOutcomeMessage(
+        outcome: outcome,
+        result: result,
+        failure: state.injectorFailure,
+        lastError: state.lastError,
       );
-      if (!launched) return;
+      if (message != null) HibikiToast.show(msg: message);
+      if (!result.launched) return;
       widget.onLaunched?.call();
     } finally {
       _launching = false;
@@ -463,7 +465,11 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final List<GalgameEntry> visible = _visible;
+    final List<BookTagRow> allTags =
+        ref.watch(allTagsProvider).valueOrNull ?? const <BookTagRow>[];
+    final Set<String>? allowedIds =
+        ref.watch(filteredGameIdsProvider).valueOrNull;
+    final List<GalgameEntry> visible = _visibleFor(allowedIds);
     final Widget grid = _games.isEmpty
         ? _buildEmpty(context)
         : (visible.isEmpty
@@ -476,6 +482,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       child: Column(
         children: <Widget>[
           if (_games.isNotEmpty) _buildToolbar(context),
+          if (_games.isNotEmpty) _buildTagFilterBar(allTags),
           Expanded(child: grid),
         ],
       ),
@@ -483,7 +490,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     final Widget addButton = FloatingActionButton.extended(
       onPressed: _addGame,
       icon: const Icon(Icons.add),
-      label: Text(t.games_add),
+      label: Text(t.game_add),
     );
     if (widget.embedded) {
       return Stack(
@@ -517,7 +524,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                 decoration: InputDecoration(
                   isDense: true,
                   prefixIcon: const Icon(Icons.search, size: 18),
-                  hintText: t.games_search,
+                  hintText: t.game_search,
                   border: const OutlineInputBorder(),
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -539,7 +546,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           ),
           const SizedBox(width: 8),
           PopupMenuButton<GalgameSortField>(
-            tooltip: t.games_sort,
+            tooltip: t.game_sort,
             icon: const Icon(Icons.sort),
             onSelected: (GalgameSortField field) => _setView(
               field == _view.sortField
@@ -568,7 +575,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             ],
           ),
           IconButton(
-            tooltip: t.games_filter,
+            tooltip: t.game_filter,
             onPressed: () => unawaited(_showFilterSheet()),
             icon: Icon(
               _view.hasActiveFilter
@@ -580,6 +587,47 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         ],
       ),
     );
+  }
+
+  Widget _buildTagFilterBar(List<BookTagRow> tags) {
+    return HibikiTagFilterBar(
+      tags: tags,
+      onToggleFilter: _toggleTagFilter,
+      onReorder: _reorderTags,
+      onTagsChanged: () => ref.invalidate(gameTagMapProvider),
+    );
+  }
+
+  void _toggleTagFilter(int tagId) {
+    final Set<int> next = Set<int>.from(ref.read(selectedTagIdsProvider));
+    if (!next.remove(tagId)) next.add(tagId);
+    ref.read(selectedTagIdsProvider.notifier).state = next;
+  }
+
+  Future<void> _reorderTags(int oldIndex, int newIndex) async {
+    final List<BookTagRow>? tags = ref.read(allTagsProvider).valueOrNull;
+    if (tags == null) return;
+    final List<BookTagRow> reordered = List<BookTagRow>.from(tags);
+    final BookTagRow moved = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, moved);
+    await _appModel.database
+        .reorderTags(reordered.map((BookTagRow tag) => tag.id).toList());
+    ref.invalidate(allTagsProvider);
+  }
+
+  Future<void> _openTagPicker(GalgameEntry game) async {
+    await Navigator.push(
+      context,
+      adaptivePageRoute(
+        context: context,
+        builder: (_) => TagPickerPage(
+          media: MediaRef(kind: MediaKind.game, entryKey: game.id),
+        ),
+      ),
+    );
+    ref.invalidate(allTagsProvider);
+    ref.invalidate(gameTagMapProvider);
+    ref.invalidate(filteredGameIdsProvider);
   }
 
   /// 筛选面板：状态 / 本地·在线 / 标签多选 / NSFW 隐藏。改动即时生效并持久化。
@@ -607,7 +655,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                 );
 
             return HibikiModalSheetFrame(
-              title: t.games_filter,
+              title: t.game_filter,
               leadingIcon: Icons.filter_alt_outlined,
               scrollable: true,
               bodyPadding:
@@ -616,13 +664,13 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  sectionLabel(t.games_filter_status),
+                  sectionLabel(t.game_filter_status),
                   Wrap(
                     spacing: tokens.spacing.gap,
                     runSpacing: tokens.spacing.gap,
                     children: <Widget>[
                       HibikiSelectableChip(
-                        label: t.games_filter_all,
+                        label: t.game_filter_all,
                         selected: _view.status == null,
                         onSelected: (_) =>
                             apply(_view.copyWith(clearStatus: true)),
@@ -643,7 +691,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                         ),
                     ],
                   ),
-                  sectionLabel(t.games_filter_source),
+                  sectionLabel(t.game_filter_source),
                   Wrap(
                     spacing: tokens.spacing.gap,
                     runSpacing: tokens.spacing.gap,
@@ -659,7 +707,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                     ],
                   ),
                   if (allTags.isNotEmpty) ...<Widget>[
-                    sectionLabel(t.games_filter_tags),
+                    sectionLabel(t.game_filter_tags),
                     Wrap(
                       spacing: tokens.spacing.gap,
                       runSpacing: tokens.spacing.gap,
@@ -684,7 +732,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                   ],
                   SizedBox(height: tokens.spacing.gap),
                   AdaptiveSettingsSwitchRow(
-                    title: t.games_filter_hide_nsfw,
+                    title: t.game_filter_hide_nsfw,
                     value: _view.hideNsfw,
                     onChanged: (bool value) =>
                         apply(_view.copyWith(hideNsfw: value)),
@@ -697,7 +745,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                   const Spacer(),
                   TextButton(
                     onPressed: () => apply(_view.clearFilters()),
-                    child: Text(t.games_filter_reset),
+                    child: Text(t.game_filter_reset),
                   ),
                 ],
               ),
@@ -722,7 +770,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           ),
           const SizedBox(height: 16),
           Text(
-            t.games_empty,
+            t.game_empty,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: colors.onSurfaceVariant,
                 ),
@@ -731,7 +779,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           FilledButton.icon(
             onPressed: _addGame,
             icon: const Icon(Icons.add),
-            label: Text(t.games_add),
+            label: Text(t.game_add),
           ),
         ],
       ),
@@ -748,7 +796,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           Icon(Icons.search_off, size: 48, color: colors.onSurfaceVariant),
           const SizedBox(height: 12),
           Text(
-            t.games_no_match,
+            t.game_no_match,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colors.onSurfaceVariant,
                 ),
@@ -885,6 +933,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       onDetail: () => unawaited(_openDetail(game)),
       onScrape: () => unawaited(_openDetail(game, initialTab: 2)),
       onAddToCollection: () => unawaited(_addGameToCollection(game)),
+      onEditTags: () => unawaited(_openTagPicker(game)),
     );
   }
 }
@@ -914,29 +963,29 @@ Widget? buildGameCollectionMemberCard({
 
 /// 游玩状态的用户可读标签（枚举 `.name` 直接上屏是 17 语言用户的灾难）。
 String galgamePlayStatusLabel(GalgamePlayStatus status) => switch (status) {
-      GalgamePlayStatus.unset => t.games_status_unset,
-      GalgamePlayStatus.wantToPlay => t.games_status_want_to_play,
-      GalgamePlayStatus.played => t.games_status_played,
-      GalgamePlayStatus.playing => t.games_status_playing,
-      GalgamePlayStatus.onHold => t.games_status_on_hold,
-      GalgamePlayStatus.dropped => t.games_status_dropped,
+      GalgamePlayStatus.unset => t.game_status_unset,
+      GalgamePlayStatus.wantToPlay => t.game_status_want_to_play,
+      GalgamePlayStatus.played => t.game_status_played,
+      GalgamePlayStatus.playing => t.game_status_playing,
+      GalgamePlayStatus.onHold => t.game_status_on_hold,
+      GalgamePlayStatus.dropped => t.game_status_dropped,
     };
 
 /// 排序维度的用户可读标签。
 String galgameSortFieldLabel(GalgameSortField field) => switch (field) {
-      GalgameSortField.added => t.games_sort_added,
-      GalgameSortField.releaseDate => t.games_sort_release,
-      GalgameSortField.lastPlayed => t.games_sort_last_played,
-      GalgameSortField.siteScore => t.games_sort_site_score,
-      GalgameSortField.userRating => t.games_sort_user_rating,
-      GalgameSortField.name => t.games_sort_name,
+      GalgameSortField.added => t.game_sort_added,
+      GalgameSortField.releaseDate => t.game_sort_release,
+      GalgameSortField.lastPlayed => t.game_sort_last_played,
+      GalgameSortField.siteScore => t.game_sort_site_score,
+      GalgameSortField.userRating => t.game_sort_user_rating,
+      GalgameSortField.name => t.game_sort_name,
     };
 
 /// 本地/在线筛选的用户可读标签。
 String galgameLocalFilterLabel(GalgameLocalFilter filter) => switch (filter) {
-      GalgameLocalFilter.all => t.games_filter_all,
-      GalgameLocalFilter.localOnly => t.games_filter_local_only,
-      GalgameLocalFilter.metadataOnly => t.games_filter_metadata_only,
+      GalgameLocalFilter.all => t.game_filter_all,
+      GalgameLocalFilter.localOnly => t.game_filter_local_only,
+      GalgameLocalFilter.metadataOnly => t.game_filter_metadata_only,
     };
 
 /// 卡片「排序字段浮层」的文案：显示当前排序维度在这条游戏上的值。
@@ -950,7 +999,7 @@ String? galgameSortValueLabel(GalgameEntry game, GalgameSortField field) {
     case GalgameSortField.releaseDate:
       return game.effectiveReleaseDate;
     case GalgameSortField.lastPlayed:
-      if (game.lastPlayedMs <= 0) return t.games_never_played;
+      if (game.lastPlayedMs <= 0) return t.game_never_played;
       return formatGalgameDate(
           DateTime.fromMillisecondsSinceEpoch(game.lastPlayedMs));
     case GalgameSortField.siteScore:
@@ -960,11 +1009,9 @@ String? galgameSortValueLabel(GalgameEntry game, GalgameSortField field) {
   }
 }
 
-/// `YYYY-MM-DD` 本地日期（与 `galgame_sessions.dateKey` 同格式）。
-String formatGalgameDate(DateTime value) {
-  String two(int n) => n.toString().padLeft(2, '0');
-  return '${value.year}-${two(value.month)}-${two(value.day)}';
-}
+/// `YYYY-MM-DD` 本地日期（与 `galgame_sessions.dateKey` 同格式）。委托
+/// [HibikiTimeFormat.dayKey]（G5 收敛）。
+String formatGalgameDate(DateTime value) => HibikiTimeFormat.dayKey(value);
 
 /// 重命名输入对话框：内容自身持有 [TextEditingController] 并在 State.dispose
 /// 释放（路由完全退出后由框架回收，修过早 dispose）。确认返回 trimmed 名称。
@@ -994,7 +1041,7 @@ class _RenameGameDialogState extends State<_RenameGameDialog> {
       maxWidth: 420,
       scrollable: false,
       child: HibikiModalSheetFrame(
-        title: t.games_rename,
+        title: t.game_rename,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
@@ -1010,7 +1057,7 @@ class _RenameGameDialogState extends State<_RenameGameDialog> {
         ),
         body: HibikiTextField(
           controller: _controller,
-          labelText: t.games_rename_label,
+          labelText: t.game_rename_label,
           autofocus: true,
           onSubmitted: (String v) => Navigator.of(context).pop(v.trim()),
         ),
@@ -1056,6 +1103,7 @@ class _GameCard extends StatelessWidget {
     required this.onDetail,
     required this.onScrape,
     required this.onAddToCollection,
+    required this.onEditTags,
     this.sortLabel,
   });
 
@@ -1073,6 +1121,7 @@ class _GameCard extends StatelessWidget {
   final VoidCallback onDetail;
   final VoidCallback onScrape;
   final VoidCallback onAddToCollection;
+  final VoidCallback onEditTags;
 
   /// 长按 / 右键的上下文菜单：与书卡/视频卡同款 [MediaItemDialogFrame]（封面块 +
   /// 快捷动作 chips + 底部危险区），替代旧手搓 SimpleDialog。菜单项与封面溢出菜单
@@ -1140,37 +1189,37 @@ class _GameCard extends StatelessWidget {
   List<_GameMenuItem> get _menuItems => <_GameMenuItem>[
         (
           action: 'detail',
-          label: t.games_view_detail,
+          label: t.game_view_detail,
           icon: Icons.info_outline,
           danger: false,
         ),
         (
           action: 'status',
-          label: t.games_play_status,
+          label: t.game_play_status,
           icon: Icons.flag_outlined,
           danger: false,
         ),
         (
           action: 'scrape',
-          label: t.games_scrape,
+          label: t.game_scrape,
           icon: Icons.cloud_download_outlined,
           danger: false,
         ),
         (
           action: 'rename',
-          label: t.games_rename,
+          label: t.game_rename,
           icon: Icons.drive_file_rename_outline,
           danger: false,
         ),
         (
           action: 'cover',
-          label: t.games_set_cover,
+          label: t.game_set_cover,
           icon: Icons.image_outlined,
           danger: false,
         ),
         (
           action: 'autocover',
-          label: t.games_auto_cover,
+          label: t.game_auto_cover,
           icon: Icons.image_search,
           danger: false,
         ),
@@ -1181,8 +1230,14 @@ class _GameCard extends StatelessWidget {
           danger: false,
         ),
         (
+          action: 'tags',
+          label: t.tag_label,
+          icon: Icons.sell_outlined,
+          danger: false,
+        ),
+        (
           action: 'remove',
-          label: t.games_remove,
+          label: t.game_remove,
           icon: Icons.delete_outline,
           danger: true,
         ),
@@ -1204,6 +1259,8 @@ class _GameCard extends StatelessWidget {
         onAutoCover();
       case 'collect':
         onAddToCollection();
+      case 'tags':
+        onEditTags();
       case 'remove':
         onRemove();
     }

@@ -149,6 +149,11 @@ class _CollectionItem {
   /// 默认书籍；句子按 [FavoriteSentence.source] 透传。视频来源句子的 [bookKey] 是视频
   /// bookUid，点击时走 [VideoHibikiPage] 并按 [normCharOffset] 的 startMs seek。
   final String source;
+
+  /// [source] 的枚举视图（BUG-1120）：UI 分支按四值穷尽 switch，未知/旧值回退
+  /// [SentenceSourceKind.book]。收藏词行（[_CollectionType.word]）的 [source] 复用
+  /// wordSourceType 值域，不走本 getter 的展示路径。
+  SentenceSourceKind get sourceKind => sentenceSourceKindOf(source);
 }
 
 class CollectionsPage extends BasePage {
@@ -1018,7 +1023,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   /// 把书名/标题清洗成安全文件名（去掉路径分隔符和保留字符），用于默认导出文件名。
   String _sanitizeFileName(String name) {
-    final String cleaned = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+    final String cleaned = safeWindowsFileName(name).trim();
     return cleaned.isEmpty ? 'export' : cleaned;
   }
 
@@ -1052,7 +1057,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   }
 
   Future<void> _showItemDialog(_CollectionItem item) async {
-    final bool isVideoSentence = item.source == kFavoriteSentenceSourceVideo;
+    // BUG-1120：四值来源穷尽 switch（旧 isVideoSentence bool 把 audiobook/lyrics
+    // 静默展示成书）。audiobook/lyrics 的 bookKey 共享 hoshi://book/ 身份，打开
+    // 目的地仍是 _openBook（reader 内处理有声书/歌词模式），仅展示层区分。
+    final SentenceSourceKind kind = item.sourceKind;
     final canNavigate = item.bookKey != null && item.bookKey!.isNotEmpty;
     final hasAudio = _hasAudio(item);
     final displayTitle = item.text ?? '';
@@ -1105,18 +1113,26 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           if (canNavigate)
             FilledButton.icon(
               icon: Icon(
-                isVideoSentence
-                    ? Icons.movie_outlined
-                    : Icons.menu_book_outlined,
+                switch (kind) {
+                  SentenceSourceKind.video => Icons.movie_outlined,
+                  SentenceSourceKind.audiobook => Icons.headphones_outlined,
+                  SentenceSourceKind.lyrics => Icons.lyrics_outlined,
+                  SentenceSourceKind.book => Icons.menu_book_outlined,
+                },
                 size: 18,
               ),
-              label: Text(isVideoSentence ? t.nav_video : t.dialog_read),
+              label: Text(
+                kind == SentenceSourceKind.video ? t.nav_video : t.dialog_read,
+              ),
               onPressed: () {
                 Navigator.pop(ctx);
-                if (isVideoSentence) {
-                  _openVideoSentence(item);
-                } else {
-                  _openBook(item);
+                switch (kind) {
+                  case SentenceSourceKind.video:
+                    _openVideoSentence(item);
+                  case SentenceSourceKind.book:
+                  case SentenceSourceKind.audiobook:
+                  case SentenceSourceKind.lyrics:
+                    _openBook(item);
                 }
               },
             ),
@@ -1233,8 +1249,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final String title;
     final String? subtitle;
 
-    final bool isVideoSentence =
-        !isWord && item.source == kFavoriteSentenceSourceVideo;
+    // BUG-1120：句子/制卡行的来源枚举（旧 isVideoSentence bool 把 audiobook/lyrics
+    // 归并进书，来源前缀丢失）。收藏词行的 source 是 wordSourceType 值域，不进
+    // kind 展示路径，按书路径兜底（词行无 bookKey，实际不可跳转）。
+    final SentenceSourceKind kind =
+        isWord ? SentenceSourceKind.book : item.sourceKind;
 
     if (isWord) {
       // BUG-462：收藏词标题=词形，副标题=读音 · 释义（无原文定位，不显示书名/章节）。
@@ -1245,10 +1264,17 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         item.chapterLabel,
       ].where((s) => s != null && s.isNotEmpty).join(' · ');
     } else {
+      // 非书来源标注来源前缀（视频/有声书/歌词），与书内来源区分；书来源无前缀
+      // （复用现有 i18n 键 nav_video / section_audiobook / lyrics_mode）。
+      final String? sourcePrefix = switch (kind) {
+        SentenceSourceKind.video => t.nav_video,
+        SentenceSourceKind.audiobook => t.section_audiobook,
+        SentenceSourceKind.lyrics => t.lyrics_mode,
+        SentenceSourceKind.book => null,
+      };
       title = item.text ?? '';
       subtitle = [
-        // 视频来源句子标注「视频」前缀，与书内/有声书来源区分（用现有 nav_video）。
-        if (isVideoSentence) t.nav_video,
+        sourcePrefix,
         // P4：所属书/视频名过 display-title 门面（快照列保持 raw 身份）。
         _itemDisplayBookTitle(item),
         item.chapterLabel,
@@ -1363,10 +1389,15 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             // stop (otherwise hold-A / the item menu can never be reached).
             onTap: canNavigate
                 ? () {
-                    if (isVideoSentence) {
-                      _openVideoSentence(item);
-                    } else {
-                      _openBook(item);
+                    switch (kind) {
+                      case SentenceSourceKind.video:
+                        _openVideoSentence(item);
+                      case SentenceSourceKind.book:
+                      case SentenceSourceKind.audiobook:
+                      case SentenceSourceKind.lyrics:
+                        // audiobook/lyrics 的 bookKey 共享 hoshi://book/ 身份，
+                        // reader 是正确目的地（内部处理有声书/歌词模式）。
+                        _openBook(item);
                     }
                   }
                 : () => _showItemDialog(item),

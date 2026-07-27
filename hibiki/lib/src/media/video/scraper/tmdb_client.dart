@@ -33,7 +33,7 @@ class TmdbClient {
   ///
   /// 旧值 `w500`（500px 宽缩略档）落盘后放大到高 dpr 大格子会发糊。Bangumi(large) /
   /// 离线库(picture) 本就取各源最高档，唯 TMDB 之前钉在缩略档，是刮削海报发糊的根因。
-  /// 落盘无损（[PosterDownloader] 原样写字节），渲染层 `resizedFileImage` 解码上限自会
+  /// 落盘无损（[CoverDownloader] 原样写字节），渲染层 `resizedFileImage` 解码上限自会
   /// 按需降采样，不会因原图更大而变慢展示。
   static const String posterBase = 'https://image.tmdb.org/t/p/original';
 

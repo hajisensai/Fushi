@@ -7,6 +7,7 @@ import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki/src/sync/webdav_ops.dart';
 
@@ -90,11 +91,11 @@ class WebDavSyncBackend extends SyncBackend
   }
 
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async {
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async {
     final entries = await _ops!.propfindChildren(rootFolderId);
     return entries
         .where((e) => e.isCollection && e.href != rootFolderId)
-        .map((e) => DriveFile(id: e.href, name: e.displayName))
+        .map((e) => SyncFileRef(id: e.href, name: e.displayName))
         .toList();
   }
 
@@ -137,14 +138,14 @@ class WebDavSyncBackend extends SyncBackend
   // ── Metadata sync ─────────────────────────────────────────────────
 
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async {
+  Future<SyncFileTrio> listSyncFiles(String folderId) async {
     final entries = await _ops!.propfindChildren(folderId);
     final files = entries
         .where((e) => !e.isCollection && e.href != folderId)
-        .map((e) => DriveFile(id: e.href, name: e.displayName))
+        .map((e) => SyncFileRef(id: e.href, name: e.displayName))
         .toList();
 
-    return DriveSyncFiles(
+    return SyncFileTrio(
       progress: WebDavOps.findByPrefix(files, 'progress_'),
       statistics: WebDavOps.findByPrefix(files, 'statistics_'),
       audioBook: WebDavOps.findByPrefix(files, 'audioBook_'),
@@ -242,11 +243,11 @@ class WebDavSyncBackend extends SyncBackend
   }
 
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async {
+  Future<SyncFileRef?> findContentFile(String folderId, String fileName) async {
     final path = '$folderId${Uri.encodeComponent(fileName)}';
     final exists = await _ops!.headFile(path);
     if (!exists) return null;
-    return DriveFile(id: path, name: fileName);
+    return SyncFileRef(id: path, name: fileName);
   }
 
   // ── Cache ─────────────────────────────────────────────────────────

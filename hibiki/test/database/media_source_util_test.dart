@@ -106,7 +106,7 @@ void main() {
 
   // TODO-1274: encodeSourceConfig persists ONLY non-sensitive connection params
   // (host/port/username/useTls); it MUST drop any password/privateKey/unknown key
-  // (credential red line — secrets go to MediaSourceCredentialStore, never here).
+  // (credential red line — secrets go to SourceLibraryCredentialStore, never here).
   group('config codec (TODO-1274 connection params, no credentials)', () {
     test('round-trips the allowed connection params', () {
       final String? encoded = encodeSourceConfig(<String, Object?>{

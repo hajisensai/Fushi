@@ -7,6 +7,7 @@ import 'package:hibiki/utils.dart';
 
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/anki/lapis_template_service.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
 import 'package:hibiki/src/profile/profile_selector.dart';
@@ -37,6 +38,13 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// createLapisSetup 内部复用 isFetching，若两行 spinner 都读它，点 Lapis 时
   /// 「刷新」行也会转圈——各行只对自己的动作显示 busy。
   bool _creatingLapis = false;
+
+  /// Lapis 样式区（备份/恢复/应用）在途标记：这几个动作都写同一个 note
+  /// type，互斥防重入。
+  bool _lapisBusy = false;
+
+  /// 媒体去重在途标记（扫描/执行互斥防重入）。
+  bool _dedupBusy = false;
 
   @override
   Widget build(BuildContext context) {
@@ -87,6 +95,95 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                 value: settings.ankiConnectApiKey,
                 hint: t.anki_connect_api_key_hint,
                 onChanged: vm.updateAnkiConnectApiKey,
+              ),
+            ],
+          ),
+        // Lapis 样式客制化：备份 / 恢复 / 字号缩放 / 自定义 CSS / 应用。
+        // 仅后端支持读写已存在 note type 时显示（AnkiConnect）；AnkiDroid /
+        // AnkiMobile 平台 API 改不了已存在模板（平台边界），整区隐藏。
+        if (vm.supportsNoteTypeEditing)
+          AdaptiveSettingsSection(
+            title: t.anki_lapis_section,
+            children: [
+              AdaptiveSettingsPickerRow<int>(
+                title: t.anki_lapis_font_scale,
+                subtitle: t.anki_lapis_font_scale_hint,
+                icon: Icons.format_size_outlined,
+                showIcon: true,
+                selected: settings.lapisFontScalePercent,
+                options: const [
+                  AdaptiveSettingsPickerOption(value: 80, label: '80%'),
+                  AdaptiveSettingsPickerOption(value: 90, label: '90%'),
+                  AdaptiveSettingsPickerOption(value: 100, label: '100%'),
+                  AdaptiveSettingsPickerOption(value: 110, label: '110%'),
+                  AdaptiveSettingsPickerOption(value: 125, label: '125%'),
+                  AdaptiveSettingsPickerOption(value: 150, label: '150%'),
+                ],
+                onChanged: (int v) => vm.setLapisFontScalePercent(v),
+              ),
+              AdaptiveSettingsRow(
+                icon: Icons.code_outlined,
+                showIcon: true,
+                title: t.anki_lapis_custom_css,
+                subtitle: t.anki_lapis_custom_css_hint,
+                onTap: () => _editLapisCustomCss(settings, vm),
+              ),
+              AdaptiveSettingsRow(
+                icon: Icons.brush_outlined,
+                showIcon: true,
+                title: t.anki_lapis_apply,
+                trailing: _lapisBusy
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child:
+                            adaptiveIndicator(context: context, strokeWidth: 2),
+                      )
+                    : null,
+                onTap: _lapisBusy ? null : () => _applyLapisStyling(vm),
+              ),
+              AdaptiveSettingsRow(
+                icon: Icons.save_outlined,
+                showIcon: true,
+                title: t.anki_lapis_backup,
+                onTap: _lapisBusy ? null : () => _backupLapisTemplate(vm),
+              ),
+              AdaptiveSettingsRow(
+                icon: Icons.settings_backup_restore_outlined,
+                showIcon: true,
+                title: t.anki_lapis_restore,
+                onTap: _lapisBusy ? null : () => _restoreLapisBackup(vm),
+              ),
+            ],
+          ),
+        // 媒体存储优化：字节级去重（只删字节相同的多余副本，绝不重编码）。
+        // 需要与 Anki 同机（本机可直读 collection.media），后端不支持时整区隐藏。
+        // 用户拍板方案 A：**没有任何自动/周期路径**，只有这里的手动触发，且
+        // 真删前必须先看干跑清单并确认。
+        if (vm.supportsMediaMaintenance)
+          AdaptiveSettingsSection(
+            title: t.anki_dedup_section,
+            children: [
+              AdaptiveSettingsRow(
+                icon: Icons.search_outlined,
+                showIcon: true,
+                title: t.anki_dedup_scan,
+                trailing: _dedupBusy
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child:
+                            adaptiveIndicator(context: context, strokeWidth: 2),
+                      )
+                    : null,
+                onTap: _dedupBusy ? null : () => _scanMediaDedup(vm),
+              ),
+              AdaptiveSettingsRow(
+                icon: Icons.cleaning_services_outlined,
+                showIcon: true,
+                title: t.anki_dedup_run,
+                subtitle: t.anki_dedup_run_hint,
+                onTap: _dedupBusy ? null : () => _runMediaDedup(vm),
               ),
             ],
           ),
@@ -374,6 +471,374 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         message = t.anki_create_lapis_failed(error: result.message ?? '');
     }
     messenger.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  // ── Lapis 样式客制化 ─────────────────────────────────────────────────
+
+  Future<void> _editLapisCustomCss(
+      AnkiSettings settings, AnkiViewModel vm) async {
+    final TextEditingController controller =
+        TextEditingController(text: settings.lapisCustomCss);
+    try {
+      await _showLapisCustomCssDialog(controller, vm);
+    } finally {
+      // 保存路径抛错（写偏好失败）时也必须释放 controller，否则 Flutter 的
+      // leak tracking 会把它记成泄漏，且每次打开都多留一个 listener。
+      controller.dispose();
+    }
+  }
+
+  Future<void> _showLapisCustomCssDialog(
+      TextEditingController controller, AnkiViewModel vm) async {
+    final String? result = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text(t.anki_lapis_custom_css),
+        content: SizedBox(
+          width: 560,
+          child: TextField(
+            controller: controller,
+            autofocus: true,
+            minLines: 8,
+            maxLines: 16,
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(fontFamily: 'monospace'),
+            decoration: const InputDecoration(
+              hintText: '.front-vocab { color: #8ab4f8; }',
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: Text(t.dialog_save),
+          ),
+        ],
+      ),
+    );
+    if (result != null) await vm.setLapisCustomCss(result);
+  }
+
+  Future<void> _applyLapisStyling(AnkiViewModel vm,
+      {bool force = false}) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    setState(() => _lapisBusy = true);
+    final LapisApplyResult result;
+    try {
+      result = await vm.lapisTemplateService.applyCustomization(force: force);
+    } catch (e) {
+      messenger.showSnackBar(
+          SnackBar(content: Text(t.anki_lapis_apply_failed(error: '$e'))));
+      return;
+    } finally {
+      if (mounted) setState(() => _lapisBusy = false);
+    }
+    if (!mounted) return;
+    switch (result) {
+      case LapisApplyResult.applied:
+        await vm.refreshSettingsFromStore();
+        messenger
+            .showSnackBar(SnackBar(content: Text(t.anki_lapis_apply_done)));
+      case LapisApplyResult.upToDate:
+        await vm.refreshSettingsFromStore();
+        messenger
+            .showSnackBar(SnackBar(content: Text(t.anki_lapis_up_to_date)));
+      case LapisApplyResult.needsConfirm:
+        final bool? ok = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext context) => AlertDialog(
+            title: Text(t.anki_lapis_foreign_edit_title),
+            content: Text(t.anki_lapis_foreign_edit_body),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(t.dialog_cancel),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(t.dialog_ok),
+              ),
+            ],
+          ),
+        );
+        if (ok == true && mounted) await _applyLapisStyling(vm, force: true);
+      case LapisApplyResult.notFound:
+        messenger.showSnackBar(SnackBar(content: Text(t.anki_lapis_not_found)));
+      case LapisApplyResult.unsupported:
+        // 整区已按 supportsNoteTypeEditing 隐藏，此分支只是防御。
+        break;
+    }
+  }
+
+  Future<void> _backupLapisTemplate(AnkiViewModel vm) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    setState(() => _lapisBusy = true);
+    try {
+      final File? file = await vm.lapisTemplateService.backupNow();
+      messenger.showSnackBar(SnackBar(
+        content: Text(file == null
+            ? t.anki_lapis_not_found
+            : t.anki_lapis_backup_done(path: file.path)),
+      ));
+    } catch (e) {
+      messenger.showSnackBar(
+          SnackBar(content: Text(t.anki_lapis_backup_failed(error: '$e'))));
+    } finally {
+      if (mounted) setState(() => _lapisBusy = false);
+    }
+  }
+
+  Future<void> _restoreLapisBackup(AnkiViewModel vm) async {
+    // 在第一个 await 之前就占住 _lapisBusy：列备份是异步的，这段窗口里
+    // `_lapisBusy ? null : ...` 的门还是开的，第二次点击能进来并开出第二条
+    // 恢复流程，两条流程写同一个 note type。占位必须先于任何 await。
+    setState(() => _lapisBusy = true);
+    try {
+      await _runRestoreLapisBackup(vm);
+    } finally {
+      if (mounted) setState(() => _lapisBusy = false);
+    }
+  }
+
+  Future<void> _runRestoreLapisBackup(AnkiViewModel vm) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final List<File> backups = await vm.lapisTemplateService.listBackups();
+    if (!mounted) return;
+    if (backups.isEmpty) {
+      messenger
+          .showSnackBar(SnackBar(content: Text(t.anki_lapis_restore_empty)));
+      return;
+    }
+    final File? chosen = await showDialog<File>(
+      context: context,
+      builder: (BuildContext context) => SimpleDialog(
+        title: Text(t.anki_lapis_restore),
+        children: [
+          for (final File f in backups.take(30))
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, f),
+              child: Text(_lapisBackupLabel(f)),
+            ),
+        ],
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text(t.anki_lapis_restore),
+        content: Text(t.anki_lapis_restore_confirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(t.dialog_ok),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    // 两步都可能失败，两步的失败都必须让用户看见：把「第一个失败」收进
+    // failure，最后统一出一条 snackbar。刷新**不能**放 finally——finally 里的
+    // await 抛出就成了没人接的异步异常（页面继续显示恢复前的值，用户只看到
+    // 什么都没发生），正是本 PR 要修的「谎报」同一类问题。
+    Object? failure;
+    try {
+      await vm.lapisTemplateService.restoreBackup(chosen);
+    } catch (e) {
+      failure = e;
+    }
+    // 成功失败都要刷：restoreBackup 在卡模板失败前已经把 styling 与 settings
+    // 写穿了，只刷成功路径会让页面继续显示恢复前的字号/自定义 CSS。
+    try {
+      await vm.refreshSettingsFromStore();
+    } catch (e) {
+      failure ??= e; // 恢复本身的错更接近根因，优先呈现它。
+    }
+    messenger.showSnackBar(SnackBar(
+      content: Text(failure == null
+          ? t.anki_lapis_restore_done
+          : t.anki_lapis_restore_failed(error: '$failure')),
+    ));
+  }
+
+  /// 「扫描重复（不改动）」：只跑干跑并把清单摊给用户看，不提供删除按钮。
+  Future<void> _scanMediaDedup(AnkiViewModel vm) async {
+    final AnkiMediaDedupReport? plan = await _runDedupPass(vm, dryRun: true);
+    if (plan == null || !mounted) return;
+    await _showDedupPlanDialog(plan, offerDelete: false);
+  }
+
+  /// 「立即去重」：**永远先干跑**，把「删哪些文件、各占多少空间、保留的是哪
+  /// 一份」逐条列给用户；用户在弹窗里点确认之后才跑真删。用户没确认之前一个
+  /// 文件都不会动。
+  Future<void> _runMediaDedup(AnkiViewModel vm) async {
+    final AnkiMediaDedupReport? plan = await _runDedupPass(vm, dryRun: true);
+    if (plan == null || !mounted) return;
+    final bool confirmed = await _showDedupPlanDialog(plan, offerDelete: true);
+    if (!confirmed || !mounted) return;
+    final AnkiMediaDedupReport? result = await _runDedupPass(vm, dryRun: false);
+    if (result == null || !mounted) return;
+    await _showDedupReportDialog(result);
+  }
+
+  /// 跑一遍去重（干跑或真跑）。后端不支持 / 出错时给出提示并返回 null。
+  Future<AnkiMediaDedupReport?> _runDedupPass(
+    AnkiViewModel vm, {
+    required bool dryRun,
+  }) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    setState(() => _dedupBusy = true);
+    AnkiMediaDedupReport? report;
+    try {
+      report = await vm.mediaDedupRunner.runNow(dryRun: dryRun);
+    } catch (e) {
+      messenger.showSnackBar(
+          SnackBar(content: Text(t.anki_dedup_failed(error: '$e'))));
+      return null;
+    } finally {
+      if (mounted) setState(() => _dedupBusy = false);
+    }
+    if (report == null) {
+      messenger.showSnackBar(SnackBar(content: Text(t.anki_dedup_unavailable)));
+      return null;
+    }
+    return report;
+  }
+
+  /// 干跑清单弹窗。[offerDelete] = 提供「删除这些文件」确认按钮（返回 true 才
+  /// 执行真删）；false 时只是只读报告。没有可删的东西时不给删除按钮。
+  Future<bool> _showDedupPlanDialog(
+    AnkiMediaDedupReport plan, {
+    required bool offerDelete,
+  }) async {
+    if (plan.deletions.isEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (BuildContext context) => AlertDialog(
+          title: Text(t.anki_dedup_plan_title),
+          content: Text(t.anki_dedup_report_clean),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_ok),
+            ),
+          ],
+        ),
+      );
+      return false;
+    }
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text(t.anki_dedup_plan_title),
+        content: SizedBox(
+          width: 420,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(t.anki_dedup_plan_intro(
+                  count: '${plan.duplicatesRemoved}',
+                  size: _formatBytes(plan.bytesSaved),
+                )),
+                const SizedBox(height: 12),
+                for (final MediaDedupDeletion d in plan.deletions)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(t.anki_dedup_plan_entry(
+                      file: d.filename,
+                      size: _formatBytes(d.bytes),
+                      canonical: d.canonical,
+                    )),
+                  ),
+                const SizedBox(height: 12),
+                Text(offerDelete
+                    ? t.anki_dedup_plan_journal
+                    : t.anki_dedup_report_dry_note),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          if (!offerDelete)
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(t.dialog_ok),
+            ),
+          if (offerDelete) ...[
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(t.dialog_cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(t.anki_dedup_plan_delete),
+            ),
+          ],
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  /// 真跑之后的结果报告。
+  Future<void> _showDedupReportDialog(AnkiMediaDedupReport result) async {
+    final String body = result.groupCount == 0
+        ? t.anki_dedup_report_clean
+        : t.anki_dedup_report_body(
+            groups: '${result.groupCount}',
+            removed: '${result.duplicatesRemoved}',
+            size: _formatBytes(result.bytesSaved),
+            notes: '${result.notesRewritten}',
+            models: '${result.modelsRewritten}',
+            skipped: '${result.skipped}',
+          );
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text(t.anki_dedup_report_title),
+        content: Text(body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(t.dialog_ok),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _formatBytes(int bytes) {
+    if (bytes >= 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '$bytes B';
+  }
+
+  /// 备份文件名 `lapis-<ISO时间戳(冒号→'-')>.json` → 本地可读时间标签；
+  /// 解析失败原样显示文件名主体（仍可区分）。
+  String _lapisBackupLabel(File f) {
+    final String raw = f.uri.pathSegments.last
+        .replaceFirst('lapis-', '')
+        .replaceFirst('.json', '');
+    final String iso = raw.replaceFirstMapped(
+      RegExp(r'T(\d{2})-(\d{2})-(\d{2})'),
+      (Match m) => 'T${m[1]}:${m[2]}:${m[3]}',
+    );
+    final DateTime? dt = DateTime.tryParse(iso)?.toLocal();
+    return dt != null ? dt.toString().split('.').first : raw;
   }
 
   Widget _buildDeckDropdown(AnkiSettings settings, AnkiViewModel vm) {

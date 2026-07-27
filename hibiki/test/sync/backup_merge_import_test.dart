@@ -20,7 +20,7 @@ Future<void> _exportZip(
   String zipPath,
 ) async {
   await BackupService(db: srcDb, dbDirectory: srcDir, appVersion: '2.0.0')
-      .exportBackup(zipPath);
+      .createBackup(zipPath);
 }
 
 /// Builds a minimal valid backup zip from a raw `hibiki.db` file (used to drive
@@ -66,7 +66,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
     );
@@ -116,10 +116,10 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
     // Re-import the SAME backup again — must stay idempotent.
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = HibikiDatabase(curDir.path);
@@ -168,7 +168,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = HibikiDatabase(curDir.path);
@@ -201,9 +201,9 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = HibikiDatabase(curDir.path);
@@ -274,9 +274,9 @@ void main() {
     await src.close();
 
     // Import twice — must stay idempotent (MAX, never SUM).
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = HibikiDatabase(curDir.path);
@@ -330,7 +330,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = HibikiDatabase(curDir.path);
@@ -364,7 +364,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = HibikiDatabase(curDir.path);
@@ -420,7 +420,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = HibikiDatabase(curDir.path);
@@ -499,7 +499,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = HibikiDatabase(curDir.path);
@@ -538,7 +538,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = HibikiDatabase(curDir.path);
@@ -561,7 +561,7 @@ void main() {
     final zip2 = p.join(zipDir.path, 'b2.zip');
     await _exportZip(src2, src2Dir.path, zip2);
     await src2.close();
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip2);
     final pos2 = await after.getReaderPosition('lwwbook');
     expect(pos2!.sectionIndex, 9); // unchanged — older backup ignored
@@ -596,10 +596,10 @@ void main() {
       dbDirectory: srcDir.path,
       appVersion: '2.0.0',
       booksRootDirectory: srcBooks.path,
-    ).exportBackup(zip);
+    ).createBackup(zip);
     await src.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
       booksRootDirectory: booksRoot.path,
@@ -646,7 +646,7 @@ void main() {
     await src.close();
 
     // Must NOT throw (FK preserved) and must skip the ghost bookmark.
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = HibikiDatabase(curDir.path);
@@ -687,8 +687,7 @@ void main() {
     await _zipDbWithMeta(corruptDb.path, zip);
 
     await expectLater(
-      BackupService.mergeImportBackupFiles(
-          dbDirectory: curDir.path, zipPath: zip),
+      BackupService.mergeRestoreBackup(dbDirectory: curDir.path, zipPath: zip),
       throwsA(anything),
     );
 
@@ -756,8 +755,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.importBackupFiles(
-        dbDirectory: curDir.path, zipPath: zip);
+    await BackupService.restoreBackup(dbDirectory: curDir.path, zipPath: zip);
 
     final after = HibikiDatabase(curDir.path);
     addTearDown(after.close);
@@ -791,7 +789,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = HibikiDatabase(curDir.path);
@@ -814,7 +812,7 @@ void main() {
     expect(await cur.getBookTombstoneKeys(), isEmpty);
   });
 
-  test('previewMergeImport counts new books and updated positions', () async {
+  test('previewMergeRestore counts new books and updated positions', () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
     final cur = HibikiDatabase(curDir.path);
@@ -847,7 +845,7 @@ void main() {
     await src.close();
 
     // Preview runs against the STILL-OPEN live DB (attaches, counts, detaches).
-    final preview = await BackupService.previewMergeImport(
+    final preview = await BackupService.previewMergeRestore(
       liveDb: cur,
       dbDirectory: curDir.path,
       zipPath: zip,
@@ -862,7 +860,7 @@ void main() {
         false);
   });
 
-  test('previewMergeImport excludes tombstoned books from the new-book count',
+  test('previewMergeRestore excludes tombstoned books from the new-book count',
       () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
@@ -882,7 +880,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    final preview = await BackupService.previewMergeImport(
+    final preview = await BackupService.previewMergeRestore(
       liveDb: cur,
       dbDirectory: curDir.path,
       zipPath: zip,
@@ -928,7 +926,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
     );
@@ -981,7 +979,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
     );
@@ -1031,9 +1029,9 @@ void main() {
     await src.close();
 
     // 连续合并两次同一备份：合集不翻倍、成员不重复。
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = HibikiDatabase(curDir.path);

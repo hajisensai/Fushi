@@ -650,6 +650,43 @@ std::string StringFromValue(const flutter::EncodableMap* args, const char* key,
   return s != nullptr ? *s : fallback;
 }
 
+// 解包可选的注音区间列表（`[{start, length, ruby}, ...]`）。
+//
+// 字段缺失、类型不对、区间非法都只是「这条没有注音」，绝不让整条 updateText 失败：
+// 旧 Dart 端不会带这个字段，浮窗必须照常显示文本（never-break userspace）。
+// start / length 的越界校验放在 FloatingLyricWindow::UpdateText 里做，因为只有那里
+// 才知道最终文本长度。
+std::vector<FloatingLyricWindow::RubySpan> RubySpansFromValue(
+    const flutter::EncodableMap* args, const char* key) {
+  std::vector<FloatingLyricWindow::RubySpan> spans;
+  if (args == nullptr) {
+    return spans;
+  }
+  const auto it = args->find(flutter::EncodableValue(key));
+  if (it == args->end()) {
+    return spans;
+  }
+  const auto* list = std::get_if<flutter::EncodableList>(&it->second);
+  if (list == nullptr) {
+    return spans;
+  }
+  for (const auto& item : *list) {
+    const auto* map = std::get_if<flutter::EncodableMap>(&item);
+    if (map == nullptr) {
+      continue;
+    }
+    FloatingLyricWindow::RubySpan span;
+    span.start = IntFromValue(map, "start", -1);
+    span.length = IntFromValue(map, "length", 0);
+    span.ruby = WideFromValue(map, "ruby", L"");
+    if (span.start < 0 || span.length <= 0 || span.ruby.empty()) {
+      continue;
+    }
+    spans.push_back(std::move(span));
+  }
+  return spans;
+}
+
 FloatingLyricWindow::Style StyleFromArgs(const flutter::EncodableMap* args) {
   FloatingLyricWindow::Style style;
   style.font_size = DoubleFromValue(args, "fontSize", style.font_size);
@@ -874,8 +911,10 @@ void FlutterWindow::RegisterClipboardTextChannel() {
         } else if (method == "updateText") {
           // Clipboard text is a single string with no "current line" concept, so
           // the multi-line dim range stays at the default (-1/0 = whole string
-          // full colour).
-          clipboard_text_window_->UpdateText(WideFromValue(args, "text", L""));
+          // full colour). rubySpans 缺省 = 无注音，排版逐像素与今天一致。
+          clipboard_text_window_->UpdateText(
+              WideFromValue(args, "text", L""), -1, 0, std::string(),
+              RubySpansFromValue(args, "rubySpans"));
           result->Success();
         } else if (method == "updateStyle") {
           clipboard_text_window_->UpdateStyle(StyleFromArgs(args));
@@ -989,7 +1028,8 @@ void FlutterWindow::RegisterGalHookTextChannel() {
         } else if (method == "updateText") {
           gal_hook_text_window_->UpdateText(
               WideFromValue(args, "text", L""), -1, 0,
-              StringFromValue(args, "lineId", ""));
+              StringFromValue(args, "lineId", ""),
+              RubySpansFromValue(args, "rubySpans"));
           result->Success();
         } else if (method == "updateStyle") {
           gal_hook_text_window_->UpdateStyle(StyleFromArgs(args));
@@ -1847,14 +1887,34 @@ void FlutterWindow::RegisterVoiceHookChannel() {
         }
         if (method == "grabClipNear") {
           // 按句取语音：找时间戳与 tsMs 最近（差 <= tolMs）的语音 clip PCM。
+          // 选轨/排除参数与 grabUtterance 同契约：本方法是它的兜底，必须同样遵守。
           const uint64_t ts = static_cast<uint64_t>(read_long("tsMs"));
           uint64_t tol = static_cast<uint64_t>(read_long("tolMs"));
           if (tol == 0) {
             tol = 3000;  // 缺省 ±3s
           }
+          const uint64_t target =
+              static_cast<uint64_t>(read_long("sourcePtr"));
+          std::vector<uint64_t> exclude;
+          const auto* cargs =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          if (cargs != nullptr) {
+            const auto ex_it = cargs->find(flutter::EncodableValue("exclude"));
+            if (ex_it != cargs->end()) {
+              const auto* list =
+                  std::get_if<flutter::EncodableList>(&ex_it->second);
+              if (list != nullptr) {
+                for (const auto& e : *list) {
+                  exclude.push_back(
+                      static_cast<uint64_t>(e.TryGetLongValue().value_or(0)));
+                }
+              }
+            }
+          }
           std::vector<uint8_t> pcm;
           const hibiki::VoiceHookStatus s =
-              hibiki::VoiceHookReader::Instance().GrabClipNear(ts, tol, pcm);
+              hibiki::VoiceHookReader::Instance().GrabClipNear(ts, tol, target,
+                                                               exclude, pcm);
           if (!s.ok || pcm.empty()) {
             result->Success(flutter::EncodableValue(flutter::EncodableMap{
                 {flutter::EncodableValue("error"),

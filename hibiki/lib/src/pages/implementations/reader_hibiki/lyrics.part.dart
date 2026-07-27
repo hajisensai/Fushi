@@ -102,7 +102,7 @@ extension _ReaderLyrics on _ReaderHibikiPageState {
         _exitCaret();
         await _resolveAndApplyProfile(
           appModelNoUpdate.database,
-          mediaTypeOverride: 'lyrics',
+          mediaTypeOverride: ProfileMediaKind.lyrics,
         );
         final List<AudioCue> allCues =
             _audiobookController!.allBookCuesSnapshot;

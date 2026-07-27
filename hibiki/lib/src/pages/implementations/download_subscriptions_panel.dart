@@ -7,6 +7,7 @@ import 'package:hibiki/src/media/torrent/anime_download_subscription.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart'
     show jimakuLanguageLabel;
+import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
 
 class DownloadSubscriptionsPanel extends ConsumerStatefulWidget {
@@ -18,7 +19,8 @@ class DownloadSubscriptionsPanel extends ConsumerStatefulWidget {
 }
 
 class _DownloadSubscriptionsPanelState
-    extends ConsumerState<DownloadSubscriptionsPanel> {
+    extends ConsumerState<DownloadSubscriptionsPanel>
+    with HibikiPagePlaceholders<DownloadSubscriptionsPanel> {
   AnimeDownloadSubscriptionStore? _store;
   List<AnimeDownloadSubscription> _subscriptions =
       const <AnimeDownloadSubscription>[];
@@ -119,16 +121,14 @@ class _DownloadSubscriptionsPanelState
     if (milliseconds == null) return t.download_subscription_never_checked;
     final DateTime value =
         DateTime.fromMillisecondsSinceEpoch(milliseconds).toLocal();
-    String two(int number) => number.toString().padLeft(2, '0');
-    return '${value.year}-${two(value.month)}-${two(value.day)} '
-        '${two(value.hour)}:${two(value.minute)}';
+    return HibikiTimeFormat.dateHourMinute(value);
   }
 
   @override
   Widget build(BuildContext context) {
     final AnimeDownloadSubscriptionService? service =
         ref.read(appProvider).animeDownloadSubscriptionService;
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) return buildLoading();
     if (service == null) {
       return Center(child: Text(t.anime_download_store_unavailable));
     }

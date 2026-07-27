@@ -154,7 +154,7 @@ function makeHarness(continuousMode) {
     .replace(/\$hoverAutoLookup/g, 'false')
     .replace(/\$swipeDistThreshold/g, '44')
     .replace(/\$swipeFastDistThreshold/g, '22')
-    .replace(/\$tapSlop/g, '28')
+    .replace(/\$tapSlop/g, '10')
     // BUG-712 ①: the tap-gate mirror line
     // `window.__hoshiTapGate = { chrome: $_showChrome, lookup:
     // ${ReaderHibikiSource.instance.highlightOnTap}, maxLen: 400 };` is emitted
@@ -265,7 +265,7 @@ function touchEvt(x, y) {
 
 // BUG-手机翻短了会查词: PAGED mode, a SLOW ~30px horizontal drift is a short,
 // under-powered swipe -- it must be a DEAD ZONE (no page turn, and crucially NO
-// word lookup). dx=30 is beyond the 28px tap-slop (so not a tap) yet below the
+// word lookup). dx=30 is beyond the 10px tap-slop (so not a tap) yet below the
 // 44px pure-distance swipe threshold, and the slow duration keeps velocity under
 // the 900px/s fast gate. Pre-fix the tap box == the 72px swipe threshold, so this
 // fell into the tap branch and fired a spurious lookup ("翻短了会查词").
@@ -290,7 +290,7 @@ function touchEvt(x, y) {
 })();
 
 // A LARGE vertical drag (dy=120) is a scroll/drag gesture, NOT a tap: absDy
-// exceeds the 28px tap-slop so the tap branch is skipped, and absDx<absDy keeps
+// exceeds the 10px tap-slop so the tap branch is skipped, and absDx<absDy keeps
 // the swipe branch off -> dead zone, no spurious lookup.
 (function () {
   const h = makeHarness(false);
@@ -329,22 +329,40 @@ function touchEvt(x, y) {
   );
 })();
 
-// A small horizontal tap (dx=25, within the 28px slop) is still a word lookup:
-// the tap box stays generous enough for normal finger jitter, so on-text tapping
-// keeps working (the TODO-971 "单词点不中" concern is preserved by the removed
-// 500ms time gate, not by a 72px box).
+// Small finger jitter (dx=6, dy=4, within the 10px radial slop) is still a word
+// lookup. The gate rejects scroll intent without requiring a perfectly motionless
+// finger.
 (function () {
   const h = makeHarness(false);
   h.dispatch('pointerdown', pointerEvt('touch', 200, 300, 0, 1));
   h.dispatch('touchstart', touchEvt(200, 300));
   h.advance(300); // slow, so the fast-swipe gate never fires
-  h.dispatch('touchend', touchEvt(225, 306)); // dx = +25 (<=28 slop), dy = +6
-  h.dispatch('pointerup', pointerEvt('touch', 225, 306, 0, 0));
+  h.dispatch('touchend', touchEvt(206, 304)); // radial distance ≈7.2px (<10)
+  h.dispatch('pointerup', pointerEvt('touch', 206, 304, 0, 0));
   assert.deepStrictEqual(h.swipes, [], 'a small tap must not page-turn');
   assert.deepStrictEqual(
-    h.taps, [225],
-    'a small (<=28px) horizontal tap must still report onTap (word lookup); got '
+    h.taps, [206],
+    'small (<10px) finger jitter must still report onTap (word lookup); got '
       + JSON.stringify(h.taps),
+  );
+})();
+
+// BUG-iPhone-scroll-lookup: endpoint-only classification is insufficient.
+// WKWebView can deliver touch events without the PointerEvent move sequence that
+// previously happened to clear `hasStart`. A finger may move far enough to begin
+// scrolling and then finish near its starting point; its final dx/dy looks like a
+// tap even though the full path was a pan. Once any touchmove exceeds the 10px
+// radial slop, releasing near the origin must not look up a word.
+(function () {
+  const h = makeHarness(true);
+  h.dispatch('touchstart', touchEvt(200, 300));
+  h.dispatch('touchmove', touchEvt(200, 284)); // 16px pan excursion (>10)
+  h.dispatch('touchend', touchEvt(203, 298)); // ends near origin (old code: tap)
+  assert.deepStrictEqual(h.swipes, [], 'continuous pan must not page-turn');
+  assert.deepStrictEqual(
+    h.taps, [],
+    'a touch path that crossed pan slop must never become lookup just because '
+      + 'touchend returned near its origin; got ' + JSON.stringify(h.taps),
   );
 })();
 

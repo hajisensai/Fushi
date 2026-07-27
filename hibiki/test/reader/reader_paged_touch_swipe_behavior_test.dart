@@ -2,7 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// TODO-553: paged-mode touch swipe must turn the page.
+/// TODO-553 / BUG-1115: touch gestures must distinguish page/scroll pans from
+/// word-lookup taps using the full movement path.
 ///
 /// 回归背景：commit 890378f19 把 touch 纳入 pointer 拖动状态机（pointerdown 的
 /// 门控从 `e.pointerType !== 'mouse'` 改成 `_hoshiReaderPointerPrimaryButton(e)`，
@@ -28,8 +29,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 当本机/CI 没有 node 时自动 skip（Node 守卫不强制进无 node 环境），但本地
 /// 与装有 node 的环境都会真跑，提供静态守卫缺失的行为级覆盖。
 void main() {
-  test(
-      'paged-mode touch swipe fires onSwipe (executes reader handlers via node)',
+  test('reader touch handler distinguishes swipe, pan, and lookup tap via node',
       () async {
     final String? nodeExe = _resolveNode();
     if (nodeExe == null) {

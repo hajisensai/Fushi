@@ -4,8 +4,23 @@
   - `packages/hibiki_core/lib/src/database/tables.dart` 里标签映射表只有四张：`BookTagMappings` / `SrtBookTagMappings` / `VideoBookTagMappings` / `CollectionTagMappings`，**没有游戏的**。
   - 标签池 `BookTags` 是共享的，筛选 UI（`tag_filter_bar.dart` / `tag_filter_sheet.dart` / `selectedTagIdsProvider`）也已是书架与视频页共用——即上层早已统一，唯独游戏没有落表就接不进来。
   - 因此这条**不能靠改 UI 修**：要加表 + schema 迁移，属独立工程。
-- **[ ] ① 未修复** — 需要：新增 `GalgameTagMappings`(gameId → tagId，FK cascade 对齐 `GalgameSources`/`GalgameSessions` 的做法) + schema 版本迁移；游戏库页接入既有 `tag_filter_bar` / `tag_filter_sheet`；标签管理页把游戏纳入统计；同步/备份侧确认标签墓碑（`BookTagMembershipTombstones`）是否需要覆盖游戏——注意游戏是**本机局域身份**（`galgames.id`），跨端同步语义要先定，不能照抄书的做法。
-- **[ ] ② 未加自动化测试** —
+- **[x] ① 已修复** — schema v58→**v59**：
+  - 新表 `GalgameTagMappings`（`packages/hibiki_core/lib/src/database/tables.dart`：gameId→`Galgames.id` cascade、tagId→`BookTags.id` cascade、`{gameId,tagId}` UNIQUE），`database.dart` 的 `if (from < 57)` 守卫建表 + `_ensureIndexes` 两个索引。
+  - DB API 一组：`getTagsForGame` / `addTagToGame` / `removeTagFromGame` / `setTagsForGame` / `getGameIdsForAllTags` / `getAllGameTagMappings`；`countBooksForTag` 把游戏计入标签管理页统计（否则只给游戏打的标签在管理页恒显示 0，与旧的视频漏计同型）。
+  - UI：`games_library_page.dart` 接既有 `HibikiTagFilterBar`（共享同一个 `selectedTagIdsProvider`）、卡片菜单加「标签」→ 共享 `TagPickerPage(media: MediaRef(kind: MediaKind.game, ...))`、`galgame_detail_page.dart` 的 meta 网格加「我的标签」格；`tag_filter_sheet.dart` 补 `gameTagMapProvider` / `filteredGameIdsProvider`。
+  - 用户标签白名单在纯函数 `applyGalgameLibraryView(..., allowedIds:)` 一处收口，不在页面里二次过滤。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/database/galgame_tags_test.dart`（CRUD 幂等 / 差集 set / AND 筛选 / 双向 cascade / `countBooksForTag` 含游戏）
+  - `hibiki/test/database/migration_v59_galgame_tag_mappings_test.dart`（真实 v58→v59 迁移：既有游戏行零破坏、升级后无标签、新表可写、fresh 库 onCreate 也建出）
+  - `hibiki/test/pages/games_library_user_tags_test.dart`（真页面：标签栏渲染、点 chip 真筛掉不匹配的游戏、空态文案、卡片菜单「标签」进 `TagPickerPage` 并真写穿 DB）
+  - `hibiki/test/mining/galgame_library_query_test.dart`（`allowedIds` 三例：null 不过滤 / 白名单 / 与元数据标签+搜索 AND）
+- **跨端同步语义（先决问题，已定契约）**：**游戏标签不跨端传播、不建墓碑**。判据是真凭据而非偏好：
+  - `galgames` 整张表**不进** live-sync 清单（`hibiki/lib/src/sync/app_model_library_host_service.dart` 只导出书与视频的标签），也**不进**备份合并导入（`backup_merge_engine.dart` 零 galgame 语句）。游戏身份 `galgames.id` 是添加时刻微秒戳 = 本机局域身份，对端根本没有对应行可挂。
+  - 故映射表**刻意不带 `addedAt`**（书/视频那一列是 LWW-element-set 的 add 时钟，只为同步裁决而存在），`BookTagMembershipTombstones` 也不覆盖游戏。范式对齐 `CollectionTagMappings`（同样无时钟无墓碑）。
+  - 全量备份恢复走整库文件拷贝，本表随之原样还原，无需额外工作。
+  - 将来若真要同步游戏标签，先决条件是先给游戏一个跨设备稳定身份（内容派生 key）；在那之前加时钟只会让人误以为它在同步。
+- **schema 版本串行化结果**：命名统一占 v57、PR#451 的 Bangumi 自动记录占 v58；本修复最终使用 v59，新建 `galgame_tag_mappings`。
 - **备注**：
   - 本条**刻意不与** [BUG-1111](BUG-1111-dashboard-continue-recent-missing-games.md) / [BUG-1112](BUG-1112-activity-timeline-game-no-cover.md) 同 PR：那两条是纯展示层收口（无 schema 变更），本条要动 schema + 迁移 + 同步语义，混在一起会让一个 PR 同时承担「不可逆的 DB 迁移」和「UI 改动」两种风险。
-  - 跨端同步语义是先决问题：对端没有对应 `galgames` 行时，游戏标签成员该静默忽略还是不同步，需先定契约。
+  - 游戏有**两套标签**，本次刻意不合并：① 用户标签（本 BUG，共享 `BookTags` 彩色标签池，与书/字幕书/视频/合集同一份）；② 元数据标签（bgm/vndb 刮削来的作品标签，存 `GalgameSources.dataJson` + `Galgames.customDataJson`，由库页筛选面板按名筛）。后者动辄上百个且随刮削变动，塞进共享池会污染书/视频的手工标签。两条轴 AND 生效。
+  - 已知遗留（非本 BUG 范围）：游戏海报卡 `GalgamePosterCard` 无标签 chip 槽位（固定 0.62 槽比，加 chip 行要改共享组件布局）。当前用户标签在**详情页**与**筛选栏**可见，网格卡上不显示。

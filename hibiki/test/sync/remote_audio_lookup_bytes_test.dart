@@ -105,7 +105,9 @@ void main() {
       expect(remoteAudioContentTypeForPath('a.M4A'), 'audio/mp4');
       expect(remoteAudioContentTypeForPath('a.m4b'), 'audio/mp4');
       expect(remoteAudioContentTypeForPath('a.ogg'), 'audio/ogg');
-      expect(remoteAudioContentTypeForPath('a.opus'), 'audio/opus');
+      // RFC 7845：Ogg Opus 文件的注册类型是 audio/ogg（audio/opus 是 RTP 载荷
+      // 类型，不用于文件）；与弹窗 data: URL 侧（audioMimeForPath）同表同值。
+      expect(remoteAudioContentTypeForPath('a.opus'), 'audio/ogg');
       expect(remoteAudioContentTypeForPath('a.wav'), 'audio/wav');
       expect(remoteAudioContentTypeForPath('a.flac'), 'audio/flac');
       expect(

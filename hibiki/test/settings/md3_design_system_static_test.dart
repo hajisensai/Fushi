@@ -1046,7 +1046,7 @@ void main() {
       // 「使用」按钮，以及「一并应用到合集 N 集」的内容勾选行——是视频子系统的
       // 瞬态搜索结果内容对话框，非普通页面 chrome，同 anki_mined_card_action_sheet /
       // sentence_context_dialog 的内容对话框豁免类。
-      'lib/src/media/video/cover_ui/poster_match_dialog.dart':
+      'lib/src/media/video/cover_ui/cover_match_dialog.dart':
           'Poster-scrape online-match dialog renders candidate poster rows as '
               'search-result content (portrait thumbnail clip + confidence '
               'badge + broken-image fallback surface + an "apply to N collection '
@@ -1534,14 +1534,13 @@ void main() {
     expect(audiobookBuild, isNot(contains('adaptiveAlertDialog(')));
     expect(removeDialog, isNot(contains('adaptiveAlertDialog(')));
 
-    // 导入对话框外框 chrome 已收敛到共享 ImportDialogFrame（清理 wave2）：
-    // 两侧 Frame 断言走委托，共享件内再断言真实 chrome，MD3 保证传递闭环
-    // （参照 BatchTagPickerDialogFrame 先例）。RemoveConfirmation 仍直持 chrome。
-    final String sharedImportFrame = _sectionSource(
-      bookImportSource,
-      'class ImportDialogFrame',
-      'class BookImportDialogFrame',
-    );
+    // 导入对话框外框 chrome 已收敛到共享 ImportDialogFrame（清理 wave2；审计
+    // §1-K 后迁到 media/import/ 共享目录）：两侧 Frame 断言走委托，共享件内再
+    // 断言真实 chrome，MD3 保证传递闭环（参照 BatchTagPickerDialogFrame 先例）。
+    // RemoveConfirmation 仍直持 chrome。
+    final String sharedImportFrame = File(
+      'lib/src/media/import/import_dialog_frame.dart',
+    ).readAsStringSync();
     expect(bookImportFrame, contains('return ImportDialogFrame('));
     expect(audiobookFrame, contains('return ImportDialogFrame('));
     expect(sharedImportFrame, contains('HibikiDialogFrame('));
@@ -1613,10 +1612,10 @@ void main() {
     );
 
     // 导入中 spinner 按钮（含 tokens.surfaces.primary 的进度指示）已收敛到
-    // import_dialog_progress_mixin.buildImportAction：两侧 flow 断言委托，
+    // import_flow_mixin.buildImportAction：两侧 flow 断言委托，
     // mixin 体内再断言真实 token，保证传递闭环。
     final String progressMixinSource = File(
-      'lib/src/media/audiobook/import_dialog_progress_mixin.dart',
+      'lib/src/media/import/import_flow_mixin.dart',
     ).readAsStringSync();
     final String importActionBody = _functionSource(
       progressMixinSource,

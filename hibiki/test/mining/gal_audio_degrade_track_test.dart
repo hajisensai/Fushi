@@ -270,28 +270,40 @@ void main() {
     );
     expect(galTrackSelectionAffectsCapture(GalHookAudioBackend.none), isFalse);
 
-    final String page = File(
-      'lib/src/pages/implementations/game_diagnostics_page.dart',
+    // 轨列表内容体已抽到共享面板（诊断页与捕获工作台音轨对话框同一份），
+    // BUG-1102 的判据守卫跟着真相走：扫共享面板文件，另确认诊断页在消费它。
+    final String panel = File(
+      'lib/src/mining/gal_audio_tracks_panel.dart',
     ).readAsStringSync();
-    final int cardAt = page.indexOf('class _AudioTracksCard');
-    expect(cardAt, greaterThan(0));
-    final String card = page.substring(cardAt);
     expect(
-      card.contains('galTrackSelectionAffectsCapture(state.audioBackend)'),
+      panel.contains('galTrackSelectionAffectsCapture(state.audioBackend)'),
       isTrue,
       reason: '解释/禁用判据必须是后端，不能再是 audioTracks.isEmpty',
     );
     expect(
-      card.contains('state.audioTracks.isEmpty && emptyHint'),
+      panel.contains('state.audioTracks.isEmpty && emptyHint'),
       isFalse,
       reason: '列表非空时解释态被跳过，正是 BUG-1102 里整套死控件照常渲染的原因',
     );
-    expect(card.contains('selectable: selectionEffective'), isTrue);
-    expect(card.contains('enabled: selectable && !excluded'), isTrue,
+    expect(panel.contains('selectable: selectionEffective'), isTrue);
+    expect(panel.contains('enabled: selectable && !excluded'), isTrue,
         reason: '非引擎 PCM 后端必须禁用「选为语音轨」');
-    expect(card.contains('t.game_track_no_clips'), isTrue,
+    expect(panel.contains('t.game_track_no_clips'), isTrue,
         reason: 'clipCount == 0 的轨必须标注，而不是和可用轨长一个样');
-    expect(card.contains('t.game_tracks_pcm_only_hint'), isTrue);
+    expect(panel.contains('t.game_tracks_pcm_only_hint'), isTrue);
+    final String page = File(
+      'lib/src/pages/implementations/game_diagnostics_page.dart',
+    ).readAsStringSync();
+    expect(page.contains('GalAudioTracksPanel('), isTrue,
+        reason: '诊断页必须消费共享面板，不得另写一份轨列表');
+
+    final String workbench = File(
+      'lib/src/pages/implementations/texthooker_page.dart',
+    ).readAsStringSync();
+    expect(workbench.contains('_session.setTrackExcluded'), isTrue,
+        reason: '捕获工作台逐句选轨弹窗必须能直接把 BGM 轨加入排除集合');
+    expect(workbench.contains('t.game_track_exclude_bgm'), isTrue);
+    expect(workbench.contains('t.game_track_restore'), isTrue);
   });
 
   test('单条台词改音轨：绕开自动门取音，且延迟资源匹配不得改回去', () async {
@@ -353,6 +365,65 @@ void main() {
       outputExtension: 'aac',
     );
     expect(engine.pairedRequests, isEmpty);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('逐句选轨试听与确认必须使用同一句时间戳', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    DateTime clock = DateTime(2020, 1, 1, 12);
+    final _FakeEngine engine = _FakeEngine(
+      rawVoice: true,
+      pairedCandidate: true,
+      utterance: GalAudioSlice(pcm: Uint8List(9600), format: kPcm),
+      lines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 4321,
+          text: '先に表示された台詞',
+          threadId: 5,
+          hookName: 'fake',
+        ),
+        GalHookedLine(
+          seq: 2,
+          timestampMs: 9876,
+          text: 'いま一番新しい台詞',
+          threadId: 5,
+          hookName: 'fake',
+        ),
+      ],
+    );
+    final _RecordingLoopback loopback = _RecordingLoopback();
+    final GalHookSessionController controller = build(
+      service: service,
+      endpoints: endpoints,
+      engine: engine,
+      loopback: loopback,
+      now: () => clock,
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
+    );
+    await waitUntil(() => service.entries.length == 2);
+    final TexthookerLineEntry first = service.entries.first;
+    engine.utteranceTimestamps.clear();
+    engine.utteranceSourcePtrs.clear();
+
+    final GalTrackPreview? preview =
+        await controller.exportLineTrackPreview(first.id, 0xABC);
+    expect(preview, isNotNull);
+    expect(await controller.setLineVoiceTrack(first.id, 0xABC), isTrue);
+    expect(engine.utteranceTimestamps, <int>[4321, 4321],
+        reason: '试听若偷用最新句 9876，用户会听见声音但确认当前句时却得到无音轨');
+    expect(engine.utteranceSourcePtrs, <int>[0xABC, 0xABC]);
+    final String? previewPath = preview?.filePath;
+    if (previewPath != null) {
+      final File previewFile = File(previewPath);
+      if (previewFile.existsSync()) previewFile.deleteSync();
+    }
 
     await controller.close();
     endpoints.dispose();
@@ -463,6 +534,7 @@ class _FakeEngine extends EngineHookGalAudioSource {
 
   int pollCalls = 0;
   int stopCalls = 0;
+  final List<int> utteranceTimestamps = <int>[];
   final List<int> utteranceSourcePtrs = <int>[];
   final List<int> pairedRequests = <int>[];
 
@@ -508,12 +580,18 @@ class _FakeEngine extends EngineHookGalAudioSource {
     int? sourcePtr,
     List<int>? exclude,
   }) async {
+    utteranceTimestamps.add(tsMs);
     if (sourcePtr != null) utteranceSourcePtrs.add(sourcePtr);
     return utterance;
   }
 
   @override
-  Future<GalAudioSlice?> grabClipNear(int tsMs, {int tolMs = 8000}) async =>
+  Future<GalAudioSlice?> grabClipNear(
+    int tsMs, {
+    int tolMs = 8000,
+    int? sourcePtr,
+    List<int>? exclude,
+  }) async =>
       null;
 
   @override

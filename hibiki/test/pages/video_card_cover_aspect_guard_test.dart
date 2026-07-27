@@ -11,7 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// `Expanded`（占封面下方剩余固定高度，ellipsis 内收）。
 ///
 /// 2026-07-24 用户拍板：主网格统一 Kazumi 式 2:3 竖版海报，封面比例从 16:9 改为
-/// `2 / 3`（横版截帧由 PosterCoverImage 模糊垫底填充）；守卫锚点同步到新比例，
+/// `2 / 3`（横版截帧由 PortraitCoverImage 模糊垫底填充）；守卫锚点同步到新比例，
 /// 「固定 AspectRatio、禁 Expanded 浮动比例」的 BUG-928 意图不变。
 ///
 /// 这是源码扫描守卫——封面是 UI 渲染难做像素断言，故锚定到两张视频卡（本地

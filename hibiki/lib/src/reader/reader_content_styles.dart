@@ -1191,7 +1191,7 @@ rtc > rt {
         return _ThemeColors(
           textColor: customFg ?? 'rgba(0, 0, 0, 0.87)',
           backgroundColor: customBg ?? '#fff',
-          colorScheme: _isDarkBackground(customBg) ? 'dark' : 'light',
+          colorScheme: isDarkBackground(customBg) ? 'dark' : 'light',
         );
       default:
         // system-theme（默认主题）/ light-theme / 未来未命中 preset 的 key（TODO-165
@@ -1205,7 +1205,7 @@ rtc > rt {
         return _ThemeColors(
           textColor: customFg ?? 'rgba(0, 0, 0, 0.87)',
           backgroundColor: customBg ?? '#fff',
-          colorScheme: _isDarkBackground(customBg) ? 'dark' : 'light',
+          colorScheme: isDarkBackground(customBg) ? 'dark' : 'light',
         );
     }
   }
@@ -1265,7 +1265,12 @@ rtc > rt {
   /// Best-effort luminance check for a custom background so the native scrollbar
   /// picks the matching light/dark bucket. Only `#rgb` / `#rrggbb` are parsed;
   /// anything else (named colours, rgba()) falls back to 'light'.
-  static bool _isDarkBackground(String? background) {
+  ///
+  /// G14：这是阅读器背景「深/浅」判定的**单一真相**（Rec.601 luma，阈值 0.5）。
+  /// 收藏高亮 JS（`HighlightBridge`）不再自带 Rec.709/0.4 公式，而是由 Dart 用
+  /// 本函数算好 bool 经 bridge 注入（`window.__hibikiHighlightBgDark`），保证
+  /// 滚动条配色与高亮透明度对同一背景色的深浅判定永远一致。
+  static bool isDarkBackground(String? background) {
     if (background == null) return false;
     final String hex = background.trim();
     if (!hex.startsWith('#')) return false;

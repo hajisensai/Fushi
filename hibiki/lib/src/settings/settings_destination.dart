@@ -11,9 +11,14 @@ enum SettingsDestinationId {
   cardCreation,
   video,
   listening,
+  mediaTracking,
   // 「下载」一级分类：torrent / qBittorrent 后端配置从下载页齿轮抬进设置主页
   // （可达 + 可搜）。位置紧随视频/听，在同步备份之前。
   downloads,
+  // 「游戏」一级分类（审计 K/Phase 3.12）：游戏库 / 捕获工作台 / 兼容性诊断此前
+  // 完全没有 settings destination，页面与其中配置项不可搜。与 games 顶层 tab
+  // 同门控（仅 Windows，galgame hook 平台边界）。
+  game,
   syncBackup,
   system,
   // Hibiki P2P 互联（设备直连 + 本机作为服务器）；从 syncBackup 拆出的

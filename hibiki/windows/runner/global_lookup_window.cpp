@@ -1270,6 +1270,46 @@ void GlobalLookupWindow::ConfigureWebView() {
     ReportOverlayError("put_IsStatusBarEnabled(FALSE) failed", status_bar_hr);
   }
 
+  // BUG-1139 — 关掉 WebView2 自带的页面缩放（Ctrl+滚轮 / Ctrl+加减 / 触控板捏合）。
+  //
+  // 这个窗的几何链**整条**按「CSS px @ zoom=1」算：host 的 measureAndReport 用
+  // shell.style.left/width + body.scrollHeight 报 bbox 与 shellRects（CSS px），
+  // Dart 按 `逻辑宽 × appUiScale × dpr` 定物理窗口大小（global_lookup_controller
+  // .dart 的 _applyOverlayBox / ShowAt），C++ 再用同一批数值 SetWindowPos + 裁
+  // window region（ApplyRoundedRegion）。WebView2 的 ZoomFactor 不在这条链的任何
+  // 一环里——它只放大**绘制**，不改这些 CSS px 读数。
+  //
+  // 而 ForwardCompositionMouse 把 WM_MOUSEWHEEL 连同 MK_CONTROL 原样
+  // SendMouseInput 给 WebView2，popup.js 的滚轮监听又明确 `if (e.ctrlKey) return`
+  // 把 Ctrl+滚轮让给原生。于是用户在 app 外浮窗上 Ctrl+滚轮 → 内容按 z 放大绘制，
+  // 窗口和 region 仍是 z=1 的尺寸 → 卡片被窗口边缘竖着切掉、region 外直接露出底下
+  // 的应用（用户报的「左边是空的」）。
+  //
+  // 这里断掉原生缩放这个「看不见的第二真值来源」，与 in-app 弹窗的
+  // `supportZoom: false`（dictionary_popup_webview.dart 的 InAppWebViewSettings）
+  // 对齐；缩放能力不丢：Ctrl+滚轮改由 popup_settings_injection 注入的监听回传
+  // popupZoomFontStep，Dart 改「词典字号」后整栈重渲，排版沿现有链路自然更新，
+  // 几何链一行不用改。
+  //
+  // put_ZoomFactor(1.0) 是必须的第二步，不是保险：WebView2 的缩放档位按 origin
+  // **持久记忆**在用户数据目录里，只关 IsZoomControlEnabled 不会复位已经缩过的
+  // 那一档——老用户升级后窗口照样是切的。IsZoomControlEnabled 在基础
+  // ICoreWebView2Settings 上、ZoomFactor 在 ICoreWebView2Controller 上，两者都无需
+  // 版本 QI。ConfigureWebView 是两条创建路径 + BUG-693 自愈重建的唯一漏斗，所以
+  // 这个窗曾经拥有的每个 surface 都被覆盖。
+  if (settings != nullptr) {
+    HRESULT zoom_ctl_hr = settings->put_IsZoomControlEnabled(FALSE);
+    if (FAILED(zoom_ctl_hr)) {
+      ReportOverlayError("put_IsZoomControlEnabled(FALSE) failed", zoom_ctl_hr);
+    }
+  }
+  if (controller_ != nullptr) {
+    HRESULT zoom_reset_hr = controller_->put_ZoomFactor(1.0);
+    if (FAILED(zoom_reset_hr)) {
+      ReportOverlayError("put_ZoomFactor(1.0) failed", zoom_reset_hr);
+    }
+  }
+
   // Inject the bridge adapter at document start so popup.js's
   // window.flutter_inappwebview.callHandler maps to chrome.webview.postMessage.
   std::wstring adapter = LoadAdapterScript();

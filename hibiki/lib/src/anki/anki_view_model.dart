@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:hibiki/src/anki/anki_media_dedup_runner.dart';
+import 'package:hibiki/src/anki/lapis_template_service.dart';
 import 'package:hibiki/src/anki/remote_mining_anki_repository.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
@@ -233,6 +235,43 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
       return LapisSetupResult(LapisSetupOutcome.failed, e.toString());
     }
   }
+
+  // ── Lapis 样式客制化（备份/恢复/应用见 LapisTemplateService）──────────
+
+  /// 当前后端能否读写已存在 note type 的模板（AnkiConnect true；AnkiDroid /
+  /// AnkiMobile false，设置页据此隐藏 Lapis 样式区）。
+  bool get supportsNoteTypeEditing => _repository.supportsNoteTypeEditing;
+
+  /// 与当前仓库绑定的模板服务（无状态，随用随建）。
+  LapisTemplateService get lapisTemplateService =>
+      LapisTemplateService(_repository);
+
+  Future<void> setLapisFontScalePercent(int percent) async {
+    final updated = await _repository
+        .updateSettings((s) => s.copyWith(lapisFontScalePercent: percent));
+    state = state.copyWith(settings: updated);
+  }
+
+  Future<void> setLapisCustomCss(String css) async {
+    final updated = await _repository
+        .updateSettings((s) => s.copyWith(lapisCustomCss: css));
+    state = state.copyWith(settings: updated);
+  }
+
+  /// LapisTemplateService 落库（指纹/客制化对齐）后刷新 UI 侧 settings。
+  Future<void> refreshSettingsFromStore() async {
+    final settings = await _repository.loadSettings();
+    state = state.copyWith(settings: settings);
+  }
+
+  // ── 媒体存储优化（字节级去重）──────────────────────────────────────
+
+  /// 当前后端能否做媒体去重（AnkiConnect 且与 Anki 同机；设置页据此隐藏区块）。
+  bool get supportsMediaMaintenance => _repository.supportsMediaMaintenance;
+
+  /// 与当前仓库绑定的去重编排器（无状态，随用随建）。
+  AnkiMediaDedupRunner get mediaDedupRunner =>
+      AnkiMediaDedupRunner(_repository);
 }
 
 /// 把用户敲/粘进 AnkiConnect **主机**字段的自由文本规范化成裸主机 + 可选端口。

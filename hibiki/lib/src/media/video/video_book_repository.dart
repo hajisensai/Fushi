@@ -127,7 +127,7 @@ class VideoBookRepository {
   /// v49：记录一条「added」活动事件，喂首页 Activity 时间轴。**只在用户明示导入
   /// 视频成功后**由 [VideoImportDialog] 显式调用（单文件 / 文件夹单集 / 播放列表首集 /
   /// 流媒体各调一次；播放列表整本只调一次，title=合集名、mediaKey=首集 uid）——刻意
-  /// **不放进 [saveVideoBook]**，让自动库扫描（media_source_scanner，批量）、远端打开
+  /// **不放进 [saveVideoBook]**，让自动库扫描（source_library_scanner，批量）、远端打开
   /// （home_video_page，打开≠导入）、云同步（app_model_library_host_service）等非明示
   /// 导入路径天然不 emit，避免刷屏或语义错误（对齐 EpubImporter 只在用户导入管线
   /// emit 的做法）。timestamp/dateKey 用调用时刻。best-effort：记账失败只 log，不影响
@@ -212,7 +212,7 @@ class VideoBookRepository {
             videoPath: Value(e.path),
             lastPositionMs: Value(e.positionMs),
             embeddedSubtitleTrack: const Value<int?>(0),
-            importedAt: Value(DateTime.now()),
+            importedAt: Value(DateTime.now().millisecondsSinceEpoch),
           ),
           sourceId: sourceId,
         );
@@ -285,7 +285,7 @@ class VideoBookRepository {
             videoPath: Value(e.path),
             lastPositionMs: Value(e.positionMs),
             embeddedSubtitleTrack: const Value<int?>(0),
-            importedAt: Value(DateTime.now()),
+            importedAt: Value(DateTime.now().millisecondsSinceEpoch),
           ),
           sourceId: sourceId,
         );
@@ -505,8 +505,8 @@ class VideoBookRepository {
     // 标记、其他设备逐条确认后也删。keepLocalOnly 不记，避免删本地→回写墓碑循环。best-effort。
     if (scope == DeleteScope.syncEverywhere) {
       try {
-        await _db.writeSyncDeletionTombstone(
-            'video', bookUid, DateTime.now().millisecondsSinceEpoch);
+        await _db.writeSyncDeletionTombstone(SyncTombstoneKind.video.dbValue,
+            bookUid, DateTime.now().millisecondsSinceEpoch);
       } catch (_) {
         // best-effort：记账失败不影响视频已删。
       }

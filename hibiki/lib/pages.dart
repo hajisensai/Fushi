@@ -46,6 +46,8 @@ export 'src/pages/implementations/miscellaneous_settings_page.dart';
 export 'src/pages/implementations/shortcut_settings_page.dart';
 
 export 'src/pages/base_page.dart';
+export 'src/pages/base_module_tab_page.dart';
+export 'src/pages/hibiki_page_placeholders.dart';
 export 'src/pages/base_history_page.dart';
 export 'src/pages/base_tab_page.dart';
 export 'src/pages/base_source_page.dart';

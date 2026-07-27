@@ -251,11 +251,11 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     _launching = true;
     try {
       if (!Platform.isWindows) {
-        HibikiToast.show(msg: t.games_launch_unsupported);
+        HibikiToast.show(msg: t.game_launch_unsupported);
         return;
       }
       if (!File(game.exePath).existsSync()) {
-        HibikiToast.show(msg: t.games_exe_missing);
+        HibikiToast.show(msg: t.game_exe_missing);
         return;
       }
       final bool is32Bit =
@@ -271,7 +271,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       }
       final GalHookSessionController controller =
           widget.sessionController ?? GalHookSessionController.instance;
-      final bool launched = await controller.launchGame(
+      final GalHookLaunchResult result = await controller.launchGame(
         game.exePath,
         launchArguments: game.launchArgumentTokens,
         workdir: game.workdir,
@@ -282,18 +282,19 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       // 既看不到游戏也看不到任何提示 —— 用户感知就是「点了没反应」。
       final GalHookSessionState state = controller.state;
       final GalHookLaunchOutcome outcome = classifyGalHookLaunchOutcome(
-        launched: launched,
+        result: result,
         hasBoundWindow: state.boundWindow != null,
         injectorFailure: state.injectorFailure,
       );
-      HibikiToast.show(
-        msg: galHookLaunchOutcomeMessage(
-          outcome: outcome,
-          failure: state.injectorFailure,
-          lastError: state.lastError,
-        ),
+      // message 为 null = 本次启动已被更新的操作取代，不该播报（BUG-1142）。
+      final String? message = galHookLaunchOutcomeMessage(
+        outcome: outcome,
+        result: result,
+        failure: state.injectorFailure,
+        lastError: state.lastError,
       );
-      if (!launched) return;
+      if (message != null) HibikiToast.show(msg: message);
+      if (!result.launched) return;
       widget.onLaunched?.call();
     } finally {
       _launching = false;
@@ -352,7 +353,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
               size: 64, color: colors.onSurfaceVariant),
           const SizedBox(height: 16),
           Text(
-            t.games_empty,
+            t.game_empty,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: colors.onSurfaceVariant,
                 ),
@@ -361,7 +362,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
           FilledButton.icon(
             onPressed: widget.onShowLibrary,
             icon: const Icon(Icons.add),
-            label: Text(t.games_add),
+            label: Text(t.game_add),
           ),
         ],
       ),
@@ -497,7 +498,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     final ThemeData theme = Theme.of(context);
     final bool hasPlayed = game.lastPlayedMs > 0;
     final String statusLabel = game.playStatus == GalgamePlayStatus.playing
-        ? t.games_status_playing
+        ? t.game_status_playing
         : (hasPlayed ? t.game_focus_continue : t.game_launch);
     final List<String> subParts = <String>[
       if (hasPlayed)
@@ -573,7 +574,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                         ),
                       ),
                       icon: const Icon(Icons.info_outline),
-                      label: Text(t.games_view_detail),
+                      label: Text(t.game_view_detail),
                     ),
                   ],
                 ),
