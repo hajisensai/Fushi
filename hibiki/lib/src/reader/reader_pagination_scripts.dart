@@ -787,6 +787,8 @@ class ReaderPaginationScripts {
     int vnSentencesPerScreen = 1,
     bool vnPreserveDialogue = false,
     bool vnMergeCrossScreenSasayakiCues = false,
+    // 跨章分段计时总开关。默认 false = 生产；JS 侧 perfMark / perfSnapshot 零开销。
+    bool perfTraceEnabled = false,
   }) {
     if (vnMode) {
       return ReaderVisualNovelScripts.vnShellScript(
@@ -815,6 +817,7 @@ class ReaderPaginationScripts {
         dartPageHeight: dartPageHeight,
         blurImages: blurImages,
         revealedKeysJson: revealedKeysJson,
+        perfTraceEnabled: perfTraceEnabled,
       );
     }
     return _paginatedShellScript(
@@ -829,6 +832,7 @@ class ReaderPaginationScripts {
       dartPageHeight: dartPageHeight,
       blurImages: blurImages,
       revealedKeysJson: revealedKeysJson,
+      perfTraceEnabled: perfTraceEnabled,
     );
   }
 
@@ -846,12 +850,20 @@ class ReaderPaginationScripts {
   // → onRestoreComplete 回来」这一整段（真机 ~30ms），无法区分那段里图片等待 / 字符偏移
   // 建表 / 恢复滚动 / IPC 回传各占多少。perfMark 在这几处打点，perfSnapshot 连同浏览器
   // navigation timing（responseEnd / DOMContentLoaded / load）一起随 onRestoreComplete
-  // 回传给 Dart。performance.now() 几次调用 + 一次 JSON.stringify，热路径成本可忽略。
+  // 回传给 Dart。
+  //
+  // 开关：`_perfOn` 由各 shell 在注入期由 Dart 侧 [ReaderChapterPerfTrace.enabled]
+  // 插值写死（见两个 shell 的对象字面量）。生产路径上它恒为 false，perfMark /
+  // perfSnapshot 立即 early-return：不读 performance.now()、不走
+  // getEntriesByType('navigation')、不做 JSON.stringify。与 Dart 侧同一个开关，
+  // 不存在「采集端常开、只 gate 消费端」的无条件热路径开销。
   _perf: {},
   perfMark: function(name) {
+    if (this._perfOn !== true) return;
     try { this._perf[name] = performance.now(); } catch (e) {}
   },
   perfSnapshot: function() {
+    if (this._perfOn !== true) return '';
     try {
       var out = { marks: this._perf };
       var entries = performance.getEntriesByType ? performance.getEntriesByType('navigation') : null;
@@ -1844,6 +1856,7 @@ if (document.readyState === 'complete') {
     double? dartPageHeight,
     bool blurImages = false,
     String revealedKeysJson = '[]',
+    bool perfTraceEnabled = false,
   }) {
     // BUG-162: 优先精确字符偏移恢复（restoreToCharOffset），无精确锚（旧存档）才
     // 回退粗粒度 restoreProgress；书签/fragment 跳转仍走 jumpToFragment。
@@ -1868,6 +1881,9 @@ if (document.readyState === 'complete') {
     return '''<script>
 window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
 window.hoshiReader = {
+  // 跨章分段计时总开关（Dart [ReaderChapterPerfTrace.enabled] 注入期写死）。
+  // false = 生产路径，perfMark / perfSnapshot 零开销。
+  _perfOn: $perfTraceEnabled,
   pageHeight: 0,
   pageWidth: 0,
   // TODO-734：纯视口高 V（不含 bottomOverlap=O）。竖排列高几何唯一用它（见
@@ -2656,6 +2672,7 @@ $_sharedInitBoot
     double? dartPageHeight,
     bool blurImages = false,
     String revealedKeysJson = '[]',
+    bool perfTraceEnabled = false,
   }) {
     // BUG-162: 同分页——优先精确字符偏移恢复，旧存档回退分数。BUG-461：收藏句跳转带句尾
     // 偏移（initialCharOffsetEnd>句首）时透传给 restoreToCharOffset 做整句区间对齐。
@@ -2680,6 +2697,9 @@ $_sharedInitBoot
     return '''<script>
 window.__hoshiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
 window.hoshiReader = {
+  // 跨章分段计时总开关（Dart [ReaderChapterPerfTrace.enabled] 注入期写死）。
+  // false = 生产路径，perfMark / perfSnapshot 零开销。
+  _perfOn: $perfTraceEnabled,
   // TODO-734：连续模式不用竖排分页几何（无 column），故 initialize/updatePageSize
   // 不注入 --reader-viewport-height、getScrollContext 也不引用它。但属性仍声明 0
   // （补点2 防 stale）：两个 hoshiReader 实例属性表保持对齐，避免误读 undefined。

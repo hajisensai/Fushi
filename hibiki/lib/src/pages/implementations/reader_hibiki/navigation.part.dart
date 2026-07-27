@@ -188,8 +188,22 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     // 挪到本帧渲染之后执行——遮罩按时撤、用户先看到新章，收尾照旧全部执行。
     // 语义变化仅「晚一帧」：高亮晚一帧绘出、图片暂停锚点晚一帧复位（跨章落地那一帧
     // 恰好有 cue 推进才有影响，且下一次推进即自愈）、进度晚一帧刷新，均无用户可感后果。
+    //
+    // 代际守卫：收尾从「与 _onRestoreComplete 同步」改成「晚一帧」后，这一帧里可能已经
+    // 起了新导航（_beginNavigation 会递增 _navigateGeneration）。此时旧章的收藏高亮 /
+    // 图片锚点复位 / 进度刷新会落到新章状态上（尤其 _refreshProgress 会把旧章位置写库）。
+    // 与本文件既有约定一致（_onRestoreComplete 头部、_applyPendingPreciseLocate），入口快照代际、
+    // 回调里比对；被顶掉就整体丢弃——收尾本就属于「已被取代的那次导航」。
+    final int settleGeneration = _navigateGeneration;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (_navigateGeneration != settleGeneration) {
+        debugPrint(
+          '[ReaderHibiki] stale restore settle: '
+          'expected=$settleGeneration current=$_navigateGeneration',
+        );
+        return;
+      }
       // 收藏高亮：恢复完成（分页布局稳定、恢复滚动结束）后重新应用。
       // _onChapterLoadComplete 里的早期 apply 跑在 onLoadStop 同步返回之后，
       // 而 hoshiReader.initialize 把 buildNodeOffsets / 恢复滚动塞进图片

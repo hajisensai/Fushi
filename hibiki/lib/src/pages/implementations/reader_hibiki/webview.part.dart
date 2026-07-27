@@ -529,6 +529,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         vnPreserveDialogue: s.visualNovelPreserveDialogueBubbles,
         vnMergeCrossScreenSasayakiCues:
             s.visualNovelMergeCrossScreenSasayakiCues,
+        // TODO-perf（跨章）：JS 侧埋点与 Dart 侧同一个开关。生产下恒 false，
+        // perfMark / perfSnapshot 在 JS 里直接 early-return（不读 performance、不
+        // stringify），不在热路径上留无条件开销。
+        perfTraceEnabled: ReaderChapterPerfTrace.enabled,
       ),
     );
 

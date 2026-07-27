@@ -60,6 +60,23 @@ before / after 两轮均在无并发负载下跑。`xchapter-rebased`（rebase �
    不由注释体积主导。
    保留的理由是字节数确实减少（移动端 WebView 的 JS 编组更贵），**但移动端未实测，不宣称收益**。
 
+#### 审查后续（PR#461 非阻塞意见收口）
+
+4. **`ReaderScriptCompactor` 的模板态跟踪换成真正的词法扫描**（根因修复，非加守卫）。
+   初版按「本行未转义反引号的奇偶」翻转模板态，把写在**注释 / 引号串 / 正则**里的反引号也算进去——
+   任何人在 JS 注释里写一个反引号，就会把后续真模板串当成代码区、剥掉模板里的空行/数据行，
+   CI 全绿而线上白屏。现在是单遍词法状态机：行注释 / 块注释 / 单双引号串 / 模板串（含 `${}` 嵌套）/
+   正则字面量各自成状态，反引号只在代码区计数。另外开了 `scansCleanly()` 供守卫自检（扫完必须回到
+   干净顶层）。选改算法而不是只加守卫：守卫只能阻止语料变脏，改算法才能让“注释里写反引号”从默认
+   危险变成默认安全（仓库红线：根因修复优先于特例分支）。
+5. **延后一帧的收尾块补上 `_navigateGeneration` 代际守卫**。之前只有 `mounted`；收尾晚一帧执行时
+   可能已起新导航，`_refreshProgress()` 会把旧章位置写进新导航。现在与同文件既有约定一致：入口快照
+   代际、回调里比对，被顶掉就整体丢弃。
+6. **JS 侧 perf 埋点受同一个开关控制**。之前 Dart 侧 `ReaderChapterPerfTrace.enabled` 只 gate 了消费端，
+   JS 侧 `perfMark` / `perfSnapshot`（含 `JSON.stringify` 与 `getEntriesByType('navigation')`）无条件执行，
+   且快照字符串每章过一次 platform channel。现在两个 shell 在注入期把 `_perfOn` 写死（`shellScript(
+   perfTraceEnabled:)` ← `ReaderChapterPerfTrace.enabled`），生产路径上两个函数立即 early-return。
+
 ### 顺带删掉的无用守卫
 
 - `_startContentReadyTimeout` 超时回调里那行 `_isNavigatingToChapter = false;` —— 与紧随其后的
@@ -79,9 +96,21 @@ before / after 两轮均在无并发负载下跑。`xchapter-rebased`（rebase �
 - `docLoad` 32ms 里有相当一部分是在等 `window.load`（含全部子资源）：`nav.dcl` 中位数 13ms vs `nav.load` 19ms。
   引擎若能在 DOMContentLoaded 就位，这段可与子资源加载并行。
 - 更彻底的方案是「下一章预渲染」（双 WebView 交替），可把顺序阅读的跨章压到一帧，但内存与状态同步成本高。
+- **连续 shell 的那层 16ms 仍是时间赌**（只是从 32ms 减半）：它没有分页 shell 那种「同步写落点」
+  可供推理的 program-order 保证。后果有界（最多遮罩早撤一帧、闪一帧未落定的滚动位置，不污染
+  持久化位置）。**日后若有人报「跨章闪一下」，第一嫌疑就是这里**；正解是在 notify 前同步
+  re-assert 一次 scrollTop（对齐分页 shell 的 `setPagePosition` 做法），把它也升级成 program-order 保证。
 
 - **[x] ① 已修复** — `_settleAndNotify` 空等 + 恢复收尾延后 + 注入脚本压缩（本 PR）
-- **[x] ② 已加自动化测试** — `hibiki/integration_test/reader_cross_chapter_perf_itest.dart`（实机分段计时 +
-  14 次跨章落点断言）、`hibiki/test/reader/reader_script_compactor_test.dart`（5 项，含真实注入脚本语义等价）
-- **备注**：性能优化，非崩溃 bug。`test/pages` + `test/reader` 定向全绿（期间修正两处因改动而失效的源码守卫
-  定位串：`reader_init_page_width_guard_static_test`、`reader_fixed_layout_blank_cloak_guard_static_test`）。
+- **[x] ② 已加自动化测试** — 三层：
+  - `hibiki/test/reader/reader_script_compactor_test.dart`（40 项，CI 单测门内）——词法地雷用例 +
+    **全部**真实注入载荷（selection / longPressDrag / caret / 分页 / 连续 / VN 三种 shell +
+    **最终拼装脚本**）的“只删空行与整行注释 / 幂等 / 扫完干净”，并用 node `--check` 真解析
+    压缩前后的脚本（无 node 时 skip）。
+  - `hibiki/test/pages/reader_cross_chapter_settle_guard_static_test.dart`（3 项）——源码扫描钉住
+    “空等不得加回来 / 分页 settle 仍是先同步写落点再通知 / 延后一帧的收尾带代际守卫”。
+  - `hibiki/integration_test/reader_cross_chapter_perf_itest.dart`（实机分段计时 + 14 次跨章落点断言；
+    **不进 CI 单测门**，故有上面两层兜底）。
+- **备注**：性能优化，非崩溃 bug。`test/pages` + `test/reader` 定向全绿；期间修正一处因改动而失效的
+  源码守卫定位串（`reader_fixed_layout_blank_cloak_guard_static_test`）。
+  `reader_init_page_width_guard_static_test` 零改动——它的两个定位串不受本改动影响（早先文档称“改了两处”是误记）。
