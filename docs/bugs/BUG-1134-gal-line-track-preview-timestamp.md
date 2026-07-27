@@ -1,0 +1,11 @@
+## BUG-1134 · 逐句选轨试听与确认使用了不同台词时间戳
+- **报告**：2026-07-27（用户：「选择这句话的音轨，点击播放能播放，但是选中时可能说没有获取到音轨」）
+- **真实性**：✅ 真 bug（试听和确认取音窗口不一致）
+  - 原逐句弹窗试听调用通用 `exportTrackPreview(sourcePtr)`，该方法取 `_lineTimestampCache.values.last`（最新一句）。
+  - 确认则调用 `setLineVoiceTrack(lineId, sourcePtr)`，按所选行 `_lineTimestampCache[lineId]` 取音。选择较早行时，试听可能播放最新句的 PCM，确认却在正确的较早窗口找不到该轨。
+- **[x] ① 已修复** — 提交 `2eb06aadb`：
+  - `hibiki/lib/src/mining/gal_hook_session_controller.dart:1177` 新增 `exportLineTrackPreview`，校验行属于当前会话，并与 `setLineVoiceTrack` 共用同一个行时间戳。
+  - `hibiki/lib/src/pages/implementations/texthooker_page.dart:235` 试听时同时传 `line.id` 与 `sourcePtr`。
+- **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_audio_degrade_track_test.dart:380`：
+  - 先后放入时间戳 4321/9876 的两句，再试听并确认第一句，断言两次取音均使用 4321 和同一 source ptr。
+- **备注**：Windows 真游戏原路径尚待复验；自动化直接锁定了此前错位的两个取音调用。

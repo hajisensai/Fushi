@@ -1,0 +1,12 @@
+## BUG-1132 · 捕获工作台混入上次进程的 TextRender 文本线程
+- **报告**：2026-07-27（用户：「Hibiki 的 TextRender 没文本，需要对齐 Luna 选择文本的行为」）
+- **真实性**：✅ 真 bug（会话边界丢失）
+  - `TexthookerService` 同时保存跨会话的 `_discoveredTextThreads` 与台词 buffer；旧工作台直接读取完整 `textThreads`，启动新游戏时没有按 `sessionStartedAt` 投影候选。
+  - Luna 的线程标识包含进程内线程身份。上次进程留下的同名 `TextRender` 能继续出现在下拉框，但当前 helper 不可能再为它发布台词，于是表现为「可选择、0 行」。
+- **[x] ① 已修复** — 提交 `2eb06aadb`：
+  - `hibiki/lib/src/sync/texthooker_service.dart:216` 新增 `textThreadsSince`，同时约束发现目录和已有台词。
+  - `hibiki/lib/src/mining/gal_hook_session_controller.dart:428` 以本次 `sessionStartedAt` 暴露线程候选；`:432` 的工作台台词投影也使用相同会话边界。
+  - `hibiki/lib/src/pages/implementations/texthooker_page.dart:803` 改为消费 controller 的会话级候选与台词，不再绕过会话状态读取 service 全历史。
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/texthooker_service_test.dart:160`：
+  - 构造旧进程 `TextRender` 与本次进程零行候选，验证旧候选被排除、本次零行候选仍可选择。
+- **备注**：Windows 真游戏原路径尚待复验；自动化已经覆盖造成死候选的数据边界。

@@ -1,0 +1,11 @@
+## BUG-1133 · 全部文本线程把同一台词显示两遍
+- **报告**：2026-07-27（用户：「捕获工作台里面感觉一句话重复了两遍」）
+- **真实性**：✅ 真 bug（同一 Luna hook 的平行线程双写没有展示层语义）
+  - native 自动选择按 hook code 记赢家并放行同 hook code（`native/galgame_hook/include/luna_text_selector.h:91-96`），同一渲染瞬间的多个 Luna 线程可能各发布一份相同台词。
+  - 原工作台「全部文本线程」直接渲染原始 buffer；因此平行线程双写会显示两行。不能在 buffer 层去重，否则会破坏逐线程选择、稳定行 id 与各自音频。
+- **[x] ① 已修复** — 提交 `2eb06aadb`：
+  - `hibiki/lib/src/sync/texthooker_service.dart:398` 新增只用于 UI 的 `collapseParallelTextThreadDuplicates`：仅折叠不同 engine-hook 线程、同文、hook/接收时间紧邻的记录；同线程稍后重说与非引擎来源都保留。
+  - 若两份中只有一份已配到音频，投影保留有音频的记录。`hibiki/lib/src/mining/gal_hook_session_controller.dart:432` 仅在「全部线程」使用该投影，选择具体线程时仍返回原始记录。
+- **[x] ② 已加自动化测试** — `hibiki/test/sync/texthooker_service_test.dart:199`：
+  - 验证同时跨线程同文折叠，而同线程稍后真实重说仍保留；同时断言底层 buffer 未被删除。
+- **备注**：Windows 真游戏原路径尚待复验；折叠窗口刻意收窄，避免把剧情中的真实重复台词吞掉。

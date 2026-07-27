@@ -298,14 +298,25 @@ class TexthookerService extends ChangeNotifier {
     return null;
   }
 
-  /// 当前会话已发现的可选文本线程，最近活跃的排在前面。
+  /// 已发现的可选文本线程，最近活跃的排在前面。
   ///
   /// Luna 的 ThreadCreate 事件会先放入 [_discoveredTextThreads]，因此被自动赢家过滤、当前
   /// 尚无已发布台词的候选也会以 0 行显示；已有台词再从 [_entries] 聚合计数。
-  List<TexthookerTextThread> get textThreads {
+  List<TexthookerTextThread> get textThreads => textThreadsSince(null);
+
+  /// [startedAt] 之后的会话级线程目录。Luna thread id 含进程身份，旧捕获会话里的
+  /// `TextRender` 即使标签相同也不再对应当前 helper；把它混进选择器会出现「可选、选择
+  /// 成功、但永远 0 行」的死候选。null 保留完整历史目录，供会话外查看。
+  List<TexthookerTextThread> textThreadsSince(DateTime? startedAt) {
     final Map<String, TexthookerTextThread> byKey =
-        Map<String, TexthookerTextThread>.from(_discoveredTextThreads);
+        <String, TexthookerTextThread>{
+      for (final MapEntry<String, TexthookerTextThread> entry
+          in _discoveredTextThreads.entries)
+        if (startedAt == null || !entry.value.latestAt.isBefore(startedAt))
+          entry.key: entry.value,
+    };
     for (final TexthookerLineEntry entry in _entries) {
+      if (startedAt != null && entry.receivedAt.isBefore(startedAt)) continue;
       final String? key = entry.textThreadKey;
       if (key == null || key.isEmpty) continue;
       final TexthookerTextThread? previous = byKey[key];
@@ -490,3 +501,47 @@ bool lineMatchesFilter(
       TexthookerLineFilter.mined => entry.mined,
       TexthookerLineFilter.favorited => entry.favorited,
     };
+
+/// 「全部文本线程」的展示投影：折叠同一渲染瞬间被不同 Luna 线程各回传一次的同文行。
+///
+/// 原始 buffer 不删，线程选择、逐行音频和稳定 id 仍消费完整数据；这里只处理 UI 投影。
+/// 仅当来源都是 engine hook、线程不同、文本相同，且 hook/接收时间都紧邻时才视为并行
+/// 双写。同线程稍后重说同一句、外部来源重复、缺时间戳的行一律保留。
+List<TexthookerLineEntry> collapseParallelTextThreadDuplicates(
+  Iterable<TexthookerLineEntry> entries, {
+  Duration hookWindow = const Duration(milliseconds: 100),
+  Duration receiveWindow = const Duration(milliseconds: 500),
+}) {
+  final List<TexthookerLineEntry> result = <TexthookerLineEntry>[];
+  for (final TexthookerLineEntry entry in entries) {
+    if (result.isEmpty) {
+      result.add(entry);
+      continue;
+    }
+    final TexthookerLineEntry previous = result.last;
+    final int? previousHookAt = previous.hookTimestampMs;
+    final int? currentHookAt = entry.hookTimestampMs;
+    final String? previousThread = previous.textThreadKey;
+    final String? currentThread = entry.textThreadKey;
+    final bool parallelDuplicate = previous.source ==
+            TexthookerLineSource.engineHook &&
+        entry.source == TexthookerLineSource.engineHook &&
+        previousThread != null &&
+        currentThread != null &&
+        previousThread != currentThread &&
+        previous.text == entry.text &&
+        previousHookAt != null &&
+        currentHookAt != null &&
+        (currentHookAt - previousHookAt).abs() <= hookWindow.inMilliseconds &&
+        entry.receivedAt.difference(previous.receivedAt).abs() <= receiveWindow;
+    if (!parallelDuplicate) {
+      result.add(entry);
+      continue;
+    }
+    // 两份里若只有一份已经配到音频，展示那份，避免折叠后把播放/制卡能力藏掉。
+    if (!previous.hasAudio && entry.hasAudio) {
+      result[result.length - 1] = entry;
+    }
+  }
+  return List<TexthookerLineEntry>.unmodifiable(result);
+}

@@ -292,4 +292,74 @@ void main() {
       expect(labels['c'], 'TextRender · 0x9c7c571 #3');
     });
   });
+
+  test('current session thread catalog excludes stale process-bound candidates',
+      () {
+    final DateTime oldSession = DateTime(2026, 7, 26, 12);
+    final DateTime currentSession = oldSession.add(const Duration(hours: 1));
+    TexthookerService.instance.registerTextThread(
+      key: 'luna:old-textrender',
+      label: 'TextRender · 0x9c7c571',
+      nativeThreadId: 0x10,
+      discoveredAt: oldSession,
+    );
+    TexthookerService.instance.appendLine(
+      '旧会话台词',
+      textThreadKey: 'luna:old-textrender',
+      textThreadLabel: 'TextRender · 0x9c7c571',
+      nativeTextThreadId: 0x10,
+      receivedAt: oldSession.add(const Duration(seconds: 1)),
+    );
+    TexthookerService.instance.registerTextThread(
+      key: 'luna:current-textrender',
+      label: 'TextRender · 0x9c7c571',
+      nativeThreadId: 0x20,
+      discoveredAt: currentSession,
+    );
+
+    final List<TexthookerTextThread> current =
+        TexthookerService.instance.textThreadsSince(currentSession);
+    expect(current, hasLength(1));
+    expect(current.single.key, 'luna:current-textrender');
+    expect(current.single.nativeThreadId, 0x20);
+    expect(current.single.lineCount, 0,
+        reason: '当前 TextRender 尚无输出时仍可选，但不得借旧进程的历史行');
+  });
+
+  test('all-thread projection folds only simultaneous cross-thread duplicates',
+      () {
+    final DateTime at = DateTime(2026, 7, 27, 10);
+    final TexthookerLineEntry first = TexthookerService.instance.appendLine(
+      '同一句台词',
+      source: TexthookerLineSource.engineHook,
+      hookTimestampMs: 123000,
+      textThreadKey: 'luna:kiri-a',
+      receivedAt: at,
+    )!;
+    TexthookerService.instance.appendLine(
+      '同一句台词',
+      source: TexthookerLineSource.engineHook,
+      hookTimestampMs: 123008,
+      textThreadKey: 'luna:kiri-b',
+      receivedAt: at.add(const Duration(milliseconds: 8)),
+    );
+    final TexthookerLineEntry legitimateRepeat =
+        TexthookerService.instance.appendLine(
+      '同一句台词',
+      source: TexthookerLineSource.engineHook,
+      hookTimestampMs: 125000,
+      textThreadKey: 'luna:kiri-a',
+      receivedAt: at.add(const Duration(seconds: 2)),
+    )!;
+
+    expect(TexthookerService.instance.entries, hasLength(3),
+        reason: '底层逐行身份不能丢，线程选择和音频状态仍需各自的原始行');
+    expect(
+      collapseParallelTextThreadDuplicates(
+        TexthookerService.instance.entries,
+      ).map((TexthookerLineEntry entry) => entry.id),
+      <String>[first.id, legitimateRepeat.id],
+      reason: '只折叠同一渲染瞬间、不同 Hook 线程双写的那一份',
+    );
+  });
 }
