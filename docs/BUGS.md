@@ -27,10 +27,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1094 条。点号进各自文件。
+> 共 1096 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1139](bugs/BUG-1139-ocr.md) | ✅ | ✅ | 漫画全卷 OCR 后密集命中层导致阅读器黑屏 |
+| [BUG-1138](bugs/BUG-1138-manga-high-frequency-turn-queue.md) | ✅ | ✅ | 漫画高频翻页跨窗口时丢失输入 |
 | [BUG-1137](bugs/BUG-1137-manga-popup-pagination-focus.md) | ✅ | ✅ | 漫画查词弹窗吞掉滚轮和左右翻页 |
 | [BUG-1136](bugs/BUG-1136-manga-page-jump-controller-lifecycle.md) | ✅ | ✅ | 漫画页码跳转关闭弹窗后红屏 |
 | [BUG-1135](bugs/BUG-1135-manga-window-generation-stale-page.md) | ✅ | ✅ | 漫画页码已翻但 WebView 仍显示旧页面 |
