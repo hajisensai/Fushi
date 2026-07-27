@@ -91,6 +91,30 @@ void main() {
     });
   });
 
+  test('组装 payload 时升级旧缓存中的倾斜竖排方向', () {
+    const OcrPageResult cached = OcrPageResult(
+      pageIndex: 0,
+      imageWidth: 100,
+      imageHeight: 140,
+      blocks: <OcrBlock>[
+        OcrBlock(
+          box: OcrRect(left: 0, top: 0, right: 100, bottom: 140),
+          vertical: false,
+          lines: <String>['進化を体感'],
+        ),
+      ],
+    );
+
+    final MokuroPayload payload = buildMangaPayloadFromResults(
+      <MangaOcrPageFile>[
+        MangaOcrPageFile(file: File('unused.jpg'), relativeUrl: 'page.jpg'),
+      ],
+      const <OcrPageResult>[cached],
+    );
+
+    expect(payload.images.single.blocks.single.isVertical, isTrue);
+  });
+
   group('ocrPageCacheFileName', () {
     test('子目录斜杠折叠', () {
       expect(ocrPageCacheFileName('p001.jpg'), 'p001.jpg.json');

@@ -251,7 +251,10 @@ MokuroPayload buildMangaPayloadFromResults(
           block.box.right,
           block.box.bottom,
         ),
-        isVertical: block.vertical,
+        // Re-evaluate cached local blocks so pages produced by the older,
+        // overly strict 1.5 ratio threshold gain queryable vertical regions
+        // without rerunning OCR.
+        isVertical: block.vertical || isVerticalBlock(block.box),
         fontSize: estimateMangaFontSize(block),
         zIndex: b,
         lines: block.lines,
