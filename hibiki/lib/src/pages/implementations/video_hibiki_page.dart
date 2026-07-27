@@ -30,6 +30,7 @@ import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
+import 'package:hibiki/src/media/media_cover_source.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
 import 'package:hibiki/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:hibiki/src/media/video/stream_video_launch.dart';
@@ -114,6 +115,7 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/remote_cover_fetcher.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
@@ -353,11 +355,26 @@ enum _VideoLoadPhase { connecting, downloadingSubtitle, buffering, preparing }
 /// 该集的单视频页）、[path] = 该集视频路径（预热用）。远端播放列表：[bookUid] = null、
 /// [path] = ''（换集靠 episodeIndex 向 host 建流，不走 pushReplacement）。
 class _PlaylistEpisodeRef {
-  const _PlaylistEpisodeRef(
-      {this.bookUid, required this.title, this.path = ''});
+  const _PlaylistEpisodeRef({
+    this.bookUid,
+    required this.title,
+    this.path = '',
+    this.coverPath,
+    this.coverUrl,
+    this.coverCacheKey,
+  });
   final String? bookUid;
   final String title;
   final String path;
+
+  /// 本机封面文件路径（本地集：`video_books.coverPath`）。
+  final String? coverPath;
+
+  /// 互联/远端封面 URL（远端合集成员：`RemoteVideoInfo.coverUrl`）。
+  final String? coverUrl;
+
+  /// 远端封面的稳定磁盘缓存键（用 `RemoteVideoInfo.id`）。
+  final String? coverCacheKey;
 }
 
 class VideoHibikiPage extends ConsumerStatefulWidget {
@@ -1901,7 +1918,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         final VideoBookRow? er = await widget.repo.getByBookUid(m.entryKey);
         if (er == null) continue; // 孤儿成员（集行已删）→ 读取期过滤。
         refs.add(_PlaylistEpisodeRef(
-            bookUid: er.bookUid, title: er.title, path: er.videoPath));
+          bookUid: er.bookUid,
+          title: er.title,
+          path: er.videoPath,
+          coverPath: er.coverPath,
+        ));
       }
       _episodes = refs;
       final int idx = refs
@@ -1945,7 +1966,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           (widget.initialEpisodeIndex ?? 0).clamp(0, _remoteMembers.length - 1);
       _episodes = <_PlaylistEpisodeRef>[
         for (final RemoteVideoInfo m in _remoteMembers)
-          _PlaylistEpisodeRef(title: m.title),
+          // 远端合集成员自带封面（host 下发 coverUrl + 稳定 id 作缓存键）——
+          // 此前这里只取 title，剧集列表因此对远端也恒无图。
+          _PlaylistEpisodeRef(
+            title: m.title,
+            coverUrl: m.coverUrl,
+            coverCacheKey: m.id,
+          ),
       ];
       _activeRemoteMember = _remoteMembers[startIndex];
       _delayMs = _remoteMembers[startIndex].delayMs;
