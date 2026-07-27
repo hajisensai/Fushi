@@ -210,6 +210,25 @@ String buildHighlightFrameScript(int frameIndex, int count) {
       'window.__globalLookupHost.highlightFrame($frameIndex, $count);';
 }
 
+/// BUG-1127 — builds the host `playWordAudioInFrame(frameId, url, token)` script
+/// that drives the overlay auto-read through the popup's own HTML5 `<audio>`
+/// (the unified fast path, 9855c3e4f), replacing the libmpv stop→load→play
+/// round-trip the app-external overlay was left on. The target is the STABLE
+/// root frame ([kGlobalLookupRootFrameId]): its popup.js realm is prewarmed at
+/// startup and REUSED across lookups (TODO-1095), so playback needs no cold
+/// iframe wait — audio is realm-agnostic (`new Audio(url)`), only the loaded
+/// realm matters, not the frame the entry renders in. The iframe reports the
+/// real `audio.play()` outcome back as a `wordAudioPlayed` [token] message
+/// (host-stamped bridge), mirroring the in-app `wordAudioPlayed` handler
+/// contract (BUG-1093). Inert when the host is not installed (guarded).
+String buildPlayWordAudioScript(String frameId, String url, int token) {
+  final String encodedId = jsonEncode(frameId);
+  final String encodedUrl = jsonEncode(url);
+  return 'window.__globalLookupHost && '
+      'window.__globalLookupHost.playWordAudioInFrame('
+      '$encodedId, $encodedUrl, $token);';
+}
+
 /// Builds the full stack render script for the host (TODO-867 P3b/P3c).
 /// Serialises every frame into the `{ popups: [...] }` payload
 /// global_lookup_host.js renderStack consumes, then calls

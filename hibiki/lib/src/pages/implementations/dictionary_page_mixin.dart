@@ -364,7 +364,7 @@ mixin DictionaryPageMixin {
     );
   }
 
-  Future<void> _playAutoReadWord(
+  Future<bool> _playAutoReadWord(
     String expression,
     String reading,
     DictionaryPopupWebViewState? popupState,

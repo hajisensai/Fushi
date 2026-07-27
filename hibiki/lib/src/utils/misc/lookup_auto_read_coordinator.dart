@@ -1,4 +1,8 @@
-typedef LookupAutoReadPlayback = Future<void> Function();
+/// Plays the word audio and reports whether playback ACTUALLY started (either
+/// the popup `<audio>` fast path or the Dart fallback player). BUG-1127: the
+/// report drives the dedupe-window rollback below — a silent failure must not
+/// keep occupying the window.
+typedef LookupAutoReadPlayback = Future<bool> Function();
 
 class LookupAutoReadCoordinator {
   LookupAutoReadCoordinator({
@@ -40,7 +44,16 @@ class LookupAutoReadCoordinator {
     _inFlight.add(key);
     _acceptedAt[key] = startedAt;
     try {
-      await play();
+      final bool played = await play();
+      if (!played) {
+        // BUG-1127 — the playback definitively did not sound (no source
+        // resolved / both play paths failed). Release the window instead of
+        // holding it: keeping a silent failure deduped turned one miss into
+        // "the same word stays mute for the whole window" (an immediate
+        // re-lookup was also swallowed).
+        _acceptedAt.remove(key);
+        return false;
+      }
       _acceptedAt[key] = _now();
       return true;
     } catch (_) {

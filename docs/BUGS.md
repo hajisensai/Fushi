@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1093 条。点号进各自文件。
+> 共 1094 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1127](bugs/BUG-1127-external-lookup-autoread-slow-swallowed.md) | ✅ | ✅ | app 外查词自动发音走 libmpv 慢路径且失败被静默吞掉 |
 | [BUG-1126](bugs/BUG-1126-video-episode-panel-missing-covers.md) | ✅ | ✅ | 视频剧集侧栏只传标题导致本地与互联封面全部丢失 |
 | [BUG-1125](bugs/BUG-1125-home-video-sanitize-missing-backslash.md) | ✅ | ✅ | home-video-sanitize-missing-backslash |
 | [BUG-1124](bugs/BUG-1124-local-audio-cache-weak-hash.md) | ✅ | ✅ | local-audio-cache-weak-hash |
