@@ -56,6 +56,171 @@ int main(int argc, char** argv) {
     return 8;
   }
 
+  // BUG-1175：带 ruby 的台词被 KiriKiriZ 分别以 base（汉字）和 ruby（假名）两种形式
+  // 送进同一 hook 面，叠上完整行双写后收到的是 `A A B B A A`。整串既不是二倍重复
+  // （前半 AAB != 后半 BAA），也不是等长游程伪影，旧实现整串放行 → 一句话出现六遍。
+  std::wstring ruby_variant = single_line;
+  ruby_variant[1] = L'り';  // 同长度的注音变体（模拟「李空」→「りく」）
+  if (ruby_variant == single_line) return 20;
+  const std::wstring ruby_double_write = single_line + single_line +
+                                         ruby_variant + ruby_variant +
+                                         single_line + single_line;
+  const int ruby_normalized =
+      hibiki_voice_hook::LunaNormalizedTextLengthForHook(
+          "EmbedKrkrZ", ruby_double_write.c_str(),
+          static_cast<int>(ruby_double_write.size()));
+  if (ruby_normalized != static_cast<int>(single_line.size()) ||
+      std::wstring(ruby_double_write.c_str(),
+                   ruby_double_write.c_str() + ruby_normalized) != single_line) {
+    return 21;
+  }
+  // 折叠只对 EmbedKrkrZ 生效，其它引擎的同形串必须原样保留。
+  if (hibiki_voice_hook::LunaNormalizedTextLengthForHook(
+          "OtherEngine", ruby_double_write.c_str(),
+          static_cast<int>(ruby_double_write.size())) !=
+      static_cast<int>(ruby_double_write.size())) {
+    return 22;
+  }
+  // 正常台词（无重复开头）绝不能被折叠。
+  if (hibiki_voice_hook::LunaNormalizedTextLengthForHook(
+          "EmbedKrkrZ", single_line.c_str(),
+          static_cast<int>(single_line.size())) !=
+      static_cast<int>(single_line.size())) {
+    return 23;
+  }
+
+  // BUG-1175 负向：合法叠句开头 + 后面跟正文，**绝不允许折叠**。
+  // 旧的「开头二倍就截掉后面全部」判据会把这两句静默腰斩成「わかった」/「ありがとう」，
+  // 而残句短到过不了伪影门，会被当干净行写进环。
+  {
+    // 「わかったわかった、もう行くよ」
+    const std::wstring doubled_prefix_line =
+        L"\u308f\u304b\u3063\u305f\u308f\u304b\u3063\u305f"
+        L"\u3001\u3082\u3046\u884c\u304f\u3088";
+    if (hibiki_voice_hook::LunaNormalizedTextLengthForHook(
+            "EmbedKrkrZ", doubled_prefix_line.c_str(),
+            static_cast<int>(doubled_prefix_line.size())) !=
+        static_cast<int>(doubled_prefix_line.size())) {
+      return 29;
+    }
+    // 「ありがとうありがとう、本当に助かった」
+    const std::wstring thanks_line =
+        L"\u3042\u308a\u304c\u3068\u3046\u3042\u308a\u304c\u3068\u3046"
+        L"\u3001\u672c\u5f53\u306b\u52a9\u304b\u3063\u305f";
+    if (hibiki_voice_hook::LunaNormalizedTextLengthForHook(
+            "EmbedKrkrZ", thanks_line.c_str(),
+            static_cast<int>(thanks_line.size())) !=
+        static_cast<int>(thanks_line.size())) {
+      return 30;
+    }
+    // 正向：真正的整串双写仍必须能折（否则 EmbedKrkrZ 原症状回来）。
+    const std::wstring folded_prefix = doubled_prefix_line + doubled_prefix_line;
+    if (hibiki_voice_hook::LunaNormalizedTextLengthForHook(
+            "EmbedKrkrZ", folded_prefix.c_str(),
+            static_cast<int>(folded_prefix.size())) !=
+        static_cast<int>(doubled_prefix_line.size())) {
+      return 31;
+    }
+  }
+
+  // BUG-1159：手动/记忆选定线程后，同一 hook 面（同 addr+ctx2+hookcode，ctx 不同）的
+  // 其余调用路径必须继续放行，否则剧情一换调用路径整段台词就被丢弃。
+  //
+  // 这里用**真实引擎参数**驱动生产实现 LunaTextFaceIdFrom / LunaTextThreadIdFrom，
+  // 不手捏 face 常量——手捏常量只能证明比较运算符能用，证不了分面规则对。
+  {
+    const uint32_t pid = 4242;
+    // 引擎 A：KiriKiriZ。同一 hook 面、同 split 分类，两个不同调用点（ctx）。
+    const wchar_t* krkr_code = L"HB0@4A1C30:krkr.exe";
+    const char* krkr_name = "EmbedKrkrZ";
+    const uint64_t krkr_addr = 0x4a1c30ull;
+    const uint64_t selected_thread = hibiki_voice_hook::LunaTextThreadIdFrom(
+        pid, krkr_addr, 0x18ff20ull, 0, krkr_code, krkr_name);
+    const uint64_t sibling_thread = hibiki_voice_hook::LunaTextThreadIdFrom(
+        pid, krkr_addr, 0x18fe40ull, 0, krkr_code, krkr_name);
+    const uint64_t krkr_face = hibiki_voice_hook::LunaTextFaceIdFrom(
+        pid, krkr_addr, 0, krkr_code, krkr_name);
+    if (selected_thread == sibling_thread) return 32;
+
+    // 引擎 B：SiglusEngine——另一个 hook 面（不同 addr + hookcode + hookname）。
+    const wchar_t* siglus_code = L"HSN4@77A0:SiglusEngine.exe";
+    const char* siglus_name = "SiglusEngine";
+    const uint64_t siglus_addr = 0x77a0ull;
+    const uint64_t siglus_thread = hibiki_voice_hook::LunaTextThreadIdFrom(
+        pid, siglus_addr, 0x18ff20ull, 0, siglus_code, siglus_name);
+    const uint64_t siglus_face = hibiki_voice_hook::LunaTextFaceIdFrom(
+        pid, siglus_addr, 0, siglus_code, siglus_name);
+    if (krkr_face == siglus_face) return 33;
+
+    // 同一 addr 上的 split H 码：ctx2 是引擎声明的语义分类（角色名 vs 正文），
+    // 必须继续分面，否则角色名会混进正文流。
+    const wchar_t* split_code = L"HBN8*0@4A1C30:krkr.exe";
+    const uint64_t split_body_face = hibiki_voice_hook::LunaTextFaceIdFrom(
+        pid, krkr_addr, 0x1ull, split_code, krkr_name);
+    const uint64_t split_name_face = hibiki_voice_hook::LunaTextFaceIdFrom(
+        pid, krkr_addr, 0x2ull, split_code, krkr_name);
+    if (split_body_face == split_name_face) return 34;
+    const uint64_t split_body_thread = hibiki_voice_hook::LunaTextThreadIdFrom(
+        pid, krkr_addr, 0x18ff20ull, 0x1ull, split_code, krkr_name);
+    const uint64_t split_name_thread = hibiki_voice_hook::LunaTextThreadIdFrom(
+        pid, krkr_addr, 0x18fe40ull, 0x2ull, split_code, krkr_name);
+
+    hibiki_voice_hook::LunaTextSelector face_selector;
+    const std::wstring krkr_key(krkr_code);
+    if (!face_selector.ShouldWrite(krkr_key, selected_thread, false,
+                                   selected_thread, krkr_face)) {
+      return 35;  // 选定线程自己当然要放行
+    }
+    if (!face_selector.ShouldWrite(krkr_key, sibling_thread, false,
+                                   selected_thread, krkr_face)) {
+      return 36;  // 同 hook 面、不同 ctx → 必须放行（本 bug 的核心回归点）
+    }
+    // 跨引擎负向：另一个引擎的行绝不能被并进选定线程。
+    if (face_selector.ShouldWrite(std::wstring(siglus_code), siglus_thread,
+                                  false, selected_thread, siglus_face)) {
+      return 37;
+    }
+    // split H 码负向：同 addr、同 hookcode，仅 ctx2 不同（角色名）→ 必须挡掉。
+    hibiki_voice_hook::LunaTextSelector split_selector;
+    if (!split_selector.ShouldWrite(std::wstring(split_code), split_body_thread,
+                                    false, split_body_thread,
+                                    split_body_face)) {
+      return 38;
+    }
+    if (split_selector.ShouldWrite(std::wstring(split_code), split_name_thread,
+                                   false, split_body_thread,
+                                   split_name_face)) {
+      return 39;
+    }
+    if (face_selector.ShouldWrite(krkr_key, sibling_thread, true,
+                                  selected_thread, krkr_face)) {
+      return 40;  // 伪影门在选择之前，放宽粒度不得让伪影漏进来
+    }
+  }
+  {
+    // face 未知（调用方给 0）时退回精确 thread_id 匹配，与旧实现语义一致。
+    hibiki_voice_hook::LunaTextSelector legacy_selector;
+    if (legacy_selector.ShouldWrite(L"HB0@0:test.exe", 1002, false, 1001, 0)) {
+      return 41;
+    }
+  }
+  {
+    // BUG-1159 跨会话恢复路径：injector 的 preferred_hook_codes 快路不进选择器，
+    // 靠的是 NoteFace 单独登记。只要选定线程本会话出过行（Dart 恢复前提是 >= 3 行），
+    // 即使它一行都没进过 ShouldWrite，兄弟线程也必须能被认回。
+    hibiki_voice_hook::LunaTextSelector restore_selector;
+    const uint64_t remembered = 5001, sibling = 5002, face = 909;
+    restore_selector.NoteFace(remembered, face);
+    if (restore_selector.FaceOf(remembered) != face) return 42;
+    if (!restore_selector.ShouldWrite(L"HB0@0:test.exe", sibling, false,
+                                      remembered, face)) {
+      return 43;
+    }
+    // Reset 必须一并清掉 face 表，否则换游戏后旧 face 会幽灵放行。
+    restore_selector.Reset();
+    if (restore_selector.FaceOf(remembered) != 0) return 44;
+  }
+
   std::ifstream input(argv[1]);
   if (!input) return 2;
   hibiki_voice_hook::LunaTextSelector selector;

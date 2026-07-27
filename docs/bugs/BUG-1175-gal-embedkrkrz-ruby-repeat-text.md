@@ -1,0 +1,16 @@
+## BUG-1175 · EmbedKrkrZ ruby 双写产生重复台词，折叠只认精确二倍全部漏过
+- **报告**：2026-07-27（用户：截图反馈——游戏内只有一句「李空って、やぎ座だっけ？　みずがめ座？」，hook 浮窗与捕获工作台实时台词却显示成六段拼接）
+- **真实性**：✅ 真 bug。收到的串是 `A A B B A A`——A = 汉字版「李空って…」、B = 注音版「りくって…」。带 ruby 的「李空(りく)」被 KiriKiriZ 分别以 base 和 ruby 两种形式送进同一个 hook 面，再叠上 `EmbedKrkrZ` 这条 hook 固有的完整行双写，一次事件回传六段。三道现有防线逐一漏过：
+  - `native/galgame_hook/include/luna_text_selector.h:16-23`（修复前）`LunaNormalizedTextLength` 只认**整串恰好二倍**（前半 == 后半）。这里前半 `AAB` != 后半 `BAA`，不折叠。
+  - 同文件 `:33-59` `LunaTextIsArtifact` 三条判据（整串二倍 / 等长游程 / 相邻同字符占比 ≥30%）对日文正常字面的短语级重复一条都不命中——这串脏文本被判成 **clean**，不但原样写进文本环，还给 EmbedKrkrZ 累加了一次干净计数、帮它在线程选择器里锁定成赢家。
+  - `hibiki/lib/src/sync/texthooker_service.dart:49` `foldRepeatedTextForPreview`（BUG-1129 引入）能折 `ABAB→AB`，但两头都够不着：唯一调用点在 `:14` 的线程下拉**预览**，行文本与 hook 浮窗根本不过它；且 `_foldWholeStringRepetition:57` 要求整串是**严格周期**，`AABBAA` 不是周期串，接上也折不掉。
+- **[x] ① 已修复** — `native/galgame_hook/include/luna_text_selector.h`：`LunaNormalizedTextLength` 由「整串恰好二倍」改为**块级分解**——整串必须能被无剩余地切成一串「连续成对重复」的块 `s1 s1 s2 s2 … sn sn`（每块 `>= kLunaMinFoldedLineChars(=4)` 字），命中才返回 `|s1|`。`A A B B A A` 正是这个形状 → 折成 A；「整串恰好二倍」是 `n == 1` 的特例，旧行为被完整覆盖。实现是 O(len²) 的后向 DP（`block[i]` = `text[i,len)` 的首块长度，0 表示拆不动），并有 `kLunaMaxFoldScanChars = 4096` 的防御性上界，超界走「原样放行」。
+  - **判据绝不能放宽成「开头二倍就截掉后面全部」**（本 PR 审查打回的原因）：那会把 galgame 里极常见的合法叠句静默腰斩，且残句短到过不了 `LunaTextIsArtifact`，会被当干净行写进环，浮窗/台词列表/制卡内容全是残句。实测两例——「わかったわかった、もう行くよ」→「わかった」、「ありがとうありがとう、本当に助かった」→「ありがとう」。块级判据下这两句的尾巴（`、もう行くよ` / `、本当に助かった`）拆不成成对重复块，整串判定失败 → 原样放行。**宁可漏折，也不能吞用户的字。**
+  - **在 native 侧修而非 Dart 侧**：文本环是浮窗、实时台词列表、制卡内容的共同上游，在此折叠才是根治，且不必去动「预览折叠不改制卡内容」那条既有纪律。#463 的 `parseRubyMarkup` 在 Dart 下游、一个字符不加不减，救不回上游已被截断的句子——所以判据必须在这里就是安全的。
+  - 折叠仍只对 `EmbedKrkrZ` 生效（`LunaNormalizedTextLengthForHook` 的 hook 名门控未变），其它引擎不受影响。
+- **[x] ② 已加自动化测试** — 两层：
+  - `native/galgame_hook/tests/luna_text_replay_test.cpp`（行为层）：`A A B B A A` 六段拼接折成单句 A（返回码 21）、同形串在非 EmbedKrkrZ 引擎下原样保留（22）、正常台词不被折叠（23），以及**负向三条**——「わかったわかった、もう行くよ」不得折（29）、「ありがとうありがとう、本当に助かった」不得折（30）、真正的整串双写仍必须能折（31）。负向验证：把判据改回前缀式，测试在返回码 **29** 处转红；还原后 exit 0。
+  - `hibiki/test/mining/gal_voice_pairing_window_parity_test.dart`（PR 门层）：C++ ctest 只在 `voice-hook-helper` workflow（`workflow_dispatch` + push develop）里跑，**PR 时不是门**，故补一条扫真实 C++ 源码的结构守卫，断言 `LunaNormalizedTextLength` 体内不出现前缀式的 `if (doubled) return k;`、且必须先确认尾巴可完整拆分才折首块。负向验证：改回前缀判据该守卫转红。
+- **验证**：`native/galgame_hook/tests/luna_text_replay_test.cpp` 用 MSVC 2022 x64（`cl /utf-8 /std:c++17`）本机编译并跑真 fixture，exit 0；三条负向改动逐条转红后还原。
+- **未验证（`implemented_unverified`）**：与 BUG-1159 同样受本机环境阻断（.NET SDK 6 无法构建 net8.0 的 `hibiki_unity_audio_runtime`，完整 ALL 构建与 injector 二进制未重建），**真机未复测**。需用户在原始路径重跑确认浮窗只剩一句。
+- **相关**：BUG-1159（同源，同一 hook 面多调用上下文导致的文本丢失与音频降级）、BUG-1129（预览折叠，其备注指出双写折叠只对 EmbedKrkrZ 硬编码生效）。

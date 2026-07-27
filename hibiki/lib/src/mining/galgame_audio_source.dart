@@ -363,6 +363,18 @@ GalHookInjectorFailure classifyGalHookInjectorFailure(
   return fallback;
 }
 
+/// 资源↔文本配对的时间窗（毫秒），**必须与 native 侧
+/// `native/galgame_hook/hook/voice_resource_pairing.h` 的
+/// `kKirikiriFollowingTextWindowMs` 同值**。
+///
+/// BUG-1159：两侧原本各写各的（native 1500 / Dart 1000），中间 500ms 是死区——native
+/// 在 1500ms 内配上就把 `TextSlot::seq` 写进资源文件名，消费端却因为超出 1000ms 拒收；
+/// 而带 marker 的资源**又被明确禁止**回退到时间窗兜底（见下方 `continue`），于是
+/// 「打了标」反而比「没打标」更容易失败。两个常数没有任何交叉引用，漂移不会被发现，
+/// 故在此固化同值并由 `test/mining/gal_voice_pairing_window_parity_test.dart`
+/// 扫描 native 头文件守卫。
+const int kGalVoicePairingWindowMs = 1500;
+
 /// galgame 纯人声配对（真机验证，docs/specs/galgame-mining）：具有运行时契约的引擎把
 /// `TextSlot.seq` 写进资源名并优先按该稳定 ID 配对；显式 ID 不匹配时禁止回退时间猜测。
 /// 旧资源仍是 `%TEMP%\hibiki_gal_voice\<tickMs>_<basename>.ogg`
@@ -381,7 +393,7 @@ String? pickPairedVoiceOgg({
   int windowHighMs = 330,
   int expectedOffsetMs = 220,
   int exactToleranceMs = 0,
-  int eventIdToleranceMs = 1000,
+  int eventIdToleranceMs = kGalVoicePairingWindowMs,
 }) {
   final int lo = textTsMs - windowHighMs;
   final int hi = textTsMs - windowLowMs;
@@ -402,9 +414,16 @@ String? pickPairedVoiceOgg({
     }
     final int tick = parsed.tick;
     if (parsed.textEventId != null) {
-      final int eventDist = (tick - textTsMs).abs();
+      // native 只保证**单边**：资源先落盘、文本随后到，
+      // `0 <= textTs - resourceTick <= kKirikiriFollowingTextWindowMs`
+      // （native/galgame_hook/hook/voice_resource_pairing.h 的
+      // `candidate.timestamp_ms >= resource_tick_ms && <= deadline_ms`）。
+      // 用 `.abs()` 做双边判定等于凭空把容差翻倍，把 native 永远不会产出的
+      // 「资源晚于文本」也纳进来，白扩大陈旧 dump 文件的碰撞面。
+      final int eventDist = textTsMs - tick;
       if (textEventId != null &&
           parsed.textEventId == textEventId &&
+          eventDist >= 0 &&
           eventDist <= eventIdToleranceMs &&
           eventDist < eventBestDist) {
         eventBestDist = eventDist;

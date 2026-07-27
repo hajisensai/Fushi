@@ -432,29 +432,19 @@ bool LunaPassesFilter(const wchar_t* text, int len) {
 // WriteTextRingLocked **完全同一套协议**：InterlockedIncrement64 原子占唯一槽号 → 填文本 + 字段
 // → 最后写 seq 作完成标记。跨进程双写同环靠原子占号防撞槽、防丢更新。LunaHook 的回调可能在
 // 其内部工作线程并发触发，原子占号同样保证 injector 侧多次调用互不撞槽。
-uint64_t Fnv1a64(uint64_t hash, const void* data, size_t size) {
-  const auto* bytes = static_cast<const uint8_t*>(data);
-  for (size_t i = 0; i < size; i++) {
-    hash ^= bytes[i];
-    hash *= 1099511628211ull;
-  }
-  return hash;
-}
-
 uint64_t LunaTextThreadId(const wchar_t* hookcode, const char* hookname,
                           const LunaThreadParam& tp) {
-  uint64_t hash = 1469598103934665603ull;
-  hash = Fnv1a64(hash, &tp.processId, sizeof(tp.processId));
-  hash = Fnv1a64(hash, &tp.addr, sizeof(tp.addr));
-  hash = Fnv1a64(hash, &tp.ctx, sizeof(tp.ctx));
-  hash = Fnv1a64(hash, &tp.ctx2, sizeof(tp.ctx2));
-  if (hookcode != nullptr) {
-    hash = Fnv1a64(hash, hookcode, wcslen(hookcode) * sizeof(wchar_t));
-  }
-  if (hookname != nullptr) {
-    hash = Fnv1a64(hash, hookname, strlen(hookname));
-  }
-  return hash == 0 ? 1 : hash;
+  return hibiki_voice_hook::LunaTextThreadIdFrom(tp.processId, tp.addr, tp.ctx,
+                                                 tp.ctx2, hookcode, hookname);
+}
+
+// hook「面」id：与 LunaTextThreadId 同源，但**刻意不含 ctx**（BUG-1159）。
+// ctx 是调用点（返回地址），同一 hook 面换剧情分支就变；ctx2 是 split H 码声明的
+// 语义分类（角色名/正文），必须保留。判据实现在 luna_text_selector.h，与单测共用。
+uint64_t LunaTextFaceId(const wchar_t* hookcode, const char* hookname,
+                        const LunaThreadParam& tp) {
+  return hibiki_voice_hook::LunaTextFaceIdFrom(tp.processId, tp.addr, tp.ctx2,
+                                               hookcode, hookname);
 }
 
 void WriteLunaTextEvent(SharedHeader* header, const wchar_t* hookcode,
@@ -548,7 +538,7 @@ bool g_lunaSelectCsInit = false;
 // hook 累计干净行达阈值即锁定为赢家，之后只写赢家的行；赢家按 clean_count 最高 + 占比
 // clean/(clean+dirty) >= 0.5 重选，可随游戏切换重新评估。
 bool LunaShouldWriteLine(const wchar_t* hookcode, uint64_t thread_id,
-                         bool is_artifact) {
+                         bool is_artifact, uint64_t face_id) {
   const uint64_t manually_selected = g_luna.header == nullptr
                                          ? 0
                                          : static_cast<uint64_t>(
@@ -562,6 +552,13 @@ bool LunaShouldWriteLine(const wchar_t* hookcode, uint64_t thread_id,
     return !is_artifact &&
            (manually_selected == 0 || manually_selected == thread_id);
   }
+  // BUG-1159：face 登记必须**先于所有过滤分支**。下面的 preferred_hook_codes
+  // 快路整段不进选择器，若只靠 ShouldWrite 内部登记，走快路的线程就永远没有
+  // face；Dart 跨会话记忆恢复恰恰只从这些“已出过行”的线程里挑，于是
+  // FaceOf 返 0 → 退回精确匹配 → 原症状原样复现。
+  EnterCriticalSection(&g_lunaSelectCs);
+  g_lunaTextSelector.NoteFace(thread_id, face_id);
+  LeaveCriticalSection(&g_lunaSelectCs);
   if (manually_selected == 0 && !g_luna.preferred_hook_codes.empty()) {
     if (is_artifact) return false;
     for (const std::wstring& preferred : g_luna.preferred_hook_codes) {
@@ -575,7 +572,7 @@ bool LunaShouldWriteLine(const wchar_t* hookcode, uint64_t thread_id,
       (hookcode != nullptr) ? std::wstring(hookcode) : std::wstring();
   EnterCriticalSection(&g_lunaSelectCs);
   const bool should_write = g_lunaTextSelector.ShouldWrite(
-      key, thread_id, is_artifact, manually_selected);
+      key, thread_id, is_artifact, manually_selected, face_id);
   LeaveCriticalSection(&g_lunaSelectCs);
   return should_write;
 }
@@ -640,7 +637,8 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
       const bool artifact =
           hibiki_voice_hook::LunaTextIsArtifact(text, normalized_len);
       const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
-      if (LunaShouldWriteLine(hookcode, thread_id, artifact)) {
+      const uint64_t face_id = LunaTextFaceId(hookcode, hookname, tp);
+      if (LunaShouldWriteLine(hookcode, thread_id, artifact, face_id)) {
         WriteLunaTextLine(g_luna.header, hookcode, hookname, tp, thread_id, text,
                           normalized_len);
         // 一旦 LunaHook 写出干净行，标记 LunaHook 权威：游戏内 GDI 文本 hook 让位不再写文本，
