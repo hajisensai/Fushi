@@ -29,20 +29,27 @@ void main() {
   test('分页 restoreToCharOffset 把 charOffset<=0 当章首走 scrollToProgressPaged(0)',
       () {
     // 分页恢复入口：<=0 或越界 → scrollToProgressPaged(context, 0)（含前导插图的 minScroll）。
+    // 只钉「判据 + 该分支的落点调用」，分支体内后续语句（BUG-1140 第二轮的
+    // registerImageLateAnchor 重锚登记）不参与判定——本守卫管的是章首判据，不是语句序列。
     expect(
       n.contains(
-          'if (charOffset <= 0 || !this.charOffsetInRange(charOffset)) { this.scrollToProgressPaged(context, 0); } else { this.scrollToCharOffset(charOffset); }'),
+          'if (charOffset <= 0 || !this.charOffsetInRange(charOffset)) { this.scrollToProgressPaged(context, 0);'),
       isTrue,
       reason:
           '分页 restoreToCharOffset 必须以 charOffset<=0 判据落章首（minScroll，不越章首插图），'
           '不得回退成 charOffset<0（漏掉 0 → scrollToCharOffset(0) 跳过插图）',
+    );
+    expect(
+      n.contains('} else { this.scrollToCharOffset(charOffset);'),
+      isTrue,
+      reason: 'charOffset>0 仍走精确锚 scrollToCharOffset',
     );
   });
 
   test('连续 restoreToCharOffset 把 charOffset<=0 当章首走 scrollToChapterStart()',
       () {
     expect(
-      n.contains('if (charOffset <= 0) { this.scrollToChapterStart(); }'),
+      n.contains('if (charOffset <= 0) { this.scrollToChapterStart();'),
       isTrue,
       reason: '连续 restoreToCharOffset 必须以 charOffset<=0 判据落章首（滚到顶含前导图）',
     );

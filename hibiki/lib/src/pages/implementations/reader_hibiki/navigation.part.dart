@@ -226,6 +226,14 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       _refreshProgress();
       _startProgressPoll();
       _diag718ProbeViewportDrift();
+      // TODO-perf（跨章·图片）：预热**阅读方向上**下一章的插图进 WebView 缓存。必须放在
+      // 这里（遮罩已撤、新章已可见）而不是 _onChapterLoadComplete —— 它要 parse 整章 HTML
+      // 找图片引用，放在恢复完成之前就等于把成本加回跨章热路径。HTML 预取省的是磁盘读+
+      // 净化，这里省的是读盘+解码，后者在带插图的章里大一个数量级（见
+      // _prefetchAdjacentChapterImages 的实测注释与配额）。方向来自 _beginNavigation 的
+      // 采样：倒着读时预热上一章，而不是刚离开的那一章。
+      _prefetchAdjacentChapterImages(
+          _currentChapter + _chapterAdvanceDirection);
     });
   }
 
@@ -387,6 +395,12 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       _restoreCompleter!.complete(false);
     }
     _restoreCompleter = Completer<bool>();
+    // TODO-perf（跨章·图片）：所有导航都经过这里，故这是「阅读方向」的唯一采样点。
+    // 同章重恢复（换字号/重排版/保不动点）不改方向——方向属于「读到哪儿去了」，
+    // 不属于重排版。方向只喂给插图预热（见 _prefetchAdjacentChapterImages）。
+    if (chapter != _currentChapter) {
+      _chapterAdvanceDirection = chapter > _currentChapter ? 1 : -1;
+    }
     _currentChapter = chapter;
     _initialProgress = progress;
     _initialCharOffset = charOffset;
