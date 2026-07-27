@@ -14,7 +14,7 @@ import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart'
     show CollectionShelfRow;
 import 'package:hibiki/src/media/collections/collection_drag.dart'
-    show MediaCardDraggable;
+    show CollectionAddOutcome, MediaCardDraggable, addMediaRefToCollection;
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
@@ -390,24 +390,17 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 把游戏卡拖到合集行头 = 把该游戏加入本合集
   /// （`CollectionShelfRow.onMediaDropped`）。
   ///
-  /// `addToCollection` 幂等，但静默 no-op 对用户是「拖了没反应」——先查成员给
-  /// 「已在该合集」的明确提示，再落库；成功后走 [_addGameToCollection] 同款刷新。
+  /// 「查成员 → 幂等提示 → 落库 → 失败提示」收口在 [addMediaRefToCollection]
+  /// （书架 / 视频库 / 游戏库同一份，且永不抛出——它挂在 `void` 回调上）；
+  /// 真写进去了才走 [_addGameToCollection] 同款刷新并报成功。
   Future<void> _addMediaToCollection(
       int collectionId, MediaRef mediaRef) async {
-    final HibikiDatabase db = _appModel.database;
-    final List<MediaCollectionItemRow> items =
-        await db.getCollectionItems(collectionId);
-    final bool already = items.any(
-      (MediaCollectionItemRow it) =>
-          it.mediaType == mediaRef.dbMediaType &&
-          it.entryKey == mediaRef.entryKey,
+    final CollectionAddOutcome outcome = await addMediaRefToCollection(
+      database: _appModel.database,
+      collectionId: collectionId,
+      mediaRef: mediaRef,
     );
-    if (already) {
-      HibikiToast.show(msg: t.collection_already_has_item);
-      return;
-    }
-    await db.addToCollection(collectionId, mediaRef.kind, mediaRef.entryKey);
-    if (!mounted) return;
+    if (outcome != CollectionAddOutcome.added || !mounted) return;
     await _loadCollectionMaps();
     _refresh();
     HibikiToast.show(msg: t.batch_add_to_collection_success(n: 1));

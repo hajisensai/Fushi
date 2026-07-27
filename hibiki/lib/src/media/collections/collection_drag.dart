@@ -17,15 +17,80 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 import 'package:hibiki/utils.dart';
 
+/// [addMediaRefToCollection] 的结果：三种结局各自对应一条不同的用户可见提示。
+enum CollectionAddOutcome {
+  /// 真的写进去了。调用方据此刷新并报成功。
+  added,
+
+  /// 该条目本就在这个合集里（`addToCollection` 幂等，静默 no-op 对用户就是
+  /// 「拖了没反应」）。已提示，调用方不必刷新。
+  alreadyPresent,
+
+  /// 落库失败（DB 锁 / 磁盘满 / schema 异常……）。已提示，**没有**写进去。
+  failed,
+}
+
+/// 提示通道。默认 [HibikiToast.show]；测试注入自己的收集器。
+typedef CollectionAddNotifier = void Function(String message);
+
+/// 「把一个 [MediaRef] 加进合集」的共享落库编排（书架 / 视频库 / 游戏库三处同一份）。
+///
+/// 三处此前各抄一遍「查成员 → 幂等提示 → 落库」，且**都没有 try/catch**，又都以
+/// unawaited Future 挂在 `onMediaDropped` 这个 `void` 回调上：`addToCollection`
+/// 抛出时异常直接漂进 zone，用户看到的只是「拖了没反应」——他会以为加成功了，
+/// 而合集里其实什么都没有。这是「让用户基于错误信息做决定」的典型，必须报。
+///
+/// 故本函数**永不抛出**：任何失败都归到 [CollectionAddOutcome.failed] 并给出
+/// 明确提示。调用方只需按返回值决定要不要刷新 + 报成功。
+Future<CollectionAddOutcome> addMediaRefToCollection({
+  required HibikiDatabase database,
+  required int collectionId,
+  required MediaRef mediaRef,
+  CollectionAddNotifier? notify,
+}) async {
+  final CollectionAddNotifier tell =
+      notify ?? (String message) => HibikiToast.show(msg: message);
+  try {
+    final List<MediaCollectionItemRow> items =
+        await database.getCollectionItems(collectionId);
+    final bool already = items.any(
+      (MediaCollectionItemRow it) =>
+          it.mediaType == mediaRef.dbMediaType &&
+          it.entryKey == mediaRef.entryKey,
+    );
+    if (already) {
+      tell(t.collection_already_has_item);
+      return CollectionAddOutcome.alreadyPresent;
+    }
+    await database.addToCollection(
+      collectionId,
+      mediaRef.kind,
+      mediaRef.entryKey,
+    );
+    return CollectionAddOutcome.added;
+  } catch (error, stackTrace) {
+    debugPrint('addMediaRefToCollection failed: $error\n$stackTrace');
+    tell(t.collection_add_failed);
+    return CollectionAddOutcome.failed;
+  }
+}
+
 /// 媒体卡的拖拽源：拖起卡片，落到合集上即加入该合集。
 ///
 /// **仅桌面端建拖拽源**（镜像 `hibiki_reorder_drag_listener.dart` 的按平台范式）：
 /// - 桌面（Windows / Linux / macOS，鼠标为主）→ [Draggable]（按下即拖）。与卡片
 ///   既有交互零冲突：`ImmediateMultiDragGestureRecognizer` 要指针移动超过
 ///   `kTouchSlop` 才在手势竞技场胜出，所以点击（按下即抬）仍归 `InkWell.onTap`
-///   开书、按住不动仍归 `onLongPress` 弹菜单、右键仍归 `onSecondaryTap`；
-///   垂直网格没放开鼠标拖动滚动，横向合集行里则是「横拖=滚动、纵拖=拖卡」的
-///   自然分工（两者都要过 slop，方向先满足者胜）。
+///   开书、按住不动仍归 `onLongPress` 弹菜单、右键仍归 `onSecondaryTap`。
+///
+///   ⚠️ **与横向合集行的鼠标拖动滚动（`HorizontalDragScrollable`）如何分流，未在
+///   真机验证。** 别把它当成「横拖=滚动、纵拖=拖卡」的自然分工——按识别器的判据
+///   推，事实很可能相反：`ImmediateMultiDragGestureRecognizer` 用**总位移**
+///   （`_pendingDelta.distance`）过 slop，而 `HorizontalDragGestureRecognizer` 用
+///   **水平分量**过 slop；`hypot(dx, dy) >= |dx|` 恒成立，所以纯横向拖动时拖卡这一
+///   侧**不晚于**滚动侧宣布胜出，卡片上的横拖大概率归拖卡而不是滚动。行头与卡片
+///   之间的空白仍能横拖滚动（那里没有 `Draggable`），滚轮 / 触控板横滚不受影响。
+///   真机确认前不要基于「横拖能滚动」这个假设改动这里。
 /// - 移动 / 触摸（Android / iOS / Fuchsia）→ **不建拖拽源**，原样返回 [child]。
 ///   触屏上按下即拖会吞掉列表滚动；而长按已被卡片的上下文菜单占用（改掉它就
 ///   破坏了既有的长按菜单），没有第三种不打架的触发方式。移动端加入合集走既有

@@ -947,27 +947,19 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   /// 把媒体卡拖到书架合集行头 = 把该条目加入本合集
   /// （`CollectionShelfRow.onMediaDropped`）。
   ///
-  /// `addToCollection` 本身幂等（insertOrIgnore + 同事务清成员墓碑），但对用户
-  /// 而言静默 no-op 就是「拖了没反应」——故先查成员给「已在该合集」的明确提示，
-  /// 再落库。加入后按 [_addEpubToCollection] 同款刷新（重取分组映射 + 重绘）。
+  /// 「查成员 → 幂等提示 → 落库 → 失败提示」收口在 [addMediaRefToCollection]
+  /// （书架 / 视频库 / 游戏库同一份，且永不抛出——它挂在 `void` 回调上）；
+  /// 真写进去了才按 [_addEpubToCollection] 同款刷新（重取分组映射 + 重绘）。
   Future<void> _addMediaToCollection(
     int collectionId,
     MediaRef mediaRef,
   ) async {
-    final HibikiDatabase db = ref.read(appProvider).database;
-    final List<MediaCollectionItemRow> items =
-        await db.getCollectionItems(collectionId);
-    final bool already = items.any(
-      (MediaCollectionItemRow it) =>
-          it.mediaType == mediaRef.dbMediaType &&
-          it.entryKey == mediaRef.entryKey,
+    final CollectionAddOutcome outcome = await addMediaRefToCollection(
+      database: ref.read(appProvider).database,
+      collectionId: collectionId,
+      mediaRef: mediaRef,
     );
-    if (already) {
-      HibikiToast.show(msg: t.collection_already_has_item);
-      return;
-    }
-    await db.addToCollection(collectionId, mediaRef.kind, mediaRef.entryKey);
-    if (!mounted) return;
+    if (outcome != CollectionAddOutcome.added || !mounted) return;
     _shelfMapsFuture = _loadShelfMaps();
     _rebuild(() {});
     HibikiToast.show(msg: t.batch_add_to_collection_success(n: 1));

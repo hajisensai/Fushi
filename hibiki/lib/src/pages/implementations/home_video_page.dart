@@ -1690,24 +1690,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 把视频卡拖到合集封面卡上 = 把该视频加入本合集（`CollectionDropTarget`）。
   ///
-  /// `addToCollection` 幂等，但静默 no-op 对用户是「拖了没反应」——先查成员给
-  /// 「已在该合集」的明确提示，再落库；成功后走 [_loadLibraryMaps] 同款刷新。
+  /// 「查成员 → 幂等提示 → 落库 → 失败提示」收口在 [addMediaRefToCollection]
+  /// （书架 / 视频库 / 游戏库同一份，且永不抛出——它挂在 `void` 回调上）；
+  /// 真写进去了才走 [_loadLibraryMaps] 同款刷新并报成功。
   Future<void> _addMediaToCollection(
       int collectionId, MediaRef mediaRef) async {
-    final HibikiDatabase db = ref.read(appProvider).database;
-    final List<MediaCollectionItemRow> items =
-        await db.getCollectionItems(collectionId);
-    final bool already = items.any(
-      (MediaCollectionItemRow it) =>
-          it.mediaType == mediaRef.dbMediaType &&
-          it.entryKey == mediaRef.entryKey,
+    final CollectionAddOutcome outcome = await addMediaRefToCollection(
+      database: ref.read(appProvider).database,
+      collectionId: collectionId,
+      mediaRef: mediaRef,
     );
-    if (already) {
-      HibikiToast.show(msg: t.collection_already_has_item);
-      return;
-    }
-    await db.addToCollection(collectionId, mediaRef.kind, mediaRef.entryKey);
-    if (!mounted) return;
+    if (outcome != CollectionAddOutcome.added || !mounted) return;
     await _loadLibraryMaps();
     HibikiToast.show(msg: t.batch_add_to_collection_success(n: 1));
   }
