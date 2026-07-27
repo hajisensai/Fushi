@@ -928,6 +928,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         );
       case DropIntent.importNewBook:
       case DropIntent.attachToBookCard:
+      // 漫画意图只由 books/manga 表面产出（video 表面不可能命中），列在此处
+      // 仅为穷尽 switch。
+      case DropIntent.importNewManga:
+      case DropIntent.unsupportedMangaArchive:
       case DropIntent.ignore:
         break;
     }

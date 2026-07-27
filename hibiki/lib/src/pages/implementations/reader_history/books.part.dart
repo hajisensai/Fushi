@@ -934,17 +934,25 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     final ModalRoute<dynamic>? route = ModalRoute.of(context);
     if (route != null && !route.isCurrent) return;
 
-    final DroppedFiles files = classifyDroppedFiles(paths);
+    // 目录（漫画页图文件夹）没有扩展名，纯分类函数分不出来——把真实文件系统判据
+    // 注入进去（分类层本身仍不碰 IO）。
+    final DroppedFiles files = classifyDroppedFiles(
+      paths,
+      isDirectory: (String pth) => Directory(pth).existsSync(),
+    );
     debugPrint(
       '[hibiki-drop] [reader-shelf] classified '
       'books=${files.books.length} subtitles=${files.subtitles.length} '
       'audios=${files.audios.length} videos=${files.videos.length} '
+      'mangas=${files.mangas.length} '
+      'unsupportedMangas=${files.unsupportedMangas.length} '
       'dictionaries=${files.dictionaries.length} unknown=${files.unknown.length} '
       'global=$globalPosition',
     );
     final String? hitBookKey = _cardDropRegistry.hitTest(globalPosition);
+    // 漫画库是同一个页面的 mangaOnly 壳，但落点语义不同（见 DropSurface.manga）。
     final DropIntent intent = decideDropIntent(
-      surface: DropSurface.books,
+      surface: _mangaOnly ? DropSurface.manga : DropSurface.books,
       files: files,
       cardHit: hitBookKey != null,
     );
@@ -955,6 +963,22 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
           subtitlePath:
               files.subtitles.isNotEmpty ? files.subtitles.first : null,
           audioPaths: files.audios,
+        );
+      case DropIntent.importNewManga:
+        // 漫画（.mokuro / .cbz / 页图目录）走与书同一个导入对话框——它的导入分派
+        // 早已认得这几种载体（mokuro → MangaImporter、cbz/图片型 zip →
+        // MangaArchiveImporter、目录 → importFromImageFolder），拖入只负责把路径
+        // 预填进去，不重复一套导入逻辑。
+        _openBookImportPrefilled(
+          epubPath: files.mangas.first,
+          subtitlePath: null,
+        );
+      case DropIntent.unsupportedMangaArchive:
+        debugPrint(
+          '[hibiki-drop] [reader-shelf] intent=unsupportedMangaArchive',
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t.drag_drop_manga_archive_unsupported)),
         );
       case DropIntent.attachToBookCard:
         _openAudiobookPrefilled(

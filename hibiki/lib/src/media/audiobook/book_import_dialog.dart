@@ -158,7 +158,14 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (epub != null) {
       _epubPath = epub;
       _epubName = p.basename(epub);
-      _autoFillTitle(p.basenameWithoutExtension(epub), ImportTitleSource.epub);
+      // 目录（漫画页图文件夹）没有扩展名概念——目录名带点时
+      // basenameWithoutExtension 会把 `第01巻.v2` 截成 `第01巻`，当书名用就错了。
+      _autoFillTitle(
+        Directory(epub).existsSync()
+            ? p.basename(epub)
+            : p.basenameWithoutExtension(epub),
+        ImportTitleSource.epub,
+      );
     }
     final String? sub = widget.initialSubtitlePath;
     if (sub != null) {
@@ -935,6 +942,29 @@ class _BookImportDialogState extends State<BookImportDialog>
 
     reportProgress(0.2, t.import_step_reading);
     final String ext = p.extension(_epubPath!).toLowerCase();
+
+    // 漫画页图**目录**（拖入一个漫画文件夹）：整目录导入，OCR blocks 留空。
+    // 必须在所有按扩展名分派的分支之前——目录没有扩展名（目录名带点时 p.extension
+    // 还会误取出一个假扩展名），落到下面任何一条文件分支都会失败。
+    if (Directory(_epubPath!).existsSync()) {
+      reportProgress(0.5, t.import_step_importing_epub);
+      await MangaModule.importImageFolder(
+        db: widget.db,
+        path: _epubPath!,
+        title: title,
+        onDuplicateTitle: _onDuplicateTitle,
+        onProgress: (int done, int total) {
+          if (total > 0) {
+            reportProgress(
+              (done / total).clamp(0.0, 1.0),
+              t.import_step_copying_file(name: p.basename(_epubPath!)),
+            );
+          }
+        },
+      );
+      reportProgress(1, t.import_step_done);
+      return;
+    }
 
     // PDF 阅读器 Phase 1：.pdf 走独立 PdfImporter（pdfrx 真渲染 + 落库 format='pdf'），
     // 必须在下面的 TextToEpub 文本转换分支之前早退——否则 PDF 二进制会被当文本转成乱码

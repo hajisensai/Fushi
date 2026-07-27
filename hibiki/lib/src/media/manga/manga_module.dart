@@ -42,6 +42,23 @@ abstract final class MangaModule {
   static bool isImageArchive(String path) =>
       MangaArchiveImporter.looksLikeImageArchive(path);
 
+  /// 整目录页图导入（拖入一个漫画文件夹的落地路径）。OCR blocks 留空，之后可由
+  /// 任一整卷引擎补齐——故 OCR 失败绝不会导致这本书消失。
+  static Future<String> importImageFolder({
+    required HibikiDatabase db,
+    required String path,
+    String? title,
+    DuplicateTitleCallback? onDuplicateTitle,
+    void Function(int done, int total)? onProgress,
+  }) =>
+      MangaImporter.importFromImageFolder(
+        db: db,
+        imageDirPath: path,
+        title: title,
+        onDuplicateTitle: onDuplicateTitle,
+        onProgress: onProgress,
+      );
+
   static Future<String> importArchive({
     required HibikiDatabase db,
     required String path,

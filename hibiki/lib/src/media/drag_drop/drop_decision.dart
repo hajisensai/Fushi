@@ -1,11 +1,25 @@
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 
 /// 拖拽落点所在的 tab 表面。
-enum DropSurface { books, video }
+///
+/// [manga] = 漫画库（`ReaderHibikiHistoryPage(mangaOnly: true)` 的壳）。它与
+/// [books] 共用同一个页面和同一份 drop target，但**语义不同**：漫画库拖入
+/// 非漫画的书文件没有意义（导进去也不显示在这个书架上，用户会以为丢了）。
+enum DropSurface { books, video, manga }
 
 /// 决策结果意图。widget 层据此打开对话框 / 提示 / 忽略。
 enum DropIntent {
   importNewBook,
+
+  /// 拖入 `.mokuro` / `.cbz` / 页图目录 → 导入一本漫画（`EpubBooks` 里
+  /// `format='manga'` 的行，第三种「书」）。books 与 manga 两个表面都产出它：
+  /// 漫画是书的一种，普通书架拖漫画包也该能导，不该静默。
+  importNewManga,
+
+  /// 拖入 cbr/cb7/rar → 认得出是漫画包，但 `archive` 包不解 RAR，导不了。
+  /// 单列一个意图只为给明确提示，不再静默无反应。
+  unsupportedMangaArchive,
+
   importNewVideo,
   importNewPlaylist,
 
@@ -35,6 +49,13 @@ DropIntent decideDropIntent({
 }) {
   switch (surface) {
     case DropSurface.books:
+      // 漫画载体优先于普通书文件：`.mokuro` 是 JSON、若先被 books 分支吃掉会被
+      // 当纯文本转成 EPUB（导入对话框内部也是漫画分支早退于 TextToEpub，同一道
+      // 理）。漫画是书的一种，普通书架拖漫画包照样导，不静默。
+      if (files.mangas.isNotEmpty) return DropIntent.importNewManga;
+      if (files.unsupportedMangas.isNotEmpty) {
+        return DropIntent.unsupportedMangaArchive;
+      }
       if (files.books.isNotEmpty) return DropIntent.importNewBook;
       // 拖字幕/音频到具体书卡 → 附加到那本书（含拖 .mp4 给书加音频）。视频判定放在
       // 其后，避免把「拖 mp4 到书卡挂音频」误判成新建视频。
@@ -50,6 +71,18 @@ DropIntent decideDropIntent({
       if (files.subtitles.isNotEmpty || files.audios.isNotEmpty) {
         return DropIntent.needCardTarget;
       }
+      if (files.hasAny) return DropIntent.unsupportedSurface;
+      return DropIntent.ignore;
+    case DropSurface.manga:
+      // 漫画库：漫画载体是主业。
+      if (files.mangas.isNotEmpty) return DropIntent.importNewManga;
+      if (files.unsupportedMangas.isNotEmpty) {
+        return DropIntent.unsupportedMangaArchive;
+      }
+      // 漫画库拖入普通书 / 视频 / 字幕等一律给「本页面不支持」提示，**不**沿用
+      // books 表面的自动切换：漫画库是漫画的地方，把 epub 悄悄导进另一个书架
+      // 会让用户以为文件丢了（导完这里什么也不多出来）。给提示而非静默，也不
+      // 替用户决定导去别处。
       if (files.hasAny) return DropIntent.unsupportedSurface;
       return DropIntent.ignore;
     case DropSurface.video:
