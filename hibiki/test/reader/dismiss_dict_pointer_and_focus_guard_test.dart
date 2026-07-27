@@ -49,7 +49,8 @@ void main() {
     test('关词典判定独立于 _audiobookController（纯 EPUB 无有声书也能关）', () {
       // 关词典分支必须排在 `_audiobookController == null` 早退之前，否则纯 EPUB
       // （controller 恒 null）永远走不到关词典。断言两个片段的先后顺序。
-      final int dismissIdx = seekBody.indexOf('ShortcutAction.readerDismissDict');
+      final int dismissIdx =
+          seekBody.indexOf('ShortcutAction.readerDismissDict');
       final int controllerGuardIdx =
           seekBody.indexOf('_audiobookController == null');
       expect(dismissIdx, greaterThanOrEqualTo(0));
@@ -65,20 +66,19 @@ void main() {
   });
 
   group('症② 键盘关词典可靠性：指针唤出弹窗后收回 Flutter 焦点', () {
-    test('存在 _reclaimReaderFocusForTouchPopup helper 且 requestFocus 正文节点', () {
+    test('popupRendered 判据分支存在且门控正确（收回正文节点）', () {
       final int start =
-          pageSrc.indexOf('void _reclaimReaderFocusForTouchPopup()');
-      expect(start, greaterThanOrEqualTo(0),
-          reason: '应有指针弹窗焦点回收 helper');
+          pageSrc.indexOf('bool _canOwnReaderFocus(FocusReclaimCause cause)');
+      expect(start, greaterThanOrEqualTo(0), reason: '应有统一焦点判据，含指针弹窗回收分支');
       final int end = pageSrc.indexOf('\n  }', start);
       final String body = pageSrc.substring(start, end);
-      expect(body.contains('_focusNode.requestFocus()'), isTrue,
+      expect(body.contains('FocusReclaimCause.popupRendered'), isTrue,
+          reason: '判据必须有 popupRendered 分支（指针唤出弹窗后收回焦点）');
+      expect(pageSrc.contains('node: _focusNode'), isTrue,
           reason: '必须把焦点收回正文 _focusNode，否则 Esc 到不了 _handleKeyEvent');
       // 歌词态不动（自有焦点路径）；无弹窗 no-op。
-      expect(body.contains('_lyricsMode'), isTrue,
-          reason: '歌词态必须门控，不夺歌词焦点');
-      expect(body.contains('isDictionaryShown'), isTrue,
-          reason: '无弹窗时 no-op');
+      expect(body.contains('_lyricsMode'), isTrue, reason: '歌词态必须门控，不夺歌词焦点');
+      expect(body.contains('isDictionaryShown'), isTrue, reason: '无弹窗时 no-op');
     });
 
     test('onDictionaryPopupRendered 仅在指针路径(CaretSurface.none)调回收 helper', () {
@@ -94,7 +94,10 @@ void main() {
           reason: '既有光标 transfer 不得丢失');
       expect(body.contains('_caretSurface == CaretSurface.none'), isTrue,
           reason: '仅指针路径 reclaim（光标态交给 transfer）');
-      expect(body.contains('_reclaimReaderFocusForTouchPopup()'), isTrue,
+      expect(
+          body.contains(
+              '_focusOwnership.reclaim(FocusReclaimCause.popupRendered)'),
+          isTrue,
           reason: '指针路径必须收回焦点，修复键盘关词典经常失效');
     });
   });

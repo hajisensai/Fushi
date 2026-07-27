@@ -63,7 +63,7 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       // 挤窄到左侧、不遮控制条），开列表时控制条 / 左右浮动 rail 应继续在被挤窄的画面上
       // 可见可用（与 [_videoSidePanel] 真 overlay 不同，后者盖控制条故仍收起）。控制条本
       // 由 media_kit 真实可见性驱动（[_pokeControlsVisible] / hover），不在此强制收起。
-      _refocusVideo();
+      _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
     } else {
       _closeSubtitleJumpList();
     }
@@ -74,12 +74,12 @@ extension _VideoSubtitle on _VideoHibikiPageState {
   /// [_toggleSubtitleJumpList] 的关闭分支）都调它，避免「关闭副作用各写一份」分叉。
   /// 关闭时必须：清挖词选择（[_clearSelectedMiningCues]）、隐藏列表
   /// （[_subtitleListVisible]）、唤回控制条（[_pokeControlsVisible]）、把焦点归还视频
-  /// （[_refocusVideo]，否则键盘 / 手柄后续失焦）。
+  /// （[_focusOwnership]，否则键盘 / 手柄后续失焦）。
   void _closeSubtitleJumpList() {
     _clearSelectedMiningCues();
     _subtitleListVisible.value = false;
     _pokeControlsVisible();
-    _refocusVideo();
+    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
   }
 
   /// 点字幕跳转列表里某句：seek 到该 cue 起点（复用现成 [VideoPlayerController.skipToCue]）
@@ -583,7 +583,7 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       ),
     );
     // Jimaku 对话框内含联网搜索/下载，会夺焦；关闭后把焦点还给 Video。
-    _refocusVideo();
+    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
     if (downloaded == null || !context.mounted) return;
     if (_isRemote) {
       // 远端：内存应用，不写本地 DB（_applyRemoteSubtitle 自带 cue 为空时的失败提示
@@ -608,14 +608,14 @@ extension _VideoSubtitle on _VideoHibikiPageState {
   }
 
   /// 弹系统文件选择器挑一个字幕文件（srt/ass/ssa/vtt）→ 经 [_importExternalSubtitle]
-  /// 落盘并应用。FilePicker 会夺走视频键盘焦点，关闭后 [_refocusVideo] 归还。
+  /// 落盘并应用。FilePicker 会夺走视频键盘焦点，关闭后 [_focusOwnership] 归还。
   Future<void> _pickAndImportSubtitle(VideoPlayerController controller) async {
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa'],
       allowMultiple: false,
     );
-    _refocusVideo();
+    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
     final String? path = result?.files.single.path;
     if (path == null) return;
     await _importExternalSubtitle(controller, path);
@@ -630,7 +630,7 @@ extension _VideoSubtitle on _VideoHibikiPageState {
       allowedExtensions: const <String>['srt', 'vtt', 'ass', 'ssa'],
       allowMultiple: false,
     );
-    _refocusVideo();
+    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
     final String? path = result?.files.single.path;
     if (path == null) return;
     if (subtitleFormatForPath(path) == null) {
@@ -893,7 +893,7 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     if (!_subtitleLoadingShown) return;
     if (mounted) {
       _rebuild(() => _subtitleLoadingShown = false);
-      WidgetsBinding.instance.addPostFrameCallback((_) => _refocusVideo());
+      _focusOwnership.reclaimAfterFrame(FocusReclaimCause.overlayClosed);
     }
   }
 
@@ -1337,43 +1337,48 @@ extension _VideoSubtitle on _VideoHibikiPageState {
             : kSubtitleAutoAlignProbeLimitMs;
     final bool canAutoAlign = cues.isNotEmpty && videoPath.isNotEmpty;
     if (!context.mounted) return;
-    await showDialog<void>(
-      context: context,
-      useRootNavigator: true,
-      builder: (BuildContext _) => SubtitleWaveformZoomView(
-        rawEnvelope: env,
-        cues: cues,
-        windowEndMs: windowEndMs,
-        initialDelayMs: _delayMs,
-        onCommitDelay: _setDelayMs,
-        onAutoAlign: canAutoAlign ? _autoAlignSubtitle : null,
-        onPlayCue: (int startMs) async {
-          await controller.seekMs(startMs);
-          await controller.play();
-        },
-        isPlaying: () => controller.isPlaying,
-        onTogglePlayPause: () async {
-          await controller.togglePlayPause();
-        },
-        // 弹窗内复用视频页 registry 驱动的整表（尊重重映射）；排除会破坏弹窗自身的动作
-        // （Escape 关弹窗 / 全屏 / 打开字幕列表 / 沉浸锁 / 再次打开对轴弹窗——避免递归叠栈）。
-        keyboardShortcuts: buildVideoPlayerShortcutsFromRegistry(
-          appModel.shortcutRegistry,
-          _buildVideoShortcutActions(controller),
-          exclude: const <ShortcutAction>{
-            ShortcutAction.videoEscape,
-            ShortcutAction.videoToggleFullscreen,
-            ShortcutAction.videoToggleSubtitleList,
-            ShortcutAction.videoToggleImmersiveLock,
-            ShortcutAction.videoOpenSubtitleAlign,
+    // guardOverlay：对轴弹窗（root navigator）会夺走视频键盘焦点，任何退出路径
+    // （Esc / 点外部 / 抛异常）都必须归还——此前这里漏了归还，关掉弹窗后视频快捷键
+    // 直到下次点画面才恢复，与同文件 Jimaku 对话框 / FilePicker 的既有范式不一致。
+    await _focusOwnership.guardOverlay(
+      () => showDialog<void>(
+        context: context,
+        useRootNavigator: true,
+        builder: (BuildContext _) => SubtitleWaveformZoomView(
+          rawEnvelope: env,
+          cues: cues,
+          windowEndMs: windowEndMs,
+          initialDelayMs: _delayMs,
+          onCommitDelay: _setDelayMs,
+          onAutoAlign: canAutoAlign ? _autoAlignSubtitle : null,
+          onPlayCue: (int startMs) async {
+            await controller.seekMs(startMs);
+            await controller.play();
           },
+          isPlaying: () => controller.isPlaying,
+          onTogglePlayPause: () async {
+            await controller.togglePlayPause();
+          },
+          // 弹窗内复用视频页 registry 驱动的整表（尊重重映射）；排除会破坏弹窗自身的动作
+          // （Escape 关弹窗 / 全屏 / 打开字幕列表 / 沉浸锁 / 再次打开对轴弹窗——避免递归叠栈）。
+          keyboardShortcuts: buildVideoPlayerShortcutsFromRegistry(
+            appModel.shortcutRegistry,
+            _buildVideoShortcutActions(controller),
+            exclude: const <ShortcutAction>{
+              ShortcutAction.videoEscape,
+              ShortcutAction.videoToggleFullscreen,
+              ShortcutAction.videoToggleSubtitleList,
+              ShortcutAction.videoToggleImmersiveLock,
+              ShortcutAction.videoOpenSubtitleAlign,
+            },
+          ),
+          onSeek: (int ms) async {
+            await controller.seekMs(ms);
+          },
+          positionListenable: controller,
+          // positionMs 可空（未就绪）；与快速设置面板路径同用 -1 哨兵 = 不画播放头。
+          currentPositionMs: () => controller.positionMs ?? -1,
         ),
-        onSeek: (int ms) async {
-          await controller.seekMs(ms);
-        },
-        positionListenable: controller,
-        // positionMs 可空（未就绪）；与快速设置面板路径同用 -1 哨兵 = 不画播放头。
-        currentPositionMs: () => controller.positionMs ?? -1,
       ),
     );
   }

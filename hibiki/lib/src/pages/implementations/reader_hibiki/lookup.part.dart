@@ -69,25 +69,6 @@ extension _ReaderLookup on _ReaderHibikiPageState {
     }
   }
 
-  /// Reclaim Flutter keyboard focus for the reading content after a reader
-  /// WebView pointer gesture (swipe / wheel page-turn, boundary chapter turn,
-  /// tap-to-toggle-chrome). The native WebView grabs the OS focus when the user
-  /// touches it, dropping [_focusNode] so ESC / shortcuts no longer reach
-  /// [_handleKeyEvent] (BUG-136). Mirrors the popup-dismiss reclaim in
-  /// [onAllPopupsDismissed]; the predicate skips it when a popup or the chrome
-  /// bar legitimately owns focus, and it is a harmless no-op for keyboard /
-  /// gamepad turns (those never route through the JS gesture handlers).
-  void _reclaimReaderFocusAfterGesture() {
-    if (!mounted) return;
-    if (!shouldReclaimReaderFocusAfterGesture(
-      popupVisible: isDictionaryShown,
-      chromeHasFocus: _chromeFocusScope.hasFocus,
-    )) {
-      return;
-    }
-    _focusNode.requestFocus();
-  }
-
   void _clearLookupState() {
     if (_pausedForLookup) {
       _pausedForLookup = false;

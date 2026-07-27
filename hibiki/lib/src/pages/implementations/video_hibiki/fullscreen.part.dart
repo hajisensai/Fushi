@@ -14,7 +14,7 @@ part of '../video_hibiki_page.dart';
 /// getter/field/method resolved through the shared private scope (`isFullscreen`,
 /// `exitFullscreen`, `isMobilePlatform`, `_videoFullscreenTransitioning`,
 /// `_videoFullscreenActive`, `_videoFullscreenRoute`, `_controller`,
-/// `_refocusVideo`, `_videoWithSubtitlePanel`, `_videoFitMode`,
+/// `_focusOwnership`, `_videoWithSubtitlePanel`, `_videoFitMode`,
 /// `videoFitModeToBoxFit`, `_videoControlIconSize`, `_handleBackOrExit`,
 /// `defaultEnterNativeFullscreen`, `defaultExitNativeFullscreen`, etc.).
 ///
@@ -221,7 +221,7 @@ extension _VideoFullscreen on _VideoHibikiPageState {
       // primary focus 丢给全屏路由的 ModalScope，进全屏后快捷键直接死掉（实测见
       // video_fullscreen_focus_gate_test.dart 的机制复现）。
       if (mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _refocusVideo());
+        _focusOwnership.reclaimAfterFrame(FocusReclaimCause.surfaceRemounted);
       }
     }
   }
@@ -234,7 +234,7 @@ extension _VideoFullscreen on _VideoHibikiPageState {
     _videoFullscreenRoute = null;
     if (!mounted) return;
     _rebuild(() => _videoFullscreenActive = false);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refocusVideo());
+    _focusOwnership.reclaimAfterFrame(FocusReclaimCause.surfaceRemounted);
   }
 
   Future<void> _exitVideoFullscreen(BuildContext context) async {
@@ -250,7 +250,7 @@ extension _VideoFullscreen on _VideoHibikiPageState {
       _videoFullscreenTransitioning = false;
       // 焦点归还由 [_onVideoFullscreenRouteClosed]（路由 future 收口）负责：
       // 此刻窗口侧 controls 可能尚未重挂，节点仍是孤儿，这里 refocus 只是兜底。
-      if (mounted) _refocusVideo();
+      _focusOwnership.reclaim(FocusReclaimCause.surfaceRemounted);
     }
   }
 

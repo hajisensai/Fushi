@@ -65,7 +65,7 @@ extension _VideoLayout on _VideoHibikiPageState {
           controller: videoController,
           // 用本页持有的 FocusNode 替换 Video 内置的匿名节点，以便覆盖层（对话框 /
           // bottom sheet / 文件选择器）关闭后能主动把键盘焦点还给它，恢复空格等内置
-          // 快捷键（见 [_refocusVideo]）。
+          // 快捷键（见 [_focusOwnership]）。
           focusNode: _videoFocusNode,
           // 禁用 media_kit 内置 SubtitleView（TODO-080/092，BUG-190）：字幕统一由
           // [VideoSubtitleOverlay] 单层承载（cue 同步 + 逐字查词）。SubtitleView 默认
@@ -127,7 +127,7 @@ extension _VideoLayout on _VideoHibikiPageState {
     // （[HibikiFileDropTarget] 内部门控），其余平台透传 child 零开销。只取第一个
     // 受支持字幕；拖入纯视频/图片等忽略。desktop_drop 只接管 OS 文件拖放、不吃
     // Flutter 指针事件，故内层字幕点击查词（onCharTap）不受影响；不夺焦故无需
-    // _refocusVideo。
+    // _focusOwnership。
     //
     // [VideoControlsFocusGate]：全屏路由在栈上时卸载窗口侧本子树（全屏侧实例因
     // 能看到 FullscreenInheritedWidget 不受影响），保证共享 [_videoFocusNode]

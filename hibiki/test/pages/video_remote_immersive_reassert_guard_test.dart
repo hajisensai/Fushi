@@ -22,9 +22,10 @@ void main() {
     final int setStateIdx = src.indexOf('_failed = false;');
     expect(setStateIdx, greaterThanOrEqualTo(0),
         reason: '需有 _applyLoad 成功路径的 _failed = false');
-    final int refocusIdx = src.indexOf('_refocusVideo();', setStateIdx);
-    expect(refocusIdx, greaterThan(setStateIdx),
-        reason: '需有就绪后的 _refocusVideo 锚点');
+    final int refocusIdx = src.indexOf(
+        '_focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady)',
+        setStateIdx);
+    expect(refocusIdx, greaterThan(setStateIdx), reason: '需有就绪后的焦点回收锚点');
     // 重申沉浸模式应紧随就绪 setState / refocus 之后、在窗口纵横比同步之前。
     final int immersiveIdx =
         src.indexOf('unawaited(_applyVideoImmersiveMode());', refocusIdx);

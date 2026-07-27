@@ -60,7 +60,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         // BUG-467：兜底超时路径同样补下 chrome insets（_hasEverLoaded 刚翻 true）。
         _reapplyChromeInsetsAfterFirstLoad();
         // TODO-700 T3：兜底超时路径也确定性落焦（门控见 helper）。
-        _settleFocusOnContentReady();
+        _focusOwnership.reclaim(FocusReclaimCause.contentReady);
         // BUG-1052：兜底超时也要起阅读计时。计时器原本只在 [_onRestoreComplete]
         // 里建/启，而这条路径正是「JS 迟迟不回 onRestoreComplete」——遮罩已摘、书能
         // 读，却一秒都不记时长（字数照常累计 ⇒ 速度又爆表）。
@@ -119,7 +119,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       _reapplyChromeInsetsAfterFirstLoad();
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       // TODO-700 T3：内容就绪确定性落焦到正文（门控见 helper）。
-      _settleFocusOnContentReady();
+      _focusOwnership.reclaim(FocusReclaimCause.contentReady);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         // 跨章计时的真正终点：用户感知的跨章 = 遮罩（!_readerContentReady 时盖住整页的
         // ColoredBox）从屏上消失、新章可见那一刻。上面的 _rebuild 只是把状态翻真，遮罩

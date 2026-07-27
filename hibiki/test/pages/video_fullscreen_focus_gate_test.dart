@@ -118,7 +118,7 @@ void main() {
     state.exitFullscreen();
     await tester.pumpAndSettle();
 
-    // 模拟页面里所有 _refocusVideo() 补丁：requestFocus 只会静默挂起。
+    // 模拟页面里所有焦点回收：requestFocus 只会静默挂起。
     sharedNode.requestFocus();
     await tester.pumpAndSettle();
     expect(sharedNode.hasPrimaryFocus, isFalse,

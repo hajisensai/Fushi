@@ -16,9 +16,11 @@ void main() {
     src = f.readAsStringSync();
   });
 
-  test('存在 _reclaimReaderFocusIfOwned 回收 helper', () {
-    expect(src, contains('void _reclaimReaderFocusIfOwned()'),
-        reason: '应有统一的 resumed 焦点回收 helper');
+  test('存在统一的焦点所有者与判据', () {
+    expect(src, contains('PageFocusOwnership _focusOwnership'),
+        reason: '应有统一的焦点所有者');
+    expect(src, contains('bool _canOwnReaderFocus(FocusReclaimCause cause)'),
+        reason: '应有统一的 resumed 焦点回收判据');
   });
 
   test('didChangeAppLifecycleState 的 resumed 分支调回收 helper', () {
@@ -28,15 +30,17 @@ void main() {
     final String body = src.substring(lifecycle, end);
     expect(body, contains('AppLifecycleState.resumed'),
         reason: 'resumed 分支不能缺失，否则切窗回来不回收焦点');
-    expect(body, contains('_reclaimReaderFocusIfOwned();'),
-        reason: 'resumed 时必须调回收 helper');
+    expect(
+        body, contains('_focusOwnership.reclaim(FocusReclaimCause.appResumed)'),
+        reason: 'resumed 时必须回收焦点');
     // 既有 paused/inactive 落库分支不得被破坏。
     expect(body, contains('_syncAndFlushPosition()'),
         reason: 'paused/inactive 落库分支必须保留');
   });
 
-  test('回收 helper 含完整门控（光标 / 歌词 / 弹窗 + 路由 isCurrent）', () {
-    final int start = src.indexOf('void _reclaimReaderFocusIfOwned()');
+  test('回收判据含完整门控（光标 / 歌词 / 弹窗 + 路由 isCurrent）', () {
+    final int start =
+        src.indexOf('bool _canOwnReaderFocus(FocusReclaimCause cause)');
     expect(start, greaterThanOrEqualTo(0));
     final int end = src.indexOf('\n  }', start);
     final String body = src.substring(start, end);
@@ -53,7 +57,6 @@ void main() {
     expect(body, contains('ModalRoute.of(context)'), reason: 'helper 必须取所有者路由');
     expect(body, contains('isCurrent'),
         reason: 'helper 必须含路由 isCurrent 门控（否则夺对话框焦点，Never break userspace）');
-    expect(body, contains('_focusNode.requestFocus()'),
-        reason: 'helper 必须 requestFocus 正文节点');
+    expect(src, contains('node: _focusNode'), reason: '所有者必须持有正文节点 _focusNode');
   });
 }

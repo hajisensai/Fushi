@@ -70,6 +70,7 @@ import 'package:hibiki/src/media/video/video_mpv_config.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_screenshot_filename.dart';
 import 'package:hibiki/src/startup/exit_flush_registry.dart';
+import 'package:hibiki/src/focus/page_focus_ownership.dart';
 import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
 // TODO-1342：视频播放器手柄映射。GamepadButtonIntent（桌面轮询派发）+ GamepadButton
 // （原生按键归一）+ ShortcutAction/ShortcutScope（video 作用域绑定解析）。
@@ -1257,7 +1258,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 快捷键（空格=播放/暂停、方向键=快进/快退/音量等）。本页把这个节点提到 State 持有，
   /// 是为了在任何**会夺走窗口键盘焦点的覆盖层**（对话框 / bottom sheet / 系统文件选择器）
   /// 关闭后，能主动把焦点还给 [Video]——否则那些覆盖层关闭后焦点悬空，空格等快捷键失灵
-  /// （根因：FilePicker 打开系统对话框抢走焦点，关闭后不会自动归还）。见 [_refocusVideo]。
+  /// （根因：FilePicker 打开系统对话框抢走焦点，关闭后不会自动归还）。见 [_focusOwnership]。
   final FocusNode _videoFocusNode = FocusNode(debugLabel: 'videoKeyboard');
 
   /// media_kit controls 子树内的 [BuildContext]（在 [_buildVideoControls] 用 [Builder]
@@ -1277,13 +1278,13 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 全屏路由会用**同一个** [_videoFocusNode] 再挂一个 [Focus]，若窗口侧 controls
   /// 不卸载，退全屏时全屏侧 Focus dispose 的 detach 会把节点从焦点树摘除，窗口侧
   /// 只剩 stale attachment、永远不再 reparent → 节点永久孤儿、此后所有
-  /// [_refocusVideo]（含每个菜单/对话框关闭后的归还）全部静默失效——这正是
+  /// [_focusOwnership] 的回收（含每个菜单/对话框关闭后的归还）全部静默失效——这正是
   /// 「设置/导入/点外部后快捷键失灵」在打过逐点 refocus 补丁后仍复发的共同根因
   /// （TODO-040/042）。
   bool _videoFullscreenActive = false;
 
   /// 当前在栈上的全屏路由（[_videoFullscreenActive] 为真时非 null）。
-  /// [_reclaimVideoFocusIfOwned] 用它判定全屏期间「键盘所有者路由」是否被
+  /// [_canOwnVideoFocus] 用它判定全屏期间「键盘所有者路由」是否被
   /// 对话框/遮罩压住（`isCurrent`），避免切窗返回时抢走全屏内对话框的焦点。
   PageRoute<void>? _videoFullscreenRoute;
 
@@ -1740,7 +1741,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
         // 切窗 / 系统对话框返回（TODO-040 ①）：窗口重新激活时若键盘所有权仍属
         // 本页（页面或其全屏路由是当前路由、无查词浮层），把焦点收回视频——
         // OS 层焦点丢失后 Flutter 不保证归还到原节点。
-        _reclaimVideoFocusIfOwned();
+        _focusOwnership.reclaim(FocusReclaimCause.appResumed);
       case AppLifecycleState.detached:
         break;
     }
@@ -2817,9 +2818,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // TODO-669：建立 / 重置进度条 hover 缩略图预览（桌面本地文件实时取帧；远端流 /
     // 移动端降级）。在 _currentVideoPath 更新后调，按新路径绑离屏取帧器。
     _setupThumbnailPreview(videoPath);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _refocusVideo();
-    });
+    _focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady);
     // BUG-370：视频就绪后重申沉浸隐藏系统栏（移动端）。沉浸模式在 initState 只申一次，
     // 而**远端视频**要先 await 网络流地址 + 下字幕才 load，controller 就绪得晚——若
     // immersiveSticky 在等待期被系统 / 用户触屏临时唤回导航栏，首个带进度条的帧会读到
@@ -3314,34 +3313,44 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _overlayInert = false;
   }
 
-  /// 把键盘焦点还给 media_kit [Video]，恢复其内置快捷键（空格=播放/暂停等）。
+  /// 本页键盘焦点的单一所有者：所有「把焦点还给 media_kit [Video]」的回收都走
+  /// 它，判据集中在 [_canOwnVideoFocus]。
   ///
-  /// 在任何会盖在视频上 / 夺走窗口焦点的覆盖层（对话框、bottom sheet、系统文件选择器）
-  /// 关闭后调用——这些覆盖层关闭后 Flutter 不会自动把焦点还给 [Video] 的 FocusNode，
-  /// 导致空格等快捷键失灵（BUG：导入着色器后空格失灵）。统一在覆盖层的 `await` 返回点
-  /// 调用即覆盖全部入口。查词浮层（[_popup]）活动期间不 refocus（用户在查词，不应让
-  /// 空格控制视频）；浮层栈**全空**时由关栈汇聚点 [_popNestedPopupAt] 统一收回。
+  /// 取代原先散在 29 处的 `_refocusVideo()` / `_reclaimVideoFocusIfOwned()` 手写
+  /// 补丁——那些补丁每个都自带一套略有出入的门控，漏一处就是一类「快捷键失灵」
+  /// 用户报告（如字幕波形对轴弹窗关闭后没有归还）。覆盖层一律用
+  /// [PageFocusOwnership.guardOverlay] 包裹，异常/取消路径也不会把键盘搁浅。
+  late final PageFocusOwnership _focusOwnership = PageFocusOwnership(
+    node: _videoFocusNode,
+    canOwn: _canOwnVideoFocus,
+  );
+
+  /// 「视频此刻应当持有键盘」的统一判据。
   ///
   /// 前提：[_videoFocusNode] 必须仍在焦点树上。全屏期间窗口侧 controls 经
   /// [VideoControlsFocusGate] 卸载，保证退全屏后节点被窗口侧重新 attach——否则
-  /// 节点是孤儿时本方法只会静默挂起（这正是 TODO-040 修掉的根因）。
-  void _refocusVideo() {
-    if (!mounted) return;
-    // 仅当播放器已就绪（Video 已挂载）才请求焦点；否则节点未 attach，requestFocus 无意义。
-    if (_controller == null) return;
-    _videoFocusNode.requestFocus();
-  }
-
-  /// 「视频应当持有键盘」的统一回收判据：键盘所有者路由（窗口模式=本页路由，
-  /// 全屏期间=全屏路由）是当前路由、且无可见查词浮层时，把焦点收回
-  /// [_videoFocusNode]。被设置对话框 / 菜单 / 导入遮罩压住（所有者路由非 current）
-  /// 时不抢焦点——那些覆盖层关闭时各自的 `whenComplete` / `await` 返回点会归还。
-  void _reclaimVideoFocusIfOwned() {
-    if (!mounted || _hasVisiblePopup) return;
-    final ModalRoute<Object?>? owner =
-        _videoFullscreenActive ? _videoFullscreenRoute : ModalRoute.of(context);
-    if (owner != null && !owner.isCurrent) return;
-    _refocusVideo();
+  /// 节点是孤儿时任何请求都只会静默挂起（这正是 TODO-040 修掉的根因）。
+  bool _canOwnVideoFocus(FocusReclaimCause cause) {
+    if (!mounted) return false;
+    // 播放器未就绪时 [Video] 尚未挂载、节点未 attach，请求焦点无意义。
+    if (_controller == null) return false;
+    // 查词浮层活动期间不抢焦点（用户在查词，不应让空格控制视频）。浮层栈**全空**
+    // 是由关栈汇聚点 [_popNestedPopupAt] 以 [FocusReclaimCause.popupDismissed]
+    // 通知的，那一刻栈已空，故该 cause 不受本门控约束。
+    if (cause != FocusReclaimCause.popupDismissed && _hasVisiblePopup) {
+      return false;
+    }
+    // 生命周期回前台是全局回调，本页上方可能压着设置对话框 / 菜单 / 导入遮罩
+    // （键盘所有者路由：窗口模式=本页路由，全屏期间=全屏路由）。此时抢焦点会
+    // 夺走对话框的键盘（Never break userspace）——那些覆盖层各自的 guardOverlay
+    // 返回点会归还。
+    if (cause == FocusReclaimCause.appResumed) {
+      final ModalRoute<Object?>? owner = _videoFullscreenActive
+          ? _videoFullscreenRoute
+          : ModalRoute.of(context);
+      if (owner != null && !owner.isCurrent) return false;
+    }
+    return true;
   }
 
   /// media_kit 控制条自动隐藏时长，与两端控制主题的 `controlsHoverDuration` 同源（2s）。
@@ -3732,7 +3741,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // 同语义；视频用 DictionaryPageMixin 没有该钩子，故在关栈汇聚点清）。点同句另一
       // 字 / 字幕条另一句切换查词走 _lookupAt(replaceStack)，栈不空，草稿不被清。
       _miningDraft.clear();
-      _refocusVideo();
+      _focusOwnership.reclaim(FocusReclaimCause.popupDismissed);
       // BUG-861：查词会话结束，复位悬停切词去重键，使关掉浮层后再次悬停同一字符能重查。
       _barrierHoverLastPos = Offset.zero;
       _barrierHoverLastSentence = '';
@@ -5354,7 +5363,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     if (!_videoControlEditMode.value) return;
     _videoControlEditMode.value = false;
     if (revealControls) _pokeControlsVisible();
-    _refocusVideo();
+    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
   }
 
   Future<void> _clearWindowAspectRatioLock() async {
@@ -6181,7 +6190,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // 「点了外面/焦点丢失后」的恢复路径——与原生播放器一致，点一下画面即恢复键盘）。
     // 查词浮层打开时点击被根 Overlay barrier 拦截、到不了这里，guard 仅兜底；点
     // 控制条按钮随后弹出的菜单/对话框会再夺焦，其 whenComplete 自会归还，不冲突。
-    if (!_hasVisiblePopup) _refocusVideo();
+    _focusOwnership.reclaim(FocusReclaimCause.gesture);
     // 触屏点画面唤回视频左侧锁 / 解锁按钮（TODO-126）。沉浸态下控制条指针被 gate，但本
     // 外层 Listener 在 gate 之外仍收到指针，故沉浸态点画面也能唤回解锁按钮（移动端无 hover）。
     _pokeLockButton();
@@ -6397,9 +6406,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       ).then((VoidCallback? action) {
         action?.call();
         // 菜单关闭后把键盘焦点还给 Video（覆盖层夺焦后不会自动归还，与其它 sheet
-        // 同样的 _refocusVideo 收尾）。点中项时其 helper 可能再弹 sheet 并各自归还，
+        // 同样的 guardOverlay 收尾）。点中项时其 helper 可能再弹 sheet 并各自归还，
         // 不冲突；未点中（点外部关闭）时这一下把焦点收回。
-        _refocusVideo();
+        _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
       }),
     );
   }

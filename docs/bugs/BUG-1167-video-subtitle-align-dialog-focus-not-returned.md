@@ -1,0 +1,9 @@
+## BUG-1167 · 视频字幕波形对轴弹窗关闭后不归还键盘焦点
+
+- **报告**：2026-07-27（用户：「无论是做视频还是漫画都特别容易丢快捷键，鼠标事件也容易丢」——排查该总症状时定位到的具体实例之一）。
+- **真实性**：✅ **真 bug（沿真实代码路径定位）**。字幕波形对轴弹窗（Shift+A，`ShortcutAction.videoOpenSubtitleAlign`）走 `await showDialog<void>(useRootNavigator: true, …)`，返回后**没有**任何焦点归还调用。根因 `file:line`：`hibiki/lib/src/pages/implementations/video_hibiki/subtitle.part.dart:1340`（修复前行号，`await showDialog` 处）。同一文件里的 Jimaku 下载对话框（`:572-586`）与两处 `FilePicker`（`:613-618` / `:628-633`）都在 `await` 返回点调了 `_refocusVideo()`，唯独这条漏了——`useRootNavigator: true` 的对话框同样会夺走 `_videoFocusNode` 的键盘焦点，关闭后 Flutter 不会自动归还。
+  - 用户可感知表现：Shift+A 开对轴弹窗 → Esc / 点外部关掉 → 空格、方向键等播放快捷键全部失灵，必须先用鼠标点一下画面（触发 `_handleVideoPointerUp` 里的兜底 refocus，修复前 `video_hibiki_page.dart:6184`）才恢复。
+  - 这不是孤例，而是**补丁式打法的必然产物**：归还焦点靠「每个覆盖层的返回点各写一次」，新增一个覆盖层就多一次漏写机会。视频页当时共 29 处此类补丁。
+- **[x] ① 已修复** — 提交 `9ef5f2776`（PR #480）。根因修（消除「每处手写」这一类别，而非只补漏掉的这一处）：新增 `hibiki/lib/src/focus/page_focus_ownership.dart` 的 `PageFocusOwnership`，覆盖层一律用 `guardOverlay(() => showDialog(...))` 包裹——`try/finally` 保证正常返回、抛异常、被 pop 三条路径都归还焦点。本弹窗改用它后同时获得异常/取消路径的归还（旧的手写 `_refocusVideo()` 即使写了也只覆盖正常返回）。视频页 29 处补丁一并收敛到单一入口 + 单一判据 `_canOwnVideoFocus`。
+- **[x] ② 已加自动化测试** — `hibiki/test/focus/page_focus_ownership_test.dart`（6 passed）：`guardOverlay` 三条路径各一例——正常 resolve 后归还、**抛异常后仍归还**（`reason: 'a failed picker/dialog must not strand the keyboard'`）、判据否决时不抢（不会从仍在上面的对话框手里夺焦）。另加 `hibiki/test/focus/media_page_focus_ownership_guard_test.dart` 源码守卫：媒体页不得绕过 `_focusOwnership` 裸调 `requestFocus`——这条守的正是「以后又有人在某个覆盖层返回点手写一次、然后下一个覆盖层继续漏」的复发路径。真实焦点行为依赖平台焦点遍历，headless 难稳定复现，故守在「单一入口 + 覆盖层自动归还」的结构不变式层。
+- **备注**：桌面（键盘）为主。`flutter analyze` 干净；`test/focus` + `test/media/video` + 视频页 11 个守卫共 1979 passed。**桌面真机肉眼复测待用户**：视频页 Shift+A 开波形对轴弹窗 → Esc 关闭 → 直接按空格应立即播放/暂停（修复前需先点一下画面）。同批修复见 [BUG-1168](BUG-1168-post-frame-focus-reclaim-never-fires-on-idle-tree.md)。

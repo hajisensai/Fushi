@@ -919,9 +919,16 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     // `moveFocusToChrome` path is gone): the bar is a touch/mouse + key-glyph
     // surface, not a directional-nav destination. Keeping focus on the content
     // means directional keys keep turning the page and hidden shortcuts are
-    // never short-circuited by a focused bar. requestFocus() is a cheap no-op
-    // when the content already holds focus.
-    _focusNode.requestFocus();
+    // never short-circuited by a focused bar.
+    //
+    // Cause is [FocusReclaimCause.chromeToggled], NOT `overlayClosed`: the bar is
+    // this page's own chrome, not an overlay stacked on top of it, so there is no
+    // other legitimate focus owner to yield to. `chromeToggled` therefore skips
+    // the strict content-ready/lyrics/caret/popup gating that `overlayClosed`
+    // carries — this reclaim is a re-assertion (a no-op when the content already
+    // holds focus), and gating it would silently drop the keyboard in lyrics mode
+    // or before content is ready.
+    _focusOwnership.reclaim(FocusReclaimCause.chromeToggled);
   }
 
   Future<void> _applyChromeInsets() async {
@@ -1225,9 +1232,9 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   // bar stays operable by touch/mouse but is never a directional-nav destination,
   // so it can neither steal a hidden shortcut nor strand the page-turn keys.
   // _chromeFocusScope is kept as the bar's structural scope; its `.hasFocus` is
-  // now always false, which [_reclaimReaderFocusAfterGesture] relies on. The
-  // audiobook bar passes a ValueKey so element identity survives the play-bar ↔
-  // settings-bar swap; the settings bar passes none (as before).
+  // now always false, which the `gesture` branch of [_canOwnReaderFocus] relies
+  // on. The audiobook bar passes a ValueKey so element identity survives the
+  // play-bar ↔ settings-bar swap; the settings bar passes none (as before).
   Widget _wrapBottomChromeBar({Key? key, required Widget bar}) {
     return Positioned(
       key: key,

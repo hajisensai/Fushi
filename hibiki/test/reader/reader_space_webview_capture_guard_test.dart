@@ -21,49 +21,25 @@ void main() {
   /// 格式（换行、缩进重排不会误伤守卫）。
   String squash(String s) => s.replaceAll(RegExp(r'\s+'), ' ');
 
-  test('webview.part.dart：内容层 keydown 捕获裸 Space + preventDefault + callHandler',
-      () {
+  test('webview.part.dart：注入裸 Space 键盘桥并接上 onSpaceKey handler', () {
     expect(webview.existsSync(), isTrue,
         reason: 'webview.part.dart 不存在，路径变了须更新守卫');
     final String src = webview.readAsStringSync();
     final String flat = squash(src);
 
-    // ① 注入 keydown 监听。
-    expect(flat, contains("document.addEventListener('keydown'"),
-        reason: '必须在内容层注入 keydown 监听拦截裸 Space');
+    // ① 内容层 keydown 捕获经共享生成器注入（JS 本身的不变式——只拦裸键、放行
+    // 修饰键组合 / IME / 输入框、preventDefault、回传 key——由
+    // test/focus/webview_key_bridge_test.dart 守，避免同一份行为在两处重复断言）。
+    expect(flat, contains('webViewKeyBridgeScript('),
+        reason: '必须经共享的 webViewKeyBridgeScript 注入内容层 keydown 捕获');
+    final int start = flat.indexOf('webViewKeyBridgeScript(');
+    final String call = flat.substring(start, start + 160);
+    expect(call, contains("handlerName: 'onSpaceKey'"),
+        reason: "桥必须回传到 'onSpaceKey'");
+    expect(call, contains("keys: const <String>[' ']"),
+        reason: '阅读器只拦裸 Space（其余键仍走 Flutter 焦点路径）');
 
-    // 定位 keydown 监听体作断言窗口，避免误命中别处的 preventDefault / callHandler。
-    final int start = flat.indexOf("document.addEventListener('keydown'");
-    expect(start, greaterThanOrEqualTo(0));
-    final String body = flat.substring(start, start + 700);
-
-    // ② 只拦裸 Space：判 key===' ' 且放行带修饰键的组合。
-    expect(body, contains("e.key !== ' '"),
-        reason: '必须按 key===空格 判定，只拦裸 Space');
-    expect(
-      body.contains('e.ctrlKey') &&
-          body.contains('e.shiftKey') &&
-          body.contains('e.altKey') &&
-          body.contains('e.metaKey'),
-      isTrue,
-      reason: 'Ctrl/Shift/Alt/Meta+Space 必须放行（尊重改键语义），不得吞掉',
-    );
-
-    // 文本框 / contenteditable / IME composing 里的空格放行。
-    expect(body.contains('isComposing'), isTrue,
-        reason: 'IME composing 里的空格不得拦（打字输入）');
-    expect(body.contains('isContentEditable'), isTrue,
-        reason: 'contenteditable 里的空格不得拦');
-
-    // ③ preventDefault 掐掉浏览器默认 scrollByPage。
-    expect(body.contains('e.preventDefault()'), isTrue,
-        reason: '必须 preventDefault 掐掉 Chromium 默认滚屏');
-
-    // ④ 经 callHandler('onSpaceKey') 回传 Dart。
-    expect(body.contains("callHandler('onSpaceKey')"), isTrue,
-        reason: "必须经 callHandler('onSpaceKey') 回传 Dart 解析");
-
-    // Dart 侧注册 onSpaceKey handler。
+    // ② Dart 侧注册 onSpaceKey handler 并解析动作。
     expect(flat, contains("handlerName: 'onSpaceKey'"),
         reason: 'Dart 必须注册 onSpaceKey handler 接收回传');
     expect(flat, contains('_resolveWebViewSpaceAction()'),

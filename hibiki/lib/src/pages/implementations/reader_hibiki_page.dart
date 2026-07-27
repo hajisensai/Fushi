@@ -95,6 +95,8 @@ import 'package:hibiki/src/shortcuts/input_binding.dart'
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent, GamepadLongPressIntent, focusedEditableText;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:hibiki/src/focus/page_focus_ownership.dart';
+import 'package:hibiki/src/focus/webview_key_bridge.dart';
 import 'package:hibiki/src/shortcuts/reader_caret_router.dart';
 import 'package:hibiki/src/shortcuts/dictionary_caret_controller.dart';
 // Re-export so existing references to `CaretSurface` via the reader page,
@@ -2194,7 +2196,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // 页级 [_focusNode]，导致切窗回来后页级 / 全局快捷键全死，且因是焦点状态而非可
       // 重建对象，只有重启 app 才靠 autofocus 抢回。对齐视频页 [_reclaimVideoFocusIfOwned]
       // 的 resumed 回收范式，把焦点收回正文（门控见 helper，绝不抢对话框 / 查词焦点）。
-      _reclaimReaderFocusIfOwned();
+      _focusOwnership.reclaim(FocusReclaimCause.appResumed);
       // BUG-892 / BUG-1052: 后台那段间隔靠「计时器停着」丢弃，而不是靠回前台重锚一个
       // 墙钟基准——后者会连同重锚前那段**真实前台阅读时长**一起抹掉（见
       // [_sessionReadingMs] 注释）。这里只重启计时器并重锚 tick 起点；两条账目（小时桶
@@ -2892,34 +2894,66 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   Map<int, bool>? _edgeMatchResults;
 
-  /// TODO-700 T3：WebView 正文就绪的瞬间，确定性把 Flutter 焦点落到正文 [_focusNode]，
-  /// 让首开书第一次按 B / 上下句 / 播放就作用在书内（消解「首开点两下播放才听书」「首开
-  /// 按 B 退书」——根因是整页 autofocus 抢在内容就绪前、焦点落在表面层，B 冒泡全局返回）。
-  /// 严格门控：光标态 / 词典弹窗态 / 歌词态都不抢（否则会覆盖正在用的光标焦点）。整页
-  /// Focus 的 autofocus:true 仍保留作冷启动兜底，本 helper 只是把「确定性到位」补在每个
-  /// 内容就绪落点（含切应用回来 / 重启后重进，不再依赖 FocusManager 进程内记忆）。
-  void _settleFocusOnContentReady() {
-    if (!mounted || !_readerContentReady || _lyricsMode) return;
-    if (_caretActive || _caretSurface != CaretSurface.none) return;
-    if (isDictionaryShown) return; // 弹窗 WebView 持焦点期间不抢
-    _focusNode.requestFocus();
-  }
+  /// 本页键盘焦点的单一所有者：所有「把焦点收回正文 [_focusNode]」的回收都走它，
+  /// 判据集中在 [_canOwnReaderFocus]。
+  ///
+  /// 取代原先的 `_settleFocusOnContentReady` / `_reclaimReaderFocusIfOwned` /
+  /// `_reclaimReaderFocusAfterGesture` / `_reclaimReaderFocusForTouchPopup` 四个
+  /// 名字相近、门控各不相同的私有 helper——它们每个都对「弹窗可见时该不该抢」
+  /// 给出过不同答案（BUG-136 说不抢、BUG-1071 ② 说必须抢），靠方法名区分极易接错。
+  late final PageFocusOwnership _focusOwnership = PageFocusOwnership(
+    node: _focusNode,
+    canOwn: _canOwnReaderFocus,
+  );
 
-  /// TODO-900：app 回前台（[AppLifecycleState.resumed]）时把 Flutter 焦点收回正文
-  /// [_focusNode]，修复「切窗回来后阅读器 / 全局快捷键整体失灵、只能重启复活」。
-  /// 复用 [_settleFocusOnContentReady] 的既有门控（内容就绪 / 非歌词 / 无光标占用 /
-  /// 无查词弹窗），并在其上**追加路由 `isCurrent` 判定**（对齐视频页
-  /// [_reclaimVideoFocusIfOwned] 的 `owner.isCurrent`）：resumed 是全局生命周期回调，
-  /// 阅读器上方压着设置 / 查词大对话框（所有者路由非 current）时直接 requestFocus 会
-  /// 夺走对话框焦点（Never break userspace 红线），故非当前路由时不抢——那些覆盖层关闭
-  /// 时各自的返回点会归还焦点。
-  void _reclaimReaderFocusIfOwned() {
-    if (!mounted || !_readerContentReady || _lyricsMode) return;
-    if (_caretActive || _caretSurface != CaretSurface.none) return;
-    if (isDictionaryShown) return; // 弹窗 WebView 持焦点期间不抢
-    final ModalRoute<Object?>? owner = ModalRoute.of(context);
-    if (owner != null && !owner.isCurrent) return;
-    _focusNode.requestFocus();
+  /// 「阅读器正文此刻应当持有键盘」的统一判据，按回收原因分流。
+  bool _canOwnReaderFocus(FocusReclaimCause cause) {
+    if (!mounted) return false;
+    switch (cause) {
+      // BUG-1071 ②：词典弹窗是**纯原生 WebView**、没有 Flutter 焦点节点，指针唤出
+      // 它时 OS 焦点落在弹窗上。必须在弹窗可见时把 Flutter 焦点拉回正文，否则关词典
+      // 键（Esc / 绑定键）永远抵达不了 [_handleKeyEvent]。故此 cause 与下面 gesture
+      // 的「弹窗可见就让位」正好相反——这正是两者当初必须是两个 helper 的原因。
+      case FocusReclaimCause.popupRendered:
+        return _lyricsMode ? false : isDictionaryShown;
+      // 整条查词浮层栈关闭：曾持键盘的弹窗 WebView 已消失，不归还用户会被困死
+      // （收不到任何按键，没有任何办法回到正文）。
+      case FocusReclaimCause.popupDismissed:
+        return true;
+      // TODO-700 T8：底栏整体是 ExcludeFocus（见 [_wrapBottomChromeBar]），任何时刻
+      // 都不是合法的焦点所有者，故切底栏没有「让位给谁」这回事——只是重新确认焦点
+      // 仍在正文，正文已持焦时是纯 no-op。**不套**下面那组严格门控：歌词模式 / 内容
+      // 未就绪下正文键盘节点依然是 [_handleKeyEvent] 的唯一入口，此时不归位就等于
+      // 切一下底栏把键丢了（统一前这里是无条件 requestFocus，行为保持不变）。
+      case FocusReclaimCause.chromeToggled:
+        return true;
+      // BUG-136：原生 WebView 在任一指针手势上捕获 OS 焦点。只让位给另一个**合法的
+      // Flutter 焦点所有者**（可见弹窗 / 底栏 chrome），其余一律收回。
+      case FocusReclaimCause.gesture:
+        return shouldReclaimReaderFocusAfterGesture(
+          popupVisible: isDictionaryShown,
+          chromeHasFocus: _chromeFocusScope.hasFocus,
+        );
+      // TODO-700 T3 / TODO-900：内容就绪、切窗回前台、底栏显隐后的归位。严格门控：
+      // 光标态 / 词典弹窗态 / 歌词态都不抢（否则会覆盖正在用的光标焦点）。整页 Focus
+      // 的 autofocus:true 仍保留作冷启动兜底，这里只是把「确定性到位」补在每个落点
+      // （含切应用回来 / 重启后重进，不再依赖 FocusManager 进程内记忆）。
+      case FocusReclaimCause.contentReady:
+      case FocusReclaimCause.appResumed:
+      case FocusReclaimCause.surfaceRemounted:
+      case FocusReclaimCause.overlayClosed:
+        if (!_readerContentReady || _lyricsMode) return false;
+        if (_caretActive || _caretSurface != CaretSurface.none) return false;
+        if (isDictionaryShown) return false; // 弹窗 WebView 持焦点期间不抢
+        // resumed 是全局生命周期回调，阅读器上方可能压着设置 / 查词大对话框；
+        // 直接抢会夺走对话框焦点（Never break userspace 红线）。那些覆盖层关闭
+        // 时各自的返回点会归还焦点。
+        if (cause == FocusReclaimCause.appResumed) {
+          final ModalRoute<Object?>? owner = ModalRoute.of(context);
+          if (owner != null && !owner.isCurrent) return false;
+        }
+        return true;
+    }
   }
 
   @override
@@ -2934,7 +2968,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // Return Flutter focus to the reading content. The dismissed popup's WebView
     // held the keyboard/gamepad focus, so without this the reader receives no key
     // events after the popup closes and the user is stuck with no way back in.
-    _focusNode.requestFocus();
+    _focusOwnership.reclaim(FocusReclaimCause.popupDismissed);
     // If the cursor was living in a popup (controller/keyboard flow), the popup
     // it was in is gone — bring it back to the reader at its remembered word.
     // This covers every dismiss path (B/Esc, tap-outside, swipe).
@@ -3007,18 +3041,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // 驱动光标键，此处不介入以免与 transfer 竞争（不回归 BUG-136：弹窗无 Flutter 焦点
     // 节点，reclaim 键盘焦点不影响弹窗指针交互——嵌套查词/制卡/收藏均 pointer 驱动）。
     if (_caretSurface == CaretSurface.none) {
-      _reclaimReaderFocusForTouchPopup();
+      _focusOwnership.reclaim(FocusReclaimCause.popupRendered);
     }
-  }
-
-  /// BUG-1071 ②：指针唤出词典弹窗后把 Flutter 键盘焦点收回正文 [_focusNode]，让
-  /// 关词典键（Esc / 绑定键）确定性抵达 [_handleKeyEvent]。与 [_reclaimReaderFocusAfterGesture]
-  /// 的区别：那条**故意**在弹窗可见时早退（BUG-136 的旧假设「弹窗自持焦点」——对纯原生
-  /// WebView 不成立）；本 helper 正是要在弹窗可见时 reclaim，故不套那条谓词。歌词态不动
-  /// （歌词自有焦点路径），非 mounted / 无弹窗时 no-op。
-  void _reclaimReaderFocusForTouchPopup() {
-    if (!mounted || _lyricsMode || !isDictionaryShown) return;
-    _focusNode.requestFocus();
   }
 
   // ── DictionaryCaretHost ───────────────────────────────────────────
