@@ -186,10 +186,13 @@ class _TorrentSettingsSectionState
     return (n.isFinite && n > 0) ? n : 0;
   }
 
+  /// [helper] 是常驻说明（`helperText`），与输入后即消失的占位 [hint]
+  /// （`hintText`）不同：用来讲清输入框自身讲不完的生效边界。
   Widget _text({
     required String label,
     String? initial,
     String? hint,
+    String? helper,
     bool obscure = false,
     TextInputType? keyboard,
     TextEditingController? controller,
@@ -214,6 +217,8 @@ class _TorrentSettingsSectionState
             decoration: InputDecoration(
               labelText: label,
               hintText: hint,
+              helperText: helper,
+              helperMaxLines: 3,
               errorText: errorText,
               isDense: true,
               border: const OutlineInputBorder(),
@@ -229,6 +234,7 @@ class _TorrentSettingsSectionState
     required String label,
     required int value,
     String? hint,
+    String? helper,
     bool decimal = false,
     required ValueChanged<String> onChanged,
   }) {
@@ -236,6 +242,7 @@ class _TorrentSettingsSectionState
       label: label,
       initial: value == 0 ? '' : '$value',
       hint: hint,
+      helper: helper,
       keyboard: decimal
           ? const TextInputType.numberWithOptions(decimal: true)
           : TextInputType.number,
@@ -409,10 +416,15 @@ class _TorrentSettingsSectionState
         if (isEmbedded) ...<Widget>[
           // TODO-1961：下载目录（只影响新增任务，旧任务留在原目录）。
           ..._downloadFolderRows(theme, appModel),
+          // 限速只约束 session 全局速率，libtorrent 把局域网 peer 归入独立的
+          // local peer class，该 class 不受全局上限约束。这是经用户拍板保持的**有意
+          // 行为**（家里两台机器互传不该被限），所以只向用户说明、不加开关。
+          // 完整决策记录见 docs/bugs/BUG-1114-local-rig-rate-limit-flake.md。
           _numField(
             label: t.video_setting_torrent_download_limit,
             value: c.downloadLimitKbps,
             hint: t.video_setting_torrent_limit_hint,
+            helper: t.download_rate_limit_lan_exempt,
             onChanged: (String v) => _commit((QbConnectionConfig c) =>
                 c.copyWith(downloadLimitKbps: _nonNegInt(v))),
           ),
@@ -428,6 +440,7 @@ class _TorrentSettingsSectionState
               label: t.video_setting_torrent_upload_limit,
               value: c.uploadLimitKbps,
               hint: t.video_setting_torrent_limit_hint,
+              helper: t.download_rate_limit_lan_exempt,
               onChanged: (String v) => _commit((QbConnectionConfig c) =>
                   c.copyWith(uploadLimitKbps: _nonNegInt(v))),
             ),

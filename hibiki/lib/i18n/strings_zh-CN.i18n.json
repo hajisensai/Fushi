@@ -2677,5 +2677,6 @@
   "manga_ocr_acceleration_degraded": "GPU 加速不可用，OCR 改用 ${engine} 运行：${reason}",
   "media_tracking_status": "收藏状态",
   "media_tracking_signup": "注册 Bangumi 账号",
-  "media_tracking_game": "游戏"
+  "media_tracking_game": "游戏",
+  "download_rate_limit_lan_exempt": "不作用于局域网；局域网内的传输始终全速进行。"
 }

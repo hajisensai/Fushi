@@ -2677,5 +2677,6 @@
   "manga_ocr_acceleration_degraded": "GPU acceleration unavailable, running OCR on ${engine}: ${reason}",
   "media_tracking_status": "Collection status",
   "media_tracking_signup": "Create a Bangumi account",
-  "media_tracking_game": "Game"
+  "media_tracking_game": "Game",
+  "download_rate_limit_lan_exempt": "Does not apply within your local network; LAN transfers always run at full speed."
 }
