@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1141](bugs/BUG-1141-download-discovery-timeout-too-short.md) | ✅ | ✅ | 代理下「发现」搜索 20s 超时太短，请求本可成功却被掐断 |
 | [BUG-1140](bugs/BUG-1140-cross-chapter-turn-latency.md) | ✅ | ✅ | 跨章翻页耗时实测与提速（遮罩口径） |
 | [BUG-1139](bugs/BUG-1139-overlay-ctrl-wheel-zoom.md) | ✅ | ✅ | app 外查词浮窗 Ctrl+滚轮触发 WebView2 原生页面缩放，窗口/region 几何按 zoom=1 计算导致卡片被切、露出底下应用 |
 | [BUG-1137](bugs/BUG-1137-gal-mining-video-tag.md) | ✅ | ✅ | gal 制卡分类标签误标 video：来源枚举缺 game 且默认值静默兜底 |
