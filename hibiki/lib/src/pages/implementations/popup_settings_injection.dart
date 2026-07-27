@@ -226,11 +226,16 @@ const String _globalLookupIconFontJs = '''
 /// 露出底下的应用。原生缩放已在 `global_lookup_window.cpp ConfigureWebView` 关掉，
 /// 这里把 Ctrl+滚轮接回**唯一真值**「词典字号」。
 ///
-/// 与 in-app 的关键差异（有意为之）：这里**不在 JS 侧就地改 zoom**。CSS `zoom` 下
-/// `body.scrollHeight` 仍是未乘 z 的 CSS px，而 host 的 measureContentHeight 正是读它
-/// 报卡片高度——就地缩放会让高度被系统性报小 z 倍，等于把几何链的老毛病换个地方复发。
-/// 走 Dart 改字号 → 整栈重渲，排版按新字号真实重排，高度/bbox/region 沿现有链路自然
-/// 更新，几何链一行不用动。代价是每档多一次 Dart 往返（约 1~2 帧），换的是零几何风险。
+/// 与 in-app 的关键差异（有意为之）：这里**不在 JS 侧就地改 zoom**，而是走 Dart 改
+/// 「词典字号」这一唯一真值 → 整栈重渲，避免 JS 与 Dart 两处各写一份 zoom。代价是
+/// 每档多一次 Dart 往返（约 1~2 帧）。
+///
+/// ⚠️ 别把这条读成「几何已经对了」（BUG-1139 ③ 未闭环）：重渲后字号最终仍只落到本
+/// 文件下方那行 `documentElement.style.zoom`，本仓没有任何一处用 dictionaryFontSize
+/// 生成 font-size CSS，所以这是 CSS zoom 而非按字号重排。而 host 的
+/// measureContentHeight（global_lookup_host.js:1820-1834）读的是 CSS `zoom` 下未乘 z 的
+/// layout px 且不做补偿，覆盖窗的窗口/region 尺寸公式里也没有字号分量 ——
+/// 放大后窗口宽度不变、高度在未触卡上限时仍会偏小 z 倍。
 ///
 /// 步进本身不在 JS 里算：只回传**净档数**（rAF 内合帧累加，一次快滚不会打出十几次
 /// 往返），夹紧与步长仍归 Dart 的 `steppedPopupZoomFontSize` / `clampPopupZoomFontSize`

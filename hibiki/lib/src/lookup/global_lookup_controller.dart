@@ -860,9 +860,15 @@ class GlobalLookupController {
       _onOverlayResized(message);
       return;
     }
-    // BUG-1139 — Ctrl+滚轮内容缩放：改「词典字号」这一唯一真值后整栈重渲。窗口与
-    // region 的新尺寸由重渲后的 host measureAndReport → overlaySize 正常推导，
-    // 不需要任何 zoom 感知的几何补偿（原生 WebView2 缩放已在 C++ 侧关掉）。
+    // BUG-1139 — Ctrl+滚轮内容缩放：改「词典字号」这一唯一真值后整栈重渲。
+    // ⚠️ 已知未闭环（BUG-1139 ③）：字号最终只落到注入 head 的
+    // `documentElement.style.zoom`，而几何链对 CSS zoom 零补偿——
+    // measureContentHeight（global_lookup_host.js:1820-1834）读的是未乘 z 的
+    // layout px，且 :1722-1725 只允许把高度往小里收；窗口物理尺寸公式
+    // （下面 _renderStack 的 cardW/cardH = overlaySize × appUiScale）里也没有
+    // 字号分量。所以放大后窗口宽度不变、高度可能仍偏小 z 倍。这不是本次改动引入的
+    // （head 那行 zoom 一直在），但 Ctrl+滚轮让用户能交互式滚进该区间。
+    // 真正闭环需要给 measureContentHeight 补 × zoom，或让 cardW/cardH 乘 fs/16。
     if (maybeHandleOverlayZoomFontStep(
       model: _appModel,
       handler: handler,

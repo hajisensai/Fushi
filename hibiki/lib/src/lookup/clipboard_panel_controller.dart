@@ -496,8 +496,13 @@ class ClipboardPanelController {
     )) {
       return;
     }
-    // BUG-1139 — Ctrl+滚轮内容缩放：改「词典字号」这一唯一真值后整栈重渲，排版按新
-    // 字号真实重排（面板窗尺寸固定，卡片高度变化沿既有 _rerender 链路生效）。
+    // BUG-1139 — Ctrl+滚轮内容缩放：改「词典字号」这一唯一真值后整栈重渲。
+    // 注意实际生效机制是注入 head 里的 `documentElement.style.zoom`
+    // （= popupContentZoom(appUiScale, fs)），**不是**按新字号重排——本仓没有任何
+    // 一处用 dictionaryFontSize 生成 font-size CSS。面板窗尺寸固定
+    // （global_lookup_host.js:1678-1683 在 panel 模式短路 measureAndReport），
+    // 所以这条路径没有窗口被切的几何风险，但放大等价于「卡内视口变窄」。
+    // 几何链尚未认识 CSS zoom，见 BUG-1139 ③。
     if (maybeHandleOverlayZoomFontStep(
       model: model,
       handler: handler,
