@@ -27,10 +27,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1102 条。点号进各自文件。
+> 共 1103 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1136](bugs/BUG-1136-ios-reader-scroll-lookup.md) | ✅ | ✅ | iPhone 阅读滑动被误判为点词查词 |
 | [BUG-1135](bugs/BUG-1135-gal-clipnear-bypasses-track-exclusion.md) | ✅ | ✅ | gal 制卡兜底 grabClipNear 绕过选轨/排除集——排除的 BGM 轨会从兜底混回卡片 |
 | [BUG-1134](bugs/BUG-1134-gal-line-track-preview-timestamp.md) | ✅ | ✅ | 逐句选轨试听与确认使用了不同台词时间戳 |
 | [BUG-1133](bugs/BUG-1133-gal-capture-parallel-text-duplicate.md) | ✅ | ✅ | 全部文本线程把同一台词显示两遍 |
