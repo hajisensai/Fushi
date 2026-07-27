@@ -62,6 +62,53 @@ Rect mangaSelectionRectFromPayload(
 
 enum MangaReaderInputAction { previous, next, dismissDictionary }
 
+enum _MangaReaderInputSource { flutter, nativeWebView }
+
+/// Serializes burst page-turn input across asynchronous WebView window loads.
+///
+/// While one step is awaiting `loadData`, later inputs are reduced to a net
+/// delta instead of being discarded. Once the in-flight step finishes, the
+/// same drain continues until the accumulated intent reaches zero.
+class MangaTurnQueue {
+  int _pendingDelta = 0;
+  bool _draining = false;
+
+  @visibleForTesting
+  int get pendingDelta => _pendingDelta;
+
+  @visibleForTesting
+  bool get isDraining => _draining;
+
+  Future<void> enqueue(
+    int delta, {
+    required int maxMagnitude,
+    required bool Function() canApply,
+    required Future<void> Function(int step) applyStep,
+  }) async {
+    if (delta == 0 || maxMagnitude <= 0) return;
+    _pendingDelta =
+        (_pendingDelta + delta).clamp(-maxMagnitude, maxMagnitude).toInt();
+    await drain(canApply: canApply, applyStep: applyStep);
+  }
+
+  Future<void> drain({
+    required bool Function() canApply,
+    required Future<void> Function(int step) applyStep,
+  }) async {
+    if (_draining || !canApply()) return;
+    _draining = true;
+    try {
+      while (_pendingDelta != 0 && canApply()) {
+        final int step = _pendingDelta > 0 ? 1 : -1;
+        _pendingDelta -= step;
+        await applyStep(step);
+      }
+    } finally {
+      _draining = false;
+    }
+  }
+}
+
 /// 漫画选区 payload 的纯分发核心。页面方法 `processMangaSelection` 接真实回调
 /// （setCurrentSentence / searchDictionaryResult）；这个接缝让词/句/矩形契约可以在
 /// 无 WebView、无 AppModel 的纯单测里验证。
@@ -442,14 +489,14 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   /// 页码指示器专用（避免 webtoon 滚动高频 setState 重建整棵 Stack/WebView）。
   final ValueNotifier<int> _pageNotifier = ValueNotifier<int>(0);
 
-  /// 当前窗口文档里物化的 spread 集合。落在集合内的翻页只需 JS translateX（不重载）；
-  /// 越出集合的翻页围绕新 spread 重 loadData 一个新窗口（loadData-per-window）。
+  /// 当前稳定文档里物化了 OCR 字符节点的 spread 集合。所有图片页始终留在同一份
+  /// lazy-loaded 文档里；这里只跟踪受控的密集命中层。
   Set<int> _loadedSpreads = <int>{};
 
-  /// 窗口重载在飞守卫：重载是异步的，快速连滑/按住方向键会交叠 loadData，让
-  /// `_loadedSpreads` 与活文档失配（translateX 目标 `data-spread` 不存在 → transform
-  /// 归 0 → 显示错页）。在飞期间丢弃后续翻页（用户重发即可，不排队避免滑动风暴）。
+  /// 首次文档加载守卫。之后所有翻页只移动稳定 strip 并替换当前 OCR 层；所有输入
+  /// 仍经 [_turnQueue] 串行化，避免快速反向操作交叠 DOM 更新。
   bool _navigating = false;
+  final MangaTurnQueue _turnQueue = MangaTurnQueue();
   int _windowGeneration = 0;
   Completer<void>? _windowLoadCompleter;
 
@@ -474,9 +521,8 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   ReadingTimeTracker? _readingTimeTracker;
   DateTime _sessionStartTime = DateTime.now();
 
-  // 5 个 spread 的窗口让常规连续翻页留在同一 WebView 文档内；只有真正越过
-  // 预载窗口才重建。旧值 1 再加“到边缘立即重载”导致几乎每页 loadData。
-  static const int _kWindowRadius = 2;
+  // 密集 OCR 命中层只保留当前 spread；图片页本身全部留在稳定的 lazy strip。
+  static const int _kWindowRadius = 0;
 
   @override
   void initState() {
@@ -492,6 +538,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     ExitFlushRegistry.instance.unregister(_flushPosition);
     WidgetsBinding.instance.removeObserver(this);
     _progressDebounce?.cancel();
+    _dictionaryTurnDismissTimer?.cancel();
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _wholeVolumeOcrSubscription = null;
     // dispose 里只能 fire-and-forget；正常退出走 onSourcePagePop 的 await 路径，
@@ -819,13 +866,13 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     final MokuroPayload payload = _payload!;
     final bool isWebtoon = _mode == MangaReadingMode.webtoon;
 
-    final List<int> keptSpreads = isWebtoon
-        ? <int>[for (int i = 0; i < _spreads.length; i++) i]
-        : MangaHibikiPage.mangaWindowRange(
-            spreadCount: _spreads.length,
-            current: _currentSpread,
-            radius: _kWindowRadius,
-          );
+    final List<int> keptSpreads = MangaHibikiPage.mangaWindowRange(
+      spreadCount: _spreads.length,
+      current: _currentSpread,
+      // Continuous mode keeps the immediately adjacent pages queryable while
+      // they enter the viewport; spread mode only needs the visible spread.
+      radius: isWebtoon ? 1 : _kWindowRadius,
+    );
     _loadedSpreads = keptSpreads.toSet();
     final Set<int> keptPages = <int>{
       for (final int s in keptSpreads) ..._spreads[s].pageIndices,
@@ -835,7 +882,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     final List<int> pageSpreadIndices = <int>[];
     final List<int> pagesPerSpread = <int>[];
     final List<int> pageNumbers = <int>[];
-    for (final int page in keptPages.toList()..sort()) {
+    for (int page = 0; page < payload.images.length; page++) {
       if (page < 0 || page >= payload.images.length) continue;
       final MokuroImage image = payload.images[page];
       pages.add(image);
@@ -862,6 +909,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       currentSpread: _currentSpread,
       restoreFraction: isWebtoon ? _currentFraction : 0,
       documentGeneration: documentGeneration,
+      ocrPageIndices: keptPages,
     );
   }
 
@@ -901,6 +949,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         _windowLoadCompleter = null;
       }
       _navigating = false;
+      if (mounted && _spreads.isNotEmpty) {
+        unawaited(_turnQueue.drain(
+          canApply: () => mounted && !_navigating,
+          applyStep: _applyMangaTurnStep,
+        ));
+      }
     }
   }
 
@@ -911,24 +965,76 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   /// 同步更新制卡卡图（ERRATA C2）并记进度。
   Future<void> _onMangaTurn(String dir) async {
     if (_spreads.isEmpty) return;
-    if (_navigating) return;
     final int delta = dir == 'next' ? 1 : -1;
+    await _turnQueue.enqueue(
+      delta,
+      maxMagnitude: _spreads.length,
+      canApply: () => mounted && !_navigating,
+      applyStep: _applyMangaTurnStep,
+    );
+  }
+
+  Future<void> _applyMangaTurnStep(int delta) async {
     final int target =
         (_currentSpread + delta).clamp(0, _spreads.length - 1).toInt();
     if (target == _currentSpread) return;
     _currentSpread = target;
-    if (_loadedSpreads.contains(target)) {
-      await _controller?.evaluateJavascript(
-        source: 'window.__mangaApplyTranslate && '
-            'window.__mangaApplyTranslate($target);',
-      );
-      // 不在窗口边缘抢先 loadData：那会把一次本可纯 transform 的翻页变成整份
-      // WebView 文档重建。真正越出 [_loadedSpreads] 时再滑窗即可。
-      _updateCurrentPageImagePath();
-    } else {
-      await _loadInitialWindow();
-    }
+    await _controller?.evaluateJavascript(
+      source: 'window.__mangaApplyTranslate && '
+          'window.__mangaApplyTranslate($target);',
+    );
+    await _replaceSpreadOcr(target);
+    _updateCurrentPageImagePath();
     _recordProgress();
+  }
+
+  /// Keep one spread worth of precise OCR hit targets in the stable manga
+  /// document. All page images stay in the same lazy-loaded strip, so changing
+  /// spreads never destroys the WebView document (and therefore never creates
+  /// a keyboard-input gap). Dense magazines remain bounded because character
+  /// nodes from the previous spread are removed before the new ones are added.
+  Future<void> _replaceSpreadOcr(int spreadIndex) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null ||
+        spreadIndex < 0 ||
+        spreadIndex >= _spreads.length) {
+      return;
+    }
+    final Set<int> spreadIndices = MangaHibikiPage.mangaWindowRange(
+      spreadCount: _spreads.length,
+      current: spreadIndex,
+      radius: _mode == MangaReadingMode.webtoon ? 1 : _kWindowRadius,
+    ).toSet();
+    final Set<int> pageIndices = <int>{
+      for (final int index in spreadIndices) ..._spreads[index].pageIndices,
+    };
+    final Map<String, String> htmlByPage = <String, String>{
+      for (final int pageIndex in pageIndices)
+        if (pageIndex >= 0 && pageIndex < _payload!.images.length)
+          '$pageIndex': mangaOcrBoxesHtml(_payload!.images[pageIndex]),
+    };
+    await controller.evaluateJavascript(
+      source: '''
+(function(){
+  var keep = new Set(${jsonEncode(pageIndices.toList())});
+  var htmlByPage = ${jsonEncode(htmlByPage)};
+  document.querySelectorAll('.manga-page').forEach(function(page){
+    var index = Number(page.getAttribute('data-page'));
+    if (!keep.has(index)) {
+      if (page.getAttribute('data-ocr-loaded') === '1') {
+        page.querySelectorAll('.ocr-box').forEach(function(node){ node.remove(); });
+        page.setAttribute('data-ocr-loaded', '0');
+      }
+      return;
+    }
+    if (page.getAttribute('data-ocr-loaded') === '1') return;
+    page.insertAdjacentHTML('beforeend', htmlByPage[String(index)] || '');
+    page.setAttribute('data-ocr-loaded', '1');
+  });
+})();
+''',
+    );
+    _loadedSpreads = spreadIndices;
   }
 
   Future<void> _jumpToPageAnchor(String dir) async {
@@ -943,6 +1049,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       source: 'window.__mangaScrollToSpread && '
           'window.__mangaScrollToSpread($target, 0);',
     );
+    await _replaceSpreadOcr(target);
     _updateCurrentPageImagePath();
     _recordProgress();
   }
@@ -963,28 +1070,51 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       direction: _spreadDirection,
     );
     if (action == null) return KeyEventResult.ignored;
-    _executeReaderInputAction(action);
+    _executeReaderInputAction(
+      action,
+      source: _MangaReaderInputSource.flutter,
+    );
     return KeyEventResult.handled;
   }
 
   MangaReaderInputAction? _lastReaderInputAction;
+  _MangaReaderInputSource? _lastReaderInputSource;
   DateTime? _lastReaderInputAt;
+  Timer? _dictionaryTurnDismissTimer;
 
-  void _executeReaderInputAction(MangaReaderInputAction action) {
+  void _executeReaderInputAction(
+    MangaReaderInputAction action, {
+    required _MangaReaderInputSource source,
+  }) {
     final DateTime now = DateTime.now();
     if (_lastReaderInputAction == action &&
+        _lastReaderInputSource != source &&
         _lastReaderInputAt != null &&
         now.difference(_lastReaderInputAt!) <
             const Duration(milliseconds: 60)) {
       return;
     }
     _lastReaderInputAction = action;
+    _lastReaderInputSource = source;
     _lastReaderInputAt = now;
     if (action == MangaReaderInputAction.dismissDictionary) {
+      _dictionaryTurnDismissTimer?.cancel();
       clearDictionaryResult();
       return;
     }
-    if (isDictionaryShown) clearDictionaryResult();
+    if (isDictionaryShown) {
+      // Keep the native dictionary WebView focused through a key burst. Removing
+      // it on the first arrow creates a short HWND focus hand-off in which the
+      // immediately following real key can be lost. The page turn is queued
+      // now; only the visual popup dismissal waits for the burst to settle.
+      _dictionaryTurnDismissTimer?.cancel();
+      _dictionaryTurnDismissTimer = Timer(
+        const Duration(milliseconds: 180),
+        () {
+          if (mounted) clearDictionaryResult();
+        },
+      );
+    }
     final String turn = action == MangaReaderInputAction.next ? 'next' : 'prev';
     unawaited(_mode == MangaReadingMode.webtoon
         ? _jumpToPageAnchor(turn)
@@ -1013,7 +1143,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       mode: _mode,
       direction: _spreadDirection,
     );
-    if (action != null) _executeReaderInputAction(action);
+    if (action != null) {
+      _executeReaderInputAction(
+        action,
+        source: _MangaReaderInputSource.nativeWebView,
+      );
+    }
   }
 
   @override
@@ -1045,6 +1180,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     final bool spreadChanged = topSpread != _currentSpread;
     _currentSpread = topSpread;
     if (spreadChanged) {
+      await _replaceSpreadOcr(topSpread);
       _updateCurrentPageImagePath();
     }
     _recordProgress();
@@ -1519,13 +1655,13 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         source: 'window.__mangaScrollToSpread && '
             'window.__mangaScrollToSpread($target, 0);',
       );
-    } else if (_loadedSpreads.contains(target)) {
+      await _replaceSpreadOcr(target);
+    } else {
       await _controller?.evaluateJavascript(
         source: 'window.__mangaApplyTranslate && '
             'window.__mangaApplyTranslate($target);',
       );
-    } else {
-      await _loadInitialWindow();
+      await _replaceSpreadOcr(target);
     }
     _updateCurrentPageImagePath();
     _recordProgress();

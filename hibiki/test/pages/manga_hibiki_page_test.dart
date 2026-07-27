@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -438,5 +439,47 @@ void main() {
     expect(script, contains('preventDefault()'));
     expect(script, contains('stopImmediatePropagation()'));
     expect(script, contains("callHandler('onMangaNavigationKey', key)"));
+  });
+
+  test('高频翻页在异步窗口加载期间累积并按净位移排空', () async {
+    final MangaTurnQueue queue = MangaTurnQueue();
+    final Completer<void> firstWindowLoad = Completer<void>();
+    final List<int> applied = <int>[];
+    bool blockFirstStep = true;
+
+    Future<void> applyStep(int step) async {
+      applied.add(step);
+      if (blockFirstStep) {
+        blockFirstStep = false;
+        await firstWindowLoad.future;
+      }
+    }
+
+    final Future<void> firstDrain = queue.enqueue(
+      1,
+      maxMagnitude: 100,
+      canApply: () => true,
+      applyStep: applyStep,
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(applied, <int>[1], reason: '第一步模拟跨预载窗口，正在等待 WebView loadData');
+
+    // 完整压力序列：→→→→←←→→→→。第一步在飞期间剩余输入净值为 +5。
+    for (final int step in <int>[1, 1, 1, -1, -1, 1, 1, 1, 1]) {
+      unawaited(queue.enqueue(
+        step,
+        maxMagnitude: 100,
+        canApply: () => true,
+        applyStep: applyStep,
+      ));
+    }
+    expect(queue.pendingDelta, 5);
+
+    firstWindowLoad.complete();
+    await firstDrain;
+    expect(applied, <int>[1, 1, 1, 1, 1, 1],
+        reason: '不得因窗口加载在飞而丢后半批输入，最终净前进 6 个 spread');
+    expect(queue.pendingDelta, 0);
+    expect(queue.isDraining, isFalse);
   });
 }

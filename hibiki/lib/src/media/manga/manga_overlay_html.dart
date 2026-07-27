@@ -49,7 +49,6 @@ String mangaOcrBoxesHtml(MokuroImage page) {
         ? _mangaCharacterRegionsHtml(
             block: block,
             regions: regions,
-            pageWidth: pageWidth,
           )
         : block.lines.map(_escapeHtml).join('<br>');
     buffer.write('<p class="ocr-box" style="'
@@ -187,7 +186,6 @@ List<Rect> _mangaLineRects(MokuroBlock block) {
 String _mangaCharacterRegionsHtml({
   required MokuroBlock block,
   required List<MangaOcrTextRegion> regions,
-  required double pageWidth,
 }) {
   final String sentence = block.lines.join();
   final Rect parent = block.rectangle;
@@ -205,22 +203,14 @@ String _mangaCharacterRegionsHtml({
     final double topPct = ((r.top - parent.top) / parentHeight) * 100;
     final double widthPct = (r.width / parentWidth) * 100;
     final double heightPct = (r.height / parentHeight) * 100;
-    final double fontCqi =
-        (math.min(r.width, r.height) / pageWidth * 100).clamp(0.1, 20);
     final String text = sentence.substring(region.utf16Start, region.utf16End);
     buffer.write('<span class="ocr-char" '
         'data-utf16-start="${region.utf16Start}" '
         'data-ocr-orientation="${block.isVertical ? 'vertical' : 'horizontal'}" '
-        'style="position:absolute;'
-        'left:${_pct(leftPct)};'
+        'style="left:${_pct(leftPct)};'
         'top:${_pct(topPct)};'
         'width:${_pct(widthPct)};'
-        'height:${_pct(heightPct)};'
-        'font-size:${_num(fontCqi)}cqi;'
-        'line-height:1;'
-        'writing-mode:horizontal-tb;'
-        'display:flex;align-items:center;justify-content:center;'
-        'color:transparent;pointer-events:auto;">'
+        'height:${_pct(heightPct)};">'
         '${_escapeHtml(text)}</span>');
   }
   return buffer.toString();
@@ -251,7 +241,8 @@ String mangaPageDivHtml(MokuroImage page, String imgSrc,
     int pagesInSpread = 1,
     int pageIndex = 0,
     bool isWebtoon = false,
-    bool eager = false}) {
+    bool eager = false,
+    bool ocrLoaded = true}) {
   // div 内联声明：
   // - position:relative —— OCR 框绝对定位的包含块。
   // - container-type:inline-size —— cqi 参照宽（自包含，不依赖外部 style 块）。
@@ -276,6 +267,7 @@ String mangaPageDivHtml(MokuroImage page, String imgSrc,
   return '<div class="manga-page" data-spread="$spreadIndex" '
       'data-spread-pages="$pagesInSpread" '
       'data-page="$pageIndex" data-pw="${_num(w)}" data-ph="${_num(h)}" '
+      'data-ocr-loaded="${ocrLoaded ? '1' : '0'}" '
       'style="position:relative;container-type:inline-size;'
       '$sizingCss'
       'aspect-ratio:${_num(w)}/${_num(h)};">'
@@ -324,6 +316,7 @@ String mangaWindowDocument(
   double restoreFraction = 0,
   int zoomPercent = 100,
   int documentGeneration = 0,
+  Set<int>? ocrPageIndices,
 }) {
   final bool isWebtoon = mode == MangaReadingMode.webtoon;
   // spread 容器本身始终按 LTR 的几何顺序排列，保证 offsetLeft 是稳定的
@@ -352,8 +345,17 @@ String mangaWindowDocument(
     // 渲染时两者一致）。
     final int pageNumber =
         (pageNumbers != null && i < pageNumbers.length) ? pageNumbers[i] : i;
+    final bool includeOcr =
+        ocrPageIndices == null || ocrPageIndices.contains(pageNumber);
+    final MokuroImage renderedPage = includeOcr
+        ? pages[i]
+        : MokuroImage(
+            url: pages[i].url,
+            size: pages[i].size,
+            blocks: const <MokuroBlock>[],
+          );
     final String pageHtml = mangaPageDivHtml(
-      pages[i],
+      renderedPage,
       imgSrcs[i],
       spreadIndex: spreadIndex,
       pagesInSpread: slotPages,
@@ -362,6 +364,7 @@ String mangaWindowDocument(
       // 当前 spread 与前后相邻 spread 立即解码；窗口里更远的页继续 lazy，
       // 兼顾无白屏翻页与超清页图内存。
       eager: !isWebtoon && (spreadIndex - currentSpread).abs() <= 1,
+      ocrLoaded: includeOcr,
     );
     if (isWebtoon) {
       pagesHtml.write(pageHtml);
@@ -424,6 +427,12 @@ String mangaWindowDocument(
       '.manga-page img{display:block;width:100%;height:100%;'
       'object-fit:contain;-webkit-user-drag:none;user-drag:none;}'
       '.ocr-box{margin:0;padding:0;pointer-events:auto;}'
+      // Character geometry is entirely explicit. Keep the common hit-layer
+      // declarations in one rule instead of repeating them for every OCR
+      // character: dense magazine pages can contain several thousand regions.
+      '.ocr-char{position:absolute;display:block;overflow:hidden;'
+      'color:transparent;pointer-events:auto;line-height:1;'
+      'writing-mode:horizontal-tb;}'
       '</style></head>'
       '<body>'
       '$body'

@@ -113,12 +113,14 @@ void main() {
           reason: '仅竖排 block 应带 vertical-rl');
     });
 
-    test('文字 transparent + margin/padding 清零 + pointer-events:auto', () {
+    test('文字 transparent + margin/padding 清零，字符公共命中样式不重复内联', () {
       final String html = mangaOcrBoxesHtml(_pageWithTwoBlocks());
       expect(html.contains('color:transparent'), isTrue);
       expect(html.contains('margin:0'), isTrue);
       expect(html.contains('padding:0'), isTrue);
-      expect(html.contains('pointer-events:auto'), isTrue);
+      expect(html.contains('class="ocr-char"'), isTrue);
+      expect(html.contains('position:absolute;display:block'), isFalse,
+          reason: '密集页面不能为每个字符重复公共 CSS，否则 WebView 文档会膨胀并超时');
     });
 
     test('HTML 特殊字符转义（< > & 不破坏结构）', () {
@@ -576,6 +578,11 @@ void main() {
       expect(doc.contains('class="ocr-char"'), isTrue);
       expect(doc.contains('>日</span>'), isTrue);
       expect(doc.contains('color:transparent;pointer-events:auto'), isTrue);
+      expect(
+          doc.contains(
+              '.ocr-char{position:absolute;display:block;overflow:hidden;'),
+          isTrue,
+          reason: '字符命中层的公共布局应只在文档 CSS 中声明一次');
     });
 
     test('desktop zoom and right-button drag/menu contract is embedded', () {
@@ -606,6 +613,32 @@ void main() {
       );
       expect(doc.contains('window.__mangaDocumentGeneration=42;'), isTrue);
       expect(doc.contains('var CURRENT = 7;'), isTrue);
+    });
+
+    test('稳定图片 strip 只物化指定页面的密集 OCR 命中层', () {
+      final String doc = mangaWindowDocument(
+        <MokuroImage>[_pageWithTwoBlocks(), _pageWithTwoBlocks()],
+        <String>['p0.jpg', 'p1.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'ltr',
+        inlineSelectionJs: '',
+        pageSpreadIndices: const <int>[0, 1],
+        pagesPerSpread: const <int>[1, 1],
+        pageNumbers: const <int>[0, 1],
+        ocrPageIndices: const <int>{1},
+      );
+      expect('class="manga-page"'.allMatches(doc).length, 2,
+          reason: '图片页全部常驻，翻页不应重建 WebView 文档');
+      expect('class="ocr-char"'.allMatches(doc).length, 9,
+          reason: '只有当前页面物化字符节点，避免密集杂志把 loadData 撑爆');
+      expect(
+          doc.contains('data-page="0" data-pw="1000" data-ph="2000" '
+              'data-ocr-loaded="0"'),
+          isTrue);
+      expect(
+          doc.contains('data-page="1" data-pw="1000" data-ph="2000" '
+              'data-ocr-loaded="1"'),
+          isTrue);
     });
   });
 }
