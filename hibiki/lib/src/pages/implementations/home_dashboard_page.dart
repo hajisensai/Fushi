@@ -25,6 +25,7 @@ import 'package:hibiki/src/pages/implementations/stat_shared.dart';
 import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_cover_image.dart';
+import 'package:hibiki/src/sync/remote_library_cache.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:hibiki/src/utils/misc/dashboard_remote_merge.dart';
@@ -527,11 +528,31 @@ class _HomeDashboardPageState
     final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
     if (!await backend.restoreAuth(syncRepo)) return;
     try {
-      final List<RemoteBookInfo> remoteBooks = await backend.listRemoteBooks();
+      // BUG-1175：首页不在 `_keepAliveTabs` 里，每次切回首页整页重建 → 这三个请求
+      // 原本每次都重发；`_scheduleReload` 的 400ms 防抖重载还会再走一遍。改为
+      // ① 过共享 TTL 缓存（书/视频清单与书架、视频页同槽，谁先拉到谁受益），
+      // ② 三个请求并行而不是串行（原本是三次完整往返首尾相接）。
+      final RemoteLibraryCache cache = ref.read(remoteLibraryCacheProvider);
+      final List<Object> results = await Future.wait<Object>(<Future<Object>>[
+        cache.read<List<RemoteBookInfo>>(
+          key: RemoteLibraryCacheKeys.books,
+          fetch: backend.listRemoteBooks,
+        ),
+        cache.read<List<RemoteVideoInfo>>(
+          key: RemoteLibraryCacheKeys.videos,
+          fetch: backend.listRemoteVideos,
+        ),
+        cache.read<List<RemoteActivityEvent>>(
+          key: RemoteLibraryCacheKeys.activity(200),
+          fetch: () => backend.listRemoteActivity(limit: 200),
+        ),
+      ]);
+      final List<RemoteBookInfo> remoteBooks =
+          results[0] as List<RemoteBookInfo>;
       final List<RemoteVideoInfo> remoteVideos =
-          await backend.listRemoteVideos();
+          results[1] as List<RemoteVideoInfo>;
       final List<RemoteActivityEvent> remoteActivity =
-          await backend.listRemoteActivity(limit: 200);
+          results[2] as List<RemoteActivityEvent>;
       if (!mounted) return;
       final List<MediaItem> books = ref
               .read(hibikiBooksProvider(JapaneseLanguage.instance))

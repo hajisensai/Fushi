@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1131 条。点号进各自文件。
+> 共 1135 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1178](bugs/BUG-1178-restore-auth-invalidates-session.md) | ✅ | ✅ | restoreAuth 无条件作废已解析地址，每次切页面重跑全候选探测 |
+| [BUG-1177](bugs/BUG-1177-show-remote-entries-gate-too-late.md) | ✅ | ✅ | 关闭「显示远端条目」仍全额拉取远端列表后丢弃 |
+| [BUG-1176](bugs/BUG-1176-manga-shelf-fetches-remote-books.md) | ✅ | ✅ | 漫画书架实例误拉远端书，切到书架触发双倍网络 |
+| [BUG-1175](bugs/BUG-1175-interconnect-remote-list-no-cache.md) | ✅ | ✅ | 互联远端库列表零缓存，每次切页面全额重拉 |
 | [BUG-1169](bugs/BUG-1169-gal-launch-failed-reason-release-assert.md) | ✅ | ✅ | release 剥离 assert 后 failed(none) 被判成启动成功 |
 | [BUG-1168](bugs/BUG-1168-post-frame-focus-reclaim-never-fires-on-idle-tree.md) | ✅ | ✅ | 静止树上 addPostFrameCallback 焦点回收永不触发（进出全屏/关字幕遮罩后快捷键失灵） |
 | [BUG-1167](bugs/BUG-1167-video-subtitle-align-dialog-focus-not-returned.md) | ✅ | ✅ | 视频字幕波形对轴弹窗关闭后不归还键盘焦点 |

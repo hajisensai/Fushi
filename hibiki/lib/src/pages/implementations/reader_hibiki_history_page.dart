@@ -62,6 +62,7 @@ import 'package:hibiki/src/sync/manual_sync_ui.dart';
 import 'package:hibiki/src/sync/remote_download_progress_badge.dart';
 import 'package:hibiki/src/sync/remote_cover_image.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
+import 'package:hibiki/src/sync/remote_library_cache.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_progress_banner.dart';
@@ -256,6 +257,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   RemoteBookClient? _remoteBookClient;
 
+  /// 远端清单的共享 TTL 缓存（BUG-1175）。与视频页 / 首页 dashboard 同一实例
+  /// （app 级 provider），所以「首页刚拉过书列表、切到书架」不会再问对端要一次。
+  RemoteLibraryCache get _remoteCache => ref.read(remoteLibraryCacheProvider);
+
+  /// 上一次取数时 [_shouldLoadRemoteBooks] 的值（BUG-1177）。null = 还没取过。
+  /// 用于识别「显示远端条目」开关翻转，翻转时重新取数。
+  bool? _remoteGateAtLastLoad;
+
   /// 正在下载中的远端书（key = book.title）。值为进度分数 0..1；收到首个
   /// onProgress 前为 null（不确定进度）。下载期间用它在卡片上替换下载按钮为进度
   /// 指示（#3：远端下载全程有进行中反馈，不再 await 完才弹一次提示）。
@@ -348,7 +357,30 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // BUG-992：顶层 tab IndexedStack 保活（BUG-750）后，切回书架不再隐式重拉远端书 →
     // 远端占位卡 + 书库概览总数要等用户手动下拉刷新才补齐。监听全局 tab 信号，切回
     // 书架 tab 时自动重拉一次远端（缓存 _lastRemoteState 顶住 waiting、不闪屏）。
-    homeShellTabNotifier.addListener(_onShellTabActivated);
+    //
+    // BUG-1176：漫画书架是本 State 类的另一个实例（`mangaOnly: true`），它也会走到
+    // 这里，而回调判的是 `== HomeTab.books` —— 于是切到书架时两个实例各拉一遍远端书，
+    // 漫画那份在 build 里被 `!_mangaOnly` 丢掉。漫画实例根本不消费远端书，直接不订阅。
+    if (!_mangaOnly) {
+      homeShellTabNotifier.addListener(_onShellTabActivated);
+      // BUG-1177：「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经
+      // AppModel 通知，本页不会因它重建 → 门控翻转后既不重取也不重渲染。显式订阅。
+      // 用 appModelNoUpdate：initState 里读 appModel 会走 ref.watch，触发
+      // 「initState 完成前依赖 InheritedWidget」断言。
+      appModelNoUpdate.prefsRepo.addListener(_onPrefsChangedForRemoteGate);
+    }
+  }
+
+  /// prefsRepo 变更回调：只关心「显示远端条目」门控是否翻转（BUG-1177）。其余偏好
+  /// 变动一概忽略——prefsRepo 的通知很频繁，不能每次都去动远端 future。
+  ///
+  /// 翻转时只触发一次重建，真正的重新取数交给 build 里那段门控比对（单一路径，避免
+  /// 这里和 build 各自重取一遍）。
+  void _onPrefsChangedForRemoteGate() {
+    if (!mounted) return;
+    if (_remoteGateAtLastLoad == null) return;
+    if (_remoteGateAtLastLoad == _shouldLoadRemoteBooks) return;
+    _rebuild(() {});
   }
 
   /// 切回书架 tab 时自动重拉远端书（BUG-992）。非书架 tab 的切换忽略。
@@ -388,6 +420,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     mediaType.tabRefreshNotifier.removeListener(_reloadShelfMapsOnTabRefresh);
     _mokuroQueue?.removeListener(_onMokuroQueueChanged);
     homeShellTabNotifier.removeListener(_onShellTabActivated);
+    appModelNoUpdate.prefsRepo.removeListener(_onPrefsChangedForRemoteGate);
     assert(() {
       ReaderHibikiHistoryPage.debugOpenBook = null;
       return true;
@@ -464,9 +497,16 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                               const <String, _AudiobookInfo>{},
                             )
                           : _loadAllAudiobookInfo();
-                      _remoteBooksFuture ??= _mangaOnly
-                          ? Future<_RemoteBookState?>.value(null)
-                          : _loadRemoteBooks();
+                      // BUG-1177：「显示远端条目」门控已前移进 _loadRemoteBooks
+                      // （关掉就不联网，而不是拉完再丢）。开关从关翻到开时 `??=` 不会
+                      // 重跑，故这里显式比对上轮门控值，翻转时重新取数——否则用户在设置
+                      // 里打开开关后要下拉刷新才看得到远端卡。
+                      if (_remoteGateAtLastLoad != null &&
+                          _remoteGateAtLastLoad != _shouldLoadRemoteBooks) {
+                        _remoteBooksFuture = null;
+                      }
+                      _remoteGateAtLastLoad = _shouldLoadRemoteBooks;
+                      _remoteBooksFuture ??= _loadRemoteBooks();
                       _shelfMapsFuture ??= _loadShelfMaps();
                       final List<MediaItem> shelfBooks =
                           filterShelfEntriesByMangaSplit(
