@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki_anki/hibiki_anki.dart';
+import 'package:hibiki/src/anki/anki_media_dedup_runner.dart';
 import 'package:hibiki/src/anki/lapis_template_service.dart';
 import 'package:hibiki/src/anki/remote_mining_anki_repository.dart';
 import 'package:hibiki/src/models/app_model.dart';
@@ -262,6 +263,15 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     final settings = await _repository.loadSettings();
     state = state.copyWith(settings: settings);
   }
+
+  // ── 媒体存储优化（字节级去重）──────────────────────────────────────
+
+  /// 当前后端能否做媒体去重（AnkiConnect 且与 Anki 同机；设置页据此隐藏区块）。
+  bool get supportsMediaMaintenance => _repository.supportsMediaMaintenance;
+
+  /// 与当前仓库绑定的去重编排器（无状态，随用随建）。
+  AnkiMediaDedupRunner get mediaDedupRunner =>
+      AnkiMediaDedupRunner(_repository);
 }
 
 /// 把用户敲/粘进 AnkiConnect **主机**字段的自由文本规范化成裸主机 + 可选端口。

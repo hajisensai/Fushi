@@ -224,4 +224,15 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   Future<bool> updateNoteTypeTemplates(
           String modelName, List<AnkiCardTemplate> templates) =>
       _local.updateNoteTypeTemplates(modelName, templates);
+
+  // 媒体去重同为配置/维护类：作用于本机 Anki，委派本地仓库。
+  @override
+  bool get supportsMediaMaintenance => _local.supportsMediaMaintenance;
+
+  @override
+  Future<AnkiMediaDedupReport?> runMediaDedup({
+    bool dryRun = false,
+    Future<void> Function(Map<String, dynamic> entry)? onJournal,
+  }) =>
+      _local.runMediaDedup(dryRun: dryRun, onJournal: onJournal);
 }

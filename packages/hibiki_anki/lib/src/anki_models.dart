@@ -172,6 +172,7 @@ class AnkiSettings {
     this.lapisFontScalePercent = 100,
     this.lapisCustomCss = '',
     this.lapisAppliedCssSha,
+    this.lastMediaDedupAtMs,
   });
 
   factory AnkiSettings.fromJson(Map<String, dynamic> json) => AnkiSettings(
@@ -205,6 +206,7 @@ class AnkiSettings {
         lapisFontScalePercent: json['lapisFontScalePercent'] as int? ?? 100,
         lapisCustomCss: json['lapisCustomCss'] as String? ?? '',
         lapisAppliedCssSha: json['lapisAppliedCssSha'] as String?,
+        lastMediaDedupAtMs: json['lastMediaDedupAtMs'] as int?,
       );
   final int? selectedDeckId;
   final String? selectedDeckName;
@@ -248,6 +250,12 @@ class AnkiSettings {
   /// 与「被用户手改（不得静默覆盖）」。
   final String? lapisAppliedCssSha;
 
+  /// 上次媒体字节级去重完成时刻（epoch ms）。null = 从未跑过。
+  ///
+  /// 去重**只有用户在设置页手动触发**这一条路径（先出干跑报告、确认后才删），
+  /// 没有任何后台自动调度；这个时刻只是「上次跑过」的记录。
+  final int? lastMediaDedupAtMs;
+
   bool get isConfigured => selectedDeckId != null && selectedNoteTypeId != null;
 
   AnkiNoteType? get selectedNoteType =>
@@ -280,6 +288,7 @@ class AnkiSettings {
     String? lapisCustomCss,
     String? lapisAppliedCssSha,
     bool clearLapisAppliedCssSha = false,
+    int? lastMediaDedupAtMs,
   }) =>
       AnkiSettings(
         selectedDeckId: selectedDeckId ?? this.selectedDeckId,
@@ -308,6 +317,7 @@ class AnkiSettings {
         lapisAppliedCssSha: clearLapisAppliedCssSha
             ? null
             : (lapisAppliedCssSha ?? this.lapisAppliedCssSha),
+        lastMediaDedupAtMs: lastMediaDedupAtMs ?? this.lastMediaDedupAtMs,
       );
 
   Map<String, dynamic> toJson() => {
@@ -333,6 +343,7 @@ class AnkiSettings {
         'lapisFontScalePercent': lapisFontScalePercent,
         'lapisCustomCss': lapisCustomCss,
         'lapisAppliedCssSha': lapisAppliedCssSha,
+        'lastMediaDedupAtMs': lastMediaDedupAtMs,
       };
 }
 

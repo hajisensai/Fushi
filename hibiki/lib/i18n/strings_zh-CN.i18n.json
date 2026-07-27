@@ -2651,5 +2651,20 @@
   "anki_lapis_restore_empty": "还没有备份。",
   "anki_lapis_restore_confirm": "用该备份覆盖 Anki 里的 Lapis 模板？当前状态会先自动备份。",
   "anki_lapis_restore_done": "模板已恢复。",
-  "anki_lapis_restore_failed": "恢复失败：$error"
+  "anki_lapis_restore_failed": "恢复失败：$error",
+  "anki_dedup_section": "Anki 媒体存储优化",
+  "anki_dedup_scan": "扫描重复项（不做改动）",
+  "anki_dedup_run": "立即去重",
+  "anki_dedup_report_title": "媒体去重报告",
+  "anki_dedup_report_body": "$groups 组重复；多余副本 $removed 个（$size）；改写笔记 $notes 张、模板 $models 个；跳过 $skipped 个。",
+  "anki_dedup_report_dry_note": "仅扫描——未做任何改动。",
+  "anki_dedup_report_clean": "没有发现字节完全相同的重复文件。",
+  "anki_dedup_failed": "去重失败：$error",
+  "anki_dedup_unavailable": "需要本机运行 Anki（AnkiConnect）。",
+  "anki_dedup_run_hint": "先扫描并列出将要删除的文件，你确认之后才会真正删除。",
+  "anki_dedup_plan_title": "将要删除的文件",
+  "anki_dedup_plan_intro": "共 $count 个多余副本，可回收 $size。每个文件都保留一份，所有引用先改指到保留的那一份；不重新编码任何文件。",
+  "anki_dedup_plan_entry": "删除 $file（$size）——保留 $canonical",
+  "anki_dedup_plan_delete": "删除这些文件",
+  "anki_dedup_plan_journal": "每一次改写和删除都会先记进备份文件夹里的日志。"
 }
