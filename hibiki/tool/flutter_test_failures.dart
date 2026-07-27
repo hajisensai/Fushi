@@ -40,11 +40,12 @@ Future<void> main(List<String> args) async {
     }
   }, onDone: stdoutDone.complete, onError: stdoutDone.completeError);
 
+  // Always mirror the child's stderr. Native-assets / compile failures report
+  // exclusively there, and swallowing it is what makes a dead run look silent
+  // and therefore green.
   process.stderr.transform(decoder).listen((String chunk) {
     stderrSink.write(chunk);
-    if (options.verboseOutput) {
-      stderr.write(chunk);
-    }
+    stderr.write(chunk);
   }, onDone: stderrDone.complete, onError: stderrDone.completeError);
 
   final int exitCode = await process.exitCode;
@@ -53,43 +54,65 @@ Future<void> main(List<String> args) async {
   await stderrSink.close();
 
   final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(jsonLines);
-  if (exitCode != 0 || summary.hasFailures) {
+  final String? verdictFailure = resolveFlutterTestVerdictFailure(
+    flutterExitCode: exitCode,
+    summary: summary,
+    minimumTests: options.minimumTests,
+  );
+
+  if (verdictFailure != null) {
     stderr.writeln(renderFlutterTestFailureSummary(
       summary,
       logPath: jsonLog.path,
       stderrLogPath: stderrLog.path,
+      minimumTests: options.minimumTests,
     ));
-  } else {
-    stdout.writeln('Flutter tests passed. Full JSON log: ${jsonLog.path}');
+    await stderr.flush();
+    stdout.writeln('$kFlutterTestVerdictPrefix FAILED - $verdictFailure '
+        '(tests completed: ${summary.testsCompleted}, '
+        'flutter exit code: $exitCode)');
+    await stdout.flush();
+    exit(exitCode != 0 ? exitCode : 1);
   }
 
-  if (exitCode != 0) {
-    exit(exitCode);
-  }
-  if (summary.hasFailures) {
-    exit(1);
-  }
+  stdout
+    ..writeln('Full JSON log: ${jsonLog.path}')
+    ..writeln(
+        '$kFlutterTestVerdictPrefix PASSED - ${summary.testsCompleted} tests ran, '
+        'all tests passed');
+  await stdout.flush();
 }
 
 class _FlutterTestFailureOptions {
   const _FlutterTestFailureOptions({
     required this.outputDir,
     required this.verboseOutput,
+    required this.minimumTests,
     required this.flutterTestArgs,
   });
 
   final String outputDir;
   final bool verboseOutput;
+  final int minimumTests;
   final List<String> flutterTestArgs;
 
   static _FlutterTestFailureOptions parse(List<String> args) {
     String outputDir = '../.codex-test/flutter-test';
     bool verboseOutput = false;
+    int minimumTests = 1;
     final List<String> flutterTestArgs = <String>[];
 
     for (final String arg in args) {
       if (arg.startsWith('--output-dir=')) {
         outputDir = arg.substring('--output-dir='.length);
+      } else if (arg.startsWith('--min-tests=')) {
+        final String raw = arg.substring('--min-tests='.length);
+        final int? parsed = int.tryParse(raw);
+        if (parsed == null || parsed < 0) {
+          stderr.writeln('Invalid --min-tests value: $raw');
+          exit(64);
+        }
+        minimumTests = parsed;
       } else if (arg == '--verbose-output') {
         verboseOutput = true;
       } else {
@@ -100,6 +123,7 @@ class _FlutterTestFailureOptions {
     return _FlutterTestFailureOptions(
       outputDir: outputDir,
       verboseOutput: verboseOutput,
+      minimumTests: minimumTests,
       flutterTestArgs: flutterTestArgs,
     );
   }

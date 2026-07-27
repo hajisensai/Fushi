@@ -34,6 +34,12 @@ Future<void> main(List<String> args) async {
 
   stdout.writeln('Comprehensive test report: $outputDir');
   if (report.hasFailures) {
+    if (report.entries.isEmpty) {
+      stderr.writeln(
+        'No scenario matched the selected platforms/scenarios, so nothing '
+        'was executed. An empty run is a failure, not a pass.',
+      );
+    }
     final String summary = renderComprehensiveFailureSummary(report);
     if (summary.isNotEmpty) {
       stderr.writeln(summary);

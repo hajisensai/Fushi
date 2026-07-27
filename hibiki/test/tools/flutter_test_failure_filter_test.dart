@@ -75,4 +75,122 @@ void main() {
       expect(rendered, contains('.codex-test/flutter-test/full.jsonl'));
     });
   });
+
+  group('zero-test runs must never look green (BUG-1157)', () {
+    test('a run that never emitted a done event fails', () {
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
+        const <String>[],
+      );
+
+      expect(summary.success, isNull);
+      expect(summary.testsCompleted, 0);
+      expect(summary.hasFailures, isTrue);
+      expect(
+        summary.failureReason(),
+        contains('never reported a result'),
+      );
+      expect(
+        resolveFlutterTestVerdictFailure(
+          flutterExitCode: 0,
+          summary: summary,
+        ),
+        isNotNull,
+      );
+    });
+
+    test('a successful done event with zero tests still fails', () {
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
+        <String>[
+          '{"type":"start","protocolVersion":"0.1.1"}',
+          '{"type":"done","success":true}',
+        ],
+      );
+
+      expect(summary.success, isTrue);
+      expect(summary.testsCompleted, 0);
+      expect(summary.hasFailures, isTrue);
+      expect(summary.failureReason(), contains('Only 0 test(s) ran'));
+      expect(
+        resolveFlutterTestVerdictFailure(
+          flutterExitCode: 0,
+          summary: summary,
+        ),
+        contains('Only 0 test(s) ran'),
+      );
+    });
+
+    test('synthetic loading tests do not count as executed tests', () {
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
+        <String>[
+          '{"type":"suite","suite":{"id":0,"path":"test/a_test.dart"}}',
+          '{"type":"testStart","test":{"id":1,"name":"loading test/a_test.dart","suiteID":0}}',
+          '{"type":"testDone","testID":1,"result":"success","hidden":true}',
+          '{"type":"done","success":true}',
+        ],
+      );
+
+      expect(summary.testsCompleted, 0);
+      expect(summary.hasFailures, isTrue);
+    });
+
+    test('a real passing run is green and reports its test count', () {
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
+        <String>[
+          '{"type":"suite","suite":{"id":0,"path":"test/a_test.dart"}}',
+          '{"type":"testStart","test":{"id":1,"name":"loading test/a_test.dart","suiteID":0}}',
+          '{"type":"testDone","testID":1,"result":"success","hidden":true}',
+          '{"type":"testStart","test":{"id":2,"name":"real test","suiteID":0}}',
+          '{"type":"testDone","testID":2,"result":"success","hidden":false}',
+          '{"type":"done","success":true}',
+        ],
+      );
+
+      expect(summary.testsCompleted, 1);
+      expect(summary.hasFailures, isFalse);
+      expect(summary.failureReason(), isNull);
+      expect(
+        resolveFlutterTestVerdictFailure(
+          flutterExitCode: 0,
+          summary: summary,
+        ),
+        isNull,
+      );
+    });
+
+    test('a non-zero flutter exit code always fails the verdict', () {
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
+        <String>[
+          '{"type":"testStart","test":{"id":1,"name":"real test"}}',
+          '{"type":"testDone","testID":1,"result":"success","hidden":false}',
+          '{"type":"done","success":true}',
+        ],
+      );
+
+      expect(summary.hasFailures, isFalse);
+      expect(
+        resolveFlutterTestVerdictFailure(
+          flutterExitCode: 1,
+          summary: summary,
+        ),
+        contains('flutter test exited with 1'),
+      );
+    });
+
+    test('minimumTests can pin a baseline so a shrunken run fails', () {
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
+        <String>[
+          '{"type":"testStart","test":{"id":1,"name":"real test"}}',
+          '{"type":"testDone","testID":1,"result":"success","hidden":false}',
+          '{"type":"done","success":true}',
+        ],
+      );
+
+      expect(summary.hasFailuresFor(minimumTests: 1), isFalse);
+      expect(summary.hasFailuresFor(minimumTests: 100), isTrue);
+      expect(
+        summary.failureReason(minimumTests: 100),
+        contains('expected at least 100'),
+      );
+    });
+  });
 }

@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1124 条。点号进各自文件。
+> 共 1125 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1162](bugs/BUG-1162-torrent-pipeline-disk-flush-race.md) | ✅ | ✅ | hibiki_torrent 端到端测试在字节落盘前就比对，CI Windows 约 24% 概率红 |
+| [BUG-1157](bugs/BUG-1157-test-runner-zero-test-false-green.md) | ✅ | ✅ | 全量测试入口把「零测试执行」当成通过（native asset 构建失败被伪装成绿） |
 | [BUG-1156](bugs/BUG-1156-manga-spread-cropped-janky.md) | ✅ | ✅ | 漫画双页图片裁切且翻页卡顿 |
 | [BUG-1155](bugs/BUG-1155-manga-popup-pagination-focus.md) | ✅ | ✅ | 漫画查词弹窗吞掉滚轮和左右翻页 |
 | [BUG-1154](bugs/BUG-1154-manga-page-jump-controller-lifecycle.md) | ✅ | ✅ | 漫画页码跳转关闭弹窗后红屏 |

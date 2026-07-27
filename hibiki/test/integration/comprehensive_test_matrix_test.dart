@@ -300,6 +300,14 @@ void main() {
       expect(entry.failureReason, contains('All tests passed'));
     });
 
+    test('an empty report is a failure, not a pass (BUG-1157)', () {
+      const ComprehensiveReport report =
+          ComprehensiveReport(entries: <ScenarioReport>[]);
+
+      expect(report.entries, isEmpty);
+      expect(report.hasFailures, isTrue);
+    });
+
     test('console failure summary only includes failed and blocked scenarios',
         () {
       const ComprehensiveReport report = ComprehensiveReport(
