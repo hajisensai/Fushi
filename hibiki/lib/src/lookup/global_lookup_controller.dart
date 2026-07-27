@@ -860,6 +860,20 @@ class GlobalLookupController {
       _onOverlayResized(message);
       return;
     }
+    // BUG-1139 — Ctrl+滚轮内容缩放：改「词典字号」这一唯一真值后整栈重渲。
+    // 字号最终落到注入 head 的 `documentElement.style.zoom`（CSS zoom，不是重排）。
+    // 几何跟得上靠 BUG-1139 ③：host 的 measureContentHeight 用 frameContentZoom
+    // 把 iframe 的 layout px 换算回 host CSS px，union bbox 的 maxBottom 与
+    // shellRects（→ window region）才是内容的真实视觉高度。宽度不需要补偿——
+    // iframe 是 shell 的 100%，z 只压缩它内部的布局视口再画回来，视觉上始终铺满。
+    if (maybeHandleOverlayZoomFontStep(
+      model: _appModel,
+      handler: handler,
+      message: message,
+      onFontSizeChanged: () => unawaited(_renderStack()),
+    )) {
+      return;
+    }
     // BUG-1127 — 浮窗 iframe realm 回报自动发音 `audio.play()` 真实结果
     // （args = [token, ok]，host 包裹桥盖 __frameId 后原样转发）。完成对应
     // pending Completer；过期 token（已超时回落）直接忽略。

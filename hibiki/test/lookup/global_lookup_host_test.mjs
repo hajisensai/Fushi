@@ -119,7 +119,10 @@ function makeElement(tag) {
     const body = { scrollHeight: 0, offsetHeight: 0, _observers: [] };
     el.contentDocument = {
       body,
-      documentElement: { scrollHeight: 0 },
+      // BUG-1139 ③: documentElement carries the injected CSS `zoom`
+      // (popup_settings_injection head). measureContentHeight reads it to convert
+      // layout px -> host CSS px, so the stub must expose a real style bag.
+      documentElement: { scrollHeight: 0, style: { zoom: '' } },
       _hasGlossary: false,
       querySelector(sel) {
         if (sel === '.glossary-content') {
@@ -2120,6 +2123,53 @@ function historyOverlayIn(shell) {
   host.renderStack({ popups: [descriptor('frame-0', -1)] });
   assert.ok(!classes.has('global-lookup-dismissing'),
     'BUG-745: the fresh render stays un-poisoned');
+}
+
+// Z1 (BUG-1139 ③). 卡片 iframe 的 documentElement 上挂着注入的 CSS `zoom`
+// （= appUiScale × dictionaryFontSize/16）。标准化 CSS zoom 下 scrollHeight 是**未乘 z
+// 的 layout px**，而卡片实际画出 layout × z；shell 几何 / union bbox / shellRects
+// （→ window region）全是未缩放的 host CSS px。不换算的话 z>1 时窗口与 region 比内容
+// 矮 1/z，卡片底部被窗口边缘裁掉、裁口外露出底下的应用 —— 本 bug 的原始症状。
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  const shell = shellsOf(document)[0];
+  const iframe = shell.children.find((c) => c.tagName === 'IFRAME');
+  const lastBox = () =>
+    hostPostLog.filter((m) => m.handler === 'overlaySize').pop().args[1];
+
+  // z=1（默认 16px 字号 + 100% 界面大小）：恒等变换，与改前逐字节一致。
+  iframe.contentDocument.body.scrollHeight = 200;
+  iframe.contentDocument.body.offsetHeight = 200;
+  host.measureAndReport();
+  assert.strictEqual(lastBox().height, 200,
+    'BUG-1139 ③: z=1 时测高不变（回归护栏：换算必须是恒等的）');
+
+  // z=2：内容视觉高度 400，窗口/region 必须按 400 报，而不是 layout 的 200。
+  iframe.contentDocument.documentElement.style.zoom = '2';
+  host.measureAndReport();
+  assert.strictEqual(lastBox().height, 400,
+    'BUG-1139 ③: 放大后窗口按视觉高度报，卡片底部不再被裁');
+
+  // 卡上限仍然是上限：视觉高度超过 planned frame 时收敛到 480，内容在 iframe 内滚动。
+  // （守住 measureAndReport「只收小、不撑大」的既有语义没被这次换算改坏。）
+  iframe.contentDocument.body.scrollHeight = 300;
+  iframe.contentDocument.body.offsetHeight = 300;
+  host.measureAndReport();
+  assert.strictEqual(lastBox().height, 480,
+    'BUG-1139 ③: 换算后仍不得撑破 planned frame 高度（只收小语义不变）');
+
+  // 非法 / 缺失 zoom 一律回落 1，不得把高度算成 0 或 NaN。
+  iframe.contentDocument.body.scrollHeight = 200;
+  iframe.contentDocument.body.offsetHeight = 200;
+  iframe.contentDocument.documentElement.style.zoom = 'not-a-number';
+  host.measureAndReport();
+  assert.strictEqual(lastBox().height, 200,
+    'BUG-1139 ③: 非法 zoom 回落 1（绝不产生 0/NaN 几何）');
 }
 
 console.log('global_lookup_host_test: PASS');
