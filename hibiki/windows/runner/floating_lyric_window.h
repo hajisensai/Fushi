@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 // A standalone always-on-top "QQ Music style" desktop lyric strip.
 //
@@ -53,6 +54,17 @@ class FloatingLyricWindow {
   using LockCallback = std::function<void(bool locked)>;
   using BoundsCallback =
       std::function<void(int left, int top, int width, int height)>;
+
+  // 一段振假名（ruby）：|ruby| 画在 text 的 [start, start + length) 上方。
+  //
+  // start / length 与 |text| 同为 UTF-16 code unit 下标，也就是 CharIndexAt()
+  // 回传给 Dart 的那个坐标系 —— 三者共用一套下标，注音不需要任何偏移映射表，
+  // 点字查词的 index 契约一个字都不用改。
+  struct RubySpan {
+    int start = 0;
+    int length = 0;
+    std::wstring ruby;
+  };
 
   struct Style {
     double font_size = 20.0;
@@ -109,9 +121,13 @@ class FloatingLyricWindow {
 
   // TODO-708 P4: 多行上下文文本 + 块内当前行区间。current_line_start<0 = 无行
   // 标记（N=0 单行/旧 payload），整块满色 = 今天观感（never-break userspace）。
+  // |ruby_spans| 为空 = 没有注音，排版与绘制与引入注音之前逐像素一致
+  // （旧 payload / 不带注音的行都走这条路，never-break userspace）。
   void UpdateText(const std::wstring& text, int current_line_start = -1,
                   int current_line_length = 0,
-                  const std::string& context_id = std::string());
+                  const std::string& context_id = std::string(),
+                  const std::vector<RubySpan>& ruby_spans =
+                      std::vector<RubySpan>());
   // Highlights [start, start + length) UTF-16 code units of the current text.
   void Highlight(int start, int length);
   void UpdateStyle(const Style& style);
@@ -272,6 +288,9 @@ class FloatingLyricWindow {
   RECT initial_bounds_ = {0, 0, 0, 0};
 
   std::wstring text_;
+  // 当前文本的注音区间（下标落在 text_ 上）。空 = 无注音，Render 完全跳过注音
+  // 相关的行距加高与附加绘制。
+  std::vector<RubySpan> ruby_spans_;
   std::string context_id_;
   // Taskbar / Alt+Tab label; seeds CreateWindowExW and retitles the live window.
   std::wstring window_title_ = L"Hibiki Lyric";
@@ -311,6 +330,9 @@ class FloatingLyricWindow {
   Microsoft::WRL::ComPtr<IDWriteFactory> dwrite_factory_;
   Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> render_target_;
   Microsoft::WRL::ComPtr<IDWriteTextFormat> text_format_;
+  // 振假名用的小号 format（居中、不换行）。与 text_format_ 同生命周期：字号 /
+  // 样式变化时一起 Reset，下一帧按新字号重建。
+  Microsoft::WRL::ComPtr<IDWriteTextFormat> ruby_format_;
   Microsoft::WRL::ComPtr<IDWriteTextLayout> text_layout_;
 
   LookupCallback on_lookup_;

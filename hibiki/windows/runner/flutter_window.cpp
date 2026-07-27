@@ -650,6 +650,43 @@ std::string StringFromValue(const flutter::EncodableMap* args, const char* key,
   return s != nullptr ? *s : fallback;
 }
 
+// 解包可选的注音区间列表（`[{start, length, ruby}, ...]`）。
+//
+// 字段缺失、类型不对、区间非法都只是「这条没有注音」，绝不让整条 updateText 失败：
+// 旧 Dart 端不会带这个字段，浮窗必须照常显示文本（never-break userspace）。
+// start / length 的越界校验放在 FloatingLyricWindow::UpdateText 里做，因为只有那里
+// 才知道最终文本长度。
+std::vector<FloatingLyricWindow::RubySpan> RubySpansFromValue(
+    const flutter::EncodableMap* args, const char* key) {
+  std::vector<FloatingLyricWindow::RubySpan> spans;
+  if (args == nullptr) {
+    return spans;
+  }
+  const auto it = args->find(flutter::EncodableValue(key));
+  if (it == args->end()) {
+    return spans;
+  }
+  const auto* list = std::get_if<flutter::EncodableList>(&it->second);
+  if (list == nullptr) {
+    return spans;
+  }
+  for (const auto& item : *list) {
+    const auto* map = std::get_if<flutter::EncodableMap>(&item);
+    if (map == nullptr) {
+      continue;
+    }
+    FloatingLyricWindow::RubySpan span;
+    span.start = IntFromValue(map, "start", -1);
+    span.length = IntFromValue(map, "length", 0);
+    span.ruby = WideFromValue(map, "ruby", L"");
+    if (span.start < 0 || span.length <= 0 || span.ruby.empty()) {
+      continue;
+    }
+    spans.push_back(std::move(span));
+  }
+  return spans;
+}
+
 FloatingLyricWindow::Style StyleFromArgs(const flutter::EncodableMap* args) {
   FloatingLyricWindow::Style style;
   style.font_size = DoubleFromValue(args, "fontSize", style.font_size);
@@ -874,8 +911,10 @@ void FlutterWindow::RegisterClipboardTextChannel() {
         } else if (method == "updateText") {
           // Clipboard text is a single string with no "current line" concept, so
           // the multi-line dim range stays at the default (-1/0 = whole string
-          // full colour).
-          clipboard_text_window_->UpdateText(WideFromValue(args, "text", L""));
+          // full colour). rubySpans 缺省 = 无注音，排版逐像素与今天一致。
+          clipboard_text_window_->UpdateText(
+              WideFromValue(args, "text", L""), -1, 0, std::string(),
+              RubySpansFromValue(args, "rubySpans"));
           result->Success();
         } else if (method == "updateStyle") {
           clipboard_text_window_->UpdateStyle(StyleFromArgs(args));
@@ -989,7 +1028,8 @@ void FlutterWindow::RegisterGalHookTextChannel() {
         } else if (method == "updateText") {
           gal_hook_text_window_->UpdateText(
               WideFromValue(args, "text", L""), -1, 0,
-              StringFromValue(args, "lineId", ""));
+              StringFromValue(args, "lineId", ""),
+              RubySpansFromValue(args, "rubySpans"));
           result->Success();
         } else if (method == "updateStyle") {
           gal_hook_text_window_->UpdateStyle(StyleFromArgs(args));

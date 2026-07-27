@@ -19,6 +19,7 @@ import 'package:hibiki/src/pages/implementations/home_page.dart';
 import 'package:hibiki/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
+import 'package:hibiki/src/utils/misc/ruby_markup.dart';
 import 'package:hibiki/utils.dart';
 
 typedef GalHookPreferenceReader = Object? Function(
@@ -302,6 +303,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       await GalHookTextOverlayChannel.updateText(
         lineId: latest.id,
         text: latest.text,
+        rubySpans: rubySpansToChannel(latest.rubySpans),
       );
       _visible = await GalHookTextOverlayChannel.show(
         rect: _savedRect,
@@ -324,6 +326,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       await GalHookTextOverlayChannel.updateText(
         lineId: latest.id,
         text: latest.text,
+        rubySpans: rubySpansToChannel(latest.rubySpans),
       );
       _displayedLineId = latest.id;
       notifyListeners();

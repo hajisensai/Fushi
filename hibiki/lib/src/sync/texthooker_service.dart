@@ -1,5 +1,6 @@
 import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/utils/misc/ruby_markup.dart';
 
 enum TexthookerLineSource { websocket, engineHook, unknown }
 
@@ -195,9 +196,14 @@ class TexthookerLineEntry {
     this.fallbackReason,
     this.mined = false,
     this.favorited = false,
+    this.rubySpans = const <RubySpan>[],
   });
 
   final String id;
+
+  /// 纯基准文本：注音标记已在 [TexthookerService.appendLine] 剥掉（注音落在
+  /// [rubySpans]）。**全链路唯一坐标系**——浮窗显示、点字查词的 native index、
+  /// 制卡 sentence、字数统计都以它为准，任何一处换成别的串都会立刻错位。
   final String text;
   final TexthookerLineSource source;
   final String? sourceLabel;
@@ -223,6 +229,10 @@ class TexthookerLineEntry {
 
   /// 本行是否已被用户收藏（会话内存态，不落 DB；重启即失）。
   final bool favorited;
+
+  /// 本行的注音（振假名）区间，下标落在 [text] 上（UTF-16 code unit）。
+  /// 空表示这行没有可识别的注音标记。
+  final List<RubySpan> rubySpans;
 
   /// 本行是否已有可用句音：matched（配到游戏资源）/ encoded（音频已提取进卡）/
   /// fallback（回退环回声）三态即有音频；pending/missing/unavailable 视作无。
@@ -269,6 +279,7 @@ class TexthookerLineEntry {
           clearFallbackReason ? null : fallbackReason ?? this.fallbackReason,
       mined: mined ?? this.mined,
       favorited: favorited ?? this.favorited,
+      rubySpans: rubySpans,
     );
   }
 }
@@ -454,12 +465,18 @@ class TexthookerService extends ChangeNotifier {
     TexthookerLineAudioStatus audioStatus =
         TexthookerLineAudioStatus.unavailable,
   }) {
-    final String trimmed = line.trim();
+    // 注音标记在这里、也只在这里剥。这是所有下游消费方（浮窗显示 / 点字查词 /
+    // 制卡 sentence / 字数统计 / 跨线程折叠）拿到 `entry.text` 之前的唯一收口，
+    // 剥在这里才能保证它们天然共用同一坐标系；放到显示层剥会让
+    // `_onLookupText` 的 `entry.text != text` 守卫恒真，点字直接失效。
+    final RubyMarkupText parsed = parseRubyMarkup(line).trimmed();
+    final String trimmed = parsed.text;
     if (trimmed.isEmpty) return null;
     final DateTime now = receivedAt ?? DateTime.now();
     final TexthookerLineEntry entry = TexthookerLineEntry(
       id: '${now.microsecondsSinceEpoch}-${_nextId++}',
       text: trimmed,
+      rubySpans: parsed.spans,
       source: source,
       sourceLabel: sourceLabel,
       sourceSequence: sourceSequence,
