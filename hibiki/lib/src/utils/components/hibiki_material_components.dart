@@ -1090,6 +1090,76 @@ class HibikiModalSheetFrame extends StatelessWidget {
   }
 }
 
+/// 一个可以在窄屏上被折进溢出菜单的 AppBar 动作。
+///
+/// [label] 既是宽屏 [IconButton] 的 tooltip，也是窄屏菜单项的文案——同一句话，
+/// 不需要为「折叠版」另造 i18n key。[onPressed] 为 null 时该项禁用（菜单项同样
+/// 置灰），语义与 [IconButton.onPressed] 一致。
+class HibikiAppBarAction {
+  const HibikiAppBarAction({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onPressed;
+}
+
+/// 窄屏下把次要 AppBar 动作折进「更多」溢出菜单，把宽度让回给标题。
+///
+/// BUG-1177：合集详情、网格详情、texthooker 这些页面的 AppBar 各挂了 4~5 个动作。
+/// Material 的 AppBar 先满足 actions 的固有宽度，再把剩下的给 title——320dp 上
+/// 5 个动作 + 返回键就吃掉约 296px，标题只剩二十几像素，合集名/书名彻底看不见
+/// （不报错，就是没了）。动作数量本身是合理的，错的是「无论屏多窄都全部平铺」。
+///
+/// [alwaysVisible] 放最高频、必须一眼可点的动作（如排序）；[collapsible] 里的
+/// 在宽屏逐个平铺，窄屏收进一个 [PopupMenuButton]。折叠后动作一个都没少，只是
+/// 多一次点击——比标题消失划算得多。
+List<Widget> narrowAwareAppBarActions(
+  BuildContext context, {
+  required List<HibikiAppBarAction> collapsible,
+  List<Widget> alwaysVisible = const <Widget>[],
+  double narrowWidth = 480,
+}) {
+  final double width = MediaQuery.sizeOf(context).width;
+  final bool narrow = width.isFinite && width < narrowWidth;
+  if (!narrow || collapsible.length < 2) {
+    return <Widget>[
+      ...alwaysVisible,
+      for (final HibikiAppBarAction action in collapsible)
+        IconButton(
+          tooltip: action.label,
+          icon: Icon(action.icon),
+          onPressed: action.onPressed,
+        ),
+    ];
+  }
+  return <Widget>[
+    ...alwaysVisible,
+    PopupMenuButton<int>(
+      tooltip: t.common_more_actions,
+      icon: const Icon(Icons.more_vert),
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
+        for (int i = 0; i < collapsible.length; i++)
+          PopupMenuItem<int>(
+            value: i,
+            enabled: collapsible[i].onPressed != null,
+            child: Row(
+              children: <Widget>[
+                Icon(collapsible[i].icon, size: 20),
+                const SizedBox(width: 12),
+                Expanded(child: Text(collapsible[i].label)),
+              ],
+            ),
+          ),
+      ],
+      onSelected: (int index) => collapsible[index].onPressed?.call(),
+    ),
+  ];
+}
+
 class HibikiDialogFrame extends StatelessWidget {
   const HibikiDialogFrame({
     required this.child,

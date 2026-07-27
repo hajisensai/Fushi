@@ -850,6 +850,23 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     );
   }
 
+  /// 游戏卡总高 = 3:4 竖版海报封面高（[cardWidth] × 4/3）+ 标题块。
+  ///
+  /// BUG-1177：此前网格用死比例 `childAspectRatio: 0.62`、合集横排行又单独抄了一遍
+  /// `cardWidth / 0.62`。0.62 是按「3:4 封面 + **一行**标题」估出来的，于是窄屏上
+  /// 文字区只剩约 0.28×卡宽（320dp 屏上 ≈38px），连两行都放不下——galgame 名普遍
+  /// 20 字以上，一行只看得到开头六七个字。改为按真实行高算：封面保持精确 3:4，
+  /// 标题块按两行 titleSmall + 内边距算出，并随文字缩放变化。两处共用此公式。
+  static double _gameCardExtent(BuildContext context, double cardWidth) {
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final double titleSize =
+        Theme.of(context).textTheme.titleSmall?.fontSize ?? 14.0;
+    // 行高系数与 Text 默认一致（未指定 height 时按字体 metrics，约 1.3）。
+    final double titleLine = scaler.scale(titleSize) * 1.3;
+    // 标题 padding 8(top)+2(bottom)（见 GalgamePosterCard 的 titleText）。
+    return cardWidth * 4 / 3 + titleLine * 2 + 10;
+  }
+
   /// 游戏海报网格（对齐 ReinaManager 库页：3:4 竖版海报卡，见
   /// `docs/design/galgame-library-reina-visual-parity.md` §1）+ 合集分区。
   ///
@@ -883,7 +900,6 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         // 成员卡与散卡网格取同一实际卡宽，行内卡与网格卡逐像素同尺寸。
         const double spacing = 16;
         const double targetExtent = 168;
-        const double aspect = 0.62;
         final double rawWidth = constraints.maxWidth - 32;
         final double available = rawWidth < 1 ? 1 : rawWidth;
         final int columns = ((available + spacing) / (targetExtent + spacing))
@@ -912,7 +928,11 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                 crossAxisCount: columns,
                 mainAxisSpacing: spacing,
                 crossAxisSpacing: spacing,
-                childAspectRatio: aspect,
+                // BUG-1177：原先是死比例 0.62（按「3:4 封面 + 一行标题」估）。窄屏
+                // 上卡宽只有约 136px，文字区按比例只剩 38px，物理上放不下两行——
+                // galgame 名普遍 20 字以上，单行等于只看得到开头几个字。改为按真实
+                // 行高算出卡高（封面仍是精确的 3:4，不再被文字区挤压变形）。
+                mainAxisExtent: _gameCardExtent(context, cardWidth),
               ),
               itemCount: loose.length,
               itemBuilder: (BuildContext context, int i) =>
@@ -940,8 +960,9 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     double cardWidth,
   ) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    // 槽比 0.62 = 宽/高 → 行高按同比换算，行内卡与网格卡同形。
-    final double rowHeight = cardWidth / 0.62;
+    // BUG-1177：与散卡网格共用同一个 extent 公式，行内卡与网格卡逐像素同形
+    // （此前两处各写一遍 0.62，改几何时极易漏掉一处）。
+    final double rowHeight = _gameCardExtent(context, cardWidth);
     return Padding(
       padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
       child: CollectionShelfRow(

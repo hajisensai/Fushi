@@ -221,63 +221,60 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
 
   Widget _buildSummaryCards() {
     final tokens = HibikiDesignTokens.of(context);
+    final double gap = tokens.spacing.gap + tokens.spacing.gap / 2;
+
+    final List<Widget> panels = <Widget>[
+      _summaryStatPanel(t.stat_today, _agg.todayMs, _agg.todayCompleted,
+          _lookup.today, _mined.today, _favorited.today,
+          _favoritedSentences.today),
+      _summaryStatPanel(t.stat_this_week, _agg.weekMs, _agg.weekCompleted,
+          _lookup.week, _mined.week, _favorited.week,
+          _favoritedSentences.week),
+      _summaryStatPanel(t.stat_this_month, _agg.monthMs, _agg.monthCompleted,
+          _lookup.month, _mined.month, _favorited.month,
+          _favoritedSentences.month),
+      _summaryStatPanel(t.stat_all_time, _agg.allMs, _agg.allCompleted,
+          _lookup.all, _mined.all, _favorited.all, _favoritedSentences.all),
+    ];
 
     return Padding(
       padding: EdgeInsets.all(tokens.spacing.card),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _summaryStatPanel(
-                    t.stat_today,
-                    _agg.todayMs,
-                    _agg.todayCompleted,
-                    _lookup.today,
-                    _mined.today,
-                    _favorited.today,
-                    _favoritedSentences.today),
+      // BUG-1177：与阅读统计页同款——写死的双列在 320dp 上每格只剩约 100px 文字宽，
+      // 每行「标签: 数值」都被迫折行。窄屏改单列。
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool twoColumns =
+              !constraints.maxWidth.isFinite || constraints.maxWidth >= 380;
+          if (!twoColumns) {
+            return Column(
+              children: <Widget>[
+                for (int i = 0; i < panels.length; i++) ...<Widget>[
+                  if (i > 0) SizedBox(height: gap),
+                  panels[i],
+                ],
+              ],
+            );
+          }
+          return Column(
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(child: panels[0]),
+                  SizedBox(width: gap),
+                  Expanded(child: panels[1]),
+                ],
               ),
-              SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
-              Expanded(
-                child: _summaryStatPanel(
-                    t.stat_this_week,
-                    _agg.weekMs,
-                    _agg.weekCompleted,
-                    _lookup.week,
-                    _mined.week,
-                    _favorited.week,
-                    _favoritedSentences.week),
-              ),
-            ],
-          ),
-          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-          Row(
-            children: [
-              Expanded(
-                child: _summaryStatPanel(
-                    t.stat_this_month,
-                    _agg.monthMs,
-                    _agg.monthCompleted,
-                    _lookup.month,
-                    _mined.month,
-                    _favorited.month,
-                    _favoritedSentences.month),
-              ),
-              SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
-              Expanded(
-                child: _summaryStatPanel(
-                    t.stat_all_time,
-                    _agg.allMs,
-                    _agg.allCompleted,
-                    _lookup.all,
-                    _mined.all,
-                    _favorited.all,
-                    _favoritedSentences.all),
+              SizedBox(height: gap),
+              Row(
+                children: <Widget>[
+                  Expanded(child: panels[2]),
+                  SizedBox(width: gap),
+                  Expanded(child: panels[3]),
+                ],
               ),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }

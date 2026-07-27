@@ -331,25 +331,29 @@ class _MediaCollectionGridDetailPageState
     ];
     return Scaffold(
       appBar: AppBar(
-        title: Text(_name),
-        actions: <Widget>[
-          _buildSortMenu(),
-          IconButton(
-            tooltip: t.rename_collection,
-            icon: const Icon(Icons.drive_file_rename_outline),
-            onPressed: renameDetailCollection,
-          ),
-          IconButton(
-            tooltip: t.tag_label,
-            icon: const Icon(Icons.sell_outlined),
-            onPressed: editDetailCollectionTags,
-          ),
-          IconButton(
-            tooltip: t.delete_collection,
-            icon: const Icon(Icons.delete_outline),
-            onPressed: _delete,
-          ),
-        ],
+        title: Text(_name, maxLines: 1, overflow: TextOverflow.ellipsis),
+        // BUG-1177：同合集详情页——窄屏把次要动作收进溢出菜单，给合集名让出宽度。
+        actions: narrowAwareAppBarActions(
+          context,
+          alwaysVisible: <Widget>[_buildSortMenu()],
+          collapsible: <HibikiAppBarAction>[
+            HibikiAppBarAction(
+              icon: Icons.drive_file_rename_outline,
+              label: t.rename_collection,
+              onPressed: renameDetailCollection,
+            ),
+            HibikiAppBarAction(
+              icon: Icons.sell_outlined,
+              label: t.tag_label,
+              onPressed: editDetailCollectionTags,
+            ),
+            HibikiAppBarAction(
+              icon: Icons.delete_outline,
+              label: t.delete_collection,
+              onPressed: _delete,
+            ),
+          ],
+        ),
       ),
       body: SafeArea(
         child: _loading

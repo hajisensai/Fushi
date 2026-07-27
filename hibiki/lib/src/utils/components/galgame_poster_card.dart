@@ -85,7 +85,9 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
       padding: const EdgeInsets.fromLTRB(6, 8, 6, 2),
       child: Text(
         widget.title,
-        maxLines: 1,
+        // BUG-1177：galgame 名普遍 20 字以上，窄屏卡宽只有约 136px，单行只看得到
+        // 开头六七个字。封面在 [Flexible] 里，标题变高只是等量压缩封面、不会溢出。
+        maxLines: 2,
         overflow: TextOverflow.ellipsis,
         textAlign: TextAlign.center,
         style: theme.textTheme.titleSmall?.copyWith(
