@@ -445,6 +445,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   @visibleForTesting
   bool get debugOverlayInert => _overlayInert;
 
+  /// BUG-1137：texthooker 页制出的卡归「游戏」分类标签——外部窗口模式走
+  /// [GalHookMiningCoordinator]（自带 game 来源），fallback 纯文本卡走 mixin 的
+  /// super.onMineEntry / onUpdateEntry，也必须同标 game，不能吃默认 book。
+  /// 统计口径（[dictionarySourceType]）不动，标签与统计是两个维度。
+  @override
+  AnkiMiningSource get miningSource => AnkiMiningSource.game;
+
   @override
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final GalHookSessionState sessionState = _session.state;
@@ -511,6 +518,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       ),
       repo: repo,
       updateNoteId: updateNoteId,
+      addTitleTag: mixinAppModel.autoAddBookNameToTags,
     );
     if (result.aborted) {
       HibikiToast.showMine(

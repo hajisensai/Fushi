@@ -35,7 +35,9 @@ ImmersionMiningRequest buildExternalWindowRequest({
   String? audioName,
   String? cueSentence,
   String? documentTitle,
-  AnkiMiningSource source = AnkiMiningSource.video,
+  // BUG-1137：不给默认值（曾默认 video，gal 一键制卡因此被误标成视频标签）。
+  // 来源由调用点显式声明：gal Hook 场景卡传 [AnkiMiningSource.game]。
+  required AnkiMiningSource source,
   String? bookTitleTag,
   int? updateNoteId,
 }) {

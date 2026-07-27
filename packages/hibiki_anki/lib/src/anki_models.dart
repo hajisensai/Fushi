@@ -416,6 +416,11 @@ enum AnkiMiningSource {
 
   /// 视频字幕查词 —— 归「视频」分类标签（写入 Anki 的标签字面量为 `video`）。
   video,
+
+  /// galgame Hook 制卡（场景卡 / texthooker 行卡）—— 归「游戏」分类标签
+  /// （写入 Anki 的标签字面量为 `game`）。BUG-1137：此前枚举没有游戏来源，
+  /// gal 制卡链路吃 `video` 默认值，卡片被误标成视频。
+  game,
 }
 
 class AnkiMiningContext {

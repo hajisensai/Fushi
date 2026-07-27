@@ -5788,6 +5788,8 @@ class _AppModelRemoteLookupService
         return AnkiMiningSource.book;
       case 'video':
         return AnkiMiningSource.video;
+      case 'game':
+        return AnkiMiningSource.game;
       default:
         return null;
     }

@@ -113,7 +113,7 @@
   "anki_settings_label": "ตั้งค่า Anki",
   "anki_tag_default_section": "แท็กเริ่มต้น",
   "anki_tag_include_category": "เพิ่มแท็กหมวดหมู่แหล่งที่มา",
-  "anki_tag_include_category_hint": "หนังสือได้แท็ก \"book\" วิดีโอได้แท็ก \"video\"",
+  "anki_tag_include_category_hint": "หนังสือได้แท็ก \"book\" วิดีโอได้แท็ก \"video\" เกมได้แท็ก \"game\"",
   "anki_tag_include_hibiki": "เพิ่มแท็ก \"hibiki\"",
   "anki_tag_include_hibiki_hint": "ทำเครื่องหมายทุกการ์ดที่สร้างโดย Hibiki",
   "anki_tags": "แท็ก",

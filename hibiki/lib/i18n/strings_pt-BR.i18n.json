@@ -113,7 +113,7 @@
   "anki_settings_label": "Configurações do Anki",
   "anki_tag_default_section": "Tags padrão",
   "anki_tag_include_category": "Adicionar tag de categoria de origem",
-  "anki_tag_include_category_hint": "Livros recebem \"book\", vídeos recebem \"video\"",
+  "anki_tag_include_category_hint": "Livros recebem \"book\", vídeos recebem \"video\", jogos recebem \"game\"",
   "anki_tag_include_hibiki": "Adicionar tag \"hibiki\"",
   "anki_tag_include_hibiki_hint": "Marca todo cartão criado pelo Hibiki",
   "anki_tags": "Etiquetas",

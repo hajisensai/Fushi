@@ -113,7 +113,7 @@
   "anki_settings_label": "Anki-instellingen",
   "anki_tag_default_section": "Standaardtags",
   "anki_tag_include_category": "Tag voor broncategorie toevoegen",
-  "anki_tag_include_category_hint": "Boeken krijgen \"book\", video's krijgen \"video\"",
+  "anki_tag_include_category_hint": "Boeken krijgen \"book\", video's krijgen \"video\", games krijgen \"game\"",
   "anki_tag_include_hibiki": "Tag \"hibiki\" toevoegen",
   "anki_tag_include_hibiki_hint": "Markeer elke kaart die met Hibiki is gemaakt",
   "anki_tags": "Tags",

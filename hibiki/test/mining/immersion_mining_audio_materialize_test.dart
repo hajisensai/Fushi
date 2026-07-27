@@ -188,6 +188,7 @@ void main() {
       );
       await engine.mine(
           const ImmersionMiningRequest(
+              source: AnkiMiningSource.video,
               fields: {'expression': 'x'},
               mediaSource: 'https://muxed.example/v',
               clipStartMs: 0,
@@ -230,6 +231,7 @@ void main() {
       );
       await engine.mine(
           const ImmersionMiningRequest(
+              source: AnkiMiningSource.video,
               fields: {'expression': 'x'},
               mediaSource: 'https://video-only.example/v',
               audioSource: 'https://audio-only.example/a',

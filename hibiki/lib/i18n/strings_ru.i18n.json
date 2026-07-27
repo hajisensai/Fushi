@@ -113,7 +113,7 @@
   "anki_settings_label": "Настройки Anki",
   "anki_tag_default_section": "Теги по умолчанию",
   "anki_tag_include_category": "Добавлять тег категории источника",
-  "anki_tag_include_category_hint": "Книги получают «book», видео — «video»",
+  "anki_tag_include_category_hint": "Книги получают «book», видео — «video», игры — «game»",
   "anki_tag_include_hibiki": "Добавлять тег «hibiki»",
   "anki_tag_include_hibiki_hint": "Помечать каждую карточку, созданную в Hibiki",
   "anki_tags": "Теги",

@@ -113,7 +113,7 @@
   "anki_settings_label": "Pengaturan Anki",
   "anki_tag_default_section": "Tag default",
   "anki_tag_include_category": "Tambahkan tag kategori sumber",
-  "anki_tag_include_category_hint": "Buku diberi \"book\", video diberi \"video\"",
+  "anki_tag_include_category_hint": "Buku diberi \"book\", video diberi \"video\", gim diberi \"game\"",
   "anki_tag_include_hibiki": "Tambahkan tag \"hibiki\"",
   "anki_tag_include_hibiki_hint": "Tandai setiap kartu yang dibuat oleh Hibiki",
   "anki_tags": "Tag",

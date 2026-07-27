@@ -113,7 +113,7 @@
   "anki_settings_label": "Anki 設定",
   "anki_tag_default_section": "預設標籤",
   "anki_tag_include_category": "加入來源分類標籤",
-  "anki_tag_include_category_hint": "書籍標「book」、影片標「video」",
+  "anki_tag_include_category_hint": "書籍標「book」、影片標「video」、遊戲標「game」",
   "anki_tag_include_hibiki": "加入「hibiki」標籤",
   "anki_tag_include_hibiki_hint": "為每張由 Hibiki 製作的卡片打上標記",
   "anki_tags": "標籤",

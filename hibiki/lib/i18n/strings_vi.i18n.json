@@ -113,7 +113,7 @@
   "anki_settings_label": "Cài đặt Anki",
   "anki_tag_default_section": "Thẻ mặc định",
   "anki_tag_include_category": "Thêm thẻ phân loại nguồn",
-  "anki_tag_include_category_hint": "Sách gắn \"book\", video gắn \"video\"",
+  "anki_tag_include_category_hint": "Sách gắn \"book\", video gắn \"video\", trò chơi gắn \"game\"",
   "anki_tag_include_hibiki": "Thêm thẻ \"hibiki\"",
   "anki_tag_include_hibiki_hint": "Đánh dấu mọi thẻ được tạo bởi Hibiki",
   "anki_tags": "Thẻ tag",

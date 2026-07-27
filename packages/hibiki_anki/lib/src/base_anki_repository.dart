@@ -217,6 +217,10 @@ abstract class BaseAnkiRepository {
   /// 或重写用户 Anki 中的既有卡片，避免碰旧数据。
   static const String videoTag = 'video';
 
+  /// galgame Hook 来源的分类标签（BUG-1137）。仅决定新制卡默认标签，既有误标
+  /// `video` 的旧卡不迁移不重写。
+  static const String gameTag = 'game';
+
   /// 把制卡来源类别映射成分类标签；`null`（未指定来源）时返回 `null`（不追加）。
   static String? _categoryTagForSource(AnkiMiningSource? source) {
     switch (source) {
@@ -224,6 +228,8 @@ abstract class BaseAnkiRepository {
         return bookTag;
       case AnkiMiningSource.video:
         return videoTag;
+      case AnkiMiningSource.game:
+        return gameTag;
       case null:
         return null;
     }
@@ -233,8 +239,8 @@ abstract class BaseAnkiRepository {
   /// **追加** [hibikiTag] 与 [source] 对应的分类标签后去重（保序）。
   ///
   /// - 追加而非覆盖：用户已配置的 tag 全部保留，只是按开关额外多 `hibiki` + 分类标签。
-  /// - 顺序：用户 tag → `hibiki` → 分类标签（`book`/`video`）。
-  /// - 去重：用户若已手动配置了 `hibiki`/`book`/`video`，不会出现两个。
+  /// - 顺序：用户 tag → `hibiki` → 分类标签（`book`/`video`/`game`）。
+  /// - 去重：用户若已手动配置了 `hibiki`/`book`/`video`/`game`，不会出现两个。
   /// - [includeHibiki]（TODO-117 开关）为 `false` 时不追加 `hibiki`。
   /// - [includeCategory]（TODO-117 开关）为 `false` 时不追加分类标签；为 `true` 但
   ///   [source] 为 `null`（未指定来源，如独立查词/悬浮窗）时本就没有分类标签可加。

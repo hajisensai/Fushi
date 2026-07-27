@@ -593,6 +593,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       ),
       repo: repo,
       updateNoteId: updateNoteId,
+      addTitleTag: model.autoAddBookNameToTags,
     );
     if (result.aborted) {
       HibikiToast.showMine(
