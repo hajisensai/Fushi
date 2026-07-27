@@ -191,6 +191,7 @@ void main() {
 
       final String outPath = await runMangaOcrFolderJob(
         imageDirPath: root.path,
+        engineSignature: kLocalMangaOcrEngineSignature,
         detector: detector,
         recognizer: recognizer,
         onProgress: (int done, int total) => progress.add(<int>[done, total]),
@@ -240,6 +241,7 @@ void main() {
       await expectLater(
         runMangaOcrFolderJob(
           imageDirPath: root.path,
+          engineSignature: kLocalMangaOcrEngineSignature,
           detector: detector,
           recognizer: recognizer,
           cancelToken: token,
@@ -255,6 +257,7 @@ void main() {
       final _FakeDetector detector2 = _FakeDetector();
       final String outPath = await runMangaOcrFolderJob(
         imageDirPath: root.path,
+        engineSignature: kLocalMangaOcrEngineSignature,
         detector: detector2,
         recognizer: recognizer,
       );
@@ -266,6 +269,54 @@ void main() {
           reason: '缓存页的识别结果必须原样进入 manga.json');
     });
 
+    // BUG-1173：缓存目录名带模型内容指纹，换模型后必须整卷重跑而不是复用旧结果。
+    test('引擎签名不同（换模型）时不复用旧页缓存', () async {
+      const String oldSignature = '$kLocalMangaOcrEngineSignature-aaaaaaaaaaaa';
+      const String newSignature = '$kLocalMangaOcrEngineSignature-bbbbbbbbbbbb';
+      final _FakeRecognizer recognizer = _FakeRecognizer();
+      await runMangaOcrFolderJob(
+        imageDirPath: root.path,
+        engineSignature: oldSignature,
+        detector: _FakeDetector(),
+        recognizer: recognizer,
+      );
+      final int callsAfterFirstRun = recognizer.calls;
+      expect(callsAfterFirstRun, greaterThan(0));
+
+      // 同签名重跑：全部命中缓存，识别器一次都不再调用。
+      await runMangaOcrFolderJob(
+        imageDirPath: root.path,
+        engineSignature: oldSignature,
+        detector: _FakeDetector(),
+        recognizer: recognizer,
+      );
+      expect(recognizer.calls, callsAfterFirstRun, reason: '同模型必须走断点缓存');
+
+      // 换模型（签名变）：旧结果不得复用，整卷重跑。
+      final _FakeDetector newDetector = _FakeDetector();
+      final String outPath = await runMangaOcrFolderJob(
+        imageDirPath: root.path,
+        engineSignature: newSignature,
+        detector: newDetector,
+        recognizer: recognizer,
+      );
+      expect(newDetector.detectedSizes, <String>['40x80', '50x80', '60x80'],
+          reason: '换模型后每页都要重新检测，不能沿用另一份模型的缓存');
+      expect(recognizer.calls, greaterThan(callsAfterFirstRun));
+
+      final Directory cacheRoot = Directory(
+          p.join(root.path, kMangaOcrOutDirName, kMangaOcrPagesCacheDirName));
+      expect(
+          Directory(p.join(cacheRoot.path, oldSignature)).existsSync(), isTrue);
+      expect(
+          Directory(p.join(cacheRoot.path, newSignature)).existsSync(), isTrue);
+      expect(
+        parseMangaJson(File(outPath).readAsStringSync()).ocr?.engineSignature,
+        newSignature,
+        reason: '产物元数据必须记录真正产出它的引擎签名',
+      );
+    });
+
     test('含 .bmp 页：整卷 OCR 真实解码、不再静默跳过（BUG-1121）', () async {
       final Directory mixed = Directory.systemTemp.createTempSync('manga_bmp_');
       addTearDown(() => mixed.deleteSync(recursive: true));
@@ -275,6 +326,7 @@ void main() {
       final _FakeDetector detector = _FakeDetector();
       final String outPath = await runMangaOcrFolderJob(
         imageDirPath: mixed.path,
+        engineSignature: kLocalMangaOcrEngineSignature,
         detector: detector,
         recognizer: _FakeRecognizer(),
       );
@@ -297,6 +349,7 @@ void main() {
       await expectLater(
         runMangaOcrFolderJob(
           imageDirPath: empty.path,
+          engineSignature: kLocalMangaOcrEngineSignature,
           detector: _FakeDetector(),
           recognizer: _FakeRecognizer(),
         ),
@@ -308,6 +361,7 @@ void main() {
       final _FakeRecognizer recognizer = _FakeRecognizer();
       await runMangaOcrFolderJob(
         imageDirPath: root.path,
+        engineSignature: kLocalMangaOcrEngineSignature,
         detector: _FakeDetector(),
         recognizer: recognizer,
       );
@@ -318,6 +372,7 @@ void main() {
       final _FakeDetector detector = _FakeDetector();
       await runMangaOcrFolderJob(
         imageDirPath: root.path,
+        engineSignature: kLocalMangaOcrEngineSignature,
         detector: detector,
         recognizer: recognizer,
       );
@@ -328,6 +383,7 @@ void main() {
       final _FakeRecognizer recognizer = _FakeRecognizer();
       await runMangaOcrFolderJob(
         imageDirPath: root.path,
+        engineSignature: kLocalMangaOcrEngineSignature,
         detector: _FakeDetector(),
         recognizer: recognizer,
       );
@@ -337,6 +393,7 @@ void main() {
       final _FakeDetector detector = _FakeDetector();
       await runMangaOcrFolderJob(
         imageDirPath: root.path,
+        engineSignature: kLocalMangaOcrEngineSignature,
         detector: detector,
         recognizer: recognizer,
       );

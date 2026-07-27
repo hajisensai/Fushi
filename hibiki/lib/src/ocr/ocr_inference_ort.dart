@@ -123,10 +123,19 @@ void _notifyResolved(
 /// Manga OCR 下载源的检测器/编码器都只有一个输入，但不同导出版本分别使用过
 /// `pixel_values`、`images` 等名字。单输入模型不存在位置歧义，因此以 session
 /// 元数据为准；多输入 decoder 仍要求名称精确匹配，避免按顺序猜测而接错张量。
+///
+/// 单输入分支必须放在按名匹配**之前**：放在后面时，循环里任一未命中就已经
+/// `return inputs` 退出，循环走完又保证 `resolved` 非空，元数据回退永远不可达
+/// ——doc 宣称的鲁棒性并不存在（BUG-1173 同批审查发现）。
 Map<String, OcrTensor> resolveOcrSessionInputs({
   required Map<String, OcrTensor> inputs,
   required List<String> sessionInputNames,
 }) {
+  if (inputs.length == 1 && sessionInputNames.length == 1) {
+    return <String, OcrTensor>{
+      sessionInputNames.single: inputs.values.single,
+    };
+  }
   final Map<String, OcrTensor> resolved = <String, OcrTensor>{};
   for (final String sessionName in sessionInputNames) {
     final OcrTensor? exact = inputs[sessionName];
@@ -142,11 +151,6 @@ Map<String, OcrTensor> resolveOcrSessionInputs({
   }
   if (resolved.isNotEmpty) {
     return resolved;
-  }
-  if (inputs.length == 1 && sessionInputNames.length == 1) {
-    return <String, OcrTensor>{
-      sessionInputNames.single: inputs.values.single,
-    };
   }
   return inputs;
 }

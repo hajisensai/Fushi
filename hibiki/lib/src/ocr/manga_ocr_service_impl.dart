@@ -29,6 +29,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart';
 import 'package:hibiki/src/ocr/manga_ocr_model_downloader.dart';
+import 'package:hibiki/src/ocr/manga_ocr_model_fingerprint.dart' as model_fp;
 import 'package:hibiki/src/ocr/manga_ocr_model_manifest.dart';
 import 'package:hibiki/src/ocr/manga_ocr_pipeline.dart';
 import 'package:hibiki/src/ocr/manga_ocr_recognizer.dart';
@@ -37,7 +38,6 @@ import 'package:hibiki/src/ocr/manga_ocr_tokenizer.dart';
 import 'package:hibiki/src/ocr/ocr_inference.dart';
 import 'package:hibiki/src/ocr/ocr_inference_ort.dart';
 import 'package:hibiki/src/ocr/text_detector.dart';
-import 'package:hibiki/src/storage/app_paths.dart';
 
 /// 纯函数：`Platform.operatingSystem` 字符串 → [OcrPlatform]。
 /// 未知平台（fuchsia 等）落 linux 档（纯 CPU），不会选到不存在的 EP。
@@ -257,10 +257,18 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
       tokenizer: tokenizer,
     );
 
+    // 缓存目录带上本机已安装模型的内容指纹：上游换模型后旧页缓存自然失效，
+    // 不会与新模型的结果混进同一卷（BUG-1173）。指纹按 (size, mtime) 记忆化，
+    // 常态只做几次 stat。
+    final String engineSignature =
+        await model_fp.resolveLocalMangaOcrEngineSignature(
+      Directory(p.dirname(args.modelPaths.detectorPath)),
+    );
     final String mangaJsonPath = await runMangaOcrFolderJob(
       imageDirPath: args.imageDirPath,
       detector: detector,
       recognizer: recognizer,
+      engineSignature: engineSignature,
       cancelToken: cancelToken,
       onProgress: (int done, int total) {
         args.events.send(_JobProgressMessage(done, total));
@@ -411,11 +419,9 @@ class MangaOcrServiceImpl implements MangaOcrService {
   final MangaOcrVolumeJobRunner _jobRunner;
 
   /// 默认模型目录：`<appSupport>/ocr_models/manga`（经 [AppPaths] 数据根
-  /// 单一入口，不硬编码平台路径）。
-  static Future<Directory> defaultMangaOcrModelsDir() async {
-    final Directory support = await AppPaths.supportRootDirectory();
-    return Directory(p.join(support.path, 'ocr_models', 'manga'));
-  }
+  /// 单一入口，不硬编码平台路径）。指纹层与本类共用同一个解析函数。
+  static Future<Directory> defaultMangaOcrModelsDir() =>
+      model_fp.defaultMangaOcrModelsDir();
 
   @override
   bool get isSupportedPlatform =>

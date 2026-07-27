@@ -6,6 +6,7 @@ import 'package:hibiki/src/media/manga/mokuro_payload.dart';
 import 'package:hibiki/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:hibiki/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart';
+import 'package:hibiki/src/ocr/manga_ocr_model_fingerprint.dart';
 import 'package:hibiki/src/ocr/ocr_types.dart';
 
 /// A non-network reconstruction of the pages already completed by incremental
@@ -25,9 +26,13 @@ class MangaOcrCacheRecovery {
   final List<int> recoveredPageIndices;
 }
 
+/// [localEngineSignature] 是本地 ONNX 引擎的缓存子目录名。默认按本机**已安装模型**
+/// 解析（含内容指纹），只恢复与当前模型同源的页；测试可直接传入固定签名
+/// （BUG-1173）。
 Future<MangaOcrCacheRecovery> recoverCachedMangaOcr({
   required String managedDirectory,
   required MokuroPayload basePayload,
+  String? localEngineSignature,
 }) async {
   final List<MangaOcrPageFile> pages =
       enumerateMangaPages(Directory(managedDirectory));
@@ -43,8 +48,10 @@ Future<MangaOcrCacheRecovery> recoverCachedMangaOcr({
     kMangaOcrOutDirName,
     kMangaOcrPagesCacheDirName,
   ));
+  final String localSignature = localEngineSignature ??
+      await resolveInstalledLocalMangaOcrEngineSignature();
   final Directory localDirectory =
-      Directory(p.join(cacheRoot.path, kLocalMangaOcrEngineSignature));
+      Directory(p.join(cacheRoot.path, localSignature));
   final Directory lensDirectory =
       Directory(p.join(cacheRoot.path, kGoogleLensEngineSignature));
   final MangaOcrFilePageCache localCache = MangaOcrFilePageCache(

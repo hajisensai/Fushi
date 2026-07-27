@@ -1,0 +1,6 @@
+## BUG-1170 · 漫画窗口 ready 锁被迟到旧回调解除
+- **报告**：2026-07-27（用户：PR#474 只读审查）
+- **真实性**：✅ 真 bug。`hibiki/lib/src/media/manga/reader/manga_hibiki_page.dart:2109`（修复前）在比对 `generation != _windowGeneration` 之后连跨 **3 个 `await controller.evaluateJavascript(...)`**（`:2112` / `:2116` / `:2121`），期间不再复检；`:2126` 读的是**当时**的 `_windowLoadCompleter` 而不是入口快照，`:2127-2128` 直接 `complete()`。若旧窗口在 `:941` 的 10s 超时后被放弃、新窗口已启动（`:923` 递增 generation、`:925` 换上新 completer），这个迟到的旧回调会 complete 掉**新**窗口的 ready 锁 → `_navigating` 被错误解除，WebView 仍在加载旧内容却被判定就绪 → 快速翻页时页面错乱（BUG-1153 只修了入口，没修出口）。与 PR#469 修过的「延后收尾缺 generation 快照」同一类。
+- **[x] ① 已修复** — 把 generation + ready 锁收进新的所有权闸门 `hibiki/lib/src/media/manga/reader/manga_window_load_gate.dart`（`MangaWindowLoadGate` / `MangaWindowLoadTicket`）：`_loadInitialWindow` 用 `begin()` 拿凭据，`_markWindowReady` 入口 `ticketFor(generation)` 取凭据，**每个 await 之后**再 `owns(ticket)` 复问，`complete(ticket, ...)` 仅在凭据仍是当前加载时生效。页面不再直接持有裸 generation / completer 字段，迟到回调在数据结构层就无法解开别人的锁。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/manga/manga_window_load_gate_test.dart`：「迟到的旧窗口回调不能解开新窗口的 ready 锁」直接构造 begin→begin→旧凭据收尾的交叠，断言 `complete` 返回 false 且新锁仍锁着；另有 generation 不匹配/缺失取不到凭据、`finish` 只清自己那把锁两条。负向验证：把 `complete` 改回「直接 complete 当前那把锁」→ 该用例转红（`Expected: false / Actual: <true>`），还原后绿。
+- **备注**：PR#474（外部作者 W1ght）新增面审查产物，随 BUG-1171/1165/1166 同批修复。

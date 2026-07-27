@@ -18,6 +18,13 @@ class FakeEncoderSession implements OcrSession {
   @override
   Future<Map<String, OcrTensor>> run(Map<String, OcrTensor> inputs) async {
     receivedInputs.add(inputs);
+    // ONNX 只按元素总数收张量，NCHW 写成 NHWC 元素数不变、推理照跑，结果全错。
+    // 维度必须逐位断言，否则这条契约在测试里等于没守（BUG-1173 同批审查）。
+    expect(
+      inputs['pixel_values']!.shape,
+      <int>[1, 3, 224, 224],
+      reason: 'encoder 输入是 NCHW，通道在第 1 维',
+    );
     return <String, OcrTensor>{
       'last_hidden_state':
           OcrTensor.float32(Float32List(1 * 2 * 3), <int>[1, 2, 3]),
@@ -37,10 +44,15 @@ class FakeDecoderSession implements OcrSession {
   @override
   Future<Map<String, OcrTensor>> run(Map<String, OcrTensor> inputs) async {
     final OcrTensor inputIds = inputs['input_ids']!;
-    expect(inputs['encoder_hidden_states'], isNotNull);
     receivedShapes.add(List<int>.from(inputIds.shape));
     final int beams = inputIds.shape[0];
     final int seqLen = inputIds.shape[1];
+    // 只断言 key 存在挡不住 beam tiling 写错：元素数相同，形状全错。
+    expect(
+      inputs['encoder_hidden_states']!.shape,
+      <int>[beams, 2, 3],
+      reason: 'encoder_hidden_states 必须沿 beam 维 tile 成 [beams, tokens, hidden]',
+    );
     final Float32List logits = Float32List(beams * seqLen * vocabSize);
     for (int b = 0; b < beams; b++) {
       for (int t = 0; t < seqLen; t++) {

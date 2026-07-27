@@ -271,10 +271,22 @@ class GoogleLensProtocol {
     return root.takeBytes();
   }
 
+  /// 解析 Lens 响应为归一化命中区。
+  ///
+  /// [imageWidth] / [imageHeight] 是**送给 Lens 的那张图**的像素尺寸。Lens 的
+  /// 坐标按图宽/图高分别归一，而 `rotation` 是真实像素空间里的角度：任何把
+  /// 「按宽归一的 width」和「按高归一的 height」混进同一组 sin/cos 的算法，只在
+  /// 正方形页上成立。漫画页恒是竖长图，必须带着宽高比还原（BUG-1172）。
   static List<GoogleLensParagraph> decodeResponse(
     Uint8List data, {
     String language = 'ja',
+    required int imageWidth,
+    required int imageHeight,
   }) {
+    if (imageWidth <= 0 || imageHeight <= 0) {
+      throw const GoogleLensProtocolException('invalid image dimensions');
+    }
+    final double aspect = imageWidth / imageHeight;
     final _ProtobufMessage root = _ProtobufMessage(data);
     final List<_ProtobufMessage> paragraphs = root
             .firstMessage(GoogleLensWireFields.serverResponseObjectsResponse)
@@ -299,7 +311,7 @@ class GoogleLensProtocol {
         final String text = _normalize(rawText, language);
         final _LensGeometry? geometry = line
             .firstMessage(GoogleLensWireFields.lineGeometry)
-            ?.let(_readGeometry);
+            ?.let((_ProtobufMessage box) => _readGeometry(box, aspect));
         if (text.isEmpty || geometry == null) {
           continue;
         }
@@ -316,7 +328,7 @@ class GoogleLensProtocol {
       }
       final _LensGeometry? paragraphGeometry = paragraph
           .firstMessage(GoogleLensWireFields.paragraphGeometry)
-          ?.let(_readGeometry);
+          ?.let((_ProtobufMessage box) => _readGeometry(box, aspect));
       final bool isVertical = paragraphGeometry?.isVertical == true ||
           lines
                       .where((_RecognizedLine line) => line.geometry.isVertical)
@@ -391,8 +403,6 @@ class GoogleLensProtocol {
     if (characters.isEmpty) {
       return const <GoogleLensTextRegion>[];
     }
-    final double cosine = math.cos(geometry.rotation);
-    final double sine = math.sin(geometry.rotation);
     final double characterWidth = geometry.width / characters.length;
     return <GoogleLensTextRegion>[
       for (int i = 0; i < characters.length; i++)
@@ -405,8 +415,6 @@ class GoogleLensProtocol {
             geometry,
             along: (i + 0.5) / characters.length - 0.5,
             characterWidth: characterWidth,
-            cosine: cosine,
-            sine: sine,
           ),
           utf16Start: characters[i].start,
           utf16End: characters[i].end,
@@ -418,17 +426,45 @@ class GoogleLensProtocol {
     _LensGeometry geometry, {
     required double along,
     required double characterWidth,
-    required double cosine,
-    required double sine,
   }) {
+    final double cosine = math.cos(geometry.rotation);
+    final double sine = math.sin(geometry.rotation);
     final double centerX = geometry.centerX + along * geometry.width * cosine;
     // Lens and the overlay both use a top-left origin, so positive baseline
-    // rotation moves down as X increases.
-    final double centerY = geometry.centerYTop + along * geometry.width * sine;
+    // rotation moves down as X increases. 沿基线走 `along * width` 的**像素**
+    // 位移，投到 Y 轴后要按页高归一，所以多一个 aspect 因子。
+    final double centerY =
+        geometry.centerYTop + along * geometry.width * geometry.aspect * sine;
+    return _rotatedAabb(
+      centerX: centerX,
+      centerY: centerY,
+      width: characterWidth,
+      height: geometry.height,
+      rotation: geometry.rotation,
+      aspect: geometry.aspect,
+    );
+  }
+
+  /// 旋转矩形的归一化 AABB。
+  ///
+  /// [width] 按图宽归一、[height] 按图高归一，两者不同尺度，不能直接进同一组
+  /// sin/cos。先把 X 轴乘 [aspect] 拉进各向同性空间（单位＝图高像素），在那里做
+  /// 三角投影，再把 X 半宽除回归一化尺度。aspect == 1（正方形页）时与旧式混算
+  /// 完全一致；1200x1700 的页在 90° 上旧式 X 半宽偏小 1.42 倍（BUG-1172）。
+  static Rect _rotatedAabb({
+    required double centerX,
+    required double centerY,
+    required double width,
+    required double height,
+    required double rotation,
+    required double aspect,
+  }) {
+    final double cosine = math.cos(rotation).abs();
+    final double sine = math.sin(rotation).abs();
+    final double isotropicWidth = width * aspect;
     final double halfWidth =
-        (characterWidth * cosine.abs() + geometry.height * sine.abs()) / 2;
-    final double halfHeight =
-        (characterWidth * sine.abs() + geometry.height * cosine.abs()) / 2;
+        (isotropicWidth * cosine + height * sine) / 2 / aspect;
+    final double halfHeight = (isotropicWidth * sine + height * cosine) / 2;
     final double left = math.max(0, centerX - halfWidth);
     final double top = math.max(0, centerY - halfHeight);
     final double right = math.min(1, centerX + halfWidth);
@@ -436,7 +472,7 @@ class GoogleLensProtocol {
     return Rect.fromLTRB(left, top, right, bottom);
   }
 
-  static _LensGeometry? _readGeometry(_ProtobufMessage message) {
+  static _LensGeometry? _readGeometry(_ProtobufMessage message, double aspect) {
     final _ProtobufMessage? box =
         message.firstMessage(GoogleLensWireFields.geometryBoundingBox);
     final double? centerX = box?.float32(GoogleLensWireFields.boxCenterX);
@@ -453,27 +489,28 @@ class GoogleLensProtocol {
     }
     final double rotation =
         box?.float32(GoogleLensWireFields.boxRotationZ) ?? 0;
-    final double cosine = math.cos(rotation).abs();
-    final double sine = math.sin(rotation).abs();
-    final double halfWidth = (width * cosine + height * sine) / 2;
-    final double halfHeight = (width * sine + height * cosine) / 2;
-    final double left = math.max(0, centerX - halfWidth);
-    final double top = math.max(0, centerY - halfHeight);
-    final double right = math.min(1, centerX + halfWidth);
-    final double bottom = math.min(1, centerY + halfHeight);
-    if (right <= left || bottom <= top) {
+    final Rect bounds = _rotatedAabb(
+      centerX: centerX,
+      centerY: centerY,
+      width: width,
+      height: height,
+      rotation: rotation,
+      aspect: aspect,
+    );
+    if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) {
       return null;
     }
     return _LensGeometry(
       // Chromium Lens already reports normalized image coordinates in the
       // browser's top-left coordinate system. Flipping Y here mirrors every
       // hit target vertically (top article text points at the bottom article).
-      rect: Rect.fromLTWH(left, top, right - left, bottom - top),
+      rect: bounds,
       rotation: rotation,
       centerX: centerX,
       centerYTop: centerY,
       width: width,
       height: height,
+      aspect: aspect,
     );
   }
 
@@ -501,6 +538,7 @@ class _LensGeometry {
     required this.centerYTop,
     required this.width,
     required this.height,
+    required this.aspect,
   });
 
   final Rect rect;
@@ -509,6 +547,9 @@ class _LensGeometry {
   final double centerYTop;
   final double width;
   final double height;
+
+  /// 送检图的 `宽/高`，用于把归一化坐标拉进各向同性空间做旋转投影。
+  final double aspect;
 
   bool get isVertical =>
       ((rotation.abs() - math.pi / 2).abs() < 0.5) ||
