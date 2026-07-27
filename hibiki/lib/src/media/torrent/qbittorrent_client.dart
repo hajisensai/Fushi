@@ -202,6 +202,59 @@ class QBittorrentClient {
     return parseQbTorrentFiles(res.body);
   }
 
+  /// TODO-1961-c：改名种子内文件：`POST /api/v2/torrents/renameFile`
+  /// （qb ≥ 4.2.1，参数 hash / oldPath / newPath）。
+  ///
+  /// 与内置引擎同语义：qb 自己改，做种不断。返回 (成功, 失败原因)：
+  /// - 409 = qb 明确拒绝（目标已存在 / 名字非法），body 是可读原因；
+  /// - 其它非 200 或网络失败 → 通用原因串。
+  Future<(bool ok, String? error)> renameFile({
+    required String hash,
+    required String oldPath,
+    required String newPath,
+  }) async {
+    if (hash.isEmpty || oldPath.isEmpty || newPath.isEmpty) {
+      return (false, 'invalid rename arguments');
+    }
+    final http.Response? res = await _request(
+      'POST',
+      '/api/v2/torrents/renameFile',
+      form: <String, String>{
+        'hash': hash,
+        'oldPath': oldPath,
+        'newPath': newPath,
+      },
+    );
+    if (res == null) return (false, 'qBittorrent request failed');
+    if (res.statusCode == 200) return (true, null);
+    final String body = res.body.trim();
+    return (false, body.isEmpty ? 'HTTP ${res.statusCode}' : body);
+  }
+
+  /// TODO-1961-c：移动种子内容：`POST /api/v2/torrents/setLocation`
+  /// （参数 hashes / location）。
+  ///
+  /// 注意与内置引擎的**语义差异**：qb 的 setLocation 对目标已存在的文件不保证
+  /// 「整体失败不覆盖」——那是 qb 自身的策略，本客户端管不了。调用方在 UI 上
+  /// 对外接 qb 后端应当提示这一点。
+  Future<(bool ok, String? error)> setLocation({
+    required String hash,
+    required String location,
+  }) async {
+    if (hash.isEmpty || location.isEmpty) {
+      return (false, 'invalid setLocation arguments');
+    }
+    final http.Response? res = await _request(
+      'POST',
+      '/api/v2/torrents/setLocation',
+      form: <String, String>{'hashes': hash, 'location': location},
+    );
+    if (res == null) return (false, 'qBittorrent request failed');
+    if (res.statusCode == 200) return (true, null);
+    final String body = res.body.trim();
+    return (false, body.isEmpty ? 'HTTP ${res.statusCode}' : body);
+  }
+
   /// 带会话编排的请求：懒登录 → 发请求 → 403 时重新登录一次并重试。
   /// 任何异常/登录失败返回 null。
   Future<http.Response?> _request(

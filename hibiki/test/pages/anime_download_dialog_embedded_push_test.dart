@@ -105,6 +105,18 @@ class _FakeBackend implements TorrentBackend {
 
   @override
   void close() {}
+
+  // TODO-1961-c：本 fake 不测改名/移动路径，给出明确的「未实现」结果而不是
+  // 假装成功——真要测这条链路的用例应当显式覆盖它。
+  @override
+  Future<TorrentStorageResult> renameFile(
+          String torrentId, int fileIndex, String newPath) async =>
+      const TorrentStorageResult.failure('not supported by fake');
+
+  @override
+  Future<TorrentStorageResult> moveStorage(
+          String torrentId, String newSavePath) async =>
+      const TorrentStorageResult.failure('not supported by fake');
 }
 
 class _FakeAppModel extends AppModel {

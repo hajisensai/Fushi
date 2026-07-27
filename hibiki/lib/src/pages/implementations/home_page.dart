@@ -63,9 +63,9 @@ List<HomeTab> homeActiveTabs({
       HomeTab.home,
       HomeTab.books,
       if (videoEnabled) HomeTab.video,
-      // 下载 tab 与视频子系统同门控（下载入口原本就在视频页头，把它单独拿出来
-      // 成独立底栏条目）；位置紧随视频。
-      if (videoEnabled) HomeTab.downloads,
+      // 下载 tab 恒在（统一下载中心）：除番剧 torrent 外还承载通用磁力（书）与
+      // 漫画「在线目录」卷下载队列，不再随视频开关隐藏；位置在视频（若开）之后。
+      HomeTab.downloads,
       HomeTab.dictionaries,
       if (gamesEnabled) HomeTab.games,
       // 浏览器扩展管理（安装引导 + 连接检测 + 版本）独立成页，仅桌面出现（手机浏览器

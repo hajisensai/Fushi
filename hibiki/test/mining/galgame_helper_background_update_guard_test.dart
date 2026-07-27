@@ -112,13 +112,20 @@ void main() {
     });
 
     test('安装核心走 staging 换入（不得就地覆盖安装目录）并串行化', () {
-      final String body = methodBody(
-        readStripped(installer),
+      final String src = readStripped(installer);
+      final String networkBody = methodBody(
+        src,
         'Future<void> _installCore(',
       );
-      expect(body.contains('galgameHelperSwapInstall('), isTrue,
+      final String installBody = methodBody(
+        src,
+        'Future<void> _installVerifiedZip(',
+      );
+      expect(networkBody.contains('_installVerifiedZip('), isTrue,
+          reason: '网络包与随包归档必须共用同一条已校验安装尾段。');
+      expect(installBody.contains('galgameHelperSwapInstall('), isTrue,
           reason: '被映射 DLL 覆盖写会半途失败留混版本（BUG-1076 ④），必须换入式安装。');
-      expect(body.contains('_serializeExtraction'), isTrue,
+      expect(installBody.contains('_serializeExtraction'), isTrue,
           reason: '换入必须挂到 _extractionGate 上与启动路径串行。');
     });
   });

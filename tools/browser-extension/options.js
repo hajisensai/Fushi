@@ -9,6 +9,13 @@ const subtitleDefaults = Object.freeze({
   subtitleAutoPause: false,
   subtitleCondensedPlayback: false,
   netflixHideNextEpisode: true,
+  // asb 移植（默认关，快捷键默认开）。
+  subtitleAutoPauseAtStart: false,
+  subtitleFastForwardPlayback: false,
+  subtitleHoverPause: false,
+  subtitleOverlayBlur: false,
+  subtitleOverlayAllTracks: false,
+  videoShortcutsEnabled: true,
 });
 const toggleIds = Object.freeze({
   nfSubList: 'netflixSubtitlePanel',
@@ -18,6 +25,12 @@ const toggleIds = Object.freeze({
   subtitleAutoPause: 'subtitleAutoPause',
   subtitleCondensedPlayback: 'subtitleCondensedPlayback',
   nfHideNext: 'netflixHideNextEpisode',
+  subtitleAutoPauseAtStart: 'subtitleAutoPauseAtStart',
+  subtitleFastForwardPlayback: 'subtitleFastForwardPlayback',
+  subtitleHoverPause: 'subtitleHoverPause',
+  subtitleOverlayBlur: 'subtitleOverlayBlur',
+  subtitleOverlayAllTracks: 'subtitleOverlayAllTracks',
+  videoShortcutsEnabled: 'videoShortcutsEnabled',
 });
 
 let toastTimer = null;
@@ -130,6 +143,23 @@ $('showToken').addEventListener('click', () => {
 
 $('check').addEventListener('click', () => refreshConnection(true));
 
+// 「版本与更新」卡片：把自更新链路状态翻成人话（self-update.js describeUpdateState），
+// 让「扩展怎么更新、现在是不是最新」在设置页一眼可见，不再只有失效时的角标。
+async function refreshUpdateCard() {
+  const titleEl = $('updTitle');
+  const detailEl = $('updDetail');
+  const buildEl = $('updBuild');
+  if (!titleEl || !self.HIBIKI_SELF_UPDATE) return;
+  let stale = null;
+  try {
+    stale = (await chrome.storage.local.get('hibikiUpdateStale')).hibikiUpdateStale || null;
+  } catch (_) { /* storage 不可用：按无 stale 渲染 */ }
+  const s = self.HIBIKI_SELF_UPDATE.describeUpdateState(self.HIBIKI_DEFAULTS, stale);
+  titleEl.textContent = '版本与更新 · ' + s.title;
+  if (detailEl) detailEl.textContent = s.detail;
+  if (buildEl) buildEl.textContent = s.build ? 'build ' + s.build : '';
+}
+
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   for (const [id, key] of Object.entries(toggleIds)) {
@@ -137,8 +167,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
     const input = $(id);
     if (input) input.checked = changes[key].newValue === true;
   }
+  if (changes.hibikiUpdateStale) refreshUpdateCard();
 });
 
 // BUG-1036：选项页每次打开都应报告当前真状态，不能复用 background 最多 5 秒的离线缓存；
 // 手动“重新检测”本来就是 force=true，首次自动检测保持同一语义。
 loadSettings().then(() => refreshConnection(true));
+refreshUpdateCard();

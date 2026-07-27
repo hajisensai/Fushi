@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "id": "reallive",
+  "status": "implemented_unverified",
+  "detection": {
+    "executable_sha256": [],
+    "module_sha256": []
+  },
+  "capabilities": {
+    "text": true,
+    "resource_audio": true,
+    "pcm_audio": true
+  },
+  "evidence": [
+    {
+      "kind": "shared_format",
+      "reference": "The OVK parser and bounded file-event path are verified on VisualArt's Siglus samples; RealLive identity and runtime compatibility still require a separate real sample."
+    }
+  ]
+}

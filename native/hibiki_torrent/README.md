@@ -39,6 +39,8 @@ hibiki/lib/src/media/torrent/
 `ht_torrent_pieces` / `ht_poll_piece_events` / `ht_set_piece_deadline` /
 `ht_apply_first_last_priority` / `ht_remove_torrent`。
 持久化（TODO-1961-a）：`ht_save_resume_data` / `ht_load_resume_dir`。
+存储整理（TODO-1961-c）：`ht_rename_file` / `ht_move_storage`（都是同步等回执的
+封装；改名/移动由引擎自己做，故做种不断）。
 出参 JSON 一律 `ht_free_string` 释放；详细契约见 `hibiki_torrent.h` 注释。
 
 ### 关键语义（踩过的坑，别再踩）
@@ -57,6 +59,10 @@ hibiki/lib/src/media/torrent/
   `drain_alerts`，各 poll 函数只读自己的队列。新增任何需要 alert 的能力时，
   往 `drain_alerts` 里加一个分支，**绝不要**再写第二处 `pop_alerts` ——
   两个消费者会静默吃掉彼此的事件。
+- **改名 / 移动必须走引擎**：libtorrent 按自己记的 save_path + 种子内相对路径
+  读盘上传。在引擎之外动文件（资源管理器改名、脚本 mv）= 当场掐断做种，且
+  **无法补救**（引擎收不到通知）。`ht_move_storage` 用 `fail_if_exist`：目标
+  已有同名文件就整体失败，绝不覆盖用户数据、也绝不留下搬了一半的目录。
 - **resume data 只对已有元数据的种子有意义**：磁力刚加时没有 info dict，
   `ht_save_resume_data` 会跳过这类种子（存了也重建不出来）。保存时带
   `save_info_dict`，故恢复后无需再向 DHT/peer 取元数据。

@@ -219,6 +219,31 @@ window.addEventListener('message', (e) => {
 // 面板只剩预取的下一集轨（列表空）。接收端就位后立刻请求 bridge 重放已存档的 cue 消息，消除时序运气。
 try { window.postMessage({ __hibikiNf: 'replayCues' }, '/'); } catch (_) {}
 
+// ── asb 移植：通用流媒体字幕桥（stream-bridge.js，MAIN 世界）→ store ──
+// TVer / Bilibili.tv / Hulu JP / Prime Video 的主世界桥抓到整集字幕原文后经
+// {__hibikiStream:'cues'} 送到这里，按 format 分派解析器写进 hibikiEpisodeCues。
+// 轨 key 用桥捕获时的 host+path（与 hibikiVideoKey 的通用回落同构）——SPA 换集后
+// 消息晚到也落在正确的视频 key 下。存档/重放握手与 netflix-bridge 相同。
+function hibikiOnStreamCues(msg) {
+  try {
+    let cues;
+    if (msg.format === 'ttml') cues = parseTtml(msg.text);
+    else if (msg.format === 'bbjson') cues = parseBilibiliJson(msg.text);
+    else cues = parseWebVtt(msg.text); // webvtt / srt（parseWebVtt 兼容 SRT 块）
+    if (!cues || !cues.length) return;
+    const vidKey = (location.hostname + (msg.path || location.pathname)).replace(/\|/g, '_');
+    const lang = String(msg.lang || 'und').replace(/\|/g, '_');
+    const key = vidKey + '|' + lang;
+    hibikiEpisodeCues[key] = cues;
+    hibikiNotifyPanel(key);
+  } catch (_) {}
+}
+window.addEventListener('message', (e) => {
+  if (e.source !== window || !e.data || e.data.__hibikiStream !== 'cues') return;
+  hibikiOnStreamCues(e.data);
+});
+try { window.postMessage({ __hibikiStream: 'replayCues' }, '/'); } catch (_) {}
+
 // ── TODO-1363：通用字幕轨 provider（所有站点） ──
 // 数据契约不变：window.hibikiEpisodeCues[`${videoKey}|${lang}`] = [{startMs,endMs,text}]，新数据到达
 // 即调 window.hibikiSubtitlePanelOnCues(key)。Netflix 整集拦截之外新增两条通用通道，站点差异全部

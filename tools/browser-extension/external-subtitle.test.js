@@ -175,7 +175,7 @@ test('① 选文件→server 解析→外挂轨写进 store 并成为当前轨',
   assert.ok(h.toasts.some((t) => t.indexOf('已加载') >= 0), '必须提示加载成功');
 });
 
-test('② 时轴偏移：nudge 让整轨 cue 时间平移', () => {
+test('② 时轴偏移：读取侧平移（面板/seek 用偏移值，store 保持原始 cue）', () => {
   const h = loadPanel({
     hostname: 'example.com', pathname: '/video/1', stored: { netflixSubtitlePanel: true },
     response: OK([{ text: 'a', startMs: 1000, endMs: 2000 }]),
@@ -184,16 +184,22 @@ test('② 时轴偏移：nudge 让整轨 cue 时间平移', () => {
   const key = 'example.com/video/1|外挂:x.srt';
   const store = h.windowObj.hibikiEpisodeCues;
   assert.strictEqual(store[key][0].startMs, 1000);
-  // 偏移条可见（当前轨为外挂），点 +0.5s 按钮。
+  // 偏移条可见（asb 移植后任意当前轨都显示），点 +0.5s 按钮。
   const panel = h.panel();
   const offsetBar = findByClassDeep(panel, 'hibiki-sub-offset')[0];
-  assert.ok(offsetBar, '外挂轨必须显示时轴偏移条');
+  assert.ok(offsetBar, '当前轨必须显示时轴偏移条');
   assert.notStrictEqual(offsetBar.style._props.display, 'none');
   const plus = findBtnByTitle(offsetBar, '＋0.5')[0];
   assert.ok(plus, '缺 ＋0.5 偏移按钮');
   plus.handlers.click[0]({ stopPropagation() {} });
-  assert.strictEqual(store[key][0].startMs, 1500, '偏移 +0.5s 后 cue 起点平移 500ms');
-  assert.strictEqual(store[key][0].endMs, 2500);
+  // asb 移植后偏移在读取侧套用：store 原始 cue 不动（provider 增量刷新不会打架），
+  // 面板行 seek 与时间戳用偏移后的值。
+  assert.strictEqual(store[key][0].startMs, 1000, 'store 必须保持原始 cue（读取侧偏移）');
+  assert.strictEqual(store[key][0].endMs, 2000);
+  const ts = findByClassDeep(h.panel(), 'hibiki-sub-ts')[0];
+  assert.ok(ts, '缺行时间戳按钮');
+  ts.handlers.click[0]({ stopPropagation() {} });
+  assert.strictEqual(h.video.currentTime, 1.5, '行点击 seek 必须用偏移后的 1500ms');
 });
 
 test('③ 不支持格式 → 提示、不造轨', () => {

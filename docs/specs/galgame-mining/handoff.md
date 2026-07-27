@@ -3,7 +3,10 @@
 > 面向接手的另一个 AI/开发者，**自包含**。总设计见 [design.md](design.md)。
 > 已完成 A 阶段 Dart 基座 + native loopback + 波形桥 + C.1 注入组件（PR #212）。本文档给出**剩余任务**的落地路径：文件、接缝、gotcha、验证门。
 >
-> **迁移说明**：本文保留 2026-07-18/19 的历史实现证据；其中 `native/galgame_voice_hook/...` 均指迁出前路径。当前 native 实现在独立仓 `hajisensai/hibiki-hook`（对应 `hook/`、`injector/`、`include/`），新工作必须按 [Galgame Hook 引擎适配 SOP](../../agent/galgame-hooking.md) 和该仓现状定位，不能在 Hibiki 主仓重建旧目录。
+> **路径说明（2026-07-26）**：本文保留 2026-07-18/19 的历史实现证据；其中
+> `native/galgame_voice_hook/...` 是旧路径，历史 `hajisensai/hibiki-hook` 提交号仍作证据锚点。
+> 当前 native 真相在本仓 `native/galgame_hook/`，新工作必须按
+> [Galgame Hook 引擎适配 SOP](../../agent/galgame-hooking.md) 定位，不得回建旧目录。
 
 ## 落地进度
 
@@ -18,7 +21,7 @@
 | **C.4** EngineHookGalAudioSource+接回 | ✅ 真机通过 | `voice_hook_reader.{h,cpp}`+`app.hibiki.reader/voice_hook` channel（含 `processIsWow64` 与 `rawVoiceReady`）；`EngineHookGalAudioSource` 支持 PCM 与 Siglus raw-only Ogg；A6 已「引擎-hook 优先(按目标位数选 x86/x64 注入器)，不可用回退 loopback」 | 全 UI 热键→Anki 出卡仍可继续走查 |
 | **C.3** 逐引擎覆盖 | 🟡 Siglus 已完成 | `SiglusEngine.exe` 专属 OVK 索引/Ogg 捕获，连续两句真机导出与原归档逐字节一致 | Artemis/Unity 等继续覆盖；KiriKiriZ 干净 per-channel 仍未做 |
 
-**接缝提醒**：injector 可执行文件约定放在 app 同级 `voice_hook/<arch>/hibiki_voice_injector.exe`（`_resolveGalInjectorPath({is32Bit})`，按 `EngineHookGalAudioSource.targetIsWow64(pid)` 查目标进程位数选 x86/x64——**KiriKiri 多为 32 位必须 x86 注入器**），由独立仓 `hajisensai/hibiki-hook` 以 CMake（`-A x64` / `-A Win32`）构建后随包分发/按需下载；缺失/位数不符时 A6 自动回退 loopback。C.2 的**校准模式 callsite/音量精筛**是迁出前 TODO，当前应在独立仓 adapter/profile 中按真机证据实现，不应回填旧 `dll_main.cpp` 主干。
+**接缝提醒**：injector 可执行文件约定放在 app 同级 `voice_hook/<arch>/hibiki_voice_injector.exe`（`_resolveGalInjectorPath({is32Bit})`，按 `EngineHookGalAudioSource.targetIsWow64(pid)` 查目标进程位数选 x86/x64——**KiriKiri 多为 32 位必须 x86 注入器**）。本仓 `native/galgame_hook/` 以 CMake（`-A x64` / `-A Win32`）单独构建；校验 zip 随 Windows 主包离线交付，旧包/更新仍可从固定 release 下载。缺失/位数不符时 A6 自动回退 loopback。C.2 的**校准模式 callsite/音量精筛**是旧 TODO，当前应在 `native/galgame_hook/hook/adapters/` 或 profile 中按真机证据实现，不应回填 `dll_main.cpp` 主干。
 
 ## ✅ 真机验证（2026-07-21，ceshi 素材批量制卡流程 + 端到端 AnkiConnect 落卡）
 

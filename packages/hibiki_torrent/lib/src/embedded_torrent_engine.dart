@@ -330,6 +330,32 @@ class HtPieceEvent {
   final int piece;
 }
 
+/// 一次异步存储操作（[EmbeddedTorrentSession.renameFile] /
+/// [EmbeddedTorrentSession.moveStorage]）的结果。
+class HtStorageOpResult {
+  const HtStorageOpResult({required this.ok, this.path, this.error});
+
+  /// 操作是否成功落地（引擎已回执且无错）。
+  final bool ok;
+
+  /// 成功时的新路径：改名 = 种子内新相对路径；移动 = 新的 save_path。
+  final String? path;
+
+  /// 失败原因（引擎原文，或超时 / 种子不存在等）。**必须**反馈给用户。
+  final String? error;
+
+  factory HtStorageOpResult._fromJson(Object? json) {
+    if (json is! Map<String, dynamic>) {
+      return const HtStorageOpResult(ok: false, error: 'bad native response');
+    }
+    return HtStorageOpResult(
+      ok: json['ok'] == true,
+      path: json['path'] as String?,
+      error: json['error'] as String?,
+    );
+  }
+}
+
 /// 一轮 [EmbeddedTorrentSession.saveResumeData] 的结果。
 class HtResumeSaveResult {
   const HtResumeSaveResult({
@@ -575,6 +601,55 @@ class EmbeddedTorrentSession {
               piece: (e['piece'] as num?)?.toInt() ?? -1,
             ))
         .toList(growable: false);
+  }
+
+  /// TODO-1961-c：引擎侧给种子内第 [fileIndex] 个文件改名（[newPath] 是种子内
+  /// 相对路径，可含子目录，分隔符 `/`）。**做种不断** —— 引擎知道数据换了名字，
+  /// 继续从新名字读盘上传。
+  ///
+  /// 返回 [HtStorageOpResult]：失败时 `error` 原样带回引擎给的原因，调用方
+  /// 必须显示给用户（不得吞成一个光秃秃的 false）。
+  HtStorageOpResult renameFile(
+    String infoHash,
+    int fileIndex,
+    String newPath, {
+    int timeoutMs = 15000,
+  }) {
+    if (isClosed) {
+      return const HtStorageOpResult(ok: false, error: 'session closed');
+    }
+    final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
+    final Pointer<Char> target = newPath.toNativeUtf8().cast<Char>();
+    try {
+      return HtStorageOpResult._fromJson(_engine._consumeJson(
+          _b.ht_rename_file(_session, id, fileIndex, target, timeoutMs)));
+    } finally {
+      malloc.free(id);
+      malloc.free(target);
+    }
+  }
+
+  /// TODO-1961-c：引擎侧把种子内容整体移动到 [newSavePath]（做种不断）。
+  ///
+  /// 目标已有同名文件时**整体失败**（libtorrent `fail_if_exist`），绝不覆盖
+  /// 用户数据、也绝不留下搬了一半的内容目录。
+  HtStorageOpResult moveStorage(
+    String infoHash,
+    String newSavePath, {
+    int timeoutMs = 15000,
+  }) {
+    if (isClosed) {
+      return const HtStorageOpResult(ok: false, error: 'session closed');
+    }
+    final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
+    final Pointer<Char> target = newSavePath.toNativeUtf8().cast<Char>();
+    try {
+      return HtStorageOpResult._fromJson(_engine
+          ._consumeJson(_b.ht_move_storage(_session, id, target, timeoutMs)));
+    } finally {
+      malloc.free(id);
+      malloc.free(target);
+    }
   }
 
   /// TODO-1961-a：把当前所有已有元数据的种子的 resume data 落盘到 [dir]

@@ -40,6 +40,47 @@ class QbTorrentBackend implements TorrentBackend {
   Future<List<TorrentFileEntry>> listFiles(String torrentId) =>
       _client.fetchTorrentFiles(torrentId);
 
+  /// TODO-1961-c：qb 的 renameFile 认的是**旧相对路径**而不是文件下标，
+  /// 所以先用文件列表把下标翻成路径（内置引擎那边下标就是天然主键）。
+  /// 翻不出来说明种子/下标不对，直接报错而不是猜一个路径去改。
+  @override
+  Future<TorrentStorageResult> renameFile(
+    String torrentId,
+    int fileIndex,
+    String newPath,
+  ) async {
+    final List<TorrentFileEntry> files =
+        await _client.fetchTorrentFiles(torrentId);
+    String? oldPath;
+    for (final TorrentFileEntry f in files) {
+      if (f.index == fileIndex) {
+        oldPath = f.name;
+        break;
+      }
+    }
+    if (oldPath == null) {
+      return const TorrentStorageResult.failure('file index not found');
+    }
+    final (bool ok, String? error) = await _client.renameFile(
+      hash: torrentId,
+      oldPath: oldPath,
+      newPath: newPath,
+    );
+    return TorrentStorageResult(
+        ok: ok, path: ok ? newPath : null, error: error);
+  }
+
+  @override
+  Future<TorrentStorageResult> moveStorage(
+    String torrentId,
+    String newSavePath,
+  ) async {
+    final (bool ok, String? error) =
+        await _client.setLocation(hash: torrentId, location: newSavePath);
+    return TorrentStorageResult(
+        ok: ok, path: ok ? newSavePath : null, error: error);
+  }
+
   @override
   void close() => _client.close();
 }

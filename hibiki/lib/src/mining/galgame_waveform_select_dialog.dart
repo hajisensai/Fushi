@@ -11,6 +11,7 @@ import 'package:hibiki/src/mining/galgame_audio_source.dart' show GalAudioSlice;
 import 'package:hibiki/src/mining/galgame_waveform.dart'
     show kGalWaveformWindowMs, pcmToEnergyEnvelope;
 import 'package:hibiki/src/mining/galgame_waveform_select.dart';
+import 'package:hibiki/utils.dart';
 
 /// galgame 一键制卡（docs/specs/galgame-mining）波形选区对话框。
 ///
@@ -23,7 +24,7 @@ Future<GalWaveformRange?> showGalWaveformSelectDialog(
   BuildContext context, {
   required GalAudioSlice slice,
 }) {
-  return showDialog<GalWaveformRange>(
+  return showAppDialog<GalWaveformRange>(
     context: context,
     builder: (BuildContext ctx) => _GalWaveformSelectDialog(slice: slice),
   );
@@ -149,87 +150,115 @@ class _GalWaveformSelectDialogState extends State<_GalWaveformSelectDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final TextTheme tt = Theme.of(context).textTheme;
-    final String rangeLabel = '${_fmtSeconds(_range.startMs)} - '
-        '${_fmtSeconds(_range.endMs)}'
-        '（时长 ${_fmtSeconds(_range.durationMs)} / 共 ${_fmtSeconds(_totalMs)}）';
-    return AlertDialog(
-      title: const Text('选择音频范围'),
-      content: SizedBox(
-        width: 480,
-        child: Column(
+    final String rangeLabel = t.game_waveform_range_label(
+      start: _fmtSeconds(_range.startMs),
+      end: _fmtSeconds(_range.endMs),
+      duration: _fmtSeconds(_range.durationMs),
+      total: _fmtSeconds(_totalMs),
+    );
+    return HibikiDialogFrame(
+      maxWidth: 520,
+      scrollable: false,
+      child: HibikiModalSheetFrame(
+        title: t.game_waveform_select_title,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             SizedBox(
               height: 140,
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-                  final double width = constraints.maxWidth.isFinite
-                      ? constraints.maxWidth
-                      : 480.0;
-                  _lastWidth = width;
-                  final int targetBuckets = math.max(1, width ~/ 2);
-                  final List<double> buckets = _bucketsFor(targetBuckets);
-                  return GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onHorizontalDragStart: _onDragStart,
-                    onHorizontalDragUpdate: _onDragUpdate,
-                    onHorizontalDragEnd: _onDragEnd,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: <Widget>[
-                        RepaintBoundary(
-                          child: CustomPaint(
-                            painter: SubtitleWaveformPainter(
-                              buckets: buckets,
-                              windowStartMs: 0,
-                              windowEndMs: _totalMs,
-                              cueBoundariesMs: const <int>[],
-                              previewDelayMs: 0,
-                              currentPositionMs: 0,
-                              waveColor: cs.primary.withValues(alpha: 0.55),
-                              cueLineColor: cs.secondary,
-                              playheadColor: cs.tertiary,
-                              centerLineColor: cs.outlineVariant,
+              child: ClipRRect(
+                borderRadius: tokens.radii.controlRadius,
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final double width = constraints.maxWidth.isFinite
+                        ? constraints.maxWidth
+                        : 480.0;
+                    _lastWidth = width;
+                    final int targetBuckets = math.max(1, width ~/ 2);
+                    final List<double> buckets = _bucketsFor(targetBuckets);
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragStart: _onDragStart,
+                      onHorizontalDragUpdate: _onDragUpdate,
+                      onHorizontalDragEnd: _onDragEnd,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: <Widget>[
+                          RepaintBoundary(
+                            child: CustomPaint(
+                              painter: SubtitleWaveformPainter(
+                                buckets: buckets,
+                                windowStartMs: 0,
+                                windowEndMs: _totalMs,
+                                cueBoundariesMs: const <int>[],
+                                previewDelayMs: 0,
+                                currentPositionMs: 0,
+                                waveColor: cs.primary.withValues(alpha: 0.55),
+                                cueLineColor: cs.secondary,
+                                playheadColor: cs.tertiary,
+                                centerLineColor: cs.outlineVariant,
+                              ),
                             ),
                           ),
-                        ),
-                        CustomPaint(
-                          painter: _GalSelectionOverlayPainter(
-                            startMs: _range.startMs,
-                            endMs: _range.endMs,
-                            totalMs: _totalMs,
-                            fillColor: cs.primary.withValues(alpha: 0.16),
-                            edgeColor: cs.primary,
+                          CustomPaint(
+                            painter: _GalSelectionOverlayPainter(
+                              startMs: _range.startMs,
+                              endMs: _range.endMs,
+                              totalMs: _totalMs,
+                              fillColor: cs.primary.withValues(alpha: 0.16),
+                              edgeColor: cs.primary,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
+                        ],
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: tokens.spacing.gap),
             Text(
               rangeLabel,
-              style: tt.bodySmall,
+              style: tokens.type.listSubtitle,
               textAlign: TextAlign.center,
             ),
           ],
         ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: () => Navigator.of(context).pop(_range),
+              child: Text(t.dialog_ok),
+            ),
+          ],
+        ),
       ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(_range),
-          child: const Text('确定'),
-        ),
-      ],
     );
   }
 }

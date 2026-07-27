@@ -1,7 +1,8 @@
 # injector 命令行契约（Hibiki ↔ hibiki-hook）
 
 Hibiki 与 `hibiki_voice_injector.exe` 之间是**进程边界 + 命令行 + stdout 文本握手**，
-没有共享代码。任何一侧改这组 flag 都必须先改本文件，否则两仓会各自漂移。
+没有共享代码。任何一侧改这组 flag 都必须先改本文件，并在同一个 PR 同步生产者/消费者，
+否则即使同仓也会发生静默契约漂移。
 
 - Hibiki 侧生产者：`hibiki/lib/src/mining/galgame_audio_source.dart` 的
   `buildEngineHookInjectorArguments`（唯一构造点）。

@@ -14,13 +14,13 @@ void main() {
   });
 
   // 漂移守卫（TODO-1000）：随 app 打包的 assets/browser_extension/ 必须与真源
-  // tools/browser-extension/ 逐字节一致（排除 *.test.js 测试文件与 scripts/ 构建工具）。
-  // 改了扩展源却忘同步 bundle → 助手装出的是旧扩展；此守卫强制同步。重新同步：把
-  // tools/browser-extension 下非 *.test.js、非 scripts/ 文件复制进
-  // hibiki/assets/browser_extension/（含 vendor/）。
-  // scripts/（TODO-1267 的 generate-content-css.mjs + content-css-overlay.css）是**构建期
-  // 生成器**：manifest 不加载、只用于把 popup.css 重生成成 scoped content.css，属 dev 工具，
-  // 与 *.test.js 同类不进发布 bundle。
+  // tools/browser-extension/ 逐字节一致（排除 *.test.js 测试文件、scripts/ 构建工具与
+  // README.md 文档）。改了扩展源却忘同步 bundle → 助手装出的是旧扩展；此守卫强制同步。
+  // 重新同步：跑 `node tools/browser-extension/scripts/sync-mirrors.mjs`（同样的排除规则，
+  // `--check` 只校验）。
+  // scripts/（TODO-1267 的 generate-content-css.mjs + content-css-overlay.css + 同步脚本）是
+  // **构建期工具**：manifest 不加载，与 *.test.js 同类不进发布 bundle。README.md 是开发文档，
+  // 不进 bundle——否则内容指纹会随文档改动翻新，触发无意义的扩展自更新 reload。
   group('bundled extension matches source', () {
     final Directory srcDir = Directory('../tools/browser-extension');
     final Directory bundleDir = Directory('assets/browser_extension');
@@ -39,6 +39,7 @@ void main() {
             .replaceFirst(RegExp(r'^/'), '');
         if (rel.endsWith('.test.js')) continue; // 测试文件不进 bundle
         if (rel.startsWith('scripts/')) continue; // 构建期生成器/overlay 不进 bundle
+        if (rel == 'README.md') continue; // 开发文档不进 bundle（防指纹随文档翻新）
         final File bundled = File('${bundleDir.path}/$rel');
         expect(bundled.existsSync(), isTrue,
             reason: 'not bundled: $rel (run the re-sync copy)');

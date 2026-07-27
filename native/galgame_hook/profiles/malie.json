@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "malie_libp",
+  "status": "partial",
+  "detection": {
+    "executable_sha256": [
+      "CFDAA598422245A36B2333F1E923C8E808412D0360C86EF83D914ADF4D6EA926"
+    ],
+    "module_sha256": []
+  },
+  "capabilities": {
+    "text": true,
+    "resource_audio": true,
+    "pcm_audio": true
+  },
+  "evidence": [
+    {
+      "kind": "real_sample",
+      "reference": "Steam app 644540 build 21665074, Dies irae ~Amantes amentes~ free common route; x86 suspended direct launch exported v_ma2056.ogg byte-identically on 2026-07-23"
+    }
+  ]
+}

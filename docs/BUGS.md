@@ -31,11 +31,11 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1125](bugs/BUG-1125-home-video-sanitize-missing-backslash.md) | 🚧 | 🚧 | home-video-sanitize-missing-backslash |
+| [BUG-1125](bugs/BUG-1125-home-video-sanitize-missing-backslash.md) | ✅ | ✅ | home-video-sanitize-missing-backslash |
 | [BUG-1124](bugs/BUG-1124-local-audio-cache-weak-hash.md) | ✅ | ✅ | local-audio-cache-weak-hash |
-| [BUG-1123](bugs/BUG-1123-video-error-copy-says-bookshelf.md) | 🚧 | 🚧 | video-error-copy-says-bookshelf |
-| [BUG-1122](bugs/BUG-1122-sync-webp-octet-stream.md) | 🚧 | 🚧 | sync-webp-octet-stream |
-| [BUG-1121](bugs/BUG-1121-bmp-manga-ocr-skipped.md) | 🚧 | 🚧 | bmp-manga-ocr-skipped |
+| [BUG-1123](bugs/BUG-1123-video-error-copy-says-bookshelf.md) | ✅ | ✅ | video-error-copy-says-bookshelf |
+| [BUG-1122](bugs/BUG-1122-sync-webp-octet-stream.md) | ✅ | ✅ | sync-webp-octet-stream |
+| [BUG-1121](bugs/BUG-1121-bmp-manga-ocr-skipped.md) | ✅ | ✅ | bmp-manga-ocr-skipped |
 | [BUG-1120](bugs/BUG-1120-favorite-sentence-kind-downcast.md) | ✅ | ✅ | favorite-sentence-kind-downcast |
 | [BUG-1119](bugs/BUG-1119-remote-continue-kind-downcast.md) | ✅ | ✅ | remote-continue-kind-downcast |
 | [BUG-1118](bugs/BUG-1118-scrape-cover-cache-not-evicted.md) | ✅ | ✅ | scrape-cover-cache-not-evicted |

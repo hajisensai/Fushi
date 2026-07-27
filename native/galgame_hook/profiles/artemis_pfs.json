@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "artemis_pfs",
+  "status": "partial",
+  "detection": {
+    "executable_sha256": [
+      "C0C14E5215541D531AC3C68C208BB514C0EF1A36CBCA6F133872A3DDF37A92E2"
+    ],
+    "module_sha256": []
+  },
+  "capabilities": {
+    "text": true,
+    "resource_audio": true,
+    "pcm_audio": true
+  },
+  "evidence": [
+    {
+      "kind": "real_sample",
+      "reference": "あざらしそふと official アマナツ trial; x64 Artemis PF8 voice playback captured byte-identically on 2026-07-23"
+    }
+  ]
+}

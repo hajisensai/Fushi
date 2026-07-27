@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:hibiki/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
+import 'package:hibiki/src/media/manga/online/mokuro_moe_tasks_section.dart';
+import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
 import 'package:hibiki/src/pages/implementations/download_subscriptions_panel.dart';
 import 'package:hibiki/src/pages/implementations/torrent_settings_section.dart';
 import 'package:hibiki/utils.dart';
 
-/// 独立「下载」页（顶层底栏 tab）：番剧下载流程 **直接内联** 铺在页面上（搜番 →
-/// 选种 → 配字幕 → 推送 + 通用磁力 + 下载任务），不再走弹窗按钮。右上角齿轮
-/// 切到「下载设置」（后端/限速/上传/做种/内存）。完成后按内容类型自动入库
-/// （视频→视频库、epub→阅读库，见 AnimeDownloadService）。
-class DownloadsPage extends StatefulWidget {
+/// 独立「下载」页（顶层底栏 tab）＝统一下载中心：番剧下载流程 **直接内联**
+/// 铺在页面上（搜番 → 选种 → 配字幕 → 推送 + 通用磁力 + 下载任务），任务 tab
+/// 同时列出漫画「在线目录」（mokuro.moe）的卷下载队列；页头另有在线目录入口。
+/// 右上角齿轮切到「下载设置」（后端/限速/上传/做种/内存）。完成后按内容类型
+/// 自动入库（视频→视频库、epub→阅读库，见 AnimeDownloadService；漫画卷→
+/// 书架，见 MokuroMoeDownloadQueue）。
+class DownloadsPage extends ConsumerStatefulWidget {
   const DownloadsPage({super.key, this.initialShowSettings = false});
 
   /// 初始即显示设置面板（「后端未配置」横幅的「去设置」从对话框入口 push
@@ -17,11 +23,20 @@ class DownloadsPage extends StatefulWidget {
   final bool initialShowSettings;
 
   @override
-  State<DownloadsPage> createState() => _DownloadsPageState();
+  ConsumerState<DownloadsPage> createState() => _DownloadsPageState();
 }
 
-class _DownloadsPageState extends State<DownloadsPage> {
+class _DownloadsPageState extends ConsumerState<DownloadsPage> {
   late bool _showSettings = widget.initialShowSettings;
+
+  /// 漫画「在线目录」入口（统一下载中心：书/漫画获取入口与 torrent 并列）。
+  Future<void> _openMangaCatalog() async {
+    await showAppDialog<void>(
+      context: context,
+      builder: (_) =>
+          MokuroMoeCatalogDialog(db: ref.read(appProvider).database),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +61,12 @@ class _DownloadsPageState extends State<DownloadsPage> {
                     ],
                   ),
             actions: <Widget>[
+              if (!_showSettings)
+                IconButton(
+                  tooltip: t.manga_online_catalog_title,
+                  icon: const Icon(Icons.menu_book_outlined),
+                  onPressed: _openMangaCatalog,
+                ),
               IconButton(
                 // 齿轮已变 ✕ 时语义是「关闭设置」，tooltip 跟着换，不再答非所问。
                 tooltip: _showSettings ? t.dialog_close : t.download_settings,
@@ -77,12 +98,21 @@ class _DownloadsPageState extends State<DownloadsPage> {
                       onOpenSettings: () =>
                           setState(() => _showSettings = true),
                     ),
-                    AnimeDownloadDialog(
-                      embedded: true,
-                      tasksOnly: true,
-                      showTasks: false,
-                      onOpenSettings: () =>
-                          setState(() => _showSettings = true),
+                    // 任务 tab：漫画目录卷下载队列（有任务才占位）+ torrent 任务，
+                    // 统一下载中心的同屏任务视图。
+                    Column(
+                      children: <Widget>[
+                        const MokuroMoeTasksSection(),
+                        Expanded(
+                          child: AnimeDownloadDialog(
+                            embedded: true,
+                            tasksOnly: true,
+                            showTasks: false,
+                            onOpenSettings: () =>
+                                setState(() => _showSettings = true),
+                          ),
+                        ),
+                      ],
                     ),
                     const DownloadSubscriptionsPanel(),
                   ],
