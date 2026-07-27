@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "1.2.0-debug.9094",
-  "tag": "v1.2.0-debug.9094+d4cab70",
+  "version": "1.2.0-debug.9098",
+  "tag": "v1.2.0-debug.9098+e4ebd59",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 9094,
-  "notes": "Automated release-signed debug-channel build from develop @ d4cab70. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 9098,
+  "notes": "Automated desktop debug-channel build from develop @ e4ebd59. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "hibiki-1.2.0-debug.9094-d4cab70-debug.apk",
@@ -29,11 +29,11 @@
       "version": "1.2.0-debug.9094"
     },
     {
-      "name": "hibiki-1.2.0-debug.9094-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.9094-windows-setup.exe",
-      "releaseSequence": 9094,
-      "tag": "v1.2.0-debug.9094+d4cab70",
-      "version": "1.2.0-debug.9094"
+      "name": "hibiki-1.2.0-debug.9098-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.2.0-debug.9098-windows-setup.exe",
+      "releaseSequence": 9098,
+      "tag": "v1.2.0-debug.9098+e4ebd59",
+      "version": "1.2.0-debug.9098"
     }
   ]
 }
