@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import '../anki_models.dart';
+import '../anki_note_type_definition.dart';
 import '../lapis_note_type.dart';
 
 class AnkiConnectService {
@@ -379,6 +380,62 @@ class AnkiConnectService {
 
   Future<void> createDeck(String name) async {
     await _request('createDeck', {'deck': name});
+  }
+
+  // ── note type 模板读写（Lapis 客制化/备份/自动迁移）────────────────────
+  // 读取类天然幂等；updateModelStyling / updateModelTemplates 同载荷重发结果
+  // 一致，也幂等——都不列入 [_nonIdempotentActions]，掉线可安全重试。
+
+  /// 读取 [modelName] 的全部卡模板正/反面。AnkiConnect `modelTemplates`
+  /// 返回 `{模板名: {Front, Back}}`。
+  Future<List<AnkiCardTemplate>> modelTemplates(String modelName) async {
+    final result = await _request('modelTemplates', {'modelName': modelName});
+    if (result is! Map) {
+      throw AnkiConnectException(
+        'Unexpected AnkiConnect response for modelTemplates (expected a map)',
+      );
+    }
+    return result.entries.map((MapEntry<dynamic, dynamic> e) {
+      final dynamic sides = e.value;
+      return AnkiCardTemplate(
+        name: e.key.toString(),
+        front: sides is Map ? sides['Front']?.toString() ?? '' : '',
+        back: sides is Map ? sides['Back']?.toString() ?? '' : '',
+      );
+    }).toList();
+  }
+
+  /// 读取 [modelName] 的 styling（CSS）。AnkiConnect `modelStyling` 返回
+  /// `{css: ...}`。
+  Future<String> modelStyling(String modelName) async {
+    final result = await _request('modelStyling', {'modelName': modelName});
+    if (result is! Map || result['css'] is! String) {
+      throw AnkiConnectException(
+        'Unexpected AnkiConnect response for modelStyling (expected {css})',
+      );
+    }
+    return result['css'] as String;
+  }
+
+  /// 覆写 [modelName] 的 styling（CSS）。
+  Future<void> updateModelStyling(String modelName, String css) async {
+    await _request('updateModelStyling', {
+      'model': {'name': modelName, 'css': css},
+    });
+  }
+
+  /// 覆写 [modelName] 的卡模板正/反面（按模板名匹配）。
+  Future<void> updateModelTemplates(
+      String modelName, List<AnkiCardTemplate> templates) async {
+    await _request('updateModelTemplates', {
+      'model': {
+        'name': modelName,
+        'templates': <String, dynamic>{
+          for (final AnkiCardTemplate t in templates)
+            t.name: <String, String>{'Front': t.front, 'Back': t.back},
+        },
+      },
+    });
   }
 
   // TODO-270 C1：更新已存在 note 的字段。AnkiConnect `updateNoteFields` 接收

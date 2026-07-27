@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../anki_models.dart';
+import '../anki_note_type_definition.dart';
 import '../base_anki_repository.dart';
 import '../lapis_note_type.dart';
 import 'ankiconnect_service.dart';
@@ -881,6 +882,44 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final existing = await service.getDeckNames();
     if (existing.contains(name)) return false;
     await service.createDeck(name);
+    return true;
+  }
+
+  // ── note type 模板读写（Lapis 客制化/备份/自动迁移）────────────────────
+
+  @override
+  bool get supportsNoteTypeEditing => true;
+
+  @override
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
+      String modelName) async {
+    final service = await _getService();
+    final List<String> existing = await service.getModelNames();
+    if (!existing.contains(modelName)) return null;
+    final List<String> fields = await service.getModelFields(modelName);
+    final List<AnkiCardTemplate> templates =
+        await service.modelTemplates(modelName);
+    final String css = await service.modelStyling(modelName);
+    return AnkiNoteTypeDefinition(
+      name: modelName,
+      fields: fields,
+      templates: templates,
+      css: css,
+    );
+  }
+
+  @override
+  Future<bool> updateNoteTypeStyling(String modelName, String css) async {
+    final service = await _getService();
+    await service.updateModelStyling(modelName, css);
+    return true;
+  }
+
+  @override
+  Future<bool> updateNoteTypeTemplates(
+      String modelName, List<AnkiCardTemplate> templates) async {
+    final service = await _getService();
+    await service.updateModelTemplates(modelName, templates);
     return true;
   }
 

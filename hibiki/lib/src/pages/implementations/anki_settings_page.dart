@@ -7,6 +7,7 @@ import 'package:hibiki/utils.dart';
 
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/anki/lapis_template_service.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
 import 'package:hibiki/src/profile/profile_selector.dart';
@@ -37,6 +38,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// createLapisSetup 内部复用 isFetching，若两行 spinner 都读它，点 Lapis 时
   /// 「刷新」行也会转圈——各行只对自己的动作显示 busy。
   bool _creatingLapis = false;
+
+  /// Lapis 样式区（备份/恢复/应用）在途标记：这几个动作都写同一个 note
+  /// type，互斥防重入。
+  bool _lapisBusy = false;
 
   @override
   Widget build(BuildContext context) {
@@ -87,6 +92,64 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                 value: settings.ankiConnectApiKey,
                 hint: t.anki_connect_api_key_hint,
                 onChanged: vm.updateAnkiConnectApiKey,
+              ),
+            ],
+          ),
+        // Lapis 样式客制化：备份 / 恢复 / 字号缩放 / 自定义 CSS / 应用。
+        // 仅后端支持读写已存在 note type 时显示（AnkiConnect）；AnkiDroid /
+        // AnkiMobile 平台 API 改不了已存在模板（平台边界），整区隐藏。
+        if (vm.supportsNoteTypeEditing)
+          AdaptiveSettingsSection(
+            title: t.anki_lapis_section,
+            children: [
+              AdaptiveSettingsPickerRow<int>(
+                title: t.anki_lapis_font_scale,
+                subtitle: t.anki_lapis_font_scale_hint,
+                icon: Icons.format_size_outlined,
+                showIcon: true,
+                selected: settings.lapisFontScalePercent,
+                options: const [
+                  AdaptiveSettingsPickerOption(value: 80, label: '80%'),
+                  AdaptiveSettingsPickerOption(value: 90, label: '90%'),
+                  AdaptiveSettingsPickerOption(value: 100, label: '100%'),
+                  AdaptiveSettingsPickerOption(value: 110, label: '110%'),
+                  AdaptiveSettingsPickerOption(value: 125, label: '125%'),
+                  AdaptiveSettingsPickerOption(value: 150, label: '150%'),
+                ],
+                onChanged: (int v) => vm.setLapisFontScalePercent(v),
+              ),
+              AdaptiveSettingsRow(
+                icon: Icons.code_outlined,
+                showIcon: true,
+                title: t.anki_lapis_custom_css,
+                subtitle: t.anki_lapis_custom_css_hint,
+                onTap: () => _editLapisCustomCss(settings, vm),
+              ),
+              AdaptiveSettingsRow(
+                icon: Icons.brush_outlined,
+                showIcon: true,
+                title: t.anki_lapis_apply,
+                trailing: _lapisBusy
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child:
+                            adaptiveIndicator(context: context, strokeWidth: 2),
+                      )
+                    : null,
+                onTap: _lapisBusy ? null : () => _applyLapisStyling(vm),
+              ),
+              AdaptiveSettingsRow(
+                icon: Icons.save_outlined,
+                showIcon: true,
+                title: t.anki_lapis_backup,
+                onTap: _lapisBusy ? null : () => _backupLapisTemplate(vm),
+              ),
+              AdaptiveSettingsRow(
+                icon: Icons.settings_backup_restore_outlined,
+                showIcon: true,
+                title: t.anki_lapis_restore,
+                onTap: _lapisBusy ? null : () => _restoreLapisBackup(vm),
               ),
             ],
           ),
@@ -374,6 +437,186 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         message = t.anki_create_lapis_failed(error: result.message ?? '');
     }
     messenger.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  // ── Lapis 样式客制化 ─────────────────────────────────────────────────
+
+  Future<void> _editLapisCustomCss(
+      AnkiSettings settings, AnkiViewModel vm) async {
+    final TextEditingController controller =
+        TextEditingController(text: settings.lapisCustomCss);
+    final String? result = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text(t.anki_lapis_custom_css),
+        content: SizedBox(
+          width: 560,
+          child: TextField(
+            controller: controller,
+            autofocus: true,
+            minLines: 8,
+            maxLines: 16,
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(fontFamily: 'monospace'),
+            decoration: const InputDecoration(
+              hintText: '.front-vocab { color: #8ab4f8; }',
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: Text(t.dialog_save),
+          ),
+        ],
+      ),
+    );
+    if (result != null) await vm.setLapisCustomCss(result);
+    controller.dispose();
+  }
+
+  Future<void> _applyLapisStyling(AnkiViewModel vm,
+      {bool force = false}) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    setState(() => _lapisBusy = true);
+    final LapisApplyResult result;
+    try {
+      result = await vm.lapisTemplateService.applyCustomization(force: force);
+    } catch (e) {
+      messenger.showSnackBar(
+          SnackBar(content: Text(t.anki_lapis_apply_failed(error: '$e'))));
+      return;
+    } finally {
+      if (mounted) setState(() => _lapisBusy = false);
+    }
+    if (!mounted) return;
+    switch (result) {
+      case LapisApplyResult.applied:
+        await vm.refreshSettingsFromStore();
+        messenger
+            .showSnackBar(SnackBar(content: Text(t.anki_lapis_apply_done)));
+      case LapisApplyResult.upToDate:
+        await vm.refreshSettingsFromStore();
+        messenger
+            .showSnackBar(SnackBar(content: Text(t.anki_lapis_up_to_date)));
+      case LapisApplyResult.needsConfirm:
+        final bool? ok = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext context) => AlertDialog(
+            title: Text(t.anki_lapis_foreign_edit_title),
+            content: Text(t.anki_lapis_foreign_edit_body),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(t.dialog_cancel),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(t.dialog_ok),
+              ),
+            ],
+          ),
+        );
+        if (ok == true && mounted) await _applyLapisStyling(vm, force: true);
+      case LapisApplyResult.notFound:
+        messenger.showSnackBar(SnackBar(content: Text(t.anki_lapis_not_found)));
+      case LapisApplyResult.unsupported:
+        // 整区已按 supportsNoteTypeEditing 隐藏，此分支只是防御。
+        break;
+    }
+  }
+
+  Future<void> _backupLapisTemplate(AnkiViewModel vm) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    setState(() => _lapisBusy = true);
+    try {
+      final File? file = await vm.lapisTemplateService.backupNow();
+      messenger.showSnackBar(SnackBar(
+        content: Text(file == null
+            ? t.anki_lapis_not_found
+            : t.anki_lapis_backup_done(path: file.path)),
+      ));
+    } catch (e) {
+      messenger.showSnackBar(
+          SnackBar(content: Text(t.anki_lapis_backup_failed(error: '$e'))));
+    } finally {
+      if (mounted) setState(() => _lapisBusy = false);
+    }
+  }
+
+  Future<void> _restoreLapisBackup(AnkiViewModel vm) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final List<File> backups = await vm.lapisTemplateService.listBackups();
+    if (!mounted) return;
+    if (backups.isEmpty) {
+      messenger
+          .showSnackBar(SnackBar(content: Text(t.anki_lapis_restore_empty)));
+      return;
+    }
+    final File? chosen = await showDialog<File>(
+      context: context,
+      builder: (BuildContext context) => SimpleDialog(
+        title: Text(t.anki_lapis_restore),
+        children: [
+          for (final File f in backups.take(30))
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, f),
+              child: Text(_lapisBackupLabel(f)),
+            ),
+        ],
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text(t.anki_lapis_restore),
+        content: Text(t.anki_lapis_restore_confirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(t.dialog_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(t.dialog_ok),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _lapisBusy = true);
+    try {
+      await vm.lapisTemplateService.restoreBackup(chosen);
+      await vm.refreshSettingsFromStore();
+      messenger
+          .showSnackBar(SnackBar(content: Text(t.anki_lapis_restore_done)));
+    } catch (e) {
+      messenger.showSnackBar(
+          SnackBar(content: Text(t.anki_lapis_restore_failed(error: '$e'))));
+    } finally {
+      if (mounted) setState(() => _lapisBusy = false);
+    }
+  }
+
+  /// 备份文件名 `lapis-<ISO时间戳(冒号→'-')>.json` → 本地可读时间标签；
+  /// 解析失败原样显示文件名主体（仍可区分）。
+  String _lapisBackupLabel(File f) {
+    final String raw = f.uri.pathSegments.last
+        .replaceFirst('lapis-', '')
+        .replaceFirst('.json', '');
+    final String iso = raw.replaceFirstMapped(
+      RegExp(r'T(\d{2})-(\d{2})-(\d{2})'),
+      (Match m) => 'T${m[1]}:${m[2]}:${m[3]}',
+    );
+    final DateTime? dt = DateTime.tryParse(iso)?.toLocal();
+    return dt != null ? dt.toString().split('.').first : raw;
   }
 
   Widget _buildDeckDropdown(AnkiSettings settings, AnkiViewModel vm) {

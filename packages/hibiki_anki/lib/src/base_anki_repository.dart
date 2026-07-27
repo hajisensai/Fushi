@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'anki_models.dart';
+import 'anki_note_type_definition.dart';
 import 'lapis_note_type.dart';
 import 'lapis_preset.dart';
 
@@ -163,6 +164,35 @@ abstract class BaseAnkiRepository {
   /// Create a deck by [name]. Idempotent: returns `false` if it already
   /// exists, `true` if newly created. Throws on backend failure.
   Future<bool> createDeck(String name);
+
+  // ── note type 模板读写（Lapis 客制化/备份/自动迁移）───────────────────────
+
+  /// 本后端能否读取/覆写**已存在** note type 的卡模板与 styling。
+  ///
+  /// **默认 = false（优雅降级）**：AnkiDroid Content Provider 与 AnkiMobile
+  /// 均无改已存在模板的 API（平台边界，非本仓可修），设置页据此隐藏 Lapis
+  /// 样式客制化区。只有 [supportsNoteTypeEditing] 为 true 的后端
+  /// （AnkiConnect）才覆写下面三个方法做真实读写。
+  bool get supportsNoteTypeEditing => false;
+
+  /// 读取名为 [modelName] 的 note type 完整定义（字段/卡模板/CSS），供备份
+  /// 与漂移判定。模型不存在或后端不支持返回 `null`；后端可达性错误照抛
+  /// （调用方决定提示还是静默跳过）。**默认实现 = 优雅降级**：返回 `null`。
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
+          String modelName) async =>
+      null;
+
+  /// 覆写 [modelName] 的 styling（CSS）。返回 `false` = 后端不支持（默认
+  /// 降级）；成功返回 `true`；后端失败照抛。
+  Future<bool> updateNoteTypeStyling(String modelName, String css) async =>
+      false;
+
+  /// 覆写 [modelName] 的全部卡模板正/反面。返回 `false` = 后端不支持（默认
+  /// 降级）；成功返回 `true`；后端失败照抛。只在「从备份恢复」时使用——样式
+  /// 客制化本身只动 styling。
+  Future<bool> updateNoteTypeTemplates(
+          String modelName, List<AnkiCardTemplate> templates) async =>
+      false;
 
   @protected
   AnkiDeck selectDeckAfterFetch(List<AnkiDeck> decks, AnkiSettings current) =>

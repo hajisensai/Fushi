@@ -169,6 +169,9 @@ class AnkiSettings {
     this.ankiConnectHost = 'localhost',
     this.ankiConnectPort = 8765,
     this.ankiConnectApiKey = '',
+    this.lapisFontScalePercent = 100,
+    this.lapisCustomCss = '',
+    this.lapisAppliedCssSha,
   });
 
   factory AnkiSettings.fromJson(Map<String, dynamic> json) => AnkiSettings(
@@ -199,6 +202,9 @@ class AnkiSettings {
         ankiConnectHost: json['ankiConnectHost'] as String? ?? 'localhost',
         ankiConnectPort: json['ankiConnectPort'] as int? ?? 8765,
         ankiConnectApiKey: json['ankiConnectApiKey'] as String? ?? '',
+        lapisFontScalePercent: json['lapisFontScalePercent'] as int? ?? 100,
+        lapisCustomCss: json['lapisCustomCss'] as String? ?? '',
+        lapisAppliedCssSha: json['lapisAppliedCssSha'] as String?,
       );
   final int? selectedDeckId;
   final String? selectedDeckName;
@@ -230,6 +236,18 @@ class AnkiSettings {
   final int ankiConnectPort;
   final String ankiConnectApiKey;
 
+  /// Lapis 卡片字号整体缩放百分比（100 = 原样）。只影响 Hibiki 推送的
+  /// styling 用户区段，不写卡片数据。
+  final int lapisFontScalePercent;
+
+  /// 追加到 Lapis styling 用户区段的自由 CSS（客制化显示效果）。
+  final String lapisCustomCss;
+
+  /// Hibiki 上次成功推送到 Anki 的 Lapis styling 指纹（sha256）。null =
+  /// 本机从未推送。自动迁移用它区分「Anki 端还是我们写的内容（可安全更新）」
+  /// 与「被用户手改（不得静默覆盖）」。
+  final String? lapisAppliedCssSha;
+
   bool get isConfigured => selectedDeckId != null && selectedNoteTypeId != null;
 
   AnkiNoteType? get selectedNoteType =>
@@ -258,6 +276,10 @@ class AnkiSettings {
     String? ankiConnectHost,
     int? ankiConnectPort,
     String? ankiConnectApiKey,
+    int? lapisFontScalePercent,
+    String? lapisCustomCss,
+    String? lapisAppliedCssSha,
+    bool clearLapisAppliedCssSha = false,
   }) =>
       AnkiSettings(
         selectedDeckId: selectedDeckId ?? this.selectedDeckId,
@@ -278,6 +300,14 @@ class AnkiSettings {
         ankiConnectHost: ankiConnectHost ?? this.ankiConnectHost,
         ankiConnectPort: ankiConnectPort ?? this.ankiConnectPort,
         ankiConnectApiKey: ankiConnectApiKey ?? this.ankiConnectApiKey,
+        lapisFontScalePercent:
+            lapisFontScalePercent ?? this.lapisFontScalePercent,
+        lapisCustomCss: lapisCustomCss ?? this.lapisCustomCss,
+        // 恢复「无标记区段」的备份时需要把指纹清回 null（视 Anki 端为来历
+        // 不明，自动迁移不再动它），?? 链表达不了清空，故给显式清空开关。
+        lapisAppliedCssSha: clearLapisAppliedCssSha
+            ? null
+            : (lapisAppliedCssSha ?? this.lapisAppliedCssSha),
       );
 
   Map<String, dynamic> toJson() => {
@@ -300,6 +330,9 @@ class AnkiSettings {
         'ankiConnectHost': ankiConnectHost,
         'ankiConnectPort': ankiConnectPort,
         'ankiConnectApiKey': ankiConnectApiKey,
+        'lapisFontScalePercent': lapisFontScalePercent,
+        'lapisCustomCss': lapisCustomCss,
+        'lapisAppliedCssSha': lapisAppliedCssSha,
       };
 }
 
