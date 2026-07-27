@@ -8,22 +8,22 @@
   "notes": "Automated desktop debug-channel build from develop @ f0574a5. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "hibiki-1.3.0-debug.9166-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.3.0-debug.9166-ios.ipa",
-      "releaseSequence": 9166,
-      "tag": "v1.3.0-debug.9166+d864b28",
-      "version": "1.3.0-debug.9166"
-    },
-    {
-      "name": "hibiki-1.3.0-debug.9166-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.3.0-debug.9166-macos.zip",
-      "releaseSequence": 9166,
-      "tag": "v1.3.0-debug.9166+d864b28",
-      "version": "1.3.0-debug.9166"
-    },
-    {
       "name": "hibiki-1.3.0-debug.9170-f0574a5-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.3.0-debug.9170-f0574a5-debug.apk",
+      "releaseSequence": 9170,
+      "tag": "v1.3.0-debug.9170+f0574a5",
+      "version": "1.3.0-debug.9170"
+    },
+    {
+      "name": "hibiki-1.3.0-debug.9170-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.3.0-debug.9170-ios.ipa",
+      "releaseSequence": 9170,
+      "tag": "v1.3.0-debug.9170+f0574a5",
+      "version": "1.3.0-debug.9170"
+    },
+    {
+      "name": "hibiki-1.3.0-debug.9170-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.3.0-debug.9170-macos.zip",
       "releaseSequence": 9170,
       "tag": "v1.3.0-debug.9170+f0574a5",
       "version": "1.3.0-debug.9170"
