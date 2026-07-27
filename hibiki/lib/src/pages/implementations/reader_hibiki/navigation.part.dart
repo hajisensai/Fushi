@@ -226,6 +226,12 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       _refreshProgress();
       _startProgressPoll();
       _diag718ProbeViewportDrift();
+      // TODO-perf（跨章·图片）：预热下一章插图进 WebView 缓存。必须放在这里（遮罩已撤、
+      // 新章已可见）而不是 _onChapterLoadComplete —— 它要 parse 整章 HTML 找图片引用，
+      // 放在恢复完成之前就等于把成本加回跨章热路径。HTML 预取省的是磁盘读+净化，这里
+      // 省的是读盘+解码，后者在带插图的章里大一个数量级（见
+      // _prefetchAdjacentChapterImages 的实测注释）。
+      _prefetchAdjacentChapterImages(_currentChapter + 1);
     });
   }
 

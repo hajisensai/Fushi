@@ -1220,6 +1220,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   final LinkedHashMap<String, Uint8List> _sanitizedHtmlCache =
       LinkedHashMap<String, Uint8List>();
 
+  /// TODO-perf（跨章·图片）：`EpubBook.isImageOnlyChapter` 每次都要 parse 整章 HTML，
+  /// 而它的答案在一次阅读会话里不变（章节文件不变）。按章号记忆化，避免拦截器热路径
+  /// （每次跨章 + 每次预取）重复解析。换书会连同本 State 一起重建。
+  final Map<int, bool> _imageOnlyChapterCache = <int, bool>{};
+
   // BUG-270: in-flight prefetch dedup — the file path currently being warmed in
   // the background, so a navigation that lands on it does not race a second read.
   String? _prefetchingHtmlPath;

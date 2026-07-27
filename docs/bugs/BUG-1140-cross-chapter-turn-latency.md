@@ -87,6 +87,44 @@ before / after 两轮均在无并发负载下跑。`xchapter-rebased`（rebase �
 **没有删**的守卫（查证后确认不是无用）：TODO-1229 那套跨章冷却窗 / 在飞守卫对应用户复诉三次的「跳两章」；
 `[xchapter]` 系列诊断埋点被 `test/reader/diagnostic_logging_guard_test.dart` 明确钉住（跨章 bug 的取证来源）。
 
+### 追加一轮：带插图的章（用户复诉「体感至少 0.5s」）
+
+**首轮测量的盲区**：合成 fixture 的「图片章」用的是内联 SVG，解码几乎免费，于是 `js.images` 恒为
+0ms、`docLoad` 也测不到图片这一段——101ms 只代表纯文本章。用户指出带图跨章体感远不止这个数。
+
+补了真实体量的素材（`integration_test/helpers/generate_test_image.dart` 生成 1600×2400 RGB PNG，
+渐变叠低频噪声：像素数决定解码成本、噪声决定压缩后体积），`EpubGenerator(withRealImages: true)`
+追加两章——纯整页插图章（3 张）与图文混排章（4 张）。实测（18 次跨章）：
+
+| 章 | 原始 | 修复后 |
+|---|---|---|
+| 图文混排章 首次（4 张插图） | **849ms**（docLoad 717ms） | **101ms**（docLoad 29ms） |
+| 纯整页插图章 首次（3 张插图） | **879ms**（docLoad 689ms） | 355~541ms（不稳定，见下） |
+| total 中位数 | 184ms | **132ms** |
+
+**根因**：`nav.dcl` 只有 15~20ms 而 `nav.load` 687~717ms——DOM 早就解析完了，剩下 670ms 全是在等
+图片读盘+解码，而遮罩正好盖住这整段（setup 脚本挂在 `window.load` 之后才注入）。
+
+`initialize` 里 TODO-1074 那段本来就想给每张 `<img>` 挂 `loading="lazy"`，理由写的正是「不再拖住
+window.load」——**但它跑得太晚**：脚本在 `load` 之后注入，浏览器早已按标签原始属性把整章图片
+（含离屏的）全部加载完毕。那行 lazy 迟到了一整个加载周期，只是给一笔已经付掉的账贴标签。
+
+**修复**：
+1. `ReaderResourceSanitizer.markImagesLazy` —— 把 lazy/decoding 的判定上移到 **Dart 生成 HTML 时**
+   写进标签，属性才对本次加载生效。保持 eager 的例外与 JS 侧同款且更保守（这里 eager 的集合是
+   JS 侧的超集，不会出现「Dart 挂 lazy 而 JS 想 eager」的倒挂）：纯图片章整章 eager（分页几何要靠
+   插图真实撑开，TODO-1349）、`gaiji` 内联小图 eager、原书已写 `loading=` 的尊重原值。
+2. `_prefetchAdjacentChapterImages` —— 跨章落地后用隐藏 `new Image()` 把下一章插图按同样 URL 请求
+   一遍，走同一个拦截器与同一份缓存条目（图片响应本就带 `max-age=3600`）。**位置很关键**：必须挂在
+   遮罩撤除之后的收尾块；第一版挂在 `_onChapterLoadComplete`（遮罩之前），parse 整章 HTML +
+   读几张大 PNG 全压在热路径上，实测把 `jsInitRestore` 顶到 520ms、`overlayGone` 顶到 312ms——
+   成本只是换了个口袋。挪到遮罩后即回落到 36ms / 69ms。
+
+**未解决 / 如实说明**：纯整页插图章仍要 355~541ms 且不稳定。它按设计不能挂 lazy（分页几何依赖插图
+真实尺寸），只能靠预热覆盖，而预热是否命中取决于用户在上一章停留多久、以及 WebView 缓存是否保留
+（实测同章二次进入有时 109ms 命中、有时 330ms 未命中，样本内不稳定）。要根治仍得让 setup 脚本不等
+`window.load`（见下「仍未做」第一项）——那样图片解码与恢复可以并行，而不是串行等完再开始。
+
 ### 仍未做（下一步，风险与收益都更大）
 
 - `evalSetupScript` 剩余 ~24ms 是**每次跨章重新编译整份引擎 JS**：`evaluateJavascript` 的字符串没有 V8 code

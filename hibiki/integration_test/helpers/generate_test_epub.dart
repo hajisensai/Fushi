@@ -12,6 +12,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'generate_test_image.dart';
+
 // Minimal ZIP implementation for EPUB generation (no external deps).
 
 void main() {
@@ -24,7 +26,29 @@ void main() {
 }
 
 class EpubGenerator {
+  /// [withRealImages] = true 时额外生成两章带**真实体量**插图的章节（1600×2400 PNG，
+  /// 见 [TestImageGenerator]）：一章纯整页插图（走 eager 路径），一章图文混排（走
+  /// lazy 路径）。默认 false —— 既有测试的书一字不变。
+  const EpubGenerator({this.withRealImages = false});
+
+  final bool withRealImages;
+
   static const int standardChapterMarkerCount = 420;
+
+  /// 真实插图章的文件名（spine 顺序在最后两章）。
+  static const List<String> realImageChapters = <String>[
+    'chapter_09_photo_only',
+    'chapter_10_photo_text',
+  ];
+
+  static const List<String> realImageTitles = <String>[
+    '第九章　実寸挿絵のみ',
+    '第十章　実寸挿絵と本文',
+  ];
+
+  /// 纯插图章的图片张数 / 图文混排章的图片张数。
+  static const int photoOnlyCount = 3;
+  static const int photoTextCount = 4;
 
   static const _lookupLead = 'testword 猫 testword 猫 testword 猫。';
 
@@ -98,6 +122,31 @@ class EpubGenerator {
     // exact DOM shape where base chars live in <rb> and furigana in <rtc><rt>.
     files['OEBPS/chapter_08_monoruby.xhtml'] =
         _utf8(_buildChapter('第八章　連番振り仮名テスト', _generateWithMonoRuby(120)));
+
+    if (withRealImages) {
+      const TestImageGenerator gen = TestImageGenerator();
+      int seed = 1;
+      final StringBuffer photoOnly = StringBuffer();
+      for (int i = 1; i <= photoOnlyCount; i++) {
+        files['OEBPS/images/photo_$i.png'] = gen.pngBytes(seed: seed++);
+        photoOnly
+            .writeln('  <div class="illust"><img src="images/photo_$i.png" '
+                'alt="挿絵$i"/></div>');
+      }
+      files['OEBPS/chapter_09_photo_only.xhtml'] =
+          _utf8(_buildChapter(realImageTitles[0], photoOnly.toString()));
+
+      final StringBuffer photoText = StringBuffer();
+      for (int i = 1; i <= photoTextCount; i++) {
+        files['OEBPS/images/inline_$i.png'] = gen.pngBytes(seed: seed++);
+        photoText
+            .writeln('  <div class="illust"><img src="images/inline_$i.png" '
+                'alt="挿絵$i"/></div>');
+        photoText.write(_generateStandard(25));
+      }
+      files['OEBPS/chapter_10_photo_text.xhtml'] =
+          _utf8(_buildChapter(realImageTitles[1], photoText.toString()));
+    }
 
     return _buildZip(files);
   }
@@ -267,21 +316,35 @@ $body
 </html>''';
   }
 
+  List<String> get _chapterFiles => <String>[
+        'chapter_01_standard',
+        'chapter_02_short',
+        'chapter_03_images',
+        'chapter_04_ruby',
+        'chapter_05_vertical',
+        'chapter_06_mixed',
+        'chapter_07_long',
+        'chapter_08_monoruby',
+        if (withRealImages) ...realImageChapters,
+      ];
+
   String _buildOpf() {
-    final chapters = [
-      'chapter_01_standard',
-      'chapter_02_short',
-      'chapter_03_images',
-      'chapter_04_ruby',
-      'chapter_05_vertical',
-      'chapter_06_mixed',
-      'chapter_07_long',
-      'chapter_08_monoruby',
+    final chapters = _chapterFiles;
+    final List<String> imageItems = <String>[
+      if (withRealImages)
+        for (int i = 1; i <= photoOnlyCount; i++)
+          '    <item id="photo_$i" href="images/photo_$i.png" '
+              'media-type="image/png"/>',
+      if (withRealImages)
+        for (int i = 1; i <= photoTextCount; i++)
+          '    <item id="inline_$i" href="images/inline_$i.png" '
+              'media-type="image/png"/>',
     ];
-    final items = chapters
-        .map((c) => '    <item id="$c" href="$c.xhtml" '
-            'media-type="application/xhtml+xml"/>')
-        .join('\n');
+    final items = <String>[
+      ...chapters.map((c) => '    <item id="$c" href="$c.xhtml" '
+          'media-type="application/xhtml+xml"/>'),
+      ...imageItems,
+    ].join('\n');
     final refs = chapters.map((c) => '    <itemref idref="$c"/>').join('\n');
     return '''<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
@@ -313,17 +376,9 @@ $refs
       '第六章　混合要素テスト',
       '第七章　長文テスト',
       '第八章　連番振り仮名テスト',
+      if (withRealImages) ...realImageTitles,
     ];
-    final files = [
-      'chapter_01_standard',
-      'chapter_02_short',
-      'chapter_03_images',
-      'chapter_04_ruby',
-      'chapter_05_vertical',
-      'chapter_06_mixed',
-      'chapter_07_long',
-      'chapter_08_monoruby',
-    ];
+    final files = _chapterFiles;
     final points = StringBuffer();
     for (int i = 0; i < titles.length; i++) {
       points.writeln('''    <navPoint id="nav${i + 1}" playOrder="${i + 1}">
