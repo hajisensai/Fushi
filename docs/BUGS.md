@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1140 条。点号进各自文件。
+> 共 1143 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1179](bugs/BUG-1179-updater-diagnostics-before-validation.md) | ✅ | ✅ | Windows 更新器在校验安装包前就全机枚举进程，坏包也要等十几秒 |
+| [BUG-1178](bugs/BUG-1178-manifest-race-test-cascade.md) | ✅ | ✅ | update-manifest 竞态测试超时会级联带红兄弟用例 |
+| [BUG-1177](bugs/BUG-1177-ankimobile-end-task-timing.md) | ✅ | ✅ | AnkiMobile 制卡测试用 10ms 定时假设等真实 I/O，36% 概率红 |
 | [BUG-1176](bugs/BUG-1176-cover-scrape-silent-catch.md) | ✅ | ✅ | 封面刮削/匹配失败被静默吞掉，用户只看到「无结果」 |
 | [BUG-1175](bugs/BUG-1175-gal-embedkrkrz-ruby-repeat-text.md) | ✅ | ✅ | EmbedKrkrZ ruby 双写产生重复台词，折叠只认精确二倍全部漏过 |
 | [BUG-1174](bugs/BUG-1174-docroot-migrator-path-gaps.md) | ✅ | ✅ | 数据根迁移漏改 6 处路径 + 非幂等 + 无事务 |

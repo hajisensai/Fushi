@@ -52,6 +52,20 @@ PLATFORM_LABEL="${PLATFORM_LABEL:-platform}"
 # asset URLs resolve on the single reused release even though `tag` keeps the
 # per-push seq for version comparison (TODO-1049).
 DOWNLOAD_TAG="${DOWNLOAD_TAG:-$TAG}"
+# Linear backoff base between publish retries, in milliseconds. 3000ms is the
+# right politeness interval for a real GitHub remote. The offline race test
+# drives a local bare repo where there is nothing to be polite to, so it lowers
+# this -- the retry SEMANTICS (re-fetch live tip, re-merge, never clobber) are
+# what the test asserts; the wait length is orthogonal to them.
+RETRY_BACKOFF_MS="${MANIFEST_RETRY_BACKOFF_MS:-3000}"
+
+# Linear backoff: attempt * base. bash has no float math, so format the
+# millisecond total as `<s>.<mmm>` for sleep(1) (fractions are fine in the
+# coreutils / BSD sleep this script runs under).
+backoff_sleep() {
+  local total=$(( $1 * RETRY_BACKOFF_MS ))
+  sleep "$(( total / 1000 )).$(printf '%03d' $(( total % 1000 )))"
+}
 
 # Map channel -> manifest filename. Only managed channels get a manifest;
 # github-release events publish through the Release UI directly and are skipped.
@@ -147,7 +161,7 @@ while :; do
         exit 1
       fi
       echo "Fetch of existing update-manifest failed (attempt $attempt); retrying..."
-      sleep $((attempt * 3))
+      backoff_sleep "$attempt"
       continue
     fi
     git -C "$WORK_DIR" checkout -q -B update-manifest FETCH_HEAD
@@ -193,5 +207,5 @@ while :; do
   # re-fetch the new live tip and re-merge onto it (preserving their assets).
   echo "Push raced/failed (attempt $attempt); re-fetching live tip and re-merging..."
   git -C "$WORK_DIR" reset -q --hard
-  sleep $((attempt * 3))
+  backoff_sleep "$attempt"
 done

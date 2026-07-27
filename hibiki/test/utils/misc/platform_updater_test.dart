@@ -453,6 +453,46 @@ void main() {
         throwsA(isA<UpdateInstallerException>()),
       );
     });
+
+    test('never collects diagnostics for a download that fails validation',
+        () async {
+      // BUG-1179: diagnostics shell out to `reg`, `powershell Get-CimInstance`
+      // and `tasklist /M libmpv-2.dll` (a whole-machine module enumeration that
+      // costs seconds). Running that BEFORE the exists/MZ-header checks made
+      // real users wait ~10s just to be told the download was corrupt, and made
+      // the two tests above race the 30s default test timeout on a busy box.
+      // Validation must come first, so diagnostics are never collected at all.
+      final Directory tmp =
+          await Directory.systemTemp.createTemp('hibiki-update-nodiag');
+      addTearDown(() async {
+        if (tmp.existsSync()) await tmp.delete(recursive: true);
+      });
+      final File bogus = File('${tmp.path}/hibiki-0.4.2-windows-setup.exe');
+      await bogus.writeAsString('<html>rate limited</html>');
+
+      var diagnosticsCalls = 0;
+      Future<WindowsInstallerDiagnostics> collect() async {
+        diagnosticsCalls++;
+        return const WindowsInstallerDiagnostics();
+      }
+
+      await expectLater(
+        WindowsInstaller.runAndExit(bogus.path, collectDiagnostics: collect),
+        throwsA(isA<UpdateInstallerException>()),
+      );
+      expect(diagnosticsCalls, 0,
+          reason: 'a corrupt download must be rejected before any '
+              'whole-machine process enumeration');
+
+      await expectLater(
+        WindowsInstaller.runAndExit(
+          'Z:/nope/does-not-exist-installer.exe',
+          collectDiagnostics: collect,
+        ),
+        throwsA(isA<UpdateInstallerException>()),
+      );
+      expect(diagnosticsCalls, 0);
+    });
   });
 
   group('Windows installer diagnostics parsers', () {
