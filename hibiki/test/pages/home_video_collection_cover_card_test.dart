@@ -103,7 +103,7 @@ void main() {
       coverPath: Value(coverPath),
       completedAt: Value(completedAt),
       lastPositionMs: Value(lastPositionMs),
-      importedAt: Value(DateTime(2026, 1, 1)),
+      importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
     ));
   }
 
@@ -234,7 +234,7 @@ void main() {
       title: const Value('第2集'),
       videoPath: const Value('/abs/video/ep2.mp4'),
       completedAt: Value(DateTime(2026, 1, 3)),
-      importedAt: Value(DateTime(2026, 1, 1)),
+      importedAt: Value(DateTime(2026, 1, 1).millisecondsSinceEpoch),
     ));
     HomeVideoPage.debugRefreshVideos?.call();
     await tester.pumpAndSettle();

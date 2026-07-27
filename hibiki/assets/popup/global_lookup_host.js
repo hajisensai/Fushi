@@ -2191,6 +2191,58 @@
     }
   }
 
+  // BUG-1127 — drive the overlay AUTO-READ through popup.js's own HTML5
+  // <audio> (the unified fast path, same playWordAudio the manual ♪ button
+  // uses) instead of the Dart/libmpv round-trip. [frameId] is the target frame
+  // (the controller passes the STABLE root id — always loaded after prewarm;
+  // audio is realm-agnostic so the entry's own frame does not matter). The
+  // iframe realm reports the REAL audio.play() outcome as a
+  // { handler: 'wordAudioPlayed', args: [token, ok] } message through its
+  // WRAPPED chrome.webview.postMessage (host-stamped, routed to Dart's
+  // _onJsMessage like every popup.js message). A missing/unloaded frame or an
+  // eval failure reports false from the HOST realm via postToHost so the Dart
+  // completer resolves immediately instead of waiting out its 5s timeout —
+  // Dart then falls back to its own player (never a silent drop, BUG-1093
+  // contract).
+  function playWordAudioInFrame(frameId, url, token) {
+    const record = frames.get(frameId);
+    let win = null;
+    if (record?.loaded) {
+      try {
+        win = record.iframe.contentWindow;
+      } catch (e) {
+        win = null;
+      }
+    }
+    if (!win || typeof win.eval !== 'function') {
+      postToHost('wordAudioPlayed', [token, false]);
+      return false;
+    }
+    try {
+      win.eval(
+          '(function () {' +
+          'var report = function (ok) {' +
+          'try { window.chrome.webview.postMessage(' +
+          '{ handler: "wordAudioPlayed", args: [' + token + ', ok === true] }' +
+          '); } catch (_) { /* bridge gone: Dart times out and falls back */ }' +
+          '};' +
+          'try {' +
+          'var play = window.__hibikiPlayWordAudioUrl;' +
+          'if (!play) { report(false); return; }' +
+          'Promise.resolve(play(' + JSON.stringify(url) + '))' +
+          '.then(function (r) { report(r === true); },' +
+          ' function () { report(false); });' +
+          '} catch (_) { report(false); }' +
+          '})();');
+      return true;
+    } catch (error) {
+      window.console?.debug?.(
+          '[global-lookup] word audio frame eval failed', error);
+      postToHost('wordAudioPlayed', [token, false]);
+      return false;
+    }
+  }
+
   window.__globalLookupHost = {
     __installed: true,
     renderStack: renderStack,
@@ -2199,6 +2251,7 @@
     frameIdForIframe: frameIdForIframe,
     layerIndexOf: layerIndexOf,
     highlightFrame: highlightFrame,
+    playWordAudioInFrame: playWordAudioInFrame,
     frameIdAtPoint: frameIdAtPoint,
     handleGlobalClick: handleGlobalClick,
     measureAndReport: measureAndReport,

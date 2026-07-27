@@ -23,7 +23,7 @@ Future<void> _exportZip(
   String zipPath,
 ) async {
   await BackupService(db: srcDb, dbDirectory: srcDir, appVersion: '2.0.0')
-      .exportBackup(zipPath);
+      .createBackup(zipPath);
 }
 
 void main() {
@@ -85,10 +85,10 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
     // Re-import the SAME backup -> must stay idempotent (no duplicates).
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final HibikiDatabase after = HibikiDatabase(curDir.path);
@@ -140,7 +140,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final HibikiDatabase after = HibikiDatabase(curDir.path);

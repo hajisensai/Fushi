@@ -4,7 +4,7 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/ffmpeg_backend.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
@@ -246,7 +246,7 @@ class _FakeLibraryService implements HibikiLibraryHostService {
   }) async {
     final ({int positionMs, int updatedAtMs}) current =
         videoPositions[id] ?? (positionMs: 0, updatedAtMs: 0);
-    videoPositions[id] = resolveVideoPositionSync(
+    videoPositions[id] = resolvePositionLww(
       localPositionMs: current.positionMs,
       localUpdatedAtMs: current.updatedAtMs,
       remotePositionMs: positionMs < 0 ? 0 : positionMs,
@@ -263,7 +263,7 @@ DateTime _uniqueSubtitleCacheMtime(String seed) {
   return DateTime.fromMillisecondsSinceEpoch(1700000000000 + offsetMs);
 }
 
-Future<HibikiClientSyncBackend> _buildBackend({
+Future<InterconnectSyncBackend> _buildBackend({
   required String base,
   required String token,
 }) async {
@@ -275,8 +275,8 @@ Future<HibikiClientSyncBackend> _buildBackend({
   ]);
   await repo.setHibikiClientToken(token);
 
-  final HibikiClientSyncBackend backend =
-      HibikiClientSyncBackend.withProbe((String url, String tok) async => true);
+  final InterconnectSyncBackend backend =
+      InterconnectSyncBackend.withProbe((String url, String tok) async => true);
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -311,7 +311,7 @@ void main() {
   });
 
   test('listRemoteVideos returns host video entries', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
 
     final List<RemoteVideoInfo> result = await backend.listRemoteVideos();
@@ -325,7 +325,7 @@ void main() {
 
   test('putRemoteVideo uploads local video file to host (client→host)',
       () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_vid_up');
     addTearDown(() => tmp.deleteSync(recursive: true));
@@ -346,7 +346,7 @@ void main() {
 
   test('remoteVideoStreamUrls returns directly playable token stream URL',
       () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
 
     final RemoteVideoStreamUrls urls =
@@ -382,7 +382,7 @@ void main() {
 
   test('getRemoteVideoSubtitle downloads sidecar subtitle with Basic auth',
       () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_vid_sub');
     final File dest = File('${tmp.path}/sample.ja.vtt');
@@ -397,7 +397,7 @@ void main() {
   test(
       'getRemoteVideoSubtitle downloads embedded text subtitle with Basic auth',
       () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_vid_embsub');
     final File dest = File('${tmp.path}/sample.embedded.srt');
@@ -415,7 +415,7 @@ void main() {
   });
 
   test('downloadRemoteVideo streams video bytes to destination file', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_vid_dl');
     final File dest = File('${tmp.path}/sample.mp4');
@@ -436,8 +436,8 @@ void main() {
     ]);
     await repo.setHibikiClientToken('wrong-token');
 
-    final HibikiClientSyncBackend backend =
-        HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+    final InterconnectSyncBackend backend =
+        InterconnectSyncBackend.withProbe((String u, String t) async => true);
     await backend.restoreAuth(repo);
 
     await expectLater(
@@ -448,7 +448,7 @@ void main() {
 
   test('putRemoteVideoPosition uploads then remoteVideoPosition reads it back',
       () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
 
     await backend.putRemoteVideoPosition(
@@ -470,7 +470,7 @@ void main() {
 
   test('remoteVideoPosition for unknown id returns 0/0 (host 404, no throw)',
       () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
 
     final ({int positionMs, int updatedAtMs}) read =
@@ -512,7 +512,7 @@ void main() {
 
     tearDown(() async => tlsServer.stop());
 
-    Future<HibikiClientSyncBackend> buildPinnedBackend(String? fp) async {
+    Future<InterconnectSyncBackend> buildPinnedBackend(String? fp) async {
       final HibikiDatabase db = _testDb();
       addTearDown(() async => db.close());
       final SyncRepository repo = SyncRepository(db);
@@ -520,15 +520,15 @@ void main() {
         HibikiClientUrl(url: tlsBase, enabled: true, fingerprintSha256: fp),
       ]);
       await repo.setHibikiClientToken(token);
-      final HibikiClientSyncBackend backend =
-          HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+      final InterconnectSyncBackend backend =
+          InterconnectSyncBackend.withProbe((String u, String t) async => true);
       await backend.restoreAuth(repo);
       await backend.authenticate(repo: repo);
       return backend;
     }
 
     test('fetchRemoteCover pulls cover bytes over pinned https', () async {
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await buildPinnedBackend(fingerprint);
       final List<RemoteVideoInfo> videos = await backend.listRemoteVideos();
       final String? coverUrl = videos.single.coverUrl;
@@ -548,7 +548,7 @@ void main() {
       // 步在 fetchRemoteCover 握手时拒绝——两处都是钉扎生效，故把整条链一起断言抛出，
       // 证明「绝不放行任意自签证书」。
       Future<Uint8List> attempt() async {
-        final HibikiClientSyncBackend backend =
+        final InterconnectSyncBackend backend =
             await buildPinnedBackend(wrongFp);
         return backend.fetchRemoteCover(
           '$tlsBase/api/library/videos/video%2Fsample/cover',
@@ -561,7 +561,7 @@ void main() {
   });
 
   test('fetchRemoteCover still works over plaintext http (老路径零破坏)', () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
     final List<RemoteVideoInfo> videos = await backend.listRemoteVideos();
     final String? coverUrl = videos.single.coverUrl;

@@ -1,0 +1,12 @@
+{
+  "upstream": "HIllya51/LunaTranslator",
+  "version": "10.16.1.2",
+  "tag": "v10.16.1.2",
+  "bridgeAbi": 1,
+  "files": {
+    "LunaHook32.dll": "78580d5108a7e47b955508f1181deb0ea76ff80c240f693feeaa06711e41406c",
+    "LunaHook64.dll": "5415a8da6ab7f0b0a17310b1b46b9601bbeca8100161d516cbde64452bcaf10b",
+    "LunaHost32.dll": "532eaf37d20a0db0b96da9fe97314f6a0bbfb9f3f4ede69ad8f6be5115e2bfe3",
+    "LunaHost64.dll": "a159b93d15dd91a756b9a48324ae0f68a9b1a010673e9a48d2ced8723c02c7a6"
+  }
+}

@@ -9,6 +9,7 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -29,7 +30,7 @@ class _CacheTrackingBackend implements SyncBackend {
   }
 
   /// Remote book folders surfaced by [listBooks] (each becomes a deletable row).
-  List<DriveFile> books;
+  List<SyncFileRef> books;
 
   /// Real cache under test: sanitized title -> folderId.
   final Map<String, String> _titleToFolderId = <String, String>{};
@@ -47,17 +48,17 @@ class _CacheTrackingBackend implements SyncBackend {
   @override
   Future<String> findOrCreateRootFolder() async => 'root';
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async => books;
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async => books;
   @override
-  void cacheBookFolderIds(List<DriveFile> folders) {
-    for (final DriveFile f in folders) {
+  void cacheBookFolderIds(List<SyncFileRef> folders) {
+    for (final SyncFileRef f in folders) {
       _titleToFolderId[f.name] = f.id;
     }
   }
 
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async =>
-      const DriveSyncFiles();
+  Future<SyncFileTrio> listSyncFiles(String folderId) async =>
+      const SyncFileTrio();
   @override
   Future<String> ensureNamespace(String name) async => name;
   @override
@@ -147,7 +148,8 @@ class _CacheTrackingBackend implements SyncBackend {
   }) async =>
       throw UnimplementedError();
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async =>
+  Future<SyncFileRef?> findContentFile(
+          String folderId, String fileName) async =>
       throw UnimplementedError();
   @override
   Future<AssetEntry?> findAsset(String namespaceId, String name) async =>
@@ -226,7 +228,9 @@ void main() {
     await repo.setFolderCache(<String, String>{sanitizedTitle: folderId});
 
     final _CacheTrackingBackend backend = _CacheTrackingBackend(
-      books: <DriveFile>[const DriveFile(id: folderId, name: sanitizedTitle)],
+      books: <SyncFileRef>[
+        const SyncFileRef(id: folderId, name: sanitizedTitle)
+      ],
       initialCache: <String, String>{sanitizedTitle: folderId},
     );
 

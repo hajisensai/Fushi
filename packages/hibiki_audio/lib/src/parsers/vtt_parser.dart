@@ -3,6 +3,7 @@ import 'dart:io';
 import '../audiobook/audiobook_model.dart';
 import 'cue_parse_dispatch.dart';
 import 'srt_parser.dart';
+import 'strip_html_tags.dart';
 import 'subtitle_markup.dart';
 import 'text_file_io.dart';
 
@@ -130,8 +131,9 @@ class VttParser {
 
       final String rawText =
           lines.skip(timeLineIdx + 1).where((l) => l.isNotEmpty).join(' ');
-      // 先剥 VTT/HTML 标签，再交 markup 解析 ASS override 块（两者正交）。
-      final SubtitleMarkup markup = parseSubtitleMarkup(_stripTags(rawText));
+      // 先剥 VTT/HTML 行内标签（`<b>` / `<ruby>` / `<c.className>` 等，共享
+      // [stripHtmlTags]），再交 markup 解析 ASS override 块（两者正交）。
+      final SubtitleMarkup markup = parseSubtitleMarkup(stripHtmlTags(rawText));
       final String text = markup.plainText;
       if (text.isEmpty) {
         continue;
@@ -171,10 +173,6 @@ class VttParser {
     }
     return (start, end);
   }
-
-  /// 剥离 VTT/HTML 行内标签（`<b>`、`<i>`、`<ruby>`、`<c.className>` 等）。
-  static String _stripTags(String text) =>
-      text.replaceAll(RegExp('<[^>]+>'), '').trim();
 
   /// 将 VTT 时间码转换为毫秒。
   ///

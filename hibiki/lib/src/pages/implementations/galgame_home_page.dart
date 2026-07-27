@@ -251,11 +251,11 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     _launching = true;
     try {
       if (!Platform.isWindows) {
-        HibikiToast.show(msg: t.games_launch_unsupported);
+        HibikiToast.show(msg: t.game_launch_unsupported);
         return;
       }
       if (!File(game.exePath).existsSync()) {
-        HibikiToast.show(msg: t.games_exe_missing);
+        HibikiToast.show(msg: t.game_exe_missing);
         return;
       }
       final bool is32Bit =
@@ -352,7 +352,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
               size: 64, color: colors.onSurfaceVariant),
           const SizedBox(height: 16),
           Text(
-            t.games_empty,
+            t.game_empty,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: colors.onSurfaceVariant,
                 ),
@@ -361,7 +361,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
           FilledButton.icon(
             onPressed: widget.onShowLibrary,
             icon: const Icon(Icons.add),
-            label: Text(t.games_add),
+            label: Text(t.game_add),
           ),
         ],
       ),
@@ -497,7 +497,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     final ThemeData theme = Theme.of(context);
     final bool hasPlayed = game.lastPlayedMs > 0;
     final String statusLabel = game.playStatus == GalgamePlayStatus.playing
-        ? t.games_status_playing
+        ? t.game_status_playing
         : (hasPlayed ? t.game_focus_continue : t.game_launch);
     final List<String> subParts = <String>[
       if (hasPlayed)
@@ -573,7 +573,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                         ),
                       ),
                       icon: const Icon(Icons.info_outline),
-                      label: Text(t.games_view_detail),
+                      label: Text(t.game_view_detail),
                     ),
                   ],
                 ),

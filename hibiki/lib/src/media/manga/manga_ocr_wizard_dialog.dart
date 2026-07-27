@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/media/import/import_dialog_frame.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/manga/external_mokuro_runner.dart';
 import 'package:hibiki/src/media/manga/manga_importer.dart';
@@ -402,9 +403,12 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     final ThemeData theme = Theme.of(context);
     final bool busy =
         _stage == _WizardStage.running || _stage == _WizardStage.importing;
-    return AlertDialog(
-      title: Text(t.manga_ocr_wizard_title),
-      content: SizedBox(
+    // 外框走统一 ImportDialogFrame（审计 §1-K：与书/有声书/视频导入同一 chrome）；
+    // 向导内容与阶段化动作按钮不变。
+    return ImportDialogFrame(
+      leadingIcon: Icons.document_scanner_outlined,
+      title: t.manga_ocr_wizard_title,
+      body: SizedBox(
         width: 420,
         child: Column(
           mainAxisSize: MainAxisSize.min,

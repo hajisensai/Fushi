@@ -32,6 +32,7 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
+import 'package:hibiki_core/hibiki_core.dart' show kStatSourceBook;
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:path/path.dart' as p;
 

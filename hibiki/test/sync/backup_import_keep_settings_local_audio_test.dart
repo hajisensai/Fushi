@@ -81,11 +81,11 @@ void main() {
     // null categories = export EVERYTHING (packs the local-audio file, keeps the
     // settings rows in the DB blob).
     await BackupService(db: srcDb, dbDirectory: srcDbDir, appVersion: '2.0.0')
-        .exportBackup(zipPath);
+        .createBackup(zipPath);
     await srcDb.close();
 
     // ── Overwrite import KEEPING this device's settings (DB already closed). ──
-    await BackupService.importBackupFiles(
+    await BackupService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zipPath,
       importSettings: false,

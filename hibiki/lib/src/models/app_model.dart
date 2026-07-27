@@ -47,6 +47,7 @@ import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/download_network_proxy.dart';
+import 'package:hibiki/src/media/torrent/download_relocate_service.dart';
 import 'package:hibiki/src/media/torrent/download_save_root.dart';
 import 'package:hibiki/src/media/torrent/embedded_torrent_host.dart';
 import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
@@ -68,7 +69,7 @@ import 'package:hibiki/src/sync/app_model_library_host_service.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
 import 'package:hibiki/src/sync/deletion_prompt.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_server_controller.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
@@ -98,7 +99,7 @@ import 'package:hibiki/src/sync/hibiki_remote_mining_client.dart';
 import 'package:hibiki/src/sync/hibiki_remote_lookup_service.dart';
 import 'package:hibiki/src/sync/remote_audio_lookup_bytes.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+import 'package:hibiki/src/media/video/video_cover_extractor.dart'
     show extractVideoCover;
 import 'package:hibiki/src/sync/forwarded_mine_payload.dart';
 import 'package:hibiki/src/sync/immersion_mine_payload.dart';
@@ -568,15 +569,21 @@ class AppModel with ChangeNotifier {
       for (final DeletionPropagationCandidate c in candidates)
         DeletionCandidateView(
           candidate: c,
-          title: switch (c.mediaType) {
+          // 命名统一 Phase 3.4：墓碑 mediaType 经 [SyncTombstoneKind.tryParse]
+          // 显式解析（未知种类 → null → 原样展示 itemKey，透传语义不变）。
+          title: switch (SyncTombstoneKind.tryParse(c.mediaType)) {
             // 有声书与其 epub 共享 bookKey，借书名；查不到退回 itemKey。
-            'book' || 'audiobook' => bookTitles[c.itemKey] ?? c.itemKey,
-            'video' => videoTitles[c.itemKey] ?? c.itemKey,
+            SyncTombstoneKind.book ||
+            SyncTombstoneKind.audiobook =>
+              bookTitles[c.itemKey] ?? c.itemKey,
+            SyncTombstoneKind.video => videoTitles[c.itemKey] ?? c.itemKey,
             // 收藏词：itemKey 是 NUL 连接键，展示其中的 expression（词本身）。
-            'favoriteword' =>
+            SyncTombstoneKind.favoriteword =>
               parseFavoriteWordItemKey(c.itemKey)?.expression ?? c.itemKey,
-            'favoritesentence' => favSentenceTexts[c.itemKey] ?? c.itemKey,
-            _ => c.itemKey, // localaudio: displayName 本身即可读。
+            SyncTombstoneKind.favoritesentence =>
+              favSentenceTexts[c.itemKey] ?? c.itemKey,
+            // localaudio: displayName 本身即可读；null = 未知种类原样展示。
+            SyncTombstoneKind.localaudio || null => c.itemKey,
           },
         ),
     ];
@@ -589,28 +596,31 @@ class AppModel with ChangeNotifier {
   ) async {
     for (final DeletionPropagationCandidate c in confirmed) {
       try {
-        switch (c.mediaType) {
-          case 'book':
+        // 命名统一 Phase 3.4：墓碑 mediaType 经 [SyncTombstoneKind.tryParse]
+        // 显式解析后穷尽 switch（加种类时编译器强制补分支）；未知种类 → null
+        // 分支，跳过但留痕（语义与旧 default 一致）。
+        switch (SyncTombstoneKind.tryParse(c.mediaType)) {
+          case SyncTombstoneKind.book:
             await ReaderHibikiSource.instance.deleteBook(
               db: database,
               bookKey: c.itemKey,
               appModel: this,
               scope: DeleteScope.keepLocalOnly,
             );
-          case 'video':
+          case SyncTombstoneKind.video:
             await VideoBookRepository(database).deleteVideoBook(
               c.itemKey,
               scope: DeleteScope.keepLocalOnly,
             );
-          case 'audiobook':
+          case SyncTombstoneKind.audiobook:
             await AudiobookRepository(database)
                 .deleteAudiobook(c.itemKey, propagateDeletion: false);
-          case 'localaudio':
+          case SyncTombstoneKind.localaudio:
             // 按 displayName 找到本地音频源并移除（不回写墓碑：keepLocalOnly 语义）。
             final int idx = _localAudioManager.entries.indexWhere(
                 (LocalAudioDbEntry e) => e.displayName == c.itemKey);
             if (idx >= 0) await _localAudioManager.remove(idx);
-          case 'favoriteword':
+          case SyncTombstoneKind.favoriteword:
             // 解析 itemKey → 取消收藏。removeFavoriteWord 默认 propagateDeletion=true：
             // 本设备也需 favoriteword 墓碑抑制第三设备快照的并集复活（幂等，与源墓碑同键）。
             final parsed = parseFavoriteWordItemKey(c.itemKey);
@@ -621,11 +631,11 @@ class AppModel with ChangeNotifier {
                 sourceType: parsed.sourceType,
               );
             }
-          case 'favoritesentence':
+          case SyncTombstoneKind.favoritesentence:
             // 按内容键取消收藏。默认写墓碑（本设备也需抑制第三设备并集复活，与源墓碑同键）。
             await FavoriteSentenceRepository(database)
                 .removeByItemKey(c.itemKey);
-          default:
+          case null:
             // 未知类型：跳过，但留痕——用户确认了删除、这里静默吞掉会造成
             // 「以为删了实际没删」且无从排查（mediaType 审计 2026-07-25）。
             debugPrint(
@@ -3309,6 +3319,23 @@ class AppModel with ChangeNotifier {
     await _restoreEmbeddedTorrentSession(store);
   }
 
+  /// TODO-1961-c+d：下载内容改名 / 移动（引擎侧动，做种不断；库路径同步迁移）。
+  ///
+  /// 后端工厂复用 [_torrentBackendFor]，所以内置引擎与外接 qb 两条路都走得通；
+  /// 库迁移走 [VideoBookRepository.migrateMediaPaths]。两步的原子性由
+  /// [DownloadRelocateService] 保证（引擎失败则库不动）。
+  DownloadRelocateService get downloadRelocateService =>
+      DownloadRelocateService(
+        backendFactory: () => _torrentBackendFor(
+            effectiveTorrentConfig(prefsRepo.qbConnectionConfig)),
+        migrateLibraryPaths: ({
+          required String fromPath,
+          required String toPath,
+        }) =>
+            VideoBookRepository(database)
+                .migrateMediaPaths(fromPath: fromPath, toPath: toPath),
+      );
+
   /// 刷新 [_animeDownloadPlanIds]（resume 剪枝的真相源）并返回它。
   /// 返回值非空：调用过一次之后哨兵就不再是 null。
   Future<Set<String>> _refreshAnimeDownloadPlanIds(
@@ -3720,7 +3747,7 @@ class AppModel with ChangeNotifier {
         if (!await backend.restoreAuth(repo)) return;
         if (!await backend.isAuthenticated) return;
         // 互联（live）后端直接走 host DELETE 端点；云后端走暂存删除路径。
-        if (backend is HibikiClientSyncBackend) {
+        if (backend is InterconnectSyncBackend) {
           await backend.deleteRemoteDictionary(name);
           return;
         }
@@ -5082,8 +5109,10 @@ class AppModel with ChangeNotifier {
         // 被移除的本地音频源：syncEverywhere 才记墓碑传播。
         if (scope == DeleteScope.syncEverywhere) {
           try {
-            await database.writeSyncDeletionTombstone('localaudio',
-                e.value.displayName, DateTime.now().millisecondsSinceEpoch);
+            await database.writeSyncDeletionTombstone(
+                SyncTombstoneKind.localaudio.dbValue,
+                e.value.displayName,
+                DateTime.now().millisecondsSinceEpoch);
           } catch (_) {
             // best-effort。
           }
@@ -5095,7 +5124,7 @@ class AppModel with ChangeNotifier {
       if (s.kind == AudioSourceKind.localAudio) {
         try {
           await database.clearSyncDeletionTombstone(
-              'localaudio', s.displayLabel);
+              SyncTombstoneKind.localaudio.dbValue, s.displayLabel);
         } catch (_) {
           // best-effort。
         }

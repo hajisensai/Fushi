@@ -44,11 +44,11 @@ void main() {
     addTearDown(() => cleanupTempDir(zipDir));
     final String zip = p.join(zipDir.path, 'b.zip');
     await BackupService(db: src, dbDirectory: srcDir.path, appVersion: '2.0.0')
-        .exportBackup(zip);
+        .createBackup(zip);
     await src.close();
 
     // ── 合并导入 ──────────────────────────────────────────────────────────────
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
     );

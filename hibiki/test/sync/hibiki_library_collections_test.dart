@@ -5,7 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
@@ -165,7 +165,7 @@ void main() {
         bookUid: 'video/ep1',
         title: 'Ep1',
         videoPath: '/tmp/ep1.mp4',
-        importedAt: Value(DateTime.now()),
+        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ));
       final int cid =
           await db.createMediaCollection('番剧', collectionType: 'playlist');
@@ -192,7 +192,7 @@ void main() {
         bookUid: 'video/probe',
         title: 'Probe',
         videoPath: video.path,
-        importedAt: Value(DateTime.now()),
+        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ));
 
       final List<RemoteVideoInfo> videos = await buildSvc(db).listVideos();
@@ -285,14 +285,14 @@ void main() {
 
     tearDown(() async => server.stop());
 
-    Future<HibikiClientSyncBackend> buildBackend(
+    Future<InterconnectSyncBackend> buildBackend(
         HibikiDatabase clientDb) async {
       final SyncRepository repo = SyncRepository(clientDb);
       await repo.setHibikiClientUrls(<HibikiClientUrl>[
         HibikiClientUrl(url: base, enabled: true),
       ]);
       await repo.setHibikiClientToken(token);
-      final HibikiClientSyncBackend backend = HibikiClientSyncBackend.withProbe(
+      final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
           (String url, String tok) async => true);
       await backend.restoreAuth(repo);
       await backend.authenticate(repo: repo);
@@ -300,7 +300,7 @@ void main() {
     }
 
     SyncOrchestrator orchestrator(
-            HibikiDatabase clientDb, HibikiClientSyncBackend backend) =>
+            HibikiDatabase clientDb, InterconnectSyncBackend backend) =>
         SyncOrchestrator(
           db: clientDb,
           backend: backend,
@@ -334,7 +334,7 @@ void main() {
       await hostDb.addToCollection(hc, MediaKind.video, 'v1');
 
       final HibikiDatabase clientDb = memDb();
-      final HibikiClientSyncBackend backend = await buildBackend(clientDb);
+      final InterconnectSyncBackend backend = await buildBackend(clientDb);
 
       // GET：host 清单含 S{v1}。
       final CollectionManifest? remote =
@@ -371,7 +371,7 @@ void main() {
       await tick();
 
       final HibikiDatabase clientDb = memDb();
-      final HibikiClientSyncBackend backend = await buildBackend(clientDb);
+      final InterconnectSyncBackend backend = await buildBackend(clientDb);
       final int cc =
           await clientDb.createMediaCollection('S', collectionType: 'playlist');
       await clientDb.addToCollection(cc, MediaKind.video, 'v9');
@@ -397,7 +397,7 @@ void main() {
       await tick();
 
       final HibikiDatabase clientDb = memDb();
-      final HibikiClientSyncBackend backend = await buildBackend(clientDb);
+      final InterconnectSyncBackend backend = await buildBackend(clientDb);
       await orchestrator(clientDb, backend)
           .syncCollectionsLiveForTest(SyncRunReport(), backend);
       expect(await orderOf(clientDb, 'S'), <String>['v1', 'v2', 'v3']);
@@ -430,7 +430,7 @@ void main() {
       await tick();
 
       final HibikiDatabase clientDb = memDb();
-      final HibikiClientSyncBackend backend = await buildBackend(clientDb);
+      final InterconnectSyncBackend backend = await buildBackend(clientDb);
       await orchestrator(clientDb, backend)
           .syncCollectionsLiveForTest(SyncRunReport(), backend);
       await tick();

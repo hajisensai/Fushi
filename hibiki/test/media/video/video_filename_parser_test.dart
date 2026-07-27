@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/video/scraper/filename_parser.dart';
+import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:path/path.dart' as p;
 
@@ -56,8 +58,8 @@ void main() {
     });
 
     test('无集号 → 整名作系列、单片', () {
-      final VideoNameInfo info = parseVideoFilename('Some Movie Title.mkv');
-      expect(info.series, 'Some Movie Title');
+      final VideoNameInfo info = parseVideoFilename('Aria the Animation.mkv');
+      expect(info.series, 'Aria the Animation');
       expect(info.episode, isNull);
     });
 
@@ -65,6 +67,49 @@ void main() {
       final VideoNameInfo info = parseVideoFilename('Cowboy.Bebop.第05話.mkv');
       expect(info.series, 'Cowboy Bebop');
       expect(info.episode, 5);
+    });
+  });
+
+  group('G10 第二步：parseVideoFilename 是 FilenameParser.parse 的窄化适配', () {
+    test('括号集数 [11]（旧引擎解不出、刮削引擎能）→ 分组/刮削同解', () {
+      final VideoNameInfo info = parseVideoFilename(
+        '[桜都字幕组] 无职转生～到了异世界就拿出真本事～ [11][1080p][简繁内封].mkv',
+      );
+      expect(info.series, '无职转生');
+      expect(info.episode, 11);
+    });
+
+    test('电影关键词由引擎剥离，不再留在系列名里（行为变化，与刮削端一致）', () {
+      expect(parseVideoFilename('Some Movie Title.mkv').series, 'Some Title');
+      expect(parseVideoFilename('紫罗兰永恒花园 剧场版.mkv').series, '紫罗兰永恒花园');
+      expect(parseVideoFilename('紫罗兰永恒花园 剧场版.mkv').episode, isNull);
+    });
+
+    test('引擎解不出标题（设备/日期命名）→ stem 兜底、series 永不为空', () {
+      final VideoNameInfo device = parseVideoFilename('VID_20260701.mp4');
+      expect(device.series, isNotEmpty);
+      expect(device.episode, isNull);
+      final VideoNameInfo obs = parseVideoFilename('2026-07-01 21-03-55.mkv');
+      expect(obs.series, isNotEmpty);
+      expect(obs.episode, isNull);
+    });
+
+    test('同一文件名两侧恒同解（防引擎再分叉守卫）', () {
+      const List<String> samples = <String>[
+        '[SubsPlease] Sousou no Frieren - 28 (1080p) [A1B2C3D4].mkv',
+        'Title.S02E05.1080p.WEB-DL.mkv',
+        '[北宇治字幕组] 摇曳露营 第三季 [08][WebRip][1080p][简繁内封].mkv',
+        'Show EP05.mp4',
+        'My Anime 03.mp4',
+        '鬼灭之刃 第26话.mp4',
+      ];
+      for (final String f in samples) {
+        final VideoNameInfo grouped = parseVideoFilename(f);
+        final ParsedMediaName scraped = FilenameParser.parse(f);
+        expect(grouped.episode, scraped.episode, reason: '$f 集数分叉');
+        expect(grouped.season, scraped.season, reason: '$f 季号分叉');
+        expect(grouped.series, scraped.title, reason: '$f 系列名分叉');
+      }
     });
   });
 

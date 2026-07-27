@@ -1,6 +1,6 @@
 /// 视频条目自动刮削（取代页头「批量匹配海报」按钮）端到端单测。
 ///
-/// 覆盖真实链路：书单 → 过滤（本地 / 未刮 / 未尝试）→ [PosterScraperService]
+/// 覆盖真实链路：书单 → 过滤（本地 / 未刮 / 未尝试）→ [CoverScraperService]
 /// 匹配落封面 → Bangumi 详情 → `video_scrape_meta` 落库 → 仓库读回领域对象。
 /// 全部走内存 DB + MockClient，无真实网络。
 library;
@@ -15,8 +15,8 @@ import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
 import 'package:hibiki/src/media/video/scraper/auto_scrape_service.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
 import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
-import 'package:hibiki/src/media/video/scraper/poster_downloader.dart';
-import 'package:hibiki/src/media/video/scraper/poster_scraper_service.dart';
+import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
+import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -64,6 +64,9 @@ String _subjectBody() => jsonEncode(<String, Object?>{
     });
 
 void main() {
+  // 刮削落盘点走 evictLocalCoverCache（需要 PaintingBinding）。
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late HibikiDatabase db;
   late VideoBookRepository repo;
   late Directory tmp;
@@ -126,12 +129,12 @@ void main() {
         }),
       );
 
-  PosterScraperService buildService() => PosterScraperService(
+  CoverScraperService buildService() => CoverScraperService(
         repository: repo,
         coverMetaStore: CoverMetaStore(tmp),
         aliasCache: AliasCache(tmp),
         bangumiClient: bangumi(),
-        posterDownloader: PosterDownloader(
+        coverDownloader: CoverDownloader(
           client: MockClient((http.Request req) async => http.Response.bytes(
                 _fakePng,
                 200,

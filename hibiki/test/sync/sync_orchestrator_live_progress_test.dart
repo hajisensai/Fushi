@@ -11,7 +11,7 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
@@ -84,7 +84,7 @@ Future<void> _seedHostAudiobook(HibikiDatabase db, String bookKey) async {
   ));
 }
 
-Future<HibikiClientSyncBackend> _buildClientBackend({
+Future<InterconnectSyncBackend> _buildClientBackend({
   required String base,
   required String token,
 }) async {
@@ -94,8 +94,8 @@ Future<HibikiClientSyncBackend> _buildClientBackend({
     HibikiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
-  final HibikiClientSyncBackend backend =
-      HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+  final InterconnectSyncBackend backend =
+      InterconnectSyncBackend.withProbe((String u, String t) async => true);
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -167,7 +167,7 @@ void main() {
           section: 4, norm: 4200, charOffset: 88, updatedAt: 2000);
 
       final Directory tmp = Directory(p.join(work.path, 't1'))..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: base, token: token);
       final SyncOrchestrator orch =
           _orchestrator(db: localDb, backend: backend, tmp: tmp);
@@ -196,7 +196,7 @@ void main() {
           section: 1, norm: 100, charOffset: 1, updatedAt: 1000);
 
       final Directory tmp = Directory(p.join(work.path, 't2'))..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: base, token: token);
       final SyncOrchestrator orch =
           _orchestrator(db: localDb, backend: backend, tmp: tmp);
@@ -221,7 +221,7 @@ void main() {
           section: 7, norm: 7000, charOffset: 70, updatedAt: 9000);
 
       final Directory tmp = Directory(p.join(work.path, 't3'))..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: base, token: token);
       final SyncOrchestrator orch =
           _orchestrator(db: localDb, backend: backend, tmp: tmp);
@@ -257,7 +257,7 @@ void main() {
           section: 1, norm: 100, charOffset: 1, updatedAt: 1000);
 
       final Directory tmp = Directory(p.join(work.path, 'tbr'))..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: base, token: token);
       final SyncOrchestrator orch =
           _orchestrator(db: localDb, backend: backend, tmp: tmp);
@@ -288,7 +288,7 @@ void main() {
           section: 7, norm: 7000, charOffset: 70, updatedAt: 9000);
 
       final Directory tmp = Directory(p.join(work.path, 'tbp'))..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: base, token: token);
       final SyncOrchestrator orch =
           _orchestrator(db: localDb, backend: backend, tmp: tmp);
@@ -319,7 +319,7 @@ void main() {
           videoRemotePositionAtPrefKey('video/v1'), 3000);
 
       final Directory tmp = Directory(p.join(work.path, 'tv1'))..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: base, token: token);
       final SyncOrchestrator orch =
           _orchestrator(db: localDb, backend: backend, tmp: tmp);
@@ -354,7 +354,7 @@ void main() {
           videoRemotePositionAtPrefKey('video/v2'), 2000);
 
       final Directory tmp = Directory(p.join(work.path, 'tv2'))..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: base, token: token);
       final SyncOrchestrator orch =
           _orchestrator(db: localDb, backend: backend, tmp: tmp);
@@ -378,7 +378,7 @@ void main() {
           videoRemotePositionAtPrefKey('video/stream'), 5000);
 
       final Directory tmp = Directory(p.join(work.path, 'tvs'))..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: base, token: token);
       final SyncOrchestrator orch =
           _orchestrator(db: localDb, backend: backend, tmp: tmp);
@@ -412,7 +412,7 @@ void main() {
           videoRemotePositionAtPrefKey('video/stream2'), 2000);
 
       final Directory tmp = Directory(p.join(work.path, 'tvs2'))..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: base, token: token);
       final SyncOrchestrator orch =
           _orchestrator(db: localDb, backend: backend, tmp: tmp);
@@ -442,7 +442,7 @@ void main() {
       await localDb.setPrefTyped<int>(audiobookPositionAtPrefKey('AB1'), 3000);
 
       final Directory tmp = Directory(p.join(work.path, 'ta1'))..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: base, token: token);
       final SyncOrchestrator orch =
           _orchestrator(db: localDb, backend: backend, tmp: tmp);
@@ -469,7 +469,7 @@ void main() {
       await localDb.setPrefTyped<int>(audiobookPositionAtPrefKey('AB2'), 2000);
 
       final Directory tmp = Directory(p.join(work.path, 'ta2'))..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: base, token: token);
       final SyncOrchestrator orch =
           _orchestrator(db: localDb, backend: backend, tmp: tmp);
@@ -495,7 +495,7 @@ void main() {
       await localDb.setPrefTyped<int>(audiobookPositionAtPrefKey('AB3'), 9000);
 
       final Directory tmp = Directory(p.join(work.path, 'ta3'))..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: base, token: token);
       final SyncOrchestrator orch =
           _orchestrator(db: localDb, backend: backend, tmp: tmp);
@@ -523,7 +523,7 @@ void main() {
           audiobookPositionAtPrefKey('AB_local_only'), 4000);
 
       final Directory tmp = Directory(p.join(work.path, 'ta4'))..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: base, token: token);
       final SyncOrchestrator orch =
           _orchestrator(db: localDb, backend: backend, tmp: tmp);
@@ -563,7 +563,7 @@ void main() {
           videoRemotePositionAtPrefKey('video/run'), 4000);
 
       final Directory tmp = Directory(p.join(work.path, 'trun'))..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: base, token: token);
       final SyncOrchestrator orch =
           _orchestrator(db: localDb, backend: backend, tmp: tmp);

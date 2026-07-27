@@ -1305,6 +1305,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     }
     // 漫画没有 Bangumi 的“页”进度：自动映射会按卷记录，只有翻到最后一页才入队；
     // 若用户手工选择了“话”，则 page+1 仍作为其明确选择下的本地进度来源。
+    // 部分页面测试用轻量 AppModel 覆写 database getter，但不会走完整 initialise；
+    // 此时只保留原有本地页码写入，不触碰依赖正式数据库生命周期的自动记录服务。
+    if (!appModel.isDatabaseReady) return;
     await appModel.mediaTrackingService.recordBookProgress(
       bookKey: widget.bookKey,
       completedChapterCount: page + 1,
@@ -1542,7 +1545,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       );
     }
     if (_bookRow == null || _imagesDir == null || _payload == null) {
-      return const Center(child: CircularProgressIndicator());
+      return buildLoading();
     }
     // 平台无关的「内容已加载」标记：非 Linux 是原生 WebView，Linux 是无后端占位
     // （`manga_webview` key 仅存在于前者，随宿主平台变化）。加载成功的普适可观察

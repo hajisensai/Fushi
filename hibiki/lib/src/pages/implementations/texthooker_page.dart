@@ -52,7 +52,12 @@ Map<String, String> injectActiveSentence(
 
 /// 捕获工作台工具栏「更多」菜单动作：驱动 [PopupMenuButton.onSelected] 的单一枚举，
 /// 消除嵌入/独立两套按钮定义的特殊分支。
-enum _GalHookToolbarMenuAction { audioFallback, showOverlay, externalWindow }
+enum _GalHookToolbarMenuAction {
+  audioFallback,
+  manageTracks,
+  showOverlay,
+  externalWindow,
+}
 
 /// texthooker 捕获工作台：实时展示 WebSocket 收到的文本行，逐词查词 + 挖词。
 ///
@@ -186,6 +191,125 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (!mounted) return;
     HibikiToast.show(
       msg: applied ? t.game_line_track_applied : t.game_line_track_failed,
+    );
+  }
+
+  /// 捕获工作台内的「排除音轨」对话框：列出会话当前音轨，逐轨试听 + 标记为 BGM /
+  /// 恢复。复用会话已有的 `setTrackExcluded`（诊断页同一通道）。排除某条 BGM 轨后，
+  /// 自动选源在**任何一句**（尤其是没有语音的那一句）都不会再选它——这正是「没音频
+  /// 时不读到 BGM」的直接手段，无需改 native。
+  ///
+  /// 排除集合只在**引擎 PCM** 后端参与取音（资源原件走逐句文件、纯 loopback 是整机单
+  /// 流，都不消费排除集合）；因此非引擎 PCM 时给出说明而非让用户点一个不生效的开关，
+  /// 与诊断页 `galTrackSelectionAffectsCapture` 门控口径一致。
+  Future<void> _showTrackManagerDialog() async {
+    unawaited(_session.refreshAudioTracks());
+    await showAppDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AnimatedBuilder(
+          animation: _session,
+          builder: (BuildContext context, _) {
+            final GalHookSessionState state = _session.state;
+            final bool effective =
+                galTrackSelectionAffectsCapture(state.audioBackend);
+            final List<GalAudioTrack> tracks = state.audioTracks;
+            return AlertDialog(
+              title: Text(t.game_track_exclusion_title),
+              content: SizedBox(
+                width: 360,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Text(
+                      t.game_track_exclusion_hint,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    if (!effective) ...<Widget>[
+                      const SizedBox(height: 8),
+                      Text(
+                        t.game_tracks_pcm_only_hint,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.tertiary,
+                            ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    if (tracks.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Text(t.game_no_tracks),
+                      )
+                    else
+                      Flexible(
+                        child: ListView(
+                          shrinkWrap: true,
+                          children: <Widget>[
+                            for (final GalAudioTrack track in tracks)
+                              _buildTrackManagerTile(track, effective, state),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: Text(t.dialog_close),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (_previewingLineId != null && mounted) {
+      // 对话框里的试听走的是共享播放器；关闭对话框顺手停掉，避免残留播放。
+      await DesktopAudioPlayback.stop();
+    }
+  }
+
+  Widget _buildTrackManagerTile(
+    GalAudioTrack track,
+    bool effective,
+    GalHookSessionState state,
+  ) {
+    final bool excluded =
+        state.excludedAudioSourcePtrs.contains(track.sourcePtr);
+    final bool silent = track.clipCount <= 0;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      enabled: !silent,
+      leading: Icon(excluded ? Icons.music_off_outlined : Icons.graphic_eq),
+      title: Text(
+        '${t.game_track_voice} ${track.orderIndex + 1} · '
+        '${track.format.sampleRate} Hz · ${track.format.channels} ch',
+      ),
+      subtitle: Text(
+        <String>[
+          '${t.game_track_clips} ${track.clipCount}',
+          '${t.game_track_energy} ${track.avgEnergy.toStringAsFixed(1)}',
+          if (silent) t.game_track_no_clips,
+        ].join(' · '),
+      ),
+      trailing: Wrap(
+        spacing: 4,
+        children: <Widget>[
+          HibikiIconButton(
+            icon: Icons.play_circle_outline,
+            tooltip: t.game_track_preview,
+            onTap: () => unawaited(_previewTrackInDialog(track.sourcePtr)),
+          ),
+          HibikiIconButton(
+            icon: excluded ? Icons.undo : Icons.music_off_outlined,
+            tooltip: excluded ? t.game_track_restore : t.game_track_exclude_bgm,
+            enabled: effective,
+            onTap: () => _session.setTrackExcluded(track.sourcePtr, !excluded),
+          ),
+        ],
+      ),
     );
   }
 
@@ -857,6 +981,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         switch (action) {
           case _GalHookToolbarMenuAction.audioFallback:
             _session.setAllowAudioFallback(!state.allowAudioFallback);
+          case _GalHookToolbarMenuAction.manageTracks:
+            unawaited(_showTrackManagerDialog());
           case _GalHookToolbarMenuAction.showOverlay:
             unawaited(GalHookTextOverlayController.instance.showManually());
           case _GalHookToolbarMenuAction.externalWindow:
@@ -869,6 +995,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           value: _GalHookToolbarMenuAction.audioFallback,
           checked: state.allowAudioFallback,
           child: Text(t.game_audio_fallback_allow),
+        ),
+        // 排除音轨：把 BGM/环境音轨标记为排除，自动选源便不再把它当成语音——
+        // 一句没有语音时不会再误读到 BGM（用户实拍反馈）。诊断页已有逐轨排除，
+        // 但排查语音配对时用户就在工作台，把入口也放到这里。
+        PopupMenuItem<_GalHookToolbarMenuAction>(
+          value: _GalHookToolbarMenuAction.manageTracks,
+          child: Text(t.game_manage_tracks),
         ),
         if (Platform.isWindows)
           PopupMenuItem<_GalHookToolbarMenuAction>(
@@ -1043,6 +1176,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final List<TexthookerLineEntry> visibleLines = lines
         .where((TexthookerLineEntry e) => lineMatchesFilter(e, _lineFilter))
         .toList(growable: false);
+    // 重名线程（同 hookName + 地址、不同调用上下文）补 `#N` 序号，供下拉区分。
+    final Map<String, String> threadDisplayLabels =
+        assignThreadDisplayLabels(textThreads);
     return HibikiCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -1150,7 +1286,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     for (final TexthookerTextThread thread in textThreads)
                       (
                         value: thread.key,
-                        label: '${thread.label} · ${thread.lineCount}',
+                        // 同一 hook 面在不同调用上下文会报成多条同 label 线程；
+                        // assignThreadDisplayLabels 给重名线程补 `#N` 序号，避免下拉
+                        // 里出现一整列一模一样的 `TextRender · 0x… · 0`。
+                        label:
+                            '${threadDisplayLabels[thread.key] ?? thread.label}'
+                            ' · ${thread.lineCount}',
                       ),
                   ],
                   // 每条线程第二行：有音频行数 + 最近台词预览——没有预览用户

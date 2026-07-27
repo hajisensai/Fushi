@@ -1,3 +1,4 @@
+import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 /// 首页 Activity 时间轴的纯数据层：把 [ActivityEventRow] 事件流聚合成「按日期分组、
@@ -218,9 +219,9 @@ DashboardTimeStats sumTimeWindowsByDateKey(
   return DashboardTimeStats(today: today, week: week, month: month, all: all);
 }
 
-/// `yyyy-MM-dd`（与统计行 dateKey 同格式，可字典序比较）。内部复用避免依赖 UI 层。
-String _dayKey(DateTime d) =>
-    '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+/// `yyyy-MM-dd`（与统计行 dateKey 同格式，可字典序比较）。委托
+/// [HibikiTimeFormat.dayKey]（G5 收敛；不引 UI 层的 statDateKey，保持纯数据层）。
+String _dayKey(DateTime d) => HibikiTimeFormat.dayKey(d);
 
 /// 把已按升序排好的时间戳按 [gap] 归并成 session 数：相邻间隔 > gap 记一个新 session。
 int _countSessions(List<int> sortedAscTimestamps, Duration gap) {

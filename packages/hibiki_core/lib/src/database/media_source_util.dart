@@ -3,7 +3,7 @@
 //
 // 🔴 凭据红线：本文件的 config 编解码 **绝不裸存明文密码**。本地来源 config 恒空；
 // 网络来源（SFTP/FTP）的 configJson 只存**非敏感连接参数**（host/port/username/useTls），
-// 密码/私钥经 MediaSourceCredentialStore 以 base64 单独落 Preferences（键
+// 密码/私钥经 SourceLibraryCredentialStore 以 base64 单独落 Preferences（键
 // `media_source_secret_<id>`），绝不进入 configJson。[encodeSourceConfig] 以允许键
 // 白名单强制这条红线：即使调用方误传 password/privateKey 也会被丢弃。
 

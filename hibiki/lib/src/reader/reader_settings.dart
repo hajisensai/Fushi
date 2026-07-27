@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/media/media_source.dart' show dbSourcePrefKey;
 import 'package:hibiki/src/reader/font_catalog.dart';
 import 'package:hibiki/src/reader/reader_chrome_floating.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -39,7 +40,9 @@ class ReaderSettings {
   final HibikiDatabase _db;
   final Map<String, dynamic> _cache = <String, dynamic>{};
 
-  static const String _prefix = 'src:reader_ttu:';
+  /// 经单一真相编码器 [dbSourcePrefKey] 得到 `src:reader_ttu:`；`reader_ttu`
+  /// 是冻结的历史 sourceId（旧数据兼容，勿改）。
+  static final String _prefix = dbSourcePrefKey('reader_ttu', '');
 
   /// TODO-362（PR#3 响应式页边距）：正文左右两侧默认各留白 2%（百分比 = vw），每行
   /// 因此变窄；上下默认 0%（垂直预留由 chrome inset + 字号决定，见
@@ -126,15 +129,12 @@ class ReaderSettings {
     }
   }
 
-  static dynamic _parseValue(String raw) {
-    if (raw == 'true') return true;
-    if (raw == 'false') return false;
-    final int? asInt = int.tryParse(raw);
-    if (asInt != null) return asInt;
-    final double? asDouble = double.tryParse(raw);
-    if (asDouble != null) return asDouble;
-    return raw;
-  }
+  /// BUG-1116：读侧统一走 [PrefCodec.decodeUntyped]，兼容两种历史写入格式：
+  /// MediaSource.setPreference 写入的 PrefCodec 标签值（'b:false' / 'd:22.0'
+  /// 等）+ 本类 [_set] 的裸 `toString()` 旧值。decodeUntyped 的非标签分支与
+  /// 旧启发式（true/false → int → double → string）逐行等价，是严格超集，
+  /// 旧裸值行为逐字节不变。
+  static dynamic _parseValue(String raw) => PrefCodec.decodeUntyped(raw);
 
   // ── Display settings (same Hive keys as old ReaderTtuSource) ──────
 

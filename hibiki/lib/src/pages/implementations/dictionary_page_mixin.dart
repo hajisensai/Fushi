@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hibiki_core/hibiki_core.dart'
+    show kStatSourceBook, kStatSourceVideo;
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
@@ -362,7 +364,7 @@ mixin DictionaryPageMixin {
     );
   }
 
-  Future<void> _playAutoReadWord(
+  Future<bool> _playAutoReadWord(
     String expression,
     String reading,
     DictionaryPopupWebViewState? popupState,

@@ -491,13 +491,5 @@ class _MangaOcrSettingsSectionState
     );
   }
 
-  static String _formatBytes(int bytes) {
-    if (bytes <= 0) return '0 MB';
-    const double mb = 1024 * 1024;
-    final double value = bytes / mb;
-    if (value >= 1024) {
-      return '${(value / 1024).toStringAsFixed(1)} GB';
-    }
-    return '${value.toStringAsFixed(value >= 10 ? 0 : 1)} MB';
-  }
+  static String _formatBytes(int bytes) => HibikiByteFormat.bytes(bytes);
 }

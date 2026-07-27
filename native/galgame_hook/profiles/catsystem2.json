@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "catsystem2",
+  "status": "partial",
+  "detection": {
+    "executable_sha256": [
+      "D1889D60DBE3350B068605F94A49AE8E93EB388CE66E7ABC36607EED2EDA7010"
+    ],
+    "module_sha256": []
+  },
+  "capabilities": {
+    "text": true,
+    "resource_audio": true,
+    "pcm_audio": true
+  },
+  "evidence": [
+    {
+      "kind": "real_sample",
+      "reference": "ARES official CatSystem2 starter kit v3.01; x86 unencrypted KIF pcm_d.int live playback captured byte-identically on 2026-07-23"
+    }
+  ]
+}

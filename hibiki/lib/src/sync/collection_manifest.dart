@@ -1,3 +1,5 @@
+import 'package:hibiki_core/hibiki_core.dart' show MediaRef;
+
 import 'package:hibiki/src/sync/sync_manifest_codec.dart';
 
 /// 合集同步清单（多端库联合视图 §2.3 任务3）。
@@ -250,6 +252,10 @@ class CollectionManifestEntry {
 }
 
 /// 清单里的一个合集成员。
+///
+/// 命名统一 Phase 3.3：[mediaType] / [entryKey] 与 hibiki_core 的 [MediaRef]
+/// 同构，但**存储保持裸字符串**——wire 契约要求原样透传对端未来新增的未知
+/// 种类（强类型化会在 [fromJson] 丢值）；需要类型化身份时走 [mediaRef] 委托。
 class CollectionManifestMember {
   const CollectionManifestMember({
     required this.mediaType,
@@ -268,6 +274,10 @@ class CollectionManifestMember {
 
   /// 合集内序（整合集 LWW 覆盖的载荷）。
   final int sortIndex;
+
+  /// 类型化身份视图（委托 [MediaRef.tryParse]）；未知种类（对端未来值）→
+  /// null，此时调用方继续用裸 [mediaType] / [entryKey] 透传。
+  MediaRef? get mediaRef => MediaRef.tryParse(mediaType, entryKey);
 
   factory CollectionManifestMember.fromJson(Object? json) {
     if (json is! Map<String, dynamic>) {

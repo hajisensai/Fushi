@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
+import 'package:hibiki/src/media/media_search_text.dart';
 import 'package:hibiki/src/reader/font_catalog.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/utils/misc/channel_constants.dart';
@@ -485,11 +486,10 @@ class _SystemFontPickerPageState extends State<_SystemFontPickerPage> {
   }
 
   void _onSearch(String query) {
-    final q = query.toLowerCase();
+    // G6：与库页搜索同一归一化口径（日文字体族名常含全角/片假名差异）。
     setState(() {
-      _filtered = q.isEmpty
-          ? _allFonts
-          : _allFonts.where((f) => f.toLowerCase().contains(q)).toList();
+      _filtered =
+          filterByMediaSearch(_allFonts, query, (String f) => <String>[f]);
     });
   }
 
@@ -576,9 +576,10 @@ class CustomFontsPage extends BasePage {
   BasePageState createState() => _CustomFontsPageState();
 }
 
-const String _readerSettingsPrefix = 'src:reader_ttu:';
-
-String _readerPrefKey(String shortKey) => '$_readerSettingsPrefix$shortKey';
+/// 阅读器设置的 DB 偏好 key：经单一真相编码器 [dbSourcePrefKey]（`reader_ttu`
+/// 是冻结的历史 sourceId，旧数据兼容，勿改）。
+String _readerPrefKey(String shortKey) =>
+    dbSourcePrefKey('reader_ttu', shortKey);
 
 class _CustomFontsPageState extends BasePageState {
   ReaderSettings? _settings;
@@ -821,7 +822,7 @@ class _CustomFontsPageState extends BasePageState {
         final ext = p.extension(entry.name);
         final destPath = p.join(
           _fontsDir.path,
-          '${overrideName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')}_${DateTime.now().millisecondsSinceEpoch}$ext',
+          '${safeWindowsFileName(overrideName)}_${DateTime.now().millisecondsSinceEpoch}$ext',
         );
         File(destPath).writeAsBytesSync(entry.content as List<int>);
         final fontEntry = CustomFontCatalogRow(

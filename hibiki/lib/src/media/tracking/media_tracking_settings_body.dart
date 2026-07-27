@@ -104,7 +104,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
       _message(t.media_tracking_token_required);
       return;
     }
-    final bool? saved = await showDialog<bool>(
+    final bool? saved = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext context) => _AddMappingDialog(
         database: widget.appModel.database,

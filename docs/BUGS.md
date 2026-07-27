@@ -27,12 +27,27 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1083 条。点号进各自文件。
+> 共 1098 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-1116](bugs/BUG-1116-book-tracking-status-semantics.md) | ✅ | ✅ | Bangumi 小说/漫画阅读进度未按语义切换在读与读过 |
-| [BUG-1115](bugs/BUG-1115-bangumi-watched-progress-stays-wish.md) | ✅ | ✅ | Bangumi 已有想看收藏在记录进度后未切换为在看 |
+| [BUG-1131](bugs/BUG-1131-book-tracking-status-semantics.md) | ✅ | ✅ | Bangumi 小说/漫画阅读进度未按语义切换在读与读过 |
+| [BUG-1130](bugs/BUG-1130-bangumi-watched-progress-stays-wish.md) | ✅ | ✅ | Bangumi 已有想看收藏在记录进度后未切换为在看 |
+| [BUG-1129](bugs/BUG-1129-gal-textthread-list-luna-parity.md) | ✅ | ✅ | 文本线程列表对齐 Luna 选择文本：预览折叠/排序/重名消歧 + TextRender 0 行 |
+| [BUG-1128](bugs/BUG-1128-gal-workbench-bgm-when-no-voice.md) | ✅ | ✅ | 无语音台词误配 BGM：捕获工作台补排除音轨入口 |
+| [BUG-1127](bugs/BUG-1127-external-lookup-autoread-slow-swallowed.md) | ✅ | ✅ | app 外查词自动发音走 libmpv 慢路径且失败被静默吞掉 |
+| [BUG-1126](bugs/BUG-1126-video-episode-panel-missing-covers.md) | ✅ | ✅ | 视频剧集侧栏只传标题导致本地与互联封面全部丢失 |
+| [BUG-1125](bugs/BUG-1125-home-video-sanitize-missing-backslash.md) | ✅ | ✅ | home-video-sanitize-missing-backslash |
+| [BUG-1124](bugs/BUG-1124-local-audio-cache-weak-hash.md) | ✅ | ✅ | local-audio-cache-weak-hash |
+| [BUG-1123](bugs/BUG-1123-video-error-copy-says-bookshelf.md) | ✅ | ✅ | video-error-copy-says-bookshelf |
+| [BUG-1122](bugs/BUG-1122-sync-webp-octet-stream.md) | ✅ | ✅ | sync-webp-octet-stream |
+| [BUG-1121](bugs/BUG-1121-bmp-manga-ocr-skipped.md) | ✅ | ✅ | bmp-manga-ocr-skipped |
+| [BUG-1120](bugs/BUG-1120-favorite-sentence-kind-downcast.md) | ✅ | ✅ | favorite-sentence-kind-downcast |
+| [BUG-1119](bugs/BUG-1119-remote-continue-kind-downcast.md) | ✅ | ✅ | remote-continue-kind-downcast |
+| [BUG-1118](bugs/BUG-1118-scrape-cover-cache-not-evicted.md) | ✅ | ✅ | scrape-cover-cache-not-evicted |
+| [BUG-1117](bugs/BUG-1117-video-import-swallowed-errors.md) | ✅ | ✅ | 视频导入四方法 try/finally 无 catch：异常静默逃逸，用户只见 spinner 停住 |
+| [BUG-1116](bugs/BUG-1116-reader-settings-prefcodec-one-way.md) | ✅ | ✅ | reader-settings-prefcodec-one-way |
+| [BUG-1115](bugs/BUG-1115-default-documents-root-flat.md) | ✅ | ✅ | 默认数据根时 16 个 Hibiki 目录直接摊在用户文档根下 |
 | [BUG-1114](bugs/BUG-1114-local-rig-rate-limit-flake.md) | 🚧 | 🚧 | 内置引擎本地 rig 测试：限速对 loopback peer 不生效导致 peer 观察窗口消失（flaky） |
 | [BUG-1113](bugs/BUG-1113-galgame-no-tags.md) | 🚧 | 🚧 | 游戏没有标签：schema 缺 GalgameTagMappings 表 |
 | [BUG-1112](bugs/BUG-1112-activity-timeline-game-no-cover.md) | ✅ | ✅ | 活动时间轴游戏条目只有图标没有封面 |

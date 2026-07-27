@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/tls/hibiki_tls_identity.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
@@ -60,7 +60,7 @@ void main() {
   });
 
   test('带正确指纹 + 正确 token → 测试连接成功（不抛）', () async {
-    await HibikiClientSyncBackend.instance.testConnection(
+    await InterconnectSyncBackend.instance.testConnection(
       url: baseUrl,
       token: token,
       fingerprint: identity.fingerprintSha256,
@@ -69,7 +69,7 @@ void main() {
 
   test('漏传指纹（旧行为）→ 自签 TLS 握手失败（回归守卫）', () async {
     await expectLater(
-      HibikiClientSyncBackend.instance.testConnection(
+      InterconnectSyncBackend.instance.testConnection(
         url: baseUrl,
         token: token,
         // fingerprint 省略：裸 client 不接受自签证书 → 握手失败。
@@ -81,7 +81,7 @@ void main() {
 
   test('指纹对但 token 错 → 鉴权失败（钉扎不放水鉴权）', () async {
     await expectLater(
-      HibikiClientSyncBackend.instance.testConnection(
+      InterconnectSyncBackend.instance.testConnection(
         url: baseUrl,
         token: 'wrong-token',
         fingerprint: identity.fingerprintSha256,

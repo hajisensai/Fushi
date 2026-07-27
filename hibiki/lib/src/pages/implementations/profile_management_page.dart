@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hibiki_core/hibiki_core.dart' show ProfileMediaKind;
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/models/app_model.dart';
@@ -90,31 +91,31 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
           children: [
             _buildMediaTypeRow(
               t.profile_media_epub,
-              'epub',
+              ProfileMediaKind.epub,
               uiState,
               vm,
             ),
             _buildMediaTypeRow(
               t.profile_media_srtbook,
-              'srtbook',
+              ProfileMediaKind.srtbook,
               uiState,
               vm,
             ),
             _buildMediaTypeRow(
               t.profile_media_audiobook,
-              'audiobook',
+              ProfileMediaKind.audiobook,
               uiState,
               vm,
             ),
             _buildMediaTypeRow(
               t.profile_media_lyrics,
-              'lyrics',
+              ProfileMediaKind.lyrics,
               uiState,
               vm,
             ),
             _buildMediaTypeRow(
               t.profile_media_video,
-              'video',
+              ProfileMediaKind.video,
               uiState,
               vm,
             ),
@@ -222,11 +223,11 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
 
   Widget _buildMediaTypeRow(
     String label,
-    String mediaType,
+    ProfileMediaKind mediaType,
     ProfileUiState uiState,
     ProfileViewModel vm,
   ) {
-    final boundId = uiState.mediaTypeBindings[mediaType];
+    final boundId = uiState.mediaTypeBindings[mediaType.dbValue];
     return AdaptiveSettingsPickerRow<int?>(
       title: label,
       selected: boundId,
@@ -329,8 +330,7 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
 
   /// 文件名安全化：去掉路径分隔符与控制字符，保证可落盘。
   String _sanitizeFileName(String name) {
-    final String cleaned =
-        name.replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), '_').trim();
+    final String cleaned = safeWindowsFileName(name).trim();
     return cleaned.isEmpty ? 'profile' : cleaned;
   }
 

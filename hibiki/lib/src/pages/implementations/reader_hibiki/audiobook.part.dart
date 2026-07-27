@@ -128,7 +128,7 @@ List<int> imageOnlyChaptersToPauseBetween({
 extension _ReaderAudiobook on _ReaderHibikiPageState {
   Future<void> _resolveAndApplyProfile(
     HibikiDatabase db, {
-    String? mediaTypeOverride,
+    ProfileMediaKind? mediaTypeOverride,
   }) async {
     try {
       final ProfileRepository profileRepo = ref.read(profileRepositoryProvider);
@@ -137,18 +137,18 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
 
       final String bookKey = widget.bookKey;
 
-      String mediaType;
+      ProfileMediaKind mediaType;
       if (mediaTypeOverride != null) {
         mediaType = mediaTypeOverride;
       } else {
-        mediaType = 'epub';
+        mediaType = ProfileMediaKind.epub;
         final abRow = await db.getAudiobookByBookKey(bookKey);
         if (abRow != null) {
-          mediaType = 'audiobook';
+          mediaType = ProfileMediaKind.audiobook;
         } else {
           final srtRow = await db.getSrtBookByBookKey(bookKey);
           if (srtRow != null) {
-            mediaType = 'srtbook';
+            mediaType = ProfileMediaKind.srtbook;
           }
         }
       }

@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:hibiki/src/media/video/video_shader_downloader.dart';
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
+import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
 
 /// mpv 着色器内嵌管理视图：导入 `.glsl`/`.hook`、从本机 mpv 发现导入、一键下载
@@ -66,7 +67,8 @@ class VideoShaderManagerView extends StatefulWidget {
   State<VideoShaderManagerView> createState() => _VideoShaderManagerViewState();
 }
 
-class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
+class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
+    with HibikiPagePlaceholders<VideoShaderManagerView> {
   late final Set<String> _enabled = widget.initialEnabled.toSet();
   late String _mpvDir = widget.initialMpvDir;
   List<String> _files = const <String>[];
@@ -341,10 +343,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const SizedBox(
-        height: 80,
-        child: Center(child: CircularProgressIndicator()),
-      );
+      return SizedBox(height: 80, child: buildLoading());
     }
     final List<Widget> installedRows = _files.isEmpty
         ? <Widget>[

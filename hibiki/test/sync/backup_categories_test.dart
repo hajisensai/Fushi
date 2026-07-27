@@ -13,7 +13,7 @@ import 'sync_settings_schema_source_corpus.dart';
 import 'temp_dir_cleanup.dart';
 
 /// TODO-106/TODO-249: the export dialog lets the user pick which sidecar trees
-/// travel in the backup. [BackupService.exportBackup]'s [categories] param
+/// travel in the backup. [BackupService.createBackup]'s [categories] param
 /// is the contract: a null set packs everything (legacy all-in export); a
 /// non-null set packs ONLY the listed trees. The db is always packed.
 void main() {
@@ -198,7 +198,7 @@ void main() {
   test('null categories packs every tree (legacy all-in export)', () async {
     final built = await buildFullSource();
     final zip = p.join(src.path, 'all.zip');
-    final meta = await built.service.exportBackup(zip);
+    final meta = await built.service.createBackup(zip);
     await built.db.close();
 
     final archive = await readZip(zip);
@@ -222,7 +222,7 @@ void main() {
       () async {
     final built = await buildFullSource();
     final zip = p.join(src.path, 'books_only.zip');
-    final meta = await built.service.exportBackup(
+    final meta = await built.service.createBackup(
       zip,
       categories: {BackupCategory.books},
     );
@@ -249,7 +249,7 @@ void main() {
   test('empty category set packs db only (every tree excluded)', () async {
     final built = await buildFullSource();
     final zip = p.join(src.path, 'db_only.zip');
-    await built.service.exportBackup(zip, categories: <BackupCategory>{});
+    await built.service.createBackup(zip, categories: <BackupCategory>{});
     await built.db.close();
 
     final archive = await readZip(zip);
@@ -268,7 +268,7 @@ void main() {
       () async {
     final built = await buildFullSource();
     final zip = p.join(src.path, 'videos.zip');
-    await built.service.exportBackup(zip, categories: {BackupCategory.videos});
+    await built.service.createBackup(zip, categories: {BackupCategory.videos});
     await built.db.close();
 
     final Archive archive = await readZip(zip);
@@ -289,7 +289,7 @@ void main() {
     final String dstVideos = p.join(dst.path, 'videos');
     Directory(dstDbDir).createSync(recursive: true);
 
-    await BackupService.importBackupFiles(
+    await BackupService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zip,
       videosRootDirectory: dstVideos,
@@ -318,7 +318,7 @@ void main() {
       'intact and does not crash', () async {
     final built = await buildFullSource();
     final zip = p.join(src.path, 'books_only.zip');
-    await built.service.exportBackup(zip, categories: {BackupCategory.books});
+    await built.service.createBackup(zip, categories: {BackupCategory.books});
     await built.db.close();
 
     // Destination already has an audiobook tree that must survive a books-only
@@ -329,7 +329,7 @@ void main() {
     Directory(dstDbDir).createSync(recursive: true);
     await writeFile(p.join(dstAudio, 'keep', 'kept.mp3'), 'KEEP');
 
-    await BackupService.importBackupFiles(
+    await BackupService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zip,
       booksRootDirectory: dstBooks,
@@ -373,7 +373,7 @@ void main() {
 
   // Source guards: the export UI must (1) gate behind a category picker that
   // (2) keeps existing categories selected but leaves videos opt-in because
-  // they are usually huge, and (3) forward the chosen set to exportBackup.
+  // they are usually huge, and (3) forward the chosen set to createBackup.
   test('export UI wires the category picker with video opt-in default', () {
     // TODO-585: 导出 widget 现住 sync_settings_schema/backup.part.dart；
     // 读合并语料而不是单文件。
@@ -398,11 +398,11 @@ void main() {
       reason: 'local audio databases must be an explicit opt-in (TODO-941)',
     );
     expect(src.contains('categories: categories'), isTrue,
-        reason: 'the chosen set must be forwarded to exportBackup');
+        reason: 'the chosen set must be forwarded to createBackup');
   });
 
   // TODO-1195 part A: the export UI must offer a per-book picker and forward the
-  // chosen book_keys to exportBackup (dormant null = full export).
+  // chosen book_keys to createBackup (dormant null = full export).
   test('export UI wires the per-book selection picker', () {
     final String src = readSyncSettingsSchemaSource();
     expect(src.contains('_pickBooks('), isTrue,
@@ -410,7 +410,7 @@ void main() {
     expect(src.contains('_selectedBookKeys'), isTrue,
         reason: 'the picked set must be held on the widget state');
     expect(src.contains('bookKeys:'), isTrue,
-        reason: 'the chosen books must be forwarded to exportBackup');
+        reason: 'the chosen books must be forwarded to createBackup');
   });
 
   test(
@@ -450,7 +450,7 @@ void main() {
     );
     final String zip = p.join(src.path, 'la.zip');
     final BackupMeta meta = await service
-        .exportBackup(zip, categories: {BackupCategory.localAudio});
+        .createBackup(zip, categories: {BackupCategory.localAudio});
     await db.close();
 
     final Archive archive = await readZip(zip);
@@ -471,7 +471,7 @@ void main() {
     // be rebased and the files must land flat alongside the new hibiki.db.
     final String dstDbDir = p.join(dst.path, 'db');
     Directory(dstDbDir).createSync(recursive: true);
-    await BackupService.importBackupFiles(
+    await BackupService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zip,
     );
@@ -503,7 +503,7 @@ void main() {
     // Source: books-only backup (no localAudio prefix).
     final built = await buildFullSource();
     final String zip = p.join(src.path, 'books_only.zip');
-    await built.service.exportBackup(zip, categories: {BackupCategory.books});
+    await built.service.createBackup(zip, categories: {BackupCategory.books});
     await built.db.close();
 
     // Destination already has a local-audio DB + matching pref that must
@@ -516,7 +516,7 @@ void main() {
     // Seed the device pref BEFORE the import overwrites the DB. The overwrite
     // import keeps the backup's preferences, so this exercises only the FILE
     // preservation (the file must not be deleted by the import).
-    await BackupService.importBackupFiles(
+    await BackupService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zip,
       booksRootDirectory: dstBooks,
@@ -533,7 +533,7 @@ void main() {
     final built = await buildFullSource();
     final zip = p.join(src.path, 'no_books.zip');
     // Everything EXCEPT books.
-    final meta = await built.service.exportBackup(zip, categories: {
+    final meta = await built.service.createBackup(zip, categories: {
       BackupCategory.dictionary,
       BackupCategory.audiobooks,
       BackupCategory.fonts,
@@ -557,13 +557,13 @@ void main() {
   test('merge-importing a books-excluded backup adds no ghost books', () async {
     final built = await buildFullSource();
     final zip = p.join(src.path, 'no_books.zip');
-    await built.service.exportBackup(zip, categories: {BackupCategory.fonts});
+    await built.service.createBackup(zip, categories: {BackupCategory.fonts});
     await built.db.close();
 
     final String dstDbDir = p.join(dst.path, 'db');
     Directory(dstDbDir).createSync(recursive: true);
     // Fresh device with no books → the backup must not add any un-openable book.
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zip,
     );
@@ -615,7 +615,7 @@ void main() {
       booksRootDirectory: books,
     );
     final String zip = p.join(src.path, 'onebook.zip');
-    final BackupMeta meta = await service.exportBackup(
+    final BackupMeta meta = await service.createBackup(
       zip,
       categories: {BackupCategory.books},
       bookKeys: {'Keep'},
@@ -644,7 +644,7 @@ void main() {
     final built = await buildFullSource();
     final String zip = p.join(src.path, 'allbooks.zip');
     // buildFullSource has exactly one book 'Bk'.
-    final BackupMeta meta = await built.service.exportBackup(
+    final BackupMeta meta = await built.service.createBackup(
       zip,
       categories: {BackupCategory.books},
       bookKeys: {'Bk'},
@@ -672,7 +672,7 @@ void main() {
     final built = await buildDataSource();
     final zip = p.join(src.path, 'no_progress.zip');
     await built.service
-        .exportBackup(zip, categories: allExcept(BackupCategory.progress));
+        .createBackup(zip, categories: allExcept(BackupCategory.progress));
     await built.db.close();
 
     final HibikiDatabase db = await openBackupDb(zip, dst);
@@ -694,7 +694,7 @@ void main() {
     final built = await buildDataSource();
     final zip = p.join(src.path, 'no_stats.zip');
     await built.service
-        .exportBackup(zip, categories: allExcept(BackupCategory.statistics));
+        .createBackup(zip, categories: allExcept(BackupCategory.statistics));
     await built.db.close();
 
     final HibikiDatabase db = await openBackupDb(zip, dst);
@@ -712,7 +712,7 @@ void main() {
     final built = await buildDataSource();
     final zip = p.join(src.path, 'no_settings.zip');
     await built.service
-        .exportBackup(zip, categories: allExcept(BackupCategory.settings));
+        .createBackup(zip, categories: allExcept(BackupCategory.settings));
     await built.db.close();
 
     final HibikiDatabase db = await openBackupDb(zip, dst);
@@ -735,7 +735,7 @@ void main() {
     final built = await buildDataSource();
     final zip = p.join(src.path, 'no_profiles.zip');
     await built.service
-        .exportBackup(zip, categories: allExcept(BackupCategory.profiles));
+        .createBackup(zip, categories: allExcept(BackupCategory.profiles));
     await built.db.close();
 
     final HibikiDatabase db = await openBackupDb(zip, dst);
@@ -757,7 +757,7 @@ void main() {
       () async {
     final built = await buildDataSource();
     final zip = p.join(src.path, 'no_set_prof.zip');
-    await built.service.exportBackup(zip,
+    await built.service.createBackup(zip,
         categories: BackupCategory.values.toSet()
           ..remove(BackupCategory.settings)
           ..remove(BackupCategory.profiles));
@@ -771,7 +771,7 @@ void main() {
         name: 'LocalProfile', createdAt: 9, updatedAt: 9));
     await local.close();
 
-    await BackupService.importBackupFiles(
+    await BackupService.restoreBackup(
       dbDirectory: dstDbDir,
       zipPath: zip,
     );
@@ -797,7 +797,7 @@ void main() {
       'backup settings (preserve does NOT trigger)', () async {
     final built = await buildDataSource();
     final zip = p.join(src.path, 'full.zip');
-    await built.service.exportBackup(zip);
+    await built.service.createBackup(zip);
     await built.db.close();
 
     final String dstDbDir = p.join(dst.path, 'db');
@@ -806,7 +806,7 @@ void main() {
     await local.setPref('theme_mode', 'local_dark');
     await local.close();
 
-    await BackupService.importBackupFiles(dbDirectory: dstDbDir, zipPath: zip);
+    await BackupService.restoreBackup(dbDirectory: dstDbDir, zipPath: zip);
 
     final HibikiDatabase restored = HibikiDatabase(dstDbDir);
     try {
@@ -839,7 +839,7 @@ void main() {
         collectionType: 'collection',
         mediaType: 'epub',
         entryKey: 'X',
-        removedAt: 1);
+        deletedAt: 1);
   }
 
   test(
@@ -848,7 +848,7 @@ void main() {
     final built = await buildDataSource();
     await seedOrphanRows(built.db);
     final zip = p.join(src.path, 'all_in_orphans.zip');
-    await built.service.exportBackup(zip); // null = every category
+    await built.service.createBackup(zip); // null = every category
     await built.db.close();
 
     final HibikiDatabase db = await openBackupDb(zip, dst);
@@ -872,7 +872,7 @@ void main() {
     await seedOrphanRows(built.db);
     final zip = p.join(src.path, 'no_content_orphans.zip');
     // Every content category unticked (the "dictionary + audio only" shape).
-    await built.service.exportBackup(zip, categories: <BackupCategory>{});
+    await built.service.createBackup(zip, categories: <BackupCategory>{});
     await built.db.close();
 
     final HibikiDatabase db = await openBackupDb(zip, dst);
@@ -896,7 +896,7 @@ void main() {
     await full.db.addToCollection(fcid, MediaKind.srt, 'ghost_srt');
     await full.db.upsertShelfOrder(MediaKind.srt, 'ghost_srt', 0);
     final fzip = p.join(src.path, 'srt_full.zip');
-    await full.service.exportBackup(fzip);
+    await full.service.createBackup(fzip);
     await full.db.close();
     final HibikiDatabase fdb = await openBackupDb(fzip, dst);
     try {
@@ -913,7 +913,7 @@ void main() {
     await none.db.addToCollection(ncid, MediaKind.srt, 'ghost_srt');
     await none.db.upsertShelfOrder(MediaKind.srt, 'ghost_srt', 0);
     final nzip = p.join(src.path, 'srt_none.zip');
-    await none.service.exportBackup(nzip, categories: <BackupCategory>{});
+    await none.service.createBackup(nzip, categories: <BackupCategory>{});
     await none.db.close();
     final HibikiDatabase ndb = await openBackupDb(nzip, dst);
     try {
@@ -935,7 +935,7 @@ void main() {
     final int tid = await built.db.createTag('Genre', 0xFF445566);
     await built.db.addTagToCollection(cid, tid);
     final zip = p.join(src.path, 'tagonly.zip');
-    await built.service.exportBackup(zip);
+    await built.service.createBackup(zip);
     await built.db.close();
 
     final HibikiDatabase db = await openBackupDb(zip, dst);
@@ -968,7 +968,7 @@ void main() {
     final built = await buildDataSource();
     await seedHistoryAndSources(built.db);
     final zip = p.join(src.path, 'bug832_full.zip');
-    await built.service.exportBackup(zip);
+    await built.service.createBackup(zip);
     await built.db.close();
 
     final HibikiDatabase db = await openBackupDb(zip, dst);
@@ -988,7 +988,7 @@ void main() {
     final built = await buildDataSource();
     await seedHistoryAndSources(built.db);
     final zip = p.join(src.path, 'bug832_none.zip');
-    await built.service.exportBackup(zip, categories: <BackupCategory>{});
+    await built.service.createBackup(zip, categories: <BackupCategory>{});
     await built.db.close();
 
     final HibikiDatabase db = await openBackupDb(zip, dst);
@@ -1008,7 +1008,7 @@ void main() {
     await seedHistoryAndSources(built.db);
     final zip = p.join(src.path, 'bug832_novideo.zip');
     await built.service
-        .exportBackup(zip, categories: allExcept(BackupCategory.videos));
+        .createBackup(zip, categories: allExcept(BackupCategory.videos));
     await built.db.close();
 
     final HibikiDatabase db = await openBackupDb(zip, dst);
@@ -1029,7 +1029,7 @@ void main() {
     final built = await buildDataSource();
     await seedOrphanRows(built.db);
     final zip = p.join(src.path, 'orphans_kept.zip');
-    await built.service.exportBackup(zip); // book 'Bk' travels
+    await built.service.createBackup(zip); // book 'Bk' travels
     await built.db.close();
 
     final HibikiDatabase db = await openBackupDb(zip, dst);
@@ -1054,7 +1054,7 @@ void main() {
     // Book excluded → 'Bk' is stripped → its membership/shelf/tag mapping go,
     // the now-empty collection is dropped, and the orphaned tag pool row too.
     await built.service
-        .exportBackup(zip, categories: allExcept(BackupCategory.books));
+        .createBackup(zip, categories: allExcept(BackupCategory.books));
     await built.db.close();
 
     final HibikiDatabase db = await openBackupDb(zip, dst);

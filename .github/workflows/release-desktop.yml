@@ -12,6 +12,9 @@ on:
     paths:
       - 'hibiki/**'
       - 'packages/**'
+      # C ABI bridge 源码：只改 native/ 的 PR 以前触发不了任何构建，
+      # 编译挂了要等下一个不相关改动才暴露。
+      - 'native/**'
       - 'ci/**'
       - 'tool/**'
       - 'third_party/**'
@@ -324,6 +327,25 @@ jobs:
           flutter build windows --release
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
+      - name: Build and bundle galgame helper archives
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/build_distribution.ps1 -RunTests
+          $sourceDir = Join-Path $PWD 'native\galgame_hook\dist'
+          $targetDir = Join-Path $PWD 'hibiki\build\windows\x64\runner\Release\galgame_helper'
+          New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+          foreach ($file in @(
+            'voice_hook_x64.zip',
+            'voice_hook_x64.zip.sha256',
+            'voice_hook_x86.zip',
+            'voice_hook_x86.zip.sha256'
+          )) {
+            $source = Join-Path $sourceDir $file
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+              throw "Missing bundled galgame helper asset: $source"
+            }
+            Copy-Item -LiteralPath $source -Destination (Join-Path $targetDir $file) -Force
+          }
       # ffmpeg.exe and its MinGW runtime DLLs are vendored at
       # third_party/ffmpeg-min/windows/
       # (TODO-416). It used to be fetched from another workflow's build artifact,

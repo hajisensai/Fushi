@@ -159,7 +159,22 @@ SettingsDestination buildLookupDestination() {
           // 定义（互联音频源 hibikiRemote 就在该对话框里管，故互联分类也提供入口）。
           buildManageAudioSourcesItem(),
           // 浏览器扩展「安装助手」已独立成桌面专属顶层页（BrowserExtensionPage，仅桌面
-          // 出现），不再埋在查词设置里；那里除安装引导外还有连接检测与版本信息。
+          // 出现），复杂正文（安装引导 + 连接检测 + 版本信息）不再埋在查词设置里；这里
+          // 保留一条可搜索的导航项直达该页（审计 K：独立成页后设置搜索完全搜不到它）。
+          SettingsNavigationItem(
+            id: 'lookup.browser_extension',
+            title: t.nav_browser_extension,
+            icon: Icons.extension_outlined,
+            showIcon: true,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop,
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const BrowserExtensionPage(),
+              );
+            },
+          ),
         ],
       ),
       // 原「查词行为」19+ 项平铺长列表，按职责拆为四组：查词触发 / 外部集成 /
@@ -1001,25 +1016,25 @@ SettingsDestination buildLookupDestination() {
           // Windows-only —— galgame hook 与 Magpie 都只做 Windows（见根 CLAUDE.md）。
           SettingsSegmentedItem<MagpieUpscalingMode>(
             id: 'lookup.galgame_upscaling',
-            title: t.galgame_upscaling,
-            subtitle: t.galgame_upscaling_hint,
+            title: t.game_upscaling,
+            subtitle: t.game_upscaling_hint,
             icon: Icons.aspect_ratio_outlined,
             visible: (SettingsContext settingsContext) => Platform.isWindows,
             options: <SettingsSegmentOption<MagpieUpscalingMode>>[
               SettingsSegmentOption<MagpieUpscalingMode>(
                 value: MagpieUpscalingMode.auto,
-                label: t.galgame_upscaling_auto,
-                tooltip: t.galgame_upscaling_auto,
+                label: t.game_upscaling_auto,
+                tooltip: t.game_upscaling_auto,
               ),
               SettingsSegmentOption<MagpieUpscalingMode>(
                 value: MagpieUpscalingMode.installedOnly,
-                label: t.galgame_upscaling_installed_only,
-                tooltip: t.galgame_upscaling_installed_only,
+                label: t.game_upscaling_installed_only,
+                tooltip: t.game_upscaling_installed_only,
               ),
               SettingsSegmentOption<MagpieUpscalingMode>(
                 value: MagpieUpscalingMode.off,
-                label: t.galgame_upscaling_off,
-                tooltip: t.galgame_upscaling_off,
+                label: t.game_upscaling_off,
+                tooltip: t.game_upscaling_off,
               ),
             ],
             selected: (SettingsContext settingsContext) =>

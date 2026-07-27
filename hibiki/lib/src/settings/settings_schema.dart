@@ -4,6 +4,7 @@ import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_schema_appearance.dart';
 import 'package:hibiki/src/settings/settings_schema_card_creation.dart';
 import 'package:hibiki/src/settings/settings_schema_downloads.dart';
+import 'package:hibiki/src/settings/settings_schema_game.dart';
 import 'package:hibiki/src/settings/settings_schema_listening.dart';
 import 'package:hibiki/src/settings/settings_schema_lookup.dart';
 import 'package:hibiki/src/settings/settings_schema_tracking.dart';
@@ -17,7 +18,8 @@ import 'package:hibiki/utils.dart';
 List<SettingsDestination> buildSettingsSchema(SettingsContext context) {
   // 四块分层排序（用户拍板，取代阶段 G 的纯任务优先排序）——块内相关项相邻：
   // ① 外观：全局界面，装完 app 第一批要调的，置顶。
-  // ② 内容：阅读 → 听书（同一本书的两面）→ 视频 → 下载（torrent/番剧，喂视频库）。
+  // ② 内容：阅读 → 听书（同一本书的两面）→ 视频 → 下载（torrent/番剧，喂视频库）
+  //   → 游戏（galgame 库/捕获，仅 Windows 可见）。
   // ③ 横切工具：查词 → 制卡（阅读/视频/galgame/扩展共用一套查词弹窗；制卡依赖查词）。
   // ④ 数据与设备：Profile（上述设置的快照）→ 同步备份 → 互联；「系统」惯例殿后。
   return <SettingsDestination>[
@@ -28,6 +30,9 @@ List<SettingsDestination> buildSettingsSchema(SettingsContext context) {
     buildMediaTrackingDestination(),
     // 「下载」大类：内联既有 torrent 设置组件（详见 buildDownloadsDestination）。
     buildDownloadsDestination(),
+    // 「游戏」大类：游戏库 / 捕获工作台 / 诊断的可搜导航入口（仅 Windows，详见
+    // buildGameDestination）。
+    buildGameDestination(),
     buildLookupDestination(),
     buildCardCreationDestination(),
     buildProfilesDestination(),

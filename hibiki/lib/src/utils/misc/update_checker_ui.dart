@@ -1,26 +1,14 @@
 part of 'update_checker.dart';
 
+/// G4 收敛：算法本体移入 [HibikiByteFormat]（本函数曾是全仓 7 份手写副本的基底），
+/// 这里保留同名薄委托，既有调用点/测试零改动。
 @visibleForTesting
-String formatUpdateDownloadByteCount(int? bytes) {
-  if (bytes == null) return '—';
-  if (bytes.abs() < 1024) return '$bytes B';
-
-  const List<String> units = <String>['B', 'KB', 'MB', 'GB'];
-  var value = bytes.toDouble();
-  var unitIndex = 0;
-  while (value.abs() >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  return '${value.toStringAsFixed(1)} ${units[unitIndex]}';
-}
+String formatUpdateDownloadByteCount(int? bytes) =>
+    HibikiByteFormat.bytes(bytes);
 
 @visibleForTesting
-String formatUpdateDownloadSpeed(double? bytesPerSecond) {
-  if (bytesPerSecond == null || !bytesPerSecond.isFinite) return '—';
-  if (bytesPerSecond < 0) return '—';
-  return '${formatUpdateDownloadByteCount(bytesPerSecond.round())}/s';
-}
+String formatUpdateDownloadSpeed(double? bytesPerSecond) =>
+    HibikiByteFormat.speed(bytesPerSecond);
 
 @visibleForTesting
 double? updateDownloadBytesPerSecond({

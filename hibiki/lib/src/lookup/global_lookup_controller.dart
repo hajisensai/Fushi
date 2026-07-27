@@ -36,7 +36,8 @@ import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
-import 'package:hibiki/src/utils/misc/tts_channel.dart';
+import 'package:hibiki_core/hibiki_core.dart'
+    show kStatSourceBook, mimeTypeForFilePath;
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:path/path.dart' as p;
@@ -859,6 +860,25 @@ class GlobalLookupController {
       _onOverlayResized(message);
       return;
     }
+    // BUG-1127 — 浮窗 iframe realm 回报自动发音 `audio.play()` 真实结果
+    // （args = [token, ok]，host 包裹桥盖 __frameId 后原样转发）。完成对应
+    // pending Completer；过期 token（已超时回落）直接忽略。
+    if (handler == 'wordAudioPlayed') {
+      final Object? args = message['args'];
+      if (args is List && args.length >= 2) {
+        final Object? rawToken = args[0];
+        final int? token =
+            rawToken is num ? rawToken.toInt() : int.tryParse('$rawToken');
+        if (token != null) {
+          final Completer<bool>? completer =
+              _pendingWordAudioPlays.remove(token);
+          if (completer != null && !completer.isCompleted) {
+            completer.complete(args[1] == true);
+          }
+        }
+      }
+      return;
+    }
     // 瞬态 root 卡🕘：从 DB 重载复制历史（主进程采集写入）并注入覆盖层。
     if (handler == 'clipboardHistory') {
       unawaited(_showClipboardHistory());
@@ -1047,9 +1067,11 @@ class GlobalLookupController {
   }
 
   /// 全局查词查到词后，按用户「自动朗读」(autoReadOnLookup) 偏好自动发音。
-  /// 复用主 Dart 查词链路同一去重协调器 (LookupAutoReadCoordinator)，播放走 overlay
-  /// 已有的两步音频桥 (resolveLookupAudioUrl -> TtsChannel.playAudioRef)，与手动 ♪
-  /// 按钮 (_handleAudioBridge) 同一解析/播放路径，不另起 playLookupAudio 绕过 overlay 桥。
+  /// 复用主 Dart 查词链路同一去重协调器 (LookupAutoReadCoordinator)，播放走与
+  /// in-app 相同的统一契约 autoReadWordUnified（BUG-1127）：优先驱动浮窗自己的
+  /// HTML5 `<audio>` 快路径（与手动 ♪ 同一 popup.js playWordAudio，桌面不再每播
+  /// 一次 libmpv stop→load→play），播放结果经 wordAudioPlayed 桥真实回报，失败/
+  /// 超时回落 Dart 播放器（受 BUG-1015 warmUp 保护），绝不静默丢发音。
   void _autoReadFirstEntry(AppModel model, DictionarySearchResult result) {
     if (!ReaderHibikiSource.instance.autoReadOnLookup) {
       return;
@@ -1070,19 +1092,61 @@ class GlobalLookupController {
     ));
   }
 
-  /// overlay 音频桥的两步：解析配置源 URL，再用 overlay 同一播放器播放（与
-  /// _handleAudioBridge 的 resolveWordAudio/playWordAudio 逐步一致）。
-  Future<void> _playWordAudio(
-      AppModel model, String expression, String reading) async {
-    final String? url = await resolveLookupAudioUrl(model, expression, reading);
-    glog('autoread: resolved url=$url for "$expression"/"$reading"');
-    if (url == null || url.isEmpty) {
-      return;
+  /// 与 in-app _playAutoReadWord 同构：解析一次 ref，WebView 快路径优先、Dart
+  /// 播放器兜底（autoReadWordUnified 单一真相）。返回是否真的出声，供协调器在
+  /// 静默失败时释放 800ms 去重窗（BUG-1127）。
+  Future<bool> _playWordAudio(
+          AppModel model, String expression, String reading) =>
+      autoReadWordUnified(
+        model,
+        expression,
+        reading,
+        playInWebView: _playWordAudioUrlInOverlay,
+      );
+
+  /// popup.js 侧 `audio.play()` 结果最长等待（与 in-app
+  /// DictionaryPopupWebView._kWordAudioPlayReportTimeout 同值同语义）。
+  static const Duration _kWordAudioPlayReportTimeout = Duration(seconds: 5);
+
+  int _wordAudioPlayToken = 0;
+  final Map<int, Completer<bool>> _pendingWordAudioPlays =
+      <int, Completer<bool>>{};
+
+  /// BUG-1127 — 在浮窗常驻 ROOT iframe 的 popup.js realm 里播放已解析的 URL，
+  /// 回报 `audio.play()` 的真实结果（token + Completer + 5s 超时，镜像 in-app
+  /// DictionaryPopupWebView.playWordAudioUrl 的 BUG-1093 契约）。目标固定为
+  /// 稳定 root 帧（TODO-1095 常驻复用、启动即预热）：音频与 realm 无关，任何
+  /// 已加载 realm 都能播，root 恒暖故无冷 iframe 等待。false = WebView 没播成
+  /// （未就绪/JS 缺失/autoplay 拒绝/超时），调用方回落 Dart 播放器。
+  ///
+  /// 发送前用 isWebViewReady 门控：native 的 render 通道在 surface 未就绪时按
+  /// last-wins 缓存脚本，直接盲发会把挂起中的整栈渲染脚本顶掉（卡片永不出现）。
+  Future<bool> _playWordAudioUrlInOverlay(String url) async {
+    if (url.isEmpty) {
+      return false;
     }
-    await TtsChannel.instance.playAudioRef(
-      url,
-      volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
-    );
+    if (!await GlobalLookupChannel.isWebViewReady()) {
+      return false;
+    }
+    final int token = ++_wordAudioPlayToken;
+    final Completer<bool> completer = Completer<bool>();
+    _pendingWordAudioPlays[token] = completer;
+    try {
+      await GlobalLookupChannel.render(
+          buildPlayWordAudioScript(kGlobalLookupRootFrameId, url, token));
+      final bool ok =
+          await completer.future.timeout(_kWordAudioPlayReportTimeout);
+      glog('autoread: webview play token=$token ok=$ok');
+      return ok;
+    } on TimeoutException {
+      glog('autoread: webview play token=$token TIMEOUT');
+      return false;
+    } catch (e) {
+      glog('autoread: webview play token=$token EXCEPTION $e');
+      return false;
+    } finally {
+      _pendingWordAudioPlays.remove(token);
+    }
   }
 
   Future<void> _lookupNested(String query, Rect? anchorRect) async {
@@ -1470,26 +1534,11 @@ String _normalizeGlobalLookupMediaPath(String path) {
   return path.trim().replaceAll('\\', '/').replaceFirst(RegExp(r'^/+'), '');
 }
 
-/// Returns the image MIME type for [path]'s extension, mirroring the in-app
-/// `_mimeTypeForPath`.
-String _globalLookupImageMime(String path) {
-  final String ext = path.split('.').last.toLowerCase();
-  switch (ext) {
-    case 'png':
-      return 'image/png';
-    case 'jpg':
-    case 'jpeg':
-      return 'image/jpeg';
-    case 'gif':
-      return 'image/gif';
-    case 'webp':
-      return 'image/webp';
-    case 'svg':
-      return 'image/svg+xml';
-    default:
-      return 'application/octet-stream';
-  }
-}
+/// Returns the image MIME type for [path]'s extension.
+///
+/// 命名统一轮 G8：查 hibiki_core 单一 MIME 映射表 [mimeTypeForFilePath]（旧本地
+/// switch 副本之一），与 app 内 `dictionary_media_types.dart` 自动同源。
+String _globalLookupImageMime(String path) => mimeTypeForFilePath(path);
 
 /// Parses an overlay media [url] into (dictionary, path, contentType),
 /// scheme-aware, matching the in-app `dictionary_webview_media.dart` parsing

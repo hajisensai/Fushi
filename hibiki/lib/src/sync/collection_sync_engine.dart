@@ -472,7 +472,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(
         t.mediaType == HibikiDatabase.collectionTombstoneSentinel &&
             t.entryKey == HibikiDatabase.collectionTombstoneSentinel;
     if (isSentinel) {
-      deletedAtByKey[key] = t.removedAt;
+      deletedAtByKey[key] = t.deletedAt;
     } else {
       (memberTombsByKey[key] ??= <CollectionMemberTombstoneRow>[]).add(t);
     }
@@ -515,14 +515,14 @@ Future<CollectionManifest> loadLocalCollectionManifest(
       memberTombstones: <CollectionMemberTombstone>[
         for (final CollectionMemberTombstoneRow t
             in memberTombsByKey[key] ?? const <CollectionMemberTombstoneRow>[])
-          // 空键 / 负 removedAt 是脏数据：跳过（对端 codec 会拒之）。
+          // 空键 / 负 deletedAt 是脏数据：跳过（对端 codec 会拒之）。
           if (t.mediaType.isNotEmpty &&
               t.entryKey.isNotEmpty &&
-              t.removedAt >= 0)
+              t.deletedAt >= 0)
             CollectionMemberTombstone(
               mediaType: t.mediaType,
               entryKey: t.entryKey,
-              removedAt: t.removedAt,
+              removedAt: t.deletedAt,
             ),
       ],
       tagNames: <String>[for (final BookTagRow t in rowTags) t.name],
@@ -553,11 +553,11 @@ Future<CollectionManifest> loadLocalCollectionManifest(
                   in memberTombsByKey[key]!)
                 if (t.mediaType.isNotEmpty &&
                     t.entryKey.isNotEmpty &&
-                    t.removedAt >= 0)
+                    t.deletedAt >= 0)
                   CollectionMemberTombstone(
                     mediaType: t.mediaType,
                     entryKey: t.entryKey,
-                    removedAt: t.removedAt,
+                    removedAt: t.deletedAt,
                   ),
             ],
     ));
@@ -592,7 +592,7 @@ Future<int> applyCollectionLocalChanges(
             collectionType: e.collectionType,
             mediaType: HibikiDatabase.collectionTombstoneSentinel,
             entryKey: HibikiDatabase.collectionTombstoneSentinel,
-            removedAt: e.deletedAt!,
+            deletedAt: e.deletedAt!,
           ),
         ]);
         continue;
@@ -640,7 +640,7 @@ Future<int> applyCollectionLocalChanges(
             collectionType: e.collectionType,
             mediaType: t.mediaType,
             entryKey: t.entryKey,
-            removedAt: t.removedAt,
+            deletedAt: t.removedAt,
           ),
       ]);
     }

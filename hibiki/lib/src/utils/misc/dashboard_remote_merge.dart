@@ -13,7 +13,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// 纯 Dart 无 IO，便于单测。
 class RemoteContinueCandidate {
   const RemoteContinueCandidate({
-    required this.isVideo,
+    required this.kind,
     required this.id,
     required this.title,
     required this.recentMs,
@@ -22,7 +22,14 @@ class RemoteContinueCandidate {
     this.collectionName,
   });
 
-  final bool isVideo;
+  /// 远端条目的媒体种类（BUG-1119：此前是 `bool isVideo` 二元降维，SRT 书会被
+  /// 当成 epub、第三种媒体结构上装不下——与 BUG-1111 本地侧同病）。书清单侧是
+  /// host additive wire 字段 `'kind'` 的落点（旧 host 缺失 → epub），视频清单
+  /// 天然 video。
+  final MediaKind kind;
+
+  /// 派生便捷判据（旧消费点零改动）。
+  bool get isVideo => kind == MediaKind.video;
 
   /// 稳定身份：书=downloadId（bookKey 或 title），视频=bookUid。远端封面磁盘
   /// 缓存键 + 去重键。
@@ -57,7 +64,7 @@ List<RemoteContinueCandidate> remoteContinueCandidates({
     if (b.progressPercent <= 0 || b.progressPercent >= 100) continue;
     if (localBookKeys.contains(b.downloadId)) continue;
     out.add(RemoteContinueCandidate(
-      isVideo: false,
+      kind: b.kind,
       id: b.downloadId,
       title: b.title,
       recentMs: b.progressUpdatedAtMs,
@@ -70,7 +77,7 @@ List<RemoteContinueCandidate> remoteContinueCandidates({
     if (v.positionMs <= 0) continue;
     if (localVideoUids.contains(v.id)) continue;
     out.add(RemoteContinueCandidate(
-      isVideo: true,
+      kind: MediaKind.video,
       id: v.id,
       title: v.title,
       recentMs: v.positionUpdatedAtMs,

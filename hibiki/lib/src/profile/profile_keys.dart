@@ -68,7 +68,6 @@ class ProfileKeys {
 
   static const List<String> _excludedPrefPrefixes = [
     'current_source/',
-    'audio_index/',
     // BUG-1019: per-book audiobook playback STATE lives in prefs
     // (`audiobook_<kind>_<bookKey>`, see AudiobookRepository). These are
     // progress/content data — the same family backup_service already treats as

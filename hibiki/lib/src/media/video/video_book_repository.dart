@@ -12,6 +12,7 @@ import 'package:hibiki/src/media/video/external_video.dart'
 import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart'
     show ScrapeInfoboxEntry, ScrapeMetadata, ScrapeSource, ScrapeTag;
+import 'package:hibiki/src/media/video/video_path_migration.dart';
 import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -126,7 +127,7 @@ class VideoBookRepository {
   /// v49：记录一条「added」活动事件，喂首页 Activity 时间轴。**只在用户明示导入
   /// 视频成功后**由 [VideoImportDialog] 显式调用（单文件 / 文件夹单集 / 播放列表首集 /
   /// 流媒体各调一次；播放列表整本只调一次，title=合集名、mediaKey=首集 uid）——刻意
-  /// **不放进 [saveVideoBook]**，让自动库扫描（media_source_scanner，批量）、远端打开
+  /// **不放进 [saveVideoBook]**，让自动库扫描（source_library_scanner，批量）、远端打开
   /// （home_video_page，打开≠导入）、云同步（app_model_library_host_service）等非明示
   /// 导入路径天然不 emit，避免刷屏或语义错误（对齐 EpubImporter 只在用户导入管线
   /// emit 的做法）。timestamp/dateKey 用调用时刻。best-effort：记账失败只 log，不影响
@@ -211,7 +212,7 @@ class VideoBookRepository {
             videoPath: Value(e.path),
             lastPositionMs: Value(e.positionMs),
             embeddedSubtitleTrack: const Value<int?>(0),
-            importedAt: Value(DateTime.now()),
+            importedAt: Value(DateTime.now().millisecondsSinceEpoch),
           ),
           sourceId: sourceId,
         );
@@ -284,7 +285,7 @@ class VideoBookRepository {
             videoPath: Value(e.path),
             lastPositionMs: Value(e.positionMs),
             embeddedSubtitleTrack: const Value<int?>(0),
-            importedAt: Value(DateTime.now()),
+            importedAt: Value(DateTime.now().millisecondsSinceEpoch),
           ),
           sourceId: sourceId,
         );
@@ -387,6 +388,55 @@ class VideoBookRepository {
     ));
   }
 
+  /// TODO-1961-d：把库里落在 [fromPath] 下的路径整体重映射到 [toPath]，
+  /// 返回实际改动的行数。
+  ///
+  /// 引擎侧改名 / 移动（TODO-1961-c）之后必须**立刻**调这个 —— 两件事成对完成，
+  /// 缺一即断：只改引擎 = 做种保住了但库里全是死路径；只改库 = 库对了但引擎按
+  /// 旧路径读盘，做种当场断。
+  ///
+  /// 三列（videoPath / subtitleSource / secondarySubtitleSource）各自判断，
+  /// 哨兵值（`embedded:<n>` / `off:`）与流媒体 URL 一律不动，规则见
+  /// [remapVideoBookPaths]。整批在一个事务里写，中途失败不会留下改了一半的库。
+  Future<int> migrateMediaPaths({
+    required String fromPath,
+    required String toPath,
+  }) async {
+    if (fromPath.trim().isEmpty || toPath.trim().isEmpty) return 0;
+    final List<VideoBookRow> rows = await _db.allVideoBooks();
+    final Map<String, VideoPathRemap> pending = <String, VideoPathRemap>{};
+    for (final VideoBookRow row in rows) {
+      final VideoPathRemap remap = remapVideoBookPaths(
+        videoPath: row.videoPath,
+        subtitleSource: row.subtitleSource,
+        secondarySubtitleSource: row.secondarySubtitleSource,
+        fromPath: fromPath,
+        toPath: toPath,
+      );
+      if (!remap.isEmpty) pending[row.bookUid] = remap;
+    }
+    if (pending.isEmpty) return 0;
+    await _db.transaction(() async {
+      for (final MapEntry<String, VideoPathRemap> entry in pending.entries) {
+        final VideoPathRemap remap = entry.value;
+        await (_db.update(_db.videoBooks)
+              ..where((tbl) => tbl.bookUid.equals(entry.key)))
+            .write(VideoBooksCompanion(
+          videoPath: remap.videoPath == null
+              ? const Value.absent()
+              : Value<String>(remap.videoPath!),
+          subtitleSource: remap.subtitleSource == null
+              ? const Value.absent()
+              : Value<String?>(remap.subtitleSource),
+          secondarySubtitleSource: remap.secondarySubtitleSource == null
+              ? const Value.absent()
+              : Value<String?>(remap.secondarySubtitleSource),
+        ));
+      }
+    });
+    return pending.length;
+  }
+
   /// 更新播放列表当前集索引（多集导航切集后持久化）。
   Future<void> updateCurrentEpisode(String bookUid, int episodeIndex) =>
       _db.updateVideoBookEpisode(bookUid, episodeIndex);
@@ -455,8 +505,8 @@ class VideoBookRepository {
     // 标记、其他设备逐条确认后也删。keepLocalOnly 不记，避免删本地→回写墓碑循环。best-effort。
     if (scope == DeleteScope.syncEverywhere) {
       try {
-        await _db.writeSyncDeletionTombstone(
-            'video', bookUid, DateTime.now().millisecondsSinceEpoch);
+        await _db.writeSyncDeletionTombstone(SyncTombstoneKind.video.dbValue,
+            bookUid, DateTime.now().millisecondsSinceEpoch);
       } catch (_) {
         // best-effort：记账失败不影响视频已删。
       }

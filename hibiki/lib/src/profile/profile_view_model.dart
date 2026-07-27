@@ -117,7 +117,8 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     }
   }
 
-  Future<void> setMediaTypeBinding(String mediaType, int? profileId) async {
+  Future<void> setMediaTypeBinding(
+      ProfileMediaKind mediaType, int? profileId) async {
     if (profileId == null) {
       await _repo.removeMediaTypeBinding(mediaType);
     } else {

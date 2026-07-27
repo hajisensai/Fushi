@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hibiki_core/hibiki_core.dart' show kStatSourceBook;
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
@@ -449,7 +450,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     );
   }
 
-  Future<void> _playAutoReadWord(String expression, String reading) {
+  Future<bool> _playAutoReadWord(String expression, String reading) {
     // Prefer the popup's own <audio> (unified fast path); fall back to the Dart
     // player when the popup WebView is not ready. Capture the state once so the
     // callback does not re-evaluate the getter mid-play.

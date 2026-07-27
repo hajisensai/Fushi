@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:hibiki/src/sync/ttu_models.dart' show DriveFile;
+import 'package:hibiki/src/sync/sync_file_ref.dart' show SyncFileRef;
+import 'package:hibiki_core/hibiki_core.dart' show mimeTypeForFilePath;
 
 /// The single sync root folder name used by every backend (cloud + LAN).
 ///
@@ -31,23 +32,18 @@ class AsyncMutex {
   }
 }
 
-DriveFile? findSyncFileByPrefix(List<DriveFile> files, String prefix) {
+SyncFileRef? findSyncFileByPrefix(List<SyncFileRef> files, String prefix) {
   for (final f in files) {
     if (f.name.startsWith(prefix)) return f;
   }
   return null;
 }
 
-/// 按文件扩展名猜测同步上传的 Content-Type（各云端后端共用的唯一真源）。
-String guessSyncContentType(String fileName) {
-  final lower = fileName.toLowerCase();
-  if (lower.endsWith('.epub')) return 'application/epub+zip';
-  if (lower.endsWith('.m4b') || lower.endsWith('.m4a')) return 'audio/mp4';
-  if (lower.endsWith('.mp3')) return 'audio/mpeg';
-  if (lower.endsWith('.ogg')) return 'audio/ogg';
-  if (lower.endsWith('.flac')) return 'audio/flac';
-  return 'application/octet-stream';
-}
+/// 按文件扩展名猜测同步上传的 Content-Type（各云端后端共用的薄 shim）。
+///
+/// 命名统一轮 G8：MIME 推断收敛到 hibiki_core 单一映射表 [mimeTypeForFilePath]
+/// （旧本地副本只认 epub/m4b/m4a/mp3/ogg/flac，其余上传一律 octet-stream）。
+String guessSyncContentType(String fileName) => mimeTypeForFilePath(fileName);
 
 /// 六个同步后端（WebDAV / OneDrive / Dropbox / FTP / SFTP / Google Drive）共享的
 /// 「书名→folderId」缓存样板：一个根 folderId + 一张书名→folderId 映射，以及围绕
@@ -93,8 +89,8 @@ mixin SyncFolderCache {
 
   Map<String, String> get cachedFolderIds => Map.unmodifiable(folderIdCache);
 
-  void cacheBookFolderIds(List<DriveFile> folders) {
-    for (final DriveFile f in folders) {
+  void cacheBookFolderIds(List<SyncFileRef> folders) {
+    for (final SyncFileRef f in folders) {
       folderIdCache[f.name] = normalizeFolderId(f.id);
     }
   }

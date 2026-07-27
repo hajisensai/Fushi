@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/epub/epub_storage.dart';
+import 'package:hibiki/src/utils/misc/safe_file_name.dart';
 
 /// 漫画导入失败时抛出的领域异常：非法的 Mokuro 文件夹、路径穿越、缺图等。
 ///
@@ -58,9 +59,10 @@ class MangaStorage {
   /// 该前缀，避免落盘成 `images/images/...`）。
   ///
   /// 防路径穿越（红线）：任一段是 `..` 直接抛 [MangaImportException]——绝不静默丢弃，
-  /// 让含穿越的整本导入硬失败。每段把 Windows 非法字符（`: * ? " < > |`）替换为 `_`；`.`
-  /// 段与空段丢弃。返回 segments（非已 join 的路径）让调用方既能 `p.joinAll` 落盘（平台
-  /// 分隔符），又能 `'/'.join` 写进 manga.json 的 `url`（跨平台正斜杠）。
+  /// 让含穿越的整本导入硬失败。每段把 Windows 非法字符（[windowsUnsafeFileNameChars]，
+  /// 段内不可能再含 `\ /`——已按其切分）替换为 `_`；`.` 段与空段丢弃。返回 segments
+  /// （非已 join 的路径）让调用方既能 `p.joinAll` 落盘（平台分隔符），又能 `'/'.join`
+  /// 写进 manga.json 的 `url`（跨平台正斜杠）。
   static List<String> sanitizeRelSegments(String raw) {
     final List<String> rawSegments = raw.split(RegExp(r'[\\/]+'));
     for (final String s in rawSegments) {
@@ -70,7 +72,7 @@ class MangaStorage {
     }
     final List<String> segments = rawSegments
         .where((String s) => s.isNotEmpty && s != '.')
-        .map((String s) => s.replaceAll(RegExp(r'[:*?"<>|]'), '_').trim())
+        .map((String s) => safeWindowsFileName(s).trim())
         .where((String s) => s.isNotEmpty)
         .toList();
     if (segments.isNotEmpty && segments.first.toLowerCase() == kImagesDirName) {

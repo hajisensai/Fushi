@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
@@ -30,8 +30,8 @@ void main() {
     final HibikiDatabase db = _testDb();
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
-    final HibikiClientSyncBackend backend =
-        HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+    final InterconnectSyncBackend backend =
+        InterconnectSyncBackend.withProbe((String u, String t) async => true);
 
     expect(await backend.restoreAuth(repo), isFalse);
     expect(await backend.isAuthenticated, isFalse);
@@ -44,8 +44,8 @@ void main() {
     final SyncRepository repo = SyncRepository(db);
     await _seed(repo,
         urls: const <HibikiClientUrl>[HibikiClientUrl(url: 'http://lan:8765')]);
-    final HibikiClientSyncBackend backend =
-        HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+    final InterconnectSyncBackend backend =
+        InterconnectSyncBackend.withProbe((String u, String t) async => true);
 
     expect(await backend.restoreAuth(repo), isTrue);
     expect(await backend.isAuthenticated, isTrue);
@@ -61,7 +61,7 @@ void main() {
       HibikiClientUrl(url: 'http://wan:8765'),
     ]);
     // LAN unreachable, WAN reachable.
-    final HibikiClientSyncBackend backend = HibikiClientSyncBackend.withProbe(
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
         (String u, String t) async => u.contains('wan'));
 
     await backend.restoreAuth(repo);
@@ -80,8 +80,8 @@ void main() {
       HibikiClientUrl(url: 'http://lan:8765'),
       HibikiClientUrl(url: 'http://wan:8765'),
     ]);
-    final HibikiClientSyncBackend backend =
-        HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+    final InterconnectSyncBackend backend =
+        InterconnectSyncBackend.withProbe((String u, String t) async => true);
 
     await backend.restoreAuth(repo);
     backend.restoreCache(rootFolderId: 'http://lan:8765/$kSyncRootFolderName/');
@@ -102,7 +102,7 @@ void main() {
       HibikiClientUrl(url: 'http://wan:8765'),
     ]);
     bool lanUp = true;
-    final HibikiClientSyncBackend backend = HibikiClientSyncBackend.withProbe(
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
       (String u, String t) async => u.contains('lan') ? lanUp : true,
     );
 
@@ -135,8 +135,8 @@ void main() {
     addTearDown(db.close);
     final SyncRepository repo = SyncRepository(db);
     await _seed(repo, urls: <HibikiClientUrl>[HibikiClientUrl(url: base)]);
-    final HibikiClientSyncBackend backend =
-        HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+    final InterconnectSyncBackend backend =
+        InterconnectSyncBackend.withProbe((String u, String t) async => true);
     await backend.restoreAuth(repo);
 
     final List<RemoteVideoInfo> videos = await backend.listRemoteVideos();

@@ -191,11 +191,23 @@ class DesktopAudioPlayback {
         if (_activation.generation != submittedGeneration) {
           // A stop superseded this playback while it was queued/loading; do not
           // start a fresh activation only to be torn down immediately.
+          // BUG-1127 — log the bail: this used to be a fully silent swallow
+          // (return false, zero traces), the same observability blind spot that
+          // mis-rooted BUG-1015.
+          ErrorLogService.instance.logDiagnostic(
+            'DesktopAudioPlayback.$tag',
+            'preempted by stop() before load — playback dropped',
+          );
           return false;
         }
         await _player.setVolume(volume.clamp(0.0, 1.0));
         await load();
         if (_activation.generation != submittedGeneration) {
+          // BUG-1127 — same as above, after load: observable, never silent.
+          ErrorLogService.instance.logDiagnostic(
+            'DesktopAudioPlayback.$tag',
+            'preempted by stop() after load — playback dropped',
+          );
           return false;
         }
         // play() also toggles platform activation (_setPlatformActive(true) in

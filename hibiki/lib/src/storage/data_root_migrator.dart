@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:hibiki/src/media/media_source.dart' show dbSourcePrefKey;
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/src/sync/backup_service.dart'
     show
@@ -113,13 +114,16 @@ class DataRootMigrator {
   ];
 
   /// 持久化的字体目录配置 pref 键（含 ReaderSettings 前缀）。与 `backup_service.dart`
-  /// 的同名常量保持一致（那边是 private，迁移引擎独立持有同一字面量）。
-  static const String _fontCatalogPrefKey = 'src:reader_ttu:font_catalog';
-  static const List<String> _legacyFontPrefKeys = <String>[
-    'src:reader_ttu:custom_fonts',
-    'src:reader_ttu:app_ui_fonts',
-    'src:reader_ttu:dict_fonts',
-    'src:reader_ttu:video_sub_fonts',
+  /// 的同名常量同一组值（那边因 const 上下文保留字面量并由
+  /// `db_source_pref_key_test` 锁一致）；这里经单一真相编码器 [dbSourcePrefKey]
+  /// 生成，不再硬编码 `src:reader_ttu:` 格式。
+  static final String _fontCatalogPrefKey =
+      dbSourcePrefKey('reader_ttu', 'font_catalog');
+  static final List<String> _legacyFontPrefKeys = <String>[
+    dbSourcePrefKey('reader_ttu', 'custom_fonts'),
+    dbSourcePrefKey('reader_ttu', 'app_ui_fonts'),
+    dbSourcePrefKey('reader_ttu', 'dict_fonts'),
+    dbSourcePrefKey('reader_ttu', 'video_sub_fonts'),
   ];
   static const String _localAudioDbsPrefKey = 'local_audio_dbs';
   static const String _audioSourceConfigsPrefKey = 'audio_source_configs';
@@ -258,9 +262,21 @@ class DataRootMigrator {
     Directory newSupport,
   ) async {
     final String canonNew = p.canonicalize(req.newDataRoot);
+    // BUG-1115：共享 documents 根（白名单选择性搬移）下的**非白名单**子目录是安全目标
+    // ——搬移只动白名单顶层项，新根在整个过程里是旁观者。这让老安装能把散落在用户
+    // `Documents` 根下的 16 个 Hibiki 目录一键收进 `Documents\Hibiki`。白名单为 null
+    // （Hibiki 专属根、整树搬移语义）时不适用：那时新根真会被连同整棵树搬走。
+    final Set<String>? whitelist = req.documentsTopLevelIncludeNames;
+    final bool nestedInSharedDocuments = whitelist != null &&
+        AppPaths.isSafeNestedTargetInSharedDocuments(
+          sharedDocumentsRoot: req.oldDocumentsRoot.path,
+          newDataRoot: req.newDataRoot,
+          ownedEntries: whitelist,
+        );
     if (canonNew == p.canonicalize(req.oldDocumentsRoot.path) ||
         canonNew == p.canonicalize(req.oldSupportRoot.path) ||
-        p.isWithin(p.canonicalize(req.oldDocumentsRoot.path), canonNew) ||
+        (p.isWithin(p.canonicalize(req.oldDocumentsRoot.path), canonNew) &&
+            !nestedInSharedDocuments) ||
         p.isWithin(p.canonicalize(req.oldSupportRoot.path), canonNew)) {
       throw const DataRootMigrationException('新数据根不能位于旧数据目录内部');
     }

@@ -4,13 +4,28 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/src/media/video/video_chrome_colors.dart';
 import 'package:hibiki/src/media/video/video_panel_auto_scroll.dart';
 
+/// 剧集面板的一条：标题 + 可选封面。
+///
+/// 此前面板的入参是 `List<String> episodeTitles`——**接口只收字符串，结构上就装
+/// 不下封面**，于是剧集列表恒无图（用户报「视频里面的剧集列表，少了封面」）。
+/// 封面源由调用方经 `resolveMediaCoverImage` 解析好再传进来：本组件只管画，不关心
+/// 这一集是本地文件还是互联远端（与 `PosterCoverImage` 同一分工原则）。
+class VideoEpisodeEntry {
+  const VideoEpisodeEntry({required this.title, this.cover});
+
+  final String title;
+
+  /// 已解析好的封面图源；null = 该集无封面可用，画占位图标。
+  final ImageProvider? cover;
+}
+
 /// 视频播放列表「剧集列表」push-aside 侧栏面板（TODO-638）。
 ///
 /// 此前剧集列表是 `showModalBottomSheet`（底部弹层），与其它侧栏（字幕列表 push-aside、
 /// 设置 / 倍速等 overlay）显示风格不一致。改成与字幕列表同款的 push-aside 侧栏后，三者
 /// 视觉统一：顶部带标题 + 右上角 × 关闭按钮的 header，下面是可滚动的剧集列表。
 ///
-/// 本 widget 只负责渲染——把每集标题列成「序号 / 当前集播放图标 + 标题」
+/// 本 widget 只负责渲染——把每集列成「序号 / 当前集播放图标 + 封面缩略图 + 标题」
 /// 一行，点击 [onTapEpisode] 切到该集（页面层 `_switchEpisode`），高亮 [currentIndex]
 /// 当前集。可见性与互斥由页面层（`_episodeListVisible` / `_videoWithSubtitlePanel`）管。
 ///
@@ -20,7 +35,7 @@ import 'package:hibiki/src/media/video/video_panel_auto_scroll.dart';
 class VideoEpisodePanel extends StatefulWidget {
   const VideoEpisodePanel({
     super.key,
-    required this.episodeTitles,
+    required this.episodes,
     required this.currentIndex,
     required this.onTapEpisode,
     required this.onClose,
@@ -31,10 +46,10 @@ class VideoEpisodePanel extends StatefulWidget {
     this.width = 320,
   });
 
-  /// 播放列表各集标题（有序）。空列表（单视频）时显示 [emptyHint]（剧集入口仅在播放
-  /// 列表出现，故正常不会空；空态作防御兜底）。统一合集 Phase 3：只需标题，与内部集
-  /// 表示解耦。
-  final List<String> episodeTitles;
+  /// 播放列表各集（有序，标题 + 可选封面）。空列表（单视频）时显示 [emptyHint]
+  /// （剧集入口仅在播放列表出现，故正常不会空；空态作防御兜底）。与内部集表示解耦：
+  /// 页面层把本地行 / 互联远端行都解析成 [VideoEpisodeEntry] 再传进来。
+  final List<VideoEpisodeEntry> episodes;
 
   /// 当前播放集下标（[episodes] 内）；负 / 越界视为「无当前集」。
   final int currentIndex;
@@ -90,7 +105,7 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
   void _scrollToCurrentEpisode() {
     _autoScroller.scrollToIndex(
       widget.currentIndex,
-      itemCount: widget.episodeTitles.length,
+      itemCount: widget.episodes.length,
     );
   }
 
@@ -112,9 +127,7 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
             _buildHeader(cs),
             const Divider(height: 1),
             Expanded(
-              child: widget.episodeTitles.isEmpty
-                  ? _buildEmpty(cs)
-                  : _buildList(cs),
+              child: widget.episodes.isEmpty ? _buildEmpty(cs) : _buildList(cs),
             ),
           ],
         ),
@@ -172,35 +185,66 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
     return ListView.builder(
       controller: _autoScroller.controller,
       padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: widget.episodeTitles.length,
+      itemCount: widget.episodes.length,
       itemBuilder: (BuildContext _, int i) {
-        final String episodeTitle = widget.episodeTitles[i];
+        final VideoEpisodeEntry entry = widget.episodes[i];
+        final String episodeTitle = entry.title;
         final bool selected = i == widget.currentIndex;
+        // 序号/播放标记 + 封面缩略图。封面缺失（旧单行 playlist 远端模型不下发
+        // 封面、或本集确实没图）时**不占位撑宽**，退回原来的纯序号形态——列表
+        // 宽度只有 240~420，给一列空占位会白吃走标题的横向空间。
+        final Widget indicator = selected
+            ? Icon(Icons.play_arrow, color: cs.primary)
+            : SizedBox(
+                // 序号列宽随字号缩放（对齐 TODO-567 字幕时间戳列范式）：固定 24px
+                // 在放大字号下放不下两位数序号（tabular figures，10 起约字号×1.2），
+                // Text 默认换行被 dense ListTile 行高纵向裁切。改为 `字号 + 12` 估宽
+                // 留余量，下界 24 保证窄字号像素不变（向后兼容）。配合 Text 单行不
+                // 换行（`maxLines:1` / `softWrap:false`），序号永不溢出 / 被裁。
+                width: math.max(24.0, widget.fontSize + 12),
+                child: Text(
+                  '${i + 1}',
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    color: cs.onSurfaceVariant,
+                    fontSize: widget.fontSize,
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures(),
+                    ],
+                  ),
+                ),
+              );
+        final ImageProvider? cover = entry.cover;
         return ListTile(
           dense: true,
-          // 当前集用 play_arrow 取代序号（与原 bottom sheet 一致）；其余集显示序号。
-          leading: selected
-              ? Icon(Icons.play_arrow, color: cs.primary)
-              : SizedBox(
-                  // 序号列宽随字号缩放（对齐 TODO-567 字幕时间戳列范式）：固定 24px
-                  // 在放大字号下放不下两位数序号（tabular figures，10 起约字号×1.2），
-                  // Text 默认换行被 dense ListTile 行高纵向裁切。改为 `字号 + 12` 估宽
-                  // 留余量，下界 24 保证窄字号像素不变（向后兼容）。配合 Text 单行不
-                  // 换行（`maxLines:1` / `softWrap:false`），序号永不溢出 / 被裁。
-                  width: math.max(24.0, widget.fontSize + 12),
-                  child: Text(
-                    '${i + 1}',
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    softWrap: false,
-                    style: TextStyle(
-                      color: cs.onSurfaceVariant,
-                      fontSize: widget.fontSize,
-                      fontFeatures: const <FontFeature>[
-                        FontFeature.tabularFigures(),
-                      ],
+          leading: cover == null
+              ? indicator
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    indicator,
+                    const SizedBox(width: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: SizedBox(
+                        // 16:9 小图：视频封面现状是抽帧横图，按横版给位不裁脸。
+                        width: 56,
+                        height: 32,
+                        child: Image(
+                          image: cover,
+                          fit: BoxFit.cover,
+                          // 文件缺失 / 解码失败 / 远端拉不到 → 退占位图标，不炸列表。
+                          errorBuilder: (_, __, ___) => Icon(
+                            Icons.movie_outlined,
+                            size: 18,
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
           title: Text(
             episodeTitle,

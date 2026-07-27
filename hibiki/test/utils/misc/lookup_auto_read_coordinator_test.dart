@@ -27,6 +27,7 @@ void main() {
         reading: 'にほんご',
         play: () async {
           playCount++;
+          return true;
         },
       );
       final bool second = await coordinator.runAutomatic(
@@ -34,6 +35,7 @@ void main() {
         reading: 'にほんご',
         play: () async {
           playCount++;
+          return true;
         },
       );
 
@@ -52,6 +54,7 @@ void main() {
         reading: 'にほんご',
         play: () async {
           playCount++;
+          return true;
         },
       );
       now = now.add(const Duration(milliseconds: 501));
@@ -60,6 +63,7 @@ void main() {
         reading: 'にほんご',
         play: () async {
           playCount++;
+          return true;
         },
       );
 
@@ -77,6 +81,7 @@ void main() {
         source: 'lookup',
         play: () async {
           played.add('きょう/lookup');
+          return true;
         },
       );
       await coordinator.runAutomatic(
@@ -85,6 +90,7 @@ void main() {
         source: 'lookup',
         play: () async {
           played.add('こんにち/lookup');
+          return true;
         },
       );
       await coordinator.runAutomatic(
@@ -93,6 +99,7 @@ void main() {
         source: 'preview',
         play: () async {
           played.add('きょう/preview');
+          return true;
         },
       );
 
@@ -107,7 +114,7 @@ void main() {
       final LookupAutoReadCoordinator coordinator = newCoordinator();
       int attempts = 0;
 
-      Future<void> failingPlay() async {
+      Future<bool> failingPlay() async {
         attempts++;
         throw StateError('boom');
       }
@@ -129,6 +136,47 @@ void main() {
         throwsA(isA<StateError>()),
       );
 
+      expect(attempts, 2);
+    });
+
+    test(
+        'BUG-1127: a silent playback failure (play -> false) releases the '
+        'window so an immediate retry sounds', () async {
+      final LookupAutoReadCoordinator coordinator = newCoordinator();
+      int attempts = 0;
+      bool nextResult = false;
+
+      Future<bool> play() async {
+        attempts++;
+        return nextResult;
+      }
+
+      final bool first = await coordinator.runAutomatic(
+        expression: '響き',
+        reading: 'ひびき',
+        play: play,
+      );
+      expect(first, isFalse,
+          reason: 'a playback that never sounded must not report success');
+
+      // Still inside the dedupe window — but the failure released it, so the
+      // user's immediate re-lookup gets a real second attempt.
+      nextResult = true;
+      final bool second = await coordinator.runAutomatic(
+        expression: '響き',
+        reading: 'ひびき',
+        play: play,
+      );
+      expect(second, isTrue);
+      expect(attempts, 2);
+
+      // A SUCCESSFUL playback still occupies the window (dedupe intact).
+      final bool third = await coordinator.runAutomatic(
+        expression: '響き',
+        reading: 'ひびき',
+        play: play,
+      );
+      expect(third, isFalse);
       expect(attempts, 2);
     });
   });

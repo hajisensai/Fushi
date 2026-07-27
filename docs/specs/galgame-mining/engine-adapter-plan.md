@@ -6,10 +6,15 @@
 > 等成熟的沉浸学习工具同类，属正常语言学习用途。本文只讨论如何把"新增一个游戏引擎的适配成本"降下来。
 >
 > 面向接手的 AI/开发者，**自包含**。总设计见 [design.md](design.md)，已完成进度与真机证据见 [handoff.md](handoff.md)。
-> 一句话目标：在 **hibiki-hook**（native 采集组件）与 **hibiki**（Dart 消费端）两仓之间，建立
+> 一句话目标：在 native 采集组件与 Hibiki Dart 消费端之间，建立
 > 数据驱动 + 模块化 + 可诊断 + 可离线验证的引擎适配体系，把"新增一个引擎"从"改 2666 行巨型
 > `dll_main.cpp` / 从零调查"降到"加 profile + 独立 adapter + fixture"，并完成至少一批高复用适配
 > （RealLive / VisualArt's）作为验证。**核心不是承诺"支持所有引擎"，而是显著降低新增成本并落一批验证。**
+>
+> **2026-07-26 拓扑更新**：native 源码与唯一支持矩阵已合入本仓 `native/galgame_hook/`；
+> x64/x86 helper zip 随 Windows 主包离线交付，并保留固定 release 供旧包/后台更新。下文
+> `hibiki-hook` 提交号与“两仓”描述是阶段历史证据，不再是当前开工位置；当前规则以
+> [galgame-hooking.md](../../agent/galgame-hooking.md) 为准。
 
 ---
 
@@ -107,7 +112,7 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 ## 0. 开工前必读 & 纪律（指针，不重复）
 - hibiki 侧：读根 `CLAUDE.md` + `hibiki/CLAUDE.md` + 本目录 `design.md` / `handoff.md` + `docs/agent/build.md`。
   native 侧：读 hibiki-hook 仓的 README + CMake。
-- 两仓都用**独立 worktree/分支**；hibiki 侧新建 worktree 后先跑 `tool/setup_worktree.ps1`，并在
+- 本仓使用**独立 worktree/分支**；新建 worktree 后先跑 `tool/setup_worktree.ps1`，并在
   `.worktrees/coordination/claims/` 登记 ownership。不覆盖用户或其它 agent 的未提交改动。
 - **根因修复**，不做延迟/重试/吞异常/硬编码/特例分支式绕过；只有外部/平台限制才允许临时兼容层并说明清理条件。
 - 每阶段独立可审查提交；真机验证留证据；缺样本的能力**显式标注"未真机验证"**。
@@ -118,17 +123,16 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
 
 ## 1. 当前真相（已核实 @ 2026-07-21，origin/develop；接手前提，先信这些再动手）
 
-### 【两仓架构 —— 最重要】
-- native 采集组件已在 commit `d53e1238d`「voice hook helper 完全迁移到独立仓库 hibiki-hook」
-  **从 hibiki 单仓整体迁出到独立仓 `hajisensai/hibiki-hook`**，理由有二：
+### 【当前合仓架构 —— 最重要】
+- native 采集组件曾在 commit `d53e1238d` 整体迁到 `hajisensai/hibiki-hook`，当时理由有二：
   1. 该组件随游戏进程加载做文本/音频采集，部分杀软对这类"随进程加载的采集模块"存在误报，物理隔离到独立仓
      可与主 app 分开构建/分发、降低对主 app 的误报牵连；
   2. 独立仓默认分支上的 `voice-hook-helper.yml` 才能正常 `workflow_dispatch` 刷新 release（主仓那份不在
      默认分支无法 dispatch）。
-- **因此：原始设想里要拆的"巨型主流程" `native/galgame_voice_hook/hook/dll_main.cpp`（P1 前已增长到
-  约 3940 行）现在在 hibiki-hook，不在 hibiki。** hibiki 已无此目录（迁出前最后快照见
-  `origin/worktree-galgame-mining`）。P1 后主文件为 521 行，具体逻辑已在 `hook/adapters/`。
-- hibiki-hook 现有结构（P0/P1 后）：
+- 2026-07-26 起这些理由已被新事实取代：默认分支 workflow dispatch 问题随合仓消失；
+  Defender 实扫零检出（EICAR 阳性对照正常），用户选择 helper 随 Windows 主包。当前主流程位于
+  `native/galgame_hook/hook/dll_main.cpp`，P1 后具体逻辑在同目录 `hook/adapters/`。
+- `native/galgame_hook/` 现有结构（P0/P1 后）：
   - `CMakeLists.txt`（`-A x64` / `-A Win32` 双架构）
   - `engine-support.yaml` + `tools/generate_engine_support.py` + 自动生成 `docs/engine-support.md`
   - `hook/adapter.h`（`probe/install/capabilities/onModuleLoaded/shutdown/diagnostics` 契约）
@@ -151,8 +155,8 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
   `LoopbackGalAudioSource`）、`galgame_audio_encode.dart`、`galgame_library.dart`、
   `galgame_system_ui_filter.dart`、`galgame_waveform*.dart`。
 - helper 安装/下载：`hibiki/lib/src/mining/galgame_helper_installer.dart`
-  （`kGalgameHelperRepo = 'hajisensai/hibiki-hook'`、tag `voice-hook-helper`、镜像回退纯函数
-  `galgameHelperCandidateUrls`、`exeIs32Bit` 读 PE COFF Machine 选 x86/x64 组件）。
+  （主包 `galgame_helper/` 优先、`kGalgameHelperRepo = 'hajisensai/hibiki'` 网络兜底、tag
+  `voice-hook-helper`、`exeIs32Bit` 读 PE COFF Machine 选 x86/x64 组件）。
 - 文本覆盖：`hibiki/lib/src/platform/gal_hook_text_overlay_channel.dart`。
 - 现成可复用件（design.md 已核实 file:line）：制卡入口 `ImmersionMiningEngine.mine`
   （`immersion_mining_engine.dart:83`）、外部窗口请求 `buildExternalWindowRequest`
@@ -165,7 +169,7 @@ P0 (真相源) ──► P1 (拆 adapter) ──┬─► P3 (probe/new/replay �
   2. C 阶段音频回调**零阻塞**：回调里只 memcpy + 无锁队列 push，写盘/编码/IPC 全移出工作线程；队列满即丢，
      保游戏正常出声。
   3. 32 位游戏内存预算：采集组件 <16MB、共享池 ≤64MB、单句 ≤30s。
-  4. 采集组件**绝不编进 `Hibiki.exe` 本体**（延续两仓隔离）。
+  4. 采集组件**绝不链接进 `Hibiki.exe` 本体**；随包 zip 不改变隔离子进程/DLL 边界。
 
 ### 【已真机验证的引擎（handoff 诚实基线，别推倒重来，只在其上扩展）】
 - **Siglus 1.1.141.3**：✅ `koe/*.ovk`（= `u32 count + count×16B index`）逐句原始 Ogg 提取，导出与游戏归档

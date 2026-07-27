@@ -74,11 +74,11 @@ void main() {
 
       final settingsItems = [
         'Appearance',
-        'Configuration Schemes',
+        'Configuration schemes',
         'Reading Display',
-        'Reading Controls',
+        'Reading controls',
         'Lookup',
-        'Card Creation',
+        'Card creation',
         'Listening',
         'Sync & Backup',
         'System',
@@ -120,7 +120,7 @@ void main() {
       await _navigateToSettingsItem(tester, 'Reading Display');
       await tester.pumpAndSettle();
 
-      final customFonts = find.text('Custom Fonts');
+      final customFonts = find.text('Custom fonts');
       if (customFonts.evaluate().isNotEmpty) {
         expect(await driver.focusWidget(customFonts.first), isTrue,
             reason: 'Custom Fonts entry must be reachable by focus');
@@ -137,10 +137,10 @@ void main() {
       }
 
       // === Deep navigation: Reading Controls → Keyboard Shortcuts ===
-      await _navigateToSettingsItem(tester, 'Reading Controls');
+      await _navigateToSettingsItem(tester, 'Reading controls');
       await tester.pumpAndSettle();
 
-      final shortcuts = find.text('Keyboard Shortcuts');
+      final shortcuts = find.text('Keyboard shortcuts');
       if (shortcuts.evaluate().isNotEmpty) {
         expect(await driver.focusWidget(shortcuts.first), isTrue,
             reason: 'Keyboard Shortcuts entry must be reachable by focus');

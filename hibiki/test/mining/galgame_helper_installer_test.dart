@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/mining/galgame_helper_installer.dart';
 import 'package:path/path.dart' as p;
@@ -30,12 +33,12 @@ void main() {
       expect(kGalgameHelperReleaseTag, 'voice-hook-helper');
     });
 
-    test('helper 默认走独立仓库 hibiki-hook（非主 app 仓库）', () {
-      expect(kGalgameHelperRepo, 'hajisensai/hibiki-hook');
+    test('helper 走主仓库（源码与产物已合仓）', () {
+      expect(kGalgameHelperRepo, 'hajisensai/hibiki');
       expect(galgameHelperDownloadUrl('x64'),
-          startsWith('https://github.com/hajisensai/hibiki-hook/'));
+          startsWith('https://github.com/hajisensai/hibiki/'));
       expect(galgameHelperSha256Url('x86'),
-          startsWith('https://github.com/hajisensai/hibiki-hook/'));
+          startsWith('https://github.com/hajisensai/hibiki/'));
     });
 
     test('sha256 侧车 URL = zip URL + .sha256', () {
@@ -102,7 +105,8 @@ void main() {
   group('formatDownloadSize', () {
     test('MB / KB / 非正数', () {
       expect(formatDownloadSize(12 * 1024 * 1024), '12.0 MB');
-      expect(formatDownloadSize(512 * 1024), '512 KB');
+      // G4 收敛后统一走 HibikiByteFormat（KB 档也带 1 位小数）。
+      expect(formatDownloadSize(512 * 1024), '512.0 KB');
       expect(formatDownloadSize(0), '');
       expect(formatDownloadSize(-1), '');
     });
@@ -320,6 +324,140 @@ void main() {
       // 两者必须是不同枚举值：调用方要能区分「重试有用」与「产物不可信」。
       expect(GalgameHelperInstallFailure.downloadFailed,
           isNot(GalgameHelperInstallFailure.verificationFailed));
+    });
+  });
+
+  group('随主包归档离线安装', () {
+    late Directory tmp;
+    late Directory bundle;
+    late Directory installRoot;
+
+    setUp(() async {
+      tmp = await Directory.systemTemp.createTemp('gal_helper_bundle_test_');
+      bundle = Directory(p.join(tmp.path, kGalgameHelperBundledDirectoryName))
+        ..createSync(recursive: true);
+      installRoot = Directory(p.join(tmp.path, 'voice_hook'));
+    });
+
+    tearDown(() {
+      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+    });
+
+    Future<void> writeBundle(String arch, {bool corruptSha = false}) async {
+      final Archive archive = Archive();
+      for (final String name in galgameHelperRequiredFiles(arch)) {
+        final List<int> content = utf8.encode('fixture:$arch:$name');
+        archive.addFile(ArchiveFile(name, content.length, content));
+      }
+      final List<int> bytes = ZipEncoder().encode(archive)!;
+      final File zip = File(p.join(bundle.path, galgameHelperZipName(arch)));
+      await zip.writeAsBytes(bytes, flush: true);
+      final String digest = corruptSha
+          ? List<String>.filled(64, '0').join()
+          : sha256.convert(bytes).toString();
+      await File('${zip.path}.sha256').writeAsString(digest, flush: true);
+    }
+
+    GalgameHelperInstaller installer() => GalgameHelperInstaller(
+          bundledDirectory: bundle,
+          installDirectory: (String arch) =>
+              Directory(p.join(installRoot.path, arch)),
+        );
+
+    test('主包含 zip + 侧车时零网络完成校验、换入和版本标记', () async {
+      await writeBundle('x64');
+
+      expect(
+        await installer().installBundledHelperForTesting('x64'),
+        isTrue,
+      );
+
+      final Directory installed = Directory(p.join(installRoot.path, 'x64'));
+      expect(
+        galgameHelperMissingFiles(
+          'x64',
+          installed
+              .listSync(followLinks: false)
+              .whereType<File>()
+              .map((File file) => p.basename(file.path)),
+        ),
+        isEmpty,
+      );
+      final String marker = File(
+        p.join(installed.path, galgameHelperMarkerName()),
+      ).readAsStringSync();
+      final File zip = File(p.join(bundle.path, galgameHelperZipName('x64')));
+      expect(marker, sha256.convert(zip.readAsBytesSync()).toString());
+      expect(zip.existsSync(), isTrue, reason: '随包归档要保留，供修复/另一会话继续使用');
+    });
+
+    test('开发/旧包没有随附归档时明确返回 false，允许网络兜底', () async {
+      expect(
+        await installer().installBundledHelperForTesting('x86'),
+        isFalse,
+      );
+      expect(installRoot.existsSync(), isFalse);
+    });
+
+    test('随包归档摘要不符时拒绝安装且不触碰目标目录', () async {
+      await writeBundle('x86', corruptSha: true);
+
+      await expectLater(
+        installer().installBundledHelperForTesting('x86'),
+        throwsA(isA<GalgameHelperInstallException>().having(
+          (GalgameHelperInstallException e) => e.failure,
+          'failure',
+          GalgameHelperInstallFailure.verificationFailed,
+        )),
+      );
+      expect(Directory(p.join(installRoot.path, 'x86')).existsSync(), isFalse);
+    });
+  });
+
+  group('Windows 主包离线资产构建契约', () {
+    final String packScript = File(
+      '../native/galgame_hook/tools/build_distribution.ps1',
+    ).readAsStringSync();
+    final String debugWorkflow = File(
+      '../.github/workflows/build-multiplatform.yml',
+    ).readAsStringSync();
+    final String releaseWorkflow = File(
+      '../.github/workflows/release-desktop.yml',
+    ).readAsStringSync();
+    final String installer =
+        File('windows/installer/hibiki.iss').readAsStringSync();
+
+    test('组包脚本清单与 Dart 安装清单逐文件一致', () {
+      for (final String arch in <String>['x64', 'x86']) {
+        for (final String file in galgameHelperRequiredFiles(arch)) {
+          expect(packScript, contains("'$file'"));
+        }
+        expect(packScript, contains('"voice_hook_\$arch.zip"'));
+        expect(packScript, contains('"\$zip.sha256"'));
+      }
+    });
+
+    test('debug 与 release 都调用统一脚本并复制到 galgame_helper', () {
+      for (final String workflow in <String>[
+        debugWorkflow,
+        releaseWorkflow,
+      ]) {
+        expect(
+          workflow,
+          contains(
+            'native/galgame_hook/tools/build_distribution.ps1 -RunTests',
+          ),
+        );
+        expect(workflow, contains(r'\galgame_helper'));
+        for (final String arch in <String>['x64', 'x86']) {
+          expect(workflow, contains("'voice_hook_$arch.zip'"));
+          expect(workflow, contains("'voice_hook_$arch.zip.sha256'"));
+        }
+      }
+    });
+
+    test('Inno Setup 递归收进 helper 子目录', () {
+      expect(installer, contains('Flags: ignoreversion recursesubdirs'));
     });
   });
 
@@ -564,7 +702,7 @@ void main() {
     });
 
     test('校验失败有专属用户可读提示（不与「下载失败」混为一谈）', () {
-      expect(src, contains('t.galgame_helper_verification_failed'));
+      expect(src, contains('t.game_helper_verification_failed'));
     });
 
     test('可信主机白名单与 magpie 安装器共用同一份真值（安全清单不得复制）', () {

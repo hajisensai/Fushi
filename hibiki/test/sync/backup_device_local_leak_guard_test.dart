@@ -32,7 +32,9 @@ void main() {
     // so the export copy carries neither the token nor the baselines.
     final int stripStart = s.indexOf('_stripCredentials(String dbDirectory)');
     expect(stripStart, greaterThan(-1), reason: '_stripCredentials must exist');
-    final int stripEnd = s.indexOf('static Future<void> _restore', stripStart);
+    // 命名统一后备份内部子步骤 restore* → reapply*/strip*：锚到下一个 static
+    // 方法声明即可，不与具体后继方法名耦合。
+    final int stripEnd = s.indexOf('static Future<void> _strip', stripStart + 1);
     expect(stripEnd, greaterThan(stripStart));
     final String stripBody = s.substring(stripStart, stripEnd);
     expect(

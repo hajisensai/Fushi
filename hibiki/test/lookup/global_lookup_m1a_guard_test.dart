@@ -44,19 +44,46 @@ void main() {
           src.contains('ReaderHibikiSource.instance.autoReadOnLookup'), isTrue);
     });
 
-    test('play step reuses the overlay audio bridge, not playLookupAudio', () {
-      // The two-step overlay bridge: resolve the configured-source URL, then
-      // play it through the overlay's own player.
-      expect(src.contains('resolveLookupAudioUrl('), isTrue);
-      expect(src.contains('TtsChannel.instance.playAudioRef('), isTrue);
-      // Must not bypass the overlay bridge via the all-in-one helper.
+    test('play step goes through the unified fast path (BUG-1127)', () {
+      // BUG-1127 — the overlay auto-read joined the SAME unified contract the
+      // in-app popup uses since 9855c3e4f: autoReadWordUnified resolves the ref
+      // once, prefers the popup's own HTML5 <audio> (playInWebView), and falls
+      // back to the Dart player on a REPORTED failure. The controller must not
+      // re-grow its own resolve + playAudioRef fork (the pre-BUG-1127 slow
+      // path: libmpv stop→load→play per play, silent failures).
+      expect(src.contains('autoReadWordUnified('), isTrue);
+      expect(src.contains('playInWebView: _playWordAudioUrlInOverlay'), isTrue);
+      expect(
+        src.contains('TtsChannel.instance.playAudioRef('),
+        isFalse,
+        reason: 'the Dart fallback lives INSIDE autoReadWordUnified with the '
+            'already-resolved ref; a direct playAudioRef here would re-fork '
+            'the overlay off the unified path (BUG-1127 regression)',
+      );
+      // Must not bypass the unified helper via the all-in-one shortcut.
       expect(
         src.contains('playLookupAudio('),
         isFalse,
-        reason:
-            'global lookup must reuse resolveLookupAudioUrl + playAudioRef, '
-            'not the playLookupAudio shortcut that bypasses the overlay bridge',
+        reason: 'global lookup must reuse autoReadWordUnified, not the '
+            'playLookupAudio shortcut that skips the WebView fast path',
       );
+    });
+
+    test('BUG-1127: WebView play reports the real audio.play() outcome', () {
+      // Token + Completer + timeout, mirroring the in-app wordAudioPlayed
+      // contract (BUG-1093): the Dart side must consume a REAL result — no
+      // fire-and-forget (silent swallow) and no unconditional fallback (double
+      // playback).
+      expect(src.contains("handler == 'wordAudioPlayed'"), isTrue);
+      expect(src.contains('_pendingWordAudioPlays'), isTrue);
+      expect(src.contains('completer.future.timeout'), isTrue);
+      // The play script must target the STABLE root frame (always warm after
+      // prewarm; TODO-1095) and be gated on webview readiness — the native
+      // render channel caches scripts last-wins while the surface is not
+      // ready, so an ungated play script would clobber a pending stack render.
+      expect(src.contains('buildPlayWordAudioScript('), isTrue);
+      expect(src.contains('kGlobalLookupRootFrameId'), isTrue);
+      expect(src.contains('GlobalLookupChannel.isWebViewReady()'), isTrue);
     });
 
     test('autoRead fires on both first lookup and nested re-lookup', () {

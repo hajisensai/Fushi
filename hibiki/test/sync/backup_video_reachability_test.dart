@@ -19,7 +19,7 @@ Future<void> _exportZip(
   String zipPath,
 ) async {
   await BackupService(db: srcDb, dbDirectory: srcDir, appVersion: '2.0.0')
-      .exportBackup(zipPath);
+      .createBackup(zipPath);
 }
 
 VideoBooksCompanion _video(String uid, String videoPath, {String? title}) =>
@@ -52,7 +52,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
         dbDirectory: curDir.path, zipPath: zip);
 
     final after = HibikiDatabase(curDir.path);
@@ -86,12 +86,12 @@ void main() {
       db: src,
       dbDirectory: srcDir.path,
       appVersion: '2.0.0',
-    ).exportBackup(zip);
+    ).createBackup(zip);
     await src.close();
 
     final curVideos = await _tempDir('vr_curvid_');
     addTearDown(() => cleanupTempDir(curVideos));
-    await BackupService.mergeImportBackupFiles(
+    await BackupService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
       videosRootDirectory: curVideos.path,
@@ -103,7 +103,7 @@ void main() {
     expect(uids, <String>{'real-vid'}); // reachable local video imported
   });
 
-  test('previewMergeImport video count equals what the merge actually inserts',
+  test('previewMergeRestore video count equals what the merge actually inserts',
       () async {
     final curDir = await _tempDir('vr_cur_');
     addTearDown(() => cleanupTempDir(curDir));
@@ -121,7 +121,7 @@ void main() {
     await _exportZip(src, srcDir.path, zip);
     await src.close();
 
-    final preview = await BackupService.previewMergeImport(
+    final preview = await BackupService.previewMergeRestore(
       liveDb: cur,
       dbDirectory: curDir.path,
       zipPath: zip,

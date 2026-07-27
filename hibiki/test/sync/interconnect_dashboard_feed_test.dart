@@ -5,7 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/pages/implementations/activity_feed.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
@@ -22,6 +22,10 @@ import 'package:path/path.dart' as p;
 ///    client `listRemoteActivity` 优雅降级空表。
 /// 3. 纯函数混排：远端「继续」候选只补本地没有的条目；活动混排按时刻倒序截断；
 ///    聚合按设备来源分组不合并且带设备标签（「标明设备来源」）。
+/// 4. BUG-1119：`RemoteBookInfo.kind` additive wire 字段 roundtrip（epub 缺省
+///    不写键、缺失/未知回落 epub），`RemoteContinueCandidate` 携带 [MediaKind]
+///    而非 isVideo 二元降维（远端 SRT 书不再被抹成 epub、游戏等第三种媒体
+///    结构上装得下）。
 AppModelLibraryHostService _makeService({
   required HibikiDatabase db,
   required Directory tmp,
@@ -191,7 +195,7 @@ void main() {
         HibikiClientUrl(url: 'http://127.0.0.1:${server.port}', enabled: true),
       ]);
       await repo.setHibikiClientToken(token);
-      final HibikiClientSyncBackend backend = HibikiClientSyncBackend.withProbe(
+      final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
           (String url, String tok) async => true);
       await backend.restoreAuth(repo);
 
@@ -244,6 +248,60 @@ void main() {
       expect(out.first.recentMs, 5);
     });
 
+    test('remoteContinueCandidates：候选携带 MediaKind，SRT 书不被抹成 epub', () {
+      final List<RemoteContinueCandidate> out = remoteContinueCandidates(
+        localBookKeys: const <String>{},
+        localVideoUids: const <String>{},
+        remoteBooks: <RemoteBookInfo>[
+          const RemoteBookInfo(
+              title: 'srt-book',
+              hasContent: true,
+              bookKey: 'srt-book',
+              kind: MediaKind.srt,
+              progressPercent: 42,
+              progressUpdatedAtMs: 5),
+          const RemoteBookInfo(
+              title: 'plain-epub',
+              hasContent: true,
+              bookKey: 'plain-epub',
+              progressPercent: 10,
+              progressUpdatedAtMs: 3),
+        ],
+        remoteVideos: <RemoteVideoInfo>[
+          const RemoteVideoInfo(
+              id: 'video/r', title: 'R', positionMs: 1, positionUpdatedAtMs: 2),
+        ],
+      );
+      final RemoteContinueCandidate srt =
+          out.singleWhere((RemoteContinueCandidate c) => c.id == 'srt-book');
+      expect(srt.kind, MediaKind.srt,
+          reason: 'BUG-1119：远端 SRT 书必须保住种类，不得降维成 epub');
+      expect(srt.isVideo, isFalse);
+      expect(
+          out
+              .singleWhere((RemoteContinueCandidate c) => c.id == 'plain-epub')
+              .kind,
+          MediaKind.epub);
+      final RemoteContinueCandidate video =
+          out.singleWhere((RemoteContinueCandidate c) => c.id == 'video/r');
+      expect(video.kind, MediaKind.video);
+      expect(video.isVideo, isTrue);
+    });
+
+    test('RemoteContinueCandidate 结构上装得下第三种媒体（游戏）', () {
+      // BUG-1119：旧 `bool isVideo` 只有两个值，游戏等第三种媒体结构上进不了
+      // 远端「继续」。枚举化后候选可如实携带 game（远端游戏 wire 导出是独立
+      // follow-up，本测试守住结构不再是障碍）。
+      const RemoteContinueCandidate game = RemoteContinueCandidate(
+        kind: MediaKind.game,
+        id: 'game/1',
+        title: 'G',
+        recentMs: 9,
+      );
+      expect(game.kind, MediaKind.game);
+      expect(game.isVideo, isFalse);
+    });
+
     test('mergeActivityEvents：按时刻倒序混排并截断', () {
       final List<ActivityEventRow> merged = mergeActivityEvents(
         <ActivityEventRow>[_row(title: 'a', timestampMs: 100)],
@@ -278,6 +336,54 @@ void main() {
               .single
               .entries,
           hasLength(1));
+    });
+  });
+
+  group('RemoteBookInfo kind wire roundtrip（BUG-1119）', () {
+    test('旧 wire 无 kind 键 → 回落 epub（旧 host 向后兼容）', () {
+      final RemoteBookInfo decoded = RemoteBookInfo.fromJson(<String, Object?>{
+        'title': 'legacy',
+        'hasContent': true,
+        'bookKey': 'legacy',
+      });
+      expect(decoded.kind, MediaKind.epub);
+    });
+
+    test("kind:'srt' 解回 srt；未知种类容忍回落 epub", () {
+      expect(
+          RemoteBookInfo.fromJson(<String, Object?>{
+            'title': 's',
+            'hasContent': true,
+            'kind': 'srt',
+          }).kind,
+          MediaKind.srt);
+      // 对端未来新增的未知种类不得抛异常（MediaKind.tryParse 契约）。
+      expect(
+          RemoteBookInfo.fromJson(<String, Object?>{
+            'title': 'w',
+            'hasContent': true,
+            'kind': 'weird-future-kind',
+          }).kind,
+          MediaKind.epub);
+    });
+
+    test('toJson：epub 缺省不写键（旧书清单 wire 字节不变守卫）；srt 写 kind', () {
+      const RemoteBookInfo epub =
+          RemoteBookInfo(title: 'e', hasContent: true, bookKey: 'e');
+      expect(epub.toJson().containsKey('kind'), isFalse,
+          reason: 'additive 字段 epub 缺省必须不写键，保证旧书清单 wire 字节完全不变');
+      const RemoteBookInfo srt = RemoteBookInfo(
+          title: 's', hasContent: true, bookKey: 's', kind: MediaKind.srt);
+      expect(srt.toJson()['kind'], 'srt');
+      expect(RemoteBookInfo.fromJson(srt.toJson()).kind, MediaKind.srt,
+          reason: 'toJson→fromJson 回环保 kind');
+    });
+
+    test('copyWith 保留/覆盖 kind', () {
+      const RemoteBookInfo srt = RemoteBookInfo(
+          title: 's', hasContent: true, bookKey: 's', kind: MediaKind.srt);
+      expect(srt.copyWith(hasEmbeddedCover: true).kind, MediaKind.srt);
+      expect(srt.copyWith(kind: MediaKind.epub).kind, MediaKind.epub);
     });
   });
 }

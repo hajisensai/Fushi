@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/obfuscating_sync_backend.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 
@@ -29,7 +29,7 @@ void main() {
     test('hibikiServer (LAN) is NOT wrapped', () {
       final backend = resolveSyncBackend(SyncBackendType.hibikiServer);
       expect(backend, isNot(isA<ObfuscatingSyncBackend>()));
-      expect(backend, isA<HibikiClientSyncBackend>());
+      expect(backend, isA<InterconnectSyncBackend>());
     });
 
     test('every SyncBackendType is handled (no enum drift)', () {
@@ -65,7 +65,7 @@ void _guardSourceFiles() {
         'lib/src/sync/dropbox_sync_backend.dart',
         'lib/src/sync/ftp_sync_backend.dart',
         'lib/src/sync/sftp_sync_backend.dart',
-        'lib/src/sync/hibiki_client_sync_backend.dart',
+        'lib/src/sync/interconnect_sync_backend.dart',
       ];
       for (final path in backendFiles) {
         final src = File(path).readAsStringSync();

@@ -3,26 +3,18 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:hibiki/src/media/media_extensions.dart';
+
 /// 支持「从 app 外用 Hibiki 打开」的视频扩展名（小写，不含点）。
 ///
-/// 与 [VideoImportDialog] 的 `FileType.video` 大致对齐，覆盖常见容器格式。
-/// libmpv（media_kit 底层）能解这些格式；不在表内的扩展名一律拒绝，避免把
-/// 任意文件（如词典 zip、EPUB）误当视频打开。
-const Set<String> _supportedVideoExtensions = <String>{
-  'mkv',
-  'mp4',
-  'm4v',
-  'avi',
-  'webm',
-  'mov',
-  'ts',
-  'm2ts',
-  'mts',
-  'flv',
-  'wmv',
-  'mpg',
-  'mpeg',
-  'ogv',
+/// 派生自共享真相源 [kVideoExtensions]（media_extensions.dart，导入 / 目录扫描 /
+/// 刮削同表）± 显式增删——此前这里手写第三份整表并已静默漂移（`.rmvb` 能导入却
+/// 不能从 app 外打开）。libmpv（media_kit 底层）能解全部这些格式；不在表内的
+/// 扩展名一律拒绝，避免把任意文件（如词典 zip、EPUB）误当视频打开。
+final Set<String> _supportedVideoExtensions = <String>{
+  for (final String ext in kVideoExtensions) ext.substring(1),
+  // 显式增：`.3gp`（手机拍摄容器）历史上只在外开白名单里。导入表暂不收录——
+  // 扩大导入/扫描面不属本轮收敛；外开保留既有能力（Never break userspace）。
   '3gp',
 };
 
