@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1109 条。点号进各自文件。
+> 共 1110 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1145](bugs/BUG-1145-clipboard-history-never-captured.md) | ✅ | ✅ | 桌面剪贴板复制历史永远为空（采集回调从未触发） |
 | [BUG-1142](bugs/BUG-1142-gal-launch-failure-unclassified.md) | ✅ | ✅ | gal 启动失败只报无信息兜底文案，失败原因在 launchGame 的 bool 返回值处被丢弃 |
 | [BUG-1141](bugs/BUG-1141-download-discovery-timeout-too-short.md) | ✅ | ✅ | 代理下「发现」搜索 20s 超时太短，请求本可成功却被掐断 |
 | [BUG-1140](bugs/BUG-1140-cross-chapter-turn-latency.md) | ✅ | ✅ | 跨章翻页耗时实测与提速（遮罩口径） |
