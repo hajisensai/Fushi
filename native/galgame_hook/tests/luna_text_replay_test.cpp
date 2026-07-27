@@ -56,7 +56,7 @@ int main(int argc, char** argv) {
     return 8;
   }
 
-  // BUG-1144：带 ruby 的台词被 KiriKiriZ 分别以 base（汉字）和 ruby（假名）两种形式
+  // BUG-1163：带 ruby 的台词被 KiriKiriZ 分别以 base（汉字）和 ruby（假名）两种形式
   // 送进同一 hook 面，叠上完整行双写后收到的是 `A A B B A A`。整串既不是二倍重复
   // （前半 AAB != 后半 BAA），也不是等长游程伪影，旧实现整串放行 → 一句话出现六遍。
   std::wstring ruby_variant = single_line;
@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
     return 23;
   }
 
-  // BUG-1143：手动/记忆选定线程后，同一 hook 面（同 addr+hookcode，ctx/ctx2 不同）的
+  // BUG-1159：手动/记忆选定线程后，同一 hook 面（同 addr+hookcode，ctx/ctx2 不同）的
   // 其余调用路径必须继续放行，否则剧情一换调用路径整段台词就被丢弃。
   {
     hibiki_voice_hook::LunaTextSelector face_selector;

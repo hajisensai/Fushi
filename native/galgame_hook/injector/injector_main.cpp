@@ -457,7 +457,7 @@ uint64_t LunaTextThreadId(const wchar_t* hookcode, const char* hookname,
   return hash == 0 ? 1 : hash;
 }
 
-// hook「面」id：与 LunaTextThreadId 同源，但**刻意不含 ctx/ctx2**（BUG-1143）。
+// hook「面」id：与 LunaTextThreadId 同源，但**刻意不含 ctx/ctx2**（BUG-1159）。
 // 同一个 hook 点在不同调用路径下 ctx/ctx2 会变，thread_id 随之变；用于展示和诊断时
 // 这种区分是必要的，用于「用户选定了哪条线程」的过滤时则过细，会把同一 hook 面的
 // 其余调用路径整段丢弃。face 只锚 hook 身份（进程 + 地址 + hookcode/hookname）。

@@ -18,7 +18,7 @@ constexpr int kLunaMinFoldedLineChars = 4;
 // untouched so the artifact filter can continue rejecting single-character
 // repetition noise.
 //
-// BUG-1144：旧实现只认「整串恰好二倍」（前半 == 后半）。带 ruby 的台词会被
+// BUG-1163：旧实现只认「整串恰好二倍」（前半 == 后半）。带 ruby 的台词会被
 // KiriKiriZ 分别以 base（汉字）和 ruby（假名）两种形式送进同一个 hook 点，再叠上
 // 本 hook 面固有的完整行双写，实际收到的是 `A A B B A A`（A=汉字版、B=注音版）——
 // 前半 `AAB` != 后半 `BAA`，整串判据一条都不命中，整串原样入环，于是浮窗/台词列表/
@@ -79,7 +79,7 @@ inline bool LunaTextIsArtifact(const wchar_t* text, int len) {
 
 // 手动/记忆选定的线程是否应放行本行（纯函数，便于单测）。
 //
-// BUG-1143：`selected_text_thread_id` 存的是一个具体的 `TextSlot::thread_id`，而
+// BUG-1159：`selected_text_thread_id` 存的是一个具体的 `TextSlot::thread_id`，而
 // thread_id = FNV1a(processId, addr, **ctx, ctx2**, hookcode, hookname) —— 含调用上下文。
 // 同一个 hook 面（同 addr + 同 hookcode/hookname）在不同调用路径下 ctx/ctx2 会变，
 // thread_id 随之变，旧的 `manually_selected == thread_id` 精确匹配就把整段台词丢掉：

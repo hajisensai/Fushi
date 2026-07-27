@@ -20,7 +20,7 @@ Directory? _findRepoRoot() {
 }
 
 void main() {
-  group('资源↔文本配对窗口两侧同值（BUG-1143）', () {
+  group('资源↔文本配对窗口两侧同值（BUG-1159）', () {
     test(
         'native kKirikiriFollowingTextWindowMs == Dart kGalVoicePairingWindowMs',
         () {

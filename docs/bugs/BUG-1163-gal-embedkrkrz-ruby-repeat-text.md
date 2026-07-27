@@ -1,4 +1,4 @@
-## BUG-1144 · EmbedKrkrZ ruby 双写产生重复台词，折叠只认精确二倍全部漏过
+## BUG-1163 · EmbedKrkrZ ruby 双写产生重复台词，折叠只认精确二倍全部漏过
 - **报告**：2026-07-27（用户：截图反馈——游戏内只有一句「李空って、やぎ座だっけ？　みずがめ座？」，hook 浮窗与捕获工作台实时台词却显示成六段拼接）
 - **真实性**：✅ 真 bug。收到的串是 `A A B B A A`——A = 汉字版「李空って…」、B = 注音版「りくって…」。带 ruby 的「李空(りく)」被 KiriKiriZ 分别以 base 和 ruby 两种形式送进同一个 hook 面，再叠上 `EmbedKrkrZ` 这条 hook 固有的完整行双写，一次事件回传六段。三道现有防线逐一漏过：
   - `native/galgame_hook/include/luna_text_selector.h:16-23`（修复前）`LunaNormalizedTextLength` 只认**整串恰好二倍**（前半 == 后半）。这里前半 `AAB` != 后半 `BAA`，不折叠。
@@ -9,5 +9,5 @@
   - 折叠仍只对 `EmbedKrkrZ` 生效（`LunaNormalizedTextLengthForHook:44-49` 的 hook 名门控未变），其它引擎不受影响。
 - **[x] ② 已加自动化测试** — `native/galgame_hook/tests/luna_text_replay_test.cpp` 新增三条：`A A B B A A` 六段拼接折成单句 A（修复前在返回码 21 处失败）、同形串在非 EmbedKrkrZ 引擎下原样保留、正常台词不被折叠。既有三条断言（精确二倍折半 / 其它引擎不折 / `AABBCC` 每字伪影不折）逐条验算后仍成立，`AABBCC` 因 `k>=4 且 2k<=6` 无解而继续返回全长。
 - **验证**：native x64 + x86 `ctest -R luna_text` 均通过。
-- **未验证（`implemented_unverified`）**：与 BUG-1143 同样受本机环境阻断（.NET SDK 6 无法构建 net8.0 的 `hibiki_unity_audio_runtime`，完整 ALL 构建与 injector 二进制未重建），**真机未复测**。需用户在原始路径重跑确认浮窗只剩一句。
-- **相关**：BUG-1143（同源，同一 hook 面多调用上下文导致的文本丢失与音频降级）、BUG-1129（预览折叠，其备注指出双写折叠只对 EmbedKrkrZ 硬编码生效）。
+- **未验证（`implemented_unverified`）**：与 BUG-1159 同样受本机环境阻断（.NET SDK 6 无法构建 net8.0 的 `hibiki_unity_audio_runtime`，完整 ALL 构建与 injector 二进制未重建），**真机未复测**。需用户在原始路径重跑确认浮窗只剩一句。
+- **相关**：BUG-1159（同源，同一 hook 面多调用上下文导致的文本丢失与音频降级）、BUG-1129（预览折叠，其备注指出双写折叠只对 EmbedKrkrZ 硬编码生效）。

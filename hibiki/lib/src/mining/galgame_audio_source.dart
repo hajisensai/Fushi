@@ -367,7 +367,7 @@ GalHookInjectorFailure classifyGalHookInjectorFailure(
 /// `native/galgame_hook/hook/voice_resource_pairing.h` 的
 /// `kKirikiriFollowingTextWindowMs` 同值**。
 ///
-/// BUG-1143：两侧原本各写各的（native 1500 / Dart 1000），中间 500ms 是死区——native
+/// BUG-1159：两侧原本各写各的（native 1500 / Dart 1000），中间 500ms 是死区——native
 /// 在 1500ms 内配上就把 `TextSlot::seq` 写进资源文件名，消费端却因为超出 1000ms 拒收；
 /// 而带 marker 的资源**又被明确禁止**回退到时间窗兜底（见下方 `continue`），于是
 /// 「打了标」反而比「没打标」更容易失败。两个常数没有任何交叉引用，漂移不会被发现，

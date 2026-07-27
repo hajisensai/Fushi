@@ -1,4 +1,4 @@
-## BUG-1143 · 文本线程记忆按 ctx 严格匹配掐断文本流，连带语音资源配对失败降级
+## BUG-1159 · 文本线程记忆按 ctx 严格匹配掐断文本流，连带语音资源配对失败降级
 - **报告**：2026-07-27（用户：截图反馈——捕获工作台里 #84/#85 音频标「已降级 · system_loopback · 5.00s · engine_utterance_unavailable」，并观察到「如果中间有一大段空白，后面的音频容易降级」）
 - **真实性**：✅ 真 bug（两处独立缺陷，主因是①）。
   - **① 文本流被掐断（主因）**：`selected_text_thread_id` 存的是具体 `TextSlot::thread_id`，而 `thread_id = FNV1a(processId, addr, **ctx, ctx2**, hookcode, hookname)`（`native/galgame_hook/injector/injector_main.cpp:444-458`）含调用上下文。`LunaTextSelector::ShouldWrite` 对手动/记忆选定值做精确匹配 `manually_selected == thread_id`（`native/galgame_hook/include/luna_text_selector.h:95` 修复前），同一 hook 面换个调用路径（ctx/ctx2 变）就整行丢弃。而 Hibiki 侧 `_maybeRestoreTextThread`（`hibiki/lib/src/mining/gal_hook_session_controller.dart:1995`）会**自动**恢复上次会话记住的线程——其注释已自陈「指纹只能锚到 hook 而锚不到具体并行线程（**ctx 未透出**）」，即用 hook 粒度的记忆锁上了 thread 粒度的门。用户本次并未手动选线程。
@@ -14,4 +14,4 @@
   - `hibiki/test/mining/gal_voice_pairing_window_parity_test.dart`（新增）：源码扫描守卫，读 `voice_resource_pairing.h` 解析 `kKirikiriFollowingTextWindowMs` 并断言与 `kGalVoicePairingWindowMs` 同值，防两侧再次漂移；另加「窗口上界处 eventId 命中必须被接受」（修复前失败）与「eventId 不同的带标资源仍不得被时间窗猜给本行」两条行为测试。
 - **验证**：native x64 + x86 均 `cmake --build --target hibiki_luna_text_replay_test` + `ctest -R luna_text` 通过；`flutter test test/mining/gal_voice_pairing_window_parity_test.dart` 3/3 通过。
 - **未验证（`implemented_unverified`）**：native **完整** ALL 构建在本机被环境阻断——`hibiki_unity_audio_runtime` 需联网下载 vgmstream/UABEA（本机直连 GitHub 不稳），且 `Hibiki.UnityAudioExtract.csproj` 目标 net8.0 而本机只有 .NET SDK 6.0.428（`dotnet --list-sdks` 实测，仅有 net8 runtime 无 SDK）。该 target 与本次改动无关（未触碰其源码），但因此 injector 二进制未在本机重新构建，**真机 E2E 未跑**。原始路径复测（重启捕获会话走同一段剧情，确认那 16 句恢复出文本、资源恢复打标）仍待用户执行；建议同时开 `HIBIKI_LUNA_DIAG=1`（`injector_main.cpp:589`）留证。
-- **相关**：BUG-1144（同源的 EmbedKrkrZ ruby 双写重复文本）、BUG-1129（线程列表预览折叠/排序，其备注已指出 ctx 参与 key 不参与 label）。
+- **相关**：BUG-1163（同源的 EmbedKrkrZ ruby 双写重复文本）、BUG-1129（线程列表预览折叠/排序，其备注已指出 ctx 参与 key 不参与 label）。
