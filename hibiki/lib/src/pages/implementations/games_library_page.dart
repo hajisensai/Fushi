@@ -13,6 +13,8 @@ import 'package:hibiki/src/media/collections/collection_context_dialog.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart'
     show CollectionShelfRow;
+import 'package:hibiki/src/media/collections/collection_drag.dart'
+    show CollectionAddOutcome, MediaCardDraggable, addMediaRefToCollection;
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
@@ -383,6 +385,25 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     if (!added || !mounted) return;
     await _loadCollectionMaps();
     _refresh();
+  }
+
+  /// 把游戏卡拖到合集行头 = 把该游戏加入本合集
+  /// （`CollectionShelfRow.onMediaDropped`）。
+  ///
+  /// 「查成员 → 幂等提示 → 落库 → 失败提示」收口在 [addMediaRefToCollection]
+  /// （书架 / 视频库 / 游戏库同一份，且永不抛出——它挂在 `void` 回调上）；
+  /// 真写进去了才走 [_addGameToCollection] 同款刷新并报成功。
+  Future<void> _addMediaToCollection(
+      int collectionId, MediaRef mediaRef) async {
+    final CollectionAddOutcome outcome = await addMediaRefToCollection(
+      database: _appModel.database,
+      collectionId: collectionId,
+      mediaRef: mediaRef,
+    );
+    if (outcome != CollectionAddOutcome.added || !mounted) return;
+    await _loadCollectionMaps();
+    _refresh();
+    HibikiToast.show(msg: t.batch_add_to_collection_success(n: 1));
   }
 
   /// 合集横排行折叠开关（游戏库独立偏好命名空间，见
@@ -992,6 +1013,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         collapsed: _appModel.prefsRepo.gamesCollapsedCollectionIds
             .contains(collection.id),
         onToggleCollapsed: () => _toggleCollectionCollapsed(collection.id),
+        // 拖游戏卡到行头 = 把该游戏加入本合集。游戏库此前完全没有拖放接线，
+        // 这是它的第一条（标签拖放仍未接，与书/视频的差异保持原样）。
+        onMediaDropped: (MediaRef mediaRef) =>
+            _addMediaToCollection(collection.id, mediaRef),
         itemBuilder: (BuildContext _, int i) =>
             _buildGameCard(group.items[i].payload),
       ),
@@ -1014,7 +1039,19 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   }
 
   /// 单张游戏卡（散卡网格与合集行内共用同一构造，回调全量接线）。
+  ///
+  /// 外层 [MediaCardDraggable] = 拖卡进合集的拖拽源（桌面端；游戏库本就只在
+  /// Windows 有实际使用场景）。合集行内的成员卡同样可拖——把成员从一个合集拖到
+  /// 另一个合集行头即多归属（合集成员是多对多，不是移动）。
   Widget _buildGameCard(GalgameEntry game) {
+    return MediaCardDraggable(
+      mediaRef: MediaRef(kind: MediaKind.game, entryKey: game.id),
+      label: game.displayName,
+      child: _buildGameCardBody(game),
+    );
+  }
+
+  Widget _buildGameCardBody(GalgameEntry game) {
     return _GameCard(
       game: game,
       sortLabel: galgameSortValueLabel(game, _view.sortField),

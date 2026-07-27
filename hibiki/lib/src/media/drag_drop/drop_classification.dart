@@ -69,6 +69,32 @@ const Set<String> kDragDictionaryExtensions = <String>{
   'mdx',
 };
 
+/// 漫画扩展名（不带点，小写）：**明确**的漫画载体，落点表面一见即知。
+///
+/// - `mokuro`：mokuro v0.2+ 的 OCR 结果文件（+ 同级图片），走 `MangaImporter`；
+/// - `cbz`：图片压缩包，走 `MangaArchiveImporter`。
+///
+/// 刻意**不含 `zip` / `epub`**：这两者要看包内容才知道是不是图片包
+/// （`MangaArchiveImporter.looksLikeImageArchive` 要真读包），而本文件是纯函数
+/// 分类层、不碰文件系统；且 `zip` 同时是词典包扩展名，无内容判据时把书架上拖入
+/// 的 Yomitan 词典 zip 当漫画导入是误判。图片型 zip/epub 仍可经导入对话框导入
+/// （对话框的分派会真读包），只是不由拖放分类层猜。
+const Set<String> kDragMangaExtensions = <String>{
+  'mokuro',
+  'cbz',
+};
+
+/// 看得出是漫画包、但当前**导入器不支持**的扩展名（不带点，小写）。
+///
+/// `archive` 包不解 RAR，故 cbr/cb7/rar 无法导入。单列一类只为一件事：让落点
+/// 给出明确的「不支持」提示，而不是归进 unknown 后静默无反应（用户实报「拖进去
+/// 一点反应都没有」）。
+const Set<String> kDragUnsupportedMangaExtensions = <String>{
+  'cbr',
+  'cb7',
+  'rar',
+};
+
 /// 音频扩展名（不带点，小写）。镜像 AudiobookStorage.audioExtensions（守卫测试钉死同步）。
 const Set<String> kDragAudioExtensions = <String>{
   'mp3',
@@ -97,6 +123,8 @@ class DroppedFiles {
     required this.dictionaries,
     required this.urls,
     required this.unknown,
+    this.mangas = const <String>[],
+    this.unsupportedMangas = const <String>[],
   });
 
   final List<String> books;
@@ -105,6 +133,15 @@ class DroppedFiles {
   final List<String> audios;
   final List<String> playlists;
   final List<String> dictionaries;
+
+  /// 漫画载体：`.mokuro` / `.cbz`，以及被 [classifyDroppedFiles] 的 `isDirectory`
+  /// 谓词判定为**目录**的路径（整目录页图导入，manga_importer 的
+  /// `importFromImageFolder` 路径）。
+  final List<String> mangas;
+
+  /// 认得出是漫画包但导入器不支持的（cbr/cb7/rar，见
+  /// [kDragUnsupportedMangaExtensions]）——落点据此给明确提示而非静默。
+  final List<String> unsupportedMangas;
 
   /// 拖入的可导入网络流 URL（http(s)，非文件路径）。浏览器地址栏/链接拖进来时，
   /// 原生（Windows CFSTR_INETURLW / macOS public.url / Linux text/uri-list）把 URL
@@ -122,7 +159,9 @@ class DroppedFiles {
       audios.isNotEmpty ||
       playlists.isNotEmpty ||
       dictionaries.isNotEmpty ||
-      urls.isNotEmpty;
+      urls.isNotEmpty ||
+      mangas.isNotEmpty ||
+      unsupportedMangas.isNotEmpty;
 }
 
 String _ext(String path) {
@@ -147,7 +186,15 @@ bool isImportableDropUrl(String candidate) {
 }
 
 /// 把拖入文件路径按扩展名分类。纯函数，无副作用。
-DroppedFiles classifyDroppedFiles(List<String> paths) {
+///
+/// [isDirectory] 是唯一的外注入判据：拖入的**目录**（漫画页图文件夹）没有扩展名，
+/// 纯扩展名分类无法与「无扩展名的文件」区分，而本函数不碰文件系统。调用方
+/// （widget 层）传 `(pth) => Directory(pth).existsSync()`，测试注入假谓词。
+/// 不传（默认 null）时行为与历史逐字节一致——目录会落进 [DroppedFiles.unknown]。
+DroppedFiles classifyDroppedFiles(
+  List<String> paths, {
+  bool Function(String path)? isDirectory,
+}) {
   final List<String> books = <String>[];
   final List<String> videos = <String>[];
   final List<String> subtitles = <String>[];
@@ -155,6 +202,8 @@ DroppedFiles classifyDroppedFiles(List<String> paths) {
   final List<String> playlists = <String>[];
   final List<String> dictionaries = <String>[];
   final List<String> urls = <String>[];
+  final List<String> mangas = <String>[];
+  final List<String> unsupportedMangas = <String>[];
   final List<String> unknown = <String>[];
 
   for (final String path in paths) {
@@ -164,8 +213,22 @@ DroppedFiles classifyDroppedFiles(List<String> paths) {
       urls.add(path.trim());
       continue;
     }
+    // 目录（漫画页图文件夹）：整目录导入一本漫画。放在扩展名分类之前——目录名
+    // 带点时（如 `第01巻.v2`）会被 p.extension 当成扩展名而误分类。
+    if (isDirectory != null && isDirectory(path)) {
+      mangas.add(path);
+      continue;
+    }
     final String ext = _ext(path);
     bool matched = false;
+    if (kDragMangaExtensions.contains(ext)) {
+      mangas.add(path);
+      matched = true;
+    }
+    if (kDragUnsupportedMangaExtensions.contains(ext)) {
+      unsupportedMangas.add(path);
+      matched = true;
+    }
     if (kDragBookExtensions.contains(ext)) {
       books.add(path);
       matched = true;
@@ -201,6 +264,8 @@ DroppedFiles classifyDroppedFiles(List<String> paths) {
     playlists: playlists,
     dictionaries: dictionaries,
     urls: urls,
+    mangas: mangas,
+    unsupportedMangas: unsupportedMangas,
     unknown: unknown,
   );
 }

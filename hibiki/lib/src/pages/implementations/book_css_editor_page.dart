@@ -325,19 +325,21 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
         ],
         bottom: SizedBox(
           height: tokens.spacing.card * 2.5,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: List.generate(_entries.length, (i) {
-                return Padding(
-                  padding: EdgeInsets.only(right: tokens.spacing.gap),
-                  child: HibikiSelectableChip(
-                    label: _tabLabel(i),
-                    selected: i == _selectedIndex,
-                    onSelected: (_) => _attemptSwitchTab(i),
-                  ),
-                );
-              }),
+          child: HorizontalDragScrollable(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: List.generate(_entries.length, (i) {
+                  return Padding(
+                    padding: EdgeInsets.only(right: tokens.spacing.gap),
+                    child: HibikiSelectableChip(
+                      label: _tabLabel(i),
+                      selected: i == _selectedIndex,
+                      onSelected: (_) => _attemptSwitchTab(i),
+                    ),
+                  );
+                }),
+              ),
             ),
           ),
         ),

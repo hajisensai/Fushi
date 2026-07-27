@@ -44,6 +44,7 @@ import 'package:hibiki/src/media/metadata/book_cover_scrape_dialog.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/shelf_sort.dart';
 import 'package:hibiki/src/media/media_search_text.dart';
+import 'package:hibiki/src/media/collections/collection_drag.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/series_shelf_card.dart';
@@ -943,6 +944,27 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     }
   }
 
+  /// 把媒体卡拖到书架合集行头 = 把该条目加入本合集
+  /// （`CollectionShelfRow.onMediaDropped`）。
+  ///
+  /// 「查成员 → 幂等提示 → 落库 → 失败提示」收口在 [addMediaRefToCollection]
+  /// （书架 / 视频库 / 游戏库同一份，且永不抛出——它挂在 `void` 回调上）；
+  /// 真写进去了才按 [_addEpubToCollection] 同款刷新（重取分组映射 + 重绘）。
+  Future<void> _addMediaToCollection(
+    int collectionId,
+    MediaRef mediaRef,
+  ) async {
+    final CollectionAddOutcome outcome = await addMediaRefToCollection(
+      database: ref.read(appProvider).database,
+      collectionId: collectionId,
+      mediaRef: mediaRef,
+    );
+    if (outcome != CollectionAddOutcome.added || !mounted) return;
+    _shelfMapsFuture = _loadShelfMaps();
+    _rebuild(() {});
+    HibikiToast.show(msg: t.batch_add_to_collection_success(n: 1));
+  }
+
   /// 某媒体卡上挂的标签列：标签 map 为空 / 该 key 无标签都返回 null，否则渲染
   /// [_adaptiveTagColumn]。三种媒体（epub/srt/video）只差「watch 哪个标签 provider +
   /// key 类型」，故各 caller 自己 `ref.watch(provider).valueOrNull`（保响应式订阅）后
@@ -1462,6 +1484,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         // 拖标签到行头 = 给整个合集打标签（与散书书级拖放一致）。
         onTagDropped: (BookTagRow tag) =>
             _addTagToCollection(collection.id, tag),
+        // 拖书卡到行头 = 把该书加入本合集（payload 泛型与标签互不误接）。
+        onMediaDropped: (MediaRef mediaRef) =>
+            _addMediaToCollection(collection.id, mediaRef),
         // 行头长按/右键 = 合集上下文菜单（统一三库页：打开/重命名/标签/删除）。
         onContextMenu: () => _showCollectionContextMenu(collection),
         // 行头下方展示该合集已打的标签 chip（与散书标签列同形）。
@@ -1864,6 +1889,12 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       dragBookId: bookKey,
       onTagDropped:
           bookKey == null ? null : (tag) => _addTagToBook(bookKey, tag),
+      // 拖卡进合集：EPUB / PDF / 漫画同为 EpubBooks 行，合集身份统一是
+      // (epub, bookKey)——漫画书架复用本卡，故一处接线两个书架都生效。
+      dragMediaRef: bookKey == null
+          ? null
+          : MediaRef(kind: MediaKind.epub, entryKey: bookKey),
+      dragLabel: displayTitleForBook(item: item, rawTitle: item.title),
       onTap: () async {
         final MediaSource source = item.getMediaSource(appModel: appModel);
         await appModel.openMedia(

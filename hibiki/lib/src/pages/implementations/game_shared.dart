@@ -110,43 +110,45 @@ class GameSectionTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: <Widget>[
-          HibikiSelectableChip(
-            label: t.game_dashboard,
-            leadingIcon: Icons.dashboard_outlined,
-            selected: selected == GameSection.dashboard,
-            focusId: HibikiFocusId('$focusIdPrefix-dashboard'),
-            onSelected: (_) => (onSelectDashboard ??
-                () => gameSectionNotifier.value = GameSection.dashboard)(),
-          ),
-          const SizedBox(width: 8),
-          HibikiSelectableChip(
-            label: t.game_library,
-            leadingIcon: Icons.sports_esports_outlined,
-            selected: selected == GameSection.library,
-            focusId: HibikiFocusId('$focusIdPrefix-library'),
-            onSelected: (_) => onSelectLibrary(),
-          ),
-          const SizedBox(width: 8),
-          HibikiSelectableChip(
-            label: t.game_capture_workbench,
-            leadingIcon: Icons.sensors_outlined,
-            selected: selected == GameSection.monitor,
-            focusId: HibikiFocusId('$focusIdPrefix-capture'),
-            onSelected: (_) => onSelectMonitor(),
-          ),
-          const SizedBox(width: 8),
-          HibikiSelectableChip(
-            label: t.game_diagnostics,
-            leadingIcon: Icons.monitor_heart_outlined,
-            selected: selected == GameSection.diagnostics,
-            focusId: HibikiFocusId('$focusIdPrefix-diagnostics'),
-            onSelected: (_) => onSelectDiagnostics(),
-          ),
-        ],
+    return HorizontalDragScrollable(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: <Widget>[
+            HibikiSelectableChip(
+              label: t.game_dashboard,
+              leadingIcon: Icons.dashboard_outlined,
+              selected: selected == GameSection.dashboard,
+              focusId: HibikiFocusId('$focusIdPrefix-dashboard'),
+              onSelected: (_) => (onSelectDashboard ??
+                  () => gameSectionNotifier.value = GameSection.dashboard)(),
+            ),
+            const SizedBox(width: 8),
+            HibikiSelectableChip(
+              label: t.game_library,
+              leadingIcon: Icons.sports_esports_outlined,
+              selected: selected == GameSection.library,
+              focusId: HibikiFocusId('$focusIdPrefix-library'),
+              onSelected: (_) => onSelectLibrary(),
+            ),
+            const SizedBox(width: 8),
+            HibikiSelectableChip(
+              label: t.game_capture_workbench,
+              leadingIcon: Icons.sensors_outlined,
+              selected: selected == GameSection.monitor,
+              focusId: HibikiFocusId('$focusIdPrefix-capture'),
+              onSelected: (_) => onSelectMonitor(),
+            ),
+            const SizedBox(width: 8),
+            HibikiSelectableChip(
+              label: t.game_diagnostics,
+              leadingIcon: Icons.monitor_heart_outlined,
+              selected: selected == GameSection.diagnostics,
+              focusId: HibikiFocusId('$focusIdPrefix-diagnostics'),
+              onSelected: (_) => onSelectDiagnostics(),
+            ),
+          ],
+        ),
       ),
     );
   }

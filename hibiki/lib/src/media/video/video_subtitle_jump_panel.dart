@@ -1201,26 +1201,28 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           Row(
             children: <Widget>[
               Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SegmentedButton<VideoSubtitleListFilter>(
-                    showSelectedIcon: false,
-                    segments: VideoSubtitleListFilter.values
-                        .map(
-                          (VideoSubtitleListFilter filter) =>
-                              ButtonSegment<VideoSubtitleListFilter>(
-                            value: filter,
-                            label: Text(_filterLabel(filter)),
-                          ),
-                        )
-                        .toList(growable: false),
-                    selected: <VideoSubtitleListFilter>{_filter},
-                    onSelectionChanged: _setFilter,
-                    style: SegmentedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      textStyle: TextStyle(fontSize: widget.fontSize - 1),
+                child: HorizontalDragScrollable(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SegmentedButton<VideoSubtitleListFilter>(
+                      showSelectedIcon: false,
+                      segments: VideoSubtitleListFilter.values
+                          .map(
+                            (VideoSubtitleListFilter filter) =>
+                                ButtonSegment<VideoSubtitleListFilter>(
+                              value: filter,
+                              label: Text(_filterLabel(filter)),
+                            ),
+                          )
+                          .toList(growable: false),
+                      selected: <VideoSubtitleListFilter>{_filter},
+                      onSelectionChanged: _setFilter,
+                      style: SegmentedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        textStyle: TextStyle(fontSize: widget.fontSize - 1),
+                      ),
                     ),
                   ),
                 ),

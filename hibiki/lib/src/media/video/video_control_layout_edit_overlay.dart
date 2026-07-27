@@ -6,6 +6,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 import 'package:hibiki/src/media/video/video_control_item_presentation.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/misc/platform_utils.dart';
 
 class VideoControlLayoutEditOverlay extends StatefulWidget {
   const VideoControlLayoutEditOverlay({
@@ -253,43 +254,47 @@ class _VideoControlLayoutEditOverlayState
               children: <Widget>[
                 SizedBox(
                   height: 48,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Icon(
-                          Icons.dashboard_customize_outlined,
-                          size: 18,
-                          color: cs.primary,
-                        ),
-                        const SizedBox(width: 4),
-                        TextButton(
-                          onPressed: _cancelDraft,
-                          child: Text(t.dialog_cancel),
-                        ),
-                        const SizedBox(width: 2),
-                        FilledButton(
-                          onPressed: _saveDraft,
-                          child: Text(t.dialog_save),
-                        ),
-                        IconButton(
-                          tooltip: MaterialLocalizations.of(context)
-                              .closeButtonTooltip,
-                          icon: const Icon(Icons.close),
-                          onPressed: _cancelDraft,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          t.video_control_palette_title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            color: cs.onSurface,
-                            fontWeight: FontWeight.w700,
+                  // 按钮工具条（取消/保存/标题），不含可拖 chip——放开鼠标拖动
+                  // 滚动不会与下方调色板的 Draggable 抢手势。
+                  child: HorizontalDragScrollable(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Icon(
+                            Icons.dashboard_customize_outlined,
+                            size: 18,
+                            color: cs.primary,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 4),
+                          TextButton(
+                            onPressed: _cancelDraft,
+                            child: Text(t.dialog_cancel),
+                          ),
+                          const SizedBox(width: 2),
+                          FilledButton(
+                            onPressed: _saveDraft,
+                            child: Text(t.dialog_save),
+                          ),
+                          IconButton(
+                            tooltip: MaterialLocalizations.of(context)
+                                .closeButtonTooltip,
+                            icon: const Icon(Icons.close),
+                            onPressed: _cancelDraft,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            t.video_control_palette_title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: cs.onSurface,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
