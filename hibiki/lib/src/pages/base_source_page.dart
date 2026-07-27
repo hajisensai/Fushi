@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hibiki_core/hibiki_core.dart' show kStatSourceBook;
@@ -154,6 +155,22 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
   @protected
   void onDismissBarrierHover(PointerHoverEvent event) {}
+
+  /// Pointer signals that land on the transparent area outside a visible
+  /// dictionary popup. Most sources intentionally ignore them; readers can
+  /// override this to preserve their underlying wheel navigation while the
+  /// popup itself keeps its native scrolling behavior.
+  @protected
+  void onDismissBarrierPointerSignal(PointerSignalEvent event) {}
+
+  /// Whether the native dictionary WebView should forward desktop navigation
+  /// keys to this source. Opt-in because other dictionary surfaces use these
+  /// keys inside the popup itself.
+  @protected
+  bool get capturesDictionaryPopupNavigationKeys => false;
+
+  @protected
+  void onDictionaryPopupNavigationKey(String key) {}
 
   /// TODO-1027：点全屏 dismiss barrier（弹窗矩形外的真空白处）的钩子。默认行为
   /// 是一次性清整栈（[clearDictionaryResult] → 会话收尾，保留隐藏热槽 BUG-092）—
@@ -575,6 +592,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                     Positioned.fill(
                       child: Listener(
                         onPointerHover: onDismissBarrierHover,
+                        onPointerSignal: onDismissBarrierPointerSignal,
                         child: GestureDetector(
                           behavior: HitTestBehavior.translucent,
                           // TODO-834（反转 TODO-720 / BUG-403）：点**所有弹窗矩形外**
@@ -726,6 +744,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         // TODO-058 fail-safe：弹窗 WebView 加载失败也走同一翻可见入口（加载失败
         // 也显示，不卡死「点查词什么都不出」）。
         onRenderError: () => _onPopupLayerRendered(index, item),
+        onHostNavigationKey: capturesDictionaryPopupNavigationKeys
+            ? onDictionaryPopupNavigationKey
+            : null,
         headerWidget: index == 0 ? buildPopupAudioControls() : null,
         overlayWidget: isTop ? buildDictionaryLoading() : null,
         onTextSelected: (text, localRect) async {

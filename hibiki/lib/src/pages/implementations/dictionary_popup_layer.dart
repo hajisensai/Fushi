@@ -423,6 +423,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onScrolledToBottom,
     this.onRendered,
     this.onRenderError,
+    this.onHostNavigationKey,
     this.headerWidget,
     this.overlayWidget,
     this.isDark = false,
@@ -515,6 +516,7 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// TODO-058 fail-safe：弹窗 WebView 主框架加载失败时触发，宿主据此立即翻可见
   /// 挂起的冷层（加载失败也显示，不卡死）。
   final VoidCallback? onRenderError;
+  final ValueChanged<String>? onHostNavigationKey;
   final Widget? headerWidget;
   final Widget? overlayWidget;
   final bool isDark;
@@ -848,6 +850,7 @@ class DictionaryPopupLayer extends StatelessWidget {
             onScrolledToBottom: onScrolledToBottom,
             onRendered: onRendered,
             onRenderError: onRenderError,
+            onHostNavigationKey: onHostNavigationKey,
           ),
           // 搜索期且还没有词条时，用一层不透明主题色盖板（带进度条）盖住 WebView。
           // 视频（mixin reuseWarmSlot）会在结果就绪前就把热槽设为可见，此刻 WebView

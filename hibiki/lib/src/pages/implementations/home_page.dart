@@ -45,6 +45,7 @@ import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 enum HomeTab {
   home,
   books,
+  manga,
   video,
   downloads,
   dictionaries,
@@ -65,6 +66,7 @@ List<HomeTab> homeActiveTabs({
     <HomeTab>[
       HomeTab.home,
       HomeTab.books,
+      HomeTab.manga,
       if (videoEnabled) HomeTab.video,
       // 下载 tab 恒在（统一下载中心）：除番剧 torrent 外还承载通用磁力（书）与
       // 漫画「在线目录」卷下载队列，不再随视频开关隐藏；位置在视频（若开）之后。
@@ -129,6 +131,12 @@ AdaptiveNavItem homeNavItemFor(HomeTab tab) {
         icon: Icons.menu_book_outlined,
         selectedIcon: Icons.menu_book,
         label: t.books,
+      );
+    case HomeTab.manga:
+      return AdaptiveNavItem(
+        icon: Icons.photo_library_outlined,
+        selectedIcon: Icons.photo_library,
+        label: t.manga_library,
       );
     case HomeTab.video:
       return AdaptiveNavItem(
@@ -926,6 +934,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// 若把它也保活会不再 re-mount 而漏消费。
   static const Set<HomeTab> _keepAliveTabs = <HomeTab>{
     HomeTab.books,
+    HomeTab.manga,
     HomeTab.video,
     HomeTab.games,
   };
@@ -992,6 +1001,8 @@ class _HomePageState extends BasePageState<HomePage>
         return _buildSettingsTabContent(showBackButton: false);
       case HomeTab.books:
         return const HomeReaderPage();
+      case HomeTab.manga:
+        return const MangaShelfPage();
     }
   }
 

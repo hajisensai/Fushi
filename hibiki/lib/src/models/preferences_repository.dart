@@ -1756,6 +1756,40 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// PC 漫画整卷 OCR 默认引擎。稳定字符串而非 enum index，避免重排枚举破坏偏好。
+  /// `auto` 的解析顺序由漫画模块统一控制，且永不自动跨到 Google Lens。
+  String get mangaOcrEnginePreference =>
+      getPref('manga_ocr_engine_preference', defaultValue: 'auto') as String;
+
+  Future<void> setMangaOcrEnginePreference(String value) async {
+    await setPref('manga_ocr_engine_preference', value);
+    notifyListeners();
+  }
+
+  String get mangaSpreadPreference =>
+      getPref('manga_spread_preference', defaultValue: 'auto') as String;
+
+  Future<void> setMangaSpreadPreference(String value) async {
+    await setPref('manga_spread_preference', value);
+    notifyListeners();
+  }
+
+  String get mangaReadingDirection =>
+      getPref('manga_reading_direction', defaultValue: 'rtl') as String;
+
+  Future<void> setMangaReadingDirection(String value) async {
+    await setPref('manga_reading_direction', value);
+    notifyListeners();
+  }
+
+  int get mangaZoomPercent =>
+      getPref('manga_zoom_percent', defaultValue: 100) as int;
+
+  Future<void> setMangaZoomPercent(int value) async {
+    await setPref('manga_zoom_percent', value.clamp(50, 200));
+    notifyListeners();
+  }
+
   /// 漫画「在线目录」站点根 URL（O1：mokuro.moe 目录源；`MokuroMoeClient` 消费，
   /// 空串/尾斜杠由 client 侧 `normalizeMokuroMoeBaseUrl` 归一回默认站点）。
   String get mangaOnlineCatalogBaseUrl =>
@@ -1786,7 +1820,9 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 云端识别模型名（空串=默认 `gemini-2.5-flash`，见 cloud_ocr_client.dart）。
+  /// 旧版单框 Gemini 识别模型名。
+  ///
+  /// 仅保留偏好键以兼容已有数据；漫画模块已改为整页 OCR，不再展示此配置。
   String get mangaCloudOcrModel =>
       getPref('manga_cloud_ocr_model', defaultValue: '') as String;
 

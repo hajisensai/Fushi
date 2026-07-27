@@ -29,11 +29,24 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1110 条。点号进各自文件。
+> 共 1123 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1156](bugs/BUG-1156-manga-spread-cropped-janky.md) | ✅ | ✅ | 漫画双页图片裁切且翻页卡顿 |
+| [BUG-1155](bugs/BUG-1155-manga-popup-pagination-focus.md) | ✅ | ✅ | 漫画查词弹窗吞掉滚轮和左右翻页 |
+| [BUG-1154](bugs/BUG-1154-manga-page-jump-controller-lifecycle.md) | ✅ | ✅ | 漫画页码跳转关闭弹窗后红屏 |
+| [BUG-1153](bugs/BUG-1153-manga-window-generation-stale-page.md) | ✅ | ✅ | 漫画页码已翻但 WebView 仍显示旧页面 |
+| [BUG-1152](bugs/BUG-1152-manga-lens-top-left-rotated-hit-regions.md) | ✅ | ✅ | 漫画 Lens OCR 坐标上下镜像且旋转文字点词错位 |
+| [BUG-1151](bugs/BUG-1151-manga-incremental-ocr-cache-recovery.md) | ✅ | ✅ | 漫画增量 OCR 缓存重开后未恢复 |
+| [BUG-1150](bugs/BUG-1150-manga-ocr-onnx-input-contract.md) | ✅ | ✅ | 漫画 OCR 按 ONNX 元数据适配单输入模型名称 |
+| [BUG-1149](bugs/BUG-1149-windows-manga-ocr-falls-back-from-unsupported-directml-provider.md) | ✅ | ✅ | Windows 漫画本地 OCR 不支持 DirectML 时未回退 CPU |
+| [BUG-1148](bugs/BUG-1148-manga-ocr-character-hit-zoom.md) | ✅ | ✅ | 漫画 OCR 横竖排字符在缩放后查词偏移 |
+| [BUG-1147](bugs/BUG-1147-manga-ocr-coordinate-cache.md) | ✅ | ✅ | 漫画 OCR 查词坐标偏移且重启重复识别 |
+| [BUG-1146](bugs/BUG-1146-manga-ocr-blocks-reader.md) | ✅ | ✅ | 漫画 OCR 模态阻塞阅读且完成页不能立即查词 |
 | [BUG-1145](bugs/BUG-1145-clipboard-history-never-captured.md) | ✅ | ✅ | 桌面剪贴板复制历史永远为空（采集回调从未触发） |
+| [BUG-1144](bugs/BUG-1144-manga-dense-ocr-black-screen.md) | ✅ | ✅ | 漫画全卷 OCR 后密集命中层导致阅读器黑屏 |
+| [BUG-1143](bugs/BUG-1143-manga-high-frequency-turn-queue.md) | ✅ | ✅ | 漫画高频翻页跨窗口时丢失输入 |
 | [BUG-1142](bugs/BUG-1142-gal-launch-failure-unclassified.md) | ✅ | ✅ | gal 启动失败只报无信息兜底文案，失败原因在 launchGame 的 bool 返回值处被丢弃 |
 | [BUG-1141](bugs/BUG-1141-download-discovery-timeout-too-short.md) | ✅ | ✅ | 代理下「发现」搜索 20s 超时太短，请求本可成功却被掐断 |
 | [BUG-1140](bugs/BUG-1140-cross-chapter-turn-latency.md) | ✅ | ✅ | 跨章翻页耗时实测与提速（遮罩口径） |

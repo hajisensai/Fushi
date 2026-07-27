@@ -25,6 +25,12 @@ const String kMangaOcrOutDirName = 'manga_ocr_out';
 /// 逐页断点缓存子目录名（`manga_ocr_out/_pages/`）。
 const String kMangaOcrPagesCacheDirName = '_pages';
 
+/// Separates local ONNX cache entries from network/CLI engines.
+// v2 bakes EXIF orientation before detection. v1 coordinates were measured
+// against the encoded pixel matrix while Chromium displayed the oriented page,
+// so portrait pages with orientation metadata had a shifted lookup layer.
+const String kLocalMangaOcrEngineSignature = 'local-onnx-v2-oriented';
+
 /// 产物文件名（`manga_ocr_out/manga.json`）。
 const String kMangaOcrOutputFileName = 'manga.json';
 
@@ -138,12 +144,17 @@ String ocrPageCacheFileName(String relativeUrl) =>
 /// [OcrPageCache] 的文件实现：`<cacheDir>/<页名>.json`，一页一文件。
 /// 键按**页名**而非页号——目录内容变化（增删页）后页号漂移，页名缓存仍能命中。
 class MangaOcrFilePageCache implements OcrPageCache {
-  MangaOcrFilePageCache({required this.cacheDir, required this.pageNames});
+  MangaOcrFilePageCache({
+    required this.cacheDir,
+    required this.pageNames,
+    required this.pageFiles,
+  }) : assert(pageNames.length == pageFiles.length);
 
   final Directory cacheDir;
 
   /// 与当前枚举顺序对齐的相对 url 列表（pageIndex → 页名）。
   final List<String> pageNames;
+  final List<File> pageFiles;
 
   File _fileFor(int pageIndex) =>
       File(p.join(cacheDir.path, ocrPageCacheFileName(pageNames[pageIndex])));
@@ -160,8 +171,18 @@ class MangaOcrFilePageCache implements OcrPageCache {
     try {
       final Map<String, dynamic> json =
           jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      final FileStat stat = await pageFiles[pageIndex].stat();
+      if (json['source_path'] != pageNames[pageIndex] ||
+          json['source_size'] != stat.size ||
+          json['source_modified_ms'] != stat.modified.millisecondsSinceEpoch) {
+        return null;
+      }
+      final Object? rawResult = json['result'];
+      if (rawResult is! Map<String, dynamic>) {
+        return null;
+      }
       // 缓存里的 pageIndex 是写入时的页号；目录变化后以当前页号为准。
-      final OcrPageResult parsed = OcrPageResult.fromJson(json);
+      final OcrPageResult parsed = OcrPageResult.fromJson(rawResult);
       return OcrPageResult(
         pageIndex: pageIndex,
         imageWidth: parsed.imageWidth,
@@ -180,7 +201,22 @@ class MangaOcrFilePageCache implements OcrPageCache {
       return;
     }
     await cacheDir.create(recursive: true);
-    await _fileFor(result.pageIndex).writeAsString(jsonEncode(result.toJson()));
+    final FileStat stat = await pageFiles[result.pageIndex].stat();
+    final File target = _fileFor(result.pageIndex);
+    final File temporary = File('${target.path}.tmp');
+    await temporary.writeAsString(
+      jsonEncode(<String, Object?>{
+        'source_path': pageNames[result.pageIndex],
+        'source_size': stat.size,
+        'source_modified_ms': stat.modified.millisecondsSinceEpoch,
+        'result': result.toJson(),
+      }),
+      flush: true,
+    );
+    if (target.existsSync()) {
+      await target.delete();
+    }
+    await temporary.rename(target.path);
   }
 }
 
@@ -217,7 +253,10 @@ MokuroPayload buildMangaPayloadFromResults(
           block.box.right,
           block.box.bottom,
         ),
-        isVertical: block.vertical,
+        // Re-evaluate cached local blocks so pages produced by the older,
+        // overly strict 1.5 ratio threshold gain queryable vertical regions
+        // without rerunning OCR.
+        isVertical: block.vertical || isVerticalBlock(block.box),
         fontSize: estimateMangaFontSize(block),
         zIndex: b,
         lines: block.lines,
@@ -241,7 +280,10 @@ Future<img.Image> decodeMangaPageFile(File file) async {
   if (decoded == null) {
     throw StateError('failed to decode image: ${file.path}');
   }
-  return decoded;
+  // Browser image rendering honors EXIF orientation. OCR must use the same
+  // oriented pixel space, otherwise the percentage overlay and click target
+  // are rotated/translated relative to the visible page.
+  return img.bakeOrientation(decoded);
 }
 
 /// 跑整卷目录任务，返回产出的 `manga.json` 绝对路径。
@@ -270,8 +312,13 @@ Future<String> runMangaOcrFolderJob({
   }
 
   final Directory outDir = Directory(p.join(imageDirPath, kMangaOcrOutDirName));
-  final Directory cacheDir =
-      Directory(p.join(outDir.path, kMangaOcrPagesCacheDirName));
+  final Directory cacheDir = Directory(
+    p.join(
+      outDir.path,
+      kMangaOcrPagesCacheDirName,
+      kLocalMangaOcrEngineSignature,
+    ),
+  );
   await cacheDir.create(recursive: true);
 
   final MangaOcrFilePageCache cache = MangaOcrFilePageCache(
@@ -279,6 +326,7 @@ Future<String> runMangaOcrFolderJob({
     pageNames: <String>[
       for (final MangaOcrPageFile page in pages) page.relativeUrl
     ],
+    pageFiles: <File>[for (final MangaOcrPageFile page in pages) page.file],
   );
   final MangaOcrPipeline pipeline = MangaOcrPipeline(
     detector: detector,
@@ -295,8 +343,24 @@ Future<String> runMangaOcrFolderJob({
     onProgress: onProgress,
   );
 
-  final MokuroPayload payload = buildMangaPayloadFromResults(pages, results);
+  final MokuroPayload generated = buildMangaPayloadFromResults(pages, results);
+  final MokuroPayload payload = MokuroPayload(
+    images: generated.images,
+    ocr: const MangaOcrMetadata(
+      engine: 'local_onnx',
+      engineSignature: kLocalMangaOcrEngineSignature,
+      schemaVersion: 1,
+    ),
+  );
   final File output = File(p.join(outDir.path, kMangaOcrOutputFileName));
-  await output.writeAsString(jsonEncode(mangaPayloadToJson(payload)));
+  final File temporary = File('${output.path}.tmp');
+  await temporary.writeAsString(
+    jsonEncode(mangaPayloadToJson(payload)),
+    flush: true,
+  );
+  if (output.existsSync()) {
+    await output.delete();
+  }
+  await temporary.rename(output.path);
   return output.path;
 }

@@ -1,13 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:drift/drift.dart';
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/media/manga/manga_storage.dart';
 import 'package:hibiki/src/media/manga/mokuro_payload.dart';
+import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart';
 import 'package:hibiki/src/media/media_extensions.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
@@ -64,6 +67,54 @@ bool _isMangaImageFile(String path) =>
 /// - `mangaReadingMode` = null（导入时留空 = 跟随阅读器按页图长宽比自动判定）。
 class MangaImporter {
   MangaImporter._();
+
+  /// Import a folder of naturally sorted page images as an immediately
+  /// readable manga. OCR blocks start empty and can be filled by any whole
+  /// volume engine later; an OCR failure therefore never removes the book.
+  static Future<String> importFromImageFolder({
+    required HibikiDatabase db,
+    required String imageDirPath,
+    String? title,
+    DuplicateTitleCallback? onDuplicateTitle,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final Directory root = Directory(imageDirPath);
+    if (!root.existsSync()) {
+      throw MangaImportException('Manga image folder not found: $imageDirPath');
+    }
+    final List<MangaOcrPageFile> files = enumerateMangaPages(root);
+    if (files.isEmpty) {
+      throw const MangaImportException('Manga image folder has no pages');
+    }
+    final List<MokuroImage> pages = <MokuroImage>[];
+    for (final MangaOcrPageFile page in files) {
+      final img.Image? decoded = img.decodeImage(await page.file.readAsBytes());
+      if (decoded == null) {
+        throw MangaImportException(
+          'Could not decode manga page: ${page.relativeUrl}',
+        );
+      }
+      final img.Image oriented = img.bakeOrientation(decoded);
+      pages.add(
+        MokuroImage(
+          url: page.relativeUrl,
+          size: Size(oriented.width.toDouble(), oriented.height.toDouble()),
+          blocks: const <MokuroBlock>[],
+        ),
+      );
+    }
+    final String proposedTitle = title?.trim().isNotEmpty == true
+        ? title!.trim()
+        : (p.basename(root.path).isEmpty ? 'manga' : p.basename(root.path));
+    return _copyAndInsert(
+      db: db,
+      srcDir: root,
+      payload: MokuroPayload(images: pages),
+      proposedTitle: proposedTitle,
+      onDuplicateTitle: onDuplicateTitle,
+      onProgress: onProgress,
+    );
+  }
 
   /// 从 [mokuroPath] 指向的 `.mokuro` 文件导入一本漫画，返回新建的 `bookKey`。
   ///
@@ -234,8 +285,8 @@ class MangaImporter {
       final String coverRel = destRels.first;
 
       // 写序列化页/框结构（url 已改写为 destRel；mangaPayloadToJson 保留 lines_coords）。
-      final Map<String, Object?> serialized =
-          mangaPayloadToJson(MokuroPayload(images: rewritten));
+      final Map<String, Object?> serialized = mangaPayloadToJson(
+          MokuroPayload(images: rewritten, ocr: payload.ocr));
       await File(p.join(bookDir, MangaStorage.kMangaJsonFileName))
           .writeAsString(jsonEncode(serialized), flush: true);
 

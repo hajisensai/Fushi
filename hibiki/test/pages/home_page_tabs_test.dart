@@ -112,6 +112,18 @@ void main() {
     });
   });
 
+  group('manga home tab', () {
+    test('漫画固定紧随普通书架，且有独立导航项', () {
+      final List<HomeTab> tabs = homeActiveTabs(videoEnabled: true);
+      expect(tabs.indexOf(HomeTab.manga), tabs.indexOf(HomeTab.books) + 1);
+
+      final AdaptiveNavItem item = homeNavItemFor(HomeTab.manga);
+      expect(item.icon, Icons.photo_library_outlined);
+      expect(item.selectedIcon, Icons.photo_library);
+      expect(item.label, t.manga_library);
+    });
+  });
+
   group('home tab structure', () {
     test('HomeTab 枚举不再含已删的 texthooker', () {
       expect(

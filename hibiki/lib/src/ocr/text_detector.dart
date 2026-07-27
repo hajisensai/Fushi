@@ -7,8 +7,11 @@
 ///   官方是**不保持长宽比的 squish resize**，非 YOLO 式 letterbox）、
 ///   `rescale 1/255`、`do_normalize=false`（**没有** mean/std 归一化）。
 ///   输入张量 `pixel_values` float32 [1,3,640,640]，RGB、CHW。
-/// - 输出：`logits` [1,300,3]（300 = num_queries，3 类）、`pred_boxes`
-///   [1,300,4]，cxcywh、相对输入图归一化到 0..1。
+/// - 原始导出输出：`logits` [1,300,3]（300 = num_queries，3 类）、
+///   `pred_boxes` [1,300,4]，cxcywh、相对输入图归一化到 0..1。
+/// - 当前下载的 int8 导出把 HuggingFace 后处理包含在图内：输入为 `images` +
+///   `orig_target_sizes`，输出 `scores` / `labels` / `boxes`（xyxy）。
+///   两种导出都在这里兼容，算法层不依赖某一份模型文件的临时命名。
 /// - 后处理（use_focal_loss=true）：对 logits 取 **sigmoid**（非 softmax），
 ///   按 (query, class) 对过阈值（参考实现默认 0.3），cxcywh -> xyxy 再乘回
 ///   原图尺寸；DETR 家族查询间本不需要 NMS，这里保留一个轻量 NMS 兜底
@@ -208,6 +211,47 @@ List<RawDetection> decodeRtdetrOutputs({
   return detections;
 }
 
+/// 解码已经在 ONNX 图内完成 sigmoid/top-k/xyxy 转换的 RT-DETR 输出。
+List<RawDetection> decodeProcessedRtdetrOutputs({
+  required Float32List scores,
+  required Float32List labels,
+  required Float32List boxes,
+  required LetterboxTransform transform,
+  double scoreThreshold = 0.3,
+}) {
+  if (scores.length != labels.length || boxes.length != scores.length * 4) {
+    throw StateError(
+      'processed detector output shapes disagree: '
+      'scores=${scores.length}, labels=${labels.length}, boxes=${boxes.length}',
+    );
+  }
+  final List<RawDetection> detections = <RawDetection>[];
+  for (int i = 0; i < scores.length; i++) {
+    final double score = scores[i];
+    if (score < scoreThreshold) {
+      continue;
+    }
+    final int boxOffset = i * 4;
+    final OcrRect rect = OcrRect(
+      left: transform.inverseX(boxes[boxOffset]),
+      top: transform.inverseY(boxes[boxOffset + 1]),
+      right: transform.inverseX(boxes[boxOffset + 2]),
+      bottom: transform.inverseY(boxes[boxOffset + 3]),
+    ).clamp(transform.srcWidth.toDouble(), transform.srcHeight.toDouble());
+    if (rect.area <= 0) {
+      continue;
+    }
+    detections.add(
+      RawDetection(
+        rect: rect,
+        score: score,
+        classId: labels[i].round(),
+      ),
+    );
+  }
+  return detections;
+}
+
 /// 同类贪心 NMS：按分数降序，IoU >= [iouThreshold] 的低分框剔除。
 List<RawDetection> applyClassAwareNms(
   List<RawDetection> detections, {
@@ -290,24 +334,44 @@ class TextDetector implements OcrDetector {
         await _session.run(<String, OcrTensor>{
       inputName: OcrTensor.float32(
           input, <int>[1, 3, transform.dstHeight, transform.dstWidth]),
+      'orig_target_sizes': OcrTensor.int64(
+        Int64List.fromList(<int>[
+          transform.dstHeight,
+          transform.dstWidth,
+        ]),
+        const <int>[1, 2],
+      ),
     });
     final OcrTensor? logits = outputs[logitsName];
-    final OcrTensor? boxes = outputs[boxesName];
-    if (logits == null || boxes == null) {
+    final OcrTensor? rawBoxes = outputs[boxesName];
+    final OcrTensor? scores = outputs['scores'];
+    final OcrTensor? labels = outputs['labels'];
+    final OcrTensor? processedBoxes = outputs['boxes'];
+    final List<RawDetection> raw;
+    if (logits != null && rawBoxes != null) {
+      final int numQueries = logits.shape[1];
+      final int numClasses = logits.shape[2];
+      raw = decodeRtdetrOutputs(
+        logits: logits.floatData!,
+        boxes: rawBoxes.floatData!,
+        transform: transform,
+        numQueries: numQueries,
+        numClasses: numClasses,
+        scoreThreshold: scoreThreshold,
+      );
+    } else if (scores != null && labels != null && processedBoxes != null) {
+      raw = decodeProcessedRtdetrOutputs(
+        scores: scores.floatData!,
+        labels: labels.floatData!,
+        boxes: processedBoxes.floatData!,
+        transform: transform,
+        scoreThreshold: scoreThreshold,
+      );
+    } else {
       throw StateError(
           'detector outputs missing: got ${outputs.keys.toList()}, '
-          'expected [$logitsName, $boxesName]');
+          'expected [$logitsName, $boxesName] or [scores, labels, boxes]');
     }
-    final int numQueries = logits.shape[1];
-    final int numClasses = logits.shape[2];
-    final List<RawDetection> raw = decodeRtdetrOutputs(
-      logits: logits.floatData!,
-      boxes: boxes.floatData!,
-      transform: transform,
-      numQueries: numQueries,
-      numClasses: numClasses,
-      scoreThreshold: scoreThreshold,
-    );
     return buildPageDetections(applyClassAwareNms(raw));
   }
 

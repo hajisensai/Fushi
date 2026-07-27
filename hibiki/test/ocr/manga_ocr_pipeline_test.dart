@@ -234,6 +234,13 @@ void main() {
         isVerticalBlock(const OcrRect(left: 0, top: 0, right: 50, bottom: 60)),
         isFalse,
       );
+      // 轴对齐外接框会把倾斜竖排拉宽；真实封面约 1.4:1，仍应判为竖排。
+      expect(
+        isVerticalBlock(
+          const OcrRect(left: 0, top: 0, right: 100, bottom: 140),
+        ),
+        isTrue,
+      );
     });
   });
 }

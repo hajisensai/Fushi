@@ -49,8 +49,11 @@ typedef OcrProgressCallback = void Function(int completedPages, int totalPages);
 typedef OcrPageLoader = Future<img.Image> Function(int pageIndex);
 
 /// 竖排判定的长宽比阈值：高 > 宽 * 阈值 视为竖排。
-/// 日漫竖排气泡通常显著瘦高；接近方形的框按横排处理。
-const double kVerticalAspectThreshold = 1.5;
+///
+/// 检测器返回的是轴对齐框，倾斜竖排会被横向外接矩形拉宽；1.5 会把真实封面上
+/// 约 1.4:1 的竖排误判为横排。1.25 仍让接近方形（≤1.2:1）的块保持横排，同时
+/// 覆盖这类倾斜竖排。
+const double kVerticalAspectThreshold = 1.25;
 
 bool isVerticalBlock(OcrRect box) =>
     box.height > box.width * kVerticalAspectThreshold;

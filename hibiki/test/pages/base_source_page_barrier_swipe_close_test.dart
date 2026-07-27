@@ -87,10 +87,16 @@ class BarrierSwipeHostPage extends BaseSourcePage {
 class BarrierSwipeHostPageState
     extends BaseSourcePageState<BarrierSwipeHostPage> {
   int barrierHoverCalls = 0;
+  int barrierPointerSignalCalls = 0;
 
   @override
   void onDismissBarrierHover(PointerHoverEvent event) {
     barrierHoverCalls++;
+  }
+
+  @override
+  void onDismissBarrierPointerSignal(PointerSignalEvent event) {
+    barrierPointerSignalCalls++;
   }
 
   Future<void> topSearch(String term) {
@@ -341,6 +347,33 @@ void main() {
     expect(host.barrierHoverCalls, greaterThan(0),
         reason: 'the drag handlers must not swallow onPointerHover');
     expect(host.debugPopupStack, hasLength(2));
+  });
+
+  testWidgets('wheel on the bare popup barrier reaches the source hook',
+      (WidgetTester tester) async {
+    final appModel = BarrierSwipeAppModel();
+    final hostKey = GlobalKey<BarrierSwipeHostPageState>();
+    await tester.pumpWidget(
+      buildBarrierSwipeApp(appModel: appModel, hostKey: hostKey),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final host = hostKey.currentState!;
+    await host.topSearch('first');
+    await tester.pump();
+    host.barrierPointerSignalCalls = 0;
+
+    await tester.sendEventToBinding(const PointerScrollEvent(
+      position: _bareBarrierPoint,
+      scrollDelta: Offset(0, 120),
+    ));
+    await tester.pump();
+
+    expect(host.barrierPointerSignalCalls, 1,
+        reason: 'the full-screen barrier must not swallow the reader wheel');
+    expect(host.dictionaryPopupShown, isTrue,
+        reason: 'the generic hook does not dismiss; the source owns semantics');
   });
 
   testWidgets(

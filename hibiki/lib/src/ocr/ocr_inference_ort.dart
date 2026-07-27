@@ -8,6 +8,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
+import 'package:flutter/services.dart';
 
 import 'package:hibiki/src/ocr/ocr_inference.dart';
 
@@ -18,8 +19,8 @@ import 'package:hibiki/src/ocr/ocr_inference.dart';
 /// 无 native 实现，任何本地 OCR 会话构造都会抛 MissingPluginException。其余三端
 /// （Windows / Linux / Android）native 正常注册，本地 OCR 照常工作。
 ///
-/// 所有本地 OCR 入口（整卷任务 `MangaOcrServiceImpl`、单框补扫
-/// `MangaBoxRescanService`）都必须先过此闸门，Apple 上改走互联 host / 云端 OCR。
+/// 所有本地整卷 OCR 入口（`MangaOcrServiceImpl`）都必须先过此闸门，
+/// Apple 上改走互联 host；需要整页云端识别时由用户显式选择 Google Lens。
 bool get isLocalOnnxRuntimeAvailable => !(Platform.isMacOS || Platform.isIOS);
 
 OrtProvider _toOrtProvider(OcrExecutionProvider provider) {
@@ -33,6 +34,62 @@ OrtProvider _toOrtProvider(OcrExecutionProvider provider) {
     case OcrExecutionProvider.cpu:
       return OrtProvider.CPU;
   }
+}
+
+/// 用配置的加速 EP 创建会话；vendored `flutter_onnxruntime` 拒绝尚未实现的
+/// provider 时，按 [providers] 中已有的 CPU 后备重试一次。
+///
+/// Windows 的 ONNX Runtime 会报告 `DmlExecutionProvider`，但当前插件的 Windows
+/// MethodChannel 只实现 CPU/CUDA 映射，传 `DIRECT_ML` 会在真正创建 ORT session
+/// 之前抛 `PlatformException(INVALID_PROVIDER, ...)`。调用层已经把 CPU 放在 EP
+/// 列表尾部，因此这里把插件边界的“拒绝整个列表”还原成 ORT 预期的逐级后备语义。
+/// 只捕获明确的 `INVALID_PROVIDER`；模型损坏、shape 错误和推理异常仍原样上抛。
+Future<T> createOcrSessionWithProviderFallback<T>({
+  required List<OcrExecutionProvider> providers,
+  required Future<T> Function(List<OcrExecutionProvider> providers) create,
+}) async {
+  try {
+    return await create(providers);
+  } on PlatformException catch (error) {
+    final bool canFallbackToCpu = error.code == 'INVALID_PROVIDER' &&
+        providers.length > 1 &&
+        providers.contains(OcrExecutionProvider.cpu);
+    if (!canFallbackToCpu) rethrow;
+    return create(const <OcrExecutionProvider>[OcrExecutionProvider.cpu]);
+  }
+}
+
+/// 把算法层的语义输入名对齐到当前 ONNX 文件声明的真实输入名。
+///
+/// Manga OCR 下载源的检测器/编码器都只有一个输入，但不同导出版本分别使用过
+/// `pixel_values`、`images` 等名字。单输入模型不存在位置歧义，因此以 session
+/// 元数据为准；多输入 decoder 仍要求名称精确匹配，避免按顺序猜测而接错张量。
+Map<String, OcrTensor> resolveOcrSessionInputs({
+  required Map<String, OcrTensor> inputs,
+  required List<String> sessionInputNames,
+}) {
+  final Map<String, OcrTensor> resolved = <String, OcrTensor>{};
+  for (final String sessionName in sessionInputNames) {
+    final OcrTensor? exact = inputs[sessionName];
+    if (exact != null) {
+      resolved[sessionName] = exact;
+      continue;
+    }
+    if (sessionName == 'images' && inputs['pixel_values'] != null) {
+      resolved[sessionName] = inputs['pixel_values']!;
+      continue;
+    }
+    return inputs;
+  }
+  if (resolved.isNotEmpty) {
+    return resolved;
+  }
+  if (inputs.length == 1 && sessionInputNames.length == 1) {
+    return <String, OcrTensor>{
+      sessionInputNames.single: inputs.values.single,
+    };
+  }
+  return inputs;
 }
 
 /// flutter_onnxruntime 会话工厂。
@@ -54,10 +111,15 @@ class OrtOcrSessionFactory implements OcrSessionFactory {
     String modelPath, {
     required List<OcrExecutionProvider> providers,
   }) async {
-    final OrtSession session = await _runtime.createSession(
-      modelPath,
-      options: OrtSessionOptions(
-        providers: providers.map(_toOrtProvider).toList(),
+    final OrtSession session =
+        await createOcrSessionWithProviderFallback<OrtSession>(
+      providers: providers,
+      create: (List<OcrExecutionProvider> effectiveProviders) =>
+          _runtime.createSession(
+        modelPath,
+        options: OrtSessionOptions(
+          providers: effectiveProviders.map(_toOrtProvider).toList(),
+        ),
       ),
     );
     return _OrtOcrSession(session);
@@ -73,7 +135,11 @@ class _OrtOcrSession implements OcrSession {
   Future<Map<String, OcrTensor>> run(Map<String, OcrTensor> inputs) async {
     final Map<String, OrtValue> ortInputs = <String, OrtValue>{};
     try {
-      for (final MapEntry<String, OcrTensor> entry in inputs.entries) {
+      final Map<String, OcrTensor> resolvedInputs = resolveOcrSessionInputs(
+        inputs: inputs,
+        sessionInputNames: _session.inputNames,
+      );
+      for (final MapEntry<String, OcrTensor> entry in resolvedInputs.entries) {
         final OcrTensor tensor = entry.value;
         switch (tensor.type) {
           case OcrTensorType.float32:

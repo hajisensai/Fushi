@@ -92,6 +92,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onTopPullReleased,
     this.onRendered,
     this.onRenderError,
+    this.onHostNavigationKey,
     this.nudgeSurfaceOnRender = false,
   });
 
@@ -196,6 +197,12 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// `popupRendered` 才显示的冷层若加载失败，`popupRendered` 永不会发；宿主据此
   /// 立即把该层翻可见（加载失败也显示空壳，至少不卡死「点查词什么都不出」）。
   final VoidCallback? onRenderError;
+
+  /// Optional host-level navigation bridge. Native popup WebViews can own the
+  /// desktop keyboard focus, so an interested host (currently the manga
+  /// reader) receives navigation keys directly from JavaScript instead of
+  /// relying on an ancestor Flutter [Focus] node.
+  final ValueChanged<String>? onHostNavigationKey;
 
   /// TODO-1152：内容渲染完成（`popupRendered`）后是否补一次「表面重绘 nudge」。
   /// 仅用于把 WebView 撑满一块固定大区域（如 in-app 查词页的结果区，[Expanded] 全高）
@@ -349,6 +356,35 @@ class DictionaryPopupWebViewState
   }, { passive: false });
 })();
 ''';
+
+  /// Installs one capture-phase keyboard bridge and only toggles its runtime
+  /// gate on subsequent injections. The gate keeps every non-manga popup's
+  /// existing keyboard behavior unchanged.
+  @visibleForTesting
+  static String debugHostNavigationKeyScript(bool enabled) => '''
+(function(){
+  window.__hibikiHostNavigationKeysEnabled = $enabled;
+  if (window.__hibikiHostNavigationKeysInstalled) return;
+  window.__hibikiHostNavigationKeysInstalled = true;
+  document.addEventListener('keydown', function(e) {
+    if (!window.__hibikiHostNavigationKeysEnabled || e.repeat) return;
+    var key = e.key === 'Esc' ? 'Escape' : e.key;
+    if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'Escape') return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    try {
+      window.flutter_inappwebview.callHandler('hostNavigationKey', key);
+    } catch (err) {}
+  }, true);
+})();
+''';
+
+  void _setHostNavigationKeysEnabled() {
+    if (_controller == null || !_ready) return;
+    _controller!.evaluateJavascript(
+      source: debugHostNavigationKeyScript(widget.onHostNavigationKey != null),
+    );
+  }
 
   /// TODO-1353 复诉：弹窗顶栏 A−/A+ 手动字号步进入口（用户复诉 Ctrl+滚轮不可发现，
   /// 且 Android/iOS 触屏根本没有 Ctrl+滚轮）。直接调用注入的
@@ -698,6 +734,10 @@ JSON.stringify((function(){
     // 不变），但 hasChildPopup 翻转必须重新注入，否则父窗点卡片关不掉刚 push 的子窗。
     if (oldWidget.hasChildPopup != widget.hasChildPopup) {
       _setHasChildPopupJs(widget.hasChildPopup);
+    }
+    if ((oldWidget.onHostNavigationKey == null) !=
+        (widget.onHostNavigationKey == null)) {
+      _setHostNavigationKeysEnabled();
     }
   }
 
@@ -1270,6 +1310,17 @@ JSON.stringify((function(){
                 return null;
               },
             );
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'hostNavigationKey',
+          callback: (args) {
+            final Object? value = args.isEmpty ? null : args.first;
+            if (value is String) {
+              widget.onHostNavigationKey?.call(value);
+            }
+            return null;
           },
         );
 
@@ -1870,6 +1921,10 @@ JSON.stringify((function(){
         controller.evaluateJavascript(source: _topPullReleaseJs);
         // TODO-1353: 装一次 Ctrl+滚轮缩放监听（幂等 guard；warm 热槽也只装一次）。
         controller.evaluateJavascript(source: _zoomWheelJs);
+        controller.evaluateJavascript(
+          source:
+              debugHostNavigationKeyScript(widget.onHostNavigationKey != null),
+        );
         controller
             .evaluateJavascript(source: ReaderCaretScripts.source())
             .then((_) {

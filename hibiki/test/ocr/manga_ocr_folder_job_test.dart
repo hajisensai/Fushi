@@ -98,6 +98,30 @@ void main() {
     });
   });
 
+  test('组装 payload 时升级旧缓存中的倾斜竖排方向', () {
+    const OcrPageResult cached = OcrPageResult(
+      pageIndex: 0,
+      imageWidth: 100,
+      imageHeight: 140,
+      blocks: <OcrBlock>[
+        OcrBlock(
+          box: OcrRect(left: 0, top: 0, right: 100, bottom: 140),
+          vertical: false,
+          lines: <String>['進化を体感'],
+        ),
+      ],
+    );
+
+    final MokuroPayload payload = buildMangaPayloadFromResults(
+      <MangaOcrPageFile>[
+        MangaOcrPageFile(file: File('unused.jpg'), relativeUrl: 'page.jpg'),
+      ],
+      const <OcrPageResult>[cached],
+    );
+
+    expect(payload.images.single.blocks.single.isVertical, isTrue);
+  });
+
   group('ocrPageCacheFileName', () {
     test('子目录斜杠折叠', () {
       expect(ocrPageCacheFileName('p001.jpg'), 'p001.jpg.json');
@@ -147,6 +171,19 @@ void main() {
       }
     });
 
+    test('解码时烘焙 EXIF 方向，OCR 坐标与浏览器显示坐标一致', () async {
+      final img.Image encoded = img.Image(width: 40, height: 80)
+        ..exif.imageIfd.orientation = 6;
+      final File page = File(p.join(root.path, 'oriented.jpg'));
+      page.writeAsBytesSync(img.encodeJpg(encoded));
+
+      final img.Image decoded = await decodeMangaPageFile(page);
+
+      expect(decoded.width, 80);
+      expect(decoded.height, 40);
+      expect(decoded.exif.imageIfd.hasOrientation, isFalse);
+    });
+
     test('全卷：逐页进度、manga.json 内容（url/尺寸/块）、缓存落盘', () async {
       final _FakeDetector detector = _FakeDetector();
       final _FakeRecognizer recognizer = _FakeRecognizer();
@@ -182,7 +219,13 @@ void main() {
 
       // 逐页断点缓存：一页一文件。
       final Directory cacheDir = Directory(
-          p.join(root.path, kMangaOcrOutDirName, kMangaOcrPagesCacheDirName));
+        p.join(
+          root.path,
+          kMangaOcrOutDirName,
+          kMangaOcrPagesCacheDirName,
+          kLocalMangaOcrEngineSignature,
+        ),
+      );
       expect(
         cacheDir.listSync().map((FileSystemEntity e) => p.basename(e.path)),
         containsAll(<String>['p1.png.json', 'p2.png.json', 'p3.png.json']),
@@ -270,7 +313,7 @@ void main() {
       );
       // 毁掉第二页缓存。
       File(p.join(root.path, kMangaOcrOutDirName, kMangaOcrPagesCacheDirName,
-              'p2.png.json'))
+              kLocalMangaOcrEngineSignature, 'p2.png.json'))
           .writeAsStringSync('not json');
       final _FakeDetector detector = _FakeDetector();
       await runMangaOcrFolderJob(
@@ -279,6 +322,25 @@ void main() {
         recognizer: recognizer,
       );
       expect(detector.detectedSizes, <String>['50x80'], reason: '只有损坏缓存的页重新检测');
+    });
+
+    test('源图变化只失效对应页缓存', () async {
+      final _FakeRecognizer recognizer = _FakeRecognizer();
+      await runMangaOcrFolderJob(
+        imageDirPath: root.path,
+        detector: _FakeDetector(),
+        recognizer: recognizer,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+      _writePng(p.join(root.path, 'p2.png'), 55, 80);
+
+      final _FakeDetector detector = _FakeDetector();
+      await runMangaOcrFolderJob(
+        imageDirPath: root.path,
+        detector: detector,
+        recognizer: recognizer,
+      );
+      expect(detector.detectedSizes, <String>['55x80']);
     });
   });
 }

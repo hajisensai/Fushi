@@ -8,6 +8,7 @@ import 'package:hibiki/src/epub/epub_storage.dart';
 import 'package:hibiki/src/media/manga/manga_importer.dart';
 import 'package:hibiki/src/media/manga/manga_storage.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
 /// 在 [srcDir] 写出一份合法的 mokuro 样本（含 sibling 图片），返回 .mokuro 路径。
@@ -104,6 +105,37 @@ void main() {
         isTrue);
     expect(File(p.join(row.extractDir, 'images', 'p002.jpg')).existsSync(),
         isTrue);
+  });
+
+  test(
+      'image folder imports immediately readable empty-OCR manga in natural order',
+      () async {
+    final Directory source = Directory(p.join(srcRoot.path, 'raw'))
+      ..createSync(recursive: true);
+    for (final String name in <String>['10.png', '2.png', '1.png']) {
+      File(p.join(source.path, name)).writeAsBytesSync(
+        img.encodePng(img.Image(width: 80, height: 120)),
+      );
+    }
+
+    final String bookKey = await MangaImporter.importFromImageFolder(
+      db: db,
+      imageDirPath: source.path,
+      title: 'Raw Manga',
+    );
+    final EpubBookRow row = (await db.getEpubBook(bookKey))!;
+    final Map<String, Object?> json = _readMangaJson(row.extractDir);
+    final List<Object?> pages = json['pages']! as List<Object?>;
+    expect(
+      pages.map((Object? page) => (page! as Map)['url']).toList(),
+      <String>['images/1.png', 'images/2.png', 'images/10.png'],
+    );
+    expect(
+      pages.every((Object? page) => ((page! as Map)['blocks'] as List).isEmpty),
+      isTrue,
+    );
+    expect(row.format, 'manga');
+    expect(row.coverPath, 'images/1.png');
   });
 
   test('rollback on bad JSON: no orphan row, no orphan dir', () async {

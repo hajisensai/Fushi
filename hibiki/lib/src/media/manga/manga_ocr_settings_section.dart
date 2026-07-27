@@ -4,19 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/src/media/manga/external_mokuro_runner.dart';
+import 'package:hibiki/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/ocr/cloud_ocr_client.dart';
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 import 'package:hibiki/utils.dart';
 
 /// 设置区「漫画 OCR」组的正文（内联进阅读设置分类）。
 ///
 /// 内容：内置 OCR 模型状态行（已下载/未下载 + 体积）、下载按钮（进度条 + 可取消）、
-/// 删除按钮（二次确认）——**全平台显示**（P4：单框补扫只需识别三件套，移动端也
-/// 用得上；整卷 OCR 向导仍桌面/远程，`isSupportedPlatform` 不支持时加一行小字说明
-/// 移动端用于框选识别）。下方是外部 mokuro CLI 路径设置（仅桌面：CLI 是桌面工具）
-/// 与「云端手写识别（Gemini）」子组（开关默认关 + API key 密文 + 模型名 + 明示
-/// 图片上云的隐私说明）。
+/// 删除按钮（二次确认）。本地模型只在支持整卷 ONNX 的平台显示；下方是外部
+/// mokuro CLI 路径设置（仅桌面）和 Google Lens 整页上传说明。旧的单框 Gemini
+/// 配置不再渲染。
 ///
 /// 服务经构造参数注入（不 `ref.read` provider），偏好与外部探测提供可注入默认实现，
 /// 故最小 widget 测试注 fake 即可独立编译/通过；真实接线由 `settings_schema_manga_ocr.dart`
@@ -27,12 +25,8 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
     this.probeExternal,
     this.mokuroPathGetter,
     this.mokuroPathSetter,
-    this.cloudEnabledGetter,
-    this.cloudEnabledSetter,
-    this.cloudApiKeyGetter,
-    this.cloudApiKeySetter,
-    this.cloudModelGetter,
-    this.cloudModelSetter,
+    this.enginePreferenceGetter,
+    this.enginePreferenceSetter,
     super.key,
   });
 
@@ -48,13 +42,10 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
   /// 外部 mokuro 路径写入（测试用）：null = 写 [appProvider] 偏好。
   final Future<void> Function(String value)? mokuroPathSetter;
 
-  /// 云端识别偏好注入口（测试用）：null = 走 [appProvider] 偏好委托。
-  final bool Function()? cloudEnabledGetter;
-  final Future<void> Function(bool value)? cloudEnabledSetter;
-  final String Function()? cloudApiKeyGetter;
-  final Future<void> Function(String value)? cloudApiKeySetter;
-  final String Function()? cloudModelGetter;
-  final Future<void> Function(String value)? cloudModelSetter;
+  /// Engine preference is optional for embedders predating the selector.
+  /// When omitted the section uses `auto` without touching a provider.
+  final String Function()? enginePreferenceGetter;
+  final Future<void> Function(String value)? enginePreferenceSetter;
 
   @override
   ConsumerState<MangaOcrSettingsSection> createState() =>
@@ -64,10 +55,7 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
 class _MangaOcrSettingsSectionState
     extends ConsumerState<MangaOcrSettingsSection> {
   late final TextEditingController _pathCtrl;
-  late final TextEditingController _cloudKeyCtrl;
-  late final TextEditingController _cloudModelCtrl;
-
-  bool _cloudEnabled = false;
+  late MangaOcrEnginePreference _enginePreference;
 
   MangaOcrModelStatus? _status;
   bool _loadingStatus = true;
@@ -88,20 +76,20 @@ class _MangaOcrSettingsSectionState
   void initState() {
     super.initState();
     _pathCtrl = TextEditingController(text: _readPath());
-    _cloudEnabled = _readCloudEnabled();
-    _cloudKeyCtrl = TextEditingController(text: _readCloudApiKey());
-    _cloudModelCtrl = TextEditingController(text: _readCloudModel());
-    // 模型状态全平台加载（单框补扫移动端也用识别模型；只有整卷向导受
-    // isSupportedPlatform 限制）。
-    unawaited(_loadStatus());
+    _enginePreference = MangaOcrEnginePreferenceKey.fromKey(
+      _readEnginePreference(),
+    );
+    if (widget.service.isSupportedPlatform) {
+      unawaited(_loadStatus());
+    } else {
+      _loadingStatus = false;
+    }
   }
 
   @override
   void dispose() {
     _downloadSub?.cancel();
     _pathCtrl.dispose();
-    _cloudKeyCtrl.dispose();
-    _cloudModelCtrl.dispose();
     super.dispose();
   }
 
@@ -120,49 +108,19 @@ class _MangaOcrSettingsSectionState
     await ref.read(appProvider).setMangaExternalMokuroPath(value);
   }
 
-  bool _readCloudEnabled() {
-    final bool Function()? getter = widget.cloudEnabledGetter;
+  String _readEnginePreference() {
+    final String Function()? getter = widget.enginePreferenceGetter;
     if (getter != null) return getter();
-    return ref.read(appProvider).mangaCloudOcrEnabled;
+    return MangaOcrEnginePreference.auto.key;
   }
 
-  Future<void> _writeCloudEnabled(bool value) async {
-    final Future<void> Function(bool)? setter = widget.cloudEnabledSetter;
+  Future<void> _writeEnginePreference(
+    MangaOcrEnginePreference preference,
+  ) async {
+    final Future<void> Function(String)? setter = widget.enginePreferenceSetter;
     if (setter != null) {
-      await setter(value);
-      return;
+      await setter(preference.key);
     }
-    await ref.read(appProvider).setMangaCloudOcrEnabled(value);
-  }
-
-  String _readCloudApiKey() {
-    final String Function()? getter = widget.cloudApiKeyGetter;
-    if (getter != null) return getter();
-    return ref.read(appProvider).mangaCloudOcrApiKey;
-  }
-
-  Future<void> _writeCloudApiKey(String value) async {
-    final Future<void> Function(String)? setter = widget.cloudApiKeySetter;
-    if (setter != null) {
-      await setter(value);
-      return;
-    }
-    await ref.read(appProvider).setMangaCloudOcrApiKey(value);
-  }
-
-  String _readCloudModel() {
-    final String Function()? getter = widget.cloudModelGetter;
-    if (getter != null) return getter();
-    return ref.read(appProvider).mangaCloudOcrModel;
-  }
-
-  Future<void> _writeCloudModel(String value) async {
-    final Future<void> Function(String)? setter = widget.cloudModelSetter;
-    if (setter != null) {
-      await setter(value);
-      return;
-    }
-    await ref.read(appProvider).setMangaCloudOcrModel(value);
   }
 
   Future<void> _loadStatus() async {
@@ -296,14 +254,17 @@ class _MangaOcrSettingsSectionState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _sectionLabel(theme, t.manga_ocr_section),
-        // 模型状态/下载全平台显示（单框补扫只需识别三件套，移动端也用）；
-        // 整卷内置引擎不支持的平台补一行小字说明模型的用途。
-        _buildModelBlock(theme),
-        if (!widget.service.isSupportedPlatform)
+        if (isDesktopPlatform) ...<Widget>[
+          _buildEnginePreference(theme),
+          const SizedBox(height: 12),
+        ],
+        if (widget.service.isSupportedPlatform)
+          _buildModelBlock(theme)
+        else
           Padding(
-            padding: const EdgeInsets.only(top: 4),
+            padding: const EdgeInsets.symmetric(vertical: 8),
             child: Text(
-              t.manga_ocr_mobile_note,
+              t.manga_ocr_unsupported,
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
@@ -314,54 +275,54 @@ class _MangaOcrSettingsSectionState
           _buildExternalBlock(theme),
         ],
         const SizedBox(height: 16),
-        _buildCloudBlock(theme),
+        _buildLensBlock(theme),
       ],
     );
   }
 
-  /// 云端手写识别（Gemini）子组：开关（默认关）+ API key（密文）+ 模型名 +
-  /// 隐私说明（明示所选图片将发送至 Google API）。
-  Widget _buildCloudBlock(ThemeData theme) {
+  Widget _buildEnginePreference(ThemeData theme) {
+    return DropdownButtonFormField<MangaOcrEnginePreference>(
+      key: const ValueKey<String>('manga_ocr_default_engine'),
+      initialValue: _enginePreference,
+      decoration: InputDecoration(
+        labelText: t.manga_ocr_default_engine,
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+      items: <DropdownMenuItem<MangaOcrEnginePreference>>[
+        DropdownMenuItem<MangaOcrEnginePreference>(
+          value: MangaOcrEnginePreference.auto,
+          child: Text(t.manga_ocr_engine_auto),
+        ),
+        DropdownMenuItem<MangaOcrEnginePreference>(
+          value: MangaOcrEnginePreference.localOnnx,
+          enabled: widget.service.isSupportedPlatform,
+          child: Text(t.manga_ocr_engine_local_onnx),
+        ),
+        DropdownMenuItem<MangaOcrEnginePreference>(
+          value: MangaOcrEnginePreference.googleLens,
+          child: Text(t.manga_ocr_engine_google_lens),
+        ),
+        DropdownMenuItem<MangaOcrEnginePreference>(
+          value: MangaOcrEnginePreference.externalMokuro,
+          child: Text(t.manga_ocr_engine_external),
+        ),
+      ],
+      onChanged: (MangaOcrEnginePreference? value) {
+        if (value == null) return;
+        setState(() => _enginePreference = value);
+        unawaited(_writeEnginePreference(value));
+      },
+    );
+  }
+
+  Widget _buildLensBlock(ThemeData theme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        _sectionLabel(theme, t.manga_cloud_ocr_section),
-        AdaptiveSettingsSwitchRow(
-          key: const ValueKey<String>('manga_cloud_ocr_switch'),
-          title: t.manga_cloud_ocr_enabled,
-          value: _cloudEnabled,
-          onChanged: (bool value) {
-            setState(() => _cloudEnabled = value);
-            unawaited(_writeCloudEnabled(value));
-          },
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          key: const ValueKey<String>('manga_cloud_ocr_api_key'),
-          controller: _cloudKeyCtrl,
-          obscureText: true,
-          decoration: InputDecoration(
-            labelText: t.manga_cloud_ocr_api_key,
-            isDense: true,
-            border: const OutlineInputBorder(),
-          ),
-          onChanged: (String v) => unawaited(_writeCloudApiKey(v.trim())),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          key: const ValueKey<String>('manga_cloud_ocr_model'),
-          controller: _cloudModelCtrl,
-          decoration: InputDecoration(
-            labelText: t.manga_cloud_ocr_model,
-            hintText: kCloudOcrDefaultModel,
-            isDense: true,
-            border: const OutlineInputBorder(),
-          ),
-          onChanged: (String v) => unawaited(_writeCloudModel(v.trim())),
-        ),
-        const SizedBox(height: 8),
+        _sectionLabel(theme, t.manga_google_lens_section),
         Text(
-          t.manga_cloud_ocr_privacy,
+          t.manga_google_lens_privacy,
           style: theme.textTheme.bodySmall
               ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),

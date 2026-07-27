@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -5,10 +6,12 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
+import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
 import 'package:hibiki/src/media/media_item.dart';
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 import 'package:hibiki/src/pages/implementations/manga_hibiki_page.dart';
@@ -42,11 +45,20 @@ class _MangaTestAppModel extends AppModel {
 
   @override
   double get appUiScale => 1.0;
+
+  @override
+  String get mangaSpreadPreference => 'auto';
+
+  @override
+  String get mangaReadingDirection => 'rtl';
+
+  @override
+  int get mangaZoomPercent => 100;
 }
 
-/// 补扫入口 gating 用的 fake OCR 服务（只有 modelStatus 有意义）。
-class _FakeRescanOcrService implements MangaOcrService {
-  _FakeRescanOcrService({required this.ready});
+/// 整卷 OCR 入口测试用 fake 服务（只有 modelStatus 有意义）。
+class _FakeMangaOcrService implements MangaOcrService {
+  _FakeMangaOcrService({required this.ready});
 
   final bool ready;
 
@@ -147,6 +159,17 @@ void main() {
     // 词典弹窗层已接进树（buildDictionary 在空栈时收缩，但宿主 key 必须在）。
     expect(find.byKey(const ValueKey<String>('manga_dictionary_host')),
         findsOneWidget);
+    final Iterable<Focus> keyboardAncestors = tester.widgetList<Focus>(
+      find.ancestor(
+        of: find.byKey(const ValueKey<String>('manga_dictionary_host')),
+        matching: find.byType(Focus),
+      ),
+    );
+    expect(
+      keyboardAncestors.any((Focus focus) => focus.onKeyEvent != null),
+      isTrue,
+      reason: '词典 WebView 必须位于漫画翻页键处理器的 Focus 子树内',
+    );
   });
 
   testWidgets('有书行时加载 manga.json 并恢复已存页码（真实进度读穿）', (WidgetTester tester) async {
@@ -216,8 +239,7 @@ void main() {
         reason: 'ReaderPositions.sectionIndex 必须恢复为当前页（0-based → 1-based 显示）');
   });
 
-  testWidgets('补扫入口：书加载成功后 chrome 出现「框选识别」按钮（模型就绪 fake）',
-      (WidgetTester tester) async {
+  testWidgets('整卷 OCR 入口：书加载成功后 chrome 出现按钮', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(600, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -227,7 +249,7 @@ void main() {
     final _MangaTestAppModel appModel = _MangaTestAppModel(db);
 
     final Directory bookDir =
-        Directory.systemTemp.createTempSync('manga_rescan_entry_');
+        Directory.systemTemp.createTempSync('manga_full_ocr_entry_');
     addTearDown(() {
       if (bookDir.existsSync()) bookDir.deleteSync(recursive: true);
     });
@@ -236,11 +258,11 @@ void main() {
     File(p.join(bookDir.path, 'images', 'p001.jpg')).writeAsBytesSync(<int>[1]);
     File(p.join(bookDir.path, 'images', 'p002.jpg')).writeAsBytesSync(<int>[2]);
 
-    const String bookKey = '補掃テスト';
+    const String bookKey = '整卷 OCR テスト';
     await tester.runAsync(() async {
       await db.insertEpubBook(EpubBooksCompanion.insert(
         bookKey: bookKey,
-        title: '補掃テスト',
+        title: '整卷 OCR テスト',
         epubPath: 'manga.json',
         extractDir: bookDir.path,
         chapterCount: 2,
@@ -254,7 +276,7 @@ void main() {
         bookKey,
         extraOverrides: <Override>[
           mangaOcrServiceProvider
-              .overrideWithValue(_FakeRescanOcrService(ready: true)),
+              .overrideWithValue(_FakeMangaOcrService(ready: true)),
         ],
       ));
       for (int i = 0; i < 50; i++) {
@@ -270,13 +292,14 @@ void main() {
     });
     await tester.pump();
 
-    // 书加载成功 → chrome 在树 → 补扫入口在场（常显；gating 在点击行为里）。
-    expect(find.byKey(const ValueKey<String>('manga_rescan_button')),
+    // 书加载成功 → chrome 在树 → 整卷 OCR 入口在场。
+    expect(find.byKey(const ValueKey<String>('manga_full_ocr_button')),
         findsOneWidget,
-        reason: '模型就绪（fake）时框选识别入口必须出现在 chrome');
+        reason: '整卷 OCR 入口必须出现在 chrome');
   });
 
-  testWidgets('补扫入口：加载失败（无书行）时 chrome 不构建 → 无按钮', (WidgetTester tester) async {
+  testWidgets('整卷 OCR 入口：加载失败（无书行）时 chrome 不构建 → 无按钮',
+      (WidgetTester tester) async {
     final HibikiDatabase db =
         HibikiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
@@ -288,14 +311,45 @@ void main() {
       'missing_book',
       extraOverrides: <Override>[
         mangaOcrServiceProvider
-            .overrideWithValue(_FakeRescanOcrService(ready: true)),
+            .overrideWithValue(_FakeMangaOcrService(ready: true)),
       ],
     ));
     await tester.pump();
     await tester.pump();
 
-    expect(find.byKey(const ValueKey<String>('manga_rescan_button')),
+    expect(find.byKey(const ValueKey<String>('manga_full_ocr_button')),
         findsNothing);
+  });
+
+  testWidgets('页码弹窗关闭动画期间不使用已 dispose 的输入控制器', (WidgetTester tester) async {
+    int? selected;
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Builder(
+            builder: (BuildContext context) => FilledButton(
+              onPressed: () async {
+                selected = await showMangaPageJumpDialog(
+                  context,
+                  currentPage: 16,
+                  total: 100,
+                );
+              },
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), '1');
+    await tester.tap(find.text(t.dialog_ok));
+    await tester.pumpAndSettle();
+
+    expect(selected, 1);
+    expect(tester.takeException(), isNull);
   });
 
   test('webtoon 进度经 ReaderPositions 写穿：charOffset 千分比往返', () async {
@@ -318,5 +372,114 @@ void main() {
     expect(
         MangaHibikiPage.charOffsetToWebtoonFraction(restored.charOffset), 0.75,
         reason: 'webtoon 页内滚动位置必须经 charOffset 千分比写穿并无损恢复');
+  });
+
+  test('查词弹窗显示后仍解析左右翻页、Escape 只关闭弹窗', () {
+    expect(
+      MangaHibikiPage.keyInputAction(
+        key: LogicalKeyboardKey.arrowRight,
+        dictionaryShown: true,
+        mode: MangaReadingMode.spread,
+        direction: 'ltr',
+      ),
+      MangaReaderInputAction.next,
+    );
+    expect(
+      MangaHibikiPage.keyInputAction(
+        key: LogicalKeyboardKey.arrowLeft,
+        dictionaryShown: true,
+        mode: MangaReadingMode.spread,
+        direction: 'rtl',
+      ),
+      MangaReaderInputAction.next,
+    );
+    expect(
+      MangaHibikiPage.keyInputAction(
+        key: LogicalKeyboardKey.escape,
+        dictionaryShown: true,
+        mode: MangaReadingMode.spread,
+        direction: 'ltr',
+      ),
+      MangaReaderInputAction.dismissDictionary,
+    );
+    expect(
+      MangaHibikiPage.keyInputAction(
+        key: LogicalKeyboardKey.space,
+        dictionaryShown: true,
+        mode: MangaReadingMode.spread,
+        direction: 'ltr',
+      ),
+      isNull,
+      reason: '词典内容仍保留自己的空格键语义',
+    );
+  });
+
+  test('查词弹窗外的滚轮按主轴解析前后翻页', () {
+    expect(
+      MangaHibikiPage.wheelInputAction(const Offset(0, 120)),
+      MangaReaderInputAction.next,
+    );
+    expect(
+      MangaHibikiPage.wheelInputAction(const Offset(-120, 1)),
+      MangaReaderInputAction.previous,
+    );
+    expect(
+      MangaHibikiPage.wheelInputAction(const Offset(0, 1)),
+      isNull,
+      reason: '过滤触控板噪声',
+    );
+  });
+
+  test('漫画正文按键桥接只捕获导航键并保持幂等', () {
+    const String script = MangaHibikiPage.navigationKeyBridgeScript;
+    expect(script, contains('__hibikiMangaNavigationKeysInstalled'));
+    expect(script, contains("'ArrowLeft'"));
+    expect(script, contains("'ArrowRight'"));
+    expect(script, contains("'Escape'"));
+    expect(script, contains('preventDefault()'));
+    expect(script, contains('stopImmediatePropagation()'));
+    expect(script, contains("callHandler('onMangaNavigationKey', key)"));
+  });
+
+  test('高频翻页在异步窗口加载期间累积并按净位移排空', () async {
+    final MangaTurnQueue queue = MangaTurnQueue();
+    final Completer<void> firstWindowLoad = Completer<void>();
+    final List<int> applied = <int>[];
+    bool blockFirstStep = true;
+
+    Future<void> applyStep(int step) async {
+      applied.add(step);
+      if (blockFirstStep) {
+        blockFirstStep = false;
+        await firstWindowLoad.future;
+      }
+    }
+
+    final Future<void> firstDrain = queue.enqueue(
+      1,
+      maxMagnitude: 100,
+      canApply: () => true,
+      applyStep: applyStep,
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(applied, <int>[1], reason: '第一步模拟跨预载窗口，正在等待 WebView loadData');
+
+    // 完整压力序列：→→→→←←→→→→。第一步在飞期间剩余输入净值为 +5。
+    for (final int step in <int>[1, 1, 1, -1, -1, 1, 1, 1, 1]) {
+      unawaited(queue.enqueue(
+        step,
+        maxMagnitude: 100,
+        canApply: () => true,
+        applyStep: applyStep,
+      ));
+    }
+    expect(queue.pendingDelta, 5);
+
+    firstWindowLoad.complete();
+    await firstDrain;
+    expect(applied, <int>[1, 1, 1, 1, 1, 1],
+        reason: '不得因窗口加载在飞而丢后半批输入，最终净前进 6 个 spread');
+    expect(queue.pendingDelta, 0);
+    expect(queue.isDraining, isFalse);
   });
 }

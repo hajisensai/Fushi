@@ -12,16 +12,32 @@ class MokuroPayload {
   /// Initialise this object.
   const MokuroPayload({
     required this.images,
+    this.ocr,
   });
 
   /// All images in sequential order.
   final List<MokuroImage> images;
+
+  /// Optional producer metadata. Older manga.json files omit it.
+  final MangaOcrMetadata? ocr;
 
   @override
   String toString() {
     return '$runtimeType(images: '
         '[${images.map((MokuroImage e) => e.toString()).join(', ')}])';
   }
+}
+
+class MangaOcrMetadata {
+  const MangaOcrMetadata({
+    required this.engine,
+    required this.engineSignature,
+    required this.schemaVersion,
+  });
+
+  final String engine;
+  final String engineSignature;
+  final int schemaVersion;
 }
 
 /// Contains all information needed to render an image, including any text
@@ -66,6 +82,7 @@ class MokuroBlock {
     required this.zIndex,
     required this.lines,
     this.linesCoords,
+    this.regions,
   });
 
   /// Coordinates for this block (the `box` = `[x1, y1, x2, y2]`).
@@ -92,12 +109,38 @@ class MokuroBlock {
   /// required for overlay rendering (which only needs the block `box`).
   final List<List<List<double>>>? linesCoords;
 
+  /// Optional character-level hit regions.
+  ///
+  /// Google Lens only exposes line geometry. The Lens adapter follows
+  /// Niratan and subdivides each line into approximate character rectangles,
+  /// retaining UTF-16 offsets into [lines] joined without separators. Other
+  /// OCR producers may omit this field and keep using the block-level overlay.
+  final List<MangaOcrTextRegion>? regions;
+
   @override
   String toString() {
     return '$runtimeType(rectangle: $rectangle, isVertical: $isVertical, '
         'fontSize: $fontSize, lines: '
         '[${lines.join(', ')}])';
   }
+}
+
+/// A character or grapheme hit target inside a [MokuroBlock].
+///
+/// Coordinates use original page pixels, matching [MokuroBlock.rectangle].
+/// [utf16Start] and [utf16End] index the block sentence
+/// (`block.lines.join()`), so the WebView can keep the existing dictionary
+/// selection payload without embedding OCR text in JavaScript attributes.
+class MangaOcrTextRegion {
+  const MangaOcrTextRegion({
+    required this.rectangle,
+    required this.utf16Start,
+    required this.utf16End,
+  });
+
+  final Rect rectangle;
+  final int utf16Start;
+  final int utf16End;
 }
 
 /// Normalise a relative path into a forward-slash `manga.json` URL.
@@ -209,7 +252,10 @@ MokuroPayload parseMangaJson(String jsonStr) {
     );
   }
 
-  return MokuroPayload(images: images);
+  return MokuroPayload(
+    images: images,
+    ocr: _parseOcrMetadata(decoded['ocr']),
+  );
 }
 
 /// Serialise a [MokuroPayload] into the internal `manga.json` structure
@@ -219,6 +265,12 @@ MokuroPayload parseMangaJson(String jsonStr) {
 /// need a string call `jsonEncode(mangaPayloadToJson(payload))`.
 Map<String, Object?> mangaPayloadToJson(MokuroPayload payload) {
   return <String, Object?>{
+    if (payload.ocr != null)
+      'ocr': <String, Object?>{
+        'engine': payload.ocr!.engine,
+        'engine_signature': payload.ocr!.engineSignature,
+        'schema_version': payload.ocr!.schemaVersion,
+      },
     'pages': <Map<String, Object?>>[
       for (final MokuroImage image in payload.images)
         <String, Object?>{
@@ -240,11 +292,42 @@ Map<String, Object?> mangaPayloadToJson(MokuroPayload payload) {
                 'lines': block.lines,
                 if (block.linesCoords != null)
                   'lines_coords': block.linesCoords,
+                if (block.regions != null)
+                  'regions': <Map<String, Object?>>[
+                    for (final MangaOcrTextRegion region in block.regions!)
+                      <String, Object?>{
+                        'box': <double>[
+                          region.rectangle.left,
+                          region.rectangle.top,
+                          region.rectangle.right,
+                          region.rectangle.bottom,
+                        ],
+                        'utf16_start': region.utf16Start,
+                        'utf16_end': region.utf16End,
+                      },
+                  ],
               },
           ],
         },
     ],
   };
+}
+
+MangaOcrMetadata? _parseOcrMetadata(Object? raw) {
+  if (raw is! Map) {
+    return null;
+  }
+  final String? engine = raw['engine'] as String?;
+  final String? signature = raw['engine_signature'] as String?;
+  final int? version = (raw['schema_version'] as num?)?.toInt();
+  if (engine == null || signature == null || version == null) {
+    return null;
+  }
+  return MangaOcrMetadata(
+    engine: engine,
+    engineSignature: signature,
+    schemaVersion: version,
+  );
 }
 
 MokuroBlock _parseBlock(
@@ -285,7 +368,42 @@ MokuroBlock _parseBlock(
     zIndex: zIndex,
     lines: lines,
     linesCoords: _parseLinesCoords(raw['lines_coords']),
+    regions: _parseRegions(raw['regions']),
   );
+}
+
+List<MangaOcrTextRegion>? _parseRegions(Object? raw) {
+  if (raw is! List) {
+    return null;
+  }
+  final List<MangaOcrTextRegion> regions = <MangaOcrTextRegion>[];
+  for (final Object? entry in raw) {
+    if (entry is! Map) {
+      continue;
+    }
+    final Object? rawBox = entry['box'];
+    if (rawBox is! List || rawBox.length < 4) {
+      continue;
+    }
+    final int start = (entry['utf16_start'] as num?)?.toInt() ?? -1;
+    final int end = (entry['utf16_end'] as num?)?.toInt() ?? -1;
+    if (start < 0 || end <= start) {
+      continue;
+    }
+    regions.add(
+      MangaOcrTextRegion(
+        rectangle: Rect.fromLTRB(
+          _asDouble(rawBox[0]),
+          _asDouble(rawBox[1]),
+          _asDouble(rawBox[2]),
+          _asDouble(rawBox[3]),
+        ),
+        utf16Start: start,
+        utf16End: end,
+      ),
+    );
+  }
+  return regions;
 }
 
 /// Parse `lines_coords` (a list of lines, each a list of `[x, y]` points) into

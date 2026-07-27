@@ -1,4 +1,3 @@
-import 'dart:async' show unawaited;
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -22,15 +21,10 @@ import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
 import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
-import 'package:hibiki/src/media/manga/external_mokuro_runner.dart';
-import 'package:hibiki/src/media/manga/manga_importer.dart';
-import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
-import 'package:hibiki/src/media/manga/manga_ocr_wizard_dialog.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
+import 'package:hibiki/src/media/manga/manga_module.dart';
 import 'package:hibiki/src/pdf/pdf_importer.dart';
 import 'package:hibiki/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
@@ -112,10 +106,6 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   bool _pickerActive = false;
 
-  /// 漫画 P3：移动端 OCR 入口 gating——探测到具备漫画 OCR 能力的已配对 host 时
-  /// 才显示入口（桌面恒显示，不必等探测）。initState 异步探测后置位。
-  bool _remoteOcrAvailable = false;
-
   /// 远程 OCR runner（生产 = [InterconnectMangaOcrClient]；测试注 fake）。
   late final MangaOcrRemoteRunner _mangaOcrRemoteRunner =
       widget.mangaOcrRemoteRunner ??
@@ -124,8 +114,9 @@ class _BookImportDialogState extends State<BookImportDialog>
   bool get _ocrEntryDesktop =>
       widget.ocrEntryDesktopOverride ?? isDesktopPlatform;
 
-  /// OCR 导入漫画入口显隐：桌面恒显示；移动端仅当探测到可代跑的已配对 host。
-  bool get _showOcrEntry => _ocrEntryDesktop || _remoteOcrAvailable;
+  /// Google Lens is available on every supported app platform, so the manga
+  /// OCR entry no longer depends on a paired desktop host on mobile.
+  bool get _showOcrEntry => true;
 
   /// TODO-935 ①A：「引用原文件（不复制）」开关。仅桌面可见/可选；移动端
   /// file_picker 返回缓存临时副本，引用即指向会被清掉的文件，故恒 false。
@@ -163,11 +154,6 @@ class _BookImportDialogState extends State<BookImportDialog>
   @override
   void initState() {
     super.initState();
-    // 漫画 P3：非桌面平台异步探测已配对 host 的漫画 OCR 能力，命中后亮出
-    // 「OCR 导入漫画」入口（桌面恒显示，无需探测）。
-    if (!_ocrEntryDesktop) {
-      unawaited(_probeRemoteOcrEntry());
-    }
     final String? epub = widget.initialEpubPath;
     if (epub != null) {
       _epubPath = epub;
@@ -238,42 +224,16 @@ class _BookImportDialogState extends State<BookImportDialog>
     );
   }
 
-  /// 漫画 P3：探测已配对 host 的漫画 OCR 能力（capabilities 的 `mangaOcr` 字段；
-  /// 老 host 无字段 → null → 入口保持隐藏，版本 skew 零破坏）。
-  Future<void> _probeRemoteOcrEntry() async {
-    bool available = false;
-    try {
-      available = (await _mangaOcrRemoteRunner.probe()) != null;
-    } catch (_) {
-      available = false;
-    }
-    if (!mounted || !available) return;
-    setState(() => _remoteOcrAvailable = true);
-  }
-
   /// 打开 OCR 导入漫画向导：从 provider 取内置 OCR 服务、按当前偏好构造外部
   /// mokuro runner（均桌面工具），再挂上远程「已配对主机」runner（移动端唯一
   /// 引擎，桌面亦可作后备）；向导内选裸图片文件夹跑整卷 OCR 后无缝落库；成功
   /// （返回 bookKey）则连同关闭本导入框并回传 true，让书架刷新。
   Future<void> _openOcrWizard() async {
-    final ProviderContainer container =
-        ProviderScope.containerOf(context, listen: false);
-    final AppModel appModel = container.read(appProvider);
-    final MangaOcrService service = container.read(mangaOcrServiceProvider);
-    final String configured = appModel.mangaExternalMokuroPath.trim();
-    final ExternalMokuroRunner? runner = _ocrEntryDesktop
-        ? ExternalMokuroRunner(
-            configuredPath: configured.isEmpty ? null : configured,
-          )
-        : null;
-    final String? bookKey = await showAppDialog<String>(
+    final String? bookKey = await MangaModule.openOcrImportWizard(
       context: context,
-      builder: (_) => MangaOcrWizardDialog(
-        service: service,
-        db: widget.db,
-        externalRunner: runner,
-        remoteRunner: _mangaOcrRemoteRunner,
-      ),
+      db: widget.db,
+      remoteRunner: _mangaOcrRemoteRunner,
+      desktop: _ocrEntryDesktop,
     );
     if (bookKey != null && mounted) {
       Navigator.pop(context, true);
@@ -284,9 +244,9 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// 进行（统一下载中心，关对话框不中断），书架刷新由书架页的队列监听触发，
   /// 本导入框不再需要「导入发生则连带关闭回传」。
   Future<void> _openOnlineCatalog() async {
-    await showAppDialog<void>(
+    await MangaModule.openOnlineCatalog(
       context: context,
-      builder: (_) => MokuroMoeCatalogDialog(db: widget.db),
+      db: widget.db,
     );
   }
 
@@ -495,6 +455,8 @@ class _BookImportDialogState extends State<BookImportDialog>
     // 漫画（第三种书）：`.mokuro`（v0.2+）+ 同级图片走独立 MangaImporter，落库 format='manga'，
     // 在 [_importEpubOnly] 里按 .mokuro 扩展名分支（须在 TextToEpub 文本转换之前早退）。
     'mokuro',
+    'cbz',
+    'zip',
     ...TextToEpub.supportedExtensions,
   ];
 
@@ -515,7 +477,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           _autoFillTitle(
             file.name.replaceAll(
                 RegExp(
-                    r'\.(epub|pdf|mokuro|txt|html?|xhtml|md|markdown|rst|org|csv|tsv|log|json|xml)$',
+                    r'\.(epub|pdf|mokuro|cbz|zip|txt|html?|xhtml|md|markdown|rst|org|csv|tsv|log|json|xml)$',
                     caseSensitive: false),
                 ''),
             ImportTitleSource.epub,
@@ -1010,9 +972,31 @@ class _BookImportDialogState extends State<BookImportDialog>
     // 当纯文本转成 EPUB。封面由 MangaImporter 取首页页图，故不走 _applyBestCoverToEpub。
     if (ext == '.mokuro') {
       reportProgress(0.5, t.import_step_importing_epub);
-      await MangaImporter.importFromMokuroPath(
+      await MangaModule.importMokuro(
         db: widget.db,
-        mokuroPath: _epubPath!,
+        path: _epubPath!,
+        title: title,
+        onDuplicateTitle: _onDuplicateTitle,
+        onProgress: (int done, int total) {
+          if (total > 0) {
+            reportProgress(
+              (done / total).clamp(0.0, 1.0),
+              t.import_step_copying_file(name: p.basename(_epubPath!)),
+            );
+          }
+        },
+      );
+      reportProgress(1, t.import_step_done);
+      return;
+    }
+
+    if (ext == '.cbz' ||
+        (<String>{'.zip', '.epub'}.contains(ext) &&
+            MangaModule.isImageArchive(_epubPath!))) {
+      reportProgress(0.5, t.import_step_importing_epub);
+      await MangaModule.importArchive(
+        db: widget.db,
+        path: _epubPath!,
         title: title,
         onDuplicateTitle: _onDuplicateTitle,
         onProgress: (int done, int total) {

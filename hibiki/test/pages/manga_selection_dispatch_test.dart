@@ -82,7 +82,7 @@ void main() {
   group('选词路径收敛不变式（ERRATA H2/C1）', () {
     test('漫画页恰好注册一个 onTextSelected JS handler', () {
       final File page = File(
-        'lib/src/pages/implementations/manga_hibiki_page.dart',
+        'lib/src/media/manga/reader/manga_hibiki_page.dart',
       );
       expect(page.existsSync(), isTrue);
       final String src = page.readAsStringSync();
@@ -95,7 +95,7 @@ void main() {
 
     test('漫画页绝不再挂第二个 pointerup JS 监听', () {
       final File page = File(
-        'lib/src/pages/implementations/manga_hibiki_page.dart',
+        'lib/src/media/manga/reader/manga_hibiki_page.dart',
       );
       final String src = page.readAsStringSync();
       // 全工程唯一的 pointerup 选词监听内嵌在 manga_overlay_html（mangaWindowDocument）。

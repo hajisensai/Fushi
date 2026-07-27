@@ -365,6 +365,47 @@ void main() {
       expect(parseMangaJson('{}').images, isEmpty);
       expect(parseMangaJson('[]').images, isEmpty);
     });
+
+    test('round-trips optional OCR metadata and UTF-16 regions', () {
+      const MokuroPayload source = MokuroPayload(
+        ocr: MangaOcrMetadata(
+          engine: 'google_lens',
+          engineSignature: 'google-lens-v1-ja',
+          schemaVersion: 1,
+        ),
+        images: <MokuroImage>[
+          MokuroImage(
+            url: 'images/p1.png',
+            size: Size(100, 200),
+            blocks: <MokuroBlock>[
+              MokuroBlock(
+                rectangle: Rect.fromLTWH(10, 20, 30, 40),
+                isVertical: false,
+                fontSize: 12,
+                zIndex: 0,
+                lines: <String>['日本'],
+                regions: <MangaOcrTextRegion>[
+                  MangaOcrTextRegion(
+                    rectangle: Rect.fromLTWH(10, 20, 15, 40),
+                    utf16Start: 0,
+                    utf16End: 1,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      );
+      final MokuroPayload parsed =
+          parseMangaJson(jsonEncode(mangaPayloadToJson(source)));
+      expect(parsed.ocr?.engine, 'google_lens');
+      expect(parsed.ocr?.engineSignature, 'google-lens-v1-ja');
+      final MangaOcrTextRegion region =
+          parsed.images.single.blocks.single.regions!.single;
+      expect(region.rectangle, const Rect.fromLTWH(10, 20, 15, 40));
+      expect(region.utf16Start, 0);
+      expect(region.utf16End, 1);
+    });
   });
 
   group('normalizeMangaUrl', () {

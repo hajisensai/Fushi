@@ -183,6 +183,10 @@ void main() {
           'https://manga.local/img/p001.jpg');
       expect(MangaHibikiPage.mangaImageUrl('vol 1/p 01.jpg'),
           'https://manga.local/img/vol%201/p%2001.jpg');
+      expect(MangaHibikiPage.mangaImageUrl('images/p001.jpg'),
+          'https://manga.local/img/p001.jpg');
+      expect(MangaHibikiPage.mangaImageUrl(r'.\images\p001.jpg'),
+          'https://manga.local/img/p001.jpg');
       // 子目录结构保留（不被整体 encode 成 %2F）。
       expect(
           MangaHibikiPage.mangaImageUrl('a/b/c.png').contains('%2F'), isFalse);

@@ -5561,6 +5561,22 @@ class AppModel with ChangeNotifier {
   Future<void> setMangaExternalMokuroPath(String value) =>
       prefsRepo.setMangaExternalMokuroPath(value);
 
+  String get mangaOcrEnginePreference => prefsRepo.mangaOcrEnginePreference;
+  Future<void> setMangaOcrEnginePreference(String value) =>
+      prefsRepo.setMangaOcrEnginePreference(value);
+
+  String get mangaSpreadPreference => prefsRepo.mangaSpreadPreference;
+  Future<void> setMangaSpreadPreference(String value) =>
+      prefsRepo.setMangaSpreadPreference(value);
+
+  String get mangaReadingDirection => prefsRepo.mangaReadingDirection;
+  Future<void> setMangaReadingDirection(String value) =>
+      prefsRepo.setMangaReadingDirection(value);
+
+  int get mangaZoomPercent => prefsRepo.mangaZoomPercent;
+  Future<void> setMangaZoomPercent(int value) =>
+      prefsRepo.setMangaZoomPercent(value);
+
   /// 漫画「在线目录」站点根 URL（O1 mokuro.moe 目录源；空值由 client 归一回默认）。
   String get mangaOnlineCatalogBaseUrl => prefsRepo.mangaOnlineCatalogBaseUrl;
   Future<void> setMangaOnlineCatalogBaseUrl(String value) =>
