@@ -1110,9 +1110,14 @@ class HibikiSegmentedStrip<T extends Object> extends StatelessWidget {
         );
         final bool fits = available.isFinite && estimated <= available;
         if (fits) return Align(alignment: alignment, child: strip);
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: strip,
+        // 与上面 [_SegmentedStripHost] 同一契约：装不下就横向滚动，且桌面端要能用
+        // 鼠标左键拖着滚（默认 dragDevices 不含 mouse，否则只有滚轮能动）。段内
+        // 只有点击目标、没有横拖手势，不存在竞技场之争。
+        return HorizontalDragScrollable(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: strip,
+          ),
         );
       },
     );
