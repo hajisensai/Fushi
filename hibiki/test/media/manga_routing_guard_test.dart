@@ -55,7 +55,7 @@ void main() {
     final String source =
         read('lib/src/media/sources/manga_hibiki_source.dart');
     final String page =
-        read('lib/src/pages/implementations/manga_hibiki_page.dart');
+        read('lib/src/media/manga/reader/manga_hibiki_page.dart');
     // 打开时从 hoshi://book/ 标识解析 bookKey（与 PDF 完全同构），关书自动同步
     // （triggerAutoSyncAfterClose 的 hoshi://book/ 前缀识别）天然工作。
     expect(source.contains('ReaderHibikiSource.parseBookKey'), isTrue,
@@ -68,7 +68,7 @@ void main() {
 
   test('页码进度落 ReaderPositions.sectionIndex，且显式传 charOffset', () {
     final String src =
-        read('lib/src/pages/implementations/manga_hibiki_page.dart');
+        read('lib/src/media/manga/reader/manga_hibiki_page.dart');
     expect(src.contains('ReaderPositionRepository('), isTrue);
     expect(src.contains('sectionIndex: page'), isTrue,
         reason: '漫画用 sectionIndex 存 0-based 页码');
@@ -90,7 +90,7 @@ void main() {
 
   test('漫画阅读统计不把页数当字数（charsRead 恒 0）', () {
     final String src =
-        read('lib/src/pages/implementations/manga_hibiki_page.dart');
+        read('lib/src/media/manga/reader/manga_hibiki_page.dart');
     expect(src.contains('charsRead: 0'), isTrue,
         reason: '漫画无字数；把页数塞进 charsRead 会污染统计页的「字数」口径');
     expect(src.contains('ReadingTimeTracker'), isTrue, reason: '复用时长统计');
@@ -100,7 +100,7 @@ void main() {
 
   test('阅读模式读写 EpubBooks.mangaReadingMode（null=自动判定）', () {
     final String src =
-        read('lib/src/pages/implementations/manga_hibiki_page.dart');
+        read('lib/src/media/manga/reader/manga_hibiki_page.dart');
     expect(src.contains('mangaReadingMode'), isTrue, reason: '打开时读列值、切换时写列值');
     expect(src.contains('detectReadingMode'), isTrue,
         reason: 'null 覆盖必须回落自动判定');
@@ -110,7 +110,7 @@ void main() {
 
   test('漫画页接在共享查词链路上（BaseSourcePage + buildDictionary + 弹窗入口）', () {
     final String src =
-        read('lib/src/pages/implementations/manga_hibiki_page.dart');
+        read('lib/src/media/manga/reader/manga_hibiki_page.dart');
     expect(src.contains('class MangaHibikiPage extends BaseSourcePage'), isTrue,
         reason: '漫画页必须是 BaseSourcePage 才能复用查词弹窗链路');
     expect(src.contains('BaseSourcePageState<MangaHibikiPage>'), isTrue);
@@ -123,7 +123,7 @@ void main() {
 
   test('制卡走 onMineFromPopup + AnkiMiningContext，卡图=当前页图文件路径', () {
     final String src =
-        read('lib/src/pages/implementations/manga_hibiki_page.dart');
+        read('lib/src/media/manga/reader/manga_hibiki_page.dart');
     expect(src.contains('onMineFromPopup'), isTrue, reason: '制卡入口');
     expect(src.contains('AnkiMiningContext('), isTrue);
     expect(src.contains('coverPath'), isTrue,
@@ -136,7 +136,7 @@ void main() {
 
   test('卡图更新在全部推进路径被调用（加载/翻页/滚动/切模式）', () {
     final String src =
-        read('lib/src/pages/implementations/manga_hibiki_page.dart');
+        read('lib/src/media/manga/reader/manga_hibiki_page.dart');
     // 至少 4 处调用点：_loadInitialWindow、_onMangaTurn（窗口内分支）、
     // _onMangaScroll（spread 变化）、_toggleReadingMode。
     final int calls = '_updateCurrentPageImagePath()'.allMatches(src).length;

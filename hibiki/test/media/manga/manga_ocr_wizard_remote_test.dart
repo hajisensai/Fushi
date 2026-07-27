@@ -244,7 +244,16 @@ void main() {
   testWidgets('remote error maps to readable message and returns to configure',
       (WidgetTester tester) async {
     final _FakeRemoteRunner remote = _FakeRemoteRunner(target: _capableTarget);
-    await pumpWizard(tester, remote: remote);
+    await pumpWizard(
+      tester,
+      remote: remote,
+      importOverride: ({
+        required String path,
+        required bool external,
+        String? title,
+      }) async =>
+          'unused',
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();

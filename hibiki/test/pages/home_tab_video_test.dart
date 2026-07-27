@@ -16,6 +16,7 @@ void main() {
       expect(tabs, <HomeTab>[
         HomeTab.home,
         HomeTab.books,
+        HomeTab.manga,
         HomeTab.downloads,
         HomeTab.dictionaries,
         HomeTab.games,
@@ -30,23 +31,26 @@ void main() {
       expect(tabs, <HomeTab>[
         HomeTab.home,
         HomeTab.books,
+        HomeTab.manga,
         HomeTab.video,
         HomeTab.downloads,
         HomeTab.dictionaries,
         HomeTab.games,
         HomeTab.settings,
       ]);
-      expect(tabs.indexOf(HomeTab.video), tabs.indexOf(HomeTab.books) + 1);
+      expect(tabs.indexOf(HomeTab.video), tabs.indexOf(HomeTab.manga) + 1);
     });
 
     test('视频后紧随下载 tab，再到词典（用户要求：下载单独拿出来）', () {
       final List<HomeTab> tabs =
           homeActiveTabs(videoEnabled: true, gamesEnabled: true);
       final int books = tabs.indexOf(HomeTab.books);
+      final int manga = tabs.indexOf(HomeTab.manga);
       final int video = tabs.indexOf(HomeTab.video);
       final int downloads = tabs.indexOf(HomeTab.downloads);
       final int dict = tabs.indexOf(HomeTab.dictionaries);
-      expect(video, equals(books + 1));
+      expect(manga, equals(books + 1));
+      expect(video, equals(manga + 1));
       expect(downloads, equals(video + 1));
       expect(dict, equals(downloads + 1));
     });

@@ -388,10 +388,12 @@ void main() {
         pageSpreadIndices: <int>[0, 1],
       );
       // wheel 监听内联存在，且被 `if (!IS_WEBTOON) {` 闸门包裹（闸门在监听注册之前）。
-      final int gateIdx = doc.indexOf('if (!IS_WEBTOON) {');
       final int wheelIdx = doc.indexOf("addEventListener('wheel'");
+      final int spreadWheelIdx =
+          doc.indexOf("addEventListener('wheel'", wheelIdx + 1);
+      final int gateIdx = doc.lastIndexOf('if (!IS_WEBTOON) {', spreadWheelIdx);
       expect(gateIdx >= 0, isTrue, reason: 'wheel 必须有 if(!IS_WEBTOON) 闸门');
-      expect(wheelIdx > gateIdx, isTrue,
+      expect(spreadWheelIdx > gateIdx, isTrue,
           reason: 'wheel 监听必须在 !IS_WEBTOON 闸门之内');
       // spread → IS_WEBTOON=false → 运行时闸门放行，滚轮翻页生效。
       expect(doc.contains('var IS_WEBTOON = false'), isTrue,
@@ -465,6 +467,55 @@ void main() {
       );
       expect(docLtr.contains('direction:ltr'), isTrue);
       expect(docLtr.contains('direction:rtl'), isFalse);
+    });
+
+    test('Lens regions render transparent character hit targets', () {
+      const MokuroImage page = MokuroImage(
+        url: 'p.jpg',
+        size: Size(100, 200),
+        blocks: <MokuroBlock>[
+          MokuroBlock(
+            rectangle: Rect.fromLTWH(10, 20, 40, 20),
+            isVertical: false,
+            fontSize: 10,
+            zIndex: 0,
+            lines: <String>['日本'],
+            regions: <MangaOcrTextRegion>[
+              MangaOcrTextRegion(
+                rectangle: Rect.fromLTWH(10, 20, 20, 20),
+                utf16Start: 0,
+                utf16End: 1,
+              ),
+            ],
+          ),
+        ],
+      );
+      final String doc = mangaWindowDocument(
+        <MokuroImage>[page],
+        <String>['p.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: '',
+      );
+      expect(doc.contains('class="ocr-char"'), isTrue);
+      expect(doc.contains('>日</span>'), isTrue);
+      expect(doc.contains('color:transparent;pointer-events:auto'), isTrue);
+    });
+
+    test('desktop zoom and right-button drag/menu contract is embedded', () {
+      final String doc = mangaWindowDocument(
+        <MokuroImage>[_pageWithTwoBlocks()],
+        <String>['p.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: '',
+        zoomPercent: 100,
+      );
+      expect(doc.contains('Math.min(2, Math.max(0.5'), isTrue);
+      expect(doc.contains('rightDrag.startX) > 4'), isTrue);
+      expect(doc.contains("callHandler('onMangaContextMenu'"), isTrue);
+      expect(doc.contains("callHandler('onMangaZoomChanged'"), isTrue);
+      expect(doc.contains('e.ctrlKey || e.metaKey'), isTrue);
     });
   });
 }

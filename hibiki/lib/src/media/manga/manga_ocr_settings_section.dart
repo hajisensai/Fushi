@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/src/media/manga/external_mokuro_runner.dart';
+import 'package:hibiki/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/ocr/cloud_ocr_client.dart';
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
@@ -27,6 +28,8 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
     this.probeExternal,
     this.mokuroPathGetter,
     this.mokuroPathSetter,
+    this.enginePreferenceGetter,
+    this.enginePreferenceSetter,
     this.cloudEnabledGetter,
     this.cloudEnabledSetter,
     this.cloudApiKeyGetter,
@@ -48,6 +51,11 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
   /// 外部 mokuro 路径写入（测试用）：null = 写 [appProvider] 偏好。
   final Future<void> Function(String value)? mokuroPathSetter;
 
+  /// Engine preference is optional for embedders predating the selector.
+  /// When omitted the section uses `auto` without touching a provider.
+  final String Function()? enginePreferenceGetter;
+  final Future<void> Function(String value)? enginePreferenceSetter;
+
   /// 云端识别偏好注入口（测试用）：null = 走 [appProvider] 偏好委托。
   final bool Function()? cloudEnabledGetter;
   final Future<void> Function(bool value)? cloudEnabledSetter;
@@ -68,6 +76,7 @@ class _MangaOcrSettingsSectionState
   late final TextEditingController _cloudModelCtrl;
 
   bool _cloudEnabled = false;
+  late MangaOcrEnginePreference _enginePreference;
 
   MangaOcrModelStatus? _status;
   bool _loadingStatus = true;
@@ -88,6 +97,9 @@ class _MangaOcrSettingsSectionState
   void initState() {
     super.initState();
     _pathCtrl = TextEditingController(text: _readPath());
+    _enginePreference = MangaOcrEnginePreferenceKey.fromKey(
+      _readEnginePreference(),
+    );
     _cloudEnabled = _readCloudEnabled();
     _cloudKeyCtrl = TextEditingController(text: _readCloudApiKey());
     _cloudModelCtrl = TextEditingController(text: _readCloudModel());
@@ -118,6 +130,21 @@ class _MangaOcrSettingsSectionState
       return;
     }
     await ref.read(appProvider).setMangaExternalMokuroPath(value);
+  }
+
+  String _readEnginePreference() {
+    final String Function()? getter = widget.enginePreferenceGetter;
+    if (getter != null) return getter();
+    return MangaOcrEnginePreference.auto.key;
+  }
+
+  Future<void> _writeEnginePreference(
+    MangaOcrEnginePreference preference,
+  ) async {
+    final Future<void> Function(String)? setter = widget.enginePreferenceSetter;
+    if (setter != null) {
+      await setter(preference.key);
+    }
   }
 
   bool _readCloudEnabled() {
@@ -296,6 +323,10 @@ class _MangaOcrSettingsSectionState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _sectionLabel(theme, t.manga_ocr_section),
+        if (isDesktopPlatform) ...<Widget>[
+          _buildEnginePreference(theme),
+          const SizedBox(height: 12),
+        ],
         // 模型状态/下载全平台显示（单框补扫只需识别三件套，移动端也用）；
         // 整卷内置引擎不支持的平台补一行小字说明模型的用途。
         _buildModelBlock(theme),
@@ -314,7 +345,59 @@ class _MangaOcrSettingsSectionState
           _buildExternalBlock(theme),
         ],
         const SizedBox(height: 16),
+        _buildLensBlock(theme),
+        const SizedBox(height: 16),
         _buildCloudBlock(theme),
+      ],
+    );
+  }
+
+  Widget _buildEnginePreference(ThemeData theme) {
+    return DropdownButtonFormField<MangaOcrEnginePreference>(
+      key: const ValueKey<String>('manga_ocr_default_engine'),
+      initialValue: _enginePreference,
+      decoration: InputDecoration(
+        labelText: t.manga_ocr_default_engine,
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+      items: <DropdownMenuItem<MangaOcrEnginePreference>>[
+        DropdownMenuItem<MangaOcrEnginePreference>(
+          value: MangaOcrEnginePreference.auto,
+          child: Text(t.manga_ocr_engine_auto),
+        ),
+        DropdownMenuItem<MangaOcrEnginePreference>(
+          value: MangaOcrEnginePreference.localOnnx,
+          enabled: widget.service.isSupportedPlatform,
+          child: Text(t.manga_ocr_engine_local_onnx),
+        ),
+        DropdownMenuItem<MangaOcrEnginePreference>(
+          value: MangaOcrEnginePreference.googleLens,
+          child: Text(t.manga_ocr_engine_google_lens),
+        ),
+        DropdownMenuItem<MangaOcrEnginePreference>(
+          value: MangaOcrEnginePreference.externalMokuro,
+          child: Text(t.manga_ocr_engine_external),
+        ),
+      ],
+      onChanged: (MangaOcrEnginePreference? value) {
+        if (value == null) return;
+        setState(() => _enginePreference = value);
+        unawaited(_writeEnginePreference(value));
+      },
+    );
+  }
+
+  Widget _buildLensBlock(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _sectionLabel(theme, t.manga_google_lens_section),
+        Text(
+          t.manga_google_lens_privacy,
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
       ],
     );
   }

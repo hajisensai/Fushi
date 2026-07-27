@@ -83,6 +83,7 @@ const HibikiFocusId kShelfImportFocusId = HibikiFocusId('reader-shelf-import');
 
 class ReaderHibikiHistoryPage extends HistoryReaderPage {
   const ReaderHibikiHistoryPage({
+    this.mangaOnly = false,
     this.remoteBookClientLoader,
     this.remoteBookDownloadDestination,
     this.remoteBookImporter,
@@ -90,6 +91,11 @@ class ReaderHibikiHistoryPage extends HistoryReaderPage {
     this.remoteAudiobookImporter,
     super.key,
   });
+
+  /// 独立漫画书架只显示 `format='manga'`；普通书架则排除漫画。
+  ///
+  /// 两个入口仍复用本页的搜索、排序、标签、合集、进度和删除管线，不另建数据表。
+  final bool mangaOnly;
 
   final Future<RemoteBookClient?> Function()? remoteBookClientLoader;
   final Future<File> Function(RemoteBookInfo book)?
@@ -118,6 +124,7 @@ class ReaderHibikiHistoryPage extends HistoryReaderPage {
 class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     extends HistoryReaderPageState {
   ReaderHibikiHistoryPage get _pageWidget => widget as ReaderHibikiHistoryPage;
+  bool get _mangaOnly => _pageWidget.mangaOnly;
 
   @override
   MediaType get mediaType => mediaSource.mediaType;
@@ -432,15 +439,30 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 Expanded(
                   child: books.when(
                     data: (bookList) {
-                      _batchAudiobookInfoFuture ??= _loadAllAudiobookInfo();
-                      _remoteBooksFuture ??= _loadRemoteBooks();
+                      _batchAudiobookInfoFuture ??= _mangaOnly
+                          ? Future<Map<String, _AudiobookInfo>>.value(
+                              const <String, _AudiobookInfo>{},
+                            )
+                          : _loadAllAudiobookInfo();
+                      _remoteBooksFuture ??= _mangaOnly
+                          ? Future<_RemoteBookState?>.value(null)
+                          : _loadRemoteBooks();
                       _shelfMapsFuture ??= _loadShelfMaps();
+                      final List<MediaItem> shelfBooks = bookList
+                          .where(
+                            (MediaItem item) => _mangaOnly
+                                ? item.mediaSourceIdentifier ==
+                                    MangaHibikiSource.kUniqueKey
+                                : item.mediaSourceIdentifier !=
+                                    MangaHibikiSource.kUniqueKey,
+                          )
+                          .toList();
                       final Set<String>? filterSet = filteredIds.valueOrNull;
                       List<MediaItem> filtered;
                       if (filterSet == null) {
-                        filtered = bookList;
+                        filtered = shelfBooks;
                       } else {
-                        filtered = bookList.where((item) {
+                        filtered = shelfBooks.where((item) {
                           final String? key =
                               _parseBookKey(item.mediaIdentifier);
                           if (key == null) return false;
@@ -524,7 +546,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
 
   Widget _buildPageHeader() {
     return HibikiPageHeader(
-      title: t.books,
+      title: _mangaOnly ? t.manga_library : t.books,
       actions: <Widget>[
         // 宽窗（非 compact）时动作展开成「图标+文字」药丸（与视频 tab 页头一致，
         // 用户 mockup：导入书籍 / 来源 / 合集 / 阅读统计带文字外显）；窄窗回落纯图标。
@@ -533,20 +555,22 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           ref: ref,
           appModel: appModel,
           focusId: kShelfImportFocusId,
-          label: t.srt_import,
+          label: _mangaOnly ? t.manga_import_action : t.srt_import,
         ),
-        _headerAction(
-          tooltip: t.media_source_manage_title,
-          icon: Icons.folder_copy_outlined,
-          onTap: _openManageSources,
-        ),
+        if (!_mangaOnly)
+          _headerAction(
+            tooltip: t.media_source_manage_title,
+            icon: Icons.folder_copy_outlined,
+            onTap: _openManageSources,
+          ),
         // 漫画「在线目录」（O1 mokuro.moe 目录源）：浏览/搜索 → 卷级下载 →
         // 现有 .mokuro 导入链落库。
-        _headerAction(
-          tooltip: t.manga_online_catalog_title,
-          icon: Icons.cloud_download_outlined,
-          onTap: _openOnlineCatalog,
-        ),
+        if (_mangaOnly)
+          _headerAction(
+            tooltip: t.manga_online_catalog_title,
+            icon: Icons.cloud_download_outlined,
+            onTap: _openOnlineCatalog,
+          ),
         // 视频导入入口**只属于视频 tab**（HomeVideoPage），书架不放视频导入——
         // 书架是书的地方。这里保留编译期常量门控（默认关）只为旧调试路径，运行时
         // 实验开关不再在书架放出视频导入（用户反馈：书架不该有视频导入入口）。
@@ -894,8 +918,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     List<MediaItem> books, [
     AsyncSnapshot<_RemoteBookState?>? remoteSnapshot,
   ]) {
-    final List<SrtBook> srtBooks =
-        ref.watch(srtBooksProvider).valueOrNull ?? const [];
+    final List<SrtBook> srtBooks = _mangaOnly
+        ? const <SrtBook>[]
+        : ref.watch(srtBooksProvider).valueOrNull ?? const <SrtBook>[];
     return _buildBodyWithSrtBooks(books, srtBooks, remoteSnapshot);
   }
 
@@ -1020,8 +1045,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // 进度 / 「查看插画」门控，若以筛选子集构建，关联 EPUB 未命中同一标签即被筛掉 → 借不到
     // → 合集成员丢封面（BUG-937 让被筛合集能带命中成员显示后暴露此缺陷）。此处已 watch
     // 于上层 build（filteredBookIdsProvider 之上的 hibikiBooksProvider），read 全量安全。
-    final List<MediaItem> allEpubBooksForBorrow =
-        ref.read(hibikiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
+    final List<MediaItem> allEpubBooksForBorrow = _mangaOnly
+        ? books
+        : ref
+                .read(hibikiBooksProvider(JapaneseLanguage.instance))
+                .valueOrNull ??
             books;
     final Map<String, String> epubCoverUrisByBookKey = {};
     // TODO-1191：`allEpubBooksForBorrow` 是 hibikiBooksProvider 的全部 EpubBooks 行；
@@ -1095,7 +1123,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       _lastRemoteState = snapState;
     }
     final _RemoteBookState? remoteState = snapState ?? _lastRemoteState;
-    final bool showRemote = remoteState != null &&
+    final bool showRemote = !_mangaOnly &&
+        remoteState != null &&
         !remoteState.failed &&
         !hasActiveFilter &&
         appModel.prefsRepo.showRemoteEntries;
@@ -1680,7 +1709,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
           FilledButton.icon(
             icon: const Icon(Icons.library_add_outlined, size: 18),
-            label: Text(t.srt_import),
+            label: Text(_mangaOnly ? t.manga_import_action : t.srt_import),
             onPressed: () async {
               final bool? imported = await showAppDialog<bool>(
                 context: context,

@@ -20,6 +20,22 @@ enum MangaSpreadPreference {
   double,
 }
 
+extension MangaSpreadPreferenceKey on MangaSpreadPreference {
+  String get key => name;
+
+  static MangaSpreadPreference fromKey(String raw) {
+    switch (raw) {
+      case 'single':
+        return MangaSpreadPreference.single;
+      case 'double':
+        return MangaSpreadPreference.double;
+      case 'auto':
+      default:
+        return MangaSpreadPreference.auto;
+    }
+  }
+}
+
 /// Resolve the effective [MangaPageLayout] for a spread book from the user
 /// [preference] and the current viewport orientation. Pure so the auto rule
 /// (landscape → double, portrait → single) is unit-testable.

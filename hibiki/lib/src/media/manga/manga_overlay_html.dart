@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
@@ -39,8 +40,15 @@ String mangaOcrBoxesHtml(MokuroImage page) {
     final double fontCqi = rawCqi > 0 ? rawCqi : 3.0;
     final String writingMode =
         block.isVertical ? 'writing-mode:vertical-rl;' : '';
-    final String inner =
-        block.lines.map(_escapeHtml).join('<br>'); // 行间 <br>，绝不 \n
+    final List<MangaOcrTextRegion>? regions = block.regions;
+    final bool hasRegions = regions != null && regions.isNotEmpty;
+    final String inner = hasRegions
+        ? _mangaCharacterRegionsHtml(
+            block: block,
+            regions: regions,
+            pageWidth: pageWidth,
+          )
+        : block.lines.map(_escapeHtml).join('<br>'); // 行间 <br>，绝不 \n
     buffer.write('<p class="ocr-box" style="'
         'position:absolute;'
         'left:${_pct(leftPct)};'
@@ -52,8 +60,48 @@ String mangaOcrBoxesHtml(MokuroImage page) {
         'color:transparent;'
         'margin:0;'
         'padding:0;'
-        'pointer-events:auto;'
+        'pointer-events:${hasRegions ? 'none' : 'auto'};'
         '">$inner</p>');
+  }
+  return buffer.toString();
+}
+
+String _mangaCharacterRegionsHtml({
+  required MokuroBlock block,
+  required List<MangaOcrTextRegion> regions,
+  required double pageWidth,
+}) {
+  final String sentence = block.lines.join();
+  final Rect parent = block.rectangle;
+  final double parentWidth = parent.width <= 0 ? 1 : parent.width;
+  final double parentHeight = parent.height <= 0 ? 1 : parent.height;
+  final StringBuffer buffer = StringBuffer();
+  for (final MangaOcrTextRegion region in regions) {
+    if (region.utf16Start < 0 ||
+        region.utf16End <= region.utf16Start ||
+        region.utf16End > sentence.length) {
+      continue;
+    }
+    final Rect r = region.rectangle;
+    final double leftPct = ((r.left - parent.left) / parentWidth) * 100;
+    final double topPct = ((r.top - parent.top) / parentHeight) * 100;
+    final double widthPct = (r.width / parentWidth) * 100;
+    final double heightPct = (r.height / parentHeight) * 100;
+    final double fontCqi =
+        (math.min(r.width, r.height) / pageWidth * 100).clamp(0.1, 20);
+    final String text = sentence.substring(region.utf16Start, region.utf16End);
+    buffer.write('<span class="ocr-char" '
+        'data-utf16-start="${region.utf16Start}" '
+        'style="position:absolute;'
+        'left:${_pct(leftPct)};'
+        'top:${_pct(topPct)};'
+        'width:${_pct(widthPct)};'
+        'height:${_pct(heightPct)};'
+        'font-size:${_num(fontCqi)}cqi;'
+        'line-height:1;'
+        'display:flex;align-items:center;justify-content:center;'
+        'color:transparent;pointer-events:auto;">'
+        '${_escapeHtml(text)}</span>');
   }
   return buffer.toString();
 }
@@ -148,6 +196,7 @@ String mangaWindowDocument(
   List<int>? pageNumbers,
   int currentSpread = 0,
   double restoreFraction = 0,
+  int zoomPercent = 100,
 }) {
   final bool isWebtoon = mode == MangaReadingMode.webtoon;
   // RTL 仅对 spread 横排有意义；direction:rtl 让 flex-row 从右往左排页。
@@ -204,11 +253,12 @@ String mangaWindowDocument(
           'transition:transform 0.18s ease-out;will-change:transform;}';
 
   // spread 时 strip 包进 overflow:hidden 视口；webtoon 时 root 直接在 body。
-  final String body = isWebtoon
+  final String content = isWebtoon
       ? '<div id="manga-root">${pagesHtml.toString()}</div>'
       : '<div id="manga-viewport">'
           '<div id="manga-root">${pagesHtml.toString()}</div>'
           '</div>';
+  final String body = '<div id="manga-canvas">$content</div>';
 
   return '<!DOCTYPE html>'
       '<html><head><meta charset="utf-8">'
@@ -223,6 +273,7 @@ String mangaWindowDocument(
       'html,body{margin:0;padding:0;background:#000;height:100%;'
       '-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}'
       '$rootSizing'
+      '#manga-canvas{transform-origin:0 0;will-change:transform;}'
       '.manga-page{position:relative;flex:0 0 auto;'
       'container-type:inline-size;}'
       '.manga-page img{display:block;width:100%;height:100%;'
@@ -238,6 +289,7 @@ String mangaWindowDocument(
     rtl: rtl,
     currentSpread: currentSpread,
     restoreFraction: restoreFraction,
+    zoomPercent: zoomPercent,
   )}'
       '</script>'
       '</body></html>';
@@ -261,12 +313,28 @@ String _mangaGestureJs({
   required bool rtl,
   required int currentSpread,
   required double restoreFraction,
+  required int zoomPercent,
 }) {
   // RTL：strip 视觉镜像，但 DOM offsetLeft 仍是几何坐标；translateX 统一把目标跨页
   // 首页 offsetLeft 平移到视口左边缘（width=100vw 的视口里目标跨页正好填满）。
   return '''
 (function(){
   function _bridge(){ return window.flutter_inappwebview; }
+  // ── desktop canvas zoom/pan ──
+  var ZOOM = ${zoomPercent.clamp(50, 200) / 100.0};
+  var PAN_X = 0, PAN_Y = 0;
+  var rightDrag = null;
+  function _applyCanvas(){
+    var canvas = document.getElementById('manga-canvas');
+    if (canvas) canvas.style.transform =
+      'translate(' + PAN_X + 'px,' + PAN_Y + 'px) scale(' + ZOOM + ')';
+  }
+  window.__mangaSetZoom = function(percent){
+    ZOOM = Math.min(2, Math.max(0.5, percent / 100));
+    if (ZOOM <= 1) { PAN_X = 0; PAN_Y = 0; }
+    _applyCanvas();
+  };
+  _applyCanvas();
   // ── spread translateX：把 data-spread==target 的首页平移到视口左边缘 ──
   window.__mangaApplyTranslate = function(target){
     var root = document.getElementById('manga-root');
@@ -363,8 +431,25 @@ String _mangaGestureJs({
     }));
   }
   document.addEventListener('pointermove', function(e){
+    if (rightDrag) {
+      var dx = e.clientX - rightDrag.lastX;
+      var dy = e.clientY - rightDrag.lastY;
+      rightDrag.lastX = e.clientX;
+      rightDrag.lastY = e.clientY;
+      if (Math.abs(e.clientX - rightDrag.startX) > 4 ||
+          Math.abs(e.clientY - rightDrag.startY) > 4) {
+        rightDrag.moved = true;
+      }
+      if (rightDrag.moved) {
+        PAN_X += dx;
+        PAN_Y += dy;
+        _applyCanvas();
+      }
+      e.preventDefault();
+      return;
+    }
     if (RESCAN && rescanStart) _rescanUpdate(e.clientX, e.clientY);
-  }, {passive: true});
+  }, {passive: false});
   var IS_WEBTOON = $isWebtoon;
   var CURRENT = $currentSpread;
   var RESTORE_FRACTION = ${restoreFraction.toStringAsFixed(6)};
@@ -426,15 +511,56 @@ String _mangaGestureJs({
     }
   }
   document.addEventListener('pointerdown', function(e){
+    if (e.button === 2) {
+      rightDrag = {
+        startX:e.clientX, startY:e.clientY,
+        lastX:e.clientX, lastY:e.clientY, moved:false
+      };
+      e.preventDefault();
+      return;
+    }
     if (e.button !== 0) return;
     if (RESCAN) { rescanStart = {x: e.clientX, y: e.clientY}; return; }
     _start(e.clientX, e.clientY);
   }, {passive: true});
   document.addEventListener('pointerup', function(e){
+    if (e.button === 2) {
+      var drag = rightDrag;
+      rightDrag = null;
+      e.preventDefault();
+      if (drag && !drag.moved) {
+        var b = _bridge();
+        if (b) b.callHandler('onMangaContextMenu', JSON.stringify({
+          x:e.clientX, y:e.clientY
+        }));
+      }
+      return;
+    }
     if (e.button !== 0) return;
     if (RESCAN) { _rescanFinish(e.clientX, e.clientY); return; }
     _end(e.clientX, e.clientY);
   }, {passive: false});
+  document.addEventListener('contextmenu', function(e){
+    e.preventDefault();
+  }, {passive:false});
+
+  // Ctrl/Command + wheel: 50%..200%, 10% steps, anchored at the pointer.
+  document.addEventListener('wheel', function(e){
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    var next = Math.min(2, Math.max(0.5, ZOOM + (e.deltaY < 0 ? 0.1 : -0.1)));
+    if (Math.abs(next - ZOOM) < 0.001) return;
+    var localX = (e.clientX - PAN_X) / ZOOM;
+    var localY = (e.clientY - PAN_Y) / ZOOM;
+    ZOOM = next;
+    PAN_X = e.clientX - localX * ZOOM;
+    PAN_Y = e.clientY - localY * ZOOM;
+    if (ZOOM <= 1) { PAN_X = 0; PAN_Y = 0; }
+    _applyCanvas();
+    var b = _bridge();
+    if (b) b.callHandler('onMangaZoomChanged', Math.round(ZOOM * 100));
+  }, {passive:false});
 
   // ── 桌面鼠标滚轮翻页（仅 spread，BUG-051）──
   // spread 的 #manga-viewport 是 overflow:hidden，滚轮本就无处可滚（死操作）；
@@ -445,6 +571,7 @@ String _mangaGestureJs({
   if (!IS_WEBTOON) {
     var _wheelLock = false;
     document.addEventListener('wheel', function(e){
+      if (e.ctrlKey || e.metaKey) return;
       e.preventDefault();
       if (RESCAN) return;
       if (_wheelLock) return;
