@@ -433,7 +433,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       }
       final GalHookSessionController session =
           widget.sessionController ?? GalHookSessionController.instance;
-      final bool launched = await session.launchGame(
+      final GalHookLaunchResult result = await session.launchGame(
         game.exePath,
         launchArguments: game.launchArgumentTokens,
         workdir: game.workdir,
@@ -444,18 +444,19 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       // 既看不到游戏也看不到任何提示 —— 用户感知就是「点了没反应」。
       final GalHookSessionState state = session.state;
       final GalHookLaunchOutcome outcome = classifyGalHookLaunchOutcome(
-        launched: launched,
+        result: result,
         hasBoundWindow: state.boundWindow != null,
         injectorFailure: state.injectorFailure,
       );
-      HibikiToast.show(
-        msg: galHookLaunchOutcomeMessage(
-          outcome: outcome,
-          failure: state.injectorFailure,
-          lastError: state.lastError,
-        ),
+      // message 为 null = 本次启动已被更新的操作取代，不该播报（BUG-1138）。
+      final String? message = galHookLaunchOutcomeMessage(
+        outcome: outcome,
+        result: result,
+        failure: state.injectorFailure,
+        lastError: state.lastError,
       );
-      if (!launched) return;
+      if (message != null) HibikiToast.show(msg: message);
+      if (!result.launched) return;
       widget.onLaunched?.call();
     } finally {
       _launching = false;

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
 
@@ -110,10 +111,12 @@ void main() {
   // 三种结果压成两个值，于是每个调用方自己去 state 里翻，翻得还不一样——游戏库页
   // 一个字都不提示。用户点完「启动游戏」既看不到游戏也看不到报错。
   group('classifyGalHookLaunchOutcome (BUG-1089)', () {
-    test('launchGame 返回 false → failed', () {
+    test('launchGame 返回失败结果 → failed', () {
       expect(
         classifyGalHookLaunchOutcome(
-          launched: false,
+          result: const GalHookLaunchResult.failed(
+            GalHookLaunchFailureReason.helperMissing,
+          ),
           hasBoundWindow: false,
           injectorFailure: GalHookInjectorFailure.helperMissing,
         ),
@@ -127,7 +130,7 @@ void main() {
       // 出现。用户感知就是「点了没反应、游戏没打开」，必须报出来。
       expect(
         classifyGalHookLaunchOutcome(
-          launched: true,
+          result: const GalHookLaunchResult.launched(),
           hasBoundWindow: false,
           injectorFailure: GalHookInjectorFailure.handshakeTimeout,
         ),
@@ -139,7 +142,7 @@ void main() {
       // 两者同时成立时，用户首要感知是「游戏没打开」，不是「音频降级了」。
       expect(
         classifyGalHookLaunchOutcome(
-          launched: true,
+          result: const GalHookLaunchResult.launched(),
           hasBoundWindow: false,
           injectorFailure: GalHookInjectorFailure.injectionFailed,
         ),
@@ -150,7 +153,7 @@ void main() {
     test('有窗口 + 注入失败 → degradedLoopback', () {
       expect(
         classifyGalHookLaunchOutcome(
-          launched: true,
+          result: const GalHookLaunchResult.launched(),
           hasBoundWindow: true,
           injectorFailure: GalHookInjectorFailure.injectionFailed,
         ),
@@ -164,7 +167,7 @@ void main() {
       // 而不是 phase，就是为了不拿这个去烦用户。
       expect(
         classifyGalHookLaunchOutcome(
-          launched: true,
+          result: const GalHookLaunchResult.launched(),
           hasBoundWindow: true,
           injectorFailure: GalHookInjectorFailure.none,
         ),
@@ -177,7 +180,7 @@ void main() {
           in GalHookInjectorFailure.values) {
         for (final bool hasWindow in <bool>[true, false]) {
           final GalHookLaunchOutcome outcome = classifyGalHookLaunchOutcome(
-            launched: true,
+            result: const GalHookLaunchResult.launched(),
             hasBoundWindow: hasWindow,
             injectorFailure: failure,
           );
@@ -193,6 +196,124 @@ void main() {
           }
         }
       }
+    });
+  });
+
+  // BUG-1138：launchGame 曾返回 `bool`，五条 `return false` 出口里有四条**不带任何
+  // 原因**（会话被抢占那几条连 state 都不碰）。UI 只能事后去 state 里翻，翻到
+  // `injectorFailure == none` + `lastError == null`，于是甩给用户一句「游戏启动或捕获
+  // 失败」——零可执行信息。原因是在 `return false` 那一刻丢的，下游补丁救不回来
+  // （下游只拿得到一个比特），所以修在返回类型上。
+  group('启动失败必须带原因 (BUG-1138)', () {
+    test('失败结果不允许把原因留空', () {
+      expect(
+        () => GalHookLaunchResult.failed(GalHookLaunchFailureReason.none),
+        throwsA(isA<AssertionError>()),
+        reason: '「没有原因的失败」正是本 bug 的形态，必须在构造处就挡掉',
+      );
+    });
+
+    test('被取代的启动 → superseded，且不播报任何文案', () {
+      const GalHookLaunchResult result = GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.superseded,
+      );
+      final GalHookLaunchOutcome outcome = classifyGalHookLaunchOutcome(
+        result: result,
+        hasBoundWindow: false,
+        injectorFailure: GalHookInjectorFailure.none,
+      );
+      expect(outcome, GalHookLaunchOutcome.superseded);
+      expect(
+        galHookLaunchOutcomeMessage(
+          outcome: outcome,
+          result: result,
+          failure: GalHookInjectorFailure.none,
+        ),
+        isNull,
+        reason: '取代它的那次操作会播报自己的结果；这里再弹一句会把真实结局盖掉',
+      );
+    });
+
+    test('每个失败原因都有确定分级，不留未定义组合', () {
+      for (final GalHookLaunchFailureReason reason
+          in GalHookLaunchFailureReason.values) {
+        if (reason == GalHookLaunchFailureReason.none) continue;
+        expect(
+          classifyGalHookLaunchOutcome(
+            result: GalHookLaunchResult.failed(reason),
+            hasBoundWindow: false,
+            injectorFailure: GalHookInjectorFailure.none,
+          ),
+          reason == GalHookLaunchFailureReason.superseded
+              ? GalHookLaunchOutcome.superseded
+              : GalHookLaunchOutcome.failed,
+          reason: '$reason 必须有确定分级',
+        );
+      }
+    });
+
+    // 本组的核心断言：即便 injector 诊断归类不出来（unknown），native 的一手证据也
+    // 必须到达用户。旧实现在这条路径上只剩一句兜底文案，stderr 尾部停在 controller
+    // 内部——用户无法自愈，报障时也提供不出线索。
+    test('归类不出来时，native 诊断必须进入文案', () {
+      const GalHookLaunchResult result = GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.injectionFailed,
+        diagnostics: GalHookInjectorDiagnostics(
+          failure: GalHookInjectorFailure.unknown,
+          exitCode: 3,
+          stderrTail: '[luna] LunaHook32.dll 已注入 pid=1234，等待连接...\n'
+              'engine bootstrap aborted: unexpected module layout',
+        ),
+      );
+      final String? message = galHookLaunchOutcomeMessage(
+        outcome: GalHookLaunchOutcome.failed,
+        result: result,
+        failure: GalHookInjectorFailure.unknown,
+      );
+      expect(message, isNotNull);
+      expect(message, contains('exit=3'));
+      expect(message, contains('engine bootstrap aborted'));
+    });
+
+    test('诊断摘要取 stderr 最后一行结论，不是中途进度', () {
+      const GalHookInjectorDiagnostics diagnostics = GalHookInjectorDiagnostics(
+        failure: GalHookInjectorFailure.unknown,
+        exitCode: 1,
+        stderrTail: '[luna] connected pid=1\n\n  final failure line  \n',
+      );
+      final String detail = galHookDiagnosticsDetail(diagnostics);
+      expect(detail, 'exit=1 final failure line');
+      expect(detail, isNot(contains('connected')));
+    });
+
+    test('没有任何诊断时不编造原因，只给兜底文案', () {
+      const GalHookLaunchResult result = GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.injectionFailed,
+      );
+      final String? message = galHookLaunchOutcomeMessage(
+        outcome: GalHookLaunchOutcome.failed,
+        result: result,
+        failure: GalHookInjectorFailure.unknown,
+      );
+      expect(message, isNotNull);
+      expect(message, isNot(contains('exit=')));
+    });
+
+    test('源码守卫：launchGame 不得退回 bool 返回值', () {
+      final File source =
+          File('lib/src/mining/gal_hook_session_controller.dart');
+      expect(source.existsSync(), isTrue, reason: '测试须在 hibiki/ 下运行才能读到源码');
+      final String code = source.readAsStringSync();
+      expect(
+        code.contains('Future<GalHookLaunchResult> launchGame('),
+        isTrue,
+        reason: '返回 bool 会让失败原因重新在 return 处丢失（BUG-1138 根因）',
+      );
+      expect(
+        RegExp(r'Future<bool>\s+launchGame\(').hasMatch(code),
+        isFalse,
+        reason: 'bool 返回值把五种失败压成一个比特，正是本 bug 的根因',
+      );
     });
   });
 }

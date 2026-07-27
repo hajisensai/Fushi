@@ -670,7 +670,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         _appModel.galgameRepo.games,
         executable,
       );
-      final bool launched = await _session.launchGame(
+      final GalHookLaunchResult result = await _session.launchGame(
         executable,
         launchArguments: known?.launchArgumentTokens ?? const <String>[],
         workdir: known?.workdir ?? '',
@@ -681,17 +681,18 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       // 主线程还挂着、根本没跑起来，说成「已运行」会让用户以为没事。
       final GalHookSessionState state = _session.state;
       final GalHookLaunchOutcome outcome = classifyGalHookLaunchOutcome(
-        launched: launched,
+        result: result,
         hasBoundWindow: state.boundWindow != null,
         injectorFailure: state.injectorFailure,
       );
-      HibikiToast.show(
-        msg: galHookLaunchOutcomeMessage(
-          outcome: outcome,
-          failure: state.injectorFailure,
-          lastError: state.lastError,
-        ),
+      // message 为 null = 本次启动已被更新的操作取代，不该播报（BUG-1138）。
+      final String? message = galHookLaunchOutcomeMessage(
+        outcome: outcome,
+        result: result,
+        failure: state.injectorFailure,
+        lastError: state.lastError,
       );
+      if (message != null) HibikiToast.show(msg: message);
     } finally {
       _launchingGalHook = false;
     }

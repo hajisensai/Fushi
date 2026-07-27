@@ -160,6 +160,67 @@ GalTrackEmptyHint galTrackEmptyHintFor(GalHookAudioBackend backend) =>
       _ => GalTrackEmptyHint.generic,
     };
 
+/// 一次启动失败的**结构化原因**（BUG-1138）。
+///
+/// 存在的理由：[GalHookSessionController.launchGame] 曾经返回 `bool`，而它有五条
+/// `return false` 出口，其中四条**根本不设置任何原因**——会话被抢占那几条连
+/// [GalHookSessionState] 都不碰。于是 UI 只能事后去 state 里翻，翻到的是
+/// `injectorFailure == none` + `lastError == null`，最终甩给用户一句「游戏启动或捕获
+/// 失败」：一个字的可执行信息都没有，用户无法自愈，排障时也判断不出到底停在哪一步。
+///
+/// 原因是在 `return false` 那一刻被丢掉的，任何下游补丁都救不回来（下游只能拿到一个
+/// 比特）。所以修在返回类型上：**每条失败出口必须携带一个原因，由编译期强制**。
+enum GalHookLaunchFailureReason {
+  /// 未失败。
+  none,
+
+  /// 非 Windows 平台，整条 Hook 链不可用。
+  unsupportedPlatform,
+
+  /// 找不到与游戏架构匹配的 injector helper。
+  helperMissing,
+
+  /// 游戏没能起来，或早期注入失败且拿不到运行中的 PID。
+  /// native 诊断在 [GalHookLaunchResult.diagnostics] 里，必须一路带到 UI。
+  injectionFailed,
+
+  /// **这不是失败**：本次启动被更新的会话操作取代（用户又点了一次、切到附着捕获、
+  /// 或停止了捕获）。旧实现把它和真失败压成同一个 `false`，于是被取代的那次会抢先
+  /// 弹一句「启动失败」，把真正生效的那次结果盖掉——用户看到的失败其实来自一次
+  /// 已经作废的操作。
+  superseded,
+}
+
+/// [GalHookSessionController.launchGame] 的结构化结果（BUG-1138）。
+///
+/// 取代原来的 `bool`：成功只有一种，失败必须说明是哪一种，并把 native 诊断一起带走。
+@immutable
+class GalHookLaunchResult {
+  /// 启动成功（含「游戏在跑但音频降级」——那仍然是启动成功，降级由 outcome 分级表达）。
+  const GalHookLaunchResult.launched()
+      : reason = GalHookLaunchFailureReason.none,
+        diagnostics = const GalHookInjectorDiagnostics();
+
+  /// 启动未成功。[reason] 不得为 [GalHookLaunchFailureReason.none]——那正是本 bug 的
+  /// 形态：一个没有原因的失败。
+  const GalHookLaunchResult.failed(
+    this.reason, {
+    this.diagnostics = const GalHookInjectorDiagnostics(),
+  }) : assert(
+          reason != GalHookLaunchFailureReason.none,
+          'failed() 必须给出真实原因；启动成功请用 GalHookLaunchResult.launched()',
+        );
+
+  final GalHookLaunchFailureReason reason;
+
+  /// injector 的结构化诊断（分类原因 + 退出码 + stderr 尾部原文）。
+  /// 即便 [GalHookInjectorFailure] 归类不出来，这里的 stderr 尾部仍是唯一的一手证据，
+  /// 必须让它到达用户和日志，而不是像旧实现那样停在 controller 内部。
+  final GalHookInjectorDiagnostics diagnostics;
+
+  bool get launched => reason == GalHookLaunchFailureReason.none;
+}
+
 /// 一次「启动游戏」结束后**必须**告知用户的结果分级（BUG-1089，纯函数可单测）。
 ///
 /// 存在的理由：[GalHookSessionController.launchGame] 返回 `bool`，把三种结果压成两个值
@@ -181,6 +242,10 @@ enum GalHookLaunchOutcome {
 
   /// 注入成功、窗口已绑定。
   running,
+
+  /// 本次启动被更新的操作取代：**不得向用户播报任何结果**。取代它的那次操作会播报
+  /// 自己的结果；这里再弹一句只会用一个作废操作的结局盖掉真实结局。
+  superseded,
 }
 
 /// 把一次启动的结果判成 [GalHookLaunchOutcome]（纯函数，无 i18n、无 IO）。
@@ -189,12 +254,17 @@ enum GalHookLaunchOutcome {
 /// `_activateTextWithLoopback`（文本 hook 就绪、音频用 Loopback）同样把 phase 设成
 /// `degraded`，但它显式把 injectorFailure 清成 [GalHookInjectorFailure.none]——那是
 /// 「有台词、音频兜底」的可接受模式，不该报成降级去烦用户。
+/// 被取代（[GalHookLaunchFailureReason.superseded]）先于一切判定：它既不是失败也不是
+/// 成功，而是「这次操作的结论已经作废」，唯一正确的处置是闭嘴。
 GalHookLaunchOutcome classifyGalHookLaunchOutcome({
-  required bool launched,
+  required GalHookLaunchResult result,
   required bool hasBoundWindow,
   required GalHookInjectorFailure injectorFailure,
 }) {
-  if (!launched) return GalHookLaunchOutcome.failed;
+  if (result.reason == GalHookLaunchFailureReason.superseded) {
+    return GalHookLaunchOutcome.superseded;
+  }
+  if (!result.launched) return GalHookLaunchOutcome.failed;
   if (!hasBoundWindow) return GalHookLaunchOutcome.windowMissing;
   if (injectorFailure != GalHookInjectorFailure.none) {
     return GalHookLaunchOutcome.degradedLoopback;
@@ -888,14 +958,25 @@ class GalHookSessionController extends ChangeNotifier {
   /// [launchArguments] 是用户为该游戏配置的启动参数（已按 Windows 规则拆成 argv
   /// token，见 `parseGameLaunchArguments`），[workdir] 是工作目录。两者都可省略：
   /// 省略即维持旧行为（不发 `--arg` / 不发 `--workdir`，injector 缺省用 exe 所在目录）。
-  Future<bool> launchGame(
+  Future<GalHookLaunchResult> launchGame(
     String executablePath, {
     List<String> launchArguments = const <String>[],
     String workdir = '',
   }) async {
     final int generation = ++_operationGeneration;
     await _stopSources();
-    if (!_isWindows || generation != _operationGeneration) return false;
+    // 两种早退原因必须分开：非 Windows 是「这台机器不支持」，被抢占是「这次操作作废」。
+    // 旧实现用同一个 `false` 表达，于是 UI 对二者说同一句无信息的话。
+    if (!_isWindows) {
+      return const GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.unsupportedPlatform,
+      );
+    }
+    if (generation != _operationGeneration) {
+      return const GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.superseded,
+      );
+    }
     _selectedTextThreadKey = null;
     _selectedNativeTextThreadId = null;
     _setState(
@@ -926,7 +1007,9 @@ class GalHookSessionController extends ChangeNotifier {
         details: <String, Object?>{'arch': is32Bit == true ? 'x86' : 'x64'},
         failure: GalHookInjectorFailure.helperMissing,
       );
-      return false;
+      return const GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.helperMissing,
+      );
     }
     final bool lunaPcHooks = shouldUseLunaPcHooksForExecutable(executablePath);
     _setState(_state.copyWith(phase: GalHookSessionPhase.launching));
@@ -956,7 +1039,9 @@ class GalHookSessionController extends ChangeNotifier {
     final PcmFormat? format = await engine.start();
     if (generation != _operationGeneration) {
       await engine.stop();
-      return false;
+      return const GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.superseded,
+      );
     }
     if (format == null && !engine.textHookReady) {
       final GalHookInjectorDiagnostics diagnostics = engine.lastFailure;
@@ -984,14 +1069,18 @@ class GalHookSessionController extends ChangeNotifier {
           fallbackReason: 'launch_injection_failed',
           failure: diagnostics.failure,
         );
-        if (generation != _operationGeneration) return false;
+        if (generation != _operationGeneration) {
+          return const GalHookLaunchResult.failed(
+            GalHookLaunchFailureReason.superseded,
+          );
+        }
         _startWindowRebindWatch(generation, runningPid);
         _scheduleEngineRecovery(
           generation,
           pid: runningPid,
           diagnostics: diagnostics,
         );
-        return true;
+        return const GalHookLaunchResult.launched();
       }
       _fail(
         'inject',
@@ -1000,7 +1089,12 @@ class GalHookSessionController extends ChangeNotifier {
         details: diagnostics.toDetails(),
         failure: diagnostics.failure,
       );
-      return false;
+      // 诊断随结果一起返回：`diagnostics.failure` 归类不出来时（unknown），stderr 尾部
+      // 就是唯一的一手证据，绝不能停在这里。
+      return GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.injectionFailed,
+        diagnostics: diagnostics,
+      );
     }
     final int? gamePid = engine.gamePid;
     if (format != null) {
@@ -1018,7 +1112,11 @@ class GalHookSessionController extends ChangeNotifier {
       engine,
       gamePid: gamePid,
     )) {
-      return false;
+      // _activateTextWithLoopback 只在会话被抢占时返回 false（音频源起不来它仍返回
+      // true，走 all_audio_sources_failed 降级）。所以这里唯一的语义就是「已作废」。
+      return const GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.superseded,
+      );
     }
     ExternalWindowInfo? window;
     if (gamePid != null) {
@@ -1037,7 +1135,11 @@ class GalHookSessionController extends ChangeNotifier {
         }
       }
     }
-    if (generation != _operationGeneration) return false;
+    if (generation != _operationGeneration) {
+      return const GalHookLaunchResult.failed(
+        GalHookLaunchFailureReason.superseded,
+      );
+    }
     if (window != null) {
       _setState(_state.copyWith(boundWindow: window, gamePid: gamePid));
       _record(
@@ -1068,7 +1170,7 @@ class GalHookSessionController extends ChangeNotifier {
       // gamePid 为空表示 hook 根本没拿到目标进程，没有可重试的匹配依据。
       if (gamePid != null) _startWindowRebindWatch(generation, gamePid);
     }
-    return true;
+    return const GalHookLaunchResult.launched();
   }
 
   /// launch 会话的窗口重绑监视：周期性按 [gamePid] 找顶层窗口，找到就补上绑定并把
