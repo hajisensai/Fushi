@@ -203,7 +203,7 @@
 | [BUG-954](bugs/BUG-954-texthooker-mine-sentence-empty-non-windows.md) | ✅ | ✅ | 非外部窗口模式制卡 sentence 字段恒空 |
 | [BUG-953](bugs/BUG-953-texthooker-popup-overlay-cross-tab-residue.md) | ✅ | ✅ | games tab 保活时查词弹窗与 barrier 跨 tab 残留遮挡 |
 | [BUG-952](bugs/BUG-952-texthooker-thread-dropdown-value-mismatch.md) | ✅ | ✅ | texthooker 线程下拉 value 与动态 items 失配触发 debug 断言红屏 |
-| [BUG-951](bugs/BUG-951-gal-overlay-click-through-cross-process.md) | ✅ | ✅ | Hook 浮窗鼠标穿透 HTTRANSPARENT 跨进程不生效 |
+| [BUG-951](bugs/BUG-951-gal-overlay-click-through-cross-process.md) | 🚧 | 🚧 | Hook 浮窗鼠标穿透 HTTRANSPARENT 跨进程不生效存疑须真机验证 |
 | [BUG-950](bugs/BUG-950-gal-hook-session-stale-line-bleed.md) | ✅ | ✅ | galgame hook 会话重启后旧行串入新会话且新文本被当重复静默丢弃 |
 | [BUG-949](bugs/BUG-949-unity-resource-audio-extractor-stall.md) | ✅ | ✅ | Unity 资源音频提取队列阻塞后持续降级 |
 | [BUG-948](bugs/BUG-948-dual-game-capture-acceptance.md) | ✅ | ✅ | Galgame 捕获不能稳定将正确文本与游戏资源语音一一配对并制卡 |
