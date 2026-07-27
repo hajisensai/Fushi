@@ -543,7 +543,11 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       insetBottom: caretBottomInset,
     );
 
-    return '''
+    // TODO-perf（跨章）：整段 setup 脚本每次跨章都要跨 platform channel 传给 WebView 再
+    // 解析执行（实测 evalSetupScript 中位数 25~40ms，与章节体量无关 = 纯固定开销）。
+    // 注入前剥掉整行注释与空行（见 ReaderScriptCompactor）——传的是同一份语义的脚本，
+    // 只是不再把给人看的中文注释也编组、传输、解析一遍。
+    return ReaderScriptCompactor.compact('''
 (function() {
   // BUG-1017: guarantee the `#hoshi-cloak` FOUC guard is always removed, even if
   // any synchronous statement in this setup IIFE throws before the tail reaches
@@ -1365,7 +1369,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   var cloak = document.getElementById('hoshi-cloak');
   if (cloak) cloak.remove();
 })();
-''';
+''');
   }
 
   static String _stripScriptTags(String js) {
@@ -1601,7 +1605,13 @@ extension _ReaderWebView on _ReaderHibikiPageState {
 
         controller.addJavaScriptHandler(
           handlerName: 'onRestoreComplete',
-          callback: (_) => _onRestoreComplete(),
+          // args[0] = JS 侧 perfSnapshot()（跨章分段计时诊断，见
+          // ReaderChapterPerfTrace）；恢复流程本身不依赖它，缺失/为空都无碍，故在
+          // handler 里就地消费，不进 _onRestoreComplete 的签名。
+          callback: (List<dynamic> args) {
+            ReaderChapterPerfTrace.noteJs(args.isEmpty ? null : args.first);
+            _onRestoreComplete();
+          },
         );
 
         // BUG-493 根因修复：JS 侧 `_reanchorPending` 清旗已单点化（_sharedJs 的
@@ -2032,6 +2042,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       },
       onLoadStop: (controller, url) async {
         _isNavigatingToChapter = false;
+        ReaderChapterPerfTrace.mark('docLoad');
         final int chapterSnapshot = _currentChapter;
         debugPrint('[ReaderHibiki] onLoadStop: url=$url '
             'chapter=$chapterSnapshot progress=$_initialProgress');
@@ -2173,12 +2184,16 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       if (_audiobookController != null) {
         sasayakiCuesJson = await _prepareSasayakiCuesJson();
       }
+      ReaderChapterPerfTrace.mark('sasayakiCues');
       if (_currentChapter != chapterSnapshot || _navigateGeneration != gen) {
         return;
       }
-      await controller.evaluateJavascript(
-        source: _buildReaderSetupScript(sasayakiCuesJson: sasayakiCuesJson),
-      );
+      final String setupScript =
+          _buildReaderSetupScript(sasayakiCuesJson: sasayakiCuesJson);
+      ReaderChapterPerfTrace.mark('buildSetupScript');
+      ReaderChapterPerfTrace.noteSize('setupChars', setupScript.length);
+      await controller.evaluateJavascript(source: setupScript);
+      ReaderChapterPerfTrace.mark('evalSetupScript');
       if (!mounted || _navigateGeneration != gen) return;
 
       // The setup script rebuilds window.hoshiCaret fresh (inactive). If the
@@ -2188,14 +2203,17 @@ extension _ReaderWebView on _ReaderHibikiPageState {
         await _caretReanchor(ReaderNavigationDirection.forward);
         if (!mounted || _navigateGeneration != gen) return;
       }
+      ReaderChapterPerfTrace.mark('caretReanchor');
 
       _initialFragment = null;
       if (_audiobookController != null) {
         await _injectAudiobookBridge();
       }
+      ReaderChapterPerfTrace.mark('audiobookBridge');
       if (!mounted || _navigateGeneration != gen) return;
       await HighlightBridge.inject(controller);
       await _applyChapterHighlights();
+      ReaderChapterPerfTrace.mark('highlights');
       if (!mounted || _navigateGeneration != gen) return;
       // BUG-111: 基线取「JS 实际分页用的尺寸」(_paginatedWidth/Height)，不是当前
       // MediaQuery——这样后续 resize 才与真正生效的版面宽度比对。

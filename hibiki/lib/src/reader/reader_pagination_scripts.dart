@@ -842,6 +842,30 @@ class ReaderPaginationScripts {
   ttuRegexNegated: /[^0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゟァ-ヺー-ヿ０-９Ａ-Ｚａ-ｚｦ-ﾝ\u{2E80}-\u{2EFF}\u{2F00}-\u{2FDF}\u{3400}-\u{4DBF}\u{4E00}-\u{9FFF}\u{F900}-\u{FAFF}\u{20000}-\u{2A6DF}\u{2A700}-\u{2EBE0}\u{2F800}-\u{2FA1F}\u{30000}-\u{323AF}]+/gimu,
   ttuRegex: /[0-9A-Za-z○◯々-〇〻ぁ-ゖゝ-ゟァ-ヺー-ヿ０-９Ａ-Ｚａ-ｚｦ-ﾝ\u{2E80}-\u{2EFF}\u{2F00}-\u{2FDF}\u{3400}-\u{4DBF}\u{4E00}-\u{9FFF}\u{F900}-\u{FAFF}\u{20000}-\u{2A6DF}\u{2A700}-\u{2EBE0}\u{2F800}-\u{2FA1F}\u{30000}-\u{323AF}]/iu,
   nodeStartOffsets: new WeakMap(),
+  // 跨章分段计时（JS 侧）。Dart 的 [ReaderChapterPerfTrace] 只能测到「setup 脚本注入完成
+  // → onRestoreComplete 回来」这一整段（真机 ~30ms），无法区分那段里图片等待 / 字符偏移
+  // 建表 / 恢复滚动 / IPC 回传各占多少。perfMark 在这几处打点，perfSnapshot 连同浏览器
+  // navigation timing（responseEnd / DOMContentLoaded / load）一起随 onRestoreComplete
+  // 回传给 Dart。performance.now() 几次调用 + 一次 JSON.stringify，热路径成本可忽略。
+  _perf: {},
+  perfMark: function(name) {
+    try { this._perf[name] = performance.now(); } catch (e) {}
+  },
+  perfSnapshot: function() {
+    try {
+      var out = { marks: this._perf };
+      var entries = performance.getEntriesByType ? performance.getEntriesByType('navigation') : null;
+      var nav = entries && entries.length ? entries[0] : null;
+      if (nav) {
+        out.nav = {
+          resp: Math.round(nav.responseEnd),
+          dcl: Math.round(nav.domContentLoadedEventEnd),
+          load: Math.round(nav.loadEventEnd)
+        };
+      }
+      return JSON.stringify(out);
+    } catch (e) { return ''; }
+  },
   isVertical: function() {
     return window.getComputedStyle(document.body).writingMode === "vertical-rl";
   },
@@ -1000,8 +1024,9 @@ class ReaderPaginationScripts {
     }
   },
   notifyRestoreComplete: function() {
+    this.perfMark('restoreDone');
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-      window.flutter_inappwebview.callHandler('onRestoreComplete');
+      window.flutter_inappwebview.callHandler('onRestoreComplete', this.perfSnapshot());
     }
     if (typeof this.warmPaginationMetrics === 'function') {
       this.warmPaginationMetrics();
@@ -2221,15 +2246,21 @@ $_sharedJs
     if (page > totalPages) page = totalPages;
     return { currentPage: page, totalPages: totalPages };
   },
-  // 纯 dedup（零行为变化）：恢复/跳锚共用的落点 settle 双发——16ms 后重设落点 + 注册
-  // snap 基线，再 16ms 后 notifyRestoreComplete 通知 Dart 恢复完成。与原
-  // restoreProgress / restoreToCharOffset / jumpToFragment 三处内联展开逐字节等时序。
+  // 恢复/跳锚共用的落点 settle：等一帧让恢复滚动引发的 reflow 落定，重设落点 + 注册
+  // snap 基线，然后立刻通知 Dart 恢复完成。
+  //
+  // TODO-perf（跨章）：旧实现是两层嵌套 setTimeout(16)——第一层重设落点（有实义），
+  // **第二层什么都不做**，只为再拖 16ms 才通知 Dart。真机分段计时（[chapter-perf]
+  // js.restore 35~44ms vs 跨章总耗时 ~96ms）显示这两层固定延迟占了跨章耗时的三分之一。
+  // 落点在第一层回调里已被 setPagePosition 同步写死，Dart 收到通知后读到的就是这个
+  // 位置；再空等一帧不改变任何落点，只是让「内容就绪」晚 16ms、遮罩多留一帧。故删掉
+  // 第二层，保留第一层的「等一帧再重设」防 reflow 语义。
   _settleAndNotify: function(context, pos) {
     var self = this;
     setTimeout(function() {
       self.setPagePosition(context, pos);
       self.registerSnapScroll(pos);
-      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
+      self.notifyRestoreComplete();
     }, 16);
   },
   restoreProgress: async function(progress) {
@@ -2523,6 +2554,7 @@ $_sharedJs
 window.hoshiReader.initialize = function() {
   if (window.hoshiReader.didInitialize) return;
   window.hoshiReader.didInitialize = true;
+  this.perfMark('initStart');
   document.documentElement.style.setProperty('--chrome-top-inset', '${chromeTopInset}px');
   document.documentElement.style.setProperty('--chrome-bottom-inset', '${chromeBottomInset}px');
 $_sharedInitViewport
@@ -2555,8 +2587,11 @@ $initImages
   spacer.style.display = 'block';
   spacer.style.breakInside = 'avoid';
   document.body.appendChild(spacer);
+  this.perfMark('initSyncDone');
   Promise.all(imagePromises).then(function() {
+    window.hoshiReader.perfMark('imagesReady');
     window.hoshiReader.buildNodeOffsets();
+    window.hoshiReader.perfMark('offsetsBuilt');
     // TODO-627：图片可能在初次分页 metrics 建好之后才 decode 完。此前
     // buildPaginationMetrics 枚举到的 <img> 还是 0x0（getBoundingClientRect 全 0），
     // metrics.maxScroll 漏掉图片所占的列 → 偏小 → paginate 在图片页前就误判到末页
@@ -2762,15 +2797,14 @@ $_sharedJs
     }
     return totalChars > 0 ? exploredChars / totalChars : 0;
   },
-  // 纯 dedup（零行为变化）：恢复落点 settle 的 16ms 双层延迟后 notifyRestoreComplete。
-  // 与原 restoreProgress（中段分数分支）/ jumpToFragment / restoreToCharOffset 三处内联
-  // 展开逐字节等时序。章首/章末分支是「单层 16ms + 重发滚动后立即通知」的另一形态
-  // （时序不同），保留原样不并入。
+  // 连续模式恢复落点 settle：等一帧让恢复滚动落定后通知 Dart。
+  //
+  // TODO-perf（跨章）：旧实现是两层嵌套 setTimeout(16)，而且**两层里都不做任何事**，
+  // 纯粹空等 32ms 再通知（分页版第一层至少还重设落点）。这里收敛成单层 16ms，与同
+  // shell 的章首/章末分支（`单层 16ms + 重发滚动后立即通知`）时序一致。
   _settleAndNotify: function() {
     var self = this;
-    setTimeout(function() {
-      setTimeout(function() { self.notifyRestoreComplete(); }, 16);
-    }, 16);
+    setTimeout(function() { self.notifyRestoreComplete(); }, 16);
   },
   restoreProgress: async function(progress) {
     await document.fonts.ready;
@@ -3139,6 +3173,7 @@ $_sharedJs
 window.hoshiReader.initialize = function() {
   if (window.hoshiReader.didInitialize) return;
   window.hoshiReader.didInitialize = true;
+  this.perfMark('initStart');
   document.documentElement.style.setProperty('--chrome-top-inset', '${chromeTopInset}px');
   document.documentElement.style.setProperty('--chrome-bottom-inset', '${chromeBottomInset}px');
 $_sharedInitViewport
@@ -3151,8 +3186,11 @@ $_sharedInitViewport
   document.documentElement.style.setProperty('--hoshi-image-max-width', __imgBox.w + 'px');
   document.documentElement.style.setProperty('--hoshi-image-max-height', __imgBox.h + 'px');
 $initImages
+  this.perfMark('initSyncDone');
   Promise.all(imagePromises).then(function() {
+    window.hoshiReader.perfMark('imagesReady');
     window.hoshiReader.buildNodeOffsets();
+    window.hoshiReader.perfMark('offsetsBuilt');
     // TODO-627：图片可能在初次分页 metrics 建好之后才 decode 完。此前
     // buildPaginationMetrics 枚举到的 <img> 还是 0x0（getBoundingClientRect 全 0），
     // metrics.maxScroll 漏掉图片所占的列 → 偏小 → paginate 在图片页前就误判到末页

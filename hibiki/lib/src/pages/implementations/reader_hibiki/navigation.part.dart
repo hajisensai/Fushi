@@ -53,10 +53,6 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
         // 书看似打开，但翻页永久被守卫吞掉、进度不再保存。这里连同解开导航态：三份中止
         // 变体已收敛进 _failNavigation（清 _isNavigatingToChapter + _restoreInFlight 并
         // complete(false)+清空 completer，让等待方立即返回而非各等各的 10s 超时）。
-        // 前一行显式清导航旗与 _failNavigation 内部重复，保留作源码守卫锚点
-        // （test/pages/reader_content_ready_timeout_unwind_guard_static_test.dart 钉住
-        // 该行存在），幂等无副作用。
-        _isNavigatingToChapter = false;
         _failNavigation();
         // TODO-1229 第三次复诉：兜底超时也算内容就绪，消费 pending 并 stamp 冷却窗，
         // 避免惯性跨章后旗子悬空到下一次真实导航才被清（那会造成一次假冷却）。
@@ -83,6 +79,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   }
 
   void _onRestoreComplete() {
+    ReaderChapterPerfTrace.mark('jsInitRestore');
     // BUG-438 / TODO-889：恢复完成=内容真正就绪，清掉兜底 deadline，下次导航拿新窗口。
     _clearContentReadyTimeout();
     // TODO-1229 第三次复诉：惯性跨章落地的新章一就绪，就把跨章冷却窗 stamp 到当下，
@@ -124,19 +121,16 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       // TODO-700 T3：内容就绪确定性落焦到正文（门控见 helper）。
       _settleFocusOnContentReady();
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        // 跨章计时的真正终点：用户感知的跨章 = 遮罩（!_readerContentReady 时盖住整页的
+        // ColoredBox）从屏上消失、新章可见那一刻。上面的 _rebuild 只是把状态翻真，遮罩
+        // 到这一帧才真正撤掉，所以 overlayGone 才是「跨章结束」，total 也算到这里。
+        ReaderChapterPerfTrace.mark('overlayGone');
+        ReaderChapterPerfTrace.end();
         if (mounted) _syncPageSize();
       });
-    }
-
-    // 收藏高亮：在恢复完成（章节分页布局已稳定、恢复滚动已结束）时重新应用。
-    // _onChapterLoadComplete 里的早期 apply 跑在 onLoadStop 同步返回之后，
-    // 而 hoshiReader.initialize 把 buildNodeOffsets / 恢复滚动塞进图片
-    // Promise.all().then() 里异步执行——早期 apply 抢在列布局存在之前注册
-    // CSS Custom Highlight range，重进章节时高亮不绘制（立即收藏时布局已稳定
-    // 所以能显示）。在这里（与立即收藏相同的稳定状态）再应用一次即可对齐。
-    // 重复应用是幂等的：__hibikiApplyHighlights 会先清空再重建 range map。
-    if (!_lyricsMode) {
-      _applyChapterHighlights();
+    } else {
+      // 已就绪（同章重恢复等）时没有遮罩要撤，恢复完成即终点。
+      ReaderChapterPerfTrace.end();
     }
 
     _audiobookController?.notifySectionRestoreCompleted(
@@ -187,19 +181,38 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       unawaited(_applyPendingPreciseLocate());
     }
 
-    // TODO-724：跳章 / 位置恢复完成后重置有声书图片暂停的 cue 推进锚点
-    // (__hoshiPrevHighlight)。否则恢复到章节中段后，首次 cue 推进时 prev 仍指向很早
-    // 的元素，__hoshiImageBetween 会跨越中间所有插图、误把视口 reveal 到一张远处的图
-    // （BUG-007 的 reveal 滚图被恢复 + 大跨度 cue 放大）。本路径同时覆盖初次开书与
-    // 有声书跨章推进（_handleCueCrossChapter→_navigateToChapter 完成后均回到这里）。
-    // 与 718 的 _reanchorContinuousAfterRestore（连续模式重锚）零共享状态，正交独立。
-    if (!_lyricsMode && _controller != null) {
-      AudiobookBridge.resetImagePauseAnchor(_controller!);
-    }
-
-    _refreshProgress();
-    _startProgressPoll();
-    _diag718ProbeViewportDrift();
+    // TODO-perf（跨章·遮罩）：下面全是「新章已经可以看了」之后的收尾——收藏高亮
+    // （一次 DB 查询 + 两次 evaluateJavascript）、有声书图片锚点复位、进度刷新与
+    // 轮询、诊断探针。它们既不决定落点也不决定可见性，但每一项都要 await 一次 DB
+    // 或 JS 往返；留在这里就跟遮罩撤除挤在同一轮事件循环里，把那一帧的绘制往后推。
+    // 挪到本帧渲染之后执行——遮罩按时撤、用户先看到新章，收尾照旧全部执行。
+    // 语义变化仅「晚一帧」：高亮晚一帧绘出、图片暂停锚点晚一帧复位（跨章落地那一帧
+    // 恰好有 cue 推进才有影响，且下一次推进即自愈）、进度晚一帧刷新，均无用户可感后果。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // 收藏高亮：恢复完成（分页布局稳定、恢复滚动结束）后重新应用。
+      // _onChapterLoadComplete 里的早期 apply 跑在 onLoadStop 同步返回之后，
+      // 而 hoshiReader.initialize 把 buildNodeOffsets / 恢复滚动塞进图片
+      // Promise.all().then() 里异步执行——早期 apply 抢在列布局存在之前注册
+      // CSS Custom Highlight range，重进章节时高亮不绘制（立即收藏时布局已稳定
+      // 所以能显示）。在这里（与立即收藏相同的稳定状态）再应用一次即可对齐。
+      // 重复应用是幂等的：__hibikiApplyHighlights 会先清空再重建 range map。
+      if (!_lyricsMode) {
+        _applyChapterHighlights();
+      }
+      // TODO-724：跳章 / 位置恢复完成后重置有声书图片暂停的 cue 推进锚点
+      // (__hoshiPrevHighlight)。否则恢复到章节中段后，首次 cue 推进时 prev 仍指向很早
+      // 的元素，__hoshiImageBetween 会跨越中间所有插图、误把视口 reveal 到一张远处的图
+      // （BUG-007 的 reveal 滚图被恢复 + 大跨度 cue 放大）。本路径同时覆盖初次开书与
+      // 有声书跨章推进（_handleCueCrossChapter→_navigateToChapter 完成后均回到这里）。
+      // 与 718 的 _reanchorContinuousAfterRestore（连续模式重锚）零共享状态，正交独立。
+      if (!_lyricsMode && _controller != null) {
+        AudiobookBridge.resetImagePauseAnchor(_controller!);
+      }
+      _refreshProgress();
+      _startProgressPoll();
+      _diag718ProbeViewportDrift();
+    });
   }
 
   /// TODO-718 诊断（默认 off·DebugLogService 门控·只读不改行为）：恢复完成后多次读**真实**
@@ -389,6 +402,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   /// 弃置 completer 不 complete、旧装载失败分支不清导航旗，各自分叉）。对已复位的字段
   /// 幂等（装载失败路径 `_isNavigatingToChapter` 已在 rethrow 前清过，再清无副作用）。
   void _failNavigation() {
+    ReaderChapterPerfTrace.abort();
     _isNavigatingToChapter = false;
     _restoreInFlight = false;
     if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
@@ -458,8 +472,10 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     );
     _lastProgressCharOffset = _initialCharOffset;
 
+    ReaderChapterPerfTrace.begin('chapter=$index');
     try {
       await _loadChapterDirectly(index);
+      ReaderChapterPerfTrace.mark('loadUrl');
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderHibiki._navigateToChapter', e, stack);
       debugPrint('[ReaderHibiki] _navigateToChapter loadUrl failed: $e');
