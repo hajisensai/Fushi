@@ -4889,8 +4889,19 @@ class AppModel with ChangeNotifier {
   ///
   /// 懒建：绑的是 [database]，只有真正用到游戏库的路径才会碰它，冷启动不多跑查询。
   /// 库页/详情页直接用这个仓储做增删改与会话查询。
-  GalgameRepository get galgameRepo =>
-      _galgameRepo ??= GalgameRepository(database);
+  GalgameRepository get galgameRepo => _galgameRepo ??= GalgameRepository(
+        database,
+        // 游玩状态改动上报媒体记录（Bangumi 收藏 type）。fail-open：同步不可用时
+        // 本地状态照常生效，事件留在 outbox 由后续同步重试。
+        onPlayStatusChanged: (String id, GalgamePlayStatus status) {
+          unawaited(
+            mediaTrackingService.recordGameStatus(
+              gameId: id,
+              status: status.value,
+            ),
+          );
+        },
+      );
   GalgameRepository? _galgameRepo;
 
   /// 当前缓存的游戏库列表（同步读，供 widget 首帧渲染）。首次进页面为空表，

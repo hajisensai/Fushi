@@ -1001,4 +1001,165 @@ void main() {
       isNull,
     );
   });
+
+  group('游戏收藏状态同步', () {
+    Future<void> insertGame(
+      String id, {
+      required String name,
+      int playStatus = 0,
+    }) =>
+        db.upsertGalgame(
+          GalgamesCompanion.insert(
+            id: id,
+            name: name,
+            exePath: 'C:\\games\\$id.exe',
+            workdir: 'C:\\games',
+            addedAt: 1000,
+            playStatus: Value<int>(playStatus),
+          ),
+        );
+
+    Future<void> scrapeBangumi(String gameId, String subjectId) =>
+        db.upsertGalgameSource(
+          GalgameSourcesCompanion.insert(
+            gameId: gameId,
+            source: 'bgm',
+            externalId: Value<String?>(subjectId),
+            dataJson: '{}',
+            fetchedAt: 1000,
+          ),
+        );
+
+    test('已刮削的游戏用 Bangumi 条目建映射并创建收藏', () async {
+      await insertGame('g1', name: 'Sakura no Uta');
+      await scrapeBangumi('g1', '4242');
+
+      await service.recordGameStatus(gameId: 'g1', status: 3);
+      // recordGameStatus 内部是 unawaited(syncNow())；syncNow 会返回同一个
+      // in-flight future，await 它即可等到后台同步真正跑完。
+      await service.syncNow();
+
+      final MediaTrackingMappingRow? mapping = await repository.findMapping(
+        mediaType: TrackingMediaType.game,
+        mediaKey: 'g1',
+      );
+      expect(mapping, isNotNull);
+      expect(mapping!.subjectId, 4242);
+      expect(mapping.kind, TrackingKind.game.value);
+      expect(mapping.progressMode, TrackingProgressMode.status.value);
+      // offset 必须是 0，否则收藏 type 会被算成另一个状态。
+      expect(mapping.progressOffset, 0);
+      expect(api.creates, <Map<String, dynamic>>[
+        <String, dynamic>{'type': 3},
+      ]);
+      // 游戏条目没有话数，绝不能去动 ep_status。
+      expect(api.episodePatches, isEmpty);
+    });
+
+    test('状态回退如实同步：玩过 → 在玩', () async {
+      await insertGame('g1', name: 'Sakura no Uta');
+      await scrapeBangumi('g1', '4242');
+      api.collection = const BangumiUserCollection(
+        type: 2,
+        episodeProgress: 0,
+        volumeProgress: 0,
+      );
+
+      await service.recordGameStatus(gameId: 'g1', status: 3);
+      await service.syncNow();
+
+      expect(api.patches, <Map<String, dynamic>>[
+        <String, dynamic>{'type': 3},
+      ]);
+    });
+
+    test('远端状态已经一致时不发多余请求', () async {
+      await insertGame('g1', name: 'Sakura no Uta');
+      await scrapeBangumi('g1', '4242');
+      api.collection = const BangumiUserCollection(
+        type: 3,
+        episodeProgress: 0,
+        volumeProgress: 0,
+      );
+
+      await service.recordGameStatus(gameId: 'g1', status: 3);
+      await service.syncNow();
+
+      expect(api.patches, isEmpty);
+      expect(api.creates, isEmpty);
+    });
+
+    test('未设置状态(0)不上报', () async {
+      await insertGame('g1', name: 'Sakura no Uta', playStatus: 0);
+      await scrapeBangumi('g1', '4242');
+
+      await service.recordGameStatus(gameId: 'g1', status: 0);
+
+      expect(
+        await repository.findMapping(
+          mediaType: TrackingMediaType.game,
+          mediaKey: 'g1',
+        ),
+        isNull,
+      );
+      expect(api.creates, isEmpty);
+      expect(api.patches, isEmpty);
+    });
+
+    test('未刮削时按名字搜游戏条目(type 4)，匹配不唯一就不建映射', () async {
+      await insertGame('g1', name: 'Generic Title');
+      api.searchResults = const <BangumiSubject>[
+        BangumiSubject(
+          id: 11,
+          type: 4,
+          name: 'Generic Title',
+          nameCn: '',
+          platform: '游戏',
+          episodeCount: 0,
+          volumeCount: 0,
+        ),
+        BangumiSubject(
+          id: 12,
+          type: 4,
+          name: 'Generic Title',
+          nameCn: '',
+          platform: '游戏',
+          episodeCount: 0,
+          volumeCount: 0,
+        ),
+      ];
+
+      await service.recordGameStatus(gameId: 'g1', status: 3);
+
+      expect(api.searches.single.subjectType, 4);
+      expect(
+        await repository.findMapping(
+          mediaType: TrackingMediaType.game,
+          mediaKey: 'g1',
+        ),
+        isNull,
+      );
+      expect(api.creates, isEmpty);
+    });
+
+    test('连上账号后对账补发此前已设置的状态', () async {
+      await insertGame('g1', name: 'Sakura no Uta', playStatus: 4);
+      await scrapeBangumi('g1', '4242');
+
+      // 换账号会把水位归零，强制从本地事实重建一次。
+      await service.setAccessToken('token');
+      await service.syncNow(force: true);
+
+      expect(api.creates, <Map<String, dynamic>>[
+        <String, dynamic>{'type': 4},
+      ]);
+    });
+  });
+
+  test('Bangumi 条目类型按 kind 映射', () {
+    expect(bangumiSubjectTypeOf(TrackingKind.anime), 2);
+    expect(bangumiSubjectTypeOf(TrackingKind.game), 4);
+    expect(bangumiSubjectTypeOf(TrackingKind.novel), 1);
+    expect(bangumiSubjectTypeOf(TrackingKind.manga), 1);
+  });
 }

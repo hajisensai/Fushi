@@ -92,12 +92,16 @@ int _int(dynamic value, [int fallback = 0]) {
 
 String _string(dynamic value) => value is String ? value : '';
 
+/// 本层支持的 Bangumi 条目类型：1 书籍（含漫画/轻小说）/ 2 动画 / 4 游戏。
+/// 音乐(3)与三次元(6)没有对应的本地媒体，解析阶段丢弃。
+const Set<int> kSupportedBangumiSubjectTypes = <int>{1, 2, 4};
+
 BangumiSubject? _parseBangumiSubjectValue(dynamic item) {
   final Map<String, dynamic>? value = _map(item);
   if (value == null) return null;
   final int id = _int(value['id']);
   final int type = _int(value['type']);
-  if (id <= 0 || (type != 1 && type != 2)) return null;
+  if (id <= 0 || !kSupportedBangumiSubjectTypes.contains(type)) return null;
   final Map<String, dynamic>? images = _map(value['images']);
   return BangumiSubject(
     id: id,
@@ -223,6 +227,10 @@ class BangumiApiClient implements BangumiTrackingApi {
 
   static const String apiBase = 'https://api.bgm.tv';
   static const String accessTokenUrl = 'https://next.bgm.tv/demo/access-token';
+
+  /// 注册入口。[accessTokenUrl] 需要先登录才能生成令牌，没有账号的用户在那里会被
+  /// 挡在登录页，因此另给一个注册入口，两者并存而不是互相替代。
+  static const String signupUrl = 'https://bgm.tv/signup';
 
   final String _accessToken;
   final String _userAgent;

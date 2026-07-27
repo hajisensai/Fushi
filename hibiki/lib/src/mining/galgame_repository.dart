@@ -96,9 +96,15 @@ GalgamesCompanion galgamesCompanionFromEntry(GalgameEntry entry) {
 /// 整库规模是几百条，全量重载三个查询在 SQLite 上是毫秒级；换来「缓存与表恒一致」，
 /// 不用维护一套增量更新 + 校验兜底（就是契约 §1.4 拒绝统计投影表的同一个理由）。
 class GalgameRepository extends ChangeNotifier {
-  GalgameRepository(this._db);
+  GalgameRepository(this._db, {this.onPlayStatusChanged});
 
   final HibikiDatabase _db;
+
+  /// 游玩状态落库后的通知钩子（可选，测试与纯本地场景可不接）。
+  ///
+  /// 用回调而不是直接依赖媒体记录服务：游戏库不该知道有没有外部同步这回事，
+  /// 接线由 AppModel 统一负责。
+  final void Function(String id, GalgamePlayStatus status)? onPlayStatusChanged;
 
   List<GalgameEntry> _games = const <GalgameEntry>[];
 
@@ -194,9 +200,13 @@ class GalgameRepository extends ChangeNotifier {
   }
 
   /// 只改游玩状态。
+  ///
+  /// 落库后通知 [onPlayStatusChanged]（媒体记录据此上报 Bangumi 收藏状态）。回调
+  /// 失败不影响本地状态：外部服务不可用时本地照常改，后续同步会重试。
   Future<void> setPlayStatus(String id, GalgamePlayStatus status) async {
     await _db.setGalgamePlayStatus(id, status.value);
     await load();
+    onPlayStatusChanged?.call(id, status);
   }
 
   /// 只改用户覆盖层（全空 → 写 null 清空自定义）。

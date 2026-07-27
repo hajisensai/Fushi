@@ -155,6 +155,17 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                 ),
               ),
             ),
+            AdaptiveSettingsRow(
+              title: t.media_tracking_signup,
+              trailing: TextButton.icon(
+                onPressed: () => launchUrl(
+                  Uri.parse(BangumiApiClient.signupUrl),
+                  mode: LaunchMode.externalApplication,
+                ),
+                icon: const Icon(Icons.person_add_alt),
+                label: Text(t.media_tracking_signup),
+              ),
+            ),
             if (_connectedAccount != null)
               AdaptiveSettingsRow(
                 title: t.media_tracking_connected_as,
@@ -243,6 +254,8 @@ String _kindLabel(String value) {
       return t.media_tracking_anime;
     case 'manga':
       return t.media_tracking_manga;
+    case 'game':
+      return t.media_tracking_game;
     default:
       return t.media_tracking_novel;
   }
@@ -254,6 +267,8 @@ String _modeLabel(String value) {
       return t.media_tracking_episode;
     case 'volume':
       return t.media_tracking_volume;
+    case 'status':
+      return t.media_tracking_status;
     default:
       return t.media_tracking_chapter;
   }
@@ -271,6 +286,8 @@ class _LocalTrackingTarget {
   final String title;
 
   bool get isBook => type == TrackingMediaType.book;
+
+  bool get isGame => type == TrackingMediaType.game;
 }
 
 class _AddMappingDialog extends StatefulWidget {
@@ -317,6 +334,7 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
   Future<void> _loadTargets() async {
     final List<EpubBookRow> books = await widget.database.getAllEpubBooks();
     final List<VideoBookRow> videos = await widget.database.allVideoBooks();
+    final List<GalgameRow> games = await widget.database.getAllGalgames();
     final List<MediaCollectionRow> collections =
         await widget.database.getAllMediaCollections();
     final List<MediaCollectionItemRow> members =
@@ -346,6 +364,12 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
           key: book.bookKey,
           title: book.title,
         ),
+      for (final GalgameRow game in games)
+        _LocalTrackingTarget(
+          type: TrackingMediaType.game,
+          key: game.id,
+          title: game.name,
+        ),
     ];
     if (!mounted) return;
     setState(() {
@@ -358,10 +382,16 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
   void _selectTarget(_LocalTrackingTarget target) {
     setState(() {
       _target = target;
-      _kind = target.isBook ? TrackingKind.novel : TrackingKind.anime;
-      _mode = target.isBook
-          ? TrackingProgressMode.volume
-          : TrackingProgressMode.episode;
+      _kind = switch (target.type) {
+        TrackingMediaType.game => TrackingKind.game,
+        TrackingMediaType.book => TrackingKind.novel,
+        _ => TrackingKind.anime,
+      };
+      _mode = switch (target.type) {
+        TrackingMediaType.game => TrackingProgressMode.status,
+        TrackingMediaType.book => TrackingProgressMode.volume,
+        _ => TrackingProgressMode.episode,
+      };
       _offsetController.text = '1';
       _searchController.text = target.title;
       _results = const <BangumiSubject>[];
@@ -392,8 +422,12 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
   Future<void> _save(BangumiSubject subject) async {
     final _LocalTrackingTarget? target = _target;
     if (target == null) return;
-    final int offset = int.tryParse(_offsetController.text) ??
-        (_mode == TrackingProgressMode.chapter ? 0 : 1);
+    // status 模式下 outbox.progress 存的是收藏 type 本身，任何非零 offset 都会把
+    // 它算成另一个状态，必须钉死为 0。
+    final int offset = _mode == TrackingProgressMode.status
+        ? 0
+        : (int.tryParse(_offsetController.text) ??
+            (_mode == TrackingProgressMode.chapter ? 0 : 1));
     await widget.repository.saveMapping(
       mediaType: target.type,
       mediaKey: target.key,
@@ -440,7 +474,13 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                 initialValue: _kind,
                 decoration: InputDecoration(labelText: t.media_tracking_kind),
                 items: <DropdownMenuItem<TrackingKind>>[
-                  if (!(_target?.isBook ?? false))
+                  if (_target?.isGame ?? false)
+                    DropdownMenuItem<TrackingKind>(
+                      value: TrackingKind.game,
+                      child: Text(t.media_tracking_game),
+                    ),
+                  if (!(_target?.isBook ?? false) &&
+                      !(_target?.isGame ?? false))
                     DropdownMenuItem<TrackingKind>(
                       value: TrackingKind.anime,
                       child: Text(t.media_tracking_anime),
@@ -468,7 +508,13 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                   labelText: t.media_tracking_progress_mode,
                 ),
                 items: <DropdownMenuItem<TrackingProgressMode>>[
-                  if (!(_target?.isBook ?? false))
+                  if (_target?.isGame ?? false)
+                    DropdownMenuItem<TrackingProgressMode>(
+                      value: TrackingProgressMode.status,
+                      child: Text(t.media_tracking_status),
+                    ),
+                  if (!(_target?.isBook ?? false) &&
+                      !(_target?.isGame ?? false))
                     DropdownMenuItem<TrackingProgressMode>(
                       value: TrackingProgressMode.episode,
                       child: Text(t.media_tracking_episode),
@@ -490,18 +536,25 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                   setState(() {
                     _mode = value;
                     _offsetController.text =
-                        value == TrackingProgressMode.chapter ? '0' : '1';
+                        value == TrackingProgressMode.chapter ||
+                                value == TrackingProgressMode.status
+                            ? '0'
+                            : '1';
                   });
                 },
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _offsetController,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: t.media_tracking_progress_offset,
+              // 收藏状态模式没有进度可偏移（Bangumi 游戏条目无话数/卷数），
+              // 保留输入框只会让用户填出一个被忽略的值。
+              if (_mode != TrackingProgressMode.status) ...<Widget>[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _offsetController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: t.media_tracking_progress_offset,
+                  ),
                 ),
-              ),
+              ],
               const SizedBox(height: 12),
               TextField(
                 controller: _searchController,
