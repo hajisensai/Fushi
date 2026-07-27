@@ -43,7 +43,7 @@ String? galHookFailureLabel(GalHookInjectorFailure failure) =>
         t.game_hook_reason_handshake_timeout,
     };
 
-/// 一次「启动游戏」结束后要 toast 给用户的话（BUG-1089 / BUG-1138）。
+/// 一次「启动游戏」结束后要 toast 给用户的话（BUG-1089 / BUG-1142）。
 ///
 /// 唯一的启动结果播报口：游戏库页和 texthooker 页都走这里，不再各写一套、也不再出现
 /// 「游戏库页一个字都不提示」。**成功也说**，因为「点了按钮什么都没发生」本身就是
@@ -73,7 +73,7 @@ String? galHookLaunchOutcomeMessage({
   };
 }
 
-/// 「启动彻底失败」要说的话（BUG-1138）。
+/// 「启动彻底失败」要说的话（BUG-1142）。
 ///
 /// 分三级取信息，**每一级都来自真实事实，绝不编造**：
 /// 1. [GalHookLaunchResult.reason]——它是编译期强制填写的，不会缺；

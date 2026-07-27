@@ -199,12 +199,12 @@ void main() {
     });
   });
 
-  // BUG-1138：launchGame 曾返回 `bool`，五条 `return false` 出口里有四条**不带任何
+  // BUG-1142：launchGame 曾返回 `bool`，五条 `return false` 出口里有四条**不带任何
   // 原因**（会话被抢占那几条连 state 都不碰）。UI 只能事后去 state 里翻，翻到
   // `injectorFailure == none` + `lastError == null`，于是甩给用户一句「游戏启动或捕获
   // 失败」——零可执行信息。原因是在 `return false` 那一刻丢的，下游补丁救不回来
   // （下游只拿得到一个比特），所以修在返回类型上。
-  group('启动失败必须带原因 (BUG-1138)', () {
+  group('启动失败必须带原因 (BUG-1142)', () {
     test('失败结果不允许把原因留空', () {
       expect(
         () => GalHookLaunchResult.failed(GalHookLaunchFailureReason.none),
@@ -307,7 +307,7 @@ void main() {
       expect(
         code.contains('Future<GalHookLaunchResult> launchGame('),
         isTrue,
-        reason: '返回 bool 会让失败原因重新在 return 处丢失（BUG-1138 根因）',
+        reason: '返回 bool 会让失败原因重新在 return 处丢失（BUG-1142 根因）',
       );
       expect(
         RegExp(r'Future<bool>\s+launchGame\(').hasMatch(code),

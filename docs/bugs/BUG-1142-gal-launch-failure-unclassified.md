@@ -1,4 +1,4 @@
-## BUG-1138 · gal 启动失败只报无信息兜底文案，失败原因在 launchGame 的 bool 返回值处被丢弃
+## BUG-1142 · gal 启动失败只报无信息兜底文案，失败原因在 launchGame 的 bool 返回值处被丢弃
 
 - **报告**：2026-07-27（用户）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/mining/gal_hook_session_controller.dart:891`（`Future<bool> launchGame`）与 `hibiki/lib/src/mining/gal_hook_failure_text.dart:62`（`reason ?? lastError ?? t.game_capture_launch_failed`）。
@@ -38,7 +38,7 @@
 - 零新增 i18n key。
 
 - **[x] ① 已修复** — `hibiki/lib/src/mining/gal_hook_session_controller.dart`（新增 `GalHookLaunchFailureReason` / `GalHookLaunchResult`、`launchGame` 改返回结构化结果、`classifyGalHookLaunchOutcome` 改吃结果）、`hibiki/lib/src/mining/gal_hook_failure_text.dart`（`galHookLaunchOutcomeMessage` 返回可空 + `galHookDiagnosticsDetail`）、三个调用点 `galgame_home_page.dart` / `games_library_page.dart` / `texthooker_page.dart`。
-- **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_hook_launch_outcome_and_encoding_test.dart` 新增 group「启动失败必须带原因 (BUG-1138)」7 例：失败不允许留空原因（构造断言）、被取代 → `superseded` 且不播报、每个原因都有确定分级、**归类不出来时 native 诊断必须进入文案**、诊断摘要取 stderr 结论行而非中途进度、无诊断时不编造原因、源码守卫禁止 `launchGame` 退回 `bool`。另在 `gal_hook_session_controller_test.dart` 的提权失败用例上补断言 `reason == injectionFailed` 且诊断保留 `elevationRequired`。
+- **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_hook_launch_outcome_and_encoding_test.dart` 新增 group「启动失败必须带原因 (BUG-1142)」7 例：失败不允许留空原因（构造断言）、被取代 → `superseded` 且不播报、每个原因都有确定分级、**归类不出来时 native 诊断必须进入文案**、诊断摘要取 stderr 结论行而非中途进度、无诊断时不编造原因、源码守卫禁止 `launchGame` 退回 `bool`。另在 `gal_hook_session_controller_test.dart` 的提权失败用例上补断言 `reason == injectionFailed` 且诊断保留 `elevationRequired`。
 
 ### 备注
 

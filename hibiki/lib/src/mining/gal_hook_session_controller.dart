@@ -160,7 +160,7 @@ GalTrackEmptyHint galTrackEmptyHintFor(GalHookAudioBackend backend) =>
       _ => GalTrackEmptyHint.generic,
     };
 
-/// 一次启动失败的**结构化原因**（BUG-1138）。
+/// 一次启动失败的**结构化原因**（BUG-1142）。
 ///
 /// 存在的理由：[GalHookSessionController.launchGame] 曾经返回 `bool`，而它有五条
 /// `return false` 出口，其中四条**根本不设置任何原因**——会话被抢占那几条连
@@ -191,7 +191,7 @@ enum GalHookLaunchFailureReason {
   superseded,
 }
 
-/// [GalHookSessionController.launchGame] 的结构化结果（BUG-1138）。
+/// [GalHookSessionController.launchGame] 的结构化结果（BUG-1142）。
 ///
 /// 取代原来的 `bool`：成功只有一种，失败必须说明是哪一种，并把 native 诊断一起带走。
 @immutable

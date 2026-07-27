@@ -685,7 +685,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         hasBoundWindow: state.boundWindow != null,
         injectorFailure: state.injectorFailure,
       );
-      // message 为 null = 本次启动已被更新的操作取代，不该播报（BUG-1138）。
+      // message 为 null = 本次启动已被更新的操作取代，不该播报（BUG-1142）。
       final String? message = galHookLaunchOutcomeMessage(
         outcome: outcome,
         result: result,

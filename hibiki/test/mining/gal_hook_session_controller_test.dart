@@ -1554,7 +1554,7 @@ void _bug950Guard() {
       final GalHookLaunchResult result =
           await controller.launchGame(r'D:\gal\x\x.exe');
       expect(result.launched, isFalse);
-      // BUG-1138：注入失败必须带结构化原因 + native 诊断，不能退化成无信息兜底。
+      // BUG-1142：注入失败必须带结构化原因 + native 诊断，不能退化成无信息兜底。
       expect(result.reason, GalHookLaunchFailureReason.injectionFailed);
       expect(
           result.diagnostics.failure, GalHookInjectorFailure.elevationRequired);
