@@ -291,16 +291,18 @@ class ProfileRepository {
     return newId;
   }
 
+  /// 全部媒体类型绑定的**裸串视图**（key = [ProfileMediaKind.dbValue]；DB 列
+  /// 接受任意串，历史行可能含旧值域，原样透传不丢行）。
   Future<Map<String, int>> getAllMediaTypeBindings() async {
     final rows = await _db.getAllMediaTypeProfiles();
     return {for (final r in rows) r.mediaType: r.profileId};
   }
 
-  Future<void> setMediaTypeBinding(String mediaType, int profileId) =>
-      _db.setMediaTypeProfile(mediaType, profileId);
+  Future<void> setMediaTypeBinding(ProfileMediaKind mediaType, int profileId) =>
+      _db.setMediaTypeProfile(mediaType.dbValue, profileId);
 
-  Future<void> removeMediaTypeBinding(String mediaType) =>
-      _db.deleteMediaTypeProfile(mediaType);
+  Future<void> removeMediaTypeBinding(ProfileMediaKind mediaType) =>
+      _db.deleteMediaTypeProfile(mediaType.dbValue);
 
   Future<int?> getBookProfileId(String bookUid) async {
     final row = await _db.getBookProfile(bookUid);
@@ -315,7 +317,7 @@ class ProfileRepository {
 
   Future<int> resolveProfileId({
     required String? bookUid,
-    required String? mediaType,
+    required ProfileMediaKind? mediaType,
   }) async {
     if (bookUid != null) {
       final bookProfileId = await getBookProfileId(bookUid);
@@ -323,7 +325,7 @@ class ProfileRepository {
     }
 
     if (mediaType != null) {
-      final mtRow = await _db.getMediaTypeProfile(mediaType);
+      final mtRow = await _db.getMediaTypeProfile(mediaType.dbValue);
       if (mtRow != null) return mtRow.profileId;
     }
 
@@ -424,14 +426,16 @@ class ProfileRepository {
     return value;
   }
 
-  /// 字体配置的持久化 key（与 backup_service 同源；见
-  /// `BackupService._fontCatalogPrefKey` / `_legacyFontPrefKeys`）。
-  static const String _fontCatalogPrefKey = 'src:reader_ttu:font_catalog';
-  static const List<String> _legacyFontPrefKeys = <String>[
-    'src:reader_ttu:custom_fonts',
-    'src:reader_ttu:app_ui_fonts',
-    'src:reader_ttu:dict_fonts',
-    'src:reader_ttu:video_sub_fonts',
+  /// 字体配置的持久化 key（与 backup_service 同一组值；那边因 const 上下文
+  /// 保留字面量并由 `db_source_pref_key_test` 锁一致）。这里经单一真相编码器
+  /// [dbSourcePrefKey] 生成，不再硬编码 `src:reader_ttu:` 格式。
+  static final String _fontCatalogPrefKey =
+      dbSourcePrefKey('reader_ttu', 'font_catalog');
+  static final List<String> _legacyFontPrefKeys = <String>[
+    dbSourcePrefKey('reader_ttu', 'custom_fonts'),
+    dbSourcePrefKey('reader_ttu', 'app_ui_fonts'),
+    dbSourcePrefKey('reader_ttu', 'dict_fonts'),
+    dbSourcePrefKey('reader_ttu', 'video_sub_fonts'),
   ];
 
   /// 解析并校验一个导出 JSON 字符串。坏文件 / 魔数不符 / 版本不兼容 / 结构非法

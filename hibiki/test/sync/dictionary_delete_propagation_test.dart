@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
@@ -46,7 +46,7 @@ class _RecordingBackend implements SyncBackend {
       throw UnimplementedError('unexpected ${invocation.memberName}');
 }
 
-// ── live 分支集成：验证 HibikiClientSyncBackend 路由到 host DELETE 端点 ─────
+// ── live 分支集成：验证 InterconnectSyncBackend 路由到 host DELETE 端点 ─────
 
 class _FakeLibraryService implements HibikiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
@@ -239,8 +239,8 @@ class _FakeLibraryService implements HibikiLibraryHostService {
 HibikiDatabase _memDb() =>
     HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
-/// 构造一个已认证的 HibikiClientSyncBackend，指向给定 base url。
-Future<HibikiClientSyncBackend> _buildBackend({
+/// 构造一个已认证的 InterconnectSyncBackend，指向给定 base url。
+Future<InterconnectSyncBackend> _buildBackend({
   required String base,
   required String token,
 }) async {
@@ -250,8 +250,8 @@ Future<HibikiClientSyncBackend> _buildBackend({
     HibikiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
-  final HibikiClientSyncBackend backend =
-      HibikiClientSyncBackend.withProbe((String url, String tok) async => true);
+  final InterconnectSyncBackend backend =
+      InterconnectSyncBackend.withProbe((String url, String tok) async => true);
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -288,11 +288,11 @@ void main() {
   });
 
   group('删除传播 live 分支（Task-6）', () {
-    /// 验证当 backend 是 HibikiClientSyncBackend 时，deleteRemoteDictionary
+    /// 验证当 backend 是 InterconnectSyncBackend 时，deleteRemoteDictionary
     /// 确实向 host 发送 DELETE /api/library/dictionaries/<name>，
     /// 且 host 库服务记录到该删除——不经过暂存 deleteRemoteDictionaryAsset 路径。
     test(
-        'HibikiClientSyncBackend.deleteRemoteDictionary routes to host DELETE endpoint',
+        'InterconnectSyncBackend.deleteRemoteDictionary routes to host DELETE endpoint',
         () async {
       const String token = 'test-token-propagate';
       final _FakeLibraryService lib = _FakeLibraryService();
@@ -306,12 +306,12 @@ void main() {
       await server.start();
       addTearDown(server.stop);
 
-      final HibikiClientSyncBackend backend = await _buildBackend(
+      final InterconnectSyncBackend backend = await _buildBackend(
         base: 'http://127.0.0.1:${server.port}',
         token: token,
       );
 
-      // 直接调 live 方法——这正是分流分支（backend is HibikiClientSyncBackend）
+      // 直接调 live 方法——这正是分流分支（backend is InterconnectSyncBackend）
       // 在 _propagateDictionaryDeleteToRemote 中执行的代码路径。
       await backend.deleteRemoteDictionary('Genius');
 

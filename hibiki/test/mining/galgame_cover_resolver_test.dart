@@ -8,6 +8,10 @@ import 'package:path/path.dart' as p;
 
 /// 游戏库「自动获取封面」的解析器测试：文件名打分（纯函数）+ 真实目录上的级联落盘。
 void main() {
+  // saveGameCover* 落盘走 MediaCoverService.applyCoverFile/applyCoverBytes 收口
+  // （内含双键驱逐，需要 PaintingBinding）。
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('rankGameCoverCandidates', () {
     test('封面类文件名排在立绘/背景之前，非图片被过滤', () {
       final List<GameCoverCandidate> ranked = rankGameCoverCandidates(

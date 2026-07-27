@@ -9,7 +9,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 ///
 /// 根因：`home_video_page._pullToRefresh`（`t.remote_video_list_failed(error:
 /// state.errorMessage ?? '')`）把 catch 里的 `e.toString()` 直接拼进 toast，异常源自
-/// `HibikiClientSyncBackend.listRemoteVideos()` 对 `GET /api/library/videos` 的
+/// `InterconnectSyncBackend.listRemoteVideos()` 对 `GET /api/library/videos` 的
 /// `.timeout(listTimeout=15s)`。修复：i18n key 改成无参自包含友好文案，toast 调用点去
 /// `error:` 参数，删掉承载异常的 `_RemoteVideoState.errorMessage` 死字段，原始异常只
 /// 留 `debugPrint`。

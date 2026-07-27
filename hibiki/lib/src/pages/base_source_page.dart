@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hibiki_core/hibiki_core.dart' show kStatSourceBook;
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';

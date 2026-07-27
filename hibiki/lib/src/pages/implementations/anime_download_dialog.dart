@@ -23,6 +23,7 @@ import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart'
     show jimakuLanguageLabel;
 import 'package:hibiki/src/pages/implementations/download_actions.dart';
 import 'package:hibiki/src/pages/implementations/downloads_page.dart';
+import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
 
 /// 「番剧下载」选种对话框：搜番（AniList）→ 选种（Nyaa）→ 确认字幕（Jimaku）→
@@ -101,7 +102,8 @@ class AnimeDownloadDialog extends ConsumerStatefulWidget {
       _AnimeDownloadDialogState();
 }
 
-class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
+class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
+    with HibikiPagePlaceholders<AnimeDownloadDialog> {
   final TextEditingController _animeQueryCtrl = TextEditingController();
   final TextEditingController _nyaaQueryCtrl = TextEditingController();
   late final TextEditingController _jimakuKeyCtrl;
@@ -1144,7 +1146,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
 
   Widget _buildAnimeResults(ThemeData theme) {
     if (_searchingAnime) {
-      return const Center(child: CircularProgressIndicator());
+      return buildLoading();
     }
     if (_animeSearchError) {
       return _buildErrorRetry(
@@ -1295,7 +1297,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
 
   Widget _buildTorrentResults(ThemeData theme) {
     if (_loadingTorrents) {
-      return const Center(child: CircularProgressIndicator());
+      return buildLoading();
     }
     if (_torrentsError) {
       return _buildErrorRetry(
@@ -1579,7 +1581,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog> {
   Widget _buildChosenSubsList(ThemeData theme) {
     // 字幕状态区分（不再「没搜就说无字幕」）：搜索中 / 缺 key / 出错 / 空。
     if (_jimakuLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return buildLoading();
     }
     if (_jimakuNoKey) {
       return Center(

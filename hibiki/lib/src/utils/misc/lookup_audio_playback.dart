@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/utils/misc/audio_mime.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
 import 'package:hibiki/src/utils/misc/word_audio_resolver.dart';
@@ -169,27 +170,11 @@ Future<String?> audioRefToWebViewUrl(String? ref) async {
 /// Audio Content-Type by file extension for `data:` URLs, so the WebView picks
 /// the right decoder. Covers the formats the local-audio libraries emit
 /// (Yomitan local audio server: mp3 / opus; plus common fallbacks). Unknown
-/// extensions fall back to `audio/mpeg` (the dominant word-audio format).
-String audioMimeForPath(String path) {
-  final String ext = path.split('.').last.toLowerCase();
-  switch (ext) {
-    case 'mp3':
-      return 'audio/mpeg';
-    case 'opus':
-    case 'ogg':
-    case 'oga':
-      return 'audio/ogg';
-    case 'm4a':
-    case 'mp4':
-    case 'aac':
-      return 'audio/mp4';
-    case 'wav':
-      return 'audio/wav';
-    case 'flac':
-      return 'audio/flac';
-    case 'webm':
-      return 'audio/webm';
-    default:
-      return 'audio/mpeg';
-  }
-}
+/// extensions fall back to `audio/mpeg` — a `data:` URL is never
+/// content-sniffed, so a definite audio/* type is required, and the Anki side
+/// derives the media file extension back from this MIME (mp3 is the dominant
+/// word-audio format). The extension → MIME mapping itself is the shared
+/// [kAudioMimeByExtension] table (audio_mime.dart), also consumed by the sync
+/// server's `remoteAudioContentTypeForPath` with its own octet-stream fallback.
+String audioMimeForPath(String path) =>
+    audioMimeForPathWithFallback(path, fallback: 'audio/mpeg');

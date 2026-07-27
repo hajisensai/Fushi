@@ -4,8 +4,15 @@
 /// 按序剥离括号块（字幕组/分辨率/校验码/语言标签/来源/年份/集数）、
 /// 集数模式、季度模式、电影提示、副标题，剩余部分清理后即主标题。
 /// 纯 Dart 标准库实现，不依赖任何 pub 包。
+///
+/// G10 第二步起本类是**仓内唯一**的视频文件名规则引擎：导入/分组/种子侧的
+/// `parseVideoFilename`（video_filename_parser.dart）已改为本类的窄化适配——
+/// 此前两套引擎对同一文件名可能解出不同集数（分组显示第 5 集、刮削按第 3 集查）。
+/// 原第二套引擎独有的识别规则（无「第」的 `12話/12集` 简写、`EP 3` 空格集数、
+/// `第N巻`）已并入本类，勿再另起副本。
 library;
 
+import 'package:hibiki/src/media/media_extensions.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 
 /// 一个被摘出的括号块：内容 + 它前面的括号外文本（用于判断「标题之后」）。
@@ -115,14 +122,15 @@ class FilenameParser {
 
   // ─────────────────────────── 扩展名 / 括号块扫描 ───────────────────────────
 
-  /// 常见视频扩展名（结尾剥离，大小写不敏感）。
-  static final RegExp _videoExtension = RegExp(
-    r'\.(mkv|mp4|avi|ts|webm|m2ts|wmv|flv|mov)$',
-    caseSensitive: false,
-  );
-
-  static String _stripExtension(String name) =>
-      name.replaceFirst(_videoExtension, '');
+  /// 结尾剥离视频扩展名（大小写不敏感）。扩展名表与导入 / 目录扫描共用
+  /// [kVideoExtensions]（G10 第一步）：此前这里另手写一张只有 9 项的小表，
+  /// `.rmvb` 等能导入的格式剥不掉、扩展名留在标题里拉低刮削搜索相似度。
+  static String _stripExtension(String name) {
+    final int dot = name.lastIndexOf('.');
+    if (dot <= 0) return name;
+    final String ext = name.substring(dot).toLowerCase();
+    return kVideoExtensions.contains(ext) ? name.substring(0, dot) : name;
+  }
 
   /// 支持的括号对（半角 + 全角）。
   static const Map<String, String> _bracketPairs = <String, String>{
@@ -192,8 +200,8 @@ class FilenameParser {
     caseSensitive: false,
   );
 
-  /// 块内 `第N话` 式集数：`[第04话]`。
-  static final RegExp _cnEpisodeBlock = RegExp(r'^第\s*(\d{1,4})\s*[话話集回]$');
+  /// 块内 `第N话` 式集数：`[第04话]`（`巻` 自导入端引擎并入，OVA/光盘卷号同解）。
+  static final RegExp _cnEpisodeBlock = RegExp(r'^第\s*(\d{1,4})\s*[话話集回巻]$');
 
   /// 中文语言/字幕标签特征（子串命中即视为语言标签块）。
   static const List<String> _cjkLangMarks = <String>[
@@ -383,12 +391,19 @@ class FilenameParser {
     r'(?:^|[\s._-])[Ss](\d{1,2})\s*[Ee][Pp]?\.?(\d{1,3})(?:[vV]\d{1,2})?(?=$|[\s._-])',
   );
 
-  /// `第04话` / `第4集` / `第04話` / `第4回`。
-  static final RegExp _cnEpisode = RegExp(r'第\s*(\d{1,4})\s*[话話集回]');
+  /// `第04话` / `第4集` / `第04話` / `第4回` / `第2巻`。
+  static final RegExp _cnEpisode = RegExp(r'第\s*(\d{1,4})\s*[话話集回巻]');
 
-  /// `E04` / `EP04` / `EP.04`（须有分隔边界，避免误伤单词内的 e）。
+  /// 无「第」前缀的 `12話` / `12话` / `12集` 简写（字幕组常见；自导入端引擎并入）。
+  /// 两端都要求分隔边界，避免误伤 `2016年12話数` 这类连写。
+  static final RegExp _cnEpisodeSuffix = RegExp(
+    r'(?:^|[\s._-])(\d{1,4})\s*[话話集](?=$|[\s._-])',
+  );
+
+  /// `E04` / `EP04` / `EP.04` / `EP 04`（须有分隔边界，避免误伤单词内的 e；
+  /// `EP` 与数字间可有空格/点——`Ep 3` 形态自导入端引擎并入）。
   static final RegExp _epToken = RegExp(
-    r'(?:^|[\s._-])(?:EP|E)\.?(\d{1,3})(?=$|[\s._-])',
+    r'(?:^|[\s._-])(?:EP[\s._-]?|E\.?)(\d{1,3})(?=$|[\s._-])',
     caseSensitive: false,
   );
 
@@ -554,6 +569,11 @@ class FilenameParser {
     // ② 其余集数模式（first-wins，括号块里解析出的集数优先保留）。
     if (st.episode == null) {
       text = _extractFirst(text, _cnEpisode, (RegExpMatch m) {
+        st.episode = int.parse(m.group(1)!);
+      });
+    }
+    if (st.episode == null) {
+      text = _extractFirst(text, _cnEpisodeSuffix, (RegExpMatch m) {
         st.episode = int.parse(m.group(1)!);
       });
     }

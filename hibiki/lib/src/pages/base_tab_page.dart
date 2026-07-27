@@ -4,7 +4,10 @@ import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
 
 /// A template for a single media type's tab body content in the main menu.
-abstract class BaseTabPage extends BasePage {
+///
+/// [BaseModuleTabPage] 的 MediaSource 特化子类：在共通 tab 生命周期之上
+/// 绑定 [MediaType]（tabRefreshNotifier 刷新信号 + [MediaSource] 代理渲染）。
+abstract class BaseTabPage extends BaseModuleTabPage {
   const BaseTabPage({
     super.key,
   });
@@ -13,7 +16,8 @@ abstract class BaseTabPage extends BasePage {
   BaseTabPageState<BaseTabPage> createState();
 }
 
-abstract class BaseTabPageState<T extends BaseTabPage> extends BasePageState {
+abstract class BaseTabPageState<T extends BaseTabPage>
+    extends BaseModuleTabPageState<T> {
   @override
   void initState() {
     super.initState();
@@ -26,11 +30,7 @@ abstract class BaseTabPageState<T extends BaseTabPage> extends BasePageState {
     super.dispose();
   }
 
-  void refresh() {
-    if (mounted) {
-      setState(() {});
-    }
-  }
+  // refresh() 已上提到 BaseModuleTabPageState（守卫式 setState），此处继承。
 
   @override
   Widget build(BuildContext context) {

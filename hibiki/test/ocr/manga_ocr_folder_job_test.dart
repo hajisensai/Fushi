@@ -52,6 +52,13 @@ void _writePng(String path, int width, int height) {
     ..writeAsBytesSync(img.encodePng(img.Image(width: width, height: height)));
 }
 
+/// 写一张 [width]x[height] 的真实 BMP（BUG-1121：bmp 页必须走完整解码路径）。
+void _writeBmp(String path, int width, int height) {
+  File(path)
+    ..createSync(recursive: true)
+    ..writeAsBytesSync(img.encodeBmp(img.Image(width: width, height: height)));
+}
+
 void main() {
   group('naturalCompare', () {
     test('数字段按数值比较', () {
@@ -105,6 +112,8 @@ void main() {
       _writePng(p.join(root.path, 'p10.png'), 10, 10);
       _writePng(p.join(root.path, 'p2.png'), 10, 10);
       _writePng(p.join(root.path, 'extra', 'p1.png'), 10, 10);
+      // bmp 页：导入白名单认它，OCR 枚举也必须收（BUG-1121）。
+      _writeBmp(p.join(root.path, 'p3.bmp'), 10, 10);
       // 二层子目录：不收。
       _writePng(p.join(root.path, 'extra', 'deep', 'x.png'), 10, 10);
       // 产物目录里的图：不收。
@@ -115,8 +124,8 @@ void main() {
       final List<MangaOcrPageFile> pages = enumerateMangaPages(root);
       expect(
         pages.map((MangaOcrPageFile page) => page.relativeUrl).toList(),
-        <String>['extra/p1.png', 'p2.png', 'p10.png'],
-        reason: '正斜杠相对 url + 自然序（p2 < p10）',
+        <String>['extra/p1.png', 'p2.png', 'p3.bmp', 'p10.png'],
+        reason: '正斜杠相对 url + 自然序（p2 < p3 < p10）',
       );
     });
   });
@@ -212,6 +221,30 @@ void main() {
       expect(payload.images, hasLength(3));
       expect(payload.images[0].blocks.single.lines.single, 'text-w40',
           reason: '缓存页的识别结果必须原样进入 manga.json');
+    });
+
+    test('含 .bmp 页：整卷 OCR 真实解码、不再静默跳过（BUG-1121）', () async {
+      final Directory mixed = Directory.systemTemp.createTempSync('manga_bmp_');
+      addTearDown(() => mixed.deleteSync(recursive: true));
+      _writePng(p.join(mixed.path, 'p1.png'), 40, 80);
+      _writeBmp(p.join(mixed.path, 'p2.bmp'), 50, 80);
+
+      final _FakeDetector detector = _FakeDetector();
+      final String outPath = await runMangaOcrFolderJob(
+        imageDirPath: mixed.path,
+        detector: detector,
+        recognizer: _FakeRecognizer(),
+      );
+
+      expect(detector.detectedSizes, <String>['40x80', '50x80'],
+          reason: 'bmp 页必须真实解码并进入检测，而非被扩展名白名单静默跳过');
+      final MokuroPayload payload =
+          parseMangaJson(File(outPath).readAsStringSync());
+      expect(
+        payload.images.map((MokuroImage image) => image.url).toList(),
+        <String>['p1.png', 'p2.bmp'],
+        reason: '产物 manga.json 必须包含 bmp 页（不缺页）',
+      );
     });
 
     test('空目录报错（不产出空 manga.json）', () async {

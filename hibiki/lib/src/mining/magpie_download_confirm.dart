@@ -62,13 +62,13 @@ class _MagpieDownloadDialogState extends State<_MagpieDownloadDialog> {
     final int? bytes = _sizeBytes;
     final String size = bytes == null
         ? ''
-        : '\n\n${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB '
+        : '\n\n${HibikiByteFormat.bytes(bytes)} '
             '(${widget.prompt.arch})';
     return HibikiDialogFrame(
       maxWidth: 440,
       scrollable: false,
       child: HibikiModalSheetFrame(
-        title: t.galgame_upscaling_download_title,
+        title: t.game_upscaling_download_title,
         scrollable: true,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
@@ -83,7 +83,7 @@ class _MagpieDownloadDialogState extends State<_MagpieDownloadDialog> {
           tokens.spacing.card,
         ),
         body: Text(
-          '${t.galgame_upscaling_download_body}$size',
+          '${t.game_upscaling_download_body}$size',
           style: tokens.type.listSubtitle,
         ),
         footer: Wrap(

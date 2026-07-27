@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:hibiki/src/media/media_cover_service.dart';
+import 'package:hibiki/src/media/media_extensions.dart';
 import 'package:hibiki/src/mining/galgame_exe_icon.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:image/image.dart' as img;
@@ -20,6 +22,13 @@ import 'package:path/path.dart' as p;
 ///
 /// 手动「设置封面」走同一套落盘入口 [saveGameCoverFromFile]，所以自动与手动封面
 /// 在磁盘上同名同目录，替换封面时不会残留两份。
+///
+/// 目录归属：本文件是 `MediaCoverService` 游戏岛（`game_covers/`）唯一的磁盘
+/// 生产者，之所以留在 `mining/` 而不迁 `media/`，是因为游戏库域整体
+/// （`galgame_*`：仓储/刮削/exe 图标解析）都住这里（见仓库地图「galgame 制卡」），
+/// 且它与同目录的 [extractLargestIconPng]（galgame_exe_icon.dart）、
+/// `galgame_cover_download.dart` 成对耦合——单独迁走会把游戏封面链路劈成两半。
+/// 落盘统一走 [MediaCoverService.applyCoverFile] / [MediaCoverService.applyCoverBytes] 收口。
 
 /// 一个待验证的封面候选：路径 + 文件名启发式得分（越大越像封面）。
 class GameCoverCandidate {
@@ -32,15 +41,12 @@ class GameCoverCandidate {
   String toString() => 'GameCoverCandidate($path, score: $score)';
 }
 
-/// 允许作为封面来源的图片扩展名（小写，含点）。
-const Set<String> kGameCoverImageExtensions = <String>{
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.webp',
-  '.bmp',
-  '.ico',
-};
+/// 允许作为封面来源的图片扩展名（小写，含点）＝图片扩展名基集显式增删：
+/// − `.gif`（动图不作封面，落盘归一化也不认它，维持既有行为）；
+/// ＋ `.ico`（galgame 目录常见现成图标文件，可作候选并原样落盘）。
+final Set<String> kGameCoverImageExtensions = Set<String>.unmodifiable(
+  <String>{...kImageExtensionsBase, '.ico'}..remove('.gif'),
+);
 
 /// 封面像素下限：小于它的图当封面会糊成一团（多数是 UI 素材 / 小图标）。
 const int kGameCoverMinPixels = 180;
@@ -286,8 +292,11 @@ Future<ResolvedGameCover?> autoResolveGameCover({
 /// 把 [sourcePath] 的图片拷成本游戏的封面，返回落盘路径；失败返回 null。
 /// 手动「设置封面」与自动获取共用此入口。
 ///
-/// [coverDirectory] 是测试接缝：默认落 [AppPaths.gameCoversDirectory]，测试传临时
-/// 目录即可断言真实落盘行为，不必去 mock `path_provider` 平台通道。
+/// 写盘走统一收口 [MediaCoverService.applyCoverFile]（原子 `.tmp`+rename +
+/// 双键驱逐旧解码缓存——换封面常落同一 `<id>.<ext>` 路径，不驱逐则 UI 重建
+/// 仍显示旧图）。[coverDirectory] 是测试接缝：默认落
+/// [AppPaths.gameCoversDirectory]，测试传临时目录即可断言真实落盘行为，
+/// 不必去 mock `path_provider` 平台通道。
 Future<String?> saveGameCoverFromFile({
   required String gameId,
   required String sourcePath,
@@ -300,14 +309,19 @@ Future<String?> saveGameCoverFromFile({
     await dir.create(recursive: true);
     await _deleteExistingCovers(dir, gameId);
     final String dest = p.join(dir.path, '$gameId$extension');
-    await File(sourcePath).copy(dest);
+    await MediaCoverService.applyCoverFile(
+      source: File(sourcePath),
+      destPath: dest,
+    );
     return dest;
   } catch (_) {
     return null;
   }
 }
 
-/// 把内存里的图片字节写成本游戏的封面（exe 图标路径用），返回落盘路径。
+/// 把内存里的图片字节写成本游戏的封面（exe 图标 / 刮削下载路径用），返回落盘
+/// 路径。写盘同样走统一收口 [MediaCoverService.applyCoverBytes]（原子落地 +
+/// 双键驱逐）。
 Future<String?> saveGameCoverBytes({
   required String gameId,
   required Uint8List bytes,
@@ -320,7 +334,7 @@ Future<String?> saveGameCoverBytes({
     await dir.create(recursive: true);
     await _deleteExistingCovers(dir, gameId);
     final String dest = p.join(dir.path, '$gameId$extension');
-    await File(dest).writeAsBytes(bytes, flush: true);
+    await MediaCoverService.applyCoverBytes(bytes: bytes, destPath: dest);
     return dest;
   } catch (_) {
     return null;

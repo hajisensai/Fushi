@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
@@ -202,7 +202,7 @@ class _LiveBookLibraryService implements HibikiLibraryHostService {
   }) async {}
 }
 
-Future<HibikiClientSyncBackend> _buildLiveBackend({
+Future<InterconnectSyncBackend> _buildLiveBackend({
   required HibikiDatabase db,
   required String base,
   required String token,
@@ -212,8 +212,8 @@ Future<HibikiClientSyncBackend> _buildLiveBackend({
     HibikiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
-  final HibikiClientSyncBackend backend =
-      HibikiClientSyncBackend.withProbe((String url, String tok) async => true);
+  final InterconnectSyncBackend backend =
+      InterconnectSyncBackend.withProbe((String url, String tok) async => true);
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -243,7 +243,7 @@ void main() {
     await server.start();
     addTearDown(server.stop);
 
-    final HibikiClientSyncBackend backend = await _buildLiveBackend(
+    final InterconnectSyncBackend backend = await _buildLiveBackend(
       db: db,
       base: 'http://127.0.0.1:${server.port}',
       token: 'compare-live-token',

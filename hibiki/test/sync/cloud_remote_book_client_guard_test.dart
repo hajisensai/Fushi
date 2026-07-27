@@ -49,8 +49,8 @@ void main() {
       // 非 hibikiServer 分支经 resolveSyncBackend 并返回 CloudRemoteBookClient。
       expect(code.contains('resolveSyncBackend('), isTrue);
       expect(code.contains('CloudRemoteBookClient('), isTrue);
-      // hibikiServer 分支仍返回裸 HibikiClientSyncBackend（保留 live 库 API）。
-      expect(code.contains('HibikiClientSyncBackend.instance'), isTrue);
+      // hibikiServer 分支仍返回裸 InterconnectSyncBackend（保留 live 库 API）。
+      expect(code.contains('InterconnectSyncBackend.instance'), isTrue);
     });
   });
 }

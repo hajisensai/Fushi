@@ -3,12 +3,9 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/src/media/audiobook/audiobook_alignment_service.dart'
     show epubSectionsFromExtractDir, parseCuesForFormat;
-import 'package:hibiki/src/media/audiobook/book_import_dialog.dart'
-    show
-        BookImportDialog,
-        ImportDialogFrame,
-        summarizeAudiobookHealth,
-        writeEpubBackedSrtBook;
+import 'package:hibiki/src/media/import/audiobook_health_summary.dart';
+import 'package:hibiki/src/media/import/epub_backed_srt_book.dart';
+import 'package:hibiki/src/media/import/import_dialog_frame.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:path/path.dart' as p;
@@ -18,7 +15,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
-import 'package:hibiki/src/media/audiobook/import_dialog_progress_mixin.dart';
+import 'package:hibiki/src/media/import/import_flow_mixin.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/sync/deletion_prompt.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
@@ -26,7 +23,7 @@ import 'package:hibiki/utils.dart';
 
 /// 有声书导入/移除对话框。
 ///
-/// UI 沿用 [BookImportDialog] 的图标按钮模式：音频来源行提供「选文件」按钮，
+/// UI 沿用 `BookImportDialog` 的图标按钮模式：音频来源行提供「选文件」按钮，
 /// 用户明确多选音频文件（TODO-1031 删掉了旧的「选目录」整目录吞并入口）。
 class AudiobookImportDialog extends StatefulWidget {
   const AudiobookImportDialog({
@@ -63,7 +60,7 @@ class AudiobookImportDialog extends StatefulWidget {
 }
 
 class _AudiobookImportDialogState extends State<AudiobookImportDialog>
-    with ImportDialogProgressMixin<AudiobookImportDialog> {
+    with ImportFlowMixin<AudiobookImportDialog> {
   // ── 音频来源 ── 两者互斥，最后选的那个生效 ─────────────────────────────────
   String? _audioDir; // folder 模式
   List<String>? _audioPaths; // files 模式
@@ -128,7 +125,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     _initExisting();
   }
 
-  // 进度 ValueNotifier 由 ImportDialogProgressMixin.dispose() 释放（无本地 dispose
+  // 进度 ValueNotifier 由 ImportFlowMixin.dispose() 释放（无本地 dispose
   // override 时 mixin 的 dispose() 即生效）。
 
   Future<void> _initExisting() async {
@@ -1026,14 +1023,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   Future<Directory> _ensurePersistDir() =>
       AudiobookStorage.ensurePersistDir(widget.bookKey);
 
-  static String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
-    if (bytes < 1024 * 1024 * 1024) {
-      return '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
-    }
-    return '${(bytes / 1024 / 1024 / 1024).toStringAsFixed(2)} GB';
-  }
+  static String _formatBytes(int bytes) => HibikiByteFormat.bytes(bytes);
 }
 
 @visibleForTesting

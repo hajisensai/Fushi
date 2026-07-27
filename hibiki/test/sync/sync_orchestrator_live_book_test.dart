@@ -1,6 +1,6 @@
 /// Task T2.4：orchestrator 书籍内容 live 同步集成测试。
 ///
-/// 用例 A：互联（HibikiClientSyncBackend）+ syncContent=true
+/// 用例 A：互联（InterconnectSyncBackend）+ syncContent=true
 ///   → 走 live 端点上传本端 epub，不自动拉取远端独有书，也不经书文件夹暂存路径。
 /// 用例 B：互联 + syncContent=false
 ///   → 不传任何 epub 内容（booksImported=0、无 toPull/toPush 动作），
@@ -19,13 +19,14 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/app_model_library_host_service.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -74,8 +75,8 @@ Future<void> _seedBook({
   );
 }
 
-/// 构造并认证一个 [HibikiClientSyncBackend]，fake probe 总返回 true。
-Future<HibikiClientSyncBackend> _buildClientBackend({
+/// 构造并认证一个 [InterconnectSyncBackend]，fake probe 总返回 true。
+Future<InterconnectSyncBackend> _buildClientBackend({
   required String base,
   required String token,
 }) async {
@@ -85,8 +86,8 @@ Future<HibikiClientSyncBackend> _buildClientBackend({
     HibikiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
-  final HibikiClientSyncBackend backend =
-      HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+  final InterconnectSyncBackend backend =
+      InterconnectSyncBackend.withProbe((String u, String t) async => true);
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -165,12 +166,12 @@ class _FakeSyncBackend implements SyncBackend {
   // ── SyncManager 元数据路径（进度/统计/有声书位置）──────────────────────────
 
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async =>
-      const DriveSyncFiles(progress: null, statistics: null, audioBook: null);
+  Future<SyncFileTrio> listSyncFiles(String folderId) async =>
+      const SyncFileTrio(progress: null, statistics: null, audioBook: null);
 
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async =>
-      const <DriveFile>[];
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async =>
+      const <SyncFileRef>[];
 
   @override
   Future<bool> get isAuthenticated async => true;
@@ -225,7 +226,8 @@ class _FakeSyncBackend implements SyncBackend {
     void Function(double progress)? onProgress,
   }) async {}
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async =>
+  Future<SyncFileRef?> findContentFile(
+          String folderId, String fileName) async =>
       null;
   @override
   void clearCache() {}
@@ -237,7 +239,7 @@ class _FakeSyncBackend implements SyncBackend {
   @override
   Map<String, String> get cachedFolderIds => const <String, String>{};
   @override
-  void cacheBookFolderIds(List<DriveFile> folders) {}
+  void cacheBookFolderIds(List<SyncFileRef> folders) {}
 
   @override
   void evictFolderId(String folderId) {}
@@ -307,7 +309,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_pull'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final SyncOrchestrator orch = _bookOrchestrator(
@@ -340,7 +342,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_push'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final SyncOrchestrator orch = _bookOrchestrator(
@@ -371,7 +373,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_rt'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final SyncOrchestrator orch = _bookOrchestrator(
@@ -403,7 +405,7 @@ void main() {
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_no_staging'))
         ..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final SyncOrchestrator orch = _bookOrchestrator(
@@ -473,7 +475,7 @@ void main() {
       await _seedBook(db: localDb, title: 'BookX', extractDir: localExtractX);
 
       final Directory tmp = Directory(p.join(work.path, 'tmp_b'))..createSync();
-      final HibikiClientSyncBackend backend =
+      final InterconnectSyncBackend backend =
           await _buildClientBackend(base: serverBase, token: token);
 
       final SyncOrchestrator orch = _bookOrchestrator(

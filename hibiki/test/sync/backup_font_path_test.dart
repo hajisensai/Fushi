@@ -204,7 +204,7 @@ void main() {
         appVersion: '1.0.0',
         fontsRootDirectory: srcFontsDir.path,
       );
-      final BackupMeta meta = await service.exportBackup(zipPath);
+      final BackupMeta meta = await service.createBackup(zipPath);
       await srcDb.close();
 
       expect(meta.fontsRoot, srcFontsDir.path);
@@ -221,7 +221,7 @@ void main() {
         if (dstFontsDir.existsSync()) await cleanupTempDir(dstFontsDir);
       });
 
-      await BackupService.importBackupFiles(
+      await BackupService.restoreBackup(
         dbDirectory: dstDir.path,
         zipPath: zipPath,
         fontsRootDirectory: dstFontsDir.path,
@@ -310,7 +310,7 @@ void main() {
         if (zipDir.existsSync()) await cleanupTempDir(zipDir);
       });
       final String zipPath = '${zipDir.path}/legacy.zip';
-      final BackupMeta meta = await realLegacy.exportBackup(zipPath);
+      final BackupMeta meta = await realLegacy.createBackup(zipPath);
       expect(meta.fontsRoot, isNull);
       await onDisk.close();
 
@@ -323,7 +323,7 @@ void main() {
         if (dstFontsDir.existsSync()) await cleanupTempDir(dstFontsDir);
       });
 
-      await BackupService.importBackupFiles(
+      await BackupService.restoreBackup(
         dbDirectory: dstDir.path,
         zipPath: zipPath,
         fontsRootDirectory: dstFontsDir.path,

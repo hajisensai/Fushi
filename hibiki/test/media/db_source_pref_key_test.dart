@@ -44,5 +44,35 @@ void main() {
       expect(pr.contains("'src:reader_ttu:\${row.key}'"), isFalse,
           reason: 'profile 不应再硬编码 media_source 私有 key 格式');
     });
+
+    // G-硬编码去重：reader_settings / custom_fonts_page / profile_repository /
+    // data_root_migrator 的 `src:reader_ttu:` 字面量已改经编码器（值不变）。
+    // backup_service 因 const 上下文保留字面量，由上面的 parity 用例锁一致。
+    test('reader_settings / custom_fonts_page / profile / migrator 字面量已转编码器',
+        () {
+      final String rs =
+          File('lib/src/reader/reader_settings.dart').readAsStringSync();
+      final String cf =
+          File('lib/src/pages/implementations/custom_fonts_page.dart')
+              .readAsStringSync();
+      final String pr =
+          File('lib/src/profile/profile_repository.dart').readAsStringSync();
+      final String dm =
+          File('lib/src/storage/data_root_migrator.dart').readAsStringSync();
+      expect(rs, contains("dbSourcePrefKey('reader_ttu', '')"),
+          reason: 'ReaderSettings._prefix 应转调编码器');
+      expect(rs.contains("'src:reader_ttu:'"), isFalse,
+          reason: 'reader_settings 不应再持有前缀字面量');
+      expect(cf, contains("dbSourcePrefKey('reader_ttu', shortKey)"),
+          reason: 'custom_fonts_page._readerPrefKey 应转调编码器');
+      expect(cf.contains("'src:reader_ttu:'"), isFalse,
+          reason: 'custom_fonts_page 不应再持有前缀字面量');
+      for (final String src in <String>[pr, dm]) {
+        expect(src, contains("dbSourcePrefKey('reader_ttu', 'font_catalog')"),
+            reason: '字体 key 组应经编码器生成');
+        expect(src.contains("'src:reader_ttu:font_catalog'"), isFalse,
+            reason: '不应再硬编码字体 key 字面量');
+      }
+    });
   });
 }

@@ -10,7 +10,7 @@ import 'package:hibiki/src/models/local_audio_manager.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/collection_sync_engine.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/aggregate_sync_service.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
@@ -20,7 +20,7 @@ import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_progress.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
-import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/video_manifest.dart';
 import 'package:hibiki_audio/hibiki_audio.dart'
     show FavoriteSentence, FavoriteSentenceRepository;
@@ -352,7 +352,7 @@ class SyncOrchestrator {
     // 书籍文件开关是上传语义：只把本端已有 epub 内容补到远端。
     // 远端独有书不会在自动同步中导入本机，必须通过 compare/interconnect UI 点击下载。
     final SyncBackend b = _backend;
-    final bool isInterconnect = b is HibikiClientSyncBackend;
+    final bool isInterconnect = b is InterconnectSyncBackend;
 
     if (isInterconnect) {
       // 互联内容（epub）走 live 端点，仅当 syncContent 开时执行。
@@ -404,7 +404,7 @@ class SyncOrchestrator {
 
     if (syncDictionary) await syncDictionaries(report);
 
-    // 互联（HibikiClientSyncBackend）本地音频 + 有声书包走 live 端点；
+    // 互联（InterconnectSyncBackend）本地音频 + 有声书包走 live 端点；
     // 云后端仍走原 __local_audio__ 暂存路径（不变）。
     if (isInterconnect) {
       if (syncLocalAudio) await _syncLocalAudioLive(report, b);
@@ -454,7 +454,7 @@ class SyncOrchestrator {
 
     // 合集双向同步（多端库联合视图 §2.3）：
     // - 云后端走 sync 根下 `__collections__/collections.json` 共享清单的读-合并-写；
-    // - 互联（HibikiClientSyncBackend）走 host API `/api/library/collections` 端点
+    // - 互联（InterconnectSyncBackend）走 host API `/api/library/collections` 端点
     //   （任务5/6，目录接口带合集归属 + 清单读写），不走 WebDAV 文件箱伪装的
     //   __collections__ 资产（互联 backend 的资产层是 live 端点适配，语义不同）。
     // 两条通道调用同一 CollectionSyncEngine.merge / applyCollectionLocalChanges，
@@ -508,14 +508,14 @@ class SyncOrchestrator {
   /// 复用 [AggregateSyncService.syncOverClient] 的通道无关核心（materialize 本地 →
   /// GET host 快照 → [AggregateMergeService] 并集折叠 → 写回本地 DB（只 MAX / 并集
   /// upsert，幂等）→ PUT 合并后快照回 host）。IO 由本方法注入：GET 走
-  /// [HibikiClientSyncBackend.getRemoteAggregate]（老 host 无端点返回 404 → null →
-  /// 只推不拉，优雅降级），PUT 走 [HibikiClientSyncBackend.putRemoteAggregate]。
+  /// [InterconnectSyncBackend.getRemoteAggregate]（老 host 无端点返回 404 → null →
+  /// 只推不拉，优雅降级），PUT 走 [InterconnectSyncBackend.putRemoteAggregate]。
   ///
   /// 无 baseline / 无冲突弹窗（集合 + 单调语义无损）；删除不跨端传播；无 schema 变更。
   /// 整段 try/catch，逐轮错误进 [report.errors] 不中断整体 sweep（与其它维度同纪律）。
   Future<void> _syncAggregateLive(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) async {
     try {
       await AggregateSyncService(_db).syncOverClient(
@@ -531,7 +531,7 @@ class SyncOrchestrator {
   @visibleForTesting
   Future<void> syncAggregateLiveForTest(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) =>
       _syncAggregateLive(report, backend);
 
@@ -558,7 +558,7 @@ class SyncOrchestrator {
   Future<SyncRunReport> runCollectionsOnly() async {
     final SyncRunReport report = SyncRunReport();
     final SyncBackend b = _backend;
-    if (b is HibikiClientSyncBackend) {
+    if (b is InterconnectSyncBackend) {
       await _syncCollectionsLive(report, b);
     } else {
       // 云路径的 ensureNamespace 依赖同步根已解析（与 [run] 开头一致）。
@@ -683,7 +683,7 @@ class SyncOrchestrator {
   ///
   /// 读-合并-写，与云后端 [syncCollections] 完全同构，仅通道不同（host API 而非
   /// WebDAV `__collections__` 文件箱）：GET host 合集清单
-  /// （[HibikiClientSyncBackend.getRemoteCollectionManifest]）→ [CollectionSyncEngine.merge]
+  /// （[InterconnectSyncBackend.getRemoteCollectionManifest]）→ [CollectionSyncEngine.merge]
   /// 与本地全量快照合并（成员并集 + 移出/删除墓碑按基线裁决 + 手动序整合集 LWW）→
   /// [applyCollectionLocalChanges] 落本地 DB（计入 [SyncRunReport.collectionsUpdated]）→
   /// 合并后清单与 host 字节不同才 POST 回写（host 端再经 mergeCollectionManifest 并入
@@ -695,7 +695,7 @@ class SyncOrchestrator {
   /// 整段 try/catch，错误进 [report.errors] 不中断整体 sweep（与其它维度同纪律）。
   Future<void> _syncCollectionsLive(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) async {
     try {
       // 竞态修复：读远端清单**之前**先预取本轮基线时刻，整轮成功后写这个预取值
@@ -744,7 +744,7 @@ class SyncOrchestrator {
   @visibleForTesting
   Future<void> syncCollectionsLiveForTest(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) =>
       _syncCollectionsLive(report, backend);
 
@@ -877,7 +877,7 @@ class SyncOrchestrator {
   /// 自身删除不经此推给 host（各端自行确认删除，见蓝图）。
   Future<void> _syncDeletionTombstonesLive(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) async {
     try {
       final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
@@ -928,7 +928,7 @@ class SyncOrchestrator {
   @visibleForTesting
   Future<void> syncDeletionTombstonesLiveForTest(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) =>
       _syncDeletionTombstonesLive(report, backend);
 
@@ -1065,7 +1065,7 @@ class SyncOrchestrator {
             title: v.title,
             videoAsset: assetName,
             sizeBytes: size,
-            importedAtMs: v.importedAt?.millisecondsSinceEpoch ?? 0,
+            importedAtMs: v.importedAt ?? 0,
             coverAsset: coverAsset ?? priorEntry?.coverAsset,
             tagsAddedAt: mergedTagAddedAt,
             tagTombstones: mergedTagTombstones,
@@ -1137,15 +1137,15 @@ class SyncOrchestrator {
   /// books". Remote folders still need a `.epub` content asset; folders
   /// without one are skipped.
   Future<void> importRemoteBooks(String root, SyncRunReport report) async {
-    final List<DriveFile> remoteFolders = await _backend.listBooks(root);
+    final List<SyncFileRef> remoteFolders = await _backend.listBooks(root);
     final Set<String> localKeys = <String>{
       for (final EpubBookRow b in await _db.getAllEpubBooks())
         sanitizeTtuFilename(b.title),
     };
 
     // Resolve the remote-only set first so progress has a real denominator.
-    final List<DriveFile> toImport = <DriveFile>[
-      for (final DriveFile folder in remoteFolders)
+    final List<SyncFileRef> toImport = <SyncFileRef>[
+      for (final SyncFileRef folder in remoteFolders)
         if (!isReservedSyncFolderName(folder.name) &&
             !isReservedSyncFolderName(sanitizeTtuFilename(folder.name)) &&
             !localKeys.contains(sanitizeTtuFilename(folder.name)))
@@ -1154,7 +1154,7 @@ class SyncOrchestrator {
     final int total = toImport.length;
 
     for (int i = 0; i < total; i++) {
-      final DriveFile folder = toImport[i];
+      final SyncFileRef folder = toImport[i];
       _emit(SyncPhase.books,
           itemIndex: i, itemTotal: total, title: folder.name);
       try {
@@ -1192,7 +1192,7 @@ class SyncOrchestrator {
   /// 若后续需要互联书籍删除传播，参考词典删除传播（BUG-086）扩展此方法。
   Future<void> _syncBooksContentLive(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) async {
     final List<RemoteBookInfo> remoteBooks = await backend.listRemoteBooks();
     final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
@@ -1282,7 +1282,7 @@ class SyncOrchestrator {
   /// 逐本错误进 [report.errors] 不中断整体。
   Future<void> _syncBookProgressLive(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) async {
     final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
     for (final EpubBookRow book in localBooks) {
@@ -1336,6 +1336,64 @@ class SyncOrchestrator {
     }
   }
 
+  /// 互联播放断点 live 双向 sweep 的共享模板（视频 / 有声书）。
+  ///
+  /// 两条 sweep 历史上 ~90% 逐字同构，仅四个探针不同，命名统一轮收口于此。
+  /// 对 [localKeys] ∩ [hostKeys] 里的每个键：
+  /// 1. [readLocal] 取本地 (位置, 时间戳)，[readHost] 取 host (位置, 时间戳)；
+  /// 2. [resolvePositionLww]「取较新时间戳」选胜者；
+  /// 3. 本地→host：胜者新于 host（或同戳不同位）→ [pushToHost] 上报
+  ///    （host 端再取较新，幂等安全）；
+  /// 4. host→本地：胜者不同于本地 → [writeBackLocal] 写回。
+  ///
+  /// 只对 host 也有的键同步（本地独有条目无 host 真相，跳过）；逐条错误以
+  /// `[errorLabel] "<key>": <e>` 进 [report.errors] 不中断整体。host 清单的获取
+  /// 与两侧空集合的早退仍在各调用方（保持既有网络行为不变）。
+  Future<void> _syncPositionsLive(
+    SyncRunReport report, {
+    required String errorLabel,
+    required Set<String> localKeys,
+    required Set<String> hostKeys,
+    required Future<({int positionMs, int updatedAtMs})> Function(String key)
+        readLocal,
+    required Future<({int positionMs, int updatedAtMs})> Function(String key)
+        readHost,
+    required Future<void> Function(String key, int positionMs, int updatedAtMs)
+        pushToHost,
+    required Future<void> Function(String key, int positionMs, int updatedAtMs)
+        writeBackLocal,
+  }) async {
+    for (final String key in localKeys) {
+      if (!hostKeys.contains(key)) continue; // host 无此条目：跳过。
+      try {
+        final ({int positionMs, int updatedAtMs}) local = await readLocal(key);
+        final ({int positionMs, int updatedAtMs}) host = await readHost(key);
+
+        final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
+          localPositionMs: local.positionMs,
+          localUpdatedAtMs: local.updatedAtMs,
+          remotePositionMs: host.positionMs,
+          remoteUpdatedAtMs: host.updatedAtMs,
+        );
+
+        // 本地→host：胜者新于 host 时上报（host 端再取较新，幂等安全）。
+        if (winner.updatedAtMs > host.updatedAtMs ||
+            (winner.updatedAtMs == host.updatedAtMs &&
+                winner.positionMs != host.positionMs)) {
+          await pushToHost(key, winner.positionMs, winner.updatedAtMs);
+        }
+
+        // host→本地：胜者不同于本地时写回。
+        if (winner.positionMs != local.positionMs ||
+            winner.updatedAtMs != local.updatedAtMs) {
+          await writeBackLocal(key, winner.positionMs, winner.updatedAtMs);
+        }
+      } catch (e) {
+        report.errors.add('$errorLabel "$key": $e');
+      }
+    }
+  }
+
   /// 互联视频播放进度 live 双向同步（TODO-767 + TODO-816）。
   ///
   /// 此前只遍历本地 `VideoBooks`，对每条比对 host 进度。但 client 流式看的远端视频
@@ -1345,15 +1403,21 @@ class SyncOrchestrator {
   ///
   /// 修复：同步基底统一为 uid 集合 = 「本地 VideoBooks 行 uid」∪「本地有
   /// `video_remote_position_<uid>` prefs 的 uid（哪怕无行）」，只对 host 也有的 uid 同步。
-  /// 每个 uid 的本地进度统一从 prefs（带时间戳）取，并与 `VideoBooks.lastPositionMs`
-  /// （旧数据，无独立时间戳记 0）经 [resolveVideoPositionSync] 取较新作为本地真相；
-  /// 与 host 进度再比对。胜者新于 host → PUT；胜者不同于本地 → 写回 prefs，**仅当本地
-  /// 存在 VideoBooks 行时**才一并更新 `lastPositionMs`（流式视频绝不强建行污染书架）。
   ///
-  /// 逐条错误进 [report.errors] 不中断整体。
+  /// 本地进度真相：书架视频与流式视频共用一个 `_at_` prefs 时间戳。书架视频的位置
+  /// 在 `VideoBooks.lastPositionMs`（本机播放写），流式视频的位置在
+  /// `video_remote_position_<uid>` prefs（resume 路径写）——同一进度的两处镜像，不会
+  /// 同时各有不同含义。本地位置取「有行用 lastPositionMs，否则用 prefs 位置」，时间戳
+  /// 统一取 `_at_` prefs（无则 0=旧数据，被任何带时间戳的远端进度盖过）。
+  ///
+  /// 写回时位置真相统一落 `video_remote_position_<uid>` + `_at_` prefs（resume 路径
+  /// 同键空间）；**仅当本地存在 VideoBooks 行时**才一并更新 `lastPositionMs`
+  /// （流式视频绝不强建行污染书架）。
+  ///
+  /// LWW 比对与逐条错误处理见共享模板 [_syncPositionsLive]。
   Future<void> _syncVideoProgressLive(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) async {
     // 基底①：本地 VideoBooks 行（uid → lastPositionMs，向后兼容书架视频）。
     final Map<String, int> rowPositionByUid = <String, int>{};
@@ -1378,91 +1442,59 @@ class SyncOrchestrator {
     }
     if (hostById.isEmpty) return;
 
-    for (final String uid in localUids) {
-      final RemoteVideoInfo? hostInfo = hostById[uid];
-      if (hostInfo == null) continue; // 本地独有视频：host 无此视频，跳过。
-      try {
-        await _syncOneVideoProgressLive(
-            uid, hostInfo, rowPositionByUid, backend);
-      } catch (e) {
-        report.errors.add('live video progress "$uid": $e');
-      }
-    }
-  }
-
-  /// 同步单个视频 [uid] 的进度（[_syncVideoProgressLive] 的循环体，控制缩进层数）。
-  ///
-  /// [rowPositionByUid] 含本地 VideoBooks 行时表示书架视频（写回需更新 lastPositionMs）；
-  /// 不含则为流式视频（只写 prefs，不建行）。本地进度统一从 prefs 取并与 lastPositionMs
-  /// 经 [resolveVideoPositionSync] 取较新。
-  Future<void> _syncOneVideoProgressLive(
-    String uid,
-    RemoteVideoInfo hostInfo,
-    Map<String, int> rowPositionByUid,
-    HibikiClientSyncBackend backend,
-  ) async {
-    // 本地进度真相：书架视频与流式视频共用一个 `_at_` prefs 时间戳。书架视频的位置
-    // 在 `VideoBooks.lastPositionMs`（本机播放写），流式视频的位置在
-    // `video_remote_position_<uid>` prefs（resume 路径写）——同一进度的两处镜像，不会
-    // 同时各有不同含义。本地位置取「有行用 lastPositionMs，否则用 prefs 位置」，时间戳
-    // 统一取 `_at_` prefs（无则 0=旧数据，被任何带时间戳的远端进度盖过）。
-    final int prefsPos =
-        await _db.getPrefTyped<int>(videoRemotePositionPrefKey(uid), 0);
-    final int prefsAt =
-        await _db.getPrefTyped<int>(videoRemotePositionAtPrefKey(uid), 0);
-    final int? rowPos = rowPositionByUid[uid];
-    final int localPositionMs = rowPos ?? prefsPos;
-
-    final ({int positionMs, int updatedAtMs}) winner = resolveVideoPositionSync(
-      localPositionMs: localPositionMs,
-      localUpdatedAtMs: prefsAt,
-      remotePositionMs: hostInfo.positionMs,
-      remoteUpdatedAtMs: hostInfo.positionUpdatedAtMs,
+    await _syncPositionsLive(
+      report,
+      errorLabel: 'live video progress',
+      localKeys: localUids,
+      hostKeys: hostById.keys.toSet(),
+      readLocal: (String uid) async {
+        final int prefsPos =
+            await _db.getPrefTyped<int>(videoRemotePositionPrefKey(uid), 0);
+        final int prefsAt =
+            await _db.getPrefTyped<int>(videoRemotePositionAtPrefKey(uid), 0);
+        return (
+          positionMs: rowPositionByUid[uid] ?? prefsPos,
+          updatedAtMs: prefsAt,
+        );
+      },
+      // host 清单条目已带 positionMs / positionUpdatedAtMs，无需逐视频 GET。
+      readHost: (String uid) async {
+        final RemoteVideoInfo info = hostById[uid]!;
+        return (
+          positionMs: info.positionMs,
+          updatedAtMs: info.positionUpdatedAtMs,
+        );
+      },
+      pushToHost: (String uid, int positionMs, int updatedAtMs) =>
+          backend.putRemoteVideoPosition(uid, positionMs, updatedAtMs),
+      writeBackLocal: (String uid, int positionMs, int updatedAtMs) async {
+        await _db.setPrefTyped<int>(
+            videoRemotePositionPrefKey(uid), positionMs);
+        await _db.setPrefTyped<int>(
+            videoRemotePositionAtPrefKey(uid), updatedAtMs);
+        if (rowPositionByUid.containsKey(uid)) {
+          await _db.updateVideoBookPosition(uid, positionMs);
+        }
+      },
     );
-
-    // 本地→host：胜者新于 host 时上报（host 端再取较新，幂等安全）。
-    if (winner.updatedAtMs > hostInfo.positionUpdatedAtMs ||
-        (winner.updatedAtMs == hostInfo.positionUpdatedAtMs &&
-            winner.positionMs != hostInfo.positionMs)) {
-      await backend.putRemoteVideoPosition(
-        uid,
-        winner.positionMs,
-        winner.updatedAtMs,
-      );
-    }
-
-    // host→本地：胜者不同于本地时写回。位置真相统一落 `video_remote_position_<uid>`
-    // + `_at_` prefs（resume 路径同键空间）；仅当本地存在 VideoBooks 行时一并更新
-    // lastPositionMs（流式视频不建行，避免污染书架）。
-    if (winner.positionMs != localPositionMs || winner.updatedAtMs != prefsAt) {
-      await _db.setPrefTyped<int>(
-          videoRemotePositionPrefKey(uid), winner.positionMs);
-      await _db.setPrefTyped<int>(
-          videoRemotePositionAtPrefKey(uid), winner.updatedAtMs);
-      if (rowPos != null) {
-        await _db.updateVideoBookPosition(uid, winner.positionMs);
-      }
-    }
   }
 
   /// 互联有声书播放进度 live 双向同步（BUG-471）。
   ///
-  /// 与视频 [_syncVideoProgressLive] 完全对称。client 听的远端有声书进度落
-  /// `audiobook_pos_<bookKey>` + `audiobook_pos_at_<bookKey>` prefs（见
-  /// [AudiobookRepository.updatePositionMs]），但互联角色非对称：host 只跑 server，
-  /// 从不回灌自己的 `audiobook_pos_` pref，故「立即同步」点了进度不过去（云后端经
-  /// SyncManager 双向文件箱正常，互联缺这一段）。
+  /// 与视频 [_syncVideoProgressLive] 完全对称（共享模板 [_syncPositionsLive]）。
+  /// client 听的远端有声书进度落 `audiobook_pos_<bookKey>` +
+  /// `audiobook_pos_at_<bookKey>` prefs（见 [AudiobookRepository.updatePositionMs]），
+  /// 但互联角色非对称：host 只跑 server，从不回灌自己的 `audiobook_pos_` pref，
+  /// 故「立即同步」点了进度不过去（云后端经 SyncManager 双向文件箱正常，互联缺这一段）。
   ///
   /// 同步基底 = 「本地有 `audiobook_pos_<key>` prefs 的 bookKey」∪「本地 Audiobooks
   /// 行的 bookKey」，只对 host 也有的 bookKey 同步（host 无该有声书时其 PUT 端点
-  /// 404 / 闸门 no-op，且 GET 无真相可拉，跳过省一次网络）。每个 bookKey 比对本地
-  /// prefs 进度与 host 进度，[resolveAudiobookPositionSync]「取较新时间戳」选胜者；
-  /// 胜者新于 host → PUT 上报；胜者不同于本地 → 写回本地 prefs。
-  ///
-  /// 逐条错误进 [report.errors] 不中断整体。
+  /// 404 / 闸门 no-op，且 GET 无真相可拉，跳过省一次网络）。本地进度真相 =
+  /// `audiobook_pos_<bookKey>`（位置）+ `audiobook_pos_at_<bookKey>`（时间戳，
+  /// 旧数据无记 0）；写回落同一 prefs 键空间（同 resume/播放写）。
   Future<void> _syncAudiobookProgressLive(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) async {
     // 同步基底：本地 Audiobooks 行 ∪ 本地有 audiobook_pos_<key> prefs 的 bookKey。
     final Set<String> localKeys = <String>{
@@ -1484,64 +1516,34 @@ class SyncOrchestrator {
     };
     if (hostKeys.isEmpty) return;
 
-    for (final String bookKey in localKeys) {
-      if (!hostKeys.contains(bookKey)) continue; // host 无此有声书：跳过。
-      try {
-        await _syncOneAudiobookProgressLive(bookKey, backend);
-      } catch (e) {
-        report.errors.add('live audiobook progress "$bookKey": $e');
-      }
-    }
-  }
-
-  /// 同步单个有声书 [bookKey] 的进度（[_syncAudiobookProgressLive] 的循环体）。
-  ///
-  /// 本地进度真相 = `audiobook_pos_<bookKey>`（位置）+ `audiobook_pos_at_<bookKey>`
-  /// （时间戳，旧数据无记 0）；与 host 进度经 [resolveAudiobookPositionSync] 取较新。
-  Future<void> _syncOneAudiobookProgressLive(
-    String bookKey,
-    HibikiClientSyncBackend backend,
-  ) async {
-    final int localPos =
-        await _db.getPrefTyped<int>(audiobookPositionPrefKey(bookKey), 0);
-    final int localAt =
-        await _db.getPrefTyped<int>(audiobookPositionAtPrefKey(bookKey), 0);
-    final ({int positionMs, int updatedAtMs}) host =
-        await backend.remoteAudiobookPosition(bookKey);
-
-    final ({int positionMs, int updatedAtMs}) winner =
-        resolveAudiobookPositionSync(
-      localPositionMs: localPos,
-      localUpdatedAtMs: localAt,
-      remotePositionMs: host.positionMs,
-      remoteUpdatedAtMs: host.updatedAtMs,
+    await _syncPositionsLive(
+      report,
+      errorLabel: 'live audiobook progress',
+      localKeys: localKeys,
+      hostKeys: hostKeys,
+      readLocal: (String bookKey) async => (
+        positionMs:
+            await _db.getPrefTyped<int>(audiobookPositionPrefKey(bookKey), 0),
+        updatedAtMs:
+            await _db.getPrefTyped<int>(audiobookPositionAtPrefKey(bookKey), 0),
+      ),
+      readHost: (String bookKey) => backend.remoteAudiobookPosition(bookKey),
+      pushToHost: (String bookKey, int positionMs, int updatedAtMs) =>
+          backend.putRemoteAudiobookPosition(bookKey, positionMs, updatedAtMs),
+      writeBackLocal: (String bookKey, int positionMs, int updatedAtMs) async {
+        await _db.setPrefTyped<int>(
+            audiobookPositionPrefKey(bookKey), positionMs);
+        await _db.setPrefTyped<int>(
+            audiobookPositionAtPrefKey(bookKey), updatedAtMs);
+      },
     );
-
-    // 本地→host：胜者新于 host 时上报（host 端再取较新，幂等安全）。
-    if (winner.updatedAtMs > host.updatedAtMs ||
-        (winner.updatedAtMs == host.updatedAtMs &&
-            winner.positionMs != host.positionMs)) {
-      await backend.putRemoteAudiobookPosition(
-        bookKey,
-        winner.positionMs,
-        winner.updatedAtMs,
-      );
-    }
-
-    // host→本地：胜者不同于本地时写回本地 prefs（同 resume/播放写键空间）。
-    if (winner.positionMs != localPos || winner.updatedAtMs != localAt) {
-      await _db.setPrefTyped<int>(
-          audiobookPositionPrefKey(bookKey), winner.positionMs);
-      await _db.setPrefTyped<int>(
-          audiobookPositionAtPrefKey(bookKey), winner.updatedAtMs);
-    }
   }
 
   /// 测试入口：直接调用 [_syncBookProgressLive]。
   @visibleForTesting
   Future<void> syncBookProgressLiveForTest(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) =>
       _syncBookProgressLive(report, backend);
 
@@ -1549,7 +1551,7 @@ class SyncOrchestrator {
   @visibleForTesting
   Future<void> syncVideoProgressLiveForTest(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) =>
       _syncVideoProgressLive(report, backend);
 
@@ -1557,7 +1559,7 @@ class SyncOrchestrator {
   @visibleForTesting
   Future<void> syncAudiobookProgressLiveForTest(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) =>
       _syncAudiobookProgressLive(report, backend);
 
@@ -1565,7 +1567,7 @@ class SyncOrchestrator {
   @visibleForTesting
   Future<void> syncBooksContentLiveForTest(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) =>
       _syncBooksContentLive(report, backend);
 
@@ -1573,7 +1575,7 @@ class SyncOrchestrator {
   @visibleForTesting
   Future<void> syncLocalAudioLiveForTest(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) =>
       _syncLocalAudioLive(report, backend);
 
@@ -1581,15 +1583,15 @@ class SyncOrchestrator {
   @visibleForTesting
   Future<void> syncAudiobooksLiveForTest(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) =>
       _syncAudiobooksLive(report, backend);
 
-  /// Union-syncs dictionaries. 互联（HibikiClientSyncBackend）→ 直读对端实时库（无暂存）；
+  /// Union-syncs dictionaries. 互联（InterconnectSyncBackend）→ 直读对端实时库（无暂存）；
   /// 云后端 → 走现有 __dictionaries__ 暂存路径（不变）。无旧设备故无能力探测。
   Future<void> syncDictionaries(SyncRunReport report) async {
     final SyncBackend b = _backend;
-    if (b is HibikiClientSyncBackend) {
+    if (b is InterconnectSyncBackend) {
       await _syncDictionariesLive(report, b);
       return;
     }
@@ -1598,17 +1600,15 @@ class SyncOrchestrator {
 
   /// 互联直读对端实时词典：按名 union，绝不创建/读写 __dictionaries__。
   Future<void> _syncDictionariesLive(
-      SyncRunReport report, HibikiClientSyncBackend backend) async {
+      SyncRunReport report, InterconnectSyncBackend backend) async {
     final List<DictionaryMetaRow> localDicts =
         await _db.getAllDictionaryMetadata();
     final List<RemoteDictionaryInfo> remoteDicts =
         await backend.listRemoteDictionaries();
 
-    final DictionarySyncDiff diff = computeDictionarySyncDiff(
-      localNames: <String>{
-        for (final DictionaryMetaRow d in localDicts) d.name
-      },
-      remoteNames: <String>{
+    final SyncKeyDiff diff = computeKeyUnionDiff(
+      localKeys: <String>{for (final DictionaryMetaRow d in localDicts) d.name},
+      remoteKeys: <String>{
         for (final RemoteDictionaryInfo d in remoteDicts) d.name
       },
     );
@@ -1770,7 +1770,7 @@ class SyncOrchestrator {
   /// 进度走 [SyncPhase.localAudio]，临时文件 finally 清理，逐项错误进 report.errors 不中断。
   Future<void> _syncLocalAudioLive(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) async {
     final List<RemoteLocalAudioInfo> remoteEntries =
         await backend.listRemoteLocalAudio();
@@ -1781,9 +1781,9 @@ class SyncOrchestrator {
       for (final RemoteLocalAudioInfo r in remoteEntries) r.displayName,
     };
 
-    final LocalAudioSyncDiff diff = computeLocalAudioSyncDiff(
-      localNames: localNames,
-      remoteNames: remoteNames,
+    final SyncKeyDiff diff = computeKeyUnionDiff(
+      localKeys: localNames,
+      remoteKeys: remoteNames,
     );
 
     final int total = diff.toPull.length + diff.toPush.length;
@@ -1881,7 +1881,7 @@ class SyncOrchestrator {
   /// 进度走 [SyncPhase.audiobooks]，临时文件 finally 清理，逐项错误进 report.errors 不中断。
   Future<void> _syncAudiobooksLive(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) async {
     final List<RemoteAudiobookInfo> remoteAudiobooks =
         await backend.listRemoteAudiobooks();
@@ -1905,7 +1905,7 @@ class SyncOrchestrator {
       for (final EpubBookRow b in localBooks) b.bookKey,
     };
 
-    final AudiobookSyncDiff diff = computeAudiobookSyncDiff(
+    final SyncKeyDiff diff = computeKeyUnionDiff(
       localKeys: localKeys,
       remoteKeys: remoteKeys,
     );
@@ -2008,7 +2008,7 @@ class SyncOrchestrator {
   /// [SyncPhase.videos]，逐项错误进 report.errors 不中断，[report.videosExported] 计上传数。
   Future<void> _syncVideosLive(
     SyncRunReport report,
-    HibikiClientSyncBackend backend,
+    InterconnectSyncBackend backend,
   ) async {
     // host 既有视频（uid → 清单条目；sizeBytes null=host 无法 stat）。
     final Map<String, RemoteVideoInfo> hostByUid = <String, RemoteVideoInfo>{
@@ -2103,7 +2103,7 @@ class SyncOrchestrator {
   /// 推送；单条字幕的其它失败进 [report.errors] 不中断。
   Future<bool> _pushVideoSubtitlesLive({
     required SyncRunReport report,
-    required HibikiClientSyncBackend backend,
+    required InterconnectSyncBackend backend,
     required VideoBookRow row,
     required Map<String, List<String>?> sidecarDirCache,
   }) async {

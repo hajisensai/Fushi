@@ -71,11 +71,7 @@ class _CrashDumpPageState extends State<CrashDumpPage> {
     }
   }
 
-  String _formatSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-  }
+  String _formatSize(int bytes) => HibikiByteFormat.bytes(bytes);
 
   @override
   Widget build(BuildContext context) {

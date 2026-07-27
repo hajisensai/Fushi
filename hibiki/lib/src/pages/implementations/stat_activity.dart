@@ -1,10 +1,8 @@
 import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 
-/// 收藏/制卡统计的来源标识：书内阅读统计用 [kStatSourceBook]，视频统计用
-/// [kStatSourceVideo]。落 DB 的 favorite_words.source_type / mining_statistics.
-/// source_type 取这两个值，查词弹窗按所在表面透传。
-const String kStatSourceBook = 'book';
-const String kStatSourceVideo = 'video';
+// 统计来源标识 kStatSourceBook / kStatSourceVideo（命名统一 Phase 3.4）已挪进
+// hibiki_core 的 stat_source_kind.dart（同枚举 StatSourceKind）——它们是 schema
+// 值域的一部分且写入点跨层。本文件只保留分桶/日期键等纯函数。
 
 /// 把按日期分布的活动计数分桶到「今日 / 本周 / 本月 / 全部」。
 ///

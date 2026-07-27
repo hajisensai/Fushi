@@ -4,7 +4,7 @@
 /// 共享契约 [ScrapeCandidate]（见 `scraper_types.dart`，本文件**只 import 不修改**）。
 ///
 /// 本文件同时定义跨刮削层共享的网络异常 [ScrapeNetworkException]（tmdb_client /
-/// offline_db_downloader / poster_downloader 均从这里 import，不重复定义）。
+/// offline_db_downloader / cover_downloader 均从这里 import，不重复定义）。
 ///
 /// 代理：`package:http` 默认走 `dart:io` 的 `HttpClient`，会尊重进程环境里的系统代理
 /// 设置（`HTTP_PROXY` / `HTTPS_PROXY` / 平台系统代理），无需自实现代理配置。Bangumi

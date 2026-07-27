@@ -8,7 +8,7 @@ import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
-import 'package:hibiki/src/sync/ttu_models.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 HibikiDatabase _memDb() => HibikiDatabase.forTesting(NativeDatabase.memory());
@@ -23,13 +23,13 @@ class _RecordingBackend implements SyncBackend {
   Future<String> findOrCreateRootFolder() async => 'root';
 
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async {
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async {
     listBooksCalls++;
-    return const <DriveFile>[];
+    return const <SyncFileRef>[];
   }
 
   @override
-  void cacheBookFolderIds(List<DriveFile> folders) {}
+  void cacheBookFolderIds(List<SyncFileRef> folders) {}
 
   @override
   void restoreCache(

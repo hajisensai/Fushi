@@ -10,6 +10,7 @@ import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 
 class SftpSyncBackend extends SyncBackend
@@ -123,13 +124,14 @@ class SftpSyncBackend extends SyncBackend
       });
 
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) => _guarded(() async {
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) =>
+      _guarded(() async {
         final sftp = await _ensureConnected();
         final entries = await sftp.listdir(rootFolderId);
         return entries
             .where((e) =>
                 e.attr.isDirectory && e.filename != '.' && e.filename != '..')
-            .map((e) => DriveFile(
+            .map((e) => SyncFileRef(
                   id: '$rootFolderId/${e.filename}',
                   name: e.filename,
                 ))
@@ -170,19 +172,19 @@ class SftpSyncBackend extends SyncBackend
   // ── Metadata sync ─────────────────────────────────────────────────
 
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) => _guarded(() async {
+  Future<SyncFileTrio> listSyncFiles(String folderId) => _guarded(() async {
         final sftp = await _ensureConnected();
         final entries = await sftp.listdir(folderId);
         final files = entries
             .where((e) =>
                 !e.attr.isDirectory && e.filename != '.' && e.filename != '..')
-            .map((e) => DriveFile(
+            .map((e) => SyncFileRef(
                   id: '$folderId/${e.filename}',
                   name: e.filename,
                 ))
             .toList();
 
-        return DriveSyncFiles(
+        return SyncFileTrio(
           progress: findSyncFileByPrefix(files, 'progress_'),
           statistics: findSyncFileByPrefix(files, 'statistics_'),
           audioBook: findSyncFileByPrefix(files, 'audioBook_'),
@@ -294,18 +296,18 @@ class SftpSyncBackend extends SyncBackend
       });
 
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) =>
+  Future<SyncFileRef?> findContentFile(String folderId, String fileName) =>
       _guarded(() async {
         final sftp = await _ensureConnected();
         final path = '$folderId/$fileName';
         if (!await _fileExists(sftp, path)) return null;
-        return DriveFile(id: path, name: fileName);
+        return SyncFileRef(id: path, name: fileName);
       });
 
   // ── SyncAssetStore ────────────────────────────────────────────────
   //
   // The asset-store contract is layered on top of the same SFTP primitives the
-  // legacy DriveFile API uses; ids are paths RELATIVE to the login home, with
+  // legacy SyncFileRef API uses; ids are paths RELATIVE to the login home, with
   // the root namespace at [rootFolderName] and children at `'$parentId/$name'`.
   //
   // Methods that delegate to an existing API (uploadContentFile /

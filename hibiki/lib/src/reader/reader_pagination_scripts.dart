@@ -4,6 +4,11 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/reader_visual_novel_scripts.dart';
+import 'package:hibiki_core/hibiki_core.dart'
+    show
+        fullwidthAsciiToHalfwidth,
+        halfwidthKatakanaToFullwidth,
+        katakanaToHiragana;
 
 enum ReaderNavigationDirection {
   forward('forward'),
@@ -436,35 +441,18 @@ class ReaderPaginationScripts {
   }
 
   // JS `foldCodePoint` 的 Dart 影子：与 `AudioTextNormalizer.appendNormalized`
-  // 的值转换同口径。
+  // 的值转换同口径。改用 hibiki_core 共享码点原语（`jp_codepoint_fold.dart`）后
+  // 与 AudioTextNormalizer 同源；在白名单域（`_jsIsMatchableCodePoint` 为 true
+  // 的码点）与 JS 分段平移逐码点等价。运行期 JS 副本（`hwKataToFw` 查表）由
+  // `hibiki/test/utils/jp_codepoint_fold_test.dart` 的 parity 测试逐项锁定。
   static int _jsFoldCodePoint(int cp) {
-    int out = cp;
-    if (cp >= 0x41 && cp <= 0x5A) {
-      out = cp + 0x20;
-    } else if (cp >= 0xFF21 && cp <= 0xFF3A) {
-      out = cp - 0xFEC0;
-    } else if (cp >= 0xFF41 && cp <= 0xFF5A) {
-      out = cp - 0xFEE0;
-    } else if (cp >= 0xFF10 && cp <= 0xFF19) {
-      out = cp - 0xFEE0;
-    } else if (cp >= 0xFF66 && cp <= 0xFF9D) {
-      out = _jsHwKataToFw[cp - 0xFF66];
+    int out = fullwidthAsciiToHalfwidth(cp);
+    if (out >= 0x41 && out <= 0x5A) {
+      out += 0x20;
     }
-    if (out >= 0x30A1 && out <= 0x30F6) {
-      out -= 0x60;
-    }
-    return out;
+    out = halfwidthKatakanaToFullwidth(out);
+    return katakanaToHiragana(out);
   }
-
-  static const List<int> _jsHwKataToFw = <int>[
-    0x30F2, 0x30A1, 0x30A3, 0x30A5, 0x30A7, 0x30A9, 0x30E3, 0x30E5, //
-    0x30E7, 0x30C3, 0x30FC, 0x30A2, 0x30A4, 0x30A6, 0x30A8, 0x30AA, //
-    0x30AB, 0x30AD, 0x30AF, 0x30B1, 0x30B3, 0x30B5, 0x30B7, 0x30B9, //
-    0x30BB, 0x30BD, 0x30BF, 0x30C1, 0x30C4, 0x30C6, 0x30C8, 0x30CA, //
-    0x30CB, 0x30CC, 0x30CD, 0x30CE, 0x30CF, 0x30D2, 0x30D5, 0x30D8, //
-    0x30DB, 0x30DE, 0x30DF, 0x30E0, 0x30E1, 0x30E2, 0x30E4, 0x30E6, //
-    0x30E8, 0x30E9, 0x30EA, 0x30EB, 0x30EC, 0x30ED, 0x30EF, 0x30F3, //
-  ];
 
   /// BUG-239 纯谓词：阅读器统一手势 `_gestureEnd` 检测到一次滑动后，是否应当
   /// 回传 `onSwipe`（→ 90% 整屏翻页）。

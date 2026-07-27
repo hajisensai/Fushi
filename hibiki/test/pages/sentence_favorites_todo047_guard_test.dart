@@ -117,7 +117,9 @@ void main() {
 
     test('视频来源句子标注「视频」前缀且跳回视频 startMs（不当书打开）', () {
       expect(src, contains('kFavoriteSentenceSourceVideo'));
-      expect(src, contains('isVideoSentence'));
+      // BUG-1120：视频/书区分从 isVideoSentence bool 升级为 SentenceSourceKind
+      // 穷尽 switch（audiobook/lyrics 不再被降维归并进书）。
+      expect(src, contains('SentenceSourceKind.video'));
       expect(
         src,
         contains('VideoHibikiPage.neutralized'),

@@ -132,6 +132,63 @@ void main() {
     }
   });
 
+  group('applyCoverFile / applyCoverBytes 统一落盘收口（审计 §1-A）', () {
+    test('applyCoverFile：原子落盘（无 .tmp 残留）+ 覆盖写后双键驱逐', () async {
+      final String dest = p.join(tempDir.path, 'cover_dest.png');
+      await MediaCoverService.applyCoverFile(
+        source: writePng(tempDir, 'src_a.png'),
+        destPath: dest,
+      );
+      expect(File(dest).existsSync(), isTrue);
+      expect(File('$dest.tmp').existsSync(), isFalse, reason: '不得残留 .tmp');
+      await populateBothCoverKeys(dest);
+
+      // 覆盖写同一路径 → 双键必须被驱逐（写盘→驱逐的结构保证）。
+      await MediaCoverService.applyCoverFile(
+        source: writePng(tempDir, 'src_b.png'),
+        destPath: dest,
+      );
+      await expectBothCoverKeysEvicted(dest);
+      expect(File('$dest.tmp').existsSync(), isFalse);
+    });
+
+    test('applyCoverBytes：原子落盘 + 覆盖写后双键驱逐', () async {
+      final String dest = p.join(tempDir.path, 'cover_bytes.png');
+      await MediaCoverService.applyCoverBytes(
+        bytes: kTransparentImage,
+        destPath: dest,
+      );
+      expect(File(dest).readAsBytesSync(), kTransparentImage);
+      expect(File('$dest.tmp').existsSync(), isFalse);
+      await populateBothCoverKeys(dest);
+
+      await MediaCoverService.applyCoverBytes(
+        bytes: kTransparentImage,
+        destPath: dest,
+      );
+      await expectBothCoverKeysEvicted(dest);
+    });
+
+    test('applyCoverFile：源缺失时抛出、不动旧封面、不留 .tmp', () async {
+      final String dest = p.join(tempDir.path, 'cover_keep.png');
+      await MediaCoverService.applyCoverBytes(
+        bytes: kTransparentImage,
+        destPath: dest,
+      );
+
+      await expectLater(
+        MediaCoverService.applyCoverFile(
+          source: File(p.join(tempDir.path, 'missing.png')),
+          destPath: dest,
+        ),
+        throwsA(anything),
+      );
+      expect(File(dest).readAsBytesSync(), kTransparentImage,
+          reason: '写盘失败必须不动旧封面');
+      expect(File('$dest.tmp').existsSync(), isFalse, reason: '失败也不得残留 .tmp');
+    });
+  });
+
   group('pickCoverImage 统一选图入口（BUG-1074 分流委托）', () {
     test('桌面（Windows）走 file_picker 图片对话框，不触碰 image_picker 通道', () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
@@ -221,7 +278,7 @@ void main() {
         bookUid: const Value('video/test_ep'),
         title: const Value('测试视频'),
         videoPath: const Value('/tmp/test_ep.mkv'),
-        importedAt: Value(DateTime.now()),
+        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ));
     });
 

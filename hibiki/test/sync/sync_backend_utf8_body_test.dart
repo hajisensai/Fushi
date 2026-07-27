@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
@@ -212,7 +212,7 @@ class _CapturingLibraryService implements HibikiLibraryHostService {
 HibikiDatabase _testDb() =>
     HibikiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
-Future<HibikiClientSyncBackend> _buildBackend({
+Future<InterconnectSyncBackend> _buildBackend({
   required String base,
   required String token,
 }) async {
@@ -222,8 +222,8 @@ Future<HibikiClientSyncBackend> _buildBackend({
     HibikiClientUrl(url: base, enabled: true),
   ]);
   await repo.setHibikiClientToken(token);
-  final HibikiClientSyncBackend backend =
-      HibikiClientSyncBackend.withProbe((String u, String t) async => true);
+  final InterconnectSyncBackend backend =
+      InterconnectSyncBackend.withProbe((String u, String t) async => true);
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -256,7 +256,7 @@ void main() {
   test(
       'putRemoteAggregate with Japanese title round-trips UTF-8 (no latin1 crash)',
       () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
 
     final AggregateSnapshot snapshot = AggregateSnapshot(
@@ -286,7 +286,7 @@ void main() {
   test(
       'putRemoteBookProgress with Japanese bookKey round-trips UTF-8 (no crash)',
       () async {
-    final HibikiClientSyncBackend backend =
+    final InterconnectSyncBackend backend =
         await _buildBackend(base: base, token: token);
 
     await backend.putRemoteBookProgress(

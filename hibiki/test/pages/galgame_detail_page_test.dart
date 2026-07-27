@@ -153,7 +153,7 @@ void main() {
 
   testWidgets('无会话时给空态而不是崩', (WidgetTester tester) async {
     await pumpPage(tester, await buildModel(withSessions: false));
-    expect(find.text(t.games_never_played), findsOneWidget);
+    expect(find.text(t.game_never_played), findsOneWidget);
     await tester.drag(find.byType(ListView), const Offset(0, -400));
     await tester.pumpAndSettle();
     expect(find.text(t.game_stat_no_sessions), findsOneWidget);
@@ -175,7 +175,7 @@ void main() {
     await pumpPage(tester, appModel, initialTab: 2);
 
     expect(find.text(t.game_edit_save), findsOneWidget);
-    expect(find.text(t.games_scrape), findsOneWidget);
+    expect(find.text(t.game_scrape), findsOneWidget);
 
     await tester.enterText(editField('name'), '我的名字');
     await tester.dragUntilVisible(

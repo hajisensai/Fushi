@@ -7,9 +7,8 @@ import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/epub/epub_parser.dart';
-import 'package:hibiki/src/media/audiobook/book_import_dialog.dart'
-    show writeEpubBackedSrtBook;
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
+import 'package:hibiki/src/media/import/epub_backed_srt_book.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
 /// 非 UI 进度回调（替代对话框的 reportProgress）。[fraction] 0..1，[message]

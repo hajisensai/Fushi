@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/sync/hibiki_client_sync_backend.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/pairing/hibiki_pair_v2_client.dart';
 import 'package:hibiki/src/sync/tls/hibiki_tls_identity.dart';
@@ -69,7 +69,7 @@ void main() {
           reason: 'host 应已把该 per-peer token 落库并受理鉴权');
 
       // Step 3：Problem ①——「测试连接」用「存下的 per-peer token + host 指纹」必须通。
-      await HibikiClientSyncBackend.instance.testConnection(
+      await InterconnectSyncBackend.instance.testConnection(
         url: baseUrl,
         token: perPeerToken,
         fingerprint: fingerprint,

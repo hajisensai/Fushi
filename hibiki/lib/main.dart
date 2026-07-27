@@ -61,7 +61,7 @@ import 'package:hibiki/src/platform/desktop/desktop_lifecycle_service.dart';
 import 'package:hibiki/src/platform/ios/ios_url_event_channel.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:hibiki/src/media/video/external_video.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+import 'package:hibiki/src/media/video/video_cover_extractor.dart'
     show extractVideoCover;
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
@@ -987,7 +987,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
             title: Value(p.basenameWithoutExtension(videoPath)),
             videoPath: Value(videoPath),
             coverPath: Value<String?>(coverPath),
-            importedAt: Value(DateTime.now()),
+            importedAt: Value(DateTime.now().millisecondsSinceEpoch),
           ));
         }
       }

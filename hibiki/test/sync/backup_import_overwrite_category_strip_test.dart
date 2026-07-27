@@ -59,7 +59,7 @@ void main() {
       dbDirectory: dbDir,
       appVersion: '2.0.0',
       booksRootDirectory: books,
-    ).exportBackup(zip);
+    ).createBackup(zip);
     await src.close();
     return zip;
   }
@@ -72,7 +72,7 @@ void main() {
       {required Directory curRoot}) async {
     final String curDbDir = p.join(curRoot.path, 'support');
     Directory(curDbDir).createSync(recursive: true);
-    await BackupService.importBackupFiles(
+    await BackupService.restoreBackup(
       dbDirectory: curDbDir,
       zipPath: zip,
       importSettings: true,

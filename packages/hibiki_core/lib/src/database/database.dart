@@ -9,9 +9,11 @@ import 'package:path/path.dart' as p;
 import 'package:sqlite3/common.dart' show CommonDatabase;
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
+import '../utils/ttu_sanitize.dart';
 import '../utils/video_book_uid.dart';
 import 'media_kind.dart';
 import 'pref_codec.dart';
+import 'sync_tombstone_kind.dart';
 import 'tables.dart';
 
 part 'database.g.dart';
@@ -307,7 +309,7 @@ class _MergedTagState {
 int _maxInt(int a, int b) => a > b ? a : b;
 
 /// LWW-element-set 逐名裁决：并集两端 add 时钟与墓碑时钟，某标签名 max(addedAt) 严格
-/// 大于 max(removedAt) ⇒ present（否则 removed，含相等——remove-wins on tie，确定性）。
+/// 大于 max(deletedAt) ⇒ present（否则 removed，含相等——remove-wins on tie，确定性）。
 /// present 名清其墓碑（add 戳已持久，未来第三端旧移除仍会被 add 戳压过），removed 名保
 /// 留墓碑防复活。
 _MergedTagState _mergeTagClocks(
@@ -409,7 +411,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 56;
+  int get schemaVersion => 57;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1115,6 +1117,88 @@ class HibikiDatabase extends _$HibikiDatabase {
               await m.addColumn(galgames, galgames.launchArgs);
             }
           }
+          if (from < 57) {
+            // v57（命名统一 Phase 4）：三项低风险持久化统一，纯改名/改型无语义变化。
+            // ① video_book_tag_mappings.video_book_uid → book_uid（外键列与被引列
+            //    [VideoBooks].bookUid 同名，消同表内异名）；
+            // ② collection_member_tombstones / book_tag_membership_tombstones 的
+            //    removed_at → deleted_at（注释自承语义即 deletedAt，与 BookTombstones
+            //    等其余墓碑表对齐；sync 清单 wire JSON 的 `removedAt` 键冻结不动）；
+            // ③ video_books.imported_at：drift DateTime（Unix 秒存储）→ int 毫秒戳
+            //    （对齐 EpubBooks/SrtBooks/MediaItems 的 int 毫秒范式）。×1000 无损
+            //    转换（NULL 保持 NULL）；本步之前的 ladder（如 v38 拆集）在旧库上
+            //    仍按秒读写该列，时序正确。
+            // ①② 列 rename 用 alterTable 按当前 Dart 定义重建表、columnTransformer
+            // 搬旧列（v39 先例）；③ 不重建——drift DateTime 与 int 同为 INTEGER 存储，
+            // 物理 schema 零变化，纯 UPDATE ×1000 即可（也避免整表复制对极老/最小
+            // 种子库缺列的脆弱性）。FK OFF/ON 夹整块（v16 先例）：重建
+            // video_book_tag_mappings 期间不触发其对 video_books/book_tags 的 FK。
+            // 守卫幂等：mid-ladder 由 m.createTable fresh 建出的表已是新 shape，
+            // _columnExists 短路 no-op。
+            await customStatement('PRAGMA foreign_keys = OFF');
+            try {
+              if (await _tableExists('video_book_tag_mappings') &&
+                  await _columnExists(
+                      'video_book_tag_mappings', 'video_book_uid')) {
+                await m.alterTable(TableMigration(
+                  videoBookTagMappings,
+                  columnTransformer: {
+                    videoBookTagMappings.bookUid:
+                        const CustomExpression<String>('video_book_uid'),
+                  },
+                ));
+              }
+              if (await _tableExists('collection_member_tombstones') &&
+                  await _columnExists(
+                      'collection_member_tombstones', 'removed_at')) {
+                await m.alterTable(TableMigration(
+                  collectionMemberTombstones,
+                  columnTransformer: {
+                    collectionMemberTombstones.deletedAt:
+                        const CustomExpression<int>('removed_at'),
+                  },
+                ));
+              }
+              if (await _tableExists('book_tag_membership_tombstones') &&
+                  await _columnExists(
+                      'book_tag_membership_tombstones', 'removed_at')) {
+                await m.alterTable(TableMigration(
+                  bookTagMembershipTombstones,
+                  columnTransformer: {
+                    bookTagMembershipTombstones.deletedAt:
+                        const CustomExpression<int>('removed_at'),
+                  },
+                ));
+              }
+              if (await _tableExists('video_books') &&
+                  await _columnExists('video_books', 'imported_at')) {
+                // 秒 → 毫秒；NULL 行不动（无导入时间的旧数据保持未知，不造假时间）。
+                await customStatement(
+                  'UPDATE video_books SET imported_at = imported_at * 1000 '
+                  'WHERE imported_at IS NOT NULL',
+                );
+              }
+              // 完整性门：重建过的映射表跑 foreign_key_check——有悬空引用说明
+              // 搬数据出错，宁抛（回滚本次打开）不放行坏库。_tableExists 守卫：
+              // 极老/最小种子库可能没有此表（对不存在的表跑该 PRAGMA 直接报错）；
+              // 父表 video_books/book_tags 缺失的最小种子库同样跳过（该 PRAGMA
+              // 要求父表在场，真实旧库两张父表恒存在）。
+              if (await _tableExists('video_book_tag_mappings') &&
+                  await _tableExists('video_books') &&
+                  await _tableExists('book_tags')) {
+                final List<QueryRow> violations = await customSelect(
+                        'PRAGMA foreign_key_check(video_book_tag_mappings)')
+                    .get();
+                if (violations.isNotEmpty) {
+                  throw StateError(
+                      'v57 migration left ${violations.length} FK violations '
+                      'in video_book_tag_mappings');
+                }
+              }
+            } finally {
+              await customStatement('PRAGMA foreign_keys = ON');
+            }
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -1732,6 +1816,14 @@ class HibikiDatabase extends _$HibikiDatabase {
     final bool hasTags = await _tableExists('video_book_tag_mappings');
     final bool hasShelf = await _tableExists('shelf_entries');
     final bool hasPrefs = await _tableExists('preferences');
+    // v57 把 video_book_tag_mappings.video_book_uid 更名 book_uid。真实旧库跑到
+    // 本步（v38 < v57）时列仍叫 video_book_uid；但 mid-ladder 由 m.createTable
+    // 按当前 Dart 定义 fresh 建出的表已是 book_uid（先例：v10/v11 的列名守卫）。
+    // 按实际列名写 SQL，两种 shape 都不崩。
+    final String tagUidCol = hasTags &&
+            await _columnExists('video_book_tag_mappings', 'video_book_uid')
+        ? 'video_book_uid'
+        : 'book_uid';
 
     // parentUid → 拆出的集 uid 列表 / 恢复集下标：供循环外一次性改写 favorite_sentences
     // pref（单一 JSON blob，含全部来源收藏句）。
@@ -1849,9 +1941,10 @@ class HibikiDatabase extends _$HibikiDatabase {
 
         // playlist 合集：name=parent.title，sort_order 取 parent 的 shelf_entries
         // sortOrder（无则 0）。created_at 契约是**毫秒**戳（同 createMediaCollection /
-        // series→collection），而 video_books.imported_at 是 drift DateTime（默认存 Unix
-        // **秒**），故 ×1000 转毫秒，避免 playlist 合集 created_at 比其它合集小约 1000×
-        // （否则一旦按加入时间排序会全排到 1970）。
+        // series→collection），而本步（v38 < v57）跑在 v57 之前，旧库的
+        // video_books.imported_at 此刻仍是 drift DateTime（Unix **秒**存储；v57 才
+        // 统一成 int 毫秒），故 ×1000 转毫秒，避免 playlist 合集 created_at 比其它
+        // 合集小约 1000×（否则一旦按加入时间排序会全排到 1970）。
         int parentSort = 0;
         if (hasShelf) {
           final QueryRow? se = await customSelect(
@@ -1884,14 +1977,14 @@ class HibikiDatabase extends _$HibikiDatabase {
         if (hasTags) {
           final List<QueryRow> tagRows = await customSelect(
             'SELECT tag_id FROM video_book_tag_mappings '
-            'WHERE video_book_uid = ?',
+            'WHERE $tagUidCol = ?',
             variables: [Variable.withString(parentUid)],
           ).get();
           for (final String uid in epUids) {
             for (final QueryRow t in tagRows) {
               await customStatement(
                 'INSERT OR IGNORE INTO video_book_tag_mappings '
-                '(video_book_uid, tag_id) VALUES (?, ?)',
+                '($tagUidCol, tag_id) VALUES (?, ?)',
                 <Object?>[uid, t.read<int>('tag_id')],
               );
             }
@@ -1926,7 +2019,7 @@ class HibikiDatabase extends _$HibikiDatabase {
         // + 删 parent 的 shelf_entry。
         if (hasTags) {
           await customStatement(
-            'DELETE FROM video_book_tag_mappings WHERE video_book_uid = ?',
+            'DELETE FROM video_book_tag_mappings WHERE $tagUidCol = ?',
             <Object?>[parentUid],
           );
         }
@@ -2831,7 +2924,7 @@ class HibikiDatabase extends _$HibikiDatabase {
           collectionType: type,
           mediaType: collectionTombstoneSentinel,
           entryKey: collectionTombstoneSentinel,
-          removedAt: DateTime.now().millisecondsSinceEpoch,
+          deletedAt: DateTime.now().millisecondsSinceEpoch,
         );
         // 新 (name, type)：清其合集级哨兵墓碑（否则新名会被自己旧删除墓碑秒杀）。
         await (delete(collectionMemberTombstones)
@@ -2876,7 +2969,7 @@ class HibikiDatabase extends _$HibikiDatabase {
             collectionType: col.collectionType,
             mediaType: collectionTombstoneSentinel,
             entryKey: collectionTombstoneSentinel,
-            removedAt: DateTime.now().millisecondsSinceEpoch,
+            deletedAt: DateTime.now().millisecondsSinceEpoch,
           );
         }
         return deleted;
@@ -2996,7 +3089,7 @@ class HibikiDatabase extends _$HibikiDatabase {
             collectionType: col.collectionType,
             mediaType: mediaType,
             entryKey: entryKey,
-            removedAt: DateTime.now().millisecondsSinceEpoch,
+            deletedAt: DateTime.now().millisecondsSinceEpoch,
           );
         }
         final List<MediaCollectionItemRow> remaining =
@@ -3088,13 +3181,13 @@ class HibikiDatabase extends _$HibikiDatabase {
             ..limit(1))
           .getSingleOrNull();
 
-  /// upsert 一条墓碑（重复移出刷新 removedAt，单行 LWW）。
+  /// upsert 一条墓碑（重复移出刷新 deletedAt，单行 LWW）。
   Future<void> upsertCollectionMemberTombstone({
     required String collectionName,
     required String collectionType,
     required String mediaType,
     required String entryKey,
-    required int removedAt,
+    required int deletedAt,
   }) =>
       into(collectionMemberTombstones).insertOnConflictUpdate(
         CollectionMemberTombstonesCompanion.insert(
@@ -3102,7 +3195,7 @@ class HibikiDatabase extends _$HibikiDatabase {
           collectionType: collectionType,
           mediaType: mediaType,
           entryKey: entryKey,
-          removedAt: removedAt,
+          deletedAt: deletedAt,
         ),
       );
 
@@ -3826,7 +3919,7 @@ class HibikiDatabase extends _$HibikiDatabase {
         if (existing != null) return false;
         // 删除传播：重新收藏同 (expression,reading,sourceType) → 清其 sync 删除墓碑，
         // 防「取消了又收藏、墓碑还在」被 aggregate 抑制或跨端误删（范式仿插书清碑）。
-        await clearSyncDeletionTombstone('favoriteword',
+        await clearSyncDeletionTombstone(SyncTombstoneKind.favoriteword.dbValue,
             favoriteWordItemKey(expression, reading, sourceType));
         // TODO-1252：[bookKey] / [title] 记「首次收藏归属书」——收藏时若在阅读器 / 视频
         // 页有书上下文则传入，供 per-book/video tile 聚合；无书来源保持 null / ''（只进
@@ -3868,7 +3961,7 @@ class HibikiDatabase extends _$HibikiDatabase {
         .go();
     if (removed > 0 && propagateDeletion) {
       await writeSyncDeletionTombstone(
-          'favoriteword',
+          SyncTombstoneKind.favoriteword.dbValue,
           favoriteWordItemKey(expression, reading, sourceType),
           DateTime.now().millisecondsSinceEpoch);
     }
@@ -4821,7 +4914,7 @@ class HibikiDatabase extends _$HibikiDatabase {
         videoBookTagMappings.tagId.equalsExp(bookTags.id),
       ),
     ])
-      ..where(videoBookTagMappings.videoBookUid.equals(videoBookUid))
+      ..where(videoBookTagMappings.bookUid.equals(videoBookUid))
       ..orderBy([OrderingTerm.asc(bookTags.createdAt)]);
     return query.map((row) => row.readTable(bookTags)).get();
   }
@@ -4837,8 +4930,8 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<void> removeTagFromVideoBook(String videoBookUid, int tagId) async {
     final String? name = await _tagNameById(tagId);
     await (delete(videoBookTagMappings)
-          ..where((t) =>
-              t.videoBookUid.equals(videoBookUid) & t.tagId.equals(tagId)))
+          ..where(
+              (t) => t.bookUid.equals(videoBookUid) & t.tagId.equals(tagId)))
         .go();
     if (name != null) {
       await _upsertTagTombstone(videoBookUid, MediaKind.video, name,
@@ -4903,7 +4996,7 @@ class HibikiDatabase extends _$HibikiDatabase {
       transaction(() async {
         final int now = DateTime.now().millisecondsSinceEpoch;
         final existing = await (select(videoBookTagMappings)
-              ..where((t) => t.videoBookUid.equals(videoBookUid)))
+              ..where((t) => t.bookUid.equals(videoBookUid)))
             .get();
         final existingTagIds = existing.map((e) => e.tagId).toSet();
 
@@ -4914,8 +5007,7 @@ class HibikiDatabase extends _$HibikiDatabase {
           final String? name = await _tagNameById(tagId);
           await (delete(videoBookTagMappings)
                 ..where((t) =>
-                    t.videoBookUid.equals(videoBookUid) &
-                    t.tagId.equals(tagId)))
+                    t.bookUid.equals(videoBookUid) & t.tagId.equals(tagId)))
               .go();
           if (name != null) {
             await _upsertTagTombstone(videoBookUid, MediaKind.video, name, now);
@@ -4932,9 +5024,9 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<List<VideoBookTagMappingRow>> getAllVideoBookTagMappings() =>
       select(videoBookTagMappings).get();
 
-  // ── tags 跨端同步（LWW-element-set：added_at vs 墓碑 removed_at）──────────────
+  // ── tags 跨端同步（LWW-element-set：added_at vs 墓碑 deleted_at）──────────────
   // 标签跨设备身份 = name。sync 合并按名并集两端「当前标签(带 addedAt)」与「移除墓碑
-  // (带 removedAt)」，逐名 max(addedAt) vs max(removedAt) 裁决 present/removed，防复活/
+  // (带 deletedAt)」，逐名 max(addedAt) vs max(deletedAt) 裁决 present/removed，防复活/
   // 防误删。UI 加/删标签写 addedAt/墓碑，让本地操作也进入同一 LWW 时钟。
 
   Future<String?> _tagNameById(int tagId) async {
@@ -4963,7 +5055,7 @@ class HibikiDatabase extends _$HibikiDatabase {
     final rows = await (select(videoBookTagMappings).join([
       innerJoin(bookTags, bookTags.id.equalsExp(videoBookTagMappings.tagId)),
     ])
-          ..where(videoBookTagMappings.videoBookUid.equals(videoBookUid)))
+          ..where(videoBookTagMappings.bookUid.equals(videoBookUid)))
         .get();
     return <String, int>{
       for (final row in rows)
@@ -4981,7 +5073,7 @@ class HibikiDatabase extends _$HibikiDatabase {
               t.itemKey.equals(itemKey) &
               t.mediaType.equals(mediaType.dbValue)))
         .get();
-    return <String, int>{for (final r in rows) r.tagName: r.removedAt};
+    return <String, int>{for (final r in rows) r.tagName: r.deletedAt};
   }
 
   /// 全库书标签「bookKey → (名 → 加入毫秒戳)」一趟批查。
@@ -5010,7 +5102,7 @@ class HibikiDatabase extends _$HibikiDatabase {
     final Map<String, Map<String, int>> out = <String, Map<String, int>>{};
     for (final row in rows) {
       final VideoBookTagMappingRow m = row.readTable(videoBookTagMappings);
-      (out[m.videoBookUid] ??= <String, int>{})[row.readTable(bookTags).name] =
+      (out[m.bookUid] ??= <String, int>{})[row.readTable(bookTags).name] =
           m.addedAt;
     }
     return out;
@@ -5025,19 +5117,19 @@ class HibikiDatabase extends _$HibikiDatabase {
         .get();
     final Map<String, Map<String, int>> out = <String, Map<String, int>>{};
     for (final r in rows) {
-      (out[r.itemKey] ??= <String, int>{})[r.tagName] = r.removedAt;
+      (out[r.itemKey] ??= <String, int>{})[r.tagName] = r.deletedAt;
     }
     return out;
   }
 
   Future<void> _upsertTagTombstone(
-          String itemKey, MediaKind mediaType, String tagName, int removedAt) =>
+          String itemKey, MediaKind mediaType, String tagName, int deletedAt) =>
       into(bookTagMembershipTombstones).insertOnConflictUpdate(
         BookTagMembershipTombstonesCompanion.insert(
           itemKey: itemKey,
           mediaType: mediaType.dbValue,
           tagName: tagName,
-          removedAt: removedAt,
+          deletedAt: deletedAt,
         ),
       );
 
@@ -5072,16 +5164,13 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<void> _upsertVideoTagMappingWithTime(
       String videoBookUid, int tagId, int addedAt) async {
     final existing = await (select(videoBookTagMappings)
-          ..where((t) =>
-              t.videoBookUid.equals(videoBookUid) & t.tagId.equals(tagId))
+          ..where((t) => t.bookUid.equals(videoBookUid) & t.tagId.equals(tagId))
           ..limit(1))
         .getSingleOrNull();
     if (existing == null) {
       await into(videoBookTagMappings).insert(
           VideoBookTagMappingsCompanion.insert(
-              videoBookUid: videoBookUid,
-              tagId: tagId,
-              addedAt: Value(addedAt)));
+              bookUid: videoBookUid, tagId: tagId, addedAt: Value(addedAt)));
     } else {
       await (update(videoBookTagMappings)
             ..where((t) => t.id.equals(existing.id)))
@@ -5092,7 +5181,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   /// LWW-element-set：把远端标签快照合并进书 [bookKey] 本地状态。
   /// [remoteAddedAt]=远端当前标签名→加入戳；[remoteTombstones]=远端移除墓碑名→移除戳。
   /// 按名并集两端 add 时钟与墓碑时钟，逐名 max(add) > max(removed) ⇒ present（写映射，
-  /// addedAt=合并后 add 戳）；否则 removed（删映射 + 写墓碑，removedAt=合并后墓碑戳）。
+  /// addedAt=合并后 add 戳）；否则 removed（删映射 + 写墓碑，deletedAt=合并后墓碑戳）。
   /// 幂等；无远端墓碑（旧端只传名单）时以 [nowMs] 视作 add 戳，退化为并集只增（向后兼容）。
   Future<void> mergeRemoteBookTags(
     String bookKey, {
@@ -5317,13 +5406,13 @@ class HibikiDatabase extends _$HibikiDatabase {
       Variable<int>(tagCount),
     ];
     final rows = await customSelect(
-      'SELECT video_book_uid FROM video_book_tag_mappings '
+      'SELECT book_uid FROM video_book_tag_mappings '
       'WHERE tag_id IN ($placeholders) '
-      'GROUP BY video_book_uid '
+      'GROUP BY book_uid '
       'HAVING COUNT(DISTINCT tag_id) = ?',
       variables: variables,
     ).get();
-    return rows.map((row) => row.read<String>('video_book_uid')).toSet();
+    return rows.map((row) => row.read<String>('book_uid')).toSet();
   }
 
   // ── profiles ──────────────────────────────────────────────────────
@@ -5448,30 +5537,15 @@ class HibikiDatabase extends _$HibikiDatabase {
   // the migration's int-extraction matches what buildLegacyBookUid produced.
   static const String _kLegacyUidPrefix = 'reader_ttu/hoshi://book/';
 
-  /// VERBATIM copy of `sanitizeTtuFilename` from
-  /// hibiki/lib/src/sync/ttu_filename.dart. hibiki_core cannot depend on the
-  /// app package, so the body is inlined here. Both MUST stay byte-identical:
-  /// the migrated bookKey has to equal the key sync/folder code derives from
-  /// the same title, or cross-device identity drifts. A source guard
-  /// (book_key_guard_test) locks the two bodies together.
-  static String _sanitizeBookKey(String title) {
-    String result = title;
-    if (result.endsWith(' ')) {
-      result = '${result.substring(0, result.length - 1)}~ttu-spc~';
-    }
-    if (result.endsWith('.')) {
-      result = '${result.substring(0, result.length - 1)}~ttu-dend~';
-    }
-    result = result.replaceAll('*', '~ttu-star~');
-    result = result.replaceAllMapped(
-      RegExp(r'[/?\<>\\:|%"]'),
-      (match) => match[0]!
-          .codeUnits
-          .map((c) => '%${c.toRadixString(16).toUpperCase().padLeft(2, '0')}')
-          .join(),
-    );
-    return result;
-  }
+  /// Delegates to the core-local copy of `sanitizeTtuFilename`
+  /// (`../utils/ttu_sanitize.dart`). hibiki_core cannot depend on the app
+  /// package, so the core copy stands in for the app truth source
+  /// `hibiki/lib/src/sync/ttu_filename.dart`. Core copy and app copy MUST
+  /// stay byte-identical: the migrated bookKey has to equal the key
+  /// sync/folder code derives from the same title, or cross-device identity
+  /// drifts. A source guard (book_key_guard_test) plus the behavioral
+  /// parity test (video_book_uid_core_parity_test) lock the two together.
+  static String _sanitizeBookKey(String title) => sanitizeTtuFilename(title);
 
   /// Re-keys every book + all reading data from the autoincrement int id to
   /// bookKey = sanitizeTtuFilename(title). Lossless: builds an id→key map (with

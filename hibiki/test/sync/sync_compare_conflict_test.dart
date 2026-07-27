@@ -10,6 +10,7 @@ import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -40,20 +41,21 @@ class _FakeSyncBackend implements SyncBackend {
   @override
   Future<String> findOrCreateRootFolder() async => 'root';
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async => <DriveFile>[
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async =>
+      <SyncFileRef>[
         for (final MapEntry<String, _RemoteBook> e in remoteBooks.entries)
-          DriveFile(id: e.value.folderId, name: e.key),
+          SyncFileRef(id: e.value.folderId, name: e.key),
       ];
   @override
-  void cacheBookFolderIds(List<DriveFile> folders) {}
+  void cacheBookFolderIds(List<SyncFileRef> folders) {}
 
   @override
   void evictFolderId(String folderId) {}
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async {
+  Future<SyncFileTrio> listSyncFiles(String folderId) async {
     final _RemoteBook? book = _byFolder(folderId);
-    if (book == null) return const DriveSyncFiles();
-    return DriveSyncFiles(progress: book.progressFile);
+    if (book == null) return const SyncFileTrio();
+    return SyncFileTrio(progress: book.progressFile);
   }
 
   @override
@@ -167,7 +169,8 @@ class _FakeSyncBackend implements SyncBackend {
   }) async =>
       throw UnimplementedError();
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async =>
+  Future<SyncFileRef?> findContentFile(
+          String folderId, String fileName) async =>
       throw UnimplementedError();
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) async =>
@@ -204,7 +207,7 @@ class _RemoteBook {
   });
 
   final String folderId;
-  final DriveFile? progressFile;
+  final SyncFileRef? progressFile;
   final TtuProgress? payload;
 
   factory _RemoteBook.withProgress({
@@ -215,7 +218,7 @@ class _RemoteBook {
     final int exploredChars = (fraction * 1000).round();
     return _RemoteBook(
       folderId: folderId,
-      progressFile: DriveFile(
+      progressFile: SyncFileRef(
         id: 'progress-$folderId',
         name: progressFileName(timestampMs, fraction),
       ),

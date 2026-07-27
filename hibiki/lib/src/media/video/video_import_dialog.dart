@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
+import 'package:hibiki/src/media/import/import_dialog_frame.dart';
+import 'package:hibiki/src/media/import/import_flow_mixin.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
@@ -16,17 +18,18 @@ import 'package:hibiki/src/media/video/youtube_source_resolver.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
-import 'package:hibiki/src/utils/cover_image.dart';
-import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
+import 'package:hibiki/src/media/media_cover_service.dart';
+import 'package:hibiki/src/media/video/video_cover_extractor.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:path/path.dart' as p;
-// TODO-817 M1c: videoCoverFileName / extractVideoCover 已下沉到
-// desktop_audio_clipper.dart（ffmpeg 封面抽取的归宿，使扫描器无需 import UI 层）；
-// 从这里 re-export 让既有调用点（home_video_page / playlist_book_uid_test）零改动。
-export 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
+// TODO-817 M1c → 审计 §1-A: videoCoverFileName / extractVideoCover 已下沉到
+// media/video/video_cover_extractor.dart（视频封面抽取的归宿，使扫描器无需
+// import UI 层）；从这里 re-export 让既有调用点（home_video_page /
+// source_library_scanner / playlist_book_uid_test）零改动。
+export 'package:hibiki/src/media/video/video_cover_extractor.dart'
     show videoCoverFileName, extractVideoCover, extractPlaylistCover;
 
 /// 为 m3u8 播放列表生成跨设备稳定 bookUid：`video/playlist/<sanitize(文件名)>`。
@@ -85,9 +88,8 @@ String uniqueVideoBookUid(String base, Set<String> existingKeys) {
 /// 时自动截图同一路径（同一 [videoCoverFileName]），所以 DB 里的 `coverPath`
 /// 字符串不变；而 [FileImage] 按 `(path, scale)` 而非内容/mtime 缓存解码，覆盖
 /// 同名文件后必须驱逐旧条目，否则 UI 重建时命中旧解码、用户重设封面后看到的
-/// 还是旧图（直到缓存淘汰或重启）。驱逐走 [evictLocalCoverCache]：裸 FileImage
-/// 键与 `resizedFileImage` 的 ResizeImage 键是两个不同 key，只清前者的话走降
-/// 采样渲染的卡片（ShelfFileCover 等）仍命中旧解码。
+/// 还是旧图。写盘与双键驱逐（裸 FileImage 键 + ResizeImage 键）由统一收口
+/// [MediaCoverService.applyCoverFile] 结构性保证。
 ///
 /// [coversDirectory] 是测试接缝：默认经唯一入口 [AppPaths] 派生
 /// `<documents>/video_covers`（TODO-935 E0），测试传临时目录即可断言真实落盘。
@@ -101,8 +103,10 @@ Future<String> setVideoCoverFromPickedFile({
       coversDirectory ?? await AppPaths.videoCoversDirectory();
   await coverDir.create(recursive: true);
   final String dest = p.join(coverDir.path, videoCoverFileName(bookUid));
-  await File(pickedPath).copy(dest);
-  await evictLocalCoverCache(dest);
+  await MediaCoverService.applyCoverFile(
+    source: File(pickedPath),
+    destPath: dest,
+  );
   await repo.updateCover(bookUid, dest);
   return dest;
 }
@@ -199,10 +203,10 @@ class VideoImportDialog extends StatefulWidget {
   State<VideoImportDialog> createState() => _VideoImportDialogState();
 }
 
-class _VideoImportDialogState extends State<VideoImportDialog> {
+class _VideoImportDialogState extends State<VideoImportDialog>
+    with ImportFlowMixin<VideoImportDialog> {
   String? _videoPath;
   String? _subtitlePath;
-  bool _busy = false;
   final TextEditingController _streamUrlController = TextEditingController();
   final TextEditingController _streamSubtitleUrlController =
       TextEditingController();
@@ -251,7 +255,7 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
         videoPath: _videoPath,
         subtitlePath: _subtitlePath,
         streamUrl: _streamUrlController.text,
-        busy: _busy,
+        busy: importing,
       );
 
   Future<void> _pickVideo() async {
@@ -317,57 +321,62 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
   /// 解析 [m3u8Path] 多集 → 建一个 playlist VideoBook（不复制视频，存绝对路径）→
   /// pop 回 bookUid。第一集作为初始 videoPath，sidecar 字幕在播放页按集动态加载
   /// （不在导入时解析全部 cue）。手动选择与拖入共用此路径。
-  Future<void> _importPlaylistFromPath(String m3u8Path) async {
-    setState(() => _busy = true);
-    try {
-      final String content = await readTextWithEncoding(File(m3u8Path));
-      final String baseDir = p.dirname(m3u8Path);
-      final List<PlaylistEntry> entries =
-          parseM3u8(content: content, baseDir: baseDir);
-      if (entries.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(t.video_file_error_content)),
-          );
+  ///
+  /// 错误处理（BUG-1117）走 [ImportFlowMixin.runImport] 模板：解析/落库异常
+  /// 落 ErrorLogService + toast 提示，`importing` 在 finally 复位，不逃逸 zone。
+  Future<void> _importPlaylistFromPath(String m3u8Path) {
+    return runImport(
+      logTag: 'VideoImportDialog.importPlaylist',
+      debugMessage: (Object e) =>
+          '[hibiki-drop] [video-import] importPlaylist failed: $e',
+      action: () async {
+        final String content = await readTextWithEncoding(File(m3u8Path));
+        final String baseDir = p.dirname(m3u8Path);
+        final List<PlaylistEntry> entries =
+            parseM3u8(content: content, baseDir: baseDir);
+        if (entries.isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(t.video_file_error_content)),
+            );
+          }
+          return;
         }
-        return;
-      }
 
-      // 统一合集 Phase 2：多集拆成 N 条独立 VideoBooks 行 + 一个 playlist 合集
-      // （单一真相源 importSplitPlaylist，与 v38 迁移落库形状对齐）。
-      final ({int collectionId, List<String> episodeUids}) result =
-          await widget.repo.importSplitPlaylist(
-        collectionName: p.basenameWithoutExtension(m3u8Path),
-        entries: entries,
-      );
-      final String firstUid = result.episodeUids.first;
-      // TODO-1237 ①：遍历各集取首个可用封面（首集缺失/远端占位时退到后续集）给首集
-      // 承接（合集卡封面纯函数取首成员封面）。桌面 ffmpeg；移动端无 ffmpeg 时留空占位。
-      final String? coverPath = await extractPlaylistCover(
-        episodePaths: entries.map((PlaylistEntry e) => e.path).toList(),
-        bookUid: firstUid,
-      );
-      if (coverPath != null) {
-        await widget.repo.updateCover(firstUid, coverPath);
-      }
+        // 统一合集 Phase 2：多集拆成 N 条独立 VideoBooks 行 + 一个 playlist 合集
+        // （单一真相源 importSplitPlaylist，与 v38 迁移落库形状对齐）。
+        final ({int collectionId, List<String> episodeUids}) result =
+            await widget.repo.importSplitPlaylist(
+          collectionName: p.basenameWithoutExtension(m3u8Path),
+          entries: entries,
+        );
+        final String firstUid = result.episodeUids.first;
+        // TODO-1237 ①：遍历各集取首个可用封面（首集缺失/远端占位时退到后续集）给首集
+        // 承接（合集卡封面纯函数取首成员封面）。桌面 ffmpeg；移动端无 ffmpeg 时留空占位。
+        final String? coverPath = await extractPlaylistCover(
+          episodePaths: entries.map((PlaylistEntry e) => e.path).toList(),
+          bookUid: firstUid,
+        );
+        if (coverPath != null) {
+          await widget.repo.updateCover(firstUid, coverPath);
+        }
 
-      // v49：手动选/拖入 m3u8 播放列表也是用户明示导入，整本只记 1 条 added 活动
-      // 事件（title=合集名=m3u8 文件名、mediaKey=首集 uid）。
-      await widget.repo.recordVideoImportActivity(
-        bookUid: firstUid,
-        title: p.basenameWithoutExtension(m3u8Path),
-      );
+        // v49：手动选/拖入 m3u8 播放列表也是用户明示导入，整本只记 1 条 added 活动
+        // 事件（title=合集名=m3u8 文件名、mediaKey=首集 uid）。
+        await widget.repo.recordVideoImportActivity(
+          bookUid: firstUid,
+          title: p.basenameWithoutExtension(m3u8Path),
+        );
 
-      if (!mounted) return;
-      debugPrint(
-        '[hibiki-drop] [video-import] importedPlaylist collection='
-        '${result.collectionId} episodes=${result.episodeUids.length} '
-        'playlist=${p.basename(m3u8Path)}',
-      );
-      Navigator.pop(context, firstUid);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+        if (!mounted) return;
+        debugPrint(
+          '[hibiki-drop] [video-import] importedPlaylist collection='
+          '${result.collectionId} episodes=${result.episodeUids.length} '
+          'playlist=${p.basename(m3u8Path)}',
+        );
+        Navigator.pop(context, firstUid);
+      },
+    );
   }
 
   /// 选一个文件夹 → 扫描顶层视频文件 → 按文件名解析分组（参照 Jellyfin/anitomy，
@@ -383,37 +392,40 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
     if (dir == null) return;
     if (!mounted) return;
 
-    setState(() => _busy = true);
-    try {
-      final List<String> videos = listVideoFilesInDirectory(dir);
-      if (videos.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(t.video_import_folder_empty)),
-          );
+    // 错误处理（BUG-1117）走 runImport 模板：扫描/分组/落库异常落日志 + toast。
+    await runImport(
+      logTag: 'VideoImportDialog.pickFolder',
+      debugMessage: (Object e) =>
+          '[hibiki-drop] [video-import] pickFolder failed: $e',
+      action: () async {
+        final List<String> videos = listVideoFilesInDirectory(dir);
+        if (videos.isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(t.video_import_folder_empty)),
+            );
+          }
+          return;
         }
-        return;
-      }
-      final List<VideoGroup> groups = groupVideosIntoPlaylists(videos);
-      String? lastBookUid;
-      int importedCount = 0;
-      for (final VideoGroup group in groups) {
-        // null = 该组文件已在库、被去重跳过（TODO-1237 ②）；只统计真正新导入的。
-        final String? uid = await _importGroup(group);
-        if (uid != null) {
-          lastBookUid = uid;
-          importedCount++;
+        final List<VideoGroup> groups = groupVideosIntoPlaylists(videos);
+        String? lastBookUid;
+        int importedCount = 0;
+        for (final VideoGroup group in groups) {
+          // null = 该组文件已在库、被去重跳过（TODO-1237 ②）；只统计真正新导入的。
+          final String? uid = await _importGroup(group);
+          if (uid != null) {
+            lastBookUid = uid;
+            importedCount++;
+          }
         }
-      }
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(t.video_import_folder_done(count: importedCount))),
-      );
-      Navigator.pop(context, lastBookUid);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(t.video_import_folder_done(count: importedCount))),
+        );
+        Navigator.pop(context, lastBookUid);
+      },
+    );
   }
 
   /// 导入一个系列分组：多集 → playlist VideoBook（身份 `video/playlist/<系列名>`），
@@ -463,7 +475,7 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
       videoPath: Value(only.path),
       embeddedSubtitleTrack: const Value<int?>(0),
       coverPath: Value<String?>(coverPath),
-      importedAt: Value(DateTime.now()),
+      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
     // v49：文件夹扫描里的单集视频，记一条 added 活动事件。
     await widget.repo.recordVideoImportActivity(
@@ -493,66 +505,70 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
     }
     final String videoPath = _videoPath!;
     final String? subtitlePath = _subtitlePath;
-    setState(() => _busy = true);
-    try {
-      final String bookUid =
-          await _uniqueBookUid(singleVideoBookUid(videoPath));
-      // 抽一帧做书架封面（桌面 ffmpeg；移动端无 ffmpeg 时留空占位）。
-      final String? coverPath =
-          await extractVideoCover(videoPath: videoPath, bookUid: bookUid);
+    // 错误处理（BUG-1117）走 runImport 模板：字幕解析/封面抽取/落库异常落日志 +
+    // toast 提示，`importing` 在 finally 复位，不逃逸 async zone。
+    await runImport(
+      logTag: 'VideoImportDialog.import',
+      debugMessage: (Object e) =>
+          '[hibiki-drop] [video-import] import failed: $e',
+      action: () async {
+        final String bookUid =
+            await _uniqueBookUid(singleVideoBookUid(videoPath));
+        // 抽一帧做书架封面（桌面 ffmpeg；移动端无 ffmpeg 时留空占位）。
+        final String? coverPath =
+            await extractVideoCover(videoPath: videoPath, bookUid: bookUid);
 
-      if (subtitlePath != null) {
-        // 选了外挂字幕：解析为 cue，写元数据 + cue 列表。
-        final String format =
-            p.extension(subtitlePath).replaceFirst('.', '').toLowerCase();
-        final String content = await readTextWithEncoding(File(subtitlePath));
-        final List<AudioCue> cues = parseSubtitleCues(
-          content: content,
-          format: format,
+        if (subtitlePath != null) {
+          // 选了外挂字幕：解析为 cue，写元数据 + cue 列表。
+          final String format =
+              p.extension(subtitlePath).replaceFirst('.', '').toLowerCase();
+          final String content = await readTextWithEncoding(File(subtitlePath));
+          final List<AudioCue> cues = parseSubtitleCues(
+            content: content,
+            format: format,
+            bookUid: bookUid,
+          );
+
+          await widget.repo.saveVideoBook(VideoBooksCompanion(
+            bookUid: Value(bookUid),
+            title: Value(p.basenameWithoutExtension(videoPath)),
+            videoPath: Value(videoPath),
+            subtitleSource: Value(subtitlePath),
+            subtitleFormat: Value(format),
+            coverPath: Value<String?>(coverPath),
+            importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+          ));
+          await widget.repo.saveCues(bookUid: bookUid, cues: cues);
+        } else {
+          // 未选外挂字幕：标记用内嵌默认轨（track 0），不写 cue——字幕靠 libmpv
+          // 画面渲染，cue 级功能（高亮/句导航）无数据（Phase 0 已知降级）。
+          await widget.repo.saveVideoBook(VideoBooksCompanion(
+            bookUid: Value(bookUid),
+            title: Value(p.basenameWithoutExtension(videoPath)),
+            videoPath: Value(videoPath),
+            subtitleSource: const Value<String?>(null),
+            subtitleFormat: const Value<String?>(null),
+            embeddedSubtitleTrack: const Value<int?>(0),
+            coverPath: Value<String?>(coverPath),
+            importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+          ));
+        }
+
+        // v49：用户明示导入单个视频成功 → 记一条 added 活动事件（喂首页 Activity
+        // 时间轴）。best-effort（方法内吞异常只 log），不影响视频已导入。
+        await widget.repo.recordVideoImportActivity(
           bookUid: bookUid,
+          title: p.basenameWithoutExtension(videoPath),
         );
 
-        await widget.repo.saveVideoBook(VideoBooksCompanion(
-          bookUid: Value(bookUid),
-          title: Value(p.basenameWithoutExtension(videoPath)),
-          videoPath: Value(videoPath),
-          subtitleSource: Value(subtitlePath),
-          subtitleFormat: Value(format),
-          coverPath: Value<String?>(coverPath),
-          importedAt: Value(DateTime.now()),
-        ));
-        await widget.repo.saveCues(bookUid: bookUid, cues: cues);
-      } else {
-        // 未选外挂字幕：标记用内嵌默认轨（track 0），不写 cue——字幕靠 libmpv
-        // 画面渲染，cue 级功能（高亮/句导航）无数据（Phase 0 已知降级）。
-        await widget.repo.saveVideoBook(VideoBooksCompanion(
-          bookUid: Value(bookUid),
-          title: Value(p.basenameWithoutExtension(videoPath)),
-          videoPath: Value(videoPath),
-          subtitleSource: const Value<String?>(null),
-          subtitleFormat: const Value<String?>(null),
-          embeddedSubtitleTrack: const Value<int?>(0),
-          coverPath: Value<String?>(coverPath),
-          importedAt: Value(DateTime.now()),
-        ));
-      }
-
-      // v49：用户明示导入单个视频成功 → 记一条 added 活动事件（喂首页 Activity
-      // 时间轴）。best-effort（方法内吞异常只 log），不影响视频已导入。
-      await widget.repo.recordVideoImportActivity(
-        bookUid: bookUid,
-        title: p.basenameWithoutExtension(videoPath),
-      );
-
-      if (!mounted) return;
-      debugPrint(
-        '[hibiki-drop] [video-import] imported bookUid=$bookUid '
-        'video=${p.basename(videoPath)} subtitle=${subtitlePath == null ? 'none' : p.basename(subtitlePath)}',
-      );
-      Navigator.pop(context, bookUid);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+        if (!mounted) return;
+        debugPrint(
+          '[hibiki-drop] [video-import] imported bookUid=$bookUid '
+          'video=${p.basename(videoPath)} subtitle=${subtitlePath == null ? 'none' : p.basename(subtitlePath)}',
+        );
+        Navigator.pop(context, bookUid);
+      },
+    );
   }
 
   /// 当前粘贴的视频 URL 是否可播（http/https 直链）。空串/非法 scheme → false。
@@ -563,62 +579,67 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
   /// 直链/HLS=直链），外挂字幕 URL + 防盗链 header 存进 [VideoBooks.streamSpecJson]；
   /// 重开时由 [buildStreamVideoLaunch] 据此重建流客户端（YouTube 重解析）。导入后 pop 回
   /// bookUid（与本地导入一致，回书架而非立即播放），身份 [streamVideoBookUid] 稳定去重。
-  Future<void> _importStreamUrl(String url) async {
-    setState(() => _busy = true);
-    try {
-      final String bookUid = await _uniqueBookUid(streamVideoBookUid(url));
-      final String subtitleUrlRaw = _streamSubtitleUrlController.text.trim();
-      final String? subtitleUrl =
-          isPlayableStreamUrl(subtitleUrlRaw) ? subtitleUrlRaw : null;
-      final String referer = _streamRefererController.text.trim();
-      final String userAgent = _streamUserAgentController.text.trim();
-      final StreamVideoSpec spec = StreamVideoSpec(
-        subtitleUrl: subtitleUrl,
-        subtitleFileName:
-            subtitleUrl == null ? null : _subtitleFileNameForUrl(subtitleUrl),
-        referer: referer.isEmpty ? null : referer,
-        userAgent: userAgent.isEmpty ? null : userAgent,
-      );
-      // TODO-1281：YouTube 导入时用 watch URL 派生的标题恒是字面 "watch"（query 里的
-      // ?v= 才是视频标识），且流媒体无本地文件可 ffmpeg 抽封面 → 名字错 + 无封面。故对
-      // YouTube URL 轻量抓一次元数据（真实标题 + 缩略图 URL），落库真名 + 下载封面。
-      // best-effort：抓取失败退回 URL 派生标题 + 无封面，导入不中止（见
-      // [resolveYoutubeMetadata]）。直链/HLS 无此问题，保持原逻辑。
-      String title = _streamTitleForUrl(url);
-      String? coverPath;
-      switch (streamImportCoverStrategy(url)) {
-        case StreamImportCoverStrategy.youtubeThumbnail:
-          coverPath = await _resolveYoutubeImportCover(
-            url,
-            bookUid,
-            (String resolved) => title = resolved,
-          );
-        case StreamImportCoverStrategy.ffmpegFrame:
-          // TODO-1304：直链/HLS 也出封面。videoPath 是可 seek 的流 URL → ffmpeg 抽一帧
-          // （桌面 CLI / 移动端 ffmpeg-kit，均支持 http 输入，经 _isRemoteFfmpegInput 放行）。
-          // 抽不到（无 ffmpeg / 流不可 seek）→ null，书架占位（与本地视频无 ffmpeg 一致，不中止）。
-          coverPath = await extractVideoCover(videoPath: url, bookUid: bookUid);
-      }
-      await widget.repo.saveVideoBook(VideoBooksCompanion(
-        bookUid: Value(bookUid),
-        title: Value(title),
-        videoPath: Value(url),
-        streamSpecJson: Value<String?>(spec.toStorageJson()),
-        coverPath: Value<String?>(coverPath),
-        importedAt: Value(DateTime.now()),
-      ));
-      // v49：用户明示导入流媒体成功 → 记一条 added 活动事件（title=解析出的流标题）。
-      await widget.repo
-          .recordVideoImportActivity(bookUid: bookUid, title: title);
-      if (!mounted) return;
-      debugPrint(
-        '[hibiki-drop] [video-import] importedStream bookUid=$bookUid '
-        'url=$url',
-      );
-      Navigator.pop(context, bookUid);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+  Future<void> _importStreamUrl(String url) {
+    // 错误处理（BUG-1117）走 runImport 模板：流解析/落库异常（拖 URL 自动导入是
+    // fire-and-forget 调用，异常必然无人接）落日志 + toast 提示，不逃逸 zone。
+    return runImport(
+      logTag: 'VideoImportDialog.importStream',
+      debugMessage: (Object e) =>
+          '[hibiki-drop] [video-import] importStream failed: $e',
+      action: () async {
+        final String bookUid = await _uniqueBookUid(streamVideoBookUid(url));
+        final String subtitleUrlRaw = _streamSubtitleUrlController.text.trim();
+        final String? subtitleUrl =
+            isPlayableStreamUrl(subtitleUrlRaw) ? subtitleUrlRaw : null;
+        final String referer = _streamRefererController.text.trim();
+        final String userAgent = _streamUserAgentController.text.trim();
+        final StreamVideoSpec spec = StreamVideoSpec(
+          subtitleUrl: subtitleUrl,
+          subtitleFileName:
+              subtitleUrl == null ? null : _subtitleFileNameForUrl(subtitleUrl),
+          referer: referer.isEmpty ? null : referer,
+          userAgent: userAgent.isEmpty ? null : userAgent,
+        );
+        // TODO-1281：YouTube 导入时用 watch URL 派生的标题恒是字面 "watch"（query 里的
+        // ?v= 才是视频标识），且流媒体无本地文件可 ffmpeg 抽封面 → 名字错 + 无封面。故对
+        // YouTube URL 轻量抓一次元数据（真实标题 + 缩略图 URL），落库真名 + 下载封面。
+        // best-effort：抓取失败退回 URL 派生标题 + 无封面，导入不中止（见
+        // [resolveYoutubeMetadata]）。直链/HLS 无此问题，保持原逻辑。
+        String title = _streamTitleForUrl(url);
+        String? coverPath;
+        switch (streamImportCoverStrategy(url)) {
+          case StreamImportCoverStrategy.youtubeThumbnail:
+            coverPath = await _resolveYoutubeImportCover(
+              url,
+              bookUid,
+              (String resolved) => title = resolved,
+            );
+          case StreamImportCoverStrategy.ffmpegFrame:
+            // TODO-1304：直链/HLS 也出封面。videoPath 是可 seek 的流 URL → ffmpeg 抽一帧
+            // （桌面 CLI / 移动端 ffmpeg-kit，均支持 http 输入，经 _isRemoteFfmpegInput 放行）。
+            // 抽不到（无 ffmpeg / 流不可 seek）→ null，书架占位（与本地视频无 ffmpeg 一致，不中止）。
+            coverPath =
+                await extractVideoCover(videoPath: url, bookUid: bookUid);
+        }
+        await widget.repo.saveVideoBook(VideoBooksCompanion(
+          bookUid: Value(bookUid),
+          title: Value(title),
+          videoPath: Value(url),
+          streamSpecJson: Value<String?>(spec.toStorageJson()),
+          coverPath: Value<String?>(coverPath),
+          importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+        ));
+        // v49：用户明示导入流媒体成功 → 记一条 added 活动事件（title=解析出的流标题）。
+        await widget.repo
+            .recordVideoImportActivity(bookUid: bookUid, title: title);
+        if (!mounted) return;
+        debugPrint(
+          '[hibiki-drop] [video-import] importedStream bookUid=$bookUid '
+          'url=$url',
+        );
+        Navigator.pop(context, bookUid);
+      },
+    );
   }
 
   /// TODO-1304：YouTube 导入封面 + 真实标题（best-effort，绝不阻断导入）。
@@ -688,7 +709,7 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
   /// 一次性解析导入（与手动点「播放列表」一致，会关窗）；否则第一个视频写
   /// `_videoPath`、第一个字幕写 `_subtitlePath`。纯解析交给 [resolveVideoDialogDrop]。
   void _handleDialogDrop(List<String> paths, Offset _) {
-    if (_busy) return;
+    if (importing) return;
     final DroppedFiles files = classifyDroppedFiles(paths);
     final VideoDialogDropResult r = resolveVideoDialogDrop(files);
     if (r.isEmpty) return;
@@ -705,145 +726,146 @@ class _VideoImportDialogState extends State<VideoImportDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // 外框走统一 ImportDialogFrame（审计 §1-K：与书/有声书/漫画导入同一 chrome）；
+    // 表单内容与动作按钮形态不变。
     return HibikiFileDropTarget(
-      enabled: !_busy,
+      enabled: !importing,
       debugLabel: 'video-import-dialog',
       onDrop: _handleDialogDrop,
-      child: AlertDialog(
-        title: Text(t.video_import_title),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              // 粘贴 URL 在线流（TODO-850 阶段①）：直链/HLS/m3u8 即播 + 可选外挂字幕 +
-              // 可选防盗链 header。与本地文件导入区分（独立分支，不走 _pickPlaylist）。
+      child: ImportDialogFrame(
+        leadingIcon: Icons.movie_outlined,
+        title: t.video_import_title,
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            // 粘贴 URL 在线流（TODO-850 阶段①）：直链/HLS/m3u8 即播 + 可选外挂字幕 +
+            // 可选防盗链 header。与本地文件导入区分（独立分支，不走 _pickPlaylist）。
+            TextField(
+              controller: _streamUrlController,
+              enabled: !importing,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              decoration: InputDecoration(
+                labelText: t.video_import_stream_url_field,
+                hintText: 'https://...',
+                prefixIcon: const Icon(Icons.link),
+                isDense: true,
+              ),
+              onChanged: (_) => setState(() {}),
+              onSubmitted: (_) {
+                if (_streamUrlValid) _doImport();
+              },
+            ),
+            const SizedBox(height: 4),
+            Text(
+              t.video_import_stream_url_hint,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _streamSubtitleUrlController,
+              enabled: !importing,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              decoration: InputDecoration(
+                labelText: t.video_import_stream_subtitle_url_field,
+                hintText: 'https://...',
+                prefixIcon: const Icon(Icons.subtitles_outlined),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton.icon(
+                onPressed: importing
+                    ? null
+                    : () => setState(() =>
+                        _streamAdvancedExpanded = !_streamAdvancedExpanded),
+                icon: Icon(_streamAdvancedExpanded
+                    ? Icons.expand_less
+                    : Icons.expand_more),
+                label: Text(t.video_import_stream_advanced),
+              ),
+            ),
+            if (_streamAdvancedExpanded) ...<Widget>[
               TextField(
-                controller: _streamUrlController,
-                enabled: !_busy,
-                keyboardType: TextInputType.url,
+                controller: _streamRefererController,
+                enabled: !importing,
                 autocorrect: false,
                 decoration: InputDecoration(
-                  labelText: t.video_import_stream_url_field,
-                  hintText: 'https://...',
-                  prefixIcon: const Icon(Icons.link),
+                  labelText: t.video_import_stream_referer,
                   isDense: true,
                 ),
-                onChanged: (_) => setState(() {}),
-                onSubmitted: (_) {
-                  if (_streamUrlValid) _doImport();
-                },
-              ),
-              const SizedBox(height: 4),
-              Text(
-                t.video_import_stream_url_hint,
-                style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 8),
               TextField(
-                controller: _streamSubtitleUrlController,
-                enabled: !_busy,
-                keyboardType: TextInputType.url,
+                controller: _streamUserAgentController,
+                enabled: !importing,
                 autocorrect: false,
                 decoration: InputDecoration(
-                  labelText: t.video_import_stream_subtitle_url_field,
-                  hintText: 'https://...',
-                  prefixIcon: const Icon(Icons.subtitles_outlined),
+                  labelText: t.video_import_stream_user_agent,
                   isDense: true,
                 ),
-              ),
-              const SizedBox(height: 4),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: TextButton.icon(
-                  onPressed: _busy
-                      ? null
-                      : () => setState(() =>
-                          _streamAdvancedExpanded = !_streamAdvancedExpanded),
-                  icon: Icon(_streamAdvancedExpanded
-                      ? Icons.expand_less
-                      : Icons.expand_more),
-                  label: Text(t.video_import_stream_advanced),
-                ),
-              ),
-              if (_streamAdvancedExpanded) ...<Widget>[
-                TextField(
-                  controller: _streamRefererController,
-                  enabled: !_busy,
-                  autocorrect: false,
-                  decoration: InputDecoration(
-                    labelText: t.video_import_stream_referer,
-                    isDense: true,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _streamUserAgentController,
-                  enabled: !_busy,
-                  autocorrect: false,
-                  decoration: InputDecoration(
-                    labelText: t.video_import_stream_user_agent,
-                    isDense: true,
-                  ),
-                ),
-              ],
-              const Divider(height: 24),
-              FilledButton.tonalIcon(
-                onPressed: _busy ? null : _pickFolder,
-                icon: const Icon(Icons.create_new_folder_outlined),
-                label: Text(
-                  t.video_import_pick_folder,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(height: 8),
-              FilledButton.tonalIcon(
-                onPressed: _busy ? null : _pickPlaylist,
-                icon: const Icon(Icons.playlist_play),
-                label: Text(
-                  t.video_import_pick_playlist,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Divider(height: 16),
-              OutlinedButton.icon(
-                onPressed: _busy ? null : _pickVideo,
-                icon: const Icon(Icons.movie_outlined),
-                label: Text(
-                  _videoPath == null
-                      ? t.video_import_pick_video
-                      : p.basename(_videoPath!),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: _busy ? null : _pickSubtitle,
-                icon: const Icon(Icons.subtitles_outlined),
-                label: Text(
-                  _subtitlePath == null
-                      ? t.video_import_pick_subtitle
-                      : p.basename(_subtitlePath!),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                t.video_import_subtitle_optional,
-                style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
-          ),
+            const Divider(height: 24),
+            FilledButton.tonalIcon(
+              onPressed: importing ? null : _pickFolder,
+              icon: const Icon(Icons.create_new_folder_outlined),
+              label: Text(
+                t.video_import_pick_folder,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(height: 8),
+            FilledButton.tonalIcon(
+              onPressed: importing ? null : _pickPlaylist,
+              icon: const Icon(Icons.playlist_play),
+              label: Text(
+                t.video_import_pick_playlist,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Divider(height: 16),
+            OutlinedButton.icon(
+              onPressed: importing ? null : _pickVideo,
+              icon: const Icon(Icons.movie_outlined),
+              label: Text(
+                _videoPath == null
+                    ? t.video_import_pick_video
+                    : p.basename(_videoPath!),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: importing ? null : _pickSubtitle,
+              icon: const Icon(Icons.subtitles_outlined),
+              label: Text(
+                _subtitlePath == null
+                    ? t.video_import_pick_subtitle
+                    : p.basename(_subtitlePath!),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              t.video_import_subtitle_optional,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
         ),
         actions: <Widget>[
           TextButton(
-            onPressed: _busy ? null : () => Navigator.pop(context),
+            onPressed: importing ? null : () => Navigator.pop(context),
             child: Text(t.dialog_cancel),
           ),
           FilledButton(
             onPressed: _canImport ? _doImport : null,
-            child: _busy
+            child: importing
                 ? const SizedBox(
                     width: 18,
                     height: 18,

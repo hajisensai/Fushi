@@ -12,6 +12,7 @@ import 'package:hibiki/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_utils.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -284,11 +285,11 @@ class DropboxSyncBackend extends SyncBackend
   }
 
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async {
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async {
     final entries = await _listFolder(rootFolderId);
     return entries
         .where((e) => e['.tag'] == 'folder')
-        .map((e) => DriveFile(
+        .map((e) => SyncFileRef(
               id: e['path_lower'] as String? ?? e['path_display'] as String,
               name: e['name'] as String,
             ))
@@ -342,17 +343,17 @@ class DropboxSyncBackend extends SyncBackend
   // ── Metadata sync ─────────────────────────────────────────────────
 
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async {
+  Future<SyncFileTrio> listSyncFiles(String folderId) async {
     final entries = await _listFolder(folderId);
     final files = entries
         .where((e) => e['.tag'] == 'file')
-        .map((e) => DriveFile(
+        .map((e) => SyncFileRef(
               id: e['path_lower'] as String? ?? e['path_display'] as String,
               name: e['name'] as String,
             ))
         .toList();
 
-    return DriveSyncFiles(
+    return SyncFileTrio(
       progress: findSyncFileByPrefix(files, 'progress_'),
       statistics: findSyncFileByPrefix(files, 'statistics_'),
       audioBook: findSyncFileByPrefix(files, 'audioBook_'),
@@ -465,12 +466,12 @@ class DropboxSyncBackend extends SyncBackend
   }
 
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async {
+  Future<SyncFileRef?> findContentFile(String folderId, String fileName) async {
     final path = '$folderId/$fileName';
     try {
       final resp = await _apiPost('/files/get_metadata', {'path': path});
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
-      return DriveFile(
+      return SyncFileRef(
         id: json['path_lower'] as String? ?? json['path_display'] as String,
         name: json['name'] as String,
       );

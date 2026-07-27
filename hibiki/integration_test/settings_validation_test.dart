@@ -54,9 +54,9 @@ void main() {
       const pages = [
         'Appearance',
         'Reading Display',
-        'Reading Controls',
+        'Reading controls',
         'Lookup',
-        'Card Creation',
+        'Card creation',
         'Listening',
         'System',
       ];

@@ -2,7 +2,50 @@ import 'dart:io';
 
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
+
+// ── 术语约定（命名统一轮审计词表）────────────────────────────────────────────
+//
+// 本文件（及互联域）的角色词汇统一如下，doc 注释里的「host …」均按此读：
+// * **peer / 对端**：已配对的另一台设备（对称概念，不指角色）。
+// * **host**：一次交互里**提供库**的角色（开着内嵌 server、被拉取清单/内容的一侧）。
+// * **client**：一次交互里消费库的角色（拉清单、下载、上报进度的一侧）。
+// * **Remote\***：从消费端视角描述「对端数据」的 wire DTO——类名的 Remote 指
+//   「对端（通常是 host 角色）的条目」，`RemoteBookInfo` = 对端 host 书库里的一本书。
+//   host 端 materialize 自己的库为同一 DTO 下发，client 端 fromJson 消费。
+
+// ── 键集 union diff（本地音频 / 有声书 / 词典共享）──────────────────────────
+
+/// 按字符串键 union 的双向同步 diff 结果。
+///
+/// 本地音频（键 = displayName）、有声书（键 = bookKey）、词典（键 = 词典名）三条
+/// 资产管道共用；删除不在此推断（交给各自的删除传播，见 BUG-086 A）。历史上
+/// `LocalAudioSyncDiff` / `AudiobookSyncDiff` / `DictionarySyncDiff` 三个类字段
+/// 完全相同、三个 compute 函数逐字相同，命名统一轮合并为单一类型。
+class SyncKeyDiff {
+  const SyncKeyDiff({required this.toPull, required this.toPush});
+
+  /// 对端有 ∧ 本端无 → 需从对端拉取。
+  final Set<String> toPull;
+
+  /// 本端有 ∧ 对端无 → 需推送到对端。
+  final Set<String> toPush;
+}
+
+/// 按键集 union 计算双向同步 diff（[SyncKeyDiff] 的唯一构造入口）。
+///
+/// [localKeys]  本端已有条目的键集合。
+/// [remoteKeys] 对端已有条目的键集合。
+SyncKeyDiff computeKeyUnionDiff({
+  required Set<String> localKeys,
+  required Set<String> remoteKeys,
+}) {
+  return SyncKeyDiff(
+    toPull: remoteKeys.difference(localKeys),
+    toPush: localKeys.difference(remoteKeys),
+  );
+}
 
 // ── 本地音频 ──────────────────────────────────────────────────────────────────
 
@@ -24,30 +67,17 @@ class RemoteLocalAudioInfo {
       );
 }
 
-/// 按 displayName union 的本地音频同步 diff 结果。
-class LocalAudioSyncDiff {
-  const LocalAudioSyncDiff({required this.toPull, required this.toPush});
+/// 旧名兼容：本地音频 diff 已并入 [SyncKeyDiff]。
+@Deprecated('已并入 SyncKeyDiff（computeKeyUnionDiff），请改用新名')
+typedef LocalAudioSyncDiff = SyncKeyDiff;
 
-  /// 对端有 ∧ 本端无 → 需从对端拉取。
-  final Set<String> toPull;
-
-  /// 本端有 ∧ 对端无 → 需推送到对端。
-  final Set<String> toPush;
-}
-
-/// 按 displayName union 计算本地音频同步 diff。
-///
-/// [localNames]  本端已注册的本地音频 displayName 集合。
-/// [remoteNames] 对端已注册的本地音频 displayName 集合。
-LocalAudioSyncDiff computeLocalAudioSyncDiff({
+/// 旧名兼容：转发 [computeKeyUnionDiff]（键 = 本地音频 displayName）。
+@Deprecated('已并入 computeKeyUnionDiff，请改用新名')
+SyncKeyDiff computeLocalAudioSyncDiff({
   required Set<String> localNames,
   required Set<String> remoteNames,
-}) {
-  return LocalAudioSyncDiff(
-    toPull: remoteNames.difference(localNames),
-    toPush: localNames.difference(remoteNames),
-  );
-}
+}) =>
+    computeKeyUnionDiff(localKeys: localNames, remoteKeys: remoteNames);
 
 // ── 有声书包 ──────────────────────────────────────────────────────────────────
 
@@ -97,30 +127,17 @@ class RemoteAudiobookInfo {
       );
 }
 
-/// 按 bookKey union 的有声书同步 diff 结果。
-class AudiobookSyncDiff {
-  const AudiobookSyncDiff({required this.toPull, required this.toPush});
+/// 旧名兼容：有声书 diff 已并入 [SyncKeyDiff]。
+@Deprecated('已并入 SyncKeyDiff（computeKeyUnionDiff），请改用新名')
+typedef AudiobookSyncDiff = SyncKeyDiff;
 
-  /// 对端有 ∧ 本端无 → 需从对端拉取。
-  final Set<String> toPull;
-
-  /// 本端有 ∧ 对端无 → 需推送到对端。
-  final Set<String> toPush;
-}
-
-/// 按 bookKey union 计算有声书同步 diff。
-///
-/// [localKeys]  本端已有有声书的 bookKey 集合。
-/// [remoteKeys] 对端已有有声书的 bookKey 集合。
-AudiobookSyncDiff computeAudiobookSyncDiff({
+/// 旧名兼容：转发 [computeKeyUnionDiff]（键 = 有声书 bookKey）。
+@Deprecated('已并入 computeKeyUnionDiff，请改用新名')
+SyncKeyDiff computeAudiobookSyncDiff({
   required Set<String> localKeys,
   required Set<String> remoteKeys,
-}) {
-  return AudiobookSyncDiff(
-    toPull: remoteKeys.difference(localKeys),
-    toPush: localKeys.difference(remoteKeys),
-  );
-}
+}) =>
+    computeKeyUnionDiff(localKeys: localKeys, remoteKeys: remoteKeys);
 
 // ── 词典 ──────────────────────────────────────────────────────────────────────
 
@@ -141,30 +158,17 @@ class RemoteDictionaryInfo {
       );
 }
 
-/// 按名 union 的 diff 结果。删除不在此处推断（交给 BUG-086 A 的删除传播）。
-class DictionarySyncDiff {
-  const DictionarySyncDiff({required this.toPull, required this.toPush});
+/// 旧名兼容：词典 diff 已并入 [SyncKeyDiff]。
+@Deprecated('已并入 SyncKeyDiff（computeKeyUnionDiff），请改用新名')
+typedef DictionarySyncDiff = SyncKeyDiff;
 
-  /// 对端有 ∧ 本端无 → 需要从对端拉取。
-  final Set<String> toPull;
-
-  /// 本端有 ∧ 对端无 → 需要推送到对端。
-  final Set<String> toPush;
-}
-
-/// 按名 union 计算词典同步 diff。
-///
-/// [localNames]  本端已安装的词典名集合。
-/// [remoteNames] 对端已安装的词典名集合。
-DictionarySyncDiff computeDictionarySyncDiff({
+/// 旧名兼容：转发 [computeKeyUnionDiff]（键 = 词典名）。
+@Deprecated('已并入 computeKeyUnionDiff，请改用新名')
+SyncKeyDiff computeDictionarySyncDiff({
   required Set<String> localNames,
   required Set<String> remoteNames,
-}) {
-  return DictionarySyncDiff(
-    toPull: remoteNames.difference(localNames),
-    toPush: localNames.difference(remoteNames),
-  );
-}
+}) =>
+    computeKeyUnionDiff(localKeys: localNames, remoteKeys: remoteNames);
 
 // ── 合集归属（多端库联合视图 §2.3 任务5.1）────────────────────────────────────
 
@@ -227,7 +231,7 @@ class RemoteBookInfo {
     required this.title,
     required this.hasContent,
     this.bookKey,
-    this.hasCover = false,
+    this.hasEmbeddedCover = false,
     this.coverUrl,
     this.coverPath,
     this.hasAudiobook = false,
@@ -237,7 +241,13 @@ class RemoteBookInfo {
     this.collection,
     this.progressPercent = 0,
     this.progressUpdatedAtMs = 0,
+    this.kind = MediaKind.epub,
   });
+
+  /// 该书的媒体种类（BUG-1119）。additive wire 字段 `'kind'`：epub 缺省**不写键**
+  /// （旧书清单 wire 字节完全不变），缺失/未知一律回落 [MediaKind.epub]（旧 host
+  /// 兼容）。视频走独立 `/api/library/videos` 清单，天然 video，无此字段。
+  final MediaKind kind;
 
   /// host 端阅读进度百分比（0..100，来自 host `MediaItems.position/duration`，
   /// 与本地首页「继续」条目同源同算）；0 = 未读/旧 host 未带。additive 字段：
@@ -251,7 +261,12 @@ class RemoteBookInfo {
   final String title;
   final bool hasContent;
   final String? bookKey;
-  final bool hasCover;
+
+  /// host 端存在**书内封面文件**（EPUB 内嵌封面解析到磁盘存在的绝对路径，见
+  /// [resolveEpubCoverFilePath]）。注意与 wire key `'hasCover'` 同名不同义：wire
+  /// 上写的是 [hasDisplayCover]（内嵌封面 ∨ coverUrl ∨ coverPath 任一可用），
+  /// 本字段只是其中「内嵌封面」一支——故 Dart 侧改名消歧，wire key 不动。
+  final bool hasEmbeddedCover;
   final String? coverUrl;
   final String? coverPath;
 
@@ -277,7 +292,7 @@ class RemoteBookInfo {
   String get downloadId => _isNonEmpty(bookKey) ? bookKey! : title;
 
   bool get hasDisplayCover =>
-      hasCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
+      hasEmbeddedCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
 
   Map<String, Object?> toJson() => <String, Object?>{
         'title': title,
@@ -292,11 +307,12 @@ class RemoteBookInfo {
         if (collection != null) 'collection': collection!.toJson(),
         if (progressPercent > 0) 'progressPercent': progressPercent,
         if (progressUpdatedAtMs > 0) 'progressUpdatedAtMs': progressUpdatedAtMs,
+        if (kind != MediaKind.epub) 'kind': kind.dbValue,
       };
 
   RemoteBookInfo copyWith({
     String? bookKey,
-    bool? hasCover,
+    bool? hasEmbeddedCover,
     String? coverUrl,
     String? coverPath,
     bool? hasAudiobook,
@@ -306,12 +322,13 @@ class RemoteBookInfo {
     RemoteCollectionMembership? collection,
     int? progressPercent,
     int? progressUpdatedAtMs,
+    MediaKind? kind,
   }) =>
       RemoteBookInfo(
         title: title,
         hasContent: hasContent,
         bookKey: bookKey ?? this.bookKey,
-        hasCover: hasCover ?? this.hasCover,
+        hasEmbeddedCover: hasEmbeddedCover ?? this.hasEmbeddedCover,
         coverUrl: coverUrl ?? this.coverUrl,
         coverPath: coverPath ?? this.coverPath,
         hasAudiobook: hasAudiobook ?? this.hasAudiobook,
@@ -321,6 +338,7 @@ class RemoteBookInfo {
         collection: collection ?? this.collection,
         progressPercent: progressPercent ?? this.progressPercent,
         progressUpdatedAtMs: progressUpdatedAtMs ?? this.progressUpdatedAtMs,
+        kind: kind ?? this.kind,
       );
 
   static RemoteBookInfo fromJson(Map<String, Object?> json) {
@@ -330,7 +348,9 @@ class RemoteBookInfo {
       title: json['title']?.toString() ?? '',
       hasContent: json['hasContent'] == true,
       bookKey: _jsonString(json['bookKey']),
-      hasCover: json['hasCover'] == true ||
+      // wire `hasCover` 是对端的 hasDisplayCover；解码侧无从区分「内嵌」与「其它
+      // 来源」，与 coverUrl/coverPath 一并折进本字段（客户端只消费 hasDisplayCover）。
+      hasEmbeddedCover: json['hasCover'] == true ||
           _isNonEmpty(coverUrl) ||
           _isNonEmpty(coverPath),
       coverUrl: coverUrl,
@@ -343,6 +363,8 @@ class RemoteBookInfo {
       progressPercent:
           _jsonNonNegativeInt(json['progressPercent']).clamp(0, 100),
       progressUpdatedAtMs: _jsonNonNegativeInt(json['progressUpdatedAtMs']),
+      // 缺失（旧 host）/未知（对端未来新增）一律回落 epub，绝不抛异常。
+      kind: MediaKind.tryParse(_jsonString(json['kind'])) ?? MediaKind.epub,
     );
   }
 }
@@ -545,7 +567,10 @@ class RemoteBookProgress {
 }
 
 /// 书籍阅读进度跨设备冲突解决（TODO-767）——「取较新时间戳」last-write-wins，
-/// 与视频 [resolveVideoPositionSync] 同范式（取较新者；时间戳相等时取「读得更远」者）。
+/// 与视频/有声书统一的单维 LWW [resolvePositionLww] 同范式（取较新者；时间戳相等时
+/// 取「读得更远」者）。本函数是其双维（sectionIndex + normCharOffset）变体，且胜者
+/// 是整条 [RemoteBookProgress] 而非 (位置, 时间戳) 二元组——语义差异故未并入
+/// [resolvePositionLww]，合并需单独评审。
 ///
 /// host 收到 client 上报时用它决定是否覆盖已存进度，client 全量 sweep 时用它在 host
 /// 真相与本地 `reader_positions` 之间选较新者再 upsert 回本地。纯函数。
@@ -584,6 +609,49 @@ List<RemoteBookInfo> dedupeRemoteBooks({
 
 // ── 视频 ──────────────────────────────────────────────────────────────────────
 
+/// 播放断点 prefs 键「三件套」生成器：位置键、时间戳键、位置键→id 逆解析。
+///
+/// 视频（`video_remote_position_*`）与有声书（`audiobook_pos_*`）的断点键结构
+/// 完全同构——`<prefix><id>` 位置键（毫秒）、`<prefix>at_<id>` 时间戳键（epoch
+/// 毫秒）、以及从位置键反解 id（**必须排除更长前缀的时间戳键**，否则会把
+/// `<prefix>at_<id>` 误当成以 `at_` 开头的 id）。历史上两组三件套逐字复制（连
+/// 上述坑注释都是复制的），命名统一轮收口成本类；**键字符串逐字节不变**，由
+/// `position_pref_keys_guard_test.dart` 守卫锁死。
+class PositionPrefKeys {
+  const PositionPrefKeys(this.positionPrefix);
+
+  /// 位置键前缀（`video_remote_position_` / `audiobook_pos_`）。
+  final String positionPrefix;
+
+  /// 时间戳键前缀：`<positionPrefix>at_`。
+  String get atPrefix => '${positionPrefix}at_';
+
+  /// [id] 的位置键（值 = 断点毫秒）。
+  String positionKey(String id) => '$positionPrefix$id';
+
+  /// [id] 的「最后更新时间」键（值 = epoch 毫秒；LWW 冲突解决用，见
+  /// [resolvePositionLww]）。
+  String atKey(String id) => '$atPrefix$id';
+
+  /// [positionKey] 的逆：从位置键反解 id；时间戳键（更长前缀 [atPrefix]）、
+  /// 非本键空间、空 id 一律返回 null。
+  String? idFromPositionKey(String key) {
+    if (key.startsWith(atPrefix)) return null;
+    if (!key.startsWith(positionPrefix)) return null;
+    final String id = key.substring(positionPrefix.length);
+    return id.isEmpty ? null : id;
+  }
+}
+
+/// 视频远端断点三件套（TODO-559/653）。前缀冻结：`video_remote_position_`。
+const PositionPrefKeys videoRemotePositionPrefKeys =
+    PositionPrefKeys('video_remote_position_');
+
+/// 有声书断点三件套（BUG-471）。前缀冻结：`audiobook_pos_`（与
+/// `AudiobookRepository._kPositionMsKeyPrefix` 同公式）。
+const PositionPrefKeys audiobookPositionPrefKeys =
+    PositionPrefKeys('audiobook_pos_');
+
 /// 视频远端断点位置 prefs key（TODO-559/653）——单一真相源，host service 与
 /// video_hibiki_page `_remotePositionPrefKey` 共用同一公式。
 ///
@@ -591,12 +659,12 @@ List<RemoteBookInfo> dedupeRemoteBooks({
 /// Drift `preferences` 表。host 自己播放该视频时也用同一 key，故 host 上的这条 prefs
 /// 即跨设备进度的真相源。
 String videoRemotePositionPrefKey(String bookUid) =>
-    'video_remote_position_$bookUid';
+    videoRemotePositionPrefKeys.positionKey(bookUid);
 
 /// [videoRemotePositionPrefKey] 对应的「最后更新时间」prefs key（epoch 毫秒）。
-/// 冲突解决「取较新时间戳」需要它（见 [resolveVideoPositionSync]）。
+/// 冲突解决「取较新时间戳」需要它（见 [resolvePositionLww]）。
 String videoRemotePositionAtPrefKey(String bookUid) =>
-    'video_remote_position_at_$bookUid';
+    videoRemotePositionPrefKeys.atKey(bookUid);
 
 /// 远端**播放列表按集**断点位置 prefs key（TODO-885）——单一真相源，host service 与
 /// video_hibiki_page 共用同一公式。
@@ -617,107 +685,98 @@ String videoRemotePositionEpisodeAtPrefKey(String bookUid, int episodeIndex) =>
 
 /// [videoRemotePositionPrefKey] 的逆：从位置 prefs key 反解出 bookUid，非该 key 返回
 /// null。用于全量同步枚举「本地看过的流式视频 uid」（无 VideoBooks 行也有此 prefs，
-/// TODO-816 断点①）。必须排除更长前缀的时间戳键 [videoRemotePositionAtPrefKey]
-/// （`video_remote_position_at_<uid>`），否则会把时间戳键误当成 uid 以 `at_` 开头。
-String? videoUidFromRemotePositionPrefKey(String key) {
-  const String atPrefix = 'video_remote_position_at_';
-  const String posPrefix = 'video_remote_position_';
-  if (key.startsWith(atPrefix)) return null;
-  if (!key.startsWith(posPrefix)) return null;
-  final String uid = key.substring(posPrefix.length);
-  return uid.isEmpty ? null : uid;
-}
+/// TODO-816 断点①）。时间戳键的排除见 [PositionPrefKeys.idFromPositionKey]。
+String? videoUidFromRemotePositionPrefKey(String key) =>
+    videoRemotePositionPrefKeys.idFromPositionKey(key);
 
-/// 视频播放进度跨设备冲突解决（TODO-653）——「取较新时间戳」last-write-wins。
+/// 播放位置跨设备冲突解决——「取较新时间戳」last-write-wins（LWW）。
 ///
-/// 纯函数，与有声书进度的 `SyncManager._determineSyncDirection` 同范式（取较新者；
-/// 时间戳相等时取较大位置，"读得更远者胜"）。host 收到 client 上报时用它决定是否覆盖
-/// 已存进度，client 恢复时用它在 host 真相与本地 prefs 之间选较新者。
+/// 视频（TODO-653）与有声书（BUG-471）共用同一实现：历史上
+/// `resolveVideoPositionSync` 与 `resolveAudiobookPositionSync` 除注释外逐字节
+/// 相同，命名统一轮合并为本函数。纯函数。
+///
+/// host 收到 client 上报时用它决定是否覆盖已存进度，client 恢复 / 全量 sweep 时
+/// 用它在 host 真相与本地 prefs 之间选较新者。旧数据无独立时间戳记 0，被任何带
+/// 时间戳的对端进度盖过（向后兼容降级）。
 ///
 /// [localPositionMs]/[localUpdatedAtMs] 一侧；[remotePositionMs]/[remoteUpdatedAtMs]
-/// 另一侧。返回胜出的 (位置, 更新时间)。两侧时间戳均为 0（都无记录）时返回较大位置。
+/// 另一侧。返回胜出的 (位置, 更新时间)。两侧时间戳均为 0（都无记录）时返回较大位置
+/// （看/听得更远者胜），保留该时间戳。
+///
+/// 关系脚注（本轮未并入，合并需单独评审）：书籍进度 [resolveBookProgressSync] 是
+/// 同范式的双维（sectionIndex + normCharOffset）变体；云通道
+/// `SyncManager._determineSyncDirection` 是同范式的方向枚举变体（返回同步方向而非
+/// 胜者值，且带存储网格量化 tie-break）。
+({int positionMs, int updatedAtMs}) resolvePositionLww({
+  required int localPositionMs,
+  required int localUpdatedAtMs,
+  required int remotePositionMs,
+  required int remoteUpdatedAtMs,
+}) {
+  if (remoteUpdatedAtMs > localUpdatedAtMs) {
+    return (positionMs: remotePositionMs, updatedAtMs: remoteUpdatedAtMs);
+  }
+  if (localUpdatedAtMs > remoteUpdatedAtMs) {
+    return (positionMs: localPositionMs, updatedAtMs: localUpdatedAtMs);
+  }
+  // 时间戳相等（含都为 0）：取较大位置（看/听得更远者胜），保留该时间戳。
+  final int winnerPos =
+      localPositionMs >= remotePositionMs ? localPositionMs : remotePositionMs;
+  return (positionMs: winnerPos, updatedAtMs: localUpdatedAtMs);
+}
+
+/// 旧名兼容：视频进度 LWW 已并入 [resolvePositionLww]。
+@Deprecated(
+    '已并入 resolvePositionLww（与 resolveAudiobookPositionSync 逐字节相同），请改用新名')
 ({int positionMs, int updatedAtMs}) resolveVideoPositionSync({
   required int localPositionMs,
   required int localUpdatedAtMs,
   required int remotePositionMs,
   required int remoteUpdatedAtMs,
-}) {
-  if (remoteUpdatedAtMs > localUpdatedAtMs) {
-    return (positionMs: remotePositionMs, updatedAtMs: remoteUpdatedAtMs);
-  }
-  if (localUpdatedAtMs > remoteUpdatedAtMs) {
-    return (positionMs: localPositionMs, updatedAtMs: localUpdatedAtMs);
-  }
-  // 时间戳相等（含都为 0）：取较大位置（看得更远者胜），保留该时间戳。
-  final int winnerPos =
-      localPositionMs >= remotePositionMs ? localPositionMs : remotePositionMs;
-  return (positionMs: winnerPos, updatedAtMs: localUpdatedAtMs);
-}
+}) =>
+    resolvePositionLww(
+      localPositionMs: localPositionMs,
+      localUpdatedAtMs: localUpdatedAtMs,
+      remotePositionMs: remotePositionMs,
+      remoteUpdatedAtMs: remoteUpdatedAtMs,
+    );
 
 // ── 有声书进度（BUG-471）──────────────────────────────────────────────────────
 
 /// 有声书播放位置 pref key（毫秒）——单一真相源，host service 与
 /// `AudiobookRepository._kPositionMsKeyPrefix` 共用同一公式。
-String audiobookPositionPrefKey(String bookKey) => 'audiobook_pos_$bookKey';
+String audiobookPositionPrefKey(String bookKey) =>
+    audiobookPositionPrefKeys.positionKey(bookKey);
 
 /// [audiobookPositionPrefKey] 对应的「最后更新时间」pref key（epoch 毫秒）——与
 /// `AudiobookRepository._kPositionAtMsKeyPrefix` 同公式。冲突解决「取较新时间戳」用它。
 String audiobookPositionAtPrefKey(String bookKey) =>
-    'audiobook_pos_at_$bookKey';
+    audiobookPositionPrefKeys.atKey(bookKey);
 
 /// [audiobookPositionPrefKey] 的逆：从位置 pref key 反解出 bookKey，非该 key 返回
-/// null。用于全量同步枚举「本地有有声书播放进度的 bookKey」。必须排除更长前缀的
-/// 时间戳键 [audiobookPositionAtPrefKey]（`audiobook_pos_at_<bookKey>`），否则会把
-/// 时间戳键误当成以 `at_` 开头的 bookKey。
-String? audiobookKeyFromPositionPrefKey(String key) {
-  const String atPrefix = 'audiobook_pos_at_';
-  const String posPrefix = 'audiobook_pos_';
-  if (key.startsWith(atPrefix)) return null;
-  if (!key.startsWith(posPrefix)) return null;
-  final String bookKey = key.substring(posPrefix.length);
-  return bookKey.isEmpty ? null : bookKey;
-}
+/// null。用于全量同步枚举「本地有有声书播放进度的 bookKey」。时间戳键的排除见
+/// [PositionPrefKeys.idFromPositionKey]。
+String? audiobookKeyFromPositionPrefKey(String key) =>
+    audiobookPositionPrefKeys.idFromPositionKey(key);
 
-/// 有声书播放进度跨设备冲突解决（BUG-471）——「取较新时间戳」last-write-wins。
-///
-/// 与视频 [resolveVideoPositionSync] 完全同范式（取较新者；时间戳相等时取较大位置，
-/// "听得更远者胜"）。host 收到 client 上报时用它决定是否覆盖已存进度，client 全量
-/// sweep 时用它在 host 真相与本地 `audiobook_pos_` 之间选较新者。纯函数。
-///
-/// 旧数据无独立时间戳记 0，被任何带时间戳的对端进度盖过（向后兼容降级）。
+/// 旧名兼容：有声书进度 LWW（BUG-471）已并入 [resolvePositionLww]。
+@Deprecated('已并入 resolvePositionLww（与 resolveVideoPositionSync 逐字节相同），请改用新名')
 ({int positionMs, int updatedAtMs}) resolveAudiobookPositionSync({
   required int localPositionMs,
   required int localUpdatedAtMs,
   required int remotePositionMs,
   required int remoteUpdatedAtMs,
-}) {
-  if (remoteUpdatedAtMs > localUpdatedAtMs) {
-    return (positionMs: remotePositionMs, updatedAtMs: remoteUpdatedAtMs);
-  }
-  if (localUpdatedAtMs > remoteUpdatedAtMs) {
-    return (positionMs: localPositionMs, updatedAtMs: localUpdatedAtMs);
-  }
-  // 时间戳相等（含都为 0）：取较大位置（听得更远者胜），保留该时间戳。
-  final int winnerPos =
-      localPositionMs >= remotePositionMs ? localPositionMs : remotePositionMs;
-  return (positionMs: winnerPos, updatedAtMs: localUpdatedAtMs);
-}
+}) =>
+    resolvePositionLww(
+      localPositionMs: localPositionMs,
+      localUpdatedAtMs: localUpdatedAtMs,
+      remotePositionMs: remotePositionMs,
+      remoteUpdatedAtMs: remoteUpdatedAtMs,
+    );
 
-/// host 实时视频的清单条目（只读，不同步——视频文件通常过大，不走同步管道）。
-///
-/// [id] 即 `VideoBooks.bookUid`，从文件名派生的稳定字符串（如 `video/my_film`
-/// 或 `video/playlist/series`）。host 服务用 id 反查 DB 行拿真实路径，客户端
-/// 持 id 请求流式传输时 **server 只做 DB 查询，绝不接受外部传入的文件路径**。
-///
-/// [sizeBytes] 对单视频是当前集文件大小（字节）；播放列表取第一集大小；
-///             文件不存在或无法 stat 时为 null。
-/// [durationMs] DB 无 duration 列，此字段留给后续任务由 ffprobe/libmpv 填充；
-///              目前恒为 null（占位）。
-/// [hasSubtitle] host 能找到可下载/可查词的文本字幕时为 true；
-///               包括当前集 sidecar 或容器内封文本轨，不包括 PGS/DVD 等图形轨。
-/// [subtitleFileName] host 找到的 sidecar 字幕文件名（含真实扩展名），供 client
-///                    下载到本地临时文件时保留 `.ass/.ssa/.vtt/.srt` 解析语义。
-///                    内封字幕的临时下载名在 [RemoteVideoEmbeddedSubtitleTrack.fileName]。
+/// host 视频容器内封字幕轨的清单条目（[RemoteVideoInfo.embeddedSubtitleTracks]
+/// 的元素）：[streamIndex]/[codec] 定位轨道，[isText] 区分文本轨与图形轨，
+/// [url]/[fileName] 是 client 侧下载该轨转出文本时的定位与落地名。
 class RemoteVideoEmbeddedSubtitleTrack {
   const RemoteVideoEmbeddedSubtitleTrack({
     required this.streamIndex,
@@ -800,6 +859,21 @@ class RemoteVideoEpisode {
       );
 }
 
+/// host 实时视频的清单条目（只读，不同步——视频文件通常过大，不走同步管道）。
+///
+/// [id] 即 `VideoBooks.bookUid`，从文件名派生的稳定字符串（如 `video/my_film`
+/// 或 `video/playlist/series`）。host 服务用 id 反查 DB 行拿真实路径，client
+/// 持 id 请求流式传输时 **host 只做 DB 查询，绝不接受外部传入的文件路径**。
+///
+/// [sizeBytes] 对单视频是当前集文件大小（字节）；播放列表取第一集大小；
+///             文件不存在或无法 stat 时为 null。
+/// [durationMs] DB 无 duration 列，此字段留给后续任务由 ffprobe/libmpv 填充；
+///              目前恒为 null（占位）。
+/// [hasSubtitle] host 能找到可下载/可查词的文本字幕时为 true；
+///               包括当前集 sidecar 或容器内封文本轨，不包括 PGS/DVD 等图形轨。
+/// [subtitleFileName] host 找到的 sidecar 字幕文件名（含真实扩展名），供 client
+///                    下载到本地临时文件时保留 `.ass/.ssa/.vtt/.srt` 解析语义。
+///                    内封字幕的临时下载名在 [RemoteVideoEmbeddedSubtitleTrack.fileName]。
 class RemoteVideoInfo {
   const RemoteVideoInfo({
     required this.id,
@@ -1212,7 +1286,7 @@ abstract class HibikiLibraryHostService {
 
   /// 把 client 上报的有声书 [bookKey] 播放断点写入 host（BUG-471）。
   ///
-  /// 冲突解决「取较新时间戳」（见 [resolveAudiobookPositionSync]）：仅当 [updatedAtMs]
+  /// 冲突解决「取较新时间戳」（见 [resolvePositionLww]）：仅当 [updatedAtMs]
   /// 严格新于 host 已存时间戳才覆盖，避免旧设备的滞后上报回退新进度。
   Future<void> putAudiobookPosition(
     String bookKey,
@@ -1330,7 +1404,7 @@ abstract class HibikiLibraryHostService {
 
   /// 把 client 上报的视频 [id] 播放断点写入 host（TODO-653）。
   ///
-  /// 冲突解决「取较新时间戳」（见 [resolveVideoPositionSync]）：仅当 [updatedAtMs]
+  /// 冲突解决「取较新时间戳」（见 [resolvePositionLww]）：仅当 [updatedAtMs]
   /// 严格新于 host 已存时间戳才覆盖，避免旧设备的滞后上报回退新进度。
   /// [episodeIndex]>0（TODO-885）按集隔离写断点。
   Future<void> putVideoPosition(

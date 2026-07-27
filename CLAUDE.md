@@ -30,7 +30,7 @@
 - reader source：`hibiki/lib/src/media/sources/reader_hibiki_source.dart`（`ReaderHibikiSource`）。
 - 阅读器 JS/CSS：`hibiki/lib/src/reader/`（17 个 JS/CSS 注入封装，`reader_pagination_scripts.dart` 等）；JS 桥接全局是 `window.hoshiReader`（历史命名，是真实符号，勿改）。
 - 全局状态：`hibiki/lib/src/models/app_model.dart`（`AppModel`，~5150 行，初始化流程 + 子系统委托核心，改前先理解）。
-- Drift 数据库：`packages/hibiki_core/lib/src/database/database.dart` 和 `tables.dart`（schema v55，50 张表，WAL）。
+- Drift 数据库：`packages/hibiki_core/lib/src/database/database.dart` 和 `tables.dart`（schema v57，50 张表，WAL）。
 - 词典：Dart 封装 `packages/hibiki_dictionary/lib/src/engine/hoshidicts.dart` + FFI 绑定 `lib/src/ffi/hoshidicts_ffi_bindings.dart`；C++ 引擎源码全在 `native/hoshidicts/`（包内已无 C++），`hoshidicts_external/` 是 vendored 第三方，上游同步基线见 `native/hoshidicts/UPSTREAM.md`。
 - 有声书：`packages/hibiki_audio/` + `hibiki/lib/src/media/audiobook/`（导入入口 `book_import_dialog.dart` / `audiobook_import_dialog.dart`）。
 - 互联/同步：`hibiki/lib/src/sync/`（`interconnect_*.dart`、`aggregate_sync_service.dart`、`backup_*`）。
@@ -44,12 +44,34 @@
 - Flutter 版本分两处：本地钉 `.fvmrc` = `3.41.6`（pubspec `flutter: "^3.41.6"`），CI workflows 用 `3.44.0`；Dart SDK 约束 `>=3.5.0 <4.0.0`。最低 Android API 24，`compileSdk 36` / `targetSdk 35`。
 - 状态管理 Riverpod；音频 just_audio（桌面经 just_audio_media_kit）；录音 record 6.0.0；视频播放走 **media_kit**（third_party vendored 全套）+ youtube_explode_dart。
 - torrent 走内部包 `packages/hibiki_torrent`（libtorrent 2.x C ABI FFI，native 在 `native/hibiki_torrent/`；Windows 预编译 DLL 随包，缺失时回退外接 qBittorrent）。
-- 主存储是 Drift SQLite（`HibikiDatabase`，schema v55），偏好落 Drift `preferences` 表 + `profile_settings` 每 Profile 快照。**已无 Isar/Hive 依赖**；旧注释里的 Isar/Hive 不代表当前事实，先查代码再判断。
-- EPUB 阅读器走 reader_hibiki 实现（见仓库地图）。`reader_ttu` key、`setTtu*` 方法、`ttuBookId` 列、`ttu_*` i18n 只是旧数据兼容残留，不代表还有 TTU 阅读器；没有迁移方案别随手改这些持久化 key。
+- 主存储是 Drift SQLite（`HibikiDatabase`，schema v57），偏好落 Drift `preferences` 表 + `profile_settings` 每 Profile 快照。**已无 Isar/Hive 依赖**；旧注释里的 Isar/Hive 不代表当前事实，先查代码再判断。
+- EPUB 阅读器走 reader_hibiki 实现（见仓库地图）。`reader_ttu` key、`setTtu*` 方法、`ttu_*` i18n 只是旧数据兼容残留，不代表还有 TTU 阅读器；没有迁移方案别随手改这些持久化 key。（旧文档提过的 `ttuBookId` 列在当前 schema 已不存在，只活在迁移阶梯里。）
 - 旧 TTU 迁移代码已移除（develop `90c37b472`：`TtuMigrationServer` / `TtuIdbReader` / `assets/ttu-ebook-reader` 均已删除）；只剩上述命名残留作旧数据兼容。阅读器渲染/交互问题按 reader_hibiki 路径修，不要去上游 ttu fork 仓库改。
 - 词典导入/查询核心走 `hoshidicts` C++ FFI；格式 UI 或旧 Dart format 类不一定是真实导入路径。
 - 国际化用 Slang，源文件 `hibiki/lib/i18n/*.i18n.json`（17 种语言），生成文件 `strings.g.dart`。
 - 5 平台均出包（Android/iOS/macOS/Windows/Linux）：`auto` 下五个平台统一走 Material Design 3；Cupertino / macOS renderer 仅保留为隐藏内部能力。桌面端依赖 fork 的 `flutter_inappwebview_windows` 渲染 EPUB。
+
+## 命名术语表（2026-07 定案，新代码遵守）
+
+同概念一词。存量持久化名（DB 列/偏好键/磁盘目录/wire key）**冻结不追改**，但新代码/新 UI 不再产生淘汰词；详见 `docs/` 下命名统一审计与守卫测试。
+
+| 概念 | 唯一词 | 淘汰词（新代码禁用） |
+|---|---|---|
+| 媒体配图 | `cover` / 封面 | poster、thumbnail（书岛旧持久化名冻结） |
+| 库页（书/视频/游戏页面统称） | library page / 中文按域「书架/媒体库」 | shelf 用作页面名；中文「书库」 |
+| 条目排序/归属映射层 | `shelf`（`ShelfEntries` 域） | — |
+| 扫描根 | `source library`（`media/source_library/`） | 裸 source |
+| 最近打开流 | `history`（仅此一义） | history 用作书架页面名 |
+| 首页面板 | `dashboard` | — |
+| 续播三层 | 选条目 `continue*` / 定起点 `resolve*ResumePoint` / 落地执行 `restoreTo*` | 三层动词混用 |
+| torrent 恢复数据 | `fastResume*`（对齐 qBittorrent） | 裸 resume |
+| 互联对端 | 已配对对端 `peer` / 提供库角色 `host` / 对端数据 DTO `Remote*` / 未配对发现 `device`；子系统名 `Interconnect*` | 混用；`HibikiClient*` 作类名前缀 |
+| 备份操作 | 顶层 `createBackup`/`restoreBackup`；内部子步骤 `reapply*`；export/import 只留给单资产 | 内部子步骤叫 restore* |
+| 时刻列 | `<名>At`（int 毫秒，无 Ms 后缀） | `Ms` 后缀用于时刻（仅时长/偏移可用） |
+| 墓碑删除时刻 | `deletedAt` | removedAt |
+| 媒体种类值域 | 各域独立枚举（`MediaKind`/`ActivityMediaKind`/`StatSourceKind`/`ProfileMediaKind`/`SyncTombstoneKind`/`SourceLibraryKind`/`SentenceSourceKind`），跨域换算走 `media_kind_mappings.dart`，禁 UI 层裸字符串比较/bool 降维 | — |
+| 搜索匹配 | `matchesMediaSearch`/`filterByMediaSearch`（统一归一化） | 裸 `toLowerCase().contains` 做用户可见搜索 |
+| i18n key | `<域>_<子域名词>_<动作/状态>`（动词在尾）+ 英文 sentence case；改名必须 `i18n_sync --rename` | 手改 json；新增 `games_`/`ttu_` 前缀 key |
 
 ## Galgame Hook 硬规则
 
@@ -103,7 +125,7 @@
 | 模块 | 语言 | 职责 / 接入方式 | 文档 |
 |---|---|---|---|
 | `hibiki/` | Dart | Flutter 主应用：UI/阅读器/视频/导入/设置 | [hibiki/CLAUDE.md](hibiki/CLAUDE.md) |
-| `packages/hibiki_core/` | Dart | DB schema（46 表）/偏好/语言配置 | [CLAUDE.md](packages/hibiki_core/CLAUDE.md) |
+| `packages/hibiki_core/` | Dart | DB schema（50 表）/偏好/语言配置 | [CLAUDE.md](packages/hibiki_core/CLAUDE.md) |
 | `packages/hibiki_dictionary/` | Dart | 词典引擎 Dart 侧/FFI 绑定/多格式导入（C++ 在 `native/hoshidicts/`） | [CLAUDE.md](packages/hibiki_dictionary/CLAUDE.md) |
 | `packages/hibiki_anki/` | Dart | Anki 集成（AnkiDroid + AnkiConnect） | [CLAUDE.md](packages/hibiki_anki/CLAUDE.md) |
 | `packages/hibiki_audio/` | Dart | 字幕解析/有声书播放/音频匹配 | [CLAUDE.md](packages/hibiki_audio/CLAUDE.md) |
@@ -114,8 +136,8 @@
 | `packages/gamepads_android_stub/` | Dart | `gamepads_android` no-op stub（防启动 ClassCastException，path override） | — |
 | `native/hoshidicts/` | C++ | 词典查询/导入引擎（上游深度 fork；`hoshidicts_external/` 为 vendored 第三方）；FFI/JNI 编入 app | [UPSTREAM.md](native/hoshidicts/UPSTREAM.md) |
 | `native/hibiki_torrent/` | C++ | libtorrent 2.x C ABI bridge；FFI，Windows 预编译 DLL 随包 | [README.md](native/hibiki_torrent/README.md) |
-| `server/log-collector/` | Go | 报错日志接收端（自有服务器 + EdgeOne 版）；独立部署 | [README.md](server/log-collector/README.md) |
-| `server/cf-worker/` | JS | 报错日志接收端（Cloudflare Worker + D1 版，与 Go 版择一）；独立部署 | [README.md](server/cf-worker/README.md) |
+| `services/log-backend/log-collector/` | Go | 报错日志接收端（自有服务器 + EdgeOne 版）；独立部署（原 `server/`，改名消与同步层 `hibiki_sync_server.dart`/`SyncBackendType.hibikiServer` 的三义撞词） | [README.md](services/log-backend/log-collector/README.md) |
+| `services/log-backend/cf-worker/` | JS | 报错日志接收端（Cloudflare Worker + D1 版，与 Go 版择一）；独立部署 | [README.md](services/log-backend/cf-worker/README.md) |
 | `tools/browser-extension/` | JS | 浏览器查词扩展（根级 `tools/`，非 `tool/`） | — |
 | `third_party/` | — | 11 个 path-override vendored 补丁包 + 1 个 CI 自编二进制（ffmpeg-min，Windows 最小化 ffmpeg.exe）：carousel_slider、desktop_drop、fading_edge_scrollview、ffmpeg_kit_flutter、flutter_inappwebview_android、media_kit_libs_{android,ios,macos,windows}_video、media_kit_video、network_to_file_image；vendor 原因见 `hibiki/pubspec.yaml` dependency_overrides 逐包注释 | — |
 | `references/ReinaManager` | — | git submodule：galgame 库信息架构参考（AGPL-3.0，不参与构建） | — |

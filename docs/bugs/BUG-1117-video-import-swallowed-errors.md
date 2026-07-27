@@ -1,0 +1,17 @@
+## BUG-1117 · 视频导入四方法 try/finally 无 catch：异常静默逃逸，用户只见 spinner 停住
+- **报告**：2026-07-26（用户：命名统一审计 bug#3）
+- **真实性**：✅ 真 bug，根因是 `VideoImportDialog` 四个导入方法均为 `try{}finally{}` **无 catch**（修复前行号）：
+  - `_doImport` — `hibiki/lib/src/media/video/video_import_dialog.dart:497-555`
+  - `_importStreamUrl` — `video_import_dialog.dart:568-621`
+  - `_importPlaylistFromPath` — `video_import_dialog.dart:322-370`
+  - `_pickFolder` — `video_import_dialog.dart:387-416`
+  - 加重因素：三处调用点是 **fire-and-forget**（`initState` postFrameCallback `:225`/`:235`、`_handleDialogDrop:697` 不 await），异常必然逃逸 async zone、无人接住——解析/落库/封面抽取任何一步抛错，用户只见确认按钮里的 spinner 停住（finally 复位 `_busy`）、无任何提示、无日志。
+  - 对照组：同类导入对话框 `book_import_dialog.dart:856-866` 早有完整范式（`catch (e, stack)` → `ErrorLogService.instance.log` → `debugPrint` → mounted 时 `HibikiToast.show('${t.srt_import_error}: $e')`），video 侧漏抄。
+- **[x] ① 已修复** — `f3acac3e8`
+  - 四个方法各在 `} finally {` 前补一个 catch 块，照抄 BookImportDialog 范式：`ErrorLogService.instance.log('VideoImportDialog.<tag>', e, stack)` + `debugPrint` + mounted 时 `HibikiToast.show(msg: '${t.srt_import_error}: $e')`。四个 tag：`VideoImportDialog.import` / `.importStream` / `.importPlaylist` / `.pickFolder`。
+  - 纯增量：不动 finally（`_busy` 复位保持原样）、不动 pop/落库顺序；复用既有 i18n key `srt_import_error`（零新 key）；`utils.dart` barrel 已导出 ErrorLogService/HibikiToast，零新增 import。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/video/video_import_dialog_error_handling_test.dart`
+  - **widget 行为层**：注入 `listAll()` 必抛的仓库（四条导入路径都先经 `_uniqueBookUid → repo.listAll()`，在进 ffmpeg 前确定性触发），断言 ① 点确认导入失败后 `takeException() == null`（异常被 catch、不逃逸 zone，修复前红）② ErrorLogService 落入对应 source 条目 ③ 确认按钮恢复可用、spinner 消失（`_busy` 已复位）；另覆盖 `initialStreamUrl` 的 fire-and-forget 自动导入路径。
+  - **源码扫描守卫层**：对 4 个 tag 各断言 catch 块存在（容忍 dart format 折行），覆盖 widget 测试驱动不到的 `_importPlaylistFromPath` / `_pickFolder`（依赖 FilePicker/目录选择器静态入口）；另断言文件内 `} catch (e, stack) {` 数 ≥ `} finally {` 数，防未来新增导入方法复制旧形态回归。
+- **备注**：
+  - 测试断言故意不依赖 toast 渲染（HibikiToast 桌面路径需 navigator overlay，测试未挂 navigatorKey 时为 no-op），以 `takeException` + ErrorLogService 条目 + 按钮状态为准。

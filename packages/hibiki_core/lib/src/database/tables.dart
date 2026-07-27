@@ -344,7 +344,7 @@ class BookTagMappings extends Table {
       integer().references(BookTags, #id, onDelete: KeyAction.cascade)();
 
   /// 该映射被加入的毫秒戳（TODO tags-sync：LWW-element-set 的 add 时钟——与
-  /// [BookTagMembershipTombstones].removedAt 比较决定 add-wins/remove-wins，防跨设备
+  /// [BookTagMembershipTombstones].deletedAt 比较决定 add-wins/remove-wins，防跨设备
   /// 复活/误删）。旧行迁移填 0（最古 add，任何带时间戳的远端移除都能压过）。
   IntColumn get addedAt => integer().withDefault(const Constant(0))();
 
@@ -448,7 +448,11 @@ class VideoBooks extends Table {
   IntColumn get embeddedSubtitleTrack => integer().nullable()();
   TextColumn get coverPath => text().nullable()();
   IntColumn get lastPositionMs => integer().withDefault(const Constant(0))();
-  DateTimeColumn get importedAt => dateTime().nullable()();
+
+  /// 导入时间（毫秒戳，同 [EpubBooks].importedAt / [SrtBooks].importedAt int
+  /// 范式）；null = 旧数据无导入时间。v57 前是 drift DateTime（Unix 秒存储），
+  /// v57 迁移统一为 int 毫秒。
+  IntColumn get importedAt => integer().nullable()();
 
   /// m3u8 多集播放列表 JSON：`[{title,path}]`（绝对路径）。单视频导入时为 null。
   TextColumn get playlistJson => text().nullable()();
@@ -491,7 +495,9 @@ class VideoBooks extends Table {
 @DataClassName('VideoBookTagMappingRow')
 class VideoBookTagMappings extends Table {
   IntColumn get id => integer().autoIncrement()();
-  TextColumn get videoBookUid =>
+
+  /// 视频书外键（v57 起与被引列 [VideoBooks].bookUid 同名；旧列名 video_book_uid）。
+  TextColumn get bookUid =>
       text().references(VideoBooks, #bookUid, onDelete: KeyAction.cascade)();
   IntColumn get tagId =>
       integer().references(BookTags, #id, onDelete: KeyAction.cascade)();
@@ -501,7 +507,7 @@ class VideoBookTagMappings extends Table {
 
   @override
   List<Set<Column>> get uniqueKeys => [
-        {videoBookUid, tagId},
+        {bookUid, tagId},
       ];
 }
 
@@ -645,8 +651,13 @@ class MinedSentences extends Table {
 ///
 /// 🔴 凭据红线：[configJson] **绝不裸存明文密码**。本地来源恒 NULL；网络来源（SFTP/
 /// FTP，TODO-1274 已接入）只存**非敏感连接参数** JSON（host/port/username/useTls）；
-/// 密码/私钥经 MediaSourceCredentialStore 以 base64 单独落 Preferences（键
+/// 密码/私钥经 SourceLibraryCredentialStore 以 base64 单独落 Preferences（键
 /// `media_source_secret_<id>`，按行 id 隐式引用），绝不进入 configJson。
+///
+/// 生成行类名 `MediaSourceRow` 是 DB 层历史命名（改名需动 database.g.dart 与全部
+/// DAO 签名，不值得）；app 消费侧统一用别名 `SourceLibraryRow`
+/// （hibiki/lib/src/media/source_library/source_library_row.dart），与 UI 媒体源
+/// `abstract class MediaSource`（jidoujisho 血统）区分。表名/列名/落库值不动。
 @DataClassName('MediaSourceRow')
 class MediaSources extends Table {
   IntColumn get id => integer().autoIncrement()();
@@ -833,13 +844,15 @@ class MediaCollectionItems extends Table {
 // 合集行被删（移空自删/显式删除）后继续存活。
 //
 // 两种行共用一张表（spec §2.3「合集级墓碑用同表哨兵」）：
-//  - 成员移出墓碑：mediaType/entryKey = 真实成员键，removedAt = 移出毫秒戳；
+//  - 成员移出墓碑：mediaType/entryKey = 真实成员键，deletedAt = 移出毫秒戳；
 //  - 合集删除墓碑：mediaType = entryKey = ''（空哨兵，真实成员键恒非空，无歧义），
-//    removedAt = 删除毫秒戳（语义即 deletedAt）。
+//    deletedAt = 删除毫秒戳。
 //
-// 主键不含 removedAt（spec 原文把 removed_at 列进复合键，但同一成员保留多条移出
+// 主键不含 deletedAt（spec 原文把该时间戳列进复合键，但同一成员保留多条移出
 // 事件对「防复活 + 重加清墓碑」毫无增益——同步只比较最新一条，重加要清的也是全部；
-// 范式仿 [BookTombstones] 单行 LWW：重复移出 upsert 刷新 removedAt）。
+// 范式仿 [BookTombstones] 单行 LWW：重复移出 upsert 刷新 deletedAt）。
+// v57 前列名 removed_at；v57 统一为 deleted_at（与 [BookTombstones] 等墓碑表对齐；
+// sync 清单 wire JSON 的 `removedAt` 键是冻结的 wire 契约，与本列名解耦）。
 // 重新加入清同键墓碑（[HibikiDatabase.addToCollection]）；重建同名合集清合集级
 // 墓碑（[HibikiDatabase.createMediaCollection]），同插书清书墓碑一律。
 @DataClassName('CollectionMemberTombstoneRow')
@@ -857,7 +870,7 @@ class CollectionMemberTombstones extends Table {
   TextColumn get entryKey => text()();
 
   /// 移出/删除毫秒戳（LWW 比较键；重复移出 upsert 取新）。
-  IntColumn get removedAt => integer()();
+  IntColumn get deletedAt => integer()();
 
   /// 一 (合集, 成员) 一行；合集级哨兵行天然也唯一。
   @override
@@ -932,15 +945,16 @@ class StatisticsTombstones extends Table {
 
 // ── book_tag_membership_tombstones ──────────────────────────────────
 // tags 稳健档跨端同步（LWW-element-set）：用户从一本书/视频移除某标签时记一条
-// (itemKey, mediaType, tagName) 墓碑（+移除时刻 removedAt）。sync 合并按名把两端
-// 当前标签并集，再用「该标签的最大 addedAt vs 最大 removedAt」逐名裁决 add-wins/
+// (itemKey, mediaType, tagName) 墓碑（+移除时刻 deletedAt）。sync 合并按名把两端
+// 当前标签并集，再用「该标签的最大 addedAt vs 最大 deletedAt」逐名裁决 add-wins/
 // remove-wins——避免「A 移除标签 → B 没移除 → B 下轮把标签又并回 A」的复活，也避免
 // 误删并发新增。重新给同一 (itemKey, tagName) 加标签会清除其墓碑（[addTagToBook]/
 // [addTagToVideoBook]/[setTagsForBook]/[setTagsForVideoBook] 内清碑），让重加生效。
-// 范式仿 [CollectionMemberTombstones]（自然键 + 单行 LWW removedAt，重加清碑）。
+// 范式仿 [CollectionMemberTombstones]（自然键 + 单行 LWW deletedAt，重加清碑）。
+// v57 前列名 removed_at；v57 统一为 deleted_at（与其余墓碑表对齐）。
 @DataClassName('BookTagMembershipTombstoneRow')
 class BookTagMembershipTombstones extends Table {
-  /// 被移除标签的宿主稳定身份：EPUB 的 bookKey / 视频的 videoBookUid（跨设备一致）。
+  /// 被移除标签的宿主稳定身份：EPUB 的 bookKey / 视频的 bookUid（跨设备一致）。
   TextColumn get itemKey => text()();
 
   /// 宿主媒体种类：'epub' | 'video'（同名书与视频各自独立立碑/清碑）。
@@ -950,7 +964,7 @@ class BookTagMembershipTombstones extends Table {
   TextColumn get tagName => text()();
 
   /// 移除毫秒戳（LWW 比较键；重复移除 upsert 取新）。
-  IntColumn get removedAt => integer()();
+  IntColumn get deletedAt => integer()();
 
   @override
   Set<Column> get primaryKey => {itemKey, mediaType, tagName};

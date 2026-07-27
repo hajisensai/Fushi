@@ -9,6 +9,7 @@ import 'package:hibiki/src/sync/sync_manager.dart';
 import 'package:hibiki/src/sync/sync_progress_resolver.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
+import 'package:hibiki/src/sync/sync_file_ref.dart';
 import 'package:hibiki/src/sync/ttu_models.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -29,7 +30,7 @@ class _FakeSyncBackend implements SyncBackend {
   });
 
   /// Remote progress file metadata (name → timestamp/fraction). Null = absent.
-  DriveFile? remoteProgressFile;
+  SyncFileRef? remoteProgressFile;
 
   /// Remote progress payload returned by `getProgressFile` (import source).
   TtuProgress? remoteProgress;
@@ -56,8 +57,8 @@ class _FakeSyncBackend implements SyncBackend {
       'folder';
 
   @override
-  Future<DriveSyncFiles> listSyncFiles(String folderId) async =>
-      DriveSyncFiles(progress: remoteProgressFile);
+  Future<SyncFileTrio> listSyncFiles(String folderId) async =>
+      SyncFileTrio(progress: remoteProgressFile);
 
   @override
   Future<TtuProgress> getProgressFile(String fileId) async {
@@ -98,7 +99,7 @@ class _FakeSyncBackend implements SyncBackend {
   @override
   Map<String, String> get cachedFolderIds => _cachedFolders;
   @override
-  void cacheBookFolderIds(List<DriveFile> folders) {}
+  void cacheBookFolderIds(List<SyncFileRef> folders) {}
 
   // ── Unreached stub members ──────────────────────────────────────────
   @override
@@ -120,7 +121,7 @@ class _FakeSyncBackend implements SyncBackend {
   @override
   void evictFolderId(String folderId) {}
   @override
-  Future<List<DriveFile>> listBooks(String rootFolderId) async => const [];
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async => const [];
   @override
   Future<List<TtuStatistics>> getStatsFile(String fileId) async => const [];
   @override
@@ -157,7 +158,8 @@ class _FakeSyncBackend implements SyncBackend {
     void Function(double progress)? onProgress,
   }) async {}
   @override
-  Future<DriveFile?> findContentFile(String folderId, String fileName) async =>
+  Future<SyncFileRef?> findContentFile(
+          String folderId, String fileName) async =>
       null;
 
   // ── SyncAssetStore (unreached) ──────────────────────────────────────
@@ -194,7 +196,7 @@ class _FakeSyncBackend implements SyncBackend {
 /// map linearly to normCharOffset in 0..10000.
 const String _chaptersJson = '[{"characters":1000}]';
 
-DriveFile _progressFile(int timestampMs, double fraction) => DriveFile(
+SyncFileRef _progressFile(int timestampMs, double fraction) => SyncFileRef(
       id: 'progress-id',
       name: progressFileName(timestampMs, fraction),
     );

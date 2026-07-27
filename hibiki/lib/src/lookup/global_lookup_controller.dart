@@ -37,6 +37,8 @@ import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
 import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:hibiki/src/utils/misc/tts_channel.dart';
+import 'package:hibiki_core/hibiki_core.dart'
+    show kStatSourceBook, mimeTypeForFilePath;
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:path/path.dart' as p;
@@ -1470,26 +1472,11 @@ String _normalizeGlobalLookupMediaPath(String path) {
   return path.trim().replaceAll('\\', '/').replaceFirst(RegExp(r'^/+'), '');
 }
 
-/// Returns the image MIME type for [path]'s extension, mirroring the in-app
-/// `_mimeTypeForPath`.
-String _globalLookupImageMime(String path) {
-  final String ext = path.split('.').last.toLowerCase();
-  switch (ext) {
-    case 'png':
-      return 'image/png';
-    case 'jpg':
-    case 'jpeg':
-      return 'image/jpeg';
-    case 'gif':
-      return 'image/gif';
-    case 'webp':
-      return 'image/webp';
-    case 'svg':
-      return 'image/svg+xml';
-    default:
-      return 'application/octet-stream';
-  }
-}
+/// Returns the image MIME type for [path]'s extension.
+///
+/// 命名统一轮 G8：查 hibiki_core 单一 MIME 映射表 [mimeTypeForFilePath]（旧本地
+/// switch 副本之一），与 app 内 `dictionary_media_types.dart` 自动同源。
+String _globalLookupImageMime(String path) => mimeTypeForFilePath(path);
 
 /// Parses an overlay media [url] into (dictionary, path, contentType),
 /// scheme-aware, matching the in-app `dictionary_webview_media.dart` parsing

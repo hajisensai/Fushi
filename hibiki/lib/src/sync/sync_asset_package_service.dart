@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart';
 import 'package:hibiki/src/models/local_audio_source_pref.dart';
+import 'package:hibiki/src/utils/misc/safe_file_name.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
 
@@ -507,9 +508,9 @@ class SyncAssetPackageService {
 }
 
 /// Sanitizes a logical id into a filesystem-safe directory name (replaces the
-/// Windows-invalid `\ / : * ? " < > |` with `_`). Filesystem-safe inputs (e.g.
-/// `ttu-42`) pass through unchanged.
-String _safeDirName(String id) => id.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+/// Windows-invalid `\ / : * ? " < > |` and control chars with `_`).
+/// Filesystem-safe inputs (e.g. `ttu-42`) pass through unchanged.
+String _safeDirName(String id) => safeWindowsFileName(id);
 
 List<File> _audioPackageFiles(AudiobookRow? audiobook, SrtBookRow srtBook) {
   final List<String> paths = <String>[

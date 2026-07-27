@@ -28,8 +28,71 @@ import 'package:hibiki/src/utils/misc/gallery_image_picker.dart';
 /// 三条 apply 路径的共同不变量：**落盘后必须 [evictLocalCoverCache]**（裸
 /// [FileImage] 键 + `resizedFileImage` 的 ResizeImage 键都清）——三岛封面都是
 /// 「同路径覆盖写」，不驱逐则 UI 重建命中旧解码，用户看到的还是旧图。
+///
+/// 该不变量由统一落盘入口 [applyCoverFile] / [applyCoverBytes] **结构性保证**
+/// （写盘与驱逐收在同一函数里，不再依赖每个落盘点自觉补 evict——BUG-1118 的
+/// 三处刮削落盘正是漏补的教训）。lib/ 下所有「封面路径写盘」都必须走这两个
+/// 入口，由 `test/media/media_cover_write_guard_test.dart` 源码扫描守卫。
+///
+/// 边界：互联层的远端封面（`sync/remote_cover_image.dart` /
+/// `sync/remote_cover_cache.dart`，HTTP `coverUrl` 协议字段冻结）是**网络缓存**
+/// 而非本地封面落盘，本轮不收编，仍由互联层自管。
 class MediaCoverService {
   const MediaCoverService._();
+
+  /// 统一落盘入口（文件源）：把 [source] 原子地写到 [destPath]（先写
+  /// `<dest>.tmp` 再删旧文件 rename——Windows rename 不覆盖；失败清 .tmp、
+  /// **不动旧封面**并 rethrow），成功后**必然**双键驱逐旧解码缓存
+  /// （[evictLocalCoverCache]）。
+  ///
+  /// 三岛的目录/文件名派生仍由各调用方负责（红线：`override_thumbnail`
+  /// hashCode 派生、`thumbnails/` / `video_covers/` / `game_covers/` 目录名
+  /// 全部冻结不动）；本入口只负责「写盘 → 驱逐」这一步的结构保证。
+  static Future<void> applyCoverFile({
+    required File source,
+    required String destPath,
+  }) async {
+    final File tmp = File('$destPath.tmp');
+    try {
+      if (await tmp.exists()) await tmp.delete();
+      await source.copy(tmp.path);
+      final File dest = File(destPath);
+      if (await dest.exists()) await dest.delete();
+      await tmp.rename(destPath);
+    } catch (_) {
+      try {
+        if (await tmp.exists()) await tmp.delete();
+      } catch (_) {
+        // .tmp 清理失败不掩盖原始写盘异常。
+      }
+      rethrow;
+    }
+    await evictLocalCoverCache(destPath);
+  }
+
+  /// 统一落盘入口（内存字节源，下载场景）：语义同 [applyCoverFile]，
+  /// 只是源换成 [bytes]（`flush: true` 落稳后 rename）。
+  static Future<void> applyCoverBytes({
+    required List<int> bytes,
+    required String destPath,
+  }) async {
+    final File tmp = File('$destPath.tmp');
+    try {
+      if (await tmp.exists()) await tmp.delete();
+      await tmp.writeAsBytes(bytes, flush: true);
+      final File dest = File(destPath);
+      if (await dest.exists()) await dest.delete();
+      await tmp.rename(destPath);
+    } catch (_) {
+      try {
+        if (await tmp.exists()) await tmp.delete();
+      } catch (_) {
+        // .tmp 清理失败不掩盖原始写盘异常。
+      }
+      rethrow;
+    }
+    await evictLocalCoverCache(destPath);
+  }
 
   /// 统一选图入口：移动端 image_picker 系统相册、桌面端 file_picker 原生文件
   /// 对话框（BUG-1074 的平台分流，委托 [pickGalleryImageFile]，分流决策见
@@ -88,20 +151,17 @@ class MediaCoverService {
   /// 游戏：用用户手选的图片设置封面，返回落盘路径；失败返回 null。
   ///
   /// 薄路由到 [saveGameCoverFromFile]（`game_covers/<id>.<ext>` 落盘、换扩展名
-  /// 清旧文件），落盘成功后统一双键驱逐。[coverDirectory] 是测试接缝。
+  /// 清旧文件；其写盘已走 [applyCoverFile]，双键驱逐结构性内含）。
+  /// [coverDirectory] 是测试接缝。
   static Future<String?> applyGameCover({
     required String gameId,
     required String sourcePath,
     Directory? coverDirectory,
-  }) async {
-    final String? saved = await saveGameCoverFromFile(
+  }) {
+    return saveGameCoverFromFile(
       gameId: gameId,
       sourcePath: sourcePath,
       coverDirectory: coverDirectory,
     );
-    if (saved != null) {
-      await evictLocalCoverCache(saved);
-    }
-    return saved;
   }
 }

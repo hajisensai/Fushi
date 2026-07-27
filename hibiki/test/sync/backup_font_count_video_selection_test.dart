@@ -111,12 +111,11 @@ void main() {
 
       // The five files on disk must NOT inflate the count: only the two
       // catalog entries are reported (root fix for "2 fonts shown as 7").
-      final BackupContentSummary summary =
-          await service.summarizeExportContent();
+      final BackupContentSummary summary = await service.summarizeLiveContent();
       expect(summary.countFor(BackupCategory.fonts), 2);
 
       final String zip = p.join(src.path, 'fonts.zip');
-      await service.exportBackup(zip);
+      await service.createBackup(zip);
       await db.close();
 
       final Archive archive = await readZip(zip);
@@ -161,8 +160,7 @@ void main() {
         appVersion: '1.0.0',
         fontsRootDirectory: fonts,
       );
-      final BackupContentSummary summary =
-          await service.summarizeExportContent();
+      final BackupContentSummary summary = await service.summarizeLiveContent();
       await db.close();
       expect(summary.countFor(BackupCategory.fonts), 1);
     });
@@ -183,8 +181,7 @@ void main() {
         appVersion: '1.0.0',
         fontsRootDirectory: fonts,
       );
-      final BackupContentSummary summary =
-          await service.summarizeExportContent();
+      final BackupContentSummary summary = await service.summarizeLiveContent();
       await db.close();
       expect(summary.countFor(BackupCategory.fonts), 0);
     });
@@ -222,7 +219,7 @@ void main() {
       final ({BackupService service, HibikiDatabase db}) built =
           await buildThreeVideos();
       final String zip = p.join(src.path, 'videos.zip');
-      final BackupMeta meta = await built.service.exportBackup(
+      final BackupMeta meta = await built.service.createBackup(
         zip,
         videoKeys: <String>{'video/A', 'video/C'},
       );
@@ -253,7 +250,7 @@ void main() {
       final ({BackupService service, HibikiDatabase db}) built =
           await buildThreeVideos();
       final String zip = p.join(src.path, 'videos_all.zip');
-      final BackupMeta meta = await built.service.exportBackup(zip);
+      final BackupMeta meta = await built.service.createBackup(zip);
       await built.db.close();
 
       final HibikiDatabase exdb = await openBackupDb(zip, dst);
@@ -266,7 +263,7 @@ void main() {
       final ({BackupService service, HibikiDatabase db}) built =
           await buildThreeVideos();
       final String zip = p.join(src.path, 'no_videos.zip');
-      final BackupMeta meta = await built.service.exportBackup(
+      final BackupMeta meta = await built.service.createBackup(
         zip,
         categories: BackupCategory.values.toSet()
           ..remove(BackupCategory.videos),
