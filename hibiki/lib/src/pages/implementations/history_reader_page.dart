@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:hibiki/media.dart';
@@ -112,6 +114,18 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
           ),
         ),
         LayoutBuilder(builder: (context, constraints) {
+          // BUG-1177：标题条高度原先是 `maxHeight * 0.25` 的纯比例值，与里面那两行
+          // metadata 字号文字毫无关系。窄屏 cell（320dp 屏上约 134×218）只剩约 48px，
+          // textScale 稍大两行就装不下、下半截被 Container 裁掉。改为「比例值与两行
+          // 文字实际所需高度取大者」：宽松时维持原来的 25% 观感，紧时按需长高。
+          final double titleLine = MediaQuery.textScalerOf(context)
+                  .scale(tokens.type.metadata.fontSize ?? 12.0) *
+              1.3;
+          final double needed =
+              titleLine * 2 + tokens.spacing.gap / 4 + tokens.spacing.gap / 2;
+          final double bandHeight = constraints.maxHeight.isFinite
+              ? math.max(constraints.maxHeight * 0.25, needed)
+              : needed;
           return Container(
             alignment: Alignment.center,
             padding: EdgeInsets.fromLTRB(
@@ -120,7 +134,7 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
               tokens.spacing.gap / 4,
               tokens.spacing.gap / 2,
             ),
-            height: constraints.maxHeight * 0.25,
+            height: bandHeight,
             width: double.maxFinite,
             color: theme.colorScheme.scrim.withValues(alpha: 0.6),
             child: Text(

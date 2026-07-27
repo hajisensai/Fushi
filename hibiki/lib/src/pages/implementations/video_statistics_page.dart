@@ -224,14 +224,23 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     final double gap = tokens.spacing.gap + tokens.spacing.gap / 2;
 
     final List<Widget> panels = <Widget>[
-      _summaryStatPanel(t.stat_today, _agg.todayMs, _agg.todayCompleted,
-          _lookup.today, _mined.today, _favorited.today,
+      _summaryStatPanel(
+          t.stat_today,
+          _agg.todayMs,
+          _agg.todayCompleted,
+          _lookup.today,
+          _mined.today,
+          _favorited.today,
           _favoritedSentences.today),
       _summaryStatPanel(t.stat_this_week, _agg.weekMs, _agg.weekCompleted,
-          _lookup.week, _mined.week, _favorited.week,
-          _favoritedSentences.week),
-      _summaryStatPanel(t.stat_this_month, _agg.monthMs, _agg.monthCompleted,
-          _lookup.month, _mined.month, _favorited.month,
+          _lookup.week, _mined.week, _favorited.week, _favoritedSentences.week),
+      _summaryStatPanel(
+          t.stat_this_month,
+          _agg.monthMs,
+          _agg.monthCompleted,
+          _lookup.month,
+          _mined.month,
+          _favorited.month,
           _favoritedSentences.month),
       _summaryStatPanel(t.stat_all_time, _agg.allMs, _agg.allCompleted,
           _lookup.all, _mined.all, _favorited.all, _favoritedSentences.all),
