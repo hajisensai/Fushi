@@ -291,6 +291,8 @@ void main() {
       expect(labels['b'], 'TextRender · 0x9c7c571 #2');
       expect(labels['c'], 'TextRender · 0x9c7c571 #3');
     });
+  });
+
   test('current session thread catalog excludes stale process-bound candidates',
       () {
     final DateTime oldSession = DateTime(2026, 7, 26, 12);
