@@ -91,7 +91,10 @@ Future<String?> resolveLookupAudioUrl(
 /// fallback must never re-resolve (a second resolve re-opens local DBs and
 /// re-fires remote requests, and a transient remote failure would put the
 /// source into cooldown twice).
-Future<void> autoReadWordUnified(
+///
+/// Returns whether playback ACTUALLY started on either path (BUG-1127: the
+/// caller-side dedupe window must not stay occupied by a silent failure).
+Future<bool> autoReadWordUnified(
   AppModel appModel,
   String expression,
   String reading, {
@@ -99,12 +102,12 @@ Future<void> autoReadWordUnified(
 }) async {
   final String? ref =
       await resolveLookupAudioUrl(appModel, expression, reading);
-  if (ref == null || ref.isEmpty) return;
+  if (ref == null || ref.isEmpty) return false;
 
   if (playInWebView != null) {
     final String? url = await audioRefToWebViewUrl(ref);
     if (url != null && url.isNotEmpty) {
-      if (await playInWebView(url)) return;
+      if (await playInWebView(url)) return true;
       // The WebView reported a real failure (autoplay blocked / JS error /
       // bridge timeout). Record it — this exact silence used to be invisible
       // (zero logs) and cost a mis-rooted fix in BUG-1015 — then fall back.
@@ -116,7 +119,7 @@ Future<void> autoReadWordUnified(
     }
   }
 
-  await TtsChannel.instance.playAudioRef(
+  return await TtsChannel.instance.playAudioRef(
     ref,
     volume: ReaderHibikiSource.instance.lookupAudioVolumeGain,
   );
