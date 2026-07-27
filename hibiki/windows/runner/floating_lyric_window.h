@@ -151,6 +151,9 @@ class FloatingLyricWindow {
   bool IsLocked() const { return locked_; }
   void SetPassThrough(bool enabled);
   bool IsPassThrough() const { return pass_through_; }
+  // BUG-951 test seam: is WS_EX_TRANSPARENT currently applied? Pass-through is
+  // only genuinely cross-process while this bit is set.
+  bool IsExTransparentForTesting() const { return ex_transparent_; }
   // Restores a physical-pixel window rectangle before the next Show. Invalid
   // rectangles are ignored and Show uses its DPI-aware default.
   void SetInitialBounds(int left, int top, int width, int height);
@@ -166,6 +169,34 @@ class FloatingLyricWindow {
   bool EnsureTextResources();
   void Render();
   void RequestRender();
+
+  // BUG-951 — pass-through hit-testing.
+  //
+  // WM_NCHITTEST -> HTTRANSPARENT only walks on to windows on the SAME THREAD
+  // (documented Win32 contract). Over a game owned by another process it hands
+  // the click to nobody: the overlay declines it, the search finds no further
+  // same-thread window, and the click is swallowed. Only WS_EX_TRANSPARENT
+  // makes a window genuinely invisible to the mouse across processes, and
+  // unlike the layered per-pixel alpha rule it holds for opaque pixels too
+  // (a visible background, and the glyph strokes themselves).
+  //
+  // The bit is a whole-window property, so it cannot be left on permanently:
+  // the top recovery band carries the button that LEAVES pass-through, and a
+  // permanently transparent overlay would strand the user in a fullscreen
+  // game. The band is therefore kept live by tracking the cursor and clearing
+  // the bit only while it hovers there.
+  //
+  // |interactive| true = the window takes its own clicks (bit cleared).
+  void ApplyPassThroughHitTest(bool interactive);
+  // Single geometry predicate for the always-live recovery band, shared by
+  // WM_NCHITTEST and the cursor poll so the two can never drift apart.
+  bool PassThroughRecoveryContainsClientY(float client_y) const;
+  // Re-evaluates the band predicate against the live cursor position. A
+  // WS_EX_TRANSPARENT window receives no mouse messages, so entering the band
+  // is only observable by polling.
+  void UpdatePassThroughFromCursor();
+  void StartPassThroughCursorPoll();
+  void StopPassThroughCursorPoll();
 
   // Geometry of the lyric text area in client (DIP-equivalent physical px),
   // computed during the last Render. Used for tap hit-testing.
@@ -249,6 +280,10 @@ class FloatingLyricWindow {
   bool text_only_ = false;
   bool hook_text_mode_ = false;
   bool pass_through_ = false;
+  // BUG-951: mirrors the live WS_EX_TRANSPARENT bit so the ex-style is only
+  // rewritten when it actually changes (the poll runs every frame).
+  bool ex_transparent_ = false;
+  bool pass_through_poll_active_ = false;
   bool hovered_ = false;
   bool tracking_mouse_leave_ = false;
   // Position lock: drag disabled, everything else (lookup + controls) still
