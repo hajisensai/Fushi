@@ -155,12 +155,144 @@ load 回调分派顺序）、`test/reader/reader_image_lazy_pipeline_guard_test.
 行为端：`integration_test/reader_cross_chapter_perf_itest.dart` 的「中段落点回归」用例
 （真实退出重进 → 图文混排插图章中段锚 → 重进落点偏差必须在一页之内）。
 
+### 第二阶段①：引擎 JS 改成 `<script src>` 外链，让 WebView 复用编译结果
+
+上文「仍未做」第一项。前提（`initialize` 的 per-nav 参数剥成运行时读取）一并做掉。
+
+**改法**
+
+- 新增 `hibiki/lib/src/reader/reader_engine_config.dart`（`ReaderEngineConfig`）——per-nav 参数的
+  唯一真相源：insets / pageWidth·Height / progress / charOffset(+End) / fragment / sasayakiCues /
+  revealedKeys / blurImages / furiganaMode / caret 色与 inset / 三种 view-mode 标志 /
+  手势阈值 / 诊断开关。改动前这些值逐个**插值进脚本源码**，于是每次跨章都是一份全新字符串。
+- 新增 `hibiki/lib/src/reader/reader_engine_script.dart`（`ReaderEngineScript`）——内容哈希、
+  URL 路径、`<script src>` 标签、强缓存头、boot 载荷、内联兜底。
+- 引擎源码（`webview.part.dart` `_buildReaderEngineSource`，**static 无参**）变成
+  `window.__hoshiEngine.install(C)` 的函数体；三种 shell 各包成
+  `window.__hoshiShells.{paginated,continuous,vn}`，由 `window.__hoshiInstallShell(C)` 运行时分流。
+  三种 shell 全部随引擎发一份 → 引擎 URL 与视图模式无关 → 不需要额外的缓存失效约定，
+  也就没有「HTML 缓存没失效 → 装错 shell」这类耦合。
+- 章节 HTML（`_buildSanitizedChapterHtmlBytes`）注入
+  `<script src="https://hoshi.local/reader-engine/<sha1-16>.js" defer>`；拦截器按
+  `ReaderEngineScript.isEnginePath` 分派，响应挂 `Cache-Control: public, max-age=31536000, immutable`。
+  哈希进 URL 才敢开 immutable。同款实证见 TODO-1074 那段图片缓存注释（挂 max-age 后 WebView
+  不再回拦截器重新读盘）。
+- 每章注入物只剩 `bootInvocation`：一份 config JSON + 一次 `install(C)`。
+
+**Dart 侧三选一全部搬到 JS 运行时**，判据与优先级逐条对齐旧的三元式：
+恢复锚 `fragment > charOffset >= 0 > progress`（连续 shell 多一条 BUG-461 的
+`initialCharOffsetEnd > initialCharOffset` 两参分支）、sasayaki cue「有才调」、
+furigana 三模式、图片防剧透遮罩的开关门控（**副作用**仍受 `C.blurImages` 门控：
+`window.__hoshiImageRevealKey` / `__hoshiMarkImageRevealed` 仍只在开了遮罩时才挂上，
+caret 与有声书桥接靠这两个全局在不在来探测）。
+
+**时序保证（合并判据，两条都仍成立）**
+
+1. **落点由同步写入、通知晚于落点写入**——未触碰。`_settleAndNotify` 与两个 shell 的
+   `setPagePosition` / 通知路径一个字没改；`install` 里 `__hoshiInstallShell(C)` 就在改动前
+   `$paginationJs` 内联展开的同一位置，`_sharedInitBoot` 的 `load` / `readyState==='complete'`
+   双分支原样保留。
+2. **首次换算仍在塌缩布局上、终态不再是**——未触碰。`registerImageLateAnchor` /
+   `reapplyImageLateAnchor` 与图 load 回调链零改动。
+
+**执行时刻完全不变**：外链脚本**只定义不执行**（引擎顶层唯一语句是
+`window.__hoshiEngine = {…}`，守卫钉住），真正的 install 仍由 Dart 在 `onLoadStop`
+之后、`docLoad` 打点之后 / `evalSetupScript` 打点之前、同一个 `_navigateGeneration`
+守卫下触发——与改动前 `evaluateJavascript(整份 setup 脚本)` 是同一时刻、同一同步执行序。
+`defer` 保证引擎早于 load 事件就绪。
+
+**外链缺席时确定性回落**（不是重试、不是等待）：boot 是个表达式，返回 `"ok"` /
+`"engine-missing"`；Dart 见到后者就地内联同一份引擎再走同一个 boot。覆盖拦截器失败、
+缓存被清、页面来自尚未注入 script 标签的旧 HTML 三种情况，语义逐字相同，只是少了缓存复用。
+
+**守卫（都进 CI 单测门）**
+
+- 新增 `hibiki/test/reader/reader_engine_static_source_guard_test.dart`（18 项，6 组）：
+  ① 引擎构造器保持 `static` 无参（**编译器背书**：static 读不到实例状态，从根上不可能
+  掺进 per-nav 值）、三个 shell 访问器同样无参、旧的 `shellScript(` /
+  `_buildReaderSetupScript({` 必须消失、引擎顶层只有一句 `window.__hoshiEngine = {…}`
+  （只定义不执行）；② 每个真实载荷的特征行（**从 builder 输出里取，不是硬编码**）都在
+  最终引擎里 + 三种 shell 与运行时分流点在场 + caret/furigana 读的是运行时 config；
+  ③ **boot 载荷 <4KB 且不含任何引擎独有符号**（收益本身的守卫）、boot 是表达式且
+  两个返回值都在、config 字面量含 per-nav 值与原样拼接的 cue；④ 章节 HTML 的**三条**
+  注入分支都带 `<script src>`、标签带 `defer`、拦截器认引擎路径且排在 `/epub/` 之前、
+  强缓存头是 `immutable` + 长 max-age；⑤ boot 仍在 `docLoad` 与 `evalSetupScript` 之间、
+  兜底判据是 boot 返回值（不是超时/轮询）、兜底与外链共用同一份源码、install 抛错不回落；
+  ⑥ node `--check` 真解析引擎与 boot。
+- `reader_script_compactor_test.dart`（现 45 项）：最终拼装脚本改为**直接向生产代码要**
+  （`readerHibikiEngineSourceUncompacted()`），删掉原先「抠 Dart 三引号模板 + 手写替身表
+  重建」的那套。那张替身表是查找表——**新增**插值会 StateError（响亮），**删掉**一个载荷
+  完全静默；PR#493 为此额外补了「命中键」机制来兜。现在引擎是零插值静态源码，重建与漂移
+  一起没有了，PR#493 的「各子载荷整段原样在场 / 哨兵在场 / 压缩后哨兵仍在」三条断言原样
+  保留并扩到三种 shell。40 项载荷用例（含词法地雷、只删空行与整行注释、幂等、node --check）
+  全部仍覆盖**新形态**：`engine` 这一项就是生产上真正交给 `compact()` 的那份。
+- **负向验证**（两次，均改完转红、还原转绿）：
+  ① 把引擎符号塞回 `bootInvocation` → 「boot 载荷不含引擎本体」红；
+  ② 从三条 HTML 注入分支里删掉一条的 `<script src>` → 「三条分支都带 script src」红
+  （`Expected: <3> Actual: <2>`）。
+
+**因形态改变而失效、已同步更新的既有守卫**（全部是**响亮**失败，没有静默漏网）：
+`reader_mouse_drag_scroll_guard_static_test` / `reader_mouse_paging_boundary_guard_static_test`
+（切片起始标记 `var hoshiContinuousMode = $continuousMode;`）、
+`reader_paged_touch_swipe_behavior_test.js`（同一标记 + 整张字符串替身表，现在直接把
+config 传进切片，少一层脆弱耦合）、`tap_gate_mirror_guard_test`、
+`reader_continuous_swipe_axis_guard_static_test`、`reader_inchapter_progress_diag_log_test`、
+`reader_tap_coord_probe_guard_test`、`todo861_hoshi_ports_test`、
+`swipe_page_turn_no_animation_test`、`restore_charoffset_guard_test`、
+`favorite_jump_sentence_fit_guard_test`、`todo1289_image_reveal_persist_guard_test`、
+`vn_shell_smoke_test`、`vn_view_mode_three_state_guard_test`、
+`audiobook_follow_scroll_settle_guard_test`、`reader_pagination_scripts_test`、
+`reader_fixed_layout_blank_cloak_guard_static_test`（IIFE 起始 → `install: function(C) {`）、
+`reader_init_page_width_guard_static_test`（`_buildReaderSetupScript` → `_buildReaderEngineConfig`）
+以及 14 个调 `shellScript(...)` 的文件（机械迁移到三个无参 shell 访问器）。
+
+**实测（Windows 离屏 itest，debug build，同机同书同 fixture，before/after **顺序**跑、
+互不并发，各 18 次跨章的中位数）**
+
+before = 干净 `origin/develop` @ `e24ccc9ef`；after = 本改动。
+
+| 段 | before | after |
+|---|---|---|
+| setupChars（每章注入载荷字符数） | 147460 | **1071**（-99.3%） |
+| buildSetupScript（Dart 侧拼装 + 压缩） | 9ms | **1ms** |
+| evalSetupScript（注入 + 解析执行） | 20ms（13~28） | **13ms**（3~20） |
+| docLoad（WebView 装载到 load 事件） | 24ms | **34ms** |
+| nav.dcl / nav.load | 12 / 16ms | 20 / 23ms |
+| js.restore | 20ms | 20ms |
+| overlayGone | 30ms | 26ms |
+| **total（遮罩口径）** | **104ms** | **88ms** |
+
+**这些数字该怎么读（别当成「省下 24ms」）**：
+
+- **确定的**是两项：每章注入载荷 147460 → 1071 字符（机制决定，不是测量）；
+  `buildSetupScript` 9 → 1ms（Dart 侧不再每章拼装 + 压缩近万行）。
+- `evalSetupScript` 中位数 -7ms，但两轮的 min/max 区间是重叠的（13~28 vs 3~20）——
+  方向对，幅度别当精确值。
+- **`docLoad` 反而 +10ms（`nav.dcl` +8 / `nav.load` +7）**：`<script defer>` 的取用与
+  编译发生在文档装载阶段，正好落在 `docLoad` 这一段里。也就是说
+  **`evalSetupScript` 省下的一部分是搬到了 `docLoad`，不是凭空消失**——与第二轮
+  「849→101ms 是延迟转移不是 8 倍加速」是同一类事实，必须一起说。
+- `total` 104 → 88ms（-15%）是**单次配对样本**，且两轮的 max 分别是 307 / 274ms
+  （方差大）。只当方向性证据，不当精确收益。
+- **机制确实生效**：after 一轮 18 次跨章日志里**没有出现**
+  `[ReaderHibiki] engine boot fell back to inline injection` —— 外链在 Windows/WebView2
+  上被拦截器正常供给并走缓存，没有掉进内联兜底。18 次跨章落点全部正确（前进落章首 /
+  后退落章末 / 章节文件确实换了 / 中段锚重进偏差在一页内），`All tests passed`。
+
+**遗留问题（如实记下，不在本轮做）**：`docLoad` +10ms 说明外链那份 306KB 引擎（含三种
+shell，改动前只注入当前模式那一份、147KB）在每次导航仍付出可观的装载/编译成本。本轮
+没有单独测「拦截器是否每章被重新命中」，所以说不清 +10ms 里读盘/跨 channel 与 V8 重编译
+各占多少。若日后要继续压这段，两条路：① 只随 HTML 发当前模式那一份 shell（引擎 URL 带
+模式段，代价是引入「模式切换必须失效 HTML 缓存」的耦合）；② 给引擎响应加命中埋点先把
+成本归因测清楚再动手。
+
+证据：`.codex-test/windows-itest/xchapter-engine-{before,after}/command.log`（不入库）。
+
 ### 仍未做（下一步，风险与收益都更大）
 
-- `evalSetupScript` 剩余 ~24ms 是**每次跨章重新编译整份引擎 JS**：`evaluateJavascript` 的字符串没有 V8 code
-  cache。正解是把引擎改成 `<script src>` 外链（走 hoshi.local 拦截器 + 强缓存）或 UserScript 注册一次，
-  让 WebView 复用编译结果。阻碍：`initialize` 的参数化程度很高（insets / pageWidth / progress / charOffset /
-  fragment / sasayakiCues 每次导航都可能不同），要先把 per-nav 参数从脚本里剥成运行时读取。
+- ~~`evalSetupScript` 剩余 ~24ms 是每次跨章重新编译整份引擎 JS~~ —— **已做，见上文「第二阶段①」**。
+  引擎改成 `<script src>` 外链（hoshi.local 拦截器 + 内容哈希 `immutable` 强缓存），per-nav 参数剥成
+  运行时读取。实测收益比「省下 24ms」小得多，且有一部分是延迟转移到 `docLoad`，详见那一节。
 - `docLoad` 32ms 里有相当一部分是在等 `window.load`（含全部子资源）：`nav.dcl` 中位数 13ms vs `nav.load` 19ms。
   引擎若能在 DOMContentLoaded 就位，这段可与子资源加载并行。
 - 更彻底的方案是「下一章预渲染」（双 WebView 交替），可把顺序阅读的跨章压到一帧，但内存与状态同步成本高。
@@ -169,12 +301,17 @@ load 回调分派顺序）、`test/reader/reader_image_lazy_pipeline_guard_test.
   持久化位置）。**日后若有人报「跨章闪一下」，第一嫌疑就是这里**；正解是在 notify 前同步
   re-assert 一次 scrollTop（对齐分页 shell 的 `setPagePosition` 做法），把它也升级成 program-order 保证。
 
-- **[x] ① 已修复** — `_settleAndNotify` 空等 + 恢复收尾延后 + 注入脚本压缩（本 PR）
+- **[x] ① 已修复** — 三轮：`_settleAndNotify` 空等 + 恢复收尾延后 + 注入脚本压缩（PR#461）；
+  插图 lazy 流水线 + 迟到图片语义重锚（PR#469）；引擎改 `<script src>` 外链 + per-nav 参数
+  剥成运行时读取（第二阶段①）
 - **[x] ② 已加自动化测试** — 三层：
-  - `hibiki/test/reader/reader_script_compactor_test.dart`（40 项，CI 单测门内）——词法地雷用例 +
-    **全部**真实注入载荷（selection / longPressDrag / caret / 分页 / 连续 / VN 三种 shell +
-    **最终拼装脚本**）的“只删空行与整行注释 / 幂等 / 扫完干净”，并用 node `--check` 真解析
-    压缩前后的脚本（无 node 时 skip）。
+  - `hibiki/test/reader/reader_script_compactor_test.dart`（CI 单测门内）——词法地雷用例 +
+    **全部**真实注入载荷（selection / longPressDrag / caret / keyBridge / 分页 / 连续 / VN 三种
+    shell + **最终拼装脚本**）的“只删空行与整行注释 / 幂等 / 扫完干净”，并用 node `--check`
+    真解析压缩前后的脚本（无 node 时 skip）。第二阶段①后「最终拼装脚本」= 引擎源码，
+    直接向生产代码要（`readerHibikiEngineSourceUncompacted()`），不再靠替身表重建。
+  - `hibiki/test/reader/reader_engine_static_source_guard_test.dart`（18 项，CI 单测门内）——
+    第二阶段①的静态引擎 / 强缓存 / 小载荷 / 时序保证，负向验证过（见上文）。
   - `hibiki/test/pages/reader_cross_chapter_settle_guard_static_test.dart`（3 项）——源码扫描钉住
     “空等不得加回来 / 分页 settle 仍是先同步写落点再通知 / 延后一帧的收尾带代际守卫”。
   - `hibiki/integration_test/reader_cross_chapter_perf_itest.dart`（实机分段计时 + 14 次跨章落点断言；
