@@ -57,7 +57,7 @@ TODO-1961-a（resume 持久化）无关，硬塞进同一个 PR 会把审查面�
   的 windows job 现在先用 vcpkg 编出 DLL，再跑
   `Run hibiki_torrent FFI tests against the freshly built DLL`（该步骤无
   `continue-on-error`）—— 本 flaky 从此**也能把 CI 判红**，优先级要按 CI flaky
-  重估，不再是纯本地噪声。（发现于 BUG-1147 的验证：本地连跑 10 次整包套件，
+  重估，不再是纯本地噪声。（发现于 BUG-1162 的验证：本地连跑 10 次整包套件，
   这条挂了 1 次。）
 - 本地跑 `packages/hibiki_torrent` 测试时会看到这条偶发红，**不要**误判成自己
   改动引入的回归；先按上面的对照实验法验一次。

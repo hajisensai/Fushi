@@ -1,7 +1,7 @@
 // 守卫：`embedded_pipeline_test` 里「下载内容的逐字节比对」必须发生在
 // **leecher session 关闭之后**。
 //
-// 为什么需要它（BUG-1147）：`isFinished` / `progress==1.0` / `left==0` /
+// 为什么需要它（BUG-1162）：`isFinished` / `progress==1.0` / `left==0` /
 // `haveCount==numPieces` 说的都是「piece 已在内存里校验通过」，**不是**「字节
 // 已经躺在文件系统里」——写盘 job 还排在 libtorrent 的 disk io 线程上，且 2.x
 // 的 mmap 磁盘后端写进去的是映射视图，Windows 不保证映射视图与 ReadFile 之间

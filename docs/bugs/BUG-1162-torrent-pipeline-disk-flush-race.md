@@ -1,4 +1,4 @@
-## BUG-1147 · hibiki_torrent 端到端测试在字节落盘前就比对，CI Windows 约 24% 概率红
+## BUG-1162 · hibiki_torrent 端到端测试在字节落盘前就比对，CI Windows 约 24% 概率红
 - **报告**：2026-07-27（用户：CI 巡检）
 - **真实性**：✅ 真 bug（测试自身的时序假设错，不是引擎功能坏）。根因
   `packages/hibiki_torrent/test/embedded_pipeline_test.dart:151`（修复前）——
