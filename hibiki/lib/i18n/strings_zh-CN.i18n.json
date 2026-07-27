@@ -2621,5 +2621,11 @@
   "yomitan_port_kill_failed": "无法结束 $process，请手动结束该进程后重试。",
   "yomitan_port_kill_protected": "$process 是关键系统进程，Hibiki 不会结束它；请改用其他端口。",
   "yomitan_port_kill_self_instance": "该进程是本应用的另一个正在运行的实例。",
-  "game_track_bgm": "BGM / 已排除"
+  "game_track_bgm": "BGM / 已排除",
+  "game_line_audio_no_voice": "无配音",
+  "game_line_audio_overlong": "超长片段",
+  "game_line_audio_overlong_hint": "远超单句时长，可能混入 BGM 或其它混音",
+  "game_line_audio_loopback_hint": "整机混音兜底，可能混入 BGM",
+  "game_line_recapture": "补录语音",
+  "game_line_recapture_stop": "完成补录"
 }

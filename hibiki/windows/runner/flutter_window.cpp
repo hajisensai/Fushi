@@ -1847,14 +1847,34 @@ void FlutterWindow::RegisterVoiceHookChannel() {
         }
         if (method == "grabClipNear") {
           // 按句取语音：找时间戳与 tsMs 最近（差 <= tolMs）的语音 clip PCM。
+          // 选轨/排除参数与 grabUtterance 同契约：本方法是它的兜底，必须同样遵守。
           const uint64_t ts = static_cast<uint64_t>(read_long("tsMs"));
           uint64_t tol = static_cast<uint64_t>(read_long("tolMs"));
           if (tol == 0) {
             tol = 3000;  // 缺省 ±3s
           }
+          const uint64_t target =
+              static_cast<uint64_t>(read_long("sourcePtr"));
+          std::vector<uint64_t> exclude;
+          const auto* cargs =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          if (cargs != nullptr) {
+            const auto ex_it = cargs->find(flutter::EncodableValue("exclude"));
+            if (ex_it != cargs->end()) {
+              const auto* list =
+                  std::get_if<flutter::EncodableList>(&ex_it->second);
+              if (list != nullptr) {
+                for (const auto& e : *list) {
+                  exclude.push_back(
+                      static_cast<uint64_t>(e.TryGetLongValue().value_or(0)));
+                }
+              }
+            }
+          }
           std::vector<uint8_t> pcm;
           const hibiki::VoiceHookStatus s =
-              hibiki::VoiceHookReader::Instance().GrabClipNear(ts, tol, pcm);
+              hibiki::VoiceHookReader::Instance().GrabClipNear(ts, tol, target,
+                                                               exclude, pcm);
           if (!s.ok || pcm.empty()) {
             result->Success(flutter::EncodableValue(flutter::EncodableMap{
                 {flutter::EncodableValue("error"),

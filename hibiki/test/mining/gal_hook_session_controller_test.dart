@@ -1663,6 +1663,8 @@ class _FakeEngineSource extends EngineHookGalAudioSource {
   Future<GalAudioSlice?> grabClipNear(
     int tsMs, {
     int tolMs = 8000,
+    int? sourcePtr,
+    List<int>? exclude,
   }) async =>
       null;
 

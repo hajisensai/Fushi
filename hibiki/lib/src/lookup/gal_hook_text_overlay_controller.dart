@@ -134,6 +134,31 @@ class GalHookTextOverlayController extends ChangeNotifier {
           confirmMagpieDownload(appModel, prompt),
     );
     _session.attachMagpieUpscaling(magpie);
+    // 跨会话 BGM 排除记忆：真值落偏好表（每游戏一个 key，值为指纹 JSON 数组）。
+    // source_ptr 跨启动会变，能持久化的只有弱指纹（orderIndex+格式），错排除
+    // 可在音轨面板一键恢复且恢复会同步删除记忆——见 session 侧注释。
+    _session.attachTrackExclusionMemory(
+      load: (String gameKey) {
+        final Object? stored = appModel.prefsRepo
+            .getPref('gal_excluded_tracks::$gameKey', defaultValue: '');
+        if (stored is! String || stored.isEmpty) return const <String>[];
+        try {
+          final Object? decoded = jsonDecode(stored);
+          if (decoded is List) {
+            return decoded.whereType<String>().toList(growable: false);
+          }
+        } catch (_) {}
+        return const <String>[];
+      },
+      save: (String gameKey, List<String> fingerprints) {
+        unawaited(
+          appModel.prefsRepo.setPref(
+            'gal_excluded_tracks::$gameKey',
+            jsonEncode(fingerprints),
+          ),
+        );
+      },
+    );
     // 启动期对账：上次崩溃 / 被任务管理器结束时，退出清理根本没跑过，配置里会留着
     // `autoScale=Fullscreen` 的 `Hibiki: ` profile（外加可能还活着的 Magpie 进程）。
     // 不对账 = 用户下次不经 Hibiki 双击游戏也被自动全屏超分。fire-and-forget：它自身

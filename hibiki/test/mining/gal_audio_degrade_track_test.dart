@@ -270,28 +270,32 @@ void main() {
     );
     expect(galTrackSelectionAffectsCapture(GalHookAudioBackend.none), isFalse);
 
-    final String page = File(
-      'lib/src/pages/implementations/game_diagnostics_page.dart',
+    // 轨列表内容体已抽到共享面板（诊断页与捕获工作台音轨对话框同一份），
+    // BUG-1102 的判据守卫跟着真相走：扫共享面板文件，另确认诊断页在消费它。
+    final String panel = File(
+      'lib/src/mining/gal_audio_tracks_panel.dart',
     ).readAsStringSync();
-    final int cardAt = page.indexOf('class _AudioTracksCard');
-    expect(cardAt, greaterThan(0));
-    final String card = page.substring(cardAt);
     expect(
-      card.contains('galTrackSelectionAffectsCapture(state.audioBackend)'),
+      panel.contains('galTrackSelectionAffectsCapture(state.audioBackend)'),
       isTrue,
       reason: '解释/禁用判据必须是后端，不能再是 audioTracks.isEmpty',
     );
     expect(
-      card.contains('state.audioTracks.isEmpty && emptyHint'),
+      panel.contains('state.audioTracks.isEmpty && emptyHint'),
       isFalse,
       reason: '列表非空时解释态被跳过，正是 BUG-1102 里整套死控件照常渲染的原因',
     );
-    expect(card.contains('selectable: selectionEffective'), isTrue);
-    expect(card.contains('enabled: selectable && !excluded'), isTrue,
+    expect(panel.contains('selectable: selectionEffective'), isTrue);
+    expect(panel.contains('enabled: selectable && !excluded'), isTrue,
         reason: '非引擎 PCM 后端必须禁用「选为语音轨」');
-    expect(card.contains('t.game_track_no_clips'), isTrue,
+    expect(panel.contains('t.game_track_no_clips'), isTrue,
         reason: 'clipCount == 0 的轨必须标注，而不是和可用轨长一个样');
-    expect(card.contains('t.game_tracks_pcm_only_hint'), isTrue);
+    expect(panel.contains('t.game_tracks_pcm_only_hint'), isTrue);
+    final String page = File(
+      'lib/src/pages/implementations/game_diagnostics_page.dart',
+    ).readAsStringSync();
+    expect(page.contains('GalAudioTracksPanel('), isTrue,
+        reason: '诊断页必须消费共享面板，不得另写一份轨列表');
 
     final String workbench = File(
       'lib/src/pages/implementations/texthooker_page.dart',
@@ -582,7 +586,12 @@ class _FakeEngine extends EngineHookGalAudioSource {
   }
 
   @override
-  Future<GalAudioSlice?> grabClipNear(int tsMs, {int tolMs = 8000}) async =>
+  Future<GalAudioSlice?> grabClipNear(
+    int tsMs, {
+    int tolMs = 8000,
+    int? sourcePtr,
+    List<int>? exclude,
+  }) async =>
       null;
 
   @override

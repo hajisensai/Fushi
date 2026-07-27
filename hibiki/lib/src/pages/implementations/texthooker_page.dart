@@ -14,6 +14,7 @@ import 'package:hibiki/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
 import 'package:hibiki/src/mining/magpie_upscaling_service.dart';
 import 'package:hibiki/src/mining/magpie_upscaling_text.dart';
+import 'package:hibiki/src/mining/gal_audio_tracks_panel.dart';
 import 'package:hibiki/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
@@ -382,6 +383,105 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (!await DesktopAudioPlayback.playFile(preview.filePath)) {
       HibikiToast.show(msg: t.game_track_preview_failed);
     }
+  }
+
+  /// 会话音轨对话框：内容复用 [GalAudioTracksPanel]（与诊断页同一份），随会话
+  /// 状态实时刷新。逐轨试听按最近一条台词时间戳整句抓取（与诊断页同语义——这里
+  /// 是会话级判断「哪条轨是语音/BGM」，不针对具体某句；针对某句改轨走行内改轨）。
+  Future<void> _showSessionTrackPanel() async {
+    unawaited(_session.refreshAudioTracks());
+    int? previewingPtr;
+    Timer? previewReset;
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setDialogState) {
+            Future<void> handlePreview(GalAudioTrack track) async {
+              if (previewingPtr == track.sourcePtr) {
+                previewReset?.cancel();
+                setDialogState(() => previewingPtr = null);
+                await DesktopAudioPlayback.stop();
+                return;
+              }
+              final GalTrackPreview? preview =
+                  await _session.exportTrackPreview(track.sourcePtr);
+              if (!dialogContext.mounted) return;
+              if (preview == null) {
+                HibikiToast.show(msg: t.game_track_preview_failed);
+                return;
+              }
+              final bool started =
+                  await DesktopAudioPlayback.playFile(preview.filePath);
+              if (!dialogContext.mounted) return;
+              if (!started) {
+                HibikiToast.show(msg: t.game_track_preview_failed);
+                return;
+              }
+              previewReset?.cancel();
+              setDialogState(() => previewingPtr = track.sourcePtr);
+              previewReset = Timer(
+                Duration(milliseconds: preview.durationMs + 300),
+                () {
+                  if (dialogContext.mounted) {
+                    setDialogState(() => previewingPtr = null);
+                  }
+                },
+              );
+            }
+
+            return AlertDialog(
+              title: Text(t.game_audio_tracks),
+              content: SizedBox(
+                width: 520,
+                child: ListenableBuilder(
+                  listenable: _session,
+                  builder: (BuildContext context, Widget? child) {
+                    return SingleChildScrollView(
+                      child: GalAudioTracksPanel(
+                        state: _session.state,
+                        onSelectVoice: _session.selectVoiceTrack,
+                        onToggleExcluded: _session.setTrackExcluded,
+                        onPreviewTrack: (GalAudioTrack track) =>
+                            unawaited(handlePreview(track)),
+                        previewingSourcePtr: previewingPtr,
+                      ),
+                    );
+                  },
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: Text(t.dialog_close),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    previewReset?.cancel();
+    unawaited(DesktopAudioPlayback.stop());
+  }
+
+  /// 行内补录开/收：missing/兜底行的一键补救。开窗后回游戏里点一次语音重播，
+  /// 再点停止（或等窗口到点自动收束）。与浮窗「重播并录音」同一条控制器出口，
+  /// 结果标注 manual_recapture，自动配对不得再覆盖（用户裁决优先）。
+  Future<void> _toggleLineRecapture(TexthookerLineEntry line) async {
+    if (_session.recapturingLineId == line.id) {
+      final bool ok = await _session.finishLineRecapture();
+      HibikiToast.show(
+        msg: ok ? t.game_hook_recapture_saved : t.game_hook_recapture_empty,
+      );
+      return;
+    }
+    final bool started = await _session.startLineRecapture(line.id);
+    HibikiToast.show(
+      msg: started
+          ? t.game_hook_recapture_started
+          : t.game_hook_recapture_unavailable,
+    );
   }
 
   /// 分词结果缓存：行文本按 id 不可变，缓存 textToWords 避免每次 rebuild 重复分词
@@ -1013,6 +1113,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           label: labelOf(t.game_stop_listening),
           onTap: () => unawaited(_session.stopCapture()),
         ),
+      // 会话音轨面板直达入口：排除 BGM 是会话级操作，此前只能从「某一句的
+      // 选轨对话框」绕进去（先随便找一句才能排除，入口藏反了）。
+      if (Platform.isWindows && state.isActive)
+        HibikiIconButton(
+          icon: Icons.multitrack_audio_outlined,
+          tooltip: t.game_audio_tracks,
+          label: labelOf(t.game_audio_tracks),
+          focusId: const HibikiFocusId('game-toolbar-tracks'),
+          onTap: () => unawaited(_showSessionTrackPanel()),
+        ),
       HibikiIconButton(
         icon: Icons.delete_outline,
         tooltip: t.clear,
@@ -1448,6 +1558,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                         canPickTrack: _session.hasEngineSource &&
                             _session.state.audioTracks.isNotEmpty &&
                             _session.isLineInCurrentSession(line),
+                        canRecapture: Platform.isWindows &&
+                            _session.state.isActive &&
+                            _session.isLineInCurrentSession(line),
+                        recapturing: _session.recapturingLineId == line.id,
                         onSelectLine: _selectLine,
                         onWordTap: _onWordTap,
                         onToggleFavorite: _toggleLineFavorite,
@@ -1455,6 +1569,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                             unawaited(_toggleLinePreview(l)),
                         onPickTrack: (TexthookerLineEntry l) =>
                             unawaited(_pickLineTrack(l)),
+                        onRecapture: (TexthookerLineEntry l) =>
+                            unawaited(_toggleLineRecapture(l)),
                       );
                     },
                   ),
@@ -2046,11 +2162,14 @@ class _TexthookerLine extends StatelessWidget {
     required this.selected,
     required this.previewingAudio,
     required this.canPickTrack,
+    required this.canRecapture,
+    required this.recapturing,
     required this.onSelectLine,
     required this.onWordTap,
     required this.onToggleFavorite,
     required this.onPreviewAudio,
     required this.onPickTrack,
+    required this.onRecapture,
   });
 
   final TexthookerLineEntry line;
@@ -2062,6 +2181,12 @@ class _TexthookerLine extends StatelessWidget {
 
   /// 是否显示「改音轨」按钮：会话有 engine helper、有音轨快照、且本行属于当前会话。
   final bool canPickTrack;
+
+  /// 是否显示「补录」按钮：Windows 会话进行中且本行属于当前会话。
+  final bool canRecapture;
+
+  /// 本行是否正开着补录窗口（按钮显示为停止收束）。
+  final bool recapturing;
   final ValueChanged<TexthookerLineEntry> onSelectLine;
   final ValueChanged<TexthookerLineEntry> onToggleFavorite;
 
@@ -2070,6 +2195,9 @@ class _TexthookerLine extends StatelessWidget {
 
   /// 为本行单独改选语音轨（自动配对配错时的用户裁决出口）。
   final ValueChanged<TexthookerLineEntry> onPickTrack;
+
+  /// 开/收本行补录窗口（missing/兜底行的一键补救，与浮窗「重播并录音」同出口）。
+  final ValueChanged<TexthookerLineEntry> onRecapture;
   final void Function(
     TexthookerLineEntry line,
     String word,
@@ -2112,7 +2240,11 @@ class _TexthookerLine extends StatelessWidget {
                   const _LineMinedChip(),
                   const SizedBox(width: 6),
                 ],
-                _LineAudioChip(status: line.audioStatus),
+                _LineAudioChip(
+                  status: line.audioStatus,
+                  backend: line.audioBackend,
+                  fallbackReason: line.fallbackReason,
+                ),
                 const SizedBox(width: 4),
                 // 行内试听已配音频（用户实拍：音频就绪却听不了）。仅 hasAudio 行显示；
                 // 试听中变停止钮。样式对齐收藏星。
@@ -2140,6 +2272,23 @@ class _TexthookerLine extends StatelessWidget {
                     size: 18,
                     focusId: HibikiFocusId('game-line-track-${line.id}'),
                     onTap: () => onPickTrack(line),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                // 行内补录：missing/兜底行的一键补救此前只在浮窗有入口，工作台里
+                // 用户对着红标没有任何补救手段。录音中变停止钮（收束并落定）。
+                if (canRecapture) ...<Widget>[
+                  HibikiIconButton(
+                    icon: recapturing
+                        ? Icons.stop_circle_outlined
+                        : Icons.mic_none_outlined,
+                    tooltip: recapturing
+                        ? t.game_line_recapture_stop
+                        : t.game_line_recapture,
+                    size: 18,
+                    enabledColor: recapturing ? colors.error : null,
+                    focusId: HibikiFocusId('game-line-recapture-${line.id}'),
+                    onTap: () => onRecapture(line),
                   ),
                   const SizedBox(width: 4),
                 ],
@@ -2222,13 +2371,46 @@ class _LineMinedChip extends StatelessWidget {
 }
 
 class _LineAudioChip extends StatelessWidget {
-  const _LineAudioChip({required this.status});
+  const _LineAudioChip({
+    required this.status,
+    this.backend,
+    this.fallbackReason,
+  });
 
   final TexthookerLineAudioStatus status;
+
+  /// 音频来源（engine_pcm / game_resource / system_loopback），用于把「整机混音
+  /// 兜底（可能混 BGM）」从正常绿标里分出来提示。
+  final String? backend;
+
+  /// 语义化 fallbackReason（见 [kGalLineNoVoiceReason] / [kGalOverlongSliceSuspectReason]）：
+  /// 「无配音」灰标不吓人、「超长可疑切片」亮黄提醒。
+  final String? fallbackReason;
 
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    // 语义化 reason 优先于通用状态：无配音是常态不是故障；超长切片是可疑不是正常。
+    if (status == TexthookerLineAudioStatus.missing &&
+        fallbackReason == kGalLineNoVoiceReason) {
+      return _chip(
+        context,
+        t.game_line_audio_no_voice,
+        colors.surfaceContainerHighest,
+        colors.onSurfaceVariant,
+      );
+    }
+    if (fallbackReason == kGalOverlongSliceSuspectReason) {
+      return Tooltip(
+        message: t.game_line_audio_overlong_hint,
+        child: _chip(
+          context,
+          t.game_line_audio_overlong,
+          colors.tertiaryContainer,
+          colors.onTertiaryContainer,
+        ),
+      );
+    }
     final (String, Color, Color) appearance = switch (status) {
       TexthookerLineAudioStatus.pending => (
           t.game_line_audio_pending,
@@ -2261,17 +2443,31 @@ class _LineAudioChip extends StatelessWidget {
           colors.onSurfaceVariant,
         ),
     };
+    final Widget chip =
+        _chip(context, appearance.$1, appearance.$2, appearance.$3);
+    // loopback 是整机混音兜底：状态标签照旧，但悬停要说清「可能混入 BGM」。
+    if (backend == 'system_loopback') {
+      return Tooltip(message: t.game_line_audio_loopback_hint, child: chip);
+    }
+    return chip;
+  }
+
+  Widget _chip(
+    BuildContext context,
+    String label,
+    Color background,
+    Color foreground,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: appearance.$2,
+        color: background,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        appearance.$1,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: appearance.$3,
-            ),
+        label,
+        style:
+            Theme.of(context).textTheme.labelSmall?.copyWith(color: foreground),
       ),
     );
   }

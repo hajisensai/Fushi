@@ -2621,5 +2621,11 @@
   "yomitan_port_kill_failed": "Could not end $process. Please end it manually, then retry.",
   "yomitan_port_kill_protected": "$process is a critical system process — Hibiki will not end it. Change the port instead.",
   "yomitan_port_kill_self_instance": "This process is another running instance of this app.",
-  "game_track_bgm": "BGM / excluded"
+  "game_track_bgm": "BGM / excluded",
+  "game_line_audio_no_voice": "No voice",
+  "game_line_audio_overlong": "Overlong clip",
+  "game_line_audio_overlong_hint": "Far longer than a single line; may include BGM or other mixed audio",
+  "game_line_audio_loopback_hint": "System-mix fallback; may include BGM",
+  "game_line_recapture": "Recapture voice",
+  "game_line_recapture_stop": "Finish recapture"
 }

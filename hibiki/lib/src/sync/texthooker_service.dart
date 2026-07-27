@@ -131,6 +131,12 @@ enum TexthookerLineAudioStatus {
   encoded,
 }
 
+/// [TexthookerLineEntry.fallbackReason] 的两个**语义化**值（其余 reason 是诊断字符串）：
+/// UI 靠它们把「这句本来就没配音」从「疑似漏抓」的红标里分出来、把「超长可疑切片」
+/// 从正常兜底里分出来。生产与消费两侧共用本常量，别在别处重复字面量。
+const String kGalLineNoVoiceReason = 'line_has_no_voice';
+const String kGalOverlongSliceSuspectReason = 'slice_overlong_suspect';
+
 /// 实时台词列表的筛选维度。单一枚举驱动 [lineMatchesFilter] 一个 predicate，
 /// 消除「有音频 / 已制卡 / 已收藏」各写一条 if 分支的特殊情况。与线程下拉筛选正交：
 /// 先按线程取行，再按本枚举过滤。

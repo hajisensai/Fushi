@@ -61,6 +61,20 @@ enum GalHookAudioBackend { none, gameResource, enginePcm, systemLoopback }
 /// 「后端是不是引擎 PCM」（[galTrackSelectionAffectsCapture]），不是「列表空不空」。
 enum GalTrackEmptyHint { generic, resourceMode, loopbackMode }
 
+/// 单句语音的合理时长上限（毫秒）。超过它的切片多半不是「一句台词」而是长段混音
+/// （典型：制卡时才收束的 loopback 回取，见 [_flushLoopbackFreeze]），入卡前换成
+/// [kGalOverlongSliceSuspectReason] 让 UI 亮黄提醒，而不是静默当正常语音。
+const int kGalOverlongSliceSuspectMs = 20000;
+
+/// 跨会话 BGM 排除记忆的持久化端口（真值放偏好表，由
+/// [GalHookSessionController.attachTrackExclusionMemory] 注入）。gameKey 是
+/// 启动 exe 全路径小写；指纹见 [GalHookSessionController.trackFingerprint]。
+typedef GalTrackExclusionLoad = List<String> Function(String gameKey);
+typedef GalTrackExclusionSave = void Function(
+  String gameKey,
+  List<String> fingerprints,
+);
+
 /// 会话级选轨 / 排除是否真的影响取音（纯函数，可单测）。
 ///
 /// 只有引擎 PCM 后端会走 `grabUtterance`，也只有它读
@@ -529,6 +543,14 @@ class GalHookSessionController extends ChangeNotifier {
   final Map<String, DateTime> _loopbackFreezeStartedAt = <String, DateTime>{};
 
   final Map<String, GalAudioSlice> _lineVoiceCache = <String, GalAudioSlice>{};
+
+  // 跨会话 BGM 排除记忆（见 [attachTrackExclusionMemory]）。
+  GalTrackExclusionLoad? _exclusionMemoryLoad;
+  GalTrackExclusionSave? _exclusionMemorySave;
+  bool _exclusionMemoryApplied = false;
+  bool _exclusionMemoryLoaded = false;
+  String? _exclusionMemoryGameKey;
+  final Set<String> _persistedExclusionFps = <String>{};
   final Map<String, int> _lineTimestampCache = <String, int>{};
   final Map<String, int> _lineTextEventIdCache = <String, int>{};
   final Map<String, ({int timestampMs, int textEventId})>
@@ -1081,6 +1103,7 @@ class GalHookSessionController extends ChangeNotifier {
         excludedAudioSourcePtrs: const <int>{},
       ),
     );
+    _resetExclusionMemorySession();
     _record(
       GalHookEventSeverity.success,
       'session',
@@ -1121,6 +1144,10 @@ class GalHookSessionController extends ChangeNotifier {
     final bool membershipChanged =
         !sameTrackMembership(_state.audioTracks, tracks);
     _setState(_state.copyWith(audioTracks: tracks));
+    if (tracks.isNotEmpty && !_exclusionMemoryApplied) {
+      _exclusionMemoryApplied = true;
+      _applyPersistedExclusions(engine, tracks);
+    }
     // BUG-1027：刷新已由定时器/状态迁移自动驱动，只有轨成员变化才记事件，
     // 避免 5s 一条「已刷新」把事件日志淹掉。
     if (membershipChanged) {
@@ -1671,6 +1698,7 @@ class GalHookSessionController extends ChangeNotifier {
         ),
       ),
     );
+    _persistTrackExclusion(sourcePtr, excluded);
     _record(
       GalHookEventSeverity.info,
       'audio',
@@ -1678,6 +1706,112 @@ class GalHookSessionController extends ChangeNotifier {
       excluded ? 'Audio track marked as BGM/excluded' : 'Audio track restored',
       details: <String, Object?>{'sourcePtr': sourcePtr},
     );
+  }
+
+  /// 注入跨会话 BGM 排除记忆的持久化端口（桌面启动流程
+  /// [GalHookTextOverlayController.start] 调用一次，真值落偏好表）。不注入 =
+  /// 排除只活在会话内，行为与旧版一致。
+  void attachTrackExclusionMemory({
+    required GalTrackExclusionLoad load,
+    required GalTrackExclusionSave save,
+  }) {
+    _exclusionMemoryLoad = load;
+    _exclusionMemorySave = save;
+  }
+
+  /// 音轨的跨会话弱指纹。`source_ptr` 只在会话内稳定（跨启动是新指针），能锚的只有
+  /// [GalAudioTrack.orderIndex]（创建顺序，跨启动相对稳定）+ PCM 格式。指纹可能撞/漂
+  /// ——所以记忆只用于**恢复排除**（错排除可一键恢复、且会话内立即可见），绝不用于
+  /// 自动选定语音轨（错选会静默混错音频）。
+  @visibleForTesting
+  static String trackFingerprint(GalAudioTrack track) =>
+      '${track.orderIndex}:${track.format.sampleRate}:'
+      '${track.format.channels}:${track.format.bitsPerSample}:'
+      '${track.format.isFloat ? 1 : 0}';
+
+  String? _exclusionGameKey() {
+    final String? exe = _state.launchExe;
+    if (exe == null || exe.isEmpty) return null;
+    return exe.toLowerCase();
+  }
+
+  /// 惰性加载当前游戏的持久化排除指纹（每会话一次）。没有游戏身份（窗口附着、
+  /// 非启动路径）就没有记忆——宁可少记，不猜身份。
+  bool _ensureExclusionMemoryLoaded() {
+    if (_exclusionMemoryLoaded) return _exclusionMemoryGameKey != null;
+    _exclusionMemoryLoaded = true;
+    final GalTrackExclusionLoad? load = _exclusionMemoryLoad;
+    final String? gameKey = _exclusionGameKey();
+    if (load == null || gameKey == null) return false;
+    _exclusionMemoryGameKey = gameKey;
+    _persistedExclusionFps
+      ..clear()
+      ..addAll(load(gameKey));
+    return true;
+  }
+
+  /// 首个非空音轨快照到达时，把上次会话的排除按指纹套回当前轨。只应用一次：
+  /// 环形越新鲜 orderIndex 越贴近真实创建序，越晚匹配越容易漂。
+  void _applyPersistedExclusions(
+    EngineHookGalAudioSource engine,
+    List<GalAudioTrack> tracks,
+  ) {
+    if (!_ensureExclusionMemoryLoaded() || _persistedExclusionFps.isEmpty) {
+      return;
+    }
+    int applied = 0;
+    for (final GalAudioTrack track in tracks) {
+      if (!_persistedExclusionFps.contains(trackFingerprint(track))) continue;
+      if (!engine.excludedAudioSourcePtrs.add(track.sourcePtr)) continue;
+      applied++;
+    }
+    if (applied == 0) return;
+    _setState(
+      _state.copyWith(
+        excludedAudioSourcePtrs: Set<int>.unmodifiable(
+          engine.excludedAudioSourcePtrs,
+        ),
+      ),
+    );
+    _record(
+      GalHookEventSeverity.info,
+      'audio',
+      'audio.track_exclusions_restored',
+      'Restored BGM track exclusions from the previous session',
+      details: <String, Object?>{'count': applied},
+    );
+  }
+
+  /// 用户显式排除/恢复后同步持久化。恢复会把指纹从记忆里删掉——用户说了这条轨
+  /// 不是 BGM，下次会话不得再自动排除它。
+  void _persistTrackExclusion(int sourcePtr, bool excluded) {
+    if (!_ensureExclusionMemoryLoaded()) return;
+    final GalTrackExclusionSave? save = _exclusionMemorySave;
+    final String? gameKey = _exclusionMemoryGameKey;
+    if (save == null || gameKey == null) return;
+    GalAudioTrack? track;
+    for (final GalAudioTrack candidate in _state.audioTracks) {
+      if (candidate.sourcePtr == sourcePtr) {
+        track = candidate;
+        break;
+      }
+    }
+    if (track == null) return; // 快照里已不存在的轨谈不上指纹。
+    final String fingerprint = trackFingerprint(track);
+    final bool changed = excluded
+        ? _persistedExclusionFps.add(fingerprint)
+        : _persistedExclusionFps.remove(fingerprint);
+    if (changed) {
+      save(gameKey, _persistedExclusionFps.toList()..sort());
+    }
+  }
+
+  /// 会话结束时复位记忆的会话内状态（持久化真值不动）。
+  void _resetExclusionMemorySession() {
+    _exclusionMemoryApplied = false;
+    _exclusionMemoryLoaded = false;
+    _exclusionMemoryGameKey = null;
+    _persistedExclusionFps.clear();
   }
 
   Future<Uint8List?> captureAudioBytes({
@@ -1807,7 +1941,13 @@ class GalHookSessionController extends ChangeNotifier {
           await engine.grabClipNear(timestamp);
     }
     if (slice == null || slice.isEmpty) {
-      _markLineAudioMissing(lineId, 'line_audio_not_cached');
+      // 制卡时刻仍两手空空：能给证据就给证据——引擎 PCM 会话下按「该句时刻
+      // 是否有候选轨在响」区分无配音与疑似漏抓，别一律顶红标。
+      final String reason =
+          engine != null && identical(source, engine) && timestamp > 0
+              ? await _classifyEnginePcmMiss(engine, timestamp)
+              : 'line_audio_not_cached';
+      _markLineAudioMissing(lineId, reason);
       return null;
     }
     return _encodeLineSlice(
@@ -1820,6 +1960,24 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
+  /// 超长切片门（纯函数）：一句台词的语音极少超过 [kGalOverlongSliceSuspectMs]。
+  /// 超长的多半是「制卡时才收束的 loopback 回取」把几十秒混音整段塞了进来
+  /// （[_flushLoopbackFreeze] 的 backMs 上限是环容量 60s）。不丢数据——照样入卡，
+  /// 但把 fallbackReason 换成明确的可疑标注让 UI 亮黄，别让一段混着 BGM 的长音频
+  /// 顶着正常标签混过去。用户显式裁决（补录/选轨）是有意为之，不二次质疑。
+  @visibleForTesting
+  static String? sliceFallbackReasonFor({
+    required int durationMs,
+    required String? fallbackReason,
+  }) {
+    final bool userAdjudicated = fallbackReason == 'manual_recapture' ||
+        fallbackReason == 'manual_track_override';
+    if (!userAdjudicated && durationMs > kGalOverlongSliceSuspectMs) {
+      return kGalOverlongSliceSuspectReason;
+    }
+    return fallbackReason;
+  }
+
   /// 把一段冻结 PCM 切片转成制卡容器字节，并把该行标成 encoded。
   /// 制卡链路上「有切片了」之后的收尾只有这一份实现（PCM 兜底与手动补录共用）。
   Future<Uint8List?> _encodeLineSlice({
@@ -1829,6 +1987,20 @@ class GalHookSessionController extends ChangeNotifier {
     required String outputExtension,
     required String? fallbackReason,
   }) async {
+    final int durationMs = (slice.pcm.length * 1000) ~/ slice.format.byteRate;
+    final String? effectiveReason = sliceFallbackReasonFor(
+      durationMs: durationMs,
+      fallbackReason: fallbackReason,
+    );
+    if (effectiveReason != fallbackReason) {
+      _record(
+        GalHookEventSeverity.warning,
+        'encode',
+        'audio.slice_overlong',
+        'Captured slice is suspiciously long for a single line',
+        details: <String, Object?>{'lineId': lineId, 'durationMs': durationMs},
+      );
+    }
     final Directory jobDirectory = await Directory.systemTemp.createTemp(
       'hibiki-gal-mining-job-',
     );
@@ -1847,8 +2019,8 @@ class GalHookSessionController extends ChangeNotifier {
         lineId,
         status: TexthookerLineAudioStatus.encoded,
         backend: backend,
-        durationMs: (slice.pcm.length * 1000) ~/ slice.format.byteRate,
-        fallbackReason: fallbackReason,
+        durationMs: durationMs,
+        fallbackReason: effectiveReason,
       );
       _record(
         GalHookEventSeverity.success,
@@ -2939,18 +3111,56 @@ class GalHookSessionController extends ChangeNotifier {
       return;
     }
     if (!resourceReady) {
+      final String reason =
+          await _classifyEnginePcmMiss(engine, line.timestampMs);
+      if (engine != _engineSource || !isLineInCurrentSession(entry)) return;
       _textService.updateLineAudio(
         entry.id,
         status: TexthookerLineAudioStatus.missing,
-        fallbackReason: 'utterance_not_found',
+        fallbackReason: reason,
       );
       _record(
-        GalHookEventSeverity.warning,
+        reason == kGalLineNoVoiceReason
+            ? GalHookEventSeverity.info
+            : GalHookEventSeverity.warning,
         'match',
-        'audio.utterance_not_found',
-        'No engine utterance matched the captured line',
+        reason == kGalLineNoVoiceReason
+            ? 'audio.line_no_voice'
+            : 'audio.utterance_not_found',
+        reason == kGalLineNoVoiceReason
+            ? 'No PCM was active at this line; treating it as unvoiced'
+            : 'No engine utterance matched the captured line',
         details: <String, Object?>{'lineId': entry.id, 'seq': line.seq},
       );
+    }
+  }
+
+  /// 引擎 PCM 窗口内没抓到这句语音时，区分「这句本来就没配音」与「疑似漏抓」。
+  ///
+  /// 证据来自 [EngineHookGalAudioSource.listAudioTracks]：`avgEnergy >= 0` 表示该轨
+  /// 在**该句文本时刻窗**（native `[ts-150, ts+450]`）内确有 16-bit clip——
+  /// - 候选轨（未被排除、且未被逐轨锁定到别的轨）在该时刻有能量 → 疑似漏抓，红标提醒；
+  /// - 候选轨全部沉默（声音只在被排除的 BGM 轨上，或根本没有）→ 判无配音，灰标不告警。
+  /// 这样旁白/选项句不再顶着「missing」红标吓人，真正的抓取失败也不会被无配音淹没。
+  Future<String> _classifyEnginePcmMiss(
+    EngineHookGalAudioSource engine,
+    int timestampMs,
+  ) async {
+    if (timestampMs <= 0) return 'utterance_not_found';
+    try {
+      final List<GalAudioTrack> tracks =
+          await engine.listAudioTracks(timestampMs);
+      final Set<int> excluded = engine.excludedAudioSourcePtrs;
+      final int selected = engine.selectedAudioSourcePtr;
+      final bool candidateActive = tracks.any(
+        (GalAudioTrack track) =>
+            !excluded.contains(track.sourcePtr) &&
+            (selected == 0 || track.sourcePtr == selected) &&
+            track.avgEnergy >= 0,
+      );
+      return candidateActive ? 'utterance_not_found' : kGalLineNoVoiceReason;
+    } catch (_) {
+      return 'utterance_not_found';
     }
   }
 
