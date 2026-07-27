@@ -2036,6 +2036,78 @@
     return false;
   }
 
+  // BUG-1166 — C++ 把「落在卡片上、且按着 Ctrl/Alt」的滚轮交到这里。
+  //
+  // 为什么这条路必须存在：那格滚轮已被 WH_MOUSE_LL 钩子吞掉（否则会穿到底下的
+  // galgame），而窗口线程若用 PostMessage 合成一条 WM_MOUSEWHEEL 补回去，修饰键
+  // 会在边界上丢失 —— Chromium 取 ctrlKey/altKey 读的是 GetKeyState，而合成消息不
+  // 更新线程键状态表，覆盖窗又是 WS_EX_NOACTIVATE、不在前台输入队列里。于是修饰键
+  // 只能作为**数据**送到这一层，由 JS 合成一条带显式 flag 的 WheelEvent。
+  //
+  // 判定语义仍然全部留在既有 JS 里，host 不做策略（绑定真值 __hoshiEntryWheelBindings
+  // 在 popup.js，用户可改键位；缩放档距在 Dart）：
+  //   ctrlKey → _globalLookupZoomWheelJs 的 window wheel 监听 → callHandler
+  //             ('popupZoomFontStep') → jsMessage → Dart maybeHandleOverlayZoomFontStep
+  //   altKey  → popup.js __hibikiPopupWheelListener 的 popupEntryWheelAction → 换词条
+  //
+  // (x, y) 与 handleGlobalClick 同一坐标系（窗口内 CSS px）；deltaY 已由 C++ 转成
+  // **DOM 约定**（向上滚为负），所以 JS 侧收到的与真滚轮完全同构。
+  // 返回是否真的派发了（false = 落在卡片外/无 realm，调用方不必处理）。
+  function handleGlobalWheel(x, y, deltaY, ctrlKey, altKey, shiftKey) {
+    var frameId = frameIdAtPoint(x, y);
+    if (frameId == null) return false;
+    var record = frames.get(frameId);
+    if (!record || !record.iframe) return false;
+    var win = null;
+    try {
+      win = record.iframe.contentWindow;
+    } catch (e) {
+      win = null;
+    }
+    if (!win) return false;
+    var doc = win.document || record.iframe.contentDocument;
+    if (!doc || typeof doc.dispatchEvent !== 'function') return false;
+    var init = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      deltaX: 0,
+      deltaY: deltaY,
+      deltaZ: 0,
+      deltaMode: 0,
+      ctrlKey: !!ctrlKey,
+      altKey: !!altKey,
+      shiftKey: !!shiftKey,
+      metaKey: false,
+    };
+    var evt = null;
+    // 真实 WebView2 走这条：构造真 WheelEvent，composedPath()/preventDefault() 等
+    // 一应俱全，下游监听分辨不出它是合成的。
+    if (typeof win.WheelEvent === 'function') {
+      try {
+        evt = new win.WheelEvent('wheel', init);
+      } catch (e) {
+        evt = null;
+      }
+    }
+    if (!evt) {
+      // 无 WheelEvent 构造器（node harness / 极老 realm）：退化成同形字面量，
+      // 保证契约仍可被断言，且真实浏览器永远走不到这里。
+      evt = { type: 'wheel' };
+      for (var k in init) {
+        if (Object.prototype.hasOwnProperty.call(init, k)) evt[k] = init[k];
+      }
+      evt.preventDefault = function () {};
+      evt.composedPath = function () { return []; };
+    }
+    try {
+      doc.dispatchEvent(evt);
+    } catch (e) {
+      return false;
+    }
+    return true;
+  }
+
   function topPopupId() {
     var last = null;
     frames.forEach(function (record, id) {
@@ -2286,6 +2358,7 @@
     playWordAudioInFrame: playWordAudioInFrame,
     frameIdAtPoint: frameIdAtPoint,
     handleGlobalClick: handleGlobalClick,
+    handleGlobalWheel: handleGlobalWheel,
     measureAndReport: measureAndReport,
     commitLayerShift: commitLayerShift,
     frameGateState: frameGateState,

@@ -30,25 +30,65 @@ std::atomic<DWORD> g_thread_id{0};
 HANDLE g_thread_ready = nullptr;
 
 LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
-  // 只关心「按下」：移动/滚轮直接放行（这条分支每秒会跑上千次，必须是纯比较）。
-  if (code >= 0 &&
+  // 只关心「按下」和「滚轮」：移动直接放行（这条分支每秒会跑上千次，在任何系统
+  // 调用之前必须先被纯比较挡掉）。
+  const bool is_click =
       (wparam == WM_LBUTTONDOWN || wparam == WM_RBUTTONDOWN ||
-       wparam == WM_NCLBUTTONDOWN)) {
-    const HWND target = g_target.load(std::memory_order_relaxed);
-    if (target != nullptr && IsWindow(target)) {
-      const MSLLHOOKSTRUCT* info =
-          reinterpret_cast<const MSLLHOOKSTRUCT*>(lparam);
-      RECT rc{};
-      // GetWindowRect 是跨线程安全的只读查询；命中判定留在这里，是为了让窗口线程
-      // 拿到的消息自带结论，不必在忙碌时再回头查几何。
-      const BOOL inside =
-          GetWindowRect(target, &rc) && PtInRect(&rc, info->pt);
-      PostMessage(target, kLowLevelMouseClickMessage,
-                  PackMouseHookPoint(info->pt.x, info->pt.y),
-                  inside ? 1 : 0);
-    }
+       wparam == WM_NCLBUTTONDOWN);
+  const bool is_wheel =
+      (wparam == WM_MOUSEWHEEL || wparam == WM_MOUSEHWHEEL);
+  if (code < 0 || (!is_click && !is_wheel)) {
+    return CallNextHookEx(nullptr, code, wparam, lparam);
   }
-  return CallNextHookEx(nullptr, code, wparam, lparam);
+  const HWND target = g_target.load(std::memory_order_relaxed);
+  if (target == nullptr || !IsWindow(target)) {
+    return CallNextHookEx(nullptr, code, wparam, lparam);
+  }
+  const MSLLHOOKSTRUCT* info = reinterpret_cast<const MSLLHOOKSTRUCT*>(lparam);
+  if (is_click) {
+    RECT rc{};
+    // GetWindowRect 是跨线程安全的只读查询；命中判定留在这里，是为了让窗口线程
+    // 拿到的消息自带结论，不必在忙碌时再回头查几何。
+    const BOOL inside = GetWindowRect(target, &rc) && PtInRect(&rc, info->pt);
+    PostMessage(target, kLowLevelMouseClickMessage,
+                PackMouseHookPoint(info->pt.x, info->pt.y), inside ? 1 : 0);
+    return CallNextHookEx(nullptr, code, wparam, lparam);
+  }
+  // BUG-1166 — 滚轮落在查词卡上：吞掉，改投给窗口线程。
+  //
+  // 命中判定**不能**用 GetWindowRect：级联查词的窗口是整叠卡片的包围盒，
+  // TODO-1345 的「保留地板」窗更是横跨大半个工作区，真正可见的只有 ApplyRoundedRegion
+  // 用 SetWindowRgn 裁出来的那几块卡片（BUG-749）。按 rect 判，等于卡片一开就把
+  // 半个屏幕的滚轮全吞了——用户在游戏画面上滚也会被吃掉。
+  // WindowFromPoint 认窗口区域，答的正是「光标此刻真的压在卡片上吗」；卡片之间的
+  // 透明缝隙判为「不在」，滚轮照常归游戏，这也正是用户在那儿看到的东西。
+  const HWND hit = WindowFromPoint(info->pt);
+  if (hit == nullptr || (hit != target && !IsChild(target, hit))) {
+    return CallNextHookEx(nullptr, code, wparam, lparam);
+  }
+  MouseHookWheel wheel;
+  wheel.delta = static_cast<short>(HIWORD(info->mouseData));
+  wheel.horizontal = (wparam == WM_MOUSEHWHEEL);
+  // 修饰键必须现取：MSLLHOOKSTRUCT 不带键状态，而钩子线程的 GetKeyState 是它自己
+  // 那份从不更新的输入状态。GetAsyncKeyState 读的是物理按键，跨线程有效；只在滚轮
+  // 事件上跑（每秒几十次量级），不会拖慢移动事件那条纯比较的快路。
+  //
+  // 这里取到的是**唯一可信的修饰键真值**：过了 PostMessage 那道边界就再也拿不回来
+  // （Chromium 读 GetKeyState，而合成消息不更新键状态表）。ctrl/alt 因此单独成字段
+  // 随载荷带走，供窗口线程分流；MK_* 位只是给裸滚轮那条原生快路捎带的。
+  const bool ctrl_down = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+  const bool shift_down = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+  const bool alt_down = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+  if (ctrl_down) wheel.keys |= MK_CONTROL;
+  if (shift_down) wheel.keys |= MK_SHIFT;
+  wheel.ctrl = ctrl_down;
+  wheel.alt = alt_down;
+  PostMessage(target, kLowLevelMouseWheelMessage,
+              PackMouseHookPoint(info->pt.x, info->pt.y),
+              PackMouseHookWheel(wheel));
+  // 返回非 0 = 事件到此为止：不进入任何线程的输入队列，前台的 galgame 也就收不到
+  // WM_MOUSEWHEEL。这是整个修复的落点，改成 CallNextHookEx 就等于没修。
+  return 1;
 }
 
 void HookThreadMain() {
@@ -137,6 +177,35 @@ POINT UnpackMouseHookPoint(WPARAM wparam) {
   pt.y = static_cast<LONG>(
       static_cast<int32_t>(static_cast<uint32_t>(wparam & 0xFFFFFFFFull)));
   return pt;
+}
+
+// 滚轮载荷位布局（LPARAM 在 x64 下 64 位）：
+//   [15:0]  MK_* 修饰键位（仅供原生快路）
+//   [31:16] 有符号 delta
+//   [32]    水平滚轮标志
+//   [33]    物理 Ctrl（分流判据）
+//   [34]    物理 Alt（分流判据；WM_MOUSEWHEEL 没有 MK_ALT，只能走这里）
+LPARAM PackMouseHookWheel(const MouseHookWheel& wheel) {
+  return static_cast<LPARAM>(
+      (static_cast<uint64_t>(wheel.alt ? 1u : 0u) << 34) |
+      (static_cast<uint64_t>(wheel.ctrl ? 1u : 0u) << 33) |
+      (static_cast<uint64_t>(wheel.horizontal ? 1u : 0u) << 32) |
+      (static_cast<uint64_t>(static_cast<uint16_t>(
+           static_cast<int16_t>(wheel.delta)))
+       << 16) |
+      static_cast<uint64_t>(wheel.keys & 0xFFFFu));
+}
+
+MouseHookWheel UnpackMouseHookWheel(LPARAM lparam) {
+  const auto raw = static_cast<uint64_t>(lparam);
+  MouseHookWheel wheel;
+  wheel.keys = static_cast<UINT>(raw & 0xFFFFull);
+  wheel.delta =
+      static_cast<int>(static_cast<int16_t>((raw >> 16) & 0xFFFFull));
+  wheel.horizontal = ((raw >> 32) & 0x1ull) != 0;
+  wheel.ctrl = ((raw >> 33) & 0x1ull) != 0;
+  wheel.alt = ((raw >> 34) & 0x1ull) != 0;
+  return wheel;
 }
 
 void ArmLowLevelMouseHook(HWND target) {
