@@ -37,6 +37,13 @@ const kSettingsSegmentedStyle = ButtonStyle(
 );
 
 const int kSettingsRowTitleMaxLines = 2;
+
+/// 说明文字（subtitle）在**显式要求压缩**时的推荐行数上限。
+///
+/// BUG-1184 起这不再是默认值：[AdaptiveSettingsRow] 默认不钳说明文字的行数
+/// （见 [AdaptiveSettingsRow.subtitleMaxLines]），因为设置行行高本就自由，
+/// 硬钳 3 行只会在窄屏上把说明尾部（往往是路径、警告、生效条件）吃掉。
+/// 只有密度敏感、确实需要固定行数的列表才显式传这个常量。
 const int kSettingsRowSubtitleMaxLines = 3;
 const double kSettingsStepperValueWidth = 72;
 const double kSettingsPickerDefaultWidth = 220;
@@ -413,6 +420,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
     this.controlBelow = false,
     this.trailingFlexible = false,
     this.titleMaxLines,
+    this.subtitleMaxLines,
   });
 
   final String title;
@@ -427,6 +435,17 @@ class AdaptiveSettingsRow extends StatelessWidget {
   /// e.g. a table-of-contents chapter name on a narrow phone - so it wraps
   /// instead of being clipped at two lines.
   final int? titleMaxLines;
+
+  /// Overrides how many lines the subtitle (说明文字) may occupy before
+  /// ellipsizing. Null = 不限行数：说明文字整段显示。
+  ///
+  /// BUG-1184：此前说明文字硬钳 [kSettingsRowSubtitleMaxLines]（3 行）+ ellipsis，
+  /// 且没有 [titleMaxLines] 那样的逃生口。设置行本身只有 minHeight 约束、行高自由，
+  /// 所以这个上限不是为了防溢出，纯粹是自伤——窄屏上 label 被 `Expanded` 压窄，
+  /// 一条稍长的说明（尤其带路径/警告拼接的那些）第 4 行起直接被吃掉，用户看不到
+  /// 配置项到底在说什么。说明文字的唯一职责就是解释配置项，截断即等于失效，因此
+  /// 默认改为不限；需要压缩的场景（列表密度敏感处）显式传一个有限值。
+  final int? subtitleMaxLines;
 
   /// CONTRACT: [trailing] must be self-sizing. With [controlBelow] false it is
   /// placed as a NON-flex child of a Row that also has an `Expanded` label, so
@@ -477,9 +496,13 @@ class AdaptiveSettingsRow extends StatelessWidget {
     final double iconExtra = (showIcon && icon != null) ? 42.0 : 0.0;
     final Widget content = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
+        // BUG-1184：flexible trailing 此前被排除在堆叠判定外（`!trailingFlexible`），
+        // 理由是它「会自己 shrink-and-scroll，不会溢出」。不溢出 ≠ 看得清：flexible
+        // trailing 与 `Expanded` 标题按 flex 五五分整行宽，360dp 上标题只剩 ~130px，
+        // 于是标题被压成两行省略号、控件也缩进一条窄滚动条——两边都读不了。窄到放不下
+        // 时同样该让出整行给标题、控件独占下一行，与非 flex trailing 完全同一条规则。
         final bool stackControls = controlBelow ||
             (trailing != null &&
-                !trailingFlexible &&
                 constraints.maxWidth < stackThreshold + iconExtra);
         return Padding(
           padding: EdgeInsets.symmetric(
@@ -557,6 +580,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
               title: title,
               subtitle: subtitle,
               titleMaxLines: titleMaxLines,
+              subtitleMaxLines: subtitleMaxLines,
             ),
           ),
           if (trailing != null) ...[
@@ -602,6 +626,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
                   title: title,
                   subtitle: subtitle,
                   titleMaxLines: titleMaxLines,
+                  subtitleMaxLines: subtitleMaxLines,
                 ),
               ),
             ],
@@ -1012,6 +1037,79 @@ class _SegmentedStripHost extends StatelessWidget {
         return SizedBox(
           width: double.infinity,
           child: fits ? strip : scrolling,
+        );
+      },
+    );
+  }
+}
+
+/// 独立分段条：直接放在页面/对话框正文里（**不**经过
+/// [AdaptiveSettingsSegmentedRow] 那种设置行）的自适应 [SegmentedButton]。
+/// 装得下就按自然宽度铺开，装不下就横向滚动，永不把尾部分段裁到画布外。
+///
+/// BUG-1184：下载设置等页面直接写了裸 `SegmentedButton`。Material 的分段布局把
+/// 每段宽度钳到 `可用宽 / 段数`（framework `segmented_button.dart` 的
+/// `_calculateHorizontalChildSize`），所以窄屏上**不会**抛 overflow，而是静默
+/// 把标签裁字——`qBittorrent`、`Built-in engine (desktop only)` 这类不可断行的
+/// 长标签在 360dp 下只剩几个字符，用户根本认不出选项是什么。设置行里的分段控件
+/// 早就用 [_SegmentedStripHost] 解决了同一问题（BUG-008），但那套逻辑是私有的、
+/// 只服务设置行。本类把同一条契约开放给任意调用点，消除「两套分段控件、只有一套
+/// 不裁字」这个特殊情况——而不是在每个调用点各自补一层滚动。
+///
+/// [alignment] 只在装得下时生效（默认左对齐，与既有裸调用点的外观一致）；装不下
+/// 时整条让位给横向滚动视图。
+class HibikiSegmentedStrip<T extends Object> extends StatelessWidget {
+  const HibikiSegmentedStrip({
+    required this.segments,
+    required this.selected,
+    required this.onChanged,
+    super.key,
+    this.style,
+    this.alignment = Alignment.centerLeft,
+  });
+
+  final List<ButtonSegment<T>> segments;
+  final T selected;
+  final ValueChanged<T> onChanged;
+  final ButtonStyle? style;
+  final AlignmentGeometry alignment;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final double fontSize = tokens.type.controlLabel.fontSize ?? 14.0;
+    final double textScale = MediaQuery.textScalerOf(context).scale(1);
+    // 与 [_SegmentedStripHost] 同一份估算：只取 Text 段的文案，图标段按固定宽计。
+    final List<String?> segmentLabels =
+        segments.map<String?>((ButtonSegment<T> s) {
+      final Widget? label = s.label;
+      return label is Text ? label.data : null;
+    }).toList(growable: false);
+
+    final Widget strip = adaptiveSegmentedButton<T>(
+      context: context,
+      segments: segments,
+      selected: <T>{selected},
+      onSelectionChanged: (Set<T> values) {
+        if (values.isEmpty) return;
+        onChanged(values.first);
+      },
+      style: style,
+    );
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double available = constraints.maxWidth;
+        final double estimated = estimateSegmentedStripWidth(
+          segmentLabels: segmentLabels,
+          fontSize: fontSize,
+          textScaleFactor: textScale,
+        );
+        final bool fits = available.isFinite && estimated <= available;
+        if (fits) return Align(alignment: alignment, child: strip);
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: strip,
         );
       },
     );
@@ -1784,11 +1882,13 @@ class _SettingsLabel extends StatelessWidget {
     required this.title,
     this.subtitle,
     this.titleMaxLines,
+    this.subtitleMaxLines,
   });
 
   final String title;
   final String? subtitle;
   final int? titleMaxLines;
+  final int? subtitleMaxLines;
 
   @override
   Widget build(BuildContext context) {
@@ -1819,8 +1919,11 @@ class _SettingsLabel extends StatelessWidget {
                   .textTheme
                   .bodySmall
                   ?.copyWith(color: subtitleColor),
+              // BUG-1184：null = 不钳行数，说明文字整段显示（见
+              // [AdaptiveSettingsRow.subtitleMaxLines]）。仍保留 ellipsis，
+              // 只在调用点显式传有限值时才生效。
               overflow: TextOverflow.ellipsis,
-              maxLines: kSettingsRowSubtitleMaxLines,
+              maxLines: subtitleMaxLines,
             ),
           ),
       ],

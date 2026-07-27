@@ -255,7 +255,23 @@ class _HomeDashboardPageState
   static const double _kContinueCoverHeight = 132;
   static const double _kContinueBookCoverWidth = 94; // ≈132×5/7 竖版
   static const double _kContinueVideoCoverWidth = 234; // ≈132×16/9 横版
-  static const double _kContinueRowHeight = 196;
+
+  /// 「继续」横滑行的总高：封面 + 两行标题 + 一行副标题 + 行间距。
+  ///
+  /// BUG-1184：原先是死常量 196，配合标题 `maxLines: 1`。书封宽只有 94px，一行
+  /// 只显示得到日文书名的五六个字。放宽到两行就必须同步抬高行高，而且这个高度
+  /// 本来也该随文字缩放走——旧的 196 在 textScale≥1.5 时连「单行标题 + 副标题」
+  /// 都装不下，会直接竖向溢出。
+  double _continueRowHeight(BuildContext context, HibikiDesignTokens tokens) {
+    final double titleLine = textLineHeight(context, tokens.type.listTitle);
+    final double metaLine = textLineHeight(context, tokens.type.metadata);
+    return _kContinueCoverHeight +
+        tokens.spacing.gap / 2 +
+        titleLine * 2 +
+        tokens.spacing.gap / 4 +
+        metaLine +
+        kTextBlockSlack;
+  }
 
   /// 「继续」分段筛选：0=全部，1=阅读，2=观看。
   int _continueFilter = 0;
@@ -887,7 +903,7 @@ class _HomeDashboardPageState
     List<_ContinueEntry> entries,
   ) {
     return SizedBox(
-      height: _kContinueRowHeight,
+      height: _continueRowHeight(context, tokens),
       // 桌面默认 MaterialScrollBehavior 的 dragDevices 不含鼠标——横排行
       // 用鼠标左右拖会毫无反应。显式放开 mouse/trackpad/stylus 拖动
       // （与合集行 CollectionShelfRow 同款）；触屏行为不变。
@@ -1160,7 +1176,9 @@ class _HomeDashboardPageState
             SizedBox(height: tokens.spacing.gap / 2),
             Text(
               title,
-              maxLines: 1,
+              // BUG-1184：书封宽只有 94px，单行放不下日文书名（行高已按两行算出，
+              // 见 [_continueRowHeight]）。
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: tokens.type.listTitle,
             ),

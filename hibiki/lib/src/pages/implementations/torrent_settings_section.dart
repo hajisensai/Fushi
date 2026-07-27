@@ -288,30 +288,28 @@ class _TorrentSettingsSectionState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _sectionLabel(theme, t.download_network_proxy_section),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: SegmentedButton<DownloadNetworkProxyMode>(
-            showSelectedIcon: false,
-            segments: <ButtonSegment<DownloadNetworkProxyMode>>[
-              ButtonSegment<DownloadNetworkProxyMode>(
-                value: DownloadNetworkProxyMode.auto,
-                label: Text(t.download_network_proxy_auto),
-              ),
-              ButtonSegment<DownloadNetworkProxyMode>(
-                value: DownloadNetworkProxyMode.direct,
-                label: Text(t.download_network_proxy_direct),
-              ),
-              ButtonSegment<DownloadNetworkProxyMode>(
-                value: DownloadNetworkProxyMode.custom,
-                label: Text(t.download_network_proxy_custom),
-              ),
-            ],
-            selected: <DownloadNetworkProxyMode>{proxy.mode},
-            onSelectionChanged: (Set<DownloadNetworkProxyMode> selected) async {
-              await appModel.setDownloadNetworkProxyMode(selected.first);
-              if (mounted) setState(() {});
-            },
-          ),
+        // BUG-1184：窄屏下裸 SegmentedButton 会把每段钳到「可用宽/段数」并静默裁字，
+        // 统一改走 [HibikiSegmentedStrip]（装不下就横向滚动，标签永远完整）。
+        HibikiSegmentedStrip<DownloadNetworkProxyMode>(
+          segments: <ButtonSegment<DownloadNetworkProxyMode>>[
+            ButtonSegment<DownloadNetworkProxyMode>(
+              value: DownloadNetworkProxyMode.auto,
+              label: Text(t.download_network_proxy_auto),
+            ),
+            ButtonSegment<DownloadNetworkProxyMode>(
+              value: DownloadNetworkProxyMode.direct,
+              label: Text(t.download_network_proxy_direct),
+            ),
+            ButtonSegment<DownloadNetworkProxyMode>(
+              value: DownloadNetworkProxyMode.custom,
+              label: Text(t.download_network_proxy_custom),
+            ),
+          ],
+          selected: proxy.mode,
+          onChanged: (DownloadNetworkProxyMode mode) async {
+            await appModel.setDownloadNetworkProxyMode(mode);
+            if (mounted) setState(() {});
+          },
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(2, 6, 2, 10),
@@ -335,25 +333,22 @@ class _TorrentSettingsSectionState
           ),
         const Divider(height: 24),
 
-        // 后端二选一。
-        Align(
-          alignment: Alignment.centerLeft,
-          child: SegmentedButton<String>(
-            showSelectedIcon: false,
-            segments: <ButtonSegment<String>>[
-              ButtonSegment<String>(
-                value: QbConnectionConfig.backendQbittorrent,
-                label: Text(t.video_setting_torrent_backend_qb),
-              ),
-              ButtonSegment<String>(
-                value: QbConnectionConfig.backendEmbedded,
-                label: Text(t.video_setting_torrent_backend_embedded),
-              ),
-            ],
-            selected: <String>{backend},
-            onSelectionChanged: (Set<String> s) =>
-                _commit((QbConnectionConfig c) => c.copyWith(backend: s.first)),
-          ),
+        // 后端二选一。标签是 `qBittorrent` / `Built-in engine (desktop only)` 这类
+        // 不可断行的长词，窄屏裸 SegmentedButton 会直接裁字（BUG-1184）。
+        HibikiSegmentedStrip<String>(
+          segments: <ButtonSegment<String>>[
+            ButtonSegment<String>(
+              value: QbConnectionConfig.backendQbittorrent,
+              label: Text(t.video_setting_torrent_backend_qb),
+            ),
+            ButtonSegment<String>(
+              value: QbConnectionConfig.backendEmbedded,
+              label: Text(t.video_setting_torrent_backend_embedded),
+            ),
+          ],
+          selected: backend,
+          onChanged: (String value) =>
+              _commit((QbConnectionConfig c) => c.copyWith(backend: value)),
         ),
         const SizedBox(height: 12),
 
@@ -516,29 +511,24 @@ class _TorrentSettingsSectionState
           ),
           Padding(
             padding: const EdgeInsets.only(top: 4, bottom: 8),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: SegmentedButton<int>(
-                showSelectedIcon: false,
-                segments: <ButtonSegment<int>>[
-                  ButtonSegment<int>(
-                    value: QbConnectionConfig.encryptionPrefer,
-                    label: Text(t.video_setting_torrent_encryption_prefer),
-                  ),
-                  ButtonSegment<int>(
-                    value: QbConnectionConfig.encryptionForced,
-                    label: Text(t.video_setting_torrent_encryption_forced),
-                  ),
-                  ButtonSegment<int>(
-                    value: QbConnectionConfig.encryptionDisabled,
-                    label: Text(t.video_setting_torrent_encryption_disabled),
-                  ),
-                ],
-                selected: <int>{c.encryptionMode},
-                onSelectionChanged: (Set<int> s) => _commit(
-                    (QbConnectionConfig c) =>
-                        c.copyWith(encryptionMode: s.first)),
-              ),
+            child: HibikiSegmentedStrip<int>(
+              segments: <ButtonSegment<int>>[
+                ButtonSegment<int>(
+                  value: QbConnectionConfig.encryptionPrefer,
+                  label: Text(t.video_setting_torrent_encryption_prefer),
+                ),
+                ButtonSegment<int>(
+                  value: QbConnectionConfig.encryptionForced,
+                  label: Text(t.video_setting_torrent_encryption_forced),
+                ),
+                ButtonSegment<int>(
+                  value: QbConnectionConfig.encryptionDisabled,
+                  label: Text(t.video_setting_torrent_encryption_disabled),
+                ),
+              ],
+              selected: c.encryptionMode,
+              onChanged: (int mode) => _commit(
+                  (QbConnectionConfig c) => c.copyWith(encryptionMode: mode)),
             ),
           ),
           _numField(

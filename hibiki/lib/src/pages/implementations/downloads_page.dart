@@ -57,6 +57,11 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
             bottom: _showSettings
                 ? null
                 : TabBar(
+                    // BUG-1184：三个 tab 均分宽度时，窄屏 + 大字号下较长的 tab 名
+                    // （英文 Subscriptions）会被裁。可滚动 tab 条按内容取宽，装不下
+                    // 就横向滚动而不是裁字。
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.center,
                     tabs: <Widget>[
                       Tab(text: t.download_discover_tab),
                       Tab(text: t.download_tasks_tab),

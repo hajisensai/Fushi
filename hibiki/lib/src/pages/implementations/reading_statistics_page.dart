@@ -533,59 +533,61 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
   Widget _buildSummaryCards() {
     final tokens = HibikiDesignTokens.of(context);
+    final double gap = tokens.spacing.gap + tokens.spacing.gap / 2;
+
+    // 四个汇总面板：今天 / 本周 / 本月 / 全部。
+    final List<Widget> panels = <Widget>[
+      _summaryStatPanel(t.stat_today, _todayChars, _todayMs, _lookup.today,
+          _mined.today, _favorited.today, _favoritedSentences.today),
+      _summaryStatPanel(t.stat_this_week, _weekChars, _weekMs, _lookup.week,
+          _mined.week, _favorited.week, _favoritedSentences.week),
+      _summaryStatPanel(t.stat_this_month, _monthChars, _monthMs, _lookup.month,
+          _mined.month, _favorited.month, _favoritedSentences.month),
+      _summaryStatPanel(t.stat_all_time, _allChars, _allMs, _lookup.all,
+          _mined.all, _favorited.all, _favoritedSentences.all),
+    ];
 
     return Padding(
       padding: EdgeInsets.all(tokens.spacing.card),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(
-                  child: _summaryStatPanel(
-                      t.stat_today,
-                      _todayChars,
-                      _todayMs,
-                      _lookup.today,
-                      _mined.today,
-                      _favorited.today,
-                      _favoritedSentences.today)),
-              SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
-              Expanded(
-                  child: _summaryStatPanel(
-                      t.stat_this_week,
-                      _weekChars,
-                      _weekMs,
-                      _lookup.week,
-                      _mined.week,
-                      _favorited.week,
-                      _favoritedSentences.week)),
+      // BUG-1184：原先是两个写死的双列 Row，没有窄屏回退（同页的 _buildMidSection
+      // 早就有 wide 标志会堆叠，汇总卡一直漏了）。320dp 屏上每格只剩约 132px、
+      // 扣掉卡片内边距只有约 100px 的文字宽，而每个面板要放 7 行「标签: 数值」——
+      // 每一行都被迫折成两三行，读起来像一团乱码。窄屏改单列。
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          // 双列每格需要约 180px 才放得下一行「标签: 数值」，加上列间距即约 380。
+          final bool twoColumns =
+              !constraints.maxWidth.isFinite || constraints.maxWidth >= 380;
+          if (!twoColumns) {
+            return Column(
+              children: <Widget>[
+                for (int i = 0; i < panels.length; i++) ...<Widget>[
+                  if (i > 0) SizedBox(height: gap),
+                  panels[i],
+                ],
+              ],
+            );
+          }
+          return Column(
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(child: panels[0]),
+                  SizedBox(width: gap),
+                  Expanded(child: panels[1]),
+                ],
+              ),
+              SizedBox(height: gap),
+              Row(
+                children: <Widget>[
+                  Expanded(child: panels[2]),
+                  SizedBox(width: gap),
+                  Expanded(child: panels[3]),
+                ],
+              ),
             ],
-          ),
-          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-          Row(
-            children: [
-              Expanded(
-                  child: _summaryStatPanel(
-                      t.stat_this_month,
-                      _monthChars,
-                      _monthMs,
-                      _lookup.month,
-                      _mined.month,
-                      _favorited.month,
-                      _favoritedSentences.month)),
-              SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
-              Expanded(
-                  child: _summaryStatPanel(
-                      t.stat_all_time,
-                      _allChars,
-                      _allMs,
-                      _lookup.all,
-                      _mined.all,
-                      _favorited.all,
-                      _favoritedSentences.all)),
-            ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }

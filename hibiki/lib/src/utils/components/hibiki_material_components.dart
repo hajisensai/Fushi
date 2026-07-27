@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -163,6 +165,15 @@ class HibikiListItem extends StatefulWidget {
   final double? minHeight;
   final HibikiListDensity density;
   final EdgeInsetsGeometry? padding;
+
+  /// 标题最多几行，默认 1。
+  ///
+  /// BUG-1184 调查记录：曾把默认值改成 2（因为列表项承载的正是书名、视频名、词典名
+  /// 这类长文本，单行 ellipsis 在窄屏上只看得到开头几个字）。**该改动已回退**：
+  /// 本组件自身行高虽只有 minHeight 下限，但相当多调用点把它放在固定高度的容器里
+  /// （golden `list_tile_narrow` 即在 150×80 的盒子里复现出 overflow 红条），窄容器
+  /// 里标题一换行就会撑破父容器。所以放宽必须逐调用点显式进行——只在父容器高度自由
+  /// 的地方传 `titleMaxLines: 2`，而不是改默认值连带影响每一个既有调用点。
   final int titleMaxLines;
   final int subtitleMaxLines;
   final HibikiFocusId? focusId;
@@ -1079,16 +1090,83 @@ class HibikiModalSheetFrame extends StatelessWidget {
   }
 }
 
+/// 一个可以在窄屏上被折进溢出菜单的 AppBar 动作。
+///
+/// [label] 既是宽屏 [IconButton] 的 tooltip，也是窄屏菜单项的文案——同一句话，
+/// 不需要为「折叠版」另造 i18n key。[onPressed] 为 null 时该项禁用（菜单项同样
+/// 置灰），语义与 [IconButton.onPressed] 一致。
+class HibikiAppBarAction {
+  const HibikiAppBarAction({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onPressed;
+}
+
+/// 窄屏下把次要 AppBar 动作折进「更多」溢出菜单，把宽度让回给标题。
+///
+/// BUG-1184：合集详情、网格详情、texthooker 这些页面的 AppBar 各挂了 4~5 个动作。
+/// Material 的 AppBar 先满足 actions 的固有宽度，再把剩下的给 title——320dp 上
+/// 5 个动作 + 返回键就吃掉约 296px，标题只剩二十几像素，合集名/书名彻底看不见
+/// （不报错，就是没了）。动作数量本身是合理的，错的是「无论屏多窄都全部平铺」。
+///
+/// [alwaysVisible] 放最高频、必须一眼可点的动作（如排序）；[collapsible] 里的
+/// 在宽屏逐个平铺，窄屏收进一个 [PopupMenuButton]。折叠后动作一个都没少，只是
+/// 多一次点击——比标题消失划算得多。
+List<Widget> narrowAwareAppBarActions(
+  BuildContext context, {
+  required List<HibikiAppBarAction> collapsible,
+  List<Widget> alwaysVisible = const <Widget>[],
+  double narrowWidth = 480,
+}) {
+  final double width = MediaQuery.sizeOf(context).width;
+  final bool narrow = width.isFinite && width < narrowWidth;
+  if (!narrow || collapsible.length < 2) {
+    return <Widget>[
+      ...alwaysVisible,
+      for (final HibikiAppBarAction action in collapsible)
+        IconButton(
+          tooltip: action.label,
+          icon: Icon(action.icon),
+          onPressed: action.onPressed,
+        ),
+    ];
+  }
+  return <Widget>[
+    ...alwaysVisible,
+    PopupMenuButton<int>(
+      tooltip: t.common_more_actions,
+      icon: const Icon(Icons.more_vert),
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
+        for (int i = 0; i < collapsible.length; i++)
+          PopupMenuItem<int>(
+            value: i,
+            enabled: collapsible[i].onPressed != null,
+            child: Row(
+              children: <Widget>[
+                Icon(collapsible[i].icon, size: 20),
+                const SizedBox(width: 12),
+                Expanded(child: Text(collapsible[i].label)),
+              ],
+            ),
+          ),
+      ],
+      onSelected: (int index) => collapsible[index].onPressed?.call(),
+    ),
+  ];
+}
+
 class HibikiDialogFrame extends StatelessWidget {
   const HibikiDialogFrame({
     required this.child,
     super.key,
     this.maxWidth = 420,
     this.maxHeightFactor = 0.82,
-    this.insetPadding = const EdgeInsets.symmetric(
-      horizontal: 40,
-      vertical: 24,
-    ),
+    this.insetPadding,
     this.padding = EdgeInsets.zero,
     this.scrollable = true,
   });
@@ -1096,21 +1174,40 @@ class HibikiDialogFrame extends StatelessWidget {
   final Widget child;
   final double maxWidth;
   final double maxHeightFactor;
-  final EdgeInsets insetPadding;
+
+  /// 对话框与屏幕边缘的留白。null = 按屏宽自适应（见 [_resolveInsetPadding]）。
+  ///
+  /// BUG-1184：此前默认硬编码 `horizontal: 40`。窄屏上这 80px 是纯损失——320dp 的
+  /// 手机上对话框正文只剩 240px，再扣掉 [HibikiModalSheetFrame] 的头部内边距和
+  /// 52px 的图标徽标，标题只剩约 144px，于是几乎所有对话框标题都被省略成「…」。
+  /// 40 这个值只对宽屏合理（且宽屏本来就被 [maxWidth] 420 兜住，边距几乎不起作用），
+  /// 真正需要它自适应的恰恰是窄屏。少数已经手动传 `tokens.spacing.card` 绕开该默认
+  /// 值的调用点即是佐证——现在默认值自己就做对了，不必每处再记得覆盖。
+  final EdgeInsets? insetPadding;
   final EdgeInsetsGeometry padding;
   final bool scrollable;
+
+  /// 屏幕越窄，边距越小：320dp 上取 16（与卡片内边距同级），随屏宽线性放大到宽屏
+  /// 的 40 为止。用比例而非断点，避免在某个宽度上突然跳变。
+  EdgeInsets _resolveInsetPadding(double screenWidth) {
+    if (insetPadding != null) return insetPadding!;
+    final double horizontal =
+        screenWidth.isFinite ? (screenWidth * 0.05).clamp(16.0, 40.0) : 40.0;
+    return EdgeInsets.symmetric(horizontal: horizontal, vertical: 24);
+  }
 
   @override
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final double screenHeight = MediaQuery.sizeOf(context).height;
+    final Size screenSize = MediaQuery.sizeOf(context);
+    final double screenHeight = screenSize.height;
     final Widget padded = Padding(
       padding: padding,
       child: child,
     );
     return Dialog(
       clipBehavior: Clip.antiAlias,
-      insetPadding: insetPadding,
+      insetPadding: _resolveInsetPadding(screenSize.width),
       shape: RoundedRectangleBorder(borderRadius: tokens.radii.dialogRadius),
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -1777,11 +1874,25 @@ class _HibikiPageHeaderRow extends StatelessWidget {
         }
         children.add(titleChild);
         if (actions != null) {
-          // 动作区可用宽上界：整行宽减去动作前 gap（title [Expanded] 允许被压到 0）。
+          // 动作区可用宽上界：整行宽减去动作前 gap，**再减去留给标题的保底宽**。
           // leading（含右 gap）作为非弹性子项另行占位，不计入此上界——它在 Row 里已被
           // 独立扣除；这里只需保证「gap + 动作区」不超过整行宽即可避免 overflow。
+          //
+          // BUG-1184：原先只保证不 overflow，标题作为 [Expanded] 被允许压到 0。窄屏上
+          // 4~5 个动作按钮就能把标题吃干净——不报错，但页面标题（合集名、书名）彻底
+          // 消失，用户只看到一排图标。动作区本就套着横向滚动视图，被限宽后是「滚动」
+          // 而不是「丢失」；标题被压到 0 才是真的丢失。所以保底给标题留几个字的宽度，
+          // 超出的动作让它滚。保底值随文字缩放走，并且不超过行宽的三分之一，免得动作
+          // 很少时反而挤到按钮。
+          final double titleFloor = constraints.maxWidth.isFinite
+              ? math.min(
+                  96.0 * MediaQuery.textScalerOf(context).scale(1),
+                  constraints.maxWidth / 3,
+                )
+              : 0.0;
           final double maxActionsWidth = constraints.maxWidth.isFinite
-              ? (constraints.maxWidth - actionsGap).clamp(0.0, double.infinity)
+              ? (constraints.maxWidth - actionsGap - titleFloor)
+                  .clamp(0.0, double.infinity)
               : double.infinity;
           // 带 label 的动作是否展开成药丸：按**页头本地可用宽**（而非整窗宽）判定，经
           // UI 缩放还原真实宽后仅 expanded（≥840）才展开。桌面带导航栏 / 分栏时整窗
@@ -1986,35 +2097,59 @@ class HibikiToolScaffold extends StatelessWidget {
               ),
               child: SizedBox(
                 height: 44,
-                child: Row(
-                  children: <Widget>[
-                    if (effectiveLeading != null) ...<Widget>[
-                      SizedBox.square(
-                        dimension: 40,
-                        child: effectiveLeading,
-                      ),
-                      SizedBox(width: tokens.spacing.gap / 2),
-                    ],
-                    Expanded(
-                      child: _buildTitle(tokens),
-                    ),
-                    if (actions.isNotEmpty) ...<Widget>[
-                      SizedBox(width: tokens.spacing.gap / 2),
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: MediaQuery.sizeOf(context).width * 0.48,
-                        ),
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          reverse: true,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: actions,
+                // BUG-1184：动作区上界原先取 `MediaQuery.sizeOf(context).width * 0.48`
+                // ——**整窗宽**。这个脚手架并不总是占满窗口（嵌在分栏/对话框/受限宽面板
+                // 里时更常见），此时 0.48×整窗可以超过本行的真实可用宽，Row 直接右溢出。
+                // 与 [_HibikiPageHeaderRow] 同一类错误，那边已按本地约束修过；这里改用
+                // LayoutBuilder 的局部约束，并同样给标题留保底宽，超出的动作横向滚动。
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final double gapHalf = tokens.spacing.gap / 2;
+                    final double leadingWidth =
+                        effectiveLeading != null ? 40 + gapHalf : 0;
+                    final double titleFloor = constraints.maxWidth.isFinite
+                        ? math.min(
+                            96.0 * MediaQuery.textScalerOf(context).scale(1),
+                            constraints.maxWidth / 3,
+                          )
+                        : 0.0;
+                    final double maxActionsWidth = constraints.maxWidth.isFinite
+                        ? (constraints.maxWidth -
+                                leadingWidth -
+                                gapHalf -
+                                titleFloor)
+                            .clamp(0.0, double.infinity)
+                        : double.infinity;
+                    return Row(
+                      children: <Widget>[
+                        if (effectiveLeading != null) ...<Widget>[
+                          SizedBox.square(
+                            dimension: 40,
+                            child: effectiveLeading,
                           ),
+                          SizedBox(width: gapHalf),
+                        ],
+                        Expanded(
+                          child: _buildTitle(tokens),
                         ),
-                      ),
-                    ],
-                  ],
+                        if (actions.isNotEmpty) ...<Widget>[
+                          SizedBox(width: gapHalf),
+                          ConstrainedBox(
+                            constraints:
+                                BoxConstraints(maxWidth: maxActionsWidth),
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              reverse: true,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: actions,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
                 ),
               ),
             ),

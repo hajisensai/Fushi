@@ -2681,5 +2681,6 @@
   "download_rate_limit_lan_exempt": "不作用于局域网；局域网内的传输始终全速进行。",
   "video_scrape_search_failed": "搜索失败，点「搜索」可重试。",
   "scrape_reason_network": "没能从封面源取到有效响应，请检查网络后重试。",
-  "scrape_reason_server": "封面源返回了错误，请稍后重试或换一个候选。"
+  "scrape_reason_server": "封面源返回了错误，请稍后重试或换一个候选。",
+  "common_more_actions": "更多操作"
 }

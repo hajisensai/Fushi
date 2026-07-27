@@ -263,6 +263,9 @@ class _DownloadSubscriptionsPanelState
           padding: EdgeInsets.zero,
           child: HibikiListItem(
             subtitleMaxLines: 4,
+            // BUG-1184：标题是番剧名，右侧 trailing 挂着开关 + 刷新 + 删除（≈150px
+            // 不可压缩），窄屏上留给番剧名的宽度只剩几十像素。行高自由，放宽到两行。
+            titleMaxLines: 2,
             leading: Icon(
               subscription.enabled
                   ? Icons.notifications_active_outlined

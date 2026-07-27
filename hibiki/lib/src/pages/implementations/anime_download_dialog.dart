@@ -1015,46 +1015,86 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             ),
           ),
           const SizedBox(height: 8),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: SegmentedButton<String>(
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  segments: <ButtonSegment<String>>[
-                    ButtonSegment<String>(
-                      value: AnimeDownloadPlan.kindAuto,
-                      label: Text(t.anime_download_kind_auto),
-                    ),
-                    ButtonSegment<String>(
-                      value: AnimeDownloadPlan.kindVideo,
-                      label: Text(t.anime_download_kind_video),
-                    ),
-                    ButtonSegment<String>(
-                      value: AnimeDownloadPlan.kindBook,
-                      label: Text(t.anime_download_kind_book),
-                    ),
-                  ],
-                  selected: <String>{_genericKind},
-                  onSelectionChanged: _pushingGeneric
-                      ? null
-                      : (Set<String> s) =>
-                          setState(() => _genericKind = s.first),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                onPressed:
-                    (!_backendReady || _pushingGeneric) ? null : _pushGeneric,
-                icon: const Icon(Icons.download, size: 18),
-                label: Text(t.anime_download_generic_download),
-              ),
-            ],
-          ),
+          _buildGenericKindRow(context),
         ],
       ),
+    );
+  }
+
+  /// 内容类型分段条 + 下载按钮。
+  ///
+  /// BUG-1184：原本是 `Row(Expanded(SegmentedButton 三段), 下载按钮)`。下载按钮不可
+  /// 压缩，分段条拿到的是「剩余宽/3」——360dp 上每段只剩约 48px，`自动/视频/书`
+  /// 三个标签全被裁成半个字。这里按**估算宽度**（随文案与文字缩放变化，不写死断点）
+  /// 判断放不放得下：放得下维持原来的一行；放不下就让分段条独占一行、按钮换到下一
+  /// 行右对齐，两者都保持完整可读。分段条本身走 [HibikiSegmentedStrip]，即使单独
+  /// 一行仍不够宽也是横向滚动而非裁字。
+  Widget _buildGenericKindRow(BuildContext context) {
+    final List<ButtonSegment<String>> segments = <ButtonSegment<String>>[
+      ButtonSegment<String>(
+        value: AnimeDownloadPlan.kindAuto,
+        label: Text(t.anime_download_kind_auto),
+      ),
+      ButtonSegment<String>(
+        value: AnimeDownloadPlan.kindVideo,
+        label: Text(t.anime_download_kind_video),
+      ),
+      ButtonSegment<String>(
+        value: AnimeDownloadPlan.kindBook,
+        label: Text(t.anime_download_kind_book),
+      ),
+    ];
+    final Widget strip = HibikiSegmentedStrip<String>(
+      segments: segments,
+      selected: _genericKind,
+      onChanged: (String kind) {
+        if (_pushingGeneric) return;
+        setState(() => _genericKind = kind);
+      },
+      style: const ButtonStyle(visualDensity: VisualDensity.compact),
+    );
+    final Widget button = FilledButton.icon(
+      onPressed: (!_backendReady || _pushingGeneric) ? null : _pushGeneric,
+      icon: const Icon(Icons.download, size: 18),
+      label: Text(t.anime_download_generic_download),
+    );
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        const double fontSize = 14.0;
+        final double textScale = MediaQuery.textScalerOf(context).scale(1);
+        final double stripWidth = estimateSegmentedStripWidth(
+          segmentLabels: segments
+              .map<String?>((ButtonSegment<String> s) =>
+                  s.label is Text ? (s.label! as Text).data : null)
+              .toList(growable: false),
+          fontSize: fontSize,
+          textScaleFactor: textScale,
+        );
+        // 下载按钮：图标 18 + 图标/文字间距与左右内边距合计约 46，再加标签字形宽
+        // （与 estimateSegmentedStripWidth 同一套保守的 CJK 倾向估算）。
+        final double buttonWidth = 46 +
+            t.anime_download_generic_download.length * fontSize * textScale;
+        final bool fitsOneRow = constraints.maxWidth.isFinite &&
+            stripWidth + 8 + buttonWidth <= constraints.maxWidth;
+        if (fitsOneRow) {
+          return Row(
+            children: <Widget>[
+              Expanded(child: strip),
+              const SizedBox(width: 8),
+              button,
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            strip,
+            const SizedBox(height: 8),
+            Align(alignment: Alignment.centerRight, child: button),
+          ],
+        );
+      },
     );
   }
 
@@ -1803,6 +1843,10 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       density: HibikiListDensity.compact,
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       subtitleMaxLines: 3,
+      // BUG-1184：番剧名 + 种子名都很长，而这一行右侧还挂着最多 3 个操作按钮，窄屏
+      // 上标题只剩百来像素。行高自由（在可滚动列表里，只有 minHeight 下限），放宽到
+      // 两行；种子名同样从死板的单行放宽到两行。
+      titleMaxLines: 2,
       leading: statusIcon,
       title: Text(plan.seriesTitle),
       subtitle: Column(
@@ -1810,7 +1854,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         children: <Widget>[
           Text(
             plan.torrentTitle,
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall,
           ),
