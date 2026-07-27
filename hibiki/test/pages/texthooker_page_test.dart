@@ -127,6 +127,31 @@ void main() {
     expect(find.textContaining('TextRender · 0xf94600 · 0'), findsWidgets);
   });
 
+  testWidgets('workbench overflow menu opens the exclude-tracks dialog',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      _wrapPage(const TexthookerPage()),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey<String>('game-toolbar-more')));
+    await tester.pumpAndSettle();
+    expect(find.text('Manage audio tracks'), findsOneWidget,
+        reason: '溢出菜单必须暴露「管理音轨」入口');
+
+    await tester.tap(find.text('Manage audio tracks'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.text('Exclude audio tracks'), findsOneWidget);
+    // 无 native 会话（默认后端 none）：无音轨 + 明示排除只在引擎 PCM 生效。
+    expect(find.text('No audio-track data yet'), findsOneWidget);
+
+    await tester.tap(find.text('CLOSE'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+  });
+
   testWidgets('embedded mode reuses parent scaffold and exposes back action',
       (WidgetTester tester) async {
     bool returned = false;
