@@ -75,11 +75,12 @@ void main() {
       List<String> unsupportedMangas = const <String>[],
       List<String> books = const <String>[],
       List<String> videos = const <String>[],
+      List<String> subtitles = const <String>[],
     }) =>
         DroppedFiles(
           books: books,
           videos: videos,
-          subtitles: const <String>[],
+          subtitles: subtitles,
           audios: const <String>[],
           playlists: const <String>[],
           dictionaries: const <String>[],
@@ -111,25 +112,54 @@ void main() {
       );
     });
 
-    test('漫画库拖普通书 -> unsupportedSurface（不悄悄导进另一个书架）', () {
+    // ↓↓↓ 「非漫画一律沿用 books 表面」是**改动前就有的行为**（漫画库是书架页的
+    // mangaOnly 壳、共用同一个 drop target）。曾一度收窄成「本页面不支持」，那等于
+    // 移除用户可能一直在用的能力，已按「用户没表态就保持现状」回退。要改成不支持
+    // 是产品决定，不是实现细节——下面几条就是钉住不许再被顺手收窄。
+    test('漫画库拖普通 epub -> importNewBook（仍自动导去书架，不得收窄成不支持）', () {
       expect(
         decideDropIntent(
           surface: DropSurface.manga,
           files: files(books: <String>['/a/b.epub']),
           cardHit: false,
         ),
-        DropIntent.unsupportedSurface,
+        DropIntent.importNewBook,
       );
     });
 
-    test('漫画库拖视频 -> unsupportedSurface（不沿用 books 表面的自动切视频）', () {
+    test('漫画库拖视频 -> importNewVideo（沿用 books 表面的自动切视频）', () {
       expect(
         decideDropIntent(
           surface: DropSurface.manga,
           files: files(videos: <String>['/a/v.mp4']),
           cardHit: false,
         ),
-        DropIntent.unsupportedSurface,
+        DropIntent.importNewVideo,
+      );
+    });
+
+    test('漫画库拖字幕到书卡 -> attachToBookCard（books 表面能做的这里都能做）', () {
+      expect(
+        decideDropIntent(
+          surface: DropSurface.manga,
+          files: files(subtitles: <String>['/a/s.srt']),
+          cardHit: true,
+        ),
+        DropIntent.attachToBookCard,
+      );
+    });
+
+    test('漫画载体仍优先于 books 规则：同时拖 .cbz + .epub -> importNewManga', () {
+      expect(
+        decideDropIntent(
+          surface: DropSurface.manga,
+          files: files(
+            mangas: <String>['/a/m.cbz'],
+            books: <String>['/a/b.epub'],
+          ),
+          cardHit: false,
+        ),
+        DropIntent.importNewManga,
       );
     });
 

@@ -3,8 +3,9 @@ import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 /// 拖拽落点所在的 tab 表面。
 ///
 /// [manga] = 漫画库（`ReaderHibikiHistoryPage(mangaOnly: true)` 的壳）。它与
-/// [books] 共用同一个页面和同一份 drop target，但**语义不同**：漫画库拖入
-/// 非漫画的书文件没有意义（导进去也不显示在这个书架上，用户会以为丢了）。
+/// [books] 共用同一个页面和同一份 drop target；差别**只在漫画载体优先**，其余
+/// 一切（epub / 视频 / 字幕 / URL）行为与 [books] 完全一致（见 decideDropIntent
+/// 里的委托）——那是改动前就有的行为，不在此处收窄。
 enum DropSurface { books, video, manga }
 
 /// 决策结果意图。widget 层据此打开对话框 / 提示 / 忽略。
@@ -74,17 +75,26 @@ DropIntent decideDropIntent({
       if (files.hasAny) return DropIntent.unsupportedSurface;
       return DropIntent.ignore;
     case DropSurface.manga:
-      // 漫画库：漫画载体是主业。
+      // 漫画库：漫画载体是主业，优先判。
       if (files.mangas.isNotEmpty) return DropIntent.importNewManga;
       if (files.unsupportedMangas.isNotEmpty) {
         return DropIntent.unsupportedMangaArchive;
       }
-      // 漫画库拖入普通书 / 视频 / 字幕等一律给「本页面不支持」提示，**不**沿用
-      // books 表面的自动切换：漫画库是漫画的地方，把 epub 悄悄导进另一个书架
-      // 会让用户以为文件丢了（导完这里什么也不多出来）。给提示而非静默，也不
-      // 替用户决定导去别处。
-      if (files.hasAny) return DropIntent.unsupportedSurface;
-      return DropIntent.ignore;
+      // 其余（epub / 视频 / 字幕 / 音频 / URL）**原样沿用 books 表面的既有行为**。
+      //
+      // 这里曾改成一律回「本页面不支持」，理由是「把 epub 悄悄导进另一个书架，
+      // 用户会以为文件丢了」。但漫画库本就是书架页的 `mangaOnly` 壳、共用同一个
+      // drop target，改之前拖 epub 进来是**会自动导进普通书架的**——那是一项用户
+      // 可能一直在用的既有能力，移除它属于 break userspace。要不要改成「不支持」
+      // 是产品决定，在用户拍板前默认保持现状。
+      //
+      // 委托而不是抄一遍：books 分支后续任何演进（自动切视频导入、URL 流媒体、
+      // 拖字幕挂到书卡……）漫画库自动跟上，不会漂成两套。
+      return decideDropIntent(
+        surface: DropSurface.books,
+        files: files,
+        cardHit: cardHit,
+      );
     case DropSurface.video:
       if (files.urls.isNotEmpty) return DropIntent.importVideoUrl;
       if (files.playlists.isNotEmpty) return DropIntent.importNewPlaylist;
