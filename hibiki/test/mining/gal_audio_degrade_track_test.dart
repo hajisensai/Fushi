@@ -292,6 +292,14 @@ void main() {
     expect(card.contains('t.game_track_no_clips'), isTrue,
         reason: 'clipCount == 0 的轨必须标注，而不是和可用轨长一个样');
     expect(card.contains('t.game_tracks_pcm_only_hint'), isTrue);
+
+    final String workbench = File(
+      'lib/src/pages/implementations/texthooker_page.dart',
+    ).readAsStringSync();
+    expect(workbench.contains('_session.setTrackExcluded'), isTrue,
+        reason: '捕获工作台逐句选轨弹窗必须能直接把 BGM 轨加入排除集合');
+    expect(workbench.contains('t.game_track_exclude_bgm'), isTrue);
+    expect(workbench.contains('t.game_track_restore'), isTrue);
   });
 
   test('单条台词改音轨：绕开自动门取音，且延迟资源匹配不得改回去', () async {
@@ -353,6 +361,65 @@ void main() {
       outputExtension: 'aac',
     );
     expect(engine.pairedRequests, isEmpty);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('逐句选轨试听与确认必须使用同一句时间戳', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    DateTime clock = DateTime(2020, 1, 1, 12);
+    final _FakeEngine engine = _FakeEngine(
+      rawVoice: true,
+      pairedCandidate: true,
+      utterance: GalAudioSlice(pcm: Uint8List(9600), format: kPcm),
+      lines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 4321,
+          text: '先に表示された台詞',
+          threadId: 5,
+          hookName: 'fake',
+        ),
+        GalHookedLine(
+          seq: 2,
+          timestampMs: 9876,
+          text: 'いま一番新しい台詞',
+          threadId: 5,
+          hookName: 'fake',
+        ),
+      ],
+    );
+    final _RecordingLoopback loopback = _RecordingLoopback();
+    final GalHookSessionController controller = build(
+      service: service,
+      endpoints: endpoints,
+      engine: engine,
+      loopback: loopback,
+      now: () => clock,
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
+    );
+    await waitUntil(() => service.entries.length == 2);
+    final TexthookerLineEntry first = service.entries.first;
+    engine.utteranceTimestamps.clear();
+    engine.utteranceSourcePtrs.clear();
+
+    final GalTrackPreview? preview =
+        await controller.exportLineTrackPreview(first.id, 0xABC);
+    expect(preview, isNotNull);
+    expect(await controller.setLineVoiceTrack(first.id, 0xABC), isTrue);
+    expect(engine.utteranceTimestamps, <int>[4321, 4321],
+        reason: '试听若偷用最新句 9876，用户会听见声音但确认当前句时却得到无音轨');
+    expect(engine.utteranceSourcePtrs, <int>[0xABC, 0xABC]);
+    final String? previewPath = preview?.filePath;
+    if (previewPath != null) {
+      final File previewFile = File(previewPath);
+      if (previewFile.existsSync()) previewFile.deleteSync();
+    }
 
     await controller.close();
     endpoints.dispose();
@@ -463,6 +530,7 @@ class _FakeEngine extends EngineHookGalAudioSource {
 
   int pollCalls = 0;
   int stopCalls = 0;
+  final List<int> utteranceTimestamps = <int>[];
   final List<int> utteranceSourcePtrs = <int>[];
   final List<int> pairedRequests = <int>[];
 
@@ -508,6 +576,7 @@ class _FakeEngine extends EngineHookGalAudioSource {
     int? sourcePtr,
     List<int>? exclude,
   }) async {
+    utteranceTimestamps.add(tsMs);
     if (sourcePtr != null) utteranceSourcePtrs.add(sourcePtr);
     return utterance;
   }

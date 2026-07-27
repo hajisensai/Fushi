@@ -162,28 +162,73 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     }
     final int? picked = await showAppDialog<int>(
       context: context,
-      builder: (BuildContext dialogContext) => SimpleDialog(
-        title: Text(t.game_line_track_dialog_title),
-        children: <Widget>[
-          for (final GalAudioTrack track in tracks)
-            ListTile(
-              leading: const Icon(Icons.graphic_eq),
-              title: Text(
-                '${t.game_track_voice} ${track.orderIndex + 1} · '
-                '${track.format.sampleRate} Hz · ${track.format.channels} ch',
+      builder: (BuildContext dialogContext) => StatefulBuilder(
+        builder: (BuildContext context, StateSetter setDialogState) =>
+            SimpleDialog(
+          title: Text(t.game_line_track_dialog_title),
+          children: <Widget>[
+            for (final GalAudioTrack track in tracks)
+              Builder(
+                builder: (BuildContext context) {
+                  final bool excluded = _session.state.excludedAudioSourcePtrs
+                      .contains(track.sourcePtr);
+                  return ListTile(
+                    leading: Icon(
+                      excluded ? Icons.music_off_outlined : Icons.graphic_eq,
+                    ),
+                    title: Text(
+                      '${t.game_track_voice} ${track.orderIndex + 1} · '
+                      '${track.format.sampleRate} Hz · '
+                      '${track.format.channels} ch',
+                    ),
+                    subtitle: Text(
+                      <String>[
+                        '${t.game_track_clips} ${track.clipCount}',
+                        '${t.game_track_energy} '
+                            '${track.avgEnergy.toStringAsFixed(1)}',
+                        if (excluded) t.game_track_bgm,
+                      ].join(' · '),
+                    ),
+                    trailing: Wrap(
+                      spacing: 4,
+                      children: <Widget>[
+                        HibikiIconButton(
+                          icon: Icons.play_circle_outline,
+                          tooltip: t.game_track_preview,
+                          onTap: () => unawaited(
+                            _previewLineTrackInDialog(
+                              line.id,
+                              track.sourcePtr,
+                            ),
+                          ),
+                        ),
+                        HibikiIconButton(
+                          icon:
+                              excluded ? Icons.undo : Icons.music_off_outlined,
+                          tooltip: excluded
+                              ? t.game_track_restore
+                              : t.game_track_exclude_bgm,
+                          onTap: () {
+                            _session.setTrackExcluded(
+                              track.sourcePtr,
+                              !excluded,
+                            );
+                            setDialogState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                    // 已明确标为 BGM 的轨不能再被误点成这句语音；仍可试听与恢复。
+                    enabled: !excluded,
+                    onTap: excluded
+                        ? null
+                        : () =>
+                            Navigator.of(dialogContext).pop(track.sourcePtr),
+                  );
+                },
               ),
-              subtitle: Text(
-                '${t.game_track_clips} ${track.clipCount} · '
-                '${t.game_track_energy} ${track.avgEnergy.toStringAsFixed(1)}',
-              ),
-              trailing: HibikiIconButton(
-                icon: Icons.play_circle_outline,
-                tooltip: t.game_track_preview,
-                onTap: () => unawaited(_previewTrackInDialog(track.sourcePtr)),
-              ),
-              onTap: () => Navigator.of(dialogContext).pop(track.sourcePtr),
-            ),
-        ],
+          ],
+        ),
       ),
     );
     if (picked == null || !mounted) return;
@@ -317,6 +362,19 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   Future<void> _previewTrackInDialog(int sourcePtr) async {
     final GalTrackPreview? preview =
         await _session.exportTrackPreview(sourcePtr);
+    if (preview == null) {
+      HibikiToast.show(msg: t.game_track_preview_failed);
+      return;
+    }
+    if (!await DesktopAudioPlayback.playFile(preview.filePath)) {
+      HibikiToast.show(msg: t.game_track_preview_failed);
+    }
+  }
+
+  /// 选轨对话框里的逐轨试听：与确认选择共用当前行时间戳，避免试听偷播最新一句。
+  Future<void> _previewLineTrackInDialog(String lineId, int sourcePtr) async {
+    final GalTrackPreview? preview =
+        await _session.exportLineTrackPreview(lineId, sourcePtr);
     if (preview == null) {
       HibikiToast.show(msg: t.game_track_preview_failed);
       return;
@@ -882,11 +940,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   @override
   Widget build(BuildContext context) {
-    final TexthookerService texthooker = TexthookerService.instance;
-    final List<TexthookerTextThread> textThreads = texthooker.textThreads;
+    final List<TexthookerTextThread> textThreads = _session.textThreads;
     final String? selectedTextThreadKey = _session.selectedTextThreadKey;
-    final List<TexthookerLineEntry> lines =
-        texthooker.entriesForTextThread(selectedTextThreadKey);
+    final List<TexthookerLineEntry> lines = _session.workbenchLines;
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
     if (widget.embedded) {
       return Column(

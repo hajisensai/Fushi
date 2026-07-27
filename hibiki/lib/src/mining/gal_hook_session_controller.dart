@@ -424,7 +424,27 @@ class GalHookSessionController extends ChangeNotifier {
   GalHookSessionState _state = const GalHookSessionState();
   GalHookSessionState get state => _state;
   List<TexthookerLineEntry> get lines => _textService.entries;
-  List<TexthookerTextThread> get textThreads => _textService.textThreads;
+  List<TexthookerTextThread> get textThreads =>
+      _textService.textThreadsSince(_state.sessionStartedAt);
+
+  /// 捕获工作台当前应展示的行。捕获中只看本次会话，避免上一个进程的 Luna 线程/台词
+  /// 混进当前选择；「全部线程」再折叠同一渲染瞬间的跨线程双写。底层 buffer 不删。
+  List<TexthookerLineEntry> get workbenchLines {
+    final DateTime? startedAt = _state.sessionStartedAt;
+    Iterable<TexthookerLineEntry> scoped =
+        _textService.entriesForTextThread(selectedTextThreadKey);
+    if (startedAt != null) {
+      scoped = scoped.where(
+        (TexthookerLineEntry entry) => !entry.receivedAt.isBefore(startedAt),
+      );
+    }
+    final List<TexthookerLineEntry> materialized =
+        scoped.toList(growable: false);
+    return selectedTextThreadKey == null
+        ? collapseParallelTextThreadDuplicates(materialized)
+        : List<TexthookerLineEntry>.unmodifiable(materialized);
+  }
+
   String? get selectedTextThreadKey {
     final String? selected = _selectedTextThreadKey;
     if (selected == null) return null;
@@ -1145,11 +1165,45 @@ class GalHookSessionController extends ChangeNotifier {
   /// 器可直接播（无需 ffmpeg 转码）。无 engine / 尚无台词时间戳 / 该轨窗口内无 PCM /
   /// 写盘失败时返回 null 并记结构化事件（调用方 toast 提示，不静默）。
   Future<GalTrackPreview?> exportTrackPreview(int sourcePtr) async {
-    final EngineHookGalAudioSource? engine = _engineSource;
-    if (engine == null) return null;
     final int timestamp = _lineTimestampCache.values.isEmpty
         ? 0
         : _lineTimestampCache.values.last;
+    return _exportTrackPreviewAt(sourcePtr, timestamp);
+  }
+
+  /// 逐句选轨弹窗的试听必须与确认选轨共用同一 [lineId] 时间戳。旧实现调用
+  /// [exportTrackPreview] 偷用了最新一句，导致用户能听见最新句，却为较早行确认时收到
+  /// 「该句没有音轨」。
+  Future<GalTrackPreview?> exportLineTrackPreview(
+    String lineId,
+    int sourcePtr,
+  ) async {
+    final TexthookerLineEntry? entry = _textService.entryById(lineId);
+    final int timestamp = _lineTimestampCache[lineId] ?? 0;
+    if (entry == null || !isLineInCurrentSession(entry) || timestamp <= 0) {
+      _record(
+        GalHookEventSeverity.warning,
+        'audio',
+        'audio.line_track_preview_unavailable',
+        'Per-line track preview needs a current hooked line timestamp',
+        details: <String, Object?>{
+          'lineId': lineId,
+          'sourcePtr': sourcePtr,
+          'tsMs': timestamp,
+        },
+      );
+      return null;
+    }
+    return _exportTrackPreviewAt(sourcePtr, timestamp, lineId: lineId);
+  }
+
+  Future<GalTrackPreview?> _exportTrackPreviewAt(
+    int sourcePtr,
+    int timestamp, {
+    String? lineId,
+  }) async {
+    final EngineHookGalAudioSource? engine = _engineSource;
+    if (engine == null) return null;
     final GalAudioSlice? slice = await engine.grabUtterance(
       timestamp,
       sourcePtr: sourcePtr,
@@ -1161,7 +1215,11 @@ class GalHookSessionController extends ChangeNotifier {
         'audio',
         'audio.track_preview_empty',
         'No recent PCM was available on the selected track',
-        details: <String, Object?>{'sourcePtr': sourcePtr, 'tsMs': timestamp},
+        details: <String, Object?>{
+          'sourcePtr': sourcePtr,
+          'tsMs': timestamp,
+          if (lineId != null) 'lineId': lineId,
+        },
       );
       return null;
     }
