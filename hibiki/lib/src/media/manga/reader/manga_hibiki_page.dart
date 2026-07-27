@@ -24,6 +24,7 @@ import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
 import 'package:hibiki/src/media/manga/manga_spread_model.dart';
 import 'package:hibiki/src/media/manga/mokuro_payload.dart';
 import 'package:hibiki/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
+import 'package:hibiki/src/media/manga/reader/manga_window_load_gate.dart';
 import 'package:hibiki/src/pages/base_source_page.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
@@ -528,8 +529,10 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   /// 仍经 [_turnQueue] 串行化，避免快速反向操作交叠 DOM 更新。
   bool _navigating = false;
   final MangaTurnQueue _turnQueue = MangaTurnQueue();
-  int _windowGeneration = 0;
-  Completer<void>? _windowLoadCompleter;
+
+  /// 窗口文档加载的所有权闸门：generation 与 ready 锁只能经它读写，迟到的旧回调
+  /// 不能解开新窗口的锁（BUG-1170），页面销毁时在飞加载被显式放弃（BUG-1171）。
+  final MangaWindowLoadGate _windowGate = MangaWindowLoadGate();
 
   /// 制卡卡图：当前 spread 首页图的绝对文件路径（加载/翻页/滚动/切模式全路径更新，
   /// 否则封面恒 null——ERRATA C2）。文件缺失/解析失败时为 null（卡图省略而非坏引用）。
@@ -574,6 +577,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   void dispose() {
     ExitFlushRegistry.instance.unregister(_flushPosition);
     WidgetsBinding.instance.removeObserver(this);
+    // 加载中的窗口必须以明确状态收尾：否则 _loadInitialWindow 会挂满 10s 超时，
+    // 再从 unawaited 调用点抛出未捕获异步异常（BUG-1171）。
+    _windowGate.abandon();
     _progressDebounce?.cancel();
     _dictionaryTurnDismissTimer?.cancel();
     unawaited(_wholeVolumeOcrSubscription?.cancel());
@@ -957,13 +963,11 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     if (_payload == null || _controller == null || _navigating) return;
     _navigating = true;
     final Set<int> previousLoaded = Set<int>.of(_loadedSpreads);
-    final int generation = ++_windowGeneration;
-    final Completer<void> ready = Completer<void>();
-    _windowLoadCompleter = ready;
+    final MangaWindowLoadTicket ticket = _windowGate.begin();
     try {
       final String doc = _buildWindowDocument(
         ReaderSelectionScripts.source(),
-        documentGeneration: generation,
+        documentGeneration: ticket.generation,
       );
       await _controller!.loadData(
         data: doc,
@@ -975,16 +979,20 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       // old document can remain visible for another event-loop turn (or a
       // stale onLoadStop can arrive), so keep navigation locked until the
       // loaded document proves it owns this exact generation.
-      await ready.future.timeout(const Duration(seconds: 10));
+      final MangaWindowLoadOutcome outcome =
+          await ticket.outcome.timeout(const Duration(seconds: 10));
+      if (outcome == MangaWindowLoadOutcome.abandoned) {
+        // 页面已在加载途中销毁（dispose 显式收尾）：不再碰 State，也不把它当
+        // 失败上抛——调用方全是 unawaited，抛出等于未捕获异步异常（BUG-1171）。
+        return;
+      }
       // 首窗图作为制卡卡图（ERRATA C2）；在 _spreads/_currentSpread 定型后解析。
       _updateCurrentPageImagePath();
     } catch (_) {
       _loadedSpreads = previousLoaded;
       rethrow;
     } finally {
-      if (identical(_windowLoadCompleter, ready)) {
-        _windowLoadCompleter = null;
-      }
+      _windowGate.finish(ticket);
       _navigating = false;
       if (mounted && _spreads.isNotEmpty) {
         unawaited(_turnQueue.drain(
@@ -1584,6 +1592,11 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   // ── 页码进度持久化 ───────────────────────────────────────────────────
 
   void _recordProgress() {
+    // 唯一收口：本方法写 _pageNotifier 并新建 debounce Timer，两者都在 dispose
+    // 里被释放/取消。所有调用点都在若干 await 之后（翻页/滚动/窗口就绪），迟到的
+    // 回调必须在这里被挡掉，否则 ValueNotifier used after being disposed，并留下
+    // dispose 之后才触发的泄漏定时器（BUG-1171）。
+    if (!mounted) return;
     final (int page, double fraction) = MangaHibikiPage.mangaProgressForSpread(
       _spreads,
       _currentSpread,
@@ -2181,12 +2194,26 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     } catch (_) {
       return;
     }
-    if (!MangaWindowGeneration.isCurrent(rawGeneration, _windowGeneration)) {
+    // 入口闸门（BUG-1153）：这份文档必须自证就是当前 generation。
+    if (!MangaWindowGeneration.isCurrent(
+        rawGeneration, _windowGate.generation)) {
+      return;
+    }
+    // 但入口比一次远远不够（BUG-1170）：下面三个 await 期间窗口可能被换掉
+    // （10s 超时放弃旧窗口 → 新一轮 begin() 递增 generation 并换新锁），迟到的旧
+    // 回调会解开**新**窗口的锁，导航锁被错误解除，WebView 还在加载旧内容就被判定
+    // 就绪。所以这里取本次加载的凭据，每个 await 之后再复问一次归属。
+    final MangaWindowLoadTicket? ticket =
+        _windowGate.ticketFor(MangaWindowGeneration.parse(rawGeneration));
+    if (ticket == null) {
       return;
     }
     await controller.evaluateJavascript(
       source: MangaHibikiPage.navigationKeyBridgeScript,
     );
+    if (!mounted || !_windowGate.owns(ticket)) {
+      return;
+    }
     if (_mode == MangaReadingMode.webtoon) {
       await controller.evaluateJavascript(
         source: 'window.__mangaScrollToSpread && '
@@ -2198,10 +2225,10 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
             'window.__mangaApplyTranslate($_currentSpread);',
       );
     }
-    final Completer<void>? ready = _windowLoadCompleter;
-    if (ready != null && !ready.isCompleted) {
-      ready.complete();
+    if (!mounted || !_windowGate.owns(ticket)) {
+      return;
     }
+    _windowGate.complete(ticket, MangaWindowLoadOutcome.ready);
     _recordProgress();
   }
 }

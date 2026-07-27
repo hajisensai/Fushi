@@ -48,6 +48,7 @@ void main() {
     final MangaOcrCacheRecovery recovery = await recoverCachedMangaOcr(
       managedDirectory: temporary.path,
       basePayload: formal,
+      localEngineSignature: kLocalMangaOcrEngineSignature,
     );
 
     expect(recovery.recoveredPageIndices, <int>[0, 1]);
@@ -77,24 +78,58 @@ void main() {
       basePayload: MokuroPayload(images: <MokuroImage>[
         for (final MangaOcrPageFile page in pages) _page(page.relativeUrl, ''),
       ]),
+      localEngineSignature: kLocalMangaOcrEngineSignature,
     );
 
     expect(recovery.recoveredPageIndices, <int>[0]);
     expect(recovery.payload.images[0].blocks.single.lines, <String>['新本地']);
     expect(recovery.payload.images[1].blocks, isEmpty);
   });
+
+  // BUG-1173：本地缓存目录名带模型内容指纹。换模型后签名变，旧模型产出的页缓存
+  // 不得再被恢复回来冒充当前模型的结果。
+  test('local cache from a different model signature is not recovered',
+      () async {
+    const String oldSignature = '$kLocalMangaOcrEngineSignature-aaaaaaaaaaaa';
+    final MangaOcrFilePageCache stale =
+        _localCache(temporary, pages, signature: oldSignature);
+    await stale.write('manga_ocr', _localResult(pageIndex: 0, text: '旧模型'));
+
+    final MangaOcrCacheRecovery recovery = await recoverCachedMangaOcr(
+      managedDirectory: temporary.path,
+      basePayload: MokuroPayload(images: <MokuroImage>[
+        for (final MangaOcrPageFile page in pages) _page(page.relativeUrl, ''),
+      ]),
+      localEngineSignature: '$kLocalMangaOcrEngineSignature-bbbbbbbbbbbb',
+    );
+
+    expect(recovery.recoveredPageIndices, isEmpty);
+    expect(recovery.payload.images[0].blocks, isEmpty);
+
+    // 同签名时同一份缓存必须能恢复（证明上面为空不是因为缓存没写成功）。
+    final MangaOcrCacheRecovery sameModel = await recoverCachedMangaOcr(
+      managedDirectory: temporary.path,
+      basePayload: MokuroPayload(images: <MokuroImage>[
+        for (final MangaOcrPageFile page in pages) _page(page.relativeUrl, ''),
+      ]),
+      localEngineSignature: oldSignature,
+    );
+    expect(sameModel.recoveredPageIndices, <int>[0]);
+    expect(sameModel.payload.images[0].blocks.single.lines, <String>['旧模型']);
+  });
 }
 
 MangaOcrFilePageCache _localCache(
   Directory root,
-  List<MangaOcrPageFile> pages,
-) =>
+  List<MangaOcrPageFile> pages, {
+  String signature = kLocalMangaOcrEngineSignature,
+}) =>
     MangaOcrFilePageCache(
       cacheDir: Directory(p.join(
         root.path,
         kMangaOcrOutDirName,
         kMangaOcrPagesCacheDirName,
-        kLocalMangaOcrEngineSignature,
+        signature,
       )),
       pageNames: <String>[for (final page in pages) page.relativeUrl],
       pageFiles: <File>[for (final page in pages) page.file],

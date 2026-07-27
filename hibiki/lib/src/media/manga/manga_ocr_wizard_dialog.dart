@@ -20,6 +20,7 @@ import 'package:hibiki/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:hibiki/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart';
+import 'package:hibiki/src/ocr/manga_ocr_model_fingerprint.dart';
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 import 'package:hibiki/src/ocr/ocr_types.dart';
 import 'package:hibiki/src/sync/interconnect_manga_ocr_client.dart';
@@ -293,12 +294,16 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
 
   Stream<MangaOcrBackgroundEvent> _backgroundLocalEvents(String dir) async* {
     final List<MangaOcrPageFile> pages = enumerateMangaPages(Directory(dir));
+    // 「整卷已缓存 → 直接产出、跳过 OCR」的探测必须与真实任务用同一个签名，
+    // 否则换模型后会拿旧模型的缓存冒充新结果（BUG-1173）。
+    final String engineSignature =
+        await resolveInstalledLocalMangaOcrEngineSignature();
     final MangaOcrFilePageCache cache = MangaOcrFilePageCache(
       cacheDir: Directory(p.join(
         dir,
         kMangaOcrOutDirName,
         kMangaOcrPagesCacheDirName,
-        kLocalMangaOcrEngineSignature,
+        engineSignature,
       )),
       pageNames: <String>[
         for (final MangaOcrPageFile page in pages) page.relativeUrl
@@ -319,9 +324,9 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
           buildMangaPayloadFromResults(pages, cachedResults);
       final MokuroPayload payload = MokuroPayload(
         images: generated.images,
-        ocr: const MangaOcrMetadata(
+        ocr: MangaOcrMetadata(
           engine: 'local_onnx',
-          engineSignature: kLocalMangaOcrEngineSignature,
+          engineSignature: engineSignature,
           schemaVersion: 1,
         ),
       );

@@ -136,6 +136,23 @@ void main() {
     expect(resolved['images'], same(pixels));
   });
 
+  // 之前这条能力只写在 doc 里：单输入回退分支排在按名匹配之后，永远不可达，
+  // 只有硬编码的 pixel_values→images 别名真正生效。上游换个导出把输入命名为
+  // `input` / `x` 就会直接失败。
+  test('single-input model accepts any exported input name', () {
+    final OcrTensor pixels =
+        OcrTensor.float32(Float32List(3), <int>[1, 3, 1, 1]);
+
+    for (final String exportedName in <String>['input', 'x', 'pixel_values']) {
+      final Map<String, OcrTensor> resolved = resolveOcrSessionInputs(
+        inputs: <String, OcrTensor>{'pixel_values': pixels},
+        sessionInputNames: <String>[exportedName],
+      );
+      expect(resolved.keys, <String>[exportedName]);
+      expect(resolved[exportedName], same(pixels));
+    }
+  });
+
   test('multi-input model never guesses by input order', () {
     final OcrTensor ids = OcrTensor.int64(Int64List(1), <int>[1, 1]);
     final OcrTensor hidden = OcrTensor.float32(Float32List(1), <int>[1, 1, 1]);

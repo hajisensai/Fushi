@@ -252,7 +252,12 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
     final Uint8List response = await _transport.post(request);
     final List<GoogleLensParagraph> paragraphs;
     try {
-      paragraphs = GoogleLensProtocol.decodeResponse(response);
+      // 归一化坐标与 rotation 都是相对**送检图**的，宽高比必须取 prepared 尺寸。
+      paragraphs = GoogleLensProtocol.decodeResponse(
+        response,
+        imageWidth: prepared.width,
+        imageHeight: prepared.height,
+      );
     } on GoogleLensProtocolException catch (error) {
       throw GoogleLensOcrException('invalid_response', error.message);
     }

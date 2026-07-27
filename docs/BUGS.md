@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1132 条。点号进各自文件。
+> 共 1136 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1173](bugs/BUG-1173-manga-ocr-cache-model-identity.md) | ✅ | ✅ | 漫画本地 OCR 缓存不含模型身份 |
+| [BUG-1172](bugs/BUG-1172-manga-lens-rotated-hit-aspect.md) | ✅ | ✅ | 漫画 Lens 旋转命中区在非方形页上算错 |
+| [BUG-1171](bugs/BUG-1171-manga-reader-progress-after-dispose.md) | ✅ | ✅ | 漫画阅读器销毁后仍写页码通知器并挂 10 秒 |
+| [BUG-1170](bugs/BUG-1170-manga-window-ready-stale-generation.md) | ✅ | ✅ | 漫画窗口 ready 锁被迟到旧回调解除 |
 | [BUG-1169](bugs/BUG-1169-gal-launch-failed-reason-release-assert.md) | ✅ | ✅ | release 剥离 assert 后 failed(none) 被判成启动成功 |
 | [BUG-1168](bugs/BUG-1168-post-frame-focus-reclaim-never-fires-on-idle-tree.md) | ✅ | ✅ | 静止树上 addPostFrameCallback 焦点回收永不触发（进出全屏/关字幕遮罩后快捷键失灵） |
 | [BUG-1167](bugs/BUG-1167-video-subtitle-align-dialog-focus-not-returned.md) | ✅ | ✅ | 视频字幕波形对轴弹窗关闭后不归还键盘焦点 |

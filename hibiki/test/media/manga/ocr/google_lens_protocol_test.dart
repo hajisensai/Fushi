@@ -1,4 +1,6 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/manga/ocr/google_lens_protocol.dart';
@@ -31,8 +33,11 @@ void main() {
   });
 
   test('decodes line text, removes CJK spaces and records UTF-16 regions', () {
-    final List<GoogleLensParagraph> result =
-        GoogleLensProtocol.decodeResponse(makeGoogleLensFixture());
+    final List<GoogleLensParagraph> result = GoogleLensProtocol.decodeResponse(
+      makeGoogleLensFixture(),
+      imageWidth: 1000,
+      imageHeight: 1000,
+    );
     expect(result, hasLength(1));
     expect(result.single.sentence, '日本');
     expect(result.single.isVertical, isFalse);
@@ -54,6 +59,8 @@ void main() {
         height: 0.4,
         rotation: 1.57079632679,
       ),
+      imageWidth: 1000,
+      imageHeight: 1000,
     );
     expect(result.single.isVertical, isTrue);
     expect(
@@ -76,6 +83,8 @@ void main() {
         secondLineText: '下',
         secondLineCenterY: 0.7,
       ),
+      imageWidth: 1000,
+      imageHeight: 1000,
     );
     expect(result.single.sentence, '上下');
     expect(
@@ -88,9 +97,76 @@ void main() {
     expect(
       () => GoogleLensProtocol.decodeResponse(
         Uint8List.fromList(<int>[0x12, 0xff, 0xff]),
+        imageWidth: 1000,
+        imageHeight: 1000,
       ),
       throwsA(isA<GoogleLensProtocolException>()),
     );
+  });
+
+  // BUG-1172：旋转必须按送检图的宽高比还原。Lens 的 width 按图宽归一、height 按
+  // 图高归一，直接把两者混进同一组 sin/cos 只在正方形页成立；漫画页恒是竖长图。
+  // 判据一律放在**像素空间**——旋转矩形的像素 AABB 与归一化口径无关。
+  test('45 度斜行在非方形页上的命中区按像素几何还原', () {
+    const int pageWidth = 1200;
+    const int pageHeight = 1700;
+    const double rotation = math.pi / 4;
+    const double lineWidth = 0.4;
+    const double lineHeight = 0.1;
+    final List<GoogleLensParagraph> result = GoogleLensProtocol.decodeResponse(
+      makeGoogleLensFixture(
+        firstWord: '斜',
+        secondWord: '体',
+        width: lineWidth,
+        height: lineHeight,
+        rotation: rotation,
+      ),
+      imageWidth: pageWidth,
+      imageHeight: pageHeight,
+    );
+    expect(result.single.sentence, '斜体');
+    expect(result.single.regions, hasLength(2));
+
+    const double cellPixelWidth = lineWidth / 2 * pageWidth;
+    const double cellPixelHeight = lineHeight * pageHeight;
+    final double expectedPixelWidth =
+        cellPixelWidth * math.cos(rotation).abs() +
+            cellPixelHeight * math.sin(rotation).abs();
+    final double expectedPixelHeight =
+        cellPixelWidth * math.sin(rotation).abs() +
+            cellPixelHeight * math.cos(rotation).abs();
+    final Rect first = result.single.regions.first.normalizedBounds;
+    expect(first.width * pageWidth, closeTo(expectedPixelWidth, 0.5));
+    expect(first.height * pageHeight, closeTo(expectedPixelHeight, 0.5));
+
+    // 两个字符沿同一条基线错开：像素位移的斜率必须等于 tan(rotation)。
+    final Rect second = result.single.regions.last.normalizedBounds;
+    final double dxPixels = (second.center.dx - first.center.dx) * pageWidth;
+    final double dyPixels = (second.center.dy - first.center.dy) * pageHeight;
+    expect(dyPixels / dxPixels, closeTo(math.tan(rotation), 1e-3));
+  });
+
+  test('90 度竖行在非方形页上的 X 半宽按页宽高比还原', () {
+    const int pageWidth = 1200;
+    const int pageHeight = 1700;
+    const double lineWidth = 0.4;
+    const double lineHeight = 0.06;
+    final List<GoogleLensParagraph> result = GoogleLensProtocol.decodeResponse(
+      makeGoogleLensFixture(
+        firstWord: '縦',
+        secondWord: '書',
+        width: lineWidth,
+        height: lineHeight,
+        rotation: math.pi / 2,
+      ),
+      imageWidth: pageWidth,
+      imageHeight: pageHeight,
+    );
+    final Rect bounds = result.single.normalizedBounds;
+    // 90° 时行的像素宽 = 未旋转时的像素高（lineHeight * 页高），与页宽无关。
+    expect(bounds.width * pageWidth, closeTo(lineHeight * pageHeight, 0.5));
+    // 行的像素高 = 未旋转时的像素宽（lineWidth * 页宽）。
+    expect(bounds.height * pageHeight, closeTo(lineWidth * pageWidth, 0.5));
   });
 }
 

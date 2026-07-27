@@ -29,6 +29,10 @@ const String kMangaOcrPagesCacheDirName = '_pages';
 // v2 bakes EXIF orientation before detection. v1 coordinates were measured
 // against the encoded pixel matrix while Chromium displayed the oriented page,
 // so portrait pages with orientation metadata had a shifted lookup layer.
+//
+// 这只是**坐标口径基线**，不代表模型身份：实际落盘的目录名要再接一段已安装模型
+// 的内容指纹（`manga_ocr_model_fingerprint.dart`），否则上游换模型后旧缓存被静默
+// 复用（BUG-1173）。
 const String kLocalMangaOcrEngineSignature = 'local-onnx-v2-oriented';
 
 /// 产物文件名（`manga_ocr_out/manga.json`）。
@@ -294,10 +298,14 @@ Future<img.Image> decodeMangaPageFile(File file) async {
 ///   缓存保留。
 /// - [onProgress] 逐页回调（含缓存命中页）。
 /// - [decodePage] 可注入（测试免真图解码）。
+/// - [engineSignature] 逐页缓存子目录名 + 产物元数据里的引擎签名。**必须**由调用
+///   方按已安装模型解析（见 `manga_ocr_model_fingerprint.dart`）：这里不给默认值，
+///   免得新调用方漏传一个手维护常量又把不同模型的结果混进同一卷（BUG-1173）。
 Future<String> runMangaOcrFolderJob({
   required String imageDirPath,
   required OcrDetector detector,
   required OcrRecognizer recognizer,
+  required String engineSignature,
   OcrCancelToken? cancelToken,
   OcrProgressCallback? onProgress,
   Future<img.Image> Function(File file)? decodePage,
@@ -316,7 +324,7 @@ Future<String> runMangaOcrFolderJob({
     p.join(
       outDir.path,
       kMangaOcrPagesCacheDirName,
-      kLocalMangaOcrEngineSignature,
+      engineSignature,
     ),
   );
   await cacheDir.create(recursive: true);
@@ -346,9 +354,9 @@ Future<String> runMangaOcrFolderJob({
   final MokuroPayload generated = buildMangaPayloadFromResults(pages, results);
   final MokuroPayload payload = MokuroPayload(
     images: generated.images,
-    ocr: const MangaOcrMetadata(
+    ocr: MangaOcrMetadata(
       engine: 'local_onnx',
-      engineSignature: kLocalMangaOcrEngineSignature,
+      engineSignature: engineSignature,
       schemaVersion: 1,
     ),
   );
