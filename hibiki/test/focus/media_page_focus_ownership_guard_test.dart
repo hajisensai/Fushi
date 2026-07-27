@@ -11,15 +11,17 @@ import 'package:flutter_test/flutter_test.dart';
 /// 把回收收敛到单一入口后，判据只有一份（各页的 `_canOwn*Focus`）；这条守卫防止
 /// 有人图省事又在某个回调里补一句裸 `requestFocus` 把判据绕过去。
 void main() {
-  /// 正文键盘节点名 → 允许出现裸 `requestFocus` 的文件（仓库相对路径，`/` 分隔）。
-  const Map<String, Set<String>> bodyFocusNodes = <String, Set<String>>{
-    '_videoFocusNode': <String>{},
-    '_focusNode': <String>{
-      // popup header ↔ 正文之间的焦点来回属于**页面内部**焦点转移（在两个都由
-      // Flutter 拥有的节点之间搬运），不是「从原生控件手里夺回」，套 cause 模型是
-      // 硬凑。这两处保留裸调，但必须留在 caret 域内。
-      'lib/src/pages/implementations/reader_hibiki/caret.part.dart',
-    },
+  /// 允许出现任何形式 `requestFocus` 的文件（仓库相对路径，`/` 分隔）。
+  ///
+  /// 扫的是**裸 token**而不是 `<节点>.requestFocus()` 这一种写法：只认后者的话，
+  /// `FocusScope.of(context).requestFocus(_focusNode)`、先把节点存进局部变量再调、
+  /// 或换成 `node..requestFocus()` 都能绕过守卫——而绕过的后果与直接裸调完全一样
+  /// （跳过该页 `_canOwn*Focus` 判据）。按文件放行、按 token 拦截，没有写法能溜。
+  const Set<String> requestFocusAllowedFiles = <String>{
+    // popup header ↔ 正文之间的焦点来回属于**页面内部**焦点转移（在两个都由
+    // Flutter 拥有的节点之间搬运），不是「从原生控件手里夺回」，套 cause 模型是
+    // 硬凑。这几处保留裸调，但必须留在 caret 域内。
+    'lib/src/pages/implementations/reader_hibiki/caret.part.dart',
   };
 
   const List<String> mediaPageRoots = <String>[
@@ -39,6 +41,14 @@ void main() {
         .where((File f) => f.path.endsWith('.dart'));
   }
 
+  /// 剥掉 `//` 注释（整行与行尾）——注释里合法地讲解 `requestFocus`，扫的是代码。
+  /// 唯一已知误差：字符串里的 `//`（如 URL）会把该行剩余截掉；`requestFocus`
+  /// 不会出现在 URL 之后，故不影响本守卫。
+  String codeOnly(String source) => source.split('\n').map((String line) {
+        final int at = line.indexOf('//');
+        return at < 0 ? line : line.substring(0, at);
+      }).join('\n');
+
   test('媒体页不得绕过 PageFocusOwnership 裸调 requestFocus', () {
     final List<String> violations = <String>[];
     for (final String root in mediaPageRoots) {
@@ -46,23 +56,24 @@ void main() {
         // CI 跑 Linux、开发机是 Windows：路径分隔符必须归一化后再比对豁免名单，
         // 否则豁免在一端静默失效。
         final String normalized = file.path.replaceAll('\\', '/');
-        final String source = file.readAsStringSync();
-        bodyFocusNodes.forEach((String node, Set<String> allowed) {
-          if (allowed.contains(normalized)) return;
-          final String needle = '$node.requestFocus()';
-          if (source.contains(needle)) {
-            violations.add('$normalized: $needle');
+        if (requestFocusAllowedFiles.contains(normalized)) continue;
+        final String source = codeOnly(file.readAsStringSync());
+        if (!source.contains('requestFocus')) continue;
+        for (final String line in source.split('\n')) {
+          if (line.contains('requestFocus')) {
+            violations.add('$normalized: ${line.trim()}');
           }
-        });
+        }
       }
     }
     expect(
       violations,
       isEmpty,
       reason: '焦点请求必须经 _focusOwnership.reclaim / reclaimAfterFrame / '
-          'guardOverlay —— 裸调会绕过该页的 _canOwn*Focus 判据（播放器/内容就绪、'
-          '查词浮层可见、光标态、所有者路由 isCurrent），正是统一前每个补丁互相'
-          '漂移的老路。命中：$violations',
+          'guardOverlay —— 任何形式的 requestFocus（含 FocusScope.of(context)'
+          '.requestFocus(node) 与经局部变量中转）都会绕过该页的 _canOwn*Focus 判据'
+          '（播放器/内容就绪、查词浮层可见、光标态、所有者路由 isCurrent），正是'
+          '统一前每个补丁互相漂移的老路。命中：$violations',
     );
   });
 

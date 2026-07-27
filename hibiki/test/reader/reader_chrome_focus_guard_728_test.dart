@@ -39,11 +39,48 @@ void main() {
     final String body = codeOnly(chrome.substring(start, end));
     expect(body, contains('_showChrome = !_showChrome'));
     expect(body, contains('_applyChromeInsets()'));
-    expect(body, contains('_focusOwnership.reclaim(FocusReclaimCause'));
+    // 底栏是本页自己的 chrome，不是压在页上的覆盖层：必须用自证的 chromeToggled，
+    // 不得复用 overlayClosed —— 后者带着「内容未就绪 / 歌词态 / 光标态 / 弹窗态一律
+    // 不抢」的严格门控，套到切底栏上就成了「歌词模式下切一次底栏，键盘再也回不来」。
+    expect(
+      body,
+      contains('_focusOwnership.reclaim(FocusReclaimCause.chromeToggled)'),
+    );
+    expect(body, isNot(contains('FocusReclaimCause.overlayClosed')));
     // Must NOT resurrect the removed moveFocusToChrome path or touch the chrome
     // focus scope directly.
     expect(body, isNot(contains('moveFocusToChrome')));
     expect(body, isNot(contains('_chromeFocusScope')));
+  });
+
+  test('chromeToggled 判据不吃 overlayClosed 那组严格门控', () {
+    final String page = File(
+      'lib/src/pages/implementations/reader_hibiki_page.dart',
+    ).readAsStringSync();
+    final int start = page.indexOf('bool _canOwnReaderFocus(');
+    expect(start, isNonNegative);
+    final int end = page.indexOf('\n  }', start);
+    expect(end, greaterThan(start));
+    final String body = codeOnly(page.substring(start, end));
+
+    final int chromeCase =
+        body.indexOf('case FocusReclaimCause.chromeToggled:');
+    final int overlayCase =
+        body.indexOf('case FocusReclaimCause.overlayClosed:');
+    expect(chromeCase, isNonNegative, reason: '切底栏必须有自己的分支，否则又会被并进严格门控组');
+    expect(overlayCase, isNonNegative);
+    expect(chromeCase, lessThan(overlayCase),
+        reason: 'chromeToggled 必须在自己的分支里 return，不得 fall-through 到严格组');
+    // chromeToggled 分支体：到下一个 case 为止，必须是无条件 return true。
+    final int chromeBodyStart =
+        chromeCase + 'case FocusReclaimCause.chromeToggled:'.length;
+    final int nextCase =
+        body.indexOf('case FocusReclaimCause.', chromeBodyStart);
+    expect(nextCase, greaterThan(chromeBodyStart));
+    final String branch = body.substring(chromeBodyStart, nextCase).trim();
+    expect(branch, 'return true;',
+        reason: '统一前这里是无条件 requestFocus；加门控等于改用户可感知行为，'
+            '要改必须单独立 bug 号。实际命中：$branch');
   });
 
   test('top-progress tap GestureDetector has no Focus wrapper', () {

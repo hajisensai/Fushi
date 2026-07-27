@@ -25,6 +25,13 @@ library;
 /// * 焦点在 `<input>` / `<textarea>` / `contenteditable` 里时放行，否则打字打不出
 ///   空格。
 /// * 命中才 `preventDefault()`，掐掉 Chromium 默认滚屏；未命中不干预页面。
+///
+/// 生成结果整体裹在 IIFE 里：同一 document 里可能注入**多份**桥（阅读器一份、漫画
+/// 页规划中再一份），键表若留在脚本作用域就是全局 `var`，后注入的一份会把先注入的
+/// 键表整个覆盖掉，而两个 listener 都还在——表现为「某一页的键突然全不响应了」，
+/// 且极难定位。裹进 IIFE 后每份桥各自闭包持有自己的键表，多份共存互不相干。
+/// 前导 `;` 是拼接安全惯例：本脚本被插进一大段 setup 脚本中间，前一条语句若少了
+/// 分号，裸 `(function…` 会被解析成对它的调用。
 String webViewKeyBridgeScript({
   required String handlerName,
   required List<String> keys,
@@ -32,6 +39,7 @@ String webViewKeyBridgeScript({
   assert(keys.isNotEmpty, 'a key bridge with no keys would be dead code');
   final String keyList = keys.map(_jsStringLiteral).join(', ');
   return '''
+  ;(function () {
   var _hoshiBridgeKeys = [$keyList];
   document.addEventListener('keydown', function(e) {
     if (!e || _hoshiBridgeKeys.indexOf(e.key) === -1) return;
@@ -46,7 +54,8 @@ String webViewKeyBridgeScript({
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler('$handlerName', e.key);
     }
-  }, {capture: true});''';
+  }, {capture: true});
+  })();''';
 }
 
 /// 把 Dart 字符串转成安全的 JS 单引号字面量（键名可能含引号 / 反斜杠）。

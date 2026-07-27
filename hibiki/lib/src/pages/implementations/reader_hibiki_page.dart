@@ -2920,6 +2920,13 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // （收不到任何按键，没有任何办法回到正文）。
       case FocusReclaimCause.popupDismissed:
         return true;
+      // TODO-700 T8：底栏整体是 ExcludeFocus（见 [_wrapBottomChromeBar]），任何时刻
+      // 都不是合法的焦点所有者，故切底栏没有「让位给谁」这回事——只是重新确认焦点
+      // 仍在正文，正文已持焦时是纯 no-op。**不套**下面那组严格门控：歌词模式 / 内容
+      // 未就绪下正文键盘节点依然是 [_handleKeyEvent] 的唯一入口，此时不归位就等于
+      // 切一下底栏把键丢了（统一前这里是无条件 requestFocus，行为保持不变）。
+      case FocusReclaimCause.chromeToggled:
+        return true;
       // BUG-136：原生 WebView 在任一指针手势上捕获 OS 焦点。只让位给另一个**合法的
       // Flutter 焦点所有者**（可见弹窗 / 底栏 chrome），其余一律收回。
       case FocusReclaimCause.gesture:
