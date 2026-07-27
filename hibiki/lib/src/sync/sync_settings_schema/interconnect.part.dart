@@ -290,9 +290,12 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
     await _persistUrls();
   }
 
+  /// [newIndex] 是**最终下标**（HibikiReorderableColumn 语义），不是 SDK
+  /// `ReorderableListView` 的「移除前下标」——故这里没有 `newIndex--` 修正。
+  /// 上/下移按钮同样按最终下标传（下移传 index+1）。
   Future<void> _reorderUrls(int oldIndex, int newIndex) async {
+    if (oldIndex == newIndex) return;
     setState(() {
-      if (newIndex > oldIndex) newIndex--;
       final List<HibikiClientUrl> copy = <HibikiClientUrl>[..._urls];
       final HibikiClientUrl item = copy.removeAt(oldIndex);
       copy.insert(newIndex, item);
@@ -349,11 +352,17 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           if (_urls.isNotEmpty)
-            ReorderableListView.builder(
-              buildDefaultDragHandles: false,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
+            // 自实现的 HibikiReorderableColumn 而非 SDK ReorderableListView：
+            // 整棵树活在 HibikiAppUiScale 的 Transform.scale 之下，而 SDK 的
+            // _DragItemProxy 用「全局坐标 − overlay 原点」纯平移、不认祖先缩放，
+            // 「界面大小」非 100% 时拖拽浮层按 (1−s)×距离 漂移、缩小时一拖即飞出
+            // 屏幕（BUG-778 同根因，当时只修了合集与词典两条链路，这里漏了）。
+            // 本组件把浮层渲染在列表自身 Stack、指针经 globalToLocal 消掉祖先
+            // 缩放，任意缩放系数下都精确跟手。原本就是 shrinkWrap +
+            // NeverScrollableScrollPhysics（外层滚动），与本组件语义一致。
+            HibikiReorderableColumn(
               itemCount: _urls.length,
+              keyForIndex: (int index) => ValueKey<String>(_urls[index].url),
               onReorder: _reorderUrls,
               itemBuilder: (BuildContext context, int index) {
                 final HibikiClientUrl u = _urls[index];
@@ -407,7 +416,7 @@ class _HibikiServerConfigWidgetState extends State<_HibikiServerConfigWidget>
                           size: 18,
                           tooltip: t.move_down,
                           enabled: index < _urls.length - 1,
-                          onTap: () => _reorderUrls(index, index + 2),
+                          onTap: () => _reorderUrls(index, index + 1),
                         ),
                         adaptiveSwitch(
                           context: context,

@@ -1105,9 +1105,12 @@ class _CustomFontsPageState extends BasePageState {
     HibikiToast.show(msg: t.custom_fonts_removed);
   }
 
+  /// [newIndex] 是**最终下标**（HibikiReorderableColumn 语义），不是 SDK
+  /// `ReorderableListView` 的「移除前下标」——故这里没有 `newIndex--` 修正。
+  /// 上/下移按钮同样按最终下标传（下移传 index+1）。
   void _onReorder(int oldIndex, int newIndex) {
+    if (oldIndex == newIndex) return;
     setState(() {
-      if (newIndex > oldIndex) newIndex--;
       final item = _fonts.removeAt(oldIndex);
       _fonts.insert(newIndex, item);
     });
@@ -1175,17 +1178,21 @@ class _CustomFontsPageState extends BasePageState {
                 title: t.custom_fonts_manage,
                 icon: Icons.format_size,
                 controlBelow: true,
-                trailing: ReorderableListView.builder(
-                  buildDefaultDragHandles: false,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: EdgeInsets.zero,
+                // 自实现的 HibikiReorderableColumn 而非 SDK ReorderableListView：
+                // 整棵树活在 HibikiAppUiScale 的 Transform.scale 之下，而 SDK 的
+                // _DragItemProxy 用「全局坐标 − overlay 原点」纯平移、不认祖先
+                // 缩放，「界面大小」非 100% 时拖拽浮层按 (1−s)×距离 漂移、缩小时
+                // 一拖即飞出屏幕（BUG-778 同根因，当时只修了合集与词典两条链路，
+                // 这里漏了）。原本就是 shrinkWrap + NeverScrollableScrollPhysics
+                //（外层滚动），与本组件语义一致。
+                trailing: HibikiReorderableColumn(
                   itemCount: _fonts.length,
+                  keyForIndex: (int index) =>
+                      ValueKey<String>('${_fonts[index].name}-$index'),
                   onReorder: _onReorder,
                   itemBuilder: (context, index) {
                     final CustomFontCatalogRow entry = _fonts[index];
                     return CustomFontCatalogTile(
-                      key: ValueKey('${entry.name}-$index'),
                       name: entry.name,
                       isFile: entry.isFile,
                       targets: entry.targets,
@@ -1195,7 +1202,7 @@ class _CustomFontsPageState extends BasePageState {
                           _toggleTarget(index, target),
                       onDelete: () => _removeFont(index),
                       onMoveUp: () => _onReorder(index, index - 1),
-                      onMoveDown: () => _onReorder(index, index + 2),
+                      onMoveDown: () => _onReorder(index, index + 1),
                     );
                   },
                 ),
@@ -1513,62 +1520,61 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
         ),
       ),
     );
-    return HibikiReorderDragListener(
-      index: widget.index,
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: cupertino ? 16 : 12,
-          vertical: 10,
-        ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: cupertino ? 58 : 60),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  dragHandle,
-                  Expanded(
-                    child: Text(
-                      widget.name,
-                      style: titleStyle,
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
+    // 不再自带拖拽监听：整行拖拽由外层 HibikiReorderableColumn 统一接管
+    //（它按输入设备分流起拖：鼠标按下即拖、触摸长按），行内容保持纯净。
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: cupertino ? 16 : 12,
+        vertical: 10,
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: cupertino ? 58 : 60),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                dragHandle,
+                Expanded(
+                  child: Text(
+                    widget.name,
+                    style: titleStyle,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
                   ),
-                  SizedBox(width: tokens.spacing.gap),
-                  actions,
+                ),
+                SizedBox(width: tokens.spacing.gap),
+                actions,
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                widget.isFile ? t.font_source_file : t.font_source_system,
+                style: subtitleStyle,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 2,
+              ),
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            rolesHeader,
+            if (_rolesExpanded) ...[
+              SizedBox(height: tokens.spacing.gap),
+              Wrap(
+                spacing: tokens.spacing.gap,
+                runSpacing: tokens.spacing.gap,
+                children: [
+                  for (final FontTarget target in FontTarget.values)
+                    FilterChip(
+                      label: Text(_targetLabel(target)),
+                      selected: widget.targets.contains(target),
+                      onSelected: (_) => widget.onTargetToggled(target),
+                    ),
                 ],
               ),
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  widget.isFile ? t.font_source_file : t.font_source_system,
-                  style: subtitleStyle,
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 2,
-                ),
-              ),
-              SizedBox(height: tokens.spacing.gap),
-              rolesHeader,
-              if (_rolesExpanded) ...[
-                SizedBox(height: tokens.spacing.gap),
-                Wrap(
-                  spacing: tokens.spacing.gap,
-                  runSpacing: tokens.spacing.gap,
-                  children: [
-                    for (final FontTarget target in FontTarget.values)
-                      FilterChip(
-                        label: Text(_targetLabel(target)),
-                        selected: widget.targets.contains(target),
-                        onSelected: (_) => widget.onTargetToggled(target),
-                      ),
-                  ],
-                ),
-              ],
             ],
-          ),
+          ],
         ),
       ),
     );

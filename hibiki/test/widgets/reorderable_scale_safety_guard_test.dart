@@ -1,0 +1,68 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+
+/// BUG-778 同根因的全仓收口守卫。
+///
+/// 整棵 widget 树活在 `HibikiAppUiScale` 的 `Transform.scale` 之下（main.dart 在
+/// 应用根部套的浏览器式整体缩放），而 Flutter SDK 的重排拖拽代理
+/// （`reorderable_list.dart` 的 `_DragItemProxy`）用「全局坐标 − overlay 原点」
+/// 的纯平移把代理放进 Overlay 本地坐标系、**不认祖先缩放变换**：用户把「界面
+/// 大小」调成非 100% 后，拖拽浮层就按 `(1−s)×(指针到 overlay 原点距离)` 漂移，
+/// 缩小时一拖即飞出屏幕。这是 SDK 的坐标缺陷，app 内改不了那段数学。
+///
+/// BUG-778 当时只把合集与词典两条链路换成了自实现的 HibikiReorderable*，
+/// `custom_fonts_page` 与互联设备排序两处漏网，且 `md3_design_system_static_test`
+/// 还**正向断言**字体页必须含 `ReorderableListView.builder(`——一条守卫把缺陷焊
+/// 在了原地。这里改为反向钉死：全仓不得再实际使用 SDK 的重排组件。
+void main() {
+  test('lib/ 下不得实际使用 SDK ReorderableListView / ReorderableGridView', () {
+    final Directory libDir = Directory('lib');
+    expect(libDir.existsSync(), isTrue, reason: '测试须从 hibiki/ 下运行');
+
+    // 只查真实构造调用，不查注释里提到的名字（多处注释正当地解释「为什么不用
+    // 它」，那些恰恰是应当保留的设计记录）。
+    final RegExp constructorCall = RegExp(
+      r'(?<![\w.])Reorderable(ListView|GridView)\s*(\.\s*\w+\s*)?\(',
+    );
+
+    final List<String> offenders = <String>[];
+    for (final FileSystemEntity entity in libDir.listSync(recursive: true)) {
+      if (entity is! File || !entity.path.endsWith('.dart')) continue;
+      final String relative = entity.path.replaceAll(r'\', '/');
+      final List<String> lines = entity.readAsLinesSync();
+      for (int i = 0; i < lines.length; i++) {
+        final String line = lines[i];
+        final String trimmed = line.trimLeft();
+        // 跳过注释行（`///`、`//`、以及 doc 续行的 `*`）。
+        if (trimmed.startsWith('//') || trimmed.startsWith('*')) continue;
+        if (constructorCall.hasMatch(line)) {
+          offenders.add('$relative:${i + 1}: ${trimmed.trim()}');
+        }
+      }
+    }
+
+    expect(
+      offenders,
+      isEmpty,
+      reason: 'SDK 重排组件的 Overlay 拖拽代理不认祖先 Transform.scale，'
+          '「界面大小」非 100% 时拖拽浮层漂移（BUG-778）。'
+          '改用 HibikiReorderableColumn / HibikiReorderableGrid'
+          '（浮层渲染在列表自身 Stack、指针经 globalToLocal 消掉祖先缩放）：\n'
+          '${offenders.join('\n')}',
+    );
+  });
+
+  test('自实现重排件仍在（消缩放的替代实现不得被误删）', () {
+    expect(
+      File('lib/src/utils/components/hibiki_reorderable_column.dart')
+          .existsSync(),
+      isTrue,
+    );
+    expect(
+      File('lib/src/utils/components/hibiki_reorderable_grid.dart')
+          .existsSync(),
+      isTrue,
+    );
+  });
+}

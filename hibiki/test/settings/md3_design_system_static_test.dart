@@ -2364,10 +2364,19 @@ void main() {
       'class CustomFontDownloadProgressDialog',
     );
 
-    expect(pageSource, contains('ReorderableListView.builder('));
-    expect(pageSource, contains('buildDefaultDragHandles: false'));
-    // 不再显示 ☰ 拖拽手柄，也不用长按拖拽，改用每行的上/下移动按钮
-    // （onMoveUp / onMoveDown 调 _onReorder），更适配焦点/手柄导航。
+    // 自实现的 HibikiReorderableColumn，**不是** SDK ReorderableListView：整棵树
+    // 活在 HibikiAppUiScale 的 Transform.scale 下，SDK 的 _DragItemProxy 用
+    // 「全局坐标 − overlay 原点」纯平移、不认祖先缩放，「界面大小」非 100% 时
+    // 拖拽浮层会漂移、缩小时一拖即飞出屏幕（BUG-778 同根因）。此前这条断言正向
+    // 钉死了 `ReorderableListView.builder(`，等于把缺陷焊在原地。
+    expect(pageSource, contains('HibikiReorderableColumn('));
+    expect(
+      pageSource,
+      isNot(contains('ReorderableListView.builder(')),
+      reason: 'SDK Reorderable 在全局 UI 缩放下拖拽坐标漂移（BUG-778 同根因）',
+    );
+    // 每行仍有上/下移动按钮（onMoveUp / onMoveDown 调 _onReorder），适配焦点/
+    // 手柄导航，也是拖拽之外的无障碍路径。
     expect(pageSource, contains('onMoveUp:'));
     expect(pageSource, contains('onMoveDown:'));
     expect(source, isNot(contains('ReorderableDelayedDragStartListener(')));
