@@ -34,10 +34,10 @@ void main() {
   test('setup script seeds the tap gate mirror with live Dart truth', () {
     expect(
       webviewPart,
-      contains(r'window.__hoshiTapGate = { chrome: $_showChrome, '
-          r'lookup: ${ReaderHibikiSource.instance.highlightOnTap}, '
-          'maxLen: 400 };'),
-      reason: '镜像初始值必须随 setup 脚本带当前门控真值注入',
+      contains('window.__hoshiTapGate = { chrome: C.showChrome, '
+          'lookup: C.highlightOnTap, maxLen: 400 };'),
+      reason: 'BUG-1140 第二阶段①后镜像初值随每章 config 下发（不再插进脚本源码），'
+          '但仍必须是当前门控真值',
     );
   });
 

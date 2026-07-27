@@ -153,80 +153,68 @@ void main() {
 
   group('ReaderPaginationScripts.shellScript contract', () {
     test('paginated mode contains hoshiReader object', () {
-      final String script = ReaderPaginationScripts.shellScript(
-        initialProgress: 0.0,
-        continuousMode: false,
-      );
+      final String script = ReaderPaginationScripts.paginatedShellSource();
       expect(script, contains('<script>'));
       expect(script, contains('</script>'));
       expect(script, contains('window.hoshiReader'));
     });
 
     test('continuous mode contains hoshiReader object', () {
-      final String script = ReaderPaginationScripts.shellScript(
-        initialProgress: 0.5,
-        continuousMode: true,
-      );
+      final String script = ReaderPaginationScripts.continuousShellSource();
       expect(script, contains('window.hoshiReader'));
     });
 
     test('paginated mode defines paginate method', () {
-      final String script = ReaderPaginationScripts.shellScript(
-        initialProgress: 0.0,
-        continuousMode: false,
-      );
+      final String script = ReaderPaginationScripts.paginatedShellSource();
       expect(script, contains('paginate'));
       expect(script, contains('calculateProgress'));
     });
 
-    test('initial progress is injected', () {
-      final String script = ReaderPaginationScripts.shellScript(
-        initialProgress: 0.75,
-        continuousMode: false,
-      );
-      expect(script, contains('0.75'));
+    // BUG-1140 第二阶段①：恢复锚与 cue 不再插进源码，改由运行时读 config。
+    // 判据（fragment > charOffset > progress 的优先级）必须原样保留。
+    test('initial progress / char offset / fragment are read from config', () {
+      final String script = ReaderPaginationScripts.paginatedShellSource();
+      expect(script,
+          contains('window.hoshiReader.restoreProgress(C.initialProgress)'));
+      expect(
+          script,
+          contains(
+              'window.hoshiReader.restoreToCharOffset(C.initialCharOffset)'));
+      expect(script,
+          contains('window.hoshiReader.jumpToFragment(C.initialFragment)'));
+      final int fragIdx = script.indexOf('C.initialFragment !== null');
+      final int charIdx = script.indexOf('C.initialCharOffset >= 0');
+      expect(fragIdx, isNonNegative);
+      expect(charIdx, isNonNegative);
+      expect(fragIdx < charIdx, isTrue, reason: 'fragment 跳转优先级必须高于精确字符锚');
     });
 
-    test('sasayaki cues JSON is injected when provided', () {
-      final String script = ReaderPaginationScripts.shellScript(
-        initialProgress: 0.0,
-        continuousMode: false,
-        sasayakiCuesJson: '[{"id":"cue1","start":0,"end":10}]',
-      );
-      expect(script, contains('cue1'));
+    test('sasayaki cues are read from config when present', () {
+      final String script = ReaderPaginationScripts.paginatedShellSource();
+      expect(script,
+          contains('window.hoshiReader.applySasayakiCues(C.sasayakiCues)'));
+      expect(script, contains('C.sasayakiCues !== null'));
     });
 
     test('defines onRestoreComplete callback', () {
-      final String script = ReaderPaginationScripts.shellScript(
-        initialProgress: 0.0,
-        continuousMode: false,
-      );
+      final String script = ReaderPaginationScripts.paginatedShellSource();
       expect(script, contains('onRestoreComplete'));
     });
 
     test('defines updatePageSize method', () {
-      final String script = ReaderPaginationScripts.shellScript(
-        initialProgress: 0.0,
-        continuousMode: false,
-      );
+      final String script = ReaderPaginationScripts.paginatedShellSource();
       expect(script, contains('updatePageSize'));
     });
 
     test('defines initialize function', () {
-      final String script = ReaderPaginationScripts.shellScript(
-        initialProgress: 0.0,
-        continuousMode: false,
-      );
+      final String script = ReaderPaginationScripts.paginatedShellSource();
       expect(script, contains('initialize'));
       expect(script, contains('addEventListener'));
     });
   });
 
   group('ReaderPaginationScripts continuous vertical position contract', () {
-    final String continuous = ReaderPaginationScripts.shellScript(
-      initialProgress: 0.5,
-      continuousMode: true,
-    );
+    final String continuous = ReaderPaginationScripts.continuousShellSource();
 
     test('continuous paginate actually scrolls before reporting scrolled', () {
       final String body = _between(
@@ -340,13 +328,8 @@ void main() {
   // char-precise + settle-aware）。本 group 只留与样式重锚无关的分页 metrics 预热守卫
   // （warmPaginationMetrics）；旧单函数 reanchorAfterStyleChange 已作死代码删除。
   group('ReaderPaginationScripts pagination metrics warm (BUG-023)', () {
-    final String paginated = ReaderPaginationScripts.shellScript(
-      initialProgress: 0.3,
-    );
-    final String continuous = ReaderPaginationScripts.shellScript(
-      continuousMode: true,
-      initialProgress: 0.3,
-    );
+    final String paginated = ReaderPaginationScripts.paginatedShellSource();
+    final String continuous = ReaderPaginationScripts.continuousShellSource();
 
     test('paginated restore completion warms pagination metrics during idle',
         () {

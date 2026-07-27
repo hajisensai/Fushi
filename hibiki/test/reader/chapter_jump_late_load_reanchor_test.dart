@@ -33,15 +33,8 @@ void main() {
   late String continuous;
 
   setUpAll(() {
-    paginated = ReaderPaginationScripts.shellScript(
-      initialProgress: 0.99,
-      initialCharOffset: -1,
-    );
-    continuous = ReaderPaginationScripts.shellScript(
-      continuousMode: true,
-      initialProgress: 0.99,
-      initialCharOffset: -1,
-    );
+    paginated = ReaderPaginationScripts.paginatedShellSource();
+    continuous = ReaderPaginationScripts.continuousShellSource();
   });
 
   String norm(String s) => s.replaceAll(RegExp(r'\s+'), ' ');
