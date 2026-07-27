@@ -16,7 +16,7 @@
     查重答案会直接决定用户「要不要再制一张卡」→ 该报。可重试失败（超时/连接被拒/非 2xx）
     继续 fail-soft 降级是有意设计，不在本 bug 范围内。
 
-- **[x] ① 已修复** — commit `6cb31d5bd`
+- **[x] ① 已修复** — commit `ade4b7c11`
   - `hibiki/lib/src/sync/hibiki_remote_mining_client.dart`：新增三态 `RemoteDuplicateCheck`
     （`duplicate` / `notDuplicate` / `authRejected`），`RemoteMineSender.isDuplicate` 返回值
     由 `bool` 升为三态。`SyncAuthError` 单独走 `on SyncAuthError → authRejected`，其余异常
@@ -34,7 +34,7 @@
     做好并就此走开。若谎报 `true` 或直接抛异常，异常会被 `_guardJsBridge<bool>` 再吞回 `false`
     且用户依然看不到——所以抛异常在这里解决不了问题。
 
-- **[x] ② 已加自动化测试** — commit `6cb31d5bd`
+- **[x] ② 已加自动化测试** — commit `ade4b7c11`
   - `hibiki/test/sync/hibiki_remote_mining_client_duplicate_test.dart`（新增，最强可落地层：
     用 `MockClient` 真实驱动 HTTP 状态码 + 内存 Drift `SyncRepository`）：401 → `authRejected`；
     200 `duplicate:true/false` → `duplicate`/`notDuplicate`；503 / 传输层异常 / 无候选 →
