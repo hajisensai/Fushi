@@ -25,7 +25,16 @@ void main() {
   late Directory tmp;
   late Directory fakeTemp;
 
+  /// BUG-1115：默认（无自定义数据根）documents 根 = `<平台 Documents>/Hibiki/data`。
+  /// 本文件的 mock support 根下没有 `hibiki.db`，故一律判为**全新安装** → 新布局。
+  String nestedDefaultDocs(String platformDocuments) => p.joinAll(<String>[
+        platformDocuments,
+        ...AppPaths.defaultDocumentsChildSegments,
+      ]);
+
   setUp(() {
+    // 布局判定有进程内缓存，用例间必须清掉，否则先跑的用例会把结论钉给后面的。
+    AppPaths.debugResetDocumentsLayoutCache();
     tmp = Directory.systemTemp.createTempSync('hibiki_dataroot_');
     fakeTemp = Directory(p.join(tmp.path, 'systemp'))..createSync();
     // path_provider 的 getTemporaryDirectory 走 method channel；mock 它返回 fakeTemp，
@@ -48,6 +57,7 @@ void main() {
 
   tearDown(() {
     AppPaths.debugDataRootReader = null;
+    AppPaths.debugResetDocumentsLayoutCache();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
@@ -99,7 +109,7 @@ void main() {
 
       expect(paths.documentsRoot.path, isNot(startsWith(missing)));
       expect(paths.documentsRoot.path,
-          equals(p.join(tmp.path, 'default_documents')));
+          equals(nestedDefaultDocs(p.join(tmp.path, 'default_documents'))));
     });
 
     test('空 data_root → 回退默认（无覆盖等价老用户）', () async {
@@ -118,7 +128,7 @@ void main() {
       AppPaths.debugDataRootReader = null;
       final AppPaths paths = await AppPaths.resolve();
       expect(paths.documentsRoot.path,
-          equals(p.join(tmp.path, 'default_documents')));
+          equals(nestedDefaultDocs(p.join(tmp.path, 'default_documents'))));
       expect(
           paths.supportRoot.path, equals(p.join(tmp.path, 'default_support')));
     });
