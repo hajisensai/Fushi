@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/sync/clipboard_dedupe.dart';
 import 'package:hibiki/src/utils/misc/lookup_input_limits.dart';
+import 'package:hibiki/src/utils/misc/ruby_markup.dart';
 import 'package:hibiki/src/utils/window_caption_channel.dart';
 import 'package:hibiki/src/sync/desktop_foreground_guard.dart';
 
@@ -32,9 +33,15 @@ class DesktopLookupRequest {
     this.foregroundPolicy = DesktopLookupForegroundPolicy.bringToFront,
     this.showSourcePanel = true,
     this.passiveStream = false,
+    this.rubySpans = const <RubySpan>[],
   });
 
+  /// 纯基准文本：注音标记已在 [DesktopLookupService._queueLookupRequest] 剥掉
+  /// （注音落在 [rubySpans]）。本条链路的唯一坐标系。
   final String text;
+
+  /// 注音（振假名）区间，下标落在 [text] 上（UTF-16 code unit）。空 = 无注音。
+  final List<RubySpan> rubySpans;
   final DesktopLookupOrigin origin;
   final DesktopLookupForegroundPolicy foregroundPolicy;
   final bool showSourcePanel;
@@ -154,10 +161,20 @@ class DesktopLookupService extends ChangeNotifier
     bool dedupe = true,
     bool passiveStream = false,
   }) {
+    // 注音标记在这里剥，且必须**先于**下面的截断：先截断会把 `<rふる>` 这类标记
+    // 拦腰切断，解析器认不出就只能把半截标记当正文留下。剥完得到的纯基准文本是
+    // 本条链路（透明文字窗 / 悬浮面板 / 瞬态卡 / 剪贴板历史）唯一的坐标系，注音
+    // 以旁路区间随 [DesktopLookupRequest.rubySpans] 下发。
+    //
+    // 放在 _queueLookupRequest 而不是 processClipboardText，是因为这里是剪贴板 /
+    // 全局热键 / 悬浮字幕点词三个来源的共同收口，一处生效即可；而自产回声拦截
+    // （clipboardIgnores.consume）必须留在上游比对**原始串**——登记侧写进剪贴板的
+    // 就是原始串。
+    final RubyMarkupText parsed = parseRubyMarkup(raw);
     // BUG-442：剪贴板/热键/显式查词的统一入口。所有来源在排队前先按同一码点上限
     // 截断（用 characters 不切碎代理对 / 字素簇），避免超长串一路流到逐字渲染的
     // SourceLookupTextPanel 把主 isolate 撑爆，也省掉对超长串做线性清洗。
-    raw = _capLookupInput(raw);
+    raw = _capLookupInput(parsed.text);
     if (!dedupe) {
       final String trimmed = raw.trim();
       if (trimmed.isEmpty) return;
@@ -169,6 +186,7 @@ class DesktopLookupService extends ChangeNotifier
         foregroundPolicy: foregroundPolicy,
         showSourcePanel: showSourcePanel,
         passiveStream: passiveStream,
+        rubySpans: parsed.rebase(trimmed).spans,
       );
       notifyListeners();
       return;
@@ -187,6 +205,7 @@ class DesktopLookupService extends ChangeNotifier
       foregroundPolicy: foregroundPolicy,
       showSourcePanel: showSourcePanel,
       passiveStream: passiveStream,
+      rubySpans: parsed.rebase(deduped).spans,
     );
     notifyListeners();
   }

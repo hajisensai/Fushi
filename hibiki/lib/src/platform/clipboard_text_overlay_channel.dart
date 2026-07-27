@@ -105,9 +105,17 @@ class ClipboardTextOverlayChannel extends FloatingOverlayChannel {
 
   static Future<bool> isShowing() => _instance.isShowingImpl();
 
-  static Future<void> updateText(String text) async {
+  /// [rubySpans] 是可选的注音区间（`{start, length, ruby}`，start/length 为 [text]
+  /// 的 UTF-16 下标）。不传或传空时 native 走老渲染路径，逐像素与今天一致。
+  static Future<void> updateText(
+    String text, {
+    List<Map<String, Object?>>? rubySpans,
+  }) async {
     if (!_instance.isSupported) return;
-    await _instance.channel.invokeMethod<void>('updateText', {'text': text});
+    await _instance.channel.invokeMethod<void>('updateText', {
+      'text': text,
+      if (rubySpans != null && rubySpans.isNotEmpty) 'rubySpans': rubySpans,
+    });
   }
 
   static Future<void> updateStyle({
