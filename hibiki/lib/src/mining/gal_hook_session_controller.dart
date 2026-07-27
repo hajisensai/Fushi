@@ -66,6 +66,46 @@ enum GalTrackEmptyHint { generic, resourceMode, loopbackMode }
 /// [kGalOverlongSliceSuspectReason] 让 UI 亮黄提醒，而不是静默当正常语音。
 const int kGalOverlongSliceSuspectMs = 20000;
 
+/// 自动降级链允许走到哪一级（取代旧的 bool `allowAudioFallback`）。
+///
+/// 旧 bool 把两件不同的事捆成一个开关：`false` 既禁掉了**整机混音**（真会混进 BGM），
+/// 也顺手禁掉了**引擎 PCM**（混音前抓的干净语音，物理上不含 BGM），于是没有资源
+/// hook 的引擎一关就一句音频都没有。三态把「干净与否」和「有没有原件」拆开：
+///
+/// - [full]：资源 → 引擎 PCM → 系统混音。抓不到就拿混音兜底（旧 `allow=true`）。
+/// - [cleanOnly]：资源 → 引擎 PCM，**绝不碰系统混音**。都没有 = 这句没配音，
+///   灰标 + 无音频成卡（旁白/心理描写句本来就该是这个结果）。
+/// - [resourceOnly]：只认游戏原始资源文件；缺音频时拒绝制卡（旧 `allow=false`）。
+///
+/// 用户**显式裁决**（浮窗「重播并录音」、逐行选轨）不受本策略约束——那不是降级，
+/// 是用户指定音源，见 [GalHookSessionController._captureAudioBytesNow] 的裁决分支。
+enum GalAudioFallbackPolicy {
+  full,
+  cleanOnly,
+  resourceOnly;
+
+  /// 是否允许把引擎 PCM（混音前的干净语音）当作资源缺失时的兜底。
+  bool get allowsEnginePcm => this != GalAudioFallbackPolicy.resourceOnly;
+
+  /// 是否允许把系统 loopback 整机混音当作兜底（唯一会混进 BGM/SE 的一路）。
+  bool get allowsLoopback => this == GalAudioFallbackPolicy.full;
+
+  /// 抓不到音频时是否拒绝制卡。只有最严格的 [resourceOnly] 拒绝——[cleanOnly] 的
+  /// 立场是「这句没配音很正常」，卡照做、只是不带音频。
+  bool get blocksMiningWhenMissing =>
+      this == GalAudioFallbackPolicy.resourceOnly;
+
+  /// 偏好/记忆里的稳定存储名（枚举 index 会随重排漂移，不入库）。
+  String get storageKey => name;
+
+  static GalAudioFallbackPolicy fromStorageKey(String? key) {
+    for (final GalAudioFallbackPolicy policy in GalAudioFallbackPolicy.values) {
+      if (policy.storageKey == key) return policy;
+    }
+    return GalAudioFallbackPolicy.full;
+  }
+}
+
 /// 每个游戏的捕获选择记忆（跨会话持久化的真值放偏好表）。
 ///
 /// 三项都用**弱指纹**而非会话内 id：`source_ptr` 每次启动都变、native 文本
@@ -80,6 +120,7 @@ class GalCaptureMemory {
     this.excludedTrackFingerprints = const <String>[],
     this.voiceTrackFingerprint,
     this.textThreadFingerprint,
+    this.audioFallbackPolicy = GalAudioFallbackPolicy.full,
   });
 
   factory GalCaptureMemory.fromJson(Map<Object?, Object?> json) {
@@ -90,6 +131,9 @@ class GalCaptureMemory {
           : const <String>[],
       voiceTrackFingerprint: json['voiceTrack'] as String?,
       textThreadFingerprint: json['textThread'] as String?,
+      audioFallbackPolicy: GalAudioFallbackPolicy.fromStorageKey(
+        json['audioFallback'] as String?,
+      ),
     );
   }
 
@@ -102,15 +146,21 @@ class GalCaptureMemory {
   /// 用户选定的文本线程指纹；null = 自动选线程。
   final String? textThreadFingerprint;
 
+  /// 用户为这个游戏选定的降级策略。与「标记 BGM」同规格按游戏记住——两者都是
+  /// 「这个游戏的音频该怎么抓」的判断，只记一半会让用户每次开游戏重设一遍。
+  final GalAudioFallbackPolicy audioFallbackPolicy;
+
   bool get isEmpty =>
       excludedTrackFingerprints.isEmpty &&
       voiceTrackFingerprint == null &&
-      textThreadFingerprint == null;
+      textThreadFingerprint == null &&
+      audioFallbackPolicy == GalAudioFallbackPolicy.full;
 
   GalCaptureMemory copyWith({
     List<String>? excludedTrackFingerprints,
     String? voiceTrackFingerprint,
     String? textThreadFingerprint,
+    GalAudioFallbackPolicy? audioFallbackPolicy,
     bool clearVoiceTrack = false,
     bool clearTextThread = false,
   }) =>
@@ -123,12 +173,15 @@ class GalCaptureMemory {
         textThreadFingerprint: clearTextThread
             ? null
             : textThreadFingerprint ?? this.textThreadFingerprint,
+        audioFallbackPolicy: audioFallbackPolicy ?? this.audioFallbackPolicy,
       );
 
   Map<String, Object?> toJson() => <String, Object?>{
         'excludedTracks': excludedTrackFingerprints,
         if (voiceTrackFingerprint != null) 'voiceTrack': voiceTrackFingerprint,
         if (textThreadFingerprint != null) 'textThread': textThreadFingerprint,
+        if (audioFallbackPolicy != GalAudioFallbackPolicy.full)
+          'audioFallback': audioFallbackPolicy.storageKey,
       };
 }
 
@@ -328,7 +381,7 @@ class GalHookSessionState {
   const GalHookSessionState({
     this.phase = GalHookSessionPhase.idle,
     this.externalWindowMode = false,
-    this.allowAudioFallback = true,
+    this.audioFallbackPolicy = GalAudioFallbackPolicy.full,
     this.boundWindow,
     this.gamePid,
     this.launchExe,
@@ -348,7 +401,10 @@ class GalHookSessionState {
 
   final GalHookSessionPhase phase;
   final bool externalWindowMode;
-  final bool allowAudioFallback;
+
+  /// 自动降级链的上限（见 [GalAudioFallbackPolicy]）。会话内可改，按游戏持久化到
+  /// [GalCaptureMemory]。
+  final GalAudioFallbackPolicy audioFallbackPolicy;
   final ExternalWindowInfo? boundWindow;
   final int? gamePid;
   final String? launchExe;
@@ -378,7 +434,7 @@ class GalHookSessionState {
   GalHookSessionState copyWith({
     GalHookSessionPhase? phase,
     bool? externalWindowMode,
-    bool? allowAudioFallback,
+    GalAudioFallbackPolicy? audioFallbackPolicy,
     ExternalWindowInfo? boundWindow,
     bool clearBoundWindow = false,
     int? gamePid,
@@ -405,7 +461,7 @@ class GalHookSessionState {
     return GalHookSessionState(
       phase: phase ?? this.phase,
       externalWindowMode: externalWindowMode ?? this.externalWindowMode,
-      allowAudioFallback: allowAudioFallback ?? this.allowAudioFallback,
+      audioFallbackPolicy: audioFallbackPolicy ?? this.audioFallbackPolicy,
       boundWindow: clearBoundWindow ? null : boundWindow ?? this.boundWindow,
       gamePid: clearGamePid ? null : gamePid ?? this.gamePid,
       launchExe: clearLaunchExe ? null : launchExe ?? this.launchExe,
@@ -1009,6 +1065,10 @@ class GalHookSessionController extends ChangeNotifier {
       title: _displayNameForExecutable(executablePath),
       mediaKey: executablePath,
     );
+    // 降级策略必须在这里恢复，不能搭 [_applyTrackMemory] 的便车：资源模式压根不枚举
+    // 音轨（native 只枚举 PCM 环），等音轨快照就等不到，用户上次选的「禁止降级」会
+    // 在最需要它的资源模式游戏里静默失效。
+    _restoreAudioFallbackPolicy();
     final bool? is32Bit = await _exe32BitProbe(executablePath);
     final String? injector = _injectorResolver(is32Bit: is32Bit ?? false);
     if (injector == null) {
@@ -2255,7 +2315,7 @@ class GalHookSessionController extends ChangeNotifier {
           details: <String, Object?>{'lineId': lineId},
         );
       }
-      if (!_state.allowAudioFallback) {
+      if (!_state.audioFallbackPolicy.allowsEnginePcm) {
         _textService.updateLineAudio(
           lineId,
           status: TexthookerLineAudioStatus.missing,
@@ -2271,6 +2331,34 @@ class GalHookSessionController extends ChangeNotifier {
         );
         return null;
       }
+    }
+    // 干净源策略：会话音源是 Loopback 就说明下面整条兜底链只能取到**整机混音**
+    // （资源模式把 `_audioSource` 指向 loopback，降级会话更是如此）。用户已经说了
+    // 不要混音，就不能拿一段 BGM 冒充这句的语音——这条兜底链到此为止，卡以「无音频」落地。
+    // 判据用音源类型而不是「缓存里有没有东西」：策略中途改时，早先冻结的切片同样
+    // 是混音，必须一并失效。用户显式裁决（补录/选轨）走上面的分支，不受此限。
+    // 但**报什么**必须按证据来：抑制掉唯一可用音源不等于「这句没配音」，
+    // 见 [_classifySuppressedLoopbackMiss]。
+    final bool loopbackSourced = source is LoopbackGalAudioSource;
+    if (loopbackSourced && !_state.audioFallbackPolicy.allowsLoopback) {
+      final String reason = await _classifySuppressedLoopbackMiss(
+        lineId: lineId,
+        engine: engine,
+        timestampMs: timestamp,
+      );
+      _markLineAudioMissing(lineId, reason);
+      _record(
+        GalHookEventSeverity.info,
+        'match',
+        'audio.loopback_suppressed',
+        'System loopback audio was suppressed by the clean-source policy',
+        details: <String, Object?>{
+          'lineId': lineId,
+          'policy': _state.audioFallbackPolicy.storageKey,
+          'reason': reason,
+        },
+      );
+      return null;
     }
     // BUG-1101：这行的 loopback 冻结可能还在等窗口到点。制卡就是「现在就要这段声音」，
     // 因此提前收束（按真实已等待时长回取），而不是拿一份还没冻的空缓存报 missing。
@@ -2441,17 +2529,43 @@ class GalHookSessionController extends ChangeNotifier {
     return null;
   }
 
-  void setAllowAudioFallback(bool value) {
-    if (_state.allowAudioFallback == value) return;
-    _setState(_state.copyWith(allowAudioFallback: value));
+  /// 用户切换降级策略：立即生效 + 按游戏记住。已排定的 loopback 冻结定时器必须
+  /// 一并取消——策略改成「不许混音」的那一刻，还在等窗口到点的冻结就是待落地的
+  /// 混音，留着等于让用户的选择晚一句才生效。
+  void setAudioFallbackPolicy(GalAudioFallbackPolicy policy) {
+    if (_state.audioFallbackPolicy == policy) return;
+    _setState(_state.copyWith(audioFallbackPolicy: policy));
+    if (!policy.allowsLoopback) _cancelLoopbackFreezes();
+    _persistAudioFallbackPolicy(policy);
     _record(
       GalHookEventSeverity.info,
       'audio',
-      value ? 'audio.fallback_enabled' : 'audio.fallback_disabled_by_user',
-      value
-          ? 'Audio fallback enabled'
-          : 'Audio fallback disabled; game resource audio is required',
+      'audio.fallback_policy_changed',
+      'Audio fallback policy changed to ${policy.storageKey}',
+      details: <String, Object?>{'policy': policy.storageKey},
     );
+  }
+
+  /// 会话启动时把上次为这个游戏选的策略套回来（没有记忆 = 保持 [GalAudioFallbackPolicy.full]）。
+  void _restoreAudioFallbackPolicy() {
+    if (!_ensureCaptureMemoryLoaded()) return;
+    final GalAudioFallbackPolicy remembered =
+        _captureMemory.audioFallbackPolicy;
+    if (remembered == _state.audioFallbackPolicy) return;
+    _setState(_state.copyWith(audioFallbackPolicy: remembered));
+    _record(
+      GalHookEventSeverity.info,
+      'audio',
+      'audio.fallback_policy_restored',
+      'Restored the audio fallback policy remembered for this game',
+      details: <String, Object?>{'policy': remembered.storageKey},
+    );
+  }
+
+  void _persistAudioFallbackPolicy(GalAudioFallbackPolicy policy) {
+    if (!_ensureCaptureMemoryLoaded()) return;
+    if (_captureMemory.audioFallbackPolicy == policy) return;
+    _saveCaptureMemory(_captureMemory.copyWith(audioFallbackPolicy: policy));
   }
 
   void clearEvents() {
@@ -2503,6 +2617,11 @@ class GalHookSessionController extends ChangeNotifier {
   /// 绑定本会话的游戏标题/稳定 id。会话开始（attach / launch）时调用。
   void _beginActivitySession({required String title, String? mediaKey}) {
     _flushGameActivity();
+    // 捕获记忆按**游戏身份**锚定，所以新会话必须重新加载：只在 [stopCapture] 里重置
+    // 是漏的——用户不点「停止监听」直接从库里启动下一个游戏时，`_captureMemoryLoaded`
+    // 还是 true，上一个游戏的排除集/语音轨/降级策略会原样套到新游戏上，而用户在新
+    // 游戏里做的选择又会被写回**上一个游戏**的 key（`_captureMemoryGameKey` 没换）。
+    _resetCaptureMemorySession();
     _activityAccumulator.reset();
     _activityCharCounter.reset();
     _engineTextCounted = false;
@@ -3450,7 +3569,12 @@ class GalHookSessionController extends ChangeNotifier {
       );
       return;
     }
-    if (_audioSource is LoopbackGalAudioSource) {
+    final bool loopbackSourced = _audioSource is LoopbackGalAudioSource;
+    // 干净源策略下这一步整个跳过：这里排的每一个定时器到点后都会把一段整机混音
+    // 写进本行缓存，没配音的句子（旁白/心理描写）拿到的必然是纯 BGM。
+    final bool loopbackSuppressed =
+        loopbackSourced && !_state.audioFallbackPolicy.allowsLoopback;
+    if (loopbackSourced && !loopbackSuppressed) {
       // Loopback 必须按本行自己的时间窗冻结环形片段；制卡时再抓“最近声音”会把
       // 后续台词/BGM 错配给旧行。BUG-1101：窗口必须是前向的，故只在这里排定时器，
       // 到点后才冻结（见 [_scheduleLoopbackFreeze]）。资源音频尚未落盘时也先保留这份
@@ -3459,25 +3583,43 @@ class GalHookSessionController extends ChangeNotifier {
       return;
     }
     if (!resourceReady) {
-      final String reason =
-          await _classifyEnginePcmMiss(engine, line.timestampMs);
+      // 混音被策略挡掉时走「抑制」分类器：有证据才敢说无配音，没证据就如实说是
+      // 策略抑制（见 [_classifySuppressedLoopbackMiss]）。引擎 PCM 会话仍走原分类器。
+      final String reason = loopbackSuppressed
+          ? await _classifySuppressedLoopbackMiss(
+              lineId: entry.id,
+              engine: engine,
+              timestampMs: line.timestampMs,
+            )
+          : await _classifyEnginePcmMiss(engine, line.timestampMs);
       if (engine != _engineSource || !isLineInCurrentSession(entry)) return;
       _textService.updateLineAudio(
         entry.id,
         status: TexthookerLineAudioStatus.missing,
         fallbackReason: reason,
       );
+      final (GalHookEventSeverity, String, String) event = switch (reason) {
+        kGalLineNoVoiceReason => (
+            GalHookEventSeverity.info,
+            'audio.line_no_voice',
+            'No PCM was active at this line; treating it as unvoiced',
+          ),
+        kGalCleanSourceSuppressedReason => (
+            GalHookEventSeverity.info,
+            'audio.loopback_suppressed',
+            'System loopback audio was suppressed by the clean-source policy',
+          ),
+        _ => (
+            GalHookEventSeverity.warning,
+            'audio.utterance_not_found',
+            'No engine utterance matched the captured line',
+          ),
+      };
       _record(
-        reason == kGalLineNoVoiceReason
-            ? GalHookEventSeverity.info
-            : GalHookEventSeverity.warning,
+        event.$1,
         'match',
-        reason == kGalLineNoVoiceReason
-            ? 'audio.line_no_voice'
-            : 'audio.utterance_not_found',
-        reason == kGalLineNoVoiceReason
-            ? 'No PCM was active at this line; treating it as unvoiced'
-            : 'No engine utterance matched the captured line',
+        event.$2,
+        event.$3,
         details: <String, Object?>{'lineId': entry.id, 'seq': line.seq},
       );
     }
@@ -3498,18 +3640,72 @@ class GalHookSessionController extends ChangeNotifier {
     try {
       final List<GalAudioTrack> tracks =
           await engine.listAudioTracks(timestampMs);
-      final Set<int> excluded = engine.excludedAudioSourcePtrs;
-      final int selected = engine.selectedAudioSourcePtr;
-      final bool candidateActive = tracks.any(
-        (GalAudioTrack track) =>
-            !excluded.contains(track.sourcePtr) &&
-            (selected == 0 || track.sourcePtr == selected) &&
-            track.avgEnergy >= 0,
-      );
-      return candidateActive ? 'utterance_not_found' : kGalLineNoVoiceReason;
+      return _hasSoundingCandidateTrack(engine, tracks)
+          ? 'utterance_not_found'
+          : kGalLineNoVoiceReason;
     } catch (_) {
       return 'utterance_not_found';
     }
+  }
+
+  /// 候选轨（未被排除、且未被逐轨锁定到别的轨）在该句时刻窗内是否响过。抽出来供
+  /// [_classifyEnginePcmMiss] 与 [_classifySuppressedLoopbackMiss] 共用，保证两条路径
+  /// 用的是同一套「什么算候选轨」的定义。
+  ///
+  /// 判据用 [GalAudioTrack.isSilentAtCue] 而不是 `avgEnergy >= 0`：`avgEnergy == -1`
+  /// 有两义（窗内无片段 / 该轨不是 16-bit 算不了能量，见 BUG-1165）。拿它当「有没有
+  /// 声音」用，会把一条**真响过的非 16-bit 语音轨**判成静默，于是整句被宣布「无配音」
+  /// ——和本 bug 要修的正是同一类错误：把「我判不出」说成「它没有」。
+  bool _hasSoundingCandidateTrack(
+    EngineHookGalAudioSource engine,
+    List<GalAudioTrack> tracks,
+  ) {
+    final Set<int> excluded = engine.excludedAudioSourcePtrs;
+    final int selected = engine.selectedAudioSourcePtr;
+    return tracks.any(
+      (GalAudioTrack track) =>
+          !excluded.contains(track.sourcePtr) &&
+          (selected == 0 || track.sourcePtr == selected) &&
+          !track.isSilentAtCue,
+    );
+  }
+
+  /// 干净源策略把整机混音挡掉之后，这一行到底该报什么。
+  ///
+  /// 铁律：**只有拿到证据才敢说「这句没配音」**。抑制掉唯一可用音源本身不是证据——
+  /// 纯 loopback 降级会话里每一行都会走到这里，全标成「无配音」等于把用户的显式降级
+  /// 说成「这游戏没配音」；资源模式下的真漏抓也会被同一句话盖掉。
+  ///
+  /// 证据只认两种：
+  /// - 这行还挂着**原件配对在途**（[_pendingResourceMatches]）= 引擎原件通道是活的、
+  ///   这行还在等配对，属于「抓过但没配上」，报疑似漏抓而不是没配音；
+  /// - 引擎能枚举出该句时刻窗的**非空**候选轨列表 = 能用 [_hasSoundingCandidateTrack] 判有没有
+  ///   声音。空列表不是证据（资源模式根本不枚举 PCM 环），不得据此宣称无配音。
+  ///
+  /// 两种都拿不到 → [kGalCleanSourceSuppressedReason]，如实说是策略挡掉了本会话唯一
+  /// 可用的音源，而不是替游戏宣布这句没有配音。
+  Future<String> _classifySuppressedLoopbackMiss({
+    required String lineId,
+    required EngineHookGalAudioSource? engine,
+    required int timestampMs,
+  }) async {
+    if (_pendingResourceMatches.containsKey(lineId)) {
+      return 'utterance_not_found';
+    }
+    if (engine != null && timestampMs > 0) {
+      try {
+        final List<GalAudioTrack> tracks =
+            await engine.listAudioTracks(timestampMs);
+        if (tracks.isNotEmpty) {
+          return _hasSoundingCandidateTrack(engine, tracks)
+              ? 'utterance_not_found'
+              : kGalLineNoVoiceReason;
+        }
+      } catch (_) {
+        // 枚举失败同样不是「没配音」的证据，落到下面的如实说明。
+      }
+    }
+    return kGalCleanSourceSuppressedReason;
   }
 
   void _promoteLateResourceAudio(EngineHookGalAudioSource engine) {
@@ -3624,7 +3820,10 @@ class GalHookSessionController extends ChangeNotifier {
   /// 等待刻意放在串行音频队列**之外**：在队列里 sleep 会把后续台词的抓取和制卡一起堵住。
   /// 文本上屏完全不受影响，只有音频后补。
   void _scheduleLoopbackFreeze(TexthookerLineEntry entry) {
-    if (_audioSource is! LoopbackGalAudioSource ||
+    // 策略守卫放在这里而不是只放调用点：[_settleLineUtterance] 的收敛路径也会排
+    // 冻结，漏一个调用点就等于「禁止降级」在某条路径上静默失效。
+    if (!_state.audioFallbackPolicy.allowsLoopback ||
+        _audioSource is! LoopbackGalAudioSource ||
         !isLineInCurrentSession(entry) ||
         _isUserAdjudicated(entry.id) ||
         _loopbackFreezeTimers.containsKey(entry.id) ||

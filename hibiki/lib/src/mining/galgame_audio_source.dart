@@ -1808,6 +1808,7 @@ class GalAudioTrack {
     required this.avgEnergy,
     required this.orderIndex,
     required this.clipCount,
+    this.clipCountAtCue = -1,
   });
 
   /// 源指针（会话内稳定；跨启动会变——UI 宜把用户选择映射到 [orderIndex] 或格式签名）。
@@ -1816,17 +1817,46 @@ class GalAudioTrack {
   /// 该源 PCM 格式（采样率/声道/位深）；解析失败该轨被丢弃。
   final PcmFormat format;
 
-  /// 近窗内该源每段平均字节数（缓冲规模）。
+  /// **环内**该源每段平均字节数（缓冲规模）。
   final int avgBytes;
 
-  /// 文本时刻窗平均能量（16-bit 平均绝对幅值；非 16-bit 为 -1）。越高越可能是当前在说话的语音源。
+  /// 文本时刻窗（native `[ts-150, ts+450]`）平均能量：16-bit 平均绝对幅值。
+  /// **-1 有两义**，别只判正负——见 [isSilentAtCue] / [energyUnknown]：
+  /// ① 该窗内这条轨一个片段都没有（真·此刻没响）；② 该轨不是 16-bit，
+  /// native `ClipEnergy16Locked` 算不了能量。
   final double avgEnergy;
 
-  /// 近窗内按首次出现排的创建顺序，0-based（跨启动相对稳定，宜作用户选择的持久锚）。
+  /// **环内**按首次出现排的创建顺序，0-based（跨启动相对稳定，宜作用户选择的持久锚）。
   final int orderIndex;
 
-  /// 近窗内该源的段数。
+  /// **环内**该源的段数——注意是整个环形缓冲的累计，不是「当前这句附近」。
+  ///
+  /// 一条轨能出现在列表里，前提就是环里至少有它的一个片段，所以这个值恒 >= 1：
+  /// 拿它判「这条轨此刻有没有声音」永远为假（BUG-1165 的原判据就栽在这）。
+  /// 判「此刻有没有响」只能用 [isSilentAtCue]。
   final int clipCount;
+
+  /// 文本时刻窗（native `[ts-150, ts+450]`）内该源的段数——**与位深无关**。
+  ///
+  /// native `VoiceTrackInfo::clip_count_at_cue`。这是「此刻这条轨响没响」的唯一
+  /// 正确依据：[avgEnergy] 只在 16-bit 上算得出来，用它兼作有无判据会误伤非 16-bit
+  /// 的可用轨（BUG-1165）。老版本 runner 不发这个字段 → 解析为 -1（未知）。
+  final int clipCountAtCue;
+
+  /// 该轨的能量是否**无法判定**（非 16-bit 轨，native 不计能量）。
+  /// 能量只用来排语音/BGM 的可能性次序，不参与「有没有声音」的判断。
+  bool get energyUnknown => format.bitsPerSample != 16;
+
+  /// 该轨在**当前这句的时刻窗**内是否一个片段都没有（试听必然抓不到）。
+  ///
+  /// 试听走 `grabUtterance(该句时刻, sourcePtr)`，与 native 统计这个窗用的是同一个
+  /// 区间，所以「窗内无片段」与「试听出不了声」是同一件事。
+  ///
+  /// [clipCountAtCue] < 0 表示 runner 没发这个字段（老版本）——此时退回能量判据，
+  /// 且只对能算出能量的 16-bit 轨下结论，宁可不置灰也不误伤（向后兼容）。
+  bool get isSilentAtCue => clipCountAtCue >= 0
+      ? clipCountAtCue == 0
+      : !energyUnknown && avgEnergy < 0;
 
   /// 从 native map 解析；缺格式（sr/ch/bits 非法）或缺 sourcePtr 返回 null。
   static GalAudioTrack? fromMap(Map<Object?, Object?> m) {
@@ -1842,6 +1872,8 @@ class GalAudioTrack {
       avgEnergy: (m['avgEnergy'] as num?)?.toDouble() ?? -1.0,
       orderIndex: (m['orderIndex'] as int?) ?? 0,
       clipCount: (m['clipCount'] as int?) ?? 0,
+      // 缺字段 = 老 runner，用 -1 显式表达「未知」，别拿 0 冒充「窗内没段」。
+      clipCountAtCue: (m['clipCountAtCue'] as int?) ?? -1,
     );
   }
 }

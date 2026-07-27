@@ -1993,6 +1993,8 @@ void FlutterWindow::RegisterVoiceHookChannel() {
                  flutter::EncodableValue(tk.order_index)},
                 {flutter::EncodableValue("clipCount"),
                  flutter::EncodableValue(tk.clip_count)},
+                {flutter::EncodableValue("clipCountAtCue"),
+                 flutter::EncodableValue(tk.clip_count_at_cue)},
             }));
           }
           result->Success(flutter::EncodableValue(flutter::EncodableMap{

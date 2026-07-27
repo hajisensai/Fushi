@@ -222,8 +222,11 @@ void main() {
       isTrue,
     );
     final TexthookerLineEntry entry = service.appendLine('resource only')!;
-    controller.setAllowAudioFallback(false);
-    expect(controller.state.allowAudioFallback, isFalse);
+    controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.resourceOnly);
+    expect(
+      controller.state.audioFallbackPolicy,
+      GalAudioFallbackPolicy.resourceOnly,
+    );
 
     final Uint8List? bytes = await controller.captureAudioBytes(
       lineId: entry.id,
@@ -243,6 +246,233 @@ void main() {
     );
 
     await controller.close();
+    endpoints.dispose();
+  });
+
+  test('clean-source policy refuses loopback mix for a line with no voice',
+      () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      rawReady: true,
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      resourceAudioWait: Duration.zero,
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(
+      (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
+      isTrue,
+    );
+    // 资源模式会话把 `_audioSource` 指向 loopback（原始资源是首选，混音只是兜底），
+    // 于是没有配对资源的句子在旧实现里必然拿到一段整机混音 = 纯 BGM。
+    final TexthookerLineEntry entry = service.appendLine('無声のモノローグ')!;
+    controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
+
+    final Uint8List? bytes = await controller.captureAudioBytes(
+      lineId: entry.id,
+      sentence: entry.text,
+      outputExtension: 'aac',
+    );
+
+    expect(bytes, isNull, reason: '干净源策略下不得拿混音冒充这句的语音');
+    expect(
+      loopback.grabRecentCalls,
+      0,
+      reason: '一次都不该去环形缓冲取混音——取了就说明降级链还活着',
+    );
+    // 这条会话拿不到任何证据（无原件配对在途、引擎枚举不出候选轨），所以只能如实
+    // 说「策略挡掉了唯一可用音源」。**绝不能**说成「这句没配音」：那是有证据才能下
+    // 的结论，冒充它会把纯 loopback 降级会话的每一行都说成游戏没配音，也会把资源
+    // 模式下的真漏抓一起盖掉。
+    expect(
+      service.entries.single.fallbackReason,
+      kGalCleanSourceSuppressedReason,
+      reason: '零证据时必须报「已按策略抑制」，不得冒充「无配音」',
+    );
+    expect(
+      service.entries.single.fallbackReason,
+      isNot(kGalLineNoVoiceReason),
+    );
+    expect(
+      controller.events.map((GalHookEvent event) => event.code),
+      contains('audio.loopback_suppressed'),
+    );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('clean-source policy still reports a missed utterance as a miss',
+      () async {
+    // 「有配音但漏抓」在 cleanOnly 下必须仍然报疑似漏抓：原件通道是活的、这行还挂着
+    // 配对在途，就是证据。把它也说成「无配音」等于用「我没抓到」冒充「它没有」，
+    // 用户报的「部分句子有配音」那类游戏首当其冲。
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      textReady: true,
+      rawReady: true,
+      polledLines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 987654,
+          text: '声のあるはずの台詞',
+          threadId: 3,
+          threadAddress: 0xabcdef,
+          sourceKind: 2,
+          hookName: 'TextRender',
+          hookCode: 'HS932@abcdef',
+        ),
+      ],
+    );
+    final _FakeLoopbackSource loopback = _FakeLoopbackSource();
+    final GalHookSessionController controller = GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      exe32BitProbe: (_) async => true,
+      injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+      engineSourceFactory: ({
+        required int targetPid,
+        required String? launchExe,
+        required String injectorPath,
+        required bool lunaPcHooks,
+        int? lunaCodepage,
+        List<String> launchArguments = const <String>[],
+        String launchWorkdir = '',
+      }) =>
+          engine,
+      loopbackSourceFactory: () => loopback,
+      windowListLoader: () async => const <ExternalWindowInfo>[],
+      windowPollAttempts: 1,
+      resourceAudioWait: Duration.zero,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    expect(
+      (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
+      isTrue,
+    );
+    controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
+    for (int i = 0; i < 40 && service.entries.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(service.entries, hasLength(1));
+    final TexthookerLineEntry entry = service.entries.single;
+
+    final Uint8List? bytes = await controller.captureAudioBytes(
+      lineId: entry.id,
+      sentence: entry.text,
+      outputExtension: 'aac',
+    );
+
+    expect(bytes, isNull);
+    expect(loopback.grabRecentCalls, 0, reason: '策略仍然禁止取整机混音');
+    expect(
+      service.entries.single.fallbackReason,
+      'utterance_not_found',
+      reason: '原件配对在途 = 有证据说明这行本该有语音，必须报漏抓而不是无配音',
+    );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('audio fallback policy is remembered per game and restored on launch',
+      () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final Map<String, GalCaptureMemory> store = <String, GalCaptureMemory>{};
+    GalHookSessionController build() {
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        exe32BitProbe: (_) async => true,
+        injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+        engineSourceFactory: ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
+        }) =>
+            _FakeEngineSource(pairedBytes: Uint8List(0), rawReady: true),
+        loopbackSourceFactory: _FakeLoopbackSource.new,
+        windowListLoader: () async => const <ExternalWindowInfo>[],
+        windowPollAttempts: 1,
+        resourceAudioWait: Duration.zero,
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+      controller.attachCaptureMemory(
+        load: (String gameKey) => store[gameKey] ?? const GalCaptureMemory(),
+        save: (String gameKey, GalCaptureMemory memory) =>
+            store[gameKey] = memory,
+      );
+      return controller;
+    }
+
+    final GalHookSessionController first = build();
+    expect(
+      (await first.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
+      isTrue,
+    );
+    first.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
+    expect(
+      store[r'd:\anemoi\siglusengine.exe']?.audioFallbackPolicy,
+      GalAudioFallbackPolicy.cleanOnly,
+    );
+    await first.close();
+
+    final GalHookSessionController second = build();
+    expect(
+      (await second.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
+      isTrue,
+    );
+    expect(
+      second.state.audioFallbackPolicy,
+      GalAudioFallbackPolicy.cleanOnly,
+      reason: '策略必须在会话启动时就恢复——资源模式不枚举音轨，等音轨快照就等不到',
+    );
+
+    // 另一个游戏不得继承上一个游戏的策略（`_beginActivitySession` 重置记忆会话）。
+    expect(
+      (await second.launchGame(r'D:\other\Game.exe')).launched,
+      isTrue,
+    );
+    expect(
+      second.state.audioFallbackPolicy,
+      GalAudioFallbackPolicy.full,
+      reason: '换游戏必须按新 exe 重新加载记忆，不能串上一个游戏的选择',
+    );
+
+    await second.close();
     endpoints.dispose();
   });
 

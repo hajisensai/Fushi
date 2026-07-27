@@ -1,0 +1,17 @@
+## BUG-1165 · 音轨面板静音判据用错字段，空白轨从不置灰
+- **报告**：2026-07-27（用户：音轨列表里总是有空白的轨，点了播放不了却一直挂在那）
+- **真实性**：✅ 真 bug，两层原因叠加：
+  - **列表里为什么总有那么多轨**：`hibiki/windows/runner/voice_hook_reader.cpp:593` 起按 `source_ptr` 聚合**整个环形缓冲**里出现过的每一个音频源。galgame 的 XAudio2/DirectSound 引擎常年维护一池 source voice（SE、系统音、播完的旧语音都在 60 秒环里），所以列表里挂一堆此刻并不发声的轨是**正常形态**，不是故障。
+  - **为什么它们没被标注/置灰**：`gal_audio_tracks_panel.dart` 的判据是 `track.clipCount <= 0`，而 native 的 `clip_count` 是**全环累计**（`voice_hook_reader.cpp:605` 的 `clip_count++` 不带时间窗过滤；时间窗 `[ts-150, ts+450]` 只用于 `avg_energy`）。一条轨能出现在列表里，前提就是环里至少有它的一个片段 → **该条件恒为假**，BUG-1102 ② 想做的「置灰 + 标注 + 不可点」从来没生效过。
+  - 于是这些轨看起来和真能取到语音的轨一模一样，而试听走 `grabUtterance(该句时刻, sourcePtr)`（`gal_hook_session_controller.dart` 的 `_exportTrackPreviewAt`）用的正是同一个时刻窗 → 抓不到 → 只弹一句「试听失败」。
+  - 附带：Dart 侧 `GalAudioTrack` 的 `clipCount` / `avgBytes` / `orderIndex` 文档注释都写成「近窗内」，与 native 实现脱钩，正是判据选错字段的诱因。
+- **[x] ① 已修复** — 判据换成真正表达「此刻有没有响」的字段，且**在 native 侧补出这个字段**：
+  - runner 新增 `VoiceTrackInfo::clip_count_at_cue`（`voice_hook_reader.h` / `.cpp` 在文本时刻窗内无条件计数、`flutter_window.cpp` 编码成 `clipCountAtCue`）。**这是纯 runner 侧统计，只读共享内存里已有的 `timestamp_ms`，不动 IPC 契约、不碰 injector/hook DLL、无需跨仓**（首轮记录误判为「要改共享内存结构」，实为读取端就能算）。
+  - `GalAudioTrack.isSilentAtCue` = `clipCountAtCue == 0`；`clipCountAtCue < 0`（老 runner 不发该字段）时退回能量判据，且只对 16-bit 下结论——宁可不置灰也不误伤。
+  - 为什么必须新开字段：**`avgEnergy == -1` 有两义**——① 时刻窗内真没片段；② 该轨不是 16-bit，native `ClipEnergy16Locked` 算不了能量。只按正负判会把非 16-bit 的**可用**轨也锁成不可点。有了片段数，非 16-bit 轨也能被正确判定。
+  - 副标题不再无条件打印「能量 -1.0」（那是内部哨兵值，不是给用户看的），只在 `avgEnergy >= 0` 时显示。
+  - 文案 `game_track_no_clips`「近窗内没有片段」→ 新 key `game_track_silent_at_cue`「这句时刻没有声音」；`clipCount` / `avgBytes` / `orderIndex` 的 Dart 与 native 注释统一改回「环内累计」。
+- **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_audio_degrade_track_test.dart`：
+  - 行为测试 `BUG-1165：此刻静音判据走时刻窗片段数，clipCount 不参与、非 16-bit 不误伤`（覆盖新 runner 精确判定、非 16-bit 两个方向、`clipCount=99` 仍判静音、老 runner 缺字段回退，以及 `fromMap` 缺字段解析成 -1 而非 0）；
+  - 同文件源码守卫加断言：`track.clipCount <= 0` 不得再出现、`silent` 必须走 `isSilentAtCue`。
+- **备注**：C++ 侧无单测框架，靠 `flutter build windows --debug` 编译验证 + 上述 Dart 契约测试。真机验收待补：需确认列表里此刻不发声的轨确实置灰且不可点、非 16-bit 轨不被误灰。同 PR：[BUG-1187](BUG-1187-gal-unvoiced-line-gets-bgm.md)（BUG-1160「制卡封面可选静态截图」是新增能力不是缺陷，已按用户要求拆到独立 PR）。

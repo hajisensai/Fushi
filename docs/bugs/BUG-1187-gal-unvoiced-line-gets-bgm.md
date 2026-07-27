@@ -1,0 +1,22 @@
+## BUG-1187 · galgame 无配音句被整机混音兜底成 BGM
+- **报告**：2026-07-27（用户：部分游戏只有一部分句子有配音，没配音的句子制卡后音频是 BGM；「禁止 BGM」能标掉音轨，「禁止降级」不知道怎么弄）
+- **真实性**：✅ 真 bug。根因不是「降级开关缺失」（开关存在），是**开关管不到真正产生 BGM 的那一层**：
+  - `hibiki/lib/src/mining/gal_hook_session_controller.dart:2650` `_activateResourceWithLoopback` 把资源模式会话的 `_audioSource` 指向 system loopback（原始资源是首选、混音只作兜底）。
+  - 于是 `gal_hook_session_controller.dart:3460` `_attachLineAudio` 对**每一行**无差别排 `_scheduleLoopbackFreeze`，到点把整机混音冻结成该行语音。没有配音的句子（旁白/心理描写/选项）冻到的必然是纯 BGM/环境音。
+  - 旧 `allowAudioFallback` 只在制卡期 `_captureAudioBytesNow`（同文件 2204）一处生效，逐行捕获期完全不受管；且它的语义是「只接受 game_resource 原始文件」，把混音前抓的**干净引擎 PCM** 一并禁掉，没有资源 hook 的引擎一关就全灭。
+  - 关掉它还会让 `gal_hook_mining_coordinator.dart:219` 把整张卡判失败，用户被迫在「收一段 BGM」和「这张卡做不了」之间二选一。
+- **[x] ① 已修复** — 用三态 `GalAudioFallbackPolicy`（`full` / `cleanOnly` / `resourceOnly`）取代 bool，把「干净与否」和「有没有原件」拆开；gate 补到真正产生混音的那一层：
+  - `_scheduleLoopbackFreeze` 自身加策略守卫（覆盖 `_attachLineAudio` 与 `_settleLineUtterance` 两个调用点，漏一个就等于策略静默失效）；
+  - `_captureAudioBytesNow` 与 `_attachLineAudio` 按**音源类型**（`source is LoopbackGalAudioSource`）判定这条兜底链只能取到混音，`cleanOnly` 下不再塞一段 BGM；
+  - 抑制之后**报什么按证据判**（`_classifySuppressedLoopbackMiss`）：原件配对在途（`_pendingResourceMatches`）→ `utterance_not_found`（疑似漏抓）；引擎能枚举出该句时刻窗的**非空**候选轨 → `_hasSoundingCandidateTrack`（有轨响过=漏抓、全静默=无配音）；两种证据都没有 → 新常量 `kGalCleanSourceSuppressedReason`，UI 单独渲染「已跳过混音」并在 tooltip 明说「不代表这句没有配音」。**绝不允许**零证据时冒充 `line_has_no_voice`：那会把纯 loopback 降级会话的每一行都说成游戏没配音，也会把资源模式的真漏抓一起盖掉（违反「不得用前一阶段推断后一阶段」）；
+  - 候选轨判据用 `GalAudioTrack.isSilentAtCue` 而非 `avgEnergy >= 0`：后者的 -1 有两义（窗内无片段 / 非 16-bit 算不了能量，见 BUG-1165），拿它当有无判据会把真响过的非 16-bit 语音轨判成静默，进而把整句宣布成「无配音」——同一类「把判不出说成没有」的错误；
+  - coordinator 只在最严格的 `resourceOnly` 下拒绝制卡，`cleanOnly` 缺音频照常成卡（无音频）。
+  - 策略随 `GalCaptureMemory` 按游戏持久化，会话启动即恢复（不能搭 `_applyTrackMemory` 的便车——资源模式根本不枚举音轨，等音轨快照永远等不到）。
+  - 顺带修一个既有隐患：`_resetCaptureMemorySession` 原先只在 `stopCapture` 里调，用户不点「停止监听」直接启动下一个游戏时，上一个游戏的排除集/语音轨会套到新游戏上、而新游戏的选择又写回旧 key。改为在 `_beginActivitySession` 重置（launch / attach 两条开新会话路径共用）。
+- **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_hook_session_controller_test.dart`：
+  - `clean-source policy refuses loopback mix for a line with no voice`（断言 `grabRecentCalls == 0`——一次都不许去环里取混音）；
+  - `audio fallback policy is remembered per game and restored on launch`（含「换游戏不得继承上一个游戏策略」）；
+  - `clean-source policy still reports a missed utterance as a miss`（cleanOnly 下「有配音但漏抓」必须仍报 `utterance_not_found`，不得说成无配音）；
+  - `hibiki/test/mining/gal_hook_mining_coordinator_test.dart`：`clean-source mode still mines the card when the line has no voice`。
+- **UI**：只在捕获工作台原有的「更多」溢出菜单里，把旧的 bool 开关项换成三档策略入口（菜单项显示当前档位，点开是带代价说明的单选对话框）。顶栏其余入口（启动并捕获 / 活跃音轨 / 溢出菜单本身）一律不动——那是本 bug 之外的 UI 偏好，删用户能力和改守卫都需要显式授权。
+- **备注**：原编号 BUG-1144，与外部 PR#474 带入的 manga bug 撞号让至 1164；rebase 到最新 develop 时 1164 又被已合入的 manga bug（BUG-1164-manga-module-orphan-i18n-and-shelf-naming）占用，再让号至 1187（文件名 + 正文 H2 + 交叉引用同步改，`bug.dart check` 通过）。真机验收待补：需在只有部分句子配音的游戏上确认「无配音」灰标 /「已跳过混音」/ 真漏抓红标三分，且不再收进 BGM。
