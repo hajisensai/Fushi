@@ -2674,5 +2674,8 @@
   "game_remove_confirm": "从库中移除此游戏？不会删除磁盘上的游戏文件。",
   "delete_collection_also_games": "同时把其中的游戏移出库（不会删除磁盘上的游戏文件）",
   "manga_ocr_acceleration_status": "OCR 加速：${engine}",
-  "manga_ocr_acceleration_degraded": "GPU 加速不可用，OCR 改用 ${engine} 运行：${reason}"
+  "manga_ocr_acceleration_degraded": "GPU 加速不可用，OCR 改用 ${engine} 运行：${reason}",
+  "media_tracking_status": "收藏状态",
+  "media_tracking_signup": "注册 Bangumi 账号",
+  "media_tracking_game": "游戏"
 }

@@ -14,6 +14,8 @@ const String kVideoTrackingReconcileWatermarkPref =
     'media_tracking_video_reconcile_watermark_v1';
 const String kBookTrackingReconcileWatermarkPref =
     'media_tracking_book_reconcile_watermark_v1';
+const String kGameTrackingReconcileWatermarkPref =
+    'media_tracking_game_reconcile_watermark_v1';
 
 typedef BangumiApiFactory = BangumiTrackingApi Function(String accessToken);
 
@@ -61,6 +63,13 @@ _PreparedTrackingTitle _prepareTrackingTitle(String rawTitle) {
   );
 }
 
+/// Bangumi 条目类型：1 书籍（含漫画/轻小说）/ 2 动画 / 4 游戏。
+int bangumiSubjectTypeOf(TrackingKind kind) => switch (kind) {
+      TrackingKind.anime => 2,
+      TrackingKind.game => 4,
+      TrackingKind.novel || TrackingKind.manga => 1,
+    };
+
 BangumiSubject? _uniqueHighConfidenceSubject(
   String query,
   List<BangumiSubject> subjects,
@@ -68,7 +77,8 @@ BangumiSubject? _uniqueHighConfidenceSubject(
 ) {
   if (query.trim().isEmpty || subjects.isEmpty) return null;
   final List<BangumiSubject> kindMatches = subjects.where((subject) {
-    if (kind == TrackingKind.anime) return true;
+    // 动画与游戏在搜索阶段已按 subject type 精确过滤，无需再按 platform 二次筛。
+    if (kind == TrackingKind.anime || kind == TrackingKind.game) return true;
     final String platform = subject.platform.toLowerCase();
     if (kind == TrackingKind.manga) {
       return platform.contains('漫画') ||
@@ -159,6 +169,7 @@ class MediaTrackingService {
       // 新账号必须从全部本地已完成事实重新对齐，不能继承旧账号的校正水位。
       await _preferences.setPref(kVideoTrackingReconcileWatermarkPref, 0);
       await _preferences.setPref(kBookTrackingReconcileWatermarkPref, 0);
+      await _preferences.setPref(kGameTrackingReconcileWatermarkPref, 0);
     }
   }
 
@@ -179,7 +190,7 @@ class MediaTrackingService {
     try {
       return await api.searchSubjects(
         keyword: keyword,
-        subjectType: kind == TrackingKind.anime ? 2 : 1,
+        subjectType: bangumiSubjectTypeOf(kind),
       );
     } finally {
       api.close();
@@ -280,6 +291,82 @@ class MediaTrackingService {
       localProgress: logicalChapterProgress,
       // 章节伴随映射只负责 ep_status；整部作品是否读完由主卷映射判断。
       completed: false,
+    );
+  }
+
+  /// 上报游戏收藏状态。[status] 直接是 Bangumi 收藏 type（1 想玩 / 2 玩过 /
+  /// 3 在玩 / 4 搁置 / 5 弃坑），`galgames.playStatus` 的值域与之刻意对齐，无需换算。
+  ///
+  /// 状态 0（未设置）不上报：用户从没表态过，不能凭空在远端建一条收藏。
+  Future<void> recordGameStatus({
+    required String gameId,
+    required int status,
+  }) async {
+    if (status < 1 || status > 5) return;
+    final MediaTrackingMappingRow? mapping =
+        await _ensureAutoGameMapping(gameId);
+    if (mapping == null) return;
+    await _enqueueAndSync(
+      mediaType: TrackingMediaType.game,
+      mediaKey: gameId,
+      localProgress: status,
+      completed: status == 2,
+      monotonic: false,
+    );
+  }
+
+  Future<MediaTrackingMappingRow?> _ensureAutoGameMapping(
+    String gameId,
+  ) async {
+    final MediaTrackingMappingRow? existing = await _repository.findMapping(
+      mediaType: TrackingMediaType.game,
+      mediaKey: gameId,
+    );
+    if (existing != null) return existing;
+    return _singleFlightAutoMapping(
+      '${TrackingMediaType.game.value}:$gameId',
+      () async {
+        final AutoGameTrackingSource? source =
+            await _repository.loadAutoGameSource(gameId);
+        if (source == null) return null;
+        final int? scrapedId = source.bangumiSubjectId;
+        if (scrapedId != null && scrapedId > 0) {
+          return _repository.saveMappingIfAbsent(
+            mediaType: TrackingMediaType.game,
+            mediaKey: gameId,
+            mediaTitle: source.name,
+            kind: TrackingKind.game,
+            subjectId: scrapedId,
+            subjectName: source.name,
+            progressMode: TrackingProgressMode.status,
+            progressOffset: 0,
+          );
+        }
+        if (!isConfigured) return null;
+        // 未刮削时只能按名字兜底。游戏的本地名默认取自 exe 文件名，噪声大，
+        // 因此沿用与视频/书籍相同的高置信度门槛：匹配不唯一就不建映射，
+        // 宁可不同步也不把进度写到别人的条目上；用户可在设置页手工指定。
+        final List<BangumiSubject> subjects = await searchSubjects(
+          keyword: source.name,
+          kind: TrackingKind.game,
+        );
+        final BangumiSubject? subject = _uniqueHighConfidenceSubject(
+          source.name,
+          subjects,
+          TrackingKind.game,
+        );
+        if (subject == null) return null;
+        return _repository.saveMappingIfAbsent(
+          mediaType: TrackingMediaType.game,
+          mediaKey: gameId,
+          mediaTitle: source.name,
+          kind: TrackingKind.game,
+          subjectId: subject.id,
+          subjectName: subject.displayName,
+          progressMode: TrackingProgressMode.status,
+          progressOffset: 0,
+        );
+      },
     );
   }
 
@@ -477,25 +564,33 @@ class MediaTrackingService {
     required String mediaKey,
     required int localProgress,
     required bool completed,
+    bool monotonic = true,
   }) async {
     final String cacheKey = '${mediaType.value}:$mediaKey';
     final ({int progress, bool completed})? previous = _lastQueued[cacheKey];
-    if (previous != null &&
-        previous.progress >= localProgress &&
-        (previous.completed || !completed)) {
-      return;
-    }
+    // 单调事件按“没有前进就不必重复入队”去重；离散状态只在值真的没变时才跳过，
+    // 否则状态回退（弃坑→在玩）会被这层内存缓存吃掉，连 outbox 都进不去。
+    final bool unchanged = previous != null &&
+        (monotonic
+            ? (previous.progress >= localProgress &&
+                (previous.completed || !completed))
+            : (previous.progress == localProgress &&
+                previous.completed == completed));
+    if (unchanged) return;
     try {
       final bool mapped = await _repository.enqueueProgress(
         mediaType: mediaType,
         mediaKey: mediaKey,
         localProgress: localProgress,
         completed: completed,
+        monotonic: monotonic,
       );
       if (!mapped) return;
       _lastQueued[cacheKey] = (
         progress: localProgress,
-        completed: completed || (previous?.completed ?? false),
+        completed: monotonic
+            ? (completed || (previous?.completed ?? false))
+            : completed,
       );
       if (_syncInFlight == null) {
         unawaited(syncNow());
@@ -538,7 +633,40 @@ class MediaTrackingService {
   }) async {
     await _reconcileCompletedVideoProgress();
     await _reconcilePersistedBookProgress();
+    await _reconcileGameStatus();
     return _sync(force: force);
+  }
+
+  /// 补发本地已设置但尚未成功上报的游戏收藏状态。
+  ///
+  /// 正常路径在用户改状态的当下即时入队；这里只兜「当时发不出去」的两类：换账号后
+  /// 水位归零的全量重建，以及先设了状态、之后才刮到 Bangumi 条目/才建映射。
+  Future<void> _reconcileGameStatus() async {
+    if (!isConfigured) return;
+    final Object? stored = _preferences.getPref(
+      kGameTrackingReconcileWatermarkPref,
+      defaultValue: 0,
+    );
+    final int watermark = stored is int ? stored : int.tryParse('$stored') ?? 0;
+    final List<PersistedGameTrackingStatus> statuses =
+        await _repository.loadPersistedGameTrackingStatus(afterMs: watermark);
+
+    int nextWatermark = watermark;
+    for (final PersistedGameTrackingStatus item in statuses) {
+      // 走完整入队路径：没有映射时它会尝试用刮削出的 Bangumi 条目补建。
+      await recordGameStatus(gameId: item.gameId, status: item.status);
+      nextWatermark =
+          item.evidenceAt > nextWatermark ? item.evidenceAt : nextWatermark;
+    }
+    if (statuses.isEmpty) {
+      nextWatermark = DateTime.now().millisecondsSinceEpoch;
+    }
+    if (nextWatermark != watermark) {
+      await _preferences.setPref(
+        kGameTrackingReconcileWatermarkPref,
+        nextWatermark,
+      );
+    }
   }
 
   Future<void> _reconcileCompletedVideoProgress() async {
@@ -682,11 +810,47 @@ class MediaTrackingService {
     final MediaTrackingMappingRow mapping = update.mapping;
     final BangumiUserCollection? collection =
         await api.getCollection(user.username, mapping.subjectId);
+    if (mapping.progressMode == TrackingProgressMode.status.value) {
+      await _syncCollectionStatus(api, mapping, update.outbox, collection);
+      return;
+    }
     if (mapping.progressMode == TrackingProgressMode.episode.value) {
       await _syncEpisodeProgress(api, mapping, update.outbox, collection);
       return;
     }
     await _syncBookProgress(api, mapping, update.outbox, collection);
+  }
+
+  /// 只写收藏状态（游戏条目没有话数/卷数可报）。
+  ///
+  /// 与观看/阅读进度不同，这里**不套用「已完成不降级」规则**：状态是用户在库页显式
+  /// 选定的意图，从「玩过」改回「在玩」或标记「弃坑」都必须如实同步，否则用户会发现
+  /// 状态改不回来。单调保护只适用于自动推断出来的进度，不适用于人工选择的状态。
+  Future<void> _syncCollectionStatus(
+    BangumiTrackingApi api,
+    MediaTrackingMappingRow mapping,
+    MediaTrackingOutboxRow outbox,
+    BangumiUserCollection? collection,
+  ) async {
+    final int targetType = outbox.progress;
+    if (targetType < 1 || targetType > 5) {
+      throw StateError(
+        'Invalid Bangumi collection type $targetType '
+        'for subject ${mapping.subjectId}',
+      );
+    }
+    if (collection == null) {
+      await api.createCollection(
+        mapping.subjectId,
+        payload: <String, dynamic>{'type': targetType},
+      );
+      return;
+    }
+    if (collection.type == targetType) return;
+    await api.patchCollection(
+      mapping.subjectId,
+      payload: <String, dynamic>{'type': targetType},
+    );
   }
 
   Future<void> _syncEpisodeProgress(

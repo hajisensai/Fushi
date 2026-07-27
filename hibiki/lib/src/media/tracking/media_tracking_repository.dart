@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:drift/drift.dart';
+import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 const String kTrackingProviderBangumi = 'bangumi';
@@ -10,7 +11,8 @@ enum TrackingMediaType {
   book('book'),
   bookChapter('book_chapter'),
   video('video'),
-  videoCollection('video_collection');
+  videoCollection('video_collection'),
+  game('game');
 
   const TrackingMediaType(this.value);
   final String value;
@@ -19,7 +21,8 @@ enum TrackingMediaType {
 enum TrackingKind {
   anime('anime'),
   novel('novel'),
-  manga('manga');
+  manga('manga'),
+  game('game');
 
   const TrackingKind(this.value);
   final String value;
@@ -28,7 +31,15 @@ enum TrackingKind {
 enum TrackingProgressMode {
   episode('episode'),
   chapter('chapter'),
-  volume('volume');
+  volume('volume'),
+
+  /// 只同步收藏状态，没有话数/卷数进度。
+  ///
+  /// Bangumi 游戏条目 `eps`/`volumes` 恒为 0，唯一可写的是收藏 `type`。此模式下
+  /// [MediaTrackingOutboxRow.progress] 存的**不是进度而是 Bangumi 收藏 type**
+  /// （1 想玩 / 2 玩过 / 3 在玩 / 4 搁置 / 5 弃坑），由本字段唯一确定其解释方式，
+  /// 与 episode/chapter/volume 决定 progress 落 `ep_status` 还是 `vol_status` 同构。
+  status('status');
 
   const TrackingProgressMode(this.value);
   final String value;
@@ -45,6 +56,19 @@ typedef AutoVideoTrackingSource = ({
 typedef AutoBookTrackingSource = ({
   String title,
   String format,
+});
+
+typedef AutoGameTrackingSource = ({
+  String name,
+  int? bangumiSubjectId,
+});
+
+typedef PersistedGameTrackingStatus = ({
+  String gameId,
+  String name,
+  int? bangumiSubjectId,
+  int status,
+  int evidenceAt,
 });
 
 typedef CompletedVideoTrackingProgress = ({
@@ -335,6 +359,74 @@ class MediaTrackingRepository {
     return (title: book.title, format: book.format);
   }
 
+  /// 游戏刮削源里的 Bangumi 条目 id。
+  ///
+  /// `galgame_sources.source` 用的是刮削源 key（`bgm`），与本层的 provider 名
+  /// （`bangumi`）不是同一个值域，不能互相套用。VNDB 的 `externalId` 形如 `v12345`，
+  /// 不是 Bangumi subject id，必须按 source 过滤后再解析。
+  int? _bangumiSubjectIdOf(List<GalgameSourceRow> sources) {
+    for (final GalgameSourceRow row in sources) {
+      if (row.source != GalgameMetadataSource.bgm.key) continue;
+      final int? id = int.tryParse((row.externalId ?? '').trim());
+      if (id != null && id > 0) return id;
+    }
+    return null;
+  }
+
+  Future<AutoGameTrackingSource?> loadAutoGameSource(String gameId) async {
+    final GalgameRow? game = await _db.getGalgame(gameId);
+    if (game == null) return null;
+    return (
+      name: game.name,
+      bangumiSubjectId:
+          _bangumiSubjectIdOf(await _db.getGalgameSources(gameId)),
+    );
+  }
+
+  /// 返回自 [afterMs] 之后需要重新对齐的游戏收藏状态。
+  ///
+  /// 游戏状态是用户显式设置的离散值，正常路径在设置当下即时入队；本方法只兜两种
+  /// 「事件已经发生过但当时发不出去」的情况：换账号后水位归零的全量重建，以及先设
+  /// 状态、之后才刮到 Bangumi 条目或才建立映射。`galgames` 表没有「最后修改时刻」列，
+  /// 因此 evidence 取 `max(mapping.updatedAt, addedAt)`——足以覆盖新增游戏与新建/
+  /// 改动映射，状态本身的变更由即时入队负责，不依赖这里。
+  Future<List<PersistedGameTrackingStatus>> loadPersistedGameTrackingStatus({
+    required int afterMs,
+  }) async {
+    final List<GalgameRow> games = await _db.getAllGalgames();
+    if (games.isEmpty) return const <PersistedGameTrackingStatus>[];
+    final Map<String, List<GalgameSourceRow>> sources =
+        await _db.getAllGalgameSources();
+    final Map<String, MediaTrackingMappingRow> mappings =
+        <String, MediaTrackingMappingRow>{};
+    for (final MediaTrackingMappingRow mapping in await listMappings()) {
+      if (mapping.provider != kTrackingProviderBangumi) continue;
+      if (mapping.mediaType != TrackingMediaType.game.value) continue;
+      mappings[mapping.mediaKey] = mapping;
+    }
+
+    final List<PersistedGameTrackingStatus> result =
+        <PersistedGameTrackingStatus>[];
+    for (final GalgameRow game in games) {
+      // 0 = 未设置：用户从没表态过，不能凭空往远端写一个收藏状态。
+      if (game.playStatus <= 0) continue;
+      final int evidenceAt = math.max(
+        mappings[game.id]?.updatedAt ?? 0,
+        game.addedAt,
+      );
+      if (evidenceAt <= afterMs) continue;
+      result.add((
+        gameId: game.id,
+        name: game.name,
+        bangumiSubjectId:
+            _bangumiSubjectIdOf(sources[game.id] ?? const <GalgameSourceRow>[]),
+        status: game.playStatus,
+        evidenceAt: evidenceAt,
+      ));
+    }
+    return result;
+  }
+
   Future<int> loadBookChapterProgress({
     required String bookKey,
     required int fallbackProgress,
@@ -519,11 +611,17 @@ class MediaTrackingRepository {
 
   /// 将本地 0-based [localProgress] 翻译为远端进度并入队。没有映射返回 false；
   /// 调用方据此无声跳过，播放/阅读主路径不受外部服务影响。
+  ///
+  /// [monotonic] 为 true（默认）时沿用“进度只增不减”的合并：观看/阅读进度天然单调，
+  /// 取 max 可以让乱序到达的事件收敛到最新位置。收藏状态类事件必须传 false——它是
+  /// 离散状态而非进度，取 max 会让「弃坑(5) → 在玩(3)」这种正当回退被永久吃掉，
+  /// 用户再也改不回来。此时按最后写入者胜（LWW）覆盖。
   Future<bool> enqueueProgress({
     required TrackingMediaType mediaType,
     required String mediaKey,
     required int localProgress,
     required bool completed,
+    bool monotonic = true,
   }) async {
     final MediaTrackingMappingRow? mapping = await findMapping(
       mediaType: mediaType,
@@ -548,8 +646,10 @@ class MediaTrackingRepository {
             );
         return;
       }
-      final int mergedProgress = math.max(existing.progress, progress);
-      final bool mergedCompleted = existing.completed || completed;
+      final int mergedProgress =
+          monotonic ? math.max(existing.progress, progress) : progress;
+      final bool mergedCompleted =
+          monotonic ? (existing.completed || completed) : completed;
       // 毫秒时钟可能在同一 tick 连收两次事件；乐观锁版本必须严格递增，不能只写 now。
       final int eventVersion = math.max(now, existing.updatedAt + 1);
       await (_db.update(_db.mediaTrackingOutbox)

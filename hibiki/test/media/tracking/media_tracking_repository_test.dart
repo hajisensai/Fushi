@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_repository.dart';
@@ -175,5 +176,175 @@ void main() {
 
     expect(await repository.pendingCount(), 1);
     expect((await repository.dueUpdates()).single.outbox.progress, 3);
+  });
+
+  group('游戏收藏状态', () {
+    Future<void> insertGame(
+      String id, {
+      required String name,
+      int playStatus = 0,
+      int addedAt = 1000,
+    }) =>
+        db.upsertGalgame(
+          GalgamesCompanion.insert(
+            id: id,
+            name: name,
+            exePath: 'C:\\games\\$id.exe',
+            workdir: 'C:\\games',
+            addedAt: addedAt,
+            playStatus: Value<int>(playStatus),
+          ),
+        );
+
+    Future<void> insertSource(
+      String gameId, {
+      required String source,
+      required String? externalId,
+    }) =>
+        db.upsertGalgameSource(
+          GalgameSourcesCompanion.insert(
+            gameId: gameId,
+            source: source,
+            externalId: Value<String?>(externalId),
+            dataJson: '{}',
+            fetchedAt: 1000,
+          ),
+        );
+
+    Future<int> gameMappingId(String gameId) => repository.saveMapping(
+          mediaType: TrackingMediaType.game,
+          mediaKey: gameId,
+          mediaTitle: 'Game',
+          kind: TrackingKind.game,
+          subjectId: 77,
+          subjectName: 'Remote game',
+          progressMode: TrackingProgressMode.status,
+          progressOffset: 0,
+        );
+
+    test('状态回退不被单调合并吃掉（弃坑 → 在玩）', () async {
+      await gameMappingId('g1');
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.game,
+        mediaKey: 'g1',
+        localProgress: 5,
+        completed: false,
+        monotonic: false,
+      );
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.game,
+        mediaKey: 'g1',
+        localProgress: 3,
+        completed: false,
+        monotonic: false,
+      );
+
+      expect(await repository.pendingCount(), 1);
+      expect((await repository.dueUpdates()).single.outbox.progress, 3);
+    });
+
+    test('completed 在非单调模式下同样如实覆盖（玩过 → 在玩）', () async {
+      await gameMappingId('g1');
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.game,
+        mediaKey: 'g1',
+        localProgress: 2,
+        completed: true,
+        monotonic: false,
+      );
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.game,
+        mediaKey: 'g1',
+        localProgress: 3,
+        completed: false,
+        monotonic: false,
+      );
+
+      final MediaTrackingOutboxRow outbox =
+          (await repository.dueUpdates()).single.outbox;
+      expect(outbox.progress, 3);
+      expect(outbox.completed, isFalse);
+    });
+
+    test('单调模式仍然只增不减（不破坏观看/阅读进度语义）', () async {
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.video,
+        mediaKey: 'v1',
+        mediaTitle: 'Video',
+        kind: TrackingKind.anime,
+        subjectId: 9,
+        subjectName: 'Remote',
+        progressMode: TrackingProgressMode.episode,
+        progressOffset: 0,
+      );
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.video,
+        mediaKey: 'v1',
+        localProgress: 8,
+        completed: true,
+      );
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.video,
+        mediaKey: 'v1',
+        localProgress: 3,
+        completed: false,
+      );
+
+      final MediaTrackingOutboxRow outbox =
+          (await repository.dueUpdates()).single.outbox;
+      expect(outbox.progress, 8);
+      expect(outbox.completed, isTrue);
+    });
+
+    test('只认 bgm 源的 externalId，VNDB 的 v 前缀 id 不当 subject id 用', () async {
+      await insertGame('g1', name: 'Sakura');
+      await insertSource('g1', source: 'vndb', externalId: 'v12345');
+
+      expect((await repository.loadAutoGameSource('g1'))?.bangumiSubjectId,
+          isNull);
+
+      await insertSource('g1', source: 'bgm', externalId: '4242');
+      final AutoGameTrackingSource? source =
+          await repository.loadAutoGameSource('g1');
+      expect(source?.name, 'Sakura');
+      expect(source?.bangumiSubjectId, 4242);
+    });
+
+    test('未设置状态(0)的游戏不参与对账，不会凭空建远端收藏', () async {
+      await insertGame('g0', name: 'Untouched');
+      await insertGame('g1', name: 'Playing', playStatus: 3);
+      await insertSource('g1', source: 'bgm', externalId: '4242');
+
+      final List<PersistedGameTrackingStatus> statuses =
+          await repository.loadPersistedGameTrackingStatus(afterMs: 0);
+
+      expect(statuses.map((s) => s.gameId), <String>['g1']);
+      expect(statuses.single.status, 3);
+      expect(statuses.single.bangumiSubjectId, 4242);
+    });
+
+    test('对账水位过滤掉已经对齐过的游戏', () async {
+      await insertGame('g1', name: 'Playing', playStatus: 3, addedAt: 5000);
+
+      expect(
+        await repository.loadPersistedGameTrackingStatus(afterMs: 5000),
+        isEmpty,
+      );
+      expect(
+        await repository.loadPersistedGameTrackingStatus(afterMs: 4999),
+        hasLength(1),
+      );
+    });
+
+    test('新建映射会让老游戏重新进入对账（映射 updatedAt 抬高 evidence）', () async {
+      await insertGame('g1', name: 'Playing', playStatus: 3, addedAt: 1000);
+      await gameMappingId('g1');
+
+      // 映射刚建，updatedAt 是当下，远高于 addedAt=1000。
+      expect(
+        await repository.loadPersistedGameTrackingStatus(afterMs: 2000),
+        hasLength(1),
+      );
+    });
   });
 }

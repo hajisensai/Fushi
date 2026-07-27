@@ -78,6 +78,62 @@ void main() {
     expect(results.single.episodeCount, 28);
   });
 
+  test('游戏条目(type 4)不被解析器丢弃，音乐(3)/三次元(6)仍然丢弃', () async {
+    final BangumiApiClient client = BangumiApiClient(
+      accessToken: 'token',
+      userAgent: 'test-agent',
+      client: MockClient((http.Request request) async {
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<String, dynamic>{
+            'data': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'id': 13,
+                'type': 4,
+                'name': 'CLANNAD',
+                'name_cn': '团子大家族',
+                'platform': '游戏',
+                'eps': 0,
+                'volumes': 0,
+              },
+              <String, dynamic>{
+                'id': 99,
+                'type': 3,
+                'name': 'Some album',
+                'name_cn': '',
+                'platform': '音乐',
+                'eps': 0,
+                'volumes': 0,
+              },
+              <String, dynamic>{
+                'id': 98,
+                'type': 6,
+                'name': 'Some drama',
+                'name_cn': '',
+                'platform': '三次元',
+                'eps': 0,
+                'volumes': 0,
+              },
+            ],
+          })),
+          200,
+          headers: const <String, String>{
+            'content-type': 'application/json; charset=utf-8',
+          },
+        );
+      }),
+    );
+    addTearDown(client.close);
+
+    final List<BangumiSubject> results =
+        await client.searchSubjects(keyword: 'CLANNAD', subjectType: 4);
+
+    expect(results.map((BangumiSubject s) => s.id), <int>[13]);
+    expect(results.single.displayName, '团子大家族');
+    // 游戏条目没有话数/卷数，正是 status 模式存在的理由。
+    expect(results.single.episodeCount, 0);
+    expect(results.single.volumeCount, 0);
+  });
+
   test('getSubject reads official chapter and volume totals', () async {
     late http.Request captured;
     final BangumiApiClient client = BangumiApiClient(
