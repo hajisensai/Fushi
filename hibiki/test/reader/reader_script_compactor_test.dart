@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/focus/webview_key_bridge.dart';
 import 'package:hibiki/src/reader/reader_caret_scripts.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 import 'package:hibiki/src/reader/reader_script_compactor.dart';
@@ -302,6 +303,13 @@ String _assembledSetupScript(String paginationJs) {
     // 用占位注释顶上（拼装外壳与其余载荷才是本守卫的目标）。
     r'$furiganaJs': '/* furigana placeholder */',
     r'$longPressDragJs': ReaderSelectionScripts.longPressDragGestureScript(),
+    // TODO-1078 裸 Space 键盘桥：注入的是真实生成结果（含 JS 字符串字面量与
+    // 对象字面量 `{capture: true}`），压缩必须照样覆盖它。
+    r"${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}":
+        webViewKeyBridgeScript(
+      handlerName: 'onSpaceKey',
+      keys: const <String>[' '],
+    ),
     r'$swipeFastDistThreshold': '22',
     r'$swipeDistThreshold': '44',
     r'$tapSlop': '10',

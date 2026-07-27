@@ -96,6 +96,7 @@ import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent, GamepadLongPressIntent, focusedEditableText;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/focus/page_focus_ownership.dart';
+import 'package:hibiki/src/focus/webview_key_bridge.dart';
 import 'package:hibiki/src/shortcuts/reader_caret_router.dart';
 import 'package:hibiki/src/shortcuts/dictionary_caret_controller.dart';
 // Re-export so existing references to `CaretSurface` via the reader page,
