@@ -34,7 +34,10 @@ before = 三项优化临时回退、测量探针保留（`xchapter-before-overla
 的实测收益落在噪声内——机理成立（不让 DB 查询与 JS 往返挤在遮罩撤除之前），但**不宣称它的数字**。
 确定的收益来自 `js.restore` 的 -17ms（删掉的那层空等）。
 
-证据：`.codex-test/windows-itest/xchapter-{base02,base03,base04,opt01,opt02,opt03,before-overlay}/command.log`（不入库）。
+证据：`.codex-test/windows-itest/xchapter-{base02,base03,base04,opt01,opt02,opt03,before-overlay,rebased}/command.log`（不入库）。
+before / after 两轮均在无并发负载下跑。`xchapter-rebased`（rebase 到含 PR#453 的 develop 后复测）与定向测试
+并发跑，`docLoad`/total 被 CPU 争用抬高，只用于确认「落点仍全绿 + 优化仍生效」（`js.restore` 20ms、
+`jsInitRestore` 14ms 与 after 一致），其 total 不作性能结论。
 
 ### 根因（三处，都是「等待」而非「计算」）
 
@@ -52,8 +55,9 @@ before = 三项优化临时回退、测量探针保留（`xchapter-before-overla
 2. `_onRestoreComplete` 里的收尾工作整体挪进 `addPostFrameCallback` —— 遮罩按时撤、用户先看到新章，收尾照旧全执行
    （语义变化仅「晚一帧」）。**这一项的实测收益落在噪声内**（见上文 `overlayGone` 说明），保留是因为机理成立。
 3. 新增 `ReaderScriptCompactor`（`lib/src/reader/reader_script_compactor.dart`），注入前剥离整行注释与空行：
-   **注入字节 171KB → 118KB（-31%）**。如实记录：Windows 桌面上这一项**没有转化为时间收益**
-   （`evalSetupScript` 27→24ms 在噪声内）——该段耗时由 IPC 固定开销 + JS 编译主导，不由注释体积主导。
+   **整份 setup 脚本 211407 → 145162 字符（-31%，实测 `setupChars`）**。如实记录：Windows 桌面上这一项
+   **没有转化为时间收益**（`evalSetupScript` 28→24ms 在噪声内）——该段耗时由 IPC 固定开销 + JS 编译主导，
+   不由注释体积主导。
    保留的理由是字节数确实减少（移动端 WebView 的 JS 编组更贵），**但移动端未实测，不宣称收益**。
 
 ### 顺带删掉的无用守卫
