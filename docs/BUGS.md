@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1139 条。点号进各自文件。
+> 共 1140 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1176](bugs/BUG-1176-cover-scrape-silent-catch.md) | ✅ | ✅ | 封面刮削/匹配失败被静默吞掉，用户只看到「无结果」 |
 | [BUG-1175](bugs/BUG-1175-gal-embedkrkrz-ruby-repeat-text.md) | ✅ | ✅ | EmbedKrkrZ ruby 双写产生重复台词，折叠只认精确二倍全部漏过 |
 | [BUG-1174](bugs/BUG-1174-docroot-migrator-path-gaps.md) | ✅ | ✅ | 数据根迁移漏改 6 处路径 + 非幂等 + 无事务 |
 | [BUG-1173](bugs/BUG-1173-manga-ocr-cache-model-identity.md) | ✅ | ✅ | 漫画本地 OCR 缓存不含模型身份 |
