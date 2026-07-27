@@ -279,6 +279,52 @@ class ClipboardHistory extends Table {
   IntColumn get copiedAt => integer()();
 }
 
+// ── media tracking (Bangumi) ──────────────────────────────────────
+/// 本地媒体/合集与外部条目的显式稳定映射。
+///
+/// 自动记录绝不按标题静默猜条目：用户确认一次映射后，播放/阅读事件只按
+/// `(provider, media_type, media_key)` 命中本表。`progress_mode` 决定本地进度如何
+/// 翻译到远端：episode（动画章节）/ chapter（书籍话数）/ volume（书籍卷数）。
+@DataClassName('MediaTrackingMappingRow')
+class MediaTrackingMappings extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get provider => text().withDefault(const Constant('bangumi'))();
+  TextColumn get mediaType => text()();
+  TextColumn get mediaKey => text()();
+  TextColumn get mediaTitle => text()();
+  TextColumn get kind => text()(); // anime / novel / manga
+  IntColumn get subjectId => integer()();
+  TextColumn get subjectName => text()();
+  TextColumn get progressMode => text()(); // episode / chapter / volume
+
+  /// 本地 0-based 序号加此偏移后得到远端 1-based 进度。单卷书可直接把卷号填在
+  /// offset，并在完成事件里传 localProgress=0。
+  IntColumn get progressOffset => integer().withDefault(const Constant(1))();
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {provider, mediaType, mediaKey},
+      ];
+}
+
+/// 事务性待同步队列。每个映射最多一行；新事件以 MAX(progress) + completed OR
+/// 合并，离线/进程退出不会丢，且旧进度永远不能覆盖新进度。
+@DataClassName('MediaTrackingOutboxRow')
+class MediaTrackingOutbox extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get mappingId => integer()
+      .unique()
+      .references(MediaTrackingMappings, #id, onDelete: KeyAction.cascade)();
+  IntColumn get progress => integer()();
+  BoolColumn get completed => boolean().withDefault(const Constant(false))();
+  IntColumn get attemptCount => integer().withDefault(const Constant(0))();
+  IntColumn get nextAttemptAt => integer().withDefault(const Constant(0))();
+  TextColumn get lastError => text().nullable()();
+  IntColumn get updatedAt => integer()();
+}
+
 // ── epub_books ─────────────────────────────────────────────────────
 @DataClassName('EpubBookRow')
 class EpubBooks extends Table {
