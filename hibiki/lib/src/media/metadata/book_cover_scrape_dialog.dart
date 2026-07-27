@@ -51,9 +51,9 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   bool _searching = false;
   bool _searched = false;
 
-  /// 上一次搜索是否因网络 / 接口异常失败。失败态在结果区显示错误行（区别于
-  /// 「无匹配」空态），用户可再点「搜索」重试——不允许静默塌缩成空列表。
-  bool _searchFailed = false;
+  /// 上一次搜索失败的异常（null = 没失败）。失败态在结果区显示错误行 + 可行动原因
+  /// （区别于「无匹配」空态），用户可再点「搜索」重试——不允许静默塌缩成空列表。
+  Object? _searchFailure;
 
   /// 正在下载封面的候选（在其「使用」按钮上转圈；null = 无进行中）。
   BookScrapeCandidate? _applyingCandidate;
@@ -80,22 +80,36 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     setState(() {
       _searching = true;
       _searched = true;
-      _searchFailed = false;
+      _searchFailure = null;
     });
-    List<BookScrapeCandidate> results;
-    bool failed = false;
+    List<BookScrapeCandidate> results = const <BookScrapeCandidate>[];
+    Object? failure;
     try {
       results = await _resolveCandidates(keyword);
-    } catch (_) {
-      results = const <BookScrapeCandidate>[];
-      failed = true;
+    } catch (e, stack) {
+      // BUG-1176：失败要有出口。界面出可见失败行，原始原因落错误日志（用户可在
+      // 「错误日志」页查看/上传），不静默塌缩成空列表。
+      ErrorLogService.instance.log('BookCoverScrapeDialog.search', e, stack);
+      failure = e;
     }
     if (!mounted) return;
     setState(() {
       _results = results;
       _searching = false;
-      _searchFailed = failed;
+      _searchFailure = failure;
     });
+  }
+
+  /// 把失败折成一句用户可行动的话。底层已把传输失败 / 非 2xx / 非图片响应统一折成带
+  /// `statusCode` 的领域异常，「有没有 statusCode」就是「没拿到可用响应」与「拿到了
+  /// 但对面报错」的唯一可靠分界——不做更细的假分类，技术细节留在错误日志里。
+  String _failureReason(Object failure) {
+    final int? status = switch (failure) {
+      BookScrapeException(:final int? statusCode) => statusCode,
+      ImageDownloadException(:final int? statusCode) => statusCode,
+      _ => null,
+    };
+    return status == null ? t.scrape_reason_network : t.scrape_reason_server;
   }
 
   /// 关键词 → 候选。添加/修改 Bangumi 映射：贴条目 URL = 按 id 直取（跳过关键词
@@ -115,8 +129,15 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       BookScrapeCandidate? direct;
       try {
         direct = await _scraper.fetchById(keyword);
-      } catch (_) {
-        direct = null; // 直取失败不拖垮关键词结果。
+      } catch (e) {
+        // 界面上静默：这是尽力而为的第二路，本分支上方那次关键词搜索（未 guard）
+        // 失败才会冒泡成可见失败态，所以这里吞掉不会让任何真失败消失。仍落诊断
+        // 日志，否则「数字关键词结果时多时少」无从查起。
+        direct = null;
+        ErrorLogService.instance.logDiagnostic(
+          'BookCoverScrapeDialog.fetchById',
+          'numeric keyword direct fetch failed: $e',
+        );
       }
       if (direct == null) return searched;
       final String directId = direct.subjectId;
@@ -132,15 +153,22 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     if (_applyingCandidate != null) return;
     setState(() => _applyingCandidate = candidate);
     File? file;
+    Object? failure;
     try {
       file = await downloadImageToTempFile(candidate.coverUrl);
-    } catch (_) {
-      file = null;
+    } catch (e, stack) {
+      // 下载失败必须可见 + 可查：toast 给「失败了 + 大概因为什么」，原始原因进日志。
+      ErrorLogService.instance.log('BookCoverScrapeDialog.download', e, stack);
+      failure = e;
     }
     if (!mounted) return;
     if (file == null) {
       setState(() => _applyingCandidate = null);
-      HibikiToast.show(msg: t.book_scrape_failed);
+      HibikiToast.show(
+        msg: failure == null
+            ? t.book_scrape_failed
+            : '${t.book_scrape_failed}\n${_failureReason(failure)}',
+      );
       return;
     }
     Navigator.of(context).pop(file);
@@ -201,8 +229,9 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     if (_searching) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_searchFailed) {
-      // 搜索失败错误行：可见反馈 + 重试指引（搜索按钮此时已恢复可点）。
+    final Object? failure = _searchFailure;
+    if (failure != null) {
+      // 搜索失败错误行：可见反馈 + 可行动原因 + 重试指引（搜索按钮此时已恢复可点）。
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -214,6 +243,12 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium
                   ?.copyWith(color: theme.colorScheme.error),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _failureReason(failure),
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall,
             ),
           ],
         ),

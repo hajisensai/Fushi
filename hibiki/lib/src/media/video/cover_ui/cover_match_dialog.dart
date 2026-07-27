@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/src/media/metadata/bangumi_api_client.dart'
     show parseBangumiSubjectUrl;
+import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
+    show ScrapeNetworkException;
 import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
@@ -71,6 +73,11 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   List<ScrapeCandidate> _results = const <ScrapeCandidate>[];
   bool _searching = false;
   bool _searched = false;
+
+  /// 上一次搜索失败的异常（null = 没失败）。BUG-1176：「搜不到」和「搜不了」是两回
+  /// 事，失败必须有出口——失败态在结果区显示错误行 + 可行动原因，绝不塌缩成
+  /// 「无匹配」空态骗用户以为条目不存在。
+  Object? _searchFailure;
   bool _showTmdbKeyField = false;
   bool _applyToCollection = false;
   bool _applying = false;
@@ -122,21 +129,28 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
       setState(() {
         _searching = true;
         _searched = true;
+        _searchFailure = null;
       });
-      List<ScrapeCandidate> results;
+      List<ScrapeCandidate> results = const <ScrapeCandidate>[];
+      Object? failure;
       try {
         final ScrapeCandidate? candidate =
             await widget.service.fetchBangumiCandidateById(mappedSubjectId);
         results = candidate == null
             ? const <ScrapeCandidate>[]
             : <ScrapeCandidate>[candidate];
-      } catch (_) {
-        results = const <ScrapeCandidate>[];
+      } catch (e, stack) {
+        // 直取失败 ≠ 条目不存在（不存在走 404 → null）：原始原因落错误日志（用户可在
+        // 「错误日志」页查看/上传），界面出可见失败态，不静默塌缩成「无匹配」。
+        ErrorLogService.instance
+            .log('CoverMatchDialog.fetchBangumiCandidateById', e, stack);
+        failure = e;
       }
       if (!mounted) return;
       setState(() {
         _results = results;
         _searching = false;
+        _searchFailure = failure;
       });
       return;
     }
@@ -149,18 +163,32 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     setState(() {
       _searching = true;
       _searched = true;
+      _searchFailure = null;
     });
-    List<ScrapeCandidate> results;
+    List<ScrapeCandidate> results = const <ScrapeCandidate>[];
+    Object? failure;
     try {
       results = await _searchSource(keyword);
-    } catch (_) {
-      results = const <ScrapeCandidate>[];
+    } catch (e, stack) {
+      // 同上：搜索失败与「零结果」必须分开，否则用户以为片名搜不到而放弃重试。
+      ErrorLogService.instance.log('CoverMatchDialog.search', e, stack);
+      failure = e;
     }
     if (!mounted) return;
     setState(() {
       _results = results;
       _searching = false;
+      _searchFailure = failure;
     });
+  }
+
+  /// 把失败折成一句用户可行动的话。底层已把传输失败 / 非 2xx / JSON 异常统一折成带
+  /// `statusCode` 的领域异常，「有没有 statusCode」就是「没拿到可用响应」与「拿到了
+  /// 但对面报错」的唯一可靠分界——不做更细的假分类，技术细节留在错误日志里。
+  String _failureReason(Object failure) {
+    final int? status =
+        failure is ScrapeNetworkException ? failure.statusCode : null;
+    return status == null ? t.scrape_reason_network : t.scrape_reason_server;
   }
 
   /// TMDB 分段用当前 key 现建 client 搜索（服务注入的 client 可能因启动时无 key 而为
@@ -177,17 +205,41 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
       }
     }
     // 纯数字输入既可能是 Bangumi subject id（用户改绑映射）也可能就是标题
-    // （如动画《86》）：两路并发，id 直取命中置顶、与同 id 搜索结果去重——
+    // （如动画《86》）：两路依次都试，id 直取命中置顶、与同 id 搜索结果去重——
     // 不牺牲任何一种意图。
     if (_source == ScrapeSource.bangumi && RegExp(r'^\d+$').hasMatch(keyword)) {
-      final List<ScrapeCandidate> searched = await widget.service
-          .searchCandidates(source: _source, keyword: keyword)
-          .catchError((Object _) => const <ScrapeCandidate>[]);
+      List<ScrapeCandidate> searched = const <ScrapeCandidate>[];
+      Object? searchError;
+      StackTrace? searchStack;
+      try {
+        searched = await widget.service
+            .searchCandidates(source: _source, keyword: keyword);
+      } catch (e, stack) {
+        // 单路失败只是降级（另一路还可能有结果），不打扰用户；但要留取证痕迹，
+        // 否则「数字关键词结果时多时少」无从查起。
+        searchError = e;
+        searchStack = stack;
+        ErrorLogService.instance.logDiagnostic(
+          'CoverMatchDialog.searchCandidates',
+          'numeric keyword search failed: $e',
+        );
+      }
       ScrapeCandidate? direct;
+      Object? directError;
       try {
         direct = await widget.service.fetchBangumiCandidateById(keyword);
-      } catch (_) {
-        direct = null;
+      } catch (e) {
+        directError = e;
+        ErrorLogService.instance.logDiagnostic(
+          'CoverMatchDialog.fetchBangumiCandidateById',
+          'numeric keyword direct fetch failed: $e',
+        );
+      }
+      // 两路都失败 = 真搜不了：带原始栈重抛给 _search 出可见失败态；只有一路失败
+      // 才算可静默降级。
+      if (searchError != null && directError != null) {
+        Error.throwWithStackTrace(
+            searchError, searchStack ?? StackTrace.current);
       }
       if (direct == null) return searched;
       final String directId = direct.entryId;
@@ -219,33 +271,39 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
         _applyToCollection && widget.collectionMemberUids.length > 1
             ? widget.collectionMemberUids
             : <String>[widget.book.bookUid];
-    bool ok = false;
+    Object? failure;
     try {
       await widget.service.applyCandidateToBooks(
         bookUids: targets,
         candidate: candidate,
         aliasKey: _parsed?.title,
       );
-      ok = true;
-    } catch (_) {
-      // ok 保持 false，走下方失败分支——绝不吞成静默无反馈。
+    } catch (e, stack) {
+      // 走下方失败分支——绝不吞成静默无反馈。原始原因进错误日志，界面只给
+      // 「失败了 + 大概因为什么」，不把堆栈抛到用户面前。
+      ErrorLogService.instance.log('CoverMatchDialog.applyCandidate', e, stack);
+      failure = e;
     }
     if (!mounted) return;
-    if (!ok) {
+    if (failure != null) {
       // 失败：复位 _applying（否则按钮永久禁用），弹可见失败提示，弹窗保留让用户改选。
       setState(() {
         _applying = false;
         _applyingCandidate = null;
       });
-      HibikiToast.show(msg: t.video_scrape_apply_failed);
+      HibikiToast.show(
+        msg: '${t.video_scrape_apply_failed}\n${_failureReason(failure)}',
+      );
       return;
     }
     // 成功：刷新库页 + 关弹窗 + 成功提示。onApplied 单独 guard，任何异常都不得阻断关闭
     // 弹窗（否则 _applying 卡在 true、按钮永久禁用 = 「使用没反应」的另一条成因）。
     try {
       widget.onApplied();
-    } catch (_) {
-      // 刷新回调异常不影响「已应用」这一既成事实，吞掉即可。
+    } catch (e, stack) {
+      // 界面上吞掉：刷新回调异常不影响「已应用」这一既成事实，不该拦住关弹窗。但必须
+      // 留日志，否则「封面应用了、库页没刷新」这条路永远查不出原因。
+      ErrorLogService.instance.log('CoverMatchDialog.onApplied', e, stack);
     }
     if (!mounted) return;
     Navigator.of(context).pop();
@@ -398,6 +456,8 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     if (_searching) {
       return const Center(child: CircularProgressIndicator());
     }
+    final Object? failure = _searchFailure;
+    if (failure != null) return _buildSearchFailure(theme, failure);
     if (_searched && _results.isEmpty) {
       return Center(child: Text(t.video_scrape_no_results));
     }
@@ -406,6 +466,31 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (BuildContext context, int index) =>
           _buildCandidateTile(theme, _results[index]),
+    );
+  }
+
+  /// 搜索失败行：可见失败 + 可行动原因 + 重试指引（此时「搜索」按钮已恢复可点）。
+  Widget _buildSearchFailure(ThemeData theme, Object failure) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(Icons.error_outline, color: theme.colorScheme.error),
+          const SizedBox(height: 8),
+          Text(
+            t.video_scrape_search_failed,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium
+                ?.copyWith(color: theme.colorScheme.error),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _failureReason(failure),
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+      ),
     );
   }
 
