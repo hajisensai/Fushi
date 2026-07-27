@@ -18,6 +18,12 @@ import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 /// 3. 用 node `--check` 真解析：把 `webview.part.dart` 里那份**最终拼装脚本**按真实
 ///    组件重建出来（821 行外壳 + 各真实载荷），压缩前后都必须是合法 JS。这才是生产上
 ///    真正被 compact 的东西，此前一行测试都没有。
+/// 4. **装配完整性**（见 group「setup 装配完整性」）：reader 侧还有约 100 条守卫只断言
+///    某个生成函数**返回的字符串**里含某符号——它们证明不了这个串真的被拼进最终注入的
+///    脚本。压缩器的插值替身表 [_setupSubstitutions] 对**新增**插值会抛 StateError（响
+///    亮），但对**删除**插值（例如从模板里抹掉 `$caretJs`）完全静默：整个 caret 载荷不
+///    再注入，那 100 条照样全绿。本层堵的正是这个单向漏洞：替换时收集命中的插值键，断言
+///    每个替身都被用上；再对最终产物断言各子载荷的运行时哨兵同时在场。
 void main() {
   group('ReaderScriptCompactor.compact', () {
     test('剥掉整行注释与空行', () {
@@ -159,6 +165,7 @@ tail`;
           'selection',
           'longPressDrag',
           'caret',
+          'keyBridge.space',
           'pagination.paginated',
           'pagination.continuous',
           'pagination.vn',
@@ -211,6 +218,72 @@ tail`;
     });
   });
 
+  // 单向漏洞的封口：模板里**删掉**一个插值（整个子载荷不再注入）此前完全静默——
+  // 那约 100 条只断言「生成函数返回的串里含某符号」的守卫照样全绿。
+  // 本组是「被注入」这件事的唯一集中证据，不要求那 100 条各自再证一遍。
+  group('setup 装配完整性（子载荷真的被拼进最终脚本）', () {
+    final _AssembledSetup assembled = _assembleSetupScript(
+        _stripScriptTags(ReaderPaginationScripts.shellScript()));
+
+    test('替身表里的每个插值都在模板里被真正用上（删掉任一子载荷即红）', () {
+      expect(assembled.hitKeys, containsAll(assembled.subKeys),
+          reason: 'setup 模板不再引用这些插值：'
+              '${assembled.subKeys.difference(assembled.hitKeys).join(', ')}。'
+              '要么该子载荷被漏拼（= 线上整块功能失效，而单载荷守卫全绿看不出来），'
+              '要么它已被有意移除——后者请同步删掉替身表里的对应项。');
+    });
+
+    // 插值是**字面**插入，所以每个子载荷必须整段原样出现在产物里。这是「被拼进去」
+    // 最强的直接证据：哨兵符号会因为外壳/兄弟载荷里也出现同名符号而假绿（实测删掉
+    // `$caretJs` 后 `window.hoshiCaret` 仍在——它由 `$caretInit` 带进来），整段比对不会。
+    test('最终脚本里各子载荷整段原样在场', () {
+      final Map<String, String> payloads = <String, String>{
+        'selection': ReaderSelectionScripts.source(),
+        'caret': ReaderCaretScripts.source(),
+        'longPressDrag': ReaderSelectionScripts.longPressDragGestureScript(),
+        'pagination': _stripScriptTags(ReaderPaginationScripts.shellScript()),
+        'keyBridge': webViewKeyBridgeScript(
+          handlerName: 'onSpaceKey',
+          keys: const <String>[' '],
+        ),
+      };
+      for (final MapEntry<String, String> entry in payloads.entries) {
+        expect(assembled.script, contains(entry.value),
+            reason: '${entry.key} 载荷没有整段出现在最终注入脚本里——'
+                '它没被拼进 setup 脚本，注入后整块功能是死的');
+      }
+    });
+
+    test('最终脚本里各子载荷的运行时哨兵同时在场', () {
+      const Map<String, String> sentinels = <String, String>{
+        'selection': 'window.hoshiSelection',
+        'pagination': 'window.hoshiReader',
+        'caret': 'window.hoshiCaret',
+        'longPressDrag': '__hoshiTextSelectDragActive',
+        'keyBridge': "'onSpaceKey'",
+      };
+      for (final MapEntry<String, String> entry in sentinels.entries) {
+        expect(assembled.script, contains(entry.value),
+            reason: '最终注入脚本里找不到 ${entry.key} 的哨兵 ${entry.value}——'
+                '该载荷没被拼进 setup 脚本，注入后整块功能是死的');
+      }
+    });
+
+    test('压缩之后哨兵依然在场（压缩不得吃掉任何子载荷）', () {
+      final String compacted = ReaderScriptCompactor.compact(assembled.script);
+      for (final String sentinel in <String>[
+        'window.hoshiSelection',
+        'window.hoshiReader',
+        'window.hoshiCaret',
+        '__hoshiTextSelectDragActive',
+        "'onSpaceKey'",
+      ]) {
+        expect(compacted, contains(sentinel),
+            reason: '压缩后 $sentinel 消失 = 压缩器剥掉了真代码');
+      }
+    });
+  });
+
   group('压缩后仍是合法 JS（node --check 真解析）', () {
     final String? nodeExe = _resolveNode();
     final Map<String, String> payloads = _realPayloads();
@@ -250,20 +323,48 @@ Map<String, String> _realPayloads() {
     'selection': ReaderSelectionScripts.source(),
     'longPressDrag': ReaderSelectionScripts.longPressDragGestureScript(),
     'caret': ReaderCaretScripts.source(),
+    // PR#480 的裸 Space 键盘桥：它同样被拼进 setup 脚本后一起压缩，必须有独立的
+    // scansCleanly / 幂等 / node --check 覆盖，不能只靠 setupScript 顺带带过。
+    'keyBridge.space': webViewKeyBridgeScript(
+      handlerName: 'onSpaceKey',
+      keys: const <String>[' '],
+    ),
     'pagination.paginated': paginated,
     'pagination.continuous': _stripScriptTags(
         ReaderPaginationScripts.shellScript(continuousMode: true)),
     'pagination.vn':
         _stripScriptTags(ReaderPaginationScripts.shellScript(vnMode: true)),
-    'setupScript': _assembledSetupScript(paginated),
+    'setupScript': _assembleSetupScript(paginated).script,
   };
+}
+
+/// [_assembleSetupScript] 的产物：最终拼装脚本 + 「哪些替身插值真的被用上了」。
+///
+/// [hitKeys] 是装配完整性的唯一证据：模板里少写一个 `$xxx`，它就少一个键。
+class _AssembledSetup {
+  const _AssembledSetup({
+    required this.script,
+    required this.hitKeys,
+    required this.subKeys,
+  });
+
+  /// 替换全部插值后的最终脚本（= 生产上真正交给压缩器的那份）。
+  final String script;
+
+  /// 在模板里真实出现并被替换掉的插值键。
+  final Set<String> hitKeys;
+
+  /// 替身表登记的全部插值键。
+  final Set<String> subKeys;
 }
 
 /// 从 `webview.part.dart` 抠出 `_buildReaderSetupScript` 的那段 Dart 三引号模板，把每个
 /// 插值换成真实子载荷（或语法上等价的标量替身），还原成生产上真正被压缩的整份脚本。
 ///
-/// 插值一旦新增/改名，[_setupPlaceholders] 里没有对应替身就直接 fail——不会静默漏覆盖。
-String _assembledSetupScript(String paginationJs) {
+/// 插值一旦新增/改名，[_setupSubstitutions] 里没有对应替身就直接 fail——不会静默漏覆盖。
+/// 反方向（模板里**删掉**某个插值，例如整个 `$caretJs`）不会抛异常，由返回值的
+/// [_AssembledSetup.hitKeys] 交给「setup 装配完整性」那组测试断言。
+_AssembledSetup _assembleSetupScript(String paginationJs) {
   final File part = File(
     'lib/src/pages/implementations/reader_hibiki/webview.part.dart',
   );
@@ -293,7 +394,29 @@ String _assembledSetupScript(String paginationJs) {
   }
   body = body.replaceAll(r'\.', '.');
 
-  final Map<String, String> subs = <String, String>{
+  final Map<String, String> subs = _setupSubstitutions(paginationJs);
+  final Set<String> hit = <String>{};
+  final RegExp placeholder = RegExp(r'\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*');
+  final String script = body.replaceAllMapped(placeholder, (Match m) {
+    final String key = m.group(0)!;
+    final String? value = subs[key];
+    if (value == null) {
+      throw StateError('setup 模板新增插值 $key，请在本守卫里给出替身，'
+          '否则最终拼装脚本的压缩就没有覆盖');
+    }
+    hit.add(key);
+    return value;
+  });
+  return _AssembledSetup(
+    script: script,
+    hitKeys: hit,
+    subKeys: subs.keys.toSet(),
+  );
+}
+
+/// setup 模板里每个插值对应的真实子载荷（或语法上等价的标量替身）。
+Map<String, String> _setupSubstitutions(String paginationJs) {
+  return <String, String>{
     r'$selectionJs': ReaderSelectionScripts.source(),
     r'$paginationJs': paginationJs,
     r'$caretJs': ReaderCaretScripts.source(),
@@ -322,16 +445,6 @@ String _assembledSetupScript(String paginationJs) {
     r'${ReaderHibikiSource.instance.highlightOnTap}': 'false',
     r'${appModel.scanNonJapaneseText}': 'false',
   };
-  final RegExp placeholder = RegExp(r'\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*');
-  return body.replaceAllMapped(placeholder, (Match m) {
-    final String key = m.group(0)!;
-    final String? value = subs[key];
-    if (value == null) {
-      throw StateError('setup 模板新增插值 $key，请在本守卫里给出替身，'
-          '否则最终拼装脚本的压缩就没有覆盖');
-    }
-    return value;
-  });
 }
 
 String _stripScriptTags(String js) => js
