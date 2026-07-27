@@ -187,4 +187,58 @@ void main() {
       );
     });
   });
+
+  group('parseBangumiSubjectDetailAsCandidate（id 直连改绑映射）', () {
+    test('详情体映射为候选：评分取 rating.score、话数回退 total_episodes', () {
+      const String body = '{"id":253,"name":"カウボーイビバップ",'
+          '"name_cn":"星际牛仔","date":"1998-04-03","platform":"TV",'
+          '"eps":0,"total_episodes":26,'
+          '"rating":{"score":8.4,"total":1234},'
+          '"images":{"large":"https://img/l.jpg"}}';
+      final ScrapeCandidate? c = parseBangumiSubjectDetailAsCandidate(body);
+      expect(c, isNotNull);
+      expect(c!.entryId, '253');
+      expect(c.title, '星际牛仔');
+      expect(c.posterUrl, 'https://img/l.jpg');
+      expect(c.year, 1998);
+      expect(c.type, ScrapeEntryType.tv);
+      expect(c.episodeCount, 26);
+      expect(c.ratingText, 'Bangumi 8.4');
+    });
+
+    test('无海报 → null（对封面刮削无用）；结构异常 → 抛异常', () {
+      expect(
+        parseBangumiSubjectDetailAsCandidate('{"id":1,"name":"x"}'),
+        isNull,
+      );
+      expect(
+        () => parseBangumiSubjectDetailAsCandidate('not json'),
+        throwsA(isA<ScrapeNetworkException>()),
+      );
+    });
+  });
+
+  group('BangumiClient.fetchSubjectCandidate', () {
+    test('200 → 候选；404 → null（条目不存在按空处理，不抛）', () async {
+      const String body = '{"id":9,"name":"n","name_cn":"中文名",'
+          '"images":{"large":"https://img/l.jpg"}}';
+      final BangumiClient ok = BangumiClient(client: _client(body));
+      final ScrapeCandidate? c = await ok.fetchSubjectCandidate('9');
+      expect(c?.entryId, '9');
+      expect(c?.title, '中文名');
+
+      final BangumiClient missing =
+          BangumiClient(client: _client('{}', status: 404));
+      expect(await missing.fetchSubjectCandidate('999999'), isNull);
+    });
+
+    test('非 2xx（非 404）→ 抛 ScrapeNetworkException', () async {
+      final BangumiClient bad =
+          BangumiClient(client: _client('{}', status: 500));
+      await expectLater(
+        bad.fetchSubjectCandidate('9'),
+        throwsA(isA<ScrapeNetworkException>()),
+      );
+    });
+  });
 }

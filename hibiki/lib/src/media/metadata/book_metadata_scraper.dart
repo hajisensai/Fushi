@@ -108,8 +108,45 @@ class BookMetadataScraper {
     return parseBookSearchResponse(response.body);
   }
 
+  /// 按 Bangumi subject id 直取条目并映射为候选（添加/修改 Bangumi 映射：用户在
+  /// 弹窗贴 ID/URL 直连，不走关键词搜索）。
+  ///
+  /// 404（条目不存在/被删）或条目无封面 → null；其余非 2xx / 网络失败 → 抛
+  /// [BookScrapeException]。
+  Future<BookScrapeCandidate?> fetchById(String subjectId) async {
+    final BangumiRawResponse response;
+    try {
+      response = await _api.fetchSubject(subjectId);
+    } on BangumiTransportException catch (e) {
+      throw BookScrapeException('Bangumi book subject ${e.message}');
+    }
+    if (response.statusCode == 404) return null;
+    if (!response.isOk) {
+      throw BookScrapeException(
+        'Bangumi book subject HTTP ${response.statusCode}',
+        statusCode: response.statusCode,
+      );
+    }
+    return parseBookSubjectResponse(response.body);
+  }
+
   /// 关闭内部 client（若为默认自建）。
   void close() => _api.close();
+}
+
+/// 纯函数：把 Bangumi `/v0/subjects/{id}` **详情**响应体解析为单个候选（id 直连
+/// 改绑映射路径用）。详情响应的 images/name/name_cn/date/summary 字段形态与搜索
+/// 条目一致，直接复用 [mapBookSubject]；无封面/无标题 → null；JSON 解码失败 →
+/// 抛 [BookScrapeException]。
+BookScrapeCandidate? parseBookSubjectResponse(String body) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(body);
+  } catch (e) {
+    throw BookScrapeException('Bangumi book subject JSON decode failed: $e');
+  }
+  if (decoded is! Map<String, Object?>) return null;
+  return mapBookSubject(decoded);
 }
 
 /// 纯函数：把 Bangumi `/v0/search/subjects`（书籍）响应体解析为候选列表。

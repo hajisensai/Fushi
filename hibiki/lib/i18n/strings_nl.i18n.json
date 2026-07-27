@@ -955,7 +955,6 @@
   "game_scrape_applied": "Metadata updated",
   "game_scrape_failed": "Metadata fetch failed",
   "game_scrape_no_result": "No matching entry found",
-  "game_scrape_pick": "Pick the matching entry",
   "game_scrape_query": "Title or source ID",
   "game_search": "Search games",
   "game_session_events": "Session events",
@@ -2687,5 +2686,10 @@
   "manga_page_number_hint": "Page number (1-${total})",
   "manga_import_direct": "Import without OCR",
   "manga_library": "Manga",
-  "manga_import_action": "Import Manga"
+  "manga_import_action": "Import Manga",
+  "game_scrape_search": "Search",
+  "game_scrape_use": "Use",
+  "game_scrape_search_failed": "Search failed. Check your network and try again.",
+  "game_remove_confirm": "Remove this game from the library? Game files on disk will not be deleted.",
+  "delete_collection_also_games": "Also remove the games in it from the library (game files on disk are kept)"
 }

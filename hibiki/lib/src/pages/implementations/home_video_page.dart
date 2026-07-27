@@ -46,6 +46,7 @@ import 'package:hibiki/src/pages/implementations/book_drag_target.dart';
 import 'package:hibiki/src/pages/implementations/collections_page.dart';
 import 'package:hibiki/src/media/collections/add_to_collection_dialog.dart';
 import 'package:hibiki/src/media/collections/batch_combine.dart';
+import 'package:hibiki/src/media/collections/collection_context_dialog.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/shelf_sort.dart';
@@ -1522,15 +1523,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         cover: _buildCover(book),
         title: book.title,
         showLaunchAction: false,
+        // 统一三库页卡菜单次序：重命名 → 封面/刮削 → 媒体特有 → 加入合集 →
+        // 标签 → 删除（与书卡/游戏卡同一约定；「标签」原在首位，移到合集后）。
         quickActions: <DialogQuickAction>[
-          DialogQuickAction(
-            label: t.tag_label,
-            icon: Icons.sell_outlined,
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              _editTags(book);
-            },
-          ),
           DialogQuickAction(
             label: t.video_rename,
             icon: Icons.drive_file_rename_outline,
@@ -1577,6 +1572,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             onPressed: () {
               Navigator.pop(dialogContext);
               _addToCollection(book);
+            },
+          ),
+          DialogQuickAction(
+            label: t.tag_label,
+            icon: Icons.sell_outlined,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _editTags(book);
             },
           ),
         ],
@@ -1769,6 +1772,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         _autoScrape?.forget(book.bookUid);
         await _maybeAutoScrape();
       },
+      // 添加/修改 Bangumi 映射：跳到在线匹配弹窗（可搜索或贴条目 ID/URL 改绑）。
+      onEditMapping: () => _openCoverMatch(book),
     );
   }
 
@@ -2498,6 +2503,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       onTap: _selectionMode
           ? () => _toggleCollectionSelection(collection.id)
           : () => _openCollectionDetail(collection),
+      // 合集卡长按/右键 = 合集上下文菜单（统一三库页：打开/重命名/标签/删除）；
+      // 多选态压制，与散卡长按菜单同一纪律。
+      onLongPress:
+          _selectionMode ? null : () => _showCollectionContextMenu(collection),
+      onSecondaryTap:
+          _selectionMode ? null : () => _showCollectionContextMenu(collection),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -3127,6 +3138,41 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         itemCount: cells.length,
         itemBuilder: (BuildContext context, int i) => cells[i](),
       ),
+    );
+  }
+
+  /// 合集封面卡长按/右键菜单（统一三库页合集菜单）：打开/重命名/标签/删除，动作
+  /// 语义与合集详情页 AppBar 同源；删除支持「连同视频一起删」勾选（与详情页
+  /// `onDeleteMembersMedia` 同一删除纪律）。
+  Future<void> _showCollectionContextMenu(MediaCollectionRow collection) {
+    final VideoBookRepository repo = widget.repo;
+    final HibikiDatabase db = ref.read(appProvider).database;
+    return showCollectionContextDialog(
+      context: context,
+      db: db,
+      collection: collection,
+      onOpenDetail: () => _openCollectionDetail(collection),
+      onChanged: () {
+        ref.invalidate(collectionTagMapProvider);
+        ref.invalidate(filteredCollectionIdsProvider);
+        _refresh();
+      },
+      onDeleteMembersMedia: (List<MediaCollectionItemRow> members) async {
+        bool anyVideo = false;
+        for (final MediaCollectionItemRow m in members) {
+          // 视频合集理论上只含 video 成员；混入的未知/跨域成员跳过不误删。
+          if (MediaKind.tryParse(m.mediaType) != MediaKind.video) continue;
+          await repo.deleteVideoBookAndReclaimAssets(
+            m.entryKey,
+            compactDatabase: false,
+          );
+          anyVideo = true;
+        }
+        if (anyVideo) {
+          await repo.compactAfterVideoDeleteBestEffort();
+        }
+      },
+      deleteMembersCheckboxLabel: t.delete_collection_also_videos,
     );
   }
 

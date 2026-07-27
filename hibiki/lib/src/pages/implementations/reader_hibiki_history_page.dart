@@ -20,7 +20,6 @@ import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
 import 'package:hibiki/src/media/display_title.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
-import 'package:hibiki/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_feature_flags.dart';
@@ -39,6 +38,9 @@ import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
 import 'package:hibiki/src/media/collections/add_to_collection_dialog.dart';
 import 'package:hibiki/src/media/collections/batch_combine.dart';
+import 'package:hibiki/src/media/collections/collection_context_dialog.dart';
+import 'package:hibiki/src/media/media_cover_service.dart';
+import 'package:hibiki/src/media/metadata/book_cover_scrape_dialog.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/shelf_sort.dart';
 import 'package:hibiki/src/media/media_search_text.dart';
@@ -565,14 +567,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             icon: Icons.folder_copy_outlined,
             onTap: _openManageSources,
           ),
-        // 漫画「在线目录」（O1 mokuro.moe 目录源）：浏览/搜索 → 卷级下载 →
-        // 现有 .mokuro 导入链落库。
-        if (_mangaOnly)
-          _headerAction(
-            tooltip: t.manga_online_catalog_title,
-            icon: Icons.cloud_download_outlined,
-            onTap: _openOnlineCatalog,
-          ),
+        // 漫画「在线目录」入口已从书架移除（属漫画域，入口收敛到下载页）；
+        // mokuro.moe 下载队列监听仍保留在 initState——下载页触发的后台落库
+        // 依赖它刷新书架。
         // 视频导入入口**只属于视频 tab**（HomeVideoPage），书架不放视频导入——
         // 书架是书的地方。这里保留编译期常量门控（默认关）只为旧调试路径，运行时
         // 实验开关不再在书架放出视频导入（用户反馈：书架不该有视频导入入口）。
@@ -620,16 +617,6 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     if (!mounted) return;
     ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
     ref.invalidate(srtBooksProvider);
-  }
-
-  /// 打开漫画「在线目录」对话框。下载/导入在共享队列后台进行（统一下载中心，
-  /// 关对话框不中断）；书架刷新由 initState 挂的队列监听按 importedCount 增量
-  /// 触发，不再依赖对话框关闭回传。
-  Future<void> _openOnlineCatalog() async {
-    await showAppDialog<void>(
-      context: context,
-      builder: (_) => MokuroMoeCatalogDialog(db: appModel.database),
-    );
   }
 
   void _openCollections() {
@@ -1420,6 +1407,8 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
         // 拖标签到行头 = 给整个合集打标签（与散书书级拖放一致）。
         onTagDropped: (BookTagRow tag) =>
             _addTagToCollection(collection.id, tag),
+        // 行头长按/右键 = 合集上下文菜单（统一三库页：打开/重命名/标签/删除）。
+        onContextMenu: () => _showCollectionContextMenu(collection),
         // 行头下方展示该合集已打的标签 chip（与散书标签列同形）。
         tags: ref.watch(collectionTagMapProvider).valueOrNull?[collection.id],
         itemBuilder: (BuildContext _, int i) => _buildShelfMemberCard(
@@ -1532,6 +1521,29 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       ),
       alignment: Alignment.topCenter,
       fit: _bookCardCoverFit,
+    );
+  }
+
+  /// 合集行头长按/右键菜单（统一三库页合集菜单）：打开/重命名/标签/删除，动作
+  /// 语义与合集详情页 AppBar 同源；删除支持「连同书一起删」勾选（复用
+  /// [_deleteCollectionMembersMedia] 分派纪律）。
+  Future<void> _showCollectionContextMenu(MediaCollectionRow collection) {
+    return showCollectionContextDialog(
+      context: context,
+      db: appModel.database,
+      collection: collection,
+      onOpenDetail: () => _openCollectionDetail(collection),
+      onChanged: () {
+        // 改名/删除影响折叠映射；标签影响行头 chip；删本体影响书架条目。
+        ref.invalidate(collectionTagMapProvider);
+        ref.invalidate(filteredCollectionIdsProvider);
+        ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+        ref.invalidate(srtBooksProvider);
+        _shelfMapsFuture = _loadShelfMaps();
+        if (mounted) setState(() {});
+      },
+      onDeleteMembersMedia: _deleteCollectionMembersMedia,
+      deleteMembersCheckboxLabel: t.delete_collection_also_books,
     );
   }
 
@@ -1876,6 +1888,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             : Icons.check_circle_outline,
         onPressed: () => _toggleBookCompleted(bookKey),
       ),
+      // 统一三库页刮削入口：书卡菜单直达「在线刮削封面」（视频/游戏的刮削都在
+      // 卡菜单一层，书此前必须绕「编辑信息→封面字段小图标」两层，用户实报）。
+      DialogListAction(
+        label: t.book_scrape_cover,
+        icon: Icons.image_search_outlined,
+        onPressed: () => _scrapeEpubCover(item),
+      ),
       // 单卡「加入合集」：与批量三档共用同一 DAO 路径；entryKey 编码与
       // shelfSelectionToEntry 对 epub 选择键的解码一致（= bookKey）。
       if (!inCollectionDetail)
@@ -1905,6 +1924,30 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           onPressed: () => _toggleFloatingLyricFromShelf(bookKey),
         ),
     ];
+  }
+
+  /// 单卡「在线刮削封面」（统一三库页刮削入口）：先收起长按菜单，弹既有
+  /// [BookCoverScrapeDialog]（Bangumi 书籍条目，选中即下载临时文件），选中后
+  /// 立即走与「编辑信息」保存完全相同的 override 通道落封面，卡面即时刷新。
+  Future<void> _scrapeEpubCover(MediaItem item) async {
+    Navigator.pop(context);
+    final MediaSource mediaSource = item.getMediaSource(appModel: appModel);
+    final File? scraped = await showBookCoverScrapeDialog(
+      context: context,
+      initialQuery: displayTitleForBook(item: item, rawTitle: item.title),
+    );
+    if (scraped == null || !mounted) return;
+    await MediaCoverService.applyBookCoverOverride(
+      appModel: appModel,
+      mediaSource: mediaSource,
+      item: item,
+      file: scraped,
+      clearOverrideImage: false,
+    );
+    if (!mounted) return;
+    ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(srtBooksProvider);
+    _rebuild(() {});
   }
 
   /// 单卡「加入合集」（EPUB 卡菜单入口）：先收起长按菜单，再弹共享的合集选择

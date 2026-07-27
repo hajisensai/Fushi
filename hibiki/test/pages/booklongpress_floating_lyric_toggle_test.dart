@@ -58,6 +58,9 @@ void main() {
       '  Future<void> _showSrtBookDialog(',
     );
 
+    // TODO-455 已拍板：书卡长按菜单不放「标签」。本轮「统一三库页右键
+    // 菜单」曾把它补回并反转本守卫——推翻既有决策不能靠改守卫测试自我批准，
+    // 已回退。书卡打标签仍走拖标签 / 批量打标签两条旧路径。
     for (final String actions in <String>[epubActions, srtActions]) {
       expect(
         actions,
@@ -66,6 +69,13 @@ void main() {
       );
       expect(actions, isNot(contains('Icons.sell_outlined')));
     }
+
+    // 统一三库页刮削入口：书卡菜单直挂「在线刮削封面」（不再必须绕编辑信息弹窗）。
+    expect(
+      epubActions,
+      contains('t.book_scrape_cover'),
+      reason: '书卡菜单必须直挂「在线刮削封面」（统一刮削入口层级）。',
+    );
 
     expect(epubActions, contains('t.view_illustrations'));
     expect(epubActions, contains('t.audiobook_import'));

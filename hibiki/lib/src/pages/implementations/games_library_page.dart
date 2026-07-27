@@ -9,6 +9,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/media/collections/add_to_collection_dialog.dart';
+import 'package:hibiki/src/media/collections/collection_context_dialog.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart'
     show CollectionShelfRow;
@@ -22,6 +23,7 @@ import 'package:hibiki/src/mining/galgame_helper_installer.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/galgame_library_query.dart';
 import 'package:hibiki/src/mining/galgame_repository.dart';
+import 'package:hibiki/src/mining/galgame_scrape_dialog.dart';
 import 'package:hibiki/src/pages/implementations/galgame_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart'
@@ -251,7 +253,21 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   }
 
   /// 移除一个游戏（按 id 定位；元数据源与游玩会话经 FK cascade 连带清理）。
+  ///
+  /// 先弹统一确认框（与书架/合集同款 [HibikiDestructiveConfirmDialog]）：语义
+  /// 只是**从库移除**，绝不删磁盘上的游戏文件——确认文案明说这点，免得用户
+  /// 不敢点或误以为会连本体一起没。
   Future<void> _removeGame(GalgameEntry game) async {
+    final HibikiDestructiveConfirmResult? result =
+        await showAppDialog<HibikiDestructiveConfirmResult>(
+      context: context,
+      builder: (_) => HibikiDestructiveConfirmDialog(
+        title: t.game_remove,
+        message: t.game_remove_confirm,
+        confirmLabel: t.game_remove,
+      ),
+    );
+    if (result == null || !mounted) return;
     await _repo.remove(game.id);
     _refresh();
   }
@@ -277,33 +293,49 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   }
 
   /// 弹状态选择对话框（菜单顺序：想玩 → 在玩 → 玩过 → 搁置 → 弃坑 + 未设置）。
+  /// 走设计系统骨架（HibikiDialogFrame + HibikiModalSheetFrame + HibikiListItem，
+  /// 替代旧裸 SimpleDialog）；radio 行为不变：点任意行即 pop 该状态。
   Future<void> _promptPlayStatus(GalgameEntry game) async {
     final GalgamePlayStatus? picked = await showAppDialog<GalgamePlayStatus>(
       context: context,
-      builder: (BuildContext ctx) => SimpleDialog(
-        title: Text(t.game_play_status),
-        children: <Widget>[
-          for (final GalgamePlayStatus status in <GalgamePlayStatus>[
-            ...kGalgamePlayStatusMenuOrder,
-            GalgamePlayStatus.unset,
-          ])
-            SimpleDialogOption(
-              onPressed: () => Navigator.of(ctx).pop(status),
-              child: Row(
-                children: <Widget>[
-                  Icon(
-                    game.playStatus == status
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_unchecked,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(galgamePlayStatusLabel(status)),
-                ],
-              ),
+      builder: (BuildContext ctx) {
+        final HibikiDesignTokens tokens = HibikiDesignTokens.of(ctx);
+        return HibikiDialogFrame(
+          maxWidth: 420,
+          scrollable: false,
+          child: HibikiModalSheetFrame(
+            title: t.game_play_status,
+            leadingIcon: Icons.flag_outlined,
+            scrollable: true,
+            bodyPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.gap,
+              0,
+              tokens.spacing.gap,
+              tokens.spacing.card,
             ),
-        ],
-      ),
+            body: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                for (final GalgamePlayStatus status in <GalgamePlayStatus>[
+                  ...kGalgamePlayStatusMenuOrder,
+                  GalgamePlayStatus.unset,
+                ])
+                  HibikiListItem(
+                    density: HibikiListDensity.compact,
+                    leading: Icon(
+                      game.playStatus == status
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      size: 18,
+                    ),
+                    title: Text(galgamePlayStatusLabel(status)),
+                    onTap: () => Navigator.of(ctx).pop(status),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
     if (picked == null || picked == game.playStatus) return;
     await _setPlayStatus(game, picked);
@@ -323,6 +355,18 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         ),
       ),
     );
+    await _reload();
+  }
+
+  /// 卡菜单「刮削元数据」：直接打开统一刮削弹窗（消灭旧「先进详情页编辑 tab
+  /// 再点一次刮削」的二跳）。落库成功后整页重载（含合集分组映射）。
+  Future<void> _scrapeGame(GalgameEntry game) async {
+    final bool applied = await showGalgameScrapeDialog(
+      context: context,
+      game: game,
+      repo: _repo,
+    );
+    if (!applied || !mounted) return;
     await _reload();
   }
 
@@ -910,6 +954,21 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         itemGap: 16,
         headerFocusId: HibikiFocusId('games-collection-${collection.id}'),
         onOpenDetail: () => _openCollectionDetail(collection),
+        // 合集行右键/长按：三库页统一的合集上下文菜单（打开详情/重命名/标签/
+        // 删除合集）。删除支持「连同游戏一起删」勾选，与书/视频对称；语义同
+        // [_removeGame]：**只从库移除**，绝不删磁盘上的游戏安装目录（确认框
+        // 勾选文案明说这点）。
+        onContextMenu: () => unawaited(
+          showCollectionContextDialog(
+            context: context,
+            db: _appModel.database,
+            collection: collection,
+            onOpenDetail: () => _openCollectionDetail(collection),
+            onChanged: () => unawaited(_reload()),
+            onDeleteMembersMedia: _removeCollectionMemberGames,
+            deleteMembersCheckboxLabel: t.delete_collection_also_games,
+          ),
+        ),
         collapsed: _appModel.prefsRepo.gamesCollapsedCollectionIds
             .contains(collection.id),
         onToggleCollapsed: () => _toggleCollectionCollapsed(collection.id),
@@ -917,6 +976,21 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             _buildGameCard(group.items[i].payload),
       ),
     );
+  }
+
+  /// 删合集时勾选「连同游戏一起删」的成员处置（与书/视频合集菜单对称）。
+  ///
+  /// 语义与卡菜单「移除游戏」完全一致：[GalgameRepository.remove] 只删库行
+  /// （元数据源/游玩会话经 FK cascade 连带清理），**绝不碰磁盘上的游戏安装
+  /// 目录**。混合合集里的书/视频成员跳过不误删（与视频页同一道防御）。
+  Future<void> _removeCollectionMemberGames(
+    List<MediaCollectionItemRow> members,
+  ) async {
+    for (final MediaCollectionItemRow m in members) {
+      if (MediaKind.tryParse(m.mediaType) != MediaKind.game) continue;
+      if (_repo.byId(m.entryKey) == null) continue;
+      await _repo.remove(m.entryKey);
+    }
   }
 
   /// 单张游戏卡（散卡网格与合集行内共用同一构造，回调全量接线）。
@@ -931,7 +1005,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       onAutoCover: () => unawaited(_autoCover(game)),
       onPlayStatus: () => unawaited(_promptPlayStatus(game)),
       onDetail: () => unawaited(_openDetail(game)),
-      onScrape: () => unawaited(_openDetail(game, initialTab: 2)),
+      onScrape: () => unawaited(_scrapeGame(game)),
       onAddToCollection: () => unawaited(_addGameToCollection(game)),
       onEditTags: () => unawaited(_openTagPicker(game)),
     );
@@ -1186,6 +1260,9 @@ class _GameCard extends StatelessWidget {
 
   /// 卡片菜单项单一真相源：`(action, 文案, 图标, 危险区)`。溢出菜单与长按/右键
   /// 对话框都从这一份生成，任一处漏项测试即红。
+  ///
+  /// 次序遵守三库页统一约定：重命名 → 封面类 → 刮削 → 加入合集 → 标签 → 删除；
+  /// 游戏特有的「查看详情 / 游玩状态」保持最前。
   List<_GameMenuItem> get _menuItems => <_GameMenuItem>[
         (
           action: 'detail',
@@ -1197,12 +1274,6 @@ class _GameCard extends StatelessWidget {
           action: 'status',
           label: t.game_play_status,
           icon: Icons.flag_outlined,
-          danger: false,
-        ),
-        (
-          action: 'scrape',
-          label: t.game_scrape,
-          icon: Icons.cloud_download_outlined,
           danger: false,
         ),
         (
@@ -1221,6 +1292,12 @@ class _GameCard extends StatelessWidget {
           action: 'autocover',
           label: t.game_auto_cover,
           icon: Icons.image_search,
+          danger: false,
+        ),
+        (
+          action: 'scrape',
+          label: t.game_scrape,
+          icon: Icons.cloud_download_outlined,
           danger: false,
         ),
         (

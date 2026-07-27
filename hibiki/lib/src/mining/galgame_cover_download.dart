@@ -18,11 +18,17 @@ const int kGalgameCoverMaxDownloadBytes = 20 * 1024 * 1024;
 /// 下载体积下限：小于它的响应不可能是可用封面图（多为错误页/空响应）。
 const int kGalgameCoverMinDownloadBytes = 1024;
 
-/// 纯函数：刮削成功后是否要自动下载封面。
+/// 纯函数：刮削成功后是否要下载封面。
 ///
 /// 规则只有一条：**已有可用封面文件（手选/自动/上次下载）绝不覆盖**；没有可用
 /// 封面且合并层给出了 URL 才下载。[hasUsableCoverFile] 由调用方按
 /// 「coverPath 非空且文件真实存在」判定（与卡片渲染的 existsSync 短路同判据）。
+///
+/// 这是游戏岛封面保护的**唯一判据**（游戏岛没有视频岛的 [CoverOrigin] 元数据，
+/// 只能以「封面文件是否存在」保护用户手选的图），详情页的自动刮削路径与统一刮削
+/// 弹窗的显式「使用」路径共用它——两条路径都不许覆盖既有封面，与
+/// `media_cover_service.dart` 的封面纪律表逐字一致。想换封面走「选择封面图片」/
+/// 「自动封面」，那两条是用户显式点名的封面写入口。
 bool shouldAutoDownloadScrapedCover({
   required bool hasUsableCoverFile,
   required String? coverUrl,

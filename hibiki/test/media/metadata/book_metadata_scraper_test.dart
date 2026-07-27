@@ -104,4 +104,54 @@ void main() {
       );
     });
   });
+
+  group('fetchById / parseBookSubjectResponse（id 直连改绑映射）', () {
+    test('详情体复用 mapBookSubject：候选字段正确', () {
+      const String body = '{"id":9999,"name":"よつばと！","name_cn":"四叶妹妹！",'
+          '"images":{"large":"https://img/large.jpg"},'
+          '"date":"2003-08-10","summary":"s"}';
+      final BookScrapeCandidate? c = parseBookSubjectResponse(body);
+      expect(c, isNotNull);
+      expect(c!.subjectId, '9999');
+      expect(c.title, '四叶妹妹！');
+      expect(c.coverUrl, 'https://img/large.jpg');
+      expect(c.year, 2003);
+    });
+
+    test('无封面 → null；JSON 解码失败 → 抛 BookScrapeException', () {
+      expect(parseBookSubjectResponse('{"id":1,"name":"x"}'), isNull);
+      expect(
+        () => parseBookSubjectResponse('not json'),
+        throwsA(isA<BookScrapeException>()),
+      );
+    });
+
+    test('fetchById：GET /subjects/{id}；404 → null；500 → 抛', () async {
+      Uri? uri;
+      final MockClient ok = MockClient((http.Request req) async {
+        uri = req.url;
+        return http.Response.bytes(
+          utf8.encode('{"id":7,"name":"n",'
+              '"images":{"large":"https://img/l.jpg"}}'),
+          200,
+        );
+      });
+      final BookScrapeCandidate? c =
+          await BookMetadataScraper(client: ok).fetchById('7');
+      expect(uri?.path, '/v0/subjects/7');
+      expect(c?.subjectId, '7');
+
+      final MockClient notFound =
+          MockClient((http.Request req) async => http.Response('x', 404));
+      expect(
+          await BookMetadataScraper(client: notFound).fetchById('7'), isNull);
+
+      final MockClient err =
+          MockClient((http.Request req) async => http.Response('x', 500));
+      await expectLater(
+        BookMetadataScraper(client: err).fetchById('7'),
+        throwsA(isA<BookScrapeException>()),
+      );
+    });
+  });
 }

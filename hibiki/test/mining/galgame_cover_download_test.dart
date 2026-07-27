@@ -45,6 +45,32 @@ void main() {
     });
   });
 
+  group('刷削不覆盖用户现有封面（游戏岛封面纪律）', () {
+    // 回归守卫：统一刷削弹窗的「使用」曾被改成无条件覆盖封面（与
+    // media_cover_service.dart 的纪律表相矛）。游戏岛没有 CoverOrigin
+    // 元数据，「封面文件是否存在」是唯一保护判据，刷削两条路径
+    // （详情页自动 / 弹窗显式使用）必须共用同一约束。
+    test('已有可用封面 + 有 URL → 不下载（无论哪条刷削路径）', () {
+      expect(
+        shouldAutoDownloadScrapedCover(
+          hasUsableCoverFile: true,
+          coverUrl: 'https://example.com/cover.jpg',
+        ),
+        isFalse,
+      );
+    });
+
+    test('没有可用封面 + 有 URL → 下载补齐', () {
+      expect(
+        shouldAutoDownloadScrapedCover(
+          hasUsableCoverFile: false,
+          coverUrl: 'https://example.com/cover.jpg',
+        ),
+        isTrue,
+      );
+    });
+  });
+
   group('galgameCoverExtension', () {
     test('Content-Type 优先于 URL 后缀', () {
       expect(

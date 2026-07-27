@@ -357,6 +357,11 @@ class CoverScraperService {
     }
   }
 
+  /// 添加/修改 Bangumi 映射：按 subject id 直取条目映射为候选（用户贴 ID/URL
+  /// 改绑）。404/无海报 → null；网络失败抛 [ScrapeNetworkException] 由弹窗降级。
+  Future<ScrapeCandidate?> fetchBangumiCandidateById(String subjectId) =>
+      _bangumi.fetchSubjectCandidate(subjectId);
+
   /// 用户在弹窗里点「使用」某候选：下载海报落封面 + `updateCover` + 记 scraped 元数据 +
   /// 记别名缓存（[aliasKey] 非空时）。[bookUids] 多于一个 = 同时应用到整个合集（每个
   /// 成员各落一份封面文件，海报只下载一次后复制分发）。

@@ -207,12 +207,7 @@ class _BookImportDialogState extends State<BookImportDialog>
               onPressed: importing ? null : _openOcrWizard,
               child: Text(t.manga_ocr_wizard_title),
             ),
-          // 漫画「在线目录」（O1 mokuro.moe 目录源）：卷级下载 → 现有导入链落库。
-          adaptiveDialogAction(
-            context: context,
-            onPressed: importing ? null : _openOnlineCatalog,
-            child: Text(t.manga_online_catalog_title),
-          ),
+          // 漫画「在线目录」入口已从书籍导入框移除（属漫画域，入口收敛到下载页）。
           adaptiveDialogAction(
             context: context,
             onPressed: () => Navigator.pop(context),
@@ -238,16 +233,6 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (bookKey != null && mounted) {
       Navigator.pop(context, true);
     }
-  }
-
-  /// 打开漫画「在线目录」（O1 mokuro.moe 目录源）。下载/导入在共享队列后台
-  /// 进行（统一下载中心，关对话框不中断），书架刷新由书架页的队列监听触发，
-  /// 本导入框不再需要「导入发生则连带关闭回传」。
-  Future<void> _openOnlineCatalog() async {
-    await MangaModule.openOnlineCatalog(
-      context: context,
-      db: widget.db,
-    );
   }
 
   /// 拖文件进本对话框 → 分类 → 按字段覆盖（仅填命中类，不清用户已选）。

@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/media/metadata/bangumi_api_client.dart'
+    show parseBangumiSubjectUrl;
 import 'package:hibiki/src/media/metadata/book_metadata_scraper.dart';
 import 'package:hibiki/src/media/metadata/image_download.dart';
 import 'package:hibiki/utils.dart';
@@ -83,7 +85,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     List<BookScrapeCandidate> results;
     bool failed = false;
     try {
-      results = await _scraper.search(keyword);
+      results = await _resolveCandidates(keyword);
     } catch (_) {
       results = const <BookScrapeCandidate>[];
       failed = true;
@@ -94,6 +96,36 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       _searching = false;
       _searchFailed = failed;
     });
+  }
+
+  /// 关键词 → 候选。添加/修改 Bangumi 映射：贴条目 URL = 按 id 直取（跳过关键词
+  /// 搜索）；纯数字既可能是 id 也可能是书名（如《1984》）——搜索 + id 直取并列，
+  /// 直取命中置顶、按 subjectId 去重；其余走关键词搜索。
+  Future<List<BookScrapeCandidate>> _resolveCandidates(String keyword) async {
+    final String? mappedSubjectId = parseBangumiSubjectUrl(keyword);
+    if (mappedSubjectId != null) {
+      final BookScrapeCandidate? candidate =
+          await _scraper.fetchById(mappedSubjectId);
+      return candidate == null
+          ? const <BookScrapeCandidate>[]
+          : <BookScrapeCandidate>[candidate];
+    }
+    if (RegExp(r'^\d+$').hasMatch(keyword)) {
+      final List<BookScrapeCandidate> searched = await _scraper.search(keyword);
+      BookScrapeCandidate? direct;
+      try {
+        direct = await _scraper.fetchById(keyword);
+      } catch (_) {
+        direct = null; // 直取失败不拖垮关键词结果。
+      }
+      if (direct == null) return searched;
+      final String directId = direct.subjectId;
+      return <BookScrapeCandidate>[
+        direct,
+        ...searched.where((BookScrapeCandidate c) => c.subjectId != directId),
+      ];
+    }
+    return _scraper.search(keyword);
   }
 
   Future<void> _use(BookScrapeCandidate candidate) async {
