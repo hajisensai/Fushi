@@ -64,8 +64,13 @@ foreach ($config in @(
     '--build', $buildDir, '--config', 'Release'
   )
   if ($RunTests) {
+    # --no-tests=error: ctest defaults to returning 0 when NO test is registered,
+    # so a CMakeLists refactor that stops registering the suite would read as a
+    # pass. Same "zero tests executed masquerades as green" family as BUG-1157.
+    # Matches .github/workflows/native-hoshidicts-gate.yml.
     Invoke-Checked -FilePath ctest -Arguments @(
-      '--test-dir', $buildDir, '-C', 'Release', '--output-on-failure'
+      '--test-dir', $buildDir, '-C', 'Release', '--output-on-failure',
+      '--no-tests=error'
     )
   }
 }

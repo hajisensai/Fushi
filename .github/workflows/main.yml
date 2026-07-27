@@ -98,8 +98,9 @@ jobs:
       run: |
         dst=hibiki/lib/src/sync/google_oauth_secret.dart
         if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+          oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
           printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
-            "$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')" \
+            "$oauth_secret_literal" \
             > "$dst"
         elif [ ! -f "$dst" ]; then
           cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"

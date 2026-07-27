@@ -49,7 +49,19 @@ try {
 
   # Vendored LunaHook/LunaHost DLLs must match VERSION.json byte for byte.
   # Read-only: -Update is NOT passed, so nothing is copied or rewritten.
+  #
+  # The $LASTEXITCODE reset + assert is not redundant. `& script.ps1` returns to
+  # THIS scope, so if sync_lunahook.ps1 ever reports failure via `exit 1` instead
+  # of `throw`, execution would simply continue here, the four unittests below
+  # would reset $LASTEXITCODE to 0, and the DLL integrity check would silently
+  # stop counting -- the exact failure mode this whole file exists to prevent.
+  # Today it only throws, and $ErrorActionPreference='Stop' catches that; this
+  # keeps the guard correct if that ever changes.
+  $global:LASTEXITCODE = 0
   & (Join-Path $PSScriptRoot 'sync_lunahook.ps1')
+  if ($LASTEXITCODE -ne 0) {
+    throw "sync_lunahook.ps1 failed with exit code $LASTEXITCODE"
+  }
 
   # Manifest schema, adapter layout, evidence contract and workflow guards.
   Invoke-Checked $python 'tests/engine_support_manifest_test.py'

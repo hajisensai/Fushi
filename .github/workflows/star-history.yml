@@ -40,8 +40,16 @@ jobs:
             --out docs/assets/star-history.svg
 
       - name: Commit refreshed chart
+        shell: bash
         run: |
-          if [ -z "$(git status --porcelain docs/assets/star-history.svg)" ]; then
+          # `set -euo pipefail` + 先把 git status 的结果落到变量再判空。
+          # 原写法是 `if [ -z "$(git status --porcelain ...)" ]; then exit 0`：
+          # git status 一旦失败会返回非零 + 空 stdout，`[ -z "" ]` 为真，于是
+          # 「查不出来」被翻译成「没有变化」并**主动 exit 0 判绿**。这是把失败
+          # 翻译成一个错误的成功结论，比单纯吞退出码更坏。
+          set -euo pipefail
+          status="$(git status --porcelain docs/assets/star-history.svg)"
+          if [ -z "$status" ]; then
             echo "Star history SVG unchanged; nothing to commit."
             exit 0
           fi

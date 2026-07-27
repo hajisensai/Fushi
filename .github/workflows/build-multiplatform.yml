@@ -77,8 +77,9 @@ jobs:
         run: |
           dst=hibiki/lib/src/sync/google_oauth_secret.dart
           if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+            oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
             printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
-              "$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')" \
+              "$oauth_secret_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
@@ -99,9 +100,11 @@ jobs:
         run: |
           dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
           if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
+            log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
+            log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
             printf 'const String kLogUploadEndpoint = %s;\nconst String kLogUploadToken = %s;\n' \
-              "$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')" \
-              "$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')" \
+              "$log_endpoint_literal" \
+              "$log_token_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
@@ -220,7 +223,10 @@ jobs:
           cmake -S native/hoshidicts/tests -B "$RUNNER_TEMP/hoshi-tests" -G Ninja \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build "$RUNNER_TEMP/hoshi-tests" --config Release
-          ctest --test-dir "$RUNNER_TEMP/hoshi-tests" --output-on-failure -C Release
+          # --no-tests=error：ctest 在「一个测试都没注册」时默认返回 0，于是一次
+          # CMake 回归让 tests/CMakeLists.txt 的 add_test 列表变空就会读成通过。
+          # 与 BUG-1157 同族的「零测试执行伪装成绿」。对齐 native-hoshidicts-gate.yml。
+          ctest --test-dir "$RUNNER_TEMP/hoshi-tests" --output-on-failure -C Release --no-tests=error
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
@@ -235,8 +241,9 @@ jobs:
         run: |
           dst=hibiki/lib/src/sync/google_oauth_secret.dart
           if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+            oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
             printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
-              "$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')" \
+              "$oauth_secret_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
@@ -257,9 +264,11 @@ jobs:
         run: |
           dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
           if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
+            log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
+            log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
             printf 'const String kLogUploadEndpoint = %s;\nconst String kLogUploadToken = %s;\n' \
-              "$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')" \
-              "$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')" \
+              "$log_endpoint_literal" \
+              "$log_token_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
@@ -394,8 +403,9 @@ jobs:
         run: |
           dst=hibiki/lib/src/sync/google_oauth_secret.dart
           if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+            oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
             printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
-              "$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')" \
+              "$oauth_secret_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
@@ -416,9 +426,11 @@ jobs:
         run: |
           dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
           if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
+            log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
+            log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
             printf 'const String kLogUploadEndpoint = %s;\nconst String kLogUploadToken = %s;\n' \
-              "$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')" \
-              "$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')" \
+              "$log_endpoint_literal" \
+              "$log_token_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
@@ -525,8 +537,9 @@ jobs:
         run: |
           dst=hibiki/lib/src/sync/google_oauth_secret.dart
           if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+            oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
             printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
-              "$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')" \
+              "$oauth_secret_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
@@ -542,9 +555,11 @@ jobs:
         run: |
           dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
           if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
+            log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
+            log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
             printf 'const String kLogUploadEndpoint = %s;\nconst String kLogUploadToken = %s;\n' \
-              "$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')" \
-              "$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')" \
+              "$log_endpoint_literal" \
+              "$log_token_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
@@ -635,8 +650,9 @@ jobs:
         run: |
           dst=hibiki/lib/src/sync/google_oauth_secret.dart
           if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+            oauth_secret_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')"
             printf 'const String kGoogleOAuthClientSecret =\n    %s;\n' \
-              "$(python3 -c 'import json,os; print(json.dumps(os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]))')" \
+              "$oauth_secret_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/sync/google_oauth_secret.example.dart "$dst"
@@ -657,9 +673,11 @@ jobs:
         run: |
           dst=hibiki/lib/src/utils/misc/log_upload_secret.dart
           if [ -n "$LOG_UPLOAD_ENDPOINT" ]; then
+            log_endpoint_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')"
+            log_token_literal="$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')"
             printf 'const String kLogUploadEndpoint = %s;\nconst String kLogUploadToken = %s;\n' \
-              "$(python3 -c 'import json,os; print(json.dumps(os.environ["LOG_UPLOAD_ENDPOINT"]))')" \
-              "$(python3 -c 'import json,os; print(json.dumps(os.environ.get("LOG_UPLOAD_TOKEN","")))')" \
+              "$log_endpoint_literal" \
+              "$log_token_literal" \
               > "$dst"
           elif [ ! -f "$dst" ]; then
             cp hibiki/lib/src/utils/misc/log_upload_secret.example.dart "$dst"
@@ -746,7 +764,12 @@ jobs:
           if (-not (Test-Path -LiteralPath $env:HIBIKI_TORRENT_LIB)) {
             throw "DLL not found at $env:HIBIKI_TORRENT_LIB — the build step above should have produced it"
           }
+          # 两条都是 native 命令，所以 `dart pub get` 的退出码会被紧随其后的
+          # `dart test` 覆盖，末尾那句断言只管得到 `dart test`。pub get 挂掉时
+          # 通常靠 dart test 也挂来自愈成红，但报错指向的是「测试失败」而不是
+          # 「依赖没解析出来」，排查方向被带偏。逐条断言。
           dart pub get
+          if ($LASTEXITCODE -ne 0) { throw "dart pub get failed ($LASTEXITCODE)" }
           dart test
           if ($LASTEXITCODE -ne 0) { throw "hibiki_torrent FFI tests failed" }
       # Windows is the ONLY platform that renders EPUB via the forked
@@ -759,7 +782,11 @@ jobs:
       - name: Build and bundle galgame helper archives
         shell: pwsh
         run: |
+          # 同 release-desktop.yml 的孪生副本：这段今天是「意外安全」的（块内只有
+          # 这一条 native 命令，后面全是不重置 $LASTEXITCODE 的 cmdlet），但只要
+          # 有人插入第二条 native 命令，双架构 ctest 的判决就被静默顶掉。显式断言。
           powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/build_distribution.ps1 -RunTests
+          if ($LASTEXITCODE -ne 0) { throw "build_distribution.ps1 -RunTests failed ($LASTEXITCODE)" }
           $sourceDir = Join-Path $PWD 'native\galgame_hook\dist'
           $targetDir = Join-Path $PWD 'hibiki\build\windows\x64\runner\Debug\galgame_helper'
           New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
