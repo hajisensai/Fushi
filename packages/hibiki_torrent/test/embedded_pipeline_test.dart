@@ -148,13 +148,7 @@ void main() {
           .listTorrents()
           .firstWhere((HtTorrentStatus t) => t.id == rig.infoHash);
       expect(snap.contentPath, isNotEmpty);
-      final File downloaded = File(snap.contentPath);
-      expect(downloaded.existsSync(), isTrue,
-          reason: 'content_path should point at the downloaded file');
-      final Uint8List got = downloaded.readAsBytesSync();
-      final Uint8List want = LocalSeedRig.deterministicBytes(8 * 1024 * 1024);
-      expect(got.length, want.length);
-      expect(got, want, reason: 'downloaded bytes must equal seeded bytes');
+      final String contentPath = snap.contentPath;
 
       // ── 顺序性：完成事件序应基本递增 ──────────────────────────────
       // 首尾提优/截止期会把个别 piece 拉到前面；剔除每文件首尾 piece 后，
@@ -176,10 +170,47 @@ void main() {
               'order (got ratio $ratio, order sample: '
               '${pieceOrder.take(16).toList()})');
 
+      // ── 落盘校验：比对前必须先关掉 session ────────────────────────
+      // isFinished / progress==1.0 / left==0 / haveCount==numPieces 说的都是
+      // 「piece 已在内存里校验通过」，**不是**「字节已经躺在文件系统里」：
+      // 写盘 job 还排在 libtorrent 的 disk io 线程上，且 2.x 的 mmap 磁盘后端
+      // 写进去的是映射视图 —— Windows 明确不保证映射视图与 ReadFile
+      // 之间的一致性，而内容文件又是稀疏的，于是尚未落实的尾部区域会被读成 0。
+      // CI 上约 24% 的跑次就挂在下面这条比对上（失败偏移恒在距文件尾
+      // ~114KB 处，读出一串 0）。
+      //
+      // 唯一确定性的落盘完成信号是**销毁 session**：lt::session 析构会走完
+      // 关停流程，等 disk io 线程把所有写盘 job 做完、解除映射并关句柄，之
+      // 后普通文件读才看得到全部字节。不得用 sleep / 重试去「等它落盘」
+      // —— 那只是把概率压小，并没消除竞态。
+      leecher.close();
+
+      final File downloaded = File(contentPath);
+      expect(downloaded.existsSync(), isTrue,
+          reason: 'content_path should point at the downloaded file');
+      final Uint8List got = downloaded.readAsBytesSync();
+      final Uint8List want = LocalSeedRig.deterministicBytes(8 * 1024 * 1024);
+      expect(got.length, want.length);
+      expect(got, want, reason: 'downloaded bytes must equal seeded bytes');
+
       // ── 移除（连数据） ────────────────────────────────────────────
-      expect(leecher.removeTorrent(rig.infoHash, deleteFiles: true), isTrue);
+      // 上面的比对已经把下载 session 关了，数据完整躺在 dlDir 里：直接用
+      // rig 的 .torrent 把同一个种子加回一个不联网的新 session（listenInterfaces
+      // 为空 = 零 peer，也不需要再换元数据），再验「连数据删除」。删除路径的
+      // 覆盖面一点没少，又不会反过来把待比对的文件删掉。
+      final EmbeddedTorrentSession? remover =
+          EmbeddedTorrentSession.open(engine, listenInterfaces: '');
+      expect(remover, isNotNull);
+      addTearDown(remover!.close);
+
+      final HtAddResult readded =
+          remover.addTorrentFile(rig.torrentPath, savePath: dlDir.path);
+      expect(readded.ok, isTrue, reason: 'addTorrentFile: ${readded.error}');
+      expect(readded.id, rig.infoHash);
+
+      expect(remover.removeTorrent(rig.infoHash, deleteFiles: true), isTrue);
       await _pollUntil(
-        () => leecher.listTorrents().isEmpty,
+        () => remover.listTorrents().isEmpty,
         timeout: const Duration(seconds: 10),
         what: 'torrent removal',
       );
