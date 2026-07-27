@@ -146,8 +146,10 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.text(t.games_no_match), findsOneWidget);
-    expect(find.text(t.games_empty), findsNothing);
+    // i18n key 是 game_*（命名术语表禁用 games_ 前缀），生产代码用的也是
+    // games_library_page.dart:772/798 的 t.game_empty / t.game_no_match。
+    expect(find.text(t.game_no_match), findsOneWidget);
+    expect(find.text(t.game_empty), findsNothing);
   });
 
   testWidgets('卡片菜单有「标签」项，点开进共享 TagPickerPage 并真写穿 DB',
