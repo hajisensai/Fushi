@@ -10,13 +10,17 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 import 'package:hibiki/src/media/manga/external_mokuro_runner.dart';
 import 'package:hibiki/src/media/manga/manga_importer.dart';
+import 'package:hibiki/src/media/manga/manga_ocr_background_job.dart';
 import 'package:hibiki/src/media/manga/manga_storage.dart';
 import 'package:hibiki/src/media/manga/mokuro_payload.dart';
 import 'package:hibiki/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:hibiki/src/media/manga/ocr/google_lens_ocr_service.dart';
+import 'package:hibiki/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:hibiki/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart';
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
+import 'package:hibiki/src/ocr/ocr_types.dart';
 import 'package:hibiki/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:hibiki/utils.dart';
 
@@ -38,6 +42,10 @@ class MangaOcrWizardDialog extends ConsumerStatefulWidget {
     this.initialEnginePreference,
     this.importOverride,
     this.initialImageDir,
+    this.existingBook,
+    this.startPage = 0,
+    this.onlyMissing = true,
+    this.launchInBackground = false,
     super.key,
   });
 
@@ -67,6 +75,18 @@ class MangaOcrWizardDialog extends ConsumerStatefulWidget {
 
   /// 预选图片目录（测试用，跳过真实目录选择器）。
   final String? initialImageDir;
+
+  /// 已导入的漫画。非 null 时直接对这本书做整卷 OCR，不创建重复书籍。
+  final EpubBookRow? existingBook;
+
+  /// 阅读器触发时优先从当前 0-based 页开始，扫到末页后再补首页。
+  final int startPage;
+
+  /// 仅补齐无 OCR 块的页面并复用逐页缓存。
+  final bool onlyMissing;
+
+  /// 已导入漫画由阅读器持有任务时，选好引擎后立即关闭向导并返回后台任务。
+  final bool launchInBackground;
 
   @override
   ConsumerState<MangaOcrWizardDialog> createState() =>
@@ -114,6 +134,21 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   @override
   void initState() {
     super.initState();
+    final EpubBookRow? existingBook = widget.existingBook;
+    if (existingBook != null) {
+      _imageDir = existingBook.extractDir;
+      _managedImageDir = existingBook.extractDir;
+      _createdBookKey = existingBook.bookKey;
+      _titleCtrl.text = existingBook.title;
+      _folderStatus = checkOcrFolder(existingBook.extractDir);
+      _stage = _folderStatus == MangaOcrFolderStatus.valid
+          ? _WizardStage.configure
+          : _WizardStage.pick;
+      if (_folderStatus == MangaOcrFolderStatus.valid) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _refreshEngines());
+      }
+      return;
+    }
     final String? initial = widget.initialImageDir;
     if (initial != null) {
       _imageDir = initial;
@@ -242,6 +277,241 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     });
   }
 
+  Stream<MangaOcrBackgroundEvent> _backgroundEvents(String dir) {
+    switch (_engine) {
+      case MangaOcrEngineId.localOnnx:
+        return _backgroundLocalEvents(dir);
+      case MangaOcrEngineId.googleLens:
+        return _backgroundLensEvents(dir);
+      case MangaOcrEngineId.externalMokuro:
+        return _backgroundExternalEvents(dir);
+      case MangaOcrEngineId.pairedHost:
+        return _backgroundRemoteEvents(dir);
+    }
+  }
+
+  Stream<MangaOcrBackgroundEvent> _backgroundLocalEvents(String dir) async* {
+    final List<MangaOcrPageFile> pages = enumerateMangaPages(Directory(dir));
+    final MangaOcrFilePageCache cache = MangaOcrFilePageCache(
+      cacheDir: Directory(p.join(
+        dir,
+        kMangaOcrOutDirName,
+        kMangaOcrPagesCacheDirName,
+        kLocalMangaOcrEngineSignature,
+      )),
+      pageNames: <String>[
+        for (final MangaOcrPageFile page in pages) page.relativeUrl
+      ],
+      pageFiles: <File>[for (final MangaOcrPageFile page in pages) page.file],
+    );
+    final List<OcrPageResult> cachedResults = <OcrPageResult>[];
+    for (int pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+      final OcrPageResult? cached = await cache.read('manga_ocr', pageIndex);
+      if (cached == null) {
+        cachedResults.clear();
+        break;
+      }
+      cachedResults.add(cached);
+    }
+    if (cachedResults.length == pages.length && pages.isNotEmpty) {
+      final MokuroPayload generated =
+          buildMangaPayloadFromResults(pages, cachedResults);
+      final MokuroPayload payload = MokuroPayload(
+        images: generated.images,
+        ocr: const MangaOcrMetadata(
+          engine: 'local_onnx',
+          engineSignature: kLocalMangaOcrEngineSignature,
+          schemaVersion: 1,
+        ),
+      );
+      final String output = await _writeCachedOutput(dir, payload);
+      for (int pageIndex = 0; pageIndex < payload.images.length; pageIndex++) {
+        yield MangaOcrBackgroundEvent.progress(
+          pagesDone: pageIndex + 1,
+          pagesTotal: pages.length,
+          pageIndex: pageIndex,
+          page: payload.images[pageIndex],
+        );
+      }
+      yield MangaOcrBackgroundEvent.finished(
+        pagesTotal: pages.length,
+        resultPath: output,
+        external: false,
+      );
+      return;
+    }
+    await for (final MangaOcrVolumeEvent event
+        in widget.service.ocrFolder(imageDirPath: dir, volumeTitle: _title)) {
+      if (event.finished) {
+        yield MangaOcrBackgroundEvent.finished(
+          pagesTotal: event.pagesTotal,
+          resultPath: event.mangaJsonPath!,
+          external: false,
+        );
+        continue;
+      }
+      final int pageIndex = event.pagesDone - 1;
+      MokuroImage? page;
+      if (pageIndex >= 0 && pageIndex < pages.length) {
+        final result = await cache.read('manga_ocr', pageIndex);
+        if (result != null) {
+          page = buildMangaPayloadFromResults(
+            <MangaOcrPageFile>[pages[pageIndex]],
+            <OcrPageResult>[result],
+          ).images.single;
+        }
+      }
+      yield MangaOcrBackgroundEvent.progress(
+        pagesDone: event.pagesDone,
+        pagesTotal: event.pagesTotal,
+        pageIndex: pageIndex,
+        page: page,
+      );
+    }
+  }
+
+  Stream<MangaOcrBackgroundEvent> _backgroundLensEvents(String dir) async* {
+    final List<MangaOcrPageFile> pages = enumerateMangaPages(Directory(dir));
+    final int start =
+        pages.isEmpty ? 0 : widget.startPage.clamp(0, pages.length - 1);
+    final List<int> order = <int>[
+      for (int index = start; index < pages.length; index++) index,
+      for (int index = 0; index < start; index++) index,
+    ];
+    final GoogleLensPageCache cache = GoogleLensPageCache(
+      Directory(p.join(
+        dir,
+        kMangaOcrOutDirName,
+        kMangaOcrPagesCacheDirName,
+        kGoogleLensEngineSignature,
+      )),
+    );
+    final List<MokuroImage> cachedPages = <MokuroImage>[];
+    for (int pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+      final MokuroImage? cached = await cache.read(pageIndex, pages[pageIndex]);
+      if (cached == null) {
+        cachedPages.clear();
+        break;
+      }
+      cachedPages.add(cached);
+    }
+    if (cachedPages.length == pages.length && pages.isNotEmpty) {
+      final MokuroPayload payload = MokuroPayload(
+        images: cachedPages,
+        ocr: const MangaOcrMetadata(
+          engine: 'google_lens',
+          engineSignature: kGoogleLensEngineSignature,
+          schemaVersion: 1,
+        ),
+      );
+      final String output = await _writeCachedOutput(dir, payload);
+      for (int orderIndex = 0; orderIndex < order.length; orderIndex++) {
+        final int pageIndex = order[orderIndex];
+        yield MangaOcrBackgroundEvent.progress(
+          pagesDone: orderIndex + 1,
+          pagesTotal: pages.length,
+          pageIndex: pageIndex,
+          page: cachedPages[pageIndex],
+        );
+      }
+      yield MangaOcrBackgroundEvent.finished(
+        pagesTotal: pages.length,
+        resultPath: output,
+        external: false,
+      );
+      return;
+    }
+    await for (final MangaOcrVolumeEvent event in widget.lensRunner!.ocrFolder(
+      imageDirPath: dir,
+      volumeTitle: _title,
+      startPage: widget.startPage,
+      onlyMissing: widget.onlyMissing,
+    )) {
+      if (event.finished) {
+        yield MangaOcrBackgroundEvent.finished(
+          pagesTotal: event.pagesTotal,
+          resultPath: event.mangaJsonPath!,
+          external: false,
+        );
+        continue;
+      }
+      final int orderIndex = event.pagesDone - 1;
+      final int? pageIndex = orderIndex >= 0 && orderIndex < order.length
+          ? order[orderIndex]
+          : null;
+      final MokuroImage? page = pageIndex == null
+          ? null
+          : await cache.read(pageIndex, pages[pageIndex]);
+      yield MangaOcrBackgroundEvent.progress(
+        pagesDone: event.pagesDone,
+        pagesTotal: event.pagesTotal,
+        pageIndex: pageIndex,
+        page: page,
+      );
+    }
+  }
+
+  Future<String> _writeCachedOutput(
+    String dir,
+    MokuroPayload payload,
+  ) async {
+    final File output = File(p.join(
+      dir,
+      kMangaOcrOutDirName,
+      kMangaOcrOutputFileName,
+    ));
+    await output.parent.create(recursive: true);
+    final File temporary = File('${output.path}.tmp');
+    await temporary.writeAsString(
+      jsonEncode(mangaPayloadToJson(payload)),
+      flush: true,
+    );
+    if (output.existsSync()) {
+      await output.delete();
+    }
+    await temporary.rename(output.path);
+    return output.path;
+  }
+
+  Stream<MangaOcrBackgroundEvent> _backgroundExternalEvents(String dir) async* {
+    await for (final MokuroRunEvent event in widget.externalRunner!.run(dir)) {
+      if (event.finished) {
+        yield MangaOcrBackgroundEvent.finished(
+          pagesTotal: event.total,
+          resultPath: event.mokuroPath!,
+          external: true,
+        );
+      } else {
+        yield MangaOcrBackgroundEvent.progress(
+          pagesDone: event.done,
+          pagesTotal: event.total,
+        );
+      }
+    }
+  }
+
+  Stream<MangaOcrBackgroundEvent> _backgroundRemoteEvents(String dir) async* {
+    final MangaOcrRemoteTarget? target = _remoteTarget;
+    if (target == null) {
+      throw StateError(t.manga_remote_ocr_no_host);
+    }
+    await for (final MangaOcrRemoteEvent event in widget.remoteRunner!
+        .run(target: target, imageDirPath: dir, volumeTitle: _title)) {
+      if (event.finished) {
+        yield MangaOcrBackgroundEvent.finished(
+          pagesTotal: event.total,
+          resultPath: event.mangaJsonPath!,
+          external: false,
+        );
+      } else {
+        yield MangaOcrBackgroundEvent.progress(
+          pagesDone: event.done,
+          pagesTotal: event.total,
+        );
+      }
+    }
+  }
+
   bool get _selectedEngineAvailable {
     switch (_engine) {
       case MangaOcrEngineId.localOnnx:
@@ -288,6 +558,23 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       }
     }
     if (!mounted) return;
+    if (widget.launchInBackground) {
+      final String? bookKey = _createdBookKey;
+      if (bookKey == null) {
+        setState(() => _error = t.manga_ocr_wizard_failed);
+        return;
+      }
+      Navigator.pop(
+        context,
+        MangaOcrBackgroundJob(
+          bookKey: bookKey,
+          managedDirectory: dir,
+          engine: _engine,
+          events: _backgroundEvents(dir),
+        ),
+      );
+      return;
+    }
     setState(() {
       _stage = _WizardStage.running;
       _error = null;
@@ -347,7 +634,12 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
 
   void _runLens(String dir) {
     _runSub = widget.lensRunner!
-        .ocrFolder(imageDirPath: dir, volumeTitle: _title)
+        .ocrFolder(
+      imageDirPath: dir,
+      volumeTitle: _title,
+      startPage: widget.startPage,
+      onlyMissing: widget.onlyMissing,
+    )
         .listen(
       (MangaOcrVolumeEvent event) {
         if (!mounted) return;
@@ -605,7 +897,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
               const SizedBox(height: 12),
               TextField(
                 controller: _titleCtrl,
-                enabled: !busy,
+                enabled: !busy && widget.existingBook == null,
                 decoration: InputDecoration(
                   labelText: t.manga_ocr_wizard_title_label,
                   isDense: true,
@@ -635,6 +927,14 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   }
 
   Widget _folderRow(bool busy) {
+    if (widget.existingBook != null) {
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.menu_book_outlined),
+        title: Text(widget.existingBook!.title),
+        subtitle: Text(p.basename(widget.existingBook!.extractDir)),
+      );
+    }
     return OutlinedButton.icon(
       onPressed: busy ? null : _pickFolder,
       icon: const Icon(Icons.folder_open_outlined),
@@ -719,15 +1019,16 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     }
     return <Widget>[
       TextButton(
-        onPressed: busy ? null : () => Navigator.pop(context, _createdBookKey),
+        onPressed: busy ? null : () => Navigator.pop(context),
         child: Text(t.dialog_cancel),
       ),
-      OutlinedButton(
-        onPressed: _folderStatus == MangaOcrFolderStatus.valid && !busy
-            ? () => unawaited(_importWithoutOcr())
-            : null,
-        child: Text(t.manga_import_direct),
-      ),
+      if (widget.existingBook == null)
+        OutlinedButton(
+          onPressed: _folderStatus == MangaOcrFolderStatus.valid && !busy
+              ? () => unawaited(_importWithoutOcr())
+              : null,
+          child: Text(t.manga_import_direct),
+        ),
       FilledButton(
         onPressed: _canRun && !busy ? () => unawaited(_run()) : null,
         child: Text(t.manga_ocr_wizard_run),

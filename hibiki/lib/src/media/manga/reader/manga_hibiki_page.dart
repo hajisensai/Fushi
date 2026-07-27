@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:drift/drift.dart' show Value;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -14,19 +15,13 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
-import 'package:hibiki/src/media/manga/manga_json_writeback.dart';
-import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
+import 'package:hibiki/src/media/manga/manga_module.dart';
+import 'package:hibiki/src/media/manga/manga_ocr_background_job.dart';
 import 'package:hibiki/src/media/manga/manga_overlay_html.dart';
 import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
-import 'package:hibiki/src/media/manga/manga_rescan_result_sheet.dart';
 import 'package:hibiki/src/media/manga/manga_spread_model.dart';
 import 'package:hibiki/src/media/manga/mokuro_payload.dart';
-import 'package:hibiki/src/ocr/cloud_ocr_client.dart';
-import 'package:hibiki/src/ocr/manga_box_rescan.dart';
-import 'package:hibiki/src/ocr/ocr_inference_ort.dart'
-    show isLocalOnnxRuntimeAvailable;
-import 'package:hibiki/src/ocr/manga_ocr_service.dart';
-import 'package:hibiki/src/ocr/ocr_types.dart';
+import 'package:hibiki/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
 import 'package:hibiki/src/pages/base_source_page.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
@@ -110,6 +105,49 @@ enum _MangaContextAction {
   direction,
   zoomIn,
   zoomOut,
+}
+
+Future<int?> showMangaPageJumpDialog(
+  BuildContext context, {
+  required int currentPage,
+  required int total,
+}) {
+  String input = '$currentPage';
+  return showAppDialog<int>(
+    context: context,
+    builder: (BuildContext dialogContext) => AlertDialog(
+      title: Text(t.manga_jump_to_page),
+      content: TextFormField(
+        initialValue: input,
+        autofocus: true,
+        keyboardType: TextInputType.number,
+        inputFormatters: <TextInputFormatter>[
+          FilteringTextInputFormatter.digitsOnly,
+        ],
+        decoration: InputDecoration(
+          labelText: t.manga_page_number_hint(total: total),
+        ),
+        onFieldSubmitted: (String value) => Navigator.pop(
+          dialogContext,
+          int.tryParse(value),
+        ),
+        onChanged: (String value) => input = value,
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: Text(t.dialog_cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(
+            dialogContext,
+            int.tryParse(input),
+          ),
+          child: Text(t.dialog_ok),
+        ),
+      ],
+    ),
+  );
 }
 
 /// 漫画阅读器页面（漫画 OCR P1：L5 媒体源路由 / L6 渲染 / L7 查词+制卡）。
@@ -346,10 +384,22 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   /// `_loadedSpreads` 与活文档失配（translateX 目标 `data-spread` 不存在 → transform
   /// 归 0 → 显示错页）。在飞期间丢弃后续翻页（用户重发即可，不排队避免滑动风暴）。
   bool _navigating = false;
+  int _windowGeneration = 0;
+  Completer<void>? _windowLoadCompleter;
 
   /// 制卡卡图：当前 spread 首页图的绝对文件路径（加载/翻页/滚动/切模式全路径更新，
   /// 否则封面恒 null——ERRATA C2）。文件缺失/解析失败时为 null（卡图省略而非坏引用）。
   String? _currentPageImagePath;
+
+  /// 整卷 OCR 向导防重入。识别进度与取消由向导持有，阅读器只负责完成后热刷新。
+  bool _wholeVolumeOcrOpen = false;
+  bool _wholeVolumeOcrRunning = false;
+  int _wholeVolumeOcrDone = 0;
+  int _wholeVolumeOcrTotal = 0;
+  StreamSubscription<void>? _wholeVolumeOcrSubscription;
+  String? _debugOcrHitOrientation;
+  String? _debugOcrHitCharacter;
+  String? _debugOcrSelectedText;
 
   /// 最近一次查词的句子与词在句中偏移，喂制卡（[AnkiMiningContext]）。
   String _lastSentence = '';
@@ -358,21 +408,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   ReadingTimeTracker? _readingTimeTracker;
   DateTime _sessionStartTime = DateTime.now();
 
-  // ── 单框补扫（P4）状态 ──
-  /// 识别三件套是否就绪（gating 只看模型、不看 isSupportedPlatform——那是整卷
-  /// 开关；单框移动端也可用）。
-  bool _rescanModelReady = false;
-
-  /// 补扫框选模式是否激活（与 JS 侧 `__mangaSetRescanMode` 同步）。
-  bool _rescanModeActive = false;
-
-  /// 一次只跑一个识别（重复框选丢弃，识别很快、用户重发即可）。
-  bool _rescanBusy = false;
-
-  /// 补扫服务：懒建 + 页面生命周期内复用（isolate/会话缓存），dispose 释放。
-  MangaBoxRescanService? _rescanService;
-
-  static const int _kWindowRadius = 1;
+  // 5 个 spread 的窗口让常规连续翻页留在同一 WebView 文档内；只有真正越过
+  // 预载窗口才重建。旧值 1 再加“到边缘立即重载”导致几乎每页 loadData。
+  static const int _kWindowRadius = 2;
 
   @override
   void initState() {
@@ -388,14 +426,11 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     ExitFlushRegistry.instance.unregister(_flushPosition);
     WidgetsBinding.instance.removeObserver(this);
     _progressDebounce?.cancel();
+    unawaited(_wholeVolumeOcrSubscription?.cancel());
+    _wholeVolumeOcrSubscription = null;
     // dispose 里只能 fire-and-forget；正常退出走 onSourcePagePop 的 await 路径，
     // 这里是崩溃/异常拆栈时的兜底。
     unawaited(_flushPosition());
-    final MangaBoxRescanService? rescanService = _rescanService;
-    if (rescanService != null) {
-      _rescanService = null;
-      unawaited(rescanService.dispose());
-    }
     _readingTimeTracker?.dispose();
     _pageNotifier.dispose();
     super.dispose();
@@ -549,9 +584,49 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       _lastSavedFraction = saved != null ? restoredFraction : -1;
     });
     _pageNotifier.value = _currentPage;
-    // 补扫入口 gating：只看识别模型就绪（recognizerReady），失败静默（按钮点击
-    // 时会再查一次并给引导提示）。
-    unawaited(_refreshRescanModelReady());
+    // A cancelled/background task intentionally does not replace manga.json,
+    // but every atomic page cache is already safe to use. Restore those pages
+    // after the first paint so opening a large book stays fast and both local
+    // ONNX and Lens results remain queryable across reader restarts.
+    unawaited(_recoverIncrementalOcrCache(row.extractDir, payload));
+  }
+
+  Future<void> _recoverIncrementalOcrCache(
+    String managedDirectory,
+    MokuroPayload loadedPayload,
+  ) async {
+    try {
+      final MangaOcrCacheRecovery recovery = await recoverCachedMangaOcr(
+        managedDirectory: managedDirectory,
+        basePayload: loadedPayload,
+      );
+      if (!mounted ||
+          recovery.recoveredPageIndices.isEmpty ||
+          !identical(_payload, loadedPayload)) {
+        return;
+      }
+      setState(() => _payload = recovery.payload);
+
+      final Set<int> visiblePages = <int>{
+        for (final int spreadIndex in _loadedSpreads)
+          if (spreadIndex >= 0 && spreadIndex < _spreads.length)
+            ..._spreads[spreadIndex].pageIndices,
+      };
+      for (final int pageIndex in recovery.recoveredPageIndices) {
+        if (visiblePages.contains(pageIndex)) {
+          await _replacePageOcrOverlay(
+            pageIndex,
+            recovery.payload.images[pageIndex],
+          );
+        }
+      }
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MangaHibikiPage.recoverIncrementalOcrCache',
+        error,
+        stack,
+      );
+    }
   }
 
   /// 当前视口是否横屏（宽 > 高）。自动布局的唯一判据。
@@ -671,7 +746,10 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   /// flex-row + overflow:hidden 视口 + translateX 到当前 spread；翻出窗口才重
   /// loadData。webtoon：**整本**一次性渲染进单文档（窗口化只是 spread 的优化），
   /// 靠文档竖滚翻页，滚动绝不重载（否则在手指下抹掉重建/抢滚）。
-  String _buildWindowDocument(String inlineSelectionJs) {
+  String _buildWindowDocument(
+    String inlineSelectionJs, {
+    required int documentGeneration,
+  }) {
     final MokuroPayload payload = _payload!;
     final bool isWebtoon = _mode == MangaReadingMode.webtoon;
 
@@ -717,6 +795,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       pageNumbers: pageNumbers,
       currentSpread: _currentSpread,
       restoreFraction: isWebtoon ? _currentFraction : 0,
+      documentGeneration: documentGeneration,
     );
   }
 
@@ -724,31 +803,37 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   /// `_loadedSpreads`（在 [_buildWindowDocument] 内同步赋值）只在本次成功后生效，
   /// 失败回滚为旧文档的集合（否则 translateX 目标缺失、transform 归 0）。
   Future<void> _loadInitialWindow() async {
-    if (_payload == null || _controller == null) return;
+    if (_payload == null || _controller == null || _navigating) return;
     _navigating = true;
     final Set<int> previousLoaded = Set<int>.of(_loadedSpreads);
+    final int generation = ++_windowGeneration;
+    final Completer<void> ready = Completer<void>();
+    _windowLoadCompleter = ready;
     try {
-      final String doc = _buildWindowDocument(ReaderSelectionScripts.source());
+      final String doc = _buildWindowDocument(
+        ReaderSelectionScripts.source(),
+        documentGeneration: generation,
+      );
       await _controller!.loadData(
         data: doc,
         baseUrl: WebUri('https://${MangaHibikiPage.kMangaHost}/'),
         mimeType: 'text/html',
         encoding: 'utf-8',
       );
+      // WebView2's loadData Future only confirms navigation was accepted. The
+      // old document can remain visible for another event-loop turn (or a
+      // stale onLoadStop can arrive), so keep navigation locked until the
+      // loaded document proves it owns this exact generation.
+      await ready.future.timeout(const Duration(seconds: 10));
       // 首窗图作为制卡卡图（ERRATA C2）；在 _spreads/_currentSpread 定型后解析。
       _updateCurrentPageImagePath();
-      // 窗口重载换了新文档，JS 侧补扫模式状态清零；Dart 态仍激活则续上，
-      // 否则按钮态与 JS 态失配（按钮亮着但拖不出框）。
-      if (_rescanModeActive) {
-        await _controller!.evaluateJavascript(
-          source: 'window.__mangaSetRescanMode && '
-              'window.__mangaSetRescanMode(true);',
-        );
-      }
     } catch (_) {
       _loadedSpreads = previousLoaded;
       rethrow;
     } finally {
+      if (identical(_windowLoadCompleter, ready)) {
+        _windowLoadCompleter = null;
+      }
       _navigating = false;
     }
   }
@@ -771,16 +856,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         source: 'window.__mangaApplyTranslate && '
             'window.__mangaApplyTranslate($target);',
       );
-      // 窗口边缘再滑窗，让下一次翻页有预加载邻页。
-      final int lo = _loadedSpreads.reduce((int a, int b) => a < b ? a : b);
-      final int hi = _loadedSpreads.reduce((int a, int b) => a > b ? a : b);
-      final bool atEdge = (target == lo && lo > 0) ||
-          (target == hi && hi < _spreads.length - 1);
-      if (atEdge) {
-        await _loadInitialWindow();
-      } else {
-        _updateCurrentPageImagePath();
-      }
+      // 不在窗口边缘抢先 loadData：那会把一次本可纯 transform 的翻页变成整份
+      // WebView 文档重建。真正越出 [_loadedSpreads] 时再滑窗即可。
+      _updateCurrentPageImagePath();
     } else {
       await _loadInitialWindow();
     }
@@ -812,14 +890,6 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       return KeyEventResult.ignored;
     }
     if (isDictionaryShown) {
-      return KeyEventResult.ignored;
-    }
-    // 补扫模式：Escape 退出（其余键不当翻页，避免框选中翻走当前页）。
-    if (_rescanModeActive) {
-      if (event.logicalKey == LogicalKeyboardKey.escape) {
-        unawaited(_setRescanMode(false));
-        return KeyEventResult.handled;
-      }
       return KeyEventResult.ignored;
     }
     final LogicalKeyboardKey key = event.logicalKey;
@@ -893,275 +963,152 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     );
   }
 
-  // ── 单框补扫（P4 生产者 D）────────────────────────────────────────────
-
-  /// 刷新识别模型就绪位（只看 recognizerReady——单框不需要检测器；也不看
-  /// isSupportedPlatform——那是整卷开关，单框移动端可用）。
-  Future<void> _refreshRescanModelReady() async {
-    try {
-      final MangaOcrModelStatus status =
-          await ref.read(mangaOcrServiceProvider).modelStatus();
-      if (!mounted) return;
-      setState(() => _rescanModelReady = status.recognizerReady);
-    } catch (e, stack) {
-      ErrorLogService.instance.log('MangaHibikiPage.rescanStatus', e, stack);
-    }
-  }
-
-  /// chrome「框选识别」按钮：模式内再点 = 退出；未就绪点击给引导去设置下载的
-  /// 提示（点击时再查一次，用户可能刚下载完）。
-  Future<void> _onRescanButtonPressed() async {
-    if (_rescanModeActive) {
-      await _setRescanMode(false);
-      return;
-    }
-    if (!isLocalOnnxRuntimeAvailable) {
-      // Apple 无内置 ONNX OCR：单框补扫依赖云端（Gemini）。云端未启用则提示不支持，
-      // 已启用则直接进补扫模式（不要求下载对 Apple 无用的本地识别模型）。
-      if (!isCloudOcrAvailable(
-        enabled: appModel.mangaCloudOcrEnabled,
-        apiKey: appModel.mangaCloudOcrApiKey,
-      )) {
-        HibikiToast.show(msg: t.manga_ocr_unsupported);
-        return;
-      }
-      await _setRescanMode(true);
-      return;
-    }
-    if (!_rescanModelReady) {
-      await _refreshRescanModelReady();
-      if (!_rescanModelReady) {
-        HibikiToast.show(msg: t.manga_rescan_model_missing);
-        return;
-      }
-    }
-    await _setRescanMode(true);
-  }
-
-  /// Dart/JS 双侧同步进入/退出补扫模式。
-  Future<void> _setRescanMode(bool on) async {
-    if (!mounted) return;
-    setState(() => _rescanModeActive = on);
-    await _controller?.evaluateJavascript(
-      source: 'window.__mangaSetRescanMode && '
-          'window.__mangaSetRescanMode(${on ? 'true' : 'false'});',
-    );
-    if (on) {
-      HibikiToast.show(msg: t.manga_rescan_mode_hint);
-    }
-  }
-
-  /// JS 框选回传（`onMangaBoxSelected`）：payload 是
-  /// `{pageIndex, left, top, right, bottom}`——pageIndex 为 0-based 整卷页码，
-  /// 坐标为**该页页图像素**（跨页 spread 已在 JS 侧按框中心落页并 clamp）。
-  /// JS 发出有效框即自动退出模式，这里同步复位按钮态。
-  Future<void> _onMangaBoxSelected(String payloadJson) async {
-    if (mounted && _rescanModeActive) {
-      setState(() => _rescanModeActive = false);
-    }
-    final MokuroPayload? payload = _payload;
-    final String? imagesDir = _imagesDir;
-    if (payload == null || imagesDir == null || _rescanBusy) return;
-    Object? decoded;
-    try {
-      decoded = jsonDecode(payloadJson);
-    } catch (_) {
-      return;
-    }
-    if (decoded is! Map) return;
-    final int pageIndex = (decoded['pageIndex'] as num?)?.toInt() ?? -1;
-    if (pageIndex < 0 || pageIndex >= payload.images.length) return;
-    final OcrRect box = OcrRect(
-      left: (decoded['left'] as num?)?.toDouble() ?? 0,
-      top: (decoded['top'] as num?)?.toDouble() ?? 0,
-      right: (decoded['right'] as num?)?.toDouble() ?? 0,
-      bottom: (decoded['bottom'] as num?)?.toDouble() ?? 0,
-    );
-    // JS 侧已按视口 8px 过滤；这里按页图像素二次防御（畸形 payload）。
-    if (box.width < 8 || box.height < 8) return;
-    final String? imagePath = MangaHibikiPage.resolveMangaResource(
-      imagesDir,
-      MangaHibikiPage.mangaImageRelativePath(
-        payload.images[pageIndex].url,
-      ),
-    );
-    if (imagePath == null) {
-      HibikiToast.show(msg: t.manga_rescan_failed);
-      return;
-    }
-    if (!isLocalOnnxRuntimeAvailable) {
-      // Apple：本地 OCR 不可用，单框直接走云端（若已启用），否则提示不支持。
-      // 不崩、不阻塞——契约与 ocr_inference_ort.dart isLocalOnnxRuntimeAvailable 一致。
-      if (isCloudOcrAvailable(
-        enabled: appModel.mangaCloudOcrEnabled,
-        apiKey: appModel.mangaCloudOcrApiKey,
-      )) {
-        await _rescanCloudRetry(
-          pageIndex: pageIndex,
-          box: box,
-          imagePath: imagePath,
-          vertical: mangaBoxIsVertical(box),
-        );
-      } else {
-        HibikiToast.show(msg: t.manga_ocr_unsupported);
-      }
-      return;
-    }
-    _rescanBusy = true;
-    HibikiToast.show(msg: t.manga_rescan_running);
-    try {
-      final MangaBoxRescanService service =
-          _rescanService ??= MangaBoxRescanService();
-      final MangaBoxRescanResult result =
-          await service.rescan(imagePath: imagePath, box: box);
-      if (!mounted) return;
-      await _showRescanResult(
-        pageIndex: pageIndex,
-        box: box,
-        imagePath: imagePath,
-        text: result.text.trim(),
-        vertical: result.vertical,
-        fromCloud: false,
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance.log('MangaHibikiPage.rescan', e, stack);
-      if (mounted) HibikiToast.show(msg: t.manga_rescan_failed);
-    } finally {
-      _rescanBusy = false;
-    }
-  }
-
-  /// 结果底部卡片：文本 + 来源标注 + 动作（查词 / 回写本页 / 云端重试）。
-  /// 「云端重试」只在开关开 + key 非空时显示（红线：默认关、手动触发）。
-  Future<void> _showRescanResult({
-    required int pageIndex,
-    required OcrRect box,
-    required String imagePath,
-    required String text,
-    required bool vertical,
-    required bool fromCloud,
-  }) async {
-    if (!mounted) return;
-    final bool cloudAvailable = isCloudOcrAvailable(
-      enabled: appModel.mangaCloudOcrEnabled,
-      apiKey: appModel.mangaCloudOcrApiKey,
-    );
-    final MangaRescanAction? action =
-        await showModalBottomSheet<MangaRescanAction>(
-      context: context,
-      builder: (BuildContext ctx) => MangaRescanResultSheet(
-        text: text,
-        fromCloud: fromCloud,
-        showCloudRetry: cloudAvailable,
-      ),
-    );
-    if (!mounted || action == null) return;
-    switch (action) {
-      case MangaRescanAction.lookup:
-        await _rescanLookup(text);
-      case MangaRescanAction.writeBack:
-        await _rescanWriteBack(
-          pageIndex: pageIndex,
-          box: box,
-          vertical: vertical,
-          text: text,
-        );
-      case MangaRescanAction.cloudRetry:
-        await _rescanCloudRetry(
-          pageIndex: pageIndex,
-          box: box,
-          imagePath: imagePath,
-          vertical: vertical,
-        );
-    }
-  }
-
-  /// 以识别文本为 searchTerm 走既有词典查询管线（弹窗锚屏幕中心，镜像块级
-  /// 兜底路径）；句子上下文 = 识别文本本身（气泡即句子）。
-  Future<void> _rescanLookup(String text) async {
-    if (text.isEmpty || !mounted) return;
-    _lastSentence = text;
-    _lastSentenceOffset = 0;
-    appModel.currentMediaSource?.setCurrentSentence(
-      selection: HibikiTextSelection(text: text),
-    );
-    final Size screen = MediaQuery.of(context).size;
-    prunePopupStack(0);
-    await searchDictionaryResult(
-      searchTerm: text,
-      selectionRect: Rect.fromCenter(
-        center: Offset(screen.width / 2, screen.height / 2),
-        width: 1,
-        height: 1,
-      ),
-    );
-  }
-
-  /// 把识别块回写进本书 manga.json 对应页（读-改-写，文件级锁），再重读文件
-  /// 刷新内存 payload 并重载当前窗口，让新框立即可查词。
-  Future<void> _rescanWriteBack({
-    required int pageIndex,
-    required OcrRect box,
-    required bool vertical,
-    required String text,
-  }) async {
+  /// 直接运行非模态全页/整卷 OCR。选好引擎后向导立即关闭，任务由阅读器持有；
+  /// Lens 从当前页扫到末页后再补首页，每完成一页就热替换该页透明文字层。
+  Future<void> _openWholeVolumeOcr() async {
     final EpubBookRow? row = _bookRow;
-    if (row == null || text.isEmpty) return;
-    final String mangaJsonPath = p.join(row.extractDir, row.epubPath);
+    if (row == null || _wholeVolumeOcrOpen || _wholeVolumeOcrRunning) {
+      return;
+    }
+    setState(() => _wholeVolumeOcrOpen = true);
     try {
-      await appendMangaBlockToMangaJson(
-        mangaJsonPath: mangaJsonPath,
-        pageIndex: pageIndex,
-        box: Rect.fromLTRB(box.left, box.top, box.right, box.bottom),
-        vertical: vertical,
-        text: text,
+      final MangaOcrBackgroundJob? job = await MangaModule.openBookOcr(
+        context: context,
+        db: appModel.database,
+        book: row,
+        startPage: _currentPage,
+        desktop: Platform.isWindows || Platform.isLinux || Platform.isMacOS,
       );
-      final String jsonStr = await File(mangaJsonPath).readAsString();
-      final MokuroPayload payload =
-          await MangaHibikiPage.parseMangaJsonOffUi(jsonStr);
-      if (!mounted) return;
-      setState(() => _payload = payload);
-      await _loadInitialWindow();
-      HibikiToast.show(msg: t.manga_rescan_writeback_done);
-    } catch (e, stack) {
-      ErrorLogService.instance.log('MangaHibikiPage.rescanWrite', e, stack);
-      if (mounted) HibikiToast.show(msg: t.manga_rescan_writeback_failed);
+      if (!mounted || job == null) return;
+      setState(() {
+        _wholeVolumeOcrRunning = true;
+        _wholeVolumeOcrDone = 0;
+        _wholeVolumeOcrTotal = 0;
+      });
+      _wholeVolumeOcrSubscription =
+          job.events.asyncMap(_handleWholeVolumeOcrEvent).listen(
+        (_) {},
+        onError: (Object error, StackTrace stack) {
+          ErrorLogService.instance.log(
+            'MangaHibikiPage.wholeVolumeOcr',
+            error,
+            stack,
+          );
+          if (!mounted) return;
+          setState(() => _wholeVolumeOcrRunning = false);
+          HibikiToast.show(msg: '${t.manga_ocr_wizard_failed}: $error');
+        },
+        onDone: () {
+          _wholeVolumeOcrSubscription = null;
+          if (mounted && _wholeVolumeOcrRunning) {
+            setState(() => _wholeVolumeOcrRunning = false);
+          }
+        },
+      );
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MangaHibikiPage.wholeVolumeOcr',
+        error,
+        stack,
+      );
+      if (mounted) {
+        HibikiToast.show(msg: '${t.manga_ocr_wizard_failed}: $error');
+      }
+    } finally {
+      if (mounted) setState(() => _wholeVolumeOcrOpen = false);
     }
   }
 
-  /// 云端重试：裁框 PNG →（明示上云的）Gemini 转写 → 以云端结果重开结果卡片。
-  /// 只有用户点按钮才会走到这里（不做自动路由）；[CloudOcrService] 内还有
-  /// 开关闸门（关着时零网络调用）。
-  Future<void> _rescanCloudRetry({
-    required int pageIndex,
-    required OcrRect box,
-    required String imagePath,
-    required bool vertical,
-  }) async {
-    HibikiToast.show(msg: t.manga_rescan_running);
-    try {
-      final Uint8List png = await MangaBoxRescanService.cropBoxPng(
-        imagePath: imagePath,
-        box: box,
-      );
-      final CloudOcrService cloud = CloudOcrService(
-        enabled: appModel.mangaCloudOcrEnabled,
-        apiKey: appModel.mangaCloudOcrApiKey,
-        model: appModel.mangaCloudOcrModel,
-      );
-      final String text = (await cloud.transcribePng(png)).trim();
-      if (!mounted) return;
-      await _showRescanResult(
-        pageIndex: pageIndex,
-        box: box,
-        imagePath: imagePath,
-        text: text,
-        vertical: vertical,
-        fromCloud: true,
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance.log('MangaHibikiPage.rescanCloud', e, stack);
-      if (mounted) HibikiToast.show(msg: t.manga_cloud_ocr_failed);
+  Future<void> _handleWholeVolumeOcrEvent(
+    MangaOcrBackgroundEvent event,
+  ) async {
+    if (!mounted) return;
+    if (event.finished) {
+      await _finishWholeVolumeOcr(event);
+      return;
+    }
+    setState(() {
+      _wholeVolumeOcrDone = event.pagesDone;
+      _wholeVolumeOcrTotal = event.pagesTotal;
+    });
+    final int? pageIndex = event.pageIndex;
+    final MokuroImage? page = event.page;
+    final MokuroPayload? current = _payload;
+    if (pageIndex == null ||
+        page == null ||
+        current == null ||
+        pageIndex < 0 ||
+        pageIndex >= current.images.length) {
+      return;
+    }
+    final List<MokuroImage> images = List<MokuroImage>.of(current.images);
+    images[pageIndex] = page;
+    setState(() {
+      _payload = MokuroPayload(images: images, ocr: current.ocr);
+    });
+    await _replacePageOcrOverlay(pageIndex, page);
+  }
+
+  Future<void> _replacePageOcrOverlay(
+    int pageIndex,
+    MokuroImage page,
+  ) async {
+    final String boxes = mangaOcrBoxesHtml(page);
+    await _controller?.evaluateJavascript(
+      source: 'window.__mangaReplaceOcr && '
+          'window.__mangaReplaceOcr($pageIndex, ${jsonEncode(boxes)});',
+    );
+  }
+
+  Future<void> _finishWholeVolumeOcr(
+    MangaOcrBackgroundEvent event,
+  ) async {
+    final EpubBookRow? row = _bookRow;
+    final String? resultPath = event.resultPath;
+    if (row == null || resultPath == null) return;
+    final String source = await File(resultPath).readAsString();
+    final MokuroPayload payload =
+        event.external ? parseMokuro(source) : parseMangaJson(source);
+    if (payload.images.isEmpty) {
+      throw StateError('OCR result has no pages');
+    }
+    final File target = File(p.join(row.extractDir, row.epubPath));
+    final File temporary = File('${target.path}.tmp');
+    await temporary.writeAsString(
+      jsonEncode(mangaPayloadToJson(payload)),
+      flush: true,
+    );
+    if (target.existsSync()) await target.delete();
+    await temporary.rename(target.path);
+    if (!mounted) return;
+    setState(() {
+      _payload = payload;
+      _wholeVolumeOcrDone = event.pagesTotal;
+      _wholeVolumeOcrTotal = event.pagesTotal;
+      _wholeVolumeOcrRunning = false;
+    });
+    final Set<int> visiblePages = <int>{
+      for (final int spread in _loadedSpreads)
+        if (spread >= 0 && spread < _spreads.length)
+          ..._spreads[spread].pageIndices,
+    };
+    for (final int pageIndex in visiblePages) {
+      if (pageIndex >= 0 && pageIndex < payload.images.length) {
+        await _replacePageOcrOverlay(pageIndex, payload.images[pageIndex]);
+      }
+    }
+    HibikiToast.show(msg: t.manga_ocr_wizard_done);
+  }
+
+  void _cancelWholeVolumeOcr() {
+    unawaited(_wholeVolumeOcrSubscription?.cancel());
+    _wholeVolumeOcrSubscription = null;
+    if (mounted) {
+      setState(() {
+        _wholeVolumeOcrRunning = false;
+        _wholeVolumeOcrDone = 0;
+        _wholeVolumeOcrTotal = 0;
+      });
     }
   }
 
@@ -1179,7 +1126,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         try {
           final Map<String, dynamic> payload =
               jsonDecode(args[0] as String) as Map<String, dynamic>;
-          await processMangaSelection(ReaderSelectionData.fromJson(payload));
+          final ReaderSelectionData data =
+              ReaderSelectionData.fromJson(payload);
+          if (kDebugMode && mounted) {
+            setState(() => _debugOcrSelectedText = data.text);
+          }
+          await processMangaSelection(data);
         } catch (e, stack) {
           ErrorLogService.instance.log('MangaHibiki.onTextSelected', e, stack);
           debugPrint('[MangaHibiki] onTextSelected error: $e');
@@ -1188,7 +1140,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     );
   }
 
-  /// 处理框内 tap 选词 payload：记录框内句子（喂制卡/收藏）并在选区矩形上开查词
+  /// 处理 OCR 文字命中后的选词 payload：记录所在句子（喂制卡/收藏）并在选区矩形上开查词
   /// 弹窗。词/句/矩形契约由纯函数 [dispatchMangaSelection] 承担（可单测）。
   Future<void> processMangaSelection(ReaderSelectionData data) async {
     if (!mounted) return;
@@ -1425,35 +1377,6 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     }
   }
 
-  // ── 图片放大（独立全屏路由）──────────────────────────────────────────
-
-  void _openMangaImageViewer(String imgUrl) {
-    final String? imagesDir = _imagesDir;
-    if (imagesDir == null) return;
-    final String? filePath =
-        MangaHibikiPage.resolveImageUrlToFile(imagesDir, imgUrl);
-    if (filePath == null) return;
-    final File file = File(filePath);
-    if (!file.existsSync()) return;
-    Navigator.push(
-      context,
-      PageRouteBuilder<void>(
-        opaque: false,
-        barrierColor:
-            Theme.of(context).colorScheme.scrim.withValues(alpha: 0.87),
-        barrierDismissible: true,
-        pageBuilder: (_, __, ___) => GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: InteractiveViewer(
-            minScale: 0.5,
-            maxScale: 10,
-            child: Center(child: Image.file(file, fit: BoxFit.contain)),
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<void> _setSpreadDirection(String direction) async {
     final String normalized = direction == 'ltr' ? 'ltr' : 'rtl';
     if (_spreadDirection == normalized) return;
@@ -1502,43 +1425,11 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   Future<void> _showPageJumpDialog() async {
     final int total = _payload?.images.length ?? 0;
     if (total <= 0) return;
-    final TextEditingController controller =
-        TextEditingController(text: '${_currentPage + 1}');
-    final int? page = await showAppDialog<int>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: Text(t.manga_jump_to_page),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          inputFormatters: <TextInputFormatter>[
-            FilteringTextInputFormatter.digitsOnly,
-          ],
-          decoration: InputDecoration(
-            labelText: t.manga_page_number_hint(total: total),
-          ),
-          onSubmitted: (String value) => Navigator.pop(
-            dialogContext,
-            int.tryParse(value),
-          ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(t.dialog_cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(
-              dialogContext,
-              int.tryParse(controller.text),
-            ),
-            child: Text(t.dialog_ok),
-          ),
-        ],
-      ),
+    final int? page = await showMangaPageJumpDialog(
+      context,
+      currentPage: _currentPage + 1,
+      total: total,
     );
-    controller.dispose();
     if (page != null) {
       await _jumpToPage(page);
     }
@@ -1707,21 +1598,65 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
             );
           },
         ),
-        // 补扫「框选识别」入口（P4）：常显；模型未就绪时点击给引导提示（gating
-        // 只看识别模型就绪，移动端同样可用）。激活时高亮。
+        // Niratan 风格整页 OCR：直接选择引擎并识别整卷，不进入框选模式。
         Tooltip(
-          message: t.manga_rescan_button,
+          message: _wholeVolumeOcrRunning && _wholeVolumeOcrTotal > 0
+              ? t.manga_ocr_wizard_page_progress(
+                  done: _wholeVolumeOcrDone,
+                  total: _wholeVolumeOcrTotal,
+                )
+              : t.manga_ocr_wizard_run,
           child: IconButton(
-            key: const ValueKey<String>('manga_rescan_button'),
-            icon: Icon(
-              Icons.highlight_alt_outlined,
-              color: _rescanModeActive
-                  ? Theme.of(context).colorScheme.primary
-                  : Colors.white,
-            ),
-            onPressed: () => unawaited(_onRescanButtonPressed()),
+            key: const ValueKey<String>('manga_full_ocr_button'),
+            icon: _wholeVolumeOcrOpen || _wholeVolumeOcrRunning
+                ? const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(
+                    Icons.document_scanner_outlined,
+                    color: Colors.white,
+                  ),
+            onPressed: _wholeVolumeOcrOpen
+                ? null
+                : _wholeVolumeOcrRunning
+                    ? _cancelWholeVolumeOcr
+                    : () => unawaited(_openWholeVolumeOcr()),
           ),
         ),
+        if (_wholeVolumeOcrRunning && _wholeVolumeOcrTotal > 0)
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: Text(
+              '$_wholeVolumeOcrDone/$_wholeVolumeOcrTotal',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Colors.white70,
+                  ),
+            ),
+          ),
+        if (kDebugMode && _debugOcrHitOrientation != null)
+          Container(
+            key: const ValueKey<String>('manga_ocr_hit_debug'),
+            margin: const EdgeInsets.only(right: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.black87,
+              border: Border.all(color: Colors.lightGreenAccent),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '${_debugOcrHitOrientation == 'vertical' ? '竖排' : '横排'}'
+              ' · ${_debugOcrHitCharacter ?? ''}'
+              ' · ${_debugOcrSelectedText ?? ''}'
+              ' · $_zoomPercent%',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Colors.lightGreenAccent,
+                  ),
+            ),
+          ),
         // 布局偏好菜单（自动/单页/双页）：只对 spread 模式有意义，webtoon 恒单页。
         if (_mode == MangaReadingMode.spread)
           PopupMenuButton<MangaSpreadPreference>(
@@ -1816,18 +1751,27 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         _controller = controller;
         // ERRATA H2/C1：唯一的 onTextSelected 注册点。
         _registerSelectionHandlers(controller);
-        // 框间裸图 tap → 独立全屏放大路由。
-        controller.addJavaScriptHandler(
-          handlerName: 'onImageTap',
-          callback: (List<dynamic> args) {
-            if (args.isEmpty) return;
-            _openMangaImageViewer(args[0] as String);
-          },
-        );
         // 空白 tap 是 no-op（记录 sink 让手势机契约可观察）。
         controller.addJavaScriptHandler(
           handlerName: 'onTapEmpty',
           callback: (List<dynamic> args) {},
+        );
+        controller.addJavaScriptHandler(
+          handlerName: 'onMangaOcrHitDebug',
+          callback: (List<dynamic> args) {
+            if (!kDebugMode || args.isEmpty || args[0] is! String) return;
+            try {
+              final Map<String, dynamic> data =
+                  jsonDecode(args[0] as String) as Map<String, dynamic>;
+              if (!mounted) return;
+              setState(() {
+                _debugOcrHitOrientation = data['orientation']?.toString() ?? '';
+                _debugOcrHitCharacter = data['text']?.toString() ?? '';
+              });
+            } catch (_) {
+              // Debug-only evidence must never affect lookup.
+            }
+          },
         );
         // 翻页：JS 手势机报方向（'next'/'prev'，页序语义），Dart 推进 spread。
         controller.addJavaScriptHandler(
@@ -1872,14 +1816,6 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
             unawaited(_onMangaScroll(args[0] as String));
           },
         );
-        // 补扫框选回传（P4，唯一注册点）：页图像素坐标 + 0-based 页码。
-        controller.addJavaScriptHandler(
-          handlerName: 'onMangaBoxSelected',
-          callback: (List<dynamic> args) {
-            if (args.isEmpty) return;
-            unawaited(_onMangaBoxSelected(args[0] as String));
-          },
-        );
         unawaited(_loadInitialWindow());
       },
       shouldInterceptRequest:
@@ -1892,19 +1828,50 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         // 已提供文档。视作加载完成（镜像 reader_hibiki 的同款处理）。
         if (Platform.isWindows &&
             request.url.host == MangaHibikiPage.kMangaHost) {
-          _markWindowReady();
+          unawaited(_markWindowReady(controller));
         }
       },
       onLoadStop: (InAppWebViewController controller, WebUri? url) async {
-        _markWindowReady();
+        await _markWindowReady(controller);
       },
     );
   }
 
   /// 当前窗口加载完成：记录当前页位置（onLoadStop 与 Windows 的
   /// onReceivedError-as-success 分支共用）。
-  void _markWindowReady() {
+  Future<void> _markWindowReady(InAppWebViewController controller) async {
     if (!mounted) return;
+    Object? rawGeneration;
+    try {
+      rawGeneration = await controller.evaluateJavascript(
+        source: 'window.__mangaDocumentGeneration',
+      );
+    } catch (_) {
+      return;
+    }
+    final int? generation = switch (rawGeneration) {
+      final num value => value.round(),
+      final String value => int.tryParse(value),
+      _ => null,
+    };
+    if (generation != _windowGeneration) {
+      return;
+    }
+    if (_mode == MangaReadingMode.webtoon) {
+      await controller.evaluateJavascript(
+        source: 'window.__mangaScrollToSpread && '
+            'window.__mangaScrollToSpread($_currentSpread, $_currentFraction);',
+      );
+    } else {
+      await controller.evaluateJavascript(
+        source: 'window.__mangaApplyTranslate && '
+            'window.__mangaApplyTranslate($_currentSpread);',
+      );
+    }
+    final Completer<void>? ready = _windowLoadCompleter;
+    if (ready != null && !ready.isCompleted) {
+      ready.complete();
+    }
     _recordProgress();
   }
 }

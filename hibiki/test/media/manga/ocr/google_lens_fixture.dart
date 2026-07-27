@@ -9,6 +9,8 @@ Uint8List makeGoogleLensFixture({
   double width = 0.4,
   double height = 0.1,
   double rotation = 0,
+  String? secondLineText,
+  double secondLineCenterY = 0.3,
 }) {
   final _ProtoWriter root = _ProtoWriter();
   root.message(2, (_ProtoWriter recognition) {
@@ -28,6 +30,23 @@ Uint8List makeGoogleLensFixture({
               });
             });
           });
+          if (secondLineText != null) {
+            paragraph.message(2, (_ProtoWriter line) {
+              line.message(
+                1,
+                (_ProtoWriter word) => word.string(2, secondLineText),
+              );
+              line.message(2, (_ProtoWriter geometry) {
+                geometry.message(1, (_ProtoWriter box) {
+                  box.float32(1, centerX);
+                  box.float32(2, secondLineCenterY);
+                  box.float32(3, width);
+                  box.float32(4, height);
+                  box.float32(5, rotation);
+                });
+              });
+            });
+          }
         });
       });
     });

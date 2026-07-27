@@ -193,10 +193,10 @@ class GoogleLensProtocol {
             return b.geometry.rect.center.dx
                 .compareTo(a.geometry.rect.center.dx);
           }
-          return b.geometry.rect.bottom.compareTo(a.geometry.rect.bottom);
+          return a.geometry.rect.top.compareTo(b.geometry.rect.top);
         }
-        if ((a.geometry.rect.bottom - b.geometry.rect.bottom).abs() > 0.002) {
-          return b.geometry.rect.bottom.compareTo(a.geometry.rect.bottom);
+        if ((a.geometry.rect.top - b.geometry.rect.top).abs() > 0.002) {
+          return a.geometry.rect.top.compareTo(b.geometry.rect.top);
         }
         return a.geometry.rect.left.compareTo(b.geometry.rect.left);
       });
@@ -213,7 +213,6 @@ class GoogleLensProtocol {
           lineText: line.text,
           utf16Base: utf16Base,
           geometry: line.geometry,
-          isVertical: isVertical,
         );
         regionCount += lineRegions.length;
         if (regionCount > kGoogleLensMaximumRegionsPerPage) {
@@ -241,7 +240,6 @@ class GoogleLensProtocol {
     required String lineText,
     required int utf16Base,
     required _LensGeometry geometry,
-    required bool isVertical,
   }) {
     final List<({String text, int start, int end})> characters =
         <({String text, int start, int end})>[];
@@ -256,27 +254,49 @@ class GoogleLensProtocol {
     if (characters.isEmpty) {
       return const <GoogleLensTextRegion>[];
     }
-    final Rect rect = geometry.rect;
+    final double cosine = math.cos(geometry.rotation);
+    final double sine = math.sin(geometry.rotation);
+    final double characterWidth = geometry.width / characters.length;
     return <GoogleLensTextRegion>[
       for (int i = 0; i < characters.length; i++)
         GoogleLensTextRegion(
-          normalizedBounds: isVertical
-              ? Rect.fromLTWH(
-                  rect.left,
-                  rect.bottom - (i + 1) * rect.height / characters.length,
-                  rect.width,
-                  rect.height / characters.length,
-                )
-              : Rect.fromLTWH(
-                  rect.left + i * rect.width / characters.length,
-                  rect.top,
-                  rect.width / characters.length,
-                  rect.height,
-                ),
+          // Split the original rotated Lens rectangle along its baseline, then
+          // take the AABB of each small glyph cell. Splitting the line's large
+          // AABB (the old implementation) makes every character cover most of
+          // a diagonal title and returns a neighbouring/reversed character.
+          normalizedBounds: _orientedCharacterBounds(
+            geometry,
+            along: (i + 0.5) / characters.length - 0.5,
+            characterWidth: characterWidth,
+            cosine: cosine,
+            sine: sine,
+          ),
           utf16Start: characters[i].start,
           utf16End: characters[i].end,
         ),
     ];
+  }
+
+  static Rect _orientedCharacterBounds(
+    _LensGeometry geometry, {
+    required double along,
+    required double characterWidth,
+    required double cosine,
+    required double sine,
+  }) {
+    final double centerX = geometry.centerX + along * geometry.width * cosine;
+    // Lens and the overlay both use a top-left origin, so positive baseline
+    // rotation moves down as X increases.
+    final double centerY = geometry.centerYTop + along * geometry.width * sine;
+    final double halfWidth =
+        (characterWidth * cosine.abs() + geometry.height * sine.abs()) / 2;
+    final double halfHeight =
+        (characterWidth * sine.abs() + geometry.height * cosine.abs()) / 2;
+    final double left = math.max(0, centerX - halfWidth);
+    final double top = math.max(0, centerY - halfHeight);
+    final double right = math.min(1, centerX + halfWidth);
+    final double bottom = math.min(1, centerY + halfHeight);
+    return Rect.fromLTRB(left, top, right, bottom);
   }
 
   static _LensGeometry? _readGeometry(_ProtobufMessage message) {
@@ -306,8 +326,15 @@ class GoogleLensProtocol {
       return null;
     }
     return _LensGeometry(
-      rect: Rect.fromLTWH(left, 1 - bottom, right - left, bottom - top),
+      // Chromium Lens already reports normalized image coordinates in the
+      // browser's top-left coordinate system. Flipping Y here mirrors every
+      // hit target vertically (top article text points at the bottom article).
+      rect: Rect.fromLTWH(left, top, right - left, bottom - top),
       rotation: rotation,
+      centerX: centerX,
+      centerYTop: centerY,
+      width: width,
+      height: height,
     );
   }
 
@@ -328,10 +355,21 @@ class GoogleLensProtocol {
 }
 
 class _LensGeometry {
-  const _LensGeometry({required this.rect, required this.rotation});
+  const _LensGeometry({
+    required this.rect,
+    required this.rotation,
+    required this.centerX,
+    required this.centerYTop,
+    required this.width,
+    required this.height,
+  });
 
   final Rect rect;
   final double rotation;
+  final double centerX;
+  final double centerYTop;
+  final double width;
+  final double height;
 
   bool get isVertical =>
       ((rotation.abs() - math.pi / 2).abs() < 0.5) ||

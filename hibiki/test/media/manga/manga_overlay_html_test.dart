@@ -37,11 +37,12 @@ void main() {
       expect(count, 2, reason: '两个 block 应生成两个 ocr-box <p>');
     });
 
-    test('多行用 <br> 分隔，绝不含字面 \\n 作行分隔', () {
+    test('多行拆成字符区域且 DOM 顺序连续，绝不含字面换行', () {
       final String html = mangaOcrBoxesHtml(_pageWithTwoBlocks());
-      // 竖排框两行之间必须是 <br>
-      expect(html.contains('一行目<br>二行目'), isTrue, reason: '框内多行必须用 <br> 连接');
-      // 行内文本绝不能出现裸换行符（\n 是 scanDelimiter，会截断扫描）
+      expect('class="ocr-char"'.allMatches(html).length, 9,
+          reason: '竖排两行 6 字 + 横排 3 字都必须成为独立命中区域');
+      expect(html.indexOf('>一</span>') < html.indexOf('>二</span>'), isTrue,
+          reason: '跨行扫描顺序必须保持 OCR 行顺序');
       expect(html.contains('一行目\n二行目'), isFalse);
       expect(html.contains('一行目\\n二行目'), isFalse);
     });
@@ -135,8 +136,86 @@ void main() {
         ],
       );
       final String html = mangaOcrBoxesHtml(page);
-      expect(html.contains('a&lt;b&gt;&amp;c'), isTrue,
-          reason: '行文本里的 < > & 必须转义');
+      expect(html.contains('>&lt;</span>'), isTrue);
+      expect(html.contains('>&gt;</span>'), isTrue);
+      expect(html.contains('>&amp;</span>'), isTrue,
+          reason: '字符区域里的 < > & 必须分别转义');
+    });
+  });
+
+  group('mangaEffectiveTextRegions', () {
+    test('横排从左到右、竖排从上到下拆字符，并保留 UTF-16 偏移', () {
+      const MokuroBlock horizontal = MokuroBlock(
+        rectangle: Rect.fromLTWH(10, 20, 60, 10),
+        isVertical: false,
+        fontSize: 10,
+        zIndex: 0,
+        lines: <String>['日本語'],
+      );
+      final List<MangaOcrTextRegion> horizontalRegions =
+          mangaEffectiveTextRegions(horizontal);
+      expect(horizontalRegions.map((r) => r.rectangle).toList(), <Rect>[
+        const Rect.fromLTWH(10, 20, 20, 10),
+        const Rect.fromLTWH(30, 20, 20, 10),
+        const Rect.fromLTWH(50, 20, 20, 10),
+      ]);
+
+      const MokuroBlock vertical = MokuroBlock(
+        rectangle: Rect.fromLTWH(80, 30, 12, 60),
+        isVertical: true,
+        fontSize: 10,
+        zIndex: 0,
+        lines: <String>['𠮷野家'],
+      );
+      final List<MangaOcrTextRegion> verticalRegions =
+          mangaEffectiveTextRegions(vertical);
+      expect(verticalRegions.map((r) => r.rectangle).toList(), <Rect>[
+        const Rect.fromLTWH(80, 30, 12, 20),
+        const Rect.fromLTWH(80, 50, 12, 20),
+        const Rect.fromLTWH(80, 70, 12, 20),
+      ]);
+      expect(verticalRegions.first.utf16Start, 0);
+      expect(verticalRegions.first.utf16End, 2,
+          reason: '补充平面字符必须按 UTF-16 两个 code unit 计数');
+      expect(verticalRegions[1].utf16Start, 2);
+    });
+
+    test('多列竖排按右到左分列，lines_coords 优先使用真实行框', () {
+      const MokuroBlock fallback = MokuroBlock(
+        rectangle: Rect.fromLTWH(10, 20, 40, 100),
+        isVertical: true,
+        fontSize: 10,
+        zIndex: 0,
+        lines: <String>['右', '左'],
+      );
+      final List<MangaOcrTextRegion> fallbackRegions =
+          mangaEffectiveTextRegions(fallback);
+      expect(
+          fallbackRegions[0].rectangle, const Rect.fromLTWH(30, 20, 20, 100));
+      expect(
+          fallbackRegions[1].rectangle, const Rect.fromLTWH(10, 20, 20, 100));
+
+      const MokuroBlock withCoordinates = MokuroBlock(
+        rectangle: Rect.fromLTWH(0, 0, 100, 100),
+        isVertical: false,
+        fontSize: 10,
+        zIndex: 0,
+        lines: <String>['AB'],
+        linesCoords: <List<List<double>>>[
+          <List<double>>[
+            <double>[20, 30],
+            <double>[80, 30],
+            <double>[80, 50],
+            <double>[20, 50],
+          ],
+        ],
+      );
+      final List<MangaOcrTextRegion> coordinateRegions =
+          mangaEffectiveTextRegions(withCoordinates);
+      expect(
+          coordinateRegions[0].rectangle, const Rect.fromLTWH(20, 30, 30, 20));
+      expect(
+          coordinateRegions[1].rectangle, const Rect.fromLTWH(50, 30, 30, 20));
     });
   });
 
@@ -161,26 +240,22 @@ void main() {
       expect(html.contains('<p class="ocr-box"'), isTrue);
     });
 
-    // CRITICAL-1：spread 槽宽驱动——单页 100vw、双页每页 50vw，跨页单元横向恒占
-    // 100vw（绝不横向溢出被裁）；高由 aspect-ratio 推。
-    test('spread 单页 → width:100vw（跨页单元恰占 100vw）', () {
+    // spread 页同时受槽宽与 100vh 限制，横屏/矮窗口都不得裁切。
+    test('spread 单页同时受 100vw 与 100vh 宽高约束', () {
       final String html = mangaPageDivHtml(_pageWithTwoBlocks(), 'p.jpg',
           pagesInSpread: 1, isWebtoon: false);
-      expect(html.contains('width:100vw'), isTrue,
-          reason: 'spread 单页槽宽必须是 100vw');
-      // 不再用 height:100vh 驱动（旧几何竖版页宽=100vh*(w/h)>100vw 被裁）。
-      expect(html.contains('height:100vh'), isFalse,
-          reason: 'spread 页不再用 height:100vh 驱动（改宽驱动）');
+      // 1000×2000：宽=min(100vw,50vh)，高=min(100vh,200vw)。
+      expect(html.contains('width:min(100vw,50vh)'), isTrue);
+      expect(html.contains('height:min(100vh,200vw)'), isTrue);
       expect(html.contains('aspect-ratio:'), isTrue,
-          reason: '高由 aspect-ratio 从 definite 宽推出');
+          reason: 'OCR 覆盖层仍需与原图保持同一宽高比');
     });
 
-    test('spread 双页 → 每页 width:50vw（两页合计 100vw 并排）', () {
+    test('spread 双页每页最多 50vw 且高度不超过 100vh', () {
       final String html = mangaPageDivHtml(_pageWithTwoBlocks(), 'p.jpg',
           pagesInSpread: 2, isWebtoon: false);
-      expect(html.contains('width:50vw'), isTrue,
-          reason: 'spread 双页每页槽宽必须是 50vw（两页 100vw 并排，右页不移出屏）');
-      expect(html.contains('width:100vw'), isFalse);
+      expect(html.contains('width:min(50vw,50vh)'), isTrue);
+      expect(html.contains('height:min(100vh,100vw)'), isTrue);
     });
 
     test('webtoon → .manga-page div 不内联 width（宽由 style 块 width:100vw 给）', () {
@@ -217,16 +292,9 @@ void main() {
       expect(doc.contains('window.hoshiSelection'), isTrue);
       // 调 selectText 前必须 null-guard bridge
       expect(doc.contains('window.flutter_inappwebview'), isTrue);
-      // ERRATA C1: 唯一一个 pointerup 监听，调 selectText 带 maxLength=40 +
-      // fromHover=false（对齐 develop 四参签名 TODO-851）。
-      expect('selectText('.allMatches(doc).length, 1,
-          reason: '全文档恰好一处 selectText 调用（唯一 pointerup 监听）');
-      expect(
-          RegExp(r'hoshiSelection\.selectText\([^)]*,\s*40,\s*false\)')
-              .hasMatch(doc),
+      expect(doc.contains('selection.selectFromPosition(node, 0, 40, x, y)'),
           isTrue,
-          reason: 'selectText 必须带 maxLength=40 + fromHover=false（四参），'
-              '漏 maxLength 扫描 gate 恒假查词哑火');
+          reason: '字符区域命中后必须带 maxLength=40 进入统一查词管线');
       // 唯一一个 pointerup 监听
       expect('pointerup'.allMatches(doc).length, 1,
           reason: '全文档恰好一个 pointerup 监听（C1 收敛不变式）');
@@ -262,7 +330,7 @@ void main() {
       expect(doc.contains('data-spread="1"'), isTrue);
     });
 
-    test('点裸图（框间）报 onImageTap，点框走 selectText（ERRATA H1 + 收敛不变式）', () {
+    test('裸图单击不打开大图，OCR 区单击或 Shift 悬停都能查词', () {
       final MokuroImage page = _pageWithTwoBlocks();
       final String doc = mangaWindowDocument(
         <MokuroImage>[page],
@@ -272,20 +340,25 @@ void main() {
         inlineSelectionJs: ReaderSelectionScripts.source(),
         pageSpreadIndices: <int>[0],
       );
-      // H1：未命中 ocr-box 时取 .manga-page 的 img.src 报 onImageTap。
-      expect(doc.contains('onImageTap'), isTrue,
-          reason: '点裸图必须报 onImageTap（H1 图片放大）');
-      // 收敛不变式：OCR 选词 selectText 调用仍恰好一处（手势机不重复触发选词）。
-      expect('selectText('.allMatches(doc).length, 1,
-          reason: '全文档恰好一处 selectText 调用（选词路径唯一）');
-      expect(
-          RegExp(r'hoshiSelection\.selectText\([^)]*,\s*40,\s*false\)')
-              .hasMatch(doc),
+      expect(doc.contains('onImageTap'), isFalse,
+          reason: '裸图单击必须留在阅读器，不再打开独立大图');
+      expect(doc.contains("b.callHandler('onTapEmpty')"), isTrue);
+      expect(doc.contains('function _hitOcrChar(x, y)'), isTrue);
+      expect(doc.contains('r.left - 4'), isTrue,
+          reason: '不同缩放下都必须保留 Niratan 的 4 屏幕像素命中余量');
+      expect(doc.contains('area < bestArea'), isTrue,
+          reason: '重叠字符区域必须选择面积最小者');
+      expect(doc.contains('selection.selectFromPosition(node, 0, 40, x, y)'),
           isTrue,
-          reason: 'selectText 必须带 maxLength=40 + fromHover=false（四参）');
+          reason: '必须从精确命中的字符节点发起现有查词管线');
+      expect(doc.contains('_selectOcrChar(e.clientX, e.clientY, true)'), isTrue,
+          reason: 'Shift 悬停必须复用同一精确字符命中路径');
+      expect(doc.contains('if (!e.shiftKey)'), isTrue);
       // 收敛不变式：恰好一个 pointerup 监听。
       expect("addEventListener('pointerup'".allMatches(doc).length, 1,
           reason: '全文档恰好一个 pointerup 监听（C1 收敛不变式）');
+      expect(doc.contains('__mangaReplaceOcr'), isTrue,
+          reason: '后台 OCR 必须能逐页热替换透明文字层');
     });
 
     test('webtoon → 竖向堆叠（column）', () {
@@ -309,9 +382,7 @@ void main() {
           reason: '手势机仍内联（IS_WEBTOON 闸门内部不触发翻页）');
     });
 
-    // CRITICAL-1（文档级）：双页跨页两页各 50vw（并排 100vw），viewport 锁高 + 行内
-    // 居中；单页跨页 100vw。pagesPerSpread 与 pages 等长，逐页驱动槽宽。
-    test('spread 双页跨页：两页各 50vw + viewport 居中（CRITICAL-1）', () {
+    test('spread 双页跨页：固定视口容器内完整居中', () {
       final MokuroImage page = _pageWithTwoBlocks();
       final String doc = mangaWindowDocument(
         <MokuroImage>[page, page],
@@ -322,17 +393,18 @@ void main() {
         pageSpreadIndices: <int>[0, 0],
         pagesPerSpread: <int>[2, 2], // 同一双页跨页
       );
-      expect('width:50vw'.allMatches(doc).length, 2,
-          reason: '双页跨页两页都应是 50vw（合计 100vw 并排，右页不移出屏）');
-      // viewport 锁高 100vh，行内居中（竖版长页上下留白而非裁切）。
+      expect('width:min(50vw,50vh)'.allMatches(doc).length, 2,
+          reason: '双页各自受 50vw 与 100vh 双重约束');
       expect(doc.contains('#manga-viewport{overflow:hidden'), isTrue);
-      expect(doc.contains('align-items:center'), isTrue,
-          reason: 'spread strip 必须 align-items:center 让页在视口内垂直居中');
-      // 不再让 .manga-page 锁 height:100vh（旧几何裁竖版页）。
-      expect(RegExp(r'\.manga-page\{height:100vh').hasMatch(doc), isFalse);
+      expect(doc.contains('class="manga-spread" data-spread="0"'), isTrue);
+      expect(
+          doc.contains('width:100vw;height:100vh;align-items:center;'
+              'justify-content:center'),
+          isTrue,
+          reason: '每个 spread 必须有独立的全视口居中槽');
     });
 
-    test('spread 单页跨页：页占 100vw（CRITICAL-1）', () {
+    test('spread 单页跨页：每页在独立 100vw 容器内 contain', () {
       final MokuroImage page = _pageWithTwoBlocks();
       final String doc = mangaWindowDocument(
         <MokuroImage>[page, page],
@@ -343,9 +415,9 @@ void main() {
         pageSpreadIndices: <int>[0, 1],
         pagesPerSpread: <int>[1, 1], // 两个独立单页跨页
       );
-      // 至少两处页槽 100vw（两个单页跨页）。viewport 自身也是 100vw，故 >=3。
-      expect('width:100vw'.allMatches(doc).length >= 2, isTrue,
-          reason: '两个单页跨页应各占 100vw');
+      expect('width:min(100vw,50vh)'.allMatches(doc).length, 2);
+      expect('class="manga-spread"'.allMatches(doc).length, 2,
+          reason: '两个单页 spread 应各有一个固定视口容器');
     });
 
     // HIGH-1：webtoon scroll 报**页内** fraction（(scrollY-offsetTop)/offsetHeight），
@@ -445,7 +517,7 @@ void main() {
       }
     });
 
-    test('spread RTL 页序：direction:rtl 让 flex-row 从右往左排（首页贴右）', () {
+    test('spread RTL 只反转组内页序，根 strip 保持 LTR 稳定几何', () {
       final MokuroImage page = _pageWithTwoBlocks();
       final String docRtl = mangaWindowDocument(
         <MokuroImage>[page, page],
@@ -454,9 +526,13 @@ void main() {
         spreadDirection: 'rtl',
         inlineSelectionJs: '',
       );
-      // RTL：DOM 顺序不变（a 在前 b 在后），靠 CSS direction:rtl 翻转视觉左右。
+      // DOM 顺序不变，根 strip 保持 LTR；每个 spread 内部用 RTL 翻转双页。
       expect(docRtl.indexOf('a.jpg') < docRtl.indexOf('b.jpg'), isTrue);
-      expect(docRtl.contains('direction:rtl'), isTrue);
+      expect(
+          docRtl.contains('#manga-root{display:flex;flex-direction:row;'
+              'direction:ltr;'),
+          isTrue);
+      expect(docRtl.contains('justify-content:center;direction:rtl'), isTrue);
 
       final String docLtr = mangaWindowDocument(
         <MokuroImage>[page, page],
@@ -465,7 +541,7 @@ void main() {
         spreadDirection: 'ltr',
         inlineSelectionJs: '',
       );
-      expect(docLtr.contains('direction:ltr'), isTrue);
+      expect(docLtr.contains('justify-content:center;direction:ltr'), isTrue);
       expect(docLtr.contains('direction:rtl'), isFalse);
     });
 
@@ -516,6 +592,20 @@ void main() {
       expect(doc.contains("callHandler('onMangaContextMenu'"), isTrue);
       expect(doc.contains("callHandler('onMangaZoomChanged'"), isTrue);
       expect(doc.contains('e.ctrlKey || e.metaKey'), isTrue);
+    });
+
+    test('window document exposes its navigation generation', () {
+      final String doc = mangaWindowDocument(
+        <MokuroImage>[_pageWithTwoBlocks()],
+        <String>['p.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: '',
+        currentSpread: 7,
+        documentGeneration: 42,
+      );
+      expect(doc.contains('window.__mangaDocumentGeneration=42;'), isTrue);
+      expect(doc.contains('var CURRENT = 7;'), isTrue);
     });
   });
 }

@@ -171,6 +171,34 @@ void main() {
     });
   });
 
+  group('decodeProcessedRtdetrOutputs', () {
+    test('过滤分数并把 xyxy 从 640 输入坐标反变换回原图', () {
+      final LetterboxTransform transform = computeLetterbox(100, 200);
+      final List<RawDetection> detections = decodeProcessedRtdetrOutputs(
+        scores: Float32List.fromList(<double>[0.9, 0.1]),
+        labels: Float32List.fromList(<double>[2, 1]),
+        boxes: Float32List.fromList(<double>[
+          256,
+          256,
+          384,
+          384,
+          0,
+          0,
+          64,
+          64,
+        ]),
+        transform: transform,
+      );
+
+      expect(detections, hasLength(1));
+      expect(detections.single.classId, kDetClassTextFree);
+      expect(detections.single.rect.left, closeTo(40, 0.01));
+      expect(detections.single.rect.top, closeTo(80, 0.01));
+      expect(detections.single.rect.right, closeTo(60, 0.01));
+      expect(detections.single.rect.bottom, closeTo(120, 0.01));
+    });
+  });
+
   group('applyClassAwareNms', () {
     const OcrRect boxA = OcrRect(left: 0, top: 0, right: 100, bottom: 100);
     const OcrRect boxB = OcrRect(left: 5, top: 5, right: 105, bottom: 105);
@@ -239,6 +267,10 @@ void main() {
       final OcrTensor input = session.receivedInputs.single['pixel_values']!;
       expect(input.shape, <int>[1, 3, 640, 640]);
       expect(input.type, OcrTensorType.float32);
+      final OcrTensor targetSize =
+          session.receivedInputs.single['orig_target_sizes']!;
+      expect(targetSize.shape, <int>[1, 2]);
+      expect(targetSize.intData, <int>[640, 640]);
 
       expect(result.textRegions, hasLength(1));
       final OcrRect rect = result.textRegions.single.rect;
@@ -250,6 +282,30 @@ void main() {
 
       await detector.close();
       expect(session.closed, isTrue);
+    });
+
+    test('兼容图内后处理的 scores labels boxes 输出', () async {
+      final FakeSession session = FakeSession(<String, OcrTensor>{
+        'scores': OcrTensor.float32(
+            Float32List.fromList(<double>[0.95]), <int>[1, 1]),
+        'labels':
+            OcrTensor.float32(Float32List.fromList(<double>[2]), <int>[1, 1]),
+        'boxes': OcrTensor.float32(
+          Float32List.fromList(<double>[256, 256, 384, 384]),
+          <int>[1, 1, 4],
+        ),
+      });
+      final TextDetector detector = TextDetector(session);
+
+      final PageDetections result =
+          await detector.detect(img.Image(width: 100, height: 200));
+
+      expect(result.textRegions, hasLength(1));
+      expect(result.textRegions.single.classId, kDetClassTextFree);
+      expect(result.textRegions.single.rect.left, closeTo(40, 0.01));
+      expect(result.textRegions.single.rect.top, closeTo(80, 0.01));
+      expect(result.textRegions.single.rect.right, closeTo(60, 0.01));
+      expect(result.textRegions.single.rect.bottom, closeTo(120, 0.01));
     });
 
     test('输出名缺失时报错而非静默', () async {

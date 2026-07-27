@@ -778,9 +778,6 @@ void main() {
           'MokuroBlock.fontSize is a mokuro/manga.json data field (detected '
               'bubble text size, serialized round-trip), not page typography — '
               'pure data-model file with no UI code.',
-      'lib/src/media/manga/manga_json_writeback.dart':
-          'Writes the MokuroBlock.fontSize data field back into manga.json '
-              '(box-rescan block append); pure data layer, no UI code.',
       'lib/src/ocr/manga_ocr_folder_job.dart':
           'Estimates the MokuroBlock.fontSize data field (sqrt(area/chars)) '
               'for OCR-produced manga.json blocks; pure data layer, no UI '

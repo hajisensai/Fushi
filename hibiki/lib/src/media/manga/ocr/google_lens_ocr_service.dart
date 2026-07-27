@@ -375,7 +375,13 @@ class GoogleLensPageCache {
       if (parsed.images.length != 1) {
         return null;
       }
-      final MokuroImage result = parsed.images.single;
+      final int geometryVersion = switch (decoded['geometry_version']) {
+        final num value => value.round(),
+        _ => 1,
+      };
+      final MokuroImage result = geometryVersion >= 2
+          ? parsed.images.single
+          : _migrateLegacyCachedLensPage(parsed.images.single);
       _remember(memoryKey, result);
       return result;
     } catch (_) {
@@ -395,6 +401,7 @@ class GoogleLensPageCache {
         .single as Map<String, Object?>;
     final Map<String, Object?> encoded = <String, Object?>{
       'fingerprint': _fingerprint(page),
+      'geometry_version': 2,
       'page': pageJson,
     };
     _remember(jsonEncode(_fingerprint(page)), result);
@@ -441,6 +448,140 @@ class GoogleLensPageCache {
     _memoryOrder.remove(key);
     _memoryOrder.add(key);
   }
+}
+
+MokuroImage _migrateLegacyCachedLensPage(MokuroImage page) {
+  final double pageHeight = page.size.height;
+  final List<MokuroBlock> blocks = <MokuroBlock>[
+    for (final MokuroBlock block in page.blocks)
+      _normalizeCachedLensBlock(MokuroBlock(
+        rectangle: _flipLegacyLensRect(block.rectangle, pageHeight),
+        isVertical: block.isVertical,
+        fontSize: block.fontSize,
+        zIndex: block.zIndex,
+        lines: block.lines,
+        linesCoords: block.linesCoords,
+        regions: block.regions
+            ?.map((MangaOcrTextRegion region) => MangaOcrTextRegion(
+                  rectangle: _flipLegacyLensRect(
+                    region.rectangle,
+                    pageHeight,
+                  ),
+                  utf16Start: region.utf16Start,
+                  utf16End: region.utf16End,
+                ))
+            .toList(),
+      )),
+  ];
+  return MokuroImage(url: page.url, size: page.size, blocks: blocks);
+}
+
+Rect _flipLegacyLensRect(Rect rect, double pageHeight) => Rect.fromLTRB(
+      rect.left,
+      pageHeight - rect.bottom,
+      rect.right,
+      pageHeight - rect.top,
+    );
+
+MokuroBlock _normalizeCachedLensBlock(MokuroBlock block) {
+  final List<MangaOcrTextRegion>? regions = block.regions;
+  final String original = block.lines.join();
+  if (regions == null || regions.length < 2 || original.isEmpty) {
+    return block;
+  }
+  final List<_CachedLensPiece> pieces = <_CachedLensPiece>[];
+  for (final MangaOcrTextRegion region in regions) {
+    final int start = region.utf16Start.clamp(0, original.length);
+    final int end = region.utf16End.clamp(start, original.length);
+    if (end <= start) continue;
+    pieces.add(_CachedLensPiece(
+      text: original.substring(start, end),
+      rectangle: region.rectangle,
+    ));
+  }
+  if (pieces.length < 2) return block;
+
+  final List<List<_CachedLensPiece>> groups =
+      _groupCachedLensPieces(pieces, vertical: block.isVertical);
+  final List<_CachedLensPiece> ordered = <_CachedLensPiece>[
+    for (final List<_CachedLensPiece> group in groups) ...group,
+  ];
+  final StringBuffer sentence = StringBuffer();
+  final List<MangaOcrTextRegion> normalizedRegions = <MangaOcrTextRegion>[];
+  int offset = 0;
+  for (final _CachedLensPiece piece in ordered) {
+    final int end = offset + piece.text.length;
+    sentence.write(piece.text);
+    normalizedRegions.add(MangaOcrTextRegion(
+      rectangle: piece.rectangle,
+      utf16Start: offset,
+      utf16End: end,
+    ));
+    offset = end;
+  }
+  return MokuroBlock(
+    rectangle: block.rectangle,
+    isVertical: block.isVertical,
+    fontSize: block.fontSize,
+    zIndex: block.zIndex,
+    lines: <String>[sentence.toString()],
+    linesCoords: block.linesCoords,
+    regions: normalizedRegions,
+  );
+}
+
+List<List<_CachedLensPiece>> _groupCachedLensPieces(
+  List<_CachedLensPiece> pieces, {
+  required bool vertical,
+}) {
+  final List<_CachedLensPiece> remaining = List<_CachedLensPiece>.of(pieces)
+    ..sort(vertical
+        ? (_CachedLensPiece a, _CachedLensPiece b) =>
+            b.rectangle.center.dx.compareTo(a.rectangle.center.dx)
+        : (_CachedLensPiece a, _CachedLensPiece b) =>
+            a.rectangle.center.dy.compareTo(b.rectangle.center.dy));
+  final List<List<_CachedLensPiece>> groups = <List<_CachedLensPiece>>[];
+  for (final _CachedLensPiece piece in remaining) {
+    List<_CachedLensPiece>? match;
+    for (final List<_CachedLensPiece> group in groups) {
+      final Rect anchor = group.first.rectangle;
+      final bool overlaps = vertical
+          ? _axisOverlap(anchor.left, anchor.right, piece.rectangle.left,
+                  piece.rectangle.right) >
+              math.min(anchor.width, piece.rectangle.width) * 0.35
+          : _axisOverlap(anchor.top, anchor.bottom, piece.rectangle.top,
+                  piece.rectangle.bottom) >
+              math.min(anchor.height, piece.rectangle.height) * 0.35;
+      if (overlaps) {
+        match = group;
+        break;
+      }
+    }
+    (match ?? (groups..add(<_CachedLensPiece>[])).last).add(piece);
+  }
+  groups.sort(vertical
+      ? (List<_CachedLensPiece> a, List<_CachedLensPiece> b) =>
+          b.first.rectangle.center.dx.compareTo(a.first.rectangle.center.dx)
+      : (List<_CachedLensPiece> a, List<_CachedLensPiece> b) =>
+          a.first.rectangle.center.dy.compareTo(b.first.rectangle.center.dy));
+  for (final List<_CachedLensPiece> group in groups) {
+    group.sort(vertical
+        ? (_CachedLensPiece a, _CachedLensPiece b) =>
+            a.rectangle.center.dy.compareTo(b.rectangle.center.dy)
+        : (_CachedLensPiece a, _CachedLensPiece b) =>
+            a.rectangle.center.dx.compareTo(b.rectangle.center.dx));
+  }
+  return groups;
+}
+
+double _axisOverlap(double a0, double a1, double b0, double b1) =>
+    math.max(0, math.min(a1, b1) - math.max(a0, b0));
+
+class _CachedLensPiece {
+  const _CachedLensPiece({required this.text, required this.rectangle});
+
+  final String text;
+  final Rect rectangle;
 }
 
 Future<Map<String, MokuroImage>> _readExistingPages(File output) async {

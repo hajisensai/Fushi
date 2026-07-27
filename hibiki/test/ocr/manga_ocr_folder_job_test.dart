@@ -138,6 +138,19 @@ void main() {
       }
     });
 
+    test('解码时烘焙 EXIF 方向，OCR 坐标与浏览器显示坐标一致', () async {
+      final img.Image encoded = img.Image(width: 40, height: 80)
+        ..exif.imageIfd.orientation = 6;
+      final File page = File(p.join(root.path, 'oriented.jpg'));
+      page.writeAsBytesSync(img.encodeJpg(encoded));
+
+      final img.Image decoded = await decodeMangaPageFile(page);
+
+      expect(decoded.width, 80);
+      expect(decoded.height, 40);
+      expect(decoded.exif.imageIfd.hasOrientation, isFalse);
+    });
+
     test('全卷：逐页进度、manga.json 内容（url/尺寸/块）、缓存落盘', () async {
       final _FakeDetector detector = _FakeDetector();
       final _FakeRecognizer recognizer = _FakeRecognizer();

@@ -27,10 +27,20 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1083 条。点号进各自文件。
+> 共 1093 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1136](bugs/BUG-1136-manga-page-jump-controller-lifecycle.md) | ✅ | ✅ | 漫画页码跳转关闭弹窗后红屏 |
+| [BUG-1135](bugs/BUG-1135-manga-window-generation-stale-page.md) | ✅ | ✅ | 漫画页码已翻但 WebView 仍显示旧页面 |
+| [BUG-1134](bugs/BUG-1134-manga-lens-top-left-rotated-hit-regions.md) | ✅ | ✅ | 漫画 Lens OCR 坐标上下镜像且旋转文字点词错位 |
+| [BUG-1133](bugs/BUG-1133-manga-incremental-ocr-cache-recovery.md) | ✅ | ✅ | 漫画增量 OCR 缓存重开后未恢复 |
+| [BUG-1132](bugs/BUG-1132-manga-ocr-onnx-input-contract.md) | ✅ | ✅ | 漫画 OCR 按 ONNX 元数据适配单输入模型名称 |
+| [BUG-1131](bugs/BUG-1131-windows-manga-ocr-falls-back-from-unsupported-directml-provider.md) | ✅ | ✅ | Windows 漫画本地 OCR 不支持 DirectML 时未回退 CPU |
+| [BUG-1130](bugs/BUG-1130-manga-ocr-character-hit-zoom.md) | ✅ | ✅ | 漫画 OCR 横竖排字符在缩放后查词偏移 |
+| [BUG-1129](bugs/BUG-1129-manga-ocr-coordinate-cache.md) | ✅ | ✅ | 漫画 OCR 查词坐标偏移且重启重复识别 |
+| [BUG-1128](bugs/BUG-1128-manga-ocr-blocks-reader.md) | ✅ | ✅ | 漫画 OCR 模态阻塞阅读且完成页不能立即查词 |
+| [BUG-1127](bugs/BUG-1127-manga-spread-cropped-janky.md) | ✅ | ✅ | 漫画双页图片裁切且翻页卡顿 |
 | [BUG-1126](bugs/BUG-1126-video-episode-panel-missing-covers.md) | ✅ | ✅ | 视频剧集侧栏只传标题导致本地与互联封面全部丢失 |
 | [BUG-1115](bugs/BUG-1115-default-documents-root-flat.md) | ✅ | ✅ | 默认数据根时 16 个 Hibiki 目录直接摊在用户文档根下 |
 | [BUG-1114](bugs/BUG-1114-local-rig-rate-limit-flake.md) | 🚧 | 🚧 | 内置引擎本地 rig 测试：限速对 loopback peer 不生效导致 peer 观察窗口消失（flaky） |

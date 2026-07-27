@@ -6,6 +6,7 @@ import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/media/manga/external_mokuro_runner.dart';
 import 'package:hibiki/src/media/manga/import/manga_archive_importer.dart';
 import 'package:hibiki/src/media/manga/manga_importer.dart';
+import 'package:hibiki/src/media/manga/manga_ocr_background_job.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_wizard_dialog.dart';
 import 'package:hibiki/src/media/manga/ocr/google_lens_ocr_service.dart';
@@ -81,6 +82,39 @@ abstract final class MangaModule {
         remoteRunner: remoteRunner,
         lensRunner: GoogleLensMangaOcrService(),
         initialEnginePreference: appModel.mangaOcrEnginePreference,
+      ),
+    );
+  }
+
+  /// 对已入书架的漫画直接运行整卷 OCR。阅读器从当前页触发时，Lens 会先扫
+  /// 当前页到末页，再从首页补齐；完成后原子替换本书的 `manga.json`。
+  static Future<MangaOcrBackgroundJob?> openBookOcr({
+    required BuildContext context,
+    required HibikiDatabase db,
+    required EpubBookRow book,
+    required int startPage,
+    required bool desktop,
+  }) {
+    final ProviderContainer container =
+        ProviderScope.containerOf(context, listen: false);
+    final AppModel appModel = container.read(appProvider);
+    final String configured = appModel.mangaExternalMokuroPath.trim();
+    return showAppDialog<MangaOcrBackgroundJob>(
+      context: context,
+      builder: (_) => MangaOcrWizardDialog(
+        service: container.read(mangaOcrServiceProvider),
+        db: db,
+        externalRunner: desktop
+            ? ExternalMokuroRunner(
+                configuredPath: configured.isEmpty ? null : configured,
+              )
+            : null,
+        lensRunner: GoogleLensMangaOcrService(),
+        initialEnginePreference: appModel.mangaOcrEnginePreference,
+        existingBook: book,
+        startPage: startPage,
+        onlyMissing: true,
+        launchInBackground: true,
       ),
     );
   }

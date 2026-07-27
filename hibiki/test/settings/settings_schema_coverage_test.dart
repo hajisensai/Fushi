@@ -85,11 +85,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 由迁移守卫（hibikiServer→独立开关）+ 可见性守卫（开关常显、配置区门控）咬住。
   'interconnect/Enable interconnect':
       'test/sync/sync_interconnect_decouple_migration_test.dart + test/sync/sync_settings_visibility_test.dart',
-  // 漫画云端手写识别开关：行为类设置（闸门控制 CloudOcrService 是否可用/零网络
-  // 红线），生效由专项 widget/service 测试咬住：设置区写穿偏好 +
-  // cloud_ocr_client_test 的「默认关零网络」gating。
-  'reading/Enable cloud recognition':
-      'test/media/manga/manga_ocr_settings_section_ui_test.dart + test/ocr/cloud_ocr_client_test.dart',
   // 漫画「在线目录」站点根 URL（O1 mokuro.moe 目录源）：网络端点，写穿偏好后
   // 消费点在 MokuroMoeClient 的请求 URL 拼接（widget harness 观测不到真生效）；
   // 由 client 专项测试咬住（base URL 归一 + URL 编码 + 端点拼接）。

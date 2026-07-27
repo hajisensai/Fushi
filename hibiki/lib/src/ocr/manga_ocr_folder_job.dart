@@ -25,7 +25,10 @@ const String kMangaOcrOutDirName = 'manga_ocr_out';
 const String kMangaOcrPagesCacheDirName = '_pages';
 
 /// Separates local ONNX cache entries from network/CLI engines.
-const String kLocalMangaOcrEngineSignature = 'local-onnx-v1';
+// v2 bakes EXIF orientation before detection. v1 coordinates were measured
+// against the encoded pixel matrix while Chromium displayed the oriented page,
+// so portrait pages with orientation metadata had a shifted lookup layer.
+const String kLocalMangaOcrEngineSignature = 'local-onnx-v2-oriented';
 
 /// 产物文件名（`manga_ocr_out/manga.json`）。
 const String kMangaOcrOutputFileName = 'manga.json';
@@ -272,7 +275,10 @@ Future<img.Image> decodeMangaPageFile(File file) async {
   if (decoded == null) {
     throw StateError('failed to decode image: ${file.path}');
   }
-  return decoded;
+  // Browser image rendering honors EXIF orientation. OCR must use the same
+  // oriented pixel space, otherwise the percentage overlay and click target
+  // are rotated/translated relative to the visible page.
+  return img.bakeOrientation(decoded);
 }
 
 /// 跑整卷目录任务，返回产出的 `manga.json` 绝对路径。

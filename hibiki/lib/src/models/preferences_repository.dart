@@ -1820,7 +1820,9 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 云端识别模型名（空串=默认 `gemini-2.5-flash`，见 cloud_ocr_client.dart）。
+  /// 旧版单框 Gemini 识别模型名。
+  ///
+  /// 仅保留偏好键以兼容已有数据；漫画模块已改为整页 OCR，不再展示此配置。
   String get mangaCloudOcrModel =>
       getPref('manga_cloud_ocr_model', defaultValue: '') as String;
 

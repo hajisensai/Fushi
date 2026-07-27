@@ -58,7 +58,29 @@ void main() {
     expect(result.single.isVertical, isTrue);
     expect(
       result.single.regions.first.normalizedBounds.top,
-      greaterThan(result.single.regions.last.normalizedBounds.top),
+      lessThan(result.single.regions.last.normalizedBounds.top),
+    );
+    expect(
+      result.single.regions.first.normalizedBounds.height,
+      lessThan(result.single.normalizedBounds.height * 0.75),
+      reason: '旋转行应先沿基线拆字符，不能让每个字符占满整行 AABB',
+    );
+  });
+
+  test('horizontal lines are ordered from visual top to bottom', () {
+    final List<GoogleLensParagraph> result = GoogleLensProtocol.decodeResponse(
+      makeGoogleLensFixture(
+        firstWord: '上',
+        secondWord: '',
+        centerY: 0.3,
+        secondLineText: '下',
+        secondLineCenterY: 0.7,
+      ),
+    );
+    expect(result.single.sentence, '上下');
+    expect(
+      result.single.regions.first.normalizedBounds.top,
+      lessThan(result.single.regions.last.normalizedBounds.top),
     );
   });
 
