@@ -8,11 +8,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/collections/add_to_collection_dialog.dart';
-import 'package:hibiki/src/mining/galgame_cover_download.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/galgame_repository.dart';
 import 'package:hibiki/src/mining/galgame_scrape_controller.dart';
-import 'package:hibiki/src/mining/metadata/galgame_metadata_adapter.dart';
+import 'package:hibiki/src/mining/galgame_scrape_dialog.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_merge.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_source.dart';
@@ -845,8 +844,6 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
       TextEditingController(text: widget.game.launchArgs);
   late bool _nsfw = widget.game.customData.nsfw ?? false;
 
-  bool _scraping = false;
-
   @override
   void dispose() {
     for (final TextEditingController c in <TextEditingController>[
@@ -909,106 +906,20 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
     HibikiToast.show(msg: t.game_edit_saved);
   }
 
-  /// 刮削：输入标题或源 ID → 搜索 → 多结果让用户选 → 取详情 → 落库。
+  /// 刮削：打开统一刮削弹窗（与库页卡菜单「刮削元数据」同一个入口，
+  /// [showGalgameScrapeDialog]）。搜索/候选/落库/封面全部在弹窗内闭环；
+  /// 预填词取编辑框里的名字（用户可能刚改过），空则退回当前显示名。
   Future<void> _scrape() async {
-    if (_scraping) return; // 再入守卫：一次刮削含多次网络往返。
-    final String? query = await showAppDialog<String>(
+    final bool applied = await showGalgameScrapeDialog(
       context: context,
-      builder: (BuildContext ctx) => _ScrapeQueryDialog(
-        initial: _name.text.trim().isEmpty
-            ? widget.game.displayName
-            : _name.text.trim(),
-      ),
+      game: widget.game,
+      repo: widget.repo,
+      initialQuery: _name.text.trim().isEmpty
+          ? widget.game.displayName
+          : _name.text.trim(),
     );
-    if (query == null || query.isEmpty) return;
-    _scraping = true;
-    setState(() {});
-    try {
-      final GalgameScrapeSearchResult result =
-          await GalgameScrapeController.instance.search(query);
-      if (!mounted) return;
-      if (result.isEmpty) {
-        HibikiToast.show(msg: t.game_scrape_no_result);
-        return;
-      }
-      SourceCandidate? picked = result.candidates.length == 1
-          ? result.candidates.first
-          : await showAppDialog<SourceCandidate>(
-              context: context,
-              builder: (BuildContext ctx) =>
-                  _SourcePickerDialog(candidates: result.candidates),
-            );
-      if (picked == null || !mounted) return;
-      final GalgameMetadataDraft? draft = await GalgameScrapeController.instance
-          .fetchById(picked.source, picked.externalId);
-      if (!mounted) return;
-      if (draft == null) {
-        HibikiToast.show(msg: t.game_scrape_no_result);
-        return;
-      }
-      // 多个源都有快照时主显示源记 mixed（契约 §1.1）。
-      final List<GalgameSourceRow> existing =
-          await widget.repo.sourcesOf(widget.game.id);
-      final Set<String> sources = <String>{
-        for (final GalgameSourceRow row in existing) row.source,
-        picked.source.key,
-      };
-      await widget.repo.saveScrapeResult(
-        gameId: widget.game.id,
-        source: picked.source,
-        draft: draft,
-        primarySource:
-            sources.length > 1 ? kGalgamePrimarySourceMixed : picked.source.key,
-      );
-      await widget.onSaved();
-      if (!mounted) return;
-      HibikiToast.show(msg: t.game_scrape_applied);
-      // 刮削封面落地：仅当该游戏当前无可用封面文件时自动下载 coverUrl 并写
-      // coverPath；已有封面（手选/自动/上次下载）绝不覆盖。失败静默降级（元数据
-      // 本身已成功），原因由下载函数记 debug 日志。
-      await _maybeDownloadScrapedCover();
-    } on GalgameMetadataException catch (e) {
-      if (!mounted) return;
-      HibikiToast.show(msg: '${t.game_scrape_failed}: ${e.message}');
-    } catch (e) {
-      if (!mounted) return;
-      HibikiToast.show(msg: '${t.game_scrape_failed}: $e');
-    } finally {
-      _scraping = false;
-      if (mounted) setState(() {});
-    }
-  }
-
-  /// 刮削成功后的封面落地（决策纯函数 [shouldAutoDownloadScrapedCover] 可单测）：
-  /// 读**重载后**的最新条目（合并层已按优先级/手选源算好 coverUrl），无可用封面
-  /// 文件才下载；落盘（含双键驱逐旧解码缓存）由 [downloadGalgameCoverToFile] →
-  /// `MediaCoverService.applyCoverBytes` 收口结构性保证，随后写 coverPath 并复用
-  /// `t.game_cover_updated` 提示。
-  Future<void> _maybeDownloadScrapedCover() async {
-    final GalgameEntry? latest = widget.repo.byId(widget.game.id);
-    if (latest == null) return;
-    final String? coverPath = latest.coverPath;
-    final bool hasUsableCoverFile = coverPath != null &&
-        coverPath.isNotEmpty &&
-        File(coverPath).existsSync();
-    final String? coverUrl = latest.metadata.coverUrl;
-    if (!shouldAutoDownloadScrapedCover(
-      hasUsableCoverFile: hasUsableCoverFile,
-      coverUrl: coverUrl,
-    )) {
-      return;
-    }
-    final String? saved = await downloadGalgameCoverToFile(
-      gameId: latest.id,
-      url: coverUrl!,
-    );
-    if (saved == null) return; // 失败静默：原因已进 debug 日志。
-    // 下载期间条目可能已被移除：仓储按 id 更新，行不在就不写。
-    if (widget.repo.byId(latest.id) == null) return;
-    await widget.repo.setCoverPath(latest.id, saved);
+    if (!applied || !mounted) return;
     await widget.onSaved();
-    if (!mounted) return;
-    HibikiToast.show(msg: t.game_cover_updated);
   }
 
   @override
@@ -1020,7 +931,8 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
           children: <Widget>[
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _scraping ? null : () => unawaited(_scrape()),
+                // 再入守卫在统一弹窗内（每行「使用」行内转圈），按钮无需禁用态。
+                onPressed: () => unawaited(_scrape()),
                 icon: const Icon(Icons.cloud_download_outlined),
                 label: Text(t.game_scrape),
               ),
@@ -1113,114 +1025,5 @@ double? parseGalgameRating(String raw) {
   return value.clamp(0, 10).toDouble();
 }
 
-/// 刮削关键词输入框（标题或源 ID）。
-class _ScrapeQueryDialog extends StatefulWidget {
-  const _ScrapeQueryDialog({required this.initial});
-
-  final String initial;
-
-  @override
-  State<_ScrapeQueryDialog> createState() => _ScrapeQueryDialogState();
-}
-
-class _ScrapeQueryDialogState extends State<_ScrapeQueryDialog> {
-  late final TextEditingController _controller =
-      TextEditingController(text: widget.initial);
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    return HibikiDialogFrame(
-      maxWidth: 420,
-      scrollable: false,
-      child: HibikiModalSheetFrame(
-        title: t.game_scrape,
-        scrollable: true,
-        bodyPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          0,
-          tokens.spacing.card,
-          tokens.spacing.gap,
-        ),
-        footerPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          tokens.spacing.gap,
-          tokens.spacing.card,
-          tokens.spacing.card,
-        ),
-        body: HibikiTextField(
-          controller: _controller,
-          labelText: t.game_scrape_query,
-          autofocus: true,
-          onSubmitted: (String v) => Navigator.of(context).pop(v.trim()),
-        ),
-        footer: Wrap(
-          alignment: WrapAlignment.end,
-          spacing: tokens.spacing.gap,
-          runSpacing: tokens.spacing.gap,
-          children: <Widget>[
-            adaptiveDialogAction(
-              context: context,
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(t.dialog_cancel),
-            ),
-            adaptiveDialogAction(
-              context: context,
-              isDefaultAction: true,
-              onPressed: () =>
-                  Navigator.of(context).pop(_controller.text.trim()),
-              child: Text(t.dialog_ok),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 多结果候选列表（契约 §2.5）：选中后由调用方 `fetchById` 补全。
-class _SourcePickerDialog extends StatelessWidget {
-  const _SourcePickerDialog({required this.candidates});
-
-  final List<SourceCandidate> candidates;
-
-  @override
-  Widget build(BuildContext context) {
-    return SimpleDialog(
-      title: Text(t.game_scrape_pick),
-      children: <Widget>[
-        for (final SourceCandidate c in candidates)
-          SimpleDialogOption(
-            onPressed: () => Navigator.of(context).pop(c),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  c.displayName,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyLarge,
-                ),
-                Text(
-                  <String>[
-                    c.source.label,
-                    c.externalId,
-                    if (c.releaseDate != null) c.releaseDate!,
-                  ].join('  ·  '),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-}
+// （旧 `_ScrapeQueryDialog` / `_SourcePickerDialog` 已被统一刮削弹窗
+// `showGalgameScrapeDialog` 取代：单弹窗内搜索 + 带缩略图候选 + 行内应用。）

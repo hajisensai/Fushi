@@ -31,6 +31,15 @@ bool shouldAutoDownloadScrapedCover({
   return coverUrl != null && coverUrl.trim().isNotEmpty;
 }
 
+/// 纯函数：用户在统一刮削弹窗里**显式选中**候选后是否下载封面。
+///
+/// 与 [shouldAutoDownloadScrapedCover]（隐式路径：已有可用封面绝不覆盖）语义
+/// 不同：显式选择 = 用户点名要这一条 → 只要源给了 URL 就下载并**覆盖**现有封面
+/// （与视频「在线匹配海报」的手动「使用」同语义）。隐式规则保持原样，仅继续
+/// 服务将来的自动刮削路径；两条路径的分界由各自纯函数钉死，禁止互相借用。
+bool shouldDownloadExplicitScrapedCover({required String? coverUrl}) =>
+    coverUrl != null && coverUrl.trim().isNotEmpty;
+
 /// 纯函数：从响应 Content-Type / URL 路径推导落盘扩展名（小写、含点）。
 ///
 /// 优先信 Content-Type（服务器端真相）；拿不到或不认识再看 URL 路径后缀是否在

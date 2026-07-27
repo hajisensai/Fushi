@@ -101,8 +101,58 @@ class BangumiClient {
     return parseBangumiSubjectResponse(response.body);
   }
 
+  /// 按 subject id 直取条目并映射为**候选**（添加/修改 Bangumi 映射：用户在匹配
+  /// 弹窗贴 ID/URL 直连改绑，不走关键词搜索）。
+  ///
+  /// 404（条目不存在/被删）或条目无海报 → null（UI 按空结果处理）；其余非 2xx /
+  /// 网络失败 → 抛 [ScrapeNetworkException]。
+  Future<ScrapeCandidate?> fetchSubjectCandidate(String subjectId) async {
+    final BangumiRawResponse response;
+    try {
+      response = await _api.fetchSubject(subjectId);
+    } on BangumiTransportException catch (e) {
+      throw ScrapeNetworkException('Bangumi subject ${e.message}');
+    }
+    if (response.statusCode == 404) return null;
+    if (!response.isOk) {
+      throw ScrapeNetworkException(
+        'Bangumi subject HTTP ${response.statusCode}',
+        statusCode: response.statusCode,
+      );
+    }
+    return parseBangumiSubjectDetailAsCandidate(response.body);
+  }
+
   /// 关闭内部 client（若为默认自建）。测试注入的 mock client 由调用方自行管理。
   void close() => _api.close();
+}
+
+/// 纯函数：把 Bangumi `/v0/subjects/{id}` **详情**响应体解析为 [ScrapeCandidate]
+/// （id 直连改绑映射路径用；与搜索候选同一映射器，保证「使用」后落库路径零分叉）。
+///
+/// 详情端点与搜索端点字段有两处形态差异，先归一再复用 [_mapBangumiSubject]：
+/// 评分在 `rating.score`（搜索是扁平 `score`）；话数补 `total_episodes` 回退。
+/// 无海报/无标题 → null；JSON 结构异常 → 抛 [ScrapeNetworkException]。
+ScrapeCandidate? parseBangumiSubjectDetailAsCandidate(String body) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(body);
+  } catch (e) {
+    throw ScrapeNetworkException('Bangumi subject JSON decode failed: $e');
+  }
+  if (decoded is! Map<String, Object?>) {
+    throw const ScrapeNetworkException('Bangumi subject not a JSON object');
+  }
+  final Map<String, Object?> subject = Map<String, Object?>.of(decoded);
+  final Object? ratingNode = subject['rating'];
+  if (_asDouble(subject['score']) == null &&
+      ratingNode is Map<String, Object?>) {
+    subject['score'] = ratingNode['score'];
+  }
+  if ((_asInt(subject['eps']) ?? 0) <= 0) {
+    subject['eps'] = subject['total_episodes'];
+  }
+  return _mapBangumiSubject(subject);
 }
 
 /// 纯函数：把 Bangumi `/v0/subjects/{id}` 响应体解析为 [ScrapeMetadata]。

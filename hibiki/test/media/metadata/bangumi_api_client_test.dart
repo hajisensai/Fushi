@@ -12,7 +12,8 @@ import 'package:http/testing.dart';
 /// 由各调用方自己的测试覆盖，不在此重复。
 void main() {
   group('BangumiApiClient.searchSubjects', () {
-    test('POST /search/subjects：UA/Content-Type 头、body 含 keyword+filter.type、limit query',
+    test(
+        'POST /search/subjects：UA/Content-Type 头、body 含 keyword+filter.type、limit query',
         () async {
       Map<String, String>? headers;
       Object? body;
@@ -50,8 +51,10 @@ void main() {
         uri = req.url;
         return http.Response.bytes(utf8.encode('{}'), 200);
       });
-      await BangumiApiClient(client: client, userAgent: 'ua')
-          .searchSubjects('x', subjectType: kBangumiSubjectTypeAnime, limit: 999);
+      await BangumiApiClient(client: client, userAgent: 'ua').searchSubjects(
+          'x',
+          subjectType: kBangumiSubjectTypeAnime,
+          limit: 999);
       expect(uri?.queryParameters['limit'], '50');
     });
 
@@ -171,6 +174,36 @@ void main() {
         baseUrl: 'https://mirror.example/v0',
       ).fetchSubject('9');
       expect(uri.toString(), 'https://mirror.example/v0/subjects/9');
+    });
+  });
+
+  group('parseBangumiSubjectUrl（添加/修改映射的 URL 直连解析）', () {
+    test('三个已知域名的 /subject/<id> 均解析出数字 id', () {
+      expect(parseBangumiSubjectUrl('https://bgm.tv/subject/253'), '253');
+      expect(parseBangumiSubjectUrl('https://bangumi.tv/subject/253'), '253');
+      expect(parseBangumiSubjectUrl('https://chii.in/subject/253'), '253');
+      expect(parseBangumiSubjectUrl('http://www.bgm.tv/subject/253'), '253');
+    });
+
+    test('容忍无 scheme / 尾随路径段 / query / fragment', () {
+      expect(parseBangumiSubjectUrl('bgm.tv/subject/4885'), '4885');
+      expect(
+        parseBangumiSubjectUrl('https://bgm.tv/subject/253/comments?x=1#top'),
+        '253',
+      );
+    });
+
+    test('纯数字不在此认定（数字可能是标题，由弹窗并列策略处理）', () {
+      expect(parseBangumiSubjectUrl('253'), isNull);
+      expect(parseBangumiSubjectUrl('86'), isNull);
+    });
+
+    test('未知域名 / 非条目路径 / 非数字 id / 空串 → null', () {
+      expect(parseBangumiSubjectUrl('https://example.com/subject/253'), isNull);
+      expect(parseBangumiSubjectUrl('https://bgm.tv/user/foo'), isNull);
+      expect(parseBangumiSubjectUrl('https://bgm.tv/subject/abc'), isNull);
+      expect(parseBangumiSubjectUrl(''), isNull);
+      expect(parseBangumiSubjectUrl('星际牛仔'), isNull);
     });
   });
 }

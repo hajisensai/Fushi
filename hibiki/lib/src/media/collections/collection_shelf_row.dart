@@ -35,6 +35,7 @@ class CollectionShelfRow extends StatefulWidget {
     this.onToggleSelected,
     this.onTagDropped,
     this.tags,
+    this.onContextMenu,
     super.key,
   });
 
@@ -94,6 +95,11 @@ class CollectionShelfRow extends StatefulWidget {
   /// 不占位。调用方 `ref.watch(collectionTagMapProvider)` 后传该合集的列表；打标签
   /// 后失效该 provider 即刷新。
   final List<BookTagRow>? tags;
+
+  /// 行头长按 / 桌面右键 → 合集上下文菜单（统一三库页合集菜单：打开/重命名/
+  /// 标签/删除，见 `showCollectionContextDialog`）。多选态（[selectionCheckbox]
+  /// 非 null）自动压制——与单卡多选态禁长按菜单同一纪律。null = 行头无菜单。
+  final VoidCallback? onContextMenu;
 
   @override
   State<CollectionShelfRow> createState() => _CollectionShelfRowState();
@@ -201,10 +207,15 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
     final bool selectionMode = selectionCheckbox != null;
     final VoidCallback headerTap =
         widget.onToggleSelected ?? widget.onOpenDetail;
+    // 行头长按/右键 = 合集上下文菜单（多选态压制，行头点击专注整选）。
+    final VoidCallback? contextMenu =
+        selectionMode ? null : widget.onContextMenu;
     final Widget header = InkWell(
       canRequestFocus: false,
       borderRadius: tokens.radii.controlRadius,
       onTap: headerTap,
+      onLongPress: contextMenu,
+      onSecondaryTap: contextMenu,
       child: Padding(
         padding: EdgeInsets.symmetric(
           horizontal: tokens.spacing.gap / 2,

@@ -45,6 +45,38 @@ void main() {
     });
   });
 
+  group('shouldDownloadExplicitScrapedCover', () {
+    test('用户显式选中候选：有 URL 即下载（即使已有封面也覆盖）', () {
+      // 显式路径的签名里根本没有 hasUsableCoverFile——「是否已有封面」不参与
+      // 决策，这正是与隐式路径的分界：显式选择 = 用户点名要这条，封面一起换。
+      expect(
+        shouldDownloadExplicitScrapedCover(
+          coverUrl: 'https://example.com/cover.jpg',
+        ),
+        isTrue,
+      );
+    });
+
+    test('无 URL / 空白 URL → 不下载', () {
+      expect(shouldDownloadExplicitScrapedCover(coverUrl: null), isFalse);
+      expect(shouldDownloadExplicitScrapedCover(coverUrl: '   '), isFalse);
+    });
+
+    test('显式覆盖 vs 隐式不覆盖：同一「已有封面 + 有 URL」情形两函数分道', () {
+      const String url = 'https://example.com/cover.jpg';
+      // 隐式（自动刮削路径）：已有可用封面绝不覆盖。
+      expect(
+        shouldAutoDownloadScrapedCover(
+          hasUsableCoverFile: true,
+          coverUrl: url,
+        ),
+        isFalse,
+      );
+      // 显式（统一刮削弹窗「使用」）：照样下载覆盖。
+      expect(shouldDownloadExplicitScrapedCover(coverUrl: url), isTrue);
+    });
+  });
+
   group('galgameCoverExtension', () {
     test('Content-Type 优先于 URL 后缀', () {
       expect(

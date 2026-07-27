@@ -277,12 +277,15 @@ void main() {
       'HibikiModalSheetFrame',
       'adaptiveDialogAction',
     ],
+    // 刮削二跳收口后，详情页的刮削 UI 全部委托统一弹窗（galgame_scrape_dialog）。
     'lib/src/pages/implementations/galgame_detail_page.dart': <String>[
-      'showAppDialog<String>(',
-      'showAppDialog<SourceCandidate>(',
+      'showGalgameScrapeDialog(',
+    ],
+    // 统一刮削弹窗本体（库页卡菜单与详情页编辑 tab 共用）走共享对话框骨架。
+    'lib/src/mining/galgame_scrape_dialog.dart': <String>[
+      'showAppDialog<bool>(',
       'HibikiDialogFrame',
       'HibikiModalSheetFrame',
-      'HibikiTextField',
       'adaptiveDialogAction',
     ],
     'lib/src/pages/implementations/games_library_page.dart': <String>[
@@ -294,6 +297,11 @@ void main() {
       'HibikiTextField',
       'adaptiveDialogAction',
       'AdaptiveSettingsSwitchRow',
+      // 卡菜单「刮削元数据」直开统一弹窗；「移除」先过统一销毁确认框；
+      // 合集横排行长按/右键有统一合集上下文菜单。
+      'showGalgameScrapeDialog(',
+      'HibikiDestructiveConfirmDialog(',
+      'showCollectionContextDialog(',
     ],
     'lib/src/pages/implementations/texthooker_page.dart': <String>[
       'showAppDialog<int>(',
@@ -604,10 +612,18 @@ void main() {
       'lib/src/pages/implementations/galgame_detail_page.dart': <String>[
         'showDialog<',
         'AlertDialog(',
+        'SimpleDialog(',
+      ],
+      'lib/src/mining/galgame_scrape_dialog.dart': <String>[
+        'showDialog<',
+        'AlertDialog(',
+        'SimpleDialog(',
       ],
       'lib/src/pages/implementations/games_library_page.dart': <String>[
         'showDialog<',
         'AlertDialog(',
+        // 游玩状态选择框已收口设计系统骨架（HibikiListItem 行），不再裸 SimpleDialog。
+        'SimpleDialog(',
         'showModalBottomSheet<',
         'SwitchListTile(',
       ],

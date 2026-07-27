@@ -24,6 +24,34 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+/// 纯函数：把用户粘贴的 Bangumi 条目 **URL** 解析为 subject id（数字串）。
+///
+/// 「添加/修改 Bangumi 映射」共享入口：三媒体域（书/视频/游戏）的刮削弹窗都允许
+/// 直接贴条目 URL 改绑映射。接受 `bgm.tv` / `bangumi.tv` / `chii.in`（含 `www.`
+/// 前缀、http/https、无 scheme）下的 `/subject/<数字>` 路径，容忍尾随路径段 /
+/// query / fragment。**纯数字输入不在此认定**——数字既可能是 id 也可能是标题
+/// （如动画《86》），由各弹窗按「关键词搜索 + id 直取并列」策略自行处理。
+/// 其它输入返回 null（按关键词搜索处理）。
+String? parseBangumiSubjectUrl(String input) {
+  final String trimmed = input.trim();
+  if (trimmed.isEmpty) return null;
+  // 无 scheme 的裸域名形态（如 `bgm.tv/subject/123`）补上 scheme 再解析。
+  final String candidate =
+      trimmed.contains('://') ? trimmed : 'https://$trimmed';
+  final Uri? uri = Uri.tryParse(candidate);
+  if (uri == null) return null;
+  final String host = uri.host.toLowerCase();
+  final String bareHost =
+      host.startsWith('www.') ? host.substring('www.'.length) : host;
+  const Set<String> knownHosts = <String>{'bgm.tv', 'bangumi.tv', 'chii.in'};
+  if (!knownHosts.contains(bareHost)) return null;
+  final List<String> segments = uri.pathSegments;
+  final int subjectIndex = segments.indexOf('subject');
+  if (subjectIndex < 0 || subjectIndex + 1 >= segments.length) return null;
+  final String id = segments[subjectIndex + 1];
+  return RegExp(r'^\d+$').hasMatch(id) ? id : null;
+}
+
 /// Bangumi `filter.type` 条目类型常量（避免各处散落魔法数字）。
 const int kBangumiSubjectTypeBook = 1;
 const int kBangumiSubjectTypeAnime = 2;

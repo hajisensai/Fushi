@@ -240,6 +240,15 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
             await _addSrtToCollection(book);
           },
         ),
+      // 统一三库页卡菜单：SRT 卡与 EPUB/视频/游戏卡对称补「标签」项（内部自行
+      // 收起本对话框）。身份 = SrtBooks.uid（与合集/批量选择键解码一致）。
+      DialogListAction(
+        label: t.tag_label,
+        icon: Icons.sell_outlined,
+        onPressed: () => _openMediaTagPicker(
+          MediaRef(kind: MediaKind.srt, entryKey: book.uid),
+        ),
+      ),
       if (bookKey.isNotEmpty) ...[
         // 与 EPUB 卡菜单对称：手动「标记为已读完 / 取消」。有声书完成状态与 EPUB 共用
         // 同一 EpubBooks.completedAt（按配对 bookKey），故复用同一 [_toggleBookCompleted]。

@@ -70,16 +70,19 @@ void main() {
     await tester.pump();
   }
 
-  /// 卡片菜单应含的全部项（与 `_GameCard._menuItems` 单一真相源对账：任一处漏项
-  /// 本表即断言失败）。'remove' 在长按对话框落危险区，但文案仍必须在场。
+  /// 卡片菜单应含的全部项，**按三库页统一次序**（重命名 → 封面类 → 刮削 →
+  /// 加入合集 → 标签 → 删除；游戏特有的详情/状态保持最前）。与
+  /// `_GameCard._menuItems` 单一真相源对账：漏项或乱序本表即断言失败。
+  /// 'remove' 在长按对话框落危险区，但文案仍必须在场。
   List<String> menuLabels() => <String>[
         t.game_view_detail,
         t.game_play_status,
-        t.game_scrape,
         t.game_rename,
         t.game_set_cover,
         t.game_auto_cover,
+        t.game_scrape,
         t.add_to_collection,
+        t.tag_label,
         t.game_remove,
       ];
 
@@ -101,6 +104,13 @@ void main() {
     for (final String label in menuLabels()) {
       expect(find.text(label), findsOneWidget, reason: '溢出菜单缺「$label」');
     }
+
+    // 次序也要钉住（统一约定：重命名 → 封面类 → 刮削 → 加入合集 → 标签 → 删除）。
+    final List<String> shown = tester
+        .widgetList<PopupMenuItem<String>>(find.byType(PopupMenuItem<String>))
+        .map((PopupMenuItem<String> item) => (item.child! as Text).data!)
+        .toList();
+    expect(shown, menuLabels(), reason: '溢出菜单次序偏离三库页统一约定');
   });
 
   testWidgets('长按菜单走 MediaItemDialogFrame 且与溢出菜单项一致',

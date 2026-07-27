@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:hibiki/src/media/metadata/bangumi_api_client.dart'
+    show parseBangumiSubjectUrl;
 import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
@@ -113,6 +115,31 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   Future<void> _search() async {
     final String keyword = _queryCtrl.text.trim();
     if (keyword.isEmpty) return;
+    // 添加/修改 Bangumi 映射：贴条目 URL = 直接按 id 取该条目改绑（跳过关键词
+    // 搜索与 TMDB key 门，无论当前在哪个数据源分段）。
+    final String? mappedSubjectId = parseBangumiSubjectUrl(keyword);
+    if (mappedSubjectId != null) {
+      setState(() {
+        _searching = true;
+        _searched = true;
+      });
+      List<ScrapeCandidate> results;
+      try {
+        final ScrapeCandidate? candidate =
+            await widget.service.fetchBangumiCandidateById(mappedSubjectId);
+        results = candidate == null
+            ? const <ScrapeCandidate>[]
+            : <ScrapeCandidate>[candidate];
+      } catch (_) {
+        results = const <ScrapeCandidate>[];
+      }
+      if (!mounted) return;
+      setState(() {
+        _results = results;
+        _searching = false;
+      });
+      return;
+    }
     // TMDB 分段但无 key：展开输入行，不搜。
     if (_source == ScrapeSource.tmdb && _storedTmdbKey().isEmpty) {
       setState(() => _showTmdbKeyField = true);
@@ -148,6 +175,26 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
       } finally {
         client.close();
       }
+    }
+    // 纯数字输入既可能是 Bangumi subject id（用户改绑映射）也可能就是标题
+    // （如动画《86》）：两路并发，id 直取命中置顶、与同 id 搜索结果去重——
+    // 不牺牲任何一种意图。
+    if (_source == ScrapeSource.bangumi && RegExp(r'^\d+$').hasMatch(keyword)) {
+      final List<ScrapeCandidate> searched = await widget.service
+          .searchCandidates(source: _source, keyword: keyword)
+          .catchError((Object _) => const <ScrapeCandidate>[]);
+      ScrapeCandidate? direct;
+      try {
+        direct = await widget.service.fetchBangumiCandidateById(keyword);
+      } catch (_) {
+        direct = null;
+      }
+      if (direct == null) return searched;
+      final String directId = direct.entryId;
+      return <ScrapeCandidate>[
+        direct,
+        ...searched.where((ScrapeCandidate c) => c.entryId != directId),
+      ];
     }
     return widget.service.searchCandidates(source: _source, keyword: keyword);
   }

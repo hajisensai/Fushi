@@ -19,6 +19,7 @@ Future<void> showScrapeInfoDialog({
   required String fallbackTitle,
   required ScrapeMetadata? metadata,
   Future<void> Function()? onRescrape,
+  VoidCallback? onEditMapping,
 }) {
   return showAppDialog<void>(
     context: context,
@@ -26,6 +27,7 @@ Future<void> showScrapeInfoDialog({
       fallbackTitle: fallbackTitle,
       metadata: metadata,
       onRescrape: onRescrape,
+      onEditMapping: onEditMapping,
     ),
   );
 }
@@ -36,6 +38,7 @@ class ScrapeInfoDialog extends StatelessWidget {
     required this.fallbackTitle,
     required this.metadata,
     this.onRescrape,
+    this.onEditMapping,
     super.key,
   });
 
@@ -44,6 +47,10 @@ class ScrapeInfoDialog extends StatelessWidget {
 
   final ScrapeMetadata? metadata;
   final Future<void> Function()? onRescrape;
+
+  /// 「添加/修改映射」：打开在线匹配弹窗（可搜索/贴 Bangumi ID/URL 改绑条目）。
+  /// 复用「在线匹配封面」文案——那个弹窗就是映射编辑器。null = 不显示。
+  final VoidCallback? onEditMapping;
 
   /// 资料表最多展示的行数：Bangumi infobox 动辄二三十行（每个声优一行），全列会把
   /// 弹窗撑成长名单。取前若干条（源本身按重要度排：中文名/话数/放送/导演/制作…）。
@@ -70,6 +77,15 @@ class ScrapeInfoDialog extends StatelessWidget {
               ),
       ),
       actions: <Widget>[
+        if (onEditMapping != null)
+          TextButton(
+            key: const ValueKey<String>('scrape_info_edit_mapping'),
+            onPressed: () {
+              Navigator.of(context).pop();
+              onEditMapping!();
+            },
+            child: Text(t.video_scrape_online_match),
+          ),
         if (onRescrape != null)
           TextButton(
             key: const ValueKey<String>('scrape_info_rescrape'),
