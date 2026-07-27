@@ -127,58 +127,61 @@ class GalTrackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final PcmFormat format = track.format;
-    final ColorScheme colors = Theme.of(context).colorScheme;
     // 近窗内一个片段都没有的轨：留在列表里（用户需要知道它存在），但明确标注并置灰，
     // 不再让它看起来和真能取到语音的轨一样（BUG-1102 ②）。
     final bool silent = track.clipCount <= 0;
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      enabled: !silent,
-      leading: Icon(excluded ? Icons.music_off_outlined : Icons.graphic_eq),
-      title: Text(
-        '${t.game_track_voice} ${track.orderIndex + 1} · ${format.sampleRate} Hz · ${format.channels} ch',
-      ),
-      subtitle: Text(
-        <String>[
-          '0x${track.sourcePtr.toRadixString(16)}',
-          '${t.game_track_clips} ${track.clipCount}',
-          '${t.game_track_energy} ${track.avgEnergy.toStringAsFixed(1)}',
-          if (excluded) t.game_track_bgm,
-          if (silent) t.game_track_no_clips,
-        ].join(' · '),
-        style: silent
-            ? Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: colors.outline)
-            : null,
-      ),
-      trailing: Wrap(
-        spacing: 4,
-        children: <Widget>[
-          // BUG-1027：逐轨试听——抓该轨最近整句 PCM 播放，帮用户判断这条轨
-          // 是语音还是 BGM，再决定选轨/排除。播放中变停止按钮。
-          HibikiIconButton(
-            icon: previewing
-                ? Icons.stop_circle_outlined
-                : Icons.play_circle_outline,
-            tooltip:
-                previewing ? t.game_track_preview_stop : t.game_track_preview,
-            onTap: onPreview,
+    return IgnorePointer(
+      ignoring: silent,
+      child: Opacity(
+        opacity: silent ? 0.56 : 1,
+        child: HibikiListItem(
+          padding: EdgeInsets.zero,
+          selected: selected,
+          leading: Icon(
+            excluded ? Icons.music_off_outlined : Icons.graphic_eq,
           ),
-          HibikiIconButton(
-            icon: selected ? Icons.check_circle : Icons.circle_outlined,
-            tooltip: selectTooltip ?? t.game_track_select_as_voice,
-            enabled: selectable && !excluded,
-            onTap: onSelect,
+          title: Text(
+            '${t.game_track_voice} ${track.orderIndex + 1} · ${format.sampleRate} Hz · ${format.channels} ch',
           ),
-          HibikiIconButton(
-            icon: excluded ? Icons.undo : Icons.music_off_outlined,
-            tooltip: excluded ? t.game_track_restore : t.game_track_exclude_bgm,
-            enabled: selectable,
-            onTap: () => onToggleExcluded(!excluded),
+          subtitle: Text(
+            <String>[
+              '0x${track.sourcePtr.toRadixString(16)}',
+              '${t.game_track_clips} ${track.clipCount}',
+              '${t.game_track_energy} ${track.avgEnergy.toStringAsFixed(1)}',
+              if (excluded) t.game_track_bgm,
+              if (silent) t.game_track_no_clips,
+            ].join(' · '),
           ),
-        ],
+          trailing: Wrap(
+            spacing: 4,
+            children: <Widget>[
+              // BUG-1027：逐轨试听——抓该轨最近整句 PCM 播放，帮用户判断这条轨
+              // 是语音还是 BGM，再决定选轨/排除。播放中变停止按钮。
+              HibikiIconButton(
+                icon: previewing
+                    ? Icons.stop_circle_outlined
+                    : Icons.play_circle_outline,
+                tooltip: previewing
+                    ? t.game_track_preview_stop
+                    : t.game_track_preview,
+                onTap: onPreview,
+              ),
+              HibikiIconButton(
+                icon: selected ? Icons.check_circle : Icons.circle_outlined,
+                tooltip: selectTooltip ?? t.game_track_select_as_voice,
+                enabled: selectable && !excluded,
+                onTap: onSelect,
+              ),
+              HibikiIconButton(
+                icon: excluded ? Icons.undo : Icons.music_off_outlined,
+                tooltip:
+                    excluded ? t.game_track_restore : t.game_track_exclude_bgm,
+                enabled: selectable,
+                onTap: () => onToggleExcluded(!excluded),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -194,17 +197,18 @@ class _PanelHintBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.all(10),
+      margin: EdgeInsets.only(top: tokens.spacing.gap),
+      padding: EdgeInsets.all(tokens.spacing.gap + 2),
       decoration: BoxDecoration(
         color: colors.secondaryContainer,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: tokens.radii.cardRadius,
       ),
       child: Row(
         children: <Widget>[
           Icon(icon, color: colors.onSecondaryContainer, size: 18),
-          const SizedBox(width: 8),
+          SizedBox(width: tokens.spacing.gap),
           Expanded(
             child: Text(
               text,

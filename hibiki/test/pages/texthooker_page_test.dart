@@ -127,7 +127,7 @@ void main() {
     expect(find.textContaining('TextRender · 0xf94600 · 0'), findsWidgets);
   });
 
-  testWidgets('workbench overflow menu opens the exclude-tracks dialog',
+  testWidgets('inactive workbench keeps audio tracks out of overflow menu',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       _wrapPage(const TexthookerPage()),
@@ -136,20 +136,11 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey<String>('game-toolbar-more')));
     await tester.pumpAndSettle();
-    expect(find.text('Manage audio tracks'), findsOneWidget,
-        reason: '溢出菜单必须暴露「管理音轨」入口');
-
-    await tester.tap(find.text('Manage audio tracks'));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(AlertDialog), findsOneWidget);
-    expect(find.text('Exclude audio tracks'), findsOneWidget);
-    // 无 native 会话（默认后端 none）：无音轨 + 明示排除只在引擎 PCM 生效。
-    expect(find.text('No audio-track data yet'), findsOneWidget);
-
-    await tester.tap(find.text('CLOSE'));
-    await tester.pumpAndSettle();
-    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.text('Health status'), findsOneWidget);
+    expect(find.text('Manage audio tracks'), findsNothing,
+        reason: 'PR #455 将会话音轨改为仅在活动会话显示的工具栏直达入口');
+    expect(find.byKey(const ValueKey<String>('game-toolbar-tracks')),
+        findsNothing);
   });
 
   testWidgets('embedded mode reuses parent scaffold and exposes back action',

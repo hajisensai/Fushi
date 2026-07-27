@@ -1840,8 +1840,8 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 音轨的跨会话弱指纹。`source_ptr` 只在会话内稳定（跨启动是新指针），能锚的只有
   /// [GalAudioTrack.orderIndex]（创建顺序，跨启动相对稳定）+ PCM 格式。指纹可能撞/漂
-  /// ——所以记忆只用于**恢复排除**（错排除可一键恢复、且会话内立即可见），绝不用于
-  /// 自动选定语音轨（错选会静默混错音频）。
+  /// ——所以记忆只恢复用户显式选择的排除项和语音轨；排除优先，恢复结果在工作台可见，
+  /// 用户可在映射漂移时立即纠正。
   @visibleForTesting
   static String trackFingerprint(GalAudioTrack track) =>
       '${track.orderIndex}:${track.format.sampleRate}:'

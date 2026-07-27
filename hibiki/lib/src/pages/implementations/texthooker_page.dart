@@ -260,7 +260,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     unawaited(_session.refreshAudioTracks());
     int? previewingPtr;
     Timer? previewReset;
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) {
         return StatefulBuilder(
@@ -1054,7 +1054,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 会话健康状态对话框（原右栏常驻卡的新家）。内容仍是 [_CaptureHealthCard]，
   /// 随会话状态实时刷新；Anki 配置态来自 app 级 AnkiViewModel（BUG-1007 的接线）。
   Future<void> _showHealthDialog() async {
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
         title: Text(t.game_health),
