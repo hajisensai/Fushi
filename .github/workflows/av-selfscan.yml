@@ -1,0 +1,329 @@
+# helper 产物的杀软自检：用 GitHub windows runner 自带、签名最新的 Windows Defender
+# 实扫主仓 release 的 voice_hook_<arch>.zip 与解压后的每个文件。
+#
+# 为什么需要这个：「injector + hook DLL 含 CreateRemoteThread/WriteProcessMemory，必被杀软报毒」
+# 这条部署红线长期是预防性判断，从未被任何一次真实扫描验证过。helper 是否随 Windows 主包分发
+# （离线首装）取决于这个事实，不能靠推测拍板。首次实测（hibiki-hook#8，签名 1.455.357.0）对
+# 全部 11 个文件 + 2 个 zip 零检出，推翻了该假设；本 workflow 把那次一次性实验固化成可复跑的门。
+#
+# 迁移说明：helper 源码与发布已于 PR#442 合回本仓（native/galgame_hook/ +
+# .github/workflows/voice-hook-helper.yml），独立仓 hajisensai/hibiki-hook 不再发 helper，
+# 因此本 workflow 扫的是**本仓** `voice-hook-helper` 固定 tag 上的 release 资产。
+#
+# 三条关键设计（缺一则结论作废，改动时不得删）：
+#   1. 先拆 runner 默认的 Defender 排除项并开回实时保护 —— GitHub windows runner 出厂就把整个
+#      C:\ 和 D:\ 排除、实时保护关闭，不拆就是 no-op 扫描，"干净"只等于"根本没扫"。
+#   2. EICAR 阳性对照 —— 连这个 AV 行业标准良性检测样本都不报，说明扫描器没工作，本次结果一律
+#      作废（该步直接 fail）。避免把「没扫」误读成「没毒」。
+#   3. 逐 zip + 解压后逐文件都扫 —— 归档扫描与落地文件扫描走的是不同引擎路径，只扫一层会漏。
+#
+# 与首版（hibiki-hook#8）的行为差异：**检出即 fail**。首版每个扫描步骤都以 `exit 0` 结尾，
+# 检出只发 `::warning::`，于是 job 绿灯并不代表没报毒，必须有人去读日志正文才知道结论 —— 正是
+# 本仓反复踩的「假绿」形态。现在任何一处检出、下载失败、sha256 不匹配或扫到 0 个文件都会让
+# job 变红，绿灯才真正等于「Defender 对全部已发布 helper 资产零检出」。
+#
+# 脚本体一律用 pwsh + 纯 ASCII 输出：runner 的 Windows PowerShell 5.1 按 ANSI codepage 解析，
+# UTF-8 中文会直接 parser error（首版即栽在这上面）。YAML 注释不经 PowerShell，可用中文。
+name: av-selfscan
+
+on:
+  workflow_dispatch:
+  # 只在本 workflow 自身变动时自动跑：被扫的是 release 资产，不是当前 commit 的构建产物，
+  # 所以业务代码提交触发它没有意义。helper 产物本身的变更由 voice-hook-helper.yml 负责重发，
+  # 重发后可手动 workflow_dispatch 复扫。
+  push:
+    branches: [develop]
+    paths:
+      - '.github/workflows/av-selfscan.yml'
+  # PR 上也跑，好让改动本 workflow 的 PR 能在合入前被真实验证一次（本 job 只读，不发布任何东西）。
+  pull_request:
+    paths:
+      - '.github/workflows/av-selfscan.yml'
+
+# 本 workflow 全程只读：不 checkout、不构建、不碰任何 release。
+permissions:
+  contents: read
+
+concurrency:
+  group: av-selfscan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  defender-scan:
+    runs-on: windows-2022
+    steps:
+      # 关键设计 1：拆掉 runner 默认排除项 + 开回实时保护。
+      - name: Disarm runner AV exclusions
+        shell: pwsh
+        run: |
+          # GitHub windows runner ships Defender with the ENTIRE C:\ and D:\ excluded and
+          # real-time protection off, so any scan there is a no-op. Strip the exclusions and
+          # turn protection back on, otherwise a "clean" result only means "never scanned".
+          $before = (Get-MpPreference).ExclusionPath
+          "exclusions before: $($before -join ' | ')"
+          foreach ($e in $before) {
+            try { Remove-MpPreference -ExclusionPath $e -ErrorAction Stop } catch { "::warning::cannot remove $e : $_" }
+          }
+          try { Set-MpPreference -DisableRealtimeMonitoring $false -ErrorAction Stop } catch { "::warning::cannot enable realtime: $_" }
+          try { Set-MpPreference -DisableArchiveScanning $false -ErrorAction Stop } catch { "::warning::cannot enable archive scan: $_" }
+          Start-Sleep -Seconds 5
+
+          $after = @((Get-MpPreference).ExclusionPath)
+          "exclusions after : $($after -join ' | ')"
+          $status = Get-MpComputerStatus
+          "RealTimeProtectionEnabled now: $($status.RealTimeProtectionEnabled)"
+
+          # Hard gate: everything we scan lives under RUNNER_TEMP. If any surviving exclusion
+          # still covers that directory, the scan below is a no-op and a "clean" result is a lie.
+          $scanRoot = [IO.Path]::GetFullPath($env:RUNNER_TEMP)
+          $covering = @()
+          foreach ($e in $after) {
+            if ([string]::IsNullOrWhiteSpace($e)) { continue }
+            $p = $e.TrimEnd('\', '/', '*')
+            if ([string]::IsNullOrWhiteSpace($p)) { continue }
+            if ($scanRoot.StartsWith($p, [StringComparison]::OrdinalIgnoreCase)) { $covering += $e }
+          }
+          if ($covering.Count -gt 0) {
+            "::error::scan root $scanRoot is still AV-excluded by: $($covering -join ', ') - scan would be a no-op"
+            exit 1
+          }
+          if (-not $status.RealTimeProtectionEnabled) {
+            "::error::real-time protection is still OFF - scan results would be meaningless"
+            exit 1
+          }
+          "disarm OK: scan root is not excluded and real-time protection is on"
+          exit 0
+
+      - name: Defender status
+        shell: pwsh
+        run: |
+          $s = Get-MpComputerStatus
+          "RealTimeProtectionEnabled : $($s.RealTimeProtectionEnabled)"
+          "AMServiceEnabled          : $($s.AMServiceEnabled)"
+          "AntivirusSignatureVersion : $($s.AntivirusSignatureVersion)"
+          "AntivirusSignatureAge     : $($s.AntivirusSignatureAge)"
+          "ExclusionPath             : $((Get-MpPreference).ExclusionPath -join ' | ')"
+
+      # 签名更新失败不致命：runner 自带签名已足够新，且 EICAR 阳性对照会兜底证明扫描器有效。
+      - name: Update signatures
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          try { Update-MpSignature -ErrorAction Stop; "signature update OK" }
+          catch { "signature update FAILED (using runner built-in): $_" }
+          $s = Get-MpComputerStatus
+          "version after update: $($s.AntivirusSignatureVersion) age=$($s.AntivirusSignatureAge)"
+
+      # 关键设计 2：阳性对照。语义保持不变 —— EICAR 必须被检出，检不出才算失败。
+      - name: EICAR positive control
+        shell: pwsh
+        run: |
+          $dir = "$env:RUNNER_TEMP\avctl"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $f = Join-Path $dir "eicar.com"
+          $eicar = 'X5O!P%@AP[4\PZX54(P^)7CC)7}' + '$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'
+          [IO.File]::WriteAllText($f, $eicar)
+          Start-Sleep -Seconds 5
+          $survived = Test-Path $f
+          "EICAR removed by real-time protection: $(-not $survived)"
+          if ($survived) {
+            # Real-time protection did not eat it; fall back to an explicit on-demand scan.
+            & "$env:ProgramFiles\Windows Defender\MpCmdRun.exe" -Scan -ScanType 3 -File $f
+            $code = $LASTEXITCODE
+            "MpCmdRun exit=$code (2=threat found)"
+            if ($code -ne 2) {
+              "::error::EICAR NOT detected - scanner not effective, results are meaningless"
+              exit 1
+            }
+          }
+          "positive control PASSED: scanner is working"
+          # MpCmdRun leaves $LASTEXITCODE=2; pwsh propagates it and would abort the job here.
+          exit 0
+
+      # 下载本仓 voice-hook-helper 固定 tag 的 release 资产，并用随包 .sha256 侧车校验完整性 ——
+      # 截断/半个文件也可能扫出「干净」，那是另一种假绿。
+      - name: Download helper release assets
+        shell: pwsh
+        env:
+          # 经 env 传入而不是在脚本体里直接展开 ${{ }}：避免表达式注入进 PowerShell 源码，
+          # 同时让 run 体保持可被 PowerShell 解析器离线校验的纯脚本。
+          HELPER_REPO: ${{ github.repository }}
+        run: |
+          $dir = "$env:RUNNER_TEMP\helper"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $base = "https://github.com/$env:HELPER_REPO/releases/download/voice-hook-helper"
+          $fatal = @()
+          foreach ($arch in @('x64', 'x86')) {
+            $name = "voice_hook_$arch.zip"
+            $out = Join-Path $dir $name
+            $sum = Join-Path $dir "$name.sha256"
+            $downloaded = $true
+            try {
+              Invoke-WebRequest -Uri "$base/$name" -OutFile $out -UseBasicParsing -ErrorAction Stop
+            } catch {
+              $downloaded = $false
+              "::error::download failed for $name : $_"
+              $fatal += "$name (download error)"
+            }
+            try {
+              Invoke-WebRequest -Uri "$base/$name.sha256" -OutFile $sum -UseBasicParsing -ErrorAction Stop
+            } catch {
+              "::warning::sha256 sidecar download failed for $name : $_"
+            }
+            Start-Sleep -Seconds 5
+            if (-not (Test-Path $out)) {
+              if ($downloaded) {
+                # Downloaded fine, then disappeared: real-time protection quarantined it.
+                # That IS a detection - the strongest possible positive - so it must fail.
+                "::error::$name VANISHED after download - quarantined by real-time protection (DETECTION)"
+                $fatal += "$name (quarantined on download)"
+              }
+              continue
+            }
+            "survived after download: $name ($([math]::Round((Get-Item $out).Length/1MB, 2)) MB)"
+            if (Test-Path $sum) {
+              # Sidecar is produced by tools/build_distribution.ps1; take the first 64-hex-char
+              # token so both "<hash>" and "<hash> *<file>" layouts parse.
+              $raw = (Get-Content $sum -Raw)
+              $m = [regex]::Match($raw, '[0-9a-fA-F]{64}')
+              if (-not $m.Success) {
+                "::error::cannot parse sha256 sidecar for $name"
+                $fatal += "$name (bad sidecar)"
+              } else {
+                $want = $m.Value.ToLowerInvariant()
+                $got = (Get-FileHash -Path $out -Algorithm SHA256).Hash.ToLowerInvariant()
+                "sha256 expected: $want"
+                "sha256 actual  : $got"
+                if ($want -ne $got) {
+                  "::error::sha256 MISMATCH for $name - scanned bytes are not the published artifact"
+                  $fatal += "$name (sha256 mismatch)"
+                }
+              }
+            }
+          }
+          if ($fatal.Count -gt 0) {
+            "::error::asset acquisition failed: $($fatal -join ', ')"
+            exit 1
+          }
+          "all helper assets downloaded and verified"
+          exit 0
+
+      # 关键设计 3a：逐 zip 扫归档。检出即 fail。
+      - name: Scan zip archives
+        shell: pwsh
+        run: |
+          $dir = "$env:RUNNER_TEMP\helper"
+          $mp = "$env:ProgramFiles\Windows Defender\MpCmdRun.exe"
+          $zips = @(Get-ChildItem $dir -Filter *.zip)
+          if ($zips.Count -lt 2) {
+            # Scanning nothing always looks clean. Refuse to report a pass on an empty set.
+            "::error::expected 2 helper zips, found $($zips.Count) - refusing to report clean"
+            exit 1
+          }
+          $hits = @()
+          $errs = @()
+          foreach ($z in $zips) {
+            "=== scanning $($z.Name) ==="
+            & $mp -Scan -ScanType 3 -File $z.FullName
+            $c = $LASTEXITCODE
+            "exit=$c  (0=clean, 2=threat found)"
+            if ($c -eq 2) { $hits += $z.Name }
+            elseif ($c -ne 0) { $errs += "$($z.Name) exit=$c" }
+          }
+          if ($hits.Count -gt 0) {
+            "::error::ARCHIVE DETECTED: $($hits -join ', ')"
+            exit 1
+          }
+          if ($errs.Count -gt 0) {
+            # Neither clean nor a detection: the scan never concluded, so we cannot claim clean.
+            "::error::scanner returned unexpected exit codes: $($errs -join ', ')"
+            exit 1
+          }
+          "RESULT: all $($zips.Count) archives clean"
+          exit 0
+
+      # 关键设计 3b：解压后逐文件扫。检出即 fail。
+      - name: Extract and scan each file
+        shell: pwsh
+        run: |
+          $dir = "$env:RUNNER_TEMP\helper"
+          $mp = "$env:ProgramFiles\Windows Defender\MpCmdRun.exe"
+          $hits = @()
+          $errs = @()
+          $scanned = 0
+          foreach ($arch in @('x64', 'x86')) {
+            $zip = Join-Path $dir "voice_hook_$arch.zip"
+            if (-not (Test-Path $zip)) {
+              "::error::missing $zip"
+              exit 1
+            }
+            $ex = Join-Path $dir $arch
+            New-Item -ItemType Directory -Force -Path $ex | Out-Null
+            $expected = 0
+            try {
+              Add-Type -AssemblyName System.IO.Compression.FileSystem
+              $za = [IO.Compression.ZipFile]::OpenRead($zip)
+              $expected = @($za.Entries | Where-Object { $_.Name -ne '' }).Count
+              $za.Dispose()
+              Expand-Archive -Path $zip -DestinationPath $ex -Force -ErrorAction Stop
+            } catch {
+              "::error::extract error for $arch : $_"
+              exit 1
+            }
+            Start-Sleep -Seconds 5
+            $files = @(Get-ChildItem $ex -File -Recurse)
+            "=== $arch surviving files after extract ($($files.Count) of $expected expected) ==="
+            $files | ForEach-Object { "  $($_.Name)  $([math]::Round($_.Length/1KB, 1)) KB" }
+            if ($expected -gt 0 -and $files.Count -lt $expected) {
+              # Entries present in the archive but absent on disk were eaten by real-time
+              # protection. That is a detection, not a skip.
+              $gone = $expected - $files.Count
+              "::error::[$arch] $gone extracted file(s) VANISHED - quarantined by real-time protection (DETECTION)"
+              $hits += "$arch (quarantined on extract)"
+            }
+            if ($files.Count -eq 0) {
+              "::error::[$arch] nothing to scan"
+              exit 1
+            }
+            foreach ($f in $files) {
+              & $mp -Scan -ScanType 3 -File $f.FullName
+              $c = $LASTEXITCODE
+              "  [$arch] $($f.Name) exit=$c"
+              $scanned++
+              if ($c -eq 2) { $hits += "$arch/$($f.Name)" }
+              elseif ($c -ne 0) { $errs += "$arch/$($f.Name) exit=$c" }
+            }
+          }
+          if ($hits.Count -gt 0) {
+            "::error::FILE DETECTED: $($hits -join ', ')"
+            exit 1
+          }
+          if ($errs.Count -gt 0) {
+            "::error::scanner returned unexpected exit codes: $($errs -join ', ')"
+            exit 1
+          }
+          "RESULT: all $scanned extracted files clean"
+          exit 0
+
+      # 无论上面成败都打印 Defender 自己的检出记录，失败时用它拿完整清单。
+      - name: Threat summary
+        if: always()
+        shell: pwsh
+        run: |
+          "=== Get-MpThreatDetection ==="
+          $d = Get-MpThreatDetection -ErrorAction SilentlyContinue
+          if ($d) {
+            $d | Select-Object ThreatID, @{n = 'Resources'; e = { $_.Resources -join ';' } }, InitialDetectionTime | Format-List
+          } else { "(no detection records)" }
+          "=== Get-MpThreat ==="
+          $t = Get-MpThreat -ErrorAction SilentlyContinue
+          if ($t) { $t | Select-Object ThreatName, SeverityID, Resources | Format-List }
+          else { "(no threat entries)" }
+
+      - name: Verdict
+        shell: pwsh
+        run: |
+          # Only reachable when every gate above passed: exclusions disarmed, EICAR detected,
+          # both zips downloaded and sha256-verified, and every archive + extracted file clean.
+          "VERDICT: Windows Defender reported ZERO detections on all published helper assets."
+          "Signature version: $((Get-MpComputerStatus).AntivirusSignatureVersion)"
