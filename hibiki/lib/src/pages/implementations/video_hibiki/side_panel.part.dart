@@ -21,7 +21,7 @@ part of '../video_hibiki_page.dart';
 /// `_buildVideoQuickSettingsSheet`, `_buildChapterSidePanel`), the controls/rail
 /// collaborators (`_clearRailHover`, `_hideVideoControlEditOverlay`,
 /// `_hideControlPopover`, `_markControlsVisible`, `_pokeControlsVisible`,
-/// `_refocusVideo`, `_clearSelectedMiningCues`), the `_subtitleListVisible` /
+/// `_focusOwnership`, `_clearSelectedMiningCues`), the `_subtitleListVisible` /
 /// `_episodeListVisible` notifiers and `_videoUiScale` all stay in the main
 /// shell; the extension reads/calls them through the shared private scope.
 extension _VideoSidePanel on _VideoHibikiPageState {
@@ -66,7 +66,7 @@ extension _VideoSidePanel on _VideoHibikiPageState {
     // 已经在显示的 media_kit 控制条 / 右侧 rail 镜像收起，避免它们冒在面板后面。
     // 面板开着期间 [_markControlsVisible] / [_pokeControlsVisible] 都被门控成不可见。
     _markControlsVisible(false);
-    _refocusVideo();
+    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
   }
 
   void _hideVideoSidePanel() {
@@ -74,7 +74,7 @@ extension _VideoSidePanel on _VideoHibikiPageState {
     // BUG-253：面板关闭后唤回一次控制条（poke 在 [_videoSidePanel] 复位为 null 之后才
     // 放行），给用户「面板已关、控制条回来了」的即时反馈，与解锁沉浸态的范式一致。
     _pokeControlsVisible();
-    _refocusVideo();
+    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
   }
 
   String _videoSidePanelTitle(_VideoSidePanelKind kind) {

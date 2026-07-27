@@ -90,7 +90,7 @@ void main() {
       // hollow stars and only fill the filled stars after the async DB
       // round-trip -- the "star loads slowly" symptom (TODO-566).
       final RegExp openBranch = RegExp(
-        r'_subtitleListVisible\.value = true;[\s\S]*?_refocusVideo\(\);',
+        r'_subtitleListVisible\.value = true;[\s\S]*?_focusOwnership\.reclaim\(',
       );
       final Match? match = openBranch.firstMatch(src);
       expect(match, isNotNull,

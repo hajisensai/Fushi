@@ -45,11 +45,14 @@ void main() {
       'void _hideSubtitleLoadingOverlay() {',
       'Future<bool> _selectSubtitleSource(',
     );
-    expect(body.contains('_refocusVideo()'), isTrue,
+    expect(
+        body.contains(
+            '_focusOwnership.reclaimAfterFrame(FocusReclaimCause.overlayClosed)'),
+        isTrue,
         reason: '加载遮罩是模态对话框、会夺焦；关闭后必须主动把焦点还给 Video，'
             '否则空格等快捷键失灵（BUG-131）');
-    expect(body.contains('addPostFrameCallback'), isTrue,
-        reason: '应在下一帧归还焦点（让 pop 自身焦点变更先落定）');
+    // 「下一帧归还」现在由 reclaimAfterFrame 封装（它同时 ensureVisualUpdate，
+    // 避免树静止时 post-frame 回调永不触发）。
   });
 
   test('BUG-132: 恢复字幕源时对导入的外挂文件按路径直接加载', () {

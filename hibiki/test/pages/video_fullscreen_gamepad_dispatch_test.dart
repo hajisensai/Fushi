@@ -43,7 +43,7 @@ void main() {
     rig.state.enterFullscreen(wrapped: false);
     await tester.pumpAndSettle();
     expect(rig.videoNode.hasPrimaryFocus, isTrue,
-        reason: '进全屏后共享焦点节点应被全屏侧持有（页面 post-frame _refocusVideo 同构）');
+        reason: '进全屏后共享焦点节点应被全屏侧持有（页面 post-frame 焦点回收同构）');
 
     // A：GamepadButtonIntent 无人消费 → ActivateIntent 兜底也无语义 → 静默 no-op。
     expect(rig.dispatchLikeService(GamepadButton.a), isFalse,

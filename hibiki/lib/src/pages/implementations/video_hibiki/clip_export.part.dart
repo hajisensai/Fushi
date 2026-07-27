@@ -77,7 +77,7 @@ extension _VideoClipExport on _VideoHibikiPageState {
       // 桌面用户取消了「另存为」——此刻尚未产出任何文件，直接清状态收场。
       _rebuild(_clearClipExportState);
       _showOsd(t.video_clip_export_cancelled);
-      _refocusVideo();
+      _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
       return;
     }
     if (generation != _clipExportGeneration || _currentVideoPath != startPath) {
@@ -142,7 +142,7 @@ extension _VideoClipExport on _VideoHibikiPageState {
           : '$readable — ${detail.length > 200 ? '${detail.substring(detail.length - 200)}…' : detail}';
       _showOsd(t.video_clip_export_failed(reason: reason));
     }
-    _refocusVideo();
+    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
   }
 
   /// 收集片段区间内「用户正在看的字幕」，裁成 SRT 文本（主字幕一条、副字幕一条）。
@@ -320,7 +320,7 @@ extension _VideoClipExport on _VideoHibikiPageState {
           await tmp.delete();
         } catch (_) {}
       }
-      _refocusVideo();
+      _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
     }
   }
 

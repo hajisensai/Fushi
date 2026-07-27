@@ -70,8 +70,8 @@ void main() {
     test('菜单关闭后归还键盘焦点', () {
       final int idx = page.indexOf('void _handleSecondaryTap(');
       final String body = page.substring(idx, idx + 2000);
-      expect(body.contains('_refocusVideo()'), isTrue,
-          reason: '覆盖层夺焦后不会自动归还，菜单关闭须 _refocusVideo');
+      expect(body.contains('_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'), isTrue,
+          reason: '覆盖层夺焦后不会自动归还，菜单关闭须经 _focusOwnership 归还');
     });
   });
 

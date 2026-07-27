@@ -26,7 +26,7 @@ void main() {
     final String activate = _functionSource(
       pageSource,
       '  void activate() {',
-      '  void _refocusVideo() {',
+      '  late final PageFocusOwnership _focusOwnership',
     );
     expect(activate, contains('_overlayInert = false'),
         reason: 'activate 必须复位 _overlayInert，重挂后恢复浮层');

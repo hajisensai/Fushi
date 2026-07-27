@@ -97,7 +97,7 @@ void main() {
           reason: '设置面板内容仍是 master-detail VideoQuickSettingsSheet');
     });
 
-    test('剧集列表 push-aside 关闭归还焦点（_closeEpisodeList → _refocusVideo）', () {
+    test('剧集列表 push-aside 关闭归还焦点（_closeEpisodeList → _focusOwnership）', () {
       // TODO-638：剧集列表改 push-aside 后，关闭走单一真相源 [_closeEpisodeList]，它必须
       // 隐藏列表 + 唤回控制条 + 归还键盘焦点（与字幕列表 _closeSubtitleJumpList 同纪律）。
       final int start = src.indexOf('void _closeEpisodeList() {');
@@ -106,7 +106,7 @@ void main() {
       final String body = src.substring(start, end);
       expect(body.contains('_episodeListVisible.value = false'), isTrue);
       expect(body.contains('_pokeControlsVisible()'), isTrue);
-      expect(body.contains('_refocusVideo()'), isTrue,
+      expect(body.contains('_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'), isTrue,
           reason: '剧集列表关闭后必须归还键盘焦点，否则空格冒泡到全局 DoNothingIntent');
     });
   });

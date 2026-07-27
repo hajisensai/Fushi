@@ -133,7 +133,7 @@ void main() {
           reason: '关闭应隐藏 push-aside 列表');
       expect(body.contains('_pokeControlsVisible()'), isTrue,
           reason: '关闭应唤回控制条（× 路径此前漏此项）');
-      expect(body.contains('_refocusVideo()'), isTrue,
+      expect(body.contains('_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'), isTrue,
           reason: '关闭应把焦点归还视频（× 路径此前漏此项，否则键盘 / 手柄失焦）');
     });
 

@@ -316,7 +316,7 @@ extension _VideoControlsPopover on _VideoHibikiPageState {
     }
     _videoControlPopover.value = kind;
     _pokeControlsVisible();
-    _refocusVideo();
+    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
   }
 
   void _hideControlPopover() {
