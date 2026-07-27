@@ -1,6 +1,10 @@
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+
+import '../widgets/widget_test_helpers.dart';
 
 /// BUG-928 守卫：视频卡封面区必须被固定 AspectRatio 锁定。
 ///
@@ -72,9 +76,10 @@ void main() {
   //   360dp 手机上卡宽只有约 154px，单行 ellipsis 只显示得到日文剧名的开头几个字。
   //
   // 现在文字块高度**按真实行高算出**（_videoCardTextBlock），不再是任何一个猜出来
-  // 的常量：默认字号下约 66px，比当年的最坏预留 83 小得多，比 52 多约 14px。也就是
-  // 说 BUG-943 抱怨的 50px 空白并没有回归，只是短标题卡多了约 14px——这是让长标题
-  // 能显示第二行必须付的最小代价。本用例守住的是「不得回到最坏预留」这条底线。
+  // 的常量：默认字号下**实测约 74px**（bodyMedium 行高 1.43、labelMedium 1.33），
+  // 仍小于当年的最坏预留 83，比收敛后的 52 多约 22px。也就是说 BUG-943 抱怨的那块
+  // 约 50px 空白并没有回归，短标题卡多出的约 22px 是让长标题能显示第二行必须付的
+  // 代价。下面两个用例守住的是「不得回到最坏预留、也不得算漏一行」这条区间。
   test(
       'video card text block is computed from real line heights, not a '
       'worst-case constant — BUG-943 / BUG-1184', () {
@@ -91,15 +96,50 @@ void main() {
       contains('static double _videoCardTextBlock(BuildContext context)'),
       reason: '文字块高度必须由 _videoCardTextBlock(context) 按真实行高算出',
     );
-    // 两行标题 + 一行进度 + 内边距：默认字号（14/12sp、行高约 1.3）下约 66px，
-    // 必须明显小于当年的最坏预留 83，否则就是 BUG-943 的空白回归。
-    const double titleLine = 14.0 * 1.3;
-    const double metaLine = 12.0 * 1.3;
-    const double computed = titleLine * 2 + 8 + metaLine + 6;
+  });
+
+  // 上面两条锁的是「必须算出来、不许再是常量」。这条锁的是**算出来的值本身**：
+  // 默认字号下必须仍明显小于 BUG-943 当年的最坏预留 83px，否则卡底空白就是回归。
+  //
+  // 这里刻意用真实主题 / 真实 design token 现算，而不是在测试里再抄一遍系数——
+  // 「各自猜行高系数」正是 BUG-1184 的根因之一（MD3 里 bodyMedium 行高是 1.43、
+  // labelMedium 是 1.33，硬编码 1.3 会算低约 8px）。日后 MD3 排版或 metadata
+  // token 变化把文字块推过 83，这条会红。
+  testWidgets(
+      'computed video card text block stays well under the old worst-case '
+      '83px reservation — BUG-943 / BUG-1184', (WidgetTester tester) async {
+    double? measured;
+    await tester.pumpWidget(
+      buildTestApp(
+        Builder(builder: (BuildContext context) {
+          // 与 _videoCardTextBlock 同构：两行标题 + 一行进度 + 内边距 8/6 + slack。
+          final double titleLine = textLineHeight(
+            context,
+            Theme.of(context).textTheme.bodyMedium ??
+                const TextStyle(fontSize: 14),
+          );
+          final double metaLine = textLineHeight(
+            context,
+            HibikiDesignTokens.of(context).type.metadata,
+          );
+          measured = titleLine * 2 + 8 + metaLine + 6 + kTextBlockSlack;
+          return const SizedBox.shrink();
+        }),
+      ),
+    );
+
+    expect(measured, isNotNull, reason: 'builder 没跑到，测试无效');
     expect(
-      computed,
+      measured!,
       lessThan(83),
-      reason: '按公式算出的文字块高度必须小于 BUG-943 当年的最坏预留 83px',
+      reason: '文字块高度必须明显小于 BUG-943 当年的最坏预留 83px，否则视频卡底部'
+          '再次出现常驻空白块',
+    );
+    expect(
+      measured!,
+      greaterThan(60),
+      reason: '两行标题 + 进度行装不下 60px——低于这个值说明公式又漏了一行或行高，'
+          '大字号下会重新裁字（BUG-1184）',
     );
   });
 }

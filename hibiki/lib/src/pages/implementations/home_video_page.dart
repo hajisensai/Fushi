@@ -3183,7 +3183,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   ///
   /// 与 BUG-943（旧值 83 → 52，消除卡底常驻空白）不冲突：那次收敛掉的是「为两行
   /// 标题预留、但绝大多数卡用不到」的最坏情况余量，代价是长标题永远显示不全。现在
-  /// 高度按需算出（默认字号约 66，仍远小于当年的 83），长标题真的用得上第二行。
+  /// 高度按需算出（默认字号实测约 74，仍小于当年的 83），长标题真的用得上第二行。
   static double _videoCardTextBlock(BuildContext context) {
     final double titleLine = textLineHeight(
       context,
