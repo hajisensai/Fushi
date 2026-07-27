@@ -21,7 +21,7 @@ constexpr int kLunaMinFoldedLineChars = 4;
 // untouched so the artifact filter can continue rejecting single-character
 // repetition noise.
 //
-// BUG-1163：旧实现只认「整串恰好二倍」（前半 == 后半）。带 ruby 的台词会被
+// BUG-1175：旧实现只认「整串恰好二倍」（前半 == 后半）。带 ruby 的台词会被
 // KiriKiriZ 分别以 base（汉字）和 ruby（假名）两种形式送进同一个 hook 点，再叠上
 // 本 hook 面固有的完整行双写，实际收到的是 `A A B B A A`（A=汉字版、B=注音版）——
 // 前半 `AAB` != 后半 `BAA`，整串判据一条都不命中，整串原样入环，于是浮窗/台词列表/

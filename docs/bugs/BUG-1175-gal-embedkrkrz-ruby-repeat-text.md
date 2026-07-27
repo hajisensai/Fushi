@@ -1,4 +1,4 @@
-## BUG-1163 · EmbedKrkrZ ruby 双写产生重复台词，折叠只认精确二倍全部漏过
+## BUG-1175 · EmbedKrkrZ ruby 双写产生重复台词，折叠只认精确二倍全部漏过
 - **报告**：2026-07-27（用户：截图反馈——游戏内只有一句「李空って、やぎ座だっけ？　みずがめ座？」，hook 浮窗与捕获工作台实时台词却显示成六段拼接）
 - **真实性**：✅ 真 bug。收到的串是 `A A B B A A`——A = 汉字版「李空って…」、B = 注音版「りくって…」。带 ruby 的「李空(りく)」被 KiriKiriZ 分别以 base 和 ruby 两种形式送进同一个 hook 面，再叠上 `EmbedKrkrZ` 这条 hook 固有的完整行双写，一次事件回传六段。三道现有防线逐一漏过：
   - `native/galgame_hook/include/luna_text_selector.h:16-23`（修复前）`LunaNormalizedTextLength` 只认**整串恰好二倍**（前半 == 后半）。这里前半 `AAB` != 后半 `BAA`，不折叠。

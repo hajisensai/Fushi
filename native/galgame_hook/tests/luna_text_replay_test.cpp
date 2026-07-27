@@ -56,7 +56,7 @@ int main(int argc, char** argv) {
     return 8;
   }
 
-  // BUG-1163：带 ruby 的台词被 KiriKiriZ 分别以 base（汉字）和 ruby（假名）两种形式
+  // BUG-1175：带 ruby 的台词被 KiriKiriZ 分别以 base（汉字）和 ruby（假名）两种形式
   // 送进同一 hook 面，叠上完整行双写后收到的是 `A A B B A A`。整串既不是二倍重复
   // （前半 AAB != 后半 BAA），也不是等长游程伪影，旧实现整串放行 → 一句话出现六遍。
   std::wstring ruby_variant = single_line;
@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
     return 23;
   }
 
-  // BUG-1163 负向：合法叠句开头 + 后面跟正文，**绝不允许折叠**。
+  // BUG-1175 负向：合法叠句开头 + 后面跟正文，**绝不允许折叠**。
   // 旧的「开头二倍就截掉后面全部」判据会把这两句静默腰斩成「わかった」/「ありがとう」，
   // 而残句短到过不了伪影门，会被当干净行写进环。
   {

@@ -104,7 +104,7 @@ void main() {
   // C++ 行为测试在 native/galgame_hook/tests/luna_text_replay_test.cpp，但那套 ctest
   // 只在 voice-hook-helper workflow（workflow_dispatch + push develop）里跑，**PR 时不是门**。
   // 下面这组结构守卫扫真实 C++ 源码，把「改回错误判据」这件事挡在 PR 的 flutter test 门上。
-  group('native 文本线程/折叠判据结构守卫（BUG-1159 / BUG-1163）', () {
+  group('native 文本线程/折叠判据结构守卫（BUG-1159 / BUG-1175）', () {
     late String selectorSource;
     late String injectorSource;
 
@@ -122,7 +122,7 @@ void main() {
     });
 
     test('折叠判据是块级分解，不是「开头二倍就截断」', () {
-      // BUG-1163 打回原因：前缀判据会把「わかったわかった、もう行くよ」腰斩成
+      // BUG-1175 打回原因：前缀判据会把「わかったわかった、もう行くよ」腰斩成
       // 「わかった」。块级判据要求整串能拆成 s1 s1 s2 s2 …，尾巴拆不动就原样放行。
       final int foldStart = selectorSource.indexOf(
         'inline int LunaNormalizedTextLength(',
