@@ -454,6 +454,57 @@ void main() {
     expect(filesForEntry, <int>[11, 22, 22]);
   });
 
+  // 整季包的字幕集号来自 Jimaku 侧、未与包内视频核对，可能配上错季字幕
+  // （S2 包视频 01-12 遇上按绝对集号编号的条目 13-24）。不得显示成确定态。
+  testWidgets('确认阶段：整季包字幕标为「集号未核对」，徽标带 ~', (WidgetTester tester) async {
+    const NyaaTorrent seasonPack = NyaaTorrent(
+      title: '[Grp] Test Anime S1 [BDRip 1080p x265]',
+      torrentUrl: '',
+      pageUrl: '',
+      infoHash: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      seeders: 10,
+      leechers: 0,
+      downloads: 0,
+      sizeText: '10 GiB',
+      sizeBytes: null,
+      categoryId: '1_2',
+      trusted: false,
+      remake: false,
+      pubDate: null,
+    );
+    final _FakeAppModel appModel = _FakeAppModel((http.Request req) async {
+      final String url = req.url.toString();
+      if (url.contains('/entries/search')) {
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<Map<String, Object>>[
+            <String, Object>{'id': 7, 'name': 'Season Entry'},
+          ])),
+          200,
+        );
+      }
+      if (url.contains('/files')) {
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<Map<String, Object>>[
+            for (int ep = 1; ep <= 3; ep++)
+              <String, Object>{
+                'name': 'Test Anime - 0$ep.ja.srt',
+                'url': 'https://jimaku.cc/f/$ep.srt',
+              },
+          ])),
+          200,
+        );
+      }
+      return http.Response('', 404);
+    });
+    await pumpDialog(tester, appModel, torrent: seasonPack);
+    await tester.tap(find.byTooltip(t.anime_download_search).last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Test Anime - 01.ja.srt'), findsOneWidget);
+    expect(find.text(t.anime_download_subs_episodes_unverified), findsOneWidget,
+        reason: '整季包集号未核对，必须明说，不能画成「字幕已配好」');
+  });
+
   // 整季包一次十几条字幕，单条下载失败以前被静默 continue，用户以为都下好了。
   testWidgets('推送：字幕缺条时 snack 汇报 N/M', (WidgetTester tester) async {
     final _FakeAppModel appModel = _FakeAppModel((http.Request req) async {

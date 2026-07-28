@@ -564,6 +564,22 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         seriesEpisodeCount: _selectedMedia?.episodes,
       );
 
+  /// 整季包的字幕集号**未经核对**——不能画成「有字幕」的确定态。
+  ///
+  /// 整季包（[TorrentEpisodeScopeKind.season]）标题只写季号/`Complete`，不写集号
+  /// 区间，所以本层只能拿字幕侧的集号去配视频侧的集号（落位层
+  /// `pairSubtitlesToVideos` 要求集号严格相等）。这里有一整类静默错配：
+  /// S2 整季包内的视频文件名是 01-12，而 Jimaku 条目按**绝对集号**编到 13-24，
+  /// 或自动选中的首条根本是别的季 → 集号照样「相等」，配上的却是错季字幕，
+  /// UI 还显示「有字幕」。改前 season 类一条不给，所以这是从「没有」变成
+  /// 「错的且看起来对」，必须显式降级成不确定态。
+  ///
+  /// 真正的根治（识别绝对集号编号、按季换算偏移、核对条目季号）不在本轮范围。
+  /// range / single 类的集号来自种子标题自身，不属此列。
+  bool _subtitleEpisodesUnverified(NyaaTorrent torrent) =>
+      torrentEpisodeScope(torrent).kind == TorrentEpisodeScopeKind.season &&
+      _chooseSubsFor(torrent).any(((int?, JimakuFile) e) => e.$1 != null);
+
   /// 字幕覆盖度徽标，与 [_chooseSubsFor] 同源（同一 `seriesEpisodeCount`）。
   ({int covered, int? total}) _jimakuCoverageFor(NyaaTorrent torrent) =>
       jimakuCoverageFor(
@@ -1531,14 +1547,22 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       } else {
         // 应有集数未知（整季包 / 剧场版）→ 只报实际能给出的条数，不报 `?`：
         // 徽标数必须与确认页字幕列表条数一致，否则「列表说有、点进去说无」。
-        final String label = coverage.total == null
-            ? '${t.anime_download_subs_badge} ${coverage.covered}'
-            : '${t.anime_download_subs_badge} '
-                '${coverage.covered}/${coverage.total}';
-        chips.add(_miniChip(theme, label,
-            icon: Icons.subtitles_outlined,
-            background: scheme.primaryContainer,
-            foreground: scheme.onPrimaryContainer));
+        final String count = coverage.total == null
+            ? '${coverage.covered}'
+            : '${coverage.covered}/${coverage.total}';
+        // 整季包的集号未经核对（见 [_subtitleEpisodesUnverified]）→ 加 `~`
+        // 并退成中性配色，不画成「字幕齐了」的确定态。
+        final bool unverified = _subtitleEpisodesUnverified(torrent);
+        chips.add(_miniChip(
+          theme,
+          '${t.anime_download_subs_badge} ${unverified ? '~' : ''}$count',
+          icon: Icons.subtitles_outlined,
+          background: unverified
+              ? scheme.surfaceContainerHighest
+              : scheme.primaryContainer,
+          foreground:
+              unverified ? scheme.onSurfaceVariant : scheme.onPrimaryContainer,
+        ));
       }
     }
     return chips;
@@ -1804,6 +1828,39 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         ),
       );
     }
+    // 整季包：集号未经核对，可能配上错季字幕（见 [_subtitleEpisodesUnverified]）。
+    // 明说一句，别让用户以为「已确认配好」。
+    final NyaaTorrent? torrent = _selectedTorrent;
+    final bool unverified =
+        torrent != null && _subtitleEpisodesUnverified(torrent);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (unverified)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Icon(Icons.help_outline,
+                    size: 16, color: theme.colorScheme.onSurfaceVariant),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    t.anime_download_subs_episodes_unverified,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Expanded(child: _buildChosenSubsListView(theme)),
+      ],
+    );
+  }
+
+  Widget _buildChosenSubsListView(ThemeData theme) {
     return ListView.builder(
       itemCount: _chosenSubs.length,
       itemBuilder: (BuildContext context, int i) {
