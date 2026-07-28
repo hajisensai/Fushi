@@ -28,8 +28,15 @@ const Map<String, String> kMimeTypeByExtension = <String, String>{
   'epub': 'application/epub+zip',
   'css': 'text/css',
   'js': 'application/javascript',
+  // BUG-1199：`.htm` / `.xht` 与 `.html` / `.xhtml` 是同一类文档的合法扩展名，缺
+  // 这两条时 EPUB 章节按 [kFallbackMimeType]（octet-stream）下发，阅读器拦截器的
+  // 「是 HTML 吗」判定（`mime == 'text/html' || mime.contains('xhtml')`）取假 →
+  // 既不注入阅读器样式/分页脚本、也不做 XHTML 净化，WebView 更不把它当文档渲染，
+  // 整本书翻页全空白。EPUB 3 规范允许这四种扩展名，表必须四条齐全。
   'xhtml': 'text/html',
   'html': 'text/html',
+  'htm': 'text/html',
+  'xht': 'text/html',
   // ── 图片 ──
   'jpg': 'image/jpeg',
   'jpeg': 'image/jpeg',
