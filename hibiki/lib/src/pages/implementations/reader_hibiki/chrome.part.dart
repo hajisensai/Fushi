@@ -161,11 +161,14 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     if (!uri.path.startsWith('/epub/')) return null;
     final String epubPath =
         Uri.decodeComponent(uri.path.substring('/epub/'.length));
-    final String extractRoot = p.canonicalize(_extractDir!);
-    final String filePath = p.canonicalize(p.join(extractRoot, epubPath));
-    if (!p.isWithin(extractRoot, filePath)) {
+    // BUG-1218：真实路径保留大小写（越界判据仍走 canonicalize），否则大小写敏感
+    // 平台上图片查看器/分享取不到 EPUB 内插图。
+    final String joined = p.join(_extractDir!, epubPath);
+    if (!p.isWithin(
+        p.canonicalize(_extractDir!), p.canonicalize(joined))) {
       return null;
     }
+    final String filePath = p.normalize(joined);
     final File file = File(filePath);
     if (!file.existsSync()) return null;
     return file;
