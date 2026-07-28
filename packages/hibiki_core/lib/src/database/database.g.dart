@@ -5682,6 +5682,14 @@ class $ReadingStatisticsTable extends ReadingStatistics
   late final GeneratedColumn<int> readingTimeMs = GeneratedColumn<int>(
       'reading_time_ms', aliasedName, false,
       type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _pagesReadMeta =
+      const VerificationMeta('pagesRead');
+  @override
+  late final GeneratedColumn<int> pagesRead = GeneratedColumn<int>(
+      'pages_read', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
   static const VerificationMeta _lastStatisticModifiedMeta =
       const VerificationMeta('lastStatisticModified');
   @override
@@ -5695,6 +5703,7 @@ class $ReadingStatisticsTable extends ReadingStatistics
         dateKey,
         charactersRead,
         readingTimeMs,
+        pagesRead,
         lastStatisticModified
       ];
   @override
@@ -5739,6 +5748,10 @@ class $ReadingStatisticsTable extends ReadingStatistics
     } else if (isInserting) {
       context.missing(_readingTimeMsMeta);
     }
+    if (data.containsKey('pages_read')) {
+      context.handle(_pagesReadMeta,
+          pagesRead.isAcceptableOrUnknown(data['pages_read']!, _pagesReadMeta));
+    }
     if (data.containsKey('last_statistic_modified')) {
       context.handle(
           _lastStatisticModifiedMeta,
@@ -5770,6 +5783,8 @@ class $ReadingStatisticsTable extends ReadingStatistics
           .read(DriftSqlType.int, data['${effectivePrefix}characters_read'])!,
       readingTimeMs: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}reading_time_ms'])!,
+      pagesRead: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}pages_read'])!,
       lastStatisticModified: attachedDatabase.typeMapping.read(
           DriftSqlType.int, data['${effectivePrefix}last_statistic_modified'])!,
     );
@@ -5788,6 +5803,14 @@ class ReadingStatisticRow extends DataClass
   final String dateKey;
   final int charactersRead;
   final int readingTimeMs;
+
+  /// v60：当日读过的**页数**（漫画 / PDF 这类以页为单位的书；EPUB 恒 0）。
+  ///
+  /// 页数与字数是两个独立量纲，绝不互相顶替：漫画既落 OCR 字符数（与 EPUB 同口径）
+  /// 又落页数，统计页两个维度分别展示。旧库迁移补 0，跨设备聚合同步的 wire 契约
+  /// 不带此列（[StatBucket] 要求两端字段集一致，加字段会让新旧端互相抛错），页数
+  /// 随整库备份/恢复走。
+  final int pagesRead;
   final int lastStatisticModified;
   const ReadingStatisticRow(
       {required this.id,
@@ -5795,6 +5818,7 @@ class ReadingStatisticRow extends DataClass
       required this.dateKey,
       required this.charactersRead,
       required this.readingTimeMs,
+      required this.pagesRead,
       required this.lastStatisticModified});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -5804,6 +5828,7 @@ class ReadingStatisticRow extends DataClass
     map['date_key'] = Variable<String>(dateKey);
     map['characters_read'] = Variable<int>(charactersRead);
     map['reading_time_ms'] = Variable<int>(readingTimeMs);
+    map['pages_read'] = Variable<int>(pagesRead);
     map['last_statistic_modified'] = Variable<int>(lastStatisticModified);
     return map;
   }
@@ -5815,6 +5840,7 @@ class ReadingStatisticRow extends DataClass
       dateKey: Value(dateKey),
       charactersRead: Value(charactersRead),
       readingTimeMs: Value(readingTimeMs),
+      pagesRead: Value(pagesRead),
       lastStatisticModified: Value(lastStatisticModified),
     );
   }
@@ -5828,6 +5854,7 @@ class ReadingStatisticRow extends DataClass
       dateKey: serializer.fromJson<String>(json['dateKey']),
       charactersRead: serializer.fromJson<int>(json['charactersRead']),
       readingTimeMs: serializer.fromJson<int>(json['readingTimeMs']),
+      pagesRead: serializer.fromJson<int>(json['pagesRead']),
       lastStatisticModified:
           serializer.fromJson<int>(json['lastStatisticModified']),
     );
@@ -5841,6 +5868,7 @@ class ReadingStatisticRow extends DataClass
       'dateKey': serializer.toJson<String>(dateKey),
       'charactersRead': serializer.toJson<int>(charactersRead),
       'readingTimeMs': serializer.toJson<int>(readingTimeMs),
+      'pagesRead': serializer.toJson<int>(pagesRead),
       'lastStatisticModified': serializer.toJson<int>(lastStatisticModified),
     };
   }
@@ -5851,6 +5879,7 @@ class ReadingStatisticRow extends DataClass
           String? dateKey,
           int? charactersRead,
           int? readingTimeMs,
+          int? pagesRead,
           int? lastStatisticModified}) =>
       ReadingStatisticRow(
         id: id ?? this.id,
@@ -5858,6 +5887,7 @@ class ReadingStatisticRow extends DataClass
         dateKey: dateKey ?? this.dateKey,
         charactersRead: charactersRead ?? this.charactersRead,
         readingTimeMs: readingTimeMs ?? this.readingTimeMs,
+        pagesRead: pagesRead ?? this.pagesRead,
         lastStatisticModified:
             lastStatisticModified ?? this.lastStatisticModified,
       );
@@ -5872,6 +5902,7 @@ class ReadingStatisticRow extends DataClass
       readingTimeMs: data.readingTimeMs.present
           ? data.readingTimeMs.value
           : this.readingTimeMs,
+      pagesRead: data.pagesRead.present ? data.pagesRead.value : this.pagesRead,
       lastStatisticModified: data.lastStatisticModified.present
           ? data.lastStatisticModified.value
           : this.lastStatisticModified,
@@ -5886,14 +5917,15 @@ class ReadingStatisticRow extends DataClass
           ..write('dateKey: $dateKey, ')
           ..write('charactersRead: $charactersRead, ')
           ..write('readingTimeMs: $readingTimeMs, ')
+          ..write('pagesRead: $pagesRead, ')
           ..write('lastStatisticModified: $lastStatisticModified')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(
-      id, title, dateKey, charactersRead, readingTimeMs, lastStatisticModified);
+  int get hashCode => Object.hash(id, title, dateKey, charactersRead,
+      readingTimeMs, pagesRead, lastStatisticModified);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -5903,6 +5935,7 @@ class ReadingStatisticRow extends DataClass
           other.dateKey == this.dateKey &&
           other.charactersRead == this.charactersRead &&
           other.readingTimeMs == this.readingTimeMs &&
+          other.pagesRead == this.pagesRead &&
           other.lastStatisticModified == this.lastStatisticModified);
 }
 
@@ -5912,6 +5945,7 @@ class ReadingStatisticsCompanion extends UpdateCompanion<ReadingStatisticRow> {
   final Value<String> dateKey;
   final Value<int> charactersRead;
   final Value<int> readingTimeMs;
+  final Value<int> pagesRead;
   final Value<int> lastStatisticModified;
   const ReadingStatisticsCompanion({
     this.id = const Value.absent(),
@@ -5919,6 +5953,7 @@ class ReadingStatisticsCompanion extends UpdateCompanion<ReadingStatisticRow> {
     this.dateKey = const Value.absent(),
     this.charactersRead = const Value.absent(),
     this.readingTimeMs = const Value.absent(),
+    this.pagesRead = const Value.absent(),
     this.lastStatisticModified = const Value.absent(),
   });
   ReadingStatisticsCompanion.insert({
@@ -5927,6 +5962,7 @@ class ReadingStatisticsCompanion extends UpdateCompanion<ReadingStatisticRow> {
     required String dateKey,
     required int charactersRead,
     required int readingTimeMs,
+    this.pagesRead = const Value.absent(),
     required int lastStatisticModified,
   })  : title = Value(title),
         dateKey = Value(dateKey),
@@ -5939,6 +5975,7 @@ class ReadingStatisticsCompanion extends UpdateCompanion<ReadingStatisticRow> {
     Expression<String>? dateKey,
     Expression<int>? charactersRead,
     Expression<int>? readingTimeMs,
+    Expression<int>? pagesRead,
     Expression<int>? lastStatisticModified,
   }) {
     return RawValuesInsertable({
@@ -5947,6 +5984,7 @@ class ReadingStatisticsCompanion extends UpdateCompanion<ReadingStatisticRow> {
       if (dateKey != null) 'date_key': dateKey,
       if (charactersRead != null) 'characters_read': charactersRead,
       if (readingTimeMs != null) 'reading_time_ms': readingTimeMs,
+      if (pagesRead != null) 'pages_read': pagesRead,
       if (lastStatisticModified != null)
         'last_statistic_modified': lastStatisticModified,
     });
@@ -5958,6 +5996,7 @@ class ReadingStatisticsCompanion extends UpdateCompanion<ReadingStatisticRow> {
       Value<String>? dateKey,
       Value<int>? charactersRead,
       Value<int>? readingTimeMs,
+      Value<int>? pagesRead,
       Value<int>? lastStatisticModified}) {
     return ReadingStatisticsCompanion(
       id: id ?? this.id,
@@ -5965,6 +6004,7 @@ class ReadingStatisticsCompanion extends UpdateCompanion<ReadingStatisticRow> {
       dateKey: dateKey ?? this.dateKey,
       charactersRead: charactersRead ?? this.charactersRead,
       readingTimeMs: readingTimeMs ?? this.readingTimeMs,
+      pagesRead: pagesRead ?? this.pagesRead,
       lastStatisticModified:
           lastStatisticModified ?? this.lastStatisticModified,
     );
@@ -5988,6 +6028,9 @@ class ReadingStatisticsCompanion extends UpdateCompanion<ReadingStatisticRow> {
     if (readingTimeMs.present) {
       map['reading_time_ms'] = Variable<int>(readingTimeMs.value);
     }
+    if (pagesRead.present) {
+      map['pages_read'] = Variable<int>(pagesRead.value);
+    }
     if (lastStatisticModified.present) {
       map['last_statistic_modified'] =
           Variable<int>(lastStatisticModified.value);
@@ -6003,6 +6046,7 @@ class ReadingStatisticsCompanion extends UpdateCompanion<ReadingStatisticRow> {
           ..write('dateKey: $dateKey, ')
           ..write('charactersRead: $charactersRead, ')
           ..write('readingTimeMs: $readingTimeMs, ')
+          ..write('pagesRead: $pagesRead, ')
           ..write('lastStatisticModified: $lastStatisticModified')
           ..write(')'))
         .toString();
@@ -24445,6 +24489,7 @@ typedef $$ReadingStatisticsTableCreateCompanionBuilder
   required String dateKey,
   required int charactersRead,
   required int readingTimeMs,
+  Value<int> pagesRead,
   required int lastStatisticModified,
 });
 typedef $$ReadingStatisticsTableUpdateCompanionBuilder
@@ -24454,6 +24499,7 @@ typedef $$ReadingStatisticsTableUpdateCompanionBuilder
   Value<String> dateKey,
   Value<int> charactersRead,
   Value<int> readingTimeMs,
+  Value<int> pagesRead,
   Value<int> lastStatisticModified,
 });
 
@@ -24481,6 +24527,9 @@ class $$ReadingStatisticsTableFilterComposer
 
   ColumnFilters<int> get readingTimeMs => $composableBuilder(
       column: $table.readingTimeMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get pagesRead => $composableBuilder(
+      column: $table.pagesRead, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<int> get lastStatisticModified => $composableBuilder(
       column: $table.lastStatisticModified,
@@ -24513,6 +24562,9 @@ class $$ReadingStatisticsTableOrderingComposer
       column: $table.readingTimeMs,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<int> get pagesRead => $composableBuilder(
+      column: $table.pagesRead, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<int> get lastStatisticModified => $composableBuilder(
       column: $table.lastStatisticModified,
       builder: (column) => ColumnOrderings(column));
@@ -24541,6 +24593,9 @@ class $$ReadingStatisticsTableAnnotationComposer
 
   GeneratedColumn<int> get readingTimeMs => $composableBuilder(
       column: $table.readingTimeMs, builder: (column) => column);
+
+  GeneratedColumn<int> get pagesRead =>
+      $composableBuilder(column: $table.pagesRead, builder: (column) => column);
 
   GeneratedColumn<int> get lastStatisticModified => $composableBuilder(
       column: $table.lastStatisticModified, builder: (column) => column);
@@ -24580,6 +24635,7 @@ class $$ReadingStatisticsTableTableManager extends RootTableManager<
             Value<String> dateKey = const Value.absent(),
             Value<int> charactersRead = const Value.absent(),
             Value<int> readingTimeMs = const Value.absent(),
+            Value<int> pagesRead = const Value.absent(),
             Value<int> lastStatisticModified = const Value.absent(),
           }) =>
               ReadingStatisticsCompanion(
@@ -24588,6 +24644,7 @@ class $$ReadingStatisticsTableTableManager extends RootTableManager<
             dateKey: dateKey,
             charactersRead: charactersRead,
             readingTimeMs: readingTimeMs,
+            pagesRead: pagesRead,
             lastStatisticModified: lastStatisticModified,
           ),
           createCompanionCallback: ({
@@ -24596,6 +24653,7 @@ class $$ReadingStatisticsTableTableManager extends RootTableManager<
             required String dateKey,
             required int charactersRead,
             required int readingTimeMs,
+            Value<int> pagesRead = const Value.absent(),
             required int lastStatisticModified,
           }) =>
               ReadingStatisticsCompanion.insert(
@@ -24604,6 +24662,7 @@ class $$ReadingStatisticsTableTableManager extends RootTableManager<
             dateKey: dateKey,
             charactersRead: charactersRead,
             readingTimeMs: readingTimeMs,
+            pagesRead: pagesRead,
             lastStatisticModified: lastStatisticModified,
           ),
           withReferenceMapper: (p0) => p0

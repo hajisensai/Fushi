@@ -136,6 +136,14 @@ class ReadingStatistics extends Table {
   TextColumn get dateKey => text()();
   IntColumn get charactersRead => integer()();
   IntColumn get readingTimeMs => integer()();
+
+  /// v60：当日读过的**页数**（漫画 / PDF 这类以页为单位的书；EPUB 恒 0）。
+  ///
+  /// 页数与字数是两个独立量纲，绝不互相顶替：漫画既落 OCR 字符数（与 EPUB 同口径）
+  /// 又落页数，统计页两个维度分别展示。旧库迁移补 0，跨设备聚合同步的 wire 契约
+  /// 不带此列（[StatBucket] 要求两端字段集一致，加字段会让新旧端互相抛错），页数
+  /// 随整库备份/恢复走。
+  IntColumn get pagesRead => integer().withDefault(const Constant(0))();
   IntColumn get lastStatisticModified => integer()();
 
   @override

@@ -199,10 +199,8 @@ class _DailyGoalDialogState extends State<_DailyGoalDialog> {
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
                 labelText: t.stat_goal_daily,
-                // 单位 + 口径：目标是「每天多少字」，且计入阅读/视频字幕/游戏文本。
+                // 单位：目标是「每天多少字」。口径说明行按用户要求删除。
                 suffixText: t.stat_goal_unit_chars,
-                helperText: t.stat_goal_scope_hint,
-                helperMaxLines: 3,
               ),
             ),
             if (widget.recentDailyAverage > 0) ...<Widget>[
@@ -1411,7 +1409,8 @@ class _HomeDashboardPageState
     final int goal = ref.read(appProvider).readingGoalDailyChars;
     if (goal <= 0) {
       // BUG-1073 病灶 2：此前是热力图下方孤零零一个左对齐按钮。改成与已设目标态
-      // 同构的一整行（图标 + 标签 + 口径说明 + 右侧入口），视觉上属于这张卡。
+      // 同构的一整行（图标 + 标签 + 右侧入口），视觉上属于这张卡。口径说明按用户要求
+      // 删除，标签退回「每日目标」本名。
       return Padding(
         padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
         child: Row(
@@ -1424,7 +1423,7 @@ class _HomeDashboardPageState
             SizedBox(width: tokens.spacing.gap),
             Expanded(
               child: Text(
-                t.stat_goal_scope_hint,
+                t.stat_goal_daily,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: tokens.type.metadata,
