@@ -1887,18 +1887,34 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (rawChapters.isEmpty) return null;
 
     final List<EpubChapter> chapters = <EpubChapter>[];
+    // BUG-1203：资源拦截器按 [EpubBook.mediaType]（即 resources 表）判「这是不是该
+    // 走 HTML 处理链的内容文档」。这条 DB 元数据回退路径此前不建 resources，判据在
+    // 这里只能退回扩展名猜测——正是「OPF 解析失败 + 章节用怪扩展名」这本书会整本
+    // 空白的场景。chaptersJson 里逐章存着导入时解析到的 mediaType，直接灌进去，
+    // 主路径与回退路径就用同一份真相源，无需在拦截器里分叉。
+    final Map<String, EpubResource> resources = <String, EpubResource>{};
+    final String canonExtractDir = p.canonicalize(extractDir);
     for (int i = 0; i < rawChapters.length; i++) {
       final Map<String, dynamic> ch = rawChapters[i] as Map<String, dynamic>;
       final String href = ch['href'] as String;
       final File file = File(p.join(extractDir, href));
       final String html = file.existsSync() ? file.readAsStringSync() : '';
+      final String mediaType = ch['mediaType'] as String? ?? 'text/html';
       chapters.add(EpubChapter(
         id: ch['id'] as String? ?? 'section-$i',
         href: href,
-        mediaType: ch['mediaType'] as String? ?? 'text/html',
+        mediaType: mediaType,
         html: html,
         spineIndex: i,
       ));
+      // key 与 EpubParser 建表时同构造（canonicalize 后相对 extractDir 的 posix
+      // 路径），拦截器才查得到。
+      final String absPath = p.canonicalize(p.join(extractDir, href));
+      if (!p.isWithin(canonExtractDir, absPath)) continue;
+      final String relPath =
+          p.relative(absPath, from: canonExtractDir).replaceAll('\\', '/');
+      resources[normalizeHref(relPath)] =
+          EpubResource(mediaType: mediaType, filePath: absPath);
     }
 
     List<EpubTocItem> toc = const <EpubTocItem>[];
@@ -1926,6 +1942,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       // 分支永不进，制卡恒无封面。row.coverPath 正是导入时落库的相对封面路径
       // （epub_importer.dart: coverPath = book.coverHref），与 _extractDir 拼接即封面文件。
       coverHref: row.coverPath,
+      resources: resources,
       rootDirectory: extractDir,
     );
   }

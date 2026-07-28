@@ -600,3 +600,26 @@ String normalizeHref(String href) => href
 /// 命名统一轮 G8：收敛到 hibiki_core 单一映射表 [mimeTypeForFilePath]（旧本地副本
 /// 缺 `.webp` 等，EPUB 内 webp 插图曾被按 octet-stream 提供）。保留旧名薄 shim。
 String fallbackMimeType(String path) => mimeTypeForFilePath(path);
+
+/// BUG-1203：一个 media-type 是不是「EPUB 内容文档」（该走 HTML 处理链的网页）。
+///
+/// EPUB 只规定内容文档的 **media-type**（EPUB 3 为 `application/xhtml+xml`，
+/// EPUB 2 另允许 `text/html`），**没有**规定文件扩展名——`.htm` / `.xht` / 甚至无
+/// 扩展名都合法，所以「按扩展名猜」天然是漏的：漏一个就整本正文空白且无错误日志。
+///
+/// 唯一实现，两处消费：[EpubParser] 筛 spine 用它；阅读器资源拦截器
+/// (`reader_hibiki/webview.part.dart` 的 `_readerResourcePayload`) 判「要不要净化 +
+/// 注样式 + 当文档渲染」也用它。**不要抄第二份平行谓词**——抄本会漂移，一边改了另一
+/// 边没跟就是静默空白页。
+///
+/// ⚠️ 本谓词只用于**分类**。分类命中后下发给 WebView 的 Content-Type 仍必须是
+/// `text/html`，绝不能回 `application/xhtml+xml`：后者让渲染器切到严格 XML 解析，
+/// 出版社 EPUB 普遍存在的 well-formedness 瑕疵会直接变成整页 parse error，而
+/// BUG-079 / BUG-737 的 `sanitizeXhtml`（为 HTML5 解析器补偿自闭合标签）是针对
+/// HTML5 解析语义设计的，切走后既失去意义也不再防护那两类空白/查不了词。
+bool isHtmlMediaType(String mediaType) {
+  final String lower = mediaType.trim().toLowerCase();
+  return lower == 'application/xhtml+xml' ||
+      lower == 'text/html' ||
+      lower.endsWith('+html');
+}
