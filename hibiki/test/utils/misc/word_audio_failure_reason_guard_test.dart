@@ -137,8 +137,11 @@ void main() {
               '否则首播失败仍只是一个光秃秃的 false（BUG-1204）');
     }
 
-    expectReasonLoggedNearHandler(
-        'lib/src/lookup/global_lookup_controller.dart');
+    // BUG-1210：app 外的 wordAudioPlayed 处理已收口进共享 OverlayAutoRead（瞬态
+    // 覆盖窗与剪贴板面板共用同一实现），故「原因落日志」这一环现在扫共享文件，
+    // 而不再是 global_lookup_controller（那里只剩一行委托）。窗口锚定的严格口径
+    // 保持不变。
+    expectReasonLoggedNearHandler('lib/src/lookup/overlay_auto_read.dart');
     expectReasonLoggedNearHandler(
         'lib/src/pages/implementations/dictionary_popup_webview.dart');
   });

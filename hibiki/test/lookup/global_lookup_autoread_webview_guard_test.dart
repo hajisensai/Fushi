@@ -58,10 +58,16 @@ void main() {
       // A missing/unloaded frame must resolve the Dart completer immediately
       // (postToHost false) instead of leaving it to the 5s timeout.
       expect(js.contains('record?.loaded'), isTrue);
+      // BUG-1201: the report now carries a THIRD arg — the failure reason — so
+      // an unloaded frame is distinguishable from an autoplay rejection in the
+      // log. Anchor on the prefix so the reason string stays free to evolve;
+      // the guarded intent (immediate false, no 5s timeout) is unchanged.
       expect(
-        js.contains("postToHost('wordAudioPlayed', [token, false])"),
+        js.contains("postToHost('wordAudioPlayed', [token, false,"),
         isTrue,
       );
+      expect(js.contains('FrameNotLoaded'), isTrue,
+          reason: 'an unloaded frame must report its own distinct reason');
     });
 
     test('iframe realm plays via __hibikiPlayWordAudioUrl and reports back',

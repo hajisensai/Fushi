@@ -22,26 +22,36 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   String read(String p) => File(p).readAsStringSync();
 
+  // BUG-1210 — 自动朗读的实现搬进共享 `overlay_auto_read.dart`（app 外两个表面
+  // 共用，剪贴板面板此前整条路径没接线）。本组守的意图一字未改，只是实现细节现在
+  // 落在共享文件里：接线（controller）与实现（shared）分开扫。
   group('M1a-1 autoRead wiring (global lookup controller)', () {
     late String src;
+    late String shared;
     setUpAll(() {
       src = read('lib/src/lookup/global_lookup_controller.dart');
+      shared = read('lib/src/lookup/overlay_auto_read.dart');
     });
 
     test('uses the shared LookupAutoReadCoordinator', () {
       expect(
-        src.contains(
+        shared.contains(
             "import 'package:hibiki/src/utils/misc/lookup_auto_read_coordinator.dart';"),
         isTrue,
         reason: 'must import the shared dedupe coordinator',
       );
-      expect(src.contains('LookupAutoReadCoordinator.instance.runAutomatic('),
+      expect(
+          shared.contains('LookupAutoReadCoordinator.instance.runAutomatic('),
           isTrue);
+      // 控制器仍须真的接上这条线（否则共享实现形同虚设）。
+      expect(src.contains('OverlayAutoRead('), isTrue,
+          reason: 'the controller must wire up the shared implementation');
+      expect(src.contains('_autoRead.autoReadFirstEntry('), isTrue);
     });
 
     test('autoRead is gated on the autoReadOnLookup preference', () {
-      expect(
-          src.contains('ReaderHibikiSource.instance.autoReadOnLookup'), isTrue);
+      expect(shared.contains('ReaderHibikiSource.instance.autoReadOnLookup'),
+          isTrue);
     });
 
     test('play step goes through the unified fast path (BUG-1127)', () {
@@ -51,22 +61,24 @@ void main() {
       // back to the Dart player on a REPORTED failure. The controller must not
       // re-grow its own resolve + playAudioRef fork (the pre-BUG-1127 slow
       // path: libmpv stop→load→play per play, silent failures).
-      expect(src.contains('autoReadWordUnified('), isTrue);
-      expect(src.contains('playInWebView: _playWordAudioUrlInOverlay'), isTrue);
-      expect(
-        src.contains('TtsChannel.instance.playAudioRef('),
-        isFalse,
-        reason: 'the Dart fallback lives INSIDE autoReadWordUnified with the '
-            'already-resolved ref; a direct playAudioRef here would re-fork '
-            'the overlay off the unified path (BUG-1127 regression)',
-      );
-      // Must not bypass the unified helper via the all-in-one shortcut.
-      expect(
-        src.contains('playLookupAudio('),
-        isFalse,
-        reason: 'global lookup must reuse autoReadWordUnified, not the '
-            'playLookupAudio shortcut that skips the WebView fast path',
-      );
+      expect(shared.contains('autoReadWordUnified('), isTrue);
+      expect(shared.contains('playInWebView: playWordAudioUrl'), isTrue);
+      for (final String s in <String>[src, shared]) {
+        expect(
+          s.contains('TtsChannel.instance.playAudioRef('),
+          isFalse,
+          reason: 'the Dart fallback lives INSIDE autoReadWordUnified with the '
+              'already-resolved ref; a direct playAudioRef here would re-fork '
+              'the overlay off the unified path (BUG-1127 regression)',
+        );
+        // Must not bypass the unified helper via the all-in-one shortcut.
+        expect(
+          s.contains('playLookupAudio('),
+          isFalse,
+          reason: 'global lookup must reuse autoReadWordUnified, not the '
+              'playLookupAudio shortcut that skips the WebView fast path',
+        );
+      }
     });
 
     test('BUG-1127: WebView play reports the real audio.play() outcome', () {
@@ -74,23 +86,28 @@ void main() {
       // contract (BUG-1093): the Dart side must consume a REAL result — no
       // fire-and-forget (silent swallow) and no unconditional fallback (double
       // playback).
-      expect(src.contains("handler == 'wordAudioPlayed'"), isTrue);
-      expect(src.contains('_pendingWordAudioPlays'), isTrue);
-      expect(src.contains('completer.future.timeout'), isTrue);
+      expect(shared.contains("handler != 'wordAudioPlayed'"), isTrue,
+          reason: 'the shared handler must still dispatch on wordAudioPlayed');
+      expect(src.contains('_autoRead.maybeHandleWordAudioPlayed('), isTrue,
+          reason:
+              'the controller must route the report into the shared handler');
+      expect(shared.contains('_pendingWordAudioPlays'), isTrue);
+      expect(shared.contains('completer.future.timeout'), isTrue);
       // The play script must target the STABLE root frame (always warm after
       // prewarm; TODO-1095) and be gated on webview readiness — the native
       // render channel caches scripts last-wins while the surface is not
       // ready, so an ungated play script would clobber a pending stack render.
-      expect(src.contains('buildPlayWordAudioScript('), isTrue);
-      expect(src.contains('kGlobalLookupRootFrameId'), isTrue);
-      expect(src.contains('GlobalLookupChannel.isWebViewReady()'), isTrue);
+      expect(shared.contains('buildPlayWordAudioScript('), isTrue);
+      expect(shared.contains('kGlobalLookupRootFrameId'), isTrue);
+      expect(shared.contains('_isWebViewReady()'), isTrue);
     });
 
     test('autoRead fires on both first lookup and nested re-lookup', () {
       expect(
         '_autoReadFirstEntry('.allMatches(src).length,
         greaterThanOrEqualTo(3),
-        reason: 'one definition + two call sites (_onHotKey + _lookupNested)',
+        reason: 'one delegating wrapper + two call sites '
+            '(_onHotKey + _lookupNested)',
       );
     });
   });

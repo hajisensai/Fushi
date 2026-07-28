@@ -20,6 +20,7 @@ import 'package:hibiki/src/lookup/global_lookup_controller.dart'
         GlobalLookupController,
         GlobalLookupMediaRequest,
         resolveGlobalLookupMedia;
+import 'package:hibiki/src/lookup/overlay_auto_read.dart';
 import 'package:hibiki/src/lookup/clipboard_history_payload.dart';
 import 'package:hibiki/src/lookup/desktop_lookup_router.dart';
 import 'package:hibiki/src/lookup/global_lookup_log.dart';
@@ -74,6 +75,17 @@ class ClipboardPanelController {
 
   static const OverlayWindowChannel _channel =
       OverlayWindowChannel(HibikiChannels.clipboardPanel);
+
+  /// BUG-1210 — 查词后自动朗读。此前**只有瞬态覆盖窗接了线**，本面板整条路径没有
+  /// 任何朗读调用：同一个全局开关 `autoReadOnLookup` 在那个表面生效、在这里完全
+  /// 无效，用户表现为「面板查词不读，必须手动点 ♪」。实现与覆盖窗共用同一份
+  /// [OverlayAutoRead]（与 deferred 桥同一条「绝不复制」红线），只是各自注入自己
+  /// 的渲染通道与就绪门控，token 表互相独立。
+  final OverlayAutoRead _autoRead = OverlayAutoRead(
+    render: _channel.render,
+    isWebViewReady: _channel.isWebViewReady,
+    label: 'panel',
+  );
 
   AppModel? _appModel;
   bool _started = false;
@@ -251,6 +263,22 @@ class ClipboardPanelController {
       await _renderPanel(model, resetRootScroll: true);
       glog('panel: updated "${request.text.length} chars" '
           'entries=${result.entries.length}');
+      // BUG-1210：与瞬态覆盖窗一致——查到词就按 autoReadOnLookup 偏好自动发音。
+      // 放在渲染之后：播放脚本经同一 render 通道下发，必须排在整栈渲染脚本之后，
+      // 否则会被 last-wins 的渲染脚本顶掉（与覆盖窗 _autoReadFirstEntry 同一位置
+      // 语义）。协调器内部去重，被动剪贴板流重复同词不会连读。
+      //
+      // 但**必须先核对 seq**：本方法的契约是「每个 await 后核对，过期即弃」（VN 流
+      // 乱序守卫），而上面 _renderPanel / _showPanel / raise 都是 await。少这一句，
+      // 被后一句顶掉的旧查词仍会把**旧词**读出来——屏幕上是新句、耳朵里是上一句，
+      // 而面板正是被动剪贴板流（galgame 台词 / texthooker）的主力表面，这种快速
+      // 连续更新恰恰是它的常态。覆盖窗没有 latest-wins 机制故原实现无此步，这是
+      // 面板独有的契约，收口共享实现时不能把它一起抹掉。
+      if (seq != _updateSeq) {
+        glog('panel: autoread skipped (superseded seq=$seq)');
+        return;
+      }
+      _autoRead.autoReadFirstEntry(model, result);
     } catch (e, st) {
       glog('panel: update EXCEPTION $e\n$st');
     }
@@ -494,6 +522,13 @@ class ClipboardPanelController {
       // 与句子横幅同一 `_currentSentence`，落实 spec §2 的「兼作制卡 sentence」。
       sentenceContext: _currentSentence,
     )) {
+      return;
+    }
+    // BUG-1210 — 面板 iframe realm 回报自动发音 `audio.play()` 真实结果
+    // （args = [token, ok, reason?]）。**必须**接住：否则 playWordAudioUrl 的
+    // Completer 永远等不到回报，每次自动发音都要空耗满 5s 超时才回落 Dart 播放器。
+    // 与覆盖窗同一份 [OverlayAutoRead] 实现。
+    if (_autoRead.maybeHandleWordAudioPlayed(handler, message)) {
       return;
     }
     // BUG-1139 — Ctrl+滚轮内容缩放：改「词典字号」这一唯一真值后整栈重渲。
