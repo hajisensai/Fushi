@@ -103,7 +103,7 @@ class PdfImporter {
           chapterCount: pageCount,
           chaptersJson: '[]',
           importedAt: importedAtMs,
-          format: const Value('pdf'),
+          format: Value(BookFormat.pdf.dbValue),
           sourceId: sourceId != null ? Value(sourceId) : const Value.absent(),
         ),
       );

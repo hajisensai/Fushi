@@ -15,6 +15,119 @@ void main() {
 
   tearDown(() => db.close());
 
+  /// 按页翻的书（PDF / 漫画）没有「章」：`chaptersJson` 是 `'[]'`、`tocJson` 是 null，
+  /// 阅读位置的 `sectionIndex` 存的是**页码**。旧实现在这里只挡了 `'manga'`，PDF 会
+  /// 一路走到 estimateCompletedBookChapters 的「无 toc 即早退」分支拿到
+  /// fallbackProgress —— 也就是把当前页码当成已读章数报进用户的 Bangumi 公开记录。
+  ///
+  /// 漫画当时只是**侥幸**没踩到：自动映射把它判成 volume 模式绕开了 chapter 分支，
+  /// 手动把映射改成 chapter 模式一样会中招。所以两种格式都要挡。
+  Future<void> seedBook(String key, BookFormat format) async {
+    await db.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: key,
+      title: key,
+      epubPath: 'x',
+      extractDir: 'd',
+      chapterCount: 300,
+      chaptersJson: '[]',
+      importedAt: 0,
+      format: Value(format.dbValue),
+    ));
+  }
+
+  for (final BookFormat format in <BookFormat>[
+    BookFormat.pdf,
+    BookFormat.manga,
+  ]) {
+    test('${format.dbValue} 不产出章进度（页码不得当章数上报）', () async {
+      await seedBook('b-${format.dbValue}', format);
+      final int? progress = await repository.loadBookChapterProgress(
+        bookKey: 'b-${format.dbValue}',
+        fallbackProgress: 137, // 当前第 137 页
+      );
+      expect(progress, isNull,
+          reason: '按页翻的书没有章，必须返回 null 让上层整条不发，'
+              '而不是把 137 页当成 137 章报出去');
+    });
+  }
+
+  /// 调用点②：`loadPersistedBookTrackingProgress` 原本**完全没有 format 守卫**。
+  ///
+  /// 这条单独存在，是因为变异实测证明它必须存在：把 `:564` 那行 format 守卫删掉，
+  /// 只覆盖 `loadBookChapterProgress` 的测试**照样全绿**——两个调用点必须各有各的
+  /// 钉子，否则「只修一处、另一处漂开」会静默复发。
+  for (final BookFormat format in <BookFormat>[
+    BookFormat.pdf,
+    BookFormat.manga,
+  ]) {
+    test('${format.dbValue} 的 chapter 模式映射不进持久化进度（调用点②）', () async {
+      final String key = 'p-${format.dbValue}';
+      await seedBook(key, format);
+      await db.upsertReaderPosition(
+        ReaderPositionsCompanion.insert(
+          bookKey: key,
+          sectionIndex: 137, // 第 137 页
+          normCharOffset: 9990,
+          updatedAt: 5000,
+        ),
+      );
+      await repository.saveMappingIfAbsent(
+        mediaType: TrackingMediaType.book,
+        mediaKey: key,
+        mediaTitle: key,
+        kind: TrackingKind.novel,
+        subjectId: 4242,
+        subjectName: key,
+        progressMode: TrackingProgressMode.chapter,
+        progressOffset: 0,
+      );
+      final List<PersistedBookTrackingProgress> got =
+          await repository.loadPersistedBookTrackingProgress(afterMs: 0);
+      expect(
+        got.where((PersistedBookTrackingProgress e) => e.mediaKey == key),
+        isEmpty,
+        reason: '按页翻的书没有章：整条不产出，'
+            '否则第 137 页会被当成「已读 137 章」提交到用户的 Bangumi 记录',
+      );
+    });
+  }
+
+  test('epub 的 chapter 模式映射照常产出（调用点②没有误伤文字书）', () async {
+    await seedBook('p-epub', BookFormat.epub);
+    await db.upsertReaderPosition(
+      ReaderPositionsCompanion.insert(
+        bookKey: 'p-epub',
+        sectionIndex: 3,
+        normCharOffset: 9990,
+        updatedAt: 5000,
+      ),
+    );
+    await repository.saveMappingIfAbsent(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'p-epub',
+      mediaTitle: 'p-epub',
+      kind: TrackingKind.novel,
+      subjectId: 4243,
+      subjectName: 'p-epub',
+      progressMode: TrackingProgressMode.chapter,
+      progressOffset: 0,
+    );
+    final List<PersistedBookTrackingProgress> got =
+        await repository.loadPersistedBookTrackingProgress(afterMs: 0);
+    expect(
+        got.where((PersistedBookTrackingProgress e) => e.mediaKey == 'p-epub'),
+        isNotEmpty);
+  });
+
+  test('epub 仍照常产出章进度（止血没有误伤文字书）', () async {
+    await seedBook('b-epub', BookFormat.epub);
+    final int? progress = await repository.loadBookChapterProgress(
+      bookKey: 'b-epub',
+      fallbackProgress: 5,
+    );
+    expect(progress, isNotNull);
+  });
+
   test('EPUB TOC progress counts logical chapters instead of spine files', () {
     final int progress = estimateCompletedBookChapters(
       chaptersJson: '''

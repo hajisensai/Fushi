@@ -29,8 +29,9 @@ void main() {
     final String src = read('lib/src/media/sources/reader_hibiki_source.dart');
     // _bookToMediaItem 必须按 format 分流 mediaSourceIdentifier；缺这条 → PDF 行用
     // 'reader_ttu' 打开 → EPUB 阅读器解析 PDF → 崩。
-    expect(src.contains("book.format == 'pdf'"), isTrue,
-        reason: '_bookToMediaItem 应按 format=="pdf" 分流');
+    // 判据统一走 BookFormat 枚举后，锚点跟着走（见 book_format_discipline_guard）。
+    expect(src.contains('format == BookFormat.pdf'), isTrue,
+        reason: '_bookToMediaItem 应按 BookFormat.pdf 分流');
     expect(src.contains('ReaderPdfSource.kUniqueKey'), isTrue,
         reason: 'PDF 行 mediaSourceIdentifier 应取 ReaderPdfSource.kUniqueKey');
   });

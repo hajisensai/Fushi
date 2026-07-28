@@ -21,6 +21,8 @@
 /// 真正的产物重建在 `book_format_rebuild.dart`。
 library;
 
+import 'package:hibiki_core/hibiki_core.dart';
+
 /// 转化目标。
 enum BookFormatTarget {
   /// 转成漫画（`format='manga'`）：产出页图 + `manga.json`，之后可跑整卷 OCR 查词。
@@ -94,11 +96,11 @@ class BookSourceProbe {
 /// [format] / [sourceAbsolutePath] 来自 `EpubBooks` 行（后者 =
 /// `p.join(extractDir, epubPath)`），[probe] 是调用方的磁盘探测结果。
 BookConvertVerdict verdictToManga({
-  required String format,
+  required BookFormat format,
   required String sourceAbsolutePath,
   required BookSourceProbe probe,
 }) {
-  if (format == 'manga') {
+  if (format == BookFormat.manga) {
     return const BookConvertVerdict.blocked(BookConvertBlocker.alreadyTarget);
   }
   if (!probe.sourceExists) {
@@ -106,7 +108,7 @@ BookConvertVerdict verdictToManga({
   }
   // PDF 每一页都能栅格化成页图，恒可转（扫描版 PDF 转过来正是刚需：PDF 阅读器
   // 对无文本层的扫描件明确不做 OCR 兜底，转成漫画才有查词）。
-  if (format == 'pdf') {
+  if (format == BookFormat.pdf) {
     return BookConvertVerdict.supported(sourceAbsolutePath);
   }
   // 普通 EPUB：只有「图片型」（扫描版漫画常见的分发形态）才有页图可用。
@@ -122,10 +124,10 @@ BookConvertVerdict verdictToManga({
 /// 「转回」是把 `epubPath` 指回书目录里**仍在的**原始 `.epub`/`.pdf`——那才是真书。
 /// 从 `.mokuro`/裸图片目录导入的漫画没有这样的原始文件，不支持（不造假书）。
 BookConvertVerdict verdictToBook({
-  required String format,
+  required BookFormat format,
   required BookSourceProbe probe,
 }) {
-  if (format != 'manga') {
+  if (format != BookFormat.manga) {
     return const BookConvertVerdict.blocked(BookConvertBlocker.alreadyTarget);
   }
   final String? original = probe.recoverableOriginalPath;

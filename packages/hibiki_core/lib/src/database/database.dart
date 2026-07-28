@@ -11,6 +11,7 @@ import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
 import '../utils/ttu_sanitize.dart';
 import '../utils/video_book_uid.dart';
+import 'book_format.dart';
 import 'collection_order.dart';
 import 'media_kind.dart';
 import 'pref_codec.dart';
@@ -4723,7 +4724,9 @@ class HibikiDatabase extends _$HibikiDatabase {
   /// 主键 `bookKey` 不变，因此 `(mediaType='epub', entryKey=bookKey)` 这个统一媒体
   /// 身份完全不动——合集成员 / 标签 / 阅读进度 / 统计 / Profile / 墓碑全部原地存活，
   /// 零悬挂引用。变的只是「这本书用哪个阅读器打开、产物在哪」：
-  /// - [format]：`'epub'` | `'pdf'` | `'manga'`（阅读器路由的唯一真相源）；
+  /// - [format]：[BookFormat]（阅读器路由的唯一真相源）。收枚举而非裸串——这是
+  ///   本列唯一不受常量约束的落库入口，收裸串就等于把「写进未知值」的可能性留在
+  ///   运行期，而未知值会让路由静默 fallback 到 EPUB 阅读器、在解析路径出错；
   /// - [epubPath]：漫画指向 `manga.json`，书指向原始 `.epub`/`.pdf` 文件名；
   /// - [coverPath]：漫画取首页页图相对路径，书取原封面。**null = 保持原封面不变**
   ///   （与相邻的 [updateEpubBookContentPaths] 同一约定）——转化从不以「清空封面」
@@ -4739,7 +4742,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   /// 单条 UPDATE，不动 `extractDir`（三种格式共用同一个书目录）。
   Future<void> updateEpubBookFormat(
     String bookKey, {
-    required String format,
+    required BookFormat format,
     required String epubPath,
     required int chapterCount,
     required String chaptersJson,
@@ -4748,7 +4751,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   }) {
     return (update(epubBooks)..where((t) => t.bookKey.equals(bookKey)))
         .write(EpubBooksCompanion(
-      format: Value(format),
+      format: Value(format.dbValue),
       epubPath: Value(epubPath),
       chapterCount: Value(chapterCount),
       chaptersJson: Value(chaptersJson),

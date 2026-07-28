@@ -458,7 +458,9 @@ class MediaTrackingService {
     final MediaTrackingMappingRow? mapping =
         await _ensureAutoBookMapping(bookKey);
     if (mapping == null) return;
-    final int logicalChapterProgress =
+    // null = 按页翻的书（PDF / 漫画），没有章的概念。此时**一律不产出 chapter
+    // 模式进度**：旧实现会把当前页码当已读章数写进用户的 Bangumi 公开记录。
+    final int? logicalChapterProgress =
         await _repository.loadBookChapterProgress(
       bookKey: bookKey,
       fallbackProgress: completedChapterCount,
@@ -469,14 +471,17 @@ class MediaTrackingService {
         isVolume && mapping.kind == TrackingKind.novel.value
             ? await _ensureBookChapterMapping(mapping)
             : null;
+    // 按页翻的书（PDF / 漫画）没有章：卷模式仍可如实上报「读完/未读完」，但 chapter
+    // 模式一律**整条不发**——报 0 也是往用户的 Bangumi 公开记录里写一个错数。
+    if (!isVolume && logicalChapterProgress == null) return;
     await _enqueueAndSync(
       mediaType: TrackingMediaType.book,
       mediaKey: bookKey,
       // 卷模式的 offset 就是当前卷号：在读时减一只报告此前已读卷，读完才计入本卷。
-      localProgress: isVolume ? (completed ? 0 : -1) : logicalChapterProgress,
+      localProgress: isVolume ? (completed ? 0 : -1) : logicalChapterProgress!,
       completed: completed,
     );
-    if (chapterMapping == null) return;
+    if (chapterMapping == null || logicalChapterProgress == null) return;
     await _enqueueAndSync(
       mediaType: TrackingMediaType.bookChapter,
       mediaKey: bookKey,
@@ -631,7 +636,9 @@ class MediaTrackingService {
             await _repository.loadAutoBookSource(bookKey);
         if (source == null) return null;
         final TrackingKind kind =
-            source.format == 'manga' ? TrackingKind.manga : TrackingKind.novel;
+            BookFormat.parseOrEpub(source.format) == BookFormat.manga
+                ? TrackingKind.manga
+                : TrackingKind.novel;
         final _PreparedTrackingTitle prepared =
             _prepareTrackingTitle(source.title);
         final List<BangumiSubject> subjects = await searchSubjects(
