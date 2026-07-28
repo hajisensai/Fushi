@@ -3973,9 +3973,23 @@ class AppModel with ChangeNotifier {
 
   /// Requests for full external storage permissions. Required to handle video
   /// files and their subtitle files in the same directory.
+  ///
+  /// **只申请存储权限，不碰相机**（BUG-1209）。本函数的全部调用点都是「选扫描根 /
+  /// 选文件 / 改下载目录」（`media/import/real_path_directory_picker.dart`），它们只需要
+  /// 读盘。此前这里顺带 `requestCameraPermission()`：用户理解不了选个文件夹为什么要给
+  /// 相机，合理反应是拒绝，而在同一串权限流程里拒绝很可能把本该给的存储权限一起否掉
+  /// ——于是「加了扫描根却扫不出东西」。
+  ///
+  /// 相机是另一件事，归真正需要相机的入口自己申请：当前唯一的相机消费方
+  /// `creator/enhancements/camera_enhancement.dart` 走 image_picker 的 `ImageSource.camera`
+  /// 系统拍照 intent，而 `AndroidManifest.xml` 并未声明 `android.permission.CAMERA`，
+  /// 该 intent 本就不需要运行时权限，故它从来没有、也不需要调这里。
+  ///
+  /// 早退门同样只看存储：旧版的 `&& hasCameraPermission()` 在安卓上恒为 false
+  /// （CAMERA 未在 manifest 声明 → permission_handler 直接判 denied），使得存储已授权时
+  /// 也永远走不进早退分支。
   Future<void> requestExternalStoragePermissions() async {
-    if (await platformServices.permission.hasExternalStoragePermission() &&
-        await platformServices.permission.hasCameraPermission()) {
+    if (await platformServices.permission.hasExternalStoragePermission()) {
       return;
     }
     if (isFirstTimeSetup) {
@@ -3986,7 +4000,6 @@ class AppModel with ChangeNotifier {
       );
     }
 
-    await platformServices.permission.requestCameraPermission();
     await platformServices.permission.requestExternalStoragePermission();
   }
 
