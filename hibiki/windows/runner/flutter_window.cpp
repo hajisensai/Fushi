@@ -978,6 +978,15 @@ void FlutterWindow::RegisterGalHookTextChannel() {
         "lockChanged",
         std::make_unique<flutter::EncodableValue>(std::move(map)));
   });
+  gal_hook_text_window_->SetPassThroughCallback([this](bool enabled) {
+    flutter::EncodableMap map{
+        {flutter::EncodableValue("passThrough"),
+         flutter::EncodableValue(enabled)},
+    };
+    gal_hook_text_channel_->InvokeMethod(
+        "passThroughChanged",
+        std::make_unique<flutter::EncodableValue>(std::move(map)));
+  });
   gal_hook_text_window_->SetBoundsCallback(
       [this](int left, int top, int width, int height) {
         flutter::EncodableMap map{
