@@ -172,7 +172,11 @@ class AnkiSettings {
     this.lapisFontScalePercent = 100,
     this.lapisCustomCss = '',
     this.lapisAppliedCssSha,
+    this.lapisMigratedBaselineSha,
     this.lastMediaDedupAtMs,
+    this.lastMediaDedupScanAtMs,
+    this.mediaDedupAutoEnabled = false,
+    this.mediaDedupAutoDelete = false,
   });
 
   factory AnkiSettings.fromJson(Map<String, dynamic> json) => AnkiSettings(
@@ -206,7 +210,13 @@ class AnkiSettings {
         lapisFontScalePercent: json['lapisFontScalePercent'] as int? ?? 100,
         lapisCustomCss: json['lapisCustomCss'] as String? ?? '',
         lapisAppliedCssSha: json['lapisAppliedCssSha'] as String?,
+        lapisMigratedBaselineSha: json['lapisMigratedBaselineSha'] as String?,
         lastMediaDedupAtMs: json['lastMediaDedupAtMs'] as int?,
+        lastMediaDedupScanAtMs: json['lastMediaDedupScanAtMs'] as int?,
+        // 缺键 = 老装置升级上来：两个自动开关都默认关，升级不会凭空获得
+        // 一条会动 Anki 媒体文件的自动路径。
+        mediaDedupAutoEnabled: json['mediaDedupAutoEnabled'] as bool? ?? false,
+        mediaDedupAutoDelete: json['mediaDedupAutoDelete'] as bool? ?? false,
       );
   final int? selectedDeckId;
   final String? selectedDeckName;
@@ -250,11 +260,36 @@ class AnkiSettings {
   /// 与「被用户手改（不得静默覆盖）」。
   final String? lapisAppliedCssSha;
 
-  /// 上次媒体字节级去重完成时刻（epoch ms）。null = 从未跑过。
+  /// Hibiki 上次把**出厂基线**（`LapisNoteType.template.css`）迁移到 Anki 时，
+  /// 那份基线的指纹（sha256）。null = 本机从未记录过。
   ///
-  /// 去重**只有用户在设置页手动触发**这一条路径（先出干跑报告、确认后才删），
-  /// 没有任何后台自动调度；这个时刻只是「上次跑过」的记录。
+  /// 启动自动迁移的闸门（PR#457 审查 §10-3，用户拍板方案甲）：只有基线**真的
+  /// 变了**（vendored Lapis 或 Hibiki delta 升级）才自动推送；用户改了字号/
+  /// 自定义 CSS 但没点「应用样式到 Anki」时，绝不自动写 Anki。
+  /// 与 [lapisAppliedCssSha] 分工不同：后者是「上次推了什么完整 styling」，
+  /// 用于漂移判定（区分自有产物与手改）。
+  final String? lapisMigratedBaselineSha;
+
+  /// 上次媒体字节级去重**真删**完成时刻（epoch ms）。null = 从未跑过。
   final int? lastMediaDedupAtMs;
+
+  /// 上次媒体去重**扫描**（含自动干跑）完成时刻（epoch ms）。null = 从未扫过。
+  /// 自动处理据此按周期节流，避免每次启动都全量哈希媒体目录。
+  final int? lastMediaDedupScanAtMs;
+
+  /// 是否启用媒体去重的自动处理。**默认 false**（用户拍板方案 A 的核心：
+  /// Hibiki 不会主动帮你省空间）；用户可以在设置页主动打开。
+  ///
+  /// 打开之后的行为仍然保守：自动路径只做**干跑**并把清单提示给用户，
+  /// 必须用户确认才真删——除非用户另外显式打开 [mediaDedupAutoDelete]。
+  final bool mediaDedupAutoEnabled;
+
+  /// 自动处理是否可以**跳过确认直接删**。默认 false。只有
+  /// [mediaDedupAutoEnabled] 也为 true 时才有意义（UI 上是它的从属开关）。
+  ///
+  /// 单独一个字段而不是把「自动 = 直接删」并进上面那个开关，是因为原实现的
+  /// 缺陷正是「自动路径绕过确认框」；加回自动开关不能把这个坑一起加回来。
+  final bool mediaDedupAutoDelete;
 
   bool get isConfigured => selectedDeckId != null && selectedNoteTypeId != null;
 
@@ -288,7 +323,11 @@ class AnkiSettings {
     String? lapisCustomCss,
     String? lapisAppliedCssSha,
     bool clearLapisAppliedCssSha = false,
+    String? lapisMigratedBaselineSha,
     int? lastMediaDedupAtMs,
+    int? lastMediaDedupScanAtMs,
+    bool? mediaDedupAutoEnabled,
+    bool? mediaDedupAutoDelete,
   }) =>
       AnkiSettings(
         selectedDeckId: selectedDeckId ?? this.selectedDeckId,
@@ -317,7 +356,14 @@ class AnkiSettings {
         lapisAppliedCssSha: clearLapisAppliedCssSha
             ? null
             : (lapisAppliedCssSha ?? this.lapisAppliedCssSha),
+        lapisMigratedBaselineSha:
+            lapisMigratedBaselineSha ?? this.lapisMigratedBaselineSha,
         lastMediaDedupAtMs: lastMediaDedupAtMs ?? this.lastMediaDedupAtMs,
+        lastMediaDedupScanAtMs:
+            lastMediaDedupScanAtMs ?? this.lastMediaDedupScanAtMs,
+        mediaDedupAutoEnabled:
+            mediaDedupAutoEnabled ?? this.mediaDedupAutoEnabled,
+        mediaDedupAutoDelete: mediaDedupAutoDelete ?? this.mediaDedupAutoDelete,
       );
 
   Map<String, dynamic> toJson() => {
@@ -343,7 +389,11 @@ class AnkiSettings {
         'lapisFontScalePercent': lapisFontScalePercent,
         'lapisCustomCss': lapisCustomCss,
         'lapisAppliedCssSha': lapisAppliedCssSha,
+        'lapisMigratedBaselineSha': lapisMigratedBaselineSha,
         'lastMediaDedupAtMs': lastMediaDedupAtMs,
+        'lastMediaDedupScanAtMs': lastMediaDedupScanAtMs,
+        'mediaDedupAutoEnabled': mediaDedupAutoEnabled,
+        'mediaDedupAutoDelete': mediaDedupAutoDelete,
       };
 }
 

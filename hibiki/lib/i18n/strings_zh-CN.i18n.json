@@ -2685,5 +2685,13 @@
   "common_more_actions": "更多操作",
   "collection_already_has_item": "该条目已在这个合集里。",
   "drag_drop_manga_archive_unsupported": "无法导入 .cbr/.rar 漫画压缩包，请转成 .cbz 或图片文件夹。",
-  "collection_add_failed": "没能把该条目加进合集，请重试。"
+  "collection_add_failed": "没能把该条目加进合集，请重试。",
+  "anki_dedup_auto": "自动处理",
+  "anki_dedup_auto_hint": "默认关闭。打开后 Hibiki 会在启动时扫描（最多每周一次）并先把清单给你看，你不确认就不会删任何文件。",
+  "anki_dedup_auto_delete": "自动直接删除（不再询问）",
+  "anki_dedup_auto_delete_hint": "跳过确认弹窗。仍然只删字节完全相同的多余副本、绝不重编码，但删除不可撤销。",
+  "anki_dedup_auto_found": "发现 $count 个重复的 Anki 媒体文件（可释放 $size）",
+  "anki_dedup_auto_review": "查看",
+  "anki_dedup_auto_done": "已删除 $count 个重复的 Anki 媒体文件，释放 $size",
+  "anki_lapis_backup_done_pruned": "已备份到 $path（按「保留 90 天、至少留 10 份」清理了 $count 份旧备份）"
 }

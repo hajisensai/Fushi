@@ -163,6 +163,17 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'packages/hibiki_anki/test/mining_tag_and_parallel_test.dart',
   'cardCreation/Add source category tag':
       'packages/hibiki_anki/test/mining_tag_and_parallel_test.dart',
+  // 媒体去重的两个自动开关。与上面两个标签开关同因：写的是 AnkiSettings
+  // （经 SharedPreferences，非本测试的内存 DB），故 changed=false；而「自动直接
+  // 删除」还是**从属开关**，自动处理关着（默认）时刻意 disabled，焦点驱动本就
+  // 拨不动它。行为本体由专项测试咬死：默认关 / 打开后只干跑并要求确认 / 只有再
+  // 显式打开自动直接删除才真删 / 7 天节流边界 / 源码守卫。
+  'cardCreation/Automatic processing':
+      'test/anki/anki_media_dedup_auto_test.dart + '
+          'test/settings/settings_flatten_anki_profile_test.dart',
+  'cardCreation/Delete automatically without asking':
+      'test/anki/anki_media_dedup_auto_test.dart + '
+          'test/settings/settings_flatten_anki_profile_test.dart',
   // PR#343: 互联「制卡到服务端」开关。写 prefsRepo mine_to_server（changed=true），
   // 生效点在 ankiRepositoryProvider——开关开时把本地仓库包一层 RemoteMiningAnkiRepository，
   // mineEntry/isDuplicate 经互联链路转发到已配对主机（用主机 Anki 落卡），配置类方法仍委派

@@ -272,6 +272,21 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   /// 与当前仓库绑定的去重编排器（无状态，随用随建）。
   AnkiMediaDedupRunner get mediaDedupRunner =>
       AnkiMediaDedupRunner(_repository);
+
+  /// 打开/关闭去重的自动处理。默认关；打开后自动路径**仍然只做干跑并提示**，
+  /// 要真删得由用户在确认弹窗里点，或另外打开 [setMediaDedupAutoDelete]。
+  Future<void> setMediaDedupAutoEnabled(bool enabled) async {
+    final updated = await _repository
+        .updateSettings((s) => s.copyWith(mediaDedupAutoEnabled: enabled));
+    state = state.copyWith(settings: updated);
+  }
+
+  /// 打开/关闭「自动直接删除」（跳过确认弹窗）。只在自动处理已打开时有意义。
+  Future<void> setMediaDedupAutoDelete(bool enabled) async {
+    final updated = await _repository
+        .updateSettings((s) => s.copyWith(mediaDedupAutoDelete: enabled));
+    state = state.copyWith(settings: updated);
+  }
 }
 
 /// 把用户敲/粘进 AnkiConnect **主机**字段的自由文本规范化成裸主机 + 可选端口。

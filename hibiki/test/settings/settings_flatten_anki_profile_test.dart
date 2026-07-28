@@ -185,13 +185,29 @@ void main() {
     //    并入一个无条件显示的区块。未配置 Anki 时它们也都露出——故恰有三个 SwitchRow。
     //    TODO-1650 把旧「压缩制卡媒体」开关换成「图片/GIF 清晰度 + 音频质量」两滑块，
     //    紧随其后的独立无标题区（同样无条件显示）。
-    expect(find.byType(AdaptiveSettingsSwitchRow), findsNWidgets(3),
+    expect(find.byType(AdaptiveSettingsSwitchRow), findsNWidgets(5),
         reason: 'TODO-135 方案A 三开关（hibiki / 来源分类 / 自动添加书名），未配置 Anki '
             '时都应显示（旧「压缩」开关已换成两滑块，不再是 SwitchRow；「制卡到已配对'
-            '设备」已移到 Hibiki 互联分类）。媒体去重区只有两个可点行、没有开关——'
-            '方案 A 没有任何自动/周期路径，不存在可拨的自动开关。');
+            '设备」已移到 Hibiki 互联分类）。外加媒体去重区的两个自动开关'
+            '（自动处理 + 自动直接删除），共 5 个。');
     expect(find.byType(AdaptiveSettingsSliderRow), findsNWidgets(2),
         reason: 'TODO-1650「图片/GIF 清晰度」+「音频质量」两滑块应无条件显示');
+    // 媒体去重的两个自动开关：**默认都关**（方案 A 的核心），且「自动直接删除」
+    // 在自动处理关着时必须是**禁用**的——它是从属开关，打开自动处理不等于授权
+    // 自动删。原实现的缺陷正是「自动路径绕过确认框」。
+    final Finder dedupAutoRow =
+        find.widgetWithText(AdaptiveSettingsSwitchRow, 'Automatic processing');
+    expect(dedupAutoRow, findsOneWidget);
+    expect(
+        tester.widget<AdaptiveSettingsSwitchRow>(dedupAutoRow).value, isFalse,
+        reason: '自动处理必须默认关');
+    final Finder dedupAutoDeleteRow = find.widgetWithText(
+        AdaptiveSettingsSwitchRow, 'Delete automatically without asking');
+    expect(dedupAutoDeleteRow, findsOneWidget);
+    final AdaptiveSettingsSwitchRow autoDelete =
+        tester.widget<AdaptiveSettingsSwitchRow>(dedupAutoDeleteRow);
+    expect(autoDelete.value, isFalse, reason: '自动直接删除必须默认关');
+    expect(autoDelete.onChanged, isNull, reason: '自动处理关着时「自动直接删除」必须禁用（从属开关）');
     expect(find.textContaining('Image / GIF quality'), findsOneWidget,
         reason: 'TODO-1650 图片/GIF 清晰度滑块标题应露出');
     expect(find.textContaining('Audio quality'), findsOneWidget,

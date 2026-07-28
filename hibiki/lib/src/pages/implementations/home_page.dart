@@ -14,6 +14,9 @@ import 'package:macos_ui/macos_ui.dart'
         MacosBackButton,
         MacosIcon;
 import 'package:flutter/services.dart' hide ModifierKey;
+import 'package:hibiki_anki/hibiki_anki.dart' show AnkiMediaDedupReport;
+import 'package:hibiki/src/anki/anki_media_dedup_dialogs.dart';
+import 'package:hibiki/src/anki/anki_media_dedup_runner.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart'
     show ankiRepositoryProvider;
 import 'package:hibiki/src/anki/lapis_template_service.dart';
@@ -333,7 +336,64 @@ class _HomePageState extends BasePageState<HomePage>
           ErrorLogService.instance.log('HomePage.lapisAutoMigrate', e, s);
         }));
       }
+
+      // Anki 媒体去重的自动处理：**默认关**，只有用户在设置页主动打开才会跑。
+      // 打开之后也只是自动干跑并把清单提示出来，用户确认后才真删；只有再显式
+      // 打开「自动直接删除」才跳过确认（判定全在
+      // [AnkiMediaDedupRunner.maybeAutoRunOnStartup]，这里不做二次决策）。
+      if (mounted) {
+        unawaited(
+            _maybeAutoDedupAnkiMedia().catchError((Object e, StackTrace s) {
+          ErrorLogService.instance.log('HomePage.ankiMediaDedupAuto', e, s);
+        }));
+      }
     });
+  }
+
+  /// 启动期自动处理一轮 Anki 媒体去重的 UI 侧收尾：报结果，或提示 + 等确认。
+  Future<void> _maybeAutoDedupAnkiMedia() async {
+    final AnkiMediaDedupAutoOutcome? outcome =
+        await AnkiMediaDedupRunner(ref.read(ankiRepositoryProvider))
+            .maybeAutoRunOnStartup();
+    if (outcome == null || !mounted) return;
+    final AnkiMediaDedupReport? applied = outcome.applied;
+    if (applied != null) {
+      // 用户显式选了「自动直接删除」：只报结果。
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(t.anki_dedup_auto_done(
+          count: '${applied.duplicatesRemoved}',
+          size: formatAnkiMediaDedupBytes(applied.bytesSaved),
+        )),
+      ));
+      return;
+    }
+    if (!outcome.needsConfirmation) return;
+    // 保守路径（默认）：只提示。用户点「查看」才摊开逐条清单，再点删除才真删。
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(t.anki_dedup_auto_found(
+        count: '${outcome.plan.duplicatesRemoved}',
+        size: formatAnkiMediaDedupBytes(outcome.plan.bytesSaved),
+      )),
+      duration: const Duration(seconds: 10),
+      action: SnackBarAction(
+        label: t.anki_dedup_auto_review,
+        onPressed: () => unawaited(_reviewAutoDedupPlan(outcome.plan)),
+      ),
+    ));
+  }
+
+  /// 「查看」→ 逐条清单 + 删除确认 → 真删 → 结果报告。与设置页手动路径同一
+  /// 套弹窗（见 anki_media_dedup_dialogs.dart）。
+  Future<void> _reviewAutoDedupPlan(AnkiMediaDedupReport plan) async {
+    if (!mounted) return;
+    final bool confirmed =
+        await showAnkiMediaDedupPlanDialog(context, plan, offerDelete: true);
+    if (!confirmed || !mounted) return;
+    final AnkiMediaDedupReport? result =
+        await AnkiMediaDedupRunner(ref.read(ankiRepositoryProvider))
+            .runNow(dryRun: false);
+    if (result == null || !mounted) return;
+    await showAnkiMediaDedupReportDialog(context, result);
   }
 
   /// 触发一次 app-open 语义的全量双向同步（导入远端新书 + 同步进度 / 内容 / 词典 / 有声书
