@@ -11,17 +11,26 @@
 // v2：音频环形 + 文本环（hook 抓的台词行）+ 语音 clip 索引（按句切的语音片段，含时间戳供配对）。
 // v6：clip 索引之后追加 loopback 混音环 + 时间戳↔环位置标记表（无引擎专属纯人声 hook 时的兜底）。
 // v10：文本槽追加事件类型，透传 Luna ThreadCreate，使尚无台词的候选线程也可被选择。
+// v12：追加「线程预览区」并取消 injector 自动选线程。文本环仍只装**当前生效线程**（配对路径
+//     不受影响），每条线程的最近一行改由预览区按线程分槽保存，供选择器展示——两个诉求相反的
+//     消费者不再抢同一块 256 槽 FIFO。完整推导见真相源头文件的 v12 注释。
 // 读共享内存不是注入、不被杀软标记，可安全进 hibiki.exe。契约用 magic/version 版本化。
 namespace hibiki_voice_hook {
 
 constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
-constexpr uint32_t kSharedVersion = 11;
+constexpr uint32_t kSharedVersion = 12;
 constexpr uint32_t kStableIpcVersion = 1;
 constexpr uint32_t kLunaBridgeAbiVersion = 1;
 constexpr uint32_t kLunaVendoredVersion = 0x0A100102;  // 10.16.1.2
 
 constexpr uint32_t kTextSlotCount = 256;
 constexpr uint32_t kTextSlotBytes = 2048;
+// v12 线程预览区：每条线程一个固定槽（按 thread_id 认领），只留最近一行。按线程分槽而非
+// 全局取模，所以逐字重绘型 hook 只覆盖自己的槽，挤不掉别的线程——这是取消自动选线程后
+// 仍能保证「每条线程都看得见」的结构保证。
+constexpr uint32_t kThreadPreviewCount = 64;
+constexpr uint32_t kThreadPreviewTextChars = 192;
+constexpr uint32_t kThreadPreviewFlagArtifact = 0x00000001u;
 constexpr uint32_t kTextHookNameChars = 64;
 constexpr uint32_t kTextHookCodeChars = 128;
 constexpr uint32_t kTextSourceUnknown = 0;
@@ -109,6 +118,21 @@ struct TextSlot {
   // 紧跟文本字节。
 };
 
+// v12 线程预览槽。字段语义与真相源头文件一致，改动必须两侧同步。
+// [line_count] 统计该线程出过的**全部**行（含被伪影过滤和线程门控丢弃的），是跨会话记忆
+// 恢复的消歧依据——v12 取消自动选线程后文本环在用户选定前恒空，用已发布行数做判据会让
+// 记忆永远无法恢复。
+struct ThreadPreviewSlot {
+  volatile uint64_t seq;    // 单调写序号（0=空槽/尚无预览行），最后写，作完成标记
+  uint64_t thread_id;       // 认领键，对应 TextSlot::thread_id；0=未认领
+  uint64_t timestamp_ms;
+  uint64_t line_count;      // 累计行数（含被过滤/门控丢弃的）
+  uint64_t artifact_count;  // 其中判为重复伪影的行数
+  uint32_t byte_len;        // 预览文本字节数（UTF-16LE）
+  uint32_t event_flags;     // bit0 = 本行被判为伪影
+  wchar_t text[kThreadPreviewTextChars];
+};
+
 struct VoiceClip {
   volatile uint64_t seq;
   uint64_t timestamp_ms;    // 该 clip 播放时刻
@@ -159,7 +183,9 @@ struct SharedHeader {
   uint32_t clip_region_offset;
   volatile uint64_t text_write_count;
   volatile uint64_t clip_write_count;
-  volatile uint64_t selected_text_thread_id;  // 0=自动；非0=用户选择的 TextSlot::thread_id
+  // 0=尚未选定（v12 起**不再有"自动选线程"**，此时文本环恒空，由 UI 引导用户从预览区挑）；
+  // 非 0 = 用户选定的 TextSlot::thread_id。
+  volatile uint64_t selected_text_thread_id;
   volatile uint32_t luna_active;  // LunaHook 出干净行后 =1，游戏内 GDI 文本 hook 让位（见 native 头注释）
   uint32_t reserved_luna;         // 32 位引擎诊断位（已满，loopback 另立字段）
   volatile uint32_t hook_diagnostics;
@@ -179,11 +205,19 @@ struct SharedHeader {
   uint32_t loopback_diag;
   volatile uint64_t loopback_total_written;
   volatile uint64_t loopback_marker_count;
+  // ── v12 线程预览区（布局最尾，前面各区偏移一个都不动）──
+  uint32_t thread_preview_offset;
+  uint32_t thread_preview_slot_count;
+  // 单调累计已写预览行数。只用于判断「有没有新预览」以跳过整区扫描；预览槽本身按
+  // thread_id 寻址，**不**靠这个序号定位（与 text_write_count 语义不同，勿照搬取模那套）。
+  volatile uint64_t thread_preview_write_count;
 };
 #pragma pack(pop)
 
 static_assert(sizeof(SharedHeader) % 8 == 0, "SharedHeader must stay 8-aligned");
 static_assert(sizeof(TextSlot) % 8 == 0, "TextSlot must stay 8-aligned");
+static_assert(sizeof(ThreadPreviewSlot) % 8 == 0,
+              "ThreadPreviewSlot must stay 8-aligned");
 static_assert(sizeof(VoiceClip) % 8 == 0, "VoiceClip must stay 8-aligned");
 static_assert(sizeof(UnityVoiceEvent) % 8 == 0,
               "UnityVoiceEvent must stay 8-aligned");

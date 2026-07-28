@@ -166,59 +166,71 @@ int main(int argc, char** argv) {
         pid, krkr_addr, 0x18fe40ull, 0x2ull, split_code, krkr_name);
 
     hibiki_voice_hook::LunaTextSelector face_selector;
-    const std::wstring krkr_key(krkr_code);
-    if (!face_selector.ShouldWrite(krkr_key, selected_thread, false,
-                                   selected_thread, krkr_face)) {
+    if (!face_selector.AcceptsLine(selected_thread, false, selected_thread,
+                                   krkr_face)) {
       return 35;  // 选定线程自己当然要放行
     }
-    if (!face_selector.ShouldWrite(krkr_key, sibling_thread, false,
-                                   selected_thread, krkr_face)) {
+    if (!face_selector.AcceptsLine(sibling_thread, false, selected_thread,
+                                   krkr_face)) {
       return 36;  // 同 hook 面、不同 ctx → 必须放行（本 bug 的核心回归点）
     }
     // 跨引擎负向：另一个引擎的行绝不能被并进选定线程。
-    if (face_selector.ShouldWrite(std::wstring(siglus_code), siglus_thread,
-                                  false, selected_thread, siglus_face)) {
+    if (face_selector.AcceptsLine(siglus_thread, false, selected_thread,
+                                  siglus_face)) {
       return 37;
     }
     // split H 码负向：同 addr、同 hookcode，仅 ctx2 不同（角色名）→ 必须挡掉。
     hibiki_voice_hook::LunaTextSelector split_selector;
-    if (!split_selector.ShouldWrite(std::wstring(split_code), split_body_thread,
-                                    false, split_body_thread,
+    if (!split_selector.AcceptsLine(split_body_thread, false, split_body_thread,
                                     split_body_face)) {
       return 38;
     }
-    if (split_selector.ShouldWrite(std::wstring(split_code), split_name_thread,
-                                   false, split_body_thread,
+    if (split_selector.AcceptsLine(split_name_thread, false, split_body_thread,
                                    split_name_face)) {
       return 39;
     }
-    if (face_selector.ShouldWrite(krkr_key, sibling_thread, true,
-                                  selected_thread, krkr_face)) {
+    if (face_selector.AcceptsLine(sibling_thread, true, selected_thread,
+                                  krkr_face)) {
       return 40;  // 伪影门在选择之前，放宽粒度不得让伪影漏进来
     }
   }
   {
     // face 未知（调用方给 0）时退回精确 thread_id 匹配，与旧实现语义一致。
     hibiki_voice_hook::LunaTextSelector legacy_selector;
-    if (legacy_selector.ShouldWrite(L"HB0@0:test.exe", 1002, false, 1001, 0)) {
+    if (legacy_selector.AcceptsLine(1002, false, 1001, 0)) {
       return 41;
     }
   }
   {
     // BUG-1159 跨会话恢复路径：injector 的 preferred_hook_codes 快路不进选择器，
-    // 靠的是 NoteFace 单独登记。只要选定线程本会话出过行（Dart 恢复前提是 >= 3 行），
-    // 即使它一行都没进过 ShouldWrite，兄弟线程也必须能被认回。
+    // 靠的是 NoteFace 单独登记。只要选定线程本会话出过行，即使它一行都没进过准入判定，
+    // 兄弟线程也必须能被认回。
     hibiki_voice_hook::LunaTextSelector restore_selector;
     const uint64_t remembered = 5001, sibling = 5002, face = 909;
     restore_selector.NoteFace(remembered, face);
     if (restore_selector.FaceOf(remembered) != face) return 42;
-    if (!restore_selector.ShouldWrite(L"HB0@0:test.exe", sibling, false,
-                                      remembered, face)) {
+    if (!restore_selector.AcceptsLine(sibling, false, remembered, face)) {
       return 43;
     }
     // Reset 必须一并清掉 face 表，否则换游戏后旧 face 会幽灵放行。
     restore_selector.Reset();
     if (restore_selector.FaceOf(remembered) != 0) return 44;
+  }
+  {
+    // BUG-1193 / v12 核心：**没有显式选择就一行都不发布**，无论这行多干净、也无论
+    // 之前那条 hook 表现多好。旧实现在这里会自动锁定赢家并放行，正是它把用户锁死在
+    // 猜错的线程上。这条是防"自动选线程"以任何形式悄悄回归的守卫。
+    hibiki_voice_hook::LunaTextSelector no_auto;
+    for (int i = 0; i < 16; ++i) {
+      // 反复喂同一条线程的干净行——旧实现累计到阈值就会 primed 并放行。
+      if (no_auto.AcceptsLine(7001, false, 0, 4242)) return 45;
+    }
+    // 另一条线程同样不得被自动选中。
+    if (no_auto.AcceptsLine(7002, false, 0, 4243)) return 46;
+    // 用户显式选定之后才开始发布。
+    if (!no_auto.AcceptsLine(7001, false, 7001, 4242)) return 47;
+    // face 登记必须在"未选择"阶段就已发生，否则用户选定后第一批兄弟线程会被漏掉。
+    if (no_auto.FaceOf(7002) != 4243) return 48;
   }
 
   std::ifstream input(argv[1]);
@@ -230,15 +242,16 @@ int main(int argc, char** argv) {
     if (line.empty() || line[0] == '#') continue;
     ++row;
     const auto fields = Split(line);
-    if (fields.size() != 5) return 10 + row;
-    const std::wstring hook(fields[0].begin(), fields[0].end());
-    const std::wstring text(fields[3].begin(), fields[3].end());
-    const bool actual = selector.ShouldWrite(
-        hook, std::stoull(fields[1]),
+    // v12 起 hook_code 不参与准入判定（自动赢家已退役），fixture 随之去掉该列——
+    // 留一个没人读的列只会让下一个读者以为它还有意义。
+    if (fields.size() != 4) return 10 + row;
+    const std::wstring text(fields[2].begin(), fields[2].end());
+    const bool actual = selector.AcceptsLine(
+        std::stoull(fields[0]),
         hibiki_voice_hook::LunaTextIsArtifact(text.c_str(),
                                                static_cast<int>(text.size())),
-        std::stoull(fields[2]));
-    if (actual != (fields[4] == "1")) return 100 + row;
+        std::stoull(fields[1]));
+    if (actual != (fields[3] == "1")) return 100 + row;
   }
   return row == 8 ? 0 : 3;
 }

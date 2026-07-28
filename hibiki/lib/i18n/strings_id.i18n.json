@@ -1001,7 +1001,6 @@
   "game_text_source_unknown": "Unknown source",
   "game_text_source_websocket": "WebSocket",
   "game_text_thread": "Text thread",
-  "game_text_thread_all": "All text threads",
   "game_text_thread_audio_count": "$count with audio",
   "game_text_thread_hint": "Choose the clean dialogue thread, like Luna Translator",
   "game_track_auto": "Automatic selection",
@@ -2754,5 +2753,6 @@
   "game_statistics": "Game statistics",
   "game_stat_by_game": "By game",
   "stat_clear_all_game_message": "Clear all game play time and session counts? Your game library and activity timeline are kept. This cannot be undone.",
-  "batch_selection_stale_skipped": "Skipped $m of $n selected items that no longer exist"
+  "batch_selection_stale_skipped": "Skipped $m of $n selected items that no longer exist",
+  "game_text_thread_unset": "No thread selected — pick one to start capturing"
 }

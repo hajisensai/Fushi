@@ -32,7 +32,16 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 // v9：合并 v8 的引擎诊断/Unity 资源事件与 v6 的 loopback 环。
 // v10：文本槽追加事件类型，透传 Luna ThreadCreate，使尚无台词的候选线程也可被选择。
 // v11：显式声明稳定 IPC、Luna bridge ABI 与 vendored Luna 版本，host 可在读数据前拒绝错配。
-constexpr uint32_t kSharedVersion = 11;
+// v12：追加「线程预览区」，并取消 injector 自动替用户选线程。
+//     旧结构里文本环是**唯一**的文本出口，同时伺候两个诉求相反的消费者：语音配对要高信噪的
+//     单条线程，线程选择器要每条线程都有样本。二者共用一块 256 槽全局 FIFO，于是"让所有 hook
+//     都发布"必然把配对候选挤出环（kExpired → 降级 loopback，即 BUG-1159 的失败链），这才是
+//     BUG-1193 真正的根因——不是门控本身。v12 把两个消费者拆到两块内存：
+//       * 文本环（Ring A）：语义不变，仍只发布**当前生效线程**的行，配对路径逐字节不受影响；
+//       * 线程预览区（本区）：每条线程各占**固定槽位**，只留最近一行。
+//     预览区按线程分槽而不是全局 FIFO，所以逐字重绘型 hook 只能覆盖它自己的槽，**物理上挤不掉
+//     别的线程**——"挤压"从"要小心防"变成结构上不可能，这正是自动赢家门控得以退役的前提。
+constexpr uint32_t kSharedVersion = 12;
 constexpr uint32_t kStableIpcVersion = 1;
 
 // 环形缓冲保留时长（秒）。C 阶段语音轨常见 48k 立体声 float32；60s 上界 ≈ 23MB。
@@ -54,6 +63,24 @@ constexpr uint32_t kTextSourceUnityTmp = 3;
 constexpr uint32_t kTextSourceSiglus = 4;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
+
+// 线程预览区（v12）：每条 Luna 文本线程占一个**固定槽**，保存它最近一行。
+// 与文本环的关键差别是**寻址方式**，不是容量：文本环按全局写序号取模（谁写得快谁占满），
+// 预览区按线程认领槽位（谁写得快只覆盖自己）。因此逐字重绘型 hook 无论多吵，都不可能挤掉
+// 别的线程的预览行——这是取消自动赢家门控之后仍能保证"每条线程都看得见"的结构保证。
+//
+// 槽数是线程数上界而不是行数上界。实测同一游戏并行 Luna 线程在个位数到几十条量级，64 留足余量；
+// 满槽后新线程只是**没有预览**（仍会经 kTextEventThreadDiscovered 出现在选择器里），不影响
+// 文本环、配对与任何既有路径。
+constexpr uint32_t kThreadPreviewCount = 64;
+// 单条预览行的文本容量（wchar 数，不含结尾 0）。预览只用于"认出这条是不是我要的线程"，
+// 不参与制卡内容，故远小于 kTextSlotBytes；超长按 wchar 边界截断。
+constexpr uint32_t kThreadPreviewTextChars = 192;
+// 每线程只保留**最近一行**：UI（含 LunaTranslator 的「选择文本」表）每条线程就展示一行，
+// 多留的行没有消费者。要改成多行请把 ThreadPreviewSlot::text 换成显式环形数组并同步 host
+// 读取端，不要靠加一个没人读的常量假装可配置。
+// ThreadPreviewSlot::event_flags 位。
+constexpr uint32_t kThreadPreviewFlagArtifact = 0x00000001u;
 // 语音 clip 索引：最近 kClipCount 条语音片段的位置记录（按 source voice / DirectSound buffer
 // 的一次提交切一条；galgame 一句台词≈一条语音）。指向音频环形里的 [ring_offset, byte_len)。
 constexpr uint32_t kClipCount = 1024;  // clip 索引环：128≈仅2秒历史不够重建整句语音，扩到 ~16秒
@@ -183,6 +210,27 @@ struct TextSlot {
   // 紧跟文本字节。
 };
 
+// 线程预览槽（v12）：一条线程一个，按 thread_id 认领，覆盖只发生在自己槽内。
+//
+// [thread_id] 是认领键：0 表示空槽。认领后**不释放**——一次会话内线程数有界，释放会让
+// 「用户刚选中的线程恰好静默几秒就被顶掉」变成可能，那正是选择器最不能有的抖动。
+//
+// [line_count] 统计该线程**出过的全部行**，含被伪影过滤和线程门控丢弃的。它是给
+// 「跨会话记忆恢复」消歧用的：hook code 指纹只能锚到 hook、锚不到具体并行线程（ctx 未
+// 透出到 Dart），恢复时要靠「谁真的在出台词」区分。v12 取消自动选线程后文本环在用户选定
+// 前恒空，若仍用已发布行数做判据，记忆将永远无法恢复——必须用本字段这种**不受门控影响**
+// 的计数。artifact_count 单独计，让 UI 能像 LunaTranslator 那样把脏线程标出来而不是藏掉。
+struct ThreadPreviewSlot {
+  volatile uint64_t seq;     // 单调递增写序号（0=空槽/尚无预览行）；最后写，作完成标记
+  uint64_t thread_id;        // 认领键，对应 TextSlot::thread_id；0=未认领
+  uint64_t timestamp_ms;     // 最近一行的写入时刻
+  uint64_t line_count;       // 该线程累计行数（含被过滤/门控丢弃的）
+  uint64_t artifact_count;   // 其中被判为重复伪影的行数
+  uint32_t byte_len;         // 预览文本有效字节数（UTF-16LE，<= kThreadPreviewTextChars*2）
+  uint32_t event_flags;      // bit0 = 本行被判为伪影
+  wchar_t text[kThreadPreviewTextChars];
+};
+
 // 语音 clip 记录：一段独立语音片段在音频环形里的位置 + 时刻 + 格式。host 按文本时间戳找最近
 // clip，再从音频环形 [ring_offset, ring_offset+byte_len) 取 PCM（若已被环形覆盖则 total_at_write
 // 与当前 total_written 差值 > ring_capacity，host 判为过期）。
@@ -273,11 +321,20 @@ struct SharedHeader {
   uint32_t loopback_diag;                // loopback 诊断位（线程启动/设备就绪/捕获非静音等）
   volatile uint64_t loopback_total_written;  // 单调累计写入 loopback 字节（reader 判可读量/覆盖）
   volatile uint64_t loopback_marker_count;   // 单调累计已写标记数
+  // ── v12 线程预览区（injector 填偏移/槽数，写入者是 Luna 回调路径）──
+  // 内存布局尾部再追加：[...标记表][线程预览区 thread_preview_slot_count*ThreadPreviewSlot]
+  uint32_t thread_preview_offset;      // 线程预览区起始（header 起算字节偏移）
+  uint32_t thread_preview_slot_count;  // 槽数（= kThreadPreviewCount，冗余便于 reader 自洽）
+  // 单调累计已写预览行数。host 只用它判断「有没有新预览」以跳过整区扫描；预览槽本身按
+  // thread_id 寻址，不靠这个序号定位（与文本环的 text_write_count 语义不同，勿照搬）。
+  volatile uint64_t thread_preview_write_count;
 };
 #pragma pack(pop)
 
 static_assert(sizeof(SharedHeader) % 8 == 0, "SharedHeader must stay 8-aligned");
 static_assert(sizeof(TextSlot) % 8 == 0, "TextSlot must stay 8-aligned");
+static_assert(sizeof(ThreadPreviewSlot) % 8 == 0,
+              "ThreadPreviewSlot must stay 8-aligned");
 static_assert(sizeof(VoiceClip) % 8 == 0, "VoiceClip must stay 8-aligned");
 static_assert(sizeof(UnityVoiceEvent) % 8 == 0,
               "UnityVoiceEvent must stay 8-aligned");

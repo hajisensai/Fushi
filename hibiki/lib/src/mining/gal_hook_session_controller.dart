@@ -2190,8 +2190,14 @@ class GalHookSessionController extends ChangeNotifier {
     TexthookerTextThread? best;
     for (final TexthookerTextThread thread in _textService.textThreads) {
       if (textThreadFingerprint(thread) != wanted) continue;
-      if (thread.lineCount < _textThreadRestoreMinLines) continue;
-      if (best == null || thread.lineCount > best.lineCount) best = thread;
+      // 🔴 判据必须用 observedLineCount（native 观测总行数），**不能**用 lineCount
+      // （已发布行数）。v12 取消自动选线程后，用户选定之前文本环恒空、lineCount 对所有
+      // 线程都是 0，用它做判据会让这里永远选不出候选 → 记忆永远恢复不了 → 每次开游戏
+      // 都要重新手选。这正是「第一次由用户选」与「之后自动恢复」能同时成立的关键。
+      if (thread.observedLineCount < _textThreadRestoreMinLines) continue;
+      if (best == null || thread.observedLineCount > best.observedLineCount) {
+        best = thread;
+      }
     }
     if (best == null) return;
     _textThreadMemoryApplied = true;
@@ -3167,6 +3173,29 @@ class GalHookSessionController extends ChangeNotifier {
     await source?.stop();
   }
 
+  /// 拉一次 native 线程预览快照并合进线程目录。
+  ///
+  /// 预览是**全量快照**，没有游标，漏一次不会丢数据；因此这里失败静默返回即可，不需要
+  /// 补偿逻辑。native 不支持（旧 helper）返回 null，此时选择器退回旧行为（只有已发布
+  /// 线程有内容）——不崩，只是选不动，与升级 helper 前的现状一致。
+  Future<void> _pollThreadPreviews(EngineHookGalAudioSource engine) async {
+    final List<GalTextThreadPreview>? previews =
+        await engine.pollThreadPreviews();
+    if (previews == null || engine != _engineSource) return;
+    _textService.applyTextThreadPreviews(<TexthookerThreadPreview>[
+      for (final GalTextThreadPreview preview in previews)
+        TexthookerThreadPreview(
+          nativeThreadId: preview.threadId,
+          text: preview.text,
+          observedLineCount: preview.lineCount,
+          observedArtifactCount: preview.artifactCount,
+          isArtifact: preview.isArtifact,
+        ),
+    ]);
+    // 预览带来了新的观测行数，跨会话记忆的消歧条件可能刚刚成立。
+    _maybeRestoreTextThread();
+  }
+
   Future<void> _pollHookedText() async {
     if (_pollInFlight) return;
     final EngineHookGalAudioSource? engine = _engineSource;
@@ -3174,6 +3203,10 @@ class GalHookSessionController extends ChangeNotifier {
     _pollInFlight = true;
     try {
       await _refreshReadinessThrottled(engine);
+      if (engine != _engineSource) return;
+      // v12：预览区与文本环是两份独立数据，必须各poll各的。文本环在用户选定线程之前
+      // 恒空，只轮询它会让选择器永远是一列空壳——那正是本次要修的症状。
+      await _pollThreadPreviews(engine);
       if (engine != _engineSource) return;
       final GalTextPoll? poll = await engine.pollText(_lastTextSeq);
       if (poll == null || engine != _engineSource) return;

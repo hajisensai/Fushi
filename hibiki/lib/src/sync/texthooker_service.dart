@@ -167,21 +167,70 @@ class TexthookerTextThread {
     this.nativeThreadId,
     this.latestText,
     this.audioLineCount = 0,
+    this.previewText,
+    this.observedLineCount = 0,
+    this.observedArtifactCount = 0,
+    this.previewIsArtifact = false,
   });
 
   final String key;
   final String label;
   final String? hookCode;
   final int? nativeThreadId;
+
+  /// 已**发布**到文本环的行数（即当前生效线程的行）。v12 起未被选中的线程恒为 0，
+  /// 判断「这条线程有没有内容」必须用 [observedLineCount]，不是本字段。
   final int lineCount;
   final DateTime latestAt;
 
-  /// 该线程最近一条台词原文（线程选择下拉的预览；尚无台词为 null）。
+  /// 该线程最近一条**已发布**台词原文（尚无已发布台词为 null）。
   final String? latestText;
 
   /// 该线程已配到句音的行数（[TexthookerLineEntry.hasAudio] 计数；语音线程
   /// 通常≈lineCount，UI 线程为 0——选择下拉靠它区分「选哪个」）。
   final int audioLineCount;
+
+  /// native 线程预览区里该线程的最近一行（v12）。**不受线程选择门控影响**：未被选中
+  /// 的线程也有值，这正是选择器能像 LunaTranslator 那样展示全部候选的来源。
+  final String? previewText;
+
+  /// native 观测到的该线程总行数，**含被伪影过滤和线程门控丢弃的**。
+  ///
+  /// 它和 [lineCount] 的区别是本次改动的关键：v12 取消自动选线程后，用户选定之前
+  /// 文本环恒空，[lineCount] 对所有线程都是 0。凡是「这条线程活不活跃 / 该不该排前面 /
+  /// 跨会话记忆能不能认回它」这类判断，都必须读本字段。
+  final int observedLineCount;
+
+  /// [observedLineCount] 中被判为重复伪影的行数。UI 据此把脏线程标出来而不是藏掉
+  /// （对齐 LunaTranslator：逐字重绘那条一直显示，只是你不选它）。
+  final int observedArtifactCount;
+
+  /// 预览里这最近一行是否被判为伪影。
+  final bool previewIsArtifact;
+
+  /// 下拉展示用的预览文本：优先已发布台词，回落 native 预览行。
+  String? get displayPreviewText => latestText ?? previewText;
+
+  /// 该线程是否出过内容（发布与否无关）。
+  bool get hasObservedLines => observedLineCount > 0 || lineCount > 0;
+}
+
+/// native 线程预览区的一条快照（v12）。按 native thread id 对齐到线程目录。
+@immutable
+class TexthookerThreadPreview {
+  const TexthookerThreadPreview({
+    required this.nativeThreadId,
+    required this.text,
+    required this.observedLineCount,
+    required this.observedArtifactCount,
+    required this.isArtifact,
+  });
+
+  final int nativeThreadId;
+  final String text;
+  final int observedLineCount;
+  final int observedArtifactCount;
+  final bool isArtifact;
 }
 
 @immutable
@@ -357,7 +406,37 @@ class TexthookerService extends ChangeNotifier {
         latestText: entry.text,
         audioLineCount:
             (previous?.audioLineCount ?? 0) + (entry.hasAudio ? 1 : 0),
+        previewText: previous?.previewText,
+        observedLineCount: previous?.observedLineCount ?? 0,
+        observedArtifactCount: previous?.observedArtifactCount ?? 0,
+        previewIsArtifact: previous?.previewIsArtifact ?? false,
       );
+    }
+    // native 预览按 thread id 对齐：线程目录的 key 是 Dart 侧字符串，预览区只知道
+    // native thread id，故在这里合流而不是在写入侧——写入侧拿不到 key 映射。
+    if (_threadPreviews.isNotEmpty) {
+      for (final MapEntry<String, TexthookerTextThread> entry
+          in byKey.entries) {
+        final int? nativeId = entry.value.nativeThreadId;
+        if (nativeId == null) continue;
+        final TexthookerThreadPreview? preview = _threadPreviews[nativeId];
+        if (preview == null) continue;
+        final TexthookerTextThread thread = entry.value;
+        byKey[entry.key] = TexthookerTextThread(
+          key: thread.key,
+          label: thread.label,
+          hookCode: thread.hookCode,
+          nativeThreadId: thread.nativeThreadId,
+          lineCount: thread.lineCount,
+          latestAt: thread.latestAt,
+          latestText: thread.latestText,
+          audioLineCount: thread.audioLineCount,
+          previewText: preview.text.isEmpty ? thread.previewText : preview.text,
+          observedLineCount: preview.observedLineCount,
+          observedArtifactCount: preview.observedArtifactCount,
+          previewIsArtifact: preview.isArtifact,
+        );
+      }
     }
     final List<TexthookerTextThread> result = byKey.values.toList()
       ..sort(_compareTextThreads);
@@ -396,6 +475,10 @@ class TexthookerService extends ChangeNotifier {
             latestAt: thread.latestAt,
             latestText: thread.latestText,
             audioLineCount: thread.audioLineCount,
+            previewText: thread.previewText,
+            observedLineCount: thread.observedLineCount,
+            observedArtifactCount: thread.observedArtifactCount,
+            previewIsArtifact: thread.previewIsArtifact,
           ),
     ];
   }
@@ -412,17 +495,73 @@ class TexthookerService extends ChangeNotifier {
   /// 线程的 `latestAt` 顶到当下，导致刚发现、尚无文本的线程压过真正在出台词的线程
   /// （用户看到列表最前面一堆 `· 0`）。有台词优先让「该选哪条」一眼可见（对齐 Luna
   /// 「选择文本」把有内容的线程排在前面的行为）。纯函数、静态，供 [textThreads] 复用。
+  ///
+  /// v12：判据从「已发布行数」改成 [TexthookerTextThread.hasObservedLines]。取消自动选
+  /// 线程后，用户选定之前所有线程的 `lineCount` 都是 0，旧判据会退化成「只按时间排」，
+  /// 又把刚发现的空线程顶回最前——正是本函数当初要修的那个症状换个方式复发。
   static int _compareTextThreads(
     TexthookerTextThread a,
     TexthookerTextThread b,
   ) {
-    final bool aHasLines = a.lineCount > 0;
-    final bool bHasLines = b.lineCount > 0;
-    if (aHasLines != bHasLines) return aHasLines ? -1 : 1;
+    if (a.hasObservedLines != b.hasObservedLines) {
+      return a.hasObservedLines ? -1 : 1;
+    }
     if (a.audioLineCount != b.audioLineCount) {
       return b.audioLineCount.compareTo(a.audioLineCount);
     }
+    // 干净线程排在脏线程之前：伪影占比低者优先。脏线程仍然可见可选（对齐 Luna），
+    // 只是不该挡在真台词前面。
+    final bool aDirty = a.observedArtifactCount * 2 > a.observedLineCount &&
+        a.observedLineCount > 0;
+    final bool bDirty = b.observedArtifactCount * 2 > b.observedLineCount &&
+        b.observedLineCount > 0;
+    if (aDirty != bDirty) return aDirty ? 1 : -1;
+    if (a.observedLineCount != b.observedLineCount) {
+      return b.observedLineCount.compareTo(a.observedLineCount);
+    }
     return b.latestAt.compareTo(a.latestAt);
+  }
+
+  /// native thread id → 该线程的预览快照（v12 线程预览区的全量快照，每次轮询整体替换）。
+  final Map<int, TexthookerThreadPreview> _threadPreviews =
+      <int, TexthookerThreadPreview>{};
+
+  /// 用 native 的线程预览快照整体替换本地副本。
+  ///
+  /// 是**替换**不是合并：预览区本身就是全量快照（每线程恒一条），合并只会让已经消失的
+  /// 线程永远留在列表里。会话结束由 [clearTextThreadPreviews] 清。
+  void applyTextThreadPreviews(List<TexthookerThreadPreview> previews) {
+    bool changed = previews.length != _threadPreviews.length;
+    if (!changed) {
+      for (final TexthookerThreadPreview preview in previews) {
+        final TexthookerThreadPreview? existing =
+            _threadPreviews[preview.nativeThreadId];
+        if (existing == null ||
+            existing.text != preview.text ||
+            existing.observedLineCount != preview.observedLineCount ||
+            existing.observedArtifactCount != preview.observedArtifactCount ||
+            existing.isArtifact != preview.isArtifact) {
+          changed = true;
+          break;
+        }
+      }
+    }
+    if (!changed) return; // 无变化不通知，避免每次轮询都重建线程下拉
+    _threadPreviews
+      ..clear()
+      ..addEntries(
+        previews.map(
+          (TexthookerThreadPreview p) =>
+              MapEntry<int, TexthookerThreadPreview>(p.nativeThreadId, p),
+        ),
+      );
+    notifyListeners();
+  }
+
+  void clearTextThreadPreviews() {
+    if (_threadPreviews.isEmpty) return;
+    _threadPreviews.clear();
+    notifyListeners();
   }
 
   void registerTextThread({
@@ -448,6 +587,12 @@ class TexthookerService extends ChangeNotifier {
       latestAt: previous != null && previous.latestAt.isAfter(observedAt)
           ? previous.latestAt
           : observedAt,
+      // 线程发现事件不携带内容，但**不得清掉已有预览**：ThreadCreate 会在同一条线程上
+      // 重复触发，清掉等于每次重新发现都把用户刚看到的预览抹成空白。
+      previewText: previous?.previewText,
+      observedLineCount: previous?.observedLineCount ?? 0,
+      observedArtifactCount: previous?.observedArtifactCount ?? 0,
+      previewIsArtifact: previous?.previewIsArtifact ?? false,
     );
     notifyListeners();
   }
@@ -559,9 +704,16 @@ class TexthookerService extends ChangeNotifier {
   }
 
   void clear() {
-    if (_entries.isEmpty && _discoveredTextThreads.isEmpty) return;
+    if (_entries.isEmpty &&
+        _discoveredTextThreads.isEmpty &&
+        _threadPreviews.isEmpty) {
+      return;
+    }
     _entries.clear();
     _discoveredTextThreads.clear();
+    // 预览必须一并清：它是**会话级**快照，thread id 含 processId，跨会话残留会让上一局
+    // 的预览挂在这一局的空线程上，用户照着选到一条死线程。
+    _threadPreviews.clear();
     notifyListeners();
   }
 }

@@ -1434,7 +1434,44 @@ class EngineHookGalAudioSource implements GalAudioSource {
     }
   }
 
-  /// 选择 Luna 文本线程。null/0 恢复 helper 自动选择；非 0 时 helper 只发布该线程。
+  /// v12 线程预览区：取**每条线程**的最近一行与观测行数，含尚未被选中的线程。
+  ///
+  /// 与 [pollText] 的区别是数据来源不同，不是同一份数据的两种视图：[pollText] 读文本环
+  /// （只有当前生效线程的行），本方法读按线程分槽的预览区（所有线程都有）。全量快照、
+  /// 无游标——预览槽按 thread id 寻址，不存在「漏读就被覆盖」的问题。
+  Future<List<GalTextThreadPreview>?> pollThreadPreviews() async {
+    try {
+      final Map<Object?, Object?>? r =
+          await _channel.invokeMethod<Map<Object?, Object?>>(
+        'pollThreadPreviews',
+      );
+      if (r == null) return null;
+      final List<Object?> raw =
+          (r['previews'] as List<Object?>?) ?? const <Object?>[];
+      final List<GalTextThreadPreview> previews = <GalTextThreadPreview>[];
+      for (final Object? e in raw) {
+        if (e is! Map) continue;
+        final Object? threadId = e['threadId'];
+        if (threadId is! int || threadId == 0) continue;
+        previews.add(GalTextThreadPreview(
+          threadId: threadId,
+          text: (e['text'] as String?) ?? '',
+          timestampMs: (e['ts'] as int?) ?? 0,
+          lineCount: (e['lineCount'] as int?) ?? 0,
+          artifactCount: (e['artifactCount'] as int?) ?? 0,
+          eventFlags: (e['eventFlags'] as int?) ?? 0,
+        ));
+      }
+      return previews;
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  /// 选择 Luna 文本线程。0/null 清除选择（v12 起清除后不再发布任何行，**不会**回到
+  /// 自动选择）；非 0 时 helper 只发布该线程。
   Future<bool> selectTextThread(int? threadId) async {
     try {
       final Map<Object?, Object?>? result =
@@ -1856,6 +1893,34 @@ class GalTextPoll {
   const GalTextPoll({required this.count, required this.lines});
   final int count;
   final List<GalHookedLine> lines;
+}
+
+/// v12 线程预览区里的一条快照：某条 Luna 文本线程的最近一行 + 观测统计。
+///
+/// [lineCount] 是 native 观测到的**全部**行数（含被伪影过滤和线程门控丢弃的），与
+/// 「已发布行数」不是一回事。v12 取消自动选线程后，用户选定之前已发布行数对所有线程
+/// 恒为 0，凡是判断线程活跃度/可选性/记忆恢复都必须用本字段。
+class GalTextThreadPreview {
+  const GalTextThreadPreview({
+    required this.threadId,
+    required this.text,
+    this.timestampMs = 0,
+    this.lineCount = 0,
+    this.artifactCount = 0,
+    this.eventFlags = 0,
+  });
+
+  /// native 侧 `ThreadPreviewSlot::event_flags` 的伪影位。
+  static const int flagArtifact = 0x1;
+
+  final int threadId;
+  final String text;
+  final int timestampMs;
+  final int lineCount;
+  final int artifactCount;
+  final int eventFlags;
+
+  bool get isArtifact => (eventFlags & flagArtifact) != 0;
 }
 
 enum GalTextEventKind {

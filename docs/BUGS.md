@@ -60,7 +60,7 @@
 | [BUG-1196](bugs/BUG-1196-galgame-helper-drop-network-download.md) | ✅ | ✅ | 删除 helper 网络下载与后台自更新，只保留随主包归档 |
 | [BUG-1195](bugs/BUG-1195-vn-blank-tap-blocks-chrome.md) | ✅ | ✅ | 视觉小说模式点空白只翻页，控制栏（菜单）永远唤不出 |
 | [BUG-1194](bugs/BUG-1194-collection-reorder-nonvideo-order.md) | ✅ | ✅ | 视频合集详情页拖拽排序打乱非 video 成员的跨种类顺序 |
-| [BUG-1193](bugs/BUG-1193-galgame-luna-nonwinner-threads-dropped.md) | 🚧 | 🚧 | primed 后非赢家 hook 线程被 native 丢弃，无法像 LunaTranslator 那样切换 |
+| [BUG-1193](bugs/BUG-1193-galgame-luna-nonwinner-threads-dropped.md) | ✅ | ✅ | primed 后非赢家 hook 线程被 native 丢弃，无法像 LunaTranslator 那样切换 |
 | [BUG-1192](bugs/BUG-1192-galgame-steam-drm-load-error.md) | 🚧 | 🚧 | Steam 游戏直接启动撞 DRM 报 Application load error 3 |
 | [BUG-1191](bugs/BUG-1191-galgame-upscaling-per-game.md) | ✅ | ✅ | 窗口超分改为每游戏一档，入口挪进游戏卡右键菜单 |
 | [BUG-1190](bugs/BUG-1190-jimaku-title-dropdown-no-research.md) | ✅ | ✅ | 换番剧名后字幕来源不刷新 |
