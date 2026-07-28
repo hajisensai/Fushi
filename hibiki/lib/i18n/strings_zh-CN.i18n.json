@@ -2745,5 +2745,7 @@
   "library_view_shelf": "书架",
   "library_view_browse": "浏览",
   "library_view_sources": "来源",
-  "library_view_media": "媒体库"
+  "library_view_media": "媒体库",
+  "scrape_failure_detail_show": "显示详情",
+  "scrape_failure_detail_hide": "隐藏详情"
 }

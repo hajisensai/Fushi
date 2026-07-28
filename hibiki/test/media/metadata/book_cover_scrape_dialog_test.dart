@@ -127,4 +127,56 @@ void main() {
     expect(find.text(t.scrape_reason_server), findsOneWidget);
     expect(find.text(t.scrape_reason_network), findsNothing);
   });
+
+  // BUG-1219：两句折叠文案只回答「我该做什么」，不回答「到底怎么了」。完整异常串必须
+  // 留在出错的地方，并且可一键复制上报（与视频封面匹配弹窗共用 ScrapeFailureView）。
+  testWidgets('BUG-1219 搜索失败在弹窗内直出完整技术详情 + 可复制', (WidgetTester tester) async {
+    final BookMetadataScraper scraper = BookMetadataScraper(
+      client: MockClient((http.Request req) async =>
+          throw http.ClientException("Failed host lookup: 'api.bgm.tv'")),
+    );
+
+    await tester.pumpWidget(wrap(
+      BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper),
+    ));
+    await tester.pumpAndSettle();
+
+    // 折叠原因仍在（可行动指引不被详情取代）。
+    expect(find.text(t.scrape_reason_network), findsOneWidget);
+    // 详情**默认折叠**：普通断网场景不拿英文异常糊用户一脸。
+    expect(find.byType(SelectableText), findsNothing);
+    expect(find.text(t.copy_error), findsNothing);
+
+    // 一键展开后底层原因（主机名）可见，并出现复制上报入口。
+    await tester.tap(
+        find.byKey(const ValueKey<String>('scrape_failure_detail_toggle')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byWidgetPredicate((Widget w) =>
+          w is SelectableText && (w.data ?? '').contains('api.bgm.tv')),
+      findsOneWidget,
+    );
+    expect(find.text(t.copy_error), findsOneWidget);
+  });
+
+  testWidgets('BUG-1219 源站 HTTP 500 的详情里带得到状态码', (WidgetTester tester) async {
+    final BookMetadataScraper scraper = BookMetadataScraper(
+      client: MockClient((http.Request req) async => http.Response('', 500)),
+    );
+
+    await tester.pumpWidget(wrap(
+      BookCoverScrapeDialog(initialQuery: '四叶', scraperOverride: scraper),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.scrape_reason_server), findsOneWidget);
+    await tester.tap(
+        find.byKey(const ValueKey<String>('scrape_failure_detail_toggle')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byWidgetPredicate(
+          (Widget w) => w is SelectableText && (w.data ?? '').contains('500')),
+      findsOneWidget,
+    );
+  });
 }

@@ -2745,5 +2745,7 @@
   "library_view_shelf": "Shelf",
   "library_view_browse": "Browse",
   "library_view_sources": "Sources",
-  "library_view_media": "Library"
+  "library_view_media": "Library",
+  "scrape_failure_detail_show": "Show details",
+  "scrape_failure_detail_hide": "Hide details"
 }

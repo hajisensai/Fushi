@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/src/media/metadata/bangumi_api_client.dart'
     show parseBangumiSubjectUrl;
+import 'package:hibiki/src/media/metadata/scrape_failure_view.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
 import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
@@ -522,7 +523,7 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
       return const Center(child: CircularProgressIndicator());
     }
     final Object? failure = _searchFailure;
-    if (failure != null) return _buildSearchFailure(theme, failure);
+    if (failure != null) return _buildSearchFailure(failure);
     if (_searched && _results.isEmpty) {
       return Center(child: Text(t.video_scrape_no_results));
     }
@@ -534,28 +535,13 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     );
   }
 
-  /// 搜索失败行：可见失败 + 可行动原因 + 重试指引（此时「搜索」按钮已恢复可点）。
-  Widget _buildSearchFailure(ThemeData theme, Object failure) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(Icons.error_outline, color: theme.colorScheme.error),
-          const SizedBox(height: 8),
-          Text(
-            t.video_scrape_search_failed,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: theme.colorScheme.error),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            _failureReason(failure),
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall,
-          ),
-        ],
-      ),
+  /// 搜索失败行：可见失败 + 可行动原因 + 完整技术详情 + 重试指引（此时「搜索」
+  /// 按钮已恢复可点）。详情直接进界面而不是只落错误日志，见 [ScrapeFailureView]。
+  Widget _buildSearchFailure(Object failure) {
+    return ScrapeFailureView(
+      title: t.video_scrape_search_failed,
+      reason: _failureReason(failure),
+      detail: failure.toString(),
     );
   }
 

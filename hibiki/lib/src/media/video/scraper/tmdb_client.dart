@@ -13,6 +13,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:hibiki/src/media/metadata/credential_redaction.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
@@ -57,7 +58,13 @@ class TmdbClient {
     } on TimeoutException {
       throw const ScrapeNetworkException('TMDB search timed out');
     } catch (e) {
-      throw ScrapeNetworkException('TMDB request failed: $e');
+      // 🔴 必须脱敏：TMDB 是 key-in-query，而 package:http 的 ClientException
+      // 把整个请求 URL（含 api_key）拼进 toString()。这条 message 会同时流向弹窗
+      // 失败态（可选中 + 一键复制）、错误日志文件、以及日志上传 —— 三条路都不脱敏。
+      // 收口在这里，抛出去的东西本身就不含凭据（BUG-1219 审查发现）。
+      throw ScrapeNetworkException(
+        redactCredentialsInText('TMDB request failed: $e'),
+      );
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {

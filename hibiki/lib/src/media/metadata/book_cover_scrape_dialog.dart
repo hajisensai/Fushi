@@ -6,6 +6,7 @@ import 'package:hibiki/src/media/metadata/bangumi_api_client.dart'
     show parseBangumiSubjectUrl;
 import 'package:hibiki/src/media/metadata/book_metadata_scraper.dart';
 import 'package:hibiki/src/media/metadata/image_download.dart';
+import 'package:hibiki/src/media/metadata/scrape_failure_view.dart';
 import 'package:hibiki/utils.dart';
 
 /// 书籍 / 漫画「在线匹配封面」弹窗（统一刮削 P1b）。
@@ -231,27 +232,12 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     }
     final Object? failure = _searchFailure;
     if (failure != null) {
-      // 搜索失败错误行：可见反馈 + 可行动原因 + 重试指引（搜索按钮此时已恢复可点）。
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(Icons.error_outline, color: theme.colorScheme.error),
-            const SizedBox(height: 8),
-            Text(
-              t.book_scrape_search_failed,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.error),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _failureReason(failure),
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
-        ),
+      // 搜索失败错误行：可见反馈 + 可行动原因 + 完整技术详情 + 重试指引（搜索按钮
+      // 此时已恢复可点）。详情直接进界面而不是只落错误日志，见 [ScrapeFailureView]。
+      return ScrapeFailureView(
+        title: t.book_scrape_search_failed,
+        reason: _failureReason(failure),
+        detail: failure.toString(),
       );
     }
     if (_searched && _results.isEmpty) {
