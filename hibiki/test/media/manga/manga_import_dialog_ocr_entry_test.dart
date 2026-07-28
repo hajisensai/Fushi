@@ -1,4 +1,10 @@
-/// 漫画 P3：导入书对话框「OCR 导入漫画」入口 gating。
+/// 漫画 P3：漫画导入对话框「OCR 导入漫画」入口 gating。
+///
+/// ## 换宿主（漫画/书籍导入分家）
+///
+/// 入口原先挂在**书籍**导入框上——那是漫画和书挤在同一个对话框时代的产物。分家后
+/// OCR 入口随漫画域迁到 [MangaImportDialog]，本测试整体跟着换宿主；下面的 gating
+/// 判据（两端都亮、两端 probeCalls 都必须是 0）逐条保留，一条没放宽。
 ///
 /// ## 判据换靶（PR#474，BUG-1164）
 ///
@@ -26,9 +32,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
-import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
+import 'package:hibiki/src/media/manga/manga_import_dialog.dart';
 import 'package:hibiki/src/sync/interconnect_manga_ocr_client.dart';
-import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 class _FakeRemoteRunner implements MangaOcrRemoteRunner {
@@ -78,9 +83,7 @@ void main() {
         child: TranslationProvider(
           child: MaterialApp(
             home: Scaffold(
-              body: BookImportDialog(
-                repo: SrtBookRepository(db),
-                audiobookRepo: AudiobookRepository(db),
+              body: MangaImportDialog(
                 db: db,
                 mangaOcrRemoteRunner: runner,
                 ocrEntryDesktopOverride: desktop,
@@ -106,8 +109,7 @@ void main() {
     final _FakeRemoteRunner runner = _FakeRemoteRunner(target: _capableTarget);
     await pumpDialog(tester, desktop: false, runner: runner);
     expect(find.text(t.manga_ocr_wizard_title), findsOneWidget);
-    expect(runner.probeCalls, 0,
-        reason: '入口不再依赖探测，渲染决策不得产生网络副作用');
+    expect(runner.probeCalls, 0, reason: '入口不再依赖探测，渲染决策不得产生网络副作用');
   });
 
   testWidgets('mobile: entry stays visible without any paired host',

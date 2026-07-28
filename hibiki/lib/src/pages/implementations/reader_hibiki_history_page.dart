@@ -20,6 +20,7 @@ import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
 import 'package:hibiki/src/media/display_title.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
+import 'package:hibiki/src/media/manga/manga_import_dialog.dart';
 import 'package:hibiki/src/media/manga/manga_module.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
@@ -610,13 +611,24 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       actions: <Widget>[
         // 宽窗（非 compact）时动作展开成「图标+文字」药丸（与视频 tab 页头一致，
         // 用户 mockup：导入书籍 / 来源 / 合集 / 阅读统计带文字外显）；窄窗回落纯图标。
-        mediaSource.buildBookImportButton(
-          context: context,
-          ref: ref,
-          appModel: appModel,
-          focusId: kShelfImportFocusId,
-          label: _mangaOnly ? t.manga_import_action : t.srt_import,
-        ),
+        // 漫画库和书架是同一页面的两种壳，但导入的是两种载体，故按钮指向两个不同
+        // 的对话框——不再是「同一个框换个 label」。
+        if (_mangaOnly)
+          MangaHibikiSource.instance.buildMangaImportButton(
+            context: context,
+            ref: ref,
+            appModel: appModel,
+            focusId: kShelfImportFocusId,
+            label: t.manga_import_action,
+          )
+        else
+          mediaSource.buildBookImportButton(
+            context: context,
+            ref: ref,
+            appModel: appModel,
+            focusId: kShelfImportFocusId,
+            label: t.srt_import,
+          ),
         if (!_mangaOnly)
           _headerAction(
             tooltip: t.media_source_manage_title,
@@ -1806,13 +1818,16 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             icon: const Icon(Icons.library_add_outlined, size: 18),
             label: Text(_mangaOnly ? t.manga_import_action : t.srt_import),
             onPressed: () async {
+              // 空态按钮与页头按钮指向同一个对话框：漫画库开漫画框，书架开书籍框。
               final bool? imported = await showAppDialog<bool>(
                 context: context,
-                builder: (_) => BookImportDialog(
-                  repo: SrtBookRepository(appModel.database),
-                  audiobookRepo: AudiobookRepository(appModel.database),
-                  db: appModel.database,
-                ),
+                builder: (_) => _mangaOnly
+                    ? MangaImportDialog(db: appModel.database)
+                    : BookImportDialog(
+                        repo: SrtBookRepository(appModel.database),
+                        audiobookRepo: AudiobookRepository(appModel.database),
+                        db: appModel.database,
+                      ),
               );
               if (imported == true) {
                 ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));

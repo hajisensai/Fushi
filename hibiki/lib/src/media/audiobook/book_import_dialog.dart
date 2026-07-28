@@ -15,6 +15,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_alignment_service.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
 import 'package:hibiki/src/media/audiobook/text_to_epub.dart';
 import 'package:hibiki/src/media/import/audiobook_health_summary.dart';
+import 'package:hibiki/src/media/import/import_carrier.dart';
 import 'package:hibiki/src/media/import/import_dialog_frame.dart';
 import 'package:hibiki/src/media/import/import_flow_mixin.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
@@ -24,10 +25,9 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
+import 'package:hibiki/src/media/manga/manga_import_dialog.dart';
 import 'package:hibiki/src/media/manga/manga_module.dart';
 import 'package:hibiki/src/pdf/pdf_importer.dart';
-import 'package:hibiki/src/sync/interconnect_manga_ocr_client.dart';
-import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/utils.dart';
 
 /// 统一"导入书"对话框。EPUB、字幕、音频可按需组合，一次导入。
@@ -41,6 +41,10 @@ import 'package:hibiki/utils.dart';
 ///   [EpubParser] 读回章节文本，跑 [EpubSrtMatcher] + [SasayakiMatchCodec]，
 ///   把 cue 对齐到真实 EPUB；cues + 可选音频落到 [AudiobookRepository]。
 /// - **音频但无字幕**：非法组合，音频必须配合字幕使用。
+///
+/// **漫画不在此列**：漫画有独立入口与独立对话框 [MangaImportDialog]（载体不同，
+/// 可填字段就不同——漫画没有字幕/音频/对齐，书籍没有 OCR）。本框仍然**认得**漫画
+/// 载体，但只做一件事：弹一次明确确认后把路径转交漫画流程（[_handoffIfManga]）。
 class BookImportDialog extends StatefulWidget {
   const BookImportDialog({
     required this.repo,
@@ -49,8 +53,6 @@ class BookImportDialog extends StatefulWidget {
     this.initialEpubPath,
     this.initialSubtitlePath,
     this.initialAudioPaths,
-    this.mangaOcrRemoteRunner,
-    this.ocrEntryDesktopOverride,
     super.key,
   });
 
@@ -59,14 +61,6 @@ class BookImportDialog extends StatefulWidget {
   final HibikiDatabase db;
   final String? initialEpubPath;
   final String? initialSubtitlePath;
-
-  /// 漫画 P3 测试缝：注入远程 OCR runner（探测已配对 host 能力 + 代跑）。
-  /// null = 生产路径，按 [db] 惰性构造 [InterconnectMangaOcrClient]。
-  final MangaOcrRemoteRunner? mangaOcrRemoteRunner;
-
-  /// 漫画 P3 测试缝：覆盖「是否桌面平台」判定（widget 测试模拟移动端入口
-  /// gating）。null = 用真实 [isDesktopPlatform]。
-  final bool? ocrEntryDesktopOverride;
 
   /// 拖拽导入预填：随新书一起拖入的音频文件路径。EPUB+音频拖到书架空白处时透传，
   /// 否则丢失（书架 `importNewBook` 此前未携带 `files.audios`）。音频必配字幕，
@@ -105,18 +99,6 @@ class _BookImportDialogState extends State<BookImportDialog>
   String? _subtitleName;
 
   bool _pickerActive = false;
-
-  /// 远程 OCR runner（生产 = [InterconnectMangaOcrClient]；测试注 fake）。
-  late final MangaOcrRemoteRunner _mangaOcrRemoteRunner =
-      widget.mangaOcrRemoteRunner ??
-          InterconnectMangaOcrClient(repo: SyncRepository(widget.db));
-
-  bool get _ocrEntryDesktop =>
-      widget.ocrEntryDesktopOverride ?? isDesktopPlatform;
-
-  /// Google Lens is available on every supported app platform, so the manga
-  /// OCR entry no longer depends on a paired desktop host on mobile.
-  bool get _showOcrEntry => true;
 
   /// TODO-935 ①A：「引用原文件（不复制）」开关。仅桌面可见/可选；移动端
   /// file_picker 返回缓存临时副本，引用即指向会被清掉的文件，故恒 false。
@@ -206,15 +188,8 @@ class _BookImportDialogState extends State<BookImportDialog>
         title: Text(t.srt_import),
         content: _buildForm(),
         actions: [
-          // 「OCR 导入漫画」：桌面恒显示（内置 OCR / 外部 mokuro CLI 均桌面工具）；
-          // 移动端在探测到可代跑 OCR 的已配对 host 时也显示（漫画 P3 远程引擎）。
-          if (_showOcrEntry)
-            adaptiveDialogAction(
-              context: context,
-              onPressed: importing ? null : _openOcrWizard,
-              child: Text(t.manga_ocr_wizard_title),
-            ),
-          // 漫画「在线目录」入口已从书籍导入框移除（属漫画域，入口收敛到下载页）。
+          // 漫画入口（「OCR 导入漫画」/「在线目录」）均已移出书籍导入框：
+          // OCR 归 [MangaImportDialog]，在线目录归下载页。书籍框只做书。
           adaptiveDialogAction(
             context: context,
             onPressed: () => Navigator.pop(context),
@@ -226,30 +201,67 @@ class _BookImportDialogState extends State<BookImportDialog>
     );
   }
 
-  /// 打开 OCR 导入漫画向导：从 provider 取内置 OCR 服务、按当前偏好构造外部
-  /// mokuro runner（均桌面工具），再挂上远程「已配对主机」runner（移动端唯一
-  /// 引擎，桌面亦可作后备）；向导内选裸图片文件夹跑整卷 OCR 后无缝落库；成功
-  /// （返回 bookKey）则连同关闭本导入框并回传 true，让书架刷新。
-  Future<void> _openOcrWizard() async {
-    final String? bookKey = await MangaModule.openOcrImportWizard(
+  /// 选/拖进来的路径若其实是漫画载体，弹一次明确确认并转交 [MangaImportDialog]。
+  ///
+  /// 返回 `true` 表示「本路径已被漫画流程接手，书籍侧不要再收下它」——用户在确认
+  /// 框里点取消也算接手（不继续按书导入，那只会产出一本乱码书）。
+  ///
+  /// 为什么书籍入口还要认漫画：图片型 `.zip` / 扫描版 `.epub` 与词典包/普通电子书
+  /// 同形，拖到书架时分类层按扩展名归 books（它刻意不为每次拖 EPUB 白开一次包）。
+  /// 此前这里是**静默**转漫画导入；现在改成用户可见的一次确认——识别照旧，分派不
+  /// 再背着用户发生。
+  Future<bool> _handoffIfManga(String path) async {
+    if (!_classifyCarrier(path).isManga) return false;
+    final bool? go = await showAppDialog<bool>(
       context: context,
-      db: widget.db,
-      remoteRunner: _mangaOcrRemoteRunner,
-      desktop: _ocrEntryDesktop,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text(t.manga_import_detected_title),
+        content: Text(
+          t.manga_import_detected_message(name: p.basename(path)),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t.dialog_cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t.manga_import_detected_confirm),
+          ),
+        ],
+      ),
     );
-    if (bookKey != null && mounted) {
-      Navigator.pop(context, true);
+    if (go != true || !mounted) return true;
+
+    final bool? imported = await showAppDialog<bool>(
+      context: context,
+      builder: (_) => MangaImportDialog(db: widget.db, initialPath: path),
+    );
+    if (mounted) {
+      // 关掉书籍框并把漫画侧的导入结果透传出去，书架照常刷新。
+      Navigator.pop(context, imported == true);
     }
+    return true;
   }
+
+  /// 判定一个待导入路径的载体身份。文件系统判据在此注入，分类函数本身不碰 IO。
+  ImportCarrier _classifyCarrier(String path) => classifyImportCarrier(
+        path,
+        isDirectory: (String pth) => Directory(pth).existsSync(),
+        isImageArchive: MangaModule.isImageArchive,
+      );
 
   /// 拖文件进本对话框 → 分类 → 按字段覆盖（仅填命中类，不清用户已选）。
   /// 纯解析交给 [resolveBookDialogDrop]；此处只 setState + sidecar/封面副作用。
-  void _handleDialogDrop(List<String> paths, Offset _) {
+  Future<void> _handleDialogDrop(List<String> paths, Offset _) async {
     if (importing) return;
     final DroppedFiles files = classifyDroppedFiles(paths);
     final BookDialogDropResult r = resolveBookDialogDrop(files);
     if (r.isEmpty) return;
     final String? droppedEpub = r.epubPath;
+    // 拖进来的「书」其实是漫画（图片型 zip / 扫描版 epub）→ 确认后转交漫画流程。
+    if (droppedEpub != null && await _handoffIfManga(droppedEpub)) return;
+    if (!mounted) return;
     final bool gotAudio = r.audioPaths.isNotEmpty;
     setState(() {
       if (droppedEpub != null) {
@@ -444,8 +456,10 @@ class _BookImportDialogState extends State<BookImportDialog>
     // PDF 阅读器 Phase 1：PDF 走独立 PdfImporter（真渲染，不经 TextToEpub 文本转换），
     // 在 [_importEpubOnly] 里按 .pdf 扩展名分支。
     'pdf',
-    // 漫画（第三种书）：`.mokuro`（v0.2+）+ 同级图片走独立 MangaImporter，落库 format='manga'，
-    // 在 [_importEpubOnly] 里按 .mokuro 扩展名分支（须在 TextToEpub 文本转换之前早退）。
+    // 漫画扩展名仍留在书籍选择器里，但**不再由本框导入**：选中后 [_handoffIfManga]
+    // 弹一次确认并转交 [MangaImportDialog]。留着是为了不打断老习惯——用户从书架
+    // 「导入书籍」里选到一本漫画时，得到的是一句「这是漫画」而不是「格式不支持」。
+    // `.zip` / `.epub` 无论如何都得留（图片型压缩包与词典包/普通电子书同形）。
     'mokuro',
     'cbz',
     'zip',
@@ -463,6 +477,9 @@ class _BookImportDialogState extends State<BookImportDialog>
       final PlatformFile? file = result?.files.single;
       final String? path = file?.path;
       if (path != null && file != null && mounted) {
+        // 选中的其实是漫画载体 → 明确确认后转交漫画流程，不再静默按书导入。
+        if (await _handoffIfManga(path)) return;
+        if (!mounted) return;
         setState(() {
           _epubPath = path;
           _epubName = file.name;
@@ -771,6 +788,12 @@ class _BookImportDialogState extends State<BookImportDialog>
       HibikiToast.show(msg: t.srt_import_missing_input);
       return;
     }
+    // 兜底闸门：选/拖两条入口在收下路径时就已过 [_handoffIfManga]，但 initialEpubPath
+    // 是构造参数直接塞进来的（书架拖入决策层刻意不为每个 EPUB 开包，图片型 .epub 会
+    // 以 books 身份到达这里）。同一个闸门在此再守一次，漫画绝不会走进书籍导入分支。
+    final String? epubPath = _epubPath;
+    if (epubPath != null && await _handoffIfManga(epubPath)) return;
+    if (!mounted) return;
     if (_epubPath != null && !_hasSubtitles && _audioPaths.isNotEmpty) {
       HibikiToast.show(msg: t.srt_import_audio_needs_subtitle);
       return;
@@ -941,35 +964,15 @@ class _BookImportDialogState extends State<BookImportDialog>
     final File file = File(_epubPath!);
 
     reportProgress(0.2, t.import_step_reading);
-    final String ext = p.extension(_epubPath!).toLowerCase();
 
-    // 漫画页图**目录**（拖入一个漫画文件夹）：整目录导入，OCR blocks 留空。
-    // 必须在所有按扩展名分派的分支之前——目录没有扩展名（目录名带点时 p.extension
-    // 还会误取出一个假扩展名），落到下面任何一条文件分支都会失败。
-    if (Directory(_epubPath!).existsSync()) {
-      reportProgress(0.5, t.import_step_importing_epub);
-      await MangaModule.importImageFolder(
-        db: widget.db,
-        path: _epubPath!,
-        title: title,
-        onDuplicateTitle: _onDuplicateTitle,
-        onProgress: (int done, int total) {
-          if (total > 0) {
-            reportProgress(
-              (done / total).clamp(0.0, 1.0),
-              t.import_step_copying_file(name: p.basename(_epubPath!)),
-            );
-          }
-        },
-      );
-      reportProgress(1, t.import_step_done);
-      return;
-    }
+    // 载体身份此前是在这里靠 4 个 if（含一次真读包）现场嗅出来的；现在它在**选中
+    // 文件那一刻**就已由 [classifyImportCarrier] 定死，且漫画载体根本进不来（三个
+    // 入口都过 [_handoffIfManga]）。这里只剩书籍侧的三种去向。
+    final ImportCarrier carrier = _classifyCarrier(_epubPath!);
 
-    // PDF 阅读器 Phase 1：.pdf 走独立 PdfImporter（pdfrx 真渲染 + 落库 format='pdf'），
-    // 必须在下面的 TextToEpub 文本转换分支之前早退——否则 PDF 二进制会被当文本转成乱码
-    // EPUB。PDF 封面在 PdfImporter 内栅格化首页得到，故不走 _applyBestCoverToEpub。
-    if (ext == '.pdf') {
+    // PDF 阅读器 Phase 1：.pdf 走独立 PdfImporter（pdfrx 真渲染 + 落库 format='pdf'）。
+    // PDF 封面在 PdfImporter 内栅格化首页得到，故不走 _applyBestCoverToEpub。
+    if (carrier == ImportCarrier.pdf) {
       reportProgress(0.5, t.import_step_importing_epub);
       await PdfImporter.importFromPath(
         db: widget.db,
@@ -982,54 +985,8 @@ class _BookImportDialogState extends State<BookImportDialog>
       return;
     }
 
-    // 漫画（第三种书）：.mokuro 走独立 MangaImporter（拷图 + 写 manga.json + 落库
-    // format='manga'），同样须在 TextToEpub 文本转换分支之前早退——否则 .mokuro 的 JSON 会被
-    // 当纯文本转成 EPUB。封面由 MangaImporter 取首页页图，故不走 _applyBestCoverToEpub。
-    if (ext == '.mokuro') {
-      reportProgress(0.5, t.import_step_importing_epub);
-      await MangaModule.importMokuro(
-        db: widget.db,
-        path: _epubPath!,
-        title: title,
-        onDuplicateTitle: _onDuplicateTitle,
-        onProgress: (int done, int total) {
-          if (total > 0) {
-            reportProgress(
-              (done / total).clamp(0.0, 1.0),
-              t.import_step_copying_file(name: p.basename(_epubPath!)),
-            );
-          }
-        },
-      );
-      reportProgress(1, t.import_step_done);
-      return;
-    }
-
-    if (ext == '.cbz' ||
-        (<String>{'.zip', '.epub'}.contains(ext) &&
-            MangaModule.isImageArchive(_epubPath!))) {
-      reportProgress(0.5, t.import_step_importing_epub);
-      await MangaModule.importArchive(
-        db: widget.db,
-        path: _epubPath!,
-        title: title,
-        onDuplicateTitle: _onDuplicateTitle,
-        onProgress: (int done, int total) {
-          if (total > 0) {
-            reportProgress(
-              (done / total).clamp(0.0, 1.0),
-              t.import_step_copying_file(name: p.basename(_epubPath!)),
-            );
-          }
-        },
-      );
-      reportProgress(1, t.import_step_done);
-      return;
-    }
-
     final String bookKey;
-    if (TextToEpub.isSupported(_epubPath!) ||
-        (ext != '.epub' && ext != '.zip')) {
+    if (carrier == ImportCarrier.text) {
       reportProgress(0.3, t.import_step_converting_epub);
       final Uint8List bytes =
           await TextToEpub.convert(file: file, title: title);

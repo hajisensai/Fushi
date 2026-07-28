@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki/media.dart';
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/media/manga/manga_import_dialog.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/utils.dart';
@@ -83,15 +85,42 @@ class MangaHibikiSource extends ReaderMediaSource {
     required WidgetRef ref,
     required AppModel appModel,
   }) {
-    // 导入按钮统一由 EPUB 源提供（同一个对话框通吃 epub/pdf/manga）；本源作为打开-漫画
-    // 的短暂当前源，页头动作复用同一按钮以防被设为当前源时缺动作。
+    // 漫画有自己的导入按钮与对话框（载体不同、可填字段就不同）；本源作为打开-漫画
+    // 的短暂当前源，页头动作给出漫画导入以防被设为当前源时缺动作。
     return <Widget>[
-      ReaderHibikiSource.instance.buildBookImportButton(
+      buildMangaImportButton(
         context: context,
         ref: ref,
         appModel: appModel,
       ),
     ];
+  }
+
+  /// 「导入漫画」按钮。与 [ReaderHibikiSource.buildBookImportButton] 并列而非复用：
+  /// 两者打开的是不同对话框，仅外观规格（尺寸/宽窗展开成图标+文字）保持一致。
+  Widget buildMangaImportButton({
+    required BuildContext context,
+    required WidgetRef ref,
+    required AppModel appModel,
+    HibikiFocusId? focusId,
+    String? label,
+  }) {
+    return HibikiIconButton(
+      tooltip: t.manga_import_action,
+      label: label,
+      icon: Icons.library_add_outlined,
+      focusId: focusId,
+      onTap: () async {
+        final bool? imported = await showAppDialog<bool>(
+          context: context,
+          builder: (_) => MangaImportDialog(db: appModel.database),
+        );
+        if (imported == true) {
+          ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+          ref.invalidate(srtBooksProvider);
+        }
+      },
+    );
   }
 
   @override
