@@ -18,22 +18,30 @@ const int kGalgameCoverMaxDownloadBytes = 20 * 1024 * 1024;
 /// 下载体积下限：小于它的响应不可能是可用封面图（多为错误页/空响应）。
 const int kGalgameCoverMinDownloadBytes = 1024;
 
-/// 纯函数：刮削成功后是否要下载封面。
+/// 纯函数：**自动/隐式**刮削路径是否要下载封面（导入后台补齐等非用户点名场景）。
 ///
 /// 规则只有一条：**已有可用封面文件（手选/自动/上次下载）绝不覆盖**；没有可用
 /// 封面且合并层给出了 URL 才下载。[hasUsableCoverFile] 由调用方按
 /// 「coverPath 非空且文件真实存在」判定（与卡片渲染的 existsSync 短路同判据）。
 ///
-/// 这是游戏岛封面保护的**唯一判据**（游戏岛没有视频岛的 [CoverOrigin] 元数据，
-/// 只能以「封面文件是否存在」保护用户手选的图），详情页的自动刮削路径与统一刮削
-/// 弹窗的显式「使用」路径共用它——两条路径都不许覆盖既有封面，与
-/// `media_cover_service.dart` 的封面纪律表逐字一致。想换封面走「选择封面图片」/
-/// 「自动封面」，那两条是用户显式点名的封面写入口。
+/// 与 [shouldDownloadExplicitScrapedCover]（显式路径）的分工见后者注释；两条
+/// 路径的语义分界与 `media_cover_service.dart` 的封面纪律表一致。
 bool shouldAutoDownloadScrapedCover({
   required bool hasUsableCoverFile,
   required String? coverUrl,
 }) {
   if (hasUsableCoverFile) return false;
+  return coverUrl != null && coverUrl.trim().isNotEmpty;
+}
+
+/// 纯函数：**显式**刮削路径（统一刮削弹窗里用户亲手点「使用」某候选）是否下载
+/// 封面。
+///
+/// 用户显式选中候选 = 明确要绑到这个条目，封面随元数据一起换：只要有 URL 就
+/// 下载并**覆盖**既有封面（用户 2026-07-28 拍板，对齐视频「在线匹配封面」与
+/// 书籍「在线刮削封面」的显式语义——三域手动刮削都覆盖）。自动/隐式路径仍走
+/// [shouldAutoDownloadScrapedCover]，绝不覆盖既有封面。
+bool shouldDownloadExplicitScrapedCover({required String? coverUrl}) {
   return coverUrl != null && coverUrl.trim().isNotEmpty;
 }
 
@@ -85,9 +93,12 @@ Future<String?> downloadGalgameCoverToFile({
     debugPrint('[galgame] cover download skipped, bad url: $url');
     return null;
   }
-  final HttpClient http = client ?? HttpClient();
+  // HttpClient 构造放进 try：本函数契约是「任何失败返回 null」（刮削元数据已
+  // 成功，封面失败静默降级），构造期异常（如测试的 HttpOverrides 地雷）也不例外。
+  HttpClient? http;
   final bool ownsClient = client == null;
   try {
+    http = client ?? HttpClient();
     final HttpClientRequest request = await http.getUrl(uri);
     final HttpClientResponse response = await request.close();
     if (response.statusCode != HttpStatus.ok) {
@@ -124,6 +135,6 @@ Future<String?> downloadGalgameCoverToFile({
     debugPrint('[galgame] cover download failed: $url ($e)');
     return null;
   } finally {
-    if (ownsClient) http.close(force: true);
+    if (ownsClient) http?.close(force: true);
   }
 }

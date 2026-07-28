@@ -20,8 +20,9 @@ import 'package:hibiki/utils.dart';
 /// 一步到位：打开即按当前显示名自动首搜，搜索框可改词重搜，候选带封面缩略图 +
 /// `源 · ID · 发行日` 副行，每行「使用」行内转圈；点「使用」= `fetchById` 补全
 /// → [GalgameRepository.saveScrapeResult]（多源 primarySource 记 mixed 规则不变）
-/// → **封面与元数据一起落**（遵守游戏岛封面纪律：只在无可用封面文件时下载，
-/// 既有封面绝不覆盖，见 [shouldAutoDownloadScrapedCover]）。
+/// → **封面与元数据一起落**：用户显式选中候选即覆盖既有封面（用户 2026-07-28
+/// 拍板，对齐视频/书籍手动刮削语义，见 [shouldDownloadExplicitScrapedCover]；
+/// 自动/隐式路径仍绝不覆盖）。
 ///
 /// 返回 true = 已成功落库（调用方据此刷新库页 / 重载详情页）；false/取消 = 无写库。
 Future<bool> showGalgameScrapeDialog({
@@ -101,7 +102,8 @@ Uri? _tryParseEntryUrl(String input) {
 /// 落库一条**用户显式选中**的候选（库页与详情页共用，取代旧 `_scrape()` 的落库段）：
 /// `fetchById` 补全 draft → [GalgameRepository.saveScrapeResult]（多源快照时
 /// primarySource 记 [kGalgamePrimarySourceMixed]，单源记该源 key——规则不变）→
-/// 封面下载（**只在该游戏还没有可用封面文件时**；下载失败静默降级，不影响返回值）。
+/// 封面下载（显式语义：有 URL 即下载并**覆盖**既有封面；下载失败静默降级，
+/// 不影响返回值）。[coverHttpClient] / [coverDirectory] 是测试接缝。
 ///
 /// 返回 false = 该 ID 在源上未找到（draft 为 null）；网络/解析失败由
 /// [GalgameMetadataException] 上抛给调用方提示。
@@ -110,6 +112,8 @@ Future<bool> applyGalgameScrapeCandidate({
   required String gameId,
   required SourceCandidate candidate,
   GalgameScrapeController? controller,
+  HttpClient? coverHttpClient,
+  Directory? coverDirectory,
 }) async {
   final GalgameScrapeController used =
       controller ?? GalgameScrapeController.instance;
@@ -134,42 +138,42 @@ Future<bool> applyGalgameScrapeCandidate({
     gameId: gameId,
     draft: draft,
     candidate: candidate,
+    httpClient: coverHttpClient,
+    coverDirectory: coverDirectory,
   );
   return true;
 }
 
-/// 刮削候选落地后的封面补齐：优先 draft 的完整封面 URL，缺了退回候选缩略图 URL。
+/// 刮削候选落地后的封面应用：优先 draft 的完整封面 URL，缺了退回候选缩略图 URL。
 ///
-/// 决策走 [shouldAutoDownloadScrapedCover]——游戏岛只有「封面文件是否存在」这一条
-/// 保护判据（无 [CoverOrigin] 元数据），所以**已有可用封面一律不覆盖**，用户手选
-/// 的封面不会被刮削悄悄换掉。想换封面走卡菜单的「选择封面图片」/「自动封面」。
-/// 下载失败静默降级不打断（原因由 [downloadGalgameCoverToFile] 记 debug 日志）。
+/// 决策走 [shouldDownloadExplicitScrapedCover]——本函数只服务统一刮削弹窗的
+/// 显式「使用」路径：用户亲手选中候选 = 明确要绑到这个条目，封面随元数据一起
+/// 换（**覆盖**既有封面；与视频「在线匹配封面」、书籍「在线刮削封面」的显式
+/// 语义一致，用户 2026-07-28 拍板）。自动/隐式补齐路径请走
+/// [shouldAutoDownloadScrapedCover]（绝不覆盖）。
+/// 下载失败静默降级不打断（原因由 [downloadGalgameCoverToFile] 记 debug 日志，
+/// 既有封面此时原样保留）。
 Future<void> _downloadScrapedCover({
   required GalgameRepository repo,
   required String gameId,
   required GalgameMetadataDraft draft,
   required SourceCandidate candidate,
+  HttpClient? httpClient,
+  Directory? coverDirectory,
 }) async {
-  // 读**落库后**的最新条目：saveScrapeResult 可能刚写过 coverPath。
-  final GalgameEntry? latest = repo.byId(gameId);
-  if (latest == null) return;
-  final String? existing = latest.coverPath;
-  final bool hasUsableCoverFile =
-      existing != null && existing.isNotEmpty && File(existing).existsSync();
+  // 条目可能在弹窗打开期间被移除：行不在就不下载。
+  if (repo.byId(gameId) == null) return;
   final String? coverUrl = (draft.coverUrl?.trim().isNotEmpty ?? false)
       ? draft.coverUrl
       : candidate.coverUrl;
-  if (!shouldAutoDownloadScrapedCover(
-    hasUsableCoverFile: hasUsableCoverFile,
-    coverUrl: coverUrl,
-  )) {
-    return;
-  }
+  if (!shouldDownloadExplicitScrapedCover(coverUrl: coverUrl)) return;
   final String? saved = await downloadGalgameCoverToFile(
     gameId: gameId,
     url: coverUrl!,
+    client: httpClient,
+    coverDirectory: coverDirectory,
   );
-  if (saved == null) return; // 失败静默：原因已进 debug 日志。
+  if (saved == null) return; // 失败静默：原因已进 debug 日志，旧封面保留。
   // 下载期间条目可能已被移除：仓储按 id 更新，行不在就不写。
   if (repo.byId(gameId) == null) return;
   await repo.setCoverPath(gameId, saved);
@@ -183,6 +187,8 @@ class GalgameScrapeDialog extends StatefulWidget {
     required this.repo,
     this.initialQuery,
     this.controllerOverride,
+    this.coverHttpClientOverride,
+    this.coverDirectoryOverride,
   });
 
   final GalgameEntry game;
@@ -193,6 +199,10 @@ class GalgameScrapeDialog extends StatefulWidget {
 
   /// 测试注入的编排层；null 用 [GalgameScrapeController.instance]。
   final GalgameScrapeController? controllerOverride;
+
+  /// 测试注入的封面下载 HttpClient / 落盘目录（验证显式覆盖语义时喂假响应）。
+  final HttpClient? coverHttpClientOverride;
+  final Directory? coverDirectoryOverride;
 
   @override
   State<GalgameScrapeDialog> createState() => _GalgameScrapeDialogState();
@@ -270,6 +280,8 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
         gameId: widget.game.id,
         candidate: candidate,
         controller: _controller,
+        coverHttpClient: widget.coverHttpClientOverride,
+        coverDirectory: widget.coverDirectoryOverride,
       );
     } on GalgameMetadataException catch (e) {
       failureMessage = '${t.game_scrape_failed}: ${e.message}';

@@ -1989,6 +1989,16 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           icon: Icons.collections_bookmark_outlined,
           onPressed: () => _addEpubToCollection(item, bookKey),
         ),
+      // 统一三库页卡菜单：书卡与视频/游戏卡对称含「标签」项。TODO-455 曾拍板
+      // 移除，用户 2026-07-28 正式推翻（守卫测试同步更新）；拖标签/批量打标签
+      // 两条旧路径不受影响。
+      DialogListAction(
+        label: t.tag_label,
+        icon: Icons.sell_outlined,
+        onPressed: () => _openMediaTagPicker(
+          MediaRef(kind: MediaKind.epub, entryKey: bookKey),
+        ),
+      ),
       DialogListAction(
         label: t.profile_book_profile,
         icon: Icons.account_circle_outlined,
@@ -2034,6 +2044,24 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
     ref.invalidate(srtBooksProvider);
     _rebuild(() {});
+  }
+
+  /// 单卡「标签」（统一三库页卡菜单，用户 2026-07-28 拍板推翻 TODO-455）：先收起
+  /// 长按菜单，进共享标签池的 [TagPickerPage]（媒体路，epub/srt 通用）；返回后
+  /// 失效标签 map 与筛选 provider，卡面 chip 与标签过滤立即刷新。
+  Future<void> _openMediaTagPicker(MediaRef media) async {
+    Navigator.pop(context);
+    await Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => TagPickerPage(media: media),
+      ),
+    );
+    if (!mounted) return;
+    ref.invalidate(bookTagMapProvider);
+    ref.invalidate(filteredBookIdsProvider);
+    ref.invalidate(filteredSrtBookIdsProvider);
   }
 
   /// 单卡「加入合集」（EPUB 卡菜单入口）：先收起长按菜单，再弹共享的合集选择

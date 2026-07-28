@@ -281,20 +281,19 @@ void main() {
 
   // ---------------------------------------------------------------------------
   // 三库页接线对账（源码扫描）：合集菜单只有一份实现，但「删成员本体」这条支线
-  // 靠调用方注入，漏注入就静默退化成「只能解散合集」——正是游戏页此前的状态。
-  // 逐页钉住三件事：走统一菜单、注入了 onDeleteMembersMedia、给了对应勾选文案。
+  // 靠调用方注入。书/视频注入（勾选文案按媒体域给）；游戏**刻意不注入**——
+  // 游戏合集删除只解散容器、绝不连带删游戏（游戏本体是用户安装目录，从库移除
+  // 走游戏卡菜单「移除」；用户 2026-07-28 拍板恢复纯解散，撤掉勾选）。
   // ---------------------------------------------------------------------------
   group('三库页合集菜单接线对账', () {
-    const Map<String, String> pages = <String, String>{
+    const Map<String, String> pagesWithDeleteMembers = <String, String>{
       'lib/src/pages/implementations/reader_hibiki_history_page.dart':
           't.delete_collection_also_books',
       'lib/src/pages/implementations/home_video_page.dart':
           't.delete_collection_also_videos',
-      'lib/src/pages/implementations/games_library_page.dart':
-          't.delete_collection_also_games',
     };
 
-    pages.forEach((String path, String checkboxLabel) {
+    pagesWithDeleteMembers.forEach((String path, String checkboxLabel) {
       test('$path 走统一合集菜单并注入删成员本体支线', () {
         final String src = File(path).readAsStringSync();
         expect(
@@ -305,8 +304,7 @@ void main() {
         expect(
           src,
           contains('onDeleteMembersMedia:'),
-          reason: '漏注入 onDeleteMembersMedia = 该页删合集永远无法连成员一起删，'
-              '与另外两页行为不一致（游戏页曾漏）。',
+          reason: '漏注入 onDeleteMembersMedia = 该页删合集永远无法连成员一起删。',
         );
         expect(
           src,
@@ -314,6 +312,24 @@ void main() {
           reason: '勾选文案必须按媒体域给，否则用户看不清会删掉什么。',
         );
       });
+    });
+
+    test('games_library_page 走统一合集菜单且**不**注入删成员本体（纯解散语义）', () {
+      final String src = File(
+        'lib/src/pages/implementations/games_library_page.dart',
+      ).readAsStringSync();
+      expect(
+        src,
+        contains('showCollectionContextDialog('),
+        reason: '游戏合集入口同样走唯一实现。',
+      );
+      expect(
+        src,
+        isNot(contains('onDeleteMembersMedia:')),
+        reason: '游戏合集删除只解散容器，绝不提供「连同游戏一起删」——游戏本体'
+            '是用户安装目录，从库移除走卡菜单「移除」（2026-07-28 拍板）。',
+      );
+      expect(src, isNot(contains('delete_collection_also_games')));
     });
   });
 }

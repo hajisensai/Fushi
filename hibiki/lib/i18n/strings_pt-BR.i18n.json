@@ -2670,7 +2670,6 @@
   "game_scrape_use": "Use",
   "game_scrape_search_failed": "Search failed. Check your network and try again.",
   "game_remove_confirm": "Remove this game from the library? Game files on disk will not be deleted.",
-  "delete_collection_also_games": "Also remove the games in it from the library (game files on disk are kept)",
   "manga_ocr_acceleration_status": "OCR acceleration: ${engine}",
   "manga_ocr_acceleration_degraded": "GPU acceleration unavailable, running OCR on ${engine}: ${reason}",
   "media_tracking_status": "Collection status",

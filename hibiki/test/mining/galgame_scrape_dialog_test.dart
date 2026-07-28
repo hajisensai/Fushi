@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -47,6 +48,8 @@ void main() {
     required GalgameRepository repo,
     required GalgameEntry game,
     required GalgameScrapeController controller,
+    HttpClient? coverHttpClient,
+    Directory? coverDirectory,
   }) async {
     Future<bool?>? result;
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
@@ -65,6 +68,8 @@ void main() {
                       game: game,
                       repo: repo,
                       controllerOverride: controller,
+                      coverHttpClientOverride: coverHttpClient,
+                      coverDirectoryOverride: coverDirectory,
                     ),
                   );
                 },
@@ -134,14 +139,79 @@ void main() {
     await tester.pump(const Duration(seconds: 4)); // 放掉桌面 toast 计时器
   });
 
-  testWidgets('已有可用封面时点「使用」不碰网络、不覆盖封面（游戏岛封面纪律）', (WidgetTester tester) async {
-    // 回归守卫：本弹窗曾把「使用」改成无条件下载并覆盖 coverPath，直接
-    // 盖掉用户手选的封面（游戏岛无 CoverOrigin 保护、无确认、无备份、不可撤销），
-    // 与 media_cover_service.dart 的封面纪律表直接矛盾。
-    //
-    // “没覆盖”光看 coverPath 不算数——下载失败也会保留旧值。这里把 HttpClient
-    // 构造堆成地雷（[_ExplodingHttpOverrides]）：只要走到下载就抛，落库会被弹窗
-    // 的 catch 接住→弹窗不关。因此「弹窗以 true 关闭」= 一次网络都没发。
+  testWidgets('已有封面时点「使用」显式覆盖：下载新封面并改写 coverPath', (WidgetTester tester) async {
+    // 用户 2026-07-28 拍板：显式选中候选 = 明确要绑到该条目，封面随元数据一起
+    // 换——即使已有封面也下载覆盖（对齐视频/书籍手动刮削语义，三域统一）。
+    // 自动/隐式路径仍走 shouldAutoDownloadScrapedCover（绝不覆盖），对照见
+    // galgame_cover_download_test.dart。
+    final Directory coverDir =
+        Directory.systemTemp.createTempSync('gal_cover_new_');
+    addTearDown(() => coverDir.deleteSync(recursive: true));
+    final Directory oldDir =
+        Directory.systemTemp.createTempSync('gal_cover_old_');
+    addTearDown(() => oldDir.deleteSync(recursive: true));
+    final File oldCover = File('${oldDir.path}/manual.png')
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    final (GalgameRepository repo, GalgameEntry game) = await buildRepo();
+    await repo.setCoverPath('g1', oldCover.path);
+
+    final List<int> imageBytes = List<int>.filled(2048, 7);
+    final _FakeCoverHttpClient http = _FakeCoverHttpClient(imageBytes);
+    const String url = 'https://example.com/covers/alpha.png';
+    final _FakeAdapter bgm = _FakeAdapter(GalgameMetadataSource.bgm)
+      ..results = const <SourceCandidate>[
+        SourceCandidate(
+          source: GalgameMetadataSource.bgm,
+          externalId: '4885',
+          coverUrl: url,
+        ),
+      ]
+      ..draft = const GalgameMetadataDraft(
+        name: 'alpha',
+        externalId: '4885',
+        coverUrl: url,
+      );
+    final GalgameScrapeController controller =
+        GalgameScrapeController(adapters: <GalgameMetadataAdapter>[bgm]);
+    final Future<bool?> Function() applied = await pumpDialogOpener(
+      tester,
+      repo: repo,
+      game: repo.byId('g1')!,
+      controller: controller,
+      coverHttpClient: http,
+      coverDirectory: coverDir,
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.game_scrape_use));
+    // 应用链含真实文件 IO（saveGameCoverBytes 异步写盘）——FakeAsync 区里
+    // 真实 IO 事件永不到达，pumpAndSettle 会挂死。用 runAsync 放行真实事件
+    // 循环让下载/写盘完成，再回 pump 收 UI 帧，直到弹窗关闭。
+    for (int i = 0;
+        i < 50 && find.byType(GalgameScrapeDialog).evaluate().isNotEmpty;
+        i++) {
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GalgameScrapeDialog), findsNothing,
+        reason: '应用成功后弹窗应以 true 关闭。');
+    expect(http.requests, 1, reason: '显式「使用」必须发起封面下载——即使该游戏已有封面。');
+    final String? coverPath = repo.byId('g1')!.coverPath;
+    expect(coverPath, isNotNull);
+    expect(coverPath, isNot(oldCover.path),
+        reason: '显式刮削应用后 coverPath 必须指向新下载的封面。');
+    expect(File(coverPath!).readAsBytesSync(), imageBytes);
+    expect(await applied(), isTrue);
+    await tester.pump(const Duration(seconds: 4)); // 放掉桌面 toast 计时器
+  });
+
+  testWidgets('封面下载失败静默降级：元数据照落、弹窗正常关、旧封面保留', (WidgetTester tester) async {
+    // 显式覆盖的另一半契约：封面下载失败**不打断**刮削（元数据已成功），且
+    // 绝不清掉旧封面。HttpClient 构造地雷（[_ExplodingHttpOverrides]）模拟
+    // 网络层整体不可用——downloadGalgameCoverToFile 契约是任何失败返回 null。
     final HttpOverrides? previous = HttpOverrides.current;
     HttpOverrides.global = _ExplodingHttpOverrides();
     addTearDown(() => HttpOverrides.global = previous);
@@ -153,7 +223,7 @@ void main() {
     final (GalgameRepository repo, GalgameEntry game) = await buildRepo();
     await repo.setCoverPath('g1', cover.path);
 
-    const String url = 'https://example.invalid/should-not-be-fetched.jpg';
+    const String url = 'https://example.invalid/unreachable.jpg';
     final _FakeAdapter bgm = _FakeAdapter(GalgameMetadataSource.bgm)
       ..results = const <SourceCandidate>[
         SourceCandidate(
@@ -180,19 +250,12 @@ void main() {
     await tester.tap(find.text(t.game_scrape_use));
     await tester.pumpAndSettle();
 
-    // 元数据落了、弹窗正常关闭（= 没碰网络）、封面原封不动。
+    // 元数据落了、弹窗以 true 正常关闭、旧封面原样保留。
     expect(await repo.sourcesOf('g1'), hasLength(1));
-    expect(
-      find.byType(GalgameScrapeDialog),
-      findsNothing,
-      reason: '已有可用封面时不得发封面下载请求（发了就会抛、弹窗不会关）。',
-    );
+    expect(find.byType(GalgameScrapeDialog), findsNothing,
+        reason: '封面下载失败不得打断刮削流程（元数据已成功）。');
     expect(await applied(), isTrue);
-    expect(
-      repo.byId('g1')!.coverPath,
-      cover.path,
-      reason: '刷削绝不得覆盖用户已有的封面文件。',
-    );
+    expect(repo.byId('g1')!.coverPath, cover.path, reason: '下载失败时旧封面必须原样保留。');
     expect(cover.readAsBytesSync(), <int>[1, 2, 3]);
     await tester.pump(const Duration(seconds: 4)); // 放掉桌面 toast 计时器
   });
@@ -400,11 +463,89 @@ class _FakeAdapter implements GalgameMetadataAdapter {
   void close() {}
 }
 
-/// 构造 HttpClient 即抛：用来证明某条路径**一次网络都没发**（比断言结果没变强，
-/// 后者被「下载失败也保留旧值」掩盖）。
+/// 构造 HttpClient 即抛：模拟网络层整体不可用（验证封面下载失败静默降级——
+/// downloadGalgameCoverToFile 契约是任何失败返回 null，不打断刮削流程）。
 class _ExplodingHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
     throw StateError('unexpected network access');
   }
+}
+
+/// 极简假 HttpClient：任何 getUrl 都回同一份 image/png 字节（验证显式覆盖时
+/// 喂合法响应）。只实现封面下载路径真正用到的成员，其余走 noSuchMethod 抛错
+/// ——真被调到说明下载路径变了，测试该跟着更新而不是静默通过。
+class _FakeCoverHttpClient implements HttpClient {
+  _FakeCoverHttpClient(this.bytes);
+
+  final List<int> bytes;
+
+  /// 发出的请求数（断言「显式路径必须真的发起下载」）。
+  int requests = 0;
+
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) async {
+    requests++;
+    return _FakeCoverRequest(bytes);
+  }
+
+  @override
+  void close({bool force = false}) {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('HttpClient.${invocation.memberName}');
+}
+
+class _FakeCoverRequest implements HttpClientRequest {
+  _FakeCoverRequest(this.bytes);
+
+  final List<int> bytes;
+
+  @override
+  Future<HttpClientResponse> close() async => _FakeCoverResponse(bytes);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('HttpClientRequest.${invocation.memberName}');
+}
+
+class _FakeCoverResponse extends Stream<List<int>>
+    implements HttpClientResponse {
+  _FakeCoverResponse(this.bytes);
+
+  final List<int> bytes;
+
+  @override
+  int get statusCode => HttpStatus.ok;
+
+  @override
+  HttpHeaders get headers => _FakeImageHeaders();
+
+  @override
+  StreamSubscription<List<int>> listen(
+    void Function(List<int> event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) =>
+      Stream<List<int>>.fromIterable(<List<int>>[bytes]).listen(
+        onData,
+        onError: onError,
+        onDone: onDone,
+        cancelOnError: cancelOnError,
+      );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('HttpClientResponse.${invocation.memberName}');
+}
+
+class _FakeImageHeaders implements HttpHeaders {
+  @override
+  ContentType? get contentType => ContentType('image', 'png');
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('HttpHeaders.${invocation.memberName}');
 }
