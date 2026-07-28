@@ -583,6 +583,17 @@ class AnimeDownloadSubscriptionService {
               magnet: torrent.magnet,
               qbCategory: config.category,
               subtitles: subtitles,
+              jimakuEntryId: current.jimakuEntryId,
+              jimakuEntryName: current.jimakuEntryName,
+              jimakuLanguage: current.jimakuLanguage,
+              // 订阅只追**单集**种子（上面 `episode == null` 已 continue），标题
+              // 集号就是该集，且这里已经真的把字幕下下来了 → 直接 resolved。
+              // 不走 BUG-1206 的延迟反查：订阅有一条更强的产品约束——
+              // 「要字幕却取不到就整条不下」（见下方 pendingError 分支），
+              // 改成完成后再取会把这个门变成「先下完再说没字幕」。
+              subtitleStatus: subtitles.isEmpty
+                  ? AnimeDownloadPlan.subtitleNone
+                  : AnimeDownloadPlan.subtitleResolved,
             );
             await planStore.save(plan);
             queued = await backend.addTorrent(

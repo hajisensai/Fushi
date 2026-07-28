@@ -1,11 +1,8 @@
 import 'dart:async' show unawaited;
-import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anime_download_matching.dart';
@@ -751,42 +748,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     if (!mounted) return;
     setState(() => _pushing = true);
 
-    // ① 逐条下载选中的字幕到计划暂存目录（单条失败跳过该条）。
-    // 整季包一次十几条，逐条失败以前是静默 continue，用户以为字幕都下好了；
-    // 记下应下条数，推送成功后按 N/M 汇报（见下方 snack）。
-    final int expectedSubs = _includeSubs ? _chosenSubs.length : 0;
-    final List<PlanSubtitle> staged = <PlanSubtitle>[];
-    if (_includeSubs && _chosenSubs.isNotEmpty) {
-      JimakuClient? jimaku;
-      try {
-        jimaku = JimakuClient(
-          apiKey: appModel.jimakuApiKey.trim(),
-          client: await appModel.createDownloadHttpClient(),
-        );
-        final Directory subsDir = store.subsDirFor(planId);
-        for (final (int? episode, JimakuFile file) in _chosenSubs) {
-          final Uint8List? bytes = await jimaku.downloadFile(file.url);
-          if (bytes == null) continue;
-          try {
-            final File dest = File(p.join(subsDir.path, p.basename(file.name)))
-              ..createSync(recursive: true);
-            await dest.writeAsBytes(bytes);
-            staged.add(PlanSubtitle(
-              episode: episode,
-              fileName: file.name,
-              stagedPath: dest.path,
-              language: detectSubtitleLanguage(file.name),
-            ));
-          } catch (_) {
-            // 单条落盘失败跳过，不影响其余字幕与推送。
-          }
-        }
-      } catch (_) {
-        // 字幕网络失败时仍允许下载视频；订阅轮询会在代理恢复后再次尝试。
-      } finally {
-        jimaku?.close();
-      }
-    }
+    // ① 字幕**不在这一刻下载**（BUG-1206）。此刻手上只有 Nyaa 标题，包里到底
+    // 有哪些文件要等种子 add 之后引擎给元数据才知道；照标题猜集号会把绝对编号
+    // 条目的字幕配到错季上，还看起来「配好了」。这里只把**意图**（取哪个
+    // Jimaku 条目、优先什么语言）记进计划，真正的反查交给完成钩子
+    // （`AnimeDownloadService._resolveSubtitles` → `JimakuPlanSubtitleResolver`），
+    // 那时按包内真实视频文件名对位，集号与条数都是事实而非猜测。
+    final JimakuEntry? subsEntry = _includeSubs ? _selectedJimakuEntry : null;
 
     // ② 落计划（先写盘再推 qb，推失败回滚删除）。
     final AnimeDownloadPlan plan = AnimeDownloadPlan(
@@ -798,7 +766,12 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       torrentTitle: torrent.title,
       magnet: torrent.magnet,
       qbCategory: config.category,
-      subtitles: staged,
+      jimakuEntryId: subsEntry?.id,
+      jimakuEntryName: subsEntry?.name,
+      jimakuLanguage: subsEntry == null ? null : _jimakuPreferredLanguage,
+      subtitleStatus: subsEntry == null
+          ? AnimeDownloadPlan.subtitleNone
+          : AnimeDownloadPlan.subtitlePending,
     );
     await store.save(plan);
 
@@ -858,13 +831,12 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     }
     unawaited(appModel.animeDownloadService?.tick());
     if (!mounted) return;
-    // 字幕缺条必须说出来：全成功不打扰，少一条就把 N/M 附在推送成功文案后面。
+    // 说清字幕的时序：选了条目就必然还没下，别让用户以为「推送时字幕已经拿好」。
     final String pushedMessage =
         subscribed ? t.download_subscription_created : t.anime_download_pushed;
-    _snack(staged.length < expectedSubs
-        ? '$pushedMessage · '
-            '${t.anime_download_subs_partial(done: staged.length, total: expectedSubs)}'
-        : pushedMessage);
+    _snack(subsEntry == null
+        ? pushedMessage
+        : '$pushedMessage · ${t.anime_download_subs_deferred}');
     // BUG-1006：embedded（下载页内联）没有对话框可关——无条件 pop 会把宿主
     // 路由（下载 tab 页/整个页面栈）弹掉。独立对话框才 pop；内联模式复位回
     // 搜番初始阶段并刷新任务区（对照 [_pushGeneric] 成功后的节奏）。
@@ -1828,35 +1800,44 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         ),
       );
     }
-    // 整季包：集号未经核对，可能配上错季字幕（见 [_subtitleEpisodesUnverified]）。
-    // 明说一句，别让用户以为「已确认配好」。
+    // 这份列表是**预览**（按种子标题猜的），不是最终会下的清单：真正配哪些
+    // 字幕要等种子 add 之后按包内真实文件名反查（BUG-1206）。所以恒显示一行
+    // 时序说明；整季包再叠一行「集号未核对」（PR#515 的不确定态表达仍然准确
+    // ——选种这一刻确实没核对，根治只保证错配不会真的落到磁盘上）。
     final NyaaTorrent? torrent = _selectedTorrent;
     final bool unverified =
         torrent != null && _subtitleEpisodesUnverified(torrent);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        _buildSubsHintRow(
+            theme, Icons.schedule, t.anime_download_subs_deferred),
         if (unverified)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Icon(Icons.help_outline,
-                    size: 16, color: theme.colorScheme.onSurfaceVariant),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    t.anime_download_subs_episodes_unverified,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          _buildSubsHintRow(theme, Icons.help_outline,
+              t.anime_download_subs_episodes_unverified),
         Expanded(child: _buildChosenSubsListView(theme)),
       ],
+    );
+  }
+
+  /// 字幕列表上方的说明行（时序 / 未核对共用同一排版）。
+  Widget _buildSubsHintRow(ThemeData theme, IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2041,6 +2022,20 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         (failed && (plan.failReason?.isNotEmpty ?? false))
             ? plan.failReason
             : null;
+    // 字幕的时序对用户是可见的（BUG-1206）：推送时不再预下字幕，所以必须在这里
+    // 说清「还没配」「没配上」，否则用户会以为字幕功能没了。
+    // resolved / none 不占行——前者字幕已经贴成 sidecar，后者用户压根没要字幕。
+    final (String, Color)? subtitleNote = switch (plan.subtitleStatus) {
+      AnimeDownloadPlan.subtitlePending => (
+          t.anime_download_subs_pending,
+          scheme.onSurfaceVariant
+        ),
+      AnimeDownloadPlan.subtitleUnavailable => (
+          t.anime_download_subs_unmatched,
+          scheme.tertiary
+        ),
+      _ => null,
+    };
     return HibikiListItem(
       density: HibikiListDensity.compact,
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -2065,6 +2060,14 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
               progressText,
               maxLines: 1,
               style: theme.textTheme.bodySmall,
+            ),
+          if (subtitleNote != null)
+            Text(
+              subtitleNote.$1,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style:
+                  theme.textTheme.bodySmall?.copyWith(color: subtitleNote.$2),
             ),
           if (failReason != null)
             Text(
