@@ -1,5 +1,6 @@
 import 'dart:async' show unawaited;
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -34,6 +35,48 @@ import 'package:hibiki/utils.dart';
 /// 分节渐进式（同 [JimakuSubtitleDialog] 的节奏）：三个阶段互斥展示（搜番结果 /
 /// 种子列表 / 确认推送），底部常驻「下载任务」折叠区列出既有计划。所有网络操作
 /// 容错降级为空结果 + 节内提示，不崩对话框。
+/// 集号输入框该有多宽：**按 label 的真实测量宽度算出**，而不是写死像素。
+///
+/// BUG-1184：这里先后写死过 72 和 96——`96` 那一版的注释就写着「72 在界面缩放 >1
+/// 时装不下 label」，也就是上一次的修法是在同一个错误里换一个更大的数字。可 label
+/// 本身是会变的：中文「集数（可选）」是 6 个全角字，英文 `Episode (optional)` 更长，
+/// 再乘上界面缩放与系统字号，96 照样装不下——用户截图里它就被裁成了「集数···」。
+/// 而且这跟屏幕宽窄无关，**任何窗口宽度下都裁**。
+///
+/// 所以宽度必须由 label 决定，而不是反过来指望 label 挤进某个常数：用 [TextPainter]
+/// 量出它在当前语言/字号/文字缩放下的实际宽度，再加上 [InputDecoration] 的水平内
+/// 边距和集号本身要占的输入宽度。
+///
+/// [rowWidth] 是整行的可用宽度。上限取它的四成——这个框右边还有搜索按钮、左边是
+/// 会被挤压的搜索词输入框，某些语言的超长译文不该把搜索词框挤没。上限同样不写死
+/// 像素：宽屏上四成足够放下任何译文，窄屏上才真正起到保护作用。[rowWidth] 为空或
+/// 无界时退回一个保守常数。
+double jimakuEpisodeFieldWidth(
+  BuildContext context,
+  String label, {
+  double? rowWidth,
+}) {
+  // label 未浮起时按 bodyLarge 渲染（浮起后缩到 75%），按较大的那个量才安全。
+  final TextStyle labelStyle =
+      Theme.of(context).textTheme.bodyLarge ?? const TextStyle(fontSize: 16);
+  final TextPainter painter = TextPainter(
+    text: TextSpan(text: label, style: labelStyle),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 1,
+  )..layout();
+  final double labelWidth = painter.width;
+  painter.dispose();
+  final double cap = (rowWidth != null && rowWidth.isFinite && rowWidth > 0)
+      ? math.max(96.0, rowWidth * 0.4)
+      : 260.0;
+  return (labelWidth + kJimakuEpisodeFieldChrome).clamp(96.0, cap);
+}
+
+/// [jimakuEpisodeFieldWidth] 里 label 之外要占掉的宽度：`isDense` 的
+/// [InputDecoration] 左右内边距各 12，再给集号本身留出约三位数字。
+const double kJimakuEpisodeFieldChrome = 24 + 28;
+
 /// 选种结果排序键（一律降序：多的/大的/新的在前）。
 enum TorrentSortKey { seeders, size, date }
 
@@ -1559,6 +1602,15 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   /// 集号 + 搜索按钮。自动搜不到或命中错版时，用户改词/填集号重搜 Jimaku
   /// （i18n 复用视频字幕对话框同款 key）。
   Widget _buildJimakuManualSearch(ThemeData theme) {
+    // BUG-1184：集号框宽度由 label 实测宽度决定，上限取整行宽的四成——所以需要
+    // 先拿到整行可用宽。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) =>
+          _buildJimakuManualSearchRow(theme, constraints.maxWidth),
+    );
+  }
+
+  Widget _buildJimakuManualSearchRow(ThemeData theme, double rowWidth) {
     final AniListMedia? media = _selectedMedia;
     final List<String> titleOptions =
         media == null ? const <String>[] : _titleOptions(media);
@@ -1599,8 +1651,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         ),
         const SizedBox(width: 8),
         SizedBox(
-          // 96：72 在界面缩放 >1 时装不下「集号」label，会截成「集…」。
-          width: 96,
+          width: jimakuEpisodeFieldWidth(
+            context,
+            t.video_jimaku_episode,
+            rowWidth: rowWidth,
+          ),
           child: TextField(
             controller: _jimakuEpisodeCtrl,
             keyboardType: TextInputType.number,

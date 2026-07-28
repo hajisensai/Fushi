@@ -20,7 +20,8 @@ import '../helpers/test_platform_services.dart';
 ///   代理提示 + 「去设置」（用户报告：站点被墙时切分类超时无从定位）。
 /// - 选种结果排序（做种数/体积/发布时间，一律降序）。
 /// - 手动字幕搜索词默认罗马字（与 Nyaa 查询词同口径），下拉可切日文原名。
-/// - 集号输入框宽度 96（72 在界面缩放 >1 时 label 截成「集…」）。
+/// - 集号输入框宽度必须放得下 label（BUG-1184：先后写死 72、96，都是在同一个错误
+///   里换更大的数字；label 随语言/字号/界面缩放变长，写死多少都会被裁）。
 
 const AniListMedia _kMedia = AniListMedia(
   id: 1,
@@ -227,7 +228,8 @@ void main() {
         findsOneWidget);
   });
 
-  testWidgets('确认阶段：字幕搜索词默认罗马字、下拉可切日文原名、集号框宽 96', (WidgetTester tester) async {
+  testWidgets('确认阶段：字幕搜索词默认罗马字、下拉可切日文原名、集号框放得下 label',
+      (WidgetTester tester) async {
     final _FakeAppModel appModel =
         _FakeAppModel((http.Request req) async => http.Response('', 404));
     await pumpDialog(tester, appModel, torrent: _kTorrent);
@@ -244,11 +246,45 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.widget<TextField>(queryField).controller!.text, 'テスト・アニメ');
 
-    // 集号输入框宽度 96（回归：72 在界面缩放 >1 时 label 截成「集…」）。
+    // BUG-1184：集号框宽度必须放得下 label，且**由 label 的实测宽度决定**。
+    //
+    // 这里原先断言的是「宽度恰好 96」——而 96 本身就是上一次补丁的产物（更早写死
+    // 72，注释写着「72 在界面缩放 >1 时 label 截成『集…』」）。同一个错误换个更大
+    // 的数字，label 一变长（中文「集数（可选）」、英文 `Episode (optional)`）照样
+    // 被裁，用户在 1920 宽的窗口上截到了「集数···」——跟屏幕宽窄根本无关。
+    // 现在断言的是「装得下」这个性质，而不是某个具体数字。
     final Finder episodeField = find.byWidgetPredicate((Widget w) =>
         w is TextField && w.decoration?.labelText == t.video_jimaku_episode);
     expect(episodeField, findsOneWidget);
-    expect(tester.getSize(episodeField).width, 96);
+
+    final TextPainter labelPainter = TextPainter(
+      text: TextSpan(
+        text: t.video_jimaku_episode,
+        style: Theme.of(tester.element(episodeField)).textTheme.bodyLarge,
+      ),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(tester.element(episodeField)),
+      maxLines: 1,
+    )..layout();
+    final double labelWidth = labelPainter.width;
+    labelPainter.dispose();
+
+    final double fieldWidth = tester.getSize(episodeField).width;
+    expect(
+      fieldWidth,
+      greaterThan(96.0),
+      reason: '不得退回写死的 96（更早是 72）——label 随语言/字号/界面缩放变长，'
+          '写死多少都会被裁（BUG-1184）',
+    );
+    expect(
+      fieldWidth,
+      greaterThanOrEqualTo(labelWidth),
+      reason: '框宽必须由 label 的实测宽度决定，至少放得下 label 本体',
+    );
+    // 注：本用例跑在对话框真实布局里，拿不到那一行的可用宽度，而宽度上限是行宽的
+    // 四成；加之测试字体（Ahem）每字符整字宽、把 label 量成真实字体的两倍多，所以
+    // 这里只能断言到「不是常数、装得下 label 本体」。「含内边距完整装下」这条性质
+    // 由 test/widgets/narrow_screen_overflow_test.dart 覆盖——那里可以自己给定行宽。
   });
 }
 
