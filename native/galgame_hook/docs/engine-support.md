@@ -19,7 +19,7 @@
 | `catsystem2` | CatSystem2 / KIF INT | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | catsystem2_unencrypted_kif_voice_resource (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `malie_libp` | Malie System / LIBP CFI | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | malie_libp_cfi_voice_resource (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `qlie_filepack` | QLIE / FilePack | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | qlie_wuvorbis_per_source_pcm (verified)；qlie_wuvorbis_float_per_source_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
-| `unity_il2cpp` | Unity IL2CPP | `verified` | luna_pc_hooks (verified)；unity_tmp_events (verified) | unity_audioclip_resource (verified)；xaudio2_source_voice_pcm (verified)；process_loopback (verified) | 1 |
+| `unity_il2cpp` | Unity IL2CPP | `verified` | luna_pc_hooks (verified)；unity_tmp_events (verified)；unity_legacy_text_events (implemented_unverified) | unity_audioclip_resource (verified)；xaudio2_source_voice_pcm (verified)；process_loopback (verified) | 1 |
 
 ## 识别与能力明细
 
@@ -498,15 +498,16 @@ Tests：`tests/qlie_pack_test.cpp`、`tests/adapter_structure_test.py`
 
 识别签名（所有非空项均带真实样本或运行时观察证据）：
 
-- `executable_names`：manosaba.exe；证据：real_sample — manosaba_game runtime recorded in hibiki-hook README
+- `executable_names`：manosaba.exe、Sasasa.exe；证据：real_sample — manosaba_game and 最悪なる災厄人間に捧ぐ runtime observations
 - `pe_architectures`：x64；证据：real_sample — manosaba_game Unity IL2CPP sample
-- `directory_files_all`：UnityPlayer.dll、GameAssembly.dll、*_Data/il2cpp_data/Metadata/global-metadata.dat；证据：real_sample — manosaba_game directory inspection recorded in hibiki-hook README
+- `directory_files_all`：UnityPlayer.dll、GameAssembly.dll、*/il2cpp_data/Metadata/global-metadata.dat；证据：real_sample — manosaba_game directory inspection recorded in hibiki-hook README
 - `runtime_modules`：UnityPlayer.dll、GameAssembly.dll；证据：runtime_observation — manosaba_game Unity IL2CPP sample
 
 文本能力：
 
 - `luna_pc_hooks`：`verified` — PC hooks are auto-enabled for the recorded Unity IL2CPP layout.
 - `unity_tmp_events`：`verified` — The baseline records TMP/text and AudioClip resource pairing on a real IL2CPP sample.
+- `unity_legacy_text_events`：`implemented_unverified` — Sasasa.exe was exercised through Hibiki launch/capture and produced complete Unity TextMesh lines; full offline gates were skipped by request.
 - codepage：utf-16 / managed strings
 - 线程提示：Prefer the stable TMP/Luna dialogue source; keep text active when audio falls back to loopback.
 
@@ -528,7 +529,7 @@ Tests：`tests/qlie_pack_test.cpp`、`tests/adapter_structure_test.py`
 
 Fixtures：尚无（P5 补齐）
 
-Tests：`tests/unity_event_cursor_test.cpp`、`tests/il2cpp_thread_scope_test.cpp`、`tests/resource_audio_ready_test.cpp`
+Tests：`tests/unity_event_cursor_test.cpp`、`tests/il2cpp_thread_scope_test.cpp`、`tests/resource_audio_ready_test.cpp`、`tests/adapter_structure_test.py`
 
 ## 状态定义
 

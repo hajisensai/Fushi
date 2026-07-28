@@ -90,6 +90,29 @@ foreach ($file in @(
 )) {
   Copy-Item -LiteralPath (Join-Path $releaseX64 $file) -Destination $stageX64 -Force
 }
+$unityAudioRuntimeFiles = @(
+  'unity_audio_runtime/hibiki_unity_audio_extract.exe',
+  'unity_audio_runtime/classdata.tpk',
+  'unity_audio_runtime/vgmstream-cli.exe',
+  'unity_audio_runtime/avcodec-vgmstream-59.dll',
+  'unity_audio_runtime/avformat-vgmstream-59.dll',
+  'unity_audio_runtime/avutil-vgmstream-57.dll',
+  'unity_audio_runtime/swresample-vgmstream-4.dll',
+  'unity_audio_runtime/libatrac9.dll',
+  'unity_audio_runtime/libcelt-0061.dll',
+  'unity_audio_runtime/libcelt-0110.dll',
+  'unity_audio_runtime/libg719_decode.dll',
+  'unity_audio_runtime/libmpg123-0.dll',
+  'unity_audio_runtime/libspeex-1.dll',
+  'unity_audio_runtime/libvorbis.dll',
+  'unity_audio_runtime/COPYING'
+)
+foreach ($file in $unityAudioRuntimeFiles) {
+  $destination = Join-Path $stageX64 $file
+  New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force |
+    Out-Null
+  Copy-Item -LiteralPath (Join-Path $releaseX64 $file) -Destination $destination -Force
+}
 foreach ($file in @(
   'hibiki_voice_injector.exe',
   'hibiki_voice_hook.dll',
@@ -129,12 +152,38 @@ Invoke-WebRequest `
   -OutFile (Join-Path $stageX86 'LocaleEmulator-LGPL-3.0.txt')
 
 $expected = @{
-  x64 = @('hibiki_voice_injector.exe', 'hibiki_voice_hook.dll', 'LunaHook64.dll', 'LunaHost64.dll')
+  x64 = @(
+    'hibiki_voice_injector.exe',
+    'hibiki_voice_hook.dll',
+    'LunaHook64.dll',
+    'LunaHost64.dll',
+    'unity_audio_runtime/hibiki_unity_audio_extract.exe',
+    'unity_audio_runtime/classdata.tpk',
+    'unity_audio_runtime/vgmstream-cli.exe',
+    'unity_audio_runtime/avcodec-vgmstream-59.dll',
+    'unity_audio_runtime/avformat-vgmstream-59.dll',
+    'unity_audio_runtime/avutil-vgmstream-57.dll',
+    'unity_audio_runtime/swresample-vgmstream-4.dll',
+    'unity_audio_runtime/libatrac9.dll',
+    'unity_audio_runtime/libcelt-0061.dll',
+    'unity_audio_runtime/libcelt-0110.dll',
+    'unity_audio_runtime/libg719_decode.dll',
+    'unity_audio_runtime/libmpg123-0.dll',
+    'unity_audio_runtime/libspeex-1.dll',
+    'unity_audio_runtime/libvorbis.dll',
+    'unity_audio_runtime/COPYING'
+  )
   x86 = @('hibiki_voice_injector.exe', 'hibiki_voice_hook.dll', 'LunaHook32.dll', 'LunaHost32.dll', 'LoaderDll.dll', 'LocaleEmulator.dll', 'LocaleEmulator-LGPL-3.0.txt')
 }
 foreach ($arch in @('x64', 'x86')) {
   $stage = Join-Path $outputRoot $arch
-  $actual = @(Get-ChildItem -LiteralPath $stage -File | ForEach-Object Name | Sort-Object)
+  $actual = @(
+    Get-ChildItem -LiteralPath $stage -File -Recurse |
+      ForEach-Object {
+        [IO.Path]::GetRelativePath($stage, $_.FullName).Replace('\', '/')
+      } |
+      Sort-Object
+  )
   $wanted = @($expected[$arch] | Sort-Object)
   if (Compare-Object $wanted $actual) {
     throw "arch $arch staged files differ: $($actual -join ', ')"

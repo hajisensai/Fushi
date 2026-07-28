@@ -168,6 +168,9 @@ void main() {
             'hibiki_voice_hook.dll',
             'LunaHook64.dll',
             'LunaHost64.dll',
+            'unity_audio_runtime/hibiki_unity_audio_extract.exe',
+            'unity_audio_runtime/classdata.tpk',
+            'unity_audio_runtime/vgmstream-cli.exe',
           ]));
       expect(required, isNot(contains('LoaderDll.dll')));
       expect(required, isNot(contains('LocaleEmulator.dll')));
@@ -377,9 +380,11 @@ void main() {
         galgameHelperMissingFiles(
           'x64',
           installed
-              .listSync(followLinks: false)
+              .listSync(recursive: true, followLinks: false)
               .whereType<File>()
-              .map((File file) => p.basename(file.path)),
+              .map((File file) => p
+                  .relative(file.path, from: installed.path)
+                  .replaceAll('\\', '/')),
         ),
         isEmpty,
       );

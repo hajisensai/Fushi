@@ -125,6 +125,21 @@ List<String> galgameHelperRequiredFiles(String arch) {
         'hibiki_voice_hook.dll',
         'LunaHook64.dll',
         'LunaHost64.dll',
+        'unity_audio_runtime/hibiki_unity_audio_extract.exe',
+        'unity_audio_runtime/classdata.tpk',
+        'unity_audio_runtime/vgmstream-cli.exe',
+        'unity_audio_runtime/avcodec-vgmstream-59.dll',
+        'unity_audio_runtime/avformat-vgmstream-59.dll',
+        'unity_audio_runtime/avutil-vgmstream-57.dll',
+        'unity_audio_runtime/swresample-vgmstream-4.dll',
+        'unity_audio_runtime/libatrac9.dll',
+        'unity_audio_runtime/libcelt-0061.dll',
+        'unity_audio_runtime/libcelt-0110.dll',
+        'unity_audio_runtime/libg719_decode.dll',
+        'unity_audio_runtime/libmpg123-0.dll',
+        'unity_audio_runtime/libspeex-1.dll',
+        'unity_audio_runtime/libvorbis.dll',
+        'unity_audio_runtime/COPYING',
       ];
     default:
       throw ArgumentError.value(arch, 'arch', 'unsupported helper arch');
@@ -137,9 +152,12 @@ List<String> galgameHelperMissingFiles(
   Iterable<String> presentFiles,
 ) {
   final Set<String> present =
-      presentFiles.map((String name) => name.toLowerCase()).toSet();
+      presentFiles
+          .map((String name) => name.replaceAll('\\', '/').toLowerCase())
+          .toSet();
   return galgameHelperRequiredFiles(arch)
-      .where((String name) => !present.contains(name.toLowerCase()))
+      .where((String name) =>
+          !present.contains(name.replaceAll('\\', '/').toLowerCase()))
       .toList(growable: false);
 }
 
@@ -490,9 +508,10 @@ class GalgameHelperInstaller {
       return galgameHelperRequiredFiles(arch);
     }
     final Iterable<String> present = dir
-        .listSync(followLinks: false)
+        .listSync(recursive: true, followLinks: false)
         .whereType<File>()
-        .map((File file) => p.basename(file.path));
+        .map((File file) =>
+            p.relative(file.path, from: dir.path).replaceAll('\\', '/'));
     return galgameHelperMissingFiles(arch, present);
   }
 
@@ -855,9 +874,9 @@ class GalgameHelperInstaller {
     final Directory staging =
         await Directory.systemTemp.createTemp('hibiki_voice_hook_staging_');
     try {
-      final Set<String> extractedRootFiles = await _extractZip(zip, staging);
+      final Set<String> extractedFiles = await _extractZip(zip, staging);
       final List<String> missingFromPackage =
-          galgameHelperMissingFiles(arch, extractedRootFiles);
+          galgameHelperMissingFiles(arch, extractedFiles);
       if (missingFromPackage.isNotEmpty) {
         // 摘要对得上但清单不全 = 发布包本身有问题（不是投毒）。仍然不换入。
         throw GalgameHelperInstallException(
@@ -1112,7 +1131,7 @@ class GalgameHelperInstaller {
     final Uint8List bytes = await zip.readAsBytes();
     final Archive archive = ZipDecoder().decodeBytes(bytes);
     final String targetRoot = p.normalize(targetDir.absolute.path);
-    final Set<String> extractedRootFiles = <String>{};
+    final Set<String> extractedFiles = <String>{};
     for (final ArchiveFile entry in archive) {
       if (!entry.isFile) continue;
       final String relativePath =
@@ -1134,11 +1153,9 @@ class GalgameHelperInstaller {
       final File out = File(outputPath);
       await out.parent.create(recursive: true);
       await out.writeAsBytes(content, flush: true);
-      if (p.dirname(relativePath) == '.') {
-        extractedRootFiles.add(p.basename(relativePath));
-      }
+      extractedFiles.add(relativePath.replaceAll('\\', '/'));
     }
-    return extractedRootFiles;
+    return extractedFiles;
   }
 }
 

@@ -7,7 +7,8 @@ namespace Hibiki.UnityAudioExtract;
 internal static class Program
 {
     private sealed record Options(
-        string Bundle,
+        string? Bundle,
+        string? DataDirectory,
         string Clip,
         string Output,
         string ClassData,
@@ -55,7 +56,8 @@ internal static class Program
             if (!args[i].StartsWith("--", StringComparison.Ordinal) || i + 1 >= args.Length)
             {
                 throw new ArgumentException(
-                    "usage: --bundle <path> --clip <name> --output <wav> " +
+                    "usage: (--bundle <path> | --data-dir <path>) " +
+                    "--clip <name> --output <wav> " +
                     "--classdata <classdata.tpk> --decoder <vgmstream-cli.exe>");
             }
             values[args[i][2..]] = args[++i];
@@ -75,19 +77,51 @@ internal static class Program
         {
             throw new ArgumentException("missing --clip");
         }
+        string? bundle = values.TryGetValue("bundle", out string? bundlePath) &&
+                         !string.IsNullOrWhiteSpace(bundlePath)
+            ? Path.GetFullPath(bundlePath)
+            : null;
+        string? dataDirectory =
+            values.TryGetValue("data-dir", out string? dataPath) &&
+            !string.IsNullOrWhiteSpace(dataPath)
+                ? Path.GetFullPath(dataPath)
+                : null;
+        if ((bundle is null) == (dataDirectory is null))
+        {
+            throw new ArgumentException(
+                "exactly one of --bundle or --data-dir is required");
+        }
         return new Options(
-            Required("bundle"), clip, Required("output"),
+            bundle, dataDirectory, clip, Required("output"),
             Required("classdata"), Required("decoder"));
     }
 
     private static void ExtractRawClip(Options options, string rawPath)
     {
-        if (!File.Exists(options.Bundle)) throw new FileNotFoundException("bundle not found", options.Bundle);
         if (!File.Exists(options.ClassData)) throw new FileNotFoundException("classdata.tpk not found", options.ClassData);
 
         var manager = new AssetsManager();
         manager.LoadClassPackage(options.ClassData);
-        BundleFileInstance bundle = manager.LoadBundleFile(options.Bundle, unpackIfPacked: true);
+        if (options.Bundle is not null)
+        {
+            ExtractFromBundle(manager, options.Bundle, options.Clip, rawPath);
+        }
+        else
+        {
+            ExtractFromLooseAssets(
+                manager, options.DataDirectory!, options.Clip, rawPath);
+        }
+    }
+
+    private static void ExtractFromBundle(
+        AssetsManager manager, string bundlePath, string clip, string rawPath)
+    {
+        if (!File.Exists(bundlePath))
+        {
+            throw new FileNotFoundException("bundle not found", bundlePath);
+        }
+        BundleFileInstance bundle =
+            manager.LoadBundleFile(bundlePath, unpackIfPacked: true);
         try
         {
             int directoryCount = bundle.file.BlockAndDirInfo.DirectoryInfos.Count;
@@ -100,7 +134,7 @@ internal static class Program
                 foreach (AssetFileInfo info in assets.file.GetAssetsOfType(AssetClassID.AudioClip))
                 {
                     AssetTypeValueField field = manager.GetBaseField(assets, info);
-                    if (!string.Equals(field["m_Name"].AsString, options.Clip,
+                    if (!string.Equals(field["m_Name"].AsString, clip,
                                        StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
@@ -143,7 +177,102 @@ internal static class Program
             manager.UnloadAll();
         }
         throw new KeyNotFoundException(
-            $"AudioClip '{options.Clip}' was not found in '{options.Bundle}'");
+            $"AudioClip '{clip}' was not found in '{bundlePath}'");
+    }
+
+    private static void ExtractFromLooseAssets(
+        AssetsManager manager, string dataDirectory, string clip,
+        string rawPath)
+    {
+        if (!Directory.Exists(dataDirectory))
+        {
+            throw new DirectoryNotFoundException(
+                $"Unity data directory not found: {dataDirectory}");
+        }
+        var candidates = new List<string>
+        {
+            Path.Combine(dataDirectory, "resources.assets"),
+            Path.Combine(dataDirectory, "globalgamemanagers"),
+            Path.Combine(dataDirectory, "globalgamemanagers.assets"),
+        };
+        candidates.AddRange(
+            Directory.EnumerateFiles(
+                dataDirectory, "sharedassets*.assets",
+                SearchOption.TopDirectoryOnly));
+
+        try
+        {
+            foreach (string assetsPath in candidates.Distinct(
+                         StringComparer.OrdinalIgnoreCase))
+            {
+                if (!File.Exists(assetsPath)) continue;
+                AssetsFileInstance assets;
+                try
+                {
+                    assets = manager.LoadAssetsFile(
+                        assetsPath, loadDeps: false);
+                    manager.LoadClassDatabaseFromPackage(
+                        assets.file.Metadata.UnityVersion);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                foreach (AssetFileInfo info in
+                         assets.file.GetAssetsOfType(AssetClassID.AudioClip))
+                {
+                    AssetTypeValueField field =
+                        manager.GetBaseField(assets, info);
+                    if (!string.Equals(
+                            field["m_Name"].AsString, clip,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                    AssetTypeValueField resource = field["m_Resource"];
+                    string source = resource["m_Source"].AsString;
+                    long offset = resource["m_Offset"].AsLong;
+                    long size = resource["m_Size"].AsLong;
+                    if (size <= 0 || size > int.MaxValue)
+                    {
+                        throw new InvalidDataException(
+                            $"invalid AudioClip resource size {size}");
+                    }
+                    string resourceName =
+                        Path.GetFileName(source.Replace('\\', '/'));
+                    string resourcePath =
+                        Path.Combine(dataDirectory, resourceName);
+                    if (!File.Exists(resourcePath))
+                    {
+                        throw new FileNotFoundException(
+                            $"AudioClip resource '{resourceName}' not found",
+                            resourcePath);
+                    }
+                    using var stream = File.Open(
+                        resourcePath, FileMode.Open, FileAccess.Read,
+                        FileShare.ReadWrite);
+                    if (offset < 0 || offset + size > stream.Length)
+                    {
+                        throw new InvalidDataException(
+                            $"AudioClip range {offset}+{size} exceeds " +
+                            $"'{resourceName}'");
+                    }
+                    stream.Position = offset;
+                    byte[] bytes = new byte[(int)size];
+                    stream.ReadExactly(bytes);
+                    File.WriteAllBytes(rawPath, bytes);
+                    return;
+                }
+            }
+        }
+        finally
+        {
+            manager.UnloadAll();
+        }
+        throw new KeyNotFoundException(
+            $"AudioClip '{clip}' was not found in loose assets under " +
+            $"'{dataDirectory}'");
     }
 
     private static void Decode(string decoder, string rawPath, string outputPath)
