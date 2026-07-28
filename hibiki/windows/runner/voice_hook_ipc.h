@@ -55,6 +55,14 @@ constexpr uint32_t kDiagVisualArtsOvkCaptured = 0x00080000u;
 constexpr uint32_t kDiagKirikiriVoiceStreamHookReady = 0x00020000u;
 constexpr uint32_t kDiagKirikiriVoiceStreamDumped = 0x00080000u;
 constexpr uint32_t kDiagSiglusOvkHooksReady = 0x10000000u;
+// reserved_hook_diagnostics: Unity legacy-text installation trace.
+constexpr uint32_t kDiagUnityTextScanReady = 0x00000400u;
+constexpr uint32_t kDiagUnityUiTextClassFound = 0x00000800u;
+constexpr uint32_t kDiagUnityUiTextMethodFound = 0x00001000u;
+constexpr uint32_t kDiagUnityUiTextHookReady = 0x00002000u;
+constexpr uint32_t kDiagUnityTextMeshClassFound = 0x00004000u;
+constexpr uint32_t kDiagUnityTextMeshMethodFound = 0x00008000u;
+constexpr uint32_t kDiagUnityTextMeshHookReady = 0x00010000u;
 
 inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
                                                 uint32_t hook_diagnostics) {

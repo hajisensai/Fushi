@@ -1240,10 +1240,10 @@
       "family": {"id": "unity", "relation": "IL2CPP runtime"},
       "detection": {
         "executable_names": {
-          "values": ["manosaba.exe"],
+          "values": ["manosaba.exe", "Sasasa.exe"],
           "evidence": {
             "kind": "real_sample",
-            "reference": "manosaba_game runtime recorded in hibiki-hook README"
+            "reference": "manosaba_game and 最悪なる災厄人間に捧ぐ runtime observations"
           }
         },
         "pe_architectures": {
@@ -1257,7 +1257,7 @@
           "values": [
             "UnityPlayer.dll",
             "GameAssembly.dll",
-            "*_Data/il2cpp_data/Metadata/global-metadata.dat"
+            "*/il2cpp_data/Metadata/global-metadata.dat"
           ],
           "evidence": {
             "kind": "real_sample",
@@ -1294,6 +1294,11 @@
             "kind": "unity_tmp_events",
             "status": "verified",
             "verification": "The baseline records TMP/text and AudioClip resource pairing on a real IL2CPP sample."
+          },
+          {
+            "kind": "unity_legacy_text_events",
+            "status": "implemented_unverified",
+            "verification": "Sasasa.exe was exercised through Hibiki launch/capture and produced complete Unity TextMesh lines; full offline gates were skipped by request."
           }
         ],
         "codepage": "utf-16 / managed strings",
@@ -1342,7 +1347,8 @@
       "test_paths": [
         "tests/unity_event_cursor_test.cpp",
         "tests/il2cpp_thread_scope_test.cpp",
-        "tests/resource_audio_ready_test.cpp"
+        "tests/resource_audio_ready_test.cpp",
+        "tests/adapter_structure_test.py"
       ]
     }
   ]

@@ -83,8 +83,15 @@ using UnityTmpSetText = void (*)(void*, void*, const void*);
 UnityTmpSetText g_orig_UnityTmpSetText = nullptr;
 using UnityTmpSetText2 = void (*)(void*, void*, bool, const void*);
 UnityTmpSetText2 g_orig_UnityTmpSetText2 = nullptr;
+using UnityUiTextSetText = void (*)(void*, void*, const void*);
+UnityUiTextSetText g_orig_UnityUiTextSetText = nullptr;
+using UnityTextMeshSetText = void (*)(void*, void*, const void*);
+UnityTextMeshSetText g_orig_UnityTextMeshSetText = nullptr;
 using NaninovelRevealableSetText = void (*)(void*, void*, const void*);
 NaninovelRevealableSetText g_orig_NaninovelRevealableSetText = nullptr;
+wchar_t g_unity_text_mesh_line[501] = {0};
+int g_unity_text_mesh_line_length = 0;
+ULONGLONG g_unity_text_mesh_last_tick = 0;
 
 int InvokeUnityInt(const void* method, void* instance) {
   if (method == nullptr || instance == nullptr ||
@@ -131,41 +138,13 @@ bool CopyUnityClipName(void* clip, wchar_t* out, size_t out_chars) {
   return true;
 }
 
-void RecordUnityTmpText(void* text_component, void* string_object,
-                        const char* hook_name, const wchar_t* hook_code) {
+void RecordUnityTextBuffer(void* text_component, const wchar_t* clean,
+                           int length, const char* hook_name,
+                           const wchar_t* hook_code) {
   if (!g_capture_enabled || g_header == nullptr || g_text_base == nullptr ||
-      text_component == nullptr || string_object == nullptr ||
-      g_il2cpp_string_chars == nullptr || g_il2cpp_string_length == nullptr) {
+      text_component == nullptr || clean == nullptr || length <= 0) {
     return;
   }
-  const wchar_t* chars = g_il2cpp_string_chars(string_object);
-  const int source_length = g_il2cpp_string_length(string_object);
-  if (chars == nullptr || source_length <= 0) return;
-
-  // TMP 富文本标签不显示为正文；移除 <...> 后保存用户实际看到的文本。保留换行与标点，
-  // 由 component 指针充当线程 id，让 UI 像 Luna 一样选择“正文 TextMeshPro 组件”。
-  wchar_t clean[501] = {0};
-  int length = 0;
-  bool in_tag = false;
-  bool has_cjk = false;
-  int meaningful = 0;
-  for (int i = 0; i < source_length && length < 500; ++i) {
-    const wchar_t c = chars[i];
-    if (c == L'<') {
-      in_tag = true;
-      continue;
-    }
-    if (in_tag) {
-      if (c == L'>') in_tag = false;
-      continue;
-    }
-    clean[length++] = c;
-    if (c != L' ' && c != L'\t' && c != L'\r' && c != L'\n' && c >= 0x20) {
-      ++meaningful;
-      if (c >= 0x3000) has_cjk = true;
-    }
-  }
-  if (length == 0 || meaningful == 0 || (!has_cjk && meaningful < 2)) return;
 
   const LONGLONG reserved = InterlockedIncrement64(
       reinterpret_cast<volatile LONGLONG*>(&g_header->text_write_count));
@@ -205,6 +184,82 @@ void RecordUnityTmpText(void* text_component, void* string_object,
   MemoryBarrier();
   text_slot->seq = static_cast<uint64_t>(reserved);
   g_header->text_hooked = 1;
+}
+
+void RecordUnityTmpText(void* text_component, void* string_object,
+                        const char* hook_name, const wchar_t* hook_code) {
+  if (string_object == nullptr || g_il2cpp_string_chars == nullptr ||
+      g_il2cpp_string_length == nullptr) {
+    return;
+  }
+  const wchar_t* chars = g_il2cpp_string_chars(string_object);
+  const int source_length = g_il2cpp_string_length(string_object);
+  if (chars == nullptr || source_length <= 0) return;
+
+  // TMP 富文本标签不显示为正文；移除 <...> 后保存用户实际看到的文本。保留换行与标点，
+  // 由 component 指针充当线程 id，让 UI 像 Luna 一样选择“正文 TextMeshPro 组件”。
+  wchar_t clean[501] = {0};
+  int length = 0;
+  bool in_tag = false;
+  bool has_cjk = false;
+  int meaningful = 0;
+  for (int i = 0; i < source_length && length < 500; ++i) {
+    const wchar_t c = chars[i];
+    if (c == L'<') {
+      in_tag = true;
+      continue;
+    }
+    if (in_tag) {
+      if (c == L'>') in_tag = false;
+      continue;
+    }
+    clean[length++] = c;
+    if (c != L' ' && c != L'\t' && c != L'\r' && c != L'\n' &&
+        c != L'\u3000' && c >= 0x20) {
+      ++meaningful;
+      if (c >= 0x3000) has_cjk = true;
+    }
+  }
+  if (length == 0 || meaningful == 0 || (!has_cjk && meaningful < 2)) return;
+  RecordUnityTextBuffer(text_component, clean, length, hook_name, hook_code);
+}
+
+void FlushUnityTextMeshLine() {
+  if (g_unity_text_mesh_line_length <= 0) return;
+  RecordUnityTextBuffer(
+      static_cast<void*>(g_unity_text_mesh_line), g_unity_text_mesh_line,
+      g_unity_text_mesh_line_length, "Unity TextMesh line",
+      L"UnityEngine.TextMesh.set_text(glyphs)");
+  memset(g_unity_text_mesh_line, 0, sizeof(g_unity_text_mesh_line));
+  g_unity_text_mesh_line_length = 0;
+}
+
+void RecordUnityTextMesh(void* string_object) {
+  if (g_il2cpp_string_chars == nullptr || g_il2cpp_string_length == nullptr) {
+    return;
+  }
+  const wchar_t* chars =
+      string_object == nullptr ? nullptr : g_il2cpp_string_chars(string_object);
+  const int source_length =
+      string_object == nullptr ? 0 : g_il2cpp_string_length(string_object);
+  const ULONGLONG now = GetTickCount64();
+  if (g_cs_ready) EnterCriticalSection(&g_cs);
+  if (g_unity_text_mesh_line_length > 0 &&
+      now - g_unity_text_mesh_last_tick > 250) {
+    FlushUnityTextMeshLine();
+  }
+  for (int i = 0; chars != nullptr && i < source_length; ++i) {
+    const wchar_t c = chars[i];
+    if (c == L'\u3000' || c == L'\r' || c == L'\n') {
+      FlushUnityTextMeshLine();
+      continue;
+    }
+    if (c < 0x20 || g_unity_text_mesh_line_length >= 500) continue;
+    g_unity_text_mesh_line[g_unity_text_mesh_line_length++] = c;
+  }
+  if (source_length == 0) FlushUnityTextMeshLine();
+  g_unity_text_mesh_last_tick = now;
+  if (g_cs_ready) LeaveCriticalSection(&g_cs);
 }
 
 void RecordUnityVoiceResourceEvent(void* clip, uint64_t timestamp_ms) {
@@ -418,6 +473,18 @@ void Detour_UnityTmpSetText2(void* self, void* text, bool sync_input_box,
                      L"TMPro.TMP_Text.SetText(string,bool)");
 }
 
+void Detour_UnityUiTextSetText(void* self, void* text, const void* method) {
+  g_orig_UnityUiTextSetText(self, text, method);
+  RecordUnityTmpText(self, text, "Unity UI.Text",
+                     L"UnityEngine.UI.Text.set_text");
+}
+
+void Detour_UnityTextMeshSetText(void* self, void* text,
+                                 const void* method) {
+  g_orig_UnityTextMeshSetText(self, text, method);
+  RecordUnityTextMesh(text);
+}
+
 void Detour_NaninovelRevealableSetText(void* self, void* text,
                                        const void* method) {
   g_orig_NaninovelRevealableSetText(self, text, method);
@@ -480,6 +547,8 @@ bool TryHookUnityIl2CppAudio() {
   const bool text_ready =
       (g_orig_UnityTmpSetText != nullptr &&
        g_orig_UnityTmpSetText2 != nullptr) ||
+      g_orig_UnityUiTextSetText != nullptr ||
+      g_orig_UnityTextMeshSetText != nullptr ||
       g_orig_NaninovelRevealableSetText != nullptr;
   if (audio_ready && text_ready) {
     return true;
@@ -532,9 +601,7 @@ bool TryHookUnityIl2CppAudio() {
       GetProcAddress(game, "il2cpp_thread_detach"));
   if (domain_get == nullptr || domain_get_assemblies == nullptr ||
       assembly_get_image == nullptr || class_from_name == nullptr ||
-      class_get_method == nullptr || get_corlib == nullptr ||
-      g_il2cpp_runtime_invoke == nullptr || g_il2cpp_array_new == nullptr ||
-      g_il2cpp_object_unbox == nullptr || g_il2cpp_string_chars == nullptr ||
+      g_il2cpp_string_chars == nullptr ||
       g_il2cpp_string_length == nullptr ||
       g_il2cpp_class_get_methods == nullptr ||
       g_il2cpp_method_get_name == nullptr ||
@@ -548,6 +615,8 @@ bool TryHookUnityIl2CppAudio() {
   void* clip_class = nullptr;
   void* object_class = nullptr;
   void* tmp_text_class = nullptr;
+  void* ui_text_class = nullptr;
+  void* text_mesh_class = nullptr;
   void* naninovel_revealable_text_class = nullptr;
   size_t assembly_count = 0;
   const void** assemblies = domain_get_assemblies(domain_get(), &assembly_count);
@@ -566,15 +635,116 @@ bool TryHookUnityIl2CppAudio() {
     if (tmp_text_class == nullptr) {
       tmp_text_class = class_from_name(image, "TMPro", "TMP_Text");
     }
+    if (ui_text_class == nullptr) {
+      ui_text_class = class_from_name(image, "UnityEngine.UI", "Text");
+    }
+    if (text_mesh_class == nullptr) {
+      text_mesh_class = class_from_name(image, "UnityEngine", "TextMesh");
+    }
     if (naninovel_revealable_text_class == nullptr) {
       naninovel_revealable_text_class =
           class_from_name(image, "Naninovel.UI", "RevealableText");
     }
   }
-  const void* corlib = get_corlib();
+  if (g_header != nullptr) {
+    g_header->reserved_hook_diagnostics |=
+        hibiki_voice_hook::kDiagUnityTextScanReady;
+    if (ui_text_class != nullptr) {
+      g_header->reserved_hook_diagnostics |=
+          hibiki_voice_hook::kDiagUnityUiTextClassFound;
+    }
+    if (text_mesh_class != nullptr) {
+      g_header->reserved_hook_diagnostics |=
+          hibiki_voice_hook::kDiagUnityTextMeshClassFound;
+    }
+  }
+
+  bool tmp_text_ready = false;
+  if (tmp_text_class != nullptr) {
+    const char* property_params[] = {"System.String"};
+    const char* method_params[] = {"System.String", "System.Boolean"};
+    const void* set_text = FindIl2CppMethod(
+        tmp_text_class, "set_text", property_params, 1);
+    const void* set_text_2 = FindIl2CppMethod(
+        tmp_text_class, "SetText", method_params, 2);
+    const bool property_ready = HookFn(
+        Il2CppMethodPointer(set_text),
+        reinterpret_cast<void*>(&Detour_UnityTmpSetText),
+        reinterpret_cast<void**>(&g_orig_UnityTmpSetText));
+    const bool method_ready = HookFn(
+        Il2CppMethodPointer(set_text_2),
+        reinterpret_cast<void*>(&Detour_UnityTmpSetText2),
+        reinterpret_cast<void**>(&g_orig_UnityTmpSetText2));
+    tmp_text_ready = property_ready && method_ready;
+  }
+  bool ui_text_ready = false;
+  if (ui_text_class != nullptr) {
+    const char* text_params[] = {"System.String"};
+    const void* set_text =
+        FindIl2CppMethod(ui_text_class, "set_text", text_params, 1);
+    if (set_text != nullptr && g_header != nullptr) {
+      g_header->reserved_hook_diagnostics |=
+          hibiki_voice_hook::kDiagUnityUiTextMethodFound;
+    }
+    ui_text_ready = HookFn(
+        Il2CppMethodPointer(set_text),
+        reinterpret_cast<void*>(&Detour_UnityUiTextSetText),
+        reinterpret_cast<void**>(&g_orig_UnityUiTextSetText));
+    if (ui_text_ready && g_header != nullptr) {
+      g_header->reserved_hook_diagnostics |=
+          hibiki_voice_hook::kDiagUnityUiTextHookReady;
+    }
+  }
+  bool text_mesh_ready = false;
+  if (text_mesh_class != nullptr) {
+    const char* text_params[] = {"System.String"};
+    const void* set_text =
+        FindIl2CppMethod(text_mesh_class, "set_text", text_params, 1);
+    if (set_text != nullptr && g_header != nullptr) {
+      g_header->reserved_hook_diagnostics |=
+          hibiki_voice_hook::kDiagUnityTextMeshMethodFound;
+    }
+    text_mesh_ready = HookFn(
+        Il2CppMethodPointer(set_text),
+        reinterpret_cast<void*>(&Detour_UnityTextMeshSetText),
+        reinterpret_cast<void**>(&g_orig_UnityTextMeshSetText));
+    if (text_mesh_ready && g_header != nullptr) {
+      g_header->reserved_hook_diagnostics |=
+          hibiki_voice_hook::kDiagUnityTextMeshHookReady;
+    }
+  }
+  bool naninovel_text_ready = false;
+  if (naninovel_revealable_text_class != nullptr) {
+    const char* text_params[] = {"System.String"};
+    const void* set_text = FindIl2CppMethod(
+        naninovel_revealable_text_class, "set_Text", text_params, 1);
+    naninovel_text_ready = HookFn(
+        Il2CppMethodPointer(set_text),
+        reinterpret_cast<void*>(&Detour_NaninovelRevealableSetText),
+        reinterpret_cast<void**>(&g_orig_NaninovelRevealableSetText));
+  }
+  const bool text_hooks_ready =
+      tmp_text_ready || ui_text_ready || text_mesh_ready ||
+      naninovel_text_ready;
+  if (tmp_text_ready && g_header != nullptr) {
+    g_header->hook_diagnostics |= kDiagUnityTmpTextHooksReady;
+  }
+  if (naninovel_text_ready && g_header != nullptr) {
+    g_header->hook_diagnostics |= kDiagUnityNaninovelTextHookReady;
+  }
+
+  // Text capture is independent from AudioClip resource extraction. Older
+  // Unity/IL2CPP games may expose UI.Text while omitting one of the managed
+  // audio helpers below; keep their dialogue hook and let audio use loopback.
+  const void* corlib = get_corlib == nullptr ? nullptr : get_corlib();
   g_system_single_class =
       corlib == nullptr ? nullptr
                         : class_from_name(corlib, "System", "Single");
+  if (class_get_method == nullptr || get_corlib == nullptr ||
+      g_il2cpp_runtime_invoke == nullptr || g_il2cpp_array_new == nullptr ||
+      g_il2cpp_object_unbox == nullptr) {
+    return false;
+  }
   if (source_class == nullptr || clip_class == nullptr || object_class == nullptr ||
       g_system_single_class == nullptr) {
     return false;
@@ -597,7 +767,7 @@ bool TryHookUnityIl2CppAudio() {
     return false;
   }
 
-  bool any = false;
+  bool any = audio_ready;
   const void* play = class_get_method(source_class, "Play", 0);
   const void* one_shot_1 = class_get_method(source_class, "PlayOneShot", 1);
   const void* one_shot_2 = class_get_method(source_class, "PlayOneShot", 2);
@@ -641,42 +811,8 @@ bool TryHookUnityIl2CppAudio() {
       Il2CppMethodPointer(play_delayed_helper),
       reinterpret_cast<void*>(&Detour_UnityAudioSourcePlayDelayedHelper),
       reinterpret_cast<void**>(&g_orig_UnityAudioSourcePlayDelayedHelper));
-  bool tmp_text_ready = false;
-  if (tmp_text_class != nullptr) {
-    const char* property_params[] = {"System.String"};
-    const char* method_params[] = {"System.String", "System.Boolean"};
-    const void* set_text = FindIl2CppMethod(
-        tmp_text_class, "set_text", property_params, 1);
-    const void* set_text_2 = FindIl2CppMethod(
-        tmp_text_class, "SetText", method_params, 2);
-    const bool property_ready = HookFn(
-        Il2CppMethodPointer(set_text),
-        reinterpret_cast<void*>(&Detour_UnityTmpSetText),
-        reinterpret_cast<void**>(&g_orig_UnityTmpSetText));
-    const bool method_ready = HookFn(
-        Il2CppMethodPointer(set_text_2),
-        reinterpret_cast<void*>(&Detour_UnityTmpSetText2),
-        reinterpret_cast<void**>(&g_orig_UnityTmpSetText2));
-    tmp_text_ready = property_ready && method_ready;
-  }
-  bool naninovel_text_ready = false;
-  if (naninovel_revealable_text_class != nullptr) {
-    const char* text_params[] = {"System.String"};
-    const void* set_text = FindIl2CppMethod(
-        naninovel_revealable_text_class, "set_Text", text_params, 1);
-    naninovel_text_ready = HookFn(
-        Il2CppMethodPointer(set_text),
-        reinterpret_cast<void*>(&Detour_NaninovelRevealableSetText),
-        reinterpret_cast<void**>(&g_orig_NaninovelRevealableSetText));
-  }
   if (any && g_header != nullptr) {
     g_header->hook_diagnostics |= kDiagUnityIl2CppHooksReady;
   }
-  if (tmp_text_ready && g_header != nullptr) {
-    g_header->hook_diagnostics |= kDiagUnityTmpTextHooksReady;
-  }
-  if (naninovel_text_ready && g_header != nullptr) {
-    g_header->hook_diagnostics |= kDiagUnityNaninovelTextHookReady;
-  }
-  return any && (tmp_text_ready || naninovel_text_ready);
+  return any && text_hooks_ready;
 }

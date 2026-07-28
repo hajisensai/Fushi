@@ -51,6 +51,45 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("DispatchNewModules();", source)
         self.assertIn("onModuleLoaded(entry.szModule);", source)
 
+    def test_unity_text_adapter_supports_legacy_ui_text(self) -> None:
+        source = (
+            ROOT / "hook" / "adapters" / "unity_adapter.inc"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'class_from_name(image, "UnityEngine.UI", "Text")', source
+        )
+        self.assertIn(
+            'FindIl2CppMethod(ui_text_class, "set_text", text_params, 1)',
+            source,
+        )
+        self.assertIn("Detour_UnityUiTextSetText", source)
+        self.assertIn('L"UnityEngine.UI.Text.set_text"', source)
+        self.assertIn(
+            "tmp_text_ready || ui_text_ready || text_mesh_ready ||",
+            source,
+        )
+        self.assertLess(
+            source.index("const bool text_hooks_ready"),
+            source.index('class_get_method(clip_class, "get_samples", 0)'),
+        )
+        for diagnostic in (
+            "kDiagUnityTextScanReady",
+            "kDiagUnityUiTextClassFound",
+            "kDiagUnityUiTextMethodFound",
+            "kDiagUnityUiTextHookReady",
+            "kDiagUnityTextMeshClassFound",
+            "kDiagUnityTextMeshMethodFound",
+            "kDiagUnityTextMeshHookReady",
+        ):
+            self.assertIn(diagnostic, source)
+        self.assertIn(
+            'class_from_name(image, "UnityEngine", "TextMesh")', source
+        )
+        self.assertIn('L"UnityEngine.TextMesh.set_text(glyphs)"', source)
+        self.assertIn("void FlushUnityTextMeshLine()", source)
+        self.assertIn("c == L'\\u3000'", source)
+        self.assertIn('"Unity TextMesh line"', source)
+
     def test_generated_adapters_have_compile_and_lifecycle_registration_seams(self) -> None:
         main = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
         registry = (ROOT / "hook" / "adapter_registry.inc").read_text(encoding="utf-8")
