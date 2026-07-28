@@ -31,18 +31,22 @@ void main() {
     expect(settings, equals(ext + 1));
   });
 
-  test('games 与 browserExtension 同开时顺序为 词典 < 游戏 < 扩展 < 设置', () {
+  test('games 与 browserExtension 同开时顺序为 视频 < 游戏 < 下载 < 词典 < 扩展 < 设置', () {
     final List<HomeTab> tabs = homeActiveTabs(
       videoEnabled: true,
       gamesEnabled: true,
       browserExtensionEnabled: true,
     );
-    final int dict = tabs.indexOf(HomeTab.dictionaries);
+    final int video = tabs.indexOf(HomeTab.video);
     final int games = tabs.indexOf(HomeTab.games);
+    final int downloads = tabs.indexOf(HomeTab.downloads);
+    final int dict = tabs.indexOf(HomeTab.dictionaries);
     final int ext = tabs.indexOf(HomeTab.browserExtension);
     final int settings = tabs.indexOf(HomeTab.settings);
-    expect(games, equals(dict + 1));
-    expect(ext, equals(games + 1));
+    expect(games, equals(video + 1));
+    expect(downloads, equals(games + 1));
+    expect(dict, equals(downloads + 1));
+    expect(ext, equals(dict + 1));
     expect(settings, equals(ext + 1));
   });
 }
