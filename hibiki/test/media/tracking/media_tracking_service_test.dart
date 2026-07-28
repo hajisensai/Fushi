@@ -1162,4 +1162,135 @@ void main() {
     expect(bangumiSubjectTypeOf(TrackingKind.novel), 1);
     expect(bangumiSubjectTypeOf(TrackingKind.manga), 1);
   });
+
+  // BUG-1216：整条追踪链路原本零可观测——成功即删 outbox 行、失败只进错误日志并
+  // 退避最长 6 小时、没建映射就静默返回。用户「看完了没反应」时无从判断断在哪一段。
+  group('可见状态快照（BUG-1216）', () {
+    Future<void> saveAnimeMapping() => repository.saveMapping(
+          mediaType: TrackingMediaType.videoCollection,
+          mediaKey: '8',
+          mediaTitle: 'Anime',
+          kind: TrackingKind.anime,
+          subjectId: 88,
+          subjectName: 'Remote anime',
+          progressMode: TrackingProgressMode.episode,
+          progressOffset: 1,
+        );
+
+    test('从未同步过与同步过零待办可区分', () async {
+      final MediaTrackingStatus before = await service.loadStatus();
+      expect(before.hasNeverSynced, isTrue);
+      expect(before.configured, isTrue);
+
+      // 队列本来就空：这一轮什么都没发出去，但确实跑过一次同步。成功即删行的
+      // 设计下，若不落「上次同步」，这个状态与「从没跑过」在 UI 上完全同形。
+      await service.syncNow(force: true);
+
+      final MediaTrackingStatus after = await service.loadStatus();
+      expect(after.hasNeverSynced, isFalse);
+      expect(after.lastSyncAt, greaterThan(0));
+      expect(after.pending, 0);
+    });
+
+    test('未配置令牌时同步不谎报「已同步过」', () async {
+      await preferences.setPref(kBangumiAccessTokenPref, '');
+
+      await service.syncNow(force: true);
+
+      final MediaTrackingStatus status = await service.loadStatus();
+      expect(status.configured, isFalse);
+      expect(status.hasNeverSynced, isTrue, reason: '没有令牌那一轮一条都发不出去，不能记成同步过');
+    });
+
+    test('失败待办在退避窗口内仍带原因外显', () async {
+      await saveAnimeMapping();
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.videoCollection,
+        mediaKey: '8',
+        localProgress: 1,
+        completed: false,
+      );
+      api.error = const BangumiApiException(statusCode: 500, message: 'boom');
+
+      final MediaTrackingSyncResult result = await service.syncNow(force: true);
+      expect(result.failed, 1);
+
+      // markFailed 把 nextAttemptAt 推到 30 秒后：发送侧（dueUpdates）此刻应看不到
+      // 这一行，展示侧（loadStatus）必须照样能说出失败原因，否则退避窗口就是一个
+      // 「零待办、零错误」的假象。
+      expect(await repository.dueUpdates(), isEmpty);
+      final MediaTrackingStatus status = await service.loadStatus();
+      expect(status.pending, 1);
+      expect(status.failures, hasLength(1));
+      expect(status.failures.single.mediaTitle, 'Anime');
+      expect(status.failures.single.error, contains('500'));
+      expect(status.hasProblem, isTrue);
+    });
+
+    test('令牌被拒记成 unauthorized 状态', () async {
+      await saveAnimeMapping();
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.videoCollection,
+        mediaKey: '8',
+        localProgress: 1,
+        completed: false,
+      );
+      api.error = const BangumiApiException(statusCode: 401, message: 'nope');
+
+      await service.syncNow(force: true);
+
+      final MediaTrackingStatus status = await service.loadStatus();
+      expect(status.unauthorized, isTrue);
+      expect(status.hasProblem, isTrue);
+    });
+
+    test('connect 记住账号名，换令牌清掉旧账号', () async {
+      final BangumiUser user = await service.connect('fresh-token');
+
+      expect(user.nickname, 'Alice');
+      expect(service.accountName, 'Alice');
+      expect(service.accessToken, 'fresh-token');
+      expect((await service.loadStatus()).accountName, 'Alice');
+
+      await service.setAccessToken('another-token');
+      expect(service.accountName, isEmpty,
+          reason: '账号名属于旧令牌，换令牌后必须失效，不能挂着上一个账号');
+    });
+
+    test('伴随的 bookChapter 映射不作为独立条目外显', () async {
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'book-1',
+        mediaTitle: 'Novel',
+        kind: TrackingKind.novel,
+        subjectId: 77,
+        subjectName: 'Remote novel',
+        progressMode: TrackingProgressMode.volume,
+        progressOffset: 2,
+      );
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.bookChapter,
+        mediaKey: 'book-1',
+        mediaTitle: 'Novel',
+        kind: TrackingKind.novel,
+        subjectId: 77,
+        subjectName: 'Remote novel',
+        progressMode: TrackingProgressMode.chapter,
+        progressOffset: 12,
+      );
+
+      final MediaTrackingStatus status = await service.loadStatus();
+
+      expect(status.mappings, hasLength(1));
+      expect(status.mappings.single.mediaType, TrackingMediaType.book.value);
+    });
+
+    test('同步结束自增 statusRevision 供 UI 刷新', () async {
+      final int before = service.statusRevision.value;
+
+      await service.syncNow(force: true);
+
+      expect(service.statusRevision.value, greaterThan(before));
+    });
+  });
 }

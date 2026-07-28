@@ -2,15 +2,20 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:transparent_image/transparent_image.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:hibiki/media.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/display_title.dart';
+import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
+import 'package:hibiki/src/media/tracking/media_tracking_labels.dart';
+import 'package:hibiki/src/media/tracking/media_tracking_service.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/galgame_repository.dart';
 import 'package:hibiki/src/media/video/m3u8_playlist.dart';
@@ -21,6 +26,8 @@ import 'package:hibiki/src/pages/implementations/home_page.dart';
 import 'package:hibiki/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
 import 'package:hibiki/src/pages/implementations/stat_shared.dart';
+import 'package:hibiki/src/settings/settings_detail_page.dart';
+import 'package:hibiki/src/settings/settings_schema_tracking.dart';
 import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_cover_image.dart';
@@ -245,6 +252,11 @@ class _DailyGoalDialogState extends State<_DailyGoalDialog> {
 /// 仪表盘内容最大宽度（逻辑像素）：超宽屏限宽居中，避免每个区块被拉成大片空白。
 const double _kDashboardMaxWidth = 1600;
 
+/// Bangumi 同步卡最多列出的已关联条目数（超出的去设置页看全量；首页卡片是状态
+/// 概览，不是映射管理器）。有失败的条目由
+/// [MediaTrackingStatus.mappingsProblemFirst] 排到最前，不会被这个上限挤掉。
+const int _kTrackingMappingLimit = 5;
+
 class _HomeDashboardPageState
     extends BaseModuleTabPageState<HomeDashboardPage> {
   /// 「继续」横滑行：卡片封面等高，书竖版 5:7 / 视频横版 16:9 由宽度区分（同一行
@@ -347,6 +359,12 @@ class _HomeDashboardPageState
   /// 每个视频 bookUid 的最近观看时刻（epoch 毫秒），继续观看排序用。
   Map<String, int> _videoWatchAtByUid = const <String, int>{};
 
+  /// Bangumi 追踪链路的可见状态（[MediaTrackingService.loadStatus]）。
+  MediaTrackingStatus _tracking = MediaTrackingStatus.empty;
+
+  /// 「立即同步」按钮的进行中态。
+  bool _trackingSyncBusy = false;
+
   /// 订阅「数据变了」信号（阅读/观看/导入落库）以自动刷新，及其防抖定时器。
   /// 首页不保活、且阅读器是 pushed 路由（读完回来首页不重建 initState），故必须靠
   /// DB 表级变更主动重查，否则「打开一本书读完回来」活动/热力图仍是旧数据。
@@ -370,7 +388,17 @@ class _HomeDashboardPageState
     // 与视频（videoBooks 表级信号）对齐失效语义。
     _galgameRepo = ref.read(appProvider).galgameRepo
       ..addListener(_scheduleReload);
+    // Bangumi 同步状态：outbox 与偏好都不在 watchDashboardDataChanges 的表集里，
+    // 由服务层每轮同步结束后自增的 revision 通知（后台自动同步完成也会刷新本卡）。
+    _trackingRevision = ref
+        .read(appProvider)
+        .mediaTrackingService
+        .statusRevision
+      ..addListener(_scheduleReload);
   }
+
+  /// 追踪状态版本号（[initState] 挂监听，[dispose] 解除）。
+  ValueListenable<int>? _trackingRevision;
 
   /// 游戏库仓储（[initState] 挂监听，[dispose] 解除）。
   GalgameRepository? _galgameRepo;
@@ -388,6 +416,7 @@ class _HomeDashboardPageState
     _reloadDebounce?.cancel();
     unawaited(_dataChangeSub?.cancel());
     _galgameRepo?.removeListener(_scheduleReload);
+    _trackingRevision?.removeListener(_scheduleReload);
     super.dispose();
   }
 
@@ -502,10 +531,16 @@ class _HomeDashboardPageState
       }
     }
 
+    // Bangumi 追踪状态（映射 + 待办 + 上次同步结果）。读的是本地库与偏好，不发
+    // 网络请求，可以和其它聚合一起进首屏。
+    final MediaTrackingStatus tracking =
+        await appModel.mediaTrackingService.loadStatus();
+
     if (!mounted) return;
     setState(() {
       _videos = videos;
       _games = games;
+      _tracking = tracking;
       _localActivityEvents = events;
       _activityEvents = events;
       _readingCharsByDay = charsByDay;
@@ -652,6 +687,9 @@ class _HomeDashboardPageState
         _buildActivitySection(tokens, now, appModel, booksByKey, videosByUid);
     final Widget? recentCard =
         _buildRecentlyAddedSection(tokens, appModel, books, now);
+    // Bangumi 同步卡恒显示（未连接时也要显示——「没连上」本身就是用户最需要看到的
+    // 那条状态，隐藏它就回到了「看完了没反应」的黑盒）。
+    final Widget trackingCard = _buildTrackingCard(tokens, appModel, now);
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -688,7 +726,18 @@ class _HomeDashboardPageState
                 ),
               ),
               SizedBox(width: tokens.spacing.card),
-              Expanded(flex: 2, child: activityCard),
+              Expanded(
+                flex: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    trackingCard,
+                    SizedBox(height: tokens.spacing.card),
+                    activityCard,
+                  ],
+                ),
+              ),
             ],
           );
         } else {
@@ -699,6 +748,8 @@ class _HomeDashboardPageState
               heatmapCard,
               SizedBox(height: tokens.spacing.card),
               continueCard,
+              SizedBox(height: tokens.spacing.card),
+              trackingCard,
               SizedBox(height: tokens.spacing.card),
               activityCard,
               if (recentCard != null) ...<Widget>[
@@ -2062,18 +2113,247 @@ class _HomeDashboardPageState
     }
   }
 
-  /// 相对时间结构化结果 → i18n 文案。
-  String _relativeTimeLabel(int timestampMs, DateTime now) {
-    final ActivityRelativeTime rel = activityRelativeTime(timestampMs, now);
-    switch (rel.unit) {
-      case ActivityRelativeUnit.justNow:
-        return t.activity_just_now;
-      case ActivityRelativeUnit.minutesAgo:
-        return t.activity_minutes_ago(n: rel.value);
-      case ActivityRelativeUnit.hoursAgo:
-        return t.activity_hours_ago(n: rel.value);
-      case ActivityRelativeUnit.daysAgo:
-        return t.activity_days_ago(n: rel.value);
+  /// 相对时间结构化结果 → i18n 文案（口径与 Bangumi 同步卡共用，见
+  /// [formatActivityRelativeTime]）。
+  String _relativeTimeLabel(int timestampMs, DateTime now) =>
+      formatActivityRelativeTime(timestampMs, now);
+
+  // ── 区块 5：Bangumi 同步 ─────────────────────────────────────────────────
+
+  /// Bangumi 同步卡：把原本全静默的追踪链路摊成用户可见状态。
+  ///
+  /// 这条链路每一步失败都不出声——没令牌不建映射、标题匹配不唯一不建映射且 10 分钟
+  /// 内不再重试、上报失败只进错误日志并退避最长 6 小时、成功则删 outbox 行不留痕迹。
+  /// 于是「看完一部作品」之后没有任何反馈可看。这张卡按链路的三段（连接 → 关联 →
+  /// 发送）依次给出当前事实与下一步动作：哪一段断了，卡上就只可能显示那一段的文案。
+  Widget _buildTrackingCard(
+    HibikiDesignTokens tokens,
+    AppModel appModel,
+    DateTime now,
+  ) {
+    final MediaTrackingStatus status = _tracking;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+
+    // 第一段：没连令牌 → 后面两段都无从谈起，只给连接入口。
+    if (!status.configured) {
+      return _sectionCard(
+        tokens,
+        title: t.media_tracking_card_title,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(t.media_tracking_not_connected, style: tokens.type.metadata),
+            SizedBox(height: tokens.spacing.gap),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: FilledButton.tonalIcon(
+                onPressed: _openTrackingSettings,
+                icon: const Icon(Icons.link),
+                label: Text(t.media_tracking_connect),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final List<String> summary = <String>[
+      '${t.media_tracking_last_sync}: '
+          '${trackingLastSyncLabel(status, now)}',
+      t.media_tracking_linked_count(n: status.mappings.length),
+      status.pending > 0
+          ? t.media_tracking_pending_count(n: status.pending)
+          : t.media_tracking_all_synced,
+    ];
+
+    return _sectionCard(
+      tokens,
+      title: t.media_tracking_card_title,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.person_outline, size: 18, color: scheme.primary),
+              SizedBox(width: tokens.spacing.gap / 2),
+              Expanded(
+                child: Text(
+                  status.accountName.isEmpty
+                      ? t.media_tracking_account
+                      : status.accountName,
+                  style: tokens.type.listTitle,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: tokens.spacing.gap / 2),
+          Text(summary.join(' · '), style: tokens.type.metadata),
+
+          // 令牌被拒是「已连接」下最容易误判成「没反应」的情形：令牌还在偏好里，
+          // isConfigured 仍为 true，但每次同步都在 getMe 就 401 中止。
+          if (status.unauthorized) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Icon(Icons.error_outline, size: 18, color: scheme.error),
+                SizedBox(width: tokens.spacing.gap / 2),
+                Expanded(
+                  child: Text(
+                    t.media_tracking_unauthorized,
+                    style: tokens.type.metadata.copyWith(color: scheme.error),
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          SizedBox(height: tokens.spacing.gap),
+
+          // 第二段：一条映射都没有 → 完成事件根本进不了 outbox，必须说清原因，
+          // 否则「已连接 + 零待办 + 全部已发送」看起来像一切正常。
+          if (status.mappings.isEmpty)
+            Text(t.media_tracking_unlinked_hint, style: tokens.type.metadata)
+          else
+            // 第三段：逐条条目。失败原因挂在对应行上（有失败的排在最前），不另开
+            // 一段——否则同一个条目在「失败」和「已关联」里各出现一次。
+            for (final MediaTrackingMappingRow mapping
+                in status.mappingsProblemFirst.take(_kTrackingMappingLimit))
+              _buildTrackingMappingRow(
+                tokens,
+                mapping,
+                status.failureByMappingId[mapping.id],
+              ),
+
+          SizedBox(height: tokens.spacing.gap),
+          Wrap(
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap / 2,
+            children: <Widget>[
+              FilledButton.tonalIcon(
+                onPressed: _trackingSyncBusy ? null : _syncTrackingNow,
+                icon: _trackingSyncBusy
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.sync),
+                label: Text(t.media_tracking_sync_now),
+              ),
+              TextButton.icon(
+                onPressed: _openTrackingSettings,
+                icon: const Icon(Icons.tune),
+                label: Text(t.media_tracking_manage_links),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 一条已关联条目：本地标题 + 「类别 · Bangumi 条目名 · 进度单位」+（有则）失败
+  /// 原因，整行点击在浏览器打开该 Bangumi 条目页。
+  ///
+  /// 打开 bgm.tv 是「怎么查看这个 bangumi 数据」的落点：远端收藏与进度的真相在
+  /// Bangumi，app 内不镜像一份（镜像就得再养一套失效逻辑，且永远可能与远端不符）。
+  Widget _buildTrackingMappingRow(
+    HibikiDesignTokens tokens,
+    MediaTrackingMappingRow mapping,
+    MediaTrackingFailure? failure,
+  ) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: () => unawaited(_openBangumiSubject(mapping.subjectId)),
+      borderRadius: HibikiBorderRadius.card,
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            if (failure != null) ...<Widget>[
+              Icon(Icons.sync_problem_outlined, size: 18, color: scheme.error),
+              SizedBox(width: tokens.spacing.gap / 2),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    mapping.mediaTitle,
+                    style: tokens.type.listTitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    trackingMappingSubtitle(mapping),
+                    style: tokens.type.metadata,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  // 退避窗口内也照显：markFailed 最长把重试推到 6 小时后，那段时间
+                  // 里发送侧看不到这一行，展示侧不说就等于「零错误」。
+                  if (failure != null)
+                    Text(
+                      '${t.media_tracking_last_error}: ${failure.error}',
+                      style: tokens.type.metadata.copyWith(color: scheme.error),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
+            ),
+            SizedBox(width: tokens.spacing.gap / 2),
+            Tooltip(
+              message: t.media_tracking_open_subject,
+              child: const Icon(Icons.open_in_new, size: 16),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openBangumiSubject(int subjectId) async {
+    await launchUrl(
+      Uri.parse(BangumiApiClient.subjectUrl(subjectId)),
+      mode: LaunchMode.externalApplication,
+    );
+  }
+
+  void _openTrackingSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            SettingsDetailPage(destination: buildMediaTrackingDestination()),
+      ),
+    );
+  }
+
+  /// 手动同步：结果用 SnackBar 明确回执（成功/失败），再刷新卡片状态。
+  /// 服务层的 `statusRevision` 也会触发重载，这里的 await 只为按钮 busy 态收敛。
+  Future<void> _syncTrackingNow() async {
+    setState(() => _trackingSyncBusy = true);
+    try {
+      final MediaTrackingSyncResult result =
+          await ref.read(appProvider).mediaTrackingService.syncNow(force: true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(result.isSuccess
+                ? t.media_tracking_sync_success
+                : t.media_tracking_sync_failed),
+          ),
+        );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('HomeDashboardPage.syncTracking', e, stack);
+    } finally {
+      if (mounted) setState(() => _trackingSyncBusy = false);
     }
   }
 

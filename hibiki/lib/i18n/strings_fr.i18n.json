@@ -1295,7 +1295,6 @@
   "media_tracking_account": "Bangumi account",
   "media_tracking_add_mapping": "Add mapping",
   "media_tracking_anime": "Anime",
-  "media_tracking_bookmeter_note": "Bookmeter is used as a progress UI reference only because it does not expose a public personal write API.",
   "media_tracking_chapter": "Chapter",
   "media_tracking_connect": "Connect and verify",
   "media_tracking_connected_as": "Connected account",
@@ -2722,5 +2721,17 @@
   "download_backend_desktop_only_note": "Built-in engine requires a desktop platform. This device uses external qBittorrent.",
   "stat_source_breakdown": "By source",
   "stat_format_pages": "$n pages",
-  "anime_download_subs_season_mismatch": "No subtitle entry matches season $season of this pack - not auto-selected. Pick one manually if you want it anyway."
+  "anime_download_subs_season_mismatch": "No subtitle entry matches season $season of this pack - not auto-selected. Pick one manually if you want it anyway.",
+  "media_tracking_card_title": "Bangumi sync",
+  "media_tracking_not_connected": "Not connected. Progress stays local and nothing reaches Bangumi.",
+  "media_tracking_last_sync": "Last sync",
+  "media_tracking_never_synced": "Never synced",
+  "media_tracking_linked_count": "$n linked",
+  "media_tracking_pending_count": "$n waiting to send",
+  "media_tracking_all_synced": "Everything sent",
+  "media_tracking_unauthorized": "Bangumi rejected the access token. Reconnect it in settings.",
+  "media_tracking_unlinked_hint": "No item is linked to a Bangumi subject yet, so finishing something changes nothing there. Automatic matching only links a subject when the title matches unambiguously; link the rest by hand.",
+  "media_tracking_open_subject": "Open on Bangumi",
+  "media_tracking_manage_links": "Manage links",
+  "media_tracking_last_error": "Last error"
 }

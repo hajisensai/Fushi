@@ -232,6 +232,11 @@ class BangumiApiClient implements BangumiTrackingApi {
   /// 挡在登录页，因此另给一个注册入口，两者并存而不是互相替代。
   static const String signupUrl = 'https://bgm.tv/signup';
 
+  /// 条目网页地址（首页/设置页「在 Bangumi 打开」用；api.bgm.tv 是纯 JSON 接口，
+  /// 给用户看的必须是 bgm.tv 的人类页面）。
+  static String subjectUrl(int subjectId) =>
+      'https://bgm.tv/subject/$subjectId';
+
   final String _accessToken;
   final String _userAgent;
   final http.Client _client;

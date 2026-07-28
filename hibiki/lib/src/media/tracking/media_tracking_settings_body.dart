@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
+import 'package:hibiki/src/media/tracking/media_tracking_labels.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_repository.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_service.dart';
 import 'package:hibiki/src/models/app_model.dart';
@@ -29,12 +30,20 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
 
   List<MediaTrackingMappingRow> _mappings = const <MediaTrackingMappingRow>[];
   int _pending = 0;
+
+  /// 最近一次载入的状态快照（上次同步时刻/结果、失败原因）。
+  MediaTrackingStatus? _status;
+
+  /// 已连接账号名。取自持久化偏好而非仅本次会话的连接结果——否则重开设置页
+  /// 就只剩一个填了令牌的输入框，用户无法确认连的是哪个账号。
   String? _connectedAccount;
   bool _busy = false;
 
   @override
   void initState() {
     super.initState();
+    final String stored = widget.appModel.mediaTrackingService.accountName;
+    if (stored.isNotEmpty) _connectedAccount = stored;
     _reload();
   }
 
@@ -45,18 +54,15 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
   }
 
   Future<void> _reload() async {
-    final List<MediaTrackingMappingRow> mappings =
-        await _repository.listMappings();
-    final int pending = await _repository.pendingCount();
+    // 映射列表 / 待办数 / 上次同步结果 / 失败原因统一走服务层快照，与首页卡片同源
+    // （含「隐藏 bookChapter 伴随映射」这条口径），不再各查一遍各滤一遍。
+    final MediaTrackingStatus status =
+        await widget.appModel.mediaTrackingService.loadStatus();
     if (!mounted) return;
     setState(() {
-      _mappings = mappings
-          .where(
-            (mapping) =>
-                mapping.mediaType != TrackingMediaType.bookChapter.value,
-          )
-          .toList(growable: false);
-      _pending = pending;
+      _status = status;
+      _mappings = status.mappings;
+      _pending = status.pending;
     });
   }
 
@@ -68,9 +74,10 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
     }
     setState(() => _busy = true);
     try {
+      // 校验 + 落令牌 + 记账号名是一次原子的「连接」，交给服务层，避免设置页与
+      // 首页各写一份半状态。
       final BangumiUser user =
-          await widget.appModel.mediaTrackingService.validateAccessToken(token);
-      await widget.appModel.mediaTrackingService.setAccessToken(token);
+          await widget.appModel.mediaTrackingService.connect(token);
       if (!mounted) return;
       setState(() => _connectedAccount =
           user.nickname.isEmpty ? user.username : user.nickname);
@@ -127,6 +134,9 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
 
   @override
   Widget build(BuildContext context) {
+    final MediaTrackingStatus? status = _status;
+    final Map<int, MediaTrackingFailure> failureByMappingId =
+        status?.failureByMappingId ?? const <int, MediaTrackingFailure>{};
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -193,6 +203,23 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
               title: t.media_tracking_pending,
               trailing: Text('$_pending'),
             ),
+            // 「上次同步」+ 失败原因：同步成功即删 outbox 行，没有这两行的话
+            // 「跑过但没有待办」与「从没跑过」在 UI 上完全同形。
+            AdaptiveSettingsRow(
+              title: t.media_tracking_last_sync,
+              trailing: Text(
+                status == null
+                    ? '—'
+                    : trackingLastSyncLabel(status, DateTime.now()),
+              ),
+            ),
+            if (status != null && status.unauthorized)
+              AdaptiveSettingsRow(
+                title: t.media_tracking_unauthorized,
+                titleMaxLines: 4,
+                icon: Icons.error_outline,
+                showIcon: true,
+              ),
             AdaptiveSettingsRow(
               title: t.media_tracking_sync_now,
               trailing: FilledButton.tonalIcon(
@@ -214,14 +241,22 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                 title: t.media_tracking_no_mappings,
                 titleMaxLines: 4,
               ),
+            // 失败原因挂在对应条目行的副标题上（与首页卡同口径），不另开一段把
+            // 标题重复一遍。
             for (final MediaTrackingMappingRow mapping in _mappings)
               AdaptiveSettingsRow(
                 title: mapping.mediaTitle,
-                subtitle: '${_kindLabel(mapping.kind)} · '
-                    '${mapping.subjectName} · '
-                    '${_modeLabel(mapping.progressMode)} '
-                    '+${mapping.progressOffset}',
+                subtitle: <String>[
+                  '${trackingMappingSubtitle(mapping)} '
+                      '+${mapping.progressOffset}',
+                  if (failureByMappingId[mapping.id]
+                      case final MediaTrackingFailure failure)
+                    '${t.media_tracking_last_error}: ${failure.error}',
+                ].join('\n'),
+                subtitleMaxLines: 4,
                 titleMaxLines: 3,
+                icon: Icons.sync_problem_outlined,
+                showIcon: failureByMappingId.containsKey(mapping.id),
                 trailing: IconButton(
                   tooltip: t.media_tracking_delete_mapping,
                   onPressed: () async {
@@ -233,44 +268,8 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
               ),
           ],
         ),
-        AdaptiveSettingsSection(
-          children: <Widget>[
-            AdaptiveSettingsRow(
-              title: t.media_tracking_bookmeter_note,
-              titleMaxLines: 5,
-              icon: Icons.info_outline,
-              showIcon: true,
-            ),
-          ],
-        ),
       ],
     );
-  }
-}
-
-String _kindLabel(String value) {
-  switch (value) {
-    case 'anime':
-      return t.media_tracking_anime;
-    case 'manga':
-      return t.media_tracking_manga;
-    case 'game':
-      return t.media_tracking_game;
-    default:
-      return t.media_tracking_novel;
-  }
-}
-
-String _modeLabel(String value) {
-  switch (value) {
-    case 'episode':
-      return t.media_tracking_episode;
-    case 'volume':
-      return t.media_tracking_volume;
-    case 'status':
-      return t.media_tracking_status;
-    default:
-      return t.media_tracking_chapter;
   }
 }
 
