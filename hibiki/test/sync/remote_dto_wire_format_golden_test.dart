@@ -20,7 +20,11 @@ import 'package:hibiki_core/hibiki_core.dart' show MediaKind;
 /// 加字段时这里必然变红——那正是要的：强制作者显式声明新字段的省略语义，而不是
 /// 让它悄悄溜进协议。
 ///
-/// 注意：断言的是 **key 集合**，不是值。值语义由各域自己的测试负责。
+/// 断言的主体是 **key 集合**，不是具体的值——值语义由各域自己的测试负责。
+/// 但**值的 JSON 类型**是 wire 协议的一部分，所以另有一组「类型锁」（见文件末尾
+/// `wire 值类型锁`）：key 集合不变、类型悄悄变（`int` 写成 `String`、`bool` 写成
+/// `int` 之类）同样会让对端的 `as num?` / `== true` 解析静默失效，而只锁 key 集合
+/// 的断言对此**全绿**。类型锁把每个 wire 键的 JSON 类型逐个钉死，补上这个洞。
 void main() {
   /// 断言 [json] 的键集合恰好是 [expected]（多一个少一个都红）。
   void expectKeys(
@@ -453,6 +457,232 @@ void main() {
       expect(back.episodes.length, 2);
       expect(back.currentEpisode, 1);
       expect(back.toJson(), original.toJson());
+    });
+  });
+
+  group('wire 值类型锁', () {
+    /// 断言 [json] 里每个键的**运行时 JSON 类型**符合 [types]；覆盖的键必须与
+    /// [json] 完全一致（漏掉一个键就说明类型锁没跟上 key 集合的变化）。
+    void expectWireTypes(
+      Map<String, Object?> json,
+      Map<String, Type> types, {
+      required String what,
+    }) {
+      expect(json.keys.toSet(), types.keys.toSet(),
+          reason: '$what：类型锁覆盖的键与实际写出的键不一致，请同步补齐');
+      types.forEach((String key, Type expected) {
+        final Object? value = json[key];
+        final bool ok = switch (expected) {
+          const (int) => value is int,
+          const (bool) => value is bool,
+          const (String) => value is String,
+          const (List<Object?>) => value is List,
+          const (Map<String, Object?>) => value is Map,
+          _ => false,
+        };
+        expect(ok, isTrue,
+            reason: '$what 的 wire 键 `$key` 类型变了：期望 $expected，实际写出 '
+                '${value.runtimeType}（值 $value）。对端按固定类型解析'
+                '（`as num?` / `== true` 之类），类型一变解析就静默失效——'
+                '这是**协议变更**，不是实现细节。');
+      });
+    }
+
+    test('RemoteBookInfo 最大实例的每个 wire 键类型', () {
+      expectWireTypes(
+        RemoteBookInfo(
+          title: 'T',
+          hasContent: true,
+          bookKey: 'k',
+          hasEmbeddedCover: true,
+          coverUrl: 'http://h/c.png',
+          hasAudiobook: true,
+          tags: const <String>['a'],
+          tagsAddedAt: const <String, int>{'a': 1},
+          tagTombstones: const <String, int>{'b': 2},
+          collection: const RemoteCollectionMembership(
+            collectionName: 'C',
+            collectionType: 'book',
+            sortIndex: 0,
+          ),
+          progressPercent: 50,
+          progressUpdatedAtMs: 123,
+          kind: MediaKind.srt,
+        ).toJson(),
+        const <String, Type>{
+          'title': String,
+          'bookKey': String,
+          'hasContent': bool,
+          'hasCover': bool,
+          'coverUrl': String,
+          'hasAudiobook': bool,
+          'tags': List<Object?>,
+          'tagsAddedAt': Map<String, Object?>,
+          'tagTombstones': Map<String, Object?>,
+          'collection': Map<String, Object?>,
+          'progressPercent': int,
+          'progressUpdatedAtMs': int,
+          'kind': String,
+        },
+        what: 'RemoteBookInfo',
+      );
+    });
+
+    test('RemoteVideoInfo 最大实例的每个 wire 键类型', () {
+      expectWireTypes(
+        RemoteVideoInfo(
+          id: 'video/x',
+          title: 'T',
+          sizeBytes: 1,
+          hasSubtitle: true,
+          subtitleFileName: 's.srt',
+          embeddedSubtitleTracks: const <RemoteVideoEmbeddedSubtitleTrack>[
+            RemoteVideoEmbeddedSubtitleTrack(streamIndex: 0, codec: 'subrip'),
+          ],
+          durationMs: 2,
+          hasCover: true,
+          coverUrl: 'http://h/c.png',
+          positionMs: 3,
+          positionUpdatedAtMs: 4,
+          delayMs: 5,
+          episodes: const <RemoteVideoEpisode>[
+            RemoteVideoEpisode(index: 0, title: 'e0'),
+            RemoteVideoEpisode(index: 1, title: 'e1'),
+          ],
+          currentEpisode: 1,
+          tags: const <String>['a'],
+          tagsAddedAt: const <String, int>{'a': 1},
+          tagTombstones: const <String, int>{'b': 2},
+          collection: const RemoteCollectionMembership(
+            collectionName: 'C',
+            collectionType: 'video',
+            sortIndex: 0,
+          ),
+        ).toJson(),
+        const <String, Type>{
+          'id': String,
+          'title': String,
+          'sizeBytes': int,
+          'hasSubtitle': bool,
+          'subtitleFileName': String,
+          'embeddedSubtitleTracks': List<Object?>,
+          'durationMs': int,
+          'hasCover': bool,
+          'coverUrl': String,
+          'positionMs': int,
+          'positionUpdatedAtMs': int,
+          'delayMs': int,
+          'episodes': List<Object?>,
+          'currentEpisode': int,
+          'tags': List<Object?>,
+          'tagsAddedAt': Map<String, Object?>,
+          'tagTombstones': Map<String, Object?>,
+          'collection': Map<String, Object?>,
+        },
+        what: 'RemoteVideoInfo',
+      );
+    });
+
+    test('内封字幕轨 / 合集归属 / 分集 / 进度的每个 wire 键类型', () {
+      expectWireTypes(
+        const RemoteVideoEmbeddedSubtitleTrack(
+          streamIndex: 1,
+          codec: 'ass',
+          language: 'jpn',
+          title: 'JP',
+          isText: false,
+          url: 'http://h/s',
+          fileName: 's.ass',
+        ).toJson(),
+        const <String, Type>{
+          'streamIndex': int,
+          'codec': String,
+          'language': String,
+          'title': String,
+          'isText': bool,
+          'url': String,
+          'fileName': String,
+        },
+        what: 'RemoteVideoEmbeddedSubtitleTrack',
+      );
+      expectWireTypes(
+        const RemoteCollectionMembership(
+          collectionName: 'C',
+          collectionType: 'book',
+          sortIndex: 3,
+        ).toJson(),
+        const <String, Type>{
+          'name': String,
+          'collectionType': String,
+          'sortIndex': int,
+        },
+        what: 'RemoteCollectionMembership',
+      );
+      expectWireTypes(
+        const RemoteVideoEpisode(index: 0, title: 't').toJson(),
+        const <String, Type>{'index': int, 'title': String},
+        what: 'RemoteVideoEpisode',
+      );
+      expectWireTypes(
+        const RemoteBookProgress(
+          sectionIndex: 0,
+          normCharOffset: 0,
+          charOffset: -1,
+          updatedAtMs: 0,
+        ).toJson(),
+        const <String, Type>{
+          'sectionIndex': int,
+          'normCharOffset': int,
+          'charOffset': int,
+          'updatedAtMs': int,
+        },
+        what: 'RemoteBookProgress',
+      );
+    });
+
+    test('RemoteActivityEvent 最大实例的每个 wire 键类型', () {
+      expectWireTypes(
+        const RemoteActivityEvent(
+          eventType: 'read',
+          mediaType: 'book',
+          title: 'T',
+          dateKey: '2026-07-28',
+          timestampMs: 1,
+          mediaKey: 'k',
+          durationMs: 2,
+          charsDelta: 3,
+        ).toJson(),
+        const <String, Type>{
+          'eventType': String,
+          'mediaType': String,
+          'title': String,
+          'dateKey': String,
+          'timestampMs': int,
+          'mediaKey': String,
+          'durationMs': int,
+          'charsDelta': int,
+        },
+        what: 'RemoteActivityEvent',
+      );
+    });
+
+    test('RemoteAudiobookInfo / RemoteDictionaryInfo / RemoteLocalAudioInfo',
+        () {
+      expectWireTypes(
+        const RemoteAudiobookInfo(bookKey: 'k', uid: 'u', title: 't').toJson(),
+        const <String, Type>{'bookKey': String, 'uid': String, 'title': String},
+        what: 'RemoteAudiobookInfo',
+      );
+      expectWireTypes(
+        const RemoteDictionaryInfo(name: 'n', type: 't').toJson(),
+        const <String, Type>{'name': String, 'type': String},
+        what: 'RemoteDictionaryInfo',
+      );
+      expectWireTypes(
+        const RemoteLocalAudioInfo(displayName: 'd').toJson(),
+        const <String, Type>{'displayName': String},
+        what: 'RemoteLocalAudioInfo',
+      );
     });
   });
 }
