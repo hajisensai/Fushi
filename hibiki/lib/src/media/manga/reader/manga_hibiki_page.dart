@@ -24,6 +24,8 @@ import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
 import 'package:hibiki/src/media/manga/manga_spread_model.dart';
 import 'package:hibiki/src/media/manga/mokuro_payload.dart';
 import 'package:hibiki/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
+import 'package:hibiki/src/focus/page_focus_ownership.dart';
+import 'package:hibiki/src/focus/webview_key_bridge.dart';
 import 'package:hibiki/src/media/manga/reader/manga_window_load_gate.dart';
 import 'package:hibiki/src/pages/base_source_page.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
@@ -319,23 +321,19 @@ class MangaHibikiPage extends BaseSourcePage {
   /// Native WebView2 owns keyboard focus while the user is reading. Forward
   /// navigation keys from the manga document to Dart so page turns do not
   /// depend on the platform view bubbling key events through Flutter.
+  /// 走共享生成器而非自写一份：手写版少了「放行修饰键组合 / IME 组字 / 输入框」
+  /// 三条放行判据，会吞掉 Ctrl+方向键，以及词典搜索框里的方向键。
+  ///
+  /// `forwardRepeats: false` 保留本页既有语义（按住方向键不堆翻页风暴）；
+  /// `stopPropagation: true` 保留独占（这些键必须只给 Dart）。`'Esc'` 与
+  /// `'Escape'` 都列进键表，旧浏览器归一由 [_handleNativeNavigationKey] 完成。
   @visibleForTesting
-  static const String navigationKeyBridgeScript = '''
-(function(){
-  if (window.__hibikiMangaNavigationKeysInstalled) return;
-  window.__hibikiMangaNavigationKeysInstalled = true;
-  document.addEventListener('keydown', function(e) {
-    if (e.repeat) return;
-    var key = e.key === 'Esc' ? 'Escape' : e.key;
-    if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'Escape') return;
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    try {
-      window.flutter_inappwebview.callHandler('onMangaNavigationKey', key);
-    } catch (err) {}
-  }, true);
-})();
-''';
+  static final String navigationKeyBridgeScript = webViewKeyBridgeScript(
+    handlerName: 'onMangaNavigationKey',
+    keys: const <String>['ArrowLeft', 'ArrowRight', 'Escape', 'Esc'],
+    forwardRepeats: false,
+    stopPropagation: true,
+  );
 
   /// 纯路径解析 + 穿越守卫。[relative] 在 [imagesRoot] 内解析到存在的文件时返回
   /// 规范绝对路径，否则 null（越界/缺文件都不 serve）。从 WebView 路径抽出，安全
@@ -564,6 +562,48 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   // 密集 OCR 命中层只保留当前 spread；图片页本身全部留在稳定的 lazy strip。
   static const int _kWindowRadius = 0;
 
+  /// 漫画正文的键盘焦点节点（本页唯一持有者）。
+  final FocusNode _focusNode = FocusNode(debugLabel: 'mangaKeyboard');
+
+  /// 本页键盘焦点的单一所有者：所有回收走它，判据集中在 [_canOwnMangaFocus]。
+  ///
+  /// 统一前漫画页**一处焦点回收都没有**（视频页 29 处、阅读器页 28 处），而它同样
+  /// 把正文交给原生 WebView 渲染——桌面上用户在漫画 WebView 里点/拖一次，OS 焦点
+  /// 就归了 WebView2，整页 `autofocus: true` 只在首帧生效、之后再没有任何路径把
+  /// 焦点要回来，方向键翻页从此失效且**无自愈**。
+  late final PageFocusOwnership _focusOwnership = PageFocusOwnership(
+    node: _focusNode,
+    canOwn: _canOwnMangaFocus,
+  );
+
+  /// 「漫画正文此刻应当持有键盘」的统一判据。
+  bool _canOwnMangaFocus(FocusReclaimCause cause) {
+    if (!mounted) return false;
+    switch (cause) {
+      // 与阅读器**相反**：阅读器在词典弹窗可见时让位（弹窗自持焦点，BUG-136），
+      // 漫画不能让——[MangaHibikiPage.keyInputAction] 规定弹窗可见时左右键仍要
+      // 「关弹窗并翻页」、Escape 要关弹窗，这些键必须抵达 [_handleReaderKey]。
+      // 词典弹窗是纯原生 WebView、没有 Flutter 焦点节点，不主动收回就全部落空。
+      // 这也正是本页覆写 [capturesDictionaryPopupNavigationKeys] 的同一诉求。
+      case FocusReclaimCause.popupRendered:
+        return isDictionaryShown;
+      case FocusReclaimCause.gesture:
+      case FocusReclaimCause.popupDismissed:
+      case FocusReclaimCause.contentReady:
+      case FocusReclaimCause.overlayClosed:
+      case FocusReclaimCause.surfaceRemounted:
+      // 本页顶部 chrome（页码 + 阅读模式切换）是常驻的，不参与焦点遍历，
+      // 显隐后重新确认焦点仍在正文即可。
+      case FocusReclaimCause.chromeToggled:
+        return true;
+      // 回前台是全局生命周期回调，本页上方可能压着全屏看图路由 / 对话框；
+      // 此时抢焦点会夺走它们的键盘（Never break userspace）。
+      case FocusReclaimCause.appResumed:
+        final ModalRoute<Object?>? owner = ModalRoute.of(context);
+        return owner == null || owner.isCurrent;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -589,6 +629,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     unawaited(_flushPosition());
     _readingTimeTracker?.dispose();
     _pageNotifier.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -603,6 +644,8 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       // BUG-892 同款纪律：回前台重锚会话起点，否则整段后台时长被计入。
       _sessionStartTime = DateTime.now();
       _readingTimeTracker?.start();
+      // OS 层焦点丢失后 Flutter 不保证归还到原节点：切窗回来若不收回，翻页键全死。
+      _focusOwnership.reclaim(FocusReclaimCause.appResumed);
     }
   }
 
@@ -1172,6 +1215,25 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   @override
   void onDictionaryPopupNavigationKey(String key) {
     _handleNativeNavigationKey(key);
+  }
+
+  /// 词典弹窗渲染完成（指针唤出路径）：把 Flutter 焦点收回正文。
+  ///
+  /// 弹窗是纯原生 WebView，指针唤出它时 OS 焦点落在弹窗上。漫画在弹窗可见时
+  /// **仍要**处理左右键（关弹窗并翻页）与 Escape（关弹窗），不收回这些键就全部
+  /// 落空——[onDictionaryPopupNavigationKey] 的转发只覆盖弹窗自己收到的键，
+  /// 覆盖不了「焦点悬空」的情况。
+  @override
+  void onDictionaryPopupRendered(int index) {
+    super.onDictionaryPopupRendered(index);
+    _focusOwnership.reclaim(FocusReclaimCause.popupRendered);
+  }
+
+  /// 整条查词弹窗栈关闭：键盘所有权无条件回到正文，否则用户被困死（收不到任何键）。
+  @override
+  void onAllPopupsDismissed() {
+    super.onAllPopupsDismissed();
+    _focusOwnership.reclaim(FocusReclaimCause.popupDismissed);
   }
 
   void _handleNativeNavigationKey(String key) {
@@ -1858,6 +1920,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         // 键盘兜底必须包住正文、chrome 和词典弹层。旧结构只包正文 WebView，
         // 词典 WebView 获得焦点后变成 sibling，左右键/Escape 不再经过本处理器。
         body: Focus(
+          focusNode: _focusNode,
           autofocus: true,
           onKeyEvent: _handleReaderKey,
           child: Stack(
@@ -2092,7 +2155,11 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         // 空白 tap 是 no-op（记录 sink 让手势机契约可观察）。
         controller.addJavaScriptHandler(
           handlerName: 'onTapEmpty',
-          callback: (List<dynamic> args) {},
+          callback: (List<dynamic> args) {
+            // 空白 tap 本身是 no-op，但指针已让原生 WebView 夺走 OS 焦点，
+            // 必须把 Flutter 焦点收回，否则此后方向键翻页全部失效。
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
+          },
         );
         controller.addJavaScriptHandler(
           handlerName: 'onMangaOcrHitDebug',
@@ -2116,6 +2183,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
           handlerName: 'onMangaTurn',
           callback: (List<dynamic> args) {
             if (args.isEmpty) return;
+            // 手势/滚轮翻页经原生 WebView 触发，指针已夺焦：翻完把键盘收回，
+            // 否则「滑一下之后方向键就不灵了」（与阅读器 BUG-136 同源）。
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
             unawaited(_onMangaTurn(args[0] as String));
           },
         );
@@ -2230,5 +2300,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     }
     _windowGate.complete(ticket, MangaWindowLoadOutcome.ready);
     _recordProgress();
+    // 正文就绪的确定性落焦：整页 autofocus 会抢在 WebView 内容就绪之前，焦点落在
+    // 表面层；换窗（翻到下一个加载窗口）同样会重挂平台视图。这里在每个就绪落点
+    // 补一次，让首开/换窗后第一次按方向键就作用在漫画上。
+    _focusOwnership.reclaim(FocusReclaimCause.contentReady);
   }
 }

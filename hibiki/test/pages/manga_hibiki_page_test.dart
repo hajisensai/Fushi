@@ -490,14 +490,22 @@ void main() {
   });
 
   test('漫画正文按键桥接只捕获导航键并保持幂等', () {
-    const String script = MangaHibikiPage.navigationKeyBridgeScript;
-    expect(script, contains('__hibikiMangaNavigationKeysInstalled'));
+    // 桥已改走共享生成器 webViewKeyBridgeScript（手写版少了「放行修饰键组合 /
+    // IME 组字 / 输入框」三条判据，会吞 Ctrl+方向键和词典搜索框里的方向键）。
+    // JS 本身的通用不变式由 test/focus/webview_key_bridge_test.dart 守，这里只钉
+    // 本页特有的接线：键表、幂等、独占、不转发长按。
+    final String script = MangaHibikiPage.navigationKeyBridgeScript;
+    expect(script, contains('__hoshiKeyBridgeInstalled_onMangaNavigationKey'),
+        reason: '每次换加载窗口都会重新注入，必须幂等，否则 listener 叠加导致一次按键翻两页');
     expect(script, contains("'ArrowLeft'"));
     expect(script, contains("'ArrowRight'"));
     expect(script, contains("'Escape'"));
     expect(script, contains('preventDefault()'));
-    expect(script, contains('stopImmediatePropagation()'));
-    expect(script, contains("callHandler('onMangaNavigationKey', key)"));
+    expect(script, contains('stopImmediatePropagation()'),
+        reason: '导航键必须独占给 Dart');
+    expect(script, contains('if (e.repeat) return;'),
+        reason: '按住方向键不得堆翻页风暴（本页既有语义）');
+    expect(script, contains("callHandler('onMangaNavigationKey', e.key)"));
   });
 
   test('高频翻页在异步窗口加载期间累积并按净位移排空', () async {

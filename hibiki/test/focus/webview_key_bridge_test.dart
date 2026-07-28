@@ -56,6 +56,42 @@ void main() {
       expect(multi, contains("callHandler('onMangaKey', e.key)"));
     });
 
+    test('默认转发长按（阅读器语义），forwardRepeats:false 时丢弃', () {
+      expect(spaceBridge, isNot(contains('e.repeat')),
+          reason: '默认不加 repeat 门，保持阅读器既有连发行为');
+      final String noRepeat = webViewKeyBridgeScript(
+        handlerName: 'onMangaNavigationKey',
+        keys: const <String>['ArrowLeft'],
+        forwardRepeats: false,
+      );
+      expect(noRepeat, contains('if (e.repeat) return;'),
+          reason: '漫画要「按住方向键不堆翻页风暴」');
+    });
+
+    test('stopPropagation 可选，默认不独占', () {
+      expect(spaceBridge, isNot(contains('stopImmediatePropagation')));
+      final String exclusive = webViewKeyBridgeScript(
+        handlerName: 'onX',
+        keys: const <String>['Escape'],
+        stopPropagation: true,
+      );
+      expect(exclusive, contains('e.stopImmediatePropagation();'));
+    });
+
+    test('幂等安装守卫按 handlerName 派生（宿主可反复注入）', () {
+      // 漫画每次换加载窗口都重新 evaluate 一次；没有守卫就会叠加 listener，
+      // 一次按键回传多次 → 翻页翻两页。
+      expect(spaceBridge,
+          contains("window['__hoshiKeyBridgeInstalled_onSpaceKey']"));
+      final String other = webViewKeyBridgeScript(
+        handlerName: 'onMangaNavigationKey',
+        keys: const <String>['ArrowLeft'],
+      );
+      expect(other,
+          contains("window['__hoshiKeyBridgeInstalled_onMangaNavigationKey']"),
+          reason: 'flag 必须按 handler 区分，否则同文档里两份桥互相把对方挡掉');
+    });
+
     test('键名里的引号 / 反斜杠被转义（不产生语法坏掉的 JS）', () {
       final String weird = webViewKeyBridgeScript(
         handlerName: 'onWeird',
