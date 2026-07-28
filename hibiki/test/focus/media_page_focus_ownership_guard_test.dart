@@ -29,6 +29,9 @@ void main() {
     'lib/src/pages/implementations/video_hibiki',
     'lib/src/pages/implementations/reader_hibiki_page.dart',
     'lib/src/pages/implementations/reader_hibiki',
+    // 漫画阅读器（pages/implementations/manga_hibiki_page.dart 只是 3 行兼容
+    // export，真实现在这里）。它曾是三个媒体页里唯一零焦点回收的那个。
+    'lib/src/media/manga/reader',
   ];
 
   Iterable<File> dartFilesUnder(String path) {
@@ -77,10 +80,11 @@ void main() {
     );
   });
 
-  test('两个媒体页都接入了 PageFocusOwnership', () {
+  test('三个媒体页都接入了 PageFocusOwnership', () {
     for (final String page in <String>[
       'lib/src/pages/implementations/video_hibiki_page.dart',
       'lib/src/pages/implementations/reader_hibiki_page.dart',
+      'lib/src/media/manga/reader/manga_hibiki_page.dart',
     ]) {
       final String source = File(page).readAsStringSync();
       expect(source, contains('PageFocusOwnership'),

@@ -996,9 +996,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         headerFocusId: HibikiFocusId('games-collection-${collection.id}'),
         onOpenDetail: () => _openCollectionDetail(collection),
         // 合集行右键/长按：三库页统一的合集上下文菜单（打开详情/重命名/标签/
-        // 删除合集）。删除支持「连同游戏一起删」勾选，与书/视频对称；语义同
-        // [_removeGame]：**只从库移除**，绝不删磁盘上的游戏安装目录（确认框
-        // 勾选文案明说这点）。
+        // 排序/删除合集）。**刻意不注入** onDeleteMembersMedia：游戏合集删除
+        // 只解散容器、绝不连带删游戏（游戏本体是用户安装目录，从库移除走
+        // 游戏卡菜单的「移除」；用户 2026-07-28 拍板恢复此纯解散语义，撤掉
+        // 审查加的「连同游戏一起删」勾选）。
         onContextMenu: () => unawaited(
           showCollectionContextDialog(
             context: context,
@@ -1006,8 +1007,6 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             collection: collection,
             onOpenDetail: () => _openCollectionDetail(collection),
             onChanged: () => unawaited(_reload()),
-            onDeleteMembersMedia: _removeCollectionMemberGames,
-            deleteMembersCheckboxLabel: t.delete_collection_also_games,
           ),
         ),
         collapsed: _appModel.prefsRepo.gamesCollapsedCollectionIds
@@ -1021,21 +1020,6 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             _buildGameCard(group.items[i].payload),
       ),
     );
-  }
-
-  /// 删合集时勾选「连同游戏一起删」的成员处置（与书/视频合集菜单对称）。
-  ///
-  /// 语义与卡菜单「移除游戏」完全一致：[GalgameRepository.remove] 只删库行
-  /// （元数据源/游玩会话经 FK cascade 连带清理），**绝不碰磁盘上的游戏安装
-  /// 目录**。混合合集里的书/视频成员跳过不误删（与视频页同一道防御）。
-  Future<void> _removeCollectionMemberGames(
-    List<MediaCollectionItemRow> members,
-  ) async {
-    for (final MediaCollectionItemRow m in members) {
-      if (MediaKind.tryParse(m.mediaType) != MediaKind.game) continue;
-      if (_repo.byId(m.entryKey) == null) continue;
-      await _repo.remove(m.entryKey);
-    }
   }
 
   /// 单张游戏卡（散卡网格与合集行内共用同一构造，回调全量接线）。

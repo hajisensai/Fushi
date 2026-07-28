@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
+import 'package:hibiki/src/mining/immersion_mining_request.dart'
+    show VideoMiningImageMode;
 import 'package:hibiki/src/mining/window_capture_channel.dart';
 import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
@@ -217,6 +219,79 @@ void main() {
     expect(failed.aborted, isTrue);
     expect(failed.failureReason, 'window disappeared');
     expect(failedRepo.contexts, isEmpty);
+  });
+
+  test('screenshot mode skips GIF entirely and is not a degradation', () async {
+    final TexthookerLineEntry entry = service.appendLine('静止画の台詞')!;
+    final _RecordingRepo repo = _RecordingRepo();
+    int gifCalls = 0;
+
+    final GalHookMiningResult result = await coordinator(
+      validator: (_) => true,
+      gif: ({required int hwnd}) async {
+        gifCalls++;
+        return Uint8List.fromList(<int>[1, 2, 3]);
+      },
+    ).mineLine(
+      lineId: entry.id,
+      fields: const <String, String>{'expression': '静止画'},
+      compression: MiningMediaCompression.compressed,
+      repo: repo,
+      imageMode: VideoMiningImageMode.currentFrame,
+    );
+
+    expect(result.success, isTrue);
+    expect(gifCalls, 0, reason: '用户选了截图就别再去抓 GIF——白花时间还白花体积');
+    expect(repo.contexts.single.coverPath, endsWith('.png'));
+    expect(
+      result.degradedToStill,
+      isFalse,
+      reason: '主动选静态图不是降级，不该弹「已降级为静态图」',
+    );
+  });
+
+  test('gif is still the default when imageMode is omitted', () async {
+    final TexthookerLineEntry entry = service.appendLine('動画の台詞')!;
+    final _RecordingRepo repo = _RecordingRepo();
+
+    // 不传 imageMode = 旧调用形态，必须逐字等价于原来的 GIF 优先链路。
+    final GalHookMiningResult result = await coordinator(
+      validator: (_) => true,
+    ).mineLine(
+      lineId: entry.id,
+      fields: const <String, String>{'expression': '動画'},
+      compression: MiningMediaCompression.compressed,
+      repo: repo,
+    );
+
+    expect(result.success, isTrue);
+    expect(repo.contexts.single.coverPath, endsWith('.gif'));
+    expect(result.degradedToStill, isFalse);
+  });
+
+  test('gif mode degrades to png and flags degradedToStill', () async {
+    // 上一条只证明「默认仍是 GIF」，并没有走降级路径——名字曾写着 "still degrades
+    // to png" 却没有任何断言覆盖它。这条把降级真验上：GIF 抓取返回空 → 退到单帧
+    // PNG，并且**必须**置 degradedToStill（用户要看到「已降级为静态图」提示，这正是
+    // 它与「主动选静态截图」的分水岭）。
+    final TexthookerLineEntry entry = service.appendLine('降格の台詞')!;
+    final _RecordingRepo repo = _RecordingRepo();
+
+    final GalHookMiningResult result = await coordinator(
+      validator: (_) => true,
+      gif: ({required int hwnd}) async => Uint8List(0),
+    ).mineLine(
+      lineId: entry.id,
+      fields: const <String, String>{'expression': '降格'},
+      compression: MiningMediaCompression.compressed,
+      repo: repo,
+      imageMode: VideoMiningImageMode.gif,
+    );
+
+    expect(result.success, isTrue);
+    expect(repo.contexts.single.coverPath, endsWith('.png'));
+    expect(result.degradedToStill, isTrue,
+        reason: 'GIF 失败退到单帧是降级，必须置标志，否则用户拿不到降级提示');
   });
 
   test('expired line is rejected before scene or audio capture', () async {

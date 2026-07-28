@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
-import 'package:hibiki/src/media/collections/shelf_sort.dart'
-    show naturalCompare;
+import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
+    show CollectionSortMeta, compareCollectionMembers;
 import 'package:hibiki/src/pages/implementations/collection_detail_shared.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_batch_dialog.dart';
 import 'package:hibiki/utils.dart';
@@ -93,14 +93,48 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// 把当前 [_members] 顺序一次落盘（sortIndex 全表回写）。库页合集行与播放器
   /// 换集读同一 `getCollectionItems`，落盘即三处同序（层次 C 单一真相源）。
+  ///
+  /// BUG-1190：本页只渲染 video 成员（调用方 `loadMembers` 按 mediaType 过滤），但
+  /// 一个合集**可以**同时含非 video 成员——「加入合集」弹窗列全表不按种类过滤，
+  /// 合集同步/备份合并又按 `(name, collectionType)` 自然键对齐、原样并入对端的裸串
+  /// mediaType。只回写可见的 video 键，会让不可见成员留着旧 sortIndex 与新写的致密
+  /// 0..n-1 碰撞（`getCollectionItems` 平手退化按 entryKey 排），把用户在别处排好的
+  /// 跨种类顺序打乱，并随同事务 bump 的 orderUpdatedAt 以 LWW 赢家身份推给对端。
+  ///
+  /// 修法与 `MediaCollectionGridDetailPage._onReorder` 同款「保序合并」：回写**全表**，
+  /// 可见槽按新可见序依次填入，不可见成员留在其原下标。
   Future<void> _persistOrder() async {
-    await widget.database.reorderCollectionItems(
-      widget.collection.id,
-      <({String mediaType, String entryKey})>[
-        for (final VideoBookRow r in _members)
-          (mediaType: 'video', entryKey: r.bookUid),
-      ],
-    );
+    final List<MediaCollectionItemRow> all =
+        await widget.database.getCollectionItems(widget.collection.id);
+    // 身份用 record 集合（值相等），不拼分隔符字符串——entryKey 是用户数据，任何
+    // 分隔符都可能歧义。
+    final Set<({String mediaType, String entryKey})> present =
+        <({String mediaType, String entryKey})>{
+      for (final MediaCollectionItemRow r in all)
+        (mediaType: r.mediaType, entryKey: r.entryKey),
+    };
+    // 可见序里只留 DB 仍在的成员：本页快照与 DB 之间可能有并发移出。过滤后可见槽数
+    // 恒等于 visible.length，下面合并时 vi 恰好消费完、不会越界。
+    final List<({String mediaType, String entryKey})> visible =
+        <({String mediaType, String entryKey})>[
+      for (final VideoBookRow r in _members)
+        if (present.contains(
+            (mediaType: MediaKind.video.dbValue, entryKey: r.bookUid)))
+          (mediaType: MediaKind.video.dbValue, entryKey: r.bookUid),
+    ];
+    final Set<({String mediaType, String entryKey})> visibleKeys =
+        visible.toSet();
+    int vi = 0;
+    final List<({String mediaType, String entryKey})> ordered =
+        <({String mediaType, String entryKey})>[
+      for (final MediaCollectionItemRow r in all)
+        if (visibleKeys
+            .contains((mediaType: r.mediaType, entryKey: r.entryKey)))
+          visible[vi++]
+        else
+          (mediaType: r.mediaType, entryKey: r.entryKey),
+    ];
+    await widget.database.reorderCollectionItems(widget.collection.id, ordered);
     widget.onChanged();
   }
 
@@ -128,17 +162,28 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// AppBar「排序」菜单：按名称（natural，卷1<卷2<卷10）/ 按导入时间（旧→新 =
   /// 原始加入时序）一键重排。菜单外壳共享 [buildDetailSortMenu]。
+  ///
+  /// 比较规则走共享的 [compareCollectionMembers]（与库页合集右键菜单、书架网格
+  /// 详情页同一份）。本页成员已是内存里的 [VideoBookRow]，标题 / 导入时刻直接取，
+  /// 不必像另两处那样现查四表——收口的是**规则**，不是取数路径。
+  ///
+  /// 顺带修掉本页原先「按名称」缺平局兜底的问题：`List.sort` 不是稳定排序，同名
+  /// 条目（同一集的两个来源 / 都还没刮到标题）此前每次整理都可能换个顺序，而顺序
+  /// 是要落盘的，看起来就像列表自己在动。
   Widget _buildSortMenu() {
-    int importedMsOf(VideoBookRow r) => r.importedAt ?? 0;
+    CollectionSortMeta metaOf(VideoBookRow r) => (
+          title: r.title,
+          importedAt: r.importedAt ?? 0,
+          key: r.bookUid,
+        );
     return buildDetailSortMenu(
       onSortByTitle: () => _applyOneKeySort(
-        (VideoBookRow a, VideoBookRow b) => naturalCompare(a.title, b.title),
+        (VideoBookRow a, VideoBookRow b) =>
+            compareCollectionMembers(metaOf(a), metaOf(b), byTitle: true),
       ),
       onSortByImported: () => _applyOneKeySort(
-        (VideoBookRow a, VideoBookRow b) {
-          final int c = importedMsOf(a).compareTo(importedMsOf(b));
-          return c != 0 ? c : naturalCompare(a.title, b.title);
-        },
+        (VideoBookRow a, VideoBookRow b) =>
+            compareCollectionMembers(metaOf(a), metaOf(b), byTitle: false),
       ),
     );
   }

@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1155 条。点号进各自文件。
+> 共 1158 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1194](bugs/BUG-1194-collection-reorder-nonvideo-order.md) | ✅ | ✅ | 视频合集详情页拖拽排序打乱非 video 成员的跨种类顺序 |
+| [BUG-1193](bugs/BUG-1193-galgame-luna-nonwinner-threads-dropped.md) | 🚧 | 🚧 | primed 后非赢家 hook 线程被 native 丢弃，无法像 LunaTranslator 那样切换 |
 | [BUG-1190](bugs/BUG-1190-sasasa-unity-resource-pcm-not-published.md) | ✅ | ✅ | Sasasa Unity 资源音频已解码但未写入音频环 |
 | [BUG-1189](bugs/BUG-1189-sasasa-unity-textmesh-glyphs.md) | ✅ | ✅ | Sasasa Unity TextMesh 对白被拆成单字 |
 | [BUG-1188](bugs/BUG-1188-dataroot-pick-layout-split.md) | ✅ | ✅ | 选目录迁移产出第三种布局，到不了新装形态（DB 被拖进文档目录） |
@@ -63,6 +65,7 @@
 | [BUG-1163](bugs/BUG-1163-manga-ocr-silent-provider-fallback.md) | ✅ | ✅ | 漫画 OCR GPU 加速降级到 CPU 完全静默 |
 | [BUG-1162](bugs/BUG-1162-torrent-pipeline-disk-flush-race.md) | ✅ | ✅ | hibiki_torrent 端到端测试在字节落盘前就比对，CI Windows 约 24% 概率红 |
 | [BUG-1161](bugs/BUG-1161-subtitle-ruby-strip.md) | ✅ | ✅ | 字幕 <rt> 注音被拼进正文，污染查词/制卡 sentence/字数统计 |
+| [BUG-1160](bugs/BUG-1160-gal-card-cover-gif-only.md) | ✅ | ✅ | galgame 制卡封面只能 GIF，不能选静态截图 |
 | [BUG-1159](bugs/BUG-1159-gal-textthread-ctx-strict-match.md) | ✅ | ✅ | 文本线程记忆按 ctx 严格匹配掐断文本流，连带语音资源配对失败降级 |
 | [BUG-1157](bugs/BUG-1157-test-runner-zero-test-false-green.md) | ✅ | ✅ | 全量测试入口把「零测试执行」当成通过（native asset 构建失败被伪装成绿） |
 | [BUG-1156](bugs/BUG-1156-manga-spread-cropped-janky.md) | ✅ | ✅ | 漫画双页图片裁切且翻页卡顿 |

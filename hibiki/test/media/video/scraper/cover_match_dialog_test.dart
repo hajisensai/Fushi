@@ -295,4 +295,69 @@ void main() {
     expect(find.text(t.scrape_reason_server), findsOneWidget);
     expect(find.text(t.scrape_reason_network), findsNothing);
   });
+
+  // 合集入口（collectionName 非 null）与单集入口的默认口径不同。合集入口下默认不勾
+  // 「应用到全合集」意味着只改 seed 那一集，而 seed 只是首个可解析成员、未必是合集卡
+  // 上显示的封面——用户会看到「点了半天毫无变化」，以为功能坏了。
+  testWidgets('合集入口：标题带合集名 + 默认应用到全合集（真写穿全部成员）', (WidgetTester tester) async {
+    final VideoBookRow book = await seed();
+    final _StubScraperService service = buildService();
+    const List<String> members = <String>[
+      'video/my_anime',
+      'video/ep2',
+      'video/ep3',
+    ];
+
+    await tester.pumpWidget(wrap(CoverMatchDialog(
+      service: service,
+      book: book,
+      collectionMemberUids: members,
+      onApplied: () {},
+      collectionName: '我的合集',
+    )));
+    await tester.pumpAndSettle();
+
+    // 标题分得清在给哪个合集换封面。
+    expect(
+      find.text(t.video_scrape_online_match_collection(name: '我的合集')),
+      findsOneWidget,
+    );
+    // 勾选默认已勾上，且仍可取消。
+    final CheckboxListTile toggle = tester.widget<CheckboxListTile>(
+      find.byKey(const ValueKey<String>('cover_match_apply_collection')),
+    );
+    expect(toggle.value, isTrue);
+    expect(toggle.onChanged, isNotNull);
+
+    // 行为（而非仅勾选状态）：点「使用」真写穿全部成员。
+    await tester.tap(find.text(t.video_scrape_use).first);
+    await tester.pumpAndSettle();
+    expect(service.appliedUids, members);
+  });
+
+  testWidgets('单集入口：标题不带合集名 + 默认只改这一集', (WidgetTester tester) async {
+    final VideoBookRow book = await seed();
+    final _StubScraperService service = buildService();
+
+    await tester.pumpWidget(wrap(CoverMatchDialog(
+      service: service,
+      book: book,
+      collectionMemberUids: const <String>[
+        'video/my_anime',
+        'video/ep2',
+      ],
+      onApplied: () {},
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.video_scrape_online_match), findsOneWidget);
+    final CheckboxListTile toggle = tester.widget<CheckboxListTile>(
+      find.byKey(const ValueKey<String>('cover_match_apply_collection')),
+    );
+    expect(toggle.value, isFalse, reason: '他点的就是这一集，别替他改整个合集');
+
+    await tester.tap(find.text(t.video_scrape_use).first);
+    await tester.pumpAndSettle();
+    expect(service.appliedUids, <String>['video/my_anime']);
+  });
 }

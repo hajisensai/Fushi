@@ -49,6 +49,13 @@ typedef GalHookTextLookupHandler = FutureOr<void> Function(
 );
 typedef GalHookTextEventHandler = FutureOr<void> Function();
 typedef GalHookTextLockHandler = FutureOr<void> Function(bool locked);
+
+/// native 侧穿透态被否决 / 变更时的回传（BUG-951）。native 建不出逃生工具条窗
+/// 时会拒绝进入穿透并把自己摁回 false；Dart 必须跟着退回，否则它的标志卡在
+/// true，用户下一次按 `↗` 会变成一次看不出反应的空点击。
+typedef GalHookTextPassThroughHandler = FutureOr<void> Function(
+  bool passThrough,
+);
 typedef GalHookTextBoundsHandler = FutureOr<void> Function(
   GalHookTextWindowRect rect,
 );
@@ -86,6 +93,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
   static GalHookTextEventHandler? _onReplayVoice;
   static GalHookTextEventHandler? _onRecaptureVoice;
   static GalHookTextLockHandler? _onLockChanged;
+  static GalHookTextPassThroughHandler? _onPassThroughChanged;
   static GalHookTextBoundsHandler? _onBoundsChanged;
 
   static void setEventHandlers({
@@ -98,6 +106,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     GalHookTextEventHandler? onReplayVoice,
     GalHookTextEventHandler? onRecaptureVoice,
     GalHookTextLockHandler? onLockChanged,
+    GalHookTextPassThroughHandler? onPassThroughChanged,
     GalHookTextBoundsHandler? onBoundsChanged,
   }) {
     _onLookupText = onLookupText;
@@ -109,6 +118,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onReplayVoice = onReplayVoice;
     _onRecaptureVoice = onRecaptureVoice;
     _onLockChanged = onLockChanged;
+    _onPassThroughChanged = onPassThroughChanged;
     _onBoundsChanged = onBoundsChanged;
     _instance.channel.setMethodCallHandler(_handleNativeCall);
   }
@@ -123,6 +133,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onReplayVoice = null;
     _onRecaptureVoice = null;
     _onLockChanged = null;
+    _onPassThroughChanged = null;
     _onBoundsChanged = null;
     _instance.channel.setMethodCallHandler(null);
   }
@@ -163,6 +174,9 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
         break;
       case 'lockChanged':
         await _onLockChanged?.call(args['locked'] == true);
+        break;
+      case 'passThroughChanged':
+        await _onPassThroughChanged?.call(args['passThrough'] == true);
         break;
       case 'windowRectChanged':
         final GalHookTextWindowRect? rect = GalHookTextWindowRect.fromMap(args);

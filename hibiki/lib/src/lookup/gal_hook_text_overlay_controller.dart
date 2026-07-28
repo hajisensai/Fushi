@@ -179,6 +179,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       onReplayVoice: replayCurrentLine,
       onRecaptureVoice: recaptureCurrentLine,
       onLockChanged: _onLockChanged,
+      onPassThroughChanged: _onPassThroughChanged,
       onBoundsChanged: _onBoundsChanged,
     );
     _session.addListener(_scheduleSync);
@@ -415,6 +416,15 @@ class GalHookTextOverlayController extends ChangeNotifier {
 
   Future<void> _onLockChanged(bool locked) async {
     _locked = locked;
+    notifyListeners();
+  }
+
+  /// native 拒绝进入穿透（逃生工具条窗建不出来）时的对账（BUG-951）。不跟着退回，
+  /// Dart 的标志会卡在 true，用户下一次按 `↗` 只会发一条 setPassThrough(false)
+  /// 到已经是 false 的 native —— 表现成「点了没反应」。
+  Future<void> _onPassThroughChanged(bool passThrough) async {
+    if (_passThrough == passThrough) return;
+    _passThrough = passThrough;
     notifyListeners();
   }
 

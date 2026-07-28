@@ -32,25 +32,45 @@ library;
 /// 且极难定位。裹进 IIFE 后每份桥各自闭包持有自己的键表，多份共存互不相干。
 /// 前导 `;` 是拼接安全惯例：本脚本被插进一大段 setup 脚本中间，前一条语句若少了
 /// 分号，裸 `(function…` 会被解析成对它的调用。
+/// [forwardRepeats] 为 false 时丢弃长按产生的 `KeyRepeatEvent`（`e.repeat`）。
+/// 漫画页要的是「按住方向键不堆翻页风暴」，阅读器则保留连发，故做成参数而不是
+/// 二选一写死。
+///
+/// [stopPropagation] 为 true 时额外 `stopImmediatePropagation()`，用于宿主文档里
+/// 还有别的 keydown 监听、且这些键必须**独占**给 Dart 的场合。
+///
+/// 生成的脚本自带按 [handlerName] 派生的幂等安装守卫：宿主可能对同一 document
+/// 反复注入（漫画每次换加载窗口都重新 evaluate 一次），没有守卫就会叠加多个
+/// listener → 一次按键回传多次 → 翻页翻两页。
 String webViewKeyBridgeScript({
   required String handlerName,
   required List<String> keys,
+  bool forwardRepeats = true,
+  bool stopPropagation = false,
 }) {
   assert(keys.isNotEmpty, 'a key bridge with no keys would be dead code');
   final String keyList = keys.map(_jsStringLiteral).join(', ');
+  final String installFlag =
+      _jsStringLiteral('__hoshiKeyBridgeInstalled_$handlerName');
+  final String repeatGuard =
+      forwardRepeats ? '' : '\n    if (e.repeat) return;';
+  final String propagationGuard =
+      stopPropagation ? '\n    e.stopImmediatePropagation();' : '';
   return '''
   ;(function () {
+  if (window[$installFlag]) return;
+  window[$installFlag] = true;
   var _hoshiBridgeKeys = [$keyList];
   document.addEventListener('keydown', function(e) {
     if (!e || _hoshiBridgeKeys.indexOf(e.key) === -1) return;
     if (e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
-    if (e.isComposing) return;
+    if (e.isComposing) return;$repeatGuard
     var t = e.target;
     if (t) {
       var tag = t.tagName ? t.tagName.toUpperCase() : '';
       if (tag === 'INPUT' || tag === 'TEXTAREA' || t.isContentEditable) return;
     }
-    e.preventDefault();
+    e.preventDefault();$propagationGuard
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler('$handlerName', e.key);
     }

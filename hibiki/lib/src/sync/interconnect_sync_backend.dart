@@ -686,19 +686,44 @@ class InterconnectSyncBackend extends SyncBackend
   }
 
   /// 列出对端 host 当前实时词典清单（直打 `/api/library/dictionaries`）。
-  Future<List<RemoteDictionaryInfo>> listRemoteDictionaries() async {
+  /// 互联「列清单」端点的共同骨架：解析会话 → GET → 逐条 fromJson（TODO-2120）。
+  ///
+  /// 五个域此前各抄一份 12 行的同构代码。**降级与超时必须逐域按现状显式传入**，
+  /// 不能图省事统一给所有域打开：
+  /// - [degradeOn404]：只有 videos / activity 这类**后加的**端点才降级——老 host 没有
+  ///   它们，降级成空表是为了「不因老 server 缺端点让整页占位卡消失或转圈」。词典 /
+  ///   书 / 本地音频 / 有声书是最老的端点，假定必然存在；给它们也加降级，会把「host
+  ///   把库服务关了（404 Library service off）」从可见错误变成静默空列表——那是真实的
+  ///   行为回归，不是「更健壮」。
+  /// - [timeout]：只有 videos / activity 有封顶（host 侧这两个清单可能很慢）。
+  Future<List<T>> _listRemote<T>(
+    String path,
+    T Function(Map<String, Object?> json) parse, {
+    Duration? timeout,
+    bool degradeOn404 = false,
+  }) async {
     await _ensureResolved();
     final HttpClientRequest req =
-        await _ops!.buildRequest('GET', '$_apiBase/api/library/dictionaries');
-    final HttpClientResponse res = await req.close();
-    _ops!.checkStatus(res.statusCode, 'GET /api/library/dictionaries');
-    final String body = await res.transform(utf8.decoder).join();
+        await _ops!.buildRequest('GET', '$_apiBase$path');
+    final Future<HttpClientResponse> closing = req.close();
+    final HttpClientResponse res =
+        timeout == null ? await closing : await closing.timeout(timeout);
+    if (degradeOn404 && res.statusCode == 404) {
+      await res.drain<void>();
+      return <T>[];
+    }
+    _ops!.checkStatus(res.statusCode, 'GET $path');
+    final Future<String> reading = res.transform(utf8.decoder).join();
+    final String body =
+        timeout == null ? await reading : await reading.timeout(timeout);
     final List<dynamic> arr = jsonDecode(body) as List<dynamic>;
-    return <RemoteDictionaryInfo>[
-      for (final dynamic e in arr)
-        RemoteDictionaryInfo.fromJson((e as Map).cast<String, Object?>()),
+    return <T>[
+      for (final dynamic e in arr) parse((e as Map).cast<String, Object?>()),
     ];
   }
+
+  Future<List<RemoteDictionaryInfo>> listRemoteDictionaries() =>
+      _listRemote('/api/library/dictionaries', RemoteDictionaryInfo.fromJson);
 
   /// 从对端 host 下载名为 [name] 的词典包到 [destination] 文件。
   Future<void> getRemoteDictionary(
@@ -761,19 +786,8 @@ class InterconnectSyncBackend extends SyncBackend
 
   /// 列出对端 host 当前书库清单（直打 `/api/library/books`）。
   @override
-  Future<List<RemoteBookInfo>> listRemoteBooks() async {
-    await _ensureResolved();
-    final HttpClientRequest req =
-        await _ops!.buildRequest('GET', '$_apiBase/api/library/books');
-    final HttpClientResponse res = await req.close();
-    _ops!.checkStatus(res.statusCode, 'GET /api/library/books');
-    final String body = await res.transform(utf8.decoder).join();
-    final List<dynamic> arr = jsonDecode(body) as List<dynamic>;
-    return <RemoteBookInfo>[
-      for (final dynamic e in arr)
-        RemoteBookInfo.fromJson((e as Map).cast<String, Object?>()),
-    ];
-  }
+  Future<List<RemoteBookInfo>> listRemoteBooks() =>
+      _listRemote('/api/library/books', RemoteBookInfo.fromJson);
 
   /// 从对端 host 下载书名为 [title] 的 EPUB 到 [destination] 文件。
   @override
@@ -987,19 +1001,8 @@ class InterconnectSyncBackend extends SyncBackend
   // 与 live books 对称：直打 /api/library/localaudio，不经 WebDAV 暂存。
 
   /// 列出对端 host 当前本地音频来源清单（直打 `/api/library/localaudio`）。
-  Future<List<RemoteLocalAudioInfo>> listRemoteLocalAudio() async {
-    await _ensureResolved();
-    final HttpClientRequest req =
-        await _ops!.buildRequest('GET', '$_apiBase/api/library/localaudio');
-    final HttpClientResponse res = await req.close();
-    _ops!.checkStatus(res.statusCode, 'GET /api/library/localaudio');
-    final String body = await res.transform(utf8.decoder).join();
-    final List<dynamic> arr = jsonDecode(body) as List<dynamic>;
-    return <RemoteLocalAudioInfo>[
-      for (final dynamic e in arr)
-        RemoteLocalAudioInfo.fromJson((e as Map).cast<String, Object?>()),
-    ];
-  }
+  Future<List<RemoteLocalAudioInfo>> listRemoteLocalAudio() =>
+      _listRemote('/api/library/localaudio', RemoteLocalAudioInfo.fromJson);
 
   /// 从对端 host 下载 displayName 为 [displayName] 的本地音频库到 [dest] 文件。
   Future<void> getRemoteLocalAudio(
@@ -1059,19 +1062,8 @@ class InterconnectSyncBackend extends SyncBackend
   // 与 live books 对称：直打 /api/library/audiobooks，不经 WebDAV 暂存。
 
   /// 列出对端 host 当前有声书清单（直打 `/api/library/audiobooks`）。
-  Future<List<RemoteAudiobookInfo>> listRemoteAudiobooks() async {
-    await _ensureResolved();
-    final HttpClientRequest req =
-        await _ops!.buildRequest('GET', '$_apiBase/api/library/audiobooks');
-    final HttpClientResponse res = await req.close();
-    _ops!.checkStatus(res.statusCode, 'GET /api/library/audiobooks');
-    final String body = await res.transform(utf8.decoder).join();
-    final List<dynamic> arr = jsonDecode(body) as List<dynamic>;
-    return <RemoteAudiobookInfo>[
-      for (final dynamic e in arr)
-        RemoteAudiobookInfo.fromJson((e as Map).cast<String, Object?>()),
-    ];
-  }
+  Future<List<RemoteAudiobookInfo>> listRemoteAudiobooks() =>
+      _listRemote('/api/library/audiobooks', RemoteAudiobookInfo.fromJson);
 
   /// 从对端 host 下载 bookKey 为 [bookKey] 的有声书到 [dest] 文件。
   Future<void> getRemoteAudiobook(
@@ -1215,24 +1207,14 @@ class InterconnectSyncBackend extends SyncBackend
   }
 
   @override
-  Future<List<RemoteVideoInfo>> listRemoteVideos() async {
-    await _ensureResolved();
-    final HttpClientRequest req =
-        await _ops!.buildRequest('GET', '$_apiBase/api/library/videos');
-    final HttpClientResponse res = await req.close().timeout(listTimeout);
-    if (res.statusCode == 404) {
-      await res.drain<void>();
-      return const <RemoteVideoInfo>[]; // 老 host 无视频端点：降级空表，不崩不转圈。
-    }
-    _ops!.checkStatus(res.statusCode, 'GET /api/library/videos');
-    final String body =
-        await res.transform(utf8.decoder).join().timeout(listTimeout);
-    final List<dynamic> arr = jsonDecode(body) as List<dynamic>;
-    return <RemoteVideoInfo>[
-      for (final dynamic e in arr)
-        RemoteVideoInfo.fromJson((e as Map).cast<String, Object?>()),
-    ];
-  }
+
+  /// 老 host 无视频端点 → 404 降级空表（不崩不转圈）；清单可能很慢，故超时封顶。
+  Future<List<RemoteVideoInfo>> listRemoteVideos() => _listRemote(
+        '/api/library/videos',
+        RemoteVideoInfo.fromJson,
+        timeout: listTimeout,
+        degradeOn404: true,
+      );
 
   /// 把本地视频 [file] 上传到对端 host，注册成 bookUid 为 [id] 的视频（client→host，
   /// syncVideoFiles 开关驱动的 live push）。[title] 与原始文件名经 URL-encode 走 header

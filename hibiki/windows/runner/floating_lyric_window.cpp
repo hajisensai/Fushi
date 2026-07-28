@@ -75,7 +75,12 @@ constexpr int kControlSlotCount = 5;
 // two leading slots are the voice controls (replay the line's captured audio;
 // open a recapture window so the user can replay the line inside the game and
 // have it recorded onto that line).
-constexpr int kHookTextControlSlotCount = 8;
+constexpr int kHookTextControlSlotCount = hook_toolbar::kSlotCount;
+// BUG-951: padding between the standalone pass-through toolbar window's edge
+// and its button row. Small on purpose — this window sits ON TOP of the game
+// and every pixel of it is a pixel the player cannot click — but non-zero so
+// there is a background strip to grab when dragging the overlay.
+constexpr float kToolbarWindowMarginDip = 5.0f;
 
 // Text-only clipboard window (Luna-style hover toolbar). A thin top strip is
 // ALWAYS a mouse catch (drawn at ~2% alpha across the full width) so the fully
@@ -330,6 +335,9 @@ bool FloatingLyricWindow::Show(HWND owner) {
   SetWindowPos(hwnd_, topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
   visible_ = true;
+  // BUG-951: a re-show while pass-through is still on must re-create the
+  // escape-hatch toolbar and re-arm the body's click-through in one place.
+  ApplyPassThroughExStyle();
   RequestRender();
   return true;
 }
@@ -339,6 +347,10 @@ void FloatingLyricWindow::Hide() {
   hovered_ = false;
   tracking_mouse_leave_ = false;
   dragging_ = false;
+  // BUG-951: hand clicks back unconditionally and take the toolbar down with
+  // the body. A hidden window that is still WS_EX_TRANSPARENT would come back
+  // click-through even if pass-through was switched off while hidden.
+  ApplyPassThroughExStyle();
   if (hwnd_ != nullptr) {
     ShowWindow(hwnd_, SW_HIDE);
   }
@@ -460,8 +472,9 @@ void FloatingLyricWindow::SetClickLookupEnabled(bool enabled) {
 bool FloatingLyricWindow::ScrollBy(float delta_px) {
   // 三个前置条件写在一处，调用方（WM_MOUSEWHEEL）不必再抄一遍：
   //  * 只有 hook 台词能滚——歌词条 / 剪贴板文本窗保持历史行为，一字不改；
-  //  * 穿透模式下鼠标整个属于游戏，滚轮不归我们（WM_NCHITTEST 已经对正文返回
-  //    HTTRANSPARENT，这里再挡一道是为了顶部“恢复带”那几十像素也不例外）；
+  //  * 穿透模式下鼠标整个属于游戏，滚轮不归我们（BUG-951 之后正文窗直接带
+  //    WS_EX_TRANSPARENT，系统压根不往这儿投鼠标消息；这条判据留着是为了
+  //    「先置位、还没走到应用 ex-style」那一瞬也不例外）；
   //  * 没有溢出就没有行程，返回 false 让事件继续往下传。
   if (!hook_text_mode_ || pass_through_ || scroll_max_px_ <= 0.0f) {
     return false;
@@ -504,7 +517,166 @@ void FloatingLyricWindow::SetPassThrough(bool enabled) {
   if (GetCapture() == hwnd_) {
     ReleaseCapture();
   }
+  // A click-through body receives no mouse messages at all, so it will never
+  // see the WM_MOUSELEAVE that would normally clear the hover state. Clear it
+  // here or the body would render its hovered appearance forever.
+  hovered_ = false;
+  tracking_mouse_leave_ = false;
+  ApplyPassThroughExStyle();
   RequestRender();
+}
+
+void FloatingLyricWindow::ApplyPassThroughExStyle() {
+  if (hwnd_ == nullptr) {
+    return;
+  }
+  // Only the galgame hook overlay has a pass-through mode. The audiobook lyric
+  // strip and the clipboard text window never reach the branch below, so their
+  // window styles are byte-for-byte what they always were.
+  const bool want = hook_text_mode_ && pass_through_ && visible_;
+  if (!want) {
+    pass_through_toolbar_.Hide();
+    SetBodyExTransparent(false);
+    return;
+  }
+  if (!toolbar_callbacks_bound_) {
+    pass_through_toolbar_.SetActionCallback(
+        [this](const std::string& action) { DispatchControlAction(action); });
+    pass_through_toolbar_.SetDragCallback(
+        [this](int x, int y) { MoveBodyTo(x, y); });
+    pass_through_toolbar_.SetDragEndCallback([this]() {
+      SyncStripSizeFromWindow();
+      // The clamp can still nudge the body (e.g. the drag ended half off a
+      // monitor edge), so re-sync the toolbar before reporting the bounds —
+      // otherwise the pill would sit a few px away from the body it belongs to.
+      ClampCurrentPositionToWindowMonitor();
+      SyncPassThroughToolbar();
+      NotifyBoundsChanged();
+    });
+    toolbar_callbacks_bound_ = true;
+  }
+  // Escape hatch FIRST. The body may only stop taking clicks once the window
+  // that can switch pass-through back off is actually on screen; if it cannot
+  // be created we refuse the toggle instead of stranding the user.
+  if (!pass_through_toolbar_.Show(ComputePassThroughToolbarLayout(),
+                                  ToolbarStyle(), ToolbarStates())) {
+    SetBodyExTransparent(false);
+    pass_through_ = false;
+    // Tell Dart the toggle was refused. Without this its own flag stays true,
+    // and the user's next press on the button sends setPassThrough(false) into
+    // an already-false native state — a press that visibly does nothing.
+    if (on_pass_through_) {
+      on_pass_through_(false);
+    }
+    return;
+  }
+  SetBodyExTransparent(true);
+}
+
+void FloatingLyricWindow::SetBodyExTransparent(bool enabled) {
+  if (hwnd_ == nullptr || ex_transparent_ == enabled) {
+    return;
+  }
+  const LONG_PTR bit = static_cast<LONG_PTR>(WS_EX_TRANSPARENT);
+  LONG_PTR ex = GetWindowLongPtr(hwnd_, GWL_EXSTYLE);
+  ex = enabled ? (ex | bit) : (ex & ~bit);
+  SetWindowLongPtr(hwnd_, GWL_EXSTYLE, ex);
+  // An ex-style change is not picked up until the frame is revalidated; without
+  // SWP_FRAMECHANGED the window keeps hit-testing with the OLD style.
+  SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                   SWP_FRAMECHANGED);
+  ex_transparent_ = enabled;
+}
+
+hook_toolbar::Layout FloatingLyricWindow::ComputePassThroughToolbarLayout()
+    const {
+  hook_toolbar::Layout layout;
+  if (hwnd_ == nullptr) {
+    return layout;
+  }
+  RECT wr = {};
+  if (!GetWindowRect(hwnd_, &wr)) {
+    return layout;
+  }
+  const float btn = ScaleForDpi(kButtonSizeDip);
+  const float gap = ScaleForDpi(kButtonGapDip);
+  const float margin = ScaleForDpi(kToolbarWindowMarginDip);
+  const float row_w = btn * kHookTextControlSlotCount +
+                      gap * (kHookTextControlSlotCount - 1);
+  // Same origin the in-body toolbar draws at (centred row, kControlsTopDip from
+  // the top), grown by |margin| so the pill has an edge to grab for dragging.
+  const float body_w = static_cast<float>(wr.right - wr.left);
+  const float row_x = wr.left + (body_w - row_w) / 2.0f;
+  const float row_y = wr.top + ScaleForDpi(kControlsTopDip);
+  layout.rect.left = static_cast<LONG>(std::lround(row_x - margin));
+  layout.rect.top = static_cast<LONG>(std::lround(row_y - margin));
+  layout.rect.right =
+      layout.rect.left + static_cast<LONG>(std::lround(row_w + margin * 2));
+  layout.rect.bottom =
+      layout.rect.top + static_cast<LONG>(std::lround(btn + margin * 2));
+  layout.owner_origin = POINT{wr.left, wr.top};
+  layout.button_px = btn;
+  layout.gap_px = gap;
+  layout.margin_px = margin;
+  return layout;
+}
+
+hook_toolbar::Style FloatingLyricWindow::ToolbarStyle() const {
+  hook_toolbar::Style style;
+  style.button_text_color = style_.button_text_color;
+  style.button_bg_color = style_.button_bg_color;
+  style.active_color = style_.active_color;
+  style.bg_color = style_.bg_color;
+  return style;
+}
+
+hook_toolbar::States FloatingLyricWindow::ToolbarStates() const {
+  hook_toolbar::States states;
+  states.replaying = replaying_;
+  states.recapturing = recapturing_;
+  states.playing = playing_;
+  states.pass_through = pass_through_;
+  states.locked = locked_;
+  return states;
+}
+
+void FloatingLyricWindow::SyncPassThroughToolbar() {
+  if (!pass_through_toolbar_.IsShowing()) {
+    return;
+  }
+  pass_through_toolbar_.Sync(ComputePassThroughToolbarLayout(), ToolbarStyle(),
+                             ToolbarStates());
+}
+
+void FloatingLyricWindow::MoveBodyTo(int x, int y) {
+  if (hwnd_ == nullptr) {
+    return;
+  }
+  RECT rc;
+  if (!GetWindowRect(hwnd_, &rc)) {
+    return;
+  }
+  const int width = rc.right - rc.left;
+  const int height = rc.bottom - rc.top;
+  // Clamp against the monitor under the cursor, exactly like the body's own
+  // drag path (TODO-832), so dragging by the toolbar cannot push the overlay
+  // off-screen and can still slide it across displays.
+  POINT cursor;
+  if (GetCursorPos(&cursor)) {
+    HMONITOR monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = {};
+    mi.cbSize = sizeof(mi);
+    if (GetMonitorInfo(monitor, &mi)) {
+      const POINT clamped =
+          ClampOriginToWorkArea(x, y, width, height, mi.rcWork);
+      x = clamped.x;
+      y = clamped.y;
+    }
+  }
+  SetWindowPos(hwnd_, topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, x, y, 0, 0,
+               SWP_NOSIZE | SWP_NOACTIVATE);
+  SyncPassThroughToolbar();
 }
 
 void FloatingLyricWindow::SetInitialBounds(int left, int top, int width,
@@ -640,34 +812,8 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
 
       // 1. Control buttons (prev / play-pause / next / lock / close) win first.
       const std::string action = ControlActionAt(x, y);
-      if (action == "lock") {
-        // The lock button toggles the position lock locally and reports the new
-        // state to Dart; it is never a no-op (unlike the old desktop strip).
-        locked_ = !locked_;
-        if (locked_ && (pressed_ || dragging_)) {
-          pressed_ = false;
-          dragging_ = false;
-        }
-        if (on_lock_) {
-          on_lock_(locked_);
-        }
-        RequestRender();
-        return 0;
-      }
-      if (action == "topmost") {
-        // The text-only Luna toolbar pin button: toggle always-on-top locally
-        // (LunaTranslator #36). Handled natively — no Dart round-trip — and every
-        // window-Z SetWindowPos reads topmost_ so the new state sticks.
-        topmost_ = !topmost_;
-        SetWindowPos(hwnd_, topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
-                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-        RequestRender();
-        return 0;
-      }
       if (!action.empty()) {
-        if (on_control_) {
-          on_control_(action);
-        }
+        DispatchControlAction(action);
         return 0;
       }
 
@@ -750,16 +896,16 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       // drag the corner to grow / shrink the bar (QQ-Music style). Everywhere
       // else stays HTCLIENT so our own mouse handlers (lookup / drag / control
       // buttons) keep receiving WM_LBUTTON*.
+      //
+      // BUG-951: there is deliberately NO pass-through branch here any more.
+      // HTTRANSPARENT only walks same-thread windows, so it never reached the
+      // galgame (a different process) — the click was simply swallowed. Real
+      // pass-through is WS_EX_TRANSPARENT on the whole body window, applied in
+      // ApplyPassThroughExStyle(); while it is set this handler is not called
+      // at all, which is exactly the point.
       POINT screen = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
       POINT client = screen;
       ScreenToClient(hwnd_, &client);
-      if (hook_text_mode_ && pass_through_) {
-        const float recovery_height =
-            ScaleForDpi(kControlsTopDip + kButtonSizeDip);
-        if (static_cast<float>(client.y) > recovery_height) {
-          return HTTRANSPARENT;
-        }
-      }
       if (ResizeGripContains(static_cast<float>(client.x),
                              static_cast<float>(client.y))) {
         return HTBOTTOMRIGHT;
@@ -771,9 +917,9 @@ LRESULT FloatingLyricWindow::HandleMessage(UINT message, WPARAM wparam,
       //
       //  * **接管条件**全在 ScrollBy 里（hook 模式 + 非穿透 + 真有溢出）。不满足
       //    就落回 DefWindowProc，歌词条 / 剪贴板文本窗的行为一字不改。
-      //  * **穿透模式**下 WM_NCHITTEST 已经对正文返回 HTTRANSPARENT，滚轮压根到
-      //    不了这里；顶部那条“恢复带”仍能收到消息，ScrollBy 的 pass_through_
-      //    判据把它也挡掉——穿透就是「鼠标整个属于游戏」，不留半个例外。
+      //  * **穿透模式**下正文窗带 WS_EX_TRANSPARENT，系统不投递任何鼠标消息，
+      //    滚轮压根到不了这里（BUG-951）；工具条独立窗自己不吃滚轮。穿透就是
+      //    「鼠标整个属于游戏」，不留半个例外。
       //  * **和工具条不打架**：那八个按钮只吃 WM_LBUTTONDOWN，从不吃滚轮。所以
       //    滚轮的命中区可以是整个窗口，不需要「避开按钮」这种特例分支——鼠标停
       //    在按钮上滚也照样翻文本，这正是用户预期。
@@ -1198,6 +1344,12 @@ void FloatingLyricWindow::Render() {
     const float t_top = ScaleForDpi(kControlsTopDip);
     const float strip_h = t_top + t_btn;
 
+    // BUG-951: while the hook body is click-through the toolbar lives in its
+    // own always-clickable window (HookToolbarWindow). Painting the band here
+    // as well would both double it visually and advertise a grab handle that
+    // takes no mouse input any more — the body is purely visual in that mode.
+    const bool draw_body_toolbar = !(hook_text_mode_ && pass_through_);
+
     // Full-width strip background: near-invisible at rest (still catches the
     // mouse so the top edge is always grabbable), a visible band on hover so the
     // whole strip stays catchable while sliding across to the buttons.
@@ -1208,7 +1360,9 @@ void FloatingLyricWindow::Render() {
     D2D1_ROUNDED_RECT strip_rect = D2D1::RoundedRect(
         D2D1::RectF(0, 0, static_cast<float>(width), strip_h),
         ScaleForDpi(6), ScaleForDpi(6));
-    render_target_->FillRoundedRectangle(strip_rect, strip_bg.Get());
+    if (draw_body_toolbar) {
+      render_target_->FillRoundedRectangle(strip_rect, strip_bg.Get());
+    }
 
     // Centre grip pill — the visible move handle (brighter on hover).
     const float grip_w = ScaleForDpi(kTextGripWidthDip);
@@ -1222,13 +1376,15 @@ void FloatingLyricWindow::Render() {
     D2D1_ROUNDED_RECT grip_rect = D2D1::RoundedRect(
         D2D1::RectF(grip_x, grip_y, grip_x + grip_w, grip_y + grip_h),
         grip_h / 2.0f, grip_h / 2.0f);
-    render_target_->FillRoundedRectangle(grip_rect, grip_brush.Get());
+    if (draw_body_toolbar) {
+      render_target_->FillRoundedRectangle(grip_rect, grip_brush.Get());
+    }
 
     // Controls appear only on hover. Clipboard mode keeps its historical
     // right-aligned buttons (transparency, pin/topmost, lock); Hook mode uses a
     // centred six-button core toolbar. Their hit areas in ControlActionAt() are
     // gated on hovered_ too, so a click can never hit an invisible button.
-    if (hovered_) {
+    if (hovered_ && draw_body_toolbar) {
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_bg;
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_fg;
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> tb_active;
@@ -1261,17 +1417,15 @@ void FloatingLyricWindow::Render() {
             t_btn * kHookTextControlSlotCount +
             t_gap * (kHookTextControlSlotCount - 1);
         const float left = (width - controls_total) / 2.0f;
-        auto hook_button = [&](int slot, const wchar_t* glyph, bool active) {
-          draw_tbtn(left + slot * (t_btn + t_gap), glyph, active);
-        };
-        hook_button(0, L"↺", replaying_);
-        hook_button(1, L"⏺", recapturing_);
-        hook_button(2, playing_ ? L"⏸" : L"▶", !playing_);
-        hook_button(3, L"↗", pass_through_);
-        hook_button(4, L"◐", false);
-        hook_button(5, locked_ ? L"\U0001F512" : L"\U0001F513", locked_);
-        hook_button(6, L"▣", false);
-        hook_button(7, L"✕", false);
+        // Glyph + active tint come from the shared slot table, so the in-body
+        // toolbar and the standalone pass-through toolbar always draw the same
+        // eight buttons in the same order (BUG-951).
+        const hook_toolbar::States tb_states = ToolbarStates();
+        for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
+          draw_tbtn(left + slot * (t_btn + t_gap),
+                    hook_toolbar::SlotGlyph(slot, tb_states),
+                    hook_toolbar::SlotActive(slot, tb_states));
+        }
       } else {
         const float lock_x = width - t_pad - t_btn;
         const float top_x = lock_x - t_gap - t_btn;
@@ -1394,6 +1548,45 @@ void FloatingLyricWindow::Render() {
   DeleteObject(dib);
   DeleteDC(mem_dc);
   ReleaseDC(nullptr, screen_dc);
+
+  // BUG-951: one funnel keeps the standalone toolbar in step with the body.
+  // Every state change already ends in a render, and Sync() is a no-op when
+  // nothing it cares about moved — so per-line caption updates do not turn into
+  // toolbar repaints.
+  SyncPassThroughToolbar();
+}
+
+void FloatingLyricWindow::DispatchControlAction(const std::string& action) {
+  if (action.empty()) {
+    return;
+  }
+  if (action == "lock") {
+    // The lock button toggles the position lock locally and reports the new
+    // state to Dart; it is never a no-op (unlike the old desktop strip).
+    locked_ = !locked_;
+    if (locked_ && (pressed_ || dragging_)) {
+      pressed_ = false;
+      dragging_ = false;
+    }
+    if (on_lock_) {
+      on_lock_(locked_);
+    }
+    RequestRender();
+    return;
+  }
+  if (action == "topmost") {
+    // The text-only Luna toolbar pin button: toggle always-on-top locally
+    // (LunaTranslator #36). Handled natively — no Dart round-trip — and every
+    // window-Z SetWindowPos reads topmost_ so the new state sticks.
+    topmost_ = !topmost_;
+    SetWindowPos(hwnd_, topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    RequestRender();
+    return;
+  }
+  if (on_control_) {
+    on_control_(action);
+  }
 }
 
 std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
@@ -1423,26 +1616,10 @@ std::string FloatingLyricWindow::ControlActionAt(float x, float y) {
       for (int slot = 0; slot < kHookTextControlSlotCount; ++slot) {
         const float bx = left + slot * (btn + gap);
         if (x < bx || x > bx + btn) continue;
-        switch (slot) {
-          case 0:
-            return "replayVoice";
-          case 1:
-            return "recaptureVoice";
-          case 2:
-            return "toggleFollow";
-          case 3:
-            return "togglePassThrough";
-          case 4:
-            return "toggleTransparency";
-          case 5:
-            return "lock";
-          case 6:
-            return "openWorkbench";
-          case 7:
-            return "close";
-          default:
-            return std::string();
-        }
+        // Shared slot table (hook_toolbar::kSlotActions): the standalone
+        // pass-through toolbar indexes the very same array, so the two windows
+        // physically cannot disagree about what a button does.
+        return hook_toolbar::kSlotActions[slot];
       }
       return std::string();
     }

@@ -320,6 +320,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             _buildMiningImageQualityRow(),
             _buildMiningAudioQualityRow(),
             _buildVideoMiningImageModePicker(),
+            _buildGalMiningImageModePicker(),
           ],
         ),
       ],
@@ -413,6 +414,40 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       ],
       onChanged: (VideoMiningImageMode mode) {
         appModel.setVideoMiningImageMode(mode);
+        setState(() {});
+      },
+    );
+  }
+
+  /// galgame 场景卡封面模式，与视频那项**分开存**（`gal_mining_image_mode`）：视频
+  /// 动图能拍出口型和动作，galgame 一句台词内画面基本静止，动图多半只是把同一帧存
+  /// 二十遍。共用一个开关会逼用户为一边将就另一边。
+  ///
+  /// galgame 没有「字幕区间」，所以只给 gif / 静态截图两档——不渲染 subtitleStart，
+  /// 免得暗示能选一个对这个场景无意义的模式。
+  Widget _buildGalMiningImageModePicker() {
+    return AdaptiveSettingsPickerRow<VideoMiningImageMode>(
+      title: t.gal_mining_image_mode,
+      subtitle: t.gal_mining_image_mode_hint,
+      icon: Icons.photo_camera_back_outlined,
+      controlBelow: true,
+      // 历史值可能是 subtitleStart（与视频项共用枚举）：按 isStill 归到静态截图，
+      // 不让 picker 落在一个没渲染的选项上。
+      selected: appModel.galMiningImageMode.isStill
+          ? VideoMiningImageMode.currentFrame
+          : VideoMiningImageMode.gif,
+      options: [
+        AdaptiveSettingsPickerOption<VideoMiningImageMode>(
+          value: VideoMiningImageMode.gif,
+          label: t.video_mining_image_mode_gif,
+        ),
+        AdaptiveSettingsPickerOption<VideoMiningImageMode>(
+          value: VideoMiningImageMode.currentFrame,
+          label: t.gal_mining_image_mode_screenshot,
+        ),
+      ],
+      onChanged: (VideoMiningImageMode mode) {
+        appModel.setGalMiningImageMode(mode);
         setState(() {});
       },
     );

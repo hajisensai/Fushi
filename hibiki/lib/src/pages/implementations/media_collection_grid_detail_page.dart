@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
+    show sortedCollectionRows;
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart'
     show unifiedShelfCardLayout;
-import 'package:hibiki/src/media/collections/shelf_sort.dart'
-    show naturalCompare;
-import 'package:hibiki/src/mining/metadata/galgame_metadata_merge.dart'
-    show GalgameCustomData;
 import 'package:hibiki/src/pages/implementations/collection_detail_shared.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart'
     show kShelfBookCardAspectRatio;
@@ -110,47 +108,14 @@ class _MediaCollectionGridDetailPageState
 
   /// 一键整理（排序交互重设计层次 B2；覆盖 95% 场景，配合网格拖拽精修）：按名称 /
   /// 导入时间（旧→新）重排全表并落盘 sortIndex（`reorderCollectionItems`），库页合集行
-  /// 同源立即同序。标题/导入时间从 epub/srt/galgames 三表现查（成员行只有身份键）。
+  /// 同源立即同序。比较器/四表元数据现查收口在共享 [sortedCollectionRows]
+  /// （合集右键菜单的排序两项同一实现）。
   Future<void> _applyOneKeySort({required bool byTitle}) async {
-    final List<EpubBookRow> epubs = await widget.database.getAllEpubBooks();
-    final List<SrtBookRow> srts = await widget.database.getAllSrtBooks();
-    // game 成员（游戏库页打开本详情页）：标题取用户覆盖名（customDataJson.name）
-    // 优先，回落本地默认名；导入时间 = addedAt。查不到的类型仍走下面的
-    // (entryKey, 0) 兜底，不 throw。
-    final List<GalgameRow> games = await widget.database.getAllGalgames();
-    final Map<String, ({String title, int importedAt})> meta =
-        <String, ({String title, int importedAt})>{
-      for (final EpubBookRow r in epubs)
-        MediaKind.epub.compositeKey(r.bookKey): (
-          title: r.title,
-          importedAt: r.importedAt
-        ),
-      for (final SrtBookRow r in srts)
-        MediaKind.srt.compositeKey(r.uid): (
-          title: r.title,
-          importedAt: r.importedAt
-        ),
-      for (final GalgameRow r in games)
-        MediaKind.game.compositeKey(r.id): (
-          title: GalgameCustomData.decode(r.customDataJson).name ?? r.name,
-          importedAt: r.addedAt,
-        ),
-    };
-    ({String title, int importedAt}) metaOf(MediaCollectionItemRow r) =>
-        meta['${r.mediaType}|${r.entryKey}'] ??
-        (title: r.entryKey, importedAt: 0);
-    final List<MediaCollectionItemRow> next =
-        List<MediaCollectionItemRow>.of(_rows)
-          ..sort((MediaCollectionItemRow a, MediaCollectionItemRow b) {
-            final ({String title, int importedAt}) ma = metaOf(a);
-            final ({String title, int importedAt}) mb = metaOf(b);
-            if (byTitle) {
-              final int c = naturalCompare(ma.title, mb.title);
-              return c != 0 ? c : ma.importedAt.compareTo(mb.importedAt);
-            }
-            final int c = ma.importedAt.compareTo(mb.importedAt);
-            return c != 0 ? c : naturalCompare(ma.title, mb.title);
-          });
+    final List<MediaCollectionItemRow> next = await sortedCollectionRows(
+      db: widget.database,
+      rows: _rows,
+      byTitle: byTitle,
+    );
     if (!mounted) return;
     setState(() => _rows = next);
     await widget.database.reorderCollectionItems(

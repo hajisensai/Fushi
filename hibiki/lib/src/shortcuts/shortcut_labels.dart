@@ -17,6 +17,12 @@ import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 extension ShortcutActionLabel on ShortcutAction {
   String get label {
     switch (this) {
+      case ShortcutAction.mangaPageForward:
+        return t.shortcut_action_manga_page_forward;
+      case ShortcutAction.mangaPageBackward:
+        return t.shortcut_action_manga_page_backward;
+      case ShortcutAction.mangaDismissDict:
+        return t.shortcut_action_manga_dismiss_dict;
       case ShortcutAction.readerPageForward:
         return t.shortcut_action_reader_page_forward;
       case ShortcutAction.readerPageBackward:
@@ -173,6 +179,8 @@ extension ShortcutScopeLabel on ShortcutScope {
         return t.shortcut_scope_audiobook;
       case ShortcutScope.video:
         return t.shortcut_scope_video;
+      case ShortcutScope.manga:
+        return t.shortcut_scope_manga;
       case ShortcutScope.gamepad:
         return t.shortcut_scope_gamepad;
       case ShortcutScope.globalExternal:

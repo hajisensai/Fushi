@@ -40,14 +40,24 @@
 
 焦点抢回来只解决「OS 焦点归 Flutter」的情况。焦点归 WebView2 期间按下的键**只存在于 DOM 里**，必须在内容层截获后交回 Dart——桌面 Windows 上 fork 的 `flutter_inappwebview_windows` 只转鼠标不转键盘。
 
-用 `lib/src/focus/webview_key_bridge.dart` 的 `webViewKeyBridgeScript({handlerName, keys})`，别自己写一份 `keydown` 监听：它固化了「只拦裸键、放行修饰键组合 / IME composing / `input|textarea|contenteditable`、命中才 `preventDefault`」这套判据，漏一条就是吃掉用户改键语义或打不出空格。
+用 `lib/src/focus/webview_key_bridge.dart` 的 `webViewKeyBridgeScript({handlerName, keys, forwardRepeats, stopPropagation})`，别自己写一份 `keydown` 监听：它固化了「只拦裸键、放行修饰键组合 / IME composing / `input|textarea|contenteditable`、命中才 `preventDefault`」这套判据，漏一条就是吃掉用户改键语义或打不出空格。
 
-生成结果整体裹在 `;(function () { … })();` 里，键表关在闭包中：同一 document 注入多份桥（阅读器一份、漫画页规划中再一份）时，若键表是脚本级全局 `var`，后注入的一份会把先注入的整个覆盖掉而两个 listener 都还在，表现为「某一页的键突然全不响应」。前导 `;` 是拼接安全惯例（本脚本插在 setup 大脚本中间）。
+生成结果整体裹在 `;(function () { … })();` 里，键表关在闭包中：同一 document 注入多份桥（阅读器的 Space 桥、漫画的导航键桥）时，若键表是脚本级全局 `var`，后注入的一份会把先注入的整个覆盖掉而两个 listener 都还在，表现为「某一页的键突然全不响应」。前导 `;` 是拼接安全惯例（本脚本插在 setup 大脚本中间）。
 
 改动注入脚本后注意 `hibiki/test/reader/reader_script_compactor_test.dart`：给 setup 模板新增插值必须在它的替身表里登记，否则该守卫直接 `StateError`（它保证最终拼装脚本的压缩有覆盖，并用 node `--check` 真解析）。
 
-## 已知未接入：漫画页
+## 漫画页（已接入，注意两处与阅读器相反的规则）
 
-`manga_hibiki_page.dart` 至今是硬编码 `if (key == LogicalKeyboardKey.arrowRight)`：不查 registry（不能改键、无手柄）、丢 `KeyRepeatEvent`（按住方向键不连翻）、零焦点回收、JS 侧无 keydown 桥。桌面上在漫画 WebView 里点/拖一次之后方向键翻页即失效且**无自愈路径**。
+实现在 `lib/src/media/manga/reader/manga_hibiki_page.dart`（`lib/src/pages/implementations/manga_hibiki_page.dart` 只是 3 行兼容 export，别改那个）。三层都已接：`PageFocusOwnership` + `ShortcutScope.manga` + 共享键盘桥。
 
-接入时要做的：`ShortcutScope.manga` + manga action 集 + 默认绑定 + i18n（走 `hibiki/tool/i18n_sync.dart --add`，禁手改 json）+ `PageFocusOwnership` 实例 + 键盘桥。**动手前先确认漫画在线源那批 PR（#411 / #417 系）已落地**，否则必然撞车重做。
+**① 词典弹窗可见时，漫画不让位。** 阅读器的 `gesture` 判据在弹窗可见时早退（弹窗自持焦点，BUG-136）；漫画的 `_canOwnMangaFocus` 必须相反——本页规定弹窗可见时左右键仍要「关弹窗并翻页」、Escape 要关弹窗，而弹窗是纯原生 WebView、没有 Flutter 焦点节点，不主动收回这些键就全部落空。这与本页覆写 `capturesDictionaryPopupNavigationKeys` 是同一诉求的两半，改任一边都要同时想另一边。
+
+**② 左右方向键不受 webtoon / 弹窗门控。** 它们是**跨页步进**语义（`inputActionForShortcut` 的 `horizontalArrow` 参数）：webtoon 的纵向滚动不影响它们，弹窗可见时也要生效。其余前进/后退键则要让位——弹窗可见时空格归词典，webtoon 下纵向键归 WebView 原生竖滚。
+
+翻页方向：注册表存**页序语义**（forward = 下一页），左右键的物理朝向由 `shortcuts/manga_arrow_override.dart` 的 `resolveMangaArrowPageTurn` 按跨页方向（日漫默认 rtl）校正，与 reader 的 `resolveReaderArrowPageTurn` 同构。方向不能进注册表——注册表全局、每本书排版不同，直接把 `ArrowLeft` 绑成 backward 会让 rtl 的书翻反。
+
+键盘桥用 `forwardRepeats: false`（本页有意设计：按住方向键不堆翻页风暴）+ `stopPropagation: true`。注意桥从旧手写版的 **capture 阶段**（`addEventListener(..., true)`）改成了共享生成器的**冒泡阶段**（仍带 `stopImmediatePropagation`）——漫画文档目前没有别的 `keydown` 监听，所以行为等价；若将来给漫画页图注入了自己的键盘处理，要重新核这条。桥每次换加载窗口都会重新注入，靠生成器自带的幂等守卫防 listener 叠加（否则一次按键翻两页）。
+
+**③ 漫画只接了键盘通道，没接手柄/鼠标。** `ShortcutScope.manga.channels` 因此只开 `keyboard`，默认表里也**不许**有手柄绑定。曾经配过 RB/LB/dpad/B，但本页既没有 `resolveGamepad`、也没有 `GamepadButtonIntent` 的 Action（Android 的 `gameButton*` 键事件同样匹配不到纯键盘绑定），结果是用户在设置里能配、按下去毫无反应——**比压根没这个选项更糟**，用户会以为自己手柄坏了。要加回来必须先照 reader 的 `_handleGamepadButton`（`caret.part.dart`）接上解析入口 + 在 build 里挂 `Actions(GamepadButtonIntent: …)`，并真机验证过再开通道。滚轮同理：本页翻页走硬编码的 `wheelInputAction`，不查注册表。
+
+两条守卫分工别搞混：`shortcut_action_wiring_guard` 只看「`ShortcutAction.<名>` 这个符号在执行体文件里出现过没有」，抓不到「键盘接了、手柄没接」这种半接线；`shortcut_channel_wiring_guard` 才是按 **(scope, channel)** 核解析入口的那条——新增 action 后报「死项」找前者，开了通道却没接线报红找后者。

@@ -94,6 +94,7 @@ void main() {
       onOpenWorkbench: () => events.add('workbench'),
       onClose: () => events.add('close'),
       onLockChanged: (bool locked) => events.add('lock:$locked'),
+      onPassThroughChanged: (bool value) => events.add('passThrough:$value'),
       onBoundsChanged: (GalHookTextWindowRect value) => rect = value,
     );
 
@@ -103,6 +104,11 @@ void main() {
     await invokeFromNative('openWorkbench');
     await invokeFromNative('close');
     await invokeFromNative('lockChanged', <String, Object?>{'locked': true});
+    // BUG-951: native 拒绝进入穿透时的对账事件，Dart 必须收得到。
+    await invokeFromNative(
+      'passThroughChanged',
+      <String, Object?>{'passThrough': false},
+    );
     await invokeFromNative('windowRectChanged', <String, Object?>{
       'left': 10,
       'top': 20,
@@ -116,7 +122,8 @@ void main() {
       'transparent',
       'workbench',
       'close',
-      'lock:true'
+      'lock:true',
+      'passThrough:false',
     ]);
     expect(rect?.toMap(), <String, Object?>{
       'left': 10,

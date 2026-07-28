@@ -2670,7 +2670,6 @@
   "game_scrape_use": "Use",
   "game_scrape_search_failed": "Search failed. Check your network and try again.",
   "game_remove_confirm": "Remove this game from the library? Game files on disk will not be deleted.",
-  "delete_collection_also_games": "Also remove the games in it from the library (game files on disk are kept)",
   "manga_ocr_acceleration_status": "OCR acceleration: ${engine}",
   "manga_ocr_acceleration_degraded": "GPU acceleration unavailable, running OCR on ${engine}: ${reason}",
   "media_tracking_status": "Collection status",
@@ -2704,5 +2703,14 @@
   "game_line_audio_suppressed_hint": "No clean audio source produced audio for this line, and the system mix was skipped by your audio fallback policy. This does not mean the line has no voice.",
   "video_setting_torrent_limit_lan": "Apply limits to LAN peers",
   "video_setting_torrent_limit_lan_hint": "Off by default: transfers with peers on your local network ignore the limits above.",
-  "download_rate_limit_lan_included": "Also applies within your local network."
+  "download_rate_limit_lan_included": "Also applies within your local network.",
+  "video_collection_no_local_member": "No local video in this collection",
+  "video_scrape_online_match_collection": "Match cover for $name",
+  "gal_mining_image_mode": "Galgame card image",
+  "gal_mining_image_mode_screenshot": "Screenshot",
+  "gal_mining_image_mode_hint": "Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.",
+  "shortcut_scope_manga": "Manga",
+  "shortcut_action_manga_page_forward": "Next page",
+  "shortcut_action_manga_page_backward": "Previous page",
+  "shortcut_action_manga_dismiss_dict": "Close dictionary"
 }

@@ -45,14 +45,29 @@ void main() {
     test('interactivity is not driven by a hover timer', () {
       // A timer-driven transparent/interactive flip is inherently racy: a fast
       // mouse-enter + click can arrive while WS_EX_TRANSPARENT is still set.
+      // This is the invariant that killed PR#460 and it still holds.
       expect(cpp.contains('PollCursorInteractivity'), isFalse);
       expect(cpp.contains('ApplyInteractive'), isFalse);
       expect(cpp.contains('SetTimer('), isFalse);
       expect(cpp.contains('KillTimer('), isFalse);
-      expect(cpp.contains('&= ~static_cast<LONG_PTR>(WS_EX_TRANSPARENT)'),
-          isFalse);
-      expect(
-          cpp.contains('|= static_cast<LONG_PTR>(WS_EX_TRANSPARENT)'), isFalse);
+
+      // BUG-951 UPDATE — this test used to also forbid touching
+      // WS_EX_TRANSPARENT at all. That blanket ban was the reason the overlay
+      // shipped a pass-through mode that did nothing across processes: the bit
+      // is the ONLY cross-process click-through mechanism Win32 has. What was
+      // actually unsafe was flipping it by cursor position on a timer, which
+      // the four assertions above already forbid.
+      //
+      // The bit is now applied statically for as long as the user keeps
+      // pass-through on, with the toolbar moved into its own always-clickable
+      // window so there is nothing to be locked out of. The full contract —
+      // one applier, escape hatch shown first, refuse the toggle if it cannot
+      // be — is pinned by
+      // test/tools/gal_overlay_passthrough_dual_window_guard_test.dart.
+      expect(cpp.contains('ApplyPassThroughExStyle'), isTrue,
+          reason: 'Pass-through must go through the single applier that also '
+              'puts the escape-hatch toolbar on screen.');
+      expect(cpp.contains('pass_through_toolbar_.Show('), isTrue);
     });
 
     test('word lookup is preserved — taps still report a char index', () {
