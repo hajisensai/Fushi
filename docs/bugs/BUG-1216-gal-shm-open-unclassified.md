@@ -44,9 +44,30 @@
 > 该游戏以更高权限运行，请以管理员身份运行 Hibiki（voice_hook open access_denied name=Local\HibikiVoiceHook_1234 win32=5 helper=x86）
 
 - **[x] ① 已修复** — `hibiki/windows/runner/voice_hook_reader.h` / `voice_hook_reader.cpp`（`VoiceHookOpenError` / `VoiceHookOpenResult` / `VoiceHookOpenErrorToken` / `ProtocolMismatchDetail`）、`hibiki/windows/runner/flutter_window.cpp`（`open` 回 token + detail + win32，失败判据改用 `Open` 的 error）、`hibiki/lib/src/mining/galgame_audio_source.dart`（`protocolMismatch` 枚举、`galHookFailureFromVoiceHookOpenError`、`galHookOpenFailureDetail`、`galHookDiagnosticsDetail` 迁入、`_captureFailure(resolved/nativeDetail)`）、`hibiki/lib/src/mining/gal_hook_failure_text.dart`（`_annotate` 无条件附证据）、`hibiki/lib/src/mining/gal_hook_session_controller.dart`（`injectorDetail` 状态字段与三处写入）、三个 UI 调用点、17 语言 i18n。
-- **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_shm_open_error_test.dart` 15 例：token→原因逐条映射、`protocolMismatch` 不可重试、未知 token 不编造、每个归类都有可执行文案、detail 压行保留 win32/版本事实、**经真实 `open` 失败路径**（fake injector 宣告 hooked + mock channel 回各 token）断言原因与证据双双落进 `lastFailure`、injector 全绿时不得把确定原因猜回 unknown、归类得出时**也**要带证据、降级路径从状态取证据、无证据不生造括号；外加三条源码守卫（全部先剥 `//` 与 `/* */` 注释再匹配，且扫不到目标函数体即判红防空集）：native 六个 token 齐全且 Dart 认得改处置的两个、`Open` 函数体内**六个失败枚举值必须逐个被赋出来**（不盯某一种违规写法——`return VoiceHookStatus{}` / `return VoiceHookOpenResult{}` / 少赋一条都等效丢原因，只有枚举齐全这个判据抗等价改写）且必须读 `GetLastError`、channel 的 `open` 分支内 `"error"` 键的值必须**来自** `VoiceHookOpenErrorToken` 且判据必须是 `opened.ok()`。
+- **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_shm_open_error_test.dart` 18 例：token→原因逐条映射、`protocolMismatch` 不可重试、未知 token 不编造、每个归类都有可执行文案、detail 压行保留 win32/版本事实、**经真实 `open` 失败路径**（fake injector 宣告 hooked + mock channel 回各 token）断言原因与证据双双落进 `lastFailure`、injector 全绿时不得把确定原因猜回 unknown、归类得出时**也**要带证据、降级路径从状态取证据、无证据不生造括号；外加三条源码守卫（全部先剥 `//` 与 `/* */` 注释再匹配，且扫不到目标函数体即判红防空集）：native 六个 token 齐全且 Dart 认得改处置的两个、`Open` 函数体内**六个失败枚举值必须逐个被赋出来**（不盯某一种违规写法——`return VoiceHookStatus{}` / `return VoiceHookOpenResult{}` / 少赋一条都等效丢原因，只有枚举齐全这个判据抗等价改写）且必须读 `GetLastError`、channel 的 `open` 分支内 `"error"` 键的值必须**来自** `VoiceHookOpenErrorToken` 且判据必须是 `opened.ok()`。
 
 守卫做过变异实测（4 次，每次 `git diff --stat` 确认真写入文件、跑完即还原），全部按预期转红：① 把 token 改名、只在注释里留 `access_denied` → 红（剥注释生效）；② 注释掉一条出口的 `out.error = ...kMapViewFailed` → 红（等价违规 + 注释冒充双重变异）；③ 把 token 换成另一句写死的串 → 红（旧写法只查那一句英文串会假绿）；④ 判据退回 `!hooked && !ok` → 红。
+
+### 审查追加修复（PR 复核时发现）
+
+初版把 `resolved` 对**每一个** token 都填成非空（未知 token 也落
+`sharedMemoryUnavailable`），而 `_captureFailure` 里 `resolved ?? classifyGalHookInjectorFailure(...)`
+的短路语义意味着：只要 `open` 报了错，injector stderr 的归类就**整条被跳过**。
+
+后果正是本 bug 要消灭的那件事，只是从 native 的 `return` 挪到了 Dart 的归类层：
+`mapping_not_found` 只说明「读侧没找到映射」，**没说为什么**；而 injector 的 stderr 往往
+正好写着原因（`hook DLL not found` → `hookDllMissing`、`位数不匹配` → `bitnessMismatch`、
+`已存在但不可复用的 hook 会话` → `staleSession`、`CreateProcessW failed: 740` →
+`elevationRequired`…）。初版会把这些更可执行的原因统统压成一句通用的「捕获通道无法打开」。
+
+修法是让数据结构自己表达「native 有没有定出处置」，而不是加分支：
+`galHookFailureFromVoiceHookOpenError` 改返回 `GalHookInjectorFailure?`，只有真定出处置的
+两条（`access_denied` / `protocol_mismatch`）返回非空盖过 stderr 归类，其余返回 `null`
+交回 `classifyGalHookInjectorFailure`。调用点因此从三元退化成一行。
+
+补两条测试（含端到端走真实 `_captureFailure` 路径的那条）：`mapping_not_found` +
+injector stderr `hook DLL not found` 必须归类成 `hookDllMissing`。变异实测：把
+`_ => null` 改回 `_ => sharedMemoryUnavailable`，两条测试转红（退出码 1）。
 
 ### 备注
 

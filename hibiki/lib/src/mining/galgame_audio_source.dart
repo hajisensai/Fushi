@@ -406,15 +406,22 @@ String galHookDiagnosticsDetail(GalHookInjectorDiagnostics diagnostics) {
 /// Hibiki」（BUG-1216）：
 ///   - `access_denied`：游戏跑在更高完整性级别 → 要以管理员身份运行 Hibiki，重启没用；
 ///   - `protocol_mismatch`：helper 与本体版本漂开 → 要更新/重装捕获组件，重启更没用；
-///   - 其余（映射不存在 / MapView 失败 / pid 非法）→ 通道确实没建起来，重试或重开游戏。
+///   - 其余（映射不存在 / MapView 失败 / pid 非法）→ native 只知道「映射不在那儿」，
+///     **不知道为什么**，此处返回 null。
 ///
-/// 未知 token 落 [GalHookInjectorFailure.sharedMemoryUnavailable]：这是「open 失败」这件事
-/// 本身仍然成立的最弱事实，绝不编造更具体的原因。
-GalHookInjectorFailure galHookFailureFromVoiceHookOpenError(String? token) =>
+/// 返回 null 表示「native 没定出具体处置」，调用方据此回退到 injector stderr 归类
+/// （[classifyGalHookInjectorFailure]）。这是有意的：`mapping_not_found` 这类 token 只说明
+/// 读侧没找到映射，而 injector 的 stderr 往往正好写着**为什么**没建起来（hook DLL 缺失 /
+/// 位数不匹配 / 陈旧会话 / 需要提权…）。若在这里一律返回
+/// [GalHookInjectorFailure.sharedMemoryUnavailable]，那些更可执行的原因就被这层压掉了——
+/// 那正是 BUG-1216 要消灭的「信息在返回值处被丢弃」，只是换个地方重犯。
+/// 只有 native **真的定出**处置的两条（拒绝访问 / 契约不符）才盖过 stderr 归类：那两条
+/// injector 侧可能一路全绿，拿它的日志猜只会把确定的事实退化成 fallback。
+GalHookInjectorFailure? galHookFailureFromVoiceHookOpenError(String? token) =>
     switch (token?.trim().toLowerCase()) {
       'access_denied' => GalHookInjectorFailure.accessDenied,
       'protocol_mismatch' => GalHookInjectorFailure.protocolMismatch,
-      _ => GalHookInjectorFailure.sharedMemoryUnavailable,
+      _ => null,
     };
 
 /// 把 `open` 失败的 native 一手事实压成一行诊断（token + win32 码 + 映射名/版本对照 +
@@ -1138,11 +1145,9 @@ class EngineHookGalAudioSource implements GalAudioSource {
         // 不猜测**：原因取 token 归类，一手事实（win32 码 / 映射名 / 双方版本）原样带进诊断。
         await _captureFailure(
           fallback: GalHookInjectorFailure.sharedMemoryUnavailable,
-          resolved: opened == null
-              ? null
-              : galHookFailureFromVoiceHookOpenError(
-                  opened['error'] as String?,
-                ),
+          resolved: galHookFailureFromVoiceHookOpenError(
+            opened?['error'] as String?,
+          ),
           nativeDetail: opened == null
               ? ''
               : galHookOpenFailureDetail(opened, injectorPath: path),

@@ -36,7 +36,7 @@ void main() {
       );
     });
 
-    test('映射不存在/MapView 失败/pid 非法仍是 sharedMemoryUnavailable', () {
+    test('映射不存在/MapView 失败/pid 非法：native 没定出处置，交回 stderr 归类', () {
       for (final String token in <String>[
         'mapping_not_found',
         'map_view_failed',
@@ -45,20 +45,33 @@ void main() {
       ]) {
         expect(
           galHookFailureFromVoiceHookOpenError(token),
-          GalHookInjectorFailure.sharedMemoryUnavailable,
-          reason: token,
+          isNull,
+          reason: '$token 只说明读侧没找到映射，没说为什么——不能盖掉 injector 的解释',
         );
       }
     });
 
     test('未知 token / null 不编造更具体的原因', () {
+      expect(galHookFailureFromVoiceHookOpenError(null), isNull);
+      expect(galHookFailureFromVoiceHookOpenError('what_is_this'), isNull);
+    });
+
+    test('native 未定出处置时，injector stderr 的更可执行原因必须活下来', () {
+      // 回归守卫：`resolved` 一度对**每个** token 都非空，于是 `mapping_not_found`
+      // 这类「只知道映射不在」的出口把 injector stderr 归类整个短路掉——hook DLL 缺失
+      // 会被降级成一句通用的「捕获通道无法打开」。那正是 BUG-1216 要消灭的信息丢弃，
+      // 只是从 native 的 return 挪到了 Dart 的归类层。
       expect(
-        galHookFailureFromVoiceHookOpenError(null),
-        GalHookInjectorFailure.sharedMemoryUnavailable,
+        classifyGalHookInjectorFailure(
+          'hook DLL not found\nvoice_hook open mapping_not_found win32=2',
+          fallback: GalHookInjectorFailure.sharedMemoryUnavailable,
+        ),
+        GalHookInjectorFailure.hookDllMissing,
       );
+      // 而真定出处置的两条不受影响：它们盖过 stderr。
       expect(
-        galHookFailureFromVoiceHookOpenError('what_is_this'),
-        GalHookInjectorFailure.sharedMemoryUnavailable,
+        galHookFailureFromVoiceHookOpenError('access_denied'),
+        GalHookInjectorFailure.accessDenied,
       );
     });
 
@@ -127,8 +140,9 @@ void main() {
 
     /// 跑一次「helper 宣告 hooked → app 打开共享内存失败」的真实路径。
     Future<GalHookInjectorDiagnostics> runOpenFailure(
-      Map<Object?, Object?> openResponse,
-    ) async {
+      Map<Object?, Object?> openResponse, {
+      String injectorStdout = 'OK hooked pid=4321 mode=attach\n',
+    }) async {
       final Directory temp = await Directory.systemTemp.createTemp(
         'hibiki_gal_shm_open_test_',
       );
@@ -152,9 +166,7 @@ void main() {
         injectorPath: injector.path,
         processStarter: (String executable, List<String> arguments) async {
           scheduleMicrotask(() {
-            process.stdoutController.add(
-              'OK hooked pid=4321 mode=attach\n'.codeUnits,
-            );
+            process.stdoutController.add(injectorStdout.codeUnits);
           });
           return process;
         },
@@ -210,6 +222,24 @@ void main() {
         GalHookInjectorFailure.sharedMemoryUnavailable,
       );
       expect(diagnostics.stderrTail, contains('mapping_not_found'));
+    });
+
+    test('native 没定出处置时，injector 说出的原因必须一路活到 failure 上', () async {
+      // 端到端回归守卫（走真实 _captureFailure 路径）：`mapping_not_found` 不得把
+      // injector 的「hook DLL 缺失」短路成通用的 sharedMemoryUnavailable。
+      final GalHookInjectorDiagnostics diagnostics = await runOpenFailure(
+        <Object?, Object?>{
+          'error': 'mapping_not_found',
+          'detail': r'name=Local\HibikiVoiceHook_4321 win32=2',
+          'win32': 2,
+        },
+        injectorStdout: 'hook DLL not found\n',
+      );
+      expect(
+        diagnostics.failure,
+        GalHookInjectorFailure.hookDllMissing,
+        reason: 'native 只知道映射不在，injector 知道为什么——不能被前者盖掉',
+      );
     });
 
     test('归类得出原因时**也**要把 native 证据带给用户', () {
