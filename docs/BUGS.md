@@ -36,6 +36,7 @@
 | [BUG-1225](bugs/BUG-1225-shm-reader-write-access-must-stay.md) | ✅ | ✅ | 读端共享内存写权限不可收紧：SelectTextThread 的原子写落在只读页上会崩 |
 | [BUG-1221](bugs/BUG-1221-manga-path-case-folded.md) | ✅ | ✅ | 漫画页图解析把路径折成小写，制卡封面名被小写化且大小写敏感平台缺页 |
 | [BUG-1220](bugs/BUG-1220-bangumi-sync-invisible.md) | ✅ | ✅ | Bangumi 同步链路全静默：看完了没反应且无处查看 |
+| [BUG-1219](bugs/BUG-1219-scrape-failure-detail.md) | ✅ | ✅ | 封面刮削失败只给一句笼统提示，完整报错被吞到错误日志 |
 | [BUG-1218](bugs/BUG-1218-epub-path-case-folded-android.md) | ✅ | ✅ | EPUB 解析把路径折成小写，大小写敏感平台上整本章节静默失踪 |
 | [BUG-1217](bugs/BUG-1217-magpie-bundle-slim-offline.md) | ✅ | ✅ | 随主包发行精简版 Magpie，超分首次使用不再下载 |
 | [BUG-1216](bugs/BUG-1216-gal-shm-open-unclassified.md) | ✅ | ✅ | 共享内存打不开被压成一句「请重启 Hibiki」，真实原因（拒绝访问/版本不符/映射不存在）在 native 返回值处丢弃 |

@@ -308,6 +308,64 @@ void main() {
     expect(find.text(t.scrape_reason_network), findsNothing);
   });
 
+  // BUG-1219：两句折叠文案（「检查网络」/「源站报错」）只回答「我该做什么」，不回答
+  // 「到底怎么了」——用户拿不到状态码、主机名、底层 SocketException，只能换页翻错误
+  // 日志。完整异常串必须留在出错的地方，并且可一键复制上报。
+  testWidgets('BUG-1219 搜索失败在弹窗内直出完整技术详情 + 可复制', (WidgetTester tester) async {
+    final VideoBookRow book = await seed();
+    final _StubScraperService service = buildService()
+      ..searchErrors.add(const ScrapeNetworkException(
+          'Bangumi search request failed: SocketException: '
+          "Failed host lookup: 'api.bgm.tv'"));
+
+    await tester.pumpWidget(wrap(CoverMatchDialog(
+      service: service,
+      book: book,
+      collectionMemberUids: const <String>['video/my_anime'],
+      onApplied: () {},
+    )));
+    await tester.pumpAndSettle();
+
+    // 折叠原因仍在（可行动指引不被详情取代）。
+    expect(find.text(t.scrape_reason_network), findsOneWidget);
+    // 完整异常串直接可见：异常类型 + 底层主机名都在界面上，不只在错误日志里。
+    expect(
+      find.byWidgetPredicate((Widget w) =>
+          w is SelectableText &&
+          (w.data ?? '').contains('ScrapeNetworkException') &&
+          (w.data ?? '').contains('api.bgm.tv')),
+      findsOneWidget,
+    );
+    // 一键复制上报入口。
+    expect(find.text(t.copy_error), findsOneWidget);
+  });
+
+  testWidgets('BUG-1219 带状态码的失败同样直出完整详情（含状态码）', (WidgetTester tester) async {
+    final VideoBookRow book = await seed();
+    final _StubScraperService service = buildService()
+      ..searchErrors.add(const ScrapeNetworkException('Bangumi search HTTP 502',
+          statusCode: 502));
+
+    await tester.pumpWidget(wrap(CoverMatchDialog(
+      service: service,
+      book: book,
+      collectionMemberUids: const <String>['video/my_anime'],
+      onApplied: () {},
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.scrape_reason_server), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+          (Widget w) => w is SelectableText && (w.data ?? '').contains('502')),
+      findsOneWidget,
+    );
+  });
+
+  // 合集入口（collectionName 非 null）与单集入口的默认口径不同。合集入口下默认不勾
+  // 「应用到全合集」意味着只改 seed 那一集，而 seed 只是首个可解析成员、未必是合集卡
+  // 上显示的封面——用户会看到「点了半天毫无变化」，以为功能坏了。
+
   // BUG-1211：用户「匹配的是合集的封面，谁说应用到本机里面的视频了」。合集入口换的
   // 必须是合集自己那张封面，成员一个都不能动；「同时应用到本合集全部 N 集」这个设定
   // 在合集入口下必须不存在。

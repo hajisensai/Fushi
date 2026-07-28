@@ -1,0 +1,14 @@
+## BUG-1219 · 封面刮削失败只给一句笼统提示，完整报错被吞到错误日志
+- **报告**：2026-07-28（用户：两张截图，视频「为『Yani Neko』匹配封面」弹窗 Bangumi / TMDB 两个源都只显示「搜索失败，点『搜索』可重试。/ 没能从封面源取到有效响应，请检查网络后重试。」，追问「完整的报错呢」）
+- **真实性**：✅ 真 bug（信息丢失，非功能崩溃）。根因不在网络层——底层异常本身就带完整因果链，是 UI 层把它折没了：
+  - `hibiki/lib/src/media/video/cover_ui/cover_match_dialog.dart:203`（原 `_failureReason`）只读 `ScrapeNetworkException.statusCode`，按「有没有状态码」二分成两句固定文案，`message` 字段整个丢弃。
+  - `hibiki/lib/src/media/metadata/book_cover_scrape_dialog.dart:106` 书籍侧同款写法，同样丢。
+  - 原始异常只经 `ErrorLogService.instance.log('CoverMatchDialog.search', e, stack)` 落错误日志页——用户要换页翻日志才能区分 DNS 不通 / 代理没生效 / 被限流 / 对面 5xx。
+  - 底层其实已经把完整链拼好了：`bangumi_api_client.dart:180` `BangumiTransportException('request failed: $e')` 把 `SocketException` 全文带上，`bangumi_client.dart:60` 再包成 `ScrapeNetworkException`，`toString()` 即 `ScrapeNetworkException: Bangumi search request failed: ClientException with SocketException: Failed host lookup: 'api.bgm.tv'`。TMDB 侧（`tmdb_client.dart:58-88`）同样带 message。信息一路到 UI 才被丢。
+  - 这是 BUG-1176「失败要有出口」的过度收敛：当时把「可行动原因」做对了，但把技术详情一并挡在了界面外。
+- **[x] ① 已修复** — 新增共享展示件 `hibiki/lib/src/media/metadata/scrape_failure_view.dart`（`ScrapeFailureView`）：一句可行动原因（保留原折叠规则）+ 完整异常 `toString()` 直出界面（限高 132 可滚、`SelectableText` 可选中）+ 「复制错误」按钮（复用既有 `t.copy_error` / `t.error_copied`，零新增 i18n key）。视频封面匹配弹窗与书籍封面刮削弹窗改为共用这一份——两处此前是逐字重复的两段 `Column`，各改各的必然漂开。提交：见本分支 `worktree-scrape-failure-detail`。
+- **[x] ② 已加自动化测试** — widget 行为层，两个消费方各 2 条：
+  - `hibiki/test/media/video/scraper/cover_match_dialog_test.dart`：`BUG-1219 搜索失败在弹窗内直出完整技术详情 + 可复制`（断言界面上存在同时含 `ScrapeNetworkException` 与 `api.bgm.tv` 的 `SelectableText`，且「复制错误」按钮在）、`BUG-1219 带状态码的失败同样直出完整详情（含状态码）`。
+  - `hibiki/test/media/metadata/book_cover_scrape_dialog_test.dart`：同名两条（主机名 / HTTP 500 状态码）。
+  - **变异实测**：把 `ScrapeFailureView` 的详情文本改成空串（等价于回滚到旧行为）后重跑，4 条新测试全部转红、其余 10 条不受影响；还原后 `FLUTTER TEST VERDICT: PASSED - 14 tests ran`。不是假绿。
+- **备注**：只改「显示」不改「分类」——`_failureReason` 的网络/服务端二分规则原样保留（它是对的）。截图里 Bangumi 与 TMDB 双源同时失败，落在无状态码那一支，真实原因需用户复现后看新界面上的详情串；本条只保证「下次报错能看到完整信息」，不预判那次失败本身的成因。另：候选「使用」失败（apply 路径）的 toast 仍只给折叠原因，未纳入本次范围——toast 不适合承载长异常串。
