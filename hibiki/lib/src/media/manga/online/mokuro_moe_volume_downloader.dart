@@ -43,7 +43,7 @@ enum MokuroMoeDownloadStage {
 }
 
 /// 下载事件：阶段 + 字节进度（total 未知时为 null）+ 导入页进度。
-/// [stage] == done 时 [bookKey] 非空（skipIfExists 命中则 [skippedExisting]
+/// [stage] == done 时 [bookKey] 非空（DuplicatePolicy.skip() 命中则 [skippedExisting]
 /// 为 true、bookKey 为空——该卷已在库，视作成功但无新行）。
 class MokuroMoeVolumeDownloadEvent {
   const MokuroMoeVolumeDownloadEvent({
@@ -198,7 +198,7 @@ class MokuroMoeVolumeDownloader {
           File(p.join(extractDir.path, '$volumeName.mokuro'));
       mokuroFile.copySync(placedMokuro.path);
 
-      // 5. 现有导入链落库（skipIfExists：同名卷静默跳过，不复制成 `X (2)`）。
+      // 5. 现有导入链落库（DuplicatePolicy.skip()：同名卷静默跳过，不复制成 `X (2)`）。
       controller.add(const MokuroMoeVolumeDownloadEvent(
         stage: MokuroMoeDownloadStage.importing,
       ));
@@ -209,7 +209,7 @@ class MokuroMoeVolumeDownloader {
           db: db,
           mokuroPath: placedMokuro.path,
           title: volumeTitle(seriesName, volumeName),
-          skipIfExists: true,
+          policy: const DuplicatePolicy.skip(),
           onProgress: (int done, int total) =>
               controller.add(MokuroMoeVolumeDownloadEvent(
             stage: MokuroMoeDownloadStage.importing,

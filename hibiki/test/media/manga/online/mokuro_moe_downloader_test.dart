@@ -208,7 +208,8 @@ void main() {
     expect(stagingDir().existsSync(), isFalse);
   });
 
-  test('同卷重跑：skipIfExists 命中 → done(skippedExisting=true)，不建重复行', () async {
+  test('同卷重跑：DuplicatePolicy.skip() 命中 → done(skippedExisting=true)，不建重复行',
+      () async {
     serveVolume();
     await downloader()
         .run(db: db, seriesName: series, volumeName: volume)

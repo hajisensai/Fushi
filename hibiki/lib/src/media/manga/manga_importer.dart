@@ -75,7 +75,7 @@ class MangaImporter {
     required HibikiDatabase db,
     required String imageDirPath,
     String? title,
-    DuplicateTitleCallback? onDuplicateTitle,
+    DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
   }) async {
     final Directory root = Directory(imageDirPath);
@@ -111,7 +111,7 @@ class MangaImporter {
       srcDir: root,
       payload: MokuroPayload(images: pages),
       proposedTitle: proposedTitle,
-      onDuplicateTitle: onDuplicateTitle,
+      policy: policy,
       onProgress: onProgress,
     );
   }
@@ -119,18 +119,17 @@ class MangaImporter {
   /// 从 [mokuroPath] 指向的 `.mokuro` 文件导入一本漫画，返回新建的 `bookKey`。
   ///
   /// [title]：由导入对话框传入的用户可编辑标题（优先）；缺省则从 mokuro 顶层 `title`/
-  /// `volume` 组合派生，再退化文件名。同名卷冲突走 [resolveBookTitleConflict]（与 EPUB/PDF
-  /// 一致）：有 [onDuplicateTitle] 回调则询问用户加后缀/取消，无回调自动加后缀。
+  /// `volume` 组合派生，再退化文件名。同名卷冲突走 [resolveDuplicateTitle]（与 EPUB/PDF
+  /// 一致）：有 [DuplicatePolicy.ask] 回调则询问用户加后缀/取消，无回调自动加后缀。
   /// [onProgress] 在每复制完一页图片后回报 `(done, total)`。校验失败（非法文件夹 / 路径穿越
   /// / 缺图）抛 [MangaImportException]；用户取消同名弹窗抛 [DuplicateImportCancelledException]。
   static Future<String> importFromMokuroPath({
     required HibikiDatabase db,
     required String mokuroPath,
     String? title,
-    DuplicateTitleCallback? onDuplicateTitle,
+    DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
     int? sourceId,
-    bool skipIfExists = false,
   }) async {
     if (!mangaImportCanImport(<String>[mokuroPath])) {
       throw const MangaImportException('Not a valid Mokuro manga folder');
@@ -161,10 +160,9 @@ class MangaImporter {
       srcDir: srcDir,
       payload: payload,
       proposedTitle: proposedTitle,
-      onDuplicateTitle: onDuplicateTitle,
+      policy: policy,
       onProgress: onProgress,
       sourceId: sourceId,
-      skipIfExists: skipIfExists,
     );
   }
 
@@ -187,10 +185,9 @@ class MangaImporter {
     required String mangaJsonPath,
     String? imageRootPath,
     String? title,
-    DuplicateTitleCallback? onDuplicateTitle,
+    DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
     int? sourceId,
-    bool skipIfExists = false,
   }) async {
     final File jsonFile = File(mangaJsonPath);
     if (!jsonFile.existsSync()) {
@@ -215,10 +212,9 @@ class MangaImporter {
       srcDir: srcDir,
       payload: payload,
       proposedTitle: proposedTitle,
-      onDuplicateTitle: onDuplicateTitle,
+      policy: policy,
       onProgress: onProgress,
       sourceId: sourceId,
-      skipIfExists: skipIfExists,
     );
   }
 
@@ -233,10 +229,9 @@ class MangaImporter {
     required Directory srcDir,
     required MokuroPayload payload,
     required String proposedTitle,
-    DuplicateTitleCallback? onDuplicateTitle,
+    DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
     int? sourceId,
-    bool skipIfExists = false,
   }) async {
     // 第一遍：规划每页 destRel（sanitize + 保留子目录 + 去重）并校验源图存在 + 防路径穿越。
     // 全部在任何落盘/落库之前完成——校验失败零副作用，无需回滚。
@@ -253,11 +248,10 @@ class MangaImporter {
     }
 
     final List<EpubBookRow> existingBooks = await db.getAllEpubBooks();
-    final String storedTitle = await resolveBookTitleConflict(
+    final String storedTitle = await resolveDuplicateTitle(
       existingTitles: existingBooks.map((EpubBookRow b) => b.title).toList(),
       proposedTitle: proposedTitle,
-      onDuplicateTitle: onDuplicateTitle,
-      skipIfExists: skipIfExists,
+      policy: policy,
     );
     final String bookKey = sanitizeTtuFilename(storedTitle);
     final String bookDir = await MangaStorage.bookDirectory(bookKey);

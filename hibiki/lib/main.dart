@@ -970,7 +970,7 @@ class _HoshiReaderAppState extends ConsumerState<HoshiReaderApp>
     try {
       // ② 去重：同一物理文件若已库内导入（`video/<basename>` 身份），复用其旧
       // bookUid，不再派生 `video/ext/<sha1>` 第二身份插第二行。按 videoPath 命中
-      // 走仓库单一真相源 findByVideoPath（与 isVideoPathReferenced 同比对语义）。
+      // 走仓库单一真相源 findByVideoPath（与 isDuplicateVideoPath 同比对语义）。
       final VideoBookRow? sameFile = await repo.findByVideoPath(videoPath);
       if (sameFile != null) {
         bookUid = sameFile.bookUid;

@@ -28,14 +28,14 @@ abstract final class MangaModule {
     required HibikiDatabase db,
     required String path,
     String? title,
-    DuplicateTitleCallback? onDuplicateTitle,
+    DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
   }) =>
       MangaImporter.importFromMokuroPath(
         db: db,
         mokuroPath: path,
         title: title,
-        onDuplicateTitle: onDuplicateTitle,
+        policy: policy,
         onProgress: onProgress,
       );
 
@@ -48,14 +48,14 @@ abstract final class MangaModule {
     required HibikiDatabase db,
     required String path,
     String? title,
-    DuplicateTitleCallback? onDuplicateTitle,
+    DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
   }) =>
       MangaImporter.importFromImageFolder(
         db: db,
         imageDirPath: path,
         title: title,
-        onDuplicateTitle: onDuplicateTitle,
+        policy: policy,
         onProgress: onProgress,
       );
 
@@ -63,14 +63,14 @@ abstract final class MangaModule {
     required HibikiDatabase db,
     required String path,
     String? title,
-    DuplicateTitleCallback? onDuplicateTitle,
+    DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
   }) =>
       MangaArchiveImporter.importArchive(
         db: db,
         archivePath: path,
         title: title,
-        onDuplicateTitle: onDuplicateTitle,
+        policy: policy,
         onProgress: onProgress,
       );
 

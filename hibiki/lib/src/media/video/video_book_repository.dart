@@ -565,7 +565,7 @@ class VideoBookRepository {
         stillReferencedSubtitlePaths: refs.subtitles,
       );
       await VideoStorage.gcOrphanCovers(referencedCoverPaths: refs.covers);
-      if (!await isVideoPathReferenced(
+      if (!await isDuplicateVideoPath(
         deletedVideoPath,
         excludeBookUid: deletedBookUid,
       )) {
@@ -626,7 +626,7 @@ class VideoBookRepository {
   /// [externalVideoBookUid] 同款语义），因此 Windows 上 `D:\Foo\bar.mkv` 与
   /// `D:/Foo/bar.mkv`（file_picker 原始路径 vs argv 路径分隔符不一致）视为同一
   /// 文件命中同一行——既覆盖新写入行也覆盖存的是未归一路径的旧库内导入行。
-  /// 与 [isVideoPathReferenced] 同一比对语义（后者即据此实现），是「同一物理
+  /// 与 [isDuplicateVideoPath] 同一比对语义（后者即据此实现），是「同一物理
   /// 文件是否已入库」的单一真相源。外部「打开方式」入库前用它复用库内已导入的
   /// 同文件 bookUid，避免派生 `video/ext/<sha1>` 第二身份重复插行（TODO-903）。
   ///
@@ -646,7 +646,7 @@ class VideoBookRepository {
     return null;
   }
 
-  Future<bool> isVideoPathReferenced(
+  Future<bool> isDuplicateVideoPath(
     String videoPath, {
     String? excludeBookUid,
   }) async =>

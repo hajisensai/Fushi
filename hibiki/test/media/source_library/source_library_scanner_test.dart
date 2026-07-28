@@ -365,7 +365,7 @@ void main() {
   // ── BUG-443: folder-scan book dedup (no silent X (2) re-import) ──────
   // Manual single-file import asks / auto-suffixes; a batch folder scan must NOT
   // re-import an already-imported same-title book as "X (2)". _importBooks passes
-  // skipIfExists:true -> EpubImporter throws DuplicateImportCancelledException on
+  // DuplicatePolicy.skip() -> EpubImporter throws DuplicateImportCancelledException on
   // a sanitizeTtuFilename key collision, which the scanner catches and skips.
   group('SourceLibraryScanner.scan book dedup (BUG-443)', () {
     late Directory tmp;
@@ -612,7 +612,7 @@ ep2.mp4
 
     // TODO-1237 ②: re-scanning the same video folder must NOT create `X (2)`
     // duplicates — already-imported single videos are skipped (path dedup),
-    // mirroring _importBooks' skipIfExists (BUG-443).
+    // mirroring _importBooks' skip policy (BUG-443).
     test('re-scan skips already-imported single videos (no X (2) dup)',
         () async {
       final HibikiDatabase db = _memDb();
@@ -755,12 +755,15 @@ sub_b/ep2.mp4
 
   // Source guard: _importBooks must keep the BUG-443 dedup wiring so a future
   // edit can't silently drop it and re-introduce X (2) folder-scan duplicates.
-  test('source guard: _importBooks passes skipIfExists for dedup (BUG-443)',
+  test('source guard: _importBooks requests DuplicatePolicy.skip (BUG-443)',
       () {
     final String src = File(
       'lib/src/media/source_library/source_library_scanner.dart',
     ).readAsStringSync();
-    expect(src.contains('skipIfExists: true'), isTrue,
+    // 旧锚点是 `skipIfExists: true`；三态收敛成单参 DuplicatePolicy 后换成
+    // `DuplicatePolicy.skip()`。守的仍是同一件事：批量扫描必须向导入器要「静默跳过」，
+    // 而不是加后缀（否则复扫一次就多一批 `X (2)`）。
+    expect(src.contains('DuplicatePolicy.skip()'), isTrue,
         reason: '_importBooks must request silent dedup from the importer');
     expect(src.contains('DuplicateImportCancelledException'), isTrue,
         reason: '_importBooks must catch+skip the duplicate-cancel signal');

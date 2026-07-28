@@ -34,6 +34,7 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/src/models/app_font_loader.dart';
 import 'package:hibiki/src/models/builtin_tags.dart';
+import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/lookup/browser_extension_installer.dart';
@@ -3422,7 +3423,7 @@ class AppModel with ChangeNotifier {
   }
 
   /// 下载完成的书籍（epub）入库回调：逐个走 [EpubImporter] 进阅读库
-  /// （skipIfExists，重复导入不报错），返回成功入库的书本数。单本失败跳过。
+  /// （DuplicatePolicy.skip()，重复导入不报错），返回成功入库的书本数。单本失败跳过。
   Future<int?> _importDownloadedBooks(
       AnimeDownloadPlan plan, List<String> bookAbsolutePaths) async {
     int imported = 0;
@@ -3432,7 +3433,7 @@ class AppModel with ChangeNotifier {
           db: database,
           filePath: filePath,
           fileName: path.basename(filePath),
-          skipIfExists: true,
+          policy: const DuplicatePolicy.skip(),
         );
         imported++;
       } catch (_) {

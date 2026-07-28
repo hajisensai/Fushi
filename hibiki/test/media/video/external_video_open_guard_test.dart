@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// `_openExternalVideo` runs on the global navigator from the widget tree, so a
 /// full behaviour test would need the whole app + a navigator + a real DB. The
-/// repository dedup half (findByVideoPath / isVideoPathReferenced same-source
+/// repository dedup half (findByVideoPath / isDuplicateVideoPath same-source
 /// semantics) is covered by a real behaviour test in
 /// test/media/video/video_book_repository_test.dart; here we pin the call-site
 /// wiring at the source level so a future refactor can't silently drop one of
@@ -41,7 +41,7 @@ void main() {
       final String body = openExternalVideoBody();
       expect(body, contains('findByVideoPath('),
           reason: 'must reuse the repository videoPath comparison (same source '
-              'as isVideoPathReferenced) to reuse an already-imported bookUid '
+              'as isDuplicateVideoPath) to reuse an already-imported bookUid '
               'instead of inserting a second video/ext/<sha1> row');
     });
 

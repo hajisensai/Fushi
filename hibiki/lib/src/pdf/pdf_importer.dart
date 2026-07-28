@@ -48,9 +48,8 @@ class PdfImporter {
     required String filePath,
     required String fileName,
     required String title,
-    DuplicateTitleCallback? onDuplicateTitle,
+    DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     int? sourceId,
-    bool skipIfExists = false,
   }) async {
     await PdfEngine.ensureInitialized();
 
@@ -71,11 +70,10 @@ class PdfImporter {
 
     // 解析标题冲突 → bookKey（与 EpubImporter 同口径：净化标题即主键，保证本地唯一）。
     final List<EpubBookRow> existingBooks = await db.getAllEpubBooks();
-    final String storedTitle = await resolveBookTitleConflict(
+    final String storedTitle = await resolveDuplicateTitle(
       existingTitles: existingBooks.map((EpubBookRow b) => b.title).toList(),
       proposedTitle: title,
-      onDuplicateTitle: onDuplicateTitle,
-      skipIfExists: skipIfExists,
+      policy: policy,
     );
     final String bookKey = sanitizeTtuFilename(storedTitle);
 
