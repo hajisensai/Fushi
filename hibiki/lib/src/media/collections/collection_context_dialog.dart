@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/media/collections/collection_one_key_sort.dart';
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
@@ -8,7 +9,8 @@ import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 /// 统一三库页合集入口的右键 / 长按菜单（书架横排行、视频合集封面卡、游戏库
-/// 横排行共用）：打开详情 / 重命名 / 标签 / 删除合集。
+/// 横排行共用）：打开详情 / 重命名 / 标签 / [extraListActions] 媒体特有项 /
+/// 按名称·按导入时间一键整理 / 删除合集。
 ///
 /// 此前合集管理动作只存在于合集详情页 AppBar，三页的合集入口本身没有任何
 /// 上下文菜单（与单卡的长按对话框割裂，用户实报）。本对话框复用单卡同款
@@ -22,6 +24,10 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// [onDeleteMembersMedia] 非 null 且合集有成员时，删除确认框提供
 /// [deleteMembersCheckboxLabel] 勾选行（调用方按媒体域传
 /// `delete_collection_also_books` / `delete_collection_also_videos` 等文案）。
+/// [extraListActions] 由调用方注入媒体特有行（视频页：在线匹配封面 / 为合集
+/// 获取字幕），本对话框统一负责「先关自身再执行」，回调里不要再 pop。
+/// 排序两项内建（[applyCollectionOneKeySort]，与详情页 AppBar 排序菜单同源），
+/// 各页零接线成本。
 Future<void> showCollectionContextDialog({
   required BuildContext context,
   required HibikiDatabase db,
@@ -31,6 +37,7 @@ Future<void> showCollectionContextDialog({
   Future<void> Function(List<MediaCollectionItemRow> members)?
       onDeleteMembersMedia,
   String? deleteMembersCheckboxLabel,
+  List<DialogListAction> extraListActions = const <DialogListAction>[],
   Widget? cover,
 }) async {
   await showAppDialog<void>(
@@ -67,6 +74,39 @@ Future<void> showCollectionContextDialog({
               () => _editCollectionTags(
                 context: context,
                 collection: collection,
+                onChanged: onChanged,
+              ),
+            ),
+          ),
+          // 媒体特有项（视频：在线匹配封面 / 为合集获取字幕）。统一包 closeThen，
+          // 调用方回调无需自行 pop。
+          for (final DialogListAction action in extraListActions)
+            DialogListAction(
+              label: action.label,
+              icon: action.icon,
+              onPressed: () => closeThen(action.onPressed),
+            ),
+          // 一键整理（与合集详情页 AppBar 排序菜单同一实现与落盘路径）。
+          DialogListAction(
+            label: t.collection_sort_by_title,
+            icon: Icons.sort_by_alpha,
+            onPressed: () => closeThen(
+              () => _sortCollection(
+                db: db,
+                collection: collection,
+                byTitle: true,
+                onChanged: onChanged,
+              ),
+            ),
+          ),
+          DialogListAction(
+            label: t.collection_sort_by_imported,
+            icon: Icons.history,
+            onPressed: () => closeThen(
+              () => _sortCollection(
+                db: db,
+                collection: collection,
+                byTitle: false,
                 onChanged: onChanged,
               ),
             ),
@@ -122,6 +162,22 @@ Future<void> _editCollectionTags({
     MaterialPageRoute<void>(
       builder: (_) => TagPickerPage(collectionId: collection.id),
     ),
+  );
+  onChanged();
+}
+
+/// 一键整理：按名称 / 按导入时间重排全表并落盘 sortIndex（共享
+/// [applyCollectionOneKeySort]），完成后 [onChanged] 让库页合集行立即同序。
+Future<void> _sortCollection({
+  required HibikiDatabase db,
+  required MediaCollectionRow collection,
+  required bool byTitle,
+  required VoidCallback onChanged,
+}) async {
+  await applyCollectionOneKeySort(
+    db: db,
+    collectionId: collection.id,
+    byTitle: byTitle,
   );
   onChanged();
 }
