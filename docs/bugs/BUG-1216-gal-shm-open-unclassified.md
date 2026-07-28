@@ -44,7 +44,9 @@
 > 该游戏以更高权限运行，请以管理员身份运行 Hibiki（voice_hook open access_denied name=Local\HibikiVoiceHook_1234 win32=5 helper=x86）
 
 - **[x] ① 已修复** — `hibiki/windows/runner/voice_hook_reader.h` / `voice_hook_reader.cpp`（`VoiceHookOpenError` / `VoiceHookOpenResult` / `VoiceHookOpenErrorToken` / `ProtocolMismatchDetail`）、`hibiki/windows/runner/flutter_window.cpp`（`open` 回 token + detail + win32，失败判据改用 `Open` 的 error）、`hibiki/lib/src/mining/galgame_audio_source.dart`（`protocolMismatch` 枚举、`galHookFailureFromVoiceHookOpenError`、`galHookOpenFailureDetail`、`galHookDiagnosticsDetail` 迁入、`_captureFailure(resolved/nativeDetail)`）、`hibiki/lib/src/mining/gal_hook_failure_text.dart`（`_annotate` 无条件附证据）、`hibiki/lib/src/mining/gal_hook_session_controller.dart`（`injectorDetail` 状态字段与三处写入）、三个 UI 调用点、17 语言 i18n。
-- **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_shm_open_error_test.dart` 15 例：token→原因逐条映射、`protocolMismatch` 不可重试、未知 token 不编造、每个归类都有可执行文案、detail 压行保留 win32/版本事实、**经真实 `open` 失败路径**（fake injector 宣告 hooked + mock channel 回各 token）断言原因与证据双双落进 `lastFailure`、injector 全绿时不得把确定原因猜回 unknown、归类得出时**也**要带证据、降级路径从状态取证据、无证据不生造括号；外加三条源码守卫：native 六个 token 齐全且 Dart 认得改处置的两个、`Open` 内不得再出现 `return VoiceHookStatus{}` 且必须读 `GetLastError`、channel 不得回退到固定英文串。
+- **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_shm_open_error_test.dart` 15 例：token→原因逐条映射、`protocolMismatch` 不可重试、未知 token 不编造、每个归类都有可执行文案、detail 压行保留 win32/版本事实、**经真实 `open` 失败路径**（fake injector 宣告 hooked + mock channel 回各 token）断言原因与证据双双落进 `lastFailure`、injector 全绿时不得把确定原因猜回 unknown、归类得出时**也**要带证据、降级路径从状态取证据、无证据不生造括号；外加三条源码守卫（全部先剥 `//` 与 `/* */` 注释再匹配，且扫不到目标函数体即判红防空集）：native 六个 token 齐全且 Dart 认得改处置的两个、`Open` 函数体内**六个失败枚举值必须逐个被赋出来**（不盯某一种违规写法——`return VoiceHookStatus{}` / `return VoiceHookOpenResult{}` / 少赋一条都等效丢原因，只有枚举齐全这个判据抗等价改写）且必须读 `GetLastError`、channel 的 `open` 分支内 `"error"` 键的值必须**来自** `VoiceHookOpenErrorToken` 且判据必须是 `opened.ok()`。
+
+守卫做过变异实测（4 次，每次 `git diff --stat` 确认真写入文件、跑完即还原），全部按预期转红：① 把 token 改名、只在注释里留 `access_denied` → 红（剥注释生效）；② 注释掉一条出口的 `out.error = ...kMapViewFailed` → 红（等价违规 + 注释冒充双重变异）；③ 把 token 换成另一句写死的串 → 红（旧写法只查那一句英文串会假绿）；④ 判据退回 `!hooked && !ok` → 红。
 
 ### 备注
 

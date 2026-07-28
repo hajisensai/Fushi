@@ -264,9 +264,19 @@ void main() {
       return direct.existsSync() ? direct : File('hibiki/$relative');
     }
 
+    /// 剥掉 `//` 行注释与 `/* */` 块注释再匹配。
+    ///
+    /// 源码扫描守卫最经典的假绿：真声明改名/删掉、注释里还留着同一串字面量，守卫照绿。
+    /// 本文件所有断言都跑在剥注释后的文本上——包括这一条自己写在注释里的
+    /// `"access_denied"`，剥完就不该再被任何断言看见。
+    String stripComments(String source) => source
+        .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
+        .replaceAll(RegExp(r'//[^\n]*'), '');
+
     test('native 为每条 open 出口发机器可读 token，Dart 侧逐个认得', () {
-      final String native =
-          resolve('windows/runner/voice_hook_reader.cpp').readAsStringSync();
+      final String native = stripComments(
+        resolve('windows/runner/voice_hook_reader.cpp').readAsStringSync(),
+      );
       const List<String> tokens = <String>[
         'invalid_pid',
         'mapping_not_found',
@@ -283,41 +293,80 @@ void main() {
         );
       }
       // access_denied / protocol_mismatch 是**唯二**改变处置的 token：Dart 必须显式认。
-      final String dart = resolve('lib/src/mining/galgame_audio_source.dart')
-          .readAsStringSync();
+      final String dart = stripComments(
+        resolve('lib/src/mining/galgame_audio_source.dart').readAsStringSync(),
+      );
       expect(dart, contains("'access_denied'"));
       expect(dart, contains("'protocol_mismatch'"));
     });
 
-    test('Open 不得再返回无原因的全零状态', () {
-      final String native =
-          resolve('windows/runner/voice_hook_reader.cpp').readAsStringSync();
+    test('Open 的每条出口都必须带原因（不认某一种违规写法，认枚举是否齐）', () {
+      final String native = stripComments(
+        resolve('windows/runner/voice_hook_reader.cpp').readAsStringSync(),
+      );
       final int openAt =
           native.indexOf('VoiceHookOpenResult VoiceHookReader::Open');
       expect(openAt, greaterThan(0), reason: 'Open 必须返回结构化结果，不是裸 status');
       final int openEnd = native.indexOf('\n}', openAt);
+      expect(openEnd, greaterThan(openAt), reason: '扫不到函数体就判红，别让空集假绿');
       final String body = native.substring(openAt, openEnd);
+      // 判据不是「没写某一句违规代码」——`return VoiceHookStatus{}`、
+      // `VoiceHookOpenResult r; return r;`、`return {}` 都能达到同样的「丢掉原因」效果。
+      // 唯一抗等价改写的判据是：**每条失败出口对应的枚举值都得在函数体里被赋出来**，
+      // 少赋一条，那条出口就必然退回「无原因」。
+      for (final String error in <String>[
+        'kInvalidPid',
+        'kMappingNotFound',
+        'kAccessDenied',
+        'kMappingOpenFailed',
+        'kMapViewFailed',
+        'kProtocolMismatch',
+      ]) {
+        expect(
+          body,
+          contains('VoiceHookOpenError::$error'),
+          reason: 'Open 少给一条出口定原因：$error',
+        );
+      }
+      expect(
+        body,
+        contains('GetLastError'),
+        reason: 'win32 码是区分「映射不存在」与「拒绝访问」的唯一事实',
+      );
       expect(
         body.contains('return VoiceHookStatus{}'),
         isFalse,
         reason: '原因是在 return 那一刻丢掉的，任何下游文案层补丁都救不回来',
       );
-      expect(body, contains('GetLastError'));
     });
 
     test('channel 的 open 失败分支必须回 token + detail，不是固定英文串', () {
-      final String window =
-          resolve('windows/runner/flutter_window.cpp').readAsStringSync();
-      expect(
-        window,
-        contains('VoiceHookOpenErrorToken'),
-        reason: 'open 失败必须把结构化 token 交给 Dart',
+      final String window = stripComments(
+        resolve('windows/runner/flutter_window.cpp').readAsStringSync(),
       );
-      expect(window, contains('"detail"'));
+      final int openAt = window.indexOf('if (method == "open")');
+      expect(openAt, greaterThan(0), reason: '扫不到 open 分支就判红，别让空集假绿');
+      final int nextMethod = window.indexOf('if (method == "status")', openAt);
+      expect(nextMethod, greaterThan(openAt));
+      final String branch = window.substring(openAt, nextMethod);
+      // 判据不是「没写那一句英文串」——换成任何别的固定串都同样把原因压没了。
+      // 抗等价改写的判据是：`"error"` 这个键的值必须**来自** VoiceHookOpenErrorToken。
+      final int errorKeyAt = branch.indexOf('EncodableValue("error")');
+      expect(errorKeyAt, greaterThan(0), reason: 'open 失败必须回 error 键');
       expect(
-        window.contains('voice hook shared memory not found'),
-        isFalse,
-        reason: '那句固定串把四种原因压成一句话，正是本 bug 的产地',
+        branch.substring(errorKeyAt),
+        contains('VoiceHookOpenErrorToken'),
+        reason: 'error 的值必须是结构化 token，不能是任何写死的串',
+      );
+      expect(
+        branch,
+        contains('"detail"'),
+        reason: 'win32 码 / 映射名 / 双方版本这些一手事实必须一起过河',
+      );
+      expect(
+        branch,
+        contains('opened.ok()'),
+        reason: '失败判据必须是 Open 自己报的 error，不能拿 hooked 位当映射存在的代理',
       );
     });
   });
