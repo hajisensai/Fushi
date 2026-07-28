@@ -40,9 +40,9 @@
 
 焦点抢回来只解决「OS 焦点归 Flutter」的情况。焦点归 WebView2 期间按下的键**只存在于 DOM 里**，必须在内容层截获后交回 Dart——桌面 Windows 上 fork 的 `flutter_inappwebview_windows` 只转鼠标不转键盘。
 
-用 `lib/src/focus/webview_key_bridge.dart` 的 `webViewKeyBridgeScript({handlerName, keys})`，别自己写一份 `keydown` 监听：它固化了「只拦裸键、放行修饰键组合 / IME composing / `input|textarea|contenteditable`、命中才 `preventDefault`」这套判据，漏一条就是吃掉用户改键语义或打不出空格。
+用 `lib/src/focus/webview_key_bridge.dart` 的 `webViewKeyBridgeScript({handlerName, keys, forwardRepeats, stopPropagation})`，别自己写一份 `keydown` 监听：它固化了「只拦裸键、放行修饰键组合 / IME composing / `input|textarea|contenteditable`、命中才 `preventDefault`」这套判据，漏一条就是吃掉用户改键语义或打不出空格。
 
-生成结果整体裹在 `;(function () { … })();` 里，键表关在闭包中：同一 document 注入多份桥（阅读器一份、漫画页规划中再一份）时，若键表是脚本级全局 `var`，后注入的一份会把先注入的整个覆盖掉而两个 listener 都还在，表现为「某一页的键突然全不响应」。前导 `;` 是拼接安全惯例（本脚本插在 setup 大脚本中间）。
+生成结果整体裹在 `;(function () { … })();` 里，键表关在闭包中：同一 document 注入多份桥（阅读器的 Space 桥、漫画的导航键桥）时，若键表是脚本级全局 `var`，后注入的一份会把先注入的整个覆盖掉而两个 listener 都还在，表现为「某一页的键突然全不响应」。前导 `;` 是拼接安全惯例（本脚本插在 setup 大脚本中间）。
 
 改动注入脚本后注意 `hibiki/test/reader/reader_script_compactor_test.dart`：给 setup 模板新增插值必须在它的替身表里登记，否则该守卫直接 `StateError`（它保证最终拼装脚本的压缩有覆盖，并用 node `--check` 真解析）。
 
