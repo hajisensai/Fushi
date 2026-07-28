@@ -2172,9 +2172,25 @@ async function fetchAudioUrl(expression, reading) {
 // 播放的 URL（远端 http、本地 base64 data:）。新播放固定先掐上一段（interrupt 行为；
 // 宿主从未注入过别的模式），留 window.__hibikiWordAudio 句柄。音量取
 // window.lookupAudioVolume（0..1，宿主注入；扩展缺省 1）。
+// BUG-1201：播放失败的**原因**必须留下痕迹。原实现是 `.catch(() => false)`，把
+// `audio.play()` 抛出的 DOMException 整个丢掉，宿主只拿到一个光秃秃的 false —— 于是
+// 「app 启动后第一次发音必失败、之后都成功」这种可复现的症状，日志里查不出到底是
+// autoplay 策略拦截（NotAllowedError）、解码失败（NotSupportedError）还是被后一次播放
+// 掐掉（AbortError），只能靠猜。三种原因的修法完全不同，这正是 BUG-1015 吃过的亏。
+//
+// 返回值仍是 boolean（`if (!await playWordAudio(url))` 与宿主的 `r === true` 契约一字
+// 未动），原因另存到 realm 上的 [__hibikiWordAudioLastError]，由注入的 report 包装读走
+// 并随 `wordAudioPlayed` 回传。成功时清空，避免下一次失败读到上一次的陈旧原因。
 function playWordAudio(audioUrl) {
+    const noteError = (e) => {
+        window.__hibikiWordAudioLastError =
+            (e && (e.name || e.message)) || 'UnknownError';
+    };
     try {
-        if (!audioUrl) return Promise.resolve(false);
+        if (!audioUrl) {
+            window.__hibikiWordAudioLastError = 'EmptyUrl';
+            return Promise.resolve(false);
+        }
         if (window.__hibikiWordAudio) {
             try { window.__hibikiWordAudio.pause(); } catch (_) { /* no-op */ }
         }
@@ -2184,8 +2200,15 @@ function playWordAudio(audioUrl) {
             audio.volume = Math.max(0, Math.min(1, v));
         }
         window.__hibikiWordAudio = audio;
-        return audio.play().then(() => true).catch(() => false);
-    } catch (_) {
+        return audio.play().then(() => {
+            window.__hibikiWordAudioLastError = '';
+            return true;
+        }).catch((err) => {
+            noteError(err);
+            return false;
+        });
+    } catch (e) {
+        noteError(e);
         return Promise.resolve(false);
     }
 }

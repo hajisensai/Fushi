@@ -171,21 +171,30 @@ void main() {
         reason: '抽段失败须被 shell 显式处理（据 aborted），而非静默落空。');
     expect(mineCard, contains('card_export_failed_detail'),
         reason: '抽段失败须给用户可见的 OSD 提示（复用现有 i18n，不静默）。');
-    // 底层 ffmpeg 诊断摘要经 onFailure 回调传回（不是只有泛化失败文案）。
-    expect(mineCard, contains('String? lastFailure'),
+    // 底层 ffmpeg 诊断摘要经失败回调传回（不是只有泛化失败文案）。
+    // BUG-1200：封面与音频现在**并行**抽取，摘要不能再靠 onFailure 的调用顺序区分
+    // 「首个=GIF、末个=音频」（顺序已不确定），改按来源分流。守的意图不变：音频失败的
+    // OSD 必须携带音频侧的底层摘要——只是锚到 onAudioFailure / audioFailure。
+    expect(mineCard, contains('String? audioFailure'),
         reason: 'OSD/日志应携带底层 ffmpeg 诊断摘要，而不是只有泛化失败文案。');
-    expect(mineCard, contains('onFailure: (String summary)'),
-        reason: '抽取器（GIF/音频）的失败摘要必须传回视频制卡路径。');
-    expect(mineCard, contains(r'sentence audio export failed: $lastFailure'),
+    expect(mineCard, contains('onAudioFailure:'),
+        reason: '音频抽取器的失败摘要必须按来源传回视频制卡路径（BUG-1200）。');
+    expect(mineCard, contains('onCoverFailure:'),
+        reason: '封面抽取器的失败摘要必须按来源传回视频制卡路径（BUG-1200）。');
+    expect(mineCard, contains(r'sentence audio export failed: $audioFailure'),
         reason: '用户可见错误应含实际 executable/fallback/0xC000007B 等摘要。');
     // 引擎把 onFailure 转发给 GIF/音频抽取器，故 GIF 失败也留下 ffmpeg 诊断。
     // TODO-<image-mode>：GIF 调用搬进 tryGif() 闭包（封面模式排列器），`await` 移位；
     // 守卫改锚 `_gif(` 调用点 + onFailure 转发（不再钉死 `await _gif(` 这一实现细节）。
+    // BUG-1200：引擎内两条抽取各自喂专属上报口（reportCover / reportAudio），二者再
+    // 合流进 onFailure。守的意图不变：GIF 失败必须留下 ffmpeg 诊断。
     expect(
         engineNorm.contains('_gif(') &&
-            engineNorm.contains('onFailure: onFailure'),
+            engineNorm.contains('onFailure: reportCover'),
         isTrue,
-        reason: 'GIF 导出失败虽可回退截图，也必须经 onFailure 留下 ffmpeg 诊断。');
+        reason: 'GIF 导出失败虽可回退截图，也必须经封面上报口留下 ffmpeg 诊断。');
+    expect(engineNorm.contains('onFailure: reportAudio'), isTrue,
+        reason: '音频抽取失败必须经音频上报口留下 ffmpeg 诊断（BUG-1200）。');
 
     // 中止顺序：引擎在构造 AnkiMiningContext 之前就 return aborted（不建缺音频 context）；
     // shell 在读取 res.outcome!（落卡产物）之前据 res.aborted 中止。
@@ -249,8 +258,10 @@ void main() {
         reason: '降级提示须据引擎回传状态 + mounted 守卫，避免向已销毁页面 _showOsd。');
     expect(mineCard, contains('card_cover_degraded_to_static'),
         reason: '降级为静态图须给用户可见 OSD（不再只 debugPrint 静默吞掉）。');
-    expect(mineCard, contains('reason: gifFailure ??'),
-        reason: 'OSD 应携带 GIF 失败的底层 ffmpeg 诊断摘要，最贴近根因。');
+    // BUG-1200：并行化后按来源取封面侧摘要（原 gifFailure 靠 onFailure 首次调用取，
+    // 顺序已不可靠）。守的意图不变：降级 OSD 要携带封面失败的底层摘要。
+    expect(mineCard, contains('reason: coverFailure ??'),
+        reason: 'OSD 应携带封面（GIF）失败的底层 ffmpeg 诊断摘要，最贴近根因。');
   });
 
   test('TODO-971：制卡成功 OSD 用突出变体（醒目，区别于音量小角标）', () {
