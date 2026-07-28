@@ -36,6 +36,41 @@ struct VoiceHookStatus {
   bool ok = false;           // 映射有效且格式已就绪（音频格式已填）
 };
 
+// [VoiceHookReader::Open] 失败的**结构化原因**。
+//
+// 这四条出口（pid 非法 / OpenFileMapping 失败 / MapViewOfFile 失败 / 契约不匹配）旧实现
+// 一律 `return VoiceHookStatus{}` 全零，上层只拿得到「打不开」一个比特，于是 UI 只能说
+// 「捕获通道无法打开，请重启 Hibiki」——而这几种原因的处置**完全不同**：
+//   - 映射不存在：helper 没建好会话，重启 app 无用，要重开游戏；
+//   - 拒绝访问：游戏跑在更高完整性级别（多为管理员权限启动），要以管理员运行 Hibiki；
+//   - 契约不匹配：helper 与本体版本不一致，重启多少次都不会好，必须更新/重装 helper。
+// 原因是在 `return` 那一刻丢掉的，任何下游文案层补丁都救不回来（同 BUG-1142 的教训）。
+enum class VoiceHookOpenError {
+  kNone = 0,
+  kInvalidPid,         // pid 为 0（调用方没有有效目标）
+  kMappingNotFound,    // OpenFileMappingW ERROR_FILE_NOT_FOUND：helper 未建会话/pid 不符
+  kAccessDenied,       // OpenFileMappingW ERROR_ACCESS_DENIED：目标完整性级别更高
+  kMappingOpenFailed,  // OpenFileMappingW 其它 win32 失败
+  kMapViewFailed,      // 映射打开了但 MapViewOfFile 失败
+  kProtocolMismatch,   // 映射有效但契约五字段不符（helper 与本体版本漂开）
+};
+
+// [VoiceHookReader::Open] 的完整结局：状态 + 失败原因 + 一手事实。
+//
+// [detail] 是**纯事实**的 ASCII 摘要（win32 错误码 / 映射名 / 双方版本对照），不做任何解释，
+// 供 Dart 侧原样附进用户可见诊断——「一次就能确诊」靠的是它，不是猜。
+struct VoiceHookOpenResult {
+  VoiceHookStatus status;
+  VoiceHookOpenError error = VoiceHookOpenError::kNone;
+  uint32_t win32_error = 0;
+  std::string detail;
+
+  bool ok() const { return error == VoiceHookOpenError::kNone; }
+};
+
+// [VoiceHookOpenError] → 机器可读 token（Dart 侧据此归类，跨语言契约的唯一名字）。
+const char* VoiceHookOpenErrorToken(VoiceHookOpenError error);
+
 // 一条 hook 文本事件（台词行或 Luna 线程发现，v10 文本环）。
 struct VoiceHookText {
   uint64_t seq = 0;           // 单调序号
@@ -78,9 +113,10 @@ class VoiceHookReader {
   static VoiceHookReader& Instance();
 
   // 按目标游戏 [pid] 打开 injector 建好的共享内存并校验契约（幂等：已打开同 pid 直接返回状态）。
-  // 打开成功但 hook 尚未填格式时 ok=false、hooked 可能仍为 false（调用方轮询等 hooked/ok）。
-  // 共享内存不存在（injector 未拉起 / pid 不符）返回 ok=false 全零状态。
-  VoiceHookStatus Open(uint32_t pid);
+  // 打开成功但 hook 尚未填格式时 status.ok=false、hooked 可能仍为 false（调用方轮询等 hooked/ok），
+  // 此时 [VoiceHookOpenResult::error] 仍是 kNone——**「映射打开了」与「hook 就绪了」是两件事**。
+  // 打不开时 error 说明是哪一种打不开，detail 带上 win32 码 / 映射名 / 双方版本对照。
+  VoiceHookOpenResult Open(uint32_t pid);
 
   // 读当前 header 状态（格式/hooked/calibrating）。未打开返回 ok=false。
   VoiceHookStatus Status();

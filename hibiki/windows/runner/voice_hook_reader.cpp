@@ -41,6 +41,55 @@ bool ProtocolMatches(const SharedHeader* h) {
          h->luna_vendored_version == hibiki_voice_hook::kLunaVendoredVersion;
 }
 
+// 无符号整数 → 十六进制字面（magic / vendored 版本按 hex 读才认得出来）。
+std::string ToHex(uint32_t value) {
+  static const char* kDigits = "0123456789abcdef";
+  std::string out = "0x";
+  bool leading = true;
+  for (int shift = 28; shift >= 0; shift -= 4) {
+    const uint32_t nibble = (value >> shift) & 0xF;
+    if (nibble == 0 && leading && shift != 0) continue;
+    leading = false;
+    out.push_back(kDigits[nibble]);
+  }
+  return out;
+}
+
+// 契约不匹配时列出**不一致的字段**及双方取值（一致的不列，免得淹没结论）。
+std::string ProtocolMismatchDetail(const SharedHeader* h) {
+  if (h == nullptr) return "header=null";
+  std::string out;
+  auto add = [&out](const char* name, const std::string& got,
+                    const std::string& want) {
+    if (!out.empty()) out.push_back(' ');
+    out += name;
+    out += "=";
+    out += got;
+    out += "/want ";
+    out += want;
+  };
+  if (h->magic != kSharedMagic) {
+    add("magic", ToHex(h->magic), ToHex(kSharedMagic));
+  }
+  if (h->version != kSharedVersion) {
+    add("shm", std::to_string(h->version), std::to_string(kSharedVersion));
+  }
+  if (h->ipc_protocol_version != hibiki_voice_hook::kStableIpcVersion) {
+    add("ipc", std::to_string(h->ipc_protocol_version),
+        std::to_string(hibiki_voice_hook::kStableIpcVersion));
+  }
+  if (h->luna_bridge_abi_version !=
+      hibiki_voice_hook::kLunaBridgeAbiVersion) {
+    add("luna_abi", std::to_string(h->luna_bridge_abi_version),
+        std::to_string(hibiki_voice_hook::kLunaBridgeAbiVersion));
+  }
+  if (h->luna_vendored_version != hibiki_voice_hook::kLunaVendoredVersion) {
+    add("vendored", ToHex(h->luna_vendored_version),
+        ToHex(hibiki_voice_hook::kLunaVendoredVersion));
+  }
+  return out;
+}
+
 std::string WideToUtf8(const wchar_t* text, int length) {
   if (text == nullptr || length <= 0) return std::string();
   const int need = WideCharToMultiByte(CP_UTF8, 0, text, length, nullptr, 0,
@@ -174,42 +223,88 @@ VoiceHookReader::~VoiceHookReader() {
   Close();
 }
 
-VoiceHookStatus VoiceHookReader::Open(uint32_t pid) {
+const char* VoiceHookOpenErrorToken(VoiceHookOpenError error) {
+  switch (error) {
+    case VoiceHookOpenError::kNone:
+      return "none";
+    case VoiceHookOpenError::kInvalidPid:
+      return "invalid_pid";
+    case VoiceHookOpenError::kMappingNotFound:
+      return "mapping_not_found";
+    case VoiceHookOpenError::kAccessDenied:
+      return "access_denied";
+    case VoiceHookOpenError::kMappingOpenFailed:
+      return "mapping_open_failed";
+    case VoiceHookOpenError::kMapViewFailed:
+      return "map_view_failed";
+    case VoiceHookOpenError::kProtocolMismatch:
+      return "protocol_mismatch";
+  }
+  return "unknown";
+}
+
+VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
   ReaderState& st = State();
   std::lock_guard<std::mutex> lock(st.mutex);
+  VoiceHookOpenResult out;
   if (pid == 0) {
-    return VoiceHookStatus{};
+    out.error = VoiceHookOpenError::kInvalidPid;
+    out.detail = "pid=0";
+    return out;
   }
   // 幂等：已打开同 pid 直接回报当前状态。
   if (st.header != nullptr && st.pid == pid) {
-    return StatusFromHeaderLocked(st.header);
+    out.status = StatusFromHeaderLocked(st.header);
+    return out;
   }
   // 打开了别的 pid：先释放。
   if (st.header != nullptr) {
     CloseLocked(st);
   }
   const std::wstring name = SharedMemoryName(static_cast<DWORD>(pid));
+  const std::string name_utf8 =
+      "name=" + WideToUtf8(name.c_str(), static_cast<int>(name.size()));
   HANDLE mapping =
       OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, name.c_str());
   if (mapping == nullptr) {
-    return VoiceHookStatus{};  // injector 未拉起 / pid 不符
+    // 这里必须分两种：ERROR_FILE_NOT_FOUND = helper 没建会话（重开游戏）；
+    // ERROR_ACCESS_DENIED = 目标进程完整性级别更高，映射的 ACL 挡住了中完整性的
+    // hibiki.exe（多为游戏以管理员身份运行，须以管理员运行 Hibiki）。两者都被旧实现
+    // 说成同一句「重启 Hibiki」，而重启对二者**都没用**。
+    const DWORD code = GetLastError();
+    out.win32_error = static_cast<uint32_t>(code);
+    out.error = (code == ERROR_FILE_NOT_FOUND)
+                    ? VoiceHookOpenError::kMappingNotFound
+                    : (code == ERROR_ACCESS_DENIED
+                           ? VoiceHookOpenError::kAccessDenied
+                           : VoiceHookOpenError::kMappingOpenFailed);
+    out.detail = name_utf8 + " win32=" + std::to_string(code);
+    return out;
   }
   auto* header = static_cast<SharedHeader*>(
       MapViewOfFile(mapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0));
   if (header == nullptr) {
+    const DWORD code = GetLastError();
     CloseHandle(mapping);
-    return VoiceHookStatus{};
+    out.error = VoiceHookOpenError::kMapViewFailed;
+    out.win32_error = static_cast<uint32_t>(code);
+    out.detail = name_utf8 + " win32=" + std::to_string(code);
+    return out;
   }
-  // 只信任契约匹配的映射（防旧/坏映射读坏内存）。
+  // 只信任契约匹配的映射（防旧/坏映射读坏内存）。不匹配时把**双方版本**带出去：
+  // 用户装的 helper 与本体版本漂开时，这是唯一能一次确诊的事实。
   if (!ProtocolMatches(header)) {
+    out.detail = ProtocolMismatchDetail(header);
     UnmapViewOfFile(header);
     CloseHandle(mapping);
-    return VoiceHookStatus{};
+    out.error = VoiceHookOpenError::kProtocolMismatch;
+    return out;
   }
   st.mapping = mapping;
   st.header = header;
   st.pid = pid;
-  return StatusFromHeaderLocked(header);
+  out.status = StatusFromHeaderLocked(header);
+  return out;
 }
 
 VoiceHookStatus VoiceHookReader::Status() {

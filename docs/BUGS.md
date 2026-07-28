@@ -36,6 +36,7 @@
 | [BUG-1221](bugs/BUG-1221-manga-path-case-folded.md) | ✅ | ✅ | 漫画页图解析把路径折成小写，制卡封面名被小写化且大小写敏感平台缺页 |
 | [BUG-1220](bugs/BUG-1220-bangumi-sync-invisible.md) | ✅ | ✅ | Bangumi 同步链路全静默：看完了没反应且无处查看 |
 | [BUG-1218](bugs/BUG-1218-epub-path-case-folded-android.md) | ✅ | ✅ | EPUB 解析把路径折成小写，大小写敏感平台上整本章节静默失踪 |
+| [BUG-1216](bugs/BUG-1216-gal-shm-open-unclassified.md) | ✅ | ✅ | 共享内存打不开被压成一句「请重启 Hibiki」，真实原因（拒绝访问/版本不符/映射不存在）在 native 返回值处丢弃 |
 | [BUG-1215](bugs/BUG-1215-jimaku-entry-wrong-season-auto-select.md) | ✅ | ✅ | Jimaku 条目自动选中不校验季号，S1 条目被配给 S2 包 |
 | [BUG-1214](bugs/BUG-1214-waveform-align-wheel-hscroll.md) | ✅ | ✅ | 波形对轴放大视图鼠标滚轮不能左右平移时间轴 |
 | [BUG-1213](bugs/BUG-1213-android-legacy-storage-permission-query.md) | ✅ | ✅ | Android 7~10 上查询侧恒判未授权，用户根本加不了本地扫描根 |
