@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
+import 'package:hibiki/src/sync/remote_library_source.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_orchestrator.dart'
@@ -24,6 +25,7 @@ import 'package:hibiki/src/sync/sync_file_ref.dart' show SyncFileRef;
 class CloudRemoteBookClient implements RemoteBookClient {
   CloudRemoteBookClient({
     required this.backend,
+    required this.backendType,
     required this.rootFolderId,
     this.contentProbeConcurrency = 4,
     this.contentProbeRetries = 1,
@@ -34,8 +36,17 @@ class CloudRemoteBookClient implements RemoteBookClient {
   /// 远端存储后端；务必是 `resolveSyncBackend` 的产物（带解混淆装饰层）。
   final SyncBackend backend;
 
+  /// [backend] 背后的云盘类型。只用于把清单缓存分槽——换后端类型（Drive→WebDAV）
+  /// 之后两边的书库毫无关系，必须落在不同槽里（BUG-1202）。由构造方
+  /// （已经查过 `getBackendType()`）传入。
+  final SyncBackendType backendType;
+
   /// 根命名空间定位符（`findOrCreateRootFolder()` 的返回值）。
   final String rootFolderId;
+
+  @override
+  String get remoteLibrarySourceId =>
+      cloudRemoteLibrarySourceId(backendType.name);
 
   /// 内容探测（每本书一次 `listChildren`）的并发上限，默认 4：避免串行慢、又不打爆
   /// 云端 API 速率。

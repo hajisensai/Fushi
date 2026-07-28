@@ -141,8 +141,8 @@ void main() {
       expect(report.videosExported, 1);
 
       // Manifest present with one correct entry.
-      final CloudRemoteVideoClient client =
-          CloudRemoteVideoClient(backend: store);
+      final CloudRemoteVideoClient client = CloudRemoteVideoClient(
+          backend: store, backendType: SyncBackendType.webDav);
       final List<RemoteVideoManifestEntry> entries =
           await client.listRemoteVideoManifest();
       expect(entries.length, 1);
@@ -203,8 +203,8 @@ void main() {
           .syncVideoAssets(report);
       expect(report.errors, isEmpty, reason: report.errors.join(' | '));
 
-      final CloudRemoteVideoClient client =
-          CloudRemoteVideoClient(backend: store);
+      final CloudRemoteVideoClient client = CloudRemoteVideoClient(
+          backend: store, backendType: SyncBackendType.webDav);
       final RemoteVideoManifestEntry e =
           (await client.listRemoteVideoManifest()).single;
       expect(e.coverAsset, isNotNull);
@@ -278,7 +278,8 @@ void main() {
           .syncVideoAssets(report);
       expect(report.errors, isEmpty, reason: report.errors.join(' | '));
 
-      final Set<String> uids = (await CloudRemoteVideoClient(backend: store)
+      final Set<String> uids = (await CloudRemoteVideoClient(
+                  backend: store, backendType: SyncBackendType.webDav)
               .listRemoteVideoManifest())
           .map((RemoteVideoManifestEntry e) => e.uid)
           .toSet();
@@ -356,10 +357,10 @@ void main() {
       // Round 1: cover uploaded, manifest entry carries coverAsset.
       await _orchestrator(db, backend, tmp, syncVideoFiles: true)
           .syncVideoAssets(SyncRunReport());
-      final RemoteVideoManifestEntry e1 =
-          (await CloudRemoteVideoClient(backend: store)
-                  .listRemoteVideoManifest())
-              .single;
+      final RemoteVideoManifestEntry e1 = (await CloudRemoteVideoClient(
+                  backend: store, backendType: SyncBackendType.webDav)
+              .listRemoteVideoManifest())
+          .single;
       expect(e1.coverAsset, isNotNull);
 
       // Local cover file vanishes (moved/deleted on this device) before round 2.
@@ -368,10 +369,10 @@ void main() {
       // Round 2: manifest entry must still carry the coverAsset (not nulled).
       await _orchestrator(db, backend, tmp, syncVideoFiles: true)
           .syncVideoAssets(SyncRunReport());
-      final RemoteVideoManifestEntry e2 =
-          (await CloudRemoteVideoClient(backend: store)
-                  .listRemoteVideoManifest())
-              .single;
+      final RemoteVideoManifestEntry e2 = (await CloudRemoteVideoClient(
+                  backend: store, backendType: SyncBackendType.webDav)
+              .listRemoteVideoManifest())
+          .single;
       expect(e2.coverAsset, e1.coverAsset,
           reason:
               'missing local cover file must not wipe published coverAsset');
@@ -429,15 +430,15 @@ void main() {
   group('CloudRemoteVideoClient', () {
     test('empty backend lists nothing (never uploaded)', () async {
       final FakeAssetStore store = FakeAssetStore();
-      final CloudRemoteVideoClient client =
-          CloudRemoteVideoClient(backend: store);
+      final CloudRemoteVideoClient client = CloudRemoteVideoClient(
+          backend: store, backendType: SyncBackendType.webDav);
       expect(await client.listRemoteVideoManifest(), isEmpty);
     });
 
     test('download of unknown uid throws SyncBackendError', () async {
       final FakeAssetStore store = FakeAssetStore();
-      final CloudRemoteVideoClient client =
-          CloudRemoteVideoClient(backend: store);
+      final CloudRemoteVideoClient client = CloudRemoteVideoClient(
+          backend: store, backendType: SyncBackendType.webDav);
       await expectLater(
         client.getRemoteVideo('video/none', File('${work.path}/x.mp4')),
         throwsA(isA<SyncBackendError>()),

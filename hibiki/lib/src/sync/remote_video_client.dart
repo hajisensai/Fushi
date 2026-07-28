@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/remote_library_source.dart';
 
 /// **任何**远端视频来源都具备的能力：列清单 + 按 id 把整片下载到本地。
 ///
@@ -19,7 +20,7 @@ import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 /// 把「能力靠 `is` 判断」换成「调了会抛」，编译器照样拦不住。按能力分级之后，
 /// `source is RemoteVideoClient` 是**类型系统认可**的能力判据——拿不到 live 能力的
 /// 地方根本调不出流播/字幕/断点方法。
-abstract class RemoteVideoSource {
+abstract class RemoteVideoSource implements RemoteLibrarySource {
   /// 列出该源可见的远端视频。云盘源在这里就把目录清单适配成 [RemoteVideoInfo]，
   /// 消费方（库页）不再需要知道 manifest 长什么样。
   Future<List<RemoteVideoInfo>> listRemoteVideos();

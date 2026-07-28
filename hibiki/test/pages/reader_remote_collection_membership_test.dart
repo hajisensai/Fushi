@@ -12,6 +12,7 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
+import 'package:hibiki/src/sync/remote_library_source.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -202,6 +203,9 @@ class _ListFakeRemoteBookClient implements RemoteBookClient {
   @override
   RemoteBookSourceKind get remoteSourceKind =>
       RemoteBookSourceKind.interconnect;
+
+  @override
+  String get remoteLibrarySourceId => kInterconnectRemoteLibrarySourceId;
 
   @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async => _books;

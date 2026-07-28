@@ -236,6 +236,12 @@ class UrlStreamVideoClient implements RemoteVideoClient {
     http.Client? httpClient,
   }) : _httpClient = httpClient ?? http.Client();
 
+  /// 远端清单缓存里的来源身份（BUG-1202）。本 client 从不进库页的清单缓存
+  /// （[listRemoteVideos] 恒空，它只是把一条粘贴来的 URL 包成播放页能吃的契约），
+  /// 但契约要求每个源都能报出身份，给一个独立值即可，绝不与互联/云盘同槽。
+  @override
+  String get remoteLibrarySourceId => 'url_stream';
+
   /// 用户粘贴的视频流 URL（http/https 直链 / HLS / m3u8）。
   final String streamUrl;
 

@@ -15,6 +15,7 @@ import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/remote_library_source.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -213,6 +214,9 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
   final List<String> downloadedIds = <String>[];
   final List<String> streamUrlRequests = <String>[];
   final List<String> subtitleDestinations = <String>[];
+
+  @override
+  String get remoteLibrarySourceId => kInterconnectRemoteLibrarySourceId;
 
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async => <RemoteVideoInfo>[

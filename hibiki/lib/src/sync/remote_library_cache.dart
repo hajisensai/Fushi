@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
+import 'package:hibiki/src/sync/remote_library_source.dart';
 
 /// 远端库列表（互联对端 / 云盘）的统一读取入口：TTL 缓存 + in-flight 去重 + 显式失效。
 ///
@@ -24,11 +25,21 @@ import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 /// 反映在混排网格里，只有「问对端要清单」这一步被 TTL 挡住，BUG-992/994 的用户可见
 /// 语义（切回 tab 远端卡在场）不受影响。
 ///
+/// **槽由 (来源身份, 域) 联合定位（BUG-1202）**——只按域分槽会让互联对端与云盘备份
+/// 后端共用同一个 `videos` / `books` 槽，于是「互联拉过的清单」被云盘那次读原样命中，
+/// 用户在云盘视图里看到互联对端的条目且不报错。来源身份由来源自己申报
+/// （[RemoteLibrarySource.remoteLibrarySourceId]），是 [read] 的必填参数——新增任何
+/// 一种远端源，编译器当场要求它给出身份，「忘了分槽」这个失败模式不存在。
+///
 /// **失效有两条路**：① 用户显式下拉刷新 → [read] 传 `forceRefresh: true`；
 /// ② 对端身份变了 → [remoteLibraryCacheProvider] 订阅
 /// `InterconnectSyncBackend.sessionIdentityRevision` 自动 [invalidateAll]。
 /// 缓存类自身不试图从 client 身份推断对端是否换人（那种推断在多地址候选 + 单例
 /// backend 的现实下必然出错），判据由 backend 给，本类只负责照做。
+///
+/// 注意这两条路都**只覆盖互联**（下拉刷新是用户手动的，revision 只在互联内部自增），
+/// 所以「换云盘后端 / 翻互联开关」不能指望它们——那正是要靠上面的按源分槽在结构上
+/// 消灭掉，而不是再补第三个失效信号。
 class RemoteLibraryCache {
   RemoteLibraryCache({
     this.defaultTtl = const Duration(seconds: 60),
@@ -45,8 +56,13 @@ class RemoteLibraryCache {
   final int Function() _nowMs;
   final Map<String, _CacheSlot> _slots = <String, _CacheSlot>{};
 
-  /// 读 [key] 对应的远端列表：命中未过期缓存直接返回；有同 key 请求在途则复用它
-  /// （in-flight 去重，解决书架/漫画/首页同帧并发问一样东西）；否则调 [fetch] 取数。
+  /// 读 [sourceId] 这个来源的 [key] 域列表：命中未过期缓存直接返回；有同槽请求在途
+  /// 则复用它（in-flight 去重，解决书架/漫画/首页同帧并发问一样东西）；否则调 [fetch]
+  /// 取数。
+  ///
+  /// [sourceId] 取自 [RemoteLibrarySource.remoteLibrarySourceId]——**必填**，因为
+  /// 「同一个域、不同来源」的清单毫无关系，共用一个槽就是 BUG-1202 的串味。调用方
+  /// 不该自己编字面量，从手里那个 client/source 上读。
   ///
   /// [forceRefresh] 为 true 时无条件重新取数（下拉刷新语义），并让任何在途的旧请求
   /// 作废——靠 slot 的 generation 计数拦截，避免旧请求后到把新结果覆盖回去。
@@ -55,12 +71,14 @@ class RemoteLibraryCache {
   /// 「拉取失败 → 占位卡不出现」降级处理，而旧值保留让离线时仍能显示上一次已知列表。
   /// 由于失败不刷新 `fetchedAt`，下一次读必然重试。
   Future<T> read<T>({
+    required String sourceId,
     required String key,
     required Future<T> Function() fetch,
     Duration? ttl,
     bool forceRefresh = false,
   }) {
-    final _CacheSlot slot = _slots.putIfAbsent(key, () => _CacheSlot());
+    final _CacheSlot slot =
+        _slots.putIfAbsent(_slotKey(sourceId, key), () => _CacheSlot());
 
     if (!forceRefresh) {
       final Future<Object?>? inFlight = slot.inFlight;
@@ -100,9 +118,18 @@ class RemoteLibraryCache {
     });
   }
 
-  /// 作废单个 key（含在途请求的写回）。下次 [read] 必然重新取数。
-  void invalidate(String key) {
-    final _CacheSlot? slot = _slots[key];
+  /// 槽的联合定位符。竖线做分隔符：来源身份（[kInterconnectRemoteLibrarySourceId] /
+  /// [cloudRemoteLibrarySourceId]）与域名（[RemoteLibraryCacheKeys]）都是本仓写死的标识符，
+  /// 两侧都不含竖线，所以拼不出歧义槽名。
+  static String _slotKey(String sourceId, String key) => '$sourceId|$key';
+
+  /// 作废 [sourceId] 的 [key] 槽（含在途请求的写回）。下次 [read] 必然重新取数。
+  void invalidate(String sourceId, String key) {
+    _invalidateSlot(_slotKey(sourceId, key));
+  }
+
+  void _invalidateSlot(String slotKey) {
+    final _CacheSlot? slot = _slots[slotKey];
     if (slot == null) return;
     slot.generation++;
     slot.inFlight = null;
@@ -111,17 +138,17 @@ class RemoteLibraryCache {
     slot.fetchedAtMs = 0;
   }
 
-  /// 作废全部 key。用于对端换人 / 配对变更 / 互联开关切换 / 同步跑完这类
+  /// 作废全部槽（所有来源、所有域）。用于对端换人 / 配对变更 / 同步跑完这类
   /// 「远端库整体可能已变」的信号。
   void invalidateAll() {
-    for (final String key in _slots.keys.toList()) {
-      invalidate(key);
+    for (final String slotKey in _slots.keys.toList()) {
+      _invalidateSlot(slotKey);
     }
   }
 
-  /// 仅供测试与诊断：[key] 当前是否持有未过期的缓存值。
-  bool isFresh(String key, {Duration? ttl}) {
-    final _CacheSlot? slot = _slots[key];
+  /// 仅供测试与诊断：[sourceId] 的 [key] 槽当前是否持有未过期的缓存值。
+  bool isFresh(String sourceId, String key, {Duration? ttl}) {
+    final _CacheSlot? slot = _slots[_slotKey(sourceId, key)];
     if (slot == null || !slot.hasValue) return false;
     return _nowMs() - slot.fetchedAtMs < (ttl ?? defaultTtl).inMilliseconds;
   }
@@ -159,8 +186,12 @@ final remoteLibraryCacheProvider = Provider<RemoteLibraryCache>((ref) {
   return cache;
 });
 
-/// 远端列表的缓存 key。集中在一处而不是散在各页面字符串字面量里——新增媒体域时
+/// 远端列表的缓存**域** key。集中在一处而不是散在各页面字符串字面量里——新增媒体域时
 /// 这里加一个常量/函数，编译器就能在所有消费点保证拼写一致。
+///
+/// 这里只有「哪一类东西」，没有「问谁要的」——后者是 [RemoteLibraryCache.read] 的
+/// `sourceId` 参数（BUG-1202）。两个维度分开，才不会出现「videos 是共用的、
+/// cloud_videos 是云盘专用的」这种一半按域、一半按源的混合命名。
 class RemoteLibraryCacheKeys {
   const RemoteLibraryCacheKeys._();
 
@@ -168,10 +199,10 @@ class RemoteLibraryCacheKeys {
 
   /// 远端视频清单（`List<RemoteVideoInfo>`）。
   ///
-  /// 互联 host live 库与云盘目录**共用**这一个槽：两种源都实现 `RemoteVideoSource`，
-  /// 清单在各自 client 里已统一成 `RemoteVideoInfo`，不存在元素类型不一致的问题
-  /// （TODO-2119 之前云盘返回的是 manifest entry，被迫分成两个槽，否则换后端时会按
-  /// 错误类型取出缓存直接 cast 崩）。换对端/换后端由 `invalidateAll` 兜底。
+  /// 互联 host live 库与云盘目录用**同一个域** key，但落在**各自的槽**里（槽 =
+  /// 来源身份 + 域）。TODO-2119 之前云盘返回的是 manifest entry，被迫拆出第二个
+  /// `cloud_videos` 域常量；现在两种源都实现 `RemoteVideoSource`、清单都已在各自
+  /// client 里统一成 `RemoteVideoInfo`，域名可以只留一个，来源隔离交给 `sourceId`。
   static const String videos = 'videos';
   static const String audiobooks = 'audiobooks';
   static const String dictionaries = 'dictionaries';

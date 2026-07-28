@@ -518,7 +518,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (type == SyncBackendType.hibikiServer) return null;
     final SyncBackend backend = resolveSyncBackend(type);
     if (!await backend.restoreAuth(syncRepo)) return null;
-    return CloudRemoteVideoClient(backend: backend);
+    return CloudRemoteVideoClient(backend: backend, backendType: type);
   }
 
   /// 是否应该去问远端要视频清单。
@@ -563,10 +563,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 网络，TTL 内直接复用。缓存只包住「问对端要清单」这一步，下面的本地库查询与
       // 去重仍每次照跑，本地新增/删除的视频立即反映在混排网格里。
       //
-      // 两种源共用一个 key：清单已在各自 client 里统一成 List<RemoteVideoInfo>，
-      // 不再有「元素类型不同、共用会 cast 崩」的问题（TODO-2119 之前必须分槽）。
-      // 换对端/换后端时由会话身份 revision 驱动 invalidateAll（BUG-1180），不会串味。
+      // 槽 = 来源身份 + 域（BUG-1202）。上面那行 `?? ` 让本方法**故意**不知道拿到的
+      // 是互联还是云盘，所以来源身份只能由 source 自己申报；靠调用点分辨来源、或靠
+      // 「换后端时记得失效」都治不了串味（换云盘后端根本不经过互联的失效信号）。
       final List<RemoteVideoInfo> videos = await _remoteCache.read(
+        sourceId: source.remoteLibrarySourceId,
         key: RemoteLibraryCacheKeys.videos,
         forceRefresh: forceRefresh,
         fetch: source.listRemoteVideos,

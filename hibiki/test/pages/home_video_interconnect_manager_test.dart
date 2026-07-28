@@ -12,6 +12,7 @@ import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/home_video_page.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/interconnect_download_manager.dart';
+import 'package:hibiki/src/sync/remote_library_source.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:drift/native.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -136,6 +137,9 @@ void main() {
 
 class _GatedClient implements RemoteVideoClient {
   final Completer<void> completer = Completer<void>();
+
+  @override
+  String get remoteLibrarySourceId => kInterconnectRemoteLibrarySourceId;
 
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async => <RemoteVideoInfo>[

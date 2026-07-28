@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/remote_library_source.dart';
 
 /// 远端书来源类型：决定书架「远端书」分区的标题/副标题文案（BUG-699 / TODO-1384）。
 ///
@@ -11,7 +12,7 @@ import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 ///   「云端书」。WebDAV-only 用户从没配过互联，绝不能给他们看「互联/对端设备」。
 enum RemoteBookSourceKind { interconnect, cloud }
 
-abstract class RemoteBookClient {
+abstract class RemoteBookClient implements RemoteLibrarySource {
   /// 本客户端代表的远端书来源类型（驱动书架分区的标题/副标题文案；这是「展示」
   /// 归类，不是能力门控——删除/有声书等能力仍按具体后端类型判断）。
   RemoteBookSourceKind get remoteSourceKind;

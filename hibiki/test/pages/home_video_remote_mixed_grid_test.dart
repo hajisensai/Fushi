@@ -15,6 +15,7 @@ import 'package:hibiki/src/pages/implementations/home_video_page.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/remote_library_source.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -235,6 +236,9 @@ class _ListFakeRemoteVideoClient implements RemoteVideoClient {
   final List<RemoteVideoInfo> _videos;
 
   @override
+  String get remoteLibrarySourceId => kInterconnectRemoteLibrarySourceId;
+
+  @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async => _videos;
 
   @override
@@ -276,6 +280,9 @@ class _ListFakeRemoteVideoClient implements RemoteVideoClient {
 
 /// listRemoteVideos 抛异常 → 页面走 failed 门控（占位卡不出现）。
 class _ThrowingRemoteVideoClient implements RemoteVideoClient {
+  @override
+  String get remoteLibrarySourceId => kInterconnectRemoteLibrarySourceId;
+
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async =>
       throw const SocketException('offline');

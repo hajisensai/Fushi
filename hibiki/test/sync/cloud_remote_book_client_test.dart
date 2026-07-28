@@ -236,8 +236,11 @@ void main() {
           'fid_b': <AssetEntry>[_epub('cover_b', 'cover.jpg')],
         },
       );
-      final client =
-          CloudRemoteBookClient(backend: backend, rootFolderId: 'root');
+      final client = CloudRemoteBookClient(
+        backend: backend,
+        rootFolderId: 'root',
+        backendType: SyncBackendType.webDav,
+      );
 
       final List<RemoteBookInfo> books = await client.listRemoteBooks();
 
@@ -266,8 +269,11 @@ void main() {
           'fid_real': <AssetEntry>[_epub('asset_real', 'Real Book.epub')],
         },
       );
-      final client =
-          CloudRemoteBookClient(backend: backend, rootFolderId: 'root');
+      final client = CloudRemoteBookClient(
+        backend: backend,
+        rootFolderId: 'root',
+        backendType: SyncBackendType.webDav,
+      );
 
       final List<RemoteBookInfo> books = await client.listRemoteBooks();
 
@@ -292,6 +298,7 @@ void main() {
       final client = CloudRemoteBookClient(
         backend: backend,
         rootFolderId: 'root',
+        backendType: SyncBackendType.webDav,
         contentProbeRetryBackoff: Duration.zero,
       );
 
@@ -325,6 +332,7 @@ void main() {
       final client = CloudRemoteBookClient(
         backend: backend,
         rootFolderId: 'root',
+        backendType: SyncBackendType.webDav,
         contentProbeRetryBackoff: Duration.zero,
       );
 
@@ -349,6 +357,7 @@ void main() {
       final client = CloudRemoteBookClient(
         backend: backend,
         rootFolderId: 'root',
+        backendType: SyncBackendType.webDav,
         contentProbeConcurrency: 3,
       );
 
@@ -373,8 +382,11 @@ void main() {
           ],
         },
       );
-      final client =
-          CloudRemoteBookClient(backend: backend, rootFolderId: 'root');
+      final client = CloudRemoteBookClient(
+        backend: backend,
+        rootFolderId: 'root',
+        backendType: SyncBackendType.webDav,
+      );
       final Directory tmp =
           Directory.systemTemp.createTempSync('cloud_remote_book_dl');
       addTearDown(() {
@@ -399,8 +411,11 @@ void main() {
           'fid_empty': <AssetEntry>[_epub('cover', 'cover.jpg')],
         },
       );
-      final client =
-          CloudRemoteBookClient(backend: backend, rootFolderId: 'root');
+      final client = CloudRemoteBookClient(
+        backend: backend,
+        rootFolderId: 'root',
+        backendType: SyncBackendType.webDav,
+      );
       final Directory tmp =
           Directory.systemTemp.createTempSync('cloud_remote_book_empty');
       addTearDown(() {

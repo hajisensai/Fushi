@@ -16,6 +16,7 @@ import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart
 import 'package:hibiki/src/pages/implementations/video_hibiki_page.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
+import 'package:hibiki/src/sync/remote_library_source.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -211,6 +212,9 @@ class _FakeRemoteBookClient implements RemoteBookClient {
       RemoteBookSourceKind.interconnect;
 
   @override
+  String get remoteLibrarySourceId => kInterconnectRemoteLibrarySourceId;
+
+  @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async => <RemoteBookInfo>[
         RemoteBookInfo.fromJson(<String, Object?>{
           'title': 'Remote Book',
@@ -249,6 +253,9 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
 
   final String coverPath;
   final List<String> streamUrlRequests = <String>[];
+
+  @override
+  String get remoteLibrarySourceId => kInterconnectRemoteLibrarySourceId;
 
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async => <RemoteVideoInfo>[
