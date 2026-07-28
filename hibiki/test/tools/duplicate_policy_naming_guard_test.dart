@@ -37,6 +37,16 @@ const Map<String, String> kRetiredNames = <String, String>{
 /// 会永远红（自指）。
 const String kSelfPath = 'test/tools/duplicate_policy_naming_guard_test.dart';
 
+/// 读取 [path] 并**剥掉整行注释**后的代码文本。
+///
+/// 结构断言一律走它，绝不用含注释的原文：本守卫早先版本直接 `src.contains(...)`，
+/// 把 `sealed class DuplicatePolicy` 的真声明删掉、只在注释里留下同一串字面量，
+/// 守卫照样全绿（实测）。注释是资产，但**不能替代声明**。
+String _codeOf(String path) => File(path)
+    .readAsLinesSync()
+    .where((String l) => !l.trimLeft().startsWith('//'))
+    .join('\n');
+
 /// 扫 [roots] 下所有 .dart 的**非注释**行，返回 `文件:行号` 命中列表。
 ///
 /// 跳过 `//` / `///` 开头的行：讲「此前叫什么、为什么改」的注释是资产，不是债。
@@ -79,7 +89,7 @@ void main() {
   });
 
   group('三态不得退回两参编码', () {
-    late final String src = File(kPolicyFile).readAsStringSync();
+    late final String src = _codeOf(kPolicyFile);
 
     test('DuplicatePolicy 是 sealed 的（非法组合不可表达）', () {
       expect(src.contains('sealed class DuplicatePolicy'), isTrue,
@@ -98,14 +108,8 @@ void main() {
 
     test('resolveDuplicateTitle 只收一个策略参数', () {
       expect(src.contains('DuplicatePolicy policy'), isTrue);
-      // 只看代码行：文件顶部的设计说明里引用了旧的两参签名（讲清为什么收敛），
-      // 那是资产不是债。
-      final String code = src
-          .split('\n')
-          .where((String l) => !l.trimLeft().startsWith('//'))
-          .join('\n');
       expect(
-        code.contains('bool skipIfExists'),
+        src.contains('bool skipIfExists'),
         isFalse,
         reason: '不得退回 (bool, callback?) 两参编码三态',
       );
@@ -113,15 +117,21 @@ void main() {
   });
 
   test('策略分派必须穷尽（switch 不许有 default）', () {
-    final String src = File(kPolicyFile).readAsStringSync();
+    // 剥注释后再找 switch：注释里的 `default:` 不该算数。
+    final String src = _codeOf(kPolicyFile);
     final int switchAt = src.indexOf('switch (policy)');
     expect(switchAt, isNonNegative, reason: '分派应是对 policy 的 switch');
     final String body = src.substring(switchAt);
     expect(
-      RegExp(r'^\s*default:', multiLine: true).hasMatch(body),
-      isFalse,
-      reason: '写了 default 就等于放弃穷尽检查——加第四种策略时这里必须编译报错，'
-          '而不是悄悄走兜底分支',
+      // Dart 3 里 `case _:` / `case _ when ...` 与 `default:` 等效，一样让穷尽性
+      // 失效。只堵 `default:` 是假绿——实测 `case _:` 能整个穿过去。
+      RegExp(r'^\s*(default\s*:|case\s+_\s*(:|when))', multiLine: true)
+          .allMatches(body)
+          .map((RegExpMatch m) => m.group(0)!.trim())
+          .toList(),
+      isEmpty,
+      reason: '写兜底分支就等于放弃穷尽检查——加第四种策略时这里必须编译报错，'
+          '而不是悄悄走进 default / case _',
     );
   });
 }
