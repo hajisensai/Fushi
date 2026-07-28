@@ -9,6 +9,7 @@ import 'package:hibiki/src/media/media_search_text.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
 import 'package:hibiki/src/media/video/jimaku_client.dart';
 import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
+import 'package:hibiki/src/pages/implementations/jimaku_api_key_field.dart';
 import 'package:hibiki/utils.dart';
 
 /// 一条可下载的 Jimaku 字幕候选：所属条目名 + 文件。
@@ -80,21 +81,8 @@ List<String> availableLanguages(List<JimakuCandidate> candidates) {
   return out;
 }
 
-/// 语言代码 → 显示名（chip 文案）。白名单外回退原代码大写。
-String jimakuLanguageLabel(String code) {
-  switch (code) {
-    case 'ja':
-      return '日本語';
-    case 'zh':
-      return '中文';
-    case 'en':
-      return 'English';
-    case 'ko':
-      return '한국어';
-    default:
-      return code.toUpperCase();
-  }
-}
+// `jimakuLanguageLabel` 已下沉到 jimaku_client.dart（数据层单一真相源，设置页也要用）。
+// 四处共用（本对话框 / 下载对话框 / 批量对话框 / 设置页），各自直接 import 数据层。
 
 /// 「自动获取字幕（Jimaku）」对话框（参照 asbplayer）：填 API key → 用番名经 AniList
 /// 找 anilist_id → Jimaku 列字幕文件 → 选一个下载到 [saveDirectory] → pop 回本地路径。
@@ -396,15 +384,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
         ],
       );
     }
-    return TextField(
-      controller: _apiKeyCtrl,
-      decoration: InputDecoration(
-        labelText: t.video_jimaku_api_key,
-        helperText: t.video_jimaku_api_key_hint,
-        helperMaxLines: 2,
-      ),
-      obscureText: true,
-    );
+    return JimakuApiKeyField(controller: _apiKeyCtrl);
   }
 
   /// 选某语言（[lang]=null 即「全部」）：更新筛选 + 选具体语言时持久化记忆（选择即写）。

@@ -567,8 +567,10 @@ extension _VideoSubtitle on _VideoHibikiPageState {
     // 语言记忆按系列（番名）粒度：seriesKey = query 归一（小写 + trim），与
     // PreferencesRepository 的 map key 约定一致。打开时读上次语言、选中时写回。
     final String seriesKey = query.trim().toLowerCase();
+    // 该系列没有记忆时兜底设置页的默认字幕语言（三个 Jimaku 界面同一兜底）。
     final String? preferredLanguage =
-        appModel.jimakuPreferredLanguages[seriesKey];
+        appModel.jimakuPreferredLanguages[seriesKey] ??
+            appModel.jimakuDefaultLanguageOrNull;
     final String? downloaded = await showDialog<String>(
       context: context,
       builder: (_) => JimakuSubtitleDialog(

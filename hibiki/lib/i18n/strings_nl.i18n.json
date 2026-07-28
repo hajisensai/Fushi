@@ -2712,5 +2712,10 @@
   "shortcut_scope_manga": "Manga",
   "shortcut_action_manga_page_forward": "Next page",
   "shortcut_action_manga_page_backward": "Previous page",
-  "shortcut_action_manga_dismiss_dict": "Close dictionary"
+  "shortcut_action_manga_dismiss_dict": "Close dictionary",
+  "video_setting_jimaku_default_language": "Default subtitle language",
+  "video_setting_jimaku_default_language_hint": "Preferred language when the series has no remembered choice",
+  "video_jimaku_api_key_settings_hint": "Also editable in Settings → Video → Subtitles",
+  "anime_download_subs_partial": "Subtitles: only $done of $total downloaded",
+  "anime_download_subs_episodes_unverified": "Episode numbers are not verified against this pack - subtitles may come from another season."
 }

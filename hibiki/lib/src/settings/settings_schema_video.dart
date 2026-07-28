@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
+import 'package:hibiki/src/media/video/jimaku_client.dart';
 import 'package:hibiki/src/media/video/video_asbplayer_config.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_immersive_mode.dart';
@@ -853,6 +854,46 @@ SettingsDestination buildVideoDestination() {
                 settingsContext,
                 (VideoSubtitleStyle s) => s.copyWith(bottomPadding: v),
               );
+            },
+          ),
+          // ── Jimaku（在线字幕源）───────────────────────────────────────────
+          // 此前 API key 只能在三个对话框（视频字幕 / 番剧下载 / 批量匹配）里就地填，
+          // 设置页压根没有入口；下载对话框那个还只在 key 为空时才显示，key 填错了
+          // 无处可改。这里是**唯一权威入口**，对话框里的就地输入只是快捷方式。
+          SettingsTextItem(
+            id: 'video.subtitle.jimaku_api_key',
+            title: t.video_jimaku_api_key,
+            subtitle: t.video_jimaku_api_key_hint,
+            icon: Icons.vpn_key_outlined,
+            secret: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.jimakuApiKey,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await settingsContext.appModel.setJimakuApiKey(value.trim());
+            },
+          ),
+          // 默认字幕语言：没有该系列记忆（jimakuPreferredLanguages）时的兜底优先语言。
+          // `''` = 不限（按 jimakuLanguageRank 默认权重排）。
+          SettingsSegmentedItem<String>(
+            id: 'video.subtitle.jimaku_default_language',
+            title: t.video_setting_jimaku_default_language,
+            subtitle: t.video_setting_jimaku_default_language_hint,
+            icon: Icons.translate_outlined,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: '',
+                label: t.video_jimaku_language_all,
+              ),
+              for (final String code in kJimakuLanguageCodes)
+                SettingsSegmentOption<String>(
+                  value: code,
+                  label: jimakuLanguageLabel(code),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.jimakuDefaultLanguage,
+            onChanged: (SettingsContext settingsContext, String code) async {
+              await settingsContext.appModel.setJimakuDefaultLanguage(code);
             },
           ),
         ],

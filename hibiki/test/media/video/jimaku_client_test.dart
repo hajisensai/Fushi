@@ -90,6 +90,16 @@ void main() {
       expect(detectSubtitleLanguage('ep01.ko.srt'), 'ko');
     });
 
+    test('Netflix 抽轨的 `ja[cc]` / `en[sdh]` 方括号修饰不挡语言识别', () {
+      expect(
+        detectSubtitleLanguage('私を喰べたい、ひとでなし.S01E01.WEBRip.Netflix.ja[cc].srt'),
+        'ja',
+      );
+      expect(detectSubtitleLanguage('show.S01E01.en[sdh].srt'), 'en');
+      // 修饰剥掉后仍不在白名单 → 照旧不猜。
+      expect(detectSubtitleLanguage('show.S01E01.fr[cc].srt'), isNull);
+    });
+
     test('方括号 / 圆括号语言标记', () {
       expect(detectSubtitleLanguage('[CHS]some show.srt'), 'zh');
       expect(detectSubtitleLanguage('[JP] show ep01.srt'), 'ja');

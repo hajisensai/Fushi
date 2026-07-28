@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/src/media/torrent/anime_download_subscription.dart';
-import 'package:hibiki/src/models/app_model.dart';
-import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart'
+import 'package:hibiki/src/media/video/jimaku_client.dart'
     show jimakuLanguageLabel;
+import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
 
