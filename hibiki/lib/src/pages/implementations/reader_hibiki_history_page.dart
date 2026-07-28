@@ -20,6 +20,7 @@ import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
 import 'package:hibiki/src/media/display_title.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
+import 'package:hibiki/src/media/manga/manga_import_dialog.dart';
 import 'package:hibiki/src/media/manga/manga_module.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
@@ -641,17 +642,29 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       actions: <Widget>[
         // 宽窗（非 compact）时动作展开成「图标+文字」药丸（与视频 tab 页头一致，
         // 用户 mockup：导入书籍 / 来源 / 合集 / 阅读统计带文字外显）；窄窗回落纯图标。
-        mediaSource.buildBookImportButton(
-          context: context,
-          ref: ref,
-          appModel: appModel,
-          focusId: kShelfImportFocusId,
-          label: _mangaOnly ? t.manga_import_action : t.srt_import,
-        ),
+        // 漫画库和书架是同一页面的两种壳，但导入的是两种载体，故按钮指向两个不同
+        // 的对话框——不再是「同一个框换个 label」。
+        if (_mangaOnly)
+          MangaHibikiSource.instance.buildMangaImportButton(
+            context: context,
+            ref: ref,
+            appModel: appModel,
+            focusId: kShelfImportFocusId,
+            label: t.manga_import_action,
+          )
+        else
+          mediaSource.buildBookImportButton(
+            context: context,
+            ref: ref,
+            appModel: appModel,
+             focusId: kShelfImportFocusId,
+             label: t.srt_import,
+           ),
         // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
-        // 按钮就是同一件事的两个入口。只有本页被独立使用（无导航条）时才保留按钮。
-        if (_pageWidget.navigation == null)
-          _headerAction(
+        // 按钮就是同一件事的两个入口。书架独立使用（无导航条）时才保留书籍来源按钮；
+        // 漫画入口由专属导入对话框负责，不复用书籍来源管理。
+        if (_pageWidget.navigation == null && !_mangaOnly)
+           _headerAction(
             tooltip: t.media_source_manage_title,
             icon: Icons.folder_copy_outlined,
             onTap: _openManageSources,
@@ -1858,13 +1871,16 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             icon: const Icon(Icons.library_add_outlined, size: 18),
             label: Text(_mangaOnly ? t.manga_import_action : t.srt_import),
             onPressed: () async {
+              // 空态按钮与页头按钮指向同一个对话框：漫画库开漫画框，书架开书籍框。
               final bool? imported = await showAppDialog<bool>(
                 context: context,
-                builder: (_) => BookImportDialog(
-                  repo: SrtBookRepository(appModel.database),
-                  audiobookRepo: AudiobookRepository(appModel.database),
-                  db: appModel.database,
-                ),
+                builder: (_) => _mangaOnly
+                    ? MangaImportDialog(db: appModel.database)
+                    : BookImportDialog(
+                        repo: SrtBookRepository(appModel.database),
+                        audiobookRepo: AudiobookRepository(appModel.database),
+                        db: appModel.database,
+                      ),
               );
               if (imported == true) {
                 ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));

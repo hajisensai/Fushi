@@ -105,9 +105,9 @@ void main() {
           return false;
         },
       );
-      // epub 刻意不探：它在 books 分支就走 BookImportDialog，对话框的分派本来就
-      // 会真读包并把图片型 EPUB 导成漫画，行为已正确——为每次拖 EPUB 白开一次包
-      // 换不来可见改进。
+      // epub 刻意不探：它在 books 分支就走 BookImportDialog，而对话框收下路径时会
+      // 用 classifyImportCarrier 真读包，图片型 EPUB 在那里被认出并（经用户确认后）
+      // 转交漫画导入——识别没丢。为每次拖 EPUB 在分类层白开一次包换不来可见改进。
       expect(probed, <String>['/a/x.zip']);
     });
 
