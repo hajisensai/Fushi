@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/epub/epub_book.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 
+import '../pages/reader_hibiki_page_source_corpus.dart';
+
 void main() {
   group('normalizeHref', () {
     test('trims whitespace', () {
@@ -65,15 +67,40 @@ void main() {
     });
 
     // BUG-1199：`.htm` / `.xht` 是 EPUB 3 允许的内容文档扩展名，表里漏了这两条时
-    // 章节按 octet-stream 下发，阅读器整本翻页空白。断言用的是阅读器拦截器
-    // (`webview.part.dart` `_readerResourcePayload`) 判定「要不要注入样式/分页脚本
-    // 并当文档渲染」的**同一个谓词**，而不只是查表，这样即便将来谓词改写、只要
-    // 语义退化仍会红。
+    // 章节按 octet-stream 下发，阅读器既不净化也不注样式，整本翻页空白。
+    //
+    // 下面的 [readerTreatsAsHtml] 是阅读器拦截器
+    // (`webview.part.dart` `_readerResourcePayload`) 那条判定的**复刻**——复刻会
+    // 漂移，所以另配一条源码守卫（`interceptor predicate is still the one
+    // replicated here`）锁住被复刻的原文；实现侧改了谓词而这里没跟，守卫先红。
     group('BUG-1199: all EPUB content-document extensions serve as HTML', () {
+      // 与 webview.part.dart 逐字对应；改这里必须同步改下面守卫里的字面量。
+      const String interceptorHtmlPredicate =
+          "mime == 'text/html' || mime.contains('xhtml')";
+
       bool readerTreatsAsHtml(String path) {
         final String mime = fallbackMimeType(path);
         return mime == 'text/html' || mime.contains('xhtml');
       }
+
+      test('interceptor predicate is still the one replicated here', () {
+        final String reader = readReaderPageSource();
+        final int payloadIdx = reader
+            .indexOf('Future<_ReaderResourceResponse> _readerResourcePayload(');
+        expect(payloadIdx, greaterThan(0),
+            reason: '_readerResourcePayload 被改名/搬走——本组复刻的谓词已失去锚点');
+        final int endIdx =
+            reader.indexOf('Future<WebResourceResponse?> _interceptRequest(');
+        expect(endIdx, greaterThan(payloadIdx));
+        final String payloadBody = reader.substring(payloadIdx, endIdx);
+
+        expect(payloadBody.contains('fallbackMimeType(filePath)'), isTrue,
+            reason: '拦截器一旦不再按扩展名表定 MIME（例如改读 OPF media-type），'
+                '本组「补全扩展名表」的断言就不再代表真实渲染判据，必须重写');
+        expect(payloadBody.contains(interceptorHtmlPredicate), isTrue,
+            reason: '拦截器判「是不是 HTML 文档」的谓词变了，'
+                '本组复刻的 readerTreatsAsHtml 已与实现脱节');
+      });
 
       for (final String ext in <String>['xhtml', 'html', 'htm', 'xht']) {
         test('.$ext chapter is served as an HTML document', () {
