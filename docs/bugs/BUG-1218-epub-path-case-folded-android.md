@@ -40,6 +40,12 @@ Windows 文件系统不区分大小写，所以在 Windows 上侥幸能读、问
 
   **测试有效性已验证**：把 `_resolveWithinExtract` 的返回值临时改回 `p.canonicalize`，该文件 5 条中 4 条立刻转红，报的正是 `Expected: Images/COV… Actual: images/cov…`，确认不是弱断言假绿。
 
-- **[ ] ③ 未做真机复测** — 本机是 Windows，恰好是这个 bug **不可见**的平台；结论「Android/Linux 上章节会被跳过」由「解析出的路径与磁盘条目逐字节不符」推出，未在真机/模拟器上打开这本书复验。应在 Android 模拟器上走原始失败路径确认。
+- **[ ] ③ 未做端到端复测** — ③ 原文按被更正前的理解写成「在 Android 模拟器上打开这本书」，与上面更正后的触发链**不一致**，一并改正：
+
+  按更正后的触发链，本 bug 的端到端复现**不是**「在 Android 上原生打开」（POSIX 不折大小写，那条路不触发），而是跨平台搬运：**① 在 Windows 宿主导入这本混合大小写的书 → ② 经备份还原 / 裸数据拷贝搬到大小写敏感设备 → ③ 在不重新解析的消费方（封面、TOC 跳转等读 `coverPath` / `tocJson` 的路径）打开**。这条链未复测。
+
+  **CI 已覆盖的部分（PR#544）**：`build`（Build Release APK）通过，`Run unit tests with coverage (main app)` 报 `FLUTTER TEST VERDICT: PASSED - 15551 tests ran`，`Run dart analyze: success`，`linux` / `windows` / `macos` / `ios` 均 pass —— 这证明**未引入回归**。注意别把「linux 绿」当成本 bug 的验证：POSIX 上 `canonicalize` 本就不折大小写，本 bug 的测试在 Linux 上未修复时也是绿的，它真正的守护力在 **Windows**（本机实测：把 `_resolveWithinExtract` 改回 `canonicalize`，5 条中 4 条立刻转红）。
+
+  **CI 的 `android` job 帮不上忙**：它跑的是模拟器 appSmoke（断言仅「渲染 Scaffold / 主导航切换 / 无 FlutterError」，**不打开 EPUB**），且本身是既有不稳定 job —— develop 上同 job 在 failure / cancelled / success 间摇摆（`538a953e`→failure、`5f37f20e`→failure、`176b26c6`→cancelled、`693d1c39`→success）；PR#544 上两次分别崩在 WebView renderer OOM（`onServiceDisconnected (crash or killed by oom)` + `libwebviewchromium.so` SIGTRAP，伴随 `Skipped 2624 frames` / 单帧 87s / `EGL_BAD_CONFIG`）与 25 分钟超时取消，**均非测试断言失败**。
 
 - **备注**：对存量书零影响——`chaptersJson` 在 `path_rebase_coverage.dart` 标注为 `notAPath`，开书走 `parseFromExtracted` 重新解析、DB 只复用字数；旧书 `tocJson` 里存的小写 href 由 `EpubBook.chapterIndexForHref`（TODO-796）既有的大小写不敏感兜底 pass 兜住，TOC 跳转不回归。另：`hibiki/lib/src/media/manga/reader/manga_hibiki_page.dart:346` 有同样的 `p.canonicalize(p.join(...))` 当真实路径的模式（漫画解压 zip/cbz 同样可能混合大小写），属独立子系统、独立导入与渲染路径，未在本次范围内。
