@@ -64,9 +64,33 @@ void main() {
       expect(fallbackMimeType('chapter.xhtml'), 'text/html');
     });
 
+    // BUG-1196：`.htm` / `.xht` 是 EPUB 3 允许的内容文档扩展名，表里漏了这两条时
+    // 章节按 octet-stream 下发，阅读器整本翻页空白。断言用的是阅读器拦截器
+    // (`webview.part.dart` `_readerResourcePayload`) 判定「要不要注入样式/分页脚本
+    // 并当文档渲染」的**同一个谓词**，而不只是查表，这样即便将来谓词改写、只要
+    // 语义退化仍会红。
+    group('BUG-1196: all EPUB content-document extensions serve as HTML', () {
+      bool readerTreatsAsHtml(String path) {
+        final String mime = fallbackMimeType(path);
+        return mime == 'text/html' || mime.contains('xhtml');
+      }
+
+      for (final String ext in <String>['xhtml', 'html', 'htm', 'xht']) {
+        test('.$ext chapter is served as an HTML document', () {
+          expect(
+            readerTreatsAsHtml('OEBPS/Dick_9780345508553_epub_c01_r1.$ext'),
+            isTrue,
+            reason: '.$ext must not fall back to octet-stream — the reader '
+                'would skip style/pagination injection and render blank',
+          );
+        });
+      }
+    });
+
     test('case insensitive extension matching', () {
       expect(fallbackMimeType('FILE.CSS'), 'text/css');
       expect(fallbackMimeType('cover.PNG'), 'image/png');
+      expect(fallbackMimeType('CHAPTER.HTM'), 'text/html');
     });
   });
 
