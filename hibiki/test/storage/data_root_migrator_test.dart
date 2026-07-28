@@ -148,11 +148,12 @@ void main() {
           await const DataRootMigrator().migrate(DataRootMigrationRequest(
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
-        newDataRoot: newDataRoot,
+        target: DataRootMigrationTarget.customRoot(newDataRoot),
         // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
         documentsTopLevelIncludeNames: null,
         closeResources: () async => closed = true,
-        writeDataRootPref: (String r) async => wroteDataRoot = r,
+        commitLocation: (DataRootMigrationTarget t) async =>
+            wroteDataRoot = t.dataRootPrefValue,
       ));
 
       // 关闭回调被调用。
@@ -238,11 +239,11 @@ void main() {
         const DataRootMigrator().migrate(DataRootMigrationRequest(
           oldDocumentsRoot: oldDocs,
           oldSupportRoot: oldSupport,
-          newDataRoot: newDataRoot,
+          target: DataRootMigrationTarget.customRoot(newDataRoot),
           // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
           documentsTopLevelIncludeNames: null,
           closeResources: () async {},
-          writeDataRootPref: (String r) async => wrote = true,
+          commitLocation: (DataRootMigrationTarget t) async => wrote = true,
         )),
         throwsA(isA<DataRootMigrationException>()),
       );
@@ -266,11 +267,11 @@ void main() {
         const DataRootMigrator().migrate(DataRootMigrationRequest(
           oldDocumentsRoot: oldDocs,
           oldSupportRoot: oldSupport,
-          newDataRoot: newDataRoot,
+          target: DataRootMigrationTarget.customRoot(newDataRoot),
           // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
           documentsTopLevelIncludeNames: null,
           closeResources: () async {},
-          writeDataRootPref: (String r) async {
+          commitLocation: (DataRootMigrationTarget t) async {
             writeAttempts++;
             throw StateError('prefs unavailable');
           },
@@ -391,11 +392,12 @@ void main() {
           await const DataRootMigrator().migrate(DataRootMigrationRequest(
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
-        newDataRoot: newDataRoot,
+        target: DataRootMigrationTarget.customRoot(newDataRoot),
         // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
         documentsTopLevelIncludeNames: null,
         closeResources: () async {},
-        writeDataRootPref: (String r) async => wroteDataRoot = r,
+        commitLocation: (DataRootMigrationTarget t) async =>
+            wroteDataRoot = t.dataRootPrefValue,
       ));
 
       // (a) prefs 仍在原 oldSupportRoot，内容不变；sidecar 也留下。
@@ -461,11 +463,12 @@ void main() {
           await const DataRootMigrator().migrate(DataRootMigrationRequest(
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
-        newDataRoot: newDataRoot,
+        target: DataRootMigrationTarget.customRoot(newDataRoot),
         // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
         documentsTopLevelIncludeNames: null,
         closeResources: () async {},
-        writeDataRootPref: (String r) async => wroteDataRoot = r,
+        commitLocation: (DataRootMigrationTarget t) async =>
+            wroteDataRoot = t.dataRootPrefValue,
       ));
 
       // 整树搬齐：DB + local_audio + documents。
@@ -511,11 +514,11 @@ void main() {
         const DataRootMigrator().migrate(DataRootMigrationRequest(
           oldDocumentsRoot: oldDocs,
           oldSupportRoot: oldSupport,
-          newDataRoot: newDataRoot,
+          target: DataRootMigrationTarget.customRoot(newDataRoot),
           // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
           documentsTopLevelIncludeNames: null,
           closeResources: () async {},
-          writeDataRootPref: (String r) async {},
+          commitLocation: (DataRootMigrationTarget t) async {},
         )),
         throwsA(isA<DataRootMigrationException>()),
       );
@@ -550,9 +553,10 @@ void main() {
           await const DataRootMigrator().migrate(DataRootMigrationRequest(
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
-        newDataRoot: newDataRoot,
+        target: DataRootMigrationTarget.customRoot(newDataRoot),
         closeResources: () async {},
-        writeDataRootPref: (String r) async => wrote = r,
+        commitLocation: (DataRootMigrationTarget t) async =>
+            wrote = t.dataRootPrefValue,
         documentsTopLevelIncludeNames: const <String>{
           'hoshi_books',
           'audiobooks',
@@ -612,9 +616,10 @@ void main() {
           await const DataRootMigrator().migrate(DataRootMigrationRequest(
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
-        newDataRoot: newDataRoot,
+        target: DataRootMigrationTarget.customRoot(newDataRoot),
         closeResources: () async {},
-        writeDataRootPref: (String r) async => wrote = r,
+        commitLocation: (DataRootMigrationTarget t) async =>
+            wrote = t.dataRootPrefValue,
         documentsTopLevelIncludeNames: const <String>{
           'hoshi_books',
           'audiobooks',
@@ -658,9 +663,10 @@ void main() {
         const DataRootMigrator().migrate(DataRootMigrationRequest(
           oldDocumentsRoot: oldDocs,
           oldSupportRoot: oldSupport,
-          newDataRoot: p.join(oldDocsPath, 'audiobooks'),
+          target: DataRootMigrationTarget.customRoot(
+              p.join(oldDocsPath, 'audiobooks')),
           closeResources: () async {},
-          writeDataRootPref: (String r) async {},
+          commitLocation: (DataRootMigrationTarget t) async {},
           documentsTopLevelIncludeNames: const <String>{
             'hoshi_books',
             'audiobooks',
@@ -680,9 +686,10 @@ void main() {
         const DataRootMigrator().migrate(DataRootMigrationRequest(
           oldDocumentsRoot: oldDocs,
           oldSupportRoot: oldSupport,
-          newDataRoot: p.join(oldDocsPath, 'Hibiki'),
+          target:
+              DataRootMigrationTarget.customRoot(p.join(oldDocsPath, 'Hibiki')),
           closeResources: () async {},
-          writeDataRootPref: (String r) async {},
+          commitLocation: (DataRootMigrationTarget t) async {},
           // null = Hibiki 专属根、整树搬移语义。
           documentsTopLevelIncludeNames: null,
         )),
@@ -703,9 +710,9 @@ void main() {
         const DataRootMigrator().migrate(DataRootMigrationRequest(
           oldDocumentsRoot: oldDocs,
           oldSupportRoot: oldSupport,
-          newDataRoot: newDataRoot,
+          target: DataRootMigrationTarget.customRoot(newDataRoot),
           closeResources: () async {},
-          writeDataRootPref: (String r) async =>
+          commitLocation: (DataRootMigrationTarget t) async =>
               throw StateError('prefs unavailable'),
           documentsTopLevelIncludeNames: const <String>{
             'hoshi_books',
@@ -771,11 +778,11 @@ void main() {
         const DataRootMigrator().migrate(DataRootMigrationRequest(
           oldDocumentsRoot: oldDocs,
           oldSupportRoot: oldSupport,
-          newDataRoot: newDataRoot,
+          target: DataRootMigrationTarget.customRoot(newDataRoot),
           // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
           documentsTopLevelIncludeNames: null,
           closeResources: () async {},
-          writeDataRootPref: (String r) async => wrote = true,
+          commitLocation: (DataRootMigrationTarget t) async => wrote = true,
           resolvedExecutablePath: exe,
         )),
         throwsA(isA<DataRootMigrationException>().having(
@@ -804,11 +811,11 @@ void main() {
         const DataRootMigrator().migrate(DataRootMigrationRequest(
           oldDocumentsRoot: oldDocs,
           oldSupportRoot: oldSupport,
-          newDataRoot: newDataRoot,
+          target: DataRootMigrationTarget.customRoot(newDataRoot),
           // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
           documentsTopLevelIncludeNames: null,
           closeResources: () async {},
-          writeDataRootPref: (String r) async {},
+          commitLocation: (DataRootMigrationTarget t) async {},
           resolvedExecutablePath: exe,
         )),
         throwsA(isA<DataRootMigrationException>()),
@@ -830,11 +837,12 @@ void main() {
           await const DataRootMigrator().migrate(DataRootMigrationRequest(
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
-        newDataRoot: newDataRoot,
+        target: DataRootMigrationTarget.customRoot(newDataRoot),
         // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
         documentsTopLevelIncludeNames: null,
         closeResources: () async {},
-        writeDataRootPref: (String r) async => wrote = r,
+        commitLocation: (DataRootMigrationTarget t) async =>
+            wrote = t.dataRootPrefValue,
         resolvedExecutablePath: exe,
       ));
       expect(File(p.join(newSupport.path, 'hibiki.db')).existsSync(), isTrue);
@@ -858,11 +866,11 @@ void main() {
         const DataRootMigrator().migrate(DataRootMigrationRequest(
           oldDocumentsRoot: oldDocs,
           oldSupportRoot: oldSupport,
-          newDataRoot: newDataRoot,
+          target: DataRootMigrationTarget.customRoot(newDataRoot),
           // 自定义专属根语义：整树搬移（TODO-1226 前的原行为）。
           documentsTopLevelIncludeNames: null,
           closeResources: () async {},
-          writeDataRootPref: (String r) async =>
+          commitLocation: (DataRootMigrationTarget t) async =>
               throw StateError('prefs unavailable'),
         )),
         throwsA(isA<DataRootMigrationException>()),
@@ -960,11 +968,11 @@ void main() {
           const DataRootMigrator().migrate(DataRootMigrationRequest(
             oldDocumentsRoot: oldDocs,
             oldSupportRoot: oldSupport,
-            newDataRoot: newDataRoot,
+            target: DataRootMigrationTarget.customRoot(newDataRoot),
             documentsTopLevelIncludeNames: null,
             closeResources: () async {},
             // pref 提交失败 = 任意提交时点中断的代理。
-            writeDataRootPref: (String r) async =>
+            commitLocation: (DataRootMigrationTarget t) async =>
                 throw StateError('interrupted before commit'),
           )),
           throwsA(isA<DataRootMigrationException>()),
@@ -1007,10 +1015,11 @@ void main() {
             await const DataRootMigrator().migrate(DataRootMigrationRequest(
           oldDocumentsRoot: oldDocs,
           oldSupportRoot: oldSupport,
-          newDataRoot: newDataRoot,
+          target: DataRootMigrationTarget.customRoot(newDataRoot),
           documentsTopLevelIncludeNames: null,
           closeResources: () async {},
-          writeDataRootPref: (String r) async => wrote = r,
+          commitLocation: (DataRootMigrationTarget t) async =>
+              wrote = t.dataRootPrefValue,
         ));
         // 新根齐全。
         expect(
@@ -1061,10 +1070,10 @@ void main() {
       await const DataRootMigrator().migrate(DataRootMigrationRequest(
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
-        newDataRoot: newDataRoot,
+        target: DataRootMigrationTarget.customRoot(newDataRoot),
         documentsTopLevelIncludeNames: null,
         closeResources: () async {},
-        writeDataRootPref: (String r) async {},
+        commitLocation: (DataRootMigrationTarget t) async {},
       ));
       final String newSupportPath = p.join(newDataRoot, 'support');
       expect(File(p.join(newSupportPath, 'hibiki.db')).existsSync(), isTrue);
@@ -1083,10 +1092,10 @@ void main() {
         const DataRootMigrator().migrate(DataRootMigrationRequest(
           oldDocumentsRoot: otherDocs,
           oldSupportRoot: otherSupport,
-          newDataRoot: newDataRoot,
+          target: DataRootMigrationTarget.customRoot(newDataRoot),
           documentsTopLevelIncludeNames: null,
           closeResources: () async {},
-          writeDataRootPref: (String r) async => wrote = true,
+          commitLocation: (DataRootMigrationTarget t) async => wrote = true,
         )),
         throwsA(isA<DataRootMigrationException>()),
       );

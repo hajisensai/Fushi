@@ -38,13 +38,118 @@ import 'package:hibiki/src/sync/backup_service.dart'
 ///    根。任一步失败 → 保留旧根、清理新根半成品、抛错、**不写 data_root**（断电/跨盘安全）。
 ///  - **同盘 rename / 跨盘 copy+verify+delete**：同卷用原子 `rename`；跨卷退回逐文件
 ///    复制并按字节数校验后再删源。
+/// BUG-1188：一次迁移的**目标形态**——解析后的两个根 + 提交时如何记录位置。
+///
+/// 历史上目标只有一种表达：一个 `newDataRoot` 字符串，引擎按 `<root>/documents` +
+/// `<root>/support` 硬派生。于是「把数据收回默认位置」这件事**无法表达**——用户按
+/// BUG-1115 的文档指引选 `<Documents>\Hibiki`，得到的是 `<Documents>\Hibiki\documents`
+/// + `<Documents>\Hibiki\support`（DB 被一起搬进文档目录），与**全新安装**的
+/// `<Documents>\Hibiki\data` + 平台固定 support 根形成两种并存布局。
+///
+/// 把目标提升成数据结构之后，两种情形是**同一条代码路径的两个取值**，不是两条分支：
+///  - [DataRootMigrationTarget.customRoot]：用户挑了一个普通目录 →
+///    `<root>/documents` + `<root>/support`，提交写 `data_root`，行为逐字节不变。
+///  - [DataRootMigrationTarget.defaultLocation]：用户挑的就是默认位置 → documents 根 =
+///    `<Documents>/Hibiki/data`、support 根 = 平台固定落点（**DB 不进文档目录**），提交
+///    清掉 `data_root` 并把 `documents_layout` 锚成 [AppPaths.documentsLayoutNested]。
+class DataRootMigrationTarget {
+  const DataRootMigrationTarget._({
+    required this.pickedPath,
+    required this.documentsRoot,
+    required this.supportRoot,
+    required this.dataRootPrefValue,
+  });
+
+  /// 普通自定义数据根：两个根都落在 [dataRootPath] 下（TODO-935 的原语义）。
+  factory DataRootMigrationTarget.customRoot(String dataRootPath) {
+    final (Directory documents, Directory support) =
+        AppPaths.rootsForDataRoot(dataRootPath);
+    return DataRootMigrationTarget._(
+      pickedPath: dataRootPath,
+      documentsRoot: documents,
+      supportRoot: support,
+      dataRootPrefValue: dataRootPath,
+    );
+  }
+
+  /// 默认位置：与**全新安装**逐字节同形。[platformSupportRoot] 必须是
+  /// `getApplicationSupportDirectory()` 的真实返回值（不是当前可能被自定义根覆盖过的
+  /// support 根）——它就是新装时 DB 的落点。
+  factory DataRootMigrationTarget.defaultLocation({
+    required String pickedPath,
+    required String defaultDocumentsRoot,
+    required String platformSupportRoot,
+  }) =>
+      DataRootMigrationTarget._(
+        pickedPath: pickedPath,
+        documentsRoot: Directory(defaultDocumentsRoot),
+        supportRoot: Directory(platformSupportRoot),
+        dataRootPrefValue: null,
+      );
+
+  /// 用户在目录选择器里真正挑中的路径。校验（自我迁移 / 安装目录）按它判定，与用户看到的
+  /// 那个目录一致。
+  final String pickedPath;
+
+  /// 目标「内容/书库」根。
+  final Directory documentsRoot;
+
+  /// 目标「数据库/支持」根。等于旧 support 根时表示**本次不搬 DB**（归一化到默认位置且
+  /// DB 本来就在平台固定落点）。
+  final Directory supportRoot;
+
+  /// 提交时要写进 [AppPaths.dataRootPrefKey] 的值；null = 默认位置（清掉该 pref）。
+  final String? dataRootPrefValue;
+
+  /// 本次目标是否是「默认位置」（= 与全新安装同形）。
+  bool get isDefaultLocation => dataRootPrefValue == null;
+
+  @override
+  String toString() => 'DataRootMigrationTarget(picked: $pickedPath, '
+      'documents: ${documentsRoot.path}, support: ${supportRoot.path}, '
+      'dataRootPref: $dataRootPrefValue)';
+}
+
+/// BUG-1188：把用户挑的目录 [pickedRoot] 解析成 [DataRootMigrationTarget]。
+///
+/// 挑中**默认位置**时归一化成 [DataRootMigrationTarget.defaultLocation]。接受两种等价
+/// 写法：默认 documents 根本身（`<Documents>/Hibiki/data`），或它的 `Hibiki` 伞目录
+/// （`<Documents>/Hibiki` —— BUG-1115 的文档指引一直让老用户选的就是这个）。
+///
+/// 归一化消除的是「同一个物理位置有两种持久化表达」这个歧义：`data_root=<Documents>/
+/// Hibiki`（派生 documents/support 两个子目录、把 DB 拖进文档目录）和全新安装的默认形态
+/// 指的是同一个地方，却解析成不同布局。留着两种表达，用户按文档整理完就永远回不到新装形态。
+///
+/// [defaultDocumentsRoot] 传 [AppPaths.defaultLocationDocumentsRoot] 的结果，
+/// [platformSupportRoot] 传 `getApplicationSupportDirectory()` 的结果。
+DataRootMigrationTarget resolveDataRootMigrationTarget({
+  required String pickedRoot,
+  required String defaultDocumentsRoot,
+  required String platformSupportRoot,
+}) {
+  final String canonPicked = p.canonicalize(pickedRoot);
+  final String canonDefaultDocs = p.canonicalize(defaultDocumentsRoot);
+  // 伞目录 = 默认 documents 根的父目录。`defaultDocumentsChildSegments` 恒有 ≥2 段
+  // （`Hibiki/data`），故伞目录绝不会等于共享的平台 `Documents` 本身——否则「挑 Documents
+  // 根」会被误判成默认位置。该不变量由 `data_root_default_location_test.dart` 守卫。
+  final String canonUmbrella = p.canonicalize(p.dirname(defaultDocumentsRoot));
+  if (canonPicked == canonDefaultDocs || canonPicked == canonUmbrella) {
+    return DataRootMigrationTarget.defaultLocation(
+      pickedPath: pickedRoot,
+      defaultDocumentsRoot: defaultDocumentsRoot,
+      platformSupportRoot: platformSupportRoot,
+    );
+  }
+  return DataRootMigrationTarget.customRoot(pickedRoot);
+}
+
 class DataRootMigrationRequest {
   const DataRootMigrationRequest({
     required this.oldDocumentsRoot,
     required this.oldSupportRoot,
-    required this.newDataRoot,
+    required this.target,
     required this.closeResources,
-    required this.writeDataRootPref,
+    required this.commitLocation,
     required this.documentsTopLevelIncludeNames,
     this.onProgress,
     this.resolvedExecutablePath,
@@ -56,17 +161,18 @@ class DataRootMigrationRequest {
   /// 旧「数据库/支持」根（`hibiki.db` + 各 `local_audio_*.db`）。
   final Directory oldSupportRoot;
 
-  /// 目标 dataRoot 绝对路径；其下派生 `<dataRoot>/documents` 与 `<dataRoot>/support`
-  /// （与 [AppPaths.rootsForDataRoot] 逐字节一致）。
-  final String newDataRoot;
+  /// BUG-1188：本次迁移的目标形态（两个根 + 位置如何记录）。见 [DataRootMigrationTarget]。
+  final DataRootMigrationTarget target;
 
   /// 迁移前**必须**完成的运行时关闭：checkpoint+关 Drift DB、关词典 FFI 句柄、停音频。
   /// 引擎在搬任何文件前 `await` 它；调用方负责真正关闭全局单例（保持引擎可纯测）。
   final Future<void> Function() closeResources;
 
-  /// 迁移全部成功后，把新 dataRoot 写进 SharedPreferences（[AppPaths.dataRootPrefKey]）。
-  /// 作为回调注入而非引擎内直连 SharedPreferences，使引擎在纯 Dart 单测里可断言写入。
-  final Future<void> Function(String newDataRoot) writeDataRootPref;
+  /// 迁移全部成功后**提交新位置**：自定义根写 [AppPaths.dataRootPrefKey]；默认位置清掉
+  /// 它并把 [AppPaths.documentsLayoutPrefKey] 锚成
+  /// [AppPaths.documentsLayoutNested]。作为回调注入而非引擎内直连 SharedPreferences，使
+  /// 引擎在纯 Dart 单测里可断言提交内容。抛错 ⇒ 引擎整次回滚（文件搬回旧根 + DB 路径改回）。
+  final Future<void> Function(DataRootMigrationTarget target) commitLocation;
 
   /// 跨盘 copy 阶段的进度回调（可选）。仅在退回逐文件复制（不同卷）时触发：每复制完一个
   /// 文件回报一次 (已复制文件数, 总文件数)。同盘 `rename` 是瞬时原子操作，不产生进度。
@@ -143,11 +249,21 @@ class DataRootMigrator {
   Future<(Directory documents, Directory support)> migrate(
     DataRootMigrationRequest req,
   ) async {
-    final Directory newRoot = Directory(req.newDataRoot);
-    final (Directory newDocs, Directory newSupport) =
-        AppPaths.rootsForDataRoot(req.newDataRoot);
+    final Directory newRoot = Directory(req.target.pickedPath);
+    final Directory newDocs = req.target.documentsRoot;
+    final Directory newSupport = req.target.supportRoot;
+    // BUG-1188：归一化到默认位置时 DB 本来就躺在平台固定落点（新装的落点也是它）→ support
+    // 根根本不需要搬。这一条必须在建搬移计划**之前**判定：源=目标时既不能建搬移计划
+    // （rename 到自己），也绝不能跑迁移末尾的 `_deleteOldSupportPreservingPrefs`
+    // （那会把活着的 support 根里除 prefs 外的一切删光，包括刚"搬"过去的 hibiki.db）。
+    final bool supportUnchanged =
+        p.equals(req.oldSupportRoot.path, newSupport.path);
+    // 目标 support 根已有内容（回到默认位置时 = 平台固定落点里的 `shared_preferences.json`）
+    // → 逐顶层项**合并**搬入，不能整目录 rename（Windows 上 dst 非空必失败）。
+    final bool mergeSupport =
+        !supportUnchanged && await _hasAnyEntryAsync(newSupport);
 
-    await _validateTarget(req, newDocs, newSupport);
+    await _validateTarget(req, newDocs, newSupport, supportUnchanged);
 
     // ① 先关运行时句柄（DB/FFI/音频），否则 Windows 上 rename/删源会被占用锁住。
     await req.closeResources();
@@ -160,15 +276,28 @@ class DataRootMigrator {
     // 迁移后固定落点读不到 data_root，重启回退默认根（TODO-935/959 根因）。故对 support
     // 搬移排除源根顶层的 prefs 文件族；从自定义根迁移时源根顶层无 prefs → 排除集为空 →
     // 走原子 rename 快路径，行为不变。
-    final Set<String> supportExclude =
-        _prefsFileNamesToPreserveAt(req.oldSupportRoot);
+    final Set<String> supportExclude = supportUnchanged
+        ? const <String>{}
+        : _prefsFileNamesToPreserveAt(req.oldSupportRoot);
     final List<_MovePlan> moves = <_MovePlan>[
       // documents：共享默认根（白名单非 null）只搬 Hibiki 自有顶层项；自定义根整树搬。
       _MovePlan(req.oldDocumentsRoot, newDocs,
           includeTopLevelNames: req.documentsTopLevelIncludeNames,
           excludeTopLevelNames: const <String>{}),
-      _MovePlan(req.oldSupportRoot, newSupport,
-          includeTopLevelNames: null, excludeTopLevelNames: supportExclude),
+      // BUG-1188：support 根未变（默认位置归一化）⇒ 一个搬移计划都不建。
+      if (!supportUnchanged)
+        _MovePlan(req.oldSupportRoot, newSupport,
+            includeTopLevelNames: null,
+            excludeTopLevelNames: supportExclude,
+            mergeIntoDestination: mergeSupport),
+    ];
+    // BUG-1188：回滚时可以**整目录清掉**的「本次迁移自建子树」。support 根在两种情况下
+    // 绝不能进这个列表：① 未变（它就是活着的平台固定落点，里面还躺着刚 rebase 完的
+    // hibiki.db）；② 合并搬入（里面有先于本次迁移就存在的 `shared_preferences.json`）。
+    // 整目录删掉等于抹掉用户的全部设置与 data_root 配置本身。
+    final List<Directory> createdSubtrees = <Directory>[
+      newDocs,
+      if (!supportUnchanged && !mergeSupport) newSupport,
     ];
     final List<_MovePlan> done = <_MovePlan>[];
     // TODO-1324（数据完整性铁律）：跨盘复制阶段**刻意保留的源**，只有在 DB rebase + pref
@@ -189,7 +318,7 @@ class DataRootMigrator {
       await _rollbackMoves(done);
       // TODO-1182：回滚只清理迁移自己创建的 documents/support 子树，**绝不**删用户选定的
       // 整个 newRoot（它可能是安装目录或含用户其它文件）；newRoot 本体一律保留。
-      await _cleanupCreatedSubtrees(newDocs, newSupport);
+      await _cleanupCreatedSubtrees(createdSubtrees);
       if (_isFileInUseError(e)) {
         throw DataRootMigrationException(
             '有文件被占用，无法迁移数据（请关闭正在使用书库/音频的功能后重试），已回滚到旧根',
@@ -210,16 +339,17 @@ class DataRootMigrator {
     } catch (e) {
       // DB 改写失败：把已搬目录搬回旧根、只清迁移自建子树（不删用户选定的 newRoot 本体）。
       await _rollbackMoves(done);
-      await _cleanupCreatedSubtrees(newDocs, newSupport);
+      await _cleanupCreatedSubtrees(createdSubtrees);
       throw DataRootMigrationException('改写数据库内绝对路径失败，已回滚到旧根', cause: e);
     }
 
-    // ④ 全成功：先写 data_root pref；只有 pref 写成功后才删除旧根。若 pref 写失败，
-    // 先把新 DB 路径 rebase 回旧根，再把目录搬回旧位置，避免下次启动仍读旧 pref 但
-    // 旧 DB 里已指向新根。pref 写成功后删旧根时，oldSupportRoot 若保留了 prefs
-    // 文件（默认根迁移），只删非 prefs 残留、保住 prefs 本体（那正是持久化 data_root 的地方）。
+    // ④ 全成功：先提交新位置（自定义根写 data_root / 默认位置清它并锚 nested 布局）；只有
+    // 提交成功后才删除旧根。若提交失败，先把新 DB 路径 rebase 回旧根，再把目录搬回旧位置，
+    // 避免下次启动仍按旧配置解析、而旧 DB 里已指向新根。提交成功后删旧根时，oldSupportRoot
+    // 若保留了 prefs 文件（默认根迁移），只删非 prefs 残留、保住 prefs 本体（那正是持久化
+    // data_root / documents_layout 的地方）。
     try {
-      await req.writeDataRootPref(req.newDataRoot);
+      await req.commitLocation(req.target);
     } catch (e) {
       try {
         await _rebaseDatabasePaths(
@@ -236,7 +366,7 @@ class DataRootMigrator {
         );
       }
       await _rollbackMoves(done);
-      await _cleanupCreatedSubtrees(newDocs, newSupport);
+      await _cleanupCreatedSubtrees(createdSubtrees);
       throw DataRootMigrationException('写入新数据根设置失败，已回滚到旧根', cause: e);
     }
 
@@ -256,7 +386,12 @@ class DataRootMigrator {
     if (req.documentsTopLevelIncludeNames == null) {
       await _deleteOldRootAfterSwitch(req.oldDocumentsRoot);
     }
-    await _deleteOldSupportPreservingPrefs(req.oldSupportRoot, supportExclude);
+    // BUG-1188：support 根未变时**绝不**跑这一步——它会把源根里除 prefs 外的一切删光，
+    // 而此时源根就是目标根（刚 rebase 好的 hibiki.db 正躺在里面）。
+    if (!supportUnchanged) {
+      await _deleteOldSupportPreservingPrefs(
+          req.oldSupportRoot, supportExclude);
+    }
 
     return (newDocs, newSupport);
   }
@@ -265,8 +400,9 @@ class DataRootMigrator {
     DataRootMigrationRequest req,
     Directory newDocs,
     Directory newSupport,
+    bool supportUnchanged,
   ) async {
-    final String canonNew = p.canonicalize(req.newDataRoot);
+    final String canonNew = p.canonicalize(req.target.pickedPath);
     // BUG-1115：共享 documents 根（白名单选择性搬移）下的**非白名单**子目录是安全目标
     // ——搬移只动白名单顶层项，新根在整个过程里是旁观者。这让老安装能把散落在用户
     // `Documents` 根下的 16 个 Hibiki 目录一键收进 `Documents\Hibiki`。白名单为 null
@@ -275,7 +411,7 @@ class DataRootMigrator {
     final bool nestedInSharedDocuments = whitelist != null &&
         AppPaths.isSafeNestedTargetInSharedDocuments(
           sharedDocumentsRoot: req.oldDocumentsRoot.path,
-          newDataRoot: req.newDataRoot,
+          newDataRoot: req.target.pickedPath,
           ownedEntries: whitelist,
         );
     if (canonNew == p.canonicalize(req.oldDocumentsRoot.path) ||
@@ -295,11 +431,24 @@ class DataRootMigrator {
             '新数据根不能是应用安装目录（含正在运行的程序），请另选一个空目录');
       }
     }
-    // 目标 dataRoot 若已存在且其 documents/support 子树非空 → 拒绝（不覆盖已有数据）。
+    // 目标的 documents/support 根若已存在且非空 → 拒绝（不覆盖已有数据）。
     // TODO-1324：用**异步** list 探测，绝不在主 isolate 上同步递归列目录——用户挑的目标可能
     // 含庞大预存子树，同步 listSync(recursive) 会卡死 UI 线程（黑屏/转圈）。
-    if ((newDocs.existsSync() && await _hasAnyFileAsync(newDocs)) ||
-        (newSupport.existsSync() && await _hasAnyFileAsync(newSupport))) {
+    //
+    // BUG-1188 两处收窄：
+    //  - support 根未变时**不检查**（它当然非空——里面正是本次要保留在原地的 DB）。
+    //  - 检查目标 support 根时**忽略顶层 prefs 文件**：归一化回默认位置时目标就是平台固定
+    //    落点，`shared_preferences.json` 一直住在那儿、且刻意不参与搬移，它的存在不代表
+    //    「那里已有一份别的数据」。除 prefs 外的任何残留（比如一个陈旧的 hibiki.db）仍照拒。
+    if (newDocs.existsSync() && await _hasAnyFileAsync(newDocs)) {
+      throw const DataRootMigrationException('目标数据根已存在数据，拒绝覆盖');
+    }
+    if (!supportUnchanged &&
+        newSupport.existsSync() &&
+        await _hasAnyFileAsync(
+          newSupport,
+          ignoreTopLevelNames: _prefsFileNamesToPreserveAt(newSupport),
+        )) {
       throw const DataRootMigrationException('目标数据根已存在数据，拒绝覆盖');
     }
   }
@@ -370,6 +519,7 @@ class DataRootMigrator {
         try {
           // 同盘 rename：源随之移走（原子、near-instant），无需延迟删源。
           await _withLockRetry(() => entity.rename(target));
+          plan.movedTopLevelNames.add(name);
           continue;
         } on FileSystemException catch (e) {
           if (!_shouldCopyAfterRenameFailure(e)) rethrow;
@@ -513,16 +663,24 @@ class DataRootMigrator {
     }
   }
 
-  /// 选择性搬移的回滚：把 [m.dst]（新根 support，含已搬的非 prefs 数据）顶层项逐个搬回
-  /// [m.src]（旧固定落点，prefs 仍在原地），同卷 rename / 跨卷 copy+delete；搬完删空的
-  /// dst 目录。尽力而为——回滚是异常清理，任何一步失败只记日志不再抛。
+  /// 选择性搬移的回滚：把**本次真正搬进去**的顶层项（[_MovePlan.movedTopLevelNames]）
+  /// 逐个从 [m.dst] 搬回 [m.src]，同卷 rename / 跨卷 copy+delete；搬完删掉本次自建的 dst
+  /// 目录。尽力而为——回滚是异常清理，任何一步失败只记日志不再抛。
+  ///
+  /// BUG-1188：判据从「列 dst 的全部顶层项」改成「本次搬进去的那些项」，并在
+  /// [_MovePlan.mergeIntoDestination] 时保留 dst 本体。旧实现假设 dst 是迁移自建的空目录，
+  /// 合并搬入（归一化回默认位置，dst = 平台固定落点）下会把用户的 `shared_preferences.json`
+  /// 一起搬进即将被删的旧根、再把 dst 整个删掉 = 抹掉全部设置。
   Future<void> _rollbackSelective(_MovePlan m) async {
     try {
       if (!await m.dst.exists()) return;
       await m.src.create(recursive: true);
-      for (final FileSystemEntity entity
-          in m.dst.listSync(recursive: false, followLinks: false)) {
-        final String name = p.basename(entity.path);
+      for (final String name in m.movedTopLevelNames) {
+        final String from = p.join(m.dst.path, name);
+        final FileSystemEntity entity = await FileSystemEntity.isDirectory(from)
+            ? Directory(from)
+            : File(from);
+        if (!await entity.exists()) continue;
         final String back = p.join(m.src.path, name);
         try {
           await entity.rename(back);
@@ -537,7 +695,7 @@ class DataRootMigrator {
           }
         }
       }
-      await _deleteIfPresent(m.dst);
+      if (!m.mergeIntoDestination) await _deleteIfPresent(m.dst);
     } catch (e) {
       debugPrint('DataRootMigrator: 选择性回滚失败 ${m.dst.path}: $e');
     }
@@ -551,16 +709,17 @@ class DataRootMigrator {
     }
   }
 
-  /// TODO-1182：回滚时只删迁移**自己创建**的 `<newRoot>/documents` 与 `<newRoot>/support`
-  /// 子树，**绝不**触碰用户选定的 [newRoot] 本体（它可能是安装目录或含用户其它文件）。
-  /// [_validateTarget] 已保证迁移前这两个子树为空或不存在，故此处清掉的必然是本次迁移搬进
-  /// 去的数据（正常路径下 `_rollbackMoves` 已把它们搬回旧根、这里是幂等兜底）。尽力而为：
-  /// 任一子树删不掉只记日志不抛（数据已回滚在旧根，用户根保留完整）。
+  /// TODO-1182：回滚时只删迁移**自己创建**的目标子树，**绝不**触碰用户选定的根本体（它可能
+  /// 是安装目录或含用户其它文件）。[_validateTarget] 已保证迁移前这些子树为空或不存在，故此处
+  /// 清掉的必然是本次迁移搬进去的数据（正常路径下 `_rollbackMoves` 已把它们搬回旧根、这里是
+  /// 幂等兜底）。尽力而为：任一子树删不掉只记日志不抛（数据已回滚在旧根，用户根保留完整）。
+  ///
+  /// BUG-1188：[subtrees] 由 `migrate` 计算——support 根未变 / 合并搬入时它**不在列表里**
+  /// （那是活着的平台固定落点，删掉等于抹掉用户全部设置）。
   static Future<void> _cleanupCreatedSubtrees(
-    Directory newDocs,
-    Directory newSupport,
+    List<Directory> subtrees,
   ) async {
-    for (final Directory sub in <Directory>[newDocs, newSupport]) {
+    for (final Directory sub in subtrees) {
       try {
         await _deleteIfPresent(sub);
       } catch (e) {
@@ -715,11 +874,31 @@ class DataRootMigrator {
   }
 
   /// TODO-1324：**异步** list（非 listSync）——绝不在主 isolate 上同步递归列大目录（冻结 UI）。
-  static Future<bool> _hasAnyFileAsync(Directory dir) async {
+  ///
+  /// BUG-1188：[ignoreTopLevelNames] 里的**顶层**项整棵跳过（用于忽略目标 support 根里
+  /// 刻意不参与搬移的 `shared_preferences.json` 族）。只忽略顶层同名项，子目录里的同名文件
+  /// 照常算数据。
+  static Future<bool> _hasAnyFileAsync(
+    Directory dir, {
+    Set<String> ignoreTopLevelNames = const <String>{},
+  }) async {
     // followLinks: false —— 同 [_countFilesAsync]：不追 junction/symlink（TODO-1226）。
     await for (final FileSystemEntity e
-        in dir.list(recursive: true, followLinks: false)) {
+        in dir.list(recursive: false, followLinks: false)) {
+      if (ignoreTopLevelNames.contains(p.basename(e.path))) continue;
       if (e is File) return true;
+      if (e is Directory && await _hasAnyFileAsync(e)) return true;
+    }
+    return false;
+  }
+
+  /// 目录是否**存在且含任何顶层项**（文件/目录/链接都算）。BUG-1188 用它判定目标 support
+  /// 根需不需要走「合并搬入」——目标已有内容时整目录 rename 在 Windows 上必失败。
+  static Future<bool> _hasAnyEntryAsync(Directory dir) async {
+    if (!await dir.exists()) return false;
+    await for (final FileSystemEntity _
+        in dir.list(recursive: false, followLinks: false)) {
+      return true;
     }
     return false;
   }
@@ -1025,9 +1204,21 @@ class _MovePlan {
     this.dst, {
     required this.includeTopLevelNames,
     required this.excludeTopLevelNames,
+    this.mergeIntoDestination = false,
   });
   final Directory src;
   final Directory dst;
+
+  /// BUG-1188：目标目录**已有内容**（归一化回默认位置时 = 平台固定落点里的 prefs 文件）。
+  /// 为真 ⇒ 强制走逐顶层项搬移（整目录 rename 到非空 dst 在 Windows 上必失败），且回滚
+  /// **绝不删除 dst 本体**——它先于本次迁移就存在，里面躺着用户的 prefs。
+  final bool mergeIntoDestination;
+
+  /// 本 plan 实际以 rename 搬进 dst 的顶层项基名。回滚只搬回这些项——merge 模式下 dst 里
+  /// 还有先于迁移就存在的项（prefs），照 dst 列目录回滚会把它们一并搬进 src（= 把用户设置
+  /// 挪进一个即将被删的目录）。跨盘 copy 分支不记：那条路径源未删、回滚整体跳过（见
+  /// [deferredCopy]）。
+  final List<String> movedTopLevelNames = <String>[];
 
   /// TODO-1226：只允许搬移的顶层项基名白名单；null = 全部可搬（Hibiki 专属根整树
   /// 语义）。非 null（共享用户 `Documents`）⇒ 白名单外的顶层项（用户文件、shell
@@ -1044,7 +1235,9 @@ class _MovePlan {
   bool deferredCopy = false;
 
   bool get isSelective =>
-      includeTopLevelNames != null || excludeTopLevelNames.isNotEmpty;
+      includeTopLevelNames != null ||
+      excludeTopLevelNames.isNotEmpty ||
+      mergeIntoDestination;
 
   /// 顶层项 [name] 是否应被搬移：命中白名单（或无白名单）且不在排除集。
   bool shouldMoveTopLevel(String name) =>

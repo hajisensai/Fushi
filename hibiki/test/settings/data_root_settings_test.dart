@@ -8,6 +8,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/storage/data_root_migrator.dart';
 import 'package:hibiki/src/sync/sync_settings_schema.dart';
 import 'package:path/path.dart' as p;
 
@@ -20,7 +21,7 @@ void main() {
 
     test('a fresh sibling directory is accepted', () {
       final DataRootTargetRejection? r = validateDataRootTarget(
-        newDataRoot: '/data/new-root',
+        target: DataRootMigrationTarget.customRoot('/data/new-root'),
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
         existsAndHasFiles: alwaysEmpty,
@@ -30,7 +31,7 @@ void main() {
 
     test('target equal to the documents root is rejected (self-migrate)', () {
       final DataRootTargetRejection? r = validateDataRootTarget(
-        newDataRoot: oldDocs,
+        target: DataRootMigrationTarget.customRoot(oldDocs),
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
         existsAndHasFiles: alwaysEmpty,
@@ -40,7 +41,8 @@ void main() {
 
     test('target inside the support root is rejected', () {
       final DataRootTargetRejection? r = validateDataRootTarget(
-        newDataRoot: p.join(oldSupport, 'nested'),
+        target:
+            DataRootMigrationTarget.customRoot(p.join(oldSupport, 'nested')),
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
         existsAndHasFiles: alwaysEmpty,
@@ -53,7 +55,7 @@ void main() {
       // The probe reports the derived <newRoot>/documents (or /support) as
       // containing files -> must refuse to overwrite existing data.
       final DataRootTargetRejection? r = validateDataRootTarget(
-        newDataRoot: '/data/occupied',
+        target: DataRootMigrationTarget.customRoot('/data/occupied'),
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
         existsAndHasFiles: (String path) => path.contains('occupied'),
@@ -65,7 +67,7 @@ void main() {
         () {
       // TODO-1182：exe 落在 newRoot 里 → newRoot 是安装目录 → 拒绝（否则失败回滚会删安装目录）。
       final DataRootTargetRejection? r = validateDataRootTarget(
-        newDataRoot: '/apps/Hibiki',
+        target: DataRootMigrationTarget.customRoot('/apps/Hibiki'),
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
         existsAndHasFiles: alwaysEmpty,
@@ -76,7 +78,7 @@ void main() {
 
     test('target is an ancestor of the exe dir is rejected', () {
       final DataRootTargetRejection? r = validateDataRootTarget(
-        newDataRoot: '/apps',
+        target: DataRootMigrationTarget.customRoot('/apps'),
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
         existsAndHasFiles: alwaysEmpty,
@@ -88,7 +90,7 @@ void main() {
     test('exe outside the target dir does not trigger install-dir rejection',
         () {
       final DataRootTargetRejection? r = validateDataRootTarget(
-        newDataRoot: '/data/new-root',
+        target: DataRootMigrationTarget.customRoot('/data/new-root'),
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
         existsAndHasFiles: alwaysEmpty,
@@ -100,7 +102,7 @@ void main() {
     test('null executablePath keeps pre-1182 behavior (no install-dir check)',
         () {
       final DataRootTargetRejection? r = validateDataRootTarget(
-        newDataRoot: '/data/new-root',
+        target: DataRootMigrationTarget.customRoot('/data/new-root'),
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
         existsAndHasFiles: alwaysEmpty,
@@ -116,7 +118,7 @@ void main() {
         'BUG-1115: nested non-whitelisted dir under the SHARED documents root '
         'is accepted', () {
       final DataRootTargetRejection? r = validateDataRootTarget(
-        newDataRoot: p.join(oldDocs, 'Hibiki'),
+        target: DataRootMigrationTarget.customRoot(p.join(oldDocs, 'Hibiki')),
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
         existsAndHasFiles: alwaysEmpty,
@@ -129,7 +131,7 @@ void main() {
         'BUG-1115: the same nested target is still rejected for a DEDICATED '
         'root (whole-tree move would swallow it)', () {
       final DataRootTargetRejection? r = validateDataRootTarget(
-        newDataRoot: p.join(oldDocs, 'Hibiki'),
+        target: DataRootMigrationTarget.customRoot(p.join(oldDocs, 'Hibiki')),
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
         existsAndHasFiles: alwaysEmpty,
@@ -141,7 +143,8 @@ void main() {
     test('BUG-1115: a whitelisted top-level dir is never an accepted target',
         () {
       final DataRootTargetRejection? r = validateDataRootTarget(
-        newDataRoot: p.join(oldDocs, 'audiobooks'),
+        target:
+            DataRootMigrationTarget.customRoot(p.join(oldDocs, 'audiobooks')),
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
         existsAndHasFiles: alwaysEmpty,
@@ -153,7 +156,7 @@ void main() {
     test('BUG-1115: the shared root itself is still a self-migrate rejection',
         () {
       final DataRootTargetRejection? r = validateDataRootTarget(
-        newDataRoot: oldDocs,
+        target: DataRootMigrationTarget.customRoot(oldDocs),
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
         existsAndHasFiles: alwaysEmpty,

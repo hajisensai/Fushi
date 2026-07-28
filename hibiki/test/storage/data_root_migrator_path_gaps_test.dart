@@ -293,9 +293,10 @@ void main() {
         await const DataRootMigrator().migrate(DataRootMigrationRequest(
       oldDocumentsRoot: oldDocs,
       oldSupportRoot: oldSupport,
-      newDataRoot: newDataRoot,
+      target: DataRootMigrationTarget.customRoot(newDataRoot),
       closeResources: () async {},
-      writeDataRootPref: (String root) async => prefWrites.add(root),
+      commitLocation: (DataRootMigrationTarget t) async =>
+          prefWrites.add(t.dataRootPrefValue!),
       documentsTopLevelIncludeNames: AppPaths.hibikiOwnedDocumentsEntries,
     ));
     expect(prefWrites, equals(<String>[newDataRoot]));
@@ -342,9 +343,9 @@ void main() {
         await const DataRootMigrator().migrate(DataRootMigrationRequest(
       oldDocumentsRoot: oldDocs,
       oldSupportRoot: oldSupport,
-      newDataRoot: newDataRoot,
+      target: DataRootMigrationTarget.customRoot(newDataRoot),
       closeResources: () async {},
-      writeDataRootPref: (String root) async {},
+      commitLocation: (DataRootMigrationTarget t) async {},
       documentsTopLevelIncludeNames: AppPaths.hibikiOwnedDocumentsEntries,
     ));
 
