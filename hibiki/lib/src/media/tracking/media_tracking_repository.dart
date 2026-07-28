@@ -433,7 +433,7 @@ class MediaTrackingRepository {
   /// `tocJson` 是 null，阅读位置的 `sectionIndex` 存的是**页码**——旧实现在这里只
   /// 挡了 `'manga'`，PDF 一路走下去会在 [estimateCompletedBookChapters] 的
   /// 「无 toc 即早退」分支拿到 `fallbackProgress`，也就是把**当前页码当成已读章数**
-  /// 报给 Bangumi。两个调用点（这里与下面 loadCompletedBookTrackingProgress）现在按
+  /// 报给 Bangumi。两个调用点（这里与下面 loadPersistedBookTrackingProgress）现在按
   /// 同一判据 [BookFormat.isPagedImageBook] 收口，缺一处就会重新漂开。
   Future<int?> loadBookChapterProgress({
     required String bookKey,

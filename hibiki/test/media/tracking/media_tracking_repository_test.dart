@@ -51,6 +51,74 @@ void main() {
     });
   }
 
+  /// 调用点②：`loadPersistedBookTrackingProgress` 原本**完全没有 format 守卫**。
+  ///
+  /// 这条单独存在，是因为变异实测证明它必须存在：把 `:564` 那行 format 守卫删掉，
+  /// 只覆盖 `loadBookChapterProgress` 的测试**照样全绿**——两个调用点必须各有各的
+  /// 钉子，否则「只修一处、另一处漂开」会静默复发。
+  for (final BookFormat format in <BookFormat>[
+    BookFormat.pdf,
+    BookFormat.manga,
+  ]) {
+    test('${format.dbValue} 的 chapter 模式映射不进持久化进度（调用点②）', () async {
+      final String key = 'p-${format.dbValue}';
+      await seedBook(key, format);
+      await db.upsertReaderPosition(
+        ReaderPositionsCompanion.insert(
+          bookKey: key,
+          sectionIndex: 137, // 第 137 页
+          normCharOffset: 9990,
+          updatedAt: 5000,
+        ),
+      );
+      await repository.saveMappingIfAbsent(
+        mediaType: TrackingMediaType.book,
+        mediaKey: key,
+        mediaTitle: key,
+        kind: TrackingKind.novel,
+        subjectId: 4242,
+        subjectName: key,
+        progressMode: TrackingProgressMode.chapter,
+        progressOffset: 0,
+      );
+      final List<PersistedBookTrackingProgress> got =
+          await repository.loadPersistedBookTrackingProgress(afterMs: 0);
+      expect(
+        got.where((PersistedBookTrackingProgress e) => e.mediaKey == key),
+        isEmpty,
+        reason: '按页翻的书没有章：整条不产出，'
+            '否则第 137 页会被当成「已读 137 章」提交到用户的 Bangumi 记录',
+      );
+    });
+  }
+
+  test('epub 的 chapter 模式映射照常产出（调用点②没有误伤文字书）', () async {
+    await seedBook('p-epub', BookFormat.epub);
+    await db.upsertReaderPosition(
+      ReaderPositionsCompanion.insert(
+        bookKey: 'p-epub',
+        sectionIndex: 3,
+        normCharOffset: 9990,
+        updatedAt: 5000,
+      ),
+    );
+    await repository.saveMappingIfAbsent(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'p-epub',
+      mediaTitle: 'p-epub',
+      kind: TrackingKind.novel,
+      subjectId: 4243,
+      subjectName: 'p-epub',
+      progressMode: TrackingProgressMode.chapter,
+      progressOffset: 0,
+    );
+    final List<PersistedBookTrackingProgress> got =
+        await repository.loadPersistedBookTrackingProgress(afterMs: 0);
+    expect(
+        got.where((PersistedBookTrackingProgress e) => e.mediaKey == 'p-epub'),
+        isNotEmpty);
+  });
+
   test('epub 仍照常产出章进度（止血没有误伤文字书）', () async {
     await seedBook('b-epub', BookFormat.epub);
     final int? progress = await repository.loadBookChapterProgress(
