@@ -14,7 +14,7 @@ import 'package:hibiki_core/hibiki_core.dart';
 
 import '../helpers/fake_platform_services.dart';
 
-/// BUG-1205：选文件夹 / 选文件 / 改下载目录时不得申请相机权限。
+/// BUG-1209：选文件夹 / 选文件 / 改下载目录时不得申请相机权限。
 ///
 /// `AppModel.requestExternalStoragePermissions()` 曾顺带 `requestCameraPermission()`，
 /// 而它的调用点全在 `media/import/real_path_directory_picker.dart`（选扫描根 / 选文件 /
@@ -104,7 +104,7 @@ void main() {
     }
   });
 
-  group('BUG-1205 storage permission never drags the camera along', () {
+  group('BUG-1209 storage permission never drags the camera along', () {
     test('storage not granted: requests storage only, never the camera',
         () async {
       permission.hasExternalStorage = false;

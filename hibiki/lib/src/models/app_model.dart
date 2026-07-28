@@ -3974,7 +3974,7 @@ class AppModel with ChangeNotifier {
   /// Requests for full external storage permissions. Required to handle video
   /// files and their subtitle files in the same directory.
   ///
-  /// **只申请存储权限，不碰相机**（BUG-1205）。本函数的全部调用点都是「选扫描根 /
+  /// **只申请存储权限，不碰相机**（BUG-1209）。本函数的全部调用点都是「选扫描根 /
   /// 选文件 / 改下载目录」（`media/import/real_path_directory_picker.dart`），它们只需要
   /// 读盘。此前这里顺带 `requestCameraPermission()`：用户理解不了选个文件夹为什么要给
   /// 相机，合理反应是拒绝，而在同一串权限流程里拒绝很可能把本该给的存储权限一起否掉

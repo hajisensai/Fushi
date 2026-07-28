@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1169 条。点号进各自文件。
+> 共 1170 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1209](bugs/BUG-1209-folder-picker-requests-camera-permission.md) | ✅ | ✅ | 安卓选文件夹时顺带弹相机权限申请 |
 | [BUG-1208](bugs/BUG-1208-ps51-getrelativepath-build-dist.md) | ✅ | ✅ | helper 打包脚本用 .NET Core-only 的 GetRelativePath，CI 的 PowerShell 5.1 直接崩 |
 | [BUG-1207](bugs/BUG-1207-android-embedded-torrent-dead-setting.md) | ✅ | ✅ | 安卓下载设置能选「内置引擎」并改下载目录，实际静默回退外接 qBittorrent |
 | [BUG-1206](bugs/BUG-1206-jimaku-season-pack-wrong-season-match.md) | ✅ | ✅ | 整季包字幕按标题猜集号导致错季配对且条数无上界 |
