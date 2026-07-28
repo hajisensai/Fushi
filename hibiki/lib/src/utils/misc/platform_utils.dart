@@ -99,6 +99,66 @@ class HorizontalDragScrollable extends StatelessWidget {
       );
 }
 
+/// 让**横向**滚动区接受鼠标滚轮（把滚轮的纵向 delta 投到横轴）。BUG-1214。
+///
+/// 根因：Flutter 的 `Scrollable` 取 pointer signal 的分量是按**自身轴**取的
+/// （`scrollable.dart` 的 `_pointerSignalEventDelta`：横向取 `scrollDelta.dx`、
+/// 纵向取 `dy`），只有按住 `pointerAxisModifiers`（默认 Shift）且是物理鼠标时
+/// 才翻轴。物理滚轮发的是 `(0, dy)`，所以横向滚动区**裸滚轮完全没反应**——用户
+/// 只能拖滚动条或横拖（后者还受 `dragDevices` 限制，见 [HorizontalDragScrollable]）。
+///
+/// 修法与 Flutter 自己处理滚轮的路径一致：向 [PointerSignalResolver] 登记，命中
+/// 后调 [ScrollPosition.pointerScroll]（会正确更新 [ScrollDirection]、走物理钳制），
+/// 不是自造 `jumpTo`。
+///
+/// **只认物理鼠标**（`PointerDeviceKind.mouse`）：触控板两个方向都能给，横向分量
+/// 本来就被 `Scrollable` 直接吃掉，翻轴反而会让纵向双指手势莫名横滚——这也是
+/// Flutter 只对鼠标做轴翻转的理由。
+///
+/// 事件派发是内层优先：内层 `Scrollable` 若已表态（如触控板给了 dx、或 Shift 已
+/// 翻轴），它先登记、本件的登记自动变 no-op，不会双份滚动。内容没超出视口时本件
+/// 不登记，滚轮照常冒泡给外层（弹窗纵向滚动不被吞）。
+class WheelToHorizontalScroll extends StatelessWidget {
+  const WheelToHorizontalScroll({
+    required this.controller,
+    required this.child,
+    super.key,
+  });
+
+  /// 目标横向滚动区的控制器（本件挂在滚动件**外面**，故不能靠 context 查 position）。
+  final ScrollController controller;
+
+  final Widget child;
+
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    if (event.kind != PointerDeviceKind.mouse) return;
+    if (!controller.hasClients) return;
+
+    final ScrollPosition position = controller.position;
+    final double raw = event.scrollDelta.dy;
+    if (raw == 0) return;
+    // 与 Flutter 同口径：轴方向反向（RTL 下的横向滚动区）时取负。
+    final double delta =
+        axisDirectionIsReversed(position.axisDirection) ? -raw : raw;
+    final double target = (position.pixels + delta)
+        .clamp(position.minScrollExtent, position.maxScrollExtent);
+    // 滚不动（已到头 / 内容没超出视口）就不登记，把事件让给外层滚动区。
+    if (target == position.pixels) return;
+
+    GestureBinding.instance.pointerSignalResolver.register(
+      event,
+      (PointerSignalEvent _) => position.pointerScroll(delta),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Listener(
+        onPointerSignal: _onPointerSignal,
+        child: child,
+      );
+}
+
 enum WindowSizeClass { compact, medium, expanded }
 
 enum DesktopContentKind { readerShelf, dictionary, settings }

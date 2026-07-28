@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -644,6 +645,73 @@ void main() {
     expect(committed, hasLength(1));
     expect(committed.single, greaterThan(0));
     expect(_zoomPainter(tester).previewDelayMs, committed.single);
+  });
+
+  /// 波形区横向 [ScrollPosition]（放大视图里唯一的横向滚动区）。
+  ScrollPosition hscrollPosition(WidgetTester tester) {
+    return tester
+        .state<ScrollableState>(find.descendant(
+          of: find.byKey(_hscrollKey),
+          matching: find.byType(Scrollable),
+        ))
+        .position;
+  }
+
+  testWidgets(
+      'BUG-1214: mouse wheel pans the timeline horizontally (no delay change)',
+      (WidgetTester tester) async {
+    final List<int> committed = <int>[];
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000, text: 'ohayou')],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5, -50, -12],
+      onCommitDelay: (int ms) async => committed.add(ms),
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+
+    final ScrollPosition position = hscrollPosition(tester);
+    expect(position.pixels, 0);
+    // 前提：内容确实超出视口（否则本用例什么都没测）。
+    expect(position.maxScrollExtent, greaterThan(0));
+
+    // 物理滚轮发的是 (0, dy)；横向 Scrollable 只吃 dx，故裸滚轮本来毫无反应
+    // （回归判据：删掉 WheelToHorizontalScroll 后 pixels 恒为 0）。
+    final Rect box = tester.getRect(find.byKey(_hscrollKey));
+    final TestPointer wheel = TestPointer(1, PointerDeviceKind.mouse);
+    wheel.hover(Offset(box.left + 20, box.top + 20));
+    await tester.sendEventToBinding(wheel.scroll(const Offset(0, 120)));
+    await tester.pumpAndSettle();
+    expect(position.pixels, 120);
+
+    // 反向滚回去，且不越过左端（clamp 生效）。
+    await tester.sendEventToBinding(wheel.scroll(const Offset(0, -400)));
+    await tester.pumpAndSettle();
+    expect(position.pixels, 0);
+
+    // 平移视图**不得**动延迟——滚轮只滚，不是「拖字幕块调轴」。
+    expect(committed, isEmpty);
+    expect(_zoomPainter(tester).previewDelayMs, 0);
+  });
+
+  testWidgets(
+      'BUG-1214: non-mouse (trackpad) vertical scroll is left to the outer '
+      'scrollable', (WidgetTester tester) async {
+    await tester.pumpWidget(_host(
+      cues: <AudioCue>[_cue(1000, 2000, text: 'ohayou')],
+      loadWaveform: () async => <double>[-60, -20, -40, -10, -30, -5, -50, -12],
+    ));
+    await tester.pumpAndSettle();
+    await _openZoom(tester);
+
+    final ScrollPosition position = hscrollPosition(tester);
+    final Rect box = tester.getRect(find.byKey(_hscrollKey));
+    // 触控板两个轴都能给（横向分量本来就被 Scrollable 直接吃掉），翻轴只对物理
+    // 鼠标做——与 Flutter 自身 pointerAxisModifiers 的取舍同源。
+    final TestPointer pad = TestPointer(1, PointerDeviceKind.trackpad);
+    pad.hover(Offset(box.left + 20, box.top + 20));
+    await tester.sendEventToBinding(pad.scroll(const Offset(0, 120)));
+    await tester.pumpAndSettle();
+    expect(position.pixels, 0);
   });
 
   testWidgets(

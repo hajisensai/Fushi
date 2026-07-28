@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1174 条。点号进各自文件。
+> 共 1175 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1215](bugs/BUG-1215-jimaku-entry-wrong-season-auto-select.md) | ✅ | ✅ | Jimaku 条目自动选中不校验季号，S1 条目被配给 S2 包 |
+| [BUG-1214](bugs/BUG-1214-waveform-align-wheel-hscroll.md) | ✅ | ✅ | 波形对轴放大视图鼠标滚轮不能左右平移时间轴 |
 | [BUG-1213](bugs/BUG-1213-android-legacy-storage-permission-query.md) | ✅ | ✅ | Android 7~10 上查询侧恒判未授权，用户根本加不了本地扫描根 |
 | [BUG-1212](bugs/BUG-1212-manga-stats-guard-stale.md) | ✅ | ✅ | 漫画统计守卫仍钉旧口径 charsRead: 0，PR#504 后 develop 变红 |
 | [BUG-1210](bugs/BUG-1210-clipboard-panel-no-auto-read.md) | ✅ | ✅ | 剪贴板面板查词不自动朗读而浮窗会开关却是全局的 |
