@@ -49,6 +49,30 @@ function Reset-StageDirectory {
   New-Item -ItemType Directory -Force -Path $full | Out-Null
 }
 
+function Get-StageRelativePath {
+  # CI runs this on the windows runner under Windows PowerShell 5.1 (.NET Framework
+  # 4.x), which has NO [IO.Path]::GetRelativePath -- that API is .NET Core /
+  # netstandard2.1+ only. Calling it there throws "does not contain a method named
+  # GetRelativePath" and takes the whole packaging step down with it. Same
+  # prefix-trim shape as Reset-StageDirectory above; emits forward slashes so the
+  # result lines up with the $expected manifest.
+  param(
+    [Parameter(Mandatory = $true)][string]$Root,
+    [Parameter(Mandatory = $true)][string]$FullName
+  )
+  $rootPrefix = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+  $full = [IO.Path]::GetFullPath($FullName)
+  # OrdinalIgnoreCase mirrors GetRelativePath's own Windows comparison. Appending the
+  # separator before comparing is load-bearing: a bare StartsWith would treat
+  # "<root>extra\file" as living inside "<root>". A staged file outside its arch root
+  # is a packaging bug, so fail loudly instead of emitting a "..\" path that would
+  # only surface later as a baffling manifest diff.
+  if (-not $full.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Staged file escapes its arch root ($Root): $full"
+  }
+  return $full.Substring($rootPrefix.Length).Replace('\', '/')
+}
+
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 
 foreach ($config in @(
@@ -179,9 +203,7 @@ foreach ($arch in @('x64', 'x86')) {
   $stage = Join-Path $outputRoot $arch
   $actual = @(
     Get-ChildItem -LiteralPath $stage -File -Recurse |
-      ForEach-Object {
-        [IO.Path]::GetRelativePath($stage, $_.FullName).Replace('\', '/')
-      } |
+      ForEach-Object { Get-StageRelativePath -Root $stage -FullName $_.FullName } |
       Sort-Object
   )
   $wanted = @($expected[$arch] | Sort-Object)
