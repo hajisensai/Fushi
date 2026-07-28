@@ -46,8 +46,16 @@
 
 改动注入脚本后注意 `hibiki/test/reader/reader_script_compactor_test.dart`：给 setup 模板新增插值必须在它的替身表里登记，否则该守卫直接 `StateError`（它保证最终拼装脚本的压缩有覆盖，并用 node `--check` 真解析）。
 
-## 已知未接入：漫画页
+## 漫画页（已接入，注意两处与阅读器相反的规则）
 
-`manga_hibiki_page.dart` 至今是硬编码 `if (key == LogicalKeyboardKey.arrowRight)`：不查 registry（不能改键、无手柄）、丢 `KeyRepeatEvent`（按住方向键不连翻）、零焦点回收、JS 侧无 keydown 桥。桌面上在漫画 WebView 里点/拖一次之后方向键翻页即失效且**无自愈路径**。
+实现在 `lib/src/media/manga/reader/manga_hibiki_page.dart`（`lib/src/pages/implementations/manga_hibiki_page.dart` 只是 3 行兼容 export，别改那个）。三层都已接：`PageFocusOwnership` + `ShortcutScope.manga` + 共享键盘桥。
 
-接入时要做的：`ShortcutScope.manga` + manga action 集 + 默认绑定 + i18n（走 `hibiki/tool/i18n_sync.dart --add`，禁手改 json）+ `PageFocusOwnership` 实例 + 键盘桥。**动手前先确认漫画在线源那批 PR（#411 / #417 系）已落地**，否则必然撞车重做。
+**① 词典弹窗可见时，漫画不让位。** 阅读器的 `gesture` 判据在弹窗可见时早退（弹窗自持焦点，BUG-136）；漫画的 `_canOwnMangaFocus` 必须相反——本页规定弹窗可见时左右键仍要「关弹窗并翻页」、Escape 要关弹窗，而弹窗是纯原生 WebView、没有 Flutter 焦点节点，不主动收回这些键就全部落空。这与本页覆写 `capturesDictionaryPopupNavigationKeys` 是同一诉求的两半，改任一边都要同时想另一边。
+
+**② 左右方向键不受 webtoon / 弹窗门控。** 它们是**跨页步进**语义（`inputActionForShortcut` 的 `horizontalArrow` 参数）：webtoon 的纵向滚动不影响它们，弹窗可见时也要生效。其余前进/后退键则要让位——弹窗可见时空格归词典，webtoon 下纵向键归 WebView 原生竖滚。
+
+翻页方向：注册表存**页序语义**（forward = 下一页），左右键的物理朝向由 `shortcuts/manga_arrow_override.dart` 的 `resolveMangaArrowPageTurn` 按跨页方向（日漫默认 rtl）校正，与 reader 的 `resolveReaderArrowPageTurn` 同构。方向不能进注册表——注册表全局、每本书排版不同，直接把 `ArrowLeft` 绑成 backward 会让 rtl 的书翻反。
+
+键盘桥用 `forwardRepeats: false`（本页有意设计：按住方向键不堆翻页风暴）+ `stopPropagation: true`。桥每次换加载窗口都会重新注入，靠生成器自带的幂等守卫防 listener 叠加（否则一次按键翻两页）。
+
+新增 action 后若 `shortcut_action_wiring_guard` 报「死项」，是执行体清单没登记本页——那正是它该拦的。
