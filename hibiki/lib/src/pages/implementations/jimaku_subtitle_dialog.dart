@@ -9,6 +9,7 @@ import 'package:hibiki/src/media/media_search_text.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
 import 'package:hibiki/src/media/video/jimaku_client.dart';
 import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
+import 'package:hibiki/src/pages/implementations/jimaku_api_key_field.dart';
 import 'package:hibiki/utils.dart';
 
 /// 一条可下载的 Jimaku 字幕候选：所属条目名 + 文件。
@@ -383,15 +384,7 @@ class _JimakuSubtitleDialogState extends State<JimakuSubtitleDialog>
         ],
       );
     }
-    return TextField(
-      controller: _apiKeyCtrl,
-      decoration: InputDecoration(
-        labelText: t.video_jimaku_api_key,
-        helperText: t.video_jimaku_api_key_hint,
-        helperMaxLines: 2,
-      ),
-      obscureText: true,
-    );
+    return JimakuApiKeyField(controller: _apiKeyCtrl);
   }
 
   /// 选某语言（[lang]=null 即「全部」）：更新筛选 + 选具体语言时持久化记忆（选择即写）。

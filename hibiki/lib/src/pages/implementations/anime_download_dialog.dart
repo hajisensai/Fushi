@@ -21,6 +21,7 @@ import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
 import 'package:hibiki/src/media/video/jimaku_client.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/jimaku_api_key_field.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_entry_picker.dart';
 import 'package:hibiki/src/pages/implementations/download_actions.dart';
 import 'package:hibiki/src/pages/implementations/downloads_page.dart';
@@ -965,21 +966,15 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     );
   }
 
-  /// Jimaku key 输入行：仅初始 key 为空时显示，`onChanged` 直接持久化
-  /// （与 [JimakuSubtitleDialog] 的 key 落偏好范式一致）。
+  /// Jimaku key 输入行：仅初始 key 为空时显示，`onChanged` 直接持久化。
+  /// 输入框本体是三处共用的 [JimakuApiKeyField]（权威配置入口在设置 → 视频 → 字幕）。
   Widget _buildJimakuKeyField() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: TextField(
+      child: JimakuApiKeyField(
         controller: _jimakuKeyCtrl,
-        decoration: InputDecoration(
-          labelText: t.video_jimaku_api_key,
-          helperText: t.video_jimaku_api_key_hint,
-          helperMaxLines: 2,
-          isDense: true,
-          prefixIcon: const Icon(Icons.vpn_key, size: 18),
-        ),
-        obscureText: true,
+        dense: true,
+        showKeyIcon: true,
         onChanged: (String value) =>
             unawaited(ref.read(appProvider).setJimakuApiKey(value.trim())),
       ),

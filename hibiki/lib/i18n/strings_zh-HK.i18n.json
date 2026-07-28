@@ -2714,5 +2714,6 @@
   "shortcut_action_manga_page_backward": "Previous page",
   "shortcut_action_manga_dismiss_dict": "Close dictionary",
   "video_setting_jimaku_default_language": "Default subtitle language",
-  "video_setting_jimaku_default_language_hint": "Preferred language when the series has no remembered choice"
+  "video_setting_jimaku_default_language_hint": "Preferred language when the series has no remembered choice",
+  "video_jimaku_api_key_settings_hint": "Also editable in Settings → Video → Subtitles"
 }

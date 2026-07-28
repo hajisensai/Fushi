@@ -59,6 +59,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 同一实例下轮即刮）。
   'video/Auto-fetch series info':
       'test/media/video/scraper/auto_scrape_service_test.dart',
+  // Jimaku 默认字幕语言（BUG-1189/1190 那批「Jimaku 设置统一到设置页」）。写
+  // prefsRepo（changed=true），生效点是三个 Jimaku 界面打开时的语言预选（没有该
+  // 系列的语言记忆时用它兜底），不在 reader CSS / 主题树里，无适用探针；由专项
+  // 测试三层咬住（偏好往返 + AppModel 归一含仓库未就绪回退 + 番剧下载对话框
+  // 真按它预选语言 chip）。
+  'video/Default subtitle language':
+      'test/pages/jimaku_default_language_test.dart',
   // 多端库联合视图（spec 2026-07-12 §2.6）：上传视频文件开关。写 SyncRepository
   // gate（changed=true），生效点在 SyncOrchestrator 云后端上传阶段（非 reader
   // CSS / 主题树），无适用探针；由专项 orchestrator 行为测试咬住（关=零上传、

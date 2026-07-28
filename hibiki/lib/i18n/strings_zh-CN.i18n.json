@@ -2714,5 +2714,6 @@
   "shortcut_action_manga_page_backward": "上一页",
   "shortcut_action_manga_dismiss_dict": "关闭词典",
   "video_setting_jimaku_default_language": "默认字幕语言",
-  "video_setting_jimaku_default_language_hint": "该系列没有记住的语言时优先使用"
+  "video_setting_jimaku_default_language_hint": "该系列没有记住的语言时优先使用",
+  "video_jimaku_api_key_settings_hint": "也可在 设置 → 视频 → 字幕 中修改"
 }

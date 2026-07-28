@@ -11,6 +11,7 @@ import 'package:hibiki/src/media/video/stream_video_launch.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
 import 'package:hibiki/src/media/video/video_subtitle_source.dart';
+import 'package:hibiki/src/pages/implementations/jimaku_api_key_field.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_entry_picker.dart';
 import 'package:hibiki/src/storage/app_paths.dart';
 import 'package:hibiki/utils.dart';
@@ -349,16 +350,7 @@ class _JimakuBatchDialogState extends ConsumerState<JimakuBatchDialog> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  TextField(
-                    controller: _apiKeyCtrl,
-                    decoration: InputDecoration(
-                      labelText: t.video_jimaku_api_key,
-                      helperText: t.video_jimaku_api_key_hint,
-                      helperMaxLines: 2,
-                      isDense: true,
-                    ),
-                    obscureText: true,
-                  ),
+                  JimakuApiKeyField(controller: _apiKeyCtrl, dense: true),
                   const SizedBox(height: 8),
                   Row(
                     children: <Widget>[
