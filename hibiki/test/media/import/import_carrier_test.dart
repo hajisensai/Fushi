@@ -166,4 +166,72 @@ void main() {
       expect(classify(r'C:\books\novel.epub'), ImportCarrier.epub);
     });
   });
+
+  group('ImportCarrierResolver 按路径记忆（不重复开包）', () {
+    /// 造一个会数「开了几次包」的 resolver。`isImageArchive` 就是真实现里那次
+    /// 全量同步解压的位置，数它 = 数解压次数。
+    ({ImportCarrierResolver resolver, List<String> probes}) makeResolver({
+      Set<String> imageArchives = const <String>{},
+    }) {
+      final List<String> probes = <String>[];
+      return (
+        resolver: ImportCarrierResolver(
+          isDirectory: (String _) => false,
+          isImageArchive: (String path) {
+            probes.add(path);
+            return imageArchives.contains(path);
+          },
+        ),
+        probes: probes,
+      );
+    }
+
+    test('同一个 .epub 问三次只开一次包（书籍导入的真实提问序列）', () {
+      // 这三次提问对应 BookImportDialog 里真实存在的三处：选中时的漫画闸门、
+      // _doImport 的兜底闸门、_importEpubOnly 的分派。修复前每次都整包解压。
+      final r = makeResolver();
+      for (int i = 0; i < 3; i++) {
+        expect(r.resolver.resolve('/b/novel.epub'), ImportCarrier.epub);
+      }
+      expect(r.probes.length, 1, reason: '载体身份是路径的函数，问三次不该解压三次');
+    });
+
+    test('有声书对齐路径：两次闸门也只开一次包', () {
+      // EPUB+字幕 走 _importEpubWithAlignment，根本不进 _importEpubOnly，
+      // 所以它只被问两次——但分家前它一次都不开包，重复开包在这条路上纯属白开。
+      final r = makeResolver();
+      r.resolver.resolve('/b/novel.epub');
+      r.resolver.resolve('/b/novel.epub');
+      expect(r.probes.length, 1);
+    });
+
+    test('换路径必须重新定性（不得把上一个文件的判定张冠李戴）', () {
+      final r = makeResolver(imageArchives: <String>{'/m/scan.zip'});
+      expect(r.resolver.resolve('/b/novel.epub'), ImportCarrier.epub);
+      expect(r.resolver.resolve('/m/scan.zip'), ImportCarrier.mangaArchive);
+      expect(r.resolver.resolve('/b/novel.epub'), ImportCarrier.epub);
+      expect(
+          r.probes, <String>['/b/novel.epub', '/m/scan.zip', '/b/novel.epub'],
+          reason: '换路径就得重算，记忆只对「同一个路径连续问」生效');
+    });
+
+    test('invalidate() 后重新开包（文件可能在对话框开着时被换掉）', () {
+      final r = makeResolver();
+      r.resolver.resolve('/b/novel.epub');
+      r.resolver.invalidate();
+      r.resolver.resolve('/b/novel.epub');
+      expect(r.probes.length, 2);
+    });
+
+    test('记忆不改变判定结果本身（词典包一票否决照常）', () {
+      // /d/dict.zip 不在 imageArchives 里 = 判据说它不是图片包（真实现里正是
+      // 词典包一票否决给出的答案）。记忆层不得把它变成漫画。
+      final r = makeResolver(imageArchives: <String>{'/m/scan.zip'});
+      for (int i = 0; i < 3; i++) {
+        expect(r.resolver.resolve('/d/dict.zip'), ImportCarrier.epub,
+            reason: '缓存只省重复提问，绝不改答案');
+      }
+      expect(r.probes.length, 1);
+    });
+  });
 }

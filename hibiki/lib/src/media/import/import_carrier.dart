@@ -76,3 +76,50 @@ ImportCarrier classifyImportCarrier(
 
 /// 需要真读包才能定性的容器扩展名（带点，小写）。
 const Set<String> _ambiguousArchiveExtensions = <String>{'.zip', '.epub'};
+
+/// 按路径记住一次载体身份的小盒子。
+///
+/// 为什么需要它：`.zip` / `.epub` 的定性要 [classifyImportCarrier] **真开包**
+/// （`isImageArchive` → 全量同步解压），那是导入对话框里唯一一处重量级同步 IO。
+/// 而一次导入里同一个路径会被问到不止一次：选中时的漫画闸门、`_doImport` 的兜底
+/// 闸门、以及真正分派时。每问一次就整包解压一次。有声书对齐路径（EPUB+字幕）尤其
+/// 亏——它根本不进按载体分派那一步，前面那几次开包纯属白开，而分家之前它一次都不开。
+///
+/// 载体身份本来就是路径的函数（这正是 [ImportCarrier] 的立意：身份在**选中那一刻**
+/// 定死，而不是一路嗅到导入执行阶段），所以按路径记住即可。换路径自动失效——key 变了
+/// 就重算，因此不会把上一个文件的判定张冠李戴到下一个文件上。
+///
+/// **不是**靠跳过判据来省 IO：判据一字未动，词典包一票否决照常生效（见
+/// `MangaArchiveImporter.looksLikeImageArchive`）。省掉的只是**重复**问同一个问题。
+class ImportCarrierResolver {
+  ImportCarrierResolver({
+    required this.isDirectory,
+    required this.isImageArchive,
+  });
+
+  final bool Function(String path) isDirectory;
+  final bool Function(String path) isImageArchive;
+
+  String? _cachedPath;
+  ImportCarrier? _cachedCarrier;
+
+  /// 判定 [path] 的载体身份；同一个 [path] 连续问只算一次真判定。
+  ImportCarrier resolve(String path) {
+    final ImportCarrier? cached = _cachedCarrier;
+    if (cached != null && _cachedPath == path) return cached;
+    final ImportCarrier carrier = classifyImportCarrier(
+      path,
+      isDirectory: isDirectory,
+      isImageArchive: isImageArchive,
+    );
+    _cachedPath = path;
+    _cachedCarrier = carrier;
+    return carrier;
+  }
+
+  /// 丢弃记忆。路径指向的文件可能在对话框开着时被换掉，需要重新定性时调用。
+  void invalidate() {
+    _cachedPath = null;
+    _cachedCarrier = null;
+  }
+}
