@@ -267,6 +267,17 @@ class ClipboardPanelController {
       // 放在渲染之后：播放脚本经同一 render 通道下发，必须排在整栈渲染脚本之后，
       // 否则会被 last-wins 的渲染脚本顶掉（与覆盖窗 _autoReadFirstEntry 同一位置
       // 语义）。协调器内部去重，被动剪贴板流重复同词不会连读。
+      //
+      // 但**必须先核对 seq**：本方法的契约是「每个 await 后核对，过期即弃」（VN 流
+      // 乱序守卫），而上面 _renderPanel / _showPanel / raise 都是 await。少这一句，
+      // 被后一句顶掉的旧查词仍会把**旧词**读出来——屏幕上是新句、耳朵里是上一句，
+      // 而面板正是被动剪贴板流（galgame 台词 / texthooker）的主力表面，这种快速
+      // 连续更新恰恰是它的常态。覆盖窗没有 latest-wins 机制故原实现无此步，这是
+      // 面板独有的契约，收口共享实现时不能把它一起抹掉。
+      if (seq != _updateSeq) {
+        glog('panel: autoread skipped (superseded seq=$seq)');
+        return;
+      }
       _autoRead.autoReadFirstEntry(model, result);
     } catch (e, st) {
       glog('panel: update EXCEPTION $e\n$st');
