@@ -30,6 +30,22 @@
   - `hibiki/test/pages/media_collection_detail_sort_test.dart` 的 group「混合种类合集」3 例
     （第一轮加的）保留：拖拽 / 一键按名称 / 一键按导入时间后，断言成员数不变、game 与 epub
     成员仍在合集内、sortIndex 致密无碰撞、非 video 成员相对 video 的手排位置不被打乱。
+  - `hibiki/test/database/media_collections_dao_test.dart` 再加 1 例「sortIndex 碰撞时
+    按 entryKey 定序，并被一次重排冻结成致密序」：DAO 现在把 `getCollectionItems` 的
+    结果**冻结**成永久致密序，那个读的定序规则是整套修复的地基。用例刻意让 entryKey
+    序与 mediaType 序**相反**，去掉 ORDER BY 的 entryKey 段即转红（实测）。
+  - 同时给 `getCollectionItems` / `getAllCollectionItems` 的 ORDER BY 补末位
+    `mediaType` 段，让排序键 == 成员身份 `(collectionId, mediaType, entryKey)` 去掉被
+    where 钉死的 collectionId → 全序。**诚实标注**：当前 SQLite 计划走复合主键索引
+    扫描、本就是 mediaType 升序，删掉这一段行为不变，实测无法用行为测试守它；保留它
+    是为了不让"冻结"依赖查询计划的巧合，不是修一个今天可复现的症状。
+- **已知残留（不在本 PR 范围）**：备份合并路径不走 DAO，本次不变量管不到它。
+  `hibiki/lib/src/sync/backup_merge_engine.dart:437` 用裸 SQL
+  `INSERT OR IGNORE ... (collection_id, media_type, entry_key, sort_index)` **原样搬**
+  源库的 sort_index，既不致密化也不碰 `orderUpdatedAt`（该文件全文无此列）。所以一次
+  备份合并导入仍可能把碰撞 sortIndex 带回本地。影响面比原 bug 小（导入才发生，且下一次
+  任何重排会自愈），但要彻底闭合「顺序一致性」得单开一条：合并后按 `(sortIndex, entryKey,
+  mediaType)` 对受影响合集重编号，并决定是否传播序时间戳。
 - **备注**：**不禁止混合种类合集**——网格详情页本就显示全部成员，混合是被支持的形态。
   「加入合集」弹窗不按种类过滤、同步/备份按 `(name, collectionType)` 自然键对齐，这两条是
   混合**如何产生**的解释，不是要改掉的缺陷；根因修复的方向是让排序在混合下正确，而不是
@@ -59,7 +75,7 @@
   （`games_library_page.dart:378`）、书架（`reader_hibiki_history_page.dart:2044`）都能把
   game/epub/srt 成员加进一个已含 video 的合集。
 - `hibiki/lib/src/sync/collection_sync_engine.dart:624` 与
-  `hibiki/lib/src/sync/backup_merge_engine.dart:436` 按 `(name, collectionType)` 自然键对齐、
+  `hibiki/lib/src/sync/backup_merge_engine.dart:308` 按 `(name, collectionType)` 自然键对齐、
   裸串写入对端 mediaType：两台设备各建同名合集（一台放书、一台放视频），同步一轮即混合。
 
 混合后在本页拖拽 → video 成员拿到 0..n-1，非 video 成员留着旧 sortIndex 与之**碰撞**；

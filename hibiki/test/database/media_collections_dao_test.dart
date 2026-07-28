@@ -181,6 +181,38 @@ void main() {
           reason: '重排把全表写成致密序，历史碰撞就此消除（不再依赖 entryKey 兜底）');
     });
 
+    test('sortIndex 碰撞时按 entryKey 定序，并被一次重排冻结成致密序', () async {
+      // reorderCollectionItems 把 getCollectionItems 的结果**冻结**成永久致密序，
+      // 所以那个读的定序规则是本 PR 的地基。这里守的是**可观测**的那一段：
+      // sortIndex 全碰撞时按 entryKey 升序，且冻结后不再依赖任何并列兜底。
+      //
+      // 诚实标注：getCollectionItems 的 ORDER BY 末位还有一段 mediaType（补全序，
+      // 见该方法注释）。当前 SQLite 计划走复合主键索引扫描、本就是 mediaType 升序，
+      // 删掉那一段**行为不变**，故此处不为它写断言——写了也是永远绿的假守卫。
+      final db = await _openDb();
+      final int c = await db.createMediaCollection('Collided');
+      // 全部塞进 sortIndex 0，且**刻意让 entryKey 序与 mediaType 序相反**
+      // （entryKey aa<mm<zz 给出 video,game,epub；mediaType epub<game<video 给出
+      // 相反序），否则两段谁在起作用分不出来——换成同向数据这条断言就永远绿。
+      // 插入序也与期望序不同，顺带排除"恰好等于写入顺序"。
+      await db.upsertCollectionItemAt(c, 'game', 'mm', 0);
+      await db.upsertCollectionItemAt(c, 'epub', 'zz', 0);
+      await db.upsertCollectionItemAt(c, 'video', 'aa', 0);
+
+      expect(
+        await members(db, c),
+        <String>['video|aa', 'game|mm', 'epub|zz'],
+        reason: 'sortIndex 全碰撞 → 按 entryKey 升序（aa < mm < zz），'
+            '与插入序、与 mediaType 序都无关',
+      );
+
+      await db.reorderCollectionItems(c, const <CollectionMemberKey>[]);
+      expect(await members(db, c), <String>['video|aa', 'game|mm', 'epub|zz'],
+          reason: '冻结不改相对顺序');
+      expect(await indices(db, c), <int>[0, 1, 2],
+          reason: '冻结后 sortIndex 致密，展示序不再依赖并列兜底');
+    });
+
     test('点名了已被并发移出的成员：丢弃该键，其余成员照常重排不越界', () async {
       final db = await _openDb();
       final int c = await seedMixed(db);

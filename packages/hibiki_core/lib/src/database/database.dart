@@ -3018,26 +3018,42 @@ class HibikiDatabase extends _$HibikiDatabase {
         return deleted;
       });
 
-  /// 某合集全部成员，按 sortIndex 升序、entryKey 升序（稳定播放/展示序）。
+  /// 某合集全部成员，按 sortIndex 升序、entryKey 升序、mediaType 升序（稳定播放/
+  /// 展示序）。
+  ///
+  /// 三段排序键**恰好等于表的成员身份**（复合主键 `(collectionId, mediaType,
+  /// entryKey)` 去掉已被 where 钉死的 collectionId）→ 全序，无并列。
+  ///
+  /// 末位 mediaType 段是**防御性**的，诚实说明其份量：只排到 entryKey 时，同一合集
+  /// 里同 entryKey 的两个不同 mediaType 行（entryKey 是各域裸串——epub=bookKey /
+  /// video=bookUid / game=galgames.id，命名空间不交叉是约定、不是 DB 约束）在
+  /// sortIndex 也碰撞的情况下，次序就交给了查询计划。当前计划走复合主键索引扫描、
+  /// 恰好已经是 mediaType 升序，所以补这一段**今天不改变任何可观测行为**——也因此
+  /// 没有能检测其删除的行为测试，别为它编一个假绿守卫。写出来的理由是
+  /// [reorderCollectionItems] 拿本查询的结果当槽位基准并**冻结**成永久的致密
+  /// sortIndex：喂给冻结操作的读不该依赖计划的巧合。
   Future<List<MediaCollectionItemRow>> getCollectionItems(int collectionId) =>
       (select(mediaCollectionItems)
             ..where((t) => t.collectionId.equals(collectionId))
             ..orderBy([
               (t) => OrderingTerm(expression: t.sortIndex),
               (t) => OrderingTerm(expression: t.entryKey),
+              (t) => OrderingTerm(expression: t.mediaType),
             ]))
           .get();
 
   /// 全部合集成员行（一次查询，供渲染层内存分组算组内 sortIndex，替代逐合集
-  /// [getCollectionItems] 的 N+1）。按 collectionId、sortIndex、entryKey 升序，
-  /// 与 [getCollectionItems] 同口径——同一 collectionId 的行连续且组内有序，
-  /// 调用方按 [MediaCollectionItemRow.collectionId] 分组即等价于逐合集查。
+  /// [getCollectionItems] 的 N+1）。按 collectionId、sortIndex、entryKey、mediaType
+  /// 升序，与 [getCollectionItems] 同口径（含末位 mediaType 的全序兜底）——同一
+  /// collectionId 的行连续且组内有序，调用方按
+  /// [MediaCollectionItemRow.collectionId] 分组即等价于逐合集查。
   Future<List<MediaCollectionItemRow>> getAllCollectionItems() =>
       (select(mediaCollectionItems)
             ..orderBy([
               (t) => OrderingTerm(expression: t.collectionId),
               (t) => OrderingTerm(expression: t.sortIndex),
               (t) => OrderingTerm(expression: t.entryKey),
+              (t) => OrderingTerm(expression: t.mediaType),
             ]))
           .get();
 
@@ -3168,8 +3184,9 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<void> reorderCollectionItems(
           int collectionId, List<CollectionMemberKey> ordered) =>
       transaction(() async {
-        // 事务内取当前全表顺序作槽位基准（[getCollectionItems] 的 sortIndex→entryKey
-        // 口径 = 用户此刻看到的顺序）。
+        // 事务内取当前全表顺序作槽位基准（[getCollectionItems] 的
+        // sortIndex→entryKey→mediaType 全序 = 用户此刻看到的顺序；那三段键就是成员
+        // 身份，无并列，故本次冻结出的致密序确定、不随查询计划变）。
         final List<MediaCollectionItemRow> all =
             await getCollectionItems(collectionId);
         final List<CollectionMemberKey> merged = mergeCollectionOrder(
