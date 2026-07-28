@@ -5,9 +5,11 @@
 /// `lib/src/media/import/real_path_directory_picker.dart` 是「选文件/选目录」的
 /// 统一入口，存在的全部理由是**安卓**：
 ///
-/// - `FilePicker.getDirectoryPath()` 在安卓返回的是 tree content URI 解析串，
-///   `dart:io` 拿它遍历恒空。扫描根、下载根、数据根、mpv 着色器目录全是「选完之后
-///   要用 `dart:io` 反复读」的语义，拿到 content URI 串 = 功能直接坏掉。
+/// - `FilePicker.getDirectoryPath()` 在安卓是把 tree URI **拼**成一个路径串返回
+///   （volume 映射不出来时直接退化成 `/`），而 SAF 授的是 URI 权限、不是路径权限
+///   ——targetSdk 35 下没拿到全文件访问，`dart:io` 读这个路径必失败。扫描根、下载
+///   根、数据根、mpv 着色器目录全是「选完之后要用 `dart:io` 反复读」的语义，于是
+///   功能直接坏掉（真实症状：安卓加了本地来源库，却永远扫不出书）。
 /// - `FilePicker.pickFiles()` 在安卓会把选中文件**复制一份到 app cache** 再返回缓存
 ///   路径：白拷一份大文件，且清缓存后该路径失效、长期引用悬空。
 ///
@@ -81,47 +83,50 @@ const Map<String, String> kFilePickerAllowlist = <String, String>{
       '本地音频库：桌面可选「引用原文件」长期引用（安卓恒复制，故当前不坏）',
 };
 
-/// 扫 `lib/` 下所有 .dart，返回含指定裸调的文件相对路径集合。
+/// 扫 `lib/` 下所有 .dart，返回调用了 `.<member>(` 的文件相对路径集合。
 ///
-/// 只算**真调用**：跳过以 `///` 开头的文档注释行（`page_focus_ownership.dart` 在
-/// 注释里举例提到了 `FilePicker.platform.pickFiles()`，那不是调用点）。
-Set<String> _filesCalling(String needle) {
+/// **受体一律不看，且容忍换行**。只匹配 `FilePicker.platform.getDirectoryPath(`
+/// 这一种字面写法的守卫是假绿——实测两种写法都能静默绕过它：
+/// - `dart format` 把长表达式折成 `await FilePicker.platform\n    .getDirectoryPath(`；
+/// - 先 `final FilePickerPlatform fp = FilePicker.platform;` 再 `fp.getDirectoryPath(`。
+/// 所以这里改成正则 `\.\s*<member>\s*\(`（`\s` 跨行）。`getDirectoryPath` /
+/// `pickFiles` 这两个成员名在本仓只属于 file_picker，受体无关匹配不会误伤。
+///
+/// 只算**真调用**：先剔除整行注释再拼回（`page_focus_ownership.dart` 在文档注释里
+/// 举例提到了 `FilePicker.platform.pickFiles()`，那不是调用点）。
+Set<String> _filesCalling(String member) {
+  final RegExp call = RegExp(r'\.\s*' + member + r'\s*\(');
   final Directory root = Directory('lib');
   final Set<String> hits = <String>{};
   for (final FileSystemEntity e in root.listSync(recursive: true)) {
     if (e is! File || !e.path.endsWith('.dart')) continue;
-    final String rel = e.path.replaceAll(r'\', '/');
-    for (final String line in e.readAsLinesSync()) {
-      final String trimmed = line.trimLeft();
-      if (trimmed.startsWith('///') || trimmed.startsWith('//')) continue;
-      if (line.contains(needle)) {
-        hits.add(rel);
-        break;
-      }
-    }
+    final String code = e
+        .readAsLinesSync()
+        .where((String line) => !line.trimLeft().startsWith('//'))
+        .join('\n');
+    if (call.hasMatch(code)) hits.add(e.path.replaceAll(r'\', '/'));
   }
   return hits;
 }
 
 void main() {
   test('目录选择器：除统一入口与登记豁免外，不得裸调 getDirectoryPath', () {
-    final Set<String> callers =
-        _filesCalling('FilePicker.platform.getDirectoryPath(')
-          ..remove(kPickerImpl);
+    final Set<String> callers = _filesCalling('getDirectoryPath')
+      ..remove(kPickerImpl);
     final Set<String> unexpected =
         callers.difference(kDirectoryPickerAllowlist.keys.toSet());
     expect(
       unexpected,
       isEmpty,
-      reason: '目录选完要用 dart:io 遍历，安卓裸 getDirectoryPath 给的是 content URI 串、'
-          '遍历恒空。请改用 pickRealDirectoryPath（见 $kPickerImpl）。',
+      reason: '目录选完要用 dart:io 遍历，安卓裸 getDirectoryPath 拼出来的路径串没有'
+          '全文件访问权限读不了（甚至退化成 /）。请改用 pickRealDirectoryPath（见 '
+          '$kPickerImpl）。',
     );
   });
 
   test('目录豁免清单不得虚挂（清单里的文件必须真的还在裸调）', () {
-    final Set<String> callers =
-        _filesCalling('FilePicker.platform.getDirectoryPath(')
-          ..remove(kPickerImpl);
+    final Set<String> callers = _filesCalling('getDirectoryPath')
+      ..remove(kPickerImpl);
     for (final String path in kDirectoryPickerAllowlist.keys) {
       expect(
         callers,
@@ -133,8 +138,7 @@ void main() {
   });
 
   test('文件选择器：裸调 pickFiles 的文件必须已登记在案', () {
-    final Set<String> callers = _filesCalling('FilePicker.platform.pickFiles(')
-      ..remove(kPickerImpl);
+    final Set<String> callers = _filesCalling('pickFiles')..remove(kPickerImpl);
     final Set<String> unexpected =
         callers.difference(kFilePickerAllowlist.keys.toSet());
     expect(
@@ -147,8 +151,7 @@ void main() {
   });
 
   test('文件豁免清单不得虚挂', () {
-    final Set<String> callers = _filesCalling('FilePicker.platform.pickFiles(')
-      ..remove(kPickerImpl);
+    final Set<String> callers = _filesCalling('pickFiles')..remove(kPickerImpl);
     for (final String path in kFilePickerAllowlist.keys) {
       expect(
         callers,

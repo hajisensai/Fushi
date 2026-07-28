@@ -143,7 +143,10 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     if (_migrating) return;
 
     // 数据根是整个 app 长期读写的落点，必须是真实文件系统路径（见
-    // pickRealDirectoryPath）——content URI 串迁过去等于把库搬进一个读不回来的地方。
+    // pickRealDirectoryPath）。这一项今天只对桌面可见（`sync_settings_schema.dart`
+    // 里 section 与 item 双重 `isDesktopPlatform` gate），桌面上统一入口就是原样
+    // `getDirectoryPath()`，故此处是**纯口径统一、行为零变化**；改统一入口是为了
+    // 哪天这项对安卓开放时不会踩到「路径串读不回来」。
     final String? picked = await pickRealDirectoryPath(
       context: context,
       appModel: widget.settingsContext.appModel,
