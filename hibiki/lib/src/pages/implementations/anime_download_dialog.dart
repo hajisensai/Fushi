@@ -49,12 +49,20 @@ import 'package:hibiki/utils.dart';
 ///
 /// [rowWidth] 是整行的可用宽度。上限取它的四成——这个框右边还有搜索按钮、左边是
 /// 会被挤压的搜索词输入框，某些语言的超长译文不该把搜索词框挤没。上限同样不写死
-/// 像素：宽屏上四成足够放下任何译文，窄屏上才真正起到保护作用。[rowWidth] 为空或
-/// 无界时退回一个保守常数。
+/// 像素：宽屏上四成足够放下任何译文，窄屏上才真正起到保护作用。
+///
+/// [rowWidth] 故意做成必填、且不提供「取不到就退回某个保守常数」的默认值——与
+/// [narrowAwareAppBarActions] 的 `availableWidth` 同一口径：有默认值就等于给这个
+/// bug 留了一条随时能走回去的路，而这个 bug 的历史恰恰是「换一个更大的常数」。
+/// 调用点把这一行包进 [LayoutBuilder] 后传 `constraints.maxWidth` 即可。
+///
+/// [rowWidth] 非有限（`double.infinity`，Row 在无界约束下就是这个值）时**不设上
+/// 限**，而不是退回一个像素常数：上限的唯一职责是「别把同一行的邻居挤没」，而无界
+/// 行里根本不存在会被挤没的邻居——此时 label 多长就多宽，反倒是唯一不会裁字的解。
 double jimakuEpisodeFieldWidth(
   BuildContext context,
   String label, {
-  double? rowWidth,
+  required double rowWidth,
 }) {
   // label 未浮起时按 bodyLarge 渲染（浮起后缩到 75%），按较大的那个量才安全。
   final TextStyle labelStyle =
@@ -67,9 +75,9 @@ double jimakuEpisodeFieldWidth(
   )..layout();
   final double labelWidth = painter.width;
   painter.dispose();
-  final double cap = (rowWidth != null && rowWidth.isFinite && rowWidth > 0)
+  final double cap = (rowWidth.isFinite && rowWidth > 0)
       ? math.max(96.0, rowWidth * 0.4)
-      : 260.0;
+      : double.infinity;
   return (labelWidth + kJimakuEpisodeFieldChrome).clamp(96.0, cap);
 }
 

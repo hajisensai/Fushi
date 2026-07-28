@@ -472,6 +472,29 @@ void main() {
         greaterThanOrEqualTo(m.labelWidth + kJimakuEpisodeFieldChrome),
       );
     });
+
+    // rowWidth 现在是必填的（不再有「取不到就退回 260」的默认值，那等于给
+    // BUG-1184 留一条走回去的路）。无界约束下 Row 给出的就是 double.infinity，
+    // 此时同一行里不存在会被挤没的邻居，上限没有任何职责——必须彻底不设上限，
+    // 而不是换回一个像素常数（260 会把下面这段 label 重新裁掉）。
+    testWidgets('无界行宽时不设上限，长 label 照样完整显示', (WidgetTester tester) async {
+      const String longLabel =
+          'Episodennummer (optional, mehrere durch Komma getrennt)';
+      final ({double fieldWidth, double labelWidth}) m = await measure(
+        tester,
+        longLabel,
+        rowWidth: double.infinity,
+      );
+      expect(m.fieldWidth.isFinite, isTrue, reason: '框宽本身必须是有限值');
+      expect(
+        m.fieldWidth,
+        greaterThanOrEqualTo(m.labelWidth + kJimakuEpisodeFieldChrome),
+        reason: '无界行里 label 多长就多宽；退回任何像素常数都会重新裁字（BUG-1184）',
+      );
+      // 守住「不是悄悄换了个更大的常数」：这段 label 的实测宽度远超任何历史兜底值
+      // （72 / 96 / 260），所以结果必须真的跟着 label 走。
+      expect(m.fieldWidth, greaterThan(260.0));
+    });
   });
 
   group('书架卡标题 footer', () {
