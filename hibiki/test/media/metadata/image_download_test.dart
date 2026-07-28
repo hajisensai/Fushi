@@ -22,7 +22,9 @@ void main() {
       expect(looksLikeImageBytes(const <int>[0x47, 0x49, 0x46, 0x38], null),
           isTrue); // GIF
       expect(
-        looksLikeImageBytes(<int>[...utf8.encode('RIFF'), 0, 0, 0, 0, ...utf8.encode('WEBP')], null),
+        looksLikeImageBytes(
+            <int>[...utf8.encode('RIFF'), 0, 0, 0, 0, ...utf8.encode('WEBP')],
+            null),
         isTrue,
       );
     });

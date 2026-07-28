@@ -328,7 +328,15 @@ void main() {
 
     // 折叠原因仍在（可行动指引不被详情取代）。
     expect(find.text(t.scrape_reason_network), findsOneWidget);
-    // 完整异常串直接可见：异常类型 + 底层主机名都在界面上，不只在错误日志里。
+    // 详情**默认折叠**：普通断网场景不拿英文异常糊用户一脸。
+    expect(find.byType(SelectableText), findsNothing);
+    expect(find.text(t.copy_error), findsNothing);
+    expect(find.text(t.scrape_failure_detail_show), findsOneWidget);
+
+    // 一键展开后，完整异常串直接可见：异常类型 + 底层主机名都在界面上。
+    await tester.tap(
+        find.byKey(const ValueKey<String>('scrape_failure_detail_toggle')));
+    await tester.pumpAndSettle();
     expect(
       find.byWidgetPredicate((Widget w) =>
           w is SelectableText &&
@@ -336,8 +344,36 @@ void main() {
           (w.data ?? '').contains('api.bgm.tv')),
       findsOneWidget,
     );
-    // 一键复制上报入口。
+    // 一键复制上报入口（展开后才出现）。
     expect(find.text(t.copy_error), findsOneWidget);
+    expect(find.text(t.scrape_failure_detail_hide), findsOneWidget);
+  });
+
+  // 第三个源：离线库（ScrapeSource.offlineDb）失败抛的不是 ScrapeNetworkException，
+  // 但同样必须能拿到完整详情——否则「离线库坏了」这条路仍然只剩一句没用的话。
+  testWidgets('BUG-1219 离线库源失败同样能展开出完整详情', (WidgetTester tester) async {
+    final VideoBookRow book = await seed();
+    final _StubScraperService service = buildService()
+      ..searchErrors
+          .add(const FormatException('offline db slim cache: bad row field'));
+
+    await tester.pumpWidget(wrap(CoverMatchDialog(
+      service: service,
+      book: book,
+      collectionMemberUids: const <String>['video/my_anime'],
+      onApplied: () {},
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+        find.byKey(const ValueKey<String>('scrape_failure_detail_toggle')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byWidgetPredicate((Widget w) =>
+          w is SelectableText &&
+          (w.data ?? '').contains('offline db slim cache: bad row field')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('BUG-1219 带状态码的失败同样直出完整详情（含状态码）', (WidgetTester tester) async {
@@ -355,16 +391,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(t.scrape_reason_server), findsOneWidget);
+    await tester.tap(
+        find.byKey(const ValueKey<String>('scrape_failure_detail_toggle')));
+    await tester.pumpAndSettle();
     expect(
       find.byWidgetPredicate(
           (Widget w) => w is SelectableText && (w.data ?? '').contains('502')),
       findsOneWidget,
     );
   });
-
-  // 合集入口（collectionName 非 null）与单集入口的默认口径不同。合集入口下默认不勾
-  // 「应用到全合集」意味着只改 seed 那一集，而 seed 只是首个可解析成员、未必是合集卡
-  // 上显示的封面——用户会看到「点了半天毫无变化」，以为功能坏了。
 
   // BUG-1211：用户「匹配的是合集的封面，谁说应用到本机里面的视频了」。合集入口换的
   // 必须是合集自己那张封面，成员一个都不能动；「同时应用到本合集全部 N 集」这个设定

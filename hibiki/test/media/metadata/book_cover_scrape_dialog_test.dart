@@ -143,7 +143,14 @@ void main() {
 
     // 折叠原因仍在（可行动指引不被详情取代）。
     expect(find.text(t.scrape_reason_network), findsOneWidget);
-    // 底层原因（主机名）直接可见，不只在错误日志里。
+    // 详情**默认折叠**：普通断网场景不拿英文异常糊用户一脸。
+    expect(find.byType(SelectableText), findsNothing);
+    expect(find.text(t.copy_error), findsNothing);
+
+    // 一键展开后底层原因（主机名）可见，并出现复制上报入口。
+    await tester.tap(
+        find.byKey(const ValueKey<String>('scrape_failure_detail_toggle')));
+    await tester.pumpAndSettle();
     expect(
       find.byWidgetPredicate((Widget w) =>
           w is SelectableText && (w.data ?? '').contains('api.bgm.tv')),
@@ -163,6 +170,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(t.scrape_reason_server), findsOneWidget);
+    await tester.tap(
+        find.byKey(const ValueKey<String>('scrape_failure_detail_toggle')));
+    await tester.pumpAndSettle();
     expect(
       find.byWidgetPredicate(
           (Widget w) => w is SelectableText && (w.data ?? '').contains('500')),
