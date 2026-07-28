@@ -22,6 +22,8 @@ import 'package:hibiki/src/anki/anki_view_model.dart'
 import 'package:hibiki/src/anki/lapis_template_service.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
+import 'package:hibiki/src/pages/implementations/media_library_shell.dart';
+import 'package:hibiki/src/pages/implementations/media_sources_page.dart';
 import 'package:hibiki/src/media/audiobook/now_listening_mini_bar.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/pages.dart';
@@ -1045,7 +1047,28 @@ class _HomePageState extends BasePageState<HomePage>
       case HomeTab.home:
         return HomeDashboardPage(videoRepo: _videoRepository);
       case HomeTab.video:
-        return HomeVideoPage(repo: _videoRepository);
+        // 视频是「媒体库 + 来源」两视图（与书 / 漫画同一套导航结构）。视频没有在线
+        // 浏览源——番剧下载走 torrent 栈、入口在下载页——所以不放「浏览」空壳 tab。
+        return MediaLibraryShell(
+          focusIdPrefix: 'video-library-view',
+          views: <MediaLibraryViewSpec>[
+            MediaLibraryViewSpec(
+              kind: MediaLibraryViewKind.library,
+              label: t.library_view_media,
+              builder: (BuildContext context, Widget navigation) =>
+                  HomeVideoPage(
+                repo: _videoRepository,
+                navigation: navigation,
+              ),
+            ),
+            MediaLibraryViewSpec(
+              kind: MediaLibraryViewKind.sources,
+              label: t.library_view_sources,
+              builder: (BuildContext context, Widget navigation) =>
+                  MediaSourcesPage(mediaKind: 'video', navigation: navigation),
+            ),
+          ],
+        );
       case HomeTab.downloads:
         return const DownloadsPage();
       case HomeTab.dictionaries:

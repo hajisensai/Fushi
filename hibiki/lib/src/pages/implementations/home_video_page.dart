@@ -121,6 +121,7 @@ Future<void> openLocalVideoBook({
 class HomeVideoPage extends BaseModuleTabPage {
   const HomeVideoPage({
     required this.repo,
+    this.navigation,
     this.remoteVideoClientLoader,
     this.cloudRemoteVideoClientLoader,
     this.remoteVideoDownloadDestination,
@@ -128,6 +129,10 @@ class HomeVideoPage extends BaseModuleTabPage {
   });
 
   final VideoBookRepository repo;
+
+  /// 库页视图导航条（由 [MediaLibraryShell] 传入，落在页头 bottom 槽）。
+  /// 本页被独立使用时为 null，页头与此前逐像素一致。
+  final Widget? navigation;
   final Future<RemoteVideoClient?> Function()? remoteVideoClientLoader;
 
   /// 测试钩子（多端库联合视图 §2.2/§2.6）：注入云视频目录 client（[CloudRemoteVideoClient]），
@@ -2943,6 +2948,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Widget _buildPageHeader(bool canImport) {
     return HibikiPageHeader(
       title: t.nav_video,
+      bottom: widget.navigation,
       actions: <Widget>[
         // 图标顺序与书架完全一致：导入 → 收藏夹 → 统计。书架
         // [reader_hibiki_history_page._buildPageHeader] 把导入按钮放在第一位
@@ -2960,7 +2966,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           ),
         // 「番剧下载」不再占页头：它是下载子系统的入口，在「下载」页
         // （downloads_page）里有完整入口，视频库页头只留库管理动作。
-        if (canImport)
+        // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
+        // 按钮就是同一件事的两个入口。只有本页被独立使用（无导航条）时才保留按钮。
+        if (canImport && widget.navigation == null)
           HibikiIconButton(
             tooltip: t.media_source_manage_title,
             label: t.media_source_manage_title,

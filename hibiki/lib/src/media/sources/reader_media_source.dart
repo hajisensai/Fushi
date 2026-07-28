@@ -1,3 +1,5 @@
+import 'package:flutter/widgets.dart';
+
 import 'package:hibiki/media.dart';
 import 'package:hibiki/pages.dart';
 
@@ -27,7 +29,8 @@ abstract class ReaderMediaSource extends MediaSource {
   /// The body widget to show in the tab when this source's media type and this
   /// source is selected.
   @override
-  BasePage buildHistoryPage({MediaItem? item}) {
+  BasePage buildHistoryPage({MediaItem? item, Widget? navigation}) {
+    // 通用回退页无页头，导航条无处安放——忽略它只是没有视图切换，不影响正确性。
     return const HistoryReaderPage();
   }
 }

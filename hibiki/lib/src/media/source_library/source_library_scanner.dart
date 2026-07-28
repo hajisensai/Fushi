@@ -35,6 +35,7 @@ import 'package:hibiki/src/media/audiobook/audiobook_alignment_service.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
 import 'package:hibiki/src/media/import/sidecar_finder.dart';
+import 'package:hibiki/src/media/manga/manga_importer.dart';
 import 'package:hibiki/src/media/source_library/source_file_system.dart';
 import 'package:hibiki/src/media/source_library/source_library_credential_store.dart';
 import 'package:hibiki/src/media/source_library/source_library_row.dart';
@@ -51,6 +52,10 @@ const Set<String> kScanEpubExtensions = <String>{'epub'};
 
 /// Subtitle whitelist shared with the video import dialog (no lrc).
 const Set<String> kScanVideoSubtitleExts = <String>{'srt', 'vtt', 'ass', 'ssa'};
+
+/// 漫画（mokuro 卷）扩展名白名单（小写、不带点）。首版只认 `.mokuro`，
+/// 边界与原因见 [SourceLibraryScanner._importManga]。
+const Set<String> kScanMangaExtensions = <String>{'mokuro'};
 
 /// One pending book item: EPUB path + optional same-stem sidecar subtitle/audio.
 ///
@@ -139,6 +144,24 @@ class ScanPlaylistItem {
   int get hashCode => playlistPath.hashCode;
 }
 
+/// One pending manga item: a `.mokuro` volume manifest scanned in a manga
+/// source. 页图目录不在此关联——[MangaImporter.importFromMokuroPath] 自己按
+/// mokuro 惯例在 `.mokuro` 同级探测图片来源（平铺或子目录）。
+@immutable
+class ScanMangaItem {
+  const ScanMangaItem({required this.mokuroPath});
+
+  /// Full `.mokuro` file path (source namespace).
+  final String mokuroPath;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ScanMangaItem && other.mokuroPath == mokuroPath;
+
+  @override
+  int get hashCode => mokuroPath.hashCode;
+}
+
 /// Classification result of one scan (pure data).
 @immutable
 class ScanPlan {
@@ -146,6 +169,7 @@ class ScanPlan {
     this.books = const <ScanBookItem>[],
     this.videos = const <ScanVideoItem>[],
     this.playlists = const <ScanPlaylistItem>[],
+    this.mangas = const <ScanMangaItem>[],
   });
 
   /// Pending book items (EPUB + optional same-stem subtitle/audio sidecar).
@@ -156,6 +180,9 @@ class ScanPlan {
 
   /// Pending playlist items (m3u8/m3u multi-episode manifests, TODO-1237).
   final List<ScanPlaylistItem> playlists;
+
+  /// Pending manga items (`.mokuro` volume manifests).
+  final List<ScanMangaItem> mangas;
 }
 
 /// Extension of an entry name (lowercase, no leading dot).
@@ -192,6 +219,7 @@ ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
   final List<ScanBookItem> books = <ScanBookItem>[];
   final List<ScanVideoItem> videos = <ScanVideoItem>[];
   final List<ScanPlaylistItem> playlists = <ScanPlaylistItem>[];
+  final List<ScanMangaItem> mangas = <ScanMangaItem>[];
 
   for (final SourceFileEntry e in files) {
     if (e.isDirectory) continue;
@@ -202,6 +230,11 @@ ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
     // for clarity).
     if (kDragPlaylistExtensions.contains(ext)) {
       playlists.add(ScanPlaylistItem(playlistPath: e.path));
+      continue;
+    }
+    // `.mokuro` 漫画卷（与其余白名单两两不相交，book/video 分类零影响）。
+    if (kScanMangaExtensions.contains(ext)) {
+      mangas.add(ScanMangaItem(mokuroPath: e.path));
       continue;
     }
     if (kScanEpubExtensions.contains(ext)) {
@@ -242,7 +275,8 @@ ScanPlan planScanFromFileList(List<SourceFileEntry> files) {
     }
   }
 
-  return ScanPlan(books: books, videos: videos, playlists: playlists);
+  return ScanPlan(
+      books: books, videos: videos, playlists: playlists, mangas: mangas);
 }
 
 /// Source-library scanner: scans one [SourceLibraryRow] root, inserts the media
@@ -300,10 +334,12 @@ class SourceLibraryScanner {
   ///
   /// [fs] defaults to [LocalSourceFileSystem] (M1b connects only locally); tests
   /// inject a local impl over a real temp dir. Routes by [SourceLibraryRow.mediaKind]
-  /// ('book' | 'video'):
+  /// ('book' | 'video' | 'manga'):
   /// - 'book': each EPUB -> [EpubImporter.importFromPath] (with sourceId).
   /// - 'video': each video -> [VideoBookRepository.saveVideoBook] (with sourceId)
   ///   plus parsed cues when a same-name subtitle exists.
+  /// - 'manga': each `.mokuro` -> [MangaImporter.importFromMokuroPath] (with
+  ///   sourceId)，仅 local transport（见 [_importManga] 首版边界）。
   ///
   /// After insert, calls [HibikiDatabase.updateMediaSourceScanResult] to write the
   /// media count / timestamp; any throw records its text in lastScanError
@@ -324,13 +360,19 @@ class SourceLibraryScanner {
         throw ArgumentError.value(
           source.mediaKind,
           'mediaKind',
-          'Unsupported media kind for scan (expected book | video)',
+          'Unsupported media kind for scan (expected book | video | manga)',
         );
       }
       // 网络视频来源不受支持：远端 SFTP/FTP 路径不可被播放器直接播放（只支持网络
       // 「书」来源——EPUB 小体积、扫描时下载后导入）。
       if (!files.isLocal && kind == SourceLibraryKind.video) {
         throw StateError('Network video sources are not supported');
+      }
+      // 网络漫画来源首版不支持（按视频先例）：一卷 mokuro 漫画 = `.mokuro` +
+      // 同级整目录页图，逐页下载的体量/断点语义远超「扫描时顺手下载」，且导入器
+      // 只吃本地路径探测同级图片。首版仅 local transport。
+      if (!files.isLocal && kind == SourceLibraryKind.manga) {
+        throw StateError('Network manga sources are not supported');
       }
       final List<SourceFileEntry> entries = await files.listFiles(
         source.rootPath,
@@ -346,6 +388,8 @@ class SourceLibraryScanner {
           // (TODO-1237).
           mediaCount = await _importVideos(plan, source.id, files);
           mediaCount += await _importPlaylists(plan, source.id, files);
+        case SourceLibraryKind.manga:
+          mediaCount = await _importManga(plan, source.id);
       }
     } catch (e, stack) {
       scanError = e.toString();
@@ -465,6 +509,41 @@ class SourceLibraryScanner {
       subtitlePath: item.subtitlePath!,
       audioPaths: item.audioPaths,
     );
+  }
+
+  /// Imports every `.mokuro` manga volume in the plan; returns the count newly
+  /// inserted.
+  ///
+  /// 首版边界（有意为之）：**只认 `.mokuro`，不扫 CBZ / 裸图目录**——
+  /// [MangaImporter.importFromMokuroPath] 的重扫去重契约按「净化标题身份 key」
+  /// 判重（标题取自 mokuro 顶层元数据/文件名，可稳定重推），CBZ/裸图导入没有
+  /// skipIfExists 这层身份契约，重扫会重复导入成 `X (2)`；等有同等去重契约再放开。
+  ///
+  /// BUG-443 范式（对齐 [_importBooks] / `_importVideos`）：`skipIfExists: true`
+  /// 让已导入卷（含同批同标题）抛 [DuplicateImportCancelledException]，逐卷捕获
+  /// 静默跳过（不计数、不算错误）。其它导入异常（坏 JSON / 缺图）不捕获，向上
+  /// 冒泡记进 lastScanError（与 book 分支同语义）。仅 local transport——网络
+  /// manga 源已在 [scan] 入口整体拒绝，故本方法直接用磁盘路径、不接 copyToLocal。
+  /// 页图不经 [planScanFromFileList] 关联：导入器自己按 mokuro 惯例在 `.mokuro`
+  /// 同级探测图片来源。
+  Future<int> _importManga(ScanPlan plan, int sourceId) async {
+    int count = 0;
+    for (final ScanMangaItem item in plan.mangas) {
+      try {
+        // 标题缺省由导入器从 mokuro 顶层 title/volume 派生，再退化文件名。
+        await MangaImporter.importFromMokuroPath(
+          db: _db,
+          mokuroPath: item.mokuroPath,
+          sourceId: sourceId,
+          skipIfExists: true,
+        );
+        count++;
+      } on DuplicateImportCancelledException catch (e) {
+        debugPrint('SourceLibraryScanner skip duplicate manga '
+            '${e.title} (${item.mokuroPath})');
+      }
+    }
+    return count;
   }
 
   /// Imports every video in the plan (with sidecar subtitle cues); returns count.

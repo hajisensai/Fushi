@@ -107,6 +107,7 @@ List<MediaItem> filterShelfEntriesByMangaSplit(
 class ReaderHibikiHistoryPage extends HistoryReaderPage {
   const ReaderHibikiHistoryPage({
     this.mangaOnly = false,
+    this.navigation,
     this.remoteBookClientLoader,
     this.remoteBookDownloadDestination,
     this.remoteBookImporter,
@@ -119,6 +120,10 @@ class ReaderHibikiHistoryPage extends HistoryReaderPage {
   ///
   /// 两个入口仍复用本页的搜索、排序、标签、合集、进度和删除管线，不另建数据表。
   final bool mangaOnly;
+
+  /// 库页视图导航条（由 [MediaLibraryShell] 传入，落在页头 bottom 槽）。
+  /// 本页作为独立页面使用时为 null，页头与此前逐像素一致。
+  final Widget? navigation;
 
   final Future<RemoteBookClient?> Function()? remoteBookClientLoader;
   final Future<File> Function(RemoteBookInfo book)?
@@ -607,6 +612,7 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   Widget _buildPageHeader() {
     return HibikiPageHeader(
       title: _mangaOnly ? t.manga_library : t.books,
+      bottom: _pageWidget.navigation,
       actions: <Widget>[
         // 宽窗（非 compact）时动作展开成「图标+文字」药丸（与视频 tab 页头一致，
         // 用户 mockup：导入书籍 / 来源 / 合集 / 阅读统计带文字外显）；窄窗回落纯图标。
@@ -617,7 +623,9 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           focusId: kShelfImportFocusId,
           label: _mangaOnly ? t.manga_import_action : t.srt_import,
         ),
-        if (!_mangaOnly)
+        // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
+        // 按钮就是同一件事的两个入口。只有本页被独立使用（无导航条）时才保留按钮。
+        if (_pageWidget.navigation == null)
           _headerAction(
             tooltip: t.media_source_manage_title,
             icon: Icons.folder_copy_outlined,
@@ -663,12 +671,13 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  /// 打开「管理来源」对话框（书籍来源库）。关闭后失效书架 provider 刷新列表
-  /// （扫描可能新增 EPUB）。
+  /// 打开「管理来源」对话框（漫画书架管漫画扫描根，普通书架管书籍来源库）。
+  /// 关闭后失效书架 provider 刷新列表（扫描可能新增 EPUB / 漫画）。
   Future<void> _openManageSources() async {
     await showAppDialog<void>(
       context: context,
-      builder: (_) => const MediaSourcesDialog(mediaKind: 'book'),
+      builder: (_) =>
+          MediaSourcesDialog(mediaKind: _mangaOnly ? 'manga' : 'book'),
     );
     if (!mounted) return;
     ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));

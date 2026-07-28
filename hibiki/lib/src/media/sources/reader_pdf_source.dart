@@ -91,7 +91,7 @@ class ReaderPdfSource extends ReaderMediaSource {
   }
 
   @override
-  BasePage buildHistoryPage({MediaItem? item}) {
-    return const ReaderHibikiHistoryPage();
+  BasePage buildHistoryPage({MediaItem? item, Widget? navigation}) {
+    return ReaderHibikiHistoryPage(navigation: navigation);
   }
 }

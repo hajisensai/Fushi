@@ -82,6 +82,31 @@ void _writeEpub(String path, String title) {
 
 const String _srt = '1\n00:00:01,000 --> 00:00:02,000\nhello\n';
 
+/// 在 [dir] 写出一份最小合法 mokuro 卷（`.mokuro` + `images/` 页图），返回
+/// `.mokuro` 路径。样式对齐 manga_importer_test 的 `_writeValidSample`：页图用
+/// 任意字节即可（mokuro 导入只拷贝字节、不解码图片）。
+String _writeMokuro(String dir, {required String title}) {
+  Directory(dir).createSync(recursive: true);
+  final Directory images = Directory(p.join(dir, 'images'))
+    ..createSync(recursive: true);
+  File(p.join(images.path, 'p001.jpg')).writeAsBytesSync(<int>[1, 2, 3]);
+  final Map<String, Object?> payload = <String, Object?>{
+    'version': '0.2.0',
+    'title': title,
+    'pages': <Object?>[
+      <String, Object?>{
+        'img_width': 800,
+        'img_height': 1200,
+        'img_path': 'images/p001.jpg',
+        'blocks': <Object?>[],
+      },
+    ],
+  };
+  final String mokuroPath = p.join(dir, '$title.mokuro');
+  File(mokuroPath).writeAsStringSync(jsonEncode(payload));
+  return mokuroPath;
+}
+
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -134,6 +159,27 @@ void main() {
       final ScanPlan plan = planScanFromFileList(const <SourceFileEntry>[]);
       expect(plan.books, isEmpty);
       expect(plan.videos, isEmpty);
+      expect(plan.playlists, isEmpty);
+      expect(plan.mangas, isEmpty);
+    });
+
+    // 漫画扫描根：.mokuro 分类进 mangas，不混进 books/videos/playlists；
+    // 页图（jpg 等）不单独入计划（导入器自己按 mokuro 惯例探测同级图片）。
+    test('.mokuro classifies as manga; page images are not planned', () {
+      final List<SourceFileEntry> files = <SourceFileEntry>[
+        _file('/lib/vol1.mokuro'),
+        _file('/lib/images/p001.jpg'),
+        _file('/lib/book.epub'),
+        _file('/lib/movie.mp4'),
+      ];
+      final ScanPlan plan = planScanFromFileList(files);
+      expect(
+        plan.mangas.map((ScanMangaItem i) => i.mokuroPath).toList(),
+        <String>['/lib/vol1.mokuro'],
+      );
+      // 既有分类零变化：EPUB/视频照旧，页图不出现在任何清单。
+      expect(plan.books.single.epubPath, '/lib/book.epub');
+      expect(plan.videos.single.videoPath, '/lib/movie.mp4');
       expect(plan.playlists, isEmpty);
     });
 
@@ -1113,6 +1159,151 @@ sub_b/ep2.mp4
       expect(after.lastScanError, isNull);
     });
   });
+
+  // ── 漫画扫描根（mediaKind='manga'）：.mokuro 经 MangaImporter 落库 ─────────
+  // 首版边界：只认 .mokuro（不扫 CBZ/裸图，无 skipIfExists 身份契约会重复导入）、
+  // 仅 local transport（网络 manga 按视频先例整体拒绝）。重扫去重走 BUG-443 范式
+  // （skipIfExists -> DuplicateImportCancelledException 静默跳过）。
+  group('SourceLibraryScanner.scan manga source', () {
+    late Directory tmp;
+    late Directory pp;
+
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('manga_scan_');
+      pp = Directory.systemTemp.createTempSync('manga_scan_pp_');
+      // MangaStorage.bookDirectory 复用 EpubStorage；钉住本测试的书目录根
+      // （进程级静态缓存，防前一个测试已删除的缓存根泄漏，同 BUG-443 组）。
+      EpubStorage.debugBaseDirectoryOverride = pp.path;
+    });
+    tearDown(() {
+      EpubStorage.debugBaseDirectoryOverride = null;
+      for (final Directory d in <Directory>[tmp, pp]) {
+        try {
+          if (d.existsSync()) d.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    });
+
+    test('manga source: imports .mokuro volume with sourceId + scan result',
+        () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      _writeMokuro(tmp.path, title: 'ScanVolume');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Manga',
+        mediaKind: 'manga',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      await SourceLibraryScanner(db).scan(source);
+
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(1));
+      expect(books.single.format, 'manga',
+          reason: 'mokuro 卷落 EpubBooks format=manga（第三种书）');
+      expect(books.single.title, 'ScanVolume');
+      expect(books.single.sourceId, sid,
+          reason: 'scanned manga must be backfilled with its source id');
+
+      final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.mediaCount, 1);
+      expect(after.lastScannedAt, isNotNull);
+      expect(after.lastScanError, isNull);
+
+      // DAO 计数分支：manga 源按 epub_books(format='manga') 反向 COUNT。
+      expect(await db.countMediaBySourceId(sid, 'manga'), 1);
+    });
+
+    test('re-scan skips the already-imported volume (silent dedup, 0 new)',
+        () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      _writeMokuro(tmp.path, title: 'RescanVolume');
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Manga',
+        mediaKind: 'manga',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+
+      // 第一遍导入。
+      SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+      await SourceLibraryScanner(db).scan(source);
+      expect(await db.getAllEpubBooks(), hasLength(1));
+
+      // 第二遍重扫：同标题身份 key 命中 -> 静默跳过，不产生 X (2)、不算错误。
+      source = (await db.getMediaSourceById(sid))!;
+      await SourceLibraryScanner(db).scan(source);
+
+      final List<EpubBookRow> books = await db.getAllEpubBooks();
+      expect(books, hasLength(1),
+          reason: 'manga re-scan must dedup by title key, not create X (2)');
+      expect(books.single.title, 'RescanVolume');
+      final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.mediaCount, 0,
+          reason: 'second scan inserted nothing (duplicate skipped)');
+      expect(after.lastScanError, isNull);
+    });
+
+    test('empty folder: 0 media, no error', () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Manga',
+        mediaKind: 'manga',
+        rootPath: tmp.path,
+        createdAt: 1000,
+      ));
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      await SourceLibraryScanner(db).scan(source);
+
+      expect(await db.getAllEpubBooks(), isEmpty);
+      final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.mediaCount, 0);
+      expect(after.lastScanError, isNull);
+    });
+
+    test('non-local transport is rejected (first-version limit)', () async {
+      final HibikiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'Manga',
+        mediaKind: 'manga',
+        rootPath: '/srv/manga',
+        createdAt: 1000,
+      ));
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      await SourceLibraryScanner(db).scan(source, fs: _FakeRemoteFs());
+
+      expect(await db.getAllEpubBooks(), isEmpty);
+      final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+      expect(after.lastScanError, contains('Network manga sources'),
+          reason: '网络 manga 源按视频先例整体拒绝并记进 lastScanError');
+      expect(after.mediaCount, 0);
+    });
+  });
+
+  // 漫画扫描守卫：_importManga 必须保持 mokuro-only 白名单 + skipIfExists 静默
+  // 去重接线（BUG-443 范式），防未来编辑悄悄放开 CBZ/裸图或退化成重复导入。
+  test('source guard: manga scan is mokuro-only with silent dedup', () {
+    final String src = File(
+      'lib/src/media/source_library/source_library_scanner.dart',
+    ).readAsStringSync();
+    expect(src.contains("kScanMangaExtensions = <String>{'mokuro'}"), isTrue,
+        reason: '首版只认 .mokuro（CBZ/裸图无 skipIfExists 身份契约）');
+    expect(src.contains('MangaImporter.importFromMokuroPath'), isTrue,
+        reason: '漫画扫描必须复用既有 mokuro 导入链（不自造落库路径）');
+  });
 }
 
 /// Fake [CharsetDetectorPlatform] for headless tests: decodes the known
@@ -1160,4 +1351,31 @@ class _FakeSjisCharsetDetector extends CharsetDetectorPlatform
     };
     return table[(hi << 8) | lo];
   }
+}
+
+/// 非 local 传输的假文件系统：只用于断言 scan 入口的 transport 门（manga 首版
+/// 拒网络源）。门在 listFiles 之前触发，故各方法不应被走到——走到即测试失败。
+class _FakeRemoteFs implements SourceFileSystem {
+  @override
+  bool get isLocal => false;
+
+  @override
+  Future<List<SourceFileEntry>> listFiles(
+    String dirPath, {
+    bool recursive = false,
+  }) async {
+    throw StateError('transport gate must reject before listing');
+  }
+
+  @override
+  Future<List<String>> listSiblingNames(String filePath) async =>
+      const <String>[];
+
+  @override
+  Future<String> readText(String filePath) async =>
+      throw StateError('unexpected readText on rejected remote fs');
+
+  @override
+  Future<String> copyToLocal(String filePath, String destDir) async =>
+      throw StateError('unexpected copyToLocal on rejected remote fs');
 }

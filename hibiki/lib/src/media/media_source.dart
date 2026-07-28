@@ -337,7 +337,11 @@ abstract class MediaSource {
 
   /// The body widget to show in the tab when this source's media type and this
   /// source is selected.
-  BasePage buildHistoryPage();
+  ///
+  /// [navigation] 是库页视图导航条（见 `MediaLibraryShell`）：实现应把它交给自己的
+  /// 页面，由页面放进页头 bottom 槽。回退型来源可以忽略它——那只是没有视图切换，
+  /// 不影响正确性。
+  BasePage buildHistoryPage({Widget? navigation});
 
   /// Given a [MediaItem], return its title. Some media items may allow
   /// overriding of values for display purposes. If a source does this,
