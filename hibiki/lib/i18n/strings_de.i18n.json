@@ -1780,7 +1780,6 @@
   "stat_goal_progress": "$read / $goal chars",
   "stat_goal_reached": "Goal reached",
   "stat_goal_recent_average": "Last 7 days: $n chars/day on average",
-  "stat_goal_scope_hint": "Counts all characters combined: reading + video subtitles + game text.",
   "stat_goal_set": "Set Goal",
   "stat_goal_unit_chars": "chars",
   "stat_goal_weekly": "Weekly Goal",
@@ -2721,5 +2720,7 @@
   "anime_download_subs_deferred": "Subtitles are matched after download, from the pack's actual files",
   "anime_download_subs_pending": "Subtitles: pending until download completes",
   "anime_download_subs_unmatched": "Subtitles: no match for this pack",
-  "download_backend_desktop_only_note": "Built-in engine requires a desktop platform. This device uses external qBittorrent."
+  "download_backend_desktop_only_note": "Built-in engine requires a desktop platform. This device uses external qBittorrent.",
+  "stat_source_breakdown": "By source",
+  "stat_format_pages": "$n pages"
 }

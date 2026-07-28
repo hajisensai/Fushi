@@ -43,8 +43,8 @@ import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 /// 顶层 tab 的逻辑身份（取代写死的整数索引 0/1/2）。条件 tab（video/downloads 常驻、
 /// games 仅 Windows）用枚举身份而非位置来切换/路由——插入条件 tab 不会再打乱「设置/词典」
 /// 的索引（消除 `==2` / `case 1/2` / `%3` 这类特殊情况）。底栏/侧栏只在渲染层把身份映射
-/// 成位置。games（galgame 库）紧邻设置之前。顶层 texthooker tab 已删（galgame 捕获工作台
-/// 现内嵌于 games tab，会话见 [GalHookSessionController]）。
+/// 成位置。games（galgame 库）紧跟在 video 之后。顶层 texthooker tab 已删（galgame 捕获
+/// 工作台现内嵌于 games tab，会话见 [GalHookSessionController]）。
 enum HomeTab {
   home,
   books,
@@ -59,7 +59,8 @@ enum HomeTab {
 
 /// 纯函数：给定视频开关与游戏库开关，返回可见顶层 tab 的**视觉顺序**——视频固定插在书架
 /// 与词典之间（用户要求「在书架和词典管理中间」），games（galgame 库）仅在开启时出现，
-/// 位置固定在词典与设置之间。提取成顶层函数便于单测条件插入与顺序，不必实例化整个
+/// 位置固定紧跟 video 之后（用户要求「底栏里把游戏移动到视频后面」，与书/漫画/视频/游戏
+/// 四类媒体入口连成一段）。提取成顶层函数便于单测条件插入与顺序，不必实例化整个
 /// [HomePage]。底栏/侧栏的位置索引由此列表导出。
 List<HomeTab> homeActiveTabs({
   required bool videoEnabled,
@@ -71,11 +72,11 @@ List<HomeTab> homeActiveTabs({
       HomeTab.books,
       HomeTab.manga,
       if (videoEnabled) HomeTab.video,
+      if (gamesEnabled) HomeTab.games,
       // 下载 tab 恒在（统一下载中心）：除番剧 torrent 外还承载通用磁力（书）与
-      // 漫画「在线目录」卷下载队列，不再随视频开关隐藏；位置在视频（若开）之后。
+      // 漫画「在线目录」卷下载队列，不再随视频开关隐藏；位置在视频/游戏之后。
       HomeTab.downloads,
       HomeTab.dictionaries,
-      if (gamesEnabled) HomeTab.games,
       // 浏览器扩展管理（安装引导 + 连接检测 + 版本）独立成页，仅桌面出现（手机浏览器
       // 不支持加载未解压扩展，故按平台而非实验开关门控），位置紧邻设置之前。
       if (browserExtensionEnabled) HomeTab.browserExtension,
@@ -592,10 +593,10 @@ class _HomePageState extends BasePageState<HomePage>
     return KeyEventResult.ignored;
   }
 
-  /// 当前可见的顶层 tab：首页 → 书架 → 视频 → 下载 → 词典 → 游戏 → 设置。视频 tab
-  /// 已毕业为常驻（位于书架与词典之间）；games（galgame 库）仅 Windows 桌面出现（galgame
-  /// 引擎-hook 注入本就 Windows-only，故以平台而非实验开关门控，默认可见），位于词典与设置
-  /// 之间。底栏/侧栏的位置索引由此列表导出。
+  /// 当前可见的顶层 tab：首页 → 书架 → 漫画 → 视频 → 游戏 → 下载 → 词典 → 设置。视频
+  /// tab 已毕业为常驻（位于书架与词典之间）；games（galgame 库）仅 Windows 桌面出现
+  /// （galgame 引擎-hook 注入本就 Windows-only，故以平台而非实验开关门控，默认可见），
+  /// 紧跟视频之后。底栏/侧栏的位置索引由此列表导出。
   List<HomeTab> _activeTabs() => homeActiveTabs(
         videoEnabled: true,
         gamesEnabled: Platform.isWindows,

@@ -7,6 +7,7 @@ import 'package:hibiki/src/pages/implementations/stat_delete_confirm_dialog.dart
 import 'package:hibiki/src/pages/implementations/stat_kpi_strip.dart';
 import 'package:hibiki/src/pages/implementations/stat_ring.dart';
 import 'package:hibiki/src/pages/implementations/stat_shared.dart';
+import 'package:hibiki/src/pages/implementations/stat_source_totals.dart';
 import 'package:hibiki/src/pages/implementations/stat_summary.dart';
 import 'package:hibiki/src/pages/implementations/stat_trends.dart';
 import 'package:hibiki/utils.dart';
@@ -37,6 +38,22 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   String? _error;
 
   List<ReadingStatisticRow> _allStats = [];
+
+  /// 视频与游戏的原始统计（与书内阅读一起构成同一个字数/时长口径）。「按书」列表
+  /// 仍只列书，这两源只进 KPI / 汇总 / 趋势 / 目标进度与「各来源」卡。
+  List<VideoWatchStatisticRow> _videoStats = <VideoWatchStatisticRow>[];
+  List<(String, int, int)> _gameDaily = <(String, int, int)>[];
+
+  /// 逐来源逐日合计（[aggregateStatSourceDaily] 的产物），四个来源同形状。
+  Map<StatBreakdownSource, Map<String, StatSourceTotals>> _sourceDaily =
+      <StatBreakdownSource, Map<String, StatSourceTotals>>{};
+
+  /// 「各来源」卡展示的窗口合计（今日 / 本周 / 本月 / 全部随 [_breakdownWindow]）。
+  Map<StatBreakdownSource, StatSourceTotals> _breakdownTotals =
+      <StatBreakdownSource, StatSourceTotals>{};
+
+  /// 「各来源」卡的窗口：0=今日 1=本周 2=本月 3=全部（默认全部）。
+  int _breakdownWindow = 3;
 
   /// 合集归属映射（书架同源）：按书 tile 显示所属合集名用。
   /// - [_collectionNamesById]：collectionId → 合集名。
@@ -116,6 +133,23 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     try {
       final db = appModelNoUpdate.database;
       _allStats = await db.getAllReadingStatistics();
+      // 口径统一：视频字幕字数/观看时长、游戏 hook 文本字数/游玩时长与书内阅读
+      // 同属一个学习总量（首页每日目标一直是这个口径，统计页此前漏了两源）。
+      _videoStats = await db.getAllVideoWatchStatistics();
+      _gameDaily = await db.getActivityDailyTotals(kActivityGame);
+      // 书身份（'epub' / 'pdf' / 'manga'）：统计行只存 title，靠 epub_books 反查，
+      // 用来把漫画从「阅读」里拆出来单列（页数是漫画独有的第三个量纲）。整表只查
+      // 一次，下面的 title→bookKey（合集归属用）复用同一批行。
+      final List<EpubBookRow> epubRows = await db.getAllEpubBooks();
+      final Map<String, String> formatByTitle = <String, String>{
+        for (final EpubBookRow r in epubRows) r.title: r.format,
+      };
+      _sourceDaily = aggregateStatSourceDaily(
+        reading: _allStats,
+        formatByTitle: formatByTitle,
+        video: _videoStats,
+        gameDaily: _gameDaily,
+      );
       _computeAggregates();
       final DateTime now = DateTime.now();
       final List<FavoriteWordRow> favs =
@@ -147,8 +181,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       };
       _primaryCollectionByEntry = await db.getPrimaryCollectionIdByEntry();
       _bookKeyByTitle = <String, String>{
-        for (final EpubBookRow r in await db.getAllEpubBooks())
-          r.title: r.bookKey,
+        for (final EpubBookRow r in epubRows) r.title: r.bookKey,
       };
       // 收藏语句按 source 分桶：非视频来源（书内 / 有声书 / 歌词）都归阅读统计。
       // BUG-893：写入端此前不带 dateKey，旧的 `dateKey != null` 过滤把所有书内收藏
@@ -204,32 +237,35 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final dailyMap = <String, StatDayData>{};
     final bookMap = <String, _BookData>{};
 
+    // 窗口合计走四来源合并后的逐日表（书 + 漫画 + 视频 + 游戏），与首页每日目标
+    // 同一个分子；「按书」列表仍只用 reading_statistics 行（视频/游戏不是书）。
+    for (final Map<String, StatSourceTotals> byDay in _sourceDaily.values) {
+      byDay.forEach((String dateKey, StatSourceTotals totals) {
+        _allChars += totals.chars;
+        _allMs += totals.timeMs;
+        if (dateKey == todayKey) {
+          _todayChars += totals.chars;
+          _todayMs += totals.timeMs;
+        }
+        if (dateKey.compareTo(weekAgoKey) >= 0) {
+          _weekChars += totals.chars;
+          _weekMs += totals.timeMs;
+        } else if (dateKey.compareTo(prevWeekAgoKey) >= 0) {
+          // 上周窗口 [prevWeekAgo, weekAgo)：本周分支未命中且不早于 14 天前。
+          _prevWeekChars += totals.chars;
+        }
+        if (dateKey.compareTo(monthAgoKey) >= 0) {
+          _monthChars += totals.chars;
+          _monthMs += totals.timeMs;
+        }
+        final StatDayData day =
+            dailyMap.putIfAbsent(dateKey, () => StatDayData(dateKey: dateKey));
+        day.chars += totals.chars;
+        day.ms += totals.timeMs;
+      });
+    }
+
     for (final s in _allStats) {
-      _allChars += s.charactersRead;
-      _allMs += s.readingTimeMs;
-
-      if (s.dateKey == todayKey) {
-        _todayChars += s.charactersRead;
-        _todayMs += s.readingTimeMs;
-      }
-      if (s.dateKey.compareTo(weekAgoKey) >= 0) {
-        _weekChars += s.charactersRead;
-        _weekMs += s.readingTimeMs;
-      } else if (s.dateKey.compareTo(prevWeekAgoKey) >= 0) {
-        // 上周窗口 [prevWeekAgo, weekAgo)：本周分支未命中且不早于 14 天前。
-        _prevWeekChars += s.charactersRead;
-      }
-      if (s.dateKey.compareTo(monthAgoKey) >= 0) {
-        _monthChars += s.charactersRead;
-        _monthMs += s.readingTimeMs;
-      }
-
-      // 每日
-      final day = dailyMap.putIfAbsent(
-          s.dateKey, () => StatDayData(dateKey: s.dateKey));
-      day.chars += s.charactersRead;
-      day.ms += s.readingTimeMs;
-
       // 按书
       final book =
           bookMap.putIfAbsent(s.title, () => _BookData(title: s.title));
@@ -246,10 +282,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       _dailyData.add(dailyMap[key] ?? StatDayData(dateKey: key));
     }
 
-    // 总览：活跃天数 = distinct dateKey；日期范围 = min/max dateKey（dateKey 零填充可
-    // 字典序比较）。
-    final Set<String> activeDayKeys =
-        _allStats.map((ReadingStatisticRow s) => s.dateKey).toSet();
+    // 总览：活跃天数 = 任一来源有数据的 distinct dateKey（看了视频、玩了游戏的那天
+    // 也是学习日，不该因为没读书就断签）；日期范围 = min/max dateKey（dateKey 零填充
+    // 可字典序比较）。
+    final Set<String> activeDayKeys = allStatSourceDateKeys(_sourceDaily);
     _streak = computeReadingStreak(activeDayKeys, now);
     if (activeDayKeys.isEmpty) {
       _firstDateKey = null;
@@ -264,6 +300,38 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
 
     _bookData = bookMap.values.toList();
     _sortBookData();
+    _recomputeBreakdown();
+  }
+
+  /// 「各来源」卡当前窗口的日期谓词（0=今日 1=近 7 天 2=近 30 天 3=全部）。
+  /// dateKey 是零填充的 `YYYY-MM-DD`，字典序即时间序。
+  bool Function(String dateKey) _breakdownPredicate() {
+    final DateTime now = DateTime.now();
+    switch (_breakdownWindow) {
+      case 0:
+        final String today = statDateKey(now);
+        return (String dateKey) => dateKey == today;
+      case 1:
+        final String from = statDateKey(now.subtract(const Duration(days: 7)));
+        return (String dateKey) => dateKey.compareTo(from) >= 0;
+      case 2:
+        final String from = statDateKey(now.subtract(const Duration(days: 30)));
+        return (String dateKey) => dateKey.compareTo(from) >= 0;
+      default:
+        return (String dateKey) => true;
+    }
+  }
+
+  /// 按当前窗口重算四来源合计（纯内存，不重查 DB）。
+  void _recomputeBreakdown() {
+    final bool Function(String) inWindow = _breakdownPredicate();
+    _breakdownTotals = <StatBreakdownSource, StatSourceTotals>{
+      for (final StatBreakdownSource source in StatBreakdownSource.values)
+        source: sumStatSourceTotals(
+          _sourceDaily[source] ?? const <String, StatSourceTotals>{},
+          inWindow,
+        ),
+    };
   }
 
   /// 按当前排序键给 [_bookData] 重排（不重新查 DB）。
@@ -356,7 +424,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           ? buildLoading(size: 25, color: theme.colorScheme.primary)
           : _error != null
               ? buildError(error: _error)
-              : _allStats.isEmpty
+              // 空态判据是**四来源皆空**：只看视频 / 只玩游戏的用户此前会被判成
+              // 「暂无数据」，明明有学习记录却什么也看不到。
+              : (_allStats.isEmpty && _videoStats.isEmpty && _gameDaily.isEmpty)
                   ? Center(
                       child: HibikiPlaceholderMessage(
                         icon: Icons.bar_chart_outlined,
@@ -400,6 +470,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                   ),
                 ),
                 SliverToBoxAdapter(child: _buildSummaryCards()),
+                SliverToBoxAdapter(child: _buildSourceBreakdown()),
                 SliverToBoxAdapter(child: _buildGoalPanel()),
                 SliverToBoxAdapter(
                     child: buildStatHourlyChartSection(context, _hourlyMs)),
@@ -526,6 +597,104 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           ),
           SizedBox(height: tokens.spacing.card),
           child,
+        ],
+      ),
+    );
+  }
+
+  /// 「各来源」卡：四个来源各自的两个量纲（字数 + 时长），漫画额外显示页数。
+  ///
+  /// 用户要的「游戏、漫画等加上支持」落在这里：统计页此前只有书内阅读，视频字幕
+  /// 与游戏文本的字数、漫画的页数都没有去处。空来源（从没看过视频 / 没玩过游戏）
+  /// 整行不渲染，装了也不用的人看不到噪音。
+  Widget _buildSourceBreakdown() {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final List<Widget> rows = <Widget>[];
+    for (final StatBreakdownSource source in StatBreakdownSource.values) {
+      final StatSourceTotals totals =
+          _breakdownTotals[source] ?? StatSourceTotals();
+      if (totals.isEmpty) continue;
+      rows.add(_breakdownRow(source, totals));
+    }
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: EdgeInsets.only(
+        left: tokens.spacing.card,
+        right: tokens.spacing.card,
+        bottom: tokens.spacing.card,
+      ),
+      child: _card(
+        title: t.stat_source_breakdown,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Wrap(
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap,
+              children: <Widget>[
+                _breakdownWindowChip(t.stat_today, 0),
+                _breakdownWindowChip(t.stat_this_week, 1),
+                _breakdownWindowChip(t.stat_this_month, 2),
+                _breakdownWindowChip(t.stat_all_time, 3),
+              ],
+            ),
+            SizedBox(height: tokens.spacing.card),
+            ...rows,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _breakdownWindowChip(String label, int window) => HibikiSelectableChip(
+        label: label,
+        selected: _breakdownWindow == window,
+        onSelected: (_) => setState(() {
+          _breakdownWindow = window;
+          _recomputeBreakdown();
+        }),
+      );
+
+  /// 单个来源一行：图标 + 名称 + 「字数 · 时长（· 页数）」。
+  Widget _breakdownRow(StatBreakdownSource source, StatSourceTotals totals) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final (IconData icon, String label) = switch (source) {
+      StatBreakdownSource.book => (Icons.menu_book, t.home_filter_read),
+      StatBreakdownSource.manga => (Icons.photo_library, t.manga_library),
+      StatBreakdownSource.video => (Icons.movie, t.home_filter_watch),
+      StatBreakdownSource.game => (Icons.videogame_asset, t.home_filter_game),
+    };
+    final List<String> metrics = <String>[
+      _formatChars(totals.chars),
+      formatStatTime(totals.timeMs),
+      // 页数只有漫画有；0 页不显示（未翻页的会话只贡献时长）。
+      if (totals.pages > 0) t.stat_format_pages(n: totals.pages),
+    ];
+    return Padding(
+      padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 18, color: scheme.onSurfaceVariant),
+          SizedBox(width: tokens.spacing.gap),
+          Expanded(
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodyMedium,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          SizedBox(width: tokens.spacing.gap),
+          Flexible(
+            child: Text(
+              metrics.join(' · '),
+              textAlign: TextAlign.right,
+              overflow: TextOverflow.ellipsis,
+              style: tokens.type.metadata.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -772,16 +941,15 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                // BUG-1075：单位 + 口径（与首页仪表盘目标对话框同一批 i18n key，
-                // 两处编辑的是同一个持久化目标）。
+                // BUG-1075：单位（与首页仪表盘目标对话框同一批 i18n key，两处编辑的是
+                // 同一个持久化目标）。口径说明行已按用户要求删除——统计口径由实际计入的
+                // 来源（阅读/漫画/视频字幕/游戏文本）自解释，不再在文案里逐项列举。
                 TextField(
                   controller: dailyController,
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
                     labelText: t.stat_goal_daily,
                     suffixText: t.stat_goal_unit_chars,
-                    helperText: t.stat_goal_scope_hint,
-                    helperMaxLines: 3,
                   ),
                 ),
                 SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),

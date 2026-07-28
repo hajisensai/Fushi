@@ -414,7 +414,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 59;
+  int get schemaVersion => 60;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1220,6 +1220,16 @@ class HibikiDatabase extends _$HibikiDatabase {
               await m.createTable(galgameTagMappings);
             }
             await _ensureIndexes();
+          }
+          if (from < 60) {
+            // v60：漫画/PDF 的「页数」维度。字数与页数是两个独立量纲，页数绝不塞进
+            // charactersRead（会污染字数口径与阅读速度）。旧行补默认 0。
+            // 表/列存在性双守卫：从 v1 起的完整迁移阶梯里 reading_statistics 可能
+            // 尚未建（早期版本没这张表），而某些路径下它是以最新定义建的（已含本列）。
+            if (await _tableExists('reading_statistics') &&
+                !await _columnExists('reading_statistics', 'pages_read')) {
+              await m.addColumn(readingStatistics, readingStatistics.pagesRead);
+            }
           }
         },
         onCreate: (m) async {
@@ -3404,6 +3414,9 @@ class HibikiDatabase extends _$HibikiDatabase {
   /// (e.g. sync merge). For incremental session deltas use
   /// [addReadingStatistic], which accumulates. Passing a delta here would
   /// silently reset the totals.
+  /// 绝对值覆盖（同步/备份合并用）。**刻意不写 `pagesRead`**：页数是 v60 新增的本机
+  /// 维度，跨设备 wire 契约不带它（[StatBucket] 要求两端字段集一致）。冲突更新只覆盖
+  /// 三个老列，本地已记的页数不会被对端的「没有页数」抹成 0。
   Future<void> setReadingStatistic(ReadingStatisticsCompanion stat) =>
       into(readingStatistics).insert(
         stat,
@@ -3420,11 +3433,14 @@ class HibikiDatabase extends _$HibikiDatabase {
   /// ACCUMULATE semantics: adds [charsRead]/[timeMs] to the existing totals
   /// for (title, dateKey). Use for reading-session deltas. For setting an
   /// absolute total (e.g. sync merge) use [setReadingStatistic].
+  /// 累加一条当日阅读统计。[pagesRead] 是 v60 的页数维度（漫画/PDF 传真实翻过的
+  /// 页数，EPUB 不传即 0），与 [charsRead] 各自独立累加，互不顶替。
   Future<void> addReadingStatistic({
     required String title,
     required String dateKey,
     required int charsRead,
     required int timeMs,
+    int pagesRead = 0,
   }) =>
       transaction(() async {
         final existing = await (select(readingStatistics)
@@ -3436,6 +3452,7 @@ class HibikiDatabase extends _$HibikiDatabase {
               .write(ReadingStatisticsCompanion(
             charactersRead: Value(existing.charactersRead + charsRead),
             readingTimeMs: Value(existing.readingTimeMs + timeMs),
+            pagesRead: Value(existing.pagesRead + pagesRead),
             lastStatisticModified: Value(DateTime.now().millisecondsSinceEpoch),
           ));
         } else {
@@ -3445,6 +3462,7 @@ class HibikiDatabase extends _$HibikiDatabase {
               dateKey: dateKey,
               charactersRead: charsRead,
               readingTimeMs: timeMs,
+              pagesRead: Value(pagesRead),
               lastStatisticModified: DateTime.now().millisecondsSinceEpoch,
             ),
           );

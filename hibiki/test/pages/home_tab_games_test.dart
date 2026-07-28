@@ -20,27 +20,27 @@ void main() {
     );
   });
 
-  test('gamesEnabled 开启时夹在词典与设置之间', () {
+  test('gamesEnabled 开启时紧跟视频之后、下载之前', () {
     final List<HomeTab> tabs = homeActiveTabs(
       videoEnabled: true,
       gamesEnabled: true,
     );
-    final int dict = tabs.indexOf(HomeTab.dictionaries);
+    final int video = tabs.indexOf(HomeTab.video);
     final int games = tabs.indexOf(HomeTab.games);
-    final int settings = tabs.indexOf(HomeTab.settings);
-    expect(games, equals(dict + 1));
-    expect(settings, equals(games + 1));
+    final int downloads = tabs.indexOf(HomeTab.downloads);
+    expect(games, equals(video + 1));
+    expect(downloads, equals(games + 1));
   });
 
-  test('无视频时 games 仍夹在词典与设置之间', () {
+  test('无视频时 games 接在漫画之后、下载之前', () {
     final List<HomeTab> tabs = homeActiveTabs(
       videoEnabled: false,
       gamesEnabled: true,
     );
-    final int dict = tabs.indexOf(HomeTab.dictionaries);
+    final int manga = tabs.indexOf(HomeTab.manga);
     final int games = tabs.indexOf(HomeTab.games);
-    final int settings = tabs.indexOf(HomeTab.settings);
-    expect(games, equals(dict + 1));
-    expect(settings, equals(games + 1));
+    final int downloads = tabs.indexOf(HomeTab.downloads);
+    expect(games, equals(manga + 1));
+    expect(downloads, equals(games + 1));
   });
 }

@@ -1006,15 +1006,16 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     final Finder dialog = find.byType(AlertDialog);
-    // 单位（suffixText）+ 口径说明（helperText）：用户「不知道该填什么」的解药。
+    // 单位（suffixText）+ 近 7 日日均：用户「不知道该填什么」的解药。口径说明行按用户
+    // 要求删除，这里守卫它不再出现（i18n key 也已下线）。
     expect(
       find.descendant(of: dialog, matching: find.text(t.stat_goal_unit_chars)),
       findsOneWidget,
     );
-    expect(
-      find.descendant(of: dialog, matching: find.text(t.stat_goal_scope_hint)),
-      findsOneWidget,
+    final TextField dailyField = tester.widget<TextField>(
+      find.descendant(of: dialog, matching: find.byType(TextField)).first,
     );
+    expect(dailyField.decoration?.helperText, isNull);
     // 参考值：与目标同口径（全来源合计）的近 7 日日均。
     expect(
       find.descendant(

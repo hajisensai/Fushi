@@ -49,6 +49,43 @@ void main() {
       expect(all.single.readingTimeMs, 15000);
     });
 
+    test('pagesRead 默认 0，且与字数各自独立累加（v60）', () async {
+      final db = await _openDb();
+      // EPUB：只有字数，不传页数 → 页数恒 0。
+      await db.addReadingStatistic(
+        title: 'Novel',
+        dateKey: '2026-07-28',
+        charsRead: 800,
+        timeMs: 60000,
+      );
+      // 漫画：字数与页数一起落，两个量纲互不顶替。
+      await db.addReadingStatistic(
+        title: 'Manga',
+        dateKey: '2026-07-28',
+        charsRead: 300,
+        timeMs: 30000,
+        pagesRead: 12,
+      );
+      await db.addReadingStatistic(
+        title: 'Manga',
+        dateKey: '2026-07-28',
+        charsRead: 120,
+        timeMs: 10000,
+        pagesRead: 5,
+      );
+
+      final List<ReadingStatisticRow> all = await db.getAllReadingStatistics();
+      final ReadingStatisticRow novel =
+          all.firstWhere((ReadingStatisticRow r) => r.title == 'Novel');
+      final ReadingStatisticRow manga =
+          all.firstWhere((ReadingStatisticRow r) => r.title == 'Manga');
+      expect(novel.pagesRead, 0);
+      expect(novel.charactersRead, 800);
+      expect(manga.charactersRead, 420);
+      expect(manga.pagesRead, 17);
+      expect(manga.readingTimeMs, 40000);
+    });
+
     test('different dates create separate rows', () async {
       final db = await _openDb();
       await db.addReadingStatistic(

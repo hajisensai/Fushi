@@ -21,6 +21,7 @@ import 'package:hibiki/src/media/manga/manga_ocr_background_job.dart';
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 import 'package:hibiki/src/media/manga/manga_overlay_html.dart';
 import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
+import 'package:hibiki/src/media/manga/manga_reading_stats.dart';
 import 'package:hibiki/src/media/manga/manga_spread_model.dart';
 import 'package:hibiki/src/media/manga/mokuro_payload.dart';
 import 'package:hibiki/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
@@ -245,7 +246,8 @@ Future<int?> showMangaPageJumpDialog(
 /// 页图 + 透明 OCR 覆盖层在 WebView 里渲染（文档由 [mangaWindowDocument] 生成），
 /// 汇入同一批共享设施：[BaseSourcePageState.searchDictionaryResult]（查词弹窗）、
 /// [ReaderPositionRepository]（阅读位置，sectionIndex=0-based 页码）、
-/// [ReadingTimeTracker]（时长统计，charsRead 恒 0）、[AnkiMiningContext]（制卡，
+/// [ReadingTimeTracker]（时长统计；v60 起同时落 OCR 字数与页数，见
+/// [mangaAccumulateReadingStats]）、[AnkiMiningContext]（制卡，
 /// 卡图=当前页图文件路径）。
 ///
 /// 身份统一 `hoshi://book/<bookKey>`（无漫画专属 scheme 特例），关书自动同步天然工作。
@@ -562,6 +564,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   ReadingTimeTracker? _readingTimeTracker;
   DateTime _sessionStartTime = DateTime.now();
 
+  /// 本次会话尚未落库的 OCR 字符数与页数，以及已记账过的页（同一页只计一次，来回
+  /// 翻页刷不出数）。字数口径与 EPUB 同源，见 [mangaAccumulateReadingStats]。
+  int _sessionCharsRead = 0;
+  int _sessionPagesRead = 0;
+  final Set<int> _sessionCountedPages = <int>{};
+
   // 密集 OCR 命中层只保留当前 spread；图片页本身全部留在稳定的 lazy strip。
   static const int _kWindowRadius = 0;
 
@@ -786,6 +794,8 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       _lastSavedFraction = saved != null ? restoredFraction : -1;
     });
     _pageNotifier.value = _currentPage;
+    // 首屏页也要进字数/页数账：开书直接停在恢复位置时不会再有 _recordProgress。
+    _countVisiblePages();
     // A cancelled/background task intentionally does not replace manga.json,
     // but every atomic page cache is already safe to use. Restore those pages
     // after the first paint so opening a large book stays fast and both local
@@ -1695,11 +1705,33 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     );
     _currentPage = page;
     _pageNotifier.value = page;
+    _countVisiblePages();
     // 600ms debounce：连续翻页/滚动只落最后一次。
     _progressDebounce?.cancel();
     _progressDebounce = Timer(const Duration(milliseconds: 600), () {
       unawaited(_persistPosition(page, fraction));
     });
+  }
+
+  /// 把当前可见页记进本会话的字数/页数账（每页只记一次）。
+  ///
+  /// spread 模式当前 entry 的两页都算看过；webtoon 整本单文档竖滚，只有真正成为
+  /// 「当前页」的那页算读过（快速滚过没停留的页不计，宁可少算不虚高）。
+  void _countVisiblePages() {
+    final MokuroPayload? payload = _payload;
+    if (payload == null) return;
+    final bool isWebtoon = _mode == MangaReadingMode.webtoon;
+    final List<int> pages =
+        !isWebtoon && _currentSpread >= 0 && _currentSpread < _spreads.length
+            ? _spreads[_currentSpread].pageIndices
+            : <int>[_currentPage];
+    final ({int chars, int pages}) added = mangaAccumulateReadingStats(
+      payload: payload,
+      pageIndices: pages,
+      counted: _sessionCountedPages,
+    );
+    _sessionCharsRead += added.chars;
+    _sessionPagesRead += added.pages;
   }
 
   Future<void> _persistPosition(int page, double fraction) async {
@@ -1745,11 +1777,14 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     await _flushReadingStats();
   }
 
-  /// 落本次会话的阅读时长 + 首页「学习活动」事件。
+  /// 落本次会话的阅读时长 + OCR 字数 + 页数 + 首页「学习活动」事件。
   ///
   /// 与 PDF 同款纪律、刻意不复用 EPUB 的实现：EPUB 那条以 `charsRead <= 0` 早退，
-  /// 漫画无字数会整段被丢。这里以**时长**为触发条件，`charsRead` 恒 0——「页数」
-  /// 绝不塞进 charsRead，否则污染统计页「字数」口径与派生指标。
+  /// 漫画只有时长没字数的那些段会整段被丢。这里仍以**时长**为触发条件。
+  ///
+  /// v60 起漫画同时落两个独立量纲：`charsRead` = 已读页的 OCR 实义字符数（口径与
+  /// EPUB 同源），`pagesRead` = 已读页数。页数仍然绝不塞进 charsRead——那会污染
+  /// 字数口径与阅读速度；两者分列，统计页分别展示。
   Future<void> _flushReadingStats() async {
     final EpubBookRow? row = _bookRow;
     if (row == null) return;
@@ -1761,13 +1796,20 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         now.subtract(Duration(milliseconds: elapsedMs)), now)) {
       return;
     }
+    // 未落库的字数/页数先取走再清零：落库失败时不重复计（下一段仍会记新翻的页），
+    // 也不会因异常把同一批重复写进 DB。
+    final int charsRead = _sessionCharsRead;
+    final int pagesRead = _sessionPagesRead;
+    _sessionCharsRead = 0;
+    _sessionPagesRead = 0;
     final String dateKey = statDateKey(now);
     try {
       await appModel.database.addReadingStatistic(
         title: row.title,
         dateKey: dateKey,
-        charsRead: 0,
+        charsRead: charsRead,
         timeMs: elapsedMs,
+        pagesRead: pagesRead,
       );
       await appModel.database.addActivityEvent(
         eventType: kActivityRead,
@@ -1777,7 +1819,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         dateKey: dateKey,
         timestampMs: now.millisecondsSinceEpoch,
         durationMs: elapsedMs,
-        charsDelta: 0,
+        charsDelta: charsRead,
       );
     } catch (e, stack) {
       ErrorLogService.instance
