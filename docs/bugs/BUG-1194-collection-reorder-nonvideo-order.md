@@ -6,11 +6,11 @@
 - **[x] ① 已修复** — `media_collection_detail_page.dart:96` 改为「保序合并」回写**全表**：
   先 `getCollectionItems` 取全部成员行定义槽位，可见槽按新可见序依次填入，不可见（非
   video / 悬空 video）成员留在其原下标，与 `media_collection_grid_detail_page.dart` 的
-  `_onReorder` 同款纪律。提交 `6bb05a64a`。
+  `_onReorder` 同款纪律。提交 `40e8b2850`。
 - **[x] ② 已加自动化测试** — `hibiki/test/pages/media_collection_detail_sort_test.dart`
   新增 group「混合种类合集」3 例：拖拽 / 一键按名称 / 一键按导入时间后，断言**成员数不变、
   game 与 epub 成员仍在合集内、sortIndex 致密无碰撞、且非 video 成员相对 video 的手排位置
-  不被打乱**。提交 `6bb05a64a`。
+  不被打乱**。提交 `40e8b2850`。
 - **备注**：
 
 ### 否定的部分：不存在数据丢失
