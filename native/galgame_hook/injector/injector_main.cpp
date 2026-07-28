@@ -1,6 +1,7 @@
 #include <windows.h>
 
 #include <bcrypt.h>
+#include <mmreg.h>
 #include <shellapi.h>
 #include <tlhelp32.h>
 
@@ -10,6 +11,7 @@
 #include <cstring>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <map>
 #include <sstream>
 #include <string>
@@ -287,6 +289,34 @@ UnityExtractorRuntime FindUnityExtractorRuntime() {
   return runtime;
 }
 
+std::wstring FindUnityDataDirectory(HANDLE process) {
+  std::vector<wchar_t> image(32768, L'\0');
+  DWORD length = static_cast<DWORD>(image.size());
+  if (!QueryFullProcessImageNameW(process, 0, image.data(), &length) ||
+      length == 0) {
+    return L"";
+  }
+  std::wstring executable(image.data(), length);
+  const size_t slash = executable.find_last_of(L"\\/");
+  const size_t dot = executable.find_last_of(L'.');
+  if (slash == std::wstring::npos) return L"";
+  const std::wstring directory = executable.substr(0, slash + 1);
+  const std::wstring stem = executable.substr(
+      slash + 1,
+      dot == std::wstring::npos || dot < slash ? std::wstring::npos
+                                               : dot - slash - 1);
+  const std::wstring candidates[] = {
+      directory + stem + L"_Data",
+      directory + L"Data",
+  };
+  for (const std::wstring& candidate : candidates) {
+    if (RegularFileExists(candidate + L"\\resources.assets")) {
+      return candidate;
+    }
+  }
+  return L"";
+}
+
 std::wstring QuoteWindowsArgument(const std::wstring& value) {
   std::wstring quoted = L"\"";
   size_t slashes = 0;
@@ -322,10 +352,189 @@ std::wstring SafeVoiceFileName(const wchar_t* clip_name) {
   return result;
 }
 
+struct WavePcm {
+  std::vector<uint8_t> bytes;
+  uint32_t sample_rate = 0;
+  uint32_t channels = 0;
+  uint32_t bits_per_sample = 0;
+  uint32_t block_align = 0;
+  uint32_t is_float = 0;
+};
+
+uint16_t ReadLe16(const uint8_t* data) {
+  return static_cast<uint16_t>(data[0]) |
+         (static_cast<uint16_t>(data[1]) << 8);
+}
+
+uint32_t ReadLe32(const uint8_t* data) {
+  return static_cast<uint32_t>(data[0]) |
+         (static_cast<uint32_t>(data[1]) << 8) |
+         (static_cast<uint32_t>(data[2]) << 16) |
+         (static_cast<uint32_t>(data[3]) << 24);
+}
+
+bool ReadUnityWavePcm(const std::wstring& path, uint32_t max_bytes,
+                      WavePcm* result) {
+  if (result == nullptr || max_bytes == 0) return false;
+  std::ifstream input(path, std::ios::binary);
+  uint8_t riff[12] = {0};
+  if (!input.read(reinterpret_cast<char*>(riff), sizeof(riff)) ||
+      memcmp(riff, "RIFF", 4) != 0 || memcmp(riff + 8, "WAVE", 4) != 0) {
+    return false;
+  }
+
+  bool found_format = false;
+  std::streamoff data_offset = 0;
+  uint32_t data_size = 0;
+  while (input) {
+    uint8_t chunk_header[8] = {0};
+    if (!input.read(reinterpret_cast<char*>(chunk_header),
+                    sizeof(chunk_header))) {
+      break;
+    }
+    const uint32_t chunk_size = ReadLe32(chunk_header + 4);
+    const std::streamoff payload = input.tellg();
+    if (memcmp(chunk_header, "fmt ", 4) == 0) {
+      if (chunk_size < 16 || chunk_size > 64) return false;
+      std::vector<uint8_t> format(chunk_size);
+      if (!input.read(reinterpret_cast<char*>(format.data()), chunk_size)) {
+        return false;
+      }
+      uint16_t format_tag = ReadLe16(format.data());
+      if (format_tag == WAVE_FORMAT_EXTENSIBLE && chunk_size >= 40) {
+        format_tag = static_cast<uint16_t>(ReadLe32(format.data() + 24));
+      }
+      if (format_tag != WAVE_FORMAT_PCM &&
+          format_tag != WAVE_FORMAT_IEEE_FLOAT) {
+        return false;
+      }
+      result->channels = ReadLe16(format.data() + 2);
+      result->sample_rate = ReadLe32(format.data() + 4);
+      result->block_align = ReadLe16(format.data() + 12);
+      result->bits_per_sample = ReadLe16(format.data() + 14);
+      result->is_float = format_tag == WAVE_FORMAT_IEEE_FLOAT ? 1u : 0u;
+      const uint32_t expected_align =
+          result->channels * ((result->bits_per_sample + 7) / 8);
+      if (result->channels == 0 || result->sample_rate == 0 ||
+          result->bits_per_sample == 0 || result->block_align == 0 ||
+          result->block_align != expected_align) {
+        return false;
+      }
+      found_format = true;
+    } else if (memcmp(chunk_header, "data", 4) == 0) {
+      data_offset = payload;
+      data_size = chunk_size;
+    }
+    const uint64_t next =
+        static_cast<uint64_t>(payload) + chunk_size + (chunk_size & 1u);
+    const uint64_t max_stream_offset = static_cast<uint64_t>(
+        (std::numeric_limits<std::streamoff>::max)());
+    if (next > max_stream_offset) {
+      return false;
+    }
+    input.clear();
+    input.seekg(static_cast<std::streamoff>(next), std::ios::beg);
+    if (found_format && data_size != 0) break;
+  }
+  if (!found_format || data_size == 0 || data_offset <= 0) return false;
+
+  uint32_t retained = (std::min)(data_size, max_bytes);
+  retained -= retained % result->block_align;
+  if (retained == 0) return false;
+  result->bytes.resize(retained);
+  input.clear();
+  input.seekg(data_offset, std::ios::beg);
+  return input.read(reinterpret_cast<char*>(result->bytes.data()), retained)
+      .good();
+}
+
+uint64_t UnityClipSourceId(const wchar_t* clip_name) {
+  uint64_t hash = 1469598103934665603ull;
+  if (clip_name != nullptr) {
+    for (const wchar_t* cursor = clip_name; *cursor != 0; ++cursor) {
+      const uint32_t value = static_cast<uint32_t>(*cursor);
+      for (int shift = 0; shift < 32; shift += 8) {
+        hash ^= (value >> shift) & 0xffu;
+        hash *= 1099511628211ull;
+      }
+    }
+  }
+  return 0x554e000000000000ull | (hash & 0x0000ffffffffffffull);
+}
+
+bool CommitUnityWavePcm(SharedHeader* header, const UnityVoiceEvent& event,
+                        const std::wstring& output) {
+  if (header == nullptr || header->ring_capacity == 0 ||
+      header->clip_region_offset == 0) {
+    return false;
+  }
+  WavePcm wave;
+  if (!ReadUnityWavePcm(output, header->ring_capacity, &wave)) {
+    fprintf(stderr, "[unity-audio] invalid wav clip=%ls output=%ls\n",
+            event.clip_name, output.c_str());
+    return false;
+  }
+
+  const uint32_t byte_len = static_cast<uint32_t>(wave.bytes.size());
+  const uint32_t capacity = header->ring_capacity;
+  const uint64_t start = static_cast<uint64_t>(InterlockedExchangeAdd64(
+      reinterpret_cast<volatile LONGLONG*>(&header->total_written),
+      static_cast<LONGLONG>(byte_len)));
+  const uint32_t ring_offset = static_cast<uint32_t>(start % capacity);
+  uint8_t* const ring =
+      reinterpret_cast<uint8_t*>(header) + sizeof(SharedHeader);
+  const uint32_t first =
+      (std::min)(byte_len, capacity - ring_offset);
+  memcpy(ring + ring_offset, wave.bytes.data(), first);
+  if (byte_len > first) {
+    memcpy(ring, wave.bytes.data() + first, byte_len - first);
+  }
+  header->write_pos =
+      static_cast<uint32_t>((start + byte_len) % capacity);
+
+  if (header->sample_rate == 0) {
+    header->channels = wave.channels;
+    header->bits_per_sample = wave.bits_per_sample;
+    header->is_float = wave.is_float;
+    header->block_align = wave.block_align;
+    MemoryBarrier();
+    InterlockedCompareExchange(
+        reinterpret_cast<volatile LONG*>(&header->sample_rate),
+        static_cast<LONG>(wave.sample_rate), 0);
+  }
+
+  const uint64_t index = static_cast<uint64_t>(InterlockedExchangeAdd64(
+      reinterpret_cast<volatile LONGLONG*>(&header->clip_write_count), 1));
+  uint8_t* const clip_base =
+      reinterpret_cast<uint8_t*>(header) + header->clip_region_offset;
+  auto* clip = reinterpret_cast<VoiceClip*>(
+      clip_base + (index % kClipCount) * sizeof(VoiceClip));
+  clip->timestamp_ms = event.timestamp_ms;
+  clip->total_at_write = start + byte_len;
+  clip->ring_offset = ring_offset;
+  clip->byte_len = byte_len;
+  clip->sample_rate = wave.sample_rate;
+  clip->channels = wave.channels;
+  clip->bits_per_sample = wave.bits_per_sample;
+  clip->is_float = wave.is_float;
+  clip->pad = 0;
+  clip->source_ptr = UnityClipSourceId(event.clip_name);
+  MemoryBarrier();
+  clip->seq = index + 1;
+  fprintf(stderr,
+          "[unity-audio] committed clip=%ls bytes=%u format=%u/%u/%u "
+          "source=0x%016llx\n",
+          event.clip_name, byte_len, wave.sample_rate, wave.channels,
+          wave.bits_per_sample,
+          static_cast<unsigned long long>(clip->source_ptr));
+  return true;
+}
+
 bool ExtractUnityVoice(const UnityExtractorRuntime& runtime,
-                       const UnityVoiceEvent& event) {
-  if (!runtime.ready || event.bundle_path[0] == 0 ||
-      event.clip_name[0] == 0) {
+                       const std::wstring& data_directory,
+                       const UnityVoiceEvent& event, SharedHeader* header) {
+  if (!runtime.ready || event.clip_name[0] == 0 ||
+      (event.bundle_path[0] == 0 && data_directory.empty())) {
     return false;
   }
   wchar_t temp[MAX_PATH] = {0};
@@ -338,7 +547,9 @@ bool ExtractUnityVoice(const UnityExtractorRuntime& runtime,
       SafeVoiceFileName(event.clip_name) + L".wav";
 
   std::wstring command = QuoteWindowsArgument(runtime.executable) +
-      L" --bundle " + QuoteWindowsArgument(event.bundle_path) +
+      (event.bundle_path[0] == 0
+           ? L" --data-dir " + QuoteWindowsArgument(data_directory)
+           : L" --bundle " + QuoteWindowsArgument(event.bundle_path)) +
       L" --clip " + QuoteWindowsArgument(event.clip_name) +
       L" --output " + QuoteWindowsArgument(output) +
       L" --classdata " + QuoteWindowsArgument(runtime.classdata) +
@@ -360,16 +571,20 @@ bool ExtractUnityVoice(const UnityExtractorRuntime& runtime,
   DWORD exit_code = 2;
   if (wait == WAIT_OBJECT_0) GetExitCodeProcess(process.hProcess, &exit_code);
   CloseHandle(process.hProcess);
-  const bool ok = wait == WAIT_OBJECT_0 && exit_code == 0 &&
-                  RegularFileExists(output);
-  fprintf(stderr, "[unity-audio] %s clip=%ls bundle=%ls output=%ls\n",
-          ok ? "extracted" : "failed", event.clip_name,
-          event.bundle_path, output.c_str());
+  const bool extracted = wait == WAIT_OBJECT_0 && exit_code == 0 &&
+                         RegularFileExists(output);
+  const bool ok = extracted && CommitUnityWavePcm(header, event, output);
+  fprintf(stderr, "[unity-audio] %s clip=%ls input=%ls output=%ls\n",
+          ok ? "extracted-and-committed" : "failed", event.clip_name,
+          event.bundle_path[0] == 0 ? data_directory.c_str()
+                                    : event.bundle_path,
+          output.c_str());
   return ok;
 }
 
 void ProcessUnityVoiceEvents(SharedHeader* header,
                              const UnityExtractorRuntime& runtime,
+                             const std::wstring& data_directory,
                              uint64_t* next_event) {
   if (header == nullptr || next_event == nullptr || !runtime.ready) return;
   const uint64_t count = header->unity_voice_write_count;
@@ -389,7 +604,7 @@ void ProcessUnityVoiceEvents(SharedHeader* header,
     wcsncpy_s(event.clip_name, source->clip_name, _TRUNCATE);
     wcsncpy_s(event.bundle_path, source->bundle_path, _TRUNCATE);
     if (source->seq != expected_seq) break;
-    if (ExtractUnityVoice(runtime, event)) {
+    if (ExtractUnityVoice(runtime, data_directory, event, header)) {
       header->hook_diagnostics |= kDiagUnityResourceExtracted;
     } else {
       header->hook_diagnostics |= kDiagUnityResourceExtractFailed;
@@ -1140,6 +1355,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
             static_cast<unsigned long long>(header->total_written));
   }
   const UnityExtractorRuntime unity_extractor = FindUnityExtractorRuntime();
+  const std::wstring unity_data_directory = FindUnityDataDirectory(target);
   if (unity_extractor.ready) {
     header->hook_diagnostics |= kDiagUnityResourceExtractorReady;
   } else {
@@ -1336,12 +1552,15 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     uint64_t next_unity_event = 0;
     if (hold_process != nullptr) {
       while (WaitForSingleObject(hold_process, 50) == WAIT_TIMEOUT) {
-        ProcessUnityVoiceEvents(header, unity_extractor, &next_unity_event);
+        ProcessUnityVoiceEvents(header, unity_extractor,
+                                unity_data_directory, &next_unity_event);
       }
-      ProcessUnityVoiceEvents(header, unity_extractor, &next_unity_event);
+      ProcessUnityVoiceEvents(header, unity_extractor,
+                              unity_data_directory, &next_unity_event);
     } else {
       for (;;) {
-        ProcessUnityVoiceEvents(header, unity_extractor, &next_unity_event);
+        ProcessUnityVoiceEvents(header, unity_extractor,
+                                unity_data_directory, &next_unity_event);
         Sleep(50);
       }
     }

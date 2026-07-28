@@ -63,6 +63,12 @@ constexpr uint32_t kDiagUnityUiTextHookReady = 0x00002000u;
 constexpr uint32_t kDiagUnityTextMeshClassFound = 0x00004000u;
 constexpr uint32_t kDiagUnityTextMeshMethodFound = 0x00008000u;
 constexpr uint32_t kDiagUnityTextMeshHookReady = 0x00010000u;
+constexpr uint32_t kDiagUnityAudioClassFound = 0x00020000u;
+constexpr uint32_t kDiagUnityAudioResourceMethodsFound = 0x00040000u;
+constexpr uint32_t kDiagUnityAudioPcmMethodsFound = 0x00080000u;
+constexpr uint32_t kDiagUnityAudioPlaybackMethodFound = 0x00100000u;
+constexpr uint32_t kDiagUnityAudioPlaybackHookReady = 0x00200000u;
+constexpr uint32_t kDiagUnityHooksDeferredUntilWindow = 0x00400000u;
 
 inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
                                                 uint32_t hook_diagnostics) {

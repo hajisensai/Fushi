@@ -70,7 +70,7 @@ class AdapterStructureTest(unittest.TestCase):
         )
         self.assertLess(
             source.index("const bool text_hooks_ready"),
-            source.index('class_get_method(clip_class, "get_samples", 0)'),
+            source.index("bool any = audio_ready"),
         )
         for diagnostic in (
             "kDiagUnityTextScanReady",
@@ -89,6 +89,86 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("void FlushUnityTextMeshLine()", source)
         self.assertIn("c == L'\\u3000'", source)
         self.assertIn('"Unity TextMesh line"', source)
+
+    def test_unity_resource_observation_is_not_gated_by_pcm_helpers(self) -> None:
+        source = (
+            ROOT / "hook" / "adapters" / "unity_adapter.inc"
+        ).read_text(encoding="utf-8")
+        capture = source.split("void CaptureUnityAudioClip", 1)[1]
+        capture = capture.split("void ProcessUnityAudioEvent", 1)[0]
+        self.assertIn("EnqueueUnityAudioClip(source, clip);", capture)
+        self.assertNotIn("RecordUnityVoiceResourceEvent", capture)
+        self.assertNotIn("g_il2cpp_runtime_invoke", capture)
+        process = source.split("void ProcessUnityAudioEvent", 1)[1]
+        process = process.split("void ProcessPendingUnityAudioEvents()", 1)[0]
+        self.assertLess(
+            process.index("RecordUnityVoiceResourceEvent(event.clip, event.timestamp_ms);"),
+            process.index("const bool pcm_helpers_ready"),
+        )
+        registry = (
+            ROOT / "hook" / "adapter_registry.inc"
+        ).read_text(encoding="utf-8")
+        self.assertIn("unity_.ProcessPendingEvents();", registry)
+        install = source.split("bool TryHookUnityIl2CppAudio()", 1)[1]
+        self.assertLess(
+            install.index('class_get_method(source_class, "get_clip", 0)'),
+            install.index('class_get_method(clip_class, "GetData", 2)'),
+        )
+        self.assertLess(
+            install.index("pcm_helpers_ready ="),
+            install.index("kDiagUnityIl2CppHooksReady"),
+        )
+        self.assertLess(
+            install.index("kDiagUnityHooksDeferredUntilWindow"),
+            install.index('GetProcAddress(game, "il2cpp_domain_get")'),
+        )
+        self.assertLess(
+            install.index("kDiagUnityHooksDeferredUntilWindow"),
+            install.index("kDiagUnityIl2CppHooksReady"),
+        )
+        self.assertLess(
+            install.index("kDiagUnityHooksDeferredUntilWindow"),
+            install.index("bool tmp_text_ready"),
+        )
+        self.assertIn("HasCurrentProcessTopLevelWindow()", source)
+        for diagnostic in (
+            "kDiagUnityAudioClassFound",
+            "kDiagUnityAudioResourceMethodsFound",
+            "kDiagUnityAudioPcmMethodsFound",
+            "kDiagUnityAudioPlaybackMethodFound",
+            "kDiagUnityAudioPlaybackHookReady",
+            "kDiagUnityHooksDeferredUntilWindow",
+        ):
+            self.assertIn(diagnostic, source)
+
+    def test_unity_extracted_wav_is_committed_to_the_primary_audio_ring(self) -> None:
+        injector = (ROOT / "injector" / "injector_main.cpp").read_text(
+            encoding="utf-8"
+        )
+        parser = injector.split("bool ReadUnityWavePcm", 1)[1]
+        parser = parser.split("uint64_t UnityClipSourceId", 1)[0]
+        self.assertIn('memcmp(riff, "RIFF", 4)', parser)
+        self.assertIn('memcmp(riff + 8, "WAVE", 4)', parser)
+        self.assertIn("(std::min)(data_size, max_bytes)", parser)
+        self.assertIn("retained -= retained % result->block_align", parser)
+        commit = injector.split("bool CommitUnityWavePcm", 1)[1]
+        commit = commit.split("bool ExtractUnityVoice", 1)[0]
+        self.assertIn("InterlockedExchangeAdd64", commit)
+        self.assertIn("header->total_written", commit)
+        self.assertIn("header->clip_write_count", commit)
+        self.assertIn("header->clip_region_offset", commit)
+        self.assertIn("clip->timestamp_ms = event.timestamp_ms", commit)
+        self.assertIn("clip->seq = index + 1", commit)
+        self.assertLess(
+            commit.index("MemoryBarrier();"),
+            commit.index("clip->seq = index + 1"),
+        )
+        extraction = injector.split("bool ExtractUnityVoice", 1)[1]
+        extraction = extraction.split("void ProcessUnityVoiceEvents", 1)[0]
+        self.assertIn(
+            "extracted && CommitUnityWavePcm(header, event, output)",
+            extraction,
+        )
 
     def test_generated_adapters_have_compile_and_lifecycle_registration_seams(self) -> None:
         main = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")

@@ -101,6 +101,7 @@ class UnityIl2CppAdapter final : public hibiki_voice_hook::EngineAdapter {
     return ready_;
   }
   bool ready() const { return ready_; }
+  void ProcessPendingEvents() { ProcessPendingUnityAudioEvents(); }
   hibiki_voice_hook::AdapterCapability capabilities() const override {
     return hibiki_voice_hook::AdapterCapability::kText |
            hibiki_voice_hook::AdapterCapability::kResourceAudio |
@@ -349,6 +350,7 @@ class AdapterRegistry {
 
   void Poll() {
     DispatchNewModules();
+    unity_.ProcessPendingEvents();
     siglus_.ProcessPendingEvents();
     tyrano_.ProcessPendingEvents();
     bgi_ethornell_.ProcessPendingEvents();

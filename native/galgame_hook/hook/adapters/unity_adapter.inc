@@ -51,10 +51,20 @@ const void* g_unity_clip_get_data = nullptr;
 const void* g_unity_source_get_clip = nullptr;
 const void* g_unity_object_get_name = nullptr;
 void* g_system_single_class = nullptr;
-volatile LONG g_unity_capture_busy = 0;
 void* g_last_unity_clip = nullptr;
 ULONGLONG g_last_unity_clip_tick = 0;
 wchar_t g_last_unity_voice_bundle[kUnityBundlePathChars] = {0};
+constexpr uint32_t kUnityPendingAudioEventCount = 32;
+struct PendingUnityAudioEvent {
+  uint64_t seq;
+  uint64_t timestamp_ms;
+  void* source;
+  void* clip;
+};
+PendingUnityAudioEvent
+    g_unity_pending_audio_events[kUnityPendingAudioEventCount] = {};
+volatile LONGLONG g_unity_pending_audio_write_count = 0;
+volatile LONGLONG g_unity_pending_audio_read_count = 0;
 
 using UnityAudioSourcePlay = void (*)(void*, const void*);
 using UnityAudioSourcePlayOneShot1 = void (*)(void*, void*, const void*);
@@ -288,39 +298,63 @@ void RecordUnityVoiceResourceEvent(void* clip, uint64_t timestamp_ms) {
   event->seq = index + 1;
 }
 
-void CaptureUnityAudioClip(void* source, void* clip) {
-  if (!g_capture_enabled || clip == nullptr || g_header == nullptr ||
-      g_system_single_class == nullptr || g_il2cpp_array_new == nullptr) {
-    return;
-  }
+void EnqueueUnityAudioClip(void* source, void* clip) {
   const ULONGLONG now = GetTickCount64();
-  // PlayOneShot(AudioClip) 的一参数包装会继续调用二参数重载；同一资源同一播放只写一次。
+  // Detour 可能运行在 Unity 的 GC/音频内部临界区。这里只写固定长本地环，绝不
+  // runtime_invoke/attach/分配托管对象；托管读取统一转移到 HookWorker。
   if (clip == g_last_unity_clip && now - g_last_unity_clip_tick < 100) return;
-  if (InterlockedCompareExchange(&g_unity_capture_busy, 1, 0) != 0) return;
+  g_last_unity_clip = clip;
+  g_last_unity_clip_tick = now;
+  const uint64_t index = static_cast<uint64_t>(InterlockedIncrement64(
+                             &g_unity_pending_audio_write_count)) -
+                         1;
+  PendingUnityAudioEvent* event =
+      &g_unity_pending_audio_events[index % kUnityPendingAudioEventCount];
+  event->seq = 0;
+  event->timestamp_ms = now;
+  event->source = source;
+  event->clip = clip;
+  MemoryBarrier();
+  InterlockedExchange64(reinterpret_cast<volatile LONGLONG*>(&event->seq),
+                        static_cast<LONGLONG>(index + 1));
+}
+
+void CaptureUnityAudioClip(void* source, void* clip) {
+  if (!g_capture_enabled || clip == nullptr || g_header == nullptr) return;
   g_header->hook_diagnostics |= kDiagUnityIl2CppPlaybackObserved;
-  // 本函数随后的每一个托管调用（RecordUnityVoiceResourceEvent 的 get_name、InvokeUnityInt
-  // 的装箱、array_new、AudioClip.GetData）都在托管堆分配。scheduled/delayed 播放会把内部
-  // Helper 派到 Unity 原生 audio 线程执行——那条线程未注册到 IL2CPP 域，直接分配会命中
-  // Boehm GC 的 "Collecting from unknown thread" 崩溃。进入托管区前确保当前线程已注册。
+  EnqueueUnityAudioClip(source, clip);
+}
+
+void ProcessUnityAudioEvent(const PendingUnityAudioEvent& event) {
+  if (!g_capture_enabled || event.clip == nullptr || g_header == nullptr) return;
+  // HookWorker 是普通 Win32 线程。先 attach 到 IL2CPP 域，再做 get_name/装箱/
+  // array_new/GetData，避免在 Unity 播放 detour 内重入 Boehm GC。
   const hibiki_voice_hook::Il2CppThreadFns il2cpp_thread_fns{
       g_il2cpp_thread_current, g_il2cpp_thread_attach, g_il2cpp_thread_detach,
       g_il2cpp_domain_get};
   hibiki_voice_hook::Il2CppManagedThreadScope managed_thread(il2cpp_thread_fns);
   if (!managed_thread.safe()) {
-    // 未注册且无法 attach：宁可放弃这次资源事件与 PCM，也不冒崩溃风险。
     g_header->hook_diagnostics |= kDiagUnityIl2CppGetDataRejected;
-    InterlockedExchange(&g_unity_capture_busy, 0);
     return;
   }
-  RecordUnityVoiceResourceEvent(clip, now);
-  // Streaming AudioClip 的 GetData 会拒绝读取，但资源事件仍然有效。去重状态必须在这里
-  // 更新，否则 Unity 6 的 public 包装与内部 Helper 会为同一次播放各触发一次解析/转码。
-  g_last_unity_clip = clip;
-  g_last_unity_clip_tick = now;
+  RecordUnityVoiceResourceEvent(event.clip, event.timestamp_ms);
 
-  const int samples = InvokeUnityInt(g_unity_clip_get_samples, clip);
-  const int channels = InvokeUnityInt(g_unity_clip_get_channels, clip);
-  const int frequency = InvokeUnityInt(g_unity_clip_get_frequency, clip);
+  const bool pcm_helpers_ready =
+      g_system_single_class != nullptr && g_il2cpp_array_new != nullptr &&
+      g_unity_clip_get_samples != nullptr &&
+      g_unity_clip_get_channels != nullptr &&
+      g_unity_clip_get_frequency != nullptr &&
+      g_unity_clip_get_data != nullptr;
+  if (!pcm_helpers_ready) {
+    // 旧 Unity 可能没有暴露 GetData 或数组辅助 API。资源事件已经写入，允许
+    // injector 走 bundle/resource 解码；这里只放弃托管 PCM 快路径。
+    g_header->hook_diagnostics |= kDiagUnityIl2CppGetDataRejected;
+    return;
+  }
+
+  const int samples = InvokeUnityInt(g_unity_clip_get_samples, event.clip);
+  const int channels = InvokeUnityInt(g_unity_clip_get_channels, event.clip);
+  const int frequency = InvokeUnityInt(g_unity_clip_get_frequency, event.clip);
   const uint64_t value_count =
       samples > 0 && channels > 0
           ? static_cast<uint64_t>(samples) * static_cast<uint64_t>(channels)
@@ -338,13 +372,14 @@ void CaptureUnityAudioClip(void* source, void* clip) {
     if (array != nullptr) {
       int offset_samples = 0;
       void* args[2] = {array, &offset_samples};
-      if (InvokeUnityBool(g_unity_clip_get_data, clip, args)) {
+      if (InvokeUnityBool(g_unity_clip_get_data, event.clip, args)) {
         // Il2CppArray = Il2CppObject(klass,monitor) + bounds + max_length；随后即 vector。
         const auto* pcm = reinterpret_cast<const uint8_t*>(array) +
                           sizeof(void*) * 4;
         const uint32_t len = static_cast<uint32_t>(byte_count);
         const uint32_t off = RingAppendVoice(pcm, len);
-        RecordVoiceClipFmt(off, len, reinterpret_cast<uint64_t>(source),
+        RecordVoiceClipFmt(off, len,
+                           reinterpret_cast<uint64_t>(event.source),
                            static_cast<uint32_t>(frequency),
                            static_cast<uint32_t>(channels), 32, 1);
         if (InterlockedCompareExchange(&g_format_set, 1, 0) == 0) {
@@ -362,7 +397,35 @@ void CaptureUnityAudioClip(void* source, void* clip) {
   } else {
     g_header->hook_diagnostics |= kDiagUnityIl2CppGetDataRejected;
   }
-  InterlockedExchange(&g_unity_capture_busy, 0);
+}
+
+void ProcessPendingUnityAudioEvents() {
+  for (uint32_t processed = 0;
+       processed < kUnityPendingAudioEventCount; ++processed) {
+    const uint64_t write_count = static_cast<uint64_t>(
+        InterlockedCompareExchange64(&g_unity_pending_audio_write_count, 0, 0));
+    uint64_t read_count = static_cast<uint64_t>(
+        InterlockedCompareExchange64(&g_unity_pending_audio_read_count, 0, 0));
+    if (read_count >= write_count) break;
+    const uint64_t oldest =
+        write_count > kUnityPendingAudioEventCount
+            ? write_count - kUnityPendingAudioEventCount
+            : 0;
+    if (read_count < oldest) {
+      read_count = oldest;
+      InterlockedExchange64(&g_unity_pending_audio_read_count,
+                            static_cast<LONGLONG>(read_count));
+    }
+    PendingUnityAudioEvent* slot =
+        &g_unity_pending_audio_events[read_count %
+                                      kUnityPendingAudioEventCount];
+    MemoryBarrier();
+    if (slot->seq != read_count + 1) break;
+    const PendingUnityAudioEvent event = *slot;
+    InterlockedExchange64(&g_unity_pending_audio_read_count,
+                          static_cast<LONGLONG>(read_count + 1));
+    ProcessUnityAudioEvent(event);
+  }
 }
 
 void Detour_UnityAudioSourcePlay(void* self, const void* method) {
@@ -536,6 +599,28 @@ const void* FindIl2CppMethod(void* klass, const char* method_name,
   return nullptr;
 }
 
+bool HasCurrentProcessTopLevelWindow() {
+  struct Search {
+    DWORD process_id;
+    bool found;
+  } search{GetCurrentProcessId(), false};
+  EnumWindows(
+      [](HWND window, LPARAM value) -> BOOL {
+        auto* search = reinterpret_cast<Search*>(value);
+        DWORD process_id = 0;
+        GetWindowThreadProcessId(window, &process_id);
+        if (process_id != search->process_id ||
+            GetWindow(window, GW_OWNER) != nullptr ||
+            !IsWindowVisible(window)) {
+          return TRUE;
+        }
+        search->found = true;
+        return FALSE;
+      },
+      reinterpret_cast<LPARAM>(&search));
+  return search.found;
+}
+
 bool TryHookUnityIl2CppAudio() {
   const bool audio_ready =
       g_orig_UnityAudioSourcePlay != nullptr ||
@@ -543,7 +628,10 @@ bool TryHookUnityIl2CppAudio() {
       g_orig_UnityAudioSourcePlayOneShot2 != nullptr ||
       g_orig_UnityAudioSourceSetClip != nullptr ||
       g_orig_UnityAudioSourcePlayScheduled != nullptr ||
-      g_orig_UnityAudioSourcePlayDelayed != nullptr;
+      g_orig_UnityAudioSourcePlayDelayed != nullptr ||
+      g_orig_UnityAudioSourcePlayHelper != nullptr ||
+      g_orig_UnityAudioSourcePlayOneShotHelper != nullptr ||
+      g_orig_UnityAudioSourcePlayDelayedHelper != nullptr;
   const bool text_ready =
       (g_orig_UnityTmpSetText != nullptr &&
        g_orig_UnityTmpSetText2 != nullptr) ||
@@ -555,6 +643,17 @@ bool TryHookUnityIl2CppAudio() {
   }
   HMODULE game = GetModuleHandleW(L"GameAssembly.dll");
   if (game == nullptr) return false;
+  // Hibiki 的“启动并捕获”会先以 CREATE_SUSPENDED 创建游戏。旧版 IL2CPP 在播放器
+  // 尚未创建窗口时连类型/方法枚举都可能进入未完成初始化的 Boehm GC；更不能在此时
+  // 用 MH_EnableHook 再次枚举并挂起线程。外部窗口附加天然越过此门；启动模式则由
+  // HookWorker 在窗口出现后按现有轮询节奏重试。
+  if (!HasCurrentProcessTopLevelWindow()) {
+    if (g_header != nullptr) {
+      g_header->reserved_hook_diagnostics |=
+          hibiki_voice_hook::kDiagUnityHooksDeferredUntilWindow;
+    }
+    return false;
+  }
   const auto domain_get = reinterpret_cast<Il2CppDomainGet>(
       GetProcAddress(game, "il2cpp_domain_get"));
   const auto domain_get_assemblies = reinterpret_cast<Il2CppDomainGetAssemblies>(
@@ -649,6 +748,11 @@ bool TryHookUnityIl2CppAudio() {
   if (g_header != nullptr) {
     g_header->reserved_hook_diagnostics |=
         hibiki_voice_hook::kDiagUnityTextScanReady;
+    if (source_class != nullptr && clip_class != nullptr &&
+        object_class != nullptr) {
+      g_header->reserved_hook_diagnostics |=
+          hibiki_voice_hook::kDiagUnityAudioClassFound;
+    }
     if (ui_text_class != nullptr) {
       g_header->reserved_hook_diagnostics |=
           hibiki_voice_hook::kDiagUnityUiTextClassFound;
@@ -656,6 +760,47 @@ bool TryHookUnityIl2CppAudio() {
     if (text_mesh_class != nullptr) {
       g_header->reserved_hook_diagnostics |=
           hibiki_voice_hook::kDiagUnityTextMeshClassFound;
+    }
+  }
+
+  bool resource_methods_ready = false;
+  bool pcm_helpers_ready = false;
+  if (class_get_method != nullptr && g_il2cpp_runtime_invoke != nullptr &&
+      source_class != nullptr && clip_class != nullptr &&
+      object_class != nullptr) {
+    g_unity_source_get_clip =
+        class_get_method(source_class, "get_clip", 0);
+    g_unity_object_get_name =
+        class_get_method(object_class, "get_name", 0);
+    resource_methods_ready =
+        g_unity_source_get_clip != nullptr &&
+        g_unity_object_get_name != nullptr;
+    if (resource_methods_ready && g_header != nullptr) {
+      g_header->reserved_hook_diagnostics |=
+          hibiki_voice_hook::kDiagUnityAudioResourceMethodsFound;
+    }
+
+    const void* corlib = get_corlib == nullptr ? nullptr : get_corlib();
+    g_system_single_class =
+        corlib == nullptr ? nullptr
+                          : class_from_name(corlib, "System", "Single");
+    g_unity_clip_get_samples =
+        class_get_method(clip_class, "get_samples", 0);
+    g_unity_clip_get_channels =
+        class_get_method(clip_class, "get_channels", 0);
+    g_unity_clip_get_frequency =
+        class_get_method(clip_class, "get_frequency", 0);
+    g_unity_clip_get_data = class_get_method(clip_class, "GetData", 2);
+    pcm_helpers_ready =
+        g_system_single_class != nullptr && g_il2cpp_array_new != nullptr &&
+        g_il2cpp_object_unbox != nullptr &&
+        g_unity_clip_get_samples != nullptr &&
+        g_unity_clip_get_channels != nullptr &&
+        g_unity_clip_get_frequency != nullptr &&
+        g_unity_clip_get_data != nullptr;
+    if (pcm_helpers_ready && g_header != nullptr) {
+      g_header->reserved_hook_diagnostics |=
+          hibiki_voice_hook::kDiagUnityAudioPcmMethodsFound;
     }
   }
 
@@ -733,39 +878,10 @@ bool TryHookUnityIl2CppAudio() {
     g_header->hook_diagnostics |= kDiagUnityNaninovelTextHookReady;
   }
 
-  // Text capture is independent from AudioClip resource extraction. Older
-  // Unity/IL2CPP games may expose UI.Text while omitting one of the managed
-  // audio helpers below; keep their dialogue hook and let audio use loopback.
-  const void* corlib = get_corlib == nullptr ? nullptr : get_corlib();
-  g_system_single_class =
-      corlib == nullptr ? nullptr
-                        : class_from_name(corlib, "System", "Single");
-  if (class_get_method == nullptr || get_corlib == nullptr ||
-      g_il2cpp_runtime_invoke == nullptr || g_il2cpp_array_new == nullptr ||
-      g_il2cpp_object_unbox == nullptr) {
-    return false;
-  }
-  if (source_class == nullptr || clip_class == nullptr || object_class == nullptr ||
-      g_system_single_class == nullptr) {
-    return false;
-  }
-
-  g_unity_clip_get_samples =
-      class_get_method(clip_class, "get_samples", 0);
-  g_unity_clip_get_channels =
-      class_get_method(clip_class, "get_channels", 0);
-  g_unity_clip_get_frequency =
-      class_get_method(clip_class, "get_frequency", 0);
-  g_unity_clip_get_data = class_get_method(clip_class, "GetData", 2);
-  g_unity_source_get_clip = class_get_method(source_class, "get_clip", 0);
-  g_unity_object_get_name = class_get_method(object_class, "get_name", 0);
-  if (g_unity_clip_get_samples == nullptr ||
-      g_unity_clip_get_channels == nullptr ||
-      g_unity_clip_get_frequency == nullptr ||
-      g_unity_clip_get_data == nullptr || g_unity_source_get_clip == nullptr ||
-      g_unity_object_get_name == nullptr) {
-    return false;
-  }
+  // Resource observation only needs the AudioSource/AudioClip/Object classes,
+  // runtime invoke, and the clip/name accessors. Keep it independent from the
+  // optional AudioClip.GetData PCM fast path used by newer Unity versions.
+  if (!resource_methods_ready) return false;
 
   bool any = audio_ready;
   const void* play = class_get_method(source_class, "Play", 0);
@@ -780,6 +896,15 @@ bool TryHookUnityIl2CppAudio() {
       class_get_method(source_class, "PlayOneShotHelper", 3);
   const void* play_delayed_helper =
       class_get_method(source_class, "PlayDelayedHelper", 2);
+  if (g_header != nullptr &&
+      (play != nullptr || one_shot_1 != nullptr ||
+       one_shot_2 != nullptr || set_clip != nullptr ||
+       play_scheduled != nullptr || play_delayed != nullptr ||
+       play_helper != nullptr || one_shot_helper != nullptr ||
+       play_delayed_helper != nullptr)) {
+    g_header->reserved_hook_diagnostics |=
+        hibiki_voice_hook::kDiagUnityAudioPlaybackMethodFound;
+  }
   any |= HookFn(Il2CppMethodPointer(play),
                 reinterpret_cast<void*>(&Detour_UnityAudioSourcePlay),
                 reinterpret_cast<void**>(&g_orig_UnityAudioSourcePlay));
@@ -813,6 +938,9 @@ bool TryHookUnityIl2CppAudio() {
       reinterpret_cast<void**>(&g_orig_UnityAudioSourcePlayDelayedHelper));
   if (any && g_header != nullptr) {
     g_header->hook_diagnostics |= kDiagUnityIl2CppHooksReady;
+    g_header->reserved_hook_diagnostics |=
+        hibiki_voice_hook::kDiagUnityAudioPlaybackHookReady;
   }
+
   return any && text_hooks_ready;
 }
