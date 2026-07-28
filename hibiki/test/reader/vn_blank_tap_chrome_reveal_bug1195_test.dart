@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/reader/reader_chrome_floating.dart';
 
-/// BUG-1189：视觉小说（VN）模式点屏幕只会翻页，控制栏（菜单）永远唤不出来。
+/// BUG-1195：视觉小说（VN）模式点屏幕只会翻页，控制栏（菜单）永远唤不出来。
 ///
 /// 根因：VN 是唯一把「点空白」绑成翻页的 view-mode，旧实现在 JS 的 `_gestureEnd`
 /// 里直接 `window.hoshiReader.paginate('forward')` 并 return，抢在查词 /
@@ -17,7 +17,7 @@ import 'package:hibiki/src/reader/reader_chrome_floating.dart';
 /// 两层锁：① 纯谓词 [readerVnBlankTapAction] 的三态真值表（headless 可真跑）；
 /// ② 源码守卫，钉死 JS→Dart 的分派结构不回退成「JS 自己 paginate」。
 void main() {
-  group('BUG-1189 VN blank-tap action truth table', () {
+  group('BUG-1195 VN blank-tap action truth table', () {
     test('挤压态底栏被收起 → 先展开底栏，不翻页', () {
       expect(
         readerVnBlankTapAction(
@@ -97,7 +97,7 @@ void main() {
     });
   });
 
-  group('BUG-1189 dispatch structure guard', () {
+  group('BUG-1195 dispatch structure guard', () {
     late String webview;
     late String chrome;
     late String page;
@@ -125,7 +125,7 @@ void main() {
         _stripLineComments(webview)
             .contains("window.hoshiReader.paginate('forward')"),
         isFalse,
-        reason: 'BUG-1189：JS 直接 paginate 会吞掉唯一能唤出控制栏的手势；'
+        reason: 'BUG-1195：JS 直接 paginate 会吞掉唯一能唤出控制栏的手势；'
             '翻页必须走 Dart 的 _paginate（同时才有跨章 / 节流 / caret 重锚）',
       );
     });
@@ -181,7 +181,7 @@ void main() {
       expect(
         page.contains('bool get _bottomBarShouldPaint => bottomBarVisible('),
         isTrue,
-        reason: 'BUG-1189：_bottomBarShouldPaint 与 readerVnBlankTapAction 必须'
+        reason: 'BUG-1195：_bottomBarShouldPaint 与 readerVnBlankTapAction 必须'
             '读同一套可见性规则，否则两边漂开又会出现「判为可见却没画出来」',
       );
     });

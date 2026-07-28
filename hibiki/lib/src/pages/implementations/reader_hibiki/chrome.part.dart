@@ -1030,7 +1030,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     return true;
   }
 
-  /// BUG-1189：VN（视觉小说）模式下一次「空白点击」的唯一落点。
+  /// BUG-1195：VN（视觉小说）模式下一次「空白点击」的唯一落点。
   ///
   /// 旧实现在 JS 侧 [_gestureEnd] 里直接 `window.hoshiReader.paginate('forward')`
   /// 并 return，抢在查词 / `onTapEmpty` 之前把每一次空白点都吃掉——而 `onTapEmpty`

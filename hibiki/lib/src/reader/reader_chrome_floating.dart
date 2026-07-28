@@ -108,7 +108,7 @@ bool topProgressVisible({
 /// 挤压态随 [chromeExpanded]（`_showChrome`）；悬浮态额外受 [transientVisible]
 /// 门控（点击唤出、计时自动收起）。[hasEverLoaded] 是首次冷加载完成前不画底栏的
 /// 既有门控。与 [topProgressVisible] 同构，是「底栏此刻可见吗」的唯一真相源，
-/// 同时被 [readerVnBlankTapAction] 复用（BUG-1189）。
+/// 同时被 [readerVnBlankTapAction] 复用（BUG-1195）。
 bool bottomBarVisible({
   required bool hasEverLoaded,
   required bool chromeExpanded,
@@ -120,7 +120,7 @@ bool bottomBarVisible({
   return transientVisible;
 }
 
-/// BUG-1189：视觉小说（VN）模式下一次「空白点击」的归宿。
+/// BUG-1195：视觉小说（VN）模式下一次「空白点击」的归宿。
 enum ReaderVnBlankTapAction {
   /// 挤压态底栏被收起（`_showChrome == false`）：先把底栏展开。
   expandChrome,
@@ -132,7 +132,7 @@ enum ReaderVnBlankTapAction {
   advance,
 }
 
-/// BUG-1189：VN 模式空白点击的分派——**唤出控制栏优先于翻页**。
+/// BUG-1195：VN 模式空白点击的分派——**唤出控制栏优先于翻页**。
 ///
 /// 根因回顾：VN 是唯一把「点空白」绑成翻页的 view-mode，而点空白同时是触屏**唯一**
 /// 能唤出控制栏的手势（分页/连续模式的 `onTapEmpty` → `_handleFloatingChromeReveal`

@@ -1045,7 +1045,7 @@ install: function(C) {
           window.hoshiReader && window.hoshiReader.paginate) {
         // TODO-909 M0: VN blank-tap. Only when the tap is NOT over matchable
         // text (so word lookup still wins on text).
-        // BUG-1189: 这里**不再**自己 paginate。旧实现直调
+        // BUG-1195: 这里**不再**自己 paginate。旧实现直调
         // `window.hoshiReader.paginate('forward')` 把每一次空白点都吃掉，而空白点
         // 同时是触屏唯一能唤出控制栏的手势（onTapEmpty）→ VN 下底栏一自动收起就
         // 永远唤不回来。翻页还是唤栏必须由 Dart 判（chrome 可见性只有 Dart 知道：
@@ -1888,7 +1888,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
           },
         );
 
-        // BUG-1189: VN（视觉小说）模式空白点击的专用桥。JS 只判「这一点落在字面外」，
+        // BUG-1195: VN（视觉小说）模式空白点击的专用桥。JS 只判「这一点落在字面外」，
         // 翻页还是唤出控制栏由 Dart 判（chrome 可见性的真值在 Dart 侧）。
         controller.addJavaScriptHandler(
           handlerName: 'onVnBlankTap',

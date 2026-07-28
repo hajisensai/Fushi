@@ -1,4 +1,4 @@
-## BUG-1189 · 视觉小说模式点空白只翻页，控制栏（菜单）永远唤不出
+## BUG-1195 · 视觉小说模式点空白只翻页，控制栏（菜单）永远唤不出
 - **报告**：2026-07-28（用户：书籍的视觉小说模式，打不开菜单啊，点屏幕只会翻页）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/reader_hibiki/webview.part.dart:1043`（`_gestureEnd` 的 VN 分支直接 `window.hoshiReader.paginate('forward')` 并 return，抢在查词 / `onTapEmpty` 之前）。
 
@@ -16,7 +16,7 @@
   - `chrome.part.dart` `_handleVnBlankTap()`：唯一决策点。清弹窗栈 / 清选区 / 焦点 reclaim 与 `onTapEmpty` 同语义，然后按三态分派——挤压态收起 → `_toggleChrome()`；悬浮态已收起 → `_handleFloatingChromeReveal()`；底栏此刻可见 → `_paginate(ReaderNavigationDirection.forward)`（顺带修好 ④：跨章 / 节流 / caret 重锚全部与滑动、键盘路径一致）。
   - `reader_chrome_floating.dart`：新增纯谓词 `bottomBarVisible` / `readerVnBlankTapAction` + `ReaderVnBlankTapAction`；`_bottomBarShouldPaint` 改为委托 `bottomBarVisible`，使「底栏此刻可见吗」与「这一下该不该翻页」读同一套规则，不可能漂开。
   - 不改 `vn_click_advance` 语义、不加新设置、不发明菜单热区；VN 的滑动翻页不经此路径，用户不会被卡在「翻不动页」。
-- **[x] ② 已加自动化测试** — `hibiki/test/reader/vn_blank_tap_chrome_reveal_bug1189_test.dart`：
+- **[x] ② 已加自动化测试** — `hibiki/test/reader/vn_blank_tap_chrome_reveal_bug1195_test.dart`：
   - 纯谓词三态真值表（含本 bug 的原始失败路径「悬浮态已自动收起 → 必须先唤出」）；
   - 逐格对齐断言：`readerVnBlankTapAction == advance` 必须与 `bottomBarVisible` 同真同假（8 种组合全枚举），钉死「底栏叫不出来」与「底栏已在却不翻页」两种回归；
   - 源码守卫：JS 不得再出现 `window.hoshiReader.paginate('forward')`（去注释后扫描）、必须 `callHandler('onVnBlankTap')`、handler 已注册、`_handleVnBlankTap` 三条分支齐全且翻页走 `_paginate`、`_bottomBarShouldPaint` 委托单一真相源。

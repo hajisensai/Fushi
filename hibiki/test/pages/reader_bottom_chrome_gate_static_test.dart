@@ -24,7 +24,7 @@ void main() {
     // _hasEverLoaded && _showChrome；悬浮再加 _chromeTransientVisible），_buildBottomChrome
     // 改调它。不变式（钉死在 set-once _hasEverLoaded、不退回每切章翻转的
     // _readerContentReady）必须在 _bottomBarShouldPaint 里成立。
-    // BUG-1189：可见性判据本体搬进纯函数 bottomBarVisible（与 VN 空白点分派
+    // BUG-1195：可见性判据本体搬进纯函数 bottomBarVisible（与 VN 空白点分派
     // readerVnBlankTapAction 共用同一套规则，防两边漂开），页里只剩绑定实例字段的
     // 委托。不变式拆成两半各自钉死：① 页把 set-once _hasEverLoaded 喂进去；
     // ② 纯函数里 !hasEverLoaded 仍是硬门。
@@ -49,7 +49,7 @@ void main() {
           .readAsStringSync()
           .replaceAll('\r\n', '\n'),
       'bool bottomBarVisible(',
-      'BUG-1189',
+      'BUG-1195',
     );
     expect(
       pureGate,
