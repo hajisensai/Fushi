@@ -67,7 +67,7 @@ class PlatformServices {
         directory: AndroidDirectoryService(),
         lifecycle: AndroidLifecycleService(),
         clipboard: clipboard,
-        permission: AndroidPermissionService(),
+        permission: AndroidPermissionService(deviceInfo),
         deviceInfo: deviceInfo,
         createAnkiRepository: AnkiRepository.new,
         androidClipboard: clipboard,
