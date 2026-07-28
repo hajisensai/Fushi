@@ -11,7 +11,7 @@
 
   同一处附带的旧漏：JS 直调 `paginate` 丢弃返回值，屏到章末返回 `"limit"` 无人处理 ⇒ VN 点击推进到章末即卡住（跨章只有滑动/键盘路径有）。
 
-- **[x] ① 已修复** — 提交 `PENDING_COMMIT`。把「翻页还是唤栏」的决策从 JS 移交给状态拥有者 Dart，语义定为**唤出优先**（与仓库既有语义同款：防剧透图「揭开优先」、歌词模式点空白无条件唤出底栏）：
+- **[x] ① 已修复** — 提交 `68f4ffe9c`。把「翻页还是唤栏」的决策从 JS 移交给状态拥有者 Dart，语义定为**唤出优先**（与仓库既有语义同款：防剧透图「揭开优先」、歌词模式点空白无条件唤出底栏）：
   - `webview.part.dart`：VN 空白点只回传事实 `callHandler('onVnBlankTap')`，不再自己 paginate；新增 `onVnBlankTap` handler。
   - `chrome.part.dart` `_handleVnBlankTap()`：唯一决策点。清弹窗栈 / 清选区 / 焦点 reclaim 与 `onTapEmpty` 同语义，然后按三态分派——挤压态收起 → `_toggleChrome()`；悬浮态已收起 → `_handleFloatingChromeReveal()`；底栏此刻可见 → `_paginate(ReaderNavigationDirection.forward)`（顺带修好 ④：跨章 / 节流 / caret 重锚全部与滑动、键盘路径一致）。
   - `reader_chrome_floating.dart`：新增纯谓词 `bottomBarVisible` / `readerVnBlankTapAction` + `ReaderVnBlankTapAction`；`_bottomBarShouldPaint` 改为委托 `bottomBarVisible`，使「底栏此刻可见吗」与「这一下该不该翻页」读同一套规则，不可能漂开。
