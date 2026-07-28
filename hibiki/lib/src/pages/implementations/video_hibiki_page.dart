@@ -76,7 +76,8 @@ import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
 // （原生按键归一）+ ShortcutAction/ShortcutScope（video 作用域绑定解析）。
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent, focusedEditableText;
-import 'package:hibiki/src/shortcuts/input_binding.dart' show GamepadButton;
+import 'package:hibiki/src/shortcuts/input_binding.dart'
+    show GamepadButton, InputBinding;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart'
     show ShortcutAction, ShortcutScope;
 import 'package:hibiki/src/media/video/video_shader_manager.dart';
@@ -112,7 +113,7 @@ import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
-    show MinePopupResult;
+    show MinePopupResult, DictionaryPopupWebViewState;
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
@@ -3935,7 +3936,8 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     // BUG-924：词典浮层可见时，任一视频快捷键先关顶层浮层（对齐阅读器），否则穿透去控制
     // 后台视频（用户报「视频里关不掉词典」「按 d 竟然快进」）。守卫是纯函数，逻辑集中在
     // [guardVideoShortcutsWithPopupDismiss]，此处只提供页面态谓词与关浮层动作。
-    return guardVideoShortcutsWithPopupDismiss(
+    final Map<ShortcutActivator, VoidCallback> guarded =
+        guardVideoShortcutsWithPopupDismiss(
       buildVideoPlayerShortcutsFromRegistry(
         appModel.shortcutRegistry,
         _buildVideoShortcutActions(controller),
@@ -3943,6 +3945,30 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       isPopupVisible: () => _hasVisiblePopup,
       dismissPopup: _dismissTopVisiblePopup,
     );
+    // 制卡键（ShortcutAction.popupMineEntry，默认 Ctrl+Enter）**合并在守卫之后**，这是
+    // 关键：上面那层守卫的前提是「视频 scope 没有任何作用于浮层本身的快捷键」，所以浮层
+    // 可见时它把每个键都改判成「先关浮层」。而制卡恰恰只在浮层可见时才有意义——若把它
+    // 放进被守卫的表里，按下去只会把浮层关掉，永远制不了卡。它属于 dictionaryPopup
+    // scope（独立 co-active 组），本就不是视频动作，走独立通道也保持了 scope 语义一致。
+    for (final InputBinding b in appModel.shortcutRegistry
+        .bindingsFor(ShortcutAction.popupMineEntry)
+        .keyboardBindings) {
+      guarded[b.toActivator(includeRepeats: false)] = _mineFromTopPopup;
+    }
+    return guarded;
+  }
+
+  /// 「点弹窗里的加号」的键盘入口（视频页）。阅读器有等价的
+  /// [ShortcutAction.readerCreateCardFromPopup]（caret.part.dart），视频页此前完全没有，
+  /// 是 app 内制卡快捷键最大的缺口。执行体与鼠标点击完全同源——回 WebView 点那颗
+  /// `.mine-button`，复用它的三态（＋/✓/✓↩︎）、单飞门与查重逻辑，Dart 侧不另造制卡路径。
+  void _mineFromTopPopup() {
+    final int idx = _topVisiblePopupIndex;
+    if (idx < 0) return; // 没有可见浮层：不消费，也没什么可制卡的
+    final DictionaryPopupWebViewState? popup =
+        _popup.entries[idx].webViewKey.currentState;
+    if (popup == null) return;
+    unawaited(popup.mineFirstVisibleEntry());
   }
 
   /// BUG-924：关掉当前顶层可见词典浮层（复用 [_handleBackOrExit] / [_onDismissBarrierTap]

@@ -2733,5 +2733,6 @@
   "media_tracking_unlinked_hint": "还没有任何条目关联到 Bangumi 条目，所以看完/读完在那边不会有任何变化。自动匹配只在标题唯一命中时才建立关联，其余需要手动关联。",
   "media_tracking_open_subject": "在 Bangumi 打开",
   "media_tracking_manage_links": "管理关联",
-  "media_tracking_last_error": "上次错误"
+  "media_tracking_last_error": "上次错误",
+  "shortcut_action_popup_mine_entry": "制卡（加号）"
 }

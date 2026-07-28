@@ -183,12 +183,11 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
       }
     });
   } catch (_) {}
+  // 「⚙ 扩展设置」按钮已从连接行内移到页脚独立成行（见 action-popup.html 的注释），
+  // 不再嵌在可点的连接行里，故不需要 stopPropagation 去防误判成「重新检测」。
   const optionsEl = document.getElementById('hp-open-options');
   if (optionsEl) {
-    optionsEl.addEventListener('click', (e) => {
-      e.stopPropagation(); // 齿轮在连接行内：别把点击冒泡成「重新检测」
-      chrome.runtime.openOptionsPage();
-    });
+    optionsEl.addEventListener('click', () => chrome.runtime.openOptionsPage());
   }
 
   function readQueue() {

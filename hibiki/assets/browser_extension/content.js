@@ -64,7 +64,10 @@ function hibikiExtAlive() {
 // 挂 window 上供 bridge-shim.js（制卡回调）调用。sticky=true 时常驻不自动消失（「制卡中…」要
 // 一直显示到出结果），后续用非 sticky 的成功/失败提示替换它并 5s 后淡出。
 let hibikiToastTimer = null;
-window.hibikiToast = function (text, sticky) {
+// [openSettings] 为真时整条 toast 可点击 → 打开扩展设置页。存在的理由：连接类报错的文案一直在
+// 让用户「去扩展设置核对 API key / 恢复自动配置」，但产品里通往设置页的路本身极难找（工具栏图标
+// 被 default_popup 占用、options_page 只在 chrome://extensions 深处）——只指路不给路，等于没说。
+window.hibikiToast = function (text, sticky, openSettings) {
   try {
     let t = document.getElementById('hibiki-toast');
     if (!t) {
@@ -79,7 +82,14 @@ window.hibikiToast = function (text, sticky) {
     } else if (t.parentNode !== (document.fullscreenElement || document.body)) {
       (document.fullscreenElement || document.body).appendChild(t); // 全屏切换时迁到正确父节点
     }
-    t.textContent = text;
+    t.textContent = openSettings ? text + '\n（点这里打开扩展设置）' : text;
+    // toast 是复用的同一个节点：每次都要把可点态显式设成本次该有的值，否则上一条可点的报错
+    // 会把 pointer-events 留给下一条普通提示，让它凭空吞掉页面点击。
+    t.style.pointerEvents = openSettings ? 'auto' : 'none';
+    t.style.cursor = openSettings ? 'pointer' : '';
+    t.onclick = openSettings
+      ? function () { try { chrome.runtime.sendMessage({ type: 'openOptions' }); } catch (_) {} }
+      : null;
     t.style.opacity = '1';
     if (hibikiToastTimer) clearTimeout(hibikiToastTimer);
     if (!sticky) hibikiToastTimer = setTimeout(() => { if (t) t.style.opacity = '0'; }, 5000);
@@ -447,7 +457,12 @@ function hibikiClassifyMineResp(resp) {
   // 批量制卡共用本分类器，两条链路的 HTTP 失败都据此显因）。
   if (!resp || !resp.ok || !resp.data) {
     if (typeof window.hibikiToast === 'function') {
-      try { window.hibikiToast('✗ ' + hibikiMineHttpFailureReason(resp)); } catch (_) {}
+      // 401 / 其它 4xx 的文案就是让用户去扩展设置核对 token，故这两类做成可点直达设置页。
+      const st = resp && typeof resp.status === 'number' ? resp.status : 0;
+      const settingsFixable = st === 401 || (st >= 400 && st < 500 && st !== 404);
+      try {
+        window.hibikiToast('✗ ' + hibikiMineHttpFailureReason(resp), false, settingsFixable);
+      } catch (_) {}
     }
     return 'retry';
   }
@@ -485,7 +500,7 @@ function hibikiQueueKey(q) {
   const sent = (q && q.sentence) || '';
   const site = (q && q.site) || '';
   const vid = (q && (q.youtubeId || q.netflixId)) || '';
-  return String(word) + ' ' + String(sent) + ' ' + String(site) + ' ' + String(vid);
+  return String(word) + '\0' + String(sent) + '\0' + String(site) + '\0' + String(vid);
 }
 window.hibikiEnqueue = function (fields, sentence) {
   // TODO-1219 P3：若本次查词来自字幕面板行（hibikiPendingCueWindow 非空），用该行整集拦截的精确
@@ -955,6 +970,79 @@ try {
   });
 } catch (_) {}
 
+// ── 隐藏字幕（用户诉求：浏览器侧对齐 app 的 videoToggleSubtitleHide）──
+// app 内视频页早有「字幕遮蔽三态（不遮蔽/模糊/隐藏）」，扩展侧此前**只有**作用于自绘覆盖层
+// 的防剧透模糊（subtitleOverlayBlur，且悬停即恢复清晰），站点原生字幕从不被遮 → 想「先听后看」
+// 的用户在浏览器里无解。这里补上真正的隐藏：站点原生字幕 + 扩展自绘覆盖层一起藏。
+//
+// 关键约束：**只能用 visibility/opacity，绝不能用 display:none 或删节点**——扩展的取词
+// (hibikiSubtitleTextNow)、逐句制卡、caret 兜底命中(hibikiSubtitleCaretAtPoint) 全靠读这些
+// 字幕节点的 textContent / getBoundingClientRect。display:none 会把它们从布局里摘掉，
+// 隐藏字幕就等于同时废掉制卡，那是把功能做成 bug。Netflix 批量录制路径 (hibikiRunNetflixBatch)
+// 用的也是 visibility:hidden，此处与之同策。
+//
+// 所有权：本模块是 subtitleHidden 的**唯一**持有者（读 storage、注入 style、翻转、toast）。
+// subtitle-panel.js 只是把快捷键转发过来——因为面板整体受 netflixSubtitlePanel 门控且默认关，
+// 状态若放在面板里，用户没开面板时隐藏字幕就会失效。
+const HIBIKI_HIDE_SUBS_ID = 'hibiki-hide-subs';
+let hibikiSubtitleHidden = false;
+
+function hibikiSubtitleHideSelectors() {
+  return [
+    '.player-timedtext',             // Netflix
+    '.ytp-caption-window-container', // YouTube
+    '.captions-text',                // 通用（部分播放器）
+    '.libassjs-canvas-parent',       // ASS/SSA 渲染层
+    '#hibiki-subtitle-overlay',      // 扩展自绘覆盖层
+  ];
+}
+
+function hibikiApplySubtitleHiding(hide) {
+  const existing = document.getElementById(HIBIKI_HIDE_SUBS_ID);
+  if (!hide) { if (existing) { try { existing.remove(); } catch (_) {} } return; }
+  if (existing) return;
+  const style = document.createElement('style');
+  style.id = HIBIKI_HIDE_SUBS_ID;
+  // ::cue（原生 <track> 字幕）必须单独成一条规则：它只接受受限属性集，且与普通选择器
+  // 并列时若被浏览器判为无效会**整条规则**失效，连带把上面的站点字幕也藏不掉。
+  style.textContent =
+      hibikiSubtitleHideSelectors().join(',') + '{visibility:hidden!important}' +
+      'video::cue{visibility:hidden!important}';
+  try { (document.head || document.documentElement).appendChild(style); } catch (_) {}
+}
+
+// 快捷键执行端（subtitle-panel.js 的 hibikiSubtitleShortcut 转发过来）。翻转 → 立即生效 →
+// 落 storage（options 页的开关与之双向同步）→ toast 反馈。返回 true 表示已接管这次按键。
+window.hibikiToggleSubtitleHiding = function () {
+  hibikiSubtitleHidden = !hibikiSubtitleHidden;
+  hibikiApplySubtitleHiding(hibikiSubtitleHidden);
+  try { chrome.storage.local.set({ subtitleHidden: hibikiSubtitleHidden }); } catch (_) {}
+  try {
+    if (typeof window.hibikiToast === 'function') {
+      window.hibikiToast('隐藏字幕：' + (hibikiSubtitleHidden ? '开' : '关'));
+    }
+  } catch (_) {}
+  return true;
+};
+
+function hibikiReadSubtitleHidden() {
+  try {
+    chrome.storage.local.get(['subtitleHidden'], (r) => {
+      hibikiSubtitleHidden = !!(r && r.subtitleHidden === true);
+      hibikiApplySubtitleHiding(hibikiSubtitleHidden);
+    });
+  } catch (_) {}
+}
+try {
+  hibikiReadSubtitleHidden();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.subtitleHidden) {
+      hibikiSubtitleHidden = changes.subtitleHidden.newValue === true;
+      hibikiApplySubtitleHiding(hibikiSubtitleHidden);
+    }
+  });
+} catch (_) {}
+
 // 「滑动关闭查词弹窗」——app 的 enableSwipeToClose 偏好经查词响应 theme 的
 // --hibiki-swipe-close（'1'/'0'）下发；in-app 走 Flutter 手势层 / WebView topPullReleased，
 // 扩展的浮动弹窗是纯 DOM，这里在弹窗宿主上装同语义的**水平拖关**手势（设置项文案即「水平
@@ -1328,7 +1416,12 @@ function hibikiShowConnectionFailure(resp) {
   } else if (c && c.state === 'wrong-service') {
     message = '扩展端口连接到了其他服务：请打开扩展设置检查连接';
   }
-  try { window.hibikiToast('⚠ ' + message); } catch (_) {}
+  // unauthorized / wrong-service 两态的解法就在扩展设置页（核对 token / 恢复自动配置），
+  // 故把 toast 做成可点直达；其余两态（app 侧没开 API、Yomitan 抢端口）要去 Hibiki app 或
+  // Yomitan 里改，开扩展设置页帮不上忙，保持不可点。
+  const settingsFixable =
+      !!c && (c.state === 'unauthorized' || c.state === 'wrong-service');
+  try { window.hibikiToast('⚠ ' + message, false, settingsFixable); } catch (_) {}
 }
 
 // 查词即自动暂停 + 发查词请求 + 渲染弹窗的共享收尾（mousemove 划词与面板行显式点击查词同源）。

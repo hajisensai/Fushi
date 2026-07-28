@@ -161,6 +161,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_popup_next_entry;
       case ShortcutAction.popupPrevEntry:
         return t.shortcut_action_popup_prev_entry;
+      case ShortcutAction.popupMineEntry:
+        return t.shortcut_action_popup_mine_entry;
     }
   }
 }

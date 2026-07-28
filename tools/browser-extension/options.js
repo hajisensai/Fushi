@@ -15,6 +15,8 @@ const subtitleDefaults = Object.freeze({
   subtitleHoverPause: false,
   subtitleOverlayBlur: false,
   subtitleOverlayAllTracks: false,
+  // 隐藏字幕（Shift+H 也会翻它）：站点原生字幕 + 扩展覆盖层一起藏，实现在 content.js。
+  subtitleHidden: false,
   videoShortcutsEnabled: true,
 });
 const toggleIds = Object.freeze({
@@ -30,6 +32,7 @@ const toggleIds = Object.freeze({
   subtitleHoverPause: 'subtitleHoverPause',
   subtitleOverlayBlur: 'subtitleOverlayBlur',
   subtitleOverlayAllTracks: 'subtitleOverlayAllTracks',
+  subtitleHidden: 'subtitleHidden',
   videoShortcutsEnabled: 'videoShortcutsEnabled',
 });
 

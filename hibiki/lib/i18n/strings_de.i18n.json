@@ -2733,5 +2733,6 @@
   "media_tracking_unlinked_hint": "No item is linked to a Bangumi subject yet, so finishing something changes nothing there. Automatic matching only links a subject when the title matches unambiguously; link the rest by hand.",
   "media_tracking_open_subject": "Open on Bangumi",
   "media_tracking_manage_links": "Manage links",
-  "media_tracking_last_error": "Last error"
+  "media_tracking_last_error": "Last error",
+  "shortcut_action_popup_mine_entry": "Create card (mine)"
 }

@@ -201,7 +201,16 @@ async function checkVersionOnStartup() {
 }
 checkVersionOnStartup(); // SW 每次启动都主动检查一次版本 + 刷新 last-seen。
 chrome.runtime.onStartup.addListener(() => { checkVersionOnStartup(); });
-chrome.runtime.onInstalled.addListener(() => { checkVersionOnStartup(); });
+chrome.runtime.onInstalled.addListener((details) => {
+  checkVersionOnStartup();
+  // 用户反馈「扩展配置根本看不见」：工具栏图标被 default_popup 占着（onClicked 永不触发，
+  // 见下方注释），options_page 在 Chrome 里只能经「chrome://extensions → 详情 → 扩展程序
+  // 选项」或右键图标进入，装完扩展的人根本不知道有这一页。首装（且仅首装）自动打开一次，
+  // 让用户至少见过它一面；后续更新（details.reason === 'update'）不打扰。
+  try {
+    if (details && details.reason === 'install') chrome.runtime.openOptionsPage();
+  } catch (_) { /* 无 UI 环境 / 已被用户关闭：忽略 */ }
+});
 maybeReinjectAfterReload(); // BUG-1047：若上一轮是自更新 reload，补回已打开网页的 content script。
 
 // BUG-1045：app 侧「插件已连接」判定 = 扩展最近 120s 内打过本机 server，且该 last-seen
@@ -342,6 +351,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // popup 已 query 到当前 tab（{id,url}），这里直接跑原 hibikiIconClick（Netflix 就地录 / YouTube 队列）。
   if (msg && msg.type === 'hibikiIconAction') {
     hibikiIconClick(msg.tab || {}).catch(() => {});
+    sendResponse({ ok: true });
+    return true;
+  }
+  // 「打开扩展设置」：content script 里 chrome.runtime.openOptionsPage 不可用（只在扩展页面
+  // 上下文存在），故页面侧（字幕面板齿轮、报错 toast）统一发这条消息，由 SW 代开。
+  if (msg && msg.type === 'openOptions') {
+    try { chrome.runtime.openOptionsPage(); } catch (_) {}
     sendResponse({ ok: true });
     return true;
   }

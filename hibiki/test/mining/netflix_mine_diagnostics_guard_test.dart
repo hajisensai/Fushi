@@ -34,9 +34,12 @@ void main() {
         expect(
             src.contains('function hibikiMineHttpFailureReason(resp)'), isTrue,
             reason: '$root 未实现 HTTP 层失败原因翻译（静默吞失败）');
+        // 断言到「原因被传进 toast」为止，不含收尾的 `)`：hibikiToast 现在还接
+        // (sticky, openSettings) 两个可选参数（401/4xx 的解法就在扩展设置页，故那两类
+        // toast 可点直达）。钉整行字面量会把「给这条 toast 加参数」误判成「不弹 toast 了」。
         expect(
             src.contains(
-                "window.hibikiToast('✗ ' + hibikiMineHttpFailureReason(resp))"),
+                "window.hibikiToast('✗ ' + hibikiMineHttpFailureReason(resp)"),
             isTrue,
             reason: '$root HTTP 失败分支未弹 ✗ 原因 toast');
         expect(src.contains('鉴权失败(401)'), isTrue,

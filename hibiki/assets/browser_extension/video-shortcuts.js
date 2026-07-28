@@ -4,6 +4,8 @@
 //   ↑           回当前句句首重播
 //   Shift+P/O/F 开关 自动暂停 / 精简播放 / 快进无字幕段
 //   Shift+S     开关字幕列表面板
+//   Shift+H     隐藏/显示字幕（站点原生字幕 + 扩展覆盖层，与 app 内视频页同键）
+//   Ctrl+Enter  制卡（等同点查词弹窗里的「＋」；判定不在本文件，见 vendor/popup.js）
 //   Ctrl+Shift+←/→/↓  字幕时轴偏移 −100ms / ＋100ms / 重置
 //   Ctrl+Shift+Z      复制当前字幕句到剪贴板（配合 Hibiki 剪贴板监看即查词）
 //   Ctrl+Shift+[ / ]  播放速度 −0.25x / ＋0.25x
@@ -36,6 +38,11 @@
     }
     if (ev.ctrl) return null;
     if (ev.shift) {
+      // 隐藏字幕（Shift+H）刻意排在 hasTrack 门之前：它藏的是**站点原生字幕**（Netflix /
+      // YouTube 自带轨）+ 扩展自绘覆盖层，而 hasTrack 问的是「扩展这边有没有加载过字幕轨」。
+      // 二者正交——绝大多数用户是在看站点原生字幕、根本没往扩展里挂轨，若卡在 hasTrack 后面，
+      // 这个键在最主要的使用场景下会永远不触发。与 app 的 videoToggleSubtitleHide 默认键一致。
+      if (code === 'KeyH') return { action: 'toggle-subtitle-hide' };
       if (!ctx.hasTrack) return null;
       if (code === 'KeyP') return { action: 'toggle-autopause' };
       if (code === 'KeyO') return { action: 'toggle-condensed' };
