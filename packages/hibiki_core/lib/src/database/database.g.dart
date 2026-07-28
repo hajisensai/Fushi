@@ -21010,6 +21010,2414 @@ class GalgameTagMappingsCompanion
   }
 }
 
+class $MangaExtensionStoresTable extends MangaExtensionStores
+    with TableInfo<$MangaExtensionStoresTable, MangaExtensionStoreRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MangaExtensionStoresTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _indexUrlMeta =
+      const VerificationMeta('indexUrl');
+  @override
+  late final GeneratedColumn<String> indexUrl = GeneratedColumn<String>(
+      'index_url', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+      'name', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _badgeLabelMeta =
+      const VerificationMeta('badgeLabel');
+  @override
+  late final GeneratedColumn<String> badgeLabel = GeneratedColumn<String>(
+      'badge_label', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _signingKeyMeta =
+      const VerificationMeta('signingKey');
+  @override
+  late final GeneratedColumn<String> signingKey = GeneratedColumn<String>(
+      'signing_key', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _contactJsonMeta =
+      const VerificationMeta('contactJson');
+  @override
+  late final GeneratedColumn<String> contactJson = GeneratedColumn<String>(
+      'contact_json', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _formatMeta = const VerificationMeta('format');
+  @override
+  late final GeneratedColumn<String> format = GeneratedColumn<String>(
+      'format', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _extensionListUrlMeta =
+      const VerificationMeta('extensionListUrl');
+  @override
+  late final GeneratedColumn<String> extensionListUrl = GeneratedColumn<String>(
+      'extension_list_url', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _enabledMeta =
+      const VerificationMeta('enabled');
+  @override
+  late final GeneratedColumn<bool> enabled = GeneratedColumn<bool>(
+      'enabled', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("enabled" IN (0, 1))'),
+      defaultValue: const Constant(true));
+  static const VerificationMeta _sortOrderMeta =
+      const VerificationMeta('sortOrder');
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+      'sort_order', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _etagMeta = const VerificationMeta('etag');
+  @override
+  late final GeneratedColumn<String> etag = GeneratedColumn<String>(
+      'etag', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _lastModifiedMeta =
+      const VerificationMeta('lastModified');
+  @override
+  late final GeneratedColumn<String> lastModified = GeneratedColumn<String>(
+      'last_modified', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _lastSyncAtMeta =
+      const VerificationMeta('lastSyncAt');
+  @override
+  late final GeneratedColumn<int> lastSyncAt = GeneratedColumn<int>(
+      'last_sync_at', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _lastErrorMeta =
+      const VerificationMeta('lastError');
+  @override
+  late final GeneratedColumn<String> lastError = GeneratedColumn<String>(
+      'last_error', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns => [
+        indexUrl,
+        name,
+        badgeLabel,
+        signingKey,
+        contactJson,
+        format,
+        extensionListUrl,
+        enabled,
+        sortOrder,
+        etag,
+        lastModified,
+        lastSyncAt,
+        lastError
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'manga_extension_stores';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<MangaExtensionStoreRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('index_url')) {
+      context.handle(_indexUrlMeta,
+          indexUrl.isAcceptableOrUnknown(data['index_url']!, _indexUrlMeta));
+    } else if (isInserting) {
+      context.missing(_indexUrlMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+          _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('badge_label')) {
+      context.handle(
+          _badgeLabelMeta,
+          badgeLabel.isAcceptableOrUnknown(
+              data['badge_label']!, _badgeLabelMeta));
+    }
+    if (data.containsKey('signing_key')) {
+      context.handle(
+          _signingKeyMeta,
+          signingKey.isAcceptableOrUnknown(
+              data['signing_key']!, _signingKeyMeta));
+    }
+    if (data.containsKey('contact_json')) {
+      context.handle(
+          _contactJsonMeta,
+          contactJson.isAcceptableOrUnknown(
+              data['contact_json']!, _contactJsonMeta));
+    }
+    if (data.containsKey('format')) {
+      context.handle(_formatMeta,
+          format.isAcceptableOrUnknown(data['format']!, _formatMeta));
+    } else if (isInserting) {
+      context.missing(_formatMeta);
+    }
+    if (data.containsKey('extension_list_url')) {
+      context.handle(
+          _extensionListUrlMeta,
+          extensionListUrl.isAcceptableOrUnknown(
+              data['extension_list_url']!, _extensionListUrlMeta));
+    }
+    if (data.containsKey('enabled')) {
+      context.handle(_enabledMeta,
+          enabled.isAcceptableOrUnknown(data['enabled']!, _enabledMeta));
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(_sortOrderMeta,
+          sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta));
+    }
+    if (data.containsKey('etag')) {
+      context.handle(
+          _etagMeta, etag.isAcceptableOrUnknown(data['etag']!, _etagMeta));
+    }
+    if (data.containsKey('last_modified')) {
+      context.handle(
+          _lastModifiedMeta,
+          lastModified.isAcceptableOrUnknown(
+              data['last_modified']!, _lastModifiedMeta));
+    }
+    if (data.containsKey('last_sync_at')) {
+      context.handle(
+          _lastSyncAtMeta,
+          lastSyncAt.isAcceptableOrUnknown(
+              data['last_sync_at']!, _lastSyncAtMeta));
+    }
+    if (data.containsKey('last_error')) {
+      context.handle(_lastErrorMeta,
+          lastError.isAcceptableOrUnknown(data['last_error']!, _lastErrorMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {indexUrl};
+  @override
+  MangaExtensionStoreRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MangaExtensionStoreRow(
+      indexUrl: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}index_url'])!,
+      name: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
+      badgeLabel: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}badge_label']),
+      signingKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}signing_key']),
+      contactJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}contact_json']),
+      format: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}format'])!,
+      extensionListUrl: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}extension_list_url']),
+      enabled: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}enabled'])!,
+      sortOrder: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}sort_order'])!,
+      etag: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}etag']),
+      lastModified: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}last_modified']),
+      lastSyncAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}last_sync_at']),
+      lastError: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}last_error']),
+    );
+  }
+
+  @override
+  $MangaExtensionStoresTable createAlias(String alias) {
+    return $MangaExtensionStoresTable(attachedDatabase, alias);
+  }
+}
+
+class MangaExtensionStoreRow extends DataClass
+    implements Insertable<MangaExtensionStoreRow> {
+  /// 仓库入口 URL 同时是稳定身份；更新时 URL 不随仓库显示名变化。
+  final String indexUrl;
+  final String name;
+  final String? badgeLabel;
+  final String? signingKey;
+  final String? contactJson;
+  final String format;
+  final String? extensionListUrl;
+  final bool enabled;
+  final int sortOrder;
+  final String? etag;
+  final String? lastModified;
+  final int? lastSyncAt;
+  final String? lastError;
+  const MangaExtensionStoreRow(
+      {required this.indexUrl,
+      required this.name,
+      this.badgeLabel,
+      this.signingKey,
+      this.contactJson,
+      required this.format,
+      this.extensionListUrl,
+      required this.enabled,
+      required this.sortOrder,
+      this.etag,
+      this.lastModified,
+      this.lastSyncAt,
+      this.lastError});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['index_url'] = Variable<String>(indexUrl);
+    map['name'] = Variable<String>(name);
+    if (!nullToAbsent || badgeLabel != null) {
+      map['badge_label'] = Variable<String>(badgeLabel);
+    }
+    if (!nullToAbsent || signingKey != null) {
+      map['signing_key'] = Variable<String>(signingKey);
+    }
+    if (!nullToAbsent || contactJson != null) {
+      map['contact_json'] = Variable<String>(contactJson);
+    }
+    map['format'] = Variable<String>(format);
+    if (!nullToAbsent || extensionListUrl != null) {
+      map['extension_list_url'] = Variable<String>(extensionListUrl);
+    }
+    map['enabled'] = Variable<bool>(enabled);
+    map['sort_order'] = Variable<int>(sortOrder);
+    if (!nullToAbsent || etag != null) {
+      map['etag'] = Variable<String>(etag);
+    }
+    if (!nullToAbsent || lastModified != null) {
+      map['last_modified'] = Variable<String>(lastModified);
+    }
+    if (!nullToAbsent || lastSyncAt != null) {
+      map['last_sync_at'] = Variable<int>(lastSyncAt);
+    }
+    if (!nullToAbsent || lastError != null) {
+      map['last_error'] = Variable<String>(lastError);
+    }
+    return map;
+  }
+
+  MangaExtensionStoresCompanion toCompanion(bool nullToAbsent) {
+    return MangaExtensionStoresCompanion(
+      indexUrl: Value(indexUrl),
+      name: Value(name),
+      badgeLabel: badgeLabel == null && nullToAbsent
+          ? const Value.absent()
+          : Value(badgeLabel),
+      signingKey: signingKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(signingKey),
+      contactJson: contactJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(contactJson),
+      format: Value(format),
+      extensionListUrl: extensionListUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(extensionListUrl),
+      enabled: Value(enabled),
+      sortOrder: Value(sortOrder),
+      etag: etag == null && nullToAbsent ? const Value.absent() : Value(etag),
+      lastModified: lastModified == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastModified),
+      lastSyncAt: lastSyncAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastSyncAt),
+      lastError: lastError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastError),
+    );
+  }
+
+  factory MangaExtensionStoreRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MangaExtensionStoreRow(
+      indexUrl: serializer.fromJson<String>(json['indexUrl']),
+      name: serializer.fromJson<String>(json['name']),
+      badgeLabel: serializer.fromJson<String?>(json['badgeLabel']),
+      signingKey: serializer.fromJson<String?>(json['signingKey']),
+      contactJson: serializer.fromJson<String?>(json['contactJson']),
+      format: serializer.fromJson<String>(json['format']),
+      extensionListUrl: serializer.fromJson<String?>(json['extensionListUrl']),
+      enabled: serializer.fromJson<bool>(json['enabled']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      etag: serializer.fromJson<String?>(json['etag']),
+      lastModified: serializer.fromJson<String?>(json['lastModified']),
+      lastSyncAt: serializer.fromJson<int?>(json['lastSyncAt']),
+      lastError: serializer.fromJson<String?>(json['lastError']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'indexUrl': serializer.toJson<String>(indexUrl),
+      'name': serializer.toJson<String>(name),
+      'badgeLabel': serializer.toJson<String?>(badgeLabel),
+      'signingKey': serializer.toJson<String?>(signingKey),
+      'contactJson': serializer.toJson<String?>(contactJson),
+      'format': serializer.toJson<String>(format),
+      'extensionListUrl': serializer.toJson<String?>(extensionListUrl),
+      'enabled': serializer.toJson<bool>(enabled),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+      'etag': serializer.toJson<String?>(etag),
+      'lastModified': serializer.toJson<String?>(lastModified),
+      'lastSyncAt': serializer.toJson<int?>(lastSyncAt),
+      'lastError': serializer.toJson<String?>(lastError),
+    };
+  }
+
+  MangaExtensionStoreRow copyWith(
+          {String? indexUrl,
+          String? name,
+          Value<String?> badgeLabel = const Value.absent(),
+          Value<String?> signingKey = const Value.absent(),
+          Value<String?> contactJson = const Value.absent(),
+          String? format,
+          Value<String?> extensionListUrl = const Value.absent(),
+          bool? enabled,
+          int? sortOrder,
+          Value<String?> etag = const Value.absent(),
+          Value<String?> lastModified = const Value.absent(),
+          Value<int?> lastSyncAt = const Value.absent(),
+          Value<String?> lastError = const Value.absent()}) =>
+      MangaExtensionStoreRow(
+        indexUrl: indexUrl ?? this.indexUrl,
+        name: name ?? this.name,
+        badgeLabel: badgeLabel.present ? badgeLabel.value : this.badgeLabel,
+        signingKey: signingKey.present ? signingKey.value : this.signingKey,
+        contactJson: contactJson.present ? contactJson.value : this.contactJson,
+        format: format ?? this.format,
+        extensionListUrl: extensionListUrl.present
+            ? extensionListUrl.value
+            : this.extensionListUrl,
+        enabled: enabled ?? this.enabled,
+        sortOrder: sortOrder ?? this.sortOrder,
+        etag: etag.present ? etag.value : this.etag,
+        lastModified:
+            lastModified.present ? lastModified.value : this.lastModified,
+        lastSyncAt: lastSyncAt.present ? lastSyncAt.value : this.lastSyncAt,
+        lastError: lastError.present ? lastError.value : this.lastError,
+      );
+  MangaExtensionStoreRow copyWithCompanion(MangaExtensionStoresCompanion data) {
+    return MangaExtensionStoreRow(
+      indexUrl: data.indexUrl.present ? data.indexUrl.value : this.indexUrl,
+      name: data.name.present ? data.name.value : this.name,
+      badgeLabel:
+          data.badgeLabel.present ? data.badgeLabel.value : this.badgeLabel,
+      signingKey:
+          data.signingKey.present ? data.signingKey.value : this.signingKey,
+      contactJson:
+          data.contactJson.present ? data.contactJson.value : this.contactJson,
+      format: data.format.present ? data.format.value : this.format,
+      extensionListUrl: data.extensionListUrl.present
+          ? data.extensionListUrl.value
+          : this.extensionListUrl,
+      enabled: data.enabled.present ? data.enabled.value : this.enabled,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      etag: data.etag.present ? data.etag.value : this.etag,
+      lastModified: data.lastModified.present
+          ? data.lastModified.value
+          : this.lastModified,
+      lastSyncAt:
+          data.lastSyncAt.present ? data.lastSyncAt.value : this.lastSyncAt,
+      lastError: data.lastError.present ? data.lastError.value : this.lastError,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaExtensionStoreRow(')
+          ..write('indexUrl: $indexUrl, ')
+          ..write('name: $name, ')
+          ..write('badgeLabel: $badgeLabel, ')
+          ..write('signingKey: $signingKey, ')
+          ..write('contactJson: $contactJson, ')
+          ..write('format: $format, ')
+          ..write('extensionListUrl: $extensionListUrl, ')
+          ..write('enabled: $enabled, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('etag: $etag, ')
+          ..write('lastModified: $lastModified, ')
+          ..write('lastSyncAt: $lastSyncAt, ')
+          ..write('lastError: $lastError')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      indexUrl,
+      name,
+      badgeLabel,
+      signingKey,
+      contactJson,
+      format,
+      extensionListUrl,
+      enabled,
+      sortOrder,
+      etag,
+      lastModified,
+      lastSyncAt,
+      lastError);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MangaExtensionStoreRow &&
+          other.indexUrl == this.indexUrl &&
+          other.name == this.name &&
+          other.badgeLabel == this.badgeLabel &&
+          other.signingKey == this.signingKey &&
+          other.contactJson == this.contactJson &&
+          other.format == this.format &&
+          other.extensionListUrl == this.extensionListUrl &&
+          other.enabled == this.enabled &&
+          other.sortOrder == this.sortOrder &&
+          other.etag == this.etag &&
+          other.lastModified == this.lastModified &&
+          other.lastSyncAt == this.lastSyncAt &&
+          other.lastError == this.lastError);
+}
+
+class MangaExtensionStoresCompanion
+    extends UpdateCompanion<MangaExtensionStoreRow> {
+  final Value<String> indexUrl;
+  final Value<String> name;
+  final Value<String?> badgeLabel;
+  final Value<String?> signingKey;
+  final Value<String?> contactJson;
+  final Value<String> format;
+  final Value<String?> extensionListUrl;
+  final Value<bool> enabled;
+  final Value<int> sortOrder;
+  final Value<String?> etag;
+  final Value<String?> lastModified;
+  final Value<int?> lastSyncAt;
+  final Value<String?> lastError;
+  final Value<int> rowid;
+  const MangaExtensionStoresCompanion({
+    this.indexUrl = const Value.absent(),
+    this.name = const Value.absent(),
+    this.badgeLabel = const Value.absent(),
+    this.signingKey = const Value.absent(),
+    this.contactJson = const Value.absent(),
+    this.format = const Value.absent(),
+    this.extensionListUrl = const Value.absent(),
+    this.enabled = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.etag = const Value.absent(),
+    this.lastModified = const Value.absent(),
+    this.lastSyncAt = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MangaExtensionStoresCompanion.insert({
+    required String indexUrl,
+    required String name,
+    this.badgeLabel = const Value.absent(),
+    this.signingKey = const Value.absent(),
+    this.contactJson = const Value.absent(),
+    required String format,
+    this.extensionListUrl = const Value.absent(),
+    this.enabled = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.etag = const Value.absent(),
+    this.lastModified = const Value.absent(),
+    this.lastSyncAt = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : indexUrl = Value(indexUrl),
+        name = Value(name),
+        format = Value(format);
+  static Insertable<MangaExtensionStoreRow> custom({
+    Expression<String>? indexUrl,
+    Expression<String>? name,
+    Expression<String>? badgeLabel,
+    Expression<String>? signingKey,
+    Expression<String>? contactJson,
+    Expression<String>? format,
+    Expression<String>? extensionListUrl,
+    Expression<bool>? enabled,
+    Expression<int>? sortOrder,
+    Expression<String>? etag,
+    Expression<String>? lastModified,
+    Expression<int>? lastSyncAt,
+    Expression<String>? lastError,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (indexUrl != null) 'index_url': indexUrl,
+      if (name != null) 'name': name,
+      if (badgeLabel != null) 'badge_label': badgeLabel,
+      if (signingKey != null) 'signing_key': signingKey,
+      if (contactJson != null) 'contact_json': contactJson,
+      if (format != null) 'format': format,
+      if (extensionListUrl != null) 'extension_list_url': extensionListUrl,
+      if (enabled != null) 'enabled': enabled,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (etag != null) 'etag': etag,
+      if (lastModified != null) 'last_modified': lastModified,
+      if (lastSyncAt != null) 'last_sync_at': lastSyncAt,
+      if (lastError != null) 'last_error': lastError,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MangaExtensionStoresCompanion copyWith(
+      {Value<String>? indexUrl,
+      Value<String>? name,
+      Value<String?>? badgeLabel,
+      Value<String?>? signingKey,
+      Value<String?>? contactJson,
+      Value<String>? format,
+      Value<String?>? extensionListUrl,
+      Value<bool>? enabled,
+      Value<int>? sortOrder,
+      Value<String?>? etag,
+      Value<String?>? lastModified,
+      Value<int?>? lastSyncAt,
+      Value<String?>? lastError,
+      Value<int>? rowid}) {
+    return MangaExtensionStoresCompanion(
+      indexUrl: indexUrl ?? this.indexUrl,
+      name: name ?? this.name,
+      badgeLabel: badgeLabel ?? this.badgeLabel,
+      signingKey: signingKey ?? this.signingKey,
+      contactJson: contactJson ?? this.contactJson,
+      format: format ?? this.format,
+      extensionListUrl: extensionListUrl ?? this.extensionListUrl,
+      enabled: enabled ?? this.enabled,
+      sortOrder: sortOrder ?? this.sortOrder,
+      etag: etag ?? this.etag,
+      lastModified: lastModified ?? this.lastModified,
+      lastSyncAt: lastSyncAt ?? this.lastSyncAt,
+      lastError: lastError ?? this.lastError,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (indexUrl.present) {
+      map['index_url'] = Variable<String>(indexUrl.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (badgeLabel.present) {
+      map['badge_label'] = Variable<String>(badgeLabel.value);
+    }
+    if (signingKey.present) {
+      map['signing_key'] = Variable<String>(signingKey.value);
+    }
+    if (contactJson.present) {
+      map['contact_json'] = Variable<String>(contactJson.value);
+    }
+    if (format.present) {
+      map['format'] = Variable<String>(format.value);
+    }
+    if (extensionListUrl.present) {
+      map['extension_list_url'] = Variable<String>(extensionListUrl.value);
+    }
+    if (enabled.present) {
+      map['enabled'] = Variable<bool>(enabled.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (etag.present) {
+      map['etag'] = Variable<String>(etag.value);
+    }
+    if (lastModified.present) {
+      map['last_modified'] = Variable<String>(lastModified.value);
+    }
+    if (lastSyncAt.present) {
+      map['last_sync_at'] = Variable<int>(lastSyncAt.value);
+    }
+    if (lastError.present) {
+      map['last_error'] = Variable<String>(lastError.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaExtensionStoresCompanion(')
+          ..write('indexUrl: $indexUrl, ')
+          ..write('name: $name, ')
+          ..write('badgeLabel: $badgeLabel, ')
+          ..write('signingKey: $signingKey, ')
+          ..write('contactJson: $contactJson, ')
+          ..write('format: $format, ')
+          ..write('extensionListUrl: $extensionListUrl, ')
+          ..write('enabled: $enabled, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('etag: $etag, ')
+          ..write('lastModified: $lastModified, ')
+          ..write('lastSyncAt: $lastSyncAt, ')
+          ..write('lastError: $lastError, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MangaExtensionsTable extends MangaExtensions
+    with TableInfo<$MangaExtensionsTable, MangaExtensionRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MangaExtensionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _packageNameMeta =
+      const VerificationMeta('packageName');
+  @override
+  late final GeneratedColumn<String> packageName = GeneratedColumn<String>(
+      'package_name', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _storeUrlMeta =
+      const VerificationMeta('storeUrl');
+  @override
+  late final GeneratedColumn<String> storeUrl = GeneratedColumn<String>(
+      'store_url', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+      'name', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _versionCodeMeta =
+      const VerificationMeta('versionCode');
+  @override
+  late final GeneratedColumn<int> versionCode = GeneratedColumn<int>(
+      'version_code', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _versionNameMeta =
+      const VerificationMeta('versionName');
+  @override
+  late final GeneratedColumn<String> versionName = GeneratedColumn<String>(
+      'version_name', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _libVersionMeta =
+      const VerificationMeta('libVersion');
+  @override
+  late final GeneratedColumn<String> libVersion = GeneratedColumn<String>(
+      'lib_version', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _languageMeta =
+      const VerificationMeta('language');
+  @override
+  late final GeneratedColumn<String> language = GeneratedColumn<String>(
+      'language', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _contentWarningMeta =
+      const VerificationMeta('contentWarning');
+  @override
+  late final GeneratedColumn<int> contentWarning = GeneratedColumn<int>(
+      'content_warning', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _apkPathMeta =
+      const VerificationMeta('apkPath');
+  @override
+  late final GeneratedColumn<String> apkPath = GeneratedColumn<String>(
+      'apk_path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _apkSha256Meta =
+      const VerificationMeta('apkSha256');
+  @override
+  late final GeneratedColumn<String> apkSha256 = GeneratedColumn<String>(
+      'apk_sha256', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _signerSha256Meta =
+      const VerificationMeta('signerSha256');
+  @override
+  late final GeneratedColumn<String> signerSha256 = GeneratedColumn<String>(
+      'signer_sha256', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _enabledMeta =
+      const VerificationMeta('enabled');
+  @override
+  late final GeneratedColumn<bool> enabled = GeneratedColumn<bool>(
+      'enabled', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("enabled" IN (0, 1))'),
+      defaultValue: const Constant(true));
+  static const VerificationMeta _installedAtMeta =
+      const VerificationMeta('installedAt');
+  @override
+  late final GeneratedColumn<int> installedAt = GeneratedColumn<int>(
+      'installed_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [
+        packageName,
+        storeUrl,
+        name,
+        versionCode,
+        versionName,
+        libVersion,
+        language,
+        contentWarning,
+        apkPath,
+        apkSha256,
+        signerSha256,
+        enabled,
+        installedAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'manga_extensions';
+  @override
+  VerificationContext validateIntegrity(Insertable<MangaExtensionRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('package_name')) {
+      context.handle(
+          _packageNameMeta,
+          packageName.isAcceptableOrUnknown(
+              data['package_name']!, _packageNameMeta));
+    } else if (isInserting) {
+      context.missing(_packageNameMeta);
+    }
+    if (data.containsKey('store_url')) {
+      context.handle(_storeUrlMeta,
+          storeUrl.isAcceptableOrUnknown(data['store_url']!, _storeUrlMeta));
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+          _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('version_code')) {
+      context.handle(
+          _versionCodeMeta,
+          versionCode.isAcceptableOrUnknown(
+              data['version_code']!, _versionCodeMeta));
+    } else if (isInserting) {
+      context.missing(_versionCodeMeta);
+    }
+    if (data.containsKey('version_name')) {
+      context.handle(
+          _versionNameMeta,
+          versionName.isAcceptableOrUnknown(
+              data['version_name']!, _versionNameMeta));
+    } else if (isInserting) {
+      context.missing(_versionNameMeta);
+    }
+    if (data.containsKey('lib_version')) {
+      context.handle(
+          _libVersionMeta,
+          libVersion.isAcceptableOrUnknown(
+              data['lib_version']!, _libVersionMeta));
+    } else if (isInserting) {
+      context.missing(_libVersionMeta);
+    }
+    if (data.containsKey('language')) {
+      context.handle(_languageMeta,
+          language.isAcceptableOrUnknown(data['language']!, _languageMeta));
+    } else if (isInserting) {
+      context.missing(_languageMeta);
+    }
+    if (data.containsKey('content_warning')) {
+      context.handle(
+          _contentWarningMeta,
+          contentWarning.isAcceptableOrUnknown(
+              data['content_warning']!, _contentWarningMeta));
+    }
+    if (data.containsKey('apk_path')) {
+      context.handle(_apkPathMeta,
+          apkPath.isAcceptableOrUnknown(data['apk_path']!, _apkPathMeta));
+    } else if (isInserting) {
+      context.missing(_apkPathMeta);
+    }
+    if (data.containsKey('apk_sha256')) {
+      context.handle(_apkSha256Meta,
+          apkSha256.isAcceptableOrUnknown(data['apk_sha256']!, _apkSha256Meta));
+    } else if (isInserting) {
+      context.missing(_apkSha256Meta);
+    }
+    if (data.containsKey('signer_sha256')) {
+      context.handle(
+          _signerSha256Meta,
+          signerSha256.isAcceptableOrUnknown(
+              data['signer_sha256']!, _signerSha256Meta));
+    } else if (isInserting) {
+      context.missing(_signerSha256Meta);
+    }
+    if (data.containsKey('enabled')) {
+      context.handle(_enabledMeta,
+          enabled.isAcceptableOrUnknown(data['enabled']!, _enabledMeta));
+    }
+    if (data.containsKey('installed_at')) {
+      context.handle(
+          _installedAtMeta,
+          installedAt.isAcceptableOrUnknown(
+              data['installed_at']!, _installedAtMeta));
+    } else if (isInserting) {
+      context.missing(_installedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {packageName};
+  @override
+  MangaExtensionRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MangaExtensionRow(
+      packageName: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}package_name'])!,
+      storeUrl: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}store_url']),
+      name: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
+      versionCode: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}version_code'])!,
+      versionName: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}version_name'])!,
+      libVersion: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}lib_version'])!,
+      language: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}language'])!,
+      contentWarning: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}content_warning'])!,
+      apkPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}apk_path'])!,
+      apkSha256: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}apk_sha256'])!,
+      signerSha256: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}signer_sha256'])!,
+      enabled: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}enabled'])!,
+      installedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}installed_at'])!,
+    );
+  }
+
+  @override
+  $MangaExtensionsTable createAlias(String alias) {
+    return $MangaExtensionsTable(attachedDatabase, alias);
+  }
+}
+
+class MangaExtensionRow extends DataClass
+    implements Insertable<MangaExtensionRow> {
+  final String packageName;
+  final String? storeUrl;
+  final String name;
+  final int versionCode;
+  final String versionName;
+  final String libVersion;
+  final String language;
+  final int contentWarning;
+  final String apkPath;
+  final String apkSha256;
+  final String signerSha256;
+  final bool enabled;
+  final int installedAt;
+  const MangaExtensionRow(
+      {required this.packageName,
+      this.storeUrl,
+      required this.name,
+      required this.versionCode,
+      required this.versionName,
+      required this.libVersion,
+      required this.language,
+      required this.contentWarning,
+      required this.apkPath,
+      required this.apkSha256,
+      required this.signerSha256,
+      required this.enabled,
+      required this.installedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['package_name'] = Variable<String>(packageName);
+    if (!nullToAbsent || storeUrl != null) {
+      map['store_url'] = Variable<String>(storeUrl);
+    }
+    map['name'] = Variable<String>(name);
+    map['version_code'] = Variable<int>(versionCode);
+    map['version_name'] = Variable<String>(versionName);
+    map['lib_version'] = Variable<String>(libVersion);
+    map['language'] = Variable<String>(language);
+    map['content_warning'] = Variable<int>(contentWarning);
+    map['apk_path'] = Variable<String>(apkPath);
+    map['apk_sha256'] = Variable<String>(apkSha256);
+    map['signer_sha256'] = Variable<String>(signerSha256);
+    map['enabled'] = Variable<bool>(enabled);
+    map['installed_at'] = Variable<int>(installedAt);
+    return map;
+  }
+
+  MangaExtensionsCompanion toCompanion(bool nullToAbsent) {
+    return MangaExtensionsCompanion(
+      packageName: Value(packageName),
+      storeUrl: storeUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(storeUrl),
+      name: Value(name),
+      versionCode: Value(versionCode),
+      versionName: Value(versionName),
+      libVersion: Value(libVersion),
+      language: Value(language),
+      contentWarning: Value(contentWarning),
+      apkPath: Value(apkPath),
+      apkSha256: Value(apkSha256),
+      signerSha256: Value(signerSha256),
+      enabled: Value(enabled),
+      installedAt: Value(installedAt),
+    );
+  }
+
+  factory MangaExtensionRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MangaExtensionRow(
+      packageName: serializer.fromJson<String>(json['packageName']),
+      storeUrl: serializer.fromJson<String?>(json['storeUrl']),
+      name: serializer.fromJson<String>(json['name']),
+      versionCode: serializer.fromJson<int>(json['versionCode']),
+      versionName: serializer.fromJson<String>(json['versionName']),
+      libVersion: serializer.fromJson<String>(json['libVersion']),
+      language: serializer.fromJson<String>(json['language']),
+      contentWarning: serializer.fromJson<int>(json['contentWarning']),
+      apkPath: serializer.fromJson<String>(json['apkPath']),
+      apkSha256: serializer.fromJson<String>(json['apkSha256']),
+      signerSha256: serializer.fromJson<String>(json['signerSha256']),
+      enabled: serializer.fromJson<bool>(json['enabled']),
+      installedAt: serializer.fromJson<int>(json['installedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'packageName': serializer.toJson<String>(packageName),
+      'storeUrl': serializer.toJson<String?>(storeUrl),
+      'name': serializer.toJson<String>(name),
+      'versionCode': serializer.toJson<int>(versionCode),
+      'versionName': serializer.toJson<String>(versionName),
+      'libVersion': serializer.toJson<String>(libVersion),
+      'language': serializer.toJson<String>(language),
+      'contentWarning': serializer.toJson<int>(contentWarning),
+      'apkPath': serializer.toJson<String>(apkPath),
+      'apkSha256': serializer.toJson<String>(apkSha256),
+      'signerSha256': serializer.toJson<String>(signerSha256),
+      'enabled': serializer.toJson<bool>(enabled),
+      'installedAt': serializer.toJson<int>(installedAt),
+    };
+  }
+
+  MangaExtensionRow copyWith(
+          {String? packageName,
+          Value<String?> storeUrl = const Value.absent(),
+          String? name,
+          int? versionCode,
+          String? versionName,
+          String? libVersion,
+          String? language,
+          int? contentWarning,
+          String? apkPath,
+          String? apkSha256,
+          String? signerSha256,
+          bool? enabled,
+          int? installedAt}) =>
+      MangaExtensionRow(
+        packageName: packageName ?? this.packageName,
+        storeUrl: storeUrl.present ? storeUrl.value : this.storeUrl,
+        name: name ?? this.name,
+        versionCode: versionCode ?? this.versionCode,
+        versionName: versionName ?? this.versionName,
+        libVersion: libVersion ?? this.libVersion,
+        language: language ?? this.language,
+        contentWarning: contentWarning ?? this.contentWarning,
+        apkPath: apkPath ?? this.apkPath,
+        apkSha256: apkSha256 ?? this.apkSha256,
+        signerSha256: signerSha256 ?? this.signerSha256,
+        enabled: enabled ?? this.enabled,
+        installedAt: installedAt ?? this.installedAt,
+      );
+  MangaExtensionRow copyWithCompanion(MangaExtensionsCompanion data) {
+    return MangaExtensionRow(
+      packageName:
+          data.packageName.present ? data.packageName.value : this.packageName,
+      storeUrl: data.storeUrl.present ? data.storeUrl.value : this.storeUrl,
+      name: data.name.present ? data.name.value : this.name,
+      versionCode:
+          data.versionCode.present ? data.versionCode.value : this.versionCode,
+      versionName:
+          data.versionName.present ? data.versionName.value : this.versionName,
+      libVersion:
+          data.libVersion.present ? data.libVersion.value : this.libVersion,
+      language: data.language.present ? data.language.value : this.language,
+      contentWarning: data.contentWarning.present
+          ? data.contentWarning.value
+          : this.contentWarning,
+      apkPath: data.apkPath.present ? data.apkPath.value : this.apkPath,
+      apkSha256: data.apkSha256.present ? data.apkSha256.value : this.apkSha256,
+      signerSha256: data.signerSha256.present
+          ? data.signerSha256.value
+          : this.signerSha256,
+      enabled: data.enabled.present ? data.enabled.value : this.enabled,
+      installedAt:
+          data.installedAt.present ? data.installedAt.value : this.installedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaExtensionRow(')
+          ..write('packageName: $packageName, ')
+          ..write('storeUrl: $storeUrl, ')
+          ..write('name: $name, ')
+          ..write('versionCode: $versionCode, ')
+          ..write('versionName: $versionName, ')
+          ..write('libVersion: $libVersion, ')
+          ..write('language: $language, ')
+          ..write('contentWarning: $contentWarning, ')
+          ..write('apkPath: $apkPath, ')
+          ..write('apkSha256: $apkSha256, ')
+          ..write('signerSha256: $signerSha256, ')
+          ..write('enabled: $enabled, ')
+          ..write('installedAt: $installedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      packageName,
+      storeUrl,
+      name,
+      versionCode,
+      versionName,
+      libVersion,
+      language,
+      contentWarning,
+      apkPath,
+      apkSha256,
+      signerSha256,
+      enabled,
+      installedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MangaExtensionRow &&
+          other.packageName == this.packageName &&
+          other.storeUrl == this.storeUrl &&
+          other.name == this.name &&
+          other.versionCode == this.versionCode &&
+          other.versionName == this.versionName &&
+          other.libVersion == this.libVersion &&
+          other.language == this.language &&
+          other.contentWarning == this.contentWarning &&
+          other.apkPath == this.apkPath &&
+          other.apkSha256 == this.apkSha256 &&
+          other.signerSha256 == this.signerSha256 &&
+          other.enabled == this.enabled &&
+          other.installedAt == this.installedAt);
+}
+
+class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
+  final Value<String> packageName;
+  final Value<String?> storeUrl;
+  final Value<String> name;
+  final Value<int> versionCode;
+  final Value<String> versionName;
+  final Value<String> libVersion;
+  final Value<String> language;
+  final Value<int> contentWarning;
+  final Value<String> apkPath;
+  final Value<String> apkSha256;
+  final Value<String> signerSha256;
+  final Value<bool> enabled;
+  final Value<int> installedAt;
+  final Value<int> rowid;
+  const MangaExtensionsCompanion({
+    this.packageName = const Value.absent(),
+    this.storeUrl = const Value.absent(),
+    this.name = const Value.absent(),
+    this.versionCode = const Value.absent(),
+    this.versionName = const Value.absent(),
+    this.libVersion = const Value.absent(),
+    this.language = const Value.absent(),
+    this.contentWarning = const Value.absent(),
+    this.apkPath = const Value.absent(),
+    this.apkSha256 = const Value.absent(),
+    this.signerSha256 = const Value.absent(),
+    this.enabled = const Value.absent(),
+    this.installedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MangaExtensionsCompanion.insert({
+    required String packageName,
+    this.storeUrl = const Value.absent(),
+    required String name,
+    required int versionCode,
+    required String versionName,
+    required String libVersion,
+    required String language,
+    this.contentWarning = const Value.absent(),
+    required String apkPath,
+    required String apkSha256,
+    required String signerSha256,
+    this.enabled = const Value.absent(),
+    required int installedAt,
+    this.rowid = const Value.absent(),
+  })  : packageName = Value(packageName),
+        name = Value(name),
+        versionCode = Value(versionCode),
+        versionName = Value(versionName),
+        libVersion = Value(libVersion),
+        language = Value(language),
+        apkPath = Value(apkPath),
+        apkSha256 = Value(apkSha256),
+        signerSha256 = Value(signerSha256),
+        installedAt = Value(installedAt);
+  static Insertable<MangaExtensionRow> custom({
+    Expression<String>? packageName,
+    Expression<String>? storeUrl,
+    Expression<String>? name,
+    Expression<int>? versionCode,
+    Expression<String>? versionName,
+    Expression<String>? libVersion,
+    Expression<String>? language,
+    Expression<int>? contentWarning,
+    Expression<String>? apkPath,
+    Expression<String>? apkSha256,
+    Expression<String>? signerSha256,
+    Expression<bool>? enabled,
+    Expression<int>? installedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (packageName != null) 'package_name': packageName,
+      if (storeUrl != null) 'store_url': storeUrl,
+      if (name != null) 'name': name,
+      if (versionCode != null) 'version_code': versionCode,
+      if (versionName != null) 'version_name': versionName,
+      if (libVersion != null) 'lib_version': libVersion,
+      if (language != null) 'language': language,
+      if (contentWarning != null) 'content_warning': contentWarning,
+      if (apkPath != null) 'apk_path': apkPath,
+      if (apkSha256 != null) 'apk_sha256': apkSha256,
+      if (signerSha256 != null) 'signer_sha256': signerSha256,
+      if (enabled != null) 'enabled': enabled,
+      if (installedAt != null) 'installed_at': installedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MangaExtensionsCompanion copyWith(
+      {Value<String>? packageName,
+      Value<String?>? storeUrl,
+      Value<String>? name,
+      Value<int>? versionCode,
+      Value<String>? versionName,
+      Value<String>? libVersion,
+      Value<String>? language,
+      Value<int>? contentWarning,
+      Value<String>? apkPath,
+      Value<String>? apkSha256,
+      Value<String>? signerSha256,
+      Value<bool>? enabled,
+      Value<int>? installedAt,
+      Value<int>? rowid}) {
+    return MangaExtensionsCompanion(
+      packageName: packageName ?? this.packageName,
+      storeUrl: storeUrl ?? this.storeUrl,
+      name: name ?? this.name,
+      versionCode: versionCode ?? this.versionCode,
+      versionName: versionName ?? this.versionName,
+      libVersion: libVersion ?? this.libVersion,
+      language: language ?? this.language,
+      contentWarning: contentWarning ?? this.contentWarning,
+      apkPath: apkPath ?? this.apkPath,
+      apkSha256: apkSha256 ?? this.apkSha256,
+      signerSha256: signerSha256 ?? this.signerSha256,
+      enabled: enabled ?? this.enabled,
+      installedAt: installedAt ?? this.installedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (packageName.present) {
+      map['package_name'] = Variable<String>(packageName.value);
+    }
+    if (storeUrl.present) {
+      map['store_url'] = Variable<String>(storeUrl.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (versionCode.present) {
+      map['version_code'] = Variable<int>(versionCode.value);
+    }
+    if (versionName.present) {
+      map['version_name'] = Variable<String>(versionName.value);
+    }
+    if (libVersion.present) {
+      map['lib_version'] = Variable<String>(libVersion.value);
+    }
+    if (language.present) {
+      map['language'] = Variable<String>(language.value);
+    }
+    if (contentWarning.present) {
+      map['content_warning'] = Variable<int>(contentWarning.value);
+    }
+    if (apkPath.present) {
+      map['apk_path'] = Variable<String>(apkPath.value);
+    }
+    if (apkSha256.present) {
+      map['apk_sha256'] = Variable<String>(apkSha256.value);
+    }
+    if (signerSha256.present) {
+      map['signer_sha256'] = Variable<String>(signerSha256.value);
+    }
+    if (enabled.present) {
+      map['enabled'] = Variable<bool>(enabled.value);
+    }
+    if (installedAt.present) {
+      map['installed_at'] = Variable<int>(installedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaExtensionsCompanion(')
+          ..write('packageName: $packageName, ')
+          ..write('storeUrl: $storeUrl, ')
+          ..write('name: $name, ')
+          ..write('versionCode: $versionCode, ')
+          ..write('versionName: $versionName, ')
+          ..write('libVersion: $libVersion, ')
+          ..write('language: $language, ')
+          ..write('contentWarning: $contentWarning, ')
+          ..write('apkPath: $apkPath, ')
+          ..write('apkSha256: $apkSha256, ')
+          ..write('signerSha256: $signerSha256, ')
+          ..write('enabled: $enabled, ')
+          ..write('installedAt: $installedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MangaOnlineSourcesTable extends MangaOnlineSources
+    with TableInfo<$MangaOnlineSourcesTable, MangaOnlineSourceRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MangaOnlineSourcesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _extensionPackageMeta =
+      const VerificationMeta('extensionPackage');
+  @override
+  late final GeneratedColumn<String> extensionPackage = GeneratedColumn<String>(
+      'extension_package', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _sourceIdMeta =
+      const VerificationMeta('sourceId');
+  @override
+  late final GeneratedColumn<String> sourceId = GeneratedColumn<String>(
+      'source_id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+      'name', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _languageMeta =
+      const VerificationMeta('language');
+  @override
+  late final GeneratedColumn<String> language = GeneratedColumn<String>(
+      'language', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _baseUrlMeta =
+      const VerificationMeta('baseUrl');
+  @override
+  late final GeneratedColumn<String> baseUrl = GeneratedColumn<String>(
+      'base_url', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
+  static const VerificationMeta _enabledMeta =
+      const VerificationMeta('enabled');
+  @override
+  late final GeneratedColumn<bool> enabled = GeneratedColumn<bool>(
+      'enabled', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("enabled" IN (0, 1))'),
+      defaultValue: const Constant(true));
+  static const VerificationMeta _pinnedMeta = const VerificationMeta('pinned');
+  @override
+  late final GeneratedColumn<bool> pinned = GeneratedColumn<bool>(
+      'pinned', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("pinned" IN (0, 1))'),
+      defaultValue: const Constant(false));
+  static const VerificationMeta _sortOrderMeta =
+      const VerificationMeta('sortOrder');
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+      'sort_order', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns => [
+        extensionPackage,
+        sourceId,
+        name,
+        language,
+        baseUrl,
+        enabled,
+        pinned,
+        sortOrder
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'manga_online_sources';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<MangaOnlineSourceRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('extension_package')) {
+      context.handle(
+          _extensionPackageMeta,
+          extensionPackage.isAcceptableOrUnknown(
+              data['extension_package']!, _extensionPackageMeta));
+    } else if (isInserting) {
+      context.missing(_extensionPackageMeta);
+    }
+    if (data.containsKey('source_id')) {
+      context.handle(_sourceIdMeta,
+          sourceId.isAcceptableOrUnknown(data['source_id']!, _sourceIdMeta));
+    } else if (isInserting) {
+      context.missing(_sourceIdMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+          _nameMeta, name.isAcceptableOrUnknown(data['name']!, _nameMeta));
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('language')) {
+      context.handle(_languageMeta,
+          language.isAcceptableOrUnknown(data['language']!, _languageMeta));
+    } else if (isInserting) {
+      context.missing(_languageMeta);
+    }
+    if (data.containsKey('base_url')) {
+      context.handle(_baseUrlMeta,
+          baseUrl.isAcceptableOrUnknown(data['base_url']!, _baseUrlMeta));
+    }
+    if (data.containsKey('enabled')) {
+      context.handle(_enabledMeta,
+          enabled.isAcceptableOrUnknown(data['enabled']!, _enabledMeta));
+    }
+    if (data.containsKey('pinned')) {
+      context.handle(_pinnedMeta,
+          pinned.isAcceptableOrUnknown(data['pinned']!, _pinnedMeta));
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(_sortOrderMeta,
+          sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {extensionPackage, sourceId};
+  @override
+  MangaOnlineSourceRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MangaOnlineSourceRow(
+      extensionPackage: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}extension_package'])!,
+      sourceId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source_id'])!,
+      name: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}name'])!,
+      language: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}language'])!,
+      baseUrl: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}base_url'])!,
+      enabled: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}enabled'])!,
+      pinned: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}pinned'])!,
+      sortOrder: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}sort_order'])!,
+    );
+  }
+
+  @override
+  $MangaOnlineSourcesTable createAlias(String alias) {
+    return $MangaOnlineSourcesTable(attachedDatabase, alias);
+  }
+}
+
+class MangaOnlineSourceRow extends DataClass
+    implements Insertable<MangaOnlineSourceRow> {
+  final String extensionPackage;
+
+  /// Mihon 的 Long ID 以十进制字符串保存，避免跨 MethodChannel/JSON 精度损失。
+  final String sourceId;
+  final String name;
+  final String language;
+  final String baseUrl;
+  final bool enabled;
+  final bool pinned;
+  final int sortOrder;
+  const MangaOnlineSourceRow(
+      {required this.extensionPackage,
+      required this.sourceId,
+      required this.name,
+      required this.language,
+      required this.baseUrl,
+      required this.enabled,
+      required this.pinned,
+      required this.sortOrder});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['extension_package'] = Variable<String>(extensionPackage);
+    map['source_id'] = Variable<String>(sourceId);
+    map['name'] = Variable<String>(name);
+    map['language'] = Variable<String>(language);
+    map['base_url'] = Variable<String>(baseUrl);
+    map['enabled'] = Variable<bool>(enabled);
+    map['pinned'] = Variable<bool>(pinned);
+    map['sort_order'] = Variable<int>(sortOrder);
+    return map;
+  }
+
+  MangaOnlineSourcesCompanion toCompanion(bool nullToAbsent) {
+    return MangaOnlineSourcesCompanion(
+      extensionPackage: Value(extensionPackage),
+      sourceId: Value(sourceId),
+      name: Value(name),
+      language: Value(language),
+      baseUrl: Value(baseUrl),
+      enabled: Value(enabled),
+      pinned: Value(pinned),
+      sortOrder: Value(sortOrder),
+    );
+  }
+
+  factory MangaOnlineSourceRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MangaOnlineSourceRow(
+      extensionPackage: serializer.fromJson<String>(json['extensionPackage']),
+      sourceId: serializer.fromJson<String>(json['sourceId']),
+      name: serializer.fromJson<String>(json['name']),
+      language: serializer.fromJson<String>(json['language']),
+      baseUrl: serializer.fromJson<String>(json['baseUrl']),
+      enabled: serializer.fromJson<bool>(json['enabled']),
+      pinned: serializer.fromJson<bool>(json['pinned']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'extensionPackage': serializer.toJson<String>(extensionPackage),
+      'sourceId': serializer.toJson<String>(sourceId),
+      'name': serializer.toJson<String>(name),
+      'language': serializer.toJson<String>(language),
+      'baseUrl': serializer.toJson<String>(baseUrl),
+      'enabled': serializer.toJson<bool>(enabled),
+      'pinned': serializer.toJson<bool>(pinned),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+    };
+  }
+
+  MangaOnlineSourceRow copyWith(
+          {String? extensionPackage,
+          String? sourceId,
+          String? name,
+          String? language,
+          String? baseUrl,
+          bool? enabled,
+          bool? pinned,
+          int? sortOrder}) =>
+      MangaOnlineSourceRow(
+        extensionPackage: extensionPackage ?? this.extensionPackage,
+        sourceId: sourceId ?? this.sourceId,
+        name: name ?? this.name,
+        language: language ?? this.language,
+        baseUrl: baseUrl ?? this.baseUrl,
+        enabled: enabled ?? this.enabled,
+        pinned: pinned ?? this.pinned,
+        sortOrder: sortOrder ?? this.sortOrder,
+      );
+  MangaOnlineSourceRow copyWithCompanion(MangaOnlineSourcesCompanion data) {
+    return MangaOnlineSourceRow(
+      extensionPackage: data.extensionPackage.present
+          ? data.extensionPackage.value
+          : this.extensionPackage,
+      sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
+      name: data.name.present ? data.name.value : this.name,
+      language: data.language.present ? data.language.value : this.language,
+      baseUrl: data.baseUrl.present ? data.baseUrl.value : this.baseUrl,
+      enabled: data.enabled.present ? data.enabled.value : this.enabled,
+      pinned: data.pinned.present ? data.pinned.value : this.pinned,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaOnlineSourceRow(')
+          ..write('extensionPackage: $extensionPackage, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('name: $name, ')
+          ..write('language: $language, ')
+          ..write('baseUrl: $baseUrl, ')
+          ..write('enabled: $enabled, ')
+          ..write('pinned: $pinned, ')
+          ..write('sortOrder: $sortOrder')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(extensionPackage, sourceId, name, language,
+      baseUrl, enabled, pinned, sortOrder);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MangaOnlineSourceRow &&
+          other.extensionPackage == this.extensionPackage &&
+          other.sourceId == this.sourceId &&
+          other.name == this.name &&
+          other.language == this.language &&
+          other.baseUrl == this.baseUrl &&
+          other.enabled == this.enabled &&
+          other.pinned == this.pinned &&
+          other.sortOrder == this.sortOrder);
+}
+
+class MangaOnlineSourcesCompanion
+    extends UpdateCompanion<MangaOnlineSourceRow> {
+  final Value<String> extensionPackage;
+  final Value<String> sourceId;
+  final Value<String> name;
+  final Value<String> language;
+  final Value<String> baseUrl;
+  final Value<bool> enabled;
+  final Value<bool> pinned;
+  final Value<int> sortOrder;
+  final Value<int> rowid;
+  const MangaOnlineSourcesCompanion({
+    this.extensionPackage = const Value.absent(),
+    this.sourceId = const Value.absent(),
+    this.name = const Value.absent(),
+    this.language = const Value.absent(),
+    this.baseUrl = const Value.absent(),
+    this.enabled = const Value.absent(),
+    this.pinned = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MangaOnlineSourcesCompanion.insert({
+    required String extensionPackage,
+    required String sourceId,
+    required String name,
+    required String language,
+    this.baseUrl = const Value.absent(),
+    this.enabled = const Value.absent(),
+    this.pinned = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : extensionPackage = Value(extensionPackage),
+        sourceId = Value(sourceId),
+        name = Value(name),
+        language = Value(language);
+  static Insertable<MangaOnlineSourceRow> custom({
+    Expression<String>? extensionPackage,
+    Expression<String>? sourceId,
+    Expression<String>? name,
+    Expression<String>? language,
+    Expression<String>? baseUrl,
+    Expression<bool>? enabled,
+    Expression<bool>? pinned,
+    Expression<int>? sortOrder,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (extensionPackage != null) 'extension_package': extensionPackage,
+      if (sourceId != null) 'source_id': sourceId,
+      if (name != null) 'name': name,
+      if (language != null) 'language': language,
+      if (baseUrl != null) 'base_url': baseUrl,
+      if (enabled != null) 'enabled': enabled,
+      if (pinned != null) 'pinned': pinned,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MangaOnlineSourcesCompanion copyWith(
+      {Value<String>? extensionPackage,
+      Value<String>? sourceId,
+      Value<String>? name,
+      Value<String>? language,
+      Value<String>? baseUrl,
+      Value<bool>? enabled,
+      Value<bool>? pinned,
+      Value<int>? sortOrder,
+      Value<int>? rowid}) {
+    return MangaOnlineSourcesCompanion(
+      extensionPackage: extensionPackage ?? this.extensionPackage,
+      sourceId: sourceId ?? this.sourceId,
+      name: name ?? this.name,
+      language: language ?? this.language,
+      baseUrl: baseUrl ?? this.baseUrl,
+      enabled: enabled ?? this.enabled,
+      pinned: pinned ?? this.pinned,
+      sortOrder: sortOrder ?? this.sortOrder,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (extensionPackage.present) {
+      map['extension_package'] = Variable<String>(extensionPackage.value);
+    }
+    if (sourceId.present) {
+      map['source_id'] = Variable<String>(sourceId.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (language.present) {
+      map['language'] = Variable<String>(language.value);
+    }
+    if (baseUrl.present) {
+      map['base_url'] = Variable<String>(baseUrl.value);
+    }
+    if (enabled.present) {
+      map['enabled'] = Variable<bool>(enabled.value);
+    }
+    if (pinned.present) {
+      map['pinned'] = Variable<bool>(pinned.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaOnlineSourcesCompanion(')
+          ..write('extensionPackage: $extensionPackage, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('name: $name, ')
+          ..write('language: $language, ')
+          ..write('baseUrl: $baseUrl, ')
+          ..write('enabled: $enabled, ')
+          ..write('pinned: $pinned, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MangaSourcePreferencesTable extends MangaSourcePreferences
+    with TableInfo<$MangaSourcePreferencesTable, MangaSourcePreferenceRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MangaSourcePreferencesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _extensionPackageMeta =
+      const VerificationMeta('extensionPackage');
+  @override
+  late final GeneratedColumn<String> extensionPackage = GeneratedColumn<String>(
+      'extension_package', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _sourceIdMeta =
+      const VerificationMeta('sourceId');
+  @override
+  late final GeneratedColumn<String> sourceId = GeneratedColumn<String>(
+      'source_id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _preferenceKeyMeta =
+      const VerificationMeta('preferenceKey');
+  @override
+  late final GeneratedColumn<String> preferenceKey = GeneratedColumn<String>(
+      'preference_key', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _preferenceTypeMeta =
+      const VerificationMeta('preferenceType');
+  @override
+  late final GeneratedColumn<String> preferenceType = GeneratedColumn<String>(
+      'preference_type', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _valueJsonMeta =
+      const VerificationMeta('valueJson');
+  @override
+  late final GeneratedColumn<String> valueJson = GeneratedColumn<String>(
+      'value_json', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+      'updated_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [
+        extensionPackage,
+        sourceId,
+        preferenceKey,
+        preferenceType,
+        valueJson,
+        updatedAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'manga_source_preferences';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<MangaSourcePreferenceRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('extension_package')) {
+      context.handle(
+          _extensionPackageMeta,
+          extensionPackage.isAcceptableOrUnknown(
+              data['extension_package']!, _extensionPackageMeta));
+    } else if (isInserting) {
+      context.missing(_extensionPackageMeta);
+    }
+    if (data.containsKey('source_id')) {
+      context.handle(_sourceIdMeta,
+          sourceId.isAcceptableOrUnknown(data['source_id']!, _sourceIdMeta));
+    } else if (isInserting) {
+      context.missing(_sourceIdMeta);
+    }
+    if (data.containsKey('preference_key')) {
+      context.handle(
+          _preferenceKeyMeta,
+          preferenceKey.isAcceptableOrUnknown(
+              data['preference_key']!, _preferenceKeyMeta));
+    } else if (isInserting) {
+      context.missing(_preferenceKeyMeta);
+    }
+    if (data.containsKey('preference_type')) {
+      context.handle(
+          _preferenceTypeMeta,
+          preferenceType.isAcceptableOrUnknown(
+              data['preference_type']!, _preferenceTypeMeta));
+    } else if (isInserting) {
+      context.missing(_preferenceTypeMeta);
+    }
+    if (data.containsKey('value_json')) {
+      context.handle(_valueJsonMeta,
+          valueJson.isAcceptableOrUnknown(data['value_json']!, _valueJsonMeta));
+    } else if (isInserting) {
+      context.missing(_valueJsonMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey =>
+      {extensionPackage, sourceId, preferenceKey};
+  @override
+  MangaSourcePreferenceRow map(Map<String, dynamic> data,
+      {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MangaSourcePreferenceRow(
+      extensionPackage: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}extension_package'])!,
+      sourceId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source_id'])!,
+      preferenceKey: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}preference_key'])!,
+      preferenceType: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}preference_type'])!,
+      valueJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}value_json'])!,
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}updated_at'])!,
+    );
+  }
+
+  @override
+  $MangaSourcePreferencesTable createAlias(String alias) {
+    return $MangaSourcePreferencesTable(attachedDatabase, alias);
+  }
+}
+
+class MangaSourcePreferenceRow extends DataClass
+    implements Insertable<MangaSourcePreferenceRow> {
+  final String extensionPackage;
+  final String sourceId;
+  final String preferenceKey;
+  final String preferenceType;
+  final String valueJson;
+  final int updatedAt;
+  const MangaSourcePreferenceRow(
+      {required this.extensionPackage,
+      required this.sourceId,
+      required this.preferenceKey,
+      required this.preferenceType,
+      required this.valueJson,
+      required this.updatedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['extension_package'] = Variable<String>(extensionPackage);
+    map['source_id'] = Variable<String>(sourceId);
+    map['preference_key'] = Variable<String>(preferenceKey);
+    map['preference_type'] = Variable<String>(preferenceType);
+    map['value_json'] = Variable<String>(valueJson);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  MangaSourcePreferencesCompanion toCompanion(bool nullToAbsent) {
+    return MangaSourcePreferencesCompanion(
+      extensionPackage: Value(extensionPackage),
+      sourceId: Value(sourceId),
+      preferenceKey: Value(preferenceKey),
+      preferenceType: Value(preferenceType),
+      valueJson: Value(valueJson),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory MangaSourcePreferenceRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MangaSourcePreferenceRow(
+      extensionPackage: serializer.fromJson<String>(json['extensionPackage']),
+      sourceId: serializer.fromJson<String>(json['sourceId']),
+      preferenceKey: serializer.fromJson<String>(json['preferenceKey']),
+      preferenceType: serializer.fromJson<String>(json['preferenceType']),
+      valueJson: serializer.fromJson<String>(json['valueJson']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'extensionPackage': serializer.toJson<String>(extensionPackage),
+      'sourceId': serializer.toJson<String>(sourceId),
+      'preferenceKey': serializer.toJson<String>(preferenceKey),
+      'preferenceType': serializer.toJson<String>(preferenceType),
+      'valueJson': serializer.toJson<String>(valueJson),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  MangaSourcePreferenceRow copyWith(
+          {String? extensionPackage,
+          String? sourceId,
+          String? preferenceKey,
+          String? preferenceType,
+          String? valueJson,
+          int? updatedAt}) =>
+      MangaSourcePreferenceRow(
+        extensionPackage: extensionPackage ?? this.extensionPackage,
+        sourceId: sourceId ?? this.sourceId,
+        preferenceKey: preferenceKey ?? this.preferenceKey,
+        preferenceType: preferenceType ?? this.preferenceType,
+        valueJson: valueJson ?? this.valueJson,
+        updatedAt: updatedAt ?? this.updatedAt,
+      );
+  MangaSourcePreferenceRow copyWithCompanion(
+      MangaSourcePreferencesCompanion data) {
+    return MangaSourcePreferenceRow(
+      extensionPackage: data.extensionPackage.present
+          ? data.extensionPackage.value
+          : this.extensionPackage,
+      sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
+      preferenceKey: data.preferenceKey.present
+          ? data.preferenceKey.value
+          : this.preferenceKey,
+      preferenceType: data.preferenceType.present
+          ? data.preferenceType.value
+          : this.preferenceType,
+      valueJson: data.valueJson.present ? data.valueJson.value : this.valueJson,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaSourcePreferenceRow(')
+          ..write('extensionPackage: $extensionPackage, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('preferenceKey: $preferenceKey, ')
+          ..write('preferenceType: $preferenceType, ')
+          ..write('valueJson: $valueJson, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(extensionPackage, sourceId, preferenceKey,
+      preferenceType, valueJson, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MangaSourcePreferenceRow &&
+          other.extensionPackage == this.extensionPackage &&
+          other.sourceId == this.sourceId &&
+          other.preferenceKey == this.preferenceKey &&
+          other.preferenceType == this.preferenceType &&
+          other.valueJson == this.valueJson &&
+          other.updatedAt == this.updatedAt);
+}
+
+class MangaSourcePreferencesCompanion
+    extends UpdateCompanion<MangaSourcePreferenceRow> {
+  final Value<String> extensionPackage;
+  final Value<String> sourceId;
+  final Value<String> preferenceKey;
+  final Value<String> preferenceType;
+  final Value<String> valueJson;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const MangaSourcePreferencesCompanion({
+    this.extensionPackage = const Value.absent(),
+    this.sourceId = const Value.absent(),
+    this.preferenceKey = const Value.absent(),
+    this.preferenceType = const Value.absent(),
+    this.valueJson = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MangaSourcePreferencesCompanion.insert({
+    required String extensionPackage,
+    required String sourceId,
+    required String preferenceKey,
+    required String preferenceType,
+    required String valueJson,
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  })  : extensionPackage = Value(extensionPackage),
+        sourceId = Value(sourceId),
+        preferenceKey = Value(preferenceKey),
+        preferenceType = Value(preferenceType),
+        valueJson = Value(valueJson),
+        updatedAt = Value(updatedAt);
+  static Insertable<MangaSourcePreferenceRow> custom({
+    Expression<String>? extensionPackage,
+    Expression<String>? sourceId,
+    Expression<String>? preferenceKey,
+    Expression<String>? preferenceType,
+    Expression<String>? valueJson,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (extensionPackage != null) 'extension_package': extensionPackage,
+      if (sourceId != null) 'source_id': sourceId,
+      if (preferenceKey != null) 'preference_key': preferenceKey,
+      if (preferenceType != null) 'preference_type': preferenceType,
+      if (valueJson != null) 'value_json': valueJson,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MangaSourcePreferencesCompanion copyWith(
+      {Value<String>? extensionPackage,
+      Value<String>? sourceId,
+      Value<String>? preferenceKey,
+      Value<String>? preferenceType,
+      Value<String>? valueJson,
+      Value<int>? updatedAt,
+      Value<int>? rowid}) {
+    return MangaSourcePreferencesCompanion(
+      extensionPackage: extensionPackage ?? this.extensionPackage,
+      sourceId: sourceId ?? this.sourceId,
+      preferenceKey: preferenceKey ?? this.preferenceKey,
+      preferenceType: preferenceType ?? this.preferenceType,
+      valueJson: valueJson ?? this.valueJson,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (extensionPackage.present) {
+      map['extension_package'] = Variable<String>(extensionPackage.value);
+    }
+    if (sourceId.present) {
+      map['source_id'] = Variable<String>(sourceId.value);
+    }
+    if (preferenceKey.present) {
+      map['preference_key'] = Variable<String>(preferenceKey.value);
+    }
+    if (preferenceType.present) {
+      map['preference_type'] = Variable<String>(preferenceType.value);
+    }
+    if (valueJson.present) {
+      map['value_json'] = Variable<String>(valueJson.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaSourcePreferencesCompanion(')
+          ..write('extensionPackage: $extensionPackage, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('preferenceKey: $preferenceKey, ')
+          ..write('preferenceType: $preferenceType, ')
+          ..write('valueJson: $valueJson, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MangaTrustedSignersTable extends MangaTrustedSigners
+    with TableInfo<$MangaTrustedSignersTable, MangaTrustedSignerRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MangaTrustedSignersTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _fingerprintMeta =
+      const VerificationMeta('fingerprint');
+  @override
+  late final GeneratedColumn<String> fingerprint = GeneratedColumn<String>(
+      'fingerprint', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _labelMeta = const VerificationMeta('label');
+  @override
+  late final GeneratedColumn<String> label = GeneratedColumn<String>(
+      'label', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _originMeta = const VerificationMeta('origin');
+  @override
+  late final GeneratedColumn<String> origin = GeneratedColumn<String>(
+      'origin', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _trustedAtMeta =
+      const VerificationMeta('trustedAt');
+  @override
+  late final GeneratedColumn<int> trustedAt = GeneratedColumn<int>(
+      'trusted_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [fingerprint, label, origin, trustedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'manga_trusted_signers';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<MangaTrustedSignerRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('fingerprint')) {
+      context.handle(
+          _fingerprintMeta,
+          fingerprint.isAcceptableOrUnknown(
+              data['fingerprint']!, _fingerprintMeta));
+    } else if (isInserting) {
+      context.missing(_fingerprintMeta);
+    }
+    if (data.containsKey('label')) {
+      context.handle(
+          _labelMeta, label.isAcceptableOrUnknown(data['label']!, _labelMeta));
+    } else if (isInserting) {
+      context.missing(_labelMeta);
+    }
+    if (data.containsKey('origin')) {
+      context.handle(_originMeta,
+          origin.isAcceptableOrUnknown(data['origin']!, _originMeta));
+    } else if (isInserting) {
+      context.missing(_originMeta);
+    }
+    if (data.containsKey('trusted_at')) {
+      context.handle(_trustedAtMeta,
+          trustedAt.isAcceptableOrUnknown(data['trusted_at']!, _trustedAtMeta));
+    } else if (isInserting) {
+      context.missing(_trustedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {fingerprint};
+  @override
+  MangaTrustedSignerRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MangaTrustedSignerRow(
+      fingerprint: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}fingerprint'])!,
+      label: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}label'])!,
+      origin: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}origin'])!,
+      trustedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}trusted_at'])!,
+    );
+  }
+
+  @override
+  $MangaTrustedSignersTable createAlias(String alias) {
+    return $MangaTrustedSignersTable(attachedDatabase, alias);
+  }
+}
+
+class MangaTrustedSignerRow extends DataClass
+    implements Insertable<MangaTrustedSignerRow> {
+  final String fingerprint;
+  final String label;
+  final String origin;
+  final int trustedAt;
+  const MangaTrustedSignerRow(
+      {required this.fingerprint,
+      required this.label,
+      required this.origin,
+      required this.trustedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['fingerprint'] = Variable<String>(fingerprint);
+    map['label'] = Variable<String>(label);
+    map['origin'] = Variable<String>(origin);
+    map['trusted_at'] = Variable<int>(trustedAt);
+    return map;
+  }
+
+  MangaTrustedSignersCompanion toCompanion(bool nullToAbsent) {
+    return MangaTrustedSignersCompanion(
+      fingerprint: Value(fingerprint),
+      label: Value(label),
+      origin: Value(origin),
+      trustedAt: Value(trustedAt),
+    );
+  }
+
+  factory MangaTrustedSignerRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MangaTrustedSignerRow(
+      fingerprint: serializer.fromJson<String>(json['fingerprint']),
+      label: serializer.fromJson<String>(json['label']),
+      origin: serializer.fromJson<String>(json['origin']),
+      trustedAt: serializer.fromJson<int>(json['trustedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'fingerprint': serializer.toJson<String>(fingerprint),
+      'label': serializer.toJson<String>(label),
+      'origin': serializer.toJson<String>(origin),
+      'trustedAt': serializer.toJson<int>(trustedAt),
+    };
+  }
+
+  MangaTrustedSignerRow copyWith(
+          {String? fingerprint,
+          String? label,
+          String? origin,
+          int? trustedAt}) =>
+      MangaTrustedSignerRow(
+        fingerprint: fingerprint ?? this.fingerprint,
+        label: label ?? this.label,
+        origin: origin ?? this.origin,
+        trustedAt: trustedAt ?? this.trustedAt,
+      );
+  MangaTrustedSignerRow copyWithCompanion(MangaTrustedSignersCompanion data) {
+    return MangaTrustedSignerRow(
+      fingerprint:
+          data.fingerprint.present ? data.fingerprint.value : this.fingerprint,
+      label: data.label.present ? data.label.value : this.label,
+      origin: data.origin.present ? data.origin.value : this.origin,
+      trustedAt: data.trustedAt.present ? data.trustedAt.value : this.trustedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaTrustedSignerRow(')
+          ..write('fingerprint: $fingerprint, ')
+          ..write('label: $label, ')
+          ..write('origin: $origin, ')
+          ..write('trustedAt: $trustedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(fingerprint, label, origin, trustedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MangaTrustedSignerRow &&
+          other.fingerprint == this.fingerprint &&
+          other.label == this.label &&
+          other.origin == this.origin &&
+          other.trustedAt == this.trustedAt);
+}
+
+class MangaTrustedSignersCompanion
+    extends UpdateCompanion<MangaTrustedSignerRow> {
+  final Value<String> fingerprint;
+  final Value<String> label;
+  final Value<String> origin;
+  final Value<int> trustedAt;
+  final Value<int> rowid;
+  const MangaTrustedSignersCompanion({
+    this.fingerprint = const Value.absent(),
+    this.label = const Value.absent(),
+    this.origin = const Value.absent(),
+    this.trustedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MangaTrustedSignersCompanion.insert({
+    required String fingerprint,
+    required String label,
+    required String origin,
+    required int trustedAt,
+    this.rowid = const Value.absent(),
+  })  : fingerprint = Value(fingerprint),
+        label = Value(label),
+        origin = Value(origin),
+        trustedAt = Value(trustedAt);
+  static Insertable<MangaTrustedSignerRow> custom({
+    Expression<String>? fingerprint,
+    Expression<String>? label,
+    Expression<String>? origin,
+    Expression<int>? trustedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (fingerprint != null) 'fingerprint': fingerprint,
+      if (label != null) 'label': label,
+      if (origin != null) 'origin': origin,
+      if (trustedAt != null) 'trusted_at': trustedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MangaTrustedSignersCompanion copyWith(
+      {Value<String>? fingerprint,
+      Value<String>? label,
+      Value<String>? origin,
+      Value<int>? trustedAt,
+      Value<int>? rowid}) {
+    return MangaTrustedSignersCompanion(
+      fingerprint: fingerprint ?? this.fingerprint,
+      label: label ?? this.label,
+      origin: origin ?? this.origin,
+      trustedAt: trustedAt ?? this.trustedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (fingerprint.present) {
+      map['fingerprint'] = Variable<String>(fingerprint.value);
+    }
+    if (label.present) {
+      map['label'] = Variable<String>(label.value);
+    }
+    if (origin.present) {
+      map['origin'] = Variable<String>(origin.value);
+    }
+    if (trustedAt.present) {
+      map['trusted_at'] = Variable<int>(trustedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaTrustedSignersCompanion(')
+          ..write('fingerprint: $fingerprint, ')
+          ..write('label: $label, ')
+          ..write('origin: $origin, ')
+          ..write('trustedAt: $trustedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$HibikiDatabase extends GeneratedDatabase {
   _$HibikiDatabase(QueryExecutor e) : super(e);
   $HibikiDatabaseManager get managers => $HibikiDatabaseManager(this);
@@ -21095,6 +23503,16 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
       $GalgameSessionsTable(this);
   late final $GalgameTagMappingsTable galgameTagMappings =
       $GalgameTagMappingsTable(this);
+  late final $MangaExtensionStoresTable mangaExtensionStores =
+      $MangaExtensionStoresTable(this);
+  late final $MangaExtensionsTable mangaExtensions =
+      $MangaExtensionsTable(this);
+  late final $MangaOnlineSourcesTable mangaOnlineSources =
+      $MangaOnlineSourcesTable(this);
+  late final $MangaSourcePreferencesTable mangaSourcePreferences =
+      $MangaSourcePreferencesTable(this);
+  late final $MangaTrustedSignersTable mangaTrustedSigners =
+      $MangaTrustedSignersTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -21152,7 +23570,12 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         galgames,
         galgameSources,
         galgameSessions,
-        galgameTagMappings
+        galgameTagMappings,
+        mangaExtensionStores,
+        mangaExtensions,
+        mangaOnlineSources,
+        mangaSourcePreferences,
+        mangaTrustedSigners
       ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules(
@@ -36004,6 +38427,1192 @@ typedef $$GalgameTagMappingsTableProcessedTableManager = ProcessedTableManager<
     (GalgameTagMappingRow, $$GalgameTagMappingsTableReferences),
     GalgameTagMappingRow,
     PrefetchHooks Function({bool gameId, bool tagId})>;
+typedef $$MangaExtensionStoresTableCreateCompanionBuilder
+    = MangaExtensionStoresCompanion Function({
+  required String indexUrl,
+  required String name,
+  Value<String?> badgeLabel,
+  Value<String?> signingKey,
+  Value<String?> contactJson,
+  required String format,
+  Value<String?> extensionListUrl,
+  Value<bool> enabled,
+  Value<int> sortOrder,
+  Value<String?> etag,
+  Value<String?> lastModified,
+  Value<int?> lastSyncAt,
+  Value<String?> lastError,
+  Value<int> rowid,
+});
+typedef $$MangaExtensionStoresTableUpdateCompanionBuilder
+    = MangaExtensionStoresCompanion Function({
+  Value<String> indexUrl,
+  Value<String> name,
+  Value<String?> badgeLabel,
+  Value<String?> signingKey,
+  Value<String?> contactJson,
+  Value<String> format,
+  Value<String?> extensionListUrl,
+  Value<bool> enabled,
+  Value<int> sortOrder,
+  Value<String?> etag,
+  Value<String?> lastModified,
+  Value<int?> lastSyncAt,
+  Value<String?> lastError,
+  Value<int> rowid,
+});
+
+class $$MangaExtensionStoresTableFilterComposer
+    extends Composer<_$HibikiDatabase, $MangaExtensionStoresTable> {
+  $$MangaExtensionStoresTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get indexUrl => $composableBuilder(
+      column: $table.indexUrl, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get badgeLabel => $composableBuilder(
+      column: $table.badgeLabel, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get signingKey => $composableBuilder(
+      column: $table.signingKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get contactJson => $composableBuilder(
+      column: $table.contactJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get format => $composableBuilder(
+      column: $table.format, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get extensionListUrl => $composableBuilder(
+      column: $table.extensionListUrl,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get enabled => $composableBuilder(
+      column: $table.enabled, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get etag => $composableBuilder(
+      column: $table.etag, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get lastModified => $composableBuilder(
+      column: $table.lastModified, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get lastSyncAt => $composableBuilder(
+      column: $table.lastSyncAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get lastError => $composableBuilder(
+      column: $table.lastError, builder: (column) => ColumnFilters(column));
+}
+
+class $$MangaExtensionStoresTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $MangaExtensionStoresTable> {
+  $$MangaExtensionStoresTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get indexUrl => $composableBuilder(
+      column: $table.indexUrl, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get badgeLabel => $composableBuilder(
+      column: $table.badgeLabel, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get signingKey => $composableBuilder(
+      column: $table.signingKey, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get contactJson => $composableBuilder(
+      column: $table.contactJson, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get format => $composableBuilder(
+      column: $table.format, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get extensionListUrl => $composableBuilder(
+      column: $table.extensionListUrl,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get enabled => $composableBuilder(
+      column: $table.enabled, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get etag => $composableBuilder(
+      column: $table.etag, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get lastModified => $composableBuilder(
+      column: $table.lastModified,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get lastSyncAt => $composableBuilder(
+      column: $table.lastSyncAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get lastError => $composableBuilder(
+      column: $table.lastError, builder: (column) => ColumnOrderings(column));
+}
+
+class $$MangaExtensionStoresTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $MangaExtensionStoresTable> {
+  $$MangaExtensionStoresTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get indexUrl =>
+      $composableBuilder(column: $table.indexUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get badgeLabel => $composableBuilder(
+      column: $table.badgeLabel, builder: (column) => column);
+
+  GeneratedColumn<String> get signingKey => $composableBuilder(
+      column: $table.signingKey, builder: (column) => column);
+
+  GeneratedColumn<String> get contactJson => $composableBuilder(
+      column: $table.contactJson, builder: (column) => column);
+
+  GeneratedColumn<String> get format =>
+      $composableBuilder(column: $table.format, builder: (column) => column);
+
+  GeneratedColumn<String> get extensionListUrl => $composableBuilder(
+      column: $table.extensionListUrl, builder: (column) => column);
+
+  GeneratedColumn<bool> get enabled =>
+      $composableBuilder(column: $table.enabled, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<String> get etag =>
+      $composableBuilder(column: $table.etag, builder: (column) => column);
+
+  GeneratedColumn<String> get lastModified => $composableBuilder(
+      column: $table.lastModified, builder: (column) => column);
+
+  GeneratedColumn<int> get lastSyncAt => $composableBuilder(
+      column: $table.lastSyncAt, builder: (column) => column);
+
+  GeneratedColumn<String> get lastError =>
+      $composableBuilder(column: $table.lastError, builder: (column) => column);
+}
+
+class $$MangaExtensionStoresTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $MangaExtensionStoresTable,
+    MangaExtensionStoreRow,
+    $$MangaExtensionStoresTableFilterComposer,
+    $$MangaExtensionStoresTableOrderingComposer,
+    $$MangaExtensionStoresTableAnnotationComposer,
+    $$MangaExtensionStoresTableCreateCompanionBuilder,
+    $$MangaExtensionStoresTableUpdateCompanionBuilder,
+    (
+      MangaExtensionStoreRow,
+      BaseReferences<_$HibikiDatabase, $MangaExtensionStoresTable,
+          MangaExtensionStoreRow>
+    ),
+    MangaExtensionStoreRow,
+    PrefetchHooks Function()> {
+  $$MangaExtensionStoresTableTableManager(
+      _$HibikiDatabase db, $MangaExtensionStoresTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MangaExtensionStoresTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MangaExtensionStoresTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MangaExtensionStoresTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> indexUrl = const Value.absent(),
+            Value<String> name = const Value.absent(),
+            Value<String?> badgeLabel = const Value.absent(),
+            Value<String?> signingKey = const Value.absent(),
+            Value<String?> contactJson = const Value.absent(),
+            Value<String> format = const Value.absent(),
+            Value<String?> extensionListUrl = const Value.absent(),
+            Value<bool> enabled = const Value.absent(),
+            Value<int> sortOrder = const Value.absent(),
+            Value<String?> etag = const Value.absent(),
+            Value<String?> lastModified = const Value.absent(),
+            Value<int?> lastSyncAt = const Value.absent(),
+            Value<String?> lastError = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MangaExtensionStoresCompanion(
+            indexUrl: indexUrl,
+            name: name,
+            badgeLabel: badgeLabel,
+            signingKey: signingKey,
+            contactJson: contactJson,
+            format: format,
+            extensionListUrl: extensionListUrl,
+            enabled: enabled,
+            sortOrder: sortOrder,
+            etag: etag,
+            lastModified: lastModified,
+            lastSyncAt: lastSyncAt,
+            lastError: lastError,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String indexUrl,
+            required String name,
+            Value<String?> badgeLabel = const Value.absent(),
+            Value<String?> signingKey = const Value.absent(),
+            Value<String?> contactJson = const Value.absent(),
+            required String format,
+            Value<String?> extensionListUrl = const Value.absent(),
+            Value<bool> enabled = const Value.absent(),
+            Value<int> sortOrder = const Value.absent(),
+            Value<String?> etag = const Value.absent(),
+            Value<String?> lastModified = const Value.absent(),
+            Value<int?> lastSyncAt = const Value.absent(),
+            Value<String?> lastError = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MangaExtensionStoresCompanion.insert(
+            indexUrl: indexUrl,
+            name: name,
+            badgeLabel: badgeLabel,
+            signingKey: signingKey,
+            contactJson: contactJson,
+            format: format,
+            extensionListUrl: extensionListUrl,
+            enabled: enabled,
+            sortOrder: sortOrder,
+            etag: etag,
+            lastModified: lastModified,
+            lastSyncAt: lastSyncAt,
+            lastError: lastError,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$MangaExtensionStoresTableProcessedTableManager
+    = ProcessedTableManager<
+        _$HibikiDatabase,
+        $MangaExtensionStoresTable,
+        MangaExtensionStoreRow,
+        $$MangaExtensionStoresTableFilterComposer,
+        $$MangaExtensionStoresTableOrderingComposer,
+        $$MangaExtensionStoresTableAnnotationComposer,
+        $$MangaExtensionStoresTableCreateCompanionBuilder,
+        $$MangaExtensionStoresTableUpdateCompanionBuilder,
+        (
+          MangaExtensionStoreRow,
+          BaseReferences<_$HibikiDatabase, $MangaExtensionStoresTable,
+              MangaExtensionStoreRow>
+        ),
+        MangaExtensionStoreRow,
+        PrefetchHooks Function()>;
+typedef $$MangaExtensionsTableCreateCompanionBuilder = MangaExtensionsCompanion
+    Function({
+  required String packageName,
+  Value<String?> storeUrl,
+  required String name,
+  required int versionCode,
+  required String versionName,
+  required String libVersion,
+  required String language,
+  Value<int> contentWarning,
+  required String apkPath,
+  required String apkSha256,
+  required String signerSha256,
+  Value<bool> enabled,
+  required int installedAt,
+  Value<int> rowid,
+});
+typedef $$MangaExtensionsTableUpdateCompanionBuilder = MangaExtensionsCompanion
+    Function({
+  Value<String> packageName,
+  Value<String?> storeUrl,
+  Value<String> name,
+  Value<int> versionCode,
+  Value<String> versionName,
+  Value<String> libVersion,
+  Value<String> language,
+  Value<int> contentWarning,
+  Value<String> apkPath,
+  Value<String> apkSha256,
+  Value<String> signerSha256,
+  Value<bool> enabled,
+  Value<int> installedAt,
+  Value<int> rowid,
+});
+
+class $$MangaExtensionsTableFilterComposer
+    extends Composer<_$HibikiDatabase, $MangaExtensionsTable> {
+  $$MangaExtensionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get packageName => $composableBuilder(
+      column: $table.packageName, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get storeUrl => $composableBuilder(
+      column: $table.storeUrl, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get versionCode => $composableBuilder(
+      column: $table.versionCode, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get versionName => $composableBuilder(
+      column: $table.versionName, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get libVersion => $composableBuilder(
+      column: $table.libVersion, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get language => $composableBuilder(
+      column: $table.language, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get contentWarning => $composableBuilder(
+      column: $table.contentWarning,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get apkPath => $composableBuilder(
+      column: $table.apkPath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get apkSha256 => $composableBuilder(
+      column: $table.apkSha256, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get signerSha256 => $composableBuilder(
+      column: $table.signerSha256, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get enabled => $composableBuilder(
+      column: $table.enabled, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get installedAt => $composableBuilder(
+      column: $table.installedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$MangaExtensionsTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $MangaExtensionsTable> {
+  $$MangaExtensionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get packageName => $composableBuilder(
+      column: $table.packageName, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get storeUrl => $composableBuilder(
+      column: $table.storeUrl, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get versionCode => $composableBuilder(
+      column: $table.versionCode, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get versionName => $composableBuilder(
+      column: $table.versionName, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get libVersion => $composableBuilder(
+      column: $table.libVersion, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get language => $composableBuilder(
+      column: $table.language, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get contentWarning => $composableBuilder(
+      column: $table.contentWarning,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get apkPath => $composableBuilder(
+      column: $table.apkPath, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get apkSha256 => $composableBuilder(
+      column: $table.apkSha256, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get signerSha256 => $composableBuilder(
+      column: $table.signerSha256,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get enabled => $composableBuilder(
+      column: $table.enabled, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get installedAt => $composableBuilder(
+      column: $table.installedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$MangaExtensionsTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $MangaExtensionsTable> {
+  $$MangaExtensionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get packageName => $composableBuilder(
+      column: $table.packageName, builder: (column) => column);
+
+  GeneratedColumn<String> get storeUrl =>
+      $composableBuilder(column: $table.storeUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<int> get versionCode => $composableBuilder(
+      column: $table.versionCode, builder: (column) => column);
+
+  GeneratedColumn<String> get versionName => $composableBuilder(
+      column: $table.versionName, builder: (column) => column);
+
+  GeneratedColumn<String> get libVersion => $composableBuilder(
+      column: $table.libVersion, builder: (column) => column);
+
+  GeneratedColumn<String> get language =>
+      $composableBuilder(column: $table.language, builder: (column) => column);
+
+  GeneratedColumn<int> get contentWarning => $composableBuilder(
+      column: $table.contentWarning, builder: (column) => column);
+
+  GeneratedColumn<String> get apkPath =>
+      $composableBuilder(column: $table.apkPath, builder: (column) => column);
+
+  GeneratedColumn<String> get apkSha256 =>
+      $composableBuilder(column: $table.apkSha256, builder: (column) => column);
+
+  GeneratedColumn<String> get signerSha256 => $composableBuilder(
+      column: $table.signerSha256, builder: (column) => column);
+
+  GeneratedColumn<bool> get enabled =>
+      $composableBuilder(column: $table.enabled, builder: (column) => column);
+
+  GeneratedColumn<int> get installedAt => $composableBuilder(
+      column: $table.installedAt, builder: (column) => column);
+}
+
+class $$MangaExtensionsTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $MangaExtensionsTable,
+    MangaExtensionRow,
+    $$MangaExtensionsTableFilterComposer,
+    $$MangaExtensionsTableOrderingComposer,
+    $$MangaExtensionsTableAnnotationComposer,
+    $$MangaExtensionsTableCreateCompanionBuilder,
+    $$MangaExtensionsTableUpdateCompanionBuilder,
+    (
+      MangaExtensionRow,
+      BaseReferences<_$HibikiDatabase, $MangaExtensionsTable, MangaExtensionRow>
+    ),
+    MangaExtensionRow,
+    PrefetchHooks Function()> {
+  $$MangaExtensionsTableTableManager(
+      _$HibikiDatabase db, $MangaExtensionsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MangaExtensionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MangaExtensionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MangaExtensionsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> packageName = const Value.absent(),
+            Value<String?> storeUrl = const Value.absent(),
+            Value<String> name = const Value.absent(),
+            Value<int> versionCode = const Value.absent(),
+            Value<String> versionName = const Value.absent(),
+            Value<String> libVersion = const Value.absent(),
+            Value<String> language = const Value.absent(),
+            Value<int> contentWarning = const Value.absent(),
+            Value<String> apkPath = const Value.absent(),
+            Value<String> apkSha256 = const Value.absent(),
+            Value<String> signerSha256 = const Value.absent(),
+            Value<bool> enabled = const Value.absent(),
+            Value<int> installedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MangaExtensionsCompanion(
+            packageName: packageName,
+            storeUrl: storeUrl,
+            name: name,
+            versionCode: versionCode,
+            versionName: versionName,
+            libVersion: libVersion,
+            language: language,
+            contentWarning: contentWarning,
+            apkPath: apkPath,
+            apkSha256: apkSha256,
+            signerSha256: signerSha256,
+            enabled: enabled,
+            installedAt: installedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String packageName,
+            Value<String?> storeUrl = const Value.absent(),
+            required String name,
+            required int versionCode,
+            required String versionName,
+            required String libVersion,
+            required String language,
+            Value<int> contentWarning = const Value.absent(),
+            required String apkPath,
+            required String apkSha256,
+            required String signerSha256,
+            Value<bool> enabled = const Value.absent(),
+            required int installedAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MangaExtensionsCompanion.insert(
+            packageName: packageName,
+            storeUrl: storeUrl,
+            name: name,
+            versionCode: versionCode,
+            versionName: versionName,
+            libVersion: libVersion,
+            language: language,
+            contentWarning: contentWarning,
+            apkPath: apkPath,
+            apkSha256: apkSha256,
+            signerSha256: signerSha256,
+            enabled: enabled,
+            installedAt: installedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$MangaExtensionsTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $MangaExtensionsTable,
+    MangaExtensionRow,
+    $$MangaExtensionsTableFilterComposer,
+    $$MangaExtensionsTableOrderingComposer,
+    $$MangaExtensionsTableAnnotationComposer,
+    $$MangaExtensionsTableCreateCompanionBuilder,
+    $$MangaExtensionsTableUpdateCompanionBuilder,
+    (
+      MangaExtensionRow,
+      BaseReferences<_$HibikiDatabase, $MangaExtensionsTable, MangaExtensionRow>
+    ),
+    MangaExtensionRow,
+    PrefetchHooks Function()>;
+typedef $$MangaOnlineSourcesTableCreateCompanionBuilder
+    = MangaOnlineSourcesCompanion Function({
+  required String extensionPackage,
+  required String sourceId,
+  required String name,
+  required String language,
+  Value<String> baseUrl,
+  Value<bool> enabled,
+  Value<bool> pinned,
+  Value<int> sortOrder,
+  Value<int> rowid,
+});
+typedef $$MangaOnlineSourcesTableUpdateCompanionBuilder
+    = MangaOnlineSourcesCompanion Function({
+  Value<String> extensionPackage,
+  Value<String> sourceId,
+  Value<String> name,
+  Value<String> language,
+  Value<String> baseUrl,
+  Value<bool> enabled,
+  Value<bool> pinned,
+  Value<int> sortOrder,
+  Value<int> rowid,
+});
+
+class $$MangaOnlineSourcesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $MangaOnlineSourcesTable> {
+  $$MangaOnlineSourcesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get extensionPackage => $composableBuilder(
+      column: $table.extensionPackage,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sourceId => $composableBuilder(
+      column: $table.sourceId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get language => $composableBuilder(
+      column: $table.language, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get baseUrl => $composableBuilder(
+      column: $table.baseUrl, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get enabled => $composableBuilder(
+      column: $table.enabled, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get pinned => $composableBuilder(
+      column: $table.pinned, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnFilters(column));
+}
+
+class $$MangaOnlineSourcesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $MangaOnlineSourcesTable> {
+  $$MangaOnlineSourcesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get extensionPackage => $composableBuilder(
+      column: $table.extensionPackage,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get sourceId => $composableBuilder(
+      column: $table.sourceId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get name => $composableBuilder(
+      column: $table.name, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get language => $composableBuilder(
+      column: $table.language, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get baseUrl => $composableBuilder(
+      column: $table.baseUrl, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get enabled => $composableBuilder(
+      column: $table.enabled, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get pinned => $composableBuilder(
+      column: $table.pinned, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+      column: $table.sortOrder, builder: (column) => ColumnOrderings(column));
+}
+
+class $$MangaOnlineSourcesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $MangaOnlineSourcesTable> {
+  $$MangaOnlineSourcesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get extensionPackage => $composableBuilder(
+      column: $table.extensionPackage, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceId =>
+      $composableBuilder(column: $table.sourceId, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get language =>
+      $composableBuilder(column: $table.language, builder: (column) => column);
+
+  GeneratedColumn<String> get baseUrl =>
+      $composableBuilder(column: $table.baseUrl, builder: (column) => column);
+
+  GeneratedColumn<bool> get enabled =>
+      $composableBuilder(column: $table.enabled, builder: (column) => column);
+
+  GeneratedColumn<bool> get pinned =>
+      $composableBuilder(column: $table.pinned, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+}
+
+class $$MangaOnlineSourcesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $MangaOnlineSourcesTable,
+    MangaOnlineSourceRow,
+    $$MangaOnlineSourcesTableFilterComposer,
+    $$MangaOnlineSourcesTableOrderingComposer,
+    $$MangaOnlineSourcesTableAnnotationComposer,
+    $$MangaOnlineSourcesTableCreateCompanionBuilder,
+    $$MangaOnlineSourcesTableUpdateCompanionBuilder,
+    (
+      MangaOnlineSourceRow,
+      BaseReferences<_$HibikiDatabase, $MangaOnlineSourcesTable,
+          MangaOnlineSourceRow>
+    ),
+    MangaOnlineSourceRow,
+    PrefetchHooks Function()> {
+  $$MangaOnlineSourcesTableTableManager(
+      _$HibikiDatabase db, $MangaOnlineSourcesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MangaOnlineSourcesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MangaOnlineSourcesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MangaOnlineSourcesTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> extensionPackage = const Value.absent(),
+            Value<String> sourceId = const Value.absent(),
+            Value<String> name = const Value.absent(),
+            Value<String> language = const Value.absent(),
+            Value<String> baseUrl = const Value.absent(),
+            Value<bool> enabled = const Value.absent(),
+            Value<bool> pinned = const Value.absent(),
+            Value<int> sortOrder = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MangaOnlineSourcesCompanion(
+            extensionPackage: extensionPackage,
+            sourceId: sourceId,
+            name: name,
+            language: language,
+            baseUrl: baseUrl,
+            enabled: enabled,
+            pinned: pinned,
+            sortOrder: sortOrder,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String extensionPackage,
+            required String sourceId,
+            required String name,
+            required String language,
+            Value<String> baseUrl = const Value.absent(),
+            Value<bool> enabled = const Value.absent(),
+            Value<bool> pinned = const Value.absent(),
+            Value<int> sortOrder = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MangaOnlineSourcesCompanion.insert(
+            extensionPackage: extensionPackage,
+            sourceId: sourceId,
+            name: name,
+            language: language,
+            baseUrl: baseUrl,
+            enabled: enabled,
+            pinned: pinned,
+            sortOrder: sortOrder,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$MangaOnlineSourcesTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $MangaOnlineSourcesTable,
+    MangaOnlineSourceRow,
+    $$MangaOnlineSourcesTableFilterComposer,
+    $$MangaOnlineSourcesTableOrderingComposer,
+    $$MangaOnlineSourcesTableAnnotationComposer,
+    $$MangaOnlineSourcesTableCreateCompanionBuilder,
+    $$MangaOnlineSourcesTableUpdateCompanionBuilder,
+    (
+      MangaOnlineSourceRow,
+      BaseReferences<_$HibikiDatabase, $MangaOnlineSourcesTable,
+          MangaOnlineSourceRow>
+    ),
+    MangaOnlineSourceRow,
+    PrefetchHooks Function()>;
+typedef $$MangaSourcePreferencesTableCreateCompanionBuilder
+    = MangaSourcePreferencesCompanion Function({
+  required String extensionPackage,
+  required String sourceId,
+  required String preferenceKey,
+  required String preferenceType,
+  required String valueJson,
+  required int updatedAt,
+  Value<int> rowid,
+});
+typedef $$MangaSourcePreferencesTableUpdateCompanionBuilder
+    = MangaSourcePreferencesCompanion Function({
+  Value<String> extensionPackage,
+  Value<String> sourceId,
+  Value<String> preferenceKey,
+  Value<String> preferenceType,
+  Value<String> valueJson,
+  Value<int> updatedAt,
+  Value<int> rowid,
+});
+
+class $$MangaSourcePreferencesTableFilterComposer
+    extends Composer<_$HibikiDatabase, $MangaSourcePreferencesTable> {
+  $$MangaSourcePreferencesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get extensionPackage => $composableBuilder(
+      column: $table.extensionPackage,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get sourceId => $composableBuilder(
+      column: $table.sourceId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get preferenceKey => $composableBuilder(
+      column: $table.preferenceKey, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get preferenceType => $composableBuilder(
+      column: $table.preferenceType,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get valueJson => $composableBuilder(
+      column: $table.valueJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$MangaSourcePreferencesTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $MangaSourcePreferencesTable> {
+  $$MangaSourcePreferencesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get extensionPackage => $composableBuilder(
+      column: $table.extensionPackage,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get sourceId => $composableBuilder(
+      column: $table.sourceId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get preferenceKey => $composableBuilder(
+      column: $table.preferenceKey,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get preferenceType => $composableBuilder(
+      column: $table.preferenceType,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get valueJson => $composableBuilder(
+      column: $table.valueJson, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$MangaSourcePreferencesTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $MangaSourcePreferencesTable> {
+  $$MangaSourcePreferencesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get extensionPackage => $composableBuilder(
+      column: $table.extensionPackage, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceId =>
+      $composableBuilder(column: $table.sourceId, builder: (column) => column);
+
+  GeneratedColumn<String> get preferenceKey => $composableBuilder(
+      column: $table.preferenceKey, builder: (column) => column);
+
+  GeneratedColumn<String> get preferenceType => $composableBuilder(
+      column: $table.preferenceType, builder: (column) => column);
+
+  GeneratedColumn<String> get valueJson =>
+      $composableBuilder(column: $table.valueJson, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$MangaSourcePreferencesTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $MangaSourcePreferencesTable,
+    MangaSourcePreferenceRow,
+    $$MangaSourcePreferencesTableFilterComposer,
+    $$MangaSourcePreferencesTableOrderingComposer,
+    $$MangaSourcePreferencesTableAnnotationComposer,
+    $$MangaSourcePreferencesTableCreateCompanionBuilder,
+    $$MangaSourcePreferencesTableUpdateCompanionBuilder,
+    (
+      MangaSourcePreferenceRow,
+      BaseReferences<_$HibikiDatabase, $MangaSourcePreferencesTable,
+          MangaSourcePreferenceRow>
+    ),
+    MangaSourcePreferenceRow,
+    PrefetchHooks Function()> {
+  $$MangaSourcePreferencesTableTableManager(
+      _$HibikiDatabase db, $MangaSourcePreferencesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MangaSourcePreferencesTableFilterComposer(
+                  $db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MangaSourcePreferencesTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MangaSourcePreferencesTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> extensionPackage = const Value.absent(),
+            Value<String> sourceId = const Value.absent(),
+            Value<String> preferenceKey = const Value.absent(),
+            Value<String> preferenceType = const Value.absent(),
+            Value<String> valueJson = const Value.absent(),
+            Value<int> updatedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MangaSourcePreferencesCompanion(
+            extensionPackage: extensionPackage,
+            sourceId: sourceId,
+            preferenceKey: preferenceKey,
+            preferenceType: preferenceType,
+            valueJson: valueJson,
+            updatedAt: updatedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String extensionPackage,
+            required String sourceId,
+            required String preferenceKey,
+            required String preferenceType,
+            required String valueJson,
+            required int updatedAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MangaSourcePreferencesCompanion.insert(
+            extensionPackage: extensionPackage,
+            sourceId: sourceId,
+            preferenceKey: preferenceKey,
+            preferenceType: preferenceType,
+            valueJson: valueJson,
+            updatedAt: updatedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$MangaSourcePreferencesTableProcessedTableManager
+    = ProcessedTableManager<
+        _$HibikiDatabase,
+        $MangaSourcePreferencesTable,
+        MangaSourcePreferenceRow,
+        $$MangaSourcePreferencesTableFilterComposer,
+        $$MangaSourcePreferencesTableOrderingComposer,
+        $$MangaSourcePreferencesTableAnnotationComposer,
+        $$MangaSourcePreferencesTableCreateCompanionBuilder,
+        $$MangaSourcePreferencesTableUpdateCompanionBuilder,
+        (
+          MangaSourcePreferenceRow,
+          BaseReferences<_$HibikiDatabase, $MangaSourcePreferencesTable,
+              MangaSourcePreferenceRow>
+        ),
+        MangaSourcePreferenceRow,
+        PrefetchHooks Function()>;
+typedef $$MangaTrustedSignersTableCreateCompanionBuilder
+    = MangaTrustedSignersCompanion Function({
+  required String fingerprint,
+  required String label,
+  required String origin,
+  required int trustedAt,
+  Value<int> rowid,
+});
+typedef $$MangaTrustedSignersTableUpdateCompanionBuilder
+    = MangaTrustedSignersCompanion Function({
+  Value<String> fingerprint,
+  Value<String> label,
+  Value<String> origin,
+  Value<int> trustedAt,
+  Value<int> rowid,
+});
+
+class $$MangaTrustedSignersTableFilterComposer
+    extends Composer<_$HibikiDatabase, $MangaTrustedSignersTable> {
+  $$MangaTrustedSignersTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get fingerprint => $composableBuilder(
+      column: $table.fingerprint, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get label => $composableBuilder(
+      column: $table.label, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get origin => $composableBuilder(
+      column: $table.origin, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get trustedAt => $composableBuilder(
+      column: $table.trustedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$MangaTrustedSignersTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $MangaTrustedSignersTable> {
+  $$MangaTrustedSignersTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get fingerprint => $composableBuilder(
+      column: $table.fingerprint, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get label => $composableBuilder(
+      column: $table.label, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get origin => $composableBuilder(
+      column: $table.origin, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get trustedAt => $composableBuilder(
+      column: $table.trustedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$MangaTrustedSignersTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $MangaTrustedSignersTable> {
+  $$MangaTrustedSignersTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get fingerprint => $composableBuilder(
+      column: $table.fingerprint, builder: (column) => column);
+
+  GeneratedColumn<String> get label =>
+      $composableBuilder(column: $table.label, builder: (column) => column);
+
+  GeneratedColumn<String> get origin =>
+      $composableBuilder(column: $table.origin, builder: (column) => column);
+
+  GeneratedColumn<int> get trustedAt =>
+      $composableBuilder(column: $table.trustedAt, builder: (column) => column);
+}
+
+class $$MangaTrustedSignersTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $MangaTrustedSignersTable,
+    MangaTrustedSignerRow,
+    $$MangaTrustedSignersTableFilterComposer,
+    $$MangaTrustedSignersTableOrderingComposer,
+    $$MangaTrustedSignersTableAnnotationComposer,
+    $$MangaTrustedSignersTableCreateCompanionBuilder,
+    $$MangaTrustedSignersTableUpdateCompanionBuilder,
+    (
+      MangaTrustedSignerRow,
+      BaseReferences<_$HibikiDatabase, $MangaTrustedSignersTable,
+          MangaTrustedSignerRow>
+    ),
+    MangaTrustedSignerRow,
+    PrefetchHooks Function()> {
+  $$MangaTrustedSignersTableTableManager(
+      _$HibikiDatabase db, $MangaTrustedSignersTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MangaTrustedSignersTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MangaTrustedSignersTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MangaTrustedSignersTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> fingerprint = const Value.absent(),
+            Value<String> label = const Value.absent(),
+            Value<String> origin = const Value.absent(),
+            Value<int> trustedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MangaTrustedSignersCompanion(
+            fingerprint: fingerprint,
+            label: label,
+            origin: origin,
+            trustedAt: trustedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String fingerprint,
+            required String label,
+            required String origin,
+            required int trustedAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              MangaTrustedSignersCompanion.insert(
+            fingerprint: fingerprint,
+            label: label,
+            origin: origin,
+            trustedAt: trustedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$MangaTrustedSignersTableProcessedTableManager = ProcessedTableManager<
+    _$HibikiDatabase,
+    $MangaTrustedSignersTable,
+    MangaTrustedSignerRow,
+    $$MangaTrustedSignersTableFilterComposer,
+    $$MangaTrustedSignersTableOrderingComposer,
+    $$MangaTrustedSignersTableAnnotationComposer,
+    $$MangaTrustedSignersTableCreateCompanionBuilder,
+    $$MangaTrustedSignersTableUpdateCompanionBuilder,
+    (
+      MangaTrustedSignerRow,
+      BaseReferences<_$HibikiDatabase, $MangaTrustedSignersTable,
+          MangaTrustedSignerRow>
+    ),
+    MangaTrustedSignerRow,
+    PrefetchHooks Function()>;
 
 class $HibikiDatabaseManager {
   final _$HibikiDatabase _db;
@@ -36119,4 +39728,15 @@ class $HibikiDatabaseManager {
       $$GalgameSessionsTableTableManager(_db, _db.galgameSessions);
   $$GalgameTagMappingsTableTableManager get galgameTagMappings =>
       $$GalgameTagMappingsTableTableManager(_db, _db.galgameTagMappings);
+  $$MangaExtensionStoresTableTableManager get mangaExtensionStores =>
+      $$MangaExtensionStoresTableTableManager(_db, _db.mangaExtensionStores);
+  $$MangaExtensionsTableTableManager get mangaExtensions =>
+      $$MangaExtensionsTableTableManager(_db, _db.mangaExtensions);
+  $$MangaOnlineSourcesTableTableManager get mangaOnlineSources =>
+      $$MangaOnlineSourcesTableTableManager(_db, _db.mangaOnlineSources);
+  $$MangaSourcePreferencesTableTableManager get mangaSourcePreferences =>
+      $$MangaSourcePreferencesTableTableManager(
+          _db, _db.mangaSourcePreferences);
+  $$MangaTrustedSignersTableTableManager get mangaTrustedSigners =>
+      $$MangaTrustedSignersTableTableManager(_db, _db.mangaTrustedSigners);
 }

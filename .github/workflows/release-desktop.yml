@@ -330,6 +330,15 @@ jobs:
           flutter build windows --release
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
+      - name: Bundle pinned Mihon desktop runtime
+        shell: pwsh
+        run: |
+          .\tool\mihon\build_desktop_runtime.ps1 `
+            -OutputDirectory "hibiki\build\windows\x64\runner\Release\mihon_bridge" `
+            -DownloadCache "$env:RUNNER_TEMP\hibiki-mihon-downloads"
+          if ($LASTEXITCODE -ne 0) { throw "Mihon desktop runtime build failed ($LASTEXITCODE)" }
+          .\tool\mihon\verify_desktop_runtime.ps1 `
+            -RuntimeDirectory "hibiki\build\windows\x64\runner\Release\mihon_bridge"
       - name: Build and bundle galgame helper archives
         shell: pwsh
         run: |
@@ -838,6 +847,23 @@ jobs:
           flutter build macos --release
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
+      - name: Bundle and sign pinned Mihon desktop runtimes
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tool/mihon/build_desktop_runtime.sh
+          app_dir="hibiki/build/macos/Build/Products/Release/hibiki.app"
+          runtime_dir="$app_dir/Contents/Resources/mihon_bridge"
+          tool/mihon/build_desktop_runtime.sh "$runtime_dir" "$RUNNER_TEMP/hibiki-mihon-downloads"
+          while IFS= read -r candidate; do
+            if file "$candidate" | grep -q 'Mach-O'; then
+              codesign --force --sign - --timestamp=none "$candidate"
+            fi
+          done < <(find "$runtime_dir" -type f)
+          chmod +x tool/mihon/verify_desktop_runtime.sh
+          tool/mihon/verify_desktop_runtime.sh "$runtime_dir"
+          codesign --force --deep --sign - --timestamp=none "$app_dir"
+          codesign --verify --deep --strict --verbose=2 "$app_dir"
       - name: Prepare macOS app release asset
         working-directory: hibiki
         shell: bash

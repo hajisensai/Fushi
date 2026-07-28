@@ -43,6 +43,8 @@ import 'package:hibiki/src/models/clipboard_history_repository.dart';
 import 'package:hibiki/src/models/media_history_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
+import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
+import 'package:hibiki/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
@@ -3110,6 +3112,32 @@ class AppModel with ChangeNotifier {
             MokuroMoeClient(baseUrl: mangaOnlineCatalogBaseUrl),
       );
 
+  /// Mihon 扩展生态宿主（Android 原生 / Windows、macOS 内置 Java sidecar）。
+  ///
+  /// 与 mokuro 下载队列一样按首次访问懒建：普通书架和 Mokuro 浏览不会启动 JVM，
+  /// 只有进入漫画源/漫画扩展/来源设置才读取扩展数据库；桌面 runtime 又会等到
+  /// 第一次真正调用扩展时才启动 M-Extension-Server。
+  MihonManager? _mihonManager;
+  MihonManager get mihonManager {
+    final MihonManager? existing = _mihonManager;
+    if (existing != null) return existing;
+    if (!MihonRuntimeFactory.isSupported) {
+      throw UnsupportedError(
+        'Mihon extensions are unavailable on this platform',
+      );
+    }
+    final Directory root =
+        Directory(path.join(databaseDirectory.path, 'mihon'));
+    final MihonManager manager = MihonManager(
+      database: database,
+      rootDirectory: root,
+      runtime: MihonRuntimeFactory.create(root),
+    );
+    _mihonManager = manager;
+    unawaited(manager.initialise());
+    return manager;
+  }
+
   AnimeDownloadSubscriptionService? _animeDownloadSubscriptionService;
   AnimeDownloadSubscriptionService? get animeDownloadSubscriptionService =>
       _animeDownloadSubscriptionService;
@@ -4748,6 +4776,8 @@ class AppModel with ChangeNotifier {
     _animeDownloadSubscriptionService?.stop();
     _mokuroMoeDownloadQueue?.dispose();
     _mokuroMoeDownloadQueue = null;
+    _mihonManager?.dispose();
+    _mihonManager = null;
     _prefsRepo?.removeListener(notifyListeners);
     if (_themeListenerAdded) {
       themeNotifier.removeListener(notifyListeners);

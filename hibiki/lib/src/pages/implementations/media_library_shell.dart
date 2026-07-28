@@ -15,6 +15,15 @@ enum MediaLibraryViewKind {
 
   /// 来源管理：本地扫描根 + 在线源设置。
   sources,
+
+  /// 漫画来源选择（内置 Mokuro + 已启用 Mihon 来源）。
+  mangaSources,
+
+  /// Mihon 扩展仓库与安装管理。
+  mangaExtensions,
+
+  /// 漫画本地扫描根、在线来源与扩展偏好。
+  sourceSettings,
 }
 
 /// 一个视图的声明：显示名 + 内容构建器。

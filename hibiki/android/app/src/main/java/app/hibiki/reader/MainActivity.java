@@ -54,6 +54,7 @@ import androidx.documentfile.provider.DocumentFile;
 import com.ryanheise.audioservice.AudioServiceActivity;
 import android.content.Context;
 import android.content.res.Configuration;
+import app.hibiki.reader.mihon.MihonChannelHandler;
 
 public class MainActivity extends AudioServiceActivity {
     private static final String VOLUME_KEY_CHANNEL = ChannelNames.VOLUME_KEYS;
@@ -82,6 +83,7 @@ public class MainActivity extends AudioServiceActivity {
     private Activity context;
     private AnkiChannelHandler ankiChannelHandler;
     private TtsChannelHandler ttsChannelHandler;
+    private MihonChannelHandler mihonChannelHandler;
     private MethodChannel.Result pendingSafResult;
     private String pendingSafDestPath;
     // BUG-427/TODO-852: when API 26+ has no install permission we route the
@@ -130,6 +132,7 @@ public class MainActivity extends AudioServiceActivity {
         context = MainActivity.this;
         ankiChannelHandler = new AnkiChannelHandler(context);
         ttsChannelHandler = new TtsChannelHandler(context);
+        mihonChannelHandler = new MihonChannelHandler(getApplication());
 
         super.onCreate(savedInstanceState);
 
@@ -178,6 +181,10 @@ public class MainActivity extends AudioServiceActivity {
     protected void onDestroy() {
         if (ttsChannelHandler != null) {
             ttsChannelHandler.destroy();
+        }
+        if (mihonChannelHandler != null) {
+            mihonChannelHandler.destroy();
+            mihonChannelHandler = null;
         }
         // HBK-AUDIT-057: the static floating-service channels are bound to this
         // engine's messenger; clear their handlers and null them so stale
@@ -516,6 +523,7 @@ public class MainActivity extends AudioServiceActivity {
 
         ankiChannelHandler.register(flutterEngine);
         ttsChannelHandler.register(flutterEngine);
+        mihonChannelHandler.register(flutterEngine);
 
         new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), SAF_CHANNEL)
             .setMethodCallHandler((call, result) -> {

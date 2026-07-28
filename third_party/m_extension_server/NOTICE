@@ -1,0 +1,14 @@
+M-Extension-Server v1.0.5.0 is distributed under the Mozilla Public
+License 2.0. Hibiki's modified source files are kept in this directory
+and applied to the exact upstream commit recorded in UPSTREAM.
+
+Significant Hibiki modifications:
+
+- loopback-only listener;
+- mandatory random Bearer authentication for all routes;
+- authenticated APK inspection using apksig;
+- authenticated source image and source data clearing routes;
+- Hibiki bridge capability identifier.
+
+Corresponding Source for shipped binaries is this overlay plus the upstream
+commit identified in UPSTREAM. Build scripts reproduce the combined source.

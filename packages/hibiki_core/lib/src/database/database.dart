@@ -398,6 +398,11 @@ _MergedTagState _mergeTagClocks(
   GalgameSources,
   GalgameSessions,
   GalgameTagMappings,
+  MangaExtensionStores,
+  MangaExtensions,
+  MangaOnlineSources,
+  MangaSourcePreferences,
+  MangaTrustedSigners,
 ])
 class HibikiDatabase extends _$HibikiDatabase {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
@@ -416,7 +421,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 62;
+  int get schemaVersion => 63;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1259,6 +1264,25 @@ class HibikiDatabase extends _$HibikiDatabase {
             if (await _tableExists('galgames') &&
                 !await _columnExists('galgames', 'upscaling_mode')) {
               await m.addColumn(galgames, galgames.upscalingMode);
+            }
+          }
+          if (from < 63) {
+            // v63（Mihon 漫画扩展生态）：全是独立新表，不改写现有漫画/书架/
+            // 来源扫描数据。旧用户升级后五张表为空，表现为「尚未添加扩展仓库」。
+            if (!await _tableExists('manga_extension_stores')) {
+              await m.createTable(mangaExtensionStores);
+            }
+            if (!await _tableExists('manga_extensions')) {
+              await m.createTable(mangaExtensions);
+            }
+            if (!await _tableExists('manga_online_sources')) {
+              await m.createTable(mangaOnlineSources);
+            }
+            if (!await _tableExists('manga_source_preferences')) {
+              await m.createTable(mangaSourcePreferences);
+            }
+            if (!await _tableExists('manga_trusted_signers')) {
+              await m.createTable(mangaTrustedSigners);
             }
           }
         },
@@ -2719,6 +2743,155 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<void> updateMediaSourceSortOrder(int id, int sortOrder) =>
       (update(mediaSources)..where((t) => t.id.equals(id)))
           .write(MediaSourcesCompanion(sortOrder: Value(sortOrder)));
+
+  // ── Mihon manga extensions (v63) ───────────────────────────────
+
+  Future<List<MangaExtensionStoreRow>> getMangaExtensionStores() =>
+      (select(mangaExtensionStores)
+            ..orderBy([
+              (t) => OrderingTerm(expression: t.sortOrder),
+              (t) => OrderingTerm(expression: t.indexUrl),
+            ]))
+          .get();
+
+  Future<void> upsertMangaExtensionStore(MangaExtensionStoresCompanion store) =>
+      into(mangaExtensionStores).insertOnConflictUpdate(store);
+
+  Future<int> deleteMangaExtensionStore(String indexUrl) =>
+      (delete(mangaExtensionStores)..where((t) => t.indexUrl.equals(indexUrl)))
+          .go();
+
+  Future<List<MangaExtensionRow>> getMangaExtensions() =>
+      (select(mangaExtensions)
+            ..orderBy([
+              (t) => OrderingTerm(expression: t.name),
+              (t) => OrderingTerm(expression: t.packageName),
+            ]))
+          .get();
+
+  Future<MangaExtensionRow?> getMangaExtension(String packageName) =>
+      (select(mangaExtensions)..where((t) => t.packageName.equals(packageName)))
+          .getSingleOrNull();
+
+  Future<void> upsertMangaExtension(MangaExtensionsCompanion extension) =>
+      into(mangaExtensions).insertOnConflictUpdate(extension);
+
+  Future<void> setMangaExtensionEnabled(String packageName, bool enabled) =>
+      (update(mangaExtensions)..where((t) => t.packageName.equals(packageName)))
+          .write(MangaExtensionsCompanion(enabled: Value(enabled)));
+
+  Future<void> deleteMangaExtension(String packageName) =>
+      transaction(() async {
+        await (delete(mangaSourcePreferences)
+              ..where((t) => t.extensionPackage.equals(packageName)))
+            .go();
+        await (delete(mangaOnlineSources)
+              ..where((t) => t.extensionPackage.equals(packageName)))
+            .go();
+        await (delete(mangaExtensions)
+              ..where((t) => t.packageName.equals(packageName)))
+            .go();
+      });
+
+  Future<List<MangaOnlineSourceRow>> getMangaOnlineSources() =>
+      (select(mangaOnlineSources)
+            ..orderBy([
+              (t) => OrderingTerm(
+                    expression: t.pinned,
+                    mode: OrderingMode.desc,
+                  ),
+              (t) => OrderingTerm(expression: t.sortOrder),
+              (t) => OrderingTerm(expression: t.name),
+            ]))
+          .get();
+
+  Future<void> replaceMangaOnlineSources(
+    String packageName,
+    Iterable<MangaOnlineSourcesCompanion> sources,
+  ) =>
+      transaction(() async {
+        final List<MangaOnlineSourceRow> previous =
+            await (select(mangaOnlineSources)
+                  ..where((t) => t.extensionPackage.equals(packageName)))
+                .get();
+        final Map<String, MangaOnlineSourceRow> settings =
+            <String, MangaOnlineSourceRow>{
+          for (final MangaOnlineSourceRow row in previous) row.sourceId: row,
+        };
+        await (delete(mangaOnlineSources)
+              ..where((t) => t.extensionPackage.equals(packageName)))
+            .go();
+        for (final MangaOnlineSourcesCompanion source in sources) {
+          final String? sourceId =
+              source.sourceId.present ? source.sourceId.value : null;
+          final MangaOnlineSourceRow? old =
+              sourceId == null ? null : settings[sourceId];
+          await into(mangaOnlineSources).insert(
+            source.copyWith(
+              enabled: old == null ? source.enabled : Value(old.enabled),
+              pinned: old == null ? source.pinned : Value(old.pinned),
+              sortOrder: old == null ? source.sortOrder : Value(old.sortOrder),
+            ),
+          );
+        }
+      });
+
+  Future<void> updateMangaOnlineSourceSettings({
+    required String extensionPackage,
+    required String sourceId,
+    bool? enabled,
+    bool? pinned,
+    int? sortOrder,
+  }) =>
+      (update(mangaOnlineSources)
+            ..where((t) =>
+                t.extensionPackage.equals(extensionPackage) &
+                t.sourceId.equals(sourceId)))
+          .write(
+        MangaOnlineSourcesCompanion(
+          enabled: enabled == null ? const Value.absent() : Value(enabled),
+          pinned: pinned == null ? const Value.absent() : Value(pinned),
+          sortOrder:
+              sortOrder == null ? const Value.absent() : Value(sortOrder),
+        ),
+      );
+
+  Future<List<MangaSourcePreferenceRow>> getMangaSourcePreferences(
+    String extensionPackage,
+    String sourceId,
+  ) =>
+      (select(mangaSourcePreferences)
+            ..where((t) =>
+                t.extensionPackage.equals(extensionPackage) &
+                t.sourceId.equals(sourceId))
+            ..orderBy([(t) => OrderingTerm(expression: t.preferenceKey)]))
+          .get();
+
+  Future<void> upsertMangaSourcePreference(
+          MangaSourcePreferencesCompanion preference) =>
+      into(mangaSourcePreferences).insertOnConflictUpdate(preference);
+
+  Future<void> clearMangaSourcePreferences(
+    String extensionPackage,
+    String sourceId,
+  ) =>
+      (delete(mangaSourcePreferences)
+            ..where((t) =>
+                t.extensionPackage.equals(extensionPackage) &
+                t.sourceId.equals(sourceId)))
+          .go();
+
+  Future<List<MangaTrustedSignerRow>> getMangaTrustedSigners() =>
+      select(mangaTrustedSigners).get();
+
+  Future<bool> isMangaSignerTrusted(String fingerprint) async =>
+      await (select(mangaTrustedSigners)
+            ..where((t) => t.fingerprint.equals(fingerprint)))
+          .getSingleOrNull() !=
+      null;
+
+  Future<void> trustMangaSigner(MangaTrustedSignersCompanion signer) =>
+      into(mangaTrustedSigners).insertOnConflictUpdate(signer);
 
   // ── hibiki_paired_peers (TODO-1017 阶段1) ────────────────────────
   // 互联 per-peer 授权凭据 CRUD。🔴 token 是敏感凭据（明文列存，方案待定），

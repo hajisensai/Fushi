@@ -30,3 +30,19 @@
 -dontwarn com.google.android.play.core.splitcompat.**
 -dontwarn com.google.android.play.core.splitinstall.**
 -dontwarn com.google.android.play.core.tasks.**
+-keep class eu.kanade.tachiyomi.source.** { *; }
+-keep class eu.kanade.tachiyomi.network.** { *; }
+-keep class tachiyomi.core.common.util.lang.** { *; }
+-keep class mihon.core.common.extensions.** { *; }
+-keep class uy.kohesive.injekt.** { *; }
+# Third-party extension bytecode calls these host libraries dynamically, so
+# R8 cannot infer the reachable API surface from Hibiki itself.
+-keep class okhttp3.** { *; }
+-keep class okio.** { *; }
+-keep class org.jsoup.** { *; }
+-keep class rx.** { *; }
+-keep class kotlinx.coroutines.** { *; }
+-keep class kotlinx.serialization.** { *; }
+-keep class androidx.preference.** { *; }
+-keep class androidx.compose.runtime.** { *; }
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod

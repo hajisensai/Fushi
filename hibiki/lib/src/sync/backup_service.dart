@@ -504,12 +504,22 @@ class BackupService {
   ///   - `sync_baselines`      — per-asset incremental-sync causality; carrying
   ///     it to another device corrupts later fork detection (mirrors why
   ///     `_keyCollectionsBaselineMs` is device-local).
-  /// Neither is FK-targeted by a content table, so a wholesale DELETE / swap is
+  ///   - `manga_*`             — Mihon repositories, executable-extension
+  ///     identities, signer trust decisions, source state and arbitrary
+  ///     extension preferences. APKs and runtime cookies deliberately do not
+  ///     travel, so exporting these rows would both create broken ghost
+  ///     extensions and risk leaking source credentials stored as preferences.
+  /// None is FK-targeted by a content table, so a wholesale DELETE / swap is
   /// safe. The merge engine already skips both, so only the overwrite path needs
   /// the restore.
   static const List<String> _deviceLocalTables = <String>[
     'hibiki_paired_peers',
     'sync_baselines',
+    'manga_extension_stores',
+    'manga_extensions',
+    'manga_online_sources',
+    'manga_source_preferences',
+    'manga_trusted_signers',
   ];
 
   /// Content tables stripped from the exported DB copy when the `statistics`

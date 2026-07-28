@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/manga/manga_library_page.dart';
+import 'package:hibiki/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:hibiki/src/media/media_item.dart';
 import 'package:hibiki/src/media/sources/manga_hibiki_source.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
@@ -82,24 +83,33 @@ void main() {
       );
       expect(built, isA<MediaLibraryShell>());
       final MediaLibraryShell shell = built! as MediaLibraryShell;
-      // 三视图齐全且顺序固定：书架在最前（进 tab 的默认落点）。
+      // 支持扩展宿主的平台固定四视图；iOS/Linux 保留原来的三视图。
       expect(
         shell.views.map((MediaLibraryViewSpec v) => v.kind).toList(),
-        <MediaLibraryViewKind>[
-          MediaLibraryViewKind.library,
-          MediaLibraryViewKind.browse,
-          MediaLibraryViewKind.sources,
-        ],
+        MihonRuntimeFactory.isSupported
+            ? <MediaLibraryViewKind>[
+                MediaLibraryViewKind.library,
+                MediaLibraryViewKind.mangaSources,
+                MediaLibraryViewKind.mangaExtensions,
+                MediaLibraryViewKind.sourceSettings,
+              ]
+            : <MediaLibraryViewKind>[
+                MediaLibraryViewKind.library,
+                MediaLibraryViewKind.browse,
+                MediaLibraryViewKind.sources,
+              ],
       );
       final Widget shelf = shell.views.first.builder(
           tester.element(find.byType(SizedBox)), const SizedBox.shrink());
       expect(shelf, isA<ReaderHibikiHistoryPage>());
       expect((shelf as ReaderHibikiHistoryPage).mangaOnly, isTrue);
       // 「来源」视图必须是漫画种类，不能误接成 book（那会把书的扫描根显示在漫画域）。
-      final Widget sources = shell.views.last.builder(
-          tester.element(find.byType(SizedBox)), const SizedBox.shrink());
-      expect(sources, isA<MediaSourcesPage>());
-      expect((sources as MediaSourcesPage).mediaKind, 'manga');
+      if (!MihonRuntimeFactory.isSupported) {
+        final Widget sources = shell.views.last.builder(
+            tester.element(find.byType(SizedBox)), const SizedBox.shrink());
+        expect(sources, isA<MediaSourcesPage>());
+        expect((sources as MediaSourcesPage).mediaKind, 'manga');
+      }
       // 反向锚：普通书架的默认值必须仍是 false，否则漫画会在两边都出现。
       expect(const ReaderHibikiHistoryPage().mangaOnly, isFalse);
     });
