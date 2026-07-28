@@ -2319,30 +2319,40 @@
       }
     }
     if (!win || typeof win.eval !== 'function') {
-      postToHost('wordAudioPlayed', [token, false]);
+      postToHost('wordAudioPlayed', [token, false, 'FrameNotLoaded']);
       return false;
     }
     try {
+      // BUG-1204：回报第三个参数 = 失败原因（popup.js 的 playWordAudio 存在
+      // window.__hibikiWordAudioLastError 上）。Dart 端按位置读且早已 `length >= 2`
+      // 守卫，多带一个参数对旧端完全无害。`play` 缺失是另一类失败（realm 里没装
+      // popup.js），给它自己的原因串，不与 play() 的 DOMException 混为一谈。
       win.eval(
           '(function () {' +
-          'var report = function (ok) {' +
+          'var reason = function () {' +
+          'try { return String(window.__hibikiWordAudioLastError || ""); }' +
+          ' catch (_) { return ""; }' +
+          '};' +
+          'var report = function (ok, why) {' +
           'try { window.chrome.webview.postMessage(' +
-          '{ handler: "wordAudioPlayed", args: [' + token + ', ok === true] }' +
+          '{ handler: "wordAudioPlayed", args: [' + token + ', ok === true,' +
+          ' String(why == null ? reason() : why)] }' +
           '); } catch (_) { /* bridge gone: Dart times out and falls back */ }' +
           '};' +
           'try {' +
           'var play = window.__hibikiPlayWordAudioUrl;' +
-          'if (!play) { report(false); return; }' +
+          'if (!play) { report(false, "PlayFunctionMissing"); return; }' +
           'Promise.resolve(play(' + JSON.stringify(url) + '))' +
           '.then(function (r) { report(r === true); },' +
-          ' function () { report(false); });' +
-          '} catch (_) { report(false); }' +
+          ' function (e) { report(false, (e && e.name) || "PlayThrew"); });' +
+          '} catch (e) { report(false, (e && e.name) || "EvalThrew"); }' +
           '})();');
       return true;
     } catch (error) {
       window.console?.debug?.(
           '[global-lookup] word audio frame eval failed', error);
-      postToHost('wordAudioPlayed', [token, false]);
+      postToHost('wordAudioPlayed',
+          [token, false, (error && error.name) || 'FrameEvalFailed']);
       return false;
     }
   }

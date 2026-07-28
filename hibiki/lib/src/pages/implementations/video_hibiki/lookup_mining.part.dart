@@ -343,9 +343,14 @@ extension _VideoLookupMining on _VideoHibikiPageState {
       };
     }
     // TODO-1000：委托统一沉浸制卡引擎。媒体降级阶梯 / 无音频中止 / 组 context / 落卡都在
-    // 引擎内；本壳只管 OSD + 视频统计。onFailure 捕获 GIF(首)/音频(末)失败摘要供 OSD。
-    String? gifFailure;
-    String? lastFailure;
+    // 引擎内；本壳只管 OSD + 视频统计。
+    //
+    // BUG-1205：两个失败摘要过去靠**同一个 onFailure 的调用顺序**区分（首个当 GIF、末个
+    // 当音频）。引擎现在让封面与音频并行跑，顺序不再确定——改按来源取：封面失败进
+    // [coverFailure]（喂「降级为静态」OSD 的原因），音频失败进 [audioFailure]（喂「无音频
+    // 中止」OSD 的原因）。语义由参数名承载，不再依赖时序。
+    String? coverFailure;
+    String? audioFailure;
     final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
       ImmersionMiningRequest(
         fields: fields,
@@ -382,18 +387,17 @@ extension _VideoLookupMining on _VideoHibikiPageState {
       compression: mediaCompression,
       tempDir: tmp.path,
       repo: repo,
-      onFailure: (String summary) {
-        gifFailure ??= summary;
-        lastFailure = summary;
-      },
+      // 各取首个摘要：同一来源多次回退（GIF→起点帧→当前帧）时，最先的那条最贴近根因。
+      onCoverFailure: (String summary) => coverFailure ??= summary,
+      onAudioFailure: (String summary) => audioFailure ??= summary,
     );
     // BUG-296 / TODO-390：应带句子音频却抽取失败 → 显式 OSD + 中止，不建无音频卡。
     if (res.aborted) {
       if (mounted) {
         _showOsd(t.card_export_failed_detail(
-          reason: lastFailure == null
+          reason: audioFailure == null
               ? 'sentence audio export failed'
-              : 'sentence audio export failed: $lastFailure',
+              : 'sentence audio export failed: $audioFailure',
         ));
       }
       return const MinePopupResult();
@@ -401,7 +405,7 @@ extension _VideoLookupMining on _VideoHibikiPageState {
     // W2a：动图降级为静态帧时可感知 OSD（原因取 GIF 失败摘要，最贴近根因）。
     if (res.degradedToStill && mounted) {
       _showOsd(t.card_cover_degraded_to_static(
-        reason: gifFailure ?? 'animated clip unavailable',
+        reason: coverFailure ?? 'animated clip unavailable',
       ));
     }
     final MineOutcome outcome = res.outcome! as MineOutcome;

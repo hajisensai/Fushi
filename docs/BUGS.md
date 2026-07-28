@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1164 条。点号进各自文件。
+> 共 1166 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1205](bugs/BUG-1205-video-mining-cover-audio-serial.md) | ✅ | ✅ | 视频制卡封面与句子音频串行且失败来源靠调用顺序区分 |
+| [BUG-1204](bugs/BUG-1204-lookup-audio-play-failure-reason-swallowed.md) | ✅ | ✅ | 浮窗单词发音首播失败且失败原因被吞无法定位 |
 | [BUG-1203](bugs/BUG-1203-epub-opf-mediatype-html-classification.md) | ✅ | ✅ | EPUB 内容文档按扩展名分类导致怪扩展名章节整本渲染空白 |
 | [BUG-1202](bugs/BUG-1202-remote-library-cache-source-crosstalk.md) | ✅ | ✅ | 互联与云盘共用远端清单缓存槽，换来源后看到上一个来源的条目 |
 | [BUG-1201](bugs/BUG-1201-sasasa-unity-resource-pcm-not-published.md) | ✅ | ✅ | Sasasa Unity 资源音频已解码但未写入音频环 |

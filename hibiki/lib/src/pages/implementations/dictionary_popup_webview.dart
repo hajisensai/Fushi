@@ -685,19 +685,28 @@ JSON.stringify((function(){
     final Completer<bool> completer = Completer<bool>();
     _pendingWordAudioPlays[token] = completer;
     try {
+      // BUG-1204：与 app 外 host 同一契约——回报第三个参数 = 失败原因（popup.js 存在
+      // window.__hibikiWordAudioLastError 上），让 app 内首播失败也能定位到 DOMException
+      // 名字，而不是只看到一个 false。
       await controller.evaluateJavascript(source: '''
 (function () {
-  var report = function (ok) {
+  var reason = function () {
+    try { return String(window.__hibikiWordAudioLastError || ''); }
+    catch (_) { return ''; }
+  };
+  var report = function (ok, why) {
     try {
-      window.flutter_inappwebview.callHandler('wordAudioPlayed', $token, ok === true);
+      window.flutter_inappwebview.callHandler('wordAudioPlayed', $token, ok === true,
+          String(why == null ? reason() : why));
     } catch (_) { /* bridge gone: Dart side times out and falls back */ }
   };
   try {
     var play = window.__hibikiPlayWordAudioUrl;
-    if (!play) { report(false); return; }
+    if (!play) { report(false, 'PlayFunctionMissing'); return; }
     Promise.resolve(play(${jsonEncode(url)}))
-        .then(report, function () { report(false); });
-  } catch (_) { report(false); }
+        .then(function (r) { report(r === true); },
+              function (e) { report(false, (e && e.name) || 'PlayThrew'); });
+  } catch (e) { report(false, (e && e.name) || 'EvalThrew'); }
 })();
 ''');
       return await completer.future.timeout(_kWordAudioPlayReportTimeout);
@@ -1337,6 +1346,17 @@ JSON.stringify((function(){
                 final int? token =
                     args.isNotEmpty ? (args[0] as num?)?.toInt() : null;
                 final bool ok = args.length > 1 && args[1] == true;
+                // BUG-1204：失败原因（args[2]）记进诊断日志——首播失败到底是 autoplay
+                // 拦截还是解码失败，决定了修法，不能再只留一个 false。成功不记。
+                if (!ok) {
+                  final String reason =
+                      (args.length > 2 ? '${args[2]}' : '').trim();
+                  ErrorLogService.instance.logDiagnostic(
+                    'DictPopupWebview.wordAudioPlayed',
+                    'WebView 播放失败 token=$token '
+                        'reason=${reason.isEmpty ? 'unreported' : reason}',
+                  );
+                }
                 if (token != null) {
                   final Completer<bool>? pending =
                       _pendingWordAudioPlays.remove(token);

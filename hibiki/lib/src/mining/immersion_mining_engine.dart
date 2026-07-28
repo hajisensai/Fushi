@@ -83,15 +83,38 @@ class ImmersionMiningEngine {
   static bool _isRemoteHttp(String s) =>
       s.startsWith('http://') || s.startsWith('https://');
 
+  /// BUG-1205 — 封面与句子音频是两条**互不依赖**的 ffmpeg 抽取，历史实现串行 await
+  /// （封面阶梯跑完才开始抽音频），耗时直接相加。用户把「图片/GIF 清晰度」调到最高档时
+  /// GIF 单项就要数秒（BUG-1039 实测：4 秒区间 6 秒 / 7.7 MB），串行让整次制卡雪上加霜。
+  /// 现在音频在封面阶梯**之前**启动、末尾才 await，两条重叠，总耗时 ≈ max 而非 sum。
+  ///
+  /// [onCoverFailure] / [onAudioFailure] 是 BUG-1205 的另一半：调用方过去靠 **onFailure
+  /// 的调用顺序**区分「首个=GIF 失败、末个=音频失败」（lookup_mining.part.dart 的
+  /// `gifFailure ??= summary`）。并行后顺序不再确定，靠顺序区分必然串味——故按**来源**
+  /// 分流，语义由参数名承载而不是时序。[onFailure] 保留为「任一来源」的合流回调，既有
+  /// 调用点（app_model 的 YouTube/Netflix、gal coordinator）零改动。
   Future<ImmersionMiningResult> mine(
     ImmersionMiningRequest req, {
     required MiningMediaCompression compression,
     required String tempDir,
     required BaseAnkiRepository repo,
     FfmpegFailureReporter? onFailure,
+    FfmpegFailureReporter? onCoverFailure,
+    FfmpegFailureReporter? onAudioFailure,
   }) async {
     String? coverPath;
     bool degradedToStill = false;
+
+    // 按来源分流的两个上报口：各自先喂专属回调，再合流进 [onFailure]（保持既有语义）。
+    void reportCover(String summary) {
+      onCoverFailure?.call(summary);
+      onFailure?.call(summary);
+    }
+
+    void reportAudio(String summary) {
+      onAudioFailure?.call(summary);
+      onFailure?.call(summary);
+    }
 
     if (req.providedCoverBytes != null) {
       coverPath = await _writeBytes(
@@ -117,7 +140,7 @@ class ImmersionMiningEngine {
         outputPath: '$tempDir/immersion_clip.gif',
         fps: compression.gifFps,
         width: compression.gifWidth,
-        onFailure: onFailure,
+        onFailure: reportCover,
         tlsPinSha256: req.mediaSourceTlsPinSha256,
       );
     }
@@ -129,7 +152,7 @@ class ImmersionMiningEngine {
         inputPath: src,
         outputPath: '$tempDir/immersion_frame.jpg',
         atSeconds: req.clipStartMs / 1000.0,
-        onFailure: onFailure,
+        onFailure: reportCover,
         tlsPinSha256: req.mediaSourceTlsPinSha256,
       );
     }
@@ -148,6 +171,28 @@ class ImmersionMiningEngine {
       );
       return _writeBytes(tempDir, 'immersion_shot.jpg', small);
     }
+
+    // BUG-1205 — 音频抽取与下面的封面阶梯**无任何数据依赖**，故在此先启动、末尾才
+    // await：两条 ffmpeg 重叠跑，总耗时从「封面 + 音频」变成「max(封面, 音频)」。
+    // 封面阶梯内部的优先级顺序（GIF → 起点帧 → 当前帧）完全不动——那才是真依赖。
+    //
+    // catchError 把异常暂存后照常在末尾重抛：不这样的话，封面阶梯若先抛出，这个已在
+    // 途的 Future 就成了 unhandled async error（Flutter 下直接上报成崩溃）。暂存 +
+    // 重抛保持与串行版逐字一致的抛出语义。
+    final String? audioSrc = req.audioSource ?? src;
+    Object? audioError;
+    StackTrace? audioStack;
+    final Future<String?> audioFuture = _resolveAudioPath(
+      req,
+      compression: compression,
+      tempDir: tempDir,
+      audioSrc: audioSrc,
+      reportAudio: reportAudio,
+    ).catchError((Object e, StackTrace st) {
+      audioError = e;
+      audioStack = st;
+      return null;
+    });
 
     if (coverPath == null) {
       switch (req.imageMode) {
@@ -174,71 +219,10 @@ class ImmersionMiningEngine {
       }
     }
 
-    // 音频段抽取源：优先独立 audioSource（YouTube 分离音频流），否则用视频源（本地/muxed）。
-    final String? audioSrc = req.audioSource ?? src;
-    String? audioPath;
-    if (req.providedAudioBytes != null) {
-      audioPath = await _writeBytes(
-          tempDir,
-          req.providedAudioName ??
-              'immersion_audio.${immersionMiningAudioExtension()}',
-          req.providedAudioBytes!);
-    } else if (audioSrc != null && req.hasRange) {
-      // BUG-1004：互联 host（LAN Hibiki 库）远端流优先走 **host 端裁**——host 用本地文件裁好
-      // 句子音频再经已鉴权/钉扎的下载通道回传，client 全程不用 ffmpeg 抓远端流，从根上绕开
-      // 「client ffmpeg 打不开 host 自签 https / token 流」的整类失败（见 BUG-891 残余缺口：
-      // 移动端自编 ffmpeg-kit 的 TLS pin 仍会因指纹缺失/URL 编码/网络脆弱而 I/O error）。命中
-      // 远端 http(s) 源且注入了裁切器时先试；成功即用，返回 null（老 host 无 clipaudio 端点/
-      // 网络失败）则落到下方现有 ffmpeg-over-URL 抽取（Never break userspace）。
-      if (req.remoteAudioClipper != null && _isRemoteHttp(audioSrc)) {
-        audioPath = await req.remoteAudioClipper!(
-          startMs: req.clipStartMs,
-          endMs: req.clipEndMs,
-          // host 裁出的是 adts aac；命名 .aac 与内容一致（AnkiDroid/桌面直收）。
-          outputPath: '$tempDir/immersion_audio_host.aac',
-        );
-      }
-      // host 端裁未命中（非互联 host / 老 host 无 clipaudio 端点 / 裁切失败）时回退现有
-      // ffmpeg-over-URL 抽取（YouTube 物化 + 直连 ffmpeg 抽取，含 BUG-891 的 tls pin）。
-      if (audioPath == null) {
-        // TODO-1314（B5）：audio-only DASH 分离流（req.audioSource 非空且为远端 http = YouTube
-        // 分离音频轨）的 ffmpeg HTTP `-ss` seek 会被 googlevideo 限速 stall→120s 超时→无句子音频
-        // （TODO-1301 曾用 muxed 绕行）。改为先用 yt-dlp 式 range 分片下载把整段音频物化到本地
-        // 临时文件、再对**本地文件**裁——本地 seek 即时、无网络 stall，根治 audio-only 不可 seek，
-        // 去掉对 muxed 的硬依赖。muxed 路径（audioSource==null → audioSrc==mediaSource，HTTP seek
-        // 只下小段、效率更高）不走物化、保持不变。物化失败回退直接对 URL 裁（best-effort，不劣于旧）。
-        String cutInput = audioSrc;
-        String? materialized;
-        if (req.audioSource != null && _isRemoteHttp(req.audioSource!)) {
-          materialized = await _materialize(
-            audioUrl: req.audioSource!,
-            outputPath: '$tempDir/immersion_audio_src',
-            onFailure: onFailure,
-          );
-          if (materialized != null) cutInput = materialized;
-        }
-        audioPath = await _audio(
-          inputPath: cutInput,
-          startMs: req.clipStartMs,
-          endMs: req.clipEndMs,
-          outputPath:
-              '$tempDir/immersion_audio.${immersionMiningAudioExtension()}',
-          audioStreamIndex: req.audioStreamIndex,
-          audioStreamCount: req.audioStreamCount,
-          audioChannels: compression.audioChannels,
-          audioBitrate: compression.audioBitrate,
-          onFailure: onFailure,
-          // BUG-891：cutInput 若是物化后的本地文件（YouTube）pin 被 buildFfmpegRemoteInputArgs
-          // 的远端判定忽略；Hibiki muxed 时 cutInput 是远端 https host，pin 生效。
-          tlsPinSha256: req.mediaSourceTlsPinSha256,
-        );
-        // 物化的整段音频临时文件用完即删（裁好的 immersion_audio.* 才是产物）。
-        if (materialized != null) {
-          try {
-            File(materialized).deleteSync();
-          } catch (_) {}
-        }
-      }
+    // BUG-1205：收割上面已并行跑完的音频抽取（异常在此重抛，语义与串行版一致）。
+    final String? audioPath = await audioFuture;
+    if (audioError != null) {
+      Error.throwWithStackTrace(audioError!, audioStack!);
     }
 
     // TODO-1303：无音频中止——需要音频却最终没有音轨（不建无音频卡）。音频来自两条路：
@@ -284,6 +268,85 @@ class ImmersionMiningEngine {
 
     return ImmersionMiningResult(
         aborted: false, outcome: outcome, degradedToStill: degradedToStill);
+  }
+
+  /// BUG-1205 — 句子音频落地路径的解析，从 [mine] 内联体**原样**抽出（provided 字节 →
+  /// 互联 host 端裁 → ffmpeg-over-URL，逐行不变），只为让它能作为一个 Future 与封面阶梯
+  /// 并行。这里不做任何策略改动：所有既有优先级、回退和临时文件清理都保持原样。
+  ///
+  /// [audioSrc] 由调用方按「独立 audioSource（YouTube 分离音频流）优先，否则视频源」算好。
+  Future<String?> _resolveAudioPath(
+    ImmersionMiningRequest req, {
+    required MiningMediaCompression compression,
+    required String tempDir,
+    required String? audioSrc,
+    required FfmpegFailureReporter reportAudio,
+  }) async {
+    String? audioPath;
+    if (req.providedAudioBytes != null) {
+      return _writeBytes(
+          tempDir,
+          req.providedAudioName ??
+              'immersion_audio.${immersionMiningAudioExtension()}',
+          req.providedAudioBytes!);
+    }
+    if (audioSrc == null || !req.hasRange) return null;
+
+    // BUG-1004：互联 host（LAN Hibiki 库）远端流优先走 **host 端裁**——host 用本地文件裁好
+    // 句子音频再经已鉴权/钉扎的下载通道回传，client 全程不用 ffmpeg 抓远端流，从根上绕开
+    // 「client ffmpeg 打不开 host 自签 https / token 流」的整类失败（见 BUG-891 残余缺口：
+    // 移动端自编 ffmpeg-kit 的 TLS pin 仍会因指纹缺失/URL 编码/网络脆弱而 I/O error）。命中
+    // 远端 http(s) 源且注入了裁切器时先试；成功即用，返回 null（老 host 无 clipaudio 端点/
+    // 网络失败）则落到下方现有 ffmpeg-over-URL 抽取（Never break userspace）。
+    if (req.remoteAudioClipper != null && _isRemoteHttp(audioSrc)) {
+      audioPath = await req.remoteAudioClipper!(
+        startMs: req.clipStartMs,
+        endMs: req.clipEndMs,
+        // host 裁出的是 adts aac；命名 .aac 与内容一致（AnkiDroid/桌面直收）。
+        outputPath: '$tempDir/immersion_audio_host.aac',
+      );
+    }
+    // host 端裁未命中（非互联 host / 老 host 无 clipaudio 端点 / 裁切失败）时回退现有
+    // ffmpeg-over-URL 抽取（YouTube 物化 + 直连 ffmpeg 抽取，含 BUG-891 的 tls pin）。
+    if (audioPath != null) return audioPath;
+
+    // TODO-1314（B5）：audio-only DASH 分离流（req.audioSource 非空且为远端 http = YouTube
+    // 分离音频轨）的 ffmpeg HTTP `-ss` seek 会被 googlevideo 限速 stall→120s 超时→无句子音频
+    // （TODO-1301 曾用 muxed 绕行）。改为先用 yt-dlp 式 range 分片下载把整段音频物化到本地
+    // 临时文件、再对**本地文件**裁——本地 seek 即时、无网络 stall，根治 audio-only 不可 seek，
+    // 去掉对 muxed 的硬依赖。muxed 路径（audioSource==null → audioSrc==mediaSource，HTTP seek
+    // 只下小段、效率更高）不走物化、保持不变。物化失败回退直接对 URL 裁（best-effort，不劣于旧）。
+    String cutInput = audioSrc;
+    String? materialized;
+    if (req.audioSource != null && _isRemoteHttp(req.audioSource!)) {
+      materialized = await _materialize(
+        audioUrl: req.audioSource!,
+        outputPath: '$tempDir/immersion_audio_src',
+        onFailure: reportAudio,
+      );
+      if (materialized != null) cutInput = materialized;
+    }
+    audioPath = await _audio(
+      inputPath: cutInput,
+      startMs: req.clipStartMs,
+      endMs: req.clipEndMs,
+      outputPath: '$tempDir/immersion_audio.${immersionMiningAudioExtension()}',
+      audioStreamIndex: req.audioStreamIndex,
+      audioStreamCount: req.audioStreamCount,
+      audioChannels: compression.audioChannels,
+      audioBitrate: compression.audioBitrate,
+      onFailure: reportAudio,
+      // BUG-891：cutInput 若是物化后的本地文件（YouTube）pin 被 buildFfmpegRemoteInputArgs
+      // 的远端判定忽略；Hibiki muxed 时 cutInput 是远端 https host，pin 生效。
+      tlsPinSha256: req.mediaSourceTlsPinSha256,
+    );
+    // 物化的整段音频临时文件用完即删（裁好的 immersion_audio.* 才是产物）。
+    if (materialized != null) {
+      try {
+        File(materialized).deleteSync();
+      } catch (_) {}
+    }
+    return audioPath;
   }
 
   Future<String> _writeBytes(String dir, String name, Uint8List bytes) async {
