@@ -473,38 +473,6 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     // TODO-779: 单词远程音频下载失败时带可见原因到成功 toast（卡片仍建好）。
     final String? audioWarning = rendered.audioWarning;
 
-    String? addNoteReconcileFieldName;
-    String? addNoteReconcileFieldValue;
-    bool addNoteReconcileAllowed = false;
-    if (!settings.allowDupes) {
-      final firstFieldName =
-          noteType.fields.isNotEmpty ? noteType.fields.first : null;
-      final firstFieldValue =
-          firstFieldName != null ? (fields[firstFieldName] ?? '') : '';
-      if (firstFieldValue.isNotEmpty) {
-        // HBK-AUDIT-060: fail closed. A failed dupe query must not fall through
-        // to addNote as if the entry were unique — that silently bypasses the
-        // no-duplicates guarantee. Surface the failure as an error instead.
-        try {
-          final isDupe = await service.isDuplicate(
-            deckName: deck.name,
-            fieldName: firstFieldName!,
-            fieldValue: firstFieldValue,
-            scope: settings.duplicateScope,
-          );
-          if (isDupe) return const MineOutcome.duplicate();
-          addNoteReconcileFieldName = firstFieldName;
-          addNoteReconcileFieldValue = firstFieldValue;
-          addNoteReconcileAllowed = true;
-        } catch (e, stack) {
-          // TODO-752a：查重失败常因连不上 AnkiConnect（socket/timeout/http）。统一经
-          // [_mineFailureFor]：网络异常按稳定码分类本地化，OS 原文仅进诊断日志，绝不
-          // 把 `$e` 透传给用户。
-          return _mineFailureFor(e, stack);
-        }
-      }
-    }
-
     // BUG/TODO-062: every Hibiki-mined card gets the `hibiki` tag appended to
     // the user's configured tags (de-duped, order preserved) via the shared
     // base helper, so both backends behave identically.
@@ -538,47 +506,20 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         fields: fields,
         tags: tags,
         allowDuplicate: settings.allowDupes,
+        duplicateScope: settings.duplicateScope,
       );
       return MineOutcome.success(noteId: noteId, audioWarning: audioWarning);
+    } on AnkiConnectDuplicateException {
+      return const MineOutcome.duplicate();
     } on AnkiConnectCommitUnknownException catch (e, stack) {
-      if (!addNoteReconcileAllowed ||
-          addNoteReconcileFieldName == null ||
-          addNoteReconcileFieldValue == null) {
-        return MineOutcome.failure(
-          _addNoteCommitUnknownMessage(),
-          error: e,
-          stackTrace: stack,
-        );
-      }
-      try {
-        // 刻意**不**传 settings.duplicateScope：这里问的不是「这个词是否已经有卡」，
-        // 而是「我刚 addNote 到 deck.name 的那一张到底落没落下」。放宽到根卡组/整库
-        // 会把别的卡组里的同词旧卡当成刚建成功的那张，把「提交结果未知」误判成成功。
-        final matches = await service.findNotesByField(
-          deckName: deck.name,
-          fieldName: addNoteReconcileFieldName,
-          fieldValue: addNoteReconcileFieldValue,
-        );
-        if (matches.length == 1) {
-          return MineOutcome.success(
-            noteId: matches.single,
-            audioWarning: audioWarning,
-          );
-        }
-        return MineOutcome.failure(
-          _addNoteCommitUnknownMessage(matchCount: matches.length),
-          error: e,
-          stackTrace: stack,
-        );
-      } catch (reconcileError, reconcileStack) {
-        return MineOutcome.failure(
-          _addNoteCommitUnknownMessage(
-            extra: 'The follow-up Anki check also failed: $reconcileError',
-          ),
-          error: reconcileError,
-          stackTrace: reconcileStack,
-        );
-      }
+      // Without a separate preflight query, a matching note after a lost
+      // response could be either pre-existing or newly created. Do not run
+      // another GUI-thread findNotes query or guess which case occurred.
+      return MineOutcome.failure(
+        _addNoteCommitUnknownMessage(),
+        error: e,
+        stackTrace: stack,
+      );
     } on AnkiConnectException catch (e, stack) {
       return MineOutcome.failure(
         'AnkiConnect: ${e.message}',
@@ -588,26 +529,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
   }
 
-  String _addNoteCommitUnknownMessage({int? matchCount, String? extra}) {
-    final buffer = StringBuffer(
-      'AnkiConnect may have created the card, but the response was lost.',
-    );
-    if (matchCount == null) {
-      buffer.write(' Hibiki could not uniquely confirm the new note.');
-    } else if (matchCount == 0) {
-      buffer
-          .write(' Hibiki found no matching note, so the result is uncertain.');
-    } else {
-      buffer.write(
-        ' Hibiki found $matchCount matching notes and could not uniquely confirm which one was new.',
-      );
-    }
-    if (extra != null && extra.isNotEmpty) {
-      buffer.write(' $extra');
-    }
-    buffer.write(' Please check Anki before retrying.');
-    return buffer.toString();
-  }
+  String _addNoteCommitUnknownMessage() =>
+      'AnkiConnect may have created the card, but the response was lost. '
+      'Hibiki could not safely confirm the result. Please check Anki before '
+      'retrying.';
 
   /// 把 [payload] + [context] 按 [settings] 的字段映射渲染成 Anki note 字段。
   ///

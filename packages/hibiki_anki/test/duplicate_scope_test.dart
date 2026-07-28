@@ -97,6 +97,68 @@ void main() {
     });
   });
 
+  group('addNote 原生查重范围', () {
+    Future<Map<String, dynamic>> optionsFor(AnkiDuplicateScope scope) async {
+      final List<http.Request> sink = <http.Request>[];
+      final client = MockClient((http.Request request) async {
+        sink.add(request);
+        return http.Response(
+          jsonEncode(<String, Object?>{'result': 42, 'error': null}),
+          200,
+          headers: <String, String>{'content-type': 'application/json'},
+        );
+      });
+      final service =
+          AnkiConnectService(host: '127.0.0.1', port: 8765, client: client);
+      await service.addNote(
+        deckName: 'Lapis::Vocab',
+        modelName: 'Lapis',
+        fields: const <String, String>{'Expression': '散乱'},
+        duplicateScope: scope,
+      );
+      final Map<String, dynamic> body =
+          jsonDecode(sink.single.body) as Map<String, dynamic>;
+      final Map<String, dynamic> note = (body['params']
+          as Map<String, dynamic>)['note'] as Map<String, dynamic>;
+      return note['options'] as Map<String, dynamic>;
+    }
+
+    test('deck 使用目标卡组及其子卡组', () async {
+      expect(await optionsFor(AnkiDuplicateScope.deck), <String, dynamic>{
+        'allowDuplicate': false,
+        'duplicateScope': 'deck',
+        'duplicateScopeOptions': <String, dynamic>{
+          'deckName': 'Lapis::Vocab',
+          'checkChildren': true,
+          'checkAllModels': true,
+        },
+      });
+    });
+
+    test('deckRoot 截到根卡组并包含整棵子树', () async {
+      expect(await optionsFor(AnkiDuplicateScope.deckRoot), <String, dynamic>{
+        'allowDuplicate': false,
+        'duplicateScope': 'deck',
+        'duplicateScopeOptions': <String, dynamic>{
+          'deckName': 'Lapis',
+          'checkChildren': true,
+          'checkAllModels': true,
+        },
+      });
+    });
+
+    test('collection 使用全收藏范围且不附带卡组名', () async {
+      expect(await optionsFor(AnkiDuplicateScope.collection), <String, dynamic>{
+        'allowDuplicate': false,
+        'duplicateScope': 'collection',
+        'duplicateScopeOptions': <String, dynamic>{
+          'checkChildren': false,
+          'checkAllModels': true,
+        },
+      });
+    });
+  });
+
   group('AnkiSettings 持久化', () {
     test('默认是 deck（= 旧行为）', () {
       expect(const AnkiSettings().duplicateScope, AnkiDuplicateScope.deck);

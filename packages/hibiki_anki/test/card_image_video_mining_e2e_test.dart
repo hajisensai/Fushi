@@ -197,6 +197,7 @@ class _RecordingAnkiConnectService extends AnkiConnectService {
     List<String>? tags,
     Map<String, String>? mediaFiles,
     bool allowDuplicate = false,
+    AnkiDuplicateScope duplicateScope = AnkiDuplicateScope.deck,
   }) async {
     addedFields.add(Map<String, String>.from(fields));
     return addedFields.length;

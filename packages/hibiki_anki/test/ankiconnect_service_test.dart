@@ -254,7 +254,15 @@ void main() {
       expect(note['fields'],
           <String, dynamic>{'Expression': '勉強', 'Reading': 'べんきょう'});
       expect(note['tags'], <String>['hibiki', 'mined']);
-      expect((note['options'] as Map)['allowDuplicate'], isTrue);
+      expect(note['options'], <String, dynamic>{
+        'allowDuplicate': true,
+        'duplicateScope': 'deck',
+        'duplicateScopeOptions': <String, dynamic>{
+          'deckName': 'Mining',
+          'checkChildren': true,
+          'checkAllModels': true,
+        },
+      });
     });
 
     test('defaults allowDuplicate to false', () async {
@@ -269,7 +277,15 @@ void main() {
         result: 1,
       );
       final note = (bodyOf(issued.single)['params'] as Map)['note'] as Map;
-      expect((note['options'] as Map)['allowDuplicate'], isFalse);
+      expect(note['options'], <String, dynamic>{
+        'allowDuplicate': false,
+        'duplicateScope': 'deck',
+        'duplicateScopeOptions': <String, dynamic>{
+          'deckName': 'D',
+          'checkChildren': true,
+          'checkAllModels': true,
+        },
+      });
     });
 
     test('throws when addNote returns a null id with no error', () async {
@@ -300,7 +316,7 @@ void main() {
           sink: issued,
           error: 'cannot create note because it is a duplicate',
         ),
-        throwsA(isA<AnkiConnectException>()),
+        throwsA(isA<AnkiConnectDuplicateException>()),
       );
     });
   });

@@ -106,7 +106,12 @@ class AnkiConnectService {
       );
     }
     if (result['error'] != null) {
-      throw AnkiConnectException(result['error'].toString());
+      final String message = result['error'].toString();
+      if (action == 'addNote' &&
+          message == 'cannot create note because it is a duplicate') {
+        throw AnkiConnectDuplicateException(message);
+      }
+      throw AnkiConnectException(message);
     }
     return result['result'];
   }
@@ -288,15 +293,22 @@ class AnkiConnectService {
     List<String>? tags,
     Map<String, String>? mediaFiles,
     bool allowDuplicate = false,
+    AnkiDuplicateScope duplicateScope = AnkiDuplicateScope.deck,
   }) async {
-    // AnkiConnect rejects duplicates by default; allowDuplicate must be sent
-    // explicitly or the user's "allow duplicates" setting has no effect.
+    // Let addNote perform the duplicate check atomically. AnkiConnect implements
+    // this path as a first-field checksum lookup, whereas a separate findNotes
+    // field query runs synchronously on Anki's GUI thread and can make Anki
+    // appear frozen on a large/busy collection.
     final result = await _request('addNote', {
       'note': {
         'deckName': deckName,
         'modelName': modelName,
         'fields': fields,
-        'options': {'allowDuplicate': allowDuplicate},
+        'options': _addNoteDuplicateOptions(
+          deckName: deckName,
+          allowDuplicate: allowDuplicate,
+          scope: duplicateScope,
+        ),
         if (tags != null) 'tags': tags,
       },
     });
@@ -619,6 +631,32 @@ String ankiDuplicateDeckFilter(String deckName, AnkiDuplicateScope scope) {
   }
 }
 
+Map<String, Object> _addNoteDuplicateOptions({
+  required String deckName,
+  required bool allowDuplicate,
+  required AnkiDuplicateScope scope,
+}) {
+  final bool collectionWide = scope == AnkiDuplicateScope.collection;
+  final String scopedDeckName = switch (scope) {
+    AnkiDuplicateScope.deck => deckName,
+    AnkiDuplicateScope.deckRoot => deckName.split('::').first,
+    AnkiDuplicateScope.collection => '',
+  };
+  return <String, Object>{
+    'allowDuplicate': allowDuplicate,
+    'duplicateScope': collectionWide ? 'collection' : 'deck',
+    'duplicateScopeOptions': <String, Object>{
+      if (!collectionWide && scopedDeckName.isNotEmpty)
+        'deckName': scopedDeckName,
+      'checkChildren': !collectionWide,
+      // The old field query was not restricted to the selected note type.
+      // Preserve that cross-model scope while switching to AnkiConnect's
+      // indexed primary-field checksum lookup.
+      'checkAllModels': true,
+    },
+  };
+}
+
 String _fieldValueQuery({
   required String deckName,
   required String fieldName,
@@ -638,6 +676,10 @@ class AnkiConnectException implements Exception {
   AnkiConnectException(this.message);
   @override
   String toString() => 'AnkiConnectException: $message';
+}
+
+class AnkiConnectDuplicateException extends AnkiConnectException {
+  AnkiConnectDuplicateException(super.message);
 }
 
 class AnkiConnectCommitUnknownException extends AnkiConnectException {

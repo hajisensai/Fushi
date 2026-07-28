@@ -39,6 +39,7 @@ class _RecordingAnkiConnectService extends AnkiConnectService {
     List<String>? tags,
     Map<String, String>? mediaFiles,
     bool allowDuplicate = false,
+    AnkiDuplicateScope duplicateScope = AnkiDuplicateScope.deck,
   }) async {
     addedTags.add(List<String>.from(tags ?? const <String>[]));
     return addedTags.length;

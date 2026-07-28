@@ -45,6 +45,7 @@ class _RecordingService extends AnkiConnectService {
     List<String>? tags,
     Map<String, String>? mediaFiles,
     bool allowDuplicate = false,
+    AnkiDuplicateScope duplicateScope = AnkiDuplicateScope.deck,
   }) async {
     addNoteCalls.add(Map<String, String>.from(fields));
     return addNoteId;
