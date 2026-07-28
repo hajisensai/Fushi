@@ -250,7 +250,7 @@ void main() {
     );
   });
 
-  test('gif mode remains the default and still degrades to png', () async {
+  test('gif is still the default when imageMode is omitted', () async {
     final TexthookerLineEntry entry = service.appendLine('動画の台詞')!;
     final _RecordingRepo repo = _RecordingRepo();
 
@@ -267,6 +267,31 @@ void main() {
     expect(result.success, isTrue);
     expect(repo.contexts.single.coverPath, endsWith('.gif'));
     expect(result.degradedToStill, isFalse);
+  });
+
+  test('gif mode degrades to png and flags degradedToStill', () async {
+    // 上一条只证明「默认仍是 GIF」，并没有走降级路径——名字曾写着 "still degrades
+    // to png" 却没有任何断言覆盖它。这条把降级真验上：GIF 抓取返回空 → 退到单帧
+    // PNG，并且**必须**置 degradedToStill（用户要看到「已降级为静态图」提示，这正是
+    // 它与「主动选静态截图」的分水岭）。
+    final TexthookerLineEntry entry = service.appendLine('降格の台詞')!;
+    final _RecordingRepo repo = _RecordingRepo();
+
+    final GalHookMiningResult result = await coordinator(
+      validator: (_) => true,
+      gif: ({required int hwnd}) async => Uint8List(0),
+    ).mineLine(
+      lineId: entry.id,
+      fields: const <String, String>{'expression': '降格'},
+      compression: MiningMediaCompression.compressed,
+      repo: repo,
+      imageMode: VideoMiningImageMode.gif,
+    );
+
+    expect(result.success, isTrue);
+    expect(repo.contexts.single.coverPath, endsWith('.png'));
+    expect(result.degradedToStill, isTrue,
+        reason: 'GIF 失败退到单帧是降级，必须置标志，否则用户拿不到降级提示');
   });
 
   test('expired line is rejected before scene or audio capture', () async {
