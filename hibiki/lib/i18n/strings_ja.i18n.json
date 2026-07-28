@@ -782,7 +782,6 @@
   "game_audio_backend_none": "No audio source",
   "game_audio_backend_resource": "Game resource audio",
   "game_audio_duration": "Audio duration",
-  "game_audio_fallback_allow": "允许音频降级",
   "game_audio_fallback_disabled_missing": "未找到与该句匹配的游戏资源音频；已关闭降级，未制卡",
   "game_audio_resource_id": "音频资源 ID",
   "game_audio_tracks": "Active audio tracks",
@@ -1011,7 +1010,6 @@
   "game_track_exclude_bgm": "Mark as BGM",
   "game_track_exclusion_hint": "BGM／環境音のトラックを除外に設定すると、自動選択がそれを音声として扱わなくなります——音声のないセリフで BGM を拾わなくなります。",
   "game_track_exclusion_title": "音声トラックを除外",
-  "game_track_no_clips": "No clips in the recent window",
   "game_track_preview": "Preview this track",
   "game_track_preview_failed": "No recent audio could be captured from this track",
   "game_track_preview_stop": "Stop preview",
@@ -2693,5 +2691,15 @@
   "anki_dedup_auto_found": "Found $count duplicate Anki media files ($size reclaimable)",
   "anki_dedup_auto_review": "Review",
   "anki_dedup_auto_done": "Removed $count duplicate Anki media files, $size reclaimed",
-  "anki_lapis_backup_done_pruned": "Backed up to $path ($count old backups pruned by the 90-day / keep-10 policy)"
+  "anki_lapis_backup_done_pruned": "Backed up to $path ($count old backups pruned by the 90-day / keep-10 policy)",
+  "game_audio_fallback_policy": "Audio fallback",
+  "game_audio_fallback_full": "Allow mixed audio",
+  "game_audio_fallback_clean": "Clean sources only",
+  "game_audio_fallback_resource": "Original resources only",
+  "game_track_silent_at_cue": "No sound at this line",
+  "game_audio_fallback_full_hint": "Falls back to the system mix when no clean voice is captured; the clip may contain BGM and effects.",
+  "game_audio_fallback_clean_hint": "Uses game resource audio and engine PCM only. Lines with no voice are mined without audio instead of picking up BGM.",
+  "game_audio_fallback_resource_hint": "Requires the original voice file shipped with the game; mining is refused when it is missing.",
+  "game_line_audio_suppressed": "Mix skipped",
+  "game_line_audio_suppressed_hint": "No clean audio source produced audio for this line, and the system mix was skipped by your audio fallback policy. This does not mean the line has no voice."
 }

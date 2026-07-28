@@ -132,11 +132,20 @@ enum TexthookerLineAudioStatus {
   encoded,
 }
 
-/// [TexthookerLineEntry.fallbackReason] 的两个**语义化**值（其余 reason 是诊断字符串）：
+/// [TexthookerLineEntry.fallbackReason] 的三个**语义化**值（其余 reason 是诊断字符串）：
 /// UI 靠它们把「这句本来就没配音」从「疑似漏抓」的红标里分出来、把「超长可疑切片」
-/// 从正常兜底里分出来。生产与消费两侧共用本常量，别在别处重复字面量。
+/// 从正常兜底里分出来、把「用户策略主动抑制了唯一可用音源」从前两者里分出来。
+/// 生产与消费两侧共用本常量，别在别处重复字面量。
 const String kGalLineNoVoiceReason = 'line_has_no_voice';
 const String kGalOverlongSliceSuspectReason = 'slice_overlong_suspect';
+
+/// 干净源策略把整机混音挡掉、且**没有任何证据**能判断这句到底有没有配音时用它。
+///
+/// 与 [kGalLineNoVoiceReason] 的区别是硬性的：那个是有证据的结论（候选轨在该句时刻
+/// 窗内全静默），这个只是「你禁用了本会话唯一可用的音源」。把没证据的抑制说成
+/// 「这句没配音」等于用前一阶段推断后一阶段——纯 loopback 降级会话下会把每一行都
+/// 说成没配音，资源模式的**真漏抓**也会被这句话盖过去。
+const String kGalCleanSourceSuppressedReason = 'clean_source_suppressed';
 
 /// 实时台词列表的筛选维度。单一枚举驱动 [lineMatchesFilter] 一个 predicate，
 /// 消除「有音频 / 已制卡 / 已收藏」各写一条 if 分支的特殊情况。与线程下拉筛选正交：

@@ -588,7 +588,8 @@ void VoiceHookReader::ListAudioTracks(uint64_t ts_ms,
   std::map<uint64_t, VoiceTrackInfo> tracks;
   std::map<uint64_t, uint64_t> sum_bytes;    // 段字节累计
   std::map<uint64_t, double> sum_energy_at;  // 文本时刻窗能量累计
-  std::map<uint64_t, int> n_energy_at;       // 文本时刻窗计数
+  std::map<uint64_t, int> n_energy_at;       // 文本时刻窗**能算出能量**的段数（仅 16-bit）
+  std::map<uint64_t, int> n_clips_at;        // 文本时刻窗内的段数（与位深无关，BUG-1165）
   int next_order = 0;
   for (const auto* c : valid) {
     auto it = tracks.find(c->source_ptr);
@@ -607,6 +608,10 @@ void VoiceHookReader::ListAudioTracks(uint64_t ts_ms,
     const int64_t d =
         static_cast<int64_t>(c->timestamp_ms) - static_cast<int64_t>(ts_ms);
     if (d >= -150 && d <= 450) {
+      // 先无条件计数：这条轨在这句时刻窗内**有没有出声**与能不能算能量无关。
+      // 能量只在 16-bit 上算得出来（ClipEnergy16Locked 其余返回 -1），拿能量兼作
+      // 「有没有段」的判据会把非 16-bit 的可用轨误判成静音（BUG-1165）。
+      n_clips_at[c->source_ptr]++;
       const double e = ClipEnergy16Locked(h, ring, c);
       if (e >= 0) {
         sum_energy_at[c->source_ptr] += e;
@@ -622,6 +627,8 @@ void VoiceHookReader::ListAudioTracks(uint64_t ts_ms,
     }
     const int ne = n_energy_at.count(kv.first) ? n_energy_at[kv.first] : 0;
     info.avg_energy = (ne > 0) ? sum_energy_at[kv.first] / ne : -1.0;
+    info.clip_count_at_cue =
+        n_clips_at.count(kv.first) ? n_clips_at[kv.first] : 0;
     out.push_back(info);
   }
   // 按创建顺序返回（UI 稳定展示）。

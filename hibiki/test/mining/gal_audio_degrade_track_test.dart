@@ -288,8 +288,14 @@ void main() {
     expect(panel.contains('selectable: selectionEffective'), isTrue);
     expect(panel.contains('enabled: selectable && !excluded'), isTrue,
         reason: '非引擎 PCM 后端必须禁用「选为语音轨」');
-    expect(panel.contains('t.game_track_no_clips'), isTrue,
-        reason: 'clipCount == 0 的轨必须标注，而不是和可用轨长一个样');
+    expect(panel.contains('t.game_track_silent_at_cue'), isTrue,
+        reason: '此刻没有声音的轨必须标注，而不是和可用轨长一个样');
+    // BUG-1165：判据不得再用 clipCount——native 的 clip_count 是全环累计，一条轨
+    // 能被列出就至少有 1 个片段，`clipCount <= 0` 恒假，置灰从来没生效过。
+    expect(panel.contains('track.clipCount <= 0'), isFalse,
+        reason: 'clipCount 是全环累计，拿它判「此刻有没有声音」恒为假');
+    expect(panel.contains('final bool silent = track.isSilentAtCue'), isTrue,
+        reason: '静音判据必须走文本时刻窗能量（与试听抓取用同一个窗）');
     expect(panel.contains('t.game_tracks_pcm_only_hint'), isTrue);
     final String page = File(
       'lib/src/pages/implementations/game_diagnostics_page.dart',
@@ -511,6 +517,61 @@ void main() {
 
     await controller.close();
     endpoints.dispose();
+  });
+
+  test('BUG-1165：此刻静音判据走时刻窗片段数，clipCount 不参与、非 16-bit 不误伤', () {
+    GalAudioTrack track({
+      required int bits,
+      required double energy,
+      int clips = 5,
+      int clipsAtCue = -1,
+    }) =>
+        GalAudioTrack(
+          sourcePtr: 0x1234,
+          format: PcmFormat(
+            sampleRate: 48000,
+            channels: 2,
+            bitsPerSample: bits,
+            isFloat: bits == 32,
+          ),
+          avgBytes: 1024,
+          avgEnergy: energy,
+          orderIndex: 0,
+          clipCount: clips,
+          clipCountAtCue: clipsAtCue,
+        );
+
+    // 新 runner：时刻窗片段数是唯一判据，与位深、与能量都无关。
+    expect(track(bits: 16, energy: -1, clipsAtCue: 0).isSilentAtCue, isTrue);
+    expect(
+        track(bits: 16, energy: 120.5, clipsAtCue: 3).isSilentAtCue, isFalse);
+    // 非 16-bit 轨 native 算不出能量（恒 -1），但窗内确实有段 = 此刻在响，不得置灰。
+    expect(track(bits: 32, energy: -1, clipsAtCue: 4).isSilentAtCue, isFalse);
+    expect(track(bits: 32, energy: -1, clipsAtCue: 0).isSilentAtCue, isTrue,
+        reason: '有了片段数，非 16-bit 轨也能被正确判定为此刻静音');
+    // clipCount 是全环累计、恒 >= 1，绝不参与判据（原实现就栽在这）。
+    expect(track(bits: 16, energy: 9, clips: 99, clipsAtCue: 0).isSilentAtCue,
+        isTrue);
+
+    // 老 runner 不发该字段（-1 = 未知）：退回能量判据，且只对 16-bit 下结论——
+    // 宁可不置灰也不误伤非 16-bit 的可用轨。
+    expect(track(bits: 16, energy: -1).isSilentAtCue, isTrue);
+    expect(track(bits: 16, energy: 120.5).isSilentAtCue, isFalse);
+    expect(track(bits: 32, energy: -1).energyUnknown, isTrue);
+    expect(track(bits: 32, energy: -1).isSilentAtCue, isFalse);
+
+    // 缺字段的 native map 必须解析成 -1（未知），不能拿 0 冒充「窗内没段」。
+    final GalAudioTrack? legacy = GalAudioTrack.fromMap(<Object?, Object?>{
+      'sourcePtr': 0x99,
+      'sampleRate': 48000,
+      'channels': 2,
+      'bitsPerSample': 16,
+      'isFloat': false,
+      'avgEnergy': 42.0,
+      'clipCount': 7,
+    });
+    expect(legacy?.clipCountAtCue, -1);
+    expect(legacy?.isSilentAtCue, isFalse);
   });
 }
 

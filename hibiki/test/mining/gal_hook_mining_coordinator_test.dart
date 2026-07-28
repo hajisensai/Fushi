@@ -341,7 +341,9 @@ void main() {
 
   test('resource-only mode rejects a card when sentence audio is missing',
       () async {
-    activeState = activeState.copyWith(allowAudioFallback: false);
+    activeState = activeState.copyWith(
+      audioFallbackPolicy: GalAudioFallbackPolicy.resourceOnly,
+    );
     final TexthookerLineEntry entry = service.appendLine('必须匹配资源音频')!;
     final _RecordingRepo repo = _RecordingRepo();
 
@@ -364,6 +366,37 @@ void main() {
     expect(result.audioFallbackDisabled, isTrue);
     expect(result.sentenceAudioMissing, isTrue);
     expect(repo.contexts, isEmpty);
+  });
+
+  test('clean-source mode still mines the card when the line has no voice',
+      () async {
+    activeState = activeState.copyWith(
+      audioFallbackPolicy: GalAudioFallbackPolicy.cleanOnly,
+    );
+    final TexthookerLineEntry entry = service.appendLine('無声の地の文')!;
+    final _RecordingRepo repo = _RecordingRepo();
+
+    final GalHookMiningResult result = await coordinator(
+      validator: (_) => true,
+      audio: ({
+        required String lineId,
+        required String sentence,
+        required String outputExtension,
+      }) async =>
+          null,
+    ).mineLine(
+      lineId: entry.id,
+      fields: const <String, String>{'expression': '地の文'},
+      compression: MiningMediaCompression.compressed,
+      repo: repo,
+    );
+
+    // 「这句没配音」是常态而不是故障：卡照做，只是不带音频。把它也拦成制卡失败
+    // 等于逼用户在「收一段 BGM」和「这张卡做不了」之间二选一。
+    expect(result.aborted, isFalse);
+    expect(result.audioFallbackDisabled, isFalse);
+    expect(result.sentenceAudioMissing, isTrue);
+    expect(repo.contexts, isNotEmpty);
   });
 
   test('concurrent jobs serialize and use isolated temporary directories',

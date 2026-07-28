@@ -1010,10 +1010,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     ];
   }
 
-  /// 低频开关收纳菜单：允许音频降级 / 显示 Hook 文本浮窗（Win）/ 外部窗口挖矿（Win）。
-  /// 两个真开关（音频降级、外部窗口挖矿）用 [CheckedPopupMenuItem] 反映当前开关态；
-  /// 「显示 Hook 文本浮窗」是一次性动作（showManually），用普通菜单项。onSelected 由
-  /// 枚举驱动，无特殊分支；各动作调用与旧按钮完全一致。
+  /// 低频开关收纳菜单：音频降级策略 / 显示 Hook 文本浮窗（Win）/ 外部窗口挖矿（Win）。
+  /// 「外部窗口挖矿」是真开关，用 [CheckedPopupMenuItem] 反映当前开关态；「显示 Hook
+  /// 文本浮窗」是一次性动作（showManually），用普通菜单项；「音频降级策略」是三选一
+  /// （[GalAudioFallbackPolicy]），菜单项直接显示当前档位、点开是带说明的单选对话框
+  /// ——三档代价各不相同（收 BGM / 丢音频 / 不出卡），不做「点一下换一档」的循环钮。
+  /// onSelected 由枚举驱动，无特殊分支；各动作调用与旧按钮完全一致。
   Widget _buildToolbarOverflowMenu(BuildContext context) {
     final GalHookSessionState state = _session.state;
     return PopupMenuButton<_GalHookToolbarMenuAction>(
@@ -1023,7 +1025,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       onSelected: (_GalHookToolbarMenuAction action) {
         switch (action) {
           case _GalHookToolbarMenuAction.audioFallback:
-            _session.setAllowAudioFallback(!state.allowAudioFallback);
+            unawaited(_showAudioFallbackPolicyDialog());
           case _GalHookToolbarMenuAction.health:
             unawaited(_showHealthDialog());
           case _GalHookToolbarMenuAction.showOverlay:
@@ -1034,10 +1036,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       },
       itemBuilder: (BuildContext context) =>
           <PopupMenuEntry<_GalHookToolbarMenuAction>>[
-        CheckedPopupMenuItem<_GalHookToolbarMenuAction>(
+        PopupMenuItem<_GalHookToolbarMenuAction>(
           value: _GalHookToolbarMenuAction.audioFallback,
-          checked: state.allowAudioFallback,
-          child: Text(t.game_audio_fallback_allow),
+          child: Text('${t.game_audio_fallback_policy} · '
+              '${_audioFallbackPolicyLabel(state.audioFallbackPolicy)}'),
         ),
         // 健康状态从右栏常驻卡改为按需打开：它是「偶尔查一眼」的静态信息，
         // 不值得长期占着逐句操作要用的横向空间（完整版仍在「兼容性诊断」页签）。
@@ -1059,6 +1061,68 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       ],
     );
   }
+
+  /// 三档选择对话框。每档都写清代价——这不是「高级选项」，是用户每局都要按游戏
+  /// 有没有逐句语音来定的判断。
+  Future<void> _showAudioFallbackPolicyDialog() async {
+    await showAppDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(t.game_audio_fallback_policy),
+        content: SizedBox(
+          width: 460,
+          child: ListenableBuilder(
+            listenable: _session,
+            builder: (BuildContext context, Widget? child) {
+              final GalAudioFallbackPolicy current =
+                  _session.state.audioFallbackPolicy;
+              return SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    for (final GalAudioFallbackPolicy policy
+                        in GalAudioFallbackPolicy.values)
+                      RadioListTile<GalAudioFallbackPolicy>(
+                        value: policy,
+                        groupValue: current,
+                        title: Text(_audioFallbackPolicyLabel(policy)),
+                        subtitle: Text(_audioFallbackPolicyDescription(policy)),
+                        onChanged: (GalAudioFallbackPolicy? picked) {
+                          if (picked != null) {
+                            _session.setAudioFallbackPolicy(picked);
+                          }
+                        },
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(t.dialog_close),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _audioFallbackPolicyLabel(GalAudioFallbackPolicy policy) =>
+      switch (policy) {
+        GalAudioFallbackPolicy.full => t.game_audio_fallback_full,
+        GalAudioFallbackPolicy.cleanOnly => t.game_audio_fallback_clean,
+        GalAudioFallbackPolicy.resourceOnly => t.game_audio_fallback_resource,
+      };
+
+  String _audioFallbackPolicyDescription(GalAudioFallbackPolicy policy) =>
+      switch (policy) {
+        GalAudioFallbackPolicy.full => t.game_audio_fallback_full_hint,
+        GalAudioFallbackPolicy.cleanOnly => t.game_audio_fallback_clean_hint,
+        GalAudioFallbackPolicy.resourceOnly =>
+          t.game_audio_fallback_resource_hint,
+      };
 
   /// 会话健康状态对话框（原右栏常驻卡的新家）。内容仍是 [_CaptureHealthCard]，
   /// 随会话状态实时刷新；Anki 配置态来自 app 级 AnkiViewModel（BUG-1007 的接线）。
@@ -2414,8 +2478,9 @@ class _LineAudioChip extends StatelessWidget {
   /// 兜底（可能混 BGM）」从正常绿标里分出来提示。
   final String? backend;
 
-  /// 语义化 fallbackReason（见 [kGalLineNoVoiceReason] / [kGalOverlongSliceSuspectReason]）：
-  /// 「无配音」灰标不吓人、「超长可疑切片」亮黄提醒。
+  /// 语义化 fallbackReason（见 [kGalLineNoVoiceReason] / [kGalOverlongSliceSuspectReason]
+  /// / [kGalCleanSourceSuppressedReason]）：「无配音」灰标不吓人、「超长可疑切片」亮黄
+  /// 提醒、「已按策略抑制混音」如实说明是用户的策略挡掉了唯一可用音源。
   final String? fallbackReason;
 
   @override
@@ -2429,6 +2494,20 @@ class _LineAudioChip extends StatelessWidget {
         t.game_line_audio_no_voice,
         colors.surfaceContainerHighest,
         colors.onSurfaceVariant,
+      );
+    }
+    // 「已按干净源策略抑制」绝不能和「无配音」共用灰标：前者是「没证据」，后者是
+    // 「有证据判定没配音」。混成一句会让用户以为游戏这句本来就没语音。
+    if (status == TexthookerLineAudioStatus.missing &&
+        fallbackReason == kGalCleanSourceSuppressedReason) {
+      return Tooltip(
+        message: t.game_line_audio_suppressed_hint,
+        child: _chip(
+          context,
+          t.game_line_audio_suppressed,
+          colors.secondaryContainer,
+          colors.onSecondaryContainer,
+        ),
       );
     }
     if (fallbackReason == kGalOverlongSliceSuspectReason) {

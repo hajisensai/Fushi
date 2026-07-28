@@ -212,7 +212,11 @@ class GalHookMiningCoordinator {
       outputExtension: audioExtension,
     );
     final bool sentenceAudioMissing = audioBytes == null || audioBytes.isEmpty;
-    if (sentenceAudioMissing && !state.allowAudioFallback) {
+    // 只有最严格的 resourceOnly 才因为「没抓到音频」拒绝制卡。cleanOnly 的立场是
+    // 「这句本来就没配音很正常」——旁白/心理描写句照样成卡，只是不带音频；把它也
+    // 拦成制卡失败，等于逼用户在「收一段 BGM」和「这张卡做不了」之间二选一。
+    if (sentenceAudioMissing &&
+        state.audioFallbackPolicy.blocksMiningWhenMissing) {
       return const GalHookMiningResult(
         failureReason:
             'no matching game resource audio; audio fallback is disabled',

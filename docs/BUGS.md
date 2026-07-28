@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1150 条。点号进各自文件。
+> 共 1152 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1187](bugs/BUG-1187-gal-unvoiced-line-gets-bgm.md) | ✅ | ✅ | galgame 无配音句被整机混音兜底成 BGM |
 | [BUG-1186](bugs/BUG-1186-appbar-actions-collapse-uses-window-width.md) | ✅ | ✅ | AppBar 动作折叠判据读整窗宽，分栏/受限宽容器里永不折叠 |
 | [BUG-1185](bugs/BUG-1185-remote-mining-duplicate-auth-swallowed.md) | ✅ | ✅ | 远端制卡查重吞掉认证失败，静默答「不重复」 |
 | [BUG-1184](bugs/BUG-1184-narrow-screen-segmented-clipped.md) | ✅ | ✅ | 窄屏/小窗口下多处内容显示不全（说明文字、分段控件、书名、对话框标题） |
@@ -54,6 +55,7 @@
 | [BUG-1168](bugs/BUG-1168-post-frame-focus-reclaim-never-fires-on-idle-tree.md) | ✅ | ✅ | 静止树上 addPostFrameCallback 焦点回收永不触发（进出全屏/关字幕遮罩后快捷键失灵） |
 | [BUG-1167](bugs/BUG-1167-video-subtitle-align-dialog-focus-not-returned.md) | ✅ | ✅ | 视频字幕波形对轴弹窗关闭后不归还键盘焦点 |
 | [BUG-1166](bugs/BUG-1166-gal-lookup-wheel-passthrough-to-game.md) | ✅ | ✅ | galgame 查词卡滚轮穿透到游戏 |
+| [BUG-1165](bugs/BUG-1165-gal-track-panel-silent-predicate.md) | ✅ | ✅ | 音轨面板静音判据用错字段，空白轨从不置灰 |
 | [BUG-1164](bugs/BUG-1164-manga-module-orphan-i18n-and-shelf-naming.md) | ✅ | ✅ | 漫画模块化重构遗留孤儿 i18n key 与 shelf 页面名违规 |
 | [BUG-1163](bugs/BUG-1163-manga-ocr-silent-provider-fallback.md) | ✅ | ✅ | 漫画 OCR GPU 加速降级到 CPU 完全静默 |
 | [BUG-1162](bugs/BUG-1162-torrent-pipeline-disk-flush-race.md) | ✅ | ✅ | hibiki_torrent 端到端测试在字节落盘前就比对，CI Windows 约 24% 概率红 |

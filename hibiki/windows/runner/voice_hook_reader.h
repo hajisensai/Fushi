@@ -62,10 +62,14 @@ struct VoiceTrackInfo {
   int channels = 0;
   int bits_per_sample = 0;
   bool is_float = false;
-  uint64_t avg_bytes = 0;     // 近窗内该源每段平均字节数（缓冲规模，代理该源是否持续流式）
+  uint64_t avg_bytes = 0;     // **环内**该源每段平均字节数（缓冲规模，代理该源是否持续流式）
   double avg_energy = 0.0;    // 文本时刻窗 [ts-150,ts+450] 平均能量（16-bit 平均绝对幅值；非 16-bit=-1）
-  int order_index = 0;        // 近窗内按首次出现（clip seq 升序）排的创建顺序，0-based
-  int clip_count = 0;         // 近窗内该源的段数
+  int order_index = 0;        // **环内**按首次出现（clip seq 升序）排的创建顺序，0-based
+  int clip_count = 0;         // **环内**该源的总段数——注意不是「当前这句附近」，恒 >= 1
+  // 文本时刻窗 [ts-150,ts+450] 内该源的段数。avg_energy 的 -1 有两义（窗内没段 /
+  // 非 16-bit 算不了能量），拿它判「此刻这条轨响没响」会把非 16-bit 的可用轨也误判成
+  // 静音；本字段与位深无关，是该判断的唯一正确依据（BUG-1165）。
+  int clip_count_at_cue = 0;
 };
 
 // 单例：整个进程一路引擎-hook 读取。所有方法可从 UI 线程调用，绝不抛异常（全 HRESULT/句柄校验）。

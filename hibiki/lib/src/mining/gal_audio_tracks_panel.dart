@@ -127,9 +127,15 @@ class GalTrackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final PcmFormat format = track.format;
-    // 近窗内一个片段都没有的轨：留在列表里（用户需要知道它存在），但明确标注并置灰，
-    // 不再让它看起来和真能取到语音的轨一样（BUG-1102 ②）。
-    final bool silent = track.clipCount <= 0;
+    // 当前这句时刻窗内一个片段都没有的轨：留在列表里（用户需要知道它存在），但明确
+    // 标注并置灰，不再让它看起来和真能取到语音的轨一样（BUG-1102 ②）。
+    //
+    // BUG-1165：原判据是 `clipCount <= 0`，而 native 的 clip_count 是**全环累计**
+    // （voice_hook_reader.cpp 的 clip_count++ 无时间窗过滤），一条轨能被列出就至少
+    // 有 1 个片段——条件恒假，置灰从来没生效过。游戏音频引擎常年维护一池 source
+    // voice（SE、系统音、播完的旧语音都在环里），于是列表里永远挂着一堆点了没声音
+    // 的轨。真正表达「此刻有没有响」的是时刻窗内片段数，见 [GalAudioTrack.isSilentAtCue]。
+    final bool silent = track.isSilentAtCue;
     return IgnorePointer(
       ignoring: silent,
       child: Opacity(
@@ -147,9 +153,12 @@ class GalTrackTile extends StatelessWidget {
             <String>[
               '0x${track.sourcePtr.toRadixString(16)}',
               '${t.game_track_clips} ${track.clipCount}',
-              '${t.game_track_energy} ${track.avgEnergy.toStringAsFixed(1)}',
+              // 能量只在真算得出来时显示。旧实现无条件打印，非 16-bit 轨和此刻
+              // 没响的轨都显示「能量 -1.0」——那是内部哨兵值，不是给用户看的。
+              if (track.avgEnergy >= 0)
+                '${t.game_track_energy} ${track.avgEnergy.toStringAsFixed(1)}',
               if (excluded) t.game_track_bgm,
-              if (silent) t.game_track_no_clips,
+              if (silent) t.game_track_silent_at_cue,
             ].join(' · '),
           ),
           trailing: Wrap(

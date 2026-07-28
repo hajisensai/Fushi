@@ -782,7 +782,6 @@
   "game_audio_backend_none": "无音频源",
   "game_audio_backend_resource": "游戏资源音频",
   "game_audio_duration": "音频时长",
-  "game_audio_fallback_allow": "允许音频降级",
   "game_audio_fallback_disabled_missing": "未找到与该句匹配的游戏资源音频；已关闭降级，未制卡",
   "game_audio_resource_id": "音频资源 ID",
   "game_audio_tracks": "活跃音轨",
@@ -1011,7 +1010,6 @@
   "game_track_exclude_bgm": "标记为 BGM",
   "game_track_exclusion_hint": "把 BGM/环境音轨标记为排除，自动选源便不会把它当成语音——没有语音的台词也不会再读到 BGM。",
   "game_track_exclusion_title": "排除音轨",
-  "game_track_no_clips": "近窗内没有片段",
   "game_track_preview": "试听该音轨",
   "game_track_preview_failed": "未能从该音轨抓到最近的音频片段",
   "game_track_preview_stop": "停止试听",
@@ -2693,5 +2691,15 @@
   "anki_dedup_auto_found": "发现 $count 个重复的 Anki 媒体文件（可释放 $size）",
   "anki_dedup_auto_review": "查看",
   "anki_dedup_auto_done": "已删除 $count 个重复的 Anki 媒体文件，释放 $size",
-  "anki_lapis_backup_done_pruned": "已备份到 $path（按「保留 90 天、至少留 10 份」清理了 $count 份旧备份）"
+  "anki_lapis_backup_done_pruned": "已备份到 $path（按「保留 90 天、至少留 10 份」清理了 $count 份旧备份）",
+  "game_audio_fallback_policy": "音频降级",
+  "game_audio_fallback_full": "允许混音兜底",
+  "game_audio_fallback_clean": "只用干净语音",
+  "game_audio_fallback_resource": "只用游戏原始资源",
+  "game_track_silent_at_cue": "这句时刻没有声音",
+  "game_audio_fallback_full_hint": "抓不到干净语音时用系统混音兜底，可能混入 BGM 和音效。",
+  "game_audio_fallback_clean_hint": "只用游戏资源音频和引擎 PCM。没有配音的句子照常制卡，只是不带音频，不会收进 BGM。",
+  "game_audio_fallback_resource_hint": "必须拿到游戏自带的原始语音文件，缺失时拒绝制卡。",
+  "game_line_audio_suppressed": "已跳过混音",
+  "game_line_audio_suppressed_hint": "本句没有干净音源可用，整机混音已按你选的降级策略跳过。这不代表这句没有配音。"
 }

@@ -141,6 +141,11 @@ void main() {
         reason: 'PR #455 将会话音轨改为仅在活动会话显示的工具栏直达入口');
     expect(find.byKey(const ValueKey<String>('game-toolbar-tracks')),
         findsNothing);
+    // 降级策略入口取代了旧的 bool 开关项，菜单项上直接显示当前档位（默认 full）。
+    expect(find.text('Audio fallback · Allow mixed audio'), findsOneWidget,
+        reason: '三档策略入口必须显示当前档位，否则用户不知道自己在哪一档');
+    expect(find.text('Allow audio fallback'), findsNothing,
+        reason: '旧的 bool「允许音频降级」开关已被三档策略取代');
   });
 
   testWidgets('embedded mode reuses parent scaffold and exposes back action',
