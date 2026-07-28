@@ -1012,6 +1012,22 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     });
   }
 
+  /// VN 空白点推进时用的「保证悬浮 chrome 可见并重新计时」——与
+  /// [_handleFloatingChromeReveal] 的**区别是不 toggle**：那个在已可见时会立即收起
+  /// （决策#4，给的是「点一下开、再点一下关」的开关语义），而 VN 空白点是「翻页」，
+  /// 顺手把底栏顶上来只是副作用，绝不能因为连点两下就把菜单关掉。
+  ///
+  /// 每次推进都重新 [_armChromeAutoHide]：停手 3 秒后收起，连续翻页期间常驻。
+  void _revealFloatingChromeForVnAdvance() {
+    if (!_anyChromeFloating) return;
+    if (!_chromeTransientVisible) {
+      _rebuild(() {
+        _chromeTransientVisible = true;
+      });
+    }
+    _armChromeAutoHide();
+  }
+
   /// 点击空白 / 顶部进度时调用（仅当存在任一悬浮 chrome）。可见时立即收起（决策#4），
   /// 隐藏时唤出 + 武装自动收起。返回 true 表示本次点击被悬浮唤出/收起逻辑消费。
   bool _handleFloatingChromeReveal() {
@@ -1043,6 +1059,10 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   /// 顺带修好一处旧漏：JS 直调 paginate 会丢弃返回值，屏到章末返回 "limit" 也没人
   /// 处理 → VN 点击推进到章末就卡住。现在走 [_paginate] 这个唯一翻页入口，跨章
   /// （[_handlePageTurnLimit]）/ 节流 / caret 重锚全部与滑动、键盘路径一致。
+  ///
+  /// **悬浮态下唤栏不吃掉这一下的翻页**（见 [readerVnBlankTapAction] 的长注释）：底栏
+  /// 的自动收起计时是在用户读这一屏时走完的，若「不可见就只唤栏」，慢读的人每屏都要点
+  /// 两下——那比原来的「菜单叫不出来」被撞到得更频繁。
   void _handleVnBlankTap() {
     if (_lyricsMode) return;
     // 与 onTapEmpty 同语义：有可见查词弹窗时，本次点击只清弹窗栈（BUG-072 续播 /
@@ -1059,12 +1079,12 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     switch (readerVnBlankTapAction(
       chromeExpanded: _showChrome,
       bottomBarFloating: _bottomBarFloating,
-      transientVisible: _chromeTransientVisible,
     )) {
       case ReaderVnBlankTapAction.expandChrome:
         _toggleChrome();
-      case ReaderVnBlankTapAction.revealFloatingChrome:
-        _handleFloatingChromeReveal();
+      case ReaderVnBlankTapAction.advanceAndRevealChrome:
+        _revealFloatingChromeForVnAdvance();
+        unawaited(_paginate(ReaderNavigationDirection.forward));
       case ReaderVnBlankTapAction.advance:
         unawaited(_paginate(ReaderNavigationDirection.forward));
     }

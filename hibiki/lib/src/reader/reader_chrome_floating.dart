@@ -107,8 +107,11 @@ bool topProgressVisible({
 ///
 /// 挤压态随 [chromeExpanded]（`_showChrome`）；悬浮态额外受 [transientVisible]
 /// 门控（点击唤出、计时自动收起）。[hasEverLoaded] 是首次冷加载完成前不画底栏的
-/// 既有门控。与 [topProgressVisible] 同构，是「底栏此刻可见吗」的唯一真相源，
-/// 同时被 [readerVnBlankTapAction] 复用（BUG-1195）。
+/// 既有门控。与 [topProgressVisible] 同构，是「底栏此刻可见吗」的唯一真相源
+/// （`_bottomBarShouldPaint` 委托到这里，BUG-1195）。
+///
+/// 注意 [readerVnBlankTapAction] **不**读这个谓词：VN 空白点在悬浮态下无条件推进，
+/// 不问底栏此刻画没画出来——那正是「每屏点两下」回归的来源。
 bool bottomBarVisible({
   required bool hasEverLoaded,
   required bool chromeExpanded,
@@ -122,13 +125,20 @@ bool bottomBarVisible({
 
 /// BUG-1195：视觉小说（VN）模式下一次「空白点击」的归宿。
 enum ReaderVnBlankTapAction {
-  /// 挤压态底栏被收起（`_showChrome == false`）：先把底栏展开。
+  /// 挤压态底栏被收起（`_showChrome == false`）：只把底栏展开，**不翻页**。
+  ///
+  /// 挤压态展开会改预留高 → `_applyChromeInsets` 触发 reflow 与重锚；同一下再叠一次
+  /// `_paginate` 的 caret 重锚就是两套重锚打架。而且挤压态是**持久开关**：展开一次之后
+  /// 就一直在，这笔「少翻一页」的代价一个阅读会话只付一次，不是每屏都付。
   expandChrome,
 
-  /// 悬浮态底栏已收起：先唤出（并武装自动收起）。
-  revealFloatingChrome,
+  /// 悬浮态：**推进到下一屏，同时把底栏唤出并重新计时**。
+  ///
+  /// 悬浮态显隐不改预留高（悬浮恒 0，见 `_handleFloatingChromeReveal` 处注释），纯显隐
+  /// 不重锚，所以同一下里翻页 + 唤栏互不干扰。
+  advanceAndRevealChrome,
 
-  /// 底栏此刻可见：本次空白点击才推进到下一屏。
+  /// 底栏本来就常驻可见（挤压态且已展开）：只推进到下一屏。
   advance,
 }
 
@@ -139,23 +149,30 @@ enum ReaderVnBlankTapAction {
 /// / `_toggleChrome`）。`tap_empty_hide_chrome` 默认 true ⇒ 底栏是悬浮态、几秒后自动
 /// 收起，于是 VN 下底栏一收起就再也叫不回来：点文字=查词、点空白=翻页，没有第三条路。
 ///
-/// 消除这个特例的办法不是再加一个「菜单专用热区」（那是给坐标发明魔数），而是给同一个
-/// 信号定优先级：**控制栏不可见时，这一下先把它叫出来；可见时才翻页**。与仓库既有语义
-/// 同款——防剧透图「揭开优先」（先揭开、再长按才出菜单）、歌词模式点空白无条件唤出底栏
-/// （「歌词没有别的唤出途径，绝不能被它关死」）。VN 的滑动翻页不经此路径，所以用户永远
-/// 不会被卡在「翻不动页」的状态。
+/// 消除这个特例的办法不是再加一个「菜单专用热区」（那是给坐标发明魔数），而是让**同一下
+/// 同时做两件不冲突的事**：悬浮态下这一下既推进到下一屏，又把底栏唤出并重新计时。
+///
+/// **为什么不是「不可见时先唤出、可见时才翻页」**（本 bug 第一版修法，已被推翻）：那样
+/// 慢读的人每屏要点两下。悬浮底栏的自动收起计时（默认 3000ms）是在**用户读这一屏的时候**
+/// 走完的——读一屏超过 3 秒（VN 的常态）底栏就已收起，于是下一下只唤栏不翻页，再下一下
+/// 才翻页。换成「advance 分支重置计时器」也救不回来：计时器照样在阅读过程中过期。**唯一
+/// 不让用户为唤栏付每屏一次代价的办法，就是别让唤栏吃掉这一下的翻页。**
+///
+/// 代价是悬浮底栏在连续点击期间基本常驻（停手 3 秒后收起）——与视频播放器控制条同款语义，
+/// 且底栏本身是悬浮层、不占正文高度。
+///
+/// 挤压态（[chromeExpanded] 为 false）例外，不在这一下翻页，理由见
+/// [ReaderVnBlankTapAction.expandChrome]。VN 的滑动翻页不经此路径，用户永远不会被卡在
+/// 「翻不动页」的状态。
 ///
 /// 参数与 [bottomBarVisible] 同源（`hasEverLoaded` 在此恒真：能点到 VN 屏就说明内容
 /// 已就绪），故三态判定与底栏实际绘制条件逐条对齐，不会出现「判为可见但没画出来」。
 ReaderVnBlankTapAction readerVnBlankTapAction({
   required bool chromeExpanded,
   required bool bottomBarFloating,
-  required bool transientVisible,
 }) {
   if (!chromeExpanded) return ReaderVnBlankTapAction.expandChrome;
-  if (bottomBarFloating && !transientVisible) {
-    return ReaderVnBlankTapAction.revealFloatingChrome;
-  }
+  if (bottomBarFloating) return ReaderVnBlankTapAction.advanceAndRevealChrome;
   return ReaderVnBlankTapAction.advance;
 }
 
