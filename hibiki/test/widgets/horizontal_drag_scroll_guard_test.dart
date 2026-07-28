@@ -3,13 +3,18 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 /// 桌面端 Flutter 的默认 `MaterialScrollBehavior.dragDevices` **不含鼠标**：横向
-/// 滚动区用鼠标左键按住左右拖会毫无反应，只能滚轮（用户实报）。仓库早在
+/// 滚动区用鼠标左键按住左右拖会毫无反应（用户实报）。仓库早在
 /// `collection_shelf_row.dart` 就写下了这条根因注释并修了合集行 + 首页继续行，
 /// 但没有推广——全仓 16 处 `Axis.horizontal` 里当时只有那 2 处放开了鼠标拖动。
 ///
 /// 这条守卫钉死「新增横向滚动区必须包 [HorizontalDragScrollable]」，防止再次漂移。
 /// 按文件粒度计数（一个文件里的横向区数 ≤ 包裹数 + 豁免数），因为静态扫描无法可靠
 /// 判断 widget 树的父子关系。
+///
+/// **注意「滚轮」不是退路**（BUG-1214 更正）：横向 `Scrollable` 只取
+/// `scrollDelta.dx`，物理滚轮发的是 `(0, dy)`，裸滚轮同样毫无反应——除非该区显式包了
+/// `WheelToHorizontalScroll` 把纵向 delta 投到横轴。所以豁免本件的区必须自己交代
+/// 用户还能怎么平移。
 void main() {
   /// 明确豁免：区内已有依赖横拖的手势，放开滚动拖动会与之抢手势竞技场。
   ///
@@ -18,9 +23,11 @@ void main() {
     // cue strip 自带 onHorizontalDrag「拖字幕块调延迟」。GestureDetector 的横拖
     // 不受 ScrollBehavior.dragDevices 约束，故现状是「鼠标拖字幕块有效、拖空白
     // 无反应」；放开滚动拖动会让两个 HorizontalDragGestureRecognizer 进同一个
-    // 竞技场，赌内层胜出去换一点便利不值得（本区有常驻滚动条可拖）。
+    // 竞技场，赌内层胜出去换一点便利不值得。平移退路：常驻滚动条 + 显式包了
+    // WheelToHorizontalScroll 的鼠标滚轮（BUG-1214）。
     'lib/src/media/video/subtitle_waveform_align_panel.dart':
-        'cue strip 自带 onHorizontalDrag 调延迟，放开滚动拖动会抢手势',
+        'cue strip 自带 onHorizontalDrag 调延迟，放开滚动拖动会抢手势；'
+            '滚轮平移由 WheelToHorizontalScroll 提供',
   };
 
   test('每个横向滚动区都放开了鼠标拖动（或在豁免清单里说明了原因）', () {

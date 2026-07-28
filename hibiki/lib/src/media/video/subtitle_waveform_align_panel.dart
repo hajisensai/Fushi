@@ -804,51 +804,58 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
             borderRadius: BorderRadius.circular(8),
           ),
           clipBehavior: Clip.antiAlias,
-          child: Scrollbar(
-            key: const ValueKey<String>('subtitle-waveform-hscroll'),
+          // 滚轮左右滚（用户实报「这里应该支持滚轮滚动左右」）：横向 Scrollable 只
+          // 取 scrollDelta.dx，物理滚轮发的是 (0, dy)，裸滚轮本来毫无反应。根因与
+          // 修法见 [WheelToHorizontalScroll]。本区尤其需要它——见下方为何不放开鼠标
+          // 拖动滚动。
+          child: WheelToHorizontalScroll(
             controller: _scrollController,
-            thumbVisibility: true,
-            // 刻意**不**包 HorizontalDragScrollable（其它横向滚动区都包了，放开
-            // 鼠标拖动滚动）：本区内的 cue strip 自带 onHorizontalDrag「拖字幕块
-            // 调延迟」，而 GestureDetector 的横拖不受 ScrollBehavior.dragDevices
-            // 约束——现在鼠标拖字幕块有效、拖空白无反应。放开滚动拖动会让两个
-            // HorizontalDragGestureRecognizer 进同一个手势竞技场，赌内层胜出去换
-            // 一点点便利，不值得（本区有常驻滚动条可拖）。
-            child: SingleChildScrollView(
+            child: Scrollbar(
+              key: const ValueKey<String>('subtitle-waveform-hscroll'),
               controller: _scrollController,
-              scrollDirection: Axis.horizontal,
-              child: SizedBox(
-                width: contentWidth,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    SizedBox(
-                      width: contentWidth,
-                      height: _waveHeight,
-                      // 点击波形把播放头 seek 到该 x 对应的时间（横向拖动仍归滚动，tap≠drag
-                      // 不冲突）。x/contentWidth 映射回 [0, windowEndMs]。
-                      child: widget.onSeek == null
-                          ? painted
-                          : GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTapUp: (TapUpDetails details) {
-                                if (contentWidth <= 0 ||
-                                    widget.windowEndMs <= 0) {
-                                  return;
-                                }
-                                final double x = details.localPosition.dx
-                                    .clamp(0.0, contentWidth);
-                                final int ms =
-                                    (x / contentWidth * widget.windowEndMs)
-                                        .round();
-                                widget.onSeek!.call(ms < 0 ? 0 : ms);
-                              },
-                              child: painted,
-                            ),
-                    ),
-                    strip,
-                  ],
+              thumbVisibility: true,
+              // 刻意**不**包 HorizontalDragScrollable（其它横向滚动区都包了，放开
+              // 鼠标拖动滚动）：本区内的 cue strip 自带 onHorizontalDrag「拖字幕块
+              // 调延迟」，而 GestureDetector 的横拖不受 ScrollBehavior.dragDevices
+              // 约束——现在鼠标拖字幕块有效、拖空白无反应。放开滚动拖动会让两个
+              // HorizontalDragGestureRecognizer 进同一个手势竞技场，赌内层胜出去换
+              // 一点点便利，不值得（本区有常驻滚动条 + 滚轮可平移）。
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: contentWidth,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      SizedBox(
+                        width: contentWidth,
+                        height: _waveHeight,
+                        // 点击波形把播放头 seek 到该 x 对应的时间（横向拖动仍归滚动，
+                        // tap≠drag 不冲突）。x/contentWidth 映射回 [0, windowEndMs]。
+                        child: widget.onSeek == null
+                            ? painted
+                            : GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTapUp: (TapUpDetails details) {
+                                  if (contentWidth <= 0 ||
+                                      widget.windowEndMs <= 0) {
+                                    return;
+                                  }
+                                  final double x = details.localPosition.dx
+                                      .clamp(0.0, contentWidth);
+                                  final int ms =
+                                      (x / contentWidth * widget.windowEndMs)
+                                          .round();
+                                  widget.onSeek!.call(ms < 0 ? 0 : ms);
+                                },
+                                child: painted,
+                              ),
+                      ),
+                      strip,
+                    ],
+                  ),
                 ),
               ),
             ),
