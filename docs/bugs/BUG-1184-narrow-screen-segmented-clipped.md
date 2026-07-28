@@ -21,13 +21,19 @@
 | 12 | 会真抛 RenderFlex overflow 的按钮行/固定高 | `interconnect.part.dart:1056`、`backup.part.dart:445/560`、`media_sources_dialog.dart:149/362`、`mokuro_moe_tasks_section.dart:62`、`mokuro_moe_catalog_dialog.dart:218` | 令牌操作按钮、备份选择计数行、来源对话框页脚、任务列表死高 220、目录对话框死高 440 |
 | 13 | 统计汇总卡写死双列，无窄屏回退 | `reading_statistics_page.dart:541/565`、`video_statistics_page.dart:229/255` | 320dp 上每格只剩约 100px 文字宽，而每格要放 7 行「标签: 数值」，每行都被迫折行。同页 `_buildMidSection` 早有窄屏堆叠，汇总卡一直漏了 |
 | 14 | 下载页 TabBar 均分宽度 | `downloads_page.dart:59` | 窄屏 + 大字号下较长 tab 名（英文 `Subscriptions`）被裁 |
+| 15 | 集号输入框写死 `width: 96` 装 label | `anime_download_dialog.dart:1603` | **用户截图实证**：1920 宽的窗口下「集数（可选）」被裁成「集数···」。与屏幕宽窄无关，任何窗口宽度下都裁。此处先后写死过 72 和 96，`96` 那版注释就写着「72 在界面缩放 >1 时装不下 label」——上一次修法是在同一个错误里换个更大的数字 |
 
 ### 修复取向
 
-不是逐点打补丁，而是先修共享组件的根因（1/2/4/5/6 一改多治），再收口重复几何（9 的两处 `0.62`、3 的四处裸分段条），最后处理确会抛异常的点（12）。新增两个共享件消除「同一问题两套写法」的特殊情况：
+不是逐点打补丁，而是先修共享组件的根因（1/2/4/5/6 一改多治），再收口重复几何（9 的两处 `0.62`、3 的四处裸分段条），最后处理确会抛异常的点（12）。
+
+贯穿全部 15 条的同一个反模式是**用固定像素/固定行数去装一段会变的内容**——文案会随语言变长、字号会随系统设置放大、界面缩放会再乘一次。根因 15 是最典型的样本：同一处先后写死 72、96 两次，每次都是「上次那个数字不够，换个大的」，而正确做法是让尺寸由内容的实测结果决定（`TextPainter` 量 label、`TextStyle.height` 算行高），连兜底上限也不写死像素、改取可用宽度的比例。
+
+新增三个共享件消除「同一问题两套写法」的特殊情况：
 
 - `HibikiSegmentedStrip`——把设置行里早已存在（BUG-008）但私有的「装不下就横向滚动」契约开放给任意调用点。
 - `narrowAwareAppBarActions` + `HibikiAppBarAction`——窄屏把次要 AppBar 动作折进溢出菜单，动作一个不少，只是多一次点击。
+- `textLineHeight(context, style)`——需要「预留 N 行文字高度」的地方（网格 `mainAxisExtent`、横滑行 `SizedBox`、卡片文字块）此前各自猜行高系数，统一读 `TextStyle.height` 真实值。
 
 ### 两处需要留档的权衡
 
@@ -38,7 +44,9 @@
 
 - Cupertino renderer 的单行标题（`cupertino_settings_renderer.dart:55`，`CupertinoListTile` 由 Flutter SDK 强制 `maxLines: 1`）与 `settings_shared.dart` Cupertino trailing 按屏宽 0.42 限宽：Cupertino 仅为隐藏内部能力（`auto` 下五平台统一走 MD3），非用户可见路径。
 - `profile_management_page.dart` / `dictionary_settings_dialog_page.dart` 的 trailing 挂 4~5 个控件：已被根因 2 的窄屏堆叠覆盖（不再与标题抢宽），但更彻底的做法是把它们收进溢出菜单。
-- `anime_download_dialog.dart` 集号输入框固定 96px、`galgame_home_page.dart` 卡片固定 126px 高：影响面较小，未在本轮处理。
+- `galgame_home_page.dart` 卡片固定 126px 高：影响面较小，未在本轮处理。
+
+> **补记（用户复核后回填）**：集号输入框那条原本也列在这里，理由是「影响面较小」——判断错了。用户随后贴出 1920 宽窗口的截图，label 就在那儿被裁成「集数···」，说明它跟屏幕宽窄无关、**任何宽度下都复现**，已作为根因 15 修掉（见下方提交）。教训：把一条已经定位到的显示不全推迟为「影响面较小」，前提是真的确认过它只在极端条件下出现；这条我没确认就推迟了。
 
 - **[x] ① 已修复** — `e0ca57a80`（共享组件根因 + 会抛异常的按钮行）、`88df6f8e2`（媒体名称单行截断 + 死高/死比例）、`1a8b51ce7`（游戏名/统计卡/AppBar 标题）、本轮末次提交（历史卡标题条、TabBar、测试）
 - **[x] ② 已加自动化测试** — `hibiki/test/widgets/narrow_screen_overflow_test.dart`（13 例，逐条锚定根因 1/2/3/4/7/10：说明文字不再钳行数且逃生口仍生效、窄行 flexible trailing 堆叠且宽行不误堆叠、分段条装不下即滚动且装得下不引入多余滚动、对话框边距窄屏收窄/宽屏不变/显式值优先、AppBar 折叠后三个动作仍在菜单里、footer 高度随文字缩放变高）。另更新两处既有守卫：`test/settings/settings_redesign_static_test.dart` 改守「subtitle 由 opt-in 覆盖决定行数，旧的无条件 3 行钳制必须保持消失」；`test/pages/video_card_cover_aspect_guard_test.dart` 改守「文字块高度必须按真实行高算出、不得退回硬编码常量」并留档 BUG-943 权衡。
