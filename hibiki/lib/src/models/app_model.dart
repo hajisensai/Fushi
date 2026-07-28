@@ -56,6 +56,7 @@ import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/anime_download_importer.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
 import 'package:hibiki/src/media/torrent/anime_download_service.dart';
+import 'package:hibiki/src/media/torrent/anime_download_subtitle_resolver.dart';
 import 'package:hibiki/src/media/torrent/anime_download_subscription.dart';
 import 'package:hibiki/src/media/torrent/torrent_memory.dart';
 import 'package:hibiki/src/media/video/dandanplay_client.dart';
@@ -3309,6 +3310,12 @@ class AppModel with ChangeNotifier {
           effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
       importer: buildAnimeDownloadImporter(database),
       bookImporter: _importDownloadedBooks,
+      // BUG-1206：字幕在下载完成时按包内真实文件名反查补取，不在选种时预下。
+      subtitleResolver: JimakuPlanSubtitleResolver(
+        apiKeyProvider: () => prefsRepo.jimakuApiKey,
+        httpClientFactory: createDownloadHttpClient,
+        stagingDirFor: store.subsDirFor,
+      ).resolve,
       backendFactory: _torrentBackendFor,
       onTick: () {
         _embeddedTorrentHost?.sweepAntiLeech();

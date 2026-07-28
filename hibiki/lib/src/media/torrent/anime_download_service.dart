@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
+import 'package:hibiki/src/media/torrent/anime_download_subtitle_resolver.dart';
 import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/qbittorrent_client.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
@@ -138,11 +139,16 @@ class AnimeDownloadService {
       AnimeDownloadPlan plan,
       List<String> bookAbsolutePaths,
     )? bookImporter,
+    Future<ResolvedPlanSubtitles> Function(
+      AnimeDownloadPlan plan,
+      List<String> videoAbsolutePaths,
+    )? subtitleResolver,
     void Function()? onTick,
     this.interval = const Duration(seconds: 20),
   })  : _configProvider = configProvider,
         _importer = importer,
         _bookImporter = bookImporter,
+        _subtitleResolver = subtitleResolver,
         _backendFactory = backendFactory ?? _defaultBackendFactory,
         _onTick = onTick;
 
@@ -172,6 +178,15 @@ class AnimeDownloadService {
     AnimeDownloadPlan plan,
     List<String> bookAbsolutePaths,
   )? _bookImporter;
+
+  /// 延迟字幕解析回调（[AnimeDownloadPlan.subtitlePending] 的计划完成时调用，
+  /// 用包内真实视频文件名反查 Jimaku，见 [JimakuPlanSubtitleResolver]）。
+  /// null = 不支持补取，pending 计划会显式落 [AnimeDownloadPlan.subtitleUnavailable]。
+  final Future<ResolvedPlanSubtitles> Function(
+    AnimeDownloadPlan plan,
+    List<String> videoAbsolutePaths,
+  )? _subtitleResolver;
+
   final TorrentBackend Function(QbConnectionConfig config) _backendFactory;
 
   /// 每 tick 起始（早于「无 pending 计划则跳过」判断）无条件跑一次的钩子；
@@ -368,11 +383,16 @@ class AnimeDownloadService {
     int booksImported = 0;
     String? importError;
 
-    // 视频：先落 sidecar 再入库（播放器按 sidecar 自动发现字幕）。
+    // 字幕：pending 的计划到这一刻才第一次知道包内真实文件名，现在才配得准
+    // （BUG-1206）。resolved/none 的老计划原样透传，行为不变。
+    AnimeDownloadPlan resolved = plan;
+
+    // 视频：先补字幕 → 落 sidecar → 入库（播放器按 sidecar 自动发现字幕）。
     if (videos.isNotEmpty) {
-      await _placeSidecars(videos, plan.subtitles);
+      resolved = await _resolveSubtitles(plan, videos);
+      await _placeSidecars(videos, resolved.subtitles);
       try {
-        outcome = await _importer(plan, videos);
+        outcome = await _importer(resolved, videos);
       } catch (e) {
         importError = 'video import failed: $e';
       }
@@ -395,15 +415,60 @@ class AnimeDownloadService {
 
     final bool imported = outcome != null || booksImported > 0;
     if (imported) {
-      await store.save(plan.copyWith(
+      await store.save(resolved.copyWith(
         status: AnimeDownloadPlan.statusImported,
         collectionId: outcome?.collectionId,
       ));
     } else {
-      await store.save(plan.copyWith(
+      await store.save(resolved.copyWith(
         status: AnimeDownloadPlan.statusFailed,
         failReason: importError ?? 'import failed',
       ));
+    }
+  }
+
+  /// 把 [AnimeDownloadPlan.subtitlePending] 的计划按 [videoAbsolutePaths]
+  /// （包内真实视频）补取字幕，返回已带结论的计划副本。
+  ///
+  /// 非 pending（老计划：选种时就下好了字幕，或压根不要字幕）原样返回——**绝不
+  /// 重取、绝不覆盖**已有的 [AnimeDownloadPlan.subtitles]。
+  ///
+  /// 任何失败路径都落 [AnimeDownloadPlan.subtitleUnavailable] + 原因，不静默：
+  /// 视频照常入库（字幕缺失不该让整个下载判失败），用户在任务行能看见「字幕未
+  /// 匹配」并用字幕对话框手动补。
+  Future<AnimeDownloadPlan> _resolveSubtitles(
+    AnimeDownloadPlan plan,
+    List<String> videoAbsolutePaths,
+  ) async {
+    if (plan.subtitleStatus != AnimeDownloadPlan.subtitlePending) return plan;
+    final Future<ResolvedPlanSubtitles> Function(
+      AnimeDownloadPlan,
+      List<String>,
+    )? resolver = _subtitleResolver;
+    if (resolver == null) {
+      return plan.copyWith(
+        subtitleStatus: AnimeDownloadPlan.subtitleUnavailable,
+        subtitleNote: 'subtitle resolver unavailable',
+      );
+    }
+    try {
+      final ResolvedPlanSubtitles result =
+          await resolver(plan, videoAbsolutePaths);
+      if (result.subtitles.isEmpty) {
+        return plan.copyWith(
+          subtitleStatus: AnimeDownloadPlan.subtitleUnavailable,
+          subtitleNote: result.failureReason ?? 'no matching subtitle',
+        );
+      }
+      return plan.copyWith(
+        subtitles: result.subtitles,
+        subtitleStatus: AnimeDownloadPlan.subtitleResolved,
+      );
+    } catch (e) {
+      return plan.copyWith(
+        subtitleStatus: AnimeDownloadPlan.subtitleUnavailable,
+        subtitleNote: 'subtitle resolve failed: $e',
+      );
     }
   }
 

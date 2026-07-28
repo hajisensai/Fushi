@@ -89,8 +89,11 @@ class _MemPlanStore extends AnimeDownloadPlanStore {
   Future<List<AnimeDownloadPlan>> loadAll() async =>
       const <AnimeDownloadPlan>[];
 
+  /// 推送真正落盘的计划（断言「计划里记了什么」用）。
+  final List<AnimeDownloadPlan> saved = <AnimeDownloadPlan>[];
+
   @override
-  Future<void> save(AnimeDownloadPlan plan) async {}
+  Future<void> save(AnimeDownloadPlan plan) async => saved.add(plan);
 
   @override
   Future<void> delete(String id) async {}
@@ -505,10 +508,15 @@ void main() {
         reason: '整季包集号未核对，必须明说，不能画成「字幕已配好」');
   });
 
-  // 整季包一次十几条字幕，单条下载失败以前被静默 continue，用户以为都下好了。
-  testWidgets('推送：字幕缺条时 snack 汇报 N/M', (WidgetTester tester) async {
+  // BUG-1206：推送这一刻手上只有 Nyaa 标题，包里到底有哪些文件还不知道，照标题
+  // 猜集号会静默配错季。所以字幕**不再在推送时下载**，计划只记「取哪个 Jimaku
+  // 条目」，真正的反查放到下载完成后按包内真实文件名做。
+  testWidgets('BUG-1206 推送：不预下字幕，计划落 pending 并说明时序',
+      (WidgetTester tester) async {
+    final List<String> requested = <String>[];
     final _FakeAppModel appModel = _FakeAppModel((http.Request req) async {
       final String url = req.url.toString();
+      requested.add(url);
       if (url.contains('/entries/search')) {
         return http.Response.bytes(
           utf8.encode(jsonEncode(<Map<String, Object>>[
@@ -529,8 +537,6 @@ void main() {
           200,
         );
       }
-      // 第 2 条字幕下载失败（其余成功）→ 3 条只成功 2 条。
-      if (url.endsWith('/f/2.srt')) return http.Response('', 500);
       if (url.contains('/f/')) return http.Response('sub body', 200);
       return http.Response('', 404);
     });
@@ -566,10 +572,23 @@ void main() {
       }
     });
     await tester.pump();
+
+    // ① 推送期间一条字幕都没下——这是「配对推迟到 add 之后」的直接证据。
     expect(
-      find.textContaining(t.anime_download_subs_partial(done: 2, total: 3)),
+      requested.where((String u) => u.contains('/f/')),
+      isEmpty,
+      reason: '推送时不得再预下字幕：那时还不知道包里有哪些文件',
+    );
+    // ② 计划记的是**意图**（条目 id + pending），不是结论。
+    final AnimeDownloadPlan plan = appModel.store.saved.single;
+    expect(plan.jimakuEntryId, 7);
+    expect(plan.subtitleStatus, AnimeDownloadPlan.subtitlePending);
+    expect(plan.subtitles, isEmpty, reason: '结论要等包内真实文件名，推送时不该有任何已配字幕');
+    // ③ 用户得知道字幕还在后头，不能以为字幕功能没了。
+    expect(
+      find.textContaining(t.anime_download_subs_deferred),
       findsOneWidget,
-      reason: '缺条必须说出来，不能只报「已推送」',
+      reason: '推送成功必须说清字幕的时序',
     );
   });
 }

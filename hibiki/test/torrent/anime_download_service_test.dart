@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
 import 'package:hibiki/src/media/torrent/anime_download_service.dart';
+import 'package:hibiki/src/media/torrent/anime_download_subtitle_resolver.dart';
 import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/qbittorrent_client.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
@@ -257,12 +258,27 @@ void main() {
         AnimeDownloadPlan, List<String>)? importerOverride;
     Future<int?> Function(AnimeDownloadPlan, List<String>)?
         bookImporterOverride;
+    late List<(AnimeDownloadPlan, List<String>)> subtitleResolverCalls;
+    Future<ResolvedPlanSubtitles> Function(AnimeDownloadPlan, List<String>)?
+        subtitleResolverOverride;
 
-    AnimeDownloadService buildService(
-        {QbConnectionConfig? Function()? config}) {
+    AnimeDownloadService buildService({
+      QbConnectionConfig? Function()? config,
+      bool withSubtitleResolver = true,
+    }) {
       return AnimeDownloadService(
         store: store,
         configProvider: config ?? () => _kConfig,
+        subtitleResolver: !withSubtitleResolver
+            ? null
+            : (AnimeDownloadPlan plan, List<String> videos) async {
+                subtitleResolverCalls.add((plan, videos));
+                final Future<ResolvedPlanSubtitles> Function(
+                        AnimeDownloadPlan, List<String>)? override =
+                    subtitleResolverOverride;
+                if (override != null) return override(plan, videos);
+                return const ResolvedPlanSubtitles.failed('not stubbed');
+              },
         importer: (AnimeDownloadPlan plan, List<String> videos) async {
           importCalls.add((plan, videos));
           if (importerOverride != null) return importerOverride!(plan, videos);
@@ -288,8 +304,10 @@ void main() {
       qb = _FakeQb();
       importCalls = <(AnimeDownloadPlan, List<String>)>[];
       bookImportCalls = <(AnimeDownloadPlan, List<String>)>[];
+      subtitleResolverCalls = <(AnimeDownloadPlan, List<String>)>[];
       importerOverride = null;
       bookImporterOverride = null;
+      subtitleResolverOverride = null;
     });
 
     tearDown(() {
@@ -336,6 +354,160 @@ void main() {
       expect(qb.filesRequests, 0);
       expect((await store.loadAll()).single.status,
           AnimeDownloadPlan.statusDownloading);
+    });
+
+    // ========================================================================
+    // BUG-1206：字幕改成「下载完成时按包内真实文件名补取」
+    // ========================================================================
+
+    /// 造一个「完成的整季包」场景：savePath 下 12 个真实视频文件（01-12）。
+    (String, List<Map<String, dynamic>>) completedSeasonPack() {
+      final String savePath = p.join(tempDir.path, 'downloads');
+      Directory(p.join(savePath, 'Show')).createSync(recursive: true);
+      return (
+        savePath,
+        <Map<String, dynamic>>[
+          for (int ep = 1; ep <= 12; ep++)
+            <String, dynamic>{
+              'name': 'Show/[Grp] Show - ${ep.toString().padLeft(2, '0')} '
+                  '[1080p].mkv',
+              'size': 10,
+              'progress': 1.0,
+            },
+        ],
+      );
+    }
+
+    test('BUG-1206 pending 计划：完成时才补取，resolver 拿到的是包内真实视频路径', () async {
+      final (String savePath, List<Map<String, dynamic>> files) =
+          completedSeasonPack();
+      await store.save(_plan().copyWith(
+        jimakuEntryId: 7,
+        subtitleStatus: AnimeDownloadPlan.subtitlePending,
+      ));
+      qb.torrents = <Map<String, dynamic>>[
+        _torrentJson(savePath: savePath, contentPath: p.join(savePath, 'Show')),
+      ];
+      qb.files = files;
+
+      final Directory subsDir = store.subsDirFor(_kHash)
+        ..createSync(recursive: true);
+      subtitleResolverOverride =
+          (AnimeDownloadPlan plan, List<String> videos) async {
+        final String staged = p.join(subsDir.path, 'Show - 03.ja.srt');
+        File(staged).writeAsStringSync('cue');
+        return ResolvedPlanSubtitles.ok(<PlanSubtitle>[
+          PlanSubtitle(
+              episode: 3,
+              fileName: 'Show - 03.ja.srt',
+              stagedPath: staged,
+              language: 'ja'),
+        ]);
+      };
+
+      await buildService().tick();
+
+      // ① 补取真的发生在完成之后，且喂进去的是**包内真实文件**的绝对路径。
+      expect(subtitleResolverCalls, hasLength(1));
+      final (AnimeDownloadPlan calledPlan, List<String> videos) =
+          subtitleResolverCalls.single;
+      expect(calledPlan.jimakuEntryId, 7);
+      expect(videos, hasLength(12));
+      expect(
+        videos.map(p.basename),
+        contains('[Grp] Show - 03 [1080p].mkv'),
+      );
+      // ② 反查结果真的贴成了第 3 集的 sidecar（不是第 1 集，也不是全都贴）。
+      expect(
+        File(p.join(savePath, 'Show', '[Grp] Show - 03 [1080p].ja.srt'))
+            .existsSync(),
+        isTrue,
+      );
+      expect(
+        File(p.join(savePath, 'Show', '[Grp] Show - 01 [1080p].ja.srt'))
+            .existsSync(),
+        isFalse,
+      );
+      // ③ 计划落成 resolved 并带上真配好的字幕。
+      final AnimeDownloadPlan saved = (await store.loadAll()).single;
+      expect(saved.subtitleStatus, AnimeDownloadPlan.subtitleResolved);
+      expect(saved.subtitles.single.episode, 3);
+      expect(saved.status, AnimeDownloadPlan.statusImported);
+    });
+
+    test('BUG-1206 反查一条都不配 → 落 unavailable + 原因，视频照常入库', () async {
+      final (String savePath, List<Map<String, dynamic>> files) =
+          completedSeasonPack();
+      await store.save(_plan().copyWith(
+        jimakuEntryId: 7,
+        jimakuEntryName: 'Wrong Season Entry',
+        subtitleStatus: AnimeDownloadPlan.subtitlePending,
+      ));
+      qb.torrents = <Map<String, dynamic>>[
+        _torrentJson(savePath: savePath, contentPath: p.join(savePath, 'Show')),
+      ];
+      qb.files = files;
+      subtitleResolverOverride = (_, __) async =>
+          const ResolvedPlanSubtitles.failed(
+              'no jimaku file matches the pack episodes');
+
+      await buildService().tick();
+
+      final AnimeDownloadPlan saved = (await store.loadAll()).single;
+      expect(saved.subtitleStatus, AnimeDownloadPlan.subtitleUnavailable);
+      expect(saved.subtitleNote, 'no jimaku file matches the pack episodes',
+          reason: '不能静默：原因要落进计划，任务行才显示得出来');
+      expect(saved.subtitles, isEmpty);
+      // 字幕没配上不该把整个下载判失败——视频还是要进库。
+      expect(saved.status, AnimeDownloadPlan.statusImported);
+      expect(importCalls, hasLength(1));
+    });
+
+    test('BUG-1206 老计划（选种时已下好字幕）不重取、不覆盖', () async {
+      final (String savePath, List<Map<String, dynamic>> files) =
+          completedSeasonPack();
+      final Directory subsDir = store.subsDirFor(_kHash)
+        ..createSync(recursive: true);
+      final String staged = p.join(subsDir.path, 'legacy 05.srt');
+      File(staged).writeAsStringSync('legacy cue');
+      // 老计划反序列化后 subtitleStatus = resolved（decode 的兼容分支）。
+      await store.save(_plan(subtitles: <PlanSubtitle>[
+        PlanSubtitle(episode: 5, fileName: 'legacy 05.srt', stagedPath: staged),
+      ]).copyWith(subtitleStatus: AnimeDownloadPlan.subtitleResolved));
+      qb.torrents = <Map<String, dynamic>>[
+        _torrentJson(savePath: savePath, contentPath: p.join(savePath, 'Show')),
+      ];
+      qb.files = files;
+
+      await buildService().tick();
+
+      expect(subtitleResolverCalls, isEmpty, reason: '老计划的字幕是既有数据，绝不能重取或覆盖');
+      expect(
+        File(p.join(savePath, 'Show', '[Grp] Show - 05 [1080p].srt'))
+            .readAsStringSync(),
+        'legacy cue',
+      );
+      expect((await store.loadAll()).single.subtitles.single.fileName,
+          'legacy 05.srt');
+    });
+
+    test('BUG-1206 没接 resolver 时 pending 计划落 unavailable，不静默', () async {
+      final (String savePath, List<Map<String, dynamic>> files) =
+          completedSeasonPack();
+      await store.save(_plan().copyWith(
+        jimakuEntryId: 7,
+        subtitleStatus: AnimeDownloadPlan.subtitlePending,
+      ));
+      qb.torrents = <Map<String, dynamic>>[
+        _torrentJson(savePath: savePath, contentPath: p.join(savePath, 'Show')),
+      ];
+      qb.files = files;
+
+      await buildService(withSubtitleResolver: false).tick();
+
+      final AnimeDownloadPlan saved = (await store.loadAll()).single;
+      expect(saved.subtitleStatus, AnimeDownloadPlan.subtitleUnavailable);
+      expect(saved.subtitleNote, isNotEmpty);
     });
 
     test('完成 → sidecar 落位 + importer 收到视频列表 + 计划标 imported', () async {
@@ -507,8 +679,8 @@ void main() {
         <String>['Show - 01.srt'],
         reason: '同一集有且只有一份 sidecar',
       );
-      expect(pickSidecar('Show - 01', dirFiles, langCode: 'ja'),
-          'Show - 01.srt');
+      expect(
+          pickSidecar('Show - 01', dirFiles, langCode: 'ja'), 'Show - 01.srt');
     });
 
     test('该集本来没有任何 sidecar 时照常落位（去重不得误伤首次下载）', () async {

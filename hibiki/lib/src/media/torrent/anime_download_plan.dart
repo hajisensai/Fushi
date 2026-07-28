@@ -44,7 +44,25 @@ class AnimeDownloadPlan {
     this.failReason,
     this.collectionId,
     this.contentKind = kindVideo,
+    this.jimakuEntryId,
+    this.jimakuEntryName,
+    this.jimakuLanguage,
+    this.subtitleStatus = subtitleNone,
+    this.subtitleNote,
   });
+
+  /// 不涉及字幕（用户没勾「一并下字幕」/ 没选中 Jimaku 条目 / 通用磁链）。
+  static const String subtitleNone = 'none';
+
+  /// 已记下 Jimaku 条目，等下载完成后按包内真实文件名反查再取（BUG-1206）。
+  static const String subtitlePending = 'pending';
+
+  /// 已配好并落进 [subtitles]（老计划在选种时就下好的，也是这个状态）。
+  static const String subtitleResolved = 'resolved';
+
+  /// 反查完一条都没配上 / Jimaku 取不到；原因见 [subtitleNote]。
+  /// **不是静默失败**：任务行会显式显示，用户可用字幕对话框手动补。
+  static const String subtitleUnavailable = 'unavailable';
 
   /// 内容类型：视频（走视频库入库，番剧默认）。
   static const String kindVideo = 'video';
@@ -104,6 +122,25 @@ class AnimeDownloadPlan {
   /// 阅读库入库。默认 [kindVideo]（番剧 + 老计划向后兼容）。
   final String contentKind;
 
+  /// 用户在选种时选中的 Jimaku 条目 id；null = 不取字幕。
+  ///
+  /// 计划只记**意图**（取哪个条目的字幕），不记结论——结论要等种子 add 之后
+  /// 引擎给出包内真实文件名才算得准（BUG-1206）。
+  final int? jimakuEntryId;
+
+  /// Jimaku 条目名（仅用于任务行/失败原因里说清取的是哪个条目）。
+  final String? jimakuEntryName;
+
+  /// 用户选的优先字幕语言（`ja` / `zh` / ...）；null = 用默认权重（ja 优先）。
+  final String? jimakuLanguage;
+
+  /// [subtitleNone] / [subtitlePending] / [subtitleResolved] /
+  /// [subtitleUnavailable]。
+  final String subtitleStatus;
+
+  /// [subtitleUnavailable] 时的原因（英文短语，落日志/任务行用）。
+  final String? subtitleNote;
+
   /// 注意：可空字段（[failReason] / [collectionId] 等）无法通过 copyWith
   /// 置回 null（标准模式局限）；状态机只前进赋值，不需要清空。
   AnimeDownloadPlan copyWith({
@@ -120,6 +157,11 @@ class AnimeDownloadPlan {
     String? failReason,
     int? collectionId,
     String? contentKind,
+    int? jimakuEntryId,
+    String? jimakuEntryName,
+    String? jimakuLanguage,
+    String? subtitleStatus,
+    String? subtitleNote,
   }) {
     return AnimeDownloadPlan(
       id: id ?? this.id,
@@ -135,6 +177,11 @@ class AnimeDownloadPlan {
       failReason: failReason ?? this.failReason,
       collectionId: collectionId ?? this.collectionId,
       contentKind: contentKind ?? this.contentKind,
+      jimakuEntryId: jimakuEntryId ?? this.jimakuEntryId,
+      jimakuEntryName: jimakuEntryName ?? this.jimakuEntryName,
+      jimakuLanguage: jimakuLanguage ?? this.jimakuLanguage,
+      subtitleStatus: subtitleStatus ?? this.subtitleStatus,
+      subtitleNote: subtitleNote ?? this.subtitleNote,
     );
   }
 }
@@ -163,6 +210,11 @@ Map<String, dynamic> encodeAnimeDownloadPlan(AnimeDownloadPlan plan) {
     'failReason': plan.failReason,
     'collectionId': plan.collectionId,
     'contentKind': plan.contentKind,
+    'jimakuEntryId': plan.jimakuEntryId,
+    'jimakuEntryName': plan.jimakuEntryName,
+    'jimakuLanguage': plan.jimakuLanguage,
+    'subtitleStatus': plan.subtitleStatus,
+    'subtitleNote': plan.subtitleNote,
   };
 }
 
@@ -213,6 +265,25 @@ AnimeDownloadPlan? decodeAnimeDownloadPlan(Map<dynamic, dynamic> raw) {
               (raw['contentKind'] as String).isNotEmpty
           ? raw['contentKind'] as String
           : AnimeDownloadPlan.kindVideo,
+      jimakuEntryId:
+          raw['jimakuEntryId'] is int ? raw['jimakuEntryId'] as int : null,
+      jimakuEntryName: raw['jimakuEntryName'] is String
+          ? raw['jimakuEntryName'] as String
+          : null,
+      jimakuLanguage: raw['jimakuLanguage'] is String
+          ? raw['jimakuLanguage'] as String
+          : null,
+      // 缺字段（老计划）→ 字幕在选种时就下好了：有暂存条目即 resolved，否则 none。
+      // 绝不能落成 pending，否则老计划会在完成时被当成「还没取字幕」再取一遍，
+      // 把用户已有的暂存/sidecar 搅乱。
+      subtitleStatus: raw['subtitleStatus'] is String &&
+              (raw['subtitleStatus'] as String).isNotEmpty
+          ? raw['subtitleStatus'] as String
+          : (subtitles.isEmpty
+              ? AnimeDownloadPlan.subtitleNone
+              : AnimeDownloadPlan.subtitleResolved),
+      subtitleNote:
+          raw['subtitleNote'] is String ? raw['subtitleNote'] as String : null,
     );
   } catch (_) {
     return null;
