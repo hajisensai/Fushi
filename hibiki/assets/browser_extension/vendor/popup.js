@@ -2784,8 +2784,11 @@ window.hoshiPopupMineFirstEntry = async function() {
     return true;
 };
 
-// 查词弹窗的键盘快捷键（用户请求：「点那个加号的动作」要能用键盘触发，app 内 / app 外 /
-// 浏览器都要）。制卡默认 Ctrl+Enter；app 外的裸 WebView2 表面由 popup_settings_injection
+// 查词弹窗的键盘快捷键（用户请求：「点那个加号的动作」要能用键盘触发）。
+// 实际覆盖面：app 内弹窗、浏览器扩展、以及 app 外**已获得焦点的剪贴板面板**。app 外的
+// 瞬态查词覆盖窗带 WS_EX_NOACTIVATE、永不接收键盘焦点（且 runner 无键盘转发），本监听在
+// 那个表面上收不到任何 keydown——不是没接线，是物理上到不了，别把它算进「都能用」。
+// 制卡默认 Ctrl+Enter；app 外的裸 WebView2 表面由 popup_settings_injection
 // 注入 window.__hoshiPopupKeyBindings 覆盖成用户在「快捷键」设置里配的绑定（dictionaryPopup
 // scope 的三个动作）。三种取值语义各不相同，别合并：
 //   · undefined（浏览器扩展：没有注入通道）→ 用下面的内置默认；

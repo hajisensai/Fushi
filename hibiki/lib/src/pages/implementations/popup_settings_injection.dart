@@ -39,8 +39,14 @@ class PopupSettingsOptions {
   });
 
   /// App-outside (Windows bare-WebView2 global lookup) frame. Adds the
-  /// `global-lookup` document class, the monochrome icon-font override, and
-  /// hides the `.mine-button` (no card mining outside the app).
+  /// `global-lookup` document class and the monochrome icon-font override, and
+  /// is what gates the popup keyboard-binding injection
+  /// (`window.__hoshiPopupKeyBindings`; in-app hosts get an explicit `null`).
+  ///
+  /// It does NOT hide `.mine-button` any more — this doc used to claim "no card
+  /// mining outside the app", but that premise was retired by TODO-1188 /
+  /// BUG-730 and the `display:none` was removed in BUG-774 (see the long note on
+  /// `_globalLookupIconFontJs` below). Both app-outside surfaces CAN mine.
   final bool globalLookup;
 
   /// TODO-1065: the app-OUTSIDE / floating-subtitle popup (popup_main host). Adds

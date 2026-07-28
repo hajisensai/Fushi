@@ -350,7 +350,7 @@ enum ShortcutAction {
   popupNextEntry(ShortcutScope.dictionaryPopup, 'popup_next_entry'),
   popupPrevEntry(ShortcutScope.dictionaryPopup, 'popup_prev_entry'),
 
-  // 制卡（用户请求：「点那个加号的动作」要有快捷键，且 app 内 / app 外 / 浏览器都能用）。
+  // 制卡（用户请求：「点那个加号的动作」要有快捷键）。
   // 语义上这个动作属于**弹窗**而非某个页面——同一份 popup.js 同时是 app 内弹窗、app 外裸
   // WebView2 查词窗和浏览器扩展弹窗的实现，加号也只有那一个（`.mine-button`）。故它落在
   // dictionaryPopup scope，一个绑定覆盖三处，而不是给每个页面各开一个「制卡」动作。
@@ -359,11 +359,19 @@ enum ShortcutAction {
   //   · app 内（焦点在 Flutter 页）：Dart 侧派发。阅读器沿用既有的
   //     readerCreateCardFromPopup（Never break userspace，默认键与本动作一致）；视频页读
   //     本动作的键盘绑定（见 video_hibiki_page 的 _buildVideoShortcuts）。
-  //   · app 外（焦点在裸 WebView2 查词窗 / 剪贴板面板）：绑定经 popup_settings_injection
-  //     注入成 window.__hoshiMineKeyBindings，由 popup.js 自己判定。
+  //   · app 外（焦点在裸 WebView2 表面）：绑定经 popup_settings_injection 注入成
+  //     window.__hoshiPopupKeyBindings，由 popup.js 自己判定。
   //   · 浏览器扩展：没有注入通道，吃 popup.js 里的同款内置默认值。
   // in-app 宿主会被显式注入 `null` 关掉 JS 侧判定——那里由 Dart 负责，两边都开就有在
   // 「WebView 键盘桥把同一次按键同时喂给 Flutter 和 JS」时制出两张卡的风险。
+  //
+  // ⚠️ app 外这一端**只有剪贴板面板真能用，且要用户先点过面板**：面板实例走
+  // `SetActivatable(true)`（flutter_window.cpp）故能拿键盘焦点；而**瞬态查词覆盖窗**默认
+  // `activatable_ = false`，带 `WS_EX_NOACTIVATE`（global_lookup_window.cpp:988）——它
+  // 永不接收键盘焦点，runner 侧也没有任何键盘转发/钩子，所以本动作在那个表面上**物理上
+  // 不可能触发**。galgame 场景焦点通常在游戏上，不先点面板就按不到。要覆盖瞬态窗只有两条
+  // 路（去掉 NOACTIVATE = 抢游戏焦点、违背它的设计初衷；或上全局 RegisterHotKey），都是
+  // 产品取舍，未做——别把这里的实现说成「app 内 / app 外 / 浏览器都能用」。
   popupMineEntry(ShortcutScope.dictionaryPopup, 'popup_mine_entry');
 
   const ShortcutAction(this.scope, this.key);
