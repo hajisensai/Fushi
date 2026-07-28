@@ -24,6 +24,14 @@
   这条链路没有可跑的运行时测试面（真实 WebView2 / InAppWebView 才有 `audio.play()`），故守
   在源码层：三份 popup.js 均含 `__hibikiWordAudioLastError` 且不得回潮 `.catch(() => false)`、
   三份字节一致、host 桥与 app 内注入脚本均回传原因、两端 handler 均记 `reason=`。
+  **审查中补掉两处假绿**（均经变异实测确认）：① 所有正向锚点原本扫的是**含注释的**全文，而
+  讲根因的注释里就写着 `__hibikiWordAudioLastError`——把代码侧属性整体改名、契约端到端断掉，
+  守卫照样绿；现统一扫 `stripLineComments` 后的源码。② 原本只查「这个名字出现过」，而
+  BUG 根因是 **`play()` 的 rejection 分支**丢了 DOMException——删掉那一句赋值，名字仍在
+  `EmptyUrl` 分支和成功清空处，守卫照样绿；现用括号配平精确截出 rejection 回调体再断言
+  （用「其后 N 字符」的窗口会把外层 `} catch (e) { noteError(e); }` 圈进来，仍是假绿，
+  第一版加固就这么漏过一次）。`reason=` 那两条也从裸 `contains` 收紧到锚在
+  `wordAudioPlayed` 附近的窗口内（大文件里任何别处的 `reason=` 都能满足裸写法）。
 - **备注**：**尚未定案的部分**——已实测排除本地音频库（6.27GB 库随机词冷读 0.3ms、取字节
   0.5ms）、Dart 解析（浮窗日志 41 次成对打点 p50 3ms / max 46ms）、桥往返（同桥 1445 次
   p50 9ms / p99 295ms）、远端音源（用户配置里全部禁用）、AnkiConnect（13-33ms）；回落路径

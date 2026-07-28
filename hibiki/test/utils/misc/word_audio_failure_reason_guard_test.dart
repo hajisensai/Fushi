@@ -32,15 +32,52 @@ void main() {
     for (final String path in popupMirrors) {
       final File f = File(path);
       expect(f.existsSync(), true, reason: '镜像缺失：$path');
-      final String src = f.readAsStringSync();
+      // 全部断言一律扫**剥掉注释后**的源码：解释「BUG-1204 根因长什么样」的注释里
+      // 必然写着 __hibikiWordAudioLastError 和旧写法，连注释一起扫等于让文档给自己
+      // 背书——把实现整段删光、只留注释也照样绿（变异实测证实过这条假绿）。
+      final String code = stripLineComments(f.readAsStringSync());
 
-      expect(src.contains('__hibikiWordAudioLastError'), true,
+      expect(code.contains('__hibikiWordAudioLastError'), true,
           reason: '$path 必须把 audio.play() 的失败原因存到 '
               '__hibikiWordAudioLastError 供宿主回传（BUG-1204）');
-      // 正是这个模式吞掉了根因，绝不允许回潮（只看真代码，不看注释）。
-      expect(stripLineComments(src).contains('.catch(() => false)'), false,
+      // 正是这个模式吞掉了根因，绝不允许回潮。
+      expect(code.contains('.catch(() => false)'), false,
           reason: '$path 不得再用 `.catch(() => false)` 丢弃 DOMException'
               '——那正是 BUG-1204 的根因');
+
+      // 光有这个名字还不够：BUG-1204 的根因是 **play() 的 rejection 分支**把
+      // DOMException 丢了。只查名字出现过，删掉 rejection 里那一句赋值照样绿
+      // （名字在 EmptyUrl 分支和成功清空处仍在）——变异实测证实过。故锚到
+      // `audio.play()` 之后的第一个 `.catch(`，要求它的回调体里真的记了原因。
+      //
+      // 括号配平精确截出回调体，**不能**用「其后 N 个字符」的窗口：那会把外层
+      // `} catch (e) { noteError(e); }` 也圈进来，删掉 rejection 里的记录照样绿
+      // （第一版加固就是这么漏的，变异实测才发现）。
+      final int playIdx = code.indexOf('audio.play()');
+      expect(playIdx, greaterThanOrEqualTo(0),
+          reason: '$path 里找不到 audio.play()，守卫锚点失效，请同步更新本测试');
+      final int catchIdx = code.indexOf('.catch(', playIdx);
+      expect(catchIdx, greaterThanOrEqualTo(0),
+          reason: '$path 的 audio.play() 之后必须有 rejection 分支');
+      int depth = 0;
+      int end = code.indexOf('(', catchIdx);
+      for (; end < code.length; end++) {
+        if (code[end] == '(') depth++;
+        if (code[end] == ')') {
+          depth--;
+          if (depth == 0) {
+            end++;
+            break;
+          }
+        }
+      }
+      final String rejection = code.substring(catchIdx, end);
+      expect(
+          rejection.contains('noteError') ||
+              rejection.contains('__hibikiWordAudioLastError'),
+          true,
+          reason: '$path 的 audio.play() rejection 分支必须把 DOMException 记进失败'
+              '原因——删掉这一句就是 BUG-1204 的根因原样回潮');
     }
   });
 
@@ -53,8 +90,9 @@ void main() {
   });
 
   test('app 外 host 桥把失败原因作为第三个参数回传', () {
-    final String src =
-        File('assets/popup/global_lookup_host.js').readAsStringSync();
+    // 同样剥注释：讲根因的注释里就写着这个属性名，连注释一起扫会自我背书。
+    final String src = stripLineComments(
+        File('assets/popup/global_lookup_host.js').readAsStringSync());
     expect(src.contains('__hibikiWordAudioLastError'), true,
         reason: 'host 注入的 report 必须读取 realm 上的失败原因（BUG-1204）');
     // 帧未加载 / eval 失败也各有自己的原因串，不与 play() 的 DOMException 混淆。
@@ -65,24 +103,43 @@ void main() {
   });
 
   test('app 内注入脚本同样回传失败原因', () {
-    final String src =
+    final String src = stripLineComments(
         File('lib/src/pages/implementations/dictionary_popup_webview.dart')
-            .readAsStringSync();
+            .readAsStringSync());
     expect(src.contains('__hibikiWordAudioLastError'), true,
         reason: 'app 内 wordAudioPlayed 注入脚本必须一并回传原因，'
             '否则 app 内首播失败仍无法定位（BUG-1204）');
   });
 
   test('两端 Dart handler 都把失败原因写进日志', () {
-    final String overlay =
-        File('lib/src/lookup/global_lookup_controller.dart').readAsStringSync();
-    expect(overlay.contains('reason='), true,
-        reason: 'app 外 wordAudioPlayed handler 必须记录 reason（BUG-1204）');
+    /// 锚到 `wordAudioPlayed` handler 之后的窗口内再找 `reason=`：这两个都是几千行的
+    /// 大文件，裸 `contains('reason=')` 会被文件里任何别处的日志满足（假绿）。
+    void expectReasonLoggedNearHandler(String path) {
+      final String code = stripLineComments(File(path).readAsStringSync());
+      // `wordAudioPlayed` 在同一文件里可能出现多次（注入脚本里的 callHandler 名 +
+      // Dart 侧的 handler 注册），只要**任一**处附近记了原因即可。
+      final List<int> spots = <int>[];
+      for (int i = code.indexOf('wordAudioPlayed');
+          i >= 0;
+          i = code.indexOf('wordAudioPlayed', i + 1)) {
+        spots.add(i);
+      }
+      expect(spots, isNotEmpty,
+          reason: '$path 里找不到 wordAudioPlayed，守卫锚点失效，请同步更新本测试');
+      final bool logged = spots.any((int idx) {
+        final int end = idx + 1200;
+        return code
+            .substring(idx, end > code.length ? code.length : end)
+            .contains('reason=');
+      });
+      expect(logged, true,
+          reason: '$path 的 wordAudioPlayed handler 必须把失败原因记进日志，'
+              '否则首播失败仍只是一个光秃秃的 false（BUG-1204）');
+    }
 
-    final String inApp =
-        File('lib/src/pages/implementations/dictionary_popup_webview.dart')
-            .readAsStringSync();
-    expect(inApp.contains('reason='), true,
-        reason: 'app 内 wordAudioPlayed handler 必须记录 reason（BUG-1204）');
+    expectReasonLoggedNearHandler(
+        'lib/src/lookup/global_lookup_controller.dart');
+    expectReasonLoggedNearHandler(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart');
   });
 }

@@ -46,19 +46,26 @@ void main() {
     sentence: '走り出した。',
   );
 
-  test('封面不被音频阻塞：音频仍在 ffmpeg 里时，封面已经开工', () async {
-    // 方向很关键：必须让**音频**挂住、看**封面**能否开工。
+  test('封面与音频真并行：两条必须同时在途（任一方向的串行都挂死）', () async {
+    // 判据只能是「**两条同时在途**」——两边都挂住，要求两个 Started 都亮才放行。
     //
-    // 反过来写（挂住 GIF、断言音频已开工）是个**假绿**测试：`_resolveAudioPath` 是
-    // async 函数，`audioFuture` 一创建就同步跑到它内部第一个 await，所以哪怕引擎退回
-    // 「先 await 音频再做封面」的串行版，音频也照样"已开工"——断言恒真、抓不到回归。
-    // 实测验证过：把 await 移回封面之前，那种写法依然全绿。
+    // 单向挂（只挂音频 + 快 GIF、断言「音频在途时封面已开工」）是**假绿**，本守卫第一版
+    // 正是那么写的：改造前的真实串行是**封面在前、音频在后**，那个顺序下 GIF 先跑完
+    // （gifStarted 早已亮）、音频随后才开工（audioStarted 也亮），两个 await 都立即返回，
+    // 断言恒真。变异实测证实：把引擎退回原始串行序，那一版全绿、抓不到回归。
+    // 反着写（挂 GIF、断言音频已开工）同样假绿——`audioFuture` 一创建就同步跑到内部
+    // 首个 await，串行也照样"已开工"。
     //
-    // 这里的写法则是确定性的：串行版会先 await 挂住的音频，封面永远轮不到，
-    // gifStarted 等不到 → 测试超时红。不依赖 wall-clock 阈值，故不 flaky。
+    // 两边都挂住则对**两个方向**都确定性：
+    //   · 并行版 → 两条各自开工后卡住，两个 Started 都亮 → 通过；
+    //   · 封面在前的串行 → GIF 卡住，音频永不开工 → audioStarted 等不到 → 红；
+    //   · 音频在前的串行 → 反之 gifStarted 等不到 → 红。
+    // 全 Completer 驱动、不依赖 wall-clock 阈值，故不 flaky；显式 timeout 让回归立刻
+    // 红并说清哪条没开工，不必白等 30 秒默认超时。
     final Completer<void> audioStarted = Completer<void>();
     final Completer<void> audioRelease = Completer<void>();
     final Completer<void> gifStarted = Completer<void>();
+    final Completer<void> gifRelease = Completer<void>();
 
     Future<String?> slowAudio({
       required String inputPath,
@@ -78,7 +85,7 @@ void main() {
       return f.path;
     }
 
-    Future<String?> fastGif({
+    Future<String?> slowGif({
       required String inputPath,
       required int startMs,
       required int endMs,
@@ -89,13 +96,14 @@ void main() {
       String? tlsPinSha256,
     }) async {
       if (!gifStarted.isCompleted) gifStarted.complete();
+      await gifRelease.future;
       final File f = File(outputPath)..writeAsStringSync('gif');
       return f.path;
     }
 
     final _FakeRepo repo = _FakeRepo();
     final Future<ImmersionMiningResult> mining = ImmersionMiningEngine(
-      gifExtractor: fastGif,
+      gifExtractor: slowGif,
       audioExtractor: slowAudio,
     ).mine(
       request,
@@ -104,10 +112,16 @@ void main() {
       repo: repo,
     );
 
-    await audioStarted.future;
-    // 关键断言：音频还卡在 ffmpeg 里，封面已经开工——这就是「并行」。
-    // 串行实现在这一行挂死。
-    await gifStarted.future;
+    // 关键断言：两条**同时**卡在各自的 ffmpeg 里——这才是「并行」。任一方向的串行都
+    // 只会有一条开工，另一条的 Started 永远不亮 → 这里超时红。
+    await Future.wait<void>(
+            <Future<void>>[audioStarted.future, gifStarted.future])
+        .timeout(const Duration(seconds: 10), onTimeout: () {
+      fail('封面与音频没有并行：只有 '
+          '${gifStarted.isCompleted ? '封面' : '音频'} 开工了，'
+          '另一条被前一条 await 挡住（引擎退回串行）');
+    });
+    gifRelease.complete();
     audioRelease.complete();
 
     final ImmersionMiningResult res = await mining;
