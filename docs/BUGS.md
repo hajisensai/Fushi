@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1194](bugs/BUG-1194-collection-reorder-nonvideo-order.md) | ✅ | ✅ | 视频合集详情页拖拽排序打乱非 video 成员的跨种类顺序 |
 | [BUG-1188](bugs/BUG-1188-dataroot-pick-layout-split.md) | ✅ | ✅ | 选目录迁移产出第三种布局，到不了新装形态（DB 被拖进文档目录） |
 | [BUG-1187](bugs/BUG-1187-gal-unvoiced-line-gets-bgm.md) | ✅ | ✅ | galgame 无配音句被整机混音兜底成 BGM |
 | [BUG-1186](bugs/BUG-1186-appbar-actions-collapse-uses-window-width.md) | ✅ | ✅ | AppBar 动作折叠判据读整窗宽，分栏/受限宽容器里永不折叠 |
