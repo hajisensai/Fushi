@@ -716,6 +716,18 @@ class ClipboardPanelController {
       _rootHitStart = hitStart < 0 ? 0 : hitStart;
       _seedRootFrame(suffix, result);
       await _renderPanel(model);
+      // BUG-1210 的另一半：点句中字**也是用户主动查词**，与 update() 那条剪贴板流同样
+      // 该按 autoReadOnLookup 自动发音。此前只有 update() 接了线，点字换根这条整条没有
+      // 朗读调用——同一个面板里「复制进来会读、点字不读」。
+      //
+      // 与 update() 同款：必须在 _renderPanel 这个 await **之后**再核对一次 seq。本方法
+      // 的契约是「每个 await 后核对，过期即弃」（VN 流乱序守卫），少这一句，被后一句
+      // 剪贴板顶掉的旧点击仍会把旧词读出来——屏幕上是新句、耳朵里是上一次点的字。
+      if (seq != _updateSeq) {
+        glog('panel: banner autoread skipped (superseded seq=$seq)');
+        return;
+      }
+      _autoRead.autoReadFirstEntry(model, result);
     } catch (e, st) {
       glog('panel: banner lookup EXCEPTION $e\n$st');
     }
@@ -815,6 +827,15 @@ class ClipboardPanelController {
       _frameResults[child.id] = result;
       _frameAnchors[child.id] = anchorRect;
       await _renderPanel(model);
+      // BUG-1210 的另一半：嵌套查词（点释义里的词再查）在**瞬态覆盖窗上是会朗读的**
+      // （global_lookup_controller 的 _lookupNested 末尾就有 _autoReadFirstEntry），
+      // 面板这条却没有——两个表面在同一个动作上行为漂开，正是 BUG-1210 要收口掉的东西。
+      //
+      // 这里**不**加 seq 核对：本方法自始就不参与 root 的 latest-wins（不领 _updateSeq、
+      // 不核对），它是压栈行为而非换根；只给朗读单独引入一套序号语义，会和上面既有的
+      // 「压栈 + 渲染」边界不一致（渲染出来了却不读）。与瞬态窗 nested 保持同构。
+      // 无结果的嵌套查词在上面 identical(next, _stack) 处已 return，走不到这里。
+      _autoRead.autoReadFirstEntry(model, result);
     } catch (e, st) {
       glog('panel: nested EXCEPTION $e\n$st');
     }

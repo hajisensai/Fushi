@@ -107,4 +107,52 @@ void main() {
         reason: '朗读调用与它前面最后一个 await 之间必须核对 latest-wins 序号，'
             '否则被顶掉的旧查词会读出与屏幕不符的旧词（BUG-1210）');
   });
+
+  test('每条查词路径都朗读：两个表面里凡是查词的方法，都不能少了朗读调用', () {
+    // 为什么要按**方法**粒度再守一层：auto_read_surface_coverage_guard 是按**文件**
+    // 粒度的（新增查词表面必须声明），但同一个文件里删掉其中一条路径的朗读它抓不到——
+    // 那正是 BUG-1210 第一版的形态：面板 update() 接了朗读，同文件的 _lookupFromBanner
+    // 和 _lookupNested 没接，于是「复制进来会读、点字不读」，而嵌套那条在瞬态覆盖窗上
+    // 又是会读的，两个表面同一动作行为漂开。变异实测证实过：删掉 _lookupNested 的朗读
+    // 调用，文件粒度那条守卫仍然全绿。
+    //
+    // 判据：把源码切成类成员方法，凡方法体内查了词（await model.searchDictionary），
+    // 就必须也有朗读调用。不是「数量相等」那种快照断言——新增一条查词路径同样会被要求
+    // 接朗读，而不是等着谁去更新一个计数。
+    List<({String name, String body})> splitMethods(String src) {
+      final RegExp head = RegExp(
+          r'^  (?:Future<[^>]*>|void|bool|int|String)\s+(\w+)\(',
+          multiLine: true);
+      final List<RegExpMatch> ms = head.allMatches(src).toList();
+      return <({String name, String body})>[
+        for (int i = 0; i < ms.length; i++)
+          (
+            name: ms[i].group(1)!,
+            body: src.substring(
+                ms[i].start, i + 1 < ms.length ? ms[i + 1].start : src.length),
+          ),
+      ];
+    }
+
+    for (final ({String src, String label, String readCall}) surface
+        in <({String src, String label, String readCall})>[
+      (src: panel, label: '剪贴板面板', readCall: 'autoReadFirstEntry('),
+      (src: overlay, label: '瞬态覆盖窗', readCall: 'autoReadFirstEntry('),
+    ]) {
+      final List<({String name, String body})> lookupMethods =
+          splitMethods(surface.src)
+              .where((({String name, String body}) m) =>
+                  m.body.contains('await model.searchDictionary('))
+              .toList();
+      expect(lookupMethods, isNotEmpty,
+          reason: '${surface.label}里一个查词方法都没切出来——守卫锚点失效了，'
+              '请修切分逻辑而不是删断言');
+      for (final ({String name, String body}) m in lookupMethods) {
+        expect(m.body.contains(surface.readCall), true,
+            reason: '${surface.label}的 ${m.name}() 查了词却没有朗读调用。'
+                '同一个表面内不同查词路径行为必须一致，否则就是 BUG-1210 那种'
+                '「这条读、那条不读」；确实不该读的路径请在这里显式说明理由后豁免。');
+      }
+    }
+  });
 }

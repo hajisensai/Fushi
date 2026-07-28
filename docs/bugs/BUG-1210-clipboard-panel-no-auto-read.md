@@ -50,3 +50,38 @@
   打破了这条锚在两参数字面量上的既有守卫，而当时的定向测试没覆盖 `test/lookup/`。本 PR 把
   锚点改成前缀匹配并补断 `FrameNotLoaded`，守的意图（未加载帧必须立刻回 false，不拖满 5s
   超时）一字未改，实际比原来更严。
+
+### 补记（2026-07-28）：第一版只修了三条路径里的一条
+
+第一版把朗读接在了 `update()`（剪贴板流）上，并据此判定「剪贴板面板是**唯一**漏接的表面」。
+那个判定是**循环论证**：当时是从 `autoRead` 符号侧去找接入点，只能看见「已经调了朗读的地方」，
+天生看不见「没调的路径」。
+
+改从**结果产生侧**穷举（`AppModel.searchDictionary(` 的全部 23 个调用点，并验证过没有旁路：
+无表面绕开它直连引擎，`DictionarySearchResult` 直接构造的 3 处都不是独立表面）后发现，
+同一个面板里还有两条**用户主动查词**的路径没接：
+
+- `_lookupFromBanner`（点句中字换根）—— 用户表现为「复制进来会读、点字不读」。
+- `_lookupNested`（点释义里的词再查）—— 更要命：**瞬态覆盖窗的同名路径是会读的**
+  （`global_lookup_controller._lookupNested` 末尾就有 `_autoReadFirstEntry`），两个表面在
+  同一个动作上行为漂开，而「两表面不得漂开」正是本条要收口的东西。
+
+两条都已补上。`_lookupFromBanner` 与 `update()` 同款，在 `_renderPanel` 这个 await **之后**
+再核对一次 latest-wins 序号才朗读（少这一句，被后一句剪贴板顶掉的旧点击会读出旧词）；
+`_lookupNested` 不加序号核对，因为它自始就不参与 root 的 latest-wins（是压栈不是换根），
+只给朗读单独引入一套序号语义会和既有的「压栈 + 渲染」边界不一致，与瞬态窗 nested 保持同构。
+
+守卫补两层：`test/lookup/auto_read_surface_coverage_guard_test.dart` 按**文件**粒度要求每个
+查词调用点显式声明接不接朗读（豁免必须写具体理由，占位符会红）；
+`overlay_auto_read_parity_test.dart` 再按**方法**粒度要求「凡查了词的方法都得有朗读调用」——
+前者抓不到同文件内删掉某一条路径的朗读，后者能（变异实测证实）。
+
+### 仍未处理：Android 悬浮词典（待产品拍板）
+
+`floating_dict_page._doSearch` 与 `app_model._setupFloatingDictHandlers.onSearch` 两条路径同样
+不朗读。同为「搜索框手动输入」的 `home_dictionary_page` 是朗读的，故**行为并不一致**；但悬浮
+词典是浮在别的 app 上层的小窗，突然出声更打扰，该不该自动朗读是产品取舍。已进守卫的豁免名单
+并注明「待产品拍板」，定了再挪进 wiredSurfaces。
+
+- **[ ] 未做真机复测（如实留空）**：本轮全部是静态代码分析 + 单测，**没有**在真机上实际
+  复现「点字查词 / 嵌套查词听不到声音 → 修后能听到」。「用户实际能不能听到」未经验证。
