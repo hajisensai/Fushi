@@ -67,11 +67,17 @@ enum ShortcutScope {
   }
 
   /// 本 scope 真正会被消费的输入通道。设置页的编辑对话框据此渲染章节——绑了不会
-  /// 生效的通道根本不给入口，杜绝「设置里能配、按了没反应」的死项（同
-  /// shortcut_action_wiring_guard 的不变式，只是发生在 UI 层）。
+  /// 生效的通道根本不给入口，杜绝「设置里能配、按了没反应」的死项。
   ///
-  /// 绝大多数 scope 走页面派发，键盘/手柄/鼠标三通道全通；[dictionaryPopup] 的
-  /// 动作只由弹窗 WebView 的滚轮事件触发（见枚举注释），故只开滚轮。
+  /// ⚠️ 这里开一个通道，就等于对用户承诺该通道真的能用，因此**必须同时存在该通道
+  /// 的解析入口**（`resolveKeyboard/resolveGamepad/resolveMouse(scope: 本 scope)`，
+  /// 或按 action 取 `bindingsFor(...).<通道>Bindings`）。守卫
+  /// `shortcut_channel_wiring_guard_test` 会对着源码核这件事：新开一个没有解析入口
+  /// 的通道即红。它与 `shortcut_action_wiring_guard` 互补——后者只看「action 符号
+  /// 有没有出现过」，抓不到「同一个 action 的键盘接了、手柄没接」这种半接线。
+  ///
+  /// 多数 scope 走页面派发，键盘/手柄/鼠标三通道全通；[manga] 只接了键盘、
+  /// [dictionaryPopup] 的动作只由弹窗 WebView 的滚轮事件触发（见各自 case 注释）。
   Set<ShortcutChannel> get channels {
     switch (this) {
       case reader:
@@ -79,7 +85,6 @@ enum ShortcutScope {
       case home:
       case global:
       case video:
-      case manga:
       case gamepad:
       case globalExternal:
         return const <ShortcutChannel>{
@@ -87,6 +92,13 @@ enum ShortcutScope {
           ShortcutChannel.gamepad,
           ShortcutChannel.mouse,
         };
+      // 漫画页只有键盘解析入口：`_resolveMangaKeyAction` 走 `resolveKeyboard`，
+      // 滚轮翻页是硬编码的 `wheelInputAction`（不查注册表），手柄则完全没接
+      // （既无 `resolveGamepad`，也无 `GamepadButtonIntent` 的 Action）。开着手柄/
+      // 鼠标通道 = 设置页给出能配却按了没反应的入口，比没有这个选项更糟。
+      // 接上对应解析入口（照 reader `_handleGamepadButton`）并真机验证后再开。
+      case manga:
+        return const <ShortcutChannel>{ShortcutChannel.keyboard};
       case dictionaryPopup:
         return const <ShortcutChannel>{ShortcutChannel.wheel};
     }

@@ -56,6 +56,8 @@
 
 翻页方向：注册表存**页序语义**（forward = 下一页），左右键的物理朝向由 `shortcuts/manga_arrow_override.dart` 的 `resolveMangaArrowPageTurn` 按跨页方向（日漫默认 rtl）校正，与 reader 的 `resolveReaderArrowPageTurn` 同构。方向不能进注册表——注册表全局、每本书排版不同，直接把 `ArrowLeft` 绑成 backward 会让 rtl 的书翻反。
 
-键盘桥用 `forwardRepeats: false`（本页有意设计：按住方向键不堆翻页风暴）+ `stopPropagation: true`。桥每次换加载窗口都会重新注入，靠生成器自带的幂等守卫防 listener 叠加（否则一次按键翻两页）。
+键盘桥用 `forwardRepeats: false`（本页有意设计：按住方向键不堆翻页风暴）+ `stopPropagation: true`。注意桥从旧手写版的 **capture 阶段**（`addEventListener(..., true)`）改成了共享生成器的**冒泡阶段**（仍带 `stopImmediatePropagation`）——漫画文档目前没有别的 `keydown` 监听，所以行为等价；若将来给漫画页图注入了自己的键盘处理，要重新核这条。桥每次换加载窗口都会重新注入，靠生成器自带的幂等守卫防 listener 叠加（否则一次按键翻两页）。
 
-新增 action 后若 `shortcut_action_wiring_guard` 报「死项」，是执行体清单没登记本页——那正是它该拦的。
+**③ 漫画只接了键盘通道，没接手柄/鼠标。** `ShortcutScope.manga.channels` 因此只开 `keyboard`，默认表里也**不许**有手柄绑定。曾经配过 RB/LB/dpad/B，但本页既没有 `resolveGamepad`、也没有 `GamepadButtonIntent` 的 Action（Android 的 `gameButton*` 键事件同样匹配不到纯键盘绑定），结果是用户在设置里能配、按下去毫无反应——**比压根没这个选项更糟**，用户会以为自己手柄坏了。要加回来必须先照 reader 的 `_handleGamepadButton`（`caret.part.dart`）接上解析入口 + 在 build 里挂 `Actions(GamepadButtonIntent: …)`，并真机验证过再开通道。滚轮同理：本页翻页走硬编码的 `wheelInputAction`，不查注册表。
+
+两条守卫分工别搞混：`shortcut_action_wiring_guard` 只看「`ShortcutAction.<名>` 这个符号在执行体文件里出现过没有」，抓不到「键盘接了、手柄没接」这种半接线；`shortcut_channel_wiring_guard` 才是按 **(scope, channel)** 核解析入口的那条——新增 action 后报「死项」找前者，开了通道却没接线报红找后者。
