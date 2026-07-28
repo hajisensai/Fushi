@@ -609,6 +609,7 @@ hook_toolbar::Layout FloatingLyricWindow::ComputePassThroughToolbarLayout()
       layout.rect.left + static_cast<LONG>(std::lround(row_w + margin * 2));
   layout.rect.bottom =
       layout.rect.top + static_cast<LONG>(std::lround(btn + margin * 2));
+  layout.owner_origin = POINT{wr.left, wr.top};
   layout.button_px = btn;
   layout.gap_px = gap;
   layout.margin_px = margin;

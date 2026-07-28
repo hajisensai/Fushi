@@ -6,54 +6,87 @@ import 'package:path/path.dart' as p;
 /// Hook 台词浮窗工具栏的绘制与命中必须来自同一个槽数：Render() 画 N 个按钮，
 /// ControlActionAt() 就得给出 N 个 action，否则点击会落到看不见的按钮上，或者
 /// 整排按钮相对居中布局漂移（浮窗是独立 native 窗口，Dart 侧测不到这层）。
+///
+/// BUG-951 起工具栏是两个窗口（正文窗内嵌一份 + 穿透态的独立 HookToolbarWindow），
+/// 槽表因此上移到 `hook_toolbar_window.h` 的 `kSlotActions`；两窗同表索引，本守卫
+/// 也随之改成「槽数 / 槽表 / 字形 / 命中四者对齐」，而不是数已经不存在的
+/// `hook_button(N,` 与 `case N:` 字面量。
 void main() {
   final String runner = p.join('windows', 'runner');
   final File window = File(p.join(runner, 'floating_lyric_window.cpp'));
+  final File toolbarHeader = File(p.join(runner, 'hook_toolbar_window.h'));
+  final File toolbar = File(p.join(runner, 'hook_toolbar_window.cpp'));
   final File host = File(p.join(runner, 'flutter_window.cpp'));
 
   test('hook 工具栏槽数与绘制、命中映射三者一致', () {
     final String source = window.readAsStringSync();
-    final RegExp slotCount =
-        RegExp(r'kHookTextControlSlotCount\s*=\s*(\d+)\s*;');
-    final Match? declared = slotCount.firstMatch(source);
-    expect(declared, isNotNull, reason: '找不到 kHookTextControlSlotCount 声明');
+    final String header = toolbarHeader.readAsStringSync();
+
+    final Match? declared =
+        RegExp(r'kSlotCount\s*=\s*(\d+)\s*;').firstMatch(header);
+    expect(declared, isNotNull, reason: '找不到 hook_toolbar::kSlotCount 声明');
     final int slots = int.parse(declared!.group(1)!);
 
-    final List<int> drawn = RegExp(r'hook_button\((\d+),')
-        .allMatches(source)
-        .map((Match m) => int.parse(m.group(1)!))
-        .toList()
-      ..sort();
+    // 正文窗不得再持有自己的槽数：必须从共享表推导。
     expect(
-      drawn,
-      List<int>.generate(slots, (int i) => i),
-      reason: 'Render() 必须正好画出 0..N-1 全部槽位',
+      source.contains('kHookTextControlSlotCount = hook_toolbar::kSlotCount'),
+      isTrue,
+      reason: '正文窗的槽数必须由 hook_toolbar::kSlotCount 推导，不得另开一份',
     );
 
-    final int hookHitStart = source.indexOf('if (hook_text_mode_) {',
-        source.indexOf('std::string FloatingLyricWindow::ControlActionAt'));
-    expect(hookHitStart, greaterThan(0));
-    // 只截 hook 分支自身：后面还有 clipboard / 歌词条的槽位 switch，混进来会误判。
-    final int hookHitEnd = source.indexOf('const float lock_x', hookHitStart);
-    expect(hookHitEnd, greaterThan(hookHitStart));
-    final String hookHit = source.substring(hookHitStart, hookHitEnd);
-    final List<int> mapped = RegExp(r'case (\d+):')
-        .allMatches(hookHit)
+    // 槽表必须正好有 N 个 action。
+    final int tableStart = header.indexOf('kSlotActions');
+    expect(tableStart, greaterThan(0));
+    final String table =
+        header.substring(tableStart, header.indexOf('};', tableStart));
+    expect(
+      RegExp('"([a-zA-Z]+)"').allMatches(table).length,
+      slots,
+      reason: 'kSlotActions 必须为每个槽位给出 action',
+    );
+
+    // 字形表必须覆盖 0..N-1（default 分支只是兜底，不算覆盖）。
+    final String toolbarSource = toolbar.readAsStringSync();
+    final int glyphStart = toolbarSource.indexOf('const wchar_t* SlotGlyph');
+    final int glyphEnd = toolbarSource.indexOf('bool SlotActive', glyphStart);
+    expect(glyphStart, greaterThan(0), reason: '找不到 SlotGlyph 定义');
+    expect(glyphEnd, greaterThan(glyphStart));
+    final String glyphBody = toolbarSource.substring(glyphStart, glyphEnd);
+    final List<int> glyphCases = RegExp(r'case (\d+):')
+        .allMatches(glyphBody)
         .map((Match m) => int.parse(m.group(1)!))
         .toList()
       ..sort();
     expect(
-      mapped,
+      glyphCases,
       List<int>.generate(slots, (int i) => i),
-      reason: 'ControlActionAt() 必须为每个绘制出来的槽位给出 action',
+      reason: 'SlotGlyph 必须为 0..N-1 每个槽位给出字形',
+    );
+
+    // 两个窗口的绘制与命中都必须遍历同一个槽数并索引同一张表。
+    expect(
+      source.contains('for (int slot = 0; slot < kHookTextControlSlotCount;'),
+      isTrue,
+      reason: '正文窗 Render() 必须按槽数循环画出全部槽位',
+    );
+    expect(
+      source.contains('hook_toolbar::kSlotActions[slot]'),
+      isTrue,
+      reason: 'ControlActionAt() 必须索引共享槽表，不得另抄一份映射',
+    );
+    expect(
+      toolbarSource.contains('hook_toolbar::kSlotActions[slot]'),
+      isTrue,
+      reason: '独立工具条窗的命中同样必须索引共享槽表',
     );
   });
 
   test('语音控件 action 与 native 状态方法齐全', () {
     final String source = window.readAsStringSync();
+    final String header = toolbarHeader.readAsStringSync();
     for (final String action in <String>['replayVoice', 'recaptureVoice']) {
       expect(
-        source,
+        header,
         contains('"$action"'),
         reason: '浮窗必须能把「$action」按钮点击回传给 Dart',
       );

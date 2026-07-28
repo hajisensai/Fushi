@@ -45,6 +45,8 @@ UINT32 GlyphLength(const wchar_t* glyph) {
 bool SameLayout(const hook_toolbar::Layout& a, const hook_toolbar::Layout& b) {
   return a.rect.left == b.rect.left && a.rect.top == b.rect.top &&
          a.rect.right == b.rect.right && a.rect.bottom == b.rect.bottom &&
+         a.owner_origin.x == b.owner_origin.x &&
+         a.owner_origin.y == b.owner_origin.y &&
          a.button_px == b.button_px && a.gap_px == b.gap_px &&
          a.margin_px == b.margin_px;
 }
@@ -355,10 +357,14 @@ LRESULT HookToolbarWindow::HandleMessage(UINT message, WPARAM wparam,
       pressed_ = true;
       dragging_ = false;
       press_origin_ = cursor;
-      // The owner's top-left is derived from the toolbar rect the owner itself
-      // gave us, so the anchor stays correct without a second GetWindowRect.
-      owner_drag_anchor_.x = cursor.x - layout_.rect.left;
-      owner_drag_anchor_.y = cursor.y - layout_.rect.top;
+      // Anchor on the OWNER's top-left, which the owner pushes down with the
+      // layout. Anchoring on the toolbar rect instead would make the first drag
+      // move jump the body by the (centred-row) toolbar offset — several
+      // hundred px — which also yanks the pill out from under the cursor and
+      // kills the drag, since a WS_EX_NOACTIVATE window only gets background
+      // capture while the cursor is over it.
+      owner_drag_anchor_.x = cursor.x - layout_.owner_origin.x;
+      owner_drag_anchor_.y = cursor.y - layout_.owner_origin.y;
       SetCapture(hwnd_);
       return 0;
     }

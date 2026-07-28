@@ -84,9 +84,14 @@ struct Style {
 // land exactly where the in-body toolbar used to draw them.
 struct Layout {
   RECT rect = {0, 0, 0, 0};  // toolbar window rect, screen px
-  float button_px = 0.0f;    // button edge length
-  float gap_px = 0.0f;       // gap between two buttons
-  float margin_px = 0.0f;    // padding between the window edge and the row
+  // Top-left of the OWNER (body) window, screen px. The toolbar rect is offset
+  // from it (the row is centred in the body and sits kControlsTopDip down), so
+  // an owner drag MUST anchor on this, not on |rect| — anchoring on the toolbar
+  // rect teleports the body by that offset the moment the drag starts.
+  POINT owner_origin = {0, 0};
+  float button_px = 0.0f;  // button edge length
+  float gap_px = 0.0f;     // gap between two buttons
+  float margin_px = 0.0f;  // padding between the window edge and the row
 };
 
 // Glyph drawn for |slot| under |states| (never null).

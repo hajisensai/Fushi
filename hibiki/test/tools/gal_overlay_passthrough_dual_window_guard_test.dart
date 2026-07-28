@@ -64,6 +64,14 @@ void main() {
   int countOf(String haystack, String needle) =>
       needle.allMatches(haystack).length;
 
+  /// Drops `// ...` comments so a call-site count cannot be thrown off (in
+  /// either direction) by prose that mentions the symbol.
+  String stripLineComments(String source) =>
+      source.split('\n').map((String line) {
+        final int slashes = line.indexOf('//');
+        return slashes < 0 ? line : line.substring(0, slashes);
+      }).join('\n');
+
   group('BUG-951 · the body window is really click-through', () {
     test('WS_EX_TRANSPARENT is applied, and only from one function', () {
       // The whole point of the fix: HTTRANSPARENT does not cross a process
@@ -114,11 +122,28 @@ void main() {
 
     test('pass-through is not driven by a timer (PR#460 regression)', () {
       for (final String source in <String>[body, toolbar]) {
-        expect(source.contains('SetTimer('), isFalse);
-        expect(source.contains('KillTimer('), isFalse);
+        // Any Win32 timer entry point at all, not just SetTimer/KillTimer:
+        // SetCoalescableTimer would otherwise re-create PR#460 verbatim while
+        // passing a SetTimer-only ban. Neither file has a legitimate timer.
+        expect(source.contains('Timer('), isFalse,
+            reason: 'No timer of any kind may drive pass-through.');
+        expect(source.contains('WM_TIMER'), isFalse);
+        // Nor a mouse hook, the other way to poll the cursor off-thread.
+        expect(source.contains('SetWindowsHookEx'), isFalse);
         expect(source.contains('PollCursorInteractivity'), isFalse);
         expect(source.contains('ApplyPassThroughHitTest'), isFalse);
       }
+    });
+
+    test('only the three lifecycle edges may re-apply pass-through', () {
+      // SetBodyExTransparent being funnelled through ApplyPassThroughExStyle is
+      // worth nothing if some cursor-driven poller may call the funnel itself.
+      // Show / Hide / SetPassThrough are the only legal callers; anything else
+      // means the "no state to race over" property has been given up.
+      final String code = stripLineComments(body);
+      expect(countOf(code, 'ApplyPassThroughExStyle()'), 3 + 1 /* definition */,
+          reason: 'Callers must stay exactly Show(), Hide(), SetPassThrough(). '
+              'A fourth caller is how a hover race gets back in.');
     });
 
     test('show / hide both route through the single applier', () {
