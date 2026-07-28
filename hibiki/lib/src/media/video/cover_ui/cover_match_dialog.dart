@@ -29,6 +29,7 @@ Future<void> showCoverMatchDialog({
   required VideoBookRow book,
   required List<String> collectionMemberUids,
   required VoidCallback onApplied,
+  String? collectionName,
 }) {
   return showAppDialog<void>(
     context: context,
@@ -37,6 +38,7 @@ Future<void> showCoverMatchDialog({
       book: book,
       collectionMemberUids: collectionMemberUids,
       onApplied: onApplied,
+      collectionName: collectionName,
     ),
   );
 }
@@ -49,6 +51,7 @@ class CoverMatchDialog extends ConsumerStatefulWidget {
     required this.book,
     required this.collectionMemberUids,
     required this.onApplied,
+    this.collectionName,
   });
 
   final CoverScraperService service;
@@ -59,6 +62,16 @@ class CoverMatchDialog extends ConsumerStatefulWidget {
 
   /// 应用成功后回调（刷新库页）。
   final VoidCallback onApplied;
+
+  /// 从**合集**入口打开时的合集名；`null` = 从单集入口打开（用户点的是某一集）。
+  ///
+  /// 一个可空字段同时承载两件事，因为它们本就是同一件事：知道合集名 ⇔ 用户点的是
+  /// 合集卡。据此决定两处行为：
+  /// - 标题带上合集名，否则用户分不清在给哪个合集换封面；
+  /// - 「同时应用到本合集全部 N 集」**默认勾上**（仍可取消）。合集入口下默认不勾
+  ///   意味着只改 [book] 那一集，而那一集未必是合集卡上显示的封面——用户会看到
+  ///   「点了半天毫无变化」，以为功能坏了。单集入口保持默认不勾：他点的就是那一集。
+  final String? collectionName;
 
   @override
   ConsumerState<CoverMatchDialog> createState() => _CoverMatchDialogState();
@@ -79,7 +92,7 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   /// 「无匹配」空态骗用户以为条目不存在。
   Object? _searchFailure;
   bool _showTmdbKeyField = false;
-  bool _applyToCollection = false;
+  late bool _applyToCollection;
   bool _applying = false;
 
   /// 正在应用的候选（用于在其「使用」按钮上显示转圈；null = 无进行中应用）。
@@ -88,6 +101,8 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   @override
   void initState() {
     super.initState();
+    // 合集入口默认勾上（见 [CoverMatchDialog.collectionName]）；单集入口默认不勾。
+    _applyToCollection = widget.collectionName != null;
     _parsed = widget.service.parseForPath(widget.book.videoPath);
     final String prefill =
         _parsed?.title.isNotEmpty == true ? _parsed!.title : widget.book.title;
@@ -314,8 +329,13 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool showCollectionToggle = widget.collectionMemberUids.length > 1;
+    final String? collectionName = widget.collectionName;
     return AlertDialog(
-      title: Text(t.video_scrape_online_match),
+      title: Text(
+        collectionName == null
+            ? t.video_scrape_online_match
+            : t.video_scrape_online_match_collection(name: collectionName),
+      ),
       content: SizedBox(
         width: 420,
         child: Column(

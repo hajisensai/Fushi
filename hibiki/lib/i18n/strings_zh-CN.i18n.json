@@ -2670,7 +2670,6 @@
   "game_scrape_use": "使用",
   "game_scrape_search_failed": "搜索失败，请检查网络后重试",
   "game_remove_confirm": "从库中移除此游戏？不会删除磁盘上的游戏文件。",
-  "delete_collection_also_games": "同时把其中的游戏移出库（不会删除磁盘上的游戏文件）",
   "manga_ocr_acceleration_status": "OCR 加速：${engine}",
   "manga_ocr_acceleration_degraded": "GPU 加速不可用，OCR 改用 ${engine} 运行：${reason}",
   "media_tracking_status": "收藏状态",
@@ -2704,5 +2703,7 @@
   "game_line_audio_suppressed_hint": "本句没有干净音源可用，整机混音已按你选的降级策略跳过。这不代表这句没有配音。",
   "video_setting_torrent_limit_lan": "限速也作用于局域网",
   "video_setting_torrent_limit_lan_hint": "默认关闭：与局域网内 peer 的传输不受上面的限速约束。",
-  "download_rate_limit_lan_included": "同时作用于局域网内的传输。"
+  "download_rate_limit_lan_included": "同时作用于局域网内的传输。",
+  "video_collection_no_local_member": "本合集没有本地视频",
+  "video_scrape_online_match_collection": "为「$name」匹配封面"
 }

@@ -46,7 +46,7 @@ void main() {
     );
   });
 
-  test('书籍长按动作移除标签按钮但保留其它管理动作', () {
+  test('书籍长按菜单含「标签」项（统一三库页卡菜单）并保留其它管理动作', () {
     final String epubActions = _sectionSource(
       src,
       'List<DialogAction> extraActions(MediaItem item) {',
@@ -58,17 +58,25 @@ void main() {
       '  Future<void> _showSrtBookDialog(',
     );
 
-    // TODO-455 已拍板：书卡长按菜单不放「标签」。本轮「统一三库页右键
-    // 菜单」曾把它补回并反转本守卫——推翻既有决策不能靠改守卫测试自我批准，
-    // 已回退。书卡打标签仍走拖标签 / 批量打标签两条旧路径。
+    // 用户 2026-07-28 拍板正式推翻 TODO-455：书卡与视频/游戏卡对称含「标签」
+    // 项（此前书打标签只有拖标签/批量两条路径，与另两库页不一致）。两侧走
+    // 共享标签池 TagPickerPage（媒体路，MediaRef 身份）。
     for (final String actions in <String>[epubActions, srtActions]) {
       expect(
         actions,
-        isNot(contains('t.tag_label')),
-        reason: 'TODO-455 removes the Tag button from book long-press menus.',
+        contains('t.tag_label'),
+        reason: '统一三库页卡菜单：书卡与视频/游戏卡对称含「标签」项'
+            '（用户 2026-07-28 拍板推翻 TODO-455）。',
       );
-      expect(actions, isNot(contains('Icons.sell_outlined')));
+      expect(actions, contains('Icons.sell_outlined'));
+      expect(
+        actions,
+        contains('_openMediaTagPicker'),
+        reason: '书卡「标签」走共享 TagPickerPage 入口。',
+      );
     }
+    expect(epubActions, contains('kind: MediaKind.epub'));
+    expect(srtActions, contains('kind: MediaKind.srt'));
 
     // 统一三库页刮削入口：书卡菜单直挂「在线刮削封面」（不再必须绕编辑信息弹窗）。
     expect(

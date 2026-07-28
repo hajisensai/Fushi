@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 import 'package:hibiki/src/media/collections/collection_context_dialog.dart';
+import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart'
+    show DialogListAction;
 import 'package:hibiki/utils.dart';
 
 /// 三库页统一合集上下文菜单的**行为**守卫（破坏性分支优先）。
@@ -43,6 +45,7 @@ void main() {
     required HibikiDatabase db,
     required MediaCollectionRow collection,
     required bool injectDeleteMembers,
+    List<DialogListAction> extraListActions = const <DialogListAction>[],
   }) async {
     final _Probe probe = _Probe();
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
@@ -70,6 +73,7 @@ void main() {
                   deleteMembersCheckboxLabel: injectDeleteMembers
                       ? t.delete_collection_also_books
                       : null,
+                  extraListActions: extraListActions,
                 ),
                 child: const Text('open'),
               ),
@@ -212,22 +216,84 @@ void main() {
     expect((await db.getAllMediaCollections()).length, 1);
   });
 
+  testWidgets('一键整理「按名称」：重排落盘 sortIndex 并通知页面刷新', (WidgetTester tester) async {
+    // 成员按 book-2 → book-1 的乱序加入；两本书无 epub 行 → 排序元数据按
+    // (entryKey, 0) 兜底，标题即 entryKey，「按名称」应重排为 book-1 → book-2。
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final int id = await db.createMediaCollection('collection-sort');
+    await db.addToCollection(id, MediaKind.epub, 'book-2');
+    await db.addToCollection(id, MediaKind.epub, 'book-1');
+    final MediaCollectionRow collection = (await db.getAllMediaCollections())
+        .firstWhere((MediaCollectionRow r) => r.id == id);
+    final _Probe probe = await pumpAndOpen(
+      tester,
+      db: db,
+      collection: collection,
+      injectDeleteMembers: false,
+    );
+
+    expect(find.text(t.collection_sort_by_title), findsOneWidget);
+    expect(find.text(t.collection_sort_by_imported), findsOneWidget);
+    await tester.tap(find.text(t.collection_sort_by_title));
+    await tester.pumpAndSettle();
+
+    final List<MediaCollectionItemRow> rows = await db.getCollectionItems(id);
+    expect(
+      rows.map((MediaCollectionItemRow r) => r.entryKey).toList(),
+      <String>['book-1', 'book-2'],
+      reason: '「按名称」必须真写穿 sortIndex（与详情页 AppBar 排序同一实现）。',
+    );
+    expect(probe.changedCount, 1, reason: '排序落盘后必须通知页面重载合集行。');
+  });
+
+  testWidgets('extraListActions：媒体特有项渲染、先关弹窗再执行、不触发 onChanged',
+      (WidgetTester tester) async {
+    final (HibikiDatabase db, MediaCollectionRow collection) =
+        await buildCollection();
+    bool ran = false;
+    final _Probe probe = await pumpAndOpen(
+      tester,
+      db: db,
+      collection: collection,
+      injectDeleteMembers: false,
+      extraListActions: <DialogListAction>[
+        DialogListAction(
+          label: 'extra-action',
+          icon: Icons.image_search,
+          onPressed: () => ran = true,
+        ),
+      ],
+    );
+
+    await tester.tap(find.text('extra-action'));
+    await tester.pumpAndSettle();
+
+    expect(ran, isTrue, reason: '注入项点击后必须执行调用方回调。');
+    expect(
+      find.text(t.rename_collection),
+      findsNothing,
+      reason: '对话框统一负责先关自身再执行注入回调。',
+    );
+    expect(probe.changedCount, 0, reason: '注入项本身不写库，不得触发 onChanged。');
+  });
+
   // ---------------------------------------------------------------------------
   // 三库页接线对账（源码扫描）：合集菜单只有一份实现，但「删成员本体」这条支线
-  // 靠调用方注入，漏注入就静默退化成「只能解散合集」——正是游戏页此前的状态。
-  // 逐页钉住三件事：走统一菜单、注入了 onDeleteMembersMedia、给了对应勾选文案。
+  // 靠调用方注入。书/视频注入（勾选文案按媒体域给）；游戏**刻意不注入**——
+  // 游戏合集删除只解散容器、绝不连带删游戏（游戏本体是用户安装目录，从库移除
+  // 走游戏卡菜单「移除」；用户 2026-07-28 拍板恢复纯解散，撤掉勾选）。
   // ---------------------------------------------------------------------------
   group('三库页合集菜单接线对账', () {
-    const Map<String, String> pages = <String, String>{
+    const Map<String, String> pagesWithDeleteMembers = <String, String>{
       'lib/src/pages/implementations/reader_hibiki_history_page.dart':
           't.delete_collection_also_books',
       'lib/src/pages/implementations/home_video_page.dart':
           't.delete_collection_also_videos',
-      'lib/src/pages/implementations/games_library_page.dart':
-          't.delete_collection_also_games',
     };
 
-    pages.forEach((String path, String checkboxLabel) {
+    pagesWithDeleteMembers.forEach((String path, String checkboxLabel) {
       test('$path 走统一合集菜单并注入删成员本体支线', () {
         final String src = File(path).readAsStringSync();
         expect(
@@ -238,8 +304,7 @@ void main() {
         expect(
           src,
           contains('onDeleteMembersMedia:'),
-          reason: '漏注入 onDeleteMembersMedia = 该页删合集永远无法连成员一起删，'
-              '与另外两页行为不一致（游戏页曾漏）。',
+          reason: '漏注入 onDeleteMembersMedia = 该页删合集永远无法连成员一起删。',
         );
         expect(
           src,
@@ -247,6 +312,24 @@ void main() {
           reason: '勾选文案必须按媒体域给，否则用户看不清会删掉什么。',
         );
       });
+    });
+
+    test('games_library_page 走统一合集菜单且**不**注入删成员本体（纯解散语义）', () {
+      final String src = File(
+        'lib/src/pages/implementations/games_library_page.dart',
+      ).readAsStringSync();
+      expect(
+        src,
+        contains('showCollectionContextDialog('),
+        reason: '游戏合集入口同样走唯一实现。',
+      );
+      expect(
+        src,
+        isNot(contains('onDeleteMembersMedia:')),
+        reason: '游戏合集删除只解散容器，绝不提供「连同游戏一起删」——游戏本体'
+            '是用户安装目录，从库移除走卡菜单「移除」（2026-07-28 拍板）。',
+      );
+      expect(src, isNot(contains('delete_collection_also_games')));
     });
   });
 }

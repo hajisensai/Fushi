@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
-import 'package:hibiki/src/media/collections/shelf_sort.dart'
-    show naturalCompare;
+import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
+    show CollectionSortMeta, compareCollectionMembers;
 import 'package:hibiki/src/pages/implementations/collection_detail_shared.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_batch_dialog.dart';
 import 'package:hibiki/utils.dart';
@@ -128,17 +128,28 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// AppBar「排序」菜单：按名称（natural，卷1<卷2<卷10）/ 按导入时间（旧→新 =
   /// 原始加入时序）一键重排。菜单外壳共享 [buildDetailSortMenu]。
+  ///
+  /// 比较规则走共享的 [compareCollectionMembers]（与库页合集右键菜单、书架网格
+  /// 详情页同一份）。本页成员已是内存里的 [VideoBookRow]，标题 / 导入时刻直接取，
+  /// 不必像另两处那样现查四表——收口的是**规则**，不是取数路径。
+  ///
+  /// 顺带修掉本页原先「按名称」缺平局兜底的问题：`List.sort` 不是稳定排序，同名
+  /// 条目（同一集的两个来源 / 都还没刮到标题）此前每次整理都可能换个顺序，而顺序
+  /// 是要落盘的，看起来就像列表自己在动。
   Widget _buildSortMenu() {
-    int importedMsOf(VideoBookRow r) => r.importedAt ?? 0;
+    CollectionSortMeta metaOf(VideoBookRow r) => (
+          title: r.title,
+          importedAt: r.importedAt ?? 0,
+          key: r.bookUid,
+        );
     return buildDetailSortMenu(
       onSortByTitle: () => _applyOneKeySort(
-        (VideoBookRow a, VideoBookRow b) => naturalCompare(a.title, b.title),
+        (VideoBookRow a, VideoBookRow b) =>
+            compareCollectionMembers(metaOf(a), metaOf(b), byTitle: true),
       ),
       onSortByImported: () => _applyOneKeySort(
-        (VideoBookRow a, VideoBookRow b) {
-          final int c = importedMsOf(a).compareTo(importedMsOf(b));
-          return c != 0 ? c : naturalCompare(a.title, b.title);
-        },
+        (VideoBookRow a, VideoBookRow b) =>
+            compareCollectionMembers(metaOf(a), metaOf(b), byTitle: false),
       ),
     );
   }

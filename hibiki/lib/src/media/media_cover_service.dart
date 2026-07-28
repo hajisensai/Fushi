@@ -23,7 +23,7 @@ import 'package:hibiki/src/utils/misc/gallery_image_picker.dart';
 /// |---|---|---|---|---|
 /// | 书（override 缩略图） | `appModel.thumbnailsDirectory`（`<documents>/thumbnails`） | `'<mediaIdentifier>/<sourceId>/override_thumbnail'.hashCode`（无扩展名，[MediaSource.getOverrideThumbnailFilename]） | override 层：清除即回落源默认封面（EPUB 内嵌图等），不存在「保护」概念 | 无 |
 /// | 视频 | `<documents>/video_covers`（[VideoStorage.coversDir]） | `<sanitize(bookUid)>.jpg`（`videoCoverFileName`），与导入自动截帧同名同路径 | 手动封面写 [CoverOrigin.manual] 进 `cover_meta.json`，批量在线刮削**永不覆盖** manual | [CoverMeta]（autoFrame / manual / scraped / sidecar） |
-/// | 游戏 | `<documents>/game_covers`（`AppPaths.gameCoversDirectory`） | `<galgames.id>.<ext>`（换扩展名时先删旧文件，无孤儿） | 刮削封面**只在无可用封面文件时**自动下载（`shouldAutoDownloadScrapedCover`）；手动/自动/已下载的一律不覆盖 | 无独立元数据（以「封面文件是否存在」为保护判据） |
+/// | 游戏 | `<documents>/game_covers`（`AppPaths.gameCoversDirectory`） | `<galgames.id>.<ext>`（换扩展名时先删旧文件，无孤儿） | 统一刮削弹窗**显式「使用」候选 = 覆盖下载**（`shouldDownloadExplicitScrapedCover`，与视频/书籍手动刮削同语义，2026-07-28 拍板）；自动/隐式路径只在无可用封面文件时下载（`shouldAutoDownloadScrapedCover`），绝不覆盖 | 无独立元数据（自动路径以「封面文件是否存在」为保护判据） |
 ///
 /// 三条 apply 路径的共同不变量：**落盘后必须 [evictLocalCoverCache]**（裸
 /// [FileImage] 键 + `resizedFileImage` 的 ResizeImage 键都清）——三岛封面都是
