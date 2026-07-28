@@ -1,7 +1,7 @@
 name: hibiki
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 1.3.1+982
+version: 1.3.1+983
 environment:
   sdk: ">=3.5.0 <4.0.0"
   flutter: "^3.41.6"
@@ -247,6 +247,10 @@ dev_dependencies:
   # flutter_charset_detector; declared here only for the test import.
   flutter_charset_detector_platform_interface: ^1.1.0
   plugin_platform_interface: ^2.1.0
+  # BUG-1213: android_permission_service_test 用它替换
+  # PermissionHandlerPlatform.instance，在 flutter test 里复刻
+  # permission_handler_android 的 SDK 分级语义（原生通道不可用）。
+  permission_handler_platform_interface: ^3.9.0
   drift_dev: ^2.23.0
   dependency_validator: ^3.0.0
   flutter_lints: ^2.0.1
