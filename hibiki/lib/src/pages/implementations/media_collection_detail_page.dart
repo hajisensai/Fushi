@@ -93,14 +93,48 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// 把当前 [_members] 顺序一次落盘（sortIndex 全表回写）。库页合集行与播放器
   /// 换集读同一 `getCollectionItems`，落盘即三处同序（层次 C 单一真相源）。
+  ///
+  /// BUG-1190：本页只渲染 video 成员（调用方 `loadMembers` 按 mediaType 过滤），但
+  /// 一个合集**可以**同时含非 video 成员——「加入合集」弹窗列全表不按种类过滤，
+  /// 合集同步/备份合并又按 `(name, collectionType)` 自然键对齐、原样并入对端的裸串
+  /// mediaType。只回写可见的 video 键，会让不可见成员留着旧 sortIndex 与新写的致密
+  /// 0..n-1 碰撞（`getCollectionItems` 平手退化按 entryKey 排），把用户在别处排好的
+  /// 跨种类顺序打乱，并随同事务 bump 的 orderUpdatedAt 以 LWW 赢家身份推给对端。
+  ///
+  /// 修法与 `MediaCollectionGridDetailPage._onReorder` 同款「保序合并」：回写**全表**，
+  /// 可见槽按新可见序依次填入，不可见成员留在其原下标。
   Future<void> _persistOrder() async {
-    await widget.database.reorderCollectionItems(
-      widget.collection.id,
-      <({String mediaType, String entryKey})>[
-        for (final VideoBookRow r in _members)
-          (mediaType: 'video', entryKey: r.bookUid),
-      ],
-    );
+    final List<MediaCollectionItemRow> all =
+        await widget.database.getCollectionItems(widget.collection.id);
+    // 身份用 record 集合（值相等），不拼分隔符字符串——entryKey 是用户数据，任何
+    // 分隔符都可能歧义。
+    final Set<({String mediaType, String entryKey})> present =
+        <({String mediaType, String entryKey})>{
+      for (final MediaCollectionItemRow r in all)
+        (mediaType: r.mediaType, entryKey: r.entryKey),
+    };
+    // 可见序里只留 DB 仍在的成员：本页快照与 DB 之间可能有并发移出。过滤后可见槽数
+    // 恒等于 visible.length，下面合并时 vi 恰好消费完、不会越界。
+    final List<({String mediaType, String entryKey})> visible =
+        <({String mediaType, String entryKey})>[
+      for (final VideoBookRow r in _members)
+        if (present.contains(
+            (mediaType: MediaKind.video.dbValue, entryKey: r.bookUid)))
+          (mediaType: MediaKind.video.dbValue, entryKey: r.bookUid),
+    ];
+    final Set<({String mediaType, String entryKey})> visibleKeys =
+        visible.toSet();
+    int vi = 0;
+    final List<({String mediaType, String entryKey})> ordered =
+        <({String mediaType, String entryKey})>[
+      for (final MediaCollectionItemRow r in all)
+        if (visibleKeys
+            .contains((mediaType: r.mediaType, entryKey: r.entryKey)))
+          visible[vi++]
+        else
+          (mediaType: r.mediaType, entryKey: r.entryKey),
+    ];
+    await widget.database.reorderCollectionItems(widget.collection.id, ordered);
     widget.onChanged();
   }
 
