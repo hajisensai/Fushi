@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-1201 守卫：单词发音失败的**原因**必须一路留痕，不能再被吞成一个光秃秃的 false。
+/// BUG-1204 守卫：单词发音失败的**原因**必须一路留痕，不能再被吞成一个光秃秃的 false。
 ///
 /// 背景：`playWordAudio` 原本是 `.catch(() => false)`，把 `audio.play()` 抛的
 /// DOMException 整个丢弃。于是「app 启动后第一次发音必失败、之后都成功」这种稳定可复现
@@ -36,11 +36,11 @@ void main() {
 
       expect(src.contains('__hibikiWordAudioLastError'), true,
           reason: '$path 必须把 audio.play() 的失败原因存到 '
-              '__hibikiWordAudioLastError 供宿主回传（BUG-1201）');
+              '__hibikiWordAudioLastError 供宿主回传（BUG-1204）');
       // 正是这个模式吞掉了根因，绝不允许回潮（只看真代码，不看注释）。
       expect(stripLineComments(src).contains('.catch(() => false)'), false,
           reason: '$path 不得再用 `.catch(() => false)` 丢弃 DOMException'
-              '——那正是 BUG-1201 的根因');
+              '——那正是 BUG-1204 的根因');
     }
   });
 
@@ -56,7 +56,7 @@ void main() {
     final String src =
         File('assets/popup/global_lookup_host.js').readAsStringSync();
     expect(src.contains('__hibikiWordAudioLastError'), true,
-        reason: 'host 注入的 report 必须读取 realm 上的失败原因（BUG-1201）');
+        reason: 'host 注入的 report 必须读取 realm 上的失败原因（BUG-1204）');
     // 帧未加载 / eval 失败也各有自己的原因串，不与 play() 的 DOMException 混淆。
     expect(src.contains('FrameNotLoaded'), true,
         reason: '帧未加载要有独立原因串，便于与 autoplay 拦截区分');
@@ -70,19 +70,19 @@ void main() {
             .readAsStringSync();
     expect(src.contains('__hibikiWordAudioLastError'), true,
         reason: 'app 内 wordAudioPlayed 注入脚本必须一并回传原因，'
-            '否则 app 内首播失败仍无法定位（BUG-1201）');
+            '否则 app 内首播失败仍无法定位（BUG-1204）');
   });
 
   test('两端 Dart handler 都把失败原因写进日志', () {
     final String overlay =
         File('lib/src/lookup/global_lookup_controller.dart').readAsStringSync();
     expect(overlay.contains('reason='), true,
-        reason: 'app 外 wordAudioPlayed handler 必须记录 reason（BUG-1201）');
+        reason: 'app 外 wordAudioPlayed handler 必须记录 reason（BUG-1204）');
 
     final String inApp =
         File('lib/src/pages/implementations/dictionary_popup_webview.dart')
             .readAsStringSync();
     expect(inApp.contains('reason='), true,
-        reason: 'app 内 wordAudioPlayed handler 必须记录 reason（BUG-1201）');
+        reason: 'app 内 wordAudioPlayed handler 必须记录 reason（BUG-1204）');
   });
 }

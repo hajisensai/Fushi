@@ -83,12 +83,12 @@ class ImmersionMiningEngine {
   static bool _isRemoteHttp(String s) =>
       s.startsWith('http://') || s.startsWith('https://');
 
-  /// BUG-1200 — 封面与句子音频是两条**互不依赖**的 ffmpeg 抽取，历史实现串行 await
+  /// BUG-1203 — 封面与句子音频是两条**互不依赖**的 ffmpeg 抽取，历史实现串行 await
   /// （封面阶梯跑完才开始抽音频），耗时直接相加。用户把「图片/GIF 清晰度」调到最高档时
   /// GIF 单项就要数秒（BUG-1039 实测：4 秒区间 6 秒 / 7.7 MB），串行让整次制卡雪上加霜。
   /// 现在音频在封面阶梯**之前**启动、末尾才 await，两条重叠，总耗时 ≈ max 而非 sum。
   ///
-  /// [onCoverFailure] / [onAudioFailure] 是 BUG-1200 的另一半：调用方过去靠 **onFailure
+  /// [onCoverFailure] / [onAudioFailure] 是 BUG-1203 的另一半：调用方过去靠 **onFailure
   /// 的调用顺序**区分「首个=GIF 失败、末个=音频失败」（lookup_mining.part.dart 的
   /// `gifFailure ??= summary`）。并行后顺序不再确定，靠顺序区分必然串味——故按**来源**
   /// 分流，语义由参数名承载而不是时序。[onFailure] 保留为「任一来源」的合流回调，既有
@@ -172,7 +172,7 @@ class ImmersionMiningEngine {
       return _writeBytes(tempDir, 'immersion_shot.jpg', small);
     }
 
-    // BUG-1200 — 音频抽取与下面的封面阶梯**无任何数据依赖**，故在此先启动、末尾才
+    // BUG-1203 — 音频抽取与下面的封面阶梯**无任何数据依赖**，故在此先启动、末尾才
     // await：两条 ffmpeg 重叠跑，总耗时从「封面 + 音频」变成「max(封面, 音频)」。
     // 封面阶梯内部的优先级顺序（GIF → 起点帧 → 当前帧）完全不动——那才是真依赖。
     //
@@ -219,7 +219,7 @@ class ImmersionMiningEngine {
       }
     }
 
-    // BUG-1200：收割上面已并行跑完的音频抽取（异常在此重抛，语义与串行版一致）。
+    // BUG-1203：收割上面已并行跑完的音频抽取（异常在此重抛，语义与串行版一致）。
     final String? audioPath = await audioFuture;
     if (audioError != null) {
       Error.throwWithStackTrace(audioError!, audioStack!);
@@ -270,7 +270,7 @@ class ImmersionMiningEngine {
         aborted: false, outcome: outcome, degradedToStill: degradedToStill);
   }
 
-  /// BUG-1200 — 句子音频落地路径的解析，从 [mine] 内联体**原样**抽出（provided 字节 →
+  /// BUG-1203 — 句子音频落地路径的解析，从 [mine] 内联体**原样**抽出（provided 字节 →
   /// 互联 host 端裁 → ffmpeg-over-URL，逐行不变），只为让它能作为一个 Future 与封面阶梯
   /// 并行。这里不做任何策略改动：所有既有优先级、回退和临时文件清理都保持原样。
   ///

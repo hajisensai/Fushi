@@ -685,7 +685,7 @@ JSON.stringify((function(){
     final Completer<bool> completer = Completer<bool>();
     _pendingWordAudioPlays[token] = completer;
     try {
-      // BUG-1201：与 app 外 host 同一契约——回报第三个参数 = 失败原因（popup.js 存在
+      // BUG-1204：与 app 外 host 同一契约——回报第三个参数 = 失败原因（popup.js 存在
       // window.__hibikiWordAudioLastError 上），让 app 内首播失败也能定位到 DOMException
       // 名字，而不是只看到一个 false。
       await controller.evaluateJavascript(source: '''
@@ -1346,7 +1346,7 @@ JSON.stringify((function(){
                 final int? token =
                     args.isNotEmpty ? (args[0] as num?)?.toInt() : null;
                 final bool ok = args.length > 1 && args[1] == true;
-                // BUG-1201：失败原因（args[2]）记进诊断日志——首播失败到底是 autoplay
+                // BUG-1204：失败原因（args[2]）记进诊断日志——首播失败到底是 autoplay
                 // 拦截还是解码失败，决定了修法，不能再只留一个 false。成功不记。
                 if (!ok) {
                   final String reason =

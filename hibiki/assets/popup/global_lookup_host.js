@@ -2323,7 +2323,7 @@
       return false;
     }
     try {
-      // BUG-1201：回报第三个参数 = 失败原因（popup.js 的 playWordAudio 存在
+      // BUG-1204：回报第三个参数 = 失败原因（popup.js 的 playWordAudio 存在
       // window.__hibikiWordAudioLastError 上）。Dart 端按位置读且早已 `length >= 2`
       // 守卫，多带一个参数对旧端完全无害。`play` 缺失是另一类失败（realm 里没装
       // popup.js），给它自己的原因串，不与 play() 的 DOMException 混为一谈。

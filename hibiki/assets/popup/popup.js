@@ -2172,7 +2172,7 @@ async function fetchAudioUrl(expression, reading) {
 // 播放的 URL（远端 http、本地 base64 data:）。新播放固定先掐上一段（interrupt 行为；
 // 宿主从未注入过别的模式），留 window.__hibikiWordAudio 句柄。音量取
 // window.lookupAudioVolume（0..1，宿主注入；扩展缺省 1）。
-// BUG-1201：播放失败的**原因**必须留下痕迹。原实现是 `.catch(() => false)`，把
+// BUG-1204：播放失败的**原因**必须留下痕迹。原实现是 `.catch(() => false)`，把
 // `audio.play()` 抛出的 DOMException 整个丢掉，宿主只拿到一个光秃秃的 false —— 于是
 // 「app 启动后第一次发音必失败、之后都成功」这种可复现的症状，日志里查不出到底是
 // autoplay 策略拦截（NotAllowedError）、解码失败（NotSupportedError）还是被后一次播放

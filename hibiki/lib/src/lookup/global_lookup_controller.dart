@@ -885,7 +885,7 @@ class GlobalLookupController {
             rawToken is num ? rawToken.toInt() : int.tryParse('$rawToken');
         if (token != null) {
           final bool ok = args[1] == true;
-          // BUG-1201：失败原因（args[2]，旧 host 不带 → 空）落日志。没有它，
+          // BUG-1204：失败原因（args[2]，旧 host 不带 → 空）落日志。没有它，
           // 「首播必失败」只是一个 false，分不清 autoplay 拦截 / 解码失败 / 被掐断，
           // 而这三种的根因修法完全不同。成功不记，避免刷屏。
           if (!ok) {
