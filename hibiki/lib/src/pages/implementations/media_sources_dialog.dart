@@ -62,13 +62,20 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog>
   /// `containerOf` 抛 `Bad state: No ProviderScope found`（BUG-513）。
   late final HibikiDatabase _db;
 
+  /// 同 [_db]：`AppModel` 也在 initState 捕获。`_addLocalFolder` 要把它交给
+  /// `pickRealDirectoryPath`（安卓那条腿用它申请全文件访问），而系统目录选择器是一段
+  /// **很长的 async gap**——用户完全可能在选择器开着时把对话框关掉。捕获成字段后此处
+  /// 不再出现任何 `ref.*`，BUG-513 的不变量（ref 只在 initState）继续成立。
+  late final AppModel _appModel;
+
   /// 网络来源仅对 'book' 开放（见文件头说明）。
   bool get _networkSupported => widget.mediaKind == 'book';
 
   @override
   void initState() {
     super.initState();
-    _db = ref.read(appProvider).database;
+    _appModel = ref.read(appProvider);
+    _db = _appModel.database;
     _load();
   }
 
@@ -409,7 +416,7 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog>
     // （安卓先取全文件访问再经原生 SAF 解析真实路径；桌面/iOS 行为逐字不变）。
     final String? picked = await pickRealDirectoryPath(
       context: context,
-      appModel: ref.read(appProvider),
+      appModel: _appModel,
       dialogTitle: t.media_source_add_local_folder,
     );
     if (!mounted || picked == null || picked.isEmpty) return;
