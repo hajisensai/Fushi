@@ -71,7 +71,9 @@ class ShelfCardFooter extends StatelessWidget {
   }
 }
 
-/// 触屏上卡片上下文菜单的入口按钮（封面右上角）。
+/// 触屏上卡片上下文菜单的入口按钮（由调用方 [Positioned] 落在封面**右下角**——
+/// 右上角在书卡是类型徽章、在视频卡是播放列表 / 云角标，同形同尺寸挨在一起会被
+/// 读成两颗按钮）。
 ///
 /// 存在的理由：长按在触屏上已改判给「进入多选」（见
 /// `media/selection/selection_gestures.dart` 的手势归属表），菜单必须另有入口。

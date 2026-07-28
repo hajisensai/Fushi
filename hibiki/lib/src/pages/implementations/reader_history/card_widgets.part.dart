@@ -216,7 +216,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
     final double selectionInset = tokens.spacing.gap / 2;
     final SelectionSlot? slot =
         selectionKey == null ? null : SelectionSlot.loose(selectionKey);
-    // 触屏：长按 = 进多选（菜单改由封面右上角 [ShelfCardMenuButton] 触发）。
+    // 触屏：长按 = 进多选（菜单改由封面右下角 [ShelfCardMenuButton] 触发）。
     // 桌面：长按 / 右键仍是菜单（鼠标按住不动就是在等菜单，不该跳进多选）。
     final bool touch = isTouchSelectionPlatform(context);
     final bool touchLongPressSelects = touch && slot != null;

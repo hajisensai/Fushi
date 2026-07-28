@@ -3504,7 +3504,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final bool showSelection = _selectionMode && selectable;
     final bool selected = showSelection && _selectedUids.contains(book.bookUid);
     final SelectionSlot slot = SelectionSlot.loose(book.bookUid);
-    // 触屏：长按 = 进多选（菜单改由封面右上角 [ShelfCardMenuButton] 触发）。
+    // 触屏：长按 = 进多选（菜单改由封面右下角 [ShelfCardMenuButton] 触发）。
     // 桌面：长按 / 右键仍弹管理菜单。成员卡（selectable=false）不可单独勾选，
     // 故不参与任何多选手势。
     final bool touchLongPressSelects =
