@@ -65,12 +65,21 @@ class QbConnectionConfig {
   /// 但配过 qb 地址的，decode 时回退 qb（向后兼容：老用户行为不变）。
   final String backend;
 
-  /// 把 [backendAuto] 解析成具体后端：桌面 → 内置引擎、移动端 → 外接 qb。
-  /// 已显式选定（embedded/qbittorrent）的原样返回。
+  /// 把配置值解析成**本平台真实可用**的后端。
+  ///
+  /// [isDesktop] = 本平台是否具备内置引擎（调用方传 `_supportsEmbeddedTorrent()`）。
+  ///
+  /// BUG-1207：这里过去只规约 [backendAuto]，显式的 [backendEmbedded] 一律原样
+  /// 放行——于是移动端（Android/iOS 从不构建也从不打包 `libhibiki_torrent_ffi.so`：
+  /// `native/hibiki_torrent/CMakeLists.txt` 只有 WIN32/APPLE 分支，
+  /// `hibiki/android/app/build.gradle` 的 externalNativeBuild 只含 hoshidicts）
+  /// 会解析出一个根本不存在的后端：`EmbeddedTorrentHost.open` 吞掉 `ArgumentError`
+  /// 返回 null，`_torrentBackendFor` 静默造一个 `QbTorrentBackend`，而设置页仍显示
+  /// 「内置引擎」选中、并把只有内置引擎才读的下载目录暴露给用户改（改了不被任何人
+  /// 采用）。规约收在这一处，下游 UI 分支与运行时后端选择的特殊情况一并消失。
   String resolveBackend({required bool isDesktop}) {
-    if (backend == backendAuto) {
-      return isDesktop ? backendEmbedded : backendQbittorrent;
-    }
+    if (!isDesktop) return backendQbittorrent;
+    if (backend == backendAuto) return backendEmbedded;
     return backend;
   }
 
