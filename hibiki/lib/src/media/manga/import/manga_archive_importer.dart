@@ -13,6 +13,24 @@ import 'package:hibiki/src/media/manga/manga_storage.dart';
 
 const int _maximumArchiveExpandedBytes = 2 * 1024 * 1024 * 1024;
 
+/// Yomitan/Yomichan 词典包的**结构**标记：包根下的数据库文件名前缀。
+///
+/// 与 C++ 导入器 `native/hoshidicts/hoshidicts_src/importer.cpp` 的
+/// `get_files()` 用同一组前缀（`term_bank_` / `kanji_bank_` /
+/// `term_meta_bank_` / `kanji_meta_bank_` / `tag_bank_`）——判据只有一处真相，
+/// 这里不自创第二套。
+const List<String> _kYomitanBankPrefixes = <String>[
+  'term_bank_',
+  'kanji_bank_',
+  'term_meta_bank_',
+  'kanji_meta_bank_',
+  'tag_bank_',
+];
+
+/// Yomitan 词典包的清单文件名（包根）。`prepareNameYomichanFormat` 就靠它读
+/// 词典标题。
+const String _kYomitanIndexEntry = 'index.json';
+
 abstract final class MangaArchiveImporter {
   static bool looksLikeImageArchive(String archivePath) {
     final String extension = p.extension(archivePath).toLowerCase();
@@ -22,10 +40,21 @@ abstract final class MangaArchiveImporter {
     try {
       final Archive archive = _decode(archivePath);
       bool hasImage = false;
+      bool hasDictionaryIndex = false;
+      bool hasDictionaryBank = false;
       for (final ArchiveFile entry in archive) {
         _validateEntry(entry);
         if (!entry.isFile) continue;
-        final String extension = p.extension(entry.name).toLowerCase();
+        final String name = entry.name;
+        if (name == _kYomitanIndexEntry) {
+          hasDictionaryIndex = true;
+          continue;
+        }
+        if (_kYomitanBankPrefixes.any(name.startsWith)) {
+          hasDictionaryBank = true;
+          continue;
+        }
+        final String extension = p.extension(name).toLowerCase();
         if (kMangaImageExtensions.contains(extension)) {
           hasImage = true;
         } else if (<String>{
@@ -36,6 +65,20 @@ abstract final class MangaArchiveImporter {
         }.contains(extension)) {
           return false;
         }
+      }
+      // 词典包一票否决，优先于「有图片就算漫画」。
+      //
+      // Yomitan 允许词典**自带图片**（structured-content 的 `image` 节点；C++
+      // 导入器 `get_files()` 把非 bank/非 index.json 的条目一律收成
+      // `media_files`）。只看「包里有没有图片」的话，一本带插图的词典包会被判成
+      // 图片包：拖进书架 → 静默导成一本只有插图的垃圾「漫画」，而词典**根本没
+      // 被导入**。那是用户数据被糟蹋，比多点两下严重得多。
+      //
+      // 判据要 index.json **和**至少一个 `*_bank_*.json` 同时在场：单有
+      // index.json 不算（打包工具随手生成的清单也叫这名），bank 前缀才是
+      // Yomitan 独有的结构指纹。
+      if (hasDictionaryIndex && hasDictionaryBank) {
+        return false;
       }
       return hasImage;
     } catch (_) {
