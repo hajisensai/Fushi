@@ -54,6 +54,11 @@ class FloatingLyricWindow {
   // Reports the new locked state after the user toggles the lock button, so the
   // Dart side can persist it and refresh any in-app mirror of the strip state.
   using LockCallback = std::function<void(bool locked)>;
+  // BUG-951 — native vetoed pass-through (the escape-hatch toolbar window could
+  // not be created, so turning the body click-through would strand the user).
+  // Dart must hear about it or its own flag stays stuck on "enabled" and the
+  // user's next press on the button does nothing visible.
+  using PassThroughCallback = std::function<void(bool enabled)>;
   using BoundsCallback =
       std::function<void(int left, int top, int width, int height)>;
 
@@ -109,6 +114,9 @@ class FloatingLyricWindow {
   }
   void SetLockCallback(LockCallback callback) {
     on_lock_ = std::move(callback);
+  }
+  void SetPassThroughCallback(PassThroughCallback callback) {
+    on_pass_through_ = std::move(callback);
   }
   void SetBoundsCallback(BoundsCallback callback) {
     on_bounds_ = std::move(callback);
@@ -388,6 +396,7 @@ class FloatingLyricWindow {
   ContextLookupCallback on_context_lookup_;
   ControlCallback on_control_;
   LockCallback on_lock_;
+  PassThroughCallback on_pass_through_;
   BoundsCallback on_bounds_;
 };
 

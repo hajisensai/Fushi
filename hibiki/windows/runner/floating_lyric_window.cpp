@@ -562,6 +562,12 @@ void FloatingLyricWindow::ApplyPassThroughExStyle() {
                                   ToolbarStyle(), ToolbarStates())) {
     SetBodyExTransparent(false);
     pass_through_ = false;
+    // Tell Dart the toggle was refused. Without this its own flag stays true,
+    // and the user's next press on the button sends setPassThrough(false) into
+    // an already-false native state — a press that visibly does nothing.
+    if (on_pass_through_) {
+      on_pass_through_(false);
+    }
     return;
   }
   SetBodyExTransparent(true);

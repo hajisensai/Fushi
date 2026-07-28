@@ -32,6 +32,7 @@ void main() {
   late String toolbarHeader;
   late String bodyHeader;
   late String cmake;
+  late String host;
 
   setUpAll(() {
     body = File('windows/runner/floating_lyric_window.cpp').readAsStringSync();
@@ -41,6 +42,7 @@ void main() {
     toolbarHeader =
         File('windows/runner/hook_toolbar_window.h').readAsStringSync();
     cmake = File('windows/runner/CMakeLists.txt').readAsStringSync();
+    host = File('windows/runner/flutter_window.cpp').readAsStringSync();
   });
 
   /// Returns the body of `signature { ... }`, brace-matched, so an assertion
@@ -184,6 +186,13 @@ void main() {
       expect(applier.contains('pass_through_ = false;'), isTrue,
           reason: 'Better to drop the toggle than to strand the user behind '
               'an overlay they can no longer click.');
+      // ...and the veto must be reported, or Dart's own flag stays true and the
+      // user's next press on the button is a press that does nothing visible.
+      expect(applier.contains('on_pass_through_(false)'), isTrue,
+          reason: 'A silently vetoed toggle desyncs Dart and eats the next '
+              'press on the escape-hatch button.');
+      expect(host.contains('"passThroughChanged"'), isTrue,
+          reason: 'The veto must reach Dart over the gal_hook_text channel.');
     });
 
     test('the toolbar window is never mouse-transparent', () {

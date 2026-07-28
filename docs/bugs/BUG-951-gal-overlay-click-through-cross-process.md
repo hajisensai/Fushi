@@ -2,7 +2,7 @@
 - **报告**：2026-07-21（PR#295 落地审查 H2，fable5）
 - **真实性**：✅ 已确定性复现为真（2026-07-27）。最小跨进程 Win32 装置（两组对照，每组一对全新进程 + 一次真实 SendInput 点击）：体表 alpha=5/200 配 `HTTRANSPARENT` 时点击被完全吞掉（游戏和浮窗都收不到）；换 `WS_EX_TRANSPARENT` 后另一进程正常收到，与逐像素 alpha 无关。根因：`HTTRANSPARENT` 按 Win32 契约只在**同线程**窗口间下传，游戏是另一进程。
   - 一直没被发现的原因：旧代码只在「背景不透明度=0」时看起来能用，那是层窗口逐像素命中测试的功劳；点在不透明的文字笔画上照样被吞。
-- **[x] ① 已修复** — 双窗设计（本轮）。
+- **[ ] ① 已实现，未验收（implemented_unverified）** — 双窗设计（本轮，PR#481）。代码已落地但**没有任何一条真机验收跑过**，按本仓 galgame 硬规则不得记为已修复。
   - 修前：`hibiki/windows/runner/floating_lyric_window.cpp` 的 `WM_NCHITTEST` 在穿透态对正文返回 `HTTRANSPARENT`，跨进程无效。
   - 中途被否的一版（PR#460，已 revert）：按光标位置 16ms 轮询开关整窗 `WS_EX_TRANSPARENT`。它命中既有守卫 `interactivity is not driven by a hover timer`，且被证明**本质竞态**——定时器可被饿死，期间用户快速甩到工具条点一下会穿过去点进游戏，推进台词或选中分支破坏存档。
   - 本轮定案：**不再让一个窗口同时当两种东西**。
@@ -12,7 +12,7 @@
   - 顺带收敛：8 个槽位的 action / 字形 / 高亮态收进共享表 `hook_toolbar::kSlotActions` + `SlotGlyph/SlotActive`，两个窗口同表索引，物理上无法对「第 3 个按钮是什么」产生分歧；按钮执行逻辑收进单一 `DispatchControlAction()`。
   - 行为差异（有意）：穿透态下正文窗不再自绘顶部工具条带与拖拽把手（它们已不接收鼠标，画出来就是骗人）；独立工具条在静止时以约 42% 不透明度常驻——它是唯一的退出口，隐形的退出口等于没有退出口。穿透态挡住游戏的死区从「整窗宽 × 约 34dip」缩小为「约 320dip × 40dip 的药丸」。
   - 非 hook 实例（有声书歌词条 / 剪贴板文本窗）完全不进这条分支，窗口样式与渲染逐像素不变。
-- **[x] ② 已加自动化测试** — `hibiki/test/tools/gal_overlay_passthrough_dual_window_guard_test.dart`（新增，源码扫描守卫）：
+- **[ ] ② 只有源码扫描守卫，缺运行时验证** — `hibiki/test/tools/gal_overlay_passthrough_dual_window_guard_test.dart`（新增，源码扫描守卫）：
   - `WS_EX_TRANSPARENT` 只允许在 `SetBodyExTransparent` 内被应用，且必须配 `SWP_FRAMECHANGED`；`SetBodyExTransparent` 只允许被 `ApplyPassThroughExStyle` 调用；
   - `return HTTRANSPARENT;` 在两个文件中都不得出现；`SetTimer(` / `KillTimer(` / 轮询符号在两个文件中都不得出现（PR#460 回归门）；
   - **顺序不变量**：`pass_through_toolbar_.Show(` 必须出现在 `SetBodyExTransparent(true)` 之前，且失败路径必须把 `pass_through_` 摁回 false；
@@ -21,5 +21,9 @@
   - `CMakeLists.txt` 真的编了新 TU。
   - 同时把 `hibiki/test/media/audiobook/floating_lyric_click_through_guard_test.dart` 里那条「禁止一切 `WS_EX_TRANSPARENT` 改写」的旧断言换成新契约：**保留**反定时器四条（那才是 PR#460 的真教训），把「禁用该位」换成「必须走唯一 applier + 必须有逃生工具条」。旧断言正是浮窗长期带着一个跨进程无效的穿透模式的原因，如实记录在测试注释里。
   - **局限（如实说明）**：源码扫描锁的是接线，不是运行时行为。跨进程点击真的落到游戏、以及工具条在任意时刻都可点，仍需下面的 Windows 真机验收。C++ 进不了 Dart 单测；更强的 Windows itest 层因本机冒烟门长期红而受阻，属成本取舍，不是跳过。
-- **待真机验收（Windows）**：①开穿透 → 点浮窗覆盖的游戏正文区 → 游戏推进台词；②穿透态下点工具条 `↗` → 立刻退出穿透（不需要精准时机）；③穿透态下拖工具条 → 整个浮窗跟着移动，松手位置被记住；④关穿透 → 正文区恢复查词与拖拽。
+- 🔴 **还差什么（这条 bug 未完成的全部原因）**：Windows 真机四条验收**一条都没做**。跨进程点击是否真的落到游戏、工具条是否在任意时刻都可点，源码扫描一个字也证明不了。四条如下，全部通过前本条保持未完成：
+  1. 开穿透 → 点浮窗覆盖的游戏正文区 → **游戏推进台词**（这条是 BUG-951 本身，其余三条都是它的配套）；
+  2. 穿透态下点工具条 `↗` → 立刻退出穿透（不需要精准时机、不需要连点）；
+  3. 穿透态下拖工具条 → 整个浮窗跟着移动且**不跳位**，松手位置被记住（审查中已修一处锚点错位：工具条曾拿自己的窗矩形当正文窗原点，第一帧会把正文窗平移约 205dip 并把药丸甩出光标）；
+  4. 关穿透 → 正文区恢复查词与拖拽。
 - **备注**：核心特性验证项，列入 Windows 真机验收清单。
