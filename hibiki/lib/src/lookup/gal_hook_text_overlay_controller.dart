@@ -10,7 +10,9 @@ import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_playback.dart';
 import 'package:hibiki/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
+import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/magpie_download_confirm.dart';
+import 'package:hibiki/src/mining/magpie_upscaling.dart';
 import 'package:hibiki/src/mining/magpie_upscaling_service.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
@@ -127,10 +129,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
     _session.attachActivityDatabase(
       () => appModel.isInitialised ? appModel.database : null,
     );
-    // 窗口超分编排器：唯一的注入点。策略惰性读偏好（用户中途改设置下一局就生效），
+    // 窗口超分编排器：唯一的注入点。档位**每局重新读**（每游戏各自一档，见下），
     // 下载确认走全局 navigator。未注入时会话侧全是 `?.` 空操作，故这里失败也不致命。
     final MagpieUpscalingService magpie = MagpieUpscalingService(
-      modeReader: () => appModel.galgameUpscalingMode,
+      modeReader: () => _upscalingModeForCurrentSession(appModel),
       confirmDownload: (MagpieDownloadPrompt prompt) =>
           confirmMagpieDownload(appModel, prompt),
     );
@@ -194,6 +196,28 @@ class GalHookTextOverlayController extends ChangeNotifier {
     await GalHookTextOverlayChannel.hide();
     _started = false;
     _visible = false;
+  }
+
+  /// 本局游戏的窗口超分档位（BUG-1191）。
+  ///
+  /// 身份取的是**本次会话的启动 exe 全路径**——这正是 galgame 库那一行的 `exePath`，
+  /// 也是用户在库里右键改档时改的那一行，两边同一个真值、不会漂。
+  ///
+  /// 三条边界都落到「关闭」（裁决本身是纯函数 [resolveSessionUpscalingMode]）：
+  /// ① 窗口附着捕获（没走启动路径）→ `launchExe` 为空 → 没有稳定游戏身份，不猜；
+  /// ② 游戏不在库里（用户从别处拉起的）→ 没有那一行可读；
+  /// ③ App 还没初始化完 → 没有 DB。
+  /// 任何一条都不该替用户默默打开一个吃 GPU 的东西。
+  MagpieUpscalingMode _upscalingModeForCurrentSession(AppModel appModel) {
+    if (!appModel.isInitialised) return kMagpieDefaultUpscalingMode;
+    final String? exe = _session.state.launchExe;
+    final GalgameEntry? game = (exe == null || exe.isEmpty)
+        ? null
+        : appModel.galgameRepo.byExePath(exe);
+    return resolveSessionUpscalingMode(
+      launchExe: exe,
+      storedModeKey: game?.upscalingMode,
+    );
   }
 
   void _loadPreferences(AppModel appModel) {

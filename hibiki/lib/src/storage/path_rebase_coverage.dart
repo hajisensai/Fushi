@@ -120,7 +120,7 @@ class PathRebasePref {
 
 /// tables.dart 里**所有**名字带 path|dir|root|url|source|file|json 的 TextColumn 的
 /// 处置声明，外加几列名字看不出、但确实承载路径 / KV 的列（preferences.value、
-/// profile_settings.value、galgames.launchArgs）。
+/// profile_settings.value、galgames.launchArgs、galgames.upscalingMode）。
 ///
 /// 守卫双向比对：路径形列漏声明红、声明了但列已不存在也红。
 /// 按 tables.dart 出现顺序排列，便于人工对照。
@@ -324,6 +324,8 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       PathRebaseKind.externalUserPath,
       '用户原样输入的命令行整行，可能内嵌外部绝对路径（如 --save="D:\\My Saves"）。'
           '**绝不能** rebase：它不是单一路径，切分/改写都会毁掉用户的启动参数。'),
+  PathRebaseColumn('Galgames', 'upscalingMode', PathRebaseKind.notAPath,
+      '窗口超分档位枚举 key（auto/installed_only/off，空串 = 未设置），不是路径。'),
   PathRebaseColumn(
       'Galgames',
       'coverPath',

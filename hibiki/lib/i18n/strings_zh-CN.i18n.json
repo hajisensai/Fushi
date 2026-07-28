@@ -1025,11 +1025,9 @@
   "game_upscaling_auto": "自动",
   "game_upscaling_download_body": "游戏窗口超分需要 Magpie（约 10 MB，GPL-3.0，由我们自行从源码编译）。现在下载吗？",
   "game_upscaling_download_title": "下载 Magpie 超分组件？",
-  "game_upscaling_hint": "使用 Magpie 在 galgame hook 会话期间对游戏窗口做超分。「自动」会在首次使用时按需下载 Magpie。",
   "game_upscaling_hint_external": "你的电脑上已经开着一个 Magpie，Hibiki 没有去动它。按 Win+Shift+A 就能放大游戏窗口。",
   "game_upscaling_hint_first_run": "这次 Magpie 还在做首次初始化。现在按 Win+Shift+A 就能放大；下次启动游戏会自动放大。",
   "game_upscaling_hint_manual": "按 Win+Shift+A 放大游戏窗口。",
-  "game_upscaling_hint_not_installed": "没有安装 Magpie。把「游戏窗口超分」改成「自动」即可下载。",
   "game_upscaling_installed_only": "仅用已装",
   "game_upscaling_off": "关闭",
   "game_upscaling_status_active": "窗口超分已开启",
@@ -2735,5 +2733,12 @@
   "media_tracking_manage_links": "管理关联",
   "media_tracking_last_error": "上次错误",
   "shortcut_action_popup_mine_entry": "制卡（加号）",
-  "game_hook_reason_protocol_mismatch": "捕获组件版本与 Hibiki 不一致，请更新或重新安装 galgame 捕获组件。"
+  "game_hook_reason_protocol_mismatch": "捕获组件版本与 Hibiki 不一致，请更新或重新安装 galgame 捕获组件。",
+  "game_upscaling_auto_hint": "优先用机器上已有的 Magpie；没有就在征得同意后下载我们的自编产物（约 10 MB）。",
+  "game_upscaling_installed_only_hint": "只用机器上已经装好的 Magpie，绝不联网下载。",
+  "game_upscaling_off_hint": "不放大游戏窗口。",
+  "game_helper_bundle_missing": "这个版本没有随包附带 galgame 钩子 helper，请更新 Hibiki 获取。",
+  "game_upscaling_pick_title": "$name 的窗口超分",
+  "game_upscaling_pick_body": "捕获会话期间用 Magpie 放大这个游戏的窗口。每个游戏各自设置——只有原生分辨率低于屏幕的游戏才用得上。会占用显卡。",
+  "game_upscaling_hint_not_installed": "没有安装 Magpie。在游戏库里右键这个游戏，把「窗口超分」改成「自动」即可下载。"
 }

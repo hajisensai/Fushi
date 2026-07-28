@@ -69,6 +69,7 @@ class GalgameEntry {
     required this.workdir,
     required this.addedAt,
     this.launchArgs = '',
+    this.upscalingMode = '',
     this.coverPath,
     this.playStatus = GalgamePlayStatus.unset,
     this.primarySource,
@@ -104,6 +105,12 @@ class GalgameEntry {
   /// [launchArgs] 按 Windows 规则拆出的 argv token 列表；injector 侧一个 token 对应
   /// 一个 `--arg`。空串 → 空列表 → 启动命令行与旧版逐字节相同。
   List<String> get launchArgumentTokens => parseGameLaunchArguments(launchArgs);
+
+  /// 该游戏的窗口超分档位（Magpie）稳定字符串：`auto` / `installed_only` / `off`；
+  /// 空串 = 用户没设过（默认），解析层回落到关闭。**每游戏独立**，没有全局开关。
+  ///
+  /// 与 [launchArgs] 同类：用户为该游戏设的启动期配置，随条目持久化，启动路径读一次。
+  final String upscalingMode;
 
   /// 可选封面图绝对路径（null = 用默认游戏图标）。
   final String? coverPath;
@@ -193,6 +200,7 @@ class GalgameEntry {
     String? exePath,
     String? workdir,
     String? launchArgs,
+    String? upscalingMode,
     String? coverPath,
     GalgamePlayStatus? playStatus,
     String? primarySource,
@@ -210,6 +218,7 @@ class GalgameEntry {
       exePath: exePath ?? this.exePath,
       workdir: workdir ?? this.workdir,
       launchArgs: launchArgs ?? this.launchArgs,
+      upscalingMode: upscalingMode ?? this.upscalingMode,
       coverPath: coverPath ?? this.coverPath,
       addedAt: addedAt,
       playStatus: playStatus ?? this.playStatus,

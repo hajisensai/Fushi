@@ -26,6 +26,8 @@ import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/galgame_library_query.dart';
 import 'package:hibiki/src/mining/galgame_repository.dart';
 import 'package:hibiki/src/mining/galgame_scrape_dialog.dart';
+import 'package:hibiki/src/mining/magpie_upscaling.dart';
+import 'package:hibiki/src/mining/magpie_upscaling_prompt.dart';
 import 'package:hibiki/src/pages/implementations/galgame_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart'
@@ -696,6 +698,24 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     ref.invalidate(filteredGameIdsProvider);
   }
 
+  /// 改这个游戏的窗口超分档位（BUG-1191）。
+  ///
+  /// 档位存在 galgame 库那一行上（`galgames.upscaling_mode`），下一局启动这个游戏
+  /// 时生效——**不影响正在进行的会话**：Magpie 的 profile 是在拉起它之前一次性写进
+  /// 配置的，Magpie 只在启动时读一次配置（全仓没有任何文件监视）。
+  ///
+  /// 取消（[pickMagpieUpscalingMode] 返回 null）不写任何东西。
+  Future<void> _editUpscalingMode(GalgameEntry game) async {
+    final MagpieUpscalingMode? picked = await pickMagpieUpscalingMode(
+      context,
+      current: magpieUpscalingModeFromKey(game.upscalingMode),
+      gameName: game.displayName,
+    );
+    if (picked == null) return;
+    await _repo.setUpscalingMode(game.id, magpieUpscalingModeToKey(picked));
+    _refresh();
+  }
+
   /// 筛选面板：状态 / 本地·在线 / 标签多选 / NSFW 隐藏。改动即时生效并持久化。
   /// 走 [adaptiveModalSheet] + [HibikiModalSheetFrame]（与标签筛选面板同一 MD3
   /// sheet 骨架），间距/文字全走 [HibikiDesignTokens]。
@@ -1050,6 +1070,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       onScrape: () => unawaited(_scrapeGame(game)),
       onAddToCollection: () => unawaited(_addGameToCollection(game)),
       onEditTags: () => unawaited(_openTagPicker(game)),
+      onEditUpscaling: () => unawaited(_editUpscalingMode(game)),
     );
   }
 }
@@ -1220,6 +1241,7 @@ class _GameCard extends StatelessWidget {
     required this.onScrape,
     required this.onAddToCollection,
     required this.onEditTags,
+    required this.onEditUpscaling,
     this.sortLabel,
   });
 
@@ -1238,6 +1260,9 @@ class _GameCard extends StatelessWidget {
   final VoidCallback onScrape;
   final VoidCallback onAddToCollection;
   final VoidCallback onEditTags;
+
+  /// 改这个游戏的窗口超分档位（Windows-only，见 [_menuItems]）。
+  final VoidCallback onEditUpscaling;
 
   /// 长按 / 右键的上下文菜单：与书卡/视频卡同款 [MediaItemDialogFrame]（封面块 +
   /// 快捷动作 chips + 底部危险区），替代旧手搓 SimpleDialog。菜单项与封面溢出菜单
@@ -1354,6 +1379,19 @@ class _GameCard extends StatelessWidget {
           icon: Icons.sell_outlined,
           danger: false,
         ),
+        // 窗口超分：**每个游戏各自一档**，这里是它唯一的入口（BUG-1191 删掉了那个
+        // 一刀切的全局设置项）。放在游戏卡菜单里是因为该开不该开完全取决于这个游戏
+        // 的原生分辨率——用户在哪儿管这个游戏，就在哪儿改它的超分。
+        // 与音频降级策略同规格把当前档位写在菜单项上，不必点开就知道现在是哪档。
+        // Windows-only：galgame hook 与 Magpie 都只做 Windows（见根 CLAUDE.md）。
+        if (Platform.isWindows)
+          (
+            action: 'upscaling',
+            label: '${t.game_upscaling} · '
+                '${MagpieUpscalingModeDialog.modeLabel(magpieUpscalingModeFromKey(game.upscalingMode))}',
+            icon: Icons.aspect_ratio_outlined,
+            danger: false,
+          ),
         (
           action: 'remove',
           label: t.game_remove,
@@ -1380,6 +1418,8 @@ class _GameCard extends StatelessWidget {
         onAddToCollection();
       case 'tags':
         onEditTags();
+      case 'upscaling':
+        onEditUpscaling();
       case 'remove':
         onRemove();
     }

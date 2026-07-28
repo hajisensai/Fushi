@@ -415,7 +415,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 61;
+  int get schemaVersion => 62;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1244,6 +1244,20 @@ class HibikiDatabase extends _$HibikiDatabase {
             if (await _tableExists('media_collections') &&
                 !await _columnExists('media_collections', 'cover_path')) {
               await m.addColumn(mediaCollections, mediaCollections.coverPath);
+            }
+          }
+          if (from < 62) {
+            // v62（每游戏窗口超分档位）：galgames 加 upscaling_mode 列，存该游戏的
+            // Magpie 超分档位（'auto' / 'installed_only' / 'off'）。与 v56 的
+            // launch_args 同型：都是「用户为该游戏设的启动期配置」。
+            //
+            // 无损迁移：列带 DEFAULT ''，SQLite ADD COLUMN 把既有全部行回填空串
+            // = 用户没设过 = 解析层回落到关闭（老用户绝不会被莫名打开超分，
+            // Never break userspace）。守卫幂等（fresh DB 已由 onCreate 的 createAll
+            // 建好，重复升级 _columnExists 短路 no-op）。
+            if (await _tableExists('galgames') &&
+                !await _columnExists('galgames', 'upscaling_mode')) {
+              await m.addColumn(galgames, galgames.upscalingMode);
             }
           }
         },
@@ -3786,6 +3800,12 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<int> setGalgameCoverPath(String id, String? path) =>
       (update(galgames)..where((t) => t.id.equals(id)))
           .write(GalgamesCompanion(coverPath: Value<String?>(path)));
+
+  /// 只改该游戏的窗口超分档位（'auto' / 'installed_only' / 'off'；空串 = 未设置，
+  /// 解析层回落到关闭）。列非空，所以清空是写空串而不是写 null。
+  Future<int> setGalgameUpscalingMode(String id, String modeKey) =>
+      (update(galgames)..where((t) => t.id.equals(id)))
+          .write(GalgamesCompanion(upscalingMode: Value<String>(modeKey)));
 
   /// 刮削成功后回写主显示源与发行日（发行日上提成列是为了 SQL 排序）。
   Future<int> setGalgameScrapeResult(

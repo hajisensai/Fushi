@@ -63,8 +63,11 @@ enum MagpieUpscalingMode {
   off,
 }
 
-/// 默认**关闭**。理由不是保守而是诚实：整条链路截至本轮尚未真机验证（见设计文档 §6），
-/// 且超分会实打实吃 GPU。用户显式打开才启用。
+/// 没有为这个游戏设过档位时的兜底档。
+///
+/// 🔴 **必须是 `off`**（BUG-1191）：超分是**每个游戏各自**的开关，存在 galgame 库那一行
+/// 上，缺省是空串。空串、认不出的旧值、以及压根不在库里的游戏（窗口附着路径没有稳定
+/// 游戏身份）全部落到这里 —— 宁可不超分，也不能替用户默默打开一个吃 GPU 的东西。
 const MagpieUpscalingMode kMagpieDefaultUpscalingMode = MagpieUpscalingMode.off;
 
 /// 偏好里持久化用的稳定字符串。
@@ -81,18 +84,41 @@ String magpieUpscalingModeToKey(MagpieUpscalingMode mode) {
   }
 }
 
-/// 反解；认不出的一律回落到 [kMagpieDefaultUpscalingMode]。
+/// 反解。null / 空串（没设过）和认不出的字符串（旧版本写坏、手改数据库）**一律**回落到
+/// [kMagpieDefaultUpscalingMode]。
+///
+/// 刻意**不**区分「没设过」和「设成了关闭」：两者对这一局的行为完全一样（不超分），
+/// 多分一态就等于多一个只在 UI 文案里体现、却要在整条链路上传递的特殊情况。
 MagpieUpscalingMode magpieUpscalingModeFromKey(String? key) {
   switch (key) {
     case 'auto':
       return MagpieUpscalingMode.auto;
     case 'installed_only':
       return MagpieUpscalingMode.installedOnly;
-    case 'off':
-      return MagpieUpscalingMode.off;
     default:
       return kMagpieDefaultUpscalingMode;
   }
+}
+
+/// **纯函数**：把「本局的启动 exe」+「库里那一行存的档位串」合成本局要用的档位。
+///
+/// [launchExe] 是本次会话的启动 exe 全路径，也是 galgame 库那一行的 `exePath` ——
+/// 用户在库里右键改的就是同一行，两边同一个真值，不会漂。
+/// [storedModeKey] 是查到的那一行的档位串；查不到那一行（游戏不在库里）传 null。
+///
+/// 🔴 每一条查不到的路径都落到 [kMagpieDefaultUpscalingMode]（关闭）：
+/// - `launchExe` 为空 = 窗口附着捕获，没有稳定游戏身份，**不猜**；
+/// - `storedModeKey` 为 null/空 = 这个游戏没设过。
+/// 反过来兜底成 auto 就等于替用户默默打开一个吃 GPU 的东西，而他既没同意过、也不
+/// 知道该去哪关。
+MagpieUpscalingMode resolveSessionUpscalingMode({
+  required String? launchExe,
+  required String? storedModeKey,
+}) {
+  if (launchExe == null || launchExe.isEmpty) {
+    return kMagpieDefaultUpscalingMode;
+  }
+  return magpieUpscalingModeFromKey(storedModeKey);
 }
 
 /// 裁决结果：这次会话到底走哪条路。

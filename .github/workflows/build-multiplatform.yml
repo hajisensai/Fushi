@@ -802,5 +802,28 @@ jobs:
             }
             Copy-Item -LiteralPath $source -Destination (Join-Path $targetDir $file) -Force
           }
+      - name: Bundle slim Magpie for offline upscaling install
+        shell: pwsh
+        run: |
+          # BUG-1217：随主包发行精简版 Magpie，超分首次使用不再需要下载 10.79 MB。
+          # 脚本自己先校验上游完整包的 SHA-256 再裁剪重打包——裁剪等于重新签名，
+          # 源包若被掉包而不先验，我们的侧车就成了给污染产物背书的东西。
+          # 只出 x64：ARM64 用户极少且能跑 x64 模拟，为它多背 4.7 MB 不划算，
+          # 那条路继续走按需下载。
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_magpie_slim.ps1
+          if ($LASTEXITCODE -ne 0) { throw "build_magpie_slim.ps1 failed ($LASTEXITCODE)" }
+          $sourceDir = Join-Path $PWD 'dist'
+          $targetDir = Join-Path $PWD 'hibiki\build\windows\x64\runner\Debug\magpie_bundle'
+          New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+          foreach ($file in @(
+            'Magpie-hibiki-slim-x64.zip',
+            'Magpie-hibiki-slim-x64.zip.sha256'
+          )) {
+            $source = Join-Path $sourceDir $file
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+              throw "Missing bundled magpie asset: $source"
+            }
+            Copy-Item -LiteralPath $source -Destination (Join-Path $targetDir $file) -Force
+          }
       - name: Run Windows comprehensive automation contract
         run: .\ci\comprehensive-test.ps1 -Platform windows -Only appSmoke
