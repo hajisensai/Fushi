@@ -1163,6 +1163,91 @@ class HibikiSyncServer {
     });
   }
 
+  /// HBK-AUDIT-012 路径穿越闸门：资产名绝不能含路径分隔符或 `..`，否则能逃出 host
+  /// 的资产根目录（DELETE 最危险）。合法返回 null；非法直接返回要回给客户端的响应。
+  ///
+  /// 此前这段判断在四个域 + 三个 position/progress 子路由里逐字重复了 7 遍。安全闸门
+  /// 靠复制粘贴维持，抄漏一处就是真漏洞——收敛成一处后新端点只能显式调用它。
+  ///
+  /// 注意：视频域**不用**本闸门——视频 id 形如 `video/xxx`，合法地含 `/`，它有自己的
+  /// `_extractVideoId` 校验。不要把视频接进来。
+  shelf.Response? _rejectUnsafeAssetId(String id, String label) {
+    if (id.isEmpty) return shelf.Response.notFound('Missing $label');
+    if (id.contains('/') || id.contains('\\') || id.contains('..')) {
+      return shelf.Response.forbidden('Invalid $label');
+    }
+    return null;
+  }
+
+  /// 「按名字取 / 存 / 删一个资产包」端点的共同骨架：词典 / 书 / 本地音频 / 有声书
+  /// 四个域在这一层**逐字相同**，只差叫什么名字、临时文件用什么扩展名、调 service
+  /// 的哪三个方法。
+  ///
+  /// 此前是四份约 60 行的复制粘贴（TODO-2120），加一个新媒体域就要再抄一遍——而这
+  /// 段代码里含导出缓存 + ETag/Range 续传、上传临时目录的必清理、IOSink 的双重关闭
+  /// 保护，抄漏任何一处都是真事故（泄漏临时目录 / 续传验证器失效 / socket 不回收）。
+  ///
+  /// [id] 必须已经过 [_rejectUnsafeAssetId]。
+  Future<shelf.Response> _serveAssetPackage(
+    shelf.Request request,
+    String method, {
+    required String id,
+    required String cacheKind,
+    required String notFoundMessage,
+    required String tempPrefix,
+    required String tempExtension,
+    required Future<File> Function() export,
+    required Future<void> Function(File tmp) import,
+    required Future<void> Function() delete,
+  }) async {
+    switch (method) {
+      case 'GET':
+        // 经导出缓存 + Range/If-Range：TTL 内的续传钉在同一份字节上（ETag 作验证器）；
+        // 旧 client 不发 Range 收到 200 全量，行为不变。扩展名保留 → Content-Type
+        // 仍由 _guessContentType 按扩展名判定。
+        File file;
+        try {
+          file = await _exportCache.obtain(cacheKind, id, export);
+        } on StateError {
+          return shelf.Response.notFound(notFoundMessage);
+        }
+        return serveFileWithRange(file, request,
+            etag: ExportPackageCache.etagFor(file));
+
+      case 'PUT':
+        final Directory tmpDir =
+            Directory.systemTemp.createTempSync(tempPrefix);
+        final File tmp = File(p.join(tmpDir.path, '$id$tempExtension'));
+        final IOSink sink = tmp.openWrite();
+        try {
+          await request.read().forEach(sink.add);
+          await sink.close();
+          await import(tmp);
+          return shelf.Response(200);
+        } catch (e) {
+          try {
+            await sink.close();
+          } catch (_) {
+            // best-effort
+          }
+          return shelf.Response(500, body: 'Import failed: $e');
+        } finally {
+          try {
+            tmpDir.deleteSync(recursive: true);
+          } catch (_) {
+            // best-effort
+          }
+        }
+
+      case 'DELETE':
+        await delete();
+        return shelf.Response(204);
+
+      default:
+        return shelf.Response(405);
+    }
+  }
+
   Future<shelf.Response> _handleLibraryDictionaries(
     shelf.Request request,
     String method,
@@ -1187,63 +1272,23 @@ class HibikiSyncServer {
     // 导致 "Illegal percent encoding in URI"（Dart 不接受非 ASCII 作为
     // decodeComponent 输入）。直接 substring 即可得到正确的词典名。
     final String name = reqPath.substring('/api/library/dictionaries/'.length);
-    if (name.isEmpty) {
-      return shelf.Response.notFound('Missing dictionary name');
-    }
-    // HBK-AUDIT-012: reject path-traversal attempts.  Dictionary names must
-    // never contain path separators or dot-dot sequences; if they did they
-    // could escape the dictionary resource root on the host (DELETE being the
-    // most dangerous).  This single gate covers all three methods below.
-    if (name.contains('/') || name.contains('\\') || name.contains('..')) {
-      return shelf.Response.forbidden('Invalid dictionary name');
-    }
+    // HBK-AUDIT-012 路径穿越闸门（收敛到 _rejectUnsafeAssetId），覆盖下面三个方法。
+    final shelf.Response? unsafe =
+        _rejectUnsafeAssetId(name, 'dictionary name');
+    if (unsafe != null) return unsafe;
 
-    switch (method) {
-      case 'GET':
-        // 经导出缓存 + Range/If-Range（TTL 内续传钉在同一份字节上；旧 client
-        // 不发 Range 收到 200 全量，行为不变）。
-        File file;
-        try {
-          file = await _exportCache.obtain(
-              'dict', name, () => svc.exportDictionary(name));
-        } on StateError {
-          return shelf.Response.notFound('Dictionary not found');
-        }
-        return serveFileWithRange(file, request,
-            etag: ExportPackageCache.etagFor(file));
-
-      case 'PUT':
-        final Directory tmpDir =
-            Directory.systemTemp.createTempSync('hibiki_dict_in');
-        final File tmp = File(p.join(tmpDir.path, '$name.hibikidict'));
-        final IOSink sink = tmp.openWrite();
-        try {
-          await request.read().forEach(sink.add);
-          await sink.close();
-          await svc.importDictionary(tmp);
-          return shelf.Response(200);
-        } catch (e) {
-          try {
-            await sink.close();
-          } catch (_) {
-            // best-effort
-          }
-          return shelf.Response(500, body: 'Import failed: $e');
-        } finally {
-          try {
-            tmpDir.deleteSync(recursive: true);
-          } catch (_) {
-            // best-effort
-          }
-        }
-
-      case 'DELETE':
-        await svc.deleteDictionary(name);
-        return shelf.Response(204);
-
-      default:
-        return shelf.Response(405);
-    }
+    return _serveAssetPackage(
+      request,
+      method,
+      id: name,
+      cacheKind: 'dict',
+      notFoundMessage: 'Dictionary not found',
+      tempPrefix: 'hibiki_dict_in',
+      tempExtension: '.hibikidict',
+      export: () => svc.exportDictionary(name),
+      import: svc.importDictionary,
+      delete: () => svc.deleteDictionary(name),
+    );
   }
 
   Future<shelf.Response> _handleLibraryBooks(
@@ -1273,14 +1318,9 @@ class HibikiSyncServer {
       if (method != 'GET') return shelf.Response(405);
       final String coverBookId = reqPath.substring(
           bookPrefix.length, reqPath.length - coverSuffix.length);
-      if (coverBookId.isEmpty) {
-        return shelf.Response.notFound('Missing book title');
-      }
-      if (coverBookId.contains('/') ||
-          coverBookId.contains('\\') ||
-          coverBookId.contains('..')) {
-        return shelf.Response.forbidden('Invalid book title');
-      }
+      final shelf.Response? unsafeCoverBookId =
+          _rejectUnsafeAssetId(coverBookId, 'book title');
+      if (unsafeCoverBookId != null) return unsafeCoverBookId;
       final File? cover = await _resolveBookCover(svc, coverBookId);
       if (cover == null) return shelf.Response.notFound('Book cover not found');
       return serveFileWithRange(cover, request);
@@ -1293,14 +1333,9 @@ class HibikiSyncServer {
     if (reqPath.startsWith(bookPrefix) && reqPath.endsWith(progressSuffix)) {
       final String progressBookKey = reqPath.substring(
           bookPrefix.length, reqPath.length - progressSuffix.length);
-      if (progressBookKey.isEmpty) {
-        return shelf.Response.notFound('Missing book key');
-      }
-      if (progressBookKey.contains('/') ||
-          progressBookKey.contains('\\') ||
-          progressBookKey.contains('..')) {
-        return shelf.Response.forbidden('Invalid book key');
-      }
+      final shelf.Response? unsafeProgressBookKey =
+          _rejectUnsafeAssetId(progressBookKey, 'book key');
+      if (unsafeProgressBookKey != null) return unsafeProgressBookKey;
       switch (method) {
         case 'GET':
           final RemoteBookProgress progress =
@@ -1328,63 +1363,23 @@ class HibikiSyncServer {
     }
 
     final String bookId = reqPath.substring(bookPrefix.length);
-    if (bookId.isEmpty) {
-      return shelf.Response.notFound('Missing book title');
-    }
-    // HBK-AUDIT-012: reject path-traversal attempts.  Book titles must
-    // never contain path separators or dot-dot sequences.
-    if (bookId.contains('/') ||
-        bookId.contains('\\') ||
-        bookId.contains('..')) {
-      return shelf.Response.forbidden('Invalid book title');
-    }
+    final shelf.Response? unsafe = _rejectUnsafeAssetId(bookId, 'book title');
+    if (unsafe != null) return unsafe;
 
-    switch (method) {
-      case 'GET':
-        // 经导出缓存 + Range/If-Range（.epub 扩展名保留 → Content-Type 仍是
-        // application/epub+zip；见 _guessContentType）。
-        File file;
-        try {
-          file = await _exportCache.obtain(
-              'book', bookId, () => svc.exportBook(bookId));
-        } on StateError {
-          return shelf.Response.notFound('Book not found');
-        }
-        return serveFileWithRange(file, request,
-            etag: ExportPackageCache.etagFor(file));
-
-      case 'PUT':
-        final Directory tmpDir =
-            Directory.systemTemp.createTempSync('hibiki_book_in');
-        final File tmp = File(p.join(tmpDir.path, '$bookId.epub'));
-        final IOSink sink = tmp.openWrite();
-        try {
-          await request.read().forEach(sink.add);
-          await sink.close();
-          await svc.importBook(tmp);
-          return shelf.Response(200);
-        } catch (e) {
-          try {
-            await sink.close();
-          } catch (_) {
-            // best-effort
-          }
-          return shelf.Response(500, body: 'Import failed: $e');
-        } finally {
-          try {
-            tmpDir.deleteSync(recursive: true);
-          } catch (_) {
-            // best-effort
-          }
-        }
-
-      case 'DELETE':
-        await svc.deleteBook(bookId);
-        return shelf.Response(204);
-
-      default:
-        return shelf.Response(405);
-    }
+    // 注：`.epub` 扩展名保留 → Content-Type 仍是 application/epub+zip
+    // （见 _guessContentType）。
+    return _serveAssetPackage(
+      request,
+      method,
+      id: bookId,
+      cacheKind: 'book',
+      notFoundMessage: 'Book not found',
+      tempPrefix: 'hibiki_book_in',
+      tempExtension: '.epub',
+      export: () => svc.exportBook(bookId),
+      import: svc.importBook,
+      delete: () => svc.deleteBook(bookId),
+    );
   }
 
   Map<String, Object?> _remoteBookJsonForRequest(
@@ -1441,61 +1436,22 @@ class HibikiSyncServer {
     // reqPath 已在 _handleRequest 经 Uri.decodeFull 解码，此处无需再解码。
     final String displayName =
         reqPath.substring('/api/library/localaudio/'.length);
-    if (displayName.isEmpty) {
-      return shelf.Response.notFound('Missing displayName');
-    }
-    // HBK-AUDIT-012: reject path-traversal attempts.
-    if (displayName.contains('/') ||
-        displayName.contains('\\') ||
-        displayName.contains('..')) {
-      return shelf.Response.forbidden('Invalid displayName');
-    }
+    final shelf.Response? unsafe =
+        _rejectUnsafeAssetId(displayName, 'displayName');
+    if (unsafe != null) return unsafe;
 
-    switch (method) {
-      case 'GET':
-        // 经导出缓存 + Range/If-Range。
-        File file;
-        try {
-          file = await _exportCache.obtain('localaudio', displayName,
-              () => svc.exportLocalAudio(displayName));
-        } on StateError {
-          return shelf.Response.notFound('Local audio not found');
-        }
-        return serveFileWithRange(file, request,
-            etag: ExportPackageCache.etagFor(file));
-
-      case 'PUT':
-        final Directory tmpDir =
-            Directory.systemTemp.createTempSync('hibiki_localaudio_in');
-        final File tmp = File(p.join(tmpDir.path, '$displayName.localaudio'));
-        final IOSink sink = tmp.openWrite();
-        try {
-          await request.read().forEach(sink.add);
-          await sink.close();
-          await svc.importLocalAudio(tmp);
-          return shelf.Response(200);
-        } catch (e) {
-          try {
-            await sink.close();
-          } catch (_) {
-            // best-effort
-          }
-          return shelf.Response(500, body: 'Import failed: $e');
-        } finally {
-          try {
-            tmpDir.deleteSync(recursive: true);
-          } catch (_) {
-            // best-effort
-          }
-        }
-
-      case 'DELETE':
-        await svc.deleteLocalAudio(displayName);
-        return shelf.Response(204);
-
-      default:
-        return shelf.Response(405);
-    }
+    return _serveAssetPackage(
+      request,
+      method,
+      id: displayName,
+      cacheKind: 'localaudio',
+      notFoundMessage: 'Local audio not found',
+      tempPrefix: 'hibiki_localaudio_in',
+      tempExtension: '.localaudio',
+      export: () => svc.exportLocalAudio(displayName),
+      import: svc.importLocalAudio,
+      delete: () => svc.deleteLocalAudio(displayName),
+    );
   }
 
   Future<shelf.Response> _handleLibraryAudiobooks(
@@ -1528,14 +1484,9 @@ class HibikiSyncServer {
         reqPath.endsWith(positionSuffix)) {
       final String positionBookKey = reqPath.substring(
           audiobookPrefix.length, reqPath.length - positionSuffix.length);
-      if (positionBookKey.isEmpty) {
-        return shelf.Response.notFound('Missing bookKey');
-      }
-      if (positionBookKey.contains('/') ||
-          positionBookKey.contains('\\') ||
-          positionBookKey.contains('..')) {
-        return shelf.Response.forbidden('Invalid bookKey');
-      }
+      final shelf.Response? unsafePositionBookKey =
+          _rejectUnsafeAssetId(positionBookKey, 'bookKey');
+      if (unsafePositionBookKey != null) return unsafePositionBookKey;
       // 先确认该有声书在 host DB 真实存在，防任意 key 写脏 prefs；与视频 position
       // 先 resolveVideoFile 同语义。BUG-471a：改用廉价的 audiobookExists（单次 DB
       // 查询）替代旧的 exportAudiobook 打包探测——旧实现每次 GET/PUT position 都把整
@@ -1578,61 +1529,23 @@ class HibikiSyncServer {
     }
 
     final String bookKey = reqPath.substring('/api/library/audiobooks/'.length);
-    if (bookKey.isEmpty) {
-      return shelf.Response.notFound('Missing bookKey');
-    }
-    // HBK-AUDIT-012: reject path-traversal attempts.
-    if (bookKey.contains('/') ||
-        bookKey.contains('\\') ||
-        bookKey.contains('..')) {
-      return shelf.Response.forbidden('Invalid bookKey');
-    }
+    final shelf.Response? unsafe = _rejectUnsafeAssetId(bookKey, 'bookKey');
+    if (unsafe != null) return unsafe;
 
-    switch (method) {
-      case 'GET':
-        // 经导出缓存 + Range/If-Range（大有声书包中断续传的最大受益者）。
-        File file;
-        try {
-          file = await _exportCache.obtain(
-              'audiobook', bookKey, () => svc.exportAudiobook(bookKey));
-        } on StateError {
-          return shelf.Response.notFound('Audiobook not found');
-        }
-        return serveFileWithRange(file, request,
-            etag: ExportPackageCache.etagFor(file));
-
-      case 'PUT':
-        final Directory tmpDir =
-            Directory.systemTemp.createTempSync('hibiki_audiobook_in');
-        final File tmp = File(p.join(tmpDir.path, '$bookKey.audiobook'));
-        final IOSink sink = tmp.openWrite();
-        try {
-          await request.read().forEach(sink.add);
-          await sink.close();
-          await svc.importAudiobook(tmp, bookKeyOverride: bookKey);
-          return shelf.Response(200);
-        } catch (e) {
-          try {
-            await sink.close();
-          } catch (_) {
-            // best-effort
-          }
-          return shelf.Response(500, body: 'Import failed: $e');
-        } finally {
-          try {
-            tmpDir.deleteSync(recursive: true);
-          } catch (_) {
-            // best-effort
-          }
-        }
-
-      case 'DELETE':
-        await svc.deleteAudiobook(bookKey);
-        return shelf.Response(204);
-
-      default:
-        return shelf.Response(405);
-    }
+    // 有声书包是 Range 续传的最大受益者（包最大）。导入要带 bookKeyOverride：
+    // 落地时必须钉在 URL 上的这个 key，不能让包里的自述 key 改写身份（BUG-414）。
+    return _serveAssetPackage(
+      request,
+      method,
+      id: bookKey,
+      cacheKind: 'audiobook',
+      notFoundMessage: 'Audiobook not found',
+      tempPrefix: 'hibiki_audiobook_in',
+      tempExtension: '.audiobook',
+      export: () => svc.exportAudiobook(bookKey),
+      import: (File tmp) => svc.importAudiobook(tmp, bookKeyOverride: bookKey),
+      delete: () => svc.deleteAudiobook(bookKey),
+    );
   }
 
   // ── 视频端点（P4-2）──────────────────────────────────────────────────────────
