@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/components/settings_shared.dart';
 import 'package:hibiki/src/utils/components/shelf_card_widgets.dart';
@@ -362,6 +363,114 @@ void main() {
           reason: '宽屏必须零行为变化：三个动作逐个平铺');
       expect(find.byIcon(Icons.sell_outlined), findsOneWidget);
       expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+    });
+  });
+
+  group('集号输入框宽度', () {
+    /// 在给定文字缩放下，量出 [label] 用 bodyLarge 渲染的真实宽度，并取回
+    /// [jimakuEpisodeFieldWidth] 的结果，供逐条断言。
+    Future<({double fieldWidth, double labelWidth})> measure(
+      WidgetTester tester,
+      String label, {
+      double textScale = 1.0,
+      double rowWidth = 1200,
+    }) async {
+      late double fieldWidth;
+      late double labelWidth;
+      await tester.pumpWidget(
+        buildTestApp(
+          MediaQuery(
+            data: MediaQueryData(
+              size: const Size(1280, 800),
+              textScaler: TextScaler.linear(textScale),
+            ),
+            child: Builder(
+              builder: (BuildContext context) {
+                fieldWidth = jimakuEpisodeFieldWidth(
+                  context,
+                  label,
+                  rowWidth: rowWidth,
+                );
+                final TextPainter painter = TextPainter(
+                  text: TextSpan(
+                    text: label,
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                  textDirection: TextDirection.ltr,
+                  textScaler: MediaQuery.textScalerOf(context),
+                  maxLines: 1,
+                )..layout();
+                labelWidth = painter.width;
+                painter.dispose();
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      return (fieldWidth: fieldWidth, labelWidth: labelWidth);
+    }
+
+    // 用户实报（截图）：宽屏 1920 窗口下 label 仍被裁成「集数···」——这跟屏幕宽窄
+    // 无关，是「用固定像素装一段会变长的文案」。此前写死 96，而中文「集数（可选）」
+    // 与英文 `Episode (optional)` 都超过它。
+    for (final ({String label, String desc}) sample
+        in <({String label, String desc})>[
+      (label: '集数（可选）', desc: '中文'),
+      (label: 'Episode (optional)', desc: '英文'),
+      (label: 'Folge (optional)', desc: '德文'),
+    ]) {
+      testWidgets('${sample.desc} label 完整放得下，不再被裁',
+          (WidgetTester tester) async {
+        final ({double fieldWidth, double labelWidth}) m =
+            await measure(tester, sample.label);
+        expect(
+          m.fieldWidth,
+          greaterThanOrEqualTo(m.labelWidth + kJimakuEpisodeFieldChrome),
+          reason: '框宽必须由 label 的实测宽度决定；写死 96 时 ${sample.desc} label '
+              '（实测 ${m.labelWidth.toStringAsFixed(1)}px）放不下（BUG-1184）',
+        );
+      });
+    }
+
+    testWidgets('界面放大时跟着变宽（旧的写死 96 正是栽在这里）', (WidgetTester tester) async {
+      final ({double fieldWidth, double labelWidth}) base =
+          await measure(tester, '集数（可选）');
+      final ({double fieldWidth, double labelWidth}) scaled =
+          await measure(tester, '集数（可选）', textScale: 1.5);
+      expect(scaled.fieldWidth, greaterThan(base.fieldWidth));
+      expect(
+        scaled.fieldWidth,
+        greaterThanOrEqualTo(scaled.labelWidth + kJimakuEpisodeFieldChrome),
+      );
+    });
+
+    testWidgets('窄行里有上限，不会把左边的搜索词输入框挤没', (WidgetTester tester) async {
+      const double rowWidth = 320;
+      final ({double fieldWidth, double labelWidth}) m = await measure(
+        tester,
+        'Episodennummer (optional, mehrere durch Komma getrennt)',
+        rowWidth: rowWidth,
+      );
+      expect(
+        m.fieldWidth,
+        lessThanOrEqualTo(rowWidth * 0.4),
+        reason: '上限本身也不写死像素——取整行宽的四成，窄屏才真正起保护作用',
+      );
+    });
+
+    testWidgets('行够宽时上限不再是限制，长译文照样完整显示', (WidgetTester tester) async {
+      const String longLabel =
+          'Episodennummer (optional, mehrere durch Komma getrennt)';
+      // 测试字体（Ahem）每个字符都是整字宽，这段 label 被量成真实字体的两倍多；
+      // 行宽给足即可表达「上限只在窄行起作用」，与真实字体下的结论一致。
+      final ({double fieldWidth, double labelWidth}) m =
+          await measure(tester, longLabel, rowWidth: 4000);
+      expect(
+        m.fieldWidth,
+        greaterThanOrEqualTo(m.labelWidth + kJimakuEpisodeFieldChrome),
+      );
     });
   });
 
