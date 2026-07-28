@@ -81,7 +81,7 @@ const Map<String, Object?> _searchFixture = <String, Object?>{
       'name': 'Fate/hollow ataraxia',
       'name_cn': '',
       'date': '2005',
-      'image': 'https://lain.bgm.tv/pic/cover/l/fha.jpg',
+      'image': 'https://lain.bgm.tv/r/400/pic/cover/l/fha.jpg',
     },
   ],
 };
@@ -424,12 +424,14 @@ void main() {
       expect(draft.tags.first, 'tag0');
     });
 
-    test('封面按 large → common → medium 回退', () {
+    test('封面按 large → common → medium 回退并还原原图', () {
       expect(
         bangumiCoverUrl(<Object?, Object?>{
-          'images': <String, Object?>{'medium': 'm.jpg'},
+          'images': <String, Object?>{
+            'medium': 'https://lain.bgm.tv/r/800/pic/cover/l/a/b/m.jpg',
+          },
         }),
-        'm.jpg',
+        'https://lain.bgm.tv/pic/cover/l/a/b/m.jpg',
       );
       expect(bangumiCoverUrl(<Object?, Object?>{'images': 'x'}), isNull);
       expect(bangumiCoverUrl(const <Object?, Object?>{}), isNull);
