@@ -88,11 +88,34 @@ void main() {
     expect(src.contains('pageBased'), isTrue, reason: 'PDF/漫画共用页码型进度分支');
   });
 
-  test('漫画阅读统计不把页数当字数（charsRead 恒 0）', () {
+  test('漫画阅读统计：字数走 OCR 记账、页数走独立列，两个量纲不交叉', () {
     final String src =
         read('lib/src/media/manga/reader/manga_hibiki_page.dart');
-    expect(src.contains('charsRead: 0'), isTrue,
-        reason: '漫画无字数；把页数塞进 charsRead 会污染统计页的「字数」口径');
+    // 旧守卫钉的是字面量 `charsRead: 0`，理由写「漫画无字数」+「页数塞进 charsRead
+    // 会污染字数口径」。前半句在 schema v60 起**不再成立**：统计口径已按产品决策纳入
+    // 漫画，漫画的字来自 mokuro / 内置 OCR 的实义字符（口径与 EPUB 同源的
+    // japaneseCharCount），恒 0 反而是错的——统计页会永远显示漫画 0 字。
+    //
+    // 后半句仍然是真不变量，且是这条守卫真正要防的东西，所以原样保留并加强：页数有
+    // 自己的 `pagesRead` 列（v60 新增），绝不能冒充字数，否则「字数」和「阅读速度」
+    // 两个口径同时被污染。下面从「钉一个字面量」改成「钉两个量纲的接线不交叉」。
+    expect(src.contains('mangaAccumulateReadingStats'), isTrue,
+        reason: '字数必须来自 OCR 文本记账，不能凭页数现编');
+    expect(src.contains('charsRead: charsRead'), isTrue,
+        reason: 'charsRead 落 OCR 字符数');
+    expect(src.contains('pagesRead: pagesRead'), isTrue,
+        reason: '页数落 v60 新增的 pagesRead 独立列，不与字数混流');
+    // 交叉接线守卫：任何把页数喂给字数、或把字数喂给页数的写法都算口径污染。
+    expect(src.contains('charsRead: pagesRead'), isFalse,
+        reason: '页数绝不能塞进 charsRead（会污染字数口径与阅读速度）');
+    expect(src.contains('charsRead: _sessionPagesRead'), isFalse,
+        reason: '页数绝不能塞进 charsRead（会污染字数口径与阅读速度）');
+    expect(src.contains('pagesRead: charsRead'), isFalse,
+        reason: '字数绝不能塞进 pagesRead');
+    expect(src.contains('_sessionCharsRead += added.pages'), isFalse,
+        reason: '会话字数累加口必须取 chars，不能取 pages');
+    expect(src.contains('_sessionPagesRead += added.chars'), isFalse,
+        reason: '会话页数累加口必须取 pages，不能取 chars');
     expect(src.contains('ReadingTimeTracker'), isTrue, reason: '复用时长统计');
   });
 
