@@ -186,9 +186,11 @@ void main() {
     await tester.tap(find.text(t.game_scrape_use));
     // 应用链含真实文件 IO（saveGameCoverBytes 异步写盘）——FakeAsync 区里
     // 真实 IO 事件永不到达，pumpAndSettle 会挂死。用 runAsync 放行真实事件
-    // 循环让下载/写盘完成，再回 pump 收 UI 帧，直到弹窗关闭。
+    // 循环让下载/写盘完成，再回 pump 收 UI 帧，直到弹窗关闭。上限给足 250
+    // 次（约 5s 真实时间）：批量套件并行抢磁盘时单次写盘可能明显变慢，上限
+    // 太紧会偶发超时（本测试首版 50 次在混跑下真踩过）。
     for (int i = 0;
-        i < 50 && find.byType(GalgameScrapeDialog).evaluate().isNotEmpty;
+        i < 250 && find.byType(GalgameScrapeDialog).evaluate().isNotEmpty;
         i++) {
       await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 20)));
