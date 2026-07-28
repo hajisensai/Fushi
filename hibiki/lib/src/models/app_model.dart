@@ -4792,6 +4792,10 @@ class AppModel with ChangeNotifier {
   void setVideoMiningImageMode(VideoMiningImageMode mode) =>
       prefsRepo.setVideoMiningImageMode(mode);
 
+  VideoMiningImageMode get galMiningImageMode => prefsRepo.galMiningImageMode;
+  void setGalMiningImageMode(VideoMiningImageMode mode) =>
+      prefsRepo.setGalMiningImageMode(mode);
+
   bool get deduplicatePitchAccents => prefsRepo.deduplicatePitchAccents;
   void toggleDeduplicatePitchAccents() =>
       prefsRepo.toggleDeduplicatePitchAccents();

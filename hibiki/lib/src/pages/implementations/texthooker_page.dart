@@ -519,6 +519,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       repo: repo,
       updateNoteId: updateNoteId,
       addTitleTag: mixinAppModel.autoAddBookNameToTags,
+      imageMode: mixinAppModel.galMiningImageMode,
     );
     if (result.aborted) {
       HibikiToast.showMine(

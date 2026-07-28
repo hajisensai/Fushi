@@ -1,0 +1,15 @@
+## BUG-1160 · galgame 制卡封面只能 GIF，不能选静态截图
+- **报告**：2026-07-27（用户：制卡要支持使用截图，而不是只能 gif）
+- **真实性**：✅ 真 bug（缺能力）。`hibiki/lib/src/mining/gal_hook_mining_coordinator.dart` 的封面链路把 GIF 写死成主路径：先 `_captureGif`，只有它返回空才退到 `_captureStill` 单帧并置 `degradedToStill`。用户没有任何入口选「我就要静态截图」。
+  - 视频侧早有 `VideoMiningImageMode { gif, currentFrame, subtitleStart }` + 偏好 `video_mining_image_mode` + 设置页选择器（`anki_settings_page.dart`），galgame 侧完全没有接。
+  - 这在 galgame 上尤其亏：一句台词内画面基本静止，GIF 多半只是把同一帧存二十遍，白白撑大卡片和 Anki 媒体库。
+- **[x] ① 已修复** — 复用视频侧的 `VideoMiningImageMode` 枚举（不新造概念），但**独立存偏好** `gal_mining_image_mode`：
+  - 视频的动图能拍出口型和动作，galgame 的不能——两者取舍不同，共用一个开关会逼用户为一边将就另一边，故分开存（`preferences_repository.dart` / `app_model.dart`）。
+  - `mineLine` 新增 `imageMode` 参数（缺省 `gif` = 旧行为逐字等价，Never break userspace），`texthooker_page.dart` 透传 `appModel.galMiningImageMode`。
+  - `imageMode.isStill` 时**直接抓单帧、完全不试 GIF**，且**不置 `degradedToStill`**（主动选静态图不是降级，不该弹「已降级为静态图」提示，与视频侧同语义）。
+  - BUG-1096 的 WGC/Magpie 诊断留痕抽成 `captureStillWithDiagnostics()`，GIF 降级与静态主路径共用，不因为多了一条路径就漏掉留痕。
+  - 设置页只渲染 gif / 静态截图两档——galgame 没有「字幕区间」，不给 `subtitleStart` 免得暗示能选；历史值若是 `subtitleStart` 按 `isStill` 归到静态截图，picker 不会落在未渲染的选项上。
+- **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_hook_mining_coordinator_test.dart`：
+  - `screenshot mode skips GIF entirely and is not a degradation`（断言 `gifCalls == 0`、封面 `.png`、`degradedToStill` 为假）；
+  - `gif mode remains the default and still degrades to png`（不传 `imageMode` 的旧调用形态必须逐字等价于原链路）。
+- **备注**：本条原与 [BUG-1187](BUG-1187-gal-unvoiced-line-gets-bgm.md) / [BUG-1165](BUG-1165-gal-track-panel-silent-predicate.md) 同在 PR#471，但它是**新增能力**而非缺陷修复，按用户要求拆成独立 PR 独立审查、独立验收；PR#471 只保留那两条 bug 修复。两个 PR 各自基于 develop，无代码依赖。真机验收待补：需在游戏里各制一张卡，确认静态模式落 `.png` 且不弹降级提示、GIF 模式行为与之前一致。

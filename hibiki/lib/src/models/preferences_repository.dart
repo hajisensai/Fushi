@@ -1334,6 +1334,20 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  // galgame 场景卡封面模式，与视频**分开存**：视频的动图能拍出口型和动作，galgame
+  // 画面在一句台词内基本静止，动图多半只是把同一帧存二十遍。两者的取舍不同，共用一
+  // 个开关会逼用户为一边将就另一边。默认 gif=现状零破坏；galgame 没有「字幕区间」，
+  // 故只在 gif / currentFrame 两档间取值，其余值按 [VideoMiningImageMode.isStill]
+  // 归入静态截图。
+  VideoMiningImageMode get galMiningImageMode =>
+      VideoMiningImageMode.fromWireName(
+          getPref('gal_mining_image_mode', defaultValue: null) as String?);
+
+  void setGalMiningImageMode(VideoMiningImageMode mode) async {
+    await setPref('gal_mining_image_mode', mode.wireName);
+    notifyListeners();
+  }
+
   bool get deduplicatePitchAccents =>
       getPref('deduplicate_pitch_accents', defaultValue: true) as bool;
 

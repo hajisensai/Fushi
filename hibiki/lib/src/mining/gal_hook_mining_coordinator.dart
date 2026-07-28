@@ -117,6 +117,9 @@ class GalHookMiningCoordinator {
     required BaseAnkiRepository repo,
     int? updateNoteId,
     bool addTitleTag = false,
+    // 缺省 gif = 旧行为逐字等价（Never break userspace）；调用方透传
+    // [AppModel.galMiningImageMode]。
+    VideoMiningImageMode imageMode = VideoMiningImageMode.gif,
   }) {
     // 串行化 + 永不毒化（BUG-956）：单次制卡异常（含错误日志自身抛）不得让后续制卡永久挂起。
     return _miningQueue.enqueue<GalHookMiningResult>(
@@ -127,6 +130,7 @@ class GalHookMiningCoordinator {
         repo: repo,
         updateNoteId: updateNoteId,
         addTitleTag: addTitleTag,
+        imageMode: imageMode,
       ),
       buildFailure: (Object error, StackTrace stack) =>
           GalHookMiningResult(failureReason: error.toString()),
@@ -145,6 +149,7 @@ class GalHookMiningCoordinator {
     required BaseAnkiRepository repo,
     required int? updateNoteId,
     required bool addTitleTag,
+    required VideoMiningImageMode imageMode,
   }) async {
     final TexthookerLineEntry? entry = _lineLookup(lineId);
     if (entry == null || !_lineValidator(entry)) {
@@ -180,13 +185,10 @@ class GalHookMiningCoordinator {
       );
     }
 
-    Uint8List? coverBytes = await _captureGif(hwnd: window.hwnd);
-    String coverName = 'external_window.gif';
-    bool degradedToStill = false;
-    if (coverBytes == null || coverBytes.isEmpty) {
+    // 单帧截图：GIF 模式下是降级路径，静态模式下是**主路径**。两条路径共用同一份
+    // 诊断留痕（BUG-1096：WGC 光标抑制是否生效 / 是否从 Magpie 缩放窗重定向回源窗）。
+    Future<WindowCaptureResult> captureStillWithDiagnostics() async {
       final WindowCaptureResult still = await _captureStill(window.hwnd);
-      // BUG-1096：native 成功路径诊断（WGC 光标抑制是否生效 / 是否从 Magpie 缩放窗
-      // 重定向到源窗口）。降级到单帧时也要留痕，否则这条路径仍是盲区。
       final String? diagnostics = still.diagnostics;
       if (diagnostics != null && diagnostics.isNotEmpty) {
         ErrorLogService.instance.log(
@@ -195,6 +197,17 @@ class GalHookMiningCoordinator {
           StackTrace.current,
         );
       }
+      return still;
+    }
+
+    Uint8List? coverBytes;
+    String coverName = 'external_window.gif';
+    bool degradedToStill = false;
+    if (imageMode.isStill) {
+      // 用户主动选静态截图：直接抓单帧，**不**先试 GIF。galgame 一句台词内画面基本
+      // 静止，动图多半只是把同一帧存二十遍，白白撑大卡片。这不是降级，故不置
+      // degradedToStill，也就不会弹「已降级为静态图」的提示（与视频侧同语义）。
+      final WindowCaptureResult still = await captureStillWithDiagnostics();
       if (!still.ok) {
         return GalHookMiningResult(
           failureReason: still.error ?? 'game window capture failed',
@@ -202,7 +215,19 @@ class GalHookMiningCoordinator {
       }
       coverBytes = still.pngBytes;
       coverName = 'external_window.png';
-      degradedToStill = true;
+    } else {
+      coverBytes = await _captureGif(hwnd: window.hwnd);
+      if (coverBytes == null || coverBytes.isEmpty) {
+        final WindowCaptureResult still = await captureStillWithDiagnostics();
+        if (!still.ok) {
+          return GalHookMiningResult(
+            failureReason: still.error ?? 'game window capture failed',
+          );
+        }
+        coverBytes = still.pngBytes;
+        coverName = 'external_window.png';
+        degradedToStill = true;
+      }
     }
 
     final String audioExtension = immersionMiningAudioExtension();
