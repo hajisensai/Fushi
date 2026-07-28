@@ -1893,7 +1893,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // 空白的场景。chaptersJson 里逐章存着导入时解析到的 mediaType，直接灌进去，
     // 主路径与回退路径就用同一份真相源，无需在拦截器里分叉。
     final Map<String, EpubResource> resources = <String, EpubResource>{};
-    final String canonExtractDir = p.canonicalize(extractDir);
+    final String normExtractDir = p.normalize(extractDir);
     for (int i = 0; i < rawChapters.length; i++) {
       final Map<String, dynamic> ch = rawChapters[i] as Map<String, dynamic>;
       final String href = ch['href'] as String;
@@ -1907,12 +1907,20 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
         html: html,
         spineIndex: i,
       ));
-      // key 与 EpubParser 建表时同构造（canonicalize 后相对 extractDir 的 posix
-      // 路径），拦截器才查得到。
-      final String absPath = p.canonicalize(p.join(extractDir, href));
-      if (!p.isWithin(canonExtractDir, absPath)) continue;
+      // BUG-1218：key 与 filePath 必须与 [EpubParser._resolveWithinExtract] /
+      // [EpubParser._relHref] **同构造**——越界判据用 canonicalize（大小写折叠，
+      // `../` 逃逸不被绕过），真实路径与键用 normalize（**保留大小写**）。此前这里
+      // 用 canonicalize 建键，而 parser 侧与拦截器侧都已改成保留大小写，三方
+      // 2:1 不一致：混合大小写的书在这条回退路径上 resources 永远查不中，
+      // BUG-1203 的「OPF media-type 优先」静默退回扩展名兜底；filePath 折成小写
+      // 更让大小写敏感平台直接读不到文件。
+      final String joined = p.join(extractDir, href);
+      if (!p.isWithin(p.canonicalize(extractDir), p.canonicalize(joined))) {
+        continue;
+      }
+      final String absPath = p.normalize(joined);
       final String relPath =
-          p.relative(absPath, from: canonExtractDir).replaceAll('\\', '/');
+          p.relative(absPath, from: normExtractDir).replaceAll('\\', '/');
       resources[normalizeHref(relPath)] =
           EpubResource(mediaType: mediaType, filePath: absPath);
     }
