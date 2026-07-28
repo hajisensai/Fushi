@@ -95,8 +95,8 @@ class MangaHibikiSource extends ReaderMediaSource {
   }
 
   @override
-  BasePage buildHistoryPage({MediaItem? item}) {
-    return const ReaderHibikiHistoryPage();
+  BasePage buildHistoryPage({MediaItem? item, Widget? navigation}) {
+    return ReaderHibikiHistoryPage(navigation: navigation);
   }
 
   /// 漫画是 `EpubBooks`（`format=='manga'`）的行，和 EPUB 共用可编辑的 `author` 列，

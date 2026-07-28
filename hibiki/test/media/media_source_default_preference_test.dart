@@ -22,7 +22,7 @@ class _TestMediaSource extends MediaSource {
   double get aspectRatio => 1;
 
   @override
-  BasePage buildHistoryPage() {
+  BasePage buildHistoryPage({Widget? navigation}) {
     return const _TestPage();
   }
 

@@ -268,8 +268,10 @@ void main() {
   group('BUG-513 no ref access after initState (captured _db field)', () {
     late String src;
     setUpAll(() {
+      // 实现体已从对话框文件搬到 [MediaSourcesView]（对话框与库页「来源」视图共用
+      // 同一份行为），守卫因此跟着扫内容体文件；断言逐条不变。
       src = File(
-        'lib/src/pages/implementations/media_sources_dialog.dart',
+        'lib/src/pages/implementations/media_sources_view.dart',
       ).readAsStringSync();
     });
 
@@ -314,8 +316,10 @@ void main() {
   group('credential red-line source guard', () {
     late String src;
     setUpAll(() {
+      // 实现体已从对话框文件搬到 [MediaSourcesView]（对话框与库页「来源」视图共用
+      // 同一份行为），守卫因此跟着扫内容体文件；断言逐条不变。
       src = File(
-        'lib/src/pages/implementations/media_sources_dialog.dart',
+        'lib/src/pages/implementations/media_sources_view.dart',
       ).readAsStringSync();
     });
 

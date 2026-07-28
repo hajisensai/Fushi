@@ -2740,5 +2740,10 @@
   "game_helper_bundle_missing": "这个版本没有随包附带 galgame 钩子 helper，请更新 Hibiki 获取。",
   "game_upscaling_pick_title": "$name 的窗口超分",
   "game_upscaling_pick_body": "捕获会话期间用 Magpie 放大这个游戏的窗口。每个游戏各自设置——只有原生分辨率低于屏幕的游戏才用得上。会占用显卡。",
-  "game_upscaling_hint_not_installed": "没有安装 Magpie。在游戏库里右键这个游戏，把「窗口超分」改成「自动」即可下载。"
+  "game_upscaling_hint_not_installed": "没有安装 Magpie。在游戏库里右键这个游戏，把「窗口超分」改成「自动」即可下载。",
+  "media_source_count_manga": "$n 卷",
+  "library_view_shelf": "书架",
+  "library_view_browse": "浏览",
+  "library_view_sources": "来源",
+  "library_view_media": "媒体库"
 }

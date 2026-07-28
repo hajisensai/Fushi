@@ -12,7 +12,9 @@ void main() {
   late String source;
 
   setUp(() {
-    source = File('lib/src/pages/implementations/media_sources_dialog.dart')
+    // 实现体已从对话框文件搬到 [MediaSourcesView]（对话框与库页「来源」视图共用
+    // 同一份行为），守卫因此跟着扫内容体文件；断言逐条不变。
+    source = File('lib/src/pages/implementations/media_sources_view.dart')
         .readAsStringSync();
   });
 

@@ -436,8 +436,8 @@ class ReaderHibikiSource extends ReaderMediaSource {
   }
 
   @override
-  BasePage buildHistoryPage({MediaItem? item}) {
-    return const ReaderHibikiHistoryPage();
+  BasePage buildHistoryPage({MediaItem? item, Widget? navigation}) {
+    return ReaderHibikiHistoryPage(navigation: navigation);
   }
 
   // ── Book listing from Drift ─────────────────────────────────────────

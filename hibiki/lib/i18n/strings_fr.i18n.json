@@ -2740,5 +2740,10 @@
   "game_helper_bundle_missing": "The galgame hook helper is not bundled with this build. Update Hibiki to get it.",
   "game_upscaling_pick_title": "Window upscaling for $name",
   "game_upscaling_pick_body": "Upscales this game window with Magpie while a capture session is running. Set per game - it only helps for games whose native resolution is lower than your screen. Uses your GPU.",
-  "game_upscaling_hint_not_installed": "Magpie is not installed. Right-click this game in your library and set window upscaling to Auto to download it."
+  "game_upscaling_hint_not_installed": "Magpie is not installed. Right-click this game in your library and set window upscaling to Auto to download it.",
+  "media_source_count_manga": "$n volumes",
+  "library_view_shelf": "Shelf",
+  "library_view_browse": "Browse",
+  "library_view_sources": "Sources",
+  "library_view_media": "Library"
 }
