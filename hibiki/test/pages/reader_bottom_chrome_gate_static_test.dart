@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'reader_hibiki_page_source_corpus.dart';
@@ -22,16 +24,38 @@ void main() {
     // _hasEverLoaded && _showChrome；悬浮再加 _chromeTransientVisible），_buildBottomChrome
     // 改调它。不变式（钉死在 set-once _hasEverLoaded、不退回每切章翻转的
     // _readerContentReady）必须在 _bottomBarShouldPaint 里成立。
+    // BUG-1189：可见性判据本体搬进纯函数 bottomBarVisible（与 VN 空白点分派
+    // readerVnBlankTapAction 共用同一套规则，防两边漂开），页里只剩绑定实例字段的
+    // 委托。不变式拆成两半各自钉死：① 页把 set-once _hasEverLoaded 喂进去；
+    // ② 纯函数里 !hasEverLoaded 仍是硬门。
     final String shouldPaint = _functionSource(
       src,
-      '  bool get _bottomBarShouldPaint {',
+      '  bool get _bottomBarShouldPaint => bottomBarVisible(',
       '  bool get _anyChromeFloating',
     );
     expect(
       shouldPaint,
-      contains('if (!_hasEverLoaded || !_showChrome) return false'),
+      contains('hasEverLoaded: _hasEverLoaded'),
       reason: '底栏门控必须用 set-once _hasEverLoaded（切章不翻转），不得退回每切章'
           '翻转的 _readerContentReady → 否则切章瞬间底栏卸载再挂回即闪烁。',
+    );
+    expect(
+      shouldPaint,
+      contains('chromeExpanded: _showChrome'),
+      reason: '底栏可见性仍须随 _showChrome。',
+    );
+    final String pureGate = _functionSource(
+      File('lib/src/reader/reader_chrome_floating.dart')
+          .readAsStringSync()
+          .replaceAll('\r\n', '\n'),
+      'bool bottomBarVisible(',
+      'BUG-1189',
+    );
+    expect(
+      pureGate,
+      contains('if (!hasEverLoaded || !chromeExpanded) return false'),
+      reason: '纯函数里「未冷加载完成 / 底栏收起 ⇒ 不画」必须是硬门，'
+          '否则页侧喂对了参数也拦不住切章闪烁。',
     );
     final String buildChrome = _functionSource(
       src,

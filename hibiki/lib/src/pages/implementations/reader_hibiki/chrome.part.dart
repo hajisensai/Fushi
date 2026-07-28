@@ -1030,6 +1030,46 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     return true;
   }
 
+  /// BUG-1189：VN（视觉小说）模式下一次「空白点击」的唯一落点。
+  ///
+  /// 旧实现在 JS 侧 [_gestureEnd] 里直接 `window.hoshiReader.paginate('forward')`
+  /// 并 return，抢在查词 / `onTapEmpty` 之前把每一次空白点都吃掉——而 `onTapEmpty`
+  /// 是触屏唯一能唤出控制栏的通道，于是 VN 下底栏（悬浮态默认几秒后自动收起）一旦
+  /// 收起就永远唤不回来。现在 JS 只回传「这是一次 VN 空白点」，翻页还是唤栏由 Dart
+  /// 这个**状态拥有者**判定（chrome 可见性只有 Dart 知道：悬浮态的真值是
+  /// `_chromeTransientVisible`，JS 侧 `__hoshiTapGate.chrome` 镜像的是 `_showChrome`，
+  /// 悬浮态下恒 true，根本区分不出「已自动收起」）。
+  ///
+  /// 顺带修好一处旧漏：JS 直调 paginate 会丢弃返回值，屏到章末返回 "limit" 也没人
+  /// 处理 → VN 点击推进到章末就卡住。现在走 [_paginate] 这个唯一翻页入口，跨章
+  /// （[_handlePageTurnLimit]）/ 节流 / caret 重锚全部与滑动、键盘路径一致。
+  void _handleVnBlankTap() {
+    if (_lyricsMode) return;
+    // 与 onTapEmpty 同语义：有可见查词弹窗时，本次点击只清弹窗栈（BUG-072 续播 /
+    // BUG-092 热槽），既不翻页也不动控制栏。
+    if (isDictionaryShown) {
+      clearDictionaryResult();
+      return;
+    }
+    // 与 onTapEmpty 同语义（TODO-1366）：点空白顺带清掉残留的 app 自绘选区。
+    _clearReaderAppSelection();
+    // 本次 pointer 手势把 OS 焦点交给了 WebView，不夺回 Flutter _focusNode 就收不到
+    // ESC（BUG-136）。翻页与唤栏两条分支都要。
+    _focusOwnership.reclaim(FocusReclaimCause.gesture);
+    switch (readerVnBlankTapAction(
+      chromeExpanded: _showChrome,
+      bottomBarFloating: _bottomBarFloating,
+      transientVisible: _chromeTransientVisible,
+    )) {
+      case ReaderVnBlankTapAction.expandChrome:
+        _toggleChrome();
+      case ReaderVnBlankTapAction.revealFloatingChrome:
+        _handleFloatingChromeReveal();
+      case ReaderVnBlankTapAction.advance:
+        unawaited(_paginate(ReaderNavigationDirection.forward));
+    }
+  }
+
   /// TODO-693: appUiScale（整体界面缩放）变化时把连续模式阅读位置重锚回原字符，避免
   /// 弹回章节开头。
   ///

@@ -216,10 +216,13 @@ void main() {
           isFalse,
           reason: 'M0 must not pass the live reveal-speed setting to the shell',
         );
+        // BUG-1189: blank-tap 不再由 JS 自己 paginate（那会吃掉唯一能唤出控制栏的
+        // 手势）。JS 只回传事实，翻页/唤栏由 Dart 判——详见
+        // vn_blank_tap_chrome_reveal_bug1189_test.dart。
         expect(
-          webview.contains("window.hoshiReader.paginate('forward')"),
+          webview.contains("callHandler('onVnBlankTap')"),
           isTrue,
-          reason: 'M0 blank-tap must advance via paginate(forward)',
+          reason: 'VN blank-tap must be routed to Dart, not paginated in JS',
         );
         expect(
           webview.contains('hoshiVnClickAdvance'),
