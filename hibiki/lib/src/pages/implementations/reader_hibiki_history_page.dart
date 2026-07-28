@@ -20,6 +20,7 @@ import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
 import 'package:hibiki/src/media/display_title.dart';
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
+import 'package:hibiki/src/media/manga/manga_module.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_download_queue.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/media/video/video_feature_flags.dart';

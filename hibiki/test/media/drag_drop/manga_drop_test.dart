@@ -56,7 +56,62 @@ void main() {
       expect(files.unknown, <String>['/a/第01巻']);
     });
 
-    test('.zip 不归漫画（无内容判据，避免把词典包当漫画导）', () {
+    // ↓ 用户实指：「你怎么知道是普通 epub 啊」——同理，`.zip` 也分不出是一包页图的
+    //   漫画还是 Yomitan 词典包。没有判据时图片型 zip 归 dictionaries，books 分支
+    //   走到 `files.hasAny` 兜底回「本页面不支持」，而导入对话框导得了它（其分派
+    //   对 .zip 会真读包）——又一处「按钮能导、拖进去不认」。
+    test('图片型 .zip 经 isImageArchive 判据归 mangas（此前回「本页面不支持」）', () {
+      final DroppedFiles files = classifyDroppedFiles(
+        <String>['/a/vol1.zip'],
+        isImageArchive: (String pth) => pth == '/a/vol1.zip',
+      );
+      expect(files.mangas, <String>['/a/vol1.zip']);
+      expect(files.dictionaries, isEmpty,
+          reason: '命中图片包判据后不得再落 dictionaries（否则归属歧义）');
+    });
+
+    test('图片型 .zip 在两个表面都 -> importNewManga', () {
+      final DroppedFiles files = classifyDroppedFiles(
+        <String>['/a/vol1.zip'],
+        isImageArchive: (String _) => true,
+      );
+      for (final DropSurface surface in <DropSurface>[
+        DropSurface.books,
+        DropSurface.manga,
+      ]) {
+        expect(
+          decideDropIntent(surface: surface, files: files, cardHit: false),
+          DropIntent.importNewManga,
+          reason: '$surface 表面的图片型 zip 必须能导入而不是回「不支持」',
+        );
+      }
+    });
+
+    test('词典 .zip 有判据也仍归 dictionaries（不误把词典包当漫画导）', () {
+      final DroppedFiles files = classifyDroppedFiles(
+        <String>['/a/dict.zip'],
+        isImageArchive: (String _) => false,
+      );
+      expect(files.mangas, isEmpty);
+      expect(files.dictionaries, <String>['/a/dict.zip']);
+    });
+
+    test('判据只探 zip，不对 epub / 无关扩展名白开压缩包', () {
+      final List<String> probed = <String>[];
+      classifyDroppedFiles(
+        <String>['/a/v.mp4', '/a/b.epub', '/a/s.srt', '/a/x.zip'],
+        isImageArchive: (String pth) {
+          probed.add(pth);
+          return false;
+        },
+      );
+      // epub 刻意不探：它在 books 分支就走 BookImportDialog，对话框的分派本来就
+      // 会真读包并把图片型 EPUB 导成漫画，行为已正确——为每次拖 EPUB 白开一次包
+      // 换不来可见改进。
+      expect(probed, <String>['/a/x.zip']);
+    });
+
+    test('无判据时 .zip 维持词典包分类（向后兼容）', () {
       final DroppedFiles files = classifyDroppedFiles(<String>['/a/dict.zip']);
       expect(files.mangas, isEmpty);
       expect(files.dictionaries, <String>['/a/dict.zip']);
