@@ -341,13 +341,32 @@ class MangaHibikiPage extends BaseSourcePage {
   );
 
   /// 纯路径解析 + 穿越守卫。[relative] 在 [imagesRoot] 内解析到存在的文件时返回
-  /// 规范绝对路径，否则 null（越界/缺文件都不 serve）。从 WebView 路径抽出，安全
-  /// 边界无需 WebView 后端即可单测。
+  /// 规范绝对路径（**保留磁盘上的真实大小写**），否则 null（越界/缺文件都不 serve）。
+  /// 从 WebView 路径抽出，安全边界无需 WebView 后端即可单测。
+  ///
+  /// BUG-1221：**越界校验**与**真实读写路径**必须用同一条路径的两种不同形式——
+  /// - 校验用 `p.canonicalize`（在 Windows 上整体小写化，见 `path` 包
+  ///   `style/windows.dart:181`，正好让 `../` 逃逸判定不被大小写差异绕过）；
+  /// - 返回值用 `p.absolute` + `p.normalize`（同样绝对化并折叠 `.`/`..` 段，但
+  ///   **保留大小写**）。
+  ///
+  /// 此前返回的是 canonicalize 的结果：漫画包里 `Vol1/P001.JPG` 这类混合大小写的
+  /// 条目被记成 `vol1/p001.jpg`。Windows 文件系统不区分大小写所以侥幸能读，但这个
+  /// 返回值会流出本次读取——`_updateCurrentPageImagePath` 把它存进
+  /// `_currentPageImagePath`，制卡时经 `ensureMangaCoverPng` 直接当作 Anki 封面
+  /// 源路径，媒体名因此被小写化；在大小写敏感平台上更是 `existsSync` 直接为 false
+  /// （页图 404、制卡无封面）。与 `EpubParser._resolveWithinExtract`（BUG-1218）
+  /// 及 `_safeArchivePath`（TODO-739）同款做法。
+  ///
+  /// 注意比 EPUB 侧多一个 `p.absolute`：本函数的契约是返回**绝对**路径，而
+  /// `p.normalize` 与 `canonicalize` 不同、**不会**绝对化。
   static String? resolveMangaResource(String imagesRoot, String relative) {
-    final String canonicalRoot = p.canonicalize(imagesRoot);
     final String decoded = Uri.decodeComponent(relative);
-    final String filePath = p.canonicalize(p.join(canonicalRoot, decoded));
-    if (!p.isWithin(canonicalRoot, filePath)) return null;
+    final String joined = p.join(imagesRoot, decoded);
+    if (!p.isWithin(p.canonicalize(imagesRoot), p.canonicalize(joined))) {
+      return null;
+    }
+    final String filePath = p.normalize(p.absolute(joined));
     final File file = File(filePath);
     if (!file.existsSync()) return null;
     return filePath;
