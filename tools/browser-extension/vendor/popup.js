@@ -806,6 +806,7 @@ function constructSingleGlossaryHtml(entryIndex) {
     const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
     entry.glossaries.forEach(g => {
         if (hiddenDictionaryNames.includes(g.dictionary)) return;
+        if (isRedirectGlossary(g)) return;
         const dictName = g.dictionary;
         const dictChanged = lastDict !== dictName;
         if (dictChanged) {
@@ -863,6 +864,7 @@ function constructGlossaryHtml(entryIndex) {
     const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
     entry.glossaries.forEach(g => {
         if (hiddenDictionaryNames.includes(g.dictionary)) return;
+        if (isRedirectGlossary(g)) return;
         const dictName = g.dictionary;
 
         const tempDiv = document.createElement('div');
@@ -2128,6 +2130,63 @@ function createPitchSection(pitches, reading) {
     return section;
 }
 
+// Redirect-only dictionary records add no definition: they only point the
+// queried spelling at another headword. English dictionaries encode that
+// intent in a few equivalent ways (a `redirect`/`redirected` definition or term
+// tag, a "Redirected from …" structured-content label, or a `non-lemma` entry
+// whose structured content contains the standalone `redirect` chip). Keep the
+// predicate data-shaped rather than dictionary-name-shaped so the same rule
+// works for LDOCE, OALD, and future imports without per-dictionary branches.
+function redirectMarkerKind(content) {
+    if (typeof content === 'string') {
+        let value = content;
+        const trimmed = value.trim();
+        if ((trimmed.startsWith('{') || trimmed.startsWith('['))) {
+            try {
+                return redirectMarkerKind(JSON.parse(trimmed));
+            } catch (_) {
+                // Not JSON; it may be dictionary HTML, handled as text below.
+            }
+        }
+        value = value
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toLowerCase();
+        if (/\bredirected\s+from\b/.test(value)) return 2;
+        if (value === 'redirect') return 1;
+        return 0;
+    }
+    if (Array.isArray(content)) {
+        return content.reduce(
+            (kind, item) => Math.max(kind, redirectMarkerKind(item)), 0);
+    }
+    if (content && typeof content === 'object') {
+        // Yomitan structured-content nodes keep user-visible text below
+        // `content` (and legacy text nodes below `text`). Do not scan style/data
+        // metadata: a CSS class named "redirect" is not a redirect record.
+        if (Object.prototype.hasOwnProperty.call(content, 'content')) {
+            return redirectMarkerKind(content.content);
+        }
+        if (typeof content.text === 'string') {
+            return redirectMarkerKind(content.text);
+        }
+    }
+    return 0;
+}
+
+function isRedirectGlossary(glossary) {
+    if (!glossary) return false;
+    const tags = `${glossary.definitionTags || ''} ${glossary.termTags || ''}`
+        .trim()
+        .toLowerCase();
+    if (/(?:^|\s)redirect(?:ed)?(?:\s|$)/.test(tags)) return true;
+
+    const marker = redirectMarkerKind(glossary.content);
+    if (marker === 2) return true;
+    return marker === 1 && /(?:^|\s)non-lemma(?:\s|$)/.test(tags);
+}
+
 function createGlossarySectionWrapper(entry) {
     // TODO-804: a term dictionary disabled in 词典管理 (its show/hide switch off)
     // is added to hiddenDictionaryNames by the host. Term dictionaries are still
@@ -2141,6 +2200,7 @@ function createGlossarySectionWrapper(entry) {
     const grouped = {};
     entry.glossaries.forEach(g => {
         if (hiddenDictionaryNames.includes(g.dictionary)) return;
+        if (isRedirectGlossary(g)) return;
         if (!grouped[g.dictionary]) grouped[g.dictionary] = [];
         grouped[g.dictionary].push({
             content: g.content,
@@ -3459,10 +3519,31 @@ function _reportPopupHeight() {
 // 不可做增量 diff）。
 function _firePopupRendered(stillRendering) {
     window._renderInProgress = !!stillRendering;
-    _reportPopupHeight();
-    // 词典方框排列：渲染完成后（含首条 + 其余条两次调用）铺 masonry。masonry 在下一帧
-    // RAF 里跑，跑完会自行 _reportPopupHeight() 复报修正后的高度。
-    window.hoshiRelayoutDictionaries();
+    const generation = window._renderGeneration;
+    const finish = () => {
+        // A newer lookup replaced this DOM while the cold font was decoding.
+        // Its own render signal owns the reveal gate; never let this stale
+        // callback reveal the new card early.
+        if (generation !== window._renderGeneration) return;
+        _reportPopupHeight();
+        // 词典方框排列：渲染完成后（含首条 + 其余条两次调用）铺 masonry。masonry 在下一帧
+        // RAF 里跑，跑完会自行 _reportPopupHeight() 复报修正后的高度。
+        window.hoshiRelayoutDictionaries();
+    };
+
+    // Custom file fonts are injected immediately before renderPopup(), but
+    // FontFace decoding is asynchronous. popupRendered is the host's reveal
+    // gate, so reporting before `document.fonts.ready` exposes one fallback-font
+    // frame in every cold/nested popup. Force style/layout discovery, then keep
+    // the already-hidden layer parked until the configured font is ready. Warm
+    // slots hit an already-resolved promise and only pay one microtask.
+    if (window.__hibikiDictionaryFontsConfigured &&
+        document.fonts && document.fonts.ready) {
+        try { void document.body.offsetWidth; } catch (_) { /* no-op */ }
+        Promise.resolve(document.fonts.ready).then(finish, finish);
+    } else {
+        finish();
+    }
 }
 
 // ===== N 列 masonry 词典方框排列（照抄 Niratan Features/Popup/popup.js layoutMasonry，
@@ -3963,6 +4044,7 @@ window.updatePopupIncremental = function() {
                 const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
                 entry.glossaries.forEach(g => {
                     if (hiddenDictionaryNames.includes(g.dictionary)) return;
+                    if (isRedirectGlossary(g)) return;
                     if (!grouped[g.dictionary]) grouped[g.dictionary] = [];
                     grouped[g.dictionary].push({
                         content: g.content,
