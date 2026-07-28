@@ -121,28 +121,34 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  // 捕获用例统一挂在 readerDismissDict 上：mouse 通道现在只对 reader / audiobook
+  // 开放（它们是 WebView 宿主，`resolveMouse` 真有解析入口），而 readerDismissDict
+  // 正是 reader 侧那个真消费者（webview.part.dart 的 onPointerSeek）。曾用的
+  // homeFocusSearch 所在的 home scope 已不再开放 mouse 通道（无任何 Flutter 侧
+  // 鼠标派发管线），捕获入口不再渲染。
+  //
+  // 按键选右键(2)/后退键(3)：reader 与 audiobook 同属一个 co-active 组，而
+  // audiobookSeekToClickedSentence 默认占着中键(1)，中键会走冲突改绑流程而非直接
+  // 落 chip。
   testWidgets(
-      'desktop: capturing the middle button records a MouseBinding(1) chip',
+      'desktop: capturing the right button records a MouseBinding(2) chip',
       (WidgetTester tester) async {
     usePlatform(TargetPlatform.windows);
     final HibikiShortcutRegistry registry =
         buildRegistry(TargetPlatform.windows);
-    // homeFocusSearch is in the home scope, which is not coactive with the
-    // audiobook scope that ships the only default MouseBinding(1), so middle
-    // click is conflict-free here.
     await pumpDialog(
       tester,
       registry,
-      action: ShortcutAction.homeFocusSearch,
+      action: ShortcutAction.readerDismissDict,
     );
 
     await tester.tap(find.byKey(const Key('shortcut_add_mouse')));
     await tester.pumpAndSettle();
     expect(find.text(t.shortcut_press_mouse_button), findsOneWidget);
 
-    await pressMouseButton(tester, kMiddleMouseButton);
+    await pressMouseButton(tester, kSecondaryMouseButton);
 
-    expect(find.text(t.shortcut_mouse_middle), findsOneWidget);
+    expect(find.text(t.shortcut_mouse_right), findsOneWidget);
     expect(find.text(t.shortcut_press_mouse_button), findsNothing);
 
     resetPlatform();
@@ -156,7 +162,7 @@ void main() {
     await pumpDialog(
       tester,
       registry,
-      action: ShortcutAction.homeFocusSearch,
+      action: ShortcutAction.readerDismissDict,
     );
 
     await tester.tap(find.byKey(const Key('shortcut_add_mouse')));
@@ -178,7 +184,7 @@ void main() {
     await pumpDialogHost(
       tester,
       registry,
-      action: ShortcutAction.homeFocusSearch,
+      action: ShortcutAction.readerDismissDict,
     );
 
     await tester.tap(find.byKey(const Key('shortcut_add_mouse')));
@@ -189,14 +195,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      registry.bindingsFor(ShortcutAction.homeFocusSearch).mouseBindings,
+      registry.bindingsFor(ShortcutAction.readerDismissDict).mouseBindings,
       contains(const MouseBinding(3)),
     );
 
     resetPlatform();
   });
 
-  testWidgets('desktop: deleting a mouse chip removes it from the draft',
+  // 通道被摘掉的 scope 上，历史快照里的鼠标绑定**不隐身、仍可删**（Never break
+  // userspace）。home 现在不开放 mouse 通道，故捕获入口消失，但老用户当年配下的
+  // 绑定仍要能看见并删掉——否则那条永不触发的死绑定就永远删不掉了。
+  testWidgets('desktop: 通道已摘的 scope 仍显示并可删除历史鼠标绑定（但没有捕获入口）',
       (WidgetTester tester) async {
     usePlatform(TargetPlatform.windows);
     final HibikiShortcutRegistry registry =
@@ -211,6 +220,7 @@ void main() {
     );
 
     expect(find.text(t.shortcut_mouse_right), findsOneWidget);
+    expect(find.byKey(const Key('shortcut_add_mouse')), findsNothing);
     await tester.tap(find.byIcon(Icons.close).first);
     await tester.pumpAndSettle();
 

@@ -588,6 +588,18 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
     final bool showWheel =
         channels.contains(ShortcutChannel.wheel) || _wheel.isNotEmpty;
 
+    // 「显示」与「可新增」是两回事：上面的 show* 带上 `isNotEmpty`，让通道被摘掉的
+    // scope 上历史快照里的绑定仍然可见、可删（Never break userspace——否则那条永不
+    // 触发的死绑定反而永远删不掉）；但**新增入口只认通道是否开放**，否则用户还能
+    // 继续往没有解析入口的通道里塞永不触发的绑定，正是
+    // `shortcut_channel_wiring_guard_test` 要根除的那件事。
+    final bool canAddKeyboard = channels.contains(ShortcutChannel.keyboard);
+    final bool canAddGamepad = channels.contains(ShortcutChannel.gamepad);
+    // 鼠标额外要求平台真有非主键鼠标（移动端只读不加，TODO-1088 既有契约）。
+    final bool canAddMouse = channels.contains(ShortcutChannel.mouse) &&
+        _mouseBindingSupported(defaultTargetPlatform);
+    final bool canAddWheel = channels.contains(ShortcutChannel.wheel);
+
     return HibikiDialogFrame(
       maxWidth: 520,
       maxHeightFactor: 0.86,
@@ -671,7 +683,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                     ),
                   ],
                 )
-              else
+              else if (canAddKeyboard)
                 TextButton.icon(
                   icon: const Icon(Icons.add, size: 18),
                   label: Text(t.shortcut_keyboard),
@@ -754,7 +766,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                     ),
                   ],
                 )
-              else
+              else if (canAddGamepad)
                 Wrap(
                   spacing: tokens.spacing.gap,
                   crossAxisAlignment: WrapCrossAlignment.center,
@@ -813,9 +825,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
             // channels. On mobile there is no mouse, so the capture entry is
             // hidden and only inherited bindings (if any) show read-only — Never
             // break userspace: nothing captured, nothing lost.
-            if (_mouse.isNotEmpty ||
-                (channels.contains(ShortcutChannel.mouse) &&
-                    _mouseBindingSupported(defaultTargetPlatform))) ...<Widget>[
+            if (_mouse.isNotEmpty || canAddMouse) ...<Widget>[
               if (showKeyboard || showGamepad) const Divider(height: 24),
               Text(
                 t.shortcut_mouse_button,
@@ -833,7 +843,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                     ),
                 ],
               ),
-              if (_mouseBindingSupported(defaultTargetPlatform)) ...<Widget>[
+              if (canAddMouse) ...<Widget>[
                 SizedBox(height: tokens.spacing.gap),
                 if (_mouseCapturing)
                   Column(
@@ -953,7 +963,7 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
                     ),
                   ],
                 )
-              else
+              else if (canAddWheel)
                 TextButton.icon(
                   key: const Key('shortcut_add_wheel'),
                   icon: const Icon(Icons.mouse_outlined, size: 18),
