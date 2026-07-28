@@ -453,6 +453,73 @@ void main() {
     c.close();
   });
 
+  // 反斜杠是 Windows 的路径分隔符，闸门里 `id.contains('\')` 是**独立**的一支：
+  // 已有用例的攻击串全是 `%2e%2e%2f`（含 `/` 且含 `..`），把 `\` 这一支整条删掉
+  // 也照样全绿。下面两条专挑「只触发反斜杠这一支」的输入。
+  test('反斜杠路径穿越 title 被 403 拒绝（Windows 分隔符）', () async {
+    final HttpClient c = HttpClient();
+
+    // `..\evil`：反斜杠 + `..`，Windows 上是真穿越。
+    final HttpClientRequest delReq =
+        await c.deleteUrl(Uri.parse('$base/api/library/books/..%5Cevil'));
+    delReq.headers.set('authorization', authHeader());
+    final HttpClientResponse delRes = await delReq.close();
+    expect(delRes.statusCode, 403,
+        reason: r'DELETE with "..\evil" must be 403 Forbidden');
+    await delRes.drain<void>();
+    expect(lib.deletedBooks, isEmpty,
+        reason: 'no deletion must occur for a backslash traversal title');
+
+    c.close();
+  });
+
+  test('含反斜杠但不含 .. 或 / 的绝对路径被 403 拒绝', () async {
+    final HttpClient c = HttpClient();
+
+    // `C:\Windows\win.ini`——**不含** `..`、**不含** `/`，只触发闸门的反斜杠一支。
+    // 这条是反斜杠分支唯一的负向验证锚点：删掉 `id.contains('\')` 只有它会红。
+    final HttpClientRequest getReq = await c
+        .getUrl(Uri.parse('$base/api/library/books/C%3A%5CWindows%5Cwin.ini'));
+    getReq.headers.set('authorization', authHeader());
+    final HttpClientResponse getRes = await getReq.close();
+    expect(getRes.statusCode, 403,
+        reason: r'GET with "C:\Windows\win.ini" must be 403 Forbidden');
+    await getRes.drain<void>();
+
+    final HttpClientRequest delReq = await c.deleteUrl(
+        Uri.parse('$base/api/library/books/C%3A%5CWindows%5Cwin.ini'));
+    delReq.headers.set('authorization', authHeader());
+    final HttpClientResponse delRes = await delReq.close();
+    expect(delRes.statusCode, 403);
+    await delRes.drain<void>();
+    expect(lib.deletedBooks, isEmpty);
+
+    c.close();
+  });
+
+  // `/api/library/books/<id>/cover` 此前**没有任何**穿越用例，且服务层
+  // （bookCoverPath）不做第二道校验——删掉那行 _rejectUnsafeAssetId 调用，全套测试
+  // 照绿。这条把它钉住。
+  test('cover 端点拒绝路径穿越 bookId', () async {
+    final HttpClient c = HttpClient();
+
+    for (final String evil in <String>[
+      '..%2Fevil', // ../evil
+      '..%5Cevil', // ..\evil
+      'C%3A%5CWindows%5Cwin.ini', // C:\Windows\win.ini（无 .. 无 /）
+    ]) {
+      final HttpClientRequest req =
+          await c.getUrl(Uri.parse('$base/api/library/books/$evil/cover'));
+      req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
+      expect(res.statusCode, 403,
+          reason: 'GET /books/$evil/cover 必须 403（闸门先于封面解析）');
+      await res.drain<void>();
+    }
+
+    c.close();
+  });
+
   // ── no service injected ──────────────────────────────────────────────────────
 
   test('books endpoints return 404 when no service injected', () async {
@@ -578,7 +645,9 @@ void main() {
         await c.getUrl(Uri.parse('$base/api/library/books/..%2Fevil/progress'));
     get.headers.set('authorization', authHeader());
     final HttpClientResponse res = await get.close();
-    expect(res.statusCode, anyOf(403, 404));
+    expect(res.statusCode, 403,
+        reason: '闸门必须在服务层之前判掉；放成 anyOf(403,404) 会让删掉闸门调用后'
+            '仍因「书不存在」返回 404 而测试照绿');
     await res.drain<void>();
     c.close();
   });

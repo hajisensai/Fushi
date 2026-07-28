@@ -219,11 +219,17 @@ void main() {
     expect(small.length, 20, reason: 'limit 不同即结果集不同，共用一槽会把首页的 200 条截断成 20 条');
   });
 
-  test('互联视频与云视频分属不同 key（元素类型不同，共用会 cast 崩）', () {
-    expect(
+  test('各媒体域分属不同 key，互不覆盖', () {
+    // 互联与云盘的视频清单**共用** videos 一个槽（TODO-2119 后两种源都实现
+    // RemoteVideoSource，元素统一是 RemoteVideoInfo）；域与域之间必须分开。
+    final Set<String> keys = <String>{
+      RemoteLibraryCacheKeys.books,
       RemoteLibraryCacheKeys.videos,
-      isNot(RemoteLibraryCacheKeys.cloudVideos),
-    );
+      RemoteLibraryCacheKeys.audiobooks,
+      RemoteLibraryCacheKeys.dictionaries,
+      RemoteLibraryCacheKeys.activity(200),
+    };
+    expect(keys.length, 5, reason: '域 key 不得重名，否则一个域的清单会盖掉另一个域');
   });
 
   /// BUG-1180 接线守卫：provider 必须订阅「对端身份变了」的信号并整体失效。
