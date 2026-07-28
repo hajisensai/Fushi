@@ -587,7 +587,7 @@
   "dialog_title_dictionary_delete": "حذف『$name』؟",
   "dict_auto_update": "التحديث تلقائيًا",
   "dict_auto_update_hint": "التحقق من تحديثات القواميس عند بدء التشغيل",
-  "dict_auto_update_last": "آخر تحديث: $time",
+  "dict_auto_update_last": "آخر تحقق ناجح: $time",
   "dict_auto_update_never": "أبدًا",
   "dict_category_frequency": "التكرار",
   "dict_category_grammar": "القواعد",

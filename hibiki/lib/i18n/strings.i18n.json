@@ -587,7 +587,7 @@
   "dialog_title_dictionary_delete": "Delete 『$name』?",
   "dict_auto_update": "Update automatically",
   "dict_auto_update_hint": "Check for dictionary updates on launch",
-  "dict_auto_update_last": "Last update: $time",
+  "dict_auto_update_last": "Last successful check: $time",
   "dict_auto_update_never": "Never",
   "dict_category_frequency": "Frequency",
   "dict_category_grammar": "Grammar",

@@ -587,7 +587,7 @@
   "dialog_title_dictionary_delete": "删除『$name』？",
   "dict_auto_update": "自动更新",
   "dict_auto_update_hint": "启动时检查词典更新",
-  "dict_auto_update_last": "上次更新：$time",
+  "dict_auto_update_last": "上次成功检查：$time",
   "dict_auto_update_never": "从未",
   "dict_category_frequency": "词频",
   "dict_category_grammar": "语法",

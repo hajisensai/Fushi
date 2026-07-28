@@ -83,7 +83,7 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   /// TODO-861③（移植 Hoshi `94d0c41`）：词典自动更新设置卡——「自动更新」开关 +
-  /// 检查周期分段（开时显示）+「上次更新」只读行。仅 startup check-due（MVP，无
+  /// 检查周期分段（开时显示）+「上次成功检查」只读行。仅 startup check-due（MVP，无
   /// 计费网络门控）。开关默认 **false**（opt-in，不在升级后静默联网/自动重导词典，
   /// 与 [PreferencesRepository.autoUpdateDictionaries] 的 defaultValue: false 对齐；
   /// TODO-1075 修正原「默认 true」误注释）。

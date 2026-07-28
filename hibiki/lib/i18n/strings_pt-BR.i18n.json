@@ -587,7 +587,7 @@
   "dialog_title_dictionary_delete": "Excluir 『$name』?",
   "dict_auto_update": "Atualizar automaticamente",
   "dict_auto_update_hint": "Verificar atualizações de dicionários ao iniciar",
-  "dict_auto_update_last": "Última atualização: $time",
+  "dict_auto_update_last": "Última verificação bem-sucedida: $time",
   "dict_auto_update_never": "Nunca",
   "dict_category_frequency": "Frequência",
   "dict_category_grammar": "Gramática",

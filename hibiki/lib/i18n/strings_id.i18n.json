@@ -587,7 +587,7 @@
   "dialog_title_dictionary_delete": "Hapus『$name』?",
   "dict_auto_update": "Perbarui otomatis",
   "dict_auto_update_hint": "Periksa pembaruan kamus saat aplikasi dibuka",
-  "dict_auto_update_last": "Pembaruan terakhir: $time",
+  "dict_auto_update_last": "Pemeriksaan berhasil terakhir: $time",
   "dict_auto_update_never": "Tidak pernah",
   "dict_category_frequency": "Frekuensi",
   "dict_category_grammar": "Tata Bahasa",

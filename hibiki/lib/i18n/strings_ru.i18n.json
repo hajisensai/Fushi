@@ -587,7 +587,7 @@
   "dialog_title_dictionary_delete": "Удалить 『$name』?",
   "dict_auto_update": "Обновлять автоматически",
   "dict_auto_update_hint": "Проверять обновления словарей при запуске",
-  "dict_auto_update_last": "Последнее обновление: $time",
+  "dict_auto_update_last": "Последняя успешная проверка: $time",
   "dict_auto_update_never": "Никогда",
   "dict_category_frequency": "Частотность",
   "dict_category_grammar": "Грамматика",

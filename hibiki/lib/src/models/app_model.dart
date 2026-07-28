@@ -3606,7 +3606,8 @@ class AppModel with ChangeNotifier {
   /// TODO-861③：启动时 check-due 自动更新词典（前台、静默、不弹错）。先用纯函数
   /// [shouldAutoUpdateDictionaries] 守门（未开 / 未到期 / 无可更新 / 正忙 → 直接
   /// 返回），再逐本拉远端 index 比 revision、有新版才下载 force 重导。**失败不中断
-  /// 整批**（逐本 try/catch 收集失败）；至少一本成功才写 `lastDictionaryUpdateAt`。
+  /// 整批**（逐本 try/catch 收集失败）；整批检查完成（无新版也算完成）才写
+  /// `lastDictionaryUpdateAt`，任一本检查/重导失败则不推进时间，留待下次启动重试。
   /// 复用手动更新同款「下载→force 重导（保留 order/hidden/collapsed）」链路。
   Future<void> maybeAutoUpdateDictionaries() async {
     if (!autoUpdateDictionaries) return;
@@ -3622,19 +3623,26 @@ class AppModel with ChangeNotifier {
       return;
     }
     _autoUpdateInProgress = true;
-    int successCount = 0;
+    int completedCount = 0;
     try {
       for (final Dictionary dictionary in updatable) {
         try {
-          final String? remoteRevision =
-              await DictionaryUpdateService.fetchRemoteIndex(
-                  dictionary.indexUrl);
+          final DictionaryRemoteIndexResult remote =
+              await DictionaryUpdateService.fetchRemoteIndexResult(
+            dictionary.indexUrl,
+          );
+          if (!remote.succeeded) {
+            debugPrint('[Hibiki] auto dict update could not check '
+                '${dictionary.name}');
+            continue;
+          }
           if (!DictionaryUpdateService.needsUpdate(
-              dictionary.revision, remoteRevision)) {
+              dictionary.revision, remote.revision)) {
+            completedCount++;
             continue;
           }
           await _autoRedownloadAndReimport(dictionary);
-          successCount++;
+          completedCount++;
         } catch (e, stack) {
           // 单本失败不中断其余（移植 Hoshi 的 failures-collect 语义）。
           ErrorLogService.instance
@@ -3643,8 +3651,12 @@ class AppModel with ChangeNotifier {
               '${dictionary.name}: $e');
         }
       }
-      // 至少一本成功才写时间戳（移植 Hoshi：failures < total 才更新 key）。
-      if (successCount > 0) {
+      // BUG-1226：检查成功且无需更新也是完整成功；旧逻辑只在真正重导过词典时写
+      // 时间，导致长期没有新版的用户永远显示“从未”并在每次启动重复联网。
+      if (didCompleteDictionaryAutoUpdateBatch(
+        totalCount: updatable.length,
+        completedCount: completedCount,
+      )) {
         await prefsRepo.setLastDictionaryUpdateAt(DateTime.now());
       }
     } finally {

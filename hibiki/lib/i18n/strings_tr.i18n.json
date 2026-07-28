@@ -587,7 +587,7 @@
   "dialog_title_dictionary_delete": "『$name』 silinsin mi?",
   "dict_auto_update": "Otomatik güncelle",
   "dict_auto_update_hint": "Başlangıçta sözlük güncellemelerini denetle",
-  "dict_auto_update_last": "Son güncelleme: $time",
+  "dict_auto_update_last": "Son başarılı denetim: $time",
   "dict_auto_update_never": "Hiçbir zaman",
   "dict_category_frequency": "Sıklık",
   "dict_category_grammar": "Dilbilgisi",

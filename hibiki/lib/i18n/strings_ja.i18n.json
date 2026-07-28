@@ -587,7 +587,7 @@
   "dialog_title_dictionary_delete": "『$name』を削除しますか？",
   "dict_auto_update": "自動更新",
   "dict_auto_update_hint": "起動時に辞書の更新を確認",
-  "dict_auto_update_last": "前回の更新: $time",
+  "dict_auto_update_last": "前回の確認成功: $time",
   "dict_auto_update_never": "なし",
   "dict_category_frequency": "頻度",
   "dict_category_grammar": "文法",

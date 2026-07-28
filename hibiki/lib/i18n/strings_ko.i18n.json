@@ -587,7 +587,7 @@
   "dialog_title_dictionary_delete": "『$name』을(를) 삭제하시겠습니까?",
   "dict_auto_update": "자동 업데이트",
   "dict_auto_update_hint": "실행 시 사전 업데이트 확인",
-  "dict_auto_update_last": "마지막 업데이트: $time",
+  "dict_auto_update_last": "마지막 확인 성공: $time",
   "dict_auto_update_never": "없음",
   "dict_category_frequency": "빈도",
   "dict_category_grammar": "문법",

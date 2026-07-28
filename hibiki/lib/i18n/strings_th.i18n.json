@@ -587,7 +587,7 @@
   "dialog_title_dictionary_delete": "ลบ『$name』?",
   "dict_auto_update": "อัปเดตอัตโนมัติ",
   "dict_auto_update_hint": "ตรวจหาการอัปเดตพจนานุกรมเมื่อเปิดแอป",
-  "dict_auto_update_last": "อัปเดตล่าสุด: $time",
+  "dict_auto_update_last": "ตรวจสอบสำเร็จล่าสุด: $time",
   "dict_auto_update_never": "ไม่เคย",
   "dict_category_frequency": "ความถี่",
   "dict_category_grammar": "ไวยากรณ์",

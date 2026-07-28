@@ -587,7 +587,7 @@
   "dialog_title_dictionary_delete": "『$name』 verwijderen?",
   "dict_auto_update": "Automatisch bijwerken",
   "dict_auto_update_hint": "Bij het opstarten controleren op woordenboekupdates",
-  "dict_auto_update_last": "Laatste update: $time",
+  "dict_auto_update_last": "Laatste geslaagde controle: $time",
   "dict_auto_update_never": "Nooit",
   "dict_category_frequency": "Frequentie",
   "dict_category_grammar": "Grammatica",

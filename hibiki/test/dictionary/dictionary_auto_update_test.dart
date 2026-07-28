@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
@@ -88,5 +90,61 @@ void main() {
         isFalse,
       );
     });
+  });
+
+  group('didCompleteDictionaryAutoUpdateBatch', () {
+    test('所有可更新词典都完成检查或更新 → true', () {
+      expect(
+        didCompleteDictionaryAutoUpdateBatch(
+          totalCount: 3,
+          completedCount: 3,
+        ),
+        isTrue,
+      );
+    });
+
+    test('任一本检查或重导失败 → false，保留下次启动重试', () {
+      expect(
+        didCompleteDictionaryAutoUpdateBatch(
+          totalCount: 3,
+          completedCount: 2,
+        ),
+        isFalse,
+      );
+    });
+
+    test('没有可更新词典不构成一轮检查', () {
+      expect(
+        didCompleteDictionaryAutoUpdateBatch(
+          totalCount: 0,
+          completedCount: 0,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  test('BUG-1226 自动更新按完整检查结果写时间，而非只认实际重导数量', () {
+    final String source =
+        File('lib/src/models/app_model.dart').readAsStringSync();
+    expect(
+      source,
+      contains('DictionaryUpdateService.fetchRemoteIndexResult'),
+    );
+    expect(
+      source,
+      contains('didCompleteDictionaryAutoUpdateBatch('),
+    );
+    expect(
+      source,
+      matches(
+        RegExp(
+          r'if \(!DictionaryUpdateService\.needsUpdate\('
+          r'[\s\S]*?\)\) \{\s*completedCount\+\+;\s*continue;',
+        ),
+      ),
+      reason: '已是最新版也必须计为一次成功完成的检查',
+    );
+    expect(source, isNot(contains('if (successCount > 0)')));
   });
 }

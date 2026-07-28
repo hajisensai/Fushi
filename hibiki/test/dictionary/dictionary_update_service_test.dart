@@ -147,4 +147,49 @@ void main() {
       expect(await DictionaryUpdateService.fetchRemoteIndex(''), isNull);
     });
   });
+
+  group('DictionaryUpdateService.fetchRemoteIndexResult', () {
+    test('合法 revision 明确标记检查成功', () async {
+      final Dio dio = _dioWith(
+        _FakeAdapter((String url) => _body('{"revision":"2026-07-29"}')),
+      );
+
+      final DictionaryRemoteIndexResult result =
+          await DictionaryUpdateService.fetchRemoteIndexResult(
+        'https://x/index.json',
+        dio: dio,
+      );
+
+      expect(result.succeeded, isTrue);
+      expect(result.revision, '2026-07-29');
+    });
+
+    test('网络失败与坏 index 明确标记检查失败', () async {
+      final Dio networkDio = _dioWith(
+        _FakeAdapter(
+          (String url) =>
+              throw DioError(requestOptions: RequestOptions(path: url)),
+        ),
+      );
+      final Dio invalidDio = _dioWith(
+        _FakeAdapter((String url) => _body('{"title":"missing revision"}')),
+      );
+
+      final DictionaryRemoteIndexResult networkResult =
+          await DictionaryUpdateService.fetchRemoteIndexResult(
+        'https://x/network.json',
+        dio: networkDio,
+      );
+      final DictionaryRemoteIndexResult invalidResult =
+          await DictionaryUpdateService.fetchRemoteIndexResult(
+        'https://x/invalid.json',
+        dio: invalidDio,
+      );
+
+      expect(networkResult.succeeded, isFalse);
+      expect(networkResult.revision, isNull);
+      expect(invalidResult.succeeded, isFalse);
+      expect(invalidResult.revision, isNull);
+    });
+  });
 }
