@@ -1163,9 +1163,9 @@ void main() {
     expect(bangumiSubjectTypeOf(TrackingKind.manga), 1);
   });
 
-  // BUG-1216：整条追踪链路原本零可观测——成功即删 outbox 行、失败只进错误日志并
+  // BUG-1220：整条追踪链路原本零可观测——成功即删 outbox 行、失败只进错误日志并
   // 退避最长 6 小时、没建映射就静默返回。用户「看完了没反应」时无从判断断在哪一段。
-  group('可见状态快照（BUG-1216）', () {
+  group('可见状态快照（BUG-1220）', () {
     Future<void> saveAnimeMapping() => repository.saveMapping(
           mediaType: TrackingMediaType.videoCollection,
           mediaKey: '8',

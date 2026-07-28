@@ -1,4 +1,4 @@
-## BUG-1216 · Bangumi 同步链路全静默：看完了没反应且无处查看
+## BUG-1220 · Bangumi 同步链路全静默：看完了没反应且无处查看
 
 - **报告**：2026-07-28（用户：看完了没反应，也不知道怎么查看这个 bangumi 数据）
 - **真实性**：✅ 真 bug（可观测性缺陷，非链路断裂）
@@ -27,7 +27,7 @@
   3. 首页 dashboard 新增「Bangumi 同步」卡（宽屏侧列顶部 / 窄屏继续区之后）：未连接→说明 + 连接入口；已连接→账号、上次同步、已关联数、待发送数、令牌被拒提示、已关联条目（点击开 bgm.tv 条目页）、立即同步 + 管理关联。零映射时明说「没有任何条目关联，所以看完不会有变化」。
      - 失败原因**挂在对应条目行上**（`MediaTrackingFailure.mappingId` + `mappingsProblemFirst` 把出问题的条目排到最前），不另开一段——首版写成独立「失败」段时 widget 测试立刻抓到同一条目标题出现两次，读起来像两个不同的东西。设置页同口径（错误进该行副标题）。
   4. 设置页删掉 bookmeter 死文案（含 17 语言 i18n key，走 `i18n_sync --remove`），并复用同一状态快照显示上次同步/失败原因；`_kindLabel`/`_modeLabel` 抽成共享 `media_tracking_labels.dart`。
-- **[x] ② 已加自动化测试** — `hibiki/test/media/tracking/media_tracking_service_test.dart`（group「可见状态快照（BUG-1216）」7 项）
+- **[x] ② 已加自动化测试** — `hibiki/test/media/tracking/media_tracking_service_test.dart`（group「可见状态快照（BUG-1220）」7 项）
   - 从未同步 vs 同步过零待办可区分
   - 未配置令牌时不谎报「已同步过」
   - 失败待办在退避窗口内仍带原因外显（`dueUpdates` 为空而 `loadStatus().failures` 有值）
