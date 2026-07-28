@@ -1,4 +1,4 @@
-## BUG-1189 · Sasasa Unity TextMesh 对白被拆成单字
+## BUG-1200 · Sasasa Unity TextMesh 对白被拆成单字
 - **报告**：2026-07-28（用户反馈：最悪なる災厄人間に捧ぐ捕获异常）
 - **真实性**：✅ 真 bug。`native/galgame_hook/hook/adapters/unity_adapter.inc`
   的 Unity 文本安装被整套 AudioClip API 前置校验阻断，且旧 KEMCO 运行时实际把一句

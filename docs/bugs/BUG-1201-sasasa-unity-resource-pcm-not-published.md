@@ -1,4 +1,4 @@
-## BUG-1190 · Sasasa Unity 资源音频已解码但未写入音频环
+## BUG-1201 · Sasasa Unity 资源音频已解码但未写入音频环
 - **报告**：2026-07-28（用户反馈：游戏运行途中窗口消失，且音频获取不到）
 - **真实性**：✅ 真 bug。`native/galgame_hook/injector/injector_main.cpp:531`
   的 `ExtractUnityVoice` 只验证解码后的 WAV 存在并设置资源诊断位，

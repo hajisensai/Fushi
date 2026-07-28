@@ -1196,6 +1196,19 @@ class PreferencesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Jimaku 默认字幕语言（`ja` / `zh` / `en` / `ko`；`''` = 不限，按语言权重默认排序）。
+  ///
+  /// [jimakuPreferredLanguages] 是**每系列**的记忆（用户在某部番里选过就记住那部），
+  /// 本项是没有系列记忆时的全局默认，设置页统一配置，字幕对话框 / 番剧下载 /
+  /// 批量匹配三处共用。
+  String get jimakuDefaultLanguage =>
+      getPref('jimaku_default_language', defaultValue: '') as String;
+
+  Future<void> setJimakuDefaultLanguage(String langCode) async {
+    await setPref('jimaku_default_language', langCode);
+    notifyListeners();
+  }
+
   /// 远端/流媒体视频用户手选的字幕来源（按 `<bookUid>#ep<index>` 记忆）：
   /// `{ "<key>": "<subtitleSource 四态编码>" }`。
   ///

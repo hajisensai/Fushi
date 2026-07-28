@@ -1,5 +1,6 @@
 import 'dart:async' show unawaited;
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -20,9 +21,8 @@ import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
 import 'package:hibiki/src/media/video/jimaku_client.dart';
 import 'package:hibiki/src/models/app_model.dart';
+import 'package:hibiki/src/pages/implementations/jimaku_api_key_field.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_entry_picker.dart';
-import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart'
-    show jimakuLanguageLabel;
 import 'package:hibiki/src/pages/implementations/download_actions.dart';
 import 'package:hibiki/src/pages/implementations/downloads_page.dart';
 import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
@@ -34,6 +34,56 @@ import 'package:hibiki/utils.dart';
 /// 分节渐进式（同 [JimakuSubtitleDialog] 的节奏）：三个阶段互斥展示（搜番结果 /
 /// 种子列表 / 确认推送），底部常驻「下载任务」折叠区列出既有计划。所有网络操作
 /// 容错降级为空结果 + 节内提示，不崩对话框。
+/// 集号输入框该有多宽：**按 label 的真实测量宽度算出**，而不是写死像素。
+///
+/// BUG-1184：这里先后写死过 72 和 96——`96` 那一版的注释就写着「72 在界面缩放 >1
+/// 时装不下 label」，也就是上一次的修法是在同一个错误里换一个更大的数字。可 label
+/// 本身是会变的：中文「集数（可选）」是 6 个全角字，英文 `Episode (optional)` 更长，
+/// 再乘上界面缩放与系统字号，96 照样装不下——用户截图里它就被裁成了「集数···」。
+/// 而且这跟屏幕宽窄无关，**任何窗口宽度下都裁**。
+///
+/// 所以宽度必须由 label 决定，而不是反过来指望 label 挤进某个常数：用 [TextPainter]
+/// 量出它在当前语言/字号/文字缩放下的实际宽度，再加上 [InputDecoration] 的水平内
+/// 边距和集号本身要占的输入宽度。
+///
+/// [rowWidth] 是整行的可用宽度。上限取它的四成——这个框右边还有搜索按钮、左边是
+/// 会被挤压的搜索词输入框，某些语言的超长译文不该把搜索词框挤没。上限同样不写死
+/// 像素：宽屏上四成足够放下任何译文，窄屏上才真正起到保护作用。
+///
+/// [rowWidth] 故意做成必填、且不提供「取不到就退回某个保守常数」的默认值——与
+/// [narrowAwareAppBarActions] 的 `availableWidth` 同一口径：有默认值就等于给这个
+/// bug 留了一条随时能走回去的路，而这个 bug 的历史恰恰是「换一个更大的常数」。
+/// 调用点把这一行包进 [LayoutBuilder] 后传 `constraints.maxWidth` 即可。
+///
+/// [rowWidth] 非有限（`double.infinity`，Row 在无界约束下就是这个值）时**不设上
+/// 限**，而不是退回一个像素常数：上限的唯一职责是「别把同一行的邻居挤没」，而无界
+/// 行里根本不存在会被挤没的邻居——此时 label 多长就多宽，反倒是唯一不会裁字的解。
+double jimakuEpisodeFieldWidth(
+  BuildContext context,
+  String label, {
+  required double rowWidth,
+}) {
+  // label 未浮起时按 bodyLarge 渲染（浮起后缩到 75%），按较大的那个量才安全。
+  final TextStyle labelStyle =
+      Theme.of(context).textTheme.bodyLarge ?? const TextStyle(fontSize: 16);
+  final TextPainter painter = TextPainter(
+    text: TextSpan(text: label, style: labelStyle),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 1,
+  )..layout();
+  final double labelWidth = painter.width;
+  painter.dispose();
+  final double cap = (rowWidth.isFinite && rowWidth > 0)
+      ? math.max(96.0, rowWidth * 0.4)
+      : double.infinity;
+  return (labelWidth + kJimakuEpisodeFieldChrome).clamp(96.0, cap);
+}
+
+/// [jimakuEpisodeFieldWidth] 里 label 之外要占掉的宽度：`isDense` 的
+/// [InputDecoration] 左右内边距各 12，再给集号本身留出约三位数字。
+const double kJimakuEpisodeFieldChrome = 24 + 28;
+
 /// 选种结果排序键（一律降序：多的/大的/新的在前）。
 enum TorrentSortKey { seeders, size, date }
 
@@ -123,6 +173,10 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   /// Jimaku key 为空时显示输入行（`onChanged` 直接落偏好）。
   bool _showJimakuKeyField = false;
 
+  /// 最近一次真正发起字幕搜索时的输入框条件（见 [_currentJimakuSearchInput]）。
+  /// 与当前输入框不一致 = 用户改了番剧名/集号但还没搜，搜索按钮据此强调。
+  String _appliedJimakuSearch = '';
+
   // ---- 阶段 1：搜番（AniList）----
   bool _searchingAnime = false;
   bool _searchedAnime = false;
@@ -151,6 +205,14 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   TorrentSortKey _torrentSort = TorrentSortKey.seeders;
   List<JimakuEntry> _jimakuEntries = const <JimakuEntry>[];
   JimakuEntry? _selectedJimakuEntry;
+
+  /// 用户在 [JimakuEntryPicker] 里**手动**选中过的条目 id（自动选首条不写这里）。
+  ///
+  /// 「用户手选过」= 他不认可自动选的那条。重搜（换番剧名/改集号）后必须优先沿用
+  /// 它，而不是无条件重置成 `entries.first` 把用户的选择静默冲掉。按 id 匹配而非
+  /// 下标——重搜的结果集顺序和长度都会变，下标是错的身份。换番（[_selectMedia]）
+  /// 才清空：那是另一部番，旧手选没有意义。
+  int? _userPickedJimakuEntryId;
   List<JimakuFile> _jimakuFiles = const <JimakuFile>[];
   String? _jimakuPreferredLanguage;
   int? _jimakuSearchEpisode;
@@ -179,6 +241,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     final AppModel appModel = ref.read(appProvider);
     _jimakuKeyCtrl = TextEditingController(text: appModel.jimakuApiKey);
     _showJimakuKeyField = appModel.jimakuApiKey.trim().isEmpty;
+    // 语言预选沿用设置页的默认字幕语言（此前恒为「全部」，与字幕对话框的语言记忆
+    // 各行其是）。用户在本对话框里改选仍只影响本次。
+    _jimakuPreferredLanguage = appModel.jimakuDefaultLanguageOrNull;
     // 仅测试：直达指定阶段（绕开 AniList/Nyaa 网络搜索）。
     final AniListMedia? debugMedia = widget.debugInitialMedia;
     if (debugMedia != null) {
@@ -188,7 +253,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       final NyaaTorrent? debugTorrent = widget.debugInitialTorrent;
       if (debugTorrent != null) {
         _selectedTorrent = debugTorrent;
-        _chosenSubs = chooseSubtitlesFor(debugTorrent, _jimakuIndex);
+        _chosenSubs = _chooseSubsFor(debugTorrent);
       }
     }
     unawaited(_reloadPlans());
@@ -268,7 +333,14 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     _jimakuQueryCtrl.text =
         titleOptions.isNotEmpty ? titleOptions.first : media.displayTitle;
     _jimakuEpisodeCtrl.clear();
+    // 预填即将由选番自动搜使用，视作「已应用」，搜索按钮不该一进来就报待生效。
+    _appliedJimakuSearch = _currentJimakuSearchInput();
   }
+
+  /// 输入框当前的字幕搜索条件（查询词 + 集号）。与 [_appliedJimakuSearch] 比对，
+  /// 得出「输入框改了但还没搜」。
+  String _currentJimakuSearchInput() =>
+      '${_jimakuQueryCtrl.text.trim()}|${_jimakuEpisodeCtrl.text.trim()}';
 
   /// 点选某番：进入选种阶段，并行拉 Nyaa 种子与 Jimaku 字幕索引。
   /// Jimaku 空结果/无 key 不阻塞选种，只是徽标显示无字幕。
@@ -282,6 +354,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       _torrentsLoaded = false;
       _jimakuEntries = const <JimakuEntry>[];
       _selectedJimakuEntry = null;
+      // 换番：旧番的手选条目对新番没有意义，清掉。
+      _userPickedJimakuEntryId = null;
       _jimakuFiles = const <JimakuFile>[];
       _jimakuPreferredLanguage = null;
       _jimakuSearchEpisode = null;
@@ -384,6 +458,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   Future<void> _searchJimakuManual() async {
     final String query = _jimakuQueryCtrl.text.trim();
     if (query.isEmpty || _jimakuLoading) return;
+    setState(() => _appliedJimakuSearch = _currentJimakuSearchInput());
     await _runJimakuSearch(
       anilistId: null,
       queries: <String>[query],
@@ -438,16 +513,21 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       final List<JimakuEntry> entries = await jimaku
           .searchEntries(anilistId: anilistId, queryFallbacks: queries)
           .timeout(kDownloadDiscoveryTimeout);
-      final List<JimakuFile> files = entries.isEmpty
+      // 用户手选过某条目 → 他不认可自动选的那条。新结果里还有它就沿用（按 id
+      // 匹配，不是按下标——重搜的结果集顺序/长度都会变），只有它彻底不在新结果里
+      // 才回退首条。此前无条件重置成 `entries.first`，换个番剧名重搜就把用户的
+      // 手选静默冲掉。必须在 listFiles 之前定下目标，否则拉的是首条的文件。
+      final JimakuEntry? target = _resolveJimakuEntryFor(entries);
+      final List<JimakuFile> files = target == null
           ? const <JimakuFile>[]
           : await jimaku
-              .listFiles(entries.first.id, episode: episode)
+              .listFiles(target.id, episode: episode)
               .timeout(kDownloadDiscoveryTimeout);
       // 用户可能已换番：结果只落到仍选中的那个番上。
       if (!mounted || _selectedMedia?.id != guardId) return;
       setState(() {
         _jimakuEntries = entries;
-        _selectedJimakuEntry = entries.isEmpty ? null : entries.first;
+        _selectedJimakuEntry = target;
         _jimakuFiles = files;
         _jimakuSearchEpisode = episode;
         _jimakuIndex = JimakuEpisodeIndex.fromFiles(
@@ -458,7 +538,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         // 已选种子则同步刷新其字幕命中（手动重搜后确认阶段的字幕列表实时更新）。
         final NyaaTorrent? torrent = _selectedTorrent;
         if (torrent != null) {
-          _chosenSubs = chooseSubtitlesFor(torrent, _jimakuIndex);
+          _chosenSubs = _chooseSubsFor(torrent);
         }
       });
     } catch (_) {
@@ -473,6 +553,54 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     }
   }
 
+  /// 挑选随下载暂存的字幕清单。**所有调用点都必须走这里**，别直接调
+  /// [chooseSubtitlesFor]：整季包的条数上界要用当前选中番的应有集数
+  /// （[AniListMedia.episodes]）收敛，徽标（[_jimakuCoverageFor]）与确认页列表
+  /// 必须喂同一个值，否则「列表说 24 条、点进去 12 条」。
+  List<(int?, JimakuFile)> _chooseSubsFor(NyaaTorrent torrent) =>
+      chooseSubtitlesFor(
+        torrent,
+        _jimakuIndex,
+        seriesEpisodeCount: _selectedMedia?.episodes,
+      );
+
+  /// 整季包的字幕集号**未经核对**——不能画成「有字幕」的确定态。
+  ///
+  /// 整季包（[TorrentEpisodeScopeKind.season]）标题只写季号/`Complete`，不写集号
+  /// 区间，所以本层只能拿字幕侧的集号去配视频侧的集号（落位层
+  /// `pairSubtitlesToVideos` 要求集号严格相等）。这里有一整类静默错配：
+  /// S2 整季包内的视频文件名是 01-12，而 Jimaku 条目按**绝对集号**编到 13-24，
+  /// 或自动选中的首条根本是别的季 → 集号照样「相等」，配上的却是错季字幕，
+  /// UI 还显示「有字幕」。改前 season 类一条不给，所以这是从「没有」变成
+  /// 「错的且看起来对」，必须显式降级成不确定态。
+  ///
+  /// 真正的根治（识别绝对集号编号、按季换算偏移、核对条目季号）不在本轮范围。
+  /// range / single 类的集号来自种子标题自身，不属此列。
+  bool _subtitleEpisodesUnverified(NyaaTorrent torrent) =>
+      torrentEpisodeScope(torrent).kind == TorrentEpisodeScopeKind.season &&
+      _chooseSubsFor(torrent).any(((int?, JimakuFile) e) => e.$1 != null);
+
+  /// 字幕覆盖度徽标，与 [_chooseSubsFor] 同源（同一 `seriesEpisodeCount`）。
+  ({int covered, int? total}) _jimakuCoverageFor(NyaaTorrent torrent) =>
+      jimakuCoverageFor(
+        torrent,
+        _jimakuIndex,
+        seriesEpisodeCount: _selectedMedia?.episodes,
+      );
+
+  /// 重搜后该选中哪条字幕来源：用户手选过且它仍在 [entries] 里 → 沿用手选；
+  /// 否则回退首条；空结果 → null。纯查找，不改 state。
+  JimakuEntry? _resolveJimakuEntryFor(List<JimakuEntry> entries) {
+    if (entries.isEmpty) return null;
+    final int? pickedId = _userPickedJimakuEntryId;
+    if (pickedId != null) {
+      for (final JimakuEntry entry in entries) {
+        if (entry.id == pickedId) return entry;
+      }
+    }
+    return entries.first;
+  }
+
   Future<void> _selectJimakuEntry(JimakuEntry entry) async {
     if (_selectedJimakuEntry?.id == entry.id || _jimakuLoading) return;
     final AniListMedia? media = _selectedMedia;
@@ -481,6 +609,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     if (apiKey.isEmpty) return;
     setState(() {
       _selectedJimakuEntry = entry;
+      // 记下「用户手选过这一条」，供重搜时优先沿用（见 [_resolveJimakuEntryFor]）。
+      _userPickedJimakuEntryId = entry.id;
       _jimakuLoading = true;
       _jimakuError = false;
       _jimakuFiles = const <JimakuFile>[];
@@ -505,7 +635,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         );
         final NyaaTorrent? torrent = _selectedTorrent;
         if (torrent != null) {
-          _chosenSubs = chooseSubtitlesFor(torrent, _jimakuIndex);
+          _chosenSubs = _chooseSubsFor(torrent);
         }
       });
     } catch (_) {
@@ -529,7 +659,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       );
       final NyaaTorrent? torrent = _selectedTorrent;
       if (torrent != null) {
-        _chosenSubs = chooseSubtitlesFor(torrent, _jimakuIndex);
+        _chosenSubs = _chooseSubsFor(torrent);
       }
     });
   }
@@ -582,7 +712,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   void _selectTorrent(NyaaTorrent torrent) {
     setState(() {
       _selectedTorrent = torrent;
-      _chosenSubs = chooseSubtitlesFor(torrent, _jimakuIndex);
+      _chosenSubs = _chooseSubsFor(torrent);
       _includeSubs = true;
     });
   }
@@ -622,6 +752,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     setState(() => _pushing = true);
 
     // ① 逐条下载选中的字幕到计划暂存目录（单条失败跳过该条）。
+    // 整季包一次十几条，逐条失败以前是静默 continue，用户以为字幕都下好了；
+    // 记下应下条数，推送成功后按 N/M 汇报（见下方 snack）。
+    final int expectedSubs = _includeSubs ? _chosenSubs.length : 0;
     final List<PlanSubtitle> staged = <PlanSubtitle>[];
     if (_includeSubs && _chosenSubs.isNotEmpty) {
       JimakuClient? jimaku;
@@ -725,8 +858,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     }
     unawaited(appModel.animeDownloadService?.tick());
     if (!mounted) return;
-    _snack(
-        subscribed ? t.download_subscription_created : t.anime_download_pushed);
+    // 字幕缺条必须说出来：全成功不打扰，少一条就把 N/M 附在推送成功文案后面。
+    final String pushedMessage =
+        subscribed ? t.download_subscription_created : t.anime_download_pushed;
+    _snack(staged.length < expectedSubs
+        ? '$pushedMessage · '
+            '${t.anime_download_subs_partial(done: staged.length, total: expectedSubs)}'
+        : pushedMessage);
     // BUG-1006：embedded（下载页内联）没有对话框可关——无条件 pop 会把宿主
     // 路由（下载 tab 页/整个页面栈）弹掉。独立对话框才 pop；内联模式复位回
     // 搜番初始阶段并刷新任务区（对照 [_pushGeneric] 成功后的节奏）。
@@ -901,21 +1039,15 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     );
   }
 
-  /// Jimaku key 输入行：仅初始 key 为空时显示，`onChanged` 直接持久化
-  /// （与 [JimakuSubtitleDialog] 的 key 落偏好范式一致）。
+  /// Jimaku key 输入行：仅初始 key 为空时显示，`onChanged` 直接持久化。
+  /// 输入框本体是三处共用的 [JimakuApiKeyField]（权威配置入口在设置 → 视频 → 字幕）。
   Widget _buildJimakuKeyField() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: TextField(
+      child: JimakuApiKeyField(
         controller: _jimakuKeyCtrl,
-        decoration: InputDecoration(
-          labelText: t.video_jimaku_api_key,
-          helperText: t.video_jimaku_api_key_hint,
-          helperMaxLines: 2,
-          isDense: true,
-          prefixIcon: const Icon(Icons.vpn_key, size: 18),
-        ),
-        obscureText: true,
+        dense: true,
+        showKeyIcon: true,
         onChanged: (String value) =>
             unawaited(ref.read(appProvider).setJimakuApiKey(value.trim())),
       ),
@@ -1408,20 +1540,29 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       chips.add(_miniChip(theme, label, icon: Icons.stacked_bar_chart));
     }
     if (_jimakuLoaded) {
-      final ({int covered, int? total}) coverage =
-          jimakuCoverageFor(torrent, _jimakuIndex);
+      final ({int covered, int? total}) coverage = _jimakuCoverageFor(torrent);
       if (coverage.covered == 0) {
         chips.add(_miniChip(theme, t.anime_download_no_subs,
             foreground: scheme.outline));
       } else {
-        final String label = coverage.total == null
-            ? '${t.anime_download_subs_badge} ?'
-            : '${t.anime_download_subs_badge} '
-                '${coverage.covered}/${coverage.total}';
-        chips.add(_miniChip(theme, label,
-            icon: Icons.subtitles_outlined,
-            background: scheme.primaryContainer,
-            foreground: scheme.onPrimaryContainer));
+        // 应有集数未知（整季包 / 剧场版）→ 只报实际能给出的条数，不报 `?`：
+        // 徽标数必须与确认页字幕列表条数一致，否则「列表说有、点进去说无」。
+        final String count = coverage.total == null
+            ? '${coverage.covered}'
+            : '${coverage.covered}/${coverage.total}';
+        // 整季包的集号未经核对（见 [_subtitleEpisodesUnverified]）→ 加 `~`
+        // 并退成中性配色，不画成「字幕齐了」的确定态。
+        final bool unverified = _subtitleEpisodesUnverified(torrent);
+        chips.add(_miniChip(
+          theme,
+          '${t.anime_download_subs_badge} ${unverified ? '~' : ''}$count',
+          icon: Icons.subtitles_outlined,
+          background: unverified
+              ? scheme.surfaceContainerHighest
+              : scheme.primaryContainer,
+          foreground:
+              unverified ? scheme.onSurfaceVariant : scheme.onPrimaryContainer,
+        ));
       }
     }
     return chips;
@@ -1559,6 +1700,15 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   /// 集号 + 搜索按钮。自动搜不到或命中错版时，用户改词/填集号重搜 Jimaku
   /// （i18n 复用视频字幕对话框同款 key）。
   Widget _buildJimakuManualSearch(ThemeData theme) {
+    // BUG-1184：集号框宽度由 label 实测宽度决定，上限取整行宽的四成——所以需要
+    // 先拿到整行可用宽。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) =>
+          _buildJimakuManualSearchRow(theme, constraints.maxWidth),
+    );
+  }
+
+  Widget _buildJimakuManualSearchRow(ThemeData theme, double rowWidth) {
     final AniListMedia? media = _selectedMedia;
     final List<String> titleOptions =
         media == null ? const <String>[] : _titleOptions(media);
@@ -1572,13 +1722,17 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
               labelText: t.video_jimaku_query,
               isDense: true,
               // 标题候选下拉（≥2 个才显示）：罗马字/日文原名/英文名一键切换。
+              // 选中即重搜——只改输入框文本不搜，用户看到的是「番剧名换了、下面
+              // 的字幕来源纹丝不动」，会误判成功能坏了（BUG-1190）。
               suffixIcon: titleOptions.length < 2
                   ? null
                   : PopupMenuButton<String>(
                       tooltip: t.video_jimaku_query,
                       icon: const Icon(Icons.arrow_drop_down),
-                      onSelected: (String value) =>
-                          _jimakuQueryCtrl.text = value,
+                      onSelected: (String value) {
+                        _jimakuQueryCtrl.text = value;
+                        unawaited(_searchJimakuManual());
+                      },
                       itemBuilder: (BuildContext context) =>
                           <PopupMenuEntry<String>>[
                         for (final String title in titleOptions)
@@ -1599,8 +1753,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         ),
         const SizedBox(width: 8),
         SizedBox(
-          // 96：72 在界面缩放 >1 时装不下「集号」label，会截成「集…」。
-          width: 96,
+          width: jimakuEpisodeFieldWidth(
+            context,
+            t.video_jimaku_episode,
+            rowWidth: rowWidth,
+          ),
           child: TextField(
             controller: _jimakuEpisodeCtrl,
             keyboardType: TextInputType.number,
@@ -1611,10 +1768,22 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             onSubmitted: (_) => _searchJimakuManual(),
           ),
         ),
-        IconButton(
-          tooltip: t.anime_download_search,
-          icon: const Icon(Icons.search, size: 20),
-          onPressed: _jimakuLoading ? null : _searchJimakuManual,
+        // 输入框改了但没搜时按钮转强调色：手改番剧名/集号后「下面没变」不是坏了，
+        // 是还没触发搜索——把这件事显式画出来（BUG-1190）。
+        ListenableBuilder(
+          listenable: Listenable.merge(
+            <Listenable>[_jimakuQueryCtrl, _jimakuEpisodeCtrl],
+          ),
+          builder: (BuildContext context, Widget? child) {
+            final bool dirty = _jimakuQueryCtrl.text.trim().isNotEmpty &&
+                _currentJimakuSearchInput() != _appliedJimakuSearch;
+            return IconButton(
+              tooltip: t.anime_download_search,
+              icon: const Icon(Icons.search, size: 20),
+              color: dirty ? theme.colorScheme.primary : null,
+              onPressed: _jimakuLoading ? null : _searchJimakuManual,
+            );
+          },
         ),
       ],
     );
@@ -1659,6 +1828,39 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         ),
       );
     }
+    // 整季包：集号未经核对，可能配上错季字幕（见 [_subtitleEpisodesUnverified]）。
+    // 明说一句，别让用户以为「已确认配好」。
+    final NyaaTorrent? torrent = _selectedTorrent;
+    final bool unverified =
+        torrent != null && _subtitleEpisodesUnverified(torrent);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (unverified)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Icon(Icons.help_outline,
+                    size: 16, color: theme.colorScheme.onSurfaceVariant),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    t.anime_download_subs_episodes_unverified,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Expanded(child: _buildChosenSubsListView(theme)),
+      ],
+    );
+  }
+
+  Widget _buildChosenSubsListView(ThemeData theme) {
     return ListView.builder(
       itemCount: _chosenSubs.length,
       itemBuilder: (BuildContext context, int i) {

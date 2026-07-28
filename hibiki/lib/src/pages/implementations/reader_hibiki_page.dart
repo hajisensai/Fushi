@@ -1524,11 +1524,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   /// TODO-975：底栏此刻是否绘制。挤压态随 [_showChrome]；悬浮态额外受
   /// [_chromeTransientVisible] 门控（与顶部共用同一唤出/收起状态）。
-  bool get _bottomBarShouldPaint {
-    if (!_hasEverLoaded || !_showChrome) return false;
-    if (!_bottomBarFloating) return true;
-    return _chromeTransientVisible;
-  }
+  bool get _bottomBarShouldPaint => bottomBarVisible(
+        hasEverLoaded: _hasEverLoaded,
+        chromeExpanded: _showChrome,
+        floating: _bottomBarFloating,
+        transientVisible: _chromeTransientVisible,
+      );
 
   /// TODO-975：是否有任一 chrome 处于悬浮模式（决定是否启用「点击唤出 + 自动收起」
   /// 状态机；都不悬浮时走纯挤压旧路径，无 timer）。

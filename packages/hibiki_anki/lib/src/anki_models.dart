@@ -819,6 +819,8 @@ const Map<String, String> kAnkiMimeTypeByExtension = <String, String>{
   'js': 'application/javascript',
   'xhtml': 'text/html',
   'html': 'text/html',
+  'htm': 'text/html',
+  'xht': 'text/html',
   // ── 图片 ──
   'jpg': 'image/jpeg',
   'jpeg': 'image/jpeg',
