@@ -79,16 +79,17 @@ class EpubParser {
         _parseToc(opfXml, manifest, opfDir, extractDir);
     final String? renditionSpread = _parseRenditionSpread(opfXml);
 
-    final String canonExtract = p.canonicalize(extractDir);
     final Map<String, EpubResource> resources = <String, EpubResource>{};
     for (final _ManifestItem item in manifest.values) {
-      final String absPath = p.canonicalize(p.join(opfDir, item.href));
-      if (!p.isWithin(canonExtract, absPath)) {
+      // BUG-1218：键与 filePath 都保留真实大小写，见 [_resolveWithinExtract]。
+      // 大小写敏感平台上 filePath 折成小写就读不到；键折成小写则拦截器（BUG-1203）
+      // 按真实 href 回查 OPF media-type 时查不中，静默退回扩展名兜底。
+      final String? absPath =
+          _resolveWithinExtract(opfDir, item.href, extractDir);
+      if (absPath == null) {
         continue;
       }
-      final String relPath =
-          p.relative(absPath, from: extractDir).replaceAll('\\', '/');
-      resources[normalizeHref(relPath)] = EpubResource(
+      resources[_relHref(absPath, extractDir)] = EpubResource(
         mediaType: item.mediaType,
         filePath: absPath,
       );
@@ -428,8 +429,11 @@ class EpubParser {
         continue;
       }
 
-      final String absPath = p.canonicalize(p.join(opfDir, item.href));
-      if (!p.isWithin(p.canonicalize(extractDir), absPath)) {
+      // BUG-1218：真实路径必须保留大小写，否则 Android/Linux 上 existsSync 全 false
+      // → 整个 spine 被逐条静默跳过。见 [_resolveWithinExtract]。
+      final String? absPath =
+          _resolveWithinExtract(opfDir, item.href, extractDir);
+      if (absPath == null) {
         continue;
       }
       final File file = File(absPath);
@@ -437,8 +441,6 @@ class EpubParser {
         continue;
       }
 
-      final String relPath =
-          p.relative(absPath, from: extractDir).replaceAll('\\', '/');
       final String linear =
           itemref.getAttribute('linear')?.toLowerCase() ?? 'yes';
 
@@ -470,7 +472,7 @@ class EpubParser {
       // [EpubChapter.html] access — open-book no longer slurps the whole book.
       chapters.add(EpubChapter.lazy(
         id: item.id,
-        href: normalizeHref(relPath),
+        href: _relHref(absPath, extractDir),
         mediaType: item.mediaType,
         filePath: absPath,
         spineIndex: index,
@@ -533,13 +535,13 @@ class EpubParser {
     String opfDir,
     String extractDir,
   ) {
-    final String absPath = p.canonicalize(p.join(opfDir, item.href));
-    if (!p.isWithin(p.canonicalize(extractDir), absPath)) {
+    // BUG-1218：封面 href 同样保留真实大小写，否则大小写敏感平台上取不到封面文件。
+    final String? absPath =
+        _resolveWithinExtract(opfDir, item.href, extractDir);
+    if (absPath == null) {
       return null;
     }
-    final String relPath =
-        p.relative(absPath, from: extractDir).replaceAll('\\', '/');
-    return normalizeHref(relPath);
+    return _relHref(absPath, extractDir);
   }
 
   // ── TOC ────────────────────────────────────────────────────────────────────
@@ -553,8 +555,10 @@ class EpubParser {
     // EPUB 3: nav document
     for (final _ManifestItem item in manifest.values) {
       if (item.properties != null && item.properties!.contains('nav')) {
-        final String navPath = p.canonicalize(p.join(opfDir, item.href));
-        if (!p.isWithin(p.canonicalize(extractDir), navPath)) {
+        // BUG-1218：大小写保留，否则大小写敏感平台上找不到 nav 文档 → TOC 空。
+        final String? navPath =
+            _resolveWithinExtract(opfDir, item.href, extractDir);
+        if (navPath == null) {
           continue;
         }
         final File navFile = File(navPath);
@@ -575,8 +579,10 @@ class EpubParser {
       final String? tocId = spine.getAttribute('toc');
       if (tocId != null && manifest.containsKey(tocId)) {
         final _ManifestItem ncxItem = manifest[tocId]!;
-        final String ncxPath = p.canonicalize(p.join(opfDir, ncxItem.href));
-        if (!p.isWithin(p.canonicalize(extractDir), ncxPath)) {
+        // BUG-1218：同上，NCX 路径保留大小写。
+        final String? ncxPath =
+            _resolveWithinExtract(opfDir, ncxItem.href, extractDir);
+        if (ncxPath == null) {
           return <EpubTocItem>[];
         }
         final File ncxFile = File(ncxPath);
@@ -717,6 +723,45 @@ class EpubParser {
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
+
+  /// BUG-1218：把 [opfDir] 下的一个 manifest/TOC href 解析成磁盘绝对路径，越出
+  /// [extractDir] 时返回 null。
+  ///
+  /// 关键在于**边界校验**与**真实路径**必须用同一条路径的两种不同形式：
+  /// - 校验用 `p.canonicalize`（在 Windows/macOS 等大小写不敏感平台会整体小写化，
+  ///   正好让 `../` 逃逸判定不被大小写差异绕过）；
+  /// - 返回值用 `p.normalize`（同样折叠 `.`/`..` 段，但**保留大小写**）。
+  ///
+  /// 此前四处直接拿 canonicalize 的结果当真实路径，于是
+  /// `OEBPS/Dick_9780345508553_epub_c01_r1.htm` 被记成 `oebps/dick_...htm`：
+  /// Windows 文件系统不区分大小写所以侥幸能读，但在 **Android / Linux 上
+  /// `existsSync()` 全部为 false**，spine 里的章节被逐条静默跳过，整本书只剩
+  /// 路径恰好全小写的那一两章，且不写任何错误日志。
+  ///
+  /// [_safeArchivePath] 早在 TODO-739 就为**解压**侧修好了同一个坑（注释详述了
+  /// 大小写折叠如何把 `META-INF` 写成 `meta-inf`），这里让**解析**侧跟上同款做法。
+  static String? _resolveWithinExtract(
+    String opfDir,
+    String href,
+    String extractDir,
+  ) {
+    final String joined = p.join(opfDir, href);
+    if (!p.isWithin(p.canonicalize(extractDir), p.canonicalize(joined))) {
+      return null;
+    }
+    return p.normalize(joined);
+  }
+
+  /// [_resolveWithinExtract] 的结果转成 extractDir 相对、正斜杠、[normalizeHref]
+  /// 归一化的 href（**大小写保留**）。
+  ///
+  /// 这个形式同时是 [EpubBook.resources] 的键，阅读器拦截器（BUG-1203）按同构造
+  /// 的相对路径回查 OPF 声明的 media-type，两侧必须一致。
+  static String _relHref(String absPath, String extractDir) {
+    return normalizeHref(
+        p.relative(absPath, from: p.normalize(extractDir))
+            .replaceAll('\\', '/'));
+  }
 
   static String? _resolveTocHref(
     String rawHref,

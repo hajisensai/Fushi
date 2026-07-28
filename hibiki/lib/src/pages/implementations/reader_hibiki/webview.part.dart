@@ -154,9 +154,16 @@ extension _ReaderWebView on _ReaderHibikiPageState {
 
     final String epubPath =
         Uri.decodeComponent(path.substring('/epub/'.length));
-    final String canonExtractDir = p.canonicalize(_extractDir!);
-    final String filePath = p.canonicalize(p.join(_extractDir!, epubPath));
-    if (!p.isWithin(canonExtractDir, filePath)) {
+    // BUG-1218：边界校验用 canonicalize（大小写折叠，`../` 逃逸不被大小写绕过），
+    // 真实读取路径用 normalize（**保留大小写**）。拿 canonicalize 的结果去 File()
+    // 会把 `OEBPS/Dick_x.htm` 折成 `oebps/dick_x.htm` —— Windows 侥幸能读，
+    // Android/Linux 上 existsSync 为 false，每个章节请求都 404。
+    // 与 EpubParser._resolveWithinExtract / _safeArchivePath 同款。
+    final String joinedPath = p.join(_extractDir!, epubPath);
+    final String normExtractDir = p.normalize(_extractDir!);
+    final String filePath = p.normalize(joinedPath);
+    if (!p.isWithin(
+        p.canonicalize(_extractDir!), p.canonicalize(joinedPath))) {
       return _forbidden('path traversal blocked: $epubPath');
     }
     final File file = File(filePath);
@@ -171,11 +178,16 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     // 文件扩展名，只规定 media-type，所以任何扩展名白名单都必然漏（BUG-1199 补了
     // `.htm`/`.xht` 之后，下一本用别的扩展名甚至无扩展名的书会以同样方式空白）。
     //
-    // 查找键与 [EpubParser] 建 resources 表时同构造（canonicalize 后相对 extractDir
-    // 的 posix 相对路径），所以用已 canonicalize 的 filePath 反推，而不是直接拿 URL
-    // 里的 epubPath——后者会被大小写、`./`、百分号编码差异带偏而静默查不到。
+    // 查找键与 [EpubParser] 建 resources 表时同构造（相对 extractDir 的 posix 相对
+    // 路径），所以用已归一化的 filePath 反推，而不是直接拿 URL 里的 epubPath——后者
+    // 会被 `./`、百分号编码差异带偏而静默查不到。
+    //
+    // BUG-1218：两侧同时改成**保留大小写**的 normalize 形式。原先两侧都 canonicalize
+    // （都被折成小写）也能互相匹配，但那让 filePath 在大小写敏感平台上根本读不到文件；
+    // 现在 parser 的 resources 键与这里的 declaredHref 都是真实大小写，既能读到文件，
+    // 也仍然对得上。
     final String declaredHref =
-        p.relative(filePath, from: canonExtractDir).replaceAll('\\', '/');
+        p.relative(filePath, from: normExtractDir).replaceAll('\\', '/');
     final String extMime = fallbackMimeType(filePath);
     // [EpubBook.mediaType] 自带「manifest 未声明就按扩展名兜底」，故 book 未就绪 /
     // 资源不在 manifest / OPF 缺 media-type 三种情况都自然退回 extMime。
@@ -426,9 +438,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     if (book == null || dir == null) return null;
     if (index < 0 || index >= book.chapters.length) return null;
     final String href = normalizeHref(book.chapters[index].href);
-    final String filePath = p.canonicalize(p.join(dir, href));
-    if (!p.isWithin(p.canonicalize(dir), filePath)) return null;
-    return filePath;
+    // BUG-1218：必须与 [_readerResourcePayload] 用**同一种**路径形式（normalize，
+    // 保留大小写），否则两边算出的 LRU cache key 一个折成小写一个原样，BUG-270 的
+    // 章节缓存/预热永远不命中；在大小写敏感平台上更是直接指向不存在的文件。
+    final String joined = p.join(dir, href);
+    if (!p.isWithin(p.canonicalize(dir), p.canonicalize(joined))) return null;
+    return p.normalize(joined);
   }
 
   // BUG-270: warm the LRU with the next chapter (in reading direction) so a
@@ -540,9 +555,13 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   int _imageFileSizeBytes(String? extractDir, String relativeHref) {
     if (extractDir == null) return 0;
     try {
-      final String root = p.canonicalize(extractDir);
-      final String filePath = p.canonicalize(p.join(root, relativeHref));
-      if (!p.isWithin(root, filePath)) return 0;
+      // BUG-1218：真实 stat 路径保留大小写（越界判据仍走 canonicalize）。
+      final String joined = p.join(extractDir, relativeHref);
+      if (!p.isWithin(
+          p.canonicalize(extractDir), p.canonicalize(joined))) {
+        return 0;
+      }
+      final String filePath = p.normalize(joined);
       final File file = File(filePath);
       if (!file.existsSync()) return 0;
       return file.lengthSync();
