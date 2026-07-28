@@ -10,6 +10,7 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/anime_download_plan.dart';
 import 'package:hibiki/src/media/torrent/nyaa_client.dart';
+import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/video/anilist_client.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
@@ -76,9 +77,13 @@ ${_rssItem(title: 'middle', hash: 'c' * 40, seeders: 100, size: '5 GiB')}
   </channel>
 </rss>''';
 
-/// 纯内存计划存储（widget 测试不碰真实文件）。
+/// 纯内存计划存储（widget 测试不碰真实文件）。字幕暂存目录落到临时目录，
+/// 避免推送流程往仓库工作区写字幕文件。
 class _MemPlanStore extends AnimeDownloadPlanStore {
   _MemPlanStore() : super(baseDir: Directory('unused-mem-store'));
+
+  final Directory tempRoot =
+      Directory.systemTemp.createTempSync('hibiki-subs-test');
 
   @override
   Future<List<AnimeDownloadPlan>> loadAll() async =>
@@ -89,6 +94,55 @@ class _MemPlanStore extends AnimeDownloadPlanStore {
 
   @override
   Future<void> delete(String id) async {}
+
+  @override
+  Directory subsDirFor(String planId) =>
+      Directory('${tempRoot.path}${Platform.pathSeparator}$planId');
+}
+
+/// 推送必成功的假后端（真 qb 在 widget 测试里连不上，会在 snack 之前就早退）。
+class _FakeTorrentBackend implements TorrentBackend {
+  @override
+  Future<bool> addTorrent(
+    String magnetOrUrl, {
+    String? category,
+    bool sequential = false,
+    bool firstLastPiecePrio = false,
+    String? savePath,
+  }) async =>
+      true;
+
+  @override
+  Future<bool> prepareCategory(String category) async => true;
+
+  @override
+  Future<String?> probeConnection() async => null;
+
+  @override
+  Future<List<TorrentSnapshot>> listTorrents({String? category}) async =>
+      const <TorrentSnapshot>[];
+
+  @override
+  Future<List<TorrentFileEntry>> listFiles(String torrentId) async =>
+      const <TorrentFileEntry>[];
+
+  @override
+  Future<TorrentStorageResult> renameFile(
+    String torrentId,
+    int fileIndex,
+    String newPath,
+  ) async =>
+      const TorrentStorageResult(ok: true);
+
+  @override
+  Future<TorrentStorageResult> moveStorage(
+    String torrentId,
+    String newSavePath,
+  ) async =>
+      const TorrentStorageResult(ok: true);
+
+  @override
+  void close() {}
 }
 
 class _FakeAppModel extends AppModel {
@@ -96,6 +150,10 @@ class _FakeAppModel extends AppModel {
 
   final Future<http.Response> Function(http.Request request) _httpHandler;
   final _MemPlanStore store = _MemPlanStore();
+
+  @override
+  TorrentBackend createTorrentBackend(QbConnectionConfig config) =>
+      _FakeTorrentBackend();
 
   @override
   String get jimakuApiKey => 'key';
@@ -394,6 +452,74 @@ void main() {
     expect(selected('Auto First Entry'), isFalse);
     // 拉的必须是手选条目的文件，不是首条的。
     expect(filesForEntry, <int>[11, 22, 22]);
+  });
+
+  // 整季包一次十几条字幕，单条下载失败以前被静默 continue，用户以为都下好了。
+  testWidgets('推送：字幕缺条时 snack 汇报 N/M', (WidgetTester tester) async {
+    final _FakeAppModel appModel = _FakeAppModel((http.Request req) async {
+      final String url = req.url.toString();
+      if (url.contains('/entries/search')) {
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<Map<String, Object>>[
+            <String, Object>{'id': 7, 'name': 'Range Entry'},
+          ])),
+          200,
+        );
+      }
+      if (url.contains('/files')) {
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<Map<String, Object>>[
+            for (int ep = 1; ep <= 3; ep++)
+              <String, Object>{
+                'name': 'Test Anime - 0$ep.ja.srt',
+                'url': 'https://jimaku.cc/f/$ep.srt',
+              },
+          ])),
+          200,
+        );
+      }
+      // 第 2 条字幕下载失败（其余成功）→ 3 条只成功 2 条。
+      if (url.endsWith('/f/2.srt')) return http.Response('', 500);
+      if (url.contains('/f/')) return http.Response('sub body', 200);
+      return http.Response('', 404);
+    });
+    // 区间包（01-03）：三集各取 1 条。
+    const NyaaTorrent rangePack = NyaaTorrent(
+      title: '[Grp] Test Anime 01-03 [1080p]',
+      torrentUrl: '',
+      pageUrl: '',
+      infoHash: 'cccccccccccccccccccccccccccccccccccccccc',
+      seeders: 10,
+      leechers: 0,
+      downloads: 0,
+      sizeText: '3 GiB',
+      sizeBytes: null,
+      categoryId: '1_2',
+      trusted: false,
+      remake: false,
+      pubDate: null,
+    );
+    await pumpDialog(tester, appModel, torrent: rangePack);
+    await tester.tap(find.byTooltip(t.anime_download_search).last);
+    await tester.pumpAndSettle();
+    expect(find.text('Test Anime - 02.ja.srt'), findsOneWidget);
+
+    // 推送会把字幕真写盘（计划暂存目录），真实 IO 只在 runAsync 里才会完成；
+    // 推送期间按钮还是无限旋转的进度指示器，pumpAndSettle 也永远等不到静止。
+    await tester.runAsync(() async {
+      await tester.tap(find.text(t.anime_download_push));
+      for (int i = 0; i < 200; i++) {
+        await tester.pump();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        if (find.byType(SnackBar).evaluate().isNotEmpty) break;
+      }
+    });
+    await tester.pump();
+    expect(
+      find.textContaining(t.anime_download_subs_partial(done: 2, total: 3)),
+      findsOneWidget,
+      reason: '缺条必须说出来，不能只报「已推送」',
+    );
   });
 }
 

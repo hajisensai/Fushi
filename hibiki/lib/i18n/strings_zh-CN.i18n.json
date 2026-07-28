@@ -2715,5 +2715,7 @@
   "shortcut_action_manga_dismiss_dict": "关闭词典",
   "video_setting_jimaku_default_language": "默认字幕语言",
   "video_setting_jimaku_default_language_hint": "该系列没有记住的语言时优先使用",
-  "video_jimaku_api_key_settings_hint": "也可在 设置 → 视频 → 字幕 中修改"
+  "video_jimaku_api_key_settings_hint": "也可在 设置 → 视频 → 字幕 中修改",
+  "anime_download_subs_partial": "字幕只成功下载 $done/$total 条",
+  "anime_download_subs_episodes_unverified": "集号未与该整季包核对，字幕可能来自别的季。"
 }

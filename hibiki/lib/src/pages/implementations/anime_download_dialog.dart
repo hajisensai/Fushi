@@ -736,6 +736,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     setState(() => _pushing = true);
 
     // ① 逐条下载选中的字幕到计划暂存目录（单条失败跳过该条）。
+    // 整季包一次十几条，逐条失败以前是静默 continue，用户以为字幕都下好了；
+    // 记下应下条数，推送成功后按 N/M 汇报（见下方 snack）。
+    final int expectedSubs = _includeSubs ? _chosenSubs.length : 0;
     final List<PlanSubtitle> staged = <PlanSubtitle>[];
     if (_includeSubs && _chosenSubs.isNotEmpty) {
       JimakuClient? jimaku;
@@ -839,8 +842,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     }
     unawaited(appModel.animeDownloadService?.tick());
     if (!mounted) return;
-    _snack(
-        subscribed ? t.download_subscription_created : t.anime_download_pushed);
+    // 字幕缺条必须说出来：全成功不打扰，少一条就把 N/M 附在推送成功文案后面。
+    final String pushedMessage =
+        subscribed ? t.download_subscription_created : t.anime_download_pushed;
+    _snack(staged.length < expectedSubs
+        ? '$pushedMessage · '
+            '${t.anime_download_subs_partial(done: staged.length, total: expectedSubs)}'
+        : pushedMessage);
     // BUG-1006：embedded（下载页内联）没有对话框可关——无条件 pop 会把宿主
     // 路由（下载 tab 页/整个页面栈）弹掉。独立对话框才 pop；内联模式复位回
     // 搜番初始阶段并刷新任务区（对照 [_pushGeneric] 成功后的节奏）。
