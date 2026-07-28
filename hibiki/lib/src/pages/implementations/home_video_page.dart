@@ -3305,7 +3305,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 合集右键「在线匹配封面」（合集级刮削）：以首个可解析的本地成员为搜索种子
   /// 打开单本匹配弹窗，成员 uid 表传整合集——弹窗底部即出现「同时应用到本合集
   /// 全部 N 集」勾选（复用 [_openCoverMatch] 同一 service 组装与应用路径）。
-  /// 合集无本地视频成员（纯远端占位）时无从刮削，静默返回。
+  /// 合集无本地视频成员（纯远端占位 / 成员行已失效）时无从刮削，给可见提示而不是
+  /// 静默返回——菜单已自行关闭，静默 return 在用户看来就是「点了没反应」，他会以为
+  /// 功能坏了或点漏了（同 BUG-1081 的判据）。
+  ///
+  /// 不做菜单项置灰：能不能刮取决于「有没有**解析得出**的本地成员」，那要
+  /// `getCollectionItems` + 逐 uid 查 repo 才知道，为每次右键都付这份 IO 不划算；
+  /// 用扩展名式的近似预判去置灰则会撒谎（灰的其实能用 / 亮的其实不能用）。
   Future<void> _openCollectionCoverMatch(MediaCollectionRow collection) async {
     final HibikiDatabase db = ref.read(appProvider).database;
     final List<MediaCollectionItemRow> items =
@@ -3319,7 +3325,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       seed = await widget.repo.getByBookUid(uid);
       if (seed != null) break;
     }
-    if (!mounted || seed == null) return;
+    if (!mounted) return;
+    if (seed == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.video_collection_no_local_member)),
+      );
+      return;
+    }
     final ({
       CoverScraperService service,
       CoverScraperService Function(OfflineIndex offline) rebuild,
@@ -3337,7 +3349,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 合集右键「为合集获取字幕」：与合集详情页 AppBar 同一 [JimakuBatchDialog]
   /// （绑定 AniList 系列 → 逐集拉最佳字幕）。collection 行重取一次拿最新
-  /// anilistId 快照作对话框初值；无本地视频成员时无从拉取，静默返回。
+  /// anilistId 快照作对话框初值；无本地视频成员时无从拉取，给可见提示而不是静默返回
+  /// （理由同 [_openCollectionCoverMatch]）。
   Future<void> _openCollectionSubtitles(MediaCollectionRow collection) async {
     final HibikiDatabase db = ref.read(appProvider).database;
     final List<MediaCollectionItemRow> items =
@@ -3350,7 +3363,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     final MediaCollectionRow fresh =
         await db.getMediaCollectionById(collection.id) ?? collection;
-    if (!mounted || members.isEmpty) return;
+    if (!mounted) return;
+    if (members.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.video_collection_no_local_member)),
+      );
+      return;
+    }
     await showDialog<void>(
       context: context,
       builder: (_) => JimakuBatchDialog(
