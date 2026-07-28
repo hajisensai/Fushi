@@ -154,7 +154,7 @@ CREATE TABLE book_tag_membership_tombstones (
 
     final version = await db.customSelect('PRAGMA user_version').getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 60,
+    expect(db.schemaVersion, 61,
         reason: 'v57 = 命名统一；v58 = 外部媒体自动记录；v59 = 游戏标签');
 
     final Set<String> mapping = await columnsOf(db, 'video_book_tag_mappings');

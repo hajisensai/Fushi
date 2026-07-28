@@ -44,8 +44,40 @@ class VideoStorage {
   static const String coversDirName = 'video_covers';
   static const String subtitlesDirName = 'video_subtitles';
 
+  /// 合集**自有**封面目录名（[coversDirName] 的子目录，BUG-1211）。
+  ///
+  /// 放子目录而不是与成员封面同级扁平存放，有两个硬理由：
+  /// ① 文件名 `<collectionId>.jpg` 与成员封面 `videoCoverFileName(bookUid)` 不可能
+  ///    撞车（bookUid 理论上可以长得像纯数字）；
+  /// ② [gcOrphanCovers] 的保留集是「全库 `video_books.cover_path`」，合集封面不在
+  ///    其中——同级扁平存放会被那轮历史 GC 当孤儿删掉。该 GC 非递归且显式跳过非
+  ///    常规文件，故子目录整体免疫。
+  static const String collectionCoversDirName = 'collections';
+
   /// 封面目录绝对路径（不创建）。TODO-935 E0：经唯一入口 [AppPaths] 派生。
   static Future<Directory> coversDir() => AppPaths.videoCoversDirectory();
+
+  /// 合集自有封面目录绝对路径（不创建）。见 [collectionCoversDirName]。
+  static Future<Directory> collectionCoversDir() async =>
+      Directory(p.join((await coversDir()).path, collectionCoversDirName));
+
+  /// 删掉被删合集自己那张封面（`MediaCollections.coverPath`）。
+  ///
+  /// 纪律与 [deleteBookAssets] 逐字一致：只删**非空 + 落在合集封面目录内 + 不被其余
+  /// 合集引用**的文件；目录外的（用户外部图片、成员封面）一律不碰。返回是否真删了。
+  static Future<bool> deleteCollectionCover({
+    required String? deletedCoverPath,
+    required Iterable<String> stillReferencedCoverPaths,
+    Directory? collectionCoversDirectory,
+  }) async {
+    final Directory owned =
+        collectionCoversDirectory ?? await collectionCoversDir();
+    return _deleteOwnedAsset(
+      candidate: deletedCoverPath,
+      ownedDir: owned,
+      stillReferenced: stillReferencedCoverPaths,
+    );
+  }
 
   /// 导入字幕目录绝对路径（不创建）。TODO-935 E0：经唯一入口 [AppPaths] 派生。
   static Future<Directory> subtitlesDir() => AppPaths.videoSubtitlesDirectory();

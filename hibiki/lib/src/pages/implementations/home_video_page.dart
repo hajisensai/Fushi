@@ -2661,10 +2661,26 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 合集卡封面借用：首个有本地封面的成员 → 首个远端成员封面（互联/云 fetch 路径）
-  /// → 无封面占位（与散卡同款 surfaceContainer + movie 图标）。组内序优先，故
-  /// 默认就是 [CollectionGroup.coverItem]（首成员）的封面，成员缺封面时向后借。
+  /// 合集卡封面：**合集自有封面**（`MediaCollections.coverPath`，schema v61）优先 →
+  /// 首个有本地封面的成员 → 首个远端成员封面（互联/云 fetch 路径）→ 无封面占位
+  /// （与散卡同款 surfaceContainer + movie 图标）。成员段组内序优先，故默认就是
+  /// [CollectionGroup.coverItem]（首成员）的封面，成员缺封面时向后借。
+  ///
+  /// 自有封面列 NULL（老库全部合集、从没换过封面的合集）→ 直接落到成员借用链，
+  /// 与 v61 之前逐像素相同（Never break userspace）。文件不存在也回落，不出破图：
+  /// overwrite 模式备份恢复会把源机的绝对路径原样带过来（备份不打包 `video_covers/`），
+  /// 那种悬空路径必须表现得像「没设过封面」。
   Widget _buildCollectionCover(CollectionGroup<_VideoSlot> group) {
+    final String? own = group.collection?.coverPath;
+    if (own != null && own.isNotEmpty && File(own).existsSync()) {
+      return PortraitCoverImage(
+        image: resizedFileImage(File(own)),
+        errorBuilder: (BuildContext _) => ShelfCoverPlaceholder(
+          icon: Icons.movie_outlined,
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+        ),
+      );
+    }
     for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
       final VideoBookRow? local = it.payload.local;
       if (local == null) continue;
@@ -3274,13 +3290,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 合集右键「在线匹配封面」（合集级刮削）：以首个可解析的本地成员为搜索种子
-  /// 打开单本匹配弹窗，成员 uid 表传整合集——弹窗底部出「同时应用到本合集全部 N
-  /// 集」勾选且**默认勾上**，标题带合集名（复用 [_openCoverMatch] 同一 service
-  /// 组装与应用路径）。
-  /// 合集无本地视频成员（纯远端占位 / 成员行已失效）时无从刮削，给可见提示而不是
-  /// 静默返回——菜单已自行关闭，静默 return 在用户看来就是「点了没反应」，他会以为
-  /// 功能坏了或点漏了（同 BUG-1081 的判据）。
+  /// 合集右键「在线匹配封面」：换的是**合集自己的封面**（`MediaCollections.coverPath`，
+  /// schema v61），一个成员都不动（BUG-1211）。
+  ///
+  /// 旧行为是把选中的封面 + Bangumi 条目资料一次性刷进合集全部成员，用户明确否决：
+  /// 「匹配的是合集的封面，谁说应用到本机里面的视频了」。现在弹窗从合集入口打开时
+  /// 不再出「同时应用到本合集全部 N 集」勾选，「使用」只下载一张图落进
+  /// `<video_covers>/collections/<id>.jpg` 并写合集那一列。
+  ///
+  /// 本地成员仍要找一个当**搜索种子**（用它的文件路径解析番名预填搜索框）；找不到
+  /// 就没有可预填的片名，给可见提示而不是静默返回——菜单已自行关闭，静默 return 在
+  /// 用户看来就是「点了没反应」（同 BUG-1081 的判据）。
   ///
   /// 不做菜单项置灰：能不能刮取决于「有没有**解析得出**的本地成员」，那要
   /// `getCollectionItems` + 逐 uid 查 repo 才知道，为每次右键都付这份 IO 不划算；
@@ -3315,12 +3335,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       context: context,
       service: bundle.service,
       book: seed,
-      collectionMemberUids: uids,
+      // 合集入口下弹窗不读成员表（不出「应用到全部」勾选）；只传种子自身，让
+      // 「误传整表 → 又被当成批量目标」这条路在类型/数据两层都不存在。
+      collectionMemberUids: <String>[seed.bookUid],
       onApplied: _refresh,
-      // 合集名非空即告诉弹窗「这是合集入口」：标题带名字，且「应用到全合集」默认
-      // 勾上——seed 只是首个可解析成员，未必是合集卡上显示的那张封面，默认不勾
-      // 会让用户以为点了没用。
-      collectionName: collection.name,
+      collection: CoverMatchCollectionTarget(
+        id: collection.id,
+        name: collection.name,
+        applyCover: (String coverPath) =>
+            db.updateMediaCollectionCoverPath(collection.id, coverPath),
+      ),
     );
   }
 

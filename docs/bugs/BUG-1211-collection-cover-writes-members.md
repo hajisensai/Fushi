@@ -1,0 +1,18 @@
+## BUG-1211 · 合集「在线匹配封面」把封面写进全部成员而不是改合集自己的封面
+- **报告**：2026-07-28（用户：「匹配的是合集的封面，谁说应用到本机里面的视频了。改是为了改合集的封面。删掉这个设定，并且修复问题」）
+- **真实性**：✅ 真 bug（设计错误，非崩溃）。根因是**数据模型缺口**：合集根本没有自己的封面字段，合集卡封面一直是「遍历成员、借第一个有 `video_books.cover_path` 的那张」——`hibiki/lib/src/pages/implementations/home_video_page.dart:2667` `_buildCollectionCover`（`MediaCollections.coverSource` 存的是成员引用 `'<mediaType>|<entryKey>'`，且渲染端零读取）。因为没有可写的合集级目标，PR#501 的合集级刮削只能退化成「把同一张封面 + Bangumi 条目资料刷进全部成员」：`hibiki/lib/src/media/video/cover_ui/cover_match_dialog.dart:285-295`（`targets = collectionMemberUids`，合集入口下默认勾选）→ `hibiki/lib/src/media/video/scraper/cover_scraper_service.dart:378-398`（逐成员 `updateCover` + `CoverMetaStore.set` + `_persistMetadata`）。入口在 `home_video_page.dart:3288` `_openCollectionCoverMatch`。
+- **[x] ① 已修复** — 根因修复（补数据结构，而不是在 UI 上打补丁）：
+  - schema **v61**：`MediaCollections` 新增 `coverPath`（`packages/hibiki_core/lib/src/database/tables.dart`），纯 ADD COLUMN、nullable 无 default、零 DROP、`_columnExists` 幂等守卫（`database.dart` `if (from < 61)`，排在 develop 的 v60「漫画/PDF 页数」之后，阶梯连续无空洞）。DAO `updateMediaCollectionCoverPath`。
+  - 渲染：`_buildCollectionCover` 改为「合集自有封面 → 成员借用链 → 远端 → 占位」；`coverPath` 为 NULL **或文件不存在**时行为与 v61 之前逐像素一致（老库不变白；overwrite 备份恢复带来的悬空路径也回落）。
+  - 应用：合集入口改走 `CoverMatchCollectionTarget`（`cover_match_dialog.dart`）→ `CoverScraperService.downloadCollectionCover` 只下载一张图落 `<video_covers>/collections/<id>.jpg` + 写合集那一列，**一个成员都不碰**；合集入口下「同时应用到本合集全部 N 集」勾选**不再出现**。
+  - 单集入口（视频单卡长按「在线匹配封面」/「条目信息 → 修改 Bangumi 映射」）**保持原样**：它属于合集时仍可勾「同时应用到本合集全部 N 集」（默认不勾）。那是「从某一集出发主动批量刷」的独立能力，用户没有异议，未连带删除。
+  - 配套：`path_rebase_coverage.dart` 登记 `documentsRooted` + `data_root_migrator.dart` `_rebaseMediaCollections`（换数据根不丢合集封面）；`collection_context_dialog.dart` 删合集时回收自有封面文件（`VideoStorage.deleteCollectionCover`，纪律同 `deleteBookAssets`）。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/media/video/scraper/cover_match_dialog_test.dart` · 「BUG-1211 合集入口：只改合集自己的封面，N 个成员的封面逐个未变」：3 成员合集各有不同的既有封面 → 走**真实**下载器 + 真实落盘 → 断言合集行 `coverPath` 落地、勾选框不存在、**每个成员的 `coverPath` 逐个未变**、批量写入路径未被调用。桩的 `applyCandidateToBooks` 真写穿 DB，保证「成员未变」这条断言有牙。
+  - `hibiki/test/pages/home_video_collection_cover_card_test.dart` · 三条渲染守卫：自有封面优先于成员借用（且成员封面原封不动）／自有封面为空回落成员（老数据不变白）／自有封面文件不存在回落成员（不出破图）。
+  - `hibiki/test/database/migration_v61_collection_cover_path_test.dart` · v60→v61 真迁移：既有合集行零破坏、新列全 NULL、可写可读可清、不动 `cover_source`。
+  - 变异实测（把修复退回去，确认断言真的转红）：① 合集入口改回只写全部成员 → 红 1；② 合集封面写对但**顺手也刷了成员** → 红 1（命中「成员封面被改了」那条）；③ 渲染去掉自有封面优先 → 红 1；④ 渲染去掉 `existsSync` 守卫 → 红 1；⑤ 迁移漏掉 ADD COLUMN → 红 1。
+- **备注**：
+  - 版本号让号记录：初版取 v60（当时 develop 基线 v59）；PR#504（统计口径纳入漫画/视频/游戏）先带 v60 合入 develop，本修复据裁定让号到 **v61**，rebase 到 develop `5308b86f7` 后重扫：阶梯 …59/60/61 连续无空洞、`_columnExists` 幂等守卫仍在、整个 diff 零 DROP。
+  - 合集自有封面**不跨端同步**（`collection_sync_engine.dart` 是显式白名单：只传 name / collectionType / orderUpdatedAt / 成员 / 墓碑 / 标签名；`backup_merge_engine.dart` 的列清单也硬编码不含 `cover_path`）。
+  - 未覆盖的回收缺口：封面文件回收只挂在**共享的合集右键菜单**删除路径（`collection_context_dialog.dart`）。合集详情页 / 网格详情页 / 视频页解散·合并那几个直调 `deleteMediaCollection` 的入口仍会留下孤儿文件（每合集约几十 KB）。与 BUG-276 的字幕孤儿同类，未在本轮扩大范围。

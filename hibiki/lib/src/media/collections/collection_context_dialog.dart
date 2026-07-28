@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:hibiki/src/media/collections/collection_one_key_sort.dart';
+import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
@@ -214,5 +215,33 @@ Future<void> _deleteCollection({
     await onDeleteMembersMedia(List<MediaCollectionItemRow>.of(members));
   }
   await db.deleteMediaCollection(collection.id);
+  await _reclaimCollectionCover(db, collection);
   onChanged();
+}
+
+/// 回收被删合集**自有**封面文件（`MediaCollections.coverPath`，schema v61）。
+///
+/// 合集行删了但那张图还在磁盘上 = 永久泄漏（合集封面不在 `video_books.cover_path`
+/// 引用集里，[VideoStorage.gcOrphanCovers] 那轮历史 GC 也扫不到子目录）。护栏与
+/// [VideoStorage.deleteBookAssets] 同纪律：只删落在合集封面目录内、且不被其余任何
+/// 合集引用的文件。删除失败不抛——合集已经删掉是既成事实，一张残留图不该让整个
+/// 删除流程报错。
+Future<void> _reclaimCollectionCover(
+  HibikiDatabase db,
+  MediaCollectionRow collection,
+) async {
+  final String? cover = collection.coverPath;
+  if (cover == null || cover.isEmpty) return;
+  try {
+    final List<MediaCollectionRow> rest = await db.getAllMediaCollections();
+    await VideoStorage.deleteCollectionCover(
+      deletedCoverPath: cover,
+      stillReferencedCoverPaths: <String>[
+        for (final MediaCollectionRow c in rest)
+          if (c.id != collection.id && c.coverPath != null) c.coverPath!,
+      ],
+    );
+  } catch (e, stack) {
+    ErrorLogService.instance.log('collection.reclaimCover', e, stack);
+  }
 }

@@ -415,7 +415,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 60;
+  int get schemaVersion => 61;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1230,6 +1230,20 @@ class HibikiDatabase extends _$HibikiDatabase {
             if (await _tableExists('reading_statistics') &&
                 !await _columnExists('reading_statistics', 'pages_read')) {
               await m.addColumn(readingStatistics, readingStatistics.pagesRead);
+            }
+          }
+          if (from < 61) {
+            // v61（BUG-1211「改的是合集封面，不是每一集的封面」）：media_collections
+            // 加 cover_path 列 = 合集**自有**封面图的绝对路径。
+            //
+            // 纯 ADD COLUMN，不重建表、不动任何既有行、零 DROP。列 nullable 且无
+            // DEFAULT → SQLite 把既有全部行回填 NULL；渲染端 NULL 时继续走旧的
+            // 「遍历成员借第一张封面」链，老合集封面逐像素不变（Never break userspace）。
+            // 守卫幂等：fresh DB 已由 onCreate 的 createAll 建好，重复升级
+            // _columnExists 短路 no-op。
+            if (await _tableExists('media_collections') &&
+                !await _columnExists('media_collections', 'cover_path')) {
+              await m.addColumn(mediaCollections, mediaCollections.coverPath);
             }
           }
         },
@@ -2988,6 +3002,15 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<void> updateMediaCollectionCover(int id, String? coverSource) =>
       (update(mediaCollections)..where((t) => t.id.equals(id)))
           .write(MediaCollectionsCompanion(coverSource: Value(coverSource)));
+
+  /// 设/清**合集自有**封面图路径（[MediaCollections.coverPath]，schema v61）。
+  ///
+  /// 与 [updateMediaCollectionCover] 是两回事：那个记「借哪个成员的封面」，这个记
+  /// 合集自己那张图的绝对路径。null = 清掉、回落成员借用链。
+  /// **只写 media_collections 一行**——不碰任何 [VideoBooks] 成员（BUG-1211）。
+  Future<void> updateMediaCollectionCoverPath(int id, String? coverPath) =>
+      (update(mediaCollections)..where((t) => t.id.equals(id)))
+          .write(MediaCollectionsCompanion(coverPath: Value(coverPath)));
 
   /// 删合集：显式先删本合集全部成员引用行、再删合集（不依赖 FK cascade，测试/生产
   /// 一致；绝不删条目本身）。返回删除的合集行数。同事务写合集级删除墓碑（空哨兵行，
