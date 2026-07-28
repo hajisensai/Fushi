@@ -142,7 +142,14 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     // 再入保护：行 Activate（A/Enter）和 trailing 按钮都进这里，迁移中忽略二次触发。
     if (_migrating) return;
 
-    final String? picked = await FilePicker.platform.getDirectoryPath(
+    // 数据根是整个 app 长期读写的落点，必须是真实文件系统路径（见
+    // pickRealDirectoryPath）。这一项今天只对桌面可见（`sync_settings_schema.dart`
+    // 里 section 与 item 双重 `isDesktopPlatform` gate），桌面上统一入口就是原样
+    // `getDirectoryPath()`，故此处是**纯口径统一、行为零变化**；改统一入口是为了
+    // 哪天这项对安卓开放时不会踩到「路径串读不回来」。
+    final String? picked = await pickRealDirectoryPath(
+      context: context,
+      appModel: widget.settingsContext.appModel,
       dialogTitle: t.data_storage_change_button,
     );
     if (picked == null || picked.isEmpty || !mounted) return;

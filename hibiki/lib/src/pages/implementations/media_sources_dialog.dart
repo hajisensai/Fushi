@@ -17,7 +17,6 @@
 import 'dart:io' show Platform, Process;
 
 import 'package:drift/drift.dart' show Value;
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
@@ -30,6 +29,7 @@ import 'package:hibiki/src/sync/webdav_sync_backend.dart';
 import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 
 /// 管理网络/本地来源库的对话框：按 mediaKind（'video' | 'book'）过滤，
 /// 列出该种类下所有来源库，提供添加 / 重新扫描 / 打开 / 移除 / 重排。
@@ -402,7 +402,14 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog>
   }
 
   Future<void> _addLocalFolder() async {
-    final String? picked = await FilePicker.platform.getDirectoryPath(
+    // 扫描根是**长期存储并反复复扫**的路径，必须是 `dart:io` 真读得动的绝对路径：
+    // 安卓上裸 `getDirectoryPath()` 只是把 tree URI 拼成路径串（映射不出 volume 时
+    // 还会退化成 `/`），而 SAF 授的是 URI 权限不是路径权限——没有全文件访问，扫描
+    // 器读它必失败，于是「加了来源却永远扫不出书」。统一走 pickRealDirectoryPath
+    // （安卓先取全文件访问再经原生 SAF 解析真实路径；桌面/iOS 行为逐字不变）。
+    final String? picked = await pickRealDirectoryPath(
+      context: context,
+      appModel: ref.read(appProvider),
       dialogTitle: t.media_source_add_local_folder,
     );
     if (!mounted || picked == null || picked.isEmpty) return;

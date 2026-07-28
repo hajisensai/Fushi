@@ -13,8 +13,12 @@ void main() {
         read('lib/src/pages/implementations/video_shader_dialog.dart');
     expect(src.contains('_pickMpvDirAndSearch'), isTrue,
         reason: '需有手动指定 mpv 目录并搜索的流程');
-    expect(src.contains('getDirectoryPath('), isTrue,
-        reason: '用系统目录选择器让用户指定 mpv 目录');
+    // 目录选择统一走 pickRealDirectoryPath（桌面/iOS 内部仍是 getDirectoryPath，
+    // 安卓经 SAF 解析回真实路径）——选中的目录随后要被 dart:io 遍历扫 .glsl/.hook，
+    // 裸 getDirectoryPath 在安卓给的是 content URI 串、遍历恒空。守的仍是「有系统
+    // 目录选择器接线」，只是锚点跟着统一入口走（见 file_picker_discipline_guard_test）。
+    expect(src.contains('pickRealDirectoryPath('), isTrue,
+        reason: '用统一入口的系统目录选择器让用户指定 mpv 目录');
     expect(src.contains('discoverLocalMpvShaders(overrideDir:'), isTrue,
         reason: '按用户指定目录(override)发现着色器');
     expect(src.contains('onMpvDirChanged'), isTrue, reason: '选定目录回调上报以持久化');

@@ -53,6 +53,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:hibiki/src/utils/misc/hibiki_share.dart';
+import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 
 /// [summarizeSyncReport] 的实现搬去了 manual_sync_ui.dart（媒体页下拉同步共用），
 /// 这里再导出一次以保持既有导入点（test/sync/sync_summary_test.dart）不变。
