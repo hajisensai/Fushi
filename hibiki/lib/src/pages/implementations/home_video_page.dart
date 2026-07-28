@@ -3303,8 +3303,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   /// 合集右键「在线匹配封面」（合集级刮削）：以首个可解析的本地成员为搜索种子
-  /// 打开单本匹配弹窗，成员 uid 表传整合集——弹窗底部即出现「同时应用到本合集
-  /// 全部 N 集」勾选（复用 [_openCoverMatch] 同一 service 组装与应用路径）。
+  /// 打开单本匹配弹窗，成员 uid 表传整合集——弹窗底部出「同时应用到本合集全部 N
+  /// 集」勾选且**默认勾上**，标题带合集名（复用 [_openCoverMatch] 同一 service
+  /// 组装与应用路径）。
   /// 合集无本地视频成员（纯远端占位 / 成员行已失效）时无从刮削，给可见提示而不是
   /// 静默返回——菜单已自行关闭，静默 return 在用户看来就是「点了没反应」，他会以为
   /// 功能坏了或点漏了（同 BUG-1081 的判据）。
@@ -3344,6 +3345,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       book: seed,
       collectionMemberUids: uids,
       onApplied: _refresh,
+      // 合集名非空即告诉弹窗「这是合集入口」：标题带名字，且「应用到全合集」默认
+      // 勾上——seed 只是首个可解析成员，未必是合集卡上显示的那张封面，默认不勾
+      // 会让用户以为点了没用。
+      collectionName: collection.name,
     );
   }
 

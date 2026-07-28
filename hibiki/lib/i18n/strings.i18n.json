@@ -2704,5 +2704,6 @@
   "video_setting_torrent_limit_lan": "Apply limits to LAN peers",
   "video_setting_torrent_limit_lan_hint": "Off by default: transfers with peers on your local network ignore the limits above.",
   "download_rate_limit_lan_included": "Also applies within your local network.",
-  "video_collection_no_local_member": "No local video in this collection"
+  "video_collection_no_local_member": "No local video in this collection",
+  "video_scrape_online_match_collection": "Match cover for $name"
 }
