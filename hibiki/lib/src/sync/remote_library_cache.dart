@@ -166,15 +166,13 @@ class RemoteLibraryCacheKeys {
 
   static const String books = 'books';
 
-  /// 互联 host live 库的视频清单（`List<RemoteVideoInfo>`）。
-  static const String videos = 'videos';
-
-  /// 云盘 `__videos__/videos.json` 目录清单（`List<RemoteVideoManifestEntry>`）。
+  /// 远端视频清单（`List<RemoteVideoInfo>`）。
   ///
-  /// 与 [videos] **必须**分槽：两者元素类型不同（`CloudRemoteVideoClient` 至今不实现
-  /// `RemoteVideoClient`，返回的是 manifest entry 而非 `RemoteVideoInfo`）。共用一个 key
-  /// 会在「互联切云盘」时把上一份缓存按错误类型取出，直接 cast 崩。
-  static const String cloudVideos = 'cloud_videos';
+  /// 互联 host live 库与云盘目录**共用**这一个槽：两种源都实现 `RemoteVideoSource`，
+  /// 清单在各自 client 里已统一成 `RemoteVideoInfo`，不存在元素类型不一致的问题
+  /// （TODO-2119 之前云盘返回的是 manifest entry，被迫分成两个槽，否则换后端时会按
+  /// 错误类型取出缓存直接 cast 崩）。换对端/换后端由 `invalidateAll` 兜底。
+  static const String videos = 'videos';
   static const String audiobooks = 'audiobooks';
   static const String dictionaries = 'dictionaries';
 
