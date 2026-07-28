@@ -15,7 +15,13 @@ import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 /// 从「设置→视频」搬到「下载」页——下载既已独立成页，配置就该在页内，不再埋进
 /// 视频设置。所有字段写 `QbConnectionConfig`（即时生效到内置引擎）。
 class TorrentSettingsSection extends ConsumerStatefulWidget {
-  const TorrentSettingsSection({super.key});
+  const TorrentSettingsSection({super.key, this.desktopOverride});
+
+  /// 仅测试注入：覆盖「本平台是否有内置引擎」的判据（BUG-1207 的平台门控）。
+  /// null = 用真实 `dart:io` 平台判断。照搬 `book_import_dialog.dart` 的
+  /// `ocrEntryDesktopOverride` 范式——`Platform` 不可 override，不给注入口就
+  /// 只能退回源码扫描守卫，测不到真实渲染行为。
+  final bool? desktopOverride;
 
   @override
   ConsumerState<TorrentSettingsSection> createState() =>
@@ -25,7 +31,8 @@ class TorrentSettingsSection extends ConsumerStatefulWidget {
 class _TorrentSettingsSectionState
     extends ConsumerState<TorrentSettingsSection> {
   bool get _isDesktop =>
-      Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+      widget.desktopOverride ??
+      (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
 
   QbConnectionConfig get _config =>
       effectiveTorrentConfig(ref.read(appProvider).qbConnectionConfig);
@@ -344,21 +351,36 @@ class _TorrentSettingsSectionState
 
         // 后端二选一。标签是 `qBittorrent` / `Built-in engine (desktop only)` 这类
         // 不可断行的长词，窄屏裸 SegmentedButton 会直接裁字（BUG-1184）。
-        HibikiSegmentedStrip<String>(
-          segments: <ButtonSegment<String>>[
-            ButtonSegment<String>(
-              value: QbConnectionConfig.backendQbittorrent,
-              label: Text(t.video_setting_torrent_backend_qb),
+        //
+        // BUG-1207：移动端根本没有内置引擎的 .so，选择器只放一个够不着的档位——
+        // 选中后 resolveBackend 会把它规约回 qb，段选状态原地弹回，比没有选项更糟。
+        // 故非桌面不渲染选择器，改为一行说明交代本平台只有外接 qb。
+        if (_isDesktop) ...<Widget>[
+          HibikiSegmentedStrip<String>(
+            segments: <ButtonSegment<String>>[
+              ButtonSegment<String>(
+                value: QbConnectionConfig.backendQbittorrent,
+                label: Text(t.video_setting_torrent_backend_qb),
+              ),
+              ButtonSegment<String>(
+                value: QbConnectionConfig.backendEmbedded,
+                label: Text(t.video_setting_torrent_backend_embedded),
+              ),
+            ],
+            selected: backend,
+            onChanged: (String value) =>
+                _commit((QbConnectionConfig c) => c.copyWith(backend: value)),
+          ),
+        ] else
+          Padding(
+            padding: const EdgeInsets.fromLTRB(2, 0, 2, 4),
+            child: Text(
+              t.download_backend_desktop_only_note,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
-            ButtonSegment<String>(
-              value: QbConnectionConfig.backendEmbedded,
-              label: Text(t.video_setting_torrent_backend_embedded),
-            ),
-          ],
-          selected: backend,
-          onChanged: (String value) =>
-              _commit((QbConnectionConfig c) => c.copyWith(backend: value)),
-        ),
+          ),
         const SizedBox(height: 12),
 
         // 外接 qb 连接字段。

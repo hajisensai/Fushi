@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1167 条。点号进各自文件。
+> 共 1168 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1207](bugs/BUG-1207-android-embedded-torrent-dead-setting.md) | ✅ | ✅ | 安卓下载设置能选「内置引擎」并改下载目录，实际静默回退外接 qBittorrent |
 | [BUG-1206](bugs/BUG-1206-jimaku-season-pack-wrong-season-match.md) | ✅ | ✅ | 整季包字幕按标题猜集号导致错季配对且条数无上界 |
 | [BUG-1205](bugs/BUG-1205-video-mining-cover-audio-serial.md) | ✅ | ✅ | 视频制卡封面与句子音频串行且失败来源靠调用顺序区分 |
 | [BUG-1204](bugs/BUG-1204-lookup-audio-play-failure-reason-swallowed.md) | ✅ | ✅ | 浮窗单词发音首播失败且失败原因被吞无法定位 |

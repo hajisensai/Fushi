@@ -2720,5 +2720,6 @@
   "anime_download_subs_episodes_unverified": "Episode numbers are not verified against this pack - subtitles may come from another season.",
   "anime_download_subs_deferred": "Subtitles are matched after download, from the pack's actual files",
   "anime_download_subs_pending": "Subtitles: pending until download completes",
-  "anime_download_subs_unmatched": "Subtitles: no match for this pack"
+  "anime_download_subs_unmatched": "Subtitles: no match for this pack",
+  "download_backend_desktop_only_note": "Built-in engine requires a desktop platform. This device uses external qBittorrent."
 }

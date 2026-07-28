@@ -32,7 +32,12 @@ void main() {
     ShortcutChannel.keyboard: <String>['resolveKeyboard(', '.keyboardBindings'],
     ShortcutChannel.gamepad: <String>['resolveGamepad(', '.gamepadBindings'],
     ShortcutChannel.mouse: <String>['resolveMouse(', '.mouseBindings'],
-    ShortcutChannel.wheel: <String>['resolveWheel(', '.wheelBindings'],
+    // wheel 只有 `.wheelBindings` 一种写法：registry 上没有、也从未有过
+    // `resolveWheel` —— 滚轮不按「事件 → 查表 → action」解析，而是查词弹窗
+    // （唯一开放本通道的 scope）在 popup_settings_injection.dart 里把绑定表
+    // 序列化成 JSON 注入 WebView，由 JS 侧自己比对。列一个指向不存在方法的
+    // token 只会让后来人以为该方法存在，故删除。
+    ShortcutChannel.wheel: <String>['.wheelBindings'],
   };
 
   /// 定义/展示层：这些文件按定义列举所有 scope 与通道，不构成任何「消费」证据。
@@ -141,7 +146,7 @@ void main() {
           } else if (!consumed.contains(pair)) {
             violations.add('$platform ${entry.key.key}：默认表配了 '
                 '${ch.key.name} 绑定，但全仓找不到 $pair 的解析入口'
-                '（既无 resolve${ch.key.name} 也无 .${ch.key.name}Bindings 取用）');
+                '（${channelTokens[ch.key]!.join(" / ")} 一个都没出现）');
           }
         }
       }
