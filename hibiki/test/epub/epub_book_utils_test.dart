@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -66,52 +67,139 @@ void main() {
       expect(fallbackMimeType('chapter.xhtml'), 'text/html');
     });
 
-    // BUG-1199：`.htm` / `.xht` 是 EPUB 3 允许的内容文档扩展名，表里漏了这两条时
-    // 章节按 octet-stream 下发，阅读器既不净化也不注样式，整本翻页空白。
+    // BUG-1203（承接 BUG-1199）：阅读器拦截器判「这是不是一个该走 HTML 处理链的
+    // 内容文档」的**真相源是 EPUB 自己声明的 media-type**，扩展名表只在声明缺失时
+    // 兜底。BUG-1199 只往扩展名表补了 `.htm` / `.xht`，那是治标——EPUB 不规定内容
+    // 文档的扩展名，只规定 media-type，下一本用别的怪扩展名（甚至无扩展名）的书会
+    // 以完全相同的方式整本空白且不写任何错误日志。
     //
-    // 下面的 [readerTreatsAsHtml] 是阅读器拦截器
-    // (`webview.part.dart` `_readerResourcePayload`) 那条判定的**复刻**——复刻会
-    // 漂移，所以另配一条源码守卫（`interceptor predicate is still the one
-    // replicated here`）锁住被复刻的原文；实现侧改了谓词而这里没跟，守卫先红。
-    group('BUG-1199: all EPUB content-document extensions serve as HTML', () {
-      // 与 webview.part.dart 逐字对应；改这里必须同步改下面守卫里的字面量。
-      const String interceptorHtmlPredicate =
-          "mime == 'text/html' || mime.contains('xhtml')";
+    // 本组不复刻拦截器的谓词（复刻会漂移，是假绿的常见来源），而是：
+    // ① 直接测拦截器真正调用的那个公开谓词 [isHtmlMediaType]；
+    // ② 直接测拦截器真正走的那条查找链 [EpubBook.mediaType]（声明优先 / 扩展名兜底）；
+    // ③ 用源码守卫钉住拦截器方法体里的**新契约**（media-type 优先 + 一律以
+    //    text/html 下发），实现侧退回旧的「只按扩展名」写法立刻转红。
+    group('BUG-1203: content documents are classified by declared media-type',
+        () {
+      test('isHtmlMediaType accepts every EPUB content-document media-type',
+          () {
+        expect(isHtmlMediaType('application/xhtml+xml'), isTrue);
+        expect(isHtmlMediaType('text/html'), isTrue);
+        // `+html` 结构化后缀（EPUB 2 遗留 / 厂商变体）。
+        expect(isHtmlMediaType('application/vnd.pub+html'), isTrue);
+        // 大小写与首尾空白由 OPF 手写而来，必须容忍。
+        expect(isHtmlMediaType('  APPLICATION/XHTML+XML '), isTrue);
+      });
 
-      bool readerTreatsAsHtml(String path) {
-        final String mime = fallbackMimeType(path);
-        return mime == 'text/html' || mime.contains('xhtml');
+      test('isHtmlMediaType rejects non-document media-types', () {
+        expect(isHtmlMediaType('image/jpeg'), isFalse);
+        expect(isHtmlMediaType('text/css'), isFalse);
+        expect(isHtmlMediaType('application/octet-stream'), isFalse);
+        // 「像 html」但不是内容文档：不能靠 contains('html') 之类的松判据放行。
+        expect(isHtmlMediaType('text/htmlish'), isFalse);
+        expect(isHtmlMediaType('application/xhtml+xml-fragment'), isFalse);
+      });
+
+      // 根治判据：扩展名再怪、甚至根本没有扩展名，只要 OPF 声明了内容文档
+      // media-type，拦截器就必须把它当网页处理。这条是 BUG-1199 的扩展名白名单
+      // **永远做不到**的。
+      for (final String href in <String>[
+        'OEBPS/text/chapter1', // 无扩展名
+        'OEBPS/text/chapter1.xml',
+        'OEBPS/text/chapter1.chapter',
+      ]) {
+        test('declared media-type wins for unusual href "$href"', () {
+          final EpubBook book = EpubBook(
+            title: 'T',
+            chapters: const <EpubChapter>[],
+            resources: <String, EpubResource>{
+              href: EpubResource(mediaType: 'application/xhtml+xml'),
+            },
+          );
+          expect(fallbackMimeType(href), isNot('text/html'),
+              reason: '前提：这个 href 靠扩展名表是判不出 HTML 的，'
+                  '否则本用例证明不了 media-type 优先');
+          expect(isHtmlMediaType(book.mediaType(href)), isTrue,
+              reason: 'OPF 声明是内容文档，拦截器必须当网页处理'
+                  '（否则整本正文空白且无错误日志）');
+        });
       }
 
-      test('interceptor predicate is still the one replicated here', () {
+      // 兜底契约：OPF 缺项 / 资源不在 manifest 时退回扩展名表——BUG-1199 补的
+      // `.htm` / `.xht` 仍然是这条兜底路径上必须成立的行为。
+      for (final String ext in <String>['xhtml', 'html', 'htm', 'xht']) {
+        test('.$ext falls back to HTML when the OPF declares nothing', () {
+          final EpubBook book = EpubBook(
+            title: 'T',
+            chapters: const <EpubChapter>[],
+            resources: const <String, EpubResource>{}, // manifest 查不到
+          );
+          expect(isHtmlMediaType(book.mediaType('OEBPS/c01.$ext')), isTrue,
+              reason: '.$ext must not fall back to octet-stream — the reader '
+                  'would skip sanitize/style injection and render blank');
+        });
+      }
+
+      test('a malformed OPF declaration cannot un-classify a known extension',
+          () {
+        // 只放宽不收紧：OPF 把 xhtml 错标成 text/plain 时，扩展名仍须兜住，
+        // 否则「换成 media-type 优先」本身会变成新的空白页来源。
+        final EpubBook book = EpubBook(
+          title: 'T',
+          chapters: const <EpubChapter>[],
+          resources: <String, EpubResource>{
+            'OEBPS/c01.xhtml': EpubResource(mediaType: 'text/plain'),
+          },
+        );
+        final String declared = book.mediaType('OEBPS/c01.xhtml');
+        final String ext = fallbackMimeType('OEBPS/c01.xhtml');
+        expect(isHtmlMediaType(declared) || isHtmlMediaType(ext), isTrue);
+      });
+
+      test('the shared predicate has no parallel copy in the parser', () {
+        final String parser =
+            File('lib/src/epub/epub_parser.dart').readAsStringSync();
+        expect(parser.contains('_isHtmlMediaType'), isFalse,
+            reason: '解析器又抄回了一份私有谓词——两份判据必然漂开，'
+                '一边认怪 media-type 另一边不认就是静默空白页');
+        expect(parser.contains('isHtmlMediaType('), isTrue,
+            reason: '解析器筛 spine 必须走共享谓词');
+      });
+
+      test('interceptor classifies by media-type and still serves text/html',
+          () {
         final String reader = readReaderPageSource();
         final int payloadIdx = reader
             .indexOf('Future<_ReaderResourceResponse> _readerResourcePayload(');
         expect(payloadIdx, greaterThan(0),
-            reason: '_readerResourcePayload 被改名/搬走——本组复刻的谓词已失去锚点');
+            reason: '_readerResourcePayload 被改名/搬走——本组守卫已失去锚点');
         final int endIdx =
             reader.indexOf('Future<WebResourceResponse?> _interceptRequest(');
         expect(endIdx, greaterThan(payloadIdx));
         final String payloadBody = reader.substring(payloadIdx, endIdx);
 
+        expect(payloadBody.contains('_book?.mediaType('), isTrue,
+            reason: '拦截器不再读 EPUB 声明的 media-type，退回「按扩展名猜」——'
+                'BUG-1203 的根因原样复活');
+        expect(payloadBody.contains('isHtmlMediaType('), isTrue,
+            reason: '拦截器必须复用共享谓词 isHtmlMediaType，'
+                '不得在本地另写一份平行判据');
         expect(payloadBody.contains('fallbackMimeType(filePath)'), isTrue,
-            reason: '拦截器一旦不再按扩展名表定 MIME（例如改读 OPF media-type），'
-                '本组「补全扩展名表」的断言就不再代表真实渲染判据，必须重写');
-        expect(payloadBody.contains(interceptorHtmlPredicate), isTrue,
-            reason: '拦截器判「是不是 HTML 文档」的谓词变了，'
-                '本组复刻的 readerTreatsAsHtml 已与实现脱节');
+            reason: 'OPF 允许缺 media-type，扩展名兜底不能被删掉');
+        expect(payloadBody.contains("isHtmlDocument ? 'text/html'"), isTrue,
+            reason: '内容文档必须一律以 text/html 下发；一旦改成回声 OPF 声明的'
+                ' application/xhtml+xml，渲染器切严格 XML 解析，'
+                'BUG-079 / BUG-737 的 sanitizeXhtml 补偿失效');
+        // 只禁 **Dart 字符串字面量**形式（注释里为解释约束会写到这个词，
+        // 用反引号包裹，不带单引号，故不会误伤自己）。
+        expect(payloadBody.contains("'application/xhtml+xml'"), isFalse,
+            reason: '拦截器方法体里出现这个字符串字面量，几乎必然是把它当成了下发的'
+                ' Content-Type 或又抄了一份本地谓词——两者都不允许');
+        expect(
+            payloadBody
+                .contains("mime == 'text/html' || mime.contains('xhtml')"),
+            isFalse,
+            reason: '旧的纯扩展名谓词回来了——BUG-1203 的根因原样复活');
       });
-
-      for (final String ext in <String>['xhtml', 'html', 'htm', 'xht']) {
-        test('.$ext chapter is served as an HTML document', () {
-          expect(
-            readerTreatsAsHtml('OEBPS/Dick_9780345508553_epub_c01_r1.$ext'),
-            isTrue,
-            reason: '.$ext must not fall back to octet-stream — the reader '
-                'would skip style/pagination injection and render blank',
-          );
-        });
-      }
     });
 
     test('case insensitive extension matching', () {

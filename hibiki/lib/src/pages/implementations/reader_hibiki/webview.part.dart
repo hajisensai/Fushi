@@ -154,8 +154,9 @@ extension _ReaderWebView on _ReaderHibikiPageState {
 
     final String epubPath =
         Uri.decodeComponent(path.substring('/epub/'.length));
+    final String canonExtractDir = p.canonicalize(_extractDir!);
     final String filePath = p.canonicalize(p.join(_extractDir!, epubPath));
-    if (!p.isWithin(p.canonicalize(_extractDir!), filePath)) {
+    if (!p.isWithin(canonExtractDir, filePath)) {
       return _forbidden('path traversal blocked: $epubPath');
     }
     final File file = File(filePath);
@@ -164,7 +165,30 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     }
 
     Uint8List data = await file.readAsBytes();
-    final String mime = fallbackMimeType(filePath);
+
+    // BUG-1203：「这是不是一个该走 HTML 处理链的内容文档」以 **EPUB 自己声明的
+    // media-type** 为准，扩展名表只在声明缺失/畸形时兜底。EPUB 不规定内容文档的
+    // 文件扩展名，只规定 media-type，所以任何扩展名白名单都必然漏（BUG-1199 补了
+    // `.htm`/`.xht` 之后，下一本用别的扩展名甚至无扩展名的书会以同样方式空白）。
+    //
+    // 查找键与 [EpubParser] 建 resources 表时同构造（canonicalize 后相对 extractDir
+    // 的 posix 相对路径），所以用已 canonicalize 的 filePath 反推，而不是直接拿 URL
+    // 里的 epubPath——后者会被大小写、`./`、百分号编码差异带偏而静默查不到。
+    final String declaredHref =
+        p.relative(filePath, from: canonExtractDir).replaceAll('\\', '/');
+    final String extMime = fallbackMimeType(filePath);
+    // [EpubBook.mediaType] 自带「manifest 未声明就按扩展名兜底」，故 book 未就绪 /
+    // 资源不在 manifest / OPF 缺 media-type 三种情况都自然退回 extMime。
+    final String declaredMime = _book?.mediaType(declaredHref) ?? extMime;
+    // 两个真相源任一认它是 HTML 就当 HTML：只放宽不收紧，OPF 声明畸形（例如把 xhtml
+    // 标成 text/plain）时仍由扩展名兜住，不会比改动前更差。
+    final bool isHtmlDocument =
+        isHtmlMediaType(declaredMime) || isHtmlMediaType(extMime);
+    // ⚠️ 分类归分类，下发的 Content-Type 一律 `text/html`，绝不回
+    // `application/xhtml+xml`：那会让渲染器切到严格 XML 解析，出版社 EPUB 常见的
+    // well-formedness 瑕疵会变成整页 parse error，且 BUG-079 / BUG-737 的
+    // `sanitizeXhtml` 是为 HTML5 解析语义写的补偿，切走后不再防护那两类故障。
+    final String mime = isHtmlDocument ? 'text/html' : extMime;
 
     if (mime == 'text/css') {
       data = _sanitizedCssCache.putIfAbsent(filePath, () {
@@ -175,7 +199,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
       });
     }
 
-    if ((mime == 'text/html' || mime.contains('xhtml')) && _settings != null) {
+    if (isHtmlDocument && _settings != null) {
       // BUG-270 (TODO-296 B): repeat chapter visits (forward/back paging,
       // prefetched chapters) reuse the sanitized + style-injected bytes from
       // the LRU cache instead of re-reading/decoding/sanitizing/injecting. The

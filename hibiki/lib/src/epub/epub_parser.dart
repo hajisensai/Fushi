@@ -423,7 +423,8 @@ class EpubParser {
       if (item == null) {
         continue;
       }
-      if (!_isHtmlMediaType(item.mediaType)) {
+      // BUG-1203：与阅读器资源拦截器共用同一个谓词（epub_book.dart），不再各留副本。
+      if (!isHtmlMediaType(item.mediaType)) {
         continue;
       }
 
@@ -774,13 +775,6 @@ class EpubParser {
     } on ArgumentError {
       return href;
     }
-  }
-
-  static bool _isHtmlMediaType(String mediaType) {
-    final String lower = mediaType.toLowerCase();
-    return lower == 'application/xhtml+xml' ||
-        lower == 'text/html' ||
-        lower.endsWith('+html');
   }
 }
 
