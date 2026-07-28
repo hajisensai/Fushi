@@ -376,4 +376,73 @@ void main() {
       }
     });
   });
+
+  // 条目 24 集、包只有 12 集时，多出来的 12 条永远配不上任何视频（落位层要求
+  // 集号严格相等），纯耗带宽和磁盘。按自述上界收敛条数。
+  group('整季包字幕条数收敛', () {
+    /// 24 集的 Jimaku 条目（两季合并编号的典型形态）。
+    JimakuEpisodeIndex index24() => JimakuEpisodeIndex.fromFiles(
+          <JimakuFile>[
+            for (int ep = 1; ep <= 24; ep++)
+              _file('Show - ${ep.toString().padLeft(2, '0')}.ja.srt'),
+          ],
+        );
+
+    test('标题自报 `全12話` → 只取 12 条（升序取最前 12 集）', () {
+      final NyaaTorrent pack = _torrent('[Grp] Show S1 全12話 [BDRip 1080p]');
+      expect(torrentEpisodeScope(pack).seasonEpisodeCount, 12);
+      final List<(int?, JimakuFile)> chosen =
+          chooseSubtitlesFor(pack, index24());
+      expect(chosen, hasLength(12));
+      expect(
+        chosen.map(((int?, JimakuFile) e) => e.$1).toList(),
+        <int>[for (int ep = 1; ep <= 12; ep++) ep],
+      );
+      // 徽标必须跟着收敛，否则「列表说 24、点进去 12」。
+      expect(jimakuCoverageFor(pack, index24()).covered, 12);
+    });
+
+    test('标题没写集数 → 用调用方给的该季应有集数收敛', () {
+      final NyaaTorrent pack = _torrent('[Grp] Show S1 [BDRip 1080p x265]');
+      expect(torrentEpisodeScope(pack).seasonEpisodeCount, isNull);
+      expect(
+        chooseSubtitlesFor(pack, index24(), seriesEpisodeCount: 12),
+        hasLength(12),
+      );
+      expect(
+        jimakuCoverageFor(pack, index24(), seriesEpisodeCount: 12).covered,
+        12,
+      );
+    });
+
+    test('标题自报的集数优先于调用方给的应有集数', () {
+      final NyaaTorrent pack = _torrent('[Grp] Show S1 全13話 [BDRip]');
+      expect(
+        chooseSubtitlesFor(pack, index24(), seriesEpisodeCount: 24),
+        hasLength(13),
+      );
+    });
+
+    test('两个上界都没有 → 不收敛（不发明魔数，维持全给）', () {
+      final NyaaTorrent pack = _torrent('[Grp] Show S1 [BDRip 1080p x265]');
+      expect(seasonSubtitleCap(torrentEpisodeScope(pack)), isNull);
+      expect(chooseSubtitlesFor(pack, index24()), hasLength(24));
+    });
+
+    test('上界大于索引集数 → 不截断（有多少给多少）', () {
+      final NyaaTorrent pack = _torrent('[Grp] Show S1 [BDRip]');
+      expect(
+        chooseSubtitlesFor(pack, index24(), seriesEpisodeCount: 50),
+        hasLength(24),
+      );
+    });
+
+    test('收敛只作用于 season 类：区间包仍按自己的区间走', () {
+      final NyaaTorrent ranged = _torrent('[Grp] Show 01-24 (1080p)');
+      expect(
+        chooseSubtitlesFor(ranged, index24(), seriesEpisodeCount: 12),
+        hasLength(24),
+      );
+    });
+  });
 }

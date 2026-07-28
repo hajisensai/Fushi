@@ -245,7 +245,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       final NyaaTorrent? debugTorrent = widget.debugInitialTorrent;
       if (debugTorrent != null) {
         _selectedTorrent = debugTorrent;
-        _chosenSubs = chooseSubtitlesFor(debugTorrent, _jimakuIndex);
+        _chosenSubs = _chooseSubsFor(debugTorrent);
       }
     }
     unawaited(_reloadPlans());
@@ -523,7 +523,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         // 已选种子则同步刷新其字幕命中（手动重搜后确认阶段的字幕列表实时更新）。
         final NyaaTorrent? torrent = _selectedTorrent;
         if (torrent != null) {
-          _chosenSubs = chooseSubtitlesFor(torrent, _jimakuIndex);
+          _chosenSubs = _chooseSubsFor(torrent);
         }
       });
     } catch (_) {
@@ -537,6 +537,25 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       }
     }
   }
+
+  /// 挑选随下载暂存的字幕清单。**所有调用点都必须走这里**，别直接调
+  /// [chooseSubtitlesFor]：整季包的条数上界要用当前选中番的应有集数
+  /// （[AniListMedia.episodes]）收敛，徽标（[_jimakuCoverageFor]）与确认页列表
+  /// 必须喂同一个值，否则「列表说 24 条、点进去 12 条」。
+  List<(int?, JimakuFile)> _chooseSubsFor(NyaaTorrent torrent) =>
+      chooseSubtitlesFor(
+        torrent,
+        _jimakuIndex,
+        seriesEpisodeCount: _selectedMedia?.episodes,
+      );
+
+  /// 字幕覆盖度徽标，与 [_chooseSubsFor] 同源（同一 `seriesEpisodeCount`）。
+  ({int covered, int? total}) _jimakuCoverageFor(NyaaTorrent torrent) =>
+      jimakuCoverageFor(
+        torrent,
+        _jimakuIndex,
+        seriesEpisodeCount: _selectedMedia?.episodes,
+      );
 
   Future<void> _selectJimakuEntry(JimakuEntry entry) async {
     if (_selectedJimakuEntry?.id == entry.id || _jimakuLoading) return;
@@ -570,7 +589,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         );
         final NyaaTorrent? torrent = _selectedTorrent;
         if (torrent != null) {
-          _chosenSubs = chooseSubtitlesFor(torrent, _jimakuIndex);
+          _chosenSubs = _chooseSubsFor(torrent);
         }
       });
     } catch (_) {
@@ -594,7 +613,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       );
       final NyaaTorrent? torrent = _selectedTorrent;
       if (torrent != null) {
-        _chosenSubs = chooseSubtitlesFor(torrent, _jimakuIndex);
+        _chosenSubs = _chooseSubsFor(torrent);
       }
     });
   }
@@ -647,7 +666,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   void _selectTorrent(NyaaTorrent torrent) {
     setState(() {
       _selectedTorrent = torrent;
-      _chosenSubs = chooseSubtitlesFor(torrent, _jimakuIndex);
+      _chosenSubs = _chooseSubsFor(torrent);
       _includeSubs = true;
     });
   }
@@ -1467,8 +1486,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       chips.add(_miniChip(theme, label, icon: Icons.stacked_bar_chart));
     }
     if (_jimakuLoaded) {
-      final ({int covered, int? total}) coverage =
-          jimakuCoverageFor(torrent, _jimakuIndex);
+      final ({int covered, int? total}) coverage = _jimakuCoverageFor(torrent);
       if (coverage.covered == 0) {
         chips.add(_miniChip(theme, t.anime_download_no_subs,
             foreground: scheme.outline));

@@ -105,8 +105,10 @@ class TorrentEpisodeScope {
   const TorrentEpisodeScope.single(int episode)
       : this._(TorrentEpisodeScopeKind.single, episode: episode);
 
-  /// 整季包（集号未知）。
-  const TorrentEpisodeScope.season() : this._(TorrentEpisodeScopeKind.season);
+  /// 整季包（集号未知）。[episodeCount] 是标题自报的包内集数（`全13話`），
+  /// 标题没写为 null。
+  const TorrentEpisodeScope.season({int? episodeCount})
+      : this._(TorrentEpisodeScopeKind.season, episode: episodeCount);
 
   /// 无集数概念。
   const TorrentEpisodeScope.unknown() : this._(TorrentEpisodeScopeKind.unknown);
@@ -116,8 +118,13 @@ class TorrentEpisodeScope {
   /// [TorrentEpisodeScopeKind.range] 时的集号区间，其余为 null。
   final (int, int)? range;
 
-  /// [TorrentEpisodeScopeKind.single] 时的集号，其余为 null。
+  /// [TorrentEpisodeScopeKind.single] 时的集号；[TorrentEpisodeScopeKind.season]
+  /// 时是标题自报的包内集数（`全13話` → 13）。其余为 null。
   final int? episode;
+
+  /// 整季包标题自报的包内集数（`全13話` → 13）；非 season 或标题没写为 null。
+  int? get seasonEpisodeCount =>
+      kind == TorrentEpisodeScopeKind.season ? episode : null;
 }
 
 /// 整季包标记（标题里表明「这是整季/全集」但不写集号区间的写法）。
@@ -127,6 +134,10 @@ final RegExp _seasonPackMarker = RegExp(
   r'\b(complete(\s+series)?|batch|bd-?box)\b|全\s*\d{0,3}\s*[话話集]',
   caseSensitive: false,
 );
+
+/// 整季包标题自报的集数（`全13話` / `全 26 集` → 13 / 26）。`全話`（无数字）不算。
+/// 这是**唯一关于「这一包里有几集」的自述信息**，见 [torrentEpisodeScope]。
+final RegExp _seasonPackEpisodeCount = RegExp(r'全\s*(\d{1,3})\s*[话話集]');
 
 /// 判定种子 [t] 的集数身份。纯函数。
 ///
@@ -139,9 +150,54 @@ TorrentEpisodeScope torrentEpisodeScope(NyaaTorrent t) {
   final int? episode = t.episode;
   if (episode != null) return TorrentEpisodeScope.single(episode);
   if (t.isBatch || t.season != null || _seasonPackMarker.hasMatch(t.title)) {
-    return const TorrentEpisodeScope.season();
+    final RegExpMatch? countMatch = _seasonPackEpisodeCount.firstMatch(t.title);
+    return TorrentEpisodeScope.season(
+      episodeCount:
+          countMatch == null ? null : int.tryParse(countMatch.group(1)!),
+    );
   }
   return const TorrentEpisodeScope.unknown();
+}
+
+/// 整季包该取几条字幕的上界。纯函数。
+///
+/// **这一层拿不到「包内实际集数」**：`chooseSubtitlesFor` 的调用点手上只有 Nyaa
+/// RSS 结果（[NyaaTorrent] 只有标题 + 体积，没有文件列表；种子要到用户点「推送
+/// 下载」之后才 add 进引擎，那时字幕早已下完），所以只能用**自述上界**收敛：
+/// - ① 标题自报的包内集数（`全13話`）——关于这一包本身，最强；
+/// - ② 调用方给的该季应有集数（[seriesEpisodeCount]，AniList `media.episodes`）——
+///   整季包声称覆盖该季，用它当上界；连载中的番 AniList 给 null。
+/// 两者都没有 → 返回 null（不设上界，维持原行为）。**不发明魔数**：拍脑袋的
+/// 「最多 26 集」对 50 集长番就是静默丢字幕。
+///
+/// 为什么要收敛：Jimaku 条目常把多季合并编号（24 集），而包只有 12 集；多下的
+/// 12 条永远配不上任何视频（落位层 [pairSubtitlesToVideos] 要求集号严格相等），
+/// 纯耗带宽和磁盘。
+int? seasonSubtitleCap(TorrentEpisodeScope scope, {int? seriesEpisodeCount}) {
+  final int? fromTitle = scope.seasonEpisodeCount;
+  if (fromTitle != null && fromTitle > 0) return fromTitle;
+  if (seriesEpisodeCount != null && seriesEpisodeCount > 0) {
+    return seriesEpisodeCount;
+  }
+  return null;
+}
+
+/// 整季包按 [seasonSubtitleCap] 收敛后的集号列表（升序，取最前 cap 个）。
+///
+/// 取「最前 cap 个」而不是「集号 ≤ cap」：Jimaku 条目按绝对集号编号时（S2 的
+/// 字幕编号 13-24），后者一条都不给；前者至少条数正确。集号是否真对得上这一包
+/// 本层无从判断——那由 UI 标成「未核对」（见 `torrentEpisodeScope` 的 season 分支
+/// 消费方），本轮不做绝对集号换算。
+List<int> _seasonEpisodes(
+  JimakuEpisodeIndex index,
+  TorrentEpisodeScope scope,
+  int? seriesEpisodeCount,
+) {
+  final List<int> episodes = index.byEpisode.keys.toList()..sort();
+  final int? cap =
+      seasonSubtitleCap(scope, seriesEpisodeCount: seriesEpisodeCount);
+  if (cap == null || episodes.length <= cap) return episodes;
+  return episodes.sublist(0, cap);
 }
 
 /// 计算种子 [t] 的字幕覆盖度（列表徽标「字幕 covered/total」用）。
@@ -151,12 +207,16 @@ TorrentEpisodeScope torrentEpisodeScope(NyaaTorrent t) {
 /// - range → `total` = 区间长度，`covered` = 区间内有候选的集数；
 /// - single → `total` 1，`covered` 0/1；
 /// - season（整季包，应有集数未知）→ `total` null，`covered` = 索引里有候选的
-///   集数（无编号集但有整季单文件字幕时记 1）；
+///   集数、按 [seasonSubtitleCap] 收敛（无编号集但有整季单文件字幕时记 1）；
 /// - unknown（剧场版/单文件）→ `total` null，`covered` = 索引非空则 1。
+///
+/// [seriesEpisodeCount]：该季应有集数（AniList），只用于 season 分支收敛条数，
+/// 必须与 [chooseSubtitlesFor] 传同一个值，否则徽标数与字幕列表条数会打架。
 ({int covered, int? total}) jimakuCoverageFor(
   NyaaTorrent t,
-  JimakuEpisodeIndex index,
-) {
+  JimakuEpisodeIndex index, {
+  int? seriesEpisodeCount,
+}) {
   final TorrentEpisodeScope scope = torrentEpisodeScope(t);
   switch (scope.kind) {
     case TorrentEpisodeScopeKind.range:
@@ -172,8 +232,10 @@ TorrentEpisodeScope torrentEpisodeScope(NyaaTorrent t) {
         total: 1
       );
     case TorrentEpisodeScopeKind.season:
-      if (index.byEpisode.isNotEmpty) {
-        return (covered: index.byEpisode.length, total: null);
+      final List<int> episodes =
+          _seasonEpisodes(index, scope, seriesEpisodeCount);
+      if (episodes.isNotEmpty) {
+        return (covered: episodes.length, total: null);
       }
       return (covered: index.unnumbered.isEmpty ? 0 : 1, total: null);
     case TorrentEpisodeScopeKind.unknown:
@@ -190,16 +252,20 @@ TorrentEpisodeScope torrentEpisodeScope(NyaaTorrent t) {
 /// 按 [torrentEpisodeScope] 分支（与 [jimakuCoverageFor] 同源）：
 /// - range → 区间内每集取首选（语言权重最优）各 1 条，缺集跳过；
 /// - single → 该集首选 1 条（记录集号）；无候选返回空；
-/// - season（整季包）→ 索引里**每个已知集**各取首选（集号升序）；一集都没有但有
-///   整季单文件字幕时退回该单文件（记 episode null）。种子标题没写区间不代表它
-///   不含整季，此处按字幕侧的集号全给，落位仍按集对位；
+/// - season（整季包）→ 索引里的已知集各取首选（集号升序），条数按
+///   [seasonSubtitleCap] 收敛；一集都没有但有整季单文件字幕时退回该单文件
+///   （记 episode null）。种子标题没写区间不代表它不含整季，落位仍按集对位；
 /// - unknown → 有无集号文件（[JimakuEpisodeIndex.unnumbered]）时取其首选，
 ///   否则全部文件恰好只有 1 条时给它；其余情况不猜，返回空。两种给出场景
 ///   均记 episode null（种子本身无集数概念，sidecar 落位不按集对位）。
+///
+/// [seriesEpisodeCount]：该季应有集数（AniList），见 [seasonSubtitleCap]；
+/// 必须与 [jimakuCoverageFor] 传同一个值。
 List<(int?, JimakuFile)> chooseSubtitlesFor(
   NyaaTorrent t,
-  JimakuEpisodeIndex index,
-) {
+  JimakuEpisodeIndex index, {
+  int? seriesEpisodeCount,
+}) {
   final TorrentEpisodeScope scope = torrentEpisodeScope(t);
   switch (scope.kind) {
     case TorrentEpisodeScopeKind.range:
@@ -220,7 +286,8 @@ List<(int?, JimakuFile)> chooseSubtitlesFor(
       }
       return <(int?, JimakuFile)>[(episode, candidates.first)];
     case TorrentEpisodeScopeKind.season:
-      final List<int> episodes = index.byEpisode.keys.toList()..sort();
+      final List<int> episodes =
+          _seasonEpisodes(index, scope, seriesEpisodeCount);
       if (episodes.isNotEmpty) {
         return <(int?, JimakuFile)>[
           for (final int episode in episodes)
