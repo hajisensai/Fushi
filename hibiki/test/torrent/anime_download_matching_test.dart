@@ -616,4 +616,155 @@ void main() {
           isEmpty);
     });
   });
+
+  group('条目自动选中的季号校验（resolveJimakuEntry）', () {
+    const JimakuEntry s1 =
+        JimakuEntry(id: 11, name: 'Sousou no Frieren'); // 不写季号 = 第一季
+    const JimakuEntry s2 =
+        JimakuEntry(id: 22, name: 'Sousou no Frieren 2nd Season');
+
+    test('S1 条目遇上 S2 包：不自动选（本轮根因）', () {
+      // 这正是落位层（matchJimakuFilesToVideoNames）拦不住的形状：条目按 1-12
+      // 编号、包也是 01-12，集号严格相等照样能配上，配的却是错季字幕。
+      final NyaaTorrent pack =
+          _torrent('[Group] Sousou no Frieren S2 [01-12][1080p]');
+      expect(pack.season, 2, reason: '前提：种子标题解析得出季号');
+      expect(
+        resolveJimakuEntry(
+          const <JimakuEntry>[s1],
+          torrentSeason: pack.season,
+          anilistId: 999,
+        ),
+        isNull,
+      );
+    });
+
+    test('候选里有对得上的季 → 自动选那一条，而不是首条', () {
+      final NyaaTorrent pack =
+          _torrent('[Group] Sousou no Frieren S2 [01-12][1080p]');
+      expect(
+        resolveJimakuEntry(
+          const <JimakuEntry>[s1, s2],
+          torrentSeason: pack.season,
+          anilistId: 999,
+        )?.id,
+        22,
+      );
+    });
+
+    test('两边都拿不到 season：照常自动选首条（信息缺失不关功能）', () {
+      final NyaaTorrent pack = _torrent('[Group] Test Anime - 01 [1080p]');
+      expect(pack.season, isNull, reason: '前提：种子标题没有季号 token');
+      expect(jimakuEntrySeason(s1.name), 1);
+      expect(
+        resolveJimakuEntry(
+          const <JimakuEntry>[s1],
+          torrentSeason: pack.season,
+          anilistId: 999,
+        )?.id,
+        11,
+      );
+    });
+
+    test('种子没写季号、条目写了季号：仍照常自动选（不凭空拦）', () {
+      expect(
+        resolveJimakuEntry(
+          const <JimakuEntry>[s2],
+          torrentSeason: null,
+          anilistId: 999,
+        )?.id,
+        22,
+      );
+    });
+
+    test('用户手选的条目不被拦：季号明显不符也原样沿用', () {
+      final NyaaTorrent pack =
+          _torrent('[Group] Sousou no Frieren S2 [01-12][1080p]');
+      // 同一份输入，不带 userPickedEntryId 时被拦成 null（对照组，证明拦截确实生效）。
+      expect(
+        resolveJimakuEntry(
+          const <JimakuEntry>[s1],
+          torrentSeason: pack.season,
+          anilistId: 999,
+        ),
+        isNull,
+      );
+      expect(
+        resolveJimakuEntry(
+          const <JimakuEntry>[s1],
+          userPickedEntryId: 11,
+          torrentSeason: pack.season,
+          anilistId: 999,
+        )?.id,
+        11,
+        reason: '用户可能就是要另一季的字幕（合集版编号不同等），拦他是越权',
+      );
+    });
+
+    test('手选的条目已不在新结果里 → 回退自动选，且自动选仍受季号校验', () {
+      final NyaaTorrent pack =
+          _torrent('[Group] Sousou no Frieren S2 [01-12][1080p]');
+      expect(
+        resolveJimakuEntry(
+          const <JimakuEntry>[s1],
+          userPickedEntryId: 4242,
+          torrentSeason: pack.season,
+          anilistId: 999,
+        ),
+        isNull,
+      );
+    });
+
+    test('条目挂的 anilist_id 命中所选番 → 一律放行（AniList 按季拆条目，id 即权威）', () {
+      final NyaaTorrent pack =
+          _torrent('[Group] Sousou no Frieren S2 [01-12][1080p]');
+      expect(
+        resolveJimakuEntry(
+          const <JimakuEntry>[
+            JimakuEntry(id: 33, name: 'Sousou no Frieren', anilistId: 999),
+          ],
+          torrentSeason: pack.season,
+          anilistId: 999,
+        )?.id,
+        33,
+      );
+      // 挂的是别的番的 id → 不算命中，照常按名字比季号。
+      expect(
+        resolveJimakuEntry(
+          const <JimakuEntry>[
+            JimakuEntry(id: 33, name: 'Sousou no Frieren', anilistId: 12345),
+          ],
+          torrentSeason: pack.season,
+          anilistId: 999,
+        ),
+        isNull,
+      );
+    });
+
+    test('空候选列表 → null（与改前一致）', () {
+      expect(resolveJimakuEntry(const <JimakuEntry>[]), isNull);
+    });
+
+    test('jimakuEntrySeason：真实条目名解析，不写季号按第一季', () {
+      expect(jimakuEntrySeason('Sousou no Frieren'), 1);
+      expect(jimakuEntrySeason('Oshi no Ko 2nd Season'), 2);
+      expect(jimakuEntrySeason('Mushoku Tensei S2'), 2);
+      expect(jimakuEntrySeason('葬送のフリーレン 第2期'), 2);
+      expect(jimakuEntrySeason('Yuru Camp Season 3'), 3);
+      expect(jimakuEntrySeason('Spice and Wolf Part 2'), 2);
+    });
+
+    test('同季不算冲突：条目与包都写 S2', () {
+      final NyaaTorrent pack =
+          _torrent('[Group] Sousou no Frieren S2 [01-12][1080p]');
+      expect(
+        jimakuEntrySeasonConflicts(
+          entry: s2,
+          torrentSeason: pack.season,
+          anilistId: 999,
+        ),
+        isFalse,
+      );
+    });
+  });
 }

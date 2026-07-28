@@ -591,6 +591,125 @@ void main() {
       reason: '推送成功必须说清字幕的时序',
     );
   });
+
+  // PR#530 补的另一半：条目选择层的季号校验。落位层（按包内真实文件名反查）只能
+  // 靠「集号严格相等」挡错配，可自动选中的条目本身就是 S1（编号 1-12）而包是 S2
+  // 的 01-12 时集号照样相等 —— 必须在选条目这一层拦。
+  testWidgets('季号校验：S1 条目遇上 S2 包不自动选，说明原因；用户手选照旧放行',
+      (WidgetTester tester) async {
+    const NyaaTorrent s2Pack = NyaaTorrent(
+      title: '[Grp] Test Anime S2 01-03 [1080p]',
+      torrentUrl: '',
+      pageUrl: '',
+      infoHash: 'dddddddddddddddddddddddddddddddddddddddd',
+      seeders: 10,
+      leechers: 0,
+      downloads: 0,
+      sizeText: '3 GiB',
+      sizeBytes: null,
+      categoryId: '1_2',
+      trusted: false,
+      remake: false,
+      pubDate: null,
+    );
+    expect(s2Pack.season, 2, reason: '前提：种子标题能解析出季号');
+
+    final List<String> requested = <String>[];
+    final _FakeAppModel appModel = _FakeAppModel((http.Request req) async {
+      final String url = req.url.toString();
+      requested.add(url);
+      if (url.contains('/entries/search')) {
+        // 条目名不写季号 = 第一季（Jimaku 的 S1 条目就是这个形状），且没挂
+        // anilist_id（文本回退搜出来的条目，正是错季的产地）。
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<Map<String, Object>>[
+            <String, Object>{'id': 7, 'name': 'Wrong Season Entry'},
+          ])),
+          200,
+        );
+      }
+      if (url.contains('/files')) {
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<Map<String, Object>>[
+            for (int ep = 1; ep <= 3; ep++)
+              <String, Object>{
+                'name': 'Test Anime - 0$ep.ja.srt',
+                'url': 'https://jimaku.cc/f/$ep.srt',
+              },
+          ])),
+          200,
+        );
+      }
+      return http.Response('', 404);
+    });
+    await pumpDialog(tester, appModel, torrent: s2Pack);
+    await tester.tap(find.byTooltip(t.anime_download_search).last);
+    await tester.pumpAndSettle();
+
+    // ① 没自动选中 → 一条字幕都没配上，连该条目的文件列表都不去拉。
+    expect(find.text('Test Anime - 01.ja.srt'), findsNothing,
+        reason: '错季条目的字幕不该被自动配上');
+    expect(requested.where((String u) => u.contains('/files')), isEmpty,
+        reason: '没自动选中就不该拉它的文件');
+    // ② 不静默：说清「没有条目对得上第 2 季」。
+    expect(
+      find.text(t.anime_download_subs_season_mismatch(season: 2)),
+      findsOneWidget,
+      reason: '不自动选必须给理由，否则用户只看到「无字幕」',
+    );
+    // ③ 候选条目仍列在 picker 里，用户随时能手选。
+    expect(find.text('Wrong Season Entry'), findsOneWidget);
+
+    // ④ 用户手选 → 季号校验不拦：文件照拉，字幕照配，提示行消失。
+    await tester.tap(find.text('Wrong Season Entry'));
+    await tester.pumpAndSettle();
+    expect(requested.where((String u) => u.contains('/files')), isNotEmpty,
+        reason: '手选的条目必须照常加载');
+    expect(find.text('Test Anime - 01.ja.srt'), findsOneWidget,
+        reason: '用户可能就是要另一季的字幕，不能拦');
+    expect(
+      find.text(t.anime_download_subs_season_mismatch(season: 2)),
+      findsNothing,
+    );
+  });
+
+  // 反向：信息缺失不能把功能关掉。两边都拿不到季号时必须维持原有的「自动选首条」。
+  testWidgets('季号校验：两边都拿不到 season 时仍照常自动选首条', (WidgetTester tester) async {
+    expect(_kTorrent.season, isNull, reason: '前提：种子标题没有季号 token');
+    final _FakeAppModel appModel = _FakeAppModel((http.Request req) async {
+      final String url = req.url.toString();
+      if (url.contains('/entries/search')) {
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<Map<String, Object>>[
+            <String, Object>{'id': 7, 'name': 'No Season Entry'},
+          ])),
+          200,
+        );
+      }
+      if (url.contains('/files')) {
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<Map<String, Object>>[
+            <String, Object>{
+              'name': 'Test Anime - 01.ja.srt',
+              'url': 'https://jimaku.cc/f/1.srt',
+            },
+          ])),
+          200,
+        );
+      }
+      return http.Response('', 404);
+    });
+    await pumpDialog(tester, appModel, torrent: _kTorrent);
+    await tester.tap(find.byTooltip(t.anime_download_search).last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Test Anime - 01.ja.srt'), findsOneWidget,
+        reason: '拿不到季号就不校验，维持现状自动选，别因信息缺失把功能关掉');
+    expect(
+      find.text(t.anime_download_subs_season_mismatch(season: 1)),
+      findsNothing,
+    );
+  });
 }
 
 NyaaTorrent _torrentWith({

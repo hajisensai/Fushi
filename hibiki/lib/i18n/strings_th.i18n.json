@@ -2715,12 +2715,12 @@
   "video_setting_jimaku_default_language": "Default subtitle language",
   "video_setting_jimaku_default_language_hint": "Preferred language when the series has no remembered choice",
   "video_jimaku_api_key_settings_hint": "Also editable in Settings → Video → Subtitles",
-  "anime_download_subs_partial": "Subtitles: only $done of $total downloaded",
   "anime_download_subs_episodes_unverified": "Episode numbers are not verified against this pack - subtitles may come from another season.",
   "anime_download_subs_deferred": "Subtitles are matched after download, from the pack's actual files",
   "anime_download_subs_pending": "Subtitles: pending until download completes",
   "anime_download_subs_unmatched": "Subtitles: no match for this pack",
   "download_backend_desktop_only_note": "Built-in engine requires a desktop platform. This device uses external qBittorrent.",
   "stat_source_breakdown": "By source",
-  "stat_format_pages": "$n pages"
+  "stat_format_pages": "$n pages",
+  "anime_download_subs_season_mismatch": "No subtitle entry matches season $season of this pack - not auto-selected. Pick one manually if you want it anyway."
 }
