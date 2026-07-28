@@ -15,12 +15,44 @@ import 'package:hibiki_core/hibiki_core.dart' show VideoBookRow;
 /// TMDB API key 偏好键（存 Drift `preferences` 表，不改 schema）。
 const String kVideoScraperTmdbApiKeyPref = 'video_scraper_tmdb_api_key';
 
-/// 单本「在线匹配海报」弹窗。
+/// 「在线匹配封面」弹窗打开时的**合集入口**标识（BUG-1211）。
+///
+/// 非 null 即表示「用户点的是合集卡，他要换的是**合集自己的封面**」。据此三件事同时
+/// 成立，缺一都会退回用户否决的旧语义：
+/// - 标题带合集名（否则分不清在给哪个合集换封面）；
+/// - 「使用」只写合集自有封面（[applyCover]），**一个成员都不碰**；
+/// - 不出「同时应用到本合集全部 N 集」勾选——合集入口下那个选项本身就是错的。
+///
+/// [applyCover] 由调用方注入（生产 = 写 `MediaCollections.coverPath`），弹窗因此不必
+/// 持有 [HibikiDatabase]，widget 测试也能直接断言「写了合集、没写成员」。
+class CoverMatchCollectionTarget {
+  const CoverMatchCollectionTarget({
+    required this.id,
+    required this.name,
+    required this.applyCover,
+  });
+
+  /// `MediaCollections.id`（下载落点文件名由它派生）。
+  final int id;
+
+  /// 合集名（弹窗标题用）。
+  final String name;
+
+  /// 把已落地的封面绝对路径写进合集行。
+  final Future<void> Function(String coverPath) applyCover;
+}
+
+/// 「在线匹配封面」弹窗。
 ///
 /// 搜索框预填**解析后的标题**（非原始文件名）；数据源分段选择 Bangumi / TMDB /
 /// 离线库（已装载才出现）；候选列表带海报缩略图 + 标题 + 年份/类型 + 评分 + 置信度
-/// 徽标（对每个候选跑 [MatchScorer.score]），「使用」即下载落封面。book 在合集内
-/// （[collectionMemberUids] 长度 > 1）时底部出「同时应用到本合集全部 N 集」勾选。
+/// 徽标（对每个候选跑 [MatchScorer.score]），「使用」即下载落封面。
+///
+/// 两种入口语义**互斥**：
+/// - [collection] 非 null = 合集入口：只写合集自有封面，成员一个不动；
+/// - [collection] 为 null = 单集入口：写 [book]；若该集属于合集
+///   （[collectionMemberUids] 长度 > 1），底部仍出「同时应用到本合集全部 N 集」勾选
+///   （默认不勾）——那是**从某一集出发**主动批量刷的能力，与合集封面无关，保留。
 ///
 /// TMDB 无 key 时点该分段展开 key 输入行并存偏好（[kVideoScraperTmdbApiKeyPref]）。
 Future<void> showCoverMatchDialog({
@@ -29,7 +61,7 @@ Future<void> showCoverMatchDialog({
   required VideoBookRow book,
   required List<String> collectionMemberUids,
   required VoidCallback onApplied,
-  String? collectionName,
+  CoverMatchCollectionTarget? collection,
 }) {
   return showAppDialog<void>(
     context: context,
@@ -38,12 +70,12 @@ Future<void> showCoverMatchDialog({
       book: book,
       collectionMemberUids: collectionMemberUids,
       onApplied: onApplied,
-      collectionName: collectionName,
+      collection: collection,
     ),
   );
 }
 
-/// 单本在线匹配海报对话框主体（导出便于 widget 测试直接构造）。
+/// 在线匹配封面对话框主体（导出便于 widget 测试直接构造）。
 class CoverMatchDialog extends ConsumerStatefulWidget {
   const CoverMatchDialog({
     super.key,
@@ -51,27 +83,24 @@ class CoverMatchDialog extends ConsumerStatefulWidget {
     required this.book,
     required this.collectionMemberUids,
     required this.onApplied,
-    this.collectionName,
+    this.collection,
   });
 
   final CoverScraperService service;
+
+  /// 搜索种子 + 单集入口的写入目标。**合集入口下它只当搜索种子用**（用它的路径解析
+  /// 出片名预填搜索框），绝不会被写封面。
   final VideoBookRow book;
 
-  /// 本合集全部成员 uid（含 [book] 自身）；长度 > 1 才显示合集应用勾选。
+  /// 本合集全部成员 uid（含 [book] 自身）；仅**单集入口**用于「同时应用到本合集全部
+  /// N 集」勾选（长度 > 1 才显示）。合集入口下不读它。
   final List<String> collectionMemberUids;
 
   /// 应用成功后回调（刷新库页）。
   final VoidCallback onApplied;
 
-  /// 从**合集**入口打开时的合集名；`null` = 从单集入口打开（用户点的是某一集）。
-  ///
-  /// 一个可空字段同时承载两件事，因为它们本就是同一件事：知道合集名 ⇔ 用户点的是
-  /// 合集卡。据此决定两处行为：
-  /// - 标题带上合集名，否则用户分不清在给哪个合集换封面；
-  /// - 「同时应用到本合集全部 N 集」**默认勾上**（仍可取消）。合集入口下默认不勾
-  ///   意味着只改 [book] 那一集，而那一集未必是合集卡上显示的封面——用户会看到
-  ///   「点了半天毫无变化」，以为功能坏了。单集入口保持默认不勾：他点的就是那一集。
-  final String? collectionName;
+  /// 非 null = 合集入口，见 [CoverMatchCollectionTarget]。
+  final CoverMatchCollectionTarget? collection;
 
   @override
   ConsumerState<CoverMatchDialog> createState() => _CoverMatchDialogState();
@@ -92,7 +121,10 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   /// 「无匹配」空态骗用户以为条目不存在。
   Object? _searchFailure;
   bool _showTmdbKeyField = false;
-  late bool _applyToCollection;
+
+  /// 单集入口下「同时应用到本合集全部 N 集」勾选态。合集入口不显示该勾选、也不读它
+  /// （合集入口只改合集自有封面，BUG-1211）。
+  bool _applyToCollection = false;
   bool _applying = false;
 
   /// 正在应用的候选（用于在其「使用」按钮上显示转圈；null = 无进行中应用）。
@@ -101,8 +133,6 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   @override
   void initState() {
     super.initState();
-    // 合集入口默认勾上（见 [CoverMatchDialog.collectionName]）；单集入口默认不勾。
-    _applyToCollection = widget.collectionName != null;
     _parsed = widget.service.parseForPath(widget.book.videoPath);
     final String prefill =
         _parsed?.title.isNotEmpty == true ? _parsed!.title : widget.book.title;
@@ -282,17 +312,29 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
       _applying = true;
       _applyingCandidate = candidate;
     });
-    final List<String> targets =
-        _applyToCollection && widget.collectionMemberUids.length > 1
-            ? widget.collectionMemberUids
-            : <String>[widget.book.bookUid];
+    final CoverMatchCollectionTarget? collection = widget.collection;
     Object? failure;
     try {
-      await widget.service.applyCandidateToBooks(
-        bookUids: targets,
-        candidate: candidate,
-        aliasKey: _parsed?.title,
-      );
+      if (collection != null) {
+        // 合集入口：下载 → 只写合集自有封面列。**刻意不调
+        // applyCandidateToBooks**——那条路会逐成员写 cover_path / cover_meta /
+        // video_scrape_meta，正是用户否决的「改合集封面却刷了每一集」（BUG-1211）。
+        final String coverPath = await widget.service.downloadCollectionCover(
+          collectionId: collection.id,
+          candidate: candidate,
+        );
+        await collection.applyCover(coverPath);
+      } else {
+        final List<String> targets =
+            _applyToCollection && widget.collectionMemberUids.length > 1
+                ? widget.collectionMemberUids
+                : <String>[widget.book.bookUid];
+        await widget.service.applyCandidateToBooks(
+          bookUids: targets,
+          candidate: candidate,
+          aliasKey: _parsed?.title,
+        );
+      }
     } catch (e, stack) {
       // 走下方失败分支——绝不吞成静默无反馈。原始原因进错误日志，界面只给
       // 「失败了 + 大概因为什么」，不把堆栈抛到用户面前。
@@ -328,13 +370,16 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool showCollectionToggle = widget.collectionMemberUids.length > 1;
-    final String? collectionName = widget.collectionName;
+    final CoverMatchCollectionTarget? collection = widget.collection;
+    // 合集入口不出「应用到全部 N 集」：那里换的是合集自己的封面，成员一个不动
+    // （BUG-1211）。只有单集入口才可能出（且默认不勾）。
+    final bool showCollectionToggle =
+        collection == null && widget.collectionMemberUids.length > 1;
     return AlertDialog(
       title: Text(
-        collectionName == null
+        collection == null
             ? t.video_scrape_online_match
-            : t.video_scrape_online_match_collection(name: collectionName),
+            : t.video_scrape_online_match_collection(name: collection.name),
       ),
       content: SizedBox(
         width: 420,

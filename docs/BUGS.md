@@ -37,6 +37,7 @@
 | [BUG-1214](bugs/BUG-1214-waveform-align-wheel-hscroll.md) | ✅ | ✅ | 波形对轴放大视图鼠标滚轮不能左右平移时间轴 |
 | [BUG-1213](bugs/BUG-1213-android-legacy-storage-permission-query.md) | ✅ | ✅ | Android 7~10 上查询侧恒判未授权，用户根本加不了本地扫描根 |
 | [BUG-1212](bugs/BUG-1212-manga-stats-guard-stale.md) | ✅ | ✅ | 漫画统计守卫仍钉旧口径 charsRead: 0，PR#504 后 develop 变红 |
+| [BUG-1211](bugs/BUG-1211-collection-cover-writes-members.md) | ✅ | ✅ | 合集「在线匹配封面」把封面写进全部成员而不是改合集自己的封面 |
 | [BUG-1210](bugs/BUG-1210-clipboard-panel-no-auto-read.md) | ✅ | ✅ | 剪贴板面板查词不自动朗读而浮窗会开关却是全局的 |
 | [BUG-1209](bugs/BUG-1209-folder-picker-requests-camera-permission.md) | ✅ | ✅ | 安卓选文件夹时顺带弹相机权限申请 |
 | [BUG-1208](bugs/BUG-1208-ps51-getrelativepath-build-dist.md) | ✅ | ✅ | helper 打包脚本用 .NET Core-only 的 GetRelativePath，CI 的 PowerShell 5.1 直接崩 |

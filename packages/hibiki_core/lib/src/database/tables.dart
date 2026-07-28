@@ -826,6 +826,25 @@ class MediaCollections extends Table {
   /// 2×2 拼贴；collection 取首成员封面堆叠）。不存快照——成员增删/重排后渲染时纯函数推导。
   TextColumn get coverSource => text().nullable()();
 
+  /// **合集自己的**封面图绝对路径（schema v61，BUG-1211）。与 [coverSource] 正交：
+  /// 后者是「借哪个成员的封面」，本列是「合集自有一张图」，落在
+  /// `<documents>/video_covers/collections/<id>.jpg`（[AppPaths.videoCoversDirectory]
+  /// 的子目录 —— 与成员封面同池不同目录，文件名不可能与 `videoCoverFileName(bookUid)`
+  /// 撞车）。
+  ///
+  /// 存在的理由：合集卡封面原先只能「遍历成员借第一张」，于是「给合集换封面」被迫
+  /// 退化成「把同一张封面写进每一集」；用户明确否决该语义（BUG-1211：「匹配的是合集
+  /// 的封面，谁说应用到本机里面的视频了」）。有了自有列，换合集封面就是改这一列，
+  /// 一个成员都不动。
+  ///
+  /// 无损迁移：nullable 无 default → 旧库既有行全 NULL；渲染端 NULL 时**继续**走原来
+  /// 的成员借用链（首个有本地封面的成员 → 远端成员 → 占位），老合集封面逐像素不变
+  /// （Never break userspace）。
+  ///
+  /// 机器本地绝对路径：随数据根迁移改写（`data_root_migrator.dart`，与
+  /// [VideoBooks].coverPath / [Galgames].coverPath 同型），且**不跨端同步**。
+  TextColumn get coverPath => text().nullable()();
+
   /// 合集卡自身在库网格中的排序权重（与散条目同层混排，语义同旧 [Series.sortOrder]）。
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
 

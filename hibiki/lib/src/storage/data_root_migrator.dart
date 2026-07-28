@@ -945,6 +945,7 @@ class DataRootMigrator {
           throw StateError('debugFailMidRebase');
         }
         await _rebaseGalgames(db, docs);
+        await _rebaseMediaCollections(db, docs);
         await _rebaseMediaItems(db, docs);
         await _rebasePreferences(db, docs, newSupportRoot);
         await _rebaseProfileSettings(db, docs, newSupportRoot);
@@ -1061,6 +1062,24 @@ class DataRootMigrator {
       await db.customStatement(
         'UPDATE galgames SET cover_path = ? WHERE id = ?',
         <Object?>[newCover, g.id],
+      );
+    }
+  }
+
+  /// media_collections：cover_path（`<documents>/video_covers/collections/<id>.jpg`）。
+  /// BUG-1211 合集自有封面，与 video_books.cover_path / galgames.cover_path 同型 ——
+  /// 不改写 = 换过封面的合集在换数据根后全部退回「借成员封面」，用户看到封面自己变了。
+  /// cover_source 是成员引用不是路径，绝不改写。
+  static Future<void> _rebaseMediaCollections(
+    HibikiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    for (final MediaCollectionRow c in await db.getAllMediaCollections()) {
+      final String? newCover = docs.rebaseNullable(c.coverPath);
+      if (newCover == c.coverPath) continue;
+      await db.customStatement(
+        'UPDATE media_collections SET cover_path = ? WHERE id = ?',
+        <Object?>[newCover, c.id],
       );
     }
   }

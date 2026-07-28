@@ -45,8 +45,14 @@ class _StubScraperService extends CoverScraperService {
     required super.bangumiClient,
     required super.coverDownloader,
     required this.candidates,
+    required this.repo,
     super.coversDirectory,
+    super.collectionCoversDirectory,
   });
+
+  /// 与 super 的 repository 同一实例：桩的成员应用**真写穿 cover_path**，否则
+  /// 「成员封面逐个未变」这条断言就是空转（写了也看不出来）。
+  final VideoBookRepository repo;
 
   final List<ScrapeCandidate> candidates;
   final List<String> appliedUids = <String>[];
@@ -75,6 +81,10 @@ class _StubScraperService extends CoverScraperService {
     String? aliasKey,
   }) async {
     appliedUids.addAll(bookUids);
+    // 真写穿：成员封面被刷这件事必须在 DB 上留下痕迹，断言才有牙。
+    for (final String uid in bookUids) {
+      await repo.updateCover(uid, 'stub-applied-${candidate.entryId}.jpg');
+    }
   }
 }
 
@@ -174,6 +184,8 @@ void main() {
           ),
         ],
         coversDirectory: tmp,
+        collectionCoversDirectory: Directory(p.join(tmp.path, 'collections')),
+        repo: repo,
       );
 
   Future<VideoBookRow> seed() async {
@@ -296,24 +308,49 @@ void main() {
     expect(find.text(t.scrape_reason_network), findsNothing);
   });
 
-  // 合集入口（collectionName 非 null）与单集入口的默认口径不同。合集入口下默认不勾
-  // 「应用到全合集」意味着只改 seed 那一集，而 seed 只是首个可解析成员、未必是合集卡
-  // 上显示的封面——用户会看到「点了半天毫无变化」，以为功能坏了。
-  testWidgets('合集入口：标题带合集名 + 默认应用到全合集（真写穿全部成员）', (WidgetTester tester) async {
+  // BUG-1211：用户「匹配的是合集的封面，谁说应用到本机里面的视频了」。合集入口换的
+  // 必须是合集自己那张封面，成员一个都不能动；「同时应用到本合集全部 N 集」这个设定
+  // 在合集入口下必须不存在。
+  testWidgets('BUG-1211 合集入口：只改合集自己的封面，N 个成员的封面逐个未变',
+      (WidgetTester tester) async {
     final VideoBookRow book = await seed();
     final _StubScraperService service = buildService();
+    // 构造一个 3 成员合集，每个成员先各有一张**不同**的既有封面（能被改动就一定看得出）。
     const List<String> members = <String>[
       'video/my_anime',
       'video/ep2',
       'video/ep3',
     ];
+    final Map<String, String> coverBefore = <String, String>{};
+    for (final String uid in members) {
+      final String cover = p.join(tmp.path, '${uid.split('/').last}_old.jpg');
+      File(cover).writeAsBytesSync(_fakePng);
+      await db.upsertVideoBook(VideoBooksCompanion(
+        bookUid: Value(uid),
+        title: Value(uid),
+        videoPath: Value(p.join('anime', 'My Anime', '$uid.mkv')),
+        coverPath: Value(cover),
+      ));
+      coverBefore[uid] = cover;
+    }
+    final int collectionId =
+        await db.createMediaCollection('我的合集', collectionType: 'collection');
+    for (final String uid in members) {
+      await db.addToCollection(collectionId, MediaKind.video, uid);
+    }
 
     await tester.pumpWidget(wrap(CoverMatchDialog(
       service: service,
       book: book,
+      // 合集入口不读成员表；即便误传整表也不得成为写入目标。
       collectionMemberUids: members,
       onApplied: () {},
-      collectionName: '我的合集',
+      collection: CoverMatchCollectionTarget(
+        id: collectionId,
+        name: '我的合集',
+        applyCover: (String coverPath) =>
+            db.updateMediaCollectionCoverPath(collectionId, coverPath),
+      ),
     )));
     await tester.pumpAndSettle();
 
@@ -322,17 +359,39 @@ void main() {
       find.text(t.video_scrape_online_match_collection(name: '我的合集')),
       findsOneWidget,
     );
-    // 勾选默认已勾上，且仍可取消。
-    final CheckboxListTile toggle = tester.widget<CheckboxListTile>(
+    // 「同时应用到本合集全部 N 集」在合集入口下彻底不出现（设定已删）。
+    expect(
       find.byKey(const ValueKey<String>('cover_match_apply_collection')),
+      findsNothing,
     );
-    expect(toggle.value, isTrue);
-    expect(toggle.onChanged, isNotNull);
+    expect(find.textContaining(t.video_scrape_apply_to_collection(n: 3)),
+        findsNothing);
 
-    // 行为（而非仅勾选状态）：点「使用」真写穿全部成员。
-    await tester.tap(find.text(t.video_scrape_use).first);
-    await tester.pumpAndSettle();
-    expect(service.appliedUids, members);
+    // 合集路径走**真实**下载器 + 真实落盘（不桩掉被测行为），故需 runAsync 放行真 IO。
+    await tester.runAsync(() async {
+      await tester.tap(find.text(t.video_scrape_use).first);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await tester.pump();
+
+    // ① 合集自己的封面真写穿 DB，且文件真落地。
+    final MediaCollectionRow? row =
+        await db.getMediaCollectionById(collectionId);
+    expect(row, isNotNull);
+    expect(row!.coverPath, isNotNull);
+    expect(File(row.coverPath!).existsSync(), isTrue);
+    expect(p.basename(row.coverPath!), '$collectionId.jpg');
+    expect(p.basename(p.dirname(row.coverPath!)), 'collections');
+
+    // ② 成员封面逐个未变——这正是用户纠正的那一点。
+    for (final String uid in members) {
+      final VideoBookRow? m = await repo.getByBookUid(uid);
+      expect(m, isNotNull, reason: uid);
+      expect(m!.coverPath, coverBefore[uid],
+          reason: '$uid 的封面被改了：合集换封面绝不能写进成员（BUG-1211）');
+    }
+    // ③ 成员批量写入路径根本没被调用（不是「写了又写回去」）。
+    expect(service.appliedUids, isEmpty);
   });
 
   testWidgets('单集入口：标题不带合集名 + 默认只改这一集', (WidgetTester tester) async {

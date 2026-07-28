@@ -140,7 +140,9 @@ class CoverScraperService {
     OfflineIndex? offlineIndex,
     bool enableSidecar = true,
     Directory? coversDirectory,
-  })  : _repo = repository,
+    Directory? collectionCoversDirectory,
+  })  : _collectionCoversDirectory = collectionCoversDirectory,
+        _repo = repository,
         _coverMeta = coverMetaStore,
         _aliasCache = aliasCache,
         _bangumi = bangumiClient,
@@ -159,6 +161,10 @@ class CoverScraperService {
   final OfflineIndex? _offline;
   final bool _enableSidecar;
   final Directory? _coversDirectory;
+
+  /// 合集自有封面目录（测试注入临时目录；null = 取生产
+  /// [VideoStorage.collectionCoversDir]）。
+  final Directory? _collectionCoversDirectory;
 
   /// 条目详情缓存 / 失败记忆，key = `<source>:<entryId>`。见 [_persistMetadata]。
   final Map<String, ScrapeMetadata> _metadataCache = <String, ScrapeMetadata>{};
@@ -399,6 +405,33 @@ class CoverScraperService {
     if (aliasKey != null && aliasKey.trim().isNotEmpty) {
       await _aliasCache.put(aliasKey, candidate.source, candidate.entryId);
     }
+  }
+
+  /// 只把候选的海报下载成**合集自有**封面文件，返回绝对路径（BUG-1211）。
+  ///
+  /// 与 [applyCandidateToBooks] 的关键区别：**一个成员都不碰**——不写任何
+  /// `VideoBooks.cover_path`、不写 `cover_meta.json`、不写 `video_scrape_meta`、
+  /// 不写别名缓存。「给合集换封面」就该只改合集自己那张图；把封面/条目资料刷进每一集
+  /// 是用户明确否决的语义。
+  ///
+  /// 落点 `<video_covers>/collections/<collectionId>.jpg`（见
+  /// [VideoStorage.collectionCoversDirName] 对撞名与历史 GC 的说明）。下载走与成员
+  /// 封面同一个 [CoverDownloader]：同样的 2xx + 图片魔数校验、同样的原子
+  /// `.tmp`+rename 落盘与双键解码缓存驱逐（BUG-1118），换封面失败绝不留半张图。
+  ///
+  /// DB 写入由调用方负责（`updateMediaCollectionCoverPath`）：本层不持有
+  /// [HibikiDatabase]，也不该为一列写入把整个数据库拖进刮削服务的依赖面。
+  Future<String> downloadCollectionCover({
+    required int collectionId,
+    required ScrapeCandidate candidate,
+  }) async {
+    final Directory covers =
+        _collectionCoversDirectory ?? await VideoStorage.collectionCoversDir();
+    return _downloader.downloadCover(
+      url: candidate.posterUrl,
+      bookUid: '$collectionId',
+      coversDirectory: covers,
+    );
   }
 
   /// 拉条目详情并落 `video_scrape_meta`（「抄 Bangumi」）。

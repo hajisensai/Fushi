@@ -13064,6 +13064,12 @@ class $MediaCollectionsTable extends MediaCollections
   late final GeneratedColumn<String> coverSource = GeneratedColumn<String>(
       'cover_source', aliasedName, true,
       type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _coverPathMeta =
+      const VerificationMeta('coverPath');
+  @override
+  late final GeneratedColumn<String> coverPath = GeneratedColumn<String>(
+      'cover_path', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   static const VerificationMeta _sortOrderMeta =
       const VerificationMeta('sortOrder');
   @override
@@ -13110,6 +13116,7 @@ class $MediaCollectionsTable extends MediaCollections
         name,
         collectionType,
         coverSource,
+        coverPath,
         sortOrder,
         createdAt,
         orderUpdatedAt,
@@ -13147,6 +13154,10 @@ class $MediaCollectionsTable extends MediaCollections
           _coverSourceMeta,
           coverSource.isAcceptableOrUnknown(
               data['cover_source']!, _coverSourceMeta));
+    }
+    if (data.containsKey('cover_path')) {
+      context.handle(_coverPathMeta,
+          coverPath.isAcceptableOrUnknown(data['cover_path']!, _coverPathMeta));
     }
     if (data.containsKey('sort_order')) {
       context.handle(_sortOrderMeta,
@@ -13197,6 +13208,8 @@ class $MediaCollectionsTable extends MediaCollections
           DriftSqlType.string, data['${effectivePrefix}collection_type'])!,
       coverSource: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}cover_source']),
+      coverPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}cover_path']),
       sortOrder: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}sort_order'])!,
       createdAt: attachedDatabase.typeMapping
@@ -13231,6 +13244,25 @@ class MediaCollectionRow extends DataClass
   /// 自定义封面成员 `'<mediaType>|<entryKey>'`；NULL = 自动（playlist 取前 4 成员封面
   /// 2×2 拼贴；collection 取首成员封面堆叠）。不存快照——成员增删/重排后渲染时纯函数推导。
   final String? coverSource;
+
+  /// **合集自己的**封面图绝对路径（schema v61，BUG-1211）。与 [coverSource] 正交：
+  /// 后者是「借哪个成员的封面」，本列是「合集自有一张图」，落在
+  /// `<documents>/video_covers/collections/<id>.jpg`（[AppPaths.videoCoversDirectory]
+  /// 的子目录 —— 与成员封面同池不同目录，文件名不可能与 `videoCoverFileName(bookUid)`
+  /// 撞车）。
+  ///
+  /// 存在的理由：合集卡封面原先只能「遍历成员借第一张」，于是「给合集换封面」被迫
+  /// 退化成「把同一张封面写进每一集」；用户明确否决该语义（BUG-1211：「匹配的是合集
+  /// 的封面，谁说应用到本机里面的视频了」）。有了自有列，换合集封面就是改这一列，
+  /// 一个成员都不动。
+  ///
+  /// 无损迁移：nullable 无 default → 旧库既有行全 NULL；渲染端 NULL 时**继续**走原来
+  /// 的成员借用链（首个有本地封面的成员 → 远端成员 → 占位），老合集封面逐像素不变
+  /// （Never break userspace）。
+  ///
+  /// 机器本地绝对路径：随数据根迁移改写（`data_root_migrator.dart`，与
+  /// [VideoBooks].coverPath / [Galgames].coverPath 同型），且**不跨端同步**。
+  final String? coverPath;
 
   /// 合集卡自身在库网格中的排序权重（与散条目同层混排，语义同旧 [Series.sortOrder]）。
   final int sortOrder;
@@ -13271,6 +13303,7 @@ class MediaCollectionRow extends DataClass
       required this.name,
       required this.collectionType,
       this.coverSource,
+      this.coverPath,
       required this.sortOrder,
       required this.createdAt,
       required this.orderUpdatedAt,
@@ -13285,6 +13318,9 @@ class MediaCollectionRow extends DataClass
     map['collection_type'] = Variable<String>(collectionType);
     if (!nullToAbsent || coverSource != null) {
       map['cover_source'] = Variable<String>(coverSource);
+    }
+    if (!nullToAbsent || coverPath != null) {
+      map['cover_path'] = Variable<String>(coverPath);
     }
     map['sort_order'] = Variable<int>(sortOrder);
     map['created_at'] = Variable<int>(createdAt);
@@ -13309,6 +13345,9 @@ class MediaCollectionRow extends DataClass
       coverSource: coverSource == null && nullToAbsent
           ? const Value.absent()
           : Value(coverSource),
+      coverPath: coverPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverPath),
       sortOrder: Value(sortOrder),
       createdAt: Value(createdAt),
       orderUpdatedAt: Value(orderUpdatedAt),
@@ -13332,6 +13371,7 @@ class MediaCollectionRow extends DataClass
       name: serializer.fromJson<String>(json['name']),
       collectionType: serializer.fromJson<String>(json['collectionType']),
       coverSource: serializer.fromJson<String?>(json['coverSource']),
+      coverPath: serializer.fromJson<String?>(json['coverPath']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       orderUpdatedAt: serializer.fromJson<int>(json['orderUpdatedAt']),
@@ -13348,6 +13388,7 @@ class MediaCollectionRow extends DataClass
       'name': serializer.toJson<String>(name),
       'collectionType': serializer.toJson<String>(collectionType),
       'coverSource': serializer.toJson<String?>(coverSource),
+      'coverPath': serializer.toJson<String?>(coverPath),
       'sortOrder': serializer.toJson<int>(sortOrder),
       'createdAt': serializer.toJson<int>(createdAt),
       'orderUpdatedAt': serializer.toJson<int>(orderUpdatedAt),
@@ -13362,6 +13403,7 @@ class MediaCollectionRow extends DataClass
           String? name,
           String? collectionType,
           Value<String?> coverSource = const Value.absent(),
+          Value<String?> coverPath = const Value.absent(),
           int? sortOrder,
           int? createdAt,
           int? orderUpdatedAt,
@@ -13373,6 +13415,7 @@ class MediaCollectionRow extends DataClass
         name: name ?? this.name,
         collectionType: collectionType ?? this.collectionType,
         coverSource: coverSource.present ? coverSource.value : this.coverSource,
+        coverPath: coverPath.present ? coverPath.value : this.coverPath,
         sortOrder: sortOrder ?? this.sortOrder,
         createdAt: createdAt ?? this.createdAt,
         orderUpdatedAt: orderUpdatedAt ?? this.orderUpdatedAt,
@@ -13392,6 +13435,7 @@ class MediaCollectionRow extends DataClass
           : this.collectionType,
       coverSource:
           data.coverSource.present ? data.coverSource.value : this.coverSource,
+      coverPath: data.coverPath.present ? data.coverPath.value : this.coverPath,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       orderUpdatedAt: data.orderUpdatedAt.present
@@ -13414,6 +13458,7 @@ class MediaCollectionRow extends DataClass
           ..write('name: $name, ')
           ..write('collectionType: $collectionType, ')
           ..write('coverSource: $coverSource, ')
+          ..write('coverPath: $coverPath, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('orderUpdatedAt: $orderUpdatedAt, ')
@@ -13430,6 +13475,7 @@ class MediaCollectionRow extends DataClass
       name,
       collectionType,
       coverSource,
+      coverPath,
       sortOrder,
       createdAt,
       orderUpdatedAt,
@@ -13444,6 +13490,7 @@ class MediaCollectionRow extends DataClass
           other.name == this.name &&
           other.collectionType == this.collectionType &&
           other.coverSource == this.coverSource &&
+          other.coverPath == this.coverPath &&
           other.sortOrder == this.sortOrder &&
           other.createdAt == this.createdAt &&
           other.orderUpdatedAt == this.orderUpdatedAt &&
@@ -13457,6 +13504,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
   final Value<String> name;
   final Value<String> collectionType;
   final Value<String?> coverSource;
+  final Value<String?> coverPath;
   final Value<int> sortOrder;
   final Value<int> createdAt;
   final Value<int> orderUpdatedAt;
@@ -13468,6 +13516,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     this.name = const Value.absent(),
     this.collectionType = const Value.absent(),
     this.coverSource = const Value.absent(),
+    this.coverPath = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.orderUpdatedAt = const Value.absent(),
@@ -13480,6 +13529,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     required String name,
     this.collectionType = const Value.absent(),
     this.coverSource = const Value.absent(),
+    this.coverPath = const Value.absent(),
     this.sortOrder = const Value.absent(),
     required int createdAt,
     this.orderUpdatedAt = const Value.absent(),
@@ -13493,6 +13543,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     Expression<String>? name,
     Expression<String>? collectionType,
     Expression<String>? coverSource,
+    Expression<String>? coverPath,
     Expression<int>? sortOrder,
     Expression<int>? createdAt,
     Expression<int>? orderUpdatedAt,
@@ -13505,6 +13556,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       if (name != null) 'name': name,
       if (collectionType != null) 'collection_type': collectionType,
       if (coverSource != null) 'cover_source': coverSource,
+      if (coverPath != null) 'cover_path': coverPath,
       if (sortOrder != null) 'sort_order': sortOrder,
       if (createdAt != null) 'created_at': createdAt,
       if (orderUpdatedAt != null) 'order_updated_at': orderUpdatedAt,
@@ -13519,6 +13571,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       Value<String>? name,
       Value<String>? collectionType,
       Value<String?>? coverSource,
+      Value<String?>? coverPath,
       Value<int>? sortOrder,
       Value<int>? createdAt,
       Value<int>? orderUpdatedAt,
@@ -13530,6 +13583,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
       name: name ?? this.name,
       collectionType: collectionType ?? this.collectionType,
       coverSource: coverSource ?? this.coverSource,
+      coverPath: coverPath ?? this.coverPath,
       sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
       orderUpdatedAt: orderUpdatedAt ?? this.orderUpdatedAt,
@@ -13553,6 +13607,9 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
     }
     if (coverSource.present) {
       map['cover_source'] = Variable<String>(coverSource.value);
+    }
+    if (coverPath.present) {
+      map['cover_path'] = Variable<String>(coverPath.value);
     }
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
@@ -13582,6 +13639,7 @@ class MediaCollectionsCompanion extends UpdateCompanion<MediaCollectionRow> {
           ..write('name: $name, ')
           ..write('collectionType: $collectionType, ')
           ..write('coverSource: $coverSource, ')
+          ..write('coverPath: $coverPath, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('orderUpdatedAt: $orderUpdatedAt, ')
@@ -30342,6 +30400,7 @@ typedef $$MediaCollectionsTableCreateCompanionBuilder
   required String name,
   Value<String> collectionType,
   Value<String?> coverSource,
+  Value<String?> coverPath,
   Value<int> sortOrder,
   required int createdAt,
   Value<int> orderUpdatedAt,
@@ -30355,6 +30414,7 @@ typedef $$MediaCollectionsTableUpdateCompanionBuilder
   Value<String> name,
   Value<String> collectionType,
   Value<String?> coverSource,
+  Value<String?> coverPath,
   Value<int> sortOrder,
   Value<int> createdAt,
   Value<int> orderUpdatedAt,
@@ -30428,6 +30488,9 @@ class $$MediaCollectionsTableFilterComposer
 
   ColumnFilters<String> get coverSource => $composableBuilder(
       column: $table.coverSource, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get coverPath => $composableBuilder(
+      column: $table.coverPath, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<int> get sortOrder => $composableBuilder(
       column: $table.sortOrder, builder: (column) => ColumnFilters(column));
@@ -30517,6 +30580,9 @@ class $$MediaCollectionsTableOrderingComposer
   ColumnOrderings<String> get coverSource => $composableBuilder(
       column: $table.coverSource, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get coverPath => $composableBuilder(
+      column: $table.coverPath, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<int> get sortOrder => $composableBuilder(
       column: $table.sortOrder, builder: (column) => ColumnOrderings(column));
 
@@ -30559,6 +30625,9 @@ class $$MediaCollectionsTableAnnotationComposer
 
   GeneratedColumn<String> get coverSource => $composableBuilder(
       column: $table.coverSource, builder: (column) => column);
+
+  GeneratedColumn<String> get coverPath =>
+      $composableBuilder(column: $table.coverPath, builder: (column) => column);
 
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
@@ -30654,6 +30723,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             Value<String> name = const Value.absent(),
             Value<String> collectionType = const Value.absent(),
             Value<String?> coverSource = const Value.absent(),
+            Value<String?> coverPath = const Value.absent(),
             Value<int> sortOrder = const Value.absent(),
             Value<int> createdAt = const Value.absent(),
             Value<int> orderUpdatedAt = const Value.absent(),
@@ -30666,6 +30736,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             name: name,
             collectionType: collectionType,
             coverSource: coverSource,
+            coverPath: coverPath,
             sortOrder: sortOrder,
             createdAt: createdAt,
             orderUpdatedAt: orderUpdatedAt,
@@ -30678,6 +30749,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             required String name,
             Value<String> collectionType = const Value.absent(),
             Value<String?> coverSource = const Value.absent(),
+            Value<String?> coverPath = const Value.absent(),
             Value<int> sortOrder = const Value.absent(),
             required int createdAt,
             Value<int> orderUpdatedAt = const Value.absent(),
@@ -30690,6 +30762,7 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
             name: name,
             collectionType: collectionType,
             coverSource: coverSource,
+            coverPath: coverPath,
             sortOrder: sortOrder,
             createdAt: createdAt,
             orderUpdatedAt: orderUpdatedAt,

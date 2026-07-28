@@ -289,6 +289,15 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       '成员引用 <mediaType>|<entryKey>，不是路径。'),
   PathRebaseColumn('MediaCollections', 'coverSource', PathRebaseKind.notAPath,
       '成员引用 <mediaType>|<entryKey>，不是路径。'),
+  PathRebaseColumn(
+      'MediaCollections',
+      'coverPath',
+      PathRebaseKind.documentsRooted,
+      'BUG-1211 合集自有封面：<documents>/video_covers/collections/<id>.jpg'
+          '（VideoStorage.collectionCoversDir，落盘唯一入口 '
+          'cover_scraper_service.dart downloadCollectionCover）。与 '
+          'video_books.cover_path / galgames.cover_path 完全同型 → 不改写 = '
+          '换过封面的合集在换数据根后全部退回成员借用链，用户看到封面「自己变了」。'),
 
   // ── book_custom_css ───────────────────────────────────────────────
   PathRebaseColumn('BookCustomCss', 'relativePath', PathRebaseKind.notAPath,

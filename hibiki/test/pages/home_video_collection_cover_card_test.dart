@@ -174,6 +174,83 @@ void main() {
     );
   });
 
+  // BUG-1211：合集有了自己的封面列（MediaCollections.coverPath, schema v61）。
+  // 它必须**压过**成员借用链——否则「给合集换封面」写了库也看不见变化。
+  testWidgets('BUG-1211 合集自有封面优先于成员借用；成员封面原封不动', (WidgetTester tester) async {
+    final File memberCover = File('${storeDir.path}/ep1_cover.png')
+      ..writeAsBytesSync(onePixelPng);
+    final File ownCover = File('${storeDir.path}/collection_own.png')
+      ..writeAsBytesSync(onePixelPng);
+    await seedEpisode('video/ep1', '第1集', coverPath: memberCover.path);
+    await seedEpisode('video/ep2', '第2集');
+    final int cid = await seedCollection(<String>['video/ep1', 'video/ep2']);
+    await db.updateMediaCollectionCoverPath(cid, ownCover.path);
+
+    await pumpPage(tester);
+
+    final Image image = tester.widget<Image>(find.descendant(
+      of: cardFinder(cid),
+      matching: find.byType(Image),
+    ));
+    final ImageProvider provider = image.image;
+    final FileImage fileImage = (provider is ResizeImage
+        ? provider.imageProvider
+        : provider) as FileImage;
+    expect(fileImage.file.path, ownCover.path,
+        reason: '合集卡必须显示合集自有封面，而不是借来的成员封面');
+    // 成员那张封面一个字节没动（换合集封面绝不写成员）。
+    expect(
+      (await VideoBookRepository(db).getByBookUid('video/ep1'))?.coverPath,
+      memberCover.path,
+    );
+  });
+
+  // 老库/从没换过封面的合集：coverPath 为 NULL → 行为与 v61 之前逐像素一致。
+  testWidgets('BUG-1211 合集自有封面为空 → 仍回落成员借用链（老数据不变白）',
+      (WidgetTester tester) async {
+    final File memberCover = File('${storeDir.path}/ep1_fallback.png')
+      ..writeAsBytesSync(onePixelPng);
+    await seedEpisode('video/ep1', '第1集', coverPath: memberCover.path);
+    final int cid = await seedCollection(<String>['video/ep1']);
+    expect((await db.getMediaCollectionById(cid))?.coverPath, isNull);
+
+    await pumpPage(tester);
+
+    final Image image = tester.widget<Image>(find.descendant(
+      of: cardFinder(cid),
+      matching: find.byType(Image),
+    ));
+    final ImageProvider provider = image.image;
+    final FileImage fileImage = (provider is ResizeImage
+        ? provider.imageProvider
+        : provider) as FileImage;
+    expect(fileImage.file.path, memberCover.path);
+  });
+
+  // 悬空路径（overwrite 备份恢复会把源机绝对路径原样带过来，备份不打包 video_covers/）：
+  // 必须表现得像「没设过封面」，不能出破图 / 空白卡。
+  testWidgets('BUG-1211 合集自有封面文件不存在 → 回落成员封面，不出破图',
+      (WidgetTester tester) async {
+    final File memberCover = File('${storeDir.path}/ep1_dangling.png')
+      ..writeAsBytesSync(onePixelPng);
+    await seedEpisode('video/ep1', '第1集', coverPath: memberCover.path);
+    final int cid = await seedCollection(<String>['video/ep1']);
+    await db.updateMediaCollectionCoverPath(
+        cid, '${storeDir.path}/does_not_exist.png');
+
+    await pumpPage(tester);
+
+    final Image image = tester.widget<Image>(find.descendant(
+      of: cardFinder(cid),
+      matching: find.byType(Image),
+    ));
+    final ImageProvider provider = image.image;
+    final FileImage fileImage = (provider is ResizeImage
+        ? provider.imageProvider
+        : provider) as FileImage;
+    expect(fileImage.file.path, memberCover.path);
+  });
+
   testWidgets('无封面 → 占位图标；集数角标 = 全部成员数；默认进度「已看完 0/N」',
       (WidgetTester tester) async {
     await seedEpisode('video/ep1', '第1集');
