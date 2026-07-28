@@ -385,43 +385,28 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   bool _isSrtCollectionMember(String uid) =>
       _primaryCollectionByEntry.containsKey(MediaKind.srt.compositeKey(uid));
 
-  void _selectAll() {
-    _rebuild(() {
-      // 散卡：只选未折进合集的可见书（折进的成员由整合集选中，不单独勾）。
-      for (final item in _visibleEpubBooks) {
-        if (_isEpubCollectionMember(_parseBookKey(item.mediaIdentifier))) {
-          continue;
-        }
-        _selectedKeys.add(item.mediaIdentifier);
-      }
-      for (final book in _visibleSrtBooks) {
-        if (_isSrtCollectionMember(book.uid)) continue;
-        _selectedKeys.add('srt_${book.uid}');
-      }
-      _selectedCollectionIds.addAll(_visibleCollectionIds);
-    });
-  }
-
-  void _invertSelection() {
-    _rebuild(() {
-      final Set<String> allKeys = {
+  /// 全选 / 反选的候选散卡键：只含未折进合集的可见书（折进的成员由整合集选中，
+  /// 不单独勾）。两处共用同一份资格判据，避免全选与反选口径漂开。
+  Set<String> _selectableLooseKeys() => <String>{
         for (final item in _visibleEpubBooks)
           if (!_isEpubCollectionMember(_parseBookKey(item.mediaIdentifier)))
             item.mediaIdentifier,
         for (final book in _visibleSrtBooks)
           if (!_isSrtCollectionMember(book.uid)) 'srt_${book.uid}',
       };
-      final Set<String> inverted = allKeys.difference(_selectedKeys);
-      _selectedKeys
-        ..clear()
-        ..addAll(inverted);
-      final Set<int> allCollections = _visibleCollectionIds.toSet();
-      final Set<int> invertedCollections =
-          allCollections.difference(_selectedCollectionIds);
-      _selectedCollectionIds
-        ..clear()
-        ..addAll(invertedCollections);
-    });
+
+  void _selectAll() {
+    _rebuild(() => _selection.selectAll(
+          loose: _selectableLooseKeys(),
+          collections: _visibleCollectionIds,
+        ));
+  }
+
+  void _invertSelection() {
+    _rebuild(() => _selection.invert(
+          loose: _selectableLooseKeys(),
+          collections: _visibleCollectionIds,
+        ));
   }
 
   Widget _buildBatchActionBar() {

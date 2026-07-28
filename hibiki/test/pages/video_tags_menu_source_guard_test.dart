@@ -60,14 +60,36 @@ void main() {
     });
 
     test('选择态长按禁用、点击改切换勾选（批量选择，TODO-063）', () {
-      // 选择态下长按必须禁用（避免与勾选冲突），点击切换勾选而非打开播放页。
-      expect(
-          src.contains(
-              'onLongPress: _selectionMode ? null : () => _showVideoMenu(book)'),
+      // 2026-07 手势归属重划：非选择态的长按按平台分流（触屏 = 进多选，桌面 =
+      // 弹菜单，见 media/selection/selection_gestures.dart），故不再锁死单一字面量；
+      // 但「选择态下长按必须禁用」这条不变式没变——长按与勾选冲突。
+      // 折掉换行/缩进后比对，免得 dart format 的换行位置成为守卫的隐形前提。
+      final String flat = src.replaceAll(RegExp(r'\s+'), ' ');
+      expect(flat.contains('onLongPress: _selectionMode ? null :'), isTrue,
+          reason: '选择态长按必须禁用');
+      expect(flat.contains('touchLongPressSelects ? () => _enterSelectionWith'),
           isTrue,
-          reason: '选择态长按禁用，非选择态才弹菜单');
+          reason: '触屏非选择态长按 = 进入多选');
+      expect(flat.contains('() => _showVideoMenu(book))'), isTrue,
+          reason: '桌面非选择态长按仍弹菜单');
       expect(src.contains('_toggleSelection(book.bookUid)'), isTrue,
           reason: '选择态点卡片切换勾选');
+    });
+
+    test('触屏长按改判给多选后，菜单必须另有入口（封面 ⋮ 按钮）', () {
+      // 长按在触屏上已归多选，若不同时给出 ⋮ 入口，移动端就再也打不开卡片菜单。
+      // 这是本次重划最容易漏掉的一环，钉死在这里。
+      final String flat = src.replaceAll(RegExp(r'\s+'), ' ');
+      expect(
+          flat.contains(
+              'ShelfCardMenuButton( onPressed: () => _showVideoMenu(book)'),
+          isTrue,
+          reason: '视频卡必须有 ⋮ 菜单入口');
+      expect(
+          flat.contains(
+              'ShelfCardMenuButton( onPressed: () => _showCollectionContextMenu(collection)'),
+          isTrue,
+          reason: '合集卡必须有 ⋮ 菜单入口');
     });
 
     test('长按面板复用封面背景 frame，不再用 bottom sheet', () {

@@ -23,6 +23,7 @@ import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
+import 'package:hibiki/src/utils/components/shelf_card_widgets.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -314,7 +315,21 @@ void main() {
     );
   });
 
-  testWidgets('长按视频卡弹出封面背景动作面板（管理动作、无播放）', (WidgetTester tester) async {
+  /// 触屏上打开某张卡的动作面板 = 点封面上的 ⋮ 按钮。
+  ///
+  /// 2026-07 手势归属重划后长按改判给「进入多选」（见
+  /// `media/selection/selection_gestures.dart`），菜单在触屏上只有这一个入口；
+  /// widget 测试默认平台是 android，故走触屏分支。桌面右键仍是菜单（下面另有用例）。
+  Future<void> openCardMenu(WidgetTester tester, Finder card) async {
+    await tester.tap(find.descendant(
+      of: card,
+      matching: find.byType(ShelfCardMenuButton),
+    ));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('触屏长按视频卡进入多选并选中该卡（不再弹菜单）',
+      (WidgetTester tester) async {
     await seedTaggedVideo();
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
@@ -322,7 +337,21 @@ void main() {
     await tester.longPress(find.byType(HibikiCard).first);
     await tester.pumpAndSettle();
 
-    // 长按只做管理动作；播放仍由卡片点击负责。
+    // 长按不再弹动作面板，而是开多选并把该卡勾上（底部批量栏出现即多选态）。
+    expect(find.byType(HibikiDialogFrame), findsNothing);
+    expect(find.text(t.batch_selected_count(n: 1)), findsOneWidget);
+    expect(find.byType(ShelfSelectionCheck), findsWidgets);
+  });
+
+  testWidgets('封面 ⋮ 按钮弹出封面背景动作面板（管理动作、无播放）',
+      (WidgetTester tester) async {
+    await seedTaggedVideo();
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await openCardMenu(tester, find.byType(HibikiCard).first);
+
+    // 菜单只做管理动作；播放仍由卡片点击负责。
     expect(find.byType(HibikiDialogFrame), findsOneWidget);
     expect(find.text(t.tag_label), findsOneWidget);
     expect(find.text(t.video_rename), findsOneWidget);
@@ -532,7 +561,7 @@ void main() {
         reason: 'video/1 被批量删除，video/2 保留');
   });
 
-  testWidgets('长按菜单单删会回收本视频 app-owned 封面字幕与内嵌字幕缓存',
+  testWidgets('卡片菜单单删会回收本视频 app-owned 封面字幕与内嵌字幕缓存',
       (WidgetTester tester) async {
     resetAppOwnedVideoAssetDirs();
     final deleted = await seedVideoWithAssets(
@@ -567,9 +596,8 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester
-        .longPress(find.byKey(const ValueKey<String>('home_video_video/1')));
-    await tester.pumpAndSettle();
+    await openCardMenu(
+        tester, find.byKey(const ValueKey<String>('home_video_video/1')));
     await tester.tap(find.text(t.dialog_delete).last);
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.dialog_delete).last);

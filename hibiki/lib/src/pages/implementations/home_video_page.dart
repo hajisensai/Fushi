@@ -52,6 +52,8 @@ import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/shelf_sort.dart';
 import 'package:hibiki/src/media/media_search_text.dart';
 import 'package:hibiki/src/media/collections/collection_drag.dart';
+import 'package:hibiki/src/media/selection/media_selection_controller.dart';
+import 'package:hibiki/src/media/selection/selection_gestures.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_batch_dialog.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_detail_page.dart';
@@ -201,12 +203,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 批量选择模式（与书架 tab 对齐）。开启后卡片点击切换勾选、长按/拖放禁用，
   /// 底部弹批量操作栏（打标签 / 删除）。视频书是扁平 bookUid（不像书架有
   /// epub `mediaIdentifier` + `srt_` 双类前缀），故选择集直接用 bookUid 字符串。
-  bool _selectionMode = false;
-  final Set<String> _selectedUids = <String>{};
+  /// 与书架 tab 共用的多选状态机（[MediaSelectionController]）：模式位、散卡选中集、
+  /// 合集整选集、Shift / 长按扫选的锚点全在里面。下面三个 getter 保留旧字段名，
+  /// 让本页几十处读取点原样成立。
+  final MediaSelectionController _selection = MediaSelectionController();
+
+  bool get _selectionMode => _selection.active;
+
+  Set<String> get _selectedUids => _selection.looseKeys;
 
   /// 多选态合集整选（块2）：选中合集 id 集，与散卡选中集 [_selectedUids] 并存。
   /// 组合三档判定（块3）与批量解散/删除（块4）都读这两个集。
-  final Set<int> _selectedCollectionIds = <int>{};
+  Set<int> get _selectedCollectionIds => _selection.collectionIds;
 
   /// 当前可见（过滤后）的本地视频列表，供全选 / 反选用。
   List<VideoBookRow> _visibleVideos = const <VideoBookRow>[];
@@ -631,70 +639,57 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   // 选择集与 picker 比书架简单一层（无 epub/srt 双类分支）。
 
   void _toggleSelectionMode() {
-    setState(() {
-      _selectionMode = !_selectionMode;
-      _selectedUids.clear();
-      _selectedCollectionIds.clear();
-    });
+    setState(_selection.toggleMode);
   }
 
   void _exitSelectionMode() {
-    setState(() {
-      _selectionMode = false;
-      _selectedUids.clear();
-      _selectedCollectionIds.clear();
-    });
+    setState(_selection.exit);
   }
 
+  /// 散卡点击：普通点击切换 + 设锚点，Shift + 点击选中锚点到该卡的可见区间。
   void _toggleSelection(String bookUid) {
-    setState(() {
-      if (!_selectedUids.remove(bookUid)) {
-        _selectedUids.add(bookUid);
-      }
-    });
+    setState(() => _selection.applyTap(
+          SelectionSlot.loose(bookUid),
+          selectionTapKind(),
+        ));
   }
 
-  /// 块2：切换整合集选中（合集行头勾选框）。
+  /// 块2：切换整合集选中（合集行头勾选框）。Shift 同样在合集区内成段。
   void _toggleCollectionSelection(int collectionId) {
-    setState(() {
-      if (!_selectedCollectionIds.remove(collectionId)) {
-        _selectedCollectionIds.add(collectionId);
-      }
-    });
+    setState(() => _selection.applyTap(
+          SelectionSlot.collection(collectionId),
+          selectionTapKind(),
+        ));
+  }
+
+  /// 触屏长按卡片 / 桌面 Ctrl+点击：直接进入多选并选中该项。
+  void _enterSelectionWith(SelectionSlot slot) {
+    setState(() => _selection.enterWith(slot));
   }
 
   /// 一个可见视频是否已折进某合集（= 合集成员，不作散卡单选/全选）。
   bool _isCollectionMember(String bookUid) => _primaryCollectionByEntry
       .containsKey(MediaKind.video.compositeKey(bookUid));
 
-  void _selectAllVisible() {
-    setState(() {
-      // 散卡：只选未折进合集的可见视频（折进的成员由整合集选中，不单独勾）。
-      for (final VideoBookRow book in _visibleVideos) {
-        if (_isCollectionMember(book.bookUid)) continue;
-        _selectedUids.add(book.bookUid);
-      }
-      _selectedCollectionIds.addAll(_visibleCollectionIds);
-    });
-  }
-
-  void _invertSelection() {
-    setState(() {
-      final Set<String> allLoose = <String>{
+  /// 全选 / 反选的候选散卡键：只含未折进合集的可见视频（折进的成员由整合集选中，
+  /// 不单独勾）。两处共用同一份资格判据，避免全选与反选口径漂开。
+  Set<String> _selectableLooseUids() => <String>{
         for (final VideoBookRow book in _visibleVideos)
           if (!_isCollectionMember(book.bookUid)) book.bookUid,
       };
-      final Set<String> invertedLoose = allLoose.difference(_selectedUids);
-      _selectedUids
-        ..clear()
-        ..addAll(invertedLoose);
-      final Set<int> allCollections = _visibleCollectionIds.toSet();
-      final Set<int> invertedCollections =
-          allCollections.difference(_selectedCollectionIds);
-      _selectedCollectionIds
-        ..clear()
-        ..addAll(invertedCollections);
-    });
+
+  void _selectAllVisible() {
+    setState(() => _selection.selectAll(
+          loose: _selectableLooseUids(),
+          collections: _visibleCollectionIds,
+        ));
+  }
+
+  void _invertSelection() {
+    setState(() => _selection.invert(
+          loose: _selectableLooseUids(),
+          collections: _visibleCollectionIds,
+        ));
   }
 
   /// 块4：批量删除区分解散/删媒体。
@@ -1966,7 +1961,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
                 const SyncProgressBanner(),
                 Expanded(
-                  child: _buildVideoLibraryBody(),
+                  // 多选态才接管长按：长按落在卡上 = 起手扫选，不抬手滑动即刷出
+                  // 一段区间。非多选态原样透传（长按仍归卡片自身的菜单 / 进多选）。
+                  child: SelectionDragArea(
+                    enabled: _selectionMode,
+                    onDragBegin: (SelectionSlot slot) =>
+                        setState(() => _selection.beginRangeDrag(slot)),
+                    onDragUpdate: (SelectionSlot slot) =>
+                        setState(() => _selection.updateRangeDrag(slot)),
+                    onDragEnd: () => setState(_selection.endRangeDrag),
+                    child: _buildVideoLibraryBody(),
+                  ),
                 ),
                 if (_selectionMode) _buildBatchActionBar(),
               ],
@@ -2402,6 +2407,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         loose.add(_VideoLooseCard(
           sortKey: _groupSortKey(group),
           build: () => _buildVideoSlotCard(slot),
+          selectionKey: slot.local?.bookUid,
         ));
       } else if (collectionVisible(group.collection!.id)) {
         collectionGroups.add(group);
@@ -2410,6 +2416,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     }
     loose.sort((_VideoLooseCard a, _VideoLooseCard b) =>
         compareShelfSortKeys(a.sortKey, b.sortKey, _sortMode));
+    // Shift 区间选 / 长按扫选的顺序真值：取排序**之后**的散卡序，与用户屏幕上的
+    // 排列逐项一致（排序 / 搜索 / 标签筛选都已作用其上）。顺序一变，控制器自动
+    // 清锚点，Shift 不会选中一片没看见的条目。
+    _selection.setVisibleOrder(
+      loose: <String>[
+        for (final _VideoLooseCard card in loose)
+          if (card.selectionKey != null) card.selectionKey!,
+      ],
+      collections: _visibleCollectionIds,
+    );
     final List<Widget Function()> cells = <Widget Function()>[
       for (final CollectionGroup<_VideoSlot> group in collectionGroups)
         () => _buildCollectionCoverCard(group),
@@ -2555,19 +2571,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         (CollectionOrderingItem<_VideoSlot> it) => it.payload.remote != null);
     final bool selected =
         _selectionMode && _selectedCollectionIds.contains(collection.id);
+    final bool touchLongPressSelects = isTouchSelectionPlatform(context);
     final HibikiCard card = HibikiCard(
       key: ValueKey<String>('home_video_collection_card_${collection.id}'),
       focusId: HibikiFocusId('home-video-collection-${collection.id}'),
       padding: EdgeInsets.zero,
       selected: selected,
       // 多选态整卡点击 = 整选合集；平时点击 = 进详情（原「查看全部」）。
-      onTap: _selectionMode
-          ? () => _toggleCollectionSelection(collection.id)
-          : () => _openCollectionDetail(collection),
+      onTap: () {
+        if (_selectionMode) {
+          _toggleCollectionSelection(collection.id);
+          return;
+        }
+        // 桌面 Ctrl/⌘（macOS）/ Shift + 点击 = 直接进多选并整选该合集。
+        if (selectionEntryModifierPressed(context)) {
+          _enterSelectionWith(SelectionSlot.collection(collection.id));
+          return;
+        }
+        _openCollectionDetail(collection);
+      },
       // 合集卡长按/右键 = 合集上下文菜单（统一三库页：打开/重命名/标签/删除）；
-      // 多选态压制，与散卡长按菜单同一纪律。
-      onLongPress:
-          _selectionMode ? null : () => _showCollectionContextMenu(collection),
+      // 多选态压制，与散卡长按菜单同一纪律。触屏长按改判给进多选（菜单走封面
+      // 右下角 ⋮），桌面长按 / 右键不变。
+      onLongPress: _selectionMode
+          ? null
+          : (touchLongPressSelects
+              ? () =>
+                  _enterSelectionWith(SelectionSlot.collection(collection.id))
+              : () => _showCollectionContextMenu(collection)),
       onSecondaryTap:
           _selectionMode ? null : () => _showCollectionContextMenu(collection),
       child: Column(
@@ -2614,6 +2645,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   ),
                 if (selected)
                   const Positioned.fill(child: ShelfSelectedOverlay()),
+                // 触屏菜单入口（长按已改判给进多选）。右上角可能有云角标、左下角
+                // 是成员数徽标，故落右下角。
+                if (touchLongPressSelects && !_selectionMode)
+                  Positioned(
+                    right: 6,
+                    bottom: 6,
+                    child: ShelfCardMenuButton(
+                      onPressed: () => _showCollectionContextMenu(collection),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -2649,19 +2690,24 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ],
       ),
     );
+    // 长按扫选身份标记：合集区自成一段区间，扫选可在合集之间连选。
+    final SelectionSlot slot = SelectionSlot.collection(collection.id);
     // 选择态下禁用标签拖放命中（与散卡一致：避免选卡时误触拖标签）。
-    if (_selectionMode) return card;
+    if (_selectionMode) return SelectionSlotTarget(slot: slot, child: card);
     // 视频合集是封面卡（不是 CollectionShelfRow 行头——`unified_collections_
     // architecture_guard_test` 明令禁止视频页回退用行式布局），故接收端直接包在
     // 卡上：拖视频卡落到合集封面 = 加入该合集。
-    return CollectionDropTarget(
-      onMediaDropped: (MediaRef mediaRef) =>
-          _addMediaToCollection(collection.id, mediaRef),
-      child: BookDragTarget(
-        bookId: 'collection:${collection.id}',
-        onTagDropped: (BookTagRow tag) =>
-            _addTagToVideoCollection(collection.id, tag),
-        child: card,
+    return SelectionSlotTarget(
+      slot: slot,
+      child: CollectionDropTarget(
+        onMediaDropped: (MediaRef mediaRef) =>
+            _addMediaToCollection(collection.id, mediaRef),
+        child: BookDragTarget(
+          bookId: 'collection:${collection.id}',
+          onTagDropped: (BookTagRow tag) =>
+              _addTagToVideoCollection(collection.id, tag),
+          child: card,
+        ),
       ),
     );
   }
@@ -3457,20 +3503,43 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 块2：只有可单独勾选的卡才在多选态显示勾选框/高亮/切换选中。
     final bool showSelection = _selectionMode && selectable;
     final bool selected = showSelection && _selectedUids.contains(book.bookUid);
+    final SelectionSlot slot = SelectionSlot.loose(book.bookUid);
+    // 触屏：长按 = 进多选（菜单改由封面右上角 [ShelfCardMenuButton] 触发）。
+    // 桌面：长按 / 右键仍弹管理菜单。成员卡（selectable=false）不可单独勾选，
+    // 故不参与任何多选手势。
+    final bool touchLongPressSelects =
+        isTouchSelectionPlatform(context) && selectable;
+    void handleTap() {
+      if (showSelection) {
+        _toggleSelection(book.bookUid);
+        return;
+      }
+      // 桌面 Ctrl/⌘（macOS）/ Shift + 点击 = 不经工具栏直接进多选并选中该卡。
+      if (selectable &&
+          !_selectionMode &&
+          selectionEntryModifierPressed(context)) {
+        _enterSelectionWith(slot);
+        return;
+      }
+      _open(book, playlistCollectionId: playlistCollectionId);
+    }
+
     final HibikiCard hibikiCard = HibikiCard(
       key: ValueKey<String>('home_video_${book.bookUid}'),
       focusId: HibikiFocusId('home-video-${book.bookUid}'),
       padding: EdgeInsets.zero,
       selected: selected,
-      // 选择态：点击切换勾选、长按禁用（与书架 _buildBookCard 一致）。成员卡
-      // （selectable=false）多选态照常开播、不切换选中。
-      onTap: showSelection
-          ? () => _toggleSelection(book.bookUid)
-          : () => _open(book, playlistCollectionId: playlistCollectionId),
+      // 选择态：点击切换勾选、长按交给祖先的扫选接管区（与书架 _bookCardShell 一致）。
+      // 成员卡（selectable=false）多选态照常开播、不切换选中。
+      onTap: handleTap,
       // 长按 / 桌面右键都弹管理菜单，与书架书卡（_bookCardShell）、远端视频卡
       // （_buildRemoteVideoCard）一致——本地视频卡此前只挂了 onLongPress、漏了
       // onSecondaryTap，故桌面右键本地视频卡无反应（BUG-758）。
-      onLongPress: _selectionMode ? null : () => _showVideoMenu(book),
+      onLongPress: _selectionMode
+          ? null
+          : (touchLongPressSelects
+              ? () => _enterSelectionWith(slot)
+              : () => _showVideoMenu(book)),
       onSecondaryTap: _selectionMode ? null : () => _showVideoMenu(book),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3525,6 +3594,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                         backgroundColor: Colors.black.withValues(alpha: 0.35),
                         color: Theme.of(context).colorScheme.primary,
                       ),
+                    ),
+                  ),
+                // 触屏菜单入口：长按已改判给「进入多选」，菜单必须另有入口。
+                // 书卡放右上角，视频卡右上角被播放列表角标占着，故落右下角；
+                // 进度条只有 3px 高，按钮抬 8px 让开。放在 Stack 末尾＝盖在最上层，
+                // 保证可点。
+                if (touchLongPressSelects && !_selectionMode)
+                  Positioned(
+                    right: 6,
+                    bottom: 8,
+                    child: ShelfCardMenuButton(
+                      onPressed: () => _showVideoMenu(book),
                     ),
                   ),
               ],
@@ -3588,7 +3669,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         mediaRef: MediaRef(kind: MediaKind.video, entryKey: book.bookUid),
         label: book.title,
         enabled: !_selectionMode,
-        child: card,
+        // 长按扫选靠命中测试反查「手指下面是哪一格」。仅可单独勾选的散卡贴标记：
+        // 合集成员卡（selectable=false）不可单独勾，扫过去应当无事发生。
+        child: selectable
+            ? SelectionSlotTarget(
+                slot: SelectionSlot.loose(book.bookUid),
+                child: card,
+              )
+            : card,
       ),
     );
   }
@@ -3952,10 +4040,18 @@ class _VideoBatchTagIntentRow extends StatelessWidget {
 /// 本地散卡（[_buildCard]）与远端占位卡（[_buildRemoteVideoCard]）用同一列表按当前
 /// 排序模式混排（[compareShelfSortKeys]）。构造用惰性闭包，排序后再取需要的那些。
 class _VideoLooseCard {
-  const _VideoLooseCard({required this.sortKey, required this.build});
+  const _VideoLooseCard({
+    required this.sortKey,
+    required this.build,
+    required this.selectionKey,
+  });
 
   final ShelfSortKey sortKey;
   final Widget Function() build;
+
+  /// 该散卡的多选键（= `bookUid`）。远端占位卡不可多选，为 null——排序后按此
+  /// 抽出「可见散卡顺序」喂给 [MediaSelectionController]，故顺序与屏幕一致。
+  final String? selectionKey;
 }
 
 /// 视频库分组 union 载荷（多端库联合视图 §2.3 任务10）：本地视频行 [local] 或

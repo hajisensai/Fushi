@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_platform.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/cover_image.dart';
@@ -63,6 +64,54 @@ class ShelfCardFooter extends StatelessWidget {
           style: tokens.type.metadata.copyWith(
             color: tokens.surfaces.onSurface,
             fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 触屏上卡片上下文菜单的入口按钮（封面右上角）。
+///
+/// 存在的理由：长按在触屏上已改判给「进入多选」（见
+/// `media/selection/selection_gestures.dart` 的手势归属表），菜单必须另有入口。
+/// 桌面不建此按钮——右键仍是菜单，鼠标按住不动也仍是菜单，加个常驻按钮只会污染
+/// 封面。
+///
+/// 尺寸取 [kMinInteractiveDimension] 的一半再加内边距，落在触屏可点区下限附近；
+/// 底色与 [ShelfSelectionCheck] 同源（eink 去半透明），确保浅色封面上仍可辨。
+class ShelfCardMenuButton extends StatelessWidget {
+  const ShelfCardMenuButton({required this.onPressed, super.key});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final bool eink = isEinkTheme(context);
+    final Color fill = eink
+        ? tokens.surfaces.page
+        : tokens.surfaces.page.withValues(alpha: 0.7);
+    return Tooltip(
+      message: t.common_more_actions,
+      child: Material(
+        color: fill,
+        shape: CircleBorder(
+          side: BorderSide(color: tokens.surfaces.outline),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          // 卡片本体的 onTap 是「打开条目」；这颗按钮必须自己吃掉点击，
+          // 否则点菜单等于开书。
+          onTap: onPressed,
+          customBorder: const CircleBorder(),
+          child: Padding(
+            padding: EdgeInsets.all(tokens.spacing.gap / 2),
+            child: Icon(
+              Icons.more_vert,
+              size: tokens.spacing.gap * 1.75,
+              color: tokens.surfaces.onSurface,
+            ),
           ),
         ),
       ),

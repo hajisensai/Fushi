@@ -46,6 +46,8 @@ import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/shelf_sort.dart';
 import 'package:hibiki/src/media/media_search_text.dart';
 import 'package:hibiki/src/media/collections/collection_drag.dart';
+import 'package:hibiki/src/media/selection/media_selection_controller.dart';
+import 'package:hibiki/src/media/selection/selection_gestures.dart';
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart';
 import 'package:hibiki/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/series_shelf_card.dart';
@@ -200,12 +202,18 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             hasAudiobook: false, healthKind: HealthKind.notApplicable);
   }
 
-  bool _selectionMode = false;
-  final Set<String> _selectedKeys = {};
+  /// 批量选择状态机（与视频库 tab 共用同一个 [MediaSelectionController]）：模式位、
+  /// 散卡选中集、合集整选集、Shift / 长按扫选的锚点全在里面。下面三个 getter 保留
+  /// 旧字段名，让本页几十处读取点原样成立。
+  final MediaSelectionController _selection = MediaSelectionController();
+
+  bool get _selectionMode => _selection.active;
+
+  Set<String> get _selectedKeys => _selection.looseKeys;
 
   /// 多选态合集整选（块2）：选中合集 id 集，与散卡选中集 [_selectedKeys] 并存。
   /// 组合三档（块3）与批量解散/删除（块4）都读这两个集。
-  final Set<int> _selectedCollectionIds = <int>{};
+  Set<int> get _selectedCollectionIds => _selection.collectionIds;
 
   /// 当前渲染成横排行的合集 id 列表（[_buildBodyWithSrtBooks] 每帧写入），供
   /// 全选 / 反选把可见合集纳入整选集。
@@ -314,36 +322,42 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
   }
 
   void _toggleSelectionMode() {
-    setState(() {
-      _selectionMode = !_selectionMode;
-      _selectedKeys.clear();
-      _selectedCollectionIds.clear();
-    });
+    setState(_selection.toggleMode);
   }
 
   void _exitSelectionMode() {
-    setState(() {
-      _selectionMode = false;
-      _selectedKeys.clear();
-      _selectedCollectionIds.clear();
-    });
+    setState(_selection.exit);
   }
 
+  /// 散卡点击：普通点击切换 + 设锚点，Shift + 点击选中锚点到该卡的可见区间。
   void _toggleSelection(String key) {
-    setState(() {
-      if (!_selectedKeys.remove(key)) {
-        _selectedKeys.add(key);
-      }
-    });
+    setState(() => _selection.applyTap(
+          SelectionSlot.loose(key),
+          selectionTapKind(),
+        ));
   }
 
-  /// 块2：切换整合集选中（合集行头勾选框）。
+  /// 块2：切换整合集选中（合集行头勾选框）。Shift 同样在合集区内成段。
   void _toggleCollectionSelection(int collectionId) {
-    setState(() {
-      if (!_selectedCollectionIds.remove(collectionId)) {
-        _selectedCollectionIds.add(collectionId);
-      }
-    });
+    setState(() => _selection.applyTap(
+          SelectionSlot.collection(collectionId),
+          selectionTapKind(),
+        ));
+  }
+
+  /// 触屏长按卡片 / 桌面 Ctrl+点击：直接进入多选并选中该项。
+  void _enterSelectionWith(SelectionSlot slot) {
+    setState(() => _selection.enterWith(slot));
+  }
+
+  /// 散卡组的多选键（与 [_selectAll] 同一套：EPUB 用 `mediaIdentifier`、SRT 用
+  /// `srt_` 前缀 uid）。远端占位卡不可多选，返回 null。
+  String? _looseSelectionKey(_ShelfBookSlot slot) {
+    final MediaItem? epub = slot.epub;
+    if (epub != null) return epub.mediaIdentifier;
+    final SrtBook? srt = slot.srt;
+    if (srt != null) return 'srt_${srt.uid}';
+    return null;
   }
 
   @override
@@ -497,91 +511,101 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
                 const SyncProgressBanner(),
                 Expanded(
-                  child: books.when(
-                    data: (bookList) {
-                      _batchAudiobookInfoFuture ??= _mangaOnly
-                          ? Future<Map<String, _AudiobookInfo>>.value(
-                              const <String, _AudiobookInfo>{},
-                            )
-                          : _loadAllAudiobookInfo();
-                      // BUG-1182：「显示远端条目」门控已前移进 _loadRemoteBooks
-                      // （关掉就不联网，而不是拉完再丢）。开关从关翻到开时 `??=` 不会
-                      // 重跑，故这里显式比对上轮门控值，翻转时重新取数——否则用户在设置
-                      // 里打开开关后要下拉刷新才看得到远端卡。
-                      if (_remoteGateAtLastLoad != null &&
-                          _remoteGateAtLastLoad != _shouldLoadRemoteBooks) {
-                        _remoteBooksFuture = null;
-                      }
-                      _remoteGateAtLastLoad = _shouldLoadRemoteBooks;
-                      _remoteBooksFuture ??= _loadRemoteBooks();
-                      _shelfMapsFuture ??= _loadShelfMaps();
-                      final List<MediaItem> shelfBooks =
-                          filterShelfEntriesByMangaSplit(
-                        bookList,
-                        mangaOnly: _mangaOnly,
-                      );
-                      final Set<String>? filterSet = filteredIds.valueOrNull;
-                      List<MediaItem> filtered;
-                      if (filterSet == null) {
-                        filtered = shelfBooks;
-                      } else {
-                        filtered = shelfBooks.where((item) {
-                          final String? key =
-                              _parseBookKey(item.mediaIdentifier);
-                          if (key == null) return false;
-                          // BUG-940：成员命中标签、或所属合集命中标签都保留（后者让
-                          // 打了标签的合集其成员整组存活，折叠出合集组）。
-                          return keepMemberUnderTagFilter(
-                            memberMatched: filterSet.contains(key),
-                            primaryCollectionId: _primaryCollectionByEntry[
-                                MediaKind.epub.compositeKey(key)],
-                            collectionFilter: tagCollectionFilter,
-                          );
-                        }).toList();
-                      }
-                      // P5-A：搜索按**显示名 + DB 原名**双口径匹配——改过名的书
-                      // 用户既可能记得新名也可能记得旧名，只匹配其一都会「搜不到
-                      // 明明在书架上的书」。归一化走与游戏库页同一份
-                      // [matchesMediaSearch]（全角/片假名/标点折叠）。
-                      if (_searchQuery.trim().isNotEmpty) {
-                        filtered = filtered.where((MediaItem item) {
-                          return matchesMediaSearch(
-                            query: _searchQuery,
-                            titles: <String>[
-                              ReaderHibikiSource.instance
-                                  .getDisplayTitleFromMediaItem(item),
-                              item.title,
-                            ],
-                          );
-                        }).toList();
-                      }
-                      return FutureBuilder<Map<String, _AudiobookInfo>>(
-                        future: _batchAudiobookInfoFuture,
-                        builder: (context, abSnapshot) =>
-                            FutureBuilder<_RemoteBookState?>(
-                          future: _remoteBooksFuture,
-                          builder: (context, remoteSnapshot) =>
-                              FutureBuilder<void>(
-                            future: _shelfMapsFuture,
-                            builder: (context, _) =>
-                                buildBody(filtered, remoteSnapshot),
+                  // 多选态才接管长按：长按落在卡上 = 起手扫选，不抬手滑动即刷出
+                  // 一段区间。非多选态原样透传（长按仍归卡片自身的菜单 / 进多选）。
+                  child: SelectionDragArea(
+                    enabled: _selectionMode,
+                    onDragBegin: (SelectionSlot slot) =>
+                        setState(() => _selection.beginRangeDrag(slot)),
+                    onDragUpdate: (SelectionSlot slot) =>
+                        setState(() => _selection.updateRangeDrag(slot)),
+                    onDragEnd: () => setState(_selection.endRangeDrag),
+                    child: books.when(
+                      data: (bookList) {
+                        _batchAudiobookInfoFuture ??= _mangaOnly
+                            ? Future<Map<String, _AudiobookInfo>>.value(
+                                const <String, _AudiobookInfo>{},
+                              )
+                            : _loadAllAudiobookInfo();
+                        // BUG-1182：「显示远端条目」门控已前移进 _loadRemoteBooks
+                        // （关掉就不联网，而不是拉完再丢）。开关从关翻到开时 `??=` 不会
+                        // 重跑，故这里显式比对上轮门控值，翻转时重新取数——否则用户在设置
+                        // 里打开开关后要下拉刷新才看得到远端卡。
+                        if (_remoteGateAtLastLoad != null &&
+                            _remoteGateAtLastLoad != _shouldLoadRemoteBooks) {
+                          _remoteBooksFuture = null;
+                        }
+                        _remoteGateAtLastLoad = _shouldLoadRemoteBooks;
+                        _remoteBooksFuture ??= _loadRemoteBooks();
+                        _shelfMapsFuture ??= _loadShelfMaps();
+                        final List<MediaItem> shelfBooks =
+                            filterShelfEntriesByMangaSplit(
+                          bookList,
+                          mangaOnly: _mangaOnly,
+                        );
+                        final Set<String>? filterSet = filteredIds.valueOrNull;
+                        List<MediaItem> filtered;
+                        if (filterSet == null) {
+                          filtered = shelfBooks;
+                        } else {
+                          filtered = shelfBooks.where((item) {
+                            final String? key =
+                                _parseBookKey(item.mediaIdentifier);
+                            if (key == null) return false;
+                            // BUG-940：成员命中标签、或所属合集命中标签都保留（后者让
+                            // 打了标签的合集其成员整组存活，折叠出合集组）。
+                            return keepMemberUnderTagFilter(
+                              memberMatched: filterSet.contains(key),
+                              primaryCollectionId: _primaryCollectionByEntry[
+                                  MediaKind.epub.compositeKey(key)],
+                              collectionFilter: tagCollectionFilter,
+                            );
+                          }).toList();
+                        }
+                        // P5-A：搜索按**显示名 + DB 原名**双口径匹配——改过名的书
+                        // 用户既可能记得新名也可能记得旧名，只匹配其一都会「搜不到
+                        // 明明在书架上的书」。归一化走与游戏库页同一份
+                        // [matchesMediaSearch]（全角/片假名/标点折叠）。
+                        if (_searchQuery.trim().isNotEmpty) {
+                          filtered = filtered.where((MediaItem item) {
+                            return matchesMediaSearch(
+                              query: _searchQuery,
+                              titles: <String>[
+                                ReaderHibikiSource.instance
+                                    .getDisplayTitleFromMediaItem(item),
+                                item.title,
+                              ],
+                            );
+                          }).toList();
+                        }
+                        return FutureBuilder<Map<String, _AudiobookInfo>>(
+                          future: _batchAudiobookInfoFuture,
+                          builder: (context, abSnapshot) =>
+                              FutureBuilder<_RemoteBookState?>(
+                            future: _remoteBooksFuture,
+                            builder: (context, remoteSnapshot) =>
+                                FutureBuilder<void>(
+                              future: _shelfMapsFuture,
+                              builder: (context, _) =>
+                                  buildBody(filtered, remoteSnapshot),
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                    error: (error, stack) => buildError(
-                      error: error,
-                      stack: stack,
-                      refresh: () {
-                        _refreshSrtBooks();
-                        ref.invalidate(
-                          hibikiBooksProvider(JapaneseLanguage.instance),
                         );
                       },
+                      error: (error, stack) => buildError(
+                        error: error,
+                        stack: stack,
+                        refresh: () {
+                          _refreshSrtBooks();
+                          ref.invalidate(
+                            hibikiBooksProvider(JapaneseLanguage.instance),
+                          );
+                        },
+                      ),
+                      // BasePage 家族历史样式（25×25 主色圈），参数化保留、视觉不变。
+                      loading: () => buildLoading(
+                          size: 25, color: theme.colorScheme.primary),
                     ),
-                    // BasePage 家族历史样式（25×25 主色圈），参数化保留、视觉不变。
-                    loading: () => buildLoading(
-                        size: 25, color: theme.colorScheme.primary),
                   ),
                 ),
                 if (_selectionMode) _buildBatchActionBar(),
@@ -1324,6 +1348,20 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
       for (final CollectionGroup<_ShelfBookSlot> g in shelfGroups)
         if (g.collection != null) g.collection!.id,
     ];
+    // Shift 区间选 / 长按扫选的顺序真值：与上面的合集顺序取自同一份 shelfGroups，
+    // 故与用户屏幕上的排列逐项一致（排序 / 搜索 / 标签筛选都已作用其上）。散卡组
+    // `collection == null` 且 items 长度恒 1；远端占位卡不参与多选（与 [_selectAll]
+    // 同判据），跳过。顺序一变，控制器自动清锚点。
+    final List<String> visibleLooseKeys = <String>[];
+    for (final CollectionGroup<_ShelfBookSlot> g in shelfGroups) {
+      if (g.collection != null) continue;
+      final String? key = _looseSelectionKey(g.items.first.payload);
+      if (key != null) visibleLooseKeys.add(key);
+    }
+    _selection.setVisibleOrder(
+      loose: visibleLooseKeys,
+      collections: _visibleCollectionIds,
+    );
     _epubCoverUrisByBookKey = epubCoverUrisByBookKey;
     _epubBackedBookKeys = epubBackedBookKeys;
     _epubProgressByBookKey = epubProgressByBookKey;
@@ -1463,48 +1501,52 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     // 导致「远端书已折进本地合集」时行头数字比眼前卡片少（甚至全为未下载远端书时显示
     // 「0 本」），与所见割裂（用户实报）。行头数字必须诚实反映该行看得见的卡片数。
     final int memberCount = group.items.length;
-    return Padding(
-      // 水平不加 padding：书卡自带 12px 内边距，与网格散卡左缘逐像素对齐。
-      padding: EdgeInsets.symmetric(
-        vertical: tokens.spacing.gap / 2,
-      ),
-      child: CollectionShelfRow(
-        key: ValueKey<String>('reader_shelf_collection_row_${collection.id}'),
-        title: collection.name,
-        countLabel: t.series_item_count(n: memberCount),
-        itemCount: group.items.length,
-        itemWidth: itemWidth,
-        rowHeight: rowHeight,
-        // 书卡自带 12px 内边距 → 行内间距归零，与散书网格视觉间距一致。
-        itemGap: 0,
-        headerFocusId:
-            HibikiFocusId('reader-shelf-collection-${collection.id}'),
-        onOpenDetail: () => _openCollectionDetail(collection),
-        collapsed:
-            appModel.prefsRepo.collapsedCollectionIds.contains(collection.id),
-        onToggleCollapsed: () => _toggleCollectionCollapsed(collection.id),
-        // 块2：多选态行头挂整选勾选框（选=选中整个合集）；成员卡多选态不可单独勾。
-        selectionCheckbox: _selectionMode
-            ? _buildSelectionCheck(
-                _selectedCollectionIds.contains(collection.id))
-            : null,
-        onToggleSelected: _selectionMode
-            ? () => _toggleCollectionSelection(collection.id)
-            : null,
-        // 拖标签到行头 = 给整个合集打标签（与散书书级拖放一致）。
-        onTagDropped: (BookTagRow tag) =>
-            _addTagToCollection(collection.id, tag),
-        // 拖书卡到行头 = 把该书加入本合集（payload 泛型与标签互不误接）。
-        onMediaDropped: (MediaRef mediaRef) =>
-            _addMediaToCollection(collection.id, mediaRef),
-        // 行头长按/右键 = 合集上下文菜单（统一三库页：打开/重命名/标签/删除）。
-        onContextMenu: () => _showCollectionContextMenu(collection),
-        // 行头下方展示该合集已打的标签 chip（与散书标签列同形）。
-        tags: ref.watch(collectionTagMapProvider).valueOrNull?[collection.id],
-        itemBuilder: (BuildContext _, int i) => _buildShelfMemberCard(
-          group.items[i].payload,
-          epubCoverUrisByBookKey,
-          selectable: false,
+    return SelectionSlotTarget(
+      // 长按扫选也能扫到合集行（合集区自成一段区间，不与散卡串区）。
+      slot: SelectionSlot.collection(collection.id),
+      child: Padding(
+        // 水平不加 padding：书卡自带 12px 内边距，与网格散卡左缘逐像素对齐。
+        padding: EdgeInsets.symmetric(
+          vertical: tokens.spacing.gap / 2,
+        ),
+        child: CollectionShelfRow(
+          key: ValueKey<String>('reader_shelf_collection_row_${collection.id}'),
+          title: collection.name,
+          countLabel: t.series_item_count(n: memberCount),
+          itemCount: group.items.length,
+          itemWidth: itemWidth,
+          rowHeight: rowHeight,
+          // 书卡自带 12px 内边距 → 行内间距归零，与散书网格视觉间距一致。
+          itemGap: 0,
+          headerFocusId:
+              HibikiFocusId('reader-shelf-collection-${collection.id}'),
+          onOpenDetail: () => _openCollectionDetail(collection),
+          collapsed:
+              appModel.prefsRepo.collapsedCollectionIds.contains(collection.id),
+          onToggleCollapsed: () => _toggleCollectionCollapsed(collection.id),
+          // 块2：多选态行头挂整选勾选框（选=选中整个合集）；成员卡多选态不可单独勾。
+          selectionCheckbox: _selectionMode
+              ? _buildSelectionCheck(
+                  _selectedCollectionIds.contains(collection.id))
+              : null,
+          onToggleSelected: _selectionMode
+              ? () => _toggleCollectionSelection(collection.id)
+              : null,
+          // 拖标签到行头 = 给整个合集打标签（与散书书级拖放一致）。
+          onTagDropped: (BookTagRow tag) =>
+              _addTagToCollection(collection.id, tag),
+          // 拖书卡到行头 = 把该书加入本合集（payload 泛型与标签互不误接）。
+          onMediaDropped: (MediaRef mediaRef) =>
+              _addMediaToCollection(collection.id, mediaRef),
+          // 行头长按/右键 = 合集上下文菜单（统一三库页：打开/重命名/标签/删除）。
+          onContextMenu: () => _showCollectionContextMenu(collection),
+          // 行头下方展示该合集已打的标签 chip（与散书标签列同形）。
+          tags: ref.watch(collectionTagMapProvider).valueOrNull?[collection.id],
+          itemBuilder: (BuildContext _, int i) => _buildShelfMemberCard(
+            group.items[i].payload,
+            epubCoverUrisByBookKey,
+            selectable: false,
+          ),
         ),
       ),
     );
