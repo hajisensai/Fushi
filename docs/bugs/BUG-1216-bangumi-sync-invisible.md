@@ -23,7 +23,7 @@
 
 - **[x] ① 已修复** — commit 见本分支
   1. 服务层新增可观测出口：`MediaTrackingStatus` / `MediaTrackingFailure` 快照 + `loadStatus()`；每轮同步结束落 `media_tracking_last_sync_*_v1` 偏好（区分「跑过零待办」与「从未跑过」），`statusRevision` 通知 UI；`connect()` 把「校验 + 落令牌 + 记账号名」收成一次原子操作，换令牌清旧账号名。
-  2. `MediaTrackingRepository.allPending()`：**不**按 `nextAttemptAt` 过滤的展示侧查询，退避窗口里也能说出失败原因。
+  2. `MediaTrackingRepository.allPending()`：**不**按 `nextAttemptAt` 过滤的展示侧查询，退避窗口里也能说出失败原因。它带展示上限（默认 50 行），因此「待发送 N 项」的计数仍走 `pendingCount()` 的 `COUNT(*)`，不能用列表长度（否则待办多于上限时少报，有回归测试守卫）。
   3. 首页 dashboard 新增「Bangumi 同步」卡（宽屏侧列顶部 / 窄屏继续区之后）：未连接→说明 + 连接入口；已连接→账号、上次同步、已关联数、待发送数、令牌被拒提示、已关联条目（点击开 bgm.tv 条目页）、立即同步 + 管理关联。零映射时明说「没有任何条目关联，所以看完不会有变化」。
      - 失败原因**挂在对应条目行上**（`MediaTrackingFailure.mappingId` + `mappingsProblemFirst` 把出问题的条目排到最前），不另开一段——首版写成独立「失败」段时 widget 测试立刻抓到同一条目标题出现两次，读起来像两个不同的东西。设置页同口径（错误进该行副标题）。
   4. 设置页删掉 bookmeter 死文案（含 17 语言 i18n key，走 `i18n_sync --remove`），并复用同一状态快照显示上次同步/失败原因；`_kindLabel`/`_modeLabel` 抽成共享 `media_tracking_labels.dart`。

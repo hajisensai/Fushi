@@ -1257,6 +1257,33 @@ void main() {
           reason: '账号名属于旧令牌，换令牌后必须失效，不能挂着上一个账号');
     });
 
+    test('待发送计数走 COUNT(*)，不被展示上限截断', () async {
+      // allPending 带展示上限（默认 50 行），计数若跟着它走，待办多于上限时就会
+      // 把「待发送 N 项」少报成上限值。
+      for (int i = 0; i < 55; i++) {
+        await repository.saveMapping(
+          mediaType: TrackingMediaType.video,
+          mediaKey: 'v$i',
+          mediaTitle: 'Video $i',
+          kind: TrackingKind.anime,
+          subjectId: 1000 + i,
+          subjectName: 'Remote $i',
+          progressMode: TrackingProgressMode.episode,
+          progressOffset: 1,
+        );
+        await repository.enqueueProgress(
+          mediaType: TrackingMediaType.video,
+          mediaKey: 'v$i',
+          localProgress: 1,
+          completed: false,
+        );
+      }
+
+      final MediaTrackingStatus status = await service.loadStatus();
+
+      expect(status.pending, 55);
+    });
+
     test('伴随的 bookChapter 映射不作为独立条目外显', () async {
       await repository.saveMapping(
         mediaType: TrackingMediaType.book,

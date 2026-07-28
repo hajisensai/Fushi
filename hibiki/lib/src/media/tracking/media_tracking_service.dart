@@ -331,6 +331,9 @@ class MediaTrackingService {
   Future<MediaTrackingStatus> loadStatus() async {
     final List<MediaTrackingMappingRow> mappings =
         await _repository.listMappings();
+    // 计数走 COUNT(*) 而不是 allPending().length：后者带展示上限（默认 50 行），
+    // 待办超过上限时会把「待发送」少报成上限值。
+    final int pendingCount = await _repository.pendingCount();
     final List<PendingTrackingUpdate> pending = await _repository.allPending();
     return MediaTrackingStatus(
       configured: isConfigured,
@@ -343,7 +346,7 @@ class MediaTrackingService {
             defaultValue: false,
           ) ==
           true,
-      pending: pending.length,
+      pending: pendingCount,
       // bookChapter 是卷映射的伴随行（只负责 ep_status），不是用户建立的独立关联，
       // 与设置页列表同口径地隐藏，避免同一本书显示成两条。
       mappings: mappings
