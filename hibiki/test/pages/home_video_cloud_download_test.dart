@@ -265,7 +265,30 @@ class _FakeCloudRemoteVideoClient implements CloudRemoteVideoClient {
   SyncAssetStore get backend => throw UnimplementedError();
 
   @override
-  Future<List<RemoteVideoManifestEntry>> listRemoteVideos() async => entries;
+  Future<List<RemoteVideoManifestEntry>> listRemoteVideoManifest() async =>
+      entries;
+
+  /// TODO-2119：[RemoteVideoSource] 视图——清单→DTO 的适配已收进真 client，
+  /// fake 这里照搬同样的映射（页面不再自己适配，所以这份映射必须由 client 侧提供）。
+  @override
+  Future<List<RemoteVideoInfo>> listRemoteVideos() async => <RemoteVideoInfo>[
+        for (final RemoteVideoManifestEntry e in entries)
+          RemoteVideoInfo(
+            id: e.uid,
+            title: e.title,
+            sizeBytes: e.sizeBytes,
+            tagsAddedAt: e.tagsAddedAt,
+            tagTombstones: e.tagTombstones,
+          ),
+      ];
+
+  @override
+  Future<void> downloadRemoteVideo(
+    String id,
+    File dest, {
+    void Function(double progress)? onProgress,
+  }) =>
+      getRemoteVideo(id, dest, onProgress: onProgress);
 
   @override
   Future<void> getRemoteVideo(

@@ -144,7 +144,7 @@ void main() {
       final CloudRemoteVideoClient client =
           CloudRemoteVideoClient(backend: store);
       final List<RemoteVideoManifestEntry> entries =
-          await client.listRemoteVideos();
+          await client.listRemoteVideoManifest();
       expect(entries.length, 1);
       final RemoteVideoManifestEntry e = entries.single;
       expect(e.uid, uid);
@@ -206,7 +206,7 @@ void main() {
       final CloudRemoteVideoClient client =
           CloudRemoteVideoClient(backend: store);
       final RemoteVideoManifestEntry e =
-          (await client.listRemoteVideos()).single;
+          (await client.listRemoteVideoManifest()).single;
       expect(e.coverAsset, isNotNull);
 
       final File cover = File('${tmp.path}/pulled_cover.jpg');
@@ -278,10 +278,10 @@ void main() {
           .syncVideoAssets(report);
       expect(report.errors, isEmpty, reason: report.errors.join(' | '));
 
-      final Set<String> uids =
-          (await CloudRemoteVideoClient(backend: store).listRemoteVideos())
-              .map((RemoteVideoManifestEntry e) => e.uid)
-              .toSet();
+      final Set<String> uids = (await CloudRemoteVideoClient(backend: store)
+              .listRemoteVideoManifest())
+          .map((RemoteVideoManifestEntry e) => e.uid)
+          .toSet();
       expect(uids, containsAll(<String>['video/FromA', 'video/FromB']),
           reason: 'upload-only union must not drop the remote-only entry');
     });
@@ -357,7 +357,8 @@ void main() {
       await _orchestrator(db, backend, tmp, syncVideoFiles: true)
           .syncVideoAssets(SyncRunReport());
       final RemoteVideoManifestEntry e1 =
-          (await CloudRemoteVideoClient(backend: store).listRemoteVideos())
+          (await CloudRemoteVideoClient(backend: store)
+                  .listRemoteVideoManifest())
               .single;
       expect(e1.coverAsset, isNotNull);
 
@@ -368,7 +369,8 @@ void main() {
       await _orchestrator(db, backend, tmp, syncVideoFiles: true)
           .syncVideoAssets(SyncRunReport());
       final RemoteVideoManifestEntry e2 =
-          (await CloudRemoteVideoClient(backend: store).listRemoteVideos())
+          (await CloudRemoteVideoClient(backend: store)
+                  .listRemoteVideoManifest())
               .single;
       expect(e2.coverAsset, e1.coverAsset,
           reason:
@@ -429,7 +431,7 @@ void main() {
       final FakeAssetStore store = FakeAssetStore();
       final CloudRemoteVideoClient client =
           CloudRemoteVideoClient(backend: store);
-      expect(await client.listRemoteVideos(), isEmpty);
+      expect(await client.listRemoteVideoManifest(), isEmpty);
     });
 
     test('download of unknown uid throws SyncBackendError', () async {

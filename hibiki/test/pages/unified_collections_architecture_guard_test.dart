@@ -317,18 +317,33 @@ void main() {
         reason: '云视频目录/下载必须经 CloudRemoteVideoClient');
     expect(homeSrc.contains('_resolveCloudRemoteVideoClient'), isTrue,
         reason: '云后端分支：resolveSyncBackend 产物包进 CloudRemoteVideoClient');
-    expect(homeSrc.contains('_cloudManifestToRemoteVideoInfo'), isTrue,
-        reason: '云清单条目须经适配函数转成 RemoteVideoInfo 混排');
+    // TODO-2119：清单→RemoteVideoInfo 的适配已从页面搬进 CloudRemoteVideoClient
+    // （原 `_cloudManifestToRemoteVideoInfo`）。页面现在只认 RemoteVideoSource 契约，
+    // 连 RemoteVideoManifestEntry 这个类型都不该出现——给 RemoteVideoInfo 加字段时
+    // 不必再回来改页面，漏改导致「云侧该字段永远为空」的坑就此消失。
+    expect(homeSrc.contains('_cloudManifestToRemoteVideoInfo'), isFalse,
+        reason: '清单→DTO 适配必须在 CloudRemoteVideoClient 里，不得回流页面');
+    expect(homeSrc.contains('RemoteVideoManifestEntry'), isFalse,
+        reason: '页面不得再感知清单条目类型（收敛到 CloudRemoteVideoClient）');
     // 页面不得自造清单解析（RemoteVideoManifest.fromJson 只应在 client 里）。
     expect(homeSrc.contains('RemoteVideoManifest.fromJson'), isFalse,
         reason: '页面不得自己解析 videos.json 清单（收敛到 CloudRemoteVideoClient）');
     expect(homeSrc.contains('kSyncVideosManifestName'), isFalse,
         reason: '页面不得直接触碰清单资产名（收敛到 CloudRemoteVideoClient）');
-    // 云视频下载走 CloudRemoteVideoClient.getRemoteVideo（整文件），登记时不双重导入。
-    expect(homeSrc.contains('getRemoteVideo('), isTrue,
-        reason: '云视频下载必须经 CloudRemoteVideoClient.getRemoteVideo 拉整文件');
+    // 下载统一走 RemoteVideoSource.downloadRemoteVideo：云盘实现内部委托给
+    // getRemoteVideo 拉整文件（无 Range 续传），互联走 host live 引擎。页面不再按
+    // 后端类型分派下载路径。
+    expect(homeSrc.contains('source.downloadRemoteVideo('), isTrue,
+        reason: '远端下载必须经 RemoteVideoSource.downloadRemoteVideo 统一入口');
     expect(homeSrc.contains('_registerDownloadedCloudVideo'), isTrue,
         reason: '云视频下载后必须建 VideoBooks 行（勿双重导入）');
+    // 两个互斥 nullable client 字段已收成一个 source（TODO-2119）：能力差异由类型
+    // 系统表达（source is RemoteVideoClient），不再靠「哪个字段非空」判后端。
+    expect(homeSrc.contains('CloudRemoteVideoClient? _cloudRemoteVideoClient;'),
+        isFalse,
+        reason: '不得恢复「互联 client + 云 client」两个互斥字段（TODO-2119 回归）');
+    expect(homeSrc.contains('RemoteVideoSource? _remoteVideoSource;'), isTrue,
+        reason: '当前远端视频来源必须是单一真相字段');
   });
 
   test('多端库联合视图 §2.3 任务10：合集行成员占位归属解析不到 → 散卡降级（不硬造行）', () {

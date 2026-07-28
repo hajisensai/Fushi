@@ -75,7 +75,6 @@ import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_progress_banner.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
-import 'package:hibiki/src/sync/video_manifest.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/utils/components/batch_tag_dialog_frame.dart';
 import 'package:hibiki/src/utils/cover_image.dart';
@@ -151,7 +150,28 @@ class HomeVideoPage extends BaseModuleTabPage {
 class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Future<List<VideoBookRow>>? _future;
   Future<_RemoteVideoState?>? _remoteFuture;
-  RemoteVideoClient? _remoteVideoClient;
+
+  /// 当前远端视频来源：互联 host live 库 或 云盘目录，**至多一个**（TODO-2119）。
+  ///
+  /// 此前是 `_remoteVideoClient` + `_cloudRemoteVideoClient` 两个互斥 nullable 字段，
+  /// 每条下载/封面/字幕路径都要 `if (cloud != null) ... else ...` 分派，两个字段还可能
+  /// 被写得不同步。收成一个之后「谁是当前源」只有一个真相，能力差异改由类型系统表达：
+  /// 只有 [RemoteVideoClient]（live）才有流播/字幕/断点，见 [_liveVideoClient]。
+  RemoteVideoSource? _remoteVideoSource;
+
+  /// 当前源的 live 能力视图；云盘源在这里是 null。拿不到它的地方**编译期**就调不出
+  /// 流播/字幕/断点方法，而不是运行时抛异常。
+  RemoteVideoClient? get _remoteVideoClient {
+    final RemoteVideoSource? source = _remoteVideoSource;
+    return source is RemoteVideoClient ? source : null;
+  }
+
+  /// 当前源的云盘视图；互联源在这里是 null。仅用于云盘独有的收尾动作
+  /// （下载后按资产名取封面，见 [_registerDownloadedCloudVideo]）。
+  CloudRemoteVideoClient? get _cloudRemoteVideoClient {
+    final RemoteVideoSource? source = _remoteVideoSource;
+    return source is CloudRemoteVideoClient ? source : null;
+  }
 
   /// 远端清单的共享 TTL 缓存（BUG-1180）。与书架 / 首页 dashboard 同一实例
   /// （app 级 provider），切 tab 不再必然重打一轮网络。
@@ -166,11 +186,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 封面自愈 / 进度回写等纯列更新（集合不变）跳过，避免写回→重刷环。null=尚未收到
   /// 首个事件（首事件仅登记基线，不刷——initState 已首载）。
   Set<String>? _knownVideoUids;
-
-  /// 多端库联合视图 §2.2/§2.6：云后端（Google Drive 等）的云视频目录 client。互联
-  /// （hibikiServer）与云后端互斥——一台设备只配一种后端，故 [_remoteVideoClient]（互联）
-  /// 与本字段（云）至多一个非空，[_downloadRemote] 据此分派下载路径。
-  CloudRemoteVideoClient? _cloudRemoteVideoClient;
 
   /// 视频卡片拖放命中注册表：每张 [CardDropZone] 注册自身几何，拖放时按屏幕坐标
   /// 命中查找目标视频卡（字幕外挂到该视频）。范型=VideoBookRow。
@@ -533,63 +548,29 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }) async {
     _remoteGateAtLastLoad = _shouldLoadRemoteVideos;
     if (!_shouldLoadRemoteVideos) {
-      _remoteVideoClient = null;
-      _cloudRemoteVideoClient = null;
+      _remoteVideoSource = null;
       return null;
     }
-    final RemoteVideoClient? client = await _resolveRemoteVideoClient();
-    _remoteVideoClient = client;
-    if (client != null) {
-      // 互联后端：host live 库直接下发 RemoteVideoInfo。
-      _cloudRemoteVideoClient = null;
-      try {
-        // BUG-1180：经共享缓存取清单——切回视频 tab（[onTabActivated]）不再必然打一轮
-        // 网络，TTL 内直接复用。缓存只包住「问对端要清单」这一步，下面的本地库查询与
-        // 去重仍每次照跑，本地新增/删除的视频立即反映在混排网格里。
-        final List<RemoteVideoInfo> videos = await _remoteCache.read(
-          key: RemoteLibraryCacheKeys.videos,
-          forceRefresh: forceRefresh,
-          fetch: client.listRemoteVideos,
-        );
-        // #6: 远端与本地是同一视频时（同 bookUid）不在混排网格重复展示。
-        final List<VideoBookRow> localVideos = await widget.repo.listAll();
-        final Set<String> localUids =
-            localVideos.map((VideoBookRow r) => r.bookUid).toSet();
-        return _RemoteVideoState(
-          videos: dedupeRemoteVideos(remote: videos, localBookUids: localUids),
-        );
-      } catch (e) {
-        // spec §2.4 离线语义：拉取失败 → 占位卡不出现（failed 门控），只剩本地库。
-        // 原始异常只落 debugPrint 供排查；显式下拉刷新时的用户可见反馈用本地化友好
-        // 文案（见 _pullToRefresh），不把 TimeoutException 等开发者文本泄漏进 UI。
-        debugPrint('[home-video] remote video list failed: $e');
-        return _RemoteVideoState(
-          videos: const <RemoteVideoInfo>[],
-          failed: true,
-        );
-      }
-    }
-
-    // 云后端（§2.2/§2.6）：读 `__videos__/videos.json` 清单，把云视频条目适配成
-    // RemoteVideoInfo 混排进主网格（云角标/排序/散卡降级既有逻辑自动生效）。
-    final CloudRemoteVideoClient? cloud =
+    // TODO-2119：互联优先、否则回退云盘；两者都是 [RemoteVideoSource]，所以下面
+    // 「列清单 → 去重 → 出占位卡」这条主干只写一遍，不再按后端类型分叉。
+    final RemoteVideoSource? source = await _resolveRemoteVideoClient() ??
         await _resolveCloudRemoteVideoClient();
-    _cloudRemoteVideoClient = cloud;
-    if (cloud == null) return null;
+    _remoteVideoSource = source;
+    if (source == null) return null;
     try {
-      // 清单不存在（从未有设备上传）→ listRemoteVideos 返回空表；结构非法
-      // （FormatException）向上抛，此处 catch → 本轮云视频不可用（= 只剩本地语义）。
-      // BUG-1180：云清单同样过缓存。云盘 `videos.json` 的读取代价不比互联低（要
-      // ensureNamespace + findAsset + getJsonAsset 三次往返），切页面重读同样冤枉。
-      final List<RemoteVideoManifestEntry> entries = await _remoteCache.read(
-        key: RemoteLibraryCacheKeys.cloudVideos,
+      // BUG-1180：经共享缓存取清单——切回视频 tab（[onTabActivated]）不再必然打一轮
+      // 网络，TTL 内直接复用。缓存只包住「问对端要清单」这一步，下面的本地库查询与
+      // 去重仍每次照跑，本地新增/删除的视频立即反映在混排网格里。
+      //
+      // 两种源共用一个 key：清单已在各自 client 里统一成 List<RemoteVideoInfo>，
+      // 不再有「元素类型不同、共用会 cast 崩」的问题（TODO-2119 之前必须分槽）。
+      // 换对端/换后端时由会话身份 revision 驱动 invalidateAll（BUG-1180），不会串味。
+      final List<RemoteVideoInfo> videos = await _remoteCache.read(
+        key: RemoteLibraryCacheKeys.videos,
         forceRefresh: forceRefresh,
-        fetch: cloud.listRemoteVideos,
+        fetch: source.listRemoteVideos,
       );
-      final List<RemoteVideoInfo> videos = <RemoteVideoInfo>[
-        for (final RemoteVideoManifestEntry e in entries)
-          _cloudManifestToRemoteVideoInfo(e),
-      ];
+      // #6: 远端与本地是同一视频时（同 bookUid）不在混排网格重复展示。
       final List<VideoBookRow> localVideos = await widget.repo.listAll();
       final Set<String> localUids =
           localVideos.map((VideoBookRow r) => r.bookUid).toSet();
@@ -597,29 +578,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         videos: dedupeRemoteVideos(remote: videos, localBookUids: localUids),
       );
     } catch (e) {
-      debugPrint('[home-video] cloud video manifest failed: $e');
+      // spec §2.4 离线语义：拉取失败 → 占位卡不出现（failed 门控），只剩本地库。
+      // 云盘侧清单结构非法（FormatException）也落这里 → 本轮云视频不可用。
+      // 原始异常只落 debugPrint 供排查；显式下拉刷新时的用户可见反馈用本地化友好
+      // 文案（见 _pullToRefresh），不把 TimeoutException 等开发者文本泄漏进 UI。
+      debugPrint('[home-video] remote video list failed: $e');
       return _RemoteVideoState(
         videos: const <RemoteVideoInfo>[],
         failed: true,
       );
     }
-  }
-
-  /// 把云视频清单条目（[RemoteVideoManifestEntry]）适配成主网格占位卡消费的
-  /// [RemoteVideoInfo]。云清单只带 uid/title/大小/importedAt/封面资产名——无外挂字幕、
-  /// 无远端进度、无合集归属（云视频占位永远散卡，与 §2.3 host 合集归属互不影响），
-  /// 故这些字段取缺省。封面走下载时的 [CloudRemoteVideoClient.getRemoteVideoCover]，
-  /// 占位阶段用占位图（不预下封面），因此这里不设 coverPath/coverUrl。
-  RemoteVideoInfo _cloudManifestToRemoteVideoInfo(RemoteVideoManifestEntry e) {
-    return RemoteVideoInfo(
-      id: e.uid,
-      title: e.title,
-      sizeBytes: e.sizeBytes,
-      // tags 稳健档：把清单条目的标签 LWW 时钟带进 RemoteVideoInfo，供下载后
-      // mergeRemoteVideoTags 按名 max(add) vs max(removed) 解析（删除/改名传播）。
-      tagsAddedAt: e.tagsAddedAt,
-      tagTombstones: e.tagTombstones,
-    );
   }
 
   /// 多端库联合视图（spec §2.1/§2.4/§2.5）：解析可混排进主网格的远端占位视频。
@@ -1344,10 +1312,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   Future<void> _downloadRemote(RemoteVideoInfo video) async {
-    final RemoteVideoClient? client = _remoteVideoClient;
-    final CloudRemoteVideoClient? cloud = _cloudRemoteVideoClient;
+    final RemoteVideoSource? source = _remoteVideoSource;
     // #3: 服务不可达 / 未鉴权时给明确提示，不再静默 return（用户点了像没反应）。
-    if (client == null && cloud == null) {
+    if (source == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(t.remote_video_unavailable)),
@@ -1365,15 +1332,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (manager.isRunning(video.id)) return;
 
     final File dest = await _remoteDownloadDestination(video);
-    // 互联 vs 云后端分派：互联走 host live 下载 + 字幕；云后端（§2.2/§2.6）走
-    // CloudRemoteVideoClient.getRemoteVideo 拉整文件，收尾登记时无外挂字幕、封面可选。
+    // TODO-2119：下载本身是所有源的共同能力，不再分派——[RemoteVideoSource] 各自
+    // 实现续传口径（互联 host live 引擎 Range + `.part` 可续；云盘整文件重下）。
     // bookUid 用稳定的远端 video.id（与 dedupeRemoteVideos 去重键一致：upsert 同行不
     // 撞键），故下载好的视频立即出现在列表、并从混排占位区去重隐藏。
-    final InterconnectDownloadRunner run = client != null
-        ? (File target, {void Function(double progress)? onProgress}) =>
-            client.downloadRemoteVideo(video.id, target, onProgress: onProgress)
-        : (File target, {void Function(double progress)? onProgress}) =>
-            cloud!.getRemoteVideo(video.id, target, onProgress: onProgress);
+    Future<void> run(
+      File target, {
+      void Function(double progress)? onProgress,
+    }) =>
+        source.downloadRemoteVideo(video.id, target, onProgress: onProgress);
+    // 收尾登记仍按源分流：互联要回填外挂字幕 + host 断点，云盘要按资产名取封面、
+    // 且没有字幕/进度可回填。这是两种源**真实**的能力差异，不是样板分支。
+    final CloudRemoteVideoClient? cloud = _cloudRemoteVideoClient;
+    final RemoteVideoClient? client = _remoteVideoClient;
     final InterconnectDownloadComplete onComplete = client != null
         ? (File downloaded) =>
             _registerDownloadedVideo(client, video, downloaded)
