@@ -76,22 +76,52 @@ enum ShortcutScope {
   /// 的通道即红。它与 `shortcut_action_wiring_guard` 互补——后者只看「action 符号
   /// 有没有出现过」，抓不到「同一个 action 的键盘接了、手柄没接」这种半接线。
   ///
-  /// 多数 scope 走页面派发，键盘/手柄/鼠标三通道全通；[manga] 只接了键盘、
-  /// [dictionaryPopup] 的动作只由弹窗 WebView 的滚轮事件触发（见各自 case 注释）。
+  /// 每个 scope 只列**真的存在解析入口**的通道，没有「多数 scope 三通道全通」这种
+  /// 省事写法——那正是 7 条死通道的来源（见各 case 注释）。
+  ///
+  /// 尤其注意 **mouse 通道在本 app 的唯一运行时输入源是 WebView 的 DOM `mousedown`**
+  /// （阅读器 `onPointerSeek` / 歌词 `onLyricsPointerSeek` → `resolveMouse`）。Flutter
+  /// 侧至今没有任何「PointerDownEvent → MouseBinding → 派发」的管线，故非 WebView
+  /// 宿主的 scope 一律不开 mouse。
   Set<ShortcutChannel> get channels {
     switch (this) {
+      // 阅读器与有声书是 WebView 宿主：键盘/手柄走页面派发，鼠标侧键经 WebView 的
+      // DOM mousedown → `resolveMouse`（webview.part.dart / pointer_seek.dart）。
       case reader:
       case audiobook:
-      case home:
-      case global:
-      case video:
-      case gamepad:
-      case globalExternal:
         return const <ShortcutChannel>{
           ShortcutChannel.keyboard,
           ShortcutChannel.gamepad,
           ShortcutChannel.mouse,
         };
+      // 首页 / 全局 / 视频页：键盘与手柄都有解析入口（home_page 的 resolveKeyboard、
+      // global_navigation、video_player_shortcuts 的 keyboardBindings、各页
+      // GamepadButtonIntent），但**鼠标没有**——这三个页面都是纯 Flutter 表面，没有
+      // WebView 接管 mousedown，也没有任何 Flutter 侧鼠标绑定派发管线。曾经开着
+      // mouse 通道纯属与 reader/audiobook 共用一个 case 分支的连带产物：设置页给出
+      // 「添加鼠标按键」入口，绑上去永不触发。要重开必须先真的建一条
+      // PointerDownEvent → MouseBinding → 派发的链路并验证。
+      case home:
+      case global:
+      case video:
+        return const <ShortcutChannel>{
+          ShortcutChannel.keyboard,
+          ShortcutChannel.gamepad,
+        };
+      // dpad 四向：唯一消费者是 GamepadService._dispatchButton，按 `GamepadButton`
+      // 做 `resolveGamepad(scope: gamepad)`，且结果只被映射成 TraversalDirection。
+      // 键盘/鼠标绑定在这里**按构造不可读**（没有也不可能有 resolveKeyboard/
+      // resolveMouse(scope: gamepad)）；默认表也刻意把键盘留空——方向焦点移动由箭头键
+      // 与摇杆负责，见 shortcut_defaults 的 dpad* 注释。
+      case gamepad:
+        return const <ShortcutChannel>{ShortcutChannel.gamepad};
+      // app 外全局查词热键：GlobalLookupController 只读 `.keyboardBindings` 注册到
+      // OS 级 hotkey_manager，而 `HotKey.key` 的类型就是 Flutter 的 `KeyboardKey`，
+      // 底层是 win32 `RegisterHotKey`（修饰键位掩码 + 虚拟键码）。手柄按钮无法表达，
+      // 鼠标键则要装 WH_MOUSE_LL 全局钩子并全系统吞掉该键——两者都不是这条机制能
+      // 提供的，故只开键盘。
+      case globalExternal:
+        return const <ShortcutChannel>{ShortcutChannel.keyboard};
       // 漫画页只有键盘解析入口：`_resolveMangaKeyAction` 走 `resolveKeyboard`，
       // 滚轮翻页是硬编码的 `wheelInputAction`（不查注册表），手柄则完全没接
       // （既无 `resolveGamepad`，也无 `GamepadButtonIntent` 的 Action）。开着手柄/

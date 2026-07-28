@@ -49,25 +49,23 @@ void main() {
 
   /// 既有欠账：**开放了通道但至今没有消费者**的 (scope, channel)。
   ///
-  /// 这些是本守卫落地之前就存在的，危害小于漫画那处——它们只是设置页多出一个空的
-  /// 通道分组，**默认表里没有任何绑定**，所以不会出现「开箱就配好了却按不动」。
+  /// **现在是空的**——本守卫落地时登记的 7 条已全部销账，全部走「摘掉通道」而非
+  /// 「接上解析入口」，因为它们无一例外是按构造不可接：
+  ///   · `video/home/global.mouse`：mouse 通道在本 app 的唯一运行时输入源是 WebView
+  ///     的 DOM `mousedown`，这三个页面都是纯 Flutter 表面，Flutter 侧根本不存在
+  ///     PointerDownEvent → MouseBinding → 派发的管线；
+  ///   · `gamepad.keyboard/mouse`：dpad 四向只由 `GamepadService._dispatchButton` 按
+  ///     `GamepadButton` 解析，键盘/鼠标绑定没有也不可能有读取方；
+  ///   · `globalExternal.gamepad/mouse`：OS 级热键走 win32 `RegisterHotKey`，
+  ///     `HotKey.key` 类型就是 `KeyboardKey`，手柄/鼠标压根无法表达。
+  /// 详见 `ShortcutScope.channels` 各 case 的注释。
+  ///
   /// 本清单是**棘轮**：下面断言的是「实际欠账集合 == 本清单」，因此
   ///   · 新增任何死通道 → 红（这正是漫画那处会被拦下的原因）；
   ///   · 接上某个通道后忘了从清单里划掉 → 也红，逼你把账销掉。
   /// 修的方向是二选一：要么接上解析入口，要么把该通道从 `scope.channels` 摘掉。
-  const Set<String> knownUnconsumedChannels = <String>{
-    // 视频页的鼠标绑定无人解析（`resolveMouse` 只有 reader / audiobook 两处）。
-    'video.mouse',
-    'home.mouse',
-    'global.mouse',
-    // gamepad scope 只装 dpad 四向，只经 GamepadService 的手柄通道消费。
-    'gamepad.keyboard',
-    'gamepad.mouse',
-    // globalExternal 只把键盘绑定注册进 OS 级 hotkey_manager，另两个通道没有 OS
-    // 级对应物。
-    'globalExternal.gamepad',
-    'globalExternal.mouse',
-  };
+  /// 往这里加条目 = 明知故犯地放一个死通道进设置页，必须在 commit 里说明理由。
+  const Set<String> knownUnconsumedChannels = <String>{};
 
   Map<ShortcutScope, List<ShortcutAction>> actionsByScope() {
     final Map<ShortcutScope, List<ShortcutAction>> byScope =
