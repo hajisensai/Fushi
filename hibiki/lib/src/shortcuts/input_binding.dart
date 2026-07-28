@@ -675,3 +675,24 @@ class ShortcutBindingSet {
         wheelBindings: wheelBindings ?? this.wheelBindings,
       );
 }
+
+/// 当前按下的修饰键集合（Ctrl / Shift / Alt / Meta）。
+///
+/// 所有页面解析键盘绑定前都要拼这个集合，各自重建一份只会漂——阅读器与漫画页
+/// 共用本函数，新页面也应直接调它，不要再抄一遍 [HardwareKeyboard] 四连判。
+Set<ModifierKey> activeModifierKeys() {
+  final Set<ModifierKey> modifiers = <ModifierKey>{};
+  if (HardwareKeyboard.instance.isControlPressed) {
+    modifiers.add(ModifierKey.ctrl);
+  }
+  if (HardwareKeyboard.instance.isShiftPressed) {
+    modifiers.add(ModifierKey.shift);
+  }
+  if (HardwareKeyboard.instance.isAltPressed) {
+    modifiers.add(ModifierKey.alt);
+  }
+  if (HardwareKeyboard.instance.isMetaPressed) {
+    modifiers.add(ModifierKey.meta);
+  }
+  return modifiers;
+}

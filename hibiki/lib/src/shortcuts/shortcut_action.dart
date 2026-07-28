@@ -4,6 +4,10 @@ enum ShortcutScope {
   global,
   audiobook,
   video,
+  // 漫画阅读器（mokuro 页图 + OCR 文本层）。与 reader 分开是因为动作集不同：漫画
+  // 没有章节/振假名/有声书，翻页是整页跨页步进而非文字流分页，且左右键要按跨页
+  // 方向（日漫默认 rtl）校正。
+  manga,
   // TODO-700 T6：摇杆与 dpad 解耦后，dpad 四向成为「可绑触发键」，落在独立的
   // gamepad 作用域（自成 co-active 组，不与 reader/home 等任何组冲突）。摇杆固定
   // 做方向焦点移动、永不经注册表，故没有对应 action——只有 dpad 进这个 scope。
@@ -42,6 +46,10 @@ enum ShortcutScope {
       // detection therefore scans just video.
       case video:
         return const <ShortcutScope>[video];
+      // 漫画阅读器同样是独立界面：只解析自己的绑定，故自成 co-active 组，
+      // 冲突检测只扫 manga（与 video 同理）。
+      case manga:
+        return const <ShortcutScope>[manga];
       // gamepad（dpad 四向）是独立 co-active 组：dpad 绑定永不与 reader/home 的
       // 按钮跨组冲突，冲突检测只扫 gamepad 自身。
       case gamepad:
@@ -71,6 +79,7 @@ enum ShortcutScope {
       case home:
       case global:
       case video:
+      case manga:
       case gamepad:
       case globalExternal:
         return const <ShortcutChannel>{
@@ -252,6 +261,16 @@ enum ShortcutAction {
   videoToggleShaderCompare(ShortcutScope.video, 'video_toggle_shader_compare'),
   videoToggleFavoriteSentence(
       ShortcutScope.video, 'video_toggle_favorite_sentence'),
+
+  // 漫画：翻页存的是**页序语义**（forward=下一页），左右方向键再按跨页方向
+  // （日漫默认 rtl）校正——与 reader 的 resolveReaderArrowPageTurn 同构，见
+  // resolveMangaArrowPageTurn。这样用户改键改的是「哪个键翻页」，方向仍由书自己
+  // 的排版决定，不会出现「改了键之后 rtl 书翻反」。
+  mangaPageForward(ShortcutScope.manga, 'manga_page_forward'),
+  mangaPageBackward(ShortcutScope.manga, 'manga_page_backward'),
+  // 关词典弹窗。漫画与阅读器的差异：本页弹窗可见时左右键仍要「关弹窗并翻页」，
+  // 故没有独立的「退书」动作绑在 Esc 上（退书走系统返回 / PopScope）。
+  mangaDismissDict(ShortcutScope.manga, 'manga_dismiss_dict'),
 
   // Gamepad（TODO-700 T6）：dpad 四向作为可绑触发键。默认各绑对应 dpad 键，执行体
   // = 通用方向焦点移动（与摇杆同效果，但摇杆固定走 onStickMove 通道、不经注册表，

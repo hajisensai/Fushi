@@ -8,7 +8,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:path/path.dart' as p;
 
@@ -25,6 +25,11 @@ import 'package:hibiki/src/media/manga/manga_spread_model.dart';
 import 'package:hibiki/src/media/manga/mokuro_payload.dart';
 import 'package:hibiki/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
 import 'package:hibiki/src/focus/page_focus_ownership.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart'
+    show ModifierKey, activeModifierKeys;
+import 'package:hibiki/src/shortcuts/manga_arrow_override.dart';
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
+import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 import 'package:hibiki/src/focus/webview_key_bridge.dart';
 import 'package:hibiki/src/media/manga/reader/manga_window_load_gate.dart';
 import 'package:hibiki/src/pages/base_source_page.dart';
@@ -276,37 +281,35 @@ class MangaHibikiPage extends BaseSourcePage {
     return rightKey == rtl ? 'prev' : 'next';
   }
 
-  static MangaReaderInputAction? keyInputAction({
-    required LogicalKeyboardKey key,
+  /// 把注册表解析出的 [ShortcutAction] 落成本页的输入动作。
+  ///
+  /// 键位本身由 `ShortcutRegistry`（`ShortcutScope.manga`）解析，左右方向键的朝向
+  /// 再由 [resolveMangaArrowPageTurn] 按跨页方向校正——两步都在调用侧完成，本函数
+  /// 只负责「拿到动作之后，当前上下文该不该执行它」这层门控。
+  ///
+  /// [horizontalArrow] = 触发键是否为左/右方向键。它们是**跨页步进**语义，两道
+  /// 门控都不适用：webtoon 的纵向滚动不影响左右翻页；词典弹窗可见时也要「关弹窗
+  /// 并翻页」（本页与阅读器的关键差异）。其余前进/后退键则要让位——弹窗可见时空格
+  /// 归词典自己，webtoon 模式下纵向键归 WebView 原生滚动。
+  static MangaReaderInputAction? inputActionForShortcut({
+    required ShortcutAction? action,
+    required bool horizontalArrow,
     required bool dictionaryShown,
     required MangaReadingMode mode,
-    required String direction,
   }) {
-    if (dictionaryShown && key == LogicalKeyboardKey.escape) {
-      return MangaReaderInputAction.dismissDictionary;
+    if (action == null) return null;
+    if (action == ShortcutAction.mangaDismissDict) {
+      return dictionaryShown ? MangaReaderInputAction.dismissDictionary : null;
     }
-    if (key == LogicalKeyboardKey.arrowRight ||
-        key == LogicalKeyboardKey.arrowLeft) {
-      final String turn = horizontalKeyTurn(
-        direction: direction,
-        rightKey: key == LogicalKeyboardKey.arrowRight,
-      );
-      return turn == 'next'
-          ? MangaReaderInputAction.next
-          : MangaReaderInputAction.previous;
+    if (!horizontalArrow) {
+      if (dictionaryShown) return null;
+      if (mode == MangaReadingMode.webtoon) return null;
     }
-    if (dictionaryShown || mode == MangaReadingMode.webtoon) {
-      return null;
-    }
-    if (key == LogicalKeyboardKey.arrowDown ||
-        key == LogicalKeyboardKey.space ||
-        key == LogicalKeyboardKey.pageDown) {
-      return MangaReaderInputAction.next;
-    }
-    if (key == LogicalKeyboardKey.arrowUp || key == LogicalKeyboardKey.pageUp) {
-      return MangaReaderInputAction.previous;
-    }
-    return null;
+    return switch (action) {
+      ShortcutAction.mangaPageForward => MangaReaderInputAction.next,
+      ShortcutAction.mangaPageBackward => MangaReaderInputAction.previous,
+      _ => null,
+    };
   }
 
   static MangaReaderInputAction? wheelInputAction(Offset delta) {
@@ -1151,11 +1154,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     if (event is! KeyDownEvent) {
       return KeyEventResult.ignored;
     }
-    final MangaReaderInputAction? action = MangaHibikiPage.keyInputAction(
-      key: event.logicalKey,
-      dictionaryShown: isDictionaryShown,
-      mode: _mode,
-      direction: _spreadDirection,
+    final MangaReaderInputAction? action = _resolveMangaKeyAction(
+      event.logicalKey,
+      activeModifierKeys(),
     );
     if (action == null) return KeyEventResult.ignored;
     _executeReaderInputAction(
@@ -1236,6 +1237,34 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     _focusOwnership.reclaim(FocusReclaimCause.popupDismissed);
   }
 
+  /// 注册表解析 → 跨页方向校正 → 上下文门控。键盘路径与 WebView 桥回传路径共用，
+  /// 保证「改键」对两条路径同时生效（否则改了键，WebView 持焦时又变回默认键位）。
+  MangaReaderInputAction? _resolveMangaKeyAction(
+    LogicalKeyboardKey key,
+    Set<ModifierKey> modifiers,
+  ) {
+    final HibikiShortcutRegistry registry = appModel.shortcutRegistry;
+    final ShortcutAction? bound = registry.resolveKeyboard(
+      key,
+      modifiers: modifiers,
+      scope: ShortcutScope.manga,
+    );
+    final ShortcutAction? corrected = resolveMangaArrowPageTurn(
+          key: key,
+          modifiers: modifiers,
+          rtl: _spreadDirection == 'rtl',
+          boundAction: bound,
+        ) ??
+        bound;
+    return MangaHibikiPage.inputActionForShortcut(
+      action: corrected,
+      horizontalArrow: key == LogicalKeyboardKey.arrowLeft ||
+          key == LogicalKeyboardKey.arrowRight,
+      dictionaryShown: isDictionaryShown,
+      mode: _mode,
+    );
+  }
+
   void _handleNativeNavigationKey(String key) {
     final LogicalKeyboardKey? logicalKey = switch (key) {
       'ArrowLeft' => LogicalKeyboardKey.arrowLeft,
@@ -1244,11 +1273,10 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       _ => null,
     };
     if (logicalKey == null) return;
-    final MangaReaderInputAction? action = MangaHibikiPage.keyInputAction(
-      key: logicalKey,
-      dictionaryShown: isDictionaryShown,
-      mode: _mode,
-      direction: _spreadDirection,
+    // 桥只转发裸键（[webViewKeyBridgeScript] 放行一切修饰键组合），故这里传空集。
+    final MangaReaderInputAction? action = _resolveMangaKeyAction(
+      logicalKey,
+      const <ModifierKey>{},
     );
     if (action != null) {
       _executeReaderInputAction(

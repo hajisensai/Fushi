@@ -311,6 +311,31 @@ class ShortcutDefaults {
     ShortcutAction.videoToggleFavoriteSentence: _kb([
       _key(LogicalKeyboardKey.keyD, {ModifierKey.ctrl}),
     ]),
+    // 漫画：默认键位与 reader 同构（PageDown/右/下/空格 前进），左右方向键的最终
+    // 朝向再由 resolveMangaArrowPageTurn 按跨页方向（日漫默认 rtl）校正，所以这里
+    // 存的是**页序语义**而非物理方向。手柄同 reader：RB/dpad 右前进、LB/dpad 左后退。
+    ShortcutAction.mangaPageForward: _kb([
+      _key(LogicalKeyboardKey.pageDown),
+      _key(LogicalKeyboardKey.arrowRight),
+      _key(LogicalKeyboardKey.arrowDown),
+      _key(LogicalKeyboardKey.space),
+    ], [
+      _gRB,
+      _gDpadRight
+    ]),
+    ShortcutAction.mangaPageBackward: _kb([
+      _key(LogicalKeyboardKey.pageUp),
+      _key(LogicalKeyboardKey.arrowLeft),
+      _key(LogicalKeyboardKey.arrowUp),
+    ], [
+      _gLB,
+      _gDpadLeft
+    ]),
+    ShortcutAction.mangaDismissDict: _kb([
+      _key(LogicalKeyboardKey.escape),
+    ], [
+      _gB
+    ]),
     ShortcutAction.videoReplayCurrentSubtitle: _kb([
       _key(LogicalKeyboardKey.keyR),
     ], [
@@ -433,6 +458,7 @@ class ShortcutDefaults {
         switch (action.scope) {
           case ShortcutScope.reader:
           case ShortcutScope.video:
+          case ShortcutScope.manga:
             return ShortcutBindingSet(
               keyboardBindings: desktop.keyboardBindings,
               gamepadBindings: desktop.gamepadBindings,

@@ -26,22 +26,9 @@ part of '../reader_hibiki_page.dart';
 extension _ReaderCaret on _ReaderHibikiPageState {
   /// 当前按下的修饰键集合（Ctrl/Shift/Alt/Meta）。键盘快捷解析与底栏焦点的
   /// Space 覆写共用，避免两处各自重建一份。
-  Set<ModifierKey> _activeModifiers() {
-    final Set<ModifierKey> modifiers = <ModifierKey>{};
-    if (HardwareKeyboard.instance.isControlPressed) {
-      modifiers.add(ModifierKey.ctrl);
-    }
-    if (HardwareKeyboard.instance.isShiftPressed) {
-      modifiers.add(ModifierKey.shift);
-    }
-    if (HardwareKeyboard.instance.isAltPressed) {
-      modifiers.add(ModifierKey.alt);
-    }
-    if (HardwareKeyboard.instance.isMetaPressed) {
-      modifiers.add(ModifierKey.meta);
-    }
-    return modifiers;
-  }
+  /// 实现已抽到 [activeModifierKeys]（漫画页也要同一份，各自重建必漂）；
+  /// 这里保留同名转发，避免改动本 part 里十余处调用点。
+  Set<ModifierKey> _activeModifiers() => activeModifierKeys();
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     // The popup header toolbar (sibling of the popup content). Down returns to

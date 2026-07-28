@@ -6,8 +6,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_provider.dart';
@@ -433,44 +433,102 @@ void main() {
         reason: 'webtoon 页内滚动位置必须经 charOffset 千分比写穿并无损恢复');
   });
 
-  test('查词弹窗显示后仍解析左右翻页、Escape 只关闭弹窗', () {
-    expect(
-      MangaHibikiPage.keyInputAction(
-        key: LogicalKeyboardKey.arrowRight,
-        dictionaryShown: true,
-        mode: MangaReadingMode.spread,
-        direction: 'ltr',
-      ),
-      MangaReaderInputAction.next,
-    );
-    expect(
-      MangaHibikiPage.keyInputAction(
-        key: LogicalKeyboardKey.arrowLeft,
-        dictionaryShown: true,
-        mode: MangaReadingMode.spread,
-        direction: 'rtl',
-      ),
-      MangaReaderInputAction.next,
-    );
-    expect(
-      MangaHibikiPage.keyInputAction(
-        key: LogicalKeyboardKey.escape,
-        dictionaryShown: true,
-        mode: MangaReadingMode.spread,
-        direction: 'ltr',
-      ),
-      MangaReaderInputAction.dismissDictionary,
-    );
-    expect(
-      MangaHibikiPage.keyInputAction(
-        key: LogicalKeyboardKey.space,
-        dictionaryShown: true,
-        mode: MangaReadingMode.spread,
-        direction: 'ltr',
-      ),
-      isNull,
-      reason: '词典内容仍保留自己的空格键语义',
-    );
+  group('键位经注册表解析后的上下文门控（inputActionForShortcut）', () {
+    // 键位本身由 ShortcutRegistry(ShortcutScope.manga) 解析、左右键朝向由
+    // resolveMangaArrowPageTurn 校正（各自有测试）；这里守的是「拿到动作之后，
+    // 当前上下文该不该执行」这层——它承载了本页与阅读器最关键的行为差异。
+    test('查词弹窗显示时左右方向键仍翻页（关弹窗并翻页）', () {
+      expect(
+        MangaHibikiPage.inputActionForShortcut(
+          action: ShortcutAction.mangaPageForward,
+          horizontalArrow: true,
+          dictionaryShown: true,
+          mode: MangaReadingMode.spread,
+        ),
+        MangaReaderInputAction.next,
+        reason: '与阅读器相反：漫画在弹窗可见时不让位给弹窗，左右键必须仍然翻页',
+      );
+    });
+
+    test('Escape（mangaDismissDict）仅在弹窗可见时消费', () {
+      expect(
+        MangaHibikiPage.inputActionForShortcut(
+          action: ShortcutAction.mangaDismissDict,
+          horizontalArrow: false,
+          dictionaryShown: true,
+          mode: MangaReadingMode.spread,
+        ),
+        MangaReaderInputAction.dismissDictionary,
+      );
+      expect(
+        MangaHibikiPage.inputActionForShortcut(
+          action: ShortcutAction.mangaDismissDict,
+          horizontalArrow: false,
+          dictionaryShown: false,
+          mode: MangaReadingMode.spread,
+        ),
+        isNull,
+        reason: '无弹窗时不消费 Escape，交给外层（退书 / PopScope）',
+      );
+    });
+
+    test('弹窗可见时非方向键（空格等）让位给词典', () {
+      expect(
+        MangaHibikiPage.inputActionForShortcut(
+          action: ShortcutAction.mangaPageForward,
+          horizontalArrow: false,
+          dictionaryShown: true,
+          mode: MangaReadingMode.spread,
+        ),
+        isNull,
+        reason: '词典内容仍保留自己的空格键语义',
+      );
+    });
+
+    test('webtoon 模式：纵向键交原生竖滚，左右方向键仍翻页', () {
+      expect(
+        MangaHibikiPage.inputActionForShortcut(
+          action: ShortcutAction.mangaPageForward,
+          horizontalArrow: false,
+          dictionaryShown: false,
+          mode: MangaReadingMode.webtoon,
+        ),
+        isNull,
+        reason: 'webtoon 每页 width:100vw，纵向键属 WebView 原生滚动',
+      );
+      expect(
+        MangaHibikiPage.inputActionForShortcut(
+          action: ShortcutAction.mangaPageForward,
+          horizontalArrow: true,
+          dictionaryShown: false,
+          mode: MangaReadingMode.webtoon,
+        ),
+        MangaReaderInputAction.next,
+        reason: '左右键是跨页步进语义，不受纵向滚动模式影响',
+      );
+    });
+
+    test('未绑定动作 / 非本 scope 动作不产生输入', () {
+      expect(
+        MangaHibikiPage.inputActionForShortcut(
+          action: null,
+          horizontalArrow: true,
+          dictionaryShown: false,
+          mode: MangaReadingMode.spread,
+        ),
+        isNull,
+      );
+      expect(
+        MangaHibikiPage.inputActionForShortcut(
+          action: ShortcutAction.readerPageForward,
+          horizontalArrow: false,
+          dictionaryShown: false,
+          mode: MangaReadingMode.spread,
+        ),
+        isNull,
+        reason: '别的 scope 的动作落到这里只能是接线错误，不得被当成翻页',
+      );
+    });
   });
 
   test('查词弹窗外的滚轮按主轴解析前后翻页', () {

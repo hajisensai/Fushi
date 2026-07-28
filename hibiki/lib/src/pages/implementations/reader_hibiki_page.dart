@@ -92,7 +92,7 @@ import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
-    show GamepadButton, ModifierKey;
+    show GamepadButton, ModifierKey, activeModifierKeys;
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent, GamepadLongPressIntent, focusedEditableText;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
