@@ -64,12 +64,12 @@ void main() {
       expect(fallbackMimeType('chapter.xhtml'), 'text/html');
     });
 
-    // BUG-1196：`.htm` / `.xht` 是 EPUB 3 允许的内容文档扩展名，表里漏了这两条时
+    // BUG-1199：`.htm` / `.xht` 是 EPUB 3 允许的内容文档扩展名，表里漏了这两条时
     // 章节按 octet-stream 下发，阅读器整本翻页空白。断言用的是阅读器拦截器
     // (`webview.part.dart` `_readerResourcePayload`) 判定「要不要注入样式/分页脚本
     // 并当文档渲染」的**同一个谓词**，而不只是查表，这样即便将来谓词改写、只要
     // 语义退化仍会红。
-    group('BUG-1196: all EPUB content-document extensions serve as HTML', () {
+    group('BUG-1199: all EPUB content-document extensions serve as HTML', () {
       bool readerTreatsAsHtml(String path) {
         final String mime = fallbackMimeType(path);
         return mime == 'text/html' || mime.contains('xhtml');

@@ -1,4 +1,4 @@
-## BUG-1196 · EPUB 章节用 .htm 扩展名时整本渲染空白（MIME 表缺 htm/xht）
+## BUG-1199 · EPUB 章节用 .htm 扩展名时整本渲染空白（MIME 表缺 htm/xht）
 
 - **报告**：2026-07-28（用户：Windows 上「Do Androids Dream of Electric Sheep？.epub 打不开」）
 - **真实性**：✅ 真 bug，根因 `packages/hibiki_core/lib/src/utils/mime_types.dart:31`（`kMimeTypeByExtension` 只有 `xhtml`/`html`，漏 `htm`/`xht`）
@@ -35,6 +35,6 @@ extract_dir=D:\APP\HIBIKI_date\documents\hoshi_books\Do Androids Dream of Electr
 **为什么不改成用 OPF 声明的 mediaType**（考虑过并否掉）：项目是**故意**把 XHTML 按 `text/html` 下发的——配合 `ReaderResourceSanitizer.sanitizeXhtml` 规避 BUG-079（`<script/>` 吞整页）与 BUG-737（`<a id=".."/>` 包住全章正文导致查词失效）。若改用 OPF 的 `application/xhtml+xml`，WebView 会转成严格 XML 解析，反而破坏那两个已修的 bug。所以扩展名表就是此处的正确真相源，它只是**不完整**。
 
 - **[x] ① 已修复** — `packages/hibiki_core/lib/src/utils/mime_types.dart` 补 `'htm'` / `'xht'` → `text/html`，与既有 `'html'` / `'xhtml'` 齐平；`packages/hibiki_anki/lib/src/anki_models.dart` 的镜像副本同步（由 `hibiki/test/sync/mime_types_test.dart` 守卫逐项一致）。
-- **[x] ② 已加自动化测试** — `hibiki/test/epub/epub_book_utils_test.dart` 新增 `BUG-1196` 组：对 `xhtml`/`html`/`htm`/`xht` 四种扩展名断言阅读器拦截器**同一个**「是否当 HTML 文档处理」谓词为真（不只查表，谓词语义退化也会红），并补 `CHAPTER.HTM` 大小写用例。`test/epub/` + `test/sync/mime_types_test.dart` 共 216 test 通过，`flutter analyze` 零问题。
+- **[x] ② 已加自动化测试** — `hibiki/test/epub/epub_book_utils_test.dart` 新增 `BUG-1199` 组：对 `xhtml`/`html`/`htm`/`xht` 四种扩展名断言阅读器拦截器**同一个**「是否当 HTML 文档处理」谓词为真（不只查表，谓词语义退化也会红），并补 `CHAPTER.HTM` 大小写用例。`test/epub/` + `test/sync/mime_types_test.dart` 共 216 test 通过，`flutter analyze` 零问题。
 
 - **备注**：同一本书还暴露出**另一个独立真 bug**（未在本次修复范围内）：`EpubParser` 用 `p.canonicalize` 生成章节/资源路径，该函数在 Windows 上会**整体小写化**，于是这本书的 `OEBPS/Dick_*.htm` 被记成 `oebps/dick_*.htm`。Windows 文件系统不区分大小写所以侥幸能读，但在 **Android / Linux 上 31/32 章的 `existsSync()` 会全部失败被静默跳过**，只剩 `titlepage.xhtml` 一章。`_safeArchivePath` 早已为 TODO-739 修好了**解压**侧的大小写保留，但 `_parseSpine` / `_itemRelHref` / resources map 三处仍在用 `canonicalize` 的结果当真实路径。已实测确认：31/32 章、33/38 资源的路径大小写与磁盘不符。
