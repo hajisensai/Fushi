@@ -2705,5 +2705,8 @@
   "video_setting_torrent_limit_lan_hint": "默认关闭：与局域网内 peer 的传输不受上面的限速约束。",
   "download_rate_limit_lan_included": "同时作用于局域网内的传输。",
   "video_collection_no_local_member": "本合集没有本地视频",
-  "video_scrape_online_match_collection": "为「$name」匹配封面"
+  "video_scrape_online_match_collection": "为「$name」匹配封面",
+  "gal_mining_image_mode": "Galgame 制卡配图",
+  "gal_mining_image_mode_screenshot": "静态截图",
+  "gal_mining_image_mode_hint": "Galgame 一句台词内画面基本不动，静态截图通常更小、信息量一样。"
 }
