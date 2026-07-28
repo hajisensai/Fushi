@@ -142,7 +142,7 @@ enum ReaderVnBlankTapAction {
   advance,
 }
 
-/// BUG-1195：VN 模式空白点击的分派——**唤出控制栏优先于翻页**。
+/// BUG-1195：VN 模式空白点击的分派——**悬浮态下翻页与唤栏在同一下里一起做**。
 ///
 /// 根因回顾：VN 是唯一把「点空白」绑成翻页的 view-mode，而点空白同时是触屏**唯一**
 /// 能唤出控制栏的手势（分页/连续模式的 `onTapEmpty` → `_handleFloatingChromeReveal`
@@ -165,8 +165,10 @@ enum ReaderVnBlankTapAction {
 /// [ReaderVnBlankTapAction.expandChrome]。VN 的滑动翻页不经此路径，用户永远不会被卡在
 /// 「翻不动页」的状态。
 ///
-/// 参数与 [bottomBarVisible] 同源（`hasEverLoaded` 在此恒真：能点到 VN 屏就说明内容
-/// 已就绪），故三态判定与底栏实际绘制条件逐条对齐，不会出现「判为可见但没画出来」。
+/// 参数**刻意只有两个**：底栏此刻画没画出来（`transientVisible` / [bottomBarVisible]）
+/// 不参与判定。翻不翻页只取决于 chrome 的**形态**（挤压 vs 悬浮），不取决于它这一瞬
+/// 的可见性——一旦把可见性接进来，就又变回「不可见时先唤出、可见时才翻页」，即每屏
+/// 点两下的那个回归。
 ReaderVnBlankTapAction readerVnBlankTapAction({
   required bool chromeExpanded,
   required bool bottomBarFloating,
