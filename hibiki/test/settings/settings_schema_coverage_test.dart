@@ -319,6 +319,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // harness 里可达——全部登记（含反吸血二级开关，超集登记无害）。
   'downloads/Enable upload / seeding':
       'test/media/torrent/torrent_upload_policy_test.dart',
+  // 「限速也作用于局域网」：生效点在 native（ht_apply_limits_ex 把上限写进
+  // libtorrent 的 local peer class），widget 测不到；由编解码 + 下发透传测试覆盖。
+  'downloads/Apply limits to LAN peers':
+      'test/media/torrent/anime_download_config_backend_test.dart',
   'downloads/DHT': 'test/media/torrent/anime_download_config_backend_test.dart',
   'downloads/Local peer discovery (LSD)':
       'test/media/torrent/anime_download_config_backend_test.dart',

@@ -3052,6 +3052,7 @@ class AppModel with ChangeNotifier {
       downloadKbps: effective.downloadLimitKbps,
       uploadKbps: effective.uploadLimitKbps,
       maxConnections: effective.maxConnections,
+      limitLocalPeers: effective.limitLocalPeers,
     );
     // 内存占用上限（按物理内存或用户设定推导；避免 libtorrent 吃满内存）。
     // 用户显式设了 maxConnections 就不用内存预算的连接数覆盖它（传 0）。

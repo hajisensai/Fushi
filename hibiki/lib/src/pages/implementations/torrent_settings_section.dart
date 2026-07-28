@@ -264,6 +264,13 @@ class _TorrentSettingsSectionState
     );
   }
 
+  /// 限速输入框下方那句「限速管不管局域网」的说明，**必须**随
+  /// [QbConnectionConfig.limitLocalPeers] 变化：开关关着时限速确实放过局域网
+  /// peer，开着时就不再放过，写死任一句都会让界面上出现与实际行为相反的话。
+  static String _lanLimitHelper(QbConnectionConfig c) => c.limitLocalPeers
+      ? t.download_rate_limit_lan_included
+      : t.download_rate_limit_lan_exempt;
+
   Widget _sectionLabel(ThemeData theme, String text) {
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 4),
@@ -411,17 +418,28 @@ class _TorrentSettingsSectionState
         if (isEmbedded) ...<Widget>[
           // TODO-1961：下载目录（只影响新增任务，旧任务留在原目录）。
           ..._downloadFolderRows(theme, appModel),
-          // 限速只约束 session 全局速率，libtorrent 把局域网 peer 归入独立的
-          // local peer class，该 class 不受全局上限约束。这是经用户拍板保持的**有意
-          // 行为**（家里两台机器互传不该被限），所以只向用户说明、不加开关。
+          // 限速默认只约束 session 全局速率：libtorrent 把局域网 peer 归入独立的
+          // local peer class，该 class 不受全局上限约束（官方文档明写的默认行为，
+          // 家里两台机器互传不该被限）。下面的 limitLocalPeers 开关（默认关）可以
+          // 把同一组上限也套到 local peer class。
           // 完整决策记录见 docs/bugs/BUG-1114-local-rig-rate-limit-flake.md。
+          //
+          // helper 必须随开关走：开着时"不作用于局域网"就是**假话**，界面不能写
+          // 一句和实际行为相反的说明。
           _numField(
             label: t.video_setting_torrent_download_limit,
             value: c.downloadLimitKbps,
             hint: t.video_setting_torrent_limit_hint,
-            helper: t.download_rate_limit_lan_exempt,
+            helper: _lanLimitHelper(c),
             onChanged: (String v) => _commit((QbConnectionConfig c) =>
                 c.copyWith(downloadLimitKbps: _nonNegInt(v))),
+          ),
+          AdaptiveSettingsSwitchRow(
+            title: t.video_setting_torrent_limit_lan,
+            subtitle: t.video_setting_torrent_limit_lan_hint,
+            value: c.limitLocalPeers,
+            onChanged: (bool v) => _commit(
+                (QbConnectionConfig c) => c.copyWith(limitLocalPeers: v)),
           ),
           AdaptiveSettingsSwitchRow(
             title: t.video_setting_torrent_upload_enabled,
@@ -435,7 +453,7 @@ class _TorrentSettingsSectionState
               label: t.video_setting_torrent_upload_limit,
               value: c.uploadLimitKbps,
               hint: t.video_setting_torrent_limit_hint,
-              helper: t.download_rate_limit_lan_exempt,
+              helper: _lanLimitHelper(c),
               onChanged: (String v) => _commit((QbConnectionConfig c) =>
                   c.copyWith(uploadLimitKbps: _nonNegInt(v))),
             ),

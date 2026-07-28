@@ -270,4 +270,48 @@ void main() {
     expect(off.uploadEnabled, isFalse);
     expect(off.seedTimeLimitMinutes, 60);
   });
+
+  group('limitLocalPeers（限速也作用于局域网）', () {
+    test('默认关：新配置不改变历史行为', () {
+      const QbConnectionConfig config = QbConnectionConfig();
+      expect(config.limitLocalPeers, isFalse);
+    });
+
+    test('老配置缺字段 → false（绝不因升级改变既有用户的限速行为）', () {
+      final QbConnectionConfig? config = decodeQbConnectionConfig(
+          '{"backend":"embedded","downloadLimitKbps":512}');
+      expect(config, isNotNull);
+      expect(config!.limitLocalPeers, isFalse);
+      expect(config.downloadLimitKbps, 512);
+    });
+
+    test('true 能 round-trip 过 encode/decode', () {
+      const QbConnectionConfig original = QbConnectionConfig(
+        backend: QbConnectionConfig.backendEmbedded,
+        downloadLimitKbps: 512,
+        limitLocalPeers: true,
+      );
+      final QbConnectionConfig decoded =
+          decodeQbConnectionConfig(encodeQbConnectionConfig(original))!;
+      expect(decoded.limitLocalPeers, isTrue);
+      expect(decoded.downloadLimitKbps, 512);
+    });
+
+    test('copyWith 能双向翻转', () {
+      const QbConnectionConfig off = QbConnectionConfig();
+      expect(off.copyWith(limitLocalPeers: true).limitLocalPeers, isTrue);
+      expect(
+          off
+              .copyWith(limitLocalPeers: true)
+              .copyWith(limitLocalPeers: false)
+              .limitLocalPeers,
+          isFalse);
+    });
+
+    test('非布尔垃圾值 → false（与 uploadEnabled 同样的容错）', () {
+      final QbConnectionConfig? config =
+          decodeQbConnectionConfig('{"limitLocalPeers":"yes"}');
+      expect(config?.limitLocalPeers, isFalse);
+    });
+  });
 }

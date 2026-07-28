@@ -14,6 +14,15 @@ import 'ffi/hibiki_torrent_bindings.dart';
 class EmbeddedTorrentEngine {
   EmbeddedTorrentEngine._(this.bindings);
 
+  /// 直接用一组已有的 [HibikiTorrentBindings] 构造引擎，跳过动态库加载。
+  ///
+  /// 存在的理由：随包的 native 库是 Windows 预编译产物，CI 的绝大多数测试环境
+  /// 里根本没有它（要 `HIBIKI_TORRENT_LIB`），于是"限速开关有没有真的传到
+  /// native"这类不变量就没有任何**必跑**的用例守着。配合
+  /// [HibikiTorrentBindings.fromLookup] + `Pointer.fromFunction`，可以在纯 Dart
+  /// 里把整条 Dart 侧链路（session → bindings → C 入参）跑通并断言，不依赖 DLL。
+  EmbeddedTorrentEngine.fromBindings(this.bindings);
+
   /// 底层 FFI 绑定（高级封装之外的逃生口）。
   final HibikiTorrentBindings bindings;
 
@@ -415,16 +424,36 @@ class EmbeddedTorrentSession {
     return _b.ht_session_set_rate_limits(_session, downloadBps, uploadBps) == 1;
   }
 
+  /// 底层库是否支持把限速套到局域网 peer（见 [applyLimits] 的
+  /// `limitLocalPeers`）。老的预编译 DLL 没有这个符号时为 false。
+  bool get supportsLocalPeerRateLimit => _b.hasApplyLimitsEx;
+
   /// 一次设全局资源限制（用户可调）：速率上限（字节/秒，<=0 不限）+ 全局最大
   /// 连接数（<=0 保持 libtorrent 默认）。
+  ///
+  /// [limitLocalPeers] = true 时限速同时作用于局域网 peer。libtorrent 的全局
+  /// 限速**默认不约束局域网 peer**（官方文档明写），要覆盖它只能设 local peer
+  /// class 的上限，所以这个参数必须传到 native，Dart 侧无从模拟。
+  ///
+  /// 若底层库不支持（[supportsLocalPeerRateLimit] 为 false）而调用方又要求
+  /// `limitLocalPeers: true`，则退回老入口应用全局限速并返回 **false**——限速
+  /// 本身生效了，但"也管局域网"这个请求没被满足，调用方据此提示用户，绝不
+  /// 假装成功。
   bool applyLimits({
     int downloadBps = 0,
     int uploadBps = 0,
     int connectionsLimit = 0,
+    bool limitLocalPeers = false,
   }) {
     if (isClosed) return false;
-    return _b.ht_apply_limits(
-            _session, downloadBps, uploadBps, connectionsLimit) ==
+    if (!_b.hasApplyLimitsEx) {
+      final bool ok = _b.ht_apply_limits(
+              _session, downloadBps, uploadBps, connectionsLimit) ==
+          1;
+      return ok && !limitLocalPeers;
+    }
+    return _b.ht_apply_limits_ex(_session, downloadBps, uploadBps,
+            connectionsLimit, limitLocalPeers ? 1 : 0) ==
         1;
   }
 

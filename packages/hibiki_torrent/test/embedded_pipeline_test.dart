@@ -254,6 +254,26 @@ void main() {
     expect(session.applyLimits(connectionsLimit: 50), isTrue);
   }, skip: skip);
 
+  test('applyLimits(limitLocalPeers:) drives the local peer class', () {
+    final EmbeddedTorrentSession? session =
+        EmbeddedTorrentSession.open(engine!);
+    addTearDown(session!.close);
+    // 刚编出来的 DLL 必须带 ht_apply_limits_ex；不带说明 native 没重编，
+    // 后面几条断言就毫无意义了，先在这里失败。
+    expect(session.supportsLocalPeerRateLimit, isTrue,
+        reason: 'this DLL predates ht_apply_limits_ex — rebuild it');
+    // 真 libtorrent 上的 get_peer_class → 改 rate → set_peer_class 往返：
+    // local_peer_class_id 必须存在且可写，否则 native 会吞异常返回 0。
+    expect(
+        session.applyLimits(
+            downloadBps: 2 * 1024 * 1024,
+            uploadBps: 512 * 1024,
+            limitLocalPeers: true),
+        isTrue);
+    // 关回去（把 local peer class 的上限写回「不限」）也必须成功。
+    expect(session.applyLimits(downloadBps: 2 * 1024 * 1024), isTrue);
+  }, skip: skip);
+
   test(
     'ip_filter blocks the seeder, then clearing it lets the download start',
     () async {

@@ -184,6 +184,37 @@ connections_limit)` 一次应用（`connections_limit<=0` 保持 libtorrent 默�
 不会把"不限"误设成禁连）。`EmbeddedTorrentHost.applyLimits`（KB/s→bps）在
 宿主创建时铺一次、用户改设置时即时重应用（`AppModel.setQbConnectionConfig`）。
 
+### 限速与局域网 peer（`ht_apply_limits_ex`）
+
+libtorrent 的 `download_rate_limit`/`upload_rate_limit` 是 **session 全局**上限，
+**默认不约束局域网 peer**——官方文档原话：*"By default peers on the local network
+are not rate limited. For fine grained control over rate limits, including making
+them apply to local peers, see peer-classes."* 局域网/链路本地/回环地址被
+libtorrent 归进内置的 **local peer class**（class id 2），该 class 不吃全局上限。
+`settings_pack` 里的 `local_upload_rate_limit` / `ignore_limits_on_local_network`
+在 2.x 已废弃，**peer class 是唯一正规入口**。
+
+因此新增 `ht_apply_limits_ex(session, download_bps, upload_bps,
+connections_limit, limit_local_peers)`：`limit_local_peers` 非 0 时把同一组上限
+写进 local peer class，为 0 时把该 class 的上限写回 0（= 不限，libtorrent 出厂
+默认），使"关掉开关"能真正还原而不是留着上次的限速。
+
+- **向后兼容**：`ht_apply_limits` 签名与语义**一字未改**，等价于
+  `ht_apply_limits_ex(..., 0)`（两者共用同一实现，避免行为漂移）。
+- **`set_peer_class` 是整体覆盖**（无单字段更新），所以实现里必须先
+  `get_peer_class` 拿现值、只改两个 rate 字段再写回，否则会连带抹掉 local class
+  的 `ignore_unchoke_slots` / `connection_limit_factor` 默认值。
+- **语义注意**：local class 的上限与全局上限是**两个独立的桶**（局域网 peer 不在
+  global class 里），所以开启后是"局域网这一路也被限到同样的数值"，不是"广域网
+  + 局域网合起来不超过这个数值"。
+- **符号可能不存在**：随包 DLL 是 vendored 预编译产物，Dart 侧
+  `HibikiTorrentBindings.hasApplyLimitsEx` 会先探符号，缺失时降级走
+  `ht_apply_limits` 并让 `applyLimits(limitLocalPeers: true)` 返回 false，
+  绝不崩。CI 的 windows job 每次都用 vcpkg 现编 DLL，故发布产物总是有该符号。
+
+app 侧开关：`QbConnectionConfig.limitLocalPeers`（默认 false，老配置缺字段读成
+false），设置 → 下载 限速输入框下方。
+
 ## 为什么不支持 wss:// tracker
 
 libtorrent 2.x **无 WebSocket/WebRTC/WebTorrent tracker 能力**（头文件里

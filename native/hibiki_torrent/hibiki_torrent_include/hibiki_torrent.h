@@ -59,6 +59,18 @@ HT_EXPORT int ht_session_set_rate_limits(void* session, int download_bps,
 HT_EXPORT int ht_apply_limits(void* session, int download_bps, int upload_bps,
                               int connections_limit);
 
+// 同 ht_apply_limits，外加一个「限速是否也作用于局域网 peer」开关。
+// [limit_local_peers] 非 0 = 把同一组速率上限同时套到 libtorrent 的 local peer
+// class（局域网 / 链路本地 / 回环 peer 所属的内置 class）；0 = 把该 class 的
+// 上限写回「不限」，即 libtorrent 出厂默认。
+// 背景：libtorrent 的 download_rate_limit/upload_rate_limit 只是 session 全局
+// 上限，**默认不约束局域网 peer**（官方文档原话），要让限速覆盖本地 peer 只能
+// 走 peer class。故 ht_apply_limits(...) === ht_apply_limits_ex(..., 0)，
+// 老调用点语义完全不变。返回 1 成功、0 失败。
+HT_EXPORT int ht_apply_limits_ex(void* session, int download_bps,
+                                 int upload_bps, int connections_limit,
+                                 int limit_local_peers);
+
 // 设置上传模式（做种/上传总开关，per-torrent 或全量）：
 // [info_hash] 为空串/NULL = 对 session 内所有种子生效；否则仅该种子。
 // [upload_enabled] 非 0 = 允许上传（清除 upload_mode）；0 = 停止上传但保持

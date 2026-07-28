@@ -20,6 +20,7 @@
 #include <libtorrent/error_code.hpp>
 #include <libtorrent/ip_filter.hpp>
 #include <libtorrent/magnet_uri.hpp>
+#include <libtorrent/peer_class.hpp>
 #include <libtorrent/read_resume_data.hpp>
 #include <libtorrent/session.hpp>
 #include <libtorrent/session_params.hpp>
@@ -410,25 +411,62 @@ HT_EXPORT int ht_session_set_rate_limits(void* session, int download_bps,
   }
 }
 
-HT_EXPORT int ht_apply_limits(void* session, int download_bps, int upload_bps,
-                              int connections_limit) {
+// ht_apply_limits / ht_apply_limits_ex 的共用实现。
+//
+// [limit_local_peers] 为真时，把同一组速率上限套到 libtorrent 的 **local peer
+// class**（内置 class id 2，局域网/链路本地/回环 peer 归属它）。这是必须的：
+// libtorrent 文档明写「download_rate_limit/upload_rate_limit 设的是 session
+// 全局上限，**默认局域网 peer 不受限速**；要让限速也作用于本地 peer，见
+// peer-classes」。旧的 settings_pack::local_*_rate_limit /
+// ignore_limits_on_local_network 在 2.x 已废弃，peer class 是唯一正规入口。
+//
+// 为假时把该 class 的上下行上限写回 0（= 不限），即 libtorrent 的出厂默认，
+// 从而「关掉开关」能真正还原原始行为，而不是留着上一次的限速。
+//
+// 注意 set_peer_class() 是**整体覆盖**（无单字段更新），所以必须先
+// get_peer_class 拿到现值，只改两个 rate 字段再写回——否则会把 local class
+// 的 ignore_unchoke_slots / connection_limit_factor 等默认值一起抹掉。
+static int ht_apply_limits_impl(void* session, int download_bps, int upload_bps,
+                                int connections_limit, bool limit_local_peers) {
   if (session == nullptr) return 0;
   try {
+    const int download_limit = download_bps > 0 ? download_bps : 0;
+    const int upload_limit = upload_bps > 0 ? upload_bps : 0;
+
     lt::settings_pack sp;
-    sp.set_int(lt::settings_pack::download_rate_limit,
-               download_bps > 0 ? download_bps : 0);
-    sp.set_int(lt::settings_pack::upload_rate_limit,
-               upload_bps > 0 ? upload_bps : 0);
+    sp.set_int(lt::settings_pack::download_rate_limit, download_limit);
+    sp.set_int(lt::settings_pack::upload_rate_limit, upload_limit);
     // <=0 时不动 connections_limit（保持 libtorrent 默认），避免把用户
     // "不限"误设成 0（0 会禁止所有连接）。
     if (connections_limit > 0) {
       sp.set_int(lt::settings_pack::connections_limit, connections_limit);
     }
-    as_session(session)->apply_settings(std::move(sp));
+    lt::session* const ses = as_session(session);
+    ses->apply_settings(std::move(sp));
+
+    lt::peer_class_info pci =
+        ses->get_peer_class(lt::session::local_peer_class_id);
+    pci.download_limit = limit_local_peers ? download_limit : 0;
+    pci.upload_limit = limit_local_peers ? upload_limit : 0;
+    ses->set_peer_class(lt::session::local_peer_class_id, pci);
     return 1;
   } catch (...) {
     return 0;
   }
+}
+
+HT_EXPORT int ht_apply_limits(void* session, int download_bps, int upload_bps,
+                              int connections_limit) {
+  // 历史入口，语义不变：局域网 peer 不受限速（libtorrent 出厂默认）。
+  return ht_apply_limits_impl(session, download_bps, upload_bps,
+                              connections_limit, false);
+}
+
+HT_EXPORT int ht_apply_limits_ex(void* session, int download_bps,
+                                 int upload_bps, int connections_limit,
+                                 int limit_local_peers) {
+  return ht_apply_limits_impl(session, download_bps, upload_bps,
+                              connections_limit, limit_local_peers != 0);
 }
 
 HT_EXPORT int ht_apply_memory_settings(void* session, int connections_limit,
