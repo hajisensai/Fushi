@@ -3971,15 +3971,15 @@ window.updatePopupIncremental = function() {
 // element with its own y-overflow) keep native scroll until they hit a boundary,
 // so nested scroll regions are not stolen — only the main document scroll, which
 // is the coarse one, is refined.
-const POPUP_WHEEL_PIXEL_FACTOR = 0.24;      // fraction of the raw px delta (coarse mouse notch)
+const POPUP_WHEEL_PIXEL_FACTOR = 0.48;      // fraction of the raw px delta (coarse mouse notch)
 const POPUP_WHEEL_MAX_VISUAL_STEP = 120;    // px cap after scaling, before zoom
 const POPUP_WHEEL_LINE_HEIGHT = 16;         // px per line for deltaMode === LINE
 // BUG-870: a precision touchpad / high-resolution wheel reports deltaMode=PIXEL
-// with small per-frame deltas; the 0.24 downscale (tuned for a coarse mouse notch,
-// deltaY≈100-120) makes those devices ~4x too slow — the "very hard to scroll"
+// with small per-frame deltas; the coarse-mouse downscale (tuned for a notch,
+// deltaY≈100-120) makes those devices too slow — the "very hard to scroll"
 // symptom. A pixel-mode frame whose |deltaY| is below this many px is treated as a
 // fine device and scrolls ~1:1 (factor 1.0, still zoom-corrected); at/above it is a
-// coarse mouse notch and keeps the 0.24 taming. A mouse notch on WebView2/Chromium
+// coarse mouse notch and keeps the 0.48 taming. A mouse notch on WebView2/Chromium
 // is ≈100px, well above this; slow touchpad frames are well below.
 const POPUP_WHEEL_MOUSE_NOTCH_PX = 60;
 const POPUP_WHEEL_TRACKPAD_FACTOR = 1.0;    // fine devices: natural 1:1, no downscale
@@ -4139,7 +4139,7 @@ const __hibikiPopupWheelListener = (e) => {
     // 已在本监听最顶部解析并早退）；返回 null 时唯一合法「滚 window」的表面是 in-app
     // 弹窗文档（整份文档即弹窗，且无 chrome.runtime）。普通网页上扩展 content script 有
     // chrome.runtime.id，滚轮不在弹窗内已在顶部放行原生滚动：否则整页会被
-    // POPUP_WHEEL_PIXEL_FACTOR(0.24) 降速 + preventDefault 抢走原生滚动。
+    // POPUP_WHEEL_PIXEL_FACTOR(0.48) 降速 + preventDefault 抢走原生滚动。
     e.preventDefault();
     // TODO-1387: carry the sub-pixel remainder across events; BUG-870: also reset
     // the device-class latch here so each new gesture is classified fresh. A
@@ -4159,10 +4159,10 @@ const __hibikiPopupWheelListener = (e) => {
         _popupWheelFineDevice = false;
     }
     _popupWheelResidualAt = nowMs;
-    // BUG-870: the 0.24 downscale is tuned for a COARSE mouse notch (deltaMode
-    // PIXEL, deltaY≈100-120 → visualStep≈24) so a notch does not jump a huge
+    // BUG-870: the 0.48 downscale is tuned for a COARSE mouse notch (deltaMode
+    // PIXEL, deltaY≈100-120 → visualStep≈48) so a notch does not jump a huge
     // chunk. A precision touchpad / hi-res wheel reports small pixel deltas;
-    // applying 0.24 to them makes scrolling ~4x too slow ("very hard to scroll").
+    // applying the coarse-mouse factor to them makes scrolling unnaturally slow.
     // Classify per gesture: a small pixel-mode frame latches the stream as a fine
     // device (kept until the idle reset above, so an occasional large mid-fling
     // frame is not mis-tamed); fine devices scroll ~1:1 (factor 1.0, still divided
