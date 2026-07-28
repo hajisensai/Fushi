@@ -99,7 +99,7 @@ void main() {
     await db.addToCollection(c, MediaKind.video, 'v2');
     await db.addToCollection(c, MediaKind.video, 'v3');
 
-    await db.reorderCollectionItems(c, <({String mediaType, String entryKey})>[
+    await db.reorderCollectionItems(c, <CollectionMemberKey>[
       (mediaType: 'video', entryKey: 'v3'),
       (mediaType: 'video', entryKey: 'v1'),
       (mediaType: 'video', entryKey: 'v2'),
@@ -108,6 +108,95 @@ void main() {
       (await db.getCollectionItems(c)).map((m) => m.entryKey).toList(),
       <String>['v3', 'v1', 'v2'],
     );
+  });
+
+  // ── BUG-1194 根因守卫：reorderCollectionItems 的**子集**契约 ──────────────
+  // 合集详情页天然只渲染成员子集（视频详情页只显示 video；网格详情页按标签过滤），
+  // 所以「传子集」是合法用法。不变量必须由 DAO 自己守住，页面漏做保序合并不该再能
+  // 造出碰撞 sortIndex——旧实现按 ordered 下标直写，未点名成员留旧值与新写的致密
+  // 0..n-1 碰撞，getCollectionItems 平手退化按 entryKey 排，跨种类手排序被打乱。
+  group('reorderCollectionItems 子集契约（BUG-1194 根因）', () {
+    /// 交错基线：video/g1/video/e1/video —— 非 video 成员夹在 video 之间，只回写
+    /// 可见 video 键时它们的相对位置必然被打乱。
+    Future<int> seedMixed(HibikiDatabase db) async {
+      final int c = await db.createMediaCollection('Mixed');
+      await db.addToCollection(c, MediaKind.video, 'v1');
+      await db.addToCollection(c, MediaKind.game, 'g1');
+      await db.addToCollection(c, MediaKind.video, 'v2');
+      await db.addToCollection(c, MediaKind.epub, 'e1');
+      await db.addToCollection(c, MediaKind.video, 'v3');
+      return c;
+    }
+
+    Future<List<String>> members(HibikiDatabase db, int c) async => <String>[
+          for (final MediaCollectionItemRow r in await db.getCollectionItems(c))
+            '${r.mediaType}|${r.entryKey}',
+        ];
+
+    Future<List<int>> indices(HibikiDatabase db, int c) async => <int>[
+          for (final MediaCollectionItemRow r in await db.getCollectionItems(c))
+            r.sortIndex,
+        ];
+
+    test('只传可见 video 子集：非 video 成员留原槽位，全表致密无碰撞', () async {
+      final db = await _openDb();
+      final int c = await seedMixed(db);
+
+      // 视频详情页把可见的三个 video 倒排后落盘（**只传 video 子集**）。
+      await db.reorderCollectionItems(c, <CollectionMemberKey>[
+        (mediaType: 'video', entryKey: 'v3'),
+        (mediaType: 'video', entryKey: 'v2'),
+        (mediaType: 'video', entryKey: 'v1'),
+      ]);
+
+      expect(
+        await members(db, c),
+        <String>['video|v3', 'game|g1', 'video|v2', 'epub|e1', 'video|v1'],
+        reason: 'video 依次填回原来的三个 video 槽位（0/2/4），g1/e1 留在 1/3 不被挤走',
+      );
+      expect(await indices(db, c), <int>[0, 1, 2, 3, 4],
+          reason: 'sortIndex 必须致密 0..n-1；有重复即说明漏写了未点名成员');
+    });
+
+    test('历史遗留的碰撞 sortIndex：任何一次重排都自愈成致密序，相对顺序不变', () async {
+      final db = await _openDb();
+      final int c = await seedMixed(db);
+      // 种一份旧版（只回写可见 video 子集）留下的碰撞现场：v1/v2/v3 被写成 0/1/2，
+      // g1/e1 留着旧的 1/3 → sortIndex 1 上有 g1 与 v2 两行。upsertCollectionItemAt
+      // 是同步应用端的显式 sortIndex 写入口，这里借它复现旧数据。
+      await db.upsertCollectionItemAt(c, 'video', 'v1', 0);
+      await db.upsertCollectionItemAt(c, 'video', 'v2', 1);
+      await db.upsertCollectionItemAt(c, 'video', 'v3', 2);
+      await db.upsertCollectionItemAt(c, 'game', 'g1', 1);
+      await db.upsertCollectionItemAt(c, 'epub', 'e1', 3);
+      expect(await indices(db, c), <int>[0, 1, 1, 2, 3],
+          reason: '前置条件：现场确实有碰撞（sortIndex 1 两行）');
+
+      // 碰撞下 getCollectionItems 平手退化按 entryKey 排 —— 这就是用户此刻看到的序。
+      final List<String> before = await members(db, c);
+      await db.reorderCollectionItems(c, const <CollectionMemberKey>[]);
+
+      expect(await members(db, c), before, reason: '没点名任何成员 → 相对顺序零变化');
+      expect(await indices(db, c), <int>[0, 1, 2, 3, 4],
+          reason: '重排把全表写成致密序，历史碰撞就此消除（不再依赖 entryKey 兜底）');
+    });
+
+    test('点名了已被并发移出的成员：丢弃该键，其余成员照常重排不越界', () async {
+      final db = await _openDb();
+      final int c = await seedMixed(db);
+      // 页面持有的快照里还有 v2，但 DB 侧已被别处移出。
+      await db.removeFromCollection(c, MediaKind.video, 'v2');
+
+      await db.reorderCollectionItems(c, <CollectionMemberKey>[
+        (mediaType: 'video', entryKey: 'v3'),
+        (mediaType: 'video', entryKey: 'v2'), // 已不在 DB → 丢弃
+        (mediaType: 'video', entryKey: 'v1'),
+      ]);
+
+      expect(await members(db, c),
+          <String>['video|v3', 'game|g1', 'epub|e1', 'video|v1']);
+      expect(await indices(db, c), <int>[0, 1, 2, 3]);
+    });
   });
 
   test('removeEntryFromAllCollections 清全部引用 + 删空合集', () async {

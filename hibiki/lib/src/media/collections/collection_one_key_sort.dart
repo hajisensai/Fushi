@@ -115,7 +115,7 @@ Future<void> applyCollectionOneKeySort({
       await sortedCollectionRows(db: db, rows: rows, byTitle: byTitle);
   await db.reorderCollectionItems(
     collectionId,
-    <({String mediaType, String entryKey})>[
+    <CollectionMemberKey>[
       for (final MediaCollectionItemRow r in next)
         (mediaType: r.mediaType, entryKey: r.entryKey),
     ],

@@ -11,6 +11,7 @@ import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
 import '../utils/ttu_sanitize.dart';
 import '../utils/video_book_uid.dart';
+import 'collection_order.dart';
 import 'media_kind.dart';
 import 'pref_codec.dart';
 import 'sync_tombstone_kind.dart';
@@ -3145,19 +3146,46 @@ class HibikiDatabase extends _$HibikiDatabase {
         }
       });
 
-  /// 合集内重排：按 [ordered] 顺序逐条回写 sortIndex（退出重排页一次落盘）。同事务
-  /// bump 本合集 orderUpdatedAt = now（schema v40 跨端手动序整合集 LWW 的比较键，
-  /// 只有真实人为改序走这里；同步应用对端顺序走 [setCollectionOrderUpdatedAt]
-  /// 镜像对端时间戳，绝不 bump now——否则同步会伪装成更新的人为改序）。
-  Future<void> reorderCollectionItems(int collectionId,
-          List<({String mediaType, String entryKey})> ordered) =>
+  /// 合集内重排：[ordered] 表达**它点名的那批成员之间的新相对顺序**，本方法负责把它
+  /// 合并回全表并把 sortIndex 回写成致密 `0..n-1`（退出重排页一次落盘）。同事务 bump
+  /// 本合集 orderUpdatedAt = now（schema v40 跨端手动序整合集 LWW 的比较键，只有真实
+  /// 人为改序走这里；同步应用对端顺序走 [setCollectionOrderUpdatedAt] 镜像对端时间戳，
+  /// 绝不 bump now——否则同步会伪装成更新的人为改序）。
+  ///
+  /// BUG-1194 根因修复——**不变量归 DAO 所有，不是各调用方的自觉**：
+  /// 合集详情页天然只渲染成员子集（视频详情页按 mediaType 只显示 video；书架网格详情页
+  /// 按标签过滤），而 `media_collection_items.mediaType` 无 CHECK 约束、一个合集可混多种
+  /// 种类（「加入合集」弹窗列全表不按种类过滤；合集同步/备份合并按 `(name, collectionType)`
+  /// 自然键对齐并原样并入对端裸串 mediaType，两端各建同名合集同步一轮即混合）。旧实现
+  /// 直接按 [ordered] 的下标写 sortIndex：调用方只要传子集，未点名的成员就留着旧
+  /// sortIndex 与新写的致密 `0..n-1` **碰撞**，[getCollectionItems] 平手退化按 entryKey
+  /// 排，用户在网格详情页排好的跨种类顺序被打乱，还随同事务 bump 的 orderUpdatedAt 以
+  /// LWW 赢家身份推给全部对端。修在页面里治标——每个现有和将来的调用方都得自己记得
+  /// 合并；修在这里治本：**传子集是合法用法**，未点名的成员由本方法保证留在原槽位。
+  ///
+  /// 顺带自愈：任何一次重排都把全表写成致密序，历史遗留的碰撞 sortIndex 就此消除。
+  /// 合并规则（含并发移出/重复键的容错）见 [mergeCollectionOrder]。
+  Future<void> reorderCollectionItems(
+          int collectionId, List<CollectionMemberKey> ordered) =>
       transaction(() async {
-        for (int i = 0; i < ordered.length; i++) {
+        // 事务内取当前全表顺序作槽位基准（[getCollectionItems] 的 sortIndex→entryKey
+        // 口径 = 用户此刻看到的顺序）。
+        final List<MediaCollectionItemRow> all =
+            await getCollectionItems(collectionId);
+        final List<CollectionMemberKey> merged = mergeCollectionOrder(
+          all: <CollectionMemberKey>[
+            for (final MediaCollectionItemRow r in all)
+              (mediaType: r.mediaType, entryKey: r.entryKey),
+          ],
+          subset: ordered,
+          keyOf: (CollectionMemberKey k) => k,
+        );
+        for (int i = 0; i < merged.length; i++) {
           await (update(mediaCollectionItems)
                 ..where((t) =>
                     t.collectionId.equals(collectionId) &
-                    t.mediaType.equals(ordered[i].mediaType) &
-                    t.entryKey.equals(ordered[i].entryKey)))
+                    t.mediaType.equals(merged[i].mediaType) &
+                    t.entryKey.equals(merged[i].entryKey)))
               .write(MediaCollectionItemsCompanion(sortIndex: Value(i)));
         }
         await (update(mediaCollections)

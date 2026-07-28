@@ -120,7 +120,7 @@ class _MediaCollectionGridDetailPageState
     setState(() => _rows = next);
     await widget.database.reorderCollectionItems(
       widget.collection.id,
-      <({String mediaType, String entryKey})>[
+      <CollectionMemberKey>[
         for (final MediaCollectionItemRow r in next)
           (mediaType: r.mediaType, entryKey: r.entryKey),
       ],
@@ -178,11 +178,12 @@ class _MediaCollectionGridDetailPageState
   }
 
   /// 网格拖拽落序：from/to 是**可见**成员下标（[_visibleRows]）。先在可见序上应用
-  /// removeAt/insert，再**保序合并**回 [_rows] 全表：遍历原 _rows，可见槽按新可见序
-  /// 依次填入、孤儿行（当前不可见——被书架标签筛选掉的成员）留在原下标。绝不把隐藏
-  /// 成员挤到表尾——否则筛选态下一次拖拽就把全部隐藏成员从原位挤到末尾落盘。最后
-  /// `reorderCollectionItems` 一次落盘。库页合集行 / 播放器换集读同一 `getCollectionItems`，
-  /// 落盘即同序。
+  /// removeAt/insert，再用共享的 [mergeCollectionOrder] **保序合并**回 [_rows] 全表：
+  /// 可见槽按新可见序依次填入、孤儿行（当前不可见——被书架标签筛选掉的成员）留在原
+  /// 下标。绝不把隐藏成员挤到表尾——否则筛选态下一次拖拽就把全部隐藏成员从原位挤到
+  /// 末尾。落盘只需传可见序（不可见成员留原槽位由 `reorderCollectionItems` 保证，与
+  /// 这里的内存合并同一份规则、不会漂开）；库页合集行 / 播放器换集读同一
+  /// `getCollectionItems`，落盘即同序。
   Future<void> _onReorder(int from, int to) async {
     if (from == to) return;
     final List<MediaCollectionItemRow> visible =
@@ -192,29 +193,20 @@ class _MediaCollectionGridDetailPageState
     }
     final MediaCollectionItemRow moved = visible.removeAt(from);
     visible.insert(to, moved);
-    // 保序合并：可见槽（key 命中 visibleKeys）按 visible 的新顺序依次消费，孤儿行按
-    // 其在原 _rows 中的下标原地保留。visible 的成员集合与拖前一致（只是被置换顺序），
-    // 故可见槽数 == visible.length，vi 恰好消费完，不会越界。
-    final Set<String> visibleKeys = <String>{
-      for (final MediaCollectionItemRow r in visible)
-        '${r.mediaType}|${r.entryKey}',
-    };
-    int vi = 0;
-    final List<MediaCollectionItemRow> next = <MediaCollectionItemRow>[
-      for (final MediaCollectionItemRow r in _rows)
-        if (visibleKeys.contains('${r.mediaType}|${r.entryKey}'))
-          visible[vi++]
-        else
-          r,
-    ];
+    final List<MediaCollectionItemRow> next = mergeCollectionOrder(
+      all: _rows,
+      subset: visible,
+      keyOf: (MediaCollectionItemRow r) =>
+          (mediaType: r.mediaType, entryKey: r.entryKey),
+    );
     setState(() {
       _rows = next;
       _visibleRows = visible;
     });
     await widget.database.reorderCollectionItems(
       widget.collection.id,
-      <({String mediaType, String entryKey})>[
-        for (final MediaCollectionItemRow r in next)
+      <CollectionMemberKey>[
+        for (final MediaCollectionItemRow r in visible)
           (mediaType: r.mediaType, entryKey: r.entryKey),
       ],
     );

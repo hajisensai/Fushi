@@ -3,15 +3,37 @@
 - **真实性**：✅ 真 bug（但**不是**报告里说的「成员从合集里掉出去」——见下方「否定的部分」）。
   根因 `hibiki/lib/src/pages/implementations/media_collection_detail_page.dart:96`（`_persistOrder`
   只把可见的 video 成员键喂给 `reorderCollectionItems`）。
-- **[x] ① 已修复** — `media_collection_detail_page.dart:96` 改为「保序合并」回写**全表**：
-  先 `getCollectionItems` 取全部成员行定义槽位，可见槽按新可见序依次填入，不可见（非
-  video / 悬空 video）成员留在其原下标，与 `media_collection_grid_detail_page.dart` 的
-  `_onReorder` 同款纪律。提交 `40e8b2850`。
-- **[x] ② 已加自动化测试** — `hibiki/test/pages/media_collection_detail_sort_test.dart`
-  新增 group「混合种类合集」3 例：拖拽 / 一键按名称 / 一键按导入时间后，断言**成员数不变、
-  game 与 epub 成员仍在合集内、sortIndex 致密无碰撞、且非 video 成员相对 video 的手排位置
-  不被打乱**。提交 `40e8b2850`。
-- **备注**：
+- **[x] ① 已修复** — 两轮，第二轮才是根因修复：
+  - 第一轮（`40e8b2850`，页面级）：`media_collection_detail_page.dart:96` 改为「保序合并」
+    回写**全表**——先 `getCollectionItems` 取全部成员行定义槽位，可见槽按新可见序依次填入，
+    不可见成员留在其原下标。**治标**：它把不变量交给每个调用方自觉，而合集详情页天然只渲染
+    子集，下一个调用方（或下一个新页面）照样能再造出碰撞。
+  - 第二轮（根因，本次）：**不变量上移到 DAO**。`HibikiDatabase.reorderCollectionItems`
+    (`packages/hibiki_core/lib/src/database/database.dart:3142`) 的契约改为「[ordered] 只表达
+    它**点名**的那批成员之间的新相对顺序」，方法自己在同一事务内取全表槽位、保序合并、把
+    sortIndex 回写成致密 `0..n-1`。**传子集从此是合法用法**，页面漏做合并不再可能造出碰撞；
+    顺带自愈——任何一次重排都把历史遗留的碰撞 sortIndex 抹平。
+  - 合并规则抽成唯一真相源纯函数 `mergeCollectionOrder`
+    （新文件 `packages/hibiki_core/lib/src/database/collection_order.dart`），DAO 守落盘不变量、
+    `media_collection_grid_detail_page._onReorder` 维护内存展示序，两侧同一份实现不会漂开。
+    身份键统一为 record `CollectionMemberKey`，**废掉网格页原来的 `'<mediaType>|<entryKey>'`
+    拼串键**——entryKey 是用户数据，`('video','a|b')` 与 `('video|a','b')` 会拼成同一个串。
+  - `media_collection_detail_page._persistOrder` 的 30 行保序合并块随之整块删除，只传可见
+    video 键。
+- **[x] ② 已加自动化测试** — 三层：
+  - `hibiki/test/database/collection_order_test.dart`（新增，7 例）：纯规则——未点名成员留原
+    槽位 / 绝不挤到表尾 / 全量点名等价于直接排序 / 空 subset / 并发移出键丢弃 / 重复键 /
+    分隔符出现在 entryKey 里也不误判。
+  - `hibiki/test/database/media_collections_dao_test.dart`（新增 group「子集契约」3 例）：
+    **根因守卫**——只传可见 video 子集时非 video 成员留原槽位且全表致密无碰撞；用
+    `upsertCollectionItemAt` 种出旧版碰撞现场后一次重排自愈；点名已被并发移出的成员不越界。
+  - `hibiki/test/pages/media_collection_detail_sort_test.dart` 的 group「混合种类合集」3 例
+    （第一轮加的）保留：拖拽 / 一键按名称 / 一键按导入时间后，断言成员数不变、game 与 epub
+    成员仍在合集内、sortIndex 致密无碰撞、非 video 成员相对 video 的手排位置不被打乱。
+- **备注**：**不禁止混合种类合集**——网格详情页本就显示全部成员，混合是被支持的形态。
+  「加入合集」弹窗不按种类过滤、同步/备份按 `(name, collectionType)` 自然键对齐，这两条是
+  混合**如何产生**的解释，不是要改掉的缺陷；根因修复的方向是让排序在混合下正确，而不是
+  加特例阻止混合。
 
 ### 否定的部分：不存在数据丢失
 
