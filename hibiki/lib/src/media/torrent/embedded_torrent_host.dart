@@ -264,18 +264,27 @@ class EmbeddedTorrentHost {
     }
   }
 
+  /// 底层 DLL 是否支持把限速套到局域网 peer（老的预编译 DLL 没有该符号）。
+  bool get supportsLocalPeerRateLimit => _session.supportsLocalPeerRateLimit;
+
   /// 应用用户可调的全局资源限制（速率 + 连接数）。[downloadKbps]/[uploadKbps]
   /// 单位 KB/s（0 = 不限），[maxConnections]（0 = 引擎默认）。config 变更时
   /// 由 AppModel 调用，即时生效。
+  ///
+  /// [limitLocalPeers] = true 时限速同时作用于局域网 peer（默认 false =
+  /// libtorrent 原生行为：局域网 peer 不受限速）。底层 DLL 太旧不支持时返回
+  /// false（全局限速仍已应用）。
   bool applyLimits({
     int downloadKbps = 0,
     int uploadKbps = 0,
     int maxConnections = 0,
+    bool limitLocalPeers = false,
   }) {
     return _session.applyLimits(
       downloadBps: downloadKbps > 0 ? downloadKbps * 1024 : 0,
       uploadBps: uploadKbps > 0 ? uploadKbps * 1024 : 0,
       connectionsLimit: maxConnections,
+      limitLocalPeers: limitLocalPeers,
     );
   }
 

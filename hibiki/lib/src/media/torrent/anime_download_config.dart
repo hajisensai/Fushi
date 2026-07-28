@@ -15,6 +15,7 @@ class QbConnectionConfig {
     this.category = 'hibiki',
     this.downloadLimitKbps = 0,
     this.uploadLimitKbps = 0,
+    this.limitLocalPeers = false,
     this.maxConnections = 0,
     this.uploadEnabled = false,
     this.seedTimeLimitMinutes = 0,
@@ -90,6 +91,13 @@ class QbConnectionConfig {
 
   /// 内置引擎全局上传限速（KB/s，0 = 不限）。
   final int uploadLimitKbps;
+
+  /// 上面两个限速是否**同时作用于局域网 peer**（默认 false = 不作用）。
+  ///
+  /// libtorrent 的全局限速默认把局域网/回环 peer 放走（它们归 local peer
+  /// class，该 class 不受 session 全局上限约束）。默认 false 就是这个原生行为；
+  /// 置 true 时 native 会把同一组上限也写到 local peer class。
+  final bool limitLocalPeers;
 
   /// 内置引擎全局最大连接数（0 = 引擎默认）。
   final int maxConnections;
@@ -172,6 +180,7 @@ class QbConnectionConfig {
     String? category,
     int? downloadLimitKbps,
     int? uploadLimitKbps,
+    bool? limitLocalPeers,
     int? maxConnections,
     bool? uploadEnabled,
     int? seedTimeLimitMinutes,
@@ -201,6 +210,7 @@ class QbConnectionConfig {
       category: category ?? this.category,
       downloadLimitKbps: downloadLimitKbps ?? this.downloadLimitKbps,
       uploadLimitKbps: uploadLimitKbps ?? this.uploadLimitKbps,
+      limitLocalPeers: limitLocalPeers ?? this.limitLocalPeers,
       maxConnections: maxConnections ?? this.maxConnections,
       uploadEnabled: uploadEnabled ?? this.uploadEnabled,
       seedTimeLimitMinutes: seedTimeLimitMinutes ?? this.seedTimeLimitMinutes,
@@ -287,6 +297,8 @@ QbConnectionConfig? decodeQbConnectionConfig(String raw) {
           : QbConnectionConfig.defaultCategory,
       downloadLimitKbps: _nonNegInt(json['downloadLimitKbps']),
       uploadLimitKbps: _nonNegInt(json['uploadLimitKbps']),
+      // 缺字段（老配置）→ false：保持限速不管局域网的历史行为。
+      limitLocalPeers: json['limitLocalPeers'] == true,
       maxConnections: _nonNegInt(json['maxConnections']),
       // 缺字段（老配置）→ false：开箱即关上传，首次下载弹窗再征询开启。
       uploadEnabled: json['uploadEnabled'] == true,
@@ -336,6 +348,7 @@ String encodeQbConnectionConfig(QbConnectionConfig config) {
     'category': config.category,
     'downloadLimitKbps': config.downloadLimitKbps,
     'uploadLimitKbps': config.uploadLimitKbps,
+    'limitLocalPeers': config.limitLocalPeers,
     'maxConnections': config.maxConnections,
     'uploadEnabled': config.uploadEnabled,
     'seedTimeLimitMinutes': config.seedTimeLimitMinutes,

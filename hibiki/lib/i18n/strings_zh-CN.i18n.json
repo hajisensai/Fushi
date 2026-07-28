@@ -2701,5 +2701,8 @@
   "game_audio_fallback_clean_hint": "只用游戏资源音频和引擎 PCM。没有配音的句子照常制卡，只是不带音频，不会收进 BGM。",
   "game_audio_fallback_resource_hint": "必须拿到游戏自带的原始语音文件，缺失时拒绝制卡。",
   "game_line_audio_suppressed": "已跳过混音",
-  "game_line_audio_suppressed_hint": "本句没有干净音源可用，整机混音已按你选的降级策略跳过。这不代表这句没有配音。"
+  "game_line_audio_suppressed_hint": "本句没有干净音源可用，整机混音已按你选的降级策略跳过。这不代表这句没有配音。",
+  "video_setting_torrent_limit_lan": "限速也作用于局域网",
+  "video_setting_torrent_limit_lan_hint": "默认关闭：与局域网内 peer 的传输不受上面的限速约束。",
+  "download_rate_limit_lan_included": "同时作用于局域网内的传输。"
 }

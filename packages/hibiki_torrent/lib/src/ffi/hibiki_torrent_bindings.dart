@@ -108,6 +108,49 @@ class HibikiTorrentBindings {
   late final _ht_apply_limits = _ht_apply_limitsPtr
       .asFunction<int Function(ffi.Pointer<ffi.Void>, int, int, int)>();
 
+  /// 同 [ht_apply_limits]，多一个 `limit_local_peers`（非 0 = 限速同时作用于
+  /// 局域网 peer）。1 成功 0 失败。
+  ///
+  /// 调用前必须先看 [hasApplyLimitsEx]：随包的 Windows DLL 是**预编译产物**，
+  /// 比本文件旧的 DLL 里没有这个符号，直接调会抛 [ArgumentError]。
+  int ht_apply_limits_ex(
+    ffi.Pointer<ffi.Void> session,
+    int download_bps,
+    int upload_bps,
+    int connections_limit,
+    int limit_local_peers,
+  ) {
+    return _ht_apply_limits_ex(session, download_bps, upload_bps,
+        connections_limit, limit_local_peers);
+  }
+
+  late final _ht_apply_limits_exPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int, ffi.Int, ffi.Int,
+              ffi.Int)>>('ht_apply_limits_ex');
+  late final _ht_apply_limits_ex = _ht_apply_limits_exPtr
+      .asFunction<int Function(ffi.Pointer<ffi.Void>, int, int, int, int)>();
+
+  /// 已加载的库里是否有 [ht_apply_limits_ex]。
+  ///
+  /// 这不是防御性编程，是真实的部署形态：`hibiki_torrent_ffi.dll` 由
+  /// `native/hibiki_torrent/build_windows_dll.ps1` 单独产出、以 vendored 预编译
+  /// 二进制随包（`prebuilt/windows-x64/`，不入库），所以 Dart 侧更新了、DLL 没
+  /// 重编的组合是会真实发生的。符号缺失时按老 DLL 的能力降级，绝不让 app 崩。
+  late final bool hasApplyLimitsEx = _probeApplyLimitsEx();
+
+  bool _probeApplyLimitsEx() {
+    try {
+      _lookup<
+          ffi.NativeFunction<
+              ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int, ffi.Int, ffi.Int,
+                  ffi.Int)>>('ht_apply_limits_ex');
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
+
   /// 上传模式开关（做种总开关，per-torrent 或全量）。info_hash 空串=全量；
   /// upload_enabled 非 0=允许上传、0=停止上传但保连接。1 成功 0 失败。
   int ht_set_upload_mode(
