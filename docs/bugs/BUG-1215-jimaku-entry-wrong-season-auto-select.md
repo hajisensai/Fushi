@@ -1,4 +1,4 @@
-## BUG-1211 · Jimaku 条目自动选中不校验季号，S1 条目被配给 S2 包
+## BUG-1215 · Jimaku 条目自动选中不校验季号，S1 条目被配给 S2 包
 - **报告**：2026-07-28（用户：PR#515 审查建议 b / PR#530 施工方自报未解决的另一半）
 - **真实性**：✅ 真 bug。根因 `hibiki/lib/src/pages/implementations/anime_download_dialog.dart:590`
   （改前 `_resolveJimakuEntryFor` 的 `return entries.first;`）——自动选中的判据只有
