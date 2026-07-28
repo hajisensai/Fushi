@@ -112,12 +112,29 @@ hook 安装；② `manifest.json` 的 stream-bridge matches 加域名；③ 新�
 | ↑ | 回当前句句首重播 |
 | Shift+P / O / F | 开关 自动暂停 / 精简播放 / 快进无字幕段（当前视频有 Hibiki 字幕轨时） |
 | Shift+S | 开关字幕列表面板（当前视频有 Hibiki 字幕轨时） |
+| Shift+H | 隐藏 / 显示字幕（站点原生字幕 + 扩展覆盖层；**不**需要 Hibiki 字幕轨） |
 | Ctrl+Shift+← / → / ↓ | 字幕偏移 −100ms / ＋100ms / 重置 |
 | Ctrl+Shift+Z | 复制当前字幕句（配合 Hibiki 剪贴板监看即查词） |
 | Ctrl+Shift+[ / ] | 播放速度 −0.25x / ＋0.25x（0.25–4x） |
 
 与 asbplayer 默认键位对齐（asb 用 hotkeys-js + 可改键；这里是固定键位 + 纯函数判定，站点
 输入框/可编辑区一律放行；无轨时方向键及 Shift+P/O/F/S 均放行给站点原生行为）。
+
+`Shift+H` 的「隐藏」用 `visibility:hidden` 而非 `display:none`：扩展的取词、逐句制卡、caret
+兜底命中都要读字幕节点的 textContent / 几何，`display:none` 会把它们摘出布局，隐藏字幕就
+等于顺手废掉制卡。状态存 `chrome.storage.local.subtitleHidden`，与 options 页的「隐藏字幕」
+开关双向同步（守卫见 `subtitle-hide.test.js`）。
+
+## 制卡快捷键（查词弹窗打开时）
+
+| 键 | 动作 |
+|---|---|
+| Ctrl+Enter | 制卡 = 点弹窗里的「＋」（Anki 三态 ＋/✓/✓↩︎ 与鼠标点击完全同源） |
+
+不受上面的「视频页快捷键」总开关影响——它属于查词弹窗而不是视频页，判定在
+`vendor/popup.js`（三端同源）。app 内 / app 外全局查词窗共用同一个可改键动作
+（Hibiki 设置 → 快捷键 → 查词弹窗 → 制卡）；扩展没有绑定注入通道，用 popup.js 里的
+同款内置默认值 Ctrl+Enter。只有真的点到了按钮才吞掉按键，IME 组词期间与输入框内一律放行。
 
 ## 测试
 

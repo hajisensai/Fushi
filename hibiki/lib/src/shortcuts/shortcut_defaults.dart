@@ -428,6 +428,16 @@ class ShortcutDefaults {
         WheelBinding(WheelDirection.up, modifiers: {ModifierKey.alt}),
       ],
     ),
+    // 制卡（= 点弹窗里的「＋」）。默认 Ctrl+Enter，与阅读器既有的
+    // readerCreateCardFromPopup 同键：两者是同一件事在不同焦点归属下的两条执行路径，
+    // 键位若不一致，用户在阅读器和在 app 外查词窗就得记两个键。dictionaryPopup 是独立
+    // co-active 组，与任何页面键位都不冲突（阅读器那条同键绑定在 reader 组，两组永不
+    // 同时解析，no-shadow 守卫只扫同组）。
+    ShortcutAction.popupMineEntry: ShortcutBindingSet(
+      keyboardBindings: <InputBinding>[
+        _key(LogicalKeyboardKey.enter, {ModifierKey.ctrl}),
+      ],
+    ),
   };
 
   static final Map<ShortcutAction, ShortcutBindingSet> _macOS = {
@@ -482,6 +492,11 @@ class ShortcutDefaults {
           // 查词弹窗的词条导航是纯滚轮通道：Android 可接鼠标（平板 / DeX / 桌面
           // 模式），滚轮事件同样到达弹窗 WebView 的 popup.js，故移动端保留桌面的
           // Alt+滚轮默认；没有鼠标的设备上它永不触发，无害。
+          // 制卡键（popupMineEntry）刻意不进移动端：它的 JS 判定只对**桌面 app 外**的
+          // 裸 WebView2 查词窗启用（in-app 宿主注入 null，由 Dart 派发），而移动端的两个
+          // 弹窗宿主（Android 悬浮词典 / 独立查词页）都是 Flutter 宿主、没有 Dart 侧接线，
+          // 给了绑定也永不触发——「设置里能配、按了没反应」比没有这个选项更糟。
+          // 与 globalExternal 在移动端返回空绑定同理。
           case ShortcutScope.dictionaryPopup:
             return ShortcutBindingSet(
               wheelBindings: desktop.wheelBindings,

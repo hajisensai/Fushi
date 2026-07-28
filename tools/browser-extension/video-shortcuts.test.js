@@ -38,6 +38,28 @@ test('Shift+P/O/F/S：仅有 Hibiki 字幕轨时切换播放模式与面板', ()
   assert.deepStrictEqual(decide(ev({ shift: true, code: 'KeyS' }), CTX), { action: 'toggle-panel' });
 });
 
+test('Shift+H：隐藏字幕**不需要**字幕轨（藏的是站点原生字幕）', () => {
+  // 这是本键与 Shift+P/O/F/S 的关键差异，也是最容易写错的地方：hasTrack 问的是「扩展这边
+  // 加载过字幕轨没有」，而隐藏字幕作用的是站点自带字幕 + 扩展覆盖层。绝大多数用户看的是
+  // 站点原生字幕、从没往扩展里挂过轨——若卡在 hasTrack 门后面，这个键在主场景下永不触发。
+  const noTrack = { enabled: true, hasVideo: true, hasTrack: false };
+  assert.deepStrictEqual(
+    decide(ev({ shift: true, code: 'KeyH' }), noTrack), { action: 'toggle-subtitle-hide' });
+  assert.deepStrictEqual(
+    decide(ev({ shift: true, code: 'KeyH' }), CTX), { action: 'toggle-subtitle-hide' });
+});
+
+test('Shift+H：无视频 / 输入框 / 加 Ctrl 或 Alt 时不接管', () => {
+  const noVideo = { enabled: true, hasVideo: false, hasTrack: false };
+  assert.strictEqual(decide(ev({ shift: true, code: 'KeyH' }), noVideo), null);
+  assert.strictEqual(decide(ev({ shift: true, code: 'KeyH', editable: true }), CTX), null);
+  assert.strictEqual(decide(ev({ shift: true, alt: true, code: 'KeyH' }), CTX), null);
+  // Ctrl+Shift+H 落进上面的 ctrl+shift 分支，未登记 → 放行（不误吞浏览器/站点组合键）。
+  assert.strictEqual(decide(ev({ ctrl: true, shift: true, code: 'KeyH' }), CTX), null);
+  // 裸 H 交给站点（很多播放器自己用它），只有带 Shift 才是我们的。
+  assert.strictEqual(decide(ev({ key: 'h', code: 'KeyH' }), CTX), null);
+});
+
 test('Ctrl+Shift+←/→/↓/Z：偏移与复制（需字幕轨）', () => {
   assert.deepStrictEqual(decide(ev({ ctrl: true, shift: true, key: 'ArrowLeft' }), CTX), { action: 'offset-minus' });
   assert.deepStrictEqual(decide(ev({ ctrl: true, shift: true, key: 'ArrowRight' }), CTX), { action: 'offset-plus' });

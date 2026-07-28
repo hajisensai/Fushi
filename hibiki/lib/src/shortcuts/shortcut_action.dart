@@ -129,8 +129,15 @@ enum ShortcutScope {
       // 接上对应解析入口（照 reader `_handleGamepadButton`）并真机验证后再开。
       case manga:
         return const <ShortcutChannel>{ShortcutChannel.keyboard};
+      // 查词弹窗：滚轮（上/下一个词条）+ 键盘（制卡）。两者都不经 resolveKeyboard —— 绑定
+      // 由 popup_settings_injection 序列化后注入给 popup.js，命中判定在 JS 侧（弹窗内容是
+      // WebView，输入事件先到它的 JS）。键盘通道的取用点同样是
+      // `bindingsFor(popupMineEntry).keyboardBindings`。
       case dictionaryPopup:
-        return const <ShortcutChannel>{ShortcutChannel.wheel};
+        return const <ShortcutChannel>{
+          ShortcutChannel.wheel,
+          ShortcutChannel.keyboard,
+        };
     }
   }
 }
@@ -341,7 +348,23 @@ enum ShortcutAction {
   // 此前只有阅读器选字光标模式下的硬编码 `.` / `,` 能触发，既不可改键也不覆盖
   // 视频/首页/全局查词的弹窗）。
   popupNextEntry(ShortcutScope.dictionaryPopup, 'popup_next_entry'),
-  popupPrevEntry(ShortcutScope.dictionaryPopup, 'popup_prev_entry');
+  popupPrevEntry(ShortcutScope.dictionaryPopup, 'popup_prev_entry'),
+
+  // 制卡（用户请求：「点那个加号的动作」要有快捷键，且 app 内 / app 外 / 浏览器都能用）。
+  // 语义上这个动作属于**弹窗**而非某个页面——同一份 popup.js 同时是 app 内弹窗、app 外裸
+  // WebView2 查词窗和浏览器扩展弹窗的实现，加号也只有那一个（`.mine-button`）。故它落在
+  // dictionaryPopup scope，一个绑定覆盖三处，而不是给每个页面各开一个「制卡」动作。
+  //
+  // 执行分工（按**键盘焦点归属**切开，三条路径互斥、绝不双触发 = 绝不重复制卡）：
+  //   · app 内（焦点在 Flutter 页）：Dart 侧派发。阅读器沿用既有的
+  //     readerCreateCardFromPopup（Never break userspace，默认键与本动作一致）；视频页读
+  //     本动作的键盘绑定（见 video_hibiki_page 的 _buildVideoShortcuts）。
+  //   · app 外（焦点在裸 WebView2 查词窗 / 剪贴板面板）：绑定经 popup_settings_injection
+  //     注入成 window.__hoshiMineKeyBindings，由 popup.js 自己判定。
+  //   · 浏览器扩展：没有注入通道，吃 popup.js 里的同款内置默认值。
+  // in-app 宿主会被显式注入 `null` 关掉 JS 侧判定——那里由 Dart 负责，两边都开就有在
+  // 「WebView 键盘桥把同一次按键同时喂给 Flutter 和 JS」时制出两张卡的风险。
+  popupMineEntry(ShortcutScope.dictionaryPopup, 'popup_mine_entry');
 
   const ShortcutAction(this.scope, this.key);
 

@@ -120,8 +120,21 @@
     .hp-connection-copy { min-width: 0; }
     .hp-connection-title { display: block; overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
     .hp-connection-detail { display: block; overflow: hidden; margin-top: 1px; opacity: .55; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-    .hp-settings-link { border: 0; padding: 4px; color: inherit; background: transparent; cursor: pointer; opacity: .72; }
-    .hp-settings-link:hover { opacity: 1; }
+    .hp-open-options {
+      display: block;
+      width: 100%;
+      margin-top: 10px;
+      padding: 9px 10px;
+      border: 1px solid rgba(128, 128, 128, 0.45);
+      border-radius: 8px;
+      background: rgba(128, 128, 128, 0.10);
+      color: inherit;
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      text-align: center;
+    }
+    .hp-open-options:hover { background: rgba(128, 128, 128, 0.20); border-color: rgba(128, 128, 128, 0.7); }
     /* BUG-1079：自更新失效提示（hibikiUpdateStale 存在时显示）：需到扩展管理页手动重新加载。 */
     .hp-update {
       margin: 0 14px 10px;
@@ -145,13 +158,12 @@
     <span class="hp-title">Hibiki 制卡队列</span>
     <span class="hp-count" id="hp-count"></span>
   </div>
-  <div class="hp-connection" id="hp-connection" data-tone="loading" title="点击重新检测；齿轮打开完整设置">
+  <div class="hp-connection" id="hp-connection" data-tone="loading" title="点击重新检测连接">
     <span class="hp-connection-dot" aria-hidden="true"></span>
     <span class="hp-connection-copy">
       <span class="hp-connection-title" id="hp-connection-title">正在检测 Hibiki…</span>
       <span class="hp-connection-detail" id="hp-connection-detail">查词与字幕服务</span>
     </span>
-    <button class="hp-settings-link" id="hp-open-options" type="button" title="打开扩展设置" aria-label="打开扩展设置">⚙</button>
   </div>
   <!-- BUG-1079：自更新失效提示（默认隐藏；chrome.storage.local.hibikiUpdateStale 存在时显示）。 -->
   <div class="hp-update" id="hp-update" hidden>
@@ -168,6 +180,12 @@
       <span class="hp-toggle-text">字幕列表</span>
     </label>
     <div class="hp-toggle-hint">面板在视频播放页侧栏（网飞整集 · 其他站点实时采集）</div>
+    <!-- 用户反馈「扩展配置根本看不见」：此前通往设置页的唯一入口，是上方连接行里一个无边框、
+         无文字、opacity .72 的「⚙」字符，而那一整行本身可点（点击=重检连接），齿轮读起来像
+         状态行的装饰而不是按钮——还要靠 stopPropagation 才不被误判成重检。工具栏图标又被
+         default_popup 占着，chrome.action.onClicked 永不触发（见 background.js），
+         options_page 因此在产品里几乎不可达。现在改成页脚一整行、有边框有文字的按钮。 -->
+    <button class="hp-open-options" id="hp-open-options" type="button">⚙ 扩展设置（连接 · 字幕 · 快捷键）</button>
   </div>
   <script src="../connection-diagnostics.js"></script>
   <script src="action-popup.js"></script>

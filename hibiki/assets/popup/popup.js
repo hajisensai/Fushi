@@ -2784,6 +2784,85 @@ window.hoshiPopupMineFirstEntry = async function() {
     return true;
 };
 
+// 查词弹窗的键盘快捷键（用户请求：「点那个加号的动作」要能用键盘触发，app 内 / app 外 /
+// 浏览器都要）。制卡默认 Ctrl+Enter；app 外的裸 WebView2 表面由 popup_settings_injection
+// 注入 window.__hoshiPopupKeyBindings 覆盖成用户在「快捷键」设置里配的绑定（dictionaryPopup
+// scope 的三个动作）。三种取值语义各不相同，别合并：
+//   · undefined（浏览器扩展：没有注入通道）→ 用下面的内置默认；
+//   · null（app 内宿主：Dart 侧派发）→ 本监听整个关掉，避免同一次按键被 JS 和 Flutter
+//     各处理一遍而制出两张卡；
+//   · 某个动作是 []（未绑 / 用户清空）→ 该动作关掉，而不是回退默认（否则「清空」等于没清）。
+// 表里带上 next/prev 而不只是 mine，是因为 Flutter 侧的通道开关按 scope 生效：设置页会给
+// 本 scope 每个动作都渲染键盘入口，只认 mine 会让另两个成为「能配、按了没反应」的死绑定。
+// 制卡实现上只调 hoshiPopupMineFirstEntry() 去点那颗按钮，**绝不另起第二条制卡桥调用**：
+// 三态（＋/✓/✓↩︎）、单飞门、查重刷新全在按钮的 onclick 里，另起一条既会绕过它们，也会
+// 撞上「本文件里制卡桥有且只有一处调用」的守卫测试（popup_append_sentence_asset_test）。
+const HOSHI_POPUP_KEY_DEFAULT_BINDINGS = {
+    mine: [{ key: 'enter', mods: ['ctrl'] }],
+    next: [],
+    prev: [],
+};
+// 本次 keydown 命中哪个弹窗动作：'mine' / 'next' / 'prev' / null。判据与滚轮那套同构：
+// 键名归一后相等，且当前按下的修饰键集合与某条绑定**全等**（故 Ctrl+Enter 绝不会被
+// Ctrl+Shift+Enter 误触）。
+function hoshiPopupKeyAction(e) {
+    const raw = window.__hoshiPopupKeyBindings;
+    if (raw === null) return null;
+    const cfg = (raw && typeof raw === 'object') ? raw : HOSHI_POPUP_KEY_DEFAULT_BINDINGS;
+    // Flutter 侧 _webKeyName 的同款归一：全小写 + 去空格，空格键特判成 'space'。
+    const name = e.key === ' ' ? 'space' : String(e.key || '').toLowerCase().replace(/ /g, '');
+    if (!name) return null;
+    const pressed = [];
+    if (e.altKey) pressed.push('alt');
+    if (e.ctrlKey) pressed.push('ctrl');
+    if (e.shiftKey) pressed.push('shift');
+    if (e.metaKey) pressed.push('meta');
+    const matches = (list) => Array.isArray(list) && list.some((b) => b &&
+        String(b.key || '').toLowerCase() === name &&
+        Array.isArray(b.mods) && b.mods.length === pressed.length &&
+        b.mods.every((m) => pressed.indexOf(m) >= 0));
+    if (matches(cfg.mine)) return 'mine';
+    if (matches(cfg.next)) return 'next';
+    if (matches(cfg.prev)) return 'prev';
+    return null;
+}
+// 扩展场景下本监听常驻在**宿主页面**的 document 上（弹窗是注入宿主页的 DOM，不是独立文档），
+// 所以每一层放行判据都要写足，绝不能在没有弹窗时吞掉网页自己的按键：
+//   · 输入框/可编辑区一律放行（宿主页的搜索框、弹窗自己的句子编辑框都靠这条）；
+//   · IME 组词期间放行（e.isComposing）——日语输入法的 Enter 是用来确认候选词的，抢了它
+//     就等于把输入法打坏，这在一个日语学习工具里是不可接受的回归；
+//   · 只有 hoshiPopupMineFirstEntry() 真的点到了按钮（返回 true）才 preventDefault，
+//     没弹窗 / 按钮禁用时事件原样交还给页面。
+function hoshiPopupIsEditableTarget(t) {
+    if (!t) return false;
+    if (t.isContentEditable) return true;
+    const tag = String(t.tagName || '').toUpperCase();
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+window.__hoshiPopupKeyListener = async function(e) {
+    if (!e || e.isComposing || e.repeat) return;
+    if (hoshiPopupIsEditableTarget(e.target)) return;
+    const action = hoshiPopupKeyAction(e);
+    if (!action) return;
+    let handled = false;
+    try {
+        if (action === 'mine') {
+            handled = (await window.hoshiPopupMineFirstEntry()) === true;
+        } else if (typeof window.hoshiFocusDictionaryEntryMove === 'function') {
+            // 与 Alt+滚轮同一执行体：只有焦点真的移动了才算接管；单词条 / 已到首尾时返回
+            // 'blocked'，这一帧交还给页面（不吞按键）。
+            handled = window.hoshiFocusDictionaryEntryMove(action) === 'moved';
+        }
+    } catch (_) { handled = false; }
+    if (handled) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+};
+try {
+    document.addEventListener('keydown', window.__hoshiPopupKeyListener, true);
+} catch (_) { /* 无 document（node 单测直接 require 本文件）：跳过 */ }
+
 // BUG-763/766：确认「制卡前调整」原生对话框时，Dart 回点第 idx 个词条（:scope > .entry
 // DOM 序，与打开对话框时的 entryIndex 同源）的制卡按钮，复用其全部制卡/查重/覆写逻辑。
 window.hoshiPopupMineEntryByIndex = function(idx) {

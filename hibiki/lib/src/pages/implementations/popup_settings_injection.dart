@@ -11,6 +11,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
@@ -397,6 +398,62 @@ String popupEntryWheelBindingsJson(
   });
 }
 
+/// 一个逻辑键在 JS `KeyboardEvent.key` 里的名字（小写归一）。
+///
+/// 两边各自的命名体系要对齐：Flutter 的 `keyLabel` 给的是人读的标签（`Arrow Left`、
+/// `Enter`、字母是大写 `A`），JS 给的是 `ArrowLeft` / `Enter` / `a`。规则就两条——
+/// 全小写 + 去掉空格，两边就重合了。空格键是唯一的例外（`keyLabel` 是 `' '`，去空格
+/// 后会变成空串），显式映射成 `space`，popup.js 侧对 `e.key === ' '` 做同样的映射。
+String _webKeyName(LogicalKeyboardKey key) {
+  if (key == LogicalKeyboardKey.space) return 'space';
+  return key.keyLabel.toLowerCase().replaceAll(' ', '');
+}
+
+/// 查词弹窗 scope 的**键盘**绑定 JSON（注入成 `window.__hoshiPopupKeyBindings`）。
+///
+/// 形状与 [popupEntryWheelBindingsJson] 同构，只是把 `dir` 换成 `key`：
+///
+/// ```json
+/// {"mine":[{"key":"enter","mods":["ctrl"]}],"next":[],"prev":[]}
+/// ```
+///
+/// 覆盖本 scope **全部三个动作**（制卡 + 上/下一个词条），而不只是制卡——因为
+/// [ShortcutScope.channels] 是按 scope 而非按 action 开通道的：只要这个 scope 开了键盘，
+/// 设置页就会给它名下每个动作都渲染出「添加键盘快捷键」入口。若只有制卡真能用，词条导航
+/// 那两个入口就成了「能配、按了没反应」的死绑定（`shortcut_channel_wiring_guard_test`
+/// 的文件头把这种情况称为「比压根没有这个选项更糟」）。故三个动作同表下发、popup.js 统一
+/// 分派。词条导航的键盘默认为空（它默认走 Alt+滚轮），但用户可以在设置里绑上。
+///
+/// `mods` 是必须**恰好**按下的修饰键集合（popup.js 侧全等比对，Ctrl+Enter 绝不会被
+/// Ctrl+Shift+Enter 误触）。空表 = 未绑/用户清空 → popup.js 关掉该动作的键盘触发（而不是
+/// 回退默认，否则「清空」等于没清）。注册表未装载时回落平台默认，理由同滚轮那条。
+String popupKeyBindingsJson(
+  HibikiShortcutRegistry registry,
+  TargetPlatform platform,
+) {
+  final Map<ShortcutAction, ShortcutBindingSet>? fallback =
+      registry.isLoaded ? null : ShortcutDefaults.forPlatform(platform);
+  List<InputBinding> bindingsOf(ShortcutAction action) => fallback == null
+      ? registry.bindingsFor(action).keyboardBindings
+      : (fallback[action]?.keyboardBindings ?? const <InputBinding>[]);
+  List<Map<String, Object>> encode(ShortcutAction action) =>
+      <Map<String, Object>>[
+        for (final InputBinding b in bindingsOf(action))
+          <String, Object>{
+            'key': _webKeyName(b.key),
+            'mods': b.modifiers
+                .map((ModifierKey m) => m.label.toLowerCase())
+                .toList(growable: false)
+              ..sort(),
+          },
+      ];
+  return jsonEncode(<String, Object>{
+    'mine': encode(ShortcutAction.popupMineEntry),
+    'next': encode(ShortcutAction.popupNextEntry),
+    'prev': encode(ShortcutAction.popupPrevEntry),
+  });
+}
+
 /// BUG-717 ③：[buildPopupStaticSettingsJs] 的产物 memo（按 options 组合分槽，
 /// in-app / mobile-external / global-lookup 三类调用方互不冲刷）。命中判据是
 /// 产物的**全部输入**的廉价投影：小串直接 ==（Dart == 先走 identical 短路）、
@@ -489,6 +546,14 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     appModel.shortcutRegistry,
     theme.platform,
   );
+  // 弹窗键盘绑定只对 **app 外**的裸 WebView2 表面（全局查词窗 / 剪贴板面板）下发真值。
+  // in-app 宿主（app 内弹窗 / Android 悬浮词典 / 独立查词页）显式收 `null` 关掉 JS 侧
+  // 判定——那里键盘由 Flutter 派发（阅读器 readerCreateCardFromPopup、视频页读
+  // popupMineEntry 绑定）。两边同时开的话，一旦 WebView 把同一次按键既交给 JS 又冒泡回
+  // Flutter，就会制出两张卡；按宿主切开是结构上杜绝，而不是靠去重兜底。
+  final String popupKeyBindings = options.globalLookup
+      ? popupKeyBindingsJson(appModel.shortcutRegistry, theme.platform)
+      : 'null';
   final String audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
   final String lookupAudioVolume = ReaderHibikiSource
       .instance.lookupAudioVolumeGain
@@ -567,6 +632,11 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // hoshiFocusDictionaryEntryMove 并吃掉该事件（不滚动内容）。三种 in-app 弹窗
     // 都经此 head 注入；浏览器扩展没有这条注入通道，用 popup.js 里的同款默认值。
     window.__hoshiEntryWheelBindings = $wheelBindingsJson;
+    // 查词弹窗 scope 的键盘绑定：制卡（popupMineEntry，默认 Ctrl+Enter）+ 上/下一个词条
+    // （默认无键盘绑定，走 Alt+滚轮）。popup.js 的 keydown 监听读它并分派。
+    // null = 本宿主由 Dart 派发，JS 侧不参与（见上方 popupKeyBindings 的注释）；
+    // 浏览器扩展没有这条注入通道，读到 undefined，用 popup.js 里的同款内置默认值。
+    window.__hoshiPopupKeyBindings = $popupKeyBindings;
     window.audioSources = $audioSourcesJson;
     window.needsAudio = true;
     window.lookupAudioVolume = $lookupAudioVolume;

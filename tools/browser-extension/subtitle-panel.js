@@ -270,11 +270,18 @@
     var larger = iconBtn('A+', '放大字号', function () { stepFont(1); });
     var autoBtn = iconBtn('AS', '自动滚动到当前句', function () { toggleAutoScroll(autoBtn); });
     autoBtn.classList.toggle('is-on', st.autoScroll);
+    // 用户反馈「扩展配置根本看不见」：页面上注入的 UI 此前**没有任何**通往设置页的入口，
+    // 而字幕面板是用户在视频页唯一常驻可见的扩展 UI。content script 里没有
+    // chrome.runtime.openOptionsPage，故发消息给 background 代开（见 background.js）。
+    var settingsBtn = iconBtn('⚙', '扩展设置（连接 · 字幕 · 快捷键）', function () {
+      try { chrome.runtime.sendMessage({ type: 'openOptions' }); } catch (_) {}
+    });
     var closeBtn = iconBtn('X', '关闭', function () { hidePanel(); });
     titleRow.appendChild(loadBtn);
     titleRow.appendChild(smaller);
     titleRow.appendChild(larger);
     titleRow.appendChild(autoBtn);
+    titleRow.appendChild(settingsBtn);
     titleRow.appendChild(closeBtn);
     header.appendChild(titleRow);
 
@@ -981,6 +988,13 @@
       case 'toggle-condensed': return togglePref('subtitleCondensedPlayback', '精简播放');
       case 'toggle-fastforward': return togglePref('subtitleFastForwardPlayback', '快进无字幕段');
       case 'toggle-panel': return shortcutTogglePanel();
+      // 隐藏字幕：状态与 style 注入由 content.js 独占（见那里的「所有权」注释）——面板整体
+      // 受 netflixSubtitlePanel 门控且默认关，状态放这里会导致「没开面板就不能隐藏字幕」。
+      // 这里只做转发，content.js 未就绪时返回 false（不吞按键，站点行为原样）。
+      case 'toggle-subtitle-hide':
+        return typeof window.hibikiToggleSubtitleHiding === 'function'
+          ? window.hibikiToggleSubtitleHiding() === true
+          : false;
     }
     return false;
   };
