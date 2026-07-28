@@ -63,8 +63,7 @@ void main() {
       expect(daily[StatBreakdownSource.book]!['2026-07-27']!.pages, 0);
       expect(daily[StatBreakdownSource.manga]!['2026-07-27']!.chars, 300);
       expect(daily[StatBreakdownSource.manga]!['2026-07-27']!.pages, 20);
-      expect(daily[StatBreakdownSource.book].toString(),
-          isNot(contains('漫画')));
+      expect(daily[StatBreakdownSource.book].toString(), isNot(contains('漫画')));
     });
 
     test('视频带字幕字数与观看时长；游戏带文本字数与游玩时长', () {
@@ -113,8 +112,7 @@ void main() {
     );
 
     test('全部来源合计 = 首页每日目标同一口径分子', () {
-      final StatSourceTotals all =
-          sumAllStatSources(daily, (String _) => true);
+      final StatSourceTotals all = sumAllStatSources(daily, (String _) => true);
       expect(all.chars, 1000 + 300 + 150 + 500 + 2000);
       expect(all.timeMs, 600000 + 300000 + 120000 + 1800000 + 3600000);
       expect(all.pages, 29);
