@@ -259,6 +259,37 @@ class MediaSelectionController {
   /// 清空选中集但**留在**多选态（批量操作落库后调用）。
   void clearSelection() => _resetSelection();
 
+  /// 把选中集收敛到**当前真实存在**的条目上，返回被剔掉的个数。
+  ///
+  /// 为什么必须有这一步：选中集只按用户点击增删，从不随库变化剪枝。多选态可以
+  /// 存活很久（切 tab、进详情页再回来都保留），期间下拉同步 / 互联对端下架 /
+  /// 另一处删除都可能让某个 key 对应的行消失。此时选中集里留着的就是**幽灵键**，
+  /// 后果不是「少做一件事」而是三种糟得多的结局：
+  ///
+  /// - 批量打标签：`bookTags` 对 `bookKey` 有外键，插幽灵键抛
+  ///   `SqliteException`，而弹窗的确定按钮把落库 await 在自己的 loading 态里，
+  ///   异常一抛 loading 永不落地 → **弹窗卡死**，用户只能杀进程。
+  /// - 批量组合：`addToCollection` 同样撞外键，且它挂在 `void` 回调后面无人
+  ///   catch，用户看到的是「点了没反应」，会以为合集建好了。
+  /// - 计数虚高：底部「已选 N 项」和确认框里的 N 都把幽灵键算进去，用户是**照着
+  ///   一个虚数在做删除决定**。
+  ///
+  /// [loose] / [collections] 传当前真实存在的全集（不是「可见」全集——被搜索或
+  /// 标签筛掉的条目仍然存在，用户先勾后筛是合法用法，不该被悄悄剔掉）。
+  ///
+  /// 剔除后锚点失效：它可能正指着被剔掉的那一格。
+  int retainExisting({
+    required Set<String> loose,
+    required Set<int> collections,
+  }) {
+    final int before = length;
+    _looseKeys.retainWhere(loose.contains);
+    _collectionIds.retainWhere(collections.contains);
+    final int dropped = before - length;
+    if (dropped > 0) _anchor = null;
+    return dropped;
+  }
+
   /// 锚点 → [slot] 的可见区间。不可用时返回 null（调用方退化处理）。
   List<SelectionSlot>? _rangeFromAnchor(SelectionSlot slot) {
     final SelectionSlot? anchor = _anchor;

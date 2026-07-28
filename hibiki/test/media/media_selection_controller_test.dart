@@ -218,4 +218,92 @@ void main() {
       expect(set, hasLength(2));
     });
   });
+
+  group('retainExisting（批量操作前剔除幽灵键）', () {
+    /// 建一个「选了 3 张散卡 + 2 个合集」的多选态。
+    MediaSelectionController seeded() {
+      final MediaSelectionController c = MediaSelectionController();
+      c.setVisibleOrder(
+        loose: <String>['a', 'b', 'c'],
+        collections: <int>[10, 20],
+      );
+      c.enterWith(const SelectionSlot.loose('a'));
+      c.toggle(const SelectionSlot.loose('b'));
+      c.toggle(const SelectionSlot.loose('c'));
+      c.toggle(const SelectionSlot.collection(10));
+      c.toggle(const SelectionSlot.collection(20));
+      return c;
+    }
+
+    test('全都还在时不剔任何东西，返回 0，锚点保留', () {
+      final MediaSelectionController c = seeded();
+      final SelectionSlot? anchorBefore = c.anchor;
+      final int dropped = c.retainExisting(
+        loose: <String>{'a', 'b', 'c'},
+        collections: <int>{10, 20},
+      );
+      expect(dropped, 0);
+      expect(c.looseKeys, <String>{'a', 'b', 'c'});
+      expect(c.collectionIds, <int>{10, 20});
+      expect(c.anchor, anchorBefore);
+    });
+
+    test('散卡与合集各剔掉一个，返回总剔除数', () {
+      final MediaSelectionController c = seeded();
+      // 同步把 b 和合集 20 下架了。
+      final int dropped = c.retainExisting(
+        loose: <String>{'a', 'c'},
+        collections: <int>{10},
+      );
+      expect(dropped, 2);
+      expect(c.looseKeys, <String>{'a', 'c'});
+      expect(c.collectionIds, <int>{10});
+      expect(c.length, 3);
+    });
+
+    test('剔除后锚点失效——它可能正指着被剔掉的那一格', () {
+      final MediaSelectionController c = seeded();
+      expect(c.anchor, isNotNull);
+      c.retainExisting(
+        loose: <String>{'a', 'b'},
+        collections: <int>{10, 20},
+      );
+      expect(c.anchor, isNull);
+    });
+
+    test('存在性全集比选中集大也不会凭空多选（只做交集，不做并集）', () {
+      final MediaSelectionController c = seeded();
+      final int dropped = c.retainExisting(
+        loose: <String>{'a', 'b', 'c', 'd', 'e'},
+        collections: <int>{10, 20, 30},
+      );
+      expect(dropped, 0);
+      expect(c.looseKeys, <String>{'a', 'b', 'c'});
+      expect(c.collectionIds, <int>{10, 20});
+    });
+
+    test('全部消失时清空并返回原长度，调用方据此中止批量操作', () {
+      final MediaSelectionController c = seeded();
+      final int dropped = c.retainExisting(
+        loose: const <String>{},
+        collections: const <int>{},
+      );
+      expect(dropped, 5);
+      expect(c.isEmpty, isTrue);
+      // 多选态本身不被 retainExisting 关掉——关不关由调用方决定。
+      expect(c.active, isTrue);
+    });
+
+    test('「已跳过 M 项 / 共 N 项」的 N 由剔除数 + 剩余数还原得出', () {
+      final MediaSelectionController c = seeded();
+      final int dropped = c.retainExisting(
+        loose: <String>{'a'},
+        collections: <int>{10},
+      );
+      // 两个页面都用 `dropped + length` 还原用户当初勾的总数，别让提示里的 N
+      // 变成剔除后的数字（那样 M/N 会自相矛盾）。
+      expect(dropped + c.length, 5);
+      expect(dropped, 3);
+    });
+  });
 }

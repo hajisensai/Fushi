@@ -81,11 +81,23 @@ class SelectionSlotTarget extends StatelessWidget {
 
 /// 长按扫选的接管区：包在库页滚动体外面，多选态才生效。
 ///
-/// 只在 [enabled] 为真（= 多选态）时挂长按识别器。多选态下卡片自身的
-/// `onLongPress` / `onSecondaryTap` 本就已置 null（两页原有纪律），故这里的
-/// 长按无竞争对手；快速点击仍归卡片 `InkWell.onTap`（长按识别器要过
+/// 只在 [enabled] 为真（= 多选态）时**接上**长按回调。多选态下参与多选的卡片
+/// 自身的 `onLongPress` / `onSecondaryTap` 已置 null（两页原有纪律），故这里的
+/// 长按在这些卡上无竞争对手；快速点击仍归卡片 `InkWell.onTap`（长按识别器要过
 /// `kLongPressTimeout` 才宣布胜出），列表滚动仍归 `Scrollable`（手指先动就
 /// 由拖动识别器赢下竞技场，长按根本不会触发）。
+///
+/// ⚠️ 「卡片长按已置 null」只对**参与多选的卡**成立。不可单独勾选的卡（合集成员
+/// 卡、远端占位卡）在多选态仍保留自己的长按菜单，长按它们归卡片、不起手扫选——
+/// 它们本来也没有 [SelectionSlot]，扫不出东西。别把这条注释读成「多选态下全页
+/// 没有第二个长按识别器」。
+///
+/// 🔴 [GestureDetector] **恒建**，只按 [enabled] 决定回调传不传 null：早期实现
+/// 在 `!enabled` 时 early-return `child`，导致进/退多选态时这一层的子树形状
+/// 变化（`GestureDetector` ↔ 业务子树 `runtimeType` 不同 → `Element` 无法复用
+/// → 整棵 body 重建），用户正翻到列表中段一进多选就被弹回顶部（两个库页都没有
+/// `PageStorageKey` / 外挂 `ScrollController` 兜底）。守卫见
+/// `test/media/selection_gestures_test.dart` 的「进/退多选态不重建子树」组。
 ///
 /// ⚠️ 未做边缘自动滚动：手指扫到屏幕边缘不会自动翻页，需要抬手滚动后再扫。
 /// 这是刻意的 v1 范围——自动滚动要引入定时器 + 速度曲线，且与
@@ -126,16 +138,32 @@ class _SelectionDragAreaState extends State<SelectionDragArea> {
   /// （一次滑动每帧都回调，同一张卡上重复刷区间是纯浪费）。
   SelectionSlot? _lastSlot;
 
+  /// 多选态在扫选途中被关掉（批量操作落库后自动退出多选）时，识别器的回调已被
+  /// 摘成 null，`onLongPressEnd` 永远不会再来。不在这里收尾的话 [_dragging] 会
+  /// 一直留 true，下次进多选后第一次滑动就会绕过 [_handleStart] 直接刷区间。
+  @override
+  void didUpdateWidget(SelectionDragArea oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.enabled && !widget.enabled) {
+      _dragging = false;
+      _lastSlot = null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (!widget.enabled) return widget.child;
+    // 恒建 GestureDetector（见类 doc 🔴）：树形状不随 enabled 变，滚动位置才不会
+    // 在进/退多选态时被重建冲掉。回调置 null 时 GestureDetector 不注册任何识别器，
+    // 命中行为与不存在这一层等价。
+    final bool on = widget.enabled;
     return GestureDetector(
-      // 卡片之间的间隙也要能起手（不然扫选起点必须精确落在卡上）。
+      // 卡片之间的间隙也要能起手（不然扫选起点必须精确落在卡上）。非多选态回调
+      // 全 null，此时 translucent 也不会吃掉任何命中（无识别器 = 不参与竞技场）。
       behavior: HitTestBehavior.translucent,
-      onLongPressStart: _handleStart,
-      onLongPressMoveUpdate: _handleMove,
-      onLongPressEnd: _handleEnd,
-      onLongPressCancel: _handleCancel,
+      onLongPressStart: on ? _handleStart : null,
+      onLongPressMoveUpdate: on ? _handleMove : null,
+      onLongPressEnd: on ? _handleEnd : null,
+      onLongPressCancel: on ? _handleCancel : null,
       child: widget.child,
     );
   }

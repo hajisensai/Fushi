@@ -502,6 +502,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   /// - 选中散卡 → 删媒体本体（EPUB/SRT，现状语义）；
   /// - 混选 → 确认框文案写明「删 N 个媒体、解散 M 个合集」。
   Future<void> _batchDeleteConfirm() async {
+    // 先剔幽灵键再取数：确认框里的 N / M 必须是真会被删的条数。
+    if (!await _pruneStaleSelection() || !mounted) return;
     final int mediaCount = _selectedKeys.length;
     final int collectionCount = _selectedCollectionIds.length;
     if (mediaCount == 0 && collectionCount == 0) return;
@@ -582,7 +584,52 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     HibikiToast.show(msg: successMsg);
   }
 
+  /// 批量操作前把选中集收敛到真实存在的条目上，真剔掉了就明说。
+  ///
+  /// 与视频库同一纪律（见 `home_video_page._pruneStaleSelection`）：选中集不随库
+  /// 变化剪枝，多选态期间同步下架 / 别处删除都会留下幽灵键，落库时撞外键——打标签
+  /// 会把弹窗卡死在 loading、组合会静默失败、确认框数字是虚数。
+  ///
+  /// 存在性全集取**全库**而非可见集：被搜索或标签筛掉的书仍然存在，用户先勾后筛
+  /// 是合法用法，不该被悄悄剔掉。
+  ///
+  /// 返回剔完后是否还有东西可做。
+  Future<bool> _pruneStaleSelection() async {
+    if (_selection.isEmpty) return false;
+    final HibikiDatabase db = appModel.database;
+    // 存在性真值必须取自**书架选择键的来源表**，不是名字相近的 `media_items`：
+    // 书架 EPUB 卡的选择键是 `ReaderHibikiSource.mediaIdentifierFor(bookKey)`，
+    // bookKey 的真值在 `epub_books`（`hibikiBooksProvider` 也是从这里取的）；
+    // `getAllMediaItems()` 是另一张表、另一套 mediaIdentifier 语义，拿它做判据
+    // 会把全部选中项误判成幽灵键而整批剔光。
+    final List<EpubBookRow> epubBooks = await db.getAllEpubBooks();
+    final List<SrtBook> srtBooks = await SrtBookRepository(db).listAll();
+    final List<MediaCollectionRow> collections =
+        await db.getAllMediaCollections();
+    if (!mounted) return false;
+    final int dropped = _selection.retainExisting(
+      loose: <String>{
+        for (final EpubBookRow row in epubBooks)
+          ReaderHibikiSource.mediaIdentifierFor(row.bookKey),
+        for (final SrtBook book in srtBooks) 'srt_${book.uid}',
+      },
+      collections: <int>{for (final MediaCollectionRow c in collections) c.id},
+    );
+    if (dropped == 0) return _selection.isNotEmpty;
+    _rebuild(() {});
+    HibikiToast.show(
+      msg: t.batch_selection_stale_skipped(
+        n: dropped + _selection.length,
+        m: dropped,
+      ),
+    );
+    return _selection.isNotEmpty;
+  }
+
   Future<void> _batchShowTagPicker() async {
+    // 幽灵键会让 bookTags 外键插入抛异常，弹窗把落库 await 在 loading 态里，
+    // 一抛就永远转圈（卡死）。必须在开弹窗前剔干净。
+    if (!await _pruneStaleSelection() || !mounted) return;
     final allTags = ref.read(allTagsProvider).valueOrNull;
     if (allTags == null || allTags.isEmpty) {
       HibikiToast.show(msg: t.tag_no_tags_hint);
@@ -610,6 +657,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
   /// - 恰 1 合集 + 若干散卡 → 散卡并入该合集（[_combineAddToExisting]，不弹命名）；
   /// - ≥2 合集（可带散卡）→ 合并成一个（[_combineMergeCollections]，默认名=成员最多合集名）。
   Future<void> _batchCombineIntoSeries() async {
+    // 幽灵键会让 addToCollection 撞外键且无人 catch（用户只看到「点了没反应」）。
+    if (!await _pruneStaleSelection() || !mounted) return;
     final List<int> collectionIds = _selectedCollectionIds.toList()..sort();
     final List<ShelfEntryRef> looseRefs = <ShelfEntryRef>[
       for (final String key in _selectedKeys)

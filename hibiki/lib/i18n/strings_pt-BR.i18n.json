@@ -2753,5 +2753,6 @@
   "media_tracking_retry_no_match": "No match found. Try manual linking.",
   "game_statistics": "Game statistics",
   "game_stat_by_game": "By game",
-  "stat_clear_all_game_message": "Clear all game play time and session counts? Your game library and activity timeline are kept. This cannot be undone."
+  "stat_clear_all_game_message": "Clear all game play time and session counts? Your game library and activity timeline are kept. This cannot be undone.",
+  "batch_selection_stale_skipped": "Skipped $m of $n selected items that no longer exist"
 }

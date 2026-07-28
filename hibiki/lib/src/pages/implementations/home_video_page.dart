@@ -692,11 +692,41 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ));
   }
 
+  /// 批量操作前把选中集收敛到真实存在的条目上，真剔掉了就明说。
+  ///
+  /// 选中集不随库变化剪枝（见 [MediaSelectionController.retainExisting]），多选态
+  /// 期间同步下架 / 别处删除都会留下幽灵键。必须在**任何**批量操作落库前剔干净：
+  /// 否则打标签撞外键会把弹窗卡死、组合撞外键会静默失败、确认框里的数字是虚数。
+  ///
+  /// 返回剔完后是否还有东西可做（全空则调用方直接返回）。
+  Future<bool> _pruneStaleSelection() async {
+    if (_selection.isEmpty) return false;
+    final List<VideoBookRow> books = await widget.repo.listAll();
+    final List<MediaCollectionRow> collections =
+        await ref.read(appProvider).database.getAllMediaCollections();
+    if (!mounted) return false;
+    final int dropped = _selection.retainExisting(
+      loose: <String>{for (final VideoBookRow b in books) b.bookUid},
+      collections: <int>{for (final MediaCollectionRow c in collections) c.id},
+    );
+    if (dropped == 0) return _selection.isNotEmpty;
+    setState(() {});
+    HibikiToast.show(
+      msg: t.batch_selection_stale_skipped(
+        n: dropped + _selection.length,
+        m: dropped,
+      ),
+    );
+    return _selection.isNotEmpty;
+  }
+
   /// 块4：批量删除区分解散/删媒体。
   /// - 选中合集 → 解散（[HibikiDatabase.deleteMediaCollection]：只解除分组，不删媒体本体）；
   /// - 选中散卡 → 删媒体本体（[VideoBookRepository.deleteVideoBook]，现状语义）；
   /// - 混选 → 确认框文案写明「删 N 个媒体、解散 M 个合集」。
   Future<void> _batchDeleteConfirm() async {
+    // 先剔幽灵键再取数：确认框里的 N / M 必须是真会被删的条数。
+    if (!await _pruneStaleSelection() || !mounted) return;
     final int mediaCount = _selectedUids.length;
     final int collectionCount = _selectedCollectionIds.length;
     if (mediaCount == 0 && collectionCount == 0) return;
@@ -807,6 +837,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 应用到所有选中视频书（经 [HibikiDatabase.addTagToVideoBook] /
   /// [HibikiDatabase.removeTagFromVideoBook]），关闭后刷新映射。
   Future<void> _batchShowTagPicker() async {
+    // 幽灵键会让 bookTags 的外键插入抛异常，而弹窗把落库 await 在 loading 态里，
+    // 一抛就永远转圈（卡死）。必须在开弹窗前剔干净。
+    if (!await _pruneStaleSelection() || !mounted) return;
     if (_selectedUids.isEmpty) return;
     final List<BookTagRow>? allTags = ref.read(allTagsProvider).valueOrNull;
     if (allTags == null || allTags.isEmpty) {
@@ -1030,6 +1063,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// - ≥2 合集（可带散卡）→ 合并成一个（[_combineMergeCollections]，默认名=成员最多合集名）。
   /// 全部走既有 DAO（createMediaCollection / addToCollection / deleteMediaCollection）。
   Future<void> _batchCombineIntoSeries() async {
+    // 幽灵键会让 addToCollection 撞外键，且它挂在无人 catch 的路径上——用户只会
+    // 看到「点了没反应」，以为合集建好了。先剔干净再分档。
+    if (!await _pruneStaleSelection() || !mounted) return;
     final HibikiDatabase db = ref.read(appProvider).database;
     final List<int> collectionIds = _selectedCollectionIds.toList()..sort();
     final List<ShelfEntryRef> looseRefs = <ShelfEntryRef>[
@@ -2814,8 +2850,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 短按仍流式播放（_openRemote）；长按 / 桌面右键弹选项面板，与本地视频
       // 卡长按一致（TODO-768 / BUG-416）。原先远端视频卡无 onLongPress（长按
       // 没反应），现在补齐。
-      onLongPress: () => _showRemoteVideoDialog(video),
-      onSecondaryTap: () => _showRemoteVideoDialog(video),
+      //
+      // 多选态压制，与本地散卡 / 合集卡同一纪律：远端占位卡不可单独勾选，但它
+      // 此前**漏了这道门控**，多选态长按它会弹选项面板，而不是被祖先
+      // [SelectionDragArea] 接走起手扫选——正好证伪了那一层「多选态下卡片长按
+      // 本就置 null」的前提。
+      onLongPress: _selectionMode ? null : () => _showRemoteVideoDialog(video),
+      onSecondaryTap:
+          _selectionMode ? null : () => _showRemoteVideoDialog(video),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
