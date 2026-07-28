@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_settings_dialog_page.dart';
 import 'package:hibiki/utils.dart';
@@ -69,6 +68,33 @@ Widget _buildApp({
         home: home,
       ),
     ),
+  );
+}
+
+class _CssDialogLauncher extends StatelessWidget {
+  const _CssDialogLauncher();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: TextButton(
+          onPressed: () {
+            showAppDialog<void>(
+              context: context,
+              builder: (_) => const DictCssEditorDialog(),
+            );
+          },
+          child: const Text('打开 CSS'),
+        ),
+      ),
+    );
+  }
+}
+
+Finder _cssEditorField() {
+  return find.byWidgetPredicate(
+    (widget) => widget is TextField && widget.expands,
   );
 }
 
@@ -146,5 +172,77 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('JMdict'), findsOneWidget);
     expect(find.textContaining('color: red'), findsOneWidget);
+  });
+
+  testWidgets('barrier dismissal keeps CSS draft and cancel discards it', (
+    WidgetTester tester,
+  ) async {
+    final _FakeCssAppModel appModel = _FakeCssAppModel();
+    final String savedCss = appModel.savedGlobalCss;
+
+    await tester.pumpWidget(
+      _buildApp(
+        appModel: appModel,
+        home: const _CssDialogLauncher(),
+      ),
+    );
+
+    await tester.tap(find.text('打开 CSS'));
+    await tester.pumpAndSettle();
+    await tester.enterText(_cssEditorField(), '.draft { color: orange; }');
+    await tester.tapAt(const Offset(4, 4));
+    await tester.pumpAndSettle();
+
+    expect(appModel.savedGlobalCss, savedCss);
+    expect(find.byType(DictCssEditorDialog), findsNothing);
+
+    await tester.tap(find.text('打开 CSS'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('.draft { color: orange; }'), findsOneWidget);
+
+    await tester.tap(find.text(t.dialog_cancel));
+    await tester.pumpAndSettle();
+    expect(appModel.savedGlobalCss, savedCss);
+
+    await tester.tap(find.text('打开 CSS'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining(savedCss), findsOneWidget);
+    expect(find.textContaining('.draft { color: orange; }'), findsNothing);
+  });
+
+  testWidgets('scope changes stay in draft until Save persists every edit', (
+    WidgetTester tester,
+  ) async {
+    final _FakeCssAppModel appModel = _FakeCssAppModel();
+    final String savedGlobalCss = appModel.savedGlobalCss;
+
+    await tester.pumpWidget(
+      _buildApp(
+        appModel: appModel,
+        home: const _CssDialogLauncher(),
+      ),
+    );
+
+    await tester.tap(find.text('打开 CSS'));
+    await tester.pumpAndSettle();
+    await tester.enterText(_cssEditorField(), '.global-draft { color: blue; }');
+
+    await tester.tap(find.byType(DropdownMenu<int>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('JMdict').last);
+    await tester.pumpAndSettle();
+
+    expect(appModel.savedGlobalCss, savedGlobalCss);
+    await tester.enterText(_cssEditorField(), '.entry { color: red; }');
+    expect(appModel.savedCustomCss, isEmpty);
+
+    await tester.tap(find.text(t.dialog_save));
+    await tester.pumpAndSettle();
+
+    expect(appModel.savedGlobalCss, '.global-draft { color: blue; }');
+    expect(
+      appModel.savedCustomCss['JMdict'],
+      '.entry { color: red; }',
+    );
   });
 }

@@ -495,6 +495,19 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   }
 }
 
+class _DictCssDraftSession {
+  _DictCssDraftSession({
+    required this.appModel,
+    required this.selectedDictionaryName,
+  });
+
+  final AppModel appModel;
+  final Map<String?, String> cssByDictionary = <String?, String>{};
+  String? selectedDictionaryName;
+}
+
+_DictCssDraftSession? _dictCssDraftSession;
+
 class DictCssEditorDialog extends StatefulWidget {
   const DictCssEditorDialog({
     super.key,
@@ -512,9 +525,13 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
   late TextEditingController _cssController;
   late List<String> _dictNames;
   late AppModel _appModel;
+  late _DictCssDraftSession _draft;
+  bool _draftFinalized = false;
+  bool _isSaving = false;
 
   bool get _isGlobal => _selectedIndex == 0;
   String get _currentDictName => _dictNames[_selectedIndex - 1];
+  String? get _selectedDictionaryName => _isGlobal ? null : _currentDictName;
 
   @override
   void initState() {
@@ -522,44 +539,98 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
     _appModel =
         ProviderScope.containerOf(context, listen: false).read(appProvider);
     _dictNames = _appModel.dictionaries.map((d) => d.name).toList();
-    _selectedIndex = _initialSelectedIndex();
-    _cssController = TextEditingController(text: _currentCss);
+    final _DictCssDraftSession? existingDraft = _dictCssDraftSession;
+    if (existingDraft != null && identical(existingDraft.appModel, _appModel)) {
+      _draft = existingDraft;
+      _selectedIndex =
+          _selectedIndexForDictionary(_draft.selectedDictionaryName);
+    } else {
+      _selectedIndex = _initialSelectedIndex();
+      _draft = _DictCssDraftSession(
+        appModel: _appModel,
+        selectedDictionaryName: _selectedDictionaryName,
+      );
+      _dictCssDraftSession = _draft;
+    }
+    _draft.selectedDictionaryName = _selectedDictionaryName;
+    _cssController = TextEditingController(text: _currentDraftCss);
   }
 
   @override
   void dispose() {
+    if (!_draftFinalized) {
+      _stashCurrentScope();
+    }
     _cssController.dispose();
     super.dispose();
   }
 
-  Future<void> _onScopeChanged(int? index) async {
+  void _onScopeChanged(int? index) {
     if (index == null || index == _selectedIndex) return;
-    await _saveCurrentScope();
+    _stashCurrentScope();
     _selectedIndex = index;
-    _cssController.text = _currentCss;
+    _draft.selectedDictionaryName = _selectedDictionaryName;
+    _cssController.text = _currentDraftCss;
     setState(() {});
   }
 
-  Future<void> _saveCurrentScope() async {
-    final css = _cssController.text;
-    if (_isGlobal) {
-      await _appModel.setGlobalDictCSS(css);
-    } else {
-      await _appModel.setCustomCSSForDict(_currentDictName, css);
+  void _stashCurrentScope() {
+    _draft.cssByDictionary[_selectedDictionaryName] = _cssController.text;
+  }
+
+  Future<void> _saveDraft() async {
+    if (_isSaving) return;
+    _stashCurrentScope();
+    setState(() => _isSaving = true);
+    try {
+      for (final MapEntry<String?, String> entry
+          in _draft.cssByDictionary.entries) {
+        final String? dictionaryName = entry.key;
+        if (dictionaryName == null) {
+          await _appModel.setGlobalDictCSS(entry.value);
+        } else {
+          await _appModel.setCustomCSSForDict(dictionaryName, entry.value);
+        }
+      }
+      _draftFinalized = true;
+      if (identical(_dictCssDraftSession, _draft)) {
+        _dictCssDraftSession = null;
+      }
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
 
+  void _cancelDraft() {
+    _draftFinalized = true;
+    if (identical(_dictCssDraftSession, _draft)) {
+      _dictCssDraftSession = null;
+    }
+    Navigator.pop(context);
+  }
+
   int _initialSelectedIndex() {
-    final String? initialDictionaryName = widget.initialDictionaryName;
-    if (initialDictionaryName == null) return 0;
-    final int dictIndex = _dictNames.indexOf(initialDictionaryName);
+    return _selectedIndexForDictionary(widget.initialDictionaryName);
+  }
+
+  int _selectedIndexForDictionary(String? dictionaryName) {
+    if (dictionaryName == null) return 0;
+    final int dictIndex = _dictNames.indexOf(dictionaryName);
     return dictIndex < 0 ? 0 : dictIndex + 1;
   }
 
-  String get _currentCss {
-    return _isGlobal
-        ? _appModel.globalDictCSS
-        : _appModel.getCustomCSSForDict(_currentDictName);
+  String get _currentDraftCss {
+    return _draft.cssByDictionary.putIfAbsent(
+      _selectedDictionaryName,
+      () => _isGlobal
+          ? _appModel.globalDictCSS
+          : _appModel.getCustomCSSForDict(_currentDictName),
+    );
   }
 
   @override
@@ -614,11 +685,14 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
           children: [
             adaptiveDialogAction(
               context: context,
-              child: Text(t.dialog_close),
-              onPressed: () async {
-                await _saveCurrentScope();
-                if (context.mounted) Navigator.pop(context);
-              },
+              onPressed: _isSaving ? null : _cancelDraft,
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: _isSaving ? null : _saveDraft,
+              child: Text(t.dialog_save),
             ),
           ],
         ),
