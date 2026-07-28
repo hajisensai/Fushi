@@ -8,7 +8,7 @@ import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression;
 
-/// BUG-1203 守卫：
+/// BUG-1205 守卫：
 ///  ① 封面（GIF）与句子音频两条 ffmpeg 抽取必须**并行**——它们之间没有数据依赖，
 ///     串行会让耗时直接相加（用户把图片档拉到最高时 GIF 单项就要数秒）。
 ///  ② 失败摘要必须按**来源**分流，不能再靠 onFailure 的调用顺序区分「首个=封面、

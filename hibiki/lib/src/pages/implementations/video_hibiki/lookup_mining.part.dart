@@ -345,7 +345,7 @@ extension _VideoLookupMining on _VideoHibikiPageState {
     // TODO-1000：委托统一沉浸制卡引擎。媒体降级阶梯 / 无音频中止 / 组 context / 落卡都在
     // 引擎内；本壳只管 OSD + 视频统计。
     //
-    // BUG-1203：两个失败摘要过去靠**同一个 onFailure 的调用顺序**区分（首个当 GIF、末个
+    // BUG-1205：两个失败摘要过去靠**同一个 onFailure 的调用顺序**区分（首个当 GIF、末个
     // 当音频）。引擎现在让封面与音频并行跑，顺序不再确定——改按来源取：封面失败进
     // [coverFailure]（喂「降级为静态」OSD 的原因），音频失败进 [audioFailure]（喂「无音频
     // 中止」OSD 的原因）。语义由参数名承载，不再依赖时序。
