@@ -17,7 +17,6 @@
 import 'dart:io' show Platform, Process;
 
 import 'package:drift/drift.dart' show Value;
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
@@ -30,6 +29,8 @@ import 'package:hibiki/src/sync/webdav_sync_backend.dart';
 import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
+import 'package:hibiki/src/models/app_model.dart';
 
 /// 管理网络/本地来源库的对话框：按 mediaKind（'video' | 'book'）过滤，
 /// 列出该种类下所有来源库，提供添加 / 重新扫描 / 打开 / 移除 / 重排。
@@ -402,7 +403,14 @@ class _MediaSourcesDialogState extends ConsumerState<MediaSourcesDialog>
   }
 
   Future<void> _addLocalFolder() async {
-    final String? picked = await FilePicker.platform.getDirectoryPath(
+    // 扫描根是**长期存储并反复复扫**的路径，必须是真实文件系统绝对路径：安卓上
+    // 裸 `getDirectoryPath()` 给的是 tree content URI 解析串，`dart:io` 遍历恒空，
+    // 于是「加了来源却永远扫不出书」。统一走 pickRealDirectoryPath（安卓经 SAF
+    // 解析回真实路径，桌面/iOS 行为逐字不变）。
+    final String? picked = await pickRealDirectoryPath(
+      context: context,
+      appModel:
+          ProviderScope.containerOf(context, listen: false).read(appProvider),
       dialogTitle: t.media_source_add_local_folder,
     );
     if (!mounted || picked == null || picked.isEmpty) return;

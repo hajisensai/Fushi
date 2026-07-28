@@ -8,6 +8,9 @@ import 'package:hibiki/src/media/video/video_shader_manager.dart';
 import 'package:hibiki/src/media/video/video_shader_tier.dart';
 import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
+import 'package:hibiki/src/models/app_model.dart';
 
 /// mpv 着色器内嵌管理视图：导入 `.glsl`/`.hook`、从本机 mpv 发现导入、一键下载
 /// Anime4K 推荐预设、勾选启用、即时应用。直接嵌进视频设置面板的「着色器」详情 pane
@@ -122,7 +125,11 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
   /// [autoFallback]=true 表示这是「自动找不到」转过来的（首句提示语略不同）。
   Future<void> _pickMpvDirAndSearch({bool autoFallback = false}) async {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-    final String? dir = await FilePicker.platform.getDirectoryPath(
+    // 选中的目录随后要被 `dart:io` 遍历（扫 .glsl/.hook），必须是真实路径。
+    final String? dir = await pickRealDirectoryPath(
+      context: context,
+      appModel:
+          ProviderScope.containerOf(context, listen: false).read(appProvider),
       dialogTitle: t.video_shader_pick_mpv_dir,
       initialDirectory: _mpvDir.isNotEmpty ? _mpvDir : null,
     );

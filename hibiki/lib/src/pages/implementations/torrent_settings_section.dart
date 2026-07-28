@@ -3,14 +3,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:file_picker/file_picker.dart';
-
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/download_network_proxy.dart';
 import 'package:hibiki/src/media/torrent/download_save_root.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 
 /// 下载后端配置（后端二选一 + qb 连接 / 内置引擎限速·上传·做种·内存·连接数）。
 /// 从「设置→视频」搬到「下载」页——下载既已独立成页，配置就该在页内，不再埋进
@@ -88,12 +87,15 @@ class _TorrentSettingsSectionState
   }
 
   /// TODO-1961：选新的下载目录。校验不过**不写**配置，直接 snack 报原因（不静默）。
-  /// 桌面统一走 file_picker 的 `getDirectoryPath`（与数据根设置同一惯例）。
+  /// 统一走 [pickRealDirectoryPath]（与数据根设置同一惯例）：下载根长期承载写入，
+  /// 必须是真实文件系统路径。
   Future<void> _changeDownloadFolder() async {
     if (_pickingFolder) return;
     setState(() => _pickingFolder = true);
     try {
-      final String? picked = await FilePicker.platform.getDirectoryPath(
+      final String? picked = await pickRealDirectoryPath(
+        context: context,
+        appModel: ref.read(appProvider),
         dialogTitle: t.download_save_root_change,
       );
       if (picked == null || picked.trim().isEmpty || !mounted) return;

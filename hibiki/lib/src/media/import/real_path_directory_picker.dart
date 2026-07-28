@@ -24,13 +24,22 @@ import 'package:path/path.dart' as p;
 ///
 /// 只有 externalstorage provider（设备存储/SD 卡）能映射出真实路径；云盘/虚拟
 /// provider 无真实路径 → 原生返回 null → 这里取消（与旧自绘浏览器同样不可达，无退化）。
+///
+/// [dialogTitle] / [initialDirectory] 只对桌面 / iOS 的 `getDirectoryPath()` 生效
+/// （原样透传）。安卓走系统 SAF（`ACTION_OPEN_DOCUMENT_TREE`），标题与初始目录由
+/// 系统自己决定，两个参数被忽略——这不是退化，是 SAF 本来就不接受这两项。
 Future<String?> pickRealDirectoryPath({
   required BuildContext context,
   required AppModel appModel,
+  String? dialogTitle,
+  String? initialDirectory,
 }) async {
   // 桌面（Windows/macOS/Linux）与 iOS：`getDirectoryPath()` 已返回真实路径。
   if (defaultTargetPlatform != TargetPlatform.android) {
-    return FilePicker.platform.getDirectoryPath();
+    return FilePicker.platform.getDirectoryPath(
+      dialogTitle: dialogTitle,
+      initialDirectory: initialDirectory,
+    );
   }
 
   // 安卓：先确保 MANAGE_EXTERNAL_STORAGE（全文件访问）已授权——下游 dart:io 读盘需要。

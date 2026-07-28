@@ -142,7 +142,11 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     // 再入保护：行 Activate（A/Enter）和 trailing 按钮都进这里，迁移中忽略二次触发。
     if (_migrating) return;
 
-    final String? picked = await FilePicker.platform.getDirectoryPath(
+    // 数据根是整个 app 长期读写的落点，必须是真实文件系统路径（见
+    // pickRealDirectoryPath）——content URI 串迁过去等于把库搬进一个读不回来的地方。
+    final String? picked = await pickRealDirectoryPath(
+      context: context,
+      appModel: widget.settingsContext.appModel,
       dialogTitle: t.data_storage_change_button,
     );
     if (picked == null || picked.isEmpty || !mounted) return;

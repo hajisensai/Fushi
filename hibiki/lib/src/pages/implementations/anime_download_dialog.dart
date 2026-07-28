@@ -5,7 +5,6 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
@@ -27,6 +26,7 @@ import 'package:hibiki/src/pages/implementations/download_actions.dart';
 import 'package:hibiki/src/pages/implementations/downloads_page.dart';
 import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 
 /// 「番剧下载」选种对话框：搜番（AniList）→ 选种（Nyaa）→ 确认字幕（Jimaku）→
 /// 推送 qBittorrent + 落盘 [AnimeDownloadPlan]（完成后由常驻服务自动入库挂合集）。
@@ -2267,7 +2267,11 @@ class _RelocateDialogState extends State<_RelocateDialog> {
   }
 
   Future<void> _pickDestination() async {
-    final String? picked = await FilePicker.platform.getDirectoryPath(
+    // 迁移目标目录长期承载下载文件，必须是真实路径（见 pickRealDirectoryPath）。
+    final String? picked = await pickRealDirectoryPath(
+      context: context,
+      appModel:
+          ProviderScope.containerOf(context, listen: false).read(appProvider),
       dialogTitle: t.anime_download_relocate_pick_folder,
     );
     if (picked == null || picked.trim().isEmpty || !mounted) return;
