@@ -27,7 +27,7 @@
   拆权限——该函数只申请存储权限，早退门只看存储；相机归真正需要相机的入口自己负责
   （`camera_enhancement.dart` 走系统拍照 intent，manifest 未声明 CAMERA，本就不需要运行时
   权限）。`PlatformPermissionService` 的 `hasCameraPermission` / `requestCameraPermission`
-  能力方法保留未删（属权限层抽象，删除是更大范围的改动，另议）。commit: <fix-sha>
+  能力方法保留未删（属权限层抽象，删除是更大范围的改动，另议）。commit: 5958414f7
 - **[x] ② 已加自动化测试** — `hibiki/test/models/app_model_storage_permission_test.dart`
   （3 条行为测试，非源码扫描）：用记录型 `PlatformPermissionService` 记下**真实生产代码**
   对权限层的每一次调用，断言 ①存储未授权时调用序列恰为 `has:storage → request:storage`、
