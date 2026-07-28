@@ -1043,11 +1043,17 @@ install: function(C) {
       } else if (hoshiVnMode && hoshiVnClickAdvance &&
           _hoshiVnTapIsBlank(x, y) &&
           window.hoshiReader && window.hoshiReader.paginate) {
-        // TODO-909 M0: VN blank-tap advance. Only when the tap is NOT over
-        // matchable text (so word lookup still wins on text). Mirrors hoshi a's
-        // host binding blank-tap -> paginate("forward").
+        // TODO-909 M0: VN blank-tap. Only when the tap is NOT over matchable
+        // text (so word lookup still wins on text).
+        // BUG-1195: 这里**不再**自己 paginate。旧实现直调
+        // `window.hoshiReader.paginate('forward')` 把每一次空白点都吃掉，而空白点
+        // 同时是触屏唯一能唤出控制栏的手势（onTapEmpty）→ VN 下底栏一自动收起就
+        // 永远唤不回来。翻页还是唤栏必须由 Dart 判（chrome 可见性只有 Dart 知道：
+        // 悬浮态真值是 _chromeTransientVisible，JS 的 __hoshiTapGate.chrome 镜像的
+        // 是 _showChrome，悬浮态下恒 true，区分不出「已收起」）。见
+        // chrome.part.dart 的 _handleVnBlankTap。
         if (e && e.preventDefault) e.preventDefault();
-        window.hoshiReader.paginate('forward');
+        window.flutter_inappwebview.callHandler('onVnBlankTap');
       } else {
         // TODO-806 [806-TAP] 框选点击坐标取证探针（默认 off，由 DebugLogService 门控：
         // C.debugLogging 为 false 时整段跳过，不打日志）。打印 onTap
@@ -1879,6 +1885,15 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
             // Tap on empty space handed OS focus to the WebView; reclaim it so
             // ESC still exits the book afterward (BUG-136).
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
+          },
+        );
+
+        // BUG-1195: VN（视觉小说）模式空白点击的专用桥。JS 只判「这一点落在字面外」，
+        // 翻页还是唤出控制栏由 Dart 判（chrome 可见性的真值在 Dart 侧）。
+        controller.addJavaScriptHandler(
+          handlerName: 'onVnBlankTap',
+          callback: (_) {
+            _handleVnBlankTap();
           },
         );
 

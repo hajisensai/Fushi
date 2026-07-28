@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1195](bugs/BUG-1195-vn-blank-tap-blocks-chrome.md) | ✅ | ✅ | 视觉小说模式点空白只翻页，控制栏（菜单）永远唤不出 |
 | [BUG-1194](bugs/BUG-1194-collection-reorder-nonvideo-order.md) | ✅ | ✅ | 视频合集详情页拖拽排序打乱非 video 成员的跨种类顺序 |
 | [BUG-1193](bugs/BUG-1193-galgame-luna-nonwinner-threads-dropped.md) | 🚧 | 🚧 | primed 后非赢家 hook 线程被 native 丢弃，无法像 LunaTranslator 那样切换 |
 | [BUG-1188](bugs/BUG-1188-dataroot-pick-layout-split.md) | ✅ | ✅ | 选目录迁移产出第三种布局，到不了新装形态（DB 被拖进文档目录） |
