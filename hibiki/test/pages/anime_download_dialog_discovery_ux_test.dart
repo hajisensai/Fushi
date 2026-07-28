@@ -332,6 +332,69 @@ void main() {
     expect(find.text('Test Anime - 01.ja.srt'), findsOneWidget);
     expect(find.text(t.anime_download_no_subs), findsNothing);
   });
+
+  // 用户手选过字幕来源 = 他不认可自动选的首条。换番剧名重搜不得把手选静默冲掉。
+  testWidgets('确认阶段：换番剧名重搜后仍保留用户手选的字幕来源条目', (WidgetTester tester) async {
+    final List<int> filesForEntry = <int>[];
+    final _FakeAppModel appModel = _FakeAppModel((http.Request req) async {
+      final String url = req.url.toString();
+      if (url.contains('/entries/search')) {
+        // 两次搜索都返回同样的两个条目（重搜后手选那条依然存在）。
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<Map<String, Object>>[
+            <String, Object>{'id': 11, 'name': 'Auto First Entry'},
+            <String, Object>{'id': 22, 'name': 'User Picked Entry'},
+          ])),
+          200,
+        );
+      }
+      final RegExpMatch? files =
+          RegExp(r'/entries/(\d+)/files').firstMatch(url);
+      if (files != null) {
+        filesForEntry.add(int.parse(files.group(1)!));
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<Map<String, Object>>[
+            <String, Object>{
+              'name': 'Test Anime - 01.ja.srt',
+              'url': 'https://jimaku.cc/f/1.srt',
+            },
+          ])),
+          200,
+        );
+      }
+      return http.Response('', 404);
+    });
+    await pumpDialog(tester, appModel, torrent: _kTorrent);
+
+    bool selected(String name) => tester
+        .widgetList<ChoiceChip>(find.byType(ChoiceChip))
+        .where((ChoiceChip chip) => (chip.label as Text).data == name)
+        .single
+        .selected;
+
+    // 首搜：自动选中首条。
+    await tester.tap(find.byTooltip(t.anime_download_search).last);
+    await tester.pumpAndSettle();
+    expect(selected('Auto First Entry'), isTrue);
+    expect(filesForEntry, <int>[11]);
+
+    // 用户手选第二条。
+    await tester.tap(find.text('User Picked Entry'));
+    await tester.pumpAndSettle();
+    expect(selected('User Picked Entry'), isTrue);
+    expect(filesForEntry, <int>[11, 22]);
+
+    // 换番剧名 → 触发重搜。手选那条仍在新结果里，必须继续选中它。
+    await tester.tap(find.byIcon(Icons.arrow_drop_down).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('テスト・アニメ').last);
+    await tester.pumpAndSettle();
+
+    expect(selected('User Picked Entry'), isTrue, reason: '重搜不得把用户手选的条目冲回首条');
+    expect(selected('Auto First Entry'), isFalse);
+    // 拉的必须是手选条目的文件，不是首条的。
+    expect(filesForEntry, <int>[11, 22, 22]);
+  });
 }
 
 NyaaTorrent _torrentWith({

@@ -205,6 +205,14 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   TorrentSortKey _torrentSort = TorrentSortKey.seeders;
   List<JimakuEntry> _jimakuEntries = const <JimakuEntry>[];
   JimakuEntry? _selectedJimakuEntry;
+
+  /// 用户在 [JimakuEntryPicker] 里**手动**选中过的条目 id（自动选首条不写这里）。
+  ///
+  /// 「用户手选过」= 他不认可自动选的那条。重搜（换番剧名/改集号）后必须优先沿用
+  /// 它，而不是无条件重置成 `entries.first` 把用户的选择静默冲掉。按 id 匹配而非
+  /// 下标——重搜的结果集顺序和长度都会变，下标是错的身份。换番（[_selectMedia]）
+  /// 才清空：那是另一部番，旧手选没有意义。
+  int? _userPickedJimakuEntryId;
   List<JimakuFile> _jimakuFiles = const <JimakuFile>[];
   String? _jimakuPreferredLanguage;
   int? _jimakuSearchEpisode;
@@ -346,6 +354,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       _torrentsLoaded = false;
       _jimakuEntries = const <JimakuEntry>[];
       _selectedJimakuEntry = null;
+      // 换番：旧番的手选条目对新番没有意义，清掉。
+      _userPickedJimakuEntryId = null;
       _jimakuFiles = const <JimakuFile>[];
       _jimakuPreferredLanguage = null;
       _jimakuSearchEpisode = null;
@@ -503,16 +513,21 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       final List<JimakuEntry> entries = await jimaku
           .searchEntries(anilistId: anilistId, queryFallbacks: queries)
           .timeout(kDownloadDiscoveryTimeout);
-      final List<JimakuFile> files = entries.isEmpty
+      // 用户手选过某条目 → 他不认可自动选的那条。新结果里还有它就沿用（按 id
+      // 匹配，不是按下标——重搜的结果集顺序/长度都会变），只有它彻底不在新结果里
+      // 才回退首条。此前无条件重置成 `entries.first`，换个番剧名重搜就把用户的
+      // 手选静默冲掉。必须在 listFiles 之前定下目标，否则拉的是首条的文件。
+      final JimakuEntry? target = _resolveJimakuEntryFor(entries);
+      final List<JimakuFile> files = target == null
           ? const <JimakuFile>[]
           : await jimaku
-              .listFiles(entries.first.id, episode: episode)
+              .listFiles(target.id, episode: episode)
               .timeout(kDownloadDiscoveryTimeout);
       // 用户可能已换番：结果只落到仍选中的那个番上。
       if (!mounted || _selectedMedia?.id != guardId) return;
       setState(() {
         _jimakuEntries = entries;
-        _selectedJimakuEntry = entries.isEmpty ? null : entries.first;
+        _selectedJimakuEntry = target;
         _jimakuFiles = files;
         _jimakuSearchEpisode = episode;
         _jimakuIndex = JimakuEpisodeIndex.fromFiles(
@@ -557,6 +572,19 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         seriesEpisodeCount: _selectedMedia?.episodes,
       );
 
+  /// 重搜后该选中哪条字幕来源：用户手选过且它仍在 [entries] 里 → 沿用手选；
+  /// 否则回退首条；空结果 → null。纯查找，不改 state。
+  JimakuEntry? _resolveJimakuEntryFor(List<JimakuEntry> entries) {
+    if (entries.isEmpty) return null;
+    final int? pickedId = _userPickedJimakuEntryId;
+    if (pickedId != null) {
+      for (final JimakuEntry entry in entries) {
+        if (entry.id == pickedId) return entry;
+      }
+    }
+    return entries.first;
+  }
+
   Future<void> _selectJimakuEntry(JimakuEntry entry) async {
     if (_selectedJimakuEntry?.id == entry.id || _jimakuLoading) return;
     final AniListMedia? media = _selectedMedia;
@@ -565,6 +593,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     if (apiKey.isEmpty) return;
     setState(() {
       _selectedJimakuEntry = entry;
+      // 记下「用户手选过这一条」，供重搜时优先沿用（见 [_resolveJimakuEntryFor]）。
+      _userPickedJimakuEntryId = entry.id;
       _jimakuLoading = true;
       _jimakuError = false;
       _jimakuFiles = const <JimakuFile>[];
