@@ -19,6 +19,7 @@ import 'package:hibiki/src/mining/galgame_repository.dart';
 import 'package:hibiki/src/pages/implementations/activity_feed.dart';
 import 'package:hibiki/src/pages/implementations/galgame_detail_page.dart';
 import 'package:hibiki/src/pages/implementations/game_shared.dart';
+import 'package:hibiki/src/pages/implementations/game_statistics_page.dart';
 import 'package:hibiki/src/pages/implementations/stat_shared.dart';
 import 'package:hibiki/utils.dart';
 
@@ -318,6 +319,15 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     await _reload();
   }
 
+  Future<void> _openStatistics() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => const GameStatisticsPage(),
+      ),
+    );
+    await _reload();
+  }
+
   @override
   Widget build(BuildContext context) {
     return DesktopContentLayout(
@@ -327,6 +337,14 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
           HibikiPageHeader(
             title: t.nav_game,
             subtitle: t.game_home_subtitle,
+            actions: <Widget>[
+              HibikiIconButton(
+                icon: Icons.bar_chart_outlined,
+                tooltip: t.game_statistics,
+                label: t.game_statistics,
+                onTap: _openStatistics,
+              ),
+            ],
             bottom: GameSectionTabs(
               selected: GameSection.dashboard,
               focusIdPrefix: 'game-dashboard-tab',

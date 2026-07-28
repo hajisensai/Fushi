@@ -4,8 +4,184 @@ import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
-/// 阅读统计页与视频统计页**字节级相同**的聚合 / 格式化 / 图表辅助（机械去重抽出，
-/// 原先两页各持一份）。页面特有的加载与布局逻辑仍留在各自页面。
+/// 阅读、视频与游戏统计页共用的聚合 / 格式化 / 页面状态 / 卡片与图表辅助。
+
+/// 统一统计页的加载、错误、空态分派。
+///
+/// 三个页面只提供自己的数据判据和内容；状态优先级与空态视觉不再各复制一份三元表达式。
+Widget buildStatPageBody({
+  required bool loading,
+  required String? error,
+  required bool isEmpty,
+  required Widget Function() loadingBuilder,
+  required Widget Function(String error) errorBuilder,
+  required String emptyMessage,
+  required Widget Function() contentBuilder,
+}) {
+  if (loading) return loadingBuilder();
+  if (error != null) return errorBuilder(error);
+  if (isEmpty) {
+    return Center(
+      child: HibikiPlaceholderMessage(
+        icon: Icons.bar_chart_outlined,
+        message: emptyMessage,
+      ),
+    );
+  }
+  return contentBuilder();
+}
+
+/// 汇总周期卡的一条次级指标。[label] 为空时只显示值（如阅读卡主字数下的时长）。
+class StatSummaryLine {
+  const StatSummaryLine({this.label, required this.value});
+
+  final String? label;
+  final String value;
+}
+
+/// 今天 / 本周 / 本月 / 全部中的一个汇总卡数据。
+class StatPeriodSummary {
+  const StatPeriodSummary({
+    required this.label,
+    required this.primaryValue,
+    this.lines = const <StatSummaryLine>[],
+  });
+
+  final String label;
+  final String primaryValue;
+  final List<StatSummaryLine> lines;
+}
+
+/// 统计页共用的四周期汇总卡网格：宽屏 2×2，窄屏单列。
+Widget buildStatPeriodSummaryGrid(
+  BuildContext context,
+  List<StatPeriodSummary> summaries,
+) {
+  final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+  final double gap = tokens.spacing.gap + tokens.spacing.gap / 2;
+  final List<Widget> panels = summaries
+      .map((StatPeriodSummary summary) =>
+          _StatPeriodSummaryCard(summary: summary))
+      .toList();
+
+  return Padding(
+    padding: EdgeInsets.all(tokens.spacing.card),
+    child: LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool twoColumns =
+            constraints.maxWidth.isFinite && constraints.maxWidth >= 380;
+        if (!twoColumns) {
+          return Column(
+            children: <Widget>[
+              for (int i = 0; i < panels.length; i++) ...<Widget>[
+                if (i > 0) SizedBox(height: gap),
+                panels[i],
+              ],
+            ],
+          );
+        }
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: <Widget>[
+            for (final Widget panel in panels)
+              SizedBox(
+                width: (constraints.maxWidth - gap) / 2,
+                child: panel,
+              ),
+          ],
+        );
+      },
+    ),
+  );
+}
+
+class _StatPeriodSummaryCard extends StatelessWidget {
+  const _StatPeriodSummaryCard({required this.summary});
+
+  final StatPeriodSummary summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+    final TextStyle? subStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        );
+    return HibikiCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            summary.label,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              summary.primaryValue,
+              maxLines: 1,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+          ),
+          for (final StatSummaryLine line in summary.lines) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap / 2),
+            Text(
+              line.label == null ? line.value : '${line.label}: ${line.value}',
+              style: subStyle,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 最近 30 天时长柱状图（视频 / 游戏统计共用）。
+Widget buildStatDailyDurationChartSection(
+  BuildContext context,
+  List<StatDayData> daily,
+) {
+  final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
+  final ColorScheme colorScheme = Theme.of(context).colorScheme;
+  return Padding(
+    padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          t.stat_last_30_days,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
+        SizedBox(
+          height: 160,
+          child: CustomPaint(
+            size: Size.infinite,
+            painter: StatBarChartPainter(
+              data: daily,
+              barColor: colorScheme.primary,
+              barRadius: tokens.radii.chipCorner,
+              labelColor: colorScheme.onSurfaceVariant,
+              labelStyle: tokens.type.metadata.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+              valueOf: statMsValue,
+              labelFormatter: formatStatDurationAxis,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
 /// TODO-1204：把查词/制卡计数行按 [LookupMiningCounterRow.title] 聚合成
 /// (查词数, 制卡数)，供 per-book / per-video tile 展示。无书查词（title 空）不入

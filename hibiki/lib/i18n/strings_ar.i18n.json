@@ -2750,5 +2750,8 @@
   "scrape_failure_detail_hide": "Hide details",
   "media_tracking_retry_mapping": "Retry matching",
   "media_tracking_retry_matched": "Matched and queued current progress",
-  "media_tracking_retry_no_match": "No match found. Try manual linking."
+  "media_tracking_retry_no_match": "No match found. Try manual linking.",
+  "game_statistics": "Game statistics",
+  "game_stat_by_game": "By game",
+  "stat_clear_all_game_message": "Clear all game play time and session counts? Your game library and activity timeline are kept. This cannot be undone."
 }
