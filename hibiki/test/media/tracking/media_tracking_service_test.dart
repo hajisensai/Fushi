@@ -1156,6 +1156,239 @@ void main() {
     });
   });
 
+  // BUG-1223：连令牌前已看完/读完的条目永不上传——视频/书籍两侧的 reconcile 都从
+  // listMappings() 出发，看不见「从没关联过」的历史条目，而映射只在 recordVideo-
+  // Completed / recordBookProgress 被触发时才建。用户不重新看一遍就永远同步不了。
+  group('历史已完成条目补传（BUG-1223）', () {
+    Future<void> insertCompletedVideo(
+      String uid, {
+      required String title,
+      required int completedAtMs,
+      String? scrapedSubjectId,
+    }) async {
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: uid,
+          title: title,
+          videoPath: 'C:/Anime/$uid.mkv',
+          completedAt: Value<DateTime?>(
+            DateTime.fromMillisecondsSinceEpoch(completedAtMs),
+          ),
+        ),
+      );
+      if (scrapedSubjectId != null) {
+        await db.upsertVideoScrapeMeta(
+          VideoScrapeMetaCompanion.insert(
+            bookUid: uid,
+            source: 'bangumi',
+            subjectId: scrapedSubjectId,
+            title: 'Remote $title',
+            scrapedAt: DateTime.fromMillisecondsSinceEpoch(completedAtMs),
+          ),
+        );
+      }
+    }
+
+    Future<void> insertCompletedBook(
+      String key, {
+      required String title,
+      required int completedAtMs,
+    }) =>
+        db.insertEpubBook(
+          EpubBooksCompanion.insert(
+            bookKey: key,
+            title: title,
+            epubPath: '/tmp/$key.epub',
+            extractDir: '/tmp/$key',
+            chapterCount: 6,
+            chaptersJson: '[]',
+            importedAt: 1,
+            completedAt: Value<DateTime?>(
+              DateTime.fromMillisecondsSinceEpoch(completedAtMs),
+            ),
+          ),
+        );
+
+    test('连令牌前看完的视频：无需重看一遍即建映射并上报', () async {
+      await insertCompletedVideo(
+        'legacy-done',
+        title: 'Legacy anime 03',
+        completedAtMs: 5000,
+        scrapedSubjectId: '400602',
+      );
+      // 关键前提：没有任何映射，outbox 也是空的——旧实现到此就永远不动了。
+      expect(await repository.listMappings(), isEmpty);
+      api.episodes = const <BangumiEpisode>[
+        BangumiEpisode(id: 11, type: 0, sort: 1),
+        BangumiEpisode(id: 12, type: 0, sort: 2),
+        BangumiEpisode(id: 13, type: 0, sort: 3),
+      ];
+
+      await service.syncNow();
+
+      final MediaTrackingMappingRow? mapping = await repository.findMapping(
+        mediaType: TrackingMediaType.video,
+        mediaKey: 'legacy-done',
+      );
+      expect(mapping, isNotNull, reason: '历史已完成条目应被补建映射');
+      expect(mapping!.subjectId, 400602);
+      // 真的发出去了（不只是建了映射）。
+      expect(api.episodePatches, isNotEmpty);
+      expect(await repository.pendingCount(), 0);
+    });
+
+    test('连令牌前读完的书：无需重读即建映射并上报', () async {
+      await insertCompletedBook(
+        'legacy-read',
+        title: '药屋少女的呢喃',
+        completedAtMs: 7000,
+      );
+      api.searchResults = const <BangumiSubject>[
+        BangumiSubject(
+          id: 77,
+          type: 1,
+          name: '药屋少女的呢喃',
+          nameCn: '药屋少女的呢喃',
+          platform: '小说',
+          episodeCount: 0,
+          volumeCount: 1,
+        ),
+      ];
+      api.subject = const BangumiSubject(
+        id: 77,
+        type: 1,
+        name: '药屋少女的呢喃',
+        nameCn: '药屋少女的呢喃',
+        platform: '小说',
+        episodeCount: 0,
+        volumeCount: 1,
+      );
+
+      await service.syncNow();
+
+      final MediaTrackingMappingRow? mapping = await repository.findMapping(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'legacy-read',
+      );
+      expect(mapping, isNotNull);
+      expect(mapping!.subjectId, 77);
+      expect(api.creates.isNotEmpty || api.patches.isNotEmpty, isTrue,
+          reason: '补建映射后应真的把读完状态发出去');
+    });
+
+    test('每条历史条目只尝试一次：第二次同步不再重复搜索', () async {
+      await insertCompletedVideo(
+        'no-match',
+        title: 'Totally unknown show',
+        completedAtMs: 9000,
+      );
+      // 搜索无结果 → 建不出映射。水位仍要越过它，否则每次启动都重扫全库。
+      api.searchResults = const <BangumiSubject>[];
+
+      await service.syncNow();
+      final int searchesAfterFirst = api.searches.length;
+      expect(searchesAfterFirst, greaterThan(0));
+
+      await service.syncNow();
+
+      expect(api.searches.length, searchesAfterFirst,
+          reason: '水位已越过该条目，不该反复搜索');
+    });
+
+    test('换令牌把补传水位归零，历史条目重新补一遍', () async {
+      await insertCompletedVideo(
+        'legacy-done',
+        title: 'Legacy anime 03',
+        completedAtMs: 5000,
+        scrapedSubjectId: '400602',
+      );
+      await service.syncNow();
+      final MediaTrackingMappingRow? mapping = await repository.findMapping(
+        mediaType: TrackingMediaType.video,
+        mediaKey: 'legacy-done',
+      );
+      expect(mapping, isNotNull);
+      expect(
+        preferences.getPref(kVideoTrackingBackfillWatermarkPref,
+            defaultValue: 0),
+        5000,
+      );
+
+      await service.setAccessToken('another-token');
+
+      expect(
+        preferences.getPref(kVideoTrackingBackfillWatermarkPref,
+            defaultValue: 0),
+        0,
+        reason: '新账号必须从全部本地已完成事实重新对齐',
+      );
+    });
+
+    test('单次同步的补传有预算上限，剩余留给下次', () async {
+      // 预算 2 / 每批 1：第一次同步只补 2 条，第三条留给下次。
+      final MediaTrackingService budgeted = MediaTrackingService(
+        repository: repository,
+        preferences: preferences,
+        userAgent: 'test-agent',
+        apiFactory: (_) => api,
+        backfillBatchSize: 1,
+        backfillBudgetPerSync: 2,
+      );
+      for (int i = 1; i <= 3; i++) {
+        await insertCompletedVideo(
+          'v$i',
+          title: 'Anime $i',
+          completedAtMs: 1000 * i,
+          scrapedSubjectId: '${400600 + i}',
+        );
+      }
+
+      await budgeted.syncNow();
+      expect(await repository.listMappings(), hasLength(2));
+
+      await budgeted.syncNow();
+      expect(await repository.listMappings(), hasLength(3),
+          reason: '超出预算的条目应在下一次同步继续补，不能被永久跳过');
+    });
+
+    test('已有合集映射的分集不重复建单集映射', () async {
+      await insertCompletedVideo(
+        'ep-1',
+        title: 'Anime 01',
+        completedAtMs: 3000,
+      );
+      final int collectionId = await db.createMediaCollection(
+        'Anime season 1',
+        collectionType: 'playlist',
+      );
+      await db.addToCollection(collectionId, MediaKind.video, 'ep-1');
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.videoCollection,
+        mediaKey: collectionId.toString(),
+        mediaTitle: 'Anime season 1',
+        kind: TrackingKind.anime,
+        subjectId: 88,
+        subjectName: 'Remote anime',
+        progressMode: TrackingProgressMode.episode,
+        progressOffset: 1,
+      );
+      api.episodes = const <BangumiEpisode>[
+        BangumiEpisode(id: 11, type: 0, sort: 1),
+      ];
+
+      await service.syncNow();
+
+      expect(
+        await repository.findMapping(
+          mediaType: TrackingMediaType.video,
+          mediaKey: 'ep-1',
+        ),
+        isNull,
+        reason: '所属合集已关联，这一集已在合集映射的覆盖范围内',
+      );
+    });
+  });
+
   test('Bangumi 条目类型按 kind 映射', () {
     expect(bangumiSubjectTypeOf(TrackingKind.anime), 2);
     expect(bangumiSubjectTypeOf(TrackingKind.game), 4);

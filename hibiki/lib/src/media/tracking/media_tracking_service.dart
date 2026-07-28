@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
@@ -27,6 +28,14 @@ const String kMediaTrackingLastSyncFailedPref =
     'media_tracking_last_sync_failed_v1';
 const String kMediaTrackingLastSyncUnauthorizedPref =
     'media_tracking_last_sync_unauthorized_v1';
+
+/// 「历史已完成条目补建映射」的水位（视频 / 书籍各一条，按 `completed_at` 单调
+/// 推进）。每条历史条目只尝试建一次映射：匹配不唯一时不重试，避免每次启动重扫全库
+/// 打一遍 Bangumi 搜索；换令牌会连同这两条水位一起归零，重新全量补。
+const String kVideoTrackingBackfillWatermarkPref =
+    'media_tracking_video_backfill_watermark_v1';
+const String kBookTrackingBackfillWatermarkPref =
+    'media_tracking_book_backfill_watermark_v1';
 
 const String kVideoTrackingReconcileWatermarkPref =
     'media_tracking_video_reconcile_watermark_v1';
@@ -246,8 +255,12 @@ class MediaTrackingService {
     required PreferencesRepository preferences,
     required String userAgent,
     BangumiApiFactory? apiFactory,
+    int backfillBatchSize = 20,
+    int backfillBudgetPerSync = 100,
   })  : _repository = repository,
         _preferences = preferences,
+        _backfillBatchSize = backfillBatchSize,
+        _backfillBudgetPerSync = backfillBudgetPerSync,
         _apiFactory = apiFactory ??
             ((String token) => BangumiApiClient(
                   accessToken: token,
@@ -267,6 +280,18 @@ class MediaTrackingService {
   final Map<String, int> _autoMappingMissAt = <String, int>{};
 
   static const Duration _autoMappingMissRetry = Duration(minutes: 10);
+
+  /// 单轮补建映射的条数上限（默认 20）。每条可能打一次 Bangumi 搜索（未刮削的条目），
+  /// 顺序执行天然限速。
+  final int _backfillBatchSize;
+
+  /// 单次 [syncNow] 的补建总预算（默认 100）。首次连接时全库可能有上千条历史完成
+  /// 记录，一次同步里打上千个搜索请求既慢又容易被远端限流；剩下的留给下一次同步
+  /// （启动 / 新完成事件 / 用户点「立即同步」）继续。
+  final int _backfillBudgetPerSync;
+
+  /// 本次 [syncNow] 已用掉的补建预算（每次 syncNow 入口归零）。
+  int _backfillSpent = 0;
 
   /// 每次同步结束/连接状态变化后自增，供 UI（首页卡片、设置页）订阅刷新。
   /// 用计数器而不是 ChangeNotifier：外部无法合法调用 `notifyListeners`（@protected）。
@@ -296,6 +321,8 @@ class MediaTrackingService {
       await _preferences.setPref(kVideoTrackingReconcileWatermarkPref, 0);
       await _preferences.setPref(kBookTrackingReconcileWatermarkPref, 0);
       await _preferences.setPref(kGameTrackingReconcileWatermarkPref, 0);
+      await _preferences.setPref(kVideoTrackingBackfillWatermarkPref, 0);
+      await _preferences.setPref(kBookTrackingBackfillWatermarkPref, 0);
       // 账号名属于旧令牌，换令牌后必须失效，否则 UI 会挂着上一个账号的名字。
       await _preferences.setPref(kBangumiAccountNamePref, '');
     }
@@ -812,6 +839,9 @@ class MediaTrackingService {
   Future<MediaTrackingSyncResult> _syncUntilSettled({
     required bool force,
   }) async {
+    // 补建预算按「一次 syncNow」计。_syncAgainRequested 的续轮共用同一份预算，
+    // 否则一次同步就能把全库历史条目扫完，正是这个预算要防的事。
+    _backfillSpent = 0;
     MediaTrackingSyncResult result = await _reconcileAndSync(force: force);
     while (_syncAgainRequested) {
       _syncAgainRequested = false;
@@ -857,10 +887,87 @@ class MediaTrackingService {
   Future<MediaTrackingSyncResult> _reconcileAndSync({
     required bool force,
   }) async {
+    // 顺序有意：先给「历史已完成但从未关联」的条目补建映射，下面三个 reconcile
+    // 才看得见它们（它们都从已有映射出发重建进度）。
+    await _backfillCompletedMappings();
     await _reconcileCompletedVideoProgress();
     await _reconcilePersistedBookProgress();
     await _reconcileGameStatus();
     return _sync(force: force);
+  }
+
+  /// 给「本地已看完/读完、但从未关联过 Bangumi 条目」的视频与书补建映射。
+  ///
+  /// 缺这一步的后果（BUG-1223）：连上 Bangumi 之前完成的东西永远不上传——没有映射
+  /// → `enqueueProgress` 返回 false → 三个 reconcile 也看不见它（它们都从
+  /// `listMappings()` 出发）。游戏侧本来就从全部 galgames 出发所以没这个洞。
+  ///
+  /// 走 [recordVideoCompleted] / [recordBookProgress] 完整路径而不是自己拼建映射
+  /// 逻辑：单集 vs 合集语义、刮削条目优先、高置信度搜索门槛都在那两个方法里，复制
+  /// 一份必然漂开。进度精度也不用这里操心——紧随其后的 reconcile 会用完整的合集/
+  /// 章节算法算出准确进度，outbox 单调合并取较大值。
+  Future<void> _backfillCompletedMappings() async {
+    if (!isConfigured) return;
+    final int remaining = _backfillBudgetPerSync - _backfillSpent;
+    if (remaining <= 0) return;
+    final int limit = math.min(_backfillBatchSize, remaining);
+
+    try {
+      final int videoWatermark = _intPref(kVideoTrackingBackfillWatermarkPref);
+      final List<UnmappedCompletedVideo> videos =
+          await _repository.loadCompletedUnmappedVideos(
+        afterMs: videoWatermark,
+        limit: limit,
+      );
+      int nextVideoWatermark = videoWatermark;
+      for (final UnmappedCompletedVideo item in videos) {
+        // episodeIndex 传 0 / seriesCompleted 不传：本步只负责让映射存在，准确进度
+        // 交给随后的 _reconcileCompletedVideoProgress（它有完整合集算法）。
+        await recordVideoCompleted(
+          bookUid: item.bookUid,
+          collectionId: item.collectionId,
+          episodeIndex: 0,
+        );
+        nextVideoWatermark = math.max(nextVideoWatermark, item.evidenceAt);
+        _backfillSpent++;
+      }
+      if (nextVideoWatermark != videoWatermark) {
+        await _preferences.setPref(
+          kVideoTrackingBackfillWatermarkPref,
+          nextVideoWatermark,
+        );
+      }
+
+      final int bookWatermark = _intPref(kBookTrackingBackfillWatermarkPref);
+      final List<UnmappedCompletedBook> books =
+          await _repository.loadCompletedUnmappedBooks(
+        afterMs: bookWatermark,
+        limit: math.max(0, _backfillBudgetPerSync - _backfillSpent),
+      );
+      int nextBookWatermark = bookWatermark;
+      for (final UnmappedCompletedBook item in books) {
+        await recordBookProgress(
+          bookKey: item.bookKey,
+          completedChapterCount: item.chapterCount,
+          completed: true,
+        );
+        nextBookWatermark = math.max(nextBookWatermark, item.evidenceAt);
+        _backfillSpent++;
+      }
+      if (nextBookWatermark != bookWatermark) {
+        await _preferences.setPref(
+          kBookTrackingBackfillWatermarkPref,
+          nextBookWatermark,
+        );
+      }
+    } catch (error, stackTrace) {
+      // fail-open：补传是尽力而为，失败不能影响本轮正常的进度同步。
+      ErrorLogService.instance.log(
+        'MediaTrackingService.backfill',
+        error,
+        stackTrace,
+      );
+    }
   }
 
   /// 补发本地已设置但尚未成功上报的游戏收藏状态。

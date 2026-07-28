@@ -87,6 +87,20 @@ typedef PersistedBookTrackingProgress = ({
   int evidenceAt,
 });
 
+/// 本地已看完但从未关联过 Bangumi 条目的视频（补建映射的输入）。
+typedef UnmappedCompletedVideo = ({
+  String bookUid,
+  int? collectionId,
+  int evidenceAt,
+});
+
+/// 本地已读完但从未关联过 Bangumi 条目的书（补建映射的输入）。
+typedef UnmappedCompletedBook = ({
+  String bookKey,
+  int chapterCount,
+  int evidenceAt,
+});
+
 final RegExp _ignoredBookTocLabel = RegExp(
   r'^(?:目次|目录|目錄|contents?|table\s+of\s+contents|扉|title\s+page|表紙|cover|奥付|版权|版權|colophon|口絵|イラスト|插图|插圖|あとがき|后记|後記|著者紹介)$',
   caseSensitive: false,
@@ -517,6 +531,96 @@ class MediaTrackingRepository {
       ));
     }
     return result;
+  }
+
+  /// 本地已看完、但既没有单集映射也没有所属合集映射的视频，按 `completed_at`
+  /// 升序取前 [limit] 条（配合单调水位分批补齐）。
+  ///
+  /// [loadCompletedVideoTrackingProgress] 从**已有映射**出发——那是「已关联条目的
+  /// 进度重建」，天生看不见「从没关联过」的条目。用户连上 Bangumi 之前看完的东西
+  /// 全落在这个盲区里：没有映射 → `enqueueProgress` 直接返回 false → 永远不上报，
+  /// 除非把那一集重新看完一次去触发 `recordVideoCompleted` 建映射。游戏侧没有这个
+  /// 洞（`loadPersistedGameTrackingStatus` 从全部 galgames 出发），本查询把视频/
+  /// 书籍侧补齐成同样的语义。
+  Future<List<UnmappedCompletedVideo>> loadCompletedUnmappedVideos({
+    required int afterMs,
+    required int limit,
+  }) async {
+    if (limit <= 0) return const <UnmappedCompletedVideo>[];
+    final List<VideoBookRow> videos = await _db.allVideoBooks();
+    if (videos.isEmpty) return const <UnmappedCompletedVideo>[];
+    final Set<String> mappedUids = <String>{};
+    final Set<int> mappedCollections = <int>{};
+    for (final MediaTrackingMappingRow mapping in await listMappings()) {
+      if (mapping.provider != kTrackingProviderBangumi) continue;
+      if (mapping.mediaType == TrackingMediaType.video.value) {
+        mappedUids.add(mapping.mediaKey);
+      } else if (mapping.mediaType == TrackingMediaType.videoCollection.value) {
+        final int? id = int.tryParse(mapping.mediaKey);
+        if (id != null) mappedCollections.add(id);
+      }
+    }
+    final Map<String, int> primaryByEntry =
+        await _db.getPrimaryCollectionIdByEntry();
+
+    final List<UnmappedCompletedVideo> result = <UnmappedCompletedVideo>[];
+    for (final VideoBookRow video in videos) {
+      final DateTime? completedAt = video.completedAt;
+      if (completedAt == null) continue;
+      final int evidenceAt = completedAt.millisecondsSinceEpoch;
+      if (evidenceAt <= afterMs) continue;
+      if (mappedUids.contains(video.bookUid)) continue;
+      final int? collectionId =
+          primaryByEntry['${MediaKind.video.dbValue}|${video.bookUid}'];
+      // 所属合集已有映射 → 这一集已在合集映射的进度重建覆盖范围内，不另建单集映射。
+      if (collectionId != null && mappedCollections.contains(collectionId)) {
+        continue;
+      }
+      result.add((
+        bookUid: video.bookUid,
+        collectionId: collectionId,
+        evidenceAt: evidenceAt,
+      ));
+    }
+    result.sort((UnmappedCompletedVideo a, UnmappedCompletedVideo b) =>
+        a.evidenceAt.compareTo(b.evidenceAt));
+    return result.take(limit).toList(growable: false);
+  }
+
+  /// 本地已读完、但从未关联过 Bangumi 条目的书，语义同
+  /// [loadCompletedUnmappedVideos]（含 bookChapter 伴随映射也算已关联）。
+  Future<List<UnmappedCompletedBook>> loadCompletedUnmappedBooks({
+    required int afterMs,
+    required int limit,
+  }) async {
+    if (limit <= 0) return const <UnmappedCompletedBook>[];
+    final List<EpubBookRow> books = await _db.getAllEpubBooks();
+    if (books.isEmpty) return const <UnmappedCompletedBook>[];
+    final Set<String> mappedKeys = <String>{};
+    for (final MediaTrackingMappingRow mapping in await listMappings()) {
+      if (mapping.provider != kTrackingProviderBangumi) continue;
+      if (mapping.mediaType == TrackingMediaType.book.value ||
+          mapping.mediaType == TrackingMediaType.bookChapter.value) {
+        mappedKeys.add(mapping.mediaKey);
+      }
+    }
+
+    final List<UnmappedCompletedBook> result = <UnmappedCompletedBook>[];
+    for (final EpubBookRow book in books) {
+      final DateTime? completedAt = book.completedAt;
+      if (completedAt == null) continue;
+      final int evidenceAt = completedAt.millisecondsSinceEpoch;
+      if (evidenceAt <= afterMs) continue;
+      if (mappedKeys.contains(book.bookKey)) continue;
+      result.add((
+        bookKey: book.bookKey,
+        chapterCount: book.chapterCount,
+        evidenceAt: evidenceAt,
+      ));
+    }
+    result.sort((UnmappedCompletedBook a, UnmappedCompletedBook b) =>
+        a.evidenceAt.compareTo(b.evidenceAt));
+    return result.take(limit).toList(growable: false);
   }
 
   /// 从阅读位置和书籍完成标记恢复自 [afterMs] 之后的可靠阅读事件。
