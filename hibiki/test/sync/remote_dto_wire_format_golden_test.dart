@@ -212,6 +212,25 @@ void main() {
       expect(single.containsKey('currentEpisode'), isFalse);
     });
 
+    test('多集但 currentEpisode 为 0 时不写 currentEpisode（旧 client 兼容）', () {
+      // 上一条只覆盖了外层 `episodes.length > 1` 这道门（单视频整块不写）。内层还有
+      // 一道**独立**的 `currentEpisode > 0`：多集播放列表停在第 0 集时，wire 上同样
+      // 不写这个键——旧 client 读不到就按 0 处理，语义相同、字节更少。少了这条用例，
+      // 把内层条件删成无条件写照样全绿（旧 client 会凭空多收到一个 currentEpisode:0）。
+      final Map<String, Object?> json = const RemoteVideoInfo(
+        id: 'video/x',
+        title: 'T',
+        episodes: <RemoteVideoEpisode>[
+          RemoteVideoEpisode(index: 0, title: 'e0'),
+          RemoteVideoEpisode(index: 1, title: 'e1'),
+        ],
+        currentEpisode: 0,
+      ).toJson();
+      expect(json.containsKey('episodes'), isTrue, reason: '多集必须写播放列表键（外层门已开）');
+      expect(json.containsKey('currentEpisode'), isFalse,
+          reason: 'currentEpisode 为 0 时不写键——0 与「没有当前集」在 wire 上同义');
+    });
+
     test('无内封字幕轨时不写 embeddedSubtitleTracks', () {
       expect(
         const RemoteVideoInfo(id: 'video/x', title: 'T').toJson(),

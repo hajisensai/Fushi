@@ -384,6 +384,30 @@ void main() {
 
     // ── path traversal 403 ────────────────────────────────────────────────────
 
+    test('含反斜杠的 displayName 被 403 拒绝（Windows 分隔符）', () async {
+      final HttpClient c = HttpClient();
+
+      // 不含 `..`、不含 `/`，只触发闸门的反斜杠一支。
+      final HttpClientRequest getReq = await c.getUrl(
+          Uri.parse('$base/api/library/localaudio/C%3A%5CWindows%5Cwin.ini'));
+      getReq.headers.set('authorization', authHeader());
+      final HttpClientResponse getRes = await getReq.close();
+      expect(getRes.statusCode, 403,
+          reason: r'GET with "C:\Windows\win.ini" must be 403 Forbidden');
+      await getRes.drain<void>();
+
+      final HttpClientRequest delReq = await c.deleteUrl(
+          Uri.parse('$base/api/library/localaudio/C%3A%5CWindows%5Cwin.ini'));
+      delReq.headers.set('authorization', authHeader());
+      final HttpClientResponse delRes = await delReq.close();
+      expect(delRes.statusCode, 403);
+      await delRes.drain<void>();
+      expect(lib.deletedLocalAudio, isEmpty,
+          reason: 'no deletion must occur for a backslash name');
+
+      c.close();
+    });
+
     test('path-traversal displayName is rejected with 403', () async {
       final HttpClient c = HttpClient();
 
@@ -564,6 +588,59 @@ void main() {
     });
 
     // ── path traversal 403 ────────────────────────────────────────────────────
+
+    // `/api/library/audiobooks/<key>/position` 此前**没有任何**穿越用例，且服务层
+    // （getAudiobookPosition / putAudiobookPosition）不做第二道校验——删掉那行
+    // _rejectUnsafeAssetId 调用，全套测试照绿。这条把它钉住。
+    test('position 端点拒绝路径穿越 bookKey（GET 与 PUT）', () async {
+      final HttpClient c = HttpClient();
+
+      for (final String evil in <String>[
+        '..%2Fevil', // ../evil
+        '..%5Cevil', // ..\evil
+        'C%3A%5CWindows%5Cwin.ini', // C:\Windows\win.ini（无 .. 无 /）
+      ]) {
+        final HttpClientRequest getReq = await c
+            .getUrl(Uri.parse('$base/api/library/audiobooks/$evil/position'));
+        getReq.headers.set('authorization', authHeader());
+        final HttpClientResponse getRes = await getReq.close();
+        expect(getRes.statusCode, 403,
+            reason: 'GET /audiobooks/$evil/position 必须 403'
+                '（闸门先于 audiobookExists 查询）');
+        await getRes.drain<void>();
+
+        final HttpClientRequest putReq = await c
+            .putUrl(Uri.parse('$base/api/library/audiobooks/$evil/position'));
+        putReq.headers.set('authorization', authHeader());
+        putReq.headers.set('content-type', 'application/json');
+        putReq.write(jsonEncode(
+            <String, Object?>{'positionMs': 1, 'positionUpdatedAtMs': 2}));
+        final HttpClientResponse putRes = await putReq.close();
+        expect(putRes.statusCode, 403,
+            reason: 'PUT /audiobooks/$evil/position 必须 403，不得写脏 prefs');
+        await putRes.drain<void>();
+      }
+
+      c.close();
+    });
+
+    // 反斜杠是 Windows 的路径分隔符，闸门里 `id.contains('\')` 是**独立**的一支；
+    // 上面两条既有用例的攻击串都含 `/`，把这一支整条删掉照样全绿。
+    test('含反斜杠的 bookKey 被 403 拒绝（Windows 分隔符）', () async {
+      final HttpClient c = HttpClient();
+
+      final HttpClientRequest delReq = await c.deleteUrl(
+          Uri.parse('$base/api/library/audiobooks/C%3A%5CWindows%5Cwin.ini'));
+      delReq.headers.set('authorization', authHeader());
+      final HttpClientResponse delRes = await delReq.close();
+      expect(delRes.statusCode, 403,
+          reason: r'DELETE with "C:\Windows\win.ini" must be 403 Forbidden');
+      await delRes.drain<void>();
+      expect(lib.deletedAudiobooks, isEmpty,
+          reason: 'no deletion must occur for a backslash key');
+
+      c.close();
+    });
 
     test('path-traversal bookKey is rejected with 403', () async {
       final HttpClient c = HttpClient();
