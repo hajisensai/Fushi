@@ -13,6 +13,8 @@ import 'package:hibiki/src/media/torrent/anime_download_service.dart';
 import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/qbittorrent_client.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
+import 'package:hibiki/src/media/video/video_sidecar.dart'
+    show listSidecarSubtitles, pickSidecar;
 
 const String _kHash = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
@@ -437,6 +439,115 @@ void main() {
       expect(File(sidecar).readAsStringSync(), 'user edited');
       expect((await store.loadAll()).single.status,
           AnimeDownloadPlan.statusImported);
+    });
+
+    // BUG-1189 跟进：去重键必须**语言无关**。本 PR 让 detectSubtitleLanguage 认出
+    // Netflix 的 `ja[cc]` 之后，同一集的目标名从 `x.srt` 变成 `x.ja.srt`，老档就挡不
+    // 住写入了 —— 重下一次多一份字幕，且 pickSidecar 把带语言标记的排在前面，默认
+    // 选中还会从老档悄悄切到 `.ja` 档。用户看得见，且随重下次数累积。
+    test('🔴 同一集重下不产生第二份字幕：老 x.srt 挡住新的 x.ja.srt', () async {
+      final Directory subsDir = store.subsDirFor(_kHash)
+        ..createSync(recursive: true);
+      final String staged = p.join(subsDir.path, 'Show 01.ja.srt');
+      File(staged).writeAsStringSync('new content');
+
+      final String savePath = p.join(tempDir.path, 'downloads');
+      final String video = p.join(savePath, 'Show - 01.mkv');
+
+      // 上一次下载留下的**无语言段**老档（这就是本 PR 之前所有已下字幕的样子）。
+      final String legacySidecar = p.join(savePath, 'Show - 01.srt');
+      File(legacySidecar).createSync(recursive: true);
+      File(legacySidecar).writeAsStringSync('legacy subtitle');
+
+      // 本轮要落位的是带语言段的新名字 —— 与老档不同名，旧的「同名跳过」拦不住。
+      const PlanSubtitle sub = PlanSubtitle(
+          episode: 1,
+          fileName: 'Show 01.ja.srt',
+          stagedPath: '',
+          language: 'ja');
+      final String langSidecar = sidecarPathFor(video, sub);
+      expect(langSidecar, isNot(legacySidecar),
+          reason: '前提：两者不同名，否则这条用例证明不了语言无关去重');
+
+      await store.save(_plan(subtitles: <PlanSubtitle>[
+        PlanSubtitle(
+            episode: 1,
+            fileName: 'Show 01.ja.srt',
+            stagedPath: staged,
+            language: 'ja'),
+      ]));
+      qb.torrents = <Map<String, dynamic>>[
+        _torrentJson(savePath: savePath, contentPath: video),
+      ];
+      qb.files = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'name': 'Show - 01.mkv',
+          'size': 10,
+          'progress': 1.0,
+          'index': 0,
+        },
+      ];
+
+      await buildService().tick();
+
+      expect(File(langSidecar).existsSync(), isFalse,
+          reason: '该集已有 sidecar，不得再写第二份');
+      expect(File(legacySidecar).readAsStringSync(), 'legacy subtitle',
+          reason: '老档可能是用户手放/手改的，绝不覆盖或删除');
+
+      // 默认选中的确定答案：目录里始终只有一份 sidecar，所以「默认选中悄悄切档」
+      // 这件事根本不会发生 —— pickSidecar 无论学习语言是什么都只能挑到老档。
+      final List<String> dirFiles = Directory(savePath)
+          .listSync()
+          .whereType<File>()
+          .map((File f) => p.basename(f.path))
+          .toList();
+      expect(
+        listSidecarSubtitles('Show - 01', dirFiles),
+        <String>['Show - 01.srt'],
+        reason: '同一集有且只有一份 sidecar',
+      );
+      expect(pickSidecar('Show - 01', dirFiles, langCode: 'ja'),
+          'Show - 01.srt');
+    });
+
+    test('该集本来没有任何 sidecar 时照常落位（去重不得误伤首次下载）', () async {
+      final Directory subsDir = store.subsDirFor(_kHash)
+        ..createSync(recursive: true);
+      final String staged = p.join(subsDir.path, 'Show 01.ja.srt');
+      File(staged).writeAsStringSync('fresh content');
+
+      final String savePath = p.join(tempDir.path, 'downloads');
+      final String video = p.join(savePath, 'Show - 01.mkv');
+      // 同目录里放一集**别的**视频的 sidecar：去重是按集（stem）判的，
+      // 不能因为目录里有任何字幕就整体不落位。
+      Directory(savePath).createSync(recursive: true);
+      File(p.join(savePath, 'Show - 02.srt')).writeAsStringSync('other ep');
+
+      await store.save(_plan(subtitles: <PlanSubtitle>[
+        PlanSubtitle(
+            episode: 1,
+            fileName: 'Show 01.ja.srt',
+            stagedPath: staged,
+            language: 'ja'),
+      ]));
+      qb.torrents = <Map<String, dynamic>>[
+        _torrentJson(savePath: savePath, contentPath: video),
+      ];
+      qb.files = <Map<String, dynamic>>[
+        <String, dynamic>{
+          'name': 'Show - 01.mkv',
+          'size': 10,
+          'progress': 1.0,
+          'index': 0,
+        },
+      ];
+
+      await buildService().tick();
+
+      expect(File(p.join(savePath, 'Show - 01.ja.srt')).readAsStringSync(),
+          'fresh content',
+          reason: '本集无 sidecar → 必须正常落位；别集的字幕不该挡住它');
     });
 
     test('importer 抛异常 → 计划标 failed 不重试', () async {

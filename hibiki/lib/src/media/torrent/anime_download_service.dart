@@ -10,6 +10,8 @@ import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/qbittorrent_client.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/media/video/video_filename_parser.dart';
+import 'package:hibiki/src/media/video/video_sidecar.dart'
+    show listSidecarSubtitles;
 
 /// 入库回调的结果：入库成功后新合集的 id（回填进计划）。
 class AnimeDownloadImportOutcome {
@@ -405,8 +407,20 @@ class AnimeDownloadService {
     }
   }
 
-  /// 把配对到的字幕从暂存复制成视频 sidecar。已存在同名文件跳过不覆盖；
+  /// 把配对到的字幕从暂存复制成视频 sidecar。**该集已有任何 sidecar 就整条跳过**；
   /// 单条复制失败跳过不影响其它。
+  ///
+  /// 去重键是**语言无关**的（比对「这一集有没有 sidecar」，不是「有没有同名文件」）。
+  /// 旧实现拿 [sidecarPathFor] 的全名当键，那只在 `language` 恒为 null（写出来永远是
+  /// `x.srt`）时才等价。本 PR 让 `detectSubtitleLanguage` 认出 Netflix 的 `ja[cc]`
+  /// 后 language 不再为 null，目标名变成 `x.ja.srt`，老的 `x.srt` 就挡不住写入了 →
+  /// **同一集重下一次多出一份字幕**，且 [pickSidecar] 的优先级里带语言标记的排在前面，
+  /// 默认选中还会从老档悄悄切到 `.ja` 档。用户看得见，且随重下次数累积。
+  ///
+  /// 为什么是「跳过」而不是「替换掉老档」：老档可能是用户手放的或手改过的字幕，
+  /// 覆盖/删除它是破坏性的——原注释「已存在同名文件跳过不覆盖」表达的本来就是
+  /// 「不动用户已有的字幕」，这里只是把键修正成它真正该有的粒度。副作用是默认选中
+  /// **保持在老档不变**（因为压根不写第二份），这正是确定的、可预期的行为。
   Future<void> _placeSidecars(
     List<String> videoAbsolutePaths,
     List<PlanSubtitle> subtitles,
@@ -416,7 +430,7 @@ class AnimeDownloadService {
     for (final MapEntry<String, PlanSubtitle> entry in pairs.entries) {
       try {
         final File target = File(sidecarPathFor(entry.key, entry.value));
-        if (await target.exists()) continue;
+        if (await _episodeAlreadyHasSidecar(entry.key)) continue;
         final File staged = File(entry.value.stagedPath);
         if (!await staged.exists()) continue;
         await target.parent.create(recursive: true);
@@ -425,5 +439,24 @@ class AnimeDownloadService {
         // 单条失败跳过。
       }
     }
+  }
+
+  /// [videoAbsolutePath] 这一集在同目录里是否已经有 sidecar 字幕（**任何语言、任何
+  /// 格式**）。复用 [listSidecarSubtitles]——它是「属于这个视频的 sidecar」的既有唯一
+  /// 判据（互联字幕推送也用它），不在这里另写一套后缀匹配。
+  ///
+  /// 目录不存在 / 读不动 → false（当作没有，让复制照常尝试；真失败会落到调用方的
+  /// try/catch）。
+  Future<bool> _episodeAlreadyHasSidecar(String videoAbsolutePath) async {
+    final Directory dir = Directory(p.dirname(videoAbsolutePath));
+    if (!await dir.exists()) return false;
+    final List<String> names = <String>[];
+    await for (final FileSystemEntity e in dir.list(followLinks: false)) {
+      if (e is File) names.add(p.basename(e.path));
+    }
+    return listSidecarSubtitles(
+      p.basenameWithoutExtension(videoAbsolutePath),
+      names,
+    ).isNotEmpty;
   }
 }
