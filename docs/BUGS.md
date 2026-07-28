@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1180 条。点号进各自文件。
+> 共 1181 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1224](bugs/BUG-1224-video-desktop-seekbar-click-stolen-by-subtitle.md) | ✅ | ✅ | 桌面视频点进度条被字幕吸走成查词 |
 | [BUG-1221](bugs/BUG-1221-manga-path-case-folded.md) | ✅ | ✅ | 漫画页图解析把路径折成小写，制卡封面名被小写化且大小写敏感平台缺页 |
 | [BUG-1220](bugs/BUG-1220-bangumi-sync-invisible.md) | ✅ | ✅ | Bangumi 同步链路全静默：看完了没反应且无处查看 |
 | [BUG-1218](bugs/BUG-1218-epub-path-case-folded-android.md) | ✅ | ✅ | EPUB 解析把路径折成小写，大小写敏感平台上整本章节静默失踪 |

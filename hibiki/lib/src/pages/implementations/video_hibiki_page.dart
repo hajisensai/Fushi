@@ -724,15 +724,44 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// reserve 抬到「轨道上缘 + 本间距」让字幕底缘恰骑进度条上方一点点（不被遮、也不像
   /// 旧版用整段热区高那样顶飞 ~47×缩放 的空白）。随界面缩放。
   static const double _videoSubtitleSeekBarBreathingBase = 8;
+
+  /// **桌面**控制条进度条触摸热区高度（BUG-1224）。桌面 theme 此前不覆盖
+  /// `seekBarContainerHeight`、吃 media_kit fork 的构造器默认 36；现在显式传同一个值，
+  /// 让「控制条实际用的热区高」与「字幕避让算的热区高」是同一个真相源，不再靠猜 fork
+  /// 默认值（fork 改默认值 → 避让会跟着漂，本 bug 的隐蔽处之一）。取值仍是 36 且**不随
+  /// 缩放**，与改动前的桌面渲染逐像素一致（本次只修避让，不动控制条外观）。
+  static const double _videoDesktopSeekBarContainerHeight = 36;
+
+  /// **桌面**进度条被向下压、骑到按钮行上沿的重叠量（BUG-1224）。media_kit fork 桌面
+  /// 控制条用 `Transform.translate` 把进度条整体下压这么多，于是它 36px 高的透明触摸热区
+  /// 只有下半截落在按钮行里、上半截（36 − 16 = 20px）探出到按钮行**上方**——正是字幕
+  /// 底缘所在处。fork 侧已把这个量提成主题字段 `seekBarBottomButtonBarOverlap`（默认同为
+  /// 16），本值同时喂给 theme 和字幕避让，两边不会各自漂。不随缩放（与 fork 原常量一致）。
+  static const double _videoDesktopSeekBarButtonBarOverlap = 16;
+
   static const double _videoControlPopoverGapBase = 8;
 
   /// 进度条与按钮条竖直间距，随界面大小缩放（TODO-156）。
   double get _videoSeekBarButtonGap =>
       _videoSeekBarButtonGapBase * _videoUiScale;
 
-  /// 进度条触摸热区高度，随界面大小缩放（TODO-157）。
+  /// 进度条触摸热区高度，随界面大小缩放（TODO-157）。**移动** theme 用。
   double get _videoSeekBarContainerHeight =>
       _videoSeekBarContainerHeightBase * _videoUiScale;
+
+  /// 当前平台控制条**实际生效**的进度条触摸热区高度（BUG-1224）：桌面 theme 传
+  /// [_videoDesktopSeekBarContainerHeight]（36，不随缩放），移动 theme 传
+  /// [_videoSeekBarContainerHeight]（40×缩放）。字幕避让必须按**这个**值算，用错平台的
+  /// 值就会算出错的热区上缘、字幕重新压进 seek 命中区。
+  double get _activeSeekBarContainerHeight => _isDesktopVideoControls
+      ? _videoDesktopSeekBarContainerHeight
+      : _videoSeekBarContainerHeight;
+
+  /// 当前平台进度条骑按钮行上沿的重叠量（BUG-1224）：桌面 =
+  /// [_videoDesktopSeekBarButtonBarOverlap]；移动端进度条被 `seekBarMargin.bottom` 整体
+  /// 抬到按钮行**上方**、不下压，故为 0。
+  double get _activeSeekBarButtonBarOverlap =>
+      _isDesktopVideoControls ? _videoDesktopSeekBarButtonBarOverlap : 0;
 
   /// 进度条拖动滑块尺寸，随界面大小缩放（TODO-157）。
   double get _videoSeekBarThumbSize =>
@@ -5269,7 +5298,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       // BUG-901：用**触摸热区全高**（进度条真正可点目标，含可见轨道上方那段透明 seek
       // 命中区）+ 呼吸间距，让字幕命中区整体骑在进度条整段可点区上方，与 seek 不重叠。
       // 只让可见轨道高（旧 TODO-568）会让字幕落进那段透明热区、两命中区在同一竞技场误触。
-      seekBarContainerHeight: _videoSeekBarContainerHeight,
+      // BUG-1224：必须取**当前平台 theme 真实生效**的热区高（桌面 36 不随缩放 / 移动
+      // 40×缩放），并减去桌面把进度条下压骑按钮行上沿的重叠量，才是真的热区上缘。
+      seekBarContainerHeight: _activeSeekBarContainerHeight,
+      seekBarBottomButtonBarOverlap: _activeSeekBarButtonBarOverlap,
       subtitleBreathingGap: _videoSubtitleSeekBarBreathingGap,
       bottomChromeBaseline: _videoBottomChromeBaseline,
       bottomSystemInset: _videoBottomSystemInset(),

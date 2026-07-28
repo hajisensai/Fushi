@@ -225,12 +225,20 @@ void main() {
     const double breathingBase =
         8; // 字幕呼吸间距（_videoSubtitleSeekBarBreathingBase）。
     const double chromeBaseline = 24; // 不随缩放的离底基线常量。
+    // BUG-1224：桌面控制条的进度条几何与移动端不同——热区高恒 36（fork 默认，不随缩放，
+    // 页面 _videoDesktopSeekBarContainerHeight），且被 Transform.translate 下压 16 骑到
+    // 按钮行上沿（_videoDesktopSeekBarButtonBarOverlap / fork 主题字段
+    // seekBarBottomButtonBarOverlap）。
+    const double desktopSeekContainer = 36;
+    const double desktopSeekOverlap = 16;
 
     double mobileReserve(double scale) => videoSubtitleControlsReserve(
           isDesktop: false,
           buttonBarHeight: buttonBarBase * scale,
           seekBarButtonGap: seekGapBase * scale,
           seekBarContainerHeight: seekContainerBase * scale,
+          // 移动端进度条被整体抬到按钮行上方、不下压，故无重叠量。
+          seekBarBottomButtonBarOverlap: 0,
           subtitleBreathingGap: breathingBase * scale,
           bottomChromeBaseline: chromeBaseline,
           bottomSystemInset: 0,
@@ -239,7 +247,8 @@ void main() {
           isDesktop: true,
           buttonBarHeight: buttonBarBase * scale,
           seekBarButtonGap: seekGapBase * scale,
-          seekBarContainerHeight: seekContainerBase * scale,
+          seekBarContainerHeight: desktopSeekContainer,
+          seekBarBottomButtonBarOverlap: desktopSeekOverlap,
           subtitleBreathingGap: breathingBase * scale,
           bottomChromeBaseline: chromeBaseline,
           bottomSystemInset: 0,
@@ -250,6 +259,11 @@ void main() {
     double seekHotzoneTop(double scale) =>
         chromeBaseline +
         (buttonBarBase + seekGapBase + seekContainerBase) * scale;
+
+    // 桌面进度条触摸热区**上缘**离底高（BUG-1224）：热区下缘 = 按钮行高 − 下压量，
+    // 上缘再加热区全高。scale=1.0：56 − 16 + 36 = 76（比按钮行高 56 还高出 20）。
+    double desktopSeekHotzoneTop(double scale) =>
+        buttonBarBase * scale - desktopSeekOverlap + desktopSeekContainer;
 
     test('移动端 reserve = 进度条触摸热区上缘 + 呼吸间距，字幕命中区整体清出 seek 命中区（BUG-901）', () {
       // 根因守卫：只让**可见轨道高** 5 的旧取舍（TODO-568）让 reserve 只抬到可见轨道上缘，
@@ -280,6 +294,7 @@ void main() {
         buttonBarHeight: buttonBarBase,
         seekBarButtonGap: seekGapBase,
         seekBarContainerHeight: seekContainerBase,
+        seekBarBottomButtonBarOverlap: 0,
         subtitleBreathingGap: breathingBase,
         bottomChromeBaseline: chromeBaseline,
         bottomSystemInset: 48,
@@ -297,17 +312,39 @@ void main() {
       // 缩放后仍清出热区上缘（差值 = 呼吸 ×scale）。
       expect(mobileReserve(2.0), greaterThanOrEqualTo(seekHotzoneTop(2.0)),
           reason: '任意缩放下字幕命中区都要清出进度条触摸热区（BUG-901）');
-      // 桌面也随缩放：一个按钮行高 ×scale。
+      // 桌面也随缩放：按钮行高 ×scale（热区高 / 下压量是 fork 常量，不随缩放）。
       expect(desktopReserve(2.0), greaterThan(desktopReserve(1.0)));
-      expect(desktopReserve(2.0), closeTo(112, 0.001)); // 56 * 2.0
+      // scale=2.0：112 − 16 + 36 + 8*2 = 148。
+      expect(desktopReserve(2.0), closeTo(148, 0.001));
+      expect(
+          desktopReserve(2.0), greaterThanOrEqualTo(desktopSeekHotzoneTop(2.0)),
+          reason: '任意缩放下桌面字幕也要清出进度条触摸热区（BUG-1224）');
     });
 
-    test('桌面 reserve = 一个按钮行高（进度条骑按钮行上沿，保 BUG-228 观感）', () {
-      // 桌面进度条用 Transform.translate 骑在按钮行上沿，只需让出一个按钮行高；
-      // 默认基线 75 已在其上（scale 1.0 时 max(75,56)=75），不被多抬（BUG-228）。
-      expect(desktopReserve(1.0), closeTo(56, 0.001));
+    test('桌面 reserve = 进度条触摸热区上缘 + 呼吸间距，点进度条不再被字幕吸走（BUG-1224）', () {
+      // 根因守卫：旧实现桌面分支直接 `return buttonBarHeight`（56），那只是**可见轨道**
+      // 所在高度。桌面 seek bar 的透明触摸热区高 36、被下压 16 骑按钮行上沿，热区上缘其实
+      // 在 56 − 16 + 36 = 76 —— 比 56 高出 20px。字幕底缘停在 56（或默认基线 75）就压住这
+      // 条带，而字幕层在 Stack 上层且对 glyph 命中主动吸收指针（_GlyphPriorityHitTest，
+      // BUG-838）→ 用户点进度条上缘 = 弹查词、seek 收不到指针（悬停缩略图却照常出现，
+      // 因为 hover 走 non-opaque MouseRegion 不被吸收）。
+      // scale=1.0：56 − 16 + 36 + 8 = 84。
+      expect(desktopReserve(1.0), closeTo(84, 0.001));
+      // 核心不变量（与移动端同一条，无平台特例）：reserve ≥ 进度条触摸热区上缘。
+      expect(
+          desktopReserve(1.0), greaterThanOrEqualTo(desktopSeekHotzoneTop(1.0)),
+          reason: '桌面字幕底缘必须骑在进度条触摸热区上缘之上，否则点进度条被字幕吸走成查词（BUG-1224）');
+      expect(desktopReserve(1.0) - desktopSeekHotzoneTop(1.0),
+          closeTo(breathingBase, 0.001),
+          reason: 'reserve 应恰为热区上缘 + 一个呼吸间距');
+      // BUG-1224 防回退：退回「只让一个按钮行高」(56) → 本条红。
+      expect(desktopReserve(1.0), greaterThan(buttonBarBase),
+          reason: '不应退回只让一个按钮行高——那让字幕压住进度条热区上缘 20px 带（BUG-1224）');
+      // BUG-228 不回归：仍必须小于旧的「整条按钮行 + 离底 margin」98，字幕不被顶飞。
+      expect(desktopReserve(1.0), lessThan(98),
+          reason: '桌面避让仍不得抬过旧的 98（BUG-228 用户报「字幕被顶太高很怪」）');
       expect(desktopReserve(1.0), lessThan(mobileReserve(1.0)),
-          reason: '桌面 reserve 应小于移动（桌面进度条没被抬高）');
+          reason: '桌面 reserve 应小于移动（桌面进度条没被整体抬到按钮行上方）');
     });
   });
 
