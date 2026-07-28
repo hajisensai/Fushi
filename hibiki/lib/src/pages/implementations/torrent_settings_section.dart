@@ -11,6 +11,12 @@ import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki/src/media/import/real_path_directory_picker.dart';
 
+/// 下载设置表单在宽屏下的最大内容宽度。
+///
+/// 卡片表面仍由设置详情页铺满 pane；这里只把同属一组的标题、说明、按钮、输入框
+/// 和开关收在一起，避免左侧文案与最右侧操作控件隔着整块 4K 详情面板。
+const double kTorrentSettingsContentMaxWidth = 560;
+
 /// 下载后端配置（后端二选一 + qb 连接 / 内置引擎限速·上传·做种·内存·连接数）。
 /// 从「设置→视频」搬到「下载」页——下载既已独立成页，配置就该在页内，不再埋进
 /// 视频设置。所有字段写 `QbConnectionConfig`（即时生效到内置引擎）。
@@ -300,7 +306,7 @@ class _TorrentSettingsSectionState
     final bool isQb = backend == QbConnectionConfig.backendQbittorrent;
     final bool isEmbedded = backend == QbConnectionConfig.backendEmbedded;
 
-    return Column(
+    final Widget content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _sectionLabel(theme, t.download_network_proxy_section),
@@ -633,6 +639,18 @@ class _TorrentSettingsSectionState
           ],
         ],
       ],
+    );
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints:
+            const BoxConstraints(maxWidth: kTorrentSettingsContentMaxWidth),
+        child: SizedBox(
+          key: const ValueKey<String>('torrent-settings-content'),
+          width: double.infinity,
+          child: content,
+        ),
+      ),
     );
   }
 }

@@ -92,7 +92,9 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                     // 桌面宽屏限宽 560 居中（对齐全 app 设置面板口径），不再全宽铺开。
                     Center(
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 560),
+                        constraints: const BoxConstraints(
+                          maxWidth: kTorrentSettingsContentMaxWidth,
+                        ),
                         child: const TorrentSettingsSection(),
                       ),
                     ),
