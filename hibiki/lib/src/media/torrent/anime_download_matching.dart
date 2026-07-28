@@ -71,70 +71,173 @@ int _compareByLanguagePreference(
   return a.name.toLowerCase().compareTo(b.name.toLowerCase());
 }
 
+/// 种子「集数身份」的类别。见 [TorrentEpisodeScope]。
+enum TorrentEpisodeScopeKind {
+  /// 标题写明集号区间（`01-13`）：按区间逐集对位。
+  range,
+
+  /// 单集（`- 07` / `第07話` / `S01E07`）。
+  single,
+
+  /// 整季 / 全集包：标了季号或 batch / Complete / BD-BOX / `全13話` 这类整季
+  /// 标记，但既没有单集号也没写区间——**集号未知，但「这一包覆盖整季」是确定的**。
+  season,
+
+  /// 无集数概念（剧场版 / 单文件）。
+  unknown,
+}
+
+/// 种子的「集数身份」——字幕匹配与覆盖度徽标的**唯一判据**。
+///
+/// 此前 [chooseSubtitlesFor] 与 [jimakuCoverageFor] 各自用
+/// `episodeRange` / `episode` 两个 getter 现推语义，整季包（标题只写 `S1` /
+/// `Complete`，不写 `01-13`）在两处被推成不同结论：列表徽标算「有字幕」、
+/// 确认页却一条都不给（BUG-1189）。集数身份收敛成这一个值后，两处共用同一分支，
+/// 结论不可能再打架。
+class TorrentEpisodeScope {
+  const TorrentEpisodeScope._(this.kind, {this.range, this.episode});
+
+  /// 集号区间已知（`01-13`）。
+  const TorrentEpisodeScope.range((int, int) range)
+      : this._(TorrentEpisodeScopeKind.range, range: range);
+
+  /// 单集。
+  const TorrentEpisodeScope.single(int episode)
+      : this._(TorrentEpisodeScopeKind.single, episode: episode);
+
+  /// 整季包（集号未知）。
+  const TorrentEpisodeScope.season() : this._(TorrentEpisodeScopeKind.season);
+
+  /// 无集数概念。
+  const TorrentEpisodeScope.unknown() : this._(TorrentEpisodeScopeKind.unknown);
+
+  final TorrentEpisodeScopeKind kind;
+
+  /// [TorrentEpisodeScopeKind.range] 时的集号区间，其余为 null。
+  final (int, int)? range;
+
+  /// [TorrentEpisodeScopeKind.single] 时的集号，其余为 null。
+  final int? episode;
+}
+
+/// 整季包标记（标题里表明「这是整季/全集」但不写集号区间的写法）。
+/// 季号（`S1` / `Season 2` / `第二季`）由 [NyaaTorrent.season] 单独识别，此处
+/// 只补 batch / 完结包关键词。
+final RegExp _seasonPackMarker = RegExp(
+  r'\b(complete(\s+series)?|batch|bd-?box)\b|全\s*\d{0,3}\s*[话話集]',
+  caseSensitive: false,
+);
+
+/// 判定种子 [t] 的集数身份。纯函数。
+///
+/// 优先级（区间 > 单集 > 整季 > 无）：合集标题常同时被解析出区间末位当「单集号」，
+/// 区间存在时它才是真相；而 `S1 [BDRip]` 这类整季包解不出集号，必须落到
+/// [TorrentEpisodeScopeKind.season] 而不是「无集数概念」，否则整季字幕全被丢弃。
+TorrentEpisodeScope torrentEpisodeScope(NyaaTorrent t) {
+  final (int, int)? range = t.episodeRange;
+  if (range != null) return TorrentEpisodeScope.range(range);
+  final int? episode = t.episode;
+  if (episode != null) return TorrentEpisodeScope.single(episode);
+  if (t.isBatch || t.season != null || _seasonPackMarker.hasMatch(t.title)) {
+    return const TorrentEpisodeScope.season();
+  }
+  return const TorrentEpisodeScope.unknown();
+}
+
 /// 计算种子 [t] 的字幕覆盖度（列表徽标「字幕 covered/total」用）。
 ///
-/// 分支（batch 优先——合集标题常同时被解析出区间末位当「单集号」，
-/// 区间存在时它才是真相，与 [NyaaTorrent.isBatch] 的判定一致）：
-/// - batch（`episodeRange != null`）→ `total` = 区间长度，`covered` = 区间内
-///   有候选的集数；
-/// - 单集（`episode != null`）→ `total` 1，`covered` 0/1；
-/// - 两者皆无（剧场版/单文件，无法判断集数）→ `total` null，`covered` =
-///   索引里有任意文件则 1，否则 0。
+/// 按 [torrentEpisodeScope] 分支，与 [chooseSubtitlesFor] 严格同源
+/// （两者必须对同一种子给出一致结论）：
+/// - range → `total` = 区间长度，`covered` = 区间内有候选的集数；
+/// - single → `total` 1，`covered` 0/1；
+/// - season（整季包，应有集数未知）→ `total` null，`covered` = 索引里有候选的
+///   集数（无编号集但有整季单文件字幕时记 1）；
+/// - unknown（剧场版/单文件）→ `total` null，`covered` = 索引非空则 1。
 ({int covered, int? total}) jimakuCoverageFor(
   NyaaTorrent t,
   JimakuEpisodeIndex index,
 ) {
-  final (int, int)? range = t.episodeRange;
-  if (range != null) {
-    int covered = 0;
-    for (int episode = range.$1; episode <= range.$2; episode++) {
-      if (index.byEpisode.containsKey(episode)) covered++;
-    }
-    return (covered: covered, total: range.$2 - range.$1 + 1);
+  final TorrentEpisodeScope scope = torrentEpisodeScope(t);
+  switch (scope.kind) {
+    case TorrentEpisodeScopeKind.range:
+      final (int, int) range = scope.range!;
+      int covered = 0;
+      for (int episode = range.$1; episode <= range.$2; episode++) {
+        if (index.byEpisode.containsKey(episode)) covered++;
+      }
+      return (covered: covered, total: range.$2 - range.$1 + 1);
+    case TorrentEpisodeScopeKind.single:
+      return (
+        covered: index.byEpisode.containsKey(scope.episode!) ? 1 : 0,
+        total: 1
+      );
+    case TorrentEpisodeScopeKind.season:
+      if (index.byEpisode.isNotEmpty) {
+        return (covered: index.byEpisode.length, total: null);
+      }
+      return (covered: index.unnumbered.isEmpty ? 0 : 1, total: null);
+    case TorrentEpisodeScopeKind.unknown:
+      // 与 [chooseSubtitlesFor] 的 unknown 分支同构：只有「有 unnumbered」或
+      // 「全部文件恰好 1 条」才真给得出，其余不猜。此前这里一律记 1，于是
+      // 「列表徽标说有字幕、点进详情说无字幕」（同 BUG-1189）。
+      if (index.unnumbered.isNotEmpty) return (covered: 1, total: null);
+      return (covered: index.totalFiles == 1 ? 1 : 0, total: null);
   }
-  final int? episode = t.episode;
-  if (episode != null) {
-    return (covered: index.byEpisode.containsKey(episode) ? 1 : 0, total: 1);
-  }
-  return (covered: index.isEmpty ? 0 : 1, total: null);
 }
 
 /// 为种子 [t] 挑选随下载暂存的字幕清单（`(集号, 文件)`，集号 null = 未知）。
 ///
-/// 分支（batch 优先，理由同 [jimakuCoverageFor]）：
-/// - batch → 区间内每集取首选（语言权重最优）各 1 条，缺集跳过；
-/// - 单集 → 该集首选 1 条（记录集号）；无候选返回空；
-/// - 无集数 → 有无集号文件（[JimakuEpisodeIndex.unnumbered]）时取其首选，
+/// 按 [torrentEpisodeScope] 分支（与 [jimakuCoverageFor] 同源）：
+/// - range → 区间内每集取首选（语言权重最优）各 1 条，缺集跳过；
+/// - single → 该集首选 1 条（记录集号）；无候选返回空；
+/// - season（整季包）→ 索引里**每个已知集**各取首选（集号升序）；一集都没有但有
+///   整季单文件字幕时退回该单文件（记 episode null）。种子标题没写区间不代表它
+///   不含整季，此处按字幕侧的集号全给，落位仍按集对位；
+/// - unknown → 有无集号文件（[JimakuEpisodeIndex.unnumbered]）时取其首选，
 ///   否则全部文件恰好只有 1 条时给它；其余情况不猜，返回空。两种给出场景
 ///   均记 episode null（种子本身无集数概念，sidecar 落位不按集对位）。
 List<(int?, JimakuFile)> chooseSubtitlesFor(
   NyaaTorrent t,
   JimakuEpisodeIndex index,
 ) {
-  final (int, int)? range = t.episodeRange;
-  if (range != null) {
-    final List<(int?, JimakuFile)> out = <(int?, JimakuFile)>[];
-    for (int episode = range.$1; episode <= range.$2; episode++) {
-      final List<JimakuFile>? candidates = index.byEpisode[episode];
-      if (candidates != null && candidates.isNotEmpty) {
-        out.add((episode, candidates.first));
+  final TorrentEpisodeScope scope = torrentEpisodeScope(t);
+  switch (scope.kind) {
+    case TorrentEpisodeScopeKind.range:
+      final (int, int) range = scope.range!;
+      final List<(int?, JimakuFile)> out = <(int?, JimakuFile)>[];
+      for (int episode = range.$1; episode <= range.$2; episode++) {
+        final List<JimakuFile>? candidates = index.byEpisode[episode];
+        if (candidates != null && candidates.isNotEmpty) {
+          out.add((episode, candidates.first));
+        }
       }
-    }
-    return out;
-  }
-  final int? episode = t.episode;
-  if (episode != null) {
-    final List<JimakuFile>? candidates = index.byEpisode[episode];
-    if (candidates == null || candidates.isEmpty) {
+      return out;
+    case TorrentEpisodeScopeKind.single:
+      final int episode = scope.episode!;
+      final List<JimakuFile>? candidates = index.byEpisode[episode];
+      if (candidates == null || candidates.isEmpty) {
+        return const <(int?, JimakuFile)>[];
+      }
+      return <(int?, JimakuFile)>[(episode, candidates.first)];
+    case TorrentEpisodeScopeKind.season:
+      final List<int> episodes = index.byEpisode.keys.toList()..sort();
+      if (episodes.isNotEmpty) {
+        return <(int?, JimakuFile)>[
+          for (final int episode in episodes)
+            (episode, index.byEpisode[episode]!.first),
+        ];
+      }
+      if (index.unnumbered.isNotEmpty) {
+        return <(int?, JimakuFile)>[(null, index.unnumbered.first)];
+      }
       return const <(int?, JimakuFile)>[];
-    }
-    return <(int?, JimakuFile)>[(episode, candidates.first)];
+    case TorrentEpisodeScopeKind.unknown:
+      if (index.unnumbered.isNotEmpty) {
+        return <(int?, JimakuFile)>[(null, index.unnumbered.first)];
+      }
+      if (index.totalFiles == 1) {
+        return <(int?, JimakuFile)>[(null, index.byEpisode.values.first.first)];
+      }
+      return const <(int?, JimakuFile)>[];
   }
-  if (index.unnumbered.isNotEmpty) {
-    return <(int?, JimakuFile)>[(null, index.unnumbered.first)];
-  }
-  if (index.totalFiles == 1) {
-    return <(int?, JimakuFile)>[(null, index.byEpisode.values.first.first)];
-  }
-  return const <(int?, JimakuFile)>[];
 }

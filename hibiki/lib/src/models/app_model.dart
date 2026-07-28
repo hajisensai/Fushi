@@ -3007,6 +3007,24 @@ class AppModel with ChangeNotifier {
 
   Future<void> setJimakuApiKey(String key) => prefsRepo.setJimakuApiKey(key);
 
+  /// Jimaku 默认字幕语言（`''` = 不限）。见
+  /// [PreferencesRepository.jimakuDefaultLanguage]。
+  String get jimakuDefaultLanguage => prefsRepo.jimakuDefaultLanguage;
+
+  Future<void> setJimakuDefaultLanguage(String langCode) =>
+      prefsRepo.setJimakuDefaultLanguage(langCode);
+
+  /// 默认字幕语言归一成语言选择器用的 `String?`（`''`/空白 → null = 不限）。
+  /// 三个 Jimaku 界面（字幕对话框 / 番剧下载 / 批量匹配）共用同一兜底。
+  ///
+  /// 走 `_prefsRepo?` 而非 [prefsRepo]：这几处在 `initState` 里读，偏好仓库尚未
+  /// 就绪（启动早期 / widget 测试的 AppModel 替身）时应回退「不限」，而不是崩在
+  /// 一个纯锦上添花的默认值上。
+  String? get jimakuDefaultLanguageOrNull {
+    final String code = (_prefsRepo?.jimakuDefaultLanguage ?? '').trim();
+    return code.isEmpty ? null : code;
+  }
+
   /// qBittorrent WebUI 连接配置（番剧下载）；null = 未配置未启用。
   QbConnectionConfig? get qbConnectionConfig => prefsRepo.qbConnectionConfig;
 

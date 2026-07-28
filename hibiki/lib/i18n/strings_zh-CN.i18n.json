@@ -2712,5 +2712,7 @@
   "shortcut_scope_manga": "漫画",
   "shortcut_action_manga_page_forward": "下一页",
   "shortcut_action_manga_page_backward": "上一页",
-  "shortcut_action_manga_dismiss_dict": "关闭词典"
+  "shortcut_action_manga_dismiss_dict": "关闭词典",
+  "video_setting_jimaku_default_language": "默认字幕语言",
+  "video_setting_jimaku_default_language_hint": "该系列没有记住的语言时优先使用"
 }

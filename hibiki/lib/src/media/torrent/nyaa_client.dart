@@ -97,6 +97,11 @@ class NyaaTorrent {
   /// 从标题解析的单集号（复用 [parseVideoFilename]）；认不出为 null。
   int? get episode => parseVideoFilename(title).episode;
 
+  /// 从标题解析的季号（`S1` / `Season 2` / `第二季` 等，复用 [parseVideoFilename]）；
+  /// 认不出为 null。整季包（标季不标集号）靠它与 [episode] 一起判定，见
+  /// `torrentEpisodeScope`。
+  int? get season => parseVideoFilename(title).season;
+
   /// 从标题解析的系列名（复用 [parseVideoFilename]，剥字幕组 tag / 画质 / 集号）。
   String get parsedSeries => parseVideoFilename(title).series;
 

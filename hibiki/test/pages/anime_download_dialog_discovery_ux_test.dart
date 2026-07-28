@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -285,6 +286,51 @@ void main() {
     // 四成；加之测试字体（Ahem）每字符整字宽、把 label 量成真实字体的两倍多，所以
     // 这里只能断言到「不是常数、装得下 label 本体」。「含内边距完整装下」这条性质
     // 由 test/widgets/narrow_screen_overflow_test.dart 覆盖——那里可以自己给定行宽。
+  });
+
+  // BUG-1190：下拉换标题只改输入框文本、不重搜，用户看到的是「番剧名换了、
+  // 底下的字幕来源纹丝不动」，会当成功能坏了。选中即搜。
+  testWidgets('确认阶段：下拉切标题立即重搜 Jimaku 并刷新字幕来源', (WidgetTester tester) async {
+    int searchCalls = 0;
+    final _FakeAppModel appModel = _FakeAppModel((http.Request req) async {
+      final String url = req.url.toString();
+      if (url.contains('/entries/search')) {
+        searchCalls++;
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<Map<String, Object>>[
+            <String, Object>{'id': 7, 'name': 'テスト・アニメ 字幕'},
+          ])),
+          200,
+        );
+      }
+      if (url.contains('/files')) {
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<Map<String, Object>>[
+            <String, Object>{
+              'name': 'Test Anime - 01.ja.srt',
+              'url': 'https://jimaku.cc/f/1.srt',
+            },
+          ])),
+          200,
+        );
+      }
+      return http.Response('', 404);
+    });
+    await pumpDialog(tester, appModel, torrent: _kTorrent);
+    // debug 直达确认阶段不自动联网搜；此时还没有任何字幕来源。
+    expect(searchCalls, 0);
+    expect(find.text(t.anime_download_no_subs), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.arrow_drop_down).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('テスト・アニメ').last);
+    await tester.pumpAndSettle();
+
+    expect(searchCalls, 1, reason: '选中标题即触发重搜，不必再点放大镜');
+    // 字幕来源 chip 换成新搜到的条目，字幕列表给出该单集种子对应的第 1 集。
+    expect(find.text('テスト・アニメ 字幕'), findsOneWidget);
+    expect(find.text('Test Anime - 01.ja.srt'), findsOneWidget);
+    expect(find.text(t.anime_download_no_subs), findsNothing);
   });
 }
 

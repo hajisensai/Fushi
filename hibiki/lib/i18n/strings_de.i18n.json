@@ -2712,5 +2712,7 @@
   "shortcut_scope_manga": "Manga",
   "shortcut_action_manga_page_forward": "Next page",
   "shortcut_action_manga_page_backward": "Previous page",
-  "shortcut_action_manga_dismiss_dict": "Close dictionary"
+  "shortcut_action_manga_dismiss_dict": "Close dictionary",
+  "video_setting_jimaku_default_language": "Default subtitle language",
+  "video_setting_jimaku_default_language_hint": "Preferred language when the series has no remembered choice"
 }

@@ -1,0 +1,14 @@
+## BUG-1189 · 整季包种子拿不到任何 Jimaku 字幕
+- **报告**：2026-07-28（用户：下载页「发现」选中 `[7³ACG] Watashi wo Tabetai, Hitodenashi 私を喰べたい、ひとでなし S1 [BDRip 1080p x265 OPUS]` 后，字幕来源已选中条目，列表区却显示「无字幕」）
+- **真实性**：✅ 真 bug。根因 `hibiki/lib/src/media/torrent/anime_download_matching.dart:110`（`chooseSubtitlesFor` 的「无集数」分支）。
+  - 数据侧已排除：用真实 API key 查 Jimaku 条目 `10365`（anilist_id 183385）返回 **130 个字幕文件、1–13 集全覆盖**（Erai-raws / Haruhana / NanakoRaws / Nekomoe / shincaps / Netflix `ja[cc]`），不是「站上真没有字幕」。
+  - 该标题在 `nyaa_client.dart` 侧解析为：`episodeRange = null`（`_episodeRange` 只认 `数字-数字`，标题里没有 `01-13`）、`isBatch = false`（不含 `batch`）、`episode = null`（`S1` 被刮削引擎 `_sToken` 当季号剥掉，`_bareTrailingEpisode` 要求两位数结尾）。
+  - 于是 `chooseSubtitlesFor` 落进第三分支「无集数概念」：`unnumbered` 为空（130 个文件全都解得出集号）、`totalFiles != 1` → 返回空列表 → 确认页渲染「无字幕」。**凡是只标 `S1`/`Season 1`/`Complete` 而不写集号区间的整季包，字幕恒为空。**
+  - 同场景下 `jimakuCoverageFor:99` 返回 `covered:1, total:null`，种子列表徽标显示「字幕 ?」＝有字幕。两个函数对同一种子结论相反（列表说有、点进去说无）。
+- **[x] ① 已修复** — 集数身份从「两个 getter 现推」收敛成单一真相 `TorrentEpisodeScope`（`anime_download_matching.dart`）：`range`（写了区间）/ `single`（单集）/ `season`（标了季号或 `batch`/`Complete`/`BD-BOX`/`全13話` 但没集号）/ `unknown`（剧场版单文件）。`chooseSubtitlesFor` 与 `jimakuCoverageFor` 改为共用这一个判定：
+  - `season` → 索引里每个已知集各取语言最优 1 条（集号升序）；一集都没有但有整季单文件字幕时退回该单文件；
+  - `unknown` 分支的覆盖度改成与 choose 同构（给不出就记 0），消除「徽标说有、详情说无」；
+  - 徽标 `total == null` 时显示实际条数而非 `?`（`anime_download_dialog.dart`）；
+  - 附带：`NyaaTorrent.season` 新 getter；`detectSubtitleLanguage` 剥掉 Netflix 的 `ja[cc]`/`en[sdh]` 方括号修饰（否则这批 CC 日语字幕语言判为未知，排不进 ja 优先也筛不到「日本語」）。
+- **[x] ② 已加自动化测试** — `hibiki/test/torrent/anime_download_matching_test.dart`：`torrentEpisodeScope` 四类判定（含本 bug 的真实标题）、整季包按集全给（真实 Jimaku 文件名构造 13 集索引）、整季单文件退回、空索引不硬塞，以及守卫「`jimakuCoverageFor().covered` 恒等于 `chooseSubtitlesFor().length`」（四类种子各验一次，锁住两函数不再各说各话）。`hibiki/test/media/video/jimaku_client_test.dart` 补 `ja[cc]` / `en[sdh]` 语言识别用例。
+- **备注**：与 [BUG-1190](BUG-1190-jimaku-title-dropdown-no-research.md) 同一次用户报告，同 PR 落地。

@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'package:hibiki/src/media/video/jimaku_client.dart';
-import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart'
-    show jimakuLanguageLabel;
 import 'package:hibiki/utils.dart';
 
 /// Jimaku 字幕来源选择器。
@@ -91,7 +89,7 @@ class JimakuLanguagePicker extends StatelessWidget {
           selected: selectedLanguage == null,
           onSelected: enabled ? (_) => onSelected(null) : null,
         ),
-        for (final String language in const <String>['ja', 'zh', 'en', 'ko'])
+        for (final String language in kJimakuLanguageCodes)
           ChoiceChip(
             label: Text(jimakuLanguageLabel(language)),
             selected: selectedLanguage == language,

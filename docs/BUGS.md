@@ -37,6 +37,8 @@
 | [BUG-1195](bugs/BUG-1195-vn-blank-tap-blocks-chrome.md) | ✅ | ✅ | 视觉小说模式点空白只翻页，控制栏（菜单）永远唤不出 |
 | [BUG-1194](bugs/BUG-1194-collection-reorder-nonvideo-order.md) | ✅ | ✅ | 视频合集详情页拖拽排序打乱非 video 成员的跨种类顺序 |
 | [BUG-1193](bugs/BUG-1193-galgame-luna-nonwinner-threads-dropped.md) | 🚧 | 🚧 | primed 后非赢家 hook 线程被 native 丢弃，无法像 LunaTranslator 那样切换 |
+| [BUG-1190](bugs/BUG-1190-jimaku-title-dropdown-no-research.md) | ✅ | ✅ | 换番剧名后字幕来源不刷新 |
+| [BUG-1189](bugs/BUG-1189-season-pack-jimaku-subs-empty.md) | ✅ | ✅ | 整季包种子拿不到任何 Jimaku 字幕 |
 | [BUG-1188](bugs/BUG-1188-dataroot-pick-layout-split.md) | ✅ | ✅ | 选目录迁移产出第三种布局，到不了新装形态（DB 被拖进文档目录） |
 | [BUG-1187](bugs/BUG-1187-gal-unvoiced-line-gets-bgm.md) | ✅ | ✅ | galgame 无配音句被整机混音兜底成 BGM |
 | [BUG-1186](bugs/BUG-1186-appbar-actions-collapse-uses-window-width.md) | ✅ | ✅ | AppBar 动作折叠判据读整窗宽，分栏/受限宽容器里永不折叠 |

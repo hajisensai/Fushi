@@ -140,6 +140,28 @@ String? detectSubtitleLanguage(String fileName) {
   return null;
 }
 
+/// 可选的 Jimaku 字幕语言代码（UI 选择器与设置项共用的单一真相源，顺序即展示顺序）。
+const List<String> kJimakuLanguageCodes = <String>['ja', 'zh', 'en', 'ko'];
+
+/// 语言代码 → 显示名（chip / 设置项文案）。白名单外回退原代码大写。纯函数。
+///
+/// 各语言用其母语写法（`日本語` / `中文` / `English` / `한국어`），与 app 界面语言无关，
+/// 故不走 i18n；放在数据层供 UI 层（字幕对话框 / 下载对话框 / 设置页）共用。
+String jimakuLanguageLabel(String code) {
+  switch (code) {
+    case 'ja':
+      return '日本語';
+    case 'zh':
+      return '中文';
+    case 'en':
+      return 'English';
+    case 'ko':
+      return '한국어';
+    default:
+      return code.toUpperCase();
+  }
+}
+
 /// 语言排序权重：优先语言（[preferred]，用户按系列记忆的语言）→ ja → zh → en → ko →
 /// 其它/认不出。数字越小越靠前。纯函数（供对话框排序与合集批量挑最佳字幕共用）。
 int jimakuLanguageRank(String? language, {String? preferred}) {
@@ -158,9 +180,16 @@ int jimakuLanguageRank(String? language, {String? preferred}) {
   }
 }
 
-/// 把单个语言 token（如 `ja`/`chs`/`zh-cn`）归一到大类代码；认不出返回 `null`。
+/// 把单个语言 token（如 `ja`/`chs`/`zh-cn`/`ja[cc]`）归一到大类代码；认不出返回 `null`。
 String? _languageFromToken(String rawToken) {
-  final String token = rawToken.trim().toLowerCase();
+  // 尾部方括号修饰（Netflix 抽轨常见的 `ja[cc]` / `en[sdh]`）不是语言的一部分，
+  // 剥掉再查表——否则整批 Netflix CC 日语字幕会被判成「语言未知」，既排不进
+  // ja 优先，也筛不到「日本語」。
+  final String token = rawToken
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'\[[^\]]*\]$'), '')
+      .trim();
   if (token.isEmpty) return null;
   const Map<String, String> table = <String, String>{
     'ja': 'ja',

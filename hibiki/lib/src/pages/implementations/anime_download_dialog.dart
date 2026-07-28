@@ -22,8 +22,6 @@ import 'package:hibiki/src/media/video/anilist_client.dart';
 import 'package:hibiki/src/media/video/jimaku_client.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_entry_picker.dart';
-import 'package:hibiki/src/pages/implementations/jimaku_subtitle_dialog.dart'
-    show jimakuLanguageLabel;
 import 'package:hibiki/src/pages/implementations/download_actions.dart';
 import 'package:hibiki/src/pages/implementations/downloads_page.dart';
 import 'package:hibiki/src/pages/hibiki_page_placeholders.dart';
@@ -174,6 +172,10 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   /// Jimaku key 为空时显示输入行（`onChanged` 直接落偏好）。
   bool _showJimakuKeyField = false;
 
+  /// 最近一次真正发起字幕搜索时的输入框条件（见 [_currentJimakuSearchInput]）。
+  /// 与当前输入框不一致 = 用户改了番剧名/集号但还没搜，搜索按钮据此强调。
+  String _appliedJimakuSearch = '';
+
   // ---- 阶段 1：搜番（AniList）----
   bool _searchingAnime = false;
   bool _searchedAnime = false;
@@ -230,6 +232,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     final AppModel appModel = ref.read(appProvider);
     _jimakuKeyCtrl = TextEditingController(text: appModel.jimakuApiKey);
     _showJimakuKeyField = appModel.jimakuApiKey.trim().isEmpty;
+    // 语言预选沿用设置页的默认字幕语言（此前恒为「全部」，与字幕对话框的语言记忆
+    // 各行其是）。用户在本对话框里改选仍只影响本次。
+    _jimakuPreferredLanguage = appModel.jimakuDefaultLanguageOrNull;
     // 仅测试：直达指定阶段（绕开 AniList/Nyaa 网络搜索）。
     final AniListMedia? debugMedia = widget.debugInitialMedia;
     if (debugMedia != null) {
@@ -319,7 +324,14 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     _jimakuQueryCtrl.text =
         titleOptions.isNotEmpty ? titleOptions.first : media.displayTitle;
     _jimakuEpisodeCtrl.clear();
+    // 预填即将由选番自动搜使用，视作「已应用」，搜索按钮不该一进来就报待生效。
+    _appliedJimakuSearch = _currentJimakuSearchInput();
   }
+
+  /// 输入框当前的字幕搜索条件（查询词 + 集号）。与 [_appliedJimakuSearch] 比对，
+  /// 得出「输入框改了但还没搜」。
+  String _currentJimakuSearchInput() =>
+      '${_jimakuQueryCtrl.text.trim()}|${_jimakuEpisodeCtrl.text.trim()}';
 
   /// 点选某番：进入选种阶段，并行拉 Nyaa 种子与 Jimaku 字幕索引。
   /// Jimaku 空结果/无 key 不阻塞选种，只是徽标显示无字幕。
@@ -435,6 +447,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   Future<void> _searchJimakuManual() async {
     final String query = _jimakuQueryCtrl.text.trim();
     if (query.isEmpty || _jimakuLoading) return;
+    setState(() => _appliedJimakuSearch = _currentJimakuSearchInput());
     await _runJimakuSearch(
       anilistId: null,
       queries: <String>[query],
@@ -1465,8 +1478,10 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         chips.add(_miniChip(theme, t.anime_download_no_subs,
             foreground: scheme.outline));
       } else {
+        // 应有集数未知（整季包 / 剧场版）→ 只报实际能给出的条数，不报 `?`：
+        // 徽标数必须与确认页字幕列表条数一致，否则「列表说有、点进去说无」。
         final String label = coverage.total == null
-            ? '${t.anime_download_subs_badge} ?'
+            ? '${t.anime_download_subs_badge} ${coverage.covered}'
             : '${t.anime_download_subs_badge} '
                 '${coverage.covered}/${coverage.total}';
         chips.add(_miniChip(theme, label,
@@ -1632,13 +1647,17 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
               labelText: t.video_jimaku_query,
               isDense: true,
               // 标题候选下拉（≥2 个才显示）：罗马字/日文原名/英文名一键切换。
+              // 选中即重搜——只改输入框文本不搜，用户看到的是「番剧名换了、下面
+              // 的字幕来源纹丝不动」，会误判成功能坏了（BUG-1190）。
               suffixIcon: titleOptions.length < 2
                   ? null
                   : PopupMenuButton<String>(
                       tooltip: t.video_jimaku_query,
                       icon: const Icon(Icons.arrow_drop_down),
-                      onSelected: (String value) =>
-                          _jimakuQueryCtrl.text = value,
+                      onSelected: (String value) {
+                        _jimakuQueryCtrl.text = value;
+                        unawaited(_searchJimakuManual());
+                      },
                       itemBuilder: (BuildContext context) =>
                           <PopupMenuEntry<String>>[
                         for (final String title in titleOptions)
@@ -1674,10 +1693,22 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             onSubmitted: (_) => _searchJimakuManual(),
           ),
         ),
-        IconButton(
-          tooltip: t.anime_download_search,
-          icon: const Icon(Icons.search, size: 20),
-          onPressed: _jimakuLoading ? null : _searchJimakuManual,
+        // 输入框改了但没搜时按钮转强调色：手改番剧名/集号后「下面没变」不是坏了，
+        // 是还没触发搜索——把这件事显式画出来（BUG-1190）。
+        ListenableBuilder(
+          listenable: Listenable.merge(
+            <Listenable>[_jimakuQueryCtrl, _jimakuEpisodeCtrl],
+          ),
+          builder: (BuildContext context, Widget? child) {
+            final bool dirty = _jimakuQueryCtrl.text.trim().isNotEmpty &&
+                _currentJimakuSearchInput() != _appliedJimakuSearch;
+            return IconButton(
+              tooltip: t.anime_download_search,
+              icon: const Icon(Icons.search, size: 20),
+              color: dirty ? theme.colorScheme.primary : null,
+              onPressed: _jimakuLoading ? null : _searchJimakuManual,
+            );
+          },
         ),
       ],
     );

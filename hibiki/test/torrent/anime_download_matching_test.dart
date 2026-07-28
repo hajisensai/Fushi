@@ -132,13 +132,26 @@ void main() {
       expect(c.covered, 2);
     });
 
-    test('无集数种子：索引有文件 → covered 1，total null', () {
+    test('无集数种子：索引里只有带集号文件且多于 1 条 → covered 0（给不出就别说有）', () {
       final NyaaTorrent t = _torrent('[Grp] Great Movie Film');
       expect(t.episode, isNull);
       expect(t.episodeRange, isNull);
       final ({int covered, int? total}) c = jimakuCoverageFor(t, index);
+      // 旧行为记 1，但 chooseSubtitlesFor 一条也给不出（BUG-1189 的同款不一致）。
+      expect(c.covered, 0);
+      expect(c.total, isNull);
+      expect(chooseSubtitlesFor(t, index), isEmpty);
+    });
+
+    test('无集数种子：索引有整季单文件字幕 → covered 1，total null', () {
+      final NyaaTorrent t = _torrent('[Grp] Great Movie Film');
+      final JimakuEpisodeIndex movieIndex = JimakuEpisodeIndex.fromFiles(
+        <JimakuFile>[_file('Great Movie.ja.srt')],
+      );
+      final ({int covered, int? total}) c = jimakuCoverageFor(t, movieIndex);
       expect(c.covered, 1);
       expect(c.total, isNull);
+      expect(chooseSubtitlesFor(t, movieIndex), hasLength(1));
     });
 
     test('无集数种子：空索引 → covered 0，total null', () {
@@ -232,6 +245,135 @@ void main() {
         chooseSubtitlesFor(_torrent('[Grp] Great Movie Film'), index),
         isEmpty,
       );
+    });
+  });
+
+  group('torrentEpisodeScope', () {
+    test('集号区间 → range（区间优先于末位被误读的单集号）', () {
+      final TorrentEpisodeScope scope =
+          torrentEpisodeScope(_torrent('[Grp] Show 01-13 (1080p)'));
+      expect(scope.kind, TorrentEpisodeScopeKind.range);
+      expect(scope.range, (1, 13));
+    });
+
+    test('单集 → single', () {
+      final TorrentEpisodeScope scope =
+          torrentEpisodeScope(_torrent('[Grp] Show - 05 (1080p)'));
+      expect(scope.kind, TorrentEpisodeScopeKind.single);
+      expect(scope.episode, 5);
+    });
+
+    test('季号但无集号（整季 BD 包）→ season（BUG-1189 的真实标题）', () {
+      final NyaaTorrent t = _torrent(
+        '[7³ACG] Watashi wo Tabetai, Hitodenashi 私を喰べたい、ひとでなし '
+        'S1 [BDRip 1080p x265 OPUS]',
+      );
+      // 前提复核：这类标题既解不出集号，也没有区间——旧实现据此误判「无集数概念」。
+      expect(t.episode, isNull);
+      expect(t.episodeRange, isNull);
+      expect(t.season, 1);
+      expect(torrentEpisodeScope(t).kind, TorrentEpisodeScopeKind.season);
+    });
+
+    test('Complete / batch / BD-BOX / 全13話 等整季标记 → season', () {
+      for (final String title in <String>[
+        '[Grp] Show Complete Series [1080p]',
+        '[Grp] Show batch [1080p]',
+        '[Grp] Show BD-BOX [1080p]',
+        '[Grp] ショー 全13話 [1080p]',
+      ]) {
+        expect(
+          torrentEpisodeScope(_torrent(title)).kind,
+          TorrentEpisodeScopeKind.season,
+          reason: title,
+        );
+      }
+    });
+
+    test('剧场版 / 单文件（无集号无季号无整季标记）→ unknown', () {
+      expect(
+        torrentEpisodeScope(_torrent('[Grp] Great Movie Film')).kind,
+        TorrentEpisodeScopeKind.unknown,
+      );
+    });
+  });
+
+  group('整季包字幕匹配（BUG-1189）', () {
+    /// 取自 Jimaku 条目 10365 的真实文件名（多字幕组 + Netflix `S01E01` 命名）。
+    JimakuEpisodeIndex seasonIndex() => JimakuEpisodeIndex.fromFiles(
+          <JimakuFile>[
+            for (int ep = 1; ep <= 13; ep++) ...<JimakuFile>[
+              _file('[Erai-raws] Watashi wo Tabetai Hitodenashi - '
+                  '${ep.toString().padLeft(2, '0')} '
+                  '[1080p CR WEB-DL AVC AAC][MultiSub].ass'),
+              _file('私を喰べたい、ひとでなし.S01E${ep.toString().padLeft(2, '0')}'
+                  '.WEBRip.Netflix.ja[cc].srt'),
+            ],
+          ],
+        );
+
+    final NyaaTorrent seasonPack = _torrent(
+      '[7³ACG] Watashi wo Tabetai, Hitodenashi 私を喰べたい、ひとでなし '
+      'S1 [BDRip 1080p x265 OPUS]',
+    );
+
+    test('整季包 → 索引里每集各给 1 条（此前一条都不给）', () {
+      final List<(int?, JimakuFile)> chosen =
+          chooseSubtitlesFor(seasonPack, seasonIndex());
+      expect(chosen, hasLength(13));
+      expect(
+        chosen.map(((int?, JimakuFile) e) => e.$1).toList(),
+        <int>[for (int ep = 1; ep <= 13; ep++) ep],
+        reason: '按集号升序',
+      );
+      // 每集取语言权重最优的候选：Netflix 那条的 `.ja[cc]` 标签归一成 ja，
+      // 优先于无语言标记的 Erai-raws 版。
+      expect(chosen.first.$2.name, contains('Netflix'));
+    });
+
+    test('整季包但字幕只有整季单文件 → 退回该单文件（episode null）', () {
+      final JimakuEpisodeIndex index = JimakuEpisodeIndex.fromFiles(
+        <JimakuFile>[_file('Watashi wo Tabetai Hitodenashi Season 1.ja.srt')],
+      );
+      final List<(int?, JimakuFile)> chosen =
+          chooseSubtitlesFor(seasonPack, index);
+      expect(chosen, hasLength(1));
+      expect(chosen.single.$1, isNull);
+    });
+
+    test('整季包 + 空索引 → 空（不硬塞）', () {
+      expect(
+        chooseSubtitlesFor(
+          seasonPack,
+          JimakuEpisodeIndex.fromFiles(const <JimakuFile>[]),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('覆盖度与实际给出的条数一致（徽标不能说有、详情说无）', () {
+      final JimakuEpisodeIndex index = seasonIndex();
+      final ({int covered, int? total}) coverage =
+          jimakuCoverageFor(seasonPack, index);
+      expect(coverage.covered, 13);
+      expect(coverage.total, isNull, reason: '整季包应有集数未知');
+      expect(coverage.covered, chooseSubtitlesFor(seasonPack, index).length);
+    });
+
+    test('四类种子的 covered 恒等于 chooseSubtitlesFor 的条数', () {
+      final JimakuEpisodeIndex index = seasonIndex();
+      for (final NyaaTorrent t in <NyaaTorrent>[
+        seasonPack,
+        _torrent('[Grp] Show 01-13 (1080p)'),
+        _torrent('[Grp] Show - 05 (1080p)'),
+        _torrent('[Grp] Great Movie Film'),
+      ]) {
+        expect(
+          jimakuCoverageFor(t, index).covered,
+          chooseSubtitlesFor(t, index).length,
+          reason: t.title,
+        );
+      }
     });
   });
 }
