@@ -127,3 +127,6 @@ third_party/media_kit_libs_macos_video/macos/Frameworks/
 third_party/media_kit_video/common/darwin/.cache/
 third_party/media_kit_video/ios/Headers/
 third_party/media_kit_video/macos/Headers/
+
+# Magpie 精简包的组包产物（tools/build_magpie_slim.ps1 生成，随主包发行不入库）
+/dist/

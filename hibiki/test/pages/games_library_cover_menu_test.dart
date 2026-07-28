@@ -74,6 +74,10 @@ void main() {
   /// 加入合集 → 标签 → 删除；游戏特有的详情/状态保持最前）。与
   /// `_GameCard._menuItems` 单一真相源对账：漏项或乱序本表即断言失败。
   /// 'remove' 在长按对话框落危险区，但文案仍必须在场。
+  ///
+  /// 「窗口超分 · <当前档>」是 Windows-only（galgame hook 与 Magpie 都只做 Windows），
+  /// 所以两个分支都要断言：Windows 上必须在场，非 Windows 上必须不在场——后者正是
+  /// Linux CI 会跑到的分支，它守的是「平台门没被顺手删掉」。
   List<String> menuLabels() => <String>[
         t.game_view_detail,
         t.game_play_status,
@@ -83,6 +87,7 @@ void main() {
         t.game_scrape,
         t.add_to_collection,
         t.tag_label,
+        if (Platform.isWindows) '${t.game_upscaling} · ${t.game_upscaling_off}',
         t.game_remove,
       ];
 

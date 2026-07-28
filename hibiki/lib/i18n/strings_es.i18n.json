@@ -1025,11 +1025,9 @@
   "game_upscaling_auto": "Auto",
   "game_upscaling_download_body": "Game window upscaling needs Magpie (about 10 MB, GPL-3.0, built by us from source). Download it now?",
   "game_upscaling_download_title": "Download Magpie upscaler?",
-  "game_upscaling_hint": "Uses Magpie to upscale the galgame window while a hook session is running. Auto downloads Magpie on first use.",
   "game_upscaling_hint_external": "A copy of Magpie was already running, so Hibiki left it alone. Press Win+Shift+A to upscale the game window.",
   "game_upscaling_hint_first_run": "Magpie still had to set itself up this time. Press Win+Shift+A to upscale now — next time you start the game it will happen automatically.",
   "game_upscaling_hint_manual": "Press Win+Shift+A to upscale the game window.",
-  "game_upscaling_hint_not_installed": "Magpie is not installed. Set window upscaling to Auto to download it.",
   "game_upscaling_installed_only": "Installed only",
   "game_upscaling_off": "Off",
   "game_upscaling_status_active": "Window upscaling is on",
@@ -2735,5 +2733,12 @@
   "media_tracking_manage_links": "Manage links",
   "media_tracking_last_error": "Last error",
   "shortcut_action_popup_mine_entry": "Create card (mine)",
-  "game_hook_reason_protocol_mismatch": "The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper."
+  "game_hook_reason_protocol_mismatch": "The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper.",
+  "game_upscaling_auto_hint": "Use Magpie if present, otherwise download our build (about 10 MB) after asking.",
+  "game_upscaling_installed_only_hint": "Only use a Magpie that is already installed. Never downloads anything.",
+  "game_upscaling_off_hint": "Never upscale the game window.",
+  "game_helper_bundle_missing": "The galgame hook helper is not bundled with this build. Update Hibiki to get it.",
+  "game_upscaling_pick_title": "Window upscaling for $name",
+  "game_upscaling_pick_body": "Upscales this game window with Magpie while a capture session is running. Set per game - it only helps for games whose native resolution is lower than your screen. Uses your GPU.",
+  "game_upscaling_hint_not_installed": "Magpie is not installed. Right-click this game in your library and set window upscaling to Auto to download it."
 }

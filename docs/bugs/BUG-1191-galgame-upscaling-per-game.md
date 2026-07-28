@@ -1,0 +1,19 @@
+## BUG-1191 · 窗口超分改为每游戏一档，入口挪进游戏卡右键菜单
+- **报告**：2026-07-28（用户：「那个超分的功能，怎么没自动启动」→「删掉设置 → 查词 →『窗口超分』」→ 最终拍板：「**这个应该是每个游戏固定的，然后弄到右键菜单里面或者哪里**」。）
+- **真实性**：✅ 真 bug（可用性 + 数据模型错）。超分从未自启的表层原因是偏好缺省即关闭（`preferences_repository.dart` 的 `defaultValue: 'off'`），用户机 `D:\APP\HIBIKI_date\support\hibiki.db` 的 `preferences` 表里**根本没有** `galgame_magpie_upscaling_mode` 这一行 —— 那个设置项从未被触达过。但真正的根因比「藏得深」更深一层：**超分被建模成了一个全局开关，而它本质上是每游戏属性**。该不该开完全取决于这个游戏的原生分辨率：同一个人手上既有 800×600 的老 gal（该开），也有本身就 1080p 的新作（开了纯浪费显卡）。一个全局值不管设成什么都有一半游戏是错的，所以无论把它放在设置页、还是改成首次启动时询问，都只是在挪一个错误的数据结构。
+- **[x] ① 已修复** — 把值域从「一个全局值」改成「每游戏一行」：
+  - **存储**：`galgames` 表加列 `upscaling_mode`（schema v61 → **v62**，`text().withDefault(const Constant(''))`），完全照 v56 `launch_args` 的先例 —— 同样是「用户为该游戏设的启动期配置」，两件同形的东西不该存在两个地方。DAO `setGalgameUpscalingMode`、仓储 `GalgameRepository.setUpscalingMode` / `byExePath`（委托既有 `findGalgameByExePath`，不另写一套路径比较）。详情页 `_save()` 的逐字段重建同步透传，否则保存一次就静默清空。
+  - **默认值**：空串 → `magpieUpscalingModeFromKey` 落 `off`。老库升级后所有既有行都是空串，**没有任何人会被莫名其妙打开超分**（迁移测试第 1 条钉死）。旧的全局偏好 `galgame_magpie_upscaling_mode` **不迁移**：全局值没法映射成「每个游戏各自开不开」，硬迁只会让一批游戏被误开；存量 DB 行保留不删（删代码不等于删数据）。
+  - **入口**：游戏库卡片菜单（`games_library_page.dart` 的 `_menuItems`）新增「窗口超分 · <当前档>」，右键 / 长按 / 封面「更多」三处共用同一份定义。Windows-only。用户在哪儿管这个游戏（重命名 / 封面 / 标签），就在哪儿改它的超分。
+  - **消费**：`MagpieUpscalingService.modeReader` 收窄成非空 `MagpieUpscalingMode Function()`，**每局 `_start` 重新读一次**（服务是 app 级单例，缓存进字段就等于换个游戏还用上一局的档）。裁决是纯函数 `resolveSessionUpscalingMode(launchExe:, storedModeKey:)`；`gal_hook_text_overlay_controller` 按本次会话的 `launchExe` 去库里取那一行 —— 这正是用户右键改的同一行，两边同一个真值。
+  - **删掉的东西**（都是错模型的附属物）：设置项 `lookup.galgame_upscaling`、全局偏好读写（`preferences_repository` / `AppModel` 三个成员）、首次启动询问框与 `askMode` / `kMagpieAskTimeout` / `_resolveMode`、三态里的「没表过态」（`magpieUpscalingModeFromKeyOrNull`）、捕获工作台「更多」里的超分项。
+  - **文案**：`game_upscaling_hint_not_installed` 原本指向「设置 →『游戏窗口超分』改成自动」，而那个设置项正是被删掉的；上一轮改指捕获工作台菜单，本轮再随入口改指「在游戏库里右键这个游戏」。新增 `game_upscaling_pick_title`（带游戏名）/ `game_upscaling_pick_body`，删除 `game_upscaling_ask_title` / `ask_body` / `hint`。全部走 `i18n_sync`，17 语齐。
+- **[x] ② 已加自动化测试** —
+  - `hibiki/test/mining/magpie_per_game_upscaling_test.dart`（取代 `magpie_first_run_ask_test.dart`）：反解矩阵（空 / 脏值 / 大小写全落 `off`，不是 `auto`）、纯函数裁决三条边界（库里有档 / 不在库里 / 附着无 exe）、服务**每局重新读档**（缓存即红）、读档抛异常落 `off` 而非 `auto`，外加对话框 widget 测试（选中态、三档回传、取消回 null）与三条源码守卫（设置 schema 无超分项、偏好里无全局超分读取点、CMake 真的把 helper 拷进 bundle）。
+  - `hibiki/test/database/migration_v62_galgame_upscaling_mode_test.dart`：v59 → v62 新列出现且**老行既有数据零破坏、新列为空串**；档位往返且不误伤 `launch_args` / `play_status`；半升级库幂等；fresh 库 `onCreate` 建出该列。
+  - `hibiki/test/pages/games_library_cover_menu_test.dart` 的菜单清单加上该项，且按 `Platform.isWindows` 双分支断言 —— Linux CI 跑到的正是「非 Windows 必须不在场」那支，守的是平台门没被顺手删掉。
+- **备注**：
+  - schema 版本是**跨 PR 的独占资源**，本轮当场兑现了这条风险：初版取 v60，rebase 时发现 `62d0cc8ad`（阅读统计页数）已占 v60，让到 v61；再一次 rebase 又发现 `417bd7c9b`（合集自有封面，PR#538）已占 v61，只能再让到 **v62**。每让一次都要同步改迁移阶梯、drift 生成代码、以及 12 个测试文件里 25 处硬编码版本断言。本 PR 合入前若又有别的 PR bump 到 62，必须再让一次。
+  - 改档只对**下一局**生效：Magpie 只在启动时读一次 `config.json`（全仓无任何文件监视），会话进行中改不会重配当前局。
+  - 窗口附着捕获路径没有稳定游戏身份（`launchExe` 为空），一律不超分 —— 不猜身份。
+  - 真机验证未做（需 Windows 上真起一局 galgame，看右键改档后下一局是否真自动全屏超分），当前为 `implemented_unverified`。

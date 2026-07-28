@@ -33,9 +33,6 @@ import 'package:hibiki/src/mining/magpie_upscaling.dart';
 export 'package:hibiki/src/mining/magpie_installer.dart'
     show MagpieDownloadPrompt;
 
-/// 偏好键：三态超分开关。**不要改**（改了等于把所有用户的设置清零）。
-const String kMagpieUpscalingModePrefKey = 'galgame_magpie_upscaling_mode';
-
 /// 发出 QUIT 之后等 Magpie 自己退出的上限。超时就直接 kill 我们自己起的那个进程。
 ///
 /// 为什么必须有 kill 兜底：`App::InitMessages()` 只对 `WM_MAGPIE_SHOWME` 调了
@@ -197,7 +194,13 @@ class MagpieUpscalingService extends ChangeNotifier {
         _bootstrapTimeout = bootstrapTimeout ?? kMagpieBootstrapTimeout,
         _bundledMagpieRunningProbe = bundledMagpieRunningProbe;
 
+  /// 读**当前这局游戏**的档位。
+  ///
+  /// 每次 [_start] 都重新调一次，而不是构造时读一次：服务是 app 级单例、每局游戏都复用，
+  /// 档位却是每游戏各自的（BUG-1191）。注入方负责按当前会话的启动 exe 去 galgame 库里
+  /// 取那一行 —— 服务对 DB、prefs、UI 全部零依赖，这是它能被单测直接构造的原因。
   final MagpieUpscalingMode Function() _modeReader;
+
   final Future<bool> Function(MagpieDownloadPrompt prompt)? _confirmDownload;
   final MagpieWin32Bridge? _bridge;
   final MagpieInstaller Function() _installerFactory;
@@ -469,6 +472,10 @@ class MagpieUpscalingService extends ChangeNotifier {
     }
   }
 
+  /// 读本局档位。读取抛异常（DB 未就绪、库里没这个游戏）一律当作「没设过」→ 不超分。
+  ///
+  /// 🔴 **绝不能反过来兜底成 auto**：读不到的时候把一个吃 GPU 的东西默默打开，用户既
+  /// 没同意过、也不知道该去哪关。
   MagpieUpscalingMode _readMode() {
     try {
       return _modeReader();

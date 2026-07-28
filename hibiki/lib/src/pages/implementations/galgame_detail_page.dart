@@ -891,6 +891,9 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
       // 这里是**逐字段重建**而非 copyWith：新增列必须在本列表里显式带上，漏一个就会
       // 每次保存静默清空该字段。改 GalgameEntry 字段时务必同步这里（有回归测试守着）。
       launchArgs: _launchArgs.text.trim(),
+      // 编辑 Tab 不提供超分档位输入框（它在库页/详情页别处设），但这里必须原样透传：
+      // 逐字段重建漏掉它 = 用户每次在编辑页保存都静默把超分设置清回默认。
+      upscalingMode: game.upscalingMode,
       coverPath: game.coverPath,
       addedAt: game.addedAt,
       playStatus: game.playStatus,

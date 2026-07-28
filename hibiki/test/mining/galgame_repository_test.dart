@@ -19,6 +19,7 @@ void main() {
     String? releaseDate,
     String? primarySource,
     String launchArgs = '',
+    String upscalingMode = '',
   }) {
     return GalgameRow(
       id: id,
@@ -26,6 +27,7 @@ void main() {
       exePath: r'Z:\g\game.exe',
       workdir: r'Z:\g',
       launchArgs: launchArgs,
+      upscalingMode: upscalingMode,
       addedAt: DateTime(2026).millisecondsSinceEpoch,
       playStatus: playStatus,
       primarySource: primarySource,

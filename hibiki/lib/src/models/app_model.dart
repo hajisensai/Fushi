@@ -109,7 +109,6 @@ import 'package:hibiki/src/mining/galgame_repository.dart';
 import 'package:hibiki/src/mining/immersion_mining_engine.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
 import 'package:hibiki/src/mining/immersion_capture_channel.dart';
-import 'package:hibiki/src/mining/magpie_upscaling.dart';
 import 'package:hibiki/src/mining/youtube_clip_miner.dart';
 import 'package:hibiki/src/sync/hibiki_sync_server.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
@@ -3035,12 +3034,9 @@ class AppModel with ChangeNotifier {
     _applyEmbeddedTorrentLimits(config);
   }
 
-  /// galgame 窗口超分策略（三态）。
-  MagpieUpscalingMode get galgameUpscalingMode =>
-      magpieUpscalingModeFromKey(prefsRepo.galgameUpscalingMode);
-
-  Future<void> setGalgameUpscalingMode(MagpieUpscalingMode mode) =>
-      prefsRepo.setGalgameUpscalingMode(magpieUpscalingModeToKey(mode));
+  // galgame 窗口超分**每游戏一档**（BUG-1191），存 `galgames.upscaling_mode`，
+  // 读写走 [galgameRepo]。这里刻意不再有全局 getter/setter —— 留着一个全局值就会
+  // 有人接回去用，然后两份真值慢慢漂开。
 
   DownloadNetworkProxyConfig get downloadNetworkProxyConfig =>
       DownloadNetworkProxyConfig(

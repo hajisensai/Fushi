@@ -19367,6 +19367,14 @@ class $GalgamesTable extends Galgames
       type: DriftSqlType.string,
       requiredDuringInsert: false,
       defaultValue: const Constant(''));
+  static const VerificationMeta _upscalingModeMeta =
+      const VerificationMeta('upscalingMode');
+  @override
+  late final GeneratedColumn<String> upscalingMode = GeneratedColumn<String>(
+      'upscaling_mode', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(''));
   static const VerificationMeta _coverPathMeta =
       const VerificationMeta('coverPath');
   @override
@@ -19420,6 +19428,7 @@ class $GalgamesTable extends Galgames
         exePath,
         workdir,
         launchArgs,
+        upscalingMode,
         coverPath,
         addedAt,
         playStatus,
@@ -19466,6 +19475,12 @@ class $GalgamesTable extends Galgames
           _launchArgsMeta,
           launchArgs.isAcceptableOrUnknown(
               data['launch_args']!, _launchArgsMeta));
+    }
+    if (data.containsKey('upscaling_mode')) {
+      context.handle(
+          _upscalingModeMeta,
+          upscalingMode.isAcceptableOrUnknown(
+              data['upscaling_mode']!, _upscalingModeMeta));
     }
     if (data.containsKey('cover_path')) {
       context.handle(_coverPathMeta,
@@ -19524,6 +19539,8 @@ class $GalgamesTable extends Galgames
           .read(DriftSqlType.string, data['${effectivePrefix}workdir'])!,
       launchArgs: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}launch_args'])!,
+      upscalingMode: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}upscaling_mode'])!,
       coverPath: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}cover_path']),
       addedAt: attachedDatabase.typeMapping
@@ -19571,6 +19588,14 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
   /// 的逆变换，且无法无损还原用户写的引号。
   final String launchArgs;
 
+  /// 该游戏的窗口超分档位（Magpie）。存稳定字符串 'auto' / 'installed_only' / 'off'；
+  /// 空串 = 用户没设过，解析层回落到关闭。**每游戏独立**，没有全局开关。
+  ///
+  /// 与 [launchArgs] 同类：都是「用户为该游戏设的启动期配置」，随游戏行走、
+  /// 由启动路径读一次。存稳定字符串而不是枚举 index：加档位不改既有值的含义，
+  /// 且脏值/未来值读到时解析层直接回落关闭（不会因为 index 越界崩）。
+  final String upscalingMode;
+
   /// 本地封面绝对路径；null = 用默认手柄图标。
   final String? coverPath;
 
@@ -19600,6 +19625,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       required this.exePath,
       required this.workdir,
       required this.launchArgs,
+      required this.upscalingMode,
       this.coverPath,
       required this.addedAt,
       required this.playStatus,
@@ -19615,6 +19641,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
     map['exe_path'] = Variable<String>(exePath);
     map['workdir'] = Variable<String>(workdir);
     map['launch_args'] = Variable<String>(launchArgs);
+    map['upscaling_mode'] = Variable<String>(upscalingMode);
     if (!nullToAbsent || coverPath != null) {
       map['cover_path'] = Variable<String>(coverPath);
     }
@@ -19640,6 +19667,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       exePath: Value(exePath),
       workdir: Value(workdir),
       launchArgs: Value(launchArgs),
+      upscalingMode: Value(upscalingMode),
       coverPath: coverPath == null && nullToAbsent
           ? const Value.absent()
           : Value(coverPath),
@@ -19667,6 +19695,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       exePath: serializer.fromJson<String>(json['exePath']),
       workdir: serializer.fromJson<String>(json['workdir']),
       launchArgs: serializer.fromJson<String>(json['launchArgs']),
+      upscalingMode: serializer.fromJson<String>(json['upscalingMode']),
       coverPath: serializer.fromJson<String?>(json['coverPath']),
       addedAt: serializer.fromJson<int>(json['addedAt']),
       playStatus: serializer.fromJson<int>(json['playStatus']),
@@ -19685,6 +19714,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       'exePath': serializer.toJson<String>(exePath),
       'workdir': serializer.toJson<String>(workdir),
       'launchArgs': serializer.toJson<String>(launchArgs),
+      'upscalingMode': serializer.toJson<String>(upscalingMode),
       'coverPath': serializer.toJson<String?>(coverPath),
       'addedAt': serializer.toJson<int>(addedAt),
       'playStatus': serializer.toJson<int>(playStatus),
@@ -19701,6 +19731,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           String? exePath,
           String? workdir,
           String? launchArgs,
+          String? upscalingMode,
           Value<String?> coverPath = const Value.absent(),
           int? addedAt,
           int? playStatus,
@@ -19714,6 +19745,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
         exePath: exePath ?? this.exePath,
         workdir: workdir ?? this.workdir,
         launchArgs: launchArgs ?? this.launchArgs,
+        upscalingMode: upscalingMode ?? this.upscalingMode,
         coverPath: coverPath.present ? coverPath.value : this.coverPath,
         addedAt: addedAt ?? this.addedAt,
         playStatus: playStatus ?? this.playStatus,
@@ -19732,6 +19764,9 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       workdir: data.workdir.present ? data.workdir.value : this.workdir,
       launchArgs:
           data.launchArgs.present ? data.launchArgs.value : this.launchArgs,
+      upscalingMode: data.upscalingMode.present
+          ? data.upscalingMode.value
+          : this.upscalingMode,
       coverPath: data.coverPath.present ? data.coverPath.value : this.coverPath,
       addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
       playStatus:
@@ -19756,6 +19791,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           ..write('exePath: $exePath, ')
           ..write('workdir: $workdir, ')
           ..write('launchArgs: $launchArgs, ')
+          ..write('upscalingMode: $upscalingMode, ')
           ..write('coverPath: $coverPath, ')
           ..write('addedAt: $addedAt, ')
           ..write('playStatus: $playStatus, ')
@@ -19774,6 +19810,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       exePath,
       workdir,
       launchArgs,
+      upscalingMode,
       coverPath,
       addedAt,
       playStatus,
@@ -19790,6 +19827,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           other.exePath == this.exePath &&
           other.workdir == this.workdir &&
           other.launchArgs == this.launchArgs &&
+          other.upscalingMode == this.upscalingMode &&
           other.coverPath == this.coverPath &&
           other.addedAt == this.addedAt &&
           other.playStatus == this.playStatus &&
@@ -19805,6 +19843,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
   final Value<String> exePath;
   final Value<String> workdir;
   final Value<String> launchArgs;
+  final Value<String> upscalingMode;
   final Value<String?> coverPath;
   final Value<int> addedAt;
   final Value<int> playStatus;
@@ -19819,6 +19858,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     this.exePath = const Value.absent(),
     this.workdir = const Value.absent(),
     this.launchArgs = const Value.absent(),
+    this.upscalingMode = const Value.absent(),
     this.coverPath = const Value.absent(),
     this.addedAt = const Value.absent(),
     this.playStatus = const Value.absent(),
@@ -19834,6 +19874,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     required String exePath,
     required String workdir,
     this.launchArgs = const Value.absent(),
+    this.upscalingMode = const Value.absent(),
     this.coverPath = const Value.absent(),
     required int addedAt,
     this.playStatus = const Value.absent(),
@@ -19853,6 +19894,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     Expression<String>? exePath,
     Expression<String>? workdir,
     Expression<String>? launchArgs,
+    Expression<String>? upscalingMode,
     Expression<String>? coverPath,
     Expression<int>? addedAt,
     Expression<int>? playStatus,
@@ -19868,6 +19910,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
       if (exePath != null) 'exe_path': exePath,
       if (workdir != null) 'workdir': workdir,
       if (launchArgs != null) 'launch_args': launchArgs,
+      if (upscalingMode != null) 'upscaling_mode': upscalingMode,
       if (coverPath != null) 'cover_path': coverPath,
       if (addedAt != null) 'added_at': addedAt,
       if (playStatus != null) 'play_status': playStatus,
@@ -19885,6 +19928,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
       Value<String>? exePath,
       Value<String>? workdir,
       Value<String>? launchArgs,
+      Value<String>? upscalingMode,
       Value<String?>? coverPath,
       Value<int>? addedAt,
       Value<int>? playStatus,
@@ -19899,6 +19943,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
       exePath: exePath ?? this.exePath,
       workdir: workdir ?? this.workdir,
       launchArgs: launchArgs ?? this.launchArgs,
+      upscalingMode: upscalingMode ?? this.upscalingMode,
       coverPath: coverPath ?? this.coverPath,
       addedAt: addedAt ?? this.addedAt,
       playStatus: playStatus ?? this.playStatus,
@@ -19927,6 +19972,9 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     }
     if (launchArgs.present) {
       map['launch_args'] = Variable<String>(launchArgs.value);
+    }
+    if (upscalingMode.present) {
+      map['upscaling_mode'] = Variable<String>(upscalingMode.value);
     }
     if (coverPath.present) {
       map['cover_path'] = Variable<String>(coverPath.value);
@@ -19963,6 +20011,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
           ..write('exePath: $exePath, ')
           ..write('workdir: $workdir, ')
           ..write('launchArgs: $launchArgs, ')
+          ..write('upscalingMode: $upscalingMode, ')
           ..write('coverPath: $coverPath, ')
           ..write('addedAt: $addedAt, ')
           ..write('playStatus: $playStatus, ')
@@ -34521,6 +34570,7 @@ typedef $$GalgamesTableCreateCompanionBuilder = GalgamesCompanion Function({
   required String exePath,
   required String workdir,
   Value<String> launchArgs,
+  Value<String> upscalingMode,
   Value<String?> coverPath,
   required int addedAt,
   Value<int> playStatus,
@@ -34536,6 +34586,7 @@ typedef $$GalgamesTableUpdateCompanionBuilder = GalgamesCompanion Function({
   Value<String> exePath,
   Value<String> workdir,
   Value<String> launchArgs,
+  Value<String> upscalingMode,
   Value<String?> coverPath,
   Value<int> addedAt,
   Value<int> playStatus,
@@ -34621,6 +34672,9 @@ class $$GalgamesTableFilterComposer
 
   ColumnFilters<String> get launchArgs => $composableBuilder(
       column: $table.launchArgs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get upscalingMode => $composableBuilder(
+      column: $table.upscalingMode, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get coverPath => $composableBuilder(
       column: $table.coverPath, builder: (column) => ColumnFilters(column));
@@ -34732,6 +34786,10 @@ class $$GalgamesTableOrderingComposer
   ColumnOrderings<String> get launchArgs => $composableBuilder(
       column: $table.launchArgs, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get upscalingMode => $composableBuilder(
+      column: $table.upscalingMode,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get coverPath => $composableBuilder(
       column: $table.coverPath, builder: (column) => ColumnOrderings(column));
 
@@ -34779,6 +34837,9 @@ class $$GalgamesTableAnnotationComposer
 
   GeneratedColumn<String> get launchArgs => $composableBuilder(
       column: $table.launchArgs, builder: (column) => column);
+
+  GeneratedColumn<String> get upscalingMode => $composableBuilder(
+      column: $table.upscalingMode, builder: (column) => column);
 
   GeneratedColumn<String> get coverPath =>
       $composableBuilder(column: $table.coverPath, builder: (column) => column);
@@ -34897,6 +34958,7 @@ class $$GalgamesTableTableManager extends RootTableManager<
             Value<String> exePath = const Value.absent(),
             Value<String> workdir = const Value.absent(),
             Value<String> launchArgs = const Value.absent(),
+            Value<String> upscalingMode = const Value.absent(),
             Value<String?> coverPath = const Value.absent(),
             Value<int> addedAt = const Value.absent(),
             Value<int> playStatus = const Value.absent(),
@@ -34912,6 +34974,7 @@ class $$GalgamesTableTableManager extends RootTableManager<
             exePath: exePath,
             workdir: workdir,
             launchArgs: launchArgs,
+            upscalingMode: upscalingMode,
             coverPath: coverPath,
             addedAt: addedAt,
             playStatus: playStatus,
@@ -34927,6 +34990,7 @@ class $$GalgamesTableTableManager extends RootTableManager<
             required String exePath,
             required String workdir,
             Value<String> launchArgs = const Value.absent(),
+            Value<String> upscalingMode = const Value.absent(),
             Value<String?> coverPath = const Value.absent(),
             required int addedAt,
             Value<int> playStatus = const Value.absent(),
@@ -34942,6 +35006,7 @@ class $$GalgamesTableTableManager extends RootTableManager<
             exePath: exePath,
             workdir: workdir,
             launchArgs: launchArgs,
+            upscalingMode: upscalingMode,
             coverPath: coverPath,
             addedAt: addedAt,
             playStatus: playStatus,

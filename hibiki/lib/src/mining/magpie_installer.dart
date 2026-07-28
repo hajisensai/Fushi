@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
@@ -11,11 +12,8 @@ import 'package:path/path.dart' as p;
 // 避免第二份实现漂移。（后续若出现第三个按需下载组件，再抽到独立的下载安装模块。）
 import 'package:hibiki/src/mining/galgame_helper_installer.dart'
     show
-        galgameHelperCandidateUrls,
-        galgameHelperIsTrustedSidecarUrl,
         galgameHelperSwapInstall,
         galgameHelperSweepStaleFiles,
-        kGalgameHelperTrustedSidecarHosts,
         parseSha256Sidecar,
         sha256Matches;
 import 'package:hibiki/src/utils/misc/resumable_downloader.dart';
@@ -55,6 +53,32 @@ const String kMagpieConfigFileName = 'config.json';
 
 /// 安装目录名（落在 `Hibiki.exe` 同级）。
 const String kMagpieInstallDirName = 'magpie';
+
+/// Windows 主包内随附的 **精简版** Magpie 归档目录名（落在 `Hibiki.exe` 同级）。
+///
+/// 与安装落点 [kMagpieInstallDirName] 刻意不同名：一个是「发行介质」，一个是「装好的
+/// 东西」，同名会让「装到一半」和「归档本身」在同一个目录里纠缠不清。范式同 galgame
+/// helper 的 `galgame_helper/`（归档） vs `voice_hook/`（落点）。
+const String kMagpieBundledDirectoryName = 'magpie_bundle';
+
+/// 随包精简归档的文件名。**带 `slim` 是契约的一部分**：它与 fork release 上的完整包
+/// （[magpieZipName]）内容不同（裁掉了 145 个用不到的 effect 文件，10.79 MB → 4.72 MB），
+/// 摘要自然也不同，混淆两者会让自更新把完整包当「新版」覆盖掉精简包。
+String magpieBundledZipName(String arch) => 'Magpie-hibiki-slim-$arch.zip';
+
+/// 安装来源标记文件名（与 [magpieMarkerName] 的 sha 标记并列）。
+///
+/// 内容是 [kMagpieBundleSource] 或不存在（= 网络装的）。存在的唯一理由见
+/// [kMagpieBundleSource]。
+String magpieSourceMarkerName() => 'installed.source';
+
+/// 「这份 Magpie 是从主包随附归档装的」。
+///
+/// 🔴 **它是自更新的熔断器，不是诊断信息**：随包装的是精简版，其 sha256 必然不等于
+/// fork release 上完整包的 sha256。若不做区分，`magpieNeedsUpdate` 每次都会判定「有新版」
+/// → 后台静默下载 10.79 MB 完整包覆盖掉 4.72 MB 的精简包 —— 内置的意义当场归零，而且
+/// 用户每次开 app 都白下一次。见 [_updateSilently] 的早退。
+const String kMagpieBundleSource = 'bundle';
 
 /// 校验安装完整性用的根文件清单。**只列缩放真正必需的三个**：主程序、WinUI 运行时、资源
 /// 索引。上游包里另有 `TouchHelper.exe`（只服务触摸）与 `Updater.exe`（Magpie 自己的自更新
@@ -146,19 +170,45 @@ String magpieSha256Url(
 ///
 /// `objects.` / `release-assets.` 是 GitHub release 资产 302 的落点，属重定向链的合法一环。
 ///
-/// **别名，不是第二份清单**：BUG-1103 把同一套收紧落到 galgame helper 安装器之后，两个安装器
-/// 的可信主机白名单必须是同一个真值 —— 安全白名单出现两份复制，迟早在只改一份时漂开。
-const List<String> kMagpieTrustedSidecarHosts =
-    kGalgameHelperTrustedSidecarHosts;
+/// 这里曾是 galgame helper 安装器同一份清单的别名。BUG-1196 把 helper 的网络下载整条
+/// 删掉之后（helper 随主包发布，不再联网），Magpie 成了**唯一**的按需下载组件，白名单
+/// 就落回它自己身上 —— 不是复制出第二份，是原来那份的家没了。
+const List<String> kMagpieTrustedSidecarHosts = <String>[
+  'github.com',
+  'api.github.com',
+  'objects.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+  'raw.githubusercontent.com',
+];
+
+/// gh 加速代理前缀（GFW 兜底）。**只给 zip 本体用，绝不给侧车用**——理由见
+/// [kMagpieTrustedSidecarHosts]。
+const List<String> kMagpieProxyPrefixes = <String>[
+  'https://ghfast.top/',
+  'https://gh-proxy.com/',
+  'https://ghproxy.net/',
+  'https://ghproxy.cc/',
+  'https://gh.llkk.cc/',
+];
+
+/// **纯函数**：为一个 GitHub 直链 [url] 生成按优先级排序的候选下载 URL：① 直连本身（有
+/// 代理/VPN 时最快最权威）→ ② 每个镜像前缀套在直连前（GFW 兜底）。逐个尝试任一成功即成功。
+List<String> magpieDownloadCandidateUrls(String url) => <String>[
+      url,
+      for (final String prefix in kMagpieProxyPrefixes) '$prefix$url',
+    ];
 
 /// **纯函数**：该 URL 是否是可信侧车来源（https + 主机在 [kMagpieTrustedSidecarHosts] 内）。
 /// 任何镜像前缀套出来的 URL（`https://ghfast.top/https://github.com/...`）主机都是镜像自己，
-/// 一律判否。判定实现与 helper 安装器共用一份（见 [kMagpieTrustedSidecarHosts]）。
-bool magpieIsTrustedSidecarUrl(String url) =>
-    galgameHelperIsTrustedSidecarUrl(url);
+/// 一律判否。
+bool magpieIsTrustedSidecarUrl(String url) {
+  final Uri? uri = Uri.tryParse(url);
+  if (uri == null || uri.scheme.toLowerCase() != 'https') return false;
+  return kMagpieTrustedSidecarHosts.contains(uri.host.toLowerCase());
+}
 
 /// **纯函数**：取 sha256 侧车的候选 URL —— **只有直连，绝不含镜像**（与
-/// [galgameHelperCandidateUrls] 的 zip 候选刻意不同，理由见 [kMagpieTrustedSidecarHosts]）。
+/// [magpieDownloadCandidateUrls] 的 zip 候选刻意不同，理由见 [kMagpieTrustedSidecarHosts]）。
 /// 直连不可用时列表为空，安装路径据此硬失败（宁可不装，也不装未校验产物）。
 List<String> magpieSidecarUrls(
   String arch, {
@@ -353,7 +403,11 @@ class MagpieDownloadPrompt {
 /// 安装器不持有 i18n / BuildContext，消费侧（阶段二的会话联动与设置项）可以自由决定用对话框、
 /// 开关还是静默策略。
 class MagpieInstaller {
-  MagpieInstaller();
+  MagpieInstaller({Directory? bundledDirectory})
+      : _bundledDirectoryOverride = bundledDirectory;
+
+  /// 仅测试注入：主包随附归档目录（生产恒为 `Hibiki.exe` 同级的 `magpie_bundle/`）。
+  final Directory? _bundledDirectoryOverride;
 
   bool _canceled = false;
 
@@ -423,6 +477,38 @@ class MagpieInstaller {
   static File _markerFile() =>
       File(p.join(installDirectory().path, magpieMarkerName()));
 
+  /// 安装来源标记（见 [kMagpieBundleSource]）。
+  static File _sourceMarkerFile() =>
+      File(p.join(installDirectory().path, magpieSourceMarkerName()));
+
+  /// 当前安装是否来自主包随附的精简归档。
+  ///
+  /// 读不出来时按「不是随包」处理并**留痕**：这条判据一旦误判成 false，自更新就会拿
+  /// 完整包覆盖精简包（见 [kMagpieBundleSource]）。用户报「装了内置版怎么还在下载」
+  /// 时，这行日志是唯一能区分「标记没写成」和「判据读失败」的东西。
+  static bool installedFromBundle() {
+    try {
+      final File marker = _sourceMarkerFile();
+      if (!marker.existsSync()) return false;
+      return marker.readAsStringSync().trim() == kMagpieBundleSource;
+    } catch (e) {
+      _log('source marker read failed (treated as non-bundle): $e');
+      return false;
+    }
+  }
+
+  /// 主包内随附归档所在目录（`Hibiki.exe` 同级的 `magpie_bundle/`）。
+  Directory _bundledDirectory() {
+    final Directory? override = _bundledDirectoryOverride;
+    if (override != null) return override;
+    return Directory(
+      p.join(
+        File(Platform.resolvedExecutable).parent.path,
+        kMagpieBundledDirectoryName,
+      ),
+    );
+  }
+
   /// 安装目录当前缺什么（必需根文件 + 必需子目录）。返回空表示安装完整。
   static List<String> missingInstalledEntries() {
     final Directory dir = installDirectory();
@@ -466,6 +552,22 @@ class MagpieInstaller {
     final bool hadInstall = installDirectory().existsSync();
     if (missingInstalledEntries().isEmpty) {
       return MagpieInstallResult.alreadyInstalled;
+    }
+
+    // 主包随附的精简归档：零网络、零确认框（BUG-1217）。x64 走这条路时用户根本
+    // 看不到「要下载 10MB」的框——东西已经在硬盘上了。ARM64 没有随包归档（为它多
+    // 背一份 4.7MB 不值），继续走下面的网络路径。
+    try {
+      if (await _installBundledMagpie(targetArch)) {
+        if (missingInstalledEntries().isEmpty) {
+          return MagpieInstallResult.installed;
+        }
+        _log('bundled install incomplete ($targetArch): '
+            'missing ${missingInstalledEntries().join(', ')}');
+      }
+    } catch (e) {
+      // 归档在但坏了（摘要不符/清单不全/换入失败）：不装，落到网络路径。
+      _log('bundled install rejected ($targetArch): $e');
     }
 
     if (!hadInstall) {
@@ -513,6 +615,11 @@ class MagpieInstaller {
 
   Future<void> _updateSilently() async {
     galgameHelperSweepStaleFiles(installDirectory());
+    // 🔴 随包精简版**绝不自更新**（BUG-1217）。它的 sha256 必然不等于 fork release 上
+    // 完整包的 sha256，`magpieNeedsUpdate` 会永远判「有新版」→ 每次开 app 都静默下载
+    // 10.79 MB 完整包覆盖掉 4.72 MB 的精简包，内置的意义当场归零。随包版本跟着 app 走：
+    // 要新 Magpie 就更新 Hibiki，与 galgame helper 同一套交付纪律。
+    if (installedFromBundle()) return;
     final File marker = _markerFile();
     if (!marker.existsSync()) return; // 手动放置/旧装：保守沿用现有
     if (missingInstalledEntries().isNotEmpty) return; // 残缺留给交互修复路径
@@ -557,6 +664,52 @@ class MagpieInstaller {
   /// （取不到即硬失败）→ 下载 zip（镜像回退 + Range 续传 + sha256 校验）→ 解压到 staging 并
   /// 校验清单 → 换入 → 复检 → 写装机标记 → best-effort 写便携标记。任一步失败抛异常，由
   /// 调用方决定提示或静默。
+  /// 从主包随附的精简归档安装（零网络）。
+  ///
+  /// 返回 false 只表示**当前构建没有随附该架构的归档**（ARM64、开发构建、旧包），调用方
+  /// 可回退网络；只要 zip 或侧车任一存在，就必须完整校验 —— 残缺或摘要不符一律抛，绝不
+  /// 装一个证明不了来源的包。校验强度与网络路径完全一致（同一个 [magpieRequireVerifiedSha]）：
+  /// 随包不等于可信，主包本身可能被改。
+  Future<bool> _installBundledMagpie(String arch) async {
+    final Directory bundle = _bundledDirectory();
+    final File zip = File(p.join(bundle.path, magpieBundledZipName(arch)));
+    final File sidecar = File('${zip.path}.sha256');
+    final bool hasZip = zip.existsSync();
+    final bool hasSidecar = sidecar.existsSync();
+    if (!hasZip && !hasSidecar) return false;
+    if (!hasZip || !hasSidecar) {
+      throw MagpieInstallException(
+        MagpieInstallResult.verificationFailed,
+        'bundled magpie incomplete ($arch): zip=$hasZip sidecar=$hasSidecar',
+      );
+    }
+
+    final String sha =
+        magpieRequireVerifiedSha(await sidecar.readAsString(), arch);
+    final String actual = sha256.convert(await zip.readAsBytes()).toString();
+    if (!sha256Matches(sha, actual)) {
+      throw MagpieInstallException(
+        MagpieInstallResult.verificationFailed,
+        'bundled magpie sha256 mismatch ($arch): expected $sha, actual $actual',
+      );
+    }
+
+    await _installVerifiedZip(
+      arch: arch,
+      zip: zip,
+      sha: sha,
+      // 随包归档必须留着：另一次修复、另一个架构都还要用它。
+      deleteArchiveOnSuccess: false,
+      source: kMagpieBundleSource,
+    );
+    return true;
+  }
+
+  /// 测试入口：跑通随包校验 → 清单 → 换入 → 双标记全链路，不经网络也不经 UI。
+  @visibleForTesting
+  Future<bool> installBundledMagpieForTesting(String arch) =>
+      _installBundledMagpie(arch);
+
   Future<void> _installCore({
     required HttpClient client,
     required String arch,
@@ -579,13 +732,37 @@ class MagpieInstaller {
     final File part = File('${dest.path}.part');
     final File zip = await _downloadZip(
       client: client,
-      candidates: galgameHelperCandidateUrls(magpieDownloadUrl(arch)),
+      candidates: magpieDownloadCandidateUrls(magpieDownloadUrl(arch)),
       dest: dest,
       part: part,
       expectedSha256: sha,
       onProgress: onProgress ?? (int _, int? __) {},
     );
 
+    await _installVerifiedZip(
+      arch: arch,
+      zip: zip,
+      sha: sha,
+      part: part,
+      deleteArchiveOnSuccess: true,
+      source: null,
+    );
+  }
+
+  /// 已通过 SHA-256 的 zip 共用的安装尾段：解压 staging → 清单验证 → 原子换入 →
+  /// 写标记 → 便携配置。网络与随包两条来源在这里合流，**校验强度必须一致**。
+  ///
+  /// [source] 非空时额外写来源标记（见 [kMagpieBundleSource]）；为 null 时**主动删掉**
+  /// 旧的来源标记 —— 网络装的东西覆盖了随包版本，标记若留着，自更新会永远以为自己
+  /// 还是随包版而不再更新。
+  Future<void> _installVerifiedZip({
+    required String arch,
+    required File zip,
+    required String sha,
+    required bool deleteArchiveOnSuccess,
+    required String? source,
+    File? part,
+  }) async {
     final Directory staging =
         await Directory.systemTemp.createTemp('hibiki_magpie_staging_');
     try {
@@ -616,19 +793,27 @@ class MagpieInstaller {
 
       try {
         await _markerFile().writeAsString(sha, flush: true);
+        final File sourceMarker = _sourceMarkerFile();
+        if (source != null) {
+          await sourceMarker.writeAsString(source, flush: true);
+        } else if (sourceMarker.existsSync()) {
+          await sourceMarker.delete();
+        }
       } catch (e) {
         // 标记写不成只影响下次自更新判据，不影响这次安装可用性。
         _log('marker write failed ($arch): $e');
       }
 
       await ensurePortableConfig(metadata: metadata);
-      _log('installed $arch (sha256 $sha)');
+      _log('installed $arch from ${source ?? 'network'} (sha256 $sha)');
 
-      try {
-        if (await zip.exists()) await zip.delete();
-        if (await part.exists()) await part.delete();
-      } catch (e) {
-        _log('temp cleanup failed ($arch): $e');
+      if (deleteArchiveOnSuccess) {
+        try {
+          if (await zip.exists()) await zip.delete();
+          if (part != null && await part.exists()) await part.delete();
+        } catch (e) {
+          _log('temp cleanup failed ($arch): $e');
+        }
       }
     } finally {
       try {
@@ -683,7 +868,7 @@ class MagpieInstaller {
   /// 逐镜像候选下载 zip。zip **本体**可以随便走镜像：内容已被 [expectedSha256]（来自直连
   /// GitHub 的侧车）钉死，镜像改一个字节都会在校验时炸掉。全部候选失败则抛分类过的
   /// [MagpieInstallException] —— 中途出现过 sha256 不符就是 verificationFailed。
-  /// [candidates] 可注入仅为测试用（生产调用点传 [galgameHelperCandidateUrls] 的结果）。
+  /// [candidates] 可注入仅为测试用（生产调用点传 [magpieDownloadCandidateUrls] 的结果）。
   @visibleForTesting
   Future<File> downloadZip({
     required HttpClient client,
@@ -828,7 +1013,7 @@ class MagpieInstaller {
     await applyUpdateProxy(client);
     try {
       for (final String url
-          in galgameHelperCandidateUrls(magpieDownloadUrl(arch))) {
+          in magpieDownloadCandidateUrls(magpieDownloadUrl(arch))) {
         if (_canceled) return null;
         try {
           final HttpClientRequest req =

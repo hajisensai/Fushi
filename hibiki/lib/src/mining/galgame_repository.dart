@@ -52,6 +52,7 @@ GalgameEntry galgameEntryFromRow(
     exePath: row.exePath,
     workdir: row.workdir,
     launchArgs: row.launchArgs,
+    upscalingMode: row.upscalingMode,
     coverPath: (row.coverPath?.isEmpty ?? true) ? null : row.coverPath,
     addedAt: DateTime.fromMillisecondsSinceEpoch(row.addedAt),
     playStatus: GalgamePlayStatus.fromValue(row.playStatus),
@@ -81,6 +82,7 @@ GalgamesCompanion galgamesCompanionFromEntry(GalgameEntry entry) {
     exePath: entry.exePath,
     workdir: entry.workdir,
     launchArgs: Value<String>(entry.launchArgs),
+    upscalingMode: Value<String>(entry.upscalingMode),
     coverPath: Value<String?>(entry.coverPath),
     addedAt: entry.addedAt.millisecondsSinceEpoch,
     playStatus: Value<int>(entry.playStatus.value),
@@ -123,6 +125,17 @@ class GalgameRepository extends ChangeNotifier {
     }
     return null;
   }
+
+  /// 按启动 exe 路径找游戏（大小写不敏感 —— Windows 路径语义），缓存内查找，无 IO。
+  ///
+  /// galgame hook 会话只有启动路径有稳定身份（进程 PID 会变、窗口标题会变、
+  /// 启动器与真实游戏还可能是两个进程），它拿到的就是这个 exe 全路径。要把会话
+  /// 反查回库条目（读该游戏的启动期配置，如超分档位）只能靠它。
+  ///
+  /// 归一化复用与去重/[findGalgameByExePath] 同一套（`/` ↔ `\`、大小写无关），
+  /// 所以 `D:/Games/a.exe` 与 `D:\games\A.EXE` 认作同一个游戏。空串/找不到返回 null。
+  GalgameEntry? byExePath(String exePath) =>
+      findGalgameByExePath(_games, exePath);
 
   /// 从 DB 全量重载（三个批量查询，无 N+1）。
   Future<List<GalgameEntry>> load() async {
@@ -219,6 +232,13 @@ class GalgameRepository extends ChangeNotifier {
   Future<void> setCoverPath(String id, String? path) async {
     await _db.setGalgameCoverPath(
         id, (path == null || path.isEmpty) ? null : path);
+    await load();
+  }
+
+  /// 只改该游戏的窗口超分档位（`auto` / `installed_only` / `off`；空串 = 未设置，
+  /// 解析层回落到关闭）。列非空，清空写空串而不是 null。
+  Future<void> setUpscalingMode(String id, String modeKey) async {
+    await _db.setGalgameUpscalingMode(id, modeKey);
     await load();
   }
 

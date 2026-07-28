@@ -62,39 +62,9 @@ void main() {
     fail('方法 $signatureNeedle 花括号未闭合');
   }
 
-  group('根因 A：确认对话框立即弹出，大小探测在后台并发回填', () {
-    const String installer = 'lib/src/mining/galgame_helper_installer.dart';
-
-    test('ensureInjector 不得在弹确认对话框前 await _probeSize（会阻塞 UI）', () {
-      final String src = readStripped(installer);
-      expect(
-        src.contains(RegExp(r'await\s+_probeSize\s*\(')),
-        isFalse,
-        reason: 'ensureInjector 若 await _probeSize 再弹框，弱网下点击后要等数秒对话框才出现。'
-            '探测必须在后台并发（unawaited），对话框先以「大小未知」立即弹出。',
-      );
-    });
-
-    test('探测在后台并发发起（unawaited sizeProbe）', () {
-      final String src = readStripped(installer);
-      expect(src.contains('_probeSize(arch)'), isTrue);
-      expect(src.contains(RegExp(r'unawaited\s*\(\s*sizeProbe')), isTrue,
-          reason: '探测 future 必须以 unawaited 在后台推进，不阻塞对话框弹出。');
-    });
-
-    test('_confirmDownload 收可监听大小文案，用 ValueListenableBuilder 就地刷新', () {
-      final String src = readStripped(installer);
-      final String body = methodBody(src, 'Future<bool> _confirmDownload(');
-      expect(
-        src.contains(RegExp(
-            r'_confirmDownload\([\s\S]*?required\s+ValueListenable<String>\s+sizeText')),
-        isTrue,
-        reason: '_confirmDownload 的 sizeText 必须是 ValueListenable，才能后台回填。',
-      );
-      expect(body.contains('ValueListenableBuilder'), isTrue,
-          reason: '对话框正文必须监听 sizeText，探测返回时就地更新「约 N MB」。');
-    });
-  });
+  // 原「根因 A：确认对话框立即弹出，大小探测在后台并发回填」整组已随 BUG-1196 删除：
+  // helper 随主包发布，安装路径不联网、不下载、也就没有确认框与大小探测了。
+  // 「不得联网」的守卫在 galgame_helper_no_network_guard_test.dart。
 
   group('根因 B：启动方法有再入守卫，重复点击不叠出多个下载对话框', () {
     void expectReentrancyGuard({

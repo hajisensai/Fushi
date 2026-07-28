@@ -1224,6 +1224,14 @@ class Galgames extends Table {
   /// 的逆变换，且无法无损还原用户写的引号。
   TextColumn get launchArgs => text().withDefault(const Constant(''))();
 
+  /// 该游戏的窗口超分档位（Magpie）。存稳定字符串 'auto' / 'installed_only' / 'off'；
+  /// 空串 = 用户没设过，解析层回落到关闭。**每游戏独立**，没有全局开关。
+  ///
+  /// 与 [launchArgs] 同类：都是「用户为该游戏设的启动期配置」，随游戏行走、
+  /// 由启动路径读一次。存稳定字符串而不是枚举 index：加档位不改既有值的含义，
+  /// 且脏值/未来值读到时解析层直接回落关闭（不会因为 index 越界崩）。
+  TextColumn get upscalingMode => text().withDefault(const Constant(''))();
+
   /// 本地封面绝对路径；null = 用默认手柄图标。
   TextColumn get coverPath => text().nullable()();
 

@@ -29,13 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1180 条。点号进各自文件。
+> 共 1184 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1221](bugs/BUG-1221-manga-path-case-folded.md) | ✅ | ✅ | 漫画页图解析把路径折成小写，制卡封面名被小写化且大小写敏感平台缺页 |
 | [BUG-1220](bugs/BUG-1220-bangumi-sync-invisible.md) | ✅ | ✅ | Bangumi 同步链路全静默：看完了没反应且无处查看 |
 | [BUG-1218](bugs/BUG-1218-epub-path-case-folded-android.md) | ✅ | ✅ | EPUB 解析把路径折成小写，大小写敏感平台上整本章节静默失踪 |
+| [BUG-1217](bugs/BUG-1217-magpie-bundle-slim-offline.md) | ✅ | ✅ | 随主包发行精简版 Magpie，超分首次使用不再下载 |
 | [BUG-1216](bugs/BUG-1216-gal-shm-open-unclassified.md) | ✅ | ✅ | 共享内存打不开被压成一句「请重启 Hibiki」，真实原因（拒绝访问/版本不符/映射不存在）在 native 返回值处丢弃 |
 | [BUG-1215](bugs/BUG-1215-jimaku-entry-wrong-season-auto-select.md) | ✅ | ✅ | Jimaku 条目自动选中不校验季号，S1 条目被配给 S2 包 |
 | [BUG-1214](bugs/BUG-1214-waveform-align-wheel-hscroll.md) | ✅ | ✅ | 波形对轴放大视图鼠标滚轮不能左右平移时间轴 |
@@ -54,9 +55,12 @@
 | [BUG-1201](bugs/BUG-1201-sasasa-unity-resource-pcm-not-published.md) | ✅ | ✅ | Sasasa Unity 资源音频已解码但未写入音频环 |
 | [BUG-1200](bugs/BUG-1200-sasasa-unity-textmesh-glyphs.md) | ✅ | ✅ | Sasasa Unity TextMesh 对白被拆成单字 |
 | [BUG-1199](bugs/BUG-1199-epub-htm-mime-blank.md) | ✅ | ✅ | EPUB 章节用 .htm 扩展名时整本渲染空白（MIME 表缺 htm/xht） |
+| [BUG-1196](bugs/BUG-1196-galgame-helper-drop-network-download.md) | ✅ | ✅ | 删除 helper 网络下载与后台自更新，只保留随主包归档 |
 | [BUG-1195](bugs/BUG-1195-vn-blank-tap-blocks-chrome.md) | ✅ | ✅ | 视觉小说模式点空白只翻页，控制栏（菜单）永远唤不出 |
 | [BUG-1194](bugs/BUG-1194-collection-reorder-nonvideo-order.md) | ✅ | ✅ | 视频合集详情页拖拽排序打乱非 video 成员的跨种类顺序 |
 | [BUG-1193](bugs/BUG-1193-galgame-luna-nonwinner-threads-dropped.md) | 🚧 | 🚧 | primed 后非赢家 hook 线程被 native 丢弃，无法像 LunaTranslator 那样切换 |
+| [BUG-1192](bugs/BUG-1192-galgame-steam-drm-load-error.md) | 🚧 | 🚧 | Steam 游戏直接启动撞 DRM 报 Application load error 3 |
+| [BUG-1191](bugs/BUG-1191-galgame-upscaling-per-game.md) | ✅ | ✅ | 窗口超分改为每游戏一档，入口挪进游戏卡右键菜单 |
 | [BUG-1190](bugs/BUG-1190-jimaku-title-dropdown-no-research.md) | ✅ | ✅ | 换番剧名后字幕来源不刷新 |
 | [BUG-1189](bugs/BUG-1189-season-pack-jimaku-subs-empty.md) | ✅ | ✅ | 整季包种子拿不到任何 Jimaku 字幕 |
 | [BUG-1188](bugs/BUG-1188-dataroot-pick-layout-split.md) | ✅ | ✅ | 选目录迁移产出第三种布局，到不了新装形态（DB 被拖进文档目录） |

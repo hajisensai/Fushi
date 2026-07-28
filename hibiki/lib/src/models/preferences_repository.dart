@@ -1838,18 +1838,14 @@ class PreferencesRepository extends ChangeNotifier {
   // 过的那个 key 必须继续被备份/Profile 快照/Profile 分享三条出境通道剔除。
   // 删代码不等于删数据，脱敏名单不能跟着删。
 
-  /// galgame 窗口超分策略（`auto` / `installed_only` / `off`）。
-  ///
-  /// 存**裸字符串**而不是 enum index：重排枚举项不会毁掉用户设置。enum 转换在 AppModel
-  /// 层做（`magpieUpscalingModeFromKey` / `magpieUpscalingModeToKey`）。
-  /// 默认 `off` —— 整条超分链路尚未真机验证，且超分实打实吃 GPU，用户显式打开才启用。
-  String get galgameUpscalingMode =>
-      getPref('galgame_magpie_upscaling_mode', defaultValue: 'off') as String;
-
-  Future<void> setGalgameUpscalingMode(String value) async {
-    await setPref('galgame_magpie_upscaling_mode', value);
-    notifyListeners();
-  }
+  // galgame 窗口超分**不再有全局偏好**（BUG-1191）。原来的
+  // `galgame_magpie_upscaling_mode` 是个一刀切开关，而超分该不该开完全取决于**这个
+  // 游戏**的原生分辨率：同一个人手上既有 800×600 的老 gal，也有本身就 1080p 的新作。
+  // 档位已改为每游戏一档，存在 galgame 库那一行（`galgames.upscaling_mode`）。
+  //
+  // ⚠️ 存量设备里可能写过的 `galgame_magpie_upscaling_mode` 行**不删也不迁移**：
+  // 全局值没法映射成「每个游戏各自开不开」，硬迁移只会让一批游戏被莫名其妙打开超分。
+  // 新结构一律从「关闭」起步，用户按游戏自己开。
 
   /// AniList/Nyaa/Jimaku requests: auto (env > enabled system proxy > direct),
   /// explicit direct, or a user-provided host:port proxy.

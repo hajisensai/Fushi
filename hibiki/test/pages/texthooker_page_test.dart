@@ -146,6 +146,12 @@ void main() {
         reason: '三档策略入口必须显示当前档位，否则用户不知道自己在哪一档');
     expect(find.text('Allow audio fallback'), findsNothing,
         reason: '旧的 bool「允许音频降级」开关已被三档策略取代');
+    // BUG-1191：超分改成**每游戏一档**后，入口挪到了游戏库卡片的右键菜单
+    // （`games_library_page.dart` 的 `_menuItems`）——这里不该再有它。工作台是
+    // 「当前会话」的界面，而档位是「这个游戏」的属性，放这儿只会诱使人以为改的是
+    // 全局值。守卫用 `textContaining`：档位后缀（「· 关闭」）变了也照样红。
+    expect(find.textContaining('Game window upscaling'), findsNothing,
+        reason: '超分档位是每游戏属性，入口在游戏库卡片菜单，不在捕获工作台');
   });
 
   testWidgets('embedded mode reuses parent scaffold and exposes back action',

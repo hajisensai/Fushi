@@ -3,8 +3,6 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hibiki/src/mining/galgame_helper_installer.dart'
-    show galgameHelperCandidateUrls, kGalgameHelperProxyPrefixes;
 import 'package:hibiki/src/mining/magpie_installer.dart';
 import 'package:path/path.dart' as p;
 
@@ -90,9 +88,9 @@ void main() {
 
     test('镜像候选：直连恒首位，随后每个镜像前缀套一份，无重复', () {
       final List<String> urls =
-          galgameHelperCandidateUrls(magpieDownloadUrl('x64'));
+          magpieDownloadCandidateUrls(magpieDownloadUrl('x64'));
       expect(urls.first, magpieDownloadUrl('x64'));
-      expect(urls.length, 1 + kGalgameHelperProxyPrefixes.length);
+      expect(urls.length, 1 + kMagpieProxyPrefixes.length);
       expect(urls.toSet().length, urls.length);
     });
   });
@@ -487,7 +485,7 @@ void main() {
     test('侧车候选只有直连一条，绝不含任何镜像前缀', () {
       final List<String> sidecar = magpieSidecarUrls('x64');
       expect(sidecar, <String>[magpieSha256Url('x64')]);
-      for (final String prefix in kGalgameHelperProxyPrefixes) {
+      for (final String prefix in kMagpieProxyPrefixes) {
         expect(sidecar.any((String u) => u.startsWith(prefix)), isFalse,
             reason: '侧车走镜像 $prefix 就等于让镜像自己签自己的产物');
       }
@@ -495,14 +493,14 @@ void main() {
 
     test('zip 本体候选照旧含全部镜像（内容已被直连摘要钉死，镜像可用）', () {
       final List<String> zipUrls =
-          galgameHelperCandidateUrls(magpieDownloadUrl('x64'));
-      expect(zipUrls.length, 1 + kGalgameHelperProxyPrefixes.length);
+          magpieDownloadCandidateUrls(magpieDownloadUrl('x64'));
+      expect(zipUrls.length, 1 + kMagpieProxyPrefixes.length);
       // 侧车候选必须是 zip 候选的**真子集规模**：这条断言就是「两者不同源」的守卫。
       expect(magpieSidecarUrls('x64').length, lessThan(zipUrls.length));
     });
 
     test('镜像前缀套出来的侧车 URL 一律判为不可信', () {
-      for (final String prefix in kGalgameHelperProxyPrefixes) {
+      for (final String prefix in kMagpieProxyPrefixes) {
         expect(
           magpieIsTrustedSidecarUrl('$prefix${magpieSha256Url('x64')}'),
           isFalse,
@@ -764,7 +762,7 @@ void main() {
 
     test('侧车绝不走镜像候选列表', () {
       expect(
-          src, isNot(contains('galgameHelperCandidateUrls(magpieSha256Url')));
+          src, isNot(contains('magpieDownloadCandidateUrls(magpieSha256Url')));
       expect(src, contains('urls: magpieSidecarUrls(arch)'));
     });
 

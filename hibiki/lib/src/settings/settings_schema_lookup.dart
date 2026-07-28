@@ -9,7 +9,6 @@ import 'package:hibiki/src/lookup/clipboard_panel_controller.dart';
 import 'package:hibiki/src/lookup/clipboard_text_overlay_controller.dart';
 import 'package:hibiki/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
-import 'package:hibiki/src/mining/magpie_upscaling.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/settings/settings_actions.dart';
 import 'package:hibiki/src/settings/settings_context.dart';
@@ -1011,42 +1010,11 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
-          // 窗口超分挂在 texthooker 旁边：galgame hook 目前唯一进 settings schema 的
-          // 开关就是它，新建一整个「游戏」destination 的代价远大于收益。
-          // Windows-only —— galgame hook 与 Magpie 都只做 Windows（见根 CLAUDE.md）。
-          SettingsSegmentedItem<MagpieUpscalingMode>(
-            id: 'lookup.galgame_upscaling',
-            title: t.game_upscaling,
-            subtitle: t.game_upscaling_hint,
-            icon: Icons.aspect_ratio_outlined,
-            visible: (SettingsContext settingsContext) => Platform.isWindows,
-            options: <SettingsSegmentOption<MagpieUpscalingMode>>[
-              SettingsSegmentOption<MagpieUpscalingMode>(
-                value: MagpieUpscalingMode.auto,
-                label: t.game_upscaling_auto,
-                tooltip: t.game_upscaling_auto,
-              ),
-              SettingsSegmentOption<MagpieUpscalingMode>(
-                value: MagpieUpscalingMode.installedOnly,
-                label: t.game_upscaling_installed_only,
-                tooltip: t.game_upscaling_installed_only,
-              ),
-              SettingsSegmentOption<MagpieUpscalingMode>(
-                value: MagpieUpscalingMode.off,
-                label: t.game_upscaling_off,
-                tooltip: t.game_upscaling_off,
-              ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galgameUpscalingMode,
-            onChanged: (
-              SettingsContext settingsContext,
-              MagpieUpscalingMode value,
-            ) async {
-              await settingsContext.appModel.setGalgameUpscalingMode(value);
-              settingsContext.refresh();
-            },
-          ),
+          // 窗口超分**故意不在这里**（BUG-1191）。它是每局游戏才有意义的东西，藏在
+          // 「设置 → 查词」里既不好找，也逼着还没启动过任何游戏的用户去决定一个看不见
+          // 效果的开关。现在改成第一次真要超分的那一刻当场问
+          // （`magpie_upscaling_prompt.dart`），事后在捕获工作台「更多」菜单里改。
+          // 加回设置项前请先想清楚它凭什么值得占一个全局条目。
         ],
       ),
       // BUG-1095: galgame Hook 台词浮窗此前在设置页**一条条目都没有**——字号只能靠
