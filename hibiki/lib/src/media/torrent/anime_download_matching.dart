@@ -419,3 +419,69 @@ List<ResolvedSubtitleMatch> matchJimakuFilesToVideoNames(
     ResolvedSubtitleMatch(videoFileName: only, file: sole),
   ];
 }
+
+/// Jimaku 条目名解析出的季号；名字不写季号一律按**第一季**算。
+///
+/// 「不写季号 = 第一季」是发布/编目惯例，也是被报的失败形状本身：Jimaku 的 S1
+/// 条目名就是光秃秃的作品名（`Sousou no Frieren`），S2 条目才带
+/// `2nd Season` / `第2期` / `S2` / `Part 2` 之类 token。若把「解析不出」当成
+/// 「未知、不校验」，S1 条目撞上 S2 包这条主线就永远拦不住。
+///
+/// 复用 [parseVideoFilename] 的季号规则（与播放器/刮削同一套解析器，不另写一份）。
+int jimakuEntrySeason(String entryName) =>
+    parseVideoFilename(entryName).season ?? 1;
+
+/// 「自动选中的 Jimaku 条目」与种子包的季号是否冲突。纯函数。
+///
+/// 补的是 BUG-1206 之外的另一半：落位层 [matchJimakuFilesToVideoNames] 只能靠
+/// 「集号严格相等」挡错配，可当条目本身就是 S1（编号 1-12）而包是 S2 的 01-12
+/// 时，集号照样相等 —— 落位层无从分辨，必须在**条目选择层**拦。
+///
+/// 判据只用手上已有的两个信息源，不新增任何网络请求：
+/// - [anilistId] 命中（条目挂的 `anilist_id` == 用户选的那个番）→ 一律不冲突。
+///   AniList 是**按季拆条目**的，id 命中即权威，条目名写不写季号都不重要；
+///   于是本校验实际只作用在「文本回退搜出来的条目」上，也就是错季真正的产地。
+/// - 种子标题解析不出季号（[torrentSeason] 为 null）→ 不冲突。我们对这个包的季
+///   一无所知，不能因为信息缺失就把一个本来能用的自动选择关掉。
+/// - 其余情况拿 [jimakuEntrySeason] 比对。
+bool jimakuEntrySeasonConflicts({
+  required JimakuEntry entry,
+  required int? torrentSeason,
+  required int? anilistId,
+}) {
+  if (anilistId != null && entry.anilistId == anilistId) return false;
+  if (torrentSeason == null) return false;
+  return jimakuEntrySeason(entry.name) != torrentSeason;
+}
+
+/// 重搜 / 选种后该**自动**选中哪条 Jimaku 条目。纯函数，UI 只做编排。
+///
+/// 顺序：
+/// 1. 用户手选过某条目（[userPickedEntryId]）且它仍在 [entries] 里 → 沿用手选，
+///    **不做任何季号校验**。用户可能就是要另一季的字幕（合集版编号不同等），
+///    拦他是越权；此前无条件重置成首条会把手选静默冲掉。
+/// 2. 否则按顺序取**第一条季号不冲突**的（[jimakuEntrySeasonConflicts]）。
+/// 3. 全都冲突（或 [entries] 为空）→ null：不自动选，由 UI 显式告知原因。
+JimakuEntry? resolveJimakuEntry(
+  List<JimakuEntry> entries, {
+  int? userPickedEntryId,
+  int? torrentSeason,
+  int? anilistId,
+}) {
+  if (entries.isEmpty) return null;
+  if (userPickedEntryId != null) {
+    for (final JimakuEntry entry in entries) {
+      if (entry.id == userPickedEntryId) return entry;
+    }
+  }
+  for (final JimakuEntry entry in entries) {
+    if (!jimakuEntrySeasonConflicts(
+      entry: entry,
+      torrentSeason: torrentSeason,
+      anilistId: anilistId,
+    )) {
+      return entry;
+    }
+  }
+  return null;
+}

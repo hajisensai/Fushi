@@ -2722,5 +2722,6 @@
   "anime_download_subs_unmatched": "字幕：未匹配到（可手动补）",
   "download_backend_desktop_only_note": "内置引擎仅桌面平台可用，本设备使用外接 qBittorrent。",
   "stat_source_breakdown": "各来源",
-  "stat_format_pages": "$n 页"
+  "stat_format_pages": "$n 页",
+  "anime_download_subs_season_mismatch": "没有字幕条目对得上该种子的第 $season 季，已不自动选中。要用的话请手动选一条。"
 }

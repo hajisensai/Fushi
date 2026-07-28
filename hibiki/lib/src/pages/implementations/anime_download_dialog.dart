@@ -514,7 +514,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       // 匹配，不是按下标——重搜的结果集顺序/长度都会变），只有它彻底不在新结果里
       // 才回退首条。此前无条件重置成 `entries.first`，换个番剧名重搜就把用户的
       // 手选静默冲掉。必须在 listFiles 之前定下目标，否则拉的是首条的文件。
-      final JimakuEntry? target = _resolveJimakuEntryFor(entries);
+      final JimakuEntry? target =
+          _resolveJimakuEntryFor(entries, torrent: _selectedTorrent);
       final List<JimakuFile> files = target == null
           ? const <JimakuFile>[]
           : await jimaku
@@ -571,11 +572,26 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   /// UI 还显示「有字幕」。改前 season 类一条不给，所以这是从「没有」变成
   /// 「错的且看起来对」，必须显式降级成不确定态。
   ///
-  /// 真正的根治（识别绝对集号编号、按季换算偏移、核对条目季号）不在本轮范围。
-  /// range / single 类的集号来自种子标题自身，不属此列。
-  bool _subtitleEpisodesUnverified(NyaaTorrent torrent) =>
-      torrentEpisodeScope(torrent).kind == TorrentEpisodeScopeKind.season &&
-      _chooseSubsFor(torrent).any(((int?, JimakuFile) e) => e.$1 != null);
+  /// 「或自动选中的首条根本是别的季」这一支现在**能测出来了**（第二个判据）：
+  /// 当前加载的条目季号与本行种子的季号冲突时，同样退成不确定态。选番阶段还没
+  /// 选种，无从在选中前替换条目，但至少不把它画成「字幕齐了」。
+  /// range / single 类的集号来自种子标题自身，不属第一个判据。
+  bool _subtitleEpisodesUnverified(NyaaTorrent torrent) {
+    final List<(int?, JimakuFile)> subs = _chooseSubsFor(torrent);
+    if (subs.isEmpty) return false;
+    final JimakuEntry? entry = _selectedJimakuEntry;
+    if (entry != null &&
+        jimakuEntrySeasonConflicts(
+          entry: entry,
+          torrentSeason: torrent.season,
+          anilistId: _selectedMedia?.id,
+        )) {
+      return true;
+    }
+    return torrentEpisodeScope(torrent).kind ==
+            TorrentEpisodeScopeKind.season &&
+        subs.any(((int?, JimakuFile) e) => e.$1 != null);
+  }
 
   /// 字幕覆盖度徽标，与 [_chooseSubsFor] 同源（同一 `seriesEpisodeCount`）。
   ({int covered, int? total}) _jimakuCoverageFor(NyaaTorrent torrent) =>
@@ -585,29 +601,46 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         seriesEpisodeCount: _selectedMedia?.episodes,
       );
 
-  /// 重搜后该选中哪条字幕来源：用户手选过且它仍在 [entries] 里 → 沿用手选；
-  /// 否则回退首条；空结果 → null。纯查找，不改 state。
-  JimakuEntry? _resolveJimakuEntryFor(List<JimakuEntry> entries) {
-    if (entries.isEmpty) return null;
-    final int? pickedId = _userPickedJimakuEntryId;
-    if (pickedId != null) {
-      for (final JimakuEntry entry in entries) {
-        if (entry.id == pickedId) return entry;
-      }
-    }
-    return entries.first;
-  }
+  /// 重搜/选种后该选中哪条字幕来源。纯查找，不改 state；决策收敛在纯函数
+  /// [resolveJimakuEntry]（用户手选优先 → 首条季号不冲突的 → 都冲突则 null）。
+  ///
+  /// [torrent] 已选中时才有包的季号可比；选番阶段还没选种（null）→ 季号校验
+  /// 天然是 no-op，行为与改前完全一致（回退首条）。
+  JimakuEntry? _resolveJimakuEntryFor(
+    List<JimakuEntry> entries, {
+    NyaaTorrent? torrent,
+  }) =>
+      resolveJimakuEntry(
+        entries,
+        userPickedEntryId: _userPickedJimakuEntryId,
+        torrentSeason: torrent?.season,
+        anilistId: _selectedMedia?.id,
+      );
+
+  /// 自动选中被季号校验拦下：没手选过、有候选条目，但没有一条季号对得上 [torrent]。
+  /// 纯派生（不另存 state，避免与 [_selectedJimakuEntry] 漂开）。
+  bool _jimakuSeasonBlockedFor(NyaaTorrent torrent) =>
+      _jimakuLoaded &&
+      _jimakuEntries.isNotEmpty &&
+      _resolveJimakuEntryFor(_jimakuEntries, torrent: torrent) == null;
 
   Future<void> _selectJimakuEntry(JimakuEntry entry) async {
     if (_selectedJimakuEntry?.id == entry.id || _jimakuLoading) return;
+    // 记下「用户手选过这一条」，供重搜时优先沿用、并让季号校验对它放行
+    // （见 [resolveJimakuEntry]）。**只有这条路径**能置位。
+    _userPickedJimakuEntryId = entry.id;
+    await _loadJimakuFilesFor(entry);
+  }
+
+  /// 切到条目 [entry] 并拉它的文件列表 → 重建索引 → 刷新已选种子的字幕命中。
+  /// 手选（[_selectJimakuEntry]）与选种后的季号复核（[_selectTorrent]）共用。
+  Future<void> _loadJimakuFilesFor(JimakuEntry entry) async {
     final AniListMedia? media = _selectedMedia;
     if (media == null) return;
     final String apiKey = ref.read(appProvider).jimakuApiKey.trim();
     if (apiKey.isEmpty) return;
     setState(() {
       _selectedJimakuEntry = entry;
-      // 记下「用户手选过这一条」，供重搜时优先沿用（见 [_resolveJimakuEntryFor]）。
-      _userPickedJimakuEntryId = entry.id;
       _jimakuLoading = true;
       _jimakuError = false;
       _jimakuFiles = const <JimakuFile>[];
@@ -707,11 +740,27 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   // ---------------------------------------------------------------- 阶段 3
 
   void _selectTorrent(NyaaTorrent torrent) {
+    // 选中种子这一刻才知道包的季号 → 复核自动选中的字幕条目。选番阶段
+    // （[_runJimakuSearch]）手上还没有种子，只能无条件取首条；那条首条可能
+    // 是别的季，落位层的「集号严格相等」拦不住 S1 条目 × S2 包（集号照样相等）。
+    final JimakuEntry? previous = _selectedJimakuEntry;
+    final JimakuEntry? target =
+        _resolveJimakuEntryFor(_jimakuEntries, torrent: torrent);
+    final bool switched = target?.id != previous?.id;
     setState(() {
       _selectedTorrent = torrent;
+      if (switched) {
+        // 旧条目的文件/索引属于错季条目，先清干净再按新目标重建。
+        _selectedJimakuEntry = target;
+        _jimakuFiles = const <JimakuFile>[];
+        _jimakuIndex = JimakuEpisodeIndex.fromFiles(const <JimakuFile>[]);
+      }
       _chosenSubs = _chooseSubsFor(torrent);
       _includeSubs = true;
     });
+    if (switched && target != null && !_jimakuLoading) {
+      unawaited(_loadJimakuFilesFor(target));
+    }
   }
 
   void _clearSelectedTorrent() {
@@ -1781,23 +1830,45 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           theme, t.anime_download_subs_failed, _retryJimaku);
     }
     if (_chosenSubs.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(
-              t.anime_download_no_subs,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.outline),
+      // 季号校验拦下自动选中时**必然**落到这条空态分支（没条目 ⇒ 没文件 ⇒
+      // 没字幕）。不能只说「无字幕」——那是静默：候选条目就在上面的 picker 里，
+      // 只是没有一条季号对得上这个包。用与「集号未核对」同一排版的提示行说清
+      // 原因，用户手选任意一条即可放行（手选不受本校验拦截）。
+      final NyaaTorrent? blockedTorrent = _selectedTorrent;
+      final bool seasonBlocked =
+          blockedTorrent != null && _jimakuSeasonBlockedFor(blockedTorrent);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (seasonBlocked)
+            _buildSubsHintRow(
+              theme,
+              Icons.help_outline,
+              t.anime_download_subs_season_mismatch(
+                season: blockedTorrent.season ?? 1,
+              ),
             ),
-            const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: _retryJimaku,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: Text(t.anime_download_retry),
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    t.anime_download_no_subs,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.outline),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: _retryJimaku,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: Text(t.anime_download_retry),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       );
     }
     // 这份列表是**预览**（按种子标题猜的），不是最终会下的清单：真正配哪些
