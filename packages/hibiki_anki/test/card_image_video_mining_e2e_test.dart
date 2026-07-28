@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -118,6 +119,68 @@ void main() {
       expect(outcome.result, MineResult.success);
       expect(service.addedFields.single.containsKey('Picture'), isFalse);
     });
+
+    test('本机 Anki 先按 path 上传 GIF，确认成功后才 addNote', () async {
+      final service = _RecordingAnkiConnectService();
+      final repo = _ConfiguredAnkiConnectRepository(
+        service: service,
+        settings: settingsWithPicture('{card-image}'),
+      );
+
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: payload,
+        context: AnkiMiningContext(
+          sentence: 'これは言葉です。',
+          coverPath: gif.path,
+        ),
+      );
+
+      expect(outcome.result, MineResult.success);
+      expect(service.storedMedia, hasLength(1));
+      expect(service.storedMedia.single.path, gif.absolute.path);
+      expect(service.storedMedia.single.data, isNull,
+          reason: '本机 Anki 不应把 GIF 放大成 base64 JSON');
+      expect(service.addedFields, hasLength(1));
+    });
+
+    test('远程 AnkiConnect 不可读本机 path，保留 base64 上传', () async {
+      final service = _RecordingAnkiConnectService(host: '192.0.2.10');
+      final repo = _ConfiguredAnkiConnectRepository(
+        service: service,
+        settings: settingsWithPicture('{card-image}'),
+      );
+
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: payload,
+        context: AnkiMiningContext(
+          sentence: 'これは言葉です。',
+          coverPath: gif.path,
+        ),
+      );
+
+      expect(outcome.result, MineResult.success);
+      expect(service.storedMedia.single.path, isNull);
+      expect(service.storedMedia.single.data, isNotEmpty);
+    });
+
+    test('GIF 上传失败时不调用 addNote，不再创建无图卡', () async {
+      final service = _FailingMediaAnkiConnectService();
+      final repo = _ConfiguredAnkiConnectRepository(
+        service: service,
+        settings: settingsWithPicture('{card-image}'),
+      );
+
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: payload,
+        context: AnkiMiningContext(
+          sentence: 'これは言葉です。',
+          coverPath: gif.path,
+        ),
+      );
+
+      expect(outcome.result, MineResult.error);
+      expect(service.addedFields, isEmpty, reason: '媒体没有确认上传成功前绝不能 addNote');
+    });
   });
 
   group('AnkiDroid video mining: {book-cover} Picture 也产 GIF (TODO-1298)', () {
@@ -180,14 +243,20 @@ void main() {
 }
 
 class _RecordingAnkiConnectService extends AnkiConnectService {
+  _RecordingAnkiConnectService({String host = 'localhost'}) : super(host: host);
+
   final List<Map<String, String>> addedFields = <Map<String, String>>[];
+  final List<({String filename, String? data, String? path})> storedMedia =
+      <({String filename, String? data, String? path})>[];
 
   @override
   Future<void> storeMediaFile({
     required String filename,
     String? data,
     String? path,
-  }) async {}
+  }) async {
+    storedMedia.add((filename: filename, data: data, path: path));
+  }
 
   @override
   Future<int?> addNote({
@@ -201,6 +270,17 @@ class _RecordingAnkiConnectService extends AnkiConnectService {
   }) async {
     addedFields.add(Map<String, String>.from(fields));
     return addedFields.length;
+  }
+}
+
+class _FailingMediaAnkiConnectService extends _RecordingAnkiConnectService {
+  @override
+  Future<void> storeMediaFile({
+    required String filename,
+    String? data,
+    String? path,
+  }) {
+    throw TimeoutException('simulated media upload timeout');
   }
 }
 

@@ -267,6 +267,101 @@ void main() {
     expect(repo.minedContext!.coverPath, endsWith('.jpg'));
   });
 
+  test('oversized GIF is re-extracted at compact upload-safe settings',
+      () async {
+    final repo = _FakeRepo();
+    final calls = <({int fps, int width})>[];
+    Future<String?> sizedGif({
+      required String inputPath,
+      required int startMs,
+      required int endMs,
+      required String outputPath,
+      int fps = 8,
+      int width = 320,
+      FfmpegFailureReporter? onFailure,
+      String? tlsPinSha256,
+    }) async {
+      calls.add((fps: fps, width: width));
+      final int size =
+          calls.length == 1 ? immersionMiningMaxGifBytes + 1 : 1024;
+      await File(outputPath).writeAsBytes(List<int>.filled(size, 0));
+      return outputPath;
+    }
+
+    final res = await build(
+      gif: sizedGif,
+      audio: okAudio,
+      frame: okFrame,
+    ).mine(
+      const ImmersionMiningRequest(
+        source: AnkiMiningSource.video,
+        fields: {'expression': 'x'},
+        mediaSource: '/v.mp4',
+        clipStartMs: 0,
+        clipEndMs: 4000,
+        sentence: 's',
+      ),
+      compression: MiningMediaCompression.highFidelity,
+      tempDir: tmp.path,
+      repo: repo,
+    );
+
+    expect(calls, <({int fps, int width})>[
+      (fps: 12, width: 720),
+      (fps: 8, width: 480),
+    ]);
+    expect(res.degradedToStill, isFalse);
+    expect(
+        repo.minedContext!.coverPath, endsWith('immersion_clip_compact.gif'));
+    expect(
+      File(repo.minedContext!.coverPath!).lengthSync(),
+      lessThanOrEqualTo(immersionMiningMaxGifBytes),
+    );
+  });
+
+  test('compact GIF still over cap falls back to a still frame', () async {
+    final repo = _FakeRepo();
+    int gifCalls = 0;
+    Future<String?> oversizedGif({
+      required String inputPath,
+      required int startMs,
+      required int endMs,
+      required String outputPath,
+      int fps = 8,
+      int width = 320,
+      FfmpegFailureReporter? onFailure,
+      String? tlsPinSha256,
+    }) async {
+      gifCalls += 1;
+      await File(outputPath).writeAsBytes(
+        List<int>.filled(immersionMiningMaxGifBytes + 1, 0),
+      );
+      return outputPath;
+    }
+
+    final res = await build(
+      gif: oversizedGif,
+      audio: okAudio,
+      frame: okFrame,
+    ).mine(
+      const ImmersionMiningRequest(
+        source: AnkiMiningSource.video,
+        fields: {'expression': 'x'},
+        mediaSource: '/v.mp4',
+        clipStartMs: 0,
+        clipEndMs: 8000,
+        sentence: 's',
+      ),
+      compression: MiningMediaCompression.highFidelity,
+      tempDir: tmp.path,
+      repo: repo,
+    );
+
+    expect(gifCalls, 2);
+    expect(res.degradedToStill, isTrue);
+    expect(repo.minedContext!.coverPath, endsWith('.jpg'));
+  });
+
   test('requireAudio && audio missing -> abort, no mine', () async {
     final repo = _FakeRepo();
     final res = await build(gif: okGif, audio: nullAudio, frame: nullFrame)

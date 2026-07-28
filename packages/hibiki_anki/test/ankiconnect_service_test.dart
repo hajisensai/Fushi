@@ -42,6 +42,20 @@ void main() {
   Map<String, dynamic> bodyOf(http.Request request) =>
       jsonDecode(request.body) as Map<String, dynamic>;
 
+  group('local media path capability', () {
+    test('recognizes localhost and IPv4/IPv6 loopback', () {
+      expect(ankiConnectHostIsLoopback('localhost'), isTrue);
+      expect(ankiConnectHostIsLoopback('127.0.0.1'), isTrue);
+      expect(ankiConnectHostIsLoopback('::1'), isTrue);
+      expect(ankiConnectHostIsLoopback('[::1]'), isTrue);
+    });
+
+    test('does not expose local paths to a remote AnkiConnect host', () {
+      expect(ankiConnectHostIsLoopback('192.0.2.10'), isFalse);
+      expect(ankiConnectHostIsLoopback('anki.example.com'), isFalse);
+    });
+  });
+
   group('request envelope', () {
     test('posts to the configured host/port over http', () async {
       final issued = <http.Request>[];

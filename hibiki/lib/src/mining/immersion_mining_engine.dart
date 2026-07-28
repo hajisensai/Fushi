@@ -47,6 +47,13 @@ typedef RemoteAudioMaterializer = Future<String?> Function({
   FfmpegFailureReporter? onFailure,
 });
 
+/// GIFs above this size are re-extracted at the standard 480px/8fps tier.
+/// If the compact retry is still over the cap, mining falls back to a still
+/// frame instead of sending a giant payload through Anki's GUI thread.
+const int immersionMiningMaxGifBytes = 4 * 1024 * 1024;
+const int _compactGifFps = 8;
+const int _compactGifWidth = 480;
+
 /// 统一沉浸制卡引擎。降级阶梯与 `_mineVideoCard`（lookup_mining.part.dart L285-441）一致：
 /// GIF 主 → 单帧降级 → 当前解码帧兜底；音频段；requireAudio 且缺音频则中止；组 context 落卡。
 ///
@@ -133,7 +140,7 @@ class ImmersionMiningEngine {
     // 抽字幕区间动图（GIF）到临时文件；无 src / 无区间 → null。
     Future<String?> tryGif() async {
       if (src == null || !req.hasRange) return null;
-      return _gif(
+      final String? primary = await _gif(
         inputPath: src,
         startMs: req.clipStartMs,
         endMs: req.clipEndMs,
@@ -143,6 +150,38 @@ class ImmersionMiningEngine {
         onFailure: reportCover,
         tlsPinSha256: req.mediaSourceTlsPinSha256,
       );
+      if (!_gifExceedsUploadCap(primary)) return primary;
+
+      reportCover(
+        'GIF is larger than ${immersionMiningMaxGifBytes ~/ (1024 * 1024)} MiB; '
+        'retrying at ${_compactGifWidth}px/${_compactGifFps}fps',
+      );
+      if (compression.gifFps <= _compactGifFps &&
+          compression.gifWidth <= _compactGifWidth) {
+        _discardTemporaryMedia(primary);
+        return null;
+      }
+
+      final String? compact = await _gif(
+        inputPath: src,
+        startMs: req.clipStartMs,
+        endMs: req.clipEndMs,
+        outputPath: '$tempDir/immersion_clip_compact.gif',
+        fps: _compactGifFps,
+        width: _compactGifWidth,
+        onFailure: reportCover,
+        tlsPinSha256: req.mediaSourceTlsPinSha256,
+      );
+      _discardTemporaryMedia(primary);
+      if (!_gifExceedsUploadCap(compact)) return compact;
+
+      reportCover(
+        'compact GIF still exceeds '
+        '${immersionMiningMaxGifBytes ~/ (1024 * 1024)} MiB; '
+        'falling back to a still frame',
+      );
+      _discardTemporaryMedia(compact);
+      return null;
     }
 
     // 抽字幕 cue 起始时间点的单帧；无 src → null。
@@ -268,6 +307,27 @@ class ImmersionMiningEngine {
 
     return ImmersionMiningResult(
         aborted: false, outcome: outcome, degradedToStill: degradedToStill);
+  }
+
+  static bool _gifExceedsUploadCap(String? path) {
+    if (path == null) return false;
+    try {
+      final File file = File(path);
+      return file.existsSync() &&
+          file.lengthSync() > immersionMiningMaxGifBytes;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static void _discardTemporaryMedia(String? path) {
+    if (path == null) return;
+    try {
+      final File file = File(path);
+      if (file.existsSync()) file.deleteSync();
+    } catch (_) {
+      // Best effort only; the OS temp directory remains the final cleanup net.
+    }
   }
 
   /// BUG-1205 — 句子音频落地路径的解析，从 [mine] 内联体**原样**抽出（provided 字节 →

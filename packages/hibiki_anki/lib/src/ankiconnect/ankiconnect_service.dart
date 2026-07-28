@@ -11,6 +11,10 @@ class AnkiConnectService {
   final String host;
   final int port;
 
+  /// Whether this endpoint runs on the same machine and can read a local path
+  /// passed to AnkiConnect's `storeMediaFile`.
+  bool get canReadLocalMediaPaths => ankiConnectHostIsLoopback(host);
+
   /// AnkiConnect API key. When the AnkiConnect add-on has `apiKey` configured,
   /// every request must carry a matching `key`; otherwise it replies with
   /// "valid api key must be provided". Empty means no key (the default).
@@ -604,6 +608,16 @@ String ankiConnectErrorHint(String code, {String? host, int? port}) {
     default:
       return 'Cannot connect to AnkiConnect$where.';
   }
+}
+
+bool ankiConnectHostIsLoopback(String host) {
+  final String normalized = host.trim().toLowerCase();
+  if (normalized == 'localhost') return true;
+  final String unbracketed =
+      normalized.startsWith('[') && normalized.endsWith(']')
+          ? normalized.substring(1, normalized.length - 1)
+          : normalized;
+  return InternetAddress.tryParse(unbracketed)?.isLoopback ?? false;
 }
 
 /// 由查重范围 [scope] 解析出的 Anki 搜索卡组子句；空串 = 不限卡组（整个收藏集）。

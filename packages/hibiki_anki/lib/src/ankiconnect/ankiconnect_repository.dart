@@ -1183,30 +1183,55 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     );
   }
 
-  Future<String?> _storeLocalMedia(
+  Future<void> _uploadLocalFile(
+    AnkiConnectService service, {
+    required File file,
+    required String filename,
+    List<int>? bytes,
+  }) async {
+    if (service.canReadLocalMediaPaths) {
+      // Anki is on this machine: send a tiny JSON path instead of inflating a
+      // multi-megabyte GIF by ~33% into base64 and making Anki parse it on its
+      // GUI thread.
+      await service.storeMediaFile(
+        filename: filename,
+        path: file.absolute.path,
+      );
+      return;
+    }
+    await service.storeMediaFile(
+      filename: filename,
+      data: await hibikiAnkiBase64EncodeAsync(
+        bytes ?? await file.readAsBytes(),
+      ),
+    );
+  }
+
+  Future<String> _storeLocalMedia(
     AnkiConnectService service,
     String filePath,
     String prefix,
   ) async {
-    try {
-      final file = File(filePath);
-      if (!file.existsSync()) return null;
-      final bytes = await file.readAsBytes();
-      // BUG-933：sha256 + base64 卸到后台 isolate（大媒体），避免阻塞 UI。
-      final encoded = await hibikiAnkiMediaEncodeForUploadAsync(
-        prefix: prefix,
-        bytes: bytes,
-        sourceName: filePath,
-      );
-      await service.storeMediaFile(
-        filename: encoded.filename,
-        data: encoded.base64Data,
-      );
-      return encoded.filename;
-    } catch (e, stack) {
-      debugPrint('AnkiConnectRepository._storeLocalMedia: $e\n$stack');
-      return null;
+    final file = File(filePath);
+    if (!file.existsSync()) {
+      throw FileSystemException('Mining media file is missing', filePath);
     }
+    final bytes = await file.readAsBytes();
+    // BUG-1227：只算内容哈希定名；本机 Anki 走 path 上传，不再生成巨大 base64。
+    final filename = await hibikiAnkiMediaFilenameForBytesAsync(
+      prefix: prefix,
+      bytes: bytes,
+      sourceName: filePath,
+    );
+    // 上传失败必须向上抛，让 mineEntry 在 addNote 之前失败。绝不能返回 null 后继续
+    // 创建一张无图/无句子音频卡，并把稍后落盘的媒体留成孤儿文件。
+    await _uploadLocalFile(
+      service,
+      file: file,
+      filename: filename,
+      bytes: bytes,
+    );
+    return filename;
   }
 
   /// TODO-779：返回 [AudioFetchOutcome]（ref 成功 / failureReason 可见失败 / none
@@ -1240,18 +1265,19 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           final file = File(AnkiAudioRef.localPath(url));
           if (!file.existsSync()) return const AudioFetchOutcome.none();
           final bytes = await file.readAsBytes();
-          // BUG-933：本地音频 sha256 + base64 卸到后台 isolate。
-          final encoded = await hibikiAnkiMediaEncodeForUploadAsync(
+          final filename = await hibikiAnkiMediaFilenameForBytesAsync(
             prefix: 'hibiki_audio_',
             bytes: bytes,
             sourceName: file.path,
             fallbackExtension: 'mp3',
           );
-          await service.storeMediaFile(
-            filename: encoded.filename,
-            data: encoded.base64Data,
+          await _uploadLocalFile(
+            service,
+            file: file,
+            filename: filename,
+            bytes: bytes,
           );
-          return AudioFetchOutcome.stored(encoded.filename);
+          return AudioFetchOutcome.stored(filename);
         case AnkiAudioRefKind.remoteUrl:
           final client = HttpClient();
           try {
@@ -1293,12 +1319,11 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       // non-null here; only existence can still fail (missing local file or a
       // download that produced no file).
       if (!audioFile.existsSync()) return const AudioFetchOutcome.none();
-      final bytes = await audioFile.readAsBytes();
       final filename = audioFile.uri.pathSegments.last;
-      // BUG-933：文件名已定（下载时已按 sha256 命名），只剩 base64 卸到后台 isolate。
-      await service.storeMediaFile(
+      await _uploadLocalFile(
+        service,
+        file: audioFile,
         filename: filename,
-        data: await hibikiAnkiBase64EncodeAsync(bytes),
       );
       return AudioFetchOutcome.stored(filename);
     } catch (e, stack) {
@@ -1343,36 +1368,28 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     return 'mp3';
   }
 
-  Future<String?> _storeDictionaryMedia(
+  Future<String> _storeDictionaryMedia(
     AnkiConnectService service,
     DictionaryMedia media,
   ) async {
-    try {
-      // 命名/目录与主 app 的 writeDictionaryMediaCache 共用同一 helper（防漂移，
-      // 否则文件名对不上→读不到→卡片留坏图）。HBK-AUDIT-062 无扩展名兜底已并入。
-      final filename =
-          ankiDictionaryMediaCacheFilename(media.dictionary, media.path);
-      final file = File('${ankiDictionaryMediaCacheDirPath()}/$filename');
-      if (!file.existsSync()) return null;
-      final bytes = await file.readAsBytes();
-      // BUG-933：外字通常几 KB（走同步分支），偶发大图才卸后台 isolate。
-      await service.storeMediaFile(
-        filename: filename,
-        data: await hibikiAnkiBase64EncodeAsync(bytes),
-      );
-      // 返回**裸文件名**（与 AnkiDroid 经 ankiInlineMediaReference 对称）。义项 HTML
-      // 已是 <img src="hoshi_dict_N.ext">，buildMinedFields 用 replaceAll 把 src 里的占位符
-      // 替换成真实文件名；这里若返回完整 <img>/[sound:] 标签会嵌进 src 成
-      // <img src="<img src=...>"> 嵌套坏图（外字不显示）。两端共用 ankiInlineMediaReference
-      // 这一裸化单一真相，杜绝再次漂移回完整标签。
-      final mime = mimeTypeForPath(filename);
-      final wrapped = mime.startsWith('audio/')
-          ? '[sound:$filename]'
-          : '<img src="$filename">';
-      return ankiInlineMediaReference(wrapped);
-    } catch (e, stack) {
-      debugPrint('AnkiConnectRepository._storeDictionaryMedia: $e\n$stack');
-      return null;
+    // 命名/目录与主 app 的 writeDictionaryMediaCache 共用同一 helper（防漂移，
+    // 否则文件名对不上→读不到→卡片留坏图）。HBK-AUDIT-062 无扩展名兜底已并入。
+    final filename =
+        ankiDictionaryMediaCacheFilename(media.dictionary, media.path);
+    final file = File('${ankiDictionaryMediaCacheDirPath()}/$filename');
+    if (!file.existsSync()) {
+      throw FileSystemException('Dictionary media file is missing', file.path);
     }
+    await _uploadLocalFile(service, file: file, filename: filename);
+    // 返回**裸文件名**（与 AnkiDroid 经 ankiInlineMediaReference 对称）。义项 HTML
+    // 已是 <img src="hoshi_dict_N.ext">，buildMinedFields 用 replaceAll 把 src 里的占位符
+    // 替换成真实文件名；这里若返回完整 <img>/[sound:] 标签会嵌进 src 成
+    // <img src="<img src=...>"> 嵌套坏图（外字不显示）。两端共用 ankiInlineMediaReference
+    // 这一裸化单一真相，杜绝再次漂移回完整标签。
+    final mime = mimeTypeForPath(filename);
+    final wrapped = mime.startsWith('audio/')
+        ? '[sound:$filename]'
+        : '<img src="$filename">';
+    return ankiInlineMediaReference(wrapped);
   }
 }
