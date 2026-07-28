@@ -245,11 +245,17 @@ class _BookImportDialogState extends State<BookImportDialog>
   }
 
   /// 判定一个待导入路径的载体身份。文件系统判据在此注入，分类函数本身不碰 IO。
-  ImportCarrier _classifyCarrier(String path) => classifyImportCarrier(
-        path,
-        isDirectory: (String pth) => Directory(pth).existsSync(),
-        isImageArchive: MangaModule.isImageArchive,
-      );
+  ///
+  /// 走 [ImportCarrierResolver] 而不是每次裸调 `classifyImportCarrier`：同一路径在一次
+  /// 导入里会被问到三次（选中闸门 / `_doImport` 兜底闸门 / `_importEpubOnly` 分派），
+  /// 而 `.zip` / `.epub` 的定性要真开包，问三次就整包解压三次。有声书对齐路径尤其亏
+  /// ——它不进 `_importEpubOnly`，那几次开包纯属白开。记忆按路径失效，换文件会重算。
+  final ImportCarrierResolver _carrierResolver = ImportCarrierResolver(
+    isDirectory: (String pth) => Directory(pth).existsSync(),
+    isImageArchive: MangaModule.isImageArchive,
+  );
+
+  ImportCarrier _classifyCarrier(String path) => _carrierResolver.resolve(path);
 
   /// 拖文件进本对话框 → 分类 → 按字段覆盖（仅填命中类，不清用户已选）。
   /// 纯解析交给 [resolveBookDialogDrop]；此处只 setState + sidecar/封面副作用。
