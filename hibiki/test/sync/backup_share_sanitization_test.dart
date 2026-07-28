@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
-import 'package:drift/drift.dart' show Variable;
+import 'package:drift/drift.dart' show Value, Variable;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/backup_service.dart';
@@ -90,6 +90,57 @@ void main() {
         peerId: 'peer-1', token: 'SECRET_PAIR_TOKEN', pairedAtMs: 1));
     await db.into(db.syncBaselines).insert(SyncBaselinesCompanion.insert(
         assetKey: 'Bk', dimension: 'progress', baseVersion: 7));
+    await db.upsertMangaExtensionStore(
+      MangaExtensionStoresCompanion.insert(
+        indexUrl: 'https://repo.example/index.json',
+        name: 'Private repository',
+        format: 'currentJson',
+        signingKey: const Value('SIGNING_KEY'),
+      ),
+    );
+    await db.upsertMangaExtension(
+      MangaExtensionsCompanion.insert(
+        packageName: 'org.example.extension',
+        name: 'Private extension',
+        versionCode: 1,
+        versionName: '1.0.0',
+        libVersion: '1.6',
+        language: 'en',
+        apkPath: 'extensions/org.example.extension.ext',
+        apkSha256: 'apk-sha',
+        signerSha256: 'signer-sha',
+        installedAt: 1,
+      ),
+    );
+    await db.replaceMangaOnlineSources(
+      'org.example.extension',
+      <MangaOnlineSourcesCompanion>[
+        MangaOnlineSourcesCompanion.insert(
+          extensionPackage: 'org.example.extension',
+          sourceId: '9223372036854775807',
+          name: 'Private source',
+          language: 'en',
+        ),
+      ],
+    );
+    await db.upsertMangaSourcePreference(
+      MangaSourcePreferencesCompanion.insert(
+        extensionPackage: 'org.example.extension',
+        sourceId: '9223372036854775807',
+        preferenceKey: 'api_token',
+        preferenceType: 'text',
+        valueJson: '"SECRET_SOURCE_TOKEN"',
+        updatedAt: 1,
+      ),
+    );
+    await db.trustMangaSigner(
+      MangaTrustedSignersCompanion.insert(
+        fingerprint: 'signer-sha',
+        label: 'Private signer',
+        origin: 'local',
+        trustedAt: 1,
+      ),
+    );
     // Content-registry prefs, each owned by a content category.
     await db.setPref(
         'favorite_sentences',
@@ -148,6 +199,19 @@ void main() {
           reason: 'LAN pairing token must never leave the device');
       expect(await tableCount(ex, 'sync_baselines'), 0,
           reason: 'sync baselines are device-local causality');
+      for (final String table in <String>[
+        'manga_extension_stores',
+        'manga_extensions',
+        'manga_online_sources',
+        'manga_source_preferences',
+        'manga_trusted_signers',
+      ]) {
+        expect(
+          await tableCount(ex, table),
+          0,
+          reason: '$table must not travel without the private APK/runtime data',
+        );
+      }
     });
 
     test('favorites follow books: unticking books strips favorite_sentences',

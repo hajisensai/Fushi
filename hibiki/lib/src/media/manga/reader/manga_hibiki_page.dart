@@ -23,6 +23,8 @@ import 'package:hibiki/src/media/manga/manga_overlay_html.dart';
 import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
 import 'package:hibiki/src/media/manga/manga_reading_stats.dart';
 import 'package:hibiki/src/media/manga/manga_spread_model.dart';
+import 'package:hibiki/src/media/manga/mihon/manga_page_provider.dart';
+import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
 import 'package:hibiki/src/media/manga/mokuro_payload.dart';
 import 'package:hibiki/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
 import 'package:hibiki/src/focus/page_focus_ownership.dart';
@@ -519,6 +521,8 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
 
   /// `<书目录>/images`（页图根，拦截器/封面解析的穿越守卫边界）。
   String? _imagesDir;
+  MangaReaderSession? _localPageSession;
+  Map<String, int> _localPageIndices = const <String, int>{};
   MokuroPayload? _payload;
   MangaReadingMode _mode = MangaReadingMode.spread;
   List<MangaSpreadEntry> _spreads = <MangaSpreadEntry>[];
@@ -654,6 +658,11 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     _dictionaryTurnDismissTimer?.cancel();
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _wholeVolumeOcrSubscription = null;
+    final MangaReaderSession? localPageSession = _localPageSession;
+    _localPageSession = null;
+    if (localPageSession != null) {
+      unawaited(localPageSession.close());
+    }
     // dispose 里只能 fire-and-forget；正常退出走 onSourcePagePop 的 await 路径，
     // 这里是崩溃/异常拆栈时的兜底。
     unawaited(_flushPosition());
@@ -773,6 +782,20 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         MangaHibikiPage.modeOverrideFromDb(row.mangaReadingMode) ??
             detectReadingMode(payload);
     final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, mode);
+    final List<String> relativePagePaths = payload.images
+        .map(
+          (MokuroImage image) =>
+              MangaHibikiPage.mangaImageRelativePath(image.url),
+        )
+        .toList(growable: false);
+    final MangaReaderSession localPageSession = await LocalMangaPageProvider(
+      imagesRoot: Directory(imagesDir),
+      relativePaths: relativePagePaths,
+    ).open();
+    if (!mounted) {
+      await localPageSession.close();
+      return;
+    }
 
     // 恢复进度：sectionIndex=0-based 页码；webtoon 的页内 fraction 从 charOffset
     // （千分比 0..1000）换算回来。
@@ -800,6 +823,15 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
 
     final int restoredSpread =
         MangaHibikiPage.restoreSpreadFromProgress(spreads, restoredPage);
+    final MangaReaderSession? previousLocalPageSession = _localPageSession;
+    _localPageSession = localPageSession;
+    _localPageIndices = <String, int>{
+      for (int index = 0; index < relativePagePaths.length; index++)
+        _localPageKey(relativePagePaths[index]): index,
+    };
+    if (previousLocalPageSession != null) {
+      unawaited(previousLocalPageSession.close());
+    }
     setState(() {
       _bookRow = row;
       _imagesDir = imagesDir;
@@ -940,9 +972,25 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       }
       return _notFound('resource not found: $relative');
     }
-    final Uint8List data = await File(filePath).readAsBytes();
+    final String decodedRelative = Uri.decodeComponent(relative);
+    final MangaReaderSession? localPageSession = _localPageSession;
+    final int? pageIndex = _localPageIndices[_localPageKey(decodedRelative)];
+    MangaPageBytes? localPage;
+    if (localPageSession != null && pageIndex != null) {
+      try {
+        localPage = await localPageSession.page(pageIndex);
+      } on MihonRuntimeException catch (error, stackTrace) {
+        ErrorLogService.instance.log(
+          'MangaHibikiPage.localPage',
+          error,
+          stackTrace,
+        );
+      }
+    }
+    final Uint8List data =
+        localPage?.bytes ?? await File(filePath).readAsBytes();
     return WebResourceResponse(
-      contentType: _mangaMimeForPath(filePath),
+      contentType: localPage?.contentType ?? _mangaMimeForPath(filePath),
       statusCode: 200,
       reasonPhrase: 'OK',
       headers: <String, String>{
@@ -952,6 +1000,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       data: data,
     );
   }
+
+  static String _localPageKey(String path) =>
+      p.normalize(path.replaceAll(r'\', '/')).replaceAll(r'\', '/');
 
   static String _mangaMimeForPath(String path) {
     final String ext = p.extension(path).toLowerCase();
