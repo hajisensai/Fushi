@@ -28,12 +28,14 @@ void main() {
 
   test('书架列书按 format 路由：format==manga 的行带 MangaHibikiSource 源标识', () {
     final String src = read('lib/src/media/sources/reader_hibiki_source.dart');
-    expect(src.contains("book.format == 'manga'"), isTrue,
-        reason: '_bookToMediaItem 应按 format=="manga" 分流');
+    // 判据统一走 BookFormat 枚举后，锚点跟着走（裸字符串比较已被
+    // book_format_discipline_guard 禁掉——它正是「只挡 manga、漏掉 pdf」的温床）。
+    expect(src.contains('format == BookFormat.manga'), isTrue,
+        reason: '_bookToMediaItem 应按 BookFormat.manga 分流');
     expect(src.contains('MangaHibikiSource.kUniqueKey'), isTrue,
         reason: '漫画行 mediaSourceIdentifier 应取 MangaHibikiSource.kUniqueKey');
     // PDF 分流不能被漫画分流破坏（向后兼容守卫）。
-    expect(src.contains("book.format == 'pdf'"), isTrue);
+    expect(src.contains('format == BookFormat.pdf'), isTrue);
     expect(src.contains('ReaderPdfSource.kUniqueKey'), isTrue);
   });
 

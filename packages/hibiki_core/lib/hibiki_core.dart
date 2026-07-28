@@ -1,6 +1,7 @@
 library hibiki_core;
 
 export 'src/database/activity_event_types.dart';
+export 'src/database/book_format.dart';
 export 'src/database/collection_order.dart';
 export 'src/database/database.dart';
 export 'src/database/media_kind.dart';

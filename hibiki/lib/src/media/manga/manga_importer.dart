@@ -301,7 +301,7 @@ class MangaImporter {
           chapterCount: total,
           chaptersJson: '[]',
           importedAt: importedAtMs,
-          format: const Value('manga'),
+          format: Value(BookFormat.manga.dbValue),
           // mangaReadingMode 留 absent(null)：跟随阅读器自动判定（P1-L4 契约）。
           sourceId: sourceId != null ? Value(sourceId) : const Value.absent(),
         ),

@@ -427,14 +427,21 @@ class MediaTrackingRepository {
     return result;
   }
 
-  Future<int> loadBookChapterProgress({
+  /// 返回这本书「已读完多少章」，**null = 这本书没有章的概念，不要上报章进度**。
+  ///
+  /// 只有 `format='epub'` 的文字书有章。PDF / 漫画的 `chaptersJson` 是 `'[]'`、
+  /// `tocJson` 是 null，阅读位置的 `sectionIndex` 存的是**页码**——旧实现在这里只
+  /// 挡了 `'manga'`，PDF 一路走下去会在 [estimateCompletedBookChapters] 的
+  /// 「无 toc 即早退」分支拿到 `fallbackProgress`，也就是把**当前页码当成已读章数**
+  /// 报给 Bangumi。两个调用点（这里与下面 loadCompletedBookTrackingProgress）现在按
+  /// 同一判据 [BookFormat.isPagedImageBook] 收口，缺一处就会重新漂开。
+  Future<int?> loadBookChapterProgress({
     required String bookKey,
     required int fallbackProgress,
   }) async {
     final EpubBookRow? book = await _db.getEpubBook(bookKey);
-    if (book == null || book.format == 'manga') {
-      return math.max(0, fallbackProgress);
-    }
+    if (book == null) return math.max(0, fallbackProgress);
+    if (BookFormat.parseOrEpub(book.format).isPagedImageBook) return null;
     final ReaderPositionRow? position = await _db.getReaderPosition(bookKey);
     if (position == null) return math.max(0, fallbackProgress);
     return estimateCompletedBookChapters(
@@ -561,6 +568,9 @@ class MediaTrackingRepository {
       final int localProgress;
       if (isChapterCompanion ||
           mapping.progressMode == TrackingProgressMode.chapter.value) {
+        // 与 [loadBookChapterProgress] 同一判据：按页翻的书（PDF / 漫画）没有章，
+        // 这里的 fallbackProgress 是 sectionIndex＝页码，报出去就是错数。宁可不报。
+        if (BookFormat.parseOrEpub(book.format).isPagedImageBook) continue;
         localProgress = estimateCompletedBookChapters(
           chaptersJson: book.chaptersJson,
           tocJson: book.tocJson,

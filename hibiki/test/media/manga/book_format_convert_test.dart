@@ -1,3 +1,4 @@
+import 'package:hibiki_core/hibiki_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/media/manga/book_format_convert.dart';
@@ -24,7 +25,7 @@ void main() {
   group('转成漫画', () {
     test('PDF 恒可转（扫描版 PDF 无文本层、阅读器不做 OCR 兜底，转漫画才有查词）', () {
       final BookConvertVerdict v = verdictToManga(
-        format: 'pdf',
+        format: BookFormat.pdf,
         sourceAbsolutePath: '/books/k/hibiki.pdf',
         probe: present,
       );
@@ -34,7 +35,7 @@ void main() {
 
     test('图片型 EPUB 可转（扫描版漫画的常见分发形态）', () {
       final BookConvertVerdict v = verdictToManga(
-        format: 'epub',
+        format: BookFormat.epub,
         sourceAbsolutePath: '/books/k/scan.epub',
         probe: imageArchive,
       );
@@ -44,7 +45,7 @@ void main() {
 
     test('文字书不可转，且原因必须是 textOnlyBook（要能说清「为什么」）', () {
       final BookConvertVerdict v = verdictToManga(
-        format: 'epub',
+        format: BookFormat.epub,
         sourceAbsolutePath: '/books/k/novel.epub',
         probe: present,
       );
@@ -56,7 +57,7 @@ void main() {
 
     test('已经是漫画 -> alreadyTarget', () {
       final BookConvertVerdict v = verdictToManga(
-        format: 'manga',
+        format: BookFormat.manga,
         sourceAbsolutePath: '/books/k/manga.json',
         probe: present,
       );
@@ -65,7 +66,7 @@ void main() {
 
     test('源文件被删 -> sourceMissing（不是笼统的「不支持」）', () {
       final BookConvertVerdict v = verdictToManga(
-        format: 'pdf',
+        format: BookFormat.pdf,
         sourceAbsolutePath: '/books/k/hibiki.pdf',
         probe: missing,
       );
@@ -74,7 +75,7 @@ void main() {
 
     test('源文件不存在时即使标着图片型也不放行（先查存在性）', () {
       final BookConvertVerdict v = verdictToManga(
-        format: 'epub',
+        format: BookFormat.epub,
         sourceAbsolutePath: '/books/k/gone.epub',
         probe: const BookSourceProbe(
           sourceExists: false,
@@ -88,7 +89,7 @@ void main() {
   group('转回书', () {
     test('原始文件仍在书目录 -> 可转，且指回那个文件', () {
       final BookConvertVerdict v = verdictToBook(
-        format: 'manga',
+        format: BookFormat.manga,
         probe: const BookSourceProbe(
           sourceExists: true,
           sourceIsImageArchive: true,
@@ -101,7 +102,7 @@ void main() {
 
     test('mokuro / 裸图片目录导入的漫画没有原始文件 -> noOriginalFile（不造假书）', () {
       final BookConvertVerdict v = verdictToBook(
-        format: 'manga',
+        format: BookFormat.manga,
         probe: present,
       );
       expect(v.supported, isFalse);
@@ -110,7 +111,7 @@ void main() {
 
     test('原始路径是空串也算没有', () {
       final BookConvertVerdict v = verdictToBook(
-        format: 'manga',
+        format: BookFormat.manga,
         probe: const BookSourceProbe(
           sourceExists: true,
           sourceIsImageArchive: false,
@@ -121,7 +122,10 @@ void main() {
     });
 
     test('本来就不是漫画 -> alreadyTarget', () {
-      for (final String format in <String>['epub', 'pdf']) {
+      for (final BookFormat format in <BookFormat>[
+        BookFormat.epub,
+        BookFormat.pdf,
+      ]) {
         expect(
           verdictToBook(format: format, probe: present).blocker,
           BookConvertBlocker.alreadyTarget,
@@ -134,21 +138,21 @@ void main() {
   test('每个 blocker 都必须被判定函数真的产出过（没有说不出理由的拒绝）', () {
     final Set<BookConvertBlocker> produced = <BookConvertBlocker>{
       verdictToManga(
-        format: 'manga',
+        format: BookFormat.manga,
         sourceAbsolutePath: '/a',
         probe: present,
       ).blocker!,
       verdictToManga(
-        format: 'epub',
+        format: BookFormat.epub,
         sourceAbsolutePath: '/a',
         probe: present,
       ).blocker!,
       verdictToManga(
-        format: 'pdf',
+        format: BookFormat.pdf,
         sourceAbsolutePath: '/a',
         probe: missing,
       ).blocker!,
-      verdictToBook(format: 'manga', probe: present).blocker!,
+      verdictToBook(format: BookFormat.manga, probe: present).blocker!,
     };
     expect(produced, BookConvertBlocker.values.toSet(),
         reason: '新增 blocker 必须同时有产出它的判定路径与说明文案');

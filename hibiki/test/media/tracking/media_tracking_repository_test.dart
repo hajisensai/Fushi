@@ -15,6 +15,51 @@ void main() {
 
   tearDown(() => db.close());
 
+  /// 按页翻的书（PDF / 漫画）没有「章」：`chaptersJson` 是 `'[]'`、`tocJson` 是 null，
+  /// 阅读位置的 `sectionIndex` 存的是**页码**。旧实现在这里只挡了 `'manga'`，PDF 会
+  /// 一路走到 estimateCompletedBookChapters 的「无 toc 即早退」分支拿到
+  /// fallbackProgress —— 也就是把当前页码当成已读章数报进用户的 Bangumi 公开记录。
+  ///
+  /// 漫画当时只是**侥幸**没踩到：自动映射把它判成 volume 模式绕开了 chapter 分支，
+  /// 手动把映射改成 chapter 模式一样会中招。所以两种格式都要挡。
+  Future<void> seedBook(String key, BookFormat format) async {
+    await db.insertEpubBook(EpubBooksCompanion.insert(
+      bookKey: key,
+      title: key,
+      epubPath: 'x',
+      extractDir: 'd',
+      chapterCount: 300,
+      chaptersJson: '[]',
+      importedAt: 0,
+      format: Value(format.dbValue),
+    ));
+  }
+
+  for (final BookFormat format in <BookFormat>[
+    BookFormat.pdf,
+    BookFormat.manga,
+  ]) {
+    test('${format.dbValue} 不产出章进度（页码不得当章数上报）', () async {
+      await seedBook('b-${format.dbValue}', format);
+      final int? progress = await repository.loadBookChapterProgress(
+        bookKey: 'b-${format.dbValue}',
+        fallbackProgress: 137, // 当前第 137 页
+      );
+      expect(progress, isNull,
+          reason: '按页翻的书没有章，必须返回 null 让上层整条不发，'
+              '而不是把 137 页当成 137 章报出去');
+    });
+  }
+
+  test('epub 仍照常产出章进度（止血没有误伤文字书）', () async {
+    await seedBook('b-epub', BookFormat.epub);
+    final int? progress = await repository.loadBookChapterProgress(
+      bookKey: 'b-epub',
+      fallbackProgress: 5,
+    );
+    expect(progress, isNotNull);
+  });
+
   test('EPUB TOC progress counts logical chapters instead of spine files', () {
     final int progress = estimateCompletedBookChapters(
       chaptersJson: '''

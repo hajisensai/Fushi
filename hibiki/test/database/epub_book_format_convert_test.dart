@@ -42,7 +42,7 @@ void main() {
 
     await db.updateEpubBookFormat(
       key,
-      format: 'manga',
+      format: BookFormat.manga,
       epubPath: 'manga.json',
       chapterCount: 180,
       chaptersJson: '[]',
@@ -69,7 +69,7 @@ void main() {
     final HibikiDatabase db = await seedImageEpub();
     await db.updateEpubBookFormat(
       key,
-      format: 'manga',
+      format: BookFormat.manga,
       epubPath: 'manga.json',
       chapterCount: 180,
       chaptersJson: '[]',
@@ -80,7 +80,7 @@ void main() {
 
     await db.updateEpubBookFormat(
       key,
-      format: 'epub',
+      format: BookFormat.epub,
       epubPath: 'scan.epub',
       chapterCount: 12,
       chaptersJson: '["c1","c2"]',
@@ -103,7 +103,7 @@ void main() {
 
     await db.updateEpubBookFormat(
       key,
-      format: 'manga',
+      format: BookFormat.manga,
       epubPath: 'manga.json',
       chapterCount: 180,
       chaptersJson: '[]',
@@ -132,7 +132,7 @@ void main() {
 
     await db.updateEpubBookFormat(
       key,
-      format: 'manga',
+      format: BookFormat.manga,
       epubPath: 'manga.json',
       chapterCount: 180,
       chaptersJson: '[]',
@@ -154,7 +154,7 @@ void main() {
     // 否则漏传一个可选参数就把用户封面抹掉，且没有任何报错。
     await db.updateEpubBookFormat(
       key,
-      format: 'manga',
+      format: BookFormat.manga,
       epubPath: 'manga.json',
       chapterCount: 180,
       chaptersJson: '[]',
@@ -170,7 +170,7 @@ void main() {
     final HibikiDatabase db = await seedImageEpub();
     await db.updateEpubBookFormat(
       key,
-      format: 'manga',
+      format: BookFormat.manga,
       epubPath: 'manga.json',
       chapterCount: 180,
       chaptersJson: '[]',
@@ -195,7 +195,7 @@ void main() {
 
     await db.updateEpubBookFormat(
       key,
-      format: 'manga',
+      format: BookFormat.manga,
       epubPath: 'manga.json',
       chapterCount: 180,
       chaptersJson: '[]',

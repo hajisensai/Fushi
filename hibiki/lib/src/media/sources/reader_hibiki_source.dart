@@ -503,8 +503,9 @@ class ReaderHibikiSource extends ReaderMediaSource {
     // 缺这条分流，PDF/漫画行会用 EPUB 阅读器打开并在解压/解析路径崩溃。媒体标识前缀
     // 共用 `hoshi://book/<bookKey>`（bookKey 是主键、与 format 无关），路由只认
     // mediaSourceIdentifier。
-    final bool isPdf = book.format == 'pdf';
-    final bool isManga = book.format == 'manga';
+    final BookFormat format = BookFormat.parseOrEpub(book.format);
+    final bool isPdf = format == BookFormat.pdf;
+    final bool isManga = format == BookFormat.manga;
     // 页码型书（PDF/漫画）：进度单位是页而非章内字数。
     final bool pageBased = isPdf || isManga;
 
