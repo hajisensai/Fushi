@@ -2722,5 +2722,12 @@
   "anime_download_subs_unmatched": "Subtitles: no match for this pack",
   "download_backend_desktop_only_note": "Built-in engine requires a desktop platform. This device uses external qBittorrent.",
   "stat_source_breakdown": "By source",
-  "stat_format_pages": "$n pages"
+  "stat_format_pages": "$n pages",
+  "manga_import_hint": "Pick a manga folder, a .cbz/.zip page archive, or a .mokuro file.",
+  "manga_import_pick_file": "Pick manga file",
+  "manga_import_pick_folder": "Pick manga folder",
+  "manga_import_missing_input": "Pick a manga file or folder first.",
+  "manga_import_detected_title": "This looks like manga",
+  "manga_import_detected_confirm": "Import as manga",
+  "manga_import_detected_message": "\"$name\" is a manga file, so it will go through the manga importer instead of the book importer."
 }

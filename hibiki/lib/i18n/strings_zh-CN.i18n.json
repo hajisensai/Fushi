@@ -2722,5 +2722,12 @@
   "anime_download_subs_unmatched": "字幕：未匹配到（可手动补）",
   "download_backend_desktop_only_note": "内置引擎仅桌面平台可用，本设备使用外接 qBittorrent。",
   "stat_source_breakdown": "各来源",
-  "stat_format_pages": "$n 页"
+  "stat_format_pages": "$n 页",
+  "manga_import_hint": "选择漫画文件夹、.cbz/.zip 页图压缩包，或 .mokuro 文件。",
+  "manga_import_pick_file": "选择漫画文件",
+  "manga_import_pick_folder": "选择漫画文件夹",
+  "manga_import_missing_input": "请先选择漫画文件或文件夹。",
+  "manga_import_detected_title": "这看起来是漫画",
+  "manga_import_detected_confirm": "按漫画导入",
+  "manga_import_detected_message": "「$name」是漫画文件，将走漫画导入流程，而不是书籍导入流程。"
 }
