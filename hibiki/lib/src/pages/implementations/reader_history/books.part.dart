@@ -939,6 +939,9 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     final DroppedFiles files = classifyDroppedFiles(
       paths,
       isDirectory: (String pth) => Directory(pth).existsSync(),
+      // 图片型 .zip（一包页图的漫画）与 Yomitan 词典包同形，要真读包才分得出——
+      // 与导入对话框的分派同一判据，两条入口对「这算不算漫画」回答一致。
+      isImageArchive: MangaModule.isImageArchive,
     );
     debugPrint(
       '[hibiki-drop] [reader-shelf] classified '

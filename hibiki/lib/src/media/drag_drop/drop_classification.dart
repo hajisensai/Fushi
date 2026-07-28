@@ -74,14 +74,29 @@ const Set<String> kDragDictionaryExtensions = <String>{
 /// - `mokuro`：mokuro v0.2+ 的 OCR 结果文件（+ 同级图片），走 `MangaImporter`；
 /// - `cbz`：图片压缩包，走 `MangaArchiveImporter`。
 ///
-/// 刻意**不含 `zip` / `epub`**：这两者要看包内容才知道是不是图片包
-/// （`MangaArchiveImporter.looksLikeImageArchive` 要真读包），而本文件是纯函数
-/// 分类层、不碰文件系统；且 `zip` 同时是词典包扩展名，无内容判据时把书架上拖入
-/// 的 Yomitan 词典 zip 当漫画导入是误判。图片型 zip/epub 仍可经导入对话框导入
-/// （对话框的分派会真读包），只是不由拖放分类层猜。
+/// 不含 `zip`：它同时是词典包扩展名，光看扩展名分不出「一包页图」还是 Yomitan
+/// 词典包，故走 [kDragImageArchiveProbeExtensions] + `isImageArchive` 注入判据。
+///
+/// 也不含 `epub`：图片型 EPUB（扫描版漫画）确实存在，但它在 books 分支就走
+/// `importNewBook` → `BookImportDialog`，而对话框的分派本来就会真读包
+/// （`{'.zip','.epub'} && MangaModule.isImageArchive` → `importArchive`），最终
+/// 照样导成漫画——行为已经正确。为它在**每次拖 EPUB** 时白开一次包换不来任何
+/// 可见改进，不值得。
 const Set<String> kDragMangaExtensions = <String>{
   'mokuro',
   'cbz',
+};
+
+/// 需要**真读包内容**才能定性的容器扩展名（不带点，小写）。
+///
+/// 只含 `zip`：它既可能是页图漫画包，也可能是 Yomitan/mdict 词典包。没有判据时
+/// 分类层只能按扩展名归 dictionaries，于是**图片型 zip 拖到书架/漫画库会回「本
+/// 页面不支持」**（books 分支走到 `files.hasAny` 兜底），而导入对话框导得了它——
+/// 又一处「按钮能导、拖进去不认」。判据由调用方注入（widget 层传
+/// `MangaModule.isImageArchive`，即 `MangaArchiveImporter.looksLikeImageArchive`），
+/// 分类层自身仍不碰文件系统；判据缺席时 zip 维持词典包分类，向后兼容。
+const Set<String> kDragImageArchiveProbeExtensions = <String>{
+  'zip',
 };
 
 /// 看得出是漫画包、但当前**导入器不支持**的扩展名（不带点，小写）。
@@ -194,6 +209,7 @@ bool isImportableDropUrl(String candidate) {
 DroppedFiles classifyDroppedFiles(
   List<String> paths, {
   bool Function(String path)? isDirectory,
+  bool Function(String path)? isImageArchive,
 }) {
   final List<String> books = <String>[];
   final List<String> videos = <String>[];
@@ -221,6 +237,16 @@ DroppedFiles classifyDroppedFiles(
     }
     final String ext = _ext(path);
     bool matched = false;
+    // 图片包（`.zip`）：光看扩展名与词典包同形，必须真读包——同 isDirectory，判据
+    // 由 widget 层注入。命中即**只**归 mangas（不再落 dictionaries），否则图片型
+    // zip 会走到 books 分支的 `files.hasAny` 兜底、回「本页面不支持」，而导入对话框
+    // 明明导得了它。与对话框同一判据，两条入口的回答因此必然一致。
+    if (isImageArchive != null &&
+        kDragImageArchiveProbeExtensions.contains(ext) &&
+        isImageArchive(path)) {
+      mangas.add(path);
+      continue;
+    }
     if (kDragMangaExtensions.contains(ext)) {
       mangas.add(path);
       matched = true;
