@@ -1295,7 +1295,6 @@
   "media_tracking_account": "Bangumi 账号",
   "media_tracking_add_mapping": "添加映射",
   "media_tracking_anime": "番剧",
-  "media_tracking_bookmeter_note": "读书 Meter 未公开个人写入 API，因此仅参考其进度交互，不进行网页抓取。",
   "media_tracking_chapter": "话",
   "media_tracking_connect": "连接并验证",
   "media_tracking_connected_as": "已连接账号",
@@ -2722,5 +2721,17 @@
   "download_backend_desktop_only_note": "内置引擎仅桌面平台可用，本设备使用外接 qBittorrent。",
   "stat_source_breakdown": "各来源",
   "stat_format_pages": "$n 页",
-  "anime_download_subs_season_mismatch": "没有字幕条目对得上该种子的第 $season 季，已不自动选中。要用的话请手动选一条。"
+  "anime_download_subs_season_mismatch": "没有字幕条目对得上该种子的第 $season 季，已不自动选中。要用的话请手动选一条。",
+  "media_tracking_card_title": "Bangumi 同步",
+  "media_tracking_not_connected": "未连接。进度只记在本地，不会同步到 Bangumi。",
+  "media_tracking_last_sync": "上次同步",
+  "media_tracking_never_synced": "从未同步",
+  "media_tracking_linked_count": "已关联 $n 项",
+  "media_tracking_pending_count": "$n 项待发送",
+  "media_tracking_all_synced": "全部已发送",
+  "media_tracking_unauthorized": "Bangumi 拒绝了访问令牌，请在设置里重新连接。",
+  "media_tracking_unlinked_hint": "还没有任何条目关联到 Bangumi 条目，所以看完/读完在那边不会有任何变化。自动匹配只在标题唯一命中时才建立关联，其余需要手动关联。",
+  "media_tracking_open_subject": "在 Bangumi 打开",
+  "media_tracking_manage_links": "管理关联",
+  "media_tracking_last_error": "上次错误"
 }

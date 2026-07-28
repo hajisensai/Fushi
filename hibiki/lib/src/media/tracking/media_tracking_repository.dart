@@ -697,6 +697,37 @@ class MediaTrackingRepository {
         .toList(growable: false);
   }
 
+  /// 全部待同步行（**不**按 `nextAttemptAt` 过滤），带各自的映射。
+  ///
+  /// 与 [dueUpdates] 的区别是它服务于「展示」而不是「发送」：失败行退避最长 6 小时，
+  /// 若 UI 也只看 due 的行，用户在退避窗口里看到的会是「零待办、零错误」，正好把
+  /// 失败原因藏起来。按 updatedAt 倒序，最近的事件排在前面。
+  Future<List<PendingTrackingUpdate>> allPending({int limit = 50}) async {
+    final query = _db.select(_db.mediaTrackingOutbox).join(<Join>[
+      innerJoin(
+        _db.mediaTrackingMappings,
+        _db.mediaTrackingMappings.id
+            .equalsExp(_db.mediaTrackingOutbox.mappingId),
+      ),
+    ])
+      ..orderBy(<OrderingTerm>[
+        OrderingTerm(
+          expression: _db.mediaTrackingOutbox.updatedAt,
+          mode: OrderingMode.desc,
+        ),
+      ])
+      ..limit(limit);
+    final List<TypedResult> rows = await query.get();
+    return rows
+        .map(
+          (TypedResult row) => PendingTrackingUpdate(
+            outbox: row.readTable(_db.mediaTrackingOutbox),
+            mapping: row.readTable(_db.mediaTrackingMappings),
+          ),
+        )
+        .toList(growable: false);
+  }
+
   Future<int> pendingCount() async {
     final Expression<int> count = _db.mediaTrackingOutbox.id.count();
     final TypedResult row = await (_db.selectOnly(_db.mediaTrackingOutbox)

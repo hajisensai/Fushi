@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1176 条。点号进各自文件。
+> 共 1178 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1220](bugs/BUG-1220-bangumi-sync-invisible.md) | ✅ | ✅ | Bangumi 同步链路全静默：看完了没反应且无处查看 |
 | [BUG-1218](bugs/BUG-1218-epub-path-case-folded-android.md) | ✅ | ✅ | EPUB 解析把路径折成小写，大小写敏感平台上整本章节静默失踪 |
 | [BUG-1215](bugs/BUG-1215-jimaku-entry-wrong-season-auto-select.md) | ✅ | ✅ | Jimaku 条目自动选中不校验季号，S1 条目被配给 S2 包 |
 | [BUG-1214](bugs/BUG-1214-waveform-align-wheel-hscroll.md) | ✅ | ✅ | 波形对轴放大视图鼠标滚轮不能左右平移时间轴 |

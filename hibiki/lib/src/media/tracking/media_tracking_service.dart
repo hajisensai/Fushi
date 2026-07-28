@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_repository.dart';
 import 'package:hibiki/src/media/video/scraper/filename_parser.dart';
@@ -10,6 +11,23 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 const String kBangumiAccessTokenPref = 'media_tracking_bangumi_access_token';
+
+/// 连接成功时记下的 Bangumi 昵称/用户名。令牌本身不可读回账号，重开 app 后若不存
+/// 这一条，UI 就只能显示「已配置」而说不出是谁的账号。
+const String kBangumiAccountNamePref = 'media_tracking_bangumi_account_name';
+
+/// 最近一次同步尝试的结果（首页/设置页「上次同步」行的唯一数据源）。
+///
+/// outbox 行同步成功即删除，成功不留任何痕迹；不落这几条偏好，用户就无法区分
+/// 「同步过且没有待办」与「从来没跑过同步」——这正是「看完了没反应」的可观测缺口。
+const String kMediaTrackingLastSyncAtPref = 'media_tracking_last_sync_at_v1';
+const String kMediaTrackingLastSyncSucceededPref =
+    'media_tracking_last_sync_succeeded_v1';
+const String kMediaTrackingLastSyncFailedPref =
+    'media_tracking_last_sync_failed_v1';
+const String kMediaTrackingLastSyncUnauthorizedPref =
+    'media_tracking_last_sync_unauthorized_v1';
+
 const String kVideoTrackingReconcileWatermarkPref =
     'media_tracking_video_reconcile_watermark_v1';
 const String kBookTrackingReconcileWatermarkPref =
@@ -33,6 +51,102 @@ class MediaTrackingSyncResult {
   final bool unauthorized;
 
   bool get isSuccess => failed == 0 && !unauthorized;
+}
+
+/// 一条同步失败的待办（首页/设置页展示「为什么没同步上去」）。
+///
+/// 带 [mappingId] 是为了让 UI 把错误挂回对应的条目行，而不是另开一段再把标题重复
+/// 一遍——同一条目在「失败」和「已关联」里各出现一次，读起来像两个不同的东西。
+class MediaTrackingFailure {
+  const MediaTrackingFailure({
+    required this.mappingId,
+    required this.mediaTitle,
+    required this.subjectId,
+    required this.subjectName,
+    required this.attemptCount,
+    required this.nextAttemptAt,
+    required this.error,
+  });
+
+  final int mappingId;
+  final String mediaTitle;
+  final int subjectId;
+  final String subjectName;
+  final int attemptCount;
+  final int nextAttemptAt;
+  final String error;
+}
+
+/// 追踪链路的整体可见状态。
+///
+/// 这条链路的每个失败点原本都是静默的（没令牌→不建映射、标题匹配不唯一→不建映射、
+/// 上报失败→只进错误日志），用户端零反馈。本快照把「连没连上、关联了哪些条目、
+/// 还有多少没发出去、上次同步什么时候、失败原因是什么」一次性摊开给 UI。
+class MediaTrackingStatus {
+  const MediaTrackingStatus({
+    required this.configured,
+    required this.accountName,
+    required this.lastSyncAt,
+    required this.lastSucceeded,
+    required this.lastFailed,
+    required this.unauthorized,
+    required this.pending,
+    required this.mappings,
+    required this.failures,
+  });
+
+  /// 未配置令牌时的空快照（服务未就绪/读库失败的降级值）。
+  static const MediaTrackingStatus empty = MediaTrackingStatus(
+    configured: false,
+    accountName: '',
+    lastSyncAt: 0,
+    lastSucceeded: 0,
+    lastFailed: 0,
+    unauthorized: false,
+    pending: 0,
+    mappings: <MediaTrackingMappingRow>[],
+    failures: <MediaTrackingFailure>[],
+  );
+
+  final bool configured;
+  final String accountName;
+
+  /// 最近一次同步尝试的时刻（epoch 毫秒；0 = 从未跑过）。
+  final int lastSyncAt;
+  final int lastSucceeded;
+  final int lastFailed;
+
+  /// 最近一次同步因令牌被拒而中止（令牌过期/被撤销，必须重新连接）。
+  final bool unauthorized;
+
+  /// 待同步条数（outbox 行数，含尚未到退避重试时刻的）。
+  final int pending;
+
+  /// 用户可见的映射（已滤掉 bookChapter 伴随映射，它不是独立条目）。
+  final List<MediaTrackingMappingRow> mappings;
+  final List<MediaTrackingFailure> failures;
+
+  bool get hasNeverSynced => lastSyncAt <= 0;
+
+  bool get hasProblem => unauthorized || failures.isNotEmpty;
+
+  /// 按 mapping id 索引失败原因，供 UI 把错误挂回对应条目行。
+  Map<int, MediaTrackingFailure> get failureByMappingId =>
+      <int, MediaTrackingFailure>{
+        for (final MediaTrackingFailure failure in failures)
+          failure.mappingId: failure,
+      };
+
+  /// 展示序：有失败的条目排在最前（首页只列前几条，出问题的那条不能被挤下去），
+  /// 其余保持 [mappings] 原序（kind → 标题，与设置页一致）。
+  List<MediaTrackingMappingRow> get mappingsProblemFirst {
+    final Map<int, MediaTrackingFailure> byId = failureByMappingId;
+    if (byId.isEmpty) return mappings;
+    return <MediaTrackingMappingRow>[
+      ...mappings.where((MediaTrackingMappingRow m) => byId.containsKey(m.id)),
+      ...mappings.where((MediaTrackingMappingRow m) => !byId.containsKey(m.id)),
+    ];
+  }
 }
 
 typedef _PreparedTrackingTitle = ({
@@ -154,12 +268,24 @@ class MediaTrackingService {
 
   static const Duration _autoMappingMissRetry = Duration(minutes: 10);
 
+  /// 每次同步结束/连接状态变化后自增，供 UI（首页卡片、设置页）订阅刷新。
+  /// 用计数器而不是 ChangeNotifier：外部无法合法调用 `notifyListeners`（@protected）。
+  final ValueNotifier<int> _statusRevision = ValueNotifier<int>(0);
+
+  ValueListenable<int> get statusRevision => _statusRevision;
+
   String get accessToken =>
       (_preferences.getPref(kBangumiAccessTokenPref, defaultValue: '')
               as String)
           .trim();
 
   bool get isConfigured => accessToken.isNotEmpty;
+
+  /// 已连接账号的显示名（未连接或旧版本连接过但没记过名字时为空串）。
+  String get accountName =>
+      (_preferences.getPref(kBangumiAccountNamePref, defaultValue: '')
+              as String)
+          .trim();
 
   Future<void> setAccessToken(String value) async {
     final String normalized = value.trim();
@@ -170,7 +296,10 @@ class MediaTrackingService {
       await _preferences.setPref(kVideoTrackingReconcileWatermarkPref, 0);
       await _preferences.setPref(kBookTrackingReconcileWatermarkPref, 0);
       await _preferences.setPref(kGameTrackingReconcileWatermarkPref, 0);
+      // 账号名属于旧令牌，换令牌后必须失效，否则 UI 会挂着上一个账号的名字。
+      await _preferences.setPref(kBangumiAccountNamePref, '');
     }
+    _statusRevision.value++;
   }
 
   Future<BangumiUser> validateAccessToken(String token) async {
@@ -180,6 +309,69 @@ class MediaTrackingService {
     } finally {
       api.close();
     }
+  }
+
+  /// 校验令牌 → 落盘 → 记住账号名，一步完成「连接」。
+  ///
+  /// 校验失败时抛出且不写入任何偏好：半连接状态（令牌存了但账号名空着）会让
+  /// UI 显示「已连接」而实际每次同步都 401。
+  Future<BangumiUser> connect(String token) async {
+    final BangumiUser user = await validateAccessToken(token);
+    await setAccessToken(token);
+    final String name = user.nickname.trim().isEmpty
+        ? user.username.trim()
+        : user.nickname.trim();
+    await _preferences.setPref(kBangumiAccountNamePref, name);
+    await _preferences.setPref(kMediaTrackingLastSyncUnauthorizedPref, false);
+    _statusRevision.value++;
+    return user;
+  }
+
+  /// 汇总当前追踪状态（映射 + 待办 + 上次同步结果），给 UI 一次读齐。
+  Future<MediaTrackingStatus> loadStatus() async {
+    final List<MediaTrackingMappingRow> mappings =
+        await _repository.listMappings();
+    // 计数走 COUNT(*) 而不是 allPending().length：后者带展示上限（默认 50 行），
+    // 待办超过上限时会把「待发送」少报成上限值。
+    final int pendingCount = await _repository.pendingCount();
+    final List<PendingTrackingUpdate> pending = await _repository.allPending();
+    return MediaTrackingStatus(
+      configured: isConfigured,
+      accountName: accountName,
+      lastSyncAt: _intPref(kMediaTrackingLastSyncAtPref),
+      lastSucceeded: _intPref(kMediaTrackingLastSyncSucceededPref),
+      lastFailed: _intPref(kMediaTrackingLastSyncFailedPref),
+      unauthorized: _preferences.getPref(
+            kMediaTrackingLastSyncUnauthorizedPref,
+            defaultValue: false,
+          ) ==
+          true,
+      pending: pendingCount,
+      // bookChapter 是卷映射的伴随行（只负责 ep_status），不是用户建立的独立关联，
+      // 与设置页列表同口径地隐藏，避免同一本书显示成两条。
+      mappings: mappings
+          .where((MediaTrackingMappingRow row) =>
+              row.mediaType != TrackingMediaType.bookChapter.value)
+          .toList(growable: false),
+      failures: <MediaTrackingFailure>[
+        for (final PendingTrackingUpdate update in pending)
+          if ((update.outbox.lastError ?? '').trim().isNotEmpty)
+            MediaTrackingFailure(
+              mappingId: update.mapping.id,
+              mediaTitle: update.mapping.mediaTitle,
+              subjectId: update.mapping.subjectId,
+              subjectName: update.mapping.subjectName,
+              attemptCount: update.outbox.attemptCount,
+              nextAttemptAt: update.outbox.nextAttemptAt,
+              error: update.outbox.lastError!.trim(),
+            ),
+      ],
+    );
+  }
+
+  int _intPref(String key) {
+    final Object? stored = _preferences.getPref(key, defaultValue: 0);
+    return stored is int ? stored : int.tryParse('$stored') ?? 0;
   }
 
   Future<List<BangumiSubject>> searchSubjects({
@@ -625,7 +817,41 @@ class MediaTrackingService {
       _syncAgainRequested = false;
       result = await _reconcileAndSync(force: false);
     }
+    await _persistSyncOutcome(result);
     return result;
+  }
+
+  /// 把本轮同步结果落成可见状态。未配置令牌时不写「上次同步」（那一轮什么都没发，
+  /// 记上去会让 UI 谎报同步过），但仍要通知 UI 刷新待办计数。
+  Future<void> _persistSyncOutcome(MediaTrackingSyncResult result) async {
+    if (isConfigured) {
+      try {
+        await _preferences.setPref(
+          kMediaTrackingLastSyncAtPref,
+          DateTime.now().millisecondsSinceEpoch,
+        );
+        await _preferences.setPref(
+          kMediaTrackingLastSyncSucceededPref,
+          result.succeeded,
+        );
+        await _preferences.setPref(
+          kMediaTrackingLastSyncFailedPref,
+          result.failed,
+        );
+        await _preferences.setPref(
+          kMediaTrackingLastSyncUnauthorizedPref,
+          result.unauthorized,
+        );
+      } catch (error, stackTrace) {
+        // fail-open：状态记录失败不能影响已经发出去的同步结果本身。
+        ErrorLogService.instance.log(
+          'MediaTrackingService.persistOutcome',
+          error,
+          stackTrace,
+        );
+      }
+    }
+    _statusRevision.value++;
   }
 
   Future<MediaTrackingSyncResult> _reconcileAndSync({

@@ -10,6 +10,9 @@ import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/media.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
+import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
+import 'package:hibiki/src/media/tracking/media_tracking_repository.dart';
+import 'package:hibiki/src/media/tracking/media_tracking_service.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/home_dashboard_page.dart';
@@ -58,11 +61,14 @@ void main() {
   late AppModel appModel;
   late Directory storeDir;
 
+  /// 提到外层：Bangumi 同步卡的状态全部来自偏好（令牌/账号名/上次同步），测试要能写。
+  late PreferencesRepository prefs;
+
   setUp(() async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     LocaleSettings.setLocale(AppLocale.zhCn);
     db = HibikiDatabase.forTesting(NativeDatabase.memory());
-    final PreferencesRepository prefs = PreferencesRepository(db);
+    prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     storeDir = Directory.systemTemp.createTempSync('hibiki_dashboard');
     platformServices = testPlatformServices();
@@ -1060,6 +1066,143 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.byType(StatContributionHeatmap), findsOneWidget);
+  });
+
+  // BUG-1220：追踪链路原本零可观测（成功即删 outbox 行、失败只进错误日志并退避、
+  // 没建映射就静默返回），用户「看完了没反应」时无处可看。这张卡是唯一出口，
+  // 三种断裂状态各自必须说得出话。
+  group('Bangumi 同步卡（BUG-1220）', () {
+    void useWideSurface(WidgetTester tester) {
+      tester.view.physicalSize = const Size(1400, 1800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+    }
+
+    Future<void> connect({String account = 'Alice'}) async {
+      await prefs.setPref(kBangumiAccessTokenPref, 'token');
+      await prefs.setPref(kBangumiAccountNamePref, account);
+    }
+
+    testWidgets('未连接：明说未连接并给出连接入口', (WidgetTester tester) async {
+      useWideSurface(tester);
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text(t.media_tracking_card_title), findsOneWidget);
+      expect(find.text(t.media_tracking_not_connected), findsOneWidget);
+      expect(
+        find.widgetWithText(FilledButton, t.media_tracking_connect),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('已连接但零关联：说清「所以什么都不会同步」，不是一切正常', (WidgetTester tester) async {
+      useWideSurface(tester);
+      await connect();
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+
+      expect(tester.takeException(), isNull);
+      // 账号名从偏好读回（不只是本次会话的连接结果）。
+      expect(find.text('Alice'), findsOneWidget);
+      // 从未同步必须与「同步过零待办」区分：成功即删 outbox 行，两者否则同形。
+      expect(
+          find.textContaining(t.media_tracking_never_synced), findsOneWidget);
+      expect(find.text(t.media_tracking_unlinked_hint), findsOneWidget);
+    });
+
+    testWidgets('已关联条目列出本地标题 + Bangumi 条目名，并给出打开入口',
+        (WidgetTester tester) async {
+      useWideSurface(tester);
+      await connect();
+      await MediaTrackingRepository(db).saveMapping(
+        mediaType: TrackingMediaType.videoCollection,
+        mediaKey: '8',
+        mediaTitle: '本地动画合集',
+        kind: TrackingKind.anime,
+        subjectId: 88,
+        subjectName: 'Remote anime',
+        progressMode: TrackingProgressMode.episode,
+        progressOffset: 1,
+      );
+
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('本地动画合集'), findsOneWidget);
+      expect(find.textContaining('Remote anime'), findsOneWidget);
+      expect(find.byIcon(Icons.open_in_new), findsOneWidget);
+      expect(
+        find.textContaining(t.media_tracking_linked_count(n: 1)),
+        findsOneWidget,
+      );
+      expect(find.text(t.media_tracking_unlinked_hint), findsNothing);
+    });
+
+    testWidgets('上报失败：退避窗口内也照说失败原因', (WidgetTester tester) async {
+      useWideSurface(tester);
+      await connect();
+      final MediaTrackingRepository repository = MediaTrackingRepository(db);
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.videoCollection,
+        mediaKey: '8',
+        mediaTitle: '失败的动画',
+        kind: TrackingKind.anime,
+        subjectId: 88,
+        subjectName: 'Remote anime',
+        progressMode: TrackingProgressMode.episode,
+        progressOffset: 1,
+      );
+      await repository.enqueueProgress(
+        mediaType: TrackingMediaType.videoCollection,
+        mediaKey: '8',
+        localProgress: 1,
+        completed: false,
+      );
+      final List<PendingTrackingUpdate> due = await repository.dueUpdates();
+      await repository.markFailed(
+        due.single.outbox,
+        const BangumiApiException(statusCode: 500, message: 'boom'),
+      );
+      // 退避后发送侧已看不到这一行——展示侧仍必须说得出原因。
+      expect(await repository.dueUpdates(), isEmpty);
+
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+
+      expect(tester.takeException(), isNull);
+      // 失败原因挂在条目行上，标题只出现一次（不另开「失败」段重复一遍）。
+      expect(find.text('失败的动画'), findsOneWidget);
+      expect(
+        find.textContaining('${t.media_tracking_last_error}: '),
+        findsOneWidget,
+      );
+      expect(find.textContaining('500'), findsOneWidget);
+      expect(find.byIcon(Icons.sync_problem_outlined), findsOneWidget);
+      expect(
+        find.textContaining(t.media_tracking_pending_count(n: 1)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('令牌被拒：给出「重新连接」提示', (WidgetTester tester) async {
+      useWideSurface(tester);
+      await connect();
+      await prefs.setPref(kMediaTrackingLastSyncUnauthorizedPref, true);
+      await prefs.setPref(
+        kMediaTrackingLastSyncAtPref,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text(t.media_tracking_unauthorized), findsOneWidget);
+    });
   });
 }
 
