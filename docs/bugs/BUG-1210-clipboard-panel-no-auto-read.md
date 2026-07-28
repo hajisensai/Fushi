@@ -36,3 +36,17 @@
   这也解释了为什么此前实测每一段（本地库 0.3ms / Dart 解析 3ms / 桥 9ms）都是毫秒级却
   找不到慢的环节。BUG-1204 的首播失败（`token=1 ok=false`）是另一条独立线索，仍待用户
   复现后从日志读到确切 DOMException 名字再定案。
+- **[ ] 未做真机复测（如实留空）**：剪贴板面板主要在 Windows 上用（galgame / 复制文本流），
+  但本轮**没有**在真机上跑通「复制文本 → 面板查词 → 自动朗读」这条链。只有源码层守卫，
+  该链路的运行时依赖是真实 WebView2 + native overlay 通道，widget 测试跑不起来。
+- **审查补记**：初版把朗读调用接在 `_renderPanel` 之后却**漏了 seq 核对**——`update()` 的
+  契约是「每个 await 后核对 latest-wins 序号，过期即弃」（VN 流乱序守卫），`_showPanel` /
+  `raise` 两个分支后都有，唯独朗读这一处没有。后果是被后一句顶掉的旧查词仍会读出**旧词**
+  （屏幕新句、耳朵旧句），而面板正是被动流的主力表面。已补核对 + 守卫。这是收口共享实现时
+  典型的「把一方独有契约一起抹掉」：覆盖窗没有 latest-wins 机制，共享实现里自然也没有。
+- **顺带修复的 CI 红**：`test/lookup/global_lookup_autoread_webview_guard_test.dart` 在
+  develop 上已经红了（`Build Release APK` 的 `Run unit tests` 门）。根因是 BUG-1204 把
+  `global_lookup_host.js` 的回报从 `[token, false]` 改成三参数 `[token, false, reason]`，
+  打破了这条锚在两参数字面量上的既有守卫，而当时的定向测试没覆盖 `test/lookup/`。本 PR 把
+  锚点改成前缀匹配并补断 `FrameNotLoaded`，守的意图（未加载帧必须立刻回 false，不拖满 5s
+  超时）一字未改，实际比原来更严。
