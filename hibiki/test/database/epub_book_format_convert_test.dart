@@ -145,6 +145,40 @@ void main() {
     expect((await db.getEpubBook(key))!.completedAt, isNotNull);
   });
 
+  test('不传 coverPath = 保持原封面不变（绝不静默清空）', () async {
+    final HibikiDatabase db = await seedImageEpub();
+    expect((await db.getEpubBook(key))!.coverPath, 'cover.jpg');
+
+    // 调用方只关心身份格式、没打算动封面：省略 coverPath。
+    // 相邻的 updateEpubBookContentPaths 就是「null = 保持不变」，本方法必须同约定，
+    // 否则漏传一个可选参数就把用户封面抹掉，且没有任何报错。
+    await db.updateEpubBookFormat(
+      key,
+      format: 'manga',
+      epubPath: 'manga.json',
+      chapterCount: 180,
+      chaptersJson: '[]',
+    );
+
+    final EpubBookRow row = (await db.getEpubBook(key))!;
+    expect(row.coverPath, 'cover.jpg',
+        reason: '省略 coverPath 必须保留原封面——写成 Value(coverPath) 会在此变成 null');
+    expect(row.format, 'manga', reason: '其余列照常写穿');
+  });
+
+  test('显式传 coverPath 仍然覆盖（「不变」只适用于省略的情况）', () async {
+    final HibikiDatabase db = await seedImageEpub();
+    await db.updateEpubBookFormat(
+      key,
+      format: 'manga',
+      epubPath: 'manga.json',
+      chapterCount: 180,
+      chaptersJson: '[]',
+      coverPath: 'images/page_0001.png',
+    );
+    expect((await db.getEpubBook(key))!.coverPath, 'images/page_0001.png');
+  });
+
   test('只影响目标行，同库其它书不受牵连', () async {
     final HibikiDatabase db = await seedImageEpub();
     await db.insertEpubBook(

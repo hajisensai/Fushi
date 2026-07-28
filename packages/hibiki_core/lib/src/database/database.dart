@@ -4608,12 +4608,16 @@ class HibikiDatabase extends _$HibikiDatabase {
   /// 零悬挂引用。变的只是「这本书用哪个阅读器打开、产物在哪」：
   /// - [format]：`'epub'` | `'pdf'` | `'manga'`（阅读器路由的唯一真相源）；
   /// - [epubPath]：漫画指向 `manga.json`，书指向原始 `.epub`/`.pdf` 文件名；
-  /// - [coverPath]：漫画取首页页图相对路径，书取原封面；
+  /// - [coverPath]：漫画取首页页图相对路径，书取原封面。**null = 保持原封面不变**
+  ///   （与相邻的 [updateEpubBookContentPaths] 同一约定）——转化从不以「清空封面」
+  ///   为目的，若用 `Value(null)` 写穿，调用方一旦漏传就把用户封面静默抹掉；
   /// - [chapterCount] / [chaptersJson]：漫画是页数 + `'[]'`，EPUB 是章数 + 每章
   ///   字数数组（转回书时必须**重新解析**原文件得到，转漫画时被覆盖会丢，故反向
   ///   转化是重建而非撤销）；
   /// - [mangaReadingMode]：仅 `format='manga'` 的行有意义，转成非漫画时必须清 null
-  ///   （表约定：其它书身份恒 null）。
+  ///   （表约定：其它书身份恒 null）。**这一列 null 是有意义的取值**（漫画上 =
+  ///   「跟随页图比例自动判定」，非漫画上 = 唯一合法值），故与 [coverPath] 相反，
+  ///   必须无条件写穿，不能沿用「null = 不变」。
   ///
   /// 单条 UPDATE，不动 `extractDir`（三种格式共用同一个书目录）。
   Future<void> updateEpubBookFormat(
@@ -4631,7 +4635,7 @@ class HibikiDatabase extends _$HibikiDatabase {
       epubPath: Value(epubPath),
       chapterCount: Value(chapterCount),
       chaptersJson: Value(chaptersJson),
-      coverPath: Value(coverPath),
+      coverPath: coverPath == null ? const Value.absent() : Value(coverPath),
       mangaReadingMode: Value(mangaReadingMode),
     ));
   }
