@@ -194,6 +194,16 @@ jobs:
         npm install
         npm test
 
+    # 浏览器扩展的 JS 行为测试（node:test + vm，零依赖，真加载 content.js / popup.js
+    # 跑断言）。这些测试一直存在但**从来没有人执行过**：上面那步的 working-directory 是
+    # test/js，`node --test` 只会跑那个目录下的 .test.mjs，tools/browser-extension/*.test.js
+    # 全部落在门外。于是「隐藏字幕不得用 display:none」「IME 组字中不得制卡」这类真行为
+    # 守卫写了也白写，改坏了 CI 照样绿。接进来时本地实测 171 个用例全绿，故不会把既有
+    # PR 的 CI 变红。
+    - name: Run browser-extension JS behavior tests
+      working-directory: tools/browser-extension
+      run: node --test *.test.js
+
     # The release build (minify/R8/proguard + C++23 native) is the variant that
     # ships; without a keystore it was never exercised on PRs, so R8/keep-rule
     # regressions stayed invisible until a tagged release (HBK-AUDIT-026).
