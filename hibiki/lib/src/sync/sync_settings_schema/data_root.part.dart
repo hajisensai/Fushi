@@ -18,7 +18,7 @@ enum DataRootTargetRejection {
   containsExecutable,
 }
 
-/// 纯函数：在不触碰文件系统搬移的前提下判断 [newDataRoot] 是否可作为迁移目标。
+/// 纯函数：在不触碰文件系统搬移的前提下判断 [target] 是否可作为迁移目标。
 /// [existsAndHasFiles] 注入目录是否存在且含文件的判定（生产传真实 FS 探测，测试传
 /// 桩），保持本函数无 IO 依赖、可纯测。
 ///
@@ -27,20 +27,20 @@ enum DataRootTargetRejection {
 /// 非白名单子目录（典型：`Documents\Hibiki`，即用户把散落的 16 个目录收进自己的子目录）
 /// 是安全的，不再按 [DataRootTargetRejection.insideCurrentRoot] 一刀切拒绝。
 DataRootTargetRejection? validateDataRootTarget({
-  required String newDataRoot,
+  required DataRootMigrationTarget target,
   required String oldDocumentsRoot,
   required String oldSupportRoot,
   required bool Function(String absolutePath) existsAndHasFiles,
   String? executablePath,
   bool sharedDocumentsRoot = false,
 }) {
-  final String canonNew = p.canonicalize(newDataRoot);
+  final String canonNew = p.canonicalize(target.pickedPath);
   final String canonDocs = p.canonicalize(oldDocumentsRoot);
   final String canonSupport = p.canonicalize(oldSupportRoot);
   final bool nestedInSharedDocuments = sharedDocumentsRoot &&
       AppPaths.isSafeNestedTargetInSharedDocuments(
         sharedDocumentsRoot: oldDocumentsRoot,
-        newDataRoot: newDataRoot,
+        newDataRoot: target.pickedPath,
       );
   if (canonNew == canonDocs ||
       canonNew == canonSupport ||
@@ -55,9 +55,14 @@ DataRootTargetRejection? validateDataRootTarget({
       return DataRootTargetRejection.containsExecutable;
     }
   }
-  final (Directory docs, Directory support) =
-      AppPaths.rootsForDataRoot(newDataRoot);
-  if (existsAndHasFiles(docs.path) || existsAndHasFiles(support.path)) {
+  if (existsAndHasFiles(target.documentsRoot.path)) {
+    return DataRootTargetRejection.targetNotEmpty;
+  }
+  // BUG-1188：默认位置的 support 根就是平台固定落点——里面必然躺着
+  // `shared_preferences.json`（它刻意不参与搬移），甚至就是当前 support 根本身。这里这个
+  // 粗粒度预检不认识 prefs 文件族，一检必误报，故交给引擎的 prefs-aware 校验
+  // （`DataRootMigrator._validateTarget`，会忽略顶层 prefs、但仍拒绝任何别的残留）。
+  if (!target.isDefaultLocation && existsAndHasFiles(target.supportRoot.path)) {
     return DataRootTargetRejection.targetNotEmpty;
   }
   return null;
@@ -161,11 +166,36 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     } catch (_) {
       sharedDocumentsRoot = true;
     }
+    // BUG-1188：把用户挑的目录解析成迁移目标。挑中默认位置（`<Documents>\Hibiki` 或
+    // `<Documents>\Hibiki\data`）时归一化成「与全新安装同形」：documents 根落
+    // `<Documents>\Hibiki\data`、DB 留在平台固定落点。旧实现无条件按 `<picked>/documents`
+    // + `<picked>/support` 派生，用户照文档指引整理完就得到第三种布局（DB 还被拖进文档目录）。
+    final DataRootMigrationTarget target;
+    try {
+      final Directory defaultDocs =
+          await AppPaths.defaultLocationDocumentsRoot();
+      final Directory platformSupport = await getApplicationSupportDirectory();
+      target = resolveDataRootMigrationTarget(
+        pickedRoot: picked,
+        defaultDocumentsRoot: defaultDocs.path,
+        platformSupportRoot: platformSupport.path,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .logFatal('DataRootMigration.resolveTarget', e, stack);
+      if (mounted) {
+        _showSnackBar(
+          context,
+          t.data_storage_migrate_failed(message: e.toString()),
+        );
+      }
+      return;
+    }
     if (!mounted) return;
 
     // 触发前纯校验：自我迁移 / 目标非空，直接报错，不进确认弹窗。
     final DataRootTargetRejection? rejection = validateDataRootTarget(
-      newDataRoot: picked,
+      target: target,
       oldDocumentsRoot: oldDocs,
       oldSupportRoot: oldSupport,
       existsAndHasFiles: _dirExistsAndHasFiles,
@@ -179,12 +209,16 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       return;
     }
 
-    final bool confirmed = await _confirmMigrate();
+    final bool confirmed = await _confirmMigrate(target);
     if (!confirmed || !mounted) return;
 
+    // 默认位置不需要 macOS 安全域书签（平台固定落点 + 应用自己的 Documents 容器，沙箱本就
+    // 可访问）；提交时反而要把可能存在的旧书签清掉。
     final String? macOSBookmark;
     try {
-      macOSBookmark = await MacOSDataRootAccess.createBookmarkForPath(picked);
+      macOSBookmark = target.isDefaultLocation
+          ? null
+          : await MacOSDataRootAccess.createBookmarkForPath(picked);
     } catch (e, stack) {
       ErrorLogService.instance
           .logFatal('DataRootMigration.createBookmark', e, stack);
@@ -207,34 +241,15 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       final DataRootMigrationRequest req = DataRootMigrationRequest(
         oldDocumentsRoot: Directory(oldDocs),
         oldSupportRoot: Directory(oldSupport),
-        newDataRoot: picked,
+        target: target,
         closeResources: () => _closeRuntimeResources(appModel),
-        writeDataRootPref: (String newRoot) async {
+        commitLocation: (DataRootMigrationTarget t) async {
           final SharedPreferences sp = await SharedPreferences.getInstance();
-          final String? previousBookmark =
-              sp.getString(MacOSDataRootAccess.dataRootBookmarkPrefKey);
-          final bool bookmarkStored =
-              await MacOSDataRootAccess.storeBookmark(sp, macOSBookmark);
-          if (!bookmarkStored) {
-            throw const DataRootMigrationException('写入 macOS 数据根授权失败');
+          if (t.isDefaultLocation) {
+            await _commitDefaultLocation(sp);
+            return;
           }
-          try {
-            final bool rootStored =
-                await sp.setString(AppPaths.dataRootPrefKey, newRoot);
-            if (!rootStored) {
-              throw const DataRootMigrationException('写入新数据根设置失败');
-            }
-          } catch (e) {
-            final bool bookmarkRestored =
-                await MacOSDataRootAccess.restoreBookmark(sp, previousBookmark);
-            if (!bookmarkRestored) {
-              throw DataRootMigrationException(
-                '写入新数据根设置失败，且恢复旧授权失败',
-                cause: e,
-              );
-            }
-            throw DataRootMigrationException('写入新数据根设置失败', cause: e);
-          }
+          await _commitCustomRoot(sp, t.dataRootPrefValue!, macOSBookmark);
         },
         // 跨盘复制进度回灌到遮罩进度条（同盘 rename 不触发，遮罩显示不确定进度）。
         onProgress: (int copied, int total) =>
@@ -272,6 +287,92 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       );
     } finally {
       if (mounted) setState(() => _migrating = false);
+    }
+  }
+
+  /// 自定义数据根的提交：存 macOS 安全域书签 + 写 `data_root`。任一步失败复原旧书签并抛错
+  /// （引擎据此整次回滚）。行为与 BUG-1188 之前逐字节一致。
+  static Future<void> _commitCustomRoot(
+    SharedPreferences sp,
+    String newRoot,
+    String? macOSBookmark,
+  ) async {
+    final String? previousBookmark =
+        sp.getString(MacOSDataRootAccess.dataRootBookmarkPrefKey);
+    final bool bookmarkStored =
+        await MacOSDataRootAccess.storeBookmark(sp, macOSBookmark);
+    if (!bookmarkStored) {
+      throw const DataRootMigrationException('写入 macOS 数据根授权失败');
+    }
+    try {
+      final bool rootStored =
+          await sp.setString(AppPaths.dataRootPrefKey, newRoot);
+      if (!rootStored) {
+        throw const DataRootMigrationException('写入新数据根设置失败');
+      }
+    } catch (e) {
+      final bool bookmarkRestored =
+          await MacOSDataRootAccess.restoreBookmark(sp, previousBookmark);
+      if (!bookmarkRestored) {
+        throw DataRootMigrationException(
+          '写入新数据根设置失败，且恢复旧授权失败',
+          cause: e,
+        );
+      }
+      throw DataRootMigrationException('写入新数据根设置失败', cause: e);
+    }
+  }
+
+  /// BUG-1188：归一化到**默认位置**的提交：把 `documents_layout` 锚成 nested、清掉
+  /// `data_root` 与 macOS 书签。
+  ///
+  /// 两个键必须**同时**生效，否则下次启动必然解析到错误的根：
+  ///  - 只锚 nested、`data_root` 还在 ⇒ 仍走自定义根分支，指向已经搬空的旧根。
+  ///  - 只清 `data_root`、锚点还是 `flat` ⇒ documents 根解析回共享 `Documents`，而数据
+  ///    已经在 `Hibiki/data` 里 = 书库/有声书/词典资源在 UI 上集体消失。
+  /// 故任一步失败就把已改的键全部复原并抛错，由引擎回滚整次迁移。
+  static Future<void> _commitDefaultLocation(SharedPreferences sp) async {
+    final String? previousLayout =
+        sp.getString(AppPaths.documentsLayoutPrefKey);
+    final String? previousRoot = sp.getString(AppPaths.dataRootPrefKey);
+    final String? previousBookmark =
+        sp.getString(MacOSDataRootAccess.dataRootBookmarkPrefKey);
+    if (!await sp.setString(
+        AppPaths.documentsLayoutPrefKey, AppPaths.documentsLayoutNested)) {
+      throw const DataRootMigrationException('写入数据位置布局设置失败');
+    }
+    try {
+      if (!await sp.remove(AppPaths.dataRootPrefKey)) {
+        throw const DataRootMigrationException('清除自定义数据根设置失败');
+      }
+      if (!await MacOSDataRootAccess.restoreBookmark(sp, null)) {
+        throw const DataRootMigrationException('清除 macOS 数据根授权失败');
+      }
+    } catch (e) {
+      await _restorePrefString(
+          sp, AppPaths.documentsLayoutPrefKey, previousLayout);
+      await _restorePrefString(sp, AppPaths.dataRootPrefKey, previousRoot);
+      await MacOSDataRootAccess.restoreBookmark(sp, previousBookmark);
+      if (e is DataRootMigrationException) rethrow;
+      throw DataRootMigrationException('写入默认数据位置设置失败', cause: e);
+    }
+  }
+
+  /// 把一个字符串 pref 复原到 [previous]（null 表示原本就没有这个键 → 删掉）。
+  /// 提交失败回退用，尽力而为：复原本身失败只记日志（外层已在抛错回滚整次迁移）。
+  static Future<void> _restorePrefString(
+    SharedPreferences sp,
+    String key,
+    String? previous,
+  ) async {
+    try {
+      if (previous == null) {
+        await sp.remove(key);
+      } else {
+        await sp.setString(key, previous);
+      }
+    } catch (e) {
+      debugPrint('DataRoot migrate: 复原 pref $key 失败: $e');
     }
   }
 
@@ -399,7 +500,12 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
         appModel.failDataRootMigration(message);
       });
 
-  Future<bool> _confirmMigrate() async {
+  /// BUG-1188：确认弹窗里把**解析后的**两个根原样列出来。挑中默认位置时目标会被归一化
+  /// （`<Documents>\Hibiki` → 内容落 `<Documents>\Hibiki\data`、DB 留在平台固定落点），
+  /// 用户必须在按下确认前就看到数据到底会去哪，而不是重启后自己找。
+  Future<bool> _confirmMigrate(DataRootMigrationTarget target) async {
+    final String body = '${t.data_storage_change_confirm_body}\n\n'
+        '${target.documentsRoot.path}\n${target.supportRoot.path}';
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext ctx) {
@@ -426,7 +532,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
               tokens.spacing.card,
               tokens.spacing.card,
             ),
-            body: Text(t.data_storage_change_confirm_body),
+            body: Text(body),
             footer: Wrap(
               alignment: WrapAlignment.end,
               spacing: tokens.spacing.gap,

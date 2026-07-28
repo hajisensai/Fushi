@@ -117,7 +117,8 @@ class AppPaths {
   static const String _dataRootSupportChild = 'support';
 
   /// BUG-1115：**默认** documents 根的布局键（SharedPreferences，与 [dataRootPrefKey]
-  /// 同一通道，DB 打开前可读）。值只有两个：[_layoutFlat] / [_layoutNested]。
+  /// 同一通道，DB 打开前可读）。值只有两个：[documentsLayoutFlat] /
+  /// [documentsLayoutNested]。
   ///
   /// 一经写入就是本机的**永久锚点**，不再重新探测：布局若随「Documents 里此刻有没有某个
   /// 目录」漂移，同一台机器两次启动就可能解析出两个不同的内容根 = 用户书库凭空消失。
@@ -125,12 +126,15 @@ class AppPaths {
 
   /// 历史扁平布局：documents 根 = 平台 `Documents` **本身**，16 个 Hibiki 子目录直接摊在
   /// 用户文档根下。老安装锚定于此（零迁移，见 [_resolveDefaultDocumentsRoot]）。
-  static const String _layoutFlat = 'flat';
+  static const String documentsLayoutFlat = 'flat';
 
   /// 当前默认布局：documents 根 = `<Documents>/Hibiki/data`（Hibiki 专属容器）。
-  static const String _layoutNested = 'nested';
+  ///
+  /// BUG-1188：迁移把数据归一化到默认位置时，提交阶段必须把这个锚点写成本值——否则下次
+  /// 启动仍按 `flat` 把 documents 根解析回共享 `Documents`，而数据已经在 `Hibiki/data` 里。
+  static const String documentsLayoutNested = 'nested';
 
-  /// [_layoutNested] 下平台 Documents 到 documents 根的相对路径段。
+  /// [documentsLayoutNested] 下平台 Documents 到 documents 根的相对路径段。
   ///
   /// 为什么是 `Hibiki/data` 而不是 `Hibiki`：`<Documents>/Hibiki` 已经是**用户可见导出
   /// 目录**（`DesktopDirectoryService.getHibikiExportDirectory` /
@@ -254,6 +258,23 @@ class AppPaths {
     final Directory platformDocuments =
         await getApplicationDocumentsDirectory();
     if (await _useLegacyFlatDocumentsRoot()) return platformDocuments;
+    return defaultLocationDocumentsRoot();
+  }
+
+  /// BUG-1188：**「默认位置」这个概念本身**的 documents 根 = `<Documents>/Hibiki/data`，
+  /// 与本机布局锚点无关。
+  ///
+  /// [_resolveDefaultDocumentsRoot] 会因老安装锚定 [documentsLayoutFlat] 而返回平台
+  /// `Documents`；而「用户在目录选择器里挑的就是默认位置吗」这个判断问的是**全新安装会落
+  /// 在哪**，两者在老安装上并不相等。迁移目标解析（`resolveDataRootMigrationTarget`）必须
+  /// 用本函数，否则老安装永远解析不出「默认位置」这个目标。
+  ///
+  /// [hibikiTestDirectory] 测试分支仍优先（与三个 `_resolve*` 的顺序铁律一致）。
+  static Future<Directory> defaultLocationDocumentsRoot() async {
+    final Directory? test = hibikiTestDirectory('app-documents');
+    if (test != null) return test;
+    final Directory platformDocuments =
+        await getApplicationDocumentsDirectory();
     return Directory(p.joinAll(<String>[
       platformDocuments.path,
       ...defaultDocumentsChildSegments,
@@ -273,7 +294,7 @@ class AppPaths {
     final bool? decided = _legacyFlatDocumentsRoot;
     if (decided != null) return decided;
     final SharedPreferences? prefs = await _prefsOrNull();
-    return prefs?.getString(documentsLayoutPrefKey) != _layoutNested;
+    return prefs?.getString(documentsLayoutPrefKey) != documentsLayoutNested;
   }
 
   /// 判定 + 固化默认布局。**唯一做探测 IO 的地方**，只由 [resolve] 在启动期调用一次；
@@ -289,8 +310,8 @@ class AppPaths {
     if (_legacyFlatDocumentsRoot != null) return;
     final SharedPreferences? prefs = await _prefsOrNull();
     final String? stored = prefs?.getString(documentsLayoutPrefKey);
-    if (stored == _layoutFlat || stored == _layoutNested) {
-      _legacyFlatDocumentsRoot = stored == _layoutFlat;
+    if (stored == documentsLayoutFlat || stored == documentsLayoutNested) {
+      _legacyFlatDocumentsRoot = stored == documentsLayoutFlat;
       return;
     }
     final bool flat = await _existingInstallHasDatabase();
@@ -298,8 +319,8 @@ class AppPaths {
     // 固化锚点（best-effort）。写失败只意味着下次启动再探一次，不改变本次结果——而下次
     // 探测的判据（hibiki.db 是否存在）此时只会更成立，不会翻转成新布局。
     try {
-      await prefs?.setString(
-          documentsLayoutPrefKey, flat ? _layoutFlat : _layoutNested);
+      await prefs?.setString(documentsLayoutPrefKey,
+          flat ? documentsLayoutFlat : documentsLayoutNested);
     } catch (e) {
       debugPrint('AppPaths: 固化 documents 布局失败（下次启动重新判定）: $e');
     }
@@ -355,7 +376,7 @@ class AppPaths {
 
   /// TODO-1226：documents 根顶层**属于 Hibiki 的目录名全集**（数据根迁移白名单）。
   ///
-  /// **老安装（[_layoutFlat]）** 的 documents 根 = 整个用户 `Documents`（共享目录，含
+  /// **老安装（[documentsLayoutFlat]）** 的 documents 根 = 整个用户 `Documents`（共享目录，含
   /// 用户自己的文件和 shell junction）。迁移引擎对共享根**只搬这份白名单里的顶层项**，
   /// 绝不整树搬移 / 整树删除用户 `Documents`。BUG-1115 之后新装走
   /// `<Documents>/Hibiki/data`（Hibiki 专属根，迁移走整树语义），白名单对它不生效——但

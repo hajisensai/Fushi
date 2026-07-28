@@ -74,6 +74,13 @@
   - 仅改「默认根」的落点，**不做任何自动迁移**：启动期搬整个书库既慢又可能被文件锁半途
     打断。老用户要整理，走设置 →「数据存储位置」选 `Documents\Hibiki`（迁移引擎会连 DB 里
     的绝对路径一起 rebase），或任意其它目录。
+    ⚠️ **BUG-1188 更正**：这条指引在当时会产出**第三种布局**——`Documents\Hibiki\documents`
+    + `Documents\Hibiki\support`，且把 `hibiki.db` 一起搬进文档目录，与新装的
+    `Documents\Hibiki\data` + `%APPDATA%` 不同形。BUG-1188 已把「挑中默认位置」归一化：现在选
+    `Documents\Hibiki`（或 `Documents\Hibiki\data`）得到的就是**与全新安装逐字节同形**的结果
+    ——内容落 `Documents\Hibiki\data`、DB 留在 `%APPDATA%` 不动、`data_root` 被清掉并把
+    `documents_layout` 锚成 `nested`。选**其它**目录仍是自定义数据根语义（`<root>/documents`
+    + `<root>/support`，DB 随之搬走），未变。
   - `ErrorLogService` 的 `error_log.txt` / `*_breadcrumb.txt` 仍直连平台 `Documents`
     （刻意不随数据根走，搬走会让服务失去续写目标），本次未动——文档根下仍会看到这两类
     **文件**（不是目录）。要一并收编需单独评估旧日志的续写衔接。
@@ -85,3 +92,4 @@
   - **本机现有安装（含报告者本人）会被判为老安装、继续用扁平布局**——这是刻意的零破坏
     设计。要立刻看到文档根变干净，走设置 →「数据存储位置」选 `Documents\Hibiki`（本次
     放开的正是这条路径），迁移引擎会把 16 个目录搬过去并 rebase DB 里的绝对路径。
+    BUG-1188 之后这条路径的产物就是新装形态本身（`Documents\Hibiki\data`，DB 不动）。
