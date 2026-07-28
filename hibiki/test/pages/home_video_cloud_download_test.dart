@@ -17,7 +17,9 @@ import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/sync/cloud_remote_video_client.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/interconnect_download_manager.dart';
+import 'package:hibiki/src/sync/remote_library_source.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
+import 'package:hibiki/src/sync/sync_backend.dart' show SyncBackendType;
 import 'package:hibiki/src/sync/video_manifest.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -263,6 +265,13 @@ class _FakeCloudRemoteVideoClient implements CloudRemoteVideoClient {
 
   @override
   SyncAssetStore get backend => throw UnimplementedError();
+
+  @override
+  SyncBackendType get backendType => SyncBackendType.webDav;
+
+  @override
+  String get remoteLibrarySourceId =>
+      cloudRemoteLibrarySourceId(backendType.name);
 
   @override
   Future<List<RemoteVideoManifestEntry>> listRemoteVideoManifest() async =>

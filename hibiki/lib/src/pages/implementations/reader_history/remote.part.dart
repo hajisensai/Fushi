@@ -29,6 +29,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     final String rootFolderId = await backend.findOrCreateRootFolder();
     return CloudRemoteBookClient(
       backend: backend,
+      backendType: type,
       rootFolderId: rootFolderId,
     );
   }
@@ -61,7 +62,10 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
       // 打一轮网络，TTL 内直接复用；首页 dashboard 刚拉过的同一份列表也在这里命中。
       // 缓存只包住「问对端要清单」这一步，下面的本地库查询与去重仍每次照跑，所以本地
       // 新增/删除的书立即反映在混排网格里。
+      // 槽 = 来源身份 + 域（BUG-1202）：互联对端与云盘书库都往 books 域写，共用一个
+      // 槽会让「关掉互联开关 / 换云盘后端」之后 TTL 内看到上一个来源的书。
       final List<RemoteBookInfo> books = await _remoteCache.read(
+        sourceId: client.remoteLibrarySourceId,
         key: RemoteLibraryCacheKeys.books,
         forceRefresh: forceRefresh,
         fetch: client.listRemoteBooks,
@@ -656,6 +660,7 @@ extension _ReaderHistoryRemote on _ReaderHibikiHistoryPageState {
     try {
       // BUG-1180：与书清单同缓存策略——切回 tab 不再重打这一枪。
       all = await _remoteCache.read(
+        sourceId: client.remoteLibrarySourceId,
         key: RemoteLibraryCacheKeys.audiobooks,
         forceRefresh: forceRefresh,
         fetch: client.listRemoteAudiobooks,

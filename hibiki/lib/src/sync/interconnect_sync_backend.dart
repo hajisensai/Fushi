@@ -7,6 +7,7 @@ import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
 import 'package:hibiki/src/sync/remote_cover_fetcher.dart';
+import 'package:hibiki/src/sync/remote_library_source.dart';
 import 'package:hibiki/src/sync/remote_video_client.dart';
 import 'package:hibiki/src/utils/misc/resumable_downloader.dart';
 import 'package:hibiki/src/sync/sync_asset_store.dart';
@@ -155,6 +156,14 @@ class InterconnectSyncBackend extends SyncBackend
   /// 上一次 [_loadConfig] 读到的配置身份（见 [_sessionSignature]）。BUG-1183：用它
   /// 判断 `restoreAuth` 是否真需要作废已解析的地址。null = 还没读过配置。
   String? _configSignature;
+
+  /// 远端清单缓存里的来源身份（BUG-1202）：互联对端 live 库。
+  ///
+  /// 不随「当前是哪一台对端」变化——本类是单例，换对端由
+  /// [sessionIdentityRevision] 驱动 `invalidateAll()`，那是唯一权威判据。这个 id
+  /// 只回答「这份清单是问互联要的，不是问云盘要的」。
+  @override
+  String get remoteLibrarySourceId => kInterconnectRemoteLibrarySourceId;
 
   /// 对端身份（地址集合 / 钉扎指纹 / 令牌）真的变了时自增。
   ///

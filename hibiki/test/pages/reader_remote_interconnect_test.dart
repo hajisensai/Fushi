@@ -16,6 +16,7 @@ import 'package:hibiki/src/pages/implementations/home_page.dart'
 import 'package:hibiki/src/pages/implementations/reader_hibiki_history_page.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
 import 'package:hibiki/src/sync/remote_book_client.dart';
+import 'package:hibiki/src/sync/remote_library_source.dart';
 import 'package:hibiki/src/sync/ttu_filename.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -651,6 +652,9 @@ class _FakeRemoteBookClient implements RemoteBookClient {
 
   @override
   RemoteBookSourceKind get remoteSourceKind => sourceKind;
+
+  @override
+  String get remoteLibrarySourceId => kInterconnectRemoteLibrarySourceId;
 
   // BUG-992：listRemoteBooks 调用次数（观测「切回书架 tab 自动重拉远端」）。
   int listRemoteBooksCalls = 0;

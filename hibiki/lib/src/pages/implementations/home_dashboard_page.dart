@@ -549,15 +549,21 @@ class _HomeDashboardPageState
       // ② 三个请求并行而不是串行（原本是三次完整往返首尾相接）。
       final RemoteLibraryCache cache = ref.read(remoteLibraryCacheProvider);
       final List<Object> results = await Future.wait<Object>(<Future<Object>>[
+        // 首页只走互联（上面已 return 掉未启用的情况），来源身份仍从 backend 自己
+        // 取而不是写字面量——书/视频两个域与书架、视频页同槽命中，靠的就是双方报出
+        // 同一个 id（BUG-1202）。
         cache.read<List<RemoteBookInfo>>(
+          sourceId: backend.remoteLibrarySourceId,
           key: RemoteLibraryCacheKeys.books,
           fetch: backend.listRemoteBooks,
         ),
         cache.read<List<RemoteVideoInfo>>(
+          sourceId: backend.remoteLibrarySourceId,
           key: RemoteLibraryCacheKeys.videos,
           fetch: backend.listRemoteVideos,
         ),
         cache.read<List<RemoteActivityEvent>>(
+          sourceId: backend.remoteLibrarySourceId,
           key: RemoteLibraryCacheKeys.activity(200),
           fetch: () => backend.listRemoteActivity(limit: 200),
         ),

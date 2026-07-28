@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1162 条。点号进各自文件。
+> 共 1163 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1202](bugs/BUG-1202-remote-library-cache-source-crosstalk.md) | ✅ | ✅ | 互联与云盘共用远端清单缓存槽，换来源后看到上一个来源的条目 |
 | [BUG-1201](bugs/BUG-1201-sasasa-unity-resource-pcm-not-published.md) | ✅ | ✅ | Sasasa Unity 资源音频已解码但未写入音频环 |
 | [BUG-1200](bugs/BUG-1200-sasasa-unity-textmesh-glyphs.md) | ✅ | ✅ | Sasasa Unity TextMesh 对白被拆成单字 |
 | [BUG-1199](bugs/BUG-1199-epub-htm-mime-blank.md) | ✅ | ✅ | EPUB 章节用 .htm 扩展名时整本渲染空白（MIME 表缺 htm/xht） |

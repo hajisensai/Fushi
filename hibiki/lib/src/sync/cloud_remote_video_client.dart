@@ -6,7 +6,9 @@ import 'package:hibiki/src/sync/hibiki_library_host_service.dart'
 import 'package:hibiki/src/sync/remote_video_client.dart'
     show RemoteVideoSource;
 import 'package:hibiki/src/sync/sync_asset_store.dart';
-import 'package:hibiki/src/sync/sync_backend.dart' show SyncBackendError;
+import 'package:hibiki/src/sync/remote_library_source.dart';
+import 'package:hibiki/src/sync/sync_backend.dart'
+    show SyncBackendError, SyncBackendType;
 import 'package:hibiki/src/sync/sync_orchestrator.dart'
     show kSyncVideosNamespace, kSyncVideosManifestName;
 import 'package:hibiki/src/sync/video_manifest.dart';
@@ -25,10 +27,19 @@ import 'package:hibiki/src/sync/video_manifest.dart';
 /// 解混淆装饰层），否则下载下来的视频/封面是混淆字节。仅需资产存取能力，故按更窄的
 /// [SyncAssetStore] 契约声明依赖（`SyncBackend` 是其子类型，直接传入即可）。
 class CloudRemoteVideoClient implements RemoteVideoSource {
-  CloudRemoteVideoClient({required this.backend});
+  CloudRemoteVideoClient({required this.backend, required this.backendType});
 
   /// 远端资产存取层；务必是 `resolveSyncBackend` 的产物（带解混淆装饰层）。
   final SyncAssetStore backend;
+
+  /// [backend] 背后的云盘类型。只用于把清单缓存分槽——换后端类型（Drive→WebDAV）
+  /// 之后两边的 `__videos__/` 内容毫无关系，必须落在不同槽里（BUG-1202）。
+  /// [SyncAssetStore] 本身不带身份，所以由构造方（已经查过 `getBackendType()`）传入。
+  final SyncBackendType backendType;
+
+  @override
+  String get remoteLibrarySourceId =>
+      cloudRemoteLibrarySourceId(backendType.name);
 
   /// 读 `__videos__/videos.json` 目录清单，返回全部云视频条目（uid/title/大小/
   /// importedAt/videoAsset/coverAsset）。命名空间或清单缺失（从未有设备上传）→ 空表。
