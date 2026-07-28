@@ -519,6 +519,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         result: result,
         failure: state.injectorFailure,
         lastError: state.lastError,
+        injectorDetail: state.injectorDetail,
       );
       if (message != null) HibikiToast.show(msg: message);
       if (!result.launched) return;

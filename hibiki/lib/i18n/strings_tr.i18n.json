@@ -2734,5 +2734,6 @@
   "media_tracking_open_subject": "Open on Bangumi",
   "media_tracking_manage_links": "Manage links",
   "media_tracking_last_error": "Last error",
-  "shortcut_action_popup_mine_entry": "Create card (mine)"
+  "shortcut_action_popup_mine_entry": "Create card (mine)",
+  "game_hook_reason_protocol_mismatch": "The capture helper version does not match Hibiki. Update or reinstall the galgame capture helper."
 }

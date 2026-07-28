@@ -692,6 +692,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         result: result,
         failure: state.injectorFailure,
         lastError: state.lastError,
+        injectorDetail: state.injectorDetail,
       );
       if (message != null) HibikiToast.show(msg: message);
     } finally {

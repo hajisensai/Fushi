@@ -1784,18 +1784,29 @@ void FlutterWindow::RegisterVoiceHookChannel() {
         };
         if (method == "open") {
           const uint32_t pid = read_pid();
-          const hibiki::VoiceHookStatus s =
+          const hibiki::VoiceHookOpenResult opened =
               hibiki::VoiceHookReader::Instance().Open(pid);
-          // open 成功但 hook 未就绪也不算错误（调用方轮询 status）：只有映射不存在
-          // （s 全零且 !hooked）才回 error，让 Dart 侧降级。
-          if (!s.hooked && !s.ok) {
+          // open 成功但 hook 未就绪**不是错误**（调用方轮询 status）。旧判据
+          // `!s.hooked && !s.ok` 把「映射已建、DLL 还没置 hooked 位」这段启动窗口
+          // 误报成「共享内存不存在」，Dart 侧据此立刻降级回 loopback——引擎 hook 明明
+          // 装得上，只是慢了一拍。真实失败的唯一判据是 Open 自己报的 error。
+          if (!opened.ok()) {
             result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                // 机器可读 token：Dart 侧据此归类成可执行处置（要管理员 / 重开游戏 /
+                // 更新 helper），不再一律说「重启 Hibiki」。
                 {flutter::EncodableValue("error"),
                  flutter::EncodableValue(
-                     std::string("voice hook shared memory not found"))}}));
+                     std::string(hibiki::VoiceHookOpenErrorToken(
+                         opened.error)))},
+                // 一手事实（win32 码 / 映射名 / 双方版本对照），原样进用户可见诊断。
+                {flutter::EncodableValue("detail"),
+                 flutter::EncodableValue(opened.detail)},
+                {flutter::EncodableValue("win32"),
+                 flutter::EncodableValue(
+                     static_cast<int>(opened.win32_error))}}));
             return;
           }
-          result->Success(flutter::EncodableValue(status_map(s)));
+          result->Success(flutter::EncodableValue(status_map(opened.status)));
           return;
         }
         if (method == "status") {

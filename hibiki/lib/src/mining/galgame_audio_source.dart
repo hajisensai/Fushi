@@ -252,6 +252,12 @@ enum GalHookInjectorFailure {
   /// injector 已宣告 hooked，但共享内存打不开（native 通道不可用）。
   sharedMemoryUnavailable,
 
+  /// 共享内存打开了，但契约版本与本体不一致：helper 与 Hibiki 版本漂开。
+  ///
+  /// 与 [sharedMemoryUnavailable] 分开是因为**处置相反**：后者重试/重开游戏有可能好，
+  /// 前者重启多少次都不会好，必须更新或重装捕获组件（BUG-1216）。
+  protocolMismatch,
+
   /// injector 已 hooked、共享内存已开，但超时内既没有 PCM 格式也没有文本 hook。
   handshakeTimeout,
 
@@ -361,6 +367,105 @@ GalHookInjectorFailure classifyGalHookInjectorFailure(
     return GalHookInjectorFailure.steamTimeout;
   }
   return fallback;
+}
+
+/// native 诊断压成一行可展示的证据：`exit=<码> <stderr 最后一行非空内容>`。
+///
+/// 取**最后一行**：injector 失败即退，最后写出的那行就是它停下的地方；早期的
+/// `[luna] ... 已注入` 之类是进度而非结论。读侧失败（共享内存打不开）的一手事实也由
+/// [EngineHookGalAudioSource] 追加在末行，同样落进这里。长诊断从尾部截断（保留结论侧）。
+String galHookDiagnosticsDetail(GalHookInjectorDiagnostics diagnostics) {
+  const int maxLength = 160;
+  final List<String> parts = <String>[];
+  if (diagnostics.exitCode != null) {
+    parts.add('exit=${diagnostics.exitCode}');
+  }
+  final List<String> lines = diagnostics.stderrTail
+      .split(RegExp(r'[\r\n]+'))
+      .map((String line) => line.trim())
+      .where((String line) => line.isNotEmpty)
+      .toList();
+  if (lines.isNotEmpty) {
+    final String last = lines.last;
+    parts.add(
+      last.length <= maxLength
+          ? last
+          : '…${last.substring(last.length - maxLength)}',
+    );
+  }
+  return parts.join(' ');
+}
+
+/// `voice_hook` 通道 `open` 失败 token → 结构化失败原因（纯函数，可单测）。
+///
+/// token 是 native `VoiceHookOpenErrorToken`（`windows/runner/voice_hook_reader.cpp`）的
+/// 唯一输出，是**跨语言契约的名字**——两侧必须同名，由
+/// `test/mining/gal_shm_open_error_test.dart` 扫源码守卫。
+///
+/// 分开归类的理由是**处置完全不同**，而旧实现把它们全压成一句「捕获通道无法打开，请重启
+/// Hibiki」（BUG-1216）：
+///   - `access_denied`：游戏跑在更高完整性级别 → 要以管理员身份运行 Hibiki，重启没用；
+///   - `protocol_mismatch`：helper 与本体版本漂开 → 要更新/重装捕获组件，重启更没用；
+///   - 其余（映射不存在 / MapView 失败 / pid 非法）→ native 只知道「映射不在那儿」，
+///     **不知道为什么**，此处返回 null。
+///
+/// 返回 null 表示「native 没定出具体处置」，调用方据此回退到 injector stderr 归类
+/// （[classifyGalHookInjectorFailure]）。这是有意的：`mapping_not_found` 这类 token 只说明
+/// 读侧没找到映射，而 injector 的 stderr 往往正好写着**为什么**没建起来（hook DLL 缺失 /
+/// 位数不匹配 / 陈旧会话 / 需要提权…）。若在这里一律返回
+/// [GalHookInjectorFailure.sharedMemoryUnavailable]，那些更可执行的原因就被这层压掉了——
+/// 那正是 BUG-1216 要消灭的「信息在返回值处被丢弃」，只是换个地方重犯。
+/// 只有 native **真的定出**处置的两条（拒绝访问 / 契约不符）才盖过 stderr 归类：那两条
+/// injector 侧可能一路全绿，拿它的日志猜只会把确定的事实退化成 fallback。
+GalHookInjectorFailure? galHookFailureFromVoiceHookOpenError(String? token) =>
+    switch (token?.trim().toLowerCase()) {
+      'access_denied' => GalHookInjectorFailure.accessDenied,
+      'protocol_mismatch' => GalHookInjectorFailure.protocolMismatch,
+      _ => null,
+    };
+
+/// 把 `open` 失败的 native 一手事实压成一行诊断（token + win32 码 + 映射名/版本对照 +
+/// 本次用的 helper 架构）。
+///
+/// 这一行会经 `GalHookInjectorDiagnostics.stderrTail` 的**最后一行**进入用户可见文案
+/// （`galHookDiagnosticsDetail`），是「用户在另一台机器上截个图就能确诊」的唯一依据。
+///
+/// [injectorPath] 带上是因为 helper 是**按目标架构分目录**装的（`.../x86/` 与 `.../x64/`）：
+/// 「同一台机器上一个游戏能捕获、另一个不能」最典型的成因就是两套 helper 只更新了一套，
+/// 只有把这次实际用的那套架构打出来，才分得清是引擎问题还是装配问题。
+String galHookOpenFailureDetail(
+  Map<Object?, Object?>? response, {
+  String? injectorPath,
+}) {
+  final Object? token = response?['error'];
+  final Object? detail = response?['detail'];
+  final List<String> parts = <String>['voice_hook open'];
+  if (token is String && token.trim().isNotEmpty) {
+    parts.add(token.trim());
+  }
+  if (detail is String && detail.trim().isNotEmpty) {
+    parts.add(detail.trim());
+  }
+  final String arch = galHookHelperArchTag(injectorPath);
+  if (arch.isNotEmpty) {
+    parts.add('helper=$arch');
+  }
+  return parts.join(' ');
+}
+
+/// injector 可执行文件路径 → 它所属的 helper 架构目录名（`x86` / `x64`）。
+///
+/// 认不出来（路径为空、没有分目录）返回空串，绝不猜一个架构出来。
+String galHookHelperArchTag(String? injectorPath) {
+  final String path = injectorPath?.trim() ?? '';
+  if (path.isEmpty) return '';
+  final List<String> segments = path
+      .split(RegExp(r'[\\/]'))
+      .where((String segment) => segment.isNotEmpty)
+      .toList();
+  if (segments.length < 2) return '';
+  final String parent = segments[segments.length - 2].toLowerCase();
+  return (parent == 'x86' || parent == 'x64') ? parent : '';
 }
 
 /// 资源↔文本配对的时间窗（毫秒），**必须与 native 侧
@@ -1036,21 +1141,33 @@ class EngineHookGalAudioSource implements GalAudioSource {
         <String, Object?>{'pid': _effectivePid},
       );
       if (opened == null || opened['error'] != null) {
+        // native 已经说清是哪一种打不开（拒绝访问 / 版本不符 / 映射不存在），这里**只转述
+        // 不猜测**：原因取 token 归类，一手事实（win32 码 / 映射名 / 双方版本）原样带进诊断。
         await _captureFailure(
           fallback: GalHookInjectorFailure.sharedMemoryUnavailable,
+          resolved: galHookFailureFromVoiceHookOpenError(
+            opened?['error'] as String?,
+          ),
+          nativeDetail: opened == null
+              ? ''
+              : galHookOpenFailureDetail(opened, injectorPath: path),
         );
         await stop();
         return null;
       }
-    } on PlatformException {
+    } on PlatformException catch (error) {
       await _captureFailure(
         fallback: GalHookInjectorFailure.sharedMemoryUnavailable,
+        nativeDetail: 'voice_hook open platform_exception '
+                '${error.code} ${error.message ?? ''}'
+            .trim(),
       );
       await stop();
       return null;
     } on MissingPluginException {
       await _captureFailure(
         fallback: GalHookInjectorFailure.sharedMemoryUnavailable,
+        nativeDetail: 'voice_hook open missing_plugin',
       );
       await stop();
       return null;
@@ -1084,8 +1201,16 @@ class EngineHookGalAudioSource implements GalAudioSource {
   ///
   /// injector 在 `--hold` 模式下失败即退出，因此这里等一个很短的窗口取 exitCode；
   /// 进程仍存活（例如握手超时但 helper 还在跑）时退出码为 null，不阻塞调用方。
+  /// [resolved] 非空表示**原因已由 native 一手确定**（`open` 返回的结构化 token），此时
+  /// 不再拿 injector stderr 去猜：injector 那边可能一路 `OK hooked` 全绿，失败发生在它之后
+  /// 的读侧边界上，用它的日志分类只会把确定的事实退化成 fallback。
+  ///
+  /// [nativeDetail] 追加到诊断**末行**：`galHookDiagnosticsDetail` 取最后一行作结论，这样
+  /// 读侧失败的一手证据（win32 码 / 双方版本）能一路走到用户看见的那句话里。
   Future<void> _captureFailure({
     required GalHookInjectorFailure fallback,
+    GalHookInjectorFailure? resolved,
+    String nativeDetail = '',
   }) async {
     final Process? process = _injector;
     int? exitCode;
@@ -1095,9 +1220,14 @@ class EngineHookGalAudioSource implements GalAudioSource {
           .then((int code) => code == -1 ? null : code)
           .catchError((Object _) => null);
     }
-    final String tail = _diagnosticsBuffer.toString().trim();
+    final String injectorTail = _diagnosticsBuffer.toString().trim();
+    final String detail = nativeDetail.trim();
+    final String tail = <String>[injectorTail, detail]
+        .where((String part) => part.isNotEmpty)
+        .join('\n');
     _lastFailure = GalHookInjectorDiagnostics(
-      failure: classifyGalHookInjectorFailure(tail, fallback: fallback),
+      failure:
+          resolved ?? classifyGalHookInjectorFailure(tail, fallback: fallback),
       exitCode: exitCode,
       stderrTail: tail,
     );

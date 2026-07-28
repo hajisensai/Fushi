@@ -390,6 +390,7 @@ class GalHookSessionState {
     this.audioFormat,
     this.fallbackReason,
     this.injectorFailure = GalHookInjectorFailure.none,
+    this.injectorDetail = '',
     this.lastError,
     this.textSignalReceived = false,
     this.textGapCount = 0,
@@ -416,6 +417,14 @@ class GalHookSessionState {
   /// 降级/失败的**结构化**原因。[fallbackReason] 是给日志的内部代码（UI 曾经原样
   /// 把 `engine_attach_failed` 甩给用户）；本字段才是 UI 该翻译成人话并给出处置的依据。
   final GalHookInjectorFailure injectorFailure;
+
+  /// 与 [injectorFailure] 同生共死的**一手证据**（`exit=<码>` + native 诊断末行，例如
+  /// `voice_hook open access_denied name=Local\HibikiVoiceHook_1234 win32=5`）。
+  ///
+  /// 降级路径的启动结果是「已启动」，诊断挂不到 `GalHookLaunchResult` 上；没有这个字段，
+  /// 用户在降级 toast 里只看得到一句归类结论，另一台机器上跑得通/跑不通无从对比
+  /// （BUG-1216）。空串表示本次没有 native 证据，绝不编造。
+  final String injectorDetail;
   final String? lastError;
   final bool textSignalReceived;
   final int textGapCount;
@@ -449,6 +458,7 @@ class GalHookSessionState {
     String? fallbackReason,
     bool clearFallbackReason = false,
     GalHookInjectorFailure? injectorFailure,
+    String? injectorDetail,
     String? lastError,
     bool clearLastError = false,
     bool? textSignalReceived,
@@ -477,6 +487,9 @@ class GalHookSessionState {
       injectorFailure: clearFallbackReason
           ? GalHookInjectorFailure.none
           : injectorFailure ?? this.injectorFailure,
+      // 证据跟着原因走：原因复位了还留着上一次的 win32 码只会误导排障。
+      injectorDetail:
+          clearFallbackReason ? '' : injectorDetail ?? this.injectorDetail,
       lastError: clearLastError ? null : lastError ?? this.lastError,
       textSignalReceived: textSignalReceived ?? this.textSignalReceived,
       textGapCount: textGapCount ?? this.textGapCount,
@@ -989,6 +1002,7 @@ class GalHookSessionController extends ChangeNotifier {
         generation,
         fallbackReason: 'engine_attach_failed',
         failure: diagnostics.failure,
+        detail: galHookDiagnosticsDetail(diagnostics),
       );
       _scheduleEngineRecovery(
         generation,
@@ -1140,6 +1154,7 @@ class GalHookSessionController extends ChangeNotifier {
           generation,
           fallbackReason: 'launch_injection_failed',
           failure: diagnostics.failure,
+          detail: galHookDiagnosticsDetail(diagnostics),
         );
         if (generation != _operationGeneration) {
           return const GalHookLaunchResult.failed(
@@ -1160,6 +1175,7 @@ class GalHookSessionController extends ChangeNotifier {
         'Game launch or early engine injection failed',
         details: diagnostics.toDetails(),
         failure: diagnostics.failure,
+        detail: galHookDiagnosticsDetail(diagnostics),
       );
       // 诊断随结果一起返回：`diagnostics.failure` 归类不出来时（unknown），stderr 尾部
       // 就是唯一的一手证据，绝不能停在这里。
@@ -2903,10 +2919,12 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
+  /// [detail] 是本次降级的 native 一手证据（见 [GalHookSessionState.injectorDetail]）。
   Future<void> _activateLoopback(
     int generation, {
     required String fallbackReason,
     GalHookInjectorFailure failure = GalHookInjectorFailure.none,
+    String detail = '',
   }) async {
     final LoopbackGalAudioSource loopback = _loopbackSourceFactory();
     final PcmFormat? format = await loopback.start();
@@ -2942,6 +2960,7 @@ class GalHookSessionController extends ChangeNotifier {
         audioFormat: format,
         fallbackReason: fallbackReason,
         injectorFailure: failure,
+        injectorDetail: detail,
         clearLastError: true,
       ),
     );
@@ -3954,12 +3973,14 @@ class GalHookSessionController extends ChangeNotifier {
     String message, {
     Map<String, Object?> details = const <String, Object?>{},
     GalHookInjectorFailure failure = GalHookInjectorFailure.none,
+    String detail = '',
   }) {
     _setState(
       _state.copyWith(
         phase: GalHookSessionPhase.error,
         lastError: message,
         injectorFailure: failure,
+        injectorDetail: detail,
         audioBackend: GalHookAudioBackend.none,
         clearAudioFormat: true,
       ),

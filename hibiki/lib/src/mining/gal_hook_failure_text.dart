@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
@@ -39,6 +38,8 @@ String? galHookFailureLabel(GalHookInjectorFailure failure) =>
       GalHookInjectorFailure.steamTimeout => t.game_hook_reason_steam_timeout,
       GalHookInjectorFailure.sharedMemoryUnavailable =>
         t.game_hook_reason_shared_memory_unavailable,
+      GalHookInjectorFailure.protocolMismatch =>
+        t.game_hook_reason_protocol_mismatch,
       GalHookInjectorFailure.handshakeTimeout =>
         t.game_hook_reason_handshake_timeout,
     };
@@ -55,38 +56,47 @@ String? galHookFailureLabel(GalHookInjectorFailure failure) =>
 ///
 /// [failure] 非 [GalHookInjectorFailure.none] 时把可执行处置作为后缀带上：知道「窗口
 /// 没出现」不够，还得知道是缺组件、要管理员，还是握手超时。
+/// [injectorDetail] 是会话状态里留存的读侧一手证据（`GalHookSessionState.injectorDetail`）：
+/// 降级路径的 [result] 是「已启动」，诊断不在它身上，只能从状态取。
 String? galHookLaunchOutcomeMessage({
   required GalHookLaunchOutcome outcome,
   required GalHookLaunchResult result,
   required GalHookInjectorFailure failure,
   String? lastError,
+  String injectorDetail = '',
 }) {
   final String? reason = galHookFailureLabel(failure);
+  // 本次启动结果自带的诊断优先；没有（降级路径 result 是 launched）才用会话状态里的。
+  final String resultDetail = galHookDiagnosticsDetail(result.diagnostics);
+  final String detail =
+      resultDetail.isNotEmpty ? resultDetail : injectorDetail.trim();
   return switch (outcome) {
     GalHookLaunchOutcome.superseded => null,
-    GalHookLaunchOutcome.failed => _failedMessage(result, reason, lastError),
+    GalHookLaunchOutcome.failed =>
+      _failedMessage(result, reason, lastError, detail),
     GalHookLaunchOutcome.windowMissing =>
-      _withReason(t.game_capture_window_missing, reason),
+      _annotate(t.game_capture_window_missing, reason, detail),
     GalHookLaunchOutcome.degradedLoopback =>
-      _withReason(t.game_capture_degraded_loopback, reason),
+      _annotate(t.game_capture_degraded_loopback, reason, detail),
     GalHookLaunchOutcome.running => t.game_capture_running,
   };
 }
 
 /// 「启动彻底失败」要说的话（BUG-1142）。
 ///
-/// 分三级取信息，**每一级都来自真实事实，绝不编造**：
+/// 结论按三级取，**每一级都来自真实事实，绝不编造**：
 /// 1. [GalHookLaunchResult.reason]——它是编译期强制填写的，不会缺；
 /// 2. injector 的结构化处置（缺组件 / 要管理员 / 位数不符…）；
-/// 3. 都归类不出来时，附上 native 一手诊断（退出码 + stderr 尾行）。
+/// 3. 都归类不出来时退到 `lastError` / 通用兜底文案。
 ///
-/// 第 3 级正是本 bug 的修复点：旧实现在这里只剩一句「游戏启动或捕获失败」，而
-/// `diagnostics.stderrTail` 明明有内容，却停在 controller 内部从不进入 UI——用户既
-/// 无法自愈，报障时也提供不出任何可用线索。
+/// native 一手诊断（退出码 + 诊断末行）**无条件**附在结论后面（BUG-1216）：BUG-1142 时
+/// 只在第 3 级才附，于是归类越准、用户拿到的事实越少——「捕获通道无法打开」这句话在
+/// 「游戏跑在管理员权限下」和「helper 版本不符」两种完全不同的现场长得一模一样。
 String _failedMessage(
   GalHookLaunchResult result,
   String? injectorReason,
   String? lastError,
+  String detail,
 ) {
   final String? reasonLabel = switch (result.reason) {
     GalHookLaunchFailureReason.unsupportedPlatform => t.game_launch_unsupported,
@@ -100,41 +110,22 @@ String _failedMessage(
     // 兜底事实（lastError / native 诊断），绝不会因此编造一句原因（BUG-1169）。
     null => null,
   };
-  if (reasonLabel != null) return reasonLabel;
-  final String base = lastError ?? t.game_capture_launch_failed;
-  final String detail = galHookDiagnosticsDetail(result.diagnostics);
-  return detail.isEmpty ? base : '$base（$detail）';
+  final String base = reasonLabel ?? lastError ?? t.game_capture_launch_failed;
+  return _annotate(base, null, detail);
 }
 
-/// native 诊断压成一行可展示的证据：`exit=<码> <stderr 最后一行非空内容>`。
+/// 给一句结论补上「原因 · 一手证据」的括号后缀。空的部分不占位。
 ///
-/// 取**最后一行**：injector 失败即退，最后写出的那行就是它停下的地方；早期的
-/// `[luna] ... 已注入` 之类是进度而非结论。长诊断从尾部截断（保留结论侧）。
-@visibleForTesting
-String galHookDiagnosticsDetail(GalHookInjectorDiagnostics diagnostics) {
-  const int maxLength = 160;
-  final List<String> parts = <String>[];
-  if (diagnostics.exitCode != null) {
-    parts.add('exit=${diagnostics.exitCode}');
-  }
-  final List<String> lines = diagnostics.stderrTail
-      .split(RegExp(r'[\r\n]+'))
-      .map((String line) => line.trim())
-      .where((String line) => line.isNotEmpty)
-      .toList();
-  if (lines.isNotEmpty) {
-    final String last = lines.last;
-    parts.add(
-      last.length <= maxLength
-          ? last
-          : '…${last.substring(last.length - maxLength)}',
-    );
-  }
-  return parts.join(' ');
+/// **有原因时也要给证据**（BUG-1216）：知道「捕获通道打不开」不等于知道是拒绝访问、
+/// 版本不符还是映射根本不存在。旧实现只在归类不出来时才附诊断，于是归类得越准、
+/// 用户和排障者拿到的事实反而越少——一台跑得通、一台跑不通时完全无从对比。
+String _annotate(String base, String? reason, String detail) {
+  final List<String> parts = <String>[
+    if (reason != null && reason.isNotEmpty) reason,
+    if (detail.isNotEmpty) detail,
+  ];
+  return parts.isEmpty ? base : '$base（${parts.join(' · ')}）';
 }
-
-String _withReason(String message, String? reason) =>
-    reason == null ? message : '$message（$reason）';
 
 /// 会话降级原因（`GalHookSessionState.fallbackReason` 的内部代码）→ 人话文案。
 ///
