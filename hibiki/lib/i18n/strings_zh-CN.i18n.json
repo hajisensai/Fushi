@@ -2708,5 +2708,9 @@
   "video_scrape_online_match_collection": "为「$name」匹配封面",
   "gal_mining_image_mode": "Galgame 制卡配图",
   "gal_mining_image_mode_screenshot": "静态截图",
-  "gal_mining_image_mode_hint": "Galgame 一句台词内画面基本不动，静态截图通常更小、信息量一样。"
+  "gal_mining_image_mode_hint": "Galgame 一句台词内画面基本不动，静态截图通常更小、信息量一样。",
+  "shortcut_scope_manga": "漫画",
+  "shortcut_action_manga_page_forward": "下一页",
+  "shortcut_action_manga_page_backward": "上一页",
+  "shortcut_action_manga_dismiss_dict": "关闭词典"
 }

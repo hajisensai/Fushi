@@ -4,6 +4,10 @@ enum ShortcutScope {
   global,
   audiobook,
   video,
+  // 漫画阅读器（mokuro 页图 + OCR 文本层）。与 reader 分开是因为动作集不同：漫画
+  // 没有章节/振假名/有声书，翻页是整页跨页步进而非文字流分页，且左右键要按跨页
+  // 方向（日漫默认 rtl）校正。
+  manga,
   // TODO-700 T6：摇杆与 dpad 解耦后，dpad 四向成为「可绑触发键」，落在独立的
   // gamepad 作用域（自成 co-active 组，不与 reader/home 等任何组冲突）。摇杆固定
   // 做方向焦点移动、永不经注册表，故没有对应 action——只有 dpad 进这个 scope。
@@ -42,6 +46,10 @@ enum ShortcutScope {
       // detection therefore scans just video.
       case video:
         return const <ShortcutScope>[video];
+      // 漫画阅读器同样是独立界面：只解析自己的绑定，故自成 co-active 组，
+      // 冲突检测只扫 manga（与 video 同理）。
+      case manga:
+        return const <ShortcutScope>[manga];
       // gamepad（dpad 四向）是独立 co-active 组：dpad 绑定永不与 reader/home 的
       // 按钮跨组冲突，冲突检测只扫 gamepad 自身。
       case gamepad:
@@ -59,11 +67,17 @@ enum ShortcutScope {
   }
 
   /// 本 scope 真正会被消费的输入通道。设置页的编辑对话框据此渲染章节——绑了不会
-  /// 生效的通道根本不给入口，杜绝「设置里能配、按了没反应」的死项（同
-  /// shortcut_action_wiring_guard 的不变式，只是发生在 UI 层）。
+  /// 生效的通道根本不给入口，杜绝「设置里能配、按了没反应」的死项。
   ///
-  /// 绝大多数 scope 走页面派发，键盘/手柄/鼠标三通道全通；[dictionaryPopup] 的
-  /// 动作只由弹窗 WebView 的滚轮事件触发（见枚举注释），故只开滚轮。
+  /// ⚠️ 这里开一个通道，就等于对用户承诺该通道真的能用，因此**必须同时存在该通道
+  /// 的解析入口**（`resolveKeyboard/resolveGamepad/resolveMouse(scope: 本 scope)`，
+  /// 或按 action 取 `bindingsFor(...).<通道>Bindings`）。守卫
+  /// `shortcut_channel_wiring_guard_test` 会对着源码核这件事：新开一个没有解析入口
+  /// 的通道即红。它与 `shortcut_action_wiring_guard` 互补——后者只看「action 符号
+  /// 有没有出现过」，抓不到「同一个 action 的键盘接了、手柄没接」这种半接线。
+  ///
+  /// 多数 scope 走页面派发，键盘/手柄/鼠标三通道全通；[manga] 只接了键盘、
+  /// [dictionaryPopup] 的动作只由弹窗 WebView 的滚轮事件触发（见各自 case 注释）。
   Set<ShortcutChannel> get channels {
     switch (this) {
       case reader:
@@ -78,6 +92,13 @@ enum ShortcutScope {
           ShortcutChannel.gamepad,
           ShortcutChannel.mouse,
         };
+      // 漫画页只有键盘解析入口：`_resolveMangaKeyAction` 走 `resolveKeyboard`，
+      // 滚轮翻页是硬编码的 `wheelInputAction`（不查注册表），手柄则完全没接
+      // （既无 `resolveGamepad`，也无 `GamepadButtonIntent` 的 Action）。开着手柄/
+      // 鼠标通道 = 设置页给出能配却按了没反应的入口，比没有这个选项更糟。
+      // 接上对应解析入口（照 reader `_handleGamepadButton`）并真机验证后再开。
+      case manga:
+        return const <ShortcutChannel>{ShortcutChannel.keyboard};
       case dictionaryPopup:
         return const <ShortcutChannel>{ShortcutChannel.wheel};
     }
@@ -252,6 +273,16 @@ enum ShortcutAction {
   videoToggleShaderCompare(ShortcutScope.video, 'video_toggle_shader_compare'),
   videoToggleFavoriteSentence(
       ShortcutScope.video, 'video_toggle_favorite_sentence'),
+
+  // 漫画：翻页存的是**页序语义**（forward=下一页），左右方向键再按跨页方向
+  // （日漫默认 rtl）校正——与 reader 的 resolveReaderArrowPageTurn 同构，见
+  // resolveMangaArrowPageTurn。这样用户改键改的是「哪个键翻页」，方向仍由书自己
+  // 的排版决定，不会出现「改了键之后 rtl 书翻反」。
+  mangaPageForward(ShortcutScope.manga, 'manga_page_forward'),
+  mangaPageBackward(ShortcutScope.manga, 'manga_page_backward'),
+  // 关词典弹窗。漫画与阅读器的差异：本页弹窗可见时左右键仍要「关弹窗并翻页」，
+  // 故没有独立的「退书」动作绑在 Esc 上（退书走系统返回 / PopScope）。
+  mangaDismissDict(ShortcutScope.manga, 'manga_dismiss_dict'),
 
   // Gamepad（TODO-700 T6）：dpad 四向作为可绑触发键。默认各绑对应 dpad 键，执行体
   // = 通用方向焦点移动（与摇杆同效果，但摇杆固定走 onStickMove 通道、不经注册表，

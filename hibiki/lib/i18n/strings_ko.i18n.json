@@ -2708,5 +2708,9 @@
   "video_scrape_online_match_collection": "Match cover for $name",
   "gal_mining_image_mode": "Galgame card image",
   "gal_mining_image_mode_screenshot": "Screenshot",
-  "gal_mining_image_mode_hint": "Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful."
+  "gal_mining_image_mode_hint": "Galgame scenes barely move within one line, so a still screenshot is usually smaller and just as useful.",
+  "shortcut_scope_manga": "Manga",
+  "shortcut_action_manga_page_forward": "Next page",
+  "shortcut_action_manga_page_backward": "Previous page",
+  "shortcut_action_manga_dismiss_dict": "Close dictionary"
 }
