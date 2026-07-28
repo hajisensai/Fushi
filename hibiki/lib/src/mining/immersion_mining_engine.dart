@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -7,6 +8,7 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/utils/misc/card_screenshot_downsampler.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart';
+import 'package:hibiki/src/mining/serial_job_queue.dart';
 
 /// 注入式抽取器（默认指向 desktop_audio_clipper.dart 真身，测试注入假件）。逐参对齐真身。
 typedef GifExtractor = Future<String?> Function({
@@ -47,13 +49,6 @@ typedef RemoteAudioMaterializer = Future<String?> Function({
   FfmpegFailureReporter? onFailure,
 });
 
-/// GIFs above this size are re-extracted at the standard 480px/8fps tier.
-/// If the compact retry is still over the cap, mining falls back to a still
-/// frame instead of sending a giant payload through Anki's GUI thread.
-const int immersionMiningMaxGifBytes = 4 * 1024 * 1024;
-const int _compactGifFps = 8;
-const int _compactGifWidth = 480;
-
 /// 统一沉浸制卡引擎。降级阶梯与 `_mineVideoCard`（lookup_mining.part.dart L285-441）一致：
 /// GIF 主 → 单帧降级 → 当前解码帧兜底；音频段；requireAudio 且缺音频则中止；组 context 落卡。
 ///
@@ -73,6 +68,11 @@ class ImmersionMiningEngine {
   final AudioExtractor _audio;
   final FrameExtractor _frame;
   final RemoteAudioMaterializer _materialize;
+
+  /// 所有沉浸制卡共享同一条事务队列。抽媒体会写固定的临时文件名，AnkiConnect 也只有
+  /// 一个 GUI 端点；必须把「抽 GIF/音频 → 上传 → add/update note」整体串行化。队列是
+  /// 进程级而非页面级，因此本地 pushReplacement 或远端原地换集都不会丢掉已入队任务。
+  static final SerialJobQueue _sharedMiningQueue = SerialJobQueue();
 
   /// 默认物化器：包一层 [materializeRemoteAudioViaRangeDownload]（补齐其额外可选参数）。
   static Future<String?> _defaultAudioMaterializer({
@@ -101,6 +101,32 @@ class ImmersionMiningEngine {
   /// 分流，语义由参数名承载而不是时序。[onFailure] 保留为「任一来源」的合流回调，既有
   /// 调用点（app_model 的 YouTube/Netflix、gal coordinator）零改动。
   Future<ImmersionMiningResult> mine(
+    ImmersionMiningRequest req, {
+    required MiningMediaCompression compression,
+    required FutureOr<String> tempDir,
+    required BaseAnkiRepository repo,
+    FfmpegFailureReporter? onFailure,
+    FfmpegFailureReporter? onCoverFailure,
+    FfmpegFailureReporter? onAudioFailure,
+  }) {
+    final ImmersionMiningRequest frozenRequest = req.frozen();
+    return _sharedMiningQueue.enqueueRethrowing<ImmersionMiningResult>(
+      () async {
+        final String resolvedTempDir = await tempDir;
+        return _mineNow(
+          frozenRequest,
+          compression: compression,
+          tempDir: resolvedTempDir,
+          repo: repo,
+          onFailure: onFailure,
+          onCoverFailure: onCoverFailure,
+          onAudioFailure: onAudioFailure,
+        );
+      },
+    );
+  }
+
+  Future<ImmersionMiningResult> _mineNow(
     ImmersionMiningRequest req, {
     required MiningMediaCompression compression,
     required String tempDir,
@@ -150,38 +176,7 @@ class ImmersionMiningEngine {
         onFailure: reportCover,
         tlsPinSha256: req.mediaSourceTlsPinSha256,
       );
-      if (!_gifExceedsUploadCap(primary)) return primary;
-
-      reportCover(
-        'GIF is larger than ${immersionMiningMaxGifBytes ~/ (1024 * 1024)} MiB; '
-        'retrying at ${_compactGifWidth}px/${_compactGifFps}fps',
-      );
-      if (compression.gifFps <= _compactGifFps &&
-          compression.gifWidth <= _compactGifWidth) {
-        _discardTemporaryMedia(primary);
-        return null;
-      }
-
-      final String? compact = await _gif(
-        inputPath: src,
-        startMs: req.clipStartMs,
-        endMs: req.clipEndMs,
-        outputPath: '$tempDir/immersion_clip_compact.gif',
-        fps: _compactGifFps,
-        width: _compactGifWidth,
-        onFailure: reportCover,
-        tlsPinSha256: req.mediaSourceTlsPinSha256,
-      );
-      _discardTemporaryMedia(primary);
-      if (!_gifExceedsUploadCap(compact)) return compact;
-
-      reportCover(
-        'compact GIF still exceeds '
-        '${immersionMiningMaxGifBytes ~/ (1024 * 1024)} MiB; '
-        'falling back to a still frame',
-      );
-      _discardTemporaryMedia(compact);
-      return null;
+      return primary;
     }
 
     // 抽字幕 cue 起始时间点的单帧；无 src → null。
@@ -307,27 +302,6 @@ class ImmersionMiningEngine {
 
     return ImmersionMiningResult(
         aborted: false, outcome: outcome, degradedToStill: degradedToStill);
-  }
-
-  static bool _gifExceedsUploadCap(String? path) {
-    if (path == null) return false;
-    try {
-      final File file = File(path);
-      return file.existsSync() &&
-          file.lengthSync() > immersionMiningMaxGifBytes;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  static void _discardTemporaryMedia(String? path) {
-    if (path == null) return;
-    try {
-      final File file = File(path);
-      if (file.existsSync()) file.deleteSync();
-    } catch (_) {
-      // Best effort only; the OS temp directory remains the final cleanup net.
-    }
   }
 
   /// BUG-1205 — 句子音频落地路径的解析，从 [mine] 内联体**原样**抽出（provided 字节 →

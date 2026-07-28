@@ -147,6 +147,40 @@ class ImmersionMiningRequest {
   })? remoteAudioClipper;
 
   bool get hasRange => clipEndMs > clipStartMs;
+
+  /// 入队前冻结所有可变输入。视频页可能在任务真正执行前已经换集或关闭弹窗；队列里的
+  /// 卡必须继续使用点击制卡那一刻的字段和外部媒体字节，不能读到调用方后续修改。
+  ImmersionMiningRequest frozen() => ImmersionMiningRequest(
+        fields: Map<String, String>.unmodifiable(
+          Map<String, String>.from(fields),
+        ),
+        clipStartMs: clipStartMs,
+        clipEndMs: clipEndMs,
+        sentence: sentence,
+        mediaSource: mediaSource,
+        audioSource: audioSource,
+        cueSentence: cueSentence,
+        documentTitle: documentTitle,
+        audioStreamIndex: audioStreamIndex,
+        audioStreamCount: audioStreamCount,
+        source: source,
+        bookTitleTag: bookTitleTag,
+        collectionTag: collectionTag,
+        updateNoteId: updateNoteId,
+        stillFallback: stillFallback,
+        providedCoverBytes: providedCoverBytes == null
+            ? null
+            : Uint8List.fromList(providedCoverBytes!),
+        providedCoverName: providedCoverName,
+        providedAudioBytes: providedAudioBytes == null
+            ? null
+            : Uint8List.fromList(providedAudioBytes!),
+        providedAudioName: providedAudioName,
+        requireAudio: requireAudio,
+        imageMode: imageMode,
+        mediaSourceTlsPinSha256: mediaSourceTlsPinSha256,
+        remoteAudioClipper: remoteAudioClipper,
+      );
 }
 
 /// 引擎产出。[outcome] 用 Object? 承 MineOutcome，避免此值对象文件依赖 anki_models 全量。
