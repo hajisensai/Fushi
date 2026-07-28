@@ -417,11 +417,19 @@ GalHookInjectorFailure galHookFailureFromVoiceHookOpenError(String? token) =>
       _ => GalHookInjectorFailure.sharedMemoryUnavailable,
     };
 
-/// 把 `open` 失败的 native 一手事实压成一行诊断（token + win32 码 + 映射名/版本对照）。
+/// 把 `open` 失败的 native 一手事实压成一行诊断（token + win32 码 + 映射名/版本对照 +
+/// 本次用的 helper 架构）。
 ///
 /// 这一行会经 `GalHookInjectorDiagnostics.stderrTail` 的**最后一行**进入用户可见文案
 /// （`galHookDiagnosticsDetail`），是「用户在另一台机器上截个图就能确诊」的唯一依据。
-String galHookOpenFailureDetail(Map<Object?, Object?>? response) {
+///
+/// [injectorPath] 带上是因为 helper 是**按目标架构分目录**装的（`.../x86/` 与 `.../x64/`）：
+/// 「同一台机器上一个游戏能捕获、另一个不能」最典型的成因就是两套 helper 只更新了一套，
+/// 只有把这次实际用的那套架构打出来，才分得清是引擎问题还是装配问题。
+String galHookOpenFailureDetail(
+  Map<Object?, Object?>? response, {
+  String? injectorPath,
+}) {
   final Object? token = response?['error'];
   final Object? detail = response?['detail'];
   final List<String> parts = <String>['voice_hook open'];
@@ -431,7 +439,26 @@ String galHookOpenFailureDetail(Map<Object?, Object?>? response) {
   if (detail is String && detail.trim().isNotEmpty) {
     parts.add(detail.trim());
   }
+  final String arch = galHookHelperArchTag(injectorPath);
+  if (arch.isNotEmpty) {
+    parts.add('helper=$arch');
+  }
   return parts.join(' ');
+}
+
+/// injector 可执行文件路径 → 它所属的 helper 架构目录名（`x86` / `x64`）。
+///
+/// 认不出来（路径为空、没有分目录）返回空串，绝不猜一个架构出来。
+String galHookHelperArchTag(String? injectorPath) {
+  final String path = injectorPath?.trim() ?? '';
+  if (path.isEmpty) return '';
+  final List<String> segments = path
+      .split(RegExp(r'[\\/]'))
+      .where((String segment) => segment.isNotEmpty)
+      .toList();
+  if (segments.length < 2) return '';
+  final String parent = segments[segments.length - 2].toLowerCase();
+  return (parent == 'x86' || parent == 'x64') ? parent : '';
 }
 
 /// 资源↔文本配对的时间窗（毫秒），**必须与 native 侧
@@ -1116,7 +1143,9 @@ class EngineHookGalAudioSource implements GalAudioSource {
               : galHookFailureFromVoiceHookOpenError(
                   opened['error'] as String?,
                 ),
-          nativeDetail: opened == null ? '' : galHookOpenFailureDetail(opened),
+          nativeDetail: opened == null
+              ? ''
+              : galHookOpenFailureDetail(opened, injectorPath: path),
         );
         await stop();
         return null;

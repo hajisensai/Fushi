@@ -35,13 +35,13 @@
 
 - native 新增 `VoiceHookOpenError`（`invalid_pid` / `mapping_not_found` / `access_denied` / `mapping_open_failed` / `map_view_failed` / `protocol_mismatch`）与 `VoiceHookOpenResult`（状态 + 原因 + `win32_error` + 纯事实 `detail`）；`Open` 改返回它，映射名与 `GetLastError()` 随失败带出，契约不符时列出**不一致字段的双方取值**（`shm=11/want 12` 这类）。
 - channel `open` 失败回 `{error: <token>, detail: <事实>, win32: <码>}`；判据改成「`Open` 自己报了 error」，不再拿 `hooked` 位当映射是否存在的代理。
-- Dart 新增 `galHookFailureFromVoiceHookOpenError`：`access_denied → accessDenied`、`protocol_mismatch → protocolMismatch`（新枚举值，不可重试），其余落 `sharedMemoryUnavailable`；native 事实经 `_captureFailure(nativeDetail:)` 追加到诊断**末行**。
+- Dart 新增 `galHookFailureFromVoiceHookOpenError`：`access_denied → accessDenied`、`protocol_mismatch → protocolMismatch`（新枚举值，不可重试），其余落 `sharedMemoryUnavailable`；native 事实经 `_captureFailure(nativeDetail:)` 追加到诊断**末行**，并附上本次实际使用的 helper 架构（`helper=x86` / `helper=x64`）——helper 按目标架构分目录安装，「同机一个游戏行、另一个不行」最典型的成因就是两套只更新了一套，不打出架构就分不清是引擎问题还是装配问题。
 - 文案层：**有原因时也附一手证据**。旧实现只在归类不出来时才附诊断，导致归类越准、用户拿到的事实越少。降级路径的证据经新增的 `GalHookSessionState.injectorDetail` 传到 UI（降级时 `GalHookLaunchResult` 是 `launched`，诊断挂不到它身上）。
 - 新增 i18n key `game_hook_reason_protocol_mismatch`（经 `i18n_sync --add`，17 语言 + `dart run slang`）。
 
 修好后同一现场会直接显示形如：
 
-> 该游戏以更高权限运行，请以管理员身份运行 Hibiki（voice_hook open access_denied name=Local\HibikiVoiceHook_1234 win32=5）
+> 该游戏以更高权限运行，请以管理员身份运行 Hibiki（voice_hook open access_denied name=Local\HibikiVoiceHook_1234 win32=5 helper=x86）
 
 - **[x] ① 已修复** — `hibiki/windows/runner/voice_hook_reader.h` / `voice_hook_reader.cpp`（`VoiceHookOpenError` / `VoiceHookOpenResult` / `VoiceHookOpenErrorToken` / `ProtocolMismatchDetail`）、`hibiki/windows/runner/flutter_window.cpp`（`open` 回 token + detail + win32，失败判据改用 `Open` 的 error）、`hibiki/lib/src/mining/galgame_audio_source.dart`（`protocolMismatch` 枚举、`galHookFailureFromVoiceHookOpenError`、`galHookOpenFailureDetail`、`galHookDiagnosticsDetail` 迁入、`_captureFailure(resolved/nativeDetail)`）、`hibiki/lib/src/mining/gal_hook_failure_text.dart`（`_annotate` 无条件附证据）、`hibiki/lib/src/mining/gal_hook_session_controller.dart`（`injectorDetail` 状态字段与三处写入）、三个 UI 调用点、17 语言 i18n。
 - **[x] ② 已加自动化测试** — `hibiki/test/mining/gal_shm_open_error_test.dart` 15 例：token→原因逐条映射、`protocolMismatch` 不可重试、未知 token 不编造、每个归类都有可执行文案、detail 压行保留 win32/版本事实、**经真实 `open` 失败路径**（fake injector 宣告 hooked + mock channel 回各 token）断言原因与证据双双落进 `lastFailure`、injector 全绿时不得把确定原因猜回 unknown、归类得出时**也**要带证据、降级路径从状态取证据、无证据不生造括号；外加三条源码守卫：native 六个 token 齐全且 Dart 认得改处置的两个、`Open` 内不得再出现 `return VoiceHookStatus{}` 且必须读 `GetLastError`、channel 不得回退到固定英文串。

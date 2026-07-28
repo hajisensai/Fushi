@@ -93,6 +93,24 @@ void main() {
         'voice_hook open invalid_pid',
       );
     });
+
+    test('带上本次实际用的 helper 架构：两套只更新一套时才分得清', () {
+      expect(
+        galHookOpenFailureDetail(
+          <Object?, Object?>{'error': 'protocol_mismatch'},
+          injectorPath: r'C:\App\galgame_helper\x86\hibiki_gal_injector.exe',
+        ),
+        'voice_hook open protocol_mismatch helper=x86',
+      );
+      expect(
+        galHookHelperArchTag('/opt/galgame_helper/x64/injector'),
+        'x64',
+      );
+      // 认不出来就不猜一个架构出来。
+      expect(galHookHelperArchTag(null), '');
+      expect(galHookHelperArchTag(''), '');
+      expect(galHookHelperArchTag(r'C:\somewhere\injector.exe'), '');
+    });
   });
 
   group('open 失败的一手证据必须走到用户看见的那句话 (BUG-1216)', () {
