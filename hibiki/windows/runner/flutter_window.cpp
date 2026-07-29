@@ -1895,6 +1895,39 @@ void FlutterWindow::RegisterVoiceHookChannel() {
           }));
           return;
         }
+        if (method == "pollThreadPreviews") {
+          // v12：每条线程的最近一行（含未被选中的线程），供选择器展示。全量快照，无游标。
+          std::vector<hibiki::VoiceHookThreadPreview> previews;
+          const uint64_t write_count =
+              hibiki::VoiceHookReader::Instance().PollThreadPreviews(previews);
+          flutter::EncodableList list;
+          for (const auto& pv : previews) {
+            list.push_back(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("threadId"),
+                 flutter::EncodableValue(static_cast<int64_t>(pv.thread_id))},
+                {flutter::EncodableValue("seq"),
+                 flutter::EncodableValue(static_cast<int64_t>(pv.seq))},
+                {flutter::EncodableValue("ts"),
+                 flutter::EncodableValue(static_cast<int64_t>(pv.timestamp_ms))},
+                {flutter::EncodableValue("lineCount"),
+                 flutter::EncodableValue(static_cast<int64_t>(pv.line_count))},
+                {flutter::EncodableValue("artifactCount"),
+                 flutter::EncodableValue(
+                     static_cast<int64_t>(pv.artifact_count))},
+                {flutter::EncodableValue("eventFlags"),
+                 flutter::EncodableValue(static_cast<int64_t>(pv.event_flags))},
+                {flutter::EncodableValue("text"),
+                 flutter::EncodableValue(pv.utf8)},
+            }));
+          }
+          result->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("writeCount"),
+               flutter::EncodableValue(static_cast<int64_t>(write_count))},
+              {flutter::EncodableValue("previews"),
+               flutter::EncodableValue(std::move(list))},
+          }));
+          return;
+        }
         if (method == "selectTextThread") {
           const uint64_t thread_id =
               static_cast<uint64_t>(read_long("threadId"));

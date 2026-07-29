@@ -88,6 +88,19 @@ struct VoiceHookText {
   std::string hook_code;
 };
 
+// 一条线程的预览快照（v12 线程预览区）。与 [VoiceHookText] 的关键差别：预览按 thread_id
+// 寻址、每线程恒一条，**不受线程选择门控影响**——未被选中的线程也有预览，这正是选择器
+// 能像 LunaTranslator 那样展示全部候选的来源。
+struct VoiceHookThreadPreview {
+  uint64_t thread_id = 0;
+  uint64_t seq = 0;             // 该槽最近一次写入的全局序号
+  uint64_t timestamp_ms = 0;
+  uint64_t line_count = 0;      // 累计行数（含被过滤/门控丢弃的），跨会话记忆恢复的消歧依据
+  uint64_t artifact_count = 0;  // 其中判为重复伪影的行数
+  uint32_t event_flags = 0;     // bit0 = 最近这行是伪影
+  std::string utf8;             // 预览文本
+};
+
 // 一条**活跃语音源**（source voice / DS buffer）的元数据快照（[ListAudioTracks] 产出）。游戏常有
 // 多条并行流式源（BGM/语音/SE 各一条），本结构供 app UI 列「音轨列表」让用户手动选/排除语音源
 // （自动能量选源可能误选 BGM，见 GrabUtterance）。所有量取自 ts_ms 附近环形窗口内该源的 clip。
@@ -132,8 +145,13 @@ class VoiceHookReader {
   // 回最近 kTextSlotCount 个（更旧的已被覆盖）。未打开 / 无新事件时 [out] 空。
   void PollText(uint64_t from_seq, std::vector<VoiceHookText>& out);
 
-  // 选择 Luna 文本线程：0 恢复自动选择，非 0 写入共享 header 让 injector 只发布该线程。
-  // 映射未打开或契约不匹配返回 false。
+  // 取全部已认领线程的预览快照（v12）。这是**全量快照**而非增量：预览槽按 thread_id 寻址、
+  // 每线程恒一条，没有"漏读就丢"的问题，故不需要游标。返回 thread_preview_write_count 供
+  // 调用方判断"有没有变"以跳过整区扫描；未打开 / 契约不匹配时 [out] 空并返回 0。
+  uint64_t PollThreadPreviews(std::vector<VoiceHookThreadPreview>& out);
+
+  // 选择 Luna 文本线程：0 = 清除选择（v12 起清除后文本环恒空，不再回到自动选择），
+  // 非 0 写入共享 header 让 injector 只发布该线程。映射未打开或契约不匹配返回 false。
   bool SelectTextThread(uint64_t thread_id);
 
   // **按句取语音**：找时间戳与 [ts_ms] 最近（且差 <= [tolerance_ms]）的语音 clip，把它那段 PCM

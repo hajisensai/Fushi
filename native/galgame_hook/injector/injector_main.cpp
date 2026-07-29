@@ -732,28 +732,85 @@ void WriteLunaTextLine(SharedHeader* header, const wchar_t* hookcode,
                      hibiki_voice_hook::kTextEventLine, 0, text, wlen);
 }
 
-// ── 多 hook 自动选干净线程（LunaHook 伪影过滤）────
+// ── 文本线程准入（LunaHook 伪影过滤 + 显式线程选择）────
 // LunaHook 对同一个游戏常同时装多条 hook，同一句对白会被多条各回传一次：只有一条
-// 干净，其余是坏 hook 产生的伪影（整串重复 / 每字重复 N 次）。这里按 hookcode 分组统计
-// clean/dirty，自动锁定表现最干净的那条 hook；用户在 Hibiki 选择线程后则以共享 header 的
-// selected_text_thread_id 覆盖自动赢家。重复伪影始终不写，手动选择也不能绕过过滤。
-
+// 干净，其余是坏 hook 产生的伪影（整串重复 / 每字重复 N 次）。
+//
+// v12 起**不再自动挑赢家**：只有用户为本游戏显式选定的线程（selected_text_thread_id）
+// 才能写进文本环，profile 的 `prefer=` 不再绕过选择，其余一行不发布。理由见
+// luna_text_selector.h 的 LunaTextSelector 类注释。所有线程（含未选中的）仍会经
+// WriteThreadPreview 进预览区，用户据此挑选——"看得见"与"只装选定线程"由两块内存分别
+// 承担，不再互相排斥。
+//
 // EmbedKrkrZ 的精确完整行双写先折叠成第一份；其他引擎保持原过滤语义。
 // 伪影判别（纯函数）：给定规范化后的 [text,len]，判断是否为坏 hook 的重复伪影。
 //   ① 等长游程：对字符串做游程编码（连续相同字符归为一段），若段数 >=3 且所有段
 //     长度相等且 >=2 → 伪影（捕获每字×2/×3/×10 等）。
 // 其余为“干净”。
-// 线程选择的纯逻辑位于 luna_text_selector.h；运行时只负责跨回调加锁和读取手动选择值。
+// 线程准入的纯逻辑位于 luna_text_selector.h；运行时只负责跨回调加锁和读取手动选择值。
 hibiki_voice_hook::LunaTextSelector g_lunaTextSelector;
 CRITICAL_SECTION g_lunaSelectCs;
 bool g_lunaSelectCsInit = false;
 
-// 多 hook 自动选干净线程：更新某 hookcode 的计数并重算当前赢家，返回本行是否应写入文本环。
-// hookcode 可能为 nullptr（归到空串 key）。冷启动（总 clean < 阈值）时干净行照写；一旦某
-// hook 累计干净行达阈值即锁定为赢家，之后只写赢家的行；赢家按 clean_count 最高 + 占比
-// clean/(clean+dirty) >= 0.5 重选，可随游戏切换重新评估。
-bool LunaShouldWriteLine(const wchar_t* hookcode, uint64_t thread_id,
-                         bool is_artifact, uint64_t face_id) {
+// v12：把本行记进该线程的预览槽。**必须在任何过滤/门控之前调用**——预览区存在的意义
+// 就是让用户看见那些没被发布的线程；只记已发布行等于什么都没做。
+//
+// 寻址按 thread_id 线性查找/认领，不取模全局序号：这正是预览区不会被逐字重绘型 hook
+// 挤爆的原因（它只覆盖自己的槽）。ThreadRemove 会回收槽并留下空洞，所以查找必须扫完整张
+// 表：先找已有 id，再回退到遇到的第一个空槽。
+//
+// 与 ShouldWrite 复用同一把锁。锁串行化多个 Luna 回调 writer；槽内 odd/even seq 则保护
+// 跨进程 reader，二者缺一不可。
+void WriteThreadPreview(SharedHeader* header, uint64_t thread_id,
+                        bool is_artifact, const wchar_t* text, int wlen) {
+  if (header == nullptr || thread_id == 0 ||
+      header->thread_preview_offset == 0 || !g_lunaSelectCsInit) {
+    return;
+  }
+  EnterCriticalSection(&g_lunaSelectCs);
+  auto* slots = reinterpret_cast<hibiki_voice_hook::ThreadPreviewSlot*>(
+      reinterpret_cast<uint8_t*>(header) + header->thread_preview_offset);
+  const uint32_t count = (std::min)(header->thread_preview_slot_count,
+                                    hibiki_voice_hook::kThreadPreviewCount);
+  hibiki_voice_hook::ThreadPreviewSlot* slot =
+      hibiki_voice_hook::FindThreadPreviewSlot(slots, count, thread_id);
+  if (slot == nullptr) {
+    LeaveCriticalSection(&g_lunaSelectCs);
+    return;  // 只有 64 条同时存活线程时才会满；ThreadRemove 后的槽会立即可复用。
+  }
+  const uint64_t generation = hibiki_voice_hook::NextThreadPreviewGeneration(
+      &header->thread_preview_write_count);
+  hibiki_voice_hook::BeginThreadPreviewWrite(slot, generation);
+  if (slot->thread_id == 0) {
+    slot->line_count = 0;
+    slot->artifact_count = 0;
+    ZeroMemory(slot->text, sizeof(slot->text));
+  }
+  slot->thread_id = thread_id;
+  slot->line_count++;
+  if (is_artifact) slot->artifact_count++;
+  uint32_t byte_len = (text == nullptr || wlen <= 0)
+                          ? 0
+                          : static_cast<uint32_t>(wlen) * sizeof(wchar_t);
+  const uint32_t max_bytes =
+      hibiki_voice_hook::kThreadPreviewTextChars * sizeof(wchar_t);
+  if (byte_len > max_bytes) byte_len = max_bytes;  // 截断到槽容量（wchar 边界）
+  if (byte_len != 0) memcpy(slot->text, text, byte_len);
+  slot->byte_len = byte_len;
+  slot->event_flags =
+      is_artifact ? hibiki_voice_hook::kThreadPreviewFlagArtifact : 0u;
+  slot->timestamp_ms = GetTickCount64();
+  hibiki_voice_hook::PublishThreadPreviewWrite(slot, generation);
+  // 全局计数最后发布：把它当变化信号的 reader 看到新 generation 时，槽必已是稳定偶数态。
+  hibiki_voice_hook::PublishThreadPreviewGeneration(
+      &header->thread_preview_write_count, generation);
+  LeaveCriticalSection(&g_lunaSelectCs);
+}
+
+// v12 文本环只接受用户显式选择的线程。hookcode/profile prefer 不参与准入判定：否则
+// selected_text_thread_id 仍为 0、UI 显示未选择时，profile 快路却会在后台悄悄发布文本。
+bool LunaShouldWriteLine(uint64_t thread_id, bool is_artifact,
+                         uint64_t face_id) {
   const uint64_t manually_selected = g_luna.header == nullptr
                                          ? 0
                                          : static_cast<uint64_t>(
@@ -764,30 +821,20 @@ bool LunaShouldWriteLine(const wchar_t* hookcode, uint64_t thread_id,
                                                             ->selected_text_thread_id),
                                                    0, 0));
   if (!g_lunaSelectCsInit) {
-    return !is_artifact &&
-           (manually_selected == 0 || manually_selected == thread_id);
+    // 锁未初始化（理论上不该发生）时也遵守 v12 的"没显式选择就不发布"，否则这条退路会
+    // 变成一个悄悄恢复旧行为的后门。face 匹配需要锁保护的注册表，这里只能精确匹配。
+    return !is_artifact && manually_selected != 0 &&
+           manually_selected == thread_id;
   }
-  // BUG-1159：face 登记必须**先于所有过滤分支**。下面的 preferred_hook_codes
-  // 快路整段不进选择器，若只靠 ShouldWrite 内部登记，走快路的线程就永远没有
-  // face；Dart 跨会话记忆恢复恰恰只从这些“已出过行”的线程里挑，于是
-  // FaceOf 返 0 → 退回精确匹配 → 原症状原样复现。
+  // BUG-1159：face 登记必须**先于准入判定**。Dart 跨会话记忆恢复会在未选择阶段
+  // 根据预览行数挑线程；这些行不进文本环，但仍必须提前登记 face，才能在恢复选定后
+  // 接受同一 hook 面的兄弟线程。
   EnterCriticalSection(&g_lunaSelectCs);
   g_lunaTextSelector.NoteFace(thread_id, face_id);
   LeaveCriticalSection(&g_lunaSelectCs);
-  if (manually_selected == 0 && !g_luna.preferred_hook_codes.empty()) {
-    if (is_artifact) return false;
-    for (const std::wstring& preferred : g_luna.preferred_hook_codes) {
-      if (hibiki_voice_hook::LunaHookCodeMatchesBlock(preferred, hookcode)) {
-        return true;
-      }
-    }
-    return false;
-  }
-  const std::wstring key =
-      (hookcode != nullptr) ? std::wstring(hookcode) : std::wstring();
   EnterCriticalSection(&g_lunaSelectCs);
-  const bool should_write = g_lunaTextSelector.ShouldWrite(
-      key, thread_id, is_artifact, manually_selected, face_id);
+  const bool should_write = g_lunaTextSelector.AcceptsLine(
+      thread_id, is_artifact, manually_selected, face_id);
   LeaveCriticalSection(&g_lunaSelectCs);
   return should_write;
 }
@@ -848,19 +895,29 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
       fflush(stderr);
     }
     if (LunaPassesFilter(text, normalized_len)) {
-      // 多 hook 自动选干净线程：先判伪影并累计，再决定本行是否写入文本环。
+      // 先判伪影，再决定本行是否写入文本环。
       const bool artifact =
           hibiki_voice_hook::LunaTextIsArtifact(text, normalized_len);
       const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
       const uint64_t face_id = LunaTextFaceId(hookcode, hookname, tp);
-      if (LunaShouldWriteLine(hookcode, thread_id, artifact, face_id)) {
+      // v12：预览必须写在门控**之前**且无条件（含伪影行）。预览区的全部意义就是让用户
+      // 看见未被发布的线程；放到门控之后就只剩已选中的那条，等于没做。
+      WriteThreadPreview(g_luna.header, thread_id, artifact, text,
+                         normalized_len);
+      // LunaHook 权威标记：游戏内 GDI 文本 hook 据此让位，避免双写者污染（见
+      // voice_hook_ipc.h SharedHeader::luna_active 注释）。幂等，写 1 即可。
+      //
+      // v12：判据从「已**发布**干净行」改成「已**观测到**干净行」。取消自动选线程后
+      // 用户选定之前一行都不发布，若仍绑在发布上，luna_active 永远是 0，GDI 会在整个
+      // 选线程期间把逐字重绘垃圾灌进文本环——旧行为下自动赢家几行内就置位，这个窗口
+      // 根本不存在。绑在观测上既保住原意（LunaHook 确实覆盖了这个引擎 → GDI 让位），
+      // 又不依赖发布门控；LunaHook 对该引擎无输出时 luna_active 仍为 0，GDI 兜底照旧。
+      if (!artifact) {
+        g_luna.header->luna_active = 1;
+      }
+      if (LunaShouldWriteLine(thread_id, artifact, face_id)) {
         WriteLunaTextLine(g_luna.header, hookcode, hookname, tp, thread_id, text,
                           normalized_len);
-        // 一旦 LunaHook 写出干净行，标记 LunaHook 权威：游戏内 GDI 文本 hook 让位不再写文本，
-        // 避免双写者污染（见 voice_hook_ipc.h SharedHeader::luna_active 注释）。幂等，写 1 即可。
-        if (!artifact) {
-          g_luna.header->luna_active = 1;
-        }
       }
     }
   }
@@ -905,13 +962,36 @@ void LunaThreadCreate(const wchar_t* hookcode, const char* hookname,
       hibiki_voice_hook::kTextEventThreadDiscovered, embedable ? 1u : 0u,
       nullptr, 0);
 }
-// 线程目录按捕获会话整体清理；移除事件暂不透传，避免用户刚选中的短生命周期线程在 Luna
-// 重建同一 ThreadParam 的间隙被 UI 擅自切回自动。
+// 移除事件不透传到线程目录，且不清 selected_text_thread_id / face map：同 ThreadParam 短暂
+// 重建仍沿用用户选择。这里只回收预览槽，避免累计超过 64 个历史线程后新线程永久没有预览。
 void LunaThreadRemove(const wchar_t* hookcode, const char* hookname,
                       LunaThreadParam tp) {
-  (void)hookcode;
-  (void)hookname;
-  (void)tp;
+  if (g_luna.header == nullptr || !g_lunaSelectCsInit ||
+      g_luna.header->thread_preview_offset == 0) {
+    return;
+  }
+  const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
+  EnterCriticalSection(&g_lunaSelectCs);
+  auto* slots = reinterpret_cast<hibiki_voice_hook::ThreadPreviewSlot*>(
+      reinterpret_cast<uint8_t*>(g_luna.header) +
+      g_luna.header->thread_preview_offset);
+  const uint32_t count =
+      (std::min)(g_luna.header->thread_preview_slot_count,
+                 hibiki_voice_hook::kThreadPreviewCount);
+  for (uint32_t i = 0; i < count; ++i) {
+    auto* slot = &slots[i];
+    if (slot->thread_id != thread_id) continue;
+    const uint64_t generation =
+        hibiki_voice_hook::NextThreadPreviewGeneration(
+            &g_luna.header->thread_preview_write_count);
+    hibiki_voice_hook::BeginThreadPreviewWrite(slot, generation);
+    hibiki_voice_hook::ClearThreadPreviewPayload(slot);
+    hibiki_voice_hook::PublishThreadPreviewWrite(slot, generation);
+    hibiki_voice_hook::PublishThreadPreviewGeneration(
+        &g_luna.header->thread_preview_write_count, generation);
+    break;
+  }
+  LeaveCriticalSection(&g_lunaSelectCs);
 }
 void LunaHostInfo(int type, const wchar_t* log) {
   if (LunaDiagEnabled() && log != nullptr) {
@@ -1021,8 +1101,8 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
     bridge.settings(200, true, codepage, 8192, 1000, false);
   }
 
-  // 多 hook 自动选干净线程的计数锁：Output 回调可在 LunaHook 工作线程并发，
-  // 于 start() 注册回调前初始化（进程生命期内一次，多次 Init 由 flag 守卫）。
+  // 文本线程 face 表、显式选择判定与预览 writer 的共享锁：Output/ThreadRemove 回调可在
+  // LunaHook 工作线程并发，于 start() 注册回调前初始化（进程生命期内一次）。
   if (!g_lunaSelectCsInit) {
     InitializeCriticalSection(&g_lunaSelectCs);
     g_lunaSelectCsInit = true;
@@ -1281,18 +1361,23 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
   // hold 模式下常驻维持它存活，供 host 消费。
   const uint32_t ring_capacity = ComputeRingCapacity();
   const uint32_t loopback_capacity = ComputeLoopbackCapacity();
-  // v6 布局：[SharedHeader][音频环形 ring_capacity][文本环 kTextSlotCount*kTextSlotBytes]
+  // v12 布局：[SharedHeader][音频环形 ring_capacity][文本环 kTextSlotCount*kTextSlotBytes]
   //          [clip 索引 kClipCount*sizeof(VoiceClip)][loopback 环 loopback_capacity]
-  //          [loopback 标记表 kLoopbackMarkerCount*sizeof(LoopbackMarker)]。各区偏移下面填进 header。
+  //          [loopback 标记表 kLoopbackMarkerCount*sizeof(LoopbackMarker)]
+  //          [线程预览区 kThreadPreviewCount*sizeof(ThreadPreviewSlot)]。各区偏移下面填进 header。
   const uint64_t text_region_bytes =
       static_cast<uint64_t>(kTextSlotCount) * kTextSlotBytes;
   const uint64_t clip_region_bytes =
       static_cast<uint64_t>(kClipCount) * sizeof(VoiceClip);
   const uint64_t loopback_marker_bytes =
       static_cast<uint64_t>(kLoopbackMarkerCount) * sizeof(LoopbackMarker);
+  const uint64_t thread_preview_bytes =
+      static_cast<uint64_t>(hibiki_voice_hook::kThreadPreviewCount) *
+      sizeof(hibiki_voice_hook::ThreadPreviewSlot);
   const uint64_t total_size = sizeof(SharedHeader) + ring_capacity +
                               text_region_bytes + clip_region_bytes +
-                              loopback_capacity + loopback_marker_bytes;
+                              loopback_capacity + loopback_marker_bytes +
+                              thread_preview_bytes;
   const std::wstring shm = SharedMemoryName(pid);
   SetLastError(ERROR_SUCCESS);
   HANDLE mapping = CreateFileMappingW(
@@ -1348,6 +1433,11 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     header->loopback_marker_offset = static_cast<uint32_t>(
         header->loopback_ring_offset + loopback_capacity);
     header->loopback_marker_slot_count = kLoopbackMarkerCount;
+    // v12：线程预览区紧随标记表。放在**布局最尾**是有意的——前面各区的偏移一个都不动，
+    // 旧 host 即使只认到 v11 的字段也不会读错位（版本号仍会先把它挡掉，这只是纵深防御）。
+    header->thread_preview_offset = static_cast<uint32_t>(
+        header->loopback_marker_offset + loopback_marker_bytes);
+    header->thread_preview_slot_count = hibiki_voice_hook::kThreadPreviewCount;
   } else {
     fprintf(stderr,
             "[session] reusing live hook mapping pid=%lu text=%u audioBytes=%llu\n",

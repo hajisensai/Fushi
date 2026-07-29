@@ -1400,16 +1400,21 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                       ? selectedTextThreadKey
                       : '',
                   entries: <GamepadDropdownEntry<String>>[
-                    (value: '', label: t.game_text_thread_all),
+                    // v12：空值不再是「全部线程」——不选就一行都不发布。标签必须如实
+                    // 说明，否则用户会以为不选也在抓，然后奇怪为什么没有台词。
+                    (value: '', label: t.game_text_thread_unset),
                     for (final TexthookerTextThread thread in textThreads)
                       (
                         value: thread.key,
                         // 同一 hook 面在不同调用上下文会报成多条同 label 线程；
                         // assignThreadDisplayLabels 给重名线程补 `#N` 序号，避免下拉
                         // 里出现一整列一模一样的 `TextRender · 0x… · 0`。
+                        // 行数用 observedLineCount（native 观测总行数）而不是已发布
+                        // 行数：v12 起未被选中的线程一行都不发布，用已发布行数会让
+                        // 每条候选都显示 `· 0`，用户还是没法判断该选哪条。
                         label:
                             '${threadDisplayLabels[thread.key] ?? thread.label}'
-                            ' · ${thread.lineCount}',
+                            ' · ${thread.observedLineCount}',
                       ),
                   ],
                   // 每条线程第二行：有音频行数 + 最近台词预览——没有预览用户
@@ -1420,7 +1425,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                       if (thread.key == key) {
                         return texthookerThreadSubtitle(
                           audioLineCount: thread.audioLineCount,
-                          latestText: thread.latestText,
+                          // 预览优先取已发布台词，回落 native 预览行——未被选中的
+                          // 线程只有后者，而那正是用户挑线程时唯一能看的东西。
+                          latestText: thread.displayPreviewText,
                           audioLabel: t.game_text_thread_audio_count(
                             count: thread.audioLineCount,
                           ),

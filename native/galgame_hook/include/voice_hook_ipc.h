@@ -7,6 +7,7 @@
 #include <string>
 
 #include "luna_version.h"
+#include "thread_preview_ipc.h"
 
 // galgame 一键制卡 C 阶段（docs/specs/galgame-mining）—— 引擎级 voice hook 的**进程间契约**。
 //
@@ -32,7 +33,16 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 // v9：合并 v8 的引擎诊断/Unity 资源事件与 v6 的 loopback 环。
 // v10：文本槽追加事件类型，透传 Luna ThreadCreate，使尚无台词的候选线程也可被选择。
 // v11：显式声明稳定 IPC、Luna bridge ABI 与 vendored Luna 版本，host 可在读数据前拒绝错配。
-constexpr uint32_t kSharedVersion = 11;
+// v12：追加「线程预览区」，并取消 injector 自动替用户选线程。
+//     旧结构里文本环是**唯一**的文本出口，同时伺候两个诉求相反的消费者：语音配对要高信噪的
+//     单条线程，线程选择器要每条线程都有样本。二者共用一块 256 槽全局 FIFO，于是"让所有 hook
+//     都发布"必然把配对候选挤出环（kExpired → 降级 loopback，即 BUG-1159 的失败链），这才是
+//     BUG-1193 真正的根因——不是门控本身。v12 把两个消费者拆到两块内存：
+//       * 文本环（Ring A）：语义不变，仍只发布**当前生效线程**的行，配对路径逐字节不受影响；
+//       * 线程预览区（本区）：每条线程各占**固定槽位**，只留最近一行。
+//     预览区按线程分槽而不是全局 FIFO，所以逐字重绘型 hook 只能覆盖它自己的槽，**物理上挤不掉
+//     别的线程**——"挤压"从"要小心防"变成结构上不可能，这正是自动赢家门控得以退役的前提。
+constexpr uint32_t kSharedVersion = 12;
 constexpr uint32_t kStableIpcVersion = 1;
 
 // 环形缓冲保留时长（秒）。C 阶段语音轨常见 48k 立体声 float32；60s 上界 ≈ 23MB。
@@ -54,6 +64,7 @@ constexpr uint32_t kTextSourceUnityTmp = 3;
 constexpr uint32_t kTextSourceSiglus = 4;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
+
 // 语音 clip 索引：最近 kClipCount 条语音片段的位置记录（按 source voice / DirectSound buffer
 // 的一次提交切一条；galgame 一句台词≈一条语音）。指向音频环形里的 [ring_offset, byte_len)。
 constexpr uint32_t kClipCount = 1024;  // clip 索引环：128≈仅2秒历史不够重建整句语音，扩到 ~16秒
@@ -245,8 +256,8 @@ struct SharedHeader {
   uint32_t clip_region_offset;      // clip 索引起始
   volatile uint64_t text_write_count;  // 单调：已写文本事件数（host 取 last..count 的新事件）
   volatile uint64_t clip_write_count;  // 单调：已写语音 clip 数
-  // 0=injector 自动选干净线程；非 0=用户在 Hibiki 选择的 TextSlot::thread_id。
-  // injector 仍无条件过滤重复伪影，再仅写该线程。
+  // 0=尚未选定（v12 起文本环恒空）；非 0=用户在 Hibiki 选择的 TextSlot::thread_id。
+  // injector 无条件过滤重复伪影，再仅写该线程/同一 hook face。
   volatile uint64_t selected_text_thread_id;
   // LunaHook（引擎精确）出干净行后 injector 置 1；置 1 后游戏内 GDI 文本 hook 让位不再写文本，
   // 消除「LunaHook 干净行 + GDI 每字重画伪影」双写者污染。音频写入不受此标志影响。GDI 仅在
@@ -273,6 +284,13 @@ struct SharedHeader {
   uint32_t loopback_diag;                // loopback 诊断位（线程启动/设备就绪/捕获非静音等）
   volatile uint64_t loopback_total_written;  // 单调累计写入 loopback 字节（reader 判可读量/覆盖）
   volatile uint64_t loopback_marker_count;   // 单调累计已写标记数
+  // ── v12 线程预览区（injector 填偏移/槽数，写入者是 Luna 回调路径）──
+  // 内存布局尾部再追加：[...标记表][线程预览区 thread_preview_slot_count*ThreadPreviewSlot]
+  uint32_t thread_preview_offset;      // 线程预览区起始（header 起算字节偏移）
+  uint32_t thread_preview_slot_count;  // 槽数（= kThreadPreviewCount，冗余便于 reader 自洽）
+  // 单调累计已写预览行数。host 只用它判断「有没有新预览」以跳过整区扫描；预览槽本身按
+  // thread_id 寻址，不靠这个序号定位（与文本环的 text_write_count 语义不同，勿照搬）。
+  volatile uint64_t thread_preview_write_count;
 };
 #pragma pack(pop)
 
