@@ -938,6 +938,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             HibikiPageHeader(
               title: t.game_capture_workbench,
               subtitle: t.game_capture_description,
+              leading: widget.onShowLibrary == null
+                  ? null
+                  : HibikiIconButton(
+                      icon: Icons.arrow_back,
+                      tooltip: t.game_back_to_library,
+                      onTap: widget.onShowLibrary,
+                    ),
               actions: actions,
             ),
           Expanded(

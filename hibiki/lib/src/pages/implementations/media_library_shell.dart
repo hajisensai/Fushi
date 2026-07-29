@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/utils.dart';
 
 /// 库页视图种类：一个顶层 tab 内部的几个平级视图。
@@ -128,6 +129,7 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
       selected: selected,
       onChanged: _select,
       focusIdPrefix: widget.focusIdPrefix,
+      focusId: HibikiFocusId('${widget.focusIdPrefix}-sections'),
       child: HibikiSegmentedStrip<MediaLibraryViewKind>(
         segments: <ButtonSegment<MediaLibraryViewKind>>[
           for (final MediaLibraryViewSpec spec in views)
