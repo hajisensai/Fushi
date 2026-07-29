@@ -17,12 +17,19 @@ const CONTENT = path.join(__dirname, 'content.js');
 // options.respond=false 模拟 MV3 background service worker 在消息在途时被系统终止：
 // sendMessage 的回调永不触发（BUG-1024 死锁场景）。options 缺省保持历史行为（同步回调）。
 function loadContentAndFireShift(options) {
+  options = options || {};
   const respond = !options || options.respond !== false;
   const src = fs.readFileSync(CONTENT, 'utf8');
   const docListeners = Object.create(null);
   const winListeners = Object.create(null);
+  const storageListeners = [];
   const sent = [];
   const dataset = {};
+  const video = {
+    paused: false,
+    pauseCount: 0,
+    pause() { this.paused = true; this.pauseCount++; },
+  };
   // 可控时钟：BUG-1024 的在途闸超时兜底按 Date.now() 判定，测试需要推进虚拟时间。
   const nowRef = { value: 1000000 };
   const RealDate = Date;
@@ -53,7 +60,7 @@ function loadContentAndFireShift(options) {
       (docListeners[t] = docListeners[t] || []).push(fn);
     },
     getElementById: () => null,
-    querySelector: () => null,
+    querySelector: (selector) => selector === 'video' ? video : null,
     querySelectorAll: () => [],
     createElement: () => ({
       style: {},
@@ -79,8 +86,15 @@ function loadContentAndFireShift(options) {
       },
     },
     storage: {
-      local: { get: async () => ({}), set: async () => {} },
-      onChanged: { addListener() {} },
+      local: {
+        get: (_keys, cb) => {
+          const saved = options.stored || {};
+          if (typeof cb === 'function') cb(saved);
+          return Promise.resolve(saved);
+        },
+        set: async () => {},
+      },
+      onChanged: { addListener: (fn) => storageListeners.push(fn) },
     },
   };
   sandbox.window = {
@@ -103,7 +117,15 @@ function loadContentAndFireShift(options) {
   vm.createContext(sandbox);
   vm.runInContext(src, sandbox, { filename: 'content.js' });
 
-  return { docListeners, sent, dataset, nowRef };
+  return {
+    docListeners,
+    sent,
+    dataset,
+    nowRef,
+    video,
+    windowObj: sandbox.window,
+    storageListeners,
+  };
 }
 
 test('content.js 在加载时注册了顶层 document mousemove 监听器', () => {
@@ -133,6 +155,77 @@ test('未按 Shift 的 mousemove 不发查词（不刷爆服务器）', () => {
     sent.filter((m) => m && m.type === 'lookup').length,
     0,
     '未按 Shift 也发了查词',
+  );
+});
+
+test('查词时暂停默认关闭；开启后任意视频站点只在发起查词时暂停', () => {
+  const off = loadContentAndFireShift();
+  for (const fn of off.docListeners.mousemove) {
+    fn({ shiftKey: true, clientX: 300, clientY: 400 });
+  }
+  assert.strictEqual(off.video.pauseCount, 0, '默认关闭时查词不得暂停视频');
+
+  const on = loadContentAndFireShift({ stored: { subtitlePauseOnLookup: true } });
+  for (const fn of on.docListeners.mousemove) {
+    fn({ shiftKey: true, clientX: 300, clientY: 400 });
+  }
+  assert.strictEqual(on.video.pauseCount, 1, '开启后发起查词应暂停当前视频');
+});
+
+test('查词暂停兼容旧 subtitleHoverPause，但新键显式 false 优先', () => {
+  const legacy = loadContentAndFireShift({ stored: { subtitleHoverPause: true } });
+  for (const fn of legacy.docListeners.mousemove) {
+    fn({ shiftKey: true, clientX: 300, clientY: 400 });
+  }
+  assert.strictEqual(legacy.video.pauseCount, 1, '旧开关为 true 的用户升级后应保留选择');
+
+  const overridden = loadContentAndFireShift({
+    stored: { subtitleHoverPause: true, subtitlePauseOnLookup: false },
+  });
+  for (const fn of overridden.docListeners.mousemove) {
+    fn({ shiftKey: true, clientX: 300, clientY: 400 });
+  }
+  assert.strictEqual(overridden.video.pauseCount, 0, '新键显式 false 必须覆盖旧 true');
+});
+
+test('查词暂停经 storage.onChanged 热更新启停，无需刷新页面', () => {
+  const h = loadContentAndFireShift({
+    stored: { subtitlePauseOnLookup: false },
+  });
+  assert.ok(h.storageListeners.length > 0, 'content.js 应注册 storage.onChanged');
+
+  fireShiftLookup(h.docListeners, 300, 400);
+  assert.strictEqual(h.video.pauseCount, 0, '初始关闭时不得暂停');
+
+  for (const listener of h.storageListeners) {
+    listener({ subtitlePauseOnLookup: { newValue: true } }, 'local');
+  }
+  fireShiftLookup(h.docListeners, 500, 600);
+  assert.strictEqual(h.video.pauseCount, 1, '热更新开启后下一次查词必须暂停');
+
+  for (const listener of h.storageListeners) {
+    listener({ subtitlePauseOnLookup: { newValue: false } }, 'local');
+  }
+  fireShiftLookup(h.docListeners, 700, 650);
+  assert.strictEqual(h.video.pauseCount, 1, '热更新关闭后不得继续暂停');
+});
+
+test('悬浮字幕自动查词复用同词去重，移开复位后可重查', () => {
+  const h = loadContentAndFireShift();
+  const cue = { startMs: 1000, endMs: 2000, text: '世界です' };
+  h.windowObj.hibikiLookupAtPoint(300, 400, cue, { auto: true });
+  h.windowObj.hibikiLookupAtPoint(310, 400, cue, { auto: true });
+  assert.strictEqual(
+    h.sent.filter((m) => m && m.type === 'lookup').length,
+    1,
+    '同一句同一词的自动悬停不得重复发请求',
+  );
+  h.windowObj.hibikiResetAutoLookupDedupe();
+  h.windowObj.hibikiLookupAtPoint(310, 400, cue, { auto: true });
+  assert.strictEqual(
+    h.sent.filter((m) => m && m.type === 'lookup').length,
+    2,
+    '移开复位后再次悬停同词应可重新查词',
   );
 });
 

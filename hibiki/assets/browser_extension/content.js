@@ -28,6 +28,7 @@ let hibikiHost = null;
 // BUG-530 性能：划词监听器原来对每次 mousemove 都发查词请求 → 一直按 Shift 移动会把服务器
 // 刷爆、UI 卡顿。用「位移阈值 + 同词去重 + 在途请求闸」三重节流：只在移到**不同词**上才查。
 let hibikiLastTerm = '';
+let hibikiLastAutoLookupKey = '';
 let hibikiLastX = -1;
 let hibikiLastY = -1;
 let hibikiPending = false;
@@ -37,6 +38,37 @@ let hibikiPending = false;
 // 就当上一次已废弃、放行新查词（回调仍会正常复位，此值只是「回调永不来」的安全兜底）。
 let hibikiPendingSince = 0;
 const HIBIKI_PENDING_TIMEOUT_MS = 1500;
+
+// 「查词时暂停」取代旧的「悬停字幕时暂停」。新键显式值优先；旧
+// subtitleHoverPause 只作升级兼容读取，避免用户更新扩展后原选择突然丢失。
+let hibikiPauseOnLookup = false;
+let hibikiHasPauseOnLookupPref = false;
+function hibikiApplyPauseOnLookupPrefs(saved) {
+  saved = saved || {};
+  hibikiHasPauseOnLookupPref = typeof saved.subtitlePauseOnLookup === 'boolean';
+  hibikiPauseOnLookup = hibikiHasPauseOnLookupPref
+    ? saved.subtitlePauseOnLookup
+    : saved.subtitleHoverPause === true;
+}
+try {
+  const hibikiPausePrefsPromise = chrome.storage.local.get(
+    ['subtitlePauseOnLookup', 'subtitleHoverPause'],
+    hibikiApplyPauseOnLookupPrefs,
+  );
+  if (hibikiPausePrefsPromise &&
+      typeof hibikiPausePrefsPromise.then === 'function') {
+    hibikiPausePrefsPromise.then(hibikiApplyPauseOnLookupPrefs, () => {});
+  }
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes) return;
+    if (changes.subtitlePauseOnLookup) {
+      hibikiHasPauseOnLookupPref = true;
+      hibikiPauseOnLookup = changes.subtitlePauseOnLookup.newValue === true;
+    } else if (changes.subtitleHoverPause && !hibikiHasPauseOnLookupPref) {
+      hibikiPauseOnLookup = changes.subtitleHoverPause.newValue === true;
+    }
+  });
+} catch (_) {}
 
 // 弹窗尺寸精细化 Phase D：拖拽调整扩展弹窗尺寸。
 // hibikiResizeGrip：右下角拖拽把手（顶层 position:fixed overlay，与高亮层同父挂在
@@ -1424,20 +1456,18 @@ function hibikiShowConnectionFailure(resp) {
   try { window.hibikiToast('⚠ ' + message, false, settingsFixable); } catch (_) {}
 }
 
-// 查词即自动暂停 + 发查词请求 + 渲染弹窗的共享收尾（mousemove 划词与面板行显式点击查词同源）。
-// 暂停：**仅对 Netflix 播放器**（按域名判定，不碰别的站点/后台视频）。定格画面+字幕（方便看词/看
-// 弹窗），冻结 video.currentTime → 句子窗口停在句末，offscreen 随之暂停录制保住这句 → 制卡得整句、
-// 干净。YouTube 走服务端裁剪路径不需暂停；普通网页背景视频更不该被查词误暂停。仅在播放时暂停、不
-// 自动恢复（用户查完自己按空格续播）。幂等（重复调用只在 !paused 时暂停）。
+// 发查词请求 + 渲染弹窗的共享收尾（Shift 悬停、面板行点击、悬浮字幕自动查词同源）。
+// 用户开启「查词时暂停」后，仅在确实发起了非空查词请求时暂停当前视频；不自动恢复，查完由用户
+// 继续播放。关闭时任何站点都不因查词被暂停。
 function hibikiSendLookup(term, anchorRect, cueWindow) {
   // TODO-1219 P3：每次查词刷新精确窗——面板行查词传 cueWindow（该行精确 [startMs,endMs]），
   // mousemove 划词不传则清空，使后续制卡回落 DOM 采样窗（live 视频 hover 取当前句）。
   hibikiPendingCueWindow = cueWindow || null;
   if (!term || !term.trim()) return;
-  if (hibikiSite() === 'netflix') {
+  if (!hibikiExtAlive()) return; // 扩展已重载/失效：静默停手（重载页面恢复）
+  if (hibikiPauseOnLookup) {
     try { const _v = document.querySelector('video'); if (_v && !_v.paused) _v.pause(); } catch (_) {}
   }
-  if (!hibikiExtAlive()) return; // 扩展已重载/失效：静默停手（重载页面恢复）
   hibikiPending = true;
   hibikiPendingSince = Date.now(); // BUG-1024：记发起时刻，供在途闸超时兜底
   try {
@@ -1472,7 +1502,7 @@ function hibikiSendLookup(term, anchorRect, cueWindow) {
 // TODO-1219 P2：面板行内文本「显式点击查词」的入口（供 subtitle-panel.js 调用）。点击命中的
 // (clientX,clientY) 复用与 mousemove 划词同一套 hoshiSelection 取词（含流媒体字幕覆盖层兜底），
 // 选中后走 hibikiSendLookup 发查词 + 渲染弹窗，取词/高亮/锚点与全局划词完全一致。
-window.hibikiLookupAtPoint = function (clientX, clientY, cueWindow) {
+window.hibikiLookupAtPoint = function (clientX, clientY, cueWindow, options) {
   if (!window.hoshiSelection || typeof window.hoshiSelection.getCharacterAtPoint !== 'function') return;
   let hit = window.hoshiSelection.getCharacterAtPoint(clientX, clientY);
   if (!hit) {
@@ -1490,8 +1520,22 @@ window.hibikiLookupAtPoint = function (clientX, clientY, cueWindow) {
       anchorRect = window.hoshiSelection.getSelectionRect(clientX, clientY);
     }
   } catch (_) { anchorRect = null; }
+  const autoLookup = !!(options && options.auto === true);
+  if (autoLookup && hibikiPending &&
+      Date.now() - hibikiPendingSince < HIBIKI_PENDING_TIMEOUT_MS) return;
+  if (autoLookup) {
+    const cueKey = cueWindow
+      ? String(cueWindow.startMs) + ':' + String(cueWindow.endMs) + ':' + String(cueWindow.text || '')
+      : '';
+    const lookupKey = String(term || '') + '\0' + cueKey;
+    if (lookupKey === hibikiLastAutoLookupKey) return;
+    hibikiLastAutoLookupKey = lookupKey;
+  }
   hibikiLastTerm = term || ''; // 与 mousemove 去重状态对齐，避免点后立刻 hover 同词重查
   hibikiSendLookup(term, anchorRect, cueWindow); // TODO-1219 P3：面板行传入精确窗
+};
+window.hibikiResetAutoLookupDedupe = function () {
+  hibikiLastAutoLookupKey = '';
 };
 
 // TODO-1185：嵌套查词——点释义里的词（词典交叉引用 a[href]）。popup.js 的 a.onclick →

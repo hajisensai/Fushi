@@ -233,15 +233,15 @@ void main() {
             reason: '$root options.css must not retain dead hero layout rules');
       });
 
-      test('[$name] options expose user-subtitle playback controls', () {
+      test('[$name] options expose subtitle lookup controls', () {
         final String html = File('$root/options.html').readAsStringSync();
         final String js = File('$root/options.js').readAsStringSync();
         for (final String id in <String>[
           'subtitleOverlayEnabled',
           'subtitleDragDropEnabled',
           'subtitleAutoScroll',
-          'subtitleAutoPause',
-          'subtitleCondensedPlayback',
+          'subtitlePauseOnLookup',
+          'subtitleOverlayAutoLookup',
         ]) {
           expect(html.contains('id="$id"'), isTrue,
               reason: '$root options.html missing $id');
@@ -260,10 +260,35 @@ void main() {
             reason: '$root subtitle-panel.js missing drag-and-drop loading');
         expect(src.contains("'hibiki-subtitle-overlay'"), isTrue,
             reason: '$root subtitle-panel.js missing video subtitle overlay');
-        expect(src.contains('st.autoPause'), isTrue,
-            reason: '$root subtitle-panel.js missing auto-pause mode');
-        expect(src.contains('st.condensedPlayback'), isTrue,
-            reason: '$root subtitle-panel.js missing condensed playback mode');
+        expect(src.contains('st.overlayAutoLookup'), isTrue,
+            reason:
+                '$root subtitle-panel.js missing floating-subtitle auto lookup');
+        expect(src.contains('applyPlaybackMode'), isFalse,
+            reason: '$root subtitle-panel.js must remove legacy playback modes');
+      });
+
+      test('[$name] video shortcuts are configured per action', () {
+        final String html = File('$root/options.html').readAsStringSync();
+        final String js = File('$root/options.js').readAsStringSync();
+        for (final String id in <String>[
+          'videoShortcutPrevCue',
+          'videoShortcutNextCue',
+          'videoShortcutReplayCue',
+          'videoShortcutTogglePanel',
+          'videoShortcutOffsetMinus',
+          'videoShortcutOffsetPlus',
+          'videoShortcutOffsetReset',
+          'videoShortcutCopyCue',
+          'videoShortcutRateDown',
+          'videoShortcutRateUp',
+        ]) {
+          expect(html.contains('id="$id"'), isTrue,
+              reason: '$root options.html missing independent shortcut $id');
+          expect(js.contains(id), isTrue,
+              reason: '$root options.js must persist independent shortcut $id');
+        }
+        expect(html.contains('id="videoShortcutsEnabled"'), isFalse,
+            reason: '$root options must not retain the all-in-one shortcut row');
       });
 
       test('[$name] background diagnoses Hibiki/Yomitan port ownership', () {
@@ -426,6 +451,8 @@ void main() {
       'manifest.json',
       // TODO-1219 P2：字幕列表面板新增/改动的共享文件，同样纳入字节守卫。
       'subtitle-panel.js',
+      // TODO-2301：视频快捷键逐动作开关和运行时接线必须与随 app 分发的镜像一致。
+      'video-shortcuts.js',
       'vendor/content.css',
       // TODO-1219：字幕列表面板默认关开关（options UI）——两镜像同步纳入字节守卫。
       'options.html',

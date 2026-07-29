@@ -10,9 +10,9 @@ Anki 能力——一切经本机 Hibiki 桌面 App 内置的 yomitan API server�
 |---|---|---|
 | `manifest.json` | — | MV3 清单；content script 注入顺序有语义（先桥后消费者） |
 | `background.js` | service worker | 唯一网络出口：查词/制卡/字幕等所有 HTTP 请求 + 连接诊断 + 自更新执行 + 心跳 + Netflix 录制编排 |
-| `content.js` | 隔离 | Shift 悬停查词、弹窗渲染/定位、高亮、挖词队列、字幕轨 provider（textTracks 收割 / DOM 采样 / 整集拦截接收端）、Netflix/YouTube 批量制卡驱动 |
-| `subtitle-panel.js` | 隔离 | 字幕列表侧栏 + 视频覆盖层 + 外挂字幕加载 + 全轨时轴偏移 + 播放模式（自动暂停/精简/快进）+ 悬停暂停/防剧透模糊 + 快捷键执行端 |
-| `video-shortcuts.js` | 隔离 | 视频页快捷键判定（纯函数）+ 绑定；动作交 subtitle-panel 执行 |
+| `content.js` | 隔离 | Shift 悬停查词、查词暂停、弹窗渲染/定位、高亮、挖词队列、字幕轨 provider（textTracks 收割 / DOM 采样 / 整集拦截接收端）、Netflix/YouTube 批量制卡驱动 |
+| `subtitle-panel.js` | 隔离 | 字幕列表侧栏 + 视频覆盖层 + 外挂字幕加载 + 全轨时轴偏移 + 悬浮字幕自动查词/防剧透模糊 + 快捷键执行端 |
+| `video-shortcuts.js` | 隔离 | 视频页快捷键判定（纯函数）+ 绑定；每个动作独立开关，动作交 subtitle-panel 执行 |
 | `netflix-bridge.js` | MAIN | Netflix 专用：JSON.parse hook 抓整集字幕 + 官方 player.seek（避开 DRM M7375） |
 | `stream-bridge.js` | MAIN | 通用流媒体字幕桥（asb 移植）：TVer / Bilibili.tv / Hulu JP / Prime Video 整集字幕拦截 |
 | `THIRD_PARTY_LICENSES.md` | — | 随扩展分发的第三方版权与许可文本（当前含 asbplayer MIT） |
@@ -23,7 +23,7 @@ Anki 能力——一切经本机 Hibiki 桌面 App 内置的 yomitan API server�
 | `connection-diagnostics.js` | SW/options | 连接六态分类 + 中文文案（纯函数） |
 | `hibiki-defaults.js` | SW/options | 安装助手写入的自动配置（host/port/token/build 指纹） |
 | `offscreen.html/js` | offscreen | tabCapture MediaRecorder（Netflix 逐句回放录制） |
-| `options.html/css/js` | options | 设置页：连接、字幕/播放偏好、快捷键开关、版本与更新卡片 |
+| `options.html/css/js` | options | 设置页：连接、字幕偏好、逐动作视频快捷键、版本与更新卡片 |
 | `vendor/` | — | `popup.{js,css,html}`+`selection.js` = app 查词弹窗原样拷贝（上游 `hibiki/assets/popup/`）；`dict-media.js` 允许扩展分叉；`content.css` 由生成器产出；`action-popup.*` 扩展独有 |
 | `scripts/` | 开发 | `generate-content-css.mjs`（popup.css → 零特异性重根 content.css）、`sync-mirrors.mjs`（镜像同步） |
 
@@ -104,21 +104,20 @@ hook 安装；② `manifest.json` 的 stream-bridge matches 加域名；③ 新�
 `stream-bridge.test.js` 样例 JSON 测试；⑤ 跑 sync-mirrors。参考 asbplayer
 `extension/src/entrypoints/*-page.ts`（MIT）。
 
-## 快捷键（视频页，options 可整体关闭）
+## 快捷键（视频页，options 逐动作独立开关）
 
 | 键 | 动作 |
 |---|---|
 | ← / → | 上一句 / 下一句字幕（仅当前视频有字幕轨时接管） |
 | ↑ | 回当前句句首重播 |
-| Shift+P / O / F | 开关 自动暂停 / 精简播放 / 快进无字幕段（当前视频有 Hibiki 字幕轨时） |
 | Shift+S | 开关字幕列表面板（当前视频有 Hibiki 字幕轨时） |
 | Shift+H | 隐藏 / 显示字幕（站点原生字幕 + 扩展覆盖层；**不**需要 Hibiki 字幕轨） |
 | Ctrl+Shift+← / → / ↓ | 字幕偏移 −100ms / ＋100ms / 重置 |
 | Ctrl+Shift+Z | 复制当前字幕句（配合 Hibiki 剪贴板监看即查词） |
 | Ctrl+Shift+[ / ] | 播放速度 −0.25x / ＋0.25x（0.25–4x） |
 
-与 asbplayer 默认键位对齐（asb 用 hotkeys-js + 可改键；这里是固定键位 + 纯函数判定，站点
-输入框/可编辑区一律放行；无轨时方向键及 Shift+P/O/F/S 均放行给站点原生行为）。
+这里使用固定键位 + 纯函数判定；每个动作在扩展设置页各有自己的开关。站点输入框/可编辑区
+一律放行；无轨时方向键及 Shift+S 均放行给站点原生行为。
 
 `Shift+H` 的「隐藏」用 `visibility:hidden` 而非 `display:none`：扩展的取词、逐句制卡、caret
 兜底命中都要读字幕节点的 textContent / 几何，`display:none` 会把它们摘出布局，隐藏字幕就

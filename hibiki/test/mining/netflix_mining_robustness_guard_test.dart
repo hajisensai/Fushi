@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 守住修复不被回退。两份扩展镜像（随 app 打包的 `assets/` 与真源 `tools/`）都守。
 ///
 /// 覆盖：
-/// - #1 查词即暂停**仅对 Netflix**（不再对页面任意 <video> 暂停 → UX 副作用）。
+/// - #1 查词暂停由用户设置门控；关闭时任何站点都不暂停，开启时暂停当前视频。
 /// - #2 Netflix 批量循环 beginClip→endClip 收口放 finally（异常也收口录制器，防状态叠加）。
 /// - #3 MediaRecorder 孤儿防御（offscreen beginClip 先停旧 recorder）+ hideStyle/cursor 还原放 finally。
 /// - #4 每句时间窗死代码已删（扩展 mineClip 不发段内窗/gifEnd；dart transcodeClipToCapture 去掉
@@ -34,22 +34,19 @@ void main() {
               reason: 'missing ${content.path}');
         });
 
-        test('#1 查词暂停仅门控 Netflix（不对任意 <video> 暂停）', () {
+        test('#1 查词暂停由 subtitlePauseOnLookup 门控', () {
           final String src = content.readAsStringSync();
-          // 暂停必须包在 hibikiSite()==='netflix' 门里。
           expect(
-            src.contains("if (hibikiSite() === 'netflix') {\n"
+            src.contains('if (hibikiPauseOnLookup) {\n'
                 "    try { const _v = document.querySelector('video'); if (_v && !_v.paused) _v.pause(); } catch (_) {}\n"
                 '  }'),
             isTrue,
-            reason: '${content.path} 查词暂停未门控到 Netflix',
+            reason: '${content.path} 查词暂停未受用户设置门控',
           );
-          // 不得再有顶层（2 空格缩进）未门控的查词暂停。
           expect(
-            src.contains(
-                "\n  try { const _v = document.querySelector('video'); if (_v && !_v.paused) _v.pause(); } catch (_) {}"),
+            src.contains("hibikiSite() === 'netflix'"),
             isFalse,
-            reason: '${content.path} 仍残留未门控的查词暂停（对任意 video 生效）',
+            reason: '${content.path} 不应再保留 Netflix 无设置强制暂停',
           );
         });
 
