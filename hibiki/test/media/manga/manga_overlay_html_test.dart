@@ -143,6 +143,143 @@ void main() {
       expect(html.contains('>&amp;</span>'), isTrue,
           reason: '字符区域里的 < > & 必须分别转义');
     });
+
+    test('Lens 拆开的竖排气泡合成整句，并排除窄假名注音', () {
+      // 取自 BUG-1229 用户实际 Lens 缓存 page-000003.jpg 的块形状：
+      // 「大丈夫だよな?」被拆成注音 + 三个正文列。
+      const MokuroImage page = MokuroImage(
+        url: 'page-000003.jpg',
+        size: Size(1170, 1600),
+        blocks: <MokuroBlock>[
+          MokuroBlock(
+            rectangle: Rect.fromLTRB(288, 565, 309, 675),
+            isVertical: true,
+            fontSize: 21,
+            zIndex: 0,
+            lines: <String>['だいじょうぶ'],
+          ),
+          MokuroBlock(
+            rectangle: Rect.fromLTRB(250, 561, 288, 687),
+            isVertical: true,
+            fontSize: 37,
+            zIndex: 1,
+            lines: <String>['大丈夫'],
+          ),
+          MokuroBlock(
+            rectangle: Rect.fromLTRB(205, 565, 240, 687),
+            isVertical: true,
+            fontSize: 34,
+            zIndex: 2,
+            lines: <String>['だよな'],
+          ),
+          MokuroBlock(
+            rectangle: Rect.fromLTRB(164, 644, 177, 683),
+            isVertical: true,
+            fontSize: 22,
+            zIndex: 3,
+            lines: <String>['?'],
+          ),
+          MokuroBlock(
+            rectangle: Rect.fromLTRB(322, 560, 360, 686),
+            isVertical: true,
+            fontSize: 34,
+            zIndex: 4,
+            lines: <String>['なに?'],
+          ),
+        ],
+      );
+
+      expect(
+        mangaBlockSentenceTexts(page),
+        <String>[
+          '大丈夫だよな?',
+          '大丈夫だよな?',
+          '大丈夫だよな?',
+          '大丈夫だよな?',
+          'なに?',
+        ],
+        reason: '相邻正文列应按竖排阅读顺序合并；右侧窄假名只作注音',
+      );
+
+      final String html = mangaOcrBoxesHtml(page);
+      expect(
+        'data-manga-sentence="大丈夫だよな?"'.allMatches(html).length,
+        4,
+      );
+      expect(
+        'data-manga-sentence-group="0"'.allMatches(html).length,
+        4,
+        reason: '同一气泡的每个 OCR 块必须共享定位组',
+      );
+      expect(
+        '<p class="ocr-box" data-ocr-orientation="vertical"'
+            .allMatches(html)
+            .length,
+        5,
+      );
+    });
+
+    test('横排相邻行合句但在强句末停止', () {
+      const MokuroImage page = MokuroImage(
+        url: 'horizontal.jpg',
+        size: Size(1000, 1000),
+        blocks: <MokuroBlock>[
+          MokuroBlock(
+            rectangle: Rect.fromLTWH(100, 100, 120, 30),
+            isVertical: false,
+            fontSize: 30,
+            zIndex: 0,
+            lines: <String>['今日は'],
+          ),
+          MokuroBlock(
+            rectangle: Rect.fromLTWH(100, 138, 100, 30),
+            isVertical: false,
+            fontSize: 30,
+            zIndex: 1,
+            lines: <String>['晴れ。'],
+          ),
+          MokuroBlock(
+            rectangle: Rect.fromLTWH(100, 176, 100, 30),
+            isVertical: false,
+            fontSize: 30,
+            zIndex: 2,
+            lines: <String>['帰る。'],
+          ),
+        ],
+      );
+
+      expect(
+        mangaBlockSentenceTexts(page),
+        <String>['今日は晴れ。', '今日は晴れ。', '帰る。'],
+      );
+      final String html = mangaOcrBoxesHtml(page);
+      expect(
+        '<p class="ocr-box" data-ocr-orientation="horizontal"'
+            .allMatches(html)
+            .length,
+        3,
+      );
+    });
+
+    test('选区 payload 读取整句、方向，并以整组边界作为弹窗锚点', () {
+      final String scripts = ReaderSelectionScripts.source();
+      expect(scripts.contains("closest('[data-manga-sentence]')"), isTrue);
+      expect(scripts.contains("getAttribute('data-ocr-orientation')"), isTrue);
+      expect(
+        scripts.contains(
+          "querySelectorAll(\n"
+          "        '.ocr-box[data-manga-sentence-group]'\n"
+          '      )',
+        ),
+        isTrue,
+      );
+      expect(
+        scripts.contains('rect: mangaGroupRect || this.getSelectionRect(x, y)'),
+        isTrue,
+        reason: '竖排应以完整气泡左右边界避让，横排应以整行上下边界避让',
+      );
+      expect(scripts.contains('verticalWriting: verticalWriting'), isTrue);
+    });
   });
 
   group('mangaEffectiveTextRegions', () {

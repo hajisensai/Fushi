@@ -8,6 +8,7 @@ class ReaderSelectionData {
     this.sentenceOffset = 0,
     this.sentenceNormalizedOffset,
     this.sentenceNormalizedLength,
+    this.verticalWriting = false,
   });
 
   factory ReaderSelectionData.fromJson(Map<String, dynamic> json) {
@@ -32,6 +33,7 @@ class ReaderSelectionData {
           (json['sentenceNormalizedOffset'] as num?)?.toInt(),
       sentenceNormalizedLength:
           (json['sentenceNormalizedLength'] as num?)?.toInt(),
+      verticalWriting: json['verticalWriting'] as bool? ?? false,
     );
   }
 
@@ -43,4 +45,11 @@ class ReaderSelectionData {
   final int sentenceOffset;
   final int? sentenceNormalizedOffset;
   final int? sentenceNormalizedLength;
+
+  /// Whether the source glyph belongs to a vertical writing run.
+  ///
+  /// Most reader surfaces derive this from page settings. Manga OCR can mix
+  /// horizontal and vertical blocks on one page, so its overlay reports the
+  /// direction per hit and the popup host consumes it for anchor placement.
+  final bool verticalWriting;
 }

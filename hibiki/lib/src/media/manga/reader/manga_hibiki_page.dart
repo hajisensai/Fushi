@@ -156,13 +156,18 @@ class MangaWindowGeneration {
 /// 无 WebView、无 AppModel 的纯单测里验证。
 ///
 /// 语义：[ReaderSelectionData.text] 是扫描出的查询词；[ReaderSelectionData.sentence]
-/// 是框内句子（C1 边界修复保证不跨 `<p class="ocr-box">`），作为 Anki 句子。
+/// 是 OCR 几何重建出的完整句子，作为 Anki 句子；[ReaderSelectionData.verticalWriting]
+/// 决定根弹窗从文字左右还是上下避让。
 /// text 为空是 no-op。
 Future<void> dispatchMangaSelection(
   ReaderSelectionData data, {
   required Size fallbackScreen,
   required void Function(String sentence) setSentence,
-  required Future<void> Function(String term, Rect selectionRect) search,
+  required Future<void> Function(
+    String term,
+    Rect selectionRect,
+    bool verticalWriting,
+  ) search,
 }) async {
   if (data.text.isEmpty) {
     return;
@@ -170,7 +175,7 @@ Future<void> dispatchMangaSelection(
   setSentence(data.sentence);
   final Rect rect =
       mangaSelectionRectFromPayload(data, fallbackScreen: fallbackScreen);
-  await search(data.text, rect);
+  await search(data.text, rect, data.verticalWriting);
 }
 
 /// 保证交给 [AnkiMiningContext.coverPath] 的路径以合法图片扩展名结尾（两个 Anki
@@ -583,6 +588,13 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   /// 最近一次查词的句子与词在句中偏移，喂制卡（[AnkiMiningContext]）。
   String _lastSentence = '';
   int _lastSentenceOffset = 0;
+
+  /// 漫画同一页会混排竖排对白、横排拟声/标题，不能像 EPUB 一样从整页设置
+  /// 推导。每次 OCR 命中都从 payload 更新，根弹窗据此左右/上下避让。
+  bool _popupVerticalWriting = false;
+
+  @override
+  bool get popupVerticalWriting => _popupVerticalWriting;
 
   ReadingTimeTracker? _readingTimeTracker;
   DateTime _sessionStartTime = DateTime.now();
@@ -1642,7 +1654,12 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
           selection: HibikiTextSelection(text: resolved),
         );
       },
-      search: (String term, Rect selectionRect) async {
+      search: (
+        String term,
+        Rect selectionRect,
+        bool verticalWriting,
+      ) async {
+        _popupVerticalWriting = verticalWriting;
         prunePopupStack(0);
         await searchDictionaryResult(
           searchTerm: term,
