@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <string>
 
+#include "../../../native/galgame_hook/include/thread_preview_ipc.h"
+
 // galgame 一键制卡 C 阶段（docs/specs/galgame-mining）—— 引擎级 voice/text hook 共享内存契约的
 // **host 端副本**（真相源在独立仓库 hibiki-hook 的 `include/voice_hook_ipc.h`，须同步）。
 // v2：音频环形 + 文本环（hook 抓的台词行）+ 语音 clip 索引（按句切的语音片段，含时间戳供配对）。
@@ -25,12 +27,6 @@ constexpr uint32_t kLunaVendoredVersion = 0x0A100102;  // 10.16.1.2
 
 constexpr uint32_t kTextSlotCount = 256;
 constexpr uint32_t kTextSlotBytes = 2048;
-// v12 线程预览区：每条线程一个固定槽（按 thread_id 认领），只留最近一行。按线程分槽而非
-// 全局取模，所以逐字重绘型 hook 只覆盖自己的槽，挤不掉别的线程——这是取消自动选线程后
-// 仍能保证「每条线程都看得见」的结构保证。
-constexpr uint32_t kThreadPreviewCount = 64;
-constexpr uint32_t kThreadPreviewTextChars = 192;
-constexpr uint32_t kThreadPreviewFlagArtifact = 0x00000001u;
 constexpr uint32_t kTextHookNameChars = 64;
 constexpr uint32_t kTextHookCodeChars = 128;
 constexpr uint32_t kTextSourceUnknown = 0;
@@ -118,21 +114,6 @@ struct TextSlot {
   // 紧跟文本字节。
 };
 
-// v12 线程预览槽。字段语义与真相源头文件一致，改动必须两侧同步。
-// [line_count] 统计该线程出过的**全部**行（含被伪影过滤和线程门控丢弃的），是跨会话记忆
-// 恢复的消歧依据——v12 取消自动选线程后文本环在用户选定前恒空，用已发布行数做判据会让
-// 记忆永远无法恢复。
-struct ThreadPreviewSlot {
-  volatile uint64_t seq;    // 单调写序号（0=空槽/尚无预览行），最后写，作完成标记
-  uint64_t thread_id;       // 认领键，对应 TextSlot::thread_id；0=未认领
-  uint64_t timestamp_ms;
-  uint64_t line_count;      // 累计行数（含被过滤/门控丢弃的）
-  uint64_t artifact_count;  // 其中判为重复伪影的行数
-  uint32_t byte_len;        // 预览文本字节数（UTF-16LE）
-  uint32_t event_flags;     // bit0 = 本行被判为伪影
-  wchar_t text[kThreadPreviewTextChars];
-};
-
 struct VoiceClip {
   volatile uint64_t seq;
   uint64_t timestamp_ms;    // 该 clip 播放时刻
@@ -216,8 +197,6 @@ struct SharedHeader {
 
 static_assert(sizeof(SharedHeader) % 8 == 0, "SharedHeader must stay 8-aligned");
 static_assert(sizeof(TextSlot) % 8 == 0, "TextSlot must stay 8-aligned");
-static_assert(sizeof(ThreadPreviewSlot) % 8 == 0,
-              "ThreadPreviewSlot must stay 8-aligned");
 static_assert(sizeof(VoiceClip) % 8 == 0, "VoiceClip must stay 8-aligned");
 static_assert(sizeof(UnityVoiceEvent) % 8 == 0,
               "UnityVoiceEvent must stay 8-aligned");

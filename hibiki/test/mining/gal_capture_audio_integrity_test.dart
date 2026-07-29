@@ -301,7 +301,10 @@ void main() {
     test('文本线程记忆：指纹匹配且够行数才恢复，用户手选覆盖记忆', () async {
       final TexthookerService service = TexthookerService.test();
       final ChangeNotifier endpoints = ChangeNotifier();
-      final _FakeEngine engine = _FakeEngine(readyFormat: kPcm);
+      final _FakeEngine engine = _FakeEngine(
+        readyFormat: kPcm,
+        enforceTextSelection: true,
+      );
       final GalHookSessionController controller = build(
         service: service,
         endpoints: endpoints,
@@ -318,36 +321,56 @@ void main() {
             store[gameKey] = memory,
       );
       await controller.launchGame(r'D:\Games\fake.exe');
+      engine.enqueue(
+        const GalHookedLine(
+          seq: 1,
+          timestampMs: 500,
+          text: '',
+          threadId: 7,
+          sourceKind: 2,
+          eventKind: GalTextEventKind.threadDiscovered,
+          hookName: 'CodeX',
+          hookCode: 'HB4@459F50',
+        ),
+      );
 
       // 前两行不足门限（3 行）：不得恢复，避免开局蹦一行的 UI 线程把选择钉死。
       for (int i = 1; i <= 2; i++) {
         engine.enqueue(
           GalHookedLine(
-            seq: i,
+            seq: i + 1,
             timestampMs: 1000 * i,
             text: 'せりふ$i',
             threadId: 7,
+            sourceKind: 2,
             hookName: 'CodeX',
             hookCode: 'HB4@459F50',
           ),
         );
       }
-      await waitUntil(() => service.entries.length >= 2);
+      await waitUntil(
+        () =>
+            service.textThreads.length == 1 &&
+            service.textThreads.single.observedLineCount == 2,
+      );
+      expect(service.entries, isEmpty, reason: 'v12 未选线程前文本环必须为空，观测行只存在预览区');
       expect(controller.selectedTextThreadKey, isNull);
 
-      // 第三行到达 -> 达到门限，按指纹恢复。
+      // 第三条预览到达 -> 达到门限，按指纹恢复；恢复后文本环才发布该线程的行。
       engine.enqueue(
         const GalHookedLine(
-          seq: 3,
+          seq: 4,
           timestampMs: 3000,
           text: 'せりふ3',
           threadId: 7,
+          sourceKind: 2,
           hookName: 'CodeX',
           hookCode: 'HB4@459F50',
         ),
       );
       await waitUntil(() => controller.selectedTextThreadKey != null);
-      expect(controller.selectedTextThreadKey, isNotNull);
+      expect(controller.selectedNativeTextThreadId, 7);
+      await waitUntil(() => service.entries.length == 3);
 
       // 用户改选「全部」：记忆被清掉，不再自动恢复。
       await controller.selectTextThread(null, remember: true);
@@ -415,11 +438,14 @@ void main() {
 class _FakeEngine extends EngineHookGalAudioSource {
   _FakeEngine({
     this.readyFormat,
+    this.enforceTextSelection = false,
   }) : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
 
   final PcmFormat? readyFormat;
+  final bool enforceTextSelection;
   List<GalAudioTrack> tracks = <GalAudioTrack>[];
   final List<GalHookedLine> _pending = <GalHookedLine>[];
+  int? _selectedTextThreadId;
 
   void enqueue(GalHookedLine line) => _pending.add(line);
 
@@ -447,13 +473,42 @@ class _FakeEngine extends EngineHookGalAudioSource {
   @override
   Future<GalTextPoll?> pollText(int fromSeq) async {
     final List<GalHookedLine> fresh = _pending
-        .where((GalHookedLine line) => line.seq > fromSeq)
+        .where(
+          (GalHookedLine line) =>
+              line.seq > fromSeq &&
+              (line.eventKind == GalTextEventKind.threadDiscovered ||
+                  !enforceTextSelection ||
+                  line.threadId == _selectedTextThreadId),
+        )
         .toList(growable: false);
     return GalTextPoll(count: _pending.length, lines: fresh);
   }
 
   @override
-  Future<bool> selectTextThread(int? threadId) async => true;
+  Future<List<GalTextThreadPreview>?> pollThreadPreviews() async {
+    final Map<int, List<GalHookedLine>> byThread = <int, List<GalHookedLine>>{};
+    for (final GalHookedLine line in _pending) {
+      if (line.eventKind != GalTextEventKind.line || line.threadId == 0) {
+        continue;
+      }
+      byThread.putIfAbsent(line.threadId, () => <GalHookedLine>[]).add(line);
+    }
+    return <GalTextThreadPreview>[
+      for (final MapEntry<int, List<GalHookedLine>> entry in byThread.entries)
+        GalTextThreadPreview(
+          threadId: entry.key,
+          text: entry.value.last.text,
+          timestampMs: entry.value.last.timestampMs,
+          lineCount: entry.value.length,
+        ),
+    ];
+  }
+
+  @override
+  Future<bool> selectTextThread(int? threadId) async {
+    _selectedTextThreadId = threadId;
+    return true;
+  }
 
   @override
   Future<GalAudioSlice?> grabUtterance(

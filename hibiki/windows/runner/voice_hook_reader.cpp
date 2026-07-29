@@ -451,32 +451,32 @@ uint64_t VoiceHookReader::PollThreadPreviews(
       reinterpret_cast<const uint8_t*>(h) + h->thread_preview_offset);
   for (uint32_t i = 0; i < slots; i++) {
     const auto& slot = base[i];
-    // 槽是顺序认领的：撞到未认领的槽即说明后面全空。
-    if (slot.thread_id == 0) {
-      break;
-    }
-    // seq==0 表示已认领但还没写过预览行（不应发生，认领与写入同在一次调用里）；
-    // 保守跳过而不是发一条空预览，避免 UI 出现无内容的幽灵行。
-    if (slot.seq == 0) {
+    hibiki_voice_hook::ThreadPreviewSnapshot snapshot;
+    // writer 用 odd/even seqlock 发布；这里最多重试四次，只接受前后 seq 相同的偶数快照。
+    // 所有 64 位 seq 读都走 Interlocked，x86 不会因裸 uint64_t 访问而撕裂。
+    if (!hibiki_voice_hook::TryReadThreadPreviewSnapshot(slot, &snapshot) ||
+        snapshot.thread_id == 0) {
       continue;
     }
     VoiceHookThreadPreview preview;
-    preview.thread_id = slot.thread_id;
-    preview.seq = slot.seq;
-    preview.timestamp_ms = slot.timestamp_ms;
-    preview.line_count = slot.line_count;
-    preview.artifact_count = slot.artifact_count;
-    preview.event_flags = slot.event_flags;
-    uint32_t blen = slot.byte_len;
+    preview.thread_id = snapshot.thread_id;
+    preview.seq = snapshot.seq;
+    preview.timestamp_ms = snapshot.timestamp_ms;
+    preview.line_count = snapshot.line_count;
+    preview.artifact_count = snapshot.artifact_count;
+    preview.event_flags = snapshot.event_flags;
+    uint32_t blen = snapshot.byte_len;
     const uint32_t maxb =
         hibiki_voice_hook::kThreadPreviewTextChars * sizeof(wchar_t);
     if (blen > maxb) {
       blen = maxb;
     }
-    preview.utf8 = WideToUtf8(slot.text, static_cast<int>(blen / 2));
+    preview.utf8 =
+        WideToUtf8(snapshot.text, static_cast<int>(blen / 2));
     out.push_back(std::move(preview));
   }
-  return h->thread_preview_write_count;
+  return hibiki_voice_hook::AtomicLoadPreview64(
+      &h->thread_preview_write_count);
 }
 
 bool VoiceHookReader::SelectTextThread(uint64_t thread_id) {

@@ -35,38 +35,60 @@ void main() {
     expect(source, contains('constexpr uint32_t kSharedVersion = 12;'));
   });
 
-  test('host mirrors the v12 thread preview region contract', () {
-    final String source = File(
+  test('host and native share the v12 thread preview seqlock contract', () {
+    final String hostHeader = File(
       'windows/runner/voice_hook_ipc.h',
     ).readAsStringSync();
+    final String nativeHeader = File(
+      '../native/galgame_hook/include/voice_hook_ipc.h',
+    ).readAsStringSync();
+    final String sharedHeader = File(
+      '../native/galgame_hook/include/thread_preview_ipc.h',
+    ).readAsStringSync();
+    final String reader = File(
+      'windows/runner/voice_hook_reader.cpp',
+    ).readAsStringSync();
 
-    // 预览区的三个常量与 header 字段必须与 native 真相源同步；漏一个就会读到错位内存。
-    expect(source, contains('constexpr uint32_t kThreadPreviewCount = 64;'));
+    // 布局只定义一次，host 直接包含 native 共用头，避免镜像漂移和重复代码。
     expect(
-      source,
+      hostHeader,
+      contains(
+        '#include "../../../native/galgame_hook/include/thread_preview_ipc.h"',
+      ),
+    );
+    expect(nativeHeader, contains('#include "thread_preview_ipc.h"'));
+    expect(
+      sharedHeader,
+      contains('constexpr uint32_t kThreadPreviewCount = 64;'),
+    );
+    expect(
+      sharedHeader,
       contains('constexpr uint32_t kThreadPreviewTextChars = 192;'),
     );
     expect(
-      source,
+      sharedHeader,
       contains(
         'constexpr uint32_t kThreadPreviewFlagArtifact = 0x00000001u;',
       ),
     );
-    expect(source, contains('struct ThreadPreviewSlot {'));
-    expect(source, contains('uint32_t thread_preview_offset;'));
-    expect(source, contains('uint32_t thread_preview_slot_count;'));
+    expect(sharedHeader, contains('struct ThreadPreviewSlot {'));
+    expect(hostHeader, contains('uint32_t thread_preview_offset;'));
+    expect(hostHeader, contains('uint32_t thread_preview_slot_count;'));
     expect(
-      source,
+      hostHeader,
       contains('volatile uint64_t thread_preview_write_count;'),
     );
     // 预览槽必须带不受门控影响的行计数，否则跨会话记忆恢复没有消歧依据。
-    expect(source, contains('uint64_t line_count;'));
-    expect(source, contains('uint64_t artifact_count;'));
+    expect(sharedHeader, contains('uint64_t line_count;'));
+    expect(sharedHeader, contains('uint64_t artifact_count;'));
     expect(
-      source,
+      sharedHeader,
       contains(
-        'static_assert(sizeof(ThreadPreviewSlot) % 8 == 0,',
+        'static_assert(offsetof(ThreadPreviewSlot, seq) == 0,',
       ),
     );
+    // reader 只发布 odd/even 原子双读后的稳定快照，write_count 同样不能在 x86 裸读。
+    expect(reader, contains('TryReadThreadPreviewSnapshot(slot, &snapshot)'));
+    expect(reader, contains('AtomicLoadPreview64('));
   });
 }

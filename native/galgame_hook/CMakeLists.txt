@@ -190,6 +190,14 @@ target_include_directories(hibiki_luna_text_replay_test PRIVATE include)
 add_test(NAME hibiki_luna_text_replay_test COMMAND hibiki_luna_text_replay_test
   "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/luna_thread_selection.tsv")
 
+add_executable(hibiki_thread_preview_ipc_test
+  tests/thread_preview_ipc_test.cpp)
+target_include_directories(hibiki_thread_preview_ipc_test PRIVATE include)
+target_compile_definitions(hibiki_thread_preview_ipc_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME hibiki_thread_preview_ipc_test
+  COMMAND hibiki_thread_preview_ipc_test)
+
 add_executable(hibiki_adapter_contract_test tests/adapter_contract_test.cpp)
 target_include_directories(hibiki_adapter_contract_test PRIVATE hook)
 add_test(NAME hibiki_adapter_contract_test COMMAND hibiki_adapter_contract_test)
