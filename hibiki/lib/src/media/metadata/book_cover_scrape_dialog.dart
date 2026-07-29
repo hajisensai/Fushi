@@ -6,6 +6,7 @@ import 'package:hibiki/src/media/metadata/bangumi_api_client.dart'
     show parseBangumiSubjectUrl;
 import 'package:hibiki/src/media/metadata/book_metadata_scraper.dart';
 import 'package:hibiki/src/media/metadata/image_download.dart';
+import 'package:hibiki/src/media/metadata/scrape_cover_preview.dart';
 import 'package:hibiki/src/media/metadata/scrape_failure_view.dart';
 import 'package:hibiki/utils.dart';
 
@@ -182,7 +183,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     return AlertDialog(
       title: Text(t.book_scrape_title),
       content: SizedBox(
-        width: 420,
+        width: 560,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -265,26 +266,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          SizedBox(
-            width: 46,
-            height: 66,
-            child: ClipRRect(
-              // 行内小缩略图与 galgame 首页小封面同级，用 chip 语义圆角。
-              borderRadius: HibikiBorderRadius.chip,
-              child: Image.network(
-                candidate.coverUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  color: tokens.surfaces.overlay,
-                  child: Icon(
-                    Icons.image_not_supported_outlined,
-                    size: 20,
-                    color: tokens.surfaces.onVariant,
-                  ),
-                ),
-              ),
-            ),
-          ),
+          ScrapeCoverPreview(url: candidate.coverUrl),
           const SizedBox(width: 10),
           Expanded(
             child: Column(

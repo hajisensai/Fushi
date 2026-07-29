@@ -17,6 +17,8 @@ import 'package:hibiki/src/media/collections/collection_drag.dart'
     show CollectionAddOutcome, MediaCardDraggable, addMediaRefToCollection;
 import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/media_cover_service.dart';
+import 'package:hibiki/src/media/metadata/scrape_batch.dart';
+import 'package:hibiki/src/media/metadata/scrape_title_matcher.dart';
 import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
@@ -26,6 +28,8 @@ import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/galgame_library_query.dart';
 import 'package:hibiki/src/mining/galgame_repository.dart';
 import 'package:hibiki/src/mining/galgame_scrape_dialog.dart';
+import 'package:hibiki/src/mining/galgame_scrape_controller.dart';
+import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:hibiki/src/mining/magpie_upscaling.dart';
 import 'package:hibiki/src/mining/magpie_upscaling_prompt.dart';
 import 'package:hibiki/src/pages/implementations/galgame_detail_page.dart';
@@ -374,6 +378,70 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     await _reload();
   }
 
+  /// 工具条「全部刮削」：按每个游戏当前显示名搜索，只自动应用唯一精确匹配。
+  /// 批量属于自动路径，已有本地/手动封面不覆盖；近似或跨源同名结果留给单卡确认。
+  Future<void> _scrapeAllGames() async {
+    final List<GalgameEntry> games = List<GalgameEntry>.of(_games);
+    if (!mounted) return;
+    await showScrapeBatchDialog(
+      context: context,
+      mediaLabel: t.games,
+      itemCount: games.length,
+      runner: (ScrapeBatchProgressCallback onProgress) async {
+        final GalgameScrapeController controller =
+            GalgameScrapeController.instance;
+        ScrapeBatchSummary summary = const ScrapeBatchSummary();
+        for (int index = 0; index < games.length; index++) {
+          final GalgameEntry game = games[index];
+          ScrapeBatchItemResult result;
+          try {
+            final List<SourceCandidate> candidates =
+                (await controller.search(game.displayName)).candidates;
+            final SourceCandidate? candidate =
+                uniqueExactScrapeTitleMatch<SourceCandidate>(
+              query: game.displayName,
+              candidates: candidates,
+              titles: (SourceCandidate candidate) => <String>[
+                if (candidate.nameCn != null) candidate.nameCn!,
+                if (candidate.name != null) candidate.name!,
+              ],
+            );
+            if (candidate == null) {
+              result = candidates.isEmpty
+                  ? ScrapeBatchItemResult.skipped
+                  : ScrapeBatchItemResult.needsReview;
+            } else {
+              final bool applied = await applyGalgameScrapeCandidate(
+                repo: _repo,
+                gameId: game.id,
+                candidate: candidate,
+                controller: controller,
+                replaceExistingCover: false,
+              );
+              result = applied
+                  ? ScrapeBatchItemResult.applied
+                  : ScrapeBatchItemResult.skipped;
+            }
+          } catch (e, stack) {
+            ErrorLogService.instance.log('GamesLibrary.scrapeAll', e, stack);
+            result = ScrapeBatchItemResult.failed;
+          }
+          summary = summary.add(result);
+          onProgress(
+            ScrapeBatchProgress(
+              current: index + 1,
+              total: games.length,
+              title: game.displayName,
+              summary: summary,
+            ),
+          );
+        }
+        if (mounted) await _reload();
+        return summary;
+      },
+    );
+  }
+
   /// 单卡「加入合集」：与书/视频同走 [showAddToCollectionDialog]（同一条
   /// createMediaCollection / addToCollection DAO 路径）；成功后重取分组映射刷新。
   Future<void> _addGameToCollection(GalgameEntry game) async {
@@ -615,6 +683,13 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             ),
           ),
           const SizedBox(width: 8),
+          HibikiIconButton(
+            tooltip: t.scrape_all,
+            label: t.scrape_all,
+            icon: Icons.manage_search_outlined,
+            onTap: _scrapeAllGames,
+          ),
+          const SizedBox(width: 4),
           PopupMenuButton<GalgameSortField>(
             tooltip: t.game_sort,
             icon: const Icon(Icons.sort),

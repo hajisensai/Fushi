@@ -44,6 +44,10 @@ import 'package:hibiki/src/media/collections/collection_asset_reclaim.dart';
 import 'package:hibiki/src/media/collections/collection_context_dialog.dart';
 import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/media/metadata/book_cover_scrape_dialog.dart';
+import 'package:hibiki/src/media/metadata/book_metadata_scraper.dart';
+import 'package:hibiki/src/media/metadata/image_download.dart';
+import 'package:hibiki/src/media/metadata/scrape_batch.dart';
+import 'package:hibiki/src/media/metadata/scrape_title_matcher.dart';
 import 'package:hibiki/src/media/collections/collection_grouping.dart';
 import 'package:hibiki/src/media/collections/shelf_sort.dart';
 import 'package:hibiki/src/media/media_search_text.dart';
@@ -659,6 +663,11 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
           focusId: kShelfImportFocusId,
           label: t.srt_import,
         ),
+      _headerAction(
+        tooltip: t.scrape_all,
+        icon: Icons.manage_search_outlined,
+        onTap: _scrapeAllBooks,
+      ),
       // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
       // 按钮就是同一件事的两个入口。书架独立使用（无导航条）时才保留书籍来源按钮；
       // 漫画入口由专属导入对话框负责，不复用书籍来源管理。
@@ -2127,6 +2136,98 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
     ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
     ref.invalidate(srtBooksProvider);
     _rebuild(() {});
+  }
+
+  /// 页头「全部刮削」：只自动采用唯一的精确标题候选。已有 override 封面视为
+  /// 用户选择并保留；近似/同名多结果留作单卡菜单里的人工确认，绝不取搜索第一条。
+  Future<void> _scrapeAllBooks() async {
+    final List<MediaItem> all =
+        ref.read(hibikiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
+            const <MediaItem>[];
+    final List<MediaItem> books = filterShelfEntriesByMangaSplit(
+      all,
+      mangaOnly: _mangaOnly,
+    ).where((MediaItem item) => item.canEdit).toList();
+    if (!mounted) return;
+    await showScrapeBatchDialog(
+      context: context,
+      mediaLabel: _mangaOnly ? t.manga_library : t.books,
+      itemCount: books.length,
+      runner: (ScrapeBatchProgressCallback onProgress) async {
+        final BookMetadataScraper scraper = BookMetadataScraper();
+        ScrapeBatchSummary summary = const ScrapeBatchSummary();
+        try {
+          for (int index = 0; index < books.length; index++) {
+            final MediaItem item = books[index];
+            final MediaSource source = item.getMediaSource(appModel: appModel);
+            final String title =
+                displayTitleForBook(item: item, rawTitle: item.title);
+            ScrapeBatchItemResult result;
+            try {
+              final File existingOverride = File(
+                source.getOverrideThumbnailFilename(
+                  appModel: appModel,
+                  item: item,
+                ),
+              );
+              if (await existingOverride.exists()) {
+                result = ScrapeBatchItemResult.skipped;
+              } else {
+                final List<BookScrapeCandidate> candidates =
+                    await scraper.search(title);
+                final BookScrapeCandidate? candidate =
+                    uniqueExactScrapeTitleMatch<BookScrapeCandidate>(
+                  query: title,
+                  candidates: candidates,
+                  titles: (BookScrapeCandidate candidate) => <String>[
+                    candidate.title,
+                    if (candidate.originalTitle != null)
+                      candidate.originalTitle!,
+                  ],
+                );
+                if (candidate == null) {
+                  result = candidates.isEmpty
+                      ? ScrapeBatchItemResult.skipped
+                      : ScrapeBatchItemResult.needsReview;
+                } else {
+                  final File file =
+                      await downloadImageToTempFile(candidate.coverUrl);
+                  await MediaCoverService.applyBookCoverOverride(
+                    appModel: appModel,
+                    mediaSource: source,
+                    item: item,
+                    file: file,
+                    clearOverrideImage: false,
+                  );
+                  result = ScrapeBatchItemResult.applied;
+                }
+              }
+            } catch (e, stack) {
+              ErrorLogService.instance
+                  .log('ReaderHistory.scrapeAllBooks', e, stack);
+              result = ScrapeBatchItemResult.failed;
+            }
+            summary = summary.add(result);
+            onProgress(
+              ScrapeBatchProgress(
+                current: index + 1,
+                total: books.length,
+                title: title,
+                summary: summary,
+              ),
+            );
+          }
+        } finally {
+          scraper.close();
+        }
+        if (mounted) {
+          ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+          ref.invalidate(srtBooksProvider);
+          _rebuild(() {});
+        }
+        return summary;
+      },
+    );
   }
 
   /// 单卡「标签」（统一三库页卡菜单，用户 2026-07-28 拍板推翻 TODO-455）：先收起

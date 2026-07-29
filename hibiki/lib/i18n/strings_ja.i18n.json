@@ -2880,5 +2880,13 @@
   "video_mining_animated_format": "Video card animation format",
   "video_mining_animated_format_hint": "AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.",
   "gal_mining_animated_format": "Game card animation format",
-  "gal_mining_animated_format_hint": "Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs."
+  "gal_mining_animated_format_hint": "Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.",
+  "scrape_all": "Scrape all",
+  "scrape_all_title": "Scrape all $kind",
+  "scrape_all_confirm": "Match all $n library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.",
+  "scrape_all_running": "Scraping $current / $total",
+  "scrape_all_item": "Processing: $title",
+  "scrape_all_done": "Done: $applied applied, $review need review, $skipped skipped, $failed failed",
+  "scrape_all_empty": "There are no items to scrape in this library.",
+  "scrape_all_start": "Start"
 }

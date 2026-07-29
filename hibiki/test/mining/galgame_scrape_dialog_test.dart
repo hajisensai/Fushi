@@ -210,6 +210,47 @@ void main() {
     await tester.pump(const Duration(seconds: 4)); // 放掉桌面 toast 计时器
   });
 
+  test('批量自动应用只更新元数据，不覆盖已有游戏封面', () async {
+    final Directory oldDir =
+        Directory.systemTemp.createTempSync('gal_batch_cover_old_');
+    addTearDown(() => oldDir.deleteSync(recursive: true));
+    final File oldCover = File('${oldDir.path}/manual.png')
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    final (GalgameRepository repo, _) = await buildRepo();
+    await repo.setCoverPath('g1', oldCover.path);
+
+    const String url = 'https://example.com/covers/alpha.png';
+    final _FakeAdapter bgm = _FakeAdapter(GalgameMetadataSource.bgm)
+      ..draft = const GalgameMetadataDraft(
+        name: 'alpha',
+        externalId: '4885',
+        coverUrl: url,
+      );
+    final GalgameScrapeController controller =
+        GalgameScrapeController(adapters: <GalgameMetadataAdapter>[bgm]);
+    final _FakeCoverHttpClient http =
+        _FakeCoverHttpClient(List<int>.filled(2048, 7));
+
+    final bool applied = await applyGalgameScrapeCandidate(
+      repo: repo,
+      gameId: 'g1',
+      candidate: const SourceCandidate(
+        source: GalgameMetadataSource.bgm,
+        externalId: '4885',
+        name: 'alpha',
+        coverUrl: url,
+      ),
+      controller: controller,
+      coverHttpClient: http,
+      replaceExistingCover: false,
+    );
+
+    expect(applied, isTrue);
+    expect(await repo.sourcesOf('g1'), hasLength(1));
+    expect(repo.byId('g1')!.coverPath, oldCover.path);
+    expect(http.requests, 0);
+  });
+
   testWidgets('封面下载失败静默降级：元数据照落、弹窗正常关、旧封面保留', (WidgetTester tester) async {
     // 显式覆盖的另一半契约：封面下载失败**不打断**刮削（元数据已成功），且
     // 绝不清掉旧封面。HttpClient 构造地雷（[_ExplodingHttpOverrides]）模拟

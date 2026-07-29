@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/media/metadata/credential_redaction.dart';
+import 'package:hibiki/src/media/metadata/scrape_cover_preview.dart';
 import 'package:hibiki/src/media/video/cover_ui/cover_match_dialog.dart';
 import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
@@ -258,6 +259,10 @@ void main() {
     expect(find.widgetWithText(TextField, 'My Anime'), findsOneWidget);
     // 候选标题渲染。
     expect(find.text('My Anime'), findsWidgets);
+    expect(
+      tester.getSize(find.byType(ScrapeCoverPreview)),
+      const Size(kScrapeCoverPreviewWidth, kScrapeCoverPreviewHeight),
+    );
     // 置信度徽标（高匹配）。
     expect(find.text(t.video_scrape_confidence_high), findsOneWidget);
     expect(find.textContaining('Bangumi #42'), findsOneWidget);
@@ -284,7 +289,6 @@ void main() {
       onApplied: () {},
     )));
     await tester.pumpAndSettle();
-
     expect(service.searchCalls, 1);
     expect(
       find.byKey(
@@ -374,6 +378,36 @@ void main() {
       ),
       findsNothing,
     );
+  });
+
+  testWidgets('BUG-1251 手动输入的标准标题作为置信度评分标题', (WidgetTester tester) async {
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value('video/noisy_playlist'),
+      title: const Value('My Anime v2 播放列表'),
+      videoPath: Value(
+        p.join(
+          'anime',
+          'My Anime v2 播放列表',
+          'My Anime v2 播放列表 - 01.mkv',
+        ),
+      ),
+    ));
+    final VideoBookRow book =
+        (await repo.getByBookUid('video/noisy_playlist'))!;
+    final _StubScraperService service = buildService();
+    await tester.pumpWidget(wrap(CoverMatchDialog(
+      service: service,
+      book: book,
+      collectionMemberUids: const <String>['video/noisy_playlist'],
+      onApplied: () {},
+    )));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'My Anime');
+    await tester.tap(find.text(t.video_scrape_search));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.video_scrape_confidence_high), findsOneWidget);
+    expect(find.text(t.video_scrape_confidence_low), findsNothing);
   });
 
   testWidgets('TODO-2284 应用失败直出完整脱敏详情，候选保留可重试', (WidgetTester tester) async {

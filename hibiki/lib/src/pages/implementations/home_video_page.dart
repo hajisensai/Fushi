@@ -21,6 +21,7 @@ import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:hibiki/src/media/video/cover_ui/cover_match_dialog.dart';
 import 'package:hibiki/src/media/video/cover_ui/scrape_info_dialog.dart';
+import 'package:hibiki/src/media/metadata/scrape_batch.dart';
 import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
 import 'package:hibiki/src/media/video/scraper/auto_scrape_service.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
@@ -1852,6 +1853,51 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
+  /// 页头「全部刮削」：显式重跑整库在线刮削。已在线刮过的封面允许刷新，
+  /// 手动封面和 sidecar 封面仍由 [CoverScraperService] 保护；中匹配只计入待确认，
+  /// 不会因为一键任务就自动覆盖。
+  Future<void> _scrapeAllVideos() async {
+    final List<VideoBookRow> books = await widget.repo.listAll();
+    if (!mounted) return;
+    final ({
+      CoverScraperService service,
+      CoverScraperService Function(OfflineIndex offline) rebuild,
+      Directory scraperDir,
+    }) bundle = await _scraperBundle();
+    if (!mounted) return;
+    await showScrapeBatchDialog(
+      context: context,
+      mediaLabel: t.nav_video,
+      itemCount: books.length,
+      runner: (ScrapeBatchProgressCallback onProgress) async {
+        ScrapeBatchSummary summary = const ScrapeBatchSummary();
+        await for (final BatchScrapeProgress progress
+            in bundle.service.scrapeLibrary(
+          books,
+          rescrapeScraped: true,
+        )) {
+          final ScrapeBatchItemResult result = switch (progress.outcome) {
+            ScrapeApplied() => ScrapeBatchItemResult.applied,
+            ScrapeNeedsConfirm() => ScrapeBatchItemResult.needsReview,
+            ScrapeFailed() => ScrapeBatchItemResult.failed,
+            _ => ScrapeBatchItemResult.skipped,
+          };
+          summary = summary.add(result);
+          onProgress(
+            ScrapeBatchProgress(
+              current: progress.index + 1,
+              total: progress.total,
+              title: progress.book.title,
+              summary: summary,
+            ),
+          );
+        }
+        if (mounted) _refresh();
+        return summary;
+      },
+    );
+  }
+
   /// 长按菜单「条目信息」：读本地已刮到的 Bangumi 条目资料并展示（只读，不发网络）。
   /// 「重新刮削」= 删掉该书资料行 + 忘掉本进程的尝试记录，再跑一次自动刮削。
   Future<void> _openScrapeInfo(VideoBookRow book) async {
@@ -3038,6 +3084,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           icon: Icons.add,
           onTap: _openImport,
         ),
+      HibikiIconButton(
+        tooltip: t.scrape_all,
+        label: t.scrape_all,
+        icon: Icons.manage_search_outlined,
+        onTap: _scrapeAllVideos,
+      ),
       // 「番剧下载」不再占页头：它是下载子系统的入口，在「下载」页
       // （downloads_page）里有完整入口，视频库页头只留库管理动作。
       // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
@@ -3061,9 +3113,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         icon: Icons.bar_chart_outlined,
         onTap: _openStatistics,
       ),
-      // 「批量匹配海报」按钮已删：刮削改为进页面 / 新视频入库时后台自动跑
-      // （[_maybeAutoScrape]），不再需要用户手动触发整库任务。单本纠错仍在长按
-      // 菜单的「在线匹配海报」。
+      // 自动刮削仍会在进页面 / 新视频入库时后台跑（[_maybeAutoScrape]）；上面的
+      // 「全部刮削」是用户明确要求的手动重跑入口，单本纠错仍在长按菜单的
+      // 「在线匹配封面」。
       // 「刷新」按钮已删：下拉刷新（[_pullToRefresh]）仍是手动同步入口，页头不再
       // 为它单占一格。
     ];
