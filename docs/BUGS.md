@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1190 条。点号进各自文件。
+> 共 1191 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-1233](bugs/BUG-1233-book-import-repeated-archive-probe.md) | ✅ | ✅ | 书籍导入重复整包判定 EPUB 载体 |
+| [BUG-1231](bugs/BUG-1231-cross-chapter-search-locate-race.md) | ✅ | ✅ | 跨章节书内搜索只跳到章首且不高亮 |
 | [BUG-1228](bugs/BUG-1228-video-mining-queue.md) | ✅ | ✅ | 连续视频制卡未串行且换集可能污染在途任务 |
 | [BUG-1227](bugs/BUG-1227-anki-media-upload-orphan.md) | ✅ | ✅ | 大 GIF 上传超时被吞后仍创建无图卡并留下孤儿媒体 |
 | [BUG-1226](bugs/BUG-1226-anki-mining-ui-thread-stall.md) | ✅ | ✅ | 制卡前查重导致 Anki 未响应 |

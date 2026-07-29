@@ -28,7 +28,7 @@ void main() {
     return source.substring(a, b);
   }
 
-  test('_navigateToChapterAndWait 收 progress + preciseLocateJs 并转发/绑定代际', () {
+  test('_navigateToChapterAndWait 收 progress + preciseLocateJs 并全部转发', () {
     final String body = slice(
       'Future<bool> _navigateToChapterAndWait(',
       'return success && _currentChapter == resolvedChapter;',
@@ -47,25 +47,34 @@ void main() {
         reason: 'charOffset 必须转发（收藏绝对字符锚运输通道）');
     expect(body, contains('progress: progress,'),
         reason: 'progress 仍必须转发（书签/字符跳转分数路径）');
-    // pending 必须绑定本次导航代际（并发导航去重，防应用到错误章节）。
-    expect(body,
-        contains('(generation: _navigateGeneration, js: preciseLocateJs)'),
-        reason: 'pending 必须绑定 _navigateGeneration');
-    // 绑定必须在 _navigateToChapter（递增代际）之后。
-    final int navIdx = body.indexOf('_navigateToChapter(index,');
-    final int bindIdx =
-        body.indexOf('generation: _navigateGeneration, js: preciseLocateJs');
-    expect(bindIdx, greaterThan(navIdx),
-        reason: '必须在 _navigateToChapter（代际已定）之后再绑定 pending');
+    expect(body, contains('preciseLocateJs: preciseLocateJs'),
+        reason: '搜索定位意图必须转发到 _navigateToChapter，不能留在 loadUrl await 之后');
   });
 
-  test('_beginNavigation 清空上一次未消费的 pending（并发导航从源头去重）', () {
+  test('_beginNavigation 在 loadUrl 前清旧 pending 并绑定本次代际', () {
     final String body = slice(
       'void _beginNavigation({',
       '_startContentReadyTimeout();',
     );
     expect(body, contains('_pendingPreciseLocate = null;'),
         reason: '新一次导航必须作废上一次排队但未消费的章内定位');
+    expect(body, contains('String? preciseLocateJs,'),
+        reason: '定位意图必须进入导航初始化原子步骤');
+    expect(body,
+        contains('(generation: _navigateGeneration, js: preciseLocateJs)'),
+        reason: '本次 pending 必须绑定已经递增的 _navigateGeneration');
+
+    final String navigate = slice(
+      'Future<void> _navigateToChapter(',
+      'Future<bool> _navigateToChapterAndWait(',
+    );
+    final int beginIdx = navigate.indexOf('_beginNavigation(');
+    final int loadIdx = navigate.indexOf('await _loadChapterDirectly(index);');
+    expect(beginIdx, isNonNegative);
+    expect(loadIdx, greaterThan(beginIdx),
+        reason: '必须先绑定定位意图再 loadUrl；反过来会让 onRestoreComplete 消费空 pending');
+    expect(navigate, contains('preciseLocateJs: preciseLocateJs,'),
+        reason: '_navigateToChapter 必须把定位意图交给 _beginNavigation');
   });
 
   test('_applyPendingPreciseLocate 有代际守卫且消费一次', () {
