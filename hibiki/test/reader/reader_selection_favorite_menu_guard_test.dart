@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// （`_showReaderTextContextMenu`），两条选区入口此前都无收藏项。本守卫钉死两处都补上
 /// 「收藏」，且各自按选区类型正确填「查词状态」（`currentSentence` / 句级区间非空契约）
 /// 后复用同一后端 `_toggleFavoriteSentence`：
-///   ① 手机拖选菜单：`value: 'favorite'` + `t.action_favorite`，switch 分支经
+///   ① 手机拖选菜单：非模态条的 `'favorite'` + `t.action_favorite`，switch 分支经
 ///      `_fillLookupStateFromSelectionData(..., extractNativeImages: false)`（无原生选区）
 ///      填状态后 `_toggleFavoriteSentence()`；
 ///   ② 桌面右键菜单：同项，switch 分支经 `_fillLookupStateFromNativeSelection()`
@@ -44,7 +44,7 @@ void main() {
   group('① 手机拖选菜单补「收藏」（自绘选区，无原生选区）', () {
     test('菜单项含 favorite + 复用 action_favorite i18n key', () {
       final String body = selectionMenuBody();
-      expect(body, contains("value: 'favorite'"), reason: '缺「收藏」菜单项');
+      expect(body, contains("'favorite'"), reason: '缺「收藏」操作项');
       expect(body, contains('t.action_favorite'),
           reason: '收藏项必须复用既有 action_favorite i18n key（勿新增重复 key）');
       // 查词 / 复制两条老出口仍在（共存，不回退）。

@@ -71,6 +71,7 @@ import 'package:hibiki/src/startup/exit_flush_registry.dart';
 import 'package:hibiki/src/sync/desktop_lookup_service.dart';
 import 'package:hibiki/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:hibiki/src/media/audiobook/pointer_seek.dart';
+import 'package:hibiki/src/platform/selection_external_actions.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/utils/misc/coalesced_async_runner.dart';
@@ -1135,6 +1136,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   bool _readerContentReady = false;
   bool _hasEverLoaded = false;
   bool _readerTextContextMenuActive = false;
+  // BUG-1236：移动端长按拖选后的非模态选区操作条。旧 showMenu 的全屏
+  // ModalBarrier 会截断 WebView 手柄触摸；OverlayEntry 只让按钮区域命中。
+  OverlayEntry? _selectionActionBarEntry;
+  ReaderSelectionData? _selectionActionData;
   bool _restoreInFlight = false;
   bool _isNavigatingToChapter = false;
   // TODO-1037：跨章推进经过的「纯图片章逐个停留」序列在途时为真，防重入跨章导航。
@@ -2047,6 +2052,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       _exitFlushCallback = null;
     }
     WidgetsBinding.instance.removeObserver(this);
+    _removeSelectionActionBar();
     _progressPollTimer?.cancel();
     _saveDebounce?.cancel();
     _scrollProgressThrottleTimer?.cancel();

@@ -1,0 +1,51 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  final String native = File(
+    'android/app/src/main/java/app/hibiki/reader/SelectionActionChannel.java',
+  ).readAsStringSync();
+  final String lower = native.toLowerCase();
+
+  test('web search uses Android ACTION_WEB_SEARCH and SearchManager.QUERY', () {
+    expect(native, contains('Intent.ACTION_WEB_SEARCH'));
+    expect(native, contains('SearchManager.QUERY'));
+    expect(native, contains('intent.putExtra(SearchManager.QUERY, query)'));
+    expect(native,
+        contains('intent.resolveActivity(context.getPackageManager())'));
+    expect(native, contains('result.success(launchWebSearch(context, query))'));
+  });
+
+  test('web search has no URL or vendor fallback', () {
+    expect(native, isNot(contains('Intent.ACTION_VIEW')));
+    expect(native, isNot(contains('Uri.parse')));
+    expect(lower, isNot(contains('http://')));
+    expect(lower, isNot(contains('https://')));
+    expect(lower, isNot(contains('google.')));
+    expect(lower, isNot(contains('bing.')));
+  });
+
+  test('main and popup engines register the same channel seam', () {
+    final String main = File(
+      'android/app/src/main/java/app/hibiki/reader/MainActivity.java',
+    ).readAsStringSync();
+    final String popup = File(
+      'android/app/src/main/java/app/hibiki/reader/PopupEngineHolder.kt',
+    ).readAsStringSync();
+    final String registrant = File(
+      'android/app/src/main/java/app/hibiki/reader/'
+      'FloatingDictPluginRegistrant.java',
+    ).readAsStringSync();
+    expect(main,
+        contains('SelectionActionChannel.registerWith(flutterEngine, this)'));
+    expect(
+      popup,
+      contains(
+        'SelectionActionChannel.registerWith(engine, context.applicationContext)',
+      ),
+    );
+    expect(registrant,
+        contains('new dev.fluttercommunity.plus.share.SharePlusPlugin()'));
+  });
+}

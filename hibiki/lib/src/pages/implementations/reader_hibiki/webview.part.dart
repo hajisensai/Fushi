@@ -1689,6 +1689,39 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
                     await _clearReaderAppSelection();
                   },
                 ),
+                if (isAndroidPlatform)
+                  ContextMenuItem(
+                    id: 4,
+                    title: t.share,
+                    action: () async {
+                      final String? text = await _controller?.getSelectedText();
+                      if (text == null || text.isEmpty) return;
+                      final bool shared = await SelectionExternalActions
+                          .instance
+                          .shareText(text);
+                      if (mounted && !shared) {
+                        HibikiToast.show(msg: t.selection_share_failed);
+                      }
+                      await _clearReaderAppSelection();
+                    },
+                  ),
+                if (isAndroidPlatform)
+                  ContextMenuItem(
+                    id: 5,
+                    title: t.selection_web_search,
+                    action: () async {
+                      final String? text = await _controller?.getSelectedText();
+                      if (text == null || text.isEmpty) return;
+                      final bool opened = await SelectionExternalActions
+                          .instance
+                          .searchWeb(text);
+                      if (mounted && !opened) {
+                        HibikiToast.show(
+                            msg: t.selection_web_search_unavailable);
+                      }
+                      await _clearReaderAppSelection();
+                    },
+                  ),
               ],
             ),
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[

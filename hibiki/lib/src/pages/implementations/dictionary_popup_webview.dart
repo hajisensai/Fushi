@@ -12,6 +12,7 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:hibiki/src/pages/implementations/popup_settings_injection.dart';
+import 'package:hibiki/src/platform/selection_external_actions.dart';
 import 'package:hibiki/src/reader/popup_swipe_close_script.dart';
 import 'package:hibiki/src/reader/reader_caret_scripts.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
@@ -539,6 +540,27 @@ JSON.stringify((function(){
       return raw.toString();
     }
     return '';
+  }
+
+  Future<void> _clearSelectedTextAcrossFrames() async {
+    try {
+      await _controller?.evaluateJavascript(source: r'''
+        (() => {
+          const clear = (win) => {
+            try {
+              win.getSelection()?.removeAllRanges();
+              for (let i = 0; i < win.frames.length; i += 1) {
+                clear(win.frames[i]);
+              }
+            } catch (_) {}
+          };
+          clear(window);
+        })()
+      ''');
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('DictionaryPopup.clearSelectedTextAcrossFrames', e, stack);
+    }
   }
 
   Future<String> caretEnter() async {
@@ -1236,7 +1258,11 @@ JSON.stringify((function(){
           // 故离 WebView 左上角越远菜单偏得越狠（用户报「跑到很远」）。改走下面
           // [_showWindowsContextMenu] 的 Flutter showMenu（BUG-261 锚点范式，吃掉缩放
           // 残差）。非 Windows 平台保持原生菜单不变（false）。
-          hideDefaultSystemContextMenuItems: isWindowsPlatform,
+          // BUG-1237：Android 自定义 ContextMenu 会先 finish 系统 ActionMode，
+          // 所以系统默认「复制」不可用；Android 隐藏默认项并由 Dart 直做。
+          // iOS 保持原生菜单，Windows 仍由下方 Flutter 右键菜单接管。
+          hideDefaultSystemContextMenuItems:
+              Platform.isAndroid || isWindowsPlatform,
         ),
         // 非 Windows：保留原生菜单 + 自定义「查词」项（原行为）。Windows 下原生菜单已
         // 被上面禁用，这里的 menuItems 不渲染，右键改由 [_showWindowsContextMenu] 接管。
@@ -1253,6 +1279,48 @@ JSON.stringify((function(){
               }
             },
           ),
+          if (Platform.isAndroid)
+            ContextMenuItem(
+              id: 2,
+              title: t.copy,
+              action: () async {
+                final String text = await _selectedTextAcrossFrames();
+                if (text.isEmpty) return;
+                await Clipboard.setData(ClipboardData(text: text));
+                HibikiToast.show(msg: t.copied_to_clipboard);
+                await _clearSelectedTextAcrossFrames();
+              },
+            ),
+          if (Platform.isAndroid)
+            ContextMenuItem(
+              id: 3,
+              title: t.share,
+              action: () async {
+                final String text = await _selectedTextAcrossFrames();
+                if (text.isEmpty) return;
+                final bool shared =
+                    await SelectionExternalActions.instance.shareText(text);
+                if (!shared) {
+                  HibikiToast.show(msg: t.selection_share_failed);
+                }
+                await _clearSelectedTextAcrossFrames();
+              },
+            ),
+          if (Platform.isAndroid)
+            ContextMenuItem(
+              id: 4,
+              title: t.selection_web_search,
+              action: () async {
+                final String text = await _selectedTextAcrossFrames();
+                if (text.isEmpty) return;
+                final bool opened =
+                    await SelectionExternalActions.instance.searchWeb(text);
+                if (!opened) {
+                  HibikiToast.show(msg: t.selection_web_search_unavailable);
+                }
+                await _clearSelectedTextAcrossFrames();
+              },
+            ),
         ],
       ),
       // TODO-896 症状①：WebView 在手势竞技场必须争得正文区的「水平拖」，否则
