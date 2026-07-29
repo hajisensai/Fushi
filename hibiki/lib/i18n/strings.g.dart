@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 47022 (2766 per locale)
+/// Strings: 47158 (2774 per locale)
 ///
-/// Built on 2026-07-29 at 08:08 UTC
+/// Built on 2026-07-29 at 13:00 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3718,6 +3718,22 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get selection_web_search => 'Search the web';
   String get selection_web_search_unavailable => 'No app can search the web.';
   String get selection_share_failed => 'Could not open the share sheet.';
+  String get scrape_all => 'Scrape all';
+  String scrape_all_title({required Object kind}) => 'Scrape all ${kind}';
+  String scrape_all_confirm({required Object n}) =>
+      'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+  String scrape_all_running({required Object current, required Object total}) =>
+      'Scraping ${current} / ${total}';
+  String scrape_all_item({required Object title}) => 'Processing: ${title}';
+  String scrape_all_done(
+          {required Object applied,
+          required Object review,
+          required Object skipped,
+          required Object failed}) =>
+      'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+  String get scrape_all_empty =>
+      'There are no items to scrape in this library.';
+  String get scrape_all_start => 'Start';
 }
 
 // Path: <root>
@@ -10050,6 +10066,30 @@ class _StringsAr extends _StringsEn {
   String get selection_web_search_unavailable => 'No app can search the web.';
   @override
   String get selection_share_failed => 'Could not open the share sheet.';
+  @override
+  String get scrape_all => 'Scrape all';
+  @override
+  String scrape_all_title({required Object kind}) => 'Scrape all ${kind}';
+  @override
+  String scrape_all_confirm({required Object n}) =>
+      'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+  @override
+  String scrape_all_running({required Object current, required Object total}) =>
+      'Scraping ${current} / ${total}';
+  @override
+  String scrape_all_item({required Object title}) => 'Processing: ${title}';
+  @override
+  String scrape_all_done(
+          {required Object applied,
+          required Object review,
+          required Object skipped,
+          required Object failed}) =>
+      'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+  @override
+  String get scrape_all_empty =>
+      'There are no items to scrape in this library.';
+  @override
+  String get scrape_all_start => 'Start';
 }
 
 // Path: <root>
@@ -16450,6 +16490,30 @@ class _StringsDe extends _StringsEn {
   String get selection_web_search_unavailable => 'No app can search the web.';
   @override
   String get selection_share_failed => 'Could not open the share sheet.';
+  @override
+  String get scrape_all => 'Scrape all';
+  @override
+  String scrape_all_title({required Object kind}) => 'Scrape all ${kind}';
+  @override
+  String scrape_all_confirm({required Object n}) =>
+      'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+  @override
+  String scrape_all_running({required Object current, required Object total}) =>
+      'Scraping ${current} / ${total}';
+  @override
+  String scrape_all_item({required Object title}) => 'Processing: ${title}';
+  @override
+  String scrape_all_done(
+          {required Object applied,
+          required Object review,
+          required Object skipped,
+          required Object failed}) =>
+      'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+  @override
+  String get scrape_all_empty =>
+      'There are no items to scrape in this library.';
+  @override
+  String get scrape_all_start => 'Start';
 }
 
 // Path: <root>
@@ -22866,6 +22930,30 @@ class _StringsEs extends _StringsEn {
   String get selection_web_search_unavailable => 'No app can search the web.';
   @override
   String get selection_share_failed => 'Could not open the share sheet.';
+  @override
+  String get scrape_all => 'Scrape all';
+  @override
+  String scrape_all_title({required Object kind}) => 'Scrape all ${kind}';
+  @override
+  String scrape_all_confirm({required Object n}) =>
+      'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+  @override
+  String scrape_all_running({required Object current, required Object total}) =>
+      'Scraping ${current} / ${total}';
+  @override
+  String scrape_all_item({required Object title}) => 'Processing: ${title}';
+  @override
+  String scrape_all_done(
+          {required Object applied,
+          required Object review,
+          required Object skipped,
+          required Object failed}) =>
+      'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+  @override
+  String get scrape_all_empty =>
+      'There are no items to scrape in this library.';
+  @override
+  String get scrape_all_start => 'Start';
 }
 
 // Path: <root>
@@ -29293,6 +29381,30 @@ class _StringsFr extends _StringsEn {
   String get selection_web_search_unavailable => 'No app can search the web.';
   @override
   String get selection_share_failed => 'Could not open the share sheet.';
+  @override
+  String get scrape_all => 'Scrape all';
+  @override
+  String scrape_all_title({required Object kind}) => 'Scrape all ${kind}';
+  @override
+  String scrape_all_confirm({required Object n}) =>
+      'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+  @override
+  String scrape_all_running({required Object current, required Object total}) =>
+      'Scraping ${current} / ${total}';
+  @override
+  String scrape_all_item({required Object title}) => 'Processing: ${title}';
+  @override
+  String scrape_all_done(
+          {required Object applied,
+          required Object review,
+          required Object skipped,
+          required Object failed}) =>
+      'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+  @override
+  String get scrape_all_empty =>
+      'There are no items to scrape in this library.';
+  @override
+  String get scrape_all_start => 'Start';
 }
 
 // Path: <root>
@@ -35649,6 +35761,30 @@ class _StringsId extends _StringsEn {
   String get selection_web_search_unavailable => 'No app can search the web.';
   @override
   String get selection_share_failed => 'Could not open the share sheet.';
+  @override
+  String get scrape_all => 'Scrape all';
+  @override
+  String scrape_all_title({required Object kind}) => 'Scrape all ${kind}';
+  @override
+  String scrape_all_confirm({required Object n}) =>
+      'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+  @override
+  String scrape_all_running({required Object current, required Object total}) =>
+      'Scraping ${current} / ${total}';
+  @override
+  String scrape_all_item({required Object title}) => 'Processing: ${title}';
+  @override
+  String scrape_all_done(
+          {required Object applied,
+          required Object review,
+          required Object skipped,
+          required Object failed}) =>
+      'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+  @override
+  String get scrape_all_empty =>
+      'There are no items to scrape in this library.';
+  @override
+  String get scrape_all_start => 'Start';
 }
 
 // Path: <root>
@@ -42051,6 +42187,30 @@ class _StringsIt extends _StringsEn {
   String get selection_web_search_unavailable => 'No app can search the web.';
   @override
   String get selection_share_failed => 'Could not open the share sheet.';
+  @override
+  String get scrape_all => 'Scrape all';
+  @override
+  String scrape_all_title({required Object kind}) => 'Scrape all ${kind}';
+  @override
+  String scrape_all_confirm({required Object n}) =>
+      'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+  @override
+  String scrape_all_running({required Object current, required Object total}) =>
+      'Scraping ${current} / ${total}';
+  @override
+  String scrape_all_item({required Object title}) => 'Processing: ${title}';
+  @override
+  String scrape_all_done(
+          {required Object applied,
+          required Object review,
+          required Object skipped,
+          required Object failed}) =>
+      'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+  @override
+  String get scrape_all_empty =>
+      'There are no items to scrape in this library.';
+  @override
+  String get scrape_all_start => 'Start';
 }
 
 // Path: <root>
@@ -48270,6 +48430,30 @@ class _StringsJa extends _StringsEn {
   String get selection_web_search_unavailable => 'No app can search the web.';
   @override
   String get selection_share_failed => 'Could not open the share sheet.';
+  @override
+  String get scrape_all => 'Scrape all';
+  @override
+  String scrape_all_title({required Object kind}) => 'Scrape all ${kind}';
+  @override
+  String scrape_all_confirm({required Object n}) =>
+      'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+  @override
+  String scrape_all_running({required Object current, required Object total}) =>
+      'Scraping ${current} / ${total}';
+  @override
+  String scrape_all_item({required Object title}) => 'Processing: ${title}';
+  @override
+  String scrape_all_done(
+          {required Object applied,
+          required Object review,
+          required Object skipped,
+          required Object failed}) =>
+      'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+  @override
+  String get scrape_all_empty =>
+      'There are no items to scrape in this library.';
+  @override
+  String get scrape_all_start => 'Start';
 }
 
 // Path: <root>
@@ -54491,6 +54675,30 @@ class _StringsKo extends _StringsEn {
   String get selection_web_search_unavailable => 'No app can search the web.';
   @override
   String get selection_share_failed => 'Could not open the share sheet.';
+  @override
+  String get scrape_all => 'Scrape all';
+  @override
+  String scrape_all_title({required Object kind}) => 'Scrape all ${kind}';
+  @override
+  String scrape_all_confirm({required Object n}) =>
+      'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+  @override
+  String scrape_all_running({required Object current, required Object total}) =>
+      'Scraping ${current} / ${total}';
+  @override
+  String scrape_all_item({required Object title}) => 'Processing: ${title}';
+  @override
+  String scrape_all_done(
+          {required Object applied,
+          required Object review,
+          required Object skipped,
+          required Object failed}) =>
+      'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+  @override
+  String get scrape_all_empty =>
+      'There are no items to scrape in this library.';
+  @override
+  String get scrape_all_start => 'Start';
 }
 
 // Path: <root>
@@ -60873,6 +61081,30 @@ class _StringsNl extends _StringsEn {
   String get selection_web_search_unavailable => 'No app can search the web.';
   @override
   String get selection_share_failed => 'Could not open the share sheet.';
+  @override
+  String get scrape_all => 'Scrape all';
+  @override
+  String scrape_all_title({required Object kind}) => 'Scrape all ${kind}';
+  @override
+  String scrape_all_confirm({required Object n}) =>
+      'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+  @override
+  String scrape_all_running({required Object current, required Object total}) =>
+      'Scraping ${current} / ${total}';
+  @override
+  String scrape_all_item({required Object title}) => 'Processing: ${title}';
+  @override
+  String scrape_all_done(
+          {required Object applied,
+          required Object review,
+          required Object skipped,
+          required Object failed}) =>
+      'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+  @override
+  String get scrape_all_empty =>
+      'There are no items to scrape in this library.';
+  @override
+  String get scrape_all_start => 'Start';
 }
 
 // Path: <root>
@@ -67268,6 +67500,30 @@ class _StringsPtBr extends _StringsEn {
   String get selection_web_search_unavailable => 'No app can search the web.';
   @override
   String get selection_share_failed => 'Could not open the share sheet.';
+  @override
+  String get scrape_all => 'Scrape all';
+  @override
+  String scrape_all_title({required Object kind}) => 'Scrape all ${kind}';
+  @override
+  String scrape_all_confirm({required Object n}) =>
+      'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+  @override
+  String scrape_all_running({required Object current, required Object total}) =>
+      'Scraping ${current} / ${total}';
+  @override
+  String scrape_all_item({required Object title}) => 'Processing: ${title}';
+  @override
+  String scrape_all_done(
+          {required Object applied,
+          required Object review,
+          required Object skipped,
+          required Object failed}) =>
+      'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+  @override
+  String get scrape_all_empty =>
+      'There are no items to scrape in this library.';
+  @override
+  String get scrape_all_start => 'Start';
 }
 
 // Path: <root>
@@ -73647,6 +73903,30 @@ class _StringsRu extends _StringsEn {
   String get selection_web_search_unavailable => 'No app can search the web.';
   @override
   String get selection_share_failed => 'Could not open the share sheet.';
+  @override
+  String get scrape_all => 'Scrape all';
+  @override
+  String scrape_all_title({required Object kind}) => 'Scrape all ${kind}';
+  @override
+  String scrape_all_confirm({required Object n}) =>
+      'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+  @override
+  String scrape_all_running({required Object current, required Object total}) =>
+      'Scraping ${current} / ${total}';
+  @override
+  String scrape_all_item({required Object title}) => 'Processing: ${title}';
+  @override
+  String scrape_all_done(
+          {required Object applied,
+          required Object review,
+          required Object skipped,
+          required Object failed}) =>
+      'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+  @override
+  String get scrape_all_empty =>
+      'There are no items to scrape in this library.';
+  @override
+  String get scrape_all_start => 'Start';
 }
 
 // Path: <root>
@@ -79974,6 +80254,30 @@ class _StringsTh extends _StringsEn {
   String get selection_web_search_unavailable => 'No app can search the web.';
   @override
   String get selection_share_failed => 'Could not open the share sheet.';
+  @override
+  String get scrape_all => 'Scrape all';
+  @override
+  String scrape_all_title({required Object kind}) => 'Scrape all ${kind}';
+  @override
+  String scrape_all_confirm({required Object n}) =>
+      'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+  @override
+  String scrape_all_running({required Object current, required Object total}) =>
+      'Scraping ${current} / ${total}';
+  @override
+  String scrape_all_item({required Object title}) => 'Processing: ${title}';
+  @override
+  String scrape_all_done(
+          {required Object applied,
+          required Object review,
+          required Object skipped,
+          required Object failed}) =>
+      'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+  @override
+  String get scrape_all_empty =>
+      'There are no items to scrape in this library.';
+  @override
+  String get scrape_all_start => 'Start';
 }
 
 // Path: <root>
@@ -86333,6 +86637,30 @@ class _StringsTr extends _StringsEn {
   String get selection_web_search_unavailable => 'No app can search the web.';
   @override
   String get selection_share_failed => 'Could not open the share sheet.';
+  @override
+  String get scrape_all => 'Scrape all';
+  @override
+  String scrape_all_title({required Object kind}) => 'Scrape all ${kind}';
+  @override
+  String scrape_all_confirm({required Object n}) =>
+      'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+  @override
+  String scrape_all_running({required Object current, required Object total}) =>
+      'Scraping ${current} / ${total}';
+  @override
+  String scrape_all_item({required Object title}) => 'Processing: ${title}';
+  @override
+  String scrape_all_done(
+          {required Object applied,
+          required Object review,
+          required Object skipped,
+          required Object failed}) =>
+      'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+  @override
+  String get scrape_all_empty =>
+      'There are no items to scrape in this library.';
+  @override
+  String get scrape_all_start => 'Start';
 }
 
 // Path: <root>
@@ -92677,6 +93005,30 @@ class _StringsVi extends _StringsEn {
   String get selection_web_search_unavailable => 'No app can search the web.';
   @override
   String get selection_share_failed => 'Could not open the share sheet.';
+  @override
+  String get scrape_all => 'Scrape all';
+  @override
+  String scrape_all_title({required Object kind}) => 'Scrape all ${kind}';
+  @override
+  String scrape_all_confirm({required Object n}) =>
+      'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+  @override
+  String scrape_all_running({required Object current, required Object total}) =>
+      'Scraping ${current} / ${total}';
+  @override
+  String scrape_all_item({required Object title}) => 'Processing: ${title}';
+  @override
+  String scrape_all_done(
+          {required Object applied,
+          required Object review,
+          required Object skipped,
+          required Object failed}) =>
+      'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+  @override
+  String get scrape_all_empty =>
+      'There are no items to scrape in this library.';
+  @override
+  String get scrape_all_start => 'Start';
 }
 
 // Path: <root>
@@ -98572,6 +98924,29 @@ class _StringsZhCn extends _StringsEn {
   String get selection_web_search_unavailable => '没有可用的网页搜索应用。';
   @override
   String get selection_share_failed => '无法打开分享面板。';
+  @override
+  String get scrape_all => '全部刮削';
+  @override
+  String scrape_all_title({required Object kind}) => '刮削全部${kind}';
+  @override
+  String scrape_all_confirm({required Object n}) =>
+      '将按标题匹配库中的 ${n} 个条目。只自动应用唯一的精确匹配；已有手动封面会保留，歧义结果留待手动确认。';
+  @override
+  String scrape_all_running({required Object current, required Object total}) =>
+      '正在刮削 ${current} / ${total}';
+  @override
+  String scrape_all_item({required Object title}) => '正在处理：${title}';
+  @override
+  String scrape_all_done(
+          {required Object applied,
+          required Object review,
+          required Object skipped,
+          required Object failed}) =>
+      '完成：已应用 ${applied} 个，待手动确认 ${review} 个，已跳过 ${skipped} 个，失败 ${failed} 个';
+  @override
+  String get scrape_all_empty => '当前库没有可刮削的条目。';
+  @override
+  String get scrape_all_start => '开始';
 }
 
 // Path: <root>
@@ -104712,6 +105087,30 @@ class _StringsZhHk extends _StringsEn {
   String get selection_web_search_unavailable => 'No app can search the web.';
   @override
   String get selection_share_failed => 'Could not open the share sheet.';
+  @override
+  String get scrape_all => 'Scrape all';
+  @override
+  String scrape_all_title({required Object kind}) => 'Scrape all ${kind}';
+  @override
+  String scrape_all_confirm({required Object n}) =>
+      'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+  @override
+  String scrape_all_running({required Object current, required Object total}) =>
+      'Scraping ${current} / ${total}';
+  @override
+  String scrape_all_item({required Object title}) => 'Processing: ${title}';
+  @override
+  String scrape_all_done(
+          {required Object applied,
+          required Object review,
+          required Object skipped,
+          required Object failed}) =>
+      'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+  @override
+  String get scrape_all_empty =>
+      'There are no items to scrape in this library.';
+  @override
+  String get scrape_all_start => 'Start';
 }
 
 /// Flat map(s) containing all translations.
@@ -110379,6 +110778,29 @@ extension on _StringsEn {
         return 'No app can search the web.';
       case 'selection_share_failed':
         return 'Could not open the share sheet.';
+      case 'scrape_all':
+        return 'Scrape all';
+      case 'scrape_all_title':
+        return ({required Object kind}) => 'Scrape all ${kind}';
+      case 'scrape_all_confirm':
+        return ({required Object n}) =>
+            'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+      case 'scrape_all_running':
+        return ({required Object current, required Object total}) =>
+            'Scraping ${current} / ${total}';
+      case 'scrape_all_item':
+        return ({required Object title}) => 'Processing: ${title}';
+      case 'scrape_all_done':
+        return (
+                {required Object applied,
+                required Object review,
+                required Object skipped,
+                required Object failed}) =>
+            'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+      case 'scrape_all_empty':
+        return 'There are no items to scrape in this library.';
+      case 'scrape_all_start':
+        return 'Start';
       default:
         return null;
     }
@@ -116044,6 +116466,29 @@ extension on _StringsAr {
         return 'No app can search the web.';
       case 'selection_share_failed':
         return 'Could not open the share sheet.';
+      case 'scrape_all':
+        return 'Scrape all';
+      case 'scrape_all_title':
+        return ({required Object kind}) => 'Scrape all ${kind}';
+      case 'scrape_all_confirm':
+        return ({required Object n}) =>
+            'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+      case 'scrape_all_running':
+        return ({required Object current, required Object total}) =>
+            'Scraping ${current} / ${total}';
+      case 'scrape_all_item':
+        return ({required Object title}) => 'Processing: ${title}';
+      case 'scrape_all_done':
+        return (
+                {required Object applied,
+                required Object review,
+                required Object skipped,
+                required Object failed}) =>
+            'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+      case 'scrape_all_empty':
+        return 'There are no items to scrape in this library.';
+      case 'scrape_all_start':
+        return 'Start';
       default:
         return null;
     }
@@ -121730,6 +122175,29 @@ extension on _StringsDe {
         return 'No app can search the web.';
       case 'selection_share_failed':
         return 'Could not open the share sheet.';
+      case 'scrape_all':
+        return 'Scrape all';
+      case 'scrape_all_title':
+        return ({required Object kind}) => 'Scrape all ${kind}';
+      case 'scrape_all_confirm':
+        return ({required Object n}) =>
+            'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+      case 'scrape_all_running':
+        return ({required Object current, required Object total}) =>
+            'Scraping ${current} / ${total}';
+      case 'scrape_all_item':
+        return ({required Object title}) => 'Processing: ${title}';
+      case 'scrape_all_done':
+        return (
+                {required Object applied,
+                required Object review,
+                required Object skipped,
+                required Object failed}) =>
+            'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+      case 'scrape_all_empty':
+        return 'There are no items to scrape in this library.';
+      case 'scrape_all_start':
+        return 'Start';
       default:
         return null;
     }
@@ -127415,6 +127883,29 @@ extension on _StringsEs {
         return 'No app can search the web.';
       case 'selection_share_failed':
         return 'Could not open the share sheet.';
+      case 'scrape_all':
+        return 'Scrape all';
+      case 'scrape_all_title':
+        return ({required Object kind}) => 'Scrape all ${kind}';
+      case 'scrape_all_confirm':
+        return ({required Object n}) =>
+            'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+      case 'scrape_all_running':
+        return ({required Object current, required Object total}) =>
+            'Scraping ${current} / ${total}';
+      case 'scrape_all_item':
+        return ({required Object title}) => 'Processing: ${title}';
+      case 'scrape_all_done':
+        return (
+                {required Object applied,
+                required Object review,
+                required Object skipped,
+                required Object failed}) =>
+            'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+      case 'scrape_all_empty':
+        return 'There are no items to scrape in this library.';
+      case 'scrape_all_start':
+        return 'Start';
       default:
         return null;
     }
@@ -133106,6 +133597,29 @@ extension on _StringsFr {
         return 'No app can search the web.';
       case 'selection_share_failed':
         return 'Could not open the share sheet.';
+      case 'scrape_all':
+        return 'Scrape all';
+      case 'scrape_all_title':
+        return ({required Object kind}) => 'Scrape all ${kind}';
+      case 'scrape_all_confirm':
+        return ({required Object n}) =>
+            'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+      case 'scrape_all_running':
+        return ({required Object current, required Object total}) =>
+            'Scraping ${current} / ${total}';
+      case 'scrape_all_item':
+        return ({required Object title}) => 'Processing: ${title}';
+      case 'scrape_all_done':
+        return (
+                {required Object applied,
+                required Object review,
+                required Object skipped,
+                required Object failed}) =>
+            'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+      case 'scrape_all_empty':
+        return 'There are no items to scrape in this library.';
+      case 'scrape_all_start':
+        return 'Start';
       default:
         return null;
     }
@@ -138779,6 +139293,29 @@ extension on _StringsId {
         return 'No app can search the web.';
       case 'selection_share_failed':
         return 'Could not open the share sheet.';
+      case 'scrape_all':
+        return 'Scrape all';
+      case 'scrape_all_title':
+        return ({required Object kind}) => 'Scrape all ${kind}';
+      case 'scrape_all_confirm':
+        return ({required Object n}) =>
+            'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+      case 'scrape_all_running':
+        return ({required Object current, required Object total}) =>
+            'Scraping ${current} / ${total}';
+      case 'scrape_all_item':
+        return ({required Object title}) => 'Processing: ${title}';
+      case 'scrape_all_done':
+        return (
+                {required Object applied,
+                required Object review,
+                required Object skipped,
+                required Object failed}) =>
+            'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+      case 'scrape_all_empty':
+        return 'There are no items to scrape in this library.';
+      case 'scrape_all_start':
+        return 'Start';
       default:
         return null;
     }
@@ -144467,6 +145004,29 @@ extension on _StringsIt {
         return 'No app can search the web.';
       case 'selection_share_failed':
         return 'Could not open the share sheet.';
+      case 'scrape_all':
+        return 'Scrape all';
+      case 'scrape_all_title':
+        return ({required Object kind}) => 'Scrape all ${kind}';
+      case 'scrape_all_confirm':
+        return ({required Object n}) =>
+            'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+      case 'scrape_all_running':
+        return ({required Object current, required Object total}) =>
+            'Scraping ${current} / ${total}';
+      case 'scrape_all_item':
+        return ({required Object title}) => 'Processing: ${title}';
+      case 'scrape_all_done':
+        return (
+                {required Object applied,
+                required Object review,
+                required Object skipped,
+                required Object failed}) =>
+            'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+      case 'scrape_all_empty':
+        return 'There are no items to scrape in this library.';
+      case 'scrape_all_start':
+        return 'Start';
       default:
         return null;
     }
@@ -150117,6 +150677,29 @@ extension on _StringsJa {
         return 'No app can search the web.';
       case 'selection_share_failed':
         return 'Could not open the share sheet.';
+      case 'scrape_all':
+        return 'Scrape all';
+      case 'scrape_all_title':
+        return ({required Object kind}) => 'Scrape all ${kind}';
+      case 'scrape_all_confirm':
+        return ({required Object n}) =>
+            'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+      case 'scrape_all_running':
+        return ({required Object current, required Object total}) =>
+            'Scraping ${current} / ${total}';
+      case 'scrape_all_item':
+        return ({required Object title}) => 'Processing: ${title}';
+      case 'scrape_all_done':
+        return (
+                {required Object applied,
+                required Object review,
+                required Object skipped,
+                required Object failed}) =>
+            'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+      case 'scrape_all_empty':
+        return 'There are no items to scrape in this library.';
+      case 'scrape_all_start':
+        return 'Start';
       default:
         return null;
     }
@@ -155771,6 +156354,29 @@ extension on _StringsKo {
         return 'No app can search the web.';
       case 'selection_share_failed':
         return 'Could not open the share sheet.';
+      case 'scrape_all':
+        return 'Scrape all';
+      case 'scrape_all_title':
+        return ({required Object kind}) => 'Scrape all ${kind}';
+      case 'scrape_all_confirm':
+        return ({required Object n}) =>
+            'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+      case 'scrape_all_running':
+        return ({required Object current, required Object total}) =>
+            'Scraping ${current} / ${total}';
+      case 'scrape_all_item':
+        return ({required Object title}) => 'Processing: ${title}';
+      case 'scrape_all_done':
+        return (
+                {required Object applied,
+                required Object review,
+                required Object skipped,
+                required Object failed}) =>
+            'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+      case 'scrape_all_empty':
+        return 'There are no items to scrape in this library.';
+      case 'scrape_all_start':
+        return 'Start';
       default:
         return null;
     }
@@ -161452,6 +162058,29 @@ extension on _StringsNl {
         return 'No app can search the web.';
       case 'selection_share_failed':
         return 'Could not open the share sheet.';
+      case 'scrape_all':
+        return 'Scrape all';
+      case 'scrape_all_title':
+        return ({required Object kind}) => 'Scrape all ${kind}';
+      case 'scrape_all_confirm':
+        return ({required Object n}) =>
+            'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+      case 'scrape_all_running':
+        return ({required Object current, required Object total}) =>
+            'Scraping ${current} / ${total}';
+      case 'scrape_all_item':
+        return ({required Object title}) => 'Processing: ${title}';
+      case 'scrape_all_done':
+        return (
+                {required Object applied,
+                required Object review,
+                required Object skipped,
+                required Object failed}) =>
+            'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+      case 'scrape_all_empty':
+        return 'There are no items to scrape in this library.';
+      case 'scrape_all_start':
+        return 'Start';
       default:
         return null;
     }
@@ -167130,6 +167759,29 @@ extension on _StringsPtBr {
         return 'No app can search the web.';
       case 'selection_share_failed':
         return 'Could not open the share sheet.';
+      case 'scrape_all':
+        return 'Scrape all';
+      case 'scrape_all_title':
+        return ({required Object kind}) => 'Scrape all ${kind}';
+      case 'scrape_all_confirm':
+        return ({required Object n}) =>
+            'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+      case 'scrape_all_running':
+        return ({required Object current, required Object total}) =>
+            'Scraping ${current} / ${total}';
+      case 'scrape_all_item':
+        return ({required Object title}) => 'Processing: ${title}';
+      case 'scrape_all_done':
+        return (
+                {required Object applied,
+                required Object review,
+                required Object skipped,
+                required Object failed}) =>
+            'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+      case 'scrape_all_empty':
+        return 'There are no items to scrape in this library.';
+      case 'scrape_all_start':
+        return 'Start';
       default:
         return null;
     }
@@ -172813,6 +173465,29 @@ extension on _StringsRu {
         return 'No app can search the web.';
       case 'selection_share_failed':
         return 'Could not open the share sheet.';
+      case 'scrape_all':
+        return 'Scrape all';
+      case 'scrape_all_title':
+        return ({required Object kind}) => 'Scrape all ${kind}';
+      case 'scrape_all_confirm':
+        return ({required Object n}) =>
+            'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+      case 'scrape_all_running':
+        return ({required Object current, required Object total}) =>
+            'Scraping ${current} / ${total}';
+      case 'scrape_all_item':
+        return ({required Object title}) => 'Processing: ${title}';
+      case 'scrape_all_done':
+        return (
+                {required Object applied,
+                required Object review,
+                required Object skipped,
+                required Object failed}) =>
+            'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+      case 'scrape_all_empty':
+        return 'There are no items to scrape in this library.';
+      case 'scrape_all_start':
+        return 'Start';
       default:
         return null;
     }
@@ -178480,6 +179155,29 @@ extension on _StringsTh {
         return 'No app can search the web.';
       case 'selection_share_failed':
         return 'Could not open the share sheet.';
+      case 'scrape_all':
+        return 'Scrape all';
+      case 'scrape_all_title':
+        return ({required Object kind}) => 'Scrape all ${kind}';
+      case 'scrape_all_confirm':
+        return ({required Object n}) =>
+            'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+      case 'scrape_all_running':
+        return ({required Object current, required Object total}) =>
+            'Scraping ${current} / ${total}';
+      case 'scrape_all_item':
+        return ({required Object title}) => 'Processing: ${title}';
+      case 'scrape_all_done':
+        return (
+                {required Object applied,
+                required Object review,
+                required Object skipped,
+                required Object failed}) =>
+            'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+      case 'scrape_all_empty':
+        return 'There are no items to scrape in this library.';
+      case 'scrape_all_start':
+        return 'Start';
       default:
         return null;
     }
@@ -184156,6 +184854,29 @@ extension on _StringsTr {
         return 'No app can search the web.';
       case 'selection_share_failed':
         return 'Could not open the share sheet.';
+      case 'scrape_all':
+        return 'Scrape all';
+      case 'scrape_all_title':
+        return ({required Object kind}) => 'Scrape all ${kind}';
+      case 'scrape_all_confirm':
+        return ({required Object n}) =>
+            'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+      case 'scrape_all_running':
+        return ({required Object current, required Object total}) =>
+            'Scraping ${current} / ${total}';
+      case 'scrape_all_item':
+        return ({required Object title}) => 'Processing: ${title}';
+      case 'scrape_all_done':
+        return (
+                {required Object applied,
+                required Object review,
+                required Object skipped,
+                required Object failed}) =>
+            'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+      case 'scrape_all_empty':
+        return 'There are no items to scrape in this library.';
+      case 'scrape_all_start':
+        return 'Start';
       default:
         return null;
     }
@@ -189827,6 +190548,29 @@ extension on _StringsVi {
         return 'No app can search the web.';
       case 'selection_share_failed':
         return 'Could not open the share sheet.';
+      case 'scrape_all':
+        return 'Scrape all';
+      case 'scrape_all_title':
+        return ({required Object kind}) => 'Scrape all ${kind}';
+      case 'scrape_all_confirm':
+        return ({required Object n}) =>
+            'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+      case 'scrape_all_running':
+        return ({required Object current, required Object total}) =>
+            'Scraping ${current} / ${total}';
+      case 'scrape_all_item':
+        return ({required Object title}) => 'Processing: ${title}';
+      case 'scrape_all_done':
+        return (
+                {required Object applied,
+                required Object review,
+                required Object skipped,
+                required Object failed}) =>
+            'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+      case 'scrape_all_empty':
+        return 'There are no items to scrape in this library.';
+      case 'scrape_all_start':
+        return 'Start';
       default:
         return null;
     }
@@ -195451,6 +196195,29 @@ extension on _StringsZhCn {
         return '没有可用的网页搜索应用。';
       case 'selection_share_failed':
         return '无法打开分享面板。';
+      case 'scrape_all':
+        return '全部刮削';
+      case 'scrape_all_title':
+        return ({required Object kind}) => '刮削全部${kind}';
+      case 'scrape_all_confirm':
+        return ({required Object n}) =>
+            '将按标题匹配库中的 ${n} 个条目。只自动应用唯一的精确匹配；已有手动封面会保留，歧义结果留待手动确认。';
+      case 'scrape_all_running':
+        return ({required Object current, required Object total}) =>
+            '正在刮削 ${current} / ${total}';
+      case 'scrape_all_item':
+        return ({required Object title}) => '正在处理：${title}';
+      case 'scrape_all_done':
+        return (
+                {required Object applied,
+                required Object review,
+                required Object skipped,
+                required Object failed}) =>
+            '完成：已应用 ${applied} 个，待手动确认 ${review} 个，已跳过 ${skipped} 个，失败 ${failed} 个';
+      case 'scrape_all_empty':
+        return '当前库没有可刮削的条目。';
+      case 'scrape_all_start':
+        return '开始';
       default:
         return null;
     }
@@ -201096,6 +201863,29 @@ extension on _StringsZhHk {
         return 'No app can search the web.';
       case 'selection_share_failed':
         return 'Could not open the share sheet.';
+      case 'scrape_all':
+        return 'Scrape all';
+      case 'scrape_all_title':
+        return ({required Object kind}) => 'Scrape all ${kind}';
+      case 'scrape_all_confirm':
+        return ({required Object n}) =>
+            'Match all ${n} library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.';
+      case 'scrape_all_running':
+        return ({required Object current, required Object total}) =>
+            'Scraping ${current} / ${total}';
+      case 'scrape_all_item':
+        return ({required Object title}) => 'Processing: ${title}';
+      case 'scrape_all_done':
+        return (
+                {required Object applied,
+                required Object review,
+                required Object skipped,
+                required Object failed}) =>
+            'Done: ${applied} applied, ${review} need review, ${skipped} skipped, ${failed} failed';
+      case 'scrape_all_empty':
+        return 'There are no items to scrape in this library.';
+      case 'scrape_all_start':
+        return 'Start';
       default:
         return null;
     }
