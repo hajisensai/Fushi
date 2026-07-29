@@ -309,6 +309,19 @@ String galgameNameFromExe(String exePath) {
 /// 路径归一成大小写无关的比较键（Windows 路径大小写不敏感、分隔符 `\\`/`/` 等价）。
 String _exePathKey(String path) => path.replaceAll('/', '\\').toLowerCase();
 
+/// 是否像历史活动曾写入 [mediaKey] 的 Windows exe 路径。
+///
+/// 稳定 id 与脏 key 都不能凭标题继续猜游戏；只有带路径分隔符且以 `.exe` 结尾的值
+/// 才具有旧路径身份。这里也接受测试/迁移数据里的根相对形式（如 `\ABS\GAME.EXE`），
+/// 但拒绝裸文件名和任意非路径字符串。
+bool _looksLikeLegacyExePath(String value) {
+  final String normalized = value.trim().replaceAll('/', '\\');
+  final int separator = normalized.lastIndexOf('\\');
+  if (separator < 0) return false;
+  final String fileName = normalized.substring(separator + 1);
+  return fileName.length > 4 && fileName.toLowerCase().endsWith('.exe');
+}
+
 /// 按 exe 路径在库里找条目；找不到返回 null。路径比较走与去重同一套归一
 /// （[_exePathKey]），所以 `D:/Games/a.exe` 与 `D:\games\A.EXE` 认作同一个游戏。
 ///
@@ -327,14 +340,45 @@ GalgameEntry? findGalgameByExePath(
   return null;
 }
 
+/// 按活动落库时的标题快照找唯一游戏；零个或多个候选都返回 null。
+GalgameEntry? _findUniqueGalgameByActivityTitle(
+  List<GalgameEntry> games,
+  String title,
+) {
+  final String snapshot = title.trim();
+  if (snapshot.isEmpty) return null;
+
+  GalgameEntry? candidate;
+  for (final GalgameEntry game in games) {
+    final Iterable<String?> knownTitles = <String?>[
+      game.displayName,
+      game.name,
+      game.metadata.name,
+      game.metadata.nameCn,
+      ...game.metadata.aliases,
+      galgameNameFromExe(game.exePath),
+    ];
+    if (!knownTitles.any((String? value) => value?.trim() == snapshot)) {
+      continue;
+    }
+    if (candidate != null) return null;
+    candidate = game;
+  }
+  return candidate;
+}
+
 /// 把一条游戏活动反查回游戏库条目。
 ///
 /// 新活动的 [mediaKey] 统一写 `galgames.id`；历史版本曾把 exe 绝对路径写进同一字段，
 /// attach 模式则可能完全没有 key。因此读取顺序固定为：
 ///
 /// 1. `galgames.id`；
-/// 2. 旧 exe 路径（复用 [findGalgameByExePath] 的 Windows 路径归一）；
-/// 3. 活动落库时的标题快照（本地名 / 当前显示名 / 元数据名与别名 / exe 文件名）。
+/// 2. 只有 key 可识别为旧 exe 路径时，才按 Windows 路径归一精确匹配；
+/// 3. 旧路径因迁移失效时，允许按标题快照恢复，但候选必须唯一；
+/// 4. 完全无 key 的更老事件也只接受唯一标题候选。
+///
+/// 非空的稳定 id / 脏非路径 key 一旦未命中就安全返回 null，绝不借同标题绑定到另一
+/// 游戏；重复标题同样返回 null，而不是依赖库顺序取首项。
 ///
 /// 这层兼容必须集中在领域模型旁边，首页 Activity 与游戏首页时间线共用；否则一个页面
 /// 能显示历史活动封面、另一个页面仍只剩占位图标。
@@ -348,26 +392,13 @@ GalgameEntry? findGalgameForActivity(
     for (final GalgameEntry game in games) {
       if (game.id == key) return game;
     }
+    if (!_looksLikeLegacyExePath(key)) return null;
     final GalgameEntry? byExePath = findGalgameByExePath(games, key);
     if (byExePath != null) return byExePath;
+    return _findUniqueGalgameByActivityTitle(games, title);
   }
 
-  final String snapshot = title.trim();
-  if (snapshot.isEmpty) return null;
-  for (final GalgameEntry game in games) {
-    final Iterable<String?> knownTitles = <String?>[
-      game.displayName,
-      game.name,
-      game.metadata.name,
-      game.metadata.nameCn,
-      ...game.metadata.aliases,
-      galgameNameFromExe(game.exePath),
-    ];
-    if (knownTitles.any((String? value) => value?.trim() == snapshot)) {
-      return game;
-    }
-  }
-  return null;
+  return _findUniqueGalgameByActivityTitle(games, title);
 }
 
 /// 把用户输入的一整行启动参数拆成 argv token，规则与 Windows `CommandLineToArgvW`
