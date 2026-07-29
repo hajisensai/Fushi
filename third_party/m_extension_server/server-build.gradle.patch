@@ -14,6 +14,12 @@ index e105c56..9fe540c 100644
 @@ -42 +43 @@ sourceSets {
 -val m_extension_serverVersion = "v1.0.4.10"
 +val m_extension_serverVersion = "v1.0.5.0"
+@@ -43,0 +45,5 @@ val m_extension_serverVersion = "v1.0.4.10"
++
++tasks.withType<org.gradle.api.tasks.bundling.AbstractArchiveTask>().configureEach {
++    isPreserveFileTimestamps = false
++    isReproducibleFileOrder = true
++}
 diff --git a/server/src/main/kotlin/mextensionserver/impl/MihonInvoker.kt b/server/src/main/kotlin/mextensionserver/impl/MihonInvoker.kt
 index f77332c..adc2815 100644
 --- a/server/src/main/kotlin/mextensionserver/impl/MihonInvoker.kt

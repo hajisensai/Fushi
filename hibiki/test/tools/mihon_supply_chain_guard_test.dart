@@ -28,6 +28,10 @@ void main() {
   final String macosVerify = File(
     '${repository.path}/tool/mihon/verify_desktop_runtime.sh',
   ).readAsStringSync();
+  final String serverBuildPatch = File(
+    '${repository.path}/third_party/m_extension_server/'
+    'server-build.gradle.patch',
+  ).readAsStringSync();
 
   test('Gradle and JitPack inputs are locked and verified', () {
     expect(wrapper, contains('distributionSha256Sum='));
@@ -87,6 +91,8 @@ void main() {
       expect(build, contains('offline'));
       expect(build, contains('sha256'));
     }
+    expect(serverBuildPatch, contains('isPreserveFileTimestamps = false'));
+    expect(serverBuildPatch, contains('isReproducibleFileOrder = true'));
   });
 
   test('runtime verification recomputes manifest hashes from final files', () {
