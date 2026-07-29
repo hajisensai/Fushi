@@ -11,6 +11,7 @@ void main() {
         'normalizedOffset': 3,
         'normalizedLength': 1,
         'sentenceOffset': 5,
+        'verticalWriting': true,
         'sentenceNormalizedOffset': 10,
         'sentenceNormalizedLength': 8,
       };
@@ -27,6 +28,7 @@ void main() {
       expect(data.normalizedOffset, 3);
       expect(data.normalizedLength, 1);
       expect(data.sentenceOffset, 5);
+      expect(data.verticalWriting, isTrue);
       expect(data.sentenceNormalizedOffset, 10);
       expect(data.sentenceNormalizedLength, 8);
     });
@@ -45,6 +47,7 @@ void main() {
       expect(data.normalizedOffset, isNull);
       expect(data.normalizedLength, isNull);
       expect(data.sentenceOffset, 0);
+      expect(data.verticalWriting, isFalse);
       expect(data.sentenceNormalizedOffset, isNull);
       expect(data.sentenceNormalizedLength, isNull);
     });

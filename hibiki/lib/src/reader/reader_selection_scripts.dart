@@ -1080,6 +1080,54 @@ window.hoshiSelection = {
     var ranges = this.selection.ranges;
     var text = this.selection.text;
     var sentenceContext = this.getSentenceContext(startNode, startOffset);
+    // Manga OCR producers may split one visual sentence into several adjacent
+    // line/column blocks. The overlay resolves that geometry once and exposes
+    // the complete sentence on every participating block. EPUB nodes do not
+    // carry this attribute and retain the normal punctuation-based context.
+    var startElement = startNode.parentElement;
+    var mangaSentenceElement = startElement && startElement.closest
+      ? startElement.closest('[data-manga-sentence]') : null;
+    var mangaSentence = mangaSentenceElement
+      ? mangaSentenceElement.getAttribute('data-manga-sentence') : null;
+    var orientationElement = startElement && startElement.closest
+      ? startElement.closest('[data-ocr-orientation]') : null;
+    var verticalWriting = orientationElement
+      ? orientationElement.getAttribute('data-ocr-orientation') === 'vertical'
+      : false;
+    // Anchor manga popups to the complete reconstructed sentence group rather
+    // than the tapped glyph. This places vertical dialogue outside the left or
+    // right edge of the bubble and horizontal dialogue above or below its text.
+    var mangaGroupRect = null;
+    var mangaGroup = mangaSentenceElement
+      ? mangaSentenceElement.getAttribute('data-manga-sentence-group') : null;
+    var mangaPage = mangaSentenceElement && mangaSentenceElement.closest
+      ? mangaSentenceElement.closest('.manga-page') : null;
+    if (mangaGroup !== null && mangaPage) {
+      var groupBoxes = mangaPage.querySelectorAll(
+        '.ocr-box[data-manga-sentence-group]'
+      );
+      var left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+      for (var groupIndex = 0; groupIndex < groupBoxes.length; groupIndex++) {
+        var groupBox = groupBoxes[groupIndex];
+        if (groupBox.getAttribute('data-manga-sentence-group') !== mangaGroup) {
+          continue;
+        }
+        var groupBoxRect = groupBox.getBoundingClientRect();
+        left = Math.min(left, groupBoxRect.left);
+        top = Math.min(top, groupBoxRect.top);
+        right = Math.max(right, groupBoxRect.right);
+        bottom = Math.max(bottom, groupBoxRect.bottom);
+      }
+      if (Number.isFinite(left) && Number.isFinite(top) &&
+          Number.isFinite(right) && Number.isFinite(bottom)) {
+        mangaGroupRect = {
+          x: left,
+          y: top,
+          width: Math.max(0, right - left),
+          height: Math.max(0, bottom - top)
+        };
+      }
+    }
     var normalizedOffset = window.hoshiReader ? this.getNormalizedOffset(startNode, startOffset) : null;
     var normalizedLength = null;
     if (normalizedOffset !== null && ranges.length > 0) {
@@ -1099,13 +1147,16 @@ window.hoshiSelection = {
     }
     return {
       text: text,
-      sentence: sentenceContext.sentence,
-      rect: this.getSelectionRect(x, y),
+      sentence: mangaSentence !== null && mangaSentence !== ''
+        ? mangaSentence : sentenceContext.sentence,
+      rect: mangaGroupRect || this.getSelectionRect(x, y),
       normalizedOffset: normalizedOffset,
       normalizedLength: normalizedLength,
-      sentenceOffset: sentenceContext.sentenceOffset,
+      sentenceOffset: mangaSentence !== null && mangaSentence !== ''
+        ? 0 : sentenceContext.sentenceOffset,
       sentenceNormalizedOffset: sentenceNormalizedOffset,
-      sentenceNormalizedLength: sentenceNormalizedLength
+      sentenceNormalizedLength: sentenceNormalizedLength,
+      verticalWriting: verticalWriting
     };
   },
   // Fire onTextSelected for the current this.selection (tap/word lookup path and

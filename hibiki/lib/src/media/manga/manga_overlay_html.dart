@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:characters/characters.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
 import 'package:hibiki/src/media/manga/mokuro_payload.dart';
@@ -26,8 +27,11 @@ import 'package:hibiki/src/media/manga/mokuro_payload.dart';
 String mangaOcrBoxesHtml(MokuroImage page) {
   final double pageWidth = page.size.width <= 0 ? 1 : page.size.width;
   final double pageHeight = page.size.height <= 0 ? 1 : page.size.height;
+  final List<({int group, String sentence})> sentenceAssignments =
+      _mangaBlockSentenceAssignments(page);
   final StringBuffer buffer = StringBuffer();
-  for (final MokuroBlock block in page.blocks) {
+  for (int blockIndex = 0; blockIndex < page.blocks.length; blockIndex++) {
+    final MokuroBlock block = page.blocks[blockIndex];
     final Rect r = block.rectangle;
     final double leftPct = (r.left / pageWidth) * 100;
     final double topPct = (r.top / pageHeight) * 100;
@@ -43,6 +47,7 @@ String mangaOcrBoxesHtml(MokuroImage page) {
     final double fontCqi = rawCqi > 0 ? rawCqi : 3.0;
     final String writingMode =
         block.isVertical ? 'writing-mode:vertical-rl;' : '';
+    final String orientation = block.isVertical ? 'vertical' : 'horizontal';
     final List<MangaOcrTextRegion> regions = mangaEffectiveTextRegions(block);
     final bool hasRegions = regions.isNotEmpty;
     final String inner = hasRegions
@@ -51,7 +56,13 @@ String mangaOcrBoxesHtml(MokuroImage page) {
             regions: regions,
           )
         : block.lines.map(_escapeHtml).join('<br>');
-    buffer.write('<p class="ocr-box" style="'
+    buffer.write('<p class="ocr-box" '
+        'data-ocr-orientation="$orientation" '
+        'data-manga-sentence="'
+        '${_escapeAttr(sentenceAssignments[blockIndex].sentence)}" '
+        'data-manga-sentence-group="'
+        '${sentenceAssignments[blockIndex].group}" '
+        'style="'
         'position:absolute;'
         'left:${_pct(leftPct)};'
         'top:${_pct(topPct)};'
@@ -67,6 +78,238 @@ String mangaOcrBoxesHtml(MokuroImage page) {
   }
   return buffer.toString();
 }
+
+/// Resolve the complete sentence represented by every OCR block on a page.
+///
+/// Google Lens often emits one paragraph per *vertical column*, not per speech
+/// bubble. For example, the real One Piece page behind BUG-1229 produced four
+/// neighbouring blocks `だいじょうぶ` (ruby), `大丈夫`, `だよな`, `?`.
+/// Rendering each paragraph as an isolated `<p>` made mining capture only the
+/// clicked column. This routine joins only geometrically adjacent columns/rows
+/// until a strong sentence terminator, and maps the resulting sentence back to
+/// every participating block. Existing single-block mokuro/local OCR remains
+/// unchanged.
+///
+/// A narrow kana-only run immediately on the annotation side of a kanji run is
+/// treated as furigana: it participates in the group (so clicking it still gets
+/// the complete base sentence) but is omitted from the mined sentence itself.
+@visibleForTesting
+List<String> mangaBlockSentenceTexts(MokuroImage page) {
+  return _mangaBlockSentenceAssignments(page)
+      .map((({int group, String sentence}) assignment) => assignment.sentence)
+      .toList(growable: false);
+}
+
+List<({int group, String sentence})> _mangaBlockSentenceAssignments(
+  MokuroImage page,
+) {
+  final List<MokuroBlock> blocks = page.blocks;
+  if (blocks.isEmpty) {
+    return const <({int group, String sentence})>[];
+  }
+
+  final List<int> parents = List<int>.generate(blocks.length, (int i) => i);
+  int rootOf(int value) {
+    int root = value;
+    while (parents[root] != root) {
+      root = parents[root];
+    }
+    while (parents[value] != value) {
+      final int next = parents[value];
+      parents[value] = root;
+      value = next;
+    }
+    return root;
+  }
+
+  void join(int a, int b) {
+    final int rootA = rootOf(a);
+    final int rootB = rootOf(b);
+    if (rootA != rootB) {
+      parents[rootB] = rootA;
+    }
+  }
+
+  final Set<int> rubyBlocks = <int>{};
+  for (int candidateIndex = 0;
+      candidateIndex < blocks.length;
+      candidateIndex++) {
+    final MokuroBlock candidate = blocks[candidateIndex];
+    if (!_mangaKanaOnly(_mangaBlockText(candidate))) {
+      continue;
+    }
+    int? closestBase;
+    double closestGap = double.infinity;
+    for (int baseIndex = 0; baseIndex < blocks.length; baseIndex++) {
+      if (baseIndex == candidateIndex) {
+        continue;
+      }
+      final MokuroBlock base = blocks[baseIndex];
+      final double? gap = _mangaRubyGap(candidate, base);
+      if (gap != null && gap < closestGap) {
+        closestGap = gap;
+        closestBase = baseIndex;
+      }
+    }
+    if (closestBase != null) {
+      rubyBlocks.add(candidateIndex);
+      join(candidateIndex, closestBase);
+    }
+  }
+
+  for (int i = 0; i < blocks.length; i++) {
+    if (rubyBlocks.contains(i)) {
+      continue;
+    }
+    for (int j = i + 1; j < blocks.length; j++) {
+      if (rubyBlocks.contains(j) ||
+          !_mangaBlocksAreAdjacent(blocks[i], blocks[j])) {
+        continue;
+      }
+      final int order = _compareMangaBlockReadingOrder(blocks[i], blocks[j]);
+      final MokuroBlock earlier = order <= 0 ? blocks[i] : blocks[j];
+      if (_mangaEndsSentence(_mangaBlockText(earlier))) {
+        continue;
+      }
+      join(i, j);
+    }
+  }
+
+  final Map<int, List<int>> groups = <int, List<int>>{};
+  for (int i = 0; i < blocks.length; i++) {
+    groups.putIfAbsent(rootOf(i), () => <int>[]).add(i);
+  }
+  final List<({int group, String sentence})?> result =
+      List<({int group, String sentence})?>.filled(blocks.length, null);
+  int groupIndex = 0;
+  for (final List<int> indices in groups.values) {
+    indices.sort(
+        (int a, int b) => _compareMangaBlockReadingOrder(blocks[a], blocks[b]));
+    final String sentence = indices
+        .where((int index) => !rubyBlocks.contains(index))
+        .map((int index) => _mangaBlockText(blocks[index]))
+        .join();
+    final String fallback = sentence.isNotEmpty
+        ? sentence
+        : indices.map((int index) => _mangaBlockText(blocks[index])).join();
+    for (final int index in indices) {
+      result[index] = (group: groupIndex, sentence: fallback);
+    }
+    groupIndex++;
+  }
+  return result.cast<({int group, String sentence})>();
+}
+
+String _mangaBlockText(MokuroBlock block) => block.lines.join();
+
+bool _mangaKanaOnly(String text) =>
+    text.isNotEmpty &&
+    RegExp(r'^[\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9dー]+$').hasMatch(text);
+
+bool _mangaContainsKanji(String text) =>
+    RegExp(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]').hasMatch(text);
+
+double _mangaAxisOverlap(Rect a, Rect b, {required bool vertical}) {
+  if (vertical) {
+    return math.max(0, math.min(a.bottom, b.bottom) - math.max(a.top, b.top));
+  }
+  return math.max(0, math.min(a.right, b.right) - math.max(a.left, b.left));
+}
+
+double _mangaAxisLength(Rect rect, {required bool vertical}) =>
+    vertical ? rect.height : rect.width;
+
+double _mangaCrossThickness(Rect rect, {required bool vertical}) =>
+    vertical ? rect.width : rect.height;
+
+double _mangaCrossGap(Rect a, Rect b, {required bool vertical}) {
+  if (vertical) {
+    return math.max(0, math.max(a.left, b.left) - math.min(a.right, b.right));
+  }
+  return math.max(0, math.max(a.top, b.top) - math.min(a.bottom, b.bottom));
+}
+
+/// Return the cross-axis gap when [candidate] is very likely ruby for [base].
+double? _mangaRubyGap(MokuroBlock candidate, MokuroBlock base) {
+  if (candidate.isVertical != base.isVertical ||
+      !_mangaContainsKanji(_mangaBlockText(base))) {
+    return null;
+  }
+  final bool vertical = candidate.isVertical;
+  final double candidateThickness =
+      _mangaCrossThickness(candidate.rectangle, vertical: vertical);
+  final double baseThickness =
+      _mangaCrossThickness(base.rectangle, vertical: vertical);
+  if (candidateThickness <= 0 ||
+      baseThickness <= 0 ||
+      candidateThickness > baseThickness * 0.68) {
+    return null;
+  }
+  // Japanese ruby sits to the right of vertical-rl base text and above
+  // horizontal base text.
+  final bool annotationSide = vertical
+      ? candidate.rectangle.center.dx > base.rectangle.center.dx
+      : candidate.rectangle.center.dy < base.rectangle.center.dy;
+  if (!annotationSide) {
+    return null;
+  }
+  final double candidateLength =
+      _mangaAxisLength(candidate.rectangle, vertical: vertical);
+  final double baseLength =
+      _mangaAxisLength(base.rectangle, vertical: vertical);
+  final double overlap = _mangaAxisOverlap(candidate.rectangle, base.rectangle,
+      vertical: vertical);
+  if (candidateLength <= 0 ||
+      baseLength <= 0 ||
+      overlap / math.min(candidateLength, baseLength) < 0.45) {
+    return null;
+  }
+  final double gap =
+      _mangaCrossGap(candidate.rectangle, base.rectangle, vertical: vertical);
+  final double maximumGap = math.max(6.0, base.fontSize * 0.45);
+  return gap <= maximumGap ? gap : null;
+}
+
+bool _mangaBlocksAreAdjacent(MokuroBlock a, MokuroBlock b) {
+  if (a.isVertical != b.isVertical) {
+    return false;
+  }
+  final bool vertical = a.isVertical;
+  final double aLength = _mangaAxisLength(a.rectangle, vertical: vertical);
+  final double bLength = _mangaAxisLength(b.rectangle, vertical: vertical);
+  if (aLength <= 0 || bLength <= 0) {
+    return false;
+  }
+  final double overlap =
+      _mangaAxisOverlap(a.rectangle, b.rectangle, vertical: vertical);
+  if (overlap / math.min(aLength, bLength) < 0.30) {
+    return false;
+  }
+  final double gap =
+      _mangaCrossGap(a.rectangle, b.rectangle, vertical: vertical);
+  final double maximumGap =
+      math.max(8.0, math.max(a.fontSize, b.fontSize) * 0.90);
+  return gap <= maximumGap;
+}
+
+int _compareMangaBlockReadingOrder(MokuroBlock a, MokuroBlock b) {
+  if (a.isVertical && b.isVertical) {
+    final double crossDelta = b.rectangle.center.dx - a.rectangle.center.dx;
+    if (crossDelta.abs() > 1) {
+      return crossDelta.sign.toInt();
+    }
+    return a.rectangle.top.compareTo(b.rectangle.top);
+  }
+  final double crossDelta = a.rectangle.center.dy - b.rectangle.center.dy;
+  if (crossDelta.abs() > 1) {
+    return crossDelta.sign.toInt();
+  }
+  return a.rectangle.left.compareTo(b.rectangle.left);
+}
+
+bool _mangaEndsSentence(String text) => RegExp(
+      r'[。！？.!?‼⁉][」』）)\]】〉》〕｝}］”’]*$',
+    ).hasMatch(text);
 
 /// Returns character-level hit regions for every OCR producer.
 ///

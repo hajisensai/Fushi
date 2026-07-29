@@ -11,11 +11,13 @@ void main() {
       String? capturedSentence;
       String? capturedTerm;
       Rect? capturedRect;
+      bool? capturedVerticalWriting;
 
       final ReaderSelectionData data = ReaderSelectionData.fromJson(
         <String, dynamic>{
           'text': '世界',
           'sentence': 'この世界は美しい。',
+          'verticalWriting': true,
           'rect': <String, dynamic>{
             'x': 30.0,
             'y': 40.0,
@@ -29,15 +31,17 @@ void main() {
         data,
         fallbackScreen: const Size(800, 600),
         setSentence: (String s) => capturedSentence = s,
-        search: (String term, Rect rect) async {
+        search: (String term, Rect rect, bool verticalWriting) async {
           capturedTerm = term;
           capturedRect = rect;
+          capturedVerticalWriting = verticalWriting;
         },
       );
 
       expect(capturedSentence, 'この世界は美しい。');
       expect(capturedTerm, '世界');
       expect(capturedRect, const Rect.fromLTWH(30.0, 40.0, 12.0, 16.0));
+      expect(capturedVerticalWriting, isTrue);
     });
 
     test('空 text payload 是 no-op（不设句、不查词）', () async {
@@ -52,7 +56,7 @@ void main() {
         data,
         fallbackScreen: const Size(400, 400),
         setSentence: (_) => sentenceSet = true,
-        search: (_, __) async => searched = true,
+        search: (_, __, ___) async => searched = true,
       );
 
       expect(sentenceSet, isFalse);
@@ -68,7 +72,7 @@ void main() {
         data,
         fallbackScreen: const Size(800, 600),
         setSentence: (_) {},
-        search: (_, Rect rect) async => capturedRect = rect,
+        search: (_, Rect rect, __) async => capturedRect = rect,
       );
       expect(capturedRect, isNotNull);
       expect(capturedRect!.center, const Offset(400, 300));
@@ -103,8 +107,24 @@ void main() {
       expect(src.contains('addEventListener("pointerup"'), isFalse);
     });
 
-    test('唯一 pointerup 监听只在 manga_overlay_html，且选词调用显式传 maxLength',
-        () {
+    test('漫画页按本次 OCR 命中的书写方向驱动根弹窗布局', () {
+      final String src = File(
+        'lib/src/media/manga/reader/manga_hibiki_page.dart',
+      ).readAsStringSync();
+      expect(
+        src.contains(
+          'bool get popupVerticalWriting => _popupVerticalWriting;',
+        ),
+        isTrue,
+      );
+      expect(
+        src.contains('_popupVerticalWriting = verticalWriting;'),
+        isTrue,
+        reason: '同页竖排与横排混排时，不能沿用页面级固定方向',
+      );
+    });
+
+    test('唯一 pointerup 监听只在 manga_overlay_html，且选词调用显式传 maxLength', () {
       final File overlay = File(
         'lib/src/media/manga/manga_overlay_html.dart',
       );
