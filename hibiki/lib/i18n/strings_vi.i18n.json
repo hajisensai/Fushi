@@ -2747,5 +2747,8 @@
   "library_view_sources": "Sources",
   "library_view_media": "Library",
   "scrape_failure_detail_show": "Show details",
-  "scrape_failure_detail_hide": "Hide details"
+  "scrape_failure_detail_hide": "Hide details",
+  "media_tracking_retry_mapping": "Retry matching",
+  "media_tracking_retry_matched": "Matched and queued current progress",
+  "media_tracking_retry_no_match": "No match found. Try manual linking."
 }

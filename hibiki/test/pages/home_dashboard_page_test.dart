@@ -1203,6 +1203,36 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text(t.media_tracking_unauthorized), findsOneWidget);
     });
+
+    testWidgets('自动关联 miss 后显示真实重试入口并回显结果', (WidgetTester tester) async {
+      useWideSurface(tester);
+      await connect();
+      // 不存在的本地游戏会形成一次可重试 miss，且不访问真实网络。
+      await appModel.mediaTrackingService.recordGameStatus(
+        gameId: 'missing-game',
+        status: 3,
+      );
+
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+
+      final Finder retryButton = find.widgetWithText(
+        FilledButton,
+        t.media_tracking_retry_mapping,
+      );
+      expect(retryButton, findsOneWidget);
+
+      await tester.tap(retryButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(
+        find.text(t.media_tracking_retry_no_match),
+        findsOneWidget,
+        reason: '重试不能被 10 分钟退避无声吞掉，匹配结果必须回显',
+      );
+      expect(tester.takeException(), isNull);
+    });
   });
 }
 

@@ -44,6 +44,7 @@ class _FakeBangumiApi implements BangumiTrackingApi {
     required int subjectType,
   }) async {
     searches.add((keyword: keyword, subjectType: subjectType));
+    _throwIfNeeded();
     return searchResults;
   }
 
@@ -1318,6 +1319,147 @@ void main() {
       await service.syncNow(force: true);
 
       expect(service.statusRevision.value, greaterThan(before));
+    });
+
+    test('自动匹配重试绕过十分钟 miss 退避并立即重新关联', () async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'retry-book',
+          title: 'Retry Book',
+          epubPath: '/tmp/retry.epub',
+          extractDir: '/tmp/retry',
+          chapterCount: 4,
+          chaptersJson: '[]',
+          importedAt: 1,
+        ),
+      );
+      await db.upsertReaderPosition(
+        ReaderPositionsCompanion.insert(
+          bookKey: 'retry-book',
+          sectionIndex: 2,
+          normCharOffset: 0,
+          updatedAt: 2,
+        ),
+      );
+
+      await service.recordBookProgress(
+        bookKey: 'retry-book',
+        completedChapterCount: 2,
+        completed: false,
+      );
+      expect(api.searches, hasLength(1));
+      expect((await service.loadStatus()).automaticMappingMissCount, 1);
+
+      // 普通事件仍被十分钟退避挡住；显式重试必须绕过它。
+      await service.recordBookProgress(
+        bookKey: 'retry-book',
+        completedChapterCount: 2,
+        completed: false,
+      );
+      expect(api.searches, hasLength(1));
+
+      api.searchResults = const <BangumiSubject>[
+        BangumiSubject(
+          id: 99,
+          type: 1,
+          name: 'Retry Book',
+          nameCn: '',
+          platform: '小说',
+          episodeCount: 4,
+          volumeCount: 1,
+        ),
+      ];
+      final MediaTrackingMappingRetryResult result =
+          await service.retryAutomaticMappings();
+
+      expect(result.attempted, 1);
+      expect(result.matched, 1);
+      expect(api.searches, hasLength(2), reason: '重试必须真的再次请求匹配');
+      expect((await service.loadStatus()).automaticMappingMissCount, 0);
+      expect(
+        await repository.findMapping(
+          mediaType: TrackingMediaType.book,
+          mediaKey: 'retry-book',
+        ),
+        isNotNull,
+      );
+      expect(api.creates, <Map<String, dynamic>>[
+        <String, dynamic>{'ep_status': 2, 'type': 3},
+      ]);
+    });
+
+    test('手动关联后当前权威进度补发一次且后续同步幂等', () async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'manual-book',
+          title: 'Manual Book',
+          epubPath: '/tmp/manual.epub',
+          extractDir: '/tmp/manual',
+          chapterCount: 4,
+          chaptersJson: '[]',
+          importedAt: 1,
+        ),
+      );
+      await db.upsertReaderPosition(
+        ReaderPositionsCompanion.insert(
+          bookKey: 'manual-book',
+          sectionIndex: 2,
+          normCharOffset: 0,
+          updatedAt: 2,
+        ),
+      );
+
+      final MediaTrackingSyncResult result =
+          await service.saveManualMappingAndSync(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'manual-book',
+        mediaTitle: 'Manual Book',
+        kind: TrackingKind.novel,
+        subjectId: 77,
+        subjectName: 'Remote manual book',
+        progressMode: TrackingProgressMode.chapter,
+        progressOffset: 0,
+      );
+
+      expect(result.succeeded, 1);
+      expect(api.creates, <Map<String, dynamic>>[
+        <String, dynamic>{'ep_status': 2, 'type': 3},
+      ]);
+      expect(await repository.pendingCount(), 0);
+
+      await service.syncNow(force: true);
+      expect(api.creates, hasLength(1),
+          reason: '同一 mapping 水位后的重复同步不得再次补发当前进度');
+    });
+
+    test('自动匹配网络失败保留可诊断 miss 状态', () async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'offline-book',
+          title: 'Offline Book',
+          epubPath: '/tmp/offline.epub',
+          extractDir: '/tmp/offline',
+          chapterCount: 2,
+          chaptersJson: '[]',
+          importedAt: 1,
+        ),
+      );
+      api.error = const BangumiApiException(
+        statusCode: 503,
+        message: 'offline',
+      );
+
+      await service.recordBookProgress(
+        bookKey: 'offline-book',
+        completedChapterCount: 1,
+        completed: false,
+      );
+
+      final MediaTrackingStatus status = await service.loadStatus();
+      expect(status.automaticMappingMissCount, 1);
+      expect(status.automaticMappingErrors, hasLength(1));
+      expect(status.automaticMappingErrors.single, contains('503'));
+      expect(status.hasProblem, isTrue);
     });
   });
 }

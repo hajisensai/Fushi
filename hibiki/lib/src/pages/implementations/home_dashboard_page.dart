@@ -2216,7 +2216,10 @@ class _HomeDashboardPageState
           // 第二段：一条映射都没有 → 完成事件根本进不了 outbox，必须说清原因，
           // 否则「已连接 + 零待办 + 全部已发送」看起来像一切正常。
           if (status.mappings.isEmpty)
-            Text(t.media_tracking_unlinked_hint, style: tokens.type.metadata)
+            Text(
+              t.media_tracking_unlinked_hint,
+              style: tokens.type.metadata,
+            )
           else
             // 第三段：逐条条目。失败原因挂在对应行上（有失败的排在最前），不另开
             // 一段——否则同一个条目在「失败」和「已关联」里各出现一次。
@@ -2227,6 +2230,13 @@ class _HomeDashboardPageState
                 mapping,
                 status.failureByMappingId[mapping.id],
               ),
+          for (final String error in status.automaticMappingErrors)
+            Text(
+              '${t.media_tracking_last_error}: $error',
+              style: tokens.type.metadata.copyWith(color: scheme.error),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
 
           SizedBox(height: tokens.spacing.gap),
           Wrap(
@@ -2243,6 +2253,12 @@ class _HomeDashboardPageState
                     : const Icon(Icons.sync),
                 label: Text(t.media_tracking_sync_now),
               ),
+              if (status.automaticMappingMissCount > 0)
+                FilledButton.tonalIcon(
+                  onPressed: _trackingSyncBusy ? null : _retryTrackingMappings,
+                  icon: const Icon(Icons.refresh),
+                  label: Text(t.media_tracking_retry_mapping),
+                ),
               TextButton.icon(
                 onPressed: _openTrackingSettings,
                 icon: const Icon(Icons.tune),
@@ -2352,6 +2368,47 @@ class _HomeDashboardPageState
         );
     } catch (e, stack) {
       ErrorLogService.instance.log('HomeDashboardPage.syncTracking', e, stack);
+    } finally {
+      if (mounted) setState(() => _trackingSyncBusy = false);
+    }
+  }
+
+  /// 自动匹配重试：由服务层清掉对应 miss 退避并重新调用原匹配解析器；结果必须明确
+  /// 回显，不能把「按钮被 10 分钟退避挡住」伪装成成功。
+  Future<void> _retryTrackingMappings() async {
+    setState(() => _trackingSyncBusy = true);
+    try {
+      final MediaTrackingMappingRetryResult result = await ref
+          .read(appProvider)
+          .mediaTrackingService
+          .retryAutomaticMappings();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              !result.matchedAny
+                  ? t.media_tracking_retry_no_match
+                  : (result.syncResult?.isSuccess ?? false)
+                      ? t.media_tracking_retry_matched
+                      : t.media_tracking_sync_failed,
+            ),
+          ),
+        );
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'HomeDashboardPage.retryTrackingMappings',
+        e,
+        stack,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(content: Text(t.media_tracking_sync_failed)),
+          );
+      }
     } finally {
       if (mounted) setState(() => _trackingSyncBusy = false);
     }

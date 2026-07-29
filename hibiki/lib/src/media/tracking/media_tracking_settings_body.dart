@@ -115,12 +115,11 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
       context: context,
       builder: (BuildContext context) => _AddMappingDialog(
         database: widget.appModel.database,
-        repository: _repository,
         service: widget.appModel.mediaTrackingService,
       ),
     );
-    if (saved ?? false) {
-      _message(t.media_tracking_saved);
+    if (saved != null) {
+      _message(saved ? t.media_tracking_saved : t.media_tracking_sync_failed);
       await _reload();
     }
   }
@@ -292,12 +291,10 @@ class _LocalTrackingTarget {
 class _AddMappingDialog extends StatefulWidget {
   const _AddMappingDialog({
     required this.database,
-    required this.repository,
     required this.service,
   });
 
   final HibikiDatabase database;
-  final MediaTrackingRepository repository;
   final MediaTrackingService service;
 
   @override
@@ -427,7 +424,8 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
         ? 0
         : (int.tryParse(_offsetController.text) ??
             (_mode == TrackingProgressMode.chapter ? 0 : 1));
-    await widget.repository.saveMapping(
+    final MediaTrackingSyncResult result =
+        await widget.service.saveManualMappingAndSync(
       mediaType: target.type,
       mediaKey: target.key,
       mediaTitle: target.title,
@@ -437,7 +435,7 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
       progressMode: _mode,
       progressOffset: offset.clamp(0, 100000),
     );
-    if (mounted) Navigator.of(context).pop(true);
+    if (mounted) Navigator.of(context).pop(result.isSuccess);
   }
 
   @override
