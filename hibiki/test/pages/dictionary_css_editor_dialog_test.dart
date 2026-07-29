@@ -79,6 +79,73 @@ class _FakeCssAppModel extends AppModel {
   }
 }
 
+class _GatedProfileRepository extends ProfileRepository {
+  _GatedProfileRepository(HibikiDatabase db) : super(db, FakeAnkiRepository());
+
+  int? pausedApplyProfileId;
+  final Completer<void> pausedApplyStarted = Completer<void>();
+  final Completer<void> continuePausedApply = Completer<void>();
+  final Completer<void> deleteStarted = Completer<void>();
+  final Completer<void> importStarted = Completer<void>();
+
+  @override
+  Future<void> applyProfile(int profileId) async {
+    if (profileId == pausedApplyProfileId && !pausedApplyStarted.isCompleted) {
+      pausedApplyStarted.complete();
+      await continuePausedApply.future;
+    }
+    await super.applyProfile(profileId);
+  }
+
+  @override
+  Future<void> deleteProfile(int id) async {
+    if (!deleteStarted.isCompleted) {
+      deleteStarted.complete();
+    }
+    await super.deleteProfile(id);
+  }
+
+  @override
+  Future<int> importProfileFromJson(
+    String json, {
+    ProfileImportMode mode = ProfileImportMode.createNew,
+    int? targetProfileId,
+  }) async {
+    if (!importStarted.isCompleted) {
+      importStarted.complete();
+    }
+    return super.importProfileFromJson(
+      json,
+      mode: mode,
+      targetProfileId: targetProfileId,
+    );
+  }
+}
+
+Future<({int profileA, int profileB})> _seedTwoProfiles(
+  HibikiDatabase db,
+  _GatedProfileRepository repo,
+) async {
+  await repo.ensureDefaultProfile();
+  final int profileA = await repo.getActiveProfileId();
+  await db.setPref(
+    'global_dict_css',
+    '.profile-a-stored { color: orange; }',
+  );
+  await repo.snapshotCurrentSettings(profileA);
+
+  final int profileB = await repo.createProfile('Profile B');
+  await db.setPref(
+    'global_dict_css',
+    '.profile-b-stored { color: blue; }',
+  );
+  await repo.snapshotCurrentSettings(profileB);
+
+  await repo.setActiveProfileId(profileA);
+  await repo.applyProfile(profileA);
+  return (profileA: profileA, profileB: profileB);
+}
+
 Widget _buildApp({
   required AppModel appModel,
   required Widget home,
@@ -248,6 +315,179 @@ void main() {
     await expectRotation(() => viewModel.switchProfile(profileB));
     await expectRotation(() => viewModel.deleteProfile(profileB));
     expect(await repo.getActiveProfileId(), profileA);
+  });
+
+  test(
+      'switch then delete target serializes before rejecting an intermediate stale Save',
+      () async {
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final _GatedProfileRepository repo = _GatedProfileRepository(db);
+    final ({int profileA, int profileB}) profiles =
+        await _seedTwoProfiles(db, repo);
+    final ProfileDraftCoordinator coordinator = ProfileDraftCoordinator();
+    final ProfileViewModel viewModel = ProfileViewModel(
+      repo,
+      () async {},
+      coordinator,
+    );
+    addTearDown(() async {
+      viewModel.dispose();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await db.close();
+    });
+    ProfileUiState latestState = await viewModel.stream.firstWhere(
+      (ProfileUiState state) =>
+          state.activeProfileId == profiles.profileA && !state.isLoading,
+    );
+    final StreamSubscription<ProfileUiState> stateSubscription =
+        viewModel.stream.listen((ProfileUiState state) {
+      latestState = state;
+    });
+    addTearDown(stateSubscription.cancel);
+
+    repo.pausedApplyProfileId = profiles.profileB;
+    final Future<void> switchProfile =
+        viewModel.switchProfile(profiles.profileB);
+    await repo.pausedApplyStarted.future;
+    expect(await repo.getActiveProfileId(), profiles.profileB);
+    expect(latestState.activeProfileId, profiles.profileA);
+
+    final Object intermediateScope = coordinator.draftScope;
+    final Future<void> deleteTarget =
+        viewModel.deleteProfile(profiles.profileB);
+    bool staleSaveRan = false;
+    final Future<bool> staleSave = coordinator.saveDraftIfCurrent(
+      intermediateScope,
+      () async {
+        staleSaveRan = true;
+        await db.setPref(
+          'global_dict_css',
+          '.stale-profile-b-draft { color: red; }',
+        );
+      },
+    );
+    await Future<void>.delayed(Duration.zero);
+    final bool deleteEnteredWhileSwitchHeldLock =
+        repo.deleteStarted.isCompleted;
+
+    repo.continuePausedApply.complete();
+    await switchProfile;
+    await deleteTarget;
+    final bool staleSaveAccepted = await staleSave;
+
+    expect(
+      deleteEnteredWhileSwitchHeldLock,
+      isFalse,
+      reason:
+          'delete must enter the coordinator before reading whether its target is active',
+    );
+    expect(staleSaveAccepted, isFalse);
+    expect(staleSaveRan, isFalse);
+    expect(await repo.getActiveProfileId(), profiles.profileA);
+    expect(latestState.activeProfileId, profiles.profileA);
+    expect(await repo.getProfileById(profiles.profileB), isNull);
+    expect(
+      await db.getPref('global_dict_css'),
+      '.profile-a-stored { color: orange; }',
+    );
+  });
+
+  test(
+      'Save lock serializes switch then target overwrite import without crossing scope',
+      () async {
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final _GatedProfileRepository repo = _GatedProfileRepository(db);
+    final ({int profileA, int profileB}) profiles =
+        await _seedTwoProfiles(db, repo);
+
+    final int importSource = await repo.createProfile('Import source');
+    await db.setPref(
+      'global_dict_css',
+      '.imported-profile-b { color: purple; }',
+    );
+    await repo.snapshotCurrentSettings(importSource);
+    final String importJson = await repo.exportProfileToJson(importSource);
+    await repo.setActiveProfileId(profiles.profileA);
+    await repo.applyProfile(profiles.profileA);
+
+    final ProfileDraftCoordinator coordinator = ProfileDraftCoordinator();
+    final ProfileViewModel viewModel = ProfileViewModel(
+      repo,
+      () async {},
+      coordinator,
+    );
+    addTearDown(() async {
+      viewModel.dispose();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await db.close();
+    });
+    ProfileUiState latestState = await viewModel.stream.firstWhere(
+      (ProfileUiState state) =>
+          state.activeProfileId == profiles.profileA && !state.isLoading,
+    );
+    final StreamSubscription<ProfileUiState> stateSubscription =
+        viewModel.stream.listen((ProfileUiState state) {
+      latestState = state;
+    });
+    addTearDown(stateSubscription.cancel);
+
+    final Object profileAScope = coordinator.draftScope;
+    final Completer<void> saveStarted = Completer<void>();
+    final Completer<void> finishSave = Completer<void>();
+    final Future<bool> save = coordinator.saveDraftIfCurrent(
+      profileAScope,
+      () async {
+        saveStarted.complete();
+        await finishSave.future;
+        await db.setPref(
+          'global_dict_css',
+          '.profile-a-saved { color: green; }',
+        );
+      },
+    );
+    await saveStarted.future;
+
+    final Future<void> switchProfile =
+        viewModel.switchProfile(profiles.profileB);
+    final Future<int> overwriteTarget = viewModel.importProfile(
+      importJson,
+      mode: ProfileImportMode.overwrite,
+      targetProfileId: profiles.profileB,
+    );
+    await Future<void>.delayed(Duration.zero);
+    final bool importEnteredWhileSaveHeldLock = repo.importStarted.isCompleted;
+
+    finishSave.complete();
+    expect(await save, isTrue);
+    await switchProfile;
+    expect(await overwriteTarget, profiles.profileB);
+
+    expect(
+      importEnteredWhileSaveHeldLock,
+      isFalse,
+      reason:
+          'import must enter the coordinator before reading whether its overwrite target is active',
+    );
+    expect(await repo.getActiveProfileId(), profiles.profileB);
+    expect(latestState.activeProfileId, profiles.profileB);
+    expect(
+      await db.getPref('global_dict_css'),
+      '.imported-profile-b { color: purple; }',
+    );
+    final List<ProfileSettingRow> profileASettings =
+        await db.getProfileSettings(profiles.profileA);
+    expect(
+      profileASettings
+          .singleWhere(
+            (ProfileSettingRow row) =>
+                row.category == 'pref' && row.key == 'global_dict_css',
+          )
+          .value,
+      '.profile-a-saved { color: green; }',
+    );
+    expect(identical(coordinator.draftScope, profileAScope), isFalse);
   });
 
   // TODO-422：词典管理页本身不实现任何自定义 CSS 编辑——行尾旧三点菜单（含

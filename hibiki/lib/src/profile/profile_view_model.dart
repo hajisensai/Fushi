@@ -40,14 +40,21 @@ class ProfileDraftCoordinator {
   }
 
   Future<T> runProfileChange<T>(Future<T> Function() action) {
+    return _runProfileMutation((_ProfileDraftMutation mutation) async {
+      mutation.invalidateDrafts();
+      return action();
+    });
+  }
+
+  Future<T> _runProfileMutation<T>(
+    Future<T> Function(_ProfileDraftMutation mutation) action,
+  ) {
     return _exclusive(() async {
-      invalidateDrafts();
+      final _ProfileDraftMutation mutation = _ProfileDraftMutation(this);
       try {
-        return await action();
+        return await action(mutation);
       } finally {
-        // A dialog opened while settings were being applied observed an
-        // intermediate AppModel and must not survive the completed change.
-        invalidateDrafts();
+        mutation.finish();
       }
     });
   }
@@ -61,6 +68,26 @@ class ProfileDraftCoordinator {
       await save();
       return true;
     });
+  }
+}
+
+class _ProfileDraftMutation {
+  _ProfileDraftMutation(this._coordinator);
+
+  final ProfileDraftCoordinator _coordinator;
+  bool _invalidatesDrafts = false;
+
+  void invalidateDrafts() {
+    if (_invalidatesDrafts) return;
+    _invalidatesDrafts = true;
+    _coordinator.invalidateDrafts();
+  }
+
+  void finish() {
+    if (!_invalidatesDrafts) return;
+    // A dialog opened while settings were being applied observed an
+    // intermediate AppModel and must not survive the completed change.
+    _coordinator.invalidateDrafts();
   }
 }
 
@@ -174,24 +201,25 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     state = state.copyWith(profiles: await _repo.getAllProfiles());
   }
 
-  Future<void> deleteProfile(int id) async {
-    final previousActiveId = state.activeProfileId;
-    Future<void> delete() async {
-      await _repo.deleteProfile(id);
-      final profiles = await _repo.getAllProfiles();
-      final activeId = await _repo.getActiveProfileId();
-      state = state.copyWith(profiles: profiles, activeProfileId: activeId);
-      if (activeId != previousActiveId) {
-        await _onProfileApplied();
-      }
-    }
+  Future<void> deleteProfile(int id) => _profileDraftCoordinator
+          ._runProfileMutation((_ProfileDraftMutation mutation) async {
+        // This repository read must happen after acquiring the same lock used
+        // by switch/create/Save. State may still describe the previous Profile
+        // while an earlier switch has already updated the repository.
+        final int previousActiveId = await _repo.getActiveProfileId();
+        final bool deletesActiveProfile = id == previousActiveId;
+        if (deletesActiveProfile) {
+          mutation.invalidateDrafts();
+        }
 
-    if (id == previousActiveId) {
-      await _whileInvalidatingProfileDrafts(delete);
-    } else {
-      await delete();
-    }
-  }
+        await _repo.deleteProfile(id);
+        final profiles = await _repo.getAllProfiles();
+        final activeId = await _repo.getActiveProfileId();
+        state = state.copyWith(profiles: profiles, activeProfileId: activeId);
+        if (deletesActiveProfile && activeId != previousActiveId) {
+          await _onProfileApplied();
+        }
+      });
 
   Future<void> setMediaTypeBinding(
       ProfileMediaKind mediaType, int? profileId) async {
@@ -229,28 +257,31 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     String json, {
     ProfileImportMode mode = ProfileImportMode.createNew,
     int? targetProfileId,
-  }) async {
-    Future<int> import() async {
-      final int writtenId = await _repo.importProfileFromJson(
-        json,
-        mode: mode,
-        targetProfileId: targetProfileId,
-      );
-      state = state.copyWith(profiles: await _repo.getAllProfiles());
-      if (mode == ProfileImportMode.overwrite &&
-          writtenId == state.activeProfileId) {
-        await _repo.applyProfile(writtenId);
-        await _onProfileApplied();
-      }
-      return writtenId;
-    }
+  }) =>
+      _profileDraftCoordinator
+          ._runProfileMutation((_ProfileDraftMutation mutation) async {
+        // Do not decide this from [state] before entering the lock: a queued
+        // switch can make [targetProfileId] active before the overwrite runs.
+        final int activeProfileId = await _repo.getActiveProfileId();
+        final bool overwritesActiveProfile =
+            mode == ProfileImportMode.overwrite &&
+                targetProfileId == activeProfileId;
+        if (overwritesActiveProfile) {
+          mutation.invalidateDrafts();
+        }
 
-    final bool overwritesActiveProfile = mode == ProfileImportMode.overwrite &&
-        targetProfileId == state.activeProfileId;
-    return overwritesActiveProfile
-        ? _whileInvalidatingProfileDrafts(import)
-        : import();
-  }
+        final int writtenId = await _repo.importProfileFromJson(
+          json,
+          mode: mode,
+          targetProfileId: targetProfileId,
+        );
+        state = state.copyWith(profiles: await _repo.getAllProfiles());
+        if (overwritesActiveProfile && writtenId == activeProfileId) {
+          await _repo.applyProfile(writtenId);
+          await _onProfileApplied();
+        }
+        return writtenId;
+      });
 }
 
 final hibikiDatabaseProvider = Provider<HibikiDatabase>((ref) {
