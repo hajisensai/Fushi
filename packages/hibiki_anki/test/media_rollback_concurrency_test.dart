@@ -41,7 +41,10 @@ class _Repository extends AnkiConnectRepository {
   Future<AnkiSettings> loadSettings() async => settings;
 }
 
-class _PreDeliveryAddNoteTimeoutClient extends http.BaseClient {
+class _AddNotePhaseClient extends http.BaseClient {
+  _AddNotePhaseClient({this.responsePhaseSocketTimeout = false});
+
+  final bool responsePhaseSocketTimeout;
   final Set<String> media = <String>{};
   final List<String> stored = <String>[];
   final List<String> deleted = <String>[];
@@ -49,7 +52,14 @@ class _PreDeliveryAddNoteTimeoutClient extends http.BaseClient {
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
-    final String rawBody = await utf8.decoder.bind(request.finalize()).join();
+    bool requestDelivered = false;
+    final String rawBody;
+    if (request is http.Request) {
+      rawBody = request.body;
+    } else {
+      rawBody = await utf8.decoder.bind(request.finalize()).join();
+      requestDelivered = true;
+    }
     final Map<String, dynamic> body =
         Map<String, dynamic>.from(jsonDecode(rawBody) as Map);
     final String action = body['action'].toString();
@@ -73,14 +83,24 @@ class _PreDeliveryAddNoteTimeoutClient extends http.BaseClient {
         result = filename;
       case 'addNote':
         addRequests += 1;
-        throw http.ClientException(
-          'Connection timed out while connecting to AnkiConnect',
+        if (responsePhaseSocketTimeout) {
+          if (!requestDelivered) {
+            await request.finalize().drain<void>();
+          }
+          throw _ResponsePhaseSocketTimeoutException();
+        }
+        throw AnkiConnectPreDeliveryException(
+          'connection failed before request delivery',
           request.url,
+          TimeoutException('connect deadline exceeded'),
         );
       default:
         result = null;
     }
 
+    if (!requestDelivered) {
+      await request.finalize().drain<void>();
+    }
     final List<int> responseBytes = utf8.encode(
       jsonEncode(<String, Object?>{'result': result, 'error': null}),
     );
@@ -90,6 +110,20 @@ class _PreDeliveryAddNoteTimeoutClient extends http.BaseClient {
       headers: <String, String>{'content-type': 'application/json'},
     );
   }
+}
+
+class _ResponsePhaseSocketTimeoutException
+    implements http.ClientException, SocketException {
+  @override
+  final String message = 'Connection timed out';
+  @override
+  final OSError osError = const OSError('Connection timed out', 10060);
+  @override
+  final Uri? uri = null;
+  @override
+  final InternetAddress? address = null;
+  @override
+  final int? port = null;
 }
 
 class _ConcurrentSameHashService extends AnkiConnectService {
@@ -577,10 +611,9 @@ void main() {
     expect(media, hasLength(2));
   });
 
-  test('pre-delivery addNote connect timeout retries then rolls back media',
+  test('tagged pre-delivery addNote failure retries then rolls back media',
       () async {
-    final _PreDeliveryAddNoteTimeoutClient client =
-        _PreDeliveryAddNoteTimeoutClient();
+    final _AddNotePhaseClient client = _AddNotePhaseClient();
     final AnkiConnectService service = AnkiConnectService(
       host: '127.0.0.1',
       port: 8765,
@@ -603,5 +636,34 @@ void main() {
     expect(client.stored, hasLength(2));
     expect(client.deleted, unorderedEquals(client.stored));
     expect(client.media, isEmpty);
+  });
+
+  test('delivered-body socket timeout is commit-unknown and preserves media',
+      () async {
+    final _AddNotePhaseClient client =
+        _AddNotePhaseClient(responsePhaseSocketTimeout: true);
+    final AnkiConnectService service = AnkiConnectService(
+      host: '127.0.0.1',
+      port: 8765,
+      client: client,
+      timeout: const Duration(seconds: 1),
+    );
+
+    final MineOutcome outcome =
+        await _Repository(_settings(), service).mineEntry(
+      rawPayloadJson: '{"expression":"socket-timeout"}',
+      context: AnkiMiningContext(
+        sentence: '',
+        coverPath: cover.path,
+        sasayakiAudioPath: audio.path,
+      ),
+    );
+
+    expect(outcome.result, MineResult.error);
+    expect(outcome.errorDetail, contains('may have created'));
+    expect(client.addRequests, 1);
+    expect(client.stored, hasLength(2));
+    expect(client.deleted, isEmpty);
+    expect(client.media, unorderedEquals(client.stored));
   });
 }
