@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/metadata/image_download.dart'
+    show kCoverImageDownloadTimeout;
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
 import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
@@ -22,6 +24,16 @@ final List<int> _fakePng = <int>[
 void main() {
   // downloadCover 落盘后走 evictLocalCoverCache（需要 PaintingBinding）。
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('视频封面复用 100 秒原图下载截止时间', () {
+    final CoverDownloader downloader = CoverDownloader(
+      client: MockClient(
+        (http.Request request) async => http.Response('', 200),
+      ),
+    );
+    expect(downloader.timeout, kCoverImageDownloadTimeout);
+    expect(downloader.timeout, const Duration(seconds: 100));
+  });
 
   late Directory tempDir;
 
@@ -111,6 +123,33 @@ void main() {
     final String finalPath = p.join(tempDir.path, videoCoverFileName(bookUid));
     expect(File(finalPath).existsSync(), isFalse);
     expect(File('$finalPath.tmp').existsSync(), isFalse);
+  });
+
+  test('超过注入的下载截止时间 → 抛超时异常、不落文件', () async {
+    final MockClient client = MockClient((http.Request req) async {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      return http.Response.bytes(_fakePng, 200);
+    });
+    const String bookUid = 'uid_timeout';
+    await expectLater(
+      CoverDownloader(
+        client: client,
+        timeout: const Duration(milliseconds: 1),
+      ).downloadCover(
+        url: 'https://img/slow',
+        bookUid: bookUid,
+        coversDirectory: tempDir,
+      ),
+      throwsA(
+        isA<ScrapeNetworkException>().having(
+          (ScrapeNetworkException error) => error.message,
+          'message',
+          'Poster download timed out',
+        ),
+      ),
+    );
+    final String finalPath = p.join(tempDir.path, videoCoverFileName(bookUid));
+    expect(File(finalPath).existsSync(), isFalse);
   });
 
   test('覆盖旧封面：同 uid 二次下载直接替换内容', () async {
