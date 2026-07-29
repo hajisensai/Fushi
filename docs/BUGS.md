@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1189 条。点号进各自文件。
+> 共 1190 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1231](bugs/BUG-1231-manga-card-wrong-spread-page.md) | ✅ | ✅ | 漫画双页模式制卡图片取错成跨页首页 |
 | [BUG-1230](bugs/BUG-1230-manga-popup-ocr-direction.md) | ✅ | ✅ | 漫画查词弹窗未按 OCR 文字方向避让 |
 | [BUG-1229](bugs/BUG-1229-manga-sentence-fragmented-blocks.md) | ✅ | ✅ | 漫画 Lens 同一气泡被拆成多列导致制卡句子残缺 |
 | [BUG-1226](bugs/BUG-1226-mihon-detail-layout.md) | ✅ | ✅ | Mihon 漫画详情页路由触发布局断言 |
