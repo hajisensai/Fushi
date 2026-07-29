@@ -435,10 +435,11 @@ class _MediaUploadTransaction {
     }
   }
 
-  Future<void> commit() async {
+  Future<void> prepareForNoteWrite() async {
     // A non-fatal remote-audio route catches its upload error and becomes an
     // audioWarning. Retry its retained cleanup candidate only after Future.wait
-    // has settled all routes; never clear it merely because the card may commit.
+    // has settled all routes. Keep successful media leased until addNote has a
+    // definite outcome.
     for (final String filename in _failedFiles.toList(growable: false)) {
       if (!await coordinator.rollback(this, filename)) {
         throw StateError(
@@ -448,11 +449,24 @@ class _MediaUploadTransaction {
       _newFiles.remove(filename);
       _failedFiles.remove(filename);
     }
+  }
+
+  void commit() {
     for (final String filename in _newFiles.toList(growable: false)) {
       coordinator.commit(this, filename);
       _newFiles.remove(filename);
     }
   }
+}
+
+class _PreparedMinedFields {
+  const _PreparedMinedFields({
+    required this.rendered,
+    required this.mediaTransaction,
+  });
+
+  final RenderedMinedFields rendered;
+  final _MediaUploadTransaction mediaTransaction;
 }
 
 /// 一条笔记的字段改写计划：[before] 是改写前的原值（journal 用来回溯），
@@ -645,69 +659,85 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       );
     }
 
-    final rendered = await _renderMinedFields(
+    final _PreparedMinedFields prepared = await _renderMinedFields(
       service: service,
       settings: settings,
       payload: payload,
       context: context,
+      deferMediaCommit: true,
     );
+    final RenderedMinedFields rendered = prepared.rendered;
+    final _MediaUploadTransaction mediaTransaction = prepared.mediaTransaction;
     final Map<String, String> fields = rendered.fields;
     // TODO-779: 单词远程音频下载失败时带可见原因到成功 toast（卡片仍建好）。
     final String? audioWarning = rendered.audioWarning;
 
-    // BUG/TODO-062: every Hibiki-mined card gets the `hibiki` tag appended to
-    // the user's configured tags (de-duped, order preserved) via the shared
-    // base helper, so both backends behave identically.
-    final tags = buildNoteTags(
-      settings.tags,
-      source: context.source,
-      includeHibiki: settings.tagIncludeHibiki,
-      includeCategory: settings.tagIncludeCategory,
-      // TODO-681 / BUG-393：调用方按「自动添加书名到标签」开关注入已清洗书名/番名标签
-      // （书籍/视频同语义）；关闭或无标题时为 null，buildNoteTags 不追加。
-      titleTag: context.bookTitleTag,
-      // 合集/系列名标签（同上开关）：视频=播放列表系列名、书籍=所属合集名；不属合集时 null。
-      collectionTag: context.collectionTag,
-    );
-
-    // `fields` only holds entries that rendered to a non-empty value; if it is
-    // empty, nothing rendered and adding the note would create a blank card
-    // reported as success (HBK-AUDIT-018).
-    if (fields.isEmpty) {
-      return MineOutcome.failure(
-        'All fields are empty — refusing to create a blank card. '
-        'Check your note type field mappings.',
-      );
-    }
     try {
-      // TODO-270 A：接住 addNote 返回的 note id，带回 MineOutcome.success，供
-      // 后续「更新已制卡片」（updateMinedNote）按 id 覆盖字段使用。
-      final int? noteId = await service.addNote(
-        deckName: deck.name,
-        modelName: noteType.name,
-        fields: fields,
-        tags: tags,
-        allowDuplicate: settings.allowDupes,
-        duplicateScope: settings.duplicateScope,
+      // BUG/TODO-062: every Hibiki-mined card gets the `hibiki` tag appended to
+      // the user's configured tags (de-duped, order preserved) via the shared
+      // base helper, so both backends behave identically.
+      final tags = buildNoteTags(
+        settings.tags,
+        source: context.source,
+        includeHibiki: settings.tagIncludeHibiki,
+        includeCategory: settings.tagIncludeCategory,
+        // TODO-681 / BUG-393：调用方按「自动添加书名到标签」开关注入已清洗书名/番名标签
+        // （书籍/视频同语义）；关闭或无标题时为 null，buildNoteTags 不追加。
+        titleTag: context.bookTitleTag,
+        // 合集/系列名标签（同上开关）：视频=播放列表系列名、书籍=所属合集名；不属合集时 null。
+        collectionTag: context.collectionTag,
       );
-      return MineOutcome.success(noteId: noteId, audioWarning: audioWarning);
-    } on AnkiConnectDuplicateException {
-      return const MineOutcome.duplicate();
-    } on AnkiConnectCommitUnknownException catch (e, stack) {
-      // Without a separate preflight query, a matching note after a lost
-      // response could be either pre-existing or newly created. Do not run
-      // another GUI-thread findNotes query or guess which case occurred.
-      return MineOutcome.failure(
-        _addNoteCommitUnknownMessage(),
-        error: e,
-        stackTrace: stack,
-      );
-    } on AnkiConnectException catch (e, stack) {
-      return MineOutcome.failure(
-        'AnkiConnect: ${e.message}',
-        error: e,
-        stackTrace: stack,
-      );
+
+      // `fields` only holds entries that rendered to a non-empty value; if it is
+      // empty, nothing rendered and adding the note would create a blank card
+      // reported as success (HBK-AUDIT-018).
+      if (fields.isEmpty) {
+        await mediaTransaction.rollback();
+        return MineOutcome.failure(
+          'All fields are empty — refusing to create a blank card. '
+          'Check your note type field mappings.',
+        );
+      }
+      try {
+        // TODO-270 A：接住 addNote 返回的 note id，带回 MineOutcome.success，供
+        // 后续「更新已制卡片」（updateMinedNote）按 id 覆盖字段使用。
+        final int? noteId = await service.addNote(
+          deckName: deck.name,
+          modelName: noteType.name,
+          fields: fields,
+          tags: tags,
+          allowDuplicate: settings.allowDupes,
+          duplicateScope: settings.duplicateScope,
+        );
+        mediaTransaction.commit();
+        return MineOutcome.success(noteId: noteId, audioWarning: audioWarning);
+      } on AnkiConnectDuplicateException {
+        await mediaTransaction.rollback();
+        return const MineOutcome.duplicate();
+      } on AnkiConnectCommitUnknownException catch (e, stack) {
+        // Without a separate preflight query, a matching note after a lost
+        // response could be either pre-existing or newly created. Do not run
+        // another GUI-thread findNotes query or guess which case occurred.
+        mediaTransaction.commit();
+        return MineOutcome.failure(
+          _addNoteCommitUnknownMessage(),
+          error: e,
+          stackTrace: stack,
+        );
+      } on AnkiConnectException catch (e, stack) {
+        await mediaTransaction.rollback();
+        return MineOutcome.failure(
+          'AnkiConnect: ${e.message}',
+          error: e,
+          stackTrace: stack,
+        );
+      }
+    } catch (_) {
+      // Socket/pre-delivery failures are known not to have committed addNote;
+      // any local failure before a confirmed or unknown commit is likewise
+      // safe to compensate. Preserve the original error for mineEntry's mapper.
+      await mediaTransaction.rollback();
+      rethrow;
     }
   }
 
@@ -728,14 +758,15 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   /// TODO-270 C1：制卡（[_mineEntryInner]）与更新已制卡片（[updateMinedNote]）
   /// 共用这一段渲染，避免两份漂移。
   ///
-  /// TODO-779：返回 [RenderedMinedFields]（fields + audioWarning）而非裸字段 map，
-  /// 把单词远程音频下载失败的可见原因带给成功分支。
-  Future<RenderedMinedFields> _renderMinedFields({
+  /// TODO-779：渲染结果携带 fields + audioWarning；制卡路径还保留媒体事务，
+  /// 直到 addNote 的确认成功、明确失败或 commit-unknown 结果定案。
+  Future<_PreparedMinedFields> _renderMinedFields({
     required AnkiConnectService service,
     required AnkiSettings settings,
     required AnkiMiningPayload payload,
     required AnkiMiningContext context,
     bool keepEmpty = false,
+    bool deferMediaCommit = false,
   }) async {
     final _MediaUploadTransaction mediaTransaction =
         _MediaUploadTransaction(service);
@@ -786,8 +817,14 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         audioWarning: remoteAudio.failureReason,
         keepEmpty: keepEmpty,
       );
-      await mediaTransaction.commit();
-      return rendered;
+      await mediaTransaction.prepareForNoteWrite();
+      if (!deferMediaCommit) {
+        mediaTransaction.commit();
+      }
+      return _PreparedMinedFields(
+        rendered: rendered,
+        mediaTransaction: mediaTransaction,
+      );
     } catch (_) {
       // Future.wait completes only after every route settles by default, so all
       // successful parallel writes are known before compensation starts.
@@ -830,13 +867,14 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         );
       }
 
-      final rendered = await _renderMinedFields(
+      final _PreparedMinedFields prepared = await _renderMinedFields(
         service: service,
         settings: settings,
         payload: payload,
         context: context,
         keepEmpty: true,
       );
+      final RenderedMinedFields rendered = prepared.rendered;
       final Map<String, String> fields = rendered.fields;
 
       // 所有映射字段渲染皆空白（含无字段映射）说明会把整卡清空——拒绝。部分字段
