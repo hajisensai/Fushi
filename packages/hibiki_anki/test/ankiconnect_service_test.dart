@@ -731,35 +731,54 @@ void main() {
       );
     });
 
-    test('tagged first failure then bare socket timeout is commit-unknown',
-        () async {
-      final _TaggedThenBareSocketTimeoutClient client =
-          _TaggedThenBareSocketTimeoutClient();
-      await expectLater(
-        run(
-          client,
-          (s) => s.addNote(
-            deckName: 'D',
-            modelName: 'M',
-            fields: const <String, String>{'F': 'v'},
+    final List<(String, Object)> taggedRetryResponseFailures =
+        <(String, Object)>[
+      (
+        'bare SocketException',
+        const SocketException(
+          'Connection timed out',
+          osError: OSError('Connection timed out', 10060),
+        ),
+      ),
+      ('bare TimeoutException', TimeoutException('response deadline exceeded')),
+      (
+        'plain ClientException with connect text',
+        http.ClientException('Connection timed out'),
+      ),
+      (
+        'ClientException+SocketException with connect text and errno',
+        _FakeClientSocketException(
+          'Connection timed out',
+          osError: const OSError('Connection timed out', 10060),
+        ),
+      ),
+    ];
+    for (final (String label, Object failure) in taggedRetryResponseFailures) {
+      test('tagged first failure then $label is commit-unknown', () async {
+        final _TaggedThenAmbiguousFailureClient client =
+            _TaggedThenAmbiguousFailureClient(failure);
+        await expectLater(
+          run(
+            client,
+            (s) => s.addNote(
+              deckName: 'D',
+              modelName: 'M',
+              fields: const <String, String>{'F': 'v'},
+            ),
           ),
-        ),
-        throwsA(
-          isA<AnkiConnectCommitUnknownException>()
-              .having((e) => e.action, 'action', 'addNote')
-              .having(
-                (e) => e.cause,
-                'cause',
-                isA<SocketException>(),
-              ),
-        ),
-      );
-      expect(
-        client.attempts,
-        2,
-        reason: 'only the tagged first failure is safe to retry',
-      );
-    });
+          throwsA(
+            isA<AnkiConnectCommitUnknownException>()
+                .having((e) => e.action, 'action', 'addNote')
+                .having((e) => e.cause, 'cause', same(failure)),
+          ),
+        );
+        expect(
+          client.attempts,
+          2,
+          reason: 'only the tagged first failure is safe to retry',
+        );
+      });
+    }
 
     test(
         'classifies response-phase addNote reset as unknown commit without retry',
@@ -867,7 +886,10 @@ class _DrainThenBareSocketTimeoutClient extends http.BaseClient {
   }
 }
 
-class _TaggedThenBareSocketTimeoutClient extends http.BaseClient {
+class _TaggedThenAmbiguousFailureClient extends http.BaseClient {
+  _TaggedThenAmbiguousFailureClient(this.secondFailure);
+
+  final Object secondFailure;
   int attempts = 0;
 
   @override
@@ -881,9 +903,6 @@ class _TaggedThenBareSocketTimeoutClient extends http.BaseClient {
       );
     }
     await request.finalize().drain<void>();
-    throw const SocketException(
-      'Connection timed out',
-      osError: OSError('Connection timed out', 10060),
-    );
+    throw secondFailure;
   }
 }
