@@ -169,6 +169,56 @@ void main() {
     await flush;
     expect(writeFinished, isTrue);
   });
+
+  test('BUG-1240 stopPlayback persists the live position before stop resets it',
+      () async {
+    installPlatform();
+    final AudiobookPlayerController c = AudiobookPlayerController();
+    addTearDown(c.dispose);
+
+    await c.load(
+      audiobook: ab(),
+      audioFiles: <File>[makeFile('hibiki-stop-position-order.mp3')],
+      initialPositionMs: 65000,
+    );
+    final List<int> writes = <int>[];
+    c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+
+    await c.stopPlayback();
+
+    expect(writes, isNotEmpty);
+    expect(
+      writes.last,
+      65000,
+      reason: 'stop 后采样会得到 0；持久化必须发生在 stop 释放播放器之前',
+    );
+  });
+
+  test('BUG-1240 source order keeps flush before both stop calls', () {
+    final String source = File(
+      '${Directory.current.path}/../packages/hibiki_audio/lib/src/audiobook/'
+      'audiobook_controller.dart',
+    ).readAsStringSync();
+    final int start = source.indexOf('Future<void> stopPlayback() async {');
+    final int end = source.indexOf(
+      'bool get debugMainPlayerPlaying',
+      start,
+    );
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final String body = source.substring(start, end);
+    final int flushAt = body.indexOf('await flushPosition();');
+    final int mainStopAt = body.indexOf('_player.stop()');
+    final int clipStopAt = body.indexOf('clip.stop()');
+    expect(flushAt, greaterThanOrEqualTo(0));
+    expect(flushAt, lessThan(mainStopAt));
+    expect(flushAt, lessThan(clipStopAt));
+    expect(
+      body.substring(mainStopAt),
+      isNot(contains('_maybeSavePosition(force: true)')),
+      reason: '释放后不得再用归零位置覆盖刚写穿的值',
+    );
+  });
 }
 
 class _FakePlatform extends JustAudioPlatform {

@@ -1529,8 +1529,8 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   // ── 生命周期 ───────────────────────────────────────────────────────────────
 
-  /// 真正停播（止声）：停掉主播放器与 clip 播放器并释放其 native 解码器，
-  /// 再强制落库当前位置。供退出/停止会话路径在 [dispose] 之前 `await`。
+  /// 真正停播（止声）：先把主播放器仍持有的当前位置写穿，再停掉主播放器与
+  /// clip 播放器并释放其 native 解码器。供退出/停止会话路径在 [dispose] 之前 `await`。
   ///
   /// 根因（BUG-278 / TODO-367）：会话停止路径 [AudiobookSession.stop] 此前是
   /// `await controller.pause(); controller.dispose();`。`pause()`（just_audio
@@ -1548,11 +1548,24 @@ class AudiobookPlayerController extends ChangeNotifier {
     _imagePauseTimer = null;
     _resumeMainAfterClip = false;
     final AudioPlayer? clip = _clipPlayer;
+    // BUG-1240：just_audio 的 stop() 会把 position 归零。旧顺序先 stop、再
+    // _maybeSavePosition(force:true)，因此 reader pop 虽已 flush 正确位置，紧随其后的
+    // session.stop() 又把 0 覆盖进数据库；重开书便从音频开头播放。必须在任何 stop
+    // 之前 await 写穿，并且 stop 后绝不再采样 position。
+    try {
+      await flushPosition();
+    } catch (error, stack) {
+      // 持久层故障不能阻止 stop：退出时“位置没写成”应可诊断，但绝不能因此继续出声
+      // 或占住 native 文件句柄。
+      debugPrint(
+        '[AudiobookPlayerController] pre-stop position flush failed: '
+        '$error\n$stack',
+      );
+    }
     await Future.wait<void>(<Future<void>>[
       _player.stop(),
       if (clip != null) clip.stop(),
     ]);
-    _maybeSavePosition(force: true);
   }
 
   /// 测试钩子：主播放器是否处于播放态（just_audio 公开状态）。

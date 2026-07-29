@@ -91,22 +91,20 @@ void main() {
       );
     });
 
-    test('MOV compatibility fallback shares the AAC companion', () {
+    test('BUG-1243 mobile share exposes one self-contained video only', () {
       final String source = File(
         'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
       ).readAsStringSync();
-      expect(source, contains('sharedFiles.add('));
       expect(
         source,
-        contains("XFile(audioClip.path, mimeType: 'audio/aac')"),
+        isNot(contains("XFile(audioClip.path, mimeType: 'audio/aac')")),
       );
-      expect(source, contains('retainAudioClipForShare = true;'));
       expect(
         source,
-        contains(
-          'if (!retainAudioClipForShare) {',
-        ),
+        isNot(contains('retainAudioClipForShare')),
+        reason: '裁剪 AAC 是中间文件，不得作为第二个“字幕/音频附件”泄漏给用户',
       );
+      expect(source, contains('await _deleteClipTempFile(audioClip);'));
     });
   });
 }

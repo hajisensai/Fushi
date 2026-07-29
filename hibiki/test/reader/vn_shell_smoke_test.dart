@@ -211,6 +211,33 @@ void main() {
     );
   });
 
+  test('BUG-1244 zero-width media screens attach to adjacent VN text', () {
+    final String shell = ReaderVisualNovelScripts.vnShellScript();
+    final int buildAt = shell.indexOf('buildScreens: function()');
+    final int attachAt = shell.indexOf(
+      'baseScreens = this.attachMediaScreensToAdjacentText(baseScreens);',
+      buildAt,
+    );
+    final int cueMergeAt =
+        shell.indexOf('this.mergeSasayakiCrossScreenScreens(baseScreens)');
+    expect(attachAt, greaterThan(buildAt));
+    expect(
+      attachAt,
+      lessThan(cueMergeAt),
+      reason: '图片必须先并入相邻文字屏，再按 cue 合屏；否则逐句跳转仍会略过图片屏',
+    );
+    expect(
+      shell,
+      contains(
+        'this.screenStartCharCount(screen) === this.screenEndCharCount(screen)',
+      ),
+      reason: '只有没有字符锚的纯媒体屏需要附加，正常文字/图片混排屏不得被重排',
+    );
+    expect(shell, contains('pendingMedia.concat([screen])'));
+    expect(shell, contains('[previous].concat(pendingMedia)'),
+        reason: '章尾无下一句时必须挂到上一屏，仍然不能永久不可见');
+  });
+
   // BUG-718：VN 模式按字符偏移恢复（restoreToCharOffset）时整页空白。根因——
   // restoreToCharOffset 只由 boot 块之后的 host-compat shim IIFE 挂上，而 boot 的
   // `if (document.readyState==='complete')` 分支在 setup 脚本注入时同步调用

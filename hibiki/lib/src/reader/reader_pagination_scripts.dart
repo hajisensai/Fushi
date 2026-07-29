@@ -2267,6 +2267,14 @@ $_sharedJs
     }
     return exploredChars / metrics.totalChars;
   },
+  // BUG-1241：最后一页的 progress 是「视口首字符 / 全章字符」，只要末页还能显示多行，
+  // 它就天然停在 0.99 左右，不能拿来判断用户是否真的到达章末。末页判定必须读分页
+  // 几何的 terminal clamp；hoshiProgressDetails 会在此为 true 时把持久进度钳到 100%。
+  isAtEnd: function() {
+    var metrics = this.paginationMetrics || this.buildPaginationMetrics();
+    var context = this.getScrollContext();
+    return this.getPagePosition(context) >= metrics.maxScroll - 1;
+  },
   pageInfo: function() {
     // Page numbers only make sense once layout has settled. During a
     // pending re-anchor rAF (page-size / chrome-inset transition) getPagePosition
@@ -2845,6 +2853,18 @@ $_sharedJs
       }
     }
     return totalChars > 0 ? exploredChars / totalChars : 0;
+  },
+  // BUG-1241：连续模式同样以视口首字符算 progress，物理滚到底时分数仍可能小于 1。
+  // 横排读 scrollTop；竖排 WebView 在 vertical-rl 下 scrollX 为负，因此用绝对位移
+  // 与物理最大滚动量比较。
+  isAtEnd: function() {
+    var root = document.scrollingElement || document.documentElement;
+    if (this.isVertical()) {
+      var maxX = Math.max(0, root.scrollWidth - root.clientWidth);
+      return Math.abs(window.scrollX || root.scrollLeft || 0) >= maxX - 1;
+    }
+    var maxY = Math.max(0, root.scrollHeight - root.clientHeight);
+    return root.scrollTop >= maxY - 1;
   },
   // 连续模式恢复落点 settle：等一帧让恢复滚动落定后通知 Dart。
   //

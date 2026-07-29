@@ -29,10 +29,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1194 条。点号进各自文件。
+> 共 1200 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1245](bugs/BUG-1245-vn-reveal-chrome-also-advances.md) | ✅ | ✅ | VN唤出悬浮底栏时误同时推进 |
+| [BUG-1244](bugs/BUG-1244-vn-media-screen-skipped.md) | ✅ | ✅ | VN独立图片屏被逐句跳转永久略过 |
+| [BUG-1243](bugs/BUG-1243-audiobook-clip-multicue-export.md) | ✅ | ✅ | 有声书片段导出多句退化并附带多余音频文件 |
+| [BUG-1242](bugs/BUG-1242-dictionary-popup-scroll-gesture-stall.md) | ✅ | ✅ | 查词弹窗横滑手势阻塞正文滚动 |
+| [BUG-1241](bugs/BUG-1241-reader-terminal-not-completed.md) | ✅ | ✅ | 阅读器末页停在99%不自动标记读完 |
+| [BUG-1240](bugs/BUG-1240-audiobook-stop-overwrites-position.md) | ✅ | ✅ | 有声书退出停止后位置被零覆盖 |
 | [BUG-1239](bugs/BUG-1239-video-ime-fullwidth-space.md) | ✅ | ✅ | 全角空格在视频页仍无法播放暂停 |
 | [BUG-1237](bugs/BUG-1237-popup-touch-copy-actionmode-finished.md) | ✅ | ✅ | 查词弹窗触屏复制经已结束 ActionMode 失效 |
 | [BUG-1236](bugs/BUG-1236-reader-selection-menu-modal-blocks-handles.md) | ✅ | ✅ | 移动端阅读器选区菜单阻断手柄拖动 |
