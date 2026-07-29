@@ -2764,5 +2764,13 @@
   "manga_import_detected_message": "「$name」是漫画文件，将走漫画导入流程，而不是书籍导入流程。",
   "selection_web_search": "网页搜索",
   "selection_web_search_unavailable": "没有可用的网页搜索应用。",
-  "selection_share_failed": "无法打开分享面板。"
+  "selection_share_failed": "无法打开分享面板。",
+  "scrape_all": "全部刮削",
+  "scrape_all_title": "刮削全部$kind",
+  "scrape_all_confirm": "将按标题匹配库中的 $n 个条目。只自动应用唯一的精确匹配；已有手动封面会保留，歧义结果留待手动确认。",
+  "scrape_all_running": "正在刮削 $current / $total",
+  "scrape_all_item": "正在处理：$title",
+  "scrape_all_done": "完成：已应用 $applied 个，待手动确认 $review 个，已跳过 $skipped 个，失败 $failed 个",
+  "scrape_all_empty": "当前库没有可刮削的条目。",
+  "scrape_all_start": "开始"
 }

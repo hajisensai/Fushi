@@ -5,6 +5,7 @@ import 'package:hibiki/src/media/metadata/bangumi_api_client.dart'
     show parseBangumiSubjectUrl;
 import 'package:hibiki/src/media/metadata/credential_redaction.dart'
     show redactCredentialsInText;
+import 'package:hibiki/src/media/metadata/scrape_cover_preview.dart';
 import 'package:hibiki/src/media/metadata/scrape_failure_view.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
@@ -118,6 +119,7 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   List<ScrapeCandidate> _results = const <ScrapeCandidate>[];
   bool _searching = false;
   bool _searched = false;
+  String? _scoringQuery;
 
   /// 上一次搜索失败的异常（null = 没失败）。BUG-1176：「搜不到」和「搜不了」是两回
   /// 事，失败必须有出口——失败态在结果区显示错误行 + 可行动原因，绝不塌缩成
@@ -174,6 +176,7 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   Future<void> _search() async {
     final String keyword = _queryCtrl.text.trim();
     if (keyword.isEmpty) return;
+    setState(() => _scoringQuery = keyword);
     // 添加/修改 Bangumi 映射：贴条目 URL = 直接按 id 取该条目改绑（跳过关键词
     // 搜索与 TMDB key 门，无论当前在哪个数据源分段）。
     final String? mappedSubjectId = parseBangumiSubjectUrl(keyword);
@@ -310,9 +313,22 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
 
   MatchConfidence? _confidenceFor(ScrapeCandidate candidate) {
     final ParsedMediaName? parsed = _parsed;
-    if (parsed == null) return null;
+    final String query = _scoringQuery?.trim() ?? '';
+    if (parsed == null && query.isEmpty) return null;
+    final ParsedMediaName scoringParsed = ParsedMediaName(
+      // 手动搜索是用户对“要匹配什么”的显式纠正，置信度必须按搜索框当前值算；
+      // 年份/季/集等结构化线索仍沿用路径解析结果。
+      title: query.isNotEmpty ? query : parsed!.title,
+      secondaryTitle: parsed?.secondaryTitle,
+      episode: parsed?.episode,
+      season: parsed?.season,
+      year: parsed?.year,
+      releaseGroup: parsed?.releaseGroup,
+      resolution: parsed?.resolution,
+      isMovieHint: parsed?.isMovieHint ?? false,
+    );
     return widget.service
-        .scoreCandidate(parsed: parsed, candidate: candidate)
+        .scoreCandidate(parsed: scoringParsed, candidate: candidate)
         .confidence;
   }
 
@@ -395,7 +411,7 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
             : t.video_scrape_online_match_collection(name: collection.name),
       ),
       content: SizedBox(
-        width: 420,
+        width: 560,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -589,7 +605,7 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          _buildThumb(theme, candidate.posterUrl),
+          ScrapeCoverPreview(url: candidate.posterUrl),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -623,28 +639,6 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
                 : Text(t.video_scrape_use),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildThumb(ThemeData theme, String url) {
-    return SizedBox(
-      width: 46,
-      height: 66,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: Image.network(
-          url,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            color: theme.colorScheme.surfaceContainerHighest,
-            child: Icon(
-              Icons.image_not_supported_outlined,
-              size: 20,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
       ),
     );
   }

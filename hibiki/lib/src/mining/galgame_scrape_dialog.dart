@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki_core/hibiki_core.dart' show GalgameSourceRow;
 
 import 'package:hibiki/src/mining/galgame_cover_download.dart';
+import 'package:hibiki/src/media/metadata/scrape_cover_preview.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/galgame_repository.dart';
 import 'package:hibiki/src/mining/galgame_scrape_controller.dart';
@@ -102,8 +103,9 @@ Uri? _tryParseEntryUrl(String input) {
 /// 落库一条**用户显式选中**的候选（库页与详情页共用，取代旧 `_scrape()` 的落库段）：
 /// `fetchById` 补全 draft → [GalgameRepository.saveScrapeResult]（多源快照时
 /// primarySource 记 [kGalgamePrimarySourceMixed]，单源记该源 key——规则不变）→
-/// 封面下载（显式语义：有 URL 即下载并**覆盖**既有封面；下载失败静默降级，
-/// 不影响返回值）。[coverHttpClient] / [coverDirectory] 是测试接缝。
+/// 封面下载默认使用显式语义（有 URL 即下载并**覆盖**既有封面）；批量自动入口传
+/// [replaceExistingCover] = false，只在没有可用封面时补图。下载失败静默降级，
+/// 不影响返回值。[coverHttpClient] / [coverDirectory] 是测试接缝。
 ///
 /// 返回 false = 该 ID 在源上未找到（draft 为 null）；网络/解析失败由
 /// [GalgameMetadataException] 上抛给调用方提示。
@@ -114,6 +116,7 @@ Future<bool> applyGalgameScrapeCandidate({
   GalgameScrapeController? controller,
   HttpClient? coverHttpClient,
   Directory? coverDirectory,
+  bool replaceExistingCover = true,
 }) async {
   final GalgameScrapeController used =
       controller ?? GalgameScrapeController.instance;
@@ -140,6 +143,7 @@ Future<bool> applyGalgameScrapeCandidate({
     candidate: candidate,
     httpClient: coverHttpClient,
     coverDirectory: coverDirectory,
+    replaceExistingCover: replaceExistingCover,
   );
   return true;
 }
@@ -160,13 +164,24 @@ Future<void> _downloadScrapedCover({
   required SourceCandidate candidate,
   HttpClient? httpClient,
   Directory? coverDirectory,
+  required bool replaceExistingCover,
 }) async {
   // 条目可能在弹窗打开期间被移除：行不在就不下载。
   if (repo.byId(gameId) == null) return;
   final String? coverUrl = (draft.coverUrl?.trim().isNotEmpty ?? false)
       ? draft.coverUrl
       : candidate.coverUrl;
-  if (!shouldDownloadExplicitScrapedCover(coverUrl: coverUrl)) return;
+  final String? existingPath = repo.byId(gameId)?.coverPath;
+  final bool hasUsableCoverFile = existingPath != null &&
+      existingPath.isNotEmpty &&
+      await File(existingPath).exists();
+  final bool shouldDownload = replaceExistingCover
+      ? shouldDownloadExplicitScrapedCover(coverUrl: coverUrl)
+      : shouldAutoDownloadScrapedCover(
+          hasUsableCoverFile: hasUsableCoverFile,
+          coverUrl: coverUrl,
+        );
+  if (!shouldDownload) return;
   final String? saved = await downloadGalgameCoverToFile(
     gameId: gameId,
     url: coverUrl!,
@@ -303,7 +318,7 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
   Widget build(BuildContext context) {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return HibikiDialogFrame(
-      maxWidth: 480,
+      maxWidth: 560,
       scrollable: false,
       child: HibikiModalSheetFrame(
         title: t.game_scrape,
@@ -423,7 +438,7 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          _buildThumb(tokens, candidate.coverUrl),
+          ScrapeCoverPreview(url: candidate.coverUrl),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -462,33 +477,6 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
                 : Text(t.game_scrape_use),
           ),
         ],
-      ),
-    );
-  }
-
-  /// 46×66 封面缩略图：无 URL / 加载失败降级为占位图标（不进网络加载路径）。
-  Widget _buildThumb(HibikiDesignTokens tokens, String? coverUrl) {
-    final Widget placeholder = Container(
-      color: tokens.surfaces.overlay,
-      child: Icon(
-        Icons.image_not_supported_outlined,
-        size: 20,
-        color: tokens.surfaces.onVariant,
-      ),
-    );
-    return SizedBox(
-      width: 46,
-      height: 66,
-      child: ClipRRect(
-        // 行内小缩略图与书籍刮削弹窗同级，用 chip 语义圆角。
-        borderRadius: HibikiBorderRadius.chip,
-        child: (coverUrl == null || coverUrl.trim().isEmpty)
-            ? placeholder
-            : Image.network(
-                coverUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => placeholder,
-              ),
       ),
     );
   }
