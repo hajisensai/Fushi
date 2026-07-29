@@ -190,7 +190,7 @@ void main() {
   });
 
   group('atomic book format and history coordination', () {
-    test('commit swaps full-payload cache and notifies only after DB commit',
+    test('commit transactionally publishes full-payload cache and notifies',
         () async {
       const String bookKey = 'atomic-success';
       await _seedBook(db, bookKey);
@@ -313,6 +313,74 @@ void main() {
         cacheBefore,
       );
       expect(notifications, 0, reason: '失败事务绝不能发布临时 cache');
+    });
+
+    test('listener failure rolls back format, two rows, and live cache',
+        () async {
+      const String bookKey = 'listener-failure';
+      await _seedBook(db, bookKey);
+      await db.upsertMediaItem(
+        _bookHistory(
+          id: 31,
+          bookKey: bookKey,
+          source: 'reader_ttu',
+          importedAt: 100,
+          title: 'epub history',
+        ),
+      );
+      await db.upsertMediaItem(
+        _bookHistory(
+          id: 32,
+          bookKey: bookKey,
+          source: 'reader_pdf',
+          importedAt: 200,
+          title: 'pdf history',
+        ),
+      );
+      await repo.loadFromDb();
+      final List<(int?, String, String)> cacheBefore = repo.mediaItems
+          .map((MediaItem item) => (
+                item.id,
+                item.mediaSourceIdentifier,
+                item.title,
+              ))
+          .toList();
+      bool listenerRan = false;
+      repo.addListener(() {
+        listenerRan = true;
+        throw StateError('injected listener failure');
+      });
+
+      await expectLater(
+        repo.applyBookFormatConversion(
+          bookKey: bookKey,
+          format: BookFormat.manga,
+          epubPath: 'manga.json',
+          chapterCount: 80,
+          chaptersJson: '[]',
+        ),
+        throwsStateError,
+      );
+
+      expect(listenerRan, isTrue,
+          reason: 'tracked listener failure must execute');
+      expect((await db.getEpubBook(bookKey))!.format, 'epub');
+      expect(await db.getAllMediaItems(), hasLength(2));
+      expect(
+        repo.mediaItems
+            .map((MediaItem item) => (
+                  item.id,
+                  item.mediaSourceIdentifier,
+                  item.title,
+                ))
+            .toList(),
+        cacheBefore,
+      );
+      expect(repo.mediaItems, hasLength(2));
+      expect(
+        repo.mediaItems.map((MediaItem item) => item.mediaSourceIdentifier),
+        containsAll(<String>['reader_ttu', 'reader_pdf']),
+      );
     });
 
     test('zero stays zero and manga-book conversion is idempotent both ways',

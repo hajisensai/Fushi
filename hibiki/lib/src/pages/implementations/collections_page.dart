@@ -89,22 +89,6 @@ enum _CollectionType { sentence, mined, word }
   }
 }
 
-MediaItem buildCollectionReaderMediaItem({
-  required String bookKey,
-  required String title,
-}) {
-  return MediaItem(
-    mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(bookKey),
-    title: title,
-    mediaTypeIdentifier: ReaderHibikiSource.instance.mediaType.uniqueKey,
-    mediaSourceIdentifier: ReaderHibikiSource.instance.uniqueKey,
-    position: 0,
-    duration: 1,
-    canDelete: false,
-    canEdit: true,
-  );
-}
-
 /// Resolves a collection jump against the latest live book rows.
 ///
 /// Favorites/mined rows intentionally keep only the stable [bookKey] and a

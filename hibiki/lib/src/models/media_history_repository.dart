@@ -124,9 +124,9 @@ class MediaHistoryRepository extends ChangeNotifier {
   /// reader-history identity for the same stable `hoshi://book/<bookKey>`.
   ///
   /// The next cache is built from a full, deterministically ordered table read
-  /// *inside* the transaction. It is published only after Drift commits, so an
-  /// error at any point leaves the database format, history rows, live cache,
-  /// and listeners observing the exact pre-call state.
+  /// and published *inside* the transaction. A database, cache publication, or
+  /// listener failure therefore rolls the database back; the outer catch also
+  /// restores the exact pre-call cache if notification or commit fails.
   Future<void> applyBookFormatConversion({
     required String bookKey,
     required BookFormat format,
@@ -137,36 +137,66 @@ class MediaHistoryRepository extends ChangeNotifier {
     String? mangaReadingMode,
     FutureOr<void> Function()? afterHistoryDuplicatesDeletedForTesting,
   }) async {
-    final List<MediaItem> nextCache = await _db.transaction(() async {
-      final EpubBookRow? liveBook = await _db.getEpubBook(bookKey);
-      if (liveBook == null) {
-        throw StateError(
-          'Cannot apply format conversion: book "$bookKey" no longer exists.',
+    final List<MediaItem> previousCache = _mediaItemsCache;
+    try {
+      await _db.transaction(() async {
+        final EpubBookRow? liveBook = await _db.getEpubBook(bookKey);
+        if (liveBook == null) {
+          throw StateError(
+            'Cannot apply format conversion: book "$bookKey" no longer exists.',
+          );
+        }
+
+        await _db.updateEpubBookFormat(
+          bookKey,
+          format: format,
+          epubPath: epubPath,
+          chapterCount: chapterCount,
+          chaptersJson: chaptersJson,
+          coverPath: coverPath,
+          mangaReadingMode: mangaReadingMode,
         );
-      }
+        await _db.reconcileBookMediaHistoryForFormat(
+          bookKey,
+          format,
+          afterDuplicatesDeletedForTesting:
+              afterHistoryDuplicatesDeletedForTesting,
+        );
 
-      await _db.updateEpubBookFormat(
-        bookKey,
-        format: format,
-        epubPath: epubPath,
-        chapterCount: chapterCount,
-        chaptersJson: chaptersJson,
-        coverPath: coverPath,
-        mangaReadingMode: mangaReadingMode,
+        final List<MediaItemRow> rows = await _db.getAllMediaItems();
+        _mediaItemsCache = rows.map(_rowToMediaItem).toList(growable: false);
+        _notifyListenersOrThrow();
+      });
+    } catch (error, stackTrace) {
+      _mediaItemsCache = previousCache;
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+
+  /// ChangeNotifier reports listener exceptions through [FlutterError] and
+  /// otherwise treats notification as successful. Conversion cannot do that:
+  /// a reported listener failure must escape the transaction so its writes are
+  /// rolled back. The handler override exists only for this synchronous notify
+  /// call and the captured original exception is rethrown with its stack.
+  void _notifyListenersOrThrow() {
+    FlutterErrorDetails? listenerFailure;
+    final FlutterExceptionHandler? previousHandler = FlutterError.onError;
+    FlutterError.onError = (FlutterErrorDetails details) {
+      listenerFailure ??= details;
+    };
+    try {
+      notifyListeners();
+    } finally {
+      FlutterError.onError = previousHandler;
+    }
+
+    final FlutterErrorDetails? failure = listenerFailure;
+    if (failure != null) {
+      Error.throwWithStackTrace(
+        failure.exception,
+        failure.stack ?? StackTrace.current,
       );
-      await _db.reconcileBookMediaHistoryForFormat(
-        bookKey,
-        format,
-        afterDuplicatesDeletedForTesting:
-            afterHistoryDuplicatesDeletedForTesting,
-      );
-
-      final List<MediaItemRow> rows = await _db.getAllMediaItems();
-      return rows.map(_rowToMediaItem).toList(growable: false);
-    });
-
-    _mediaItemsCache = nextCache;
-    notifyListeners();
+    }
   }
 
   // ── media item queries ───────────────────────────────────────────────
