@@ -5,10 +5,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_settings_dialog_page.dart';
+import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';
+
+final StateProvider<int> _testActiveProfileIdProvider = StateProvider<int>(
+  (ref) => 1,
+);
 
 class _FakeCssAppModel extends AppModel {
   _FakeCssAppModel()
@@ -24,7 +29,24 @@ class _FakeCssAppModel extends AppModel {
 
   final List<Dictionary> _dictionaries;
   final Map<String, String> savedCustomCss = <String, String>{};
-  String savedGlobalCss = '.glossary-content { font-size: 18px; }';
+  final Map<int, String> _savedGlobalCssByProfile = <int, String>{
+    1: '.glossary-content { font-size: 18px; }',
+  };
+  int activeProfileId = 1;
+
+  String get savedGlobalCss => _savedGlobalCssByProfile[activeProfileId] ?? '';
+
+  set savedGlobalCss(String value) {
+    _savedGlobalCssByProfile[activeProfileId] = value;
+  }
+
+  void switchToProfile(int profileId, {required String globalCss}) {
+    activeProfileId = profileId;
+    _savedGlobalCssByProfile.putIfAbsent(profileId, () => globalCss);
+  }
+
+  String globalCssForProfile(int profileId) =>
+      _savedGlobalCssByProfile[profileId] ?? '';
 
   @override
   List<Dictionary> get dictionaries => _dictionaries;
@@ -56,6 +78,9 @@ Widget _buildApp({
   return ProviderScope(
     overrides: [
       appProvider.overrideWith((ref) => appModel),
+      activeProfileIdProvider.overrideWith(
+        (ref) => ref.watch(_testActiveProfileIdProvider),
+      ),
     ],
     child: TranslationProvider(
       child: MaterialApp(
@@ -244,5 +269,93 @@ void main() {
       appModel.savedCustomCss['JMdict'],
       '.entry { color: red; }',
     );
+  });
+
+  testWidgets(
+      'same AppModel does not reuse a CSS draft after the active Profile changes',
+      (WidgetTester tester) async {
+    final _FakeCssAppModel appModel = _FakeCssAppModel();
+    final String profileAStoredCss = appModel.savedGlobalCss;
+
+    await tester.pumpWidget(
+      _buildApp(
+        appModel: appModel,
+        home: const _CssDialogLauncher(),
+      ),
+    );
+
+    await tester.tap(find.text('打开 CSS'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      _cssEditorField(),
+      '.profile-a-draft { color: orange; }',
+    );
+    await tester.tapAt(const Offset(4, 4));
+    await tester.pumpAndSettle();
+
+    appModel.switchToProfile(
+      2,
+      globalCss: '.profile-b-stored { color: blue; }',
+    );
+    ProviderScope.containerOf(
+      tester.element(find.byType(_CssDialogLauncher)),
+    ).read(_testActiveProfileIdProvider.notifier).state =
+        appModel.activeProfileId;
+    await tester.pump();
+
+    await tester.tap(find.text('打开 CSS'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('.profile-b-stored'), findsOneWidget);
+    expect(find.textContaining('.profile-a-draft'), findsNothing);
+
+    await tester.enterText(
+      _cssEditorField(),
+      '.profile-b-saved { color: green; }',
+    );
+    await tester.tap(find.text(t.dialog_save));
+    await tester.pumpAndSettle();
+
+    expect(appModel.globalCssForProfile(1), profileAStoredCss);
+    expect(
+      appModel.globalCssForProfile(2),
+      '.profile-b-saved { color: green; }',
+    );
+  });
+
+  testWidgets('Save cannot write an open draft after the Profile changes', (
+    WidgetTester tester,
+  ) async {
+    final _FakeCssAppModel appModel = _FakeCssAppModel();
+    final String profileAStoredCss = appModel.savedGlobalCss;
+    const String profileBStoredCss = '.profile-b-stored { color: blue; }';
+
+    await tester.pumpWidget(
+      _buildApp(
+        appModel: appModel,
+        home: const _CssDialogLauncher(),
+      ),
+    );
+
+    await tester.tap(find.text('打开 CSS'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      _cssEditorField(),
+      '.profile-a-draft { color: orange; }',
+    );
+
+    appModel.switchToProfile(2, globalCss: profileBStoredCss);
+    ProviderScope.containerOf(
+      tester.element(find.byType(DictCssEditorDialog)),
+    ).read(_testActiveProfileIdProvider.notifier).state =
+        appModel.activeProfileId;
+    await tester.pump();
+
+    await tester.tap(find.text(t.dialog_save));
+    await tester.pumpAndSettle();
+
+    expect(appModel.globalCssForProfile(1), profileAStoredCss);
+    expect(appModel.globalCssForProfile(2), profileBStoredCss);
+    expect(find.byType(DictCssEditorDialog), findsNothing);
   });
 }

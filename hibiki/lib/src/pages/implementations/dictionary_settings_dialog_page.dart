@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/focus/hibiki_focus_scroll.dart';
+import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/utils.dart';
 
 @visibleForTesting
@@ -498,10 +499,12 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
 class _DictCssDraftSession {
   _DictCssDraftSession({
     required this.appModel,
+    required this.activeProfileId,
     required this.selectedDictionaryName,
   });
 
   final AppModel appModel;
+  final int activeProfileId;
   final Map<String?, String> cssByDictionary = <String?, String>{};
   String? selectedDictionaryName;
 }
@@ -538,9 +541,15 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
     super.initState();
     _appModel =
         ProviderScope.containerOf(context, listen: false).read(appProvider);
+    final int activeProfileId = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(activeProfileIdProvider);
     _dictNames = _appModel.dictionaries.map((d) => d.name).toList();
     final _DictCssDraftSession? existingDraft = _dictCssDraftSession;
-    if (existingDraft != null && identical(existingDraft.appModel, _appModel)) {
+    if (existingDraft != null &&
+        identical(existingDraft.appModel, _appModel) &&
+        existingDraft.activeProfileId == activeProfileId) {
       _draft = existingDraft;
       _selectedIndex =
           _selectedIndexForDictionary(_draft.selectedDictionaryName);
@@ -548,6 +557,7 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
       _selectedIndex = _initialSelectedIndex();
       _draft = _DictCssDraftSession(
         appModel: _appModel,
+        activeProfileId: activeProfileId,
         selectedDictionaryName: _selectedDictionaryName,
       );
       _dictCssDraftSession = _draft;
@@ -580,6 +590,20 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
 
   Future<void> _saveDraft() async {
     if (_isSaving) return;
+    final int activeProfileId = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(activeProfileIdProvider);
+    if (activeProfileId != _draft.activeProfileId) {
+      // Profile 可能被媒体自动切换等后台路径替换。旧 Profile 的草稿绝不能通过
+      // 当前 AppModel 写进新 Profile；切换即精确失效，后续重开会从新 Profile
+      // 的持久化值初始化。
+      _finalizeDraft();
+      if (mounted) {
+        Navigator.pop(context);
+      }
+      return;
+    }
     _stashCurrentScope();
     setState(() => _isSaving = true);
     try {
@@ -592,10 +616,7 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
           await _appModel.setCustomCSSForDict(dictionaryName, entry.value);
         }
       }
-      _draftFinalized = true;
-      if (identical(_dictCssDraftSession, _draft)) {
-        _dictCssDraftSession = null;
-      }
+      _finalizeDraft();
       if (mounted) {
         Navigator.pop(context);
       }
@@ -607,11 +628,15 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
   }
 
   void _cancelDraft() {
+    _finalizeDraft();
+    Navigator.pop(context);
+  }
+
+  void _finalizeDraft() {
     _draftFinalized = true;
     if (identical(_dictCssDraftSession, _draft)) {
       _dictCssDraftSession = null;
     }
-    Navigator.pop(context);
   }
 
   int _initialSelectedIndex() {

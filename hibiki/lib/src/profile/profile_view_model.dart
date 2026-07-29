@@ -196,3 +196,15 @@ final profileViewModelProvider =
 
   return ProfileViewModel(repo, onApplied);
 });
+
+/// 当前激活 Profile 的稳定身份投影。
+///
+/// 需要把临时 UI 状态限定在单个 Profile 内的组件只依赖这个 provider，避免把
+/// ProfileViewModel 的完整状态与操作能力扩散到页面实现。
+final activeProfileIdProvider = Provider<int>((ref) {
+  return ref.watch(
+    profileViewModelProvider.select(
+      (ProfileUiState state) => state.activeProfileId,
+    ),
+  );
+});
