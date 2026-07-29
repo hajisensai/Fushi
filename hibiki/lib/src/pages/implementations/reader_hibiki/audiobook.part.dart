@@ -690,6 +690,14 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     // 被推进看见），图片等待对它彻底失效。跨章落定前先把中间纯图片章逐个导航过去
     // 并停留 imagePauseSec 秒，让用户看见每张整章插图，再继续到目标文本章。
     await _pauseThroughImageOnlyChapters(newSection);
+    // BUG-1246：图片章停留会跨越多个 await；期间 route 可能已 dispose。
+    // dispose 会 detach reader，但已经在飞的回调仍会从上面的 Future 返回。此时既不能
+    // 再进入 _navigateToChapter/setState，也不能把图片序列 finally 持住的跨章守卫
+    // 留给进程级有声书 session；取消本次 transition 后终止旧 reader 的导航。
+    if (!mounted || _controller == null) {
+      _audiobookController?.cancelChapterTransition();
+      return;
+    }
     await _navigateToChapter(newSection, progress: progress ?? 0.0);
   }
 
