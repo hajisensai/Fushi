@@ -8,9 +8,12 @@
   footer 改为“取消 / 保存”，取消清空草稿，保存一次性提交所有已编辑范围并清空草稿。
   审查补强还在保存前复核 Profile 草稿作用域：真正应用 Profile 时旧草稿精确失效，
   不会把 A Profile 的 CSS 写进 B Profile；首次异步加载从 `-1` 取得真实 Profile id
-  不轮换作用域，避免误杀首开草稿并导致 Save 静默丢弃。
+  不轮换作用域，避免误杀首开草稿并导致 Save 静默丢弃。Profile 应用和 Save 还通过
+  同一协调器串行：Profile 先开始时 Save 等待完成后拒绝旧 scope，Save 先开始时
+  Profile 等待全部 CSS setter 完成，封住异步交叉写入窗口。
 - **[x] ② 已加自动化测试** —
   `hibiki/test/pages/dictionary_css_editor_dialog_test.dart:178` 覆盖遮罩退出不持久化、
   重开恢复、取消丢弃；`:214` 覆盖切换范围不写入以及保存统一提交；Profile 回归覆盖
-  “首次懒加载后 Save”、“关闭后切换再打开”和“编辑器打开期间切换后点击保存”三条路径。
-- **备注**：定向 widget 测试 8/8 通过；仓库未写入任何 native-asset 测试绕过配置。
+  “首次懒加载后 Save”、“关闭后切换再打开”和“编辑器打开期间切换后点击保存”三条路径；
+  另有双向并发锁测试及 create/switch/delete-active/import-overwrite-active 真路径覆盖。
+- **备注**：定向测试 11/11 通过；仓库未写入任何 native-asset 测试绕过配置。

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -7,17 +8,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_settings_dialog_page.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
+import 'package:hibiki/src/profile/profile_repository.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 
-final StateProvider<Object> _testProfileDraftScopeProvider =
-    StateProvider<Object>(
-  (ref) => Object(),
+final Provider<ProfileDraftCoordinator> _testProfileDraftCoordinatorProvider =
+    Provider<ProfileDraftCoordinator>(
+  (ref) => ProfileDraftCoordinator(),
 );
 
 class _FakeCssAppModel extends AppModel {
@@ -79,15 +82,15 @@ class _FakeCssAppModel extends AppModel {
 Widget _buildApp({
   required AppModel appModel,
   required Widget home,
-  bool overrideProfileDraftScope = true,
+  bool overrideProfileDraftCoordinator = true,
 }) {
   return ProviderScope(
     overrides: [
       appProvider.overrideWith((ref) => appModel),
       platformServicesProvider.overrideWithValue(testPlatformServices()),
-      if (overrideProfileDraftScope)
-        profileDraftScopeProvider.overrideWith(
-          (ref) => ref.watch(_testProfileDraftScopeProvider),
+      if (overrideProfileDraftCoordinator)
+        profileDraftCoordinatorProvider.overrideWith(
+          (ref) => ref.watch(_testProfileDraftCoordinatorProvider),
         ),
     ],
     child: TranslationProvider(
@@ -135,6 +138,116 @@ void main() {
   setUp(() {
     LocaleSettings.setLocale(AppLocale.zhCn);
     SharedPreferences.setMockInitialValues(<String, Object>{});
+  });
+
+  test('Profile change finishes before an intermediate draft can Save',
+      () async {
+    final ProfileDraftCoordinator coordinator = ProfileDraftCoordinator();
+    final Completer<void> changeStarted = Completer<void>();
+    final Completer<void> finishChange = Completer<void>();
+    bool wroteDraft = false;
+
+    final Future<void> change = coordinator.runProfileChange(() async {
+      changeStarted.complete();
+      await finishChange.future;
+    });
+    await changeStarted.future;
+    final Object intermediateScope = coordinator.draftScope;
+
+    final Future<bool> save = coordinator.saveDraftIfCurrent(
+      intermediateScope,
+      () async {
+        wroteDraft = true;
+      },
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(wroteDraft, isFalse);
+
+    finishChange.complete();
+    await change;
+    expect(await save, isFalse);
+    expect(wroteDraft, isFalse);
+  });
+
+  test('Profile change waits for an in-flight draft Save', () async {
+    final ProfileDraftCoordinator coordinator = ProfileDraftCoordinator();
+    final Object initialScope = coordinator.draftScope;
+    final Completer<void> saveStarted = Completer<void>();
+    final Completer<void> finishSave = Completer<void>();
+    bool profileChangeStarted = false;
+
+    final Future<bool> save = coordinator.saveDraftIfCurrent(
+      initialScope,
+      () async {
+        saveStarted.complete();
+        await finishSave.future;
+      },
+    );
+    await saveStarted.future;
+
+    final Future<void> change = coordinator.runProfileChange(() async {
+      profileChangeStarted = true;
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(profileChangeStarted, isFalse);
+
+    finishSave.complete();
+    expect(await save, isTrue);
+    await change;
+    expect(profileChangeStarted, isTrue);
+    expect(identical(coordinator.draftScope, initialScope), isFalse);
+  });
+
+  test('every active Profile mutation path rotates the draft scope', () async {
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
+    final ProfileRepository repo = ProfileRepository(
+      db,
+      FakeAnkiRepository(),
+    );
+    final ProfileDraftCoordinator coordinator = ProfileDraftCoordinator();
+    final ProfileViewModel viewModel = ProfileViewModel(
+      repo,
+      () async {},
+      coordinator,
+    );
+    addTearDown(() async {
+      viewModel.dispose();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await db.close();
+    });
+
+    final ProfileUiState loadedState = await viewModel.stream.firstWhere(
+      (ProfileUiState state) => state.activeProfileId > 0,
+    );
+    final int profileA = loadedState.activeProfileId;
+    expect(profileA, greaterThan(0));
+
+    Future<void> expectRotation(Future<void> Function() operation) async {
+      final Object before = coordinator.draftScope;
+      await operation();
+      expect(identical(coordinator.draftScope, before), isFalse);
+    }
+
+    await expectRotation(() => viewModel.createProfile('Profile B'));
+    final int profileB = await repo.getActiveProfileId();
+    expect(profileB, isNot(profileA));
+
+    await expectRotation(() => viewModel.switchProfile(profileA));
+    final String exported = await viewModel.exportProfile(profileA);
+    await expectRotation(
+      () async {
+        await viewModel.importProfile(
+          exported,
+          mode: ProfileImportMode.overwrite,
+          targetProfileId: profileA,
+        );
+      },
+    );
+
+    await expectRotation(() => viewModel.switchProfile(profileB));
+    await expectRotation(() => viewModel.deleteProfile(profileB));
+    expect(await repo.getActiveProfileId(), profileA);
   });
 
   // TODO-422：词典管理页本身不实现任何自定义 CSS 编辑——行尾旧三点菜单（含
@@ -293,7 +406,7 @@ void main() {
       _buildApp(
         appModel: appModel,
         home: const _CssDialogLauncher(),
-        overrideProfileDraftScope: false,
+        overrideProfileDraftCoordinator: false,
       ),
     );
 
@@ -307,7 +420,9 @@ void main() {
     final ProviderContainer container = ProviderScope.containerOf(
       tester.element(find.byType(DictCssEditorDialog)),
     );
-    final Object initialDraftScope = container.read(profileDraftScopeProvider);
+    final ProfileDraftCoordinator draftCoordinator =
+        container.read(profileDraftCoordinatorProvider);
+    final Object initialDraftScope = draftCoordinator.draftScope;
     container.read(profileViewModelProvider);
     await tester.runAsync(() async {
       for (int attempt = 0;
@@ -325,7 +440,7 @@ void main() {
     );
     expect(
       identical(
-        container.read(profileDraftScopeProvider),
+        draftCoordinator.draftScope,
         initialDraftScope,
       ),
       isTrue,
@@ -348,7 +463,7 @@ void main() {
     );
     expect(
       identical(
-        container.read(profileDraftScopeProvider),
+        draftCoordinator.draftScope,
         initialDraftScope,
       ),
       isFalse,
@@ -384,7 +499,7 @@ void main() {
     );
     ProviderScope.containerOf(
       tester.element(find.byType(_CssDialogLauncher)),
-    ).read(_testProfileDraftScopeProvider.notifier).state = Object();
+    ).read(_testProfileDraftCoordinatorProvider).invalidateDrafts();
     await tester.pump();
 
     await tester.tap(find.text('打开 CSS'));
@@ -431,7 +546,7 @@ void main() {
     appModel.switchToProfile(2, globalCss: profileBStoredCss);
     ProviderScope.containerOf(
       tester.element(find.byType(DictCssEditorDialog)),
-    ).read(_testProfileDraftScopeProvider.notifier).state = Object();
+    ).read(_testProfileDraftCoordinatorProvider).invalidateDrafts();
     await tester.pump();
 
     await tester.tap(find.text(t.dialog_save));

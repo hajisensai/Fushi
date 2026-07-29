@@ -528,6 +528,7 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
   late TextEditingController _cssController;
   late List<String> _dictNames;
   late AppModel _appModel;
+  late ProfileDraftCoordinator _profileDraftCoordinator;
   late _DictCssDraftSession _draft;
   bool _draftFinalized = false;
   bool _isSaving = false;
@@ -541,10 +542,11 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
     super.initState();
     _appModel =
         ProviderScope.containerOf(context, listen: false).read(appProvider);
-    final Object profileDraftScope = ProviderScope.containerOf(
+    _profileDraftCoordinator = ProviderScope.containerOf(
       context,
       listen: false,
-    ).read(profileDraftScopeProvider);
+    ).read(profileDraftCoordinatorProvider);
+    final Object profileDraftScope = _profileDraftCoordinator.draftScope;
     _dictNames = _appModel.dictionaries.map((d) => d.name).toList();
     final _DictCssDraftSession? existingDraft = _dictCssDraftSession;
     if (existingDraft != null &&
@@ -590,31 +592,35 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
 
   Future<void> _saveDraft() async {
     if (_isSaving) return;
-    final Object profileDraftScope = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(profileDraftScopeProvider);
-    if (!identical(profileDraftScope, _draft.profileDraftScope)) {
-      // Profile 可能被媒体自动切换等后台路径替换。旧 Profile 的草稿绝不能通过
-      // 当前 AppModel 写进新 Profile；切换即精确失效，后续重开会从新 Profile
-      // 的持久化值初始化。
-      _finalizeDraft();
-      if (mounted) {
-        Navigator.pop(context);
-      }
-      return;
-    }
     _stashCurrentScope();
     setState(() => _isSaving = true);
     try {
-      for (final MapEntry<String?, String> entry
-          in _draft.cssByDictionary.entries) {
-        final String? dictionaryName = entry.key;
-        if (dictionaryName == null) {
-          await _appModel.setGlobalDictCSS(entry.value);
-        } else {
-          await _appModel.setCustomCSSForDict(dictionaryName, entry.value);
+      final bool saved = await _profileDraftCoordinator.saveDraftIfCurrent(
+        _draft.profileDraftScope,
+        () async {
+          for (final MapEntry<String?, String> entry
+              in _draft.cssByDictionary.entries) {
+            final String? dictionaryName = entry.key;
+            if (dictionaryName == null) {
+              await _appModel.setGlobalDictCSS(entry.value);
+            } else {
+              await _appModel.setCustomCSSForDict(
+                dictionaryName,
+                entry.value,
+              );
+            }
+          }
+        },
+      );
+      if (!saved) {
+        // Profile 可能被媒体自动切换等后台路径替换。旧 Profile 的草稿绝不能通过
+        // 当前 AppModel 写进新 Profile；切换即精确失效，后续重开会从新 Profile
+        // 的持久化值初始化。
+        _finalizeDraft();
+        if (mounted) {
+          Navigator.pop(context);
         }
+        return;
       }
       _finalizeDraft();
       if (mounted) {

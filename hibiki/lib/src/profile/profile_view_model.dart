@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +8,61 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
+
+/// Serializes Profile application with temporary draft persistence.
+///
+/// A scope check on its own is racy: Profile application may start after Save
+/// checks the scope, or Save may run against an intermediate AppModel while a
+/// Profile is being applied. Both operations therefore use this same lock.
+class ProfileDraftCoordinator {
+  Object _draftScope = Object();
+  Future<void> _tail = Future<void>.value();
+
+  Object get draftScope => _draftScope;
+
+  void invalidateDrafts() {
+    _draftScope = Object();
+  }
+
+  Future<T> _exclusive<T>(Future<T> Function() action) {
+    final Future<void> previous = _tail;
+    final Completer<void> release = Completer<void>();
+    _tail = release.future;
+
+    return (() async {
+      await previous;
+      try {
+        return await action();
+      } finally {
+        release.complete();
+      }
+    })();
+  }
+
+  Future<T> runProfileChange<T>(Future<T> Function() action) {
+    return _exclusive(() async {
+      invalidateDrafts();
+      try {
+        return await action();
+      } finally {
+        // A dialog opened while settings were being applied observed an
+        // intermediate AppModel and must not survive the completed change.
+        invalidateDrafts();
+      }
+    });
+  }
+
+  Future<bool> saveDraftIfCurrent(
+    Object expectedScope,
+    Future<void> Function() save,
+  ) {
+    return _exclusive(() async {
+      if (!identical(expectedScope, _draftScope)) return false;
+      await save();
+      return true;
+    });
+  }
+}
 
 class ProfileUiState {
   const ProfileUiState({
@@ -44,7 +101,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   ProfileViewModel(
     this._repo,
     this._onProfileApplied,
-    this._invalidateProfileDrafts,
+    this._profileDraftCoordinator,
   ) : super(const ProfileUiState()) {
     _load();
   }
@@ -59,20 +116,12 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   final ProfileRepository _repo;
   final Future<void> Function() _onProfileApplied;
-  final void Function() _invalidateProfileDrafts;
+  final ProfileDraftCoordinator _profileDraftCoordinator;
 
   Future<T> _whileInvalidatingProfileDrafts<T>(
     Future<T> Function() action,
-  ) async {
-    _invalidateProfileDrafts();
-    try {
-      return await action();
-    } finally {
-      // A dialog opened while Profile settings were being applied may have
-      // observed an intermediate AppModel. Invalidate that draft as well.
-      _invalidateProfileDrafts();
-    }
-  }
+  ) =>
+      _profileDraftCoordinator.runProfileChange(action);
 
   Future<void> _load() async {
     state = state.copyWith(isLoading: true);
@@ -215,23 +264,22 @@ final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
   return ProfileRepository(db, ankiRepo);
 });
 
-final _profileDraftScopeStateProvider = StateProvider<Object>(
-  (ref) => Object(),
-);
-
 /// 临时 UI 草稿所绑定的 Profile 应用代次。
 ///
 /// 它刻意独立于 [ProfileViewModel] 的异步初始加载：首次加载期间
 /// `activeProfileId` 会从 -1 变成真实 id，但 AppModel 并未切换 Profile，
 /// 因而不应误杀用户刚输入的草稿。只有真正应用/替换 Profile 的操作才轮换
-/// 这个对象。
-final profileDraftScopeProvider = Provider<Object>((ref) {
-  return ref.watch(_profileDraftScopeStateProvider);
-});
+/// 这个对象。它还串行化 Profile 应用与草稿保存，封住单次 scope guard 后的
+/// 异步交叉写入窗口。
+final profileDraftCoordinatorProvider = Provider<ProfileDraftCoordinator>(
+  (ref) => ProfileDraftCoordinator(),
+);
 
 final profileViewModelProvider =
     StateNotifierProvider<ProfileViewModel, ProfileUiState>((ref) {
   final repo = ref.watch(profileRepositoryProvider);
+  final ProfileDraftCoordinator profileDraftCoordinator =
+      ref.watch(profileDraftCoordinatorProvider);
   Future<void> onApplied() async {
     ref.invalidate(ankiViewModelProvider);
     final appModel = ref.read(appProvider);
@@ -243,9 +291,5 @@ final profileViewModelProvider =
     await ReaderHibikiSource.readerSettings?.refreshFromDb();
   }
 
-  void invalidateProfileDrafts() {
-    ref.read(_profileDraftScopeStateProvider.notifier).state = Object();
-  }
-
-  return ProfileViewModel(repo, onApplied, invalidateProfileDrafts);
+  return ProfileViewModel(repo, onApplied, profileDraftCoordinator);
 });
