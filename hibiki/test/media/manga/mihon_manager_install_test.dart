@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -57,6 +58,65 @@ void main() {
     final MihonInstallProposal trusted =
         await manager.prepareLocalInstall(second.path);
     expect(trusted.signerTrusted, isTrue);
+  });
+
+  test('commit rejects staging bytes changed after inspection', () async {
+    final File apk = await _fixtureApk(root, 'prepared.apk', <int>[1, 2, 3, 4]);
+    runtime.inspection = _inspection(versionCode: 1, signer: 'AA:BB');
+    final MihonInstallProposal proposal =
+        await manager.prepareLocalInstall(apk.path);
+
+    await File(proposal.tempPath).writeAsBytes(<int>[9, 9, 9], flush: true);
+
+    await expectLater(
+      manager.commitInstall(proposal, trustSigner: true),
+      throwsA(
+        isA<MihonRuntimeException>().having(
+          (MihonRuntimeException error) => error.code,
+          'code',
+          'APK_CHANGED',
+        ),
+      ),
+    );
+    expect(await database.isMangaSignerTrusted('aabb'), isFalse);
+    expect(
+      await database.getMangaExtension('org.example.fixture'),
+      equals(null),
+    );
+  });
+
+  test('same-package commits never overlap their install transaction',
+      () async {
+    await database.trustMangaSigner(
+      MangaTrustedSignersCompanion.insert(
+        fingerprint: 'aabb',
+        label: 'Fixture signer',
+        origin: 'local',
+        trustedAt: 1,
+      ),
+    );
+    final File apk =
+        await _fixtureApk(root, 'concurrent.apk', <int>[1, 2, 3, 4]);
+    runtime.inspection = _inspection(versionCode: 1, signer: 'aabb');
+    final MihonInstallProposal first =
+        await manager.prepareLocalInstall(apk.path);
+    final MihonInstallProposal second =
+        await manager.prepareLocalInstall(apk.path);
+    runtime.firstListSourcesEntered = Completer<void>();
+    runtime.listSourcesGate = Completer<void>();
+
+    final Future<void> firstCommit =
+        manager.commitInstall(first, trustSigner: false);
+    await runtime.firstListSourcesEntered!.future;
+    final Future<void> secondCommit =
+        manager.commitInstall(second, trustSigner: false);
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(runtime.maxConcurrentListSources, 1);
+    } finally {
+      runtime.listSourcesGate!.complete();
+      await Future.wait(<Future<void>>[firstCommit, secondCommit]);
+    }
   });
 
   test(
@@ -256,6 +316,10 @@ class _InstallRuntime extends Fake implements MihonRuntime {
     signer: 'aabb',
   );
   bool failListSources = false;
+  Completer<void>? firstListSourcesEntered;
+  Completer<void>? listSourcesGate;
+  int activeListSources = 0;
+  int maxConcurrentListSources = 0;
 
   @override
   Future<MihonExtensionInspection> inspectExtension(String apkPath) async =>
@@ -269,21 +333,33 @@ class _InstallRuntime extends Fake implements MihonRuntime {
     MihonExtensionRef extension, {
     List<MihonPreference> preferences = const <MihonPreference>[],
   }) async {
-    if (failListSources) {
-      throw const MihonRuntimeException(
-        'LOAD_FAILED',
-        'Fixture load failed',
-      );
+    activeListSources++;
+    if (activeListSources > maxConcurrentListSources) {
+      maxConcurrentListSources = activeListSources;
     }
-    return const <MihonSource>[
-      MihonSource(
-        extensionPackage: 'org.example.fixture',
-        id: '9223372036854775807',
-        name: 'Fixture source',
-        language: 'en',
-        baseUrl: 'https://source.example',
-      ),
-    ];
+    final Completer<void>? entered = firstListSourcesEntered;
+    if (entered != null && !entered.isCompleted) entered.complete();
+    try {
+      final Completer<void>? gate = listSourcesGate;
+      if (gate != null) await gate.future;
+      if (failListSources) {
+        throw const MihonRuntimeException(
+          'LOAD_FAILED',
+          'Fixture load failed',
+        );
+      }
+      return const <MihonSource>[
+        MihonSource(
+          extensionPackage: 'org.example.fixture',
+          id: '9223372036854775807',
+          name: 'Fixture source',
+          language: 'en',
+          baseUrl: 'https://source.example',
+        ),
+      ];
+    } finally {
+      activeListSources--;
+    }
   }
 
   @override

@@ -40,6 +40,8 @@ class MihonManager extends ChangeNotifier {
   Future<void>? _initialising;
   Future<void>? _runtimeShutdown;
   ExitFlushCallback? _exitShutdown;
+  int _stagingSequence = 0;
+  final Map<String, Future<void>> _installTails = <String, Future<void>>{};
 
   /// Desktop window close ends in a process-level fast exit, so ordinary
   /// ChangeNotifier/widget disposal is not guaranteed to run. Register this
@@ -269,7 +271,8 @@ class MihonManager extends ChangeNotifier {
     final File temp = File(p.join(
       rootDirectory.path,
       'tmp',
-      'extension-$sha.apk.part',
+      'extension-$sha-${DateTime.now().microsecondsSinceEpoch}-'
+          '${_stagingSequence++}.apk.part',
     ));
     await temp.writeAsBytes(bytes, flush: true);
     try {
@@ -334,27 +337,81 @@ class MihonManager extends ChangeNotifier {
   Future<void> commitInstall(
     MihonInstallProposal proposal, {
     required bool trustSigner,
+  }) =>
+      _withPackageInstallLock(
+        proposal.inspection.packageName,
+        () => _guarded(
+          () => _commitInstallLocked(
+            proposal,
+            trustSigner: trustSigner,
+          ),
+        ),
+      );
+
+  Future<void> _commitInstallLocked(
+    MihonInstallProposal proposal, {
+    required bool trustSigner,
   }) async {
-    final String signer =
-        _normalizeFingerprint(proposal.inspection.signerSha256);
-    if (!proposal.signerTrusted && !trustSigner) {
+    final File staged = File(proposal.tempPath);
+    late final Uint8List stagedBytes;
+    try {
+      stagedBytes = await staged.readAsBytes();
+    } on FileSystemException {
       throw const MihonRuntimeException(
-        'SIGNER_NOT_TRUSTED',
-        'The extension signer has not been trusted',
+        'APK_MISSING',
+        'The prepared extension APK is no longer available',
       );
     }
-    await _guarded(() async {
-      if (!proposal.signerTrusted) {
-        await database.trustMangaSigner(
-          MangaTrustedSignersCompanion.insert(
-            fingerprint: signer,
-            label: proposal.inspection.name,
-            origin: proposal.expected?.storeUrl ?? 'local',
-            trustedAt: DateTime.now().millisecondsSinceEpoch,
-          ),
+    final String actualSha = sha256.convert(stagedBytes).toString();
+    if (actualSha != proposal.apkSha256) {
+      throw const MihonRuntimeException(
+        'APK_CHANGED',
+        'The prepared extension APK changed after inspection',
+      );
+    }
+
+    final Directory snapshotDirectory =
+        await Directory(p.join(rootDirectory.path, 'tmp'))
+            .createTemp('install-');
+    final File snapshot = File(p.join(snapshotDirectory.path, 'extension.apk'));
+    await snapshot.writeAsBytes(stagedBytes, flush: true);
+    try {
+      final MihonExtensionInspection actualInspection =
+          await runtime.inspectExtension(snapshot.path);
+      if (!_sameInspection(actualInspection, proposal.inspection)) {
+        throw const MihonRuntimeException(
+          'APK_CHANGED',
+          'The prepared extension identity changed after confirmation',
         );
       }
-      final String packageName = proposal.inspection.packageName;
+      final String signer =
+          _normalizeFingerprint(actualInspection.signerSha256);
+      final bool signerTrustedNow = await database.isMangaSignerTrusted(signer);
+      if (!signerTrustedNow && !trustSigner) {
+        throw const MihonRuntimeException(
+          'SIGNER_NOT_TRUSTED',
+          'The extension signer has not been trusted',
+        );
+      }
+
+      final String packageName = actualInspection.packageName;
+      final MangaExtensionRow? current =
+          await database.getMangaExtension(packageName);
+      if (current != null) {
+        if (actualInspection.versionCode < current.versionCode) {
+          throw const MihonRuntimeException(
+            'DOWNGRADE_REJECTED',
+            'Extension downgrade is not allowed',
+          );
+        }
+        if (_normalizeFingerprint(current.signerSha256) != signer) {
+          throw const MihonRuntimeException(
+            'SIGNATURE_CHANGED',
+            'Extension update signer does not match the installed version',
+          );
+        }
+      }
+
       final File target = File(p.join(
         rootDirectory.path,
         'extensions',
@@ -366,15 +423,15 @@ class MihonManager extends ChangeNotifier {
         if (await backup.exists()) await backup.delete();
         if (await target.exists()) await target.rename(backup.path);
         try {
-          await File(proposal.tempPath).rename(target.path);
+          await snapshot.rename(target.path);
         } on FileSystemException {
-          await File(proposal.tempPath).copy(target.path);
-          await File(proposal.tempPath).delete();
+          await snapshot.copy(target.path);
+          await snapshot.delete();
         }
       }
       String runtimePath = desktop
           ? target.path
-          : await runtime.installPrivateExtension(proposal.tempPath);
+          : await runtime.installPrivateExtension(snapshot.path);
       try {
         final MihonExtensionRef extension = MihonExtensionRef(
           packageName: packageName,
@@ -389,42 +446,51 @@ class MihonManager extends ChangeNotifier {
         }
         final String storedPath =
             p.join('extensions', '$packageName.${desktop ? 'apk' : 'ext'}');
-        await database.upsertMangaExtension(
-          MangaExtensionsCompanion.insert(
-            packageName: packageName,
-            storeUrl: Value(proposal.expected?.storeUrl),
-            name: proposal.inspection.name,
-            versionCode: proposal.inspection.versionCode,
-            versionName: proposal.inspection.versionName,
-            libVersion: proposal.inspection.libVersion,
-            language: proposal.expected?.language ??
-                loaded
-                    .map((MihonSource item) => item.language)
-                    .toSet()
-                    .join(','),
-            contentWarning: Value(proposal.expected?.contentWarning ?? 0),
-            apkPath: storedPath,
-            apkSha256: proposal.apkSha256,
-            signerSha256: signer,
-            installedAt: DateTime.now().millisecondsSinceEpoch,
-          ),
-        );
-        await database.replaceMangaOnlineSources(
-          packageName,
-          loaded.map(
-            (MihonSource source) => MangaOnlineSourcesCompanion.insert(
-              extensionPackage: packageName,
-              sourceId: source.id,
-              name: source.name,
-              language: source.language,
-              baseUrl: Value(source.baseUrl),
+        await database.transaction(() async {
+          if (!signerTrustedNow) {
+            await database.trustMangaSigner(
+              MangaTrustedSignersCompanion.insert(
+                fingerprint: signer,
+                label: actualInspection.name,
+                origin: proposal.expected?.storeUrl ?? 'local',
+                trustedAt: DateTime.now().millisecondsSinceEpoch,
+              ),
+            );
+          }
+          await database.upsertMangaExtension(
+            MangaExtensionsCompanion.insert(
+              packageName: packageName,
+              storeUrl: Value(proposal.expected?.storeUrl),
+              name: actualInspection.name,
+              versionCode: actualInspection.versionCode,
+              versionName: actualInspection.versionName,
+              libVersion: actualInspection.libVersion,
+              language: proposal.expected?.language ??
+                  loaded
+                      .map((MihonSource item) => item.language)
+                      .toSet()
+                      .join(','),
+              contentWarning: Value(proposal.expected?.contentWarning ?? 0),
+              apkPath: storedPath,
+              apkSha256: actualSha,
+              signerSha256: signer,
+              installedAt: DateTime.now().millisecondsSinceEpoch,
             ),
-          ),
-        );
+          );
+          await database.replaceMangaOnlineSources(
+            packageName,
+            loaded.map(
+              (MihonSource source) => MangaOnlineSourcesCompanion.insert(
+                extensionPackage: packageName,
+                sourceId: source.id,
+                name: source.name,
+                language: source.language,
+                baseUrl: Value(source.baseUrl),
+              ),
+            ),
+          );
+        });
         if (await backup.exists()) await backup.delete();
-        if (await File(proposal.tempPath).exists()) {
-          await File(proposal.tempPath).delete();
-        }
       } catch (_) {
         if (desktop) {
           if (await target.exists()) await target.delete();
@@ -434,7 +500,13 @@ class MihonManager extends ChangeNotifier {
       }
       await runtime.invalidateExtension(packageName);
       await reload();
-    });
+    } finally {
+      if (await staged.exists()) await staged.delete();
+      if (await snapshot.exists()) await snapshot.delete();
+      if (await snapshotDirectory.exists()) {
+        await snapshotDirectory.delete(recursive: true);
+      }
+    }
   }
 
   Future<void> uninstallExtension(
@@ -625,6 +697,26 @@ class MihonManager extends ChangeNotifier {
         extensionListUrl: row.extensionListUrl,
       );
 
+  Future<T> _withPackageInstallLock<T>(
+    String packageName,
+    Future<T> Function() action,
+  ) async {
+    final Future<void> previous =
+        _installTails[packageName] ?? Future<void>.value();
+    final Completer<void> release = Completer<void>();
+    final Future<void> tail = release.future;
+    _installTails[packageName] = tail;
+    await previous;
+    try {
+      return await action();
+    } finally {
+      release.complete();
+      if (identical(_installTails[packageName], tail)) {
+        _installTails.remove(packageName);
+      }
+    }
+  }
+
   Future<void> _guarded(Future<void> Function() action) async {
     loading = true;
     error = null;
@@ -660,6 +752,19 @@ class MihonManager extends ChangeNotifier {
 
   static String _normalizeFingerprint(String value) =>
       value.replaceAll(RegExp('[^0-9a-fA-F]'), '').toLowerCase();
+
+  static bool _sameInspection(
+    MihonExtensionInspection actual,
+    MihonExtensionInspection prepared,
+  ) =>
+      actual.packageName == prepared.packageName &&
+      actual.name == prepared.name &&
+      actual.versionCode == prepared.versionCode &&
+      actual.versionName == prepared.versionName &&
+      actual.libVersion == prepared.libVersion &&
+      _normalizeFingerprint(actual.signerSha256) ==
+          _normalizeFingerprint(prepared.signerSha256) &&
+      listEquals(actual.sourceClasses, prepared.sourceClasses);
 }
 
 @immutable
