@@ -657,14 +657,14 @@ class _ReaderHibikiHistoryPageState<T extends HistoryReaderPage>
             context: context,
             ref: ref,
             appModel: appModel,
-             focusId: kShelfImportFocusId,
-             label: t.srt_import,
-           ),
+            focusId: kShelfImportFocusId,
+            label: t.srt_import,
+          ),
         // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
         // 按钮就是同一件事的两个入口。书架独立使用（无导航条）时才保留书籍来源按钮；
         // 漫画入口由专属导入对话框负责，不复用书籍来源管理。
         if (_pageWidget.navigation == null && !_mangaOnly)
-           _headerAction(
+          _headerAction(
             tooltip: t.media_source_manage_title,
             icon: Icons.folder_copy_outlined,
             onTap: _openManageSources,
