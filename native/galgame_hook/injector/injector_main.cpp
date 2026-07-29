@@ -737,7 +737,7 @@ void WriteLunaTextLine(SharedHeader* header, const wchar_t* hookcode,
 // 干净，其余是坏 hook 产生的伪影（整串重复 / 每字重复 N 次）。
 //
 // v12 起**不再自动挑赢家**：只有用户为本游戏显式选定的线程（selected_text_thread_id）
-// 或 profile 的 `prefer=` hook code 才能写进文本环，其余一行不发布。理由见
+// 才能写进文本环，profile 的 `prefer=` 不再绕过选择，其余一行不发布。理由见
 // luna_text_selector.h 的 LunaTextSelector 类注释。所有线程（含未选中的）仍会经
 // WriteThreadPreview 进预览区，用户据此挑选——"看得见"与"只装选定线程"由两块内存分别
 // 承担，不再互相排斥。
