@@ -263,10 +263,11 @@ class ClipboardPanelController {
       await _renderPanel(model, resetRootScroll: true);
       glog('panel: updated "${request.text.length} chars" '
           'entries=${result.entries.length}');
-      // BUG-1210：与瞬态覆盖窗一致——查到词就按 autoReadOnLookup 偏好自动发音。
+      // BUG-1210：与瞬态覆盖窗一致——显式查词按 autoReadOnLookup 偏好自动发音。
       // 放在渲染之后：播放脚本经同一 render 通道下发，必须排在整栈渲染脚本之后，
       // 否则会被 last-wins 的渲染脚本顶掉（与覆盖窗 _autoReadFirstEntry 同一位置
-      // 语义）。协调器内部去重，被动剪贴板流重复同词不会连读。
+      // 语义）。BUG-1236：剪贴板内容变化是环境输入，不代表用户要求播放声音；
+      // 只有热键/显式查词，或下方横幅点字与嵌套点词等手动路径，才允许自动朗读。
       //
       // 但**必须先核对 seq**：本方法的契约是「每个 await 后核对，过期即弃」（VN 流
       // 乱序守卫），而上面 _renderPanel / _showPanel / raise 都是 await。少这一句，
@@ -278,7 +279,9 @@ class ClipboardPanelController {
         glog('panel: autoread skipped (superseded seq=$seq)');
         return;
       }
-      _autoRead.autoReadFirstEntry(model, result);
+      if (request.allowsAutomaticAudio) {
+        _autoRead.autoReadFirstEntry(model, result);
+      }
     } catch (e, st) {
       glog('panel: update EXCEPTION $e\n$st');
     }
