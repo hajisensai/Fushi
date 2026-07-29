@@ -20,6 +20,7 @@ import 'package:flutter/foundation.dart' show immutable;
 @immutable
 class ReaderEngineConfig {
   const ReaderEngineConfig({
+    required this.navigationGeneration,
     required this.continuousMode,
     required this.vnMode,
     required this.vnClickAdvance,
@@ -52,6 +53,11 @@ class ReaderEngineConfig {
     required this.vnMergeCrossScreenSasayakiCues,
     this.sasayakiCuesJson,
   });
+
+  /// Immutable token identifying the document/navigation that owns this
+  /// config. Restore callbacks must echo it so a late callback from a replaced
+  /// document cannot complete or mutate the active navigation.
+  final int navigationGeneration;
 
   // ── 视图模式 / 手势 ────────────────────────────────────────────────
   final bool continuousMode;
@@ -105,6 +111,7 @@ class ReaderEngineConfig {
 
   /// 除 [sasayakiCuesJson] 外的全部字段（它是已编码的 JSON 片段，见 [toJsLiteral]）。
   Map<String, Object?> toJson() => <String, Object?>{
+        'navigationGeneration': navigationGeneration,
         'continuousMode': continuousMode,
         'vnMode': vnMode,
         'vnClickAdvance': vnClickAdvance,

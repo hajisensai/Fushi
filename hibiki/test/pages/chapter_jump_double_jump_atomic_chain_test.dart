@@ -28,7 +28,7 @@ void main() {
     return source.substring(a, b);
   }
 
-  test('_navigateToChapterAndWait 收 progress + preciseLocateJs 并转发/绑定代际', () {
+  test('_navigateToChapterAndWait 收 progress + preciseLocateJs 并全部转发', () {
     final String body = slice(
       'Future<bool> _navigateToChapterAndWait(',
       'return success && _currentChapter == resolvedChapter;',
@@ -47,25 +47,35 @@ void main() {
         reason: 'charOffset 必须转发（收藏绝对字符锚运输通道）');
     expect(body, contains('progress: progress,'),
         reason: 'progress 仍必须转发（书签/字符跳转分数路径）');
-    // pending 必须绑定本次导航代际（并发导航去重，防应用到错误章节）。
-    expect(body,
-        contains('(generation: _navigateGeneration, js: preciseLocateJs)'),
-        reason: 'pending 必须绑定 _navigateGeneration');
-    // 绑定必须在 _navigateToChapter（递增代际）之后。
-    final int navIdx = body.indexOf('_navigateToChapter(index,');
-    final int bindIdx =
-        body.indexOf('generation: _navigateGeneration, js: preciseLocateJs');
-    expect(bindIdx, greaterThan(navIdx),
-        reason: '必须在 _navigateToChapter（代际已定）之后再绑定 pending');
+    expect(body, contains('preciseLocateJs: preciseLocateJs'),
+        reason: '搜索定位意图必须转发到 _navigateToChapter，不能留在 loadUrl await 之后');
   });
 
-  test('_beginNavigation 清空上一次未消费的 pending（并发导航从源头去重）', () {
+  test('_beginNavigation 在 loadUrl 前清旧 pending 并绑定本次代际', () {
     final String body = slice(
       'void _beginNavigation({',
       '_startContentReadyTimeout();',
     );
-    expect(body, contains('_pendingPreciseLocate = null;'),
+    expect(body, contains('_preciseLocateQueue.clear();'),
         reason: '新一次导航必须作废上一次排队但未消费的章内定位');
+    expect(body, contains('String? preciseLocateJs,'),
+        reason: '定位意图必须进入导航初始化原子步骤');
+    expect(body, contains('_preciseLocateQueue.replace('),
+        reason: '本次定位必须在 loadUrl 前进入 last-write-wins 队列');
+    expect(body, contains('generation: _navigateGeneration,'),
+        reason: '本次 pending 必须绑定已经递增的 _navigateGeneration');
+
+    final String navigate = slice(
+      'Future<void> _navigateToChapter(',
+      'Future<bool> _navigateToChapterAndWait(',
+    );
+    final int beginIdx = navigate.indexOf('_beginNavigation(');
+    final int loadIdx = navigate.indexOf('await _loadChapterDirectly(index);');
+    expect(beginIdx, isNonNegative);
+    expect(loadIdx, greaterThan(beginIdx),
+        reason: '必须先绑定定位意图再 loadUrl；反过来会让 onRestoreComplete 消费空 pending');
+    expect(navigate, contains('preciseLocateJs: preciseLocateJs,'),
+        reason: '_navigateToChapter 必须把定位意图交给 _beginNavigation');
   });
 
   test('_applyPendingPreciseLocate 有代际守卫且消费一次', () {
@@ -73,11 +83,21 @@ void main() {
       'Future<void> _applyPendingPreciseLocate() async {',
       'debugPrint(\'[ReaderHibiki] _applyPendingPreciseLocate failed',
     );
-    // 先无条件清空（消费一次），再代际守卫（顶掉即丢弃）。
-    expect(body, contains('_pendingPreciseLocate = null;'), reason: '消费一次即清空');
-    expect(body,
-        contains('if (pending.generation != _navigateGeneration) return;'),
-        reason: '代际不匹配（被更晚导航顶掉）→ 丢弃，绝不应用到错误章节');
+    expect(body, contains('_preciseLocateQueue.consume('),
+        reason: '消费必须经过 last-write-wins 队列的一次性代际守卫');
+    expect(body, contains('generation: _navigateGeneration,'),
+        reason: '只消费当前导航代际');
+    expect(body, contains('canApply: mounted && _controller != null,'),
+        reason: 'dispose/控制器释放后必须丢弃 pending，不执行旧 DOM 脚本');
+  });
+
+  test('dispose 立即中止导航等待并清除 pending', () {
+    final String body = slice(
+      'void dispose() {',
+      'super.dispose();',
+    );
+    expect(body, contains('_failNavigation();'),
+        reason: 'dispose 必须立即 complete(false) 并清 pending，不能让搜索回调挂到超时');
   });
 
   test('_onRestoreComplete 在 settle 之后应用 pending（分派互斥：非连续直接 / 连续走 reanchor）',
@@ -107,7 +127,7 @@ void main() {
         reason: '连续模式在 reanchor commit（settle）之后应用 pending');
   });
 
-  test('onSearchJump 跨章走 preciseLocateJs 队列、删除 !ok 早退', () {
+  test('onSearchJump 按 logical chapter + DOM ready 分流，跨章排队且同章在飞最后写胜出', () {
     final String body = slice(
       'onSearchJump: (BookSearchResult result, String query) async {',
       'favoriteSentences: favorites,',
@@ -116,6 +136,17 @@ void main() {
     expect(body, contains('preciseLocateJs:'), reason: '跨章搜索定位必须排进导航的原子恢复链');
     expect(body, contains('scrollToSearchMatchInvocation'),
         reason: '搜索定位仍用 scrollToSearchMatch（文本命中）');
+    expect(body, contains('decideReaderSearchJump('),
+        reason: '不得只比较 sectionIndex/currentChapter；必须同时判断 DOM ready');
+    expect(
+        body,
+        contains(
+            'if (!mounted || _book == null || _controller == null) return;'),
+        reason: '搜索弹层回调晚到 dispose 后不得继续排队或求值旧 WebView');
+    expect(body, contains('ReaderSearchJumpAction.replacePending'),
+        reason: '同一逻辑目标章仍在 restore 时，新选择必须替换本代 pending');
+    expect(body, contains('_preciseLocateQueue.replace('),
+        reason: '最后一次同章选择必须成为 settle 后唯一执行的定位');
     // 旧的首跳 !ok 早退（停在章首、要点两次）必须已删除。
     expect(body.contains('if (!ok'), isFalse,
         reason: '删掉 !ok 早退——定位随恢复落定 settle 之后确定性应用，不再靠第二次点');

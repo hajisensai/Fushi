@@ -162,8 +162,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     final String joinedPath = p.join(_extractDir!, epubPath);
     final String normExtractDir = p.normalize(_extractDir!);
     final String filePath = p.normalize(joinedPath);
-    if (!p.isWithin(
-        p.canonicalize(_extractDir!), p.canonicalize(joinedPath))) {
+    if (!p.isWithin(p.canonicalize(_extractDir!), p.canonicalize(joinedPath))) {
       return _forbidden('path traversal blocked: $epubPath');
     }
     final File file = File(filePath);
@@ -557,8 +556,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     try {
       // BUG-1218：真实 stat 路径保留大小写（越界判据仍走 canonicalize）。
       final String joined = p.join(extractDir, relativeHref);
-      if (!p.isWithin(
-          p.canonicalize(extractDir), p.canonicalize(joined))) {
+      if (!p.isWithin(p.canonicalize(extractDir), p.canonicalize(joined))) {
         return 0;
       }
       final String filePath = p.normalize(joined);
@@ -608,7 +606,10 @@ extension _ReaderWebView on _ReaderHibikiPageState {
   ///
   /// 这里聚齐的就是**改动前逐个插进脚本源码的那些值**——现在改成一份小 JSON 随
   /// boot 下发，引擎运行时读取。新增 per-nav 参数一律加在这里，不得回到脚本里插值。
-  ReaderEngineConfig _buildReaderEngineConfig({String? sasayakiCuesJson}) {
+  ReaderEngineConfig _buildReaderEngineConfig({
+    required int navigationGeneration,
+    String? sasayakiCuesJson,
+  }) {
     final ReaderSettings s = _settings!;
     // TODO-113: 滑动翻页距离阈值随灵敏度系数缩放。基础值 44px（纯距离触发）/ 22px
     // （配合速度的快速短滑触发），系数 1.0 = 默认「轻快」手感，越大越迟钝（需滑得更远）。
@@ -639,6 +640,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     _paginatedWidth = screenSize.width;
     _paginatedHeight = screenSize.height;
     return ReaderEngineConfig(
+      navigationGeneration: navigationGeneration,
       continuousMode: continuousMode,
       vnMode: vnMode,
       vnClickAdvance: vnMode && vnClickAdvanceM0ForceOn,
@@ -1813,12 +1815,24 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
 
         controller.addJavaScriptHandler(
           handlerName: 'onRestoreComplete',
-          // args[0] = JS 侧 perfSnapshot()（跨章分段计时诊断，见
-          // ReaderChapterPerfTrace）；恢复流程本身不依赖它，缺失/为空都无碍，故在
-          // handler 里就地消费，不进 _onRestoreComplete 的签名。
+          // args[0] = JS 侧 perfSnapshot()；args[1] = 文档安装引擎时捕获的
+          // navigationGeneration。代次缺失/失配一律不能完成当前 restore，更不能
+          // 消费当前代 pending。
           callback: (List<dynamic> args) {
-            ReaderChapterPerfTrace.noteJs(args.isEmpty ? null : args.first);
-            _onRestoreComplete();
+            if (args.length < 2 || args[1] is! num) {
+              debugPrint('[ReaderHibiki] onRestoreComplete missing generation');
+              return;
+            }
+            final num rawGeneration = args[1] as num;
+            if (!rawGeneration.isFinite ||
+                rawGeneration != rawGeneration.toInt()) {
+              debugPrint('[ReaderHibiki] onRestoreComplete invalid generation');
+              return;
+            }
+            _acceptRestoreComplete(
+              reportedGeneration: rawGeneration.toInt(),
+              perfSnapshot: args.first,
+            );
           },
         );
 
@@ -2408,8 +2422,10 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       // per-nav 参数走 config，引擎源码按 view-mode memoized。两半拼成**一次**
       // evaluateJavascript 发出去——注入通道与执行时刻都与改动前逐字相同，省掉的是
       // Dart 侧每章重新拼装 + 压缩近万行（实测 buildSetupScript 中位数 9ms）。
-      final ReaderEngineConfig engineConfig =
-          _buildReaderEngineConfig(sasayakiCuesJson: sasayakiCuesJson);
+      final ReaderEngineConfig engineConfig = _buildReaderEngineConfig(
+        navigationGeneration: gen,
+        sasayakiCuesJson: sasayakiCuesJson,
+      );
       final String engineSource = readerEngineSource(
         vnMode: engineConfig.vnMode,
         continuousMode: engineConfig.continuousMode,

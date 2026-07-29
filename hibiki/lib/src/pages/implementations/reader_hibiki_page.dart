@@ -60,6 +60,7 @@ import 'package:hibiki/src/reader/reader_content_styles.dart';
 import 'package:hibiki/src/reader/image_reveal_key.dart';
 import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
+import 'package:hibiki/src/reader/reader_search_navigation.dart';
 import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_chrome_floating.dart';
@@ -1162,7 +1163,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   // _applyPendingPreciseLocate 在恢复落定且 settle 之后消费。代际用于并发导航去重（顶掉后
   // 代际不匹配即丢弃，不误用到别的章）。null=无待处理。书签/收藏/字符跳转把分数烘进导航
   // （_navigateToChapterAndWait 的 progress），单次原子恢复直接落点，不入本队列。
-  ({int generation, String js})? _pendingPreciseLocate;
+  final ReaderPreciseLocateQueue _preciseLocateQueue =
+      ReaderPreciseLocateQueue();
 
   double _stableTopInset = 0;
   double _stableBottomInset = 0;
@@ -2018,6 +2020,10 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   @override
   void dispose() {
+    // Search navigation can still be awaiting restore while the route closes.
+    // Complete it as failed now (and clear its precise-locate request) instead
+    // of leaving the callback alive until the 10-second timeout.
+    _failNavigation();
     assert(() {
       ReaderHibikiPage.debugEvaluateJavascript = null;
       ReaderHibikiPage.debugCaptureWebView = null;

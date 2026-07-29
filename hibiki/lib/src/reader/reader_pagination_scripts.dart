@@ -1060,7 +1060,11 @@ window.__hoshiInstallShell = function(C) {
   notifyRestoreComplete: function() {
     this.perfMark('restoreDone');
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-      window.flutter_inappwebview.callHandler('onRestoreComplete', this.perfSnapshot());
+      window.flutter_inappwebview.callHandler(
+        'onRestoreComplete',
+        this.perfSnapshot(),
+        C.navigationGeneration
+      );
     }
     if (typeof this.warmPaginationMetrics === 'function') {
       this.warmPaginationMetrics();

@@ -164,8 +164,7 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     // BUG-1218：真实路径保留大小写（越界判据仍走 canonicalize），否则大小写敏感
     // 平台上图片查看器/分享取不到 EPUB 内插图。
     final String joined = p.join(_extractDir!, epubPath);
-    if (!p.isWithin(
-        p.canonicalize(_extractDir!), p.canonicalize(joined))) {
+    if (!p.isWithin(p.canonicalize(_extractDir!), p.canonicalize(joined))) {
       return null;
     }
     final String filePath = p.normalize(joined);
@@ -1517,32 +1516,46 @@ extension _ReaderChrome on _ReaderHibikiPageState {
         epubBook: _book,
         chapterLabel: _currentChapterLabel(),
         onSearchJump: (BookSearchResult result, String query) async {
-          if (_book == null || _controller == null) return;
-          if (result.sectionIndex != _currentChapter) {
-            // TODO-1309：跨章搜索跳转把「章内定位」排进导航的原子恢复链（settle 之后应用），
-            // 不再在 restore 完成微任务里抢发被 settle-reflow / 连续重锚采样冲回章首（双跳，
-            // 首跳只到章节）。去掉旧的首跳失败早退分支——旧代码首跳超时/代际 stale 时会停在
-            // 章首、要点第二次才走「同章直接 restore」才生效；现在定位随恢复落定 settle
-            // 之后由 _applyPendingPreciseLocate 确定性应用。文本命中无法用分数烘进 shell，故走
-            // preciseLocateJs 队列（书签/收藏用 progress 烘进导航）。
-            await _navigateToChapterAndWait(
-              result.sectionIndex,
-              manual: true,
-              preciseLocateJs:
-                  ReaderPaginationScripts.scrollToSearchMatchInvocation(
-                query,
-                result.charOffset,
-              ),
-            );
-            return;
-          }
-          // 同章：章节已 settle，直接定位（既有正常路径，双跳的「第二次点」本就走这里）。
-          await _controller!.evaluateJavascript(
-            source: ReaderPaginationScripts.scrollToSearchMatchInvocation(
-              query,
-              result.charOffset,
-            ),
+          if (!mounted || _book == null || _controller == null) return;
+          final String preciseLocateJs =
+              ReaderPaginationScripts.scrollToSearchMatchInvocation(
+            query,
+            result.charOffset,
           );
+          final ReaderSearchJumpAction action = decideReaderSearchJump(
+            targetChapter: result.sectionIndex,
+            currentChapter: _currentChapter,
+            restoreInFlight: _restoreInFlight,
+            readerContentReady: _readerContentReady,
+          );
+          switch (action) {
+            case ReaderSearchJumpAction.navigate:
+              // TODO-1309：跨章搜索跳转把「章内定位」排进导航的原子恢复链（settle 之后应用），
+              // 不再在 restore 完成微任务里抢发被 settle-reflow / 连续重锚采样冲回章首（双跳，
+              // 首跳只到章节）。去掉旧的首跳失败早退分支——旧代码首跳超时/代际 stale 时会停在
+              // 章首、要点第二次才走「同章直接 restore」才生效；现在定位随恢复落定 settle
+              // 之后由 _applyPendingPreciseLocate 确定性应用。文本命中无法用分数烘进 shell，故走
+              // preciseLocateJs 队列（书签/收藏用 progress 烘进导航）。
+              await _navigateToChapterAndWait(
+                result.sectionIndex,
+                manual: true,
+                preciseLocateJs: preciseLocateJs,
+              );
+              return;
+            case ReaderSearchJumpAction.replacePending:
+              // _currentChapter 在 loadUrl 前就切到逻辑目标章。DOM 尚未 ready 时再次选择
+              // 同章结果，必须更新本导航代际的 pending；直接 evaluate 会命中旧 DOM，
+              // 且首条 pending 会在 restore settle 后反过来覆盖用户最后一次选择。
+              _preciseLocateQueue.replace(
+                generation: _navigateGeneration,
+                js: preciseLocateJs,
+              );
+              return;
+            case ReaderSearchJumpAction.evaluateNow:
+              // 同章且 DOM 已 settle：直接定位（既有正常路径）。
+              await _controller!.evaluateJavascript(source: preciseLocateJs);
+              return;
+          }
         },
         favoriteSentences: favorites,
         favoritePositionLabel: _favoritePositionLabel,
