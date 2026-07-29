@@ -116,6 +116,9 @@ class AudiobookSession extends ChangeNotifier {
   bool get hasReaderAttached => _reader != null;
 
   ReaderAudiobookView? _reader;
+  final OwnerEpochRegistry<ReaderAudiobookView, AudiobookPlayerController>
+      _readerOwnership =
+      OwnerEpochRegistry<ReaderAudiobookView, AudiobookPlayerController>();
 
   // ── audioHandler 控制流订阅（进程级，脱离 reader） ─────────────────────────
   StreamSubscription<void>? _playStreamSub;
@@ -212,17 +215,65 @@ class AudiobookSession extends ChangeNotifier {
 
   /// 装 reader WebView 侧回调：正文跟随高亮 / 跨章导航 / 边界跳句 / cue 变化。
   /// 只在 reader 在场期间生效。重复 attach（同一 reader 重建）覆盖即可。
-  void attachReader(ReaderAudiobookView reader) {
+  ReaderAudiobookAttachment? attachReader(ReaderAudiobookView reader) {
     final AudiobookPlayerController? controller = _controller;
     _reader = reader;
-    if (controller != null) {
-      controller.getCurrentReaderSection = reader.getCurrentReaderSection;
-      controller.onCrossChapter = reader.onCueCrossChapter;
-      controller.onBoundarySkip = reader.onBoundarySkip;
-      // BUG-1107：显式跳句（skipToCue 漏斗）→ reader 抬阅读统计字数水位到目标
-      // cue（音频跳过的段落不算已读）。
-      controller.onExplicitCueJump = reader.onExplicitCueJump;
+    if (controller == null) {
+      _readerOwnership.invalidate();
+      return null;
     }
+    // 一个进程级 controller 可被退出后立即重进的 reader State 复用。attach 是
+    // ownership 边界：先原子清掉上个 owner 的图片序列/跨章旗，再发新 epoch。
+    controller.resetReaderTransitionState();
+    final ReaderAudiobookAttachment attachment =
+        _readerOwnership.attach(reader, controller);
+    controller.getCurrentReaderSection = reader.getCurrentReaderSection;
+    controller.onCrossChapter = reader.onCueCrossChapter;
+    controller.onBoundarySkip = reader.onBoundarySkip;
+    // BUG-1107：显式跳句（skipToCue 漏斗）→ reader 抬阅读统计字数水位到目标
+    // cue（音频跳过的段落不算已读）。
+    controller.onExplicitCueJump = reader.onExplicitCueJump;
+    return attachment;
+  }
+
+  /// 当前 reader 是否仍拥有 attach 时捕获的 controller + owner epoch。
+  bool ownsReaderAttachment(
+    ReaderAudiobookView reader,
+    ReaderAudiobookAttachment? attachment,
+  ) {
+    return attachment != null &&
+        identical(_reader, reader) &&
+        identical(_controller, attachment.controller) &&
+        _readerOwnership.owns(reader, attachment);
+  }
+
+  /// 在 captured controller / reader owner / navigation generation 都仍是
+  /// 当前值时才允许修改共享 controller transition 状态。
+  bool runIfCurrentReaderNavigation(
+    ReaderAudiobookView reader,
+    ReaderAudiobookAttachment? attachment, {
+    required int expectedNavigationGeneration,
+    required int currentNavigationGeneration,
+    required void Function(AudiobookPlayerController controller) action,
+  }) {
+    if (expectedNavigationGeneration != currentNavigationGeneration ||
+        !ownsReaderAttachment(reader, attachment)) {
+      return false;
+    }
+    action(attachment!.controller);
+    return true;
+  }
+
+  /// owner 仍当前即可执行；用于清掉同一 reader 被更新导航顶替的旧图片序列 active
+  /// 位。新 reader attach 会换 epoch，因此旧 continuation 仍绝不可能触碰新 owner。
+  bool runIfCurrentReaderOwner(
+    ReaderAudiobookView reader,
+    ReaderAudiobookAttachment? attachment, {
+    required void Function(AudiobookPlayerController controller) action,
+  }) {
+    if (!ownsReaderAttachment(reader, attachment)) return false;
+    action(attachment!.controller);
+    return true;
   }
 
   /// 退出 reader：把 WebView 侧回调清成「无 reader」安全默认，但不 dispose 控制器。
@@ -235,15 +286,16 @@ class AudiobookSession extends ChangeNotifier {
   void detachReader(ReaderAudiobookView reader) {
     if (!identical(_reader, reader)) return;
     _reader = null;
+    _readerOwnership.detach(reader);
     final AudiobookPlayerController? controller = _controller;
     if (controller != null) {
       controller.getCurrentReaderSection = () => -1;
       controller.onCrossChapter = null;
       controller.onBoundarySkip = null;
       controller.onExplicitCueJump = null;
-      // 离开 reader 时把跨章守卫复位，避免 reader 在跳章 await 中途离开导致
-      // _chapterTransition 卡 true，会话继续播却永不推进 cue。
-      controller.cancelChapterTransition();
+      // 离开 reader 时原子清图片序列 + 跨章守卫。旧 await continuation 的 epoch
+      // 已失效，之后任何 finally/cancel 都会被 ownership 门拒绝。
+      controller.resetReaderTransitionState();
     }
     // 退 reader 后悬浮窗换回 app 级默认主题样式 + 默认查词（桌面后台听书点词无弹窗宿主）。
     restoreDefaultSurfaces();
@@ -253,6 +305,7 @@ class AudiobookSession extends ChangeNotifier {
   Future<void> stop() async {
     final AudiobookPlayerController? controller = _controller;
     _reader = null;
+    _readerOwnership.invalidate();
     _controller = null;
     _book = null;
     // TODO-831：同步清空 _book/_controller 后立即通知一次，让监听者（书架
@@ -559,6 +612,7 @@ class AudiobookSession extends ChangeNotifier {
     _controller = null;
     _book = null;
     _reader = null;
+    _readerOwnership.invalidate();
     super.dispose();
   }
 }
@@ -582,6 +636,78 @@ abstract class ReaderAudiobookView {
 
   /// 控制器 cue / 播放态变化：reader 更新 WebView 正文高亮 / lyrics / 进度。
   void onReaderCueChanged();
+}
+
+/// 资源 attach 时捕获的 owner identity + 递增 epoch 凭证。
+@immutable
+class OwnerEpochAttachment<Owner extends Object, Resource extends Object> {
+  const OwnerEpochAttachment._({
+    required this.owner,
+    required this.resource,
+    required this.ownerEpoch,
+  });
+
+  final Owner owner;
+  final Resource resource;
+  final int ownerEpoch;
+}
+
+/// 共享资源的 owner epoch 真相源。
+///
+/// 同一个资源实例可被相邻 owner 复用，identity 不足以区分旧 continuation；每次
+/// attach/detach/invalidate 都递增 epoch，使旧凭证确定性失效。
+class OwnerEpochRegistry<Owner extends Object, Resource extends Object> {
+  int _ownerEpoch = 0;
+  Owner? _owner;
+  Resource? _resource;
+  OwnerEpochAttachment<Owner, Resource>? _attachment;
+
+  OwnerEpochAttachment<Owner, Resource> attach(
+    Owner owner,
+    Resource resource,
+  ) {
+    _ownerEpoch++;
+    _owner = owner;
+    _resource = resource;
+    final OwnerEpochAttachment<Owner, Resource> attachment =
+        OwnerEpochAttachment<Owner, Resource>._(
+      owner: owner,
+      resource: resource,
+      ownerEpoch: _ownerEpoch,
+    );
+    _attachment = attachment;
+    return attachment;
+  }
+
+  void detach(Owner owner) {
+    if (!identical(_owner, owner)) return;
+    invalidate();
+  }
+
+  void invalidate() {
+    _ownerEpoch++;
+    _owner = null;
+    _resource = null;
+    _attachment = null;
+  }
+
+  bool owns(
+    Owner owner,
+    OwnerEpochAttachment<Owner, Resource>? attachment,
+  ) {
+    return attachment != null &&
+        identical(_owner, owner) &&
+        identical(_resource, attachment.resource) &&
+        identical(_attachment, attachment) &&
+        attachment.ownerEpoch == _ownerEpoch;
+  }
+}
+
+typedef ReaderAudiobookAttachment
+    = OwnerEpochAttachment<ReaderAudiobookView, AudiobookPlayerController>;
+
+extension ReaderAudiobookAttachmentController on ReaderAudiobookAttachment {
+  AudiobookPlayerController get controller => resource;
 }
 
 /// 当前会话书的元数据快照（脱离 reader 页持有，供后台 / 迷你条 / 通知读取）。

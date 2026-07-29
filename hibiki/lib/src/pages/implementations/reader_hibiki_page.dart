@@ -61,6 +61,7 @@ import 'package:hibiki/src/reader/image_reveal_key.dart';
 import 'package:hibiki/src/reader/reader_resource_sanitizer.dart';
 import 'package:hibiki/src/reader/reader_pagination_scripts.dart';
 import 'package:hibiki/src/reader/reader_search_navigation.dart';
+import 'package:hibiki/src/reader/reader_navigation_lifecycle.dart';
 import 'package:hibiki/src/reader/reader_selection_data.dart';
 import 'package:hibiki/src/reader/reader_selection_scripts.dart';
 import 'package:hibiki/src/reader/reader_chrome_floating.dart';
@@ -1109,8 +1110,43 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// 子类持有的这个转发器统一承接。part 中的异步回调可能在 route dispose 后才返回；
   /// 此时状态已不可再更新，统一在转发边界丢弃，避免晚到回调触发 setState-after-dispose。
   void _rebuild(VoidCallback fn) {
-    if (!mounted) return;
-    setState(fn);
+    runReaderRebuildIfMounted(
+      mounted: mounted,
+      rebuild: () => setState(fn),
+    );
+  }
+
+  bool _ownsAudiobookNavigation(
+    ReaderAudiobookAttachment? attachment,
+    int navigationGeneration,
+  ) {
+    return navigationGeneration == _navigateGeneration &&
+        appModel.audiobookSession.ownsReaderAttachment(this, attachment);
+  }
+
+  bool _runOwnedAudiobookNavigationMutation(
+    ReaderAudiobookAttachment? attachment,
+    int navigationGeneration,
+    void Function(AudiobookPlayerController controller) action,
+  ) {
+    return appModel.audiobookSession.runIfCurrentReaderNavigation(
+      this,
+      attachment,
+      expectedNavigationGeneration: navigationGeneration,
+      currentNavigationGeneration: _navigateGeneration,
+      action: action,
+    );
+  }
+
+  bool _runOwnedAudiobookReaderMutation(
+    ReaderAudiobookAttachment? attachment,
+    void Function(AudiobookPlayerController controller) action,
+  ) {
+    return appModel.audiobookSession.runIfCurrentReaderOwner(
+      this,
+      attachment,
+      action: action,
+    );
   }
 
   /// 同 [_rebuild] 的理由：part 扩展不被视作 State 子类实例成员，直接读写
@@ -1342,6 +1378,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   final Set<String> _revealedImageKeys = <String>{};
 
   AudiobookPlayerController? _audiobookController;
+  ReaderAudiobookAttachment? _audiobookAttachment;
   String? _audiobookBookKey;
   String? _srtBookUid;
   Map<int, int>? _srtCueChapterMap;
@@ -2087,6 +2124,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     // - 开启（=true）：只 detachReader，控制器留在 [AudiobookSession] 进程级常驻
     //   持有者里继续后台播放（保 TODO-291 阶段2 的后台续播）。
     appModel.audiobookSession.detachReader(this);
+    _audiobookAttachment = null;
     if (!appModel.audiobookBackgroundPlay) {
       // fire-and-forget 必须 catchError：dispose 同步签名无法 await，stop 内
       // stopPlayback 在 await 边界后若抛平台异常（native 解码器半销毁），会逃进

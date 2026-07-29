@@ -241,6 +241,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       // 旧引用是 session 控制器：先 detach（不 dispose）。reader 字段清掉等下面重接。
       session.detachReader(this);
       _audiobookController = null;
+      _audiobookAttachment = null;
       _audiobookBookKey = null;
       _srtBookUid = null;
       _srtCueChapterMap = null;
@@ -288,9 +289,10 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       }
     }
     _installReaderSessionSurfaces(session);
-    session.attachReader(this);
+    final ReaderAudiobookAttachment? attachment = session.attachReader(this);
     _rebuild(() {
       _audiobookController = controller;
+      _audiobookAttachment = attachment;
     });
     // 同步一次当前 cue 到 WebView（暂停态也即时高亮）。
     _onCueChanged();
@@ -329,9 +331,10 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       _audiobookBookKey = req.info.bookKey;
     }
     _installReaderSessionSurfaces(session);
-    session.attachReader(this);
+    final ReaderAudiobookAttachment? attachment = session.attachReader(this);
     _rebuild(() {
       _audiobookController = controller;
+      _audiobookAttachment = attachment;
     });
   }
 
@@ -646,15 +649,34 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
   }
 
   Future<void> _handleCueCrossChapter(int newSection) async {
+    final ReaderAudiobookAttachment? attachment = _audiobookAttachment;
+    final int initialNavigationGeneration = _navigateGeneration;
+    if (!_ownsAudiobookNavigation(
+      attachment,
+      initialNavigationGeneration,
+    )) {
+      return;
+    }
+
+    void cancelOwnedTransition(int navigationGeneration) {
+      _runOwnedAudiobookNavigationMutation(
+        attachment,
+        navigationGeneration,
+        (AudiobookPlayerController controller) {
+          controller.cancelChapterTransition();
+        },
+      );
+    }
+
     if (_lyricsMode) {
-      _audiobookController?.cancelChapterTransition();
+      cancelOwnedTransition(initialNavigationGeneration);
       return;
     }
     if (_restoreInFlight ||
         _book == null ||
         newSection < 0 ||
         newSection >= _book!.chapters.length) {
-      _audiobookController?.cancelChapterTransition();
+      cancelOwnedTransition(initialNavigationGeneration);
       return;
     }
     // TODO-807（路径 B 守卫）：sasayaki 跨章用 frag.sectionIndex 当真实章 index，
@@ -662,7 +684,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     // 甩到目录。命中 nav 页则保位不跳（取消跳章守卫、保留当前章），与「反查不到
     // 不跳」语义一致，绝不归零到 index 0。
     if (_book!.isChapterNav(newSection)) {
-      _audiobookController?.cancelChapterTransition();
+      cancelOwnedTransition(initialNavigationGeneration);
       return;
     }
     // TODO-746: reuse the same sasayaki in-chapter progress formula the restore
@@ -676,7 +698,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     // char count transiently 0 before the lazy recompute lands) falls back to
     // 0.0 = that chapter's own start, which is the original behaviour for a
     // matched cue and is NOT a zero-to-chapter-1 (it is its real chapter).
-    final AudioCue? cue = _audiobookController?.currentCue;
+    final AudioCue? cue = attachment?.controller.currentCue;
     final SasayakiFragment? frag =
         cue == null ? null : SasayakiMatchCodec.tryDecode(cue.textFragmentId);
     double? progress;
@@ -689,13 +711,24 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     // TODO-1037：cue 驱动的跨章会一步跳过「独立成章的纯图片页」（无 cue 故从不
     // 被推进看见），图片等待对它彻底失效。跨章落定前先把中间纯图片章逐个导航过去
     // 并停留 imagePauseSec 秒，让用户看见每张整章插图，再继续到目标文本章。
-    await _pauseThroughImageOnlyChapters(newSection);
-    // BUG-1246：图片章停留会跨越多个 await；期间 route 可能已 dispose。
-    // dispose 会 detach reader，但已经在飞的回调仍会从上面的 Future 返回。此时既不能
-    // 再进入 _navigateToChapter/setState，也不能把图片序列 finally 持住的跨章守卫
-    // 留给进程级有声书 session；取消本次 transition 后终止旧 reader 的导航。
-    if (!mounted || _controller == null) {
-      _audiobookController?.cancelChapterTransition();
+    final ReaderImageChapterSequenceResult imageSequence =
+        await _pauseThroughImageOnlyChapters(
+      newSection,
+      attachment: attachment!,
+      initialNavigationGeneration: initialNavigationGeneration,
+    );
+    // BUG-1246：图片章停留会跨越多个 await。只有 captured controller + reader
+    // owner epoch + 该序列最后一代 navigation 仍同时当前，才允许最终跳目标章。
+    // dispose→立即重进或同 State 新导航都会让这里失主；旧 continuation 既不导航，
+    // 也不能 cancel 新 owner / 新 generation 的 transition。
+    if (!imageSequence.completed ||
+        !_ownsAudiobookNavigation(
+          attachment,
+          imageSequence.navigationGeneration,
+        ) ||
+        !mounted ||
+        _controller == null) {
+      cancelOwnedTransition(imageSequence.navigationGeneration);
       return;
     }
     await _navigateToChapter(newSection, progress: progress ?? 0.0);
@@ -720,10 +753,22 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
   /// [AudiobookPlayerController.holdChapterTransition] 守卫——否则每个中间章载入完成
   /// 的 `notifySectionRestoreCompleted` 会把 `_chapterTransition` 清回 false，下一
   /// tick 可能重入 `onCrossChapter` 乱跳。
-  Future<void> _pauseThroughImageOnlyChapters(int targetSection) async {
-    final AudiobookPlayerController? controller = _audiobookController;
-    if (controller == null || _book == null || _imageChapterPauseInFlight) {
-      return;
+  Future<ReaderImageChapterSequenceResult> _pauseThroughImageOnlyChapters(
+    int targetSection, {
+    required ReaderAudiobookAttachment attachment,
+    required int initialNavigationGeneration,
+  }) async {
+    final AudiobookPlayerController controller = attachment.controller;
+    if (_book == null ||
+        _imageChapterPauseInFlight ||
+        !_ownsAudiobookNavigation(
+          attachment,
+          initialNavigationGeneration,
+        )) {
+      return ReaderImageChapterSequenceResult(
+        completed: false,
+        navigationGeneration: initialNavigationGeneration,
+      );
     }
     final List<int> imageChapters = imageOnlyChaptersToPauseBetween(
       fromChapter: _currentChapter,
@@ -733,7 +778,12 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       isImageOnly: _book!.isImageOnlyChapter,
       isNav: _book!.isChapterNav,
     );
-    if (imageChapters.isEmpty) return;
+    if (imageChapters.isEmpty) {
+      return ReaderImageChapterSequenceResult(
+        completed: true,
+        navigationGeneration: initialNavigationGeneration,
+      );
+    }
     _imageChapterPauseInFlight = true;
     // TODO-1037（重入竞态根因修复）：整段序列期间让控制器持住跨章守卫。每个中间章
     // 载入完成会**同步**调 notifySectionRestoreCompleted——它原本无条件清
@@ -741,37 +791,59 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     // 导航 await 返回后才发起）、cue 仍指目标文本章 → 重入 _maybeEmitCrossChapter
     // 一步跳过剩余图片章（f3e4d2e52 症状复现）。置此标志后 notifySectionRestoreCompleted
     // 见序列在途即保持守卫不放、不重算，序列收尾置回 false 由落到目标章的导航正常清。
-    controller.setImageChapterPauseActive(true);
     try {
-      // TODO-1128：被吸收单图片章与其宿主文本章共享同一虚拟页（图片内联在宿主顶部）。
-      // 连续多张被吸收图片会 resolve 到同一宿主——只在该宿主上停留一次，不逐图重载宿主
-      // （避免闪烁 + 重复停留）。非吸收图片章 resolve 到自身，行为不变。
-      int lastResolved = -1;
-      for (final int chapter in imageChapters) {
-        if (!mounted || _lyricsMode) break;
-        final int resolved = _resolveNavChapter(chapter);
-        if (resolved == lastResolved) continue;
-        lastResolved = resolved;
-        // 中间章载入完成会清掉 _chapterTransition；序列未结束前重新持住，防重入跨章。
-        controller.holdChapterTransition();
-        final bool loaded = await _navigateToChapterAndWait(chapter);
-        if (!mounted || _lyricsMode) break;
-        if (!loaded) continue;
-        // BUG-898：停留前揭开该纯图片章的防剧透模糊图（此路径无 cue，不经区间揭遮罩
-        // 原语 __hoshiRevealBlurredBetween，否则音频停在一张仍模糊的图上）。
-        final InAppWebViewController? webCtrl = _controller;
-        if (webCtrl != null) {
-          await AudiobookBridge.revealAllBlurred(webCtrl);
-        }
-        await controller.awaitImageChapterPause();
-      }
+      return await runReaderImageChapterSequence(
+        chapters: imageChapters,
+        initialNavigationGeneration: initialNavigationGeneration,
+        resolveChapter: _resolveNavChapter,
+        isCurrent: (int navigationGeneration) {
+          return mounted &&
+              !_lyricsMode &&
+              _ownsAudiobookNavigation(attachment, navigationGeneration);
+        },
+        markActive: () {
+          return _runOwnedAudiobookNavigationMutation(
+            attachment,
+            initialNavigationGeneration,
+            (AudiobookPlayerController ownedController) {
+              ownedController.setImageChapterPauseActive(true);
+            },
+          );
+        },
+        clearActiveIfOwner: () {
+          return _runOwnedAudiobookReaderMutation(
+            attachment,
+            (AudiobookPlayerController ownedController) {
+              ownedController.setImageChapterPauseActive(false);
+            },
+          );
+        },
+        holdTransition: (int navigationGeneration) {
+          return _runOwnedAudiobookNavigationMutation(
+            attachment,
+            navigationGeneration,
+            (AudiobookPlayerController ownedController) {
+              ownedController.holdChapterTransition();
+            },
+          );
+        },
+        navigate: (int chapter) async {
+          final ({bool loaded, int generation}) result =
+              await _navigateToChapterAndWaitWithGeneration(chapter);
+          return result;
+        },
+        reveal: () async {
+          // BUG-898：停留前揭开该纯图片章的防剧透模糊图（此路径无 cue，不经区间揭遮罩
+          // 原语 __hoshiRevealBlurredBetween，否则音频停在一张仍模糊的图上）。
+          final InAppWebViewController? webCtrl = _controller;
+          if (webCtrl != null) {
+            await AudiobookBridge.revealAllBlurred(webCtrl);
+          }
+        },
+        pause: controller.awaitImageChapterPause,
+      );
     } finally {
       _imageChapterPauseInFlight = false;
-      // 序列收尾：先解除控制器侧的序列守卫，再持住跨章守卫；最终的
-      // _navigateToChapter(targetSection) 会再触发一次 notifySectionRestoreCompleted，
-      // 此时 _imageChapterPauseActive 已为 false，正常清守卫并落到目标章。
-      controller.setImageChapterPauseActive(false);
-      controller.holdChapterTransition();
     }
   }
 

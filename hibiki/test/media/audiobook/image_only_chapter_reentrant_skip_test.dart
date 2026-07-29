@@ -96,13 +96,17 @@ void main() {
         'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
       ).readAsStringSync();
       expect(
-          src.contains('controller.setImageChapterPauseActive(true);'), isTrue);
-      expect(src.contains('controller.setImageChapterPauseActive(false);'),
-          isTrue);
+        src.contains('ownedController.setImageChapterPauseActive(true);'),
+        isTrue,
+      );
+      expect(
+        src.contains('ownedController.setImageChapterPauseActive(false);'),
+        isTrue,
+      );
       final int onIdx =
-          src.indexOf('controller.setImageChapterPauseActive(true);');
+          src.indexOf('ownedController.setImageChapterPauseActive(true);');
       final int offIdx =
-          src.indexOf('controller.setImageChapterPauseActive(false);');
+          src.indexOf('ownedController.setImageChapterPauseActive(false);');
       expect(onIdx >= 0 && offIdx > onIdx, isTrue,
           reason: 'set true at entry, false in finally');
     });

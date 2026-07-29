@@ -453,9 +453,22 @@ class AudiobookPlayerController extends ChangeNotifier {
     _imageChapterPauseActive = active;
   }
 
+  /// reader attach/detach ownership 边界的原子复位。
+  ///
+  /// controller 是进程级会话对象，可被相邻两个 reader State 复用；只清
+  /// `_chapterTransition` 会让旧 State 的图片序列 active 位泄漏给新 owner。
+  void resetReaderTransitionState() {
+    _imageChapterPauseActive = false;
+    _chapterTransition = false;
+  }
+
   /// 测试用：暴露 [_chapterTransition] 守卫当前是否持住，便于断言重入竞态修复。
   @visibleForTesting
   bool get chapterTransitionHeldForTesting => _chapterTransition;
+
+  /// 测试用：验证旧 reader continuation 没有清掉新 owner 的图片序列。
+  @visibleForTesting
+  bool get imageChapterPauseActiveForTesting => _imageChapterPauseActive;
 
   /// 是否正在播放。
   bool get isPlaying => _player.playing;

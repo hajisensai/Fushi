@@ -147,9 +147,16 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       ReaderChapterPerfTrace.end();
     }
 
-    _audiobookController?.notifySectionRestoreCompleted(
-      currentReaderSection: _currentChapter,
-      success: true,
+    final ReaderAudiobookAttachment? audiobookAttachment = _audiobookAttachment;
+    _runOwnedAudiobookNavigationMutation(
+      audiobookAttachment,
+      _restoreExpectedGeneration,
+      (AudiobookPlayerController controller) {
+        controller.notifySectionRestoreCompleted(
+          currentReaderSection: _currentChapter,
+          success: true,
+        );
+      },
     );
 
     // BUG-1052：这里**不再**重锚任何会话时钟。本方法（恢复完成）每次重排版/重恢复
@@ -478,7 +485,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     return map.entryAt(virtual).chapterIndex;
   }
 
-  Future<void> _navigateToChapter(
+  Future<int?> _navigateToChapter(
     int index, {
     double progress = 0.0,
     int? charOffset,
@@ -486,48 +493,50 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     bool manual = false,
     String? preciseLocateJs,
   }) async {
-    if (!mounted ||
-        _book == null ||
-        index < 0 ||
-        index >= _book!.chapters.length) {
-      return;
-    }
-    if (_controller == null) {
-      return;
-    }
-    // TODO-1128：目标是被吸收的单图片章时，重定向到其宿主文本章的章首——被吸收图片只在
-    // 宿主正文顶部内联注入那一份，绝不再加载独立单图页（消除重复）。charOffset 归零锚
-    // （宿主顶部即那张图），progress 强制 0.0（内联图在最开头）。宿主本身不会被吸收，故幂等。
-    final int resolvedChapter = _resolveNavChapter(index);
-    if (resolvedChapter != index) {
-      index = resolvedChapter;
-      progress = 0.0;
-      charOffset = null;
-      charOffsetEnd = -1;
-    }
-    // TODO-807（纵深防御）：被动（有声书跟随）导航绝不落到 EPUB 目录/nav 页——
-    // 否则跨章会把用户甩到目录。manual=true 是用户显式跳章（TOC 点击 / 翻章
-    // 按钮），保留其自由不拦。被动命中 nav 页直接保位（不加载、不归零）。
-    if (!manual && _book!.isChapterNav(index)) {
-      return;
-    }
+    final int? generation = runReaderNavigationStartIfActive(
+      mounted: mounted,
+      hasBook: _book != null,
+      hasController: _controller != null,
+      validChapter:
+          _book != null && index >= 0 && index < _book!.chapters.length,
+      start: () {
+        // TODO-1128：目标是被吸收的单图片章时，重定向到其宿主文本章的章首——被吸收图片只在
+        // 宿主正文顶部内联注入那一份，绝不再加载独立单图页（消除重复）。charOffset 归零锚
+        // （宿主顶部即那张图），progress 强制 0.0（内联图在最开头）。宿主本身不会被吸收，故幂等。
+        final int resolvedChapter = _resolveNavChapter(index);
+        if (resolvedChapter != index) {
+          index = resolvedChapter;
+          progress = 0.0;
+          charOffset = null;
+          charOffsetEnd = -1;
+        }
+        // TODO-807（纵深防御）：被动（有声书跟随）导航绝不落到 EPUB 目录/nav 页——
+        // 否则跨章会把用户甩到目录。manual=true 是用户显式跳章（TOC 点击 / 翻章
+        // 按钮），保留其自由不拦。被动命中 nav 页直接保位（不加载、不归零）。
+        if (!manual && _book!.isChapterNav(index)) {
+          return -1;
+        }
 
-    if (manual) {
-      _audiobookController?.noteManualReaderNavigation();
-    }
-    _progressPollTimer?.cancel();
-    _flushReadingStats();
+        if (manual) {
+          _audiobookController?.noteManualReaderNavigation();
+        }
+        _progressPollTimer?.cancel();
+        _flushReadingStats();
 
-    // BUG-162: 普通翻章去新位置，无该章精确锚 → -1 走分数；同章程序化重分页可显式
-    // 传 charOffset 保不动点。
-    _beginNavigation(
-      chapter: index,
-      progress: progress,
-      charOffset: charOffset ?? -1,
-      charOffsetEnd: charOffsetEnd,
-      preciseLocateJs: preciseLocateJs,
+        // BUG-162: 普通翻章去新位置，无该章精确锚 → -1 走分数；同章程序化重分页可显式
+        // 传 charOffset 保不动点。
+        _beginNavigation(
+          chapter: index,
+          progress: progress,
+          charOffset: charOffset ?? -1,
+          charOffsetEnd: charOffsetEnd,
+          preciseLocateJs: preciseLocateJs,
+        );
+        _lastProgressCharOffset = _initialCharOffset;
+        return _navigateGeneration;
+      },
     );
-    _lastProgressCharOffset = _initialCharOffset;
+    if (generation == null || generation < 0) return null;
 
     ReaderChapterPerfTrace.begin('chapter=$index');
     try {
@@ -538,9 +547,31 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
       debugPrint('[ReaderHibiki] _navigateToChapter loadUrl failed: $e');
       _failNavigation();
     }
+    return generation;
   }
 
   Future<bool> _navigateToChapterAndWait(
+    int index, {
+    bool manual = false,
+    double progress = 0.0,
+    int? charOffset,
+    int charOffsetEnd = -1,
+    String? preciseLocateJs,
+  }) async {
+    final ({bool loaded, int generation}) result =
+        await _navigateToChapterAndWaitWithGeneration(
+      index,
+      manual: manual,
+      progress: progress,
+      charOffset: charOffset,
+      charOffsetEnd: charOffsetEnd,
+      preciseLocateJs: preciseLocateJs,
+    );
+    return result.loaded;
+  }
+
+  Future<({bool loaded, int generation})>
+      _navigateToChapterAndWaitWithGeneration(
     int index, {
     bool manual = false,
     double progress = 0.0,
@@ -562,12 +593,18 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     // 把收藏句的精确字符锚烘进同一条原子恢复链（_beginNavigation → shell
     // restoreToCharOffset），与冷启动 charAnchor 跳转（BUG-459）同构；[charOffsetEnd]
     // 句尾锚透传做整句对齐（BUG-461）。分数与字符锚二选一：charOffset 非空时优先。
-    await _navigateToChapter(index,
+    final int? generation = await _navigateToChapter(index,
         progress: progress,
         charOffset: charOffset,
         charOffsetEnd: charOffsetEnd,
         manual: manual,
         preciseLocateJs: preciseLocateJs);
+    if (generation == null || _navigateGeneration != generation) {
+      return (
+        loaded: false,
+        generation: generation ?? _navigateGeneration,
+      );
+    }
     final bool success = await _restoreCompleter?.future.timeout(
           const Duration(seconds: 10),
           onTimeout: () {
@@ -581,7 +618,12 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
           },
         ) ??
         false;
-    return success && _currentChapter == resolvedChapter;
+    return (
+      loaded: success &&
+          _navigateGeneration == generation &&
+          _currentChapter == resolvedChapter,
+      generation: generation,
+    );
   }
 
   /// TODO-1309：消费并应用排队的「章内精确定位」（当前仅跨章文本搜索跳转的

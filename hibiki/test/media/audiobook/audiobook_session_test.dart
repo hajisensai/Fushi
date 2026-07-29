@@ -207,6 +207,67 @@ void main() {
     expect(before.onBoundarySkip, isNull);
   });
 
+  test('attach/detach atomically reset image-sequence and transition flags',
+      () async {
+    final AudiobookSession session = await startedSession('a');
+    final AudiobookPlayerController controller = session.controller!;
+    final _FakeReader reader = _FakeReader(section: 3);
+
+    controller.setImageChapterPauseActive(true);
+    controller.holdChapterTransition();
+    session.attachReader(reader);
+    expect(controller.imageChapterPauseActiveForTesting, isFalse);
+    expect(controller.chapterTransitionHeldForTesting, isFalse);
+
+    controller.setImageChapterPauseActive(true);
+    controller.holdChapterTransition();
+    session.detachReader(reader);
+    expect(controller.imageChapterPauseActiveForTesting, isFalse);
+    expect(controller.chapterTransitionHeldForTesting, isFalse);
+  });
+
+  test('old attachment cannot mutate controller after immediate reattach',
+      () async {
+    final AudiobookSession session = await startedSession('a');
+    final AudiobookPlayerController controller = session.controller!;
+    final _FakeReader readerA = _FakeReader(section: 1);
+    final _FakeReader readerB = _FakeReader(section: 2);
+    final ReaderAudiobookAttachment leaseA = session.attachReader(readerA)!;
+
+    session.detachReader(readerA);
+    final ReaderAudiobookAttachment leaseB = session.attachReader(readerB)!;
+    controller.setImageChapterPauseActive(true);
+    controller.holdChapterTransition();
+
+    final bool oldRan = session.runIfCurrentReaderNavigation(
+      readerA,
+      leaseA,
+      expectedNavigationGeneration: 4,
+      currentNavigationGeneration: 4,
+      action: (AudiobookPlayerController owned) {
+        owned.setImageChapterPauseActive(false);
+        owned.cancelChapterTransition();
+      },
+    );
+    expect(oldRan, isFalse);
+    expect(controller.imageChapterPauseActiveForTesting, isTrue);
+    expect(controller.chapterTransitionHeldForTesting, isTrue);
+
+    final bool currentRan = session.runIfCurrentReaderNavigation(
+      readerB,
+      leaseB,
+      expectedNavigationGeneration: 5,
+      currentNavigationGeneration: 5,
+      action: (AudiobookPlayerController owned) {
+        owned.setImageChapterPauseActive(false);
+        owned.cancelChapterTransition();
+      },
+    );
+    expect(currentRan, isTrue, reason: '当前 owner 正控必须仍能收尾');
+    expect(controller.imageChapterPauseActiveForTesting, isFalse);
+    expect(controller.chapterTransitionHeldForTesting, isFalse);
+  });
+
   test('cue change forwards to reader while attached, stops after detach',
       () async {
     final AudiobookSession session = await startedSession('a');

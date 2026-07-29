@@ -41,7 +41,7 @@ void main() {
     expect(
       readerSource,
       matches(RegExp(
-        r'Future<void> _navigateToChapter\(\s*int index,\s*\{[\s\S]*?double progress = 0\.0,[\s\S]*?bool manual = false,[\s\S]*?\}\) async \{',
+        r'Future<int\?> _navigateToChapter\(\s*int index,\s*\{[\s\S]*?double progress = 0\.0,[\s\S]*?bool manual = false,[\s\S]*?\}\) async \{',
       )),
       reason:
           'The chapter navigation API must keep a manual flag even if additional restore-position parameters are added.',

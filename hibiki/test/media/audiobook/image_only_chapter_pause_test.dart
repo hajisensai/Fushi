@@ -176,11 +176,19 @@ void main() {
     });
 
     test('每个图片章导航后复用控制器 await-based 停留（不新造定时器）', () {
-      expect(src.contains('awaitImageChapterPause()'), isTrue);
+      expect(
+        src.contains('pause: controller.awaitImageChapterPause'),
+        isTrue,
+        reason: 'the lifecycle coordinator must await the controller pause',
+      );
     });
 
     test('序列期间持住 holdChapterTransition 防重入跨章', () {
-      expect(src.contains('holdChapterTransition()'), isTrue);
+      expect(
+        src.contains('ownedController.holdChapterTransition()'),
+        isTrue,
+        reason: 'transition mutation must go through the captured owner lease',
+      );
     });
   });
 
