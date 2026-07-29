@@ -56,6 +56,11 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       system_theme_channel_;
 
+  // BUG-1231: forwards an unmodified IME-owned physical Space press before
+  // Flutter turns VK_PROCESSKEY into a KeyEvent with physical/logical key 0.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      windows_ime_space_channel_;
+
   // Drives the standalone always-on-top desktop lyric strip (the Windows
   // counterpart of Android's FloatingLyricService). See floating_lyric_window.h.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>

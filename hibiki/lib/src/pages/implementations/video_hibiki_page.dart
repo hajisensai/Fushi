@@ -131,6 +131,7 @@ import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:hibiki/src/utils/misc/render_backend_service.dart';
 import 'package:hibiki/src/platform/desktop/macos_traffic_lights.dart';
 import 'package:hibiki/src/platform/screen_brightness_controller.dart';
+import 'package:hibiki/src/platform/windows_ime_space_channel.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
@@ -1664,6 +1665,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   @override
   void initState() {
     super.initState();
+    if (Platform.isWindows) {
+      WindowsImeSpaceChannel.setHandler(this, _handleWindowsImeSpaceDown);
+    }
     // 不在 initState 读 appModel.lowMemoryMode（它读 prefsRepo，未初始化会抛；
     // 错误态 smoke 用未初始化 AppModel）。先建空 controller，真实 lowMemory 留到
     // _seedWarmPopup（成功路径、必已初始化）再设——与 base_source_page 同范式。
@@ -3198,6 +3202,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
 
   @override
   void dispose() {
+    if (Platform.isWindows) {
+      WindowsImeSpaceChannel.clearHandler(this);
+    }
     WidgetsBinding.instance.removeObserver(this);
     // TODO-658/BUG-383: 摘除系统栏可见性回调（全局单例，避免退页后仍回调已释放 State）。
     if (isMobilePlatform) {
@@ -4247,6 +4254,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       () => unawaited(controller.playOrPause()),
     );
     return true;
+  }
+
+  /// BUG-1231：Windows runner 在 Flutter 丢掉 `VK_PROCESSKEY` 的 scan code 之前，
+  /// 把「无修饰的物理 Space 按下沿」经专用 channel 送到这里。
+  ///
+  /// 这条入口绕过 Focus 冒泡，故必须显式复刻页面快捷键的所有权边界：只有当前视频
+  /// 路由（窗口或 media_kit 全屏路由）可响应；文本框持焦时让给 IME；词典浮层可见时
+  /// 只关浮层；其余才按沉浸模式门控播放/暂停。普通半角 Space 仍走既有 KeyEvent /
+  /// SingleActivator 路径，本通道只接 native 已确认的 `VK_PROCESSKEY + Space scan code`。
+  void _handleWindowsImeSpaceDown() {
+    if (!mounted || _controller == null) return;
+    final ModalRoute<Object?>? owner =
+        _videoFullscreenActive ? _videoFullscreenRoute : ModalRoute.of(context);
+    if (owner != null && !owner.isCurrent) return;
+    if (focusedEditableText() != null) return;
+    if (_hasVisiblePopup) {
+      _dismissTopVisiblePopup();
+      return;
+    }
+    final VideoPlayerController controller = _controller!;
+    _runWhenImmersiveAllowsShortcuts(
+      () => unawaited(controller.playOrPause()),
+    );
   }
 
   /// TODO-1342：把整页子树包进手柄输入层。外层 [Actions] 接桌面轮询派发的

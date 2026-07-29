@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
+import 'package:hibiki/src/platform/windows_ime_space_channel.dart';
 
 import '../../pages/video_hibiki_page_source_corpus.dart';
 
@@ -17,7 +20,14 @@ import '../../pages/video_hibiki_page_source_corpus.dart';
 /// BUG-936：BUG-853 只认 `logicalKey == process` 这一种 IME 改写值，真机仍失效——日文 IME
 /// 在不同输入模式下把物理空格改写成的逻辑键未必是 `process`。改判据为「物理键是 Space +
 /// 逻辑键非裸 space」，覆盖 `process` 及任意其它 IME 改写值。
+///
+/// BUG-1231：前两轮仍建立在错误前提上。Flutter Windows 引擎会把 `VK_PROCESSKEY`
+/// 事件降成 physical/logical key 均为 0，Dart 层根本拿不到旧修复依赖的物理 Space。
+/// runner 必须在交给 Flutter 前从 Win32 lParam 的 scan code 识别 Space，再经专用
+/// MethodChannel 通知当前视频页。
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('isVideoImeSpacePlayPause', () {
     test('IME 改写成 process 的物理空格（无修饰、无文本框）→ 命中', () {
       expect(
@@ -116,5 +126,90 @@ void main() {
     // 真正接入最外层手柄 Focus 的 onKeyEvent（否则 helper 是死代码，IME 空格到不了它）。
     expect(src, contains('_handleVideoImeSpacePlayPause(event)'),
         reason: '_wrapVideoGamepadControls 的 Focus.onKeyEvent 必须先调 IME 空格回退');
+  });
+
+  test('BUG-1231 native IME Space channel 只派发约定方法并按 owner 清理', () async {
+    final Object owner = Object();
+    int calls = 0;
+    WindowsImeSpaceChannel.setHandler(owner, () => calls++);
+
+    await WindowsImeSpaceChannel.debugDispatch(
+      const MethodCall('unknownMethod'),
+    );
+    expect(calls, 0);
+
+    await WindowsImeSpaceChannel.debugDispatch(
+      const MethodCall('onImeSpaceDown'),
+    );
+    expect(calls, 1);
+
+    WindowsImeSpaceChannel.clearHandler(Object());
+    await WindowsImeSpaceChannel.debugDispatch(
+      const MethodCall('onImeSpaceDown'),
+    );
+    expect(calls, 2, reason: '旧 route 不得清掉新 owner 的 handler');
+
+    WindowsImeSpaceChannel.clearHandler(owner);
+    await WindowsImeSpaceChannel.debugDispatch(
+      const MethodCall('onImeSpaceDown'),
+    );
+    expect(calls, 2);
+  });
+
+  test('BUG-1231 runner 在 Flutter 丢键前按 VK_PROCESSKEY scan code 捕获 Space', () {
+    final String cpp =
+        File('windows/runner/flutter_window.cpp').readAsStringSync();
+    final int predicateStart =
+        cpp.indexOf('bool IsInitialUnmodifiedImeSpaceDown(');
+    final int predicateEnd =
+        cpp.indexOf('\n}\n\n}  // namespace', predicateStart);
+    expect(predicateStart, greaterThanOrEqualTo(0));
+    expect(predicateEnd, greaterThan(predicateStart));
+    final String predicate = cpp.substring(predicateStart, predicateEnd);
+    expect(predicate, contains('wparam != VK_PROCESSKEY'));
+    expect(predicate, contains('kSpaceScanCode = 0x39'));
+    expect(predicate, contains('>> 30'), reason: '必须过滤 auto-repeat，只接受首次按下沿');
+    expect(predicate, contains('GetKeyState(VK_CONTROL)'));
+    expect(predicate, contains('GetKeyState(VK_SHIFT)'));
+
+    final int notify = cpp.indexOf(
+      'IsInitialUnmodifiedImeSpaceDown(message, wparam, lparam)',
+      predicateEnd,
+    );
+    final int flutterDispatch = cpp.indexOf('HandleTopLevelWindowProc', notify);
+    expect(notify, greaterThan(predicateEnd));
+    expect(flutterDispatch, greaterThan(notify),
+        reason: '必须在 Flutter 把 VK_PROCESSKEY 降成 0/0 之前捕获');
+    expect(
+      cpp.substring(notify, flutterDispatch),
+      contains('"onImeSpaceDown"'),
+    );
+  });
+
+  test('BUG-1231 视频页注册 native 通道并守住路由/文本框/浮层边界', () {
+    final String src = readVideoHibikiSource();
+    expect(
+      src,
+      contains(
+        'WindowsImeSpaceChannel.setHandler(this, _handleWindowsImeSpaceDown)',
+      ),
+    );
+    expect(
+      src,
+      contains('WindowsImeSpaceChannel.clearHandler(this)'),
+    );
+
+    final int start = src.indexOf('void _handleWindowsImeSpaceDown()');
+    final int end = src.indexOf('\n  }', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final String body = src.substring(start, end);
+    expect(body, contains('_videoFullscreenRoute'));
+    expect(body, contains('!owner.isCurrent'));
+    expect(body, contains('focusedEditableText()'));
+    expect(body, contains('_hasVisiblePopup'));
+    expect(body, contains('_dismissTopVisiblePopup()'));
+    expect(body, contains('_runWhenImmersiveAllowsShortcuts'));
+    expect(body, contains('controller.playOrPause()'));
   });
 }

@@ -353,6 +353,29 @@ bool ApplyShortcutIcon(const std::wstring& icon_path) {
   return any;
 }
 
+// Windows keeps the original keyboard scan code in lParam even when an active
+// IME replaces wParam with VK_PROCESSKEY. Flutter intentionally discards those
+// IME key events from the framework keyboard pipeline, so this is the last
+// reliable point at which a physical Space can be identified (BUG-1231).
+bool IsInitialUnmodifiedImeSpaceDown(UINT message,
+                                     WPARAM wparam,
+                                     LPARAM lparam) {
+  if (message != WM_KEYDOWN || wparam != VK_PROCESSKEY) {
+    return false;
+  }
+  constexpr UINT kSpaceScanCode = 0x39;
+  const UINT scan_code =
+      static_cast<UINT>((static_cast<UINT_PTR>(lparam) >> 16) & 0xff);
+  const bool was_down =
+      ((static_cast<UINT_PTR>(lparam) >> 30) & 0x1) != 0;
+  if (scan_code != kSpaceScanCode || was_down) {
+    return false;
+  }
+  return GetKeyState(VK_CONTROL) >= 0 && GetKeyState(VK_SHIFT) >= 0 &&
+         GetKeyState(VK_MENU) >= 0 && GetKeyState(VK_LWIN) >= 0 &&
+         GetKeyState(VK_RWIN) >= 0;
+}
+
 }  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -533,6 +556,12 @@ bool FlutterWindow::OnCreate() {
   system_theme_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(), "app.hibiki/system_theme",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  windows_ime_space_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.hibiki/windows_ime_space",
           &flutter::StandardMethodCodec::GetInstance());
 
   RegisterFloatingLyricChannel();
@@ -2245,6 +2274,18 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // BUG-1231: inspect VK_PROCESSKEY before Flutter handles the message. The
+  // engine deliberately reports IME-owned keys as physical=0/logical=0, so
+  // checking after HandleTopLevelWindowProc can no longer identify Space.
+  // Notify Dart without consuming the Win32 message; Flutter/IME processing
+  // continues unchanged.
+  if (windows_ime_space_channel_ &&
+      IsInitialUnmodifiedImeSpaceDown(message, wparam, lparam)) {
+    windows_ime_space_channel_->InvokeMethod(
+        "onImeSpaceDown",
+        std::make_unique<flutter::EncodableValue>());
+  }
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =
