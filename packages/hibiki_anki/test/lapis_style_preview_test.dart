@@ -13,11 +13,24 @@ void main() {
 
       for (final LapisVisualField field in LapisVisualField.values) {
         expect(
-          html,
-          contains('data-hibiki-lapis-field="${field.wireName}"'),
+          RegExp(
+            'data-hibiki-lapis-targets="[^"]*'
+            '${RegExp.escape(field.wireName)}[^"]*"',
+          ).hasMatch(html),
+          isTrue,
+          reason: '预览缺少 ${field.wireName} 的可点击目标',
         );
       }
       expect(html, contains("callHandler('selectLapisVisualField', field)"));
+      expect(html, contains('candidates.indexOf'));
+      expect(html, contains('selectedIndex + 1'));
+      expect(
+        html,
+        contains(
+          'data-hibiki-lapis-targets='
+          '"primary-definition definition-content"',
+        ),
+      );
       expect(
         html,
         contains(
@@ -29,6 +42,28 @@ void main() {
         contains('window.hibikiLapisEditor.showSide("back")'),
       );
       expect(html, contains('<body class="card card1">'));
+    });
+
+    test('复杂释义示例覆盖结构语义，不把规则绑定到具体词典名称', () {
+      final String html = buildLapisStylePreviewHtml(
+        css: LapisNoteType.template.css,
+        selectedField: LapisVisualField.dictionaryEntry,
+        showBack: true,
+        darkMode: false,
+      );
+
+      expect(html, contains('data-dictionary='));
+      expect(html, contains('data-details='));
+      expect(html, contains('data-sc-content="example-sentence"'));
+      expect(html, contains('class="dict-group__tag-list"'));
+      expect(
+        lapisVisualSelector(LapisVisualField.dictionaryEntry),
+        isNot(contains('明鏡')),
+      );
+      expect(
+        lapisVisualSelector(LapisVisualField.dictionaryEntry),
+        isNot(contains('JMdict')),
+      );
     });
 
     test('CSS 通过 textContent 注入，style/script 结束标签不能逃逸', () {
@@ -45,6 +80,7 @@ void main() {
       expect(html, contains(r'\u003C/style>'));
       expect(html, contains(r'\u003Cscript>window.bad = true;'));
       expect(html, contains('<html class="nightMode">'));
+      expect(html, contains('<body class="card card1 nightMode">'));
     });
   });
 }

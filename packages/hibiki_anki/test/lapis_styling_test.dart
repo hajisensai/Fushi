@@ -261,12 +261,115 @@ void main() {
             field: const LapisVisualRule(fontScalePercent: 110),
           },
         );
-        expect(css, contains('font-size: calc(var(--'));
+        expect(lapisVisualSelector(field), isNotEmpty);
+        expect(css, contains('font-size: calc('));
         expect(
           splitLapisVisualStyleSheet(css).ruleFor(field).fontScalePercent,
           110,
         );
       }
+    });
+
+    test('整段释义与释义框生成真实层级 selector，子级规则排在父级之后', () {
+      final String css = composeLapisVisualStyleSheet(
+        freeformCss: '',
+        rules: const <LapisVisualField, LapisVisualRule>{
+          LapisVisualField.definitionBox: LapisVisualRule(
+            backgroundColorHex: '#D9EAD3',
+          ),
+          LapisVisualField.definitionContent: LapisVisualRule(
+            colorHex: '#2F6B5F',
+          ),
+          LapisVisualField.primaryDefinition: LapisVisualRule(bold: true),
+        },
+      );
+
+      expect(css, contains('.main-def {'));
+      expect(css, contains('.main-def > .definition > div {'));
+      expect(css, contains('#primary {'));
+      expect(css.indexOf('.main-def {'), lessThan(css.indexOf('#primary {')));
+      expect(
+        css.indexOf('.main-def > .definition > div {'),
+        lessThan(css.indexOf('#primary {')),
+      );
+    });
+
+    test('背景、行高和区域外观完整往返并生成受控 CSS', () {
+      const LapisVisualRule rule = LapisVisualRule(
+        fontScalePercent: 115,
+        bold: true,
+        alignment: LapisVisualTextAlign.start,
+        colorHex: '#2F6B5F',
+        lineHeightPercent: 175,
+        backgroundColorHex: '#FFF0A6',
+        borderWidthPx: 2,
+        borderColorHex: '#3D5A80',
+        borderRadiusPx: 12,
+        paddingPx: 16,
+        marginBlockPx: 8,
+      );
+      final String css = composeLapisVisualStyleSheet(
+        freeformCss: '',
+        rules: const <LapisVisualField, LapisVisualRule>{
+          LapisVisualField.definitionBox: rule,
+        },
+      );
+
+      expect(css, contains('line-height: 1.75 !important'));
+      expect(css, contains('background-color: #FFF0A6 !important'));
+      expect(css, contains('border-style: solid !important'));
+      expect(css, contains('border-width: 2px !important'));
+      expect(css, contains('border-color: #3D5A80 !important'));
+      expect(css, contains('border-radius: 12px !important'));
+      expect(css, contains('padding: 16px !important'));
+      expect(css, contains('margin-block: 8px !important'));
+
+      final LapisVisualRule round = splitLapisVisualStyleSheet(css)
+          .ruleFor(LapisVisualField.definitionBox);
+      expect(round.fontScalePercent, 115);
+      expect(round.lineHeightPercent, 175);
+      expect(round.backgroundColorHex, '#FFF0A6');
+      expect(round.borderWidthPx, 2);
+      expect(round.borderColorHex, '#3D5A80');
+      expect(round.borderRadiusPx, 12);
+      expect(round.paddingPx, 16);
+      expect(round.marginBlockPx, 8);
+    });
+
+    test('损坏或越界的可视参数安全归一化', () {
+      final LapisVisualRule? rule = LapisVisualRule.fromJson(
+        <String, dynamic>{
+          'fontScalePercent': 999,
+          'lineHeightPercent': 999,
+          'backgroundColorHex': 'red',
+          'borderWidthPx': -4,
+          'borderColorHex': '#aabbcc',
+          'borderRadiusPx': 999,
+          'paddingPx': -1,
+          'marginBlockPx': 999,
+        },
+      );
+
+      expect(rule, isNotNull);
+      expect(rule!.fontScalePercent, 250);
+      expect(rule.lineHeightPercent, 250);
+      expect(rule.backgroundColorHex, isNull);
+      expect(rule.borderWidthPx, 0);
+      expect(rule.borderColorHex, '#AABBCC');
+      expect(rule.borderRadiusPx, 48);
+      expect(rule.paddingPx, 0);
+      expect(rule.marginBlockPx, 48);
+    });
+
+    test('正面目标与背面层级目标有明确平台侧切换语义', () {
+      expect(LapisVisualField.expression.backOnly, isFalse);
+      expect(LapisVisualField.sentence.backOnly, isFalse);
+      expect(LapisVisualField.reading.backOnly, isTrue);
+      expect(LapisVisualField.definitionBox.backOnly, isTrue);
+      expect(LapisVisualField.dictionaryEntry.backOnly, isTrue);
+      expect(LapisVisualField.definitionBox.supportsBoxLayout, isTrue);
+      expect(LapisVisualField.dictionaryEntry.supportsBoxLayout, isTrue);
+      expect(LapisVisualField.dictionaryName.supportsBoxLayout, isFalse);
     });
   });
 

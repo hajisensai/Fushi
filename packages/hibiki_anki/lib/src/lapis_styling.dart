@@ -33,8 +33,16 @@ enum LapisVisualField {
   expression('expression'),
   reading('reading'),
   sentence('sentence'),
+  definitionInfo('definition-info'),
+  definitionBox('definition-box'),
+  definitionContent('definition-content'),
+  selectedDefinition('selected-definition'),
   primaryDefinition('primary-definition'),
-  glossaries('glossaries');
+  glossaries('glossaries'),
+  dictionaryEntry('dictionary-entry'),
+  dictionaryName('dictionary-name'),
+  definitionExample('definition-example'),
+  partOfSpeech('part-of-speech');
 
   const LapisVisualField(this.wireName);
 
@@ -46,6 +54,23 @@ enum LapisVisualField {
     }
     return null;
   }
+
+  bool get backOnly => switch (this) {
+        LapisVisualField.expression || LapisVisualField.sentence => false,
+        _ => true,
+      };
+
+  bool get supportsBoxLayout => switch (this) {
+        LapisVisualField.sentence ||
+        LapisVisualField.definitionBox ||
+        LapisVisualField.definitionContent ||
+        LapisVisualField.selectedDefinition ||
+        LapisVisualField.primaryDefinition ||
+        LapisVisualField.glossaries ||
+        LapisVisualField.dictionaryEntry =>
+          true,
+        _ => false,
+      };
 }
 
 enum LapisVisualTextAlign {
@@ -73,21 +98,52 @@ class LapisVisualRule {
     this.bold = false,
     this.alignment,
     this.colorHex,
+    this.lineHeightPercent,
+    this.backgroundColorHex,
+    this.borderWidthPx,
+    this.borderColorHex,
+    this.borderRadiusPx,
+    this.paddingPx,
+    this.marginBlockPx,
   });
 
   final int fontScalePercent;
   final bool bold;
   final LapisVisualTextAlign? alignment;
   final String? colorHex;
+  final int? lineHeightPercent;
+  final String? backgroundColorHex;
+  final int? borderWidthPx;
+  final String? borderColorHex;
+  final int? borderRadiusPx;
+  final int? paddingPx;
+  final int? marginBlockPx;
 
   bool get isDefault =>
-      fontScalePercent == 100 && !bold && alignment == null && colorHex == null;
+      fontScalePercent == 100 &&
+      !bold &&
+      alignment == null &&
+      colorHex == null &&
+      lineHeightPercent == null &&
+      backgroundColorHex == null &&
+      borderWidthPx == null &&
+      borderColorHex == null &&
+      borderRadiusPx == null &&
+      paddingPx == null &&
+      marginBlockPx == null;
 
   LapisVisualRule copyWith({
     int? fontScalePercent,
     bool? bold,
     Object? alignment = _lapisVisualUnset,
     Object? colorHex = _lapisVisualUnset,
+    Object? lineHeightPercent = _lapisVisualUnset,
+    Object? backgroundColorHex = _lapisVisualUnset,
+    Object? borderWidthPx = _lapisVisualUnset,
+    Object? borderColorHex = _lapisVisualUnset,
+    Object? borderRadiusPx = _lapisVisualUnset,
+    Object? paddingPx = _lapisVisualUnset,
+    Object? marginBlockPx = _lapisVisualUnset,
   }) =>
       LapisVisualRule(
         fontScalePercent: fontScalePercent ?? this.fontScalePercent,
@@ -98,6 +154,27 @@ class LapisVisualRule {
         colorHex: identical(colorHex, _lapisVisualUnset)
             ? this.colorHex
             : colorHex as String?,
+        lineHeightPercent: identical(lineHeightPercent, _lapisVisualUnset)
+            ? this.lineHeightPercent
+            : lineHeightPercent as int?,
+        backgroundColorHex: identical(backgroundColorHex, _lapisVisualUnset)
+            ? this.backgroundColorHex
+            : backgroundColorHex as String?,
+        borderWidthPx: identical(borderWidthPx, _lapisVisualUnset)
+            ? this.borderWidthPx
+            : borderWidthPx as int?,
+        borderColorHex: identical(borderColorHex, _lapisVisualUnset)
+            ? this.borderColorHex
+            : borderColorHex as String?,
+        borderRadiusPx: identical(borderRadiusPx, _lapisVisualUnset)
+            ? this.borderRadiusPx
+            : borderRadiusPx as int?,
+        paddingPx: identical(paddingPx, _lapisVisualUnset)
+            ? this.paddingPx
+            : paddingPx as int?,
+        marginBlockPx: identical(marginBlockPx, _lapisVisualUnset)
+            ? this.marginBlockPx
+            : marginBlockPx as int?,
       );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -105,6 +182,14 @@ class LapisVisualRule {
         'bold': bold,
         if (alignment != null) 'alignment': alignment!.cssValue,
         if (colorHex != null) 'colorHex': colorHex,
+        if (lineHeightPercent != null) 'lineHeightPercent': lineHeightPercent,
+        if (backgroundColorHex != null)
+          'backgroundColorHex': backgroundColorHex,
+        if (borderWidthPx != null) 'borderWidthPx': borderWidthPx,
+        if (borderColorHex != null) 'borderColorHex': borderColorHex,
+        if (borderRadiusPx != null) 'borderRadiusPx': borderRadiusPx,
+        if (paddingPx != null) 'paddingPx': paddingPx,
+        if (marginBlockPx != null) 'marginBlockPx': marginBlockPx,
       };
 
   static LapisVisualRule? fromJson(Object? value) {
@@ -119,11 +204,47 @@ class LapisVisualRule {
     final String? color = rawColor is String && _isCssHexColor(rawColor)
         ? rawColor.toUpperCase()
         : null;
+    final int? lineHeight = _clampedOptionalInt(
+      value['lineHeightPercent'],
+      min: 100,
+      max: 250,
+    );
+    final String? backgroundColor =
+        _normalizedOptionalCssHex(value['backgroundColorHex']);
+    final int? borderWidth = _clampedOptionalInt(
+      value['borderWidthPx'],
+      min: 0,
+      max: 12,
+    );
+    final String? borderColor =
+        _normalizedOptionalCssHex(value['borderColorHex']);
+    final int? borderRadius = _clampedOptionalInt(
+      value['borderRadiusPx'],
+      min: 0,
+      max: 48,
+    );
+    final int? padding = _clampedOptionalInt(
+      value['paddingPx'],
+      min: 0,
+      max: 48,
+    );
+    final int? marginBlock = _clampedOptionalInt(
+      value['marginBlockPx'],
+      min: 0,
+      max: 48,
+    );
     return LapisVisualRule(
       fontScalePercent: scale,
       bold: value['bold'] == true,
       alignment: alignment,
       colorHex: color,
+      lineHeightPercent: lineHeight,
+      backgroundColorHex: backgroundColor,
+      borderWidthPx: borderWidth,
+      borderColorHex: borderColor,
+      borderRadiusPx: borderRadius,
+      paddingPx: padding,
+      marginBlockPx: marginBlock,
     );
   }
 }
@@ -245,18 +366,27 @@ List<String> _buildLapisVisualFieldCss(
   LapisVisualField field,
   LapisVisualRule rule,
 ) {
-  final String selector = switch (field) {
-    LapisVisualField.expression => '.front-vocab, .vocab',
-    LapisVisualField.reading => '.pitch',
-    LapisVisualField.sentence => '.front-sentence, .sentence, .sentence-alt',
-    LapisVisualField.primaryDefinition => '#primary',
-    LapisVisualField.glossaries => '#glossaries',
-  };
+  final String selector = lapisVisualSelector(field);
   final List<String> declarations = <String>[
     if (rule.bold) '  font-weight: 700 !important;',
     if (rule.alignment != null)
       '  text-align: ${rule.alignment!.cssValue} !important;',
     if (rule.colorHex != null) '  color: ${rule.colorHex} !important;',
+    if (rule.lineHeightPercent != null)
+      '  line-height: ${(rule.lineHeightPercent! / 100).toStringAsFixed(2)} !important;',
+    if (rule.backgroundColorHex != null)
+      '  background-color: ${rule.backgroundColorHex} !important;',
+    if (rule.borderWidthPx != null) ...<String>[
+      '  border-style: solid !important;',
+      '  border-width: ${rule.borderWidthPx}px !important;',
+    ],
+    if (rule.borderColorHex != null)
+      '  border-color: ${rule.borderColorHex} !important;',
+    if (rule.borderRadiusPx != null)
+      '  border-radius: ${rule.borderRadiusPx}px !important;',
+    if (rule.paddingPx != null) '  padding: ${rule.paddingPx}px !important;',
+    if (rule.marginBlockPx != null)
+      '  margin-block: ${rule.marginBlockPx}px !important;',
   ];
   final List<String> result = <String>[];
   if (declarations.isNotEmpty) {
@@ -268,7 +398,7 @@ List<String> _buildLapisVisualFieldCss(
         in _lapisVisualFontTargets(field)) {
       result.add(
         '${target.key} {\n'
-        '  font-size: calc(var(--${target.value}) * $factor) !important;\n'
+        '  font-size: calc(${target.value} * $factor) !important;\n'
         '}',
       );
     }
@@ -276,32 +406,112 @@ List<String> _buildLapisVisualFieldCss(
   return result;
 }
 
+/// 可视化目标对应的真实 Lapis selector。只依赖模板结构和语义属性，不绑定词典名称。
+String lapisVisualSelector(LapisVisualField field) => switch (field) {
+      LapisVisualField.expression => '.front-vocab, .vocab',
+      LapisVisualField.reading => '.pitch',
+      LapisVisualField.sentence => '.front-sentence, .sentence, .sentence-alt',
+      LapisVisualField.definitionInfo => '.def-info',
+      LapisVisualField.definitionBox => '.main-def',
+      LapisVisualField.definitionContent => '.main-def > .definition > div',
+      LapisVisualField.selectedDefinition => '#selection',
+      LapisVisualField.primaryDefinition => '#primary',
+      LapisVisualField.glossaries => '#glossaries',
+      LapisVisualField.dictionaryEntry => '#primary > div, #glossaries > div, '
+          '.definition li[data-dictionary], .definition li[data-details]',
+      LapisVisualField.dictionaryName =>
+        '#primary > div > i, #glossaries > div > i, '
+            '.definition li[data-dictionary] > i, '
+            '.definition li[data-details] > i, '
+            '.definition .dict-group__tag--dict',
+      LapisVisualField.definitionExample =>
+        '.definition [data-sc-content|="example-sentence"], '
+            '.definition [data-sc-content="example"]',
+      LapisVisualField.partOfSpeech => '.definition .dict-group__tag-list '
+          '.dict-group__tag:not(.dict-group__tag--dict), '
+          '.definition [data-sc-content="part-of-speech"]',
+    };
+
 List<MapEntry<String, String>> _lapisVisualFontTargets(
   LapisVisualField field,
 ) =>
     switch (field) {
       LapisVisualField.expression => const <MapEntry<String, String>>[
-          MapEntry<String, String>('.front-vocab', 'vocab-font-size'),
-          MapEntry<String, String>('.vocab', 'back-vocab-font-size'),
+          MapEntry<String, String>('.front-vocab', 'var(--vocab-font-size)'),
+          MapEntry<String, String>('.vocab', 'var(--back-vocab-font-size)'),
         ],
       LapisVisualField.reading => const <MapEntry<String, String>>[
-          MapEntry<String, String>('.pitch', 'info-font-size'),
+          MapEntry<String, String>('.pitch', 'var(--info-font-size)'),
         ],
       LapisVisualField.sentence => const <MapEntry<String, String>>[
-          MapEntry<String, String>('.front-sentence', 'sentence-font-size'),
           MapEntry<String, String>(
-              '.sentence, .sentence-alt', 'back-sentence-font-size'),
+            '.front-sentence',
+            'var(--sentence-font-size)',
+          ),
+          MapEntry<String, String>(
+            '.sentence, .sentence-alt',
+            'var(--back-sentence-font-size)',
+          ),
+        ],
+      LapisVisualField.definitionInfo => const <MapEntry<String, String>>[
+          MapEntry<String, String>('.def-info', '0.9rem'),
+        ],
+      LapisVisualField.definitionBox => const <MapEntry<String, String>>[
+          MapEntry<String, String>('.main-def', 'var(--main-def-size)'),
+        ],
+      LapisVisualField.definitionContent => const <MapEntry<String, String>>[
+          MapEntry<String, String>(
+            '.main-def > .definition > div',
+            'var(--main-def-size)',
+          ),
+        ],
+      LapisVisualField.selectedDefinition => const <MapEntry<String, String>>[
+          MapEntry<String, String>('#selection', 'var(--main-def-size)'),
         ],
       LapisVisualField.primaryDefinition => const <MapEntry<String, String>>[
-          MapEntry<String, String>('#primary', 'main-def-size'),
+          MapEntry<String, String>('#primary', 'var(--main-def-size)'),
         ],
       LapisVisualField.glossaries => const <MapEntry<String, String>>[
-          MapEntry<String, String>('#glossaries', 'main-def-size'),
+          MapEntry<String, String>('#glossaries', 'var(--main-def-size)'),
+        ],
+      LapisVisualField.dictionaryEntry => <MapEntry<String, String>>[
+          MapEntry<String, String>(
+            lapisVisualSelector(LapisVisualField.dictionaryEntry),
+            'var(--main-def-size)',
+          ),
+        ],
+      LapisVisualField.dictionaryName => <MapEntry<String, String>>[
+          MapEntry<String, String>(
+            lapisVisualSelector(LapisVisualField.dictionaryName),
+            'var(--main-def-size)',
+          ),
+        ],
+      LapisVisualField.definitionExample => <MapEntry<String, String>>[
+          MapEntry<String, String>(
+            lapisVisualSelector(LapisVisualField.definitionExample),
+            'var(--main-def-size)',
+          ),
+        ],
+      LapisVisualField.partOfSpeech => <MapEntry<String, String>>[
+          MapEntry<String, String>(
+            lapisVisualSelector(LapisVisualField.partOfSpeech),
+            'var(--main-def-size)',
+          ),
         ],
     };
 
 bool _isCssHexColor(String value) =>
     RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(value);
+
+String? _normalizedOptionalCssHex(Object? value) =>
+    value is String && _isCssHexColor(value) ? value.toUpperCase() : null;
+
+int? _clampedOptionalInt(
+  Object? value, {
+  required int min,
+  required int max,
+}) =>
+    value is int ? value.clamp(min, max).toInt() : null;
 
 /// 从 vendored Lapis CSS 里提取全部字号变量并按 [percent]（百分比，100 = 原样）
 /// 缩放，产出一个 `:root` 覆写块。基准值直接解析自 [LapisNoteType.css]（单一

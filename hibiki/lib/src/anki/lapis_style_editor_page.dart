@@ -51,6 +51,13 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
     '#A13D63',
     '#C47F17',
   ];
+  static const List<String> _highlightChoices = <String>[
+    '#FFF0A6',
+    '#D9EAD3',
+    '#DDEBFF',
+    '#F7D7E3',
+    '#E8DDF5',
+  ];
 
   @override
   void initState() {
@@ -88,13 +95,10 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   }
 
   void _selectField(LapisVisualField field) {
-    final bool backOnly = field == LapisVisualField.reading ||
-        field == LapisVisualField.primaryDefinition ||
-        field == LapisVisualField.glossaries;
-    if (_selectedField == field && (_showBack || !backOnly)) return;
+    if (_selectedField == field && (_showBack || !field.backOnly)) return;
     setState(() {
       _selectedField = field;
-      if (backOnly) _showBack = true;
+      if (field.backOnly) _showBack = true;
     });
     _refreshPreview();
   }
@@ -340,16 +344,74 @@ window.hibikiLapisEditor.selectField(${_jsonForScript(_selectedField.wireName)})
             style: tokens.type.sectionLabel,
           ),
           SizedBox(height: tokens.spacing.gap),
-          Wrap(
-            spacing: tokens.spacing.gap,
-            runSpacing: tokens.spacing.gap,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              for (final LapisVisualField field in LapisVisualField.values)
-                HibikiSelectableChip(
-                  label: _fieldLabel(field),
-                  selected: field == _selectedField,
-                  onSelected: (_) => _selectField(field),
+              Icon(
+                Icons.account_tree_outlined,
+                size: 18,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              SizedBox(width: tokens.spacing.gap),
+              Expanded(
+                child: Text(
+                  _targetPath(_selectedField).join('  ›  '),
+                  style: tokens.type.listSubtitle,
                 ),
+              ),
+            ],
+          ),
+          SizedBox(height: tokens.spacing.card),
+          _buildTargetGroup(
+            tokens: tokens,
+            label: t.anki_lapis_visual_target_card_content,
+            fields: const <LapisVisualField>[
+              LapisVisualField.expression,
+              LapisVisualField.reading,
+              LapisVisualField.sentence,
+            ],
+          ),
+          SizedBox(height: tokens.spacing.card),
+          _buildTargetGroup(
+            tokens: tokens,
+            label: t.anki_lapis_visual_target_definition,
+            fields: const <LapisVisualField>[
+              LapisVisualField.definitionBox,
+              LapisVisualField.definitionContent,
+              LapisVisualField.selectedDefinition,
+              LapisVisualField.primaryDefinition,
+              LapisVisualField.glossaries,
+            ],
+          ),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: EdgeInsets.only(bottom: tokens.spacing.gap),
+            leading: const Icon(Icons.tune_outlined),
+            title: Text(t.anki_lapis_visual_target_inside_definition),
+            initiallyExpanded: _isDetailedDefinitionTarget(_selectedField),
+            children: <Widget>[
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Wrap(
+                  spacing: tokens.spacing.gap,
+                  runSpacing: tokens.spacing.gap,
+                  children: <Widget>[
+                    for (final LapisVisualField field
+                        in const <LapisVisualField>[
+                      LapisVisualField.definitionInfo,
+                      LapisVisualField.dictionaryEntry,
+                      LapisVisualField.dictionaryName,
+                      LapisVisualField.definitionExample,
+                      LapisVisualField.partOfSpeech,
+                    ])
+                      HibikiSelectableChip(
+                        label: _fieldLabel(field),
+                        selected: field == _selectedField,
+                        onSelected: (_) => _selectField(field),
+                      ),
+                  ],
+                ),
+              ),
             ],
           ),
           SizedBox(height: tokens.spacing.card),
@@ -391,6 +453,31 @@ window.hibikiLapisEditor.selectField(${_jsonForScript(_selectedField.wireName)})
             value: rule.bold,
             onChanged: (bool value) =>
                 _updateSelectedRule(rule.copyWith(bold: value)),
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          DropdownMenu<int>(
+            key: ValueKey<String>(
+              'line-height-${_selectedField.wireName}-'
+              '${rule.lineHeightPercent}',
+            ),
+            expandedInsets: EdgeInsets.zero,
+            initialSelection: rule.lineHeightPercent ?? 0,
+            label: Text(t.anki_lapis_visual_line_height),
+            dropdownMenuEntries: <DropdownMenuEntry<int>>[
+              DropdownMenuEntry<int>(
+                value: 0,
+                label: t.anki_lapis_visual_default,
+              ),
+              const DropdownMenuEntry<int>(value: 120, label: '1.2'),
+              const DropdownMenuEntry<int>(value: 150, label: '1.5'),
+              const DropdownMenuEntry<int>(value: 175, label: '1.75'),
+              const DropdownMenuEntry<int>(value: 200, label: '2.0'),
+            ],
+            onSelected: (int? value) => _updateSelectedRule(
+              rule.copyWith(
+                lineHeightPercent: value == null || value == 0 ? null : value,
+              ),
+            ),
           ),
           SizedBox(height: tokens.spacing.gap),
           Text(
@@ -452,6 +539,123 @@ window.hibikiLapisEditor.selectField(${_jsonForScript(_selectedField.wireName)})
             ],
           ),
           SizedBox(height: tokens.spacing.card),
+          Text(
+            t.anki_lapis_visual_background_color,
+            style: tokens.type.listSubtitle,
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          Wrap(
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            children: <Widget>[
+              _LapisColorChoice(
+                colorHex: null,
+                selected: rule.backgroundColorHex == null,
+                tooltip: t.anki_lapis_visual_default,
+                onTap: () => _updateSelectedRule(
+                  rule.copyWith(backgroundColorHex: null),
+                ),
+              ),
+              for (final String colorHex in _highlightChoices)
+                _LapisColorChoice(
+                  colorHex: colorHex,
+                  selected: rule.backgroundColorHex == colorHex,
+                  tooltip: colorHex,
+                  onTap: () => _updateSelectedRule(
+                    rule.copyWith(backgroundColorHex: colorHex),
+                  ),
+                ),
+            ],
+          ),
+          if (_selectedField.supportsBoxLayout) ...<Widget>[
+            SizedBox(height: tokens.spacing.card),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.crop_square_outlined),
+              title: Text(t.anki_lapis_visual_box_layout),
+              children: <Widget>[
+                _buildOptionalSlider(
+                  title: t.anki_lapis_visual_border_width,
+                  value: rule.borderWidthPx,
+                  enabledValue: 1,
+                  max: 8,
+                  onChanged: (int? value) => _updateSelectedRule(
+                    rule.copyWith(
+                      borderWidthPx: value,
+                      borderColorHex:
+                          value == null ? null : rule.borderColorHex,
+                    ),
+                  ),
+                ),
+                if (rule.borderWidthPx != null) ...<Widget>[
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text(
+                      t.anki_lapis_visual_border_color,
+                      style: tokens.type.listSubtitle,
+                    ),
+                  ),
+                  SizedBox(height: tokens.spacing.gap),
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Wrap(
+                      spacing: tokens.spacing.gap,
+                      runSpacing: tokens.spacing.gap,
+                      children: <Widget>[
+                        _LapisColorChoice(
+                          colorHex: null,
+                          selected: rule.borderColorHex == null,
+                          tooltip: t.anki_lapis_visual_default,
+                          onTap: () => _updateSelectedRule(
+                            rule.copyWith(borderColorHex: null),
+                          ),
+                        ),
+                        for (final String colorHex in _colorChoices)
+                          _LapisColorChoice(
+                            colorHex: colorHex,
+                            selected: rule.borderColorHex == colorHex,
+                            tooltip: colorHex,
+                            onTap: () => _updateSelectedRule(
+                              rule.copyWith(borderColorHex: colorHex),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: tokens.spacing.gap),
+                ],
+                _buildOptionalSlider(
+                  title: t.anki_lapis_visual_corner_radius,
+                  value: rule.borderRadiusPx,
+                  enabledValue: 8,
+                  max: 32,
+                  onChanged: (int? value) => _updateSelectedRule(
+                    rule.copyWith(borderRadiusPx: value),
+                  ),
+                ),
+                _buildOptionalSlider(
+                  title: t.anki_lapis_visual_padding,
+                  value: rule.paddingPx,
+                  enabledValue: 12,
+                  max: 32,
+                  onChanged: (int? value) => _updateSelectedRule(
+                    rule.copyWith(paddingPx: value),
+                  ),
+                ),
+                _buildOptionalSlider(
+                  title: t.anki_lapis_visual_margin,
+                  value: rule.marginBlockPx,
+                  enabledValue: 8,
+                  max: 32,
+                  onChanged: (int? value) => _updateSelectedRule(
+                    rule.copyWith(marginBlockPx: value),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          SizedBox(height: tokens.spacing.card),
           ExpansionTile(
             tilePadding: EdgeInsets.zero,
             childrenPadding: EdgeInsets.zero,
@@ -483,10 +687,112 @@ window.hibikiLapisEditor.selectField(${_jsonForScript(_selectedField.wireName)})
         LapisVisualField.expression => t.anki_lapis_visual_field_expression,
         LapisVisualField.reading => t.anki_lapis_visual_field_reading,
         LapisVisualField.sentence => t.anki_lapis_visual_field_sentence,
+        LapisVisualField.definitionInfo =>
+          t.anki_lapis_visual_field_definition_info,
+        LapisVisualField.definitionBox =>
+          t.anki_lapis_visual_field_definition_box,
+        LapisVisualField.definitionContent =>
+          t.anki_lapis_visual_field_definition_content,
+        LapisVisualField.selectedDefinition =>
+          t.anki_lapis_visual_field_selected_definition,
         LapisVisualField.primaryDefinition =>
           t.anki_lapis_visual_field_primary_definition,
         LapisVisualField.glossaries => t.anki_lapis_visual_field_glossaries,
+        LapisVisualField.dictionaryEntry =>
+          t.anki_lapis_visual_field_dictionary_entry,
+        LapisVisualField.dictionaryName =>
+          t.anki_lapis_visual_field_dictionary_name,
+        LapisVisualField.definitionExample =>
+          t.anki_lapis_visual_field_definition_example,
+        LapisVisualField.partOfSpeech =>
+          t.anki_lapis_visual_field_part_of_speech,
       };
+
+  List<String> _targetPath(LapisVisualField field) {
+    if (const <LapisVisualField>{
+      LapisVisualField.expression,
+      LapisVisualField.reading,
+      LapisVisualField.sentence,
+    }.contains(field)) {
+      return <String>[
+        t.anki_lapis_visual_target_card_content,
+        _fieldLabel(field),
+      ];
+    }
+    if (_isDetailedDefinitionTarget(field)) {
+      return <String>[
+        t.anki_lapis_visual_target_definition,
+        t.anki_lapis_visual_target_inside_definition,
+        _fieldLabel(field),
+      ];
+    }
+    return <String>[
+      t.anki_lapis_visual_target_definition,
+      _fieldLabel(field),
+    ];
+  }
+
+  bool _isDetailedDefinitionTarget(LapisVisualField field) =>
+      const <LapisVisualField>{
+        LapisVisualField.definitionInfo,
+        LapisVisualField.dictionaryEntry,
+        LapisVisualField.dictionaryName,
+        LapisVisualField.definitionExample,
+        LapisVisualField.partOfSpeech,
+      }.contains(field);
+
+  Widget _buildTargetGroup({
+    required HibikiDesignTokens tokens,
+    required String label,
+    required List<LapisVisualField> fields,
+  }) =>
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Text(label, style: tokens.type.listSubtitle),
+          SizedBox(height: tokens.spacing.gap),
+          Wrap(
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            children: <Widget>[
+              for (final LapisVisualField field in fields)
+                HibikiSelectableChip(
+                  label: _fieldLabel(field),
+                  selected: field == _selectedField,
+                  onSelected: (_) => _selectField(field),
+                ),
+            ],
+          ),
+        ],
+      );
+
+  Widget _buildOptionalSlider({
+    required String title,
+    required int? value,
+    required int enabledValue,
+    required int max,
+    required ValueChanged<int?> onChanged,
+  }) =>
+      Column(
+        children: <Widget>[
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: Text(value == null ? title : '$title · ${value}px'),
+            value: value != null,
+            onChanged: (bool enabled) =>
+                onChanged(enabled ? enabledValue : null),
+          ),
+          if (value != null)
+            Slider(
+              value: value.toDouble(),
+              min: 0,
+              max: max.toDouble(),
+              divisions: max,
+              label: '${value}px',
+              onChanged: (double next) => onChanged(next.round()),
+            ),
+        ],
+      );
 }
 
 class _LapisColorChoice extends StatelessWidget {
