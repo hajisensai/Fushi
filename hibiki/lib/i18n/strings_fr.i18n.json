@@ -2856,5 +2856,13 @@
   "anki_lapis_visual_field_dictionary_name_note": "On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.",
   "game_upscaling_error_bundle_missing": "Hibiki installation is incomplete: the bundled Magpie component is missing. Reinstall or update Hibiki.",
   "game_upscaling_error_bundle_invalid": "The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.",
-  "download_test_connection_failed_reason": "Connection failed: $message"
+  "download_test_connection_failed_reason": "Connection failed: $message",
+  "scrape_all": "Scrape all",
+  "scrape_all_title": "Scrape all $kind",
+  "scrape_all_confirm": "Match all $n library items by title. Only a unique exact match is applied automatically; existing manual covers are kept, and ambiguous results stay pending for manual review.",
+  "scrape_all_running": "Scraping $current / $total",
+  "scrape_all_item": "Processing: $title",
+  "scrape_all_done": "Done: $applied applied, $review need review, $skipped skipped, $failed failed",
+  "scrape_all_empty": "There are no items to scrape in this library.",
+  "scrape_all_start": "Start"
 }
