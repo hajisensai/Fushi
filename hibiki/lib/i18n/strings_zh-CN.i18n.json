@@ -2747,5 +2747,8 @@
   "library_view_sources": "来源",
   "library_view_media": "媒体库",
   "scrape_failure_detail_show": "显示详情",
-  "scrape_failure_detail_hide": "隐藏详情"
+  "scrape_failure_detail_hide": "隐藏详情",
+  "media_tracking_retry_mapping": "重试匹配",
+  "media_tracking_retry_matched": "已重新关联并补发当前进度",
+  "media_tracking_retry_no_match": "仍未匹配到条目，请尝试手动关联"
 }

@@ -53,6 +53,20 @@ class MediaTrackingSyncResult {
   bool get isSuccess => failed == 0 && !unauthorized;
 }
 
+class MediaTrackingMappingRetryResult {
+  const MediaTrackingMappingRetryResult({
+    required this.attempted,
+    required this.matched,
+    this.syncResult,
+  });
+
+  final int attempted;
+  final int matched;
+  final MediaTrackingSyncResult? syncResult;
+
+  bool get matchedAny => matched > 0;
+}
+
 /// 一条同步失败的待办（首页/设置页展示「为什么没同步上去」）。
 ///
 /// 带 [mappingId] 是为了让 UI 把错误挂回对应的条目行，而不是另开一段再把标题重复
@@ -93,6 +107,8 @@ class MediaTrackingStatus {
     required this.pending,
     required this.mappings,
     required this.failures,
+    required this.automaticMappingMissCount,
+    required this.automaticMappingErrors,
   });
 
   /// 未配置令牌时的空快照（服务未就绪/读库失败的降级值）。
@@ -106,6 +122,8 @@ class MediaTrackingStatus {
     pending: 0,
     mappings: <MediaTrackingMappingRow>[],
     failures: <MediaTrackingFailure>[],
+    automaticMappingMissCount: 0,
+    automaticMappingErrors: <String>[],
   );
 
   final bool configured;
@@ -126,9 +144,16 @@ class MediaTrackingStatus {
   final List<MediaTrackingMappingRow> mappings;
   final List<MediaTrackingFailure> failures;
 
+  /// 本会话内仍处于 10 分钟自动匹配退避的本地条目数。
+  final int automaticMappingMissCount;
+
+  /// 自动匹配请求失败的诊断文本。无候选/低置信度不是异常，因此只计 miss、不伪造错误。
+  final List<String> automaticMappingErrors;
+
   bool get hasNeverSynced => lastSyncAt <= 0;
 
-  bool get hasProblem => unauthorized || failures.isNotEmpty;
+  bool get hasProblem =>
+      unauthorized || failures.isNotEmpty || automaticMappingErrors.isNotEmpty;
 
   /// 按 mapping id 索引失败原因，供 UI 把错误挂回对应条目行。
   Map<int, MediaTrackingFailure> get failureByMappingId =>
@@ -265,6 +290,10 @@ class MediaTrackingService {
   final Map<String, Future<MediaTrackingMappingRow?>> _autoMappingInFlight =
       <String, Future<MediaTrackingMappingRow?>>{};
   final Map<String, int> _autoMappingMissAt = <String, int>{};
+  final Map<String, Future<MediaTrackingMappingRow?> Function()>
+      _autoMappingRetry =
+      <String, Future<MediaTrackingMappingRow?> Function()>{};
+  final Map<String, String> _autoMappingErrors = <String, String>{};
 
   static const Duration _autoMappingMissRetry = Duration(minutes: 10);
 
@@ -366,6 +395,8 @@ class MediaTrackingService {
               error: update.outbox.lastError!.trim(),
             ),
       ],
+      automaticMappingMissCount: _autoMappingMissAt.length,
+      automaticMappingErrors: _autoMappingErrors.values.toList(growable: false),
     );
   }
 
@@ -386,6 +417,139 @@ class MediaTrackingService {
       );
     } finally {
       api.close();
+    }
+  }
+
+  /// 绕过本会话内自动匹配的 10 分钟 miss 退避，立即重跑所有失败条目。
+  ///
+  /// 成功建映射后立刻 reconciliation：mapping.updatedAt 会让当前本地权威进度越过
+  /// 水位并幂等进入 outbox；失败仍留在 miss/error 状态供首页诊断。
+  Future<MediaTrackingMappingRetryResult> retryAutomaticMappings() async {
+    final Map<String, Future<MediaTrackingMappingRow?> Function()> retries =
+        Map<String, Future<MediaTrackingMappingRow?> Function()>.of(
+      _autoMappingRetry,
+    );
+    int matched = 0;
+    for (final MapEntry<String,
+        Future<MediaTrackingMappingRow?> Function()> entry in retries.entries) {
+      _autoMappingMissAt.remove(entry.key);
+      final MediaTrackingMappingRow? mapping =
+          await _singleFlightAutoMapping(entry.key, entry.value);
+      if (mapping != null) {
+        matched++;
+        await _enqueueCurrentProgress(mapping);
+      }
+    }
+    if (matched == 0) {
+      _statusRevision.value++;
+      return MediaTrackingMappingRetryResult(
+        attempted: retries.length,
+        matched: 0,
+      );
+    }
+    final MediaTrackingSyncResult syncResult = await syncNow(force: true);
+    return MediaTrackingMappingRetryResult(
+      attempted: retries.length,
+      matched: matched,
+      syncResult: syncResult,
+    );
+  }
+
+  /// 保存用户确认的映射后，立即把当前本地权威进度补入 outbox 并尝试同步。
+  ///
+  /// reconciliation 水位 + outbox 单行合并共同保证同一当前进度不会重复发送。
+  Future<MediaTrackingSyncResult> saveManualMappingAndSync({
+    required TrackingMediaType mediaType,
+    required String mediaKey,
+    required String mediaTitle,
+    required TrackingKind kind,
+    required int subjectId,
+    required String subjectName,
+    required TrackingProgressMode progressMode,
+    required int progressOffset,
+  }) async {
+    await _repository.saveMapping(
+      mediaType: mediaType,
+      mediaKey: mediaKey,
+      mediaTitle: mediaTitle,
+      kind: kind,
+      subjectId: subjectId,
+      subjectName: subjectName,
+      progressMode: progressMode,
+      progressOffset: progressOffset,
+    );
+    final String key = '${mediaType.value}:$mediaKey';
+    _autoMappingMissAt.remove(key);
+    _autoMappingRetry.remove(key);
+    _autoMappingErrors.remove(key);
+    final MediaTrackingMappingRow? mapping = await _repository.findMapping(
+      mediaType: mediaType,
+      mediaKey: mediaKey,
+    );
+    if (mapping == null) {
+      throw StateError('Manual media tracking mapping was not persisted');
+    }
+    await _enqueueCurrentProgress(mapping);
+    return syncNow(force: true);
+  }
+
+  /// 读取指定 mapping 的当前权威本地事实并幂等入队，不依赖毫秒水位先后关系。
+  Future<void> _enqueueCurrentProgress(MediaTrackingMappingRow mapping) async {
+    TrackingMediaType? mediaType;
+    for (final TrackingMediaType value in TrackingMediaType.values) {
+      if (value.value == mapping.mediaType) {
+        mediaType = value;
+        break;
+      }
+    }
+    if (mediaType == null) return;
+    if (mediaType == TrackingMediaType.video ||
+        mediaType == TrackingMediaType.videoCollection) {
+      final List<CompletedVideoTrackingProgress> progress =
+          await _repository.loadCompletedVideoTrackingProgress(afterMs: -1);
+      for (final CompletedVideoTrackingProgress item in progress) {
+        if (item.mediaType != mediaType || item.mediaKey != mapping.mediaKey) {
+          continue;
+        }
+        await _repository.enqueueProgress(
+          mediaType: item.mediaType,
+          mediaKey: item.mediaKey,
+          localProgress: item.localProgress,
+          completed: item.completed,
+        );
+      }
+      return;
+    }
+    if (mediaType == TrackingMediaType.book ||
+        mediaType == TrackingMediaType.bookChapter) {
+      final List<PersistedBookTrackingProgress> progress =
+          await _repository.loadPersistedBookTrackingProgress(afterMs: -1);
+      for (final PersistedBookTrackingProgress item in progress) {
+        if (item.mediaType != mediaType || item.mediaKey != mapping.mediaKey) {
+          continue;
+        }
+        await _repository.enqueueProgress(
+          mediaType: item.mediaType,
+          mediaKey: item.mediaKey,
+          localProgress: item.localProgress,
+          completed: item.completed,
+        );
+      }
+      return;
+    }
+    if (mediaType == TrackingMediaType.game) {
+      final List<PersistedGameTrackingStatus> progress =
+          await _repository.loadPersistedGameTrackingStatus(afterMs: -1);
+      for (final PersistedGameTrackingStatus item in progress) {
+        if (item.gameId != mapping.mediaKey) continue;
+        await _repository.enqueueProgress(
+          mediaType: TrackingMediaType.game,
+          mediaKey: item.gameId,
+          localProgress: item.status,
+          completed: item.status == 2,
+          monotonic: false,
+        );
+      }
     }
   }
 
@@ -719,6 +883,7 @@ class MediaTrackingService {
     String key,
     Future<MediaTrackingMappingRow?> Function() resolve,
   ) {
+    _autoMappingRetry[key] = resolve;
     final Future<MediaTrackingMappingRow?>? running = _autoMappingInFlight[key];
     if (running != null) return running;
     final int now = DateTime.now().millisecondsSinceEpoch;
@@ -733,12 +898,18 @@ class MediaTrackingService {
         final MediaTrackingMappingRow? result = await resolve();
         if (result == null) {
           _autoMappingMissAt[key] = DateTime.now().millisecondsSinceEpoch;
+          _autoMappingErrors.remove(key);
         } else {
           _autoMappingMissAt.remove(key);
+          _autoMappingRetry.remove(key);
+          _autoMappingErrors.remove(key);
         }
+        _statusRevision.value++;
         return result;
       } catch (error, stackTrace) {
         _autoMappingMissAt[key] = DateTime.now().millisecondsSinceEpoch;
+        _autoMappingErrors[key] = error.toString();
+        _statusRevision.value++;
         ErrorLogService.instance.log(
           'MediaTrackingService.autoMap',
           error,
