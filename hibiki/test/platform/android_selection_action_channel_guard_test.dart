@@ -12,9 +12,21 @@ void main() {
     expect(native, contains('Intent.ACTION_WEB_SEARCH'));
     expect(native, contains('SearchManager.QUERY'));
     expect(native, contains('intent.putExtra(SearchManager.QUERY, query)'));
-    expect(native,
-        contains('intent.resolveActivity(context.getPackageManager())'));
     expect(native, contains('result.success(launchWebSearch(context, query))'));
+  });
+
+  test('web search launches directly despite package visibility filtering', () {
+    expect(native, isNot(contains('resolveActivity(')));
+    expect(native, contains('context.startActivity(intent)'));
+    expect(native, contains('catch (ActivityNotFoundException error)'));
+    expect(
+      native,
+      contains(
+        'catch (ActivityNotFoundException error) {\n'
+        '            return false;\n'
+        '        }',
+      ),
+    );
   });
 
   test('web search has no URL or vendor fallback', () {
