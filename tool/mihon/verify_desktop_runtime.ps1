@@ -16,7 +16,8 @@ foreach ($required in @(
     $server,
     $manifestPath,
     (Join-Path $runtimeRoot "LICENSE-M-Extension-Server.txt"),
-    (Join-Path $runtimeRoot "NOTICE-M-Extension-Server.txt")
+    (Join-Path $runtimeRoot "NOTICE-M-Extension-Server.txt"),
+    (Join-Path $runtimeRoot "UPSTREAM-M-Extension-Server.txt")
 )) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Missing Mihon desktop runtime asset: $required"

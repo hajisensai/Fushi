@@ -191,6 +191,7 @@ try {
     Copy-Item -LiteralPath $serverJar.FullName -Destination (Join-Path $stagingRoot "m-extension-server.jar")
     Copy-Item -LiteralPath (Join-Path $sourceRoot "LICENSE") -Destination (Join-Path $stagingRoot "LICENSE-M-Extension-Server.txt")
     Copy-Item -LiteralPath (Join-Path $overlayRoot "NOTICE") -Destination (Join-Path $stagingRoot "NOTICE-M-Extension-Server.txt")
+    Copy-Item -LiteralPath (Join-Path $overlayRoot "UPSTREAM") -Destination (Join-Path $stagingRoot "UPSTREAM-M-Extension-Server.txt")
 
     $checksums = [ordered]@{
         mExtensionServer = [ordered]@{

@@ -6,6 +6,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $ApkPath,
 
+    [ValidateSet("", "x64", "arm64")]
+    [string] $Architecture = "",
+
     [string] $Language = "en",
 
     [string] $Search = "Frieren"
@@ -18,8 +21,12 @@ $runtimeRoot = [IO.Path]::GetFullPath($RuntimeDirectory)
 $extensionApk = [IO.Path]::GetFullPath($ApkPath)
 $javaRelativePath = if ($env:OS -eq "Windows_NT") {
     "runtime\bin\java.exe"
+} elseif ($Architecture -eq "x64") {
+    "runtime-macos-x64/bin/java"
+} elseif ($Architecture -eq "arm64") {
+    "runtime-macos-arm64/bin/java"
 } else {
-    "runtime/bin/java"
+    throw "-Architecture x64 or arm64 is required outside Windows."
 }
 $java = Join-Path $runtimeRoot $javaRelativePath
 $server = Join-Path $runtimeRoot "m-extension-server.jar"

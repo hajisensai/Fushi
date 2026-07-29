@@ -150,6 +150,7 @@ void main() {
           ).absolute.path,
         ),
         _gitBashPath(runtime.absolute.path),
+        'x64',
       ],
     );
 
@@ -348,6 +349,8 @@ Future<void> _writeTamperedRuntimeFixture(
   await File('${runtime.path}/LICENSE-M-Extension-Server.txt')
       .writeAsString('fixture');
   await File('${runtime.path}/NOTICE-M-Extension-Server.txt')
+      .writeAsString('fixture');
+  await File('${runtime.path}/UPSTREAM-M-Extension-Server.txt')
       .writeAsString('fixture');
   await File('${runtime.path}/checksums.json').writeAsString(
     jsonEncode(<String, Object>{

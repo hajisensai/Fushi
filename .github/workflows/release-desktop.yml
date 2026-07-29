@@ -642,8 +642,70 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  macos-runtime-validation:
+    name: Mihon runtime ${{ matrix.arch }} (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build pinned Mihon runtime for architecture validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tool/mihon/build_desktop_runtime.sh
+          runtime_dir="$RUNNER_TEMP/mihon_bridge"
+          tool/mihon/build_desktop_runtime.sh \
+            "$runtime_dir" "$RUNNER_TEMP/hibiki-mihon-downloads"
+      - name: Execute Mihon runtime smoke on target architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_dir="$RUNNER_TEMP/mihon_bridge"
+          chmod +x tool/mihon/verify_desktop_runtime.sh
+          tool/mihon/verify_desktop_runtime.sh \
+            "$runtime_dir" "${{ matrix.arch }}"
+      - name: Execute real extension E2E on target architecture
+        shell: pwsh
+        run: |
+          $architecture = "${{ matrix.arch }}"
+          $apk = Join-Path $env:RUNNER_TEMP "mihon-e2e.apk"
+          $report = Join-Path $env:RUNNER_TEMP "mihon-e2e-$architecture.log"
+          Set-Content -LiteralPath $report -Value "Pinned Mihon extension E2E started."
+          try {
+            Invoke-WebRequest -Uri $env:MIHON_E2E_APK_URL -OutFile $apk
+            $actual = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $env:MIHON_E2E_APK_SHA256) {
+              throw "Mihon E2E APK hash mismatch: $actual"
+            }
+            & ./tool/mihon/verify_desktop_extension_e2e.ps1 `
+              -RuntimeDirectory (Join-Path $env:RUNNER_TEMP "mihon_bridge") `
+              -ApkPath $apk `
+              -Architecture $architecture *>&1 |
+                Tee-Object -FilePath $report -Append
+          } catch {
+            $_ | Out-String | Add-Content -LiteralPath $report
+            throw
+          }
+      - name: Upload architecture Mihon E2E report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mihon-extension-e2e-macos-${{ matrix.arch }}
+          path: ${{ runner.temp }}/mihon-e2e-${{ matrix.arch }}.log
+          if-no-files-found: error
+
   macos:
-    runs-on: macos-latest
+    needs: macos-runtime-validation
+    runs-on: macos-15
     permissions:
       contents: write
     steps:
@@ -883,7 +945,7 @@ jobs:
           flutter build macos --release
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
-      - name: Bundle and sign pinned Mihon desktop runtimes
+      - name: Bundle and verify pinned Mihon desktop runtimes
         shell: bash
         run: |
           set -euo pipefail
@@ -891,15 +953,147 @@ jobs:
           app_dir="hibiki/build/macos/Build/Products/Release/hibiki.app"
           runtime_dir="$app_dir/Contents/Resources/mihon_bridge"
           tool/mihon/build_desktop_runtime.sh "$runtime_dir" "$RUNNER_TEMP/hibiki-mihon-downloads"
+          chmod +x tool/mihon/verify_desktop_runtime.sh
+          tool/mihon/verify_desktop_runtime.sh "$runtime_dir" arm64
+      - name: Re-sign non-formal macOS app after runtime injection
+        if: ${{ steps.channel.outputs.manifest_channel != 'formal' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_dir="hibiki/build/macos/Build/Products/Release/hibiki.app"
+          entitlements_path="hibiki/macos/Runner/Release.entitlements"
+
+          python3 - "$app_dir" <<'PY' |
+          import pathlib
+          import sys
+          root = pathlib.Path(sys.argv[1])
+          files = [path for path in root.rglob("*") if path.is_file()]
+          for path in sorted(files, key=lambda item: len(item.parts), reverse=True):
+              print(path)
+          PY
           while IFS= read -r candidate; do
             if file "$candidate" | grep -q 'Mach-O'; then
               codesign --force --sign - --timestamp=none "$candidate"
+              codesign --verify --strict --verbose=2 "$candidate"
             fi
-          done < <(find "$runtime_dir" -type f)
-          chmod +x tool/mihon/verify_desktop_runtime.sh
-          tool/mihon/verify_desktop_runtime.sh "$runtime_dir"
-          codesign --force --deep --sign - --timestamp=none "$app_dir"
-          codesign --verify --deep --strict --verbose=2 "$app_dir"
+          done
+
+          python3 - "$app_dir" <<'PY' |
+          import pathlib
+          import sys
+          root = pathlib.Path(sys.argv[1])
+          bundles = [
+              path for path in root.rglob("*")
+              if path.is_dir() and path.suffix in {".framework", ".app"}
+          ]
+          for path in sorted(bundles, key=lambda item: len(item.parts), reverse=True):
+              print(path)
+          PY
+          while IFS= read -r bundle; do
+            codesign --force --sign - --timestamp=none "$bundle"
+            codesign --verify --strict --verbose=2 "$bundle"
+          done
+
+          codesign --force --sign - --timestamp=none \
+            --entitlements "$entitlements_path" "$app_dir"
+          codesign --verify --strict --verbose=2 "$app_dir"
+      - name: Sign formal macOS app with Developer ID
+        if: ${{ steps.channel.outputs.manifest_channel == 'formal' }}
+        shell: bash
+        env:
+          MACOS_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          MACOS_DEVELOPER_ID_APPLICATION: ${{ secrets.MACOS_DEVELOPER_ID_APPLICATION }}
+        run: |
+          set -euo pipefail
+          : "${MACOS_DEVELOPER_ID_CERTIFICATE_BASE64:?missing Developer ID certificate}"
+          : "${MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD:?missing certificate password}"
+          : "${MACOS_DEVELOPER_ID_APPLICATION:?missing Developer ID identity}"
+          case "$MACOS_DEVELOPER_ID_APPLICATION" in
+            "Developer ID Application:"*) ;;
+            *) echo "::error::Expected a Developer ID Application identity"; exit 1 ;;
+          esac
+
+          app_dir="hibiki/build/macos/Build/Products/Release/hibiki.app"
+          entitlements_path="hibiki/macos/Runner/Release.entitlements"
+          certificate_path="$RUNNER_TEMP/hibiki-developer-id.p12"
+          keychain_path="$RUNNER_TEMP/hibiki-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          original_keychains=()
+          while IFS= read -r keychain; do
+            original_keychains+=("$keychain")
+          done < <(
+            security list-keychains -d user |
+              sed 's/^[[:space:]]*"//; s/"[[:space:]]*$//'
+          )
+          cleanup_signing() {
+            security list-keychains -d user -s "${original_keychains[@]}" || true
+            security delete-keychain "$keychain_path" || true
+            rm -f "$certificate_path"
+          }
+          trap cleanup_signing EXIT
+
+          CERTIFICATE_BASE64="$MACOS_DEVELOPER_ID_CERTIFICATE_BASE64" \
+            python3 - "$certificate_path" <<'PY'
+          import base64
+          import os
+          import pathlib
+          import sys
+          pathlib.Path(sys.argv[1]).write_bytes(
+              base64.b64decode(os.environ["CERTIFICATE_BASE64"], validate=True)
+          )
+          PY
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" \
+            -k "$keychain_path" \
+            -P "$MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple: -s -k "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+
+          python3 - "$app_dir" <<'PY' |
+          import pathlib
+          import sys
+          root = pathlib.Path(sys.argv[1])
+          files = [path for path in root.rglob("*") if path.is_file()]
+          for path in sorted(files, key=lambda item: len(item.parts), reverse=True):
+              print(path)
+          PY
+          while IFS= read -r candidate; do
+            if file "$candidate" | grep -q 'Mach-O'; then
+              codesign --force --options runtime --timestamp \
+                --keychain "$keychain_path" \
+                --sign "$MACOS_DEVELOPER_ID_APPLICATION" "$candidate"
+              codesign --verify --strict --verbose=2 "$candidate"
+            fi
+          done
+
+          python3 - "$app_dir" <<'PY' |
+          import pathlib
+          import sys
+          root = pathlib.Path(sys.argv[1])
+          bundles = [
+              path for path in root.rglob("*")
+              if path.is_dir() and path.suffix in {".framework", ".app"}
+          ]
+          for path in sorted(bundles, key=lambda item: len(item.parts), reverse=True):
+              print(path)
+          PY
+          while IFS= read -r bundle; do
+            codesign --force --options runtime --timestamp \
+              --keychain "$keychain_path" \
+              --sign "$MACOS_DEVELOPER_ID_APPLICATION" "$bundle"
+            codesign --verify --strict --verbose=2 "$bundle"
+          done
+
+          codesign --force --options runtime --timestamp \
+            --keychain "$keychain_path" \
+            --sign "$MACOS_DEVELOPER_ID_APPLICATION" \
+            --entitlements "$entitlements_path" "$app_dir"
+          codesign --verify --strict --verbose=2 "$app_dir"
       - name: Run real Mihon extension E2E on macOS release runtime
         shell: pwsh
         run: |
@@ -915,7 +1109,9 @@ jobs:
             $runtime = "hibiki/build/macos/Build/Products/Release/hibiki.app/Contents/Resources/mihon_bridge"
             & ./tool/mihon/verify_desktop_extension_e2e.ps1 `
               -RuntimeDirectory $runtime `
-              -ApkPath $apk *>&1 | Tee-Object -FilePath $report -Append
+              -ApkPath $apk `
+              -Architecture arm64 *>&1 |
+                Tee-Object -FilePath $report -Append
           } catch {
             $_ | Out-String | Add-Content -LiteralPath $report
             throw
@@ -932,6 +1128,10 @@ jobs:
         shell: bash
         env:
           BUILD_VERSION_NAME: ${{ steps.channel.outputs.build_version_name }}
+          MANIFEST_CHANNEL: ${{ steps.channel.outputs.manifest_channel }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           app_dir="build/macos/Build/Products/Release/hibiki.app"
@@ -942,6 +1142,29 @@ jobs:
           fi
           mkdir -p "$out_dir"
           rm -f "$out_dir"/hibiki-*-macos.zip
+          if [ "$MANIFEST_CHANNEL" = formal ]; then
+            : "${APPLE_ID:?missing Apple ID for notarization}"
+            : "${APPLE_APP_SPECIFIC_PASSWORD:?missing app-specific password}"
+            : "${APPLE_TEAM_ID:?missing Apple team ID}"
+            submission="$RUNNER_TEMP/hibiki-notary-submission.zip"
+            ditto -c -k --keepParent "$app_dir" "$submission"
+            notary_result="$(xcrun notarytool submit "$submission" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait --output-format json)"
+            printf '%s\n' "$notary_result"
+            notary_status="$(python3 -c \
+              'import json,sys; print(json.load(sys.stdin).get("status", ""))' \
+              <<<"$notary_result")"
+            if [ "$notary_status" != Accepted ]; then
+              echo "::error title=macOS notarization rejected::status=$notary_status"
+              exit 1
+            fi
+            xcrun stapler staple "$app_dir"
+            xcrun stapler validate "$app_dir"
+            spctl --assess --type execute --verbose=4 "$app_dir"
+          fi
           ditto -c -k --keepParent "$app_dir" "$out_dir/hibiki-${BUILD_VERSION_NAME}-macos.zip"
       # The single non-blocking `publish` job downloads this artifact and does
       # all Release publishing, so macOS builds in parallel with Windows/iOS and

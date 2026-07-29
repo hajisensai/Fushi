@@ -174,6 +174,7 @@ build_runtime "$arm64_jdk_home" "runtime-macos-arm64"
 cp "$server_jar" "$staging_root/m-extension-server.jar"
 cp "$source_root/LICENSE" "$staging_root/LICENSE-M-Extension-Server.txt"
 cp "$overlay_root/NOTICE" "$staging_root/NOTICE-M-Extension-Server.txt"
+cp "$overlay_root/UPSTREAM" "$staging_root/UPSTREAM-M-Extension-Server.txt"
 
 server_sha256="$(shasum -a 256 "$staging_root/m-extension-server.jar" | awk '{print $1}')"
 cat >"$staging_root/checksums.json" <<EOF

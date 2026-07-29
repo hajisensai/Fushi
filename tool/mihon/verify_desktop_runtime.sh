@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 1 ]]; then
-  echo "usage: $0 RUNTIME_DIRECTORY" >&2
+if [[ $# -ne 2 ]]; then
+  echo "usage: $0 RUNTIME_DIRECTORY ARCHITECTURE" >&2
   exit 64
 fi
 
 runtime_directory="$(cd "$1" && pwd)"
-case "$(uname -m)" in
+architecture="$2"
+case "$architecture" in
   arm64) java="$runtime_directory/runtime-macos-arm64/bin/java" ;;
-  x86_64) java="$runtime_directory/runtime-macos-x64/bin/java" ;;
-  *) echo "unsupported macOS architecture: $(uname -m)" >&2; exit 1 ;;
+  x64) java="$runtime_directory/runtime-macos-x64/bin/java" ;;
+  *) echo "unsupported Mihon runtime architecture: $architecture" >&2; exit 64 ;;
 esac
 server="$runtime_directory/m-extension-server.jar"
 sha256_file() {
@@ -22,7 +23,8 @@ sha256_file() {
 }
 for required in "$java" "$server" "$runtime_directory/checksums.json" \
   "$runtime_directory/LICENSE-M-Extension-Server.txt" \
-  "$runtime_directory/NOTICE-M-Extension-Server.txt"; do
+  "$runtime_directory/NOTICE-M-Extension-Server.txt" \
+  "$runtime_directory/UPSTREAM-M-Extension-Server.txt"; do
   if [[ ! -f "$required" ]]; then
     echo "missing bundled Mihon runtime asset: $required" >&2
     exit 1
