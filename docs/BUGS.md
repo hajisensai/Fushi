@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1250 条。点号进各自文件。
+> 共 1252 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -74,6 +74,8 @@
 | [BUG-1262](bugs/BUG-1262-anki-dedup-vanished-file-aborts.md) | ✅ | ✅ | 媒体文件在扫描快照后消失导致整轮去重PathNotFoundException中止 |
 | [BUG-1261](bugs/BUG-1261-oald-mdd-parts-sound-play.md) | ✅ | ✅ | MDX 分卷 MDD 未挂载 + 词典内 sound:// 发音点击无反应（OALD） |
 | [BUG-1260](bugs/BUG-1260-sync-progress-blank-and-silent-noop.md) | ✅ | ✅ | 同步进度条只有线没有字 + 零通道空转静默收尾 |
+| [BUG-1252](bugs/BUG-1252-scrape-cover-preview-size.md) | ✅ | ✅ | 刮削候选封面预览过小 |
+| [BUG-1251](bugs/BUG-1251-manual-search-confidence.md) | ✅ | ✅ | 手动搜索封面仍按原路径标题评分 |
 | [BUG-1250](bugs/BUG-1250-stream-import-hides-progress.md) | ✅ | ✅ | 边下边播提前入库把下载任务直接标成已完成并丢失进度 |
 | [BUG-1249](bugs/BUG-1249-download-empty-result-reason.md) | ✅ | ✅ | 下载发现把空响应或损坏 RSS 伪装成无结果且不说明筛选原因 |
 | [BUG-1247](bugs/BUG-1247-gal-unity-text-source-isolation.md) | ✅ | ✅ | Unity TextMesh 停顿拆句且绕过文本线程选择 |
