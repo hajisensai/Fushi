@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/media/manga/mihon/mihon_library.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_online_reader_page.dart';
@@ -308,6 +308,9 @@ class MihonMangaDetailPage extends StatefulWidget {
 class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
   MihonManga? _details;
   List<MihonChapter> _chapters = const <MihonChapter>[];
+  String? _libraryBookKey;
+  MihonLibraryEntry? _libraryEntry;
+  bool _libraryBusy = false;
   Object? _error;
 
   @override
@@ -331,10 +334,25 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
         details,
         preferences: widget.sourceContext.preferences,
       );
+      final MihonLibraryService library = MihonLibraryService(widget.manager);
+      EpubBookRow? shelfBook =
+          await library.find(widget.sourceContext, details);
+      if (shelfBook != null) {
+        await library.refresh(
+          bookKey: shelfBook.bookKey,
+          existing: MihonLibraryEntry.tryParse(shelfBook.sourceMetadata),
+          manga: details,
+          chapters: chapters,
+        );
+        shelfBook =
+            await widget.manager.database.getEpubBook(shelfBook.bookKey);
+      }
       if (mounted) {
         setState(() {
           _details = details;
           _chapters = chapters;
+          _libraryBookKey = shelfBook?.bookKey;
+          _libraryEntry = MihonLibraryEntry.tryParse(shelfBook?.sourceMetadata);
         });
       }
     } on Object catch (error) {
@@ -342,19 +360,67 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
     }
   }
 
-  void _openChapter(MihonChapter chapter) {
-    Navigator.of(context).push(
+  Future<void> _addToBookshelf() async {
+    final MihonManga? details = _details;
+    if (details == null || _libraryBusy) return;
+    setState(() => _libraryBusy = true);
+    try {
+      final EpubBookRow row = await MihonLibraryService(widget.manager).add(
+        context: widget.sourceContext,
+        manga: details,
+        chapters: _chapters,
+      );
+      if (!mounted) return;
+      setState(() {
+        _libraryBookKey = row.bookKey;
+        _libraryEntry = MihonLibraryEntry.tryParse(row.sourceMetadata);
+      });
+    } on Object catch (error, stack) {
+      ErrorLogService.instance
+          .log('MihonMangaDetailPage.addToBookshelf', error, stack);
+      debugPrint('[Mihon] add to bookshelf failed: $error');
+      if (mounted) HibikiToast.show(msg: '$error');
+    } finally {
+      if (mounted) setState(() => _libraryBusy = false);
+    }
+  }
+
+  Future<void> _continueReading() async {
+    final MihonLibraryEntry? entry = _libraryEntry;
+    if (entry == null || entry.chapters.isEmpty) return;
+    final int chapterIndex = MihonLibraryService.initialChapterIndex(entry);
+    await _openChapter(entry.chapters[chapterIndex]);
+  }
+
+  Future<void> _openChapter(MihonChapter chapter) async {
+    final String? libraryBookKey = _libraryBookKey;
+    if (libraryBookKey != null) {
+      final MihonLibraryEntry? entry = _libraryEntry;
+      if (entry != null) {
+        final int chapterIndex = entry.chapters.indexWhere(
+          (MihonChapter value) => value.url == chapter.url,
+        );
+        if (chapterIndex >= 0 && chapterIndex != entry.currentChapterIndex) {
+          _libraryEntry =
+              await MihonLibraryService(widget.manager).selectChapter(
+            bookKey: libraryBookKey,
+            entry: entry,
+            chapterIndex: chapterIndex,
+          );
+          if (mounted) setState(() {});
+        }
+      }
+    }
+    if (!mounted) return;
+    await Navigator.of(context).push(
       adaptivePageRoute<void>(
         context: context,
         builder: (BuildContext context) => MihonChapterReaderPage(
-          title: '${_details?.title ?? widget.manga.title} · ${chapter.name}',
-          runtime: widget.manager.runtime,
+          manager: widget.manager,
           context: widget.sourceContext,
+          manga: _details ?? widget.manga,
           chapter: chapter,
-          cacheRoot: Directory(
-            '${widget.manager.rootDirectory.path}${Platform.pathSeparator}'
-            'reader-cache',
-          ),
+          libraryBookKey: libraryBookKey,
         ),
       ),
     );
@@ -412,6 +478,38 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      children: <Widget>[
+                        FilledButton.icon(
+                          key: const ValueKey<String>(
+                            'mihon_add_to_bookshelf',
+                          ),
+                          onPressed: _libraryBookKey == null && !_libraryBusy
+                              ? _addToBookshelf
+                              : null,
+                          icon: Icon(
+                            _libraryBookKey == null
+                                ? Icons.library_add_outlined
+                                : Icons.check,
+                          ),
+                          label: Text(
+                            _libraryBookKey == null
+                                ? t.mihon_add_to_bookshelf
+                                : t.mihon_in_bookshelf,
+                          ),
+                        ),
+                        if (_libraryBookKey != null)
+                          OutlinedButton.icon(
+                            onPressed:
+                                _chapters.isEmpty ? null : _continueReading,
+                            icon: const Icon(Icons.play_arrow),
+                            label: Text(t.book_continue_reading),
+                          ),
+                      ],
+                    ),
                     const SizedBox(height: 24),
                     Text(
                       t.mihon_chapters_title,
@@ -425,8 +523,12 @@ class _MihonMangaDetailPageState extends State<MihonMangaDetailPage> {
                           subtitle: chapter.scanlator?.isNotEmpty == true
                               ? Text(chapter.scanlator!)
                               : null,
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => _openChapter(chapter),
+                          trailing: Icon(
+                            _libraryEntry?.currentChapter?.url == chapter.url
+                                ? Icons.play_circle_outline
+                                : Icons.chevron_right,
+                          ),
+                          onTap: () => unawaited(_openChapter(chapter)),
                         ),
                       ),
                   ],

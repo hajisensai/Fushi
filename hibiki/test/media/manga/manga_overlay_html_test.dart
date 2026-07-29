@@ -728,6 +728,30 @@ void main() {
           reason: '字符命中层的公共布局应只在文档 CSS 中声明一次');
     });
 
+    test('online image load replaces bootstrap dimensions with natural size',
+        () {
+      final String doc = mangaWindowDocument(
+        <MokuroImage>[
+          const MokuroImage(
+            url: 'online.jpg',
+            size: Size(1000, 1400),
+            blocks: <MokuroBlock>[],
+          ),
+        ],
+        <String>['online.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: '',
+      );
+
+      expect(doc.contains('window.__mangaUpdatePageGeometry'), isTrue);
+      expect(doc.contains('image.naturalWidth'), isTrue);
+      expect(doc.contains('image.naturalHeight'), isTrue);
+      expect(doc.contains("page.style.aspectRatio = width + ' / ' + height"),
+          isTrue);
+      expect(doc.contains("page.style.width =\n        'min('"), isTrue);
+    });
+
     test('desktop zoom and right-button drag/menu contract is embedded', () {
       final String doc = mangaWindowDocument(
         <MokuroImage>[_pageWithTwoBlocks()],

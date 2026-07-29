@@ -3,12 +3,13 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/media/manga/mihon/mihon_bridge_runtime.dart';
+import 'package:hibiki/src/media/manga/mihon/mihon_child_process_containment.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_runtime.dart';
 
@@ -19,11 +20,13 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     Directory? resourceDirectory,
     http.Client? httpClient,
   })  : resourceDirectory = resourceDirectory ?? _defaultResourceDirectory(),
+        _processContainment = MihonChildProcessContainment.platform(),
         _http = httpClient ?? http.Client();
 
   final Directory dataDirectory;
   final Directory resourceDirectory;
   final http.Client _http;
+  final MihonChildProcessContainment _processContainment;
 
   Process? _process;
   int? _port;
@@ -34,6 +37,9 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
   final Map<String, _CachedApk> _apkCache = <String, _CachedApk>{};
   final Map<String, http.Client> _imageClients = <String, http.Client>{};
   int _imageRequestSequence = 0;
+
+  @visibleForTesting
+  int? get processId => _process?.pid;
 
   Uri _uri(String path) {
     final int? port = _port;
@@ -230,20 +236,23 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
       // Process identity is retained below; a failed graceful stop never causes
       // a port/PID scan or termination of unrelated processes.
     }
-    final Process? process = _process;
-    if (process != null) {
-      try {
-        await process.exitCode.timeout(const Duration(milliseconds: 700));
-      } on TimeoutException {
-        process.kill();
+    try {
+      final Process? process = _process;
+      if (process != null) {
         try {
-          await process.exitCode.timeout(const Duration(milliseconds: 500));
+          await process.exitCode.timeout(const Duration(milliseconds: 700));
         } on TimeoutException {
-          // The retained Process is the only identity ever terminated. The
-          // app-level exit barrier is bounded at two seconds and must not hang
-          // behind an unresponsive third-party JVM.
+          process.kill();
+          try {
+            await process.exitCode.timeout(const Duration(milliseconds: 500));
+          } on TimeoutException {
+            // Closing the Windows Job Object below is the final exact-process
+            // backstop. The app-level exit barrier must remain bounded.
+          }
         }
       }
+    } finally {
+      _processContainment.close();
     }
     _process = null;
     _port = null;
@@ -314,6 +323,34 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
       environment: <String, String>{'HIBIKI_MIHON_TOKEN': token},
       mode: ProcessStartMode.normal,
     );
+    if (_disposed) {
+      process.kill();
+      try {
+        await process.exitCode.timeout(const Duration(seconds: 1));
+      } on TimeoutException {
+        // Process identity is exact; the runtime is already shutting down.
+      }
+      throw const MihonRuntimeException(
+        'DISPOSED',
+        'Mihon runtime was disposed while the sidecar was starting',
+      );
+    }
+    try {
+      _processContainment.attach(process.pid);
+    } catch (error) {
+      process.kill();
+      try {
+        await process.exitCode.timeout(const Duration(seconds: 1));
+      } on TimeoutException {
+        // This is still the exact retained child. Startup fails rather than
+        // allowing an uncontained JVM to outlive Hibiki.
+      }
+      throw MihonRuntimeException(
+        'PROCESS_CONTAINMENT_FAILED',
+        'Failed to contain the Mihon sidecar process',
+        cause: error,
+      );
+    }
     _process = process;
     _port = port;
     _token = token;

@@ -18,7 +18,8 @@ import 'package:hibiki/utils.dart';
 /// - **漫画源**：Mokuro 内置来源和已启用的 Mihon 在线来源。
 /// - **来源设置**：本地漫画扫描根、在线来源排序/启停及扩展偏好。
 ///
-/// V1 在线章节只在临时会话内流式阅读，不写书籍数据库、阅读进度或离线下载。
+/// Mihon 在线漫画复用 EpubBooks 的漫画身份进入同一书架，当前章节/页码可跨重启
+/// 继续；页面仍由来源运行时按需流式获取，不把鉴权 URL 暴露给 WebView。
 ///
 /// 命名：`shelf` 在本仓命名术语表里已冻结给 `ShelfEntries`（条目排序/归属映射
 /// 层），页面统称 library page，因此这里叫 `MangaLibraryPage` 而不是

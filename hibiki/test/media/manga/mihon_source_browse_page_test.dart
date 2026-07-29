@@ -85,6 +85,7 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text('Chapter 1'), findsOneWidget);
+      expect(find.text('Add to manga shelf'), findsOneWidget);
     },
   );
 }

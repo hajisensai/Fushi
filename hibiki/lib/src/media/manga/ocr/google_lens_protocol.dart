@@ -15,7 +15,7 @@ const int kGoogleLensMaximumImageDimension = 1500;
 const int kGoogleLensMaximumResponseBytes = 12 * 1024 * 1024;
 const int kGoogleLensMaximumCachedPageBytes = 32 * 1024 * 1024;
 const int kGoogleLensMaximumRegionsPerPage = 100000;
-const String kGoogleLensEngineSignature = 'google-lens-v1-ja';
+const String kGoogleLensEngineSignature = 'google-lens-v2-niratan-ja';
 
 /// Chromium Lens overlay protobuf 的字段号真值表（BUG-1163 配套）。
 ///
@@ -362,6 +362,7 @@ class GoogleLensProtocol {
           lineText: line.text,
           utf16Base: utf16Base,
           geometry: line.geometry,
+          isVertical: isVertical,
         );
         regionCount += lineRegions.length;
         if (regionCount > kGoogleLensMaximumRegionsPerPage) {
@@ -389,6 +390,7 @@ class GoogleLensProtocol {
     required String lineText,
     required int utf16Base,
     required _LensGeometry geometry,
+    required bool isVertical,
   }) {
     final List<({String text, int start, int end})> characters =
         <({String text, int start, int end})>[];
@@ -403,46 +405,32 @@ class GoogleLensProtocol {
     if (characters.isEmpty) {
       return const <GoogleLensTextRegion>[];
     }
-    final double characterWidth = geometry.width / characters.length;
     return <GoogleLensTextRegion>[
       for (int i = 0; i < characters.length; i++)
         GoogleLensTextRegion(
-          // Split the original rotated Lens rectangle along its baseline, then
-          // take the AABB of each small glyph cell. Splitting the line's large
-          // AABB (the old implementation) makes every character cover most of
-          // a diagonal title and returns a neighbouring/reversed character.
-          normalizedBounds: _orientedCharacterBounds(
-            geometry,
-            along: (i + 0.5) / characters.length - 0.5,
-            characterWidth: characterWidth,
-          ),
+          // Match Niratan's visible hit-test contract after adapting its
+          // bottom-left AppKit canvas to Hibiki's top-left WebView: horizontal
+          // text is always left-to-right and vertical text top-to-bottom.
+          // Using the raw rotation sign here reverses -90° vertical lines.
+          normalizedBounds: isVertical
+              ? Rect.fromLTWH(
+                  geometry.rect.left,
+                  geometry.rect.top +
+                      i * geometry.rect.height / characters.length,
+                  geometry.rect.width,
+                  geometry.rect.height / characters.length,
+                )
+              : Rect.fromLTWH(
+                  geometry.rect.left +
+                      i * geometry.rect.width / characters.length,
+                  geometry.rect.top,
+                  geometry.rect.width / characters.length,
+                  geometry.rect.height,
+                ),
           utf16Start: characters[i].start,
           utf16End: characters[i].end,
         ),
     ];
-  }
-
-  static Rect _orientedCharacterBounds(
-    _LensGeometry geometry, {
-    required double along,
-    required double characterWidth,
-  }) {
-    final double cosine = math.cos(geometry.rotation);
-    final double sine = math.sin(geometry.rotation);
-    final double centerX = geometry.centerX + along * geometry.width * cosine;
-    // Lens and the overlay both use a top-left origin, so positive baseline
-    // rotation moves down as X increases. 沿基线走 `along * width` 的**像素**
-    // 位移，投到 Y 轴后要按页高归一，所以多一个 aspect 因子。
-    final double centerY =
-        geometry.centerYTop + along * geometry.width * geometry.aspect * sine;
-    return _rotatedAabb(
-      centerX: centerX,
-      centerY: centerY,
-      width: characterWidth,
-      height: geometry.height,
-      rotation: geometry.rotation,
-      aspect: geometry.aspect,
-    );
   }
 
   /// 旋转矩形的归一化 AABB。
@@ -506,11 +494,6 @@ class GoogleLensProtocol {
       // hit target vertically (top article text points at the bottom article).
       rect: bounds,
       rotation: rotation,
-      centerX: centerX,
-      centerYTop: centerY,
-      width: width,
-      height: height,
-      aspect: aspect,
     );
   }
 
@@ -534,22 +517,10 @@ class _LensGeometry {
   const _LensGeometry({
     required this.rect,
     required this.rotation,
-    required this.centerX,
-    required this.centerYTop,
-    required this.width,
-    required this.height,
-    required this.aspect,
   });
 
   final Rect rect;
   final double rotation;
-  final double centerX;
-  final double centerYTop;
-  final double width;
-  final double height;
-
-  /// 送检图的 `宽/高`，用于把归一化坐标拉进各向同性空间做旋转投影。
-  final double aspect;
 
   bool get isVertical =>
       ((rotation.abs() - math.pi / 2).abs() < 0.5) ||

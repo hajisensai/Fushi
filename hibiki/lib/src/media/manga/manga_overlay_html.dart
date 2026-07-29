@@ -779,6 +779,41 @@ String _mangaGestureJs({
   var IS_WEBTOON = $isWebtoon;
   var CURRENT = $currentSpread;
   var RESTORE_FRACTION = ${restoreFraction.toStringAsFixed(6)};
+  // Online sources do not expose pixel dimensions before the first image
+  // response. Replace the bootstrap ratio with the browser-decoded (and EXIF
+  // oriented) dimensions as soon as each page loads. OCR coordinates and the
+  // page box then share one exact geometry instead of a 1000x1400 placeholder.
+  window.__mangaUpdatePageGeometry = function(pageIndex, width, height){
+    if (!(width > 0 && height > 0)) return;
+    var page = document.querySelector('.manga-page[data-page="'+pageIndex+'"]');
+    if (!page) return;
+    page.setAttribute('data-pw', String(width));
+    page.setAttribute('data-ph', String(height));
+    page.style.aspectRatio = width + ' / ' + height;
+    if (!IS_WEBTOON) {
+      var slots = Number(page.getAttribute('data-spread-pages')) || 1;
+      slots = slots <= 1 ? 1 : slots;
+      var slotVw = 100 / slots;
+      page.style.width =
+        'min(' + slotVw + 'vw,' + (100 * width / height) + 'vh)';
+      page.style.height =
+        'min(100vh,' + (slotVw * height / width) + 'vw)';
+    }
+  };
+  document.querySelectorAll('.manga-page').forEach(function(page){
+    var image = page.querySelector('img');
+    if (!image) return;
+    var apply = function(){
+      if (!(image.naturalWidth > 0 && image.naturalHeight > 0)) return;
+      window.__mangaUpdatePageGeometry(
+        Number(page.getAttribute('data-page')),
+        image.naturalWidth,
+        image.naturalHeight
+      );
+    };
+    image.addEventListener('load', apply);
+    if (image.complete) apply();
+  });
   function _initPosition(){
     if (IS_WEBTOON) window.__mangaScrollToSpread(CURRENT, RESTORE_FRACTION);
     else window.__mangaApplyTranslate(CURRENT);
