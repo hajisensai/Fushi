@@ -2392,9 +2392,100 @@ class HibikiDatabase extends _$HibikiDatabase {
   }
 
   // ── media items ─────────────────────────────────────────────────
-  Future<List<MediaItemRow>> getAllMediaItems() =>
-      (select(mediaItems)..orderBy([(t) => OrderingTerm.desc(t.importedAt)]))
-          .get();
+  Future<List<MediaItemRow>> getAllMediaItems() => (select(mediaItems)
+        ..orderBy([
+          (t) => OrderingTerm.desc(t.importedAt),
+          (t) => OrderingTerm.desc(t.id),
+        ]))
+      .get();
+
+  /// Reconciles the persisted history identity for one stable book after its
+  /// [EpubBooks.format] changes.
+  ///
+  /// This deliberately operates on rows, never on an app-layer `MediaItem`
+  /// round-trip: the newest candidate (`imported_at DESC, id DESC`) survives,
+  /// non-survivors are deleted first, then only the survivor's source/type/key
+  /// identity columns are updated by row id. Every payload field, the primary
+  /// key, and `imported_at` therefore remain byte-for-byte owned by SQLite.
+  ///
+  /// Callers that also mutate [EpubBooks.format] must invoke this inside the
+  /// same [transaction]. [afterDuplicatesDeletedForTesting] is a deterministic
+  /// failure seam for proving that the outer transaction restores both the
+  /// deleted rows and the already-updated format before the re-key can happen.
+  Future<void> reconcileBookMediaHistoryForFormat(
+    String bookKey,
+    BookFormat format, {
+    FutureOr<void> Function()? afterDuplicatesDeletedForTesting,
+  }) async {
+    const List<String> candidateSources = <String>[
+      'reader_ttu',
+      'reader_pdf',
+      'reader_manga',
+    ];
+    const String readerMediaType = 'reader_media_type';
+    final String targetSource = switch (format) {
+      BookFormat.epub => 'reader_ttu',
+      BookFormat.pdf => 'reader_pdf',
+      BookFormat.manga => 'reader_manga',
+    };
+    final String mediaIdentifier = 'hoshi://book/$bookKey';
+    final String targetUniqueKey = '$targetSource/$mediaIdentifier';
+
+    // `unique_key` is persisted independently from its component columns.
+    // Reject a corrupt/unrelated row occupying the target key before deleting
+    // anything; otherwise re-keying would either fail late or steal identity
+    // from a row outside the three reader candidates.
+    final MediaItemRow? targetCollision = await (select(mediaItems)
+          ..where((t) => t.uniqueKey.equals(targetUniqueKey)))
+        .getSingleOrNull();
+    if (targetCollision != null &&
+        (targetCollision.mediaIdentifier != mediaIdentifier ||
+            targetCollision.mediaSourceIdentifier != targetSource ||
+            !candidateSources
+                .contains(targetCollision.mediaSourceIdentifier))) {
+      throw StateError(
+        'Cannot reconcile book history for "$bookKey": target unique key '
+        '"$targetUniqueKey" is occupied by unrelated row '
+        '${targetCollision.id}.',
+      );
+    }
+
+    final List<MediaItemRow> candidates = await (select(mediaItems)
+          ..where((t) =>
+              t.mediaIdentifier.equals(mediaIdentifier) &
+              t.mediaSourceIdentifier.isIn(candidateSources))
+          ..orderBy([
+            (t) => OrderingTerm.desc(t.importedAt),
+            (t) => OrderingTerm.desc(t.id),
+          ]))
+        .get();
+    if (candidates.isEmpty) return;
+
+    final MediaItemRow survivor = candidates.first;
+    final List<int> nonSurvivorIds = candidates
+        .skip(1)
+        .map((MediaItemRow row) => row.id)
+        .toList(growable: false);
+    if (nonSurvivorIds.isNotEmpty) {
+      await (delete(mediaItems)..where((t) => t.id.isIn(nonSurvivorIds))).go();
+    }
+
+    await afterDuplicatesDeletedForTesting?.call();
+
+    final int updated = await (update(mediaItems)
+          ..where((t) => t.id.equals(survivor.id)))
+        .write(MediaItemsCompanion(
+      mediaSourceIdentifier: Value<String>(targetSource),
+      mediaTypeIdentifier: const Value<String>(readerMediaType),
+      uniqueKey: Value<String>(targetUniqueKey),
+    ));
+    if (updated != 1) {
+      throw StateError(
+        'Cannot reconcile book history for "$bookKey": survivor row '
+        '${survivor.id} disappeared before re-key.',
+      );
+    }
+  }
 
   Future<void> upsertMediaItem(MediaItemsCompanion item) =>
       into(mediaItems).insertOnConflictUpdate(item);

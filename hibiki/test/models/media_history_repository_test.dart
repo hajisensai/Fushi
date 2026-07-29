@@ -36,6 +36,51 @@ MediaItem _item({
   );
 }
 
+Future<void> _seedBook(HibikiDatabase db, String bookKey) async {
+  await db.insertEpubBook(
+    EpubBooksCompanion.insert(
+      bookKey: bookKey,
+      title: 'Book $bookKey',
+      epubPath: 'book.epub',
+      extractDir: '/books/$bookKey',
+      chapterCount: 10,
+      chaptersJson: '["chapter"]',
+      importedAt: 100,
+    ),
+  );
+}
+
+MediaItemsCompanion _bookHistory({
+  required int id,
+  required String bookKey,
+  required String source,
+  required int importedAt,
+  String title = 'History',
+}) {
+  final String identifier = 'hoshi://book/$bookKey';
+  return MediaItemsCompanion(
+    id: Value<int>(id),
+    mediaIdentifier: Value<String>(identifier),
+    title: Value<String>(title),
+    mediaTypeIdentifier: const Value<String>('reader_media_type'),
+    mediaSourceIdentifier: Value<String>(source),
+    uniqueKey: Value<String>('$source/$identifier'),
+    base64Image: const Value<String?>('base64'),
+    imageUrl: const Value<String?>('image'),
+    audioUrl: const Value<String?>('audio'),
+    author: const Value<String?>('author'),
+    authorIdentifier: const Value<String?>('author-id'),
+    extraUrl: const Value<String?>('extra-url'),
+    extra: const Value<String?>('extra'),
+    sourceMetadata: const Value<String?>('metadata'),
+    position: const Value<int>(321),
+    duration: const Value<int>(654),
+    canDelete: const Value<bool>(true),
+    canEdit: const Value<bool>(false),
+    importedAt: Value<int>(importedAt),
+  );
+}
+
 void main() {
   late HibikiDatabase db;
   late MediaHistoryRepository repo;
@@ -141,6 +186,185 @@ void main() {
         repo.mediaItems.where((m) => m.id == null),
         isEmpty,
       );
+    });
+  });
+
+  group('atomic book format and history coordination', () {
+    test('commit swaps full-payload cache and notifies only after DB commit',
+        () async {
+      const String bookKey = 'atomic-success';
+      await _seedBook(db, bookKey);
+      await db.upsertMediaItem(
+        _bookHistory(
+          id: 10,
+          bookKey: bookKey,
+          source: 'reader_ttu',
+          importedAt: 100,
+          title: 'older',
+        ),
+      );
+      await db.upsertMediaItem(
+        _bookHistory(
+          id: 1 << 40,
+          bookKey: bookKey,
+          source: 'reader_pdf',
+          importedAt: 100,
+          title: 'survivor',
+        ),
+      );
+      await repo.loadFromDb();
+      int notifications = 0;
+      repo.addListener(() => notifications++);
+
+      await repo.applyBookFormatConversion(
+        bookKey: bookKey,
+        format: BookFormat.manga,
+        epubPath: 'manga.json',
+        chapterCount: 80,
+        chaptersJson: '[]',
+        coverPath: 'images/page_0001.png',
+      );
+
+      expect((await db.getEpubBook(bookKey))!.format, 'manga');
+      expect(await db.getAllMediaItems(), hasLength(1));
+      expect(notifications, 1);
+      final MediaItem cached = repo.mediaItems.single;
+      expect(cached.id, 1 << 40);
+      expect(cached.mediaSourceIdentifier, 'reader_manga');
+      expect(cached.mediaTypeIdentifier, 'reader_media_type');
+      expect(cached.title, 'survivor');
+      expect(cached.base64Image, 'base64');
+      expect(cached.imageUrl, 'image');
+      expect(cached.audioUrl, 'audio');
+      expect(cached.author, 'author');
+      expect(cached.authorIdentifier, 'author-id');
+      expect(cached.extraUrl, 'extra-url');
+      expect(cached.extra, 'extra');
+      expect(cached.sourceMetadata, 'metadata');
+      expect(cached.position, 321);
+      expect(cached.duration, 654);
+      expect(cached.canDelete, true);
+      expect(cached.canEdit, false);
+    });
+
+    test('fault after duplicate deletion rolls back format, rows, and cache',
+        () async {
+      const String bookKey = 'atomic-rollback';
+      await _seedBook(db, bookKey);
+      await db.upsertMediaItem(
+        _bookHistory(
+          id: 20,
+          bookKey: bookKey,
+          source: 'reader_ttu',
+          importedAt: 10,
+          title: 'old',
+        ),
+      );
+      await db.upsertMediaItem(
+        _bookHistory(
+          id: 21,
+          bookKey: bookKey,
+          source: 'reader_pdf',
+          importedAt: 20,
+          title: 'new',
+        ),
+      );
+      await repo.loadFromDb();
+      final List<(int?, String, String)> cacheBefore = repo.mediaItems
+          .map((MediaItem item) => (
+                item.id,
+                item.mediaSourceIdentifier,
+                item.title,
+              ))
+          .toList();
+      int notifications = 0;
+      repo.addListener(() => notifications++);
+
+      await expectLater(
+        repo.applyBookFormatConversion(
+          bookKey: bookKey,
+          format: BookFormat.manga,
+          epubPath: 'manga.json',
+          chapterCount: 80,
+          chaptersJson: '[]',
+          afterHistoryDuplicatesDeletedForTesting: () async {
+            expect((await db.getEpubBook(bookKey))!.format, 'manga',
+                reason: '故障点必须位于 format 更新之后');
+            final List<MediaItemRow> midRows = await db.getAllMediaItems();
+            expect(midRows, hasLength(1), reason: '故障点必须位于 non-survivor 删除之后');
+            expect(midRows.single.mediaSourceIdentifier, 'reader_pdf',
+                reason: '故障点必须位于 survivor rekey 之前');
+            throw StateError('injected after delete, before rekey');
+          },
+        ),
+        throwsStateError,
+      );
+
+      expect((await db.getEpubBook(bookKey))!.format, 'epub');
+      expect(await db.getAllMediaItems(), hasLength(2));
+      expect(
+        repo.mediaItems
+            .map((MediaItem item) => (
+                  item.id,
+                  item.mediaSourceIdentifier,
+                  item.title,
+                ))
+            .toList(),
+        cacheBefore,
+      );
+      expect(notifications, 0, reason: '失败事务绝不能发布临时 cache');
+    });
+
+    test('zero stays zero and manga-book conversion is idempotent both ways',
+        () async {
+      const String emptyKey = 'zero-history';
+      await _seedBook(db, emptyKey);
+      await repo.applyBookFormatConversion(
+        bookKey: emptyKey,
+        format: BookFormat.manga,
+        epubPath: 'manga.json',
+        chapterCount: 5,
+        chaptersJson: '[]',
+      );
+      expect(repo.mediaItems, isEmpty);
+
+      const String bookKey = 'round-trip';
+      await _seedBook(db, bookKey);
+      await db.upsertMediaItem(
+        _bookHistory(
+          id: 77,
+          bookKey: bookKey,
+          source: 'reader_pdf',
+          importedAt: 700,
+        ),
+      );
+      await repo.loadFromDb();
+
+      for (int i = 0; i < 2; i++) {
+        await repo.applyBookFormatConversion(
+          bookKey: bookKey,
+          format: BookFormat.manga,
+          epubPath: 'manga.json',
+          chapterCount: 100,
+          chaptersJson: '[]',
+        );
+      }
+      expect(repo.mediaItems.single.id, 77);
+      expect(repo.mediaItems.single.mediaSourceIdentifier, 'reader_manga');
+
+      for (int i = 0; i < 2; i++) {
+        await repo.applyBookFormatConversion(
+          bookKey: bookKey,
+          format: BookFormat.pdf,
+          epubPath: 'book.pdf',
+          chapterCount: 10,
+          chaptersJson: '[]',
+        );
+      }
+      expect(repo.mediaItems.single.id, 77);
+      expect(repo.mediaItems.single.mediaSourceIdentifier, 'reader_pdf');
+      expect((await db.getAllMediaItems()).single.id, 77);
+      expect((await db.getEpubBook(bookKey))!.format, 'pdf');
     });
   });
 

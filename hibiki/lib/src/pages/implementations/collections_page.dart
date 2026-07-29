@@ -105,6 +105,66 @@ MediaItem buildCollectionReaderMediaItem({
   );
 }
 
+/// Resolves a collection jump against the latest live book rows.
+///
+/// Favorites/mined rows intentionally keep only the stable [bookKey] and a
+/// title snapshot. Their source cannot be trusted after a book ↔ manga
+/// conversion, so the caller must await the live library and preserve its
+/// EPUB/PDF/Manga source identity. A deleted book or an unmounted page is a
+/// quiet no-op.
+@visibleForTesting
+Future<void> openCollectionBookFromLiveItems({
+  required String bookKey,
+  required String title,
+  required Bookmark? bookmark,
+  required Future<List<MediaItem>> Function() loadLiveItems,
+  required bool Function() isMounted,
+  required Future<void> Function(MediaItem item, Bookmark? bookmark) open,
+}) async {
+  const Set<String> readerSources = <String>{
+    'reader_ttu',
+    'reader_pdf',
+    'reader_manga',
+  };
+  final List<MediaItem> liveItems = await loadLiveItems();
+  if (!isMounted()) return;
+
+  final String mediaIdentifier = ReaderHibikiSource.mediaIdentifierFor(bookKey);
+  MediaItem? liveItem;
+  for (final MediaItem candidate in liveItems) {
+    if (candidate.mediaIdentifier == mediaIdentifier &&
+        readerSources.contains(candidate.mediaSourceIdentifier)) {
+      liveItem = candidate;
+      break;
+    }
+  }
+  if (liveItem == null) return;
+
+  // Preserve every live payload field while retaining the collection's
+  // display-title facade. This copy is navigation-only and is never written
+  // back to media_items.
+  final MediaItem resolvedItem = MediaItem(
+    id: liveItem.id,
+    mediaIdentifier: liveItem.mediaIdentifier,
+    title: title,
+    mediaTypeIdentifier: liveItem.mediaTypeIdentifier,
+    mediaSourceIdentifier: liveItem.mediaSourceIdentifier,
+    position: liveItem.position,
+    duration: liveItem.duration,
+    canDelete: liveItem.canDelete,
+    canEdit: liveItem.canEdit,
+    base64Image: liveItem.base64Image,
+    imageUrl: liveItem.imageUrl,
+    audioUrl: liveItem.audioUrl,
+    author: liveItem.author,
+    authorIdentifier: liveItem.authorIdentifier,
+    extraUrl: liveItem.extraUrl,
+    extra: liveItem.extra,
+    sourceMetadata: liveItem.sourceMetadata,
+  );
+  await open(resolvedItem, bookmark);
+}
+
 class _CollectionItem {
   _CollectionItem({
     required this.type,
@@ -422,7 +482,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         rawSnapshot: item.bookTitle,
       );
 
-  void _openBook(_CollectionItem item) {
+  Future<void> _openBook(_CollectionItem item) async {
     final String? bookKey = item.bookKey;
     if (bookKey == null || bookKey.isEmpty) return;
 
@@ -433,11 +493,6 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           rawSnapshot: item.bookTitle,
         ) ??
         '';
-
-    final MediaItem mediaItem = buildCollectionReaderMediaItem(
-      bookKey: bookKey,
-      title: title,
-    );
 
     // BUG-459: 三类行的 normCharOffset 计量不同——
     //   bookmark：0-10000 章内进度分数（reader `_addBookmarkAtCurrentPosition` 写）。
@@ -462,11 +517,21 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           )
         : null;
 
-    appModel.openMedia(
-      ref: ref,
-      mediaSource: ReaderHibikiSource.instance,
-      item: mediaItem,
-      initialBookmarkJump: bookmark,
+    await openCollectionBookFromLiveItems(
+      bookKey: bookKey,
+      title: title,
+      bookmark: bookmark,
+      loadLiveItems: () => ReaderHibikiSource.instance.getBooksFromDb(
+        appModel: appModel,
+      ),
+      isMounted: () => mounted,
+      open: (MediaItem resolvedItem, Bookmark? resolvedBookmark) =>
+          appModel.openMedia(
+        ref: ref,
+        mediaSource: resolvedItem.getMediaSource(appModel: appModel),
+        item: resolvedItem,
+        initialBookmarkJump: resolvedBookmark,
+      ),
     );
   }
 

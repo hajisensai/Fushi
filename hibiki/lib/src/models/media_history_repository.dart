@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -116,6 +118,55 @@ class MediaHistoryRepository extends ChangeNotifier {
     if (item.id != null) {
       await _db.deleteMediaItemById(item.id!);
     }
+  }
+
+  /// Atomically applies a rebuilt book format and reconciles every persisted
+  /// reader-history identity for the same stable `hoshi://book/<bookKey>`.
+  ///
+  /// The next cache is built from a full, deterministically ordered table read
+  /// *inside* the transaction. It is published only after Drift commits, so an
+  /// error at any point leaves the database format, history rows, live cache,
+  /// and listeners observing the exact pre-call state.
+  Future<void> applyBookFormatConversion({
+    required String bookKey,
+    required BookFormat format,
+    required String epubPath,
+    required int chapterCount,
+    required String chaptersJson,
+    String? coverPath,
+    String? mangaReadingMode,
+    FutureOr<void> Function()? afterHistoryDuplicatesDeletedForTesting,
+  }) async {
+    final List<MediaItem> nextCache = await _db.transaction(() async {
+      final EpubBookRow? liveBook = await _db.getEpubBook(bookKey);
+      if (liveBook == null) {
+        throw StateError(
+          'Cannot apply format conversion: book "$bookKey" no longer exists.',
+        );
+      }
+
+      await _db.updateEpubBookFormat(
+        bookKey,
+        format: format,
+        epubPath: epubPath,
+        chapterCount: chapterCount,
+        chaptersJson: chaptersJson,
+        coverPath: coverPath,
+        mangaReadingMode: mangaReadingMode,
+      );
+      await _db.reconcileBookMediaHistoryForFormat(
+        bookKey,
+        format,
+        afterDuplicatesDeletedForTesting:
+            afterHistoryDuplicatesDeletedForTesting,
+      );
+
+      final List<MediaItemRow> rows = await _db.getAllMediaItems();
+      return rows.map(_rowToMediaItem).toList(growable: false);
+    });
+
+    _mediaItemsCache = nextCache;
+    notifyListeners();
   }
 
   // ── media item queries ───────────────────────────────────────────────
