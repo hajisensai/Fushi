@@ -17,7 +17,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/media_sources_dialog.dart';
+import 'package:hibiki/src/sync/sync_orchestrator.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -27,6 +29,13 @@ HibikiDatabase _memDb() => HibikiDatabase.forTesting(
         setup: (rawDb) => rawDb.execute('PRAGMA foreign_keys = ON'),
       ),
     );
+
+class _SyncRefreshAppModel extends AppModel {
+  _SyncRefreshAppModel(super.platformServices);
+
+  @override
+  Future<void> refreshPrefCache() => prefsRepo.refreshFromDb();
+}
 
 Future<void> _pumpDialog(
   WidgetTester tester,
@@ -52,6 +61,39 @@ Future<void> _pumpDialog(
     ),
   );
   await tester.pumpAndSettle();
+}
+
+Future<_SyncRefreshAppModel> _pumpDialogWithPreferences(
+  WidgetTester tester,
+  HibikiDatabase db,
+  Directory databaseDirectory,
+) async {
+  final PreferencesRepository prefsRepo = PreferencesRepository(db);
+  await prefsRepo.loadFromDb();
+  final _SyncRefreshAppModel appModel =
+      _SyncRefreshAppModel(testPlatformServices())
+        ..wireLocalAudioForTesting(
+          prefsRepo: prefsRepo,
+          databaseDirectory: databaseDirectory,
+        )
+        ..wireDatabaseForTesting(db);
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: <Override>[
+        appProvider.overrideWith((ref) => appModel),
+      ],
+      child: const MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(size: Size(420, 800)),
+          child: Scaffold(
+            body: MediaSourcesDialog(mediaKind: 'manga'),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+  return appModel;
 }
 
 Future<int> _seedSource(
@@ -146,6 +188,58 @@ void main() {
     expect(find.text(r'D:\manga\a'), findsOneWidget);
     expect(find.text('Manga B'), findsOneWidget);
     expect(find.text(r'D:\manga\b'), findsOneWidget);
+  });
+
+  testWidgets(
+      'open manga Sources row follows service-config sync preference refresh',
+      (tester) async {
+    final HibikiDatabase db = _memDb();
+    addTearDown(db.close);
+    final Directory databaseDirectory =
+        Directory.systemTemp.createTempSync('media_sources_sync_refresh');
+    addTearDown(() {
+      if (databaseDirectory.existsSync()) {
+        databaseDirectory.deleteSync(recursive: true);
+      }
+    });
+    await db.setPrefTyped<bool>('manga_online_catalog_enabled', true);
+    await db.setPrefTyped<String>(
+      'manga_online_catalog_base_url',
+      'https://catalog-a.test',
+    );
+    final _SyncRefreshAppModel appModel = await _pumpDialogWithPreferences(
+      tester,
+      db,
+      databaseDirectory,
+    );
+
+    expect(
+      tester.widget<Switch>(find.byType(Switch).last).value,
+      isTrue,
+      reason: 'the already-open Sources row starts from the cached preference',
+    );
+    expect(find.text('https://catalog-a.test'), findsOneWidget);
+
+    // InterconnectServiceConfigSnapshot.applyTo writes Drift directly. The
+    // post-sync hook then refreshes AppModel's preference cache and notifies
+    // listeners; the already-open Sources row must rebuild without reopening.
+    await db.setPrefTyped<bool>('manga_online_catalog_enabled', false);
+    await db.setPrefTyped<String>(
+      'manga_online_catalog_base_url',
+      'https://catalog-b.test',
+    );
+    await appModel.refreshAfterSyncRun(
+      SyncRunReport()..serviceConfigsImported = 1,
+    );
+    await tester.pump();
+
+    expect(
+      tester.widget<Switch>(find.byType(Switch).last).value,
+      isFalse,
+      reason: 'sync refresh must update an already-open Mokuro source row',
+    );
+    expect(find.text('https://catalog-b.test'), findsOneWidget);
+    expect(find.text('https://catalog-a.test'), findsNothing);
   });
 
   testWidgets('video sources render label / rootPath / count + last scan',
@@ -291,10 +385,11 @@ void main() {
         reason: 'mid-scan dispose must not surface an exception (BUG-513)');
   });
 
-  // BUG-513 源码守卫：数据库/provider 引用只允许在 initState 里 `ref.read` 一次并
-  // 缓存进字段；任何 async 方法（尤其 _rescan 的 finally）跨 async gap 再 `ref.*`，
-  // 对话框已被关闭/dispose 后就会抛 `No ProviderScope found`。把不变量钉死在源码层，
-  // 比脆弱的时序型 widget 测试更能防复发。
+  // BUG-513 源码守卫：数据库/provider 的命令式 `ref.read` 只允许在 initState 一次
+  // 捕获；同步 build 可用 `ref.watch(appProvider)` 响应 AppModel 通知。任何 async 方法
+  // （尤其 _rescan 的 finally）跨 async gap 再 `ref.*`，对话框已被关闭/dispose 后就会
+  // 抛 `No ProviderScope found`。把不变量钉死在源码层，比脆弱的时序型 widget 测试
+  // 更能防复发。
   group('BUG-513 no ref access after initState (captured _db field)', () {
     late String src;
     setUpAll(() {
@@ -313,31 +408,52 @@ void main() {
           reason: 'database must be captured once in initState');
     });
 
-    test('every ref.read/watch/listen sits inside initState', () {
+    test('ref.read stays in initState and the only build watch is appProvider',
+        () {
       // 去掉行注释（避免文档注释里提到 ref.read 触发误报）。
       final List<String> lines = const LineSplitter().convert(src);
       final RegExp refAccess = RegExp(r'\bref\.(read|watch|listen)\b');
       final RegExp initStart = RegExp(r'void\s+initState\s*\(\s*\)');
+      final RegExp buildStart = RegExp(r'Widget\s+build\s*\(');
       bool inInit = false;
-      int depth = 0;
+      bool inBuild = false;
+      int initDepth = 0;
+      int buildDepth = 0;
       for (final String raw in lines) {
         final String line =
             raw.replaceAll(RegExp(r'//.*$'), ''); // strip line comment
         if (!inInit && initStart.hasMatch(line)) {
           inInit = true;
-          depth = 0;
+          initDepth = 0;
+        }
+        if (!inBuild && buildStart.hasMatch(line)) {
+          inBuild = true;
+          buildDepth = 0;
         }
         if (inInit) {
-          depth += '{'.allMatches(line).length;
-          depth -= '}'.allMatches(line).length;
+          initDepth += '{'.allMatches(line).length;
+          initDepth -= '}'.allMatches(line).length;
+        }
+        if (inBuild) {
+          buildDepth += '{'.allMatches(line).length;
+          buildDepth -= '}'.allMatches(line).length;
         }
         if (refAccess.hasMatch(line)) {
-          expect(inInit, isTrue,
-              reason: 'ref.* outside initState re-reads a possibly-disposed '
-                  'ProviderScope across async gaps (BUG-513): "$line"');
+          final bool allowedBuildWatch =
+              inBuild && line.contains('ref.watch(appProvider)');
+          expect(
+            inInit || allowedBuildWatch,
+            isTrue,
+            reason: 'ref.* is allowed only for initState capture or the '
+                'synchronous appProvider build watch; async-gap access can '
+                'read a disposed ProviderScope (BUG-513): "$line"',
+          );
         }
-        if (inInit && depth <= 0 && line.contains('}')) {
+        if (inInit && initDepth <= 0 && line.contains('}')) {
           inInit = false;
+        }
+        if (inBuild && buildDepth <= 0 && line.contains('}')) {
+          inBuild = false;
         }
       }
     });

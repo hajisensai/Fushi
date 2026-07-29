@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1192 条。点号进各自文件。
+> 共 1194 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1249](bugs/BUG-1249-media-sources-sync-refresh.md) | ✅ | ✅ | 同步导入 Mokuro 配置后已打开 Sources 行仍显示旧状态 |
+| [BUG-1248](bugs/BUG-1248-interconnect-service-config-http.md) | ✅ | ✅ | 互联 service-config 在 HTTP 上泄露 peer token 并接受伪 host 配置 |
 | [BUG-1239](bugs/BUG-1239-video-ime-fullwidth-space.md) | ✅ | ✅ | 全角空格在视频页仍无法播放暂停 |
 | [BUG-1233](bugs/BUG-1233-book-import-repeated-archive-probe.md) | ✅ | ✅ | 书籍导入重复整包判定 EPUB 载体 |
 | [BUG-1231](bugs/BUG-1231-cross-chapter-search-locate-race.md) | ✅ | ✅ | 跨章节书内搜索只跳到章首且不高亮 |

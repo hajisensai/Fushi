@@ -680,13 +680,17 @@ class InterconnectSyncBackend extends SyncBackend
 
   /// Pulls the host-owned service configuration over the pinned HTTPS session.
   /// Old hosts return 404 and are treated as not supporting the capability.
-  /// HTTP/shared-token sessions are rejected by the server rather than silently
-  /// downgrading API keys to plaintext transport.
+  /// Non-HTTPS endpoints fail before a credential-bearing request is built;
+  /// the server independently rejects legacy shared-token sessions.
   Future<InterconnectServiceConfigSnapshot?> getRemoteServiceConfig() async {
     await _ensureResolved();
+    final Uri endpoint = Uri.parse('$_apiBase/api/interconnect/service-config');
+    if (endpoint.scheme.toLowerCase() != 'https') {
+      throw SyncBackendError('Service config requires HTTPS');
+    }
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
-      '$_apiBase/api/interconnect/service-config',
+      endpoint.toString(),
     );
     final HttpClientResponse res = await req.close();
     if (res.statusCode == 404) {

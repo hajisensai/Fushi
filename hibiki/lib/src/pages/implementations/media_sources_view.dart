@@ -143,15 +143,29 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
 
   @override
   Widget build(BuildContext context) {
+    final AppModel liveAppModel = ref.watch(appProvider);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
-    final Widget body = _buildBody(tokens);
+    final bool? mangaOnlineCatalogEnabled = liveAppModel.isPreferencesReady
+        ? liveAppModel.mangaOnlineCatalogEnabled
+        : _mangaOnlineCatalogEnabled;
+    final String mangaOnlineCatalogBaseUrl = liveAppModel.isPreferencesReady
+        ? liveAppModel.mangaOnlineCatalogBaseUrl
+        : 'https://mokuro.moe';
+    final Widget body = _buildBody(
+      tokens,
+      mangaOnlineCatalogEnabled: mangaOnlineCatalogEnabled,
+      mangaOnlineCatalogBaseUrl: mangaOnlineCatalogBaseUrl,
+    );
     return widget.scrollable ? SingleChildScrollView(child: body) : body;
   }
 
-  Widget _buildBody(HibikiDesignTokens tokens) {
+  Widget _buildBody(
+    HibikiDesignTokens tokens, {
+    required bool? mangaOnlineCatalogEnabled,
+    required String mangaOnlineCatalogBaseUrl,
+  }) {
     final List<SourceLibraryRow>? rows = _rows;
     final bool? interconnectEnabled = _interconnectEnabled;
-    final bool? mangaOnlineCatalogEnabled = _mangaOnlineCatalogEnabled;
     if (rows == null ||
         interconnectEnabled == null ||
         mangaOnlineCatalogEnabled == null) {
@@ -171,9 +185,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           tokens,
           icon: Icons.public_outlined,
           title: 'Mokuro.moe',
-          subtitle: _appModel.isPreferencesReady
-              ? _appModel.mangaOnlineCatalogBaseUrl
-              : 'https://mokuro.moe',
+          subtitle: mangaOnlineCatalogBaseUrl,
           value: mangaOnlineCatalogEnabled,
           onChanged: _setMangaOnlineCatalogEnabled,
         ),
