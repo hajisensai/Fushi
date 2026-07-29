@@ -32,6 +32,21 @@ List<int> _buildFakeMagpieZip() {
   return ZipEncoder().encode(archive)!;
 }
 
+Iterable<File> _workflowFiles() sync* {
+  final Directory workflowDirectory = Directory('../.github/workflows');
+  for (final FileSystemEntity entity
+      in workflowDirectory.listSync(recursive: true, followLinks: false)) {
+    if (entity is! File) continue;
+    final String extension = p.extension(entity.path).toLowerCase();
+    if (extension == '.yml' || extension == '.yaml') {
+      yield entity;
+    }
+  }
+}
+
+String _repoRelativePath(File file) =>
+    p.relative(file.path, from: '..').replaceAll(r'\', '/');
+
 void main() {
   late Directory tmp;
   late Directory bundleDir;
@@ -149,10 +164,63 @@ void main() {
   });
 
   group('组包脚本契约', () {
+    late File scriptFile;
     late String script;
 
     setUpAll(() {
-      script = File('../tools/build_magpie_slim.ps1').readAsStringSync();
+      scriptFile = File('../tools/build_magpie_slim.ps1');
+      script = scriptFile.readAsStringSync();
+    });
+
+    test('源文件保留 UTF-8 BOM，避免 Windows PowerShell 5.1 按代码页误解码', () {
+      final List<int> bytes = scriptFile.readAsBytesSync();
+      expect(bytes.length, greaterThanOrEqualTo(3));
+      expect(bytes.take(3), <int>[0xEF, 0xBB, 0xBF],
+          reason: 'BUG-1217 脚本含中文；无 BOM 时 Windows PowerShell 5.1 '
+              '会按系统代码页读取并在执行前 parser error');
+    });
+
+    test(
+      'Windows PowerShell 5.1 Parser.ParseFile 对脚本零错误',
+      () {
+        final String escapedPath =
+            scriptFile.absolute.path.replaceAll("'", "''");
+        final String command = r'$tokens = $null; $errors = $null; '
+            '[System.Management.Automation.Language.Parser]::ParseFile('
+            "'$escapedPath'"
+            r', [ref]$tokens, [ref]$errors) | Out-Null; '
+            r'if ($errors.Count -ne 0) { '
+            r'$errors | ForEach-Object { Write-Error $_.Message }; exit 1 }';
+        final ProcessResult result = Process.runSync(
+          'powershell.exe',
+          <String>[
+            '-NoLogo',
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            command,
+          ],
+        );
+        expect(
+          result.exitCode,
+          0,
+          reason: 'Windows PowerShell 5.1 parse failed:\n'
+              '${result.stdout}\n${result.stderr}',
+        );
+      },
+      skip: !Platform.isWindows,
+    );
+
+    test('裁剪计数、zip 与 sha256 侧车仍由脚本真实产出', () {
+      expect(script, contains(r'$kept = 0; $dropped = 0'));
+      expect(
+        script,
+        contains(r'Write-Host "  保留 $kept 个文件，裁掉 $dropped 个"'),
+      );
+      expect(
+        script,
+        contains(r'Set-Content -LiteralPath "${slimZip}.sha256"'),
+      );
     });
 
     test('产出文件名与 Dart 侧随包命名一致', () {
@@ -192,17 +260,95 @@ void main() {
   });
 
   group('Windows 主包随包资产构建契约', () {
-    test('debug 与 release 都跑组包脚本并复制到 magpie_bundle', () {
+    test('递归扫描 workflow，Magpie slim 只有两个规范 pwsh 调用点', () {
+      const String scriptPath = 'tools/build_magpie_slim.ps1';
+      const String canonicalInvocation =
+          'pwsh -NoProfile -ExecutionPolicy Bypass -File $scriptPath';
+      final List<String> callers = <String>[];
+
+      for (final File file in _workflowFiles()) {
+        final List<String> lines = file.readAsLinesSync();
+        for (int index = 0; index < lines.length; index++) {
+          final String line = lines[index];
+          if (!line.contains(scriptPath)) continue;
+          final String trimmed = line.trim();
+          if (trimmed == "- '$scriptPath'" || trimmed == '- "$scriptPath"') {
+            continue;
+          }
+          callers.add('${_repoRelativePath(file)}:${index + 1}');
+          expect(trimmed, canonicalInvocation,
+              reason: 'Magpie slim 禁止回退到 Windows PowerShell 5.1：'
+                  '${_repoRelativePath(file)}:${index + 1}');
+
+          int stepStart = index;
+          while (stepStart >= 0 &&
+              !RegExp(r'^ {6}- name:').hasMatch(lines[stepStart])) {
+            stepStart--;
+          }
+          expect(stepStart, greaterThanOrEqualTo(0),
+              reason: '调用必须位于可审计的 named step');
+
+          int stepEnd = index + 1;
+          while (stepEnd < lines.length &&
+              !RegExp(r'^ {6}- name:').hasMatch(lines[stepEnd])) {
+            stepEnd++;
+          }
+          final List<String> step = lines.sublist(stepStart, stepEnd);
+          expect(
+              step.any((String value) => value.trim() == 'shell: pwsh'), isTrue,
+              reason: '外层 step 也必须显式 shell: pwsh');
+
+          int nextCommand = index + 1;
+          while (nextCommand < stepEnd) {
+            final String candidate = lines[nextCommand].trim();
+            if (candidate.isNotEmpty && !candidate.startsWith('#')) break;
+            nextCommand++;
+          }
+          expect(nextCommand, lessThan(stepEnd),
+              reason: 'pwsh 子进程后必须紧邻检查 LASTEXITCODE');
+          expect(
+            lines[nextCommand].trim(),
+            matches(RegExp(
+              r'^if \(\$LASTEXITCODE -ne 0\) \{ throw '
+              r'"build_magpie_slim\.ps1 failed \(\$LASTEXITCODE\)" \}$',
+            )),
+            reason: '下载、哈希或裁剪失败必须由外层 step 继续非零退出',
+          );
+        }
+      }
+
+      expect(
+        callers.map((String value) => value.split(':').first).toSet(),
+        <String>{
+          '.github/workflows/build-multiplatform.yml',
+          '.github/workflows/release-desktop.yml',
+        },
+      );
+      expect(callers, hasLength(2), reason: '新增或删除调用点时必须同步审查全部 Windows 组包链');
+    });
+
+    test('debug 与 release 的脚本单改都触发构建并复制 zip + sha256', () {
       for (final String path in <String>[
         '../.github/workflows/build-multiplatform.yml',
         '../.github/workflows/release-desktop.yml',
       ]) {
         final String workflow = File(path).readAsStringSync();
-        expect(workflow, contains('tools/build_magpie_slim.ps1'));
+        expect(
+          workflow,
+          contains("- 'tools/build_magpie_slim.ps1'"),
+          reason: '$path 必须在 push paths 中精确监听组包脚本',
+        );
         expect(workflow, contains('magpie_bundle'));
         expect(workflow, contains("'Magpie-hibiki-slim-x64.zip'"));
         expect(workflow, contains("'Magpie-hibiki-slim-x64.zip.sha256'"));
       }
+
+      final String buildWorkflow =
+          File('../.github/workflows/build-multiplatform.yml')
+              .readAsStringSync();
+      expect(buildWorkflow, contains('paths: &multiplatform_paths'));
+      expect(buildWorkflow, contains('paths: *multiplatform_paths'),
+          reason: '共享 paths anchor 必须同时覆盖 push 与 pull_request');
     });
 
     test('Inno Setup 递归收目录，随包资产无需单独列条目', () {

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   取 Magpie fork release 的完整包，裁成随主包发行的精简包（BUG-1217）。
 
