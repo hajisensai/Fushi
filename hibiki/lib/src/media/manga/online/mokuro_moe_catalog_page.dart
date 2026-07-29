@@ -63,7 +63,26 @@ class _MokuroMoeCatalogPageState extends ConsumerState<MokuroMoeCatalogPage> {
               ) {
                 final Widget? navigation = widget.navigation;
                 if (navigation != null) {
-                  return HibikiPageHeader.customTitle(title: navigation);
+                  final String? seriesName = snapshot.seriesName;
+                  return HibikiPageHeader.customTitle(
+                    title: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        navigation,
+                        if (seriesName != null && seriesName.trim().isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              seriesName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
                 }
                 return HibikiPageHeader(
                   title: t.manga_online_catalog_title,

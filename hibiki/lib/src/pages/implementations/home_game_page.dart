@@ -160,14 +160,6 @@ class _HomeGamePageState extends State<HomeGamePage> {
       child: Column(
         children: <Widget>[
           HibikiPageHeader.customTitle(
-            title: GameSectionTabs(
-              selected: GameSection.library,
-              focusIdPrefix: 'game-library-tab',
-              onSelectDashboard: _showDashboard,
-              onSelectLibrary: _showLibrary,
-              onSelectMonitor: _showMonitor,
-              onSelectDiagnostics: _showDiagnostics,
-            ),
             actions: <Widget>[
               HibikiIconButton(
                 icon: Icons.bar_chart_outlined,
@@ -176,6 +168,14 @@ class _HomeGamePageState extends State<HomeGamePage> {
                 onTap: _openStatistics,
               ),
             ],
+            title: GameSectionTabs(
+              selected: GameSection.library,
+              focusIdPrefix: 'game-library-tab',
+              onSelectDashboard: _showDashboard,
+              onSelectLibrary: _showLibrary,
+              onSelectMonitor: _showMonitor,
+              onSelectDiagnostics: _showDiagnostics,
+            ),
             // 顶部不再放「捕获工作台」图标钮——它与下方 GameSectionTabs 的
             // 「捕获工作台」分段去向完全相同，纯冗余；入口收敛到分段导航 + 状态带。
           ),
