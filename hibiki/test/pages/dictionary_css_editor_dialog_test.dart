@@ -1,18 +1,23 @@
 import 'dart:io';
 
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/models.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_settings_dialog_page.dart';
+import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/profile/profile_view_model.dart';
 import 'package:hibiki/utils.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_platform_services.dart';
 
-final StateProvider<int> _testActiveProfileIdProvider = StateProvider<int>(
-  (ref) => 1,
+final StateProvider<Object> _testProfileDraftScopeProvider =
+    StateProvider<Object>(
+  (ref) => Object(),
 );
 
 class _FakeCssAppModel extends AppModel {
@@ -74,13 +79,16 @@ class _FakeCssAppModel extends AppModel {
 Widget _buildApp({
   required AppModel appModel,
   required Widget home,
+  bool overrideProfileDraftScope = true,
 }) {
   return ProviderScope(
     overrides: [
       appProvider.overrideWith((ref) => appModel),
-      activeProfileIdProvider.overrideWith(
-        (ref) => ref.watch(_testActiveProfileIdProvider),
-      ),
+      platformServicesProvider.overrideWithValue(testPlatformServices()),
+      if (overrideProfileDraftScope)
+        profileDraftScopeProvider.overrideWith(
+          (ref) => ref.watch(_testProfileDraftScopeProvider),
+        ),
     ],
     child: TranslationProvider(
       child: MaterialApp(
@@ -126,6 +134,7 @@ Finder _cssEditorField() {
 void main() {
   setUp(() {
     LocaleSettings.setLocale(AppLocale.zhCn);
+    SharedPreferences.setMockInitialValues(<String, Object>{});
   });
 
   // TODO-422：词典管理页本身不实现任何自定义 CSS 编辑——行尾旧三点菜单（含
@@ -271,6 +280,82 @@ void main() {
     );
   });
 
+  testWidgets('first-open Save survives lazy Profile initialization', (
+    WidgetTester tester,
+  ) async {
+    final _FakeCssAppModel appModel = _FakeCssAppModel();
+    final HibikiDatabase db =
+        HibikiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    appModel.wireDatabaseForTesting(db);
+
+    await tester.pumpWidget(
+      _buildApp(
+        appModel: appModel,
+        home: const _CssDialogLauncher(),
+        overrideProfileDraftScope: false,
+      ),
+    );
+
+    await tester.tap(find.text('打开 CSS'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      _cssEditorField(),
+      '.first-open-draft { color: purple; }',
+    );
+
+    final ProviderContainer container = ProviderScope.containerOf(
+      tester.element(find.byType(DictCssEditorDialog)),
+    );
+    final Object initialDraftScope = container.read(profileDraftScopeProvider);
+    container.read(profileViewModelProvider);
+    await tester.runAsync(() async {
+      for (int attempt = 0;
+          attempt < 100 &&
+              container.read(profileViewModelProvider).activeProfileId < 0;
+          attempt++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+    });
+    await tester.pump();
+    expect(
+      container.read(profileViewModelProvider).activeProfileId,
+      greaterThan(0),
+      reason: 'The regression must exercise the completed lazy Profile load.',
+    );
+    expect(
+      identical(
+        container.read(profileDraftScopeProvider),
+        initialDraftScope,
+      ),
+      isTrue,
+      reason: 'Initial Profile loading must not invalidate the open draft.',
+    );
+
+    await tester.tap(find.text(t.dialog_save));
+    await tester.pumpAndSettle();
+
+    expect(
+      appModel.savedGlobalCss,
+      '.first-open-draft { color: purple; }',
+    );
+    expect(find.byType(DictCssEditorDialog), findsNothing);
+
+    await tester.runAsync(
+      () => container
+          .read(profileViewModelProvider.notifier)
+          .createProfile('Scope rotation regression'),
+    );
+    expect(
+      identical(
+        container.read(profileDraftScopeProvider),
+        initialDraftScope,
+      ),
+      isFalse,
+      reason: 'A real Profile identity change must rotate the draft scope.',
+    );
+  });
+
   testWidgets(
       'same AppModel does not reuse a CSS draft after the active Profile changes',
       (WidgetTester tester) async {
@@ -299,8 +384,7 @@ void main() {
     );
     ProviderScope.containerOf(
       tester.element(find.byType(_CssDialogLauncher)),
-    ).read(_testActiveProfileIdProvider.notifier).state =
-        appModel.activeProfileId;
+    ).read(_testProfileDraftScopeProvider.notifier).state = Object();
     await tester.pump();
 
     await tester.tap(find.text('打开 CSS'));
@@ -347,8 +431,7 @@ void main() {
     appModel.switchToProfile(2, globalCss: profileBStoredCss);
     ProviderScope.containerOf(
       tester.element(find.byType(DictCssEditorDialog)),
-    ).read(_testActiveProfileIdProvider.notifier).state =
-        appModel.activeProfileId;
+    ).read(_testProfileDraftScopeProvider.notifier).state = Object();
     await tester.pump();
 
     await tester.tap(find.text(t.dialog_save));

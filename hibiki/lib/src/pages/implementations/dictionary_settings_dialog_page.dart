@@ -499,12 +499,12 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
 class _DictCssDraftSession {
   _DictCssDraftSession({
     required this.appModel,
-    required this.activeProfileId,
+    required this.profileDraftScope,
     required this.selectedDictionaryName,
   });
 
   final AppModel appModel;
-  final int activeProfileId;
+  final Object profileDraftScope;
   final Map<String?, String> cssByDictionary = <String?, String>{};
   String? selectedDictionaryName;
 }
@@ -541,15 +541,15 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
     super.initState();
     _appModel =
         ProviderScope.containerOf(context, listen: false).read(appProvider);
-    final int activeProfileId = ProviderScope.containerOf(
+    final Object profileDraftScope = ProviderScope.containerOf(
       context,
       listen: false,
-    ).read(activeProfileIdProvider);
+    ).read(profileDraftScopeProvider);
     _dictNames = _appModel.dictionaries.map((d) => d.name).toList();
     final _DictCssDraftSession? existingDraft = _dictCssDraftSession;
     if (existingDraft != null &&
         identical(existingDraft.appModel, _appModel) &&
-        existingDraft.activeProfileId == activeProfileId) {
+        identical(existingDraft.profileDraftScope, profileDraftScope)) {
       _draft = existingDraft;
       _selectedIndex =
           _selectedIndexForDictionary(_draft.selectedDictionaryName);
@@ -557,7 +557,7 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
       _selectedIndex = _initialSelectedIndex();
       _draft = _DictCssDraftSession(
         appModel: _appModel,
-        activeProfileId: activeProfileId,
+        profileDraftScope: profileDraftScope,
         selectedDictionaryName: _selectedDictionaryName,
       );
       _dictCssDraftSession = _draft;
@@ -590,11 +590,11 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
 
   Future<void> _saveDraft() async {
     if (_isSaving) return;
-    final int activeProfileId = ProviderScope.containerOf(
+    final Object profileDraftScope = ProviderScope.containerOf(
       context,
       listen: false,
-    ).read(activeProfileIdProvider);
-    if (activeProfileId != _draft.activeProfileId) {
+    ).read(profileDraftScopeProvider);
+    if (!identical(profileDraftScope, _draft.profileDraftScope)) {
       // Profile 可能被媒体自动切换等后台路径替换。旧 Profile 的草稿绝不能通过
       // 当前 AppModel 写进新 Profile；切换即精确失效，后续重开会从新 Profile
       // 的持久化值初始化。

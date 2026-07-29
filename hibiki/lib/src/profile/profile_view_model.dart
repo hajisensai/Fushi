@@ -1,4 +1,4 @@
-﻿import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/src/anki/anki_view_model.dart';
@@ -41,8 +41,11 @@ class ProfileUiState {
 }
 
 class ProfileViewModel extends StateNotifier<ProfileUiState> {
-  ProfileViewModel(this._repo, this._onProfileApplied)
-      : super(const ProfileUiState()) {
+  ProfileViewModel(
+    this._repo,
+    this._onProfileApplied,
+    this._invalidateProfileDrafts,
+  ) : super(const ProfileUiState()) {
     _load();
   }
 
@@ -56,6 +59,20 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   final ProfileRepository _repo;
   final Future<void> Function() _onProfileApplied;
+  final void Function() _invalidateProfileDrafts;
+
+  Future<T> _whileInvalidatingProfileDrafts<T>(
+    Future<T> Function() action,
+  ) async {
+    _invalidateProfileDrafts();
+    try {
+      return await action();
+    } finally {
+      // A dialog opened while Profile settings were being applied may have
+      // observed an intermediate AppModel. Invalidate that draft as well.
+      _invalidateProfileDrafts();
+    }
+  }
 
   Future<void> _load() async {
     state = state.copyWith(isLoading: true);
@@ -72,24 +89,26 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   Future<void> reload() => _load();
 
-  Future<void> switchProfile(int profileId) async {
-    await _repo.snapshotCurrentSettings(state.activeProfileId);
-    await _repo.setActiveProfileId(profileId);
-    await _repo.applyProfile(profileId);
-    state = state.copyWith(activeProfileId: profileId);
-    await _onProfileApplied();
-  }
+  Future<void> switchProfile(int profileId) =>
+      _whileInvalidatingProfileDrafts(() async {
+        await _repo.snapshotCurrentSettings(state.activeProfileId);
+        await _repo.setActiveProfileId(profileId);
+        await _repo.applyProfile(profileId);
+        state = state.copyWith(activeProfileId: profileId);
+        await _onProfileApplied();
+      });
 
-  Future<void> createProfile(String name) async {
-    await _repo.snapshotCurrentSettings(state.activeProfileId);
-    final newId = await _repo.createProfile(name);
-    await _repo.snapshotCurrentSettings(newId);
-    await _repo.setActiveProfileId(newId);
-    state = state.copyWith(
-      profiles: await _repo.getAllProfiles(),
-      activeProfileId: newId,
-    );
-  }
+  Future<void> createProfile(String name) =>
+      _whileInvalidatingProfileDrafts(() async {
+        await _repo.snapshotCurrentSettings(state.activeProfileId);
+        final newId = await _repo.createProfile(name);
+        await _repo.snapshotCurrentSettings(newId);
+        await _repo.setActiveProfileId(newId);
+        state = state.copyWith(
+          profiles: await _repo.getAllProfiles(),
+          activeProfileId: newId,
+        );
+      });
 
   Future<void> copyProfile(int sourceId, String newName) async {
     if (sourceId == state.activeProfileId) {
@@ -108,12 +127,20 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   Future<void> deleteProfile(int id) async {
     final previousActiveId = state.activeProfileId;
-    await _repo.deleteProfile(id);
-    final profiles = await _repo.getAllProfiles();
-    final activeId = await _repo.getActiveProfileId();
-    state = state.copyWith(profiles: profiles, activeProfileId: activeId);
-    if (activeId != previousActiveId) {
-      await _onProfileApplied();
+    Future<void> delete() async {
+      await _repo.deleteProfile(id);
+      final profiles = await _repo.getAllProfiles();
+      final activeId = await _repo.getActiveProfileId();
+      state = state.copyWith(profiles: profiles, activeProfileId: activeId);
+      if (activeId != previousActiveId) {
+        await _onProfileApplied();
+      }
+    }
+
+    if (id == previousActiveId) {
+      await _whileInvalidatingProfileDrafts(delete);
+    } else {
+      await delete();
     }
   }
 
@@ -154,18 +181,26 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     ProfileImportMode mode = ProfileImportMode.createNew,
     int? targetProfileId,
   }) async {
-    final int writtenId = await _repo.importProfileFromJson(
-      json,
-      mode: mode,
-      targetProfileId: targetProfileId,
-    );
-    state = state.copyWith(profiles: await _repo.getAllProfiles());
-    if (mode == ProfileImportMode.overwrite &&
-        writtenId == state.activeProfileId) {
-      await _repo.applyProfile(writtenId);
-      await _onProfileApplied();
+    Future<int> import() async {
+      final int writtenId = await _repo.importProfileFromJson(
+        json,
+        mode: mode,
+        targetProfileId: targetProfileId,
+      );
+      state = state.copyWith(profiles: await _repo.getAllProfiles());
+      if (mode == ProfileImportMode.overwrite &&
+          writtenId == state.activeProfileId) {
+        await _repo.applyProfile(writtenId);
+        await _onProfileApplied();
+      }
+      return writtenId;
     }
-    return writtenId;
+
+    final bool overwritesActiveProfile = mode == ProfileImportMode.overwrite &&
+        targetProfileId == state.activeProfileId;
+    return overwritesActiveProfile
+        ? _whileInvalidatingProfileDrafts(import)
+        : import();
   }
 }
 
@@ -178,6 +213,20 @@ final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
   final db = ref.watch(hibikiDatabaseProvider);
   final ankiRepo = ref.watch(ankiRepositoryProvider);
   return ProfileRepository(db, ankiRepo);
+});
+
+final _profileDraftScopeStateProvider = StateProvider<Object>(
+  (ref) => Object(),
+);
+
+/// 临时 UI 草稿所绑定的 Profile 应用代次。
+///
+/// 它刻意独立于 [ProfileViewModel] 的异步初始加载：首次加载期间
+/// `activeProfileId` 会从 -1 变成真实 id，但 AppModel 并未切换 Profile，
+/// 因而不应误杀用户刚输入的草稿。只有真正应用/替换 Profile 的操作才轮换
+/// 这个对象。
+final profileDraftScopeProvider = Provider<Object>((ref) {
+  return ref.watch(_profileDraftScopeStateProvider);
 });
 
 final profileViewModelProvider =
@@ -194,17 +243,9 @@ final profileViewModelProvider =
     await ReaderHibikiSource.readerSettings?.refreshFromDb();
   }
 
-  return ProfileViewModel(repo, onApplied);
-});
+  void invalidateProfileDrafts() {
+    ref.read(_profileDraftScopeStateProvider.notifier).state = Object();
+  }
 
-/// 当前激活 Profile 的稳定身份投影。
-///
-/// 需要把临时 UI 状态限定在单个 Profile 内的组件只依赖这个 provider，避免把
-/// ProfileViewModel 的完整状态与操作能力扩散到页面实现。
-final activeProfileIdProvider = Provider<int>((ref) {
-  return ref.watch(
-    profileViewModelProvider.select(
-      (ProfileUiState state) => state.activeProfileId,
-    ),
-  );
+  return ProfileViewModel(repo, onApplied, invalidateProfileDrafts);
 });
