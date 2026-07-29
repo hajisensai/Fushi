@@ -393,10 +393,12 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     // 若调用方 await loadUrl 后才写 pending，onRestoreComplete 可能已经消费过空值，最终只
     // 落到目标章章首且没有搜索高亮。用户在恢复途中翻页/再跳时，新一次 _beginNavigation
     // 仍会从源头顶掉旧 pending；代际守卫继续兜底。
-    _pendingPreciseLocate = null;
+    _preciseLocateQueue.clear();
     if (preciseLocateJs != null) {
-      _pendingPreciseLocate =
-          (generation: _navigateGeneration, js: preciseLocateJs);
+      _preciseLocateQueue.replace(
+        generation: _navigateGeneration,
+        js: preciseLocateJs,
+      );
     }
     if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
       _restoreCompleter!.complete(false);
@@ -440,7 +442,7 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     ReaderChapterPerfTrace.abort();
     _isNavigatingToChapter = false;
     _restoreInFlight = false;
-    _pendingPreciseLocate = null;
+    _preciseLocateQueue.clear();
     if (_restoreCompleter != null && !_restoreCompleter!.isCompleted) {
       _restoreCompleter!.complete(false);
     }
@@ -577,13 +579,13 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
   /// 代际守卫：`pending.generation != _navigateGeneration` = 被更晚的导航顶掉 → 丢弃，
   /// 绝不把搜索命中定位应用到错误章节。消费一次即清空（无论应用与否）。
   Future<void> _applyPendingPreciseLocate() async {
-    final ({int generation, String js})? pending = _pendingPreciseLocate;
-    if (pending == null) return;
-    _pendingPreciseLocate = null;
-    if (pending.generation != _navigateGeneration) return;
-    if (!mounted || _controller == null) return;
+    final String? js = _preciseLocateQueue.consume(
+      generation: _navigateGeneration,
+      canApply: mounted && _controller != null,
+    );
+    if (js == null) return;
     try {
-      await _controller!.evaluateJavascript(source: pending.js);
+      await _controller!.evaluateJavascript(source: js);
     } catch (e, stack) {
       ErrorLogService.instance
           .log('ReaderHibiki._applyPendingPreciseLocate', e, stack);
