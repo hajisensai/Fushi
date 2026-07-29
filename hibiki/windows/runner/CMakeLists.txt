@@ -30,6 +30,7 @@ add_executable(${BINARY_NAME} WIN32
   "foreground_selection.cpp"
   "global_lookup_window.cpp"
   "hook_toolbar_window.cpp"
+  "ime_space_dispatch.cpp"
   "low_level_mouse_hook.cpp"
   "main.cpp"
   "utils.cpp"
@@ -84,6 +85,22 @@ target_link_libraries(${BINARY_NAME} PRIVATE avrt)
 target_link_libraries(${BINARY_NAME} PRIVATE dcomp dxguid)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 add_dependencies(${BINARY_NAME} flutter_assemble)
+
+# BUG-1239: compile and execute the production IME Space predicate/dispatch
+# seam as part of every Windows runner build. Source-string tests could not
+# detect WM_KEYDOWN -> WM_KEYUP or removed Alt/Win guards.
+add_executable(hibiki_windows_ime_space_test
+  "ime_space_dispatch.cpp"
+  "tests/ime_space_dispatch_test.cpp"
+)
+apply_standard_settings(hibiki_windows_ime_space_test)
+target_compile_definitions(hibiki_windows_ime_space_test PRIVATE "NOMINMAX")
+add_custom_target(hibiki_windows_ime_space_gate
+  COMMAND "$<TARGET_FILE:hibiki_windows_ime_space_test>"
+  DEPENDS hibiki_windows_ime_space_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} hibiki_windows_ime_space_gate)
 
 add_executable(hibiki_update_launcher WIN32
   "update_launcher.cpp"

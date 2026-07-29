@@ -26,6 +26,7 @@
 #include "audio_loopback_capture.h"
 #include "voice_hook_reader.h"
 #include "foreground_selection.h"
+#include "ime_space_dispatch.h"
 #include "window_capture.h"
 
 #pragma comment(lib, "windowscodecs.lib")
@@ -533,6 +534,12 @@ bool FlutterWindow::OnCreate() {
   system_theme_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(), "app.hibiki/system_theme",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  windows_ime_space_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.hibiki/windows_ime_space",
           &flutter::StandardMethodCodec::GetInstance());
 
   RegisterFloatingLyricChannel();
@@ -2245,6 +2252,28 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // BUG-1239: inspect VK_PROCESSKEY before Flutter handles the message. The
+  // engine deliberately reports IME-owned keys as physical=0/logical=0, so
+  // checking after HandleTopLevelWindowProc can no longer identify Space.
+  // Notify Dart without consuming the Win32 message; Flutter/IME processing
+  // continues unchanged.
+  if (windows_ime_space_channel_) {
+    const ImeSpaceModifierState modifiers{
+        GetKeyState(VK_CONTROL) < 0, GetKeyState(VK_SHIFT) < 0,
+        GetKeyState(VK_MENU) < 0,    GetKeyState(VK_LWIN) < 0,
+        GetKeyState(VK_RWIN) < 0};
+    DispatchInitialUnmodifiedImeSpaceDown(
+        message, wparam, lparam, modifiers,
+        [](void* context) {
+          auto* channel = static_cast<
+              flutter::MethodChannel<flutter::EncodableValue>*>(context);
+          channel->InvokeMethod(
+              "onImeSpaceDown",
+              std::make_unique<flutter::EncodableValue>());
+        },
+        windows_ime_space_channel_.get());
+  }
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =
