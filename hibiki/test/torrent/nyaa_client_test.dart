@@ -285,6 +285,50 @@ void main() {
       client.close();
     });
 
+    test('空响应 / 损坏 RSS 抛格式错误；有效空 feed 才是 0 条结果', () async {
+      Future<Object?> searchBody(String body) async {
+        final NyaaClient client = NyaaClient(
+          client: MockClient(
+            (http.Request req) async => http.Response(body, 200),
+          ),
+        );
+        try {
+          return await client.search('frieren');
+        } catch (error) {
+          return error;
+        } finally {
+          client.close();
+        }
+      }
+
+      expect(
+        await searchBody(''),
+        isA<FormatException>().having(
+          (FormatException e) => e.message,
+          'message',
+          contains('empty'),
+        ),
+      );
+      expect(
+        await searchBody('not xml <<<'),
+        isA<FormatException>().having(
+          (FormatException e) => e.message,
+          'message',
+          contains('Invalid Nyaa RSS'),
+        ),
+      );
+      expect(
+        await searchBody(
+          '<rss><channel><title>valid empty</title></channel></rss>',
+        ),
+        isA<List<NyaaTorrent>>().having(
+          (List<NyaaTorrent> items) => items,
+          'items',
+          isEmpty,
+        ),
+      );
+    });
+
     test('UTF-8 无 charset 响应按 UTF-8 解码（日文标题不乱码）', () async {
       // Nyaa 实际返回 UTF-8 字节但常不声明 charset；用 Response.bytes 模拟。
       // 旧实现走 res.body(latin1) 会把「ソ・ラ・ノ・ヲ・ト」变成「Soã»...」。

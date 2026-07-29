@@ -2774,5 +2774,13 @@
   "sync_last_nothing": "上次同步：没有可同步的内容",
   "sync_last_auto_disabled": "上次同步：已跳过——自动同步已关闭",
   "sync_last_cooled_down": "上次同步：已跳过——刚同步过",
-  "sync_last_failed": "上次同步：失败"
+  "sync_last_failed": "上次同步：失败",
+  "anime_download_no_results_detail": "服务已正常响应，但按当前条件返回 0 条。查询：$query；筛选：$filters。请尝试别名或放宽筛选。",
+  "anime_download_streaming_ready": "已入库 · 下载继续",
+  "anime_download_task_settings": "任务设置",
+  "anime_download_task_library_name": "入库名称",
+  "anime_download_task_content_kind": "入库类型",
+  "anime_download_task_settings_hint": "这些设置影响入库；要修改下载文件名或目录，请使用“重命名 / 移动”。",
+  "anime_download_task_more_actions": "更多任务操作",
+  "anime_download_unfiltered": "未启用 Trusted 筛选"
 }

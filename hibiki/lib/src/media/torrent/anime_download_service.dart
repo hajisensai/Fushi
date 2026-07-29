@@ -239,7 +239,8 @@ class AnimeDownloadService {
 
   /// 边下边播（提前入库）：不等种子完成，立刻按计划入库。顺序下载模式下视频
   /// 从下载初期即可顺序播放；还没下到的集在库里表现为缺失态，下载补齐后自然
-  /// 可播。成功后计划标 imported，完成轮询自然跳过，不会重复入库。
+  /// 可播。成功后只标 [AnimeDownloadPlan.importedEarly]，计划仍保持 downloading，
+  /// 继续轮询真实进度；真正完成后才转 imported，且不会重复导入视频。
   ///
   /// 预检种子元数据已解析出视频文件（磁力刚添加时文件列表为空——此时直接
   /// 返回 false 且**不动计划状态**，避免误标 failed）。返回 true = 已入库。
@@ -271,10 +272,21 @@ class AnimeDownloadService {
       if (info == null) return false;
       // 预检：元数据未解析（文件列表还空）时不入库、不动计划状态。
       final List<TorrentFileEntry> files = await client.listFiles(info.hash);
-      final (List<String> v, List<String> b) =
-          _classifyContent(plan, info, files);
-      if (v.isEmpty && b.isEmpty) return false;
-      await _finishPlan(client, plan, info);
+      final (List<String> videos, _) = _classifyContent(plan, info, files);
+      if (videos.isEmpty) return false;
+      if (!info.isComplete) {
+        _publishProgress(<String, double>{
+          ...downloadProgress.value,
+          plan.id: info.progress.clamp(0.0, 1.0).toDouble(),
+        });
+      }
+      await _finishPlan(
+        client,
+        plan,
+        info,
+        keepDownloading: !info.isComplete,
+        importBooks: info.isComplete,
+      );
     } catch (_) {
       return false;
     } finally {
@@ -283,7 +295,7 @@ class AnimeDownloadService {
     final List<AnimeDownloadPlan> after = await store.loadAll();
     for (final AnimeDownloadPlan p in after) {
       if (p.id == planId) {
-        return p.status == AnimeDownloadPlan.statusImported;
+        return p.status == AnimeDownloadPlan.statusImported || p.importedEarly;
       }
     }
     return false;
@@ -368,13 +380,19 @@ class AnimeDownloadService {
     }
   }
 
-  /// 单个计划的完成处理：按内容类型分流 → 视频落 sidecar + 视频库入库、书走
-  /// 阅读库入库 → 状态落盘（任一入库成功即 imported；全失败 failed，不重试）。
+  /// 单个计划的处理：按内容类型分流 → 视频落 sidecar + 视频库入库、书走
+  /// 阅读库入库 → 状态落盘。
+  ///
+  /// [keepDownloading] 只用于「边下边播」：视频入库成功后记录
+  /// [AnimeDownloadPlan.importedEarly]，但保留 downloading 状态与进度轮询。真实
+  /// 完成 tick 再进来时跳过重复视频导入，只补书籍分流并把状态转 imported。
   Future<void> _finishPlan(
     TorrentBackend client,
     AnimeDownloadPlan plan,
-    TorrentSnapshot info,
-  ) async {
+    TorrentSnapshot info, {
+    bool keepDownloading = false,
+    bool importBooks = true,
+  }) async {
     final List<TorrentFileEntry> files = await client.listFiles(info.hash);
     final (List<String> videos, List<String> books) =
         _classifyContent(plan, info, files);
@@ -391,15 +409,17 @@ class AnimeDownloadService {
     if (videos.isNotEmpty) {
       resolved = await _resolveSubtitles(plan, videos);
       await _placeSidecars(videos, resolved.subtitles);
-      try {
-        outcome = await _importer(resolved, videos);
-      } catch (e) {
-        importError = 'video import failed: $e';
+      if (!plan.importedEarly) {
+        try {
+          outcome = await _importer(resolved, videos);
+        } catch (e) {
+          importError = 'video import failed: $e';
+        }
       }
     }
 
     // 书：走阅读库入库回调（epub）。
-    if (books.isNotEmpty) {
+    if (importBooks && books.isNotEmpty) {
       final Future<int?> Function(AnimeDownloadPlan, List<String>)?
           bookImporter = _bookImporter;
       if (bookImporter == null) {
@@ -413,7 +433,18 @@ class AnimeDownloadService {
       }
     }
 
-    final bool imported = outcome != null || booksImported > 0;
+    if (keepDownloading) {
+      // 提前入库失败不应把仍在正常下载的任务标成 failed；保留下载状态，用户可
+      // 稍后再试。字幕解析结论仍落盘，避免下一次重复网络决策。
+      await store.save(resolved.copyWith(
+        importedEarly: outcome != null || plan.importedEarly,
+        collectionId: outcome?.collectionId,
+      ));
+      return;
+    }
+
+    final bool imported =
+        plan.importedEarly || outcome != null || booksImported > 0;
     if (imported) {
       await store.save(resolved.copyWith(
         status: AnimeDownloadPlan.statusImported,

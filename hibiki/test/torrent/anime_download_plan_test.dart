@@ -103,6 +103,7 @@ void main() {
       expect(decoded.status, AnimeDownloadPlan.statusDownloading);
       expect(decoded.failReason, isNull);
       expect(decoded.collectionId, isNull);
+      expect(decoded.importedEarly, isFalse);
       expect(decoded.subtitles, hasLength(2));
       expect(decoded.subtitles.first.episode, 1);
       expect(decoded.subtitles.first.language, 'ja');
@@ -120,6 +121,22 @@ void main() {
           decodeAnimeDownloadPlan(encodeAnimeDownloadPlan(imported));
       expect(decoded!.status, AnimeDownloadPlan.statusImported);
       expect(decoded.collectionId, 42);
+    });
+
+    test('roundtrip 保持边下边播提前入库标记；老 JSON 默认 false', () {
+      final AnimeDownloadPlan streaming = _fullPlan().copyWith(
+        importedEarly: true,
+        collectionId: 42,
+      );
+      final AnimeDownloadPlan? decoded =
+          decodeAnimeDownloadPlan(encodeAnimeDownloadPlan(streaming));
+      expect(decoded!.status, AnimeDownloadPlan.statusDownloading);
+      expect(decoded.importedEarly, isTrue);
+      expect(decoded.collectionId, 42);
+
+      final AnimeDownloadPlan? legacy =
+          decodeAnimeDownloadPlan(<String, dynamic>{'id': 'legacy'});
+      expect(legacy!.importedEarly, isFalse);
     });
 
     test('缺 id 返回 null；空 Map 返回 null', () {

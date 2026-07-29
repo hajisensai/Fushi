@@ -838,7 +838,7 @@ void main() {
             AnimeDownloadPlan.statusDownloading);
       });
 
-      test('未完成但文件已解析 → 提前入库成功，后续 tick 不重复导入', () async {
+      test('未完成但文件已解析 → 提前入库后继续跟踪进度，完成时不重复导入', () async {
         final String savePath = p.join(tempDir.path, 'downloads');
         Directory(savePath).createSync(recursive: true);
         await store.save(_plan());
@@ -856,12 +856,39 @@ void main() {
         expect(await service.importNow(_kHash), isTrue);
         expect(importCalls, hasLength(1));
         expect(importCalls.single.$2.single, p.join(savePath, 'Show 01.mkv'));
-        expect((await store.loadAll()).single.status,
-            AnimeDownloadPlan.statusImported);
-        // 已 imported：tick 不再有 downloading 计划，不建连接、不重复导入。
-        final int factoryCallsBefore = qb.factoryCalls;
+        AnimeDownloadPlan saved = (await store.loadAll()).single;
+        expect(saved.status, AnimeDownloadPlan.statusDownloading);
+        expect(saved.importedEarly, isTrue);
+        expect(saved.collectionId, 42);
+        expect(service.downloadProgress.value[_kHash], 0.2);
+
+        // 提前入库不是下载完成：后续 tick 继续刷新真实进度，且不重复导入。
+        qb.torrents = <Map<String, dynamic>>[
+          _torrentJson(
+              state: 'downloading',
+              progress: 0.55,
+              amountLeft: 450,
+              savePath: savePath),
+        ];
         await service.tick();
-        expect(qb.factoryCalls, factoryCallsBefore);
+        expect(importCalls, hasLength(1));
+        expect(service.downloadProgress.value[_kHash], 0.55);
+        expect((await store.loadAll()).single.status,
+            AnimeDownloadPlan.statusDownloading);
+
+        // 真正完成后才转 imported；提前入库的视频仍不重复导入。
+        qb.torrents = <Map<String, dynamic>>[
+          _torrentJson(
+              state: 'stalledUP',
+              progress: 1,
+              amountLeft: 0,
+              savePath: savePath),
+        ];
+        await service.tick();
+        saved = (await store.loadAll()).single;
+        expect(saved.status, AnimeDownloadPlan.statusImported);
+        expect(saved.importedEarly, isTrue);
+        expect(saved.collectionId, 42);
         expect(importCalls, hasLength(1));
       });
 

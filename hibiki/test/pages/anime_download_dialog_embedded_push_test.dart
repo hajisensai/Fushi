@@ -268,4 +268,57 @@ void main() {
     expect(appModel.store.plans[_kHash]?.status,
         AnimeDownloadPlan.statusDownloading);
   });
+
+  testWidgets('下载中任务提供独立设置入口，可修改入库名称', (WidgetTester tester) async {
+    final (_FakeAppModel appModel, GlobalKey<NavigatorState> navKey) =
+        await pumpHost(tester);
+    appModel.store.plans[_kHash] = AnimeDownloadPlan(
+      id: _kHash,
+      createdAtMs: 1,
+      anilistId: 1,
+      seriesTitle: 'Old library name',
+      torrentTitle: '[Group] Test Anime - 01 [1080p]',
+      magnet: 'magnet:?xt=urn:btih:$_kHash',
+      qbCategory: 'hibiki',
+    );
+
+    navKey.currentState!.push(MaterialPageRoute<void>(
+      builder: (BuildContext context) => const Scaffold(
+        body: AnimeDownloadDialog(
+          embedded: true,
+          tasksOnly: true,
+          showTasks: false,
+        ),
+      ),
+    ));
+    // 下载进度是不定动画，不能 pumpAndSettle。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byTooltip(t.anime_download_task_settings), findsOneWidget);
+    await tester.tap(find.byTooltip(t.anime_download_task_settings));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text(t.anime_download_task_settings), findsOneWidget);
+    final Finder nameField = find.byWidgetPredicate(
+      (Widget widget) =>
+          widget is TextField &&
+          widget.decoration?.labelText == t.anime_download_task_library_name,
+    );
+    expect(nameField, findsOneWidget);
+    await tester.enterText(nameField, 'Configured library name');
+    await tester.tap(find.text(t.dialog_save));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(
+      appModel.store.plans[_kHash]?.seriesTitle,
+      'Configured library name',
+    );
+    expect(
+      appModel.store.plans[_kHash]?.contentKind,
+      AnimeDownloadPlan.kindVideo,
+    );
+  });
 }

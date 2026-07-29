@@ -206,32 +206,35 @@ DateTime? parseNyaaPubDate(String raw) {
 List<NyaaTorrent> parseNyaaRss(String body) {
   if (body.trim().isEmpty) return const <NyaaTorrent>[];
   try {
-    final XmlDocument doc = XmlDocument.parse(body);
-    final List<NyaaTorrent> out = <NyaaTorrent>[];
-    for (final XmlElement item in doc.findAllElements('item')) {
-      final String title = _childText(item, 'title');
-      if (title.isEmpty) continue;
-      final String sizeText = _childText(item, 'size');
-      out.add(NyaaTorrent(
-        title: title,
-        torrentUrl: _childText(item, 'link'),
-        pageUrl: _childText(item, 'guid'),
-        infoHash: _childText(item, 'infoHash'),
-        seeders: int.tryParse(_childText(item, 'seeders')) ?? 0,
-        leechers: int.tryParse(_childText(item, 'leechers')) ?? 0,
-        downloads: int.tryParse(_childText(item, 'downloads')) ?? 0,
-        sizeText: sizeText,
-        sizeBytes: parseNyaaSize(sizeText),
-        categoryId: _childText(item, 'categoryId'),
-        trusted: _childText(item, 'trusted') == 'Yes',
-        remake: _childText(item, 'remake') == 'Yes',
-        pubDate: parseNyaaPubDate(_childText(item, 'pubDate')),
-      ));
-    }
-    return out;
+    return _parseNyaaDocument(XmlDocument.parse(body));
   } catch (_) {
     return const <NyaaTorrent>[];
   }
+}
+
+List<NyaaTorrent> _parseNyaaDocument(XmlDocument doc) {
+  final List<NyaaTorrent> out = <NyaaTorrent>[];
+  for (final XmlElement item in doc.findAllElements('item')) {
+    final String title = _childText(item, 'title');
+    if (title.isEmpty) continue;
+    final String sizeText = _childText(item, 'size');
+    out.add(NyaaTorrent(
+      title: title,
+      torrentUrl: _childText(item, 'link'),
+      pageUrl: _childText(item, 'guid'),
+      infoHash: _childText(item, 'infoHash'),
+      seeders: int.tryParse(_childText(item, 'seeders')) ?? 0,
+      leechers: int.tryParse(_childText(item, 'leechers')) ?? 0,
+      downloads: int.tryParse(_childText(item, 'downloads')) ?? 0,
+      sizeText: sizeText,
+      sizeBytes: parseNyaaSize(sizeText),
+      categoryId: _childText(item, 'categoryId'),
+      trusted: _childText(item, 'trusted') == 'Yes',
+      remake: _childText(item, 'remake') == 'Yes',
+      pubDate: parseNyaaPubDate(_childText(item, 'pubDate')),
+    ));
+  }
+  return out;
 }
 
 /// 取 [item] 下本地名为 [local] 的第一个子元素文本（去首尾空白）；没有返回空串。
@@ -257,7 +260,8 @@ class NyaaClient {
   /// 按关键词搜索种子。网络错误 / 非 200 **抛出**（`ClientException` /
   /// `SocketException` / `HandshakeException` 等），由调用方决定展示或记录：
   /// 以前这里吞错返回空列表，真实网络故障（如站点被墙、代理未配）会被
-  /// 误报成「无结果」，用户无从判断。RSS 内容坏损仍宽容（[parseNyaaRss]）。
+  /// 误报成「无结果」，用户无从判断。空响应 / 损坏 RSS 同样抛
+  /// [FormatException]；只有结构有效、确实没有 `<item>` 才返回空列表。
   Future<List<NyaaTorrent>> search(
     String query, {
     String category = '1_0',
@@ -278,7 +282,22 @@ class NyaaClient {
     }
     // Nyaa RSS 是 UTF-8 但常不声明 charset，http 的 res.body 会按 latin1 解码 →
     // 日文标题变乱码（如「ソ・ラ・ノ・ヲ・ト」→「Soã»Ra...」）。显式按 UTF-8 解码。
-    return parseNyaaRss(utf8.decode(res.bodyBytes, allowMalformed: true));
+    final String body = utf8.decode(res.bodyBytes, allowMalformed: true);
+    if (body.trim().isEmpty) {
+      throw const FormatException('Nyaa RSS response was empty');
+    }
+    try {
+      final XmlDocument doc = XmlDocument.parse(body);
+      final XmlElement root = doc.rootElement;
+      if (root.name.local != 'rss' || doc.findAllElements('channel').isEmpty) {
+        throw const FormatException('Nyaa response was not an RSS feed');
+      }
+      return _parseNyaaDocument(doc);
+    } on FormatException {
+      rethrow;
+    } catch (error) {
+      throw FormatException('Invalid Nyaa RSS response: $error');
+    }
   }
 
   void close() => _client.close();

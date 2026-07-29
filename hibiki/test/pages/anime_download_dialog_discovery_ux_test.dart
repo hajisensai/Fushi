@@ -257,6 +257,35 @@ void main() {
     expect(find.text(t.download_open_settings), findsOneWidget);
   });
 
+  testWidgets('Nyaa 真 0 条：展示实际查询词与筛选；损坏 feed 不伪装成无结果',
+      (WidgetTester tester) async {
+    const String emptyRss =
+        '<rss><channel><title>valid empty</title></channel></rss>';
+    final _FakeAppModel emptyModel = _FakeAppModel(
+      (http.Request req) async => http.Response(emptyRss, 200),
+    );
+    await pumpDialog(tester, emptyModel);
+    await tester.tap(find.byTooltip(t.anime_download_search).first);
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.anime_download_no_results), findsOneWidget);
+    expect(find.textContaining('Test Anime'), findsOneWidget);
+    expect(find.textContaining(t.anime_download_category_all), findsOneWidget);
+    expect(find.textContaining(t.anime_download_unfiltered), findsOneWidget);
+
+    // 损坏 RSS 必须落错误态并带真实解析原因，不能再显示「无结果」。
+    await tester.pumpWidget(const SizedBox.shrink());
+    final _FakeAppModel brokenModel = _FakeAppModel(
+      (http.Request req) async => http.Response('not xml <<<', 200),
+    );
+    await pumpDialog(tester, brokenModel);
+    await tester.tap(find.byTooltip(t.anime_download_search).first);
+    await tester.pumpAndSettle();
+    expect(find.text(t.anime_download_search_failed), findsOneWidget);
+    expect(find.textContaining('Invalid Nyaa RSS'), findsOneWidget);
+    expect(find.text(t.anime_download_no_results), findsNothing);
+  });
+
   testWidgets('选种结果排序：默认做种数降序，切「体积」就地重排', (WidgetTester tester) async {
     final _FakeAppModel appModel = _FakeAppModel((http.Request req) async {
       return http.Response.bytes(_kSortRss.codeUnits, 200);

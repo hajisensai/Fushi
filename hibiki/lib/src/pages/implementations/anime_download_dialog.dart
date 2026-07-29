@@ -1010,6 +1010,27 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     if (ok) await _reloadPlans();
   }
 
+  /// 单任务配置：允许在入库前修正库内名称；通用磁链还可修正内容分流类型。
+  /// 下载文件/目录不在这里假改，仍统一走后端支持的 [_relocatePlan]。
+  Future<void> _configurePlan(AnimeDownloadPlan plan) async {
+    final AnimeDownloadPlanStore? store =
+        ref.read(appProvider).animeDownloadPlanStore;
+    if (store == null) {
+      _snack(t.anime_download_store_unavailable);
+      return;
+    }
+    final _TaskSettingsChoice? choice = await showDialog<_TaskSettingsChoice>(
+      context: context,
+      builder: (BuildContext context) => _TaskSettingsDialog(plan: plan),
+    );
+    if (choice == null) return;
+    await store.save(plan.copyWith(
+      seriesTitle: choice.libraryName,
+      contentKind: choice.contentKind,
+    ));
+    await _reloadPlans();
+  }
+
   // ---------------------------------------------------------------- 渲染
 
   /// 「去设置」：embedded 由下载页回调切页内设置面板；独立对话框（视频页入口）
@@ -1339,6 +1360,43 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     );
   }
 
+  /// 真正的 0 条结果：服务已正常响应，因此不是网络错误；把这次实际采用的
+  /// 查询词与筛选条件直接摆出来，用户能判断是标题别名、分类还是 Trusted
+  /// 过滤过严，而不是只看到一句没有行动信息的「无结果」。
+  Widget _buildNoResults(
+    ThemeData theme, {
+    required String query,
+    required String filters,
+  }) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(
+              Icons.search_off_outlined,
+              size: 40,
+              color: theme.colorScheme.outline,
+            ),
+            const SizedBox(height: 8),
+            Text(t.anime_download_no_results, textAlign: TextAlign.center),
+            const SizedBox(height: 4),
+            Text(
+              t.anime_download_no_results_detail(
+                query: query,
+                filters: filters,
+              ),
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildAnimeResults(ThemeData theme) {
     if (_searchingAnime) {
       return buildLoading();
@@ -1353,7 +1411,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       );
     }
     if (_searchedAnime && _animeMatches.isEmpty) {
-      return Center(child: Text(t.anime_download_no_results));
+      return _buildNoResults(
+        theme,
+        query: _animeQueryCtrl.text.trim(),
+        filters: 'AniList · ANIME',
+      );
     }
     if (_animeMatches.isEmpty) {
       return Center(
@@ -1504,7 +1566,18 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       );
     }
     if (_torrentsLoaded && _torrents.isEmpty) {
-      return Center(child: Text(t.anime_download_no_results));
+      final String categoryLabel = switch (_category) {
+        '1_4' => t.anime_download_category_raw,
+        '1_2' => t.anime_download_category_english,
+        '1_3' => t.anime_download_category_non_english,
+        _ => t.anime_download_category_all,
+      };
+      return _buildNoResults(
+        theme,
+        query: _nyaaQueryCtrl.text.trim(),
+        filters:
+            '$categoryLabel · ${_trustedOnly ? t.anime_download_trusted_only : t.anime_download_unfiltered}',
+      );
     }
     return ListView.builder(
       itemCount: _torrents.length,
@@ -2132,6 +2205,12 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
               maxLines: 1,
               style: theme.textTheme.bodySmall,
             ),
+          if (plan.importedEarly)
+            Text(
+              t.anime_download_streaming_ready,
+              maxLines: 1,
+              style: theme.textTheme.bodySmall?.copyWith(color: scheme.primary),
+            ),
           if (subtitleNote != null)
             Text(
               subtitleNote.$1,
@@ -2152,7 +2231,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          if (downloading)
+          if (downloading && !plan.importedEarly)
             HibikiIconButton(
               tooltip: t.anime_download_play_now,
               icon: Icons.play_circle_outline,
@@ -2166,17 +2245,44 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
               size: 20,
               onTap: () => _retryPlan(plan),
             ),
-          HibikiIconButton(
-            tooltip: t.anime_download_relocate,
-            icon: Icons.drive_file_move_outline,
-            size: 20,
-            onTap: () => _relocatePlan(plan),
-          ),
-          HibikiIconButton(
-            tooltip: t.anime_download_delete,
-            icon: Icons.delete_outline,
-            size: 20,
-            onTap: () => _deletePlan(plan),
+          if (plan.status != AnimeDownloadPlan.statusImported &&
+              !plan.importedEarly)
+            HibikiIconButton(
+              tooltip: t.anime_download_task_settings,
+              icon: Icons.tune,
+              size: 20,
+              onTap: () => _configurePlan(plan),
+            ),
+          PopupMenuButton<_TaskMoreAction>(
+            tooltip: t.anime_download_task_more_actions,
+            icon: const Icon(Icons.more_vert, size: 20),
+            onSelected: (_TaskMoreAction action) {
+              switch (action) {
+                case _TaskMoreAction.relocate:
+                  unawaited(_relocatePlan(plan));
+                case _TaskMoreAction.delete:
+                  unawaited(_deletePlan(plan));
+              }
+            },
+            itemBuilder: (BuildContext context) =>
+                <PopupMenuEntry<_TaskMoreAction>>[
+              PopupMenuItem<_TaskMoreAction>(
+                value: _TaskMoreAction.relocate,
+                child: ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.drive_file_move_outline),
+                  title: Text(t.anime_download_relocate),
+                ),
+              ),
+              PopupMenuItem<_TaskMoreAction>(
+                value: _TaskMoreAction.delete,
+                child: ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.delete_outline),
+                  title: Text(t.anime_download_delete),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -2280,6 +2386,128 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           ),
         ],
       ),
+    );
+  }
+}
+
+enum _TaskMoreAction { relocate, delete }
+
+class _TaskSettingsChoice {
+  const _TaskSettingsChoice({
+    required this.libraryName,
+    required this.contentKind,
+  });
+
+  final String libraryName;
+  final String contentKind;
+}
+
+/// 单任务入库设置。番剧任务的内容类型固定为视频；通用磁链允许在自动 / 视频 /
+/// 书之间修正。名称与类型只在尚未入库时开放，避免给用户一个“保存成功但现有库
+/// 条目完全没变”的假配置入口。
+class _TaskSettingsDialog extends StatefulWidget {
+  const _TaskSettingsDialog({required this.plan});
+
+  final AnimeDownloadPlan plan;
+
+  @override
+  State<_TaskSettingsDialog> createState() => _TaskSettingsDialogState();
+}
+
+class _TaskSettingsDialogState extends State<_TaskSettingsDialog> {
+  late final TextEditingController _nameController =
+      TextEditingController(text: widget.plan.seriesTitle);
+  late String _contentKind = widget.plan.anilistId == null
+      ? widget.plan.contentKind
+      : AnimeDownloadPlan.kindVideo;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final String name = _nameController.text.trim();
+    if (name.isEmpty) return;
+    Navigator.pop(
+      context,
+      _TaskSettingsChoice(
+        libraryName: name,
+        contentKind: _contentKind,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool generic = widget.plan.anilistId == null;
+    return AlertDialog(
+      title: Text(t.anime_download_task_settings),
+      content: SizedBox(
+        width: 440,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            TextField(
+              controller: _nameController,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: t.anime_download_task_library_name,
+                border: const OutlineInputBorder(),
+              ),
+              onSubmitted: (_) => _save(),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _contentKind,
+              decoration: InputDecoration(
+                labelText: t.anime_download_task_content_kind,
+                border: const OutlineInputBorder(),
+              ),
+              items: <DropdownMenuItem<String>>[
+                if (generic)
+                  DropdownMenuItem<String>(
+                    value: AnimeDownloadPlan.kindAuto,
+                    child: Text(t.anime_download_kind_auto),
+                  ),
+                DropdownMenuItem<String>(
+                  value: AnimeDownloadPlan.kindVideo,
+                  child: Text(t.anime_download_kind_video),
+                ),
+                if (generic)
+                  DropdownMenuItem<String>(
+                    value: AnimeDownloadPlan.kindBook,
+                    child: Text(t.anime_download_kind_book),
+                  ),
+              ],
+              onChanged: generic
+                  ? (String? value) {
+                      if (value != null) setState(() => _contentKind = value);
+                    }
+                  : null,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              t.anime_download_task_settings_hint,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(t.dialog_cancel),
+        ),
+        FilledButton(
+          onPressed: _save,
+          child: Text(t.dialog_save),
+        ),
+      ],
     );
   }
 }
