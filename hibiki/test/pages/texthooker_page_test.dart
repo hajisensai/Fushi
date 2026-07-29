@@ -21,12 +21,16 @@ Widget _wrapPage(Widget home) {
 }
 
 void main() {
-  setUp(() {
+  setUp(() async {
     // AnkiViewModel.loadSettings 走 SharedPreferences——测试环境需 mock 初始值。
     SharedPreferences.setMockInitialValues(<String, Object>{});
     TexthookerService.instance.clear();
+    await GalHookSessionController.instance.selectTextThread(null);
   });
-  tearDown(() => TexthookerService.instance.clear());
+  tearDown(() async {
+    await GalHookSessionController.instance.selectTextThread(null);
+    TexthookerService.instance.clear();
+  });
 
   testWidgets('renders incoming lines reactively', (WidgetTester tester) async {
     await tester.pumpWidget(
@@ -36,18 +40,31 @@ void main() {
 
     expect(find.text('第'), findsNothing);
 
-    TexthookerService.instance.appendLine('第一行');
+    TexthookerService.instance.appendLine(
+      '第一行',
+      textThreadKey: 'test:reactive',
+    );
+    await GalHookSessionController.instance
+        .selectTextThread(1, threadKey: 'test:reactive');
     await tester.pump();
     // 分词后可能拆成多个 span，逐字降级时「第」是独立 span。
     expect(find.textContaining('第'), findsWidgets);
 
-    TexthookerService.instance.appendLine('第二行');
+    TexthookerService.instance.appendLine(
+      '第二行',
+      textThreadKey: 'test:reactive',
+    );
     await tester.pump();
     expect(find.textContaining('二'), findsWidgets);
   });
 
   testWidgets('clear button empties the list', (WidgetTester tester) async {
-    TexthookerService.instance.appendLine('行X');
+    TexthookerService.instance.appendLine(
+      '行X',
+      textThreadKey: 'test:clear',
+    );
+    await GalHookSessionController.instance
+        .selectTextThread(1, threadKey: 'test:clear');
     await tester.pumpWidget(
       _wrapPage(const TexthookerPage()),
     );
@@ -88,7 +105,8 @@ void main() {
       TexthookerService.instance.lines,
       contains('坏线程文本'),
     );
-    expect(find.textContaining('干'), findsWidgets);
+    expect(find.textContaining('干'), findsNothing,
+        reason: 'v13 requires an explicit text-thread selection');
 
     await tester.tap(
       find.byKey(const ValueKey<String>('game-text-thread-selector')),
@@ -97,7 +115,7 @@ void main() {
     // 菜单项标签是「线程名 · 行数」精确串（行卡片元数据不含行数后缀），
     // 用精确匹配避免命中列表行；取可命中的一份（DropdownMenu 有隐藏测宽副本）。
     await tester.tap(
-      find.text('SiglusEngine 0x2000 · 1').last,
+      find.text('SiglusEngine 0x2000 · 0').last,
       warnIfMissed: false,
     );
     await tester.pumpAndSettle();
@@ -157,7 +175,12 @@ void main() {
   testWidgets('embedded mode reuses parent scaffold and exposes back action',
       (WidgetTester tester) async {
     bool returned = false;
-    TexthookerService.instance.appendLine('嵌入行');
+    TexthookerService.instance.appendLine(
+      '嵌入行',
+      textThreadKey: 'test:embedded',
+    );
+    await GalHookSessionController.instance
+        .selectTextThread(1, threadKey: 'test:embedded');
     await tester.pumpWidget(
       _wrapPage(
         Scaffold(

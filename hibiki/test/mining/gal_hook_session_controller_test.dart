@@ -18,6 +18,41 @@ void main() {
   // 空列表而不是在无 binding 下直接抛错。
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  String testTextThreadKey(int threadId, {String source = 'hook'}) =>
+      '$source:${threadId.toUnsigned(64).toRadixString(16)}';
+
+  Future<void> selectTestTextThread(
+    GalHookSessionController controller,
+    TexthookerService service,
+    int threadId, {
+    String source = 'hook',
+  }) async {
+    final String key = testTextThreadKey(threadId, source: source);
+    service.registerTextThread(
+      key: key,
+      label: 'test',
+      nativeThreadId: threadId,
+    );
+    expect(
+      await controller.selectTextThread(threadId, threadKey: key),
+      isTrue,
+    );
+  }
+
+  Future<TexthookerLineEntry> appendSelectedTestLine(
+    GalHookSessionController controller,
+    TexthookerService service,
+    String text, {
+    int threadId = 5,
+  }) async {
+    await selectTestTextThread(controller, service, threadId);
+    return service.appendLine(
+      text,
+      textThreadKey: testTextThreadKey(threadId),
+      nativeTextThreadId: threadId,
+    )!;
+  }
+
   test('window binding is app-level state and stop keeps binding by default',
       () async {
     final TexthookerService service = TexthookerService.test();
@@ -114,7 +149,8 @@ void main() {
       (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
       isTrue,
     );
-    final TexthookerLineEntry entry = service.appendLine('siglus line')!;
+    final TexthookerLineEntry entry =
+        await appendSelectedTestLine(controller, service, 'siglus line');
     final Uint8List? bytes = await controller.captureAudioBytes(
       lineId: entry.id,
       sentence: entry.text,
@@ -167,7 +203,8 @@ void main() {
       (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
       isTrue,
     );
-    final TexthookerLineEntry entry = service.appendLine('late resource line')!;
+    final TexthookerLineEntry entry =
+        await appendSelectedTestLine(controller, service, 'late resource line');
     final Uint8List? bytes = await controller.captureAudioBytes(
       lineId: entry.id,
       sentence: entry.text,
@@ -221,7 +258,8 @@ void main() {
       (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
       isTrue,
     );
-    final TexthookerLineEntry entry = service.appendLine('resource only')!;
+    final TexthookerLineEntry entry =
+        await appendSelectedTestLine(controller, service, 'resource only');
     controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.resourceOnly);
     expect(
       controller.state.audioFallbackPolicy,
@@ -287,7 +325,8 @@ void main() {
     );
     // 资源模式会话把 `_audioSource` 指向 loopback（原始资源是首选，混音只是兜底），
     // 于是没有配对资源的句子在旧实现里必然拿到一段整机混音 = 纯 BGM。
-    final TexthookerLineEntry entry = service.appendLine('無声のモノローグ')!;
+    final TexthookerLineEntry entry =
+        await appendSelectedTestLine(controller, service, '無声のモノローグ');
     controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
 
     final Uint8List? bytes = await controller.captureAudioBytes(
@@ -377,6 +416,7 @@ void main() {
       (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
       isTrue,
     );
+    await selectTestTextThread(controller, service, 3, source: 'luna');
     controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
     for (int i = 0; i < 40 && service.entries.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
@@ -637,6 +677,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'Test Game'),
     );
+    await selectTestTextThread(controller, service, 9);
     for (int i = 0; i < 20 && service.entries.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -706,6 +747,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 7, pid: 19332, title: 'manosaba'),
     );
+    await selectTestTextThread(controller, service, 99);
 
     expect(controller.state.phase, GalHookSessionPhase.degraded);
     expect(controller.state.audioBackend, GalHookAudioBackend.systemLoopback);
@@ -713,9 +755,6 @@ void main() {
     expect(engine.stopCalls, 0,
         reason: 'text helper must remain alive when only engine PCM is absent');
     expect(loopback.startCalls, 1);
-    expect(await controller.selectTextThread(99), isTrue,
-        reason: 'retained engine helper must still accept Luna thread choices');
-
     for (int i = 0; i < 60 && loopback.grabRecentCalls == 0; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -791,6 +830,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 9, pid: 28140, title: 'anemoi'),
     );
+    await selectTestTextThread(controller, service, 5);
     expect(controller.state.audioBackend, GalHookAudioBackend.gameResource);
     expect(controller.state.audioFormat, isNull,
         reason: 'resource-only readiness must not be presented as fake PCM');
@@ -883,6 +923,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 21, pid: 2200, title: 'RealLive fixture'),
     );
+    await selectTestTextThread(controller, service, 19);
     for (int i = 0; i < 20 && service.entries.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -942,6 +983,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 11, pid: 22812, title: '9-nine'),
     );
+    await selectTestTextThread(controller, service, 4948456556519461331);
     expect(controller.state.audioBackend, GalHookAudioBackend.systemLoopback);
 
     for (int i = 0;
@@ -1022,6 +1064,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 13, pid: 777, title: 'Engine game'),
     );
+    await selectTestTextThread(controller, service, 5);
     for (int i = 0; i < 20 && service.entries.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -1074,7 +1117,8 @@ void main() {
       (await controller.launchGame(r'D:\anemoi\SiglusEngine.exe')).launched,
       isTrue,
     );
-    final TexthookerLineEntry entry = service.appendLine('siglus line')!;
+    final TexthookerLineEntry entry =
+        await appendSelectedTestLine(controller, service, 'siglus line');
     await controller.captureAudioBytes(
       lineId: entry.id,
       sentence: entry.text,
@@ -1254,6 +1298,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'サノバウィッチ'),
     );
+    await selectTestTextThread(controller, service, 1);
     for (int i = 0; i < 40 && service.entries.length < 2; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -1343,6 +1388,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'サノバウィッチ'),
     );
+    await selectTestTextThread(controller, service, 1);
     for (int i = 0; i < 40 && service.entries.length < 3; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -1448,8 +1494,12 @@ void _bug950Guard() {
         .toList();
     expect(
       awaited,
-      <String>['_refreshReadinessThrottled', 'engine.pollText'],
-      reason: 'BUG-1063：文本主路径只许等 readiness 与 pollText 本身，'
+      <String>[
+        '_refreshReadinessThrottled',
+        '_pollThreadPreviews',
+        'engine.pollText',
+      ],
+      reason: 'BUG-1063：文本主路径只许等 readiness、线程候选预览与 pollText，'
           '语音抓取必须走 _scheduleLineAudioAttach 的后台队列',
     );
 
@@ -1457,24 +1507,56 @@ void _bug950Guard() {
     expect(attachAt, greaterThan(0), reason: '_attachLineAudio 不存在，守卫需更新');
     final String attachBody = body.substring(attachAt, attachAt + 1200);
     expect(
-      attachBody.contains('if (engine != _engineSource)') &&
+      attachBody.contains('engine != _engineSource') &&
+          attachBody.contains('isLineInCurrentSelection') &&
           attachBody.contains('BUG-950'),
       isTrue,
-      reason: 'BUG-950：语音抓取 await 归来后必须复检 engine generation',
+      reason: 'BUG-950：语音抓取 await 归来后必须复检 engine 与线程选择 generation',
     );
   });
 
   group('exportLineAudioPreview（实时台词行内试听）', () {
     test('PCM 缓存路径：冻结切片拼 WAV 落临时目录，时长>0，不改行状态', () async {
       final TexthookerService service = TexthookerService.test();
-      final TexthookerLineEntry line = service.appendLine('試聴の台詞')!;
       final ChangeNotifier endpoints = ChangeNotifier();
+      final _FakeEngineSource engine = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+      );
       final GalHookSessionController controller = GalHookSessionController(
         textService: service,
-        isWindows: false,
+        isWindows: true,
+        targetWow64Probe: (_) async => false,
+        injectorResolver: ({required bool is32Bit}) => 'injector.exe',
+        engineSourceFactory: ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
+        }) =>
+            engine,
         endpointListenable: endpoints,
         endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
       );
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 13, pid: 777, title: 'Preview game'),
+      );
+      service.registerTextThread(
+        key: 'hook:5',
+        label: 'test',
+        nativeThreadId: 5,
+      );
+      expect(
+        await controller.selectTextThread(5, threadKey: 'hook:5'),
+        isTrue,
+      );
+      final TexthookerLineEntry line = service.appendLine(
+        '試聴の台詞',
+        textThreadKey: 'hook:5',
+        nativeTextThreadId: 5,
+      )!;
       controller.debugCacheLineVoice(
         line.id,
         GalAudioSlice(
@@ -1506,7 +1588,7 @@ void _bug950Guard() {
       endpoints.dispose();
     });
 
-    test('无任何已配音频：返回 null 并记结构化事件（不静默）', () async {
+    test('无当前线程授权：返回 null 并标记上下文失效', () async {
       final TexthookerService service = TexthookerService.test();
       final TexthookerLineEntry line = service.appendLine('音無しの台詞')!;
       final ChangeNotifier endpoints = ChangeNotifier();
@@ -1520,7 +1602,8 @@ void _bug950Guard() {
       expect(await controller.exportLineAudioPreview(line.id), isNull);
       expect(
         controller.events.map((GalHookEvent e) => e.code),
-        contains('audio.line_preview_unavailable'),
+        isNot(contains('audio.line_preview_unavailable')),
+        reason: '未授权的旧行必须在触发试听/取音前被代际门控拒绝',
       );
 
       await controller.close();

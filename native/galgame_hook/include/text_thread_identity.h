@@ -30,6 +30,15 @@ inline uint64_t TextThreadFnv1a64(uint64_t hash, const void* data,
   return hash;
 }
 
+inline uint64_t NativeComponentThreadIdentity(uint64_t component_identity,
+                                              uint32_t os_thread_id) {
+  uint64_t hash = 1469598103934665603ull;
+  hash = TextThreadFnv1a64(hash, &component_identity,
+                          sizeof(component_identity));
+  hash = TextThreadFnv1a64(hash, &os_thread_id, sizeof(os_thread_id));
+  return hash == 0 ? 1 : hash;
+}
+
 inline uint64_t NativeTextThreadIdFrom(uint64_t component_identity,
                                        const wchar_t* hook_code,
                                        const char* hook_name) {

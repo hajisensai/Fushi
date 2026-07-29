@@ -86,9 +86,11 @@ class AdapterStructureTest(unittest.TestCase):
             'class_from_name(image, "UnityEngine", "TextMesh")', source
         )
         self.assertIn('L"UnityEngine.TextMesh.set_text(glyphs)"', source)
-        self.assertIn("void FlushUnityTextMeshLine()", source)
+        self.assertIn("void FlushUnityTextMeshLines()", source)
         self.assertIn("UsesSasasaLegacyTextMeshTerminator", source)
-        self.assertIn("g_unity_text_mesh_reassembler.ShouldTerminate(c, true)", source)
+        self.assertIn("bucket.line.ApplySnapshot", source)
+        self.assertIn("NativeComponentThreadIdentity", source)
+        self.assertIn("GetCurrentThreadId()", source)
         self.assertIn("IsExactTextThreadSelected", source)
         self.assertIn("kNativeThreadPreviewStart", source)
         self.assertIn("candidate->thread_id == selected", source)
@@ -103,7 +105,7 @@ class AdapterStructureTest(unittest.TestCase):
             "// 收尾在工作线程里做（不在 loader lock 中）", 1
         )[1]
         self.assertLess(
-            shutdown.index("FlushUnityTextMeshLine();"),
+            shutdown.index("FlushUnityTextMeshLines();"),
             shutdown.index("g_capture_enabled = false;"),
         )
 
@@ -319,6 +321,18 @@ class AdapterStructureTest(unittest.TestCase):
             1,
             run_launch.count('SetEnvironmentVariableW(L"SteamAppId"'),
             "Only the explicit force-direct launch may set SteamAppId.",
+        )
+
+    def test_process_detach_flushes_unity_text_before_shared_memory_release(
+        self,
+    ) -> None:
+        source = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
+        detach = source.split("case DLL_PROCESS_DETACH:", 1)[1]
+        self.assertIn("FlushUnityTextMeshLines", detach)
+        self.assertIn("UnmapViewOfFile", detach)
+        self.assertLess(
+            detach.index("FlushUnityTextMeshLines"),
+            detach.index("UnmapViewOfFile"),
         )
 
 

@@ -21,8 +21,8 @@
 namespace hibiki_voice_hook {
 
 constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
-constexpr uint32_t kSharedVersion = 12;
-constexpr uint32_t kStableIpcVersion = 1;
+constexpr uint32_t kSharedVersion = 13;
+constexpr uint32_t kStableIpcVersion = 2;
 constexpr uint32_t kLunaBridgeAbiVersion = 1;
 constexpr uint32_t kLunaVendoredVersion = 0x0A100102;  // 10.16.1.2
 
@@ -196,6 +196,33 @@ struct SharedHeader {
   volatile uint64_t thread_preview_write_count;
 };
 #pragma pack(pop)
+
+inline bool HasExpectedIpcLayout(const SharedHeader* header) {
+  if (header == nullptr ||
+      header->thread_preview_slot_count != kThreadPreviewCount ||
+      header->loopback_marker_slot_count != kLoopbackMarkerCount) {
+    return false;
+  }
+  const uint64_t text_offset =
+      static_cast<uint64_t>(sizeof(SharedHeader)) + header->ring_capacity;
+  const uint64_t clip_offset =
+      text_offset + static_cast<uint64_t>(kTextSlotCount) * kTextSlotBytes;
+  const uint64_t loopback_offset =
+      clip_offset + static_cast<uint64_t>(kClipCount) * sizeof(VoiceClip);
+  const uint64_t marker_offset =
+      loopback_offset + header->loopback_ring_capacity;
+  const uint64_t preview_offset =
+      marker_offset +
+      static_cast<uint64_t>(kLoopbackMarkerCount) * sizeof(LoopbackMarker);
+  return text_offset <= UINT32_MAX && clip_offset <= UINT32_MAX &&
+         loopback_offset <= UINT32_MAX && marker_offset <= UINT32_MAX &&
+         preview_offset <= UINT32_MAX &&
+         header->text_region_offset == text_offset &&
+         header->clip_region_offset == clip_offset &&
+         header->loopback_ring_offset == loopback_offset &&
+         header->loopback_marker_offset == marker_offset &&
+         header->thread_preview_offset == preview_offset;
+}
 
 static_assert(sizeof(SharedHeader) % 8 == 0, "SharedHeader must stay 8-aligned");
 static_assert(sizeof(TextSlot) % 8 == 0, "TextSlot must stay 8-aligned");

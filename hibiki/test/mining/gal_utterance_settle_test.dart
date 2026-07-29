@@ -25,6 +25,21 @@ void main() {
   // byteRate = 44100 * 1 * 2 = 88200 B/s，故 4410B=50ms、17640B=200ms、44100B=500ms。
   const int kHalfSecondBytes = 44100;
 
+  Future<void> selectTestTextThread(
+    GalHookSessionController controller,
+    TexthookerService service,
+  ) async {
+    service.registerTextThread(
+      key: 'hook:5',
+      label: 'Siglus',
+      nativeThreadId: 5,
+    );
+    expect(
+      await controller.selectTextThread(5, threadKey: 'hook:5'),
+      isTrue,
+    );
+  }
+
   GalHookSessionController buildController({
     required TexthookerService service,
     required Listenable endpoints,
@@ -83,6 +98,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 13, pid: 777, title: 'Engine game'),
     );
+    await selectTestTextThread(controller, service);
     for (int i = 0; i < 40 && service.entries.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -146,6 +162,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 13, pid: 777, title: 'Engine game'),
     );
+    await selectTestTextThread(controller, service);
     for (int i = 0; i < 40 && service.entries.length < 2; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -203,6 +220,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 13, pid: 777, title: 'Engine game'),
     );
+    await selectTestTextThread(controller, service);
     for (int i = 0; i < 200 && service.entries.length < 2; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -249,6 +267,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 13, pid: 777, title: 'Engine game'),
     );
+    await selectTestTextThread(controller, service);
     for (int i = 0; i < 200 && service.entries.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
@@ -305,6 +324,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 13, pid: 777, title: 'Engine game'),
     );
+    await selectTestTextThread(controller, service);
     for (int i = 0; i < 200 && service.entries.isEmpty; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }

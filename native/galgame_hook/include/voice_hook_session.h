@@ -30,15 +30,21 @@ inline bool AdvanceUnityEventCursorIfCommitted(
 inline MappingSessionAction InspectMappingSession(
     bool already_exists, const SharedHeader* header,
     uint32_t expected_ring_capacity, uint32_t expected_text_offset,
-    uint32_t expected_clip_offset) {
+    uint32_t expected_clip_offset, uint32_t expected_preview_offset,
+    uint32_t expected_preview_count) {
   if (!already_exists) {
     return MappingSessionAction::kInitializeFresh;
   }
   if (header == nullptr || header->magic != kSharedMagic ||
       header->version != kSharedVersion ||
+      header->ipc_protocol_version != kStableIpcVersion ||
+      header->luna_bridge_abi_version != kLunaBridgeAbiVersion ||
+      header->luna_vendored_version != kLunaVendoredVersion ||
       header->ring_capacity != expected_ring_capacity ||
       header->text_region_offset != expected_text_offset ||
       header->clip_region_offset != expected_clip_offset ||
+      header->thread_preview_offset != expected_preview_offset ||
+      header->thread_preview_slot_count != expected_preview_count ||
       header->hooked == 0) {
     return MappingSessionAction::kRejectStale;
   }

@@ -43,8 +43,10 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //         native adapter 使用互斥槽分区，跨进程 writer 不会争抢同一槽。
 //     预览区按线程分槽而不是全局 FIFO，所以逐字重绘型 hook 只能覆盖它自己的槽，**物理上挤不掉
 //     别的线程**——"挤压"从"要小心防"变成结构上不可能，这正是自动赢家门控得以退役的前提。
-constexpr uint32_t kSharedVersion = 12;
-constexpr uint32_t kStableIpcVersion = 1;
+// v13: thread selection is an authorization boundary for every consumer, and
+// TextMesh preview publication is isolated per component/thread identity.
+constexpr uint32_t kSharedVersion = 13;
+constexpr uint32_t kStableIpcVersion = 2;
 
 // 环形缓冲保留时长（秒）。C 阶段语音轨常见 48k 立体声 float32；60s 上界 ≈ 23MB。
 // 32 位游戏地址空间有限，共享内存映射进游戏进程也吃它的地址空间——故设硬上界。
@@ -295,6 +297,33 @@ struct SharedHeader {
   volatile uint64_t thread_preview_write_count;
 };
 #pragma pack(pop)
+
+inline bool HasExpectedIpcLayout(const SharedHeader* header) {
+  if (header == nullptr ||
+      header->thread_preview_slot_count != kThreadPreviewCount ||
+      header->loopback_marker_slot_count != kLoopbackMarkerCount) {
+    return false;
+  }
+  const uint64_t text_offset =
+      static_cast<uint64_t>(sizeof(SharedHeader)) + header->ring_capacity;
+  const uint64_t clip_offset =
+      text_offset + static_cast<uint64_t>(kTextSlotCount) * kTextSlotBytes;
+  const uint64_t loopback_offset =
+      clip_offset + static_cast<uint64_t>(kClipCount) * sizeof(VoiceClip);
+  const uint64_t marker_offset =
+      loopback_offset + header->loopback_ring_capacity;
+  const uint64_t preview_offset =
+      marker_offset +
+      static_cast<uint64_t>(kLoopbackMarkerCount) * sizeof(LoopbackMarker);
+  return text_offset <= UINT32_MAX && clip_offset <= UINT32_MAX &&
+         loopback_offset <= UINT32_MAX && marker_offset <= UINT32_MAX &&
+         preview_offset <= UINT32_MAX &&
+         header->text_region_offset == text_offset &&
+         header->clip_region_offset == clip_offset &&
+         header->loopback_ring_offset == loopback_offset &&
+         header->loopback_marker_offset == marker_offset &&
+         header->thread_preview_offset == preview_offset;
+}
 
 inline uint64_t SelectedTextThreadId(const SharedHeader* header) {
   if (header == nullptr) return 0;

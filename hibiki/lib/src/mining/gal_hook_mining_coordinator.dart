@@ -84,7 +84,7 @@ class GalHookMiningCoordinator {
         _createTempDirectory =
             createTempDirectory ?? _defaultCreateTempDirectory {
     _lineLookup = lineLookup ?? _textService.entryById;
-    _lineValidator = lineValidator ?? _session.isLineInCurrentSession;
+    _lineValidator = lineValidator ?? _session.isLineInCurrentSelection;
     _stateLoader = stateLoader ?? (() => _session.state);
     _captureAudio = captureAudio ?? _session.captureAudioBytes;
   }

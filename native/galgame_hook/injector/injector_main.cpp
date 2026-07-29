@@ -1398,9 +1398,13 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
       static_cast<uint32_t>(sizeof(SharedHeader) + ring_capacity);
   const uint32_t expected_clip_offset =
       static_cast<uint32_t>(expected_text_offset + text_region_bytes);
+  const uint32_t expected_preview_offset = static_cast<uint32_t>(
+      expected_clip_offset + clip_region_bytes + loopback_capacity +
+      loopback_marker_bytes);
   const MappingSessionAction mapping_action = InspectMappingSession(
       mapping_already_exists, header, ring_capacity, expected_text_offset,
-      expected_clip_offset);
+      expected_clip_offset, expected_preview_offset,
+      hibiki_voice_hook::kThreadPreviewCount);
   if (mapping_action == MappingSessionAction::kRejectStale) {
     fprintf(stderr,
             "已存在但不可复用的 hook 会话（契约不匹配或 hooked=0）；请重启一次游戏以清理旧 DLL。\n");
@@ -1431,8 +1435,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
     header->loopback_marker_slot_count = kLoopbackMarkerCount;
     // v12：线程预览区紧随标记表。放在**布局最尾**是有意的——前面各区的偏移一个都不动，
     // 旧 host 即使只认到 v11 的字段也不会读错位（版本号仍会先把它挡掉，这只是纵深防御）。
-    header->thread_preview_offset = static_cast<uint32_t>(
-        header->loopback_marker_offset + loopback_marker_bytes);
+    header->thread_preview_offset = expected_preview_offset;
     header->thread_preview_slot_count = hibiki_voice_hook::kThreadPreviewCount;
   } else {
     fprintf(stderr,

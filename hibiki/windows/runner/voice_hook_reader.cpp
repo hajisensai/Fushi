@@ -38,7 +38,8 @@ bool ProtocolMatches(const SharedHeader* h) {
          h->ipc_protocol_version == hibiki_voice_hook::kStableIpcVersion &&
          h->luna_bridge_abi_version ==
              hibiki_voice_hook::kLunaBridgeAbiVersion &&
-         h->luna_vendored_version == hibiki_voice_hook::kLunaVendoredVersion;
+         h->luna_vendored_version == hibiki_voice_hook::kLunaVendoredVersion &&
+         hibiki_voice_hook::HasExpectedIpcLayout(h);
 }
 
 // 无符号整数 → 十六进制字面（magic / vendored 版本按 hex 读才认得出来）。

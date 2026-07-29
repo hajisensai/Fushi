@@ -467,7 +467,14 @@ DWORD WINAPI HookWorker(LPVOID) {
   if (g_header != nullptr) {
     // 只信任 injector 建好、契约匹配的映射。
     if (g_header->magic == kSharedMagic &&
-        g_header->version == kSharedVersion) {
+        g_header->version == kSharedVersion &&
+        g_header->ipc_protocol_version ==
+            hibiki_voice_hook::kStableIpcVersion &&
+        g_header->luna_bridge_abi_version ==
+            hibiki_voice_hook::kLunaBridgeAbiVersion &&
+        g_header->luna_vendored_version ==
+            hibiki_voice_hook::kLunaVendoredVersion &&
+        hibiki_voice_hook::HasExpectedIpcLayout(g_header)) {
       g_header->hooked = 1;
 
       // 此时 DLL、共享内存与契约均已就绪，先让 injector 进入 hold 保住映射。
@@ -516,7 +523,7 @@ DWORD WINAPI HookWorker(LPVOID) {
   // 收尾在工作线程里做（不在 loader lock 中）：先提交仍在组装的 legacy TextMesh
   // 末句，再在同一把 adapter 锁内关总开关，确保正常结束不会静默丢尾句。
   if (g_cs_ready) EnterCriticalSection(&g_cs);
-  FlushUnityTextMeshLine();
+  FlushUnityTextMeshLines();
   g_capture_enabled = false;
   if (g_cs_ready) LeaveCriticalSection(&g_cs);
   registry.Shutdown();
@@ -543,6 +550,12 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
       // 进程正常退出（reserved != NULL）时其它线程已停，OS 回收即可；动态 FreeLibrary 卸载
       // 极罕见（注入的 hook DLL 常驻进程生命周期），此路径 trampoline 残留由 OS 退出兜底。
       g_capture_enabled = false;
+      // During process termination Windows has already stopped the other
+      // threads. Commit every pending TextMesh bucket while the shared mapping
+      // is still valid; unmapping first silently loses the final line.
+      if (reserved != nullptr && g_header != nullptr) {
+        FlushUnityTextMeshLines();
+      }
       g_stop = true;
       // 先断 loopback 环基址（缩小 loopback 线程悬垂写窗口；进程正常退出路径 OS 已先杀线程）。
       g_lb_ring_base = nullptr;

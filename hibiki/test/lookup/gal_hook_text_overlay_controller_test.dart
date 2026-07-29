@@ -116,6 +116,10 @@ void main() {
     await session.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 77, pid: 1234, title: 'Game'),
     );
+    expect(
+      await session.selectTextThread(1, threadKey: 'test:default'),
+      isTrue,
+    );
   }
 
   test('first line auto-shows, pause freezes, and resume catches up', () async {
@@ -124,6 +128,7 @@ void main() {
     final TexthookerLineEntry first = textService.appendLine(
       '最初の台詞',
       source: TexthookerLineSource.websocket,
+      textThreadKey: 'test:default',
     )!;
 
     await _waitUntil(() => controller.displayedLineId == first.id);
@@ -142,6 +147,7 @@ void main() {
     final TexthookerLineEntry second = textService.appendLine(
       '暂停期间的新台词',
       source: TexthookerLineSource.websocket,
+      textThreadKey: 'test:default',
     )!;
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(controller.displayedLineId, first.id);
@@ -158,6 +164,7 @@ void main() {
     final TexthookerLineEntry first = textService.appendLine(
       '会话一',
       source: TexthookerLineSource.websocket,
+      textThreadKey: 'test:default',
     )!;
     await _waitUntil(() => controller.displayedLineId == first.id);
 
@@ -167,6 +174,7 @@ void main() {
     textService.appendLine(
       '关闭后不可自动出现',
       source: TexthookerLineSource.websocket,
+      textThreadKey: 'test:default',
     );
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(controller.isSuppressedForSession, isTrue);
@@ -189,6 +197,7 @@ void main() {
     final TexthookerLineEntry nextSession = textService.appendLine(
       '新会话自动恢复',
       source: TexthookerLineSource.websocket,
+      textThreadKey: 'test:default',
     )!;
     await _waitUntil(() => controller.displayedLineId == nextSession.id);
     expect(controller.isFollowing, isTrue);
@@ -225,6 +234,27 @@ void main() {
       isTrue,
     );
     await _waitUntil(() => controller.displayedLineId == otherThread.id);
+
+    expect(await session.selectTextThread(null), isTrue);
+    await _waitUntil(
+      () => controller.displayedLineId == null && !controller.isVisible,
+    );
+    expect(
+      session.isLineInCurrentSelection(otherThread),
+      isFalse,
+      reason: 'clearing selection revokes the old line immediately',
+    );
+
+    expect(
+      await session.selectTextThread(11, threadKey: 'luna:first'),
+      isTrue,
+    );
+    await _waitUntil(() => controller.displayedLineId == firstThread.id);
+    await session.stopCapture();
+    await _waitUntil(
+      () => controller.displayedLineId == null && !controller.isVisible,
+    );
+    expect(session.isLineInCurrentSelection(firstThread), isFalse);
   });
 
   test('saved rectangle is restored and changed bounds are persisted',
@@ -236,6 +266,7 @@ void main() {
     textService.appendLine(
       '位置を復元する',
       source: TexthookerLineSource.websocket,
+      textThreadKey: 'test:default',
     );
     await _waitUntil(() => controller.isVisible);
 
@@ -282,6 +313,7 @@ void main() {
     textService.appendLine(
       'フォントサイズ',
       source: TexthookerLineSource.websocket,
+      textThreadKey: 'test:default',
     );
     await _waitUntil(() => controller.isVisible);
 
@@ -309,6 +341,7 @@ void main() {
     textService.appendLine(
       '設定から変更',
       source: TexthookerLineSource.websocket,
+      textThreadKey: 'test:default',
     );
     await _waitUntil(() => controller.isVisible);
     expect(controller.fontSize, kGalHookTextFontSize);

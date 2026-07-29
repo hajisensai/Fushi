@@ -306,6 +306,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
         state.phase != GalHookSessionPhase.stopping &&
         state.phase != GalHookSessionPhase.error;
     if (!active) {
+      _displayedLineId = null;
+      if (_replaying) await _stopReplay();
       if (_visible) {
         await GalHookTextOverlayChannel.hide();
         _visible = false;
@@ -322,7 +324,20 @@ class GalHookTextOverlayController extends ChangeNotifier {
     if (_suppressedForSession) return;
 
     final List<TexthookerLineEntry> lines = _session.selectedSessionLines;
-    if (lines.isEmpty) return;
+    if (lines.isEmpty) {
+      _displayedLineId = null;
+      if (_replaying) await _stopReplay();
+      if (_session.isRecapturing) {
+        await _session.finishLineRecapture(discard: true);
+      }
+      if (_visible) {
+        await GalHookTextOverlayChannel.hide();
+        _visible = false;
+      }
+      await _syncVoiceState();
+      notifyListeners();
+      return;
+    }
     final TexthookerLineEntry latest = lines.last;
     if (!_visible) {
       await GalHookTextOverlayChannel.updateText(
@@ -576,7 +591,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     if (model == null ||
         entry == null ||
         entry.text != text ||
-        !_session.isLineInCurrentSession(entry)) {
+        !_session.isLineInCurrentSelection(entry)) {
       HibikiToast.show(msg: t.game_hook_line_unavailable);
       return;
     }

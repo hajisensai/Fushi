@@ -400,6 +400,12 @@ void main() {
         engine: engine,
       );
       await controller.launchGame(r'D:\Games\fake.exe');
+      service.registerTextThread(
+        key: 'hook:5',
+        label: 'fake',
+        nativeThreadId: 5,
+      );
+      await controller.selectTextThread(5, threadKey: 'hook:5');
 
       // (a) 候选轨在该句时刻有能量但整句抓取失败 -> 疑似漏抓，保留告警红标。
       engine.tracks = <GalAudioTrack>[

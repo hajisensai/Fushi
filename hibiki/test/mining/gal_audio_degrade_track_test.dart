@@ -28,6 +28,21 @@ void main() {
     }
   }
 
+  Future<void> selectTestTextThread(
+    GalHookSessionController controller,
+    TexthookerService service,
+  ) async {
+    service.registerTextThread(
+      key: 'hook:5',
+      label: 'fake',
+      nativeThreadId: 5,
+    );
+    expect(
+      await controller.selectTextThread(5, threadKey: 'hook:5'),
+      isTrue,
+    );
+  }
+
   GalHookSessionController build({
     required TexthookerService service,
     required Listenable endpoints,
@@ -88,6 +103,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    await selectTestTextThread(controller, service);
     // 游戏刚启动、一句语音都没播：hook 装好了但共享内存里没有格式 -> 临时 Loopback。
     expect(controller.state.phase, GalHookSessionPhase.degraded);
     expect(controller.state.audioBackend, GalHookAudioBackend.systemLoopback);
@@ -176,6 +192,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    await selectTestTextThread(controller, service);
     await waitUntil(() => service.entries.isNotEmpty);
     expect(service.entries, hasLength(1));
     expect(
@@ -229,6 +246,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    await selectTestTextThread(controller, service);
     await waitUntil(() => service.entries.isNotEmpty);
     expect(loopback.backMsCalls, isEmpty);
 
@@ -343,6 +361,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    await selectTestTextThread(controller, service);
     await waitUntil(() => service.entries.isNotEmpty);
     final TexthookerLineEntry line = service.entries.single;
     expect(line.audioResourceId, isNotNull, reason: '前提：自动链路已配上资源语音');
@@ -413,6 +432,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    await selectTestTextThread(controller, service);
     await waitUntil(() => service.entries.length == 2);
     final TexthookerLineEntry first = service.entries.first;
     engine.utteranceTimestamps.clear();
@@ -497,6 +517,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    await selectTestTextThread(controller, service);
     await waitUntil(() => service.entries.isNotEmpty);
     final TexthookerLineEntry first = service.entries.single;
 

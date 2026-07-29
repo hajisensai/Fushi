@@ -204,8 +204,21 @@ target_include_directories(hibiki_unity_text_mesh_reassembler_test
   PRIVATE include)
 target_compile_definitions(hibiki_unity_text_mesh_reassembler_test
   PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_options(hibiki_unity_text_mesh_reassembler_test
+  PRIVATE /UNDEBUG)
 add_test(NAME hibiki_unity_text_mesh_reassembler_test
   COMMAND hibiki_unity_text_mesh_reassembler_test)
+
+add_executable(hibiki_voice_hook_ipc_contract_test
+  tests/ipc_contract_test.cpp
+  tests/ipc_contract_native_probe.cpp
+  tests/ipc_contract_host_probe.cpp)
+target_include_directories(hibiki_voice_hook_ipc_contract_test
+  PRIVATE include tests)
+target_compile_definitions(hibiki_voice_hook_ipc_contract_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME hibiki_voice_hook_ipc_contract_test
+  COMMAND hibiki_voice_hook_ipc_contract_test)
 
 add_executable(hibiki_adapter_contract_test tests/adapter_contract_test.cpp)
 target_include_directories(hibiki_adapter_contract_test PRIVATE hook)

@@ -86,9 +86,14 @@ void main() {
     await session.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 77, pid: 1234, title: 'Game'),
     );
+    expect(
+      await session.selectTextThread(1, threadKey: 'test:voice'),
+      isTrue,
+    );
     final TexthookerLineEntry line = textService.appendLine(
       '補録テスト台詞',
       source: TexthookerLineSource.websocket,
+      textThreadKey: 'test:voice',
     )!;
     await waitUntil(() => controller.displayedLineId == line.id);
     return line;
@@ -137,6 +142,32 @@ void main() {
       ),
       isEmpty,
     );
+  });
+
+  test('clearing selection revokes recapture and cached replay authorization',
+      () async {
+    final TexthookerLineEntry line = await showFirstLine();
+    session.debugCacheLineVoice(
+      line.id,
+      GalAudioSlice(
+        pcm: Uint8List.fromList(<int>[0, 0, 1, 0]),
+        format: const PcmFormat(
+          sampleRate: 44100,
+          channels: 1,
+          bitsPerSample: 16,
+          isFloat: false,
+        ),
+      ),
+    );
+    expect(await session.startLineRecapture(line.id), isTrue);
+    expect(session.isRecapturing, isTrue);
+
+    expect(await session.selectTextThread(null), isTrue);
+    await waitUntil(() => !session.isRecapturing);
+
+    expect(session.isLineInCurrentSelection(line), isFalse);
+    expect(await session.exportLineAudioPreview(line.id), isNull);
+    expect(controller.displayedLineId, isNull);
   });
 }
 

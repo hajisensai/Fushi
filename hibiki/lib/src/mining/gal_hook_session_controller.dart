@@ -716,6 +716,23 @@ class GalHookSessionController extends ChangeNotifier {
     return startedAt != null && !entry.receivedAt.isBefore(startedAt);
   }
 
+  /// Whether [entry] still belongs to the exact text selection generation that
+  /// authorized an action. Session time alone is insufficient: switching A →
+  /// B (or clearing the selection) must revoke replay, recapture, lookup,
+  /// mining, and delayed audio pairing for A immediately.
+  bool isLineInCurrentSelection(
+    TexthookerLineEntry entry, {
+    int? generation,
+  }) {
+    final String? selectedKey = selectedTextThreadKey;
+    return (generation == null || generation == _textSelectionGeneration) &&
+        selectedKey != null &&
+        entry.textThreadKey == selectedKey &&
+        isLineInCurrentSession(entry);
+  }
+
+  int get textSelectionGeneration => _textSelectionGeneration;
+
   List<TexthookerEndpointStatus> get endpointStatuses =>
       _endpointStatusLoader();
 
@@ -749,6 +766,7 @@ class GalHookSessionController extends ChangeNotifier {
   String? _lastObservedLineId;
   String? _selectedTextThreadKey;
   int? _selectedNativeTextThreadId;
+  int _textSelectionGeneration = 0;
   final SerialJobQueue _audioQueue = SerialJobQueue();
   final Set<String> _loopbackCacheInFlight = <String>{};
 
@@ -1333,6 +1351,8 @@ class GalHookSessionController extends ChangeNotifier {
     _activityGameTitle = null;
     _activityGameKey = null;
     if (_state.phase == GalHookSessionPhase.idle && _audioSource == null) {
+      _invalidateTextSelectionWork(clearSelection: true);
+      await finishLineRecapture(discard: true);
       _setState(
         _state.copyWith(
           externalWindowMode: false,
@@ -1474,7 +1494,7 @@ class GalHookSessionController extends ChangeNotifier {
   ) async {
     final TexthookerLineEntry? entry = _textService.entryById(lineId);
     final int timestamp = _lineTimestampCache[lineId] ?? 0;
-    if (entry == null || !isLineInCurrentSession(entry) || timestamp <= 0) {
+    if (entry == null || !isLineInCurrentSelection(entry) || timestamp <= 0) {
       _record(
         GalHookEventSeverity.warning,
         'audio',
@@ -1488,7 +1508,15 @@ class GalHookSessionController extends ChangeNotifier {
       );
       return null;
     }
-    return _exportTrackPreviewAt(sourcePtr, timestamp, lineId: lineId);
+    final int selectionGeneration = _textSelectionGeneration;
+    final GalTrackPreview? preview =
+        await _exportTrackPreviewAt(sourcePtr, timestamp, lineId: lineId);
+    return isLineInCurrentSelection(
+      entry,
+      generation: selectionGeneration,
+    )
+        ? preview
+        : null;
   }
 
   Future<GalTrackPreview?> _exportTrackPreviewAt(
@@ -1567,6 +1595,9 @@ class GalHookSessionController extends ChangeNotifier {
   ///  ② 引擎 PCM / loopback 兜底行 → [_lineVoiceCache] 冻结切片拼 WAV 写临时目录。
   /// 只读既有配对结果，不改行状态、不影响制卡链路；取不到返回 null 并记结构化事件。
   Future<GalTrackPreview?> exportLineAudioPreview(String lineId) async {
+    final TexthookerLineEntry? entry = _textService.entryById(lineId);
+    if (entry == null || !isLineInCurrentSelection(entry)) return null;
+    final int selectionGeneration = _textSelectionGeneration;
     final EngineHookGalAudioSource? engine = _engineSource;
     // 用户裁决过的行只播它自己的冻结切片，绝不回头播资源原件。
     final String? resourceId =
@@ -1575,9 +1606,19 @@ class GalHookSessionController extends ChangeNotifier {
       // BUG-1109：hook 可能还在写这个原件，直接播会听到被截断的半句。
       final String? path =
           await engine.settledPairedVoiceFilePathForResourceId(resourceId);
-      if (path != null) {
+      if (path != null &&
+          isLineInCurrentSelection(
+            entry,
+            generation: selectionGeneration,
+          )) {
         return GalTrackPreview(filePath: path, durationMs: 0);
       }
+    }
+    if (!isLineInCurrentSelection(
+      entry,
+      generation: selectionGeneration,
+    )) {
+      return null;
     }
     final GalAudioSlice? slice = _lineVoiceCache[lineId];
     if (slice != null && !slice.isEmpty) {
@@ -1592,6 +1633,12 @@ class GalHookSessionController extends ChangeNotifier {
         );
         await out.writeAsBytes(buildWavBytes(slice.pcm, slice.format),
             flush: true);
+        if (!isLineInCurrentSelection(
+          entry,
+          generation: selectionGeneration,
+        )) {
+          return null;
+        }
         return GalTrackPreview(
           filePath: out.path,
           durationMs: pcmDurationMs(slice.pcm.length, slice.format.byteRate),
@@ -1634,6 +1681,7 @@ class GalHookSessionController extends ChangeNotifier {
   static const int _recaptureMinBackMs = 500;
 
   String? _recapturingLineId;
+  int? _recaptureSelectionGeneration;
   Timer? _recaptureTimer;
   Stopwatch? _recaptureElapsed;
 
@@ -1673,7 +1721,7 @@ class GalHookSessionController extends ChangeNotifier {
   Future<bool> startLineRecapture(String lineId) async {
     if (_recapturingLineId != null) return false;
     final TexthookerLineEntry? entry = _textService.entryById(lineId);
-    if (entry == null || !isLineInCurrentSession(entry)) {
+    if (entry == null || !isLineInCurrentSelection(entry)) {
       _record(
         GalHookEventSeverity.warning,
         'audio',
@@ -1684,9 +1732,17 @@ class GalHookSessionController extends ChangeNotifier {
       return false;
     }
     LoopbackGalAudioSource? temp;
+    final int selectionGeneration = _textSelectionGeneration;
     if (_audioSource is! LoopbackGalAudioSource) {
       temp = _loopbackSourceFactory();
       final PcmFormat? format = await temp.start();
+      if (!isLineInCurrentSelection(
+        entry,
+        generation: selectionGeneration,
+      )) {
+        await temp.stop();
+        return false;
+      }
       if (format == null) {
         await temp.stop();
         _record(
@@ -1701,6 +1757,7 @@ class GalHookSessionController extends ChangeNotifier {
     }
     _recaptureTempSource = temp;
     _recapturingLineId = lineId;
+    _recaptureSelectionGeneration = selectionGeneration;
     // 这行的自动延迟冻结已被用户裁决取代，别让它到点后再盖一次。
     _loopbackFreezeTimers.remove(lineId)?.cancel();
     _loopbackFreezeStartedAt.remove(lineId);
@@ -1731,6 +1788,9 @@ class GalHookSessionController extends ChangeNotifier {
   Future<bool> finishLineRecapture({bool discard = false}) async {
     final String? lineId = _recapturingLineId;
     if (lineId == null) return false;
+    final int? selectionGeneration = _recaptureSelectionGeneration;
+    _recaptureSelectionGeneration = null;
+    final TexthookerLineEntry? entry = _textService.entryById(lineId);
     _recaptureTimer?.cancel();
     _recaptureTimer = null;
     final int elapsedMs = _recaptureElapsed?.elapsedMilliseconds ?? 0;
@@ -1761,6 +1821,13 @@ class GalHookSessionController extends ChangeNotifier {
           details: <String, Object?>{'lineId': lineId, 'error': '$error'},
         ),
       );
+      if (entry == null ||
+          !isLineInCurrentSelection(
+            entry,
+            generation: selectionGeneration,
+          )) {
+        return false;
+      }
       if (slice == null || slice.isEmpty) {
         _markLineAudioMissing(lineId, 'manual_recapture_empty');
         return false;
@@ -1836,10 +1903,12 @@ class GalHookSessionController extends ChangeNotifier {
     final bool selected =
         engine == null || await engine.selectTextThread(threadId);
     if (selected) {
+      _invalidateTextSelectionWork();
       _selectedTextThreadKey =
           threadKey == null || threadKey.isEmpty ? null : threadKey;
       _selectedNativeTextThreadId =
           threadId == null || threadId == 0 ? null : threadId;
+      await finishLineRecapture(discard: true);
       if (remember) {
         // 用户已亲自表态：本会话不再自动恢复，并把这次选择记成新的真值。
         _textThreadMemoryApplied = true;
@@ -1869,6 +1938,16 @@ class GalHookSessionController extends ChangeNotifier {
     return selected;
   }
 
+  void _invalidateTextSelectionWork({bool clearSelection = false}) {
+    _textSelectionGeneration++;
+    _cancelLoopbackFreezes();
+    _pendingResourceMatches.clear();
+    if (clearSelection) {
+      _selectedTextThreadKey = null;
+      _selectedNativeTextThreadId = null;
+    }
+  }
+
   /// 单条台词改用指定音轨重抓语音（BUG-1102 的真正出口）。
   ///
   /// 会话级 [selectVoiceTrack] 只改自动选源的默认值，且只在引擎 PCM 是当前音源时生效；
@@ -1885,7 +1964,7 @@ class GalHookSessionController extends ChangeNotifier {
     final int timestamp = _lineTimestampCache[lineId] ?? 0;
     if (engine == null ||
         entry == null ||
-        !isLineInCurrentSession(entry) ||
+        !isLineInCurrentSelection(entry) ||
         timestamp <= 0) {
       _record(
         GalHookEventSeverity.warning,
@@ -1901,6 +1980,7 @@ class GalHookSessionController extends ChangeNotifier {
       );
       return false;
     }
+    final int selectionGeneration = _textSelectionGeneration;
     final GalAudioSlice? slice = await _audioQueue.enqueue<GalAudioSlice?>(
       () => engine.grabUtterance(
         timestamp,
@@ -1917,7 +1997,13 @@ class GalHookSessionController extends ChangeNotifier {
       ),
     );
     // BUG-950 范式：入队到执行之间可能夹一次 stop/重启，旧会话的结果不落地。
-    if (engine != _engineSource) return false;
+    if (engine != _engineSource ||
+        !isLineInCurrentSelection(
+          entry,
+          generation: selectionGeneration,
+        )) {
+      return false;
+    }
     if (slice == null || slice.isEmpty) {
       _record(
         GalHookEventSeverity.warning,
@@ -1975,13 +2061,15 @@ class GalHookSessionController extends ChangeNotifier {
     final int timestamp = _lineTimestampCache[lineId] ?? 0;
     if (engine == null ||
         entry == null ||
-        !isLineInCurrentSession(entry) ||
+        !isLineInCurrentSelection(entry) ||
         timestamp <= 0) {
       return const <GalAudioTrack>[];
     }
     final List<GalAudioTrack> tracks = await engine.listAudioTracks(timestamp);
     // await 期间会话可能已停止/重启：旧 engine 的快照不落地（同 BUG-950 范式）。
-    if (engine != _engineSource) return const <GalAudioTrack>[];
+    if (engine != _engineSource || !isLineInCurrentSelection(entry)) {
+      return const <GalAudioTrack>[];
+    }
     return tracks;
   }
 
@@ -2251,16 +2339,18 @@ class GalHookSessionController extends ChangeNotifier {
     final TexthookerLineEntry? entry = _textService.entryById(lineId);
     if (entry == null ||
         entry.text != sentence ||
-        !isLineInCurrentSession(entry)) {
+        !isLineInCurrentSelection(entry)) {
       _markLineAudioMissing(lineId, 'line_context_unavailable');
       return Future<Uint8List?>.value(null);
     }
     // 串行化 + 永不毒化（BUG-956）：单次语音采集异常（含事件记录自身抛）不得让后续采集永久挂起。
+    final int selectionGeneration = _textSelectionGeneration;
     return _audioQueue.enqueue<Uint8List?>(
       () => _captureAudioBytesNow(
         lineId: lineId,
         sentence: sentence,
         outputExtension: outputExtension,
+        selectionGeneration: selectionGeneration,
       ),
       buildFailure: (Object error, StackTrace stack) => null,
       onError: (Object error, StackTrace stack) => _record(
@@ -2277,7 +2367,16 @@ class GalHookSessionController extends ChangeNotifier {
     required String lineId,
     required String sentence,
     required String outputExtension,
+    required int selectionGeneration,
   }) async {
+    final TexthookerLineEntry? entry = _textService.entryById(lineId);
+    if (entry == null ||
+        !isLineInCurrentSelection(
+          entry,
+          generation: selectionGeneration,
+        )) {
+      return null;
+    }
     final GalAudioSource? source = _audioSource;
     final EngineHookGalAudioSource? engine = _engineSource;
     if (source == null && engine == null) {
@@ -2293,6 +2392,8 @@ class GalHookSessionController extends ChangeNotifier {
     if (adjudicated != null && !adjudicated.isEmpty) {
       return _encodeLineSlice(
         lineId: lineId,
+        entry: entry,
+        selectionGeneration: selectionGeneration,
         slice: adjudicated,
         backend: overriddenTrack != null ? 'engine_pcm' : 'system_loopback',
         outputExtension: outputExtension,
@@ -2309,6 +2410,12 @@ class GalHookSessionController extends ChangeNotifier {
         timestamp: timestamp,
         outputExtension: outputExtension,
       );
+      if (!isLineInCurrentSelection(
+        entry,
+        generation: selectionGeneration,
+      )) {
+        return null;
+      }
       if (paired != null && paired.isNotEmpty) {
         _textService.updateLineAudio(
           lineId,
@@ -2369,6 +2476,12 @@ class GalHookSessionController extends ChangeNotifier {
         engine: engine,
         timestampMs: timestamp,
       );
+      if (!isLineInCurrentSelection(
+        entry,
+        generation: selectionGeneration,
+      )) {
+        return null;
+      }
       _markLineAudioMissing(lineId, reason);
       _record(
         GalHookEventSeverity.info,
@@ -2386,6 +2499,12 @@ class GalHookSessionController extends ChangeNotifier {
     // BUG-1101：这行的 loopback 冻结可能还在等窗口到点。制卡就是「现在就要这段声音」，
     // 因此提前收束（按真实已等待时长回取），而不是拿一份还没冻的空缓存报 missing。
     await _flushLoopbackFreeze(lineId);
+    if (!isLineInCurrentSelection(
+      entry,
+      generation: selectionGeneration,
+    )) {
+      return null;
+    }
     GalAudioSlice? slice = _lineVoiceCache[lineId];
     // 会话已经选用 Loopback 时，engine 仍需保活来提供文本/资源事件，但它的 PCM
     // 明确没有通过 readiness 门。此时绝不能因为共享内存里残留着可读 clip 就重新
@@ -2396,6 +2515,12 @@ class GalHookSessionController extends ChangeNotifier {
         timestamp > 0) {
       slice = await engine.grabUtterance(timestamp) ??
           await engine.grabClipNear(timestamp);
+      if (!isLineInCurrentSelection(
+        entry,
+        generation: selectionGeneration,
+      )) {
+        return null;
+      }
     }
     if (slice == null || slice.isEmpty) {
       // 制卡时刻仍两手空空：能给证据就给证据——引擎 PCM 会话下按「该句时刻
@@ -2404,11 +2529,19 @@ class GalHookSessionController extends ChangeNotifier {
           engine != null && identical(source, engine) && timestamp > 0
               ? await _classifyEnginePcmMiss(engine, timestamp)
               : 'line_audio_not_cached';
+      if (!isLineInCurrentSelection(
+        entry,
+        generation: selectionGeneration,
+      )) {
+        return null;
+      }
       _markLineAudioMissing(lineId, reason);
       return null;
     }
     return _encodeLineSlice(
       lineId: lineId,
+      entry: entry,
+      selectionGeneration: selectionGeneration,
       slice: slice,
       backend: identical(source, engine) ? 'engine_pcm' : 'system_loopback',
       outputExtension: outputExtension,
@@ -2439,6 +2572,8 @@ class GalHookSessionController extends ChangeNotifier {
   /// 制卡链路上「有切片了」之后的收尾只有这一份实现（PCM 兜底与手动补录共用）。
   Future<Uint8List?> _encodeLineSlice({
     required String lineId,
+    required TexthookerLineEntry entry,
+    required int selectionGeneration,
     required GalAudioSlice slice,
     required String backend,
     required String outputExtension,
@@ -2468,6 +2603,12 @@ class GalHookSessionController extends ChangeNotifier {
         tempDir: jobDirectory.path,
         outputExtension: outputExtension,
       );
+      if (!isLineInCurrentSelection(
+        entry,
+        generation: selectionGeneration,
+      )) {
+        return null;
+      }
       if (encoded == null || encoded.isEmpty) {
         _markLineAudioMissing(lineId, 'pcm_encode_failed');
         return null;
@@ -3141,6 +3282,7 @@ class GalHookSessionController extends ChangeNotifier {
   Future<void> _stopSources() async {
     // 补录窗口挂在会话音源上，会话停就必须先收束（丢弃取音）：否则临时 loopback
     // 源泄漏，超时回调还会往已结束的会话行里写状态。
+    _invalidateTextSelectionWork(clearSelection: true);
     await finishLineRecapture(discard: true);
     _textPollTimer?.cancel();
     _textPollTimer = null;
@@ -3209,6 +3351,7 @@ class GalHookSessionController extends ChangeNotifier {
       // 恒空，只轮询它会让选择器永远是一列空壳——那正是本次要修的症状。
       await _pollThreadPreviews(engine);
       if (engine != _engineSource) return;
+      final int selectionGeneration = _textSelectionGeneration;
       final GalTextPoll? poll = await engine.pollText(_lastTextSeq);
       if (poll == null || engine != _engineSource) return;
       final List<GalHookedLine> ordered = List<GalHookedLine>.from(poll.lines)
@@ -3254,6 +3397,15 @@ class GalHookSessionController extends ChangeNotifier {
         // 会被 injector 的 hook 赢家选择放行——在喂进文本服务/查词面板前用实证启发式剔除。
         // 推进 cursor 消费掉该 seq，但不置 receivedTextLine（菜单文字不算收到台词信号）。
         if (isGalgameSystemUiLine(line.text)) {
+          cursor = line.seq;
+          continue;
+        }
+        if (selectionGeneration != _textSelectionGeneration ||
+            selectedTextThreadKey == null ||
+            line.textThreadKey != selectedTextThreadKey) {
+          // The poll began under an older selection, or a stale helper slot
+          // does not match the selected thread. Consume the sequence number
+          // but never publish/pair it into the new generation.
           cursor = line.seq;
           continue;
         }
@@ -3565,7 +3717,7 @@ class GalHookSessionController extends ChangeNotifier {
   }) =>
       engine == _engineSource &&
       identical(_audioSource, engine) &&
-      isLineInCurrentSession(entry) &&
+      isLineInCurrentSelection(entry) &&
       // 下一句台词已经到了 = 这句语音要么播完、要么被玩家跳过。再等下去，下一句的段
       // 会落进同一个 `[ts-200, ts+6000]` 窗口被拼进上一句。
       _lastTextSeq <= line.seq &&
@@ -3594,7 +3746,14 @@ class GalHookSessionController extends ChangeNotifier {
     required bool resourceReady,
   }) async {
     // BUG-950：入队到执行之间、以及下面每个 await 之间都可能夹一次 stop/重启。
-    if (engine != _engineSource || !isLineInCurrentSession(entry)) return;
+    final int selectionGeneration = _textSelectionGeneration;
+    if (engine != _engineSource ||
+        !isLineInCurrentSelection(
+          entry,
+          generation: selectionGeneration,
+        )) {
+      return;
+    }
     GalAudioSlice? clip;
     // BUG-1060：只有 readiness 已选择 engine PCM 作为当前音频源时才读取 engine clip。
     // 文本 helper 在 Loopback 降级会话中仍然保活，但它暴露的残留/未通过门控 PCM 不能
@@ -3602,7 +3761,13 @@ class GalHookSessionController extends ChangeNotifier {
     if (!resourceReady && identical(_audioSource, engine)) {
       clip = await engine.grabUtterance(line.timestampMs) ??
           await engine.grabClipNear(line.timestampMs);
-      if (engine != _engineSource) return;
+      if (engine != _engineSource ||
+          !isLineInCurrentSelection(
+            entry,
+            generation: selectionGeneration,
+          )) {
+        return;
+      }
     }
     if (clip != null && !clip.isEmpty) {
       _lineVoiceCache[entry.id] = clip;
@@ -3645,7 +3810,7 @@ class GalHookSessionController extends ChangeNotifier {
               timestampMs: line.timestampMs,
             )
           : await _classifyEnginePcmMiss(engine, line.timestampMs);
-      if (engine != _engineSource || !isLineInCurrentSession(entry)) return;
+      if (engine != _engineSource || !isLineInCurrentSelection(entry)) return;
       _textService.updateLineAudio(
         entry.id,
         status: TexthookerLineAudioStatus.missing,
@@ -3851,7 +4016,9 @@ class GalHookSessionController extends ChangeNotifier {
           _state = _state.copyWith(textSignalReceived: true);
         }
         _recordActivityLine(latest.text, fromEngineHook: false);
-        _scheduleLoopbackFreeze(latest);
+        if (isLineInCurrentSelection(latest)) {
+          _scheduleLoopbackFreeze(latest);
+        }
       }
     }
     _lastObservedLineId = latestId;
@@ -3877,7 +4044,7 @@ class GalHookSessionController extends ChangeNotifier {
     // 冻结，漏一个调用点就等于「禁止降级」在某条路径上静默失效。
     if (!_state.audioFallbackPolicy.allowsLoopback ||
         _audioSource is! LoopbackGalAudioSource ||
-        !isLineInCurrentSession(entry) ||
+        !isLineInCurrentSelection(entry) ||
         _isUserAdjudicated(entry.id) ||
         _loopbackFreezeTimers.containsKey(entry.id) ||
         _loopbackCacheInFlight.contains(entry.id)) {
@@ -3886,12 +4053,17 @@ class GalHookSessionController extends ChangeNotifier {
     _loopbackFreezeStartedAt[entry.id] = _now();
     _trimCache(_loopbackFreezeStartedAt);
     final int backMs = _loopbackFreezeDelay.inMilliseconds + _loopbackPreRollMs;
+    final int selectionGeneration = _textSelectionGeneration;
     _loopbackFreezeTimers[entry.id] = Timer(_loopbackFreezeDelay, () {
       _loopbackFreezeTimers.remove(entry.id);
       unawaited(
         _audioQueue.enqueue<bool>(
           () async {
-            await _cacheLoopbackForLine(entry, backMs: backMs);
+            await _cacheLoopbackForLine(
+              entry,
+              backMs: backMs,
+              selectionGeneration: selectionGeneration,
+            );
             return true;
           },
           buildFailure: (Object error, StackTrace stack) => false,
@@ -3947,10 +4119,14 @@ class GalHookSessionController extends ChangeNotifier {
   Future<void> _cacheLoopbackForLine(
     TexthookerLineEntry entry, {
     required int backMs,
+    int? selectionGeneration,
   }) async {
     final GalAudioSource? source = _audioSource;
     if (source is! LoopbackGalAudioSource ||
-        !isLineInCurrentSession(entry) ||
+        !isLineInCurrentSelection(
+          entry,
+          generation: selectionGeneration,
+        ) ||
         // 用户裁决与已配到的原始资源都优先：延迟冻结到点时它们可能已经落定，
         // 这一段回环混音绝不能反过来把它们盖掉。
         _isUserAdjudicated(entry.id) ||
@@ -3960,7 +4136,13 @@ class GalHookSessionController extends ChangeNotifier {
     }
     try {
       final GalAudioSlice? slice = await source.grabRecent(backMs);
-      if (slice == null || slice.isEmpty || _audioSource != source) {
+      if (slice == null ||
+          slice.isEmpty ||
+          _audioSource != source ||
+          !isLineInCurrentSelection(
+            entry,
+            generation: selectionGeneration,
+          )) {
         _markLineAudioMissing(entry.id, 'loopback_line_slice_unavailable');
         return;
       }

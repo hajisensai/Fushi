@@ -494,7 +494,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final String? lineId = _activeLineId;
     final TexthookerLineEntry? entry =
         lineId == null ? null : _session.entryById(lineId);
-    if (entry == null) {
+    if (entry == null || !_session.isLineInCurrentSelection(entry)) {
       HibikiToast.showMine(
         msg: t.game_hook_line_unavailable,
         status: MineToastStatus.failed,
@@ -769,7 +769,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   }
 
   void _onSessionChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final String? activeId = _activeLineId;
+    final TexthookerLineEntry? active =
+        activeId == null ? null : _session.entryById(activeId);
+    setState(() {
+      if (active != null && !_session.isLineInCurrentSelection(active)) {
+        _activeLineId = null;
+        _activeSentence = null;
+      }
+    });
   }
 
   /// 外部窗口挖矿模式条：展示已绑定窗口标题 + 重选/解绑；未绑定时点击选窗口。
@@ -1518,10 +1527,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                         // 且这行属于当前会话（历史会话的时间戳早已失效）。
                         canPickTrack: _session.hasEngineSource &&
                             _session.state.audioTracks.isNotEmpty &&
-                            _session.isLineInCurrentSession(line),
+                            _session.isLineInCurrentSelection(line),
                         canRecapture: Platform.isWindows &&
                             _session.state.isActive &&
-                            _session.isLineInCurrentSession(line),
+                            _session.isLineInCurrentSelection(line),
                         recapturing: _session.recapturingLineId == line.id,
                         onSelectLine: _selectLine,
                         onWordTap: _onWordTap,

@@ -99,8 +99,10 @@ using UnityTextMeshSetText = void (*)(void*, void*, const void*);
 UnityTextMeshSetText g_orig_UnityTextMeshSetText = nullptr;
 using NaninovelRevealableSetText = void (*)(void*, void*, const void*);
 NaninovelRevealableSetText g_orig_NaninovelRevealableSetText = nullptr;
-hibiki_voice_hook::UnityTextMeshReassembler<501>
-    g_unity_text_mesh_reassembler;
+using UnityTextMeshTable =
+    hibiki_voice_hook::UnityTextMeshStateTable<16, 501>;
+UnityTextMeshTable g_unity_text_mesh_states;
+uint64_t g_unity_text_mesh_stamp = 0;
 bool g_unity_sasasa_text_mesh_profile = false;
 bool g_unity_text_profile_initialized = false;
 alignas(8) volatile uint64_t g_unity_preview_generation = 0;
@@ -344,17 +346,28 @@ void RecordUnityTmpText(void* text_component, void* string_object,
                    hook_code);
 }
 
-void FlushUnityTextMeshLine() {
-  if (g_unity_text_mesh_reassembler.empty()) return;
+void PublishUnityTextMeshLine(const UnityTextMeshTable::Bucket& bucket,
+                              const wchar_t* text, int length,
+                              bool completed) {
+  if (text == nullptr || length <= 0) return;
   constexpr char kHookName[] = "Unity TextMesh line";
   constexpr wchar_t kHookCode[] =
       L"UnityEngine.TextMesh.set_text(glyphs)";
+  const uint64_t identity =
+      hibiki_voice_hook::NativeComponentThreadIdentity(bucket.component,
+                                                       bucket.thread_id);
   const uint64_t thread_id =
-      hibiki_voice_hook::NativeTextThreadIdFrom(0, kHookCode, kHookName);
-  PublishUnityText(thread_id, nullptr, g_unity_text_mesh_reassembler.text(),
-                   g_unity_text_mesh_reassembler.length(), true, kHookName,
-                   kHookCode);
-  g_unity_text_mesh_reassembler.Reset();
+      hibiki_voice_hook::NativeTextThreadIdFrom(identity, kHookCode, kHookName);
+  PublishUnityText(thread_id, reinterpret_cast<void*>(bucket.component), text,
+                   length, completed, kHookName, kHookCode);
+}
+
+void FlushUnityTextMeshLines() {
+  g_unity_text_mesh_states.FlushAll(
+      [](const UnityTextMeshTable::Bucket& bucket) {
+        PublishUnityTextMeshLine(bucket, bucket.line.text(),
+                                 bucket.line.length(), true);
+      });
 }
 
 void RecordUnityTextMesh(void* text_component, void* string_object) {
@@ -371,29 +384,30 @@ void RecordUnityTextMesh(void* text_component, void* string_object) {
       string_object == nullptr ? nullptr : g_il2cpp_string_chars(string_object);
   const int source_length =
       string_object == nullptr ? 0 : g_il2cpp_string_length(string_object);
+  // set_text("") is commonly a transient redraw. It is not a semantic EOF.
+  if (chars == nullptr || source_length <= 0) return;
   if (g_cs_ready) EnterCriticalSection(&g_cs);
   if (!g_capture_enabled) {
     if (g_cs_ready) LeaveCriticalSection(&g_cs);
     return;
   }
-  for (int i = 0; chars != nullptr && i < source_length; ++i) {
-    const wchar_t c = chars[i];
-    if (g_unity_text_mesh_reassembler.ShouldTerminate(c, true)) {
-      FlushUnityTextMeshLine();
-      continue;
-    }
-    if (!g_unity_text_mesh_reassembler.Append(c)) continue;
-    constexpr char kHookName[] = "Unity TextMesh line";
-    constexpr wchar_t kHookCode[] =
-        L"UnityEngine.TextMesh.set_text(glyphs)";
-    const uint64_t thread_id =
-        hibiki_voice_hook::NativeTextThreadIdFrom(0, kHookCode, kHookName);
-    PublishUnityText(thread_id, nullptr,
-                     g_unity_text_mesh_reassembler.text(),
-                     g_unity_text_mesh_reassembler.length(), false, kHookName,
-                     kHookCode);
+  UnityTextMeshTable::Bucket& bucket = g_unity_text_mesh_states.Acquire(
+      reinterpret_cast<uint64_t>(text_component), GetCurrentThreadId(),
+      ++g_unity_text_mesh_stamp,
+      [](const UnityTextMeshTable::Bucket& evicted) {
+        PublishUnityTextMeshLine(evicted, evicted.line.text(),
+                                 evicted.line.length(), true);
+      });
+  const hibiki_voice_hook::UnityTextMeshUpdate update =
+      bucket.line.ApplySnapshot(chars, static_cast<size_t>(source_length), true);
+  if (update == hibiki_voice_hook::UnityTextMeshUpdate::kCompleted ||
+      update == hibiki_voice_hook::UnityTextMeshUpdate::kOverflowCompleted) {
+    PublishUnityTextMeshLine(bucket, bucket.line.completed_text(),
+                             bucket.line.completed_length(), true);
+  } else if (update == hibiki_voice_hook::UnityTextMeshUpdate::kPartial) {
+    PublishUnityTextMeshLine(bucket, bucket.line.text(), bucket.line.length(),
+                             false);
   }
-  if (source_length == 0) FlushUnityTextMeshLine();
   if (g_cs_ready) LeaveCriticalSection(&g_cs);
 }
 

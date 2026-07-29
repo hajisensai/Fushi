@@ -32,10 +32,11 @@ void main() {
         '(hook_diagnostics & kDiagVisualArtsOvkHooksReady) != 0',
       ),
     );
-    expect(source, contains('constexpr uint32_t kSharedVersion = 12;'));
+    expect(source, contains('constexpr uint32_t kSharedVersion = 13;'));
+    expect(source, contains('constexpr uint32_t kStableIpcVersion = 2;'));
   });
 
-  test('host and native share the v12 thread preview seqlock contract', () {
+  test('host and native share the v13 thread preview seqlock contract', () {
     final String hostHeader = File(
       'windows/runner/voice_hook_ipc.h',
     ).readAsStringSync();
@@ -106,7 +107,7 @@ void main() {
     );
   });
 
-  test('native profile prefer cannot bypass v12 explicit thread selection', () {
+  test('native profile prefer cannot bypass v13 explicit thread selection', () {
     final String injector = File(
       '../native/galgame_hook/injector/injector_main.cpp',
     ).readAsStringSync();

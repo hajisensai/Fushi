@@ -19,6 +19,21 @@ void main() {
     }
   }
 
+  Future<void> selectTestTextThread(
+    GalHookSessionController controller,
+    TexthookerService service,
+  ) async {
+    service.registerTextThread(
+      key: 'hook:5',
+      label: 'fake',
+      nativeThreadId: 5,
+    );
+    expect(
+      await controller.selectTextThread(5, threadKey: 'hook:5'),
+      isTrue,
+    );
+  }
+
   test('语音抓取挂起时后续台词照常显示（BUG-1063 显示延迟根因守卫）', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
@@ -67,6 +82,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    await selectTestTextThread(controller, service);
     await waitUntil(() => service.entries.length >= 2);
 
     expect(
@@ -113,6 +129,7 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    await selectTestTextThread(controller, service);
     await waitUntil(() => engine.pollCalls >= 8);
     expect(
       engine.readinessCalls,
@@ -167,9 +184,12 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    await selectTestTextThread(controller, service);
     final TexthookerLineEntry line = service.appendLine(
       '補録したい台詞',
       source: TexthookerLineSource.websocket,
+      textThreadKey: 'hook:5',
+      nativeTextThreadId: 5,
     )!;
 
     // 先让会话自身的逐行 loopback 兜底跑完，再补录——否则断言看到的是它写的状态。
@@ -249,9 +269,12 @@ void main() {
     await controller.startAttachedCapture(
       const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
     );
+    await selectTestTextThread(controller, service);
     final TexthookerLineEntry line = service.appendLine(
       '会話終了時の台詞',
       source: TexthookerLineSource.websocket,
+      textThreadKey: 'hook:5',
+      nativeTextThreadId: 5,
     )!;
     expect(await controller.startLineRecapture(line.id), isTrue);
 
