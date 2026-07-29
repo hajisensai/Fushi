@@ -202,9 +202,8 @@ int main(int argc, char** argv) {
     }
   }
   {
-    // BUG-1159 跨会话恢复路径：injector 的 preferred_hook_codes 快路不进选择器，
-    // 靠的是 NoteFace 单独登记。只要选定线程本会话出过行，即使它一行都没进过准入判定，
-    // 兄弟线程也必须能被认回。
+    // BUG-1159 跨会话恢复路径：未选择阶段的行不进文本环，只靠 NoteFace 单独登记。
+    // 只要选定线程本会话出过预览行，即使它一行都没通过准入判定，兄弟线程也必须能被认回。
     hibiki_voice_hook::LunaTextSelector restore_selector;
     const uint64_t remembered = 5001, sibling = 5002, face = 909;
     restore_selector.NoteFace(remembered, face);

@@ -256,8 +256,8 @@ struct SharedHeader {
   uint32_t clip_region_offset;      // clip 索引起始
   volatile uint64_t text_write_count;  // 单调：已写文本事件数（host 取 last..count 的新事件）
   volatile uint64_t clip_write_count;  // 单调：已写语音 clip 数
-  // 0=injector 自动选干净线程；非 0=用户在 Hibiki 选择的 TextSlot::thread_id。
-  // injector 仍无条件过滤重复伪影，再仅写该线程。
+  // 0=尚未选定（v12 起文本环恒空）；非 0=用户在 Hibiki 选择的 TextSlot::thread_id。
+  // injector 无条件过滤重复伪影，再仅写该线程/同一 hook face。
   volatile uint64_t selected_text_thread_id;
   // LunaHook（引擎精确）出干净行后 injector 置 1；置 1 后游戏内 GDI 文本 hook 让位不再写文本，
   // 消除「LunaHook 干净行 + GDI 每字重画伪影」双写者污染。音频写入不受此标志影响。GDI 仅在

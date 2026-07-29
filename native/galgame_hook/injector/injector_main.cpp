@@ -807,12 +807,10 @@ void WriteThreadPreview(SharedHeader* header, uint64_t thread_id,
   LeaveCriticalSection(&g_lunaSelectCs);
 }
 
-// 多 hook 自动选干净线程：更新某 hookcode 的计数并重算当前赢家，返回本行是否应写入文本环。
-// hookcode 可能为 nullptr（归到空串 key）。冷启动（总 clean < 阈值）时干净行照写；一旦某
-// hook 累计干净行达阈值即锁定为赢家，之后只写赢家的行；赢家按 clean_count 最高 + 占比
-// clean/(clean+dirty) >= 0.5 重选，可随游戏切换重新评估。
-bool LunaShouldWriteLine(const wchar_t* hookcode, uint64_t thread_id,
-                         bool is_artifact, uint64_t face_id) {
+// v12 文本环只接受用户显式选择的线程。hookcode/profile prefer 不参与准入判定：否则
+// selected_text_thread_id 仍为 0、UI 显示未选择时，profile 快路却会在后台悄悄发布文本。
+bool LunaShouldWriteLine(uint64_t thread_id, bool is_artifact,
+                         uint64_t face_id) {
   const uint64_t manually_selected = g_luna.header == nullptr
                                          ? 0
                                          : static_cast<uint64_t>(
@@ -828,22 +826,12 @@ bool LunaShouldWriteLine(const wchar_t* hookcode, uint64_t thread_id,
     return !is_artifact && manually_selected != 0 &&
            manually_selected == thread_id;
   }
-  // BUG-1159：face 登记必须**先于所有过滤分支**。下面的 preferred_hook_codes
-  // 快路整段不进选择器，若只靠 ShouldWrite 内部登记，走快路的线程就永远没有
-  // face；Dart 跨会话记忆恢复恰恰只从这些“已出过行”的线程里挑，于是
-  // FaceOf 返 0 → 退回精确匹配 → 原症状原样复现。
+  // BUG-1159：face 登记必须**先于准入判定**。Dart 跨会话记忆恢复会在未选择阶段
+  // 根据预览行数挑线程；这些行不进文本环，但仍必须提前登记 face，才能在恢复选定后
+  // 接受同一 hook 面的兄弟线程。
   EnterCriticalSection(&g_lunaSelectCs);
   g_lunaTextSelector.NoteFace(thread_id, face_id);
   LeaveCriticalSection(&g_lunaSelectCs);
-  if (manually_selected == 0 && !g_luna.preferred_hook_codes.empty()) {
-    if (is_artifact) return false;
-    for (const std::wstring& preferred : g_luna.preferred_hook_codes) {
-      if (hibiki_voice_hook::LunaHookCodeMatchesBlock(preferred, hookcode)) {
-        return true;
-      }
-    }
-    return false;
-  }
   EnterCriticalSection(&g_lunaSelectCs);
   const bool should_write = g_lunaTextSelector.AcceptsLine(
       thread_id, is_artifact, manually_selected, face_id);
@@ -927,7 +915,7 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
       if (!artifact) {
         g_luna.header->luna_active = 1;
       }
-      if (LunaShouldWriteLine(hookcode, thread_id, artifact, face_id)) {
+      if (LunaShouldWriteLine(thread_id, artifact, face_id)) {
         WriteLunaTextLine(g_luna.header, hookcode, hookname, tp, thread_id, text,
                           normalized_len);
       }
@@ -1113,8 +1101,8 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
     bridge.settings(200, true, codepage, 8192, 1000, false);
   }
 
-  // 多 hook 自动选干净线程的计数锁：Output 回调可在 LunaHook 工作线程并发，
-  // 于 start() 注册回调前初始化（进程生命期内一次，多次 Init 由 flag 守卫）。
+  // 文本线程 face 表、显式选择判定与预览 writer 的共享锁：Output/ThreadRemove 回调可在
+  // LunaHook 工作线程并发，于 start() 注册回调前初始化（进程生命期内一次）。
   if (!g_lunaSelectCsInit) {
     InitializeCriticalSection(&g_lunaSelectCs);
     g_lunaSelectCsInit = true;

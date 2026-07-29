@@ -91,4 +91,32 @@ void main() {
     expect(reader, contains('TryReadThreadPreviewSnapshot(slot, &snapshot)'));
     expect(reader, contains('AtomicLoadPreview64('));
   });
+
+  test('native profile prefer cannot bypass v12 explicit thread selection', () {
+    final String injector = File(
+      '../native/galgame_hook/injector/injector_main.cpp',
+    ).readAsStringSync();
+    final int functionStart = injector.indexOf('bool LunaShouldWriteLine(');
+    final int functionEnd = injector.indexOf(
+      '\n}\n\n// ── Luna_Start',
+      functionStart,
+    );
+    expect(functionStart, greaterThanOrEqualTo(0));
+    expect(functionEnd, greaterThan(functionStart));
+    final String functionBody = injector.substring(functionStart, functionEnd);
+
+    // hookcode/prefer 不能再进入准入函数；唯一真值必须是共享内存里的显式 thread id。
+    expect(
+      functionBody,
+      isNot(contains('preferred_hook_codes')),
+    );
+    expect(functionBody, isNot(contains('const wchar_t* hookcode')));
+    expect(functionBody, contains('selected_text_thread_id'));
+    expect(
+      functionBody,
+      contains(
+        'AcceptsLine(\n      thread_id, is_artifact, manually_selected, face_id)',
+      ),
+    );
+  });
 }

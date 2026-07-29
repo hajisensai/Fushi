@@ -197,8 +197,8 @@ inline bool LunaSelectedThreadAccepts(uint64_t manually_selected,
 // voice_hook_ipc.h ThreadPreviewSlot）挑一条。预览区按线程分槽，不受本判定影响，所以
 // "让用户看见所有线程"和"文本环只装选定线程"不再互相排斥——这是删掉赢家逻辑的前提。
 //
-// 显式选择有两个来源，都在调用方（injector）处理：用户选定的 selected_text_thread_id，
-// 以及 profile 的 `prefer=` hook code。本类只负责前者的匹配。
+// 唯一准入来源是用户选定的 selected_text_thread_id。profile 的 `prefer=` 只保留为旧配置
+// 元数据，v12 不得据此绕过显式选择。
 class LunaTextSelector {
  public:
   // 判定本行是否写入文本环。[face_id] 是不含 ctx 的 hook 面 id（见
@@ -218,11 +218,10 @@ class LunaTextSelector {
 
   // 登记一条 thread_id → face 映射。
   //
-  // BUG-1159：这一步必须对**每一行**做，且必须早于所有过滤分支。injector 侧
-  // 的 preferred_hook_codes 快路根本不进选择器；如果只在 ShouldWrite 里登记，
-  // 那些行的 thread 就永远没有 face。而跨会话记忆恢复（Dart `_maybeRestoreTextThread`）
-  // 正是从「本会话已出过 >= 3 行」的线程里挑一条写进 `selected_text_thread_id`，
-  // 若那几行走的是快路，FaceOf 会返回 0 → 退回精确匹配 → 原症状原样复现。
+  // BUG-1159：这一步必须对**每一行**做，且必须早于准入判定。未选择阶段的行只进入
+  // 预览区、不进入文本环；跨会话记忆恢复（Dart `_maybeRestoreTextThread`）会从
+  // 「本会话已出过 >= 3 行」的线程里挑一条写进 `selected_text_thread_id`，所以这些
+  // 预览行也必须提前登记 face。
   // 登记在全路径完成后，「选定线程已出过 >= 3 行」就硬性蕴含「face 已知」。
   void NoteFace(uint64_t thread_id, uint64_t face_id) {
     if (face_id != 0 && thread_id != 0) thread_face_[thread_id] = face_id;
