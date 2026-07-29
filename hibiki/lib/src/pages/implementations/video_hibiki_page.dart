@@ -132,6 +132,7 @@ import 'package:hibiki/src/utils/misc/render_backend_service.dart';
 import 'package:hibiki/src/platform/desktop/macos_traffic_lights.dart';
 import 'package:hibiki/src/platform/screen_brightness_controller.dart';
 import 'package:hibiki/src/platform/windows_ime_space_channel.dart';
+import 'package:hibiki/src/platform/windows_ime_space_dispatch.dart';
 import 'package:hibiki/src/utils/misc/platform_utils.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
@@ -4264,19 +4265,29 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 只关浮层；其余才按沉浸模式门控播放/暂停。普通半角 Space 仍走既有 KeyEvent /
   /// SingleActivator 路径，本通道只接 native 已确认的 `VK_PROCESSKEY + Space scan code`。
   void _handleWindowsImeSpaceDown() {
-    if (!mounted || _controller == null) return;
-    final ModalRoute<Object?>? owner =
-        _videoFullscreenActive ? _videoFullscreenRoute : ModalRoute.of(context);
-    if (owner != null && !owner.isCurrent) return;
-    if (focusedEditableText() != null) return;
-    if (_hasVisiblePopup) {
-      _dismissTopVisiblePopup();
-      return;
-    }
-    final VideoPlayerController controller = _controller!;
-    _runWhenImmersiveAllowsShortcuts(
-      () => unawaited(controller.playOrPause()),
+    final ModalRoute<Object?>? owner = mounted
+        ? (_videoFullscreenActive
+            ? _videoFullscreenRoute
+            : ModalRoute.of(context))
+        : null;
+    final WindowsImeSpaceDispatchAction action = resolveWindowsImeSpaceDispatch(
+      mounted: mounted,
+      hasController: _controller != null,
+      isCurrentRoute: owner == null || owner.isCurrent,
+      hasEditableFocus: focusedEditableText() != null,
+      hasVisiblePopup: _hasVisiblePopup,
+      immersiveAllowsShortcuts: _immersiveAllowsShortcuts,
     );
+    switch (action) {
+      case WindowsImeSpaceDispatchAction.ignore:
+        return;
+      case WindowsImeSpaceDispatchAction.dismissPopup:
+        _dismissTopVisiblePopup();
+        return;
+      case WindowsImeSpaceDispatchAction.togglePlayPause:
+        final VideoPlayerController controller = _controller!;
+        unawaited(controller.playOrPause());
+    }
   }
 
   /// TODO-1342：把整页子树包进手柄输入层。外层 [Actions] 接桌面轮询派发的

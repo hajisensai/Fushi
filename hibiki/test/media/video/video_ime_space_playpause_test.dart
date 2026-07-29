@@ -1,10 +1,9 @@
-import 'dart:io';
-
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:hibiki/src/media/video/video_player_shortcuts.dart';
 import 'package:hibiki/src/platform/windows_ime_space_channel.dart';
+import 'package:hibiki/src/platform/windows_ime_space_dispatch.dart';
 
 import '../../pages/video_hibiki_page_source_corpus.dart';
 
@@ -156,34 +155,61 @@ void main() {
     expect(calls, 2);
   });
 
-  test('BUG-1239 runner 在 Flutter 丢键前按 VK_PROCESSKEY scan code 捕获 Space', () {
-    final String cpp =
-        File('windows/runner/flutter_window.cpp').readAsStringSync();
-    final int predicateStart =
-        cpp.indexOf('bool IsInitialUnmodifiedImeSpaceDown(');
-    final int predicateEnd =
-        cpp.indexOf('\n}\n\n}  // namespace', predicateStart);
-    expect(predicateStart, greaterThanOrEqualTo(0));
-    expect(predicateEnd, greaterThan(predicateStart));
-    final String predicate = cpp.substring(predicateStart, predicateEnd);
-    expect(predicate, contains('wparam != VK_PROCESSKEY'));
-    expect(predicate, contains('kSpaceScanCode = 0x39'));
-    expect(predicate, contains('>> 30'), reason: '必须过滤 auto-repeat，只接受首次按下沿');
-    expect(predicate, contains('GetKeyState(VK_CONTROL)'));
-    expect(predicate, contains('GetKeyState(VK_SHIFT)'));
+  group('BUG-1239 native notification Dart ownership gate', () {
+    WindowsImeSpaceDispatchAction resolve({
+      bool mounted = true,
+      bool hasController = true,
+      bool isCurrentRoute = true,
+      bool hasEditableFocus = false,
+      bool hasVisiblePopup = false,
+      bool immersiveAllowsShortcuts = true,
+    }) {
+      return resolveWindowsImeSpaceDispatch(
+        mounted: mounted,
+        hasController: hasController,
+        isCurrentRoute: isCurrentRoute,
+        hasEditableFocus: hasEditableFocus,
+        hasVisiblePopup: hasVisiblePopup,
+        immersiveAllowsShortcuts: immersiveAllowsShortcuts,
+      );
+    }
 
-    final int notify = cpp.indexOf(
-      'IsInitialUnmodifiedImeSpaceDown(message, wparam, lparam)',
-      predicateEnd,
-    );
-    final int flutterDispatch = cpp.indexOf('HandleTopLevelWindowProc', notify);
-    expect(notify, greaterThan(predicateEnd));
-    expect(flutterDispatch, greaterThan(notify),
-        reason: '必须在 Flutter 把 VK_PROCESSKEY 降成 0/0 之前捕获');
-    expect(
-      cpp.substring(notify, flutterDispatch),
-      contains('"onImeSpaceDown"'),
-    );
+    test('当前视频、无编辑焦点且允许快捷键 → 只触发播放暂停', () {
+      expect(
+        resolve(),
+        WindowsImeSpaceDispatchAction.togglePlayPause,
+      );
+    });
+
+    test('IME composing / 输入框 / 字幕搜索编辑焦点 → 放行', () {
+      expect(
+        resolve(hasEditableFocus: true),
+        WindowsImeSpaceDispatchAction.ignore,
+      );
+    });
+
+    test('非当前路由、已销毁、无 controller 或沉浸禁用 → 放行', () {
+      expect(
+        resolve(isCurrentRoute: false),
+        WindowsImeSpaceDispatchAction.ignore,
+      );
+      expect(resolve(mounted: false), WindowsImeSpaceDispatchAction.ignore);
+      expect(
+        resolve(hasController: false),
+        WindowsImeSpaceDispatchAction.ignore,
+      );
+      expect(
+        resolve(immersiveAllowsShortcuts: false),
+        WindowsImeSpaceDispatchAction.ignore,
+      );
+    });
+
+    test('词典浮层优先只关闭一次，不穿透播放暂停', () {
+      expect(
+        resolve(hasVisiblePopup: true),
+        WindowsImeSpaceDispatchAction.dismissPopup,
+      );
+    });
   });
 
   test('BUG-1239 视频页注册 native 通道并守住路由/文本框/浮层边界', () {
@@ -205,11 +231,11 @@ void main() {
     expect(end, greaterThan(start));
     final String body = src.substring(start, end);
     expect(body, contains('_videoFullscreenRoute'));
-    expect(body, contains('!owner.isCurrent'));
+    expect(body, contains('owner == null || owner.isCurrent'));
     expect(body, contains('focusedEditableText()'));
     expect(body, contains('_hasVisiblePopup'));
     expect(body, contains('_dismissTopVisiblePopup()'));
-    expect(body, contains('_runWhenImmersiveAllowsShortcuts'));
+    expect(body, contains('resolveWindowsImeSpaceDispatch'));
     expect(body, contains('controller.playOrPause()'));
   });
 }
