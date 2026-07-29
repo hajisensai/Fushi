@@ -162,8 +162,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     final String joinedPath = p.join(_extractDir!, epubPath);
     final String normExtractDir = p.normalize(_extractDir!);
     final String filePath = p.normalize(joinedPath);
-    if (!p.isWithin(
-        p.canonicalize(_extractDir!), p.canonicalize(joinedPath))) {
+    if (!p.isWithin(p.canonicalize(_extractDir!), p.canonicalize(joinedPath))) {
       return _forbidden('path traversal blocked: $epubPath');
     }
     final File file = File(filePath);
@@ -557,8 +556,7 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     try {
       // BUG-1218：真实 stat 路径保留大小写（越界判据仍走 canonicalize）。
       final String joined = p.join(extractDir, relativeHref);
-      if (!p.isWithin(
-          p.canonicalize(extractDir), p.canonicalize(joined))) {
+      if (!p.isWithin(p.canonicalize(extractDir), p.canonicalize(joined))) {
         return 0;
       }
       final String filePath = p.normalize(joined);
