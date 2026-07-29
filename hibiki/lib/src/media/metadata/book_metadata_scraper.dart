@@ -13,6 +13,7 @@ library;
 import 'dart:convert';
 
 import 'package:hibiki/src/media/metadata/bangumi_api_client.dart';
+import 'package:hibiki/src/media/metadata/bangumi_cover_url.dart';
 import 'package:http/http.dart' as http;
 
 /// 书籍刮削领域异常（网络失败 / 非 2xx / JSON 异常）。绝不吞异常，交上层给用户可见提示。
@@ -46,7 +47,7 @@ class BookScrapeCandidate {
   /// 展示用主标题（优先中文名）。
   final String title;
 
-  /// 封面图 URL（满分辨率优先 large；下载层负责落地）。
+  /// 封面原图 URL（下载层负责落地）。
   final String coverUrl;
 
   /// 原名（与主标题不同才留）。
@@ -176,9 +177,9 @@ List<BookScrapeCandidate> parseBookSearchResponse(String body) {
   return out;
 }
 
-/// 把单个 Bangumi 书籍 subject 映射为候选；缺封面（large/common/medium 皆无）返回 null。
+/// 把单个 Bangumi 书籍 subject 映射为候选；缺封面返回 null。
 BookScrapeCandidate? mapBookSubject(Map<String, Object?> subject) {
-  final String? coverUrl = _coverUrl(subject);
+  final String? coverUrl = bangumiOriginalCoverUrl(subject);
   if (coverUrl == null) return null; // 无封面的条目对「刮封面」无用，跳过。
 
   final String? nameCn = _nonEmptyString(subject['name_cn']);
@@ -198,19 +199,6 @@ BookScrapeCandidate? mapBookSubject(Map<String, Object?> subject) {
     year: _yearFromDate(_nonEmptyString(subject['date'])),
     summary: _nonEmptyString(subject['summary']),
   );
-}
-
-/// 封面 URL：`images.large → common → medium → small`；搜索结果偶尔退化成 `image`。
-String? _coverUrl(Map<String, Object?> subject) {
-  final Object? images = subject['images'];
-  if (images is Map<String, Object?>) {
-    final String? url = _nonEmptyString(images['large']) ??
-        _nonEmptyString(images['common']) ??
-        _nonEmptyString(images['medium']) ??
-        _nonEmptyString(images['small']);
-    if (url != null) return url;
-  }
-  return _nonEmptyString(subject['image']);
 }
 
 /// 从 `YYYY-MM-DD` 取年份，非法返回 null。

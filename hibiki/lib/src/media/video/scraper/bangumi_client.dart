@@ -14,6 +14,7 @@ library;
 import 'dart:convert';
 
 import 'package:hibiki/src/media/metadata/bangumi_api_client.dart';
+import 'package:hibiki/src/media/metadata/bangumi_cover_url.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:http/http.dart' as http;
 
@@ -288,14 +289,9 @@ List<ScrapeCandidate> parseBangumiSearchResponse(String body) {
   return candidates;
 }
 
-/// 把单个 Bangumi subject 映射为 [ScrapeCandidate]；缺海报（large/common 皆无）返回 null。
+/// 把单个 Bangumi subject 映射为 [ScrapeCandidate]；缺封面返回 null。
 ScrapeCandidate? _mapBangumiSubject(Map<String, Object?> subject) {
-  final Object? images = subject['images'];
-  String? posterUrl;
-  if (images is Map<String, Object?>) {
-    posterUrl =
-        _nonEmptyString(images['large']) ?? _nonEmptyString(images['common']);
-  }
+  final String? posterUrl = bangumiOriginalCoverUrl(subject);
   if (posterUrl == null) return null; // 无海报的条目对封面刮削无用，跳过。
 
   final String? nameCn = _nonEmptyString(subject['name_cn']);

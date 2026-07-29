@@ -41,16 +41,19 @@ void main() {
       expect(list.first.aliases, isEmpty);
     });
 
-    test('缺 large 用 common；large/common 皆缺 → 跳过该条', () {
+    test('缺 large 用 common 原图；所有尺寸皆缺 → 跳过该条', () {
       const String body = '''
 {"data":[
-  {"id":2,"name":"A","images":{"common":"https://img/c.jpg"}},
+  {"id":2,"name":"A","images":{"common":"https://lain.bgm.tv/r/400/pic/cover/l/a/b/c.jpg"}},
   {"id":3,"name":"B","images":{}},
   {"id":4,"name":"C"}
 ]}''';
       final List<ScrapeCandidate> list = parseBangumiSearchResponse(body);
       expect(list, hasLength(1)); // 只有 id=2 有海报
-      expect(list.first.posterUrl, 'https://img/c.jpg');
+      expect(
+        list.first.posterUrl,
+        'https://lain.bgm.tv/pic/cover/l/a/b/c.jpg',
+      );
     });
 
     test('eps=0 → episodeCount 为 null；score=0 → ratingText 为 null', () {

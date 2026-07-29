@@ -10,6 +10,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:hibiki/src/media/metadata/bangumi_api_client.dart';
+import 'package:hibiki/src/media/metadata/bangumi_cover_url.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_adapter.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:hibiki/src/mining/metadata/galgame_metadata_rate_limit.dart';
@@ -261,20 +262,9 @@ List<SourceCandidate> parseBangumiSearchResults(
   return out;
 }
 
-/// 取封面 URL：`images.large` → `common` → `medium`；搜索结果里可能退化成 `image` 字符串。
-String? bangumiCoverUrl(Map<Object?, Object?> subject) {
-  final Object? images = subject['images'];
-  if (images is Map) {
-    final String? url = draftString(images['large']) ??
-        draftString(images['common']) ??
-        draftString(images['medium']) ??
-        draftString(images['small']);
-    if (url != null) {
-      return url;
-    }
-  }
-  return draftString(subject['image']);
-}
+/// 取 Bangumi 上传原图；保留公开 wrapper，供 adapter 解析测试与调用方复用。
+String? bangumiCoverUrl(Map<Object?, Object?> subject) =>
+    bangumiOriginalCoverUrl(subject);
 
 /// `tags: [{name, count}]` → 按 count 降序取前 [kBangumiMaxTags] 个名字。
 List<String> _parseTags(Object? value) {
