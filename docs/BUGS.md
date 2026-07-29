@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1187 条。点号进各自文件。
+> 共 1188 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1237](bugs/BUG-1237-activity-game-cover.md) | ✅ | ✅ | 游戏活动身份不统一导致封面缺失 |
 | [BUG-1233](bugs/BUG-1233-book-import-repeated-archive-probe.md) | ✅ | ✅ | 书籍导入重复整包判定 EPUB 载体 |
 | [BUG-1225](bugs/BUG-1225-shm-reader-write-access-must-stay.md) | ✅ | ✅ | 读端共享内存写权限不可收紧：SelectTextThread 的原子写落在只读页上会崩 |
 | [BUG-1221](bugs/BUG-1221-manga-path-case-folded.md) | ✅ | ✅ | 漫画页图解析把路径折成小写，制卡封面名被小写化且大小写敏感平台缺页 |

@@ -675,6 +675,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         executable,
         launchArguments: known?.launchArgumentTokens ?? const <String>[],
         workdir: known?.workdir ?? '',
+        gameId: known?.id,
+        gameTitle: known?.displayName,
       );
       if (!mounted) return;
       // 与游戏库页共用同一条结果播报（BUG-1089）。旧实现在这里自己判 `boundWindow`

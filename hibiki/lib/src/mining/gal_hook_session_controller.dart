@@ -1038,12 +1038,16 @@ class GalHookSessionController extends ChangeNotifier {
   /// 拉起游戏并注入。
   ///
   /// [launchArguments] 是用户为该游戏配置的启动参数（已按 Windows 规则拆成 argv
-  /// token，见 `parseGameLaunchArguments`），[workdir] 是工作目录。两者都可省略：
-  /// 省略即维持旧行为（不发 `--arg` / 不发 `--workdir`，injector 缺省用 exe 所在目录）。
+  /// token，见 `parseGameLaunchArguments`），[workdir] 是工作目录。[gameId] 必须是
+  /// `galgames.id`，[gameTitle] 是当前库内显示名；游戏库入口应同时传入，使活动事件
+  /// 使用与封面/详情反查相同的稳定身份。裸 exe 启动可以省略二者，此时活动仍保留
+  /// exe 文件名快照，但 mediaKey 留空，不能再把路径伪装成 `galgames.id`。
   Future<GalHookLaunchResult> launchGame(
     String executablePath, {
     List<String> launchArguments = const <String>[],
     String workdir = '',
+    String? gameId,
+    String? gameTitle,
   }) async {
     final int generation = ++_operationGeneration;
     await _stopSources();
@@ -1074,10 +1078,14 @@ class GalHookSessionController extends ChangeNotifier {
         textSignalReceived: false,
       ),
     );
-    // launch 模式可执行文件路径是稳定 id：文件名去扩展名作游戏名，路径作 mediaKey。
+    final String normalizedTitle = gameTitle?.trim() ?? '';
+    // 活动 mediaKey 的跨层契约统一为 galgames.id。历史版本写过 exePath，读取侧保留
+    // 兼容；新写入不再延续一字段两种身份的歧义。
     _beginActivitySession(
-      title: _displayNameForExecutable(executablePath),
-      mediaKey: executablePath,
+      title: normalizedTitle.isEmpty
+          ? _displayNameForExecutable(executablePath)
+          : normalizedTitle,
+      mediaKey: gameId,
     );
     // 降级策略必须在这里恢复，不能搭 [_applyTrackMemory] 的便车：资源模式压根不枚举
     // 音轨（native 只枚举 PCM 环），等音轨快照就等不到，用户上次选的「禁止降级」会

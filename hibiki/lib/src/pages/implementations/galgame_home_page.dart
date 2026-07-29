@@ -10,6 +10,7 @@ import 'package:hibiki/models.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
 import 'package:hibiki/src/media/display_title.dart';
+import 'package:hibiki/src/media/media_cover_source.dart';
 import 'package:hibiki/src/mining/gal_hook_failure_text.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_audio_source.dart';
@@ -276,6 +277,8 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         game.exePath,
         launchArguments: game.launchArgumentTokens,
         workdir: game.workdir,
+        gameId: game.id,
+        gameTitle: game.displayName,
       );
       if (!mounted) return;
       // 每种结果都播报（BUG-1089）。旧实现只在 `!launched` 时说话，可注入降级和
@@ -896,17 +899,12 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     );
   }
 
-  /// 活动条 → 对应的库内游戏（先按 mediaKey==id，再按显示名匹配；查不到返回 null）。
-  GalgameEntry? _gameForActivity(ActivityEntry entry) {
-    final String? key = entry.mediaKey;
-    for (final GalgameEntry g in _games) {
-      if (key != null && g.id == key) return g;
-    }
-    for (final GalgameEntry g in _games) {
-      if (g.displayName == entry.title) return g;
-    }
-    return null;
-  }
+  /// 活动条 → 对应的库内游戏。新事件按 id，旧事件兼容 exePath / 标题快照。
+  GalgameEntry? _gameForActivity(ActivityEntry entry) => findGalgameForActivity(
+        _games,
+        mediaKey: entry.mediaKey,
+        title: entry.title,
+      );
 
   String _actionWord(String eventType) {
     switch (eventType) {
@@ -936,19 +934,20 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   String _formatDay(int epochMs) =>
       HibikiTimeFormat.dayKey(DateTime.fromMillisecondsSinceEpoch(epochMs));
 
-  /// 封面 widget：有 coverPath 且文件存在则显示图片（cover 铺满），否则默认手柄图标
-  /// 占位（回落逻辑与库页卡片一致）。
+  /// 封面 widget：来源解析与首页 Activity / 游戏库共用；文件缺失或解码失败由渲染层
+  /// 回退默认手柄图标，不在 build 里做同步文件探测。
   Widget _coverImage(BuildContext context, GalgameEntry game) {
-    final String? cover = game.coverPath;
-    if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
-      return Image.file(
-        File(cover),
-        fit: BoxFit.cover,
-        errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
-            _coverFallback(context),
-      );
-    }
-    return _coverFallback(context);
+    final ImageProvider? provider = resolveMediaCoverImage(
+      kind: MediaKind.game,
+      localPath: game.coverPath,
+    );
+    if (provider == null) return _coverFallback(context);
+    return Image(
+      image: provider,
+      fit: BoxFit.cover,
+      errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
+          _coverFallback(context),
+    );
   }
 
   Widget _coverFallback(BuildContext context) {

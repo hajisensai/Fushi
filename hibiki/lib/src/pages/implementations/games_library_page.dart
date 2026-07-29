@@ -504,6 +504,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         game.exePath,
         launchArguments: game.launchArgumentTokens,
         workdir: game.workdir,
+        gameId: game.id,
+        gameTitle: game.displayName,
       );
       if (!mounted) return;
       // 每种结果都播报（BUG-1089）。旧实现只在 `!launched` 时说话，可注入降级和
