@@ -216,10 +216,6 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
     final double selectionInset = tokens.spacing.gap / 2;
     final SelectionSlot? slot =
         selectionKey == null ? null : SelectionSlot.loose(selectionKey);
-    // 触屏：长按 = 进多选（菜单改由封面右下角 [ShelfCardMenuButton] 触发）。
-    // 桌面：长按 / 右键仍是菜单（鼠标按住不动就是在等菜单，不该跳进多选）。
-    final bool touch = isTouchSelectionPlatform(context);
-    final bool touchLongPressSelects = touch && slot != null;
     void handleTap() {
       if (slot == null) {
         onTap();
@@ -237,11 +233,6 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
       onTap();
     }
 
-    final VoidCallback? longPressAction = _selectionMode
-        ? null
-        : (touchLongPressSelects
-            ? () => _enterSelectionWith(slot)
-            : onLongPress);
     Widget interactiveCard = Padding(
       key: cardKey,
       padding: EdgeInsets.all(tokens.spacing.rowVertical),
@@ -251,7 +242,9 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
           canRequestFocus: false,
           borderRadius: tokens.radii.cardRadius,
           onTap: handleTap,
-          onLongPress: longPressAction,
+          // 未进入选择态时，触屏与桌面长按都保留上下文菜单；只有显式进入选择态后
+          // 才摘掉卡片识别器，让祖先 SelectionDragArea 接管长按扫选。
+          onLongPress: _selectionMode ? null : onLongPress,
           // 桌面端鼠标右键打开与长按相同的书籍上下文菜单（PC 用户惯例）。多选态
           // 压制不变。
           onSecondaryTap: _selectionMode ? null : onLongPress,
@@ -266,19 +259,6 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
                     top: selectionInset,
                     left: selectionInset,
                     child: ShelfSelectionCheck(selected: selected),
-                  ),
-                // 触屏菜单入口：长按被多选占用后，这是菜单唯一的触达方式。多选态
-                // 不渲染（此时全卡都是勾选目标）。
-                //
-                // 落在**封面右下角**：右上角是恒有的类型徽章（[_bookCardLayout] 的
-                // `coverBadge`，与本按钮同为 22px 圆形，挨在一起会被读成两颗按钮），
-                // 左上角是标签列。封面底部只有细进度条（`metadata`），故按 footer
-                // 高度 + 内边距把按钮抬到封面区内，与视频卡的 ⋮ 位置同侧。
-                if (touchLongPressSelects && !_selectionMode)
-                  Positioned(
-                    bottom: ShelfCardFooter.heightFor(context) + selectionInset,
-                    right: selectionInset,
-                    child: ShelfCardMenuButton(onPressed: onLongPress),
                   ),
                 if (selected)
                   const Positioned.fill(child: ShelfSelectedOverlay()),

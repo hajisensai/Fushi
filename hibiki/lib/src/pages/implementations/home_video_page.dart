@@ -2607,7 +2607,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         (CollectionOrderingItem<_VideoSlot> it) => it.payload.remote != null);
     final bool selected =
         _selectionMode && _selectedCollectionIds.contains(collection.id);
-    final bool touchLongPressSelects = isTouchSelectionPlatform(context);
     final HibikiCard card = HibikiCard(
       key: ValueKey<String>('home_video_collection_card_${collection.id}'),
       focusId: HibikiFocusId('home-video-collection-${collection.id}'),
@@ -2626,15 +2625,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         }
         _openCollectionDetail(collection);
       },
-      // 合集卡长按/右键 = 合集上下文菜单（统一三库页：打开/重命名/标签/删除）；
-      // 多选态压制，与散卡长按菜单同一纪律。触屏长按改判给进多选（菜单走封面
-      // 右下角 ⋮），桌面长按 / 右键不变。
-      onLongPress: _selectionMode
-          ? null
-          : (touchLongPressSelects
-              ? () =>
-                  _enterSelectionWith(SelectionSlot.collection(collection.id))
-              : () => _showCollectionContextMenu(collection)),
+      // 未进入选择态时，触屏与桌面长按都保留合集上下文菜单；只有显式进入选择态
+      // 后才禁用菜单，让整卡点击/扫选负责勾选。
+      onLongPress:
+          _selectionMode ? null : () => _showCollectionContextMenu(collection),
       onSecondaryTap:
           _selectionMode ? null : () => _showCollectionContextMenu(collection),
       child: Column(
@@ -2681,16 +2675,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   ),
                 if (selected)
                   const Positioned.fill(child: ShelfSelectedOverlay()),
-                // 触屏菜单入口（长按已改判给进多选）。右上角可能有云角标、左下角
-                // 是成员数徽标，故落右下角。
-                if (touchLongPressSelects && !_selectionMode)
-                  Positioned(
-                    right: 6,
-                    bottom: 6,
-                    child: ShelfCardMenuButton(
-                      onPressed: () => _showCollectionContextMenu(collection),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -3546,11 +3530,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final bool showSelection = _selectionMode && selectable;
     final bool selected = showSelection && _selectedUids.contains(book.bookUid);
     final SelectionSlot slot = SelectionSlot.loose(book.bookUid);
-    // 触屏：长按 = 进多选（菜单改由封面右下角 [ShelfCardMenuButton] 触发）。
-    // 桌面：长按 / 右键仍弹管理菜单。成员卡（selectable=false）不可单独勾选，
-    // 故不参与任何多选手势。
-    final bool touchLongPressSelects =
-        isTouchSelectionPlatform(context) && selectable;
     void handleTap() {
       if (showSelection) {
         _toggleSelection(book.bookUid);
@@ -3577,11 +3556,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 长按 / 桌面右键都弹管理菜单，与书架书卡（_bookCardShell）、远端视频卡
       // （_buildRemoteVideoCard）一致——本地视频卡此前只挂了 onLongPress、漏了
       // onSecondaryTap，故桌面右键本地视频卡无反应（BUG-758）。
-      onLongPress: _selectionMode
-          ? null
-          : (touchLongPressSelects
-              ? () => _enterSelectionWith(slot)
-              : () => _showVideoMenu(book)),
+      // 未进入选择态时，触屏与桌面长按都保留管理菜单；显式进入选择态后才摘掉
+      // 卡片长按识别器，让祖先 SelectionDragArea 接管扫选。
+      onLongPress: _selectionMode ? null : () => _showVideoMenu(book),
       onSecondaryTap: _selectionMode ? null : () => _showVideoMenu(book),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3636,18 +3613,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                         backgroundColor: Colors.black.withValues(alpha: 0.35),
                         color: Theme.of(context).colorScheme.primary,
                       ),
-                    ),
-                  ),
-                // 触屏菜单入口：长按已改判给「进入多选」，菜单必须另有入口。
-                // 书卡放右上角，视频卡右上角被播放列表角标占着，故落右下角；
-                // 进度条只有 3px 高，按钮抬 8px 让开。放在 Stack 末尾＝盖在最上层，
-                // 保证可点。
-                if (touchLongPressSelects && !_selectionMode)
-                  Positioned(
-                    right: 6,
-                    bottom: 8,
-                    child: ShelfCardMenuButton(
-                      onPressed: () => _showVideoMenu(book),
                     ),
                   ),
               ],

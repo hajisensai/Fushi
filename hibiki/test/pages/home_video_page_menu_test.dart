@@ -23,7 +23,6 @@ import 'package:hibiki/src/pages/implementations/tag_filter_bar.dart';
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
-import 'package:hibiki/src/utils/components/shelf_card_widgets.dart';
 import 'package:hibiki/src/utils/misc/hibiki_toast.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 import 'package:path/path.dart' as p;
@@ -315,43 +314,21 @@ void main() {
     );
   });
 
-  /// 触屏上打开某张卡的动作面板 = 点封面上的 ⋮ 按钮。
-  ///
-  /// 2026-07 手势归属重划后长按改判给「进入多选」（见
-  /// `media/selection/selection_gestures.dart`），菜单在触屏上只有这一个入口；
-  /// widget 测试默认平台是 android，故走触屏分支。桌面右键仍是菜单（下面另有用例）。
+  /// 打开某张卡的动作面板。触屏和桌面长按都走同一条管理菜单链路。
   Future<void> openCardMenu(WidgetTester tester, Finder card) async {
-    await tester.tap(find.descendant(
-      of: card,
-      matching: find.byType(ShelfCardMenuButton),
-    ));
+    await tester.longPress(card);
     await tester.pumpAndSettle();
   }
 
-  testWidgets('触屏长按视频卡进入多选并选中该卡（不再弹菜单）',
-      (WidgetTester tester) async {
-    await seedTaggedVideo();
-    await tester.pumpWidget(buildApp());
-    await tester.pumpAndSettle();
-
-    await tester.longPress(find.byType(HibikiCard).first);
-    await tester.pumpAndSettle();
-
-    // 长按不再弹动作面板，而是开多选并把该卡勾上（底部批量栏出现即多选态）。
-    expect(find.byType(HibikiDialogFrame), findsNothing);
-    expect(find.text(t.batch_selected_count(n: 1)), findsOneWidget);
-    expect(find.byType(ShelfSelectionCheck), findsWidgets);
-  });
-
-  testWidgets('封面 ⋮ 按钮弹出封面背景动作面板（管理动作、无播放）',
-      (WidgetTester tester) async {
+  testWidgets('触屏未进选择态长按视频卡弹管理菜单，不进入多选', (WidgetTester tester) async {
     await seedTaggedVideo();
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
     await openCardMenu(tester, find.byType(HibikiCard).first);
 
-    // 菜单只做管理动作；播放仍由卡片点击负责。
+    expect(find.text(t.batch_selected_count(n: 1)), findsNothing,
+        reason: '触屏必须先点明确的「选择」入口，长按不能暗中进入多选');
     expect(find.byType(HibikiDialogFrame), findsOneWidget);
     expect(find.text(t.tag_label), findsOneWidget);
     expect(find.text(t.video_rename), findsOneWidget);
@@ -364,6 +341,24 @@ void main() {
     expect(find.text(t.add_to_collection), findsOneWidget);
     expect(find.text(t.dialog_delete), findsOneWidget);
     expect(find.text(t.dialog_read), findsNothing);
+  });
+
+  testWidgets('桌面长按本地视频卡仍弹同一动作面板，不进入多选', (WidgetTester tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    try {
+      await seedTaggedVideo();
+      await tester.pumpWidget(buildApp());
+      await tester.pumpAndSettle();
+
+      await openCardMenu(tester, find.byType(HibikiCard).first);
+
+      expect(find.text(t.batch_selected_count(n: 1)), findsNothing);
+      expect(find.byType(HibikiDialogFrame), findsOneWidget);
+      expect(find.text(t.video_rename), findsOneWidget);
+      expect(find.text(t.add_to_collection), findsOneWidget);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   testWidgets('桌面右键（次按钮）本地视频卡弹出同一动作面板（BUG-758）', (WidgetTester tester) async {

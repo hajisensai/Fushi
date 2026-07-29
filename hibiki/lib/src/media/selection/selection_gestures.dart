@@ -3,20 +3,18 @@
 /// 与 [MediaSelectionController]（纯语义）分开：这一层只负责「用户这一下是什么
 /// 意思」，判完调 controller。
 ///
-/// ## 手势归属（2026-07 重划）
+/// ## 手势归属
 ///
-/// 长按此前在两个库页上都是「上下文菜单」（`card_widgets.part.dart` 的
-/// `_bookCardShell`、`home_video_page.dart` 的视频卡），触屏因此没有任何进多选
-/// 的快捷路径——这也是 `collection_drag.dart` 里「移动端不建拖拽源」那段注释记的
-/// 死结的由来。现在按输入方式重新分派：
+/// 两个库页都必须先通过标签栏末尾明确的「选择」入口进入多选态。未进入选择态时，
+/// 触屏长按和桌面长按 / 右键都继续打开卡片上下文菜单；进入选择态后，卡片点击切换
+/// 勾选，长按后滑动才由 [SelectionDragArea] 接管为扫选。桌面额外保留
+/// Ctrl/⌘/Shift + 点击直接进入多选的既有快捷路径。
 ///
 /// | | 触屏（Android / iOS / Fuchsia） | 桌面（鼠标） |
 /// |---|---|---|
-/// | 上下文菜单 | 卡片上的 `⋮` 按钮 | 右键 `onSecondaryTap`（**未变**） |
-/// | 进入多选 | 长按卡片 | Ctrl/⌘ + 点击 |
-/// | 多选态内扩选 | 长按后滑动扫选 | Shift + 点击 |
-///
-/// 桌面的长按（鼠标按住不动）保持弹菜单不变——桌面用户按住不动就是等菜单。
+/// | 上下文菜单 | 长按卡片 | 长按 / 右键 |
+/// | 进入多选 | 点「选择」 | 点「选择」或 Ctrl/⌘/Shift + 点击 |
+/// | 多选态内扩选 | 长按后滑动扫选 | Shift + 点击 / 长按后滑动扫选 |
 library;
 
 import 'package:flutter/gestures.dart';
@@ -25,20 +23,6 @@ import 'package:flutter/rendering.dart' show RenderMetaData;
 import 'package:flutter/services.dart';
 
 import 'package:hibiki/src/media/selection/media_selection_controller.dart';
-
-/// 触屏平台（长按 = 进多选；桌面则长按 = 菜单）。
-bool isTouchSelectionPlatform(BuildContext context) {
-  switch (Theme.of(context).platform) {
-    case TargetPlatform.android:
-    case TargetPlatform.iOS:
-    case TargetPlatform.fuchsia:
-      return true;
-    case TargetPlatform.linux:
-    case TargetPlatform.windows:
-    case TargetPlatform.macOS:
-      return false;
-  }
-}
 
 /// 多选态内的一次点击该按哪种语义：按住 Shift = 区间扩选，否则普通切换。
 ///

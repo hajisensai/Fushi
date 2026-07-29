@@ -228,33 +228,6 @@ void main() {
     });
   });
 
-  group('平台分流', () {
-    testWidgets('触屏平台长按归多选，桌面归菜单', (WidgetTester tester) async {
-      Future<bool> touchOn(TargetPlatform platform) async {
-        late BuildContext ctx;
-        await tester.pumpWidget(MaterialApp(
-          theme: ThemeData(platform: platform),
-          home: Builder(builder: (BuildContext context) {
-            ctx = context;
-            return const SizedBox();
-          }),
-        ));
-        // MaterialApp 的 AnimatedTheme 在主题间插值，而 `ThemeData.lerp` 的
-        // platform 是 `t < 0.5 ? a : b` 的硬切——同一个 tester 里连续换主题时，
-        // 首帧读到的仍是上一个平台。必须让动画跑完再读。
-        await tester.pumpAndSettle();
-        return isTouchSelectionPlatform(ctx);
-      }
-
-      expect(await touchOn(TargetPlatform.android), isTrue);
-      expect(await touchOn(TargetPlatform.iOS), isTrue);
-      expect(await touchOn(TargetPlatform.fuchsia), isTrue);
-      expect(await touchOn(TargetPlatform.windows), isFalse);
-      expect(await touchOn(TargetPlatform.macOS), isFalse);
-      expect(await touchOn(TargetPlatform.linux), isFalse);
-    });
-  });
-
   group('进/退多选态不重建子树（滚动位置守卫）', () {
     /// 一条长列表包在 [SelectionDragArea] 里；[enabled] 由外部 setState 翻转，
     /// 模拟用户点工具栏进/退多选。
@@ -342,9 +315,9 @@ void main() {
       expect(after.position.pixels, 1500, reason: '退出多选把列表滚回了顶部');
     });
 
-    // 恒建 GestureDetector 之后，非多选态必须仍然完全不接管长按——否则「不重建
-    // 子树」是靠让 disabled 态也吃手势换来的，那是另一个 bug。
-    testWidgets('非多选态即便 GestureDetector 常驻也不吃长按', (WidgetTester tester) async {
+    // 恒建 GestureDetector 之后，未点「选择」时必须仍然完全不接管长按——否则
+    // 触屏卡片的上下文菜单会被祖先扫选识别器抢走。
+    testWidgets('未进入选择态时常驻 GestureDetector 不接管长按', (WidgetTester tester) async {
       final ValueNotifier<bool> enabled = ValueNotifier<bool>(false);
       addTearDown(enabled.dispose);
       final ScrollController scrollController = ScrollController();
