@@ -42,7 +42,6 @@ import 'package:hibiki/src/lookup/clipboard_text_overlay_controller.dart';
 import 'package:hibiki/src/lookup/desktop_lookup_dispatcher.dart';
 import 'package:hibiki/src/lookup/global_lookup_controller.dart';
 import 'package:hibiki/src/lookup/gal_hook_text_overlay_controller.dart';
-import 'package:hibiki/src/mining/magpie_installer.dart';
 import 'package:hibiki/src/startup/desktop_window_placement.dart';
 import 'package:hibiki/src/storage/data_root_migration_view.dart';
 import 'package:hibiki/src/startup/loading_watchdog_view.dart';
@@ -428,15 +427,8 @@ void main([List<String> args = const <String>[]]) {
       }));
     }
 
-    // galgame helper **没有**后台自更新（BUG-1196 删除）。helper 是会被注入用户游戏进程的
-    // injector exe + hook DLL，一条「后台静默从网上取原生代码」的通道换来的便利远抵不上
-    // 它的攻击面（BUG-1103）。两架构 zip 已随 Windows 主包发布，helper 版本与 app 版本
-    // 强绑定：要新 helper 就更新 app。别在这里加回来。
-    //
-    // Magpie（窗口超分）仍有后台静默自更新——它不注入任何进程，是个独立的缩放程序。
-    // 只做「已装 → 最新」：未安装/无装机标记/残缺一律不动（首装属于交互路径，要用户
-    // 确认）。非 Windows 自身早退。
-    unawaited(MagpieInstaller.updateInstalledMagpieInBackground());
+    // galgame helper 与 Magpie 都只从 Windows 主包随附归档安装（BUG-1196 / BUG-1246）。
+    // 版本与 app 强绑定：要新组件就更新 Hibiki。不要恢复后台静默下载或旧包联网兜底。
 
     /// Capture Flutter framework errors with full details.
     FlutterError.onError = (details) {

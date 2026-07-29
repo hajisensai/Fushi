@@ -88,8 +88,8 @@ void main() {
   group('服务按每局读档', () {
     /// 走 **Windows 分支**（`isWindowsOverride: true`）：非 Windows 下任何档位都被平台
     /// 判据压成 `disabled`，那样「读到 off」和「读到 auto」就分不开，断言等于没断言。
-    /// Windows 分支里 off → disabled、auto → unavailable（没给 confirmDownload，
-    /// 绝不静默下载），两者可分。
+    /// Windows 分支里 off → disabled、auto → unavailable（测试宿主没有随包归档，
+    /// 且绝不联网补取），两者可分。
     MagpieUpscalingService build(MagpieUpscalingMode Function() modeReader) =>
         MagpieUpscalingService(
           modeReader: modeReader,

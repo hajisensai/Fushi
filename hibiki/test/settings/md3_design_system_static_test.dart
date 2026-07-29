@@ -271,12 +271,6 @@ void main() {
       't.game_waveform_select_title',
       't.game_waveform_range_label',
     ],
-    'lib/src/mining/magpie_download_confirm.dart': <String>[
-      'showAppDialog<bool>(',
-      'HibikiDialogFrame',
-      'HibikiModalSheetFrame',
-      'adaptiveDialogAction',
-    ],
     // 刮削二跳收口后，详情页的刮削 UI 全部委托统一弹窗（galgame_scrape_dialog）。
     'lib/src/pages/implementations/galgame_detail_page.dart': <String>[
       'showGalgameScrapeDialog(',
@@ -604,10 +598,6 @@ void main() {
         'showDialog<',
         'AlertDialog(',
         '选择音频范围',
-      ],
-      'lib/src/mining/magpie_download_confirm.dart': <String>[
-        'showDialog<',
-        'AlertDialog(',
       ],
       'lib/src/pages/implementations/galgame_detail_page.dart': <String>[
         'showDialog<',

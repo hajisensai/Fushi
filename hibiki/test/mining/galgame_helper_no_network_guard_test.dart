@@ -63,13 +63,18 @@ void main() {
       expect(src.contains('galgameHelperMissingFiles'), isTrue);
     });
 
-    test('Magpie 仍可联网（它不注入任何进程），两者不得混为一谈', () {
-      // 防止有人「顺手」把 Magpie 的下载也一并删掉：超分是独立缩放程序，按需下载是
-      // 它的既定设计（用户确认后才下），与 helper 的注入语义完全不同。
+    test('Magpie 也只认随包归档，内置组件不恢复下载兜底', () {
       final String magpie =
           readStripped('lib/src/mining/magpie_installer.dart');
-      expect(magpie.contains('magpieDownloadCandidateUrls'), isTrue);
-      expect(magpie.contains('kMagpieTrustedSidecarHosts'), isTrue);
+      for (final String needle in <String>[
+        'HttpClient',
+        'ResumableDownload',
+        'https://',
+        'updateInstalledMagpieInBackground',
+      ]) {
+        expect(magpie.contains(needle), isFalse, reason: needle);
+      }
+      expect(magpie.contains('_installBundledMagpie'), isTrue);
     });
   });
 }

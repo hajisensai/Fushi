@@ -11,7 +11,6 @@ import 'package:hibiki/src/utils/misc/desktop_audio_playback.dart';
 import 'package:hibiki/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
-import 'package:hibiki/src/mining/magpie_download_confirm.dart';
 import 'package:hibiki/src/mining/magpie_upscaling.dart';
 import 'package:hibiki/src/mining/magpie_upscaling_service.dart';
 import 'package:hibiki/src/models/app_model.dart';
@@ -129,12 +128,11 @@ class GalHookTextOverlayController extends ChangeNotifier {
     _session.attachActivityDatabase(
       () => appModel.isInitialised ? appModel.database : null,
     );
-    // 窗口超分编排器：唯一的注入点。档位**每局重新读**（每游戏各自一档，见下），
-    // 下载确认走全局 navigator。未注入时会话侧全是 `?.` 空操作，故这里失败也不致命。
+    // 窗口超分编排器：唯一的注入点。档位**每局重新读**（每游戏各自一档，见下）。
+    // Magpie 只从 Hibiki 随包归档安装，不持有下载确认 UI。未注入时会话侧全是
+    // `?.` 空操作，故这里失败也不致命。
     final MagpieUpscalingService magpie = MagpieUpscalingService(
       modeReader: () => _upscalingModeForCurrentSession(appModel),
-      confirmDownload: (MagpieDownloadPrompt prompt) =>
-          confirmMagpieDownload(appModel, prompt),
     );
     _session.attachMagpieUpscaling(magpie);
     // 每游戏捕获选择记忆（文本线程 / 语音轨 / BGM 排除集）：真值落偏好表，每游戏

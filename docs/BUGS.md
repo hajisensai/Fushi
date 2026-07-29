@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1240 条。点号进各自文件。
+> 共 1241 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -67,6 +67,7 @@
 | [BUG-1250](bugs/BUG-1250-stream-import-hides-progress.md) | ✅ | ✅ | 边下边播提前入库把下载任务直接标成已完成并丢失进度 |
 | [BUG-1249](bugs/BUG-1249-download-empty-result-reason.md) | ✅ | ✅ | 下载发现把空响应或损坏 RSS 伪装成无结果且不说明筛选原因 |
 | [BUG-1247](bugs/BUG-1247-gal-unity-text-source-isolation.md) | ✅ | ✅ | Unity TextMesh 停顿拆句且绕过文本线程选择 |
+| [BUG-1246](bugs/BUG-1246-magpie-bundled-only.md) | ✅ | ✅ | Magpie 内置后仍显示并保留下载路径 |
 | [BUG-1246](bugs/BUG-1246-galgame-helper-version-drift.md) | ✅ | ✅ | 随包 helper 已更新但完整旧安装被直接放行，native 修复永远不生效 |
 | [BUG-1245](bugs/BUG-1245-vn-reveal-chrome-also-advances.md) | ✅ | ✅ | VN唤出悬浮底栏时误同时推进 |
 | [BUG-1244](bugs/BUG-1244-vn-media-screen-skipped.md) | ✅ | ✅ | VN独立图片屏被逐句跳转永久略过 |

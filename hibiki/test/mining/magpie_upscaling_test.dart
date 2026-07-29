@@ -141,7 +141,7 @@ void main() {
       );
     });
 
-    test('auto 装了 → installed（不为用自家产物重复下载）', () {
+    test('auto 装了 → installed（不重复解压随包归档）', () {
       expect(
         resolveMagpieBackend(
           mode: MagpieUpscalingMode.auto,
@@ -152,14 +152,14 @@ void main() {
       );
     });
 
-    test('auto 没装 → needsDownload', () {
+    test('auto 没装 → needsBundledInstall', () {
       expect(
         resolveMagpieBackend(
           mode: MagpieUpscalingMode.auto,
           isWindows: true,
           installedAvailable: false,
         ),
-        MagpieBackend.needsDownload,
+        MagpieBackend.needsBundledInstall,
       );
     });
   });
@@ -642,14 +642,13 @@ void main() {
       expect(service.report.status, MagpieUpscalingStatus.unavailable);
     });
 
-    test('auto 但没提供确认回调 → unavailable，绝不静默下载', () async {
+    test('auto 但随包归档缺失 → unavailable，绝不联网', () async {
       final MagpieUpscalingService service = MagpieUpscalingService(
         modeReader: () => MagpieUpscalingMode.auto,
         bridge: FakeBridge(),
         configPathOverride: configPath,
         hibikiExecutablePath: kHibikiExe,
         isWindowsOverride: true,
-        // confirmDownload 故意不传
         processLauncher: (String exe, List<String> args) async =>
             throw StateError('不该走到这'),
       );
@@ -1208,13 +1207,14 @@ void main() {
       expect(kMagpieExitQuitGrace, lessThan(kMagpieQuitGrace));
     });
 
-    test('BUG-1076 契约：确认回调之前不 await 体积探测', () {
+    test('BUG-1246 契约：安装器不再有确认框或体积探测', () {
       final File installer = File(
         p.join(Directory.current.path, 'lib/src/mining/magpie_installer.dart'),
       );
       final String source = installer.readAsStringSync();
-      expect(source.contains('await _probeSize('), isFalse,
-          reason: '体积探测绝不能在确认框之前被 await');
+      expect(source.contains('_probeSize'), isFalse);
+      expect(source.contains('confirmDownload'), isFalse);
+      expect(source.contains('HttpClient'), isFalse);
     });
   });
 }
