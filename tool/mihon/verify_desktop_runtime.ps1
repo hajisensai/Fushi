@@ -103,7 +103,7 @@ try {
         $response = Invoke-WebRequest `
             -Uri "$baseUri$($probe.Path)" `
             -Method $probe.Method `
-            -ContentType "application/json" `
+            -ContentType "application/json; charset=utf-8" `
             -Body "{}" `
             -SkipHttpErrorCheck `
             -TimeoutSec 2

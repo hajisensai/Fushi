@@ -9,6 +9,7 @@ Significant Hibiki modifications:
 - authenticated APK inspection using apksig;
 - authenticated source image and source data clearing routes;
 - Hibiki bridge capability identifier.
+- catalogue identity preservation for legacy detail parsers.
 
 Corresponding Source for shipped binaries is this overlay plus the upstream
 commit identified in UPSTREAM. Build scripts reproduce the combined source.
