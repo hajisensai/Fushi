@@ -21,7 +21,7 @@ import '../../pages/video_hibiki_page_source_corpus.dart';
 /// 在不同输入模式下把物理空格改写成的逻辑键未必是 `process`。改判据为「物理键是 Space +
 /// 逻辑键非裸 space」，覆盖 `process` 及任意其它 IME 改写值。
 ///
-/// BUG-1231：前两轮仍建立在错误前提上。Flutter Windows 引擎会把 `VK_PROCESSKEY`
+/// BUG-1239：前两轮仍建立在错误前提上。Flutter Windows 引擎会把 `VK_PROCESSKEY`
 /// 事件降成 physical/logical key 均为 0，Dart 层根本拿不到旧修复依赖的物理 Space。
 /// runner 必须在交给 Flutter 前从 Win32 lParam 的 scan code 识别 Space，再经专用
 /// MethodChannel 通知当前视频页。
@@ -128,7 +128,7 @@ void main() {
         reason: '_wrapVideoGamepadControls 的 Focus.onKeyEvent 必须先调 IME 空格回退');
   });
 
-  test('BUG-1231 native IME Space channel 只派发约定方法并按 owner 清理', () async {
+  test('BUG-1239 native IME Space channel 只派发约定方法并按 owner 清理', () async {
     final Object owner = Object();
     int calls = 0;
     WindowsImeSpaceChannel.setHandler(owner, () => calls++);
@@ -156,7 +156,7 @@ void main() {
     expect(calls, 2);
   });
 
-  test('BUG-1231 runner 在 Flutter 丢键前按 VK_PROCESSKEY scan code 捕获 Space', () {
+  test('BUG-1239 runner 在 Flutter 丢键前按 VK_PROCESSKEY scan code 捕获 Space', () {
     final String cpp =
         File('windows/runner/flutter_window.cpp').readAsStringSync();
     final int predicateStart =
@@ -186,7 +186,7 @@ void main() {
     );
   });
 
-  test('BUG-1231 视频页注册 native 通道并守住路由/文本框/浮层边界', () {
+  test('BUG-1239 视频页注册 native 通道并守住路由/文本框/浮层边界', () {
     final String src = readVideoHibikiSource();
     expect(
       src,

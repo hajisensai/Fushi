@@ -4256,7 +4256,7 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     return true;
   }
 
-  /// BUG-1231：Windows runner 在 Flutter 丢掉 `VK_PROCESSKEY` 的 scan code 之前，
+  /// BUG-1239：Windows runner 在 Flutter 丢掉 `VK_PROCESSKEY` 的 scan code 之前，
   /// 把「无修饰的物理 Space 按下沿」经专用 channel 送到这里。
   ///
   /// 这条入口绕过 Focus 冒泡，故必须显式复刻页面快捷键的所有权边界：只有当前视频

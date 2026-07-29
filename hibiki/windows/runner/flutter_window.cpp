@@ -356,7 +356,7 @@ bool ApplyShortcutIcon(const std::wstring& icon_path) {
 // Windows keeps the original keyboard scan code in lParam even when an active
 // IME replaces wParam with VK_PROCESSKEY. Flutter intentionally discards those
 // IME key events from the framework keyboard pipeline, so this is the last
-// reliable point at which a physical Space can be identified (BUG-1231).
+// reliable point at which a physical Space can be identified (BUG-1239).
 bool IsInitialUnmodifiedImeSpaceDown(UINT message,
                                      WPARAM wparam,
                                      LPARAM lparam) {
@@ -2274,7 +2274,7 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
-  // BUG-1231: inspect VK_PROCESSKEY before Flutter handles the message. The
+  // BUG-1239: inspect VK_PROCESSKEY before Flutter handles the message. The
   // engine deliberately reports IME-owned keys as physical=0/logical=0, so
   // checking after HandleTopLevelWindowProc can no longer identify Space.
   // Notify Dart without consuming the Win32 message; Flutter/IME processing
