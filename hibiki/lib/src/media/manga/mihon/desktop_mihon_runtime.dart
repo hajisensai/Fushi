@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -12,6 +13,45 @@ import 'package:hibiki/src/media/manga/mihon/mihon_bridge_runtime.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_child_process_containment.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_runtime.dart';
+
+const int kMihonMaximumNativeImageBytes = 100 * 1024 * 1024;
+
+@visibleForTesting
+Future<Uint8List> readMihonImageBytesBounded(
+  http.StreamedResponse response, {
+  int maximumBytes = kMihonMaximumNativeImageBytes,
+  Duration timeout = const Duration(seconds: 45),
+}) async {
+  final int? declaredLength = response.contentLength;
+  if (declaredLength != null && declaredLength > maximumBytes) {
+    final StreamSubscription<List<int>> subscription =
+        response.stream.listen(null);
+    await subscription.cancel();
+    throw const MihonRuntimeException(
+      'IMAGE_TOO_LARGE',
+      'Mihon source image exceeds the 100 MiB limit',
+    );
+  }
+  final BytesBuilder bytes = BytesBuilder(copy: false);
+  int total = 0;
+  await for (final List<int> chunk in response.stream.timeout(timeout)) {
+    total += chunk.length;
+    if (total > maximumBytes) {
+      throw const MihonRuntimeException(
+        'IMAGE_TOO_LARGE',
+        'Mihon source image exceeds the 100 MiB limit',
+      );
+    }
+    bytes.add(chunk);
+  }
+  if (total == 0) {
+    throw const MihonRuntimeException(
+      'EMPTY_IMAGE',
+      'Mihon source returned an empty image',
+    );
+  }
+  return bytes.takeBytes();
+}
 
 class DesktopMihonRuntime extends MihonBridgeRuntime
     implements CancellableMihonRuntime {
@@ -138,22 +178,17 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     replaced?.close();
     _imageClients[requestId] = imageClient;
     try {
-      final http.Response response = await imageClient
-          .get(requested, headers: _headers)
-          .timeout(const Duration(seconds: 45));
+      final http.Request request = http.Request('GET', requested)
+        ..headers.addAll(_headers);
+      final http.StreamedResponse response =
+          await imageClient.send(request).timeout(const Duration(seconds: 45));
       if (response.statusCode != HttpStatus.ok) {
         throw MihonRuntimeException(
           'IMAGE_HTTP_${response.statusCode}',
           'Mihon image proxy request failed',
         );
       }
-      if (response.bodyBytes.isEmpty) {
-        throw const MihonRuntimeException(
-          'EMPTY_IMAGE',
-          'Mihon source returned an empty image',
-        );
-      }
-      return response.bodyBytes;
+      return readMihonImageBytesBounded(response);
     } finally {
       if (identical(_imageClients[requestId], imageClient)) {
         _imageClients.remove(requestId);
@@ -177,25 +212,23 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     List<MihonPreference> preferences = const <MihonPreference>[],
   }) async {
     await _ensureStarted();
-    final http.Response response = await _http
-        .post(
-          _uri('/source-image'),
-          headers: _headers,
-          body: jsonEncode(<String, Object?>{
-            'data': await _apkBase64(extension.apkPath),
-            'sourceId': source.id,
-            'url': url,
-            'preferences': mihonBridgePreferences(source, preferences),
-          }),
-        )
-        .timeout(const Duration(seconds: 45));
-    if (response.statusCode != HttpStatus.ok || response.bodyBytes.isEmpty) {
+    final http.Request request = http.Request('POST', _uri('/source-image'))
+      ..headers.addAll(_headers)
+      ..body = jsonEncode(<String, Object?>{
+        'data': await _apkBase64(extension.apkPath),
+        'sourceId': source.id,
+        'url': url,
+        'preferences': mihonBridgePreferences(source, preferences),
+      });
+    final http.StreamedResponse response =
+        await _http.send(request).timeout(const Duration(seconds: 45));
+    if (response.statusCode != HttpStatus.ok) {
       throw MihonRuntimeException(
         'IMAGE_HTTP_${response.statusCode}',
         'Mihon source image request failed',
       );
     }
-    return response.bodyBytes;
+    return readMihonImageBytesBounded(response);
   }
 
   @override

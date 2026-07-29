@@ -23,12 +23,16 @@ import uy.kohesive.injekt.api.addSingleton
 import uy.kohesive.injekt.api.addSingletonFactory
 import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.registry.default.DefaultRegistrar
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.ConcurrentHashMap
+
+private const val MAXIMUM_IMAGE_BYTES = 100L * 1024L * 1024L
+private const val IMAGE_READ_BUFFER_BYTES = 64 * 1024
 
 class MihonChannelHandler(private val app: Application) {
     private val executor: ExecutorService = Executors.newFixedThreadPool(2)
@@ -328,7 +332,7 @@ class MihonChannelHandler(private val app: Application) {
                 if (!response.isSuccessful) {
                     throw MihonHostException("IMAGE_HTTP", "Source image request failed")
                 }
-                response.body.bytes()
+                readImageBodyBounded(response)
             }
         }
     }
@@ -347,7 +351,47 @@ class MihonChannelHandler(private val app: Application) {
             if (!response.isSuccessful) {
                 throw MihonHostException("IMAGE_HTTP", "Source image request failed")
             }
-            return response.body.bytes()
+            return readImageBodyBounded(response)
+        }
+    }
+
+    private fun readImageBodyBounded(response: okhttp3.Response): ByteArray {
+        val body = response.body
+        val declaredLength = body.contentLength()
+        if (declaredLength > MAXIMUM_IMAGE_BYTES) {
+            throw MihonHostException(
+                "IMAGE_TOO_LARGE",
+                "Mihon source image exceeds the 100 MiB limit",
+            )
+        }
+        body.byteStream().use { input ->
+            val initialCapacity = when {
+                declaredLength <= 0L -> IMAGE_READ_BUFFER_BYTES
+                declaredLength > Int.MAX_VALUE -> IMAGE_READ_BUFFER_BYTES
+                else -> declaredLength.toInt()
+            }
+            val output = ByteArrayOutputStream(initialCapacity)
+            val buffer = ByteArray(IMAGE_READ_BUFFER_BYTES)
+            var total = 0L
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                total += count
+                if (total > MAXIMUM_IMAGE_BYTES) {
+                    throw MihonHostException(
+                        "IMAGE_TOO_LARGE",
+                        "Mihon source image exceeds the 100 MiB limit",
+                    )
+                }
+                output.write(buffer, 0, count)
+            }
+            if (total == 0L) {
+                throw MihonHostException(
+                    "EMPTY_IMAGE",
+                    "Mihon source returned an empty image",
+                )
+            }
+            return output.toByteArray()
         }
     }
 
