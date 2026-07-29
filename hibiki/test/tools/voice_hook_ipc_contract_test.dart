@@ -67,6 +67,16 @@ void main() {
     );
     expect(
       sharedHeader,
+      contains('constexpr uint32_t kLunaThreadPreviewCount = 48;'),
+    );
+    expect(
+      sharedHeader,
+      contains(
+        'constexpr uint32_t kNativeThreadPreviewStart = kLunaThreadPreviewCount;',
+      ),
+    );
+    expect(
+      sharedHeader,
       contains(
         'constexpr uint32_t kThreadPreviewFlagArtifact = 0x00000001u;',
       ),
@@ -90,6 +100,10 @@ void main() {
     // reader 只发布 odd/even 原子双读后的稳定快照，write_count 同样不能在 x86 裸读。
     expect(reader, contains('TryReadThreadPreviewSnapshot(slot, &snapshot)'));
     expect(reader, contains('AtomicLoadPreview64('));
+    expect(
+      sharedHeader,
+      contains('inline void PublishThreadPreviewChange('),
+    );
   });
 
   test('native profile prefer cannot bypass v12 explicit thread selection', () {
@@ -111,12 +125,37 @@ void main() {
       isNot(contains('preferred_hook_codes')),
     );
     expect(functionBody, isNot(contains('const wchar_t* hookcode')));
-    expect(functionBody, contains('selected_text_thread_id'));
+    expect(functionBody, contains('SelectedTextThreadId(g_luna.header)'));
     expect(
       functionBody,
       contains(
         'AcceptsLine(\n      thread_id, is_artifact, manually_selected, face_id)',
       ),
+    );
+  });
+
+  test('Unity native text uses preview first and the same explicit gate', () {
+    final String source = File(
+      '../native/galgame_hook/hook/adapters/unity_adapter.inc',
+    ).readAsStringSync();
+    final int functionStart = source.indexOf('void PublishUnityText(');
+    final int functionEnd = source.indexOf(
+      '\n}\n\nvoid RecordUnityTmpText',
+      functionStart,
+    );
+    expect(functionStart, greaterThanOrEqualTo(0));
+    expect(functionEnd, greaterThan(functionStart));
+    final String body = source.substring(functionStart, functionEnd);
+
+    expect(body, contains('WriteUnityThreadPreview('));
+    expect(body, contains('IsExactTextThreadSelected(g_header, thread_id)'));
+    expect(
+      body.indexOf('WriteUnityThreadPreview('),
+      lessThan(body.indexOf('IsExactTextThreadSelected(')),
+    );
+    expect(
+      body.indexOf('IsExactTextThreadSelected('),
+      lessThan(body.indexOf('WriteUnityTextEvent(')),
     );
   });
 }

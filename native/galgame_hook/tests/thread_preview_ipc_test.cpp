@@ -15,6 +15,7 @@ using hibiki_voice_hook::ThreadPreviewSnapshot;
 
 struct PreviewTable {
   volatile uint64_t write_count = 0;
+  volatile uint64_t generation = 0;
   std::array<ThreadPreviewSlot, hibiki_voice_hook::kThreadPreviewCount> slots{};
   std::mutex writer_mutex;
 };
@@ -26,7 +27,7 @@ void WritePattern(PreviewTable* table, uint64_t thread_id) {
       thread_id);
   if (slot == nullptr) return;
   const uint64_t generation =
-      hibiki_voice_hook::NextThreadPreviewGeneration(&table->write_count);
+      hibiki_voice_hook::NextThreadPreviewGeneration(&table->generation);
   hibiki_voice_hook::BeginThreadPreviewWrite(slot, generation);
   slot->thread_id = thread_id;
   slot->timestamp_ms = generation * 3;
@@ -37,8 +38,7 @@ void WritePattern(PreviewTable* table, uint64_t thread_id) {
   const wchar_t pattern = static_cast<wchar_t>(L'A' + (generation % 23));
   for (uint32_t i = 0; i < 128; ++i) slot->text[i] = pattern;
   hibiki_voice_hook::PublishThreadPreviewWrite(slot, generation);
-  hibiki_voice_hook::PublishThreadPreviewGeneration(&table->write_count,
-                                                    generation);
+  hibiki_voice_hook::PublishThreadPreviewChange(&table->write_count);
 }
 
 void RemovePreview(PreviewTable* table, uint64_t thread_id) {
@@ -46,12 +46,11 @@ void RemovePreview(PreviewTable* table, uint64_t thread_id) {
   for (ThreadPreviewSlot& slot : table->slots) {
     if (slot.thread_id != thread_id) continue;
     const uint64_t generation =
-        hibiki_voice_hook::NextThreadPreviewGeneration(&table->write_count);
+        hibiki_voice_hook::NextThreadPreviewGeneration(&table->generation);
     hibiki_voice_hook::BeginThreadPreviewWrite(&slot, generation);
     hibiki_voice_hook::ClearThreadPreviewPayload(&slot);
     hibiki_voice_hook::PublishThreadPreviewWrite(&slot, generation);
-    hibiki_voice_hook::PublishThreadPreviewGeneration(&table->write_count,
-                                                      generation);
+    hibiki_voice_hook::PublishThreadPreviewChange(&table->write_count);
     return;
   }
 }
@@ -77,6 +76,23 @@ bool SnapshotMatchesOneGeneration(const ThreadPreviewSnapshot& snapshot) {
 }  // namespace
 
 int main() {
+  if (hibiki_voice_hook::kLunaThreadPreviewCount +
+          hibiki_voice_hook::kNativeThreadPreviewCount !=
+      hibiki_voice_hook::kThreadPreviewCount) {
+    return 10;
+  }
+  PreviewTable partitioned;
+  ThreadPreviewSlot* luna_slot = hibiki_voice_hook::FindThreadPreviewSlot(
+      partitioned.slots.data(), hibiki_voice_hook::kLunaThreadPreviewCount, 1);
+  ThreadPreviewSlot* native_slot = hibiki_voice_hook::FindThreadPreviewSlot(
+      partitioned.slots.data() + hibiki_voice_hook::kNativeThreadPreviewStart,
+      hibiki_voice_hook::kNativeThreadPreviewCount, 2);
+  if (luna_slot != &partitioned.slots.front() ||
+      native_slot !=
+          &partitioned.slots[hibiki_voice_hook::kNativeThreadPreviewStart]) {
+    return 11;
+  }
+
   PreviewTable table;
 
   // 回收后允许空洞：已有 id 必须优先命中，新的第 65 条线程必须复用被释放的槽。

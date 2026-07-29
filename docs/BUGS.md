@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1194 条。点号进各自文件。
+> 共 1195 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1247](bugs/BUG-1247-gal-unity-text-source-isolation.md) | ✅ | ✅ | Unity TextMesh 停顿拆句且绕过文本线程选择 |
 | [BUG-1239](bugs/BUG-1239-video-ime-fullwidth-space.md) | ✅ | ✅ | 全角空格在视频页仍无法播放暂停 |
 | [BUG-1237](bugs/BUG-1237-popup-touch-copy-actionmode-finished.md) | ✅ | ✅ | 查词弹窗触屏复制经已结束 ActionMode 失效 |
 | [BUG-1236](bugs/BUG-1236-reader-selection-menu-modal-blocks-handles.md) | ✅ | ✅ | 移动端阅读器选区菜单阻断手柄拖动 |

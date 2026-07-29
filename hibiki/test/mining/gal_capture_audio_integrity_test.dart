@@ -372,9 +372,19 @@ void main() {
       expect(controller.selectedNativeTextThreadId, 7);
       await waitUntil(() => service.entries.length == 3);
 
-      // 用户改选「全部」：记忆被清掉，不再自动恢复。
+      // 用户取消选择：记忆被清掉，不再自动恢复，正式消费者也必须立刻归零。
       await controller.selectTextThread(null, remember: true);
       expect(store[r'd:\games\fake.exe']!.textThreadFingerprint, isNull);
+      expect(
+        controller.workbenchLines,
+        isEmpty,
+        reason: '未选线程时历史正式环只能留作诊断，不得继续进入工作台',
+      );
+      expect(
+        controller.selectedSessionLines,
+        isEmpty,
+        reason: '未选线程时浮窗、配对和制卡不得消费任何来源',
+      );
 
       await controller.close();
       endpoints.dispose();

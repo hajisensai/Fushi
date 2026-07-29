@@ -658,22 +658,20 @@ class GalHookSessionController extends ChangeNotifier {
   List<TexthookerTextThread> get textThreads =>
       _textService.textThreadsSince(_state.sessionStartedAt);
 
-  /// 捕获工作台当前应展示的行。捕获中只看本次会话，避免上一个进程的 Luna 线程/台词
-  /// 混进当前选择；「全部线程」再折叠同一渲染瞬间的跨线程双写。底层 buffer 不删。
+  /// 捕获工作台当前应展示的正式行。没有选择时只允许下拉里的候选预览可见，
+  /// 正式台词、浮窗、配对和制卡都必须为空；底层诊断 buffer 不删。
   List<TexthookerLineEntry> get workbenchLines {
+    final String? selectedKey = selectedTextThreadKey;
+    if (selectedKey == null) return const <TexthookerLineEntry>[];
     final DateTime? startedAt = _state.sessionStartedAt;
     Iterable<TexthookerLineEntry> scoped =
-        _textService.entriesForTextThread(selectedTextThreadKey);
+        _textService.entriesForTextThread(selectedKey);
     if (startedAt != null) {
       scoped = scoped.where(
         (TexthookerLineEntry entry) => !entry.receivedAt.isBefore(startedAt),
       );
     }
-    final List<TexthookerLineEntry> materialized =
-        scoped.toList(growable: false);
-    return selectedTextThreadKey == null
-        ? collapseParallelTextThreadDuplicates(materialized)
-        : List<TexthookerLineEntry>.unmodifiable(materialized);
+    return List<TexthookerLineEntry>.unmodifiable(scoped);
   }
 
   String? get selectedTextThreadKey {
@@ -699,10 +697,13 @@ class GalHookSessionController extends ChangeNotifier {
   /// 制卡只允许消费这里的行，防止跨会话或跨线程借用上下文。
   List<TexthookerLineEntry> get selectedSessionLines {
     final DateTime? startedAt = _state.sessionStartedAt;
-    if (startedAt == null) return const <TexthookerLineEntry>[];
+    final String? selectedKey = selectedTextThreadKey;
+    if (startedAt == null || selectedKey == null) {
+      return const <TexthookerLineEntry>[];
+    }
     return List<TexthookerLineEntry>.unmodifiable(
       _textService
-          .entriesForTextThread(selectedTextThreadKey)
+          .entriesForTextThread(selectedKey)
           .where((entry) => !entry.receivedAt.isBefore(startedAt)),
     );
   }
@@ -1857,7 +1858,7 @@ class GalHookSessionController extends ChangeNotifier {
       'text',
       selected ? 'text.thread_selected' : 'text.thread_select_failed',
       threadId == null || threadId == 0
-          ? 'Automatic text-thread selection enabled'
+          ? 'Text thread selection cleared'
           : 'Text thread selected',
       details: <String, Object?>{
         'threadId': threadId ?? 0,
@@ -2217,7 +2218,7 @@ class GalHookSessionController extends ChangeNotifier {
     );
   }
 
-  /// 用户显式选定/取消文本线程后同步持久化（null = 自动，清掉记忆）。
+  /// 用户显式选定/取消文本线程后同步持久化（null = 未选择，清掉记忆）。
   void _persistTextThread(TexthookerTextThread? thread) {
     if (!_ensureCaptureMemoryLoaded()) return;
     final String? fingerprint =

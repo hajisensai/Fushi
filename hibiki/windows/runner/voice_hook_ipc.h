@@ -15,7 +15,8 @@
 // v10：文本槽追加事件类型，透传 Luna ThreadCreate，使尚无台词的候选线程也可被选择。
 // v12：追加「线程预览区」并取消 injector 自动选线程。文本环仍只装**当前生效线程**（配对路径
 //     不受影响），每条线程的最近一行改由预览区按线程分槽保存，供选择器展示——两个诉求相反的
-//     消费者不再抢同一块 256 槽 FIFO。完整推导见真相源头文件的 v12 注释。
+//     消费者不再抢同一块 256 槽 FIFO。LunaHost 与游戏内 native adapter 还会使用
+//     `thread_preview_ipc.h` 声明的互斥槽分区，避免跨进程 writer 争抢同一槽。
 // 读共享内存不是注入、不被杀软标记，可安全进 hibiki.exe。契约用 magic/version 版本化。
 namespace hibiki_voice_hook {
 
@@ -189,7 +190,8 @@ struct SharedHeader {
   // ── v12 线程预览区（布局最尾，前面各区偏移一个都不动）──
   uint32_t thread_preview_offset;
   uint32_t thread_preview_slot_count;
-  // 单调累计已写预览行数。只用于判断「有没有新预览」以跳过整区扫描；预览槽本身按
+  // 单调累计预览变更次数（含 partial TextMesh 快照）。只用于判断「有没有新预览」；
+  // 预览槽本身按
   // thread_id 寻址，**不**靠这个序号定位（与 text_write_count 语义不同，勿照搬取模那套）。
   volatile uint64_t thread_preview_write_count;
 };

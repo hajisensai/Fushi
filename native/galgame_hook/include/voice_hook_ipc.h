@@ -39,7 +39,8 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     都发布"必然把配对候选挤出环（kExpired → 降级 loopback，即 BUG-1159 的失败链），这才是
 //     BUG-1193 真正的根因——不是门控本身。v12 把两个消费者拆到两块内存：
 //       * 文本环（Ring A）：语义不变，仍只发布**当前生效线程**的行，配对路径逐字节不受影响；
-//       * 线程预览区（本区）：每条线程各占**固定槽位**，只留最近一行。
+//       * 线程预览区（本区）：每条线程各占**固定槽位**，只留最近一行。Luna 与游戏内
+//         native adapter 使用互斥槽分区，跨进程 writer 不会争抢同一槽。
 //     预览区按线程分槽而不是全局 FIFO，所以逐字重绘型 hook 只能覆盖它自己的槽，**物理上挤不掉
 //     别的线程**——"挤压"从"要小心防"变成结构上不可能，这正是自动赢家门控得以退役的前提。
 constexpr uint32_t kSharedVersion = 12;
@@ -288,11 +289,22 @@ struct SharedHeader {
   // 内存布局尾部再追加：[...标记表][线程预览区 thread_preview_slot_count*ThreadPreviewSlot]
   uint32_t thread_preview_offset;      // 线程预览区起始（header 起算字节偏移）
   uint32_t thread_preview_slot_count;  // 槽数（= kThreadPreviewCount，冗余便于 reader 自洽）
-  // 单调累计已写预览行数。host 只用它判断「有没有新预览」以跳过整区扫描；预览槽本身按
+  // 单调累计预览变更次数（含 partial TextMesh 快照）。host 只用它判断「有没有新预览」；
+  // 预览槽本身按
   // thread_id 寻址，不靠这个序号定位（与文本环的 text_write_count 语义不同，勿照搬）。
   volatile uint64_t thread_preview_write_count;
 };
 #pragma pack(pop)
+
+inline uint64_t SelectedTextThreadId(const SharedHeader* header) {
+  if (header == nullptr) return 0;
+  return AtomicLoadPreview64(&header->selected_text_thread_id);
+}
+
+inline bool IsExactTextThreadSelected(const SharedHeader* header,
+                                      uint64_t thread_id) {
+  return thread_id != 0 && SelectedTextThreadId(header) == thread_id;
+}
 
 static_assert(sizeof(SharedHeader) % 8 == 0, "SharedHeader must stay 8-aligned");
 static_assert(sizeof(TextSlot) % 8 == 0, "TextSlot must stay 8-aligned");
