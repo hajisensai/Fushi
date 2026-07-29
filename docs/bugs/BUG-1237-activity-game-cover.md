@@ -13,6 +13,6 @@
   `test/mining/galgame_launch_args_test.dart` 覆盖三类历史/当前身份；
   `test/mining/galgame_helper_launch_guard_test.dart` 钉住三处调用接线；
   `test/pages/home_dashboard_page_test.dart` 用旧 exePath 复现并断言活动封面。
-- **备注**：改动提交哈希在提交后回填。定向测试启动前被 `pdfium_dart` 下载
+- **备注**：根因修复与自动化测试提交 `9d6243bd0`。定向测试启动前被 `pdfium_dart` 下载
   `pdfium-win-x64.tgz` 的 GitHub 网络超时阻断（0 条执行）；10 个改动项的
   `flutter analyze --no-pub` 通过。
