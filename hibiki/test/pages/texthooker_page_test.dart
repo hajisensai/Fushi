@@ -276,6 +276,38 @@ void main() {
     expect(inert(), isFalse, reason: '重新可见时恢复浮层');
   });
 
+  testWidgets('mounted lookup overlay survives TickerMode dependency rebuild',
+      (WidgetTester tester) async {
+    final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
+    addTearDown(visible.dispose);
+    await tester.pumpWidget(
+      _wrapPage(
+        Scaffold(
+          body: ValueListenableBuilder<bool>(
+            valueListenable: visible,
+            builder: (BuildContext context, bool v, _) =>
+                TickerMode(enabled: v, child: const TexthookerPage()),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final dynamic state = tester.state(find.byType(TexthookerPage));
+    state.debugMountPopupOverlayForTesting();
+    await tester.pump();
+
+    visible.value = false;
+    await tester.pump();
+
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: 'TickerMode changes during build must not synchronously dirty '
+          'the root OverlayEntry and corrupt the layout queue',
+    );
+  });
+
   group('injectActiveSentence（BUG-954：fallback 制卡带上活跃台词）', () {
     test('fields 无 sentence + 有活跃台词 → 注入活跃台词，其它字段不变', () {
       final Map<String, String> r = injectActiveSentence(
