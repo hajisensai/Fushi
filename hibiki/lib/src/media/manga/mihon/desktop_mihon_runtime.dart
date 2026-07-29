@@ -48,7 +48,11 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
 
   Map<String, String> get _headers => <String, String>{
         'Authorization': 'Bearer $_token',
-        'Content-Type': 'application/json',
+        // NanoHTTPD 2.3.1 falls back to US-ASCII when a request content type
+        // omits its charset. Mihon manga URLs commonly contain CJK text, so
+        // omitting this parameter corrupts those URLs into U+FFFD on the
+        // bridge round trip and makes otherwise valid detail pages return 404.
+        'Content-Type': 'application/json; charset=utf-8',
       };
 
   @override

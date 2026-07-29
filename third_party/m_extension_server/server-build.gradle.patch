@@ -22,12 +22,44 @@ index f77332c..adc2815 100644
 +import mextensionserver.model.JChapter
 @@ -38,0 +40 @@ import mextensionserver.model.toJAnime
 +import mextensionserver.model.toJChapter
-@@ -271 +273 @@ object MihonInvoker {
+@@ -241,10 +243,30 @@ object MihonInvoker {
+         return runBlocking {
++            val originalManga = mangaData.toSManga(source)
+             val detailedManga =
+                 source
+                     .getMangaUpdate(
+-                        manga = mangaData.toSManga(source),
++                        manga = originalManga,
+                         chapters = emptyList(),
+                         fetchDetails = true,
+                         fetchChapters = false,
+                     ).manga
++            // Most legacy extensions return a fresh SManga from their details
++            // parser. The Mihon host merges it into the catalogue item, whose
++            // URL is the stable source identity. Preserve catalogue fields
++            // omitted by the parser before crossing the stateless bridge.
++            if (runCatching { detailedManga.url }.getOrDefault("").isBlank()) {
++                detailedManga.url = originalManga.url
++            }
++            if (runCatching { detailedManga.title }.getOrDefault("").isBlank()) {
++                detailedManga.title = originalManga.title
++            }
++            if (detailedManga.artist == null) detailedManga.artist = originalManga.artist
++            if (detailedManga.author == null) detailedManga.author = originalManga.author
++            if (detailedManga.description == null) {
++                detailedManga.description = originalManga.description
++            }
++            if (detailedManga.genre == null) detailedManga.genre = originalManga.genre
++            if (detailedManga.thumbnail_url == null) {
++                detailedManga.thumbnail_url = originalManga.thumbnail_url
++            }
+             MihonMetadataCache.remember(source, detailedManga)
+@@ -271 +293 @@ object MihonInvoker {
 -    ): List<SChapter> {
 +    ): List<JChapter> {
-@@ -285,0 +288 @@ object MihonInvoker {
+@@ -285,0 +308 @@ object MihonInvoker {
 +                .map(SChapter::toJChapter)
-@@ -854 +857 @@ object MihonInvoker {
+@@ -854 +877 @@ object MihonInvoker {
 -                                    text.state = dataGroup.name ?: ""
 +                                    text.state = dataGroup.stateString ?: ""
 diff --git a/server/src/main/kotlin/mextensionserver/model/DataBody.kt b/server/src/main/kotlin/mextensionserver/model/DataBody.kt
@@ -67,15 +99,20 @@ index d00206f..b0e4c9e 100644
 +++ b/server/src/test/kotlin/mextensionserver/impl/TachiyomiXCompatibilityTest.kt
 @@ -10,0 +11 @@ import kotlinx.serialization.json.buildJsonObject
 +import mextensionserver.model.JChapter
-@@ -41 +42 @@ class TachiyomiXCompatibilityTest {
+@@ -31,0 +33 @@ class TachiyomiXCompatibilityTest {
++        assertEquals("/manga", result.url)
+@@ -41 +43 @@ class TachiyomiXCompatibilityTest {
 -        assertEquals(listOf("Chapter 1"), result.map(SChapter::name))
 +        assertEquals(listOf("Chapter 1"), result.map(JChapter::name))
-@@ -115 +116 @@ class TachiyomiXCompatibilityTest {
+@@ -115 +117 @@ class TachiyomiXCompatibilityTest {
 -    private fun invokeChapters(source: Source): List<SChapter> {
 +    private fun invokeChapters(source: Source): List<JChapter> {
-@@ -123 +124 @@ class TachiyomiXCompatibilityTest {
+@@ -123 +125 @@ class TachiyomiXCompatibilityTest {
 -        return method.invoke(MihonInvoker, source, mangaData()) as List<SChapter>
 +        return method.invoke(MihonInvoker, source, mangaData()) as List<JChapter>
+@@ -144 +146 @@ class TachiyomiXCompatibilityTest {
+-                manga = if (fetchDetails) newManga("Updated title") else manga,
++                manga = if (fetchDetails) newManga("Updated title").apply { url = "" } else manga,
 diff --git a/server/src/test/kotlin/mextensionserver/util/BytecodeEditorTest.kt b/server/src/test/kotlin/mextensionserver/util/BytecodeEditorTest.kt
 index 1635772..63987f5 100644
 --- a/server/src/test/kotlin/mextensionserver/util/BytecodeEditorTest.kt

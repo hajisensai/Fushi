@@ -79,7 +79,7 @@ function Invoke-MihonJson {
         -Uri "$baseUri$Path" `
         -Method Post `
         -Headers $authenticatedHeaders `
-        -ContentType "application/json" `
+        -ContentType "application/json; charset=utf-8" `
         -Body ($Payload | ConvertTo-Json -Depth 40 -Compress) `
         -SkipHttpErrorCheck `
         -TimeoutSec $TimeoutSeconds
