@@ -1102,6 +1102,11 @@ window.hoshiSelection = {
       ? mangaSentenceElement.getAttribute('data-manga-sentence-group') : null;
     var mangaPage = mangaSentenceElement && mangaSentenceElement.closest
       ? mangaSentenceElement.closest('.manga-page') : null;
+    var mangaPageIndex = mangaPage
+      ? Number(mangaPage.getAttribute('data-page')) : null;
+    if (!Number.isInteger(mangaPageIndex) || mangaPageIndex < 0) {
+      mangaPageIndex = null;
+    }
     if (mangaGroup !== null && mangaPage) {
       var groupBoxes = mangaPage.querySelectorAll(
         '.ocr-box[data-manga-sentence-group]'
@@ -1156,7 +1161,8 @@ window.hoshiSelection = {
         ? 0 : sentenceContext.sentenceOffset,
       sentenceNormalizedOffset: sentenceNormalizedOffset,
       sentenceNormalizedLength: sentenceNormalizedLength,
-      verticalWriting: verticalWriting
+      verticalWriting: verticalWriting,
+      mangaPageIndex: mangaPageIndex
     };
   },
   // Fire onTextSelected for the current this.selection (tap/word lookup path and

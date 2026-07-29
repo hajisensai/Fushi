@@ -261,7 +261,7 @@ void main() {
       );
     });
 
-    test('选区 payload 读取整句、方向，并以整组边界作为弹窗锚点', () {
+    test('选区 payload 读取整句、方向、精确页，并以整组边界作为弹窗锚点', () {
       final String scripts = ReaderSelectionScripts.source();
       expect(scripts.contains("closest('[data-manga-sentence]')"), isTrue);
       expect(scripts.contains("getAttribute('data-ocr-orientation')"), isTrue);
@@ -279,6 +279,12 @@ void main() {
         reason: '竖排应以完整气泡左右边界避让，横排应以整行上下边界避让',
       );
       expect(scripts.contains('verticalWriting: verticalWriting'), isTrue);
+      expect(
+        scripts.contains("Number(mangaPage.getAttribute('data-page'))"),
+        isTrue,
+        reason: '双页模式制卡必须携带 OCR 命中的精确页，不能只知道当前 spread',
+      );
+      expect(scripts.contains('mangaPageIndex: mangaPageIndex'), isTrue);
     });
   });
 
