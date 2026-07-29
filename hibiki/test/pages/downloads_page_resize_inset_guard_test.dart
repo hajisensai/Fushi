@@ -33,14 +33,4 @@ void main() {
           '否则软键盘弹出会把贴底「下载任务」区顶到顶部输入框边上（BUG-1003）',
     );
   });
-
-  test('下载页右上角不再提供重复的在线目录入口', () {
-    final File f = File('lib/src/pages/implementations/downloads_page.dart');
-    expect(f.existsSync(), isTrue);
-    final String src = f.readAsStringSync();
-
-    expect(src.contains('Icons.menu_book_outlined'), isFalse);
-    expect(src.contains('_openMangaCatalog'), isFalse);
-    expect(src.contains('MangaModule.openOnlineCatalog'), isFalse);
-  });
 }

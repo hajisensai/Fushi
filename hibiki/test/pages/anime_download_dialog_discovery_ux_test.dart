@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -82,8 +83,9 @@ ${_rssItem(title: 'middle', hash: 'c' * 40, seeders: 100, size: '5 GiB')}
 class _MemPlanStore extends AnimeDownloadPlanStore {
   _MemPlanStore() : super(baseDir: Directory('unused-mem-store'));
 
-  final Directory tempRoot =
-      Directory.systemTemp.createTempSync('hibiki-subs-test');
+  final Directory tempRoot = Directory.systemTemp.createTempSync(
+    'hibiki-subs-test',
+  );
 
   @override
   Future<List<AnimeDownloadPlan>> loadAll() async =>
@@ -93,7 +95,10 @@ class _MemPlanStore extends AnimeDownloadPlanStore {
   final List<AnimeDownloadPlan> saved = <AnimeDownloadPlan>[];
 
   @override
-  Future<void> save(AnimeDownloadPlan plan) async => saved.add(plan);
+  Future<bool> save(AnimeDownloadPlan plan) async {
+    saved.add(plan);
+    return true;
+  }
 
   @override
   Future<void> delete(String id) async {}
@@ -188,22 +193,22 @@ void main() {
     _FakeAppModel appModel, {
     NyaaTorrent? torrent,
   }) async {
-    await tester.pumpWidget(ProviderScope(
-      overrides: <Override>[
-        appProvider.overrideWith((ref) => appModel),
-      ],
-      child: TranslationProvider(
-        child: MaterialApp(
-          home: Scaffold(
-            body: AnimeDownloadDialog(
-              embedded: true,
-              debugInitialMedia: _kMedia,
-              debugInitialTorrent: torrent,
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+        child: TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: AnimeDownloadDialog(
+                embedded: true,
+                debugInitialMedia: _kMedia,
+                debugInitialTorrent: torrent,
+              ),
             ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
   }
 
@@ -213,25 +218,35 @@ void main() {
       final NyaaTorrent big = _torrentWith(seeders: 1, sizeBytes: 900);
       final NyaaTorrent noSize = _torrentWith(seeders: 9, sizeBytes: null);
       expect(
-          compareNyaaTorrents(TorrentSortKey.seeders, noSize, small) < 0, true);
+        compareNyaaTorrents(TorrentSortKey.seeders, noSize, small) < 0,
+        true,
+      );
       expect(compareNyaaTorrents(TorrentSortKey.size, big, small) < 0, true);
       expect(compareNyaaTorrents(TorrentSortKey.size, small, noSize) < 0, true);
 
-      final NyaaTorrent newer =
-          _torrentWith(seeders: 1, pubDate: DateTime.utc(2026, 7, 2));
-      final NyaaTorrent older =
-          _torrentWith(seeders: 1, pubDate: DateTime.utc(2026, 7, 1));
+      final NyaaTorrent newer = _torrentWith(
+        seeders: 1,
+        pubDate: DateTime.utc(2026, 7, 2),
+      );
+      final NyaaTorrent older = _torrentWith(
+        seeders: 1,
+        pubDate: DateTime.utc(2026, 7, 1),
+      );
       final NyaaTorrent noDate = _torrentWith(seeders: 1);
       expect(compareNyaaTorrents(TorrentSortKey.date, newer, older) < 0, true);
       expect(compareNyaaTorrents(TorrentSortKey.date, older, noDate) < 0, true);
     });
 
     test('animeTitleOptions：罗马字优先、去空去重保序', () {
-      expect(animeTitleOptions(_kMedia),
-          <String>['Test Anime', 'テスト・アニメ', 'The Test Anime']);
+      expect(animeTitleOptions(_kMedia), <String>[
+        'Test Anime',
+        'テスト・アニメ',
+        'The Test Anime',
+      ]);
       expect(
         animeTitleOptions(
-            const AniListMedia(id: 2, romaji: 'Same', native: 'Same')),
+          const AniListMedia(id: 2, romaji: 'Same', native: 'Same'),
+        ),
         <String>['Same'],
       );
       expect(
@@ -257,8 +272,9 @@ void main() {
     expect(find.text(t.download_open_settings), findsOneWidget);
   });
 
-  testWidgets('Nyaa 真 0 条：展示实际查询词与筛选；损坏 feed 不伪装成无结果',
-      (WidgetTester tester) async {
+  testWidgets('Nyaa 真 0 条：展示实际查询词与筛选；损坏 feed 不伪装成无结果', (
+    WidgetTester tester,
+  ) async {
     const String emptyRss =
         '<rss><channel><title>valid empty</title></channel></rss>';
     final _FakeAppModel emptyModel = _FakeAppModel(
@@ -269,9 +285,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(t.anime_download_no_results), findsOneWidget);
-    expect(find.textContaining('Test Anime'), findsOneWidget);
-    expect(find.textContaining(t.anime_download_category_all), findsOneWidget);
-    expect(find.textContaining(t.anime_download_unfiltered), findsOneWidget);
+    expect(find.textContaining('Query: Test Anime;'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'filters: ${t.anime_download_category_all} · '
+        '${t.anime_download_unfiltered}',
+      ),
+      findsOneWidget,
+    );
 
     // 损坏 RSS 必须落错误态并带真实解析原因，不能再显示「无结果」。
     await tester.pumpWidget(const SizedBox.shrink());
@@ -282,8 +303,57 @@ void main() {
     await tester.tap(find.byTooltip(t.anime_download_search).first);
     await tester.pumpAndSettle();
     expect(find.text(t.anime_download_search_failed), findsOneWidget);
-    expect(find.textContaining('Invalid Nyaa RSS'), findsOneWidget);
+    expect(find.textContaining('malformedXml'), findsOneWidget);
     expect(find.text(t.anime_download_no_results), findsNothing);
+  });
+
+  testWidgets('Nyaa 请求 generation + snapshot：旧请求晚回不覆盖，0条文案不读未提交控件', (
+    WidgetTester tester,
+  ) async {
+    final Completer<http.Response> oldResponse = Completer<http.Response>();
+    const String emptyRss =
+        '<rss><channel><title>valid empty</title></channel></rss>';
+    final _FakeAppModel appModel = _FakeAppModel((http.Request req) async {
+      if (req.url.queryParameters['q'] == 'old query') {
+        return oldResponse.future;
+      }
+      return http.Response(emptyRss, 200);
+    });
+    await pumpDialog(tester, appModel);
+
+    final Finder queryField = find.byWidgetPredicate(
+      (Widget widget) =>
+          widget is TextField &&
+          widget.decoration?.labelText == t.anime_download_nyaa_query,
+    );
+    final Finder searchButton = find.descendant(
+      of: queryField,
+      matching: find.byTooltip(t.anime_download_search),
+    );
+    await tester.enterText(queryField, 'old query');
+    await tester.tap(searchButton);
+    await tester.pump();
+
+    await tester.enterText(queryField, 'new query');
+    await tester.tap(searchButton);
+    await tester.pumpAndSettle();
+    expect(find.text(t.anime_download_no_results), findsOneWidget);
+    expect(find.textContaining('Query: new query;'), findsOneWidget);
+
+    // 控件改了但没发请求：0 条说明仍必须绑定上一响应的 snapshot。
+    await tester.enterText(queryField, 'unsent current text');
+    await tester.pump();
+    expect(find.textContaining('Query: new query;'), findsOneWidget);
+    expect(find.textContaining('Query: unsent current text;'), findsNothing);
+
+    oldResponse.complete(http.Response(_kSortRss, 200));
+    await tester.pumpAndSettle();
+    expect(find.text(t.anime_download_no_results), findsOneWidget);
+    expect(
+      find.text('seeders-top'),
+      findsNothing,
+      reason: '旧 generation 晚回不得覆盖新请求的有效 empty 结果',
+    );
   });
 
   testWidgets('选种结果排序：默认做种数降序，切「体积」就地重排', (WidgetTester tester) async {
@@ -308,25 +378,32 @@ void main() {
     expect(titles(), <String>['seeders-top', 'middle', 'size-top']);
 
     // 打开排序菜单，切换到「体积」。
-    await tester
-        .tap(find.text('${t.sort_by}: ${t.anime_download_sort_seeders}'));
+    await tester.tap(
+      find.text('${t.sort_by}: ${t.anime_download_sort_seeders}'),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.anime_download_sort_size).last);
     await tester.pumpAndSettle();
 
     expect(titles(), <String>['size-top', 'middle', 'seeders-top']);
-    expect(find.text('${t.sort_by}: ${t.anime_download_sort_size}'),
-        findsOneWidget);
+    expect(
+      find.text('${t.sort_by}: ${t.anime_download_sort_size}'),
+      findsOneWidget,
+    );
   });
 
-  testWidgets('确认阶段：字幕搜索词默认罗马字、下拉可切日文原名、集号框放得下 label',
-      (WidgetTester tester) async {
-    final _FakeAppModel appModel =
-        _FakeAppModel((http.Request req) async => http.Response('', 404));
+  testWidgets('确认阶段：字幕搜索词默认罗马字、下拉可切日文原名、集号框放得下 label', (
+    WidgetTester tester,
+  ) async {
+    final _FakeAppModel appModel = _FakeAppModel(
+      (http.Request req) async => http.Response('', 404),
+    );
     await pumpDialog(tester, appModel, torrent: _kTorrent);
 
-    final Finder queryField = find.byWidgetPredicate((Widget w) =>
-        w is TextField && w.decoration?.labelText == t.video_jimaku_query);
+    final Finder queryField = find.byWidgetPredicate(
+      (Widget w) =>
+          w is TextField && w.decoration?.labelText == t.video_jimaku_query,
+    );
     expect(queryField, findsOneWidget);
     expect(tester.widget<TextField>(queryField).controller!.text, 'Test Anime');
 
@@ -344,8 +421,10 @@ void main() {
     // 的数字，label 一变长（中文「集数（可选）」、英文 `Episode (optional)`）照样
     // 被裁，用户在 1920 宽的窗口上截到了「集数···」——跟屏幕宽窄根本无关。
     // 现在断言的是「装得下」这个性质，而不是某个具体数字。
-    final Finder episodeField = find.byWidgetPredicate((Widget w) =>
-        w is TextField && w.decoration?.labelText == t.video_jimaku_episode);
+    final Finder episodeField = find.byWidgetPredicate(
+      (Widget w) =>
+          w is TextField && w.decoration?.labelText == t.video_jimaku_episode,
+    );
     expect(episodeField, findsOneWidget);
 
     final TextPainter labelPainter = TextPainter(
@@ -387,20 +466,24 @@ void main() {
       if (url.contains('/entries/search')) {
         searchCalls++;
         return http.Response.bytes(
-          utf8.encode(jsonEncode(<Map<String, Object>>[
-            <String, Object>{'id': 7, 'name': 'テスト・アニメ 字幕'},
-          ])),
+          utf8.encode(
+            jsonEncode(<Map<String, Object>>[
+              <String, Object>{'id': 7, 'name': 'テスト・アニメ 字幕'},
+            ]),
+          ),
           200,
         );
       }
       if (url.contains('/files')) {
         return http.Response.bytes(
-          utf8.encode(jsonEncode(<Map<String, Object>>[
-            <String, Object>{
-              'name': 'Test Anime - 01.ja.srt',
-              'url': 'https://jimaku.cc/f/1.srt',
-            },
-          ])),
+          utf8.encode(
+            jsonEncode(<Map<String, Object>>[
+              <String, Object>{
+                'name': 'Test Anime - 01.ja.srt',
+                'url': 'https://jimaku.cc/f/1.srt',
+              },
+            ]),
+          ),
           200,
         );
       }
@@ -431,24 +514,29 @@ void main() {
       if (url.contains('/entries/search')) {
         // 两次搜索都返回同样的两个条目（重搜后手选那条依然存在）。
         return http.Response.bytes(
-          utf8.encode(jsonEncode(<Map<String, Object>>[
-            <String, Object>{'id': 11, 'name': 'Auto First Entry'},
-            <String, Object>{'id': 22, 'name': 'User Picked Entry'},
-          ])),
+          utf8.encode(
+            jsonEncode(<Map<String, Object>>[
+              <String, Object>{'id': 11, 'name': 'Auto First Entry'},
+              <String, Object>{'id': 22, 'name': 'User Picked Entry'},
+            ]),
+          ),
           200,
         );
       }
-      final RegExpMatch? files =
-          RegExp(r'/entries/(\d+)/files').firstMatch(url);
+      final RegExpMatch? files = RegExp(
+        r'/entries/(\d+)/files',
+      ).firstMatch(url);
       if (files != null) {
         filesForEntry.add(int.parse(files.group(1)!));
         return http.Response.bytes(
-          utf8.encode(jsonEncode(<Map<String, Object>>[
-            <String, Object>{
-              'name': 'Test Anime - 01.ja.srt',
-              'url': 'https://jimaku.cc/f/1.srt',
-            },
-          ])),
+          utf8.encode(
+            jsonEncode(<Map<String, Object>>[
+              <String, Object>{
+                'name': 'Test Anime - 01.ja.srt',
+                'url': 'https://jimaku.cc/f/1.srt',
+              },
+            ]),
+          ),
           200,
         );
       }
@@ -508,21 +596,25 @@ void main() {
       final String url = req.url.toString();
       if (url.contains('/entries/search')) {
         return http.Response.bytes(
-          utf8.encode(jsonEncode(<Map<String, Object>>[
-            <String, Object>{'id': 7, 'name': 'Season Entry'},
-          ])),
+          utf8.encode(
+            jsonEncode(<Map<String, Object>>[
+              <String, Object>{'id': 7, 'name': 'Season Entry'},
+            ]),
+          ),
           200,
         );
       }
       if (url.contains('/files')) {
         return http.Response.bytes(
-          utf8.encode(jsonEncode(<Map<String, Object>>[
-            for (int ep = 1; ep <= 3; ep++)
-              <String, Object>{
-                'name': 'Test Anime - 0$ep.ja.srt',
-                'url': 'https://jimaku.cc/f/$ep.srt',
-              },
-          ])),
+          utf8.encode(
+            jsonEncode(<Map<String, Object>>[
+              for (int ep = 1; ep <= 3; ep++)
+                <String, Object>{
+                  'name': 'Test Anime - 0$ep.ja.srt',
+                  'url': 'https://jimaku.cc/f/$ep.srt',
+                },
+            ]),
+          ),
           200,
         );
       }
@@ -533,36 +625,44 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Test Anime - 01.ja.srt'), findsOneWidget);
-    expect(find.text(t.anime_download_subs_episodes_unverified), findsOneWidget,
-        reason: '整季包集号未核对，必须明说，不能画成「字幕已配好」');
+    expect(
+      find.text(t.anime_download_subs_episodes_unverified),
+      findsOneWidget,
+      reason: '整季包集号未核对，必须明说，不能画成「字幕已配好」',
+    );
   });
 
   // BUG-1206：推送这一刻手上只有 Nyaa 标题，包里到底有哪些文件还不知道，照标题
   // 猜集号会静默配错季。所以字幕**不再在推送时下载**，计划只记「取哪个 Jimaku
   // 条目」，真正的反查放到下载完成后按包内真实文件名做。
-  testWidgets('BUG-1206 推送：不预下字幕，计划落 pending 并说明时序',
-      (WidgetTester tester) async {
+  testWidgets('BUG-1206 推送：不预下字幕，计划落 pending 并说明时序', (
+    WidgetTester tester,
+  ) async {
     final List<String> requested = <String>[];
     final _FakeAppModel appModel = _FakeAppModel((http.Request req) async {
       final String url = req.url.toString();
       requested.add(url);
       if (url.contains('/entries/search')) {
         return http.Response.bytes(
-          utf8.encode(jsonEncode(<Map<String, Object>>[
-            <String, Object>{'id': 7, 'name': 'Range Entry'},
-          ])),
+          utf8.encode(
+            jsonEncode(<Map<String, Object>>[
+              <String, Object>{'id': 7, 'name': 'Range Entry'},
+            ]),
+          ),
           200,
         );
       }
       if (url.contains('/files')) {
         return http.Response.bytes(
-          utf8.encode(jsonEncode(<Map<String, Object>>[
-            for (int ep = 1; ep <= 3; ep++)
-              <String, Object>{
-                'name': 'Test Anime - 0$ep.ja.srt',
-                'url': 'https://jimaku.cc/f/$ep.srt',
-              },
-          ])),
+          utf8.encode(
+            jsonEncode(<Map<String, Object>>[
+              for (int ep = 1; ep <= 3; ep++)
+                <String, Object>{
+                  'name': 'Test Anime - 0$ep.ja.srt',
+                  'url': 'https://jimaku.cc/f/$ep.srt',
+                },
+            ]),
+          ),
           200,
         );
       }
@@ -624,8 +724,9 @@ void main() {
   // PR#530 补的另一半：条目选择层的季号校验。落位层（按包内真实文件名反查）只能
   // 靠「集号严格相等」挡错配，可自动选中的条目本身就是 S1（编号 1-12）而包是 S2
   // 的 01-12 时集号照样相等 —— 必须在选条目这一层拦。
-  testWidgets('季号校验：S1 条目遇上 S2 包不自动选，说明原因；用户手选照旧放行',
-      (WidgetTester tester) async {
+  testWidgets('季号校验：S1 条目遇上 S2 包不自动选，说明原因；用户手选照旧放行', (
+    WidgetTester tester,
+  ) async {
     const NyaaTorrent s2Pack = NyaaTorrent(
       title: '[Grp] Test Anime S2 01-03 [1080p]',
       torrentUrl: '',
@@ -651,21 +752,25 @@ void main() {
         // 条目名不写季号 = 第一季（Jimaku 的 S1 条目就是这个形状），且没挂
         // anilist_id（文本回退搜出来的条目，正是错季的产地）。
         return http.Response.bytes(
-          utf8.encode(jsonEncode(<Map<String, Object>>[
-            <String, Object>{'id': 7, 'name': 'Wrong Season Entry'},
-          ])),
+          utf8.encode(
+            jsonEncode(<Map<String, Object>>[
+              <String, Object>{'id': 7, 'name': 'Wrong Season Entry'},
+            ]),
+          ),
           200,
         );
       }
       if (url.contains('/files')) {
         return http.Response.bytes(
-          utf8.encode(jsonEncode(<Map<String, Object>>[
-            for (int ep = 1; ep <= 3; ep++)
-              <String, Object>{
-                'name': 'Test Anime - 0$ep.ja.srt',
-                'url': 'https://jimaku.cc/f/$ep.srt',
-              },
-          ])),
+          utf8.encode(
+            jsonEncode(<Map<String, Object>>[
+              for (int ep = 1; ep <= 3; ep++)
+                <String, Object>{
+                  'name': 'Test Anime - 0$ep.ja.srt',
+                  'url': 'https://jimaku.cc/f/$ep.srt',
+                },
+            ]),
+          ),
           200,
         );
       }
@@ -676,10 +781,16 @@ void main() {
     await tester.pumpAndSettle();
 
     // ① 没自动选中 → 一条字幕都没配上，连该条目的文件列表都不去拉。
-    expect(find.text('Test Anime - 01.ja.srt'), findsNothing,
-        reason: '错季条目的字幕不该被自动配上');
-    expect(requested.where((String u) => u.contains('/files')), isEmpty,
-        reason: '没自动选中就不该拉它的文件');
+    expect(
+      find.text('Test Anime - 01.ja.srt'),
+      findsNothing,
+      reason: '错季条目的字幕不该被自动配上',
+    );
+    expect(
+      requested.where((String u) => u.contains('/files')),
+      isEmpty,
+      reason: '没自动选中就不该拉它的文件',
+    );
     // ② 不静默：说清「没有条目对得上第 2 季」。
     expect(
       find.text(t.anime_download_subs_season_mismatch(season: 2)),
@@ -692,10 +803,16 @@ void main() {
     // ④ 用户手选 → 季号校验不拦：文件照拉，字幕照配，提示行消失。
     await tester.tap(find.text('Wrong Season Entry'));
     await tester.pumpAndSettle();
-    expect(requested.where((String u) => u.contains('/files')), isNotEmpty,
-        reason: '手选的条目必须照常加载');
-    expect(find.text('Test Anime - 01.ja.srt'), findsOneWidget,
-        reason: '用户可能就是要另一季的字幕，不能拦');
+    expect(
+      requested.where((String u) => u.contains('/files')),
+      isNotEmpty,
+      reason: '手选的条目必须照常加载',
+    );
+    expect(
+      find.text('Test Anime - 01.ja.srt'),
+      findsOneWidget,
+      reason: '用户可能就是要另一季的字幕，不能拦',
+    );
     expect(
       find.text(t.anime_download_subs_season_mismatch(season: 2)),
       findsNothing,
@@ -709,20 +826,24 @@ void main() {
       final String url = req.url.toString();
       if (url.contains('/entries/search')) {
         return http.Response.bytes(
-          utf8.encode(jsonEncode(<Map<String, Object>>[
-            <String, Object>{'id': 7, 'name': 'No Season Entry'},
-          ])),
+          utf8.encode(
+            jsonEncode(<Map<String, Object>>[
+              <String, Object>{'id': 7, 'name': 'No Season Entry'},
+            ]),
+          ),
           200,
         );
       }
       if (url.contains('/files')) {
         return http.Response.bytes(
-          utf8.encode(jsonEncode(<Map<String, Object>>[
-            <String, Object>{
-              'name': 'Test Anime - 01.ja.srt',
-              'url': 'https://jimaku.cc/f/1.srt',
-            },
-          ])),
+          utf8.encode(
+            jsonEncode(<Map<String, Object>>[
+              <String, Object>{
+                'name': 'Test Anime - 01.ja.srt',
+                'url': 'https://jimaku.cc/f/1.srt',
+              },
+            ]),
+          ),
           200,
         );
       }
@@ -732,8 +853,11 @@ void main() {
     await tester.tap(find.byTooltip(t.anime_download_search).last);
     await tester.pumpAndSettle();
 
-    expect(find.text('Test Anime - 01.ja.srt'), findsOneWidget,
-        reason: '拿不到季号就不校验，维持现状自动选，别因信息缺失把功能关掉');
+    expect(
+      find.text('Test Anime - 01.ja.srt'),
+      findsOneWidget,
+      reason: '拿不到季号就不校验，维持现状自动选，别因信息缺失把功能关掉',
+    );
     expect(
       find.text(t.anime_download_subs_season_mismatch(season: 1)),
       findsNothing,

@@ -18,7 +18,7 @@ import 'package:hibiki_torrent/hibiki_torrent.dart';
 ///   记入 [_pendingFirstLast]，在每次 [listTorrents] 轮询时补应用 ——
 ///   上层服务本就以 20s tick 轮询，无需额外定时器。
 /// - close 只关本后端持有的 session；引擎（DLL）进程级共享不关。
-class EmbeddedTorrentBackend implements TorrentBackend {
+class EmbeddedTorrentBackend implements TorrentRemovalBackend {
   EmbeddedTorrentBackend({
     required EmbeddedTorrentSession session,
     required TorrentSaveRoots saveRoots,
@@ -70,12 +70,18 @@ class EmbeddedTorrentBackend implements TorrentBackend {
     if (!await prepareCategory(category)) return false;
     final HtAddResult result;
     if (magnetOrUrl.startsWith('magnet:')) {
-      result = _session.addMagnet(magnetOrUrl,
-          savePath: savePath, sequential: sequential);
+      result = _session.addMagnet(
+        magnetOrUrl,
+        savePath: savePath,
+        sequential: sequential,
+      );
     } else if (magnetOrUrl.toLowerCase().endsWith('.torrent') &&
         !magnetOrUrl.contains('://')) {
-      result = _session.addTorrentFile(magnetOrUrl,
-          savePath: savePath, sequential: sequential);
+      result = _session.addTorrentFile(
+        magnetOrUrl,
+        savePath: savePath,
+        sequential: sequential,
+      );
     } else {
       // http(s) .torrent URL：内置引擎不支持（见类注释）。
       return false;
@@ -95,9 +101,11 @@ class EmbeddedTorrentBackend implements TorrentBackend {
     _applyPendingFirstLast();
     return _session
         .listTorrents()
-        .where((HtTorrentStatus t) =>
-            category == null ||
-            _saveRoots.ownsCategoryPath(t.savePath, category))
+        .where(
+          (HtTorrentStatus t) =>
+              category == null ||
+              _saveRoots.ownsCategoryPath(t.savePath, category),
+        )
         .map(_toSnapshot)
         .toList(growable: false);
   }
@@ -107,14 +115,23 @@ class EmbeddedTorrentBackend implements TorrentBackend {
     final List<HtFileEntry>? files = _session.torrentFiles(torrentId);
     if (files == null) return const <TorrentFileEntry>[];
     return files
-        .map((HtFileEntry f) => TorrentFileEntry(
-              name: f.path,
-              size: f.size,
-              progress: f.size <= 0 ? 1.0 : (f.done / f.size).clamp(0.0, 1.0),
-              index: f.index,
-            ))
+        .map(
+          (HtFileEntry f) => TorrentFileEntry(
+            name: f.path,
+            size: f.size,
+            progress: f.size <= 0 ? 1.0 : (f.done / f.size).clamp(0.0, 1.0),
+            index: f.index,
+          ),
+        )
         .toList(growable: false);
   }
+
+  @override
+  Future<bool> removeTorrent(
+    String torrentId, {
+    bool deleteFiles = false,
+  }) async =>
+      _session.removeTorrent(torrentId, deleteFiles: deleteFiles);
 
   @override
   Future<TorrentStorageResult> renameFile(

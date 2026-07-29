@@ -3,7 +3,7 @@ import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 
 /// [TorrentBackend] 的外接 qBittorrent 实现：纯转发适配器，把接口语义
 /// 一一映射到 [QBittorrentClient] 的 WebUI 调用，不加任何额外逻辑。
-class QbTorrentBackend implements TorrentBackend {
+class QbTorrentBackend implements TorrentRemovalBackend {
   QbTorrentBackend(this._client);
 
   final QBittorrentClient _client;
@@ -40,6 +40,10 @@ class QbTorrentBackend implements TorrentBackend {
   Future<List<TorrentFileEntry>> listFiles(String torrentId) =>
       _client.fetchTorrentFiles(torrentId);
 
+  @override
+  Future<bool> removeTorrent(String torrentId, {bool deleteFiles = false}) =>
+      _client.deleteTorrent(torrentId, deleteFiles: deleteFiles);
+
   /// TODO-1961-c：qb 的 renameFile 认的是**旧相对路径**而不是文件下标，
   /// 所以先用文件列表把下标翻成路径（内置引擎那边下标就是天然主键）。
   /// 翻不出来说明种子/下标不对，直接报错而不是猜一个路径去改。
@@ -49,8 +53,9 @@ class QbTorrentBackend implements TorrentBackend {
     int fileIndex,
     String newPath,
   ) async {
-    final List<TorrentFileEntry> files =
-        await _client.fetchTorrentFiles(torrentId);
+    final List<TorrentFileEntry> files = await _client.fetchTorrentFiles(
+      torrentId,
+    );
     String? oldPath;
     for (final TorrentFileEntry f in files) {
       if (f.index == fileIndex) {
@@ -67,7 +72,10 @@ class QbTorrentBackend implements TorrentBackend {
       newPath: newPath,
     );
     return TorrentStorageResult(
-        ok: ok, path: ok ? newPath : null, error: error);
+      ok: ok,
+      path: ok ? newPath : null,
+      error: error,
+    );
   }
 
   @override
@@ -75,10 +83,15 @@ class QbTorrentBackend implements TorrentBackend {
     String torrentId,
     String newSavePath,
   ) async {
-    final (bool ok, String? error) =
-        await _client.setLocation(hash: torrentId, location: newSavePath);
+    final (bool ok, String? error) = await _client.setLocation(
+      hash: torrentId,
+      location: newSavePath,
+    );
     return TorrentStorageResult(
-        ok: ok, path: ok ? newSavePath : null, error: error);
+      ok: ok,
+      path: ok ? newSavePath : null,
+      error: error,
+    );
   }
 
   @override

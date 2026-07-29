@@ -47,10 +47,7 @@ class TorrentSnapshot {
   };
 
   /// 错误类状态：即使进度显示 100% 也不视为可用完成态。
-  static const Set<String> _errorStates = <String>{
-    'error',
-    'missingFiles',
-  };
+  static const Set<String> _errorStates = <String>{'error', 'missingFiles'};
 
   /// 是否已下载完成：state 属于做种类直接算完成；否则要求进度打满
   /// （`progress >= 1.0` 或 `amountLeft == 0`）且 state 不是 error 类。
@@ -59,6 +56,16 @@ class TorrentSnapshot {
     if (_errorStates.contains(state)) return false;
     return progress >= 1.0 || amountLeft == 0;
   }
+
+  /// 后端已明确进入不可继续的错误态。暂停态不是失败：暂停/恢复后计划仍继续
+  /// downloading，并保留实时进度。
+  bool get isFailure => _errorStates.contains(state);
+}
+
+/// 支持真实取消/删除种子的后端能力。单独拆接口，避免只读 fake 被迫伪造支持；
+/// qBittorrent 与内置引擎都实现，调用方仅在 capability 存在时触发。
+abstract interface class TorrentRemovalBackend implements TorrentBackend {
+  Future<bool> removeTorrent(String torrentId, {bool deleteFiles = false});
 }
 
 /// 种子内的单个文件（后端无关）。

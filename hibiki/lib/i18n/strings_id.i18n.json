@@ -2777,10 +2777,5 @@
   "sync_last_failed": "Last sync: failed",
   "anime_download_no_results_detail": "The service responded successfully but returned 0 items. Query: $query; filters: $filters. Try another title or loosen the filters.",
   "anime_download_streaming_ready": "In library · download continues",
-  "anime_download_task_settings": "Task settings",
-  "anime_download_task_library_name": "Library name",
-  "anime_download_task_content_kind": "Import as",
-  "anime_download_task_settings_hint": "These settings affect library import. Use Rename / move to change downloaded files or their folder.",
-  "anime_download_task_more_actions": "More task actions",
   "anime_download_unfiltered": "No Trusted filter"
 }

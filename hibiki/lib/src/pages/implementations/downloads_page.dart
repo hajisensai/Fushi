@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:hibiki/src/media/manga/manga_module.dart';
 import 'package:hibiki/src/media/manga/online/mokuro_moe_tasks_section.dart';
+import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/src/pages/implementations/anime_download_dialog.dart';
 import 'package:hibiki/src/pages/implementations/download_subscriptions_panel.dart';
 import 'package:hibiki/src/pages/implementations/torrent_settings_section.dart';
@@ -9,7 +11,7 @@ import 'package:hibiki/utils.dart';
 
 /// 独立「下载」页（顶层底栏 tab）＝统一下载中心：番剧下载流程 **直接内联**
 /// 铺在页面上（搜番 → 选种 → 配字幕 → 推送 + 通用磁力 + 下载任务），任务 tab
-/// 同时列出漫画「在线目录」（mokuro.moe）的卷下载队列。
+/// 同时列出漫画「在线目录」（mokuro.moe）的卷下载队列；页头另有在线目录入口。
 /// 右上角齿轮切到「下载设置」（后端/限速/上传/做种/内存）。完成后按内容类型
 /// 自动入库（视频→视频库、epub→阅读库，见 AnimeDownloadService；漫画卷→
 /// 书架，见 MokuroMoeDownloadQueue）。
@@ -26,6 +28,18 @@ class DownloadsPage extends ConsumerStatefulWidget {
 
 class _DownloadsPageState extends ConsumerState<DownloadsPage> {
   late bool _showSettings = widget.initialShowSettings;
+
+  /// 漫画「在线目录」入口（统一下载中心：书/漫画获取入口与 torrent 并列）。
+  ///
+  /// 书架页与书籍导入框的旧入口已收敛到这里，故本页是
+  /// [MangaModule.openOnlineCatalog] 的唯一消费方——目录弹窗的构造统一收在
+  /// 漫画模块里，不在页面层直接 new 它。
+  Future<void> _openMangaCatalog() async {
+    await MangaModule.openOnlineCatalog(
+      context: context,
+      db: ref.read(appProvider).database,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,6 +69,12 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                     ],
                   ),
             actions: <Widget>[
+              if (!_showSettings)
+                IconButton(
+                  tooltip: t.manga_online_catalog_title,
+                  icon: const Icon(Icons.menu_book_outlined),
+                  onPressed: _openMangaCatalog,
+                ),
               IconButton(
                 // 齿轮已变 ✕ 时语义是「关闭设置」，tooltip 跟着换，不再答非所问。
                 tooltip: _showSettings ? t.dialog_close : t.download_settings,

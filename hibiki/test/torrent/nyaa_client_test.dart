@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -86,8 +87,10 @@ void main() {
       expect(items, hasLength(3));
 
       final NyaaTorrent first = items[0];
-      expect(first.title,
-          '[SubsPlease] Sousou no Frieren - 05 (1080p) [ABCD1234].mkv');
+      expect(
+        first.title,
+        '[SubsPlease] Sousou no Frieren - 05 (1080p) [ABCD1234].mkv',
+      );
       expect(first.torrentUrl, 'https://nyaa.si/download/1234567.torrent');
       expect(first.pageUrl, 'https://nyaa.si/view/1234567');
       expect(first.infoHash, '0123456789abcdef0123456789abcdef01234567');
@@ -159,8 +162,9 @@ void main() {
       expect(
         t.magnet,
         startsWith(
-            'magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567'
-            '&dn=My%20Show%20%5Bx%5D'),
+          'magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567'
+          '&dn=My%20Show%20%5Bx%5D',
+        ),
       );
       expect('&tr='.allMatches(t.magnet), hasLength(5));
       expect(
@@ -228,15 +232,52 @@ void main() {
   });
 
   group('NyaaClient.search', () {
+    Future<Object?> searchResponse(
+      List<int> bytes, {
+      Map<String, String> headers = const <String, String>{},
+    }) async {
+      final NyaaClient client = NyaaClient(
+        client: MockClient(
+          (_) async => http.Response.bytes(bytes, 200, headers: headers),
+        ),
+      );
+      try {
+        return await client.search('show');
+      } catch (error) {
+        return error;
+      } finally {
+        client.close();
+      }
+    }
+
     test('拼出 page=rss&q&c&f 的查询 URL 并解析响应', () async {
       Uri? captured;
       final MockClient mock = MockClient((http.Request req) async {
         captured = req.url;
-        return http.Response(sampleRss, 200);
+        return http.Response(
+          sampleRss
+              .replaceFirst(
+                '<nyaa:seeders>bad</nyaa:seeders>',
+                '<nyaa:seeders>0</nyaa:seeders>',
+              )
+              .replaceFirst(
+                '<nyaa:leechers></nyaa:leechers>',
+                '<nyaa:leechers>0</nyaa:leechers>',
+              )
+              .replaceFirst(
+                '<nyaa:infoHash>aaaa</nyaa:infoHash>',
+                '<nyaa:infoHash>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+                    '</nyaa:infoHash>',
+              ),
+          200,
+        );
       });
       final NyaaClient client = NyaaClient(client: mock);
-      final List<NyaaTorrent> items =
-          await client.search('frieren', category: '1_2', filter: '2');
+      final List<NyaaTorrent> items = await client.search(
+        'frieren',
+        category: '1_2',
+        filter: '2',
+      );
       expect(items, hasLength(3));
       expect(captured, isNotNull);
       expect(captured!.host, 'nyaa.si');
@@ -250,25 +291,32 @@ void main() {
       client.close();
     });
 
-    test('默认 category=1_0 / filter=0；非 200 → 抛 ClientException（含状态码）',
-        () async {
-      // 以前吞错返回空列表，真实网络故障（站点被墙/代理未配）会被误报成
-      // 「无结果」；现在必须抛出让调用方展示真实错误。
-      Uri? captured;
-      final MockClient mock = MockClient((http.Request req) async {
-        captured = req.url;
-        return http.Response('server error', 500);
-      });
-      final NyaaClient client = NyaaClient(client: mock);
-      await expectLater(
-        client.search('frieren'),
-        throwsA(isA<http.ClientException>().having(
-            (http.ClientException e) => e.message, 'message', 'HTTP 500')),
-      );
-      expect(captured!.queryParameters['c'], '1_0');
-      expect(captured!.queryParameters['f'], '0');
-      client.close();
-    });
+    test(
+      '默认 category=1_0 / filter=0；非 200 → 抛 ClientException（含状态码）',
+      () async {
+        // 以前吞错返回空列表，真实网络故障（站点被墙/代理未配）会被误报成
+        // 「无结果」；现在必须抛出让调用方展示真实错误。
+        Uri? captured;
+        final MockClient mock = MockClient((http.Request req) async {
+          captured = req.url;
+          return http.Response('server error', 500);
+        });
+        final NyaaClient client = NyaaClient(client: mock);
+        await expectLater(
+          client.search('frieren'),
+          throwsA(
+            isA<http.ClientException>().having(
+              (http.ClientException e) => e.message,
+              'message',
+              'HTTP 500',
+            ),
+          ),
+        );
+        expect(captured!.queryParameters['c'], '1_0');
+        expect(captured!.queryParameters['f'], '0');
+        client.close();
+      },
+    );
 
     test('底层网络异常（如握手失败）原样穿透，不吞成空列表', () async {
       final MockClient mock = MockClient((http.Request req) async {
@@ -277,10 +325,13 @@ void main() {
       final NyaaClient client = NyaaClient(client: mock);
       await expectLater(
         client.search('frieren'),
-        throwsA(isA<http.ClientException>().having(
+        throwsA(
+          isA<http.ClientException>().having(
             (http.ClientException e) => e.message,
             'message',
-            contains('HandshakeException'))),
+            contains('HandshakeException'),
+          ),
+        ),
       );
       client.close();
     });
@@ -311,10 +362,10 @@ void main() {
       );
       expect(
         await searchBody('not xml <<<'),
-        isA<FormatException>().having(
-          (FormatException e) => e.message,
-          'message',
-          contains('Invalid Nyaa RSS'),
+        isA<NyaaFeedFormatException>().having(
+          (NyaaFeedFormatException e) => e.code,
+          'code',
+          NyaaFeedErrorCode.malformedXml,
         ),
       );
       expect(
@@ -356,5 +407,117 @@ void main() {
       expect(items.single.title.contains('ソ・ラ・ノ・ヲ・ト'), isTrue);
       client.close();
     });
+
+    test('严格错误矩阵：编码/XML/RSS结构/命名空间/必需字段稳定可区分', () async {
+      Future<void> expectCode(
+        List<int> bytes,
+        NyaaFeedErrorCode code, {
+        Map<String, String> headers = const <String, String>{},
+      }) async {
+        expect(
+          await searchResponse(bytes, headers: headers),
+          isA<NyaaFeedFormatException>().having(
+            (NyaaFeedFormatException error) => error.code,
+            'code',
+            code,
+          ),
+        );
+      }
+
+      await expectCode(const <int>[], NyaaFeedErrorCode.emptyBody);
+      await expectCode(
+        utf8.encode('<rss><channel/></rss>'),
+        NyaaFeedErrorCode.unsupportedEncoding,
+        headers: const <String, String>{
+          'content-type': 'application/rss+xml; charset=shift_jis',
+        },
+      );
+      await expectCode(
+        utf8.encode(
+          '<?xml version="1.0" encoding="shift_jis"?><rss><channel/></rss>',
+        ),
+        NyaaFeedErrorCode.unsupportedEncoding,
+      );
+      await expectCode(<int>[
+        ...utf8.encode('<rss>'),
+        0xff,
+        ...utf8.encode('</rss>'),
+      ], NyaaFeedErrorCode.invalidUtf8);
+      await expectCode(
+        utf8.encode('<rss><channel>'),
+        NyaaFeedErrorCode.malformedXml,
+      );
+      await expectCode(
+        utf8.encode('<html><body/></html>'),
+        NyaaFeedErrorCode.notRss,
+      );
+      await expectCode(
+        utf8.encode('<rss/>'),
+        NyaaFeedErrorCode.missingStructure,
+      );
+      await expectCode(
+        utf8.encode(
+          '<rss><channel><item><link>x</link><guid>y</guid>'
+          '<n:infoHash xmlns:n="$_nyaaNamespaceForTest">'
+          '${'a' * 40}</n:infoHash></item></channel></rss>',
+        ),
+        NyaaFeedErrorCode.missingField,
+      );
+      await expectCode(
+        utf8.encode(
+          '<rss><channel><item><title>x</title><link>x</link><guid>y</guid>'
+          '<bad:infoHash xmlns:bad="https://invalid.example/ns">'
+          '${'a' * 40}</bad:infoHash></item></channel></rss>',
+        ),
+        NyaaFeedErrorCode.invalidNamespace,
+      );
+    });
+
+    test('真实本地 HTTP：特殊字符 query/category/trusted 与任意前缀 namespace', () async {
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(() => server.close(force: true));
+      Uri? captured;
+      server.listen((HttpRequest request) async {
+        captured = request.uri;
+        request.response.headers.contentType = ContentType(
+          'application',
+          'rss+xml',
+          charset: 'utf-8',
+        );
+        request.response.write('''
+<?xml version="1.0" encoding="utf-8"?>
+<rss><channel><item>
+  <title>ソラ &amp; 星</title>
+  <link>https://nyaa.si/download/1.torrent</link>
+  <guid>https://nyaa.si/view/1</guid>
+  <alt:infoHash xmlns:alt="$_nyaaNamespaceForTest">${'a' * 40}</alt:infoHash>
+  <alt:trusted xmlns:alt="$_nyaaNamespaceForTest">Yes</alt:trusted>
+</item></channel></rss>''');
+        await request.response.close();
+      });
+
+      final NyaaClient client = NyaaClient(
+        baseUrl: 'http://${server.address.address}:${server.port}',
+      );
+      addTearDown(client.close);
+      final List<NyaaTorrent> items = await client.search(
+        'ソラ & 星/空',
+        category: '1_4 special',
+        filter: '2',
+      );
+      expect(items.single.title, 'ソラ & 星');
+      expect(items.single.trusted, isTrue);
+      expect(captured!.queryParameters, <String, String>{
+        'page': 'rss',
+        'q': 'ソラ & 星/空',
+        'c': '1_4 special',
+        'f': '2',
+      });
+    });
   });
 }
+
+const String _nyaaNamespaceForTest = 'https://nyaa.si/xmlns/nyaa';

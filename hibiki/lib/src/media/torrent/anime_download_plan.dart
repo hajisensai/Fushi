@@ -44,6 +44,7 @@ class AnimeDownloadPlan {
     this.failReason,
     this.collectionId,
     this.importedEarly = false,
+    this.importInProgress = false,
     this.contentKind = kindVideo,
     this.jimakuEntryId,
     this.jimakuEntryName,
@@ -126,6 +127,13 @@ class AnimeDownloadPlan {
   /// [statusImported]。旧计划缺字段时默认 false。
   final bool importedEarly;
 
+  /// 是否已把本计划的稳定业务键持久化为「正在入库」。
+  ///
+  /// 这不是完成标志：进程可能在 importer 提交 DB 事务后、回写
+  /// [importedEarly]/[status] 前崩溃。重启看到 true 时仍会按相同 plan id +
+  /// 视频路径重放幂等 importer，从而补齐计划状态但不重复制造媒体/合集。
+  final bool importInProgress;
+
   /// 内容类型（[kindVideo] / [kindBook] / [kindAuto]），决定完成后走视频库还是
   /// 阅读库入库。默认 [kindVideo]（番剧 + 老计划向后兼容）。
   final String contentKind;
@@ -165,6 +173,7 @@ class AnimeDownloadPlan {
     String? failReason,
     int? collectionId,
     bool? importedEarly,
+    bool? importInProgress,
     String? contentKind,
     int? jimakuEntryId,
     String? jimakuEntryName,
@@ -186,6 +195,7 @@ class AnimeDownloadPlan {
       failReason: failReason ?? this.failReason,
       collectionId: collectionId ?? this.collectionId,
       importedEarly: importedEarly ?? this.importedEarly,
+      importInProgress: importInProgress ?? this.importInProgress,
       contentKind: contentKind ?? this.contentKind,
       jimakuEntryId: jimakuEntryId ?? this.jimakuEntryId,
       jimakuEntryName: jimakuEntryName ?? this.jimakuEntryName,
@@ -220,6 +230,7 @@ Map<String, dynamic> encodeAnimeDownloadPlan(AnimeDownloadPlan plan) {
     'failReason': plan.failReason,
     'collectionId': plan.collectionId,
     'importedEarly': plan.importedEarly,
+    'importInProgress': plan.importInProgress,
     'contentKind': plan.contentKind,
     'jimakuEntryId': plan.jimakuEntryId,
     'jimakuEntryName': plan.jimakuEntryName,
@@ -243,12 +254,14 @@ AnimeDownloadPlan? decodeAnimeDownloadPlan(Map<dynamic, dynamic> raw) {
         final dynamic fileName = s['fileName'];
         final dynamic stagedPath = s['stagedPath'];
         if (fileName is! String || stagedPath is! String) continue;
-        subtitles.add(PlanSubtitle(
-          episode: s['episode'] is int ? s['episode'] as int : null,
-          fileName: fileName,
-          stagedPath: stagedPath,
-          language: s['language'] is String ? s['language'] as String : null,
-        ));
+        subtitles.add(
+          PlanSubtitle(
+            episode: s['episode'] is int ? s['episode'] as int : null,
+            fileName: fileName,
+            stagedPath: stagedPath,
+            language: s['language'] is String ? s['language'] as String : null,
+          ),
+        );
       }
     }
     return AnimeDownloadPlan(
@@ -272,6 +285,7 @@ AnimeDownloadPlan? decodeAnimeDownloadPlan(Map<dynamic, dynamic> raw) {
       collectionId:
           raw['collectionId'] is int ? raw['collectionId'] as int : null,
       importedEarly: raw['importedEarly'] == true,
+      importInProgress: raw['importInProgress'] == true,
       // 缺字段（老计划）→ 视频（既有番剧计划行为不变）。
       contentKind: raw['contentKind'] is String &&
               (raw['contentKind'] as String).isNotEmpty
@@ -352,15 +366,21 @@ class AnimeDownloadPlanStore {
   }
 
   /// 原子写入计划（临时文件 + rename，避免中途断电留半个 JSON）。
-  Future<void> save(AnimeDownloadPlan plan) async {
+  ///
+  /// 返回值让跨 JSON/数据库的入库编排能做到 fail-closed：只有 durable marker
+  /// 确认真落盘后才允许执行 importer 副作用。普通调用方可以继续忽略返回值。
+  Future<bool> save(AnimeDownloadPlan plan) async {
     try {
       await _plansDir.create(recursive: true);
       final File target = _planFile(plan.id);
-      final File tmp = File('${target.path}.tmp');
+      final File tmp = File(
+        '${target.path}.${DateTime.now().microsecondsSinceEpoch}.tmp',
+      );
       await tmp.writeAsString(jsonEncode(encodeAnimeDownloadPlan(plan)));
       await tmp.rename(target.path);
+      return true;
     } catch (_) {
-      // 写失败静默：调用方（周期 tick）下轮会重写。
+      return false;
     }
   }
 
