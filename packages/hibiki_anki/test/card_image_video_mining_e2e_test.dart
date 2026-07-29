@@ -37,10 +37,13 @@ void main() {
 
   late Directory dir;
   late File gif;
+  late File audio;
 
   setUp(() {
     dir = Directory.systemTemp.createTempSync('hibiki_card_image_e2e');
     gif = File('${dir.path}/immersion_clip.gif')..writeAsBytesSync(gifBytes);
+    audio = File('${dir.path}/sentence.aac')
+      ..writeAsBytesSync(<int>[0x41, 0x44, 0x54, 0x53]);
   });
   tearDown(() {
     if (dir.existsSync()) dir.deleteSync(recursive: true);
@@ -181,6 +184,67 @@ void main() {
       expect(outcome.result, MineResult.error);
       expect(service.addedFields, isEmpty, reason: '媒体没有确认上传成功前绝不能 addNote');
     });
+
+    test('并行媒体一路失败时回滚本次新写文件，且不调用 addNote', () async {
+      final service = _CoordinatedFailingMediaAnkiConnectService();
+      final repo = _ConfiguredAnkiConnectRepository(
+        service: service,
+        settings: settingsWithPicture('{card-image}'),
+      );
+
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: payload,
+        context: AnkiMiningContext(
+          sentence: 'これは言葉です。',
+          coverPath: gif.path,
+          sasayakiAudioPath: audio.path,
+        ),
+      );
+
+      expect(outcome.result, MineResult.error);
+      expect(service.addedFields, isEmpty);
+      expect(
+        service.deletedMedia.toSet(),
+        service.storedMedia.map((entry) => entry.filename).toSet(),
+        reason: '一路响应丢失时也须补偿删除本次可能已提交的全部新媒体',
+      );
+    });
+
+    test('补偿回滚绝不删除制卡前已存在的共享哈希媒体', () async {
+      final service = _CoordinatedFailingMediaAnkiConnectService(
+        preexistingCover: true,
+      );
+      final repo = _ConfiguredAnkiConnectRepository(
+        service: service,
+        settings: settingsWithPicture('{card-image}'),
+      );
+
+      final outcome = await repo.mineEntry(
+        rawPayloadJson: payload,
+        context: AnkiMiningContext(
+          sentence: 'これは言葉です。',
+          coverPath: gif.path,
+          sasayakiAudioPath: audio.path,
+        ),
+      );
+
+      expect(outcome.result, MineResult.error);
+      final String coverFilename = service.storedMedia
+          .singleWhere((entry) => entry.filename.startsWith('hibiki_cover_'))
+          .filename;
+      expect(service.deletedMedia, isNot(contains(coverFilename)),
+          reason: '内容哈希同名文件可能被旧卡共享，若原先存在绝不能补偿删除');
+      expect(
+        service.deletedMedia,
+        contains(
+          service.storedMedia
+              .singleWhere(
+                  (entry) => entry.filename.startsWith('hibiki_audio_'))
+              .filename,
+        ),
+      );
+      expect(service.addedFields, isEmpty);
+    });
   });
 
   group('AnkiDroid video mining: {book-cover} Picture 也产 GIF (TODO-1298)', () {
@@ -243,11 +307,21 @@ void main() {
 }
 
 class _RecordingAnkiConnectService extends AnkiConnectService {
-  _RecordingAnkiConnectService({String host = 'localhost'}) : super(host: host);
+  _RecordingAnkiConnectService({
+    String host = 'localhost',
+    Set<String>? existingMedia,
+  })  : existingMedia = existingMedia ?? <String>{},
+        super(host: host);
 
   final List<Map<String, String>> addedFields = <Map<String, String>>[];
   final List<({String filename, String? data, String? path})> storedMedia =
       <({String filename, String? data, String? path})>[];
+  final Set<String> existingMedia;
+  final List<String> deletedMedia = <String>[];
+
+  @override
+  Future<bool> mediaFileExists(String filename) async =>
+      existingMedia.contains(filename);
 
   @override
   Future<void> storeMediaFile({
@@ -256,6 +330,13 @@ class _RecordingAnkiConnectService extends AnkiConnectService {
     String? path,
   }) async {
     storedMedia.add((filename: filename, data: data, path: path));
+    existingMedia.add(filename);
+  }
+
+  @override
+  Future<void> deleteMediaFile(String filename) async {
+    deletedMedia.add(filename);
+    existingMedia.remove(filename);
   }
 
   @override
@@ -281,6 +362,35 @@ class _FailingMediaAnkiConnectService extends _RecordingAnkiConnectService {
     String? path,
   }) {
     throw TimeoutException('simulated media upload timeout');
+  }
+}
+
+class _CoordinatedFailingMediaAnkiConnectService
+    extends _RecordingAnkiConnectService {
+  _CoordinatedFailingMediaAnkiConnectService({
+    this.preexistingCover = false,
+  });
+
+  final bool preexistingCover;
+  final Completer<void> _coverStored = Completer<void>();
+
+  @override
+  Future<bool> mediaFileExists(String filename) async =>
+      preexistingCover && filename.startsWith('hibiki_cover_');
+
+  @override
+  Future<void> storeMediaFile({
+    required String filename,
+    String? data,
+    String? path,
+  }) async {
+    if (filename.startsWith('hibiki_audio_')) {
+      await _coverStored.future;
+      await super.storeMediaFile(filename: filename, data: data, path: path);
+      throw TimeoutException('simulated lost audio upload response');
+    }
+    await super.storeMediaFile(filename: filename, data: data, path: path);
+    if (!_coverStored.isCompleted) _coverStored.complete();
   }
 }
 

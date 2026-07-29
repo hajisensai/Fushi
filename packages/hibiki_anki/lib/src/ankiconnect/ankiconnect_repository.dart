@@ -273,6 +273,63 @@ String _sha256Hex(List<int> bytes) {
 int _rotr32(int value, int shift) =>
     ((value >> shift) | (value << (32 - shift))) & _uint32Mask;
 
+/// Tracks content-addressed media created while rendering one note.
+///
+/// Uploads stay parallel, but every filename is checked once before its first
+/// write. A failed upload removes its own possibly committed file; if any
+/// required media route fails, [rollback] removes the other new files too.
+/// Files that existed before this attempt are never candidates for deletion,
+/// because their hash filename may already be shared by older notes.
+class _MediaUploadTransaction {
+  _MediaUploadTransaction(this.service);
+
+  final AnkiConnectService service;
+  final Map<String, Future<bool>> _existenceChecks = <String, Future<bool>>{};
+  final Set<String> _newFiles = <String>{};
+
+  Future<void> upload({
+    required String filename,
+    required Future<void> Function() write,
+  }) async {
+    final bool existedBefore = await (_existenceChecks[filename] ??=
+        service.mediaFileExists(filename));
+    if (!existedBefore) {
+      // Register before the write: a lost storeMediaFile response may still
+      // mean Anki committed the file, so the failure path must try to remove it.
+      _newFiles.add(filename);
+    }
+    try {
+      await write();
+    } catch (_) {
+      if (!existedBefore) {
+        await _deleteNewFile(filename);
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> rollback() async {
+    for (final String filename in _newFiles.toList(growable: false)) {
+      await _deleteNewFile(filename);
+    }
+  }
+
+  void commit() => _newFiles.clear();
+
+  Future<void> _deleteNewFile(String filename) async {
+    try {
+      await service.deleteMediaFile(filename);
+      _newFiles.remove(filename);
+    } catch (error, stack) {
+      // Preserve the original media-preparation failure. Keep the candidate in
+      // the set so transaction-level rollback can retry after all routes settle.
+      debugPrint(
+        'AnkiConnect media rollback failed for $filename: $error\n$stack',
+      );
+    }
+  }
+}
+
 /// 一条笔记的字段改写计划：[before] 是改写前的原值（journal 用来回溯），
 /// [after] 是要写进 Anki 的新值。两者键集相同，只含真正会变的字段。
 class _NoteFieldRewrite {
@@ -555,43 +612,63 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     required AnkiMiningContext context,
     bool keepEmpty = false,
   }) async {
+    final _MediaUploadTransaction mediaTransaction =
+        _MediaUploadTransaction(service);
     final List<Future<dynamic>> mediaFutures = <Future<dynamic>>[
       context.coverPath != null
-          ? _storeLocalMedia(service, context.coverPath!, 'hibiki_cover_')
+          ? _storeLocalMedia(
+              service,
+              mediaTransaction,
+              context.coverPath!,
+              'hibiki_cover_',
+            )
           : Future<String?>.value(null),
       context.sasayakiAudioPath != null
           ? _storeLocalMedia(
-              service, context.sasayakiAudioPath!, 'hibiki_audio_')
+              service,
+              mediaTransaction,
+              context.sasayakiAudioPath!,
+              'hibiki_audio_',
+            )
           : Future<String?>.value(null),
       payload.audio.isNotEmpty
-          ? _storeRemoteAudio(service, payload.audio)
+          ? _storeRemoteAudio(service, mediaTransaction, payload.audio)
           : Future<AudioFetchOutcome>.value(const AudioFetchOutcome.none()),
       buildDictionaryMediaTags(
         payload.dictionaryMedia,
-        (media) => _storeDictionaryMedia(service, media),
+        (media) => _storeDictionaryMedia(service, mediaTransaction, media),
       ),
     ];
-    final List<dynamic> mediaResults = await Future.wait(mediaFutures);
-    final String? coverMediaRef = mediaResults[0] as String?;
-    final String? sasayakiMediaRef = mediaResults[1] as String?;
-    final AudioFetchOutcome remoteAudio = mediaResults[2] as AudioFetchOutcome;
-    final Map<String, String> dictionaryMediaTags =
-        mediaResults[3] as Map<String, String>;
+    try {
+      final List<dynamic> mediaResults = await Future.wait(mediaFutures);
+      final String? coverMediaRef = mediaResults[0] as String?;
+      final String? sasayakiMediaRef = mediaResults[1] as String?;
+      final AudioFetchOutcome remoteAudio =
+          mediaResults[2] as AudioFetchOutcome;
+      final Map<String, String> dictionaryMediaTags =
+          mediaResults[3] as Map<String, String>;
 
-    final String? remoteAudioRef = remoteAudio.ref;
-
-    return renderMediaPayload(
-      settings: settings,
-      payload: payload,
-      context: context,
-      coverRef: coverMediaRef != null ? '<img src="$coverMediaRef">' : null,
-      sasayakiRef:
-          sasayakiMediaRef != null ? '[sound:$sasayakiMediaRef]' : null,
-      processedAudio: remoteAudioRef != null ? '[sound:$remoteAudioRef]' : '',
-      dictionaryMediaTags: dictionaryMediaTags,
-      audioWarning: remoteAudio.failureReason,
-      keepEmpty: keepEmpty,
-    );
+      final String? remoteAudioRef = remoteAudio.ref;
+      final RenderedMinedFields rendered = renderMediaPayload(
+        settings: settings,
+        payload: payload,
+        context: context,
+        coverRef: coverMediaRef != null ? '<img src="$coverMediaRef">' : null,
+        sasayakiRef:
+            sasayakiMediaRef != null ? '[sound:$sasayakiMediaRef]' : null,
+        processedAudio: remoteAudioRef != null ? '[sound:$remoteAudioRef]' : '',
+        dictionaryMediaTags: dictionaryMediaTags,
+        audioWarning: remoteAudio.failureReason,
+        keepEmpty: keepEmpty,
+      );
+      mediaTransaction.commit();
+      return rendered;
+    } catch (_) {
+      // Future.wait completes only after every route settles by default, so all
+      // successful parallel writes are known before compensation starts.
+      await mediaTransaction.rollback();
+      rethrow;
+    }
   }
 
   /// TODO-270 C1：更新一张**已存在**的 Hibiki 制卡（[noteId]）的字段。
@@ -1185,30 +1262,37 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
   Future<void> _uploadLocalFile(
     AnkiConnectService service, {
+    required _MediaUploadTransaction mediaTransaction,
     required File file,
     required String filename,
     List<int>? bytes,
   }) async {
-    if (service.canReadLocalMediaPaths) {
-      // Anki is on this machine: send a tiny JSON path instead of inflating a
-      // multi-megabyte GIF by ~33% into base64 and making Anki parse it on its
-      // GUI thread.
-      await service.storeMediaFile(
-        filename: filename,
-        path: file.absolute.path,
-      );
-      return;
-    }
-    await service.storeMediaFile(
+    await mediaTransaction.upload(
       filename: filename,
-      data: await hibikiAnkiBase64EncodeAsync(
-        bytes ?? await file.readAsBytes(),
-      ),
+      write: () async {
+        if (service.canReadLocalMediaPaths) {
+          // Anki is on this machine: send a tiny JSON path instead of inflating
+          // a multi-megabyte GIF by ~33% into base64 and making Anki parse it on
+          // its GUI thread.
+          await service.storeMediaFile(
+            filename: filename,
+            path: file.absolute.path,
+          );
+          return;
+        }
+        await service.storeMediaFile(
+          filename: filename,
+          data: await hibikiAnkiBase64EncodeAsync(
+            bytes ?? await file.readAsBytes(),
+          ),
+        );
+      },
     );
   }
 
   Future<String> _storeLocalMedia(
     AnkiConnectService service,
+    _MediaUploadTransaction mediaTransaction,
     String filePath,
     String prefix,
   ) async {
@@ -1227,6 +1311,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     // 创建一张无图/无句子音频卡，并把稍后落盘的媒体留成孤儿文件。
     await _uploadLocalFile(
       service,
+      mediaTransaction: mediaTransaction,
       file: file,
       filename: filename,
       bytes: bytes,
@@ -1238,7 +1323,10 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   /// 无音频）而非裸 `String?`，让非 200 与异常不再静默落空，而是把原因冒泡到
   /// [MineOutcome.audioWarning] 给用户看。`return null` 的拒绝坏字节语义不变。
   Future<AudioFetchOutcome> _storeRemoteAudio(
-      AnkiConnectService service, String url) async {
+    AnkiConnectService service,
+    _MediaUploadTransaction mediaTransaction,
+    String url,
+  ) async {
     try {
       File? audioFile;
       switch (AnkiAudioRef.classify(url)) {
@@ -1273,6 +1361,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           );
           await _uploadLocalFile(
             service,
+            mediaTransaction: mediaTransaction,
             file: file,
             filename: filename,
             bytes: bytes,
@@ -1322,6 +1411,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       final filename = audioFile.uri.pathSegments.last;
       await _uploadLocalFile(
         service,
+        mediaTransaction: mediaTransaction,
         file: audioFile,
         filename: filename,
       );
@@ -1370,6 +1460,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
   Future<String> _storeDictionaryMedia(
     AnkiConnectService service,
+    _MediaUploadTransaction mediaTransaction,
     DictionaryMedia media,
   ) async {
     // 命名/目录与主 app 的 writeDictionaryMediaCache 共用同一 helper（防漂移，
@@ -1380,7 +1471,12 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     if (!file.existsSync()) {
       throw FileSystemException('Dictionary media file is missing', file.path);
     }
-    await _uploadLocalFile(service, file: file, filename: filename);
+    await _uploadLocalFile(
+      service,
+      mediaTransaction: mediaTransaction,
+      file: file,
+      filename: filename,
+    );
     // 返回**裸文件名**（与 AnkiDroid 经 ankiInlineMediaReference 对称）。义项 HTML
     // 已是 <img src="hoshi_dict_N.ext">，buildMinedFields 用 replaceAll 把 src 里的占位符
     // 替换成真实文件名；这里若返回完整 <img>/[sound:] 标签会嵌进 src 成

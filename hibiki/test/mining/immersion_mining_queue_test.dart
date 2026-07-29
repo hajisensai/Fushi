@@ -29,6 +29,42 @@ class _RecordingRepo implements BaseAnkiRepository {
 }
 
 void main() {
+  test('视频制卡历史快照冻结字段、标题与集定位，不读取换集后状态', () {
+    final Map<String, String> fields = <String, String>{
+      'expression': 'old expression',
+      'reading': 'old reading',
+      'glossary': 'old glossary',
+    };
+    final VideoMiningHistorySnapshot snapshot =
+        VideoMiningHistorySnapshot.capture(
+      fields: fields,
+      sentence: 'old sentence',
+      documentTitle: 'Old episode',
+      bookKey: 'old-book',
+      sectionIndex: 1,
+      cueStartMs: 1200,
+      cueEndMs: 2450,
+      dateKey: '2026-07-29',
+    );
+
+    // 模拟任务排队期间 popup fields 与远端当前集都已切到下一集。
+    fields
+      ..['expression'] = 'new expression'
+      ..['reading'] = 'new reading'
+      ..['glossary'] = 'new glossary';
+
+    expect(snapshot.expression, 'old expression');
+    expect(snapshot.reading, 'old reading');
+    expect(snapshot.glossary, 'old glossary');
+    expect(snapshot.sentence, 'old sentence');
+    expect(snapshot.documentTitle, 'Old episode');
+    expect(snapshot.bookKey, 'old-book');
+    expect(snapshot.sectionIndex, 1);
+    expect(snapshot.normCharOffset, 1200);
+    expect(snapshot.normCharLength, 1250);
+    expect(snapshot.dateKey, '2026-07-29');
+  });
+
   test('连续制卡整笔串行，换集后仍使用各自入队快照', () async {
     final Directory tmp =
         await Directory.systemTemp.createTemp('immersion_mining_queue');

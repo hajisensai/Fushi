@@ -130,6 +130,9 @@ class _RecordingAnkiConnectService extends AnkiConnectService {
   Map<String, String>? lastAddedFields;
 
   @override
+  Future<bool> mediaFileExists(String filename) async => false;
+
+  @override
   Future<void> storeMediaFile({
     required String filename,
     String? data,

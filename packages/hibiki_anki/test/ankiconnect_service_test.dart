@@ -349,6 +349,33 @@ void main() {
       expect(params['filename'], 'hibiki_audio_abc.mp3');
       expect(params['data'], 'QUJD');
     });
+
+    test('mediaFileExists uses an exact-name getMediaFilesNames query',
+        () async {
+      final issued = <http.Request>[];
+      final bool exists = await withMock(
+        (s) => s.mediaFileExists('hibiki_cover_abc.gif'),
+        sink: issued,
+        result: <String>[
+          'hibiki_cover_abc.gif',
+          'hibiki_cover_abc.gif.bak',
+        ],
+      );
+      final body = bodyOf(issued.single);
+      expect(body['action'], 'getMediaFilesNames');
+      expect((body['params'] as Map)['pattern'], 'hibiki_cover_abc.gif');
+      expect(exists, isTrue);
+    });
+
+    test('mediaFileExists does not accept a neighbouring glob result',
+        () async {
+      final bool exists = await withMock(
+        (s) => s.mediaFileExists('hibiki_cover_abc.gif'),
+        sink: <http.Request>[],
+        result: <String>['hibiki_cover_abc.gif.bak'],
+      );
+      expect(exists, isFalse);
+    });
   });
 
   group('api key', () {

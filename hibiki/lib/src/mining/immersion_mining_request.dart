@@ -21,6 +21,43 @@ String immersionMiningAudioExtensionFor({required bool isIOS}) =>
 String immersionMiningAudioExtension() =>
     immersionMiningAudioExtensionFor(isIOS: Platform.isIOS);
 
+/// Immutable locator/title payload for the mined-sentence history row written
+/// after a queued video mining request completes.
+///
+/// The video page can stay mounted while switching episodes, or be disposed
+/// while the queue is waiting. Capturing primitive values before enqueue/await
+/// prevents the old card from inheriting the new episode's title, locator, or
+/// popup fields.
+class VideoMiningHistorySnapshot {
+  VideoMiningHistorySnapshot.capture({
+    required Map<String, String> fields,
+    required this.sentence,
+    required this.documentTitle,
+    required this.bookKey,
+    required this.sectionIndex,
+    required int? cueStartMs,
+    required int? cueEndMs,
+    required this.dateKey,
+  })  : expression = fields['expression'] ?? '',
+        reading = fields['reading'] ?? '',
+        glossary = fields['glossary'] ?? '',
+        normCharOffset = cueStartMs,
+        normCharLength = cueStartMs == null || cueEndMs == null
+            ? null
+            : (cueEndMs - cueStartMs).clamp(0, 1 << 31).toInt();
+
+  final String expression;
+  final String reading;
+  final String glossary;
+  final String sentence;
+  final String documentTitle;
+  final String bookKey;
+  final int? sectionIndex;
+  final int? normCharOffset;
+  final int? normCharLength;
+  final String dateKey;
+}
+
 /// 视频制卡的封面图片模式（用户在 Anki 设置里三选一，默认 [gif]=现状零破坏）：
 /// - [gif]：字幕区间动图（现默认，`extractClipGifViaFfmpeg`）。抽取失败按旧阶梯降级为
 ///   静态帧，并弹「降级为静态帧」OSD。

@@ -378,6 +378,25 @@ class AnkiConnectService {
     });
   }
 
+  /// Whether [filename] already exists in the active profile's media folder.
+  ///
+  /// `getMediaFilesNames` avoids downloading the file just to distinguish a
+  /// content-addressed shared file from one created by the current mining
+  /// attempt. The exact-name check also prevents glob results from being
+  /// mistaken for the requested file.
+  Future<bool> mediaFileExists(String filename) async {
+    final result = await _request('getMediaFilesNames', {
+      'pattern': filename,
+    });
+    if (result is! List) {
+      throw AnkiConnectException(
+        'Unexpected AnkiConnect response for getMediaFilesNames '
+        '(expected a list)',
+      );
+    }
+    return result.any((dynamic value) => value.toString() == filename);
+  }
+
   // ── 媒体维护（字节级去重）────────────────────────────────────────────
   // getMediaDirPath / findNotes 读取类幂等；deleteMediaFile 同名重删是 no-op，
   // 也幂等——均不列入 [_nonIdempotentActions]。

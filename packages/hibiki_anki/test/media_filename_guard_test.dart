@@ -10,6 +10,9 @@ class _RecordingAnkiConnectService extends AnkiConnectService {
   final List<Map<String, String>> addedNotes = <Map<String, String>>[];
 
   @override
+  Future<bool> mediaFileExists(String filename) async => false;
+
+  @override
   Future<void> storeMediaFile({
     required String filename,
     String? data,

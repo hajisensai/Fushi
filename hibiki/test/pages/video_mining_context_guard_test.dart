@@ -112,6 +112,53 @@ void main() {
     expect(mine, contains('clipEndMs: range.clipEndMs'));
     expect(mine, contains('sentence: range.sentence'));
     expect(mine, contains('cueSentence: range.cueSentence'));
+    final int snapshotIndex =
+        mine.indexOf('VideoMiningHistorySnapshot.capture(');
+    final int awaitIndex = mine.indexOf('await _mineVideoCard(');
+    expect(snapshotIndex, greaterThanOrEqualTo(0),
+        reason: '历史标题/集/cue/fields 必须在排队 await 前冻结。');
+    expect(awaitIndex, greaterThan(snapshotIndex),
+        reason: '历史快照须先于队列等待，换集后不能回读页面当前状态。');
+    expect(
+      mine,
+      contains('_recordMinedSentenceForVideo(historySnapshot, result.noteId)'),
+      reason: '成功历史落库必须只消费点击时快照。',
+    );
+    final int mountedIndex = mine.indexOf(
+      'if (!mounted || _currentEpisode != queuedEpisode) return result;',
+      awaitIndex,
+    );
+    final int clearIndex =
+        mine.indexOf('_clearSelectedMiningCues()', awaitIndex);
+    expect(mountedIndex, greaterThan(awaitIndex));
+    expect(clearIndex, greaterThan(mountedIndex),
+        reason: '页面 dispose 或换集后不得再 setState 清新页面/新集选中。');
+
+    final String record = region(
+      'Future<void> _recordMinedSentenceForVideo(',
+      'String? composeVideoMiningDocumentTitle(',
+    );
+    expect(record, isNot(contains('_lastLookupCue')));
+    expect(record, isNot(contains('_title ??')));
+    expect(record, isNot(contains('_favoriteSectionIndex')));
+    expect(record, isNot(contains('widget.bookUid')));
+    expect(record, contains('snapshot.sectionIndex'),
+        reason: '历史落库只能使用冻结的集定位。');
+
+    final String update = region(
+      'Future<MinePopupResult> _onUpdateEntryImpl(',
+      'String? _videoMiningDocumentTitle()',
+    );
+    final int updateAwait = update.indexOf('await _mineVideoCard(');
+    final int updateGuard = update.indexOf(
+      'if (!mounted || _currentEpisode != queuedEpisode) return result;',
+      updateAwait,
+    );
+    final int updateClear =
+        update.indexOf('_clearSelectedMiningCues()', updateAwait);
+    expect(updateGuard, greaterThan(updateAwait));
+    expect(updateClear, greaterThan(updateGuard),
+        reason: '覆盖卡排队返回后同样不得操作已销毁或已换集的 State。');
   });
 
   test('_mineVideoCard extracts the passed [clipStartMs, clipEndMs] range', () {
@@ -239,13 +286,14 @@ void main() {
         reason: 'GIF 不可用时须按 cue 时间从视频文件抽单帧（而非截当前解码帧）。');
     expect(engineNorm, contains('atSeconds: req.clipStartMs / 1000.0'),
         reason: '降级帧的取帧时间必须 = clipStartMs（与 GIF 主路径同一播放器轴坐标）。');
-    // shell 把当前解码帧截图作为最后兜底喂进引擎（stillFallback: controller.screenshot）。
+    // shell 在点击时立即启动当前帧截图，并把冻结的 Future 作为最后兜底喂进引擎；
+    // 不能等任务真正出队后再读 controller，否则换集/销毁会截错或访问已释放播放器。
     final String mineCard = region(
       'Future<MinePopupResult> _mineVideoCard(',
       'Future<void> _recordMinedSentenceForVideo(',
     );
-    expect(mineCard, contains('stillFallback: controller.screenshot'),
-        reason: '当前解码帧截图只作最后兜底，经 stillFallback 喂进引擎。');
+    expect(mineCard, contains('stillFallback: () => currentFrameSnapshot'),
+        reason: '当前解码帧须在入队时冻结，只作最后兜底经 stillFallback 喂进引擎。');
 
     // 引擎里：cue 抽帧(_frame) 必须排在 stillFallback（当前解码帧）之前——有区间时优先按
     // cue 取帧，截当前帧只能是 cue 抽帧也失败/无区间后的最后兜底。

@@ -189,6 +189,19 @@ extension _VideoLookupMining on _VideoHibikiPageState {
       String? cueSentence,
       bool usedSelectedCue,
     }) range = _resolveVideoMiningRange(controller);
+    final int queuedEpisode = _currentEpisode;
+    final AudioCue? historyCue = _lastLookupCue;
+    final VideoMiningHistorySnapshot historySnapshot =
+        VideoMiningHistorySnapshot.capture(
+      fields: fields,
+      sentence: range.sentence,
+      documentTitle: _title ?? widget.bookUid,
+      bookKey: widget.bookUid,
+      sectionIndex: _favoriteSectionIndex,
+      cueStartMs: historyCue?.startMs,
+      cueEndMs: historyCue?.endMs,
+      dateKey: statTodayKey(),
+    );
 
     final MinePopupResult result = await _mineVideoCard(
       fields: fields,
@@ -204,8 +217,8 @@ extension _VideoLookupMining on _VideoHibikiPageState {
       // TODO-633: success also lands one mined-sentence history row with the
       // video locator (bookUid + episode + cue time window), mirroring the
       // favorite-sentence anchors so collections can jump back via the video page.
-      unawaited(
-          _recordMinedSentenceForVideo(fields, range.sentence, result.noteId));
+      unawaited(_recordMinedSentenceForVideo(historySnapshot, result.noteId));
+      if (!mounted || _currentEpisode != queuedEpisode) return result;
       if (range.usedSelectedCue) {
         _clearSelectedMiningCues();
       } else {
@@ -231,6 +244,7 @@ extension _VideoLookupMining on _VideoHibikiPageState {
       String? cueSentence,
       bool usedSelectedCue,
     }) range = _resolveVideoMiningRange(controller);
+    final int queuedEpisode = _currentEpisode;
 
     final MinePopupResult result = await _mineVideoCard(
       fields: fields,
@@ -241,6 +255,7 @@ extension _VideoLookupMining on _VideoHibikiPageState {
       updateNoteId: noteId,
     );
     if (result.ankiConnect) {
+      if (!mounted || _currentEpisode != queuedEpisode) return result;
       if (range.usedSelectedCue) {
         _clearSelectedMiningCues();
       } else {
@@ -464,26 +479,22 @@ extension _VideoLookupMining on _VideoHibikiPageState {
   /// cue.startMs/duration) so collections reuses _openVideoSentence to jump back.
   /// Best-effort; failure is swallowed + logged (does not break mining).
   Future<void> _recordMinedSentenceForVideo(
-    Map<String, String> fields,
-    String sentence,
+    VideoMiningHistorySnapshot snapshot,
     int? noteId,
   ) async {
     try {
-      final AudioCue? cue = _lastLookupCue;
       await appModel.database.addMinedSentence(
         source: kStatSourceVideo,
-        dateKey: statTodayKey(),
-        expression: fields['expression'] ?? '',
-        reading: fields['reading'] ?? '',
-        glossary: fields['glossary'] ?? '',
-        sentence: sentence,
-        documentTitle: _title ?? widget.bookUid,
-        bookKey: widget.bookUid,
-        sectionIndex: _favoriteSectionIndex,
-        normCharOffset: cue?.startMs,
-        normCharLength: cue == null
-            ? null
-            : (cue.endMs - cue.startMs).clamp(0, 1 << 31).toInt(),
+        dateKey: snapshot.dateKey,
+        expression: snapshot.expression,
+        reading: snapshot.reading,
+        glossary: snapshot.glossary,
+        sentence: snapshot.sentence,
+        documentTitle: snapshot.documentTitle,
+        bookKey: snapshot.bookKey,
+        sectionIndex: snapshot.sectionIndex,
+        normCharOffset: snapshot.normCharOffset,
+        normCharLength: snapshot.normCharLength,
         noteId: noteId,
       );
     } catch (e, st) {
