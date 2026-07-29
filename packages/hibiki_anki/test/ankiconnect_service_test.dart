@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -41,6 +42,20 @@ void main() {
 
   Map<String, dynamic> bodyOf(http.Request request) =>
       jsonDecode(request.body) as Map<String, dynamic>;
+
+  group('local media path capability', () {
+    test('recognizes localhost and IPv4/IPv6 loopback', () {
+      expect(ankiConnectHostIsLoopback('localhost'), isTrue);
+      expect(ankiConnectHostIsLoopback('127.0.0.1'), isTrue);
+      expect(ankiConnectHostIsLoopback('::1'), isTrue);
+      expect(ankiConnectHostIsLoopback('[::1]'), isTrue);
+    });
+
+    test('does not expose local paths to a remote AnkiConnect host', () {
+      expect(ankiConnectHostIsLoopback('192.0.2.10'), isFalse);
+      expect(ankiConnectHostIsLoopback('anki.example.com'), isFalse);
+    });
+  });
 
   group('request envelope', () {
     test('posts to the configured host/port over http', () async {
@@ -254,7 +269,15 @@ void main() {
       expect(note['fields'],
           <String, dynamic>{'Expression': '勉強', 'Reading': 'べんきょう'});
       expect(note['tags'], <String>['hibiki', 'mined']);
-      expect((note['options'] as Map)['allowDuplicate'], isTrue);
+      expect(note['options'], <String, dynamic>{
+        'allowDuplicate': true,
+        'duplicateScope': 'deck',
+        'duplicateScopeOptions': <String, dynamic>{
+          'deckName': 'Mining',
+          'checkChildren': true,
+          'checkAllModels': true,
+        },
+      });
     });
 
     test('defaults allowDuplicate to false', () async {
@@ -269,7 +292,15 @@ void main() {
         result: 1,
       );
       final note = (bodyOf(issued.single)['params'] as Map)['note'] as Map;
-      expect((note['options'] as Map)['allowDuplicate'], isFalse);
+      expect(note['options'], <String, dynamic>{
+        'allowDuplicate': false,
+        'duplicateScope': 'deck',
+        'duplicateScopeOptions': <String, dynamic>{
+          'deckName': 'D',
+          'checkChildren': true,
+          'checkAllModels': true,
+        },
+      });
     });
 
     test('throws when addNote returns a null id with no error', () async {
@@ -300,7 +331,7 @@ void main() {
           sink: issued,
           error: 'cannot create note because it is a duplicate',
         ),
-        throwsA(isA<AnkiConnectException>()),
+        throwsA(isA<AnkiConnectDuplicateException>()),
       );
     });
   });
@@ -318,6 +349,33 @@ void main() {
       final params = body['params'] as Map;
       expect(params['filename'], 'hibiki_audio_abc.mp3');
       expect(params['data'], 'QUJD');
+    });
+
+    test('mediaFileExists uses an exact-name getMediaFilesNames query',
+        () async {
+      final issued = <http.Request>[];
+      final bool exists = await withMock(
+        (s) => s.mediaFileExists('hibiki_cover_abc.gif'),
+        sink: issued,
+        result: <String>[
+          'hibiki_cover_abc.gif',
+          'hibiki_cover_abc.gif.bak',
+        ],
+      );
+      final body = bodyOf(issued.single);
+      expect(body['action'], 'getMediaFilesNames');
+      expect((body['params'] as Map)['pattern'], 'hibiki_cover_abc.gif');
+      expect(exists, isTrue);
+    });
+
+    test('mediaFileExists does not accept a neighbouring glob result',
+        () async {
+      final bool exists = await withMock(
+        (s) => s.mediaFileExists('hibiki_cover_abc.gif'),
+        sink: <http.Request>[],
+        result: <String>['hibiki_cover_abc.gif.bak'],
+      );
+      expect(exists, isFalse);
     });
   });
 
@@ -487,6 +545,70 @@ void main() {
       );
       expect(f.attempts.length, 2, reason: 'initial write fails + one retry');
       expect(id, 555);
+    });
+
+    test('pre-delivery connection timeout retries safely, then surfaces',
+        () async {
+      final f = flakyClient(
+        failTimes: 99,
+        exception: http.ClientException(
+          'Connection timed out while connecting to AnkiConnect',
+        ),
+      );
+      await expectLater(
+        run(
+          f.client,
+          (s) => s.addNote(
+            deckName: 'D',
+            modelName: 'M',
+            fields: const <String, String>{'F': 'v'},
+          ),
+        ),
+        throwsA(
+          isA<http.ClientException>().having(
+            (http.ClientException e) => e.message,
+            'message',
+            contains('Connection timed out'),
+          ),
+        ),
+      );
+      expect(
+        f.attempts.length,
+        2,
+        reason: 'connect timeout is pre-delivery, so one retry is safe',
+      );
+    });
+
+    test('delivery-ambiguous addNote timeout is commit-unknown, no retry',
+        () async {
+      final f = flakyClient(
+        failTimes: 99,
+        exception: TimeoutException('response deadline exceeded'),
+      );
+      await expectLater(
+        run(
+          f.client,
+          (s) => s.addNote(
+            deckName: 'D',
+            modelName: 'M',
+            fields: const <String, String>{'F': 'v'},
+          ),
+        ),
+        throwsA(
+          isA<AnkiConnectCommitUnknownException>()
+              .having((e) => e.action, 'action', 'addNote')
+              .having(
+                (e) => e.cause,
+                'cause',
+                isA<TimeoutException>(),
+              ),
+        ),
+      );
+      expect(
+        f.attempts.length,
+        1,
+        reason: 'an overall response timeout may follow a committed addNote',
+      );
     });
 
     test(

@@ -133,11 +133,14 @@ void main() {
         () {
       final String src = File(
         '../packages/hibiki_anki/lib/src/ankiconnect/ankiconnect_repository.dart',
-      ).readAsStringSync();
+      ).readAsStringSync().replaceAll('\r\n', '\n');
       // 锚定方法定义（而非调用点 `_storeDictionaryMedia(service, media)`）。
-      final int start = src.indexOf('Future<String?> _storeDictionaryMedia(');
+      final int start = src.indexOf('Future<String> _storeDictionaryMedia(');
       expect(start, greaterThan(0));
-      final int end = src.indexOf('\n  }', start);
+      // This is the final method in the repository class. Match its closing
+      // brace plus the class brace so an inner guard block cannot truncate the
+      // extracted method body.
+      final int end = src.indexOf('\n  }\n}', start);
       expect(end, greaterThan(start));
       final String body = src.substring(start, end);
       expect(body, contains('ankiInlineMediaReference('));

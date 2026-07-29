@@ -189,6 +189,19 @@ extension _VideoLookupMining on _VideoHibikiPageState {
       String? cueSentence,
       bool usedSelectedCue,
     }) range = _resolveVideoMiningRange(controller);
+    final int queuedEpisode = _currentEpisode;
+    final AudioCue? historyCue = _lastLookupCue;
+    final VideoMiningHistorySnapshot historySnapshot =
+        VideoMiningHistorySnapshot.capture(
+      fields: fields,
+      sentence: range.sentence,
+      documentTitle: _title ?? widget.bookUid,
+      bookKey: widget.bookUid,
+      sectionIndex: _favoriteSectionIndex,
+      cueStartMs: historyCue?.startMs,
+      cueEndMs: historyCue?.endMs,
+      dateKey: statTodayKey(),
+    );
 
     final MinePopupResult result = await _mineVideoCard(
       fields: fields,
@@ -204,8 +217,8 @@ extension _VideoLookupMining on _VideoHibikiPageState {
       // TODO-633: success also lands one mined-sentence history row with the
       // video locator (bookUid + episode + cue time window), mirroring the
       // favorite-sentence anchors so collections can jump back via the video page.
-      unawaited(
-          _recordMinedSentenceForVideo(fields, range.sentence, result.noteId));
+      unawaited(_recordMinedSentenceForVideo(historySnapshot, result.noteId));
+      if (!mounted || _currentEpisode != queuedEpisode) return result;
       if (range.usedSelectedCue) {
         _clearSelectedMiningCues();
       } else {
@@ -231,6 +244,7 @@ extension _VideoLookupMining on _VideoHibikiPageState {
       String? cueSentence,
       bool usedSelectedCue,
     }) range = _resolveVideoMiningRange(controller);
+    final int queuedEpisode = _currentEpisode;
 
     final MinePopupResult result = await _mineVideoCard(
       fields: fields,
@@ -241,6 +255,7 @@ extension _VideoLookupMining on _VideoHibikiPageState {
       updateNoteId: noteId,
     );
     if (result.ankiConnect) {
+      if (!mounted || _currentEpisode != queuedEpisode) return result;
       if (range.usedSelectedCue) {
         _clearSelectedMiningCues();
       } else {
@@ -276,13 +291,46 @@ extension _VideoLookupMining on _VideoHibikiPageState {
   }) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return const MinePopupResult();
+
+    // 入队前立即冻结所有播放器/页面输入。换集会复用或 dispose controller，后续任务绝不能
+    // 到真正出队时再读“当前集”。截图 Future 也在点击当下启动，current-frame 模式不会因
+    // 本地 pushReplacement / 远端换流而截到下一集或访问已释放播放器。
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
-    final Directory tmp = await getTemporaryDirectory();
     final MiningMediaCompression mediaCompression =
         MiningMediaCompression.resolve(
       imageTier: appModel.miningImageQuality,
       audioTier: appModel.miningAudioQuality,
     );
+    final String? mediaSource = controller.miningSource;
+    final String? audioSource = controller.miningAudioSource;
+    final int? audioStreamIndex = controller.currentAudioStreamIndex;
+    final int audioStreamCount = controller.realAudioStreamCount;
+    final int episode = _currentEpisode;
+    final String? documentTitle = _videoMiningDocumentTitle();
+    final VideoMiningImageMode imageMode = appModel.videoMiningImageMode;
+    final String? bookTitleTag = appModel.autoAddBookNameToTags
+        ? BaseAnkiRepository.sanitizeTitleTag(_title)
+        : null;
+    final String? collectionTag = appModel.autoAddBookNameToTags
+        ? BaseAnkiRepository.sanitizeTitleTag(_playlistTitle)
+        : null;
+    final Future<Uint8List?> currentFrameSnapshot =
+        controller.screenshot().catchError((Object error, StackTrace stack) {
+      // 截图在入队时就启动，必须立刻接住异常；否则任务排队期间 Future 已失败会成为
+      // unhandled async error。GIF/字幕起点帧路径仍可继续，截图只作为对应模式/兜底。
+      try {
+        ErrorLogService.instance.log(
+          'mineVideoCard.snapshotCurrentFrame',
+          error,
+          stack,
+        );
+      } catch (_) {}
+      return null;
+    });
+    // 不 await：先把本任务按点击顺序送进共享队列，轮到它时再解析临时目录。否则两个
+    // 连续点击可能因 path_provider 返回先后不同而逆序入队。
+    final Future<String> tempDir =
+        getTemporaryDirectory().then((Directory value) => value.path);
     // BUG-891：远端 Hibiki 库视频的 miningSource 是自签 https 流 URL。把该 host 当前会话
     // 已 TOFU 钉扎的证书指纹带给引擎，使 ffmpeg（自编 ffmpeg-kit `--enable-gnutls` + pin
     // 补丁）按指纹接受自签流抽音频/帧，绕过「Protocol not found」。非 Hibiki host（本地 /
@@ -306,9 +354,6 @@ extension _VideoLookupMining on _VideoHibikiPageState {
     if (remoteClient is InterconnectSyncBackend && remoteInfo != null) {
       final InterconnectSyncBackend backend = remoteClient;
       final String remoteId = remoteInfo.id;
-      final int episode = _currentEpisode;
-      final int? audioIdx = controller.currentAudioStreamIndex;
-      final int audioCount = controller.realAudioStreamCount;
       final int ac = mediaCompression.audioChannels;
       final String bitrate = mediaCompression.audioBitrate;
       remoteAudioClipper = ({
@@ -324,8 +369,8 @@ extension _VideoLookupMining on _VideoHibikiPageState {
             startMs: startMs,
             endMs: endMs,
             episodeIndex: episode,
-            audioStreamIndex: audioIdx,
-            audioStreamCount: audioCount,
+            audioStreamIndex: audioStreamIndex,
+            audioStreamCount: audioStreamCount,
             audioChannels: ac,
             audioBitrate: bitrate,
           );
@@ -354,8 +399,8 @@ extension _VideoLookupMining on _VideoHibikiPageState {
     final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
       ImmersionMiningRequest(
         fields: fields,
-        mediaSource: controller.miningSource,
-        audioSource: controller.miningAudioSource,
+        mediaSource: mediaSource,
+        audioSource: audioSource,
         mediaSourceTlsPinSha256: mediaSourceTlsPin,
         // BUG-1004：互联 host 远端流句子音频优先走 host 端裁（绕开 client ffmpeg 抓远端流）。
         remoteAudioClipper: remoteAudioClipper,
@@ -364,28 +409,24 @@ extension _VideoLookupMining on _VideoHibikiPageState {
         sentence: sentence,
         cueSentence: cueSentence,
         // TODO-761（方案 B）：播放列表下拼「系列名 - 剧集名」，单视频/远端仍是剧集名，零变化。
-        documentTitle: _videoMiningDocumentTitle(),
-        audioStreamIndex: controller.currentAudioStreamIndex,
-        audioStreamCount: controller.realAudioStreamCount,
+        documentTitle: documentTitle,
+        audioStreamIndex: audioStreamIndex,
+        audioStreamCount: audioStreamCount,
         // TODO-115：视频来源 → 卡片追加 `video` 分类标签。
         source: AnkiMiningSource.video,
         // TODO-681 / BUG-393：番名/标题作书名标签，开关关闭或无标题时 null 不追加。
-        bookTitleTag: appModel.autoAddBookNameToTags
-            ? BaseAnkiRepository.sanitizeTitleTag(_title)
-            : null,
+        bookTitleTag: bookTitleTag,
         // 合集/系列名标签（同上开关）：播放列表下用系列名 _playlistTitle（col.name，已在内存）
         // 作独立 tag，与剧集名并列；单视频/远端无系列名时为 null 不追加。
-        collectionTag: appModel.autoAddBookNameToTags
-            ? BaseAnkiRepository.sanitizeTitleTag(_playlistTitle)
-            : null,
+        collectionTag: collectionTag,
         updateNoteId: updateNoteId,
-        stillFallback: controller.screenshot,
+        stillFallback: () => currentFrameSnapshot,
         // 用户在 Anki 设置里选的封面图片模式（GIF / 制卡时当前帧 / 字幕开头帧）；
         // 默认 gif=现状。静态模式引擎不置 degradedToStill，故不弹「降级为静态」OSD。
-        imageMode: appModel.videoMiningImageMode,
+        imageMode: imageMode,
       ),
       compression: mediaCompression,
-      tempDir: tmp.path,
+      tempDir: tempDir,
       repo: repo,
       // 各取首个摘要：同一来源多次回退（GIF→起点帧→当前帧）时，最先的那条最贴近根因。
       onCoverFailure: (String summary) => coverFailure ??= summary,
@@ -438,26 +479,22 @@ extension _VideoLookupMining on _VideoHibikiPageState {
   /// cue.startMs/duration) so collections reuses _openVideoSentence to jump back.
   /// Best-effort; failure is swallowed + logged (does not break mining).
   Future<void> _recordMinedSentenceForVideo(
-    Map<String, String> fields,
-    String sentence,
+    VideoMiningHistorySnapshot snapshot,
     int? noteId,
   ) async {
     try {
-      final AudioCue? cue = _lastLookupCue;
       await appModel.database.addMinedSentence(
         source: kStatSourceVideo,
-        dateKey: statTodayKey(),
-        expression: fields['expression'] ?? '',
-        reading: fields['reading'] ?? '',
-        glossary: fields['glossary'] ?? '',
-        sentence: sentence,
-        documentTitle: _title ?? widget.bookUid,
-        bookKey: widget.bookUid,
-        sectionIndex: _favoriteSectionIndex,
-        normCharOffset: cue?.startMs,
-        normCharLength: cue == null
-            ? null
-            : (cue.endMs - cue.startMs).clamp(0, 1 << 31).toInt(),
+        dateKey: snapshot.dateKey,
+        expression: snapshot.expression,
+        reading: snapshot.reading,
+        glossary: snapshot.glossary,
+        sentence: snapshot.sentence,
+        documentTitle: snapshot.documentTitle,
+        bookKey: snapshot.bookKey,
+        sectionIndex: snapshot.sectionIndex,
+        normCharOffset: snapshot.normCharOffset,
+        normCharLength: snapshot.normCharLength,
         noteId: noteId,
       );
     } catch (e, st) {

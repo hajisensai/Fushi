@@ -22,6 +22,9 @@ class _RecordingAnkiConnectService extends AnkiConnectService {
   final List<List<String>> addedTags = <List<String>>[];
 
   @override
+  Future<bool> mediaFileExists(String filename) async => false;
+
+  @override
   Future<void> storeMediaFile({
     required String filename,
     String? data,
@@ -39,6 +42,7 @@ class _RecordingAnkiConnectService extends AnkiConnectService {
     List<String>? tags,
     Map<String, String>? mediaFiles,
     bool allowDuplicate = false,
+    AnkiDuplicateScope duplicateScope = AnkiDuplicateScope.deck,
   }) async {
     addedTags.add(List<String>.from(tags ?? const <String>[]));
     return addedTags.length;

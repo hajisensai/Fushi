@@ -11,6 +11,10 @@ class AnkiConnectService {
   final String host;
   final int port;
 
+  /// Whether this endpoint runs on the same machine and can read a local path
+  /// passed to AnkiConnect's `storeMediaFile`.
+  bool get canReadLocalMediaPaths => ankiConnectHostIsLoopback(host);
+
   /// AnkiConnect API key. When the AnkiConnect add-on has `apiKey` configured,
   /// every request must carry a matching `key`; otherwise it replies with
   /// "valid api key must be provided". Empty means no key (the default).
@@ -106,7 +110,12 @@ class AnkiConnectService {
       );
     }
     if (result['error'] != null) {
-      throw AnkiConnectException(result['error'].toString());
+      final String message = result['error'].toString();
+      if (action == 'addNote' &&
+          message == 'cannot create note because it is a duplicate') {
+        throw AnkiConnectDuplicateException(message);
+      }
+      throw AnkiConnectException(message);
     }
     return result['result'];
   }
@@ -155,27 +164,43 @@ class AnkiConnectService {
       return await _post(body);
     } on http.ClientException catch (e) {
       final bool retryable =
-          idempotent ? _isConnectionDrop(e) : _isPreDeliveryWriteFailure(e);
+          idempotent ? _isConnectionDrop(e) : _isPreDeliveryFailure(e);
       if (retryable) {
         try {
           return await _post(body);
         } on http.ClientException catch (retryError) {
           if (!idempotent &&
               _isConnectionDrop(retryError) &&
-              !_isPreDeliveryWriteFailure(retryError)) {
+              !_isPreDeliveryFailure(retryError)) {
+            throw AnkiConnectCommitUnknownException(action, retryError);
+          }
+          rethrow;
+        } on TimeoutException catch (retryError) {
+          if (!idempotent) {
             throw AnkiConnectCommitUnknownException(action, retryError);
           }
           rethrow;
         }
       }
-      if (!idempotent &&
-          _isConnectionDrop(e) &&
-          !_isPreDeliveryWriteFailure(e)) {
+      if (!idempotent && _isConnectionDrop(e) && !_isPreDeliveryFailure(e)) {
+        throw AnkiConnectCommitUnknownException(action, e);
+      }
+      rethrow;
+    } on TimeoutException catch (e) {
+      // `_post` starts its overall timeout only after handing the request to
+      // package:http. Without a connect/write-phase exception there is no proof
+      // that addNote stayed local: Anki may have consumed it and created the
+      // note while the response hung. Treat that delivery-ambiguous timeout as
+      // commit-unknown and never blindly retry the non-idempotent action.
+      if (!idempotent) {
         throw AnkiConnectCommitUnknownException(action, e);
       }
       rethrow;
     }
   }
+
+  static bool _isPreDeliveryFailure(http.ClientException e) =>
+      _isPreDeliveryWriteFailure(e) || _isConnectionEstablishmentTimeout(e);
 
   /// True only for a connection drop that happened *while writing the request*,
   /// proving the server never received a complete request — so re-sending even
@@ -191,6 +216,27 @@ class AnkiConnectService {
   static bool _isPreDeliveryWriteFailure(http.ClientException e) {
     final String message = e.message.toLowerCase();
     return message.contains('write failed') || message.contains('broken pipe');
+  }
+
+  /// A connect-phase timeout proves that no HTTP request reached AnkiConnect.
+  ///
+  /// Do not classify a bare [TimeoutException] or a generic ETIMEDOUT errno this
+  /// way: either can occur while reading a response after addNote committed.
+  /// The explicit "connection/connect timed out" wording is emitted by the
+  /// socket connection-establishment budget configured in [_defaultClient].
+  static bool _isConnectionEstablishmentTimeout(http.ClientException e) {
+    final String message = e.message.toLowerCase();
+    if (message.contains('connection timed out') ||
+        message.contains('connect timed out')) {
+      return true;
+    }
+    if (e is SocketException) {
+      final String osMessage =
+          (e as SocketException).osError?.message.toLowerCase() ?? '';
+      return osMessage.contains('connection timed out') ||
+          osMessage.contains('connect timed out');
+    }
+    return false;
   }
 
   Future<http.Response> _post(String body) {
@@ -288,15 +334,22 @@ class AnkiConnectService {
     List<String>? tags,
     Map<String, String>? mediaFiles,
     bool allowDuplicate = false,
+    AnkiDuplicateScope duplicateScope = AnkiDuplicateScope.deck,
   }) async {
-    // AnkiConnect rejects duplicates by default; allowDuplicate must be sent
-    // explicitly or the user's "allow duplicates" setting has no effect.
+    // Let addNote perform the duplicate check atomically. AnkiConnect implements
+    // this path as a first-field checksum lookup, whereas a separate findNotes
+    // field query runs synchronously on Anki's GUI thread and can make Anki
+    // appear frozen on a large/busy collection.
     final result = await _request('addNote', {
       'note': {
         'deckName': deckName,
         'modelName': modelName,
         'fields': fields,
-        'options': {'allowDuplicate': allowDuplicate},
+        'options': _addNoteDuplicateOptions(
+          deckName: deckName,
+          allowDuplicate: allowDuplicate,
+          scope: duplicateScope,
+        ),
         if (tags != null) 'tags': tags,
       },
     });
@@ -360,6 +413,25 @@ class AnkiConnectService {
       if (data != null) 'data': data,
       if (path != null) 'path': path,
     });
+  }
+
+  /// Whether [filename] already exists in the active profile's media folder.
+  ///
+  /// `getMediaFilesNames` avoids downloading the file just to distinguish a
+  /// content-addressed shared file from one created by the current mining
+  /// attempt. The exact-name check also prevents glob results from being
+  /// mistaken for the requested file.
+  Future<bool> mediaFileExists(String filename) async {
+    final result = await _request('getMediaFilesNames', {
+      'pattern': filename,
+    });
+    if (result is! List) {
+      throw AnkiConnectException(
+        'Unexpected AnkiConnect response for getMediaFilesNames '
+        '(expected a list)',
+      );
+    }
+    return result.any((dynamic value) => value.toString() == filename);
   }
 
   // ── 媒体维护（字节级去重）────────────────────────────────────────────
@@ -594,6 +666,16 @@ String ankiConnectErrorHint(String code, {String? host, int? port}) {
   }
 }
 
+bool ankiConnectHostIsLoopback(String host) {
+  final String normalized = host.trim().toLowerCase();
+  if (normalized == 'localhost') return true;
+  final String unbracketed =
+      normalized.startsWith('[') && normalized.endsWith(']')
+          ? normalized.substring(1, normalized.length - 1)
+          : normalized;
+  return InternetAddress.tryParse(unbracketed)?.isLoopback ?? false;
+}
+
 /// 由查重范围 [scope] 解析出的 Anki 搜索卡组子句；空串 = 不限卡组（整个收藏集）。
 ///
 /// Anki 的 `deck:X` **本来就包含** X 的子卡组，但不含父卡组与兄弟子卡组——这正是
@@ -619,6 +701,32 @@ String ankiDuplicateDeckFilter(String deckName, AnkiDuplicateScope scope) {
   }
 }
 
+Map<String, Object> _addNoteDuplicateOptions({
+  required String deckName,
+  required bool allowDuplicate,
+  required AnkiDuplicateScope scope,
+}) {
+  final bool collectionWide = scope == AnkiDuplicateScope.collection;
+  final String scopedDeckName = switch (scope) {
+    AnkiDuplicateScope.deck => deckName,
+    AnkiDuplicateScope.deckRoot => deckName.split('::').first,
+    AnkiDuplicateScope.collection => '',
+  };
+  return <String, Object>{
+    'allowDuplicate': allowDuplicate,
+    'duplicateScope': collectionWide ? 'collection' : 'deck',
+    'duplicateScopeOptions': <String, Object>{
+      if (!collectionWide && scopedDeckName.isNotEmpty)
+        'deckName': scopedDeckName,
+      'checkChildren': !collectionWide,
+      // The old field query was not restricted to the selected note type.
+      // Preserve that cross-model scope while switching to AnkiConnect's
+      // indexed primary-field checksum lookup.
+      'checkAllModels': true,
+    },
+  };
+}
+
 String _fieldValueQuery({
   required String deckName,
   required String fieldName,
@@ -638,6 +746,10 @@ class AnkiConnectException implements Exception {
   AnkiConnectException(this.message);
   @override
   String toString() => 'AnkiConnectException: $message';
+}
+
+class AnkiConnectDuplicateException extends AnkiConnectException {
+  AnkiConnectDuplicateException(super.message);
 }
 
 class AnkiConnectCommitUnknownException extends AnkiConnectException {

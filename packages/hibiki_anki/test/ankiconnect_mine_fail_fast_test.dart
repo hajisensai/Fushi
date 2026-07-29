@@ -6,11 +6,11 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 
 // BUG-665: when the configured AnkiConnect endpoint accepts a connection but
 // never answers (unreachable/black-holed host, VPN down, wrong service on the
-// port, a hung add-on), a mine's isDuplicate query used to dangle to the full
-// 10s response budget and surface an opaque `TimeoutException: Future not
-// completed`. These tests lock the fail-fast contract: the per-request
-// `.timeout` bounds a stuck request, and `mineEntry` converts the timeout into
-// a *classified* MineOutcome failure (never hangs indefinitely, never throws).
+// port, a hung add-on), a request used to dangle to the full 10s response
+// budget and surface an opaque `TimeoutException: Future not completed`.
+// These tests lock both sides of the fail-fast contract: idempotent reads
+// surface their bounded timeout, while a timed-out atomic addNote is
+// commit-unknown because the server may already have created the note.
 
 /// An HTTP client whose every request never completes — models an AnkiConnect
 /// endpoint that connected but never responds. Counts issued requests so a test
@@ -84,8 +84,8 @@ void main() {
   });
 
   test(
-      'mineEntry returns a classified connectionTimeout failure (no hang, no '
-      'throw) when the dupe check times out', () async {
+      'mineEntry returns commit-unknown (no hang, no retry) when atomic '
+      'addNote times out', () async {
     final client = _UnresponsiveClient();
     final service = AnkiConnectService(
       host: '127.0.0.1',
@@ -103,9 +103,13 @@ void main() {
     );
     stopwatch.stop();
 
-    // Contract: the mine yields a localizable classified failure, not a crash.
+    // The response timeout starts after the request is handed to the HTTP
+    // client, so delivery is ambiguous and must not be reported as a proven
+    // connection failure or retried.
     expect(outcome.result, MineResult.error);
-    expect(outcome.errorCode, AnkiErrorCode.connectionTimeout);
+    expect(outcome.errorCode, isNull);
+    expect(outcome.errorDetail, contains('may have created'));
+    expect(client.sent, 1);
     // Fail-fast: bounded by the request budget, nowhere near an indefinite hang.
     expect(stopwatch.elapsed, lessThan(const Duration(seconds: 3)));
   });

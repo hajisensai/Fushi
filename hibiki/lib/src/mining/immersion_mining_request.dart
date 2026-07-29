@@ -21,6 +21,43 @@ String immersionMiningAudioExtensionFor({required bool isIOS}) =>
 String immersionMiningAudioExtension() =>
     immersionMiningAudioExtensionFor(isIOS: Platform.isIOS);
 
+/// Immutable locator/title payload for the mined-sentence history row written
+/// after a queued video mining request completes.
+///
+/// The video page can stay mounted while switching episodes, or be disposed
+/// while the queue is waiting. Capturing primitive values before enqueue/await
+/// prevents the old card from inheriting the new episode's title, locator, or
+/// popup fields.
+class VideoMiningHistorySnapshot {
+  VideoMiningHistorySnapshot.capture({
+    required Map<String, String> fields,
+    required this.sentence,
+    required this.documentTitle,
+    required this.bookKey,
+    required this.sectionIndex,
+    required int? cueStartMs,
+    required int? cueEndMs,
+    required this.dateKey,
+  })  : expression = fields['expression'] ?? '',
+        reading = fields['reading'] ?? '',
+        glossary = fields['glossary'] ?? '',
+        normCharOffset = cueStartMs,
+        normCharLength = cueStartMs == null || cueEndMs == null
+            ? null
+            : (cueEndMs - cueStartMs).clamp(0, 1 << 31).toInt();
+
+  final String expression;
+  final String reading;
+  final String glossary;
+  final String sentence;
+  final String documentTitle;
+  final String bookKey;
+  final int? sectionIndex;
+  final int? normCharOffset;
+  final int? normCharLength;
+  final String dateKey;
+}
+
 /// 视频制卡的封面图片模式（用户在 Anki 设置里三选一，默认 [gif]=现状零破坏）：
 /// - [gif]：字幕区间动图（现默认，`extractClipGifViaFfmpeg`）。抽取失败按旧阶梯降级为
 ///   静态帧，并弹「降级为静态帧」OSD。
@@ -147,6 +184,40 @@ class ImmersionMiningRequest {
   })? remoteAudioClipper;
 
   bool get hasRange => clipEndMs > clipStartMs;
+
+  /// 入队前冻结所有可变输入。视频页可能在任务真正执行前已经换集或关闭弹窗；队列里的
+  /// 卡必须继续使用点击制卡那一刻的字段和外部媒体字节，不能读到调用方后续修改。
+  ImmersionMiningRequest frozen() => ImmersionMiningRequest(
+        fields: Map<String, String>.unmodifiable(
+          Map<String, String>.from(fields),
+        ),
+        clipStartMs: clipStartMs,
+        clipEndMs: clipEndMs,
+        sentence: sentence,
+        mediaSource: mediaSource,
+        audioSource: audioSource,
+        cueSentence: cueSentence,
+        documentTitle: documentTitle,
+        audioStreamIndex: audioStreamIndex,
+        audioStreamCount: audioStreamCount,
+        source: source,
+        bookTitleTag: bookTitleTag,
+        collectionTag: collectionTag,
+        updateNoteId: updateNoteId,
+        stillFallback: stillFallback,
+        providedCoverBytes: providedCoverBytes == null
+            ? null
+            : Uint8List.fromList(providedCoverBytes!),
+        providedCoverName: providedCoverName,
+        providedAudioBytes: providedAudioBytes == null
+            ? null
+            : Uint8List.fromList(providedAudioBytes!),
+        providedAudioName: providedAudioName,
+        requireAudio: requireAudio,
+        imageMode: imageMode,
+        mediaSourceTlsPinSha256: mediaSourceTlsPinSha256,
+        remoteAudioClipper: remoteAudioClipper,
+      );
 }
 
 /// 引擎产出。[outcome] 用 Object? 承 MineOutcome，避免此值对象文件依赖 anki_models 全量。
