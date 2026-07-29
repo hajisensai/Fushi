@@ -118,6 +118,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
         service: widget.appModel.mediaTrackingService,
         initialMediaType: initial?.mediaType,
         initialMediaKey: initial?.mediaKey,
+        initialKind: initial?.kind,
       ),
     );
     if (saved != null) {
@@ -321,12 +322,14 @@ class _AddMappingDialog extends StatefulWidget {
     required this.service,
     this.initialMediaType,
     this.initialMediaKey,
+    this.initialKind,
   });
 
   final HibikiDatabase database;
   final MediaTrackingService service;
   final TrackingMediaType? initialMediaType;
   final String? initialMediaKey;
+  final TrackingKind? initialKind;
 
   @override
   State<_AddMappingDialog> createState() => _AddMappingDialogState();
@@ -410,18 +413,41 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
             target.key == widget.initialMediaKey,
         orElse: () => targets.first,
       );
-      _selectTarget(initial);
+      _selectTarget(initial, preferredKind: widget.initialKind);
     }
   }
 
-  void _selectTarget(_LocalTrackingTarget target) {
+  TrackingKind _kindForTarget(
+    _LocalTrackingTarget target, {
+    TrackingKind? preferredKind,
+  }) {
+    if (target.isBook &&
+        (preferredKind == TrackingKind.novel ||
+            preferredKind == TrackingKind.manga)) {
+      return preferredKind!;
+    }
+    if (target.isGame && preferredKind == TrackingKind.game) {
+      return TrackingKind.game;
+    }
+    if (!target.isBook &&
+        !target.isGame &&
+        preferredKind == TrackingKind.anime) {
+      return TrackingKind.anime;
+    }
+    return switch (target.type) {
+      TrackingMediaType.game => TrackingKind.game,
+      TrackingMediaType.book => TrackingKind.novel,
+      _ => TrackingKind.anime,
+    };
+  }
+
+  void _selectTarget(
+    _LocalTrackingTarget target, {
+    TrackingKind? preferredKind,
+  }) {
     setState(() {
       _target = target;
-      _kind = switch (target.type) {
-        TrackingMediaType.game => TrackingKind.game,
-        TrackingMediaType.book => TrackingKind.novel,
-        _ => TrackingKind.anime,
-      };
+      _kind = _kindForTarget(target, preferredKind: preferredKind);
       _mode = switch (target.type) {
         TrackingMediaType.game => TrackingProgressMode.status,
         TrackingMediaType.book => TrackingProgressMode.volume,
@@ -488,6 +514,9 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               DropdownButtonFormField<_LocalTrackingTarget>(
+                key: ValueKey<String>(
+                  'tracking-local:${_target?.type.value}:${_target?.key}',
+                ),
                 initialValue: _target,
                 decoration:
                     InputDecoration(labelText: t.media_tracking_local_item),
@@ -507,6 +536,9 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<TrackingKind>(
+                key: ValueKey<String>(
+                  'tracking-kind:${_target?.type.value}:${_target?.key}:${_kind.value}',
+                ),
                 initialValue: _kind,
                 decoration: InputDecoration(labelText: t.media_tracking_kind),
                 items: <DropdownMenuItem<TrackingKind>>[
@@ -539,6 +571,9 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<TrackingProgressMode>(
+                key: ValueKey<String>(
+                  'tracking-mode:${_target?.type.value}:${_target?.key}:$_mode',
+                ),
                 initialValue: _mode,
                 decoration: InputDecoration(
                   labelText: t.media_tracking_progress_mode,

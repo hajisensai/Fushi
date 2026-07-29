@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -13,6 +14,7 @@ import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_repository.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_service.dart';
+import 'package:hibiki/src/media/tracking/media_tracking_settings_body.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/models/preferences_repository.dart';
 import 'package:hibiki/src/pages/implementations/home_dashboard_page.dart';
@@ -21,6 +23,7 @@ import 'package:hibiki/src/pages/implementations/home_page.dart'
 import 'package:hibiki/src/platform/platform_providers.dart';
 import 'package:hibiki/src/platform/platform_services.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
+import 'package:hibiki/src/utils/components/settings_shared.dart';
 import 'package:hibiki/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:hibiki/src/utils/misc/hibiki_time_format.dart';
 import 'package:hibiki_core/hibiki_core.dart';
@@ -28,6 +31,62 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+
+class _WatchedHistoryApi implements BangumiTrackingApi {
+  _WatchedHistoryApi(this.watched);
+
+  final Future<List<BangumiWatchedItem>> watched;
+
+  @override
+  Future<BangumiUser> getMe() async =>
+      const BangumiUser(username: 'alice', nickname: 'Alice');
+
+  @override
+  Future<List<BangumiWatchedItem>> getWatchedAnime(String username) => watched;
+
+  @override
+  Future<List<BangumiSubject>> searchSubjects({
+    required String keyword,
+    required int subjectType,
+  }) =>
+      throw UnsupportedError('not used by watched-history UI tests');
+
+  @override
+  Future<BangumiSubject> getSubject(int subjectId) =>
+      throw UnsupportedError('not used by watched-history UI tests');
+
+  @override
+  Future<BangumiUserCollection?> getCollection(
+    String username,
+    int subjectId,
+  ) =>
+      throw UnsupportedError('not used by watched-history UI tests');
+
+  @override
+  Future<void> createCollection(
+    int subjectId, {
+    required Map<String, dynamic> payload,
+  }) =>
+      throw UnsupportedError('not used by watched-history UI tests');
+
+  @override
+  Future<void> patchCollection(
+    int subjectId, {
+    required Map<String, dynamic> payload,
+  }) =>
+      throw UnsupportedError('not used by watched-history UI tests');
+
+  @override
+  Future<List<BangumiEpisode>> getMainEpisodes(int subjectId) =>
+      throw UnsupportedError('not used by watched-history UI tests');
+
+  @override
+  Future<void> markEpisodesDone(int subjectId, List<int> episodeIds) =>
+      throw UnsupportedError('not used by watched-history UI tests');
+
+  @override
+  void close() {}
+}
 
 /// 首页仪表盘布局回归：**宽屏（PC/横屏）曾因把 stretch/Expanded 的 Row 直接放进纵向
 /// ListView（高度无界）而在 layout 阶段抛「BoxConstraints forces an infinite height」，
@@ -92,6 +151,7 @@ void main() {
       String bookUid,
       int? playlistCollectionId,
     )? openVideoOverride,
+    MediaTrackingService? trackingServiceOverride,
   }) =>
       ProviderScope(
         overrides: <Override>[
@@ -111,6 +171,7 @@ void main() {
               body: HomeDashboardPage(
                 videoRepo: VideoBookRepository(db),
                 openVideoOverride: openVideoOverride,
+                trackingServiceOverride: trackingServiceOverride,
               ),
             ),
           ),
@@ -1084,6 +1145,30 @@ void main() {
       await prefs.setPref(kBangumiAccountNamePref, account);
     }
 
+    MediaTrackingService watchedHistoryService(
+      Future<List<BangumiWatchedItem>> watched,
+    ) =>
+        MediaTrackingService(
+          repository: MediaTrackingRepository(db),
+          preferences: prefs,
+          userAgent: 'dashboard-test',
+          apiFactory: (_) => _WatchedHistoryApi(watched),
+        );
+
+    Future<void> openWatchedHistory(
+      WidgetTester tester,
+      MediaTrackingService service,
+    ) async {
+      useWideSurface(tester);
+      await connect();
+      await tester.pumpWidget(
+        buildApp(trackingServiceOverride: service),
+      );
+      await pumpDashboard(tester);
+      await tester.tap(find.text(t.media_tracking_watched_show));
+      await tester.pump();
+    }
+
     testWidgets('未连接：明说未连接并给出连接入口', (WidgetTester tester) async {
       useWideSurface(tester);
       await tester.pumpWidget(buildApp());
@@ -1112,6 +1197,82 @@ void main() {
           find.textContaining(t.media_tracking_never_synced), findsOneWidget);
       expect(find.text(t.media_tracking_no_local_history), findsOneWidget);
       expect(find.text(t.media_tracking_watched_show), findsOneWidget);
+    });
+
+    testWidgets('完整观看历史弹窗从 loading 进入 list，并展示远端进度',
+        (WidgetTester tester) async {
+      final Completer<List<BangumiWatchedItem>> watched =
+          Completer<List<BangumiWatchedItem>>();
+      await openWatchedHistory(tester, watchedHistoryService(watched.future));
+
+      final Finder dialog = find.byType(AlertDialog);
+      expect(dialog, findsOneWidget);
+      expect(
+        find.descendant(
+          of: dialog,
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
+
+      watched.complete(<BangumiWatchedItem>[
+        BangumiWatchedItem(
+          subject: const BangumiSubject(
+            id: 42,
+            type: 2,
+            name: 'Sousou no Frieren',
+            nameCn: '葬送的芙莉莲',
+            platform: 'TV',
+            episodeCount: 28,
+            volumeCount: 0,
+          ),
+          episodeProgress: 12,
+          updatedAt: DateTime(2026, 7, 29),
+        ),
+      ]);
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.descendant(of: dialog, matching: find.text('葬送的芙莉莲')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: dialog,
+          matching: find.text(t.media_tracking_watched_progress(n: 12)),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('完整观看历史弹窗明确展示 error', (WidgetTester tester) async {
+      final Completer<List<BangumiWatchedItem>> watched =
+          Completer<List<BangumiWatchedItem>>();
+      await openWatchedHistory(tester, watchedHistoryService(watched.future));
+
+      watched.completeError(StateError('remote boom'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.textContaining('remote boom'),
+        findsOneWidget,
+      );
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
+
+    testWidgets('完整观看历史弹窗明确展示 empty', (WidgetTester tester) async {
+      final Completer<List<BangumiWatchedItem>> watched =
+          Completer<List<BangumiWatchedItem>>();
+      await openWatchedHistory(tester, watchedHistoryService(watched.future));
+
+      watched.complete(const <BangumiWatchedItem>[]);
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text(t.media_tracking_watched_empty), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
     });
 
     testWidgets('以前看完但未映射的视频会明确列为需要手动关联', (WidgetTester tester) async {
@@ -1143,6 +1304,96 @@ void main() {
         findsOneWidget,
       );
     });
+
+    for (final (BookFormat format, TrackingKind expectedKind)
+        in <(BookFormat, TrackingKind)>[
+      (BookFormat.manga, TrackingKind.manga),
+      (BookFormat.epub, TrackingKind.novel),
+    ]) {
+      testWidgets(
+        '待关联 ${format.dbValue} 定向打开时保留 ${expectedKind.value} kind',
+        (WidgetTester tester) async {
+          useWideSurface(tester);
+          await connect();
+          final String key = 'manual-${format.dbValue}';
+          final String title = '待关联 ${format.dbValue}';
+          await db.insertEpubBook(
+            EpubBooksCompanion.insert(
+              bookKey: key,
+              title: title,
+              epubPath: 'C:/books/$key',
+              extractDir: 'C:/books/$key-extracted',
+              chapterCount: 1,
+              chaptersJson: '[]',
+              importedAt: 1,
+              format: Value<String>(format.dbValue),
+            ),
+          );
+          await db.upsertReaderPosition(
+            ReaderPositionsCompanion.insert(
+              bookKey: key,
+              sectionIndex: 0,
+              normCharOffset: 1,
+              updatedAt: 5000,
+            ),
+          );
+
+          await tester.runAsync(() async {
+            await tester.pumpWidget(
+              TranslationProvider(
+                child: MaterialApp(
+                  home: Scaffold(
+                    body: SingleChildScrollView(
+                      child: MediaTrackingSettingsBody(appModel: appModel),
+                    ),
+                  ),
+                ),
+              ),
+            );
+            await Future<void>.delayed(const Duration(milliseconds: 300));
+          });
+          await tester.pump();
+
+          final Finder row = find
+              .ancestor(
+                of: find.text(title),
+                matching: find.byType(AdaptiveSettingsRow),
+              )
+              .first;
+          await tester.tap(
+            find.descendant(
+              of: row,
+              matching: find.widgetWithText(
+                TextButton,
+                t.media_tracking_add_mapping,
+              ),
+            ),
+          );
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 300)),
+          );
+          await tester.pumpAndSettle();
+
+          final Finder kindField = find.byWidgetPredicate(
+            (Widget widget) => widget is DropdownButtonFormField<TrackingKind>,
+          );
+          expect(kindField, findsOneWidget);
+          expect(
+            tester
+                .widget<DropdownButtonFormField<TrackingKind>>(kindField)
+                .initialValue,
+            expectedKind,
+          );
+          expect(
+            tester.widgetList<TextField>(find.byType(TextField)).any(
+                  (TextField field) => field.controller?.text == title,
+                ),
+            isTrue,
+            reason: '定向入口还必须锁到被点击的本地条目，不能错绑其它书',
+          );
+        },
+      );
+    }
 
     testWidgets('已关联条目列出本地标题 + Bangumi 条目名，并给出打开入口',
         (WidgetTester tester) async {

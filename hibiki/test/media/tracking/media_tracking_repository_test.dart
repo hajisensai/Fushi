@@ -47,13 +47,6 @@ void main() {
     expect(unlinked, isEmpty);
   });
 
-  /// 按页翻的书（PDF / 漫画）没有「章」：`chaptersJson` 是 `'[]'`、`tocJson` 是 null，
-  /// 阅读位置的 `sectionIndex` 存的是**页码**。旧实现在这里只挡了 `'manga'`，PDF 会
-  /// 一路走到 estimateCompletedBookChapters 的「无 toc 即早退」分支拿到
-  /// fallbackProgress —— 也就是把当前页码当成已读章数报进用户的 Bangumi 公开记录。
-  ///
-  /// 漫画当时只是**侥幸**没踩到：自动映射把它判成 volume 模式绕开了 chapter 分支，
-  /// 手动把映射改成 chapter 模式一样会中招。所以两种格式都要挡。
   Future<void> seedBook(String key, BookFormat format) async {
     await db.insertEpubBook(EpubBooksCompanion.insert(
       bookKey: key,
@@ -67,6 +60,108 @@ void main() {
     ));
   }
 
+  test('待关联历史跨媒体去重并按活动时间与标题稳定排序', () async {
+    Future<void> addCompletedVideo(
+      String uid,
+      String title,
+      int completedAt,
+    ) =>
+        db.upsertVideoBook(
+          VideoBooksCompanion.insert(
+            bookUid: uid,
+            title: title,
+            videoPath: 'C:/video/$uid.mkv',
+            completedAt: Value<DateTime?>(
+              DateTime.fromMillisecondsSinceEpoch(completedAt),
+            ),
+          ),
+        );
+
+    await addCompletedVideo('episode-1', '合集成员一', 5000);
+    await addCompletedVideo('episode-2', '合集成员二', 4000);
+    await addCompletedVideo('standalone', '独立视频', 8000);
+    final int firstPlaylist = await db.createMediaCollection(
+      '第一合集',
+      collectionType: 'playlist',
+    );
+    final int overlappingPlaylist = await db.createMediaCollection(
+      '重叠合集',
+      collectionType: 'playlist',
+    );
+    await db.addToCollection(firstPlaylist, MediaKind.video, 'episode-1');
+    await db.addToCollection(firstPlaylist, MediaKind.video, 'episode-2');
+    await db.addToCollection(
+      overlappingPlaylist,
+      MediaKind.video,
+      'episode-1',
+    );
+
+    await seedBook('漫画', BookFormat.manga);
+    await db.upsertReaderPosition(
+      ReaderPositionsCompanion.insert(
+        bookKey: '漫画',
+        sectionIndex: 1,
+        normCharOffset: 1,
+        updatedAt: 7000,
+      ),
+    );
+    await seedBook('小说', BookFormat.epub);
+    await db.upsertReaderPosition(
+      ReaderPositionsCompanion.insert(
+        bookKey: '小说',
+        sectionIndex: 1,
+        normCharOffset: 1,
+        updatedAt: 7000,
+      ),
+    );
+
+    await db.upsertGalgame(
+      GalgamesCompanion.insert(
+        id: 'game-1',
+        name: '游戏',
+        exePath: 'C:/games/game-1.exe',
+        workdir: 'C:/games',
+        addedAt: 6000,
+      ),
+    );
+    await db.setGalgamePlayStatus('game-1', 3);
+
+    final List<MediaTrackingUnlinkedItem> unlinked =
+        await repository.listUnlinkedHistory();
+
+    expect(
+      unlinked.map((MediaTrackingUnlinkedItem item) => item.mediaTitle),
+      <String>['独立视频', '小说', '漫画', '游戏', '第一合集'],
+    );
+    expect(
+      unlinked
+          .where((MediaTrackingUnlinkedItem item) =>
+              item.mediaType == TrackingMediaType.videoCollection)
+          .map((MediaTrackingUnlinkedItem item) => item.mediaKey),
+      <String>[firstPlaylist.toString()],
+      reason: '重叠 playlist 与已折叠成员都不能重复产生待关联项',
+    );
+    expect(
+      unlinked.singleWhere((item) => item.mediaKey == '漫画').kind,
+      TrackingKind.manga,
+    );
+    expect(
+      unlinked.singleWhere((item) => item.mediaKey == '小说').kind,
+      TrackingKind.novel,
+    );
+    expect(
+      unlinked.singleWhere((item) => item.mediaKey == 'game-1').kind,
+      TrackingKind.game,
+    );
+  });
+
+  /// 按页翻的书（PDF / 漫画）没有「章」：`chaptersJson` 是 `'[]'`、`tocJson` 是 null，
+  /// 阅读位置的 `sectionIndex` 存的是**页码**。旧实现在这里只挡了 `'manga'`，PDF 会
+  /// 一路走到 estimateCompletedBookChapters 的「无 toc 即早退」分支拿到
+  /// fallbackProgress —— 也就是把当前页码当成已读章数报进用户的 Bangumi 公开记录。
+  ///
+  /// 漫画当时只是**侥幸**没踩到：自动映射把它判成 volume 模式绕开了 chapter 分支，
+  /// 手动把映射改成 chapter 模式一样会中招。所以两种格式都要挡。
   for (final BookFormat format in <BookFormat>[
     BookFormat.pdf,
     BookFormat.manga,

@@ -5,6 +5,28 @@ import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+Map<String, dynamic> _watchedCollection(
+  int id, {
+  int episodeProgress = 1,
+  String? updatedAt = '2026-07-29T12:00:00+08:00',
+}) =>
+    <String, dynamic>{
+      'subject_id': id,
+      'subject_type': 2,
+      'type': 2,
+      'ep_status': episodeProgress,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      'subject': <String, dynamic>{
+        'id': id,
+        'type': 2,
+        'name': 'Anime $id',
+        'name_cn': '番剧 $id',
+        'platform': 'TV',
+        'eps': episodeProgress,
+        'volumes': 0,
+      },
+    };
+
 void main() {
   test('getCollection uses the authenticated username path and auth headers',
       () async {
@@ -222,6 +244,138 @@ void main() {
       <int>[41, 42],
     );
     expect(watched.last.episodeProgress, 24);
+  });
+
+  test('解析后全空的中间脏页不会截断后续有效收藏', () async {
+    final List<int> offsets = <int>[];
+    final BangumiApiClient client = BangumiApiClient(
+      accessToken: 'token',
+      userAgent: 'test-agent',
+      client: MockClient((http.Request request) async {
+        final int offset =
+            int.parse(request.url.queryParameters['offset'] ?? '0');
+        offsets.add(offset);
+        final List<Map<String, dynamic>> data = switch (offset) {
+          0 => <Map<String, dynamic>>[_watchedCollection(41)],
+          50 => <Map<String, dynamic>>[
+              <String, dynamic>{
+                'subject_id': 42,
+                'subject_type': 2,
+                'type': 2,
+                'ep_status': 1,
+                // 原始响应有记录，但缺嵌入 subject，解析层必须丢弃。
+              },
+            ],
+          _ => <Map<String, dynamic>>[_watchedCollection(43)],
+        };
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<String, dynamic>{
+            'total': 101,
+            'limit': 50,
+            'offset': offset,
+            'data': data,
+          })),
+          200,
+        );
+      }),
+    );
+    addTearDown(client.close);
+
+    final List<BangumiWatchedItem> watched =
+        await client.getWatchedAnime('alice');
+
+    expect(offsets, <int>[0, 50, 100]);
+    expect(
+      watched.map((BangumiWatchedItem item) => item.subject.id),
+      <int>[41, 43],
+    );
+  });
+
+  test('跨页重复 subject 取最新事实并按更新时间稳定排序', () async {
+    final BangumiApiClient client = BangumiApiClient(
+      accessToken: 'token',
+      userAgent: 'test-agent',
+      client: MockClient((http.Request request) async {
+        final int offset =
+            int.parse(request.url.queryParameters['offset'] ?? '0');
+        final List<Map<String, dynamic>> data = offset == 0
+            ? <Map<String, dynamic>>[
+                _watchedCollection(
+                  9,
+                  episodeProgress: 2,
+                  updatedAt: '2026-07-28T12:00:00+08:00',
+                ),
+                _watchedCollection(
+                  2,
+                  episodeProgress: 8,
+                  updatedAt: '2026-07-30T12:00:00+08:00',
+                ),
+              ]
+            : <Map<String, dynamic>>[
+                _watchedCollection(
+                  9,
+                  episodeProgress: 5,
+                  updatedAt: '2026-07-29T12:00:00+08:00',
+                ),
+                _watchedCollection(3, updatedAt: null),
+              ];
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<String, dynamic>{
+            'total': 51,
+            'limit': 50,
+            'offset': offset,
+            'data': data,
+          })),
+          200,
+        );
+      }),
+    );
+    addTearDown(client.close);
+
+    final List<BangumiWatchedItem> watched =
+        await client.getWatchedAnime('alice');
+
+    expect(
+      watched.map((BangumiWatchedItem item) => item.subject.id),
+      <int>[2, 9, 3],
+    );
+    expect(watched.where((item) => item.subject.id == 9), hasLength(1));
+    expect(
+      watched.singleWhere((item) => item.subject.id == 9).episodeProgress,
+      5,
+    );
+  });
+
+  test('服务端重复 offset 元数据会停止而不是无限请求', () async {
+    int requestCount = 0;
+    final BangumiApiClient client = BangumiApiClient(
+      accessToken: 'token',
+      userAgent: 'test-agent',
+      client: MockClient((http.Request request) async {
+        requestCount++;
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<String, dynamic>{
+            'total': 1000,
+            'limit': 1,
+            'offset': 0,
+            'data': <Map<String, dynamic>>[
+              _watchedCollection(requestCount),
+            ],
+          })),
+          200,
+        );
+      }),
+    );
+    addTearDown(client.close);
+
+    final List<BangumiWatchedItem> watched =
+        await client.getWatchedAnime('alice');
+
+    expect(requestCount, 2);
+    expect(
+      watched.map((BangumiWatchedItem item) => item.subject.id),
+      <int>[1, 2],
+    );
   });
 
   test('markEpisodesDone sends one idempotent batch patch', () async {

@@ -57,6 +57,7 @@ class HomeDashboardPage extends BaseModuleTabPage {
     super.key,
     required this.videoRepo,
     this.openVideoOverride,
+    this.trackingServiceOverride,
   });
 
   /// 视频库仓库：仪表盘「继续观看」与视频计数的数据源（[VideoBookRepository.listForShelf]）。
@@ -71,6 +72,10 @@ class HomeDashboardPage extends BaseModuleTabPage {
     String bookUid,
     int? playlistCollectionId,
   )? openVideoOverride;
+
+  /// 测试缝：Bangumi 完整观看历史弹窗使用的服务。生产恒 null，走 AppModel 的真实
+  /// service；widget 测试注入真实 service 层 + fake API，只替换外部 HTTP 边界。
+  final MediaTrackingService? trackingServiceOverride;
 
   @override
   BaseModuleTabPageState<HomeDashboardPage> createState() =>
@@ -2553,7 +2558,8 @@ class _HomeDashboardPageState
     await showDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => _BangumiWatchedDialog(
-        service: ref.read(appProvider).mediaTrackingService,
+        service: widget.trackingServiceOverride ??
+            ref.read(appProvider).mediaTrackingService,
         onOpenSubject: _openBangumiSubject,
       ),
     );

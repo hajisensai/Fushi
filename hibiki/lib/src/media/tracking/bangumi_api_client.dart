@@ -95,6 +95,7 @@ typedef BangumiWatchedPage = ({
   int total,
   int limit,
   int offset,
+  int rawItemCount,
 });
 
 Map<String, dynamic>? _map(dynamic value) {
@@ -189,6 +190,7 @@ BangumiWatchedPage parseBangumiWatchedPage(String body) {
   }
   final List<BangumiWatchedItem> items = <BangumiWatchedItem>[];
   final dynamic data = root['data'];
+  final int rawItemCount = data is List ? data.length : 0;
   if (data is List) {
     for (final dynamic item in data) {
       final Map<String, dynamic>? collection = _map(item);
@@ -208,10 +210,41 @@ BangumiWatchedPage parseBangumiWatchedPage(String body) {
   }
   return (
     items: items,
-    total: _int(root['total'], items.length),
-    limit: _int(root['limit'], items.length),
+    total: _int(root['total'], rawItemCount),
+    limit: _int(root['limit'], rawItemCount),
     offset: _int(root['offset']),
+    rawItemCount: rawItemCount,
   );
+}
+
+int _compareWatchedRecency(
+  BangumiWatchedItem a,
+  BangumiWatchedItem b,
+) {
+  final DateTime? aUpdatedAt = a.updatedAt;
+  final DateTime? bUpdatedAt = b.updatedAt;
+  if (aUpdatedAt == null && bUpdatedAt != null) return 1;
+  if (aUpdatedAt != null && bUpdatedAt == null) return -1;
+  if (aUpdatedAt != null && bUpdatedAt != null) {
+    final int byUpdatedAt = bUpdatedAt.compareTo(aUpdatedAt);
+    if (byUpdatedAt != 0) return byUpdatedAt;
+  }
+  return a.subject.id.compareTo(b.subject.id);
+}
+
+bool _isNewerWatchedItem(
+  BangumiWatchedItem candidate,
+  BangumiWatchedItem current,
+) {
+  final DateTime? candidateUpdatedAt = candidate.updatedAt;
+  final DateTime? currentUpdatedAt = current.updatedAt;
+  if (candidateUpdatedAt != null && currentUpdatedAt == null) return true;
+  if (candidateUpdatedAt == null && currentUpdatedAt != null) return false;
+  if (candidateUpdatedAt != null && currentUpdatedAt != null) {
+    final int byUpdatedAt = candidateUpdatedAt.compareTo(currentUpdatedAt);
+    if (byUpdatedAt != 0) return byUpdatedAt > 0;
+  }
+  return candidate.episodeProgress > current.episodeProgress;
 }
 
 ({List<BangumiEpisode> episodes, int total}) parseBangumiEpisodes(String body) {
@@ -320,9 +353,11 @@ class BangumiApiClient implements BangumiTrackingApi {
     const int pageSize = 50;
     int offset = 0;
     int total = pageSize;
-    final List<BangumiWatchedItem> all = <BangumiWatchedItem>[];
+    final Map<int, BangumiWatchedItem> bySubjectId =
+        <int, BangumiWatchedItem>{};
+    final Set<int> requestedOffsets = <int>{};
     final String encodedUsername = Uri.encodeComponent(username);
-    while (offset < total) {
+    while (offset < total && requestedOffsets.add(offset)) {
       final Uri uri = Uri.parse(
         '$apiBase/v0/users/$encodedUsername/collections',
       ).replace(
@@ -336,12 +371,27 @@ class BangumiApiClient implements BangumiTrackingApi {
       final http.Response response = await _client.get(uri, headers: _headers);
       _require(response, const <int>{200});
       final BangumiWatchedPage page = parseBangumiWatchedPage(_body(response));
-      all.addAll(page.items);
+      for (final BangumiWatchedItem item in page.items) {
+        final int subjectId = item.subject.id;
+        final BangumiWatchedItem? current = bySubjectId[subjectId];
+        if (current == null || _isNewerWatchedItem(item, current)) {
+          bySubjectId[subjectId] = item;
+        }
+      }
       total = page.total;
-      if (page.items.isEmpty) break;
-      offset += page.limit > 0 ? page.limit : page.items.length;
+      // 是否还有下一页只能看原始响应与分页元数据，不能看解析后的 items：
+      // 中间页可能全是缺 subject/不支持类型的脏记录，但 total 后面仍有有效历史。
+      if (page.rawItemCount == 0) break;
+      final int step = page.limit > 0 ? page.limit : page.rawItemCount;
+      final int nextOffset = page.offset + step;
+      // 服务端重复 offset、limit=0 或其它停滞元数据时直接收敛，避免无限请求。
+      if (step <= 0 || nextOffset <= offset) break;
+      offset = nextOffset;
     }
-    return all;
+    final List<BangumiWatchedItem> result = bySubjectId.values
+        .toList(growable: false)
+      ..sort(_compareWatchedRecency);
+    return result;
   }
 
   @override
