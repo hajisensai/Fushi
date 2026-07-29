@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +15,45 @@ import 'package:path/path.dart' as p;
 import 'package:transparent_image/transparent_image.dart';
 
 import '../../../helpers/cover_cache_test_helpers.dart';
+
+/// 先返回响应头、再把 body stream 挂住，只有 abort trigger 才释放。
+///
+/// 这覆盖「Future.timeout 已向 UI 报错，但源响应流仍在后台下载」的旧缺陷。
+final class _StreamAbortTrackingClient extends http.BaseClient {
+  final Completer<void> abortObserved = Completer<void>();
+  final List<StreamController<List<int>>> _openResponses =
+      <StreamController<List<int>>>[];
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final StreamController<List<int>> response = StreamController<List<int>>();
+    _openResponses.add(response);
+    if (request case http.Abortable(:final Future<void>? abortTrigger)
+        when abortTrigger != null) {
+      unawaited(
+        abortTrigger.whenComplete(() {
+          if (!abortObserved.isCompleted) abortObserved.complete();
+          if (!response.isClosed) {
+            response.addError(http.RequestAbortedException(request.url));
+            unawaited(response.close());
+          }
+        }),
+      );
+    }
+    return http.StreamedResponse(
+      response.stream,
+      200,
+      headers: const <String, String>{'content-type': 'image/png'},
+    );
+  }
+
+  @override
+  void close() {
+    for (final StreamController<List<int>> response in _openResponses) {
+      if (!response.isClosed) unawaited(response.close());
+    }
+  }
+}
 
 /// 最小合法 PNG 魔数字节（89 50 4E 47 0D 0A 1A 0A + 少量填充）。
 final List<int> _fakePng = <int>[
@@ -125,31 +165,62 @@ void main() {
     expect(File('$finalPath.tmp').existsSync(), isFalse);
   });
 
-  test('超过注入的下载截止时间 → 抛超时异常、不落文件', () async {
-    final MockClient client = MockClient((http.Request req) async {
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      return http.Response.bytes(_fakePng, 200);
-    });
-    const String bookUid = 'uid_timeout';
+  test(
+    '超过截止时间会取消底层响应流，不覆盖旧封面且不留 .tmp',
+    () async {
+      const String bookUid = 'uid_timeout';
+      final String finalPath =
+          p.join(tempDir.path, videoCoverFileName(bookUid));
+      const List<int> oldCover = <int>[0xFF, 0xD8, 0xFF, 0x01];
+      await File(finalPath).writeAsBytes(oldCover);
+      final _StreamAbortTrackingClient client = _StreamAbortTrackingClient();
+
+      await expectLater(
+        CoverDownloader(
+          client: client,
+          timeout: const Duration(milliseconds: 5),
+        ).downloadCover(
+          url: 'https://img/slow',
+          bookUid: bookUid,
+          coversDirectory: tempDir,
+        ),
+        throwsA(
+          isA<ScrapeNetworkException>().having(
+            (ScrapeNetworkException error) => error.message,
+            'message',
+            'Poster download timed out',
+          ),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(client.abortObserved.isCompleted, isTrue);
+      expect(File(finalPath).readAsBytesSync(), oldCover);
+      expect(File('$finalPath.tmp').existsSync(), isFalse);
+      client.close();
+    },
+    timeout: const Timeout(Duration(seconds: 2)),
+  );
+
+  test('底层 IO 失败不覆盖旧封面且不留 .tmp', () async {
+    const String bookUid = 'uid_io_error';
+    final String finalPath = p.join(tempDir.path, videoCoverFileName(bookUid));
+    const List<int> oldCover = <int>[0xFF, 0xD8, 0xFF, 0x02];
+    await File(finalPath).writeAsBytes(oldCover);
+    final MockClient client = MockClient(
+      (http.Request req) async =>
+          throw const SocketException('connection reset'),
+    );
+
     await expectLater(
-      CoverDownloader(
-        client: client,
-        timeout: const Duration(milliseconds: 1),
-      ).downloadCover(
-        url: 'https://img/slow',
+      CoverDownloader(client: client).downloadCover(
+        url: 'https://img/io-error',
         bookUid: bookUid,
         coversDirectory: tempDir,
       ),
-      throwsA(
-        isA<ScrapeNetworkException>().having(
-          (ScrapeNetworkException error) => error.message,
-          'message',
-          'Poster download timed out',
-        ),
-      ),
+      throwsA(isA<ScrapeNetworkException>()),
     );
-    final String finalPath = p.join(tempDir.path, videoCoverFileName(bookUid));
-    expect(File(finalPath).existsSync(), isFalse);
+    expect(File(finalPath).readAsBytesSync(), oldCover);
+    expect(File('$finalPath.tmp').existsSync(), isFalse);
   });
 
   test('覆盖旧封面：同 uid 二次下载直接替换内容', () async {

@@ -16,7 +16,7 @@ import 'dart:io';
 
 import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/media/metadata/image_download.dart'
-    show kCoverImageDownloadTimeout;
+    show fetchCoverImageResponse, kCoverImageDownloadTimeout;
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
 import 'package:hibiki/src/media/video/video_import_dialog.dart'
@@ -56,7 +56,11 @@ class CoverDownloader {
 
     final http.Response response;
     try {
-      response = await _client.get(Uri.parse(url)).timeout(timeout);
+      response = await fetchCoverImageResponse(
+        _client,
+        Uri.parse(url),
+        timeout: timeout,
+      );
     } on TimeoutException {
       throw const ScrapeNetworkException('Poster download timed out');
     } catch (e) {
