@@ -86,7 +86,7 @@ target_link_libraries(${BINARY_NAME} PRIVATE dcomp dxguid)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 add_dependencies(${BINARY_NAME} flutter_assemble)
 
-# BUG-1231: compile and execute the production IME Space predicate/dispatch
+# BUG-1239: compile and execute the production IME Space predicate/dispatch
 # seam as part of every Windows runner build. Source-string tests could not
 # detect WM_KEYDOWN -> WM_KEYUP or removed Alt/Win guards.
 add_executable(hibiki_windows_ime_space_test
