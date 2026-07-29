@@ -5,11 +5,18 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
 
 const int mihonStoreMaxBytes = 10 * 1024 * 1024;
 const int mihonExtensionApkMaxBytes = 100 * 1024 * 1024;
+
+typedef MihonHostResolver = Future<List<InternetAddress>> Function(String host);
+typedef MihonConnectedPeer = InternetAddress? Function(
+  http.StreamedResponse response,
+);
+typedef MihonProxyDetector = bool Function(http.StreamedResponse response);
 
 enum MihonStoreFormat { currentJson, currentProtobuf, legacy }
 
@@ -96,10 +103,40 @@ class MihonStoreFetchResult {
 }
 
 class MihonExtensionStoreClient {
-  MihonExtensionStoreClient({http.Client? client})
-      : _client = client ?? http.Client();
+  factory MihonExtensionStoreClient({
+    http.Client? client,
+    MihonHostResolver? resolver,
+    MihonConnectedPeer? connectedPeer,
+    MihonProxyDetector? proxyDetected,
+  }) {
+    final MihonHostResolver effectiveResolver =
+        resolver ?? InternetAddress.lookup;
+    if (client != null &&
+        (resolver == null || connectedPeer == null || proxyDetected == null)) {
+      throw ArgumentError(
+        'Injected clients must provide resolver, connectedPeer, and '
+        'proxyDetected security seams',
+      );
+    }
+    return MihonExtensionStoreClient._(
+      client ?? _createDirectPinnedClient(effectiveResolver),
+      effectiveResolver,
+      connectedPeer,
+      proxyDetected,
+    );
+  }
+
+  MihonExtensionStoreClient._(
+    this._client,
+    this._resolver,
+    this._connectedPeer,
+    this._proxyDetected,
+  );
 
   final http.Client _client;
+  final MihonHostResolver _resolver;
+  final MihonConnectedPeer? _connectedPeer;
+  final MihonProxyDetector? _proxyDetected;
 
   Future<MihonStoreFetchResult> fetchStore(
     String rawUrl, {
@@ -269,6 +306,7 @@ class MihonExtensionStoreClient {
     bool allowInsecure = false,
     int redirectCount = 0,
   }) async {
+    await _assertSafeNetworkTarget(url);
     final http.Request request = http.Request('GET', url);
     request.followRedirects = false;
     if (etag != null && etag.isNotEmpty) {
@@ -279,6 +317,33 @@ class MihonExtensionStoreClient {
     }
     final http.StreamedResponse response =
         await _client.send(request).timeout(const Duration(seconds: 30));
+    try {
+      if (_proxyDetected?.call(response) ?? false) {
+        throw const MihonRuntimeException(
+          'UNSAFE_NETWORK_PROXY',
+          'Extension store requests must connect directly',
+        );
+      }
+      final InternetAddress? connectedPeer = _connectedPeer?.call(response);
+      if (_connectedPeer != null && connectedPeer == null) {
+        throw const MihonRuntimeException(
+          'UNVERIFIED_NETWORK_PEER',
+          'Extension store transport did not report its connected peer',
+        );
+      }
+      if (connectedPeer != null) {
+        _assertPublicAddress(connectedPeer);
+      }
+      final Uri actualUrl = response.request?.url ?? url;
+      _validatedUri(
+        actualUrl.toString(),
+        allowInsecure: allowInsecure,
+      );
+      await _assertSafeNetworkTarget(actualUrl);
+    } on Object {
+      await response.stream.drain<void>();
+      rethrow;
+    }
     if (<int>{
       HttpStatus.movedPermanently,
       HttpStatus.found,
@@ -316,10 +381,6 @@ class MihonExtensionStoreClient {
         redirectCount: redirectCount + 1,
       );
     }
-    _validatedUri(
-      (response.request?.url ?? url).toString(),
-      allowInsecure: allowInsecure,
-    );
     if (allowNotModified && response.statusCode == HttpStatus.notModified) {
       return _NetworkBytes(
         Uint8List(0),
@@ -364,6 +425,23 @@ class MihonExtensionStoreClient {
     );
   }
 
+  Future<void> _assertSafeNetworkTarget(Uri uri) async {
+    final String host = _normalizedHost(uri.host);
+    _assertSafeHostSpelling(host);
+    final InternetAddress? literal = InternetAddress.tryParse(host);
+    final List<InternetAddress> addresses =
+        literal == null ? await _resolver(host) : <InternetAddress>[literal];
+    if (addresses.isEmpty) {
+      throw const MihonRuntimeException(
+        'UNSAFE_NETWORK_TARGET',
+        'Extension store host did not resolve to a public address',
+      );
+    }
+    for (final InternetAddress address in addresses) {
+      _assertPublicAddress(address);
+    }
+  }
+
   static Uri _validatedUri(
     String rawUrl, {
     required bool allowInsecure,
@@ -375,6 +453,14 @@ class MihonExtensionStoreClient {
         'Extension store URL is invalid',
       );
     }
+    if (uri.userInfo.isNotEmpty ||
+        uri.host.isEmpty ||
+        uri.authority.contains('%')) {
+      throw const MihonRuntimeException(
+        'INVALID_URL',
+        'Extension store URL authority is invalid',
+      );
+    }
     if (uri.scheme != 'https' && !(allowInsecure && uri.scheme == 'http')) {
       throw const MihonRuntimeException(
         'INSECURE_URL',
@@ -382,6 +468,149 @@ class MihonExtensionStoreClient {
       );
     }
     return uri;
+  }
+
+  static http.Client _createDirectPinnedClient(MihonHostResolver resolver) {
+    final HttpClient ioClient = HttpClient()
+      ..findProxy = ((Uri uri) => 'DIRECT')
+      ..connectionFactory = (
+        Uri uri,
+        String? proxyHost,
+        int? proxyPort,
+      ) async {
+        if (proxyHost != null || proxyPort != null) {
+          throw const MihonRuntimeException(
+            'UNSAFE_NETWORK_PROXY',
+            'Extension store requests must connect directly',
+          );
+        }
+        final String host = _normalizedHost(uri.host);
+        _assertSafeHostSpelling(host);
+        final InternetAddress? literal = InternetAddress.tryParse(host);
+        final List<InternetAddress> addresses =
+            literal == null ? await resolver(host) : <InternetAddress>[literal];
+        if (addresses.isEmpty) {
+          throw const MihonRuntimeException(
+            'UNSAFE_NETWORK_TARGET',
+            'Extension store host did not resolve to a public address',
+          );
+        }
+        for (final InternetAddress address in addresses) {
+          _assertPublicAddress(address);
+        }
+        final int port =
+            uri.hasPort ? uri.port : (uri.scheme == 'https' ? 443 : 80);
+        // The URI remains hostname-based, so HttpClient retains the original
+        // Host header and TLS SNI while the socket is pinned to a vetted peer.
+        return Socket.startConnect(addresses.first, port);
+      };
+    return IOClient(ioClient);
+  }
+
+  static String _normalizedHost(String host) =>
+      host.endsWith('.') ? host.substring(0, host.length - 1) : host;
+
+  static void _assertSafeHostSpelling(String host) {
+    final String lower = host.toLowerCase();
+    if (lower == 'localhost' ||
+        lower.endsWith('.localhost') ||
+        lower == 'metadata' ||
+        lower == 'instance-data' ||
+        lower == 'metadata.google.internal' ||
+        lower.endsWith('.metadata.google.internal')) {
+      throw const MihonRuntimeException(
+        'UNSAFE_NETWORK_TARGET',
+        'Extension store host is not a public network target',
+      );
+    }
+    final List<String> parts = lower.split('.');
+    final RegExp numericPart = RegExp(r'^(?:0x[0-9a-f]+|[0-9]+)$');
+    if (parts.every(numericPart.hasMatch)) {
+      final bool canonicalDottedDecimal = parts.length == 4 &&
+          parts.every(
+            (String part) =>
+                !part.startsWith('0x') &&
+                (part == '0' || !part.startsWith('0')),
+          );
+      if (!canonicalDottedDecimal) {
+        throw const MihonRuntimeException(
+          'UNSAFE_NETWORK_TARGET',
+          'Non-canonical numeric hostnames are not allowed',
+        );
+      }
+    }
+  }
+
+  static void _assertPublicAddress(InternetAddress address) {
+    final Uint8List bytes = address.rawAddress;
+    final bool isPublic = switch (bytes.length) {
+      4 => _isPublicIpv4(bytes),
+      16 => _isPublicIpv6(bytes),
+      _ => false,
+    };
+    if (!isPublic) {
+      throw const MihonRuntimeException(
+        'UNSAFE_NETWORK_TARGET',
+        'Extension store resolved to a non-public network address',
+      );
+    }
+  }
+
+  static bool _isPublicIpv4(Uint8List bytes) {
+    final int a = bytes[0];
+    final int b = bytes[1];
+    if (a == 0 ||
+        a == 10 ||
+        a == 127 ||
+        a >= 224 ||
+        (a == 100 && b >= 64 && b <= 127) ||
+        (a == 169 && b == 254) ||
+        (a == 172 && b >= 16 && b <= 31) ||
+        (a == 192 && b == 0) ||
+        (a == 192 && b == 168) ||
+        (a == 198 && (b == 18 || b == 19))) {
+      return false;
+    }
+    return true;
+  }
+
+  static bool _isPublicIpv6(Uint8List bytes) {
+    final bool mappedIpv4 =
+        bytes.sublist(0, 10).every((int byte) => byte == 0) &&
+            bytes[10] == 0xff &&
+            bytes[11] == 0xff;
+    if (mappedIpv4) {
+      return _isPublicIpv4(Uint8List.fromList(bytes.sublist(12)));
+    }
+    final bool compatibleIpv4 =
+        bytes.sublist(0, 12).every((int byte) => byte == 0);
+    if (compatibleIpv4) return false;
+    if ((bytes[0] & 0xfe) == 0xfc || // fc00::/7 ULA
+        (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) || // fe80::/10
+        (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0xc0) || // fec0::/10
+        bytes[0] == 0xff) {
+      return false;
+    }
+    // 6to4 embeds the destination IPv4 address in bytes 2..5.
+    if (bytes[0] == 0x20 && bytes[1] == 0x02) {
+      return _isPublicIpv4(Uint8List.fromList(bytes.sublist(2, 6)));
+    }
+    // Teredo carries an obfuscated IPv4 endpoint and is not safe to pin using
+    // the visible IPv6 peer alone.
+    if (bytes[0] == 0x20 &&
+        bytes[1] == 0x01 &&
+        bytes[2] == 0x00 &&
+        bytes[3] == 0x00) {
+      return false;
+    }
+    // Documentation-only 2001:db8::/32.
+    if (bytes[0] == 0x20 &&
+        bytes[1] == 0x01 &&
+        bytes[2] == 0x0d &&
+        bytes[3] == 0xb8) {
+      return false;
+    }
+    return true;
   }
 
   static MihonStore _parseLegacyStore(

@@ -175,7 +175,14 @@ void main() {
         database: database,
         rootDirectory: root,
         runtime: runtime,
-        storeClient: MihonExtensionStoreClient(client: httpClient),
+        storeClient: MihonExtensionStoreClient(
+          client: httpClient,
+          resolver: (String host) async =>
+              <InternetAddress>[InternetAddress('93.184.216.34')],
+          connectedPeer: (http.StreamedResponse response) =>
+              InternetAddress('93.184.216.34'),
+          proxyDetected: (http.StreamedResponse response) => false,
+        ),
       );
 
       await manager.initialise();
