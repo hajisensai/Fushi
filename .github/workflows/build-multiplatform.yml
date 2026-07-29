@@ -21,6 +21,11 @@ on:
       - 'native/**'
       - 'ci/**'
       - 'third_party/**'
+      - 'third_party/m_extension_server/**'
+      - 'third_party/mihon-source-api/**'
+      - 'tool/mihon/**'
+      - 'hibiki/android/**/*.gradle*'
+      - 'hibiki/android/gradle/**'
       - 'tools/build_magpie_slim.ps1'
       - '.github/workflows/build-multiplatform.yml'
       - 'pubspec.yaml'
@@ -34,6 +39,10 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  MIHON_E2E_APK_URL: https://raw.githubusercontent.com/keiyoushi/extensions/9aaf4bd95c3d24a34a280371aeb6267141b4d235/apk/tachiyomi-all.mangadex-v1.4.211.apk
+  MIHON_E2E_APK_SHA256: 44f8617edb3b754957b1ac4fedf789181d72820c58ac1c18a1d242ea864f4e0d
 
 jobs:
   android:
@@ -507,6 +516,33 @@ jobs:
           tool/mihon/verify_desktop_runtime.sh "$runtime_dir"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
+      - name: Run real Mihon extension E2E on macOS
+        shell: pwsh
+        run: |
+          $apk = Join-Path $env:RUNNER_TEMP "mihon-e2e.apk"
+          $report = Join-Path $env:RUNNER_TEMP "mihon-e2e-macos.log"
+          Set-Content -LiteralPath $report -Value "Pinned Mihon extension E2E started."
+          try {
+            Invoke-WebRequest -Uri $env:MIHON_E2E_APK_URL -OutFile $apk
+            $actual = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $env:MIHON_E2E_APK_SHA256) {
+              throw "Mihon E2E APK hash mismatch: $actual"
+            }
+            $runtime = "hibiki/build/macos/Build/Products/Debug/hibiki.app/Contents/Resources/mihon_bridge"
+            & ./tool/mihon/verify_desktop_extension_e2e.ps1 `
+              -RuntimeDirectory $runtime `
+              -ApkPath $apk *>&1 | Tee-Object -FilePath $report -Append
+          } catch {
+            $_ | Out-String | Add-Content -LiteralPath $report
+            throw
+          }
+      - name: Upload macOS Mihon extension E2E report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mihon-extension-e2e-macos
+          path: ${{ runner.temp }}/mihon-e2e-macos.log
+          if-no-files-found: error
       - name: Verify macOS hoshidicts dylib bundle
         working-directory: hibiki
         run: |
@@ -817,6 +853,33 @@ jobs:
             }
           }
           .\tool\mihon\verify_desktop_runtime.ps1 -RuntimeDirectory $runtime
+      - name: Run real Mihon extension E2E on Windows
+        shell: pwsh
+        run: |
+          $apk = Join-Path $env:RUNNER_TEMP "mihon-e2e.apk"
+          $report = Join-Path $env:RUNNER_TEMP "mihon-e2e-windows.log"
+          Set-Content -LiteralPath $report -Value "Pinned Mihon extension E2E started."
+          try {
+            Invoke-WebRequest -Uri $env:MIHON_E2E_APK_URL -OutFile $apk
+            $actual = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $env:MIHON_E2E_APK_SHA256) {
+              throw "Mihon E2E APK hash mismatch: $actual"
+            }
+            $runtime = "hibiki\build\windows\x64\runner\Debug\mihon_bridge"
+            & .\tool\mihon\verify_desktop_extension_e2e.ps1 `
+              -RuntimeDirectory $runtime `
+              -ApkPath $apk *>&1 | Tee-Object -FilePath $report -Append
+          } catch {
+            $_ | Out-String | Add-Content -LiteralPath $report
+            throw
+          }
+      - name: Upload Windows Mihon extension E2E report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mihon-extension-e2e-windows
+          path: ${{ runner.temp }}/mihon-e2e-windows.log
+          if-no-files-found: error
       - name: Build and bundle galgame helper archives
         shell: pwsh
         run: |

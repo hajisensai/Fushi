@@ -18,6 +18,11 @@ on:
       - 'ci/**'
       - 'tool/**'
       - 'third_party/**'
+      - 'third_party/m_extension_server/**'
+      - 'third_party/mihon-source-api/**'
+      - 'tool/mihon/**'
+      - 'hibiki/android/**/*.gradle*'
+      - 'hibiki/android/gradle/**'
       - 'tools/build_magpie_slim.ps1'
       - '.github/workflows/**'
       - 'melos.yaml'
@@ -46,6 +51,10 @@ on:
 concurrency:
   group: hibiki-release-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
   cancel-in-progress: false
+
+env:
+  MIHON_E2E_APK_URL: https://raw.githubusercontent.com/keiyoushi/extensions/9aaf4bd95c3d24a34a280371aeb6267141b4d235/apk/tachiyomi-all.mangadex-v1.4.211.apk
+  MIHON_E2E_APK_SHA256: 44f8617edb3b754957b1ac4fedf789181d72820c58ac1c18a1d242ea864f4e0d
 
 jobs:
   windows:
@@ -340,6 +349,32 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Mihon desktop runtime build failed ($LASTEXITCODE)" }
           .\tool\mihon\verify_desktop_runtime.ps1 `
             -RuntimeDirectory "hibiki\build\windows\x64\runner\Release\mihon_bridge"
+      - name: Run real Mihon extension E2E on Windows release runtime
+        shell: pwsh
+        run: |
+          $apk = Join-Path $env:RUNNER_TEMP "mihon-e2e.apk"
+          $report = Join-Path $env:RUNNER_TEMP "mihon-e2e-windows-release.log"
+          Set-Content -LiteralPath $report -Value "Pinned Mihon extension E2E started."
+          try {
+            Invoke-WebRequest -Uri $env:MIHON_E2E_APK_URL -OutFile $apk
+            $actual = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $env:MIHON_E2E_APK_SHA256) {
+              throw "Mihon E2E APK hash mismatch: $actual"
+            }
+            & .\tool\mihon\verify_desktop_extension_e2e.ps1 `
+              -RuntimeDirectory "hibiki\build\windows\x64\runner\Release\mihon_bridge" `
+              -ApkPath $apk *>&1 | Tee-Object -FilePath $report -Append
+          } catch {
+            $_ | Out-String | Add-Content -LiteralPath $report
+            throw
+          }
+      - name: Upload Windows release Mihon extension E2E report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mihon-extension-e2e-windows-release
+          path: ${{ runner.temp }}/mihon-e2e-windows-release.log
+          if-no-files-found: error
       - name: Build and bundle galgame helper archives
         shell: pwsh
         run: |
@@ -865,6 +900,33 @@ jobs:
           tool/mihon/verify_desktop_runtime.sh "$runtime_dir"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
+      - name: Run real Mihon extension E2E on macOS release runtime
+        shell: pwsh
+        run: |
+          $apk = Join-Path $env:RUNNER_TEMP "mihon-e2e.apk"
+          $report = Join-Path $env:RUNNER_TEMP "mihon-e2e-macos-release.log"
+          Set-Content -LiteralPath $report -Value "Pinned Mihon extension E2E started."
+          try {
+            Invoke-WebRequest -Uri $env:MIHON_E2E_APK_URL -OutFile $apk
+            $actual = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $env:MIHON_E2E_APK_SHA256) {
+              throw "Mihon E2E APK hash mismatch: $actual"
+            }
+            $runtime = "hibiki/build/macos/Build/Products/Release/hibiki.app/Contents/Resources/mihon_bridge"
+            & ./tool/mihon/verify_desktop_extension_e2e.ps1 `
+              -RuntimeDirectory $runtime `
+              -ApkPath $apk *>&1 | Tee-Object -FilePath $report -Append
+          } catch {
+            $_ | Out-String | Add-Content -LiteralPath $report
+            throw
+          }
+      - name: Upload macOS release Mihon extension E2E report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mihon-extension-e2e-macos-release
+          path: ${{ runner.temp }}/mihon-e2e-macos-release.log
+          if-no-files-found: error
       - name: Prepare macOS app release asset
         working-directory: hibiki
         shell: bash

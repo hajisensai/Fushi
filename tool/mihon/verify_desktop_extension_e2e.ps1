@@ -16,7 +16,12 @@ Set-StrictMode -Version Latest
 
 $runtimeRoot = [IO.Path]::GetFullPath($RuntimeDirectory)
 $extensionApk = [IO.Path]::GetFullPath($ApkPath)
-$java = Join-Path $runtimeRoot "runtime\bin\java.exe"
+$javaRelativePath = if ($env:OS -eq "Windows_NT") {
+    "runtime\bin\java.exe"
+} else {
+    "runtime/bin/java"
+}
+$java = Join-Path $runtimeRoot $javaRelativePath
 $server = Join-Path $runtimeRoot "m-extension-server.jar"
 foreach ($required in @($java, $server, $extensionApk)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
