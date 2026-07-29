@@ -1375,6 +1375,7 @@ class BackupService {
             .go();
       }
       await _stripCredentialRowsFromProfileSnapshots(db);
+      await _stripDeviceBoundMihonBooks(db);
       // BUG-816: device-local tables (LAN pairing token + sync baselines) live
       // outside `preferences`, so the key sweeps above never touched them and a
       // shared backup leaked the plaintext pairing `token`. Wipe them from the
@@ -1387,6 +1388,34 @@ class BackupService {
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {
       await db.close();
+    }
+  }
+
+  /// Removes Mihon-backed shelf entries from the export copy.
+  ///
+  /// Their descriptor points at an installed extension and its runtime source,
+  /// both of which are deliberately stripped as device-local state below. If
+  /// the `epub_books` row travelled without them, a fresh restore would expose
+  /// an unopenable shelf ghost. Remove logical collection references, then use
+  /// the canonical book deletion path for shelf / reader dependants, without
+  /// writing user-deletion tombstones. Ordinary local manga, missing metadata,
+  /// and malformed metadata remain portable.
+  static Future<void> _stripDeviceBoundMihonBooks(HibikiDatabase db) async {
+    for (final EpubBookRow book in await db.getAllEpubBooks()) {
+      if (!_isDeviceBoundMihonMetadata(book.sourceMetadata)) continue;
+      await db.removeEntryFromAllCollections(MediaKind.epub, book.bookKey);
+      await db.deleteEpubBook(book.bookKey);
+    }
+  }
+
+  static bool _isDeviceBoundMihonMetadata(String? raw) {
+    if (raw == null || raw.isEmpty) return false;
+    try {
+      final Object? decoded = jsonDecode(raw);
+      return decoded is Map<Object?, Object?> &&
+          decoded['type'] == 'hibiki-mihon';
+    } on Object {
+      return false;
     }
   }
 
