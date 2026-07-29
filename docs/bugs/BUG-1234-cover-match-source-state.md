@@ -11,7 +11,7 @@
   `hibiki/test/media/video/scraper/cover_match_dialog_test.dart` 覆盖切换不自动请求、旧
   Bangumi 候选不混入 TMDB、手动搜索恢复结果、来源标识与默认关闭；另钉住保存 TMDB
   key 尚未完成时切换来源的竞态，迟到 continuation 不得搜索新来源。
-- **修复提交**：`37b101471`
+- **修复提交**：`1a4107e69`
 - **备注**：定向测试使用已缓存的 `pdfium.dll` 与仅测试期间启用的系统
   `winsqlite3` 完成 55/55；临时 pubspec 配置已在提交前移除。`flutter analyze
   --no-pub` 通过。

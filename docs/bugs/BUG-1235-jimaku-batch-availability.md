@@ -14,6 +14,6 @@
   合法空数组；`jimaku_batch_test.dart` 覆盖批量失败语义和下载门禁；
   `jimaku_batch_dialog_state_test.dart` 覆盖客户端工厂失败、loading/成功门禁与快速
   切系列竞态；`jimaku_entry_picker_test.dart` 覆盖来源身份、摘要、失败态和选择。
-- **修复提交**：`37b101471`
+- **修复提交**：`1a4107e69`
 - **备注**：同组定向测试 55/55，`flutter analyze --no-pub` 通过；真实 Jimaku 网络
   与设备 UI E2E 未在本轮执行。
