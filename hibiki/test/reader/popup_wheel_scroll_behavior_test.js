@@ -10,10 +10,10 @@
 // the sub-pixel fraction every frame and the popup froze. The fix carries the
 // remainder across events and stops horizontal jitter from dropping vertical frames.
 //
-// BUG-870 extends this: the 0.24 POPUP_WHEEL_PIXEL_FACTOR is a coarse-mouse-notch
+// BUG-870 extends this: POPUP_WHEEL_PIXEL_FACTOR is a coarse-mouse-notch
 // taming; applying it to a fine device (small pixel deltas) made scrolling ~4x too
 // slow ("very hard to scroll"). Fine-device frames now scroll ~1:1 (factor 1.0,
-// still zoom-corrected); a mouse notch (deltaY≈100) keeps the 0.24 step. A gesture
+// still zoom-corrected); a mouse notch (deltaY≈100) uses the 0.48 step. A gesture
 // latches to its device class so a large mid-fling touchpad frame is not mis-tamed.
 
 const assert = require('assert');
@@ -102,9 +102,9 @@ const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
 
 // A. BUG-870: a precision touchpad's small pixel-mode frames scroll ~1:1 (natural),
-// NOT downscaled by the 0.24 mouse-notch factor. deltaY=2 (< MOUSE_NOTCH_PX 60) is a
+// NOT downscaled by the 0.48 mouse-notch factor. deltaY=2 (< MOUSE_NOTCH_PX 60) is a
 // fine-device frame => factor 1.0 => 2 layout px/frame at zoom 1.
-test('slow touchpad frames scroll ~1:1 natural, not the 0.24 mouse taming (zoom 1)', () => {
+test('slow touchpad frames scroll ~1:1 natural, not the coarse-mouse taming (zoom 1)', () => {
   const ctx = loadPopup();
   clockMs = 1000;
   let prevCount = 0;
@@ -135,37 +135,37 @@ test('fine-device sub-pixel carry is lossless under zoom (deltaY 1, zoom 3)', ()
 
 // BUG-870 latch: a gesture that starts fine (small frame) stays fine even when an
 // occasional larger mid-fling frame (>= MOUSE_NOTCH_PX) arrives — it must NOT be
-// suddenly downscaled by 0.24 as if it were a mouse notch.
+// suddenly downscaled by the coarse-mouse factor as if it were a mouse notch.
 test('touchpad gesture latches fine: a large mid-fling frame is not mouse-tamed', () => {
   const ctx = loadPopup();
   clockMs = 1000; clockMs += 16;
   fireWheel(ctx, { deltaY: 4, deltaMode: 0 });   // small first frame => latch fine (4px)
   clockMs += 16;
-  fireWheel(ctx, { deltaY: 80, deltaMode: 0 });  // big fling frame, still fine => 80px (not 19)
+  fireWheel(ctx, { deltaY: 80, deltaMode: 0 });  // big fling frame, still fine => 80px (not 38)
   assert.equal(ctx.__win.scrollY, 84,
     'latched fine device must scroll the fling frame ~1:1 (4+80=84), got ' + ctx.__win.scrollY);
 });
 
-// B. Mouse-wheel large-delta path is UNCHANGED (no regression).
-test('mouse notch (large delta) moves the full step every notch, zoom 1', () => {
+// B. Mouse-wheel large-delta path uses the calibrated 48px visual step.
+test('mouse notch (large delta) moves the calibrated full step every notch, zoom 1', () => {
   const ctx = loadPopup();
   clockMs = 1000;
-  // A Windows WebView2 mouse notch: deltaMode=PIXEL, deltaY=100 => x0.24=24 (< cap).
+  // A Windows WebView2 mouse notch: deltaMode=PIXEL, deltaY=100 => x0.48=48 (< cap).
   for (let n = 1; n <= 3; n++) {
     clockMs += 200; // notch-to-notch; even crossing idle the whole step is intact
     fireWheel(ctx, { deltaY: 100, deltaMode: 0 });
-    assert.equal(ctx.__win.scrollY, 24 * n,
-      'mouse notch ' + n + ' must move a full 24px, got ' + ctx.__win.scrollY);
+    assert.equal(ctx.__win.scrollY, 48 * n,
+      'mouse notch ' + n + ' must move a full 48px, got ' + ctx.__win.scrollY);
   }
 });
 
-test('mouse notch under zoom keeps the pre-fix zoom-divided step (12px at zoom 2)', () => {
+test('mouse notch under zoom keeps a zoom-independent 48px visual step', () => {
   const ctx = loadPopup();
   ctx.__setZoom(2);
   clockMs = 1000; clockMs += 16;
-  fireWheel(ctx, { deltaY: 100, deltaMode: 0 }); // 24 visual / 2 zoom = 12 layout px
-  assert.equal(ctx.__win.scrollY, 12,
-    'mouse notch at zoom 2 must still move 12px, got ' + ctx.__win.scrollY);
+  fireWheel(ctx, { deltaY: 100, deltaMode: 0 }); // 48 visual / 2 zoom = 24 layout px
+  assert.equal(ctx.__win.scrollY, 24,
+    'mouse notch at zoom 2 must move 24 layout px, got ' + ctx.__win.scrollY);
   assert.ok(ctx.__win.scrollY > 1, 'a mouse notch must never freeze');
 });
 
