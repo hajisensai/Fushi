@@ -99,6 +99,7 @@ try {
     # when the host is Java 17. Use the same verified JDK that will be linked
     # into the app, so compilation, tests, jdeps and jlink share one toolchain.
     $previousJavaHome = $env:JAVA_HOME
+    $serverJar = $null
     try {
         $env:JAVA_HOME = $jdkRoot.FullName
         Invoke-Checked -Executable (Join-Path $sourceRoot "gradlew.bat") -Arguments @(
@@ -107,6 +108,38 @@ try {
             ":server:shadowJar",
             "--no-daemon"
         )
+        $serverJar = Get-ChildItem -LiteralPath (Join-Path $sourceRoot "server\build") -Filter "*.jar" |
+            Where-Object { $_.Name -like "MExtensionServer-*" } |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+        if ($null -eq $serverJar) {
+            throw "The online M-Extension-Server shadow JAR was not produced."
+        }
+        $onlineServerSha256 = (
+            Get-FileHash -LiteralPath $serverJar.FullName -Algorithm SHA256
+        ).Hash.ToLowerInvariant()
+
+        Invoke-Checked -Executable (Join-Path $sourceRoot "gradlew.bat") -Arguments @(
+            "-p", $sourceRoot,
+            ":server:clean",
+            ":server:test",
+            ":server:shadowJar",
+            "--offline",
+            "--no-daemon"
+        )
+        $serverJar = Get-ChildItem -LiteralPath (Join-Path $sourceRoot "server\build") -Filter "*.jar" |
+            Where-Object { $_.Name -like "MExtensionServer-*" } |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+        if ($null -eq $serverJar) {
+            throw "The offline M-Extension-Server shadow JAR was not produced."
+        }
+        $offlineServerSha256 = (
+            Get-FileHash -LiteralPath $serverJar.FullName -Algorithm SHA256
+        ).Hash.ToLowerInvariant()
+        if ($offlineServerSha256 -ne $onlineServerSha256) {
+            throw "Online/offline M-Extension-Server hash mismatch: online=$onlineServerSha256 offline=$offlineServerSha256"
+        }
     } finally {
         if ($null -eq $previousJavaHome) {
             Remove-Item Env:JAVA_HOME -ErrorAction SilentlyContinue
@@ -115,10 +148,6 @@ try {
         }
     }
 
-    $serverJar = Get-ChildItem -LiteralPath (Join-Path $sourceRoot "server\build") -Filter "*.jar" |
-        Where-Object { $_.Name -like "MExtensionServer-*" } |
-        Sort-Object LastWriteTimeUtc -Descending |
-        Select-Object -First 1
     if ($null -eq $serverJar) {
         throw "The M-Extension-Server shadow JAR was not produced."
     }

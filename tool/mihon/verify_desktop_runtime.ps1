@@ -10,16 +10,29 @@ Set-StrictMode -Version Latest
 $runtimeRoot = [IO.Path]::GetFullPath($RuntimeDirectory)
 $java = Join-Path $runtimeRoot "runtime\bin\java.exe"
 $server = Join-Path $runtimeRoot "m-extension-server.jar"
+$manifestPath = Join-Path $runtimeRoot "checksums.json"
 foreach ($required in @(
     $java,
     $server,
-    (Join-Path $runtimeRoot "checksums.json"),
+    $manifestPath,
     (Join-Path $runtimeRoot "LICENSE-M-Extension-Server.txt"),
     (Join-Path $runtimeRoot "NOTICE-M-Extension-Server.txt")
 )) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Missing Mihon desktop runtime asset: $required"
     }
+}
+
+$manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+$expectedServerSha256 = "$($manifest.mExtensionServer.sha256)".ToLowerInvariant()
+if ($expectedServerSha256 -notmatch "^[0-9a-f]{64}$") {
+    throw "Invalid M-Extension-Server SHA-256 in checksums.json."
+}
+$actualServerSha256 = (
+    Get-FileHash -LiteralPath $server -Algorithm SHA256
+).Hash.ToLowerInvariant()
+if ($actualServerSha256 -ne $expectedServerSha256) {
+    throw "M-Extension-Server checksum mismatch: expected $expectedServerSha256, got $actualServerSha256"
 }
 
 $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)

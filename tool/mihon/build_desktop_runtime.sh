@@ -26,6 +26,63 @@ trap 'rm -rf -- "$working_root"' EXIT
 source_root="$working_root/M-Extension-Server"
 staging_root="$working_root/output"
 
+verified_download() {
+  local download_url="$1"
+  local archive_path="$2"
+  local expected_sha256="$3"
+  local archive_lock="$archive_path.lock"
+  local lock_deadline=$((SECONDS + 120))
+  local lock_owner=""
+  local download_tmp=""
+
+  if [[ -f "$archive_path" ]] &&
+    printf '%s  %s\n' "$expected_sha256" "$archive_path" |
+      shasum -a 256 --check >/dev/null 2>&1; then
+    return
+  fi
+
+  while ! mkdir "$archive_lock" 2>/dev/null; do
+    if [[ -f "$archive_lock/pid" ]]; then
+      lock_owner="$(cat "$archive_lock/pid" 2>/dev/null || true)"
+      if [[ "$lock_owner" =~ ^[0-9]+$ ]] &&
+        ! kill -0 "$lock_owner" 2>/dev/null; then
+        rm -rf -- "$archive_lock"
+        continue
+      fi
+    fi
+    if ((SECONDS >= lock_deadline)); then
+      echo "timed out waiting for verified download lock: $archive_lock" >&2
+      return 1
+    fi
+    sleep 0.1
+  done
+  printf '%s\n' "$$" >"$archive_lock/pid"
+
+  if [[ -f "$archive_path" ]] &&
+    printf '%s  %s\n' "$expected_sha256" "$archive_path" |
+      shasum -a 256 --check >/dev/null 2>&1; then
+    rmdir "$archive_lock" 2>/dev/null || rm -rf -- "$archive_lock"
+    return
+  fi
+
+  find "$(dirname "$archive_path")" -maxdepth 1 -type f \
+    -name "$(basename "$archive_path").tmp.*" -delete
+  download_tmp="$(mktemp "$archive_path.tmp.XXXXXX")"
+  if ! curl --fail --location --retry 3 --output "$download_tmp" "$download_url"; then
+    rm -f -- "$download_tmp"
+    rm -rf -- "$archive_lock"
+    return 1
+  fi
+  if ! printf '%s  %s\n' "$expected_sha256" "$download_tmp" |
+    shasum -a 256 --check >/dev/null; then
+    rm -f -- "$download_tmp"
+    rm -rf -- "$archive_lock"
+    return 1
+  fi
+  mv "$download_tmp" "$archive_path"
+  rmdir "$archive_lock" 2>/dev/null || rm -rf -- "$archive_lock"
+}
+
 git clone --filter=blob:none --no-checkout "$server_repository" "$source_root"
 git -C "$source_root" checkout --detach "$server_commit"
 git -C "$source_root" apply --unidiff-zero "$overlay_root/server-build.gradle.patch"
@@ -39,10 +96,7 @@ prepare_jdk() {
   local download_version="${temurin_version/+/%2B}"
   local download_url="https://github.com/adoptium/temurin21-binaries/releases/download/$download_version/$archive"
 
-  if [[ ! -f "$archive_path" ]]; then
-    curl --fail --location --retry 3 --output "$archive_path" "$download_url"
-  fi
-  printf '%s  %s\n' "$expected_sha256" "$archive_path" | shasum -a 256 --check >/dev/null
+  verified_download "$download_url" "$archive_path" "$expected_sha256"
 
   local extract_root="$working_root/jdk-$architecture"
   mkdir -p "$extract_root"
@@ -75,7 +129,22 @@ JAVA_HOME="$host_jdk_home" "$source_root/gradlew" \
 
 server_jar="$(find "$source_root/server/build" -maxdepth 1 -type f -name 'MExtensionServer-*.jar' -print -quit)"
 if [[ -z "$server_jar" ]]; then
-  echo "the M-Extension-Server shadow JAR was not produced" >&2
+  echo "the online M-Extension-Server shadow JAR was not produced" >&2
+  exit 1
+fi
+online_server_sha256="$(shasum -a 256 "$server_jar" | awk '{print $1}')"
+
+JAVA_HOME="$host_jdk_home" "$source_root/gradlew" \
+  -p "$source_root" :server:clean :server:test :server:shadowJar \
+  --offline --no-daemon
+server_jar="$(find "$source_root/server/build" -maxdepth 1 -type f -name 'MExtensionServer-*.jar' -print -quit)"
+if [[ -z "$server_jar" ]]; then
+  echo "the offline M-Extension-Server shadow JAR was not produced" >&2
+  exit 1
+fi
+offline_server_sha256="$(shasum -a 256 "$server_jar" | awk '{print $1}')"
+if [[ "$offline_server_sha256" != "$online_server_sha256" ]]; then
+  echo "online/offline M-Extension-Server hash mismatch: online=$online_server_sha256 offline=$offline_server_sha256" >&2
   exit 1
 fi
 

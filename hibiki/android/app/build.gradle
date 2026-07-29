@@ -32,15 +32,66 @@ def prepareMihonSourceApi = tasks.register("prepareMihonSourceApi") {
     doLast {
         File archive = mihonSourceArchive.get().asFile
         archive.parentFile.mkdirs()
-        if (!archive.exists() || sha256Of(archive) != mihonSourceArchiveSha256) {
-            new URL("https://github.com/mihonapp/mihon/archive/${mihonSourceApiCommit}.zip")
-                .withInputStream { input ->
-                    archive.withOutputStream { output -> output << input }
+        File archiveLock = new File(archive.parentFile, "${archive.name}.lock")
+        def lockChannel = java.nio.channels.FileChannel.open(
+            archiveLock.toPath(),
+            java.nio.file.StandardOpenOption.CREATE,
+            java.nio.file.StandardOpenOption.WRITE,
+        )
+        try {
+            def archiveFileLock = lockChannel.lock()
+            try {
+                if (!archive.exists() || sha256Of(archive) != mihonSourceArchiveSha256) {
+                    archive.parentFile
+                        .listFiles({ File _, String name ->
+                            name.startsWith("${archive.name}.tmp-")
+                        } as FilenameFilter)
+                        ?.each { File stale -> stale.delete() }
+                    File temporary = new File(
+                        archive.parentFile,
+                        "${archive.name}.tmp-${UUID.randomUUID()}",
+                    )
+                    try {
+                        new URL("https://github.com/mihonapp/mihon/archive/${mihonSourceApiCommit}.zip")
+                            .withInputStream { input ->
+                                def temporaryChannel = java.nio.channels.FileChannel.open(
+                                    temporary.toPath(),
+                                    java.nio.file.StandardOpenOption.CREATE_NEW,
+                                    java.nio.file.StandardOpenOption.WRITE,
+                                )
+                                try {
+                                    input.transferTo(
+                                        java.nio.channels.Channels.newOutputStream(temporaryChannel),
+                                    )
+                                    temporaryChannel.force(true)
+                                } finally {
+                                    temporaryChannel.close()
+                                }
+                            }
+                        def downloadedSha = sha256Of(temporary)
+                        if (downloadedSha != mihonSourceArchiveSha256) {
+                            throw new GradleException(
+                                "Mihon source archive SHA-256 mismatch: ${downloadedSha}",
+                            )
+                        }
+                        java.nio.file.Files.move(
+                            temporary.toPath(),
+                            archive.toPath(),
+                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        )
+                    } finally {
+                        java.nio.file.Files.deleteIfExists(temporary.toPath())
+                    }
                 }
+            } finally {
+                archiveFileLock.release()
+            }
+        } finally {
+            lockChannel.close()
         }
         def actualSha = sha256Of(archive)
         if (actualSha != mihonSourceArchiveSha256) {
-            archive.delete()
             throw new GradleException("Mihon source archive SHA-256 mismatch: ${actualSha}")
         }
         File output = mihonSourceOutput.get().asFile

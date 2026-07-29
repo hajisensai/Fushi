@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -14,6 +15,9 @@ void main() {
   ).readAsStringSync();
   final String windowsBuild = File(
     '${repository.path}/tool/mihon/build_desktop_runtime.ps1',
+  ).readAsStringSync();
+  final String windowsDownloader = File(
+    '${repository.path}/tool/mihon/cache_verified_download.ps1',
   ).readAsStringSync();
   final String macosBuild = File(
     '${repository.path}/tool/mihon/build_desktop_runtime.sh',
@@ -58,19 +62,20 @@ void main() {
   });
 
   test('desktop downloads use unique same-directory temporary files', () {
-    expect(windowsBuild, contains('[Guid]::NewGuid().ToString("N")'));
-    expect(windowsBuild, contains('FileMode]::CreateNew'));
-    expect(windowsBuild, contains('Move-Item'));
+    expect(windowsBuild, contains('cache_verified_download.ps1'));
+    expect(windowsDownloader, contains('[Guid]::NewGuid().ToString("N")'));
+    expect(windowsDownloader, contains('FileMode]::CreateNew'));
+    expect(windowsDownloader, contains('[IO.File]::Move'));
     expect(
       macosBuild,
-      contains(r'mktemp "$download_cache/$archive.tmp.XXXXXX"'),
+      contains(r'mktemp "$archive_path.tmp.XXXXXX"'),
     );
     expect(macosBuild, contains(r'mv "$download_tmp" "$archive_path"'));
   });
 
   test('desktop cache publication is serialized across processes', () {
-    expect(windowsBuild, contains('FileShare]::None'));
-    expect(windowsBuild, contains(r'$archiveLockPath'));
+    expect(windowsDownloader, contains('FileShare]::None'));
+    expect(windowsDownloader, contains(r'$archiveLockPath'));
     expect(macosBuild, contains(r'mkdir "$archive_lock"'));
     expect(macosBuild, contains(r'rmdir "$archive_lock"'));
   });
@@ -89,9 +94,65 @@ void main() {
     expect(windowsVerify, contains(r'Get-FileHash -LiteralPath $server'));
     expect(windowsVerify, contains('mExtensionServer.sha256'));
     expect(macosVerify, contains('checksums.json'));
-    expect(macosVerify, contains(r'shasum -a 256 "$server"'));
+    expect(macosVerify, contains('shasum -a 256'));
+    expect(macosVerify, contains(r'sha256_file "$server"'));
     expect(macosVerify, contains('mExtensionServer'));
   });
+
+  test('Windows runtime verification rejects a tampered final server JAR',
+      () async {
+    final Directory runtime =
+        await Directory.systemTemp.createTemp('mihon-verify-win-');
+    addTearDown(() => runtime.delete(recursive: true));
+    await _writeTamperedRuntimeFixture(runtime, windows: true);
+
+    final ProcessResult result = await Process.run(
+      'powershell.exe',
+      <String>[
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        File(
+          '${repository.path}/tool/mihon/verify_desktop_runtime.ps1',
+        ).absolute.path,
+        '-RuntimeDirectory',
+        runtime.path,
+      ],
+    );
+
+    expect(result.exitCode, isNot(0));
+    expect(
+      '${result.stdout}\n${result.stderr}',
+      contains('M-Extension-Server checksum mismatch'),
+    );
+  }, skip: !Platform.isWindows);
+
+  test('macOS runtime verification rejects a tampered final server JAR',
+      () async {
+    final Directory runtime =
+        await Directory.systemTemp.createTemp('mihon-verify-mac-');
+    addTearDown(() => runtime.delete(recursive: true));
+    await _writeTamperedRuntimeFixture(runtime, windows: false);
+
+    final ProcessResult result = await Process.run(
+      r'C:\Program Files\Git\bin\bash.exe',
+      <String>[
+        _gitBashPath(
+          File(
+            '${repository.path}/tool/mihon/verify_desktop_runtime.sh',
+          ).absolute.path,
+        ),
+        _gitBashPath(runtime.absolute.path),
+      ],
+    );
+
+    expect(result.exitCode, isNot(0));
+    expect(
+      '${result.stdout}\n${result.stderr}',
+      contains('M-Extension-Server checksum mismatch'),
+    );
+  }, skip: !Platform.isWindows);
 
   test('verified downloader has executable bad-cache and concurrency seams',
       () {
@@ -107,7 +168,7 @@ void main() {
     if (!helper.existsSync()) {
       return;
     }
-    final String source = helper.readAsStringSync();
+    final String source = windowsDownloader;
     expect(
       source,
       contains(r'[Parameter(Mandatory = $true)][string] $Uri'),
@@ -264,6 +325,40 @@ Future<HttpServer> _serveFixture(
     await request.response.close();
   });
   return server;
+}
+
+Future<void> _writeTamperedRuntimeFixture(
+  Directory runtime, {
+  required bool windows,
+}) async {
+  final File java = File(
+    windows
+        ? '${runtime.path}/runtime/bin/java.exe'
+        : '${runtime.path}/runtime-macos-x64/bin/java',
+  );
+  await java.create(recursive: true);
+  await File('${runtime.path}/m-extension-server.jar')
+      .writeAsString('tampered-final-jar');
+  await File('${runtime.path}/LICENSE-M-Extension-Server.txt')
+      .writeAsString('fixture');
+  await File('${runtime.path}/NOTICE-M-Extension-Server.txt')
+      .writeAsString('fixture');
+  await File('${runtime.path}/checksums.json').writeAsString(
+    jsonEncode(<String, Object>{
+      'mExtensionServer': <String, String>{
+        'sha256': List<String>.filled(64, '0').join(),
+      },
+    }),
+  );
+}
+
+String _gitBashPath(String windowsPath) {
+  final String normalized = windowsPath.replaceAll(r'\', '/');
+  final Match? drive = RegExp(r'^([A-Za-z]):/(.*)$').firstMatch(normalized);
+  if (drive == null) {
+    return normalized;
+  }
+  return '/${drive.group(1)!.toLowerCase()}/${drive.group(2)}';
 }
 
 Future<Process> _startDownloader({

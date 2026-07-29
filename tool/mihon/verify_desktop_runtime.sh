@@ -13,6 +13,13 @@ case "$(uname -m)" in
   *) echo "unsupported macOS architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 server="$runtime_directory/m-extension-server.jar"
+sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1"
+  else
+    sha256sum "$1"
+  fi
+}
 for required in "$java" "$server" "$runtime_directory/checksums.json" \
   "$runtime_directory/LICENSE-M-Extension-Server.txt" \
   "$runtime_directory/NOTICE-M-Extension-Server.txt"; do
@@ -21,6 +28,24 @@ for required in "$java" "$server" "$runtime_directory/checksums.json" \
     exit 1
   fi
 done
+
+expected_server_sha256="$(python3 - "$runtime_directory/checksums.json" <<'PY'
+import json
+import re
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    value = json.load(source)["mExtensionServer"]["sha256"].lower()
+if re.fullmatch(r"[0-9a-f]{64}", value) is None:
+    raise SystemExit("invalid M-Extension-Server SHA-256 in checksums.json")
+print(value)
+PY
+)"
+actual_server_sha256="$(sha256_file "$server" | awk '{print $1}')"
+if [[ "$actual_server_sha256" != "$expected_server_sha256" ]]; then
+  echo "M-Extension-Server checksum mismatch: expected $expected_server_sha256, got $actual_server_sha256" >&2
+  exit 1
+fi
 
 port="$(python3 - <<'PY'
 import socket
