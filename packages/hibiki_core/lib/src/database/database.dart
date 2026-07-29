@@ -4943,6 +4943,26 @@ class HibikiDatabase extends _$HibikiDatabase {
       (update(epubBooks)..where((t) => t.bookKey.equals(bookKey)))
           .write(EpubBooksCompanion(chaptersJson: Value(chaptersJson)));
 
+  /// Persist the non-sensitive restart descriptor for a Mihon-backed manga.
+  ///
+  /// Online manga deliberately reuse [EpubBooks] so the existing shelf,
+  /// collections, tags and reader identity keep working. The descriptor only
+  /// contains extension/source identities, manga metadata and chapter URLs;
+  /// cookies, request headers and bearer tokens must never be written here.
+  Future<void> updateEpubBookMihonState(
+    String bookKey, {
+    required String sourceMetadata,
+    required int chapterCount,
+    required String chaptersJson,
+  }) =>
+      (update(epubBooks)..where((t) => t.bookKey.equals(bookKey))).write(
+        EpubBooksCompanion(
+          sourceMetadata: Value(sourceMetadata),
+          chapterCount: Value(chapterCount),
+          chaptersJson: Value(chaptersJson),
+        ),
+      );
+
   /// Rewrites a book's on-disk content paths (full-data backup restore rebases
   /// absolute paths to this device's roots). Only supplied fields are written;
   /// null leaves a column unchanged.

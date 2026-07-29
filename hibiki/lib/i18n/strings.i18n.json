@@ -2785,5 +2785,7 @@
   "mihon_filter_include": "Include",
   "mihon_filter_exclude": "Exclude",
   "mihon_filter_ascending": "Ascending",
-  "mihon_filter_descending": "Descending"
+  "mihon_filter_descending": "Descending",
+  "mihon_add_to_bookshelf": "Add to manga shelf",
+  "mihon_in_bookshelf": "In manga shelf"
 }

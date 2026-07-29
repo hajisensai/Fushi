@@ -2785,5 +2785,7 @@
   "mihon_filter_include": "包含",
   "mihon_filter_exclude": "排除",
   "mihon_filter_ascending": "升序",
-  "mihon_filter_descending": "降序"
+  "mihon_filter_descending": "降序",
+  "mihon_add_to_bookshelf": "加入漫画书架",
+  "mihon_in_bookshelf": "已加入漫画书架"
 }

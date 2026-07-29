@@ -18,14 +18,22 @@ import 'package:hibiki_core/hibiki_core.dart';
 import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/media/manga/manga_module.dart';
 import 'package:hibiki/src/media/manga/manga_ocr_background_job.dart';
+import 'package:hibiki/src/ocr/manga_ocr_folder_job.dart'
+    show kMangaOcrOutDirName;
 import 'package:hibiki/src/ocr/manga_ocr_service.dart';
 import 'package:hibiki/src/media/manga/manga_overlay_html.dart';
 import 'package:hibiki/src/media/manga/manga_reading_mode.dart';
 import 'package:hibiki/src/media/manga/manga_reading_stats.dart';
 import 'package:hibiki/src/media/manga/manga_spread_model.dart';
 import 'package:hibiki/src/media/manga/mihon/manga_page_provider.dart';
+import 'package:hibiki/src/media/manga/mihon/mihon_library.dart';
+import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
+import 'package:hibiki/src/media/manga/mihon/mihon_online_ocr.dart';
+import 'package:hibiki/src/media/manga/mihon/mihon_reader_chapter.dart';
 import 'package:hibiki/src/media/manga/mokuro_payload.dart';
+import 'package:hibiki/src/media/manga/ocr/google_lens_disclosure.dart';
+import 'package:hibiki/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:hibiki/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
 import 'package:hibiki/src/focus/page_focus_ownership.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
@@ -277,10 +285,15 @@ class MangaHibikiPage extends BaseSourcePage {
     super.key,
     required super.item,
     required this.bookKey,
+    this.onlineChapter,
   });
 
   /// `EpubBooks` 主键（净化后的标题），由 `hoshi://book/<bookKey>` 解析而来。
   final String bookKey;
+
+  /// A directly selected Mihon chapter. Shelf launches leave this null and
+  /// restore the chapter from the restart descriptor in `sourceMetadata`.
+  final MihonReaderChapter? onlineChapter;
 
   /// 漫画拦截器专属虚拟域。必须与阅读器的 `hoshi.local` 互异。
   static const String kMangaHost = 'manga.local';
@@ -545,8 +558,10 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
 
   /// `<书目录>/images`（页图根，拦截器/封面解析的穿越守卫边界）。
   String? _imagesDir;
-  MangaReaderSession? _localPageSession;
+  MangaReaderSession? _pageSession;
   Map<String, int> _localPageIndices = const <String, int>{};
+  MihonReaderChapter? _onlineChapter;
+  bool _persistProgress = true;
   MokuroPayload? _payload;
   MangaReadingMode _mode = MangaReadingMode.spread;
   List<MangaSpreadEntry> _spreads = <MangaSpreadEntry>[];
@@ -565,6 +580,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   int _currentPage = 0;
   double _currentFraction = 0;
   Timer? _progressDebounce;
+  Timer? _onlineGeometryPersistDebounce;
   int _lastSavedPage = -1;
   double _lastSavedFraction = -1;
 
@@ -692,13 +708,14 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     // 再从 unawaited 调用点抛出未捕获异步异常（BUG-1171）。
     _windowGate.abandon();
     _progressDebounce?.cancel();
+    _onlineGeometryPersistDebounce?.cancel();
     _dictionaryTurnDismissTimer?.cancel();
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _wholeVolumeOcrSubscription = null;
-    final MangaReaderSession? localPageSession = _localPageSession;
-    _localPageSession = null;
-    if (localPageSession != null) {
-      unawaited(localPageSession.close());
+    final MangaReaderSession? pageSession = _pageSession;
+    _pageSession = null;
+    if (pageSession != null) {
+      unawaited(_closePageSession(pageSession));
     }
     // dispose 里只能 fire-and-forget；正常退出走 onSourcePagePop 的 await 路径，
     // 这里是崩溃/异常拆栈时的兜底。
@@ -707,6 +724,10 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     _pageNotifier.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  Future<void> _closePageSession(MangaReaderSession session) async {
+    await session.close();
   }
 
   @override
@@ -784,10 +805,27 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
 
   Future<void> _loadBook() async {
     final HibikiDatabase db = appModel.database;
+    final MihonReaderChapter? directOnlineChapter = widget.onlineChapter;
+    if (directOnlineChapter != null) {
+      final EpubBookRow? persisted = directOnlineChapter.persistProgress
+          ? await db.getEpubBook(widget.bookKey)
+          : null;
+      await _loadOnlineChapter(
+        directOnlineChapter,
+        persistedRow: persisted,
+      );
+      return;
+    }
     final EpubBookRow? row = await db.getEpubBook(widget.bookKey);
     if (!mounted) return;
     if (row == null) {
       setState(() => _loadFailed = true);
+      return;
+    }
+    final MihonLibraryEntry? onlineEntry =
+        MihonLibraryEntry.tryParse(row.sourceMetadata);
+    if (onlineEntry != null) {
+      await _loadOnlineBookFromShelf(row, onlineEntry);
       return;
     }
     // 存储契约（与 PDF 同构）：extractDir/epubPath 指向 manga.json；页图在
@@ -860,8 +898,8 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
 
     final int restoredSpread =
         MangaHibikiPage.restoreSpreadFromProgress(spreads, restoredPage);
-    final MangaReaderSession? previousLocalPageSession = _localPageSession;
-    _localPageSession = localPageSession;
+    final MangaReaderSession? previousLocalPageSession = _pageSession;
+    _pageSession = localPageSession;
     _localPageIndices = <String, int>{
       for (int index = 0; index < relativePagePaths.length; index++)
         _localPageKey(relativePagePaths[index]): index,
@@ -891,6 +929,390 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     unawaited(_recoverIncrementalOcrCache(row.extractDir, payload));
   }
 
+  Future<void> _loadOnlineBookFromShelf(
+    EpubBookRow row,
+    MihonLibraryEntry entry,
+  ) async {
+    try {
+      final MihonManager manager = appModel.mihonManager;
+      await manager.initialise();
+      final MangaOnlineSourceRow source = manager.sources.firstWhere(
+        (MangaOnlineSourceRow value) =>
+            value.extensionPackage == entry.extensionPackage &&
+            value.sourceId == entry.sourceId &&
+            value.enabled,
+        orElse: () => throw const MihonRuntimeException(
+          'SOURCE_DISABLED',
+          'The manga source is missing or disabled',
+        ),
+      );
+      final MihonSourceContext sourceContext =
+          await manager.contextForSource(source);
+      int chapterIndex = MihonLibraryService.initialChapterIndex(entry);
+      if (chapterIndex < 0) {
+        throw const MihonRuntimeException(
+          'CHAPTERS_EMPTY',
+          'The manga has no chapters',
+        );
+      }
+      if (entry.currentChapterIndex == null) {
+        entry = await MihonLibraryService(manager).selectChapter(
+          bookKey: row.bookKey,
+          entry: entry,
+          chapterIndex: chapterIndex,
+        );
+        chapterIndex = entry.currentChapterIndex!;
+      }
+      final MihonChapter chapter = entry.chapters[chapterIndex];
+      final List<MihonPage> pages = await manager.runtime.getPages(
+        sourceContext.extension,
+        sourceContext.source,
+        chapter,
+        preferences: sourceContext.preferences,
+      );
+      await _loadOnlineChapter(
+        MihonReaderChapter(
+          manager: manager,
+          sourceContext: sourceContext,
+          manga: entry.manga,
+          chapter: chapter,
+          pages: pages,
+          managedDirectory: MihonLibraryService(manager)
+              .chapterDirectory(row.bookKey, chapter),
+          persistProgress: true,
+        ),
+        persistedRow: row,
+      );
+    } on Object catch (error, stack) {
+      ErrorLogService.instance
+          .log('MangaHibikiPage.loadOnlineShelf', error, stack);
+      if (mounted) {
+        setState(() {
+          _bookRow = row;
+          _loadFailed = true;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadOnlineChapter(
+    MihonReaderChapter input, {
+    required EpubBookRow? persistedRow,
+  }) async {
+    final Directory directory = input.managedDirectory;
+    final Directory imagesDirectory =
+        Directory(p.join(directory.path, 'images'));
+    await imagesDirectory.create(recursive: true);
+    final List<String> pageIdentities = <String>[
+      for (final MihonPage page in input.pages)
+        mihonPageCacheIdentity(input.sourceContext, page),
+    ];
+    final File identityFile =
+        File(p.join(directory.path, '.mihon-chapter.json'));
+    final bool sameChapterPages =
+        await _onlineChapterIdentityMatches(identityFile, pageIdentities);
+    if (!sameChapterPages) {
+      await _invalidateOnlineChapterPayload(directory, imagesDirectory);
+    }
+    await _writeOnlineChapterIdentity(identityFile, pageIdentities);
+
+    final List<String> relativePagePaths = <String>[
+      for (int index = 0; index < input.pages.length; index++)
+        'page-${(index + 1).toString().padLeft(6, '0')}.jpg',
+    ];
+    final File mangaJson = File(p.join(directory.path, 'manga.json'));
+    MokuroPayload? payload;
+    bool rewriteMangaJson = !await mangaJson.exists();
+    if (await mangaJson.exists()) {
+      try {
+        final MokuroPayload stored = await MangaHibikiPage.parseMangaJsonOffUi(
+          await mangaJson.readAsString(),
+        );
+        if (stored.images.length == input.pages.length) {
+          payload = stored;
+        } else {
+          rewriteMangaJson = true;
+        }
+      } on Object {
+        payload = null;
+        rewriteMangaJson = true;
+      }
+    }
+    payload ??= MokuroPayload(
+      images: <MokuroImage>[
+        for (final String path in relativePagePaths)
+          MokuroImage(
+            url: path,
+            // Mihon does not expose dimensions before fetching the page. This
+            // neutral portrait ratio is only used until OCR decodes the real
+            // dimensions; image rendering itself keeps the source aspect.
+            size: const Size(1000, 1400),
+            blocks: const <MokuroBlock>[],
+          ),
+      ],
+    );
+    if (rewriteMangaJson) {
+      final File temporary = File('${mangaJson.path}.tmp');
+      await temporary.writeAsString(
+        jsonEncode(mangaPayloadToJson(payload)),
+        flush: true,
+      );
+      if (await mangaJson.exists()) await mangaJson.delete();
+      await temporary.rename(mangaJson.path);
+    }
+
+    final MangaReaderSession pageSession = await MihonMangaPageProvider(
+      runtime: input.manager.runtime,
+      context: input.sourceContext,
+      pages: input.pages,
+      cacheRoot: Directory(
+        p.join(
+          input.manager.rootDirectory.path,
+          'reader-cache',
+          'pages',
+        ),
+      ),
+    ).open();
+    if (!mounted) {
+      await pageSession.close();
+      return;
+    }
+
+    _spreadPreference = MangaSpreadPreferenceKey.fromKey(
+      appModel.mangaSpreadPreference,
+    );
+    _spreadDirection = appModel.mangaReadingDirection == 'ltr' ? 'ltr' : 'rtl';
+    _zoomPercent = appModel.mangaZoomPercent.clamp(50, 200);
+    final EpubBookRow row = persistedRow != null
+        ? persistedRow.copyWith(
+            epubPath: p.basename(mangaJson.path),
+            extractDir: directory.path,
+            chapterCount: input.pages.length,
+          )
+        : EpubBookRow(
+            bookKey: widget.bookKey,
+            title: input.manga.title,
+            author: input.manga.author ?? input.manga.artist,
+            epubPath: p.basename(mangaJson.path),
+            extractDir: directory.path,
+            chapterCount: input.pages.length,
+            chaptersJson: '[]',
+            importedAt: DateTime.now().millisecondsSinceEpoch,
+            format: 'manga',
+          );
+    final MangaReadingMode mode =
+        MangaHibikiPage.modeOverrideFromDb(row.mangaReadingMode) ??
+            detectReadingMode(payload);
+    final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, mode);
+
+    int restoredPage = input.initialPage ?? 0;
+    double restoredFraction = 0;
+    ReaderPosition? saved;
+    if (input.persistProgress && input.initialPage == null) {
+      try {
+        saved = await ReaderPositionRepository(appModel.database)
+            .findByBookKey(widget.bookKey);
+      } on Object catch (error, stack) {
+        ErrorLogService.instance
+            .log('MangaHibikiPage.restoreOnline', error, stack);
+      }
+      if (saved != null &&
+          saved.sectionIndex >= 0 &&
+          saved.sectionIndex < payload.images.length) {
+        restoredPage = saved.sectionIndex;
+        if (mode == MangaReadingMode.webtoon) {
+          restoredFraction = MangaHibikiPage.charOffsetToWebtoonFraction(
+            saved.charOffset,
+          );
+        }
+      }
+    }
+    restoredPage =
+        restoredPage.clamp(0, math.max(0, payload.images.length - 1));
+
+    _readingTimeTracker ??= ReadingTimeTracker(appModel.database)..start();
+    _sessionStartTime = DateTime.now();
+    final MangaReaderSession? previousSession = _pageSession;
+    _pageSession = pageSession;
+    _localPageIndices = <String, int>{
+      for (int index = 0; index < relativePagePaths.length; index++)
+        _localPageKey(relativePagePaths[index]): index,
+    };
+    _onlineChapter = input;
+    _persistProgress = input.persistProgress;
+    if (previousSession != null) unawaited(previousSession.close());
+
+    final int restoredSpread =
+        MangaHibikiPage.restoreSpreadFromProgress(spreads, restoredPage);
+    setState(() {
+      _bookRow = row;
+      _imagesDir = imagesDirectory.path;
+      _payload = payload;
+      _mode = mode;
+      _spreads = spreads;
+      _currentSpread = restoredSpread;
+      _currentPage = MangaHibikiPage.firstPageOfSpread(spreads, restoredSpread);
+      _currentFraction = restoredFraction;
+      _lastSavedPage = saved != null ? restoredPage : -1;
+      _lastSavedFraction = saved != null ? restoredFraction : -1;
+    });
+    _pageNotifier.value = _currentPage;
+    _countVisiblePages();
+    unawaited(_primeOnlinePages(restoredPage));
+    unawaited(_recoverIncrementalOcrCache(directory.path, payload));
+  }
+
+  Future<bool> _onlineChapterIdentityMatches(
+    File file,
+    List<String> expected,
+  ) async {
+    try {
+      final Object? decoded = jsonDecode(await file.readAsString());
+      if (decoded is! Map<Object?, Object?> ||
+          decoded['schema_version'] != 1 ||
+          decoded['pages'] is! List<Object?>) {
+        return false;
+      }
+      final List<String> stored = (decoded['pages'] as List<Object?>)
+          .map((Object? value) => value?.toString() ?? '')
+          .toList(growable: false);
+      if (stored.length != expected.length) return false;
+      for (int index = 0; index < expected.length; index++) {
+        if (stored[index] != expected[index]) return false;
+      }
+      return true;
+    } on Object {
+      return false;
+    }
+  }
+
+  Future<void> _invalidateOnlineChapterPayload(
+    Directory directory,
+    Directory imagesDirectory,
+  ) async {
+    final File payload = File(p.join(directory.path, 'manga.json'));
+    if (await payload.exists()) await payload.delete();
+    final File materializedManifest =
+        File(p.join(imagesDirectory.path, '.mihon-pages.json'));
+    if (await materializedManifest.exists()) {
+      await materializedManifest.delete();
+    }
+    final Directory ocr =
+        Directory(p.join(imagesDirectory.path, kMangaOcrOutDirName));
+    if (await ocr.exists()) await ocr.delete(recursive: true);
+    if (await imagesDirectory.exists()) {
+      await for (final FileSystemEntity entity in imagesDirectory.list()) {
+        if (entity is File &&
+            RegExp(r'^page-\d{6}\.jpg$').hasMatch(p.basename(entity.path))) {
+          await entity.delete();
+        }
+      }
+    }
+  }
+
+  Future<void> _writeOnlineChapterIdentity(
+    File target,
+    List<String> identities,
+  ) async {
+    final File temporary = File('${target.path}.tmp');
+    await temporary.writeAsString(
+      jsonEncode(<String, Object?>{
+        'schema_version': 1,
+        'pages': identities,
+      }),
+      flush: true,
+    );
+    if (await target.exists()) await target.delete();
+    await temporary.rename(target.path);
+  }
+
+  Future<void> _primeOnlinePages(int pageIndex) async {
+    final MangaReaderSession? session = _pageSession;
+    if (session == null || _onlineChapter == null) return;
+    try {
+      final MangaPageBytes page = await session.page(pageIndex);
+      await _synchronizeOnlinePageGeometry(pageIndex, page);
+      await session.prefetchAround(pageIndex);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MangaHibikiPage.onlinePrefetch',
+        error,
+        stack,
+      );
+    }
+  }
+
+  Future<void> _synchronizeOnlinePageGeometry(
+    int pageIndex,
+    MangaPageBytes page,
+  ) async {
+    final int? width = page.width;
+    final int? height = page.height;
+    final MokuroPayload? current = _payload;
+    if (width == null ||
+        height == null ||
+        width <= 0 ||
+        height <= 0 ||
+        current == null ||
+        pageIndex < 0 ||
+        pageIndex >= current.images.length) {
+      return;
+    }
+    final MokuroImage previous = current.images[pageIndex];
+    if (previous.size.width != width || previous.size.height != height) {
+      final List<MokuroImage> images = List<MokuroImage>.of(current.images);
+      images[pageIndex] = MokuroImage(
+        url: previous.url,
+        size: Size(width.toDouble(), height.toDouble()),
+        blocks: previous.blocks,
+      );
+      _payload = MokuroPayload(images: images, ocr: current.ocr);
+      _onlineGeometryPersistDebounce?.cancel();
+      _onlineGeometryPersistDebounce = Timer(
+        const Duration(milliseconds: 500),
+        () => unawaited(_persistOnlinePayloadGeometry()),
+      );
+    }
+    await _controller?.evaluateJavascript(
+      source: 'window.__mangaUpdatePageGeometry && '
+          'window.__mangaUpdatePageGeometry($pageIndex, $width, $height);',
+    );
+  }
+
+  Future<void> _persistOnlinePayloadGeometry() async {
+    final EpubBookRow? row = _bookRow;
+    final MokuroPayload? payload = _payload;
+    if (row == null ||
+        payload == null ||
+        _onlineChapter == null ||
+        _wholeVolumeOcrRunning) {
+      return;
+    }
+    final File target = File(p.join(row.extractDir, row.epubPath));
+    final File temporary = File('${target.path}.tmp');
+    try {
+      await temporary.writeAsString(
+        jsonEncode(mangaPayloadToJson(payload)),
+        flush: true,
+      );
+      if (await target.exists()) await target.delete();
+      await temporary.rename(target.path);
+    } on Object catch (error, stack) {
+      if (await temporary.exists()) {
+        try {
+          await temporary.delete();
+        } on FileSystemException {
+          // Best-effort cleanup; the managed target remains intact.
+        }
+      }
+      ErrorLogService.instance.log(
+        'MangaHibikiPage.persistOnlineGeometry',
+        error,
+        stack,
+      );
+    }
+  }
+
   Future<void> _recoverIncrementalOcrCache(
     String managedDirectory,
     MokuroPayload loadedPayload,
@@ -900,12 +1322,29 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         managedDirectory: managedDirectory,
         basePayload: loadedPayload,
       );
+      final MokuroPayload? current = _payload;
       if (!mounted ||
           recovery.recoveredPageIndices.isEmpty ||
-          !identical(_payload, loadedPayload)) {
+          current == null ||
+          current.images.length != recovery.payload.images.length ||
+          _bookRow?.extractDir != managedDirectory) {
         return;
       }
-      setState(() => _payload = recovery.payload);
+      final List<MokuroImage> merged = List<MokuroImage>.of(current.images);
+      for (final int pageIndex in recovery.recoveredPageIndices) {
+        final MokuroImage recovered = recovery.payload.images[pageIndex];
+        final MokuroImage existing = merged[pageIndex];
+        merged[pageIndex] = MokuroImage(
+          url: existing.url,
+          size: recovered.size,
+          blocks: recovered.blocks,
+        );
+      }
+      final MokuroPayload recoveredPayload = MokuroPayload(
+        images: merged,
+        ocr: recovery.payload.ocr ?? current.ocr,
+      );
+      setState(() => _payload = recoveredPayload);
 
       final Set<int> visiblePages = <int>{
         for (final int spreadIndex in _loadedSpreads)
@@ -916,7 +1355,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
         if (visiblePages.contains(pageIndex)) {
           await _replacePageOcrOverlay(
             pageIndex,
-            recovery.payload.images[pageIndex],
+            recoveredPayload.images[pageIndex],
           );
         }
       }
@@ -990,13 +1429,46 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
 
   Future<WebResourceResponse?> _interceptRequest(WebUri url) async {
     if (url.host != MangaHibikiPage.kMangaHost) return null;
+    final String path = url.path;
+    if (!path.startsWith('/img/')) return _notFound('unknown path: $path');
+    final String relative = path.substring('/img/'.length);
+    final String decodedRelative = Uri.decodeComponent(relative);
+    final MangaReaderSession? pageSession = _pageSession;
+    final int? pageIndex = _localPageIndices[_localPageKey(decodedRelative)];
+    if (pageSession != null && pageIndex != null) {
+      try {
+        final MangaPageBytes page = await pageSession.page(pageIndex);
+        if (_onlineChapter != null) {
+          await _synchronizeOnlinePageGeometry(pageIndex, page);
+        }
+        return WebResourceResponse(
+          contentType: page.contentType,
+          statusCode: 200,
+          reasonPhrase: 'OK',
+          headers: <String, String>{
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'private, max-age=3600',
+          },
+          data: page.bytes,
+        );
+      } on MihonRuntimeException catch (error, stackTrace) {
+        ErrorLogService.instance.log(
+          'MangaHibikiPage.page',
+          error,
+          stackTrace,
+        );
+        return WebResourceResponse(
+          contentType: 'text/plain',
+          statusCode: 502,
+          reasonPhrase: 'Bad Gateway',
+          data: Uint8List(0),
+        );
+      }
+    }
     final String? imagesDir = _imagesDir;
     if (imagesDir == null) {
       return _notFound('imagesDir not ready: ${url.path}');
     }
-    final String path = url.path;
-    if (!path.startsWith('/img/')) return _notFound('unknown path: $path');
-    final String relative = path.substring('/img/'.length);
     final String? filePath =
         MangaHibikiPage.resolveMangaResource(imagesDir, relative);
     if (filePath == null) {
@@ -1009,32 +1481,15 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       }
       return _notFound('resource not found: $relative');
     }
-    final String decodedRelative = Uri.decodeComponent(relative);
-    final MangaReaderSession? localPageSession = _localPageSession;
-    final int? pageIndex = _localPageIndices[_localPageKey(decodedRelative)];
-    MangaPageBytes? localPage;
-    if (localPageSession != null && pageIndex != null) {
-      try {
-        localPage = await localPageSession.page(pageIndex);
-      } on MihonRuntimeException catch (error, stackTrace) {
-        ErrorLogService.instance.log(
-          'MangaHibikiPage.localPage',
-          error,
-          stackTrace,
-        );
-      }
-    }
-    final Uint8List data =
-        localPage?.bytes ?? await File(filePath).readAsBytes();
     return WebResourceResponse(
-      contentType: localPage?.contentType ?? _mangaMimeForPath(filePath),
+      contentType: _mangaMimeForPath(filePath),
       statusCode: 200,
       reasonPhrase: 'OK',
       headers: <String, String>{
         'Access-Control-Allow-Origin': '*',
         'Cache-Control': 'max-age=3600',
       },
-      data: data,
+      data: await File(filePath).readAsBytes(),
     );
   }
 
@@ -1194,6 +1649,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     await _replaceSpreadOcr(target);
     _updateCurrentPageImagePath();
     _recordProgress();
+    if (_onlineChapter != null) {
+      unawaited(_primeOnlinePages(_currentPage));
+    }
   }
 
   /// Keep one spread worth of precise OCR hit targets in the stable manga
@@ -1260,6 +1718,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     await _replaceSpreadOcr(target);
     _updateCurrentPageImagePath();
     _recordProgress();
+    if (_onlineChapter != null) {
+      unawaited(_primeOnlinePages(_currentPage));
+    }
   }
 
   /// 桌面键盘翻页（webtoon 交 WebView 原生竖滚，方向键一律 ignored）。
@@ -1436,6 +1897,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       _updateCurrentPageImagePath();
     }
     _recordProgress();
+    if (spreadChanged && _onlineChapter != null) {
+      unawaited(_primeOnlinePages(_currentPage));
+    }
   }
 
   /// 解析当前 spread 首页图的绝对文件路径，作为 Anki 卡图（ERRATA C2——
@@ -1458,6 +1922,29 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       imagesDir,
       MangaHibikiPage.mangaImageRelativePath(payload.images[page].url),
     );
+    if (_currentPageImagePath == null && _onlineChapter != null) {
+      unawaited(_resolveOnlineCurrentPageFile(page));
+    }
+  }
+
+  Future<void> _resolveOnlineCurrentPageFile(int page) async {
+    final MangaReaderSession? session = _pageSession;
+    if (session == null || page < 0 || page >= session.pageCount) return;
+    try {
+      final File? file = await session.localFile(page);
+      if (!mounted ||
+          page !=
+              MangaHibikiPage.firstPageOfSpread(
+                _spreads,
+                _currentSpread,
+              )) {
+        return;
+      }
+      _currentPageImagePath = file?.path;
+    } on Object catch (error, stack) {
+      ErrorLogService.instance
+          .log('MangaHibikiPage.onlineCardImage', error, stack);
+    }
   }
 
   /// 直接运行非模态全页/整卷 OCR。选好引擎后向导立即关闭，任务由阅读器持有；
@@ -1469,13 +1956,35 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     }
     setState(() => _wholeVolumeOcrOpen = true);
     try {
-      final MangaOcrBackgroundJob? job = await MangaModule.openBookOcr(
-        context: context,
-        db: appModel.database,
-        book: row,
-        startPage: _currentPage,
-        desktop: Platform.isWindows || Platform.isLinux || Platform.isMacOS,
-      );
+      final MihonReaderChapter? online = _onlineChapter;
+      final MangaOcrBackgroundJob? job;
+      if (online != null) {
+        if (!await ensureGoogleLensDisclosure(context) || !mounted) return;
+        final MangaReaderSession? session = _pageSession;
+        final MokuroPayload? payload = _payload;
+        if (session == null || payload == null) return;
+        _onlineGeometryPersistDebounce?.cancel();
+        await _persistOnlinePayloadGeometry();
+        job = MangaOcrBackgroundJob(
+          bookKey: widget.bookKey,
+          managedDirectory: online.managedDirectory.path,
+          engine: MangaOcrEngineId.googleLens,
+          events: MihonOnlineMangaOcr(
+            session: session,
+            managedDirectory: online.managedDirectory,
+            initialPayload: payload,
+            startPage: _currentPage,
+          ).run(),
+        );
+      } else {
+        job = await MangaModule.openBookOcr(
+          context: context,
+          db: appModel.database,
+          book: row,
+          startPage: _currentPage,
+          desktop: Platform.isWindows || Platform.isLinux || Platform.isMacOS,
+        );
+      }
       if (!mounted || job == null) return;
       setState(() {
         _wholeVolumeOcrRunning = true;
@@ -1689,7 +2198,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
       return;
     }
 
-    final MangaReaderSession? session = _localPageSession;
+    final MangaReaderSession? session = _pageSession;
     if (session == null || pageIndex >= session.pageCount) return;
     try {
       final File? file = await session.localFile(pageIndex);
@@ -1895,6 +2404,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   Future<void> _persistPosition(int page, double fraction) async {
     _lastSavedPage = page;
     _lastSavedFraction = fraction;
+    if (!_persistProgress) return;
     final HibikiDatabase db = appModel.database;
     final bool isWebtoon = _mode == MangaReadingMode.webtoon;
     try {

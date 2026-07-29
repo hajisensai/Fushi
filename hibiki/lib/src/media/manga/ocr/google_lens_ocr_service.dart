@@ -3,6 +3,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui';
@@ -47,6 +48,7 @@ class HttpGoogleLensTransport implements GoogleLensTransport {
         _client = client ?? HttpClient() {
     _client.connectionTimeout = timeout;
     _client.userAgent = _kChromiumUserAgent;
+    _client.maxConnectionsPerHost = 2;
   }
 
   final Uri endpoint;
@@ -242,8 +244,26 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
 
   Future<MokuroImage> _recognizePage(MangaOcrPageFile page) async {
     final Uint8List source = await page.file.readAsBytes();
+    return recognizePageBytes(
+      source,
+      relativeUrl: page.relativeUrl,
+    );
+  }
+
+  /// Recognize a single already-fetched page.
+  ///
+  /// Online Mihon chapters use this entry point so page download, Lens upload
+  /// and per-page cache publication remain one serial current-page-first job.
+  /// Image decoding/resizing stays off the Flutter UI isolate, matching
+  /// Niratan's detached preparation task.
+  Future<MokuroImage> recognizePageBytes(
+    Uint8List source, {
+    required String relativeUrl,
+  }) async {
     final GoogleLensPreparedImage prepared =
-        GoogleLensProtocol.prepareImage(source);
+        await Isolate.run<GoogleLensPreparedImage>(
+      () => GoogleLensProtocol.prepareImage(source),
+    );
     final Uint8List request = GoogleLensProtocol.makeRequest(
       imageData: prepared.data,
       width: prepared.width,
@@ -292,7 +312,7 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
       );
     }
     return MokuroImage(
-      url: page.relativeUrl,
+      url: relativeUrl,
       size: Size(width, height),
       blocks: blocks,
     );
@@ -406,7 +426,7 @@ class GoogleLensPageCache {
         .single as Map<String, Object?>;
     final Map<String, Object?> encoded = <String, Object?>{
       'fingerprint': _fingerprint(page),
-      'geometry_version': 2,
+      'geometry_version': 3,
       'page': pageJson,
     };
     _remember(jsonEncode(_fingerprint(page)), result);

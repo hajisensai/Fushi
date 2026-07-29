@@ -107,7 +107,7 @@ void main() {
   // BUG-1172：旋转必须按送检图的宽高比还原。Lens 的 width 按图宽归一、height 按
   // 图高归一，直接把两者混进同一组 sin/cos 只在正方形页成立；漫画页恒是竖长图。
   // 判据一律放在**像素空间**——旋转矩形的像素 AABB 与归一化口径无关。
-  test('45 度斜行在非方形页上的命中区按像素几何还原', () {
+  test('45 度斜行保留非方形页 AABB 并按 Niratan 横排方向切分', () {
     const int pageWidth = 1200;
     const int pageHeight = 1700;
     const double rotation = math.pi / 4;
@@ -127,23 +127,44 @@ void main() {
     expect(result.single.sentence, '斜体');
     expect(result.single.regions, hasLength(2));
 
-    const double cellPixelWidth = lineWidth / 2 * pageWidth;
-    const double cellPixelHeight = lineHeight * pageHeight;
-    final double expectedPixelWidth =
-        cellPixelWidth * math.cos(rotation).abs() +
-            cellPixelHeight * math.sin(rotation).abs();
-    final double expectedPixelHeight =
-        cellPixelWidth * math.sin(rotation).abs() +
-            cellPixelHeight * math.cos(rotation).abs();
-    final Rect first = result.single.regions.first.normalizedBounds;
-    expect(first.width * pageWidth, closeTo(expectedPixelWidth, 0.5));
-    expect(first.height * pageHeight, closeTo(expectedPixelHeight, 0.5));
+    final double expectedLinePixelWidth =
+        lineWidth * pageWidth * math.cos(rotation).abs() +
+            lineHeight * pageHeight * math.sin(rotation).abs();
+    final double expectedLinePixelHeight =
+        lineWidth * pageWidth * math.sin(rotation).abs() +
+            lineHeight * pageHeight * math.cos(rotation).abs();
+    final Rect line = result.single.normalizedBounds;
+    expect(line.width * pageWidth, closeTo(expectedLinePixelWidth, 0.5));
+    expect(line.height * pageHeight, closeTo(expectedLinePixelHeight, 0.5));
 
-    // 两个字符沿同一条基线错开：像素位移的斜率必须等于 tan(rotation)。
+    final Rect first = result.single.regions.first.normalizedBounds;
+    expect(first.width * pageWidth, closeTo(expectedLinePixelWidth / 2, 0.5));
+    expect(first.height * pageHeight, closeTo(expectedLinePixelHeight, 0.5));
+
+    // Niratan 的最终命中语义按段落方向切 AABB：横排固定左到右，不再受
+    // rotation 正负号影响而把字符命中顺序翻转。
     final Rect second = result.single.regions.last.normalizedBounds;
-    final double dxPixels = (second.center.dx - first.center.dx) * pageWidth;
-    final double dyPixels = (second.center.dy - first.center.dy) * pageHeight;
-    expect(dyPixels / dxPixels, closeTo(math.tan(rotation), 1e-3));
+    expect(first.center.dx, lessThan(second.center.dx));
+    expect(first.center.dy, closeTo(second.center.dy, 1e-5));
+  });
+
+  test('负 90 度竖排仍按视觉上到下切分', () {
+    final List<GoogleLensParagraph> result = GoogleLensProtocol.decodeResponse(
+      makeGoogleLensFixture(
+        firstWord: '上',
+        secondWord: '下',
+        width: 0.4,
+        height: 0.08,
+        rotation: -math.pi / 2,
+      ),
+      imageWidth: 1200,
+      imageHeight: 1700,
+    );
+    expect(result.single.isVertical, isTrue);
+    expect(
+      result.single.regions.first.normalizedBounds.top,
+      lessThan(result.single.regions.last.normalizedBounds.top),
+    );
   });
 
   test('90 度竖行在非方形页上的 X 半宽按页宽高比还原', () {

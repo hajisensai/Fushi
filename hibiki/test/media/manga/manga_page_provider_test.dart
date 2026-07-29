@@ -7,6 +7,7 @@ import 'package:hibiki/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:image/image.dart' as img;
 
 void main() {
   test('local reader session serves managed pages and blocks traversal',
@@ -32,6 +33,7 @@ void main() {
     ).open();
     expect(session.pageCount, 2);
     expect((await session.page(0)).contentType, 'image/png');
+    expect((await session.localFile(0))?.path, endsWith('page.png'));
     await expectLater(
       session.page(1),
       throwsA(
@@ -56,8 +58,7 @@ void main() {
     );
   });
 
-  test('online reader uses LRU cache and removes the session directory',
-      () async {
+  test('online reader uses memory LRU and preserves the disk cache', () async {
     final Directory root =
         await Directory.systemTemp.createTemp('hibiki-mihon-reader-');
     addTearDown(() async {
@@ -85,23 +86,28 @@ void main() {
         MihonPage(index: 1, url: 'page-1'),
       ],
       cacheRoot: root,
-      maxCacheBytes: 5,
+      maxMemoryCacheBytes: 5,
     );
 
     final MangaReaderSession session = await provider.open();
-    final Directory sessionDirectory =
+    final Directory cacheDirectory =
         (session as MihonMangaReaderSession).directory;
     expect((await session.page(0)).contentType, 'image/jpeg');
+    expect(await session.localFile(0), isNotNull);
     await session.page(1);
     expect(runtime.fetchCount, 2);
 
     await session.page(1);
     expect(runtime.fetchCount, 2, reason: 'the newest page remains cached');
     await session.page(0);
-    expect(runtime.fetchCount, 3, reason: 'the LRU page was evicted');
+    expect(
+      runtime.fetchCount,
+      2,
+      reason: 'a memory eviction falls back to the persistent disk cache',
+    );
 
     await session.close();
-    expect(await sessionDirectory.exists(), isFalse);
+    expect(await cacheDirectory.exists(), isTrue);
     expect(
       () => session.page(0),
       throwsA(
@@ -112,6 +118,11 @@ void main() {
         ),
       ),
     );
+
+    final MangaReaderSession reopened = await provider.open();
+    await reopened.page(0);
+    expect(runtime.fetchCount, 2, reason: 'the disk cache survives sessions');
+    await reopened.close();
   });
 
   test('closing a chapter cancels unfinished runtime image requests', () async {
@@ -138,6 +149,111 @@ void main() {
 
     expect(runtime.cancelledIds, hasLength(1));
     await cancellation;
+  });
+
+  test('decodes the real landscape and portrait page dimensions', () async {
+    final ({int width, int height})? landscape = await mangaImageDimensions(
+      Uint8List.fromList(
+        img.encodePng(img.Image(width: 1200, height: 700)),
+      ),
+    );
+    final ({int width, int height})? portrait = await mangaImageDimensions(
+      Uint8List.fromList(
+        img.encodePng(img.Image(width: 720, height: 1280)),
+      ),
+    );
+
+    expect(landscape, (width: 1200, height: 700));
+    expect(portrait, (width: 720, height: 1280));
+  });
+
+  test('online image requests never exceed four concurrent fetches', () async {
+    final Directory root =
+        await Directory.systemTemp.createTemp('hibiki-mihon-concurrency-');
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    final _ConcurrentImageRuntime runtime = _ConcurrentImageRuntime();
+    final MangaReaderSession session = await MihonMangaPageProvider(
+      runtime: runtime,
+      context: _fixtureContext,
+      pages: <MihonPage>[
+        for (int index = 0; index < 8; index++)
+          MihonPage(index: index, url: 'page-$index'),
+      ],
+      cacheRoot: root,
+    ).open();
+
+    await Future.wait<MangaPageBytes>(
+      <Future<MangaPageBytes>>[
+        for (int index = 0; index < 8; index++) session.page(index),
+      ],
+    );
+
+    expect(runtime.maximumActive, 4);
+    await session.close();
+  });
+
+  test('cache identities are stable for Unicode source URLs', () async {
+    final Directory root =
+        await Directory.systemTemp.createTemp('hibiki-mihon-unicode-cache-');
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    final MangaReaderSession session = await MihonMangaPageProvider(
+      runtime: _ImageRuntime(),
+      context: const MihonSourceContext(
+        extension: MihonExtensionRef(
+          packageName: 'org.example.unicode',
+          apkPath: 'unicode.ext',
+        ),
+        source: MihonSource(
+          extensionPackage: 'org.example.unicode',
+          id: '日本語-source',
+          name: '日本語',
+          language: 'ja',
+          baseUrl: 'https://例え.test',
+        ),
+        preferences: <MihonPreference>[],
+      ),
+      pages: const <MihonPage>[
+        MihonPage(
+          index: 0,
+          url: '/漫画/第一話',
+          imageUrl: 'https://例え.test/画像/一.jpg',
+        ),
+      ],
+      cacheRoot: root,
+    ).open();
+
+    final String identity = session.cacheIdentity(0);
+    expect(identity, matches(RegExp(r'^[0-9a-f]{64}$')));
+    expect(identity, session.cacheIdentity(0));
+    expect(
+      identity,
+      mihonPageCacheIdentity(
+        const MihonSourceContext(
+          extension: MihonExtensionRef(
+            packageName: 'org.example.unicode',
+            apkPath: 'unicode.ext',
+          ),
+          source: MihonSource(
+            extensionPackage: 'org.example.unicode',
+            id: '日本語-source',
+            name: '日本語',
+            language: 'ja',
+            baseUrl: 'https://例え.test',
+          ),
+          preferences: <MihonPreference>[],
+        ),
+        const MihonPage(
+          index: 0,
+          url: '/漫画/第一話',
+          imageUrl: 'https://例え.test/画像/一.jpg',
+        ),
+      ),
+    );
+    await session.close();
   });
 }
 
@@ -203,5 +319,24 @@ class _CancellableImageRuntime extends Fake
             ),
           );
     }
+  }
+}
+
+class _ConcurrentImageRuntime extends Fake implements MihonRuntime {
+  int active = 0;
+  int maximumActive = 0;
+
+  @override
+  Future<Uint8List> fetchImage(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonPage page, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async {
+    active += 1;
+    if (active > maximumActive) maximumActive = active;
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    active -= 1;
+    return Uint8List.fromList(<int>[0xff, 0xd8, 0xff, page.index]);
   }
 }
