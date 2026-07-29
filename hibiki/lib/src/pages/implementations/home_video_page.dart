@@ -662,7 +662,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ));
   }
 
-  /// 触屏长按卡片 / 桌面 Ctrl+点击：直接进入多选并选中该项。
+  /// 桌面 Ctrl/⌘/Shift + 点击：直接进入多选并选中该项。
+  /// 触屏（含外接键盘）只允许从明确的「选择」入口进入。
   void _enterSelectionWith(SelectionSlot slot) {
     setState(() => _selection.enterWith(slot));
   }
@@ -1998,7 +1999,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 const SyncProgressBanner(),
                 Expanded(
                   // 多选态才接管长按：长按落在卡上 = 起手扫选，不抬手滑动即刷出
-                  // 一段区间。非多选态原样透传（长按仍归卡片自身的菜单 / 进多选）。
+                  // 一段区间。非多选态原样透传（长按仍归卡片自身的菜单）。
                   child: SelectionDragArea(
                     enabled: _selectionMode,
                     onDragBegin: (SelectionSlot slot) =>

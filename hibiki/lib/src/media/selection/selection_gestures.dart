@@ -35,8 +35,19 @@ SelectionTapKind selectionTapKind() => HardwareKeyboard.instance.isShiftPressed
 /// 非多选态下，这一次点击是不是「用修饰键直接进多选」。
 ///
 /// macOS 用 ⌘、其余桌面用 Ctrl（各自平台的多选惯例）；Shift 也算，此时相当于
-/// 进多选并选中该项（无锚点，区间退化为单项）。触屏无键盘，恒 false。
+/// 进多选并选中该项（无锚点，区间退化为单项）。Android / iOS / Fuchsia 即使
+/// 外接物理键盘也恒 false：触屏库页必须先点明确的「选择」入口。
 bool selectionEntryModifierPressed(BuildContext context) {
+  switch (Theme.of(context).platform) {
+    case TargetPlatform.android:
+    case TargetPlatform.iOS:
+    case TargetPlatform.fuchsia:
+      return false;
+    case TargetPlatform.linux:
+    case TargetPlatform.windows:
+    case TargetPlatform.macOS:
+      break;
+  }
   final HardwareKeyboard keyboard = HardwareKeyboard.instance;
   if (keyboard.isShiftPressed) return true;
   return Theme.of(context).platform == TargetPlatform.macOS

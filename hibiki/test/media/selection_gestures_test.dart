@@ -226,6 +226,39 @@ void main() {
       expect(selectionEntryModifierPressed(ctx), isFalse);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     });
+
+    testWidgets('Android/iOS/Fuchsia 外接键盘修饰键也不能绕过明确选择入口',
+        (WidgetTester tester) async {
+      for (final TargetPlatform platform in <TargetPlatform>[
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+        TargetPlatform.fuchsia,
+      ]) {
+        late BuildContext ctx;
+        await tester.pumpWidget(MaterialApp(
+          theme: ThemeData(platform: platform),
+          home: Builder(builder: (BuildContext context) {
+            ctx = context;
+            return const SizedBox();
+          }),
+        ));
+        await tester.pumpAndSettle();
+
+        for (final LogicalKeyboardKey key in <LogicalKeyboardKey>[
+          LogicalKeyboardKey.shiftLeft,
+          LogicalKeyboardKey.controlLeft,
+          LogicalKeyboardKey.metaLeft,
+        ]) {
+          await tester.sendKeyDownEvent(key);
+          expect(
+            selectionEntryModifierPressed(ctx),
+            isFalse,
+            reason: '$platform + $key 必须先点明确的「选择」入口',
+          );
+          await tester.sendKeyUpEvent(key);
+        }
+      }
+    });
   });
 
   group('进/退多选态不重建子树（滚动位置守卫）', () {
