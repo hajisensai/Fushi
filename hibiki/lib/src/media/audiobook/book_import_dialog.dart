@@ -53,6 +53,7 @@ class BookImportDialog extends StatefulWidget {
     this.initialEpubPath,
     this.initialSubtitlePath,
     this.initialAudioPaths,
+    this.imageArchiveProbe,
     super.key,
   });
 
@@ -67,6 +68,11 @@ class BookImportDialog extends StatefulWidget {
   /// 故仅预填展示——`_doImport` 的「音频必须配字幕」校验照旧（拖 EPUB+音频无字幕
   /// 时仍要求补字幕）。
   final List<String>? initialAudioPaths;
+
+  /// 测试计数缝：生产始终走 [MangaModule.isImageArchive]；回归测试只在外层计数后
+  /// 委托同一个真判据，证明真实对话框没有重复执行昂贵的整包载体判定。
+  @visibleForTesting
+  final bool Function(String path)? imageArchiveProbe;
 
   @override
   State<BookImportDialog> createState() => _BookImportDialogState();
@@ -136,6 +142,10 @@ class _BookImportDialogState extends State<BookImportDialog>
   @override
   void initState() {
     super.initState();
+    _carrierResolver = ImportCarrierResolver(
+      isDirectory: (String pth) => Directory(pth).existsSync(),
+      isImageArchive: widget.imageArchiveProbe ?? MangaModule.isImageArchive,
+    );
     final String? epub = widget.initialEpubPath;
     if (epub != null) {
       _epubPath = epub;
@@ -250,10 +260,7 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// 导入里会被问到三次（选中闸门 / `_doImport` 兜底闸门 / `_importEpubOnly` 分派），
   /// 而 `.zip` / `.epub` 的定性要真开包，问三次就整包解压三次。有声书对齐路径尤其亏
   /// ——它不进 `_importEpubOnly`，那几次开包纯属白开。记忆按路径失效，换文件会重算。
-  final ImportCarrierResolver _carrierResolver = ImportCarrierResolver(
-    isDirectory: (String pth) => Directory(pth).existsSync(),
-    isImageArchive: MangaModule.isImageArchive,
-  );
+  late final ImportCarrierResolver _carrierResolver;
 
   ImportCarrier _classifyCarrier(String path) => _carrierResolver.resolve(path);
 

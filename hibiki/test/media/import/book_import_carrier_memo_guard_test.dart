@@ -37,7 +37,11 @@ void main() {
         reason: '_classifyCarrier 必须委托给 resolver，而不是自己再拼一次判据');
     // 真实注入的判据不能被换成简化桩，否则词典包一票否决就失效了
     // （那条判据活在 MangaArchiveImporter.looksLikeImageArchive 里）。
-    expect(src.contains('isImageArchive: MangaModule.isImageArchive'), isTrue,
-        reason: '必须注入真判据；换成按扩展名的桩会让 Yomitan 词典 zip 被当漫画导入');
+    expect(
+      src.contains('widget.imageArchiveProbe ?? MangaModule.isImageArchive'),
+      isTrue,
+      reason: '生产 fallback 必须是真判据；换成按扩展名的桩会让 '
+          'Yomitan 词典 zip 被当漫画导入',
+    );
   });
 }
