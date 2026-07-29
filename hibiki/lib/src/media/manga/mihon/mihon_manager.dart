@@ -66,6 +66,7 @@ class MihonManager extends ChangeNotifier {
       await Directory(p.join(rootDirectory.path, 'tmp'))
           .create(recursive: true);
       await reload();
+      await _refreshStores();
     } catch (exception) {
       error = '$exception';
       rethrow;
@@ -128,78 +129,91 @@ class MihonManager extends ChangeNotifier {
   }
 
   Future<void> refreshStores() async {
-    await _guarded(() async {
-      final List<MihonAvailableExtension> next = <MihonAvailableExtension>[];
-      for (final MangaExtensionStoreRow row in stores) {
-        if (!row.enabled) continue;
-        try {
-          final bool insecure = Uri.parse(row.indexUrl).scheme == 'http';
-          final MihonStoreFetchResult fetched = await _storeClient.fetchStore(
-            row.indexUrl,
-            etag: row.etag,
-            lastModified: row.lastModified,
-            allowInsecure: insecure,
-          );
-          final MihonStore store =
-              fetched.notModified ? _storeFromRow(row) : fetched.store!;
-          // A current protobuf/JSON store can embed its complete extension
-          // list. A 304 response intentionally has no body, so reconstructing
-          // the store from the DB cannot reconstruct that list. Retain the
-          // already parsed list in that case; external/legacy indexes can
-          // still be fetched independently from extensionListUrl.
-          final List<MihonAvailableExtension> extensions =
-              fetched.notModified && store.extensionListUrl == null
-                  ? available
-                      .where(
-                        (MihonAvailableExtension item) =>
-                            item.storeUrl == row.indexUrl,
-                      )
-                      .toList(growable: false)
-                  : await _storeClient.fetchExtensions(
-                      store,
-                      allowInsecure: insecure,
-                    );
-          next.addAll(extensions);
-          await database.upsertMangaExtensionStore(
-            MangaExtensionStoresCompanion.insert(
-              indexUrl: store.indexUrl,
-              name: store.name,
-              format: store.format.name,
-              badgeLabel: Value(store.badgeLabel),
-              signingKey: Value(store.signingKey),
-              contactJson: Value(jsonEncode(store.contact)),
-              extensionListUrl: Value(store.extensionListUrl),
-              enabled: Value(row.enabled),
-              sortOrder: Value(row.sortOrder),
-              etag: Value(fetched.etag ?? row.etag),
-              lastModified: Value(fetched.lastModified ?? row.lastModified),
-              lastSyncAt: Value(DateTime.now().millisecondsSinceEpoch),
-              lastError: const Value(null),
-            ),
-          );
-        } catch (exception) {
-          await database.upsertMangaExtensionStore(
-            MangaExtensionStoresCompanion.insert(
-              indexUrl: row.indexUrl,
-              name: row.name,
-              format: row.format,
-              badgeLabel: Value(row.badgeLabel),
-              signingKey: Value(row.signingKey),
-              contactJson: Value(row.contactJson),
-              extensionListUrl: Value(row.extensionListUrl),
-              enabled: Value(row.enabled),
-              sortOrder: Value(row.sortOrder),
-              etag: Value(row.etag),
-              lastModified: Value(row.lastModified),
-              lastSyncAt: Value(row.lastSyncAt),
-              lastError: Value('$exception'),
-            ),
-          );
-        }
+    await _guarded(_refreshStores);
+  }
+
+  Future<void> _refreshStores() async {
+    final List<MihonAvailableExtension> next = <MihonAvailableExtension>[];
+    for (final MangaExtensionStoreRow row in stores) {
+      if (!row.enabled) continue;
+      final List<MihonAvailableExtension> cachedExtensions = available
+          .where(
+            (MihonAvailableExtension item) => item.storeUrl == row.indexUrl,
+          )
+          .toList(growable: false);
+      try {
+        final bool insecure = Uri.parse(row.indexUrl).scheme == 'http';
+        // Current JSON/protobuf repositories embed the complete catalogue in
+        // the index response. After a process restart that catalogue is not in
+        // memory, so a conditional 304 would leave the page permanently empty.
+        // Only validate an embedded index when its parsed catalogue is still
+        // reusable; repositories with an external list can always re-fetch it.
+        final bool hasReusableCatalogue =
+            row.extensionListUrl != null || cachedExtensions.isNotEmpty;
+        final MihonStoreFetchResult fetched = await _storeClient.fetchStore(
+          row.indexUrl,
+          etag: hasReusableCatalogue ? row.etag : null,
+          lastModified: hasReusableCatalogue ? row.lastModified : null,
+          allowInsecure: insecure,
+        );
+        final MihonStore store =
+            fetched.notModified ? _storeFromRow(row) : fetched.store!;
+        // A current protobuf/JSON store can embed its complete extension
+        // list. A 304 response intentionally has no body, so reconstructing
+        // the store from the DB cannot reconstruct that list. Retain the
+        // already parsed list in that case; external/legacy indexes can
+        // still be fetched independently from extensionListUrl.
+        final List<MihonAvailableExtension> extensions =
+            fetched.notModified && store.extensionListUrl == null
+                ? cachedExtensions
+                : await _storeClient.fetchExtensions(
+                    store,
+                    allowInsecure: insecure,
+                  );
+        next.addAll(extensions);
+        await database.upsertMangaExtensionStore(
+          MangaExtensionStoresCompanion.insert(
+            indexUrl: store.indexUrl,
+            name: store.name,
+            format: store.format.name,
+            badgeLabel: Value(store.badgeLabel),
+            signingKey: Value(store.signingKey),
+            contactJson: Value(jsonEncode(store.contact)),
+            extensionListUrl: Value(store.extensionListUrl),
+            enabled: Value(row.enabled),
+            sortOrder: Value(row.sortOrder),
+            etag: Value(fetched.etag ?? row.etag),
+            lastModified: Value(fetched.lastModified ?? row.lastModified),
+            lastSyncAt: Value(DateTime.now().millisecondsSinceEpoch),
+            lastError: const Value(null),
+          ),
+        );
+      } catch (exception) {
+        // A manual refresh must not blank an already visible catalogue merely
+        // because this request failed. Cold start has no in-memory catalogue,
+        // but installed extensions still come from the database via reload().
+        next.addAll(cachedExtensions);
+        await database.upsertMangaExtensionStore(
+          MangaExtensionStoresCompanion.insert(
+            indexUrl: row.indexUrl,
+            name: row.name,
+            format: row.format,
+            badgeLabel: Value(row.badgeLabel),
+            signingKey: Value(row.signingKey),
+            contactJson: Value(row.contactJson),
+            extensionListUrl: Value(row.extensionListUrl),
+            enabled: Value(row.enabled),
+            sortOrder: Value(row.sortOrder),
+            etag: Value(row.etag),
+            lastModified: Value(row.lastModified),
+            lastSyncAt: Value(row.lastSyncAt),
+            lastError: Value('$exception'),
+          ),
+        );
       }
-      available = next;
-      await reload();
-    });
+    }
+    available = next;
+    await reload();
   }
 
   Future<void> removeStore(String indexUrl) async {

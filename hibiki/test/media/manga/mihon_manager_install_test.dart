@@ -1,7 +1,12 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:hibiki/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_models.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_runtime.dart';
@@ -53,6 +58,77 @@ void main() {
         await manager.prepareLocalInstall(second.path);
     expect(trusted.signerTrusted, isTrue);
   });
+
+  test(
+    'cold start restores an embedded repository catalogue without stale validators',
+    () async {
+      await database.upsertMangaExtensionStore(
+        MangaExtensionStoresCompanion.insert(
+          indexUrl: 'https://repo.example/index.json',
+          name: 'Fixture repository',
+          format: MihonStoreFormat.currentJson.name,
+          signingKey: const Value<String?>('aabb'),
+          etag: const Value<String?>('"stale-etag"'),
+          lastModified: const Value<String?>(
+            'Wed, 29 Jul 2026 00:00:00 GMT',
+          ),
+        ),
+      );
+      manager.dispose();
+
+      bool sentConditionalValidator = false;
+      final MockClient httpClient = MockClient((http.Request request) async {
+        sentConditionalValidator =
+            request.headers.containsKey(HttpHeaders.ifNoneMatchHeader) ||
+                request.headers.containsKey(HttpHeaders.ifModifiedSinceHeader);
+        if (sentConditionalValidator) {
+          return http.Response('', HttpStatus.notModified);
+        }
+        return http.Response(
+          jsonEncode(<String, Object?>{
+            'name': 'Fixture repository',
+            'badgeLabel': 'Fixture',
+            'signingKey': 'aabb',
+            'extensionList': <String, Object?>{
+              'extensions': <Object?>[
+                <String, Object?>{
+                  'name': 'Restored extension',
+                  'packageName': 'org.example.restored',
+                  'resources': <String, Object?>{
+                    'apkUrl': 'apk/restored.apk',
+                    'iconUrl': 'icons/restored.png',
+                  },
+                  'extensionLib': '1.6',
+                  'versionCode': 8,
+                  'versionName': '1.6.8',
+                  'contentWarning': 'CONTENT_WARNING_SAFE',
+                  'sources': <Object?>[],
+                },
+              ],
+            },
+          }),
+          HttpStatus.ok,
+          headers: <String, String>{HttpHeaders.etagHeader: '"fresh-etag"'},
+        );
+      });
+      manager = MihonManager(
+        database: database,
+        rootDirectory: root,
+        runtime: runtime,
+        storeClient: MihonExtensionStoreClient(client: httpClient),
+      );
+
+      await manager.initialise();
+
+      expect(sentConditionalValidator, isFalse);
+      expect(manager.available, hasLength(1));
+      expect(manager.available.single.packageName, 'org.example.restored');
+      expect(
+        (await database.getMangaExtensionStores()).single.etag,
+        '"fresh-etag"',
+      );
+    },
+  );
 
   test('rejects downgrade and update signer discontinuity', () async {
     await _seedInstalled(database, versionCode: 5, signer: 'aabb');

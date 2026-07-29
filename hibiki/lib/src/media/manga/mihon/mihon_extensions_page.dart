@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/media/media_search_text.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:hibiki/src/media/manga/mihon/mihon_manager.dart';
 import 'package:hibiki/src/models/app_model.dart';
@@ -14,9 +15,11 @@ class MihonExtensionsPage extends ConsumerStatefulWidget {
   const MihonExtensionsPage({
     super.key,
     this.navigation,
+    this.manager,
   });
 
   final Widget? navigation;
+  final MihonManager? manager;
 
   @override
   ConsumerState<MihonExtensionsPage> createState() =>
@@ -26,11 +29,14 @@ class MihonExtensionsPage extends ConsumerStatefulWidget {
 class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   MihonManager? _manager;
   String _language = '*';
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final MihonManager manager = ref.read(appProvider).mihonManager;
+    final MihonManager manager =
+        widget.manager ?? ref.read(appProvider).mihonManager;
     if (identical(_manager, manager)) return;
     _manager?.removeListener(_onChanged);
     _manager = manager..addListener(_onChanged);
@@ -39,6 +45,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   @override
   void dispose() {
     _manager?.removeListener(_onChanged);
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -207,7 +214,8 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final MihonManager manager = _manager ?? ref.read(appProvider).mihonManager;
+    final MihonManager manager =
+        _manager ?? widget.manager ?? ref.read(appProvider).mihonManager;
     return DesktopContentLayout(
       kind: DesktopContentKind.readerShelf,
       child: Column(
@@ -308,16 +316,42 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         .toSet()
         .toList()
       ..sort();
-    final List<MihonAvailableExtension> visibleAvailable = manager.available
-        .where((MihonAvailableExtension extension) =>
-            _language == '*' ||
-            extension.language == _language ||
-            extension.language.toLowerCase() == 'all')
-        .toList(growable: false);
+    final List<MihonAvailableExtension> visibleAvailable =
+        filterByMediaSearch<MihonAvailableExtension>(
+      manager.available
+          .where((MihonAvailableExtension extension) =>
+              _language == '*' ||
+              extension.language == _language ||
+              extension.language.toLowerCase() == 'all')
+          .toList(growable: false),
+      _searchQuery,
+      (MihonAvailableExtension extension) => <String>[
+        extension.name,
+        extension.packageName,
+        extension.storeUrl,
+        extension.language,
+        ...extension.sources.expand(
+          (MihonAvailableSource source) => <String>[
+            source.name,
+            source.baseUrl,
+          ],
+        ),
+      ],
+    );
     final List<MangaExtensionRow> localOnly = manager.installed
         .where((MangaExtensionRow row) =>
             !availablePackages.contains(row.packageName))
         .toList(growable: false);
+    final List<MangaExtensionRow> visibleLocalOnly =
+        filterByMediaSearch<MangaExtensionRow>(
+      localOnly,
+      _searchQuery,
+      (MangaExtensionRow extension) => <String>[
+        extension.name,
+        extension.packageName,
+        extension.language,
+      ],
+    );
     return ListView(
       padding: const EdgeInsets.all(16),
       children: <Widget>[
@@ -340,29 +374,10 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
               ),
             ),
           ),
-        if (manager.available.isNotEmpty)
+        if (manager.available.isNotEmpty || manager.installed.isNotEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: DropdownButtonFormField<String>(
-              value: languages.contains(_language) ? _language : '*',
-              decoration: InputDecoration(
-                labelText: t.mihon_extension_language_filter,
-              ),
-              items: <DropdownMenuItem<String>>[
-                DropdownMenuItem<String>(
-                  value: '*',
-                  child: Text(t.mihon_extension_language_all),
-                ),
-                for (final String language in languages)
-                  DropdownMenuItem<String>(
-                    value: language,
-                    child: Text(language.toUpperCase()),
-                  ),
-              ],
-              onChanged: (String? value) {
-                setState(() => _language = value ?? '*');
-              },
-            ),
+            child: _buildFilters(languages),
           ),
         const SizedBox(height: 8),
         for (final MihonAvailableExtension extension in visibleAvailable)
@@ -382,7 +397,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
                       value,
                     )),
           ),
-        for (final MangaExtensionRow extension in localOnly)
+        for (final MangaExtensionRow extension in visibleLocalOnly)
           _InstalledExtensionTile(
             extension: extension,
             onUninstall: () => unawaited(_uninstall(extension)),
@@ -390,7 +405,76 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
               manager.setExtensionEnabled(extension, value),
             ),
           ),
+        if (_searchQuery.trim().isNotEmpty &&
+            visibleAvailable.isEmpty &&
+            visibleLocalOnly.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Center(child: Text(t.no_search_results)),
+          ),
       ],
+    );
+  }
+
+  Widget _buildFilters(List<String> languages) {
+    final Widget languageFilter = DropdownButtonFormField<String>(
+      value: languages.contains(_language) ? _language : '*',
+      decoration: InputDecoration(
+        labelText: t.mihon_extension_language_filter,
+      ),
+      items: <DropdownMenuItem<String>>[
+        DropdownMenuItem<String>(
+          value: '*',
+          child: Text(t.mihon_extension_language_all),
+        ),
+        for (final String language in languages)
+          DropdownMenuItem<String>(
+            value: language,
+            child: Text(language.toUpperCase()),
+          ),
+      ],
+      onChanged: (String? value) {
+        setState(() => _language = value ?? '*');
+      },
+    );
+    final Widget searchField = TextField(
+      key: const ValueKey<String>('mihon_extension_search_field'),
+      controller: _searchController,
+      decoration: InputDecoration(
+        prefixIcon: const Icon(Icons.search),
+        hintText: t.search,
+        border: const OutlineInputBorder(),
+        suffixIcon: _searchQuery.isEmpty
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () {
+                  _searchController.clear();
+                  setState(() => _searchQuery = '');
+                },
+              ),
+      ),
+      onChanged: (String value) => setState(() => _searchQuery = value),
+    );
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (constraints.maxWidth < 700) {
+          return Column(
+            children: <Widget>[
+              languageFilter,
+              const SizedBox(height: 12),
+              searchField,
+            ],
+          );
+        }
+        return Row(
+          children: <Widget>[
+            Expanded(child: languageFilter),
+            const SizedBox(width: 12),
+            Expanded(child: searchField),
+          ],
+        );
+      },
     );
   }
 }
