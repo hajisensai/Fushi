@@ -263,6 +263,24 @@ void main() {
       tester.getSize(find.byType(ScrapeCoverPreview)),
       const Size(kScrapeCoverPreviewWidth, kScrapeCoverPreviewHeight),
     );
+    // 左侧封面可点击打开大图，并可缩放、显式关闭。
+    await tester.tap(find.byType(ScrapeCoverPreview));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('scrape_cover_large_preview')),
+      findsOneWidget,
+    );
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('scrape_cover_large_preview_close'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('scrape_cover_large_preview')),
+      findsNothing,
+    );
     // 置信度徽标（高匹配）。
     expect(find.text(t.video_scrape_confidence_high), findsOneWidget);
     expect(find.textContaining('Bangumi #42'), findsOneWidget);
