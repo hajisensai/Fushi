@@ -24,6 +24,19 @@ ReaderSearchJumpAction decideReaderSearchJump({
   return ReaderSearchJumpAction.evaluateNow;
 }
 
+/// Whether a restore-complete event belongs to the active navigation.
+///
+/// [reportedGeneration] is captured in the document's immutable per-navigation
+/// config. Comparing only the two Dart fields is insufficient: both fields
+/// have already advanced when an old document reports completion late.
+bool isCurrentReaderRestoreCompletion({
+  required int reportedGeneration,
+  required int currentGeneration,
+  required int expectedGeneration,
+}) =>
+    reportedGeneration == currentGeneration &&
+    reportedGeneration == expectedGeneration;
+
 /// Last-write-wins queue for a precise locate bound to a navigation generation.
 ///
 /// Search results can be selected again after the logical current chapter has
@@ -53,10 +66,14 @@ class ReaderPreciseLocateQueue {
     required bool canApply,
   }) {
     final ({int generation, String js})? pending = _pending;
-    _pending = null;
-    if (!canApply || pending == null || pending.generation != generation) {
+    if (!canApply) {
+      _pending = null;
       return null;
     }
+    // A stale restore callback must not discard the active generation's final
+    // selection. Only its owning generation may consume the request.
+    if (pending == null || pending.generation != generation) return null;
+    _pending = null;
     return pending.js;
   }
 }

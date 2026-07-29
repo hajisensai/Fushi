@@ -864,7 +864,11 @@ window.hoshiReader = {
     // (HoshiReaderRestore). Hibiki is InAppWebView, so forward to the same
     // 'onRestoreComplete' handler the paginated/continuous shells use.
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-      window.flutter_inappwebview.callHandler('onRestoreComplete');
+      window.flutter_inappwebview.callHandler(
+        'onRestoreComplete',
+        null,
+        C.navigationGeneration
+      );
     }
   },
   buildNodeOffsets: function() {

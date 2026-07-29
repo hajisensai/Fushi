@@ -78,6 +78,27 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     _contentReadyDeadline = null;
   }
 
+  void _acceptRestoreComplete({
+    required int reportedGeneration,
+    Object? perfSnapshot,
+  }) {
+    if (!mounted ||
+        !isCurrentReaderRestoreCompletion(
+          reportedGeneration: reportedGeneration,
+          currentGeneration: _navigateGeneration,
+          expectedGeneration: _restoreExpectedGeneration,
+        )) {
+      debugPrint(
+        '[ReaderHibiki] stale onRestoreComplete: '
+        'reported=$reportedGeneration expected=$_restoreExpectedGeneration '
+        'current=$_navigateGeneration',
+      );
+      return;
+    }
+    ReaderChapterPerfTrace.noteJs(perfSnapshot);
+    _onRestoreComplete();
+  }
+
   void _onRestoreComplete() {
     ReaderChapterPerfTrace.mark('jsInitRestore');
     // BUG-438 / TODO-889：恢复完成=内容真正就绪，清掉兜底 deadline，下次导航拿新窗口。
@@ -86,13 +107,6 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     // 挡住随后的残余滚轮/惯性在新章边界二次跨章（滚轮离散事件在长加载期间不续窗的真因）。
     _noteChapterTurnSettledIfPending();
     if (!mounted) {
-      return;
-    }
-    if (_restoreExpectedGeneration != _navigateGeneration) {
-      debugPrint(
-        '[ReaderHibiki] stale onRestoreComplete: '
-        'expected=$_restoreExpectedGeneration current=$_navigateGeneration',
-      );
       return;
     }
     _restoreInFlight = false;

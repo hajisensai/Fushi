@@ -76,12 +76,15 @@ void main() {
       expect(second, contains(', 91)'));
     });
 
-    test('new navigation generation cannot consume an old request', () {
+    test('stale completion cannot consume or clear the active request', () {
       final ReaderPreciseLocateQueue queue = ReaderPreciseLocateQueue();
-      queue.replace(generation: 9, js: 'old chapter');
+      queue.replace(generation: 10, js: 'new final selection');
 
-      expect(queue.consume(generation: 10, canApply: true), isNull);
       expect(queue.consume(generation: 9, canApply: true), isNull);
+      expect(
+        queue.consume(generation: 10, canApply: true),
+        'new final selection',
+      );
     });
 
     test('navigation dispose discards pending without evaluating it', () {
@@ -90,6 +93,28 @@ void main() {
 
       expect(queue.consume(generation: 11, canApply: false), isNull);
       expect(queue.consume(generation: 11, canApply: true), isNull);
+    });
+  });
+
+  group('restore completion generation', () {
+    test('only the document that owns the active navigation can settle it', () {
+      expect(
+        isCurrentReaderRestoreCompletion(
+          reportedGeneration: 14,
+          currentGeneration: 15,
+          expectedGeneration: 15,
+        ),
+        isFalse,
+        reason: 'late completion from the replaced document must be ignored',
+      );
+      expect(
+        isCurrentReaderRestoreCompletion(
+          reportedGeneration: 15,
+          currentGeneration: 15,
+          expectedGeneration: 15,
+        ),
+        isTrue,
+      );
     });
   });
 }
