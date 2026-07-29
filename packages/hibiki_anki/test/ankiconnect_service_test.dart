@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -544,6 +545,70 @@ void main() {
       );
       expect(f.attempts.length, 2, reason: 'initial write fails + one retry');
       expect(id, 555);
+    });
+
+    test('pre-delivery connection timeout retries safely, then surfaces',
+        () async {
+      final f = flakyClient(
+        failTimes: 99,
+        exception: http.ClientException(
+          'Connection timed out while connecting to AnkiConnect',
+        ),
+      );
+      await expectLater(
+        run(
+          f.client,
+          (s) => s.addNote(
+            deckName: 'D',
+            modelName: 'M',
+            fields: const <String, String>{'F': 'v'},
+          ),
+        ),
+        throwsA(
+          isA<http.ClientException>().having(
+            (http.ClientException e) => e.message,
+            'message',
+            contains('Connection timed out'),
+          ),
+        ),
+      );
+      expect(
+        f.attempts.length,
+        2,
+        reason: 'connect timeout is pre-delivery, so one retry is safe',
+      );
+    });
+
+    test('delivery-ambiguous addNote timeout is commit-unknown, no retry',
+        () async {
+      final f = flakyClient(
+        failTimes: 99,
+        exception: TimeoutException('response deadline exceeded'),
+      );
+      await expectLater(
+        run(
+          f.client,
+          (s) => s.addNote(
+            deckName: 'D',
+            modelName: 'M',
+            fields: const <String, String>{'F': 'v'},
+          ),
+        ),
+        throwsA(
+          isA<AnkiConnectCommitUnknownException>()
+              .having((e) => e.action, 'action', 'addNote')
+              .having(
+                (e) => e.cause,
+                'cause',
+                isA<TimeoutException>(),
+              ),
+        ),
+      );
+      expect(
+        f.attempts.length,
+        1,
+        reason: 'an overall response timeout may follow a committed addNote',
+      );
     });
 
     test(

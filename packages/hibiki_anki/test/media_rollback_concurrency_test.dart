@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -38,6 +39,57 @@ class _Repository extends AnkiConnectRepository {
 
   @override
   Future<AnkiSettings> loadSettings() async => settings;
+}
+
+class _PreDeliveryAddNoteTimeoutClient extends http.BaseClient {
+  final Set<String> media = <String>{};
+  final List<String> stored = <String>[];
+  final List<String> deleted = <String>[];
+  int addRequests = 0;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final String rawBody = await utf8.decoder.bind(request.finalize()).join();
+    final Map<String, dynamic> body =
+        Map<String, dynamic>.from(jsonDecode(rawBody) as Map);
+    final String action = body['action'].toString();
+    final Map<String, dynamic> params = body['params'] is Map
+        ? Map<String, dynamic>.from(body['params'] as Map)
+        : <String, dynamic>{};
+
+    Object? result;
+    switch (action) {
+      case 'getMediaFilesNames':
+        result = media.toList();
+      case 'storeMediaFile':
+        final String filename = params['filename'].toString();
+        stored.add(filename);
+        media.add(filename);
+        result = filename;
+      case 'deleteMediaFile':
+        final String filename = params['filename'].toString();
+        deleted.add(filename);
+        media.remove(filename);
+        result = filename;
+      case 'addNote':
+        addRequests += 1;
+        throw http.ClientException(
+          'Connection timed out while connecting to AnkiConnect',
+          request.url,
+        );
+      default:
+        result = null;
+    }
+
+    final List<int> responseBytes = utf8.encode(
+      jsonEncode(<String, Object?>{'result': result, 'error': null}),
+    );
+    return http.StreamedResponse(
+      Stream<List<int>>.value(responseBytes),
+      200,
+      headers: <String, String>{'content-type': 'application/json'},
+    );
+  }
 }
 
 class _ConcurrentSameHashService extends AnkiConnectService {
@@ -443,5 +495,113 @@ void main() {
     expect(service.stored, hasLength(2));
     expect(service.deleted, isEmpty);
     expect(service.media, unorderedEquals(service.stored));
+  });
+
+  test(
+      'server consumes addNote then times out: no retry and media stays leased',
+      () async {
+    final HttpServer server =
+        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final Set<String> media = <String>{};
+    final List<String> deleted = <String>[];
+    final List<HttpResponse> heldAddNoteResponses = <HttpResponse>[];
+    int addRequests = 0;
+
+    server.listen((HttpRequest request) async {
+      final String rawBody = await utf8.decoder.bind(request).join();
+      final Map<String, dynamic> body =
+          Map<String, dynamic>.from(jsonDecode(rawBody) as Map);
+      final String action = body['action'].toString();
+      final Map<String, dynamic> params = body['params'] is Map
+          ? Map<String, dynamic>.from(body['params'] as Map)
+          : <String, dynamic>{};
+
+      if (action == 'addNote') {
+        // The server consumed and parsed the complete request. Holding the
+        // response open models Anki creating the note before its response hangs.
+        addRequests += 1;
+        heldAddNoteResponses.add(request.response);
+        return;
+      }
+
+      Object? result;
+      switch (action) {
+        case 'getMediaFilesNames':
+          result = <String>[];
+        case 'storeMediaFile':
+          final String filename = params['filename'].toString();
+          media.add(filename);
+          result = filename;
+        case 'deleteMediaFile':
+          final String filename = params['filename'].toString();
+          deleted.add(filename);
+          media.remove(filename);
+          result = filename;
+        default:
+          result = null;
+      }
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(
+        jsonEncode(<String, Object?>{'result': result, 'error': null}),
+      );
+      await request.response.close();
+    });
+
+    addTearDown(() async {
+      for (final HttpResponse response in heldAddNoteResponses) {
+        await response.close();
+      }
+      await server.close(force: true);
+    });
+
+    final AnkiConnectService service = AnkiConnectService(
+      host: InternetAddress.loopbackIPv4.address,
+      port: server.port,
+      timeout: const Duration(milliseconds: 150),
+      connectionTimeout: const Duration(seconds: 1),
+    );
+    final MineOutcome outcome =
+        await _Repository(_settings(), service).mineEntry(
+      rawPayloadJson: '{"expression":"server-timeout"}',
+      context: AnkiMiningContext(
+        sentence: '',
+        coverPath: cover.path,
+        sasayakiAudioPath: audio.path,
+      ),
+    );
+
+    expect(outcome.result, MineResult.error);
+    expect(outcome.errorDetail, contains('may have created'));
+    expect(addRequests, 1);
+    expect(deleted, isEmpty);
+    expect(media, hasLength(2));
+  });
+
+  test('pre-delivery addNote connect timeout retries then rolls back media',
+      () async {
+    final _PreDeliveryAddNoteTimeoutClient client =
+        _PreDeliveryAddNoteTimeoutClient();
+    final AnkiConnectService service = AnkiConnectService(
+      host: '127.0.0.1',
+      port: 8765,
+      client: client,
+      timeout: const Duration(seconds: 1),
+    );
+
+    final MineOutcome outcome =
+        await _Repository(_settings(), service).mineEntry(
+      rawPayloadJson: '{"expression":"connect-timeout"}',
+      context: AnkiMiningContext(
+        sentence: '',
+        coverPath: cover.path,
+        sasayakiAudioPath: audio.path,
+      ),
+    );
+
+    expect(outcome.result, MineResult.error);
+    expect(client.addRequests, 2);
+    expect(client.stored, hasLength(2));
+    expect(client.deleted, unorderedEquals(client.stored));
+    expect(client.media, isEmpty);
   });
 }

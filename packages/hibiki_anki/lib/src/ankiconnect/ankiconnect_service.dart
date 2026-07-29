@@ -164,27 +164,43 @@ class AnkiConnectService {
       return await _post(body);
     } on http.ClientException catch (e) {
       final bool retryable =
-          idempotent ? _isConnectionDrop(e) : _isPreDeliveryWriteFailure(e);
+          idempotent ? _isConnectionDrop(e) : _isPreDeliveryFailure(e);
       if (retryable) {
         try {
           return await _post(body);
         } on http.ClientException catch (retryError) {
           if (!idempotent &&
               _isConnectionDrop(retryError) &&
-              !_isPreDeliveryWriteFailure(retryError)) {
+              !_isPreDeliveryFailure(retryError)) {
+            throw AnkiConnectCommitUnknownException(action, retryError);
+          }
+          rethrow;
+        } on TimeoutException catch (retryError) {
+          if (!idempotent) {
             throw AnkiConnectCommitUnknownException(action, retryError);
           }
           rethrow;
         }
       }
-      if (!idempotent &&
-          _isConnectionDrop(e) &&
-          !_isPreDeliveryWriteFailure(e)) {
+      if (!idempotent && _isConnectionDrop(e) && !_isPreDeliveryFailure(e)) {
+        throw AnkiConnectCommitUnknownException(action, e);
+      }
+      rethrow;
+    } on TimeoutException catch (e) {
+      // `_post` starts its overall timeout only after handing the request to
+      // package:http. Without a connect/write-phase exception there is no proof
+      // that addNote stayed local: Anki may have consumed it and created the
+      // note while the response hung. Treat that delivery-ambiguous timeout as
+      // commit-unknown and never blindly retry the non-idempotent action.
+      if (!idempotent) {
         throw AnkiConnectCommitUnknownException(action, e);
       }
       rethrow;
     }
   }
+
+  static bool _isPreDeliveryFailure(http.ClientException e) =>
+      _isPreDeliveryWriteFailure(e) || _isConnectionEstablishmentTimeout(e);
 
   /// True only for a connection drop that happened *while writing the request*,
   /// proving the server never received a complete request — so re-sending even
@@ -200,6 +216,27 @@ class AnkiConnectService {
   static bool _isPreDeliveryWriteFailure(http.ClientException e) {
     final String message = e.message.toLowerCase();
     return message.contains('write failed') || message.contains('broken pipe');
+  }
+
+  /// A connect-phase timeout proves that no HTTP request reached AnkiConnect.
+  ///
+  /// Do not classify a bare [TimeoutException] or a generic ETIMEDOUT errno this
+  /// way: either can occur while reading a response after addNote committed.
+  /// The explicit "connection/connect timed out" wording is emitted by the
+  /// socket connection-establishment budget configured in [_defaultClient].
+  static bool _isConnectionEstablishmentTimeout(http.ClientException e) {
+    final String message = e.message.toLowerCase();
+    if (message.contains('connection timed out') ||
+        message.contains('connect timed out')) {
+      return true;
+    }
+    if (e is SocketException) {
+      final String osMessage =
+          (e as SocketException).osError?.message.toLowerCase() ?? '';
+      return osMessage.contains('connection timed out') ||
+          osMessage.contains('connect timed out');
+    }
+    return false;
   }
 
   Future<http.Response> _post(String body) {
