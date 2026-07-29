@@ -1163,6 +1163,20 @@ void main() {
     );
   });
 
+  test('scrape failure detail uses the shared MD3 card and design tokens', () {
+    final String source = File(
+      'lib/src/media/metadata/scrape_failure_view.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('HibikiCard('));
+    expect(source, contains('HibikiDesignTokens.of(context)'));
+    expect(source, contains('tokens.surfaces.overlay'));
+    expect(source, contains('tokens.radii.cardRadius'));
+    expect(source, contains('tokens.spacing.gap'));
+    expect(source, isNot(contains('surfaceContainerHighest')));
+    expect(source, isNot(contains('BorderRadius.circular(')));
+  });
+
   test('reader history hover overlays use design tokens', () {
     // BookDragTarget 已从 reader_hibiki_history_page.dart 提取为独立文件
     // book_drag_target.dart（history 页只剩调用点），守卫跟随到新文件。

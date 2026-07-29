@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/metadata/credential_redaction.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
 import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
@@ -111,6 +112,27 @@ void main() {
     final String finalPath = p.join(tempDir.path, videoCoverFileName(bookUid));
     expect(File(finalPath).existsSync(), isFalse);
     expect(File('$finalPath.tmp').existsSync(), isFalse);
+  });
+
+  test('传输异常在构造侧脱敏候选海报 URL 凭据', () async {
+    const String secret = 'SECRET_POSTER_TOKEN_456';
+    final MockClient client = MockClient((http.Request req) async {
+      throw http.ClientException('connection reset', req.url);
+    });
+
+    try {
+      await CoverDownloader(client: client).downloadCover(
+        url: 'https://img.example/poster?size=original&api_key=$secret',
+        bookUid: 'uid-secret',
+        coversDirectory: tempDir,
+      );
+      fail('should throw');
+    } on ScrapeNetworkException catch (error) {
+      final String detail = error.toString();
+      expect(detail, contains('size=original'));
+      expect(detail, contains('api_key=$kRedactedPlaceholder'));
+      expect(detail, isNot(contains(secret)));
+    }
   });
 
   test('覆盖旧封面：同 uid 二次下载直接替换内容', () async {
