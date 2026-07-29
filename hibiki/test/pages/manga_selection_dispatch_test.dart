@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/manga/mokuro_payload.dart';
 import 'package:hibiki/src/pages/implementations/manga_hibiki_page.dart';
 import 'package:hibiki/src/reader/reader_selection_data.dart';
 
@@ -12,12 +13,14 @@ void main() {
       String? capturedTerm;
       Rect? capturedRect;
       bool? capturedVerticalWriting;
+      int? capturedPage;
 
       final ReaderSelectionData data = ReaderSelectionData.fromJson(
         <String, dynamic>{
           'text': '世界',
           'sentence': 'この世界は美しい。',
           'verticalWriting': true,
+          'mangaPageIndex': 2,
           'rect': <String, dynamic>{
             'x': 30.0,
             'y': 40.0,
@@ -30,6 +33,7 @@ void main() {
       await dispatchMangaSelection(
         data,
         fallbackScreen: const Size(800, 600),
+        selectPageForMining: (int? page) async => capturedPage = page,
         setSentence: (String s) => capturedSentence = s,
         search: (String term, Rect rect, bool verticalWriting) async {
           capturedTerm = term;
@@ -42,11 +46,13 @@ void main() {
       expect(capturedTerm, '世界');
       expect(capturedRect, const Rect.fromLTWH(30.0, 40.0, 12.0, 16.0));
       expect(capturedVerticalWriting, isTrue);
+      expect(capturedPage, 2);
     });
 
     test('空 text payload 是 no-op（不设句、不查词）', () async {
       bool searched = false;
       bool sentenceSet = false;
+      bool pageSelected = false;
 
       final ReaderSelectionData data = ReaderSelectionData.fromJson(
         <String, dynamic>{'text': '', 'sentence': ''},
@@ -55,12 +61,14 @@ void main() {
       await dispatchMangaSelection(
         data,
         fallbackScreen: const Size(400, 400),
+        selectPageForMining: (_) async => pageSelected = true,
         setSentence: (_) => sentenceSet = true,
         search: (_, __, ___) async => searched = true,
       );
 
       expect(sentenceSet, isFalse);
       expect(searched, isFalse);
+      expect(pageSelected, isFalse);
     });
 
     test('无 rect payload 锚到屏幕中心 1x1（块级兜底）', () async {
@@ -71,6 +79,7 @@ void main() {
       await dispatchMangaSelection(
         data,
         fallbackScreen: const Size(800, 600),
+        selectPageForMining: (_) async {},
         setSentence: (_) {},
         search: (_, Rect rect, __) async => capturedRect = rect,
       );
@@ -78,6 +87,48 @@ void main() {
       expect(capturedRect!.center, const Offset(400, 300));
       expect(capturedRect!.width, 1);
       expect(capturedRect!.height, 1);
+    });
+
+    test('双页 spread 精确解析命中页图片，不取 spread 首页', () async {
+      final Directory root =
+          await Directory.systemTemp.createTemp('hibiki-mining-page-');
+      addTearDown(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+      final File spreadFirst = File('${root.path}/right.jpg')
+        ..writeAsBytesSync(<int>[1]);
+      File('${root.path}/left.jpg').writeAsBytesSync(<int>[2]);
+      const MokuroPayload payload = MokuroPayload(
+        images: <MokuroImage>[
+          MokuroImage(
+            url: 'right.jpg',
+            size: Size(100, 200),
+            blocks: <MokuroBlock>[],
+          ),
+          MokuroImage(
+            url: 'left.jpg',
+            size: Size(100, 200),
+            blocks: <MokuroBlock>[],
+          ),
+        ],
+      );
+
+      final String? resolved = MangaHibikiPage.resolveMangaPageImage(
+        payload,
+        root.path,
+        1,
+      );
+
+      expect(resolved, isNotNull);
+      expect(File(resolved!).readAsBytesSync(), <int>[2]);
+      expect(
+        File(resolved).readAsBytesSync(),
+        isNot(spreadFirst.readAsBytesSync()),
+      );
+      expect(
+        MangaHibikiPage.resolveMangaPageImage(payload, root.path, 2),
+        isNull,
+      );
     });
   });
 
@@ -121,6 +172,21 @@ void main() {
         src.contains('_popupVerticalWriting = verticalWriting;'),
         isTrue,
         reason: '同页竖排与横排混排时，不能沿用页面级固定方向',
+      );
+    });
+
+    test('制卡只在旧 payload 回退当前 spread，新 payload 使用精确命中页', () {
+      final String src = File(
+        'lib/src/media/manga/reader/manga_hibiki_page.dart',
+      ).readAsStringSync();
+      expect(src.contains('selectPageForMining: _selectPageForMining'), isTrue);
+      expect(
+        src.contains(
+          '_miningPageIndex == null\n'
+          '          ? _currentPageImagePath\n'
+          '          : _miningPageImagePath',
+        ),
+        isTrue,
       );
     });
 

@@ -157,11 +157,13 @@ class MangaWindowGeneration {
 ///
 /// 语义：[ReaderSelectionData.text] 是扫描出的查询词；[ReaderSelectionData.sentence]
 /// 是 OCR 几何重建出的完整句子，作为 Anki 句子；[ReaderSelectionData.verticalWriting]
-/// 决定根弹窗从文字左右还是上下避让。
+/// 决定根弹窗从文字左右还是上下避让；[ReaderSelectionData.mangaPageIndex] 把
+/// OCR 命中的精确页交给制卡图片解析，不能退化成双页 spread 的首页。
 /// text 为空是 no-op。
 Future<void> dispatchMangaSelection(
   ReaderSelectionData data, {
   required Size fallbackScreen,
+  required Future<void> Function(int? pageIndex) selectPageForMining,
   required void Function(String sentence) setSentence,
   required Future<void> Function(
     String term,
@@ -172,6 +174,7 @@ Future<void> dispatchMangaSelection(
   if (data.text.isEmpty) {
     return;
   }
+  await selectPageForMining(data.mangaPageIndex);
   setSentence(data.sentence);
   final Rect rect =
       mangaSelectionRectFromPayload(data, fallbackScreen: fallbackScreen);
@@ -402,6 +405,22 @@ class MangaHibikiPage extends BaseSourcePage {
     return normalized;
   }
 
+  /// Resolve the exact image for a 0-based manga [pageIndex].
+  ///
+  /// Keeping this separate from spread navigation prevents mining a selection
+  /// on the second page of a two-page spread with the spread's first image.
+  static String? resolveMangaPageImage(
+    MokuroPayload payload,
+    String imagesRoot,
+    int pageIndex,
+  ) {
+    if (pageIndex < 0 || pageIndex >= payload.images.length) return null;
+    return resolveMangaResource(
+      imagesRoot,
+      mangaImageRelativePath(payload.images[pageIndex].url),
+    );
+  }
+
   /// 纯函数：manga.json 的相对 url → WebView 可加载的拦截器 URL。逐段
   /// percent-encode（保留 `/` 结构），与拦截器侧 `Uri.decodeComponent` 对称
   /// （镜像 epubUrl 的 HBK-AUDIT-127 编解码对称纪律）。
@@ -565,9 +584,15 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   /// 不能解开新窗口的锁（BUG-1170），页面销毁时在飞加载被显式放弃（BUG-1171）。
   final MangaWindowLoadGate _windowGate = MangaWindowLoadGate();
 
-  /// 制卡卡图：当前 spread 首页图的绝对文件路径（加载/翻页/滚动/切模式全路径更新，
-  /// 否则封面恒 null——ERRATA C2）。文件缺失/解析失败时为 null（卡图省略而非坏引用）。
+  /// 旧选区 payload 的制卡卡图回退：当前 spread 首页图的绝对文件路径。新 payload
+  /// 会以 [_miningPageIndex] 精确定位 OCR 命中的页，不能用此值覆盖。
   String? _currentPageImagePath;
+
+  /// 最近一次非空 OCR 选区所在的精确页及其卡图。页码非 null 而路径为 null 表示
+  /// 精确页不可用，此时宁可不附图，也不能静默回退到双页 spread 的另一页。
+  int? _miningPageIndex;
+  String? _miningPageImagePath;
+  int _miningPageGeneration = 0;
 
   /// 整卷 OCR 向导防重入。识别进度与取消由向导持有，阅读器只负责完成后热刷新。
   bool _wholeVolumeOcrOpen = false;
@@ -1635,6 +1660,48 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     );
   }
 
+  /// Capture the exact OCR page for subsequent mining. Local imports resolve
+  /// synchronously; online chapters materialise that one page through the
+  /// session cache. A generation guard prevents a slow old selection from
+  /// overwriting a newer click.
+  Future<void> _selectPageForMining(int? pageIndex) async {
+    final int generation = ++_miningPageGeneration;
+    _miningPageIndex = pageIndex;
+    _miningPageImagePath = null;
+    if (pageIndex == null) return;
+
+    final MokuroPayload? payload = _payload;
+    final String? imagesDir = _imagesDir;
+    if (payload == null ||
+        imagesDir == null ||
+        pageIndex < 0 ||
+        pageIndex >= payload.images.length) {
+      return;
+    }
+
+    final String? local = MangaHibikiPage.resolveMangaPageImage(
+      payload,
+      imagesDir,
+      pageIndex,
+    );
+    if (local != null) {
+      _miningPageImagePath = local;
+      return;
+    }
+
+    final MangaReaderSession? session = _localPageSession;
+    if (session == null || pageIndex >= session.pageCount) return;
+    try {
+      final File? file = await session.localFile(pageIndex);
+      if (!mounted || generation != _miningPageGeneration) return;
+      _miningPageImagePath =
+          file != null && await file.exists() ? file.path : null;
+    } on Object catch (error, stack) {
+      ErrorLogService.instance
+          .log('MangaHibikiPage.selectedCardImage', error, stack);
+    }
+  }
+
   /// 处理 OCR 文字命中后的选词 payload：记录所在句子（喂制卡/收藏）并在选区矩形上开查词
   /// 弹窗。词/句/矩形契约由纯函数 [dispatchMangaSelection] 承担（可单测）。
   Future<void> processMangaSelection(ReaderSelectionData data) async {
@@ -1643,6 +1710,7 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
     await dispatchMangaSelection(
       data,
       fallbackScreen: screen,
+      selectPageForMining: _selectPageForMining,
       setSentence: (String sentence) {
         // TODO-956 下限兜底：句子派生不出时退回词本身，绝不让收藏/制卡拿到空句。
         final String resolved =
@@ -1672,8 +1740,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   // ── 制卡（L7）────────────────────────────────────────────────────────
 
   /// 查词弹窗里点「+」制卡。句子 = 最近一次查词的框内句（气泡即句子）；卡图 =
-  /// **当前页图的文件路径**（页图本就在盘上，直接传路径经 [AnkiMiningContext.coverPath]
-  /// 走 `{book-cover}`/`{card-image}` 通道）。漫画无音轨，sasayaki 音频字段恒 null。
+  /// **本次 OCR 命中页的文件路径**（旧 payload 才回退当前 spread 首页），直接传路径
+  /// 经 [AnkiMiningContext.coverPath] 走 `{book-cover}`/`{card-image}` 通道。漫画无
+  /// 音轨，sasayaki 音频字段恒 null。
   @override
   Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) async {
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
@@ -1682,7 +1751,9 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
           _lastSentence.isNotEmpty ? _lastSentence : (fields['sentence'] ?? '');
 
       String? coverPath;
-      final String? pageImage = _currentPageImagePath;
+      final String? pageImage = _miningPageIndex == null
+          ? _currentPageImagePath
+          : _miningPageImagePath;
       if (pageImage != null && File(pageImage).existsSync()) {
         // mokuro 页图自带合法图片扩展名；仅无扩展名的裁剪输出需要补 .png（M2）。
         coverPath = await ensureMangaCoverPng(pageImage);
