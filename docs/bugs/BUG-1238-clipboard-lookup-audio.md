@@ -1,4 +1,4 @@
-## BUG-1236 · 剪贴板变更查词不应自动播放音频
+## BUG-1238 · 剪贴板变更查词不应自动播放音频
 - **报告**：2026-07-29（用户：）
 - **真实性**：✅ 真 bug。主窗口词典页已在
   `hibiki/lib/src/pages/implementations/home_dictionary_page.dart:234`
