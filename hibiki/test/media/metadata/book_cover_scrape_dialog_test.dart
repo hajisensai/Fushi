@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/metadata/book_cover_scrape_dialog.dart';
@@ -131,6 +132,23 @@ void main() {
   // BUG-1219：两句折叠文案只回答「我该做什么」，不回答「到底怎么了」。完整异常串必须
   // 留在出错的地方，并且可一键复制上报（与视频封面匹配弹窗共用 ScrapeFailureView）。
   testWidgets('BUG-1219 搜索失败在弹窗内直出完整技术详情 + 可复制', (WidgetTester tester) async {
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (MethodCall call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map<Object?, Object?>)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+    });
+
     final BookMetadataScraper scraper = BookMetadataScraper(
       client: MockClient((http.Request req) async =>
           throw http.ClientException("Failed host lookup: 'api.bgm.tv'")),
@@ -151,12 +169,17 @@ void main() {
     await tester.tap(
         find.byKey(const ValueKey<String>('scrape_failure_detail_toggle')));
     await tester.pumpAndSettle();
-    expect(
-      find.byWidgetPredicate((Widget w) =>
-          w is SelectableText && (w.data ?? '').contains('api.bgm.tv')),
-      findsOneWidget,
-    );
+    final Finder detailFinder = find.byWidgetPredicate((Widget w) =>
+        w is SelectableText && (w.data ?? '').contains('api.bgm.tv'));
+    expect(detailFinder, findsOneWidget);
     expect(find.text(t.copy_error), findsOneWidget);
+
+    // 「复制错误」写出的必须是界面里这段完整详情，而不是折叠原因或截断文本。
+    final String detail =
+        tester.widget<SelectableText>(detailFinder).data ?? '';
+    await tester.tap(find.text(t.copy_error));
+    await tester.pump();
+    expect(copied, detail);
   });
 
   testWidgets('BUG-1219 源站 HTTP 500 的详情里带得到状态码', (WidgetTester tester) async {

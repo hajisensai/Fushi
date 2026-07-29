@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:hibiki/src/media/metadata/bangumi_api_client.dart'
     show parseBangumiSubjectUrl;
+import 'package:hibiki/src/media/metadata/credential_redaction.dart'
+    show redactCredentialsInText;
 import 'package:hibiki/src/media/metadata/scrape_failure_view.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
@@ -131,6 +133,10 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
   /// 正在应用的候选（用于在其「使用」按钮上显示转圈；null = 无进行中应用）。
   ScrapeCandidate? _applyingCandidate;
 
+  /// 上一次应用失败的安全详情。应用链可能抛出带请求 URL 的异常，先脱敏再同时送入
+  /// 错误日志与 [ScrapeFailureView]，避免「界面安全、日志仍泄露」的半修复。
+  ({Object error, String detail})? _applyFailure;
+
   @override
   void initState() {
     super.initState();
@@ -176,6 +182,7 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
         _searching = true;
         _searched = true;
         _searchFailure = null;
+        _applyFailure = null;
       });
       List<ScrapeCandidate> results = const <ScrapeCandidate>[];
       Object? failure;
@@ -202,7 +209,10 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     }
     // TMDB 分段但无 key：展开输入行，不搜。
     if (_source == ScrapeSource.tmdb && _storedTmdbKey().isEmpty) {
-      setState(() => _showTmdbKeyField = true);
+      setState(() {
+        _showTmdbKeyField = true;
+        _applyFailure = null;
+      });
       HibikiToast.show(msg: t.video_scrape_tmdb_key_required);
       return;
     }
@@ -210,6 +220,7 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
       _searching = true;
       _searched = true;
       _searchFailure = null;
+      _applyFailure = null;
     });
     List<ScrapeCandidate> results = const <ScrapeCandidate>[];
     Object? failure;
@@ -312,9 +323,10 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     setState(() {
       _applying = true;
       _applyingCandidate = candidate;
+      _applyFailure = null;
     });
     final CoverMatchCollectionTarget? collection = widget.collection;
-    Object? failure;
+    ({Object error, String detail})? failure;
     try {
       if (collection != null) {
         // 合集入口：下载 → 只写合集自有封面列。**刻意不调
@@ -337,10 +349,12 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
         );
       }
     } catch (e, stack) {
-      // 走下方失败分支——绝不吞成静默无反馈。原始原因进错误日志，界面只给
-      // 「失败了 + 大概因为什么」，不把堆栈抛到用户面前。
-      ErrorLogService.instance.log('CoverMatchDialog.applyCandidate', e, stack);
-      failure = e;
+      // 走下方失败分支——绝不吞成静默无反馈。与搜索失败共用完整详情视图；
+      // 日志和界面都只接收同一份脱敏文本，避免异常 URL 的 query 凭据泄露。
+      final String detail = redactCredentialsInText(e.toString());
+      ErrorLogService.instance
+          .log('CoverMatchDialog.applyCandidate', detail, stack);
+      failure = (error: e, detail: detail);
     }
     if (!mounted) return;
     if (failure != null) {
@@ -348,10 +362,8 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
       setState(() {
         _applying = false;
         _applyingCandidate = null;
+        _applyFailure = failure;
       });
-      HibikiToast.show(
-        msg: '${t.video_scrape_apply_failed}\n${_failureReason(failure)}',
-      );
       return;
     }
     // 成功：刷新库页 + 关弹窗 + 成功提示。onApplied 单独 guard，任何异常都不得阻断关闭
@@ -527,11 +539,29 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     if (_searched && _results.isEmpty) {
       return Center(child: Text(t.video_scrape_no_results));
     }
+    final ({Object error, String detail})? applyFailure = _applyFailure;
+    final int firstCandidateIndex = applyFailure == null ? 0 : 1;
     return ListView.separated(
-      itemCount: _results.length,
+      key: ValueKey<String>(
+        applyFailure == null
+            ? 'cover_match_results'
+            : 'cover_match_apply_failure',
+      ),
+      itemCount: _results.length + firstCandidateIndex,
       separatorBuilder: (_, __) => const Divider(height: 1),
-      itemBuilder: (BuildContext context, int index) =>
-          _buildCandidateTile(theme, _results[index]),
+      itemBuilder: (BuildContext context, int index) {
+        if (applyFailure != null && index == 0) {
+          return ScrapeFailureView(
+            title: t.video_scrape_apply_failed,
+            reason: _failureReason(applyFailure.error),
+            detail: applyFailure.detail,
+          );
+        }
+        return _buildCandidateTile(
+          theme,
+          _results[index - firstCandidateIndex],
+        );
+      },
     );
   }
 

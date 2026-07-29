@@ -15,6 +15,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:hibiki/src/media/media_cover_service.dart';
+import 'package:hibiki/src/media/metadata/credential_redaction.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
 import 'package:hibiki/src/media/video/video_import_dialog.dart'
@@ -56,7 +57,11 @@ class CoverDownloader {
     } on TimeoutException {
       throw const ScrapeNetworkException('Poster download timed out');
     } catch (e) {
-      throw ScrapeNetworkException('Poster request failed: $e');
+      // package:http 的 ClientException 会把完整请求 URL 拼进 toString()；候选
+      // 海报 URL 可能带签名/token，必须在异常构造侧先脱敏，保证日志/界面/复制同源安全。
+      throw ScrapeNetworkException(
+        redactCredentialsInText('Poster request failed: $e'),
+      );
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -80,7 +85,9 @@ class CoverDownloader {
       await MediaCoverService.applyCoverBytes(
           bytes: bytes, destPath: finalPath);
     } catch (e) {
-      throw ScrapeNetworkException('Cover write failed: $e');
+      throw ScrapeNetworkException(
+        redactCredentialsInText('Cover write failed: $e'),
+      );
     }
 
     return finalPath;

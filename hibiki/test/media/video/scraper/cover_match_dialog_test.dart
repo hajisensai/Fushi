@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/models.dart';
+import 'package:hibiki/src/media/metadata/credential_redaction.dart';
 import 'package:hibiki/src/media/video/cover_ui/cover_match_dialog.dart';
 import 'package:hibiki/src/media/video/scraper/alias_cache.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
@@ -59,6 +60,7 @@ class _StubScraperService extends CoverScraperService {
 
   /// 逐次出队的搜索异常（非 null 即抛）。让「第一次失败 → 重试成功」可测。
   final List<Object?> searchErrors = <Object?>[];
+  final List<Object?> applyErrors = <Object?>[];
   int searchCalls = 0;
 
   @override
@@ -80,6 +82,8 @@ class _StubScraperService extends CoverScraperService {
     required ScrapeCandidate candidate,
     String? aliasKey,
   }) async {
+    final Object? error = applyErrors.isEmpty ? null : applyErrors.removeAt(0);
+    if (error != null) Error.throwWithStackTrace(error, StackTrace.current);
     appliedUids.addAll(bookUids);
     // 真写穿：成员封面被刷这件事必须在 DB 上留下痕迹，断言才有牙。
     for (final String uid in bookUids) {
@@ -248,6 +252,65 @@ void main() {
     expect(service.appliedUids, <String>['video/my_anime']);
     // 弹窗应用后关闭。
     expect(find.text(t.video_scrape_use), findsNothing);
+  });
+
+  testWidgets('TODO-2284 应用失败直出完整脱敏详情，候选保留可重试', (WidgetTester tester) async {
+    const String secret = 'SECRET_APPLY_KEY_123';
+    final VideoBookRow book = await seed();
+    final _StubScraperService service = buildService()
+      ..applyErrors.add(
+        const ScrapeNetworkException(
+          'Poster request failed: ClientException: connection reset, '
+          'uri=https://img.example/poster?size=original&api_key=$secret',
+        ),
+      );
+    final int logsBefore = ErrorLogService.instance.entries.length;
+
+    await tester.pumpWidget(wrap(CoverMatchDialog(
+      service: service,
+      book: book,
+      collectionMemberUids: const <String>['video/my_anime'],
+      onApplied: () {},
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(t.video_scrape_use).first);
+    await tester.pumpAndSettle();
+
+    // 弹窗与候选都保留，用户可换候选或重试；失败不再只是一闪而过的两句 toast。
+    expect(find.text(t.video_scrape_apply_failed), findsOneWidget);
+    expect(find.text(t.video_scrape_use), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, t.video_scrape_use),
+          )
+          .onPressed,
+      isNotNull,
+    );
+    expect(find.text(t.scrape_reason_network), findsOneWidget);
+    expect(find.byType(SelectableText), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('scrape_failure_detail_toggle')),
+    );
+    await tester.pumpAndSettle();
+    final SelectableText detail =
+        tester.widget<SelectableText>(find.byType(SelectableText));
+    expect(detail.data, contains('Poster request failed'));
+    expect(detail.data, contains('size=original'));
+    expect(detail.data, contains('api_key=$kRedactedPlaceholder'));
+    expect(detail.data, isNot(contains(secret)));
+
+    // 错误日志与界面吃同一份脱敏详情，不能只堵 UI、让日志/上传继续漏。
+    final List<ErrorLogEntry> added =
+        ErrorLogService.instance.entries.sublist(logsBefore);
+    final ErrorLogEntry applyLog = added.singleWhere(
+      (ErrorLogEntry entry) =>
+          entry.source == 'CoverMatchDialog.applyCandidate',
+    );
+    expect(applyLog.error, contains('api_key=$kRedactedPlaceholder'));
+    expect(applyLog.error, isNot(contains(secret)));
   });
 
   // BUG-1176：搜索失败曾被 `catch (_)` 吞成空表，界面显示「无匹配」——用户无从分辨

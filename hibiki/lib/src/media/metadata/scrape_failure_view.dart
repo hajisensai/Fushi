@@ -47,6 +47,7 @@ class _ScrapeFailureViewState extends State<ScrapeFailureView> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Center(
       // 结果区高度由弹窗决定，可能比本列矮（窄窗/小屏）：外层滚动兜底，避免
       // RenderFlex overflow 把失败态本身变成一条黄黑警告。
@@ -88,18 +89,19 @@ class _ScrapeFailureViewState extends State<ScrapeFailureView> {
               // 「复制」按钮推出可视区，用户永远够得着上报入口。
               ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 132),
-                child: Container(
+                child: SizedBox(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: SingleChildScrollView(
-                    child: SelectableText(
-                      widget.detail,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  child: HibikiCard(
+                    padding: EdgeInsets.all(tokens.spacing.gap),
+                    color: tokens.surfaces.overlay,
+                    borderRadius: tokens.radii.cardRadius,
+                    child: SingleChildScrollView(
+                      child: SelectableText(
+                        widget.detail,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
                     ),
                   ),
                 ),
