@@ -640,11 +640,12 @@ void main() {
 
     test('症状②：Windows 禁原生菜单 + 走 Flutter showMenu（BUG-261 锚点范式）', () {
       // 原生 WebView2 菜单只在 Windows 偏移（独立 Win32 popup 用未拉伸逻辑坐标），
-      // 故只在 Windows 禁原生改 Flutter 菜单；非 Windows 保持原生（false 不写死）。
+      // Windows 禁原生改 Flutter 菜单；Android 因 BUG-1237 的 ActionMode 转发缺陷
+      // 也隐藏系统项、改由 Dart 直做。iOS 不扩范围，保持原生。
       expect(
         source,
-        contains('hideDefaultSystemContextMenuItems: isWindowsPlatform'),
-        reason: 'Windows 才禁 WebView2 原生菜单，其它平台保持原生（症状②）。',
+        contains('Platform.isAndroid || isWindowsPlatform'),
+        reason: 'Windows 与 Android 各自按真实原生缺陷禁系统项；iOS 保持原生。',
       );
       // 右键入口 onSecondaryTapDown，仅 Windows 包 GestureDetector。
       expect(source, contains('onSecondaryTapDown:'),

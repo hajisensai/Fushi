@@ -2761,5 +2761,8 @@
   "manga_import_missing_input": "请先选择漫画文件或文件夹。",
   "manga_import_detected_title": "这看起来是漫画",
   "manga_import_detected_confirm": "按漫画导入",
-  "manga_import_detected_message": "「$name」是漫画文件，将走漫画导入流程，而不是书籍导入流程。"
+  "manga_import_detected_message": "「$name」是漫画文件，将走漫画导入流程，而不是书籍导入流程。",
+  "selection_web_search": "网页搜索",
+  "selection_web_search_unavailable": "没有可用的网页搜索应用。",
+  "selection_share_failed": "无法打开分享面板。"
 }

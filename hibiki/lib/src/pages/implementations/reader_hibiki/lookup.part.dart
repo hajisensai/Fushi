@@ -137,6 +137,7 @@ extension _ReaderLookup on _ReaderHibikiPageState {
     if (data.text.isEmpty) {
       return;
     }
+    _removeSelectionActionBar();
     // TODO-393 / BUG-缓存串味：每次新查词（换词 / 换句）都从「只制当前句」起步，丢弃
     // 上一个词的「上 N 句 / 下 N 句」上下文选择。热槽 WebView 复用使弹窗 DOM 不重载，
     // 草稿若不在此清空，上一个词攒的上下文会带到下一个词的卡（用户报「弹窗会缓存」）。
