@@ -374,7 +374,10 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
       return KeyEventResult.handled;
     }
 
-    final LogicalKeyboardKey key = event.logicalKey;
+    final LogicalKeyboardKey key = InputBinding.normalizeCapturedKey(
+      logicalKey: event.logicalKey,
+      physicalKey: event.physicalKey,
+    );
 
     // Wait for a non-modifier key; a bare modifier press keeps capturing.
     if (ModifierKey.fromKeyboardKey(key) != null) {

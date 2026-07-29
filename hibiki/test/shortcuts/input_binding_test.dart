@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart';
@@ -354,6 +356,48 @@ void main() {
           GamepadButton.dpadLeft);
       expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowRight),
           GamepadButton.dpadRight);
+    });
+  });
+
+  group('InputBinding.normalizeCapturedKey', () {
+    test('IME process + physical Z records KeyZ', () {
+      expect(
+        InputBinding.normalizeCapturedKey(
+          logicalKey: LogicalKeyboardKey.process,
+          physicalKey: PhysicalKeyboardKey.keyZ,
+        ),
+        LogicalKeyboardKey.keyZ,
+      );
+    });
+
+    test('real logical key is preserved on non-US layouts', () {
+      expect(
+        InputBinding.normalizeCapturedKey(
+          logicalKey: LogicalKeyboardKey.keyY,
+          physicalKey: PhysicalKeyboardKey.keyZ,
+        ),
+        LogicalKeyboardKey.keyY,
+      );
+    });
+
+    test('unknown process physical key remains Process', () {
+      expect(
+        InputBinding.normalizeCapturedKey(
+          logicalKey: LogicalKeyboardKey.process,
+          physicalKey: PhysicalKeyboardKey.numpad1,
+        ),
+        LogicalKeyboardKey.process,
+      );
+    });
+
+    test('shortcut recorder persists the normalized key', () {
+      final String source = File(
+        'lib/src/pages/implementations/shortcut_settings/'
+        'binding_edit_dialog.part.dart',
+      ).readAsStringSync();
+      expect(source, contains('InputBinding.normalizeCapturedKey('));
+      expect(source, contains('logicalKey: event.logicalKey'));
+      expect(source, contains('physicalKey: event.physicalKey'));
     });
   });
 

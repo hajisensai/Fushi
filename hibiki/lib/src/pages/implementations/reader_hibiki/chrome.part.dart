@@ -905,6 +905,27 @@ extension _ReaderChrome on _ReaderHibikiPageState {
 
   // ── Bottom Chrome ─────────────────────────────────────────────────
 
+  /// Toggles the bottom control bar from a keyboard/gamepad shortcut.
+  ///
+  /// In floating mode [_showChrome] is only the persistent "bar enabled"
+  /// gate; what the user actually sees is [_chromeTransientVisible]. Calling
+  /// [_toggleChrome] there changes an invisible backing flag and never refreshes
+  /// [_chromeAutoHideTimer], so the shortcut appears dead until a blank-content
+  /// tap reveals the bar. Use the same transient state machine as that tap,
+  /// which also cancels/re-arms the timer on every hide/show operation.
+  ///
+  /// When only the top progress strip floats, the bottom bar is still a squeeze
+  /// bar and retains the historical [_toggleChrome] behavior.
+  void _toggleChromeFromShortcut() {
+    if (_bottomBarFloating) {
+      final bool handled = _handleFloatingChromeReveal();
+      assert(handled, 'a floating bottom bar must enable floating chrome');
+      _focusOwnership.reclaim(FocusReclaimCause.chromeToggled);
+      return;
+    }
+    _toggleChrome();
+  }
+
   void _toggleChrome() {
     _rebuild(() {
       _showChrome = !_showChrome;

@@ -260,6 +260,32 @@ class InputBinding {
     LogicalKeyboardKey.backquote: PhysicalKeyboardKey.backquote,
   };
 
+  static final Map<PhysicalKeyboardKey, LogicalKeyboardKey> _physicalToLogical =
+      <PhysicalKeyboardKey, LogicalKeyboardKey>{
+    for (final MapEntry<LogicalKeyboardKey, PhysicalKeyboardKey> entry
+        in _logicalToPhysical.entries)
+      entry.value: entry.key,
+  };
+
+  /// Resolves the logical key that shortcut capture should persist.
+  ///
+  /// Windows IMEs can replace a pressed letter's [logicalKey] with
+  /// [LogicalKeyboardKey.process] while leaving its USB-HID [physicalKey]
+  /// intact. Runtime shortcut resolution already has this fallback; capture
+  /// must use the same contract or a physical Z press is stored as `Process`
+  /// (or appears to do nothing) instead of `KeyZ`.
+  ///
+  /// The fallback is deliberately limited to `process`, matching runtime
+  /// resolution and preserving non-US keyboard layout semantics whenever the
+  /// engine supplies a real logical key.
+  static LogicalKeyboardKey normalizeCapturedKey({
+    required LogicalKeyboardKey logicalKey,
+    required PhysicalKeyboardKey physicalKey,
+  }) {
+    if (logicalKey != LogicalKeyboardKey.process) return logicalKey;
+    return _physicalToLogical[physicalKey] ?? logicalKey;
+  }
+
   /// 本 binding 逻辑键对应的物理键（USB HID 扫描码）；不在覆盖表内（如 game* 键、
   /// numpad、F13+）返回 null。仅供 IME 改写 logicalKey 时的物理键回退使用，绝不进入
   /// [==] / [hashCode] / [serialize]（保持 Set 去重、冲突检测、JSON 兼容不变）。
