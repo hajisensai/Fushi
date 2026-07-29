@@ -486,7 +486,10 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     bool manual = false,
     String? preciseLocateJs,
   }) async {
-    if (_book == null || index < 0 || index >= _book!.chapters.length) {
+    if (!mounted ||
+        _book == null ||
+        index < 0 ||
+        index >= _book!.chapters.length) {
       return;
     }
     if (_controller == null) {

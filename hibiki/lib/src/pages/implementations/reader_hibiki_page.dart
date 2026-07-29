@@ -1106,8 +1106,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   /// 库内 part 文件（extension）改状态的入口：扩展不被视作 State 子类实例成员，
   /// 直接调 @protected 的 setState 会报 invalid_use_of_protected_member。由本 State
-  /// 子类持有的这个转发器统一承接，零行为变化（仅转发）。
-  void _rebuild(VoidCallback fn) => setState(fn);
+  /// 子类持有的这个转发器统一承接。part 中的异步回调可能在 route dispose 后才返回；
+  /// 此时状态已不可再更新，统一在转发边界丢弃，避免晚到回调触发 setState-after-dispose。
+  void _rebuild(VoidCallback fn) {
+    if (!mounted) return;
+    setState(fn);
+  }
 
   /// 同 [_rebuild] 的理由：part 扩展不被视作 State 子类实例成员，直接读写
   /// `BaseSourcePageState` 的 @protected 弹窗栈成员会报 invalid_use_of_protected_member。
