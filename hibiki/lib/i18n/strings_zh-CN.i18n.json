@@ -2753,5 +2753,6 @@
   "media_tracking_retry_no_match": "仍未匹配到条目，请尝试手动关联",
   "game_statistics": "游戏统计",
   "game_stat_by_game": "按游戏",
-  "stat_clear_all_game_message": "确定清空全部游戏统计吗？将删除所有游戏时长和游玩次数。你的游戏库与首页活动流不受影响。此操作不可撤销。"
+  "stat_clear_all_game_message": "确定清空全部游戏统计吗？将删除所有游戏时长和游玩次数。你的游戏库与首页活动流不受影响。此操作不可撤销。",
+  "batch_selection_stale_skipped": "选中的 $n 项中有 $m 项已不存在，已跳过"
 }

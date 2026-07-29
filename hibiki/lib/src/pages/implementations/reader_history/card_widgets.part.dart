@@ -214,9 +214,25 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
         selectionKey != null && _selectedKeys.contains(selectionKey);
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     final double selectionInset = tokens.spacing.gap / 2;
-    final VoidCallback effectiveTap = _selectionMode && selectionKey != null
-        ? () => _toggleSelection(selectionKey)
-        : onTap;
+    final SelectionSlot? slot =
+        selectionKey == null ? null : SelectionSlot.loose(selectionKey);
+    void handleTap() {
+      if (slot == null) {
+        onTap();
+        return;
+      }
+      if (_selectionMode) {
+        _toggleSelection(slot.looseKey!);
+        return;
+      }
+      // 桌面 Ctrl/⌘（macOS）/ Shift + 点击 = 不经工具栏直接进多选并选中该卡。
+      if (selectionEntryModifierPressed(context)) {
+        _enterSelectionWith(slot);
+        return;
+      }
+      onTap();
+    }
+
     Widget interactiveCard = Padding(
       key: cardKey,
       padding: EdgeInsets.all(tokens.spacing.rowVertical),
@@ -225,9 +241,12 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
         child: InkWell(
           canRequestFocus: false,
           borderRadius: tokens.radii.cardRadius,
-          onTap: effectiveTap,
+          onTap: handleTap,
+          // 未进入选择态时，触屏与桌面长按都保留上下文菜单；只有显式进入选择态后
+          // 才摘掉卡片识别器，让祖先 SelectionDragArea 接管长按扫选。
           onLongPress: _selectionMode ? null : onLongPress,
-          // 桌面端鼠标右键打开与长按相同的书籍上下文菜单（PC 用户惯例）。
+          // 桌面端鼠标右键打开与长按相同的书籍上下文菜单（PC 用户惯例）。多选态
+          // 压制不变。
           onSecondaryTap: _selectionMode ? null : onLongPress,
           child: AspectRatio(
             aspectRatio: slotAspectRatio,
@@ -254,7 +273,7 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
         actions: <Type, Action<Intent>>{
           ActivateIntent: CallbackAction<ActivateIntent>(
             onInvoke: (_) {
-              effectiveTap();
+              handleTap();
               return null;
             },
           ),
@@ -286,6 +305,11 @@ extension _ReaderHistoryCardWidgets on _ReaderHibikiHistoryPageState {
         label: dragLabel ?? '',
         child: result,
       );
+    }
+    // 长按扫选靠命中测试反查「手指下面是哪一格」，故身份标记包在最外层（
+    // [MetaData] 默认 deferToChild，只有真命中卡片时才进命中路径）。不改布局。
+    if (slot != null) {
+      result = SelectionSlotTarget(slot: slot, child: result);
     }
     return result;
   }

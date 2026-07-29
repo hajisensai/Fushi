@@ -71,6 +71,8 @@ void main() {
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
     appModel.populateLanguages();
+    appModel.populateMediaTypes();
+    appModel.populateMediaSources();
     epubItems = <MediaItem>[];
     srtItems = <SrtBook>[];
   });
@@ -163,6 +165,28 @@ void main() {
   Finder epubCard(String bookKey) => find.byKey(ValueKey<String>(
       'book_entry_${ReaderHibikiSource.mediaIdentifierFor(bookKey)}'));
   Finder srtCard(String uid) => find.byKey(ValueKey<String>('srt_entry_$uid'));
+
+  testWidgets('触屏书卡长按保留菜单；点明确选择后才能勾选', (WidgetTester tester) async {
+    await seedEpub('epubKey1', 'Epub One');
+    await pumpPage(tester);
+
+    await tester.longPress(epubCard('epubKey1'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.dialog_delete), findsOneWidget,
+        reason: '未进入选择态时，触屏长按书卡必须继续打开上下文菜单');
+    expect(find.text(t.batch_selected_count(n: 1)), findsNothing,
+        reason: '长按不能暗中进入多选');
+
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+    await enterSelectionMode(tester);
+    await tester.tap(epubCard('epubKey1'));
+    await tester.pump();
+
+    expect(find.text(t.batch_selected_count(n: 1)), findsOneWidget,
+        reason: '点明确「选择」入口后，书卡才能参与多选');
+  });
 
   testWidgets('档1：epub + srt 混合散卡 → 命名弹窗新建合集（真写穿 DB）',
       (WidgetTester tester) async {

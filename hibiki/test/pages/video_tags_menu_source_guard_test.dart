@@ -50,9 +50,8 @@ void main() {
     final String src = homeVideoSrc;
 
     test('视频卡 onLongPress 走菜单，不再等于打开播放页', () {
-      // TODO-063 起 onLongPress 是三元（选择态禁用长按、非选择态弹菜单），故不再锁
-      // 死 `onLongPress: () => _showVideoMenu(book)` 字面量前缀，只断言长按指向
-      // _showVideoMenu（弹菜单）这条不变式。
+      // TODO-063 起选择态禁用卡片长按，让祖先扫选接管；未进入选择态时所有平台
+      // 都必须继续走 _showVideoMenu。
       expect(src.contains('_showVideoMenu(book)'), isTrue, reason: '长按必须弹菜单');
       // 旧 bug：onLongPress 与 onTap 一样调 _open。
       expect(src.contains('onLongPress: () => _open(book)'), isFalse,
@@ -60,14 +59,24 @@ void main() {
     });
 
     test('选择态长按禁用、点击改切换勾选（批量选择，TODO-063）', () {
-      // 选择态下长按必须禁用（避免与勾选冲突），点击切换勾选而非打开播放页。
+      // 折掉换行/缩进后比对，免得 dart format 的换行位置成为守卫的隐形前提。
+      final String flat = src.replaceAll(RegExp(r'\s+'), ' ');
       expect(
-          src.contains(
+          flat.contains(
               'onLongPress: _selectionMode ? null : () => _showVideoMenu(book)'),
           isTrue,
-          reason: '选择态长按禁用，非选择态才弹菜单');
+          reason: '未进选择态时触屏/桌面长按都弹菜单，选择态才禁用');
+      expect(flat.contains('touchLongPressSelects'), isFalse,
+          reason: '不得再按触屏平台把未进入选择态的长按改判成多选');
       expect(src.contains('_toggleSelection(book.bookUid)'), isTrue,
           reason: '选择态点卡片切换勾选');
+    });
+
+    test('未进选择态的长按不按平台改判，也不再叠加临时 ⋮ 按钮', () {
+      final String flat = src.replaceAll(RegExp(r'\s+'), ' ');
+      expect(flat.contains('isTouchSelectionPlatform'), isFalse);
+      expect(flat.contains('ShelfCardMenuButton'), isFalse,
+          reason: '恢复长按菜单后不需要在封面上永久叠加替代入口');
     });
 
     test('长按面板复用封面背景 frame，不再用 bottom sheet', () {

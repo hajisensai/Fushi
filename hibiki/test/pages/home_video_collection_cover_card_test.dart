@@ -143,6 +143,20 @@ void main() {
   Finder cardFinder(int cid) =>
       find.byKey(ValueKey<String>('home_video_collection_card_$cid'));
 
+  testWidgets('触屏未进选择态长按视频合集卡仍弹合集菜单', (WidgetTester tester) async {
+    await seedEpisode('video/ep1', '第1集');
+    final int cid = await seedCollection(<String>['video/ep1']);
+
+    await pumpPage(tester);
+    await tester.longPress(cardFinder(cid));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.rename_collection), findsOneWidget,
+        reason: '触屏长按合集卡必须保留上下文菜单');
+    expect(find.text(t.batch_selected_count(n: 1)), findsNothing,
+        reason: '未点明确「选择」入口时不得暗中整选合集');
+  });
+
   testWidgets('有封面成员 → 卡显该成员封面（借用组内首个有封面的本地成员）', (WidgetTester tester) async {
     // ep1 无封面、ep2 有封面：组内序首成员缺封面时向后借。
     final File cover = File('${storeDir.path}/ep2_cover.png')
