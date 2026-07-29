@@ -22,6 +22,287 @@ const String lapisUserCssBeginMarker = '/* HIBIKI-LAPIS-USER BEGIN */';
 /// 用户客制化区段结束标记。
 const String lapisUserCssEndMarker = '/* HIBIKI-LAPIS-USER END */';
 
+/// 可视化编辑器写进 [AnkiSettings.lapisCustomCss] 的托管区段。自由 CSS 保留在
+/// 区段外；编辑器只重写这一块，用户仍可在高级编辑器里写任意 Lapis CSS。
+const String lapisVisualCssBeginMarker = '/* HIBIKI-LAPIS-VISUAL BEGIN */';
+const String lapisVisualCssEndMarker = '/* HIBIKI-LAPIS-VISUAL END */';
+const String _lapisVisualConfigPrefix = '/* HIBIKI-LAPIS-VISUAL-CONFIG ';
+
+/// Lapis 预览中可直接点选、并由可视化编辑器生成稳定选择器的内容区域。
+enum LapisVisualField {
+  expression('expression'),
+  reading('reading'),
+  sentence('sentence'),
+  primaryDefinition('primary-definition'),
+  glossaries('glossaries');
+
+  const LapisVisualField(this.wireName);
+
+  final String wireName;
+
+  static LapisVisualField? fromWireName(String value) {
+    for (final LapisVisualField field in values) {
+      if (field.wireName == value) return field;
+    }
+    return null;
+  }
+}
+
+enum LapisVisualTextAlign {
+  start('start'),
+  center('center'),
+  end('end');
+
+  const LapisVisualTextAlign(this.cssValue);
+
+  final String cssValue;
+
+  static LapisVisualTextAlign? fromCssValue(String value) {
+    for (final LapisVisualTextAlign alignment in values) {
+      if (alignment.cssValue == value) return alignment;
+    }
+    return null;
+  }
+}
+
+/// 单个 Lapis 内容区域的低风险样式参数。100% / 非粗体 / 默认对齐 / 默认颜色
+/// 表示不生成覆盖，因而不会改变出厂 Lapis。
+class LapisVisualRule {
+  const LapisVisualRule({
+    this.fontScalePercent = 100,
+    this.bold = false,
+    this.alignment,
+    this.colorHex,
+  });
+
+  final int fontScalePercent;
+  final bool bold;
+  final LapisVisualTextAlign? alignment;
+  final String? colorHex;
+
+  bool get isDefault =>
+      fontScalePercent == 100 && !bold && alignment == null && colorHex == null;
+
+  LapisVisualRule copyWith({
+    int? fontScalePercent,
+    bool? bold,
+    Object? alignment = _lapisVisualUnset,
+    Object? colorHex = _lapisVisualUnset,
+  }) =>
+      LapisVisualRule(
+        fontScalePercent: fontScalePercent ?? this.fontScalePercent,
+        bold: bold ?? this.bold,
+        alignment: identical(alignment, _lapisVisualUnset)
+            ? this.alignment
+            : alignment as LapisVisualTextAlign?,
+        colorHex: identical(colorHex, _lapisVisualUnset)
+            ? this.colorHex
+            : colorHex as String?,
+      );
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'fontScalePercent': fontScalePercent,
+        'bold': bold,
+        if (alignment != null) 'alignment': alignment!.cssValue,
+        if (colorHex != null) 'colorHex': colorHex,
+      };
+
+  static LapisVisualRule? fromJson(Object? value) {
+    if (value is! Map<String, dynamic>) return null;
+    final Object? rawScale = value['fontScalePercent'];
+    final int scale = rawScale is int ? rawScale.clamp(50, 250).toInt() : 100;
+    final Object? rawAlignment = value['alignment'];
+    final LapisVisualTextAlign? alignment = rawAlignment is String
+        ? LapisVisualTextAlign.fromCssValue(rawAlignment)
+        : null;
+    final Object? rawColor = value['colorHex'];
+    final String? color = rawColor is String && _isCssHexColor(rawColor)
+        ? rawColor.toUpperCase()
+        : null;
+    return LapisVisualRule(
+      fontScalePercent: scale,
+      bold: value['bold'] == true,
+      alignment: alignment,
+      colorHex: color,
+    );
+  }
+}
+
+const Object _lapisVisualUnset = Object();
+
+/// 自由 CSS 与可视化托管规则的拆分结果。
+class LapisVisualStyleSheet {
+  const LapisVisualStyleSheet({
+    required this.freeformCss,
+    required this.rules,
+  });
+
+  final String freeformCss;
+  final Map<LapisVisualField, LapisVisualRule> rules;
+
+  LapisVisualRule ruleFor(LapisVisualField field) =>
+      rules[field] ?? const LapisVisualRule();
+}
+
+/// 从现有自定义 CSS 中拆出可视化托管区段。区段损坏时返回「全部是自由 CSS」，
+/// 绝不因为打开编辑器就吞掉用户手写内容。
+LapisVisualStyleSheet splitLapisVisualStyleSheet(String customCss) {
+  // 取最后一个 BEGIN：若用户自由 CSS 里恰有残缺旧标记，后续新增的完整托管块
+  // 仍能独立解析，不会把前面的手写内容一起误吃掉。
+  final int begin = customCss.lastIndexOf(lapisVisualCssBeginMarker);
+  if (begin < 0) {
+    return LapisVisualStyleSheet(
+      freeformCss: customCss,
+      rules: const <LapisVisualField, LapisVisualRule>{},
+    );
+  }
+  final int end = customCss.indexOf(
+    lapisVisualCssEndMarker,
+    begin + lapisVisualCssBeginMarker.length,
+  );
+  if (end < 0) {
+    return LapisVisualStyleSheet(
+      freeformCss: customCss,
+      rules: const <LapisVisualField, LapisVisualRule>{},
+    );
+  }
+
+  final String managedBody = customCss.substring(
+    begin + lapisVisualCssBeginMarker.length,
+    end,
+  );
+  final RegExpMatch? configMatch = RegExp(
+    r'/\* HIBIKI-LAPIS-VISUAL-CONFIG (.*?) \*/',
+    dotAll: true,
+  ).firstMatch(managedBody);
+  if (configMatch == null) {
+    return LapisVisualStyleSheet(
+      freeformCss: customCss,
+      rules: const <LapisVisualField, LapisVisualRule>{},
+    );
+  }
+
+  try {
+    final Object? decoded = jsonDecode(configMatch.group(1)!);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('visual config is not an object');
+    }
+    final Map<LapisVisualField, LapisVisualRule> rules =
+        <LapisVisualField, LapisVisualRule>{};
+    for (final MapEntry<String, dynamic> entry in decoded.entries) {
+      final LapisVisualField? field = LapisVisualField.fromWireName(entry.key);
+      final LapisVisualRule? rule = LapisVisualRule.fromJson(entry.value);
+      if (field != null && rule != null && !rule.isDefault) {
+        rules[field] = rule;
+      }
+    }
+    final int afterEnd = end + lapisVisualCssEndMarker.length;
+    final String freeform = <String>[
+      customCss.substring(0, begin).trim(),
+      customCss.substring(afterEnd).trim(),
+    ].where((String part) => part.isNotEmpty).join('\n\n');
+    return LapisVisualStyleSheet(
+      freeformCss: freeform,
+      rules: Map<LapisVisualField, LapisVisualRule>.unmodifiable(rules),
+    );
+  } on FormatException {
+    return LapisVisualStyleSheet(
+      freeformCss: customCss,
+      rules: const <LapisVisualField, LapisVisualRule>{},
+    );
+  }
+}
+
+/// 把可视化规则写回自定义 CSS。自由 CSS 在前、托管区段在后，因此用户在界面
+/// 上刚调的值与预览一致；高级用户仍可删除托管区段并完全接管。
+String composeLapisVisualStyleSheet({
+  required String freeformCss,
+  required Map<LapisVisualField, LapisVisualRule> rules,
+}) {
+  final Map<String, Object?> config = <String, Object?>{};
+  final List<String> cssRules = <String>[];
+  for (final LapisVisualField field in LapisVisualField.values) {
+    final LapisVisualRule rule = rules[field] ?? const LapisVisualRule();
+    if (rule.isDefault) continue;
+    config[field.wireName] = rule.toJson();
+    cssRules.addAll(_buildLapisVisualFieldCss(field, rule));
+  }
+  final String custom = freeformCss.trim();
+  if (config.isEmpty) return custom;
+  final String managed = <String>[
+    lapisVisualCssBeginMarker,
+    '$_lapisVisualConfigPrefix${jsonEncode(config)} */',
+    ...cssRules,
+    lapisVisualCssEndMarker,
+  ].join('\n');
+  return <String>[
+    if (custom.isNotEmpty) custom,
+    managed,
+  ].join('\n\n');
+}
+
+List<String> _buildLapisVisualFieldCss(
+  LapisVisualField field,
+  LapisVisualRule rule,
+) {
+  final String selector = switch (field) {
+    LapisVisualField.expression => '.front-vocab, .vocab',
+    LapisVisualField.reading => '.pitch',
+    LapisVisualField.sentence => '.front-sentence, .sentence, .sentence-alt',
+    LapisVisualField.primaryDefinition => '#primary',
+    LapisVisualField.glossaries => '#glossaries',
+  };
+  final List<String> declarations = <String>[
+    if (rule.bold) '  font-weight: 700 !important;',
+    if (rule.alignment != null)
+      '  text-align: ${rule.alignment!.cssValue} !important;',
+    if (rule.colorHex != null) '  color: ${rule.colorHex} !important;',
+  ];
+  final List<String> result = <String>[];
+  if (declarations.isNotEmpty) {
+    result.add('$selector {\n${declarations.join('\n')}\n}');
+  }
+  if (rule.fontScalePercent != 100) {
+    final String factor = (rule.fontScalePercent / 100).toStringAsFixed(2);
+    for (final MapEntry<String, String> target
+        in _lapisVisualFontTargets(field)) {
+      result.add(
+        '${target.key} {\n'
+        '  font-size: calc(var(--${target.value}) * $factor) !important;\n'
+        '}',
+      );
+    }
+  }
+  return result;
+}
+
+List<MapEntry<String, String>> _lapisVisualFontTargets(
+  LapisVisualField field,
+) =>
+    switch (field) {
+      LapisVisualField.expression => const <MapEntry<String, String>>[
+          MapEntry<String, String>('.front-vocab', 'vocab-font-size'),
+          MapEntry<String, String>('.vocab', 'back-vocab-font-size'),
+        ],
+      LapisVisualField.reading => const <MapEntry<String, String>>[
+          MapEntry<String, String>('.pitch', 'info-font-size'),
+        ],
+      LapisVisualField.sentence => const <MapEntry<String, String>>[
+          MapEntry<String, String>('.front-sentence', 'sentence-font-size'),
+          MapEntry<String, String>(
+              '.sentence, .sentence-alt', 'back-sentence-font-size'),
+        ],
+      LapisVisualField.primaryDefinition => const <MapEntry<String, String>>[
+          MapEntry<String, String>('#primary', 'main-def-size'),
+        ],
+      LapisVisualField.glossaries => const <MapEntry<String, String>>[
+          MapEntry<String, String>('#glossaries', 'main-def-size'),
+        ],
+    };
+
+bool _isCssHexColor(String value) =>
+    RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(value);
+
 /// 从 vendored Lapis CSS 里提取全部字号变量并按 [percent]（百分比，100 = 原样）
 /// 缩放，产出一个 `:root` 覆写块。基准值直接解析自 [LapisNoteType.css]（单一
 /// 真相源），vendored 版本升级后无需改这里。[percent] == 100 或未解析到任何变量

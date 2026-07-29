@@ -166,6 +166,110 @@ void main() {
     });
   });
 
+  group('Lapis visual style sheet', () {
+    test('自由 CSS 与字段规则往返，托管区段始终排在最后', () {
+      const String freeform = '.custom { line-height: 1.8; }';
+      const LapisVisualRule expression = LapisVisualRule(
+        fontScalePercent: 125,
+        bold: true,
+        alignment: LapisVisualTextAlign.center,
+        colorHex: '#2F6B5F',
+      );
+      final String css = composeLapisVisualStyleSheet(
+        freeformCss: freeform,
+        rules: const <LapisVisualField, LapisVisualRule>{
+          LapisVisualField.expression: expression,
+        },
+      );
+
+      expect(css, startsWith(freeform));
+      expect(css, contains(lapisVisualCssBeginMarker));
+      expect(css, contains('.front-vocab, .vocab'));
+      expect(css, contains('font-weight: 700 !important'));
+      expect(css, contains('text-align: center !important'));
+      expect(css, contains('color: #2F6B5F !important'));
+      expect(
+        css,
+        contains(
+          'font-size: calc(var(--vocab-font-size) * 1.25) !important',
+        ),
+      );
+      expect(
+        css,
+        contains(
+          'font-size: calc(var(--back-vocab-font-size) * 1.25) !important',
+        ),
+      );
+
+      final LapisVisualStyleSheet round = splitLapisVisualStyleSheet(css);
+      expect(round.freeformCss, freeform);
+      expect(
+        round.ruleFor(LapisVisualField.expression).fontScalePercent,
+        125,
+      );
+      expect(round.ruleFor(LapisVisualField.expression).bold, isTrue);
+      expect(
+        round.ruleFor(LapisVisualField.expression).alignment,
+        LapisVisualTextAlign.center,
+      );
+      expect(
+        composeLapisVisualStyleSheet(
+          freeformCss: round.freeformCss,
+          rules: round.rules,
+        ),
+        css,
+      );
+    });
+
+    test('没有非默认规则时不制造托管区段', () {
+      expect(
+        composeLapisVisualStyleSheet(
+          freeformCss: '.custom { color: red; }',
+          rules: const <LapisVisualField, LapisVisualRule>{
+            LapisVisualField.sentence: LapisVisualRule(),
+          },
+        ),
+        '.custom { color: red; }',
+      );
+    });
+
+    test('损坏或不完整的托管区段按自由 CSS 原样保留', () {
+      const String broken = '$lapisVisualCssBeginMarker\n.bad { color: red; }';
+      final LapisVisualStyleSheet sheet = splitLapisVisualStyleSheet(broken);
+      expect(sheet.freeformCss, broken);
+      expect(sheet.rules, isEmpty);
+    });
+
+    test('残缺旧标记不会吞掉其后的新托管区段或手写 CSS', () {
+      const String broken = '$lapisVisualCssBeginMarker\n.bad { color: red; }';
+      final String withRule = composeLapisVisualStyleSheet(
+        freeformCss: broken,
+        rules: const <LapisVisualField, LapisVisualRule>{
+          LapisVisualField.sentence: LapisVisualRule(bold: true),
+        },
+      );
+      final LapisVisualStyleSheet round = splitLapisVisualStyleSheet(withRule);
+      expect(round.freeformCss, broken);
+      expect(round.ruleFor(LapisVisualField.sentence).bold, isTrue);
+    });
+
+    test('每个可视字段都有稳定 selector 与对应字号变量', () {
+      for (final LapisVisualField field in LapisVisualField.values) {
+        final String css = composeLapisVisualStyleSheet(
+          freeformCss: '',
+          rules: <LapisVisualField, LapisVisualRule>{
+            field: const LapisVisualRule(fontScalePercent: 110),
+          },
+        );
+        expect(css, contains('font-size: calc(var(--'));
+        expect(
+          splitLapisVisualStyleSheet(css).ruleFor(field).fontScalePercent,
+          110,
+        );
+      }
+    });
+  });
+
   group('AnkiNoteTypeDefinition', () {
     test('JSON 往返（备份文件载荷）', () {
       const AnkiNoteTypeDefinition def = AnkiNoteTypeDefinition(

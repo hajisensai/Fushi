@@ -4,8 +4,9 @@
 //    才置位 —— 那段异步窗口里 `_lapisBusy ? null : ...` 的门还开着，连点两下
 //    会开出两条恢复流程写同一个 note type。要求：置位必须先于本方法的第一个
 //    `await`。
-// 2. `_editLapisCustomCss` 原本在 `setLapisCustomCss` 之后才 dispose
-//    controller —— 保存抛错就漏掉 dispose。要求：dispose 在 `finally` 里。
+// 2. Lapis CSS 编辑器持有的 controller 必须随页面 dispose。旧弹窗曾在
+//    `setLapisCustomCss` 抛错时漏掉 controller；改成独立页面后生命周期守卫移到
+//    `LapisStyleEditorPage.dispose`。
 //
 // 这两条都是时序/生命周期，widget 测试要真跑整个 Anki 设置页（依赖 AppModel /
 // 平台通道），源码扫描是本仓能落地的最强层。
@@ -28,7 +29,10 @@ String _stripLineComments(String source) => const LineSplitter()
 /// （如 `'{'`），配平同样会错；当前被扫的两个方法没有这种字面量，真加了就得把
 /// 这里升级成带字符串状态机的扫描。
 String _methodBody(String source, String name) {
-  final int start = source.indexOf('Future<void> $name(');
+  final RegExp declaration = RegExp(
+    r'(?:Future<void>|void)\s+' + RegExp.escape(name) + r'\s*\(',
+  );
+  final int start = declaration.firstMatch(source)?.start ?? -1;
   expect(start, greaterThanOrEqualTo(0), reason: '找不到方法 $name');
   final int braceStart = source.indexOf('{', start);
   int depth = 0;
@@ -46,11 +50,15 @@ String _methodBody(String source, String name) {
 void main() {
   final File file =
       File('lib/src/pages/implementations/anki_settings_page.dart');
+  final File editorFile = File('lib/src/anki/lapis_style_editor_page.dart');
   late String source;
+  late String editorSource;
 
   setUpAll(() {
     expect(file.existsSync(), isTrue, reason: '路径变了就更新本守卫');
+    expect(editorFile.existsSync(), isTrue, reason: '路径变了就更新本守卫');
     source = _stripLineComments(file.readAsStringSync());
+    editorSource = _stripLineComments(editorFile.readAsStringSync());
   });
 
   test('_restoreLapisBackup 在第一个 await 之前就置 _lapisBusy', () {
@@ -79,12 +87,11 @@ void main() {
     expect(body, contains('anki_lapis_restore_failed'));
   });
 
-  test('_editLapisCustomCss 在 finally 里 dispose controller', () {
-    final String body = _methodBody(source, '_editLapisCustomCss');
-    expect(body, contains('finally'));
-    final int finallyAt = body.indexOf('finally');
-    final int disposeAt = body.indexOf('controller.dispose()');
-    expect(disposeAt, greaterThan(finallyAt),
-        reason: 'dispose 必须在 finally 内，保存抛错时也要释放');
+  test('LapisStyleEditorPage 随页面 dispose 高级 CSS controller', () {
+    final String body = _methodBody(editorSource, 'dispose');
+    expect(body, contains('_advancedCssController'));
+    expect(body, contains('removeListener(_handleAdvancedCssChanged)'));
+    expect(body, contains('dispose()'),
+        reason: '独立编辑页退出时必须释放 TextEditingController');
   });
 }
