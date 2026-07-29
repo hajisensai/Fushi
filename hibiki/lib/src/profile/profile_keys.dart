@@ -11,6 +11,13 @@ class ProfileKeys {
   static const String categoryAnki = 'anki';
   static const String categoryPref = 'pref';
 
+  /// v63 已从 live preferences 与 Profile 副本中删除的旧全局超分键。
+  ///
+  /// 每游戏真值是 `galgames.upscaling_mode`；此键只保留为输入拒绝标识，防止
+  /// 旧快照或旧分享 JSON 在升级后把废弃数据重新写回。
+  static const String obsoleteGalgameUpscalingModePrefKey =
+      'galgame_magpie_upscaling_mode';
+
   /// TODO-1077: per-profile snapshot of the `dictionary_metadata` Drift table
   /// (enable list / order / formatKey / type / hidden+collapsed languages /
   /// metadata). This is a NEW category, distinct from the legacy pref-style
@@ -58,6 +65,7 @@ class ProfileKeys {
     // path that may not even exist on this machine.
     'download_save_root',
     'download_save_root_history',
+    obsoleteGalgameUpscalingModePrefKey,
     // TODO-855: the monotonic prefs-version counter is the cross-process signal
     // the :popup process reads to decide whether to refresh its warm-reuse
     // pref cache. It must stay app-global and monotonic — snapshotting it

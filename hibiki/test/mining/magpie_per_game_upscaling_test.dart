@@ -245,15 +245,38 @@ void main() {
       );
     });
 
-    test('不得再有全局超分偏好（两份真值一定会漂开）', () async {
+    test('不得再有全局超分偏好读写或 UI/AppModel 入口', () async {
+      const String obsoleteKey = 'galgame_magpie_upscaling_mode';
       final String prefs = await File(
         'lib/src/models/preferences_repository.dart',
       ).readAsString();
       expect(
-        prefs.contains("getPref('galgame_magpie_upscaling_mode'"),
+        prefs.contains("getPref('$obsoleteKey'"),
         isFalse,
         reason: '档位已落 galgames.upscaling_mode，全局偏好必须没有读取点',
       );
+      expect(
+        prefs.contains("setPref('$obsoleteKey'"),
+        isFalse,
+        reason: '旧全局偏好也不得留下写入点',
+      );
+
+      final String appModel =
+          await File('lib/src/models/app_model.dart').readAsString();
+      expect(appModel.contains(obsoleteKey), isFalse,
+          reason: 'AppModel 不得重新暴露旧全局超分状态');
+
+      final Iterable<File> settingsFiles = Directory('lib/src/settings')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((File file) => file.path.endsWith('.dart'));
+      for (final File file in settingsFiles) {
+        expect(
+          (await file.readAsString()).contains(obsoleteKey),
+          isFalse,
+          reason: 'settings schema 不得重新出现旧全局超分 key：${file.path}',
+        );
+      }
     });
 
     test('helper 随包归档必须由 CMake install 拷进 bundle（开发构建也要有）', () async {

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/profile/profile_repository.dart';
+import 'package:hibiki/src/profile/profile_keys.dart';
 import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -201,6 +202,32 @@ void main() {
   });
 
   group('ProfileRepository import', () {
+    String legacyUpscalingJson(String profileName) => jsonEncode(
+          <String, dynamic>{
+            'type': ProfileExport.fileType,
+            'formatVersion': ProfileExport.currentFormatVersion,
+            'schemaVersion': 62,
+            'profileName': profileName,
+            'settings': <Map<String, String>>[
+              <String, String>{
+                'category': ProfileKeys.categoryPref,
+                'key': ProfileKeys.obsoleteGalgameUpscalingModePrefKey,
+                'value': 's:auto',
+              },
+              <String, String>{
+                'category': 'legacy_non_pref',
+                'key': ProfileKeys.obsoleteGalgameUpscalingModePrefKey,
+                'value': 'must-survive',
+              },
+              <String, String>{
+                'category': ProfileKeys.categoryPref,
+                'key': 'font_size',
+                'value': '24',
+              },
+            ],
+          },
+        );
+
     Future<String> exportFixture(
       HibikiDatabase db,
       ProfileRepository repo,
@@ -240,6 +267,36 @@ void main() {
       final kv = <String, String>{for (final s in settings) s.key: s.value};
       expect(kv['font_size'], '24');
       expect(kv['theme'], 'sepia');
+    });
+
+    test(
+        'v63 create import drops only the obsolete pref row and keeps the '
+        'same key in a non-pref category', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+
+      final int id =
+          await repo.importProfileFromJson(legacyUpscalingJson('Legacy'));
+      final rows = await db.getProfileSettings(id);
+
+      expect(
+        rows.where((r) =>
+            r.category == ProfileKeys.categoryPref &&
+            r.key == ProfileKeys.obsoleteGalgameUpscalingModePrefKey),
+        isEmpty,
+      );
+      expect(
+        rows.where((r) =>
+            r.category == 'legacy_non_pref' &&
+            r.key == ProfileKeys.obsoleteGalgameUpscalingModePrefKey),
+        hasLength(1),
+        reason: '用户只授权删除 pref 分类，同名非 pref 行必须保留',
+      );
+      expect(
+        rows.where((r) =>
+            r.category == ProfileKeys.categoryPref && r.key == 'font_size'),
+        hasLength(1),
+      );
     });
 
     test('duplicate name gets a numeric suffix', () async {
@@ -285,6 +342,48 @@ void main() {
       final kv = <String, String>{for (final s in settings) s.key: s.value};
       expect(kv['font_size'], '32');
       expect(kv['new_key'], 'v');
+    });
+
+    test('v63 overwrite import also cannot recreate the obsolete pref row',
+        () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final int target = await repo.createProfile('Target');
+      await db.replaceProfileSettings(target, <ProfileSettingsCompanion>[
+        ProfileSettingsCompanion.insert(
+          profileId: target,
+          category: ProfileKeys.categoryPref,
+          key: ProfileKeys.obsoleteGalgameUpscalingModePrefKey,
+          value: 's:off',
+        ),
+      ]);
+
+      await repo.importProfileFromJson(
+        legacyUpscalingJson('Ignored'),
+        mode: ProfileImportMode.overwrite,
+        targetProfileId: target,
+      );
+      final rows = await db.getProfileSettings(target);
+
+      expect(
+        rows.where((r) =>
+            r.category == ProfileKeys.categoryPref &&
+            r.key == ProfileKeys.obsoleteGalgameUpscalingModePrefKey),
+        isEmpty,
+      );
+      expect(
+        rows.where((r) =>
+            r.category == 'legacy_non_pref' &&
+            r.key == ProfileKeys.obsoleteGalgameUpscalingModePrefKey),
+        hasLength(1),
+      );
+      expect(
+        rows
+            .singleWhere((r) =>
+                r.category == ProfileKeys.categoryPref && r.key == 'font_size')
+            .value,
+        '24',
+      );
     });
 
     test('corrupt JSON throws ProfileImportException before touching the DB',

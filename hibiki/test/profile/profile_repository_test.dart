@@ -123,6 +123,42 @@ void main() {
       expect(keys, isNot(contains('current_source/reader')));
     });
 
+    test(
+        'v63 obsolete galgame upscaling pref is not snapshotted and an old '
+        'snapshot cannot restore it', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final pid = await repo.createProfile('Legacy');
+      const String obsoleteKey = 'galgame_magpie_upscaling_mode';
+
+      await db.setPref(obsoleteKey, 's:auto');
+      await db.setPref('font_size', '16');
+      await repo.snapshotCurrentSettings(pid);
+      expect(await _prefKeys(db, pid), isNot(contains(obsoleteKey)));
+
+      // Simulate a pre-v63 snapshot captured before the key became excluded.
+      await db.replaceProfileSettings(pid, <ProfileSettingsCompanion>[
+        ProfileSettingsCompanion.insert(
+          profileId: pid,
+          category: 'pref',
+          key: obsoleteKey,
+          value: 's:installed_only',
+        ),
+        ProfileSettingsCompanion.insert(
+          profileId: pid,
+          category: 'pref',
+          key: 'font_size',
+          value: '20',
+        ),
+      ]);
+      await db.deletePref(obsoleteKey);
+      await repo.applyProfile(pid);
+
+      expect(await db.getPref(obsoleteKey), isNull,
+          reason: '旧 Profile apply 不得把 v63 已删除的全局值写回 live prefs');
+      expect(await db.getPref('font_size'), '20', reason: '同一旧快照中的正常偏好仍照常恢复');
+    });
+
     test('snapshot and apply keep app UI scale prefs device-local', () async {
       final db = await _openDb();
       final repo = _repo(db);
