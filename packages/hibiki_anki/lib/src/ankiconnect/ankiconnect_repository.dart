@@ -307,9 +307,16 @@ class _MediaUploadCoordinator {
   final Map<String, _MediaUploadLeaseState> _states =
       <String, _MediaUploadLeaseState>{};
 
-  void claim(_MediaUploadTransaction transaction, String filename) {
-    final _MediaUploadLeaseState state =
+  Future<void> claim(
+    _MediaUploadTransaction transaction,
+    String filename,
+  ) async {
+    _MediaUploadLeaseState state =
         _states.putIfAbsent(filename, _MediaUploadLeaseState.new);
+    while (state.cleanupAttempt != null) {
+      await state.cleanupAttempt;
+      state = _states.putIfAbsent(filename, _MediaUploadLeaseState.new);
+    }
     if (state.participants.add(transaction)) {
       state.notifyChanged();
     }
@@ -403,7 +410,7 @@ class _MediaUploadTransaction {
       // Register before the write: a lost storeMediaFile response may still
       // mean Anki committed the file, so the failure path must try to remove it.
       _newFiles.add(filename);
-      coordinator.claim(this, filename);
+      await coordinator.claim(this, filename);
     }
     try {
       await write();
