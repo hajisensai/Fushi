@@ -159,9 +159,15 @@ class _HomeGamePageState extends State<HomeGamePage> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          HibikiPageHeader(
-            title: t.nav_game,
-            subtitle: t.game_home_subtitle,
+          HibikiPageHeader.customTitle(
+            title: GameSectionTabs(
+              selected: GameSection.library,
+              focusIdPrefix: 'game-library-tab',
+              onSelectDashboard: _showDashboard,
+              onSelectLibrary: _showLibrary,
+              onSelectMonitor: _showMonitor,
+              onSelectDiagnostics: _showDiagnostics,
+            ),
             actions: <Widget>[
               HibikiIconButton(
                 icon: Icons.bar_chart_outlined,
@@ -171,15 +177,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
               ),
             ],
             // 顶部不再放「捕获工作台」图标钮——它与下方 GameSectionTabs 的
-            // 「捕获工作台」页签去向完全相同，纯冗余；入口收敛到页签 + 状态带。
-            bottom: GameSectionTabs(
-              selected: GameSection.library,
-              focusIdPrefix: 'game-library-tab',
-              onSelectDashboard: _showDashboard,
-              onSelectLibrary: _showLibrary,
-              onSelectMonitor: _showMonitor,
-              onSelectDiagnostics: _showDiagnostics,
-            ),
+            // 「捕获工作台」分段去向完全相同，纯冗余；入口收敛到分段导航 + 状态带。
           ),
           Expanded(
             child: Column(

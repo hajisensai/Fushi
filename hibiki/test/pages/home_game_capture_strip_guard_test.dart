@@ -43,9 +43,8 @@ void main() {
     });
 
     test('库页顶部不再放与页签冗余的捕获图标钮', () {
-      final int headerStart = src.indexOf('HibikiPageHeader(');
-      final int headerEnd =
-          src.indexOf('bottom: GameSectionTabs(', headerStart);
+      final int headerStart = src.indexOf('HibikiPageHeader.customTitle(');
+      final int headerEnd = src.indexOf('title: GameSectionTabs(', headerStart);
       expect(headerStart, greaterThanOrEqualTo(0));
       expect(headerEnd, greaterThan(headerStart));
       final String header = src.substring(headerStart, headerEnd);

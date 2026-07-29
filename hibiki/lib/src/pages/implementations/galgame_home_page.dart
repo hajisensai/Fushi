@@ -334,9 +334,14 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          HibikiPageHeader(
-            title: t.nav_game,
-            subtitle: t.game_home_subtitle,
+          HibikiPageHeader.customTitle(
+            title: GameSectionTabs(
+              selected: GameSection.dashboard,
+              focusIdPrefix: 'game-dashboard-tab',
+              onSelectLibrary: widget.onShowLibrary,
+              onSelectMonitor: widget.onShowMonitor,
+              onSelectDiagnostics: widget.onShowDiagnostics,
+            ),
             actions: <Widget>[
               HibikiIconButton(
                 icon: Icons.bar_chart_outlined,
@@ -345,13 +350,6 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                 onTap: _openStatistics,
               ),
             ],
-            bottom: GameSectionTabs(
-              selected: GameSection.dashboard,
-              focusIdPrefix: 'game-dashboard-tab',
-              onSelectLibrary: widget.onShowLibrary,
-              onSelectMonitor: widget.onShowMonitor,
-              onSelectDiagnostics: widget.onShowDiagnostics,
-            ),
           ),
           Expanded(
             child: _games.isEmpty ? _buildEmpty(context) : _buildBody(context),

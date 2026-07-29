@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/main.dart' as app;
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
@@ -53,26 +54,27 @@ void main() {
         await _capture(tester, 'game-library');
 
         final FocusDriver driver = FocusDriver(tester);
-        final Finder openCapture =
-            find.widgetWithText(HibikiSelectableChip, t.game_capture_workbench);
-        expect(openCapture, findsOneWidget);
+        final Finder gameSections =
+            find.byType(HibikiAdjustableSegmented<GameSection>);
+        expect(gameSections, findsOneWidget);
         expect(
           find.descendant(
-            of: openCapture,
+            of: gameSections,
             matching: find.byType(HibikiFocusTarget),
           ),
           findsOneWidget,
-          reason: '游戏页签应在真 app 中注册 Hibiki 焦点目标',
+          reason: '游戏分段导航应在真 app 中注册单一 Hibiki 焦点目标',
         );
         expect(
-          await _activateHibikiTarget(
+          await _focusThroughHibiki(
             driver,
-            openCapture,
-            const HibikiFocusId('game-library-tab-capture'),
+            gameSections,
+            const HibikiFocusId('game-library-tab-sections'),
           ),
           isTrue,
-          reason: '捕获工作台页头入口必须可由 Hibiki 确认动作激活',
+          reason: '游戏分段导航必须可由 Hibiki 焦点系统聚焦',
         );
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pump(const Duration(seconds: 1));
 
         expect(find.byType(TexthookerPage), findsOneWidget);
@@ -112,18 +114,19 @@ void main() {
             reason: '捕获台词必须跨一级模块切换保活');
         await _capture(tester, 'game-capture-after-tab-switch');
 
-        final Finder diagnosticsChip =
-            find.widgetWithText(HibikiSelectableChip, t.game_diagnostics);
-        expect(diagnosticsChip, findsOneWidget);
+        final Finder captureSections =
+            find.byType(HibikiAdjustableSegmented<GameSection>);
+        expect(captureSections, findsOneWidget);
         expect(
-          await _activateHibikiTarget(
+          await _focusThroughHibiki(
             driver,
-            diagnosticsChip,
-            const HibikiFocusId('game-capture-tab-diagnostics'),
+            captureSections,
+            const HibikiFocusId('game-capture-tab-sections'),
           ),
           isTrue,
-          reason: '兼容性诊断入口必须可由 Hibiki 确认动作激活',
+          reason: '捕获页分段导航必须可由 Hibiki 焦点系统聚焦',
         );
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pump(const Duration(seconds: 1));
         expect(find.byType(GameDiagnosticsPage), findsOneWidget);
         expect(find.byKey(HomeGamePage.diagnosticsKey), findsOneWidget);

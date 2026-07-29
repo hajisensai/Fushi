@@ -26,7 +26,7 @@ class MokuroMoeCatalogPage extends ConsumerStatefulWidget {
   /// 保持无 provider 依赖（接线守卫测试能纯构造它，不必搭一整套 ProviderScope）。
   final HibikiDatabase? db;
 
-  /// 库页视图导航条（由 `MediaLibraryShell` 传入，落在页头 bottom 槽）。
+  /// 库页视图导航条（由 `MediaLibraryShell` 传入，作为页头主内容与动作同一行）。
   final Widget? navigation;
 
   @override
@@ -60,12 +60,16 @@ class _MokuroMoeCatalogPageState extends ConsumerState<MokuroMoeCatalogPage> {
                 BuildContext context,
                 MokuroMoeCatalogSnapshot snapshot,
                 Widget? child,
-              ) =>
-                  HibikiPageHeader(
-                title: t.manga_online_catalog_title,
-                subtitle: snapshot.seriesName,
-                bottom: widget.navigation,
-              ),
+              ) {
+                final Widget? navigation = widget.navigation;
+                if (navigation != null) {
+                  return HibikiPageHeader.customTitle(title: navigation);
+                }
+                return HibikiPageHeader(
+                  title: t.manga_online_catalog_title,
+                  subtitle: snapshot.seriesName,
+                );
+              },
             ),
           Expanded(
             child: MokuroMoeCatalogView(

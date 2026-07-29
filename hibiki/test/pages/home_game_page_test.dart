@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/pages/implementations/home_game_page.dart';
@@ -104,12 +105,12 @@ void main() {
     );
     expect(
       controller.requestById(
-        const HibikiFocusId('game-library-tab-diagnostics'),
+        const HibikiFocusId('game-library-tab-sections'),
       ),
       isTrue,
     );
     await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.tap(find.text(t.game_diagnostics).first);
     await tester.pump();
 
     expect(find.byKey(HomeGamePage.diagnosticsKey), findsOneWidget);
@@ -137,12 +138,12 @@ void main() {
     );
     expect(
       controller.requestById(
-        const HibikiFocusId('game-library-tab-capture'),
+        const HibikiFocusId('game-library-tab-sections'),
       ),
       isTrue,
     );
     await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
 
     expect(find.text('focused-monitor'), findsOneWidget);

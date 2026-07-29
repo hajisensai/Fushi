@@ -1140,6 +1140,7 @@ class HibikiAdjustableSegmented<T extends Object> extends StatelessWidget {
     required this.child,
     super.key,
     this.focusIdPrefix = 'segmented',
+    this.focusId,
   });
 
   /// The segment values in display order; [selected] must be one of them.
@@ -1148,6 +1149,7 @@ class HibikiAdjustableSegmented<T extends Object> extends StatelessWidget {
   final ValueChanged<T> onChanged;
   final Widget child;
   final String focusIdPrefix;
+  final HibikiFocusId? focusId;
 
   @override
   Widget build(BuildContext context) {
@@ -1161,6 +1163,7 @@ class HibikiAdjustableSegmented<T extends Object> extends StatelessWidget {
 
     return _GamepadAdjustableValue(
       focusIdPrefix: focusIdPrefix,
+      focusId: focusId,
       onIncrement: () => selectAt(currentIndex + 1),
       onDecrement: () => selectAt(currentIndex - 1),
       child: child,
@@ -1520,9 +1523,11 @@ class _GamepadAdjustableValue extends StatefulWidget {
     required this.onIncrement,
     required this.onDecrement,
     required this.child,
+    this.focusId,
   });
 
   final String focusIdPrefix;
+  final HibikiFocusId? focusId;
   final VoidCallback onIncrement;
   final VoidCallback onDecrement;
   final Widget child;
@@ -1533,7 +1538,7 @@ class _GamepadAdjustableValue extends StatefulWidget {
 }
 
 class _GamepadAdjustableValueState extends State<_GamepadAdjustableValue> {
-  late final HibikiFocusId _focusId =
+  late final HibikiFocusId _fallbackFocusId =
       HibikiFocusId('${widget.focusIdPrefix}-${identityHashCode(this)}');
 
   @override
@@ -1567,7 +1572,7 @@ class _GamepadAdjustableValueState extends State<_GamepadAdjustableValue> {
           SingleActivator(LogicalKeyboardKey.arrowLeft): _AdjustDownIntent(),
         },
         child: HibikiFocusTarget(
-          id: _focusId,
+          id: widget.focusId ?? _fallbackFocusId,
           child: ExcludeFocus(child: widget.child),
         ),
       ),

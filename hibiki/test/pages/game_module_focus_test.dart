@@ -25,8 +25,8 @@ import '../helpers/test_platform_services.dart';
 /// 1. 游戏卡走 HibikiCard 注册 `game-card-<id>` 焦点站点，可被 requestById 聚焦、
 ///    Enter（ActivateIntent）触发启动路径（G1 根因修复回归守卫）；
 /// 2. texthooker 线程选择器换共享手柄可进下拉后，`game-text-thread-selector`
-///    focusId 在焦点系统注册（G3）；三页共用 GameSectionTabs 后 chip focusId
-///    前缀不冲突且可聚焦。
+///    focusId 在焦点系统注册（G3）；四页共用 GameSectionTabs 后分段条的单一
+///    focusId 前缀不冲突且可聚焦。
 void main() {
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
@@ -102,8 +102,7 @@ void main() {
     final Finder launchFeedback = find.byWidgetPredicate(
       (Widget w) =>
           w is Text &&
-          (w.data == t.game_exe_missing ||
-              w.data == t.game_launch_unsupported),
+          (w.data == t.game_exe_missing || w.data == t.game_launch_unsupported),
     );
     expect(launchFeedback, findsOneWidget, reason: 'ActivateIntent 必须触发游戏启动路径');
 
@@ -197,8 +196,7 @@ void main() {
     final Finder launchFeedback = find.byWidgetPredicate(
       (Widget w) =>
           w is Text &&
-          (w.data == t.game_exe_missing ||
-              w.data == t.game_launch_unsupported),
+          (w.data == t.game_exe_missing || w.data == t.game_launch_unsupported),
     );
     expect(launchFeedback, findsOneWidget,
         reason: 'ActivateIntent 必须触发最近玩过缩略图的启动路径');
@@ -247,16 +245,11 @@ void main() {
       isTrue,
       reason: '线程选择器换 GamepadMenuDropdown 后必须注册 focusId',
     );
-    for (final String id in <String>[
-      'game-capture-tab-library',
-      'game-capture-tab-capture',
-      'game-capture-tab-diagnostics',
-    ]) {
-      expect(
-        controller.requestById(HibikiFocusId(id)),
-        isTrue,
-        reason: 'GameSectionTabs 收敛后 $id 必须保持注册',
-      );
-    }
+    const String id = 'game-capture-tab-sections';
+    expect(
+      controller.requestById(const HibikiFocusId(id)),
+      isTrue,
+      reason: 'GameSectionTabs 收敛后 $id 必须保持注册',
+    );
   });
 }
