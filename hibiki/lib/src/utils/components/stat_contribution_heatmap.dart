@@ -170,6 +170,7 @@ class StatContributionHeatmap extends StatefulWidget {
     required this.emptyColor,
     required this.valueLabel,
     super.key,
+    this.emptyBorderColor,
     this.onDaySelected,
     this.weeks = 17,
     this.maxWeeks = 53,
@@ -187,6 +188,11 @@ class StatContributionHeatmap extends StatefulWidget {
 
   /// level 0（无活动）格子的底色（通常取一个很浅的中性色）。
   final Color emptyColor;
+
+  /// level 0 格子的可选描边。某些深色/自定义主题会把多个 surface 色阶压成近似色，
+  /// 此时仅换一个 surface 填充色仍会让空格融进卡片背景；传入 outline role 后，即使
+  /// 填充色与背景完全相同，网格轮廓仍然可见。null 保持旧的纯填充行为。
+  final Color? emptyBorderColor;
 
   /// 选中某天时气泡文案的格式化器：入参为 (dateKey, 当日值)，返回完整气泡文本。
   final String Function(String dateKey, int value) valueLabel;
@@ -416,6 +422,7 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
                   model: model,
                   baseColor: widget.baseColor,
                   emptyColor: widget.emptyColor,
+                  emptyBorderColor: widget.emptyBorderColor,
                   cell: effCell,
                   spacing: widget.spacing,
                   selectedDateKey: _selectedDateKey,
@@ -450,6 +457,7 @@ class _HeatmapPainter extends CustomPainter {
     required this.model,
     required this.baseColor,
     required this.emptyColor,
+    required this.emptyBorderColor,
     required this.cell,
     required this.spacing,
     required this.selectedDateKey,
@@ -459,6 +467,7 @@ class _HeatmapPainter extends CustomPainter {
   final StatHeatmapModel model;
   final Color baseColor;
   final Color emptyColor;
+  final Color? emptyBorderColor;
   final double cell;
   final double spacing;
   final String? selectedDateKey;
@@ -487,6 +496,12 @@ class _HeatmapPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5
       ..color = selectedBorderColor;
+    final Paint? emptyBorder = emptyBorderColor == null
+        ? null
+        : (Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = emptyBorderColor!);
     final Radius radius = Radius.circular(cell * 0.25);
     Rect? selectedRect;
     for (int w = 0; w < model.weeks.length; w++) {
@@ -500,6 +515,12 @@ class _HeatmapPainter extends CustomPainter {
         final Rect rect = Rect.fromLTWH(x, y, cell, cell);
         paint.color = _colorFor(c.level);
         canvas.drawRRect(RRect.fromRectAndRadius(rect, radius), paint);
+        if (c.level == 0 && emptyBorder != null) {
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(rect.deflate(0.5), radius),
+            emptyBorder,
+          );
+        }
         if (selectedDateKey != null && c.dateKey == selectedDateKey) {
           selectedRect = rect;
         }
@@ -519,6 +540,7 @@ class _HeatmapPainter extends CustomPainter {
       old.model != model ||
       old.baseColor != baseColor ||
       old.emptyColor != emptyColor ||
+      old.emptyBorderColor != emptyBorderColor ||
       old.cell != cell ||
       old.spacing != spacing ||
       old.selectedDateKey != selectedDateKey ||

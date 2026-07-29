@@ -24,10 +24,14 @@ void main() {
 
   Widget buildHeatmap({
     required double width,
+    Color backgroundColor = Colors.white,
+    Color emptyColor = Colors.grey,
+    Color? emptyBorderColor,
     void Function(String, int)? onDaySelected,
   }) {
     return MaterialApp(
       home: Scaffold(
+        backgroundColor: backgroundColor,
         body: Align(
           alignment: Alignment.topLeft,
           child: SizedBox(
@@ -36,7 +40,8 @@ void main() {
               valueByDateKey: <String, int>{todayKey: 123},
               now: now,
               baseColor: Colors.green,
-              emptyColor: Colors.grey,
+              emptyColor: emptyColor,
+              emptyBorderColor: emptyBorderColor,
               valueLabel: (String dateKey, int value) => '$dateKey $value',
               onDaySelected: onDaySelected,
             ),
@@ -108,5 +113,50 @@ void main() {
     await tester.pump();
 
     expect(calls, <(String, int)>[(todayKey, 123)]);
+  });
+
+  testWidgets('BUG-1247：surface 色阶坍缩时，空格仍由 outline 描边可见',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 精确复现用户截图的失败条件：卡片背景与 level 0 填充完全同色。旧实现只填充，
+    // 第一格中心和边缘都是黑色，整整 53 周空格视觉消失；修复后 outline 仍被画出。
+    await tester.pumpWidget(buildHeatmap(
+      width: maxWeeks * (cell + spacing) - spacing,
+      backgroundColor: Colors.black,
+      emptyColor: Colors.black,
+      emptyBorderColor: Colors.white,
+    ));
+    await tester.pump();
+
+    final Finder boundaryFinder = find
+        .descendant(
+          of: gridFinder(),
+          matching: find.byType(RepaintBoundary),
+        )
+        .first;
+    final RenderRepaintBoundary boundary =
+        tester.renderObject<RenderRepaintBoundary>(boundaryFinder);
+    final image = await boundary.toImage(pixelRatio: 1);
+    addTearDown(image.dispose);
+    final data = await image.toByteData();
+    expect(data, isNotNull);
+
+    Color pixelAt(int x, int y) {
+      final int offset = (y * image.width + x) * 4;
+      return Color.fromARGB(
+        data!.getUint8(offset + 3),
+        data.getUint8(offset),
+        data.getUint8(offset + 1),
+        data.getUint8(offset + 2),
+      );
+    }
+
+    // 第一格（过去日期、value=0）的上边框为白，中心仍保持黑色填充。
+    expect(pixelAt(6, 0).computeLuminance(), greaterThan(0.5));
+    expect(pixelAt(6, 6), Colors.black);
   });
 }
