@@ -131,6 +131,26 @@ String batchSubtitleFileName(String bookUid, String fileName) {
 /// 每集处理完（下载落盘后，含 noMatch/failed）的回调；调用方据此持久化 + 刷新 UI。
 typedef JimakuBatchItemCallback = Future<void> Function(JimakuBatchItem item);
 
+/// 批量下载只能在所选来源的预检查已经成功完成且确有可解析字幕时开放。
+///
+/// loading / failed / 合法空库存都必须保持禁用，避免用户在还没看完预览或已经明确
+/// 失败时启动一条语义不同的下载请求链。
+bool canDownloadJimakuInventory({
+  required int? selectedEntryId,
+  required Map<int, JimakuFileInventory> inventories,
+  required Set<int> loadingEntryIds,
+  required Set<int> failedEntryIds,
+}) {
+  final int? entryId = selectedEntryId;
+  if (entryId == null ||
+      loadingEntryIds.contains(entryId) ||
+      failedEntryIds.contains(entryId)) {
+    return false;
+  }
+  final JimakuFileInventory? inventory = inventories[entryId];
+  return inventory != null && inventory.files.isNotEmpty;
+}
+
 /// 编排合集批量字幕下载：对 [targets] 逐集在 [entryIds]（合集绑定的 Jimaku 条目）里按
 /// 集号列文件 → 挑最佳 → 下载 → 落 [saveDirectory]。每集处理前后各回调一次
 /// （[onItemStart] / [onItemDone]），持久化由 [onItemDone] 里调用方按 target.isStream 分派。
@@ -160,7 +180,13 @@ Future<List<JimakuBatchItem>> runJimakuBatch({
     try {
       final List<JimakuFile> files = <JimakuFile>[];
       for (final int id in ids) {
-        files.addAll(await client.listFiles(id, episode: item.episode));
+        files.addAll(
+          await client.listFiles(
+            id,
+            episode: item.episode,
+            throwOnError: true,
+          ),
+        );
       }
       final JimakuFile? best = pickBestSubtitleFile(
         files,
