@@ -44,9 +44,18 @@ void main() {
   });
 
   test('导入对话框把 .pdf 路由到 PdfImporter（不经 TextToEpub 文本转换）', () {
+    // 载体分家（漫画导入从书籍导入拆出）后，「.pdf 是什么载体」的判定从
+    // _importEpubOnly 的扩展名早退挪到了 classifyImportCarrier 这个纯函数；
+    // 对话框只按分类结果分派。守卫跟着锚点走，两段各守一半，强度不放宽。
+    final String carrier = read('lib/src/media/import/import_carrier.dart');
+    expect(carrier.contains("ext == '.pdf'"), isTrue,
+        reason: 'classifyImportCarrier 必须早退分流 .pdf');
+    expect(carrier.contains('ImportCarrier.pdf'), isTrue,
+        reason: '.pdf 必须归到独立的 pdf 载体，而不是落进文本兜底分支');
+
     final String src = read('lib/src/media/audiobook/book_import_dialog.dart');
-    expect(src.contains("ext == '.pdf'"), isTrue,
-        reason: '_importEpubOnly 必须早退分流 .pdf');
+    expect(src.contains('ImportCarrier.pdf'), isTrue,
+        reason: '_importEpubOnly 必须按 pdf 载体分派，缺这条 → PDF 落文本兜底');
     expect(src.contains('PdfImporter.importFromPath'), isTrue,
         reason: '.pdf 走 PdfImporter，而非把 PDF 二进制喂 TextToEpub 转成乱码 EPUB');
     // .pdf 必须在文件选择白名单里，否则用户根本选不到。

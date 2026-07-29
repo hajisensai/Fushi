@@ -2754,5 +2754,12 @@
   "game_stat_by_game": "按游戏",
   "stat_clear_all_game_message": "确定清空全部游戏统计吗？将删除所有游戏时长和游玩次数。你的游戏库与首页活动流不受影响。此操作不可撤销。",
   "batch_selection_stale_skipped": "选中的 $n 项中有 $m 项已不存在，已跳过",
-  "game_text_thread_unset": "尚未选择线程 · 选一条后开始捕获"
+  "game_text_thread_unset": "尚未选择线程 · 选一条后开始捕获",
+  "manga_import_hint": "选择漫画文件夹、.cbz/.zip 页图压缩包，或 .mokuro 文件。",
+  "manga_import_pick_file": "选择漫画文件",
+  "manga_import_pick_folder": "选择漫画文件夹",
+  "manga_import_missing_input": "请先选择漫画文件或文件夹。",
+  "manga_import_detected_title": "这看起来是漫画",
+  "manga_import_detected_confirm": "按漫画导入",
+  "manga_import_detected_message": "「$name」是漫画文件，将走漫画导入流程，而不是书籍导入流程。"
 }

@@ -2754,5 +2754,12 @@
   "game_stat_by_game": "By game",
   "stat_clear_all_game_message": "Clear all game play time and session counts? Your game library and activity timeline are kept. This cannot be undone.",
   "batch_selection_stale_skipped": "Skipped $m of $n selected items that no longer exist",
-  "game_text_thread_unset": "No thread selected — pick one to start capturing"
+  "game_text_thread_unset": "No thread selected — pick one to start capturing",
+  "manga_import_hint": "Pick a manga folder, a .cbz/.zip page archive, or a .mokuro file.",
+  "manga_import_pick_file": "Pick manga file",
+  "manga_import_pick_folder": "Pick manga folder",
+  "manga_import_missing_input": "Pick a manga file or folder first.",
+  "manga_import_detected_title": "This looks like manga",
+  "manga_import_detected_confirm": "Import as manga",
+  "manga_import_detected_message": "\"$name\" is a manga file, so it will go through the manga importer instead of the book importer."
 }

@@ -8,15 +8,18 @@ import 'package:hibiki/src/media/audiobook/book_import_dialog.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
-/// 守卫 TODO-790-B：三个导入对话框（book/audiobook/video）的 build 必须把根
+/// 守卫 TODO-790-B：每个导入对话框（book/manga/audiobook/video）的 build 必须把根
 /// frame 包进 [HibikiFileDropTarget]，否则拖文件进打开的模态对话框会被页级
 /// drop target 因 `isCurrent` 守卫静默忽略。
 ///
-/// 源码扫描守卫（仿 drag_drop_platform_guard_test.dart）：断言三文件各引用
-/// `HibikiFileDropTarget` 且各自定义 `_handleDialogDrop`。
+/// 源码扫描守卫（仿 drag_drop_platform_guard_test.dart）：断言各文件都引用
+/// `HibikiFileDropTarget` 且各自定义 `_handleDialogDrop`。漫画从书籍框分家后是
+/// 独立对话框，同样是模态落点，故一并纳入守卫——否则「漫画框拖不进东西」会成为
+/// 一个没人看守的回归。
 void main() {
   const Map<String, String> dialogs = <String, String>{
     'book': 'lib/src/media/audiobook/book_import_dialog.dart',
+    'manga': 'lib/src/media/manga/manga_import_dialog.dart',
     'audiobook': 'lib/src/media/audiobook/audiobook_import_dialog.dart',
     'video': 'lib/src/media/video/video_import_dialog.dart',
   };

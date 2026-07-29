@@ -1012,14 +1012,10 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
           audioPaths: files.audios,
         );
       case DropIntent.importNewManga:
-        // 漫画（.mokuro / .cbz / 页图目录）走与书同一个导入对话框——它的导入分派
-        // 早已认得这几种载体（mokuro → MangaImporter、cbz/图片型 zip →
-        // MangaArchiveImporter、目录 → importFromImageFolder），拖入只负责把路径
-        // 预填进去，不重复一套导入逻辑。
-        _openBookImportPrefilled(
-          epubPath: files.mangas.first,
-          subtitlePath: null,
-        );
+        // 漫画（.mokuro / .cbz / 页图目录 / 图片型 zip）走漫画自己的导入对话框。
+        // 决策层本来就把漫画和书分成了两个 intent，此前两个 intent 却落到同一个
+        // 对话框；现在落点跟着 intent 走，载体身份不再在半路丢失。
+        _openMangaImportPrefilled(mangaPath: files.mangas.first);
       case DropIntent.unsupportedMangaArchive:
         debugPrint(
           '[hibiki-drop] [reader-shelf] intent=unsupportedMangaArchive',
@@ -1080,6 +1076,23 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         initialEpubPath: epubPath,
         initialSubtitlePath: subtitlePath,
         initialAudioPaths: audioPaths.isEmpty ? null : audioPaths,
+      ),
+    );
+    if (imported == true && mounted) {
+      _refreshSrtBooks();
+      ref.invalidate(hibikiBooksProvider(JapaneseLanguage.instance));
+    }
+  }
+
+  /// 拖入漫画 → 打开 [MangaImportDialog]，预填漫画路径（目录 / .cbz / .mokuro /
+  /// 图片型 zip）。刷新范式与 [_openBookImportPrefilled] 一致：漫画与书共用
+  /// `EpubBooks` 表和同一块书架，故失效的 provider 也相同。
+  Future<void> _openMangaImportPrefilled({required String mangaPath}) async {
+    final bool? imported = await showAppDialog<bool>(
+      context: context,
+      builder: (_) => MangaImportDialog(
+        db: appModel.database,
+        initialPath: mangaPath,
       ),
     );
     if (imported == true && mounted) {
