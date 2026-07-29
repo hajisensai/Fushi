@@ -273,21 +273,127 @@ String _sha256Hex(List<int> bytes) {
 int _rotr32(int value, int shift) =>
     ((value >> shift) | (value << (32 - shift))) & _uint32Mask;
 
+final Expando<_MediaUploadCoordinator> _mediaUploadCoordinators =
+    Expando<_MediaUploadCoordinator>('AnkiConnect media upload coordinators');
+
+class _MediaUploadLeaseState {
+  final Set<_MediaUploadTransaction> participants =
+      Set<_MediaUploadTransaction>.identity();
+  bool committed = false;
+  Completer<void> changed = Completer<void>();
+  Future<bool>? cleanupAttempt;
+
+  void notifyChanged() {
+    if (!changed.isCompleted) {
+      changed.complete();
+    }
+    changed = Completer<void>();
+  }
+}
+
+/// Coordinates compensation for the same media filename across concurrent note
+/// transactions that share one AnkiConnect connection.
+///
+/// An existence check can race: two notes may both observe "absent" and upload
+/// the same content-addressed filename. A failed transaction therefore releases
+/// its lease and waits for every peer lease to settle before deleting. Once any
+/// peer commits, the filename remains protected for the lifetime of this
+/// connector so a stale negative existence result can never delete media
+/// referenced by the peer's note.
+class _MediaUploadCoordinator {
+  _MediaUploadCoordinator(this.service);
+
+  final AnkiConnectService service;
+  final Map<String, _MediaUploadLeaseState> _states =
+      <String, _MediaUploadLeaseState>{};
+
+  void claim(_MediaUploadTransaction transaction, String filename) {
+    final _MediaUploadLeaseState state =
+        _states.putIfAbsent(filename, _MediaUploadLeaseState.new);
+    if (state.participants.add(transaction)) {
+      state.notifyChanged();
+    }
+  }
+
+  void commit(_MediaUploadTransaction transaction, String filename) {
+    final _MediaUploadLeaseState? state = _states[filename];
+    if (state == null) return;
+    state.committed = true;
+    state.participants.remove(transaction);
+    state.notifyChanged();
+  }
+
+  Future<bool> rollback(
+    _MediaUploadTransaction transaction,
+    String filename,
+  ) async {
+    final _MediaUploadLeaseState? state = _states[filename];
+    if (state == null) return true;
+    if (state.participants.remove(transaction)) {
+      state.notifyChanged();
+    }
+
+    while (!state.committed && state.participants.isNotEmpty) {
+      final Future<void> changed = state.changed.future;
+      if (!state.committed && state.participants.isNotEmpty) {
+        await changed;
+      }
+    }
+    if (state.committed) return true;
+
+    final Future<bool>? pendingCleanup = state.cleanupAttempt;
+    if (pendingCleanup != null) return pendingCleanup;
+
+    final Completer<bool> cleanup = Completer<bool>();
+    state.cleanupAttempt = cleanup.future;
+    try {
+      await service.deleteMediaFile(filename);
+      _states.remove(filename);
+      cleanup.complete(true);
+    } catch (error, stack) {
+      // Keep the uncommitted state in the coordinator. The owning transaction
+      // retains the filename and retries after every parallel media route has
+      // settled instead of losing the candidate to a non-fatal audio warning.
+      debugPrint(
+        'AnkiConnect media rollback failed for $filename: $error\n$stack',
+      );
+      cleanup.complete(false);
+    } finally {
+      if (identical(state.cleanupAttempt, cleanup.future)) {
+        state.cleanupAttempt = null;
+      }
+    }
+    return cleanup.future;
+  }
+}
+
 /// Tracks content-addressed media created while rendering one note.
 ///
 /// Uploads stay parallel, but every filename is checked once before its first
-/// write. A failed upload removes its own possibly committed file; if any
-/// required media route fails, [rollback] removes the other new files too.
-/// Files that existed before this attempt are never candidates for deletion,
-/// because their hash filename may already be shared by older notes.
+/// write. Same-filename routes inside the transaction share one upload Future.
+/// A failed upload attempts compensation immediately, while a retained
+/// candidate is retried by [commit] after all routes settle. Cross-transaction
+/// leases prevent a failed note from deleting media committed by a concurrent
+/// peer. Files that existed before this attempt are never deletion candidates.
 class _MediaUploadTransaction {
-  _MediaUploadTransaction(this.service);
+  _MediaUploadTransaction(this.service)
+      : coordinator = _mediaUploadCoordinators[service] ??=
+            _MediaUploadCoordinator(service);
 
   final AnkiConnectService service;
+  final _MediaUploadCoordinator coordinator;
   final Map<String, Future<bool>> _existenceChecks = <String, Future<bool>>{};
+  final Map<String, Future<void>> _uploads = <String, Future<void>>{};
   final Set<String> _newFiles = <String>{};
+  final Set<String> _failedFiles = <String>{};
 
   Future<void> upload({
+    required String filename,
+    required Future<void> Function() write,
+  }) =>
+      _uploads[filename] ??= _upload(filename: filename, write: write);
+
+  Future<void> _upload({
     required String filename,
     required Future<void> Function() write,
   }) async {
@@ -297,12 +403,17 @@ class _MediaUploadTransaction {
       // Register before the write: a lost storeMediaFile response may still
       // mean Anki committed the file, so the failure path must try to remove it.
       _newFiles.add(filename);
+      coordinator.claim(this, filename);
     }
     try {
       await write();
     } catch (_) {
       if (!existedBefore) {
-        await _deleteNewFile(filename);
+        _failedFiles.add(filename);
+        if (await coordinator.rollback(this, filename)) {
+          _newFiles.remove(filename);
+          _failedFiles.remove(filename);
+        }
       }
       rethrow;
     }
@@ -310,22 +421,29 @@ class _MediaUploadTransaction {
 
   Future<void> rollback() async {
     for (final String filename in _newFiles.toList(growable: false)) {
-      await _deleteNewFile(filename);
+      if (await coordinator.rollback(this, filename)) {
+        _newFiles.remove(filename);
+        _failedFiles.remove(filename);
+      }
     }
   }
 
-  void commit() => _newFiles.clear();
-
-  Future<void> _deleteNewFile(String filename) async {
-    try {
-      await service.deleteMediaFile(filename);
+  Future<void> commit() async {
+    // A non-fatal remote-audio route catches its upload error and becomes an
+    // audioWarning. Retry its retained cleanup candidate only after Future.wait
+    // has settled all routes; never clear it merely because the card may commit.
+    for (final String filename in _failedFiles.toList(growable: false)) {
+      if (!await coordinator.rollback(this, filename)) {
+        throw StateError(
+          'Could not safely clean up failed Anki media upload: $filename',
+        );
+      }
       _newFiles.remove(filename);
-    } catch (error, stack) {
-      // Preserve the original media-preparation failure. Keep the candidate in
-      // the set so transaction-level rollback can retry after all routes settle.
-      debugPrint(
-        'AnkiConnect media rollback failed for $filename: $error\n$stack',
-      );
+      _failedFiles.remove(filename);
+    }
+    for (final String filename in _newFiles.toList(growable: false)) {
+      coordinator.commit(this, filename);
+      _newFiles.remove(filename);
     }
   }
 }
@@ -661,7 +779,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         audioWarning: remoteAudio.failureReason,
         keepEmpty: keepEmpty,
       );
-      mediaTransaction.commit();
+      await mediaTransaction.commit();
       return rendered;
     } catch (_) {
       // Future.wait completes only after every route settles by default, so all
