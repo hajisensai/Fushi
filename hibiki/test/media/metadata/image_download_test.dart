@@ -8,6 +8,10 @@ import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
+  test('原图下载截止时间为 100 秒', () {
+    expect(kCoverImageDownloadTimeout, const Duration(seconds: 100));
+  });
+
   group('looksLikeImageBytes', () {
     test('Content-Type image/* 直接判是', () {
       expect(looksLikeImageBytes(const <int>[], 'image/jpeg'), isTrue);
@@ -22,7 +26,9 @@ void main() {
       expect(looksLikeImageBytes(const <int>[0x47, 0x49, 0x46, 0x38], null),
           isTrue); // GIF
       expect(
-        looksLikeImageBytes(<int>[...utf8.encode('RIFF'), 0, 0, 0, 0, ...utf8.encode('WEBP')], null),
+        looksLikeImageBytes(
+            <int>[...utf8.encode('RIFF'), 0, 0, 0, 0, ...utf8.encode('WEBP')],
+            null),
         isTrue,
       );
     });

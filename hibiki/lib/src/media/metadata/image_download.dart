@@ -27,6 +27,12 @@ class ImageDownloadException implements Exception {
       : 'ImageDownloadException($statusCode): $message';
 }
 
+/// 远端封面原图下载的统一截止时间。
+///
+/// 原图通常比候选列表缩略图大，弱网或代理链路下 30 秒容易在响应完成前误杀；
+/// 100 秒仍是有界等待，同时给高分辨率封面留出足够传输时间。
+const Duration kCoverImageDownloadTimeout = Duration(seconds: 100);
+
 /// 下载 [url] 指向的图片到临时文件，返回该文件。
 ///
 /// - [client]：默认自建（下载完关闭）；测试注入 mock client（不关闭，由调用方管理）。
@@ -38,7 +44,7 @@ Future<File> downloadImageToTempFile(
   String url, {
   http.Client? client,
   Directory? tempDir,
-  Duration timeout = const Duration(seconds: 30),
+  Duration timeout = kCoverImageDownloadTimeout,
 }) async {
   final http.Client httpClient = client ?? http.Client();
   try {

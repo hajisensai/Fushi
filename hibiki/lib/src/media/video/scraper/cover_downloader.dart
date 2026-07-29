@@ -15,6 +15,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:hibiki/src/media/media_cover_service.dart';
+import 'package:hibiki/src/media/metadata/image_download.dart'
+    show kCoverImageDownloadTimeout;
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
 import 'package:hibiki/src/media/video/video_import_dialog.dart'
@@ -25,11 +27,13 @@ import 'package:path/path.dart' as p;
 
 /// 海报下载器。构造注入 [http.Client]（默认自建），测试用 mock client。
 class CoverDownloader {
-  CoverDownloader({http.Client? client}) : _client = client ?? http.Client();
+  CoverDownloader({
+    http.Client? client,
+    this.timeout = kCoverImageDownloadTimeout,
+  }) : _client = client ?? http.Client();
 
   final http.Client _client;
-
-  static const Duration _timeout = Duration(seconds: 30);
+  final Duration timeout;
 
   /// 下载 [url] 指向的海报，落地为 [bookUid] 对应封面，返回**绝对路径**（可直接
   /// 传给 `updateCover`）。
@@ -52,7 +56,7 @@ class CoverDownloader {
 
     final http.Response response;
     try {
-      response = await _client.get(Uri.parse(url)).timeout(_timeout);
+      response = await _client.get(Uri.parse(url)).timeout(timeout);
     } on TimeoutException {
       throw const ScrapeNetworkException('Poster download timed out');
     } catch (e) {
