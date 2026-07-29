@@ -10,7 +10,29 @@ void main() {
   ).readAsStringSync();
 
   test('delegate passes playlist documentTitle (TODO-761 guard)', () {
-    expect(src.contains('documentTitle: _videoMiningDocumentTitle()'), isTrue);
+    final int mineStart =
+        src.indexOf('Future<MinePopupResult> _mineVideoCard({');
+    final int mineEnd =
+        src.indexOf('Future<void> _recordMinedSentenceForVideo(', mineStart);
+    expect(mineStart, greaterThanOrEqualTo(0));
+    expect(mineEnd, greaterThan(mineStart));
+    final String mineBody = src.substring(mineStart, mineEnd);
+    expect(
+      mineBody,
+      contains(
+        'final String? documentTitle = _videoMiningDocumentTitle();',
+      ),
+      reason:
+          'queued mining must snapshot the playlist-aware title at tap time',
+    );
+    final int requestStart = mineBody.indexOf('ImmersionMiningRequest(');
+    final int requestEnd =
+        mineBody.indexOf('source: AnkiMiningSource.video', requestStart);
+    expect(requestStart, greaterThanOrEqualTo(0));
+    expect(requestEnd, greaterThan(requestStart));
+    final String request = mineBody.substring(requestStart, requestEnd);
+    expect(request, contains('documentTitle: documentTitle,'));
+    expect(request, isNot(contains('documentTitle: _title,')));
   });
 
   test('accounting stays on describeMineOutcome().record, not hand-rolled', () {

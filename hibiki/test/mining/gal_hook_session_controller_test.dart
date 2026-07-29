@@ -1448,9 +1448,13 @@ void _bug950Guard() {
         .toList();
     expect(
       awaited,
-      <String>['_refreshReadinessThrottled', 'engine.pollText'],
-      reason: 'BUG-1063：文本主路径只许等 readiness 与 pollText 本身，'
-          '语音抓取必须走 _scheduleLineAudioAttach 的后台队列',
+      <String>[
+        '_refreshReadinessThrottled',
+        '_pollThreadPreviews',
+        'engine.pollText',
+      ],
+      reason: 'v12 的线程预览必须先于文本环轮询，且 BUG-1063 仍要求'
+          '语音抓取走 _scheduleLineAudioAttach 的后台队列',
     );
 
     final int attachAt = body.indexOf('Future<void> _attachLineAudio(');

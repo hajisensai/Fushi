@@ -168,29 +168,36 @@ void main() {
       );
     });
 
-    test('injector 在所有过滤分支之前登记 face（跨会话恢复路径）', () {
+    test('injector 在已初始化路径的准入判定前登记 face（跨会话恢复路径）', () {
       // Dart 的 _maybeRestoreTextThread 只从「本会话已出过 >= 3 行」的线程里挑一条写进
-      // selected_text_thread_id。若 face 登记只发生在 ShouldWrite 内部，走
-      // preferred_hook_codes 快路的线程就永远没有 face，FaceOf 返 0 → 退回精确匹配 →
-      // 原症状原样复现。故登记必须早于 preferred_hook_codes 分支。
+      // selected_text_thread_id。face 必须在 AcceptsLine 读取注册表前登记；否则本行
+      // 第一次出现的新 ctx 仍会退回精确匹配，跨会话恢复后的第一句被静默丢掉。
       final int fnStart = injectorSource.indexOf('bool LunaShouldWriteLine(');
       expect(fnStart, greaterThanOrEqualTo(0),
           reason: '找不到 LunaShouldWriteLine——face 登记守卫失去依据');
+      final int fnEnd = injectorSource.indexOf(
+        '// ── Luna_Start',
+        fnStart,
+      );
+      expect(fnEnd, greaterThan(fnStart));
+      final String body = injectorSource.substring(fnStart, fnEnd);
       final int noteAt = injectorSource.indexOf(
         'g_lunaTextSelector.NoteFace(thread_id, face_id);',
         fnStart,
       );
-      final int preferredAt = injectorSource.indexOf(
-        'g_luna.preferred_hook_codes.empty()',
+      final int acceptsAt = injectorSource.indexOf(
+        'g_lunaTextSelector.AcceptsLine(',
         fnStart,
       );
-      expect(noteAt, greaterThanOrEqualTo(0),
+      expect(body.contains('g_lunaTextSelector.NoteFace(thread_id, face_id);'),
+          isTrue,
           reason: 'LunaShouldWriteLine 必须显式调用 NoteFace 登记 hook 面');
-      expect(preferredAt, greaterThanOrEqualTo(0));
+      expect(body.contains('g_lunaTextSelector.AcceptsLine('), isTrue,
+          reason: 'LunaShouldWriteLine 必须通过 selector 做显式线程准入');
       expect(
         noteAt,
-        lessThan(preferredAt),
-        reason: 'face 登记必须早于 preferred_hook_codes 快路，否则走快路的线程永远没有 face',
+        lessThan(acceptsAt),
+        reason: 'face 登记必须早于 AcceptsLine，否则首次出现的新 ctx 会被精确匹配拒绝',
       );
     });
   });
