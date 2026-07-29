@@ -749,10 +749,9 @@ extension _VideoLayout on _VideoHibikiPageState {
     // 分支）。barrier 删除后列表锁定（TODO-611，原本
     // 唯一作用是把 barrier 门控成 no-op）失去意义，一并移除（TODO-634）。
     //
-    // TODO-638：剧集列表也是 push-aside 侧栏，与字幕列表共享同一右栏槽位（同时只一个
-    // 可见，互斥由 _toggleEpisodeList / _toggleSubtitleJumpList 保证）。Row 同时监听两个
-    // 可见性 notifier，渲染两列面板——隐藏的那列宽度收成 0（_subtitleJumpSidePanel /
-    // _episodeSidePanel 内部 AnimatedSize 处理伸缩），故画面只被当前打开的那个侧栏挤窄。
+    // TODO-638 后续视觉升级：字幕列表继续 push-aside；剧集列表改成视频底部的横向
+    // overlay rail（[_episodeOverlayPanel]），以画面本身作沉浸式背景。两者仍互斥，
+    // 所以剧集轨道出现时字幕侧栏宽度必为 0。
     return ListenableBuilder(
       listenable: Listenable.merge(
         <Listenable>[_subtitleListVisible, _episodeListVisible],
@@ -760,12 +759,17 @@ extension _VideoLayout on _VideoHibikiPageState {
       builder: (BuildContext _, __) {
         final bool visible = _subtitleListVisible.value;
         final bool episodeVisible = _episodeListVisible.value;
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        return Stack(
+          fit: StackFit.expand,
           children: <Widget>[
-            Expanded(child: video),
-            _subtitleJumpSidePanel(controller, visible),
-            _episodeSidePanel(episodeVisible),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(child: video),
+                _subtitleJumpSidePanel(controller, visible),
+              ],
+            ),
+            _episodeOverlayPanel(episodeVisible),
           ],
         );
       },
