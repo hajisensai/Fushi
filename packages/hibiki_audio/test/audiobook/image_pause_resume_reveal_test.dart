@@ -25,8 +25,8 @@ void main() {
     expect(idx, greaterThan(-1), reason: 'play() 必须存在');
     final int end = src.indexOf('Future<void> pause()', idx);
     final String body = src.substring(idx, end > idx ? end : idx + 600);
-    expect(body, contains('_imagePauseTimer'),
-        reason: '手动 play 须取消待恢复的图片暂停计时器（否则计时器到点不 snap）');
+    expect(body, contains('_invalidateImageChapterPause()'),
+        reason: '手动 play 须取消 Timer 并完成 await-based 图片暂停（否则旧等待会续播）');
     expect(body, contains('snapReaderToAudio'),
         reason: '手动 play 须把视口从插图拉回当前 cue');
   });

@@ -268,6 +268,78 @@ void main() {
     expect(controller.chapterTransitionHeldForTesting, isFalse);
   });
 
+  test(
+      'owner switch during image chapter pause completes old wait without resume or notify',
+      () async {
+    final AudiobookSession session = await startedSession('a');
+    final AudiobookPlayerController controller = session.controller!;
+    final _FakePlatform platform = JustAudioPlatform.instance as _FakePlatform;
+    final _FakeReader readerA = _FakeReader(section: 1);
+    final _FakeReader readerB = _FakeReader(section: 2);
+    session.attachReader(readerA);
+    controller.setImagePauseSec(1);
+
+    await controller.play();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    final int initialPlayCalls = platform.player!.playCalls;
+
+    final Future<void> oldPause = controller.awaitImageChapterPause();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(controller.isImagePaused, isTrue);
+
+    session.detachReader(readerA);
+    session.attachReader(readerB);
+    final int playCallsAfterOwnerSwitch = platform.player!.playCalls;
+    final int readerNotificationsAfterOwnerSwitch = readerB.cueChangedCount;
+
+    await oldPause.timeout(const Duration(milliseconds: 200));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(initialPlayCalls, 1, reason: '测试前置必须先进入播放态');
+    expect(
+      platform.player!.playCalls,
+      playCallsAfterOwnerSwitch,
+      reason: 'reader A 的 pause continuation 不得恢复 reader B 复用的播放器',
+    );
+    expect(
+      readerB.cueChangedCount,
+      readerNotificationsAfterOwnerSwitch,
+      reason: 'reader A 的 pause continuation 不得通知新 owner B',
+    );
+    expect(controller.isImagePaused, isFalse);
+  });
+
+  test('owner switch also cancels an in-flight platform pause await', () async {
+    final AudiobookSession session = await startedSession('a');
+    final AudiobookPlayerController controller = session.controller!;
+    final _FakePlatform platform = JustAudioPlatform.instance as _FakePlatform;
+    final _FakeReader readerA = _FakeReader(section: 1);
+    final _FakeReader readerB = _FakeReader(section: 2);
+    session.attachReader(readerA);
+    controller.setImagePauseSec(1);
+
+    await controller.play();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    platform.player!.hangPause = true;
+
+    final Future<void> oldPause = controller.awaitImageChapterPause();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(platform.player!.pendingPause, isNotNull);
+
+    session.detachReader(readerA);
+    session.attachReader(readerB);
+    final int playCallsAfterOwnerSwitch = platform.player!.playCalls;
+    final int readerNotificationsAfterOwnerSwitch = readerB.cueChangedCount;
+
+    await oldPause.timeout(const Duration(milliseconds: 200));
+    platform.player!.completePendingPause();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(platform.player!.playCalls, playCallsAfterOwnerSwitch);
+    expect(readerB.cueChangedCount, readerNotificationsAfterOwnerSwitch);
+    expect(controller.isImagePaused, isFalse);
+  });
+
   test('cue change forwards to reader while attached, stops after detach',
       () async {
     final AudiobookSession session = await startedSession('a');
@@ -372,6 +444,10 @@ class _FakePlayer extends AudioPlayerPlatform {
   _FakePlayer(super.id);
   final StreamController<PlaybackEventMessage> _events =
       StreamController<PlaybackEventMessage>.broadcast();
+  bool hangPause = false;
+  Completer<PauseResponse>? pendingPause;
+  int pauseCalls = 0;
+  int playCalls = 0;
 
   void emit(int ms, ProcessingStateMessage state, {required bool playing}) {
     _events.add(PlaybackEventMessage(
@@ -398,9 +474,27 @@ class _FakePlayer extends AudioPlayerPlatform {
   }
 
   @override
-  Future<PauseResponse> pause(PauseRequest request) async => PauseResponse();
+  Future<PauseResponse> pause(PauseRequest request) {
+    pauseCalls++;
+    if (!hangPause) return Future<PauseResponse>.value(PauseResponse());
+    pendingPause = Completer<PauseResponse>();
+    return pendingPause!.future;
+  }
+
+  void completePendingPause() {
+    final Completer<PauseResponse>? pending = pendingPause;
+    pendingPause = null;
+    if (pending != null && !pending.isCompleted) {
+      pending.complete(PauseResponse());
+    }
+  }
+
   @override
-  Future<PlayResponse> play(PlayRequest request) async => PlayResponse();
+  Future<PlayResponse> play(PlayRequest request) async {
+    playCalls++;
+    return PlayResponse();
+  }
+
   @override
   Future<SeekResponse> seek(SeekRequest request) async {
     emit(request.position?.inMilliseconds ?? 0, ProcessingStateMessage.ready,

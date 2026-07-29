@@ -203,7 +203,8 @@ void main() {
     test('awaitImageChapterPause 受 imagePauseSec>0 门控，复用 _imagePauseTimer', () {
       expect(src.contains('Future<void> awaitImageChapterPause()'), isTrue);
       final int start = src.indexOf('Future<void> awaitImageChapterPause()');
-      final String body = src.substring(start, start + 800);
+      final int end = src.indexOf('void holdChapterTransition()', start);
+      final String body = src.substring(start, end);
       expect(body.contains('if (sec <= 0) return'), isTrue,
           reason: 'imagePauseSec=0 时不停留');
       expect(body.contains('_imagePauseTimer'), isTrue,
