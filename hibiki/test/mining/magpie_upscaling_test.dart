@@ -754,11 +754,13 @@ void main() {
     MagpieUpscalingReport report(
       MagpieUpscalingStatus status, {
       MagpieProfileSkipReason? skip,
+      MagpieUpscalingFailureReason? failure,
       bool scaling = false,
     }) =>
         MagpieUpscalingReport(
           status: status,
           profileSkipReason: skip,
+          failureReason: failure,
           scalingActive: scaling,
         );
 
@@ -796,8 +798,11 @@ void main() {
             .map((MagpieUpscalingStatus e) => e.name),
         ...MagpieProfileSkipReason.values
             .map((MagpieProfileSkipReason e) => e.name),
+        ...MagpieUpscalingFailureReason.values
+            .map((MagpieUpscalingFailureReason e) => e.name),
         'MagpieUpscalingStatus',
         'MagpieProfileSkipReason',
+        'MagpieUpscalingFailureReason',
       ];
       for (final MagpieUpscalingStatus status in MagpieUpscalingStatus.values) {
         for (final MagpieProfileSkipReason? skip in <MagpieProfileSkipReason?>[
@@ -817,6 +822,25 @@ void main() {
           }
         }
       }
+    });
+
+    test('随包归档缺失或损坏 → 明确报安装包错误，不伪装成暂时不可用', () {
+      final MagpieUpscalingReport missing = report(
+        MagpieUpscalingStatus.failed,
+        failure: MagpieUpscalingFailureReason.bundleMissing,
+      );
+      final MagpieUpscalingReport invalid = report(
+        MagpieUpscalingStatus.failed,
+        failure: MagpieUpscalingFailureReason.bundleInvalid,
+      );
+
+      expect(magpieUpscalingActionHint(missing), contains('Magpie'));
+      expect(magpieUpscalingActionHint(missing), contains('Hibiki'));
+      expect(magpieUpscalingActionHint(invalid), contains('Magpie'));
+      expect(
+        magpieUpscalingActionHint(missing),
+        isNot(magpieUpscalingActionHint(invalid)),
+      );
     });
 
     test('首次初始化失败 → 给「下次就自动了」的专属处置，而不是通用话', () {
@@ -1215,6 +1239,23 @@ void main() {
       expect(source.contains('_probeSize'), isFalse);
       expect(source.contains('confirmDownload'), isFalse);
       expect(source.contains('HttpClient'), isFalse);
+    });
+
+    test('BUG-1246 契约：正式包缺 Magpie 必须进入 failed，不得伪装成 unavailable', () {
+      final int missingCase =
+          serviceSource.indexOf('case MagpieInstallResult.bundleMissing:');
+      final int invalidCase =
+          serviceSource.indexOf('case MagpieInstallResult.verificationFailed:');
+      expect(missingCase, greaterThan(0));
+      expect(invalidCase, greaterThan(missingCase));
+
+      final String branch = serviceSource.substring(missingCase, invalidCase);
+      expect(branch, contains('status: MagpieUpscalingStatus.failed'));
+      expect(
+        branch,
+        contains('MagpieUpscalingFailureReason.bundleMissing'),
+      );
+      expect(branch, isNot(contains('MagpieUpscalingStatus.unavailable')));
     });
   });
 }

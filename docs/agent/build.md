@@ -113,4 +113,5 @@ galgame 一键制卡的引擎-hook 注入器（injector.exe + hook.dll + vendore
 - **Magpie 同样随包唯一来源**（BUG-1246）：两个 Windows workflow 用
   `tools/build_magpie_slim.ps1` 生成 `Magpie-hibiki-slim-x64.zip` + `.sha256`，放进
   `magpie_bundle/`。`MagpieInstaller` 校验后换入 `magpie/`；ARM64 Windows 走系统 x64 模拟。
-  缺包、损坏和旧构建只提示更新/重装 Hibiki，没有下载确认、镜像兜底或后台自更新。
+  缺包、损坏和旧构建会直接报告“安装包不完整/内置组件校验失败”，没有下载确认、镜像兜底
+  或后台自更新；正式 Windows 包出现该错误即属于打包或安装损坏。

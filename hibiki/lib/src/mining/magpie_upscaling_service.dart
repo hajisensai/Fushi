@@ -66,7 +66,7 @@ enum MagpieUpscalingStatus {
   /// 用户关掉了超分。
   disabled,
 
-  /// 想用但用不上（`installedOnly` 且没装 / 非 Windows / 随包归档缺失）。
+  /// 想用但用不上（`installedOnly` 且没装 / 非 Windows）。
   unavailable,
 
   /// 正在准备（安装随包归档 / 写配置 / 拉起进程）。
@@ -82,12 +82,22 @@ enum MagpieUpscalingStatus {
   failed,
 }
 
+/// 超分失败中需要直接告诉用户的交付错误。
+enum MagpieUpscalingFailureReason {
+  /// 正式 Windows 包承诺携带的 Magpie 归档不存在，说明安装包不完整。
+  bundleMissing,
+
+  /// 随包归档或摘要损坏，不能继续安装。
+  bundleInvalid,
+}
+
 /// 一次超分尝试的完整结果（含降级原因），给 UI 与日志用。
 @immutable
 class MagpieUpscalingReport {
   const MagpieUpscalingReport({
     required this.status,
     this.profileSkipReason,
+    this.failureReason,
     this.detail,
     this.scalingActive = false,
   });
@@ -105,6 +115,7 @@ class MagpieUpscalingReport {
       MagpieUpscalingReport(
         status: status,
         profileSkipReason: profileSkipReason,
+        failureReason: failureReason,
         detail: detail,
         scalingActive: scalingActive ?? this.scalingActive,
       );
@@ -112,12 +123,16 @@ class MagpieUpscalingReport {
   /// 没能写自动缩放 profile 的原因；写成功或压根没走到这步时为 null。
   final MagpieProfileSkipReason? profileSkipReason;
 
+  /// 需要向用户明确报告的交付错误；普通启动失败为 null。
+  final MagpieUpscalingFailureReason? failureReason;
+
   /// 人类可读的补充说明（异常文本等），只进日志不进 UI 文案。
   final String? detail;
 
   @override
   String toString() => 'MagpieUpscalingReport($status, '
-      'skip=$profileSkipReason, scaling=$scalingActive, detail=$detail)';
+      'skip=$profileSkipReason, failure=$failureReason, '
+      'scaling=$scalingActive, detail=$detail)';
 }
 
 /// 我们起的那个 Magpie 进程的最小句柄。
@@ -474,7 +489,7 @@ class MagpieUpscalingService extends ChangeNotifier {
     }
   }
 
-  /// 只从 Hibiki 随包归档安装；缺包或损坏时降级，绝不触发网络。
+  /// 只从 Hibiki 随包归档安装；缺包或损坏是交付错误，绝不触发网络。
   Future<bool> _ensureBundledInstalled() async {
     _report = const MagpieUpscalingReport(
       status: MagpieUpscalingStatus.preparing,
@@ -495,13 +510,15 @@ class MagpieUpscalingService extends ChangeNotifier {
         return true;
       case MagpieInstallResult.bundleMissing:
         _report = const MagpieUpscalingReport(
-          status: MagpieUpscalingStatus.unavailable,
-          detail: 'bundled magpie archive missing; update or reinstall Hibiki',
+          status: MagpieUpscalingStatus.failed,
+          failureReason: MagpieUpscalingFailureReason.bundleMissing,
+          detail: 'required bundled magpie archive is missing',
         );
         return false;
       case MagpieInstallResult.verificationFailed:
         _report = MagpieUpscalingReport(
           status: MagpieUpscalingStatus.failed,
+          failureReason: MagpieUpscalingFailureReason.bundleInvalid,
           detail: 'bundled install result: ${result.name} (integrity)',
         );
         return false;

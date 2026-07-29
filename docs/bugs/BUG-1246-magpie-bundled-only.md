@@ -8,8 +8,8 @@
 - **[x] ① 已修复** —
   - `magpie_installer.dart` 收口为随包唯一来源：生产固定使用随包 x64 精简归档（ARM64
     Windows 走系统 x64 模拟），保留 SHA-256、staging 清单和原子换入，删除 HTTP、
-    镜像、续传、确认框和后台更新。缺包返回 `bundleMissing`，由上层降级并提示更新/重装
-    Hibiki，不再联网补取。
+    镜像、续传、确认框和后台更新。缺包返回 `bundleMissing`，由上层作为安装包不完整的
+    **硬错误**明确报告；摘要或归档损坏也单独报校验错误，不再联网补取或伪装成“暂时不可用”。
   - `magpie_upscaling.dart` / `magpie_upscaling_service.dart` 把 `needsDownload` 改成
     `needsBundledInstall`；删除下载确认注入和 `magpie_download_confirm.dart`。
   - 超分档位文案改成“启用 Hibiki 内置版本，不需要下载”；“仅用已装”明确表示不解压
