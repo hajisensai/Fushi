@@ -2761,5 +2761,6 @@
   "manga_import_missing_input": "Pick a manga file or folder first.",
   "manga_import_detected_title": "This looks like manga",
   "manga_import_detected_confirm": "Import as manga",
-  "manga_import_detected_message": "\"$name\" is a manga file, so it will go through the manga importer instead of the book importer."
+  "manga_import_detected_message": "\"$name\" is a manga file, so it will go through the manga importer instead of the book importer.",
+  "manga_online_source_disabled": "This internet source is disabled. Enable it in Sources to browse the catalog."
 }

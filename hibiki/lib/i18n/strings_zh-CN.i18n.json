@@ -2761,5 +2761,6 @@
   "manga_import_missing_input": "请先选择漫画文件或文件夹。",
   "manga_import_detected_title": "这看起来是漫画",
   "manga_import_detected_confirm": "按漫画导入",
-  "manga_import_detected_message": "「$name」是漫画文件，将走漫画导入流程，而不是书籍导入流程。"
+  "manga_import_detected_message": "「$name」是漫画文件，将走漫画导入流程，而不是书籍导入流程。",
+  "manga_online_source_disabled": "此互联网来源已关闭，请在「来源」中开启后浏览目录。"
 }

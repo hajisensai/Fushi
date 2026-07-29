@@ -16,6 +16,7 @@ import 'package:hibiki/src/sync/aggregate_sync_service.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/collection_sync_engine.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/interconnect_service_config.dart';
 import 'package:hibiki/src/sync/sync_asset_package_service.dart';
 import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki/src/sync/sync_manager.dart'
@@ -46,7 +47,10 @@ import 'package:path/path.dart' as p;
 ///
 /// T2/T3 后续接线任务会在 AppModel 初始化时传入真实值。
 class AppModelLibraryHostService
-    implements HibikiLibraryHostService, DeletionTombstoneHost {
+    implements
+        HibikiLibraryHostService,
+        DeletionTombstoneHost,
+        InterconnectServiceConfigHost {
   AppModelLibraryHostService({
     required HibikiDatabase db,
     required Directory dictionaryResourceRoot,
@@ -86,6 +90,14 @@ class AppModelLibraryHostService
   final SyncAssetPackageService _packages;
   final Future<void> Function() _refreshDictionaryCache;
   final Future<void> Function(Future<void> Function() body) _runExclusive;
+
+  @override
+  Future<InterconnectServiceConfigSnapshot>
+      getInterconnectServiceConfig() async {
+    return InterconnectServiceConfigSnapshot.fromPreferences(
+      await _db.getAllPrefs(),
+    );
+  }
 
   /// 书籍导入回调（可选；null 时 importBook 抛 [UnsupportedError]）。
   /// 生产传 `(f) => EpubImporter.importFromPath(db: db, filePath: f.path, fileName: p.basename(f.path))`。

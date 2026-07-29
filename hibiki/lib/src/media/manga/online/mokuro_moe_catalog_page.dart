@@ -47,6 +47,7 @@ class _MokuroMoeCatalogPageState extends ConsumerState<MokuroMoeCatalogPage> {
 
   @override
   Widget build(BuildContext context) {
+    final AppModel appModel = ref.watch(appProvider);
     // 与书架 / 视频 / 来源同构：DesktopContentLayout + HibikiPageHeader，
     // 外层 Scaffold 由 HomePage 提供。
     return DesktopContentLayout(
@@ -69,8 +70,9 @@ class _MokuroMoeCatalogPageState extends ConsumerState<MokuroMoeCatalogPage> {
             ),
           Expanded(
             child: MokuroMoeCatalogView(
-              db: widget.db ?? ref.read(appProvider).database,
+              db: widget.db ?? appModel.database,
               embedded: true,
+              enabledOverride: appModel.mangaOnlineCatalogEnabled,
               snapshotNotifier: _snapshot,
             ),
           ),

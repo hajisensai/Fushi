@@ -656,6 +656,10 @@ class AppModel with ChangeNotifier {
   Future<void> refreshAfterSyncRun(SyncRunReport report) async {
     if (!report.needsLocalLibraryRefresh) return;
 
+    if (report.serviceConfigsImported > 0) {
+      await refreshPrefCache();
+    }
+
     if (report.dictionariesImported > 0) {
       dictRepo.clearDictionariesCache();
       await _rebuildDictPathsCacheAsync();
@@ -714,6 +718,7 @@ class AppModel with ChangeNotifier {
   /// Preference management, extracted from AppModel for testability.
   PreferencesRepository? _prefsRepo;
   PreferencesRepository get prefsRepo => _prefsRepo!;
+  bool get isPreferencesReady => _prefsRepo != null;
 
   /// TODO-855: last prefs-version this process has reconciled its cache against.
   /// Used by [refreshPrefCacheIfChanged] so the warm-reuse :popup process only
@@ -5631,6 +5636,10 @@ class AppModel with ChangeNotifier {
   String get mangaOnlineCatalogBaseUrl => prefsRepo.mangaOnlineCatalogBaseUrl;
   Future<void> setMangaOnlineCatalogBaseUrl(String value) =>
       prefsRepo.setMangaOnlineCatalogBaseUrl(value);
+
+  bool get mangaOnlineCatalogEnabled => prefsRepo.mangaOnlineCatalogEnabled;
+  Future<void> setMangaOnlineCatalogEnabled(bool value) =>
+      prefsRepo.setMangaOnlineCatalogEnabled(value);
 
   // TODO-1024 / BUG-479：更新检查结果缓存（缓存优先 + 后台静默刷新）。
   UpdateCheckCacheEntry? get updateCheckCache => prefsRepo.updateCheckCache;

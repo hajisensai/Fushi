@@ -15,6 +15,7 @@ import 'package:hibiki/src/media/video/video_subtitle_source.dart'
 import 'package:hibiki/src/sync/aggregate_snapshot.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki/src/sync/hibiki_library_host_service.dart';
+import 'package:hibiki/src/sync/interconnect_service_config.dart';
 import 'package:hibiki/src/sync/hibiki_manga_ocr_host.dart';
 import 'package:hibiki/src/sync/interconnect_device_name.dart';
 import 'package:hibiki/src/sync/hibiki_remote_api_handlers.dart';
@@ -435,12 +436,9 @@ class HibikiSyncServer {
       urlPath == 'api/lookup/audio/file';
 
   Future<bool> _validateAuth(String header) async {
-    if (!header.startsWith('Basic ')) return false;
+    final String? password = _basicPassword(header);
+    if (password == null) return false;
     try {
-      final decoded = utf8.decode(base64Decode(header.substring(6)));
-      final colonIdx = decoded.indexOf(':');
-      if (colonIdx < 0) return false;
-      final password = decoded.substring(colonIdx + 1);
       // 兼容路径：共享 [_token] 仍受理（未重新配对的老设备继续可用，Never break
       // userspace）。常量时间比较防计时侧信道泄漏 token 前缀。
       if (_constantTimeEquals(
@@ -462,6 +460,37 @@ class HibikiSyncServer {
       return false;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// Sensitive service configuration is stricter than ordinary library APIs:
+  /// it accepts only a currently paired device token, never the legacy shared
+  /// server token.
+  Future<bool> _validatePeerAuth(String? header) async {
+    if (header == null) return false;
+    final String? password = _basicPassword(header);
+    if (password == null) return false;
+    final Uint8List supplied = Uint8List.fromList(utf8.encode(password));
+    for (final String peerToken in await _peerTokens()) {
+      if (_constantTimeEquals(
+        supplied,
+        Uint8List.fromList(utf8.encode(peerToken)),
+      )) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static String? _basicPassword(String header) {
+    if (!header.startsWith('Basic ')) return null;
+    try {
+      final String decoded =
+          utf8.decode(base64Decode(header.substring('Basic '.length)));
+      final int colonIdx = decoded.indexOf(':');
+      return colonIdx < 0 ? null : decoded.substring(colonIdx + 1);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -574,6 +603,9 @@ class HibikiSyncServer {
     }
     if (reqPath == '/api/library/collections') {
       return _handleLibraryCollections(request, method, reqPath);
+    }
+    if (reqPath == '/api/interconnect/service-config') {
+      return _handleInterconnectServiceConfig(request, method);
     }
     if (reqPath == '/api/tombstones') {
       return _handleTombstones(request, method);
@@ -1153,6 +1185,8 @@ class HibikiSyncServer {
         'books': lib,
         'audio': lib,
         'videos': lib,
+        'serviceConfig': _securityContext != null &&
+            _libraryService is InterconnectServiceConfigHost,
       },
       // TODO-961 M1 能力协商（设计稿 §1.1 / §2.5）：老 client 读不到也不崩。
       'tls': <String, dynamic>{
@@ -2146,6 +2180,40 @@ class HibikiSyncServer {
       default:
         return shelf.Response(405);
     }
+  }
+
+  /// Host → paired child service configuration.
+  ///
+  /// This endpoint carries API keys and connection credentials, so its security
+  /// boundary is intentionally narrower than the ordinary library API:
+  /// HTTPS is mandatory, only a per-peer token is accepted, and no write method
+  /// exists. The legacy shared server token remains valid elsewhere for
+  /// compatibility but is explicitly rejected here.
+  Future<shelf.Response> _handleInterconnectServiceConfig(
+    shelf.Request request,
+    String method,
+  ) async {
+    if (method != 'GET') return shelf.Response(405);
+    if (_securityContext == null) {
+      return shelf.Response.forbidden('HTTPS required for service config');
+    }
+    if (!await _validatePeerAuth(request.headers['authorization'])) {
+      return shelf.Response.forbidden('Paired-device token required');
+    }
+    final HibikiLibraryHostService? library = _libraryService;
+    if (library is! InterconnectServiceConfigHost) {
+      return shelf.Response.notFound('Service config capability off');
+    }
+    final InterconnectServiceConfigSnapshot snapshot =
+        await (library as InterconnectServiceConfigHost)
+            .getInterconnectServiceConfig();
+    return shelf.Response.ok(
+      jsonEncode(snapshot.toJson()),
+      headers: const <String, String>{
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+    );
   }
 
   /// GET `/api/tombstones`：列 host 全部删除墓碑为 JSON 数组，供 client 拉取后与本地
