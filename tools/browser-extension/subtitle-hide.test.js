@@ -14,6 +14,8 @@ const vm = require('node:vm');
 //   ② 站点原生字幕（Netflix/YouTube）和扩展自绘覆盖层都要被藏——只藏一半等于没藏。
 //   ③ 翻回「显示」时样式必须真的被移除（不是留着空规则），否则第二次开关就失效。
 const CONTENT = path.join(__dirname, 'content.js');
+const PANEL = path.join(__dirname, 'subtitle-panel.js');
+const SHORTCUTS = path.join(__dirname, 'video-shortcuts.js');
 
 function makeEl(tag) {
   const el = {
@@ -64,6 +66,7 @@ function loadContent(storedHidden) {
   html.appendChild(head);
   const stored = { subtitleHidden: storedHidden };
   const changeListeners = [];
+  const windowListeners = Object.create(null);
   const sandbox = {
     console: { log() {}, warn() {}, error() {} },
     setTimeout: () => 0,
@@ -110,7 +113,9 @@ function loadContent(storedHidden) {
     },
   };
   sandbox.window = {
-    addEventListener() {},
+    addEventListener(type, listener) {
+      (windowListeners[type] = windowListeners[type] || []).push(listener);
+    },
     innerWidth: 1200,
     innerHeight: 800,
     matchMedia: () => ({ matches: false }),
@@ -125,7 +130,7 @@ function loadContent(storedHidden) {
 
   vm.createContext(sandbox);
   vm.runInContext(src, sandbox, { filename: 'content.js' });
-  return { sandbox, head, stored, changeListeners };
+  return { sandbox, head, stored, changeListeners, windowListeners };
 }
 
 const STYLE_ID = 'hibiki-hide-subs';
@@ -181,4 +186,52 @@ test('隐藏字幕：options 页改开关经 storage.onChanged 实时生效', ()
     fn({ subtitleHidden: { newValue: false } }, 'local');
   }
   assert.strictEqual(findById(head, STYLE_ID), null);
+});
+
+test('Shift+H 真链：keydown 经 subtitle-panel 转发到 content 并持久化隐藏状态', () => {
+  const h = loadContent(false);
+  const video = { currentTime: 0, paused: false, playbackRate: 1 };
+  h.sandbox.document.querySelector = (selector) => selector === 'video' ? video : null;
+  h.sandbox.setInterval = () => 0;
+  h.sandbox.clearInterval = () => {};
+  h.sandbox.navigator = {
+    clipboard: { writeText: () => Promise.resolve() },
+  };
+  h.sandbox.self = h.sandbox.window;
+  h.sandbox.window.hibikiEpisodeCues = {};
+  h.sandbox.window.hibikiVideoKey = () => 'episode';
+
+  vm.runInContext(
+    fs.readFileSync(PANEL, 'utf8'),
+    h.sandbox,
+    { filename: 'subtitle-panel.js' },
+  );
+  vm.runInContext(
+    fs.readFileSync(SHORTCUTS, 'utf8'),
+    h.sandbox,
+    { filename: 'video-shortcuts.js' },
+  );
+
+  const keydown = (h.windowListeners.keydown || []).at(-1);
+  assert.strictEqual(typeof keydown, 'function', 'video-shortcuts 应注册 keydown');
+  let prevented = false;
+  let stopped = false;
+  keydown({
+    key: 'H',
+    code: 'KeyH',
+    shiftKey: true,
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    target: null,
+    preventDefault() { prevented = true; },
+    stopPropagation() { stopped = true; },
+  });
+
+  assert.strictEqual(prevented, true, '真链执行成功后应接管 Shift+H');
+  assert.strictEqual(stopped, true, '真链执行成功后应阻止站点重复处理');
+  assert.strictEqual(h.stored.subtitleHidden, true,
+    'subtitle-panel 必须调用 content 的持有者并写回 subtitleHidden');
+  assert.ok(findById(h.head, STYLE_ID),
+    'keydown → panel → content 真链必须立即注入隐藏字幕样式');
 });

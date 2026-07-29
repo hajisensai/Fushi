@@ -99,6 +99,136 @@ function createRuntime(initialSettings = {}, { hasTrack = true } = {}) {
   };
 }
 
+function makeOptionsElement(id) {
+  const listeners = Object.create(null);
+  const element = {
+    id,
+    value: '',
+    placeholder: '',
+    checked: false,
+    disabled: false,
+    open: false,
+    type: id === 'token' ? 'password' : '',
+    textContent: '',
+    dataset: {},
+    classList: { add() {}, remove() {} },
+    addEventListener(type, listener) {
+      (listeners[type] = listeners[type] || []).push(listener);
+    },
+    async fire(type) {
+      for (const listener of listeners[type] || []) {
+        await listener({ preventDefault() {} });
+      }
+    },
+    closest() {
+      return {
+        querySelector() {
+          return { textContent: id };
+        },
+      };
+    },
+  };
+  return element;
+}
+
+async function loadOptionsRuntime(initialSettings = {}) {
+  const storage = { ...initialSettings };
+  const writes = [];
+  const storageListeners = [];
+  const ids = [
+    'nfSubList',
+    'subtitleOverlayEnabled',
+    'subtitleDragDropEnabled',
+    'subtitleAutoScroll',
+    'nfHideNext',
+    'subtitlePauseOnLookup',
+    'subtitleOverlayAutoLookup',
+    'subtitleOverlayBlur',
+    'subtitleOverlayAllTracks',
+    'subtitleHidden',
+    ...shortcutSettingIds,
+    'host',
+    'port',
+    'token',
+    'connectionCard',
+    'connTitle',
+    'connDetail',
+    'connEndpoint',
+    'check',
+    'advancedConnection',
+    'connectionForm',
+    'reset',
+    'showToken',
+    'status',
+    'updTitle',
+    'updDetail',
+    'updBuild',
+  ];
+  const elements = Object.fromEntries(ids.map((id) => [id, makeOptionsElement(id)]));
+  const self = {
+    HIBIKI_DEFAULTS: { host: '127.0.0.1', port: 19633, token: '' },
+    HIBIKI_CONNECTION: {
+      states: { unauthorized: 'unauthorized', wrongService: 'wrong-service' },
+      copy() {
+        return { tone: 'good', title: '已连接', detail: '测试连接正常' };
+      },
+    },
+    HIBIKI_SELF_UPDATE: {
+      describeUpdateState() {
+        return { title: '已是最新', detail: '测试 build', build: 'test' };
+      },
+    },
+  };
+  const context = {
+    self,
+    document: {
+      getElementById(id) {
+        return elements[id] || null;
+      },
+    },
+    chrome: {
+      runtime: {
+        lastError: null,
+        sendMessage(_message, callback) {
+          callback({
+            connection: {
+              state: 'online',
+              port: 19633,
+              base: 'http://127.0.0.1:19633',
+            },
+          });
+        },
+      },
+      storage: {
+        local: {
+          async get(keys) {
+            const result = {};
+            for (const key of Array.isArray(keys) ? keys : [keys]) {
+              if (Object.hasOwn(storage, key)) result[key] = storage[key];
+            }
+            return result;
+          },
+          async set(patch) {
+            writes.push(patch);
+            Object.assign(storage, patch);
+          },
+        },
+        onChanged: {
+          addListener(listener) {
+            storageListeners.push(listener);
+          },
+        },
+      },
+    },
+    setTimeout() { return 1; },
+    clearTimeout() {},
+  };
+  vm.runInNewContext(optionsJs, context, { filename: 'options.js' });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  return { elements, storage, writes, storageListeners };
+}
+
 test('options 把每个视频快捷键动作拆成独立开关', () => {
   for (const id of shortcutSettingIds) {
     assert.ok(optionsHtml.includes(`id="${id}"`), `options.html 缺独立快捷键开关 ${id}`);
@@ -108,6 +238,35 @@ test('options 把每个视频快捷键动作拆成独立开关', () => {
   assert.ok(!optionsHtml.includes('Shift+P/O/F'), '已删除的播放模式快捷键不得继续展示');
   assert.ok(optionsHtml.includes('id="subtitleHidden"'), '隐藏字幕实际状态仍须保留独立设置入口');
   assert.ok(optionsJs.includes("subtitleHidden: 'subtitleHidden'"), 'options.js 必须持久化隐藏字幕状态');
+});
+
+test('options runtime 真正回读默认/legacy/显式值，change 后 storage.set 并可重载读回', async () => {
+  const defaults = await loadOptionsRuntime();
+  assert.strictEqual(defaults.elements.videoShortcutPrevCue.checked, true,
+    '无存量时逐动作快捷键默认开启');
+  assert.strictEqual(defaults.elements.videoShortcutToggleSubtitleHide.checked, true,
+    'Shift+H 独立动作无存量时默认开启');
+
+  const legacy = await loadOptionsRuntime({
+    videoShortcutsEnabled: false,
+    videoShortcutPrevCue: true,
+  });
+  assert.strictEqual(legacy.elements.videoShortcutPrevCue.checked, true,
+    '新单项显式 true 必须优先于 legacy false');
+  assert.strictEqual(legacy.elements.videoShortcutNextCue.checked, false,
+    '未显式的新单项必须回退 legacy false');
+
+  legacy.elements.videoShortcutNextCue.checked = true;
+  await legacy.elements.videoShortcutNextCue.fire('change');
+  assert.strictEqual(legacy.writes.length, 1, 'change 必须真实调用 storage.set');
+  assert.strictEqual(legacy.writes[0].videoShortcutNextCue, true,
+    'storage.set 必须写入对应逐动作 key');
+  assert.strictEqual(legacy.storage.videoShortcutNextCue, true,
+    '持久化层必须保存 change 后的值');
+
+  const reloaded = await loadOptionsRuntime(legacy.storage);
+  assert.strictEqual(reloaded.elements.videoShortcutNextCue.checked, true,
+    '重新加载 options 后必须读回刚持久化的显式值');
 });
 
 test('←/→/↑：有轨时接管为上一句/下一句/重播本句', () => {

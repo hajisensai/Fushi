@@ -22,6 +22,7 @@ function loadContentAndFireShift(options) {
   const src = fs.readFileSync(CONTENT, 'utf8');
   const docListeners = Object.create(null);
   const winListeners = Object.create(null);
+  const storageListeners = [];
   const sent = [];
   const dataset = {};
   const video = {
@@ -93,7 +94,7 @@ function loadContentAndFireShift(options) {
         },
         set: async () => {},
       },
-      onChanged: { addListener() {} },
+      onChanged: { addListener: (fn) => storageListeners.push(fn) },
     },
   };
   sandbox.window = {
@@ -116,7 +117,15 @@ function loadContentAndFireShift(options) {
   vm.createContext(sandbox);
   vm.runInContext(src, sandbox, { filename: 'content.js' });
 
-  return { docListeners, sent, dataset, nowRef, video, windowObj: sandbox.window };
+  return {
+    docListeners,
+    sent,
+    dataset,
+    nowRef,
+    video,
+    windowObj: sandbox.window,
+    storageListeners,
+  };
 }
 
 test('content.js 在加载时注册了顶层 document mousemove 监听器', () => {
@@ -177,6 +186,28 @@ test('查词暂停兼容旧 subtitleHoverPause，但新键显式 false 优先', 
     fn({ shiftKey: true, clientX: 300, clientY: 400 });
   }
   assert.strictEqual(overridden.video.pauseCount, 0, '新键显式 false 必须覆盖旧 true');
+});
+
+test('查词暂停经 storage.onChanged 热更新启停，无需刷新页面', () => {
+  const h = loadContentAndFireShift({
+    stored: { subtitlePauseOnLookup: false },
+  });
+  assert.ok(h.storageListeners.length > 0, 'content.js 应注册 storage.onChanged');
+
+  fireShiftLookup(h.docListeners, 300, 400);
+  assert.strictEqual(h.video.pauseCount, 0, '初始关闭时不得暂停');
+
+  for (const listener of h.storageListeners) {
+    listener({ subtitlePauseOnLookup: { newValue: true } }, 'local');
+  }
+  fireShiftLookup(h.docListeners, 500, 600);
+  assert.strictEqual(h.video.pauseCount, 1, '热更新开启后下一次查词必须暂停');
+
+  for (const listener of h.storageListeners) {
+    listener({ subtitlePauseOnLookup: { newValue: false } }, 'local');
+  }
+  fireShiftLookup(h.docListeners, 700, 650);
+  assert.strictEqual(h.video.pauseCount, 1, '热更新关闭后不得继续暂停');
 });
 
 test('悬浮字幕自动查词复用同词去重，移开复位后可重查', () => {
