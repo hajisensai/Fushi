@@ -29,6 +29,13 @@ void main() {
       // TODO-1961: download folder + legacy-folder history are device-local.
       expect(ProfileKeys.isExcludedPref('download_save_root'), isTrue);
       expect(ProfileKeys.isExcludedPref('download_save_root_history'), isTrue);
+      expect(
+        ProfileKeys.isExcludedPref(
+          ProfileKeys.obsoleteGalgameUpscalingModePrefKey,
+        ),
+        isTrue,
+        reason: 'v63 删除的旧全局超分键不得再进入 Profile 快照',
+      );
     });
 
     test('excludes keys with current_source/ prefix', () {

@@ -565,6 +565,12 @@ class ProfileRepository {
     int profileId,
   ) =>
       entries
+          // v63 只拒绝旧全局超分键的 pref 分类。不要改成过滤全部
+          // isExcludedPref：其它排除键有各自的跨版本/设备本地语义，扩大过滤会
+          // 无授权地改变旧 Profile JSON 的导入行为；同名非 pref 分类也必须保留。
+          .where((ProfileSettingEntry e) =>
+              e.category != ProfileKeys.categoryPref ||
+              e.key != ProfileKeys.obsoleteGalgameUpscalingModePrefKey)
           .map((ProfileSettingEntry e) => ProfileSettingsCompanion.insert(
                 profileId: profileId,
                 category: e.category,

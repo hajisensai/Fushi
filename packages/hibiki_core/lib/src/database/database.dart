@@ -416,7 +416,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   HibikiDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 62;
+  int get schemaVersion => 63;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -1260,6 +1260,32 @@ class HibikiDatabase extends _$HibikiDatabase {
                 !await _columnExists('galgames', 'upscaling_mode')) {
               await m.addColumn(galgames, galgames.upscalingMode);
             }
+          }
+          if (from < 63) {
+            // v63：删除已废弃的 galgame 全局窗口超分偏好。v62 起超分档位的
+            // 唯一真值是 galgames.upscaling_mode；旧 KV 既不能映射成任一游戏，
+            // 也不能留在 Profile 快照里等切换 Profile 时复活。
+            //
+            // 两张表的清理必须同成同败：onUpgrade 本身不保证把多个裸 SQL 包成
+            // 一个事务，因此这里显式 transaction。第二条 DELETE 若因损坏的历史
+            // schema 失败，第一条也回滚，user_version 仍停在旧版本供修复后重试。
+            // 成功后不留影子副本——这是用户明确要求的不可逆数据删除。
+            const String obsoleteKey = 'galgame_magpie_upscaling_mode';
+            await transaction(() async {
+              if (await _tableExists('preferences')) {
+                await customStatement(
+                  'DELETE FROM preferences WHERE key = ?',
+                  <Object?>[obsoleteKey],
+                );
+              }
+              if (await _tableExists('profile_settings')) {
+                await customStatement(
+                  'DELETE FROM profile_settings '
+                  "WHERE category = 'pref' AND key = ?",
+                  <Object?>[obsoleteKey],
+                );
+              }
+            });
           }
         },
         onCreate: (m) async {
