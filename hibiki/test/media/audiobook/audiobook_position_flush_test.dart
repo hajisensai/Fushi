@@ -169,10 +169,128 @@ void main() {
     await flush;
     expect(writeFinished, isTrue);
   });
+
+  test('BUG-1240 stopPlayback persists the live position before stop resets it',
+      () async {
+    installPlatform();
+    final AudiobookPlayerController c = AudiobookPlayerController();
+
+    await c.load(
+      audiobook: ab(),
+      audioFiles: <File>[makeFile('hibiki-stop-position-order.mp3')],
+      initialPositionMs: 65000,
+    );
+    final List<int> writes = <int>[];
+    c.onPositionWrite = (String uid, int ms) async => writes.add(ms);
+
+    await c.stopPlayback();
+    await c.disposeAndRelease();
+
+    expect(writes, isNotEmpty);
+    expect(
+      writes.last,
+      65000,
+      reason: 'stop 后采样会得到 0；持久化必须发生在 stop 释放播放器之前',
+    );
+  });
+
+  test('BUG-1240 old queued write completes before the final stop write',
+      () async {
+    final _FakePlatform plat = installPlatform();
+    final AudiobookPlayerController c = AudiobookPlayerController();
+    addTearDown(c.dispose);
+
+    await c.load(
+      audiobook: ab(),
+      audioFiles: <File>[makeFile('hibiki-stop-position-queue.mp3')],
+      initialPositionMs: 65000,
+    );
+    await c.play();
+    final Completer<void> firstWriteStarted = Completer<void>();
+    final Completer<void> allowFirstWrite = Completer<void>();
+    final List<int> started = <int>[];
+    final List<int> completed = <int>[];
+    c.onPositionWrite = (String uid, int ms) async {
+      started.add(ms);
+      if (started.length == 1) {
+        firstWriteStarted.complete();
+        await allowFirstWrite.future;
+      }
+      completed.add(ms);
+    };
+
+    final Future<void> oldFlush = c.flushPosition();
+    await firstWriteStarted.future;
+    plat.player!.emit(70000, ProcessingStateMessage.ready, playing: false);
+    await Future<void>.delayed(Duration.zero);
+
+    final Future<void> stop = c.stopPlayback();
+    await Future<void>.delayed(Duration.zero);
+    expect(started, <int>[65000],
+        reason: 'the final write must queue behind the older in-flight write');
+
+    allowFirstWrite.complete();
+    await oldFlush;
+    await stop;
+    expect(started.first, 65000);
+    expect(started.skip(1), everyElement(70000));
+    expect(completed, started,
+        reason: 'DB/cache completion order must match capture order');
+  });
+
+  test('BUG-1240 flush failure is surfaced only after playback is stopped',
+      () async {
+    final _FakePlatform plat = installPlatform();
+    final AudiobookPlayerController c = AudiobookPlayerController();
+    addTearDown(c.dispose);
+
+    await c.load(
+      audiobook: ab(),
+      audioFiles: <File>[makeFile('hibiki-stop-position-write-error.mp3')],
+      initialPositionMs: 42000,
+    );
+    await c.play();
+    c.onPositionWrite = (String uid, int ms) async {
+      throw StateError('write failed');
+    };
+    final int disposeBefore = plat.disposePlayerCalls;
+
+    await expectLater(c.stopPlayback(), throwsStateError);
+    expect(plat.disposePlayerCalls, greaterThan(disposeBefore),
+        reason: 'a persistence error must never leave native playback alive');
+  });
+
+  test('BUG-1240 source order keeps flush before both stop calls', () {
+    final String source = File(
+      '${Directory.current.path}/../packages/hibiki_audio/lib/src/audiobook/'
+      'audiobook_controller.dart',
+    ).readAsStringSync();
+    final int start =
+        source.indexOf('Future<void> _stopPlaybackOnce() async {');
+    final int end = source.indexOf(
+      'bool get debugMainPlayerPlaying',
+      start,
+    );
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final String body = source.substring(start, end);
+    final int flushAt = body.indexOf('await flushPosition();');
+    final int mainStopAt = body.indexOf('_player.stop()');
+    final int clipStopAt = body.indexOf('clip.stop()');
+    expect(flushAt, greaterThanOrEqualTo(0));
+    expect(flushAt, lessThan(mainStopAt));
+    expect(flushAt, lessThan(clipStopAt));
+    expect(
+      body.substring(mainStopAt),
+      isNot(contains('_maybeSavePosition(force: true)')),
+      reason: '释放后不得再用归零位置覆盖刚写穿的值',
+    );
+  });
 }
 
 class _FakePlatform extends JustAudioPlatform {
   _FakePlayer? player;
+  int disposePlayerCalls = 0;
   @override
   Future<AudioPlayerPlatform> init(InitRequest request) async {
     player = _FakePlayer(request.id);
@@ -182,6 +300,7 @@ class _FakePlatform extends JustAudioPlatform {
   @override
   Future<DisposePlayerResponse> disposePlayer(
       DisposePlayerRequest request) async {
+    disposePlayerCalls++;
     await player?.dispose(DisposeRequest());
     return DisposePlayerResponse();
   }
@@ -198,6 +317,7 @@ class _FakePlayer extends AudioPlayerPlatform {
   _FakePlayer(super.id);
   final StreamController<PlaybackEventMessage> _events =
       StreamController<PlaybackEventMessage>.broadcast();
+  bool _disposed = false;
 
   void emit(int ms, ProcessingStateMessage state, {required bool playing}) {
     _events.add(PlaybackEventMessage(
@@ -283,6 +403,8 @@ class _FakePlayer extends AudioPlayerPlatform {
       SetWebCrossOriginResponse();
   @override
   Future<DisposeResponse> dispose(DisposeRequest request) async {
+    if (_disposed) return DisposeResponse();
+    _disposed = true;
     await _events.close();
     return DisposeResponse();
   }

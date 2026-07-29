@@ -91,21 +91,22 @@ void main() {
       );
     });
 
-    test('MOV compatibility fallback shares the AAC companion', () {
-      final String source = File(
-        'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
-      ).readAsStringSync();
-      expect(source, contains('sharedFiles.add('));
-      expect(
-        source,
-        contains("XFile(audioClip.path, mimeType: 'audio/aac')"),
+    test('BUG-1243 mobile share exposes one self-contained video only', () {
+      final List<AudiobookClipShareAttachment> attachments =
+          audiobookClipMobileShareAttachments(
+        videoPath: '/tmp/clip.mov',
+        useH264: false,
       );
-      expect(source, contains('retainAudioClipForShare = true;'));
+      expect(attachments, hasLength(1));
+      expect(attachments.single.path, '/tmp/clip.mov');
+      expect(attachments.single.mimeType, 'video/quicktime');
       expect(
-        source,
-        contains(
-          'if (!retainAudioClipForShare) {',
+        attachments.where(
+          (AudiobookClipShareAttachment attachment) =>
+              attachment.mimeType.startsWith('audio/'),
         ),
+        isEmpty,
+        reason: 'AAC is an intermediate file, never a second share attachment',
       );
     });
   });

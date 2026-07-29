@@ -1,3 +1,5 @@
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:flutter/material.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
@@ -913,8 +915,15 @@ class DictionaryPopupLayer extends StatelessWidget {
 /// TODO-880：弹窗本体（含顶栏）的「opaque 命中吸收 + 水平滑动关闭」收口层。
 ///
 /// 永远是 `HitTestBehavior.opaque` 的吸收层（TODO-805：整个 `Positioned` 矩形命中真
-/// 值、不下穿 barrier，空 `onTap` 在竞技场必输给任何子识别器，按钮/WebView 不受影响）。
-/// 当 [enableSwipeToClose] 为真时，在**同一个** GestureDetector 上追加横拖识别器：拖动
+/// 值、不下穿 barrier，按钮/WebView 不受影响）。
+///
+/// BUG-1242：这里不能再注册 Flutter `HorizontalDragGestureRecognizer`。Windows
+/// `CustomPlatformView` 的触摸通过 raw pointer 注入 WebView2；父层横拖识别器一旦把稍带
+/// 横向抖动的纵向滚动赢进 gesture arena，平台视图会收到 cancel，表现就是查词结果滑好几次
+/// 才偶尔响应。改用不参与竞技场的 raw [Listener] 旁路观察触摸轨迹：只有明确横向主导后
+/// 才更新退场动画，纵向轨迹永不取消 WebView 的原生滚动。
+///
+/// 当 [enableSwipeToClose] 为真时，明确横向触摸拖动
 /// 期间 [Transform.translate] 实时跟手（[_dragX]）+ 随位移淡出；松手时按累计 dx 是否过
 /// [swipeDismissThreshold]（灵敏度取 [dismissSwipeSensitivity]，与顶栏 wrapper / 716
 /// barrier 同源）分流——
@@ -923,8 +932,8 @@ class DictionaryPopupLayer extends StatelessWidget {
 ///     **动画完成回调里**才调 [onDismiss]（关一层）——宿主在弹窗已滑出不可见之后才移除，
 ///     用户看到顺滑滑走而非瞬时消失。
 ///   * 未过阈值：补间弹回原位（spring-back）。
-/// tap 与横拖共享一个识别器，竞技场天然分流（单击 → onTap、横拖 → drag），互斥不互吞。
-/// 双向水平（[_dragX].abs()，对齐手机）。[enableSwipeToClose] 为假时只 onTap，行为同旧。
+/// 双向水平（[_dragX].abs()，对齐手机）。鼠标拖选不参与本体滑关（顶栏仍有专用
+/// [SwipeDismissWrapper]），避免正文框选触发退场。
 ///
 /// TODO-890 复用复位：reader 复用同一槽位（[Visibility] 保留、换新 child）时，
 /// [didUpdateWidget] 监测 child 身份变化并复位 [AnimationController] / [_dragX]，
@@ -970,6 +979,15 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
 
   /// 过阈值滑出补间是否在进行——完成时调 [onDismiss]（弹回补间不调）。
   bool _dismissing = false;
+
+  /// 当前仍按下的可触摸指针。出现第二根指针后，本轮手势永久失效，直到所有指针
+  /// 都抬起；不能在其中一根抬起后把剩余指针重新解释成一次新的单指横滑。
+  final Set<int> _activePointers = <int>{};
+  int? _trackedPointer;
+  Offset? _pointerStart;
+
+  /// null=尚未判轴，true=横拖关闭候选，false=纵向/斜向滚动（交还 WebView）。
+  bool? _pointerIsHorizontal;
 
   double get _threshold => swipeDismissThreshold(
         ReaderHibikiSource.instance.dismissSwipeSensitivity,
@@ -1027,17 +1045,68 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
     }
   }
 
-  void _onHorizontalDragStart(DragStartDetails _) {
+  void _onPointerDown(PointerDownEvent event) {
+    if (!widget.enableSwipeToClose ||
+        (event.kind != PointerDeviceKind.touch &&
+            event.kind != PointerDeviceKind.stylus &&
+            event.kind != PointerDeviceKind.invertedStylus)) {
+      return;
+    }
+    _activePointers.add(event.pointer);
+    if (_trackedPointer != null || _activePointers.length != 1) {
+      // BUG-1242：第二根指针必须立即取消第一根的 dismiss tracking。旧实现直接
+      // return，第一根之后的 move/up 仍可越过阈值关闭弹窗。
+      _clearTrackedPointer();
+      _springBack();
+      return;
+    }
+    _trackedPointer = event.pointer;
+    _pointerStart = event.position;
+    _pointerIsHorizontal = null;
     _controller.stop();
     _dismissing = false;
     setState(() => _dragX = 0);
   }
 
-  void _onHorizontalDragUpdate(DragUpdateDetails details) {
-    setState(() => _dragX += details.delta.dx);
+  void _onPointerMove(PointerMoveEvent event) {
+    if (event.pointer != _trackedPointer || _pointerStart == null) return;
+    final Offset delta = event.position - _pointerStart!;
+    if (_pointerIsHorizontal == null) {
+      if (delta.distanceSquared < 64) return;
+      // 强横向意图才滑关。其余轨迹固定判为正文滚动，后续即使偏回横向也不反抢。
+      _pointerIsHorizontal = delta.dx.abs() > delta.dy.abs() * 1.5;
+    }
+    if (_pointerIsHorizontal != true) return;
+    setState(() => _dragX = delta.dx);
   }
 
-  void _onHorizontalDragEnd(DragEndDetails _) {
+  void _onPointerUp(PointerUpEvent event) {
+    _activePointers.remove(event.pointer);
+    if (event.pointer != _trackedPointer) return;
+    final bool shouldFinish = _pointerIsHorizontal == true;
+    _clearTrackedPointer();
+    if (shouldFinish) {
+      _finishHorizontalDrag();
+    }
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    _activePointers.remove(event.pointer);
+    if (event.pointer != _trackedPointer) return;
+    final bool shouldSpringBack = _pointerIsHorizontal == true;
+    _clearTrackedPointer();
+    if (shouldSpringBack) {
+      _springBack();
+    }
+  }
+
+  void _clearTrackedPointer() {
+    _trackedPointer = null;
+    _pointerStart = null;
+    _pointerIsHorizontal = null;
+  }
+
+  void _finishHorizontalDrag() {
     final double accumulated = _dragX;
     // 双向水平：左右皆可，对齐手机 `_dragX.abs()`。
     if (accumulated.abs() > _threshold) {
@@ -1051,27 +1120,27 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
         ..reset()
         ..animateTo(1.0, curve: Curves.easeOut);
     } else {
-      // 未过阈值：补间弹回原位（spring-back）。
-      _dragStartX = accumulated;
-      _dragTargetX = 0;
-      _dismissing = false;
-      _controller
-        ..reset()
-        ..animateTo(1.0, curve: Curves.easeOut);
+      _springBack();
     }
+  }
+
+  void _springBack() {
+    _dragStartX = _dragX;
+    _dragTargetX = 0;
+    _dismissing = false;
+    _controller
+      ..reset()
+      ..animateTo(1.0, curve: Curves.easeOut);
   }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Listener(
       behavior: HitTestBehavior.opaque,
-      onTap: () {},
-      onHorizontalDragStart:
-          widget.enableSwipeToClose ? _onHorizontalDragStart : null,
-      onHorizontalDragUpdate:
-          widget.enableSwipeToClose ? _onHorizontalDragUpdate : null,
-      onHorizontalDragEnd:
-          widget.enableSwipeToClose ? _onHorizontalDragEnd : null,
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: _onPointerUp,
+      onPointerCancel: _onPointerCancel,
       child: widget.enableSwipeToClose
           ? LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) {

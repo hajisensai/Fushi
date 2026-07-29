@@ -12,9 +12,8 @@ import 'package:hibiki/src/reader/reader_chrome_floating.dart';
 /// 就再也叫不回来（点文字=查词、点空白=翻页，没有第三条路）。
 ///
 /// 修复：JS 只回传「这是一次 VN 空白点」，翻页还是唤栏由 Dart（chrome 可见性的
-/// 状态拥有者）判定。语义是**悬浮态下同一下既翻页又唤栏**——不是「唤出优先、可见才
-/// 翻页」：那一版慢读的人每屏要点两下（底栏的自动收起计时是在读这一屏时走完的），
-/// 比原 bug 被撞到得更频繁。
+/// 状态拥有者）判定。BUG-1245 进一步明确一次点击只做一个主动作：悬浮底栏隐藏时
+/// 只唤栏，已经可见时才推进。
 ///
 /// 三层锁：① 纯谓词 [readerVnBlankTapAction] 的真值表（headless 可真跑）；
 /// ② 源码守卫，钉死 JS→Dart 的分派结构不回退成「JS 自己 paginate」、也不回退成
@@ -26,6 +25,7 @@ void main() {
         readerVnBlankTapAction(
           chromeExpanded: false,
           bottomBarFloating: false,
+          transientVisible: false,
         ),
         ReaderVnBlankTapAction.expandChrome,
       );
@@ -34,18 +34,29 @@ void main() {
         readerVnBlankTapAction(
           chromeExpanded: false,
           bottomBarFloating: true,
+          transientVisible: false,
         ),
         ReaderVnBlankTapAction.expandChrome,
       );
     });
 
-    test('悬浮态 → 翻页 + 唤栏（不论底栏此刻画没画出来）', () {
-      // 本 bug 的原始失败路径：悬浮底栏已自动收起。旧修法在这里只唤栏、不翻页，
-      // 于是慢读每屏点两下；现在这一下必须**同时**推进。
+    test('悬浮底栏已隐藏 → 只唤栏，不推进', () {
       expect(
         readerVnBlankTapAction(
           chromeExpanded: true,
           bottomBarFloating: true,
+          transientVisible: false,
+        ),
+        ReaderVnBlankTapAction.revealChrome,
+      );
+    });
+
+    test('悬浮底栏已可见 → 翻页并续期', () {
+      expect(
+        readerVnBlankTapAction(
+          chromeExpanded: true,
+          bottomBarFloating: true,
+          transientVisible: true,
         ),
         ReaderVnBlankTapAction.advanceAndRevealChrome,
       );
@@ -56,41 +67,55 @@ void main() {
         readerVnBlankTapAction(
           chromeExpanded: true,
           bottomBarFloating: false,
+          transientVisible: false,
         ),
         ReaderVnBlankTapAction.advance,
       );
     });
 
-    test('🔴 只要 chrome 已展开，任何悬浮/收起组合都必须推进——不存在「白点一下」', () {
-      // 这是防回归的核心不变式。第一版修法正是在这里破了：悬浮态且底栏已收起时
-      // 返回「只唤栏」，那一下用户的翻页意图被吞掉。逐格穷举，任何一格退回
-      // 「不推进」都会红。
-      for (final bool floating in <bool>[false, true]) {
-        final ReaderVnBlankTapAction action = readerVnBlankTapAction(
-          chromeExpanded: true,
-          bottomBarFloating: floating,
-        );
-        expect(
-          action == ReaderVnBlankTapAction.advance ||
-              action == ReaderVnBlankTapAction.advanceAndRevealChrome,
-          isTrue,
-          reason: 'floating=$floating：chrome 已展开时这一下必须推进；'
-              '「先唤栏、下一下才翻页」= 慢读每屏点两下（比原 bug 更频繁）',
-        );
-      }
-    });
-
-    test('悬浮态的推进必须捎带唤栏——否则菜单又叫不出来了', () {
-      // 与上一条互为夹逼：上一条钉「不许不翻页」，这一条钉「不许不唤栏」。
-      // 两条都在，才不可能滑向任一侧的旧 bug。
+    test('悬浮态动作由真实可见性唯一决定', () {
       expect(
         readerVnBlankTapAction(
           chromeExpanded: true,
           bottomBarFloating: true,
+          transientVisible: false,
+        ),
+        ReaderVnBlankTapAction.revealChrome,
+        reason: '底栏隐藏时必须把这一下完整留给唤栏',
+      );
+      expect(
+        readerVnBlankTapAction(
+          chromeExpanded: true,
+          bottomBarFloating: true,
+          transientVisible: true,
         ),
         ReaderVnBlankTapAction.advanceAndRevealChrome,
-        reason: '悬浮底栏会自动收起，若推进时不唤栏就回到原 bug：菜单永远不可达',
+        reason: '底栏已经可见时，空白点击才是推进意图',
       );
+    });
+
+    test('BUG-1245 production dispatcher: first tap reveals, second advances',
+        () {
+      final List<String> actions = <String>[];
+      void dispatch(bool visible) {
+        dispatchReaderVnBlankTapAction(
+          readerVnBlankTapAction(
+            chromeExpanded: true,
+            bottomBarFloating: true,
+            transientVisible: visible,
+          ),
+          expandChrome: () => actions.add('expand'),
+          revealChrome: () => actions.add('reveal'),
+          advance: () => actions.add('advance'),
+        );
+      }
+
+      dispatch(false);
+      expect(actions, <String>['reveal'],
+          reason: 'the first hidden-chrome tap only reveals controls');
+      dispatch(true);
+      expect(actions, <String>['reveal', 'reveal', 'advance'],
+          reason: 'only the second, already-visible tap advances');
     });
   });
 
@@ -140,63 +165,30 @@ void main() {
       );
     });
 
-    test('_handleVnBlankTap 三条分支齐全，且翻页走 _paginate 唯一入口', () {
+    test('_handleVnBlankTap delegates to the production dispatcher', () {
       final String body = _vnBlankTapBody(chrome);
 
       expect(
-        body.contains('readerVnBlankTapAction('),
+        body.contains('dispatchReaderVnBlankTapAction(') &&
+            body.contains('readerVnBlankTapAction('),
         isTrue,
-        reason: '分派必须走纯谓词，不得在页里重写一套内联条件',
+        reason: '页面必须复用纯谓词与唯一生产分派器',
       );
       expect(
-        body.contains('ReaderVnBlankTapAction.expandChrome') &&
-            body.contains('ReaderVnBlankTapAction.advanceAndRevealChrome') &&
-            body.contains('ReaderVnBlankTapAction.advance'),
+        body.contains('expandChrome: _toggleChrome') &&
+            body.contains('revealChrome: _revealFloatingChromeForVnAdvance') &&
+            body.contains('_paginate(ReaderNavigationDirection.forward)'),
         isTrue,
-        reason: '三态分支必须都落地，漏任一态就会重现「菜单叫不出来」',
-      );
-      expect(
-        body.contains('_paginate(ReaderNavigationDirection.forward)'),
-        isTrue,
-        reason: '翻页必须复用 _paginate（跨章 / 节流 / caret 重锚的唯一入口）',
-      );
-      expect(
-        body.contains('_toggleChrome()') &&
-            body.contains('_revealFloatingChromeForVnAdvance()'),
-        isTrue,
-        reason: '挤压态展开与悬浮态唤栏各自复用既有状态机，不新造第三套',
-      );
-    });
-
-    test('🔴 悬浮态分支必须同时唤栏和翻页（两句都在同一 case 下）', () {
-      final String body = _vnBlankTapBody(chrome);
-      final int caseAt =
-          body.indexOf('case ReaderVnBlankTapAction.advanceAndRevealChrome:');
-      expect(caseAt, greaterThanOrEqualTo(0),
-          reason: '悬浮态 case 必须存在');
-      final int nextCase = body.indexOf('case ', caseAt + 10);
-      final String branch = nextCase > caseAt
-          ? body.substring(caseAt, nextCase)
-          : body.substring(caseAt);
-      expect(
-        branch.contains('_revealFloatingChromeForVnAdvance()'),
-        isTrue,
-        reason: '不唤栏 → 底栏自动收起后菜单又不可达（原 bug 复发）',
-      );
-      expect(
-        branch.contains('_paginate(ReaderNavigationDirection.forward)'),
-        isTrue,
-        reason: '不翻页 → 慢读每屏点两下（第一版修法的回归）；'
-            '这一下必须两件事都做',
+        reason: '三个副作用仍绑定既有 chrome/paginate 状态机',
       );
     });
 
     test('🔴 唤栏助手每次都重新武装自动收起，且绝不 toggle 关掉底栏', () {
       final int start =
           chrome.indexOf('void _revealFloatingChromeForVnAdvance()');
-      expect(start, greaterThanOrEqualTo(0),
-          reason: 'VN 推进专用的唤栏助手必须存在');
-      final int end = chrome.indexOf('bool _handleFloatingChromeReveal()', start);
+      expect(start, greaterThanOrEqualTo(0), reason: 'VN 推进专用的唤栏助手必须存在');
+      final int end =
+          chrome.indexOf('bool _handleFloatingChromeReveal()', start);
       expect(end, greaterThan(start));
       final String body = chrome.substring(start, end);
 

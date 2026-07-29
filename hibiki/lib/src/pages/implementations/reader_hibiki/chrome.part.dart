@@ -1108,9 +1108,8 @@ extension _ReaderChrome on _ReaderHibikiPageState {
   /// 处理 → VN 点击推进到章末就卡住。现在走 [_paginate] 这个唯一翻页入口，跨章
   /// （[_handlePageTurnLimit]）/ 节流 / caret 重锚全部与滑动、键盘路径一致。
   ///
-  /// **悬浮态下唤栏不吃掉这一下的翻页**（见 [readerVnBlankTapAction] 的长注释）：底栏
-  /// 的自动收起计时是在用户读这一屏时走完的，若「不可见就只唤栏」，慢读的人每屏都要点
-  /// 两下——那比原来的「菜单叫不出来」被撞到得更频繁。
+  /// BUG-1245：悬浮底栏已隐藏时，这一下只唤栏、不推进。用户看到“底栏出来”的同时
+  /// 丢掉当前句属于双重副作用；底栏已经可见时，下一次空白点击才推进。
   void _handleVnBlankTap() {
     if (_lyricsMode) return;
     // 与 onTapEmpty 同语义：有可见查词弹窗时，本次点击只清弹窗栈（BUG-072 续播 /
@@ -1124,18 +1123,16 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     // 本次 pointer 手势把 OS 焦点交给了 WebView，不夺回 Flutter _focusNode 就收不到
     // ESC（BUG-136）。翻页与唤栏两条分支都要。
     _focusOwnership.reclaim(FocusReclaimCause.gesture);
-    switch (readerVnBlankTapAction(
-      chromeExpanded: _showChrome,
-      bottomBarFloating: _bottomBarFloating,
-    )) {
-      case ReaderVnBlankTapAction.expandChrome:
-        _toggleChrome();
-      case ReaderVnBlankTapAction.advanceAndRevealChrome:
-        _revealFloatingChromeForVnAdvance();
-        unawaited(_paginate(ReaderNavigationDirection.forward));
-      case ReaderVnBlankTapAction.advance:
-        unawaited(_paginate(ReaderNavigationDirection.forward));
-    }
+    dispatchReaderVnBlankTapAction(
+      readerVnBlankTapAction(
+        chromeExpanded: _showChrome,
+        bottomBarFloating: _bottomBarFloating,
+        transientVisible: _chromeTransientVisible,
+      ),
+      expandChrome: _toggleChrome,
+      revealChrome: _revealFloatingChromeForVnAdvance,
+      advance: () => unawaited(_paginate(ReaderNavigationDirection.forward)),
+    );
   }
 
   /// TODO-693: appUiScale（整体界面缩放）变化时把连续模式阅读位置重锚回原字符，避免

@@ -1033,7 +1033,20 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         '';
     final AudiobookPlayerController? ctrl = _audiobookController;
     final int audioFileCount = ctrl?.audioFiles.length ?? 0;
-    final AudioPlaybackRange? sentenceRange = _currentSentenceAudioRange();
+    // BUG-1243：多句拖选必须先按「真实选区 span」建立动态计划，再决定最终裁剪范围。
+    // 旧顺序先用 currentSentence 的单句 range 做分类，随后才建多句计划，导致最终传给
+    // ffmpeg 的仍是第一句窗口；动态计划又优先拿 cachedSentenceRange，覆盖了跨句选区
+    // span，因而退化成「只有第一句声音 + 整段静态高亮」。
+    _AudiobookClipDynamicPlan? dynamicPlan = _buildAudiobookClipPlan(
+      audioFileCount: audioFileCount,
+    );
+    final AudioPlaybackRange? sentenceRange = dynamicPlan == null
+        ? _currentSentenceAudioRange()
+        : AudioPlaybackRange(
+            audioFileIndex: dynamicPlan.audioFileIndex,
+            startMs: dynamicPlan.globalStartMs,
+            endMs: dynamicPlan.globalEndMs,
+          );
 
     final AudiobookClipBoundaryResult result = classifyAudiobookClipSelection(
       selectedText: selectedText,
@@ -1137,9 +1150,6 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
         // TODO-1115：尝试多句连读 + 逐句高亮跟随。把选区映射到有序 cue 列表；≥1 句即走
         // 动态路径（单句时自然退化为单句动态，仍可回退单句静态）。跨章/跨文件 span 为空
         // → dynamicPlan 为 null → 直接走原单句静态路径（never break userspace）。
-        _AudiobookClipDynamicPlan? dynamicPlan = _buildAudiobookClipPlan(
-          audioFileCount: audioFileCount,
-        );
         // TODO-1115 review M1：根因护栏。音频裁剪走静态 `range`（由 range.audioFileIndex
         // 选 inputFile），但起止 ms 走 dynamicPlan.globalStartMs/globalEndMs（由 span 独立
         // 解析出的 dynamicPlan.audioFileIndex 定的坐标系）。二者理论可分歧（静态走
@@ -1195,23 +1205,35 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
   }) {
     final AudiobookPlayerController? ctrl = _audiobookController;
     if (ctrl == null) return null;
-    // span 主锚：句子文本 + 归一化 offset/length（保持不变，动态多句仍以整句 span 定位）。
-    final String sentence =
-        appModel.currentMediaSource?.currentSentence.text ?? '';
+    final ({int offset, int length, String text})? selection =
+        _cachedSelectionRange;
+    // BUG-1243：导出入口的主锚是用户真实选区；只有没有原生选区（普通点词导出）时
+    // 才回退 currentSentence。不能复用 _miningSpanRange 的「句级优先」规则——那是
+    // 单句制卡语义，会把跨多句 selection 收窄回当前句。
+    final ({int offset, int length})? fallbackRange = _miningSpanRange();
+    final AudiobookClipSelectionSpan resolvedSelection =
+        resolveAudiobookClipSelectionSpan(
+      selectedText: selection?.text,
+      selectedOffset: selection?.offset,
+      selectedLength: selection?.length,
+      fallbackText: appModel.currentMediaSource?.currentSentence.text ?? '',
+      fallbackOffset: fallbackRange?.offset,
+      fallbackLength: fallbackRange?.length,
+    );
+    final String sentence = resolvedSelection.text;
     // TODO-1115 review M2：分类文本与静态路径（[_exportAudiobookClip] 的 selectedText）
     // 同源——`_cachedSelectionRange?.text ?? currentSentence.text`。此前动态侧只用
     // currentSentence.text，与静态侧 emptySelection 判据不同调（纯外字/无选区时可能一条
     // 判空、另一条判非空）。归一到同一真相源，消除两条路径的边界分歧。
-    final String classifyText = _cachedSelectionRange?.text ?? sentence;
-    final ({int offset, int length})? spanRange = _miningSpanRange();
+    final String classifyText = resolvedSelection.text;
     final List<AudioCue> allCues = _sentenceAudioMiningCues(_lookupCue);
     final List<AudioCue> span = miningSentenceCueSpan(
       cues: allCues,
       cue: _lookupCue,
       sentence: sentence,
       sectionIndex: _lookupSectionIndex,
-      sentenceNormCharOffset: spanRange?.offset,
-      sentenceNormCharLength: spanRange?.length,
+      sentenceNormCharOffset: resolvedSelection.offset,
+      sentenceNormCharLength: resolvedSelection.length,
     );
     if (span.isEmpty) return null;
 
@@ -1299,7 +1321,6 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     File? audioClip;
     File? imageFile;
     File? videoFile;
-    bool retainAudioClipForShare = false;
     Directory? framesDir;
     final bool isDesktop =
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
@@ -1493,19 +1514,20 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_saved);
         }
       } else {
-        final List<XFile> sharedFiles = <XFile>[
-          XFile(
-            outPath,
-            // BUG-809：容器与编码器一致（桌面 mp4/h264 / 移动 mov/mjpeg）。
-            mimeType: useH264 ? 'video/mp4' : 'video/quicktime',
-          ),
-        ];
-        if (!useH264) {
-          // Some mobile receivers ignore AAC embedded in MJPEG/MOV. Share the
-          // exact clipped AAC beside the video so the export never loses audio.
-          sharedFiles.add(XFile(audioClip.path, mimeType: 'audio/aac'));
-          retainAudioClipForShare = true;
-        }
+        final List<XFile> sharedFiles = audiobookClipMobileShareAttachments(
+          videoPath: outPath,
+          useH264: useH264,
+        )
+            .map(
+              (AudiobookClipShareAttachment attachment) => XFile(
+                attachment.path,
+                mimeType: attachment.mimeType,
+              ),
+            )
+            .toList(growable: false);
+        // BUG-1243：ffmpeg 合成参数已显式 `-map 0:v:0 -map 1:a:0`，AAC 在 MOV 内。
+        // 旧兼容兜底又把临时 .aac 当第二个附件分享，系统分享面板把它显示成一个多余
+        // “字幕/音频文件”。产物契约收敛为单个带声视频，不再泄漏中间文件。
         await HibikiShare.shareFiles(sharedFiles, subject: text);
         if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_saved);
       }
@@ -1518,9 +1540,7 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       _audiobookClipExporting = false;
       // 清理临时中间文件。桌面端最终视频已 copy 到用户选定路径，可一并清理；移动端
       // 系统 Share 异步读取 outPath，保留视频文件供其读取，仅清理音频/图中间产物。
-      if (!retainAudioClipForShare) {
-        await _deleteClipTempFile(audioClip);
-      }
+      await _deleteClipTempFile(audioClip);
       await _deleteClipTempFile(imageFile);
       // TODO-1115：动态路径的 N 帧 JPEG 序列帧目录一并清理（无论成功/回退/桌面/移动）。
       await _deleteClipFramesDir(framesDir);

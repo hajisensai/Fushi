@@ -1,6 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/src/media/audiobook/audiobook_clip_export.dart';
+import 'package:hibiki/src/media/audiobook/mining_audio_clip.dart';
+import 'package:hibiki_audio/hibiki_audio.dart';
 
 /// TODO-1115 review 守卫：动态导出（多句连读 + 逐句高亮）的两处硬化。
 ///
@@ -12,10 +15,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// assert）。
 ///
 /// M2（分类文本同源）：动态侧 [classifyAudiobookClipMultiCue] 的 selectedText 必须与静态
-/// 路径 [_exportAudiobookClip] 的 selectedText 同源——`_cachedSelectionRange?.text ??
-/// currentSentence.text`；此前动态侧只用 currentSentence.text，两条 emptySelection 判据
-/// 不同调。span 主锚仍是归一化 offset/length（非选区文本），但取值经单一真相源
-/// [_miningSpanRange]（句级 span 缺失时回退选区级 span，TODO-1278：消除导出误报跨章）。
+/// 路径 [_exportAudiobookClip] 的真实原生选区同源。BUG-1243 后跨句导出不能再用
+/// `_miningSpanRange` 的句级优先语义：有选区时必须直接读 selection.offset/length，
+/// 无选区的普通点词导出才回退 `_miningSpanRange()`。
 void main() {
   String libFile(String relative) =>
       File(relative).readAsStringSync().replaceAll('\r\n', '\n');
@@ -61,6 +63,33 @@ void main() {
   });
 
   group('M1: dynamic/static audioFileIndex divergence guard', () {
+    test('BUG-1243 dynamic plan defines the classified audio range up front',
+        () {
+      final String body = fnBody(audiobookPart, 'void _exportAudiobookClip(');
+      final int planAt = body.indexOf('_buildAudiobookClipPlan(');
+      final int rangeAt = body.indexOf(
+        'AudioPlaybackRange? sentenceRange',
+        planAt,
+      );
+      final int classifyAt = body.indexOf(
+        'classifyAudiobookClipSelection(',
+        rangeAt,
+      );
+      expect(planAt, greaterThanOrEqualTo(0));
+      expect(rangeAt, greaterThan(planAt));
+      expect(classifyAt, greaterThan(rangeAt));
+      expect(
+        body.substring(rangeAt, classifyAt),
+        contains('dynamicPlan.globalStartMs'),
+        reason: '多句计划的完整起点必须进入最终裁剪范围，不能仍裁第一句',
+      );
+      expect(
+        body.substring(rangeAt, classifyAt),
+        contains('dynamicPlan.globalEndMs'),
+        reason: '多句计划的完整终点必须进入最终裁剪范围，不能仍裁第一句',
+      );
+    });
+
     test(
         'dispatcher compares dynamicPlan.audioFileIndex to range.audioFileIndex',
         () {
@@ -98,44 +127,84 @@ void main() {
 
   group('M2: dynamic classify text shares single source with static path', () {
     test(
-        '_buildAudiobookClipPlan classify text = _cachedSelectionRange?.text ?? sentence',
-        () {
-      final String body = fnBody(
-          audiobookPart, '_AudiobookClipDynamicPlan? _buildAudiobookClipPlan(');
-      // 分类文本必须取同源。允许命名局部 classifyText，或直接内联表达式。
-      final RegExp source = RegExp(
-        r'_cachedSelectionRange\?\.text\s*\?\?\s*sentence',
-      );
-      expect(source.hasMatch(body), isTrue,
-          reason: 'M2：动态分类文本必须与静态路径同源 '
-              '(_cachedSelectionRange?.text ?? currentSentence.text)。');
-      // classify 调用的 selectedText 不得再直接绑 currentSentence 文本变量 sentence。
-      expect(body.contains('selectedText: sentence,'), isFalse,
-          reason: 'M2：classifyAudiobookClipMultiCue 的 selectedText 不得只用 '
-              'currentSentence.text（两条 emptySelection 判据会不同调）。');
-    });
+        'BUG-1243 production plan keeps a three-cue native selection and '
+        'highlights every sentence', () {
+      AudioCue cue({
+        required String text,
+        required int normStart,
+        required int normEnd,
+        required int startMs,
+      }) {
+        return AudioCue()
+          ..bookKey = 'book'
+          ..chapterHref = 'chapter'
+          ..sentenceIndex = normStart ~/ 10
+          ..textFragmentId = SasayakiMatchCodec.encodeHit(
+            sectionIndex: 0,
+            normCharStart: normStart,
+            normCharEnd: normEnd,
+          )
+          ..text = text
+          ..startMs = startMs
+          ..endMs = startMs + 1000
+          ..audioFileIndex = 0;
+      }
 
-    test('span anchor stays on currentSentence.text + norm offset/length', () {
-      final String body = fnBody(
-          audiobookPart, '_AudiobookClipDynamicPlan? _buildAudiobookClipPlan(');
-      // span 主锚不变：miningSentenceCueSpan 仍喂整句文本 sentence（不被选区文本替换）。
-      expect(body.contains('sentence: sentence,'), isTrue,
-          reason: 'M2：span 主锚必须仍用整句文本（sentence），不能被选区文本替换。');
-      // TODO-1278：归一化 offset/length 主锚改走单一真相源 _miningSpanRange()（句级
-      // span 缺失时回退选区级 span），与收藏 / 制卡历史归一，消除导出误报「跨章」。仍是
-      // 归一化 offset/length（非选区文本），只是取值经共享回退——不得回退成裸
-      // _cachedSentenceRange?.offset（会丢选区级回退）。
-      expect(body.contains('sentenceNormCharOffset: spanRange?.offset'), isTrue,
-          reason: 'M2：span 主锚的归一化 offset 必须经 _miningSpanRange() 的 '
-              'spanRange（含选区级回退，TODO-1278）。');
-      expect(body.contains('sentenceNormCharLength: spanRange?.length'), isTrue,
-          reason: 'M2：span 主锚的归一化 length 必须经 _miningSpanRange() 的 '
-              'spanRange（含选区级回退，TODO-1278）。');
+      final List<AudioCue> cues = <AudioCue>[
+        cue(text: 'first', normStart: 0, normEnd: 10, startMs: 0),
+        cue(text: 'second', normStart: 10, normEnd: 20, startMs: 1000),
+        cue(text: 'third', normStart: 20, normEnd: 30, startMs: 2000),
+      ];
+      final AudiobookClipSelectionSpan selection =
+          resolveAudiobookClipSelectionSpan(
+        selectedText: 'first second third',
+        selectedOffset: 0,
+        selectedLength: 30,
+        fallbackText: 'second',
+        fallbackOffset: 10,
+        fallbackLength: 10,
+      );
+      final List<AudioCue> span = miningSentenceCueSpan(
+        cues: cues,
+        cue: cues[1],
+        sentence: selection.text,
+        sectionIndex: 0,
+        sentenceNormCharOffset: selection.offset,
+        sentenceNormCharLength: selection.length,
+      );
+      expect(span, hasLength(3),
+          reason:
+              'native selection must override the narrower cached sentence');
+
+      final AudioPlaybackRange range = clipExportGlobalRange(
+        span: span,
+        allCues: cues,
+        headPadMs: 0,
+        tailPadMs: 0,
+      )!;
+      final AudiobookClipMultiCueResult classified =
+          classifyAudiobookClipMultiCue(
+        selectedText: selection.text,
+        audioFileCount: 1,
+        globalRange: range,
+        cueSpans: clipCueSpansWithDelay(span: span, delayMs: 0),
+      );
+      expect(classified.isExportable, isTrue);
       expect(
-          body.contains('sentenceNormCharOffset: _cachedSentenceRange?.offset'),
-          isFalse,
-          reason: 'M2：不得再裸读 _cachedSentenceRange?.offset（丢选区级回退 → '
-              'TODO-1278 误报跨章回归）。');
+        audiobookClipCueTextMatchesSelection(
+          selectedText: selection.text,
+          cueSpans: classified.cueSpans,
+        ),
+        isTrue,
+      );
+      final List<int> highlights = clipFramePlan(
+        cues: span,
+        globalStartMs: classified.globalStartMs,
+        globalEndMs: classified.globalEndMs,
+        fps: 2,
+      ).map((ClipFrameSpec frame) => frame.highlightCueIndex).toList();
+      expect(highlights, <int>[0, 1, 2],
+          reason: 'the production frame plan must highlight each selected cue');
     });
   });
 }

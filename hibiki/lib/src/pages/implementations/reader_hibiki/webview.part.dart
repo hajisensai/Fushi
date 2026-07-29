@@ -1478,13 +1478,23 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
       total = 0;
       while (node = walker.nextNode()) total += r.countChars(node.textContent);
     }
-    if (total <= 0) return '';
+    // 纯图片章没有可匹配字符，但可能仍有多张分页图片。只有真实到达该章物理末端时
+    // 才返回一个合成的 1/1 完成快照；中间图片页继续返空，由现有图片进度 UI 兜底，
+    // 避免一进纯图片末章就提前标完。
+    if (total <= 0) {
+      var mediaAtEnd = typeof r.isAtEnd === 'function' && r.isAtEnd();
+      return mediaAtEnd ? '1,1,-1' : '';
+    }
     // BUG-162: 第三段 = section 内精确绝对字符偏移（视口首字符），落 DB char_offset
     // 作退出再进的恢复锚（成熟 getFirstVisibleCharOffset/scrollToCharOffset 路径）。
     // caretRangeFromPoint 失败时返 -1 → Dart 当「无精确偏移」回退分数。
     var off = (typeof r.getFirstVisibleCharOffset === 'function')
         ? r.getFirstVisibleCharOffset() : -1;
-    return Math.round(p * total) + ',' + total + ',' + off;
+    // BUG-1241：阅读进度分数描述的是「视口首字符」，不是「是否到达末页」。
+    // 到达分页末页 / 连续物理末端 / VN 末屏时把持久分子钳到 total，使自动完成和
+    // 阅读统计都得到明确终态；中间页仍保留原字符级进度。
+    var atEnd = typeof r.isAtEnd === 'function' && r.isAtEnd();
+    return (atEnd ? total : Math.round(p * total)) + ',' + total + ',' + off;
   };
   // BUG-213: 章内原生滚动（连续模式 window 滚动 / 分页模式触摸/trackpad/键盘箭头
   // 落 body 的原生滚动）没有进度回传通道，进度条要等 10s 轮询或翻章才更新。这里给

@@ -111,6 +111,14 @@ void main() {
       expect(snapshot.charOffset, 0);
     });
 
+    test('BUG-1241 末页钳位结果解析为精确完成态', () {
+      final snapshot = parseReaderStableProgressDetails('"1000,1000,900"');
+
+      expect(snapshot, isNotNull);
+      expect(snapshot!.progress, 1.0);
+      expect(snapshot.charOffset, 900, reason: '完成态钳到 100% 时仍保留真实末页字符锚供恢复');
+    });
+
     test('未 settle / 空结果不生成可保存快照', () {
       expect(parseReaderStableProgressDetails(null), isNull);
       expect(parseReaderStableProgressDetails(''), isNull);

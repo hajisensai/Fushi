@@ -21,10 +21,10 @@ import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 /// popup rect, so dragging ON the popup body never closed it ("switch does
 /// nothing").
 ///
-/// The fix adds `onHorizontalDrag*` to that same outer opaque GestureDetector
-/// (gated on `enableSwipeToClose`). Tap and horizontal-drag share one detector,
-/// so the Flutter arena routes a single tap to `onTap` and a drag to the drag
-/// recognizer — mutually exclusive, no swallowing. These guards lock that
+/// BUG-1242 replaces the parent horizontal recognizer with an opaque raw
+/// `Listener`: it can observe a deliberate horizontal touch swipe without
+/// entering the gesture arena and cancelling the platform WebView's vertical
+/// scroll. These guards lock that
 /// contract directly on [DictionaryPopupLayer] (the layer all five surfaces
 /// share), independent of any host's barrier.
 ///
@@ -192,6 +192,91 @@ void main() {
   });
 
   testWidgets(
+      'BUG-1242: vertical-dominant touch stays on the WebView scroll path',
+      (WidgetTester tester) async {
+    int dismissed = 0;
+    await tester.pumpWidget(_host(_layer(
+      onDismiss: () => dismissed++,
+      enableSwipeToClose: true,
+      onClose: () {},
+    )));
+    await tester.pump();
+
+    final TestGesture gesture = await tester.startGesture(_popupBodyPoint);
+    for (int i = 0; i < 12; i++) {
+      await gesture.moveBy(const Offset(2, 12));
+      await tester.pump();
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(dismissed, 0);
+    final Iterable<Transform> transforms =
+        tester.widgetList<Transform>(find.byType(Transform));
+    expect(
+      transforms.every(
+        (Transform t) => t.transform.getTranslation().x.abs() < 0.5,
+      ),
+      isTrue,
+      reason: '纵向轨迹不能触发父层横移，否则真实 WebView 会收到 pointer cancel',
+    );
+  });
+
+  testWidgets(
+      'BUG-1242: second pointer cancels the first swipe and springs back',
+      (WidgetTester tester) async {
+    int dismissed = 0;
+    await tester.pumpWidget(_host(_layer(
+      onDismiss: () => dismissed++,
+      enableSwipeToClose: true,
+      onClose: () {},
+    )));
+    await tester.pump();
+
+    final TestGesture first =
+        await tester.startGesture(_popupBodyPoint, pointer: 1);
+    for (int i = 0; i < 12; i++) {
+      await first.moveBy(const Offset(10, 0));
+      await tester.pump();
+    }
+    expect(
+      tester.widgetList<Transform>(find.byType(Transform)).any(
+            (Transform transform) =>
+                transform.transform.getTranslation().x > 80,
+          ),
+      isTrue,
+      reason: 'precondition: the first pointer is tracking a dismiss swipe',
+    );
+
+    final TestGesture second = await tester.startGesture(
+      _popupBodyPoint + const Offset(0, 30),
+      pointer: 2,
+    );
+    await tester.pump();
+    await first.moveBy(const Offset(120, 0));
+    await tester.pump();
+    await first.up();
+    await second.up();
+    await tester.pumpAndSettle();
+
+    expect(dismissed, 0,
+        reason: 'a later move/up from the first pointer must not dismiss');
+    expect(
+      tester.widgetList<Transform>(find.byType(Transform)).every(
+            (Transform transform) =>
+                transform.transform.getTranslation().x.abs() < 0.5,
+          ),
+      isTrue,
+      reason: 'the second pointer immediately cancels and springs back',
+    );
+
+    // Once every pointer from the cancelled gesture is up, a fresh one-finger
+    // gesture is eligible again.
+    await _dragOn(tester, _popupBodyPoint, dx: 200);
+    expect(dismissed, 1);
+  });
+
+  testWidgets(
       'switch OFF: horizontal drag on the body is inert, X still closes',
       (WidgetTester tester) async {
     int dismissed = 0;
@@ -322,6 +407,20 @@ void main() {
 
   test('threshold sanity: default sensitivity 0.6 ~94px', () {
     expect(swipeDismissThreshold(0.6), closeTo(94, 0.5));
+  });
+
+  test('BUG-1242 detector uses raw Listener, not a gesture-arena drag', () {
+    final String layerSource = File(
+      'lib/src/pages/implementations/dictionary_popup_layer.dart',
+    ).readAsStringSync();
+    final int start =
+        layerSource.indexOf('class _BodySwipeDismissDetectorState');
+    final int end = layerSource.indexOf('class _PopupResizeGrip', start);
+    final String body = layerSource.substring(start, end);
+    expect(body, contains('return Listener('));
+    expect(body, isNot(contains('onHorizontalDragStart:')));
+    expect(body, isNot(contains('onHorizontalDragUpdate:')));
+    expect(body, isNot(contains('onHorizontalDragEnd:')));
   });
 
   // TODO-896 half-(b) reconciliation: the "frame-select on a real WebView body

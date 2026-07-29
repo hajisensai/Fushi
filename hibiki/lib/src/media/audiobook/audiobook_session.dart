@@ -101,6 +101,22 @@ class AudiobookSession extends ChangeNotifier {
 
   AudiobookPlayerController? _controller;
 
+  /// start/stop 共用的生命周期队列。切书与退出可能来自页面、通知栏和数据迁移等
+  /// 不同入口；串行化保证旧控制器已完成最终写入/stop/dispose 后，新一代才可发布。
+  Future<void> _lifecycleTail = Future<void>.value();
+
+  Future<T> _enqueueLifecycle<T>(Future<T> Function() operation) {
+    final Completer<T> result = Completer<T>();
+    _lifecycleTail = _lifecycleTail.then<void>((_) async {
+      try {
+        result.complete(await operation());
+      } catch (error, stack) {
+        result.completeError(error, stack);
+      }
+    });
+    return result.future;
+  }
+
   /// 当前会话持有的控制器（null = 无会话）。reader / play bar / 查词只读引用。
   AudiobookPlayerController? get controller => _controller;
 
@@ -145,6 +161,24 @@ class AudiobookSession extends ChangeNotifier {
     required SessionPrefs prefs,
     required SessionPersistCallbacks persist,
     List<AudioCue> cues = const <AudioCue>[],
+  }) {
+    return _enqueueLifecycle<AudiobookPlayerController?>(
+      () => _startInternal(
+        info: info,
+        audioFiles: audioFiles,
+        prefs: prefs,
+        persist: persist,
+        cues: cues,
+      ),
+    );
+  }
+
+  Future<AudiobookPlayerController?> _startInternal({
+    required SessionBookInfo info,
+    required List<File> audioFiles,
+    required SessionPrefs prefs,
+    required SessionPersistCallbacks persist,
+    required List<AudioCue> cues,
   }) async {
     final AudiobookPlayerController? existing = _controller;
     if (existing != null && _book?.bookKey == info.bookKey) {
@@ -156,7 +190,7 @@ class AudiobookSession extends ChangeNotifier {
     }
     if (existing != null) {
       // 切书：顶掉旧会话。
-      await stop();
+      await _stopInternal();
     }
 
     final AudiobookPlayerController controller = AudiobookPlayerController();
@@ -251,6 +285,10 @@ class AudiobookSession extends ChangeNotifier {
 
   /// 显式停止会话：dispose 控制器、隐藏悬浮窗、清媒体通知、取消订阅。
   Future<void> stop() async {
+    await _enqueueLifecycle<void>(_stopInternal);
+  }
+
+  Future<void> _stopInternal() async {
     final AudiobookPlayerController? controller = _controller;
     _reader = null;
     _controller = null;
@@ -273,22 +311,45 @@ class AudiobookSession extends ChangeNotifier {
     _skipPrevSub = null;
     _floatingLyricSub = null;
 
+    Object? firstError;
+    StackTrace? firstStack;
+    void remember(Object error, StackTrace stack) {
+      firstError ??= error;
+      firstStack ??= stack;
+    }
+
     if (controller != null) {
       controller.removeListener(_onControllerChanged);
       // BUG-278/TODO-367：dispose 前必须真正 stop（释放 native 解码器止声），不能
       // 只 pause（pause 保留解码器，紧随的同步 dispose 又抢不过异步平台拆除，
       // Android 上表现为停止后仍在响）。stopPlayback 可 await 到平台切换 settle，
       // 也 force-flush 位置；之后 dispose 不再与异步平台切换竞争。
-      await controller.stopPlayback();
+      try {
+        await controller.stopPlayback();
+      } catch (error, stack) {
+        remember(error, stack);
+      }
       // TODO-1212：用可 await 的 disposeAndRelease 取代同步 dispose()——后者的
       // `_player.dispose()` 是 fire-and-forget，返回时 libmpv 音频文件句柄仍在异步
       // 释放中；数据根迁移在停音频后立即 rename 数据根，句柄未放会撞「文件被占用」。
       // disposeAndRelease 先 `await _player.dispose()` 真放掉句柄再返回。
-      await controller.disposeAndRelease();
+      try {
+        await controller.disposeAndRelease();
+      } catch (error, stack) {
+        remember(error, stack);
+      }
     }
 
-    await _stopBackgroundSurfaces();
+    try {
+      await _stopBackgroundSurfaces();
+    } catch (error, stack) {
+      remember(error, stack);
+    }
     notifyListeners();
+    final Object? error = firstError;
+    if (error != null) {
+      Error.throwWithStackTrace(error, firstStack!);
+    }
   }
 
   // ── 控制器 cue 变化的常驻同步 ────────────────────────────────────────────
