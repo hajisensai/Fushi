@@ -15,6 +15,7 @@ import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/display_title.dart';
 import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_labels.dart';
+import 'package:hibiki/src/media/tracking/media_tracking_repository.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_service.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/galgame_repository.dart';
@@ -249,6 +250,114 @@ class _DailyGoalDialogState extends State<_DailyGoalDialog> {
   }
 }
 
+class _BangumiWatchedDialog extends StatefulWidget {
+  const _BangumiWatchedDialog({
+    required this.service,
+    required this.onOpenSubject,
+  });
+
+  final MediaTrackingService service;
+  final Future<void> Function(int subjectId) onOpenSubject;
+
+  @override
+  State<_BangumiWatchedDialog> createState() => _BangumiWatchedDialogState();
+}
+
+class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
+  late final Future<List<BangumiWatchedItem>> _watched =
+      widget.service.loadWatchedAnime();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Row(
+        children: <Widget>[
+          const Icon(Icons.visibility_outlined),
+          const SizedBox(width: 12),
+          Expanded(child: Text(t.media_tracking_watched_title)),
+        ],
+      ),
+      content: SizedBox(
+        width: 640,
+        height: MediaQuery.sizeOf(context).height * 0.6,
+        child: FutureBuilder<List<BangumiWatchedItem>>(
+          future: _watched,
+          builder: (
+            BuildContext context,
+            AsyncSnapshot<List<BangumiWatchedItem>> snapshot,
+          ) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(
+                child: Text(
+                  t.media_tracking_watched_load_failed(
+                    error: snapshot.error!,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              );
+            }
+            final List<BangumiWatchedItem> watched =
+                snapshot.data ?? const <BangumiWatchedItem>[];
+            if (watched.isEmpty) {
+              return Center(child: Text(t.media_tracking_watched_empty));
+            }
+            return ListView.separated(
+              itemCount: watched.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (BuildContext context, int index) {
+                final BangumiWatchedItem item = watched[index];
+                final String? coverUrl = item.subject.coverUrl;
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: SizedBox(
+                    width: 42,
+                    height: 56,
+                    child: coverUrl == null
+                        ? const Icon(Icons.movie_outlined)
+                        : ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: Image.network(
+                              coverUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  const Icon(Icons.broken_image_outlined),
+                            ),
+                          ),
+                  ),
+                  title: Text(
+                    item.subject.displayName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    t.media_tracking_watched_progress(
+                      n: item.episodeProgress,
+                    ),
+                  ),
+                  trailing: Tooltip(
+                    message: t.media_tracking_open_subject,
+                    child: const Icon(Icons.open_in_new, size: 18),
+                  ),
+                  onTap: () => unawaited(widget.onOpenSubject(item.subject.id)),
+                );
+              },
+            );
+          },
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(t.dialog_close),
+        ),
+      ],
+    );
+  }
+}
+
 /// 仪表盘内容最大宽度（逻辑像素）：超宽屏限宽居中，避免每个区块被拉成大片空白。
 const double _kDashboardMaxWidth = 1600;
 
@@ -256,6 +365,9 @@ const double _kDashboardMaxWidth = 1600;
 /// 概览，不是映射管理器）。有失败的条目由
 /// [MediaTrackingStatus.mappingsProblemFirst] 排到最前，不会被这个上限挤掉。
 const int _kTrackingMappingLimit = 5;
+
+/// 首页卡最多直接摊开的待手动关联条目数；完整清单在「管理关联」页。
+const int _kTrackingUnlinkedLimit = 5;
 
 class _HomeDashboardPageState
     extends BaseModuleTabPageState<HomeDashboardPage> {
@@ -2180,20 +2292,48 @@ class _HomeDashboardPageState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(Icons.person_outline, size: 18, color: scheme.primary),
-              SizedBox(width: tokens.spacing.gap / 2),
-              Expanded(
-                child: Text(
-                  status.accountName.isEmpty
-                      ? t.media_tracking_account
-                      : status.accountName,
-                  style: tokens.type.listTitle,
-                  overflow: TextOverflow.ellipsis,
+          Tooltip(
+            message: t.media_tracking_watched_show,
+            child: InkWell(
+              onTap: () => unawaited(_showBangumiWatched()),
+              borderRadius: HibikiBorderRadius.card,
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  vertical: tokens.spacing.gap / 2,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.person_outline,
+                      size: 18,
+                      color: scheme.primary,
+                    ),
+                    SizedBox(width: tokens.spacing.gap / 2),
+                    Expanded(
+                      child: Text(
+                        status.accountName.isEmpty
+                            ? t.media_tracking_account
+                            : status.accountName,
+                        style: tokens.type.listTitle,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      t.media_tracking_watched_show,
+                      style: tokens.type.metadata.copyWith(
+                        color: scheme.primary,
+                      ),
+                    ),
+                    SizedBox(width: tokens.spacing.gap / 4),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: scheme.primary,
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
           SizedBox(height: tokens.spacing.gap / 2),
           Text(summary.join(' · '), style: tokens.type.metadata),
@@ -2219,23 +2359,45 @@ class _HomeDashboardPageState
 
           SizedBox(height: tokens.spacing.gap),
 
-          // 第二段：一条映射都没有 → 完成事件根本进不了 outbox，必须说清原因，
-          // 否则「已连接 + 零待办 + 全部已发送」看起来像一切正常。
-          if (status.mappings.isEmpty)
+          // 本地历史与映射是两个独立口径：先明确列出已有进度但仍没关联的条目。
+          // 旧文案只在映射表为空时泛泛说“其余需手动关联”，既没写出“哪些”，
+          // 又把“零映射”误当成“零历史”。
+          if (status.unlinked.isNotEmpty) ...<Widget>[
             Text(
-              t.media_tracking_unlinked_hint,
+              t.media_tracking_manual_required_count(n: status.unlinked.length),
+              style: tokens.type.listTitle.copyWith(color: scheme.error),
+            ),
+            SizedBox(height: tokens.spacing.gap / 4),
+            Text(
+              t.media_tracking_manual_required_hint,
               style: tokens.type.metadata,
-            )
-          else
-            // 第三段：逐条条目。失败原因挂在对应行上（有失败的排在最前），不另开
-            // 一段——否则同一个条目在「失败」和「已关联」里各出现一次。
-            for (final MediaTrackingMappingRow mapping
-                in status.mappingsProblemFirst.take(_kTrackingMappingLimit))
-              _buildTrackingMappingRow(
-                tokens,
-                mapping,
-                status.failureByMappingId[mapping.id],
+            ),
+            for (final MediaTrackingUnlinkedItem item
+                in status.unlinked.take(_kTrackingUnlinkedLimit))
+              _buildTrackingUnlinkedRow(tokens, item),
+            if (status.unlinked.length > _kTrackingUnlinkedLimit)
+              TextButton(
+                onPressed: _openTrackingSettings,
+                child: Text(
+                  t.media_tracking_more_manual_required(
+                    n: status.unlinked.length - _kTrackingUnlinkedLimit,
+                  ),
+                ),
               ),
+          ] else if (status.mappings.isEmpty)
+            Text(
+              t.media_tracking_no_local_history,
+              style: tokens.type.metadata,
+            ),
+
+          // 已关联条目仍保留作同步诊断；失败原因挂在对应行上并排到最前。
+          for (final MediaTrackingMappingRow mapping
+              in status.mappingsProblemFirst.take(_kTrackingMappingLimit))
+            _buildTrackingMappingRow(
+              tokens,
+              mapping,
+              status.failureByMappingId[mapping.id],
+            ),
           for (final String error in status.automaticMappingErrors)
             Text(
               '${t.media_tracking_last_error}: $error',
@@ -2273,6 +2435,47 @@ class _HomeDashboardPageState
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTrackingUnlinkedRow(
+    HibikiDesignTokens tokens,
+    MediaTrackingUnlinkedItem item,
+  ) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: _openTrackingSettings,
+      borderRadius: HibikiBorderRadius.card,
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Icon(Icons.link_off, size: 18, color: scheme.error),
+            SizedBox(width: tokens.spacing.gap / 2),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    item.mediaTitle,
+                    style: tokens.type.listTitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    '${trackingKindLabel(item.kind.value)} · '
+                    '${t.media_tracking_manual_required}',
+                    style: tokens.type.metadata.copyWith(color: scheme.error),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(width: tokens.spacing.gap / 2),
+            const Icon(Icons.chevron_right, size: 18),
+          ],
+        ),
       ),
     );
   }
@@ -2343,6 +2546,16 @@ class _HomeDashboardPageState
     await launchUrl(
       Uri.parse(BangumiApiClient.subjectUrl(subjectId)),
       mode: LaunchMode.externalApplication,
+    );
+  }
+
+  Future<void> _showBangumiWatched() async {
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) => _BangumiWatchedDialog(
+        service: ref.read(appProvider).mediaTrackingService,
+        onOpenSubject: _openBangumiSubject,
+      ),
     );
   }
 

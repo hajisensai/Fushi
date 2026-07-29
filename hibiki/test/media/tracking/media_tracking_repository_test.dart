@@ -15,6 +15,38 @@ void main() {
 
   tearDown(() => db.close());
 
+  test('旧的已完成视频会列为待手动关联，建立映射后立即消失', () async {
+    final DateTime completedAt = DateTime.fromMillisecondsSinceEpoch(5000);
+    await db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'old-video',
+        title: '以前看过的番剧',
+        videoPath: 'C:/video/old.mkv',
+        completedAt: Value<DateTime?>(completedAt),
+      ),
+    );
+
+    List<MediaTrackingUnlinkedItem> unlinked =
+        await repository.listUnlinkedHistory();
+    expect(unlinked, hasLength(1));
+    expect(unlinked.single.mediaKey, 'old-video');
+    expect(unlinked.single.lastActivityAt, 5000);
+
+    await repository.saveMapping(
+      mediaType: TrackingMediaType.video,
+      mediaKey: 'old-video',
+      mediaTitle: '以前看过的番剧',
+      kind: TrackingKind.anime,
+      subjectId: 42,
+      subjectName: 'Remote anime',
+      progressMode: TrackingProgressMode.episode,
+      progressOffset: 1,
+    );
+
+    unlinked = await repository.listUnlinkedHistory();
+    expect(unlinked, isEmpty);
+  });
+
   /// 按页翻的书（PDF / 漫画）没有「章」：`chaptersJson` 是 `'[]'`、`tocJson` 是 null，
   /// 阅读位置的 `sectionIndex` 存的是**页码**。旧实现在这里只挡了 `'manga'`，PDF 会
   /// 一路走到 estimateCompletedBookChapters 的「无 toc 即早退」分支拿到

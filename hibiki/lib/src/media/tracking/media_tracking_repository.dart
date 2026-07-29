@@ -87,6 +87,26 @@ typedef PersistedBookTrackingProgress = ({
   int evidenceAt,
 });
 
+/// 本地已经产生过可同步进度、但尚未建立 Bangumi 映射的条目。
+///
+/// 这份列表专供 UI 明确指出「哪些需要手动关联」。它与映射表是互补关系，不把
+/// “没有映射”误写成“没有看过/读过”。
+class MediaTrackingUnlinkedItem {
+  const MediaTrackingUnlinkedItem({
+    required this.mediaType,
+    required this.mediaKey,
+    required this.mediaTitle,
+    required this.kind,
+    required this.lastActivityAt,
+  });
+
+  final TrackingMediaType mediaType;
+  final String mediaKey;
+  final String mediaTitle;
+  final TrackingKind kind;
+  final int lastActivityAt;
+}
+
 final RegExp _ignoredBookTocLabel = RegExp(
   r'^(?:目次|目录|目錄|contents?|table\s+of\s+contents|扉|title\s+page|表紙|cover|奥付|版权|版權|colophon|口絵|イラスト|插图|插圖|あとがき|后记|後記|著者紹介)$',
   caseSensitive: false,
@@ -204,6 +224,155 @@ class MediaTrackingRepository {
               (t) => OrderingTerm(expression: t.mediaTitle),
             ]))
           .get();
+
+  /// 列出全部「已有本地观看/阅读/游玩事实，但没有 Bangumi 映射」的条目。
+  ///
+  /// 视频合集优先于成员：同一季已经放进 playlist 时只提示一次合集，避免把十二集
+  /// 全部写成十二条“需手动关联”。未归合集的已完成视频仍按单条列出。
+  Future<List<MediaTrackingUnlinkedItem>> listUnlinkedHistory() async {
+    final Set<String> mapped = <String>{
+      for (final MediaTrackingMappingRow row in await listMappings())
+        '${row.mediaType}|${row.mediaKey}',
+    };
+    bool isMapped(TrackingMediaType type, String key) =>
+        mapped.contains('${type.value}|$key');
+
+    final List<VideoBookRow> videos = await _db.allVideoBooks();
+    final Map<String, VideoBookRow> videosByUid = <String, VideoBookRow>{
+      for (final VideoBookRow video in videos) video.bookUid: video,
+    };
+    final List<MediaCollectionRow> collections =
+        await _db.getAllMediaCollections();
+    final List<MediaCollectionItemRow> members =
+        await _db.getAllCollectionItems();
+    final Map<int, List<MediaCollectionItemRow>> videoMembersByCollection =
+        <int, List<MediaCollectionItemRow>>{};
+    for (final MediaCollectionItemRow member in members) {
+      if (member.mediaType != MediaKind.video.dbValue) continue;
+      videoMembersByCollection
+          .putIfAbsent(member.collectionId, () => <MediaCollectionItemRow>[])
+          .add(member);
+    }
+
+    final List<MediaTrackingUnlinkedItem> result =
+        <MediaTrackingUnlinkedItem>[];
+    final Set<String> videosCoveredByPlaylist = <String>{};
+    for (final MediaCollectionRow collection in collections) {
+      final String key = collection.id.toString();
+      if (collection.collectionType != 'playlist' ||
+          !isMapped(TrackingMediaType.videoCollection, key)) {
+        continue;
+      }
+      for (final MediaCollectionItemRow member
+          in videoMembersByCollection[collection.id] ??
+              const <MediaCollectionItemRow>[]) {
+        if (videosByUid[member.entryKey]?.completedAt != null) {
+          videosCoveredByPlaylist.add(member.entryKey);
+        }
+      }
+    }
+    for (final MediaCollectionRow collection in collections) {
+      if (collection.collectionType != 'playlist') continue;
+      final String key = collection.id.toString();
+      if (isMapped(TrackingMediaType.videoCollection, key)) continue;
+      final List<MediaCollectionItemRow> collectionMembers =
+          videoMembersByCollection[collection.id] ??
+              const <MediaCollectionItemRow>[];
+      int lastCompletedAt = 0;
+      final Set<String> completedMembers = <String>{};
+      for (final MediaCollectionItemRow member in collectionMembers) {
+        final VideoBookRow? video = videosByUid[member.entryKey];
+        final DateTime? completedAt = video?.completedAt;
+        if (completedAt == null ||
+            videosCoveredByPlaylist.contains(member.entryKey) ||
+            isMapped(TrackingMediaType.video, member.entryKey)) {
+          continue;
+        }
+        completedMembers.add(member.entryKey);
+        lastCompletedAt =
+            math.max(lastCompletedAt, completedAt.millisecondsSinceEpoch);
+      }
+      if (completedMembers.isEmpty) continue;
+      videosCoveredByPlaylist.addAll(completedMembers);
+      result.add(
+        MediaTrackingUnlinkedItem(
+          mediaType: TrackingMediaType.videoCollection,
+          mediaKey: key,
+          mediaTitle: collection.name,
+          kind: TrackingKind.anime,
+          lastActivityAt: lastCompletedAt,
+        ),
+      );
+    }
+
+    for (final VideoBookRow video in videos) {
+      final DateTime? completedAt = video.completedAt;
+      if (completedAt == null ||
+          videosCoveredByPlaylist.contains(video.bookUid) ||
+          isMapped(TrackingMediaType.video, video.bookUid)) {
+        continue;
+      }
+      result.add(
+        MediaTrackingUnlinkedItem(
+          mediaType: TrackingMediaType.video,
+          mediaKey: video.bookUid,
+          mediaTitle: video.title,
+          kind: TrackingKind.anime,
+          lastActivityAt: completedAt.millisecondsSinceEpoch,
+        ),
+      );
+    }
+
+    final Map<String, ReaderPositionRow> positions =
+        <String, ReaderPositionRow>{
+      for (final ReaderPositionRow position
+          in await _db.getAllReaderPositions())
+        position.bookKey: position,
+    };
+    for (final EpubBookRow book in await _db.getAllEpubBooks()) {
+      final ReaderPositionRow? position = positions[book.bookKey];
+      final DateTime? completedAt = book.completedAt;
+      if ((position == null && completedAt == null) ||
+          isMapped(TrackingMediaType.book, book.bookKey)) {
+        continue;
+      }
+      result.add(
+        MediaTrackingUnlinkedItem(
+          mediaType: TrackingMediaType.book,
+          mediaKey: book.bookKey,
+          mediaTitle: book.title,
+          kind: BookFormat.parseOrEpub(book.format) == BookFormat.manga
+              ? TrackingKind.manga
+              : TrackingKind.novel,
+          lastActivityAt: math.max(
+            position?.updatedAt ?? 0,
+            completedAt?.millisecondsSinceEpoch ?? 0,
+          ),
+        ),
+      );
+    }
+
+    for (final GalgameRow game in await _db.getAllGalgames()) {
+      if (game.playStatus <= 0 || isMapped(TrackingMediaType.game, game.id)) {
+        continue;
+      }
+      result.add(
+        MediaTrackingUnlinkedItem(
+          mediaType: TrackingMediaType.game,
+          mediaKey: game.id,
+          mediaTitle: game.name,
+          kind: TrackingKind.game,
+          lastActivityAt: game.addedAt,
+        ),
+      );
+    }
+
+    result.sort((MediaTrackingUnlinkedItem a, MediaTrackingUnlinkedItem b) {
+      final int byTime = b.lastActivityAt.compareTo(a.lastActivityAt);
+      return byTime != 0 ? byTime : a.mediaTitle.compareTo(b.mediaTitle);
+    });
+    return result;
+  }
 
   Future<MediaTrackingMappingRow?> findMapping({
     required TrackingMediaType mediaType,

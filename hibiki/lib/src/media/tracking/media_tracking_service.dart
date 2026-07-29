@@ -106,6 +106,7 @@ class MediaTrackingStatus {
     required this.unauthorized,
     required this.pending,
     required this.mappings,
+    required this.unlinked,
     required this.failures,
     required this.automaticMappingMissCount,
     required this.automaticMappingErrors,
@@ -121,6 +122,7 @@ class MediaTrackingStatus {
     unauthorized: false,
     pending: 0,
     mappings: <MediaTrackingMappingRow>[],
+    unlinked: <MediaTrackingUnlinkedItem>[],
     failures: <MediaTrackingFailure>[],
     automaticMappingMissCount: 0,
     automaticMappingErrors: <String>[],
@@ -142,6 +144,9 @@ class MediaTrackingStatus {
 
   /// 用户可见的映射（已滤掉 bookChapter 伴随映射，它不是独立条目）。
   final List<MediaTrackingMappingRow> mappings;
+
+  /// 本地已经看过/读过/设置过游玩状态，但仍没有映射的条目。
+  final List<MediaTrackingUnlinkedItem> unlinked;
   final List<MediaTrackingFailure> failures;
 
   /// 本会话内仍处于 10 分钟自动匹配退避的本地条目数。
@@ -382,6 +387,7 @@ class MediaTrackingService {
           .where((MediaTrackingMappingRow row) =>
               row.mediaType != TrackingMediaType.bookChapter.value)
           .toList(growable: false),
+      unlinked: await _repository.listUnlinkedHistory(),
       failures: <MediaTrackingFailure>[
         for (final PendingTrackingUpdate update in pending)
           if ((update.outbox.lastError ?? '').trim().isNotEmpty)
@@ -415,6 +421,21 @@ class MediaTrackingService {
         keyword: keyword,
         subjectType: bangumiSubjectTypeOf(kind),
       );
+    } finally {
+      api.close();
+    }
+  }
+
+  /// 拉取当前账号在 Bangumi 标记为「看过」的全部动画收藏。
+  ///
+  /// 不从本地映射反推：映射只记录 Hibiki 建过的关联，会永久漏掉用户接入 Hibiki
+  /// 之前的历史。账号入口必须直接以 Bangumi 收藏列表为真相源。
+  Future<List<BangumiWatchedItem>> loadWatchedAnime() async {
+    if (!isConfigured) return const <BangumiWatchedItem>[];
+    final BangumiTrackingApi api = _apiFactory(accessToken);
+    try {
+      final BangumiUser user = await api.getMe();
+      return api.getWatchedAnime(user.username);
     } finally {
       api.close();
     }
