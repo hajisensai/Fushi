@@ -18,6 +18,7 @@ $temurinUrl = "https://github.com/adoptium/temurin21-binaries/releases/download/
 
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 $overlayRoot = Join-Path $repositoryRoot "third_party\m_extension_server"
+$verifiedDownloader = Join-Path $PSScriptRoot "cache_verified_download.ps1"
 $resolvedOutput = [IO.Path]::GetFullPath($OutputDirectory)
 if ([IO.Path]::GetPathRoot($resolvedOutput) -eq $resolvedOutput) {
     throw "Refusing to write a desktop runtime to a filesystem root."
@@ -81,13 +82,10 @@ try {
     Copy-Overlay (Join-Path $overlayRoot "overlay") $sourceRoot
 
     $archivePath = Join-Path $resolvedCache $temurinArchive
-    if (-not (Test-Path -LiteralPath $archivePath)) {
-        Invoke-WebRequest -Uri $temurinUrl -OutFile $archivePath
-    }
-    $actualSha256 = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($actualSha256 -ne $temurinSha256) {
-        throw "Temurin archive checksum mismatch: expected $temurinSha256, got $actualSha256"
-    }
+    & $verifiedDownloader `
+        -Uri $temurinUrl `
+        -Destination $archivePath `
+        -Sha256 $temurinSha256
 
     $jdkExtractRoot = Join-Path $workingRoot "jdk"
     Expand-Archive -LiteralPath $archivePath -DestinationPath $jdkExtractRoot

@@ -1,4 +1,7 @@
 allprojects {
+    dependencyLocking {
+        lockAllConfigurations()
+    }
     repositories {
         // The Flutter integration_test plugin requests dynamic test deps
         // (androidx.test:runner/rules:1.2+, espresso-core:3.3+). Listing a
