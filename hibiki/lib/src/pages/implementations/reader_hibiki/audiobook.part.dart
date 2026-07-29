@@ -1210,25 +1210,30 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
     // BUG-1243：导出入口的主锚是用户真实选区；只有没有原生选区（普通点词导出）时
     // 才回退 currentSentence。不能复用 _miningSpanRange 的「句级优先」规则——那是
     // 单句制卡语义，会把跨多句 selection 收窄回当前句。
-    final String sentence = selection?.text ??
-        appModel.currentMediaSource?.currentSentence.text ??
-        '';
+    final ({int offset, int length})? fallbackRange = _miningSpanRange();
+    final AudiobookClipSelectionSpan resolvedSelection =
+        resolveAudiobookClipSelectionSpan(
+      selectedText: selection?.text,
+      selectedOffset: selection?.offset,
+      selectedLength: selection?.length,
+      fallbackText: appModel.currentMediaSource?.currentSentence.text ?? '',
+      fallbackOffset: fallbackRange?.offset,
+      fallbackLength: fallbackRange?.length,
+    );
+    final String sentence = resolvedSelection.text;
     // TODO-1115 review M2：分类文本与静态路径（[_exportAudiobookClip] 的 selectedText）
     // 同源——`_cachedSelectionRange?.text ?? currentSentence.text`。此前动态侧只用
     // currentSentence.text，与静态侧 emptySelection 判据不同调（纯外字/无选区时可能一条
     // 判空、另一条判非空）。归一到同一真相源，消除两条路径的边界分歧。
-    final String classifyText = selection?.text ?? sentence;
-    final ({int offset, int length})? spanRange = selection == null
-        ? _miningSpanRange()
-        : (offset: selection.offset, length: selection.length);
+    final String classifyText = resolvedSelection.text;
     final List<AudioCue> allCues = _sentenceAudioMiningCues(_lookupCue);
     final List<AudioCue> span = miningSentenceCueSpan(
       cues: allCues,
       cue: _lookupCue,
       sentence: sentence,
       sectionIndex: _lookupSectionIndex,
-      sentenceNormCharOffset: spanRange?.offset,
-      sentenceNormCharLength: spanRange?.length,
+      sentenceNormCharOffset: resolvedSelection.offset,
+      sentenceNormCharLength: resolvedSelection.length,
     );
     if (span.isEmpty) return null;
 
@@ -1509,13 +1514,17 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
           if (mounted) HibikiToast.show(msg: t.audiobook_export_clip_saved);
         }
       } else {
-        final List<XFile> sharedFiles = <XFile>[
-          XFile(
-            outPath,
-            // BUG-809：容器与编码器一致（桌面 mp4/h264 / 移动 mov/mjpeg）。
-            mimeType: useH264 ? 'video/mp4' : 'video/quicktime',
-          ),
-        ];
+        final List<XFile> sharedFiles = audiobookClipMobileShareAttachments(
+          videoPath: outPath,
+          useH264: useH264,
+        )
+            .map(
+              (AudiobookClipShareAttachment attachment) => XFile(
+                attachment.path,
+                mimeType: attachment.mimeType,
+              ),
+            )
+            .toList(growable: false);
         // BUG-1243：ffmpeg 合成参数已显式 `-map 0:v:0 -map 1:a:0`，AAC 在 MOV 内。
         // 旧兼容兜底又把临时 .aac 当第二个附件分享，系统分享面板把它显示成一个多余
         // “字幕/音频文件”。产物契约收敛为单个带声视频，不再泄漏中间文件。

@@ -176,6 +176,27 @@ ReaderVnBlankTapAction readerVnBlankTapAction({
   return ReaderVnBlankTapAction.advance;
 }
 
+/// 执行 VN 空白点击决策。把“隐藏时只 reveal、可见时 reveal+advance”的组合收敛为
+/// 可行为测试的生产分派器，避免页面 switch 与纯谓词各自漂移。
+void dispatchReaderVnBlankTapAction(
+  ReaderVnBlankTapAction action, {
+  required void Function() expandChrome,
+  required void Function() revealChrome,
+  required void Function() advance,
+}) {
+  switch (action) {
+    case ReaderVnBlankTapAction.expandChrome:
+      expandChrome();
+    case ReaderVnBlankTapAction.revealChrome:
+      revealChrome();
+    case ReaderVnBlankTapAction.advanceAndRevealChrome:
+      revealChrome();
+      advance();
+    case ReaderVnBlankTapAction.advance:
+      advance();
+  }
+}
+
 /// Whether the top progress pill paints a frosted-glass (BackdropFilter blur +
 /// translucent fill) background behind its text — single source of truth for
 /// `_buildTopProgressBar`'s pill branch.

@@ -90,6 +90,62 @@ AudiobookClipBoundaryResult classifyAudiobookClipSelection({
   );
 }
 
+/// 阅读器动态片段导出的文本/字符窗。原生选区存在时它必须完整覆盖 sentence fallback，
+/// 否则跨句选择会被当前句缓存悄悄收窄。
+class AudiobookClipSelectionSpan {
+  const AudiobookClipSelectionSpan({
+    required this.text,
+    required this.offset,
+    required this.length,
+  });
+
+  final String text;
+  final int? offset;
+  final int? length;
+}
+
+AudiobookClipSelectionSpan resolveAudiobookClipSelectionSpan({
+  required String? selectedText,
+  required int? selectedOffset,
+  required int? selectedLength,
+  required String fallbackText,
+  required int? fallbackOffset,
+  required int? fallbackLength,
+}) {
+  final bool hasNativeSelection = selectedText != null &&
+      selectedOffset != null &&
+      selectedLength != null &&
+      selectedLength > 0;
+  return AudiobookClipSelectionSpan(
+    text: hasNativeSelection ? selectedText : fallbackText,
+    offset: hasNativeSelection ? selectedOffset : fallbackOffset,
+    length: hasNativeSelection ? selectedLength : fallbackLength,
+  );
+}
+
+/// 移动端系统分享的生产附件描述。AAC 是合成中间件，最终只暴露一份自带音轨的视频。
+class AudiobookClipShareAttachment {
+  const AudiobookClipShareAttachment({
+    required this.path,
+    required this.mimeType,
+  });
+
+  final String path;
+  final String mimeType;
+}
+
+List<AudiobookClipShareAttachment> audiobookClipMobileShareAttachments({
+  required String videoPath,
+  required bool useH264,
+}) {
+  return <AudiobookClipShareAttachment>[
+    AudiobookClipShareAttachment(
+      path: videoPath,
+      mimeType: useH264 ? 'video/mp4' : 'video/quicktime',
+    ),
+  ];
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // TODO-1115 多句连读 + 逐句高亮跟随：把「多句 cue 列表 + 全局裁剪窗口」分类成可导出
 // 结果。沿用 [classifyAudiobookClipSelection] 的时长上限与单文件约束；多句按**全局

@@ -1123,21 +1123,16 @@ extension _ReaderChrome on _ReaderHibikiPageState {
     // 本次 pointer 手势把 OS 焦点交给了 WebView，不夺回 Flutter _focusNode 就收不到
     // ESC（BUG-136）。翻页与唤栏两条分支都要。
     _focusOwnership.reclaim(FocusReclaimCause.gesture);
-    switch (readerVnBlankTapAction(
-      chromeExpanded: _showChrome,
-      bottomBarFloating: _bottomBarFloating,
-      transientVisible: _chromeTransientVisible,
-    )) {
-      case ReaderVnBlankTapAction.expandChrome:
-        _toggleChrome();
-      case ReaderVnBlankTapAction.revealChrome:
-        _revealFloatingChromeForVnAdvance();
-      case ReaderVnBlankTapAction.advanceAndRevealChrome:
-        _revealFloatingChromeForVnAdvance();
-        unawaited(_paginate(ReaderNavigationDirection.forward));
-      case ReaderVnBlankTapAction.advance:
-        unawaited(_paginate(ReaderNavigationDirection.forward));
-    }
+    dispatchReaderVnBlankTapAction(
+      readerVnBlankTapAction(
+        chromeExpanded: _showChrome,
+        bottomBarFloating: _bottomBarFloating,
+        transientVisible: _chromeTransientVisible,
+      ),
+      expandChrome: _toggleChrome,
+      revealChrome: _revealFloatingChromeForVnAdvance,
+      advance: () => unawaited(_paginate(ReaderNavigationDirection.forward)),
+    );
   }
 
   /// TODO-693: appUiScale（整体界面缩放）变化时把连续模式阅读位置重锚回原字符，避免

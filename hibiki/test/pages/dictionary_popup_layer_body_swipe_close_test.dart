@@ -223,6 +223,60 @@ void main() {
   });
 
   testWidgets(
+      'BUG-1242: second pointer cancels the first swipe and springs back',
+      (WidgetTester tester) async {
+    int dismissed = 0;
+    await tester.pumpWidget(_host(_layer(
+      onDismiss: () => dismissed++,
+      enableSwipeToClose: true,
+      onClose: () {},
+    )));
+    await tester.pump();
+
+    final TestGesture first =
+        await tester.startGesture(_popupBodyPoint, pointer: 1);
+    for (int i = 0; i < 12; i++) {
+      await first.moveBy(const Offset(10, 0));
+      await tester.pump();
+    }
+    expect(
+      tester.widgetList<Transform>(find.byType(Transform)).any(
+            (Transform transform) =>
+                transform.transform.getTranslation().x > 80,
+          ),
+      isTrue,
+      reason: 'precondition: the first pointer is tracking a dismiss swipe',
+    );
+
+    final TestGesture second = await tester.startGesture(
+      _popupBodyPoint + const Offset(0, 30),
+      pointer: 2,
+    );
+    await tester.pump();
+    await first.moveBy(const Offset(120, 0));
+    await tester.pump();
+    await first.up();
+    await second.up();
+    await tester.pumpAndSettle();
+
+    expect(dismissed, 0,
+        reason: 'a later move/up from the first pointer must not dismiss');
+    expect(
+      tester.widgetList<Transform>(find.byType(Transform)).every(
+            (Transform transform) =>
+                transform.transform.getTranslation().x.abs() < 0.5,
+          ),
+      isTrue,
+      reason: 'the second pointer immediately cancels and springs back',
+    );
+
+    // Once every pointer from the cancelled gesture is up, a fresh one-finger
+    // gesture is eligible again.
+    await _dragOn(tester, _popupBodyPoint, dx: 200);
+    expect(dismissed, 1);
+  });
+
+  testWidgets(
       'switch OFF: horizontal drag on the body is inert, X still closes',
       (WidgetTester tester) async {
     int dismissed = 0;

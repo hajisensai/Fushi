@@ -92,19 +92,22 @@ void main() {
     });
 
     test('BUG-1243 mobile share exposes one self-contained video only', () {
-      final String source = File(
-        'lib/src/pages/implementations/reader_hibiki/audiobook.part.dart',
-      ).readAsStringSync();
-      expect(
-        source,
-        isNot(contains("XFile(audioClip.path, mimeType: 'audio/aac')")),
+      final List<AudiobookClipShareAttachment> attachments =
+          audiobookClipMobileShareAttachments(
+        videoPath: '/tmp/clip.mov',
+        useH264: false,
       );
+      expect(attachments, hasLength(1));
+      expect(attachments.single.path, '/tmp/clip.mov');
+      expect(attachments.single.mimeType, 'video/quicktime');
       expect(
-        source,
-        isNot(contains('retainAudioClipForShare')),
-        reason: '裁剪 AAC 是中间文件，不得作为第二个“字幕/音频附件”泄漏给用户',
+        attachments.where(
+          (AudiobookClipShareAttachment attachment) =>
+              attachment.mimeType.startsWith('audio/'),
+        ),
+        isEmpty,
+        reason: 'AAC is an intermediate file, never a second share attachment',
       );
-      expect(source, contains('await _deleteClipTempFile(audioClip);'));
     });
   });
 }

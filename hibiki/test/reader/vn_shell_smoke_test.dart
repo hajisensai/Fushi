@@ -23,7 +23,10 @@ void main() {
     expect(shell.contains('restoreToCharOffset(C.initialCharOffset)'), isTrue);
     expect(shell.contains('revealSpeed: C.vnRevealSpeed,'), isTrue);
     expect(shell.contains('screenMode: C.vnScreenMode,'), isTrue);
-    expect(shell.contains("callHandler('onRestoreComplete')"), isTrue);
+    expect(
+      RegExp(r"callHandler\(\s*'onRestoreComplete'").hasMatch(shell),
+      isTrue,
+    );
     // 整份 shell 被包成运行时可复用的安装函数（引擎静态化的前提）。
     expect(shell.contains('window.__hoshiShells.vn = function(C) {'), isTrue);
   });
@@ -108,7 +111,7 @@ void main() {
     final String shell = ReaderVisualNovelScripts.vnShellScript();
     // The happy-path notify exists.
     expect(
-      shell.contains("callHandler('onRestoreComplete')"),
+      RegExp(r"callHandler\(\s*'onRestoreComplete'").hasMatch(shell),
       isTrue,
       reason: 'notifyRestoreComplete must forward to onRestoreComplete',
     );

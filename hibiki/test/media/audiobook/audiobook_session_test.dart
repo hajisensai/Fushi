@@ -46,7 +46,7 @@ void main() {
     return f;
   }
 
-  void installPlatform() {
+  _FakePlatform installPlatform() {
     const MethodChannel ch = MethodChannel('com.ryanheise.audio_session');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(ch, (_) async => null);
@@ -55,8 +55,10 @@ void main() {
           .setMockMethodCallHandler(ch, null);
     });
     final JustAudioPlatform prev = JustAudioPlatform.instance;
-    JustAudioPlatform.instance = _FakePlatform();
+    final _FakePlatform platform = _FakePlatform();
+    JustAudioPlatform.instance = platform;
     addTearDown(() => JustAudioPlatform.instance = prev);
+    return platform;
   }
 
   setUp(() {
@@ -255,6 +257,49 @@ void main() {
     expect(session.controller, isNull);
     expect(session.book, isNull);
   });
+
+  test('BUG-1240 a new session waits for the old generation to release',
+      () async {
+    final _FakePlatform platform = installPlatform();
+    final AudiobookSession session = makeSession();
+    addTearDown(session.dispose);
+    await session.start(
+      info: SessionBookInfo(
+        bookKey: 'old',
+        audiobook: ab('old'),
+        title: 'Old',
+        mediaIdentifier: 'hoshi://book/old',
+      ),
+      audioFiles: <File>[makeFile('hibiki-session-old-generation.mp3')],
+      prefs: prefs(),
+      persist: persist(),
+    );
+    await session.controller!.play();
+    platform.disposeGate = Completer<void>();
+
+    final Future<void> stopOld = session.stop();
+    await platform.disposeStarted.future;
+    final Future<AudiobookPlayerController?> startNew = session.start(
+      info: SessionBookInfo(
+        bookKey: 'new',
+        audiobook: ab('new'),
+        title: 'New',
+        mediaIdentifier: 'hoshi://book/new',
+      ),
+      audioFiles: <File>[makeFile('hibiki-session-new-generation.mp3')],
+      prefs: prefs(),
+      persist: persist(),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(session.book, isNull,
+        reason: 'the new generation must not publish before old release');
+    platform.disposeGate!.complete();
+    await stopOld;
+    await startNew;
+    expect(session.book?.bookKey, 'new');
+    expect(session.controller, isNotNull);
+  });
 }
 
 class _FakeReader implements ReaderAudiobookView {
@@ -286,6 +331,8 @@ class _FakeReader implements ReaderAudiobookView {
 
 class _FakePlatform extends JustAudioPlatform {
   _FakePlayer? player;
+  Completer<void>? disposeGate;
+  Completer<void> disposeStarted = Completer<void>();
   @override
   Future<AudioPlayerPlatform> init(InitRequest request) async {
     player = _FakePlayer(request.id);
@@ -295,6 +342,8 @@ class _FakePlatform extends JustAudioPlatform {
   @override
   Future<DisposePlayerResponse> disposePlayer(
       DisposePlayerRequest request) async {
+    if (!disposeStarted.isCompleted) disposeStarted.complete();
+    await disposeGate?.future;
     await player?.dispose(DisposeRequest());
     return DisposePlayerResponse();
   }

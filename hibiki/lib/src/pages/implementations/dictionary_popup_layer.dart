@@ -980,6 +980,9 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
   /// 过阈值滑出补间是否在进行——完成时调 [onDismiss]（弹回补间不调）。
   bool _dismissing = false;
 
+  /// 当前仍按下的可触摸指针。出现第二根指针后，本轮手势永久失效，直到所有指针
+  /// 都抬起；不能在其中一根抬起后把剩余指针重新解释成一次新的单指横滑。
+  final Set<int> _activePointers = <int>{};
   int? _trackedPointer;
   Offset? _pointerStart;
 
@@ -1044,10 +1047,17 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
 
   void _onPointerDown(PointerDownEvent event) {
     if (!widget.enableSwipeToClose ||
-        _trackedPointer != null ||
         (event.kind != PointerDeviceKind.touch &&
             event.kind != PointerDeviceKind.stylus &&
             event.kind != PointerDeviceKind.invertedStylus)) {
+      return;
+    }
+    _activePointers.add(event.pointer);
+    if (_trackedPointer != null || _activePointers.length != 1) {
+      // BUG-1242：第二根指针必须立即取消第一根的 dismiss tracking。旧实现直接
+      // return，第一根之后的 move/up 仍可越过阈值关闭弹窗。
+      _clearTrackedPointer();
+      _springBack();
       return;
     }
     _trackedPointer = event.pointer;
@@ -1071,6 +1081,7 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
   }
 
   void _onPointerUp(PointerUpEvent event) {
+    _activePointers.remove(event.pointer);
     if (event.pointer != _trackedPointer) return;
     final bool shouldFinish = _pointerIsHorizontal == true;
     _clearTrackedPointer();
@@ -1080,6 +1091,7 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
   }
 
   void _onPointerCancel(PointerCancelEvent event) {
+    _activePointers.remove(event.pointer);
     if (event.pointer != _trackedPointer) return;
     final bool shouldSpringBack = _pointerIsHorizontal == true;
     _clearTrackedPointer();

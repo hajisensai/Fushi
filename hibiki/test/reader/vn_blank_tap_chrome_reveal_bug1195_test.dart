@@ -93,6 +93,30 @@ void main() {
         reason: '底栏已经可见时，空白点击才是推进意图',
       );
     });
+
+    test('BUG-1245 production dispatcher: first tap reveals, second advances',
+        () {
+      final List<String> actions = <String>[];
+      void dispatch(bool visible) {
+        dispatchReaderVnBlankTapAction(
+          readerVnBlankTapAction(
+            chromeExpanded: true,
+            bottomBarFloating: true,
+            transientVisible: visible,
+          ),
+          expandChrome: () => actions.add('expand'),
+          revealChrome: () => actions.add('reveal'),
+          advance: () => actions.add('advance'),
+        );
+      }
+
+      dispatch(false);
+      expect(actions, <String>['reveal'],
+          reason: 'the first hidden-chrome tap only reveals controls');
+      dispatch(true);
+      expect(actions, <String>['reveal', 'reveal', 'advance'],
+          reason: 'only the second, already-visible tap advances');
+    });
   });
 
   group('BUG-1195 dispatch structure guard', () {
@@ -141,69 +165,21 @@ void main() {
       );
     });
 
-    test('_handleVnBlankTap 四条分支齐全，且翻页走 _paginate 唯一入口', () {
+    test('_handleVnBlankTap delegates to the production dispatcher', () {
       final String body = _vnBlankTapBody(chrome);
 
       expect(
-        body.contains('readerVnBlankTapAction('),
+        body.contains('dispatchReaderVnBlankTapAction(') &&
+            body.contains('readerVnBlankTapAction('),
         isTrue,
-        reason: '分派必须走纯谓词，不得在页里重写一套内联条件',
+        reason: '页面必须复用纯谓词与唯一生产分派器',
       );
       expect(
-        body.contains('ReaderVnBlankTapAction.expandChrome') &&
-            body.contains('ReaderVnBlankTapAction.revealChrome') &&
-            body.contains('ReaderVnBlankTapAction.advanceAndRevealChrome') &&
-            body.contains('ReaderVnBlankTapAction.advance'),
+        body.contains('expandChrome: _toggleChrome') &&
+            body.contains('revealChrome: _revealFloatingChromeForVnAdvance') &&
+            body.contains('_paginate(ReaderNavigationDirection.forward)'),
         isTrue,
-        reason: '四态分支必须都落地，漏任一态就会重现唤栏/误翻页问题',
-      );
-      expect(
-        body.contains('_paginate(ReaderNavigationDirection.forward)'),
-        isTrue,
-        reason: '翻页必须复用 _paginate（跨章 / 节流 / caret 重锚的唯一入口）',
-      );
-      expect(
-        body.contains('_toggleChrome()') &&
-            body.contains('_revealFloatingChromeForVnAdvance()'),
-        isTrue,
-        reason: '挤压态展开与悬浮态唤栏各自复用既有状态机，不新造第三套',
-      );
-    });
-
-    test('BUG-1245 隐藏悬浮底栏分支只唤栏，绝不翻页', () {
-      final String body = _vnBlankTapBody(chrome);
-      final int caseAt =
-          body.indexOf('case ReaderVnBlankTapAction.revealChrome:');
-      expect(caseAt, greaterThanOrEqualTo(0));
-      final int nextCase = body.indexOf('case ', caseAt + 10);
-      final String branch = body.substring(caseAt, nextCase);
-      expect(branch, contains('_revealFloatingChromeForVnAdvance()'));
-      expect(
-        branch,
-        isNot(contains('_paginate(ReaderNavigationDirection.forward)')),
-        reason: '唤出底栏的同一次点击不得跳过当前 VN 句',
-      );
-    });
-
-    test('🔴 悬浮态分支必须同时唤栏和翻页（两句都在同一 case 下）', () {
-      final String body = _vnBlankTapBody(chrome);
-      final int caseAt =
-          body.indexOf('case ReaderVnBlankTapAction.advanceAndRevealChrome:');
-      expect(caseAt, greaterThanOrEqualTo(0), reason: '悬浮态 case 必须存在');
-      final int nextCase = body.indexOf('case ', caseAt + 10);
-      final String branch = nextCase > caseAt
-          ? body.substring(caseAt, nextCase)
-          : body.substring(caseAt);
-      expect(
-        branch.contains('_revealFloatingChromeForVnAdvance()'),
-        isTrue,
-        reason: '不唤栏 → 底栏自动收起后菜单又不可达（原 bug 复发）',
-      );
-      expect(
-        branch.contains('_paginate(ReaderNavigationDirection.forward)'),
-        isTrue,
-        reason: '不翻页 → 慢读每屏点两下（第一版修法的回归）；'
-            '这一下必须两件事都做',
+        reason: '三个副作用仍绑定既有 chrome/paginate 状态机',
       );
     });
 
