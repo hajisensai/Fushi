@@ -672,6 +672,95 @@ void main() {
       );
     });
 
+    test('delivered-body plain ClientException text is commit-unknown',
+        () async {
+      final _DrainThenPlainClientTimeoutClient client =
+          _DrainThenPlainClientTimeoutClient();
+      await expectLater(
+        run(
+          client,
+          (s) => s.addNote(
+            deckName: 'D',
+            modelName: 'M',
+            fields: const <String, String>{'F': 'v'},
+          ),
+        ),
+        throwsA(
+          isA<AnkiConnectCommitUnknownException>()
+              .having((e) => e.action, 'action', 'addNote')
+              .having(
+                (e) => e.cause,
+                'cause',
+                isA<http.ClientException>(),
+              ),
+        ),
+      );
+      expect(
+        client.attempts,
+        1,
+        reason: 'ClientException text cannot prove a connect-phase failure',
+      );
+    });
+
+    test('delivered-body bare SocketException is commit-unknown', () async {
+      final _DrainThenBareSocketTimeoutClient client =
+          _DrainThenBareSocketTimeoutClient();
+      await expectLater(
+        run(
+          client,
+          (s) => s.addNote(
+            deckName: 'D',
+            modelName: 'M',
+            fields: const <String, String>{'F': 'v'},
+          ),
+        ),
+        throwsA(
+          isA<AnkiConnectCommitUnknownException>()
+              .having((e) => e.action, 'action', 'addNote')
+              .having(
+                (e) => e.cause,
+                'cause',
+                isA<SocketException>(),
+              ),
+        ),
+      );
+      expect(
+        client.attempts,
+        1,
+        reason: 'a bare socket type/text/errno cannot prove pre-delivery',
+      );
+    });
+
+    test('tagged first failure then bare socket timeout is commit-unknown',
+        () async {
+      final _TaggedThenBareSocketTimeoutClient client =
+          _TaggedThenBareSocketTimeoutClient();
+      await expectLater(
+        run(
+          client,
+          (s) => s.addNote(
+            deckName: 'D',
+            modelName: 'M',
+            fields: const <String, String>{'F': 'v'},
+          ),
+        ),
+        throwsA(
+          isA<AnkiConnectCommitUnknownException>()
+              .having((e) => e.action, 'action', 'addNote')
+              .having(
+                (e) => e.cause,
+                'cause',
+                isA<SocketException>(),
+              ),
+        ),
+      );
+      expect(
+        client.attempts,
+        2,
+        reason: 'only the tagged first failure is safe to retry',
+      );
+    });
+
     test(
         'classifies response-phase addNote reset as unknown commit without retry',
         () async {
@@ -749,6 +838,52 @@ class _DrainThenSocketTimeoutClient extends http.BaseClient {
     throw _FakeClientSocketException(
       'Connection timed out',
       osError: const OSError('Connection timed out', 10060),
+    );
+  }
+}
+
+class _DrainThenPlainClientTimeoutClient extends http.BaseClient {
+  int attempts = 0;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    attempts += 1;
+    await request.finalize().drain<void>();
+    throw http.ClientException('Connection timed out', request.url);
+  }
+}
+
+class _DrainThenBareSocketTimeoutClient extends http.BaseClient {
+  int attempts = 0;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    attempts += 1;
+    await request.finalize().drain<void>();
+    throw const SocketException(
+      'Connection timed out',
+      osError: OSError('Connection timed out', 10060),
+    );
+  }
+}
+
+class _TaggedThenBareSocketTimeoutClient extends http.BaseClient {
+  int attempts = 0;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    attempts += 1;
+    if (attempts == 1) {
+      throw AnkiConnectPreDeliveryException(
+        'connection failed before request delivery',
+        request.url,
+        TimeoutException('connect deadline exceeded'),
+      );
+    }
+    await request.finalize().drain<void>();
+    throw const SocketException(
+      'Connection timed out',
+      osError: OSError('Connection timed out', 10060),
     );
   }
 }

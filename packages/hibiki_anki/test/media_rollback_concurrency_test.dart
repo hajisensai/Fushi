@@ -42,9 +42,15 @@ class _Repository extends AnkiConnectRepository {
 }
 
 class _AddNotePhaseClient extends http.BaseClient {
-  _AddNotePhaseClient({this.responsePhaseSocketTimeout = false});
+  _AddNotePhaseClient({
+    this.responsePhaseSocketTimeout = false,
+    this.responsePhaseBareSocketTimeout = false,
+    this.taggedThenResponsePhaseBareSocketTimeout = false,
+  });
 
   final bool responsePhaseSocketTimeout;
+  final bool responsePhaseBareSocketTimeout;
+  final bool taggedThenResponsePhaseBareSocketTimeout;
   final Set<String> media = <String>{};
   final List<String> stored = <String>[];
   final List<String> deleted = <String>[];
@@ -88,6 +94,16 @@ class _AddNotePhaseClient extends http.BaseClient {
             await request.finalize().drain<void>();
           }
           throw _ResponsePhaseSocketTimeoutException();
+        }
+        if (responsePhaseBareSocketTimeout ||
+            (taggedThenResponsePhaseBareSocketTimeout && addRequests == 2)) {
+          if (!requestDelivered) {
+            await request.finalize().drain<void>();
+          }
+          throw const SocketException(
+            'Connection timed out',
+            osError: OSError('Connection timed out', 10060),
+          );
         }
         throw AnkiConnectPreDeliveryException(
           'connection failed before request delivery',
@@ -662,6 +678,66 @@ void main() {
     expect(outcome.result, MineResult.error);
     expect(outcome.errorDetail, contains('may have created'));
     expect(client.addRequests, 1);
+    expect(client.stored, hasLength(2));
+    expect(client.deleted, isEmpty);
+    expect(client.media, unorderedEquals(client.stored));
+  });
+
+  test(
+      'delivered-body bare SocketException is commit-unknown and preserves media',
+      () async {
+    final _AddNotePhaseClient client =
+        _AddNotePhaseClient(responsePhaseBareSocketTimeout: true);
+    final AnkiConnectService service = AnkiConnectService(
+      host: '127.0.0.1',
+      port: 8765,
+      client: client,
+      timeout: const Duration(seconds: 1),
+    );
+
+    final MineOutcome outcome =
+        await _Repository(_settings(), service).mineEntry(
+      rawPayloadJson: '{"expression":"bare-socket-timeout"}',
+      context: AnkiMiningContext(
+        sentence: '',
+        coverPath: cover.path,
+        sasayakiAudioPath: audio.path,
+      ),
+    );
+
+    expect(outcome.result, MineResult.error);
+    expect(outcome.errorDetail, contains('may have created'));
+    expect(client.addRequests, 1);
+    expect(client.stored, hasLength(2));
+    expect(client.deleted, isEmpty);
+    expect(client.media, unorderedEquals(client.stored));
+  });
+
+  test(
+      'tagged retry then bare SocketException is commit-unknown and preserves media',
+      () async {
+    final _AddNotePhaseClient client =
+        _AddNotePhaseClient(taggedThenResponsePhaseBareSocketTimeout: true);
+    final AnkiConnectService service = AnkiConnectService(
+      host: '127.0.0.1',
+      port: 8765,
+      client: client,
+      timeout: const Duration(seconds: 1),
+    );
+
+    final MineOutcome outcome =
+        await _Repository(_settings(), service).mineEntry(
+      rawPayloadJson: '{"expression":"tagged-then-bare-socket"}',
+      context: AnkiMiningContext(
+        sentence: '',
+        coverPath: cover.path,
+        sasayakiAudioPath: audio.path,
+      ),
+    );
+
+    expect(outcome.result, MineResult.error);
+    expect(outcome.errorDetail, contains('may have created'));
+    expect(client.addRequests, 2);
     expect(client.stored, hasLength(2));
     expect(client.deleted, isEmpty);
     expect(client.media, unorderedEquals(client.stored));

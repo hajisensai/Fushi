@@ -200,6 +200,11 @@ class AnkiConnectService {
             throw AnkiConnectCommitUnknownException(action, retryError);
           }
           rethrow;
+        } on SocketException catch (retryError) {
+          if (!idempotent) {
+            throw AnkiConnectCommitUnknownException(action, retryError);
+          }
+          rethrow;
         } on TimeoutException catch (retryError) {
           if (!idempotent) {
             throw AnkiConnectCommitUnknownException(action, retryError);
@@ -208,6 +213,11 @@ class AnkiConnectService {
         }
       }
       if (!idempotent && !_isPreDeliveryFailure(e)) {
+        throw AnkiConnectCommitUnknownException(action, e);
+      }
+      rethrow;
+    } on SocketException catch (e) {
+      if (!idempotent) {
         throw AnkiConnectCommitUnknownException(action, e);
       }
       rethrow;
