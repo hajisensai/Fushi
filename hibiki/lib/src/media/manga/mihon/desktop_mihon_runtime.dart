@@ -269,23 +269,11 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
       // Process identity is retained below; a failed graceful stop never causes
       // a port/PID scan or termination of unrelated processes.
     }
+    final Process? process = _process;
     try {
-      final Process? process = _process;
-      if (process != null) {
-        try {
-          await process.exitCode.timeout(const Duration(milliseconds: 700));
-        } on TimeoutException {
-          process.kill();
-          try {
-            await process.exitCode.timeout(const Duration(milliseconds: 500));
-          } on TimeoutException {
-            // Closing the Windows Job Object below is the final exact-process
-            // backstop. The app-level exit barrier must remain bounded.
-          }
-        }
-      }
+      if (process != null) await _processContainment.terminate(process);
     } finally {
-      _processContainment.close();
+      await _processContainment.close();
     }
     _process = null;
     _port = null;
@@ -342,46 +330,35 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     final String token = base64UrlEncode(
       List<int>.generate(32, (_) => random.nextInt(256)),
     ).replaceAll('=', '');
-    final Process process = await Process.start(
-      java.path,
-      <String>[
-        '-Xmx512m',
-        '-Djava.awt.headless=true',
-        '-Djava.util.prefs.userRoot=${preferences.path}',
-        '-jar',
-        server.path,
-        '$port',
-        dataDirectory.path,
-      ],
-      environment: <String, String>{'HIBIKI_MIHON_TOKEN': token},
-      mode: ProcessStartMode.normal,
-    );
-    if (_disposed) {
-      process.kill();
-      try {
-        await process.exitCode.timeout(const Duration(seconds: 1));
-      } on TimeoutException {
-        // Process identity is exact; the runtime is already shutting down.
-      }
-      throw const MihonRuntimeException(
-        'DISPOSED',
-        'Mihon runtime was disposed while the sidecar was starting',
-      );
-    }
+    late final Process process;
     try {
-      _processContainment.attach(process.pid);
-    } catch (error) {
-      process.kill();
-      try {
-        await process.exitCode.timeout(const Duration(seconds: 1));
-      } on TimeoutException {
-        // This is still the exact retained child. Startup fails rather than
-        // allowing an uncontained JVM to outlive Hibiki.
-      }
+      process = await _processContainment.start(
+        java.path,
+        <String>[
+          '-Xmx512m',
+          '-Djava.awt.headless=true',
+          '-Djava.util.prefs.userRoot=${preferences.path}',
+          '-jar',
+          server.path,
+          '$port',
+          dataDirectory.path,
+        ],
+        environment: <String, String>{'HIBIKI_MIHON_TOKEN': token},
+      );
+    } on Object catch (error) {
+      await _processContainment.close();
       throw MihonRuntimeException(
         'PROCESS_CONTAINMENT_FAILED',
         'Failed to contain the Mihon sidecar process',
         cause: error,
+      );
+    }
+    if (_disposed) {
+      await _processContainment.terminate(process);
+      await _processContainment.close();
+      throw const MihonRuntimeException(
+        'DISPOSED',
+        'Mihon runtime was disposed while the sidecar was starting',
       );
     }
     _process = process;
@@ -389,13 +366,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     _token = token;
     process.stdout.listen((List<int> _) {});
     process.stderr.listen((List<int> _) {});
-    unawaited(process.exitCode.then((int _) {
-      if (identical(_process, process)) {
-        _process = null;
-        _port = null;
-        _token = null;
-      }
-    }));
+    unawaited(_watchProcessExit(process));
 
     final DateTime deadline = DateTime.now().add(const Duration(seconds: 20));
     Object? lastError;
@@ -411,11 +382,11 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         return;
       } catch (error) {
         lastError = error;
-        if (await _hasExited(process)) break;
+        if (await _processContainment.hasExited(process)) break;
         await Future<void>.delayed(const Duration(milliseconds: 200));
       }
     }
-    process.kill();
+    await _processContainment.terminate(process);
     _process = null;
     _port = null;
     _token = null;
@@ -501,12 +472,21 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
     _port = null;
     _token = null;
     if (process != null) {
-      process.kill();
-      try {
-        await process.exitCode.timeout(const Duration(seconds: 2));
-      } on TimeoutException {
-        // The retained Process object is the only identity we ever terminate.
+      await _processContainment.terminate(process);
+    }
+  }
+
+  Future<void> _watchProcessExit(Process process) async {
+    while (identical(_process, process)) {
+      if (await _processContainment.hasExited(process)) {
+        if (identical(_process, process)) {
+          _process = null;
+          _port = null;
+          _token = null;
+        }
+        return;
       }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
     }
   }
 
@@ -546,15 +526,6 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
       'bin',
       Platform.isWindows ? 'java.exe' : 'java',
     );
-  }
-
-  static Future<bool> _hasExited(Process process) async {
-    try {
-      await process.exitCode.timeout(const Duration(milliseconds: 1));
-      return true;
-    } on TimeoutException {
-      return false;
-    }
   }
 
   static Directory _defaultResourceDirectory() {
