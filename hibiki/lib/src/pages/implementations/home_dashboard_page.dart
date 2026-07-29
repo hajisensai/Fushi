@@ -443,9 +443,12 @@ class _HomeDashboardPageState
         await db.getAllReadingStatistics();
     final List<VideoWatchStatisticRow> watch =
         await db.getAllVideoWatchStatistics();
-    // 游戏活动日聚合（activity_events 的 game 事件，热力图「游戏」档数据源）。
-    final List<(String, int, int)> gameDaily =
+    // 游戏文本字数仍取 hook 活动事件；游玩时长必须取 galgame_sessions 事实表。
+    // activity_events 只描述时间线，不能兼任游戏时长统计投影。
+    final List<(String, int, int)> gameActivityDaily =
         await db.getActivityDailyTotals(kActivityGame);
+    final Map<String, (int totalSeconds, int sessionCount)> gameSessionDaily =
+        await db.getAllGalgameDailyTotals();
     // P4：游戏库整表（日明细/时间轴的游戏显示名反查）。仓储缓存与表恒一致，
     // 未载入过才真查 DB（毫秒级）；load() 会 notify → 本页监听器防抖重载一次
     // 后 isLoaded=true，不再形成回环。
@@ -496,9 +499,12 @@ class _HomeDashboardPageState
     }
     final Map<String, int> gameChars = <String, int>{};
     final Map<String, int> gameTimeMs = <String, int>{};
-    for (final (String dateKey, int charsDelta, int durationMs) in gameDaily) {
+    for (final (String dateKey, int charsDelta, int _) in gameActivityDaily) {
       gameChars[dateKey] = (gameChars[dateKey] ?? 0) + charsDelta;
-      gameTimeMs[dateKey] = (gameTimeMs[dateKey] ?? 0) + durationMs;
+    }
+    for (final MapEntry<String, (int totalSeconds, int sessionCount)> entry
+        in gameSessionDaily.entries) {
+      gameTimeMs[entry.key] = entry.value.$1 * 1000;
     }
     final Map<String, int> charsByDay = <String, int>{};
     final Map<String, int> timeMsByDay = <String, int>{};

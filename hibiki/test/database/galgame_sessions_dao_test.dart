@@ -149,6 +149,23 @@ void main() {
     expect(await db.getGalgameSecondsForDay('2026-07-25'), 0);
   });
 
+  test('getAllGalgameDailyTotals：跨游戏按天聚合时长与会话数', () async {
+    final HibikiDatabase db = await openDb();
+    await addGame(db, 'a');
+    await addGame(db, 'b');
+
+    await addSession(db, 'a',
+        startMs: 1, endMs: 2, durationSeconds: 100, dateKey: '2026-07-24');
+    await addSession(db, 'b',
+        startMs: 3, endMs: 4, durationSeconds: 250, dateKey: '2026-07-24');
+    await addSession(db, 'a',
+        startMs: 5, endMs: 6, durationSeconds: 999, dateKey: '2026-07-23');
+
+    final Map<String, (int, int)> totals = await db.getAllGalgameDailyTotals();
+    expect(totals['2026-07-24'], (350, 2));
+    expect(totals['2026-07-23'], (999, 1));
+  });
+
   test('getGalgameSessions：按起始时间倒序并支持分页', () async {
     final HibikiDatabase db = await openDb();
     await addGame(db, 'a');
@@ -198,6 +215,39 @@ void main() {
     expect(after['a']?.$1, 600); // 只剩最早那条 600 秒
     expect(after['a']?.$2, 1);
     expect(after['a']?.$3, 2000); // 最后游玩回退到剩下那条的 end_ms
+  });
+
+  test('clearAllGalgameStatistics：只清会话，保留游戏库与活动时间线', () async {
+    final HibikiDatabase db = await openDb();
+    await addGame(db, 'a');
+    await addSession(
+      db,
+      'a',
+      startMs: 1000,
+      endMs: 2000,
+      durationSeconds: 600,
+      dateKey: '2026-07-20',
+    );
+    await db.addActivityEvent(
+      eventType: kActivityGame,
+      mediaType: kActivityMediaGame,
+      title: 'a',
+      mediaKey: 'a',
+      dateKey: '2026-07-20',
+      timestampMs: 2000,
+      durationMs: 600000,
+      charsDelta: 100,
+    );
+
+    expect(await db.clearAllGalgameStatistics(), 1);
+
+    expect(await db.getGalgameSessions('a'), isEmpty);
+    expect(await db.getAllGalgameDailyTotals(), isEmpty);
+    expect(await db.getGalgame('a'), isNotNull);
+    final List<ActivityEventRow> activities =
+        await db.getRecentActivityEvents();
+    expect(activities, hasLength(1));
+    expect(activities.single.eventType, kActivityGame);
   });
 
   test('galgame_sources：同 (gameId, source) 覆盖而不是插重复行', () async {

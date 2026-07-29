@@ -3776,7 +3776,7 @@ class HibikiDatabase extends _$HibikiDatabase {
   // ── galgames / galgame_sources / galgame_sessions (v55 游戏库) ──────
   //
   // 设计见 `docs/design/galgame-library-reina-parity.md`。这里刻意没有统计投影表：
-  // 时长/次数/最后游玩全部现算 GROUP BY（见下面三个聚合方法），一次消掉「投影与
+  // 时长/次数/最后游玩全部现算 GROUP BY（见下面聚合方法），一次消掉「投影与
   // 事实表不一致」的整类 bug。单机规模是几百游戏 × 几千会话，SQLite 毫秒级。
 
   /// 全部游戏，按添加时间升序（与旧 JSON 列表的天然顺序一致，Never break userspace）。
@@ -3877,6 +3877,12 @@ class HibikiDatabase extends _$HibikiDatabase {
   Future<int> deleteGalgameSession(int id) =>
       (delete(galgameSessions)..where((t) => t.id.equals(id))).go();
 
+  /// 清空游戏统计，只删除游玩会话事实。
+  ///
+  /// 游戏库（[galgames]）与首页活动时间线（[activityEvents]）是独立用户数据，
+  /// 不能因统计页的「清空」操作被连带删除。
+  Future<int> clearAllGalgameStatistics() => delete(galgameSessions).go();
+
   /// 全库每个游戏的时长合计（秒）+ 会话次数 + 最后游玩毫秒戳。
   ///
   /// 库页排序（按总时长 / 按最后游玩）与详情页 KPI 都吃这一个查询，取代上游的
@@ -3923,6 +3929,28 @@ class HibikiDatabase extends _$HibikiDatabase {
     return <String, int>{
       for (final QueryRow row in rows)
         row.read<String>('date_key'): row.read<int>('total_seconds'),
+    };
+  }
+
+  /// 全部游戏按天的游玩时长（秒）与会话数。
+  ///
+  /// 游戏统计页与首页汇总只认 [galgameSessions] 事实表；`activity_events` 是时间线，
+  /// 不能反过来充当时长统计投影。返回全部历史日期，读取端按今日/周/月窗口筛选。
+  Future<Map<String, (int totalSeconds, int sessionCount)>>
+      getAllGalgameDailyTotals() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT date_key, '
+      'COALESCE(SUM(duration_seconds), 0) AS total_seconds, '
+      'COUNT(*) AS session_count '
+      'FROM galgame_sessions GROUP BY date_key',
+      readsFrom: {galgameSessions},
+    ).get();
+    return <String, (int, int)>{
+      for (final QueryRow row in rows)
+        row.read<String>('date_key'): (
+          row.read<int>('total_seconds'),
+          row.read<int>('session_count'),
+        ),
     };
   }
 

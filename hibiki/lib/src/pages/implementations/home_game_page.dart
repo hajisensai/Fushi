@@ -4,6 +4,7 @@ import 'package:hibiki/src/mining/gal_hook_session_controller.dart';
 import 'package:hibiki/src/pages/implementations/galgame_home_page.dart';
 import 'package:hibiki/src/pages/implementations/game_diagnostics_page.dart';
 import 'package:hibiki/src/pages/implementations/game_shared.dart';
+import 'package:hibiki/src/pages/implementations/game_statistics_page.dart';
 import 'package:hibiki/src/pages/implementations/games_library_page.dart';
 import 'package:hibiki/src/pages/implementations/texthooker_page.dart';
 import 'package:hibiki/utils.dart';
@@ -101,6 +102,12 @@ class _HomeGamePageState extends State<HomeGamePage> {
   void _showMonitor() => _showSection(GameSection.monitor);
   void _showDiagnostics() => _showSection(GameSection.diagnostics);
 
+  Future<void> _openStatistics() => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext context) => const GameStatisticsPage(),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final GameMonitorBuilder monitorBuilder = widget.monitorBuilder ??
@@ -155,6 +162,14 @@ class _HomeGamePageState extends State<HomeGamePage> {
           HibikiPageHeader(
             title: t.nav_game,
             subtitle: t.game_home_subtitle,
+            actions: <Widget>[
+              HibikiIconButton(
+                icon: Icons.bar_chart_outlined,
+                tooltip: t.game_statistics,
+                label: t.game_statistics,
+                onTap: _openStatistics,
+              ),
+            ],
             // 顶部不再放「捕获工作台」图标钮——它与下方 GameSectionTabs 的
             // 「捕获工作台」页签去向完全相同，纯冗余；入口收敛到页签 + 状态带。
             bottom: GameSectionTabs(

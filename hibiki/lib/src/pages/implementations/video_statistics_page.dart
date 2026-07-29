@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:hibiki/pages.dart';
 import 'package:hibiki/src/media/video/video_book_repository.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
-import 'package:hibiki/src/pages/implementations/stat_charts.dart';
 import 'package:hibiki/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:hibiki/src/pages/implementations/stat_shared.dart';
 import 'package:hibiki/src/pages/implementations/video_stat_aggregates.dart';
@@ -170,19 +169,16 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
           onTap: _confirmAndClearAll,
         ),
       ],
-      body: _loading
-          // BasePage 家族历史样式（25×25 主色圈），参数化保留、视觉不变。
-          ? buildLoading(size: 25, color: theme.colorScheme.primary)
-          : _error != null
-              ? buildError(error: _error)
-              : !_hasData
-                  ? Center(
-                      child: HibikiPlaceholderMessage(
-                        icon: Icons.bar_chart_outlined,
-                        message: t.video_stat_no_data,
-                      ),
-                    )
-                  : _buildContent(),
+      body: buildStatPageBody(
+        loading: _loading,
+        error: _error,
+        isEmpty: !_hasData,
+        loadingBuilder: () =>
+            buildLoading(size: 25, color: theme.colorScheme.primary),
+        errorBuilder: (String error) => buildError(error: error),
+        emptyMessage: t.video_stat_no_data,
+        contentBuilder: _buildContent,
+      ),
     );
   }
 
@@ -194,7 +190,9 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
         SliverToBoxAdapter(child: _buildSummaryCards()),
         SliverToBoxAdapter(
             child: buildStatHourlyChartSection(context, _hourlyMs)),
-        SliverToBoxAdapter(child: _buildDailyChart()),
+        SliverToBoxAdapter(
+          child: buildStatDailyDurationChartSection(context, _agg.daily),
+        ),
         SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.fromLTRB(
@@ -220,146 +218,64 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   }
 
   Widget _buildSummaryCards() {
-    final tokens = HibikiDesignTokens.of(context);
-    final double gap = tokens.spacing.gap + tokens.spacing.gap / 2;
-
-    final List<Widget> panels = <Widget>[
-      _summaryStatPanel(
-          t.stat_today,
-          _agg.todayMs,
-          _agg.todayCompleted,
-          _lookup.today,
-          _mined.today,
-          _favorited.today,
-          _favoritedSentences.today),
-      _summaryStatPanel(t.stat_this_week, _agg.weekMs, _agg.weekCompleted,
-          _lookup.week, _mined.week, _favorited.week, _favoritedSentences.week),
-      _summaryStatPanel(
-          t.stat_this_month,
-          _agg.monthMs,
-          _agg.monthCompleted,
-          _lookup.month,
-          _mined.month,
-          _favorited.month,
-          _favoritedSentences.month),
-      _summaryStatPanel(t.stat_all_time, _agg.allMs, _agg.allCompleted,
-          _lookup.all, _mined.all, _favorited.all, _favoritedSentences.all),
-    ];
-
-    return Padding(
-      padding: EdgeInsets.all(tokens.spacing.card),
-      // BUG-1184：与阅读统计页同款——写死的双列在 320dp 上每格只剩约 100px 文字宽，
-      // 每行「标签: 数值」都被迫折行。窄屏改单列。
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          final bool twoColumns =
-              !constraints.maxWidth.isFinite || constraints.maxWidth >= 380;
-          if (!twoColumns) {
-            return Column(
-              children: <Widget>[
-                for (int i = 0; i < panels.length; i++) ...<Widget>[
-                  if (i > 0) SizedBox(height: gap),
-                  panels[i],
-                ],
-              ],
-            );
-          }
-          return Column(
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Expanded(child: panels[0]),
-                  SizedBox(width: gap),
-                  Expanded(child: panels[1]),
-                ],
-              ),
-              SizedBox(height: gap),
-              Row(
-                children: <Widget>[
-                  Expanded(child: panels[2]),
-                  SizedBox(width: gap),
-                  Expanded(child: panels[3]),
-                ],
-              ),
-            ],
-          );
-        },
-      ),
+    return buildStatPeriodSummaryGrid(
+      context,
+      <StatPeriodSummary>[
+        _periodSummary(
+            t.stat_today,
+            _agg.todayMs,
+            _agg.todayCompleted,
+            _lookup.today,
+            _mined.today,
+            _favorited.today,
+            _favoritedSentences.today),
+        _periodSummary(
+            t.stat_this_week,
+            _agg.weekMs,
+            _agg.weekCompleted,
+            _lookup.week,
+            _mined.week,
+            _favorited.week,
+            _favoritedSentences.week),
+        _periodSummary(
+            t.stat_this_month,
+            _agg.monthMs,
+            _agg.monthCompleted,
+            _lookup.month,
+            _mined.month,
+            _favorited.month,
+            _favoritedSentences.month),
+        _periodSummary(t.stat_all_time, _agg.allMs, _agg.allCompleted,
+            _lookup.all, _mined.all, _favorited.all, _favoritedSentences.all),
+      ],
     );
   }
 
-  Widget _summaryStatPanel(String label, int ms, int completed, int lookup,
-      int mined, int favorited, int favoritedSentences) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final tokens = HibikiDesignTokens.of(context);
-    final TextStyle? subStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: colorScheme.onSurfaceVariant,
-        );
-    return HibikiCard(
-      child: Padding(
-        padding: EdgeInsets.zero,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    )),
-            SizedBox(height: tokens.spacing.gap),
-            // 删字数后以观看时长为主数字。
-            Text(formatStatTime(ms),
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: colorScheme.onSurface,
-                      fontWeight: FontWeight.bold,
-                    )),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Text('${t.video_stat_completed}: $completed', style: subStyle),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Text('${t.stat_lookup}: $lookup', style: subStyle),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Text('${t.stat_mined}: $mined', style: subStyle),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Text('${t.stat_favorited}: $favorited', style: subStyle),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Text('${t.stat_favorited_sentence}: $favoritedSentences',
-                style: subStyle),
-          ],
+  StatPeriodSummary _periodSummary(
+    String label,
+    int ms,
+    int completed,
+    int lookup,
+    int mined,
+    int favorited,
+    int favoritedSentences,
+  ) {
+    return StatPeriodSummary(
+      label: label,
+      primaryValue: formatStatTime(ms),
+      lines: <StatSummaryLine>[
+        StatSummaryLine(
+          label: t.video_stat_completed,
+          value: '$completed',
         ),
-      ),
-    );
-  }
-
-  Widget _buildDailyChart() {
-    final tokens = HibikiDesignTokens.of(context);
-    final colorScheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(t.stat_last_30_days,
-              style: Theme.of(context).textTheme.titleMedium),
-          SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-          SizedBox(
-            height: 160,
-            child: CustomPaint(
-              size: Size.infinite,
-              painter: StatBarChartPainter(
-                data: _agg.daily,
-                barColor: colorScheme.primary,
-                barRadius: tokens.radii.chipCorner,
-                labelColor: colorScheme.onSurfaceVariant,
-                labelStyle: tokens.type.metadata.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-                // 删字数后日图画观看时长（ms），纵轴用时长格式（修 `0m` 退化）。
-                valueOf: statMsValue,
-                labelFormatter: formatStatDurationAxis,
-              ),
-            ),
-          ),
-        ],
-      ),
+        StatSummaryLine(label: t.stat_lookup, value: '$lookup'),
+        StatSummaryLine(label: t.stat_mined, value: '$mined'),
+        StatSummaryLine(label: t.stat_favorited, value: '$favorited'),
+        StatSummaryLine(
+          label: t.stat_favorited_sentence,
+          value: '$favoritedSentences',
+        ),
+      ],
     );
   }
 

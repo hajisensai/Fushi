@@ -1,10 +1,9 @@
 import 'package:hibiki_core/hibiki_core.dart';
 
-/// 学习统计的**来源**维度：阅读统计页与首页仪表盘的字数/时长口径由此统一。
+/// 学习活动的**来源**维度：供跨来源首页汇总与来源拆分纯函数使用。
 ///
-/// 背景：统计页此前只读 `reading_statistics`（书内阅读），却在编辑与首页共用的
-/// 每日目标——首页把 阅读 + 视频字幕 + 游戏文本 三源合计当分子，统计页只算书，
-/// 同一个目标两个页面两套分子。这里把四个来源摊平成同一形状，两边共用。
+/// 四个来源摊平成同一形状，消费方再明确选择自己的域：阅读统计页只取
+/// [book]/[manga]，视频与游戏由各自统计页读取各自事实表；首页跨来源目标可取并集。
 ///
 /// 每个来源都带**两个独立量纲**（字数 + 时长），漫画额外带页数：
 /// - [book]：EPUB / PDF 等书内阅读（`reading_statistics` 中 `format != 'manga'`）。
@@ -96,7 +95,7 @@ StatSourceTotals sumStatSourceTotals(
   return total;
 }
 
-/// 全部来源在某窗口的合计（首页每日目标 / 统计页 KPI 的同一口径分子）。
+/// 全部来源在某窗口的合计（跨来源首页目标等场景使用）。
 StatSourceTotals sumAllStatSources(
   Map<StatBreakdownSource, Map<String, StatSourceTotals>> daily,
   bool Function(String dateKey) inWindow,
@@ -108,8 +107,7 @@ StatSourceTotals sumAllStatSources(
   return total;
 }
 
-/// 所有来源出现过的日期键并集（连续天数 / 活跃天数用：看了视频、玩了游戏的那天
-/// 也是学习日，不该因为没读书就断签）。
+/// 所有来源出现过的日期键并集（跨来源活跃天数使用）。
 Set<String> allStatSourceDateKeys(
   Map<StatBreakdownSource, Map<String, StatSourceTotals>> daily,
 ) {

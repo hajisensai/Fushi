@@ -43,7 +43,13 @@ void main() {
     });
 
     test('库页顶部不再放与页签冗余的捕获图标钮', () {
-      expect(src.contains('HibikiIconButton'), isFalse,
+      final int headerStart = src.indexOf('HibikiPageHeader(');
+      final int headerEnd =
+          src.indexOf('bottom: GameSectionTabs(', headerStart);
+      expect(headerStart, greaterThanOrEqualTo(0));
+      expect(headerEnd, greaterThan(headerStart));
+      final String header = src.substring(headerStart, headerEnd);
+      expect(header.contains('onTap: _showMonitor'), isFalse,
           reason: '顶部「捕获工作台」图标钮与 GameSectionTabs 页签冗余，应删除');
     });
 
