@@ -24,6 +24,8 @@ class MangaOcrBackgroundEvent {
   const MangaOcrBackgroundEvent.progress({
     required this.pagesDone,
     required this.pagesTotal,
+    this.pagesSucceeded,
+    this.pagesFailed,
     this.pageIndex,
     this.page,
     this.acceleration,
@@ -35,6 +37,8 @@ class MangaOcrBackgroundEvent {
     required this.pagesTotal,
     required String this.resultPath,
     required this.external,
+    this.pagesSucceeded,
+    this.pagesFailed,
     this.acceleration,
   })  : pagesDone = pagesTotal,
         pageIndex = null,
@@ -43,6 +47,8 @@ class MangaOcrBackgroundEvent {
 
   final int pagesDone;
   final int pagesTotal;
+  final int? pagesSucceeded;
+  final int? pagesFailed;
   final int? pageIndex;
   final MokuroImage? page;
   final String? resultPath;

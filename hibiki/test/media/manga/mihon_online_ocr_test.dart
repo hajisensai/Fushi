@@ -105,7 +105,146 @@ void main() {
     );
     await reopened.close();
   });
+
+  test('online OCR fails instead of finishing when every page fails', () async {
+    final Directory root =
+        await Directory.systemTemp.createTemp('hibiki-mihon-ocr-zero-');
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    final MangaReaderSession session = await MihonMangaPageProvider(
+      runtime: _FailingOnlineImageRuntime(),
+      context: _context,
+      pages: const <MihonPage>[MihonPage(index: 0, url: 'page-0')],
+      cacheRoot: Directory('${root.path}${Platform.pathSeparator}page-cache'),
+    ).open();
+
+    await expectLater(
+      MihonOnlineMangaOcr(
+        session: session,
+        managedDirectory:
+            Directory('${root.path}${Platform.pathSeparator}managed'),
+        initialPayload: _initialPayload(1),
+        startPage: 0,
+        lens: GoogleLensMangaOcrService(transport: _LensTransport()),
+      ).run().drain<void>(),
+      throwsA(
+        isA<GoogleLensOcrException>().having(
+          (GoogleLensOcrException error) => error.code,
+          'code',
+          'no_ocr_pages',
+        ),
+      ),
+    );
+    await session.close();
+  });
+
+  test('concurrent OCR runs singleflight the same page identity', () async {
+    final Directory root =
+        await Directory.systemTemp.createTemp('hibiki-mihon-ocr-race-');
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    final _DelayedOnlineImageRuntime runtime = _DelayedOnlineImageRuntime(
+      Uint8List.fromList(
+        img.encodePng(img.Image(width: 1200, height: 1700)),
+      ),
+    );
+    final MihonMangaPageProvider provider = MihonMangaPageProvider(
+      runtime: runtime,
+      context: _context,
+      pages: const <MihonPage>[MihonPage(index: 0, url: 'page-0')],
+      cacheRoot: Directory('${root.path}${Platform.pathSeparator}page-cache'),
+    );
+    final MangaReaderSession firstSession = await provider.open();
+    final MangaReaderSession secondSession = await provider.open();
+    final Directory managed =
+        Directory('${root.path}${Platform.pathSeparator}managed');
+
+    final List<List<MangaOcrBackgroundEvent>> runs = await Future.wait(
+      <Future<List<MangaOcrBackgroundEvent>>>[
+        MihonOnlineMangaOcr(
+          session: firstSession,
+          managedDirectory: managed,
+          initialPayload: _initialPayload(1),
+          startPage: 0,
+          lens: GoogleLensMangaOcrService(transport: _LensTransport()),
+        ).run().toList(),
+        MihonOnlineMangaOcr(
+          session: secondSession,
+          managedDirectory: managed,
+          initialPayload: _initialPayload(1),
+          startPage: 0,
+          lens: GoogleLensMangaOcrService(transport: _LensTransport()),
+        ).run().toList(),
+      ],
+    );
+
+    expect(runs.every((List<MangaOcrBackgroundEvent> run) => run.last.finished),
+        isTrue);
+    expect(runtime.fetchCount, 1);
+    final List<FileSystemEntity> leftovers = await managed
+        .list(recursive: true)
+        .where(
+          (FileSystemEntity entity) =>
+              entity.path.contains('.tmp-') ||
+              entity.path.contains('.previous.tmp-'),
+        )
+        .toList();
+    expect(leftovers, isEmpty);
+    await firstSession.close();
+    await secondSession.close();
+  });
+
+  test('partial OCR completion reports successful and failed page counts',
+      () async {
+    final Directory root =
+        await Directory.systemTemp.createTemp('hibiki-mihon-ocr-partial-');
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    final _PartiallyFailingOnlineImageRuntime runtime =
+        _PartiallyFailingOnlineImageRuntime(
+      Uint8List.fromList(
+        img.encodePng(img.Image(width: 1200, height: 1700)),
+      ),
+    );
+    final MangaReaderSession session = await MihonMangaPageProvider(
+      runtime: runtime,
+      context: _context,
+      pages: const <MihonPage>[
+        MihonPage(index: 0, url: 'page-0'),
+        MihonPage(index: 1, url: 'page-1'),
+      ],
+      cacheRoot: Directory('${root.path}${Platform.pathSeparator}page-cache'),
+    ).open();
+
+    final List<MangaOcrBackgroundEvent> events = await MihonOnlineMangaOcr(
+      session: session,
+      managedDirectory:
+          Directory('${root.path}${Platform.pathSeparator}managed'),
+      initialPayload: _initialPayload(2),
+      startPage: 0,
+      lens: GoogleLensMangaOcrService(transport: _LensTransport()),
+    ).run().toList();
+
+    expect(events.last.finished, isTrue);
+    expect(events.last.pagesSucceeded, 1);
+    expect(events.last.pagesFailed, 1);
+    await session.close();
+  });
 }
+
+MokuroPayload _initialPayload(int pages) => MokuroPayload(
+      images: <MokuroImage>[
+        for (int index = 0; index < pages; index++)
+          MokuroImage(
+            url: 'page-${(index + 1).toString().padLeft(6, '0')}.jpg',
+            size: const Size(1000, 1400),
+            blocks: const <MokuroBlock>[],
+          ),
+      ],
+    );
 
 const MihonSourceContext _context = MihonSourceContext(
   extension: MihonExtensionRef(
@@ -143,6 +282,61 @@ class _OnlineImageRuntime extends Fake implements MihonRuntime {
       throw const MihonRuntimeException(
         'FIXTURE_RETRY',
         'retry this fixture page',
+      );
+    }
+    return bytes;
+  }
+}
+
+class _FailingOnlineImageRuntime extends Fake implements MihonRuntime {
+  @override
+  Future<Uint8List> fetchImage(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonPage page, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) =>
+      throw const MihonRuntimeException(
+        'FIXTURE_FAILURE',
+        'fixture image fetch failed',
+      );
+}
+
+class _DelayedOnlineImageRuntime extends Fake implements MihonRuntime {
+  _DelayedOnlineImageRuntime(this.bytes);
+
+  final Uint8List bytes;
+  int fetchCount = 0;
+
+  @override
+  Future<Uint8List> fetchImage(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonPage page, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async {
+    fetchCount += 1;
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    return bytes;
+  }
+}
+
+class _PartiallyFailingOnlineImageRuntime extends Fake implements MihonRuntime {
+  _PartiallyFailingOnlineImageRuntime(this.bytes);
+
+  final Uint8List bytes;
+
+  @override
+  Future<Uint8List> fetchImage(
+    MihonExtensionRef extension,
+    MihonSource source,
+    MihonPage page, {
+    List<MihonPreference> preferences = const <MihonPreference>[],
+  }) async {
+    if (page.index == 0) {
+      throw const MihonRuntimeException(
+        'FIXTURE_FAILURE',
+        'fixture page zero failed',
       );
     }
     return bytes;

@@ -35,6 +35,8 @@ class MihonOnlineMangaOcr {
   final GoogleLensMangaOcrService _lens;
   static final _MihonOnlineOcrMemoryCache _memoryCache =
       _MihonOnlineOcrMemoryCache(kMihonOnlineOcrMemoryPages);
+  static final Map<String, Future<MokuroImage>> _pendingPages =
+      <String, Future<MokuroImage>>{};
 
   Stream<MangaOcrBackgroundEvent> run() {
     late final StreamController<MangaOcrBackgroundEvent> controller;
@@ -105,57 +107,56 @@ class MihonOnlineMangaOcr {
     final List<MokuroImage> results =
         List<MokuroImage>.of(initialPayload.images);
     int done = 0;
+    int succeeded = 0;
+    int failed = 0;
 
     for (final int pageIndex in order) {
       if (isCancelled()) throw const _MihonOnlineOcrCancelled();
       final MokuroImage previous = results[pageIndex];
       final String relativeUrl = previous.url;
       try {
-        final File file = await _materializePage(
+        final String identity = session.cacheIdentity(pageIndex);
+        final String memoryKey = <String>[
+          p.canonicalize(managedDirectory.path),
+          identity,
+        ].join('\u001f');
+        final MokuroImage recognized = await _recognizePageSingleflight(
+          key: memoryKey,
           pageIndex: pageIndex,
           relativeUrl: relativeUrl,
           imagesDirectory: imagesDirectory,
           identities: identities,
+          cache: cache,
           isCancelled: isCancelled,
         );
-        final MangaOcrPageFile source = MangaOcrPageFile(
-          file: file,
-          relativeUrl: relativeUrl,
-        );
-        final String memoryKey = <String>[
-          p.canonicalize(managedDirectory.path),
-          session.cacheIdentity(pageIndex),
-        ].join('\u001f');
-        final MokuroImage? memoryCached = _memoryCache.get(memoryKey);
-        final MokuroImage? cached =
-            memoryCached ?? await cache.read(pageIndex, source);
-        final MokuroImage recognized = cached ??
-            await _lens.recognizePageBytes(
-              await file.readAsBytes(),
-              relativeUrl: relativeUrl,
-            );
         results[pageIndex] = recognized;
-        if (cached == null) {
-          await cache.write(pageIndex, source, recognized);
-        }
-        _memoryCache.put(memoryKey, recognized);
+        succeeded += 1;
       } on _MihonOnlineOcrCancelled {
         rethrow;
       } on Object {
         // Match Niratan: a failed page remains pending while the scan proceeds
         // and successfully cached pages stay immediately usable.
+        failed += 1;
       }
       done += 1;
       emit(
         MangaOcrBackgroundEvent.progress(
           pagesDone: done,
           pagesTotal: total,
+          pagesSucceeded: succeeded,
+          pagesFailed: failed,
           pageIndex: pageIndex,
           page: results[pageIndex],
         ),
       );
     }
     if (isCancelled()) throw const _MihonOnlineOcrCancelled();
+    if (succeeded == 0) {
+      throw GoogleLensOcrException(
+        'no_ocr_pages',
+        'all $failed online manga pages failed',
+      );
+    }
 
     final MokuroPayload payload = MokuroPayload(
       images: results,
@@ -179,10 +180,85 @@ class MihonOnlineMangaOcr {
     emit(
       MangaOcrBackgroundEvent.finished(
         pagesTotal: total,
+        pagesSucceeded: succeeded,
+        pagesFailed: failed,
         resultPath: output.path,
         external: false,
       ),
     );
+  }
+
+  Future<MokuroImage> _recognizePageSingleflight({
+    required String key,
+    required int pageIndex,
+    required String relativeUrl,
+    required Directory imagesDirectory,
+    required _OnlinePageIdentityManifest identities,
+    required GoogleLensPageCache cache,
+    required bool Function() isCancelled,
+  }) {
+    final Future<MokuroImage>? current = _pendingPages[key];
+    if (current != null) return current;
+    final Future<MokuroImage> future = _recognizePage(
+      key: key,
+      pageIndex: pageIndex,
+      relativeUrl: relativeUrl,
+      imagesDirectory: imagesDirectory,
+      identities: identities,
+      cache: cache,
+      isCancelled: isCancelled,
+    );
+    _pendingPages[key] = future;
+    unawaited(
+      future.then<void>(
+        (_) {
+          if (identical(_pendingPages[key], future)) {
+            _pendingPages.remove(key);
+          }
+        },
+        onError: (Object _, StackTrace __) {
+          if (identical(_pendingPages[key], future)) {
+            _pendingPages.remove(key);
+          }
+        },
+      ),
+    );
+    return future;
+  }
+
+  Future<MokuroImage> _recognizePage({
+    required String key,
+    required int pageIndex,
+    required String relativeUrl,
+    required Directory imagesDirectory,
+    required _OnlinePageIdentityManifest identities,
+    required GoogleLensPageCache cache,
+    required bool Function() isCancelled,
+  }) async {
+    final File file = await _materializePage(
+      pageIndex: pageIndex,
+      relativeUrl: relativeUrl,
+      imagesDirectory: imagesDirectory,
+      identities: identities,
+      isCancelled: isCancelled,
+    );
+    final MangaOcrPageFile source = MangaOcrPageFile(
+      file: file,
+      relativeUrl: relativeUrl,
+    );
+    final MokuroImage? memoryCached = _memoryCache.get(key);
+    final MokuroImage? cached =
+        memoryCached ?? await cache.read(pageIndex, source);
+    final MokuroImage recognized = cached ??
+        await _lens.recognizePageBytes(
+          await file.readAsBytes(),
+          relativeUrl: relativeUrl,
+        );
+    if (cached == null) {
+      await cache.write(pageIndex, source, recognized);
+    }
+    _memoryCache.put(key, recognized);
+    return recognized;
   }
 
   Future<File> _materializePage({
@@ -218,11 +294,16 @@ class MihonOnlineMangaOcr {
           throw const GoogleLensOcrException('image_unavailable');
         }
         await target.parent.create(recursive: true);
-        final File temporary = File('${target.path}.tmp');
-        await source.copy(temporary.path);
-        if (await target.exists()) await target.delete();
-        await temporary.rename(target.path);
-        await identities.record(pageIndex);
+        final File temporary = _uniqueTemporarySibling(target);
+        try {
+          await source.copy(temporary.path);
+          await _withFilePromotionLock(target, () async {
+            await _promoteTemporary(temporary, target);
+            await identities.record(pageIndex);
+          });
+        } finally {
+          if (await temporary.exists()) await temporary.delete();
+        }
         return target;
       } on Object catch (error) {
         lastError = error;
@@ -317,10 +398,60 @@ class _MihonOnlineOcrCancelled implements Exception {
   const _MihonOnlineOcrCancelled();
 }
 
+int _temporarySequence = 0;
+final Map<String, Future<void>> _filePromotionTails = <String, Future<void>>{};
+
+File _uniqueTemporarySibling(File target) => File(
+      '${target.path}.tmp-${DateTime.now().microsecondsSinceEpoch}-'
+      '${_temporarySequence++}',
+    );
+
+Future<T> _withFilePromotionLock<T>(
+  File target,
+  Future<T> Function() action,
+) async {
+  final String key = p.canonicalize(target.path);
+  final Future<void> previous =
+      _filePromotionTails[key] ?? Future<void>.value();
+  final Completer<void> release = Completer<void>();
+  final Future<void> tail = release.future;
+  _filePromotionTails[key] = tail;
+  await previous;
+  try {
+    return await action();
+  } finally {
+    release.complete();
+    if (identical(_filePromotionTails[key], tail)) {
+      _filePromotionTails.remove(key);
+    }
+  }
+}
+
+Future<void> _promoteTemporary(File temporary, File target) async {
+  final File previous = _uniqueTemporarySibling(
+    File('${target.path}.previous'),
+  );
+  final bool hadTarget = await target.exists();
+  if (hadTarget) await target.rename(previous.path);
+  try {
+    await temporary.rename(target.path);
+  } on Object {
+    if (await target.exists()) await target.delete();
+    if (await previous.exists()) await previous.rename(target.path);
+    rethrow;
+  }
+  if (await previous.exists()) await previous.delete();
+}
+
 Future<void> _writeTextAtomically(File target, String value) async {
   await target.parent.create(recursive: true);
-  final File temporary = File('${target.path}.tmp');
-  await temporary.writeAsString(value, flush: true);
-  if (await target.exists()) await target.delete();
-  await temporary.rename(target.path);
+  final File temporary = _uniqueTemporarySibling(target);
+  try {
+    await temporary.writeAsString(value, flush: true);
+    await _withFilePromotionLock(target, () async {
+      await _promoteTemporary(temporary, target);
+    });
+  } finally {
+    if (await temporary.exists()) await temporary.delete();
+  }
 }
