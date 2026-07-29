@@ -43,6 +43,13 @@ enum TrackingProgressMode {
 
   const TrackingProgressMode(this.value);
   final String value;
+
+  static TrackingProgressMode? tryParse(String value) {
+    for (final TrackingProgressMode mode in TrackingProgressMode.values) {
+      if (mode.value == value) return mode;
+    }
+    return null;
+  }
 }
 
 typedef AutoVideoTrackingSource = ({
@@ -86,6 +93,33 @@ typedef PersistedBookTrackingProgress = ({
   bool completed,
   int evidenceAt,
 });
+
+typedef BookTrackingSnapshot = ({
+  BookFormat format,
+  int? chapterProgress,
+});
+
+/// 把书籍格式、映射模式和明确完成状态收敛成唯一的本地上报值。
+///
+/// PDF / 漫画没有可靠章节，chapter 模式返回 null（整条不发）；volume 模式只在
+/// [completed] 为 true 时把当前卷计入，未完成时用 -1 配合卷号 offset 仅保留此前卷数。
+/// 即时阅读事件和持久化补发必须都走这里，避免两条入口再次漂开。
+int? resolveBookTrackingLocalProgress({
+  required BookFormat format,
+  required TrackingProgressMode progressMode,
+  required int? chapterProgress,
+  required bool completed,
+}) {
+  switch (progressMode) {
+    case TrackingProgressMode.chapter:
+      return format.isPagedImageBook ? null : chapterProgress;
+    case TrackingProgressMode.volume:
+      return completed ? 0 : -1;
+    case TrackingProgressMode.episode:
+    case TrackingProgressMode.status:
+      return null;
+  }
+}
 
 final RegExp _ignoredBookTocLabel = RegExp(
   r'^(?:目次|目录|目錄|contents?|table\s+of\s+contents|扉|title\s+page|表紙|cover|奥付|版权|版權|colophon|口絵|イラスト|插图|插圖|あとがき|后记|後記|著者紹介)$',
@@ -438,19 +472,49 @@ class MediaTrackingRepository {
   Future<int?> loadBookChapterProgress({
     required String bookKey,
     required int fallbackProgress,
+  }) async =>
+      (await loadBookTrackingSnapshot(
+        bookKey: bookKey,
+        fallbackProgress: fallbackProgress,
+      ))
+          .chapterProgress;
+
+  /// 读取即时上报所需的格式与逻辑章节快照。
+  ///
+  /// chapter/volume 的最终选择统一交给 [resolveBookTrackingLocalProgress]；这里仅把
+  /// PDF/漫画的“无章节”事实表达成 null，并为 EPUB 计算逻辑 TOC 章节数。
+  Future<BookTrackingSnapshot> loadBookTrackingSnapshot({
+    required String bookKey,
+    required int fallbackProgress,
   }) async {
     final EpubBookRow? book = await _db.getEpubBook(bookKey);
-    if (book == null) return math.max(0, fallbackProgress);
-    if (BookFormat.parseOrEpub(book.format).isPagedImageBook) return null;
+    if (book == null) {
+      return (
+        format: BookFormat.epub,
+        chapterProgress: math.max(0, fallbackProgress),
+      );
+    }
+    final BookFormat format = BookFormat.parseOrEpub(book.format);
+    if (format.isPagedImageBook) {
+      return (format: format, chapterProgress: null);
+    }
     final ReaderPositionRow? position = await _db.getReaderPosition(bookKey);
-    if (position == null) return math.max(0, fallbackProgress);
-    return estimateCompletedBookChapters(
-      chaptersJson: book.chaptersJson,
-      tocJson: book.tocJson,
-      sectionIndex: position.sectionIndex,
-      sectionCompleted: position.normCharOffset >= 9990,
-      bookCompleted: book.completedAt != null,
-      fallbackProgress: fallbackProgress,
+    if (position == null) {
+      return (
+        format: format,
+        chapterProgress: math.max(0, fallbackProgress),
+      );
+    }
+    return (
+      format: format,
+      chapterProgress: estimateCompletedBookChapters(
+        chaptersJson: book.chaptersJson,
+        tocJson: book.tocJson,
+        sectionIndex: position.sectionIndex,
+        sectionCompleted: position.normCharOffset >= 9990,
+        bookCompleted: book.completedAt != null,
+        fallbackProgress: fallbackProgress,
+      ),
     );
   }
 
@@ -562,29 +626,31 @@ class MediaTrackingRepository {
 
       final bool isChapterCompanion =
           mediaType == TrackingMediaType.bookChapter;
-      final bool isVolume =
-          mapping.progressMode == TrackingProgressMode.volume.value;
       final bool completed = completedAt != null;
-      final int localProgress;
-      if (isChapterCompanion ||
-          mapping.progressMode == TrackingProgressMode.chapter.value) {
-        // 与 [loadBookChapterProgress] 同一判据：按页翻的书（PDF / 漫画）没有章，
-        // 这里的 fallbackProgress 是 sectionIndex＝页码，报出去就是错数。宁可不报。
-        if (BookFormat.parseOrEpub(book.format).isPagedImageBook) continue;
-        localProgress = estimateCompletedBookChapters(
-          chaptersJson: book.chaptersJson,
-          tocJson: book.tocJson,
-          sectionIndex: position?.sectionIndex ?? 0,
-          sectionCompleted: (position?.normCharOffset ?? 0) >= 9990,
-          bookCompleted: completed,
-          fallbackProgress: (position?.sectionIndex ?? 0) +
-              ((position?.normCharOffset ?? 0) >= 9990 ? 1 : 0),
-        );
-      } else if (isVolume) {
-        localProgress = completed ? 0 : -1;
-      } else {
-        continue;
-      }
+      final BookFormat format = BookFormat.parseOrEpub(book.format);
+      final TrackingProgressMode? storedMode =
+          TrackingProgressMode.tryParse(mapping.progressMode);
+      final TrackingProgressMode? effectiveMode =
+          isChapterCompanion ? TrackingProgressMode.chapter : storedMode;
+      if (effectiveMode == null) continue;
+      final int? chapterProgress = format.isPagedImageBook
+          ? null
+          : estimateCompletedBookChapters(
+              chaptersJson: book.chaptersJson,
+              tocJson: book.tocJson,
+              sectionIndex: position?.sectionIndex ?? 0,
+              sectionCompleted: (position?.normCharOffset ?? 0) >= 9990,
+              bookCompleted: completed,
+              fallbackProgress: (position?.sectionIndex ?? 0) +
+                  ((position?.normCharOffset ?? 0) >= 9990 ? 1 : 0),
+            );
+      final int? localProgress = resolveBookTrackingLocalProgress(
+        format: format,
+        progressMode: effectiveMode,
+        chapterProgress: chapterProgress,
+        completed: completed,
+      );
+      if (localProgress == null) continue;
       result.add((
         mediaKey: mapping.mediaKey,
         mediaType: mediaType,

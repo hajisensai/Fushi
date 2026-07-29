@@ -92,6 +92,46 @@ void main() {
     });
   }
 
+  test('PDF 的 volume 模式只在明确完成时把当前卷计入（持久化入口）', () async {
+    const String key = 'persisted-pdf-volume';
+    await seedBook(key, BookFormat.pdf);
+    await db.upsertReaderPosition(
+      ReaderPositionsCompanion.insert(
+        bookKey: key,
+        sectionIndex: 137,
+        normCharOffset: 5000,
+        updatedAt: 5000,
+      ),
+    );
+    await repository.saveMappingIfAbsent(
+      mediaType: TrackingMediaType.book,
+      mediaKey: key,
+      mediaTitle: key,
+      kind: TrackingKind.novel,
+      subjectId: 2289,
+      subjectName: key,
+      progressMode: TrackingProgressMode.volume,
+      progressOffset: 1,
+    );
+
+    List<PersistedBookTrackingProgress> got =
+        await repository.loadPersistedBookTrackingProgress(afterMs: 0);
+    PersistedBookTrackingProgress progress =
+        got.singleWhere((PersistedBookTrackingProgress e) => e.mediaKey == key);
+    expect(progress.localProgress, -1);
+    expect(progress.completed, isFalse);
+
+    await db.markEpubBookCompletedIfUnset(
+      key,
+      DateTime.fromMillisecondsSinceEpoch(6000),
+    );
+    got = await repository.loadPersistedBookTrackingProgress(afterMs: 0);
+    progress =
+        got.singleWhere((PersistedBookTrackingProgress e) => e.mediaKey == key);
+    expect(progress.localProgress, 0);
+    expect(progress.completed, isTrue);
+  });
+
   test('epub 的 chapter 模式映射照常产出（调用点②没有误伤文字书）', () async {
     await seedBook('p-epub', BookFormat.epub);
     await db.upsertReaderPosition(

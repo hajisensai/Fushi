@@ -22,6 +22,8 @@ class _FakeBangumiApi implements BangumiTrackingApi {
   Exception? error;
   final List<Map<String, dynamic>> creates = <Map<String, dynamic>>[];
   final List<Map<String, dynamic>> patches = <Map<String, dynamic>>[];
+  final List<int> createSubjectIds = <int>[];
+  final List<int> patchSubjectIds = <int>[];
   final List<List<int>> episodePatches = <List<int>>[];
   List<BangumiSubject> searchResults = const <BangumiSubject>[];
   final List<({String keyword, int subjectType})> searches =
@@ -70,6 +72,7 @@ class _FakeBangumiApi implements BangumiTrackingApi {
     required Map<String, dynamic> payload,
   }) async {
     _throwIfNeeded();
+    createSubjectIds.add(subjectId);
     creates.add(payload);
   }
 
@@ -79,6 +82,7 @@ class _FakeBangumiApi implements BangumiTrackingApi {
     required Map<String, dynamic> payload,
   }) async {
     _throwIfNeeded();
+    patchSubjectIds.add(subjectId);
     patches.add(payload);
   }
 
@@ -890,6 +894,150 @@ void main() {
       api.patches,
       anyElement(equals(<String, dynamic>{'ep_status': 2})),
     );
+  });
+
+  test(
+      'PDF auto mapping reports one volume only after completion and is idempotent',
+      () async {
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'pdf-key',
+        title: '单册 PDF 第3卷',
+        epubPath: '/tmp/single.pdf',
+        extractDir: '/tmp/pdf',
+        chapterCount: 200,
+        chaptersJson: '[]',
+        importedAt: 1,
+        format: const Value<String>('pdf'),
+      ),
+    );
+    await db.upsertReaderPosition(
+      ReaderPositionsCompanion.insert(
+        bookKey: 'pdf-key',
+        sectionIndex: 137,
+        normCharOffset: 5000,
+        updatedAt: 2,
+      ),
+    );
+    api.searchResults = const <BangumiSubject>[
+      BangumiSubject(
+        id: 2289,
+        type: 1,
+        name: '单册 PDF',
+        nameCn: '',
+        platform: '小说',
+        episodeCount: 12,
+        volumeCount: 1,
+      ),
+    ];
+    api.subject = api.searchResults.single;
+
+    await service.recordBookProgress(
+      bookKey: 'pdf-key',
+      completedChapterCount: 137,
+      completed: false,
+    );
+    await service.syncNow();
+
+    final MediaTrackingMappingRow? mapping = await repository.findMapping(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'pdf-key',
+    );
+    expect(mapping, isNotNull);
+    expect(mapping!.progressMode, TrackingProgressMode.volume.value);
+    expect(mapping.progressOffset, 1,
+        reason: '一本 PDF 只算一卷，不能因标题带“第3卷”猜测此前两卷也已读');
+    expect(
+      await repository.findMapping(
+        mediaType: TrackingMediaType.bookChapter,
+        mediaKey: 'pdf-key',
+      ),
+      isNull,
+      reason: 'PDF 没有章节进度，不应创建章节伴随映射',
+    );
+    expect(api.createSubjectIds, <int>[2289]);
+    expect(
+      api.creates.single,
+      <String, dynamic>{'type': 3},
+      reason: '未完成 PDF 可以标记在读，但不能把第 137 页或本卷计入进度',
+    );
+
+    api.collection = const BangumiUserCollection(
+      type: 3,
+      episodeProgress: 0,
+      volumeProgress: 0,
+    );
+    await db.markEpubBookCompletedIfUnset(
+      'pdf-key',
+      DateTime.fromMillisecondsSinceEpoch(3),
+    );
+    await service.recordBookProgress(
+      bookKey: 'pdf-key',
+      completedChapterCount: 200,
+      completed: true,
+    );
+    await service.syncNow();
+
+    expect(api.patchSubjectIds, <int>[2289]);
+    expect(
+      api.patches.single,
+      <String, dynamic>{'vol_status': 1, 'type': 2},
+      reason: '明确完成一本 PDF 后只上报 1 卷，并将单卷条目标为读过',
+    );
+
+    await service.recordBookProgress(
+      bookKey: 'pdf-key',
+      completedChapterCount: 200,
+      completed: true,
+    );
+    await service.syncNow();
+    expect(api.patches, hasLength(1), reason: '重复完成回调必须幂等，不二次写 Bangumi');
+  });
+
+  test(
+      'manual PDF chapter mapping is preserved and never reports page progress',
+      () async {
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'manual-pdf',
+        title: '手动映射 PDF',
+        epubPath: '/tmp/manual.pdf',
+        extractDir: '/tmp/manual-pdf',
+        chapterCount: 88,
+        chaptersJson: '[]',
+        importedAt: 1,
+        format: const Value<String>('pdf'),
+      ),
+    );
+    await repository.saveMapping(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'manual-pdf',
+      mediaTitle: '手动映射 PDF',
+      kind: TrackingKind.novel,
+      subjectId: 2290,
+      subjectName: '用户选择的条目',
+      progressMode: TrackingProgressMode.chapter,
+      progressOffset: 7,
+    );
+
+    await service.recordBookProgress(
+      bookKey: 'manual-pdf',
+      completedChapterCount: 88,
+      completed: true,
+    );
+    await service.syncNow();
+
+    final MediaTrackingMappingRow mapping = (await repository.findMapping(
+      mediaType: TrackingMediaType.book,
+      mediaKey: 'manual-pdf',
+    ))!;
+    expect(mapping.subjectId, 2290);
+    expect(mapping.progressMode, TrackingProgressMode.chapter.value);
+    expect(mapping.progressOffset, 7);
+    expect(api.searches, isEmpty);
+    expect(api.creates, isEmpty);
+    expect(api.patches, isEmpty);
+    expect(await repository.pendingCount(), 0);
   });
 
   test('manga volume suffix reports previous volumes while current is reading',
