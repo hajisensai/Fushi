@@ -2764,5 +2764,6 @@
   "manga_import_detected_message": "\"$name\" is a manga file, so it will go through the manga importer instead of the book importer.",
   "selection_web_search": "Search the web",
   "selection_web_search_unavailable": "No app can search the web.",
-  "selection_share_failed": "Could not open the share sheet."
+  "selection_share_failed": "Could not open the share sheet.",
+  "handlebar_phonetic_transcriptions": "Phonetic transcriptions"
 }
