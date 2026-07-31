@@ -27,5 +27,12 @@
   （15 个用例三组：输出不变性 / FFI 缓存键带上限 / app_model 接线守卫）。
   变异实测：改回 `maxResults: 200` → 红；`getCachedFfiLookup(searchTerm)` → 红；
   推翻「每 term ≥1 glossary」前提（fixture 造零 glossary 结果）→ 不变性组红。
+- **旁证（降上限是安全的，已在生产里跑了很久）**：Android 独立弹窗进程走另一条引擎
+  入口 `hibiki/android/app/src/main/java/app/hibiki/reader/PopupDictActivity.kt:423`，
+  `maxResults = prefs.maximumSearchResults`，而该值读的偏好键
+  `maximum_dictionary_search_results`（`PopupDbReader.kt:215`）**全仓无人写入**
+  （grep 只此一处），故它一直取默认值 **16**。也就是说同一个引擎、同一份词典，
+  Android 弹窗进程长期以 16 为上限出结果，主进程却是 200 —— 两条入口本就不一致，
+  低上限那条从未被报过结果缺失。
 - **备注**：本条只砍「白干的解压条数」，**没有**动 native 侧的按需分页策略
   （`PrefetchVirtualMemory` / `madvise`）——那是跨平台预取改动，需单独评估。
