@@ -1698,7 +1698,7 @@ window.hibikiResetAutoLookupDedupe = function () {
 // TODO-1185：嵌套查词——点释义里的词（词典交叉引用 a[href]）。popup.js 的 a.onclick →
 // callHandler('onLinkClick', query) → bridge-shim → 这里。用该词**重发一次 lookup**，在同一
 // #entries-container 重渲染（yomitan 式单弹窗内导航），对齐 app 的「点释义里的词继续查」。
-// BUG-1261：走 hibikiRenderNested（只换内容），不再走 hibikiRender 的完整首查词路径——弹窗
+// BUG-1279：走 hibikiRenderNested（只换内容），不再走 hibikiRender 的完整首查词路径——弹窗
 // 的位置、尺寸、原文高亮、入场淡入全部原样保持。子词的匹配长度（result.bestLength）在这里
 // 没有任何用处：它是「原文里命中了几个字」的量，而嵌套查的词根本不在原文里，拿它去截原文
 // 选区正是修复前把原文高亮和弹窗落点一起算错的原因。
@@ -1893,7 +1893,7 @@ function hibikiEnsureResizeGrip() {
   if (hibikiResizeGrip.parentNode !== parent) parent.appendChild(hibikiResizeGrip);
 }
 
-// BUG-1261：把「换弹窗内容」从「建立弹窗几何」里拆出来。首次查词两件事都要做；嵌套查词
+// BUG-1279：把「换弹窗内容」从「建立弹窗几何」里拆出来。首次查词两件事都要做；嵌套查词
 // （弹窗内点释义里的词）只该换内容——原文里被查的词一个字都没变，重算它的高亮与落点纯属
 // 无中生有。三个入口共用这一份内容渲染，行为不再各写一遍。
 function hibikiRenderEntries(popupJson) {
@@ -1952,7 +1952,7 @@ function hibikiApplyTheme(c, theme, applyBox) {
   }
 }
 
-// BUG-1261：嵌套查词的渲染入口——**只换内容**。不重算原文高亮、不重新 place、不重走入场
+// BUG-1279：嵌套查词的渲染入口——**只换内容**。不重算原文高亮、不重新 place、不重走入场
 // 淡入、不重写尺寸盒。语义与 yomitan 的单弹窗内导航一致（本实现的既定设计也是「没有前进
 // 后退，就是嵌套查词」）：用户视线停在弹窗上，弹窗就不该动；原文里被查的词没变，它的高亮
 // 就不该变。修复前这里走的是下面 hibikiRender 的完整路径，代价是弹窗先压成透明、归零到屏

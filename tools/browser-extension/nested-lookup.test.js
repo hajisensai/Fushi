@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-// BUG-1261 回归守卫：浏览器扩展里的「嵌套查词」（在查词弹窗内点释义里的词 / 词典交叉引用
+// BUG-1279 回归守卫：浏览器扩展里的「嵌套查词」（在查词弹窗内点释义里的词 / 词典交叉引用
 // a[href] → popup.js handleGlossaryAnchorClick → callHandler('onLinkClick') → bridge-shim →
 // content.js __hibikiOnLinkClick → 重发 lookup → 原地重渲染同一个弹窗）。
 //
