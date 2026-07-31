@@ -683,13 +683,19 @@ class GalHookSessionController extends ChangeNotifier {
   /// **不带线程身份的行**（`textThreadKey == null`：WebSocket / Textractor 端点
   /// 的行，以及 `threadId == 0` 的降级 hook 行）从来不进线程目录，也就永远不会
   /// 出现在选择器里——拿选择状态去门控它们等于永久丢弃，而且用户无法自救（下拉
-  /// 本身按 `textThreads.isNotEmpty` 置灰）。所以它们无条件放行。
+  /// 本身按 `textThreads.isNotEmpty` 置灰）。所以**未选线程时**它们放行。
+  ///
+  /// 反过来，用户**已经选定**一条线程时无身份行必须让位：那是一句「我的正文来自
+  /// 这条线程」的显式声明。此时再混进 Textractor 端点的平行文本，浮窗的 `latest`
+  /// 会在两个来源之间跳，且无身份行没有 `textEventId`/`hookTimestampMs`
+  /// （只有引擎行会写 `_lineTextEventIdCache`），逐句配对只能退回时间戳兜底窗
+  /// —— 正是 BUG-1159 的失败链。这一支保持与 v12 之前逐字节同一行为。
   static bool _publishesUnderSelection(
     TexthookerLineEntry entry,
     String? selectedKey,
   ) {
     final String? key = entry.textThreadKey;
-    if (key == null || key.isEmpty) return true;
+    if (key == null || key.isEmpty) return selectedKey == null;
     return key == selectedKey;
   }
 
