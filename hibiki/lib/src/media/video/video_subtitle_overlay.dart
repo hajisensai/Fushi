@@ -1736,8 +1736,11 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 投影由 [_buildSubtitleChar] 挂到本样式上；尊重 .ass 时描边由其底层 stroke [Text] 单独
   /// 承载、.ass \shad 硬投影由本方法的 `shadows` 提供（BUG-323 / TODO-569 / TODO-1105）。
   ///
-  /// respectAssStyle 关：只应用行内 `\i \b \u \s \c \fs` 这些历史就支持的 span 样式，字体 /
-  /// 字号 / 颜色的基线恒为用户统一样式，与历史像素级一致。
+  /// respectAssStyle 关 = **纯字幕模式**（BUG-915/1264）：**颜色语义整体归零**——行内 `\c`
+  /// / `\1c` 主色与 `\3c` 描边色（[_resolveStroke]）、`\1a` 填充透明度、cueStyle 主色、`\t`
+  /// 颜色动画、卡拉 OK SecondaryColour（[_applyDynamicFill]）同源门控，一律回落用户
+  /// textColor。只保留行内 `\i \b \u \s` 这些**文本语义**与历史 `\fs` 裸像素字号；字体 /
+  /// 字号 / 颜色的基线恒为用户统一样式。
   /// respectAssStyle 开：字体名 / 主色 / 字号 / 粗斜下删线优先取 .ass 值（行内 span >
   /// [SubtitleCueStyle] cue 默认 > 用户统一样式，TODO-1105）。字体缺字时仍挂
   /// [_subtitleCjkFallback] 兜底。
@@ -1844,7 +1847,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 基线色）。多层卡拉 OK 光晕层 `\1a&HFF&` 抹透明填充、只留模糊描边成辉光；描边层
     // 由 [_buildSubtitleChar] 单独构建，不受本透明度影响（ASS \1a 仅主填充语义）。
     final double? fillOp = respect ? span.fillOpacity : null;
-    Color? spanColor = span.colorArgb != null ? Color(span.colorArgb!) : null;
+    // 行内 `\c`/`\1c` 主色**必须与 respect 同源门控**（BUG-1285）：纯字幕模式下这是最后一条
+    // 穿透的颜色通道——兄弟属性（\3c 描边色、\1a 填充透明度、cueStyle 主色、\t 颜色动画、
+    // 卡拉 OK SecondaryColour）早已全部门控，唯独它按「历史 span 样式」放行。多层卡拉 OK
+    // 的 OP 歌词被 [_uniqueByText] 去重后只留发现顺序第一条（通常是最底的描边/光晕层），
+    // 那层的 `\c` 是黑色、而给它兜底的白描边 \3c 与透明填充 \1a 又都被正确门控掉 → 整句
+    // 渲染成裸黑字（用户报「关掉尊重字幕自带样式后 OP 字幕变黑」）。开关文案明示「关闭则
+    // 一律使用你的外观设置」，故这里归零回落 baseColor（用户 textColor）。
+    Color? spanColor =
+        (respect && span.colorArgb != null) ? Color(span.colorArgb!) : null;
     if (fillOp != null) {
       spanColor = (spanColor ?? baseColor).withValues(alpha: fillOp);
     }

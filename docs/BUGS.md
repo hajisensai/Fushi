@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1217 条。点号进各自文件。
+> 共 1218 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1285](bugs/BUG-1285-subtitle-plain-mode-inline-color.md) | ✅ | ✅ | 纯字幕模式下行内 \c 主色穿透导致 OP 字幕变黑 |
 | [BUG-1284](bugs/BUG-1284-activity-game-cover.md) | ✅ | ✅ | 游戏活动身份不统一导致封面缺失 |
 | [BUG-1283](bugs/BUG-1283-nested-popup-custom-font-flash.md) | ✅ | ✅ | 嵌套查词显示前闪过系统字体 |
 | [BUG-1282](bugs/BUG-1282-dictionary-redirect-only-entries.md) | ✅ | ✅ | redirect-only 词典条目混入真实释义结果 |
