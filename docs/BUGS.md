@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1200 条。点号进各自文件。
+> 共 1201 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1261](bugs/BUG-1261-oald-mdd-parts-sound-play.md) | ✅ | ✅ | MDX 分卷 MDD 未挂载 + 词典内 sound:// 发音点击无反应（OALD） |
 | [BUG-1245](bugs/BUG-1245-vn-reveal-chrome-also-advances.md) | ✅ | ✅ | VN唤出悬浮底栏时误同时推进 |
 | [BUG-1244](bugs/BUG-1244-vn-media-screen-skipped.md) | ✅ | ✅ | VN独立图片屏被逐句跳转永久略过 |
 | [BUG-1243](bugs/BUG-1243-audiobook-clip-multicue-export.md) | ✅ | ✅ | 有声书片段导出多句退化并附带多余音频文件 |
