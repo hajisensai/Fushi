@@ -102,7 +102,19 @@ class DictionaryQuery {
 
  private:
   friend class Lookup;
+
+  // BUG-1286: query_raw() returns terms WITHOUT frequency/pitch enrichment.
+  // Lookup::lookup() calls it once per (scan candidate x text variant x
+  // deinflection) -- hundreds to thousands of times per single user lookup --
+  // and enriching inside it meant every intermediate term hit every frequency
+  // and pitch dictionary (each with its own JSON parse), only for ~all of that
+  // work to be thrown away by the dedup + partial_sort + resize that follow.
+  // The enrichment now happens once, on the surviving set, in lookup.cpp.
+  // The public query_freq/query_pitch keep enriching a whole vector so
+  // query() -- the single-expression entry point -- is unchanged.
   std::vector<TermResult> query_raw(const std::string& expression) const;
+  void enrich_freq(TermResult& term) const;
+  void enrich_pitch(TermResult& term) const;
   void materialize(TermResult& term) const;
 
   struct DictionaryData;

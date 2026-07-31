@@ -3963,14 +3963,36 @@ class AppModel with ChangeNotifier {
     return DictionarySearchResult(searchTerm: searchTerm);
   }
 
+  /// 远端词典「全部配对候选不可达」后的冷却截止时刻（BUG-1284）；null = 不在冷却中。
+  /// 只被 [_searchRemoteDictionary] 读写，单 isolate 内无并发写。
+  DateTime? _remoteDictionaryUnreachableUntil;
+
+  /// 测试可见：当前是否处于远端词典失败冷却窗内。
+  @visibleForTesting
+  bool get isRemoteDictionaryInFailureCooldown {
+    final DateTime? until = _remoteDictionaryUnreachableUntil;
+    return until != null && DateTime.now().isBefore(until);
+  }
+
   Future<DictionarySearchResult?> _searchRemoteDictionary({
     required String searchTerm,
     required bool searchWithWildcards,
     required int maximumTerms,
   }) async {
     if (!remoteLookupEnabled) return null;
+    // 配对设备被证实不可达后的冷却窗内直接短路（BUG-1284）。远端查词排在本地
+    // 缓存**之前**，不短路的话设备离线/换网/休眠时每次查词都要重付一遍
+    // 「3s × 候选数」的传输层超时——这是「某些机器上查词 4-5 秒」的主因。
+    final DateTime? until = _remoteDictionaryUnreachableUntil;
+    if (until != null) {
+      if (DateTime.now().isBefore(until)) return null;
+      _remoteDictionaryUnreachableUntil = null;
+    }
     try {
-      return HibikiRemoteLookupClient(
+      // await 必须收进 try：原实现直接 return 未 await 的 Future，catch 只能抓
+      // 同步 throw，异步错误全部漏出成 uncaught（音频路径 lookupRemoteAudio 已
+      // 修过同一处写法，词典路径此前遗留）。
+      final DictionarySearchResult? result = await HibikiRemoteLookupClient(
         repo: SyncRepository(_database),
         httpClient: _remoteLookupClient,
       ).searchDictionary(
@@ -3978,6 +4000,14 @@ class AppModel with ChangeNotifier {
         wildcards: searchWithWildcards,
         maximumTerms: maximumTerms,
       );
+      // 拿到任何 HTTP 响应即证明设备活着（含「可达但无结果」的 null），清冷却。
+      _remoteDictionaryUnreachableUntil = null;
+      return result;
+    } on RemoteLookupUnreachableError catch (e, stack) {
+      _remoteDictionaryUnreachableUntil =
+          DateTime.now().add(kRemoteDictionaryFailureCooldown);
+      ErrorLogService.instance.log('remoteDictionaryLookup', e, stack);
+      return null;
     } catch (e, stack) {
       ErrorLogService.instance.log('remoteDictionaryLookup', e, stack);
       return null;

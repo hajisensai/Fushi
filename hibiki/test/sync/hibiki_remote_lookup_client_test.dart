@@ -406,9 +406,14 @@ void main() {
       expect(url, isNull);
     });
 
+    // BUG-1284 契约变更：词典路径此前是全仓唯一「拿到 allUnreachable 却不消费」
+    // 的调用点（旧断言：全不可达 → 返回 null）。因为远端查词排在本地缓存之前，
+    // 那等于配对设备离线时每次查词都白付一遍「3s × 候选数」，重复查同一个词也
+    // 不例外——用户报的「某些机器上查词 4-5 秒」。现在与音频路径对称抛出，
+    // 供 AppModel 计入失败冷却。
     test(
-        'dictionary lookup keeps returning null when all candidates are '
-        'unreachable (dictionary path unchanged)', () async {
+        'dictionary lookup throws RemoteLookupUnreachableError when all '
+        'candidates are transport-dead (BUG-1284)', () async {
       final HibikiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = await _repo(
@@ -424,13 +429,72 @@ void main() {
         }),
       );
 
+      await expectLater(
+        client.searchDictionary(
+          term: '猫',
+          wildcards: false,
+          maximumTerms: 10,
+        ),
+        throwsA(isA<RemoteLookupUnreachableError>()),
+      );
+    });
+
+    test(
+        'dictionary lookup on a reachable host with no match still returns '
+        'null (no false cooldown)', () async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = await _repo(
+        db: db,
+        urls: const <HibikiClientUrl>[
+          HibikiClientUrl(url: 'http://dead:8765'),
+          HibikiClientUrl(url: 'http://alive:8765'),
+        ],
+      );
+      final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+        repo: repo,
+        httpClient: MockClient((http.Request request) async {
+          if (request.url.host == 'dead') {
+            throw const SocketException('Connection refused');
+          }
+          return http.Response('missing', 404);
+        }),
+      );
+
       final DictionarySearchResult? result = await client.searchDictionary(
         term: '猫',
         wildcards: false,
         maximumTerms: 10,
       );
 
-      // 只有音频路径消费不可达信号；词典查词维持「失败返回 null」零行为变化。
+      // 只要有一个候选给出过 HTTP 响应就是「设备活着」，绝不能抛 unreachable
+      // ——否则设备在线但没这个词也会把远端查词打进冷却。
+      expect(result, isNull);
+    });
+
+    test(
+        'dictionary lookup without paired candidates returns null instead of '
+        'throwing', () async {
+      final HibikiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = await _repo(
+        db: db,
+        urls: const <HibikiClientUrl>[],
+      );
+      final HibikiRemoteLookupClient client = HibikiRemoteLookupClient(
+        repo: repo,
+        httpClient: MockClient((http.Request request) async {
+          fail('no request should be issued without candidates');
+        }),
+      );
+
+      final DictionarySearchResult? result = await client.searchDictionary(
+        term: '猫',
+        wildcards: false,
+        maximumTerms: 10,
+      );
+
+      // 未配对 ≠ 设备不可达：不得触发冷却（否则刚配好对的第一次查词被冷却窗吃掉）。
       expect(result, isNull);
     });
   });

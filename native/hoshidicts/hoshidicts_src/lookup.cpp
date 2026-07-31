@@ -81,6 +81,19 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
   }
 
   auto results = result_map | std::views::values | std::views::as_rvalue | std::ranges::to<std::vector>();
+
+  // BUG-1286: frequency enrichment happens ONCE here, on the deduplicated set,
+  // instead of inside every query_raw() call above (which runs once per
+  // scan-candidate x text-variant x deinflection -- hundreds to thousands of
+  // times, each one hitting every frequency dictionary with its own JSON
+  // parse, for results that the dedup/sort/resize below mostly discard).
+  // It must precede the sort because the comparator ranks by frequency.
+  // Enriching per (expression, reading) is what query_freq did all along, so
+  // the surviving results carry byte-identical frequency data.
+  for (auto& r : results) {
+    query_.enrich_freq(r.term);
+  }
+
   const auto freq_dict_order = query_.get_freq_dict_order();
   auto middle_iter = std::ranges::next(results.begin(), max_results, results.end());
   std::ranges::partial_sort(results, middle_iter, [&freq_dict_order](const auto& a, const auto& b) {
@@ -125,7 +138,11 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
     results.resize(max_results);
   }
 
+  // Pitch is not read by the comparator, so it waits until after the resize:
+  // only the <=max_results terms the user actually receives get enriched
+  // (BUG-1286).
   for (auto& r : results) {
+    query_.enrich_pitch(r.term);
     query_.materialize(r.term);
   }
 
