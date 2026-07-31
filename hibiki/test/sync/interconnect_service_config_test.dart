@@ -1,6 +1,11 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/sync/interconnect_service_config.dart';
+import 'package:hibiki/src/sync/interconnect_sync_backend.dart';
+import 'package:hibiki/src/sync/sync_repository.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 void main() {
@@ -102,6 +107,47 @@ void main() {
         'preferences': <String, Object?>{},
       }),
       throwsFormatException,
+    );
+  });
+
+  test('BUG-1311：明文互联会话不得请求 service-config（403 必然，问了只是伪造失败）', () async {
+    // 复刻真实 host 在明文会话上的行为：`hibiki_sync_server.dart` 的
+    // `_handleInterconnectServiceConfig` 在 `_securityContext == null` 时恒返回
+    // `403 HTTPS required for service config`。而 TLS 默认是关的，存量 host 一律
+    // 走这条分支——客户端照发请求就会每轮同步收一条 SyncAuthError。
+    final List<String> hits = <String>[];
+    final HttpServer server =
+        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    unawaited(server.forEach((HttpRequest request) async {
+      hits.add(request.uri.path);
+      request.response.statusCode = HttpStatus.forbidden;
+      request.response.write('HTTPS required for service config');
+      await request.response.close();
+    }));
+
+    final SyncRepository repo = SyncRepository(db);
+    await repo.setHibikiClientUrls(<HibikiClientUrl>[
+      HibikiClientUrl(url: 'http://127.0.0.1:${server.port}', enabled: true),
+    ]);
+    await repo.setHibikiClientToken('peer-token');
+    final InterconnectSyncBackend backend =
+        InterconnectSyncBackend.withProbe((String u, String t) async => true);
+    await backend.restoreAuth(repo);
+    await backend.authenticate(repo: repo);
+
+    expect(
+      await backend.getRemoteServiceConfig(),
+      isNull,
+      reason: '明文 host 不提供该能力，语义与「旧 host 404」「能力关闭 404」归一',
+    );
+    // 只断返回值不够——把门控换成「照发请求 + catch 吞掉异常」同样会返回 null。
+    // 必须断请求根本没发出去：否则每一轮同步仍会打一次注定 403 的往返，
+    // 并把 403 经 webdav_ops.checkStatus 压成 SyncAuthError 挂进 report.errors。
+    expect(
+      hits,
+      isEmpty,
+      reason: '明文会话上 service-config 必然 403，这一次请求就不该发出去',
     );
   });
 }

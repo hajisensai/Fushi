@@ -673,14 +673,35 @@ class GalHookSessionController extends ChangeNotifier {
   List<TexthookerTextThread> get textThreads =>
       _textService.textThreadsSince(_state.sessionStartedAt);
 
-  /// 捕获工作台当前应展示的正式行。没有选择时只允许下拉里的候选预览可见，
-  /// 正式台词、浮窗、配对和制卡都必须为空；底层诊断 buffer 不删。
+  /// 这一行能否进入正式消费面（工作台 / 浮窗 / 配对 / 制卡）。
+  ///
+  /// v12 起「未选线程」不再等于「全部线程」：**带线程身份的行**必须由用户显式
+  /// 选中才发布（BUG-1193），没选就只在下拉的候选预览里可见，底层诊断 buffer
+  /// 不删。
+  ///
+  /// 但判据是「这一行归不归一条被排除的线程」，而不是「有没有选过线程」。
+  /// **不带线程身份的行**（`textThreadKey == null`：WebSocket / Textractor 端点
+  /// 的行，以及 `threadId == 0` 的降级 hook 行）从来不进线程目录，也就永远不会
+  /// 出现在选择器里——拿选择状态去门控它们等于永久丢弃，而且用户无法自救（下拉
+  /// 本身按 `textThreads.isNotEmpty` 置灰）。所以它们无条件放行。
+  static bool _publishesUnderSelection(
+    TexthookerLineEntry entry,
+    String? selectedKey,
+  ) {
+    final String? key = entry.textThreadKey;
+    if (key == null || key.isEmpty) return true;
+    return key == selectedKey;
+  }
+
+  /// 捕获工作台当前应展示的正式行。过滤判据见 [_publishesUnderSelection]；
+  /// 捕获中额外只看本次会话，避免上一个进程的台词混进当前工作台。
   List<TexthookerLineEntry> get workbenchLines {
     final String? selectedKey = selectedTextThreadKey;
-    if (selectedKey == null) return const <TexthookerLineEntry>[];
     final DateTime? startedAt = _state.sessionStartedAt;
-    Iterable<TexthookerLineEntry> scoped =
-        _textService.entriesForTextThread(selectedKey);
+    Iterable<TexthookerLineEntry> scoped = _textService.entries.where(
+      (TexthookerLineEntry entry) =>
+          _publishesUnderSelection(entry, selectedKey),
+    );
     if (startedAt != null) {
       scoped = scoped.where(
         (TexthookerLineEntry entry) => !entry.receivedAt.isBefore(startedAt),
@@ -712,14 +733,14 @@ class GalHookSessionController extends ChangeNotifier {
   /// 制卡只允许消费这里的行，防止跨会话或跨线程借用上下文。
   List<TexthookerLineEntry> get selectedSessionLines {
     final DateTime? startedAt = _state.sessionStartedAt;
+    if (startedAt == null) return const <TexthookerLineEntry>[];
     final String? selectedKey = selectedTextThreadKey;
-    if (startedAt == null || selectedKey == null) {
-      return const <TexthookerLineEntry>[];
-    }
     return List<TexthookerLineEntry>.unmodifiable(
-      _textService
-          .entriesForTextThread(selectedKey)
-          .where((entry) => !entry.receivedAt.isBefore(startedAt)),
+      _textService.entries.where(
+        (TexthookerLineEntry entry) =>
+            _publishesUnderSelection(entry, selectedKey) &&
+            !entry.receivedAt.isBefore(startedAt),
+      ),
     );
   }
 
