@@ -19,7 +19,7 @@
   #7 ImmersionMiningEngine._mineNow (…:296)
   ```
 
-- **[x] ① 已修复** — commit 见下。两处：
+- **[x] ① 已修复** — commit `30dc387e5`。两处：
   - `ankiconnect_repository.dart` `_storeDictionaryMedia` 改回 `Future<String?>`，缺失时带上下文 `debugPrint` 后 `return null`，与另两个 backend 同契约。封面/句子音频仍由 `_storeLocalMedia` 抛异常拦住（缺了卡片没价值），**两套策略故意不同，不要再合并**。
   - `dictionary_webview_media.dart` 的三条跳过路径全部改为带原因留痕（`debugPrint` + `ErrorLogService.log('DictionaryMedia.cache', …)`），下次用户报错时能直接判断是「词典取不到字节」还是「根本没走到写入方」。另把 `HoshiDicts.isInitialized` 判断挪到「确实有媒体要写」之后，无媒体时不产生噪音日志。
 - **[x] ② 已加自动化测试** — `packages/hibiki_anki/test/dictionary_media_missing_degrades_test.dart`（3 条，走完整 `mineEntry` 落卡链）：
@@ -29,3 +29,4 @@
 
   变异实测：把 `return null` 改回 `throw FileSystemException` 后，第 1、2 条立刻转红（`Expected: MineResult.success / Actual: MineResult.error`），第 3 条保持绿——测试确实咬住了根因，不是假绿。
 - **备注**：降级后卡片里留的是未替换的 `<img src="hoshi_dict_N.ext">` 占位符（等价于 alt 文本），与 AnkiDroid/AnkiMobile 行为一致，属既有契约。若要进一步把无法解析的占位符从字段里剥掉，是**三个 backend 共同**的独立改动，不在本 bug 范围内。
+- **验证**：`flutter analyze`（hibiki + hibiki_anki）均 No issues found；`packages/hibiki_anki` 282 条、`hibiki/test/anki` 187 条全绿；全量套件 18469 条执行、13 条失败，其中 11 条在把两个 lib 文件还原到基底 `72a3b942a` 后**同样红**（既有红，与本改动无关，且这 13 个测试文件均不引用本次改动的任何符号），另 2 条（`local_audio_manager_test` / `home_video_remote_download_register_test`）带本修复孤立复跑 21 条全过，属全量下的串扰。
