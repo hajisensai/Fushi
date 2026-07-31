@@ -517,6 +517,13 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       builder: (ctx) => ReaderHistoryDeleteDialog(
         title: t.dialog_delete,
         message: message,
+        // 纯解散合集（mediaCount==0）不碰媒体本体，不能挂「会删解压目录/有声书」
+        // 的披露；只有真删散卡时才披露真实删除范围。
+        disclosure: mediaCount == 0
+            ? null
+            : buildDeletionDisclosure(
+                target: DeletionDisclosureTarget.shelfBook,
+              ),
         onConfirm: (DeleteScope s) => Navigator.pop(ctx, s),
       ),
     );
@@ -813,6 +820,9 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     final DeleteScope? scope = await _confirmMediaDelete(
       title: t.srt_delete_title,
       message: t.srt_delete_confirm(title: _srtDisplayTitle(book)),
+      disclosure: buildDeletionDisclosure(
+        target: DeletionDisclosureTarget.shelfBook,
+      ),
     );
     if (scope == null) return;
 
@@ -871,6 +881,9 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
       title: t.epub_delete_title,
       message: t.srt_delete_confirm(
         title: displayTitleForBook(item: item, rawTitle: item.title),
+      ),
+      disclosure: buildDeletionDisclosure(
+        target: DeletionDisclosureTarget.shelfBook,
       ),
     );
     if (scope == null) return;

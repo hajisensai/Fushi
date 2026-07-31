@@ -17,6 +17,7 @@ import 'package:hibiki/src/media/drag_drop/hibiki_file_drop_target.dart';
 import 'package:hibiki/src/media/drag_drop/import_dialog_drop.dart';
 import 'package:hibiki/src/media/import/import_flow_mixin.dart';
 import 'package:hibiki/src/media/audiobook/sasayaki_rematch.dart';
+import 'package:hibiki/src/sync/deletion_disclosure.dart';
 import 'package:hibiki/src/sync/deletion_prompt.dart';
 import 'package:hibiki/src/sync/deletion_propagation.dart';
 import 'package:hibiki/utils.dart';
@@ -250,7 +251,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
                 context: context,
                 isDestructiveAction: true,
                 onPressed: () => _removeAudiobook(existing),
-                child: Text(t.audiobook_remove),
+                child: Text(t.audiobook_delete),
               ),
             ],
     );
@@ -995,7 +996,10 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     final DeleteScope? scope = await showDeleteScopeConfirm(
       context,
       title: t.dialog_delete,
-      message: t.audiobook_remove_confirm,
+      message: t.audiobook_delete_confirm,
+      disclosure: buildDeletionDisclosure(
+        target: DeletionDisclosureTarget.attachedAudiobook,
+      ),
     );
     debugPrint('AudiobookImportDialog: scope=$scope');
     if (scope == null) return;
@@ -1082,7 +1086,7 @@ class AudiobookRemoveConfirmationDialog extends StatelessWidget {
           tokens.spacing.card,
         ),
         body: Text(
-          t.audiobook_remove_confirm,
+          t.audiobook_delete_confirm,
           style: tokens.type.listSubtitle,
         ),
         footer: Wrap(
@@ -1099,7 +1103,7 @@ class AudiobookRemoveConfirmationDialog extends StatelessWidget {
               context: context,
               isDestructiveAction: true,
               onPressed: onConfirm,
-              child: Text(t.audiobook_remove),
+              child: Text(t.audiobook_delete),
             ),
           ],
         ),

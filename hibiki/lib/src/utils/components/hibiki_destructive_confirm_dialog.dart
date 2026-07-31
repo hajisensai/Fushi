@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hibiki/i18n/strings.g.dart';
+import 'package:hibiki/src/sync/deletion_disclosure.dart';
 import 'package:hibiki/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:hibiki/src/utils/components/hibiki_design_tokens.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
@@ -33,6 +34,7 @@ class HibikiDestructiveConfirmDialog extends StatefulWidget {
     this.leadingIcon = Icons.delete_outline,
     this.checkboxLabel,
     this.checkboxInitialValue = false,
+    this.checkedDisclosure,
     super.key,
   });
 
@@ -48,6 +50,14 @@ class HibikiDestructiveConfirmDialog extends StatefulWidget {
   final String? checkboxLabel;
 
   final bool checkboxInitialValue;
+
+  /// 勾选框被勾上后追加渲染的「会被删除 / 会被保留」逐项披露。
+  ///
+  /// 根因（BUG-1305）：本对话框的正文 [message] 与勾选行是两个静态节点，勾选翻转
+  /// 语义时正文不跟随。合集删除因此出现「删除合集不会删除其中的视频」与「同时删除
+  /// 其中的书」同屏并存，而代码按勾选递归删了每本书的解压目录和有声书目录。披露挂
+  /// 在勾选状态上，正文才不会再和实际行为说反话。
+  final DeletionDisclosure? checkedDisclosure;
 
   @override
   State<HibikiDestructiveConfirmDialog> createState() =>
@@ -111,6 +121,12 @@ class _HibikiDestructiveConfirmDialogState
                 ),
                 onTap: () => setState(() => _checked = !_checked),
               ),
+              if (_checked && widget.checkedDisclosure != null) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
+                DeletionDisclosureView(
+                  disclosure: widget.checkedDisclosure!,
+                ),
+              ],
             ],
           ],
         ),
