@@ -51,6 +51,7 @@ class VideoPlayerShortcutActions {
     required this.subtitleDelayDecrease,
     required this.alignSubtitleToPrev,
     required this.alignSubtitleToNext,
+    required this.enterCaret,
     required this.escape,
   });
 
@@ -129,6 +130,11 @@ class VideoPlayerShortcutActions {
   final VoidCallback alignSubtitleToPrev;
   final VoidCallback alignSubtitleToNext;
 
+  /// 进入字级选词光标（videoEnterCaret，默认 Enter / 手柄 Select）。光标已激活时
+  /// 本回调等价于「对光标字符查词」（与阅读器 readerLookupAtCursor 的双语义一致）；
+  /// 激活期的方向/确认/退出键不经本表，由页面先于注册表截获。
+  final VoidCallback enterCaret;
+
   final VoidCallback escape;
 }
 
@@ -178,6 +184,7 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoSubtitleDelayDecrease: actions.subtitleDelayDecrease,
     ShortcutAction.videoAlignSubtitleToPrev: actions.alignSubtitleToPrev,
     ShortcutAction.videoAlignSubtitleToNext: actions.alignSubtitleToNext,
+    ShortcutAction.videoEnterCaret: actions.enterCaret,
     ShortcutAction.videoEscape: actions.escape,
   };
 }
@@ -214,6 +221,8 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
       ShortcutAction.videoToggleSubtitleBlur,
       ShortcutAction.videoCycleSubtitleObscure,
       ShortcutAction.videoToggleSubtitleHide,
+      // 进入选词光标 / 光标处查词：按一下进一次，长按不得连发查词。
+      ShortcutAction.videoEnterCaret,
     };
     final bool includeRepeats = !pressEdgeOnly.contains(action);
     for (final binding in registry.bindingsFor(action).keyboardBindings) {
@@ -234,6 +243,40 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
 /// 调 [dismissPopup] 关一层浮层后 return（不跑原动作）；为假时原样执行 [base] 的回调。视频
 /// scope 没有任何「作用于浮层本身」的快捷键（制卡走浮层内按钮，非视频快捷键），故整表统一
 /// 守卫等价于阅读器的逐键 `isDictionaryShown` 判定，不误吞需要作用于浮层的键。
+/// 字级选词光标激活期的键盘接管（videoEnterCaret）：把注册表 activator 表里每个
+/// 回调包一层守卫——光标激活时，若该 activator 的**无修饰**触发键在光标键表里
+/// （方向键=移动、Enter=查词、Esc=退出，`ReaderCaretRouter.decideKeyboard` 同源），
+/// 先走光标动作、不跑原动作（裸方向键不再 seek/调音量）；带 Ctrl/Alt/Meta 的组合键
+/// （如 Ctrl+←=上一句）与非光标键照常执行。光标未激活时零行为变化。
+///
+/// 纯函数、无页面依赖（与 [guardVideoShortcutsWithPopupDismiss] 同范式，可单测）。
+/// [runCaretKey] 由页面提供：对 (键, shift) 执行光标动作，返回是否已消费。
+Map<ShortcutActivator, VoidCallback> guardVideoShortcutsWithSubtitleCaret(
+  Map<ShortcutActivator, VoidCallback> base, {
+  required bool Function() isCaretActive,
+  required bool Function(LogicalKeyboardKey key, {required bool shift})
+      runCaretKey,
+}) {
+  return base.map(
+    (ShortcutActivator activator, VoidCallback callback) => MapEntry(
+      activator,
+      () {
+        if (isCaretActive() && activator is SingleActivator) {
+          // Ctrl/Alt/Meta 组合键不是光标键（Ctrl+← 上一句等照常放行）；Shift 作为
+          // 光标语义的一部分透传（Shift+Tab=后退一字，与阅读器一致）。
+          final bool hasHardModifier =
+              activator.control || activator.alt || activator.meta;
+          if (!hasHardModifier &&
+              runCaretKey(activator.trigger, shift: activator.shift)) {
+            return;
+          }
+        }
+        callback();
+      },
+    ),
+  );
+}
+
 Map<ShortcutActivator, VoidCallback> guardVideoShortcutsWithPopupDismiss(
   Map<ShortcutActivator, VoidCallback> base, {
   required bool Function() isPopupVisible,

@@ -697,6 +697,10 @@ mixin DictionaryPageMixin {
             controller.endSearchUi();
             setState(() {});
           }
+          // 选词光标跟随（videoEnterCaret）：层渲染完成后交给页面钩子，视频页据此
+          // 把光标 transfer 进刚显示的顶层弹窗（BaseSourcePageState 家族的
+          // onDictionaryPopupRendered 同语义；mixin 家族此前没有该钩子）。
+          onNestedPopupRendered(index);
         },
         // TODO-058 fail-safe：WebView 加载失败也走同一翻可见路径（不卡死）。
         onRenderError: () {
@@ -989,4 +993,9 @@ mixin DictionaryPageMixin {
     if (index < 0 || index >= controller.entries.length - 1) return; // 无后代
     setState(() => controller.truncateTo(index + 1));
   }
+
+  /// 某弹窗层 WebView 渲染完成（reveal 之后）的可覆写钩子——mixin 家族版的
+  /// [BaseSourcePageState.onDictionaryPopupRendered]。视频页覆写它把选词光标
+  /// transfer 进刚显示的顶层弹窗（videoEnterCaret）；不覆写 = 历史行为不变。
+  void onNestedPopupRendered(int index) {}
 }

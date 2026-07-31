@@ -2855,5 +2855,6 @@
   "anki_lapis_visual_padding": "内边距",
   "anki_lapis_visual_margin": "外边距",
   "anki_lapis_visual_field_definition_info_note": "仅在保留多段释义的卡片上可见；只有一段释义的卡片不会显示。",
-  "anki_lapis_visual_field_dictionary_name_note": "Hibiki 生成的卡片把词性标签和词典名放在同一个标签里，两者无法分开设置样式。"
+  "anki_lapis_visual_field_dictionary_name_note": "Hibiki 生成的卡片把词性标签和词典名放在同一个标签里，两者无法分开设置样式。",
+  "shortcut_action_video_enter_caret": "进入字幕选词光标"
 }

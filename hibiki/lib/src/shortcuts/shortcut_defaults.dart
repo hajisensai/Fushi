@@ -50,6 +50,8 @@ class ShortcutDefaults {
   static const _gR3 = GamepadBinding(GamepadButton.thumbRight);
   // TODO-1342：视频播放器手柄映射用到的额外按钮常量。
   static const _gStart = GamepadBinding(GamepadButton.start);
+  // 手柄字级选词查词（videoEnterCaret）：Select/View 键，video 组内此前未占用。
+  static const _gSelect = GamepadBinding(GamepadButton.select);
 
   static final Map<ShortcutAction, ShortcutBindingSet> _desktop = {
     ShortcutAction.readerPageForward: _kb([
@@ -317,6 +319,15 @@ class ShortcutDefaults {
     ]),
     ShortcutAction.videoToggleFavoriteSentence: _kb([
       _key(LogicalKeyboardKey.keyD, {ModifierKey.ctrl}),
+    ]),
+    // 手柄/键盘字级选词查词（对齐阅读器 readerEnterCaret）：进入后 D-pad/方向键移
+    // 光标、A/Enter 查词、B/Esc 退出（激活期按键在视频页先于注册表截获）。默认
+    // Enter + Select——video 组内两个空闲位；纯手柄用户由此第一次获得视频查词入口
+    //（此前唯一非鼠标入口是 Shift+指针位置，无鼠标即失效）。
+    ShortcutAction.videoEnterCaret: _kb([
+      _key(LogicalKeyboardKey.enter),
+    ], [
+      _gSelect
     ]),
     // 漫画：默认键位与 reader 同构（PageDown/右/下/空格 前进），左右方向键的最终
     // 朝向再由 resolveMangaArrowPageTurn 按跨页方向（日漫默认 rtl）校正，所以这里

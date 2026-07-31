@@ -286,6 +286,11 @@ enum ShortcutAction {
       ShortcutScope.video, 'video_cycle_secondary_subtitle_obscure'),
   videoToggleSecondarySubtitleHide(
       ShortcutScope.video, 'video_toggle_secondary_subtitle_hide'),
+  // 手柄/键盘字级选词查词（对齐阅读器 readerEnterCaret）：进入后光标停在当前字幕
+  // 首个可见字符，D-pad/方向键逐字移动、A/Enter 对光标字符查词（浮层内继续用手柄
+  // 翻词条/跳词典/制卡）、B/Esc 退出。激活期的方向/确认/退出键在页面侧**先于**注册
+  // 表截获（reader caret 同款contextual 路由），见 video_hibiki/subtitle_caret.part.dart。
+  videoEnterCaret(ShortcutScope.video, 'video_enter_caret'),
 
   // 字幕对轴/匹配快捷键（用户请求）：把埋在快速设置面板深处的「字幕调轴」直接搬到
   // 键盘。videoOpenSubtitleAlign 一键弹波形对轴放大视图（复用 SubtitleWaveformZoomView，

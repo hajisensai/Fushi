@@ -337,6 +337,8 @@ extension _VideoLayout on _VideoHibikiPageState {
                               ReaderHibikiSource.instance.hoverAutoLookup,
                           onHoverChanged: _handleSubtitleHover,
                           hitTester: _subtitleHitTester,
+                          // 字级选词光标环（videoEnterCaret，手柄/键盘查词）。
+                          caretEntryIndex: _subtitleCaretEntry,
                           // 当前句已收藏时在字幕盒角标实心星（TODO-301）。读同一收藏缓存
                           // [_favoritedVideoSentences]（[_isCueFavorited]）；收藏 / 取消收藏
                           // 后 setState 触发本 builder 重建，标记即时更新。

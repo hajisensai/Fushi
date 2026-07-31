@@ -2855,5 +2855,6 @@
   "anki_lapis_visual_padding": "Inner spacing",
   "anki_lapis_visual_margin": "Outer spacing",
   "anki_lapis_visual_field_definition_info_note": "Only visible on cards that keep more than one definition block; single-definition cards hide it.",
-  "anki_lapis_visual_field_dictionary_name_note": "On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately."
+  "anki_lapis_visual_field_dictionary_name_note": "On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.",
+  "shortcut_action_video_enter_caret": "Enter subtitle lookup cursor"
 }

@@ -149,6 +149,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_align_subtitle_to_next;
       case ShortcutAction.videoEscape:
         return t.shortcut_action_video_escape;
+      case ShortcutAction.videoEnterCaret:
+        return t.shortcut_action_video_enter_caret;
       case ShortcutAction.dpadUp:
         return t.shortcut_action_dpad_up;
       case ShortcutAction.dpadDown:

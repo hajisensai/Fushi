@@ -2215,6 +2215,8 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
           );
           break;
         case CaretSurface.none:
+        // video 面属于视频页，阅读器不可能持有——防御性忽略。
+        case CaretSurface.video:
           break;
       }
     }
