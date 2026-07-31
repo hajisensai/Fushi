@@ -905,8 +905,51 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
   }
 
+  /// AnkiConnect 传输层被证实不可达后，查重探测的短路冷却窗（BUG-1302）。
+  ///
+  /// **必须是静态的**：`platformServices.createAnkiRepository()` 每次调用都新建一个
+  /// [AnkiConnectRepository]（`AnkiConnectRepository.new` 直接当工厂用），
+  /// `overlay_bridge_handlers` 的每次 duplicateCheck 桥调用都走一次——实例字段
+  /// 存不住任何跨调用状态。AnkiConnect 主机是全局配置，「连不上」也是全局事实。
+  static const Duration kDuplicateCheckUnreachableCooldown =
+      Duration(seconds: 30);
+
+  static DateTime? _duplicateCheckUnreachableUntil;
+
+  /// 测试用：清掉进程级查重冷却，避免用例间互相污染。
+  @visibleForTesting
+  static void resetDuplicateCheckCooldown() {
+    _duplicateCheckUnreachableUntil = null;
+  }
+
+  /// 测试可见：当前查重是否处于不可达冷却窗内。
+  @visibleForTesting
+  static bool get isDuplicateCheckInCooldown {
+    final DateTime? until = _duplicateCheckUnreachableUntil;
+    return until != null && DateTime.now().isBefore(until);
+  }
+
   @override
   Future<bool> isDuplicate(String expression, String reading) async {
+    // 不可达冷却窗内直接判「非重复」（BUG-1302）。查重是渲染路径上**逐词条**发起的
+    // 装饰性探测：popup.js 的 createEntryHeader 对结果里每个词条都发一次 duplicateCheck
+    // 桥调用，AnkiConnect 主机被防火墙静默丢包 / VPN 断开 / 配成了远程不在线的主机时，
+    // 每次都要挂满连接超时（5s，BUG-665 已把连接阶段单独绑定），N 个词条就是 N 条
+    // 并发挂起的 HTTP。
+    //
+    // 注意口径（复核修正）：`createEntryHeader` 是同步函数，这次探测是脱链的
+    // `.then(...)`，既不被 await 也不参与 `popupRendered` 发信——所以它**不会**
+    // 让弹窗迟出来，它拖住的是每个词条「已制卡 ✓ / 可制卡 +」徽章的刷新，外加
+    // N 条白挂的 socket。修它是为了消除这个延迟和浪费，不要拿它解释「查词慢 4-5 秒」。
+    //
+    // 返回值语义与下面 catch 的 fail-soft 完全一致（false = 不标「已制卡」），
+    // 只是不再为已证实不可达的主机把超时重复付 N 遍。Anki 一旦重新可达，
+    // 冷却窗到期后的第一次探测就会成功并立刻清零（见下方成功分支）。
+    final DateTime? until = _duplicateCheckUnreachableUntil;
+    if (until != null) {
+      if (DateTime.now().isBefore(until)) return false;
+      _duplicateCheckUnreachableUntil = null;
+    }
     final settings = await loadSettings();
     final deck = settings.availableDecks
             .firstWhereOrNull((d) => d.id == settings.selectedDeckId) ??
@@ -920,13 +963,25 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     }
     try {
       final service = _serviceForSettings(settings);
-      return await service.isDuplicate(
+      final bool duplicate = await service.isDuplicate(
         deckName: deck.name,
         fieldName: noteType.fields.first,
         fieldValue: expression,
         scope: settings.duplicateScope,
       );
+      // 拿到应答即证明主机活着，立刻解除冷却（不必等窗口自然到期）。
+      _duplicateCheckUnreachableUntil = null;
+      return duplicate;
     } catch (e, stack) {
+      // 只有**传输层**失败才进冷却，与 _mineFailureFor 用同一套分类：AnkiConnect
+      // 应答了业务错误（牌照不存在、字段不匹配等）说明主机可达，短路它只会让
+      // 查重永久失灵。
+      if (e is SocketException ||
+          e is TimeoutException ||
+          e is http.ClientException) {
+        _duplicateCheckUnreachableUntil =
+            DateTime.now().add(kDuplicateCheckUnreachableCooldown);
+      }
       debugPrint('AnkiConnectRepository.isDuplicate: $e\n$stack');
       return false;
     }
