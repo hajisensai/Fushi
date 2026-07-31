@@ -4926,6 +4926,18 @@ class AppModel with ChangeNotifier {
   void setGalMiningImageMode(VideoMiningImageMode mode) =>
       prefsRepo.setGalMiningImageMode(mode);
 
+  // 动图编码格式（AVIF / WebP / GIF，透传 prefsRepo）。默认 avif。与上面的「封面模式」
+  // 正交：模式选用不用动图，格式选动图怎么编码。
+  MiningAnimatedFormat get videoMiningAnimatedFormat =>
+      prefsRepo.videoMiningAnimatedFormat;
+  void setVideoMiningAnimatedFormat(MiningAnimatedFormat format) =>
+      prefsRepo.setVideoMiningAnimatedFormat(format);
+
+  MiningAnimatedFormat get galMiningAnimatedFormat =>
+      prefsRepo.galMiningAnimatedFormat;
+  void setGalMiningAnimatedFormat(MiningAnimatedFormat format) =>
+      prefsRepo.setGalMiningAnimatedFormat(format);
+
   bool get deduplicatePitchAccents => prefsRepo.deduplicatePitchAccents;
   void toggleDeduplicatePitchAccents() =>
       prefsRepo.toggleDeduplicatePitchAccents();

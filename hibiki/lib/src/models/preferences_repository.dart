@@ -11,7 +11,7 @@ import 'package:hibiki/src/media/video/video_immersive_mode.dart';
 import 'package:hibiki/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:hibiki/src/mining/galgame_library.dart';
 import 'package:hibiki/src/mining/immersion_mining_request.dart'
-    show VideoMiningImageMode;
+    show MiningAnimatedFormat, VideoMiningImageMode;
 import 'package:hibiki/src/models/audio_source_config.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression;
@@ -1359,6 +1359,31 @@ class PreferencesRepository extends ChangeNotifier {
 
   void setGalMiningImageMode(VideoMiningImageMode mode) async {
     await setPref('gal_mining_image_mode', mode.wireName);
+    notifyListeners();
+  }
+
+  // 动图**编码格式**，与上面两个「封面模式」正交：模式选「用不用动图 / 静态帧取哪一帧」，
+  // 格式选「动图用什么编码」。视频与 gal 同样分开存，理由与 image mode 一致（两边画面
+  // 特性不同，共用一个开关会逼用户为一边将就另一边）。
+  //
+  // 默认值不写在这里，由 [MiningAnimatedFormat.fromWireName] 对 null 给出（= avif），
+  // 保证解析未知历史值与「从没设过」走同一条路径。
+  MiningAnimatedFormat get videoMiningAnimatedFormat =>
+      MiningAnimatedFormat.fromWireName(
+          getPref('video_mining_animated_format', defaultValue: null)
+              as String?);
+
+  void setVideoMiningAnimatedFormat(MiningAnimatedFormat format) async {
+    await setPref('video_mining_animated_format', format.wireName);
+    notifyListeners();
+  }
+
+  MiningAnimatedFormat get galMiningAnimatedFormat =>
+      MiningAnimatedFormat.fromWireName(
+          getPref('gal_mining_animated_format', defaultValue: null) as String?);
+
+  void setGalMiningAnimatedFormat(MiningAnimatedFormat format) async {
+    await setPref('gal_mining_animated_format', format.wireName);
     notifyListeners();
   }
 

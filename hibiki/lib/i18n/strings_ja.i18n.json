@@ -2873,5 +2873,12 @@
   "sync_err_forbidden_detail": "The server refused this request: $reason (your sign-in is fine)",
   "collection_group_extras": "Extras & PV",
   "collection_group_season": "Season $n",
-  "collection_sort_by_season": "Sort by season"
+  "collection_sort_by_season": "Sort by season",
+  "mining_animated_format_avif": "AVIF (smallest)",
+  "mining_animated_format_webp": "WebP (wider support)",
+  "mining_animated_format_gif": "GIF (most compatible)",
+  "video_mining_animated_format": "Video card animation format",
+  "video_mining_animated_format_hint": "AVIF is far smaller than GIF at the same quality, and its top quality tier allows a higher resolution and frame rate than GIF or WebP. Falls back to GIF automatically when the bundled encoder cannot produce it.",
+  "gal_mining_animated_format": "Game card animation format",
+  "gal_mining_animated_format_hint": "Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs."
 }

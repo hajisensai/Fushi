@@ -91,6 +91,74 @@ enum VideoMiningImageMode {
   bool get isStill => this != VideoMiningImageMode.gif;
 }
 
+/// 制卡封面**动图的编码格式**，与 [VideoMiningImageMode] 正交：后者选「用不用动图 +
+/// 静态帧取哪一帧」，本枚举选「动图用什么编码」。默认 [avif]。
+///
+/// 为什么是两个枚举而不是把 avif/webp 并进 [VideoMiningImageMode]：并进去会变成
+/// 「格式 × 静态来源」的笛卡尔积（avif/webp/gif × currentFrame/subtitleStart），而格式
+/// 只对动图有意义、静态来源只对静态图有意义。两轴独立取值，各自一个设置项。
+///
+/// 每种格式自己声明**顶格档（最高清晰度档）用什么参数**（[maxTierFps]/[maxTierWidth]，
+/// `0` = 源帧率/源分辨率直通）。这不是装饰性属性——它是顶格档语义的唯一真相源，
+/// `MiningMediaCompression.resolve` 直接查它，不做「谁是特例」的分支判断。
+///
+/// 为什么不是一个 `hasInterFrameCompression` 布尔（本改动的初版就是那样，被实测推翻）：
+/// 「有没有帧间压缩」是编解码规格问题，而顶格档要回答的是**「源直通跑得动吗」**，
+/// 两者并不等价。本机 ffmpeg（libsvtav1 / libwebp_anim / native gif）实测，1080p30
+/// 合成源 4 秒窗：
+///
+/// | 格式 | 标准档 480px·8fps | 原图档 1080p·30fps |
+/// |---|---|---|
+/// | gif  | 1973 ms / 471 KB | 11978 ms / 17.8 MB |
+/// | webp |  877 ms / 163 KB | **16383 ms** / 5.19 MB |
+/// | avif | 2124 ms /  36 KB | **3502 ms** / 3.32 MB |
+///
+/// WebP 规格上确有帧间差分，实测却是三者里**最慢**的——`libwebp_anim` 本质是逐帧 VP8
+/// 帧内编码的静态图编码器，没有真正的运动补偿，也不并行；SVT-AV1 是真视频编码器，
+/// 在源分辨率下反而比 GIF 快 3.4 倍。所以 WebP 与 GIF 一样吃封顶值，只有 AVIF 开放源
+/// 直通。GIF 的封顶值仍是 BUG-1039 的实测折中（那次 1080p/4 秒 = 48.9 秒 / 54 MB，
+/// 10 秒 cue 约 135 MB，撞 120 秒超时且 AnkiConnect 卡死）。
+///
+/// ⚠️ 默认值是 [avif] 而非 [gif]：这是本改动**唯一一处有意的现状变更**（老用户升级后
+/// 新卡默认变 AVIF）。[gif] 保留为可选项，既供用户回退，也供捆绑 ffmpeg 不支持新编码器
+/// 时 fail-open 降级（见 `galgame_window_gif.dart` / `desktop_audio_clipper.dart`）。
+enum MiningAnimatedFormat {
+  avif('avif', 'avif', maxTierFps: 0, maxTierWidth: 0),
+  webp('webp', 'webp', maxTierFps: 12, maxTierWidth: 960),
+  gif('gif', 'gif', maxTierFps: 12, maxTierWidth: 960);
+
+  const MiningAnimatedFormat(
+    this.wireName,
+    this.fileExtension, {
+    required this.maxTierFps,
+    required this.maxTierWidth,
+  });
+
+  /// 偏好持久化用的稳定字符串键（勿随枚举名改动）。
+  final String wireName;
+
+  /// 输出文件扩展名（不含点）。ffmpeg 按扩展名选 muxer，故这也是 muxer 选择依据。
+  final String fileExtension;
+
+  /// 顶格档帧率。`0` = 源帧率直通（不加 `fps` 滤镜）。见枚举文档的实测表。
+  final int maxTierFps;
+
+  /// 顶格档宽度（px）。`0` = 源分辨率直通（不加 `scale` 滤镜）。同上。
+  final int maxTierWidth;
+
+  /// 顶格档是否真的是「原图」（源分辨率 + 源帧率）。仅供 UI 决定顶格档文案该说
+  /// 「原图」还是「最高」——不参与参数计算，参数一律读 [maxTierFps]/[maxTierWidth]。
+  bool get maxTierIsSourcePassthrough => maxTierFps == 0 && maxTierWidth == 0;
+
+  /// 从偏好字符串解析；未知/null → [avif]（新默认）。
+  static MiningAnimatedFormat fromWireName(String? name) {
+    for (final MiningAnimatedFormat format in MiningAnimatedFormat.values) {
+      if (format.wireName == name) return format;
+    }
+    return MiningAnimatedFormat.avif;
+  }
+}
+
 /// 统一沉浸制卡请求。任何来源（本地/YouTube/Netflix）都构造这个喂 [ImmersionMiningEngine]。
 ///
 /// [mediaSource] 是 ffmpeg 的 inputPath——本地绝对路径 或 可 seek 的 http 流 URL。
@@ -121,6 +189,7 @@ class ImmersionMiningRequest {
     this.providedAudioName,
     this.requireAudio = true,
     this.imageMode = VideoMiningImageMode.gif,
+    this.animatedFormat = MiningAnimatedFormat.gif,
     this.mediaSourceTlsPinSha256,
     this.remoteAudioClipper,
   });
@@ -164,6 +233,15 @@ class ImmersionMiningRequest {
   /// 视频制卡封面图片模式（见 [VideoMiningImageMode]）。默认 [VideoMiningImageMode.gif]
   /// = 现状。仅本地/有 range 的封面解析路径读取；providedCoverBytes 路径不受影响。
   final VideoMiningImageMode imageMode;
+
+  /// 动图编码格式（见 [MiningAnimatedFormat]）。仅 [imageMode] 为
+  /// [VideoMiningImageMode.gif]（= 用动图）时生效。
+  ///
+  /// 这里默认 [MiningAnimatedFormat.gif] 而**用户偏好默认 avif**，两者不矛盾：值对象的
+  /// 默认只服务「没显式指定的调用点/测试」，保证它们逐字节等价于改动前；用户可见的默认
+  /// 由 `MiningAnimatedFormat.fromWireName(null)` 给出（= avif），真实调用点一律显式透传
+  /// 偏好。与 [imageMode] 的默认取法一致。
+  final MiningAnimatedFormat animatedFormat;
 
   /// BUG-891：[mediaSource]/[audioSource] 若是远端自签 Hibiki 主机的 https 流，这里带上
   /// 该 host 经 TOFU 钉扎的证书 SHA-256 指纹（`aa:bb:..`）。引擎把它透传给 ffmpeg 抽取器的
@@ -215,6 +293,7 @@ class ImmersionMiningRequest {
         providedAudioName: providedAudioName,
         requireAudio: requireAudio,
         imageMode: imageMode,
+        animatedFormat: animatedFormat,
         mediaSourceTlsPinSha256: mediaSourceTlsPinSha256,
         remoteAudioClipper: remoteAudioClipper,
       );

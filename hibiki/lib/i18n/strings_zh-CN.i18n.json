@@ -2873,5 +2873,12 @@
   "sync_err_forbidden_detail": "服务端拒绝了这次请求：$reason（登录没问题）",
   "collection_group_extras": "PV·特典",
   "collection_group_season": "第 $n 季",
-  "collection_sort_by_season": "按季排序"
+  "collection_sort_by_season": "按季排序",
+  "mining_animated_format_avif": "AVIF（体积最小）",
+  "mining_animated_format_webp": "WebP（兼容性更广）",
+  "mining_animated_format_gif": "GIF（兼容性最好）",
+  "video_mining_animated_format": "视频制卡动图格式",
+  "video_mining_animated_format_hint": "同画质下 AVIF 体积远小于 GIF，最高清晰度档也允许比 GIF/WebP 更高的分辨率与帧率。捆绑的编码器产不出时会自动回退 GIF。",
+  "gal_mining_animated_format": "游戏制卡动图格式",
+  "gal_mining_animated_format_hint": "与视频制卡同样的格式，但分开保存：galgame 一句台词内画面基本静止，取舍不同。"
 }

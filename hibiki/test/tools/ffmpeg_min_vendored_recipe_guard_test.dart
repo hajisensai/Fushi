@@ -41,11 +41,15 @@ const Map<String, String> _componentVarToFlag = <String, String>{
 /// 必须出现在入库二进制 configure 串里的独立开关（非清单形式）。
 ///
 /// libx264/gpl：H.264 片段导出（TODO-1257）。network/schannel：YouTube 远端制卡
-/// 的 http(s) 输入 + -reconnect（TODO-1214）。少任何一个都是「二进制比配方旧」。
+/// 的 http(s) 输入 + -reconnect（TODO-1214）。libsvtav1/libwebp：制卡封面动图的
+/// AVIF / WebP 编码器（默认格式已是 AVIF；缺它们时 Dart 侧会降级 GIF，卡还能制出来，
+/// 但用户选的格式静默失效）。少任何一个都是「二进制比配方旧」。
 const List<String> _requiredStandaloneFlags = <String>[
   '--disable-everything',
   '--enable-gpl',
   '--enable-libx264',
+  '--enable-libsvtav1',
+  '--enable-libwebp',
   '--enable-network',
   '--enable-schannel',
 ];

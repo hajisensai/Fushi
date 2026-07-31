@@ -61,6 +61,7 @@ void main() {
           required String outputPath,
           int fps = 8,
           int width = 320,
+          MiningAnimatedFormat format = MiningAnimatedFormat.gif,
           FfmpegFailureReporter? onFailure,
           String? tlsPinSha256}) async =>
       outputPath;
@@ -71,6 +72,7 @@ void main() {
           required String outputPath,
           int fps = 8,
           int width = 320,
+          MiningAnimatedFormat format = MiningAnimatedFormat.gif,
           FfmpegFailureReporter? onFailure,
           String? tlsPinSha256}) async =>
       null;
@@ -278,6 +280,7 @@ void main() {
       required String outputPath,
       int fps = 8,
       int width = 320,
+      MiningAnimatedFormat format = MiningAnimatedFormat.gif,
       FfmpegFailureReporter? onFailure,
       String? tlsPinSha256,
     }) async {
@@ -364,6 +367,7 @@ void main() {
         required String outputPath,
         int fps = 8,
         int width = 320,
+        MiningAnimatedFormat format = MiningAnimatedFormat.gif,
         FfmpegFailureReporter? onFailure,
         String? tlsPinSha256}) async {
       gifInput = inputPath;
@@ -496,6 +500,7 @@ void main() {
         required String outputPath,
         int fps = 8,
         int width = 320,
+        MiningAnimatedFormat format = MiningAnimatedFormat.gif,
         FfmpegFailureReporter? onFailure,
         String? tlsPinSha256}) async {
       gifCalled = true;
@@ -533,6 +538,7 @@ void main() {
         required String outputPath,
         int fps = 8,
         int width = 320,
+        MiningAnimatedFormat format = MiningAnimatedFormat.gif,
         FfmpegFailureReporter? onFailure,
         String? tlsPinSha256}) async {
       gifCalled = true;
