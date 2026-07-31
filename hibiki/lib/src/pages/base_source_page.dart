@@ -11,9 +11,11 @@ import 'package:hibiki/src/anki/anki_view_model.dart';
 import 'package:hibiki/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:hibiki/src/lookup/effective_lookup_size.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/pages/implementations/sentence_context_dialog.dart';
+import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
@@ -163,14 +165,49 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   @protected
   void onDismissBarrierPointerSignal(PointerSignalEvent event) {}
 
-  /// Whether the native dictionary WebView should forward desktop navigation
-  /// keys to this source. Opt-in because other dictionary surfaces use these
-  /// keys inside the popup itself.
+  /// 本页面的快捷键作用域。非空即启用「弹窗内输入交回宿主」的桥
+  /// （[dictionaryPopupForwardedActions] 决定交回哪些）。
+  ///
+  /// 词典弹窗是纯原生 WebView：指针落在它上面时，键盘与鼠标事件只存在于弹窗 DOM
+  /// 里，宿主的 Flutter `Focus` / `Listener` 一个都收不到。点词后弹窗恰好贴在光标
+  /// 旁，所以这是常态——不装这座桥，「关闭词典」的鼠标键永远无反应、快捷键则在与
+  /// 弹窗交互过一次之后失效（BUG-1071 复诉的两个症状）。
   @protected
-  bool get capturesDictionaryPopupNavigationKeys => false;
+  ShortcutScope? get dictionaryPopupInputScope => null;
 
+  /// 弹窗可见时仍要生效的动作。token 表由注册表**当前**绑定实时导出，故用户改键
+  /// 立即对弹窗持焦的路径生效（旧桥把键名硬编码在 JS 里，改键后不跟随）。
   @protected
-  void onDictionaryPopupNavigationKey(String key) {}
+  Set<ShortcutAction> get dictionaryPopupForwardedActions =>
+      const <ShortcutAction>{};
+
+  /// 当前要下发给弹窗的输入表。作用域缺席时为空表——空表**仍会**注入，用来清掉
+  /// 热槽 WebView 上残留的旧表。
+  @protected
+  DictionaryPopupInputSpec get dictionaryPopupInputSpec =>
+      dictionaryPopupInputScope == null
+          ? const DictionaryPopupInputSpec()
+          : dictionaryPopupInputSpecFor(
+              registry: appModel.shortcutRegistry,
+              actions: dictionaryPopupForwardedActions,
+            );
+
+  /// 弹窗回传 token 的落地点。默认行为：解析出的动作只要属于
+  /// [dictionaryPopupForwardedActions] 就关掉整条弹窗栈——「关闭词典」是这条桥的
+  /// 唯一通用语义。漫画页覆写它，把左右键接回自己的翻页链。
+  @protected
+  void onDictionaryPopupInputToken(String token) {
+    final ShortcutScope? scope = dictionaryPopupInputScope;
+    if (scope == null) return;
+    final ShortcutAction? action = resolveDictionaryPopupInputToken(
+      registry: appModel.shortcutRegistry,
+      token: token,
+      scope: scope,
+    );
+    if (action == null) return;
+    if (!dictionaryPopupForwardedActions.contains(action)) return;
+    clearDictionaryResult();
+  }
 
   /// TODO-1027：点全屏 dismiss barrier（弹窗矩形外的真空白处）的钩子。默认行为
   /// 是一次性清整栈（[clearDictionaryResult] → 会话收尾，保留隐藏热槽 BUG-092）—
@@ -744,9 +781,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         // TODO-058 fail-safe：弹窗 WebView 加载失败也走同一翻可见入口（加载失败
         // 也显示，不卡死「点查词什么都不出」）。
         onRenderError: () => _onPopupLayerRendered(index, item),
-        onHostNavigationKey: capturesDictionaryPopupNavigationKeys
-            ? onDictionaryPopupNavigationKey
-            : null,
+        inputSpec: dictionaryPopupInputSpec,
+        onHostInputToken: dictionaryPopupInputScope == null
+            ? null
+            : onDictionaryPopupInputToken,
         headerWidget: index == 0 ? buildPopupAudioControls() : null,
         overlayWidget: isTop ? buildDictionaryLoading() : null,
         onTextSelected: (text, localRect) async {

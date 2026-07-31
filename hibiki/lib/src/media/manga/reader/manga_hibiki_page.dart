@@ -27,7 +27,7 @@ import 'package:hibiki/src/media/manga/mokuro_payload.dart';
 import 'package:hibiki/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
 import 'package:hibiki/src/focus/page_focus_ownership.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
-    show ModifierKey, activeModifierKeys;
+    show InputBinding, ModifierKey, MouseBinding, activeModifierKeys;
 import 'package:hibiki/src/shortcuts/manga_arrow_override.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
@@ -1240,11 +1240,28 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   }
 
   @override
-  bool get capturesDictionaryPopupNavigationKeys => true;
+  ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.manga;
+
+  /// 漫画在弹窗可见时**仍要**处理翻页与关词典：左右键关弹窗并翻页、关词典键只关
+  /// 弹窗。旧桥把这三个键硬编码成 `ArrowLeft/ArrowRight/Escape`，用户改键后弹窗
+  /// 持焦的路径仍按老键位响应；现在 token 表由注册表当前绑定导出，改键自动跟随。
+  @override
+  Set<ShortcutAction> get dictionaryPopupForwardedActions =>
+      const <ShortcutAction>{
+        ShortcutAction.mangaPageForward,
+        ShortcutAction.mangaPageBackward,
+        ShortcutAction.mangaDismissDict,
+      };
 
   @override
-  void onDictionaryPopupNavigationKey(String key) {
-    _handleNativeNavigationKey(key);
+  void onDictionaryPopupInputToken(String token) {
+    // 鼠标 token 不参与「跨页方向校正」（那是方向键专属语义），交回基类按注册表
+    // 动作直接执行（关词典）。
+    if (MouseBinding.deserialize(token) != null) {
+      super.onDictionaryPopupInputToken(token);
+      return;
+    }
+    _handleNativeNavigationKey(token);
   }
 
   /// 词典弹窗渲染完成（指针唤出路径）：把 Flutter 焦点收回正文。
@@ -1295,17 +1312,18 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   }
 
   void _handleNativeNavigationKey(String key) {
-    final LogicalKeyboardKey? logicalKey = switch (key) {
-      'ArrowLeft' => LogicalKeyboardKey.arrowLeft,
-      'ArrowRight' => LogicalKeyboardKey.arrowRight,
-      'Escape' || 'Esc' => LogicalKeyboardKey.escape,
-      _ => null,
-    };
-    if (logicalKey == null) return;
-    // 桥只转发裸键（[webViewKeyBridgeScript] 放行一切修饰键组合），故这里传空集。
+    // token 按 [InputBinding.serialize] 解析：正文 WebView 的桥发裸 `event.key`
+    // （`ArrowLeft`），弹窗桥发注册表 token（可能是任意键名、可能带修饰键前缀），
+    // 两者都能被同一个 deserialize 吃下——旧的三分支 switch 只认硬编码的方向键与
+    // Escape，用户把翻页/关词典改绑到别的键后，WebView 持焦的这条路径就整个失效。
+    // `Esc` 是旧浏览器对 Escape 的别名，不在注册表键名表里，单独归一。
+    final InputBinding? binding = key == 'Esc'
+        ? const InputBinding(key: LogicalKeyboardKey.escape)
+        : InputBinding.deserialize(key);
+    if (binding == null) return;
     final MangaReaderInputAction? action = _resolveMangaKeyAction(
-      logicalKey,
-      const <ModifierKey>{},
+      binding.key,
+      binding.modifiers,
     );
     if (action != null) {
       _executeReaderInputAction(

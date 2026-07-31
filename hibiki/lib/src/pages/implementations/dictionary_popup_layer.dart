@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hibiki_dictionary/hibiki_dictionary.dart';
 import 'package:hibiki/src/media/sources/reader_hibiki_source.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:hibiki/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:hibiki/utils.dart';
@@ -425,7 +426,8 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onScrolledToBottom,
     this.onRendered,
     this.onRenderError,
-    this.onHostNavigationKey,
+    this.inputSpec = const DictionaryPopupInputSpec(),
+    this.onHostInputToken,
     this.headerWidget,
     this.overlayWidget,
     this.isDark = false,
@@ -518,7 +520,12 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// TODO-058 fail-safe：弹窗 WebView 主框架加载失败时触发，宿主据此立即翻可见
   /// 挂起的冷层（加载失败也显示，不卡死）。
   final VoidCallback? onRenderError;
-  final ValueChanged<String>? onHostNavigationKey;
+
+  /// 弹窗内要交回宿主的输入集合（键盘 token + 鼠标按钮），见 [DictionaryPopupInputSpec]。
+  final DictionaryPopupInputSpec inputSpec;
+
+  /// [inputSpec] 命中时弹窗回传的 token。
+  final ValueChanged<String>? onHostInputToken;
   final Widget? headerWidget;
   final Widget? overlayWidget;
   final bool isDark;
@@ -852,7 +859,8 @@ class DictionaryPopupLayer extends StatelessWidget {
             onScrolledToBottom: onScrolledToBottom,
             onRendered: onRendered,
             onRenderError: onRenderError,
-            onHostNavigationKey: onHostNavigationKey,
+            inputSpec: inputSpec,
+            onHostInputToken: onHostInputToken,
           ),
           // 搜索期且还没有词条时，用一层不透明主题色盖板（带进度条）盖住 WebView。
           // 视频（mixin reuseWarmSlot）会在结果就绪前就把热槽设为可见，此刻 WebView

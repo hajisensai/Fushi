@@ -1,0 +1,15 @@
+## BUG-1269 · 关闭词典的快捷键/鼠标键在弹窗表面仍然无效
+- **报告**：2026-07-31（用户：关闭词典快捷键鼠标按键还是没用）。[BUG-1071](BUG-1071-dismiss-dictionary-mouse-and-keyboard-fails.md) 的复诉。
+- **真实性**：✅ 真 bug。BUG-1071 修的两处都在**宿主页面**一侧，而失效发生在**弹窗自己**那一侧——它把这一格写成了「已知边界」，但那正是用户的常态操作落点。
+  - **鼠标键**：唯一的鼠标消费者是正文 WebView 的 `onPointerSeek`（`reader_hibiki/webview.part.dart:2246`），只覆盖「点在弹窗矩形**之外**的正文区」。点词后弹窗就贴在光标旁，按侧键时指针几乎必然落在**弹窗表面**上，事件被弹窗的原生 WebView 吃掉，正文 JS 根本收不到 → 全程无反应。
+  - **键盘键**：BUG-1071 的 `_reclaimReaderFocusForTouchPopup` 只在**弹窗渲染那一刻**把 Flutter 焦点抢回正文。用户与弹窗交互一次（滚动看释义 / 点释义 / 点发音）OS 焦点就回到弹窗 WebView，之后按键必然再次失效 → 表现为「时灵时不灵」。
+  - **为什么弹窗侧本来该有的桥没起作用**：`DictionaryPopupWebView` 早有转发桥，但被 `capturesDictionaryPopupNavigationKeys`（`base_source_page.dart:170` 基类恒 false）门控成**漫画页专属**——阅读器/视频页压根没装；且它的键表**硬编码** `ArrowLeft/ArrowRight/Escape` 三个值，既不含「关闭词典」的用户绑定，也不跟随改键。
+- **[x] ① 已修复** —
+  - 共享桥 `webViewKeyBridgeScript`（`hibiki/lib/src/focus/webview_key_bridge.dart`）一般化：判据从「裸 `event.key` 列表」升级为 **token 列表**（`[Ctrl+][Shift+][Alt+][Meta+]<键名>`，键名同时匹配 `e.key` 与 `e.code`）。`InputBinding.serialize()` 的键名（`Escape`/`KeyD`/`Space`）逐字就是 DOM `code`，故注册表绑定可**原样**当 token 用，零映射表。旧版「带任一修饰键就整体放行」的独立分支随之消失——那条分支正是「绑成 Ctrl+D 的动作在 WebView 持焦时永远收不到」的原因；裸表放行组合键现在是「不命中」的自然结果。
+  - 同一座桥新增**鼠标通道**（`mouseButtons` + `installMouseListeners`）：命中回传 `Mouse<n>`，并压掉 `auxclick`（侧键历史导航）/ `contextmenu` 默认行为；左键与未绑定按钮原样留给弹窗（不抢查词/滚动）。
+  - 键表改为按 `handlerName` 派生的 `window` 槽、**每次注入覆盖**，listener 仍只装一次。旧版键表冻结在首次注入的闭包里——热槽弹窗 WebView 跨查词长期存活，改键后换不掉表。
+  - 门控从「漫画专属 bool」换成作用域契约（`base_source_page.dart`）：`dictionaryPopupInputScope` + `dictionaryPopupForwardedActions` → `dictionaryPopupInputSpecFor` 实时导出 token 表；回传 token 经 `resolveDictionaryPopupInputToken` 走**与键盘路径同一个** `resolve*`，默认落地 `clearDictionaryResult()`。阅读器接 `readerDismissDict`；漫画接翻页 + `mangaDismissDict`（顺带修掉它「改键后弹窗持焦仍按老键位响应」的老毛病，`_handleNativeNavigationKey` 的三分支硬编码 switch 换成 `InputBinding.deserialize`）。
+  - 新文件 `hibiki/lib/src/pages/implementations/dictionary_popup_input_bridge.dart`（spec + 导出 + 解析 + 脚本生成）。
+- **[x] ② 已加自动化测试** — `hibiki/test/focus/webview_key_bridge_behavior_test.dart` + `.js`：**行为级**守卫，Dart 生成生产脚本 → node 真执行 → 合成事件断言转发结果（与 BUG-1012 同款 harness，无 node 时显式 skip）。覆盖：Escape/侧键转发、左键与未绑定键放行、长按不重复、裸表放行组合键、`Ctrl+KeyD` 真拦得到、`e.code` 通道（换输入布局不失效）、**改键后旧键立即失效且 listener 不叠加**、输入框/IME 放行、空表不拦、老宿主（阅读器空格桥）语义零变化。已做**变异实测**：把 `forwardRepeats` 翻成 true，测试立刻转红（证明 node 真在跑，不是 skip 假绿）。注入面守卫更新在 `test/focus/webview_key_bridge_test.dart` 与 `test/pages/dictionary_popup_inline_html_memo_test.dart`。
+- **验证状态**：全量 `flutter analyze`（含 test）0 issue；`test/focus` + `test/reader` + `test/pages` + `test/lookup` + `test/shortcuts` + `test/media/video` 共 6700+ 测试通过，失败项经逐个核对均为 develop 既有红（扫的源文件本轮零改动，如 `vn_view_mode_three_state_guard` 的断言字面量在 `origin/develop` 上就是 0 次命中）或大批量并跑的加载 flaky（单跑绿）。
+- **备注**：本轮范围是有「关闭词典」动作的阅读器与漫画两页。**视频页未接**——它没有独立的「关闭词典」动作（走 `guardVideoShortcutsWithPopupDismiss` 的「浮层可见时任一映射键先关浮层」语义），要接需先定义转发哪些键，避免把弹窗内的按键整片抢走；作为独立跟进项。app 外 / galgame 的全局查词浮窗是 Windows 原生裸 WebView2（`global_lookup_window.cpp`），不走本条路径，不在本次修复覆盖内。
