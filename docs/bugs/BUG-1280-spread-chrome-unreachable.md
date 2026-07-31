@@ -41,12 +41,23 @@
     真正被卷进去的是**图片型 EPUB**：扫描版漫画以 `format='epub'` 导入后走 reader 路径
     （`reader_hibiki_source.dart:506-508, 548-552` 只把 `pdf`/`manga` 分流走），以及带
     `rendition:spread` 的轻小说彩插页。用户说的「变成双页漫画」正是这一类。
-  - **为什么不做「按媒体类型门控」**：reader 页拿不到可用的区分信号。`manga`/`pdf` 在打开
-    前已被路由分走，reader 内 `BookFormat` 事实上恒为 `epub`；`MediaKind`
-    （`packages/hibiki_core/lib/src/database/media_kind.dart:29-40`）同样只有
-    epub/srt/video/game，区分不出「图片型 EPUB」。要加门控只能新造信号（如整本 image-only
-    章占比阈值），属于新功能而非本 bug 的根因修复。既然小说本就不会进，把默认改成 `off`
-    已经**完整覆盖**用户诉求：没主动选过的用户不再被自动切进双页。
+  - **为什么不做「按媒体类型门控」**（口径更正：不是「拿不到信号」）：
+    本仓**确实已有**可用信号——`MangaArchiveImporter._isPureImageEpub`
+    （`hibiki/lib/src/media/manga/import/manga_archive_importer.dart:220-239`），入参正是
+    reader 已持有的 `EpubBook`，且已产品化为 `BookConvertBlocker.textOnlyBook`
+    （`book_format_convert.dart:42, 117`）；另有 DB 侧逐章 `chaptersJson.characters`。
+    不做门控的真实理由是**它对本 bug 零增量、且不修根因**：
+    - `_isPureImageEpub` 要求**所有** linear 非 nav 章都 image-only（`:226-227` 一章不满足
+      就 false）。用户实际撞的是「**轻小说彩插 + `rendition:spread`**」——正文章节是文字，
+      这类书会被判成**文字书**。按它正向门控 ⇒ 这类书本来就不符合，等于什么都没挡（零
+      增量）；反向门控（只在纯图书上启用 spread）⇒ 彩插书原样复发。两个方向都不解决用户
+      报的那本书。
+    - 更根本的是：门控只是把「手势契约不同的独立文档」**精准投递**给会触发它的书，
+      spread 文档本身的手势缺口一点没修。根因修复是 ①③（补唤出通道 + 堵掉误注入），
+      默认改 `off` 是「不让没选过的用户撞上」，两者已覆盖用户诉求。
+    - 相邻空白（本轮不做，留 TODO）：`rendition:layout` / `pre-paginated` **全仓未解析**
+      （`grep` 零命中），`hibiki/lib/src/epub/epub_parser.dart:794-805` 解析 `rendition:spread`
+      处是唯一的补点。真要做「按书判断该不该双页」，那才是正确的信号来源。
 - **[x] ① 已修复** — 四处根因修复：
   - spread 文档补「图片以外的点击」专桥 `onSpreadTapEmpty`（文档级监听 + `IMG` 短路，
     点图片仍走原有查看器）：`reader_hibiki_page.dart` `buildSpreadPageHtml`。
@@ -85,9 +96,16 @@
     其中 ③ 第一版守卫**假绿**（`return;` 的搜索窗口从守卫一直到注入点，混进了歌词分支自己
     的 `return;`），已收紧为 if 块自身再复测转红——变异实测当场抓到的假绿。
 - **备注**：
-  - 已知相邻缺口（本轮未扩大范围）：spread 独立文档同样没有 `onSwipe` 脚本，触屏在双页页面
-    上无法滑动翻页，只能靠唤出底栏后用底栏按钮 / 键盘。修好唤出通道后已不再卡死，但手势
-    契约仍与正文不对齐。
+  - 🔴 **本次修复在 Android 上有一处真实的能力损失，必须记账**：③ 的守卫堵掉的那份误注入，
+    此前**顺带**给 Android 的 spread 页提供过 `onSwipe` 滑动翻页与键盘桥（正文引擎自带）。
+    守卫生效后它们一并消失 ⇒ **Android 用户在双页页面上会失去滑动翻页**，只能唤出底栏后用
+    底栏按钮 / 键盘 / 手柄翻页。这不是「单纯修好一个 bug」，是拿「双触发导致底栏彻底唤不出
+    （退不出书）」换「少一种翻页手势」——卡死是致命的、少一种手势是可降级的，所以这笔交易
+    值得做，但**不得淡化**。
+    Windows 侧无此损失（那边从来就没被注入过，本来就没有 spread 滑动翻页）。
+  - **TODO（跟进补回）**：给 spread 独立文档补它自己的 `onSwipe` 脚本 + 键桥，与歌词 / VN
+    独立文档同款自带手势，而不是靠正文引擎误注入白捡。补回后两个平台的 spread 手势契约才
+    真正对齐（目前是「两平台一致地少了滑动翻页」）。
   - 真机复测（Android / Windows 原始路径：书架 → 打开含整页图的书 → 显式设 spreadMode=on →
     收起底栏 → 点 letterbox 留白）未做；③ 的平台分叉是静态证据链（Dart 调用点 + 两侧原生
     实现 + 陈旧判据三处对齐），未在真机上观测过双触发。

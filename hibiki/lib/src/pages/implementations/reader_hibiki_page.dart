@@ -1121,10 +1121,14 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   /// BUG-1280：**上一次交给 WebView 的文档是不是 spread 独立文档**
   /// （[buildSpreadPageHtml]，两张整页 `<img>`，无正文 `hoshiReader`）。
   ///
-  /// 只有两个写点，正好是 WebView 的两个装载原语：`_loadSpreadPage` 置位、
-  /// `_loadChapterDirectly` 复位——所以它跟踪的是「WebView 里现在是什么文档」，
-  /// 而不是「spread map 存不存在」（`_spreadMap != null` 在整本书生命周期为真，
-  /// 分不出当前这一页是双页还是普通章）。
+  /// 写点是**三个**，正好是把文档交给 WebView 的三个装载原语：`_loadSpreadPage`
+  /// 置位，`_loadChapterDirectly` 与 **`_loadLyricsPage`** 复位。所以它跟踪的是
+  /// 「WebView 里现在是什么文档」，而不是「spread map 存不存在」
+  /// （`_spreadMap != null` 在整本书生命周期为真，分不出当前这一页是双页还是普通章）。
+  ///
+  /// **歌词那处最容易漏，本 PR 实现时就漏过**：不在 `_loadLyricsPage` 复位，从双页
+  /// 页面切进歌词模式时本标记会残留为真，`_onChapterLoadComplete` 的 spread 守卫把
+  /// 歌词分支一起挡掉 → 歌词永远不就绪。新增装载点必须同步写它。
   ///
   /// 存在的理由是 `onLoadStop` 的陈旧判据只比 URL 的 path，而 `_loadSpreadPage`
   /// 传的 baseUrl 与 `_chapterUrl(_currentChapter)` 逐字相同 → 该判据**分不出**
