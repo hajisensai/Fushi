@@ -1,3 +1,4 @@
+import 'package:hibiki/src/media/collections/collection_asset_reclaim.dart';
 import 'package:hibiki/src/sync/collection_manifest.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
@@ -575,6 +576,9 @@ Future<CollectionManifest> loadLocalCollectionManifest(
 Future<int> applyCollectionLocalChanges(
     HibikiDatabase db, CollectionLocalChanges changes) async {
   if (changes.isEmpty) return 0;
+  // 被本轮解散的合集行快照：删行发生在事务里，而回收自有封面是文件 IO，必须挪到
+  // 事务提交之后做（BUG-1316）。路径只能在行还活着时取，故在删之前入列。
+  final List<MediaCollectionRow> dissolved = <MediaCollectionRow>[];
   await db.transaction(() async {
     for (final CollectionManifestEntry e in changes.entries) {
       final MediaCollectionRow? row =
@@ -583,6 +587,7 @@ Future<int> applyCollectionLocalChanges(
       if (e.deletedAt != null) {
         // 目标态 = 已删：删本地行（若有），墓碑表只留哨兵（镜像 deletedAt）。
         if (row != null) {
+          dissolved.add(row);
           await db.deleteMediaCollectionRaw(row.id);
         }
         await db.replaceCollectionTombstonesFor(
@@ -602,6 +607,7 @@ Future<int> applyCollectionLocalChanges(
       if (e.members.isEmpty) {
         // 活壳（全成员被移出）：本地沿用「移空自删」语义，不留 0 成员合集卡。
         if (row != null) {
+          dissolved.add(row);
           await db.deleteMediaCollectionRaw(row.id);
         }
       } else {
@@ -645,6 +651,9 @@ Future<int> applyCollectionLocalChanges(
       ]);
     }
   });
+  // 事务外回收：护栏（落在合集封面目录内 + 不被任何存活合集引用）在 helper 里，
+  // 本轮又新建了合集的话它们的封面自然在存活引用集里，不会被误删。
+  await reclaimDeletedCollectionAssets(db, dissolved);
   return changes.changedCollections;
 }
 

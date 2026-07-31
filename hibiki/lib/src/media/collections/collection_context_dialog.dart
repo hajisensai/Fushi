@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'package:hibiki/src/sync/deletion_disclosure.dart';
+import 'package:hibiki/src/media/collections/collection_asset_reclaim.dart';
 import 'package:hibiki/src/media/collections/collection_one_key_sort.dart';
-import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
 import 'package:hibiki/src/pages/implementations/media_item_dialog_page.dart';
@@ -18,7 +18,8 @@ import 'package:hibiki_core/hibiki_core.dart';
 /// 上下文菜单（与单卡的长按对话框割裂，用户实报）。本对话框复用单卡同款
 /// [MediaItemDialogFrame] 骨架，动作语义与详情页 AppBar 完全同源：
 /// 重命名走 [HibikiDatabase.renameMediaCollection]，标签走 [TagPickerPage]
-/// （合集路），删除走 [HibikiDatabase.deleteMediaCollection]（纯解链，可选
+/// （合集路），删除走 [deleteMediaCollectionWithAssets]（纯解链 + 回收合集自有
+/// 封面，不删成员本体，可选
 /// 「连同成员本体一起删」勾选，与详情页 `_delete` 同一纪律）。
 ///
 /// [context] 必须是**页面**级 context（对话框内部动作先关自身再用它续跑）。
@@ -187,8 +188,9 @@ Future<void> _sortCollection({
 }
 
 /// 删除合集：确认（可选「连同成员本体一起删」勾选）→ 先删成员本体（调用方注入，
-/// 按媒体域删 DB 行 + 磁盘副本）→ [HibikiDatabase.deleteMediaCollection]
-/// 解散容器（清引用行 + 写合集级墓碑）。与两个合集详情页的 `_delete` 同一顺序。
+/// 按媒体域删 DB 行 + 磁盘副本）→ [deleteMediaCollectionWithAssets] 解散容器
+/// （清引用行 + 写合集级墓碑 + 回收合集自有封面）。与两个合集详情页的 `_delete`
+/// 同一顺序、同一入口（BUG-1316：回收必须挂在删除动作上，不能各入口各写一遍）。
 Future<void> _deleteCollection({
   required BuildContext context,
   required HibikiDatabase db,
@@ -219,34 +221,6 @@ Future<void> _deleteCollection({
   if (result.checked && onDeleteMembersMedia != null) {
     await onDeleteMembersMedia(List<MediaCollectionItemRow>.of(members));
   }
-  await db.deleteMediaCollection(collection.id);
-  await _reclaimCollectionCover(db, collection);
+  await deleteMediaCollectionWithAssets(db, collection.id);
   onChanged();
-}
-
-/// 回收被删合集**自有**封面文件（`MediaCollections.coverPath`，schema v61）。
-///
-/// 合集行删了但那张图还在磁盘上 = 永久泄漏（合集封面不在 `video_books.cover_path`
-/// 引用集里，[VideoStorage.gcOrphanCovers] 那轮历史 GC 也扫不到子目录）。护栏与
-/// [VideoStorage.deleteBookAssets] 同纪律：只删落在合集封面目录内、且不被其余任何
-/// 合集引用的文件。删除失败不抛——合集已经删掉是既成事实，一张残留图不该让整个
-/// 删除流程报错。
-Future<void> _reclaimCollectionCover(
-  HibikiDatabase db,
-  MediaCollectionRow collection,
-) async {
-  final String? cover = collection.coverPath;
-  if (cover == null || cover.isEmpty) return;
-  try {
-    final List<MediaCollectionRow> rest = await db.getAllMediaCollections();
-    await VideoStorage.deleteCollectionCover(
-      deletedCoverPath: cover,
-      stillReferencedCoverPaths: <String>[
-        for (final MediaCollectionRow c in rest)
-          if (c.id != collection.id && c.coverPath != null) c.coverPath!,
-      ],
-    );
-  } catch (e, stack) {
-    ErrorLogService.instance.log('collection.reclaimCover', e, stack);
-  }
 }

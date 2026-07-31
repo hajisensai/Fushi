@@ -40,6 +40,7 @@ import 'package:hibiki/src/pages/implementations/book_css_editor_page.dart';
 import 'package:hibiki/src/pages/implementations/illustrations_viewer_page.dart';
 import 'package:hibiki/src/media/collections/add_to_collection_dialog.dart';
 import 'package:hibiki/src/media/collections/batch_combine.dart';
+import 'package:hibiki/src/media/collections/collection_asset_reclaim.dart';
 import 'package:hibiki/src/media/collections/collection_context_dialog.dart';
 import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/media/metadata/book_cover_scrape_dialog.dart';

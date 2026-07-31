@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1255 条。点号进各自文件。
+> 共 1256 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1316](bugs/BUG-1316-collection-delete-cover-leak.md) | ✅ | ✅ | 删合集只有 1/6 入口回收自有封面：其余五条只删 DB 行，路径随行永久丢失、GC 又扫不到该子目录 = 确定性空间泄漏 |
 | [BUG-1308](bugs/BUG-1308-popup-dict-style-node-per-section.md) | 🚧 | 🚧 | 查词弹窗每条目×每词典新建一个 style 节点，触发 10 次全文档样式重算 |
 | [BUG-1307](bugs/BUG-1307-dict-engine-max-results-overshoot.md) | ✅ | ✅ | 查词冷路径白解压 20 倍：引擎结果上限硬编码 200 而 Dart 侧只用 maximumTerms |
 | [BUG-1305](bugs/BUG-1305-delete-confirm-disclosure.md) | ✅ | ✅ | 删除确认文案与真实删除范围对不上（书架递归删解压目录+有声书；合集正文说反话） |

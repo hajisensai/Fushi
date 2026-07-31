@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
 import 'package:hibiki/src/focus/hibiki_focus_target.dart';
+import 'package:hibiki/src/media/collections/collection_asset_reclaim.dart';
 import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
     show CollectionSortMeta, compareCollectionMembers;
@@ -260,11 +261,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
     if (result == null || !mounted) return;
     // 先删各集视频本体（DB 行 + 封面/字幕副本），再解散容器。删视频会连带清各合集
-    // 引用行并自删空合集，故随后的 deleteMediaCollection 多为幂等收尾（写合集级墓碑）。
+    // 引用行并自删空合集，故随后的解散多为幂等收尾（写合集级墓碑）。解散必须走
+    // [deleteMediaCollectionWithAssets]：裸 deleteMediaCollection 只删 DB 行，合集
+    // 自有封面会永久留在磁盘上（BUG-1316）。
     if (result.checked && widget.onDeleteMembersMedia != null) {
       await widget.onDeleteMembersMedia!(List<VideoBookRow>.of(_members));
     }
-    await widget.database.deleteMediaCollection(widget.collection.id);
+    await deleteMediaCollectionWithAssets(
+        widget.database, widget.collection.id);
     if (!mounted) return;
     widget.onChanged();
     Navigator.of(context).maybePop();
