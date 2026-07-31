@@ -44,6 +44,9 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
   bool _recomputeScheduled = false;
   bool _ensureVisibleScheduled = false;
 
+  // BUG-1300：环显示期间的逐帧几何跟踪臂标记（见 [_armFrameTracker]）。
+  bool _frameTrackerArmed = false;
+
   // The node we last scrolled into view. Distinguishes a real primary-focus
   // change (worth scrolling to) from the many other FocusManager notifications
   // and from a manual scroll (which must never trigger a scroll-back).
@@ -158,6 +161,42 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
       // Clear at the end so the "scheduled" window spans the whole read, not
       // just up to entry — independent of when focus changes are delivered.
       _recomputeScheduled = false;
+      _armFrameTracker();
+    });
+  }
+
+  /// BUG-1300 根因修复：键盘/手柄高亮模式期间**逐帧**跟踪焦点控件几何。
+  ///
+  /// 旧实现按「事件枚举」重算矩形（焦点变化 / 滚动通知 / 窗口尺寸 / UI 缩放 /
+  /// 主题），但布局位移本身没有事件——首页 dashboard 异步数据（热力图 / 各区块）
+  /// 加载后整页 reflow，焦点控件被推走，环钉死在旧矩形上悬空（用户截图：环横跨
+  /// 两个区块之间的空白）。此前的 UI-scale 特例（didChangeDependencies 读
+  /// HibikiAppUiScale）正是同一类病灶的单点补丁；本跟踪器把「矩形 = 焦点控件的
+  /// 实时几何」变成持续成立的导出状态，一并吸收滚动/缩放/任意 reflow。
+  ///
+  /// 成本：post-frame 回调**不催帧**——没有帧渲染时回调只是挂起（零开销）；有帧
+  /// 渲染（滚动 / 动画 / 数据加载重建）时每帧一次 `localToGlobal`（微秒级）。矩形
+  /// 无变化不 setState、不产生新帧，天然收敛。离开 traditional 模式即停臂（环不
+  /// 显示无需跟踪），回到该模式由 [_onHighlight] → [_scheduleRecompute] 重新起臂。
+  void _armFrameTracker() {
+    if (_frameTrackerArmed || !mounted) return;
+    if (!widget.enabled ||
+        _fm.highlightMode != FocusHighlightMode.traditional) {
+      return;
+    }
+    _frameTrackerArmed = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _frameTrackerArmed = false;
+      if (!mounted ||
+          !widget.enabled ||
+          _fm.highlightMode != FocusHighlightMode.traditional) {
+        return; // 事件路径（_onHighlight / didUpdateWidget）负责后续重新起臂。
+      }
+      final Rect? next = _computeFocusRect();
+      if (next != _rect) {
+        setState(() => _rect = next);
+      }
+      _armFrameTracker();
     });
   }
 
@@ -250,18 +289,10 @@ class _HibikiFocusRingState extends State<HibikiFocusRing>
         : _scaleRect(globalRect.inflate(2), 1 / scale);
     return Stack(
       children: <Widget>[
-        // Track the focused control while any scrollable moves it (mouse wheel,
-        // ensureVisible animation, parent scroll) so the ring never lags behind.
-        // In touch mode the ring is hidden, so skip the per-scroll bookkeeping.
-        NotificationListener<ScrollNotification>(
-          onNotification: (_) {
-            if (_fm.highlightMode == FocusHighlightMode.traditional) {
-              _scheduleRecompute();
-            }
-            return false;
-          },
-          child: widget.child,
-        ),
+        // 滚动 / 动画 / 数据加载 reflow 期间环不滞后：traditional 模式下
+        // [_armFrameTracker] 逐帧跟踪焦点控件几何（BUG-1300），旧的
+        // ScrollNotification 监听特例已被它吸收（滚动帧就是帧）。
+        widget.child,
         if (ringRect != null)
           Positioned.fromRect(
             rect: ringRect,

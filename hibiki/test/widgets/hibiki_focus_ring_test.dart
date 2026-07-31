@@ -299,6 +299,80 @@ void main() {
   });
 
   testWidgets(
+      'ring follows the focused control after a plain layout shift '
+      '(async content load — no focus/scroll/scale/theme event, BUG-1300)',
+      (WidgetTester tester) async {
+    // 用户截图：首页 dashboard 的异步区块（热力图/继续观看）加载后整页 reflow，
+    // 焦点卡片被推走，环钉死在旧矩形上、悬空横跨两个区块之间。布局位移本身没有
+    // 任何事件（无焦点变化/滚动通知/窗口尺寸/缩放/主题），旧的事件枚举式重算
+    // 全部不触发。修复后 traditional 模式下逐帧跟踪几何，环必须跟上。
+    final FocusManager fm = FocusManager.instance;
+    final FocusHighlightStrategy previous = fm.highlightStrategy;
+    fm.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
+    addTearDown(() => fm.highlightStrategy = previous);
+
+    final FocusNode node = FocusNode();
+    addTearDown(node.dispose);
+    const Key focusKey = ValueKey<String>('layout-shift-target');
+
+    late StateSetter setOuter;
+    double headerHeight = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: StatefulBuilder(
+        builder: (BuildContext context, StateSetter setState) {
+          setOuter = setState;
+          return HibikiAppUiScale(
+            scale: 1.0,
+            child: HibikiFocusRing(
+              child: Scaffold(
+                body: Column(
+                  children: <Widget>[
+                    // 模拟异步加载完成后撑开的区块（如 dashboard 热力图）。
+                    SizedBox(height: headerHeight),
+                    Focus(
+                      focusNode: node,
+                      autofocus: true,
+                      child:
+                          const SizedBox(key: focusKey, width: 40, height: 40),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    ));
+    await tester.pump(); // post-frame rect computation
+    await tester.pump(); // setState -> ring drawn
+
+    final Finder ring = find.descendant(
+      of: find.byType(HibikiFocusRing),
+      matching: find.byWidgetPredicate((Widget w) =>
+          w is DecoratedBox &&
+          w.decoration is BoxDecoration &&
+          (w.decoration as BoxDecoration).border != null),
+    );
+    expect(ring, findsOneWidget);
+    final Offset before = tester.getTopLeft(find.byKey(focusKey));
+    expect((tester.getTopLeft(ring) - (before - const Offset(2, 2))).distance,
+        lessThan(0.5),
+        reason: 'sanity: ring aligned before the layout shift');
+
+    // 纯布局位移：上方区块长高 120px，把焦点控件推下去。无任何事件。
+    setOuter(() => headerHeight = 120);
+    await tester.pump(); // reflow 帧（帧尾逐帧跟踪重算矩形）
+    await tester.pump(); // setState -> ring 重定位
+
+    final Offset after = tester.getTopLeft(find.byKey(focusKey));
+    expect(after.dy, greaterThan(before.dy),
+        reason: 'sanity: focus target moved down by the layout shift');
+    expect((tester.getTopLeft(ring) - (after - const Offset(2, 2))).distance,
+        lessThan(0.5),
+        reason: '环必须跟随纯布局位移（BUG-1300：不许钉在旧位置悬空）');
+  });
+
+  testWidgets(
       'a theme change does not yank a manually-scrolled-away focus back',
       (WidgetTester tester) async {
     // didChangeDependencies fires for ANY inherited dependency the ring reads in
