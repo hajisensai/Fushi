@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1253 条。点号进各自文件。
+> 共 1255 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1308](bugs/BUG-1308-popup-dict-style-node-per-section.md) | 🚧 | 🚧 | 查词弹窗每条目×每词典新建一个 style 节点，触发 10 次全文档样式重算 |
+| [BUG-1307](bugs/BUG-1307-dict-engine-max-results-overshoot.md) | ✅ | ✅ | 查词冷路径白解压 20 倍：引擎结果上限硬编码 200 而 Dart 侧只用 maximumTerms |
 | [BUG-1305](bugs/BUG-1305-delete-confirm-disclosure.md) | ✅ | ✅ | 删除确认文案与真实删除范围对不上（书架递归删解压目录+有声书；合集正文说反话） |
 | [BUG-1304](bugs/BUG-1304-engine-freq-pitch-enrich-before-truncate.md) | ✅ | ✅ | 词典引擎 freq/pitch 在截断前富化：中间结果被重复富化约 3 倍（实测微优化，非秒级根因） |
 | [BUG-1303](bugs/BUG-1303-hoshidicts-hash-probe-unbounded.md) | ✅ | ✅ | 词典 hash 探测无界循环 + load() 零边界校验：损坏词典可致查词永久挂死/越界读 |
