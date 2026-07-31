@@ -18293,6 +18293,780 @@ class VideoScrapeMetaCompanion extends UpdateCompanion<VideoScrapeMetaRow> {
   }
 }
 
+class $CollectionScrapeMetaTable extends CollectionScrapeMeta
+    with TableInfo<$CollectionScrapeMetaTable, CollectionScrapeMetaRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $CollectionScrapeMetaTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _collectionIdMeta =
+      const VerificationMeta('collectionId');
+  @override
+  late final GeneratedColumn<int> collectionId = GeneratedColumn<int>(
+      'collection_id', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES media_collections (id) ON DELETE CASCADE'));
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+      'source', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _subjectIdMeta =
+      const VerificationMeta('subjectId');
+  @override
+  late final GeneratedColumn<String> subjectId = GeneratedColumn<String>(
+      'subject_id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+      'title', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _originalTitleMeta =
+      const VerificationMeta('originalTitle');
+  @override
+  late final GeneratedColumn<String> originalTitle = GeneratedColumn<String>(
+      'original_title', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _summaryMeta =
+      const VerificationMeta('summary');
+  @override
+  late final GeneratedColumn<String> summary = GeneratedColumn<String>(
+      'summary', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _airDateMeta =
+      const VerificationMeta('airDate');
+  @override
+  late final GeneratedColumn<String> airDate = GeneratedColumn<String>(
+      'air_date', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _ratingMeta = const VerificationMeta('rating');
+  @override
+  late final GeneratedColumn<double> rating = GeneratedColumn<double>(
+      'rating', aliasedName, true,
+      type: DriftSqlType.double, requiredDuringInsert: false);
+  static const VerificationMeta _ratingCountMeta =
+      const VerificationMeta('ratingCount');
+  @override
+  late final GeneratedColumn<int> ratingCount = GeneratedColumn<int>(
+      'rating_count', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _episodeCountMeta =
+      const VerificationMeta('episodeCount');
+  @override
+  late final GeneratedColumn<int> episodeCount = GeneratedColumn<int>(
+      'episode_count', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _tagsJsonMeta =
+      const VerificationMeta('tagsJson');
+  @override
+  late final GeneratedColumn<String> tagsJson = GeneratedColumn<String>(
+      'tags_json', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _infoboxJsonMeta =
+      const VerificationMeta('infoboxJson');
+  @override
+  late final GeneratedColumn<String> infoboxJson = GeneratedColumn<String>(
+      'infobox_json', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _backdropPathMeta =
+      const VerificationMeta('backdropPath');
+  @override
+  late final GeneratedColumn<String> backdropPath = GeneratedColumn<String>(
+      'backdrop_path', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _detailUrlMeta =
+      const VerificationMeta('detailUrl');
+  @override
+  late final GeneratedColumn<String> detailUrl = GeneratedColumn<String>(
+      'detail_url', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _scrapedAtMeta =
+      const VerificationMeta('scrapedAt');
+  @override
+  late final GeneratedColumn<DateTime> scrapedAt = GeneratedColumn<DateTime>(
+      'scraped_at', aliasedName, false,
+      type: DriftSqlType.dateTime, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [
+        collectionId,
+        source,
+        subjectId,
+        title,
+        originalTitle,
+        summary,
+        airDate,
+        rating,
+        ratingCount,
+        episodeCount,
+        tagsJson,
+        infoboxJson,
+        backdropPath,
+        detailUrl,
+        scrapedAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'collection_scrape_meta';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<CollectionScrapeMetaRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('collection_id')) {
+      context.handle(
+          _collectionIdMeta,
+          collectionId.isAcceptableOrUnknown(
+              data['collection_id']!, _collectionIdMeta));
+    }
+    if (data.containsKey('source')) {
+      context.handle(_sourceMeta,
+          source.isAcceptableOrUnknown(data['source']!, _sourceMeta));
+    } else if (isInserting) {
+      context.missing(_sourceMeta);
+    }
+    if (data.containsKey('subject_id')) {
+      context.handle(_subjectIdMeta,
+          subjectId.isAcceptableOrUnknown(data['subject_id']!, _subjectIdMeta));
+    } else if (isInserting) {
+      context.missing(_subjectIdMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+          _titleMeta, title.isAcceptableOrUnknown(data['title']!, _titleMeta));
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('original_title')) {
+      context.handle(
+          _originalTitleMeta,
+          originalTitle.isAcceptableOrUnknown(
+              data['original_title']!, _originalTitleMeta));
+    }
+    if (data.containsKey('summary')) {
+      context.handle(_summaryMeta,
+          summary.isAcceptableOrUnknown(data['summary']!, _summaryMeta));
+    }
+    if (data.containsKey('air_date')) {
+      context.handle(_airDateMeta,
+          airDate.isAcceptableOrUnknown(data['air_date']!, _airDateMeta));
+    }
+    if (data.containsKey('rating')) {
+      context.handle(_ratingMeta,
+          rating.isAcceptableOrUnknown(data['rating']!, _ratingMeta));
+    }
+    if (data.containsKey('rating_count')) {
+      context.handle(
+          _ratingCountMeta,
+          ratingCount.isAcceptableOrUnknown(
+              data['rating_count']!, _ratingCountMeta));
+    }
+    if (data.containsKey('episode_count')) {
+      context.handle(
+          _episodeCountMeta,
+          episodeCount.isAcceptableOrUnknown(
+              data['episode_count']!, _episodeCountMeta));
+    }
+    if (data.containsKey('tags_json')) {
+      context.handle(_tagsJsonMeta,
+          tagsJson.isAcceptableOrUnknown(data['tags_json']!, _tagsJsonMeta));
+    }
+    if (data.containsKey('infobox_json')) {
+      context.handle(
+          _infoboxJsonMeta,
+          infoboxJson.isAcceptableOrUnknown(
+              data['infobox_json']!, _infoboxJsonMeta));
+    }
+    if (data.containsKey('backdrop_path')) {
+      context.handle(
+          _backdropPathMeta,
+          backdropPath.isAcceptableOrUnknown(
+              data['backdrop_path']!, _backdropPathMeta));
+    }
+    if (data.containsKey('detail_url')) {
+      context.handle(_detailUrlMeta,
+          detailUrl.isAcceptableOrUnknown(data['detail_url']!, _detailUrlMeta));
+    }
+    if (data.containsKey('scraped_at')) {
+      context.handle(_scrapedAtMeta,
+          scrapedAt.isAcceptableOrUnknown(data['scraped_at']!, _scrapedAtMeta));
+    } else if (isInserting) {
+      context.missing(_scrapedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {collectionId};
+  @override
+  CollectionScrapeMetaRow map(Map<String, dynamic> data,
+      {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return CollectionScrapeMetaRow(
+      collectionId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}collection_id'])!,
+      source: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}source'])!,
+      subjectId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}subject_id'])!,
+      title: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}title'])!,
+      originalTitle: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}original_title']),
+      summary: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}summary']),
+      airDate: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}air_date']),
+      rating: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}rating']),
+      ratingCount: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}rating_count']),
+      episodeCount: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}episode_count']),
+      tagsJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}tags_json']),
+      infoboxJson: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}infobox_json']),
+      backdropPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}backdrop_path']),
+      detailUrl: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}detail_url']),
+      scrapedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}scraped_at'])!,
+    );
+  }
+
+  @override
+  $CollectionScrapeMetaTable createAlias(String alias) {
+    return $CollectionScrapeMetaTable(attachedDatabase, alias);
+  }
+}
+
+class CollectionScrapeMetaRow extends DataClass
+    implements Insertable<CollectionScrapeMetaRow> {
+  /// 合集身份（= MediaCollections.id）。删合集 cascade 清本表。
+  final int collectionId;
+
+  /// 来源（`ScrapeSource.name`：bangumi / tmdb / offlineDb / manualUrl）。
+  final String source;
+
+  /// 源内条目 id（Bangumi subject id / TMDB id），字符串化存储。
+  final String subjectId;
+
+  /// 条目主标题（中文优先）。合集名回写用它，但**本列独立保存**：用户事后手动改
+  /// 合集名不该篡改「刮到的条目叫什么」这一事实（重刮判据 / 展示原始条目名要它）。
+  final String title;
+
+  /// 原名（日文原题）；与 [title] 相同或缺失时为 null。
+  final String? originalTitle;
+
+  /// 条目简介（含换行）。
+  final String? summary;
+
+  /// 放送开始日期 `YYYY-MM-DD`。存字符串而非 DateTime：源数据常见只精确到年或
+  /// 年月的残缺日期，转 DateTime 会凭空补月/日造假（与 VideoScrapeMeta 同规矩）。
+  final String? airDate;
+
+  /// 评分（0~10）与评分人数。
+  final double? rating;
+  final int? ratingCount;
+
+  /// 总话数。
+  final int? episodeCount;
+
+  /// 标签 JSON 数组：`[{"name":"日常","count":1234}]`（按热度降序）。
+  final String? tagsJson;
+
+  /// infobox JSON 数组：`[{"key":"导演","value":"..."}]`（摊平，值为数组时用 `/`
+  /// 连接）。存原始 key 名，展示层不翻译。
+  final String? infoboxJson;
+
+  /// **横版背景图**绝对路径（BUG-1298 的数据层根治）。
+  ///
+  /// 详情页 hero 是约 2.7:1 的宽幅槽，而 [MediaCollections.coverPath] 存的是 2:3
+  /// 竖版海报——把海报 cover 进宽槽要放大 4.5 倍、只剩中间 26%。根治办法是让宽槽
+  /// 有自己的横版图源：TMDB 的 `backdrop_path` 就在搜索响应里（同一次请求，零额外
+  /// 开销）。落在 `video_covers/collections/<id>_backdrop.jpg`。
+  ///
+  /// NULL = 该源没有横版图（Bangumi 只提供竖版海报，永远为 NULL）。此时 hero 回落
+  /// 到海报 + `LandscapeCoverImage` 的模糊垫底——那不是补丁，是 Bangumi 源的常态路径。
+  final String? backdropPath;
+
+  /// 条目详情页 URL，供「查看条目」跳转。
+  final String? detailUrl;
+
+  /// 本行写入时间（重刮判据 / 展示「资料更新于」）。
+  final DateTime scrapedAt;
+  const CollectionScrapeMetaRow(
+      {required this.collectionId,
+      required this.source,
+      required this.subjectId,
+      required this.title,
+      this.originalTitle,
+      this.summary,
+      this.airDate,
+      this.rating,
+      this.ratingCount,
+      this.episodeCount,
+      this.tagsJson,
+      this.infoboxJson,
+      this.backdropPath,
+      this.detailUrl,
+      required this.scrapedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['collection_id'] = Variable<int>(collectionId);
+    map['source'] = Variable<String>(source);
+    map['subject_id'] = Variable<String>(subjectId);
+    map['title'] = Variable<String>(title);
+    if (!nullToAbsent || originalTitle != null) {
+      map['original_title'] = Variable<String>(originalTitle);
+    }
+    if (!nullToAbsent || summary != null) {
+      map['summary'] = Variable<String>(summary);
+    }
+    if (!nullToAbsent || airDate != null) {
+      map['air_date'] = Variable<String>(airDate);
+    }
+    if (!nullToAbsent || rating != null) {
+      map['rating'] = Variable<double>(rating);
+    }
+    if (!nullToAbsent || ratingCount != null) {
+      map['rating_count'] = Variable<int>(ratingCount);
+    }
+    if (!nullToAbsent || episodeCount != null) {
+      map['episode_count'] = Variable<int>(episodeCount);
+    }
+    if (!nullToAbsent || tagsJson != null) {
+      map['tags_json'] = Variable<String>(tagsJson);
+    }
+    if (!nullToAbsent || infoboxJson != null) {
+      map['infobox_json'] = Variable<String>(infoboxJson);
+    }
+    if (!nullToAbsent || backdropPath != null) {
+      map['backdrop_path'] = Variable<String>(backdropPath);
+    }
+    if (!nullToAbsent || detailUrl != null) {
+      map['detail_url'] = Variable<String>(detailUrl);
+    }
+    map['scraped_at'] = Variable<DateTime>(scrapedAt);
+    return map;
+  }
+
+  CollectionScrapeMetaCompanion toCompanion(bool nullToAbsent) {
+    return CollectionScrapeMetaCompanion(
+      collectionId: Value(collectionId),
+      source: Value(source),
+      subjectId: Value(subjectId),
+      title: Value(title),
+      originalTitle: originalTitle == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originalTitle),
+      summary: summary == null && nullToAbsent
+          ? const Value.absent()
+          : Value(summary),
+      airDate: airDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(airDate),
+      rating:
+          rating == null && nullToAbsent ? const Value.absent() : Value(rating),
+      ratingCount: ratingCount == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ratingCount),
+      episodeCount: episodeCount == null && nullToAbsent
+          ? const Value.absent()
+          : Value(episodeCount),
+      tagsJson: tagsJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(tagsJson),
+      infoboxJson: infoboxJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(infoboxJson),
+      backdropPath: backdropPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(backdropPath),
+      detailUrl: detailUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(detailUrl),
+      scrapedAt: Value(scrapedAt),
+    );
+  }
+
+  factory CollectionScrapeMetaRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return CollectionScrapeMetaRow(
+      collectionId: serializer.fromJson<int>(json['collectionId']),
+      source: serializer.fromJson<String>(json['source']),
+      subjectId: serializer.fromJson<String>(json['subjectId']),
+      title: serializer.fromJson<String>(json['title']),
+      originalTitle: serializer.fromJson<String?>(json['originalTitle']),
+      summary: serializer.fromJson<String?>(json['summary']),
+      airDate: serializer.fromJson<String?>(json['airDate']),
+      rating: serializer.fromJson<double?>(json['rating']),
+      ratingCount: serializer.fromJson<int?>(json['ratingCount']),
+      episodeCount: serializer.fromJson<int?>(json['episodeCount']),
+      tagsJson: serializer.fromJson<String?>(json['tagsJson']),
+      infoboxJson: serializer.fromJson<String?>(json['infoboxJson']),
+      backdropPath: serializer.fromJson<String?>(json['backdropPath']),
+      detailUrl: serializer.fromJson<String?>(json['detailUrl']),
+      scrapedAt: serializer.fromJson<DateTime>(json['scrapedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'collectionId': serializer.toJson<int>(collectionId),
+      'source': serializer.toJson<String>(source),
+      'subjectId': serializer.toJson<String>(subjectId),
+      'title': serializer.toJson<String>(title),
+      'originalTitle': serializer.toJson<String?>(originalTitle),
+      'summary': serializer.toJson<String?>(summary),
+      'airDate': serializer.toJson<String?>(airDate),
+      'rating': serializer.toJson<double?>(rating),
+      'ratingCount': serializer.toJson<int?>(ratingCount),
+      'episodeCount': serializer.toJson<int?>(episodeCount),
+      'tagsJson': serializer.toJson<String?>(tagsJson),
+      'infoboxJson': serializer.toJson<String?>(infoboxJson),
+      'backdropPath': serializer.toJson<String?>(backdropPath),
+      'detailUrl': serializer.toJson<String?>(detailUrl),
+      'scrapedAt': serializer.toJson<DateTime>(scrapedAt),
+    };
+  }
+
+  CollectionScrapeMetaRow copyWith(
+          {int? collectionId,
+          String? source,
+          String? subjectId,
+          String? title,
+          Value<String?> originalTitle = const Value.absent(),
+          Value<String?> summary = const Value.absent(),
+          Value<String?> airDate = const Value.absent(),
+          Value<double?> rating = const Value.absent(),
+          Value<int?> ratingCount = const Value.absent(),
+          Value<int?> episodeCount = const Value.absent(),
+          Value<String?> tagsJson = const Value.absent(),
+          Value<String?> infoboxJson = const Value.absent(),
+          Value<String?> backdropPath = const Value.absent(),
+          Value<String?> detailUrl = const Value.absent(),
+          DateTime? scrapedAt}) =>
+      CollectionScrapeMetaRow(
+        collectionId: collectionId ?? this.collectionId,
+        source: source ?? this.source,
+        subjectId: subjectId ?? this.subjectId,
+        title: title ?? this.title,
+        originalTitle:
+            originalTitle.present ? originalTitle.value : this.originalTitle,
+        summary: summary.present ? summary.value : this.summary,
+        airDate: airDate.present ? airDate.value : this.airDate,
+        rating: rating.present ? rating.value : this.rating,
+        ratingCount: ratingCount.present ? ratingCount.value : this.ratingCount,
+        episodeCount:
+            episodeCount.present ? episodeCount.value : this.episodeCount,
+        tagsJson: tagsJson.present ? tagsJson.value : this.tagsJson,
+        infoboxJson: infoboxJson.present ? infoboxJson.value : this.infoboxJson,
+        backdropPath:
+            backdropPath.present ? backdropPath.value : this.backdropPath,
+        detailUrl: detailUrl.present ? detailUrl.value : this.detailUrl,
+        scrapedAt: scrapedAt ?? this.scrapedAt,
+      );
+  CollectionScrapeMetaRow copyWithCompanion(
+      CollectionScrapeMetaCompanion data) {
+    return CollectionScrapeMetaRow(
+      collectionId: data.collectionId.present
+          ? data.collectionId.value
+          : this.collectionId,
+      source: data.source.present ? data.source.value : this.source,
+      subjectId: data.subjectId.present ? data.subjectId.value : this.subjectId,
+      title: data.title.present ? data.title.value : this.title,
+      originalTitle: data.originalTitle.present
+          ? data.originalTitle.value
+          : this.originalTitle,
+      summary: data.summary.present ? data.summary.value : this.summary,
+      airDate: data.airDate.present ? data.airDate.value : this.airDate,
+      rating: data.rating.present ? data.rating.value : this.rating,
+      ratingCount:
+          data.ratingCount.present ? data.ratingCount.value : this.ratingCount,
+      episodeCount: data.episodeCount.present
+          ? data.episodeCount.value
+          : this.episodeCount,
+      tagsJson: data.tagsJson.present ? data.tagsJson.value : this.tagsJson,
+      infoboxJson:
+          data.infoboxJson.present ? data.infoboxJson.value : this.infoboxJson,
+      backdropPath: data.backdropPath.present
+          ? data.backdropPath.value
+          : this.backdropPath,
+      detailUrl: data.detailUrl.present ? data.detailUrl.value : this.detailUrl,
+      scrapedAt: data.scrapedAt.present ? data.scrapedAt.value : this.scrapedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CollectionScrapeMetaRow(')
+          ..write('collectionId: $collectionId, ')
+          ..write('source: $source, ')
+          ..write('subjectId: $subjectId, ')
+          ..write('title: $title, ')
+          ..write('originalTitle: $originalTitle, ')
+          ..write('summary: $summary, ')
+          ..write('airDate: $airDate, ')
+          ..write('rating: $rating, ')
+          ..write('ratingCount: $ratingCount, ')
+          ..write('episodeCount: $episodeCount, ')
+          ..write('tagsJson: $tagsJson, ')
+          ..write('infoboxJson: $infoboxJson, ')
+          ..write('backdropPath: $backdropPath, ')
+          ..write('detailUrl: $detailUrl, ')
+          ..write('scrapedAt: $scrapedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      collectionId,
+      source,
+      subjectId,
+      title,
+      originalTitle,
+      summary,
+      airDate,
+      rating,
+      ratingCount,
+      episodeCount,
+      tagsJson,
+      infoboxJson,
+      backdropPath,
+      detailUrl,
+      scrapedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is CollectionScrapeMetaRow &&
+          other.collectionId == this.collectionId &&
+          other.source == this.source &&
+          other.subjectId == this.subjectId &&
+          other.title == this.title &&
+          other.originalTitle == this.originalTitle &&
+          other.summary == this.summary &&
+          other.airDate == this.airDate &&
+          other.rating == this.rating &&
+          other.ratingCount == this.ratingCount &&
+          other.episodeCount == this.episodeCount &&
+          other.tagsJson == this.tagsJson &&
+          other.infoboxJson == this.infoboxJson &&
+          other.backdropPath == this.backdropPath &&
+          other.detailUrl == this.detailUrl &&
+          other.scrapedAt == this.scrapedAt);
+}
+
+class CollectionScrapeMetaCompanion
+    extends UpdateCompanion<CollectionScrapeMetaRow> {
+  final Value<int> collectionId;
+  final Value<String> source;
+  final Value<String> subjectId;
+  final Value<String> title;
+  final Value<String?> originalTitle;
+  final Value<String?> summary;
+  final Value<String?> airDate;
+  final Value<double?> rating;
+  final Value<int?> ratingCount;
+  final Value<int?> episodeCount;
+  final Value<String?> tagsJson;
+  final Value<String?> infoboxJson;
+  final Value<String?> backdropPath;
+  final Value<String?> detailUrl;
+  final Value<DateTime> scrapedAt;
+  const CollectionScrapeMetaCompanion({
+    this.collectionId = const Value.absent(),
+    this.source = const Value.absent(),
+    this.subjectId = const Value.absent(),
+    this.title = const Value.absent(),
+    this.originalTitle = const Value.absent(),
+    this.summary = const Value.absent(),
+    this.airDate = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.ratingCount = const Value.absent(),
+    this.episodeCount = const Value.absent(),
+    this.tagsJson = const Value.absent(),
+    this.infoboxJson = const Value.absent(),
+    this.backdropPath = const Value.absent(),
+    this.detailUrl = const Value.absent(),
+    this.scrapedAt = const Value.absent(),
+  });
+  CollectionScrapeMetaCompanion.insert({
+    this.collectionId = const Value.absent(),
+    required String source,
+    required String subjectId,
+    required String title,
+    this.originalTitle = const Value.absent(),
+    this.summary = const Value.absent(),
+    this.airDate = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.ratingCount = const Value.absent(),
+    this.episodeCount = const Value.absent(),
+    this.tagsJson = const Value.absent(),
+    this.infoboxJson = const Value.absent(),
+    this.backdropPath = const Value.absent(),
+    this.detailUrl = const Value.absent(),
+    required DateTime scrapedAt,
+  })  : source = Value(source),
+        subjectId = Value(subjectId),
+        title = Value(title),
+        scrapedAt = Value(scrapedAt);
+  static Insertable<CollectionScrapeMetaRow> custom({
+    Expression<int>? collectionId,
+    Expression<String>? source,
+    Expression<String>? subjectId,
+    Expression<String>? title,
+    Expression<String>? originalTitle,
+    Expression<String>? summary,
+    Expression<String>? airDate,
+    Expression<double>? rating,
+    Expression<int>? ratingCount,
+    Expression<int>? episodeCount,
+    Expression<String>? tagsJson,
+    Expression<String>? infoboxJson,
+    Expression<String>? backdropPath,
+    Expression<String>? detailUrl,
+    Expression<DateTime>? scrapedAt,
+  }) {
+    return RawValuesInsertable({
+      if (collectionId != null) 'collection_id': collectionId,
+      if (source != null) 'source': source,
+      if (subjectId != null) 'subject_id': subjectId,
+      if (title != null) 'title': title,
+      if (originalTitle != null) 'original_title': originalTitle,
+      if (summary != null) 'summary': summary,
+      if (airDate != null) 'air_date': airDate,
+      if (rating != null) 'rating': rating,
+      if (ratingCount != null) 'rating_count': ratingCount,
+      if (episodeCount != null) 'episode_count': episodeCount,
+      if (tagsJson != null) 'tags_json': tagsJson,
+      if (infoboxJson != null) 'infobox_json': infoboxJson,
+      if (backdropPath != null) 'backdrop_path': backdropPath,
+      if (detailUrl != null) 'detail_url': detailUrl,
+      if (scrapedAt != null) 'scraped_at': scrapedAt,
+    });
+  }
+
+  CollectionScrapeMetaCompanion copyWith(
+      {Value<int>? collectionId,
+      Value<String>? source,
+      Value<String>? subjectId,
+      Value<String>? title,
+      Value<String?>? originalTitle,
+      Value<String?>? summary,
+      Value<String?>? airDate,
+      Value<double?>? rating,
+      Value<int?>? ratingCount,
+      Value<int?>? episodeCount,
+      Value<String?>? tagsJson,
+      Value<String?>? infoboxJson,
+      Value<String?>? backdropPath,
+      Value<String?>? detailUrl,
+      Value<DateTime>? scrapedAt}) {
+    return CollectionScrapeMetaCompanion(
+      collectionId: collectionId ?? this.collectionId,
+      source: source ?? this.source,
+      subjectId: subjectId ?? this.subjectId,
+      title: title ?? this.title,
+      originalTitle: originalTitle ?? this.originalTitle,
+      summary: summary ?? this.summary,
+      airDate: airDate ?? this.airDate,
+      rating: rating ?? this.rating,
+      ratingCount: ratingCount ?? this.ratingCount,
+      episodeCount: episodeCount ?? this.episodeCount,
+      tagsJson: tagsJson ?? this.tagsJson,
+      infoboxJson: infoboxJson ?? this.infoboxJson,
+      backdropPath: backdropPath ?? this.backdropPath,
+      detailUrl: detailUrl ?? this.detailUrl,
+      scrapedAt: scrapedAt ?? this.scrapedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (collectionId.present) {
+      map['collection_id'] = Variable<int>(collectionId.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (subjectId.present) {
+      map['subject_id'] = Variable<String>(subjectId.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (originalTitle.present) {
+      map['original_title'] = Variable<String>(originalTitle.value);
+    }
+    if (summary.present) {
+      map['summary'] = Variable<String>(summary.value);
+    }
+    if (airDate.present) {
+      map['air_date'] = Variable<String>(airDate.value);
+    }
+    if (rating.present) {
+      map['rating'] = Variable<double>(rating.value);
+    }
+    if (ratingCount.present) {
+      map['rating_count'] = Variable<int>(ratingCount.value);
+    }
+    if (episodeCount.present) {
+      map['episode_count'] = Variable<int>(episodeCount.value);
+    }
+    if (tagsJson.present) {
+      map['tags_json'] = Variable<String>(tagsJson.value);
+    }
+    if (infoboxJson.present) {
+      map['infobox_json'] = Variable<String>(infoboxJson.value);
+    }
+    if (backdropPath.present) {
+      map['backdrop_path'] = Variable<String>(backdropPath.value);
+    }
+    if (detailUrl.present) {
+      map['detail_url'] = Variable<String>(detailUrl.value);
+    }
+    if (scrapedAt.present) {
+      map['scraped_at'] = Variable<DateTime>(scrapedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CollectionScrapeMetaCompanion(')
+          ..write('collectionId: $collectionId, ')
+          ..write('source: $source, ')
+          ..write('subjectId: $subjectId, ')
+          ..write('title: $title, ')
+          ..write('originalTitle: $originalTitle, ')
+          ..write('summary: $summary, ')
+          ..write('airDate: $airDate, ')
+          ..write('rating: $rating, ')
+          ..write('ratingCount: $ratingCount, ')
+          ..write('episodeCount: $episodeCount, ')
+          ..write('tagsJson: $tagsJson, ')
+          ..write('infoboxJson: $infoboxJson, ')
+          ..write('backdropPath: $backdropPath, ')
+          ..write('detailUrl: $detailUrl, ')
+          ..write('scrapedAt: $scrapedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $MediaTrackingMappingsTable extends MediaTrackingMappings
     with TableInfo<$MediaTrackingMappingsTable, MediaTrackingMappingRow> {
   @override
@@ -21085,6 +21859,8 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
       $ClipboardHistoryTable(this);
   late final $VideoScrapeMetaTable videoScrapeMeta =
       $VideoScrapeMetaTable(this);
+  late final $CollectionScrapeMetaTable collectionScrapeMeta =
+      $CollectionScrapeMetaTable(this);
   late final $MediaTrackingMappingsTable mediaTrackingMappings =
       $MediaTrackingMappingsTable(this);
   late final $MediaTrackingOutboxTable mediaTrackingOutbox =
@@ -21147,6 +21923,7 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
         activityEvents,
         clipboardHistory,
         videoScrapeMeta,
+        collectionScrapeMeta,
         mediaTrackingMappings,
         mediaTrackingOutbox,
         galgames,
@@ -21281,6 +22058,13 @@ abstract class _$HibikiDatabase extends GeneratedDatabase {
                 limitUpdateKind: UpdateKind.delete),
             result: [
               TableUpdate('video_scrape_meta', kind: UpdateKind.delete),
+            ],
+          ),
+          WritePropagation(
+            on: TableUpdateQuery.onTableName('media_collections',
+                limitUpdateKind: UpdateKind.delete),
+            result: [
+              TableUpdate('collection_scrape_meta', kind: UpdateKind.delete),
             ],
           ),
           WritePropagation(
@@ -30514,6 +31298,25 @@ final class $$MediaCollectionsTableReferences extends BaseReferences<
     return ProcessedTableManager(
         manager.$state.copyWith(prefetchedData: cache));
   }
+
+  static MultiTypedResultKey<$CollectionScrapeMetaTable,
+      List<CollectionScrapeMetaRow>> _collectionScrapeMetaRefsTable(
+          _$HibikiDatabase db) =>
+      MultiTypedResultKey.fromTable(db.collectionScrapeMeta,
+          aliasName:
+              'media_collections__id__collection_scrape_meta__collection_id');
+
+  $$CollectionScrapeMetaTableProcessedTableManager
+      get collectionScrapeMetaRefs {
+    final manager = $$CollectionScrapeMetaTableTableManager(
+            $_db, $_db.collectionScrapeMeta)
+        .filter((f) => f.collectionId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache =
+        $_typedResult.readTableOrNull(_collectionScrapeMetaRefsTable($_db));
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: cache));
+  }
 }
 
 class $$MediaCollectionsTableFilterComposer
@@ -30603,6 +31406,28 @@ class $$MediaCollectionsTableFilterComposer
                   $removeJoinBuilderFromRootComposer:
                       $removeJoinBuilderFromRootComposer,
                 ));
+    return f(composer);
+  }
+
+  Expression<bool> collectionScrapeMetaRefs(
+      Expression<bool> Function($$CollectionScrapeMetaTableFilterComposer f)
+          f) {
+    final $$CollectionScrapeMetaTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.id,
+        referencedTable: $db.collectionScrapeMeta,
+        getReferencedColumn: (t) => t.collectionId,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$CollectionScrapeMetaTableFilterComposer(
+              $db: $db,
+              $table: $db.collectionScrapeMeta,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
     return f(composer);
   }
 }
@@ -30741,6 +31566,29 @@ class $$MediaCollectionsTableAnnotationComposer
                 ));
     return f(composer);
   }
+
+  Expression<T> collectionScrapeMetaRefs<T extends Object>(
+      Expression<T> Function($$CollectionScrapeMetaTableAnnotationComposer a)
+          f) {
+    final $$CollectionScrapeMetaTableAnnotationComposer composer =
+        $composerBuilder(
+            composer: this,
+            getCurrentColumn: (t) => t.id,
+            referencedTable: $db.collectionScrapeMeta,
+            getReferencedColumn: (t) => t.collectionId,
+            builder: (joinBuilder,
+                    {$addJoinBuilderToRootComposer,
+                    $removeJoinBuilderFromRootComposer}) =>
+                $$CollectionScrapeMetaTableAnnotationComposer(
+                  $db: $db,
+                  $table: $db.collectionScrapeMeta,
+                  $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                  joinBuilder: joinBuilder,
+                  $removeJoinBuilderFromRootComposer:
+                      $removeJoinBuilderFromRootComposer,
+                ));
+    return f(composer);
+  }
 }
 
 class $$MediaCollectionsTableTableManager extends RootTableManager<
@@ -30755,7 +31603,9 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
     (MediaCollectionRow, $$MediaCollectionsTableReferences),
     MediaCollectionRow,
     PrefetchHooks Function(
-        {bool mediaCollectionItemsRefs, bool collectionTagMappingsRefs})> {
+        {bool mediaCollectionItemsRefs,
+        bool collectionTagMappingsRefs,
+        bool collectionScrapeMetaRefs})> {
   $$MediaCollectionsTableTableManager(
       _$HibikiDatabase db, $MediaCollectionsTable table)
       : super(TableManagerState(
@@ -30827,12 +31677,14 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
               .toList(),
           prefetchHooksCallback: (
               {mediaCollectionItemsRefs = false,
-              collectionTagMappingsRefs = false}) {
+              collectionTagMappingsRefs = false,
+              collectionScrapeMetaRefs = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [
                 if (mediaCollectionItemsRefs) db.mediaCollectionItems,
-                if (collectionTagMappingsRefs) db.collectionTagMappings
+                if (collectionTagMappingsRefs) db.collectionTagMappings,
+                if (collectionScrapeMetaRefs) db.collectionScrapeMeta
               ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
@@ -30862,6 +31714,19 @@ class $$MediaCollectionsTableTableManager extends RootTableManager<
                         referencedItemsForCurrentItem:
                             (item, referencedItems) => referencedItems
                                 .where((e) => e.collectionId == item.id),
+                        typedResults: items),
+                  if (collectionScrapeMetaRefs)
+                    await $_getPrefetchedData<MediaCollectionRow,
+                            $MediaCollectionsTable, CollectionScrapeMetaRow>(
+                        currentTable: table,
+                        referencedTable: $$MediaCollectionsTableReferences
+                            ._collectionScrapeMetaRefsTable(db),
+                        managerFromTypedResult: (p0) =>
+                            $$MediaCollectionsTableReferences(db, table, p0)
+                                .collectionScrapeMetaRefs,
+                        referencedItemsForCurrentItem:
+                            (item, referencedItems) => referencedItems
+                                .where((e) => e.collectionId == item.id),
                         typedResults: items)
                 ];
               },
@@ -30882,7 +31747,9 @@ typedef $$MediaCollectionsTableProcessedTableManager = ProcessedTableManager<
     (MediaCollectionRow, $$MediaCollectionsTableReferences),
     MediaCollectionRow,
     PrefetchHooks Function(
-        {bool mediaCollectionItemsRefs, bool collectionTagMappingsRefs})>;
+        {bool mediaCollectionItemsRefs,
+        bool collectionTagMappingsRefs,
+        bool collectionScrapeMetaRefs})>;
 typedef $$MediaCollectionItemsTableCreateCompanionBuilder
     = MediaCollectionItemsCompanion Function({
   required int collectionId,
@@ -33866,6 +34733,435 @@ typedef $$VideoScrapeMetaTableProcessedTableManager = ProcessedTableManager<
     (VideoScrapeMetaRow, $$VideoScrapeMetaTableReferences),
     VideoScrapeMetaRow,
     PrefetchHooks Function({bool bookUid})>;
+typedef $$CollectionScrapeMetaTableCreateCompanionBuilder
+    = CollectionScrapeMetaCompanion Function({
+  Value<int> collectionId,
+  required String source,
+  required String subjectId,
+  required String title,
+  Value<String?> originalTitle,
+  Value<String?> summary,
+  Value<String?> airDate,
+  Value<double?> rating,
+  Value<int?> ratingCount,
+  Value<int?> episodeCount,
+  Value<String?> tagsJson,
+  Value<String?> infoboxJson,
+  Value<String?> backdropPath,
+  Value<String?> detailUrl,
+  required DateTime scrapedAt,
+});
+typedef $$CollectionScrapeMetaTableUpdateCompanionBuilder
+    = CollectionScrapeMetaCompanion Function({
+  Value<int> collectionId,
+  Value<String> source,
+  Value<String> subjectId,
+  Value<String> title,
+  Value<String?> originalTitle,
+  Value<String?> summary,
+  Value<String?> airDate,
+  Value<double?> rating,
+  Value<int?> ratingCount,
+  Value<int?> episodeCount,
+  Value<String?> tagsJson,
+  Value<String?> infoboxJson,
+  Value<String?> backdropPath,
+  Value<String?> detailUrl,
+  Value<DateTime> scrapedAt,
+});
+
+final class $$CollectionScrapeMetaTableReferences extends BaseReferences<
+    _$HibikiDatabase, $CollectionScrapeMetaTable, CollectionScrapeMetaRow> {
+  $$CollectionScrapeMetaTableReferences(
+      super.$_db, super.$_table, super.$_typedResult);
+
+  static $MediaCollectionsTable _collectionIdTable(_$HibikiDatabase db) =>
+      db.mediaCollections.createAlias(
+          'collection_scrape_meta__collection_id__media_collections__id');
+
+  $$MediaCollectionsTableProcessedTableManager get collectionId {
+    final $_column = $_itemColumn<int>('collection_id')!;
+
+    final manager =
+        $$MediaCollectionsTableTableManager($_db, $_db.mediaCollections)
+            .filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_collectionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+        manager.$state.copyWith(prefetchedData: [item]));
+  }
+}
+
+class $$CollectionScrapeMetaTableFilterComposer
+    extends Composer<_$HibikiDatabase, $CollectionScrapeMetaTable> {
+  $$CollectionScrapeMetaTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get source => $composableBuilder(
+      column: $table.source, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get subjectId => $composableBuilder(
+      column: $table.subjectId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get originalTitle => $composableBuilder(
+      column: $table.originalTitle, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get summary => $composableBuilder(
+      column: $table.summary, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get airDate => $composableBuilder(
+      column: $table.airDate, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get rating => $composableBuilder(
+      column: $table.rating, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get ratingCount => $composableBuilder(
+      column: $table.ratingCount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get episodeCount => $composableBuilder(
+      column: $table.episodeCount, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get tagsJson => $composableBuilder(
+      column: $table.tagsJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get infoboxJson => $composableBuilder(
+      column: $table.infoboxJson, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get backdropPath => $composableBuilder(
+      column: $table.backdropPath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get detailUrl => $composableBuilder(
+      column: $table.detailUrl, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get scrapedAt => $composableBuilder(
+      column: $table.scrapedAt, builder: (column) => ColumnFilters(column));
+
+  $$MediaCollectionsTableFilterComposer get collectionId {
+    final $$MediaCollectionsTableFilterComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.collectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableFilterComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$CollectionScrapeMetaTableOrderingComposer
+    extends Composer<_$HibikiDatabase, $CollectionScrapeMetaTable> {
+  $$CollectionScrapeMetaTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get source => $composableBuilder(
+      column: $table.source, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get subjectId => $composableBuilder(
+      column: $table.subjectId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get title => $composableBuilder(
+      column: $table.title, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get originalTitle => $composableBuilder(
+      column: $table.originalTitle,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get summary => $composableBuilder(
+      column: $table.summary, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get airDate => $composableBuilder(
+      column: $table.airDate, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get rating => $composableBuilder(
+      column: $table.rating, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get ratingCount => $composableBuilder(
+      column: $table.ratingCount, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get episodeCount => $composableBuilder(
+      column: $table.episodeCount,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get tagsJson => $composableBuilder(
+      column: $table.tagsJson, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get infoboxJson => $composableBuilder(
+      column: $table.infoboxJson, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get backdropPath => $composableBuilder(
+      column: $table.backdropPath,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get detailUrl => $composableBuilder(
+      column: $table.detailUrl, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<DateTime> get scrapedAt => $composableBuilder(
+      column: $table.scrapedAt, builder: (column) => ColumnOrderings(column));
+
+  $$MediaCollectionsTableOrderingComposer get collectionId {
+    final $$MediaCollectionsTableOrderingComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.collectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableOrderingComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$CollectionScrapeMetaTableAnnotationComposer
+    extends Composer<_$HibikiDatabase, $CollectionScrapeMetaTable> {
+  $$CollectionScrapeMetaTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<String> get subjectId =>
+      $composableBuilder(column: $table.subjectId, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get originalTitle => $composableBuilder(
+      column: $table.originalTitle, builder: (column) => column);
+
+  GeneratedColumn<String> get summary =>
+      $composableBuilder(column: $table.summary, builder: (column) => column);
+
+  GeneratedColumn<String> get airDate =>
+      $composableBuilder(column: $table.airDate, builder: (column) => column);
+
+  GeneratedColumn<double> get rating =>
+      $composableBuilder(column: $table.rating, builder: (column) => column);
+
+  GeneratedColumn<int> get ratingCount => $composableBuilder(
+      column: $table.ratingCount, builder: (column) => column);
+
+  GeneratedColumn<int> get episodeCount => $composableBuilder(
+      column: $table.episodeCount, builder: (column) => column);
+
+  GeneratedColumn<String> get tagsJson =>
+      $composableBuilder(column: $table.tagsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get infoboxJson => $composableBuilder(
+      column: $table.infoboxJson, builder: (column) => column);
+
+  GeneratedColumn<String> get backdropPath => $composableBuilder(
+      column: $table.backdropPath, builder: (column) => column);
+
+  GeneratedColumn<String> get detailUrl =>
+      $composableBuilder(column: $table.detailUrl, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get scrapedAt =>
+      $composableBuilder(column: $table.scrapedAt, builder: (column) => column);
+
+  $$MediaCollectionsTableAnnotationComposer get collectionId {
+    final $$MediaCollectionsTableAnnotationComposer composer = $composerBuilder(
+        composer: this,
+        getCurrentColumn: (t) => t.collectionId,
+        referencedTable: $db.mediaCollections,
+        getReferencedColumn: (t) => t.id,
+        builder: (joinBuilder,
+                {$addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer}) =>
+            $$MediaCollectionsTableAnnotationComposer(
+              $db: $db,
+              $table: $db.mediaCollections,
+              $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+              joinBuilder: joinBuilder,
+              $removeJoinBuilderFromRootComposer:
+                  $removeJoinBuilderFromRootComposer,
+            ));
+    return composer;
+  }
+}
+
+class $$CollectionScrapeMetaTableTableManager extends RootTableManager<
+    _$HibikiDatabase,
+    $CollectionScrapeMetaTable,
+    CollectionScrapeMetaRow,
+    $$CollectionScrapeMetaTableFilterComposer,
+    $$CollectionScrapeMetaTableOrderingComposer,
+    $$CollectionScrapeMetaTableAnnotationComposer,
+    $$CollectionScrapeMetaTableCreateCompanionBuilder,
+    $$CollectionScrapeMetaTableUpdateCompanionBuilder,
+    (CollectionScrapeMetaRow, $$CollectionScrapeMetaTableReferences),
+    CollectionScrapeMetaRow,
+    PrefetchHooks Function({bool collectionId})> {
+  $$CollectionScrapeMetaTableTableManager(
+      _$HibikiDatabase db, $CollectionScrapeMetaTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$CollectionScrapeMetaTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$CollectionScrapeMetaTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$CollectionScrapeMetaTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> collectionId = const Value.absent(),
+            Value<String> source = const Value.absent(),
+            Value<String> subjectId = const Value.absent(),
+            Value<String> title = const Value.absent(),
+            Value<String?> originalTitle = const Value.absent(),
+            Value<String?> summary = const Value.absent(),
+            Value<String?> airDate = const Value.absent(),
+            Value<double?> rating = const Value.absent(),
+            Value<int?> ratingCount = const Value.absent(),
+            Value<int?> episodeCount = const Value.absent(),
+            Value<String?> tagsJson = const Value.absent(),
+            Value<String?> infoboxJson = const Value.absent(),
+            Value<String?> backdropPath = const Value.absent(),
+            Value<String?> detailUrl = const Value.absent(),
+            Value<DateTime> scrapedAt = const Value.absent(),
+          }) =>
+              CollectionScrapeMetaCompanion(
+            collectionId: collectionId,
+            source: source,
+            subjectId: subjectId,
+            title: title,
+            originalTitle: originalTitle,
+            summary: summary,
+            airDate: airDate,
+            rating: rating,
+            ratingCount: ratingCount,
+            episodeCount: episodeCount,
+            tagsJson: tagsJson,
+            infoboxJson: infoboxJson,
+            backdropPath: backdropPath,
+            detailUrl: detailUrl,
+            scrapedAt: scrapedAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> collectionId = const Value.absent(),
+            required String source,
+            required String subjectId,
+            required String title,
+            Value<String?> originalTitle = const Value.absent(),
+            Value<String?> summary = const Value.absent(),
+            Value<String?> airDate = const Value.absent(),
+            Value<double?> rating = const Value.absent(),
+            Value<int?> ratingCount = const Value.absent(),
+            Value<int?> episodeCount = const Value.absent(),
+            Value<String?> tagsJson = const Value.absent(),
+            Value<String?> infoboxJson = const Value.absent(),
+            Value<String?> backdropPath = const Value.absent(),
+            Value<String?> detailUrl = const Value.absent(),
+            required DateTime scrapedAt,
+          }) =>
+              CollectionScrapeMetaCompanion.insert(
+            collectionId: collectionId,
+            source: source,
+            subjectId: subjectId,
+            title: title,
+            originalTitle: originalTitle,
+            summary: summary,
+            airDate: airDate,
+            rating: rating,
+            ratingCount: ratingCount,
+            episodeCount: episodeCount,
+            tagsJson: tagsJson,
+            infoboxJson: infoboxJson,
+            backdropPath: backdropPath,
+            detailUrl: detailUrl,
+            scrapedAt: scrapedAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable(table),
+                    $$CollectionScrapeMetaTableReferences(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: ({collectionId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                  T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic>>(state) {
+                if (collectionId) {
+                  state = state.withJoin(
+                    currentTable: table,
+                    currentColumn: table.collectionId,
+                    referencedTable: $$CollectionScrapeMetaTableReferences
+                        ._collectionIdTable(db),
+                    referencedColumn: $$CollectionScrapeMetaTableReferences
+                        ._collectionIdTable(db)
+                        .id,
+                  ) as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ));
+}
+
+typedef $$CollectionScrapeMetaTableProcessedTableManager
+    = ProcessedTableManager<
+        _$HibikiDatabase,
+        $CollectionScrapeMetaTable,
+        CollectionScrapeMetaRow,
+        $$CollectionScrapeMetaTableFilterComposer,
+        $$CollectionScrapeMetaTableOrderingComposer,
+        $$CollectionScrapeMetaTableAnnotationComposer,
+        $$CollectionScrapeMetaTableCreateCompanionBuilder,
+        $$CollectionScrapeMetaTableUpdateCompanionBuilder,
+        (CollectionScrapeMetaRow, $$CollectionScrapeMetaTableReferences),
+        CollectionScrapeMetaRow,
+        PrefetchHooks Function({bool collectionId})>;
 typedef $$MediaTrackingMappingsTableCreateCompanionBuilder
     = MediaTrackingMappingsCompanion Function({
   Value<int> id,
@@ -36107,6 +37403,8 @@ class $HibikiDatabaseManager {
       $$ClipboardHistoryTableTableManager(_db, _db.clipboardHistory);
   $$VideoScrapeMetaTableTableManager get videoScrapeMeta =>
       $$VideoScrapeMetaTableTableManager(_db, _db.videoScrapeMeta);
+  $$CollectionScrapeMetaTableTableManager get collectionScrapeMeta =>
+      $$CollectionScrapeMetaTableTableManager(_db, _db.collectionScrapeMeta);
   $$MediaTrackingMappingsTableTableManager get mediaTrackingMappings =>
       $$MediaTrackingMappingsTableTableManager(_db, _db.mediaTrackingMappings);
   $$MediaTrackingOutboxTableTableManager get mediaTrackingOutbox =>

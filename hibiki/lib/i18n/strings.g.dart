@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 48586 (2858 per locale)
+/// Strings: 48603 (2859 per locale)
 ///
-/// Built on 2026-07-31 at 16:20 UTC
+/// Built on 2026-07-31 at 18:17 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3857,6 +3857,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.';
   String download_test_connection_failed_reason({required Object message}) =>
       'Connection failed: ${message}';
+  String collection_hero_total_episodes({required Object count}) =>
+      '${count} episodes';
 }
 
 // Path: <root>
@@ -10421,6 +10423,9 @@ class _StringsAr extends _StringsEn {
   @override
   String download_test_connection_failed_reason({required Object message}) =>
       'Connection failed: ${message}';
+  @override
+  String collection_hero_total_episodes({required Object count}) =>
+      '${count} episodes';
 }
 
 // Path: <root>
@@ -17052,6 +17057,9 @@ class _StringsDe extends _StringsEn {
   @override
   String download_test_connection_failed_reason({required Object message}) =>
       'Connection failed: ${message}';
+  @override
+  String collection_hero_total_episodes({required Object count}) =>
+      '${count} episodes';
 }
 
 // Path: <root>
@@ -23699,6 +23707,9 @@ class _StringsEs extends _StringsEn {
   @override
   String download_test_connection_failed_reason({required Object message}) =>
       'Connection failed: ${message}';
+  @override
+  String collection_hero_total_episodes({required Object count}) =>
+      '${count} episodes';
 }
 
 // Path: <root>
@@ -30357,6 +30368,9 @@ class _StringsFr extends _StringsEn {
   @override
   String download_test_connection_failed_reason({required Object message}) =>
       'Connection failed: ${message}';
+  @override
+  String collection_hero_total_episodes({required Object count}) =>
+      '${count} episodes';
 }
 
 // Path: <root>
@@ -36944,6 +36958,9 @@ class _StringsId extends _StringsEn {
   @override
   String download_test_connection_failed_reason({required Object message}) =>
       'Connection failed: ${message}';
+  @override
+  String collection_hero_total_episodes({required Object count}) =>
+      '${count} episodes';
 }
 
 // Path: <root>
@@ -43577,6 +43594,9 @@ class _StringsIt extends _StringsEn {
   @override
   String download_test_connection_failed_reason({required Object message}) =>
       'Connection failed: ${message}';
+  @override
+  String collection_hero_total_episodes({required Object count}) =>
+      '${count} episodes';
 }
 
 // Path: <root>
@@ -50027,6 +50047,9 @@ class _StringsJa extends _StringsEn {
   @override
   String download_test_connection_failed_reason({required Object message}) =>
       'Connection failed: ${message}';
+  @override
+  String collection_hero_total_episodes({required Object count}) =>
+      '${count} episodes';
 }
 
 // Path: <root>
@@ -56479,6 +56502,9 @@ class _StringsKo extends _StringsEn {
   @override
   String download_test_connection_failed_reason({required Object message}) =>
       'Connection failed: ${message}';
+  @override
+  String collection_hero_total_episodes({required Object count}) =>
+      '${count} episodes';
 }
 
 // Path: <root>
@@ -63092,6 +63118,9 @@ class _StringsNl extends _StringsEn {
   @override
   String download_test_connection_failed_reason({required Object message}) =>
       'Connection failed: ${message}';
+  @override
+  String collection_hero_total_episodes({required Object count}) =>
+      '${count} episodes';
 }
 
 // Path: <root>
@@ -69718,6 +69747,9 @@ class _StringsPtBr extends _StringsEn {
   @override
   String download_test_connection_failed_reason({required Object message}) =>
       'Connection failed: ${message}';
+  @override
+  String collection_hero_total_episodes({required Object count}) =>
+      '${count} episodes';
 }
 
 // Path: <root>
@@ -76328,6 +76360,9 @@ class _StringsRu extends _StringsEn {
   @override
   String download_test_connection_failed_reason({required Object message}) =>
       'Connection failed: ${message}';
+  @override
+  String collection_hero_total_episodes({required Object count}) =>
+      '${count} episodes';
 }
 
 // Path: <root>
@@ -82886,6 +82921,9 @@ class _StringsTh extends _StringsEn {
   @override
   String download_test_connection_failed_reason({required Object message}) =>
       'Connection failed: ${message}';
+  @override
+  String collection_hero_total_episodes({required Object count}) =>
+      '${count} episodes';
 }
 
 // Path: <root>
@@ -89476,6 +89514,9 @@ class _StringsTr extends _StringsEn {
   @override
   String download_test_connection_failed_reason({required Object message}) =>
       'Connection failed: ${message}';
+  @override
+  String collection_hero_total_episodes({required Object count}) =>
+      '${count} episodes';
 }
 
 // Path: <root>
@@ -96051,6 +96092,9 @@ class _StringsVi extends _StringsEn {
   @override
   String download_test_connection_failed_reason({required Object message}) =>
       'Connection failed: ${message}';
+  @override
+  String collection_hero_total_episodes({required Object count}) =>
+      '${count} episodes';
 }
 
 // Path: <root>
@@ -102164,6 +102208,9 @@ class _StringsZhCn extends _StringsEn {
   @override
   String download_test_connection_failed_reason({required Object message}) =>
       '连接失败：${message}';
+  @override
+  String collection_hero_total_episodes({required Object count}) =>
+      '全 ${count} 话';
 }
 
 // Path: <root>
@@ -108535,6 +108582,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String download_test_connection_failed_reason({required Object message}) =>
       'Connection failed: ${message}';
+  @override
+  String collection_hero_total_episodes({required Object count}) =>
+      '${count} episodes';
 }
 
 /// Flat map(s) containing all translations.
@@ -114399,6 +114449,8 @@ extension on _StringsEn {
         return 'The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.';
       case 'download_test_connection_failed_reason':
         return ({required Object message}) => 'Connection failed: ${message}';
+      case 'collection_hero_total_episodes':
+        return ({required Object count}) => '${count} episodes';
       default:
         return null;
     }
@@ -120261,6 +120313,8 @@ extension on _StringsAr {
         return 'The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.';
       case 'download_test_connection_failed_reason':
         return ({required Object message}) => 'Connection failed: ${message}';
+      case 'collection_hero_total_episodes':
+        return ({required Object count}) => '${count} episodes';
       default:
         return null;
     }
@@ -126145,6 +126199,8 @@ extension on _StringsDe {
         return 'The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.';
       case 'download_test_connection_failed_reason':
         return ({required Object message}) => 'Connection failed: ${message}';
+      case 'collection_hero_total_episodes':
+        return ({required Object count}) => '${count} episodes';
       default:
         return null;
     }
@@ -132028,6 +132084,8 @@ extension on _StringsEs {
         return 'The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.';
       case 'download_test_connection_failed_reason':
         return ({required Object message}) => 'Connection failed: ${message}';
+      case 'collection_hero_total_episodes':
+        return ({required Object count}) => '${count} episodes';
       default:
         return null;
     }
@@ -137917,6 +137975,8 @@ extension on _StringsFr {
         return 'The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.';
       case 'download_test_connection_failed_reason':
         return ({required Object message}) => 'Connection failed: ${message}';
+      case 'collection_hero_total_episodes':
+        return ({required Object count}) => '${count} episodes';
       default:
         return null;
     }
@@ -143788,6 +143848,8 @@ extension on _StringsId {
         return 'The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.';
       case 'download_test_connection_failed_reason':
         return ({required Object message}) => 'Connection failed: ${message}';
+      case 'collection_hero_total_episodes':
+        return ({required Object count}) => '${count} episodes';
       default:
         return null;
     }
@@ -149673,6 +149735,8 @@ extension on _StringsIt {
         return 'The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.';
       case 'download_test_connection_failed_reason':
         return ({required Object message}) => 'Connection failed: ${message}';
+      case 'collection_hero_total_episodes':
+        return ({required Object count}) => '${count} episodes';
       default:
         return null;
     }
@@ -155520,6 +155584,8 @@ extension on _StringsJa {
         return 'The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.';
       case 'download_test_connection_failed_reason':
         return ({required Object message}) => 'Connection failed: ${message}';
+      case 'collection_hero_total_episodes':
+        return ({required Object count}) => '${count} episodes';
       default:
         return null;
     }
@@ -161371,6 +161437,8 @@ extension on _StringsKo {
         return 'The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.';
       case 'download_test_connection_failed_reason':
         return ({required Object message}) => 'Connection failed: ${message}';
+      case 'collection_hero_total_episodes':
+        return ({required Object count}) => '${count} episodes';
       default:
         return null;
     }
@@ -167250,6 +167318,8 @@ extension on _StringsNl {
         return 'The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.';
       case 'download_test_connection_failed_reason':
         return ({required Object message}) => 'Connection failed: ${message}';
+      case 'collection_hero_total_episodes':
+        return ({required Object count}) => '${count} episodes';
       default:
         return null;
     }
@@ -173126,6 +173196,8 @@ extension on _StringsPtBr {
         return 'The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.';
       case 'download_test_connection_failed_reason':
         return ({required Object message}) => 'Connection failed: ${message}';
+      case 'collection_hero_total_episodes':
+        return ({required Object count}) => '${count} episodes';
       default:
         return null;
     }
@@ -179007,6 +179079,8 @@ extension on _StringsRu {
         return 'The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.';
       case 'download_test_connection_failed_reason':
         return ({required Object message}) => 'Connection failed: ${message}';
+      case 'collection_hero_total_episodes':
+        return ({required Object count}) => '${count} episodes';
       default:
         return null;
     }
@@ -184871,6 +184945,8 @@ extension on _StringsTh {
         return 'The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.';
       case 'download_test_connection_failed_reason':
         return ({required Object message}) => 'Connection failed: ${message}';
+      case 'collection_hero_total_episodes':
+        return ({required Object count}) => '${count} episodes';
       default:
         return null;
     }
@@ -190744,6 +190820,8 @@ extension on _StringsTr {
         return 'The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.';
       case 'download_test_connection_failed_reason':
         return ({required Object message}) => 'Connection failed: ${message}';
+      case 'collection_hero_total_episodes':
+        return ({required Object count}) => '${count} episodes';
       default:
         return null;
     }
@@ -196613,6 +196691,8 @@ extension on _StringsVi {
         return 'The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.';
       case 'download_test_connection_failed_reason':
         return ({required Object message}) => 'Connection failed: ${message}';
+      case 'collection_hero_total_episodes':
+        return ({required Object count}) => '${count} episodes';
       default:
         return null;
     }
@@ -202430,6 +202510,8 @@ extension on _StringsZhCn {
         return '内置 Magpie 组件已损坏或校验失败。请重新安装或更新 Hibiki。';
       case 'download_test_connection_failed_reason':
         return ({required Object message}) => '连接失败：${message}';
+      case 'collection_hero_total_episodes':
+        return ({required Object count}) => '全 ${count} 话';
       default:
         return null;
     }
@@ -208272,6 +208354,8 @@ extension on _StringsZhHk {
         return 'The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.';
       case 'download_test_connection_failed_reason':
         return ({required Object message}) => 'Connection failed: ${message}';
+      case 'collection_hero_total_episodes':
+        return ({required Object count}) => '${count} episodes';
       default:
         return null;
     }

@@ -26,13 +26,14 @@ const String kVideoScraperTmdbApiKeyPref = 'video_scraper_tmdb_api_key';
 /// - 「使用」只写合集自有封面（[applyCover]），**一个成员都不碰**；
 /// - 不出「同时应用到本合集全部 N 集」勾选——合集入口下那个选项本身就是错的。
 ///
-/// [applyCover] 由调用方注入（生产 = 写 `MediaCollections.coverPath`），弹窗因此不必
-/// 持有 [HibikiDatabase]，widget 测试也能直接断言「写了合集、没写成员」。
+/// [applyScrape] 由调用方注入（生产 = 写 `MediaCollections.coverPath` +
+/// `collection_scrape_meta` + 回写合集名），弹窗因此不必持有 [HibikiDatabase]，
+/// widget 测试也能直接断言「写了合集、没写成员」。
 class CoverMatchCollectionTarget {
   const CoverMatchCollectionTarget({
     required this.id,
     required this.name,
-    required this.applyCover,
+    required this.applyScrape,
   });
 
   /// `MediaCollections.id`（下载落点文件名由它派生）。
@@ -41,8 +42,12 @@ class CoverMatchCollectionTarget {
   /// 合集名（弹窗标题用）。
   final String name;
 
-  /// 把已落地的封面绝对路径写进合集行。
-  final Future<void> Function(String coverPath) applyCover;
+  /// 把整份刮削产物（封面 + 横版背景 + 条目资料）写进合集（BUG-1305）。
+  ///
+  /// 从原先的 `applyCover(String coverPath)` 扩成整份结果：只传封面路径的签名
+  /// 结构性地决定了「合集刮削只能有一张图」——资料和背景根本没有参数位可传，
+  /// 这正是详情页除标题外一片空白的源头。
+  final Future<void> Function(CollectionScrapeResult result) applyScrape;
 }
 
 /// 「在线匹配封面」弹窗。
@@ -338,14 +343,15 @@ class _CoverMatchDialogState extends ConsumerState<CoverMatchDialog> {
     ({Object error, String detail})? failure;
     try {
       if (collection != null) {
-        // 合集入口：下载 → 只写合集自有封面列。**刻意不调
+        // 合集入口：下载封面 + 横版背景 + 拉条目资料 → 只写合集自己。**刻意不调
         // applyCandidateToBooks**——那条路会逐成员写 cover_path / cover_meta /
         // video_scrape_meta，正是用户否决的「改合集封面却刷了每一集」（BUG-1211）。
-        final String coverPath = await widget.service.downloadCollectionCover(
+        final CollectionScrapeResult result =
+            await widget.service.applyCandidateToCollection(
           collectionId: collection.id,
           candidate: candidate,
         );
-        await collection.applyCover(coverPath);
+        await collection.applyScrape(result);
       } else {
         final List<String> targets =
             _applyToCollection && widget.collectionMemberUids.length > 1

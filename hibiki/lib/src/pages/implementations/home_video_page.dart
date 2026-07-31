@@ -26,6 +26,7 @@ import 'package:hibiki/src/media/video/scraper/bangumi_client.dart';
 import 'package:hibiki/src/media/video/scraper/cover_meta_store.dart';
 import 'package:hibiki/src/media/video/scraper/offline_index.dart';
 import 'package:hibiki/src/media/video/scraper/cover_downloader.dart';
+import 'package:hibiki/src/media/video/scraper/collection_scrape_apply.dart';
 import 'package:hibiki/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:hibiki/src/media/video/scraper/scraper_types.dart';
 import 'package:hibiki/src/media/video/scraper/tmdb_client.dart';
@@ -3433,8 +3434,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       collection: CoverMatchCollectionTarget(
         id: collection.id,
         name: collection.name,
-        applyCover: (String coverPath) =>
-            db.updateMediaCollectionCoverPath(collection.id, coverPath),
+        applyScrape: (CollectionScrapeResult result) =>
+            applyCollectionScrape(db, collection.id, result),
       ),
     );
   }
