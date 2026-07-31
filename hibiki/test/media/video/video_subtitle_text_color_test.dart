@@ -40,6 +40,29 @@ AudioCue _markupCue(String text, SubtitleMarkup markup) {
   return _plainCue(text)..markup = markup;
 }
 
+/// 真 ASS 覆盖标签（`{\c&H..&}` 等）经解析器产出的 cue——与 markup_test 同款造法，避免
+/// 手搓 [SubtitleSpan] 漏掉解析器真实行为。[index] 区分同句多层拷贝的事件。
+AudioCue _assCue(String raw, {int index = 0}) {
+  final SubtitleMarkup m = parseSubtitleMarkup(raw);
+  return AudioCue()
+    ..bookKey = 'b'
+    ..chapterHref = 'c'
+    ..sentenceIndex = index
+    ..textFragmentId = '[data-cue-id="$index"]'
+    ..text = m.plainText
+    ..markup = m
+    ..startMs = 0
+    ..endMs = 5000
+    ..audioFileIndex = 0;
+}
+
+VideoPlayerController _stubWithCues(List<AudioCue> cues) {
+  final VideoPlayerController c = VideoPlayerController();
+  c.setCues(cues);
+  c.debugUpdateCueForPosition(cues.first.startMs + 1);
+  return c;
+}
+
 /// 读某字符 stroke+fill 双层里的**填充层**（`foreground == null`）；描边层是
 /// `foreground != null`（[buildSubtitleStrokePaint] 的画笔）。与 markup_test 同款读法。
 Text _fillText(WidgetTester tester, String char) {
@@ -94,6 +117,78 @@ void main() {
     await tester.pump();
     expect(_fillText(tester, 'A').style?.color, userColor,
         reason: 'respect 开但 ASS 无主色时应回退用户文字颜色（不冲突、不吞掉用户设置）');
+  });
+
+  /// BUG-1264（用户报「OP 字幕关闭尊重字幕自带样式变黑了」）：纯字幕模式（respectAssStyle
+  /// 关）下行内 `\c`/`\1c` 主色曾以「历史 span 样式」之名不受门控一路穿透——它是这个模式里
+  /// 最后一条漏网的颜色通道（`\3c` 描边色、`\1a` 填充透明度、cueStyle 主色、`\t` 颜色动画、
+  /// 卡拉 OK SecondaryColour 早已全部按 respect 门控）。多层卡拉 OK 的 OP 歌词把一句拆成多
+  /// 条同文本事件，纯字幕模式按文本去重只留发现顺序第一条＝最底的描边/光晕层，那层 `\c`
+  /// 是黑色，而本该给它兜底的白描边 `\3c` 与透明填充 `\1a` 又都被正确门控掉 → 整句裸黑字。
+  group('BUG-1264 纯字幕模式颜色语义归零（行内 \\c 不穿透）', () {
+    testWidgets('OFF: 行内 \\c 黑色不生效，填充恒为用户 textColor',
+        (WidgetTester tester) async {
+      const Color userColor = Color(0xFF00E5FF);
+      final VideoPlayerController c = _stubWithCue(_assCue(r'{\c&H000000&}歌'));
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: VideoSubtitleOverlay(
+            controller: c,
+            textColor: userColor,
+            respectAssStyle: false,
+          ),
+        ),
+      ));
+      await tester.pump();
+      expect(_fillText(tester, '歌').style?.color, userColor,
+          reason: '开关文案明示「关闭则一律使用你的外观设置」，行内 \\c 不得穿透');
+    });
+
+    testWidgets('OFF: 多层卡拉 OK 同句去重后不落到底层黑色（原始失败路径）',
+        (WidgetTester tester) async {
+      const Color userColor = Color(0xFF00E5FF);
+      // OP 歌词的真实形态：同一句拆成多条同时事件——底层描边/光晕层（黑填充 + 白描边）在
+      // 前、文字层在后。纯字幕模式按文本去重只保留第一条，正是黑填充那条。
+      final VideoPlayerController c = _stubWithCues(<AudioCue>[
+        _assCue(r'{\c&H000000&\3c&HFFFFFF&\bord4}歌', index: 0),
+        _assCue(r'{\c&HFFFFFF&}歌', index: 1),
+      ]);
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: VideoSubtitleOverlay(
+            controller: c,
+            textColor: userColor,
+            respectAssStyle: false,
+          ),
+        ),
+      ));
+      await tester.pump();
+      final Iterable<Text> fills = tester
+          .widgetList<Text>(find.text('歌'))
+          .where((Text t) => t.style?.foreground == null);
+      expect(fills, isNotEmpty, reason: '去重后仍应渲染该句');
+      for (final Text t in fills) {
+        expect(t.style?.color, userColor, reason: '任何一层拷贝都不得把 ASS 黑色主色带进纯字幕模式');
+      }
+    });
+
+    testWidgets('ON: 行内 \\c 照常生效（尊重语义未被误伤）', (WidgetTester tester) async {
+      const Color userColor = Color(0xFF00E5FF);
+      final VideoPlayerController c = _stubWithCue(_assCue(r'{\c&H0000FF&}歌'));
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: VideoSubtitleOverlay(
+            controller: c,
+            textColor: userColor,
+            respectAssStyle: true,
+          ),
+        ),
+      ));
+      await tester.pump();
+      // ASS 是 &HBBGGRR：&H0000FF& = 红。
+      expect(_fillText(tester, '歌').style?.color, const Color(0xFFFF0000),
+          reason: '开关打开时 ASS 主色必须优先，修复不得反向破坏尊重路径');
+    });
   });
 
   test(
