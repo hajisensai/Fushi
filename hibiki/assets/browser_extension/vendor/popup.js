@@ -4397,7 +4397,19 @@ function handleGlossaryAnchorClick(event, anchor) {
         return;
     }
     if (/^sound:/i.test(href)) {
-        // 词典发音媒体节点（sound://xxx），不是查词目标；导航已被阻止，播放另属后续能力。
+        // BUG-1261：词典发音媒体节点（sound://xxx）。不是查词目标；导航已被阻止，
+        // 改走与 <img>/gaiji 完全相同的词典媒体字节通道播放：剥掉 sound: 前缀后交给
+        // rewriteDictionaryMediaPath（app 内 → image:// 自定义 scheme，四个宿主表面
+        // 均已注册；浏览器扩展 → 带 token 的 /api/media/dictionary HTTP 端点），
+        // 再用 playWordAudio 播（与单词 ♪ 同一 <audio> 路径：音量/interrupt 语义一致）。
+        // dictName 取最近的 [data-dictionary] 容器（MDX 释义 wrapper 3052 行必设）。
+        const dictNode = anchor.closest('[data-dictionary]');
+        const soundDict = dictNode ? dictNode.getAttribute('data-dictionary') : '';
+        const soundPath = href.replace(/^sound:\/*/i, '');
+        if (soundDict && soundPath) {
+            const soundUrl = rewriteDictionaryMediaPath(soundPath, soundDict);
+            if (soundUrl) playWordAudio(soundUrl);
+        }
         return;
     }
     const query = (anchor.textContent || '').trim();
