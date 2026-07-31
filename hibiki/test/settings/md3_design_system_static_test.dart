@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 import '../pages/reader_history_source_corpus.dart';
 import '../pages/reader_hibiki_page_source_corpus.dart';
 import '../sync/sync_settings_schema_source_corpus.dart';
@@ -1632,9 +1633,15 @@ void main() {
 
         expect(section, contains('HibikiFilePickerRow('));
         expect(section, contains('HibikiIconButton('));
+        // 原写法先把 HibikiIconButton 换名再做裸子串匹配 —— 那是白名单，白名单
+        // 永远漏：仓内还有 `_RepeatIconButton(` / `_InBookIconButton(` /
+        // `_CompactSearchIconButton(` 没登记，用上任何一个就假红；反向也漏，裸子串
+        // 匹配不到本仓真实在用的 `IconButton.filledTonal(`。带标识符边界的匹配
+        // 一次堵住两个方向，且不需要维护白名单。
         expect(
-          section.replaceAll('HibikiIconButton(', 'HibikiSharedAction('),
-          isNot(contains('IconButton(')),
+          containsIdentifierCall(section, 'IconButton'),
+          isFalse,
+          reason: '${entry.key} 不得用裸 IconButton（含 IconButton.filledTonal）',
         );
         expect(section, isNot(contains('Theme.of(context).colorScheme')));
         expect(section, isNot(contains('size: 18')));
@@ -2069,7 +2076,9 @@ void main() {
     expect(managerMenu, isNot(contains('Material(')));
     expect(managerMenu, isNot(contains('BorderRadius.circular(24)')));
     expect(managerPopupItem, contains('HibikiPopupMenuItem<VoidCallback>('));
-    expect(managerPopupItem, isNot(contains('Row(')));
+    // 裸子串 `Row(` 会被仓内几十个 `*Row(` 组件（`AdaptiveSettingsSwitchRow(` /
+    // `AudioCueRow(` / `AnkiMappingRow(` …）命中，菜单项引用任何一个就假红。
+    expect(containsIdentifierCall(managerPopupItem, 'Row'), isFalse);
     expect(managerPopupItem, isNot(contains('const SizedBox(width: 8)')));
     expect(managerMenu, isNot(contains('const SizedBox(width: 8)')));
 
@@ -2083,10 +2092,10 @@ void main() {
       'Future<MinePopupResult> onMineFromPopup',
     );
     expect(dictionaryLoading, contains('HibikiCard('));
-    expect(
-      _withoutSharedComponentNames(dictionaryLoading),
-      isNot(contains('Card(')),
-    );
+    // 免白名单：`HibikiCard(` 本身含子串 `Card(`，旧写法靠换名绕开；但仓内还有
+    // `_EndpointCard(` / `_EpisodeRailCard(` / `SeriesShelfCard(` 等一堆以 Card
+    // 结尾的组件没登记。标识符边界匹配只认裸 `Card` 构造。
+    expect(containsIdentifierCall(dictionaryLoading, 'Card'), isFalse);
 
     final String progressContent = File(
       'lib/src/pages/implementations/dictionary_progress_dialog_content.dart',
@@ -2106,8 +2115,8 @@ void main() {
     expect(mineButton, contains('Icons.add_circle_outline'));
     expect(mineButton, contains('tokens.spacing'));
     expect(mineButton, contains('creator_export_card'));
-    expect(_withoutSharedComponentNames(mineButton),
-        isNot(contains('IconButton(')));
+    expect(containsIdentifierCall(mineButton, 'IconButton'), isFalse,
+        reason: '制卡按钮不得用裸 IconButton（含 IconButton.filledTonal）');
     expect(mineButton, isNot(contains("Text('+")));
     expect(mineButton, isNot(contains('HibikiFocusable(')));
 
@@ -2495,18 +2504,20 @@ void main() {
       'Widget _buildItem(_CollectionItem item)',
       'class CollectionItemDialogFrame',
     );
-    final String normalized = _withoutSharedComponentNames(itemSource);
-
     expect(itemSource, contains('HibikiListItem('));
     expect(itemSource, contains('HibikiIconButton('));
     expect(itemSource, contains('tokens.spacing'));
     expect(itemSource, contains('_hasAudio(item)'));
     expect(itemSource, contains('_playItemAudio(item)'));
     expect(itemSource, contains('onLongPress: () => _showItemDialog(item)'));
-    expect(normalized, isNot(contains('IconButton(')));
+    // 三条判据都换成标识符边界匹配，_withoutSharedComponentNames 白名单在此不再需要：
+    // 共享组件（HibikiIconButton / HibikiListTile / HibikiCard）天然不匹配，
+    // 未登记的 `_RepeatIconButton(` / `_EndpointCard(` 也不再假红，
+    // 而 `IconButton.filledTonal(` 这类命名构造器回归反而能被抓到。
+    expect(containsIdentifierCall(itemSource, 'IconButton'), isFalse);
     expect(itemSource, isNot(contains('VisualDensity.compact')));
-    expect(normalized, isNot(contains('ListTile(')));
-    expect(normalized, isNot(contains('Card(')));
+    expect(containsIdentifierCall(itemSource, 'ListTile'), isFalse);
+    expect(containsIdentifierCall(itemSource, 'Card'), isFalse);
   });
 
   test('media item edit dialog uses shared MD3 dialog chrome', () {

@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// TODO-728 source-scan focus guards (TODO-700 invariant must not regress):
 ///  - The bottom chrome bars stay wrapped in ExcludeFocus (out of the focus
 ///    traversal pool).
@@ -98,7 +100,16 @@ void main() {
       isTrue,
       reason: '顶部进度点击必须路由到 _toggleChrome（挤压）或悬浮唤出/收起',
     );
-    expect(body, isNot(contains('Focus(')));
+    // 裸子串 'Focus(' 会被任何**以 Focus 结尾**的更长标识符命中——本仓真实存在
+    // `requestFocus(` / `ensureFocus(` / `nextFocus(` / `ExcludeFocus(` 等一堆，
+    // 顶部进度条一旦正常调一次 `node.requestFocus()` 这条守卫就假红。
+    // 契约是「不得包一层 Focus widget」，故只匹配裸构造：`Focus.of(context)` 是读取
+    // 祖先节点、不是包装，不该判违规（allowNamedConstructor: false）。
+    expect(
+      containsIdentifierCall(body, 'Focus', allowNamedConstructor: false),
+      isFalse,
+      reason: '顶部进度点击面必须保持纯指针面，不得包 Focus',
+    );
     expect(body, isNot(contains('canRequestFocus')));
   });
 }

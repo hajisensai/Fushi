@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 void main() {
   final Map<String, List<String>> migratedPages = <String, List<String>>{
     // anki_settings_page.dart 现在导出的是无脚手架的 AnkiSettingsBody（直接平铺
@@ -60,8 +62,17 @@ void main() {
           reason: '$fileName still uses SwitchListTile');
       expect(source, isNot(contains('adaptiveSwitch(')),
           reason: '$fileName still hand-rolls switch rows');
-      expect(source, isNot(contains('ListTile(')),
+      // 带标识符边界：裸子串 `ListTile(` 会被共享组件 `HibikiListTile(` 命中
+      // （`_withoutSharedComponentNames` 白名单里已把它列为合法共享组件），
+      // 设置页哪天改用共享行组件就假红。Radio/Cupertino 变体在下面显式补回，
+      // 保住原裸子串顺带盖住的范围。
+      expect(containsIdentifierCall(source, 'ListTile'), isFalse,
           reason: '$fileName still uses ListTile instead of settings rows');
+      expect(containsIdentifierCall(source, 'RadioListTile'), isFalse,
+          reason:
+              '$fileName still uses RadioListTile instead of settings rows');
+      expect(containsIdentifierCall(source, 'CupertinoListTile'), isFalse,
+          reason: '$fileName still uses CupertinoListTile');
       expect(source, isNot(contains('ExpansionTile(')),
           reason: '$fileName still uses ExpansionTile instead of sections');
       expect(source, isNot(contains('adaptiveSegmentedButton')),

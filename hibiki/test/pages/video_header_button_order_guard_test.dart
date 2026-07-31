@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_control_customization.dart';
 
+import '../helpers/source_guard.dart';
 import 'video_hibiki_page_source_corpus.dart';
 
 /// 守卫（TODO-162）：视频页（HomeVideoPage）顶栏三个动作按钮的排列顺序，必须与
@@ -28,14 +29,24 @@ void main() {
   /// `List<Widget> actions = <Widget>[`（页头统一成 [HibikiPageHeader] 后走后者）。
   /// 区间终点用方括号配对求出，而不是「下一个 `],`」——后者在列表以 `];` 收尾时会
   /// 直接越过方法体，把断言范围放大到整个文件。
+  ///
+  /// 起点必须命中**定义**而不是调用点。两个语料文件里裸名 `_buildPageHeader` 都是
+  /// 先命中调用点（`home_video_page.dart` 的 `if (!isCupertinoPlatform(context))
+  /// _buildPageHeader(canImport)` / `reader_hibiki_history_page.dart` 的
+  /// `_buildPageHeader()`），定义在几百上千行之后。用裸名 `indexOf` 定起点的话，
+  /// 只要将来有人在调用点与定义之间写一个持有 `actions = <Widget>[` 的**无关方法**，
+  /// 切出来的就是那个方法的列表，真实页头的顺序回归会静默漏掉（复核方 MUT_G 已实证
+  /// 此形态下守卫仍绿）。
+  ///
+  /// 这里用 [methodBody] 按花括号配对截出方法体：起点签名带 `Widget ` 前缀，只会命中
+  /// 定义；终点由源码结构给出，不再是裸名 + 全文件后缀。
   String headerActionsBlock(File file) {
-    final String text = file.readAsStringSync();
-    final int headerIdx = text.indexOf('_buildPageHeader');
-    expect(headerIdx, greaterThanOrEqualTo(0),
-        reason: '${file.path} 应定义 _buildPageHeader');
-    int actionsIdx =
-        text.indexOf('List<Widget> actions = <Widget>[', headerIdx);
-    final int inlineIdx = text.indexOf('actions: <Widget>[', headerIdx);
+    final String text = methodBody(
+      file.readAsStringSync(),
+      'Widget _buildPageHeader(',
+    );
+    int actionsIdx = text.indexOf('List<Widget> actions = <Widget>[');
+    final int inlineIdx = text.indexOf('actions: <Widget>[');
     if (actionsIdx < 0 || (inlineIdx >= 0 && inlineIdx < actionsIdx)) {
       actionsIdx = inlineIdx;
     }

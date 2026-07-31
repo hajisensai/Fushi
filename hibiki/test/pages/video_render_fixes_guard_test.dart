@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 视频渲染三修复的源码守卫（media_kit 驱动的 VideoHibikiPage 无法 headless 行为测试，
 /// 故锁定关键配线）：
 ///  1. 「视频没画面」——所有打开视频页的入口都经 [VideoHibikiPage.neutralized] 在路由层
@@ -31,8 +33,17 @@ void main() {
       final String s = File(path).readAsStringSync();
       expect(s, contains('VideoHibikiPage.neutralized('),
           reason: '$path 必须经 VideoHibikiPage.neutralized 打开视频页');
-      expect(s, isNot(contains('VideoHibikiPage(')),
-          reason: '$path 不得裸用 VideoHibikiPage( 构造（会漏掉缩放中和→无画面）');
+      // 这里必须 allowNamedConstructor: false —— 契约是「只禁裸构造，命名构造器
+      // （.neutralized / .remote / .neutralizedRemote）才是唯一合法入口」。默认
+      // 吃命名构造器的匹配会把上一行正向要求的写法判成违规。
+      // 换匹配器的收益是补上前边界：将来出现任何 `_XxxVideoHibikiPage(` 这类以该名
+      // 结尾的更长标识符时不会假红。
+      expect(
+        containsIdentifierCall(s, 'VideoHibikiPage',
+            allowNamedConstructor: false),
+        isFalse,
+        reason: '$path 不得裸用 VideoHibikiPage( 构造（会漏掉缩放中和→无画面）',
+      );
     }
     // 书架不再打开视频页（视频归「视频」tab 独占，书架视频分区已删），故此处不再
     // 校验书架语料的 VideoHibikiPage.neutralized 接线。
