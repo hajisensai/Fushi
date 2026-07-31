@@ -577,7 +577,7 @@ Future<int> applyCollectionLocalChanges(
     HibikiDatabase db, CollectionLocalChanges changes) async {
   if (changes.isEmpty) return 0;
   // 被本轮解散的合集行快照：删行发生在事务里，而回收自有封面是文件 IO，必须挪到
-  // 事务提交之后做（BUG-1316）。路径只能在行还活着时取，故在删之前入列。
+  // 事务提交之后做（BUG-1319）。路径只能在行还活着时取，故在删之前入列。
   final List<MediaCollectionRow> dissolved = <MediaCollectionRow>[];
   await db.transaction(() async {
     for (final CollectionManifestEntry e in changes.entries) {

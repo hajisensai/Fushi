@@ -1,4 +1,4 @@
-## BUG-1316 · 删合集只有 1/6 入口回收自有封面：其余五条只删 DB 行，路径随行永久丢失、GC 又扫不到该子目录 = 确定性空间泄漏
+## BUG-1319 · 删合集只有 1/6 入口回收自有封面：其余五条只删 DB 行，路径随行永久丢失、GC 又扫不到该子目录 = 确定性空间泄漏
 - **报告**：2026-08-01（PR#635 审查时发现，非用户直报）
 - **真实性**：✅ 真 bug，**确定性**泄漏（不是概率性的：每从这五条入口删掉一个刮削过的合集，就永久漏一个文件）。
   - 合集自有封面唯一落盘路径是 `video_covers/collections/<collectionId>.jpg`（`hibiki/lib/src/media/video/video_storage.dart:55` 目录名 + `:61-62` 目录 + `video_cover_extractor.dart:131-134` 文件名 + `scraper/cover_scraper_service.dart:424-435` 下载），路径记在 `media_collections.cover_path`（`packages/hibiki_core/lib/src/database/tables.dart:846`）。

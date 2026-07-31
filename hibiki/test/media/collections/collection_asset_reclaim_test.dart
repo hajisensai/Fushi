@@ -8,7 +8,7 @@ import 'package:path/path.dart' as p;
 
 import '../../helpers/source_guard.dart';
 
-/// BUG-1316 守卫：删合集必须回收该合集**自有**的磁盘资产，且**只**回收它自己的。
+/// BUG-1319 守卫：删合集必须回收该合集**自有**的磁盘资产，且**只**回收它自己的。
 ///
 /// 两个方向都要锁死：
 /// - 漏删（本 BUG 的症状）：合集封面落在 `video_covers/collections/<id>.jpg`，
@@ -61,7 +61,7 @@ void main() {
       expect(removed, 1, reason: '返回值必须透传被删的合集行数，调用方判据零变化');
       expect(await db.getMediaCollectionById(id), isNull);
       expect(cover.existsSync(), isFalse,
-          reason: '合集自有封面必须随合集一起回收，否则永久泄漏（BUG-1316）');
+          reason: '合集自有封面必须随合集一起回收，否则永久泄漏（BUG-1319）');
     });
 
     test('别的合集的封面文件一根汗毛都不许动', () async {
@@ -209,7 +209,7 @@ void main() {
       }
       expect(offenders, isEmpty,
           reason: '这些调用点删了 DB 行却不回收合集自有封面 = 确定性磁盘泄漏'
-              '（BUG-1316）。改调 deleteMediaCollectionWithAssets；'
+              '（BUG-1319）。改调 deleteMediaCollectionWithAssets；'
               '事务内删行的调用方用 reclaimDeletedCollectionAssets 在事务外收尾。');
     });
 

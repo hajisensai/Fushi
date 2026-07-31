@@ -4,7 +4,7 @@ import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/utils.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
-/// 合集自有磁盘资产的回收（BUG-1316）。
+/// 合集自有磁盘资产的回收（BUG-1319）。
 ///
 /// ## 为什么必须是「唯一入口」而不是某个页面的私有 helper
 ///

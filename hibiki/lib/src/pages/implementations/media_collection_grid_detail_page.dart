@@ -157,7 +157,7 @@ class _MediaCollectionGridDetailPageState
     if (result == null || !mounted) return;
     // 先删成员本体（书/有声书/视频 DB 行 + 磁盘副本），再解散容器。删书不动合集引用
     // 行，故随后的解散负责清掉残留引用 + 写合集级墓碑 + 回收合集自有封面
-    // （[deleteMediaCollectionWithAssets]，BUG-1316）。
+    // （[deleteMediaCollectionWithAssets]，BUG-1319）。
     if (result.checked && widget.onDeleteMembersMedia != null) {
       await widget
           .onDeleteMembersMedia!(List<MediaCollectionItemRow>.of(_rows));

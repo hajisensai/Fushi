@@ -190,7 +190,7 @@ Future<void> _sortCollection({
 /// 删除合集：确认（可选「连同成员本体一起删」勾选）→ 先删成员本体（调用方注入，
 /// 按媒体域删 DB 行 + 磁盘副本）→ [deleteMediaCollectionWithAssets] 解散容器
 /// （清引用行 + 写合集级墓碑 + 回收合集自有封面）。与两个合集详情页的 `_delete`
-/// 同一顺序、同一入口（BUG-1316：回收必须挂在删除动作上，不能各入口各写一遍）。
+/// 同一顺序、同一入口（BUG-1319：回收必须挂在删除动作上，不能各入口各写一遍）。
 Future<void> _deleteCollection({
   required BuildContext context,
   required HibikiDatabase db,

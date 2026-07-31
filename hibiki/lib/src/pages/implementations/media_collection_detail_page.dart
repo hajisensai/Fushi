@@ -263,7 +263,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 先删各集视频本体（DB 行 + 封面/字幕副本），再解散容器。删视频会连带清各合集
     // 引用行并自删空合集，故随后的解散多为幂等收尾（写合集级墓碑）。解散必须走
     // [deleteMediaCollectionWithAssets]：裸 deleteMediaCollection 只删 DB 行，合集
-    // 自有封面会永久留在磁盘上（BUG-1316）。
+    // 自有封面会永久留在磁盘上（BUG-1319）。
     if (result.checked && widget.onDeleteMembersMedia != null) {
       await widget.onDeleteMembersMedia!(List<VideoBookRow>.of(_members));
     }
