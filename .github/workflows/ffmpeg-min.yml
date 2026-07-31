@@ -42,11 +42,11 @@ jobs:
 
       - name: Install deps (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg nasm yasm pkg-config zlib1g-dev libx264-dev libgnutls28-dev
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg nasm yasm pkg-config zlib1g-dev libx264-dev libgnutls28-dev libsvtav1-dev libwebp-dev
 
       - name: Install deps (macOS)
         if: runner.os == 'macOS'
-        run: brew install ffmpeg nasm pkg-config x264
+        run: brew install ffmpeg nasm pkg-config x264 svt-av1 webp
 
       - name: Setup MSYS2 (Windows)
         if: runner.os == 'Windows'
@@ -58,7 +58,7 @@ jobs:
             base-devel git
             mingw-w64-x86_64-gcc mingw-w64-x86_64-nasm
             mingw-w64-x86_64-pkgconf mingw-w64-x86_64-zlib
-            mingw-w64-x86_64-x264
+            mingw-w64-x86_64-x264 mingw-w64-x86_64-svt-av1 mingw-w64-x86_64-libwebp
             mingw-w64-x86_64-ffmpeg
 
       - name: Build (Linux/macOS)

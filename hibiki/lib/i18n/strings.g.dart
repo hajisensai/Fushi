@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 48569 (2857 per locale)
+/// Strings: 48688 (2864 per locale)
 ///
-/// Built on 2026-07-31 at 14:41 UTC
+/// Built on 2026-07-31 at 16:23 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3854,6 +3854,15 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Only visible on cards that keep more than one definition block; single-definition cards hide it.';
   String get anki_lapis_visual_field_dictionary_name_note =>
       'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+  String get mining_animated_format_avif => 'AVIF (smallest)';
+  String get mining_animated_format_webp => 'WebP (wider support)';
+  String get mining_animated_format_gif => 'GIF (most compatible)';
+  String get video_mining_animated_format => 'Video card animation format';
+  String get video_mining_animated_format_hint =>
+      'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+  String get gal_mining_animated_format => 'Game card animation format';
+  String get gal_mining_animated_format_hint =>
+      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
 }
 
 // Path: <root>
@@ -10414,6 +10423,22 @@ class _StringsAr extends _StringsEn {
   @override
   String get anki_lapis_visual_field_dictionary_name_note =>
       'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+  @override
+  String get mining_animated_format_avif => 'AVIF (smallest)';
+  @override
+  String get mining_animated_format_webp => 'WebP (wider support)';
+  @override
+  String get mining_animated_format_gif => 'GIF (most compatible)';
+  @override
+  String get video_mining_animated_format => 'Video card animation format';
+  @override
+  String get video_mining_animated_format_hint =>
+      'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+  @override
+  String get gal_mining_animated_format => 'Game card animation format';
+  @override
+  String get gal_mining_animated_format_hint =>
+      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
 }
 
 // Path: <root>
@@ -17041,6 +17066,22 @@ class _StringsDe extends _StringsEn {
   @override
   String get anki_lapis_visual_field_dictionary_name_note =>
       'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+  @override
+  String get mining_animated_format_avif => 'AVIF (smallest)';
+  @override
+  String get mining_animated_format_webp => 'WebP (wider support)';
+  @override
+  String get mining_animated_format_gif => 'GIF (most compatible)';
+  @override
+  String get video_mining_animated_format => 'Video card animation format';
+  @override
+  String get video_mining_animated_format_hint =>
+      'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+  @override
+  String get gal_mining_animated_format => 'Game card animation format';
+  @override
+  String get gal_mining_animated_format_hint =>
+      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
 }
 
 // Path: <root>
@@ -23684,6 +23725,22 @@ class _StringsEs extends _StringsEn {
   @override
   String get anki_lapis_visual_field_dictionary_name_note =>
       'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+  @override
+  String get mining_animated_format_avif => 'AVIF (smallest)';
+  @override
+  String get mining_animated_format_webp => 'WebP (wider support)';
+  @override
+  String get mining_animated_format_gif => 'GIF (most compatible)';
+  @override
+  String get video_mining_animated_format => 'Video card animation format';
+  @override
+  String get video_mining_animated_format_hint =>
+      'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+  @override
+  String get gal_mining_animated_format => 'Game card animation format';
+  @override
+  String get gal_mining_animated_format_hint =>
+      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
 }
 
 // Path: <root>
@@ -30338,6 +30395,22 @@ class _StringsFr extends _StringsEn {
   @override
   String get anki_lapis_visual_field_dictionary_name_note =>
       'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+  @override
+  String get mining_animated_format_avif => 'AVIF (smallest)';
+  @override
+  String get mining_animated_format_webp => 'WebP (wider support)';
+  @override
+  String get mining_animated_format_gif => 'GIF (most compatible)';
+  @override
+  String get video_mining_animated_format => 'Video card animation format';
+  @override
+  String get video_mining_animated_format_hint =>
+      'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+  @override
+  String get gal_mining_animated_format => 'Game card animation format';
+  @override
+  String get gal_mining_animated_format_hint =>
+      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
 }
 
 // Path: <root>
@@ -36921,6 +36994,22 @@ class _StringsId extends _StringsEn {
   @override
   String get anki_lapis_visual_field_dictionary_name_note =>
       'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+  @override
+  String get mining_animated_format_avif => 'AVIF (smallest)';
+  @override
+  String get mining_animated_format_webp => 'WebP (wider support)';
+  @override
+  String get mining_animated_format_gif => 'GIF (most compatible)';
+  @override
+  String get video_mining_animated_format => 'Video card animation format';
+  @override
+  String get video_mining_animated_format_hint =>
+      'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+  @override
+  String get gal_mining_animated_format => 'Game card animation format';
+  @override
+  String get gal_mining_animated_format_hint =>
+      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
 }
 
 // Path: <root>
@@ -43550,6 +43639,22 @@ class _StringsIt extends _StringsEn {
   @override
   String get anki_lapis_visual_field_dictionary_name_note =>
       'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+  @override
+  String get mining_animated_format_avif => 'AVIF (smallest)';
+  @override
+  String get mining_animated_format_webp => 'WebP (wider support)';
+  @override
+  String get mining_animated_format_gif => 'GIF (most compatible)';
+  @override
+  String get video_mining_animated_format => 'Video card animation format';
+  @override
+  String get video_mining_animated_format_hint =>
+      'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+  @override
+  String get gal_mining_animated_format => 'Game card animation format';
+  @override
+  String get gal_mining_animated_format_hint =>
+      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
 }
 
 // Path: <root>
@@ -49996,6 +50101,22 @@ class _StringsJa extends _StringsEn {
   @override
   String get anki_lapis_visual_field_dictionary_name_note =>
       'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+  @override
+  String get mining_animated_format_avif => 'AVIF (smallest)';
+  @override
+  String get mining_animated_format_webp => 'WebP (wider support)';
+  @override
+  String get mining_animated_format_gif => 'GIF (most compatible)';
+  @override
+  String get video_mining_animated_format => 'Video card animation format';
+  @override
+  String get video_mining_animated_format_hint =>
+      'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+  @override
+  String get gal_mining_animated_format => 'Game card animation format';
+  @override
+  String get gal_mining_animated_format_hint =>
+      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
 }
 
 // Path: <root>
@@ -56444,6 +56565,22 @@ class _StringsKo extends _StringsEn {
   @override
   String get anki_lapis_visual_field_dictionary_name_note =>
       'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+  @override
+  String get mining_animated_format_avif => 'AVIF (smallest)';
+  @override
+  String get mining_animated_format_webp => 'WebP (wider support)';
+  @override
+  String get mining_animated_format_gif => 'GIF (most compatible)';
+  @override
+  String get video_mining_animated_format => 'Video card animation format';
+  @override
+  String get video_mining_animated_format_hint =>
+      'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+  @override
+  String get gal_mining_animated_format => 'Game card animation format';
+  @override
+  String get gal_mining_animated_format_hint =>
+      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
 }
 
 // Path: <root>
@@ -63053,6 +63190,22 @@ class _StringsNl extends _StringsEn {
   @override
   String get anki_lapis_visual_field_dictionary_name_note =>
       'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+  @override
+  String get mining_animated_format_avif => 'AVIF (smallest)';
+  @override
+  String get mining_animated_format_webp => 'WebP (wider support)';
+  @override
+  String get mining_animated_format_gif => 'GIF (most compatible)';
+  @override
+  String get video_mining_animated_format => 'Video card animation format';
+  @override
+  String get video_mining_animated_format_hint =>
+      'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+  @override
+  String get gal_mining_animated_format => 'Game card animation format';
+  @override
+  String get gal_mining_animated_format_hint =>
+      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
 }
 
 // Path: <root>
@@ -69675,6 +69828,22 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get anki_lapis_visual_field_dictionary_name_note =>
       'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+  @override
+  String get mining_animated_format_avif => 'AVIF (smallest)';
+  @override
+  String get mining_animated_format_webp => 'WebP (wider support)';
+  @override
+  String get mining_animated_format_gif => 'GIF (most compatible)';
+  @override
+  String get video_mining_animated_format => 'Video card animation format';
+  @override
+  String get video_mining_animated_format_hint =>
+      'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+  @override
+  String get gal_mining_animated_format => 'Game card animation format';
+  @override
+  String get gal_mining_animated_format_hint =>
+      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
 }
 
 // Path: <root>
@@ -76281,6 +76450,22 @@ class _StringsRu extends _StringsEn {
   @override
   String get anki_lapis_visual_field_dictionary_name_note =>
       'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+  @override
+  String get mining_animated_format_avif => 'AVIF (smallest)';
+  @override
+  String get mining_animated_format_webp => 'WebP (wider support)';
+  @override
+  String get mining_animated_format_gif => 'GIF (most compatible)';
+  @override
+  String get video_mining_animated_format => 'Video card animation format';
+  @override
+  String get video_mining_animated_format_hint =>
+      'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+  @override
+  String get gal_mining_animated_format => 'Game card animation format';
+  @override
+  String get gal_mining_animated_format_hint =>
+      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
 }
 
 // Path: <root>
@@ -82835,6 +83020,22 @@ class _StringsTh extends _StringsEn {
   @override
   String get anki_lapis_visual_field_dictionary_name_note =>
       'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+  @override
+  String get mining_animated_format_avif => 'AVIF (smallest)';
+  @override
+  String get mining_animated_format_webp => 'WebP (wider support)';
+  @override
+  String get mining_animated_format_gif => 'GIF (most compatible)';
+  @override
+  String get video_mining_animated_format => 'Video card animation format';
+  @override
+  String get video_mining_animated_format_hint =>
+      'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+  @override
+  String get gal_mining_animated_format => 'Game card animation format';
+  @override
+  String get gal_mining_animated_format_hint =>
+      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
 }
 
 // Path: <root>
@@ -89421,6 +89622,22 @@ class _StringsTr extends _StringsEn {
   @override
   String get anki_lapis_visual_field_dictionary_name_note =>
       'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+  @override
+  String get mining_animated_format_avif => 'AVIF (smallest)';
+  @override
+  String get mining_animated_format_webp => 'WebP (wider support)';
+  @override
+  String get mining_animated_format_gif => 'GIF (most compatible)';
+  @override
+  String get video_mining_animated_format => 'Video card animation format';
+  @override
+  String get video_mining_animated_format_hint =>
+      'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+  @override
+  String get gal_mining_animated_format => 'Game card animation format';
+  @override
+  String get gal_mining_animated_format_hint =>
+      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
 }
 
 // Path: <root>
@@ -95992,6 +96209,22 @@ class _StringsVi extends _StringsEn {
   @override
   String get anki_lapis_visual_field_dictionary_name_note =>
       'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+  @override
+  String get mining_animated_format_avif => 'AVIF (smallest)';
+  @override
+  String get mining_animated_format_webp => 'WebP (wider support)';
+  @override
+  String get mining_animated_format_gif => 'GIF (most compatible)';
+  @override
+  String get video_mining_animated_format => 'Video card animation format';
+  @override
+  String get video_mining_animated_format_hint =>
+      'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+  @override
+  String get gal_mining_animated_format => 'Game card animation format';
+  @override
+  String get gal_mining_animated_format_hint =>
+      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
 }
 
 // Path: <root>
@@ -102100,6 +102333,22 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get anki_lapis_visual_field_dictionary_name_note =>
       'Hibiki 生成的卡片把词性标签和词典名放在同一个标签里，两者无法分开设置样式。';
+  @override
+  String get mining_animated_format_avif => 'AVIF（体积最小）';
+  @override
+  String get mining_animated_format_webp => 'WebP（兼容性更广）';
+  @override
+  String get mining_animated_format_gif => 'GIF（兼容性最好）';
+  @override
+  String get video_mining_animated_format => '视频制卡动图格式';
+  @override
+  String get video_mining_animated_format_hint =>
+      '同画质下 AVIF 体积远小于 GIF，也是唯一在最高清晰度档保留源分辨率与源帧率的格式。捆绑的编码器产不出时会自动回退 GIF。';
+  @override
+  String get gal_mining_animated_format => '游戏制卡动图格式';
+  @override
+  String get gal_mining_animated_format_hint =>
+      '与视频制卡同样的格式，但分开保存：galgame 一句台词内画面基本静止，取舍不同。';
 }
 
 // Path: <root>
@@ -108467,6 +108716,22 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get anki_lapis_visual_field_dictionary_name_note =>
       'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+  @override
+  String get mining_animated_format_avif => 'AVIF (smallest)';
+  @override
+  String get mining_animated_format_webp => 'WebP (wider support)';
+  @override
+  String get mining_animated_format_gif => 'GIF (most compatible)';
+  @override
+  String get video_mining_animated_format => 'Video card animation format';
+  @override
+  String get video_mining_animated_format_hint =>
+      'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+  @override
+  String get gal_mining_animated_format => 'Game card animation format';
+  @override
+  String get gal_mining_animated_format_hint =>
+      'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
 }
 
 /// Flat map(s) containing all translations.
@@ -114329,6 +114594,20 @@ extension on _StringsEn {
         return 'Only visible on cards that keep more than one definition block; single-definition cards hide it.';
       case 'anki_lapis_visual_field_dictionary_name_note':
         return 'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+      case 'mining_animated_format_avif':
+        return 'AVIF (smallest)';
+      case 'mining_animated_format_webp':
+        return 'WebP (wider support)';
+      case 'mining_animated_format_gif':
+        return 'GIF (most compatible)';
+      case 'video_mining_animated_format':
+        return 'Video card animation format';
+      case 'video_mining_animated_format_hint':
+        return 'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+      case 'gal_mining_animated_format':
+        return 'Game card animation format';
+      case 'gal_mining_animated_format_hint':
+        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       default:
         return null;
     }
@@ -120189,6 +120468,20 @@ extension on _StringsAr {
         return 'Only visible on cards that keep more than one definition block; single-definition cards hide it.';
       case 'anki_lapis_visual_field_dictionary_name_note':
         return 'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+      case 'mining_animated_format_avif':
+        return 'AVIF (smallest)';
+      case 'mining_animated_format_webp':
+        return 'WebP (wider support)';
+      case 'mining_animated_format_gif':
+        return 'GIF (most compatible)';
+      case 'video_mining_animated_format':
+        return 'Video card animation format';
+      case 'video_mining_animated_format_hint':
+        return 'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+      case 'gal_mining_animated_format':
+        return 'Game card animation format';
+      case 'gal_mining_animated_format_hint':
+        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       default:
         return null;
     }
@@ -126071,6 +126364,20 @@ extension on _StringsDe {
         return 'Only visible on cards that keep more than one definition block; single-definition cards hide it.';
       case 'anki_lapis_visual_field_dictionary_name_note':
         return 'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+      case 'mining_animated_format_avif':
+        return 'AVIF (smallest)';
+      case 'mining_animated_format_webp':
+        return 'WebP (wider support)';
+      case 'mining_animated_format_gif':
+        return 'GIF (most compatible)';
+      case 'video_mining_animated_format':
+        return 'Video card animation format';
+      case 'video_mining_animated_format_hint':
+        return 'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+      case 'gal_mining_animated_format':
+        return 'Game card animation format';
+      case 'gal_mining_animated_format_hint':
+        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       default:
         return null;
     }
@@ -131952,6 +132259,20 @@ extension on _StringsEs {
         return 'Only visible on cards that keep more than one definition block; single-definition cards hide it.';
       case 'anki_lapis_visual_field_dictionary_name_note':
         return 'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+      case 'mining_animated_format_avif':
+        return 'AVIF (smallest)';
+      case 'mining_animated_format_webp':
+        return 'WebP (wider support)';
+      case 'mining_animated_format_gif':
+        return 'GIF (most compatible)';
+      case 'video_mining_animated_format':
+        return 'Video card animation format';
+      case 'video_mining_animated_format_hint':
+        return 'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+      case 'gal_mining_animated_format':
+        return 'Game card animation format';
+      case 'gal_mining_animated_format_hint':
+        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       default:
         return null;
     }
@@ -137839,6 +138160,20 @@ extension on _StringsFr {
         return 'Only visible on cards that keep more than one definition block; single-definition cards hide it.';
       case 'anki_lapis_visual_field_dictionary_name_note':
         return 'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+      case 'mining_animated_format_avif':
+        return 'AVIF (smallest)';
+      case 'mining_animated_format_webp':
+        return 'WebP (wider support)';
+      case 'mining_animated_format_gif':
+        return 'GIF (most compatible)';
+      case 'video_mining_animated_format':
+        return 'Video card animation format';
+      case 'video_mining_animated_format_hint':
+        return 'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+      case 'gal_mining_animated_format':
+        return 'Game card animation format';
+      case 'gal_mining_animated_format_hint':
+        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       default:
         return null;
     }
@@ -143708,6 +144043,20 @@ extension on _StringsId {
         return 'Only visible on cards that keep more than one definition block; single-definition cards hide it.';
       case 'anki_lapis_visual_field_dictionary_name_note':
         return 'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+      case 'mining_animated_format_avif':
+        return 'AVIF (smallest)';
+      case 'mining_animated_format_webp':
+        return 'WebP (wider support)';
+      case 'mining_animated_format_gif':
+        return 'GIF (most compatible)';
+      case 'video_mining_animated_format':
+        return 'Video card animation format';
+      case 'video_mining_animated_format_hint':
+        return 'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+      case 'gal_mining_animated_format':
+        return 'Game card animation format';
+      case 'gal_mining_animated_format_hint':
+        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       default:
         return null;
     }
@@ -149591,6 +149940,20 @@ extension on _StringsIt {
         return 'Only visible on cards that keep more than one definition block; single-definition cards hide it.';
       case 'anki_lapis_visual_field_dictionary_name_note':
         return 'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+      case 'mining_animated_format_avif':
+        return 'AVIF (smallest)';
+      case 'mining_animated_format_webp':
+        return 'WebP (wider support)';
+      case 'mining_animated_format_gif':
+        return 'GIF (most compatible)';
+      case 'video_mining_animated_format':
+        return 'Video card animation format';
+      case 'video_mining_animated_format_hint':
+        return 'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+      case 'gal_mining_animated_format':
+        return 'Game card animation format';
+      case 'gal_mining_animated_format_hint':
+        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       default:
         return null;
     }
@@ -155436,6 +155799,20 @@ extension on _StringsJa {
         return 'Only visible on cards that keep more than one definition block; single-definition cards hide it.';
       case 'anki_lapis_visual_field_dictionary_name_note':
         return 'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+      case 'mining_animated_format_avif':
+        return 'AVIF (smallest)';
+      case 'mining_animated_format_webp':
+        return 'WebP (wider support)';
+      case 'mining_animated_format_gif':
+        return 'GIF (most compatible)';
+      case 'video_mining_animated_format':
+        return 'Video card animation format';
+      case 'video_mining_animated_format_hint':
+        return 'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+      case 'gal_mining_animated_format':
+        return 'Game card animation format';
+      case 'gal_mining_animated_format_hint':
+        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       default:
         return null;
     }
@@ -161285,6 +161662,20 @@ extension on _StringsKo {
         return 'Only visible on cards that keep more than one definition block; single-definition cards hide it.';
       case 'anki_lapis_visual_field_dictionary_name_note':
         return 'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+      case 'mining_animated_format_avif':
+        return 'AVIF (smallest)';
+      case 'mining_animated_format_webp':
+        return 'WebP (wider support)';
+      case 'mining_animated_format_gif':
+        return 'GIF (most compatible)';
+      case 'video_mining_animated_format':
+        return 'Video card animation format';
+      case 'video_mining_animated_format_hint':
+        return 'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+      case 'gal_mining_animated_format':
+        return 'Game card animation format';
+      case 'gal_mining_animated_format_hint':
+        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       default:
         return null;
     }
@@ -167162,6 +167553,20 @@ extension on _StringsNl {
         return 'Only visible on cards that keep more than one definition block; single-definition cards hide it.';
       case 'anki_lapis_visual_field_dictionary_name_note':
         return 'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+      case 'mining_animated_format_avif':
+        return 'AVIF (smallest)';
+      case 'mining_animated_format_webp':
+        return 'WebP (wider support)';
+      case 'mining_animated_format_gif':
+        return 'GIF (most compatible)';
+      case 'video_mining_animated_format':
+        return 'Video card animation format';
+      case 'video_mining_animated_format_hint':
+        return 'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+      case 'gal_mining_animated_format':
+        return 'Game card animation format';
+      case 'gal_mining_animated_format_hint':
+        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       default:
         return null;
     }
@@ -173036,6 +173441,20 @@ extension on _StringsPtBr {
         return 'Only visible on cards that keep more than one definition block; single-definition cards hide it.';
       case 'anki_lapis_visual_field_dictionary_name_note':
         return 'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+      case 'mining_animated_format_avif':
+        return 'AVIF (smallest)';
+      case 'mining_animated_format_webp':
+        return 'WebP (wider support)';
+      case 'mining_animated_format_gif':
+        return 'GIF (most compatible)';
+      case 'video_mining_animated_format':
+        return 'Video card animation format';
+      case 'video_mining_animated_format_hint':
+        return 'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+      case 'gal_mining_animated_format':
+        return 'Game card animation format';
+      case 'gal_mining_animated_format_hint':
+        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       default:
         return null;
     }
@@ -178915,6 +179334,20 @@ extension on _StringsRu {
         return 'Only visible on cards that keep more than one definition block; single-definition cards hide it.';
       case 'anki_lapis_visual_field_dictionary_name_note':
         return 'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+      case 'mining_animated_format_avif':
+        return 'AVIF (smallest)';
+      case 'mining_animated_format_webp':
+        return 'WebP (wider support)';
+      case 'mining_animated_format_gif':
+        return 'GIF (most compatible)';
+      case 'video_mining_animated_format':
+        return 'Video card animation format';
+      case 'video_mining_animated_format_hint':
+        return 'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+      case 'gal_mining_animated_format':
+        return 'Game card animation format';
+      case 'gal_mining_animated_format_hint':
+        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       default:
         return null;
     }
@@ -184777,6 +185210,20 @@ extension on _StringsTh {
         return 'Only visible on cards that keep more than one definition block; single-definition cards hide it.';
       case 'anki_lapis_visual_field_dictionary_name_note':
         return 'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+      case 'mining_animated_format_avif':
+        return 'AVIF (smallest)';
+      case 'mining_animated_format_webp':
+        return 'WebP (wider support)';
+      case 'mining_animated_format_gif':
+        return 'GIF (most compatible)';
+      case 'video_mining_animated_format':
+        return 'Video card animation format';
+      case 'video_mining_animated_format_hint':
+        return 'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+      case 'gal_mining_animated_format':
+        return 'Game card animation format';
+      case 'gal_mining_animated_format_hint':
+        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       default:
         return null;
     }
@@ -190648,6 +191095,20 @@ extension on _StringsTr {
         return 'Only visible on cards that keep more than one definition block; single-definition cards hide it.';
       case 'anki_lapis_visual_field_dictionary_name_note':
         return 'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+      case 'mining_animated_format_avif':
+        return 'AVIF (smallest)';
+      case 'mining_animated_format_webp':
+        return 'WebP (wider support)';
+      case 'mining_animated_format_gif':
+        return 'GIF (most compatible)';
+      case 'video_mining_animated_format':
+        return 'Video card animation format';
+      case 'video_mining_animated_format_hint':
+        return 'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+      case 'gal_mining_animated_format':
+        return 'Game card animation format';
+      case 'gal_mining_animated_format_hint':
+        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       default:
         return null;
     }
@@ -196515,6 +196976,20 @@ extension on _StringsVi {
         return 'Only visible on cards that keep more than one definition block; single-definition cards hide it.';
       case 'anki_lapis_visual_field_dictionary_name_note':
         return 'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+      case 'mining_animated_format_avif':
+        return 'AVIF (smallest)';
+      case 'mining_animated_format_webp':
+        return 'WebP (wider support)';
+      case 'mining_animated_format_gif':
+        return 'GIF (most compatible)';
+      case 'video_mining_animated_format':
+        return 'Video card animation format';
+      case 'video_mining_animated_format_hint':
+        return 'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+      case 'gal_mining_animated_format':
+        return 'Game card animation format';
+      case 'gal_mining_animated_format_hint':
+        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       default:
         return null;
     }
@@ -202330,6 +202805,20 @@ extension on _StringsZhCn {
         return '仅在保留多段释义的卡片上可见；只有一段释义的卡片不会显示。';
       case 'anki_lapis_visual_field_dictionary_name_note':
         return 'Hibiki 生成的卡片把词性标签和词典名放在同一个标签里，两者无法分开设置样式。';
+      case 'mining_animated_format_avif':
+        return 'AVIF（体积最小）';
+      case 'mining_animated_format_webp':
+        return 'WebP（兼容性更广）';
+      case 'mining_animated_format_gif':
+        return 'GIF（兼容性最好）';
+      case 'video_mining_animated_format':
+        return '视频制卡动图格式';
+      case 'video_mining_animated_format_hint':
+        return '同画质下 AVIF 体积远小于 GIF，也是唯一在最高清晰度档保留源分辨率与源帧率的格式。捆绑的编码器产不出时会自动回退 GIF。';
+      case 'gal_mining_animated_format':
+        return '游戏制卡动图格式';
+      case 'gal_mining_animated_format_hint':
+        return '与视频制卡同样的格式，但分开保存：galgame 一句台词内画面基本静止，取舍不同。';
       default:
         return null;
     }
@@ -208170,6 +208659,20 @@ extension on _StringsZhHk {
         return 'Only visible on cards that keep more than one definition block; single-definition cards hide it.';
       case 'anki_lapis_visual_field_dictionary_name_note':
         return 'On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.';
+      case 'mining_animated_format_avif':
+        return 'AVIF (smallest)';
+      case 'mining_animated_format_webp':
+        return 'WebP (wider support)';
+      case 'mining_animated_format_gif':
+        return 'GIF (most compatible)';
+      case 'video_mining_animated_format':
+        return 'Video card animation format';
+      case 'video_mining_animated_format_hint':
+        return 'AVIF is far smaller than GIF at the same quality and is the only format whose top quality tier keeps the source resolution and frame rate. Falls back to GIF automatically when the bundled encoder cannot produce it.';
+      case 'gal_mining_animated_format':
+        return 'Game card animation format';
+      case 'gal_mining_animated_format_hint':
+        return 'Same formats as video cards, stored separately: a galgame frame barely moves within one line, so the trade-off differs.';
       default:
         return null;
     }

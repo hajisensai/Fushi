@@ -300,6 +300,9 @@ extension _VideoLookupMining on _VideoHibikiPageState {
         MiningMediaCompression.resolve(
       imageTier: appModel.miningImageQuality,
       audioTier: appModel.miningAudioQuality,
+      // 顶格档的动图参数随格式变（AVIF 源直通 / WebP·GIF 封顶），故必须把格式一并传进来
+      // 解析——否则顶格档会拿到 GIF 的封顶值，用户选了 AVIF 也享受不到原图档。
+      format: appModel.videoMiningAnimatedFormat,
     );
     final String? mediaSource = controller.miningSource;
     final String? audioSource = controller.miningAudioSource;
@@ -308,6 +311,8 @@ extension _VideoLookupMining on _VideoHibikiPageState {
     final int episode = _currentEpisode;
     final String? documentTitle = _videoMiningDocumentTitle();
     final VideoMiningImageMode imageMode = appModel.videoMiningImageMode;
+    final MiningAnimatedFormat animatedFormat =
+        appModel.videoMiningAnimatedFormat;
     final String? bookTitleTag = appModel.autoAddBookNameToTags
         ? BaseAnkiRepository.sanitizeTitleTag(_title)
         : null;
@@ -424,6 +429,9 @@ extension _VideoLookupMining on _VideoHibikiPageState {
         // 用户在 Anki 设置里选的封面图片模式（GIF / 制卡时当前帧 / 字幕开头帧）；
         // 默认 gif=现状。静态模式引擎不置 degradedToStill，故不弹「降级为静态」OSD。
         imageMode: imageMode,
+        // 动图编码格式（默认 AVIF）。引擎在编码失败时会自动降级 GIF 重试一次——旧版本
+        // 包捆绑的 ffmpeg 没有 libsvtav1/libwebp，靠这条保证不会因换默认格式而制不出卡。
+        animatedFormat: animatedFormat,
       ),
       compression: mediaCompression,
       tempDir: tempDir,

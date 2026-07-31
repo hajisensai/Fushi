@@ -58,7 +58,14 @@ DECODERS="h264,hevc,av1,vp9,vp8,mpeg4,mpeg2video,mpeg1video,flv,rv10,rv20,rv30,r
 # ffmpeg 直接 "Unknown encoder 'mov_text'"，字幕封装在桌面全挂（导出会自动降级成
 # 无字幕片段，见 exportVideoClipViaFfmpeg 的降级重试，但字幕永远出不来）。
 # 注意 movtext **解码器**早已在 DECODERS 里（读内嵌 mp4 字幕），编码器是另一个开关。
-ENCODERS="gif,aac,mjpeg,png,libx264,ass,ssa,subrip,webvtt,movtext,pcm_s16le"
+# libsvtav1 / libwebp_anim：制卡封面动图的 AVIF / WebP 编码器（默认格式已从 GIF 改为
+# AVIF）。选 SVT-AV1 而非 libaom：本负载是几十帧的短片，延迟比压缩率重要，静态链接体积
+# 也小一半。实测（1080p30 源 4 秒窗）：标准档 480px·8fps 下 AVIF 36 KB / GIF 471 KB /
+# WebP 163 KB；原图档（源分辨率+源帧率）AVIF 3.5 秒 3.3 MB，反而比 GIF 的 12 秒 17.8 MB
+# 又快又小，而 libwebp_anim 要 16.4 秒（它是逐帧帧内的静态图编码器，无运动补偿也不并行）。
+# 二者均为 BSD 许可，本 build 已因 libx264 是 GPL，无新增许可约束。
+# ⚠️ CI 构建环境需装 libsvtav1 / libwebp 开发包（MSYS2: mingw-w64-x86_64-{svt-av1,libwebp}）。
+ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,ass,ssa,subrip,webvtt,movtext,pcm_s16le"
 # pcm_s16le：能量探针（audio_energy_probe.dart，TODO-701）用 `-f null -`；null muxer 的
 # 默认音频编码器是 pcm_s16le，缺它会报 "Default encoder for format null (codec pcm_s16le)
 # is probably disabled ... Encoder not found"，探针在三平台全挂（TODO-1096）。
@@ -68,7 +75,9 @@ ENCODERS="gif,aac,mjpeg,png,libx264,ass,ssa,subrip,webvtt,movtext,pcm_s16le"
 # null: audio_energy_probe.dart uses -f null - to discard output and read astats metadata from stderr (TODO-701 subtitle auto-align)
 # mp4：片段导出 mp4（TODO-1257）把 libx264 视频 + aac 音频合成 .mp4（比 .mov 更
 # 通用、任意播放器/浏览器直接打开）；mp4 muxer 与 mov 同一 movenc，体积增量近零。
-MUXERS="gif,adts,image2,mjpeg,mov,mp4,srt,ass,webvtt,null"
+# avif / webp：动图封面的两个新容器（ffmpeg 按输出扩展名选 muxer）。avif muxer 自
+# FFmpeg 6.1 进主线，本 build 钉的 n7.1.5 已有；它与 mov/mp4 同属 movenc，体积增量近零。
+MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,srt,ass,webvtt,null"
 # pad：有声书片段导出（buildFfmpegImageAudioToVideoArgs）用
 #   `scale=W:H:force_original_aspect_ratio=decrease,pad=W:H:(ow-iw)/2:(oh-ih)/2:color=black`
 #   把文本图缩进框内再黑边填充到精确 WxH；漏 pad → "No option name near '...'" +
@@ -104,7 +113,7 @@ esac
   --disable-ffplay --disable-ffprobe \
   --enable-ffmpeg \
   --enable-small --enable-zlib \
-  --enable-gpl --enable-libx264 \
+  --enable-gpl --enable-libx264 --enable-libsvtav1 --enable-libwebp \
   --enable-avcodec --enable-avformat --enable-avfilter \
   --enable-swscale --enable-swresample \
   --enable-demuxer="$DEMUXERS" \

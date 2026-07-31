@@ -16,7 +16,10 @@ import 'package:hibiki/src/sync/texthooker_service.dart';
 import 'package:hibiki/src/utils/misc/desktop_audio_clipper.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 
-typedef GalHookGifCapture = Future<Uint8List?> Function({required int hwnd});
+typedef GalHookGifCapture = Future<GalWindowAnimatedCapture?> Function({
+  required int hwnd,
+  MiningAnimatedFormat format,
+});
 typedef GalHookStillCapture = Future<WindowCaptureResult> Function(int hwnd);
 typedef GalHookTempDirectoryFactory = Future<Directory> Function();
 typedef GalHookLineLookup = TexthookerLineEntry? Function(String lineId);
@@ -104,8 +107,11 @@ class GalHookMiningCoordinator {
 
   final SerialJobQueue _miningQueue = SerialJobQueue();
 
-  static Future<Uint8List?> _defaultCaptureGif({required int hwnd}) =>
-      captureWindowGifBytes(hwnd: hwnd);
+  static Future<GalWindowAnimatedCapture?> _defaultCaptureGif({
+    required int hwnd,
+    MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+  }) =>
+      captureWindowGifBytes(hwnd: hwnd, format: format);
 
   static Future<Directory> _defaultCreateTempDirectory() =>
       Directory.systemTemp.createTemp('hibiki-gal-card-job-');
@@ -120,6 +126,8 @@ class GalHookMiningCoordinator {
     // 缺省 gif = 旧行为逐字等价（Never break userspace）；调用方透传
     // [AppModel.galMiningImageMode]。
     VideoMiningImageMode imageMode = VideoMiningImageMode.gif,
+    // 缺省 gif = 旧行为逐字等价；调用方透传 [AppModel.galMiningAnimatedFormat]（默认 avif）。
+    MiningAnimatedFormat animatedFormat = MiningAnimatedFormat.gif,
   }) {
     // 串行化 + 永不毒化（BUG-956）：单次制卡异常（含错误日志自身抛）不得让后续制卡永久挂起。
     return _miningQueue.enqueue<GalHookMiningResult>(
@@ -131,6 +139,7 @@ class GalHookMiningCoordinator {
         updateNoteId: updateNoteId,
         addTitleTag: addTitleTag,
         imageMode: imageMode,
+        animatedFormat: animatedFormat,
       ),
       buildFailure: (Object error, StackTrace stack) =>
           GalHookMiningResult(failureReason: error.toString()),
@@ -150,6 +159,7 @@ class GalHookMiningCoordinator {
     required int? updateNoteId,
     required bool addTitleTag,
     required VideoMiningImageMode imageMode,
+    required MiningAnimatedFormat animatedFormat,
   }) async {
     final TexthookerLineEntry? entry = _lineLookup(lineId);
     if (entry == null || !_lineValidator(entry)) {
@@ -216,7 +226,16 @@ class GalHookMiningCoordinator {
       coverBytes = still.pngBytes;
       coverName = 'external_window.png';
     } else {
-      coverBytes = await _captureGif(hwnd: window.hwnd);
+      final GalWindowAnimatedCapture? animated = await _captureGif(
+        hwnd: window.hwnd,
+        format: animatedFormat,
+      );
+      // 文件名一律取**实际产出格式**而非用户所选：捕获内部会在编码器缺失时降级 GIF，
+      // 按所选格式拼名会写出 `.avif` 里装 GIF 字节的卡（Anki 按扩展名判 MIME → 图不显示）。
+      coverBytes = animated?.bytes;
+      if (animated != null) {
+        coverName = 'external_window.${animated.format.fileExtension}';
+      }
       if (coverBytes == null || coverBytes.isEmpty) {
         final WindowCaptureResult still = await captureStillWithDiagnostics();
         if (!still.ok) {

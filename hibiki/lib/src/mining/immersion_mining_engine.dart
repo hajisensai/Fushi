@@ -18,6 +18,7 @@ typedef GifExtractor = Future<String?> Function({
   required String outputPath,
   int fps,
   int width,
+  MiningAnimatedFormat format,
   FfmpegFailureReporter? onFailure,
   String? tlsPinSha256,
 });
@@ -166,17 +167,42 @@ class ImmersionMiningEngine {
     // 抽字幕区间动图（GIF）到临时文件；无 src / 无区间 → null。
     Future<String?> tryGif() async {
       if (src == null || !req.hasRange) return null;
-      final String? primary = await _gif(
-        inputPath: src,
-        startMs: req.clipStartMs,
-        endMs: req.clipEndMs,
-        outputPath: '$tempDir/immersion_clip.gif',
-        fps: compression.gifFps,
-        width: compression.gifWidth,
-        onFailure: reportCover,
-        tlsPinSha256: req.mediaSourceTlsPinSha256,
-      );
-      return primary;
+      // 首选用户所选格式；失败则降级 GIF 再试一次。这不是「重试掩盖症状」——两次调用的
+      // **参数不同**，第二次是能力降级：捆绑 ffmpeg 若来自旧版本包，没有 libsvtav1 /
+      // libwebp 编码器（见 tool/ffmpeg-min/build-ffmpeg-min.sh），首选格式必然失败而 GIF
+      // 恒可用。只降一级，且只在首选不是 GIF 时发生；GIF 也失败才轮到既有的单帧降级阶梯。
+      final List<MiningAnimatedFormat> attempts =
+          req.animatedFormat == MiningAnimatedFormat.gif
+              ? <MiningAnimatedFormat>[MiningAnimatedFormat.gif]
+              : <MiningAnimatedFormat>[
+                  req.animatedFormat,
+                  MiningAnimatedFormat.gif,
+                ];
+      for (final MiningAnimatedFormat attempt in attempts) {
+        // 顶格档下 gifFps/gifWidth 是 0（源直通哨兵，只有 AVIF 声明得起）。换格式重试时
+        // 必须改用**该格式自己**的顶格档参数，否则会把「源分辨率 + 源帧率」原样喂给 GIF
+        // ——那正是 BUG-1039 实测 54 MB / 撞 120 秒超时 / AnkiConnect 卡死的配置。
+        // 规则对三种格式一致（AVIF 的 maxTier* 本就是 0/0，代入后不变），不是特例分支。
+        final int fps =
+            compression.gifFps == 0 ? attempt.maxTierFps : compression.gifFps;
+        final int width = compression.gifWidth == 0
+            ? attempt.maxTierWidth
+            : compression.gifWidth;
+        final String? out = await _gif(
+          inputPath: src,
+          startMs: req.clipStartMs,
+          endMs: req.clipEndMs,
+          // 扩展名必须与格式一致：ffmpeg 按扩展名选 muxer。
+          outputPath: '$tempDir/immersion_clip.${attempt.fileExtension}',
+          fps: fps,
+          width: width,
+          format: attempt,
+          onFailure: reportCover,
+          tlsPinSha256: req.mediaSourceTlsPinSha256,
+        );
+        if (out != null) return out;
+      }
+      return null;
     }
 
     // 抽字幕 cue 起始时间点的单帧；无 src → null。
