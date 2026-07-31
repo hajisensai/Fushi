@@ -95,7 +95,11 @@ enum BanReason {
   /// 客户端名关键词黑名单命中。
   clientBlacklist,
 
-  /// 迅雷特例：做种时不让迅雷白嫖（不做种时迅雷可能是正常下载者，放行）。
+  /// 【已停产，仅保留兼容】旧「迅雷做种特例」的原因值。BUG-1274 把该特例的
+  /// 相位逻辑（仅做种期封、下载期放行）推广为整个身份黑名单的统一规则后，
+  /// 迅雷（`-XL` / xunlei / thunder）改走普通 [peerIdBlacklist] /
+  /// [clientBlacklist] 路径，引擎不再产生本值；枚举保留是为了不破坏可能
+  /// 持有该值的消费方/序列化数据。
   xunleiSeeding,
 
   /// 多拨/PCDN：同段同种子连接数超容忍值。
@@ -130,8 +134,9 @@ class BanVerdict {
   final bool banned;
   final BanReason? reason;
 
-  /// 连坐/多拨时要封的段（如 `'1.2.3.0/24'`）；单 IP 封时 null（=封该
-  /// peer.ip）。
+  /// 要封的 CIDR：段（如 `'1.2.3.0/24'`，多拨/连坐）或单 IP（如
+  /// `'1.2.3.4/32'`，身份黑名单，BUG-1275）。null = 由
+  /// [AntiLeechEngine.evaluate] 回退到配置前缀的段默认（见其内注释）。
   final String? cidr;
 
   /// 封禁时长；null=用默认长封。
@@ -341,9 +346,11 @@ bool ipInCidr(String ip, String cidr) {
 /// 反吸血判定引擎（有状态：跨 [evaluate] 调用累积峰值/首见/进度/封段）。
 ///
 /// 规则顺序（每 peer 走一遍，第一个命中就 ban 并短路）：
-/// ① AutoRangeBan 连坐 → ② PeerId/ClientName 黑名单（含迅雷做种特例）→
+/// ① AutoRangeBan 连坐 → ② PeerId/ClientName 身份黑名单（仅做种期生效、
+/// 吃 ignoreByDownloadedBytes 豁免、单 IP 封禁，BUG-1274/1275）→
 /// ③ MultiDialing 多拨 → ④ ProgressCheatBlocker（PCB，最后做：最贵且要过
-/// 宽限窗口）。任何新 ban 都把该 IP 的 CIDR 段登记进连坐源。
+/// 宽限窗口）。任何新 ban 都把 verdict 携带的 CIDR（身份类=单 IP，多拨=段）
+/// 登记进连坐源；未携带的行为类判定回退登记所属段。
 class AntiLeechEngine {
   AntiLeechEngine({this.config = const AntiLeechConfig()});
 
@@ -405,6 +412,11 @@ class AntiLeechEngine {
     for (final PeerSnapshot peer in peers) {
       final BanVerdict verdict = _evaluatePeer(peer, ctx, nowMs);
       if (verdict.banned) {
+        // cidr 回退语义（BUG-1275 后）：身份类（peerIdBlacklist/
+        // clientBlacklist）恒带单 IP CIDR，多拨（multiDialing）与连坐
+        // （autoRangeBan）恒带段；只有行为类单 IP 判定（PCB 各原因 +
+        // multiPort）落到 _segmentOf 段默认——行为证据表明该 IP 在吸血，
+        // 段级连坐是有意的爆炸半径。
         _registerBan(verdict.cidr ?? _segmentOf(peer.ip), nowMs);
       }
       out[peer.ip] = verdict;
@@ -435,26 +447,33 @@ class AntiLeechEngine {
       return const BanVerdict.allow();
     }
 
-    // ② PeerId/ClientName 黑名单 + 迅雷特例。
-    final String clientLower = peer.client.toLowerCase();
-    final bool isXunlei = peer.peerId.startsWith('-XL') ||
-        clientLower.startsWith('xunlei') ||
-        clientLower.startsWith('thunder');
-    if (isXunlei) {
-      // 迅雷特例：仅做种时 ban（不做种时迅雷可能是正常下载者），不做种
-      // 则跳过黑名单继续走后续规则。
-      if (ctx.isSeeding) {
-        return const BanVerdict.ban(BanReason.xunleiSeeding);
-      }
-    } else {
+    // ② PeerId/ClientName 身份黑名单 —— 仅做种期生效（BUG-1274）：封禁的
+    // 收益只在「不给它上传」，下载期封 peer 只减少自己的潜在数据源、毫无
+    // 收益，所以下载期跳过全部身份判定、直接走后续行为规则（伪造进度照样
+    // 被 PCB 封）。这是旧「迅雷做种特例」相位逻辑的推广：特例升级为常规
+    // 后特例分支消除，迅雷（-XL/xunlei/thunder）命中普通黑名单路径。
+    // 同时吃 ignoreByDownloadedBytes 豁免（语义同 ④ PCB 内）：确实在喂
+    // 我们数据的 peer 不因身份自动封（PCB 内原豁免位置不动）。
+    // 命中时显式携带单 IP CIDR（BUG-1275）：身份证据只指向该 peer 自身，
+    // 不升级 /24（/60）整段连坐——CGNAT 下一个段后面是成百上千真实用户。
+    final bool fedUsEnough = config.ignoreByDownloadedBytes > 0 &&
+        peer.totalDownload >= config.ignoreByDownloadedBytes;
+    if (ctx.isSeeding && !fedUsEnough) {
       for (final String prefix in config.peerIdBlacklistPrefixes) {
         if (peer.peerId.startsWith(prefix)) {
-          return const BanVerdict.ban(BanReason.peerIdBlacklist);
+          return BanVerdict.ban(
+            BanReason.peerIdBlacklist,
+            cidr: _singleIpCidrOf(peer.ip),
+          );
         }
       }
+      final String clientLower = peer.client.toLowerCase();
       for (final String keyword in config.clientNameKeywords) {
         if (clientLower.contains(keyword)) {
-          return const BanVerdict.ban(BanReason.clientBlacklist);
+          return BanVerdict.ban(
+            BanReason.clientBlacklist,
+            cidr: _singleIpCidrOf(peer.ip),
+          );
         }
       }
     }
@@ -574,4 +593,9 @@ class AntiLeechEngine {
         ipv4Prefix: config.ipv4PrefixLength,
         ipv6Prefix: config.ipv6PrefixLength,
       );
+
+  /// 单 IP CIDR（IPv4 `/32`、IPv6 `/128`）：身份类 ban 专用，不连坐邻居
+  /// （BUG-1275）。
+  String _singleIpCidrOf(String ip) =>
+      cidrOf(ip, ipv4Prefix: 32, ipv6Prefix: 128);
 }
