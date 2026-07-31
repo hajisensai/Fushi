@@ -13,6 +13,15 @@ constexpr uint32_t kThreadPreviewCount = 64;
 constexpr uint32_t kThreadPreviewTextChars = 192;
 constexpr uint32_t kThreadPreviewFlagArtifact = 0x00000001u;
 constexpr uint32_t kThreadPreviewSnapshotRetries = 4;
+// LunaHost lives in the injector process while native adapters run inside the
+// game process. They must never claim/write the same preview slot because a
+// process-local CRITICAL_SECTION cannot serialize the other process.
+constexpr uint32_t kLunaThreadPreviewCount = 48;
+constexpr uint32_t kNativeThreadPreviewStart = kLunaThreadPreviewCount;
+constexpr uint32_t kNativeThreadPreviewCount =
+    kThreadPreviewCount - kNativeThreadPreviewStart;
+static_assert(kNativeThreadPreviewCount > 0,
+              "native text producers need reserved preview slots");
 
 #pragma pack(push, 8)
 // v12 线程预览槽。writer 必须先由进程内锁串行化，再执行：
@@ -62,8 +71,9 @@ inline void AtomicStorePreview64(volatile uint64_t* value, uint64_t next) {
 }
 
 inline uint64_t NextThreadPreviewGeneration(
-    const volatile uint64_t* write_count) {
-  return AtomicLoadPreview64(write_count) + 1;
+    volatile uint64_t* process_local_generation) {
+  return static_cast<uint64_t>(InterlockedIncrement64(
+      reinterpret_cast<volatile LONGLONG*>(process_local_generation)));
 }
 
 inline uint64_t ThreadPreviewWritingSequence(uint64_t generation) {
@@ -86,9 +96,9 @@ inline void PublishThreadPreviewWrite(ThreadPreviewSlot* slot,
                        ThreadPreviewCommittedSequence(generation));
 }
 
-inline void PublishThreadPreviewGeneration(volatile uint64_t* write_count,
-                                           uint64_t generation) {
-  AtomicStorePreview64(write_count, generation);
+inline void PublishThreadPreviewChange(volatile uint64_t* write_count) {
+  InterlockedIncrement64(
+      reinterpret_cast<volatile LONGLONG*>(write_count));
 }
 
 // 调用方持有 writer 锁。回收会产生空洞，因此必须继续扫描以优先找回已有 id。

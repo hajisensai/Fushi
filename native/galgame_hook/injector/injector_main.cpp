@@ -30,6 +30,7 @@
 #include "luna_bridge.h"
 #include "luna_hook_config.h"
 #include "luna_text_selector.h"
+#include "text_thread_identity.h"
 
 // galgame 一键制卡 C 阶段注入器（C.1）。把 hook DLL 注入目标游戏进程，建立共享内存 + 就绪
 // 事件，确认注入成功后读回语音格式。Hibiki 主进程把它当子进程拉起（部署红线：注入代码只在
@@ -649,8 +650,9 @@ bool LunaPassesFilter(const wchar_t* text, int len) {
 // 其内部工作线程并发触发，原子占号同样保证 injector 侧多次调用互不撞槽。
 uint64_t LunaTextThreadId(const wchar_t* hookcode, const char* hookname,
                           const LunaThreadParam& tp) {
-  return hibiki_voice_hook::LunaTextThreadIdFrom(tp.processId, tp.addr, tp.ctx,
-                                                 tp.ctx2, hookcode, hookname);
+  return hibiki_voice_hook::NormalizeLunaTextThreadId(
+      hibiki_voice_hook::LunaTextThreadIdFrom(
+          tp.processId, tp.addr, tp.ctx, tp.ctx2, hookcode, hookname));
 }
 
 // hook「面」id：与 LunaTextThreadId 同源，但**刻意不含 ctx**（BUG-1159）。
@@ -751,6 +753,7 @@ void WriteLunaTextLine(SharedHeader* header, const wchar_t* hookcode,
 hibiki_voice_hook::LunaTextSelector g_lunaTextSelector;
 CRITICAL_SECTION g_lunaSelectCs;
 bool g_lunaSelectCsInit = false;
+alignas(8) volatile uint64_t g_lunaPreviewGeneration = 0;
 
 // v12：把本行记进该线程的预览槽。**必须在任何过滤/门控之前调用**——预览区存在的意义
 // 就是让用户看见那些没被发布的线程；只记已发布行等于什么都没做。
@@ -771,7 +774,7 @@ void WriteThreadPreview(SharedHeader* header, uint64_t thread_id,
   auto* slots = reinterpret_cast<hibiki_voice_hook::ThreadPreviewSlot*>(
       reinterpret_cast<uint8_t*>(header) + header->thread_preview_offset);
   const uint32_t count = (std::min)(header->thread_preview_slot_count,
-                                    hibiki_voice_hook::kThreadPreviewCount);
+                                    hibiki_voice_hook::kLunaThreadPreviewCount);
   hibiki_voice_hook::ThreadPreviewSlot* slot =
       hibiki_voice_hook::FindThreadPreviewSlot(slots, count, thread_id);
   if (slot == nullptr) {
@@ -779,7 +782,7 @@ void WriteThreadPreview(SharedHeader* header, uint64_t thread_id,
     return;  // 只有 64 条同时存活线程时才会满；ThreadRemove 后的槽会立即可复用。
   }
   const uint64_t generation = hibiki_voice_hook::NextThreadPreviewGeneration(
-      &header->thread_preview_write_count);
+      &g_lunaPreviewGeneration);
   hibiki_voice_hook::BeginThreadPreviewWrite(slot, generation);
   if (slot->thread_id == 0) {
     slot->line_count = 0;
@@ -802,8 +805,8 @@ void WriteThreadPreview(SharedHeader* header, uint64_t thread_id,
   slot->timestamp_ms = GetTickCount64();
   hibiki_voice_hook::PublishThreadPreviewWrite(slot, generation);
   // 全局计数最后发布：把它当变化信号的 reader 看到新 generation 时，槽必已是稳定偶数态。
-  hibiki_voice_hook::PublishThreadPreviewGeneration(
-      &header->thread_preview_write_count, generation);
+  hibiki_voice_hook::PublishThreadPreviewChange(
+      &header->thread_preview_write_count);
   LeaveCriticalSection(&g_lunaSelectCs);
 }
 
@@ -811,15 +814,8 @@ void WriteThreadPreview(SharedHeader* header, uint64_t thread_id,
 // selected_text_thread_id 仍为 0、UI 显示未选择时，profile 快路却会在后台悄悄发布文本。
 bool LunaShouldWriteLine(uint64_t thread_id, bool is_artifact,
                          uint64_t face_id) {
-  const uint64_t manually_selected = g_luna.header == nullptr
-                                         ? 0
-                                         : static_cast<uint64_t>(
-                                               InterlockedCompareExchange64(
-                                                   reinterpret_cast<
-                                                       volatile LONGLONG*>(
-                                                       &g_luna.header
-                                                            ->selected_text_thread_id),
-                                                   0, 0));
+  const uint64_t manually_selected =
+      hibiki_voice_hook::SelectedTextThreadId(g_luna.header);
   if (!g_lunaSelectCsInit) {
     // 锁未初始化（理论上不该发生）时也遵守 v12 的"没显式选择就不发布"，否则这条退路会
     // 变成一个悄悄恢复旧行为的后门。face 匹配需要锁保护的注册表，这里只能精确匹配。
@@ -977,18 +973,18 @@ void LunaThreadRemove(const wchar_t* hookcode, const char* hookname,
       g_luna.header->thread_preview_offset);
   const uint32_t count =
       (std::min)(g_luna.header->thread_preview_slot_count,
-                 hibiki_voice_hook::kThreadPreviewCount);
+                 hibiki_voice_hook::kLunaThreadPreviewCount);
   for (uint32_t i = 0; i < count; ++i) {
     auto* slot = &slots[i];
     if (slot->thread_id != thread_id) continue;
     const uint64_t generation =
         hibiki_voice_hook::NextThreadPreviewGeneration(
-            &g_luna.header->thread_preview_write_count);
+            &g_lunaPreviewGeneration);
     hibiki_voice_hook::BeginThreadPreviewWrite(slot, generation);
     hibiki_voice_hook::ClearThreadPreviewPayload(slot);
     hibiki_voice_hook::PublishThreadPreviewWrite(slot, generation);
-    hibiki_voice_hook::PublishThreadPreviewGeneration(
-        &g_luna.header->thread_preview_write_count, generation);
+    hibiki_voice_hook::PublishThreadPreviewChange(
+        &g_luna.header->thread_preview_write_count);
     break;
   }
   LeaveCriticalSection(&g_lunaSelectCs);

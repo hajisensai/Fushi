@@ -44,6 +44,9 @@
 #include "ffmpeg_runtime.h"
 #include "siglus_ovk.h"
 #include "siglus_text.h"
+#include "text_thread_identity.h"
+#include "unity_text_mesh_reassembler.h"
+#include "unity_text_profile.h"
 #include "visual_arts_ovk.h"
 #include "voice_hook_ipc.h"
 #include "voice_resource_filename.h"
@@ -510,8 +513,12 @@ DWORD WINAPI HookWorker(LPVOID) {
     Sleep(registry.PollDelayMs());
   }
 
-  // 收尾在工作线程里做（不在 loader lock 中）：先关捕获总开关，join loopback 线程，再拆 MinHook。
+  // 收尾在工作线程里做（不在 loader lock 中）：先提交仍在组装的 legacy TextMesh
+  // 末句，再在同一把 adapter 锁内关总开关，确保正常结束不会静默丢尾句。
+  if (g_cs_ready) EnterCriticalSection(&g_cs);
+  FlushUnityTextMeshLine();
   g_capture_enabled = false;
+  if (g_cs_ready) LeaveCriticalSection(&g_cs);
   registry.Shutdown();
   if (g_mh_init) {
     MH_DisableHook(MH_ALL_HOOKS);

@@ -87,8 +87,25 @@ class AdapterStructureTest(unittest.TestCase):
         )
         self.assertIn('L"UnityEngine.TextMesh.set_text(glyphs)"', source)
         self.assertIn("void FlushUnityTextMeshLine()", source)
-        self.assertIn("c == L'\\u3000'", source)
+        self.assertIn("UsesSasasaLegacyTextMeshTerminator", source)
+        self.assertIn("g_unity_text_mesh_reassembler.ShouldTerminate(c, true)", source)
+        self.assertIn("IsExactTextThreadSelected", source)
+        self.assertIn("kNativeThreadPreviewStart", source)
+        self.assertIn("candidate->thread_id == selected", source)
+        text_mesh = source.split("void RecordUnityTextMesh", 1)[1]
+        text_mesh = text_mesh.split("void RecordUnityVoiceResourceEvent", 1)[0]
+        self.assertNotIn("GetTickCount64", text_mesh)
+        self.assertNotIn("c == L'\\r'", text_mesh)
+        self.assertNotIn("c == L'\\n'", text_mesh)
         self.assertIn('"Unity TextMesh line"', source)
+        dll = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
+        shutdown = dll.split(
+            "// 收尾在工作线程里做（不在 loader lock 中）", 1
+        )[1]
+        self.assertLess(
+            shutdown.index("FlushUnityTextMeshLine();"),
+            shutdown.index("g_capture_enabled = false;"),
+        )
 
     def test_unity_resource_observation_is_not_gated_by_pcm_helpers(self) -> None:
         source = (
