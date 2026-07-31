@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 void main() {
   const String pagePath =
       'lib/src/pages/implementations/popup_dictionary_page.dart';
@@ -28,7 +30,9 @@ void main() {
     // 不能再用全屏阅读器语义的 buildNestedPopupLayer / calcPopupPosition
     // 把子弹窗压成小窗。
     expect(src, contains('Positioned.fill'));
-    expect(src, isNot(contains('buildNestedPopupLayer(')),
+    // 裸子串会被**以该名结尾**的更长标识符命中：仓内真实存在私有的
+    // `_buildNestedPopupLayer(`，本页哪天自己落一个同名私有 helper 就假红。
+    expect(containsIdentifierCall(src, 'buildNestedPopupLayer'), isFalse,
         reason: '下钻层改为满卡渲染，不再复用阅读器的贴选区小浮卡');
     expect(src, isNot(contains('calcPopupPosition')), reason: '满卡渲染无需按选区定位');
     // 嵌套层不透明铺满盖住下层（base 透明，nested 用词典色/页面色）。

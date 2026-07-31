@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/source_guard.dart';
 import '../../pages/video_hibiki_page_source_corpus.dart';
 
 /// 源码守卫（TODO-438）：视频底栏音量控件是「图标锚点 + 上方紧凑浮层」，且布局尺寸
@@ -48,9 +49,15 @@ void main() {
           reason: '音量浮层必须按所在 slot 取得独立锚点，不能共用全局 link');
       expect(build, isNot(contains('_volumeControlPopoverLink')),
           reason: 'volume 不得继续使用单个全局 LayerLink');
-      expect(build, isNot(contains('Slider(')),
-          reason: '底栏按钮内不得内联 Slider，避免占位随需求回退到横向滑条');
-      expect(build, isNot(contains('Row(')),
+      // 判据须带标识符边界：裸子串 `Slider(` 会被仓内 `adaptiveSlider(` /
+      // `buildSlider(` / `_CommitOnReleaseSlider(` / `gamepadSeekableSlider(`，
+      // 尤其是**同域**的 `_setVolumeFromSlider(` 命中——按钮里正常引用一次音量
+      // helper 就假红；`Row(` 同理被仓内几十个 `*Row(` 组件命中。
+      // 反向也堵：`Slider.adaptive(` 是真内联滑条，裸子串匹配不到（默认吃命名构造器）。
+      expect(containsIdentifierCall(build, 'Slider'), isFalse,
+          reason: '底栏按钮内不得内联 Slider（含 Slider.adaptive），'
+              '避免占位随需求回退到横向滑条');
+      expect(containsIdentifierCall(build, 'Row'), isFalse,
           reason: '底栏音量入口只占图标空间，不再渲染图标 + 横滑条 Row');
     });
 

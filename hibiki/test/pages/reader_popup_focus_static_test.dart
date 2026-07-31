@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
 import 'reader_hibiki_page_source_corpus.dart';
 
 /// 查词弹窗焦点系统守卫。
@@ -25,10 +26,16 @@ void main() {
       reason: '查词弹窗 header 是 Flutter 兄弟层，手柄/键盘方向导航只走 '
           'HibikiFocusTarget；裸 IconButton 会被自定义焦点系统跳过。',
     );
+    // 原写法靠 replaceAll 抠掉 HibikiIconButton 再做裸子串匹配——那是白名单，
+    // 白名单永远漏：仓内还有 `_RepeatIconButton(` / `_InBookIconButton(` /
+    // `_CompactSearchIconButton(` 没登记，header 用上任何一个都会假红。
+    // 反向也漏：裸子串匹配不到 `IconButton.filledTonal(`（本仓真实在用），而那
+    // 正是本守卫要拦的「未注册的裸 IconButton」。带标识符边界的匹配免白名单。
     expect(
-      popupHeader.replaceAll('HibikiIconButton(', ''),
-      isNot(contains('IconButton(')),
-      reason: '查词弹窗 header 不得再使用未注册的裸 IconButton。',
+      containsIdentifierCall(popupHeader, 'IconButton'),
+      isFalse,
+      reason: '查词弹窗 header 不得再使用未注册的裸 IconButton'
+          '（含 IconButton.filledTonal 等命名构造器）。',
     );
   });
 
