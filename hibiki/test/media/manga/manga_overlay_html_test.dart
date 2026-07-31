@@ -267,7 +267,7 @@ void main() {
       expect(scripts.contains("getAttribute('data-ocr-orientation')"), isTrue);
       expect(
         scripts.contains(
-          "querySelectorAll(\n"
+          'querySelectorAll(\n'
           "        '.ocr-box[data-manga-sentence-group]'\n"
           '      )',
         ),

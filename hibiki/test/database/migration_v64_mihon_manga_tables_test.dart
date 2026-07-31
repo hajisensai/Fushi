@@ -97,7 +97,8 @@ Future<int> _countRows(HibikiDatabase db, String sql) async {
 }
 
 void main() {
-  test('v62 -> current runs BOTH v63 (obsolete pref delete) and v64 '
+  test(
+      'v62 -> current runs BOTH v63 (obsolete pref delete) and v64 '
       '(Mihon tables); neither swallows the other', () async {
     final HibikiDatabase db = HibikiDatabase.forTesting(
       NativeDatabase.memory(setup: _seedV62),
@@ -169,8 +170,7 @@ void main() {
     expect(await _userVersion(db), 64);
     final Set<String> tables = await _tableNames(db);
     for (final String table in _mangaTables) {
-      expect(tables, contains(table),
-          reason: 'from=63 时 v64 必须仍然建表：缺 $table');
+      expect(tables, contains(table), reason: 'from=63 时 v64 必须仍然建表：缺 $table');
     }
   });
 

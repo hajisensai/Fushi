@@ -185,8 +185,30 @@ void main() {
           .read<String>('payload'),
       'untouched',
     );
-    expect(await _tableSqlFromDrift(db), schemaBefore,
-        reason: 'v63 只能删行，不得 ALTER/DROP/create/rebuild 或留影子表');
+    // 同一次 onUpgrade 里 v64 会建 Mihon 的五张新表，所以不能再要求整库
+    // schema 逐字不变。拆成两条，原意（v63 只删行）反而守得更死：
+    // ① v62 就存在的表必须逐字不变且一张都不许少；
+    // ② 新增的表只能是 v64 那五张，多一张就是影子表。
+    final Map<String, String> schemaAfter = await _tableSqlFromDrift(db);
+    expect(
+      <String, String>{
+        for (final MapEntry<String, String> entry in schemaAfter.entries)
+          if (schemaBefore.containsKey(entry.key)) entry.key: entry.value,
+      },
+      schemaBefore,
+      reason: 'v63 只能删行，不得 ALTER/DROP/rebuild 已有表',
+    );
+    expect(
+      schemaAfter.keys.where((String name) => !schemaBefore.containsKey(name)),
+      <String>[
+        'manga_extension_stores',
+        'manga_extensions',
+        'manga_online_sources',
+        'manga_source_preferences',
+        'manga_trusted_signers',
+      ],
+      reason: '本次升级只应由 v64 新建 Mihon 五表，不得留影子表',
+    );
   });
 
   test('v63 is idempotent when the obsolete rows are already absent', () async {

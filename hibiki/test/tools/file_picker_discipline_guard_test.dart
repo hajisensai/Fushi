@@ -73,6 +73,8 @@ const Map<String, String> kFilePickerAllowlist = <String, String>{
   'lib/src/pages/implementations/video_shader_dialog.dart':
       '着色器文件：选中即拷进 mpv_shaders 目录',
   'lib/src/pages/implementations/home_video_page.dart': '视频页文件选择：当场消费',
+  'lib/src/media/manga/mihon/mihon_extensions_page.dart':
+      'Mihon 扩展 APK：选中即 readAsBytes 拷进 app 存储的 tmp/extension-<sha>.apk.part 再校验安装，原路径不入库',
   // (a) 长期引用，但**仅 Windows** 路径可达，安卓那条腿根本跑不到：
   'lib/src/pages/implementations/games_library_page.dart':
       'galgame exe：Windows 专属（见 galgame SOP），安卓无此入口',
