@@ -2764,5 +2764,8 @@
   "manga_import_detected_message": "「$name」是漫画文件，将走漫画导入流程，而不是书籍导入流程。",
   "selection_web_search": "网页搜索",
   "selection_web_search_unavailable": "没有可用的网页搜索应用。",
-  "selection_share_failed": "无法打开分享面板。"
+  "selection_share_failed": "无法打开分享面板。",
+  "dict_download_learning_language": "学习语言",
+  "dict_category_bilingual": "双语",
+  "dict_category_monolingual": "单语"
 }
