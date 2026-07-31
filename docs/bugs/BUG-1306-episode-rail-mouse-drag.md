@@ -1,4 +1,5 @@
 ## BUG-1306 · 选集横排无法鼠标拖动滚动（漏包共享横滚件）
+- **曾用号**：本条一度取到 BUG-1303，因并发 PR #624 抢注而改为 1306。
 - **报告**：2026-08-01（用户：「这里的集，没办法鼠标拖动欸」）
 - **真实性**：✅ 真 bug — 根因 `hibiki/lib/src/media/video/video_episode_rail.dart:99`
   （修复前）：`ListView.separated` 直接裸用，没有任何 `ScrollConfiguration` 包裹。
