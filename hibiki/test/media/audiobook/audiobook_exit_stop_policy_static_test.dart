@@ -74,12 +74,12 @@ void main() {
   // 调用），让书架 NowListeningMiniBar 从首帧就见空会话、不闪播放条。
   //
   // BUG-1273 契约变更：这里从「await stop」改成「unawaited(stop())」。TODO-831 要的
-  // 「首帧见空会话」由 [AudiobookSession.stop] 的**同步首段**（首个 await 前清空
-  // _reader/_controller/_book + notifyListeners）保证，与是否 await 无关；而 await
-  // 它会把「停 native 播放器 + 销毁解码器」这段**只有播放态才真正干活**的不可控耗时
-  // 挂进用户的返回路径（外层还有 _popInProgress 单飞门 → 播放中返回被静默吞掉，
-  // 直到音频真停下来才 pop）。行为层证据见
-  // `reader_back_not_blocked_by_stop_test.dart`。
+  // 「首帧见空会话」由 `_stopInternal` 的首段（第一个 await 前清空
+  // _reader/_controller/_book + notifyListeners）保证——只隔一个微任务，远早于 pop
+  // 动画首帧，与调用方是否 await 无关；而 await 它会把「排队 + 停 native 播放器 +
+  // 销毁解码器」这段**只有播放态才真正干活**的不可控耗时挂进用户的返回路径（外层
+  // 还有 _popInProgress 单飞门 → 播放中返回被静默吞掉，直到音频真停下来才 pop）。
+  // 行为层证据见 `reader_back_not_blocked_by_stop_test.dart`。
   test('onSourcePagePop fires the guarded stop without awaiting (BUG-1273)',
       () {
     final RegExpMatch? body = RegExp(
