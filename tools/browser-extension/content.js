@@ -146,9 +146,11 @@ function hibikiNetflixId() {
   const m = location.pathname.match(/\/watch\/(\d+)/);
   return m ? m[1] : null;
 }
-function hibikiVideoTimeMs() {
-  const v = document.querySelector('video');
-  return v && typeof v.currentTime === 'number' ? Math.round(v.currentTime * 1000) : 0;
+function hibikiVideoTimeMs(video) {
+  const v = video || document.querySelector('video');
+  return v && typeof v.currentTime === 'number' && Number.isFinite(v.currentTime)
+    ? Math.round(v.currentTime * 1000)
+    : null;
 }
 function hibikiSubtitleTextNow() {
   // Netflix: .player-timedtext；YouTube: .ytp-caption-segment / .captions-text。
@@ -162,16 +164,36 @@ function hibikiSubtitleTextNow() {
   }
   return '';
 }
-// 当前正在显示的字幕（视频时间）：文本 + 出现时的视频时间。end 在字幕变化时定格。
-let hibikiCurText = '';
-let hibikiCurStartV = 0;
-let hibikiLastSampleV = 0;
-// 最近若干句 {text, startV, endV}（视频时间），供倒退/入队时按文本回取已知完整窗。
-const hibikiCueHist = [];
-function hibikiPushCueV(text, startV, endV) {
+const HIBIKI_LIVE_CUE_MAX_MS = 12000;
+const HIBIKI_LIVE_LANG = 'live';
+let hibikiSamplerGeneration = 0;
+let hibikiSamplerState = null;
+
+function hibikiNewSamplerState(video, key, replayPending) {
+  return {
+    video: video,
+    key: key,
+    generation: ++hibikiSamplerGeneration,
+    lastDomText: '',
+    curText: '',
+    curStartV: 0,
+    lastSampleV: 0,
+    cueHist: [],
+    liveCue: null,
+    liveCueReplay: false,
+    replayPending: !!replayPending,
+    seeking: false,
+    onSeeking: null,
+    onSeeked: null,
+  };
+}
+
+// 最近若干句 {text, startV, endV}（视频时间）只属于当前视频元素代际，避免
+// SPA 换视频或播放器 remount 后按旧视频文本回取时间窗。
+function hibikiPushCueV(state, text, startV, endV) {
   if (!text || endV <= startV) return;
-  hibikiCueHist.push({ text: text, startV: startV, endV: endV });
-  if (hibikiCueHist.length > 80) hibikiCueHist.shift();
+  state.cueHist.push({ text: text, startV: startV, endV: endV });
+  if (state.cueHist.length > 80) state.cueHist.shift();
 }
 function hibikiIsProgressiveCueUpdate(previousText, nextText) {
   if (!previousText || !nextText || nextText.length <= previousText.length) return false;
@@ -180,43 +202,159 @@ function hibikiIsProgressiveCueUpdate(previousText, nextText) {
   return nextText.indexOf(previousText) === 0;
 }
 
+function hibikiFinishSamplerCue(state, endV) {
+  if (!state) return;
+  if (state.curText && typeof endV === 'number' && endV > state.curStartV) {
+    hibikiPushCueV(state, state.curText, state.curStartV, endV);
+  }
+  hibikiLiveCueEnd(state, endV);
+  state.lastDomText = '';
+  state.curText = '';
+  state.curStartV = 0;
+}
+
+function hibikiDetachSamplerVideo(state) {
+  if (!state || !state.video || typeof state.video.removeEventListener !== 'function') return;
+  try { state.video.removeEventListener('seeking', state.onSeeking); } catch (_) {}
+  try { state.video.removeEventListener('seeked', state.onSeeked); } catch (_) {}
+}
+
+function hibikiBindSamplerVideo(state) {
+  if (!state || !state.video || typeof state.video.addEventListener !== 'function') return;
+  state.onSeeking = function () {
+    if (hibikiSamplerState !== state) return;
+    if (!state.seeking) hibikiFinishSamplerCue(state, state.lastSampleV);
+    state.seeking = true;
+    state.replayPending = true;
+  };
+  state.onSeeked = function () {
+    if (hibikiSamplerState !== state) return;
+    // 某些播放器会在 content script 绑定较晚时只被我们观察到 seeked；仍须用
+    // 最后一个真实采样时间定格旧 cue，不能把目标时间当旧句 end。
+    if (!state.seeking) hibikiFinishSamplerCue(state, state.lastSampleV);
+    state.seeking = false;
+    state.replayPending = true;
+  };
+  try { state.video.addEventListener('seeking', state.onSeeking); } catch (_) {}
+  try { state.video.addEventListener('seeked', state.onSeeked); } catch (_) {}
+}
+
+function hibikiHasRecordedLiveTrack(key) {
+  const track = hibikiEpisodeCues[key + '|' + HIBIKI_LIVE_LANG];
+  return !!(track && track.length);
+}
+
+function hibikiSyncSamplerLifecycle() {
+  const video = document.querySelector('video');
+  if (!video) {
+    // player 销毁后只用最后一个真实视频时间定格；绝不把缺失播放器映射成 t=0。
+    if (hibikiSamplerState) {
+      hibikiFinishSamplerCue(hibikiSamplerState, hibikiSamplerState.lastSampleV);
+      hibikiDetachSamplerVideo(hibikiSamplerState);
+      hibikiSamplerState = null;
+    }
+    return null;
+  }
+  const key = hibikiVideoKey();
+  if (!hibikiSamplerState ||
+      hibikiSamplerState.video !== video ||
+      hibikiSamplerState.key !== key) {
+    const previous = hibikiSamplerState;
+    const replayKnownTrack =
+      !!(previous && previous.key === key) ||
+      hibikiHasRecordedLiveTrack(key);
+    if (previous) {
+      hibikiFinishSamplerCue(previous, previous.lastSampleV);
+      hibikiDetachSamplerVideo(previous);
+    }
+    // 同 key remount，或 A→B→A 回到已有 live 轨时，首个真实快照按只读 replay
+    // 对照旧轨；真正未见过的 key 则建立新轨，不能复用旧代引用。
+    hibikiSamplerState = hibikiNewSamplerState(video, key, replayKnownTrack);
+    hibikiBindSamplerVideo(hibikiSamplerState);
+  }
+  return hibikiSamplerState;
+}
+
 function hibikiSampleCue() {
-  const nowV = hibikiVideoTimeMs();
-  const jumped = hibikiLastSampleV && (nowV < hibikiLastSampleV - 400 || nowV > hibikiLastSampleV + 1500);
-  hibikiLastSampleV = nowV;
+  const state = hibikiSyncSamplerLifecycle();
+  if (!state) return;
+  const nowV = hibikiVideoTimeMs(state.video);
+  if (nowV === null) return;
+
+  // seek 只认播放器生命周期信号。采样停顿/后台节流造成的正向时间间隔不是 seek，
+  // 不能把正常逐字后缀扔进只读 replay。
+  if (state.video.seeking === true) {
+    if (!state.seeking) hibikiFinishSamplerCue(state, state.lastSampleV);
+    state.seeking = true;
+    state.replayPending = true;
+    return;
+  }
+  if (state.seeking) {
+    state.seeking = false;
+    state.replayPending = true;
+  }
+  state.lastSampleV = nowV;
   const text = hibikiSubtitleTextNow();
-  if (jumped) {
-    hibikiCurText = text;
-    hibikiCurStartV = text ? nowV : 0;
-    hibikiLiveCueStart(text, nowV); // TODO-1363：seek 后的新句也入 live 轨（空文本时清掉悬挂引用）
+
+  if (state.replayPending) {
+    // seek/remount 后字幕 DOM 可能短暂为空；等第一份真实快照再消费 replay 门。
+    if (!text) return;
+    state.replayPending = false;
+    state.lastDomText = text;
+    state.curText = text;
+    state.curStartV = nowV;
+    hibikiLiveCueStart(state, text, nowV, true);
     return;
   }
-  if (text === hibikiCurText) return;
-  if (hibikiIsProgressiveCueUpdate(hibikiCurText, text) &&
-      hibikiLiveCueUpdate(hibikiCurText, text, nowV)) {
-    hibikiCurText = text;
+  if (text === state.lastDomText) return;
+  if (hibikiIsProgressiveCueUpdate(state.lastDomText, text)) {
+    const addedText = text.slice(state.lastDomText.length);
+    state.lastDomText = text;
+    // 回放已经采过的区间：只跟进页面快照，不改旧 cue，也不把逐字扩长误插成新行。
+    if (state.liveCueReplay) {
+      state.curText += addedText;
+      return;
+    }
+    // YouTube 自动字幕在同一 DOM 节点中逐字扩长；12 秒内追加到当前行。
+    if (state.liveCue && nowV - state.liveCue.startMs < HIBIKI_LIVE_CUE_MAX_MS) {
+      state.curText += addedText;
+      hibikiLiveCueAppend(state, addedText, nowV);
+      return;
+    }
+    // DOM 长时间不换节点时，按新增后缀切成下一行，避免整段视频被吞进一个超长 cue。
+    if (state.curText) {
+      hibikiPushCueV(state, state.curText, state.curStartV, nowV);
+      hibikiLiveCueEnd(state, nowV);
+    }
+    state.curText = addedText.replace(/^\s+/, '');
+    state.curStartV = state.curText ? nowV : 0;
+    if (state.curText) hibikiLiveCueStart(state, state.curText, nowV, false);
     return;
   }
-  if (hibikiCurText) {
-    hibikiPushCueV(hibikiCurText, hibikiCurStartV, nowV); // 上一句定格
-    hibikiLiveCueEnd(hibikiCurText, nowV); // TODO-1363：live 轨同句定格真实 end
+  if (state.curText) {
+    hibikiPushCueV(state, state.curText, state.curStartV, nowV); // 上一句定格
+    hibikiLiveCueEnd(state, nowV); // TODO-1363：live 轨同句定格真实 end
   }
-  hibikiCurText = text;
-  hibikiCurStartV = text ? nowV : 0;
-  if (text) hibikiLiveCueStart(text, nowV); // TODO-1363：新句出现即入 live 轨（暂定 end）
+  state.lastDomText = text;
+  state.curText = text;
+  state.curStartV = text ? nowV : 0;
+  if (text) hibikiLiveCueStart(state, text, nowV, false); // TODO-1363：新句出现即入 live 轨（暂定 end）
 }
 // 当前句的视频时间窗：命中历史（倒退回看过的句）用其完整 [startV,endV]；否则用当前 start +
 // 现在的视频时间作暂定 end（Netflix 回放时会按字幕变化重新定 end；YouTube 用此窗即可）。
 function hibikiCurrentCueWindowV() {
-  if (!hibikiCurText) {
-    const last = hibikiCueHist[hibikiCueHist.length - 1];
+  const state = hibikiSamplerState;
+  if (!state) return null;
+  if (!state.curText) {
+    const last = state.cueHist[state.cueHist.length - 1];
     return last ? { text: last.text, startV: last.startV, endV: last.endV } : null;
   }
-  for (let i = hibikiCueHist.length - 1; i >= 0; i--) {
-    if (hibikiCueHist[i].text === hibikiCurText) return { text: hibikiCueHist[i].text, startV: hibikiCueHist[i].startV, endV: hibikiCueHist[i].endV };
+  for (let i = state.cueHist.length - 1; i >= 0; i--) {
+    if (state.cueHist[i].text === state.curText) return { text: state.cueHist[i].text, startV: state.cueHist[i].startV, endV: state.cueHist[i].endV };
   }
-  const endV = Math.max(hibikiCurStartV + 1200, hibikiVideoTimeMs());
-  return { text: hibikiCurText, startV: hibikiCurStartV, endV: endV };
+  const nowV = hibikiVideoTimeMs(state.video);
+  const endV = Math.max(state.curStartV + 1200, nowV === null ? state.curStartV : nowV);
+  return { text: state.curText, startV: state.curStartV, endV: endV };
 }
 try { setInterval(hibikiSampleCue, 200); } catch (_) {}
 
@@ -295,7 +433,6 @@ try { window.postMessage({ __hibikiStream: 'replayCues' }, '/'); } catch (_) {}
 //   b) DOM 字幕采样升格 live 轨——hibikiSampleCue 已在采字幕（YouTube .ytp-caption-segment /
 //      Netflix .player-timedtext 等既有通道），把采到的句子按视频时间有序去重进 `${videoKey}|live`
 //      轨，边看边长（YouTube 自绘字幕不走 textTracks，靠这条）。
-const HIBIKI_LIVE_LANG = 'live';
 function hibikiVideoKey() {
   const site = hibikiSite();
   if (site === 'netflix') {
@@ -336,35 +473,55 @@ function hibikiSortedCueInsert(cues, cue) {
   return true;
 }
 
-// live 轨：句子出现即入轨（暂定 end，勾选开关立刻有内容可显示），句子结束时定格真实 end。
-let hibikiLiveCue = null; // 当前显示句在 live 轨里的对象引用
-function hibikiLiveCueStart(text, startV) {
-  if (!text) { hibikiLiveCue = null; return; }
-  const key = hibikiVideoKey() + '|' + HIBIKI_LIVE_LANG;
+// live cue/replay 引用只保存在 hibikiSamplerState 当前代际；SPA/video remount 后旧引用不可达。
+function hibikiCueTextRelated(a, b) {
+  return a === b || a.indexOf(b) === 0 || b.indexOf(a) === 0;
+}
+function hibikiLiveCueStart(state, text, startV, allowReplay) {
+  if (!text) {
+    state.liveCue = null;
+    state.liveCueReplay = false;
+    return;
+  }
+  const key = state.key + '|' + HIBIKI_LIVE_LANG;
   const track = hibikiEpisodeCues[key] || (hibikiEpisodeCues[key] = []);
+  if (allowReplay) {
+    // 真实 seek 或同 key 的新 video 代际回到已采区间时，页面先给较短快照、再逐字扩长；
+    // 只读 replay 只由这两个明确生命周期事件开启，普通采样停顿不会误入。
+    for (const existing of track) {
+      if (startV < existing.startMs - 750 || startV > existing.endMs + 750) continue;
+      if (!hibikiCueTextRelated(existing.text, text)) continue;
+      state.liveCue = null;
+      state.liveCueReplay = true;
+      return;
+    }
+  }
   const cue = { startMs: startV, endMs: startV + 1500, text: text };
   if (hibikiSortedCueInsert(track, cue)) {
-    hibikiLiveCue = cue;
+    state.liveCue = cue;
+    state.liveCueReplay = false;
     hibikiNotifyPanel(key);
   } else {
-    hibikiLiveCue = null; // 回放已见过的句：不重复入轨，也不动旧句窗
+    state.liveCue = null; // 已见过的句：不重复入轨，也不动旧句窗
+    state.liveCueReplay = true;
   }
 }
-function hibikiLiveCueUpdate(previousText, nextText, nowV) {
-  if (!hibikiLiveCue || hibikiLiveCue.text !== previousText) return false;
-  hibikiLiveCue.text = nextText;
+function hibikiLiveCueAppend(state, addedText, nowV) {
+  if (!state.liveCue || state.liveCueReplay || !addedText) return false;
+  state.liveCue.text += addedText;
   // 句子仍在屏幕上时保持一个向后的暂定窗；真正换句/清空时由 hibikiLiveCueEnd 定格。
-  hibikiLiveCue.endMs = Math.max(hibikiLiveCue.endMs, nowV + 1500);
-  const key = hibikiVideoKey() + '|' + HIBIKI_LIVE_LANG;
+  state.liveCue.endMs = Math.max(state.liveCue.endMs, nowV + 1500);
+  const key = state.key + '|' + HIBIKI_LIVE_LANG;
   hibikiNotifyPanel(key);
   return true;
 }
 
-function hibikiLiveCueEnd(text, endV) {
-  if (hibikiLiveCue && hibikiLiveCue.text === text && endV > hibikiLiveCue.startMs) {
-    hibikiLiveCue.endMs = endV;
+function hibikiLiveCueEnd(state, endV) {
+  if (state.liveCue && typeof endV === 'number' && endV > state.liveCue.startMs) {
+    state.liveCue.endMs = endV;
   }
-  hibikiLiveCue = null;
+  state.liveCue = null;
+  state.liveCueReplay = false;
 }
 
 // a) textTracks 全量收割：轮询增量（cue 随流加载渐增，条数长了才重建该轨）。kind 只收
