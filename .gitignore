@@ -130,3 +130,7 @@ third_party/media_kit_video/macos/Headers/
 
 # Magpie 精简包的组包产物（tools/build_magpie_slim.ps1 生成，随主包发行不入库）
 /dist/
+
+# 本地 vibe-coxswain 看板（board.db + 公开页 share_token + 任务日志 + pr_sweep 发布台账）——
+# 纯本机运行时状态，含私密 token，绝不入库
+/.vibe-coxswain/
