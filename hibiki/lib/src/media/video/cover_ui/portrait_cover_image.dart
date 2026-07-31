@@ -1,6 +1,7 @@
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/media/video/cover_ui/cover_aspect_probe.dart';
 
 /// 槽向自适应封面（Kazumi 式，用户拍板 2026-07-24 统一竖版；BUG-1299 推广为
 /// 横竖槽通用）。
@@ -45,8 +46,9 @@ class PortraitCoverImage extends StatefulWidget {
   static const double portraitAspectThreshold = 0.85;
 
   /// 横版槽的横图判定阈值：宽高比 ≥ 此值直接 cover（截帧 16:9≈1.78；方图/竖图
-  /// cover 进 16:9 槽会裁掉四成以上，走垫底）。
-  static const double landscapeAspectThreshold = 1.2;
+  /// cover 进 16:9 槽会裁掉四成以上，走垫底）。与 `LandscapeCoverImage` 共用同一
+  /// 真相源 [kCoverLandscapeAspectThreshold]（TODO-2426）。
+  static const double landscapeAspectThreshold = kCoverLandscapeAspectThreshold;
 
   /// 横图垫底的模糊强度（sigma，任务定 12~16 取中）。
   static const double backdropBlurSigma = 14;
@@ -55,76 +57,17 @@ class PortraitCoverImage extends StatefulWidget {
   State<PortraitCoverImage> createState() => _PortraitCoverImageState();
 }
 
-class _PortraitCoverImageState extends State<PortraitCoverImage> {
-  ImageStream? _stream;
-  ImageStreamListener? _listener;
-
-  /// 图片固有宽高比（宽 / 高）；null = 首帧前尺寸未知。
-  double? _aspect;
-  bool _failed = false;
-
+class _PortraitCoverImageState extends State<PortraitCoverImage>
+    with CoverAspectProbe<PortraitCoverImage> {
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _resolveImage();
-  }
-
-  @override
-  void didUpdateWidget(PortraitCoverImage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.image != oldWidget.image) {
-      _aspect = null;
-      _failed = false;
-      _resolveImage();
-    }
-  }
-
-  @override
-  void dispose() {
-    _detachListener();
-    super.dispose();
-  }
-
-  void _detachListener() {
-    final ImageStreamListener? listener = _listener;
-    if (listener != null) _stream?.removeListener(listener);
-    _stream = null;
-    _listener = null;
-  }
-
-  void _resolveImage() {
-    final ImageStream newStream =
-        widget.image.resolve(createLocalImageConfiguration(context));
-    if (newStream.key == _stream?.key) return;
-    _detachListener();
-    final ImageStreamListener listener =
-        ImageStreamListener(_onImage, onError: _onError);
-    _stream = newStream;
-    _listener = listener;
-    newStream.addListener(listener);
-  }
-
-  void _onImage(ImageInfo info, bool syncCall) {
-    final double aspect = info.image.width / info.image.height;
-    info.dispose();
-    if (!mounted || _aspect == aspect) return;
-    setState(() {
-      _aspect = aspect;
-      _failed = false;
-    });
-  }
-
-  void _onError(Object exception, StackTrace? stackTrace) {
-    if (!mounted || _failed) return;
-    setState(() => _failed = true);
-  }
+  ImageProvider probedImageOf(PortraitCoverImage widget) => widget.image;
 
   @override
   Widget build(BuildContext context) {
-    if (_failed) {
+    if (coverFailed) {
       return widget.errorBuilder?.call(context) ?? const SizedBox.shrink();
     }
-    final double? aspect = _aspect;
+    final double? aspect = coverAspect;
     // 朝向不合槽 = 垫底 + contain；首帧前（aspect 未知）按合槽 cover 渲染。
     final bool mismatch = aspect != null &&
         (widget.landscapeSlot
@@ -159,7 +102,7 @@ class _PortraitCoverImageState extends State<PortraitCoverImage> {
             ),
           ),
           // 半透明压暗垫底，突出前景。
-          const ColoredBox(color: Color(0x59000000)),
+          const ColoredBox(color: kCoverBackdropDimColor),
           foreground,
         ],
       ),

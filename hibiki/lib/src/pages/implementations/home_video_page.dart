@@ -13,6 +13,7 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
 
 import 'package:hibiki/src/focus/hibiki_focus_controller.dart';
+import 'package:hibiki/src/media/collections/collection_asset_reclaim.dart';
 import 'package:hibiki/src/media/drag_drop/card_drop_registry.dart';
 import 'package:hibiki/src/media/drag_drop/drop_classification.dart';
 import 'package:hibiki/src/media/drag_drop/drop_decision.dart';
@@ -775,7 +776,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final Set<int> toDissolve = Set<int>.of(_selectedCollectionIds);
     int dissolved = 0;
     for (final int id in toDissolve) {
-      final int removed = await db.deleteMediaCollection(id);
+      final int removed = await deleteMediaCollectionWithAssets(db, id);
       if (removed > 0) dissolved++;
     }
     // 再删选中散卡的媒体本体（现状语义）。
@@ -1188,7 +1189,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // 原样搬家现有成员行：行值可能是对端未知种类，走 raw 版防静默丢成员。
         await db.addToCollectionRaw(targetId, m.mediaType, m.entryKey);
       }
-      await db.deleteMediaCollection(id);
+      await deleteMediaCollectionWithAssets(db, id);
     }
     for (final ShelfEntryRef ref in refs) {
       await db.addToCollection(targetId, ref.mediaType, ref.entryKey);

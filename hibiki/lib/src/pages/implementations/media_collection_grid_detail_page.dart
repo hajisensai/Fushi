@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:hibiki/src/sync/deletion_disclosure.dart';
+import 'package:hibiki/src/media/collections/collection_asset_reclaim.dart';
 import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
     show sortedCollectionRows;
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart'
@@ -155,12 +156,14 @@ class _MediaCollectionGridDetailPageState
     );
     if (result == null || !mounted) return;
     // 先删成员本体（书/有声书/视频 DB 行 + 磁盘副本），再解散容器。删书不动合集引用
-    // 行，故随后的 deleteMediaCollection 负责清掉残留引用 + 写合集级墓碑。
+    // 行，故随后的解散负责清掉残留引用 + 写合集级墓碑 + 回收合集自有封面
+    // （[deleteMediaCollectionWithAssets]，BUG-1316）。
     if (result.checked && widget.onDeleteMembersMedia != null) {
       await widget
           .onDeleteMembersMedia!(List<MediaCollectionItemRow>.of(_rows));
     }
-    await widget.database.deleteMediaCollection(widget.collection.id);
+    await deleteMediaCollectionWithAssets(
+        widget.database, widget.collection.id);
     if (!mounted) return;
     widget.onChanged();
     Navigator.of(context).maybePop();

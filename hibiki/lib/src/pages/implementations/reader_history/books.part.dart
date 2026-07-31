@@ -533,7 +533,8 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
     final Set<int> toDissolve = Set<int>.of(_selectedCollectionIds);
     int dissolved = 0;
     for (final int id in toDissolve) {
-      final int removed = await appModel.database.deleteMediaCollection(id);
+      final int removed =
+          await deleteMediaCollectionWithAssets(appModel.database, id);
       if (removed > 0) dissolved++;
     }
 
@@ -802,7 +803,7 @@ extension _ReaderHistoryBooks on _ReaderHibikiHistoryPageState {
         // 原样搬家现有成员行：行值可能是对端未知种类，走 raw 版防静默丢成员。
         await db.addToCollectionRaw(targetId, m.mediaType, m.entryKey);
       }
-      await db.deleteMediaCollection(id);
+      await deleteMediaCollectionWithAssets(db, id);
     }
     for (final ShelfEntryRef ref in refs) {
       await db.addToCollection(targetId, ref.mediaType, ref.entryKey);

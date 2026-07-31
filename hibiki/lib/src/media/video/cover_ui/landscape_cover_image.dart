@@ -1,6 +1,7 @@
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:hibiki/src/media/video/cover_ui/cover_aspect_probe.dart';
 
 /// 宽幅（约 2.7:1）封面槽的填充组件 —— [PortraitCoverImage] 的镜像。
 ///
@@ -59,89 +60,32 @@ class LandscapeCoverImage extends StatefulWidget {
 
   /// 横图判定阈值：宽高比 ≥ 此值直接 cover。抽帧 16:9≈1.78 是横图；刮削海报
   /// 2:3≈0.71 与方图 1.0 都要走模糊垫底（方图 cover 进 2.7:1 槽也要裁掉 63%）。
-  static const double landscapeAspectThreshold = 1.2;
+  /// 与 `PortraitCoverImage` 的横槽判定共用同一真相源
+  /// [kCoverLandscapeAspectThreshold]（TODO-2426）。
+  static const double landscapeAspectThreshold = kCoverLandscapeAspectThreshold;
 
   /// 竖图垫底的模糊强度（sigma）。比竖版槽的 14 更强：这里垫底被放大 4.5 倍，
   /// 同样的 sigma 相对画面显得太锐。
   static const double backdropBlurSigma = 28;
 
-  /// 竖图垫底之上的压暗层（与 `PortraitCoverImage` 同值）。
-  static const Color backdropDimColor = Color(0x59000000);
+  /// 竖图垫底之上的压暗层（与 `PortraitCoverImage` 共用 [kCoverBackdropDimColor]）。
+  static const Color backdropDimColor = kCoverBackdropDimColor;
 
   @override
   State<LandscapeCoverImage> createState() => _LandscapeCoverImageState();
 }
 
-class _LandscapeCoverImageState extends State<LandscapeCoverImage> {
-  ImageStream? _stream;
-  ImageStreamListener? _listener;
-
-  /// 图片固有宽高比（宽 / 高）；null = 首帧前尺寸未知。
-  double? _aspect;
-  bool _failed = false;
-
+class _LandscapeCoverImageState extends State<LandscapeCoverImage>
+    with CoverAspectProbe<LandscapeCoverImage> {
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _resolveImage();
-  }
-
-  @override
-  void didUpdateWidget(LandscapeCoverImage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.image != oldWidget.image) {
-      _aspect = null;
-      _failed = false;
-      _resolveImage();
-    }
-  }
-
-  @override
-  void dispose() {
-    _detachListener();
-    super.dispose();
-  }
-
-  void _detachListener() {
-    final ImageStreamListener? listener = _listener;
-    if (listener != null) _stream?.removeListener(listener);
-    _stream = null;
-    _listener = null;
-  }
-
-  void _resolveImage() {
-    final ImageStream newStream =
-        widget.image.resolve(createLocalImageConfiguration(context));
-    if (newStream.key == _stream?.key) return;
-    _detachListener();
-    final ImageStreamListener listener =
-        ImageStreamListener(_onImage, onError: _onError);
-    _stream = newStream;
-    _listener = listener;
-    newStream.addListener(listener);
-  }
-
-  void _onImage(ImageInfo info, bool syncCall) {
-    final double aspect = info.image.width / info.image.height;
-    info.dispose();
-    if (!mounted || _aspect == aspect) return;
-    setState(() {
-      _aspect = aspect;
-      _failed = false;
-    });
-  }
-
-  void _onError(Object exception, StackTrace? stackTrace) {
-    if (!mounted || _failed) return;
-    setState(() => _failed = true);
-  }
+  ImageProvider probedImageOf(LandscapeCoverImage widget) => widget.image;
 
   @override
   Widget build(BuildContext context) {
-    if (_failed) {
+    if (coverFailed) {
       return widget.errorBuilder?.call(context) ?? const SizedBox.shrink();
     }
-    final double? aspect = _aspect;
+    final double? aspect = coverAspect;
     // 首帧前 aspect 未知 → 按横图走（= 引入本组件前的行为），拿到尺寸再切。
     final bool portrait =
         aspect != null && aspect < LandscapeCoverImage.landscapeAspectThreshold;

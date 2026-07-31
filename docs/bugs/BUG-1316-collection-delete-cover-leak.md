@@ -1,0 +1,27 @@
+## BUG-1316 · 删合集只有 1/6 入口回收自有封面：其余五条只删 DB 行，路径随行永久丢失、GC 又扫不到该子目录 = 确定性空间泄漏
+- **报告**：2026-08-01（PR#635 审查时发现，非用户直报）
+- **真实性**：✅ 真 bug，**确定性**泄漏（不是概率性的：每从这五条入口删掉一个刮削过的合集，就永久漏一个文件）。
+  - 合集自有封面唯一落盘路径是 `video_covers/collections/<collectionId>.jpg`（`hibiki/lib/src/media/video/video_storage.dart:55` 目录名 + `:61-62` 目录 + `video_cover_extractor.dart:131-134` 文件名 + `scraper/cover_scraper_service.dart:424-435` 下载），路径记在 `media_collections.cover_path`（`packages/hibiki_core/lib/src/database/tables.dart:846`）。
+  - `HibikiDatabase.deleteMediaCollection`（`packages/hibiki_core/lib/src/database/database.dart:3071-3094`）**零磁盘操作**：删成员引用行 + 删合集行 + 清残留成员墓碑 + 写合集级哨兵墓碑。行一删，`<id>` 与 `cover_path` 同时消失 —— **磁盘上那张图再也无法被任何机制识别**。
+  - 兜底 GC 也接不住：`VideoStorage.gcOrphanCovers`（`video_storage.dart:208-230`）只扫 `video_covers/` 一层（`:219` `covers.list()` 非递归、`:220` `entity is! File` 跳过目录项），保留集是全库 `video_books.cover_path`（`video_book_repository.dart:606-614`）。合集封面既在子目录、又不在那个引用集里，**两重免疫**。这个盲区是**设计意图**（`video_storage.dart:47-55` 明写：同级扁平存放反而会被那轮 GC 当孤儿误删），所以「删合集」是这些文件唯一的回收时机。
+  - **根因不是某个页面忘了删文件，而是回收挂在某个调用点上、没挂在「删合集」这个动作本身**：回收只存在于 `hibiki/lib/src/media/collections/collection_context_dialog.dart:223`（旧 `_reclaimCollectionCover`，`:234-252`），全仓 `deleteCollectionCover` 只有这一个消费者。其余五条删除路径全部裸调 DAO：
+    - `hibiki/lib/src/pages/implementations/media_collection_detail_page.dart:267`（视频合集详情页 `_delete`）
+    - `hibiki/lib/src/pages/implementations/media_collection_grid_detail_page.dart:163`（网格合集详情页 `_delete`）
+    - `hibiki/lib/src/pages/implementations/home_video_page.dart:778`（视频库页批量解散）、`:1191`（合集合并时解散源合集）
+    - `hibiki/lib/src/pages/implementations/reader_history/books.part.dart:536`（书架页批量解散）、`:805`（书架页合集合并）
+    - `hibiki/lib/src/sync/collection_sync_engine.dart:586`、`:605`（同步删除传播 / 移空自删，走 `deleteMediaCollectionRaw`）
+  - **关于 `<id>_backdrop.jpg`**：这条线索来自 PR#635，但该 PR **尚未合入**。当前 develop 全仓无 backdrop 列、无 backdrop 落盘代码、无 `_backdrop` 文件名规则（`git grep -i backdrop` 命中的全是 `BackdropFilter` / `DWMWA_SYSTEMBACKDROP_TYPE` / media_kit `backdropColor` 等无关物）。所以 backdrop 是这个泄漏**未来的放大版**，今天真实在漏的是 **cover 本身**。修复按「合集自有资产」建模而非按「封面」建模，正是为了让 #635 落地时 backdrop 一行接入、不必重演六处补丁。
+- **[x] ① 已修复** — 新增 `hibiki/lib/src/media/collections/collection_asset_reclaim.dart`，把「删行 + 回收自有资产」收成单一入口：
+  - `deleteMediaCollectionWithAssets(db, id)`：**先取行快照**（路径只能从还活着的行推导）→ `deleteMediaCollection` → 回收。返回值透传被删行数，六个调用点原有的 `removed > 0` 判据零变化。
+  - `reclaimDeletedCollectionAssets(db, rows)`：给「删行在事务里、文件 IO 必须挪到事务外」的同步引擎用。`applyCollectionLocalChanges` 在事务内把被解散的行快照入列 `dissolved`，事务提交后统一回收。
+  - `collectionOwnedAssetPaths(row)`：合集自有资产路径的唯一清单（今天只有 `coverPath`）。将来加 backdrop 列 = 在这里加一行，六条路径同时生效。
+  - **误删护栏（三条同时成立才删，任一不成立静默保留）**：① 路径只来自被删合集自己 DB 行的 `coverPath`，不枚举目录、不猜文件名；② 规范化后必须严格落在合集封面目录内（`VideoStorage.deleteCollectionCover` → `_deleteOwnedAsset` 的 `p.isWithin`，杜绝 `..` / 符号链接越界）；③ 删行后重查全库合集，任何仍存活的合集引用同一规范化路径则保留。
+  - 显式**不做**启动时全盘扫描找孤儿：那既绕过根因，又把「宁可漏删不误删」的判据换成了「目录里没被引用的都删」。
+- **[x] ② 已加自动化测试** — `hibiki/test/media/collections/collection_asset_reclaim_test.dart`（9 例）：行为层 7 例（回收自己的封面 / **别的合集封面一根汗毛不许动** / 两合集共用同一张封面时保留 / 目录外用户图片绝不删 / 无封面零 IO / 合集不存在返回 0 / 批量事务外回收）+ 源码守卫 2 例（生产代码不得裸调 `deleteMediaCollection(`，唯一豁免回收入口自己；同步引擎必须先入列快照再删行、且回收落在事务之后）。
+- **备注**：**变异实测 5 轮，双向都验**（每轮只改语义关键的一位，还原用反向文本替换 + `diff` 对齐备份，未对未提交文件用 `git checkout --`）：
+  - ① 摘掉 `deleteMediaCollectionWithAssets` 里的回收调用 → 2 例红（漏删方向）；
+  - ② `stillReferencedCoverPaths` 传空集 → 「共用同一张封面」1 例红（证明引用护栏是承重的，不是自洽废话）；
+  - ③ 把逐候选删改成目录整扫（最典型的误删写法）→ 3 例红，含「别的合集封面不许动」（误删方向）；
+  - ④ 把详情页调用点退回 `widget.database.deleteMediaCollection(...)` → 源码守卫红，且报出精确文件行；
+  - ⑤ 把同步回收挪进 `db.transaction` 内 → 时序守卫红。
+  - 全部还原后重跑 `FLUTTER TEST VERDICT: PASSED - 9 tests ran`。
