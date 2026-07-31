@@ -1,4 +1,4 @@
-## BUG-1246 · Magpie 内置后仍显示并保留下载路径
+## BUG-1292 · Magpie 内置后仍显示并保留下载路径
 - **报告**：2026-07-29（用户截图指出：“这什么垃圾说明，我们不是内置了吗，还下载？”）
 - **真实性**：✅ 真 bug。BUG-1217 虽然把精简 Magpie 放进 Windows 主包，但
   `hibiki/lib/src/mining/magpie_installer.dart:542-601` 仍在随包安装失败后落到确认框和

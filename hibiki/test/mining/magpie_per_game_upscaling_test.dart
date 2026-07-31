@@ -89,7 +89,7 @@ void main() {
     /// 走 **Windows 分支**（`isWindowsOverride: true`）：非 Windows 下任何档位都被平台
     /// 判据压成 `disabled`，那样「读到 off」和「读到 auto」就分不开，断言等于没断言。
     /// Windows 分支里 off → disabled、auto → failed + bundleMissing（测试宿主没有随包
-    /// 归档，且绝不联网补取 —— BUG-1246 之后缺随包是**交付错误**而不是「暂时不可用」），
+    /// 归档，且绝不联网补取 —— BUG-1292 之后缺随包是**交付错误**而不是「暂时不可用」），
     /// 两者可分。
     MagpieUpscalingService build(MagpieUpscalingMode Function() modeReader) =>
         MagpieUpscalingService(

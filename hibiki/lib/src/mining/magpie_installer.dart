@@ -69,7 +69,7 @@ const List<String> kMagpieRequiredDirs = <String>['effects'];
 String magpieMarkerName() => 'installed.sha256';
 
 /// Windows 主包只携带 x64 精简包，安装路径**恒取它**。ARM64 Windows 通过系统的 x64
-/// 模拟运行同一份产物，不再有第二个切片，所以也不再需要探测机器架构：BUG-1246 之前
+/// 模拟运行同一份产物，不再有第二个切片，所以也不再需要探测机器架构：BUG-1292 之前
 /// 的 `magpieArchForProcessorArchitecture` / `magpieCurrentArch` 只服务于「按架构选下载
 /// URL」，下载链路删掉后它们就是死代码，一并删除（想恢复架构分发得先恢复第二个随包
 /// 切片，那是构建侧的事）。
