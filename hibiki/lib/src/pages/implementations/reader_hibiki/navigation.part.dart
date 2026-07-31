@@ -818,6 +818,9 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     final String html =
         buildSpreadPageHtml(leftUrl: leftUrl, rightUrl: rightUrl);
 
+    // BUG-1280：置位必须在 loadData 之前——`onLoadStop` 可能在 await 返回前就
+    // 派发，晚置位等于守卫对这一次加载失效。
+    _spreadDocumentLoaded = true;
     _isNavigatingToChapter = true;
     try {
       await _controller!.loadData(

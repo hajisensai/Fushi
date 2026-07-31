@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1239 条。点号进各自文件。
+> 共 1240 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -44,6 +44,7 @@
 | [BUG-1283](bugs/BUG-1283-nested-popup-custom-font-flash.md) | ✅ | ✅ | 嵌套查词显示前闪过系统字体 |
 | [BUG-1282](bugs/BUG-1282-dictionary-redirect-only-entries.md) | ✅ | ✅ | redirect-only 词典条目混入真实释义结果 |
 | [BUG-1281](bugs/BUG-1281-dict-auto-update-last-check.md) | ✅ | ✅ | 词典自动更新检查成功但无新版时永远显示从未并重复检查 |
+| [BUG-1280](bugs/BUG-1280-spread-chrome-unreachable.md) | ✅ | ✅ | 双页 spread 页唤不出底栏、退不出书 |
 | [BUG-1279](bugs/BUG-1279-ext-nested-lookup-inplace.md) | ✅ | ✅ | 浏览器扩展嵌套查词会关掉旧弹窗、跳位并重画原文高亮 |
 | [BUG-1278](bugs/BUG-1278-download-settings-content-left.md) | ✅ | ✅ | 下载设置宽屏内容整体贴左且开关被推到远端 |
 | [BUG-1277](bugs/BUG-1277-reader-navigation-after-dispose.md) | ✅ | ✅ | 有声书跨章等待后触发已销毁 State 重绘 |
