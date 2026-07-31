@@ -99,8 +99,10 @@ KeyEventResult _handleGlobalEscape(
 ///    a bound page-turn / seek shortcut. The home page handles its own arrows and
 ///    consumes them before they reach here; this catches every other managed
 ///    page (settings, dialogs, reader chrome) uniformly. Disabled entirely when
-///    [focusNavigationEnabled] is off (the whole arrow/gamepad block is gated by
-///    the caller), so the default build is unchanged.
+///    [focusNavigationEnabled] is off, so the default build is unchanged.
+///    BUG-1266：门控范围已收窄到**只剩方向键移焦这一件事**——同一个 `if` 里原本还
+///    压着手柄按钮分发与注册表 globalBack，它们与「实验性焦点导航」无关，现已移到
+///    门控之外常驻生效。
 KeyEventResult _handleGlobalArrowFocus(
   GlobalKey<NavigatorState> navigatorKey,
   KeyEvent event,
@@ -213,6 +215,32 @@ KeyEventResult _handleGlobalBack(
   nav.maybePop();
   return KeyEventResult.handled;
 }
+
+/// BUG-1266：吞掉**没有任何处理器认领**的手柄 B，阻断 Android 的系统级按键兜底。
+///
+/// Android 的 `Generic.kcm` 为游戏手柄的 `BUTTON_B` 定义了 `fallback BACK`：当 app
+/// 的 view 层不消费 `KEYCODE_BUTTON_B` 时，系统会**另外合成一个 `KEYCODE_BACK`** 派发
+/// 下来。那条兜底路径完全绕过 Hibiki 的快捷键注册表，于是：
+///   * 用户把「返回」改绑到 RB 后，B 仍然退出页面（改键在 B 上根本是假的）；
+///   * 页面尚未拿到键盘焦点时（如视频页首帧未就绪），B 连页面自己的绑定都还没轮到，
+///     就被系统直接判成返回——用户「进视频想回退两句，结果一路退回桌面」正是它。
+/// 把 B 在最外层就地消费，等于把「B 是不是返回键」的决定权完整交回注册表：绑了
+/// globalBack 就在上面的 [_handleGlobalBack] 里 pop（默认绑定，行为不变），改绑走了
+/// 就静默无操作，绝不再有第二条隐形返回路径。
+///
+/// 只针对 B，不扩大到别的手柄键，因为只有它有 BACK 兜底：
+///   * `BUTTON_A` 的兜底是 `DPAD_CENTER`（= 确认焦点控件），是有益能力，保留；
+///   * D-pad 无按键兜底，且仍需放行给方向焦点移动，绝不能在此吞掉；
+///   * X/Y/LB/RB/扳机/Start/Select 在 `Generic.kcm` 里没有 fallback，吞不吞等价。
+///
+/// DOWN / UP / REPEAT 三个边沿都要消费：Android 的返回动作实际发生在 **ACTION_UP**，
+/// 只吞按下边沿会让抬起边沿照样合成出 BACK，等于没修。
+///
+/// 判据独立成可单测的纯函数，让「吞哪些键」这条边界有直接断言，而不是只能从
+/// widget 行为反推。
+@visibleForTesting
+bool gamepadBackMustBeSwallowed(KeyEvent event) =>
+    GamepadButton.fromKeyEvent(event) == GamepadButton.b;
 
 /// Desktop window-level fullscreen toggle for the remappable
 /// [ShortcutAction.globalToggleFullscreen] key (TODO-1093). Distinct from the
@@ -331,8 +359,11 @@ Future<void> _toggleWindowFullscreen() async {
 ///   framework's own Escape handling.
 /// * The gamepad B button triggers a global back/dismiss.
 /// * [focusNavigationEnabled] 为实验性「键盘/手柄焦点导航」总开关（默认关闭，见
-///   AppModel.experimentalFocusNavigationEnabled）。它控制手柄按钮分发、方向键
-///   移焦、手柄 B 返回；关闭时这些一律不挂。**关闭时还把 Tab / Shift+Tab 中和成
+///   AppModel.experimentalFocusNavigationEnabled）。它只控制**方向键/摇杆移焦**这
+///   套实验性焦点导航；**手柄按钮分发与注册表 globalBack 不再受它门控**（BUG-1266）：
+///   手柄改键是正式功能（快捷键设置里有完整 UI 与默认绑定表），把它挂在一个默认关闭
+///   的实验开关上，等于在默认安装上「配了手柄绑定却永不解析」。**关闭时还把
+///   Tab / Shift+Tab 中和成
 ///   [DoNothingIntent]**，停掉 Flutter [WidgetsApp] 内建的 Tab 焦点遍历——用户裁定
 ///   没开焦点导航时按 Tab 不该有动作（TODO-112）。开启时不中和，原生 Tab 遍历照常。
 ///   与焦点导航无关、始终生效的两件事不受其影响：
@@ -377,20 +408,26 @@ Widget wrapWithGlobalNavigation({
       if (_neutralizeBareSpace(event) == KeyEventResult.handled) {
         return KeyEventResult.handled;
       }
+      // BUG-1266：手柄按钮分发**不受** [focusNavigationEnabled] 门控。该开关默认
+      // 关闭，此前把整块手柄逻辑一起关掉，导致默认安装上「注册表 globalBack」根本
+      // 不参与解析——Android 上按 B 之所以还能返回，靠的是系统兜底（见下），于是
+      // 用户把「返回」改绑到 RB 后 B 依旧退出页面。
+      final KeyEventResult gamepadResult =
+          dispatchNativeGamepadButtonIntent(event);
+      if (gamepadResult == KeyEventResult.handled) return gamepadResult;
       if (focusNavigationEnabled) {
-        final KeyEventResult gamepadResult =
-            dispatchNativeGamepadButtonIntent(event);
-        if (gamepadResult == KeyEventResult.handled) return gamepadResult;
         final KeyEventResult arrowResult =
             _handleGlobalArrowFocus(navigatorKey, event);
         if (arrowResult == KeyEventResult.handled) return arrowResult;
-        // TODO-700 T1：注册表驱动的全局返回回退（B 或用户改键后的「返回」键）。仅
-        // 对未自解析 globalBack 的页面（设置/对话框）生效；home/reader 已在更近的
-        // 处理器消费。registry 为空（测试 / 未注入）时跳过，回退到 Escape。
-        if (registry != null) {
-          final KeyEventResult backResult =
-              _handleGlobalBack(navigatorKey, registry, event);
-          if (backResult == KeyEventResult.handled) return backResult;
+      }
+      // TODO-700 T1：注册表驱动的全局返回回退（B 或用户改键后的「返回」键）。仅
+      // 对未自解析 globalBack 的页面（设置/对话框）生效；home/reader 已在更近的
+      // 处理器消费。registry 为空（测试 / 未注入）时跳过，回退到 Escape。
+      if (registry != null) {
+        final KeyEventResult backResult =
+            _handleGlobalBack(navigatorKey, registry, event);
+        if (backResult == KeyEventResult.handled) return backResult;
+        if (focusNavigationEnabled) {
           // TODO-1093：注册表驱动的窗口级全屏切换（默认 F11）。放在 globalBack 之后、
           // Escape 之前；仅桌面有窗口时真正 toggle，移动端 no-op（见下）。
           final KeyEventResult fullscreenResult =
@@ -400,6 +437,9 @@ Widget wrapWithGlobalNavigation({
           }
         }
       }
+      // BUG-1266：走到这里说明**没有任何**处理器认领这次手柄按键。对手柄 B 必须
+      // 就地消费，绝不能放行——见 [gamepadBackMustBeSwallowed] 的完整理由。
+      if (gamepadBackMustBeSwallowed(event)) return KeyEventResult.handled;
       return _handleGlobalEscape(navigatorKey, event);
     },
     child: Shortcuts(
