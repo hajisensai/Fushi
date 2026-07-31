@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show ValueNotifier, mapEquals;
+import 'package:flutter/foundation.dart'
+    show ValueNotifier, immutable, mapEquals;
 import 'package:path/path.dart' as p;
 
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
@@ -19,6 +20,66 @@ class AnimeDownloadImportOutcome {
   const AnimeDownloadImportOutcome({required this.collectionId});
 
   final int collectionId;
+}
+
+/// 单个下载中任务的实时观测值（BUG-1294：进度之外补上速度/流量/peer 数）。
+///
+/// 值语义相等（==/hashCode），供「内容没变不通知」的发布路径用。
+@immutable
+class DownloadTaskStats {
+  const DownloadTaskStats({
+    required this.progress,
+    required this.downRateBps,
+    required this.upRateBps,
+    required this.downloadedBytes,
+    required this.uploadedBytes,
+    required this.numPeers,
+  });
+
+  /// 从后端快照投影。
+  factory DownloadTaskStats.fromSnapshot(TorrentSnapshot info) {
+    return DownloadTaskStats(
+      progress: info.progress.clamp(0.0, 1.0).toDouble(),
+      downRateBps: info.downRateBps,
+      upRateBps: info.upRateBps,
+      downloadedBytes: info.downloadedBytes,
+      uploadedBytes: info.uploadedBytes,
+      numPeers: info.numPeers,
+    );
+  }
+
+  /// 下载进度 0.0 ~ 1.0。
+  final double progress;
+
+  /// 实时下载速率（字节/秒）。
+  final int downRateBps;
+
+  /// 实时上传速率（字节/秒）。
+  final int upRateBps;
+
+  /// 累计下载字节。
+  final int downloadedBytes;
+
+  /// 累计上传字节。
+  final int uploadedBytes;
+
+  /// 当前连接的 peer 数。
+  final int numPeers;
+
+  @override
+  bool operator ==(Object other) {
+    return other is DownloadTaskStats &&
+        other.progress == progress &&
+        other.downRateBps == downRateBps &&
+        other.upRateBps == upRateBps &&
+        other.downloadedBytes == downloadedBytes &&
+        other.uploadedBytes == uploadedBytes &&
+        other.numPeers == numPeers;
+  }
+
+  @override
+  int get hashCode => Object.hash(progress, downRateBps, upRateBps,
+      downloadedBytes, uploadedBytes, numPeers);
 }
 
 /// 把种子文件列表解析为视频绝对路径列表。纯函数。
@@ -210,24 +271,84 @@ class AnimeDownloadService {
   final ValueNotifier<Map<String, double>> downloadProgress =
       ValueNotifier<Map<String, double>>(const <String, double>{});
 
-  /// 发布新一轮进度快照；内容没变不通知（避免每 20s 无谓重建任务行）。
-  void _publishProgress(Map<String, double> next) {
+  /// 下载中计划的实时观测值（planId → 速度/流量/peer 数；BUG-1294）。
+  /// 键集合与 [downloadProgress] 一致，UI 任务行用它渲染速度与流量。
+  final ValueNotifier<Map<String, DownloadTaskStats>> downloadStats =
+      ValueNotifier<Map<String, DownloadTaskStats>>(
+          const <String, DownloadTaskStats>{});
+
+  /// 发布新一轮进度快照；内容没变不通知（避免无谓重建任务行）。
+  void _publishProgress(
+    Map<String, double> next, [
+    Map<String, DownloadTaskStats> stats = const <String, DownloadTaskStats>{},
+  ]) {
+    if (!mapEquals(downloadStats.value, stats)) {
+      downloadStats.value = Map<String, DownloadTaskStats>.unmodifiable(stats);
+    }
     if (mapEquals(downloadProgress.value, next)) return;
     downloadProgress.value = Map<String, double>.unmodifiable(next);
   }
 
-  /// 启动周期轮询（先立即 tick 一次，再每 [interval] 一次）。
+  /// 有活跃下载（内置引擎）时的加密轮询间隔。20s 的常规 tick 对「速度/进度在
+  /// 动」的观感来说等于静止（BUG-1294）；内置引擎的 listTorrents 是本进程内
+  /// 同步 FFI，3s 一次开销可忽略。外接 qb 保持 [interval]：每 tick 都是一次
+  /// 全新 WebUI 登录，提频会放大认证失败计数（qb 默认 5 次封 IP 一小时）。
+  static const Duration activeInterval = Duration(seconds: 3);
+
+  /// 当前定时器的周期（诊断/测试用；未启动为 null）。
+  Duration? get currentPollInterval => _currentPeriod;
+  Duration? _currentPeriod;
+
+  /// 启动周期轮询（先立即 tick 一次，再按周期轮询）。
   void start() {
     if (_timer != null) return;
-    _timer = Timer.periodic(interval, (_) => unawaited(tick()));
+    _startTimer(interval);
     unawaited(tick());
+  }
+
+  void _startTimer(Duration period) {
+    _currentPeriod = period;
+    _timer = Timer.periodic(period, (_) => unawaited(tick()));
   }
 
   /// 停止周期轮询（进行中的 tick 自然收尾，不打断）。
   void stop() {
     _timer?.cancel();
     _timer = null;
+    _currentPeriod = null;
   }
+
+  /// 轮询周期决策（纯函数，可无定时器单测）：只有「内置引擎 + 有活跃下载」
+  /// 才提频到 [active]；外接 qb 恒用 [idle]（见 [activeInterval] 注释）。
+  static Duration resolvePollInterval({
+    required QbConnectionConfig? config,
+    required bool hasActiveDownloads,
+    required bool isDesktop,
+    required Duration idle,
+    Duration active = activeInterval,
+  }) {
+    final bool embedded = config != null &&
+        config.resolveBackend(isDesktop: isDesktop) ==
+            QbConnectionConfig.backendEmbedded;
+    return embedded && hasActiveDownloads ? active : idle;
+  }
+
+  /// tick 后按 [resolvePollInterval] 重排定时器周期。
+  void _reschedule() {
+    if (_timer == null) return; // 未 start / 已 stop：不自启。
+    final Duration want = resolvePollInterval(
+      config: _configProvider(),
+      hasActiveDownloads: downloadProgress.value.isNotEmpty,
+      isDesktop: _isDesktop(),
+      idle: interval,
+    );
+    if (want == _currentPeriod) return;
+    _timer?.cancel();
+    _startTimer(want);
+  }
+
+  static bool _isDesktop() =>
+      Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
   /// 轮询一次（可单独调用；测试用）。内置防重入：上一 tick 未完成则跳过。
   /// 整体容错：网络/文件系统异常静默跳过，下轮再试。
@@ -241,6 +362,7 @@ class AnimeDownloadService {
     } finally {
       _ticking = false;
     }
+    _reschedule();
   }
 
   /// 边下边播（提前入库）：不等种子完成，立刻按计划入库。顺序下载模式下视频
@@ -398,7 +520,14 @@ class AnimeDownloadService {
               when !info.isComplete && !info.isFailure)
             plan.id: info.progress.clamp(0.0, 1.0).toDouble(),
       };
-      _publishProgress(progressNext);
+      final Map<String, DownloadTaskStats> statsNext =
+          <String, DownloadTaskStats>{
+        for (final AnimeDownloadPlan plan in pending)
+          if (byHash[plan.id.toLowerCase()] case final TorrentSnapshot info
+              when !info.isComplete)
+            plan.id: DownloadTaskStats.fromSnapshot(info),
+      };
+      _publishProgress(progressNext, statsNext);
 
       for (final AnimeDownloadPlan plan in pending) {
         final TorrentSnapshot? info = byHash[plan.id.toLowerCase()];

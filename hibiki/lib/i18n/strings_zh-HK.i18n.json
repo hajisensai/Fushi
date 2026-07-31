@@ -2855,5 +2855,6 @@
   "anki_lapis_visual_field_definition_info_note": "Only visible on cards that keep more than one definition block; single-definition cards hide it.",
   "anki_lapis_visual_field_dictionary_name_note": "On Hibiki cards this label also carries the part-of-speech tags, so the two cannot be styled separately.",
   "game_upscaling_error_bundle_missing": "Hibiki installation is incomplete: the bundled Magpie component is missing. Reinstall or update Hibiki.",
-  "game_upscaling_error_bundle_invalid": "The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki."
+  "game_upscaling_error_bundle_invalid": "The bundled Magpie component is corrupted or did not pass verification. Reinstall or update Hibiki.",
+  "download_test_connection_failed_reason": "Connection failed: $message"
 }

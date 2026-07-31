@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1241 条。点号进各自文件。
+> 共 1244 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1295](bugs/BUG-1295-qb-test-connection-undiagnosable.md) | ✅ | ✅ | qB测试连接失败无法自查且本机免密被登录门卡死 |
+| [BUG-1294](bugs/BUG-1294-download-tasks-no-speed-traffic.md) | ✅ | ✅ | 下载任务行无速度与流量显示 |
+| [BUG-1293](bugs/BUG-1293-embedded-upload-mode-kills-download.md) | ✅ | ✅ | 内置引擎默认关上传误用upload_mode掐死下载 |
 | [BUG-1292](bugs/BUG-1292-magpie-bundled-only.md) | ✅ | ✅ | Magpie 内置后仍显示并保留下载路径 |
 | [BUG-1291](bugs/BUG-1291-destructive-confirm-checkbox-truncated.md) | ✅ | ✅ | 销毁确认弹窗勾选行文案被单行省略号截断 |
 | [BUG-1290](bugs/BUG-1290-bangumi-dashboard-history.md) | ✅ | ✅ | Bangumi 首页卡把映射误当观看历史且不列待手动关联条目 |

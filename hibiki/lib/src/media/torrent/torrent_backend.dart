@@ -13,6 +13,11 @@ class TorrentSnapshot {
     required this.savePath,
     required this.contentPath,
     required this.amountLeft,
+    this.downRateBps = 0,
+    this.upRateBps = 0,
+    this.downloadedBytes = 0,
+    this.uploadedBytes = 0,
+    this.numPeers = 0,
   });
 
   /// 种子 infohash（小写十六进制），后续查文件列表用。
@@ -35,6 +40,22 @@ class TorrentSnapshot {
 
   /// 剩余待下载字节数；解析不出为 -1（= 未知，不当作完成）。
   final int amountLeft;
+
+  /// 实时下载速率（字节/秒）。BUG-1294：native/qb 一直导出这些字段，此前在
+  /// 本抽象层被整体丢弃，UI 无从显示速度/流量。
+  final int downRateBps;
+
+  /// 实时上传速率（字节/秒）。
+  final int upRateBps;
+
+  /// 累计下载字节（流量显示用）。
+  final int downloadedBytes;
+
+  /// 累计上传字节。
+  final int uploadedBytes;
+
+  /// 当前连接的 peer 数。
+  final int numPeers;
 
   /// 做种/完成类状态：数据已全部落盘，只在做种或做种停止。
   static const Set<String> _seedingStates = <String>{

@@ -508,14 +508,41 @@ class EmbeddedTorrentSession {
         1;
   }
 
-  /// 上传模式开关（做种/上传总开关）。[infoHash] 空串 = 对所有种子生效；
-  /// [enabled] false = 停止上传但保持连接与下载（libtorrent upload_mode，
-  /// 「只下不上」的正规做法；限速设 0 是不限而非禁传）。1 成功 0 失败。
+  /// 【已废弃，仅存量兼容】历史上传开关。BUG-1293：libtorrent 的
+  /// `upload_mode` flag 语义是「不再发出 piece 请求」= **停止下载**，与旧
+  /// 注释宣称的「只下不上」正好相反——旧 DLL 的 `enabled: false` 会掐死下载。
+  /// 新代码一律走 [setUnchokeSlots]（会话级停上传）/ [pauseTorrent]（做种停止）；
+  /// 新 DLL 里本函数 `enabled: true` 只清 flag（治愈残留）、false 为 no-op。
   bool setUploadMode({String infoHash = '', required bool enabled}) {
     if (isClosed) return false;
     final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
     try {
       return _b.ht_set_upload_mode(_session, id, enabled ? 1 : 0) == 1;
+    } finally {
+      malloc.free(id);
+    }
+  }
+
+  /// 底层库是否支持上传策略正确原语（[setUnchokeSlots] + [pauseTorrent]）。
+  /// 旧的预编译 DLL 没有这两个符号时为 false，上传策略应整体降级为不动作。
+  bool get supportsUploadControl => _b.hasUploadControl;
+
+  /// 会话级 unchoke 槽位：[slots] >= 0 精确设置（0 = 不给任何 peer unchoke
+  /// 槽位 = 停止上传 payload，下载不受影响——piece 请求是协议消息不占槽）；
+  /// [slots] < 0 恢复 libtorrent 出厂默认。库不支持（老 DLL）返回 false。
+  bool setUnchokeSlots(int slots) {
+    if (isClosed || !_b.hasUploadControl) return false;
+    return _b.ht_set_unchoke_slots(_session, slots) == 1;
+  }
+
+  /// 种子暂停/恢复（做种停止的正确原语）。[infoHash] 空串 = 全量；
+  /// [pause] true = 清 auto_managed 再 pause（否则队列管理器自动恢复）、
+  /// false = 恢复 auto_managed 并 resume。库不支持（老 DLL）返回 false。
+  bool pauseTorrent(String infoHash, {required bool pause}) {
+    if (isClosed || !_b.hasUploadControl) return false;
+    final Pointer<Char> id = infoHash.toNativeUtf8().cast<Char>();
+    try {
+      return _b.ht_pause_torrent(_session, id, pause ? 1 : 0) == 1;
     } finally {
       malloc.free(id);
     }

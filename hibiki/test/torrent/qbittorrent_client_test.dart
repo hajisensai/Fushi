@@ -123,11 +123,16 @@ void main() {
         baseUrl: 'http://qb.local:8080',
         username: 'admin',
         password: 'wrong',
-        client: MockClient(
-            (http.Request request) async => http.Response('Fails.', 200)),
+        // 真实 qb：登录失败回 200 Fails.；未认证访问业务接口回 403。
+        client: MockClient((http.Request request) async =>
+            request.url.path == '/api/v2/auth/login'
+                ? http.Response('Fails.', 200)
+                : http.Response('Forbidden', 403)),
       );
       expect(await client.login(), isFalse);
-      // 登录失败后依赖会话的调用也应失败而不是抛异常。
+      // BUG-1295：失败原因可读，不再折叠成裸 null。
+      expect(client.lastFailure, contains('rejected'));
+      // 登录失败 + 匿名也 403 → 依赖会话的调用失败而不是抛异常。
       expect(await client.fetchVersion(), isNull);
       client.close();
     });
@@ -142,9 +147,71 @@ void main() {
         }),
       );
       expect(await client.login(), isFalse);
+      // BUG-1295：网络异常原样透出（与账密错区分开）。
+      expect(client.lastFailure, contains('connection refused'));
       expect(await client.fetchVersion(), isNull);
       expect(await client.addTorrents(<String>['magnet:?xt=x']), isFalse);
       expect(await client.fetchTorrents(), isEmpty);
+      client.close();
+    });
+
+    test('reports qBittorrent IP ban distinctly (BUG-1295)', () async {
+      final QBittorrentClient client = QBittorrentClient(
+        baseUrl: 'http://qb.local:8080',
+        username: 'admin',
+        password: 'secret',
+        client: MockClient((http.Request request) async => http.Response(
+            'Your IP address has been banned after too many failed '
+            'authentication attempts.',
+            403)),
+      );
+      expect(await client.fetchVersion(), isNull);
+      expect(client.lastFailure, contains('banned'));
+      client.close();
+    });
+  });
+
+  group('anonymous fallback（qb localhost 免密，BUG-1295）', () {
+    test('login Fails. 但接口匿名可用 → 探测成功且不带 Cookie', () async {
+      final List<http.Request> versionRequests = <http.Request>[];
+      int loginAttempts = 0;
+      final QBittorrentClient client = QBittorrentClient(
+        baseUrl: 'http://qb.local:8080',
+        username: '',
+        password: '',
+        client: MockClient((http.Request request) async {
+          if (request.url.path == '/api/v2/auth/login') {
+            loginAttempts++;
+            // localhost bypass 下登录接口仍校验账密：空账密 = Fails.
+            return http.Response('Fails.', 200);
+          }
+          expect(request.url.path, '/api/v2/app/version');
+          versionRequests.add(request);
+          return http.Response('v5.0.4', 200);
+        }),
+      );
+      expect(await client.fetchVersion(), 'v5.0.4');
+      for (final http.Request r in versionRequests) {
+        expect(_header(r, 'Cookie'), isNull, reason: '匿名直连不应带 SID cookie');
+      }
+      // 匿名态被缓存：后续调用不再反复撞登录门（避免触发 qb 失败计数封 IP）。
+      expect(await client.fetchVersion(), 'v5.0.4');
+      expect(loginAttempts, 1);
+      client.close();
+    });
+
+    test('登录与匿名都不通 → null + 保留登录失败原因', () async {
+      final QBittorrentClient client = QBittorrentClient(
+        baseUrl: 'http://qb.local:8080',
+        username: 'admin',
+        password: 'wrong',
+        client: MockClient((http.Request request) async =>
+            request.url.path == '/api/v2/auth/login'
+                ? http.Response('Fails.', 200)
+                : http.Response('Forbidden', 403)),
+      );
+      expect(await client.fetchVersion(), isNull);
+      expect(client.lastFailure, contains('rejected'));
       client.close();
     });
   });
@@ -354,6 +421,35 @@ void main() {
       ]);
       final List<TorrentSnapshot> infos = parseQbTorrentInfos(body);
       expect(infos.single.progress, 1.0);
+    });
+
+    test('parses speed/traffic/peer fields (BUG-1294)', () {
+      final String body = jsonEncode(<Map<String, dynamic>>[
+        <String, dynamic>{
+          'hash': 'h1',
+          'state': 'downloading',
+          'dlspeed': 1048576,
+          'upspeed': 2048,
+          'downloaded': 734003200,
+          'uploaded': 1024,
+          'num_seeds': 3,
+          'num_leechs': 2,
+        },
+      ]);
+      final TorrentSnapshot info = parseQbTorrentInfos(body).single;
+      expect(info.downRateBps, 1048576);
+      expect(info.upRateBps, 2048);
+      expect(info.downloadedBytes, 734003200);
+      expect(info.uploadedBytes, 1024);
+      expect(info.numPeers, 5);
+      // 字段缺省 → 安全 0，不影响老响应。
+      final TorrentSnapshot bare =
+          parseQbTorrentInfos('[{"hash":"h2"}]').single;
+      expect(bare.downRateBps, 0);
+      expect(bare.upRateBps, 0);
+      expect(bare.downloadedBytes, 0);
+      expect(bare.uploadedBytes, 0);
+      expect(bare.numPeers, 0);
     });
 
     test('tolerates bad JSON, non-list JSON and missing fields', () {

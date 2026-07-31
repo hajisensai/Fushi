@@ -58,7 +58,13 @@ class _FakeBackend implements TorrentBackend {
       const TorrentStorageResult.failure('not supported by fake');
 }
 
-TorrentSnapshot _snapshot({required double progress, required String state}) {
+TorrentSnapshot _snapshot({
+  required double progress,
+  required String state,
+  int downRateBps = 0,
+  int upRateBps = 0,
+  int downloadedBytes = 0,
+}) {
   return TorrentSnapshot(
     hash: _kHash,
     name: 'torrent',
@@ -67,6 +73,9 @@ TorrentSnapshot _snapshot({required double progress, required String state}) {
     savePath: '',
     contentPath: '',
     amountLeft: state == 'downloading' ? 100 : 0,
+    downRateBps: downRateBps,
+    upRateBps: upRateBps,
+    downloadedBytes: downloadedBytes,
   );
 }
 
@@ -137,6 +146,76 @@ void main() {
     // pending 清零后，下一轮 tick 保持空表。
     await service.tick();
     expect(service.downloadProgress.value, isEmpty);
+  });
+
+  test('tick 同步发布速度/流量观测值到 downloadStats（BUG-1294）', () async {
+    backend.torrents = <TorrentSnapshot>[
+      _snapshot(
+        progress: 0.42,
+        state: 'downloading',
+        downRateBps: 1048576,
+        upRateBps: 2048,
+        downloadedBytes: 4096,
+      ),
+    ];
+    await service.tick();
+    final DownloadTaskStats stats = service.downloadStats.value[_kHash]!;
+    expect(stats.progress, 0.42);
+    expect(stats.downRateBps, 1048576);
+    expect(stats.upRateBps, 2048);
+    expect(stats.downloadedBytes, 4096);
+
+    // 种子从后端消失 → stats 同步清空（与 downloadProgress 键集合一致）。
+    backend.torrents = <TorrentSnapshot>[];
+    await service.tick();
+    expect(service.downloadStats.value, isEmpty);
+  });
+
+  test('轮询周期决策：内置引擎 + 有活跃下载才提频（BUG-1294）', () {
+    const QbConnectionConfig embedded =
+        QbConnectionConfig(backend: QbConnectionConfig.backendEmbedded);
+    const Duration idle = Duration(seconds: 20);
+
+    expect(
+      AnimeDownloadService.resolvePollInterval(
+        config: embedded,
+        hasActiveDownloads: true,
+        isDesktop: true,
+        idle: idle,
+      ),
+      AnimeDownloadService.activeInterval,
+    );
+    // 无活跃下载 → 保持常规周期。
+    expect(
+      AnimeDownloadService.resolvePollInterval(
+        config: embedded,
+        hasActiveDownloads: false,
+        isDesktop: true,
+        idle: idle,
+      ),
+      idle,
+    );
+    // 外接 qb：每 tick 都是一次全新 WebUI 登录，提频会放大失败计数
+    // （qb 默认 5 次封 IP），恒用常规周期。
+    expect(
+      AnimeDownloadService.resolvePollInterval(
+        config: _kConfig,
+        hasActiveDownloads: true,
+        isDesktop: true,
+        idle: idle,
+      ),
+      idle,
+    );
+    // 未配置 → 常规周期。
+    expect(
+      AnimeDownloadService.resolvePollInterval(
+        config: null,
+        hasActiveDownloads: true,
+        isDesktop: true,
+        idle: idle,
+      ),
+      idle,
+    );
   });
 
   test('后端未配置时清空进度表', () async {

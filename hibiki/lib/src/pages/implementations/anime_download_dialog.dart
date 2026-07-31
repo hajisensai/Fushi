@@ -2205,10 +2205,12 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       final AnimeDownloadService? service =
           ref.read(appProvider).animeDownloadService;
       if (service != null) {
-        return ValueListenableBuilder<Map<String, double>>(
-          valueListenable: service.downloadProgress,
-          builder: (BuildContext context, Map<String, double> progress, _) =>
-              _buildPlanRowInner(theme, plan, progress[plan.id]),
+        // BUG-1294：订阅完整观测值（进度 + 速度/流量），不再只有百分比。
+        return ValueListenableBuilder<Map<String, DownloadTaskStats>>(
+          valueListenable: service.downloadStats,
+          builder:
+              (BuildContext context, Map<String, DownloadTaskStats> stats, _) =>
+                  _buildPlanRowInner(theme, plan, stats[plan.id]),
         );
       }
     }
@@ -2216,10 +2218,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   }
 
   Widget _buildPlanRowInner(
-    ThemeData theme,
-    AnimeDownloadPlan plan,
-    double? progress,
-  ) {
+      ThemeData theme, AnimeDownloadPlan plan, DownloadTaskStats? stats) {
+    final double? progress = stats?.progress;
     final ColorScheme scheme = theme.colorScheme;
     final bool eink = isEinkTheme(context);
     final bool downloading = plan.status == AnimeDownloadPlan.statusDownloading;
@@ -2249,8 +2249,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
               ),
             ),
     };
-    final String? progressText = (downloading && progress != null)
-        ? '${(progress * 100).toStringAsFixed(0)}%'
+    // BUG-1294：进度百分比之外补速度与累计流量（单位串是纯数字/符号，无需
+    // i18n key）。速率为 0 时仍显示（「0 B/s 卡住了」本身就是有效信息）。
+    final String? progressText = (downloading && stats != null)
+        ? '${(stats.progress * 100).toStringAsFixed(0)}% · '
+            '↓ ${HibikiByteFormat.speed(stats.downRateBps.toDouble())} · '
+            '↑ ${HibikiByteFormat.speed(stats.upRateBps.toDouble())} · '
+            '${HibikiByteFormat.bytes(stats.downloadedBytes)}'
         : null;
     final String? failReason =
         (failed && (plan.failReason?.isNotEmpty ?? false))

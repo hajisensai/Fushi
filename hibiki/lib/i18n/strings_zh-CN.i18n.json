@@ -2855,5 +2855,6 @@
   "anki_lapis_visual_field_definition_info_note": "仅在保留多段释义的卡片上可见；只有一段释义的卡片不会显示。",
   "anki_lapis_visual_field_dictionary_name_note": "Hibiki 生成的卡片把词性标签和词典名放在同一个标签里，两者无法分开设置样式。",
   "game_upscaling_error_bundle_missing": "Hibiki 安装包不完整：缺少内置 Magpie 组件。请重新安装或更新 Hibiki。",
-  "game_upscaling_error_bundle_invalid": "内置 Magpie 组件已损坏或校验失败。请重新安装或更新 Hibiki。"
+  "game_upscaling_error_bundle_invalid": "内置 Magpie 组件已损坏或校验失败。请重新安装或更新 Hibiki。",
+  "download_test_connection_failed_reason": "连接失败：$message"
 }
