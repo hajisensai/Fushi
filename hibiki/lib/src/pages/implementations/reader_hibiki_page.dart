@@ -520,9 +520,16 @@ html,body{width:100vw;height:100vh;overflow:hidden;background:#000}
       window.flutter_inappwebview.callHandler('onImageTap',img.src);
     });
   });
-  // BUG-1280：spread 是第四种独立文档（继歌词 BUG-756、VN BUG-1195 之后），没有正文
-  // hoshiReader 的 onTap/onTapEmpty。此前它唯一的手势是「点图片 → onImageTap」，
-  // 于是底栏一收起就再没有任何唤出通道——用户看不到返回按钮，就退不出这本书。
+  // BUG-1280：spread 是第四种独立文档（继歌词 BUG-756、VN BUG-1195 之后），HTML 本身
+  // 不含正文 hoshiReader 的 onTap/onTapEmpty，自带的手势只有「点图片 → onImageTap」。
+  // 底栏一收起就没有唤出通道 → 看不到返回按钮 → 退不出这本书。
+  //
+  // 注意这条在修复前**分平台**：Windows 的 loadData 丢 baseUrl，onLoadStop 判 stale，
+  // 正文引擎从不注入，spread 页确实一个唤出通道都没有；Android 保留 baseUrl，判据放行，
+  // 正文引擎（含 onTapEmpty）被误注进来，反而"意外"有过一条受 tapEmptyToHideChrome
+  // 门控的通道。那条误注入已由 _onChapterLoadComplete 的 spread 守卫堵掉（见其注释），
+  // 所以两个平台现在都只剩下面这一条、且语义一致的专桥。
+  //
   // 修法镜像歌词的 onLyricsTapEmpty：图片以外（letterbox 留白 / 页缝）的点击走专桥
   // 给 Dart，由 Dart 判唤出还是收起（chrome 可见性的真值只在 Dart 侧）。
   document.addEventListener('click', function(e){
@@ -1110,6 +1117,20 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   ({String? bookKey, String? title})? get lookupBookIdentity =>
       (bookKey: widget.bookKey, title: _book?.title);
   EpubSpreadMap? _spreadMap;
+
+  /// BUG-1280：**上一次交给 WebView 的文档是不是 spread 独立文档**
+  /// （[buildSpreadPageHtml]，两张整页 `<img>`，无正文 `hoshiReader`）。
+  ///
+  /// 只有两个写点，正好是 WebView 的两个装载原语：`_loadSpreadPage` 置位、
+  /// `_loadChapterDirectly` 复位——所以它跟踪的是「WebView 里现在是什么文档」，
+  /// 而不是「spread map 存不存在」（`_spreadMap != null` 在整本书生命周期为真，
+  /// 分不出当前这一页是双页还是普通章）。
+  ///
+  /// 存在的理由是 `onLoadStop` 的陈旧判据只比 URL 的 path，而 `_loadSpreadPage`
+  /// 传的 baseUrl 与 `_chapterUrl(_currentChapter)` 逐字相同 → 该判据**分不出**
+  /// spread 文档和正文章节，于是在保留 baseUrl 的平台上会把整份正文引擎注进
+  /// spread 文档。详见 `_onChapterLoadComplete` 的守卫注释。
+  bool _spreadDocumentLoaded = false;
   ReaderSettings? _settings;
   String? _extractDir;
 
