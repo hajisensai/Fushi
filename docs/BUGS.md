@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1201 条。点号进各自文件。
+> 共 1204 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1267](bugs/BUG-1267-gal-attach-missing-luna-pchooks.md) | ✅ | ✅ | 捕获窗口(attach)模式硬编码不装 LunaHook PC hooks，Unity 游戏中途对接抓不到文本 |
+| [BUG-1266](bugs/BUG-1266-gal-loopback-flush-no-settle.md) | ✅ | ✅ | galgame 查词/制卡时语音只到句子前半段：loopback 提前收束后不再补全 |
+| [BUG-1265](bugs/BUG-1265-gal-lookup-hook-revoked.md) | ✅ | ✅ | galgame 查词浮窗点击失效：低级鼠标钩子被系统吊销后不再重装 |
 | [BUG-1246](bugs/BUG-1246-galgame-helper-version-drift.md) | ✅ | ✅ | 随包 helper 已更新但完整旧安装被直接放行，native 修复永远不生效 |
 | [BUG-1245](bugs/BUG-1245-vn-reveal-chrome-also-advances.md) | ✅ | ✅ | VN唤出悬浮底栏时误同时推进 |
 | [BUG-1244](bugs/BUG-1244-vn-media-screen-skipped.md) | ✅ | ✅ | VN独立图片屏被逐句跳转永久略过 |

@@ -20,9 +20,24 @@ constexpr UINT kThreadDisarm = WM_APP + 0x61;
 // 维持「不查词不留全局钩子」的承诺。
 constexpr UINT kDisarmGraceMs = 3000;
 
+// BUG-1265 — 钩子存活性核对间隔（毫秒）。
+//
+// WH_MOUSE_LL 不是「装上就永远有效」的资源：回调若超过 HKCU\Control Panel\Desktop
+// 的 LowLevelHooksTimeout（默认 300ms）没返回，**系统会直接把这个钩子从链上摘掉**，
+// 既不通知也不让 HHOOK 失效。旧实现只在 Arm 时装一次，之后 `hook != nullptr` 永远为
+// 真，于是被摘掉之后再也不会重装——查词卡从此收不到任何点击，而台词照常更新（那条路
+// 走 IPC→ExecuteScript，与钩子无关），表现成「浮窗看得见、点不动，只能重启」。玩 gal
+// 时进程内同时有词典 FFI、WebView2 COM、语音捕获与转码在抢核，超时是现实会发生的。
+constexpr UINT kLivenessIntervalMs = 1000;
+
 // 钩子线程与调用线程共享的唯一可变状态：目标窗口。回调只读它，故用 atomic 而不是锁——
 // 钩子回调必须尽快返回，任何可能阻塞（锁竞争、堆分配）的东西都不该出现在这条路径上。
 std::atomic<HWND> g_target{nullptr};
+
+// BUG-1265 — 回调最近一次被调用的时刻。存活性判据的一半（另一半是光标是否移动过）。
+// 只在回调里写、只在钩子线程的定时器里读，relaxed 足够：判据比较的是「有没有变化」，
+// 不依赖它与其他内存的顺序关系。
+std::atomic<ULONGLONG> g_callback_tick{0};
 
 std::mutex g_thread_mutex;
 std::atomic<DWORD> g_thread_id{0};
@@ -30,6 +45,10 @@ std::atomic<DWORD> g_thread_id{0};
 HANDLE g_thread_ready = nullptr;
 
 LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
+  // BUG-1265 — 存活证据必须记在最前面：**移动事件**才是每秒都有的那类，用它证明
+  // 钩子还在链上；记在过滤分支之后就只剩点击/滚轮能刷新，判据立刻失效。
+  // GetTickCount64 是读共享页的纯计算，没有系统调用开销。
+  g_callback_tick.store(GetTickCount64(), std::memory_order_relaxed);
   // 只关心「按下」和「滚轮」：移动直接放行（这条分支每秒会跑上千次，在任何系统
   // 调用之前必须先被纯比较挡掉）。
   const bool is_click =
@@ -108,6 +127,14 @@ void HookThreadMain() {
   HHOOK hook = nullptr;
   // 宽限期卸载定时器（线程定时器，WM_TIMER 走本线程消息队列）。0 = 未挂起。
   UINT_PTR disarm_timer = 0;
+  // BUG-1265 — 存活性核对定时器：常驻，不随 Arm/Disarm 起停。armed 状态的真值是
+  // g_target，Arm/Disarm 消息只是「立刻生效」的快路径；让这只定时器周期性地把实际
+  // 钩子状态收敛到 g_target，SetWindowsHookEx 失败、PostThreadMessage 丢失、系统
+  // 摘钩这三类静默失败就都只是「下一拍自动补上」，不再各需一套特例分支。
+  UINT_PTR liveness_timer = SetTimer(nullptr, 0, kLivenessIntervalMs, nullptr);
+  POINT last_cursor{};
+  GetCursorPos(&last_cursor);
+  ULONGLONG last_seen_tick = g_callback_tick.load(std::memory_order_relaxed);
   while (GetMessage(&msg, nullptr, 0, 0) > 0) {
     if (msg.message == kThreadArm) {
       if (disarm_timer != 0) {
@@ -118,6 +145,35 @@ void HookThreadMain() {
         hook = SetWindowsHookEx(WH_MOUSE_LL, &HookProc,
                                 GetModuleHandle(nullptr), 0);
       }
+    } else if (msg.message == WM_TIMER && liveness_timer != 0 &&
+               msg.wParam == liveness_timer) {
+      POINT cursor{};
+      const BOOL got_cursor = GetCursorPos(&cursor);
+      const ULONGLONG seen_tick =
+          g_callback_tick.load(std::memory_order_relaxed);
+      if (g_target.load(std::memory_order_relaxed) != nullptr) {
+        if (hook == nullptr) {
+          // armed 但没有钩子：Arm 那次 SetWindowsHookEx 失败，或 kThreadArm 根本没
+          // 送达（PostThreadMessage 会失败，旧实现没检查返回值）。补装。
+          hook = SetWindowsHookEx(WH_MOUSE_LL, &HookProc,
+                                  GetModuleHandle(nullptr), 0);
+        } else if (got_cursor &&
+                   (cursor.x != last_cursor.x || cursor.y != last_cursor.y) &&
+                   seen_tick == last_seen_tick) {
+          // 判据零误报：光标位置变了，说明这一秒里系统一定投递过 WM_MOUSEMOVE；
+          // 而我们的回调一次都没跑，那它只可能已经不在钩子链上了（被系统摘掉，或被
+          // 链上更靠前的钩子吞掉——后者重装排到链首同样是正解）。
+          // 反向不成立的那半（光标没动 → 本就无事件）已被 cursor 比较排除，因此
+          // 「用户只是没动鼠标」永远不会触发重装。
+          UnhookWindowsHookEx(hook);
+          hook = SetWindowsHookEx(WH_MOUSE_LL, &HookProc,
+                                  GetModuleHandle(nullptr), 0);
+        }
+      }
+      if (got_cursor) {
+        last_cursor = cursor;
+      }
+      last_seen_tick = seen_tick;
     } else if (msg.message == kThreadDisarm) {
       // g_target 已由 Disarm 侧清空（回调此刻起纯放行）；这里只安排宽限期后的
       // 真正卸载。已有挂起定时器就沿用原先的到期时间。
@@ -136,6 +192,9 @@ void HookThreadMain() {
         hook = nullptr;
       }
     }
+  }
+  if (liveness_timer != 0) {
+    KillTimer(nullptr, liveness_timer);
   }
   if (hook != nullptr) {
     UnhookWindowsHookEx(hook);
