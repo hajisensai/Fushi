@@ -16,6 +16,7 @@ import 'dart:io';
 
 import 'package:hibiki/src/media/media_cover_service.dart';
 import 'package:hibiki/src/media/metadata/credential_redaction.dart';
+import 'package:hibiki/src/media/metadata/transport_retry.dart';
 import 'package:hibiki/src/media/video/scraper/bangumi_client.dart'
     show ScrapeNetworkException;
 import 'package:hibiki/src/media/video/video_import_dialog.dart'
@@ -26,10 +27,23 @@ import 'package:path/path.dart' as p;
 
 /// 海报下载器。构造注入 [http.Client]（默认自建），测试用 mock client。
 class CoverDownloader {
-  CoverDownloader({http.Client? client}) : _client = client ?? http.Client();
+  CoverDownloader({
+    http.Client? client,
+    this.maxAttempts = kTransportMaxAttempts,
+    Future<void> Function(Duration delay)? retrySleep,
+  })  : _client = client ?? http.Client(),
+        _retrySleep = retrySleep;
 
   final http.Client _client;
 
+  /// 传输失败时的总尝试次数（含首次）。与搜索同一根因：链路会成片丢连接（BUG-1272）。
+  /// 图片下载是幂等 GET，重放安全。
+  final int maxAttempts;
+
+  final Future<void> Function(Duration delay)? _retrySleep;
+
+  /// 单次尝试超时。比搜索宽：海报是几百 KB 的响应体，慢速链路上传输本身就要时间，
+  /// 这里不能像搜索那样按「建连成败」取值。
   static const Duration _timeout = Duration(seconds: 30);
 
   /// 下载 [url] 指向的海报，落地为 [bookUid] 对应封面，返回**绝对路径**（可直接
@@ -53,7 +67,13 @@ class CoverDownloader {
 
     final http.Response response;
     try {
-      response = await _client.get(Uri.parse(url)).timeout(_timeout);
+      // 只有传输失败（拿不到响应）会重试；下面对非 2xx 的判断在 try 之外，因此
+      // 404 / 403 的坏 URL 依旧一次就失败，不会被重放。
+      response = await runWithTransportRetry<http.Response>(
+        () => _client.get(Uri.parse(url)).timeout(_timeout),
+        maxAttempts: maxAttempts,
+        sleep: _retrySleep,
+      );
     } on TimeoutException {
       throw const ScrapeNetworkException('Poster download timed out');
     } catch (e) {

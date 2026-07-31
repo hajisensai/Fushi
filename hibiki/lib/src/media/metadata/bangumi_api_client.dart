@@ -22,6 +22,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:hibiki/src/media/metadata/transport_retry.dart';
 import 'package:http/http.dart' as http;
 
 /// 纯函数：把用户粘贴的 Bangumi 条目 **URL** 解析为 subject id（数字串）。
@@ -104,17 +105,29 @@ typedef BangumiSendGate = Future<http.Response> Function(
   Future<http.Response> Function() send,
 );
 
+/// 单次尝试的超时（BUG-1272）。
+///
+/// 刻意**短**：实测成功的请求 0.5~0.8s 就返回，失败的则是 TCP SYN 石沉大海、等到
+/// 内核重传放弃（Windows 约 21s）——两者之间没有中间地带。所以这里的取值不是「等
+/// 多久算慢」，而是「多快认定这条连接已经死了、该换一条重试」。调长只会拖慢失败
+/// 路径而一条也救不回来。
+const Duration kBangumiRequestTimeout = Duration(seconds: 8);
+
 /// Bangumi API v0 共享传输客户端。
 class BangumiApiClient {
   BangumiApiClient({
     http.Client? client,
     required this.userAgent,
     this.baseUrl = 'https://api.bgm.tv/v0',
-    this.timeout = const Duration(seconds: 15),
+    this.timeout = kBangumiRequestTimeout,
+    this.maxAttempts = kTransportMaxAttempts,
+    this.retryBackoff = kTransportRetryBackoff,
     this.accessToken,
     BangumiSendGate? gate,
+    Future<void> Function(Duration delay)? retrySleep,
   })  : _client = client ?? http.Client(),
         _ownsClient = client == null,
+        _retrySleep = retrySleep,
         _gate = gate ?? _directSend;
 
   final http.Client _client;
@@ -124,7 +137,18 @@ class BangumiApiClient {
   final String userAgent;
 
   final String baseUrl;
+
+  /// **单次尝试**的超时（不是整条请求的总预算）；总耗时上界还要乘 [maxAttempts]。
   final Duration timeout;
+
+  /// 传输失败时的总尝试次数（含首次）。设为 1 即退回「一次定生死」的旧行为。
+  final int maxAttempts;
+
+  /// 重试基础退避，第 n 次重试等 `retryBackoff * n`。
+  final Duration retryBackoff;
+
+  /// 测试注入的等待实现，避免真实退避拖慢单测。
+  final Future<void> Function(Duration delay)? _retrySleep;
 
   /// 可选 access token（Bearer）：只有 R18 条目才必须带（galgame 侧用）。
   final String? accessToken;
@@ -171,7 +195,16 @@ class BangumiApiClient {
   ) async {
     final http.Response response;
     try {
-      response = await _gate(send);
+      // 重试包在 [_gate] **外层**：每次重试都重新过一遍限流器（galgame 侧注入），
+      // 否则重试会绕过令牌桶，把「链路抖动」变成「对公益 API 的连打」。
+      // 只有传输失败（拿不到响应）才会走到 catch —— 见 transport_retry.dart 的
+      // 正确性前提：package:http 对非 2xx 不抛异常，403/404/429 原样返回不重试。
+      response = await runWithTransportRetry<http.Response>(
+        () => _gate(send),
+        maxAttempts: maxAttempts,
+        backoff: retryBackoff,
+        sleep: _retrySleep,
+      );
     } on TimeoutException {
       throw const BangumiTransportException('request timed out');
     } on BangumiTransportException {

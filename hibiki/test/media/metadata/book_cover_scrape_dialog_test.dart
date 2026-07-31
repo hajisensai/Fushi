@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/media/metadata/book_cover_scrape_dialog.dart';
 import 'package:hibiki/src/media/metadata/book_metadata_scraper.dart';
+import 'package:hibiki/src/media/metadata/transport_retry.dart';
 import 'package:hibiki/src/utils/misc/error_log_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -63,7 +64,12 @@ void main() {
     final BookMetadataScraper scraper = BookMetadataScraper(
       client: MockClient((http.Request req) async {
         calls++;
-        if (calls == 1) throw http.ClientException('network down');
+        // BUG-1272 起传输失败会自动重试 [kTransportMaxAttempts] 次，所以要让整轮
+        // 搜索都失败，必须打满一整轮尝试；只失败一次的话现在会被自动重试救回来，
+        // 用户根本看不到错误行（这正是本次修复的目的）。手动重试从下一轮开始成功。
+        if (calls <= kTransportMaxAttempts) {
+          throw http.ClientException('network down');
+        }
         return http.Response.bytes(
           utf8.encode('{"data":[{"id":1,"name":"Yotsuba to!",'
               '"images":{"large":"https://i/l.jpg"}}]}'),
