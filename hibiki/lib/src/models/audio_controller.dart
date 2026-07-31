@@ -47,7 +47,17 @@ class AudioController {
 
   void emitMediaPause() => _mediaPauseController.add(null);
 
-  Future<void> initialiseHandler() async {
+  /// 在飞/已完成的初始化 future（并发安全 + 可重复 await 的单次初始化）。
+  /// openMedia 只起跑不 await（audio_service 冷启不再阻塞导航）；真正需要
+  /// handler 的消费端（audiobook 会话 attach/start、书架后台听书）各自 await
+  /// 同一份。方法体自带 catch 兜底（构造本地 handler）、永不失败，故无需
+  /// 失败重置。旧实现只查 `_audioHandler != null`，并发双调会双跑
+  /// AudioService.init。
+  Future<void>? _handlerInit;
+
+  Future<void> initialiseHandler() => _handlerInit ??= _initialiseHandlerOnce();
+
+  Future<void> _initialiseHandlerOnce() async {
     if (_audioHandler != null) return;
 
     try {

@@ -4078,7 +4078,14 @@ class AppModel with ChangeNotifier {
 
     mediaSource.clearCurrentSentence();
     mediaSource.clearExtraData();
-    await initialiseAudioHandler();
+    // TODO-perf（开媒体反馈）：audio_service 冷启是平台通道重活（冷路径可达数百
+    // ms），此前串行挡在 Navigator.push 之前——点下卡片后到路由动画开始前屏幕零
+    // 反馈的那段就在这里。改为起跑不阻塞导航：AudioController.initialiseHandler
+    // 记忆化在飞 future（并发安全），真正需要 handler 的消费端（reader 的
+    // _resolveAudioSlot、书架后台听书 startBackgroundListening）await 同一份，
+    // 「会话挂通知前 handler 必就绪」的时序契约不变。方法自带兜底构造、永不抛，
+    // unawaited 安全。
+    unawaited(initialiseAudioHandler());
 
     _currentMediaSource = mediaSource;
     if (item != null) {
