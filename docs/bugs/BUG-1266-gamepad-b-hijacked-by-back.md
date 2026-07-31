@@ -50,7 +50,7 @@ attach，却**没有人再请求一次焦点**。于是焦点整段滞留在页�
 快路径（`load()` 返回即出画）不进 `_promoteVideoReady`，其 contentReady 回收时
 `Video` 已挂载、本就有效，行为不变。
 
-- **[x] ① 已修复** — 提交 `e88c569e0`
+- **[x] ① 已修复** — 提交 `d7b474b40`
   - A：手柄按钮分发 + 注册表 `globalBack` 移出 `focusNavigationEnabled` 门控，
     门控范围收窄到只剩方向键移焦（`global_navigation.dart`）。
   - B：新增 `gamepadBackMustBeSwallowed`，在最外层就地消费**没有任何处理器认领**的
