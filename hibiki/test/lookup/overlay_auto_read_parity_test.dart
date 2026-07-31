@@ -108,6 +108,16 @@ void main() {
             '否则被顶掉的旧查词会读出与屏幕不符的旧词（BUG-1210）');
   });
 
+  test('剪贴板变化不朗读，面板手动点词与覆盖窗显式查词仍可朗读', () {
+    expect(panel.contains('if (request.allowsAutomaticAudio)'), true,
+        reason: '面板 update 收到剪贴板变化时不得自动播放音频');
+    expect(
+      overlay.contains('if (autoRead)'),
+      true,
+      reason: '瞬态覆盖窗 root 查词必须执行调用方传入的朗读资格',
+    );
+  });
+
   test('每条查词路径都朗读：两个表面里凡是查词的方法，都不能少了朗读调用', () {
     // 为什么要按**方法**粒度再守一层：auto_read_surface_coverage_guard 是按**文件**
     // 粒度的（新增查词表面必须声明），但同一个文件里删掉其中一条路径的朗读它抓不到——

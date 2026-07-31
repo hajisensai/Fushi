@@ -62,6 +62,7 @@ class DesktopLookupDispatcher {
           request.text,
           sentence: request.text,
           passiveStream: request.passiveStream,
+          autoRead: request.allowsAutomaticAudio,
         ));
       case DesktopLookupConsumer.textWindow:
         DesktopLookupService.instance.clearPending();
