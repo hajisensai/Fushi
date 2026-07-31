@@ -171,6 +171,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.backgroundColor,
     this.backgroundOpacity = 0,
     this.bottomPadding = 75,
+    this.secondaryBottomPadding,
     this.controlsVisible,
     this.controlsBottomReserve = kVideoControlsBottomReserve,
     this.controlsTopReserve = kVideoControlsTopReserve,
@@ -260,6 +261,14 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// [controlsVisible] 在控制条可见时对 [controlsBottomReserve] 取下限（max），此处只是
   /// 用户手选的基线位置。
   final double bottomPadding;
+
+  /// 副字幕层的**独立**位置基线（[VideoSubtitleStyle.secondaryBottomPadding]）。
+  ///
+  /// null = 跟随 [bottomPadding]（历史行为）。非 null 时副字幕层的锚点边距改用本值：
+  /// 强制置顶的纯 SRT 副字幕用它当**顶距**，带自带底部锚点的副字幕用它当底距。主字幕层
+  /// 恒用 [bottomPadding]，两层不再互相牵动（此前共用一个字段，调主字幕位置会把副字幕
+  /// 一起挪走）。控制条 / 顶栏避让照旧对各自基线取下限（max），语义不变。
+  final double? secondaryBottomPadding;
 
   /// media_kit 控制条当前是否可见（TODO-129/161）。非 null 时驱动字幕动态避让：可见时
   /// 字幕底部 padding 取 `max([bottomPadding], [controlsBottomReserve])`（字幕底缘骑到
@@ -768,7 +777,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         // （KFX/多层特效把一句拆成多条同时事件，样式被统一后只剩裸文本拷贝，同位叠印成
         // 乱字——正是「样式不尊重、位置却尊重」的半吊子语义的病根；文本互异的堆叠分行）。
         final List<(String, List<AudioCue>)> groups = widget.respectAssStyle
-            ? _groupMainCuesByPosition(cues)
+            ? _groupMainCuesByPosition(cues, isSecondary: isSecondary)
             : <(String, List<AudioCue>)>[('plain', _uniqueByText(cues))];
 
         final List<(String, Widget)> positioned = <(String, Widget)>[
@@ -845,11 +854,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 顺序。同组的 cue 共享一个位置、竖排堆叠；不同组各自独立定位，从而顶部歌词与底部对白
   /// 不再被裹挟到同一处。返回每组的 (分组键, cue 列表)（组内顺序即活动集顺序；分组键给
   /// [_syncGroupSlots] 作跨帧槽位状态的身份，TODO-1372）。
-  List<(String, List<AudioCue>)> _groupMainCuesByPosition(List<AudioCue> cues) {
+  /// [isSecondary]：本次分组属于哪一层——底部基线折叠判据要拿**该层**的用户基线
+  /// （[_layerBaseline]）当阈值，否则副字幕的分组会钉在主字幕基线上、与它自己的渲染基线
+  /// 脱节。分组键只在层内使用（调用方已加 `m|` / `s|` 前缀），两层同形键不会互串。
+  List<(String, List<AudioCue>)> _groupMainCuesByPosition(List<AudioCue> cues,
+      {required bool isSecondary}) {
     final Map<String, List<AudioCue>> byKey = <String, List<AudioCue>>{};
     final List<(String, List<AudioCue>)> order = <(String, List<AudioCue>)>[];
     for (final AudioCue cue in cues) {
-      final String key = _positionKey(cue.markup);
+      final String key = _positionKey(cue.markup, isSecondary: isSecondary);
       final List<AudioCue>? existing = byKey[key];
       if (existing != null) {
         existing.add(cue);
@@ -866,7 +879,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // 一个堆叠组（竖排分行）；同文本的多层拷贝（卡拉OK特效层，BUG-833，通常 \pos / 顶部锚点，
     // 不落底部基线桶）不合并，仍各自成组同位叠画出特效。
     final List<(String, List<AudioCue>)> grouped =
-        _mergeBottomBaselineGroups(order);
+        _mergeBottomBaselineGroups(order, isSecondary: isSecondary);
     // 组内按 MarginV 升序稳定排序：折进同一基线桶的底部双语（JP MarginV=4 + CH MarginV=30）
     // 竖排堆叠时，MarginV 小的贴锚点（底部锚组 slot0 在底）、大的在上，复现 libass「MarginV
     // 越大离底越远」的相对次序，不再依赖字幕文件里 JP/CH 的书写先后（本 BUG 的次序保证）。
@@ -901,8 +914,10 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 桶内出现重复文本（同句多层拷贝=卡拉OK特效层，应同位叠画不拆行）则整桶不合并，保持
   /// [_positionKey] 原分组（各层同位叠画，BUG-833 不回归）。非底部 / 带显式位置的组原样保留。
   List<(String, List<AudioCue>)> _mergeBottomBaselineGroups(
-    List<(String, List<AudioCue>)> order,
-  ) {
+    List<(String, List<AudioCue>)> order, {
+    required bool isSecondary,
+  }) {
+    final double userBase = _layerBaseline(isSecondary);
     bool isBottomBaselineFolded(AudioCue cue) {
       final SubtitleMarkup? m = cue.markup;
       if (m == null) return true; // 纯 SRT / 无 markup：底部居中、无 MarginV → 折叠
@@ -912,7 +927,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       if (v != SubtitleVAlign.bottom) return false;
       final double? mv = m.cueStyle?.marginV;
       if (mv == null || mv <= 0) return true;
-      return mv <= widget.bottomPadding;
+      return mv <= userBase;
     }
 
     // 按水平锚点分桶收集底部基线折叠组的 order 下标（组内 cue 同键、同折叠态，取代表判断）。
@@ -987,7 +1002,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 使它们同组、竖排堆叠（libass 的碰撞下推同效果），不再叠印。真正超出基线（标题
   /// MarginV=400 等）才保留各自 authored 高度（TODO-1341 行为不变）。顶部/中部锚点无 max
   /// 夹逻辑（[_paddingFor] 直接用 scaledMarginV），保持按原始 MarginV 分键。
-  String _positionKey(SubtitleMarkup? markup) {
+  String _positionKey(SubtitleMarkup? markup, {required bool isSecondary}) {
     final SubtitlePos? pf = markup?.posFraction;
     final SubtitleAnchor? a = markup?.anchor;
     final int av = (a?.vertical ?? SubtitleVAlign.bottom).index;
@@ -1026,7 +1041,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
       // 碰撞下推同效果），只有真正的高位标题（大 MarginV，如 400）才独立占 authored 高度
       // （TODO-1341 不回归）。以原始值入键（而非缩放 round），组身份也不随显示尺寸漂移，
       // 跨帧槽位状态（[_syncGroupSlots]）不因窗口缩放churn。
-      mv = mvRaw <= widget.bottomPadding ? -1 : mvRaw.round();
+      mv = mvRaw <= _layerBaseline(isSecondary) ? -1 : mvRaw.round();
     } else {
       mv = mvRaw.round();
     }
@@ -1186,7 +1201,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return Align(
       alignment: _alignFor(anchor),
       child: _anchoredPadded(
-          anchor, content, scaledMarginV, scaledMarginL, scaledMarginR),
+          anchor, content, scaledMarginV, scaledMarginL, scaledMarginR,
+          isSecondary: isSecondary),
     );
   }
 
@@ -2195,6 +2211,15 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return Alignment(x, y);
   }
 
+  /// 该层的**用户位置基线**：主字幕恒 [VideoSubtitleOverlay.bottomPadding]，副字幕在用户
+  /// 单独调过（[VideoSubtitleOverlay.secondaryBottomPadding] 非 null）时用自己的值、否则
+  /// 跟随主字幕（历史行为）。位置计算全部经此取值，不再有第二处直读 `widget.bottomPadding`
+  /// 的层无关分支——这正是「调主字幕位置把副字幕一起挪走」的根因。
+  double _layerBaseline(bool isSecondary) =>
+      isSecondary && widget.secondaryBottomPadding != null
+          ? widget.secondaryBottomPadding!
+          : widget.bottomPadding;
+
   /// 顶部锚点用顶部 padding、中部不加、底部按 [controlsVisible] 取避让下限。
   ///
   /// 底部锚点避让是「字幕底缘 ≥ 控制条顶缘」的约束，故控制条可见时底部 padding 取
@@ -2206,14 +2231,19 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 在控制条可见时真正被抬升盖过被抬高的移动进度条。用户手选高位（> reserve）时 max 取其
   /// 值、不被避让改写；手选低位（< reserve）时控制条可见仍抬到 reserve 躲进度条、隐藏落回
   /// 原值。避让只对底部锚点生效——控制条在底部，顶部 / 中部字幕不会被进度条遮挡。
+  ///
+  /// [isSecondary] 决定取哪条用户基线（[_layerBaseline]）：主字幕恒 [bottomPadding]，
+  /// 副字幕在用户单独调过后用 [secondaryBottomPadding]。避让/MarginV 的 max 语义两层同构。
   EdgeInsets _paddingFor(SubtitleAnchor? a, bool controlsVisible,
-      double? scaledMarginV, double? scaledMarginL, double? scaledMarginR) {
+      double? scaledMarginV, double? scaledMarginL, double? scaledMarginR,
+      {required bool isSecondary}) {
     final SubtitleVAlign v = a?.vertical ?? SubtitleVAlign.bottom;
-    // 底部锚点基线：用户 bottomPadding 与 ASS 缩放 MarginV 取**较大值**（单调抬升——绝不低于
+    // 本层的用户基线：主字幕恒 bottomPadding，副字幕在用户单独调过时用自己的基线。
+    final double userBase = _layerBaseline(isSecondary);
+    // 底部锚点基线：用户基线与 ASS 缩放 MarginV 取**较大值**（单调抬升——绝不低于
     // 用户基线，保 TODO-129/161/238 控制条避让不回归；作者用大 MarginV 要求更高时才抬）。
-    final double bottomBase = scaledMarginV == null
-        ? widget.bottomPadding
-        : math.max(widget.bottomPadding, scaledMarginV);
+    final double bottomBase =
+        scaledMarginV == null ? userBase : math.max(userBase, scaledMarginV);
     // ASS MarginL/MarginR 水平边距：Align 内侧 padding 恰是 ASS 排版盒语义——居中对齐时
     // 盒宽 = 文本 + L + R、Align 居中该盒 → 文本中心右移 (L-R)/2；左/右对齐时文本起点 /
     // 终点分别落在 L / 宽-R。无边距恒 0（srt/vtt 像素级不变）。
@@ -2236,7 +2266,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
           left: left,
           right: right,
           top: () {
-            final double topBase = scaledMarginV ?? widget.bottomPadding;
+            final double topBase = scaledMarginV ?? userBase;
             return controlsVisible
                 ? math.max(topBase, widget.controlsTopReserve)
                 : topBase;
@@ -2254,12 +2284,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
   /// 见 [_paddingFor]）。取下限而非加法，故基线 < 控制条高时不会把字幕顶飞、手选高位也
   /// 不被改写（同一字段无特例分支）。
   Widget _anchoredPadded(SubtitleAnchor? anchor, Widget child,
-      double? scaledMarginV, double? scaledMarginL, double? scaledMarginR) {
+      double? scaledMarginV, double? scaledMarginL, double? scaledMarginR,
+      {required bool isSecondary}) {
     final ValueListenable<bool>? visible = widget.controlsVisible;
     if (visible == null) {
       return Padding(
           padding: _paddingFor(
-              anchor, false, scaledMarginV, scaledMarginL, scaledMarginR),
+              anchor, false, scaledMarginV, scaledMarginL, scaledMarginR,
+              isSecondary: isSecondary),
           child: child);
     }
     return ValueListenableBuilder<bool>(
@@ -2270,7 +2302,8 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
           padding: _paddingFor(anchor, controlsVisible, scaledMarginV,
-              scaledMarginL, scaledMarginR),
+              scaledMarginL, scaledMarginR,
+              isSecondary: isSecondary),
           child: padded,
         );
       },

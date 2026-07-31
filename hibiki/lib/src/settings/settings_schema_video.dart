@@ -856,6 +856,41 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
+          // 副字幕垂直位置：与上面的主字幕位置**同量纲、各自独立**（此前两层共用
+          // `bottomPadding` 一个字段——主字幕拿它当底距、置顶的副字幕拿它当顶距，调一个
+          // 必然把另一个也拽走）。value 在用户没单独调过时回落到主字幕位置（显示成
+          // 「当前跟随主字幕」的那个值），一拖即写入 secondaryBottomPadding、从此解耦。
+          SettingsSliderItem(
+            id: 'video.subtitle.position_secondary',
+            title: t.video_setting_subtitle_position_secondary,
+            icon: Icons.height_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 145,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            min: 0,
+            max: 240,
+            divisions: 24,
+            value: (SettingsContext settingsContext) {
+              final VideoSubtitleStyle s =
+                  currentVideoSubtitleStyle(settingsContext);
+              return (s.secondaryBottomPadding ?? s.bottomPadding)
+                  .clamp(0, 240);
+            },
+            onChanged: (SettingsContext settingsContext, double v) {
+              previewVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(secondaryBottomPadding: v),
+              );
+            },
+            onChangeEnd: (SettingsContext settingsContext, double v) async {
+              await commitVideoSubtitleStyle(
+                settingsContext,
+                (VideoSubtitleStyle s) => s.copyWith(secondaryBottomPadding: v),
+              );
+            },
+          ),
           // ── Jimaku（在线字幕源）───────────────────────────────────────────
           // 此前 API key 只能在三个对话框（视频字幕 / 番剧下载 / 批量匹配）里就地填，
           // 设置页压根没有入口；下载对话框那个还只在 key 为空时才显示，key 填错了

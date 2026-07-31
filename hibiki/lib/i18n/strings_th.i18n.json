@@ -2765,6 +2765,7 @@
   "selection_web_search": "Search the web",
   "selection_web_search_unavailable": "No app can search the web.",
   "selection_share_failed": "Could not open the share sheet.",
+  "video_setting_subtitle_position_secondary": "Secondary subtitle position",
   "dict_download_learning_language": "Learning language",
   "dict_category_bilingual": "Bilingual",
   "dict_category_monolingual": "Monolingual",

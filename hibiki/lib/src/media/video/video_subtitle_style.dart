@@ -236,6 +236,7 @@ class VideoSubtitleStyle {
     required this.backgroundColor,
     required this.backgroundOpacity,
     required this.bottomPadding,
+    this.secondaryBottomPadding,
   });
 
   static const int defaultFontWeight = 700;
@@ -296,6 +297,17 @@ class VideoSubtitleStyle {
   final double backgroundOpacity;
   final double bottomPadding;
 
+  /// 副字幕层的**独立**位置基线（距其锚点边的距离；纯 SRT 副字幕强制置顶时即顶距）。
+  ///
+  /// null = 跟随 [bottomPadding]（历史行为、旧数据零迁移）：此前主副两层共用同一个
+  /// [bottomPadding] 字段——主字幕拿它当底距、副字幕（强制置顶）拿它当顶距，调一个
+  /// 必然把另一个也拽走，用户没法把主字幕压低同时把副字幕抬高。分成两条基线后，
+  /// [VideoSubtitleOverlay] 按层取值（见 `_layerBaseline`），两层各自独立。
+  ///
+  /// 只有用户真正拖过「副字幕垂直位置」才写具体值；没拖过恒为 null、逐字沿用主字幕
+  /// 位置（Never break userspace：老用户外观像素级不变）。
+  final double? secondaryBottomPadding;
+
   VideoSubtitleStyle copyWith({
     double? fontSize,
     Color? textColor,
@@ -305,6 +317,9 @@ class VideoSubtitleStyle {
     Color? backgroundColor,
     double? backgroundOpacity,
     double? bottomPadding,
+    // null = 不改（保持当前值，含「仍跟随主字幕」的 null 态）。设置面板拖动副字幕位置
+    // 时才传具体值；无「改回跟随」的入口，故不需要 backgroundColor 那样的 reset 标志。
+    double? secondaryBottomPadding,
     // [backgroundColor] 与 null 语义冲突：`null` 既是「不改」又是「显式清空跟随默认黑」。
     // 用显式 [resetBackgroundColor] 标志区分——true 时把 [backgroundColor] 强制清成 null
     // （回到 [kDefaultSubtitleBackgroundColor] 固定默认），供设置面板「默认（黑）」选项用。
@@ -321,6 +336,8 @@ class VideoSubtitleStyle {
           : (backgroundColor ?? this.backgroundColor),
       backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,
       bottomPadding: bottomPadding ?? this.bottomPadding,
+      secondaryBottomPadding:
+          secondaryBottomPadding ?? this.secondaryBottomPadding,
     );
   }
 
@@ -355,6 +372,8 @@ class VideoSubtitleStyle {
         'backgroundColor': s.backgroundColor?.toARGB32(),
         'backgroundOpacity': s.backgroundOpacity,
         'bottomPadding': s.bottomPadding,
+        // null（从未单独调过副字幕位置）也照写：decode 侧 null → 继续跟随主字幕。
+        'secondaryBottomPadding': s.secondaryBottomPadding,
       });
 
   static VideoSubtitleStyle decode(String? json) {
@@ -414,6 +433,13 @@ class VideoSubtitleStyle {
         ).clamp(0.0, 1.0),
         bottomPadding:
             num2d(d['bottomPadding'], defaults.bottomPadding).clamp(0, 400),
+        // 缺字段（旧数据）/ 非数字 → null = 副字幕继续跟随主字幕位置（旧外观不变）。
+        secondaryBottomPadding: d['secondaryBottomPadding'] is num
+            ? (d['secondaryBottomPadding'] as num)
+                .toDouble()
+                .clamp(0, 400)
+                .toDouble()
+            : null,
       );
     } catch (_) {
       return defaults;
