@@ -114,7 +114,14 @@ void main() {
     );
 
     final double contentLeft = tester.getTopLeft(content).dx;
-    final Finder strips = find.byType(HibikiSegmentedStrip);
+    // HibikiSegmentedStrip 是泛型控件，实例的 runtimeType 是
+    // HibikiSegmentedStrip<DownloadNetworkProxyMode> / <String> / <int>；
+    // find.byType 走 runtimeType 精确相等，对泛型永远 0 命中。按 Dart 的协变
+    // 子类型关系用 `is HibikiSegmentedStrip<Object>` 判定才能覆盖全部实参。
+    final Finder strips = find.byWidgetPredicate(
+      (Widget widget) => widget is HibikiSegmentedStrip<Object>,
+      description: 'HibikiSegmentedStrip<*>',
+    );
     expect(strips, findsWidgets);
     expect(
       tester.getTopLeft(strips.first).dx,
