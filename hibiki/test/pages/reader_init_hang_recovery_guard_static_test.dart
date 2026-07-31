@@ -58,6 +58,10 @@ void main() {
         reason: 'catch 必须提示用户打开失败');
     expect(catchBody.contains('Navigator.of(context).pop()'), isTrue,
         reason: 'catch 必须退回书架，不让 spinner 永挂');
+    // 渐进重建 phase2：init 失败自动退与用户手动退（PopScope onWillPop）同窗竞发
+    // 时不得连退两级——失败路径的 pop 必须共用 _popInProgress 锁（BUG-782 同款）。
+    expect(catchBody.contains('if (_popInProgress) return;'), isTrue,
+        reason: 'init 失败 pop 必须与用户退出共用 _popInProgress 合流锁');
     expect(
         catchBody.contains('debugPrint(') ||
             catchBody.contains('ErrorLogService.instance.log('),

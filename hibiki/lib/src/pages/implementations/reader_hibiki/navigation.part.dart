@@ -1097,23 +1097,28 @@ extension _ReaderNavigation on _ReaderHibikiPageState {
     _lastSavedSection = section;
     _lastSavedProgress = progress;
 
-    final int normOffset = (progress * 10000).round();
+    // BUG-162/BUG-285：量化 + 精确锚取舍已凿进纯函数 readerPositionSaveArgs
+    // （有真行为测），此处只做接线。
+    final ({int normCharOffset, int? charOffset}) saveArgs =
+        readerPositionSaveArgs(progress: progress, charOffset: charOffset);
     debugPrint('[ReaderHibiki] save position: bookKey=${widget.bookKey} '
-        'section=$section normOffset=$normOffset charOffset=$charOffset');
+        'section=$section normOffset=${saveArgs.normCharOffset} '
+        'charOffset=$charOffset');
     final ReaderPositionRepository repo =
         ReaderPositionRepository(appModel.database);
     try {
       await repo.save(
         bookKey: widget.bookKey,
         sectionIndex: section,
-        normCharOffset: normOffset,
+        normCharOffset: saveArgs.normCharOffset,
         // BUG-162: >=0 写精确锚（char_offset 列）。<0（WebView 当帧算不出精确偏移）
         // 传 null → ReaderPositionRepository.save 在同 section 保留既有精确锚、仅跨
         // section 失效。BUG-285 回归：TODO-265 误改成直接传 -1，使 _refreshProgress /
         // _syncPositionFromWebViewProgress 在重排或竖排边缘拿到 -1 时把同 section 的
         // 精确锚覆盖成 -1 → 恢复/有声书跨章重锚退化成「章首分数」（章节粒度），不再
-        // 逐句跟随。还原 null 守卫，把同/跨 section 的取舍交回 repo.save。
-        charOffset: charOffset >= 0 ? charOffset : null,
+        // 逐句跟随。取舍语义在 readerPositionSaveArgs 纯函数里（-1 → null），把
+        // 同/跨 section 的保留/失效决策交回 repo.save。
+        charOffset: saveArgs.charOffset,
       );
     } catch (e, stack) {
       // fail-open：本次位置未落盘（后续 debounce/flush 会重试），补日志便于诊断。

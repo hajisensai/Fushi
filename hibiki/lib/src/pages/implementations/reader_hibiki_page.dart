@@ -885,6 +885,24 @@ bool chaptersJsonCharCaliberIsCurrent(
   return true;
 }
 
+/// BUG-285 / BUG-162（TODO-575 路线·渐进重建 phase2）：位置落库参数归一化，从
+/// `_persistPosition` 凿出的纯函数（替换脆弱源码扫描守卫，真行为测见
+/// reader_position_save_args_test.dart）。
+/// - 分数进度量化为 normCharOffset ∈ [0,10000]（round 定点，恢复端 /10000 还原）。
+/// - charOffset >= 0 写精确锚；< 0（WebView 当帧算不出精确偏移的瞬态）必须映射成
+///   null——ReaderPositionRepository.save 收到 null 才会「同 section 保留既有精确
+///   锚、仅跨 section 失效」；透传 -1 会把精确锚覆盖成 -1，恢复/有声书跨章重锚
+///   退化到章首分数粒度（BUG-285 的回归形态）。
+({int normCharOffset, int? charOffset}) readerPositionSaveArgs({
+  required double progress,
+  required int charOffset,
+}) {
+  return (
+    normCharOffset: (progress * 10000).round(),
+    charOffset: charOffset >= 0 ? charOffset : null,
+  );
+}
+
 /// TODO-575 批1: 把 reader 里散落的 5 处 `rgba(...)` 生成统一成一个纯函数。
 ///
 /// 契约对齐（零行为变化）：通道一律 `(channel * 255.0).round().clamp(0, 255)`
@@ -1252,6 +1270,11 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   String? _prefetchingHtmlPath;
 
   String? _cachedStyleTag;
+
+  /// 样式代际：[_invalidateStyleCache] 每次自增。真异步预取（读盘/净化期间样式
+  /// 可能变更）据此丢弃过期结果——styleTag 烤进缓存条目，旧代际结果入缓存=脏数据
+  /// （用户刚换的字号/主题被预取章悄悄换回旧样式）。
+  int _styleEpoch = 0;
 
   Timer? _saveDebounce;
 
@@ -1636,6 +1659,12 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
       ErrorLogService.instance.log('ReaderHibiki._initBook', e, stack);
       if (!mounted) return;
       HibikiToast.show(msg: t.reader_open_failed);
+      // BUG-782 同款并发退出合流：init 失败自动退与用户手动退（PopScope 的
+      // onPopInvokedWithResult）可能同窗竞发，两条各自 pop 会连退两级把书架也
+      // 弹掉。共用同一把 _popInProgress 锁：用户已在退出就让用户路径收尾，这里
+      // 不再补刀；本路径 pop 后页面随即 dispose，锁无需复位。
+      if (_popInProgress) return;
+      _popInProgress = true;
       Navigator.of(context).pop();
     }
   }
@@ -1679,6 +1708,9 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
     if (!located.exists) {
       debugPrint('[ReaderHibiki] book ${widget.bookKey} not found on disk');
       HibikiToast.show(msg: t.book_file_not_found);
+      // 与 _initBook catch 同款 _popInProgress 合流（防与用户手动退出竞发连退两级）。
+      if (_popInProgress) return;
+      _popInProgress = true;
       Navigator.of(context).pop();
       return;
     }
@@ -2588,6 +2620,7 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
 
   void _invalidateStyleCache() {
     _cachedStyleTag = null;
+    _styleEpoch++;
     // BUG-270: cached chapter HTML bakes in the styleTag, so any style change
     // must drop it — the next served chapter then rebuilds with the fresh tag.
     _sanitizedHtmlCache.clear();
