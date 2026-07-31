@@ -89,15 +89,22 @@ enum _CollectionType { sentence, mined, word }
   }
 }
 
+/// 用「跳回原文」所需的最小信息重建一条 [MediaItem]。
+///
+/// [format] 必须是**当前** `EpubBooks.format`（调用方现查），不能省略也不能默认成
+/// EPUB：`mediaSourceIdentifier` 决定打开哪个阅读器，写死成 `reader_ttu` 会让漫画 /
+/// PDF 书落进 EPUB 阅读器并在解析路径出错。派生走 [ReaderHibikiSource.mediaSourceKeyFor]
+/// 这一唯一真相源，与书架列书同一条路径。
 MediaItem buildCollectionReaderMediaItem({
   required String bookKey,
   required String title,
+  required BookFormat format,
 }) {
   return MediaItem(
     mediaIdentifier: ReaderHibikiSource.mediaIdentifierFor(bookKey),
     title: title,
     mediaTypeIdentifier: ReaderHibikiSource.instance.mediaType.uniqueKey,
-    mediaSourceIdentifier: ReaderHibikiSource.instance.uniqueKey,
+    mediaSourceIdentifier: ReaderHibikiSource.mediaSourceKeyFor(format),
     position: 0,
     duration: 1,
     canDelete: false,
@@ -422,9 +429,15 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         rawSnapshot: item.bookTitle,
       );
 
-  void _openBook(_CollectionItem item) {
+  Future<void> _openBook(_CollectionItem item) async {
     final String? bookKey = item.bookKey;
     if (bookKey == null || bookKey.isEmpty) return;
+
+    // 阅读器路由的真相源是**当前** `EpubBooks.format`，这里只有 bookKey，必须现查。
+    // 书行查不到（书已删、收藏还在）时按 EPUB 回退，与路由层 parseOrEpub 的既有
+    // 回退一致——反正随后阅读器自己会报「书不存在」，不在这里造第二种失败形态。
+    final EpubBookRow? book = await appModel.database.getEpubBook(bookKey);
+    final BookFormat format = BookFormat.parseOrEpub(book?.format);
 
     // 标题仅作展示（身份走 mediaIdentifier=bookKey），过门面显示改名后书名。
     final String title = _displayBookTitleFor(
@@ -437,6 +450,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final MediaItem mediaItem = buildCollectionReaderMediaItem(
       bookKey: bookKey,
       title: title,
+      format: format,
     );
 
     // BUG-459: 三类行的 normCharOffset 计量不同——
@@ -462,9 +476,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           )
         : null;
 
-    appModel.openMedia(
+    if (!mounted) return;
+    await appModel.openMedia(
       ref: ref,
-      mediaSource: ReaderHibikiSource.instance,
+      // 由 item 自己的 mediaSourceIdentifier 反查源，不写死 EPUB 阅读器。
+      mediaSource: mediaItem.getMediaSource(appModel: appModel),
       item: mediaItem,
       initialBookmarkJump: bookmark,
     );
