@@ -2766,6 +2766,7 @@
   "selection_web_search": "网页搜索",
   "selection_web_search_unavailable": "没有可用的网页搜索应用。",
   "selection_share_failed": "无法打开分享面板。",
+  "video_subtitle_youtube_auto_generated": "$lang（自动生成）",
   "anki_dedup_progress_title": "正在去重媒体",
   "anki_dedup_progress_scanning": "正在扫描媒体目录…（已发现 $count 个文件）",
   "anki_dedup_progress_hashing": "正在比对同大小文件…（$done / $total）",

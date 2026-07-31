@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1233 条。点号进各自文件。
+> 共 1235 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1289](bugs/BUG-1289-youtube-caption-track-labels-ambiguous.md) | ✅ | ✅ | YouTube 字幕轨标签退化成语言码且人工/ASR 重名，无法分辨选哪条 |
 | [BUG-1288](bugs/BUG-1288-android-video-resume-seek-overwritten.md) | ✅ | ✅ | 安卓视频进入后被踢回开头：恢复 seek 被 loadfile 覆盖 |
 | [BUG-1287](bugs/BUG-1287-gal-loopback-flush-no-settle.md) | ✅ | ✅ | galgame 查词/制卡时语音只到句子前半段：loopback 提前收束后不再补全 |
 | [BUG-1286](bugs/BUG-1286-gal-lookup-hook-revoked.md) | ✅ | ✅ | galgame 查词浮窗点击失效：低级鼠标钩子被系统吊销后不再重装 |
@@ -51,6 +52,7 @@
 | [BUG-1271](bugs/BUG-1271-popup-autoexpand-rows-unit-mismatch.md) | ✅ | ✅ | 自动展开默认值按本数写进行数槽位，出厂默认从3本变9本 |
 | [BUG-1270](bugs/BUG-1270-youtube-live-subtitle-seek-duplicate.md) | ✅ | ✅ | YouTube 实时字幕回跳后重复且累积成长段 |
 | [BUG-1269](bugs/BUG-1269-dismiss-dict-popup-surface-input.md) | ✅ | ✅ | 关闭词典的快捷键/鼠标键在弹窗表面仍然无效 |
+| [BUG-1268](bugs/BUG-1268-youtube-quality-entry-self-locked.md) | ✅ | ✅ | YouTube 画质入口自锁：设置面板画质行永不显示 |
 | [BUG-1267](bugs/BUG-1267-gal-attach-missing-luna-pchooks.md) | ✅ | ✅ | 捕获窗口(attach)模式硬编码不装 LunaHook PC hooks，Unity 游戏中途对接抓不到文本 |
 | [BUG-1266](bugs/BUG-1266-gamepad-b-hijacked-by-back.md) | ✅ | ✅ | 手柄 B 被 Android 系统返回兜底抢占，改键无效；视频页首帧就绪前手柄键全失灵 |
 | [BUG-1265](bugs/BUG-1265-anki-gaiji-cache-miss-aborts-mine.md) | ✅ | ✅ | AnkiConnect 制卡：词典外字缓存缺失导致整张卡建不出来 |

@@ -45,6 +45,8 @@ import 'package:hibiki/src/media/video/youtube_source_resolver.dart'
         resolveYoutubeCaptionTracks,
         resolveYoutubeCaptionCues,
         pickBestYoutubeCaptionTrack,
+        // BUG-1289：字幕轨选择器的显示标签合成（可读语言名 + ASR/翻译标注）。
+        youtubeCaptionTrackLabel,
         YoutubeVideoVariant,
         YoutubeVariantSet,
         resolveYoutubeVideoVariants,

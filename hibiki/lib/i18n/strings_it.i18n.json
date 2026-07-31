@@ -2766,6 +2766,7 @@
   "selection_web_search": "Search the web",
   "selection_web_search_unavailable": "No app can search the web.",
   "selection_share_failed": "Could not open the share sheet.",
+  "video_subtitle_youtube_auto_generated": "$lang (auto-generated)",
   "anki_dedup_progress_title": "Deduplicating media",
   "anki_dedup_progress_scanning": "Scanning media folder… ($count files found)",
   "anki_dedup_progress_hashing": "Comparing same-size files… ($done / $total)",
