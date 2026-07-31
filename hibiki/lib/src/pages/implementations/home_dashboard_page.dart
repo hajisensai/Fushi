@@ -310,15 +310,16 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
               itemBuilder: (BuildContext context, int index) {
                 final BangumiWatchedItem item = watched[index];
                 final String? coverUrl = item.subject.coverUrl;
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
+                return HibikiListItem(
+                  padding: EdgeInsets.zero,
+                  titleMaxLines: 2,
                   leading: SizedBox(
                     width: 42,
                     height: 56,
                     child: coverUrl == null
                         ? const Icon(Icons.movie_outlined)
                         : ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
+                            borderRadius: HibikiBorderRadius.chip,
                             child: Image.network(
                               coverUrl,
                               fit: BoxFit.cover,
