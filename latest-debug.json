@@ -8,18 +8,18 @@
   "notes": "Automated release-signed debug-channel build from develop @ ba57865. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "hibiki-1.3.1-debug.9682-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.3.1-debug.9682-ios.ipa",
-      "releaseSequence": 9682,
-      "tag": "v1.3.1-debug.9682+ddea3fc",
-      "version": "1.3.1-debug.9682"
+      "name": "hibiki-1.3.1-debug.9687-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.3.1-debug.9687-ios.ipa",
+      "releaseSequence": 9687,
+      "tag": "v1.3.1-debug.9687+b87d506",
+      "version": "1.3.1-debug.9687"
     },
     {
-      "name": "hibiki-1.3.1-debug.9682-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.3.1-debug.9682-macos.zip",
-      "releaseSequence": 9682,
-      "tag": "v1.3.1-debug.9682+ddea3fc",
-      "version": "1.3.1-debug.9682"
+      "name": "hibiki-1.3.1-debug.9687-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/hibiki/releases/download/debug-rolling/hibiki-1.3.1-debug.9687-macos.zip",
+      "releaseSequence": 9687,
+      "tag": "v1.3.1-debug.9687+b87d506",
+      "version": "1.3.1-debug.9687"
     },
     {
       "name": "hibiki-1.3.1-debug.9687-windows-setup.exe",
