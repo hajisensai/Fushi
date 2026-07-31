@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1227 条。点号进各自文件。
+> 共 1228 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1288](bugs/BUG-1288-android-video-resume-seek-overwritten.md) | ✅ | ✅ | 安卓视频进入后被踢回开头：恢复 seek 被 loadfile 覆盖 |
 | [BUG-1287](bugs/BUG-1287-gal-loopback-flush-no-settle.md) | ✅ | ✅ | galgame 查词/制卡时语音只到句子前半段：loopback 提前收束后不再补全 |
 | [BUG-1286](bugs/BUG-1286-gal-lookup-hook-revoked.md) | ✅ | ✅ | galgame 查词浮窗点击失效：低级鼠标钩子被系统吊销后不再重装 |
 | [BUG-1285](bugs/BUG-1285-subtitle-plain-mode-inline-color.md) | ✅ | ✅ | 纯字幕模式下行内 \c 主色穿透导致 OP 字幕变黑 |

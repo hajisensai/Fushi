@@ -688,3 +688,61 @@ Future<void> applyHttpHeaderFieldsToPlayer(
     }
   }
 }
+
+// ── 恢复起播位置：作为**加载参数**下发（BUG-1288）──────────────────────────────
+
+/// 把 [positionMs] 格式化成 libmpv `start` 选项接受的秒值字符串（`45.000`）。
+///
+/// 纯函数，供 [applyMpvStartPosition] 与单测共用。负值 clamp 到 0。
+String formatMpvStartSeconds(int positionMs) {
+  final int ms = positionMs < 0 ? 0 : positionMs;
+  return (ms / 1000).toStringAsFixed(3);
+}
+
+/// 把「本次 loadfile 的起播位置」作为**加载参数**下发给 libmpv（`start` 选项）。
+///
+/// 根因（BUG-1288）：media_kit 的 `open()` 把 `playlist-pos` 写在整个命令序列的**最后**
+/// （media_kit-1.2.6 `player/native/player/real.dart:228`），那才是真正触发 mpv 加载文件
+/// 的一步，而 `open()` **不等它完成**就返回。此时 `duration` 属性可能已就绪（旧实现的
+/// [VideoPlayerController] 据此判定「可以 seek 了」），但 mpv 仍在 loadfile 流程中——发过去
+/// 的 seek 会被随后完成的加载按 `start`（默认 0）覆盖，表现为「画面闪过断点那一帧又跳回
+/// 开头」。Android 模拟器实测必现（断点 45s，位置从 0 一路播到 17.9s，duration 报的
+/// 90023 完全正确、near-end 判定未触发，即 seek 确已发出却没保住）；桌面因命令消化快
+/// 而只是偶发，这正是 BUG-179「Android 尤甚」的同一个洞——那次只补了守护宽限，没修
+/// seek 落地本身。
+///
+/// 修法是把「从哪开始」从**加载后的操作**改成**加载参数**：mpv 在 loadfile 完成时本就
+/// 按 `start` 定位，写进去就没有「加载完再 seek」的竞态窗口可言。不是加延迟/重试掩盖
+/// 症状，而是让这个特殊情况不存在。
+///
+/// 仅 libmpv 后端有效。非 libmpv（`player.platform` 无 `setProperty`）或属性被拒时返回
+/// false，调用方回退到既有的「open 后 seek」路径，行为与修复前一致。
+Future<bool> applyMpvStartPosition(Player player, int positionMs) async {
+  if (positionMs <= 0) return false;
+  final dynamic native = player.platform;
+  if (native == null) return false;
+  try {
+    await native.setProperty('start', formatMpvStartSeconds(positionMs));
+    return true;
+  } catch (_) {
+    return false; // 非 libmpv / 属性被拒：调用方回退到 open 后 seek。
+  }
+}
+
+/// 复位 `start`（`none` = mpv 默认从头）。
+///
+/// `start` 是**全局选项**，一旦写入会影响该 [Player] 后续**每一次** loadfile；换集与画质
+/// 切档都复用同一个 Player 实例（见 [VideoPlayerController.load] 的复用注释），不清掉会
+/// 让下一集也从上一集的断点秒数起播。故本次加载定位完成后必须立即清除。
+///
+/// best-effort：与 [applyMpvConfigToPlayer] 同范式，失败静默吞掉（清不掉最坏是下次
+/// loadfile 多一次起播位置，由调用方的 near-end/seek 兜底修正）。
+Future<void> clearMpvStartPosition(Player player) async {
+  final dynamic native = player.platform;
+  if (native == null) return;
+  try {
+    await native.setProperty('start', 'none');
+  } catch (_) {
+    // 非 libmpv / 属性被拒：no-op。
+  }
+}
