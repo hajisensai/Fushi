@@ -333,6 +333,22 @@ String buildSearchCacheKey({
   return '${term.length}:$term/$maxTerms/$maxResults';
 }
 
+/// 引擎原始结果（`HoshiDicts.lookup`）缓存键的单一真相。格式：
+/// `<term.length>:<term>/<maxResults>`。
+///
+/// 🔴 **键必须带 [maxResults]**：引擎按该上限 `partial_sort` + `resize` 截断，
+/// 不同上限拿到的是**不同长度**的结果集。此前 `maxResults` 是硬编码常量，键里
+/// 省掉它是安全的；现在它等于调用方的词头预算（load-more 会以「已显示条数 +
+/// maximumTerms」为新上限重查同一个词），若键里不含上限，load-more 就会命中上
+/// 一轮的短结果集、拿不到新条目，`allLoaded` 随即为 true —— load-more 永久失灵。
+@visibleForTesting
+String buildFfiLookupCacheKey({
+  required String term,
+  required int maxResults,
+}) {
+  return '${term.length}:$term/$maxResults';
+}
+
 /// 从 `blobs.bin` 头部字节解码词典实际类型（freq/pitch），供 term 词典的类型回填迁移。
 /// 此前解析与 `RandomAccessFile` 的分次读/定位深交织（[AppModel._migrateDictionaryTypes]），
 /// 无法单测（依赖真文件）。纯逻辑吃**已读入的字节**（调用方负责打开/读盘/关闭），按
@@ -1243,9 +1259,6 @@ class AppModel with ChangeNotifier {
 
   /// Maximum number of dictionary history items.
   int get maximumDictionaryHistoryItems => lowMemoryMode ? 5 : 10;
-
-  /// Maximum number of dictionary search results stored in the database.
-  final int maximumDictionarySearchResults = 200;
 
   /// Maximum number of headwords in a returned dictionary result for
   /// performance purposes.
@@ -3871,10 +3884,16 @@ class AppModel with ChangeNotifier {
       }
     }
 
+    // maxTerms 与 maxResults 现在恒等（引擎上限已对齐词头预算，见下方 lookup 调用
+    // 处），键格式保持不变以免旧键格式守卫漂移。
     final String cacheKey = buildSearchCacheKey(
       term: searchTerm,
       maxTerms: effectiveMaxTerms,
-      maxResults: maximumDictionarySearchResults,
+      maxResults: effectiveMaxTerms,
+    );
+    final String ffiCacheKey = buildFfiLookupCacheKey(
+      term: searchTerm,
+      maxResults: effectiveMaxTerms,
     );
 
     final cached = dictRepo.getCachedSearch(cacheKey);
@@ -3894,7 +3913,7 @@ class AppModel with ChangeNotifier {
     final List<HoshiKanjiResult> kanjiResults = queryKanjiForTerm(searchTerm);
 
     List<HoshiLookupResult>? ffiResults =
-        dictRepo.getCachedFfiLookup(searchTerm);
+        dictRepo.getCachedFfiLookup(ffiCacheKey);
     DictionarySearchResult? result;
 
     if (ffiResults != null) {
@@ -3914,12 +3933,28 @@ class AppModel with ChangeNotifier {
       );
       result = result.withKanjiResults(kanjiResults);
     } else {
+      // 🔴 引擎上限 == 本次真正要消费的词头预算。
+      // `lookup.cpp` 在 `partial_sort` + `resize(max_results)` **之后**才对存活的
+      // 每条结果做 `materialize()`（逐 glossary zstd 解压，每条落在 blobs.bin 的
+      // 一个随机偏移上）。此前这里传硬编码 200，而下面的 buildResultFromLookup /
+      // buildPopupJsonFromLookup 只取 effectiveMaxTerms（默认 10）条 —— 相当于在
+      // 整条链路最贵的按需分页段上白解压 20 倍。
+      //
+      // 输出逐字不变，三条理由（改这里前必须逐条复核）：
+      // 1. `partial_sort` 的比较器没动，top-N 的集合与顺序不变；
+      // 2. `query.cpp` 的 `query_raw` 里 `glossaries.push_back` 无条件执行，故
+      //    每个返回的 term 至少带一条 glossary —— N 个结果必然凑够 N 条，
+      //    buildResultFromLookup 的 maximumTerms 预算先于结果数耗尽；
+      // 3. `bestLength` 取 `matched` 的最大 UTF-16 长度，而所有 `matched` 都是
+      //    同一个查询串的前缀（`scan_candidates` 只产出前缀），故「码点最长」与
+      //    「UTF-16 最长」是同一个元素，它必在 `partial_sort` 后排首位、
+      //    永远落在 top-N 内。
       ffiResults = HoshiDicts.instance.lookup(
         searchTerm,
-        maxResults: maximumDictionarySearchResults,
+        maxResults: effectiveMaxTerms,
       );
       if (ffiResults.isNotEmpty) {
-        dictRepo.cacheFfiLookup(searchTerm, ffiResults);
+        dictRepo.cacheFfiLookup(ffiCacheKey, ffiResults);
         result = buildResultFromLookup(
           searchTerm: searchTerm,
           results: ffiResults,
