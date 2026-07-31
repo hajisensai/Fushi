@@ -1,12 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'video_hibiki_page_source_corpus.dart';
 
-/// 源码守卫：剧集列表走 push-aside 侧栏（把画面挤窄到左侧、与字幕列表风格统一），
-/// 而非 `showModalBottomSheet`（底部弹层）（TODO-638）。
+/// 源码守卫：剧集列表走视频底部的非模态横向轨道，而非
+/// `showModalBottomSheet` 或会挤窄画面的右侧栏。
 ///
-/// 用户报「视频的剧集列表弄成侧边栏或者什么的，和其他的显示效果差太多了」。此前剧集
-/// 列表是底部弹层，与字幕列表（push-aside）/ 设置·倍速（overlay）风格不一致。改成与
-/// 字幕列表同款 push-aside 侧栏（独立 [_episodeListVisible] 槽，与字幕列表互斥）。
+/// 字幕列表仍是 push-aside；剧集轨道覆盖在视频底部，以画面本身作沉浸式背景。
+/// 两者继续共用 [_episodeListVisible] / [_subtitleListVisible] 互斥状态。
 ///
 /// media_kit 在 headless test 跑不起真视频 widget，故断言源码层的可见性路由与结构
 /// （与 video_subtitle_list_push_aside_guard_test 同范式）。
@@ -16,7 +15,7 @@ void main() {
     src = readVideoHibikiSource();
   });
 
-  test('剧集列表不再用 showModalBottomSheet（已改 push-aside 侧栏）', () {
+  test('剧集列表不再用 showModalBottomSheet（已改底部横向轨道）', () {
     final int start = src.indexOf('void _showEpisodeList() {');
     expect(start, greaterThan(-1), reason: '应保留 _showEpisodeList 作为控制条入口');
     final int end = src.indexOf('\n  }', start);
@@ -24,12 +23,12 @@ void main() {
     expect(
       body.contains('showModalBottomSheet'),
       isFalse,
-      reason: '剧集列表入口不应再用 showModalBottomSheet（已改 push-aside）',
+      reason: '剧集列表入口不应再用 showModalBottomSheet（已改横向轨道）',
     );
     expect(
       body.contains('_toggleEpisodeList()'),
       isTrue,
-      reason: '_showEpisodeList 应翻转 push-aside 侧栏（_toggleEpisodeList）',
+      reason: '_showEpisodeList 应翻转非模态剧集轨道（_toggleEpisodeList）',
     );
   });
 
@@ -44,7 +43,7 @@ void main() {
     );
   });
 
-  test('_toggleEpisodeList 驱动 _episodeListVisible（push-aside），不走 overlay', () {
+  test('_toggleEpisodeList 驱动 _episodeListVisible，不走 modal route', () {
     final int start = src.indexOf('void _toggleEpisodeList() {');
     expect(start, greaterThan(-1), reason: '应有 _toggleEpisodeList 方法');
     final int end = src.indexOf('\n  }', start);
@@ -52,7 +51,7 @@ void main() {
     expect(
       body.contains('_episodeListVisible.value'),
       isTrue,
-      reason: '应翻转 push-aside 可见性 _episodeListVisible',
+      reason: '应翻转剧集轨道可见性 _episodeListVisible',
     );
   });
 
@@ -64,7 +63,7 @@ void main() {
     expect(
       epBody.contains('_closeSubtitleJumpList()'),
       isTrue,
-      reason: '开 push-aside 剧集列表前应关掉字幕列表（同一右栏槽，互斥）',
+      reason: '开剧集轨道前应关掉字幕列表（互斥）',
     );
     expect(
       epBody.contains('_hideVideoSidePanel()'),
@@ -82,7 +81,7 @@ void main() {
     );
   });
 
-  test('开任何浮层都关掉 push-aside 剧集列表（与字幕列表同处右栏）', () {
+  test('开任何浮层都关掉剧集轨道', () {
     // _showVideoSidePanel 开浮层时关剧集列表。
     final int showStart = src.indexOf('void _showVideoSidePanel(');
     expect(showStart, greaterThan(-1));
@@ -93,7 +92,7 @@ void main() {
     expect(
       showBody.contains('_episodeListVisible.value = false'),
       isTrue,
-      reason: '开任何浮层都应关掉 push-aside 剧集列表',
+      reason: '开任何浮层都应关掉剧集轨道',
     );
   });
 
@@ -110,10 +109,13 @@ void main() {
       final int end = src.indexOf('\n  }', start);
       final String body = src.substring(start, end);
       expect(body.contains('_episodeListVisible.value = false'), isTrue,
-          reason: '关闭应隐藏 push-aside 列表');
+          reason: '关闭应隐藏剧集轨道');
       expect(body.contains('_pokeControlsVisible()'), isTrue,
           reason: '关闭应唤回控制条');
-      expect(body.contains('_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'), isTrue,
+      expect(
+          body.contains(
+              '_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'),
+          isTrue,
           reason: '关闭应把焦点归还视频（否则键盘 / 手柄失焦）');
     });
 
@@ -153,23 +155,31 @@ void main() {
     });
   });
 
-  test('push-aside 布局渲染剧集面板列（_episodeSidePanel），用 VideoEpisodePanel', () {
+  test('视频布局用 Stack 渲染底部剧集轨道，不把它放进 push-aside Row', () {
     final int start = src.indexOf('Widget _videoWithSubtitlePanel(');
     expect(start, greaterThan(-1),
         reason: 'should have push-aside layout _videoWithSubtitlePanel');
-    // 找到该方法到下一个 `\n  Widget ` 之间的体（含 _episodeSidePanel 调用）。
-    final int rowIdx = src.indexOf('children: <Widget>[', start);
-    final int rowEnd = src.indexOf('],', rowIdx);
-    final String rowBody = src.substring(rowIdx, rowEnd);
+    final int end = src.indexOf('\n  Widget ', start + 1);
+    final String body = src.substring(start, end);
     expect(
-      rowBody.contains('_episodeSidePanel('),
+      body.contains('return Stack('),
       isTrue,
-      reason: 'push-aside Row 应渲染剧集面板列 _episodeSidePanel',
+      reason: '视频与剧集轨道应叠在 Stack 中',
+    );
+    expect(
+      body.contains('_episodeOverlayPanel(episodeVisible)'),
+      isTrue,
+      reason: 'Stack 应渲染底部 _episodeOverlayPanel',
+    );
+    expect(
+      body.contains('_episodeSidePanel('),
+      isFalse,
+      reason: '剧集列表不应再作为 Row 侧栏挤窄视频',
     );
     expect(
       src.contains('child: VideoEpisodePanel('),
       isTrue,
-      reason: '剧集面板列应渲染 VideoEpisodePanel widget',
+      reason: '剧集轨道应渲染 VideoEpisodePanel widget',
     );
   });
 
@@ -192,7 +202,7 @@ void main() {
         reason: 'VideoEpisodePanel 应接收解析后的标题与封面条目');
   });
 
-  test('剧集列表 push-aside 也门控控制条 / rail 可见性（与字幕列表一致）', () {
+  test('剧集轨道也门控控制条 / rail 可见性（与字幕列表一致）', () {
     // _applyControlsVisibilityFromMediaKit 的 gated 应含 _episodeListVisible。
     final int start =
         src.indexOf('void _applyControlsVisibilityFromMediaKit() {');

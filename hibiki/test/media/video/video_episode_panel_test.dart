@@ -32,16 +32,18 @@ void main() {
     ));
 
     expect(find.text('Episode 1'), findsOneWidget);
-    expect(find.text('Episode 2'), findsOneWidget);
+    // 当前集同时出现在面板摘要与自己的卡片中。
+    expect(find.text('Episode 2'), findsNWidgets(2));
     expect(find.text('Episode 3'), findsOneWidget);
 
-    await tester.tap(find.text('Episode 3'));
+    await tester
+        .tap(find.byKey(const ValueKey<String>('video-episode-card-2')));
     expect(tapped, <int>[2]);
   });
 
   testWidgets(
-      'highlights the current episode with a play_arrow leading icon '
-      '(TODO-638)', (WidgetTester tester) async {
+      'highlights the current episode card with a play icon and keeps '
+      'number labels on other cards', (WidgetTester tester) async {
     await tester.pumpWidget(wrap(
       VideoEpisodePanel(
         episodes: episodes(3),
@@ -54,26 +56,22 @@ void main() {
       ),
     ));
 
-    // 仅当前集（Episode 2, index 1）有 play_arrow leading 标记。
-    final Finder currentTile = find.ancestor(
-      of: find.text('Episode 2'),
-      matching: find.byType(ListTile),
-    );
+    final Finder currentCard =
+        find.byKey(const ValueKey<String>('video-episode-card-1'));
     expect(
-      find.descendant(of: currentTile, matching: find.byIcon(Icons.play_arrow)),
+      find.descendant(
+          of: currentCard, matching: find.byIcon(Icons.play_arrow_rounded)),
       findsOneWidget,
     );
-    final Finder otherTile = find.ancestor(
-      of: find.text('Episode 1'),
-      matching: find.byType(ListTile),
-    );
+    final Finder otherCard =
+        find.byKey(const ValueKey<String>('video-episode-card-0'));
     expect(
-      find.descendant(of: otherTile, matching: find.byIcon(Icons.play_arrow)),
+      find.descendant(
+          of: otherCard, matching: find.byIcon(Icons.play_arrow_rounded)),
       findsNothing,
     );
-    // 非当前集显示序号。
-    expect(find.text('1'), findsOneWidget);
-    expect(find.text('3'), findsOneWidget);
+    expect(find.text('01'), findsOneWidget);
+    expect(find.text('03'), findsOneWidget);
   });
 
   testWidgets('header × button reports onClose (TODO-638)',
@@ -114,13 +112,8 @@ void main() {
   });
 
   testWidgets(
-      'two-digit episode numbers stay single-line and visible at large font '
-      '(TODO-759)', (WidgetTester tester) async {
-    // 界面调大字号（appUiScale=3.0 → fontSize 14*3=42）下，两位数序号（tabular
-    // figures，宽于一位数）此前被固定 24px 的 leading SizedBox 逼着换行，dense
-    // ListTile 行高按 title 决定不随 leading 抬高，第二行被纵向裁切看不见。修复后
-    // 序号列宽随字号缩放且 Text 单行不换行：① 序号 Text 仍可见且单行 ② leading
-    // SizedBox 宽度 >= 阈值（不再固定 24）。
+      'two-digit episode numbers stay single-line in the horizontal rail at '
+      'large font', (WidgetTester tester) async {
     const double largeFontSize = 42; // 14 * appUiScale(3.0)
     await tester.pumpWidget(wrap(
       VideoEpisodePanel(
@@ -136,34 +129,22 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    // ListView.builder 懒构建：大字号下后面的集可能在视口外未构建，先滚到序号「10」。
     final Finder tenText = find.text('10');
     await tester.scrollUntilVisible(tenText, 200,
         scrollable: find.byType(Scrollable));
     await tester.pumpAndSettle();
 
-    // 两位数序号「10」存在、可见、且单行（softWrap:false / maxLines:1）。
     expect(tenText, findsOneWidget);
     final Text tenWidget = tester.widget<Text>(tenText);
     expect(tenWidget.maxLines, 1);
     expect(tenWidget.softWrap, false);
 
-    // 序号未被纵向裁切：Text 的渲染高度约等于单行高度（< 1.6 行），不是两行。
     final Size tenSize = tester.getSize(tenText);
     expect(tenSize.height, lessThan(largeFontSize * 1.6),
         reason: 'episode number must render on a single line, not wrap');
-
-    // 序号 leading 列宽随字号放大到阈值以上（不再固定 24px）。
-    final Finder leadingBox = find.ancestor(
-      of: tenText,
-      matching: find.byType(SizedBox),
-    );
-    final SizedBox box = tester.widget<SizedBox>(leadingBox.first);
-    expect(box.width, isNotNull);
-    expect(box.width!, greaterThanOrEqualTo(largeFontSize + 12));
   });
 
-  testWidgets('renders an episode cover next to the indicator',
+  testWidgets('renders a cover as the full 16:9 episode card background',
       (WidgetTester tester) async {
     final MemoryImage cover = MemoryImage(kTransparentImage);
     await tester.pumpWidget(wrap(
@@ -178,14 +159,29 @@ void main() {
       ),
     ));
 
-    final Finder firstTile = find.ancestor(
-      of: find.text('Episode 1'),
-      matching: find.byType(ListTile),
-    );
+    final Finder firstCard =
+        find.byKey(const ValueKey<String>('video-episode-card-0'));
     final Finder image =
-        find.descendant(of: firstTile, matching: find.byType(Image));
+        find.descendant(of: firstCard, matching: find.byType(Image));
     expect(image, findsOneWidget);
     expect(tester.widget<Image>(image).image, same(cover));
-    expect(tester.getSize(image), const Size(56, 32));
+    expect(tester.getSize(firstCard).aspectRatio, closeTo(16 / 9, 0.01));
+  });
+
+  testWidgets('episode rail scrolls horizontally', (WidgetTester tester) async {
+    await tester.pumpWidget(wrap(
+      VideoEpisodePanel(
+        episodes: episodes(8),
+        currentIndex: 0,
+        onTapEpisode: (_) {},
+        onClose: () {},
+        colorScheme: const ColorScheme.light(),
+        title: 'Episodes',
+        emptyHint: 'No episodes',
+      ),
+    ));
+
+    final ListView list = tester.widget<ListView>(find.byType(ListView));
+    expect(list.scrollDirection, Axis.horizontal);
   });
 }
