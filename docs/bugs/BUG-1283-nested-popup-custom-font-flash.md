@@ -1,4 +1,4 @@
-## BUG-1230 · 嵌套查词显示前闪过系统字体
+## BUG-1283 · 嵌套查词显示前闪过系统字体
 - **报告**：2026-07-29（用户：嵌套查词时仍会短暂看到非自定义字体）
 - **真实性**：✅ 真 bug。宿主把弹窗保持隐藏直到收到 `popupRendered`，但 `hibiki/assets/popup/popup.js:3520` 在 DOM 构建完成后同步发信；`popup_settings_injection.dart` 注入的 data URL 自定义字体仍在异步解码，故冷槽/嵌套查词会先显示一帧 fallback 字体。
 - **[x] ① 已修复** — `865508b29` 让宿主明确注入“本次配置了自定义字体”的状态，并让 `popupRendered` 在强制样式发现后等待 `document.fonts.ready`；加入 render generation 校验，防止旧查询的字体等待回调提前显示新查询。

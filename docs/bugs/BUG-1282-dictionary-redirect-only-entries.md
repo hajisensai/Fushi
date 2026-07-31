@@ -1,4 +1,4 @@
-## BUG-1229 · redirect-only 词典条目混入真实释义结果
+## BUG-1282 · redirect-only 词典条目混入真实释义结果
 - **报告**：2026-07-29（用户截图：查询 `repaired` 时，LDOCE5 与 OALD10 的跳转记录和 Oxford 的真实释义一起显示）
 - **真实性**：✅ 真 bug。`hibiki/assets/popup/popup.js:2200` 的词典分组此前只处理隐藏词典，没有识别 Yomitan 结构化义项里的 redirect-only 记录；同一份 glossary 又在 `:806`、`:864`、`:4044` 分别进入制卡、旧渲染和增量渲染路径。
 - **[x] ① 已修复** — `865508b29` 按数据形态而非词典名称识别 `redirect` / `redirected` tag、`Redirected from …` 文本，以及 `non-lemma + redirect` 组合。
