@@ -19,6 +19,7 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult, DictionaryPopupWebViewState;
 import 'package:hibiki/src/pages/implementations/sentence_context_dialog.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart' show InputBinding;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/utils/misc/lookup_audio_playback.dart';
@@ -69,29 +70,40 @@ mixin DictionaryPageMixin {
   /// [DictionaryPopupLayer]，此处保持对称）。
   ShortcutScope? get dictionaryPopupInputScope => null;
 
-  /// 弹窗可见时仍要生效的动作。token 表由注册表**当前**绑定实时导出，改键立即跟随。
-  Set<ShortcutAction> get dictionaryPopupForwardedActions =>
-      const <ShortcutAction>{};
-
-  /// 当前要下发给弹窗的输入表。作用域缺席时为空表——空表**仍会**注入，用来清掉热槽
-  /// WebView 上残留的旧表。
+  /// 当前要下发给弹窗的输入表 = 该 scope 的**全部**绑定（减去弹窗自己占用的）。
+  /// 作用域缺席时为空表——空表**仍会**注入，用来清掉热槽 WebView 上残留的旧表。
   DictionaryPopupInputSpec get dictionaryPopupInputSpec =>
       dictionaryPopupInputScope == null
           ? const DictionaryPopupInputSpec()
           : dictionaryPopupInputSpecFor(
               registry: mixinAppModel.shortcutRegistry,
-              actions: dictionaryPopupForwardedActions,
+              scope: dictionaryPopupInputScope!,
             );
 
-  /// 弹窗回传 token 的落地点。
+  /// 把弹窗交回来的动作喂进本页**既有的**动作分发入口——必须与键盘路径同一个，
+  /// 不要在这里另写一套「弹窗可见时该怎么做」。
   ///
   /// 默认 no-op：本 mixin 的关栈入口（[popNestedPopupAt]）需要调用方持有的
-  /// [DictionaryPopupController]，mixin 自身拿不到，故不在这里替宿主决定怎么关。
-  /// 声明了 [dictionaryPopupInputScope] 的宿主必须覆写它（视频页覆写成「只关顶层」，
-  /// 与 `guardVideoShortcutsWithPopupDismiss` 同一执行体）。用
-  /// [resolveDictionaryPopupInputToken] 把 token 解析成动作——那与键盘路径是同一个
-  /// `resolve*`，改键对两条路径同时生效。
-  void onDictionaryPopupInputToken(String token) {}
+  /// [DictionaryPopupController]，mixin 自身拿不到，故不替宿主决定怎么落地。声明了
+  /// [dictionaryPopupInputScope] 的宿主必须实现它。
+  void executeDictionaryPopupInputAction(
+    ShortcutAction action,
+    InputBinding? keyboard,
+  ) {}
+
+  /// 弹窗回传 token 的落地点：解析 → 交给 [executeDictionaryPopupInputAction]。
+  /// 解析走的是与键盘路径**同一个** `resolve*`，改键对两条路径同时生效。
+  void onDictionaryPopupInputToken(String token) {
+    final ShortcutScope? scope = dictionaryPopupInputScope;
+    if (scope == null) return;
+    final ShortcutAction? action = resolveDictionaryPopupInputToken(
+      registry: mixinAppModel.shortcutRegistry,
+      token: token,
+      scope: scope,
+    );
+    if (action == null) return;
+    executeDictionaryPopupInputAction(action, InputBinding.deserialize(token));
+  }
 
   /// 查词浮层顶部可选的 header 行（如视频「收藏当前字幕句」星标）。默认 null（书内查词
   /// 已有自己的 [BaseSourcePageState.buildPopupAudioControls]，不走 mixin；独立查词页 /

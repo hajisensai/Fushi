@@ -94,7 +94,7 @@ import 'package:hibiki/src/utils/components/hibiki_icon_button.dart';
 import 'package:hibiki/src/utils/components/hibiki_material_components.dart';
 import 'package:hibiki/src/utils/misc/show_app_dialog.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
-    show GamepadButton, ModifierKey, activeModifierKeys;
+    show GamepadButton, InputBinding, ModifierKey, activeModifierKeys;
 import 'package:hibiki/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent, GamepadLongPressIntent, focusedEditableText;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
@@ -3092,12 +3092,22 @@ class _ReaderHibikiPageState extends BaseSourcePageState<ReaderHibikiPage>
   ///
   /// 故让弹窗自己把这些输入交回来：键盘与鼠标同一条通道，token 表由注册表当前绑定
   /// 实时导出（改键立即生效）。
+  ///
+  /// 交回的是**整份 reader scope**，不是只有「关闭词典」：弹窗持焦时断掉的是整条
+  /// 输入通道，翻页 / 有声书控制 / 制卡同样全部落空——那是同一个 bug 的其它症状。
   @override
   ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.reader;
 
+  /// 喂进与键盘路径完全同一个分发入口。[_executeShortcutAction] 的每个 case 自己
+  /// 判 `isDictionaryShown`（如 `readerDismissDict` 只在弹窗可见时消费），所以弹窗
+  /// 持焦与 Flutter 持焦的行为天然同源，这里不需要任何额外分支。
   @override
-  Set<ShortcutAction> get dictionaryPopupForwardedActions =>
-      const <ShortcutAction>{ShortcutAction.readerDismissDict};
+  void executeDictionaryPopupInputAction(
+    ShortcutAction action,
+    InputBinding? keyboard,
+  ) {
+    _executeShortcutAction(action, keyboardTriggerKey: keyboard?.key);
+  }
 
   // ── DictionaryCaretHost ───────────────────────────────────────────
   // The reader is the host for its [_caret] state machine: it supplies the

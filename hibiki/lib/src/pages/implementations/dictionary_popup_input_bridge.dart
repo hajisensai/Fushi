@@ -54,9 +54,18 @@ class DictionaryPopupInputSpec {
       'DictionaryPopupInputSpec(keys: $keyTokens, mouse: $mouseButtons)';
 }
 
-/// 把 [actions] 在 [scope] 下的**当前**键盘/鼠标绑定导出成弹窗 token 表。
+/// 把 [scope] 下**全部**动作的当前键盘/鼠标绑定导出成弹窗 token 表。
 ///
-/// 顺序按 [actions] 的迭代序 + 各自绑定序，稳定可比较（widget 的 `didUpdateWidget`
+/// **为什么是整份 scope 而不是点名几个动作**：弹窗持焦时断掉的是宿主的**整条输入
+/// 通道**，不是「关闭词典」那一个键。只放行点名的动作，等于承认「弹窗开着时用户
+/// 只准用这几个键」——翻页、有声书控制、播放暂停在弹窗持焦时依旧全部落空，那是同
+/// 一个 bug 的其它未报症状。名单本身就是补丁；把通道整条接回去才是修复。
+///
+/// 落地侧与之对称：宿主把回传的动作喂进**它既有的、与键盘路径同一个**的分发入口
+/// （阅读器 `_executeShortcutAction`、漫画 `inputActionForShortcut`、视频的 BUG-924
+/// 守卫），那些入口本来就处理了「弹窗可见时该怎么做」的分支，所以不需要第二套语义。
+///
+/// 顺序按 scope 内动作声明序 + 各自绑定序，稳定可比较（widget 的 `didUpdateWidget`
 /// 靠 spec 相等性决定要不要重新注入，顺序抖动会造成无谓的重复注入）。同一 token
 /// 在多个 action 上重复绑定时只保留一次。
 ///
@@ -65,13 +74,11 @@ class DictionaryPopupInputSpec {
 /// 按空表下发即可（弹窗侧不拦任何键），等装载完成宿主会再注入一次真表。
 ///
 /// **恒减去 [ShortcutScope.dictionaryPopup] 已占用的绑定**：切词条 / 制卡是**弹窗内**
-/// 的动作，必须在弹窗里生效，宿主不能把它们抢走。这条是不变式而不是各宿主的选项——
-/// 视频页尤其需要：它的 dismiss 语义是「浮层可见时**任一**已映射的视频快捷键先关浮层」
-/// （BUG-924），整个 video scope 都要转发，与弹窗内动作撞键的概率最高。放在数据层做
-/// 减法，JS 侧就不必再判一次 scope。
+/// 的动作，必须在弹窗里生效，宿主不能把它们抢走。转发整份 scope 后这条更是硬约束
+/// （撞键面从「几个动作」扩到「整个 scope」）。放在数据层做减法，JS 侧就不必再判 scope。
 DictionaryPopupInputSpec dictionaryPopupInputSpecFor({
   required HibikiShortcutRegistry registry,
-  required Iterable<ShortcutAction> actions,
+  required ShortcutScope scope,
 }) {
   if (!registry.isLoaded) return const DictionaryPopupInputSpec();
 
@@ -86,7 +93,7 @@ DictionaryPopupInputSpec dictionaryPopupInputSpecFor({
 
   final List<String> keys = <String>[];
   final List<int> buttons = <int>[];
-  for (final ShortcutAction action in actions) {
+  for (final ShortcutAction action in ShortcutAction.actionsForScope(scope)) {
     final ShortcutBindingSet bindings = registry.bindingsFor(action);
     for (final InputBinding kb in bindings.keyboardBindings) {
       final String token = kb.serialize();

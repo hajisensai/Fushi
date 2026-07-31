@@ -3992,24 +3992,19 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   @override
   ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.video;
 
-  /// 与 [guardVideoShortcutsWithPopupDismiss] 同语义：浮层可见时**任一**已映射的视频
-  /// 快捷键都先关顶层浮层。故整份 video scope 都要转发——弹窗内动作
-  /// （dictionaryPopup scope 的切词条 / 制卡）由 [dictionaryPopupInputSpecFor] 统一减掉，
-  /// 不会被抢走，与守卫把制卡键排在守卫之外是同一条边界。
+  /// 落地与 [guardVideoShortcutsWithPopupDismiss] 是同一条语义、同一个执行体：浮层
+  /// 可见时**任一**已映射的视频快捷键都先关**顶层**浮层并消费掉这次输入，不穿透去
+  /// 控制后面的视频（BUG-924）。桥只在浮层可见时才有事件可转发，故这里无条件关顶层
+  /// 即与守卫等价——不是「只放行 dismiss 一个动作」的特例，而是本页 dismiss 语义本身。
+  ///
+  /// 弹窗内动作（dictionaryPopup scope 的切词条 / 制卡）由
+  /// [dictionaryPopupInputSpecFor] 在数据层统一减掉、不会进转发表，与守卫把制卡键
+  /// **排在守卫之外**是同一条边界。
   @override
-  Set<ShortcutAction> get dictionaryPopupForwardedActions =>
-      ShortcutAction.actionsForScope(ShortcutScope.video).toSet();
-
-  /// 视频的语义是「关**顶层**浮层」（逐层关，保留隐藏热槽 BUG-092），不是清整栈，
-  /// 故不走基类默认的 `clearDictionaryResult()`，改用与守卫完全同一个执行体。
-  @override
-  void onDictionaryPopupInputToken(String token) {
-    final ShortcutAction? action = resolveDictionaryPopupInputToken(
-      registry: appModel.shortcutRegistry,
-      token: token,
-      scope: ShortcutScope.video,
-    );
-    if (action == null) return;
+  void executeDictionaryPopupInputAction(
+    ShortcutAction action,
+    InputBinding? keyboard,
+  ) {
     _dismissTopVisiblePopup();
   }
 

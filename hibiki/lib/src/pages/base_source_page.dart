@@ -15,6 +15,7 @@ import 'package:hibiki/src/pages/implementations/dictionary_popup_input_bridge.d
 import 'package:hibiki/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:hibiki/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:hibiki/src/pages/implementations/sentence_context_dialog.dart';
+import 'package:hibiki/src/shortcuts/input_binding.dart' show InputBinding;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/pages/implementations/stat_activity.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
@@ -175,26 +176,31 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   @protected
   ShortcutScope? get dictionaryPopupInputScope => null;
 
-  /// 弹窗可见时仍要生效的动作。token 表由注册表**当前**绑定实时导出，故用户改键
-  /// 立即对弹窗持焦的路径生效（旧桥把键名硬编码在 JS 里，改键后不跟随）。
-  @protected
-  Set<ShortcutAction> get dictionaryPopupForwardedActions =>
-      const <ShortcutAction>{};
-
-  /// 当前要下发给弹窗的输入表。作用域缺席时为空表——空表**仍会**注入，用来清掉
-  /// 热槽 WebView 上残留的旧表。
+  /// 当前要下发给弹窗的输入表 = 该 scope 的**全部**绑定（减去弹窗自己占用的）。
+  /// 作用域缺席时为空表——空表**仍会**注入，用来清掉热槽 WebView 上残留的旧表。
   @protected
   DictionaryPopupInputSpec get dictionaryPopupInputSpec =>
       dictionaryPopupInputScope == null
           ? const DictionaryPopupInputSpec()
           : dictionaryPopupInputSpecFor(
               registry: appModel.shortcutRegistry,
-              actions: dictionaryPopupForwardedActions,
+              scope: dictionaryPopupInputScope!,
             );
 
-  /// 弹窗回传 token 的落地点。默认行为：解析出的动作只要属于
-  /// [dictionaryPopupForwardedActions] 就关掉整条弹窗栈——「关闭词典」是这条桥的
-  /// 唯一通用语义。漫画页覆写它，把左右键接回自己的翻页链。
+  /// 把弹窗交回来的动作喂进本页**既有的**动作分发入口——必须与键盘路径同一个，
+  /// 不要在这里另写一套「弹窗可见时该怎么做」。那些入口本就带弹窗可见的分支
+  /// （阅读器每个 case 自判 `isDictionaryShown`、漫画 `inputActionForShortcut` 收
+  /// `dictionaryShown`），复用它们，弹窗持焦与 Flutter 持焦的行为才真正同源。
+  ///
+  /// 声明了 [dictionaryPopupInputScope] 的页面必须实现它。
+  @protected
+  void executeDictionaryPopupInputAction(
+    ShortcutAction action,
+    InputBinding? keyboard,
+  ) {}
+
+  /// 弹窗回传 token 的落地点：解析 → 交给 [executeDictionaryPopupInputAction]。
+  /// 解析走的是与键盘路径**同一个** `resolve*`，所以改键对两条路径同时生效。
   @protected
   void onDictionaryPopupInputToken(String token) {
     final ShortcutScope? scope = dictionaryPopupInputScope;
@@ -205,8 +211,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       scope: scope,
     );
     if (action == null) return;
-    if (!dictionaryPopupForwardedActions.contains(action)) return;
-    clearDictionaryResult();
+    executeDictionaryPopupInputAction(action, InputBinding.deserialize(token));
   }
 
   /// TODO-1027：点全屏 dismiss barrier（弹窗矩形外的真空白处）的钩子。默认行为

@@ -27,7 +27,7 @@ import 'package:hibiki/src/media/manga/mokuro_payload.dart';
 import 'package:hibiki/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
 import 'package:hibiki/src/focus/page_focus_ownership.dart';
 import 'package:hibiki/src/shortcuts/input_binding.dart'
-    show InputBinding, ModifierKey, MouseBinding, activeModifierKeys;
+    show InputBinding, ModifierKey, activeModifierKeys;
 import 'package:hibiki/src/shortcuts/manga_arrow_override.dart';
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
@@ -1242,26 +1242,43 @@ class _MangaHibikiPageState extends BaseSourcePageState<MangaHibikiPage>
   @override
   ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.manga;
 
-  /// 漫画在弹窗可见时**仍要**处理翻页与关词典：左右键关弹窗并翻页、关词典键只关
-  /// 弹窗。旧桥把这三个键硬编码成 `ArrowLeft/ArrowRight/Escape`，用户改键后弹窗
-  /// 持焦的路径仍按老键位响应；现在 token 表由注册表当前绑定导出，改键自动跟随。
+  /// 喂进与键盘路径完全同一个分发链：[_resolveMangaKeyAction] 走注册表 → 跨页方向
+  /// 校正（rtl）→ [MangaHibikiPage.inputActionForShortcut] 的上下文门控（它本就收
+  /// `dictionaryShown`），再由 [_executeReaderInputAction] 落地。旧桥把三个键名硬编码
+  /// 在 JS 里，用户改键后弹窗持焦的路径仍按老键位响应。
+  ///
+  /// 鼠标 token 没有方向校正语义（那是方向键专属），[InputBinding.deserialize] 对它
+  /// 返回 null，此时按注册表动作直接落地。
   @override
-  Set<ShortcutAction> get dictionaryPopupForwardedActions =>
-      const <ShortcutAction>{
-        ShortcutAction.mangaPageForward,
-        ShortcutAction.mangaPageBackward,
-        ShortcutAction.mangaDismissDict,
-      };
-
-  @override
-  void onDictionaryPopupInputToken(String token) {
-    // 鼠标 token 不参与「跨页方向校正」（那是方向键专属语义），交回基类按注册表
-    // 动作直接执行（关词典）。
-    if (MouseBinding.deserialize(token) != null) {
-      super.onDictionaryPopupInputToken(token);
+  void executeDictionaryPopupInputAction(
+    ShortcutAction action,
+    InputBinding? keyboard,
+  ) {
+    if (keyboard == null) {
+      final MangaReaderInputAction? mouseAction =
+          MangaHibikiPage.inputActionForShortcut(
+        action: action,
+        horizontalArrow: false,
+        dictionaryShown: isDictionaryShown,
+        mode: _mode,
+      );
+      if (mouseAction != null) {
+        _executeReaderInputAction(
+          mouseAction,
+          source: _MangaReaderInputSource.nativeWebView,
+        );
+      }
       return;
     }
-    _handleNativeNavigationKey(token);
+    final MangaReaderInputAction? resolved = _resolveMangaKeyAction(
+      keyboard.key,
+      keyboard.modifiers,
+    );
+    if (resolved == null) return;
+    _executeReaderInputAction(
+      resolved,
+      source: _MangaReaderInputSource.nativeWebView,
+    );
   }
 
   /// 词典弹窗渲染完成（指针唤出路径）：把 Flutter 焦点收回正文。

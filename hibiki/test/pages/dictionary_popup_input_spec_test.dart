@@ -9,9 +9,12 @@ import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 
 /// BUG-1269：宿主要交回弹窗的 token 表怎么算出来的。
 ///
-/// 视频页把**整份** video scope 都交给弹窗转发（它的 dismiss 语义就是「浮层可见时
-/// 任一已映射的视频快捷键先关浮层」，BUG-924），所以与弹窗内动作撞键的概率最高——
-/// 减法这一条必须锁死，否则弹窗里切词条/制卡会被宿主抢走。
+/// 契约是**整份 scope**，不是点名几个动作：弹窗持焦时断掉的是宿主的整条输入通道，
+/// 只放行点名动作等于「弹窗开着时用户只准用这几个键」——翻页/播放暂停/有声书控制
+/// 照样全部落空，那是同一个 bug 的其它未报症状。名单本身就是补丁。
+///
+/// 代价是撞键面从「几个动作」扩到「整个 scope」，所以减去 dictionaryPopup scope
+/// （切词条/制卡是弹窗内动作）这一条必须锁死，否则弹窗里的交互会被宿主抢走。
 void main() {
   HibikiShortcutRegistry registryWith(
     Map<ShortcutAction, ShortcutBindingSet> bindings,
@@ -25,7 +28,7 @@ void main() {
     return registry;
   }
 
-  test('导出宿主动作的当前键盘/鼠标绑定（改键自动跟随）', () {
+  test('导出整份 scope 的当前键盘/鼠标绑定（改键自动跟随）', () {
     final HibikiShortcutRegistry registry =
         registryWith(<ShortcutAction, ShortcutBindingSet>{
       ShortcutAction.readerDismissDict: const ShortcutBindingSet(
@@ -37,16 +40,28 @@ void main() {
         ],
         mouseBindings: <MouseBinding>[MouseBinding(3)],
       ),
+      // 同 scope 的另一个动作：证明导出的是整份 scope 而不是点名的那一个。
+      ShortcutAction.readerExitBook: const ShortcutBindingSet(
+        keyboardBindings: <InputBinding>[
+          InputBinding(
+            key: LogicalKeyboardKey.keyW,
+            modifiers: <ModifierKey>{ModifierKey.ctrl},
+          ),
+        ],
+      ),
     });
 
     final DictionaryPopupInputSpec spec = dictionaryPopupInputSpecFor(
       registry: registry,
-      actions: <ShortcutAction>{ShortcutAction.readerDismissDict},
+      scope: ShortcutScope.reader,
     );
 
-    expect(spec.keyTokens, <String>['Ctrl+KeyD'],
+    expect(spec.keyTokens, contains('Ctrl+KeyD'),
         reason: 'token 直接取 InputBinding.serialize()，与 JS 侧判据同一套字面量');
-    expect(spec.mouseButtons, <int>[3]);
+    expect(spec.mouseButtons, contains(3));
+    expect(spec.keyTokens, contains('Ctrl+KeyW'),
+        reason: '同 scope 的其它动作（退出书籍）也必须进表——弹窗持焦时断掉的是整条'
+            '输入通道，只放行「关闭词典」等于让其它键继续失效');
   });
 
   test('恒减去 dictionaryPopup scope 已占用的键（弹窗内动作优先于宿主）', () {
@@ -70,7 +85,7 @@ void main() {
 
     final DictionaryPopupInputSpec spec = dictionaryPopupInputSpecFor(
       registry: registry,
-      actions: <ShortcutAction>{ShortcutAction.videoTogglePlayPause},
+      scope: ShortcutScope.video,
     );
 
     expect(spec.keyTokens, <String>['Escape'],
@@ -82,7 +97,7 @@ void main() {
     expect(
       dictionaryPopupInputSpecFor(
         registry: HibikiShortcutRegistry(),
-        actions: <ShortcutAction>{ShortcutAction.readerDismissDict},
+        scope: ShortcutScope.reader,
       ).isEmpty,
       isTrue,
     );
