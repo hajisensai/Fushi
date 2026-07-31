@@ -1835,6 +1835,23 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     _controller?.removeListener(_promoteVideoReadyOnFirstFrame);
     if (!mounted) return;
     setState(() => _videoReadyToShow = true);
+    // BUG-1266：慢路径必须在这里**补一次**焦点回收，否则本页整段时间都没有键盘所有者。
+    //
+    // [_videoFocusNode] 挂在 [Video] 上（`layout.part.dart`），而 [_buildScaffold] 用
+    // `!_videoReadyToShow` 把首帧未就绪的首开挡在 [_buildLoadingBody] 分支——此刻
+    // [Video] 尚未挂载，节点还没 attach 到焦点树。`_openVideo` 结尾那次
+    // `reclaimAfterFrame(contentReady)` 正好落在这个窗口里，对孤儿节点
+    // `requestFocus()` 是**静默 no-op**（请求直接丢失，无任何报错）。等这里把
+    // [Video] 挂上、节点终于 attach 时，却没有人再请求一次焦点，于是焦点滞留在
+    // 页面之外：手柄按键不冒泡经过 [_wrapVideoGamepadControls]，本页所有手柄绑定
+    // （上一句/下一句/播放暂停…）全部失灵，直到用户随便点一下画面触发
+    // [FocusReclaimCause.gesture] 才恢复——正是用户报的「必须先按一下暂停才能
+    // 正常上下句」。更糟的是这段窗口里手柄 B 没人消费，会被 Android 合成成 BACK
+    // 直接退页（见 [_swallowUnboundGamepadBack]）。
+    //
+    // 快路径（load 返回即出画）不进本方法，其 contentReady 那次回收时 [Video] 已挂载、
+    // 本就有效，行为不变。
+    _focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady);
     // BUG-839：慢路径就绪后触发「换集保持全屏」的重进全屏（仅 initialFullscreen 新页生效）。
     _scheduleInitialFullscreenIfNeeded();
   }
