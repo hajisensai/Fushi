@@ -236,8 +236,12 @@ void main() {
       final int epochBump = body.indexOf('_imageChapterPauseEpoch++;');
       final int complete = body.indexOf('pending.complete();');
       expect(epochBump, isNonNegative);
+      // 形态不变量（非当前行为差异）：`Completer.complete()` 走微任务，续体总在
+      // 本同步块之后才跑，所以今天两种顺序行为相同。锁住它是为了防未来把
+      // Completer 换成 `Completer.sync()` / 在两句之间插入 await——那时顺序立刻
+      // 变成 load-bearing：旧续体会通过 epoch 校验并把用户刚暂停的播放恢复回去。
       expect(complete, greaterThan(epochBump),
-          reason: '顺序反了的话，被唤醒的旧续体会通过 epoch 校验并恢复播放/改状态');
+          reason: '作废必须先递增 epoch 再 complete，否则同步唤醒的旧续体会通过 epoch 校验');
     });
 
     test('awaitImageChapterPause 的恢复播放必须 unawaited 且走 _activateMainPlayer', () {
