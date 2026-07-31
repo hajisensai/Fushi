@@ -52,6 +52,45 @@ bool containsCodeLine(String body, String needle) {
   return false;
 }
 
+/// 构造「以独立标识符身份出现的 [name] 调用/构造」的正则。
+///
+/// 源码守卫里最常见的判据是裸字面量 `contains('Image(')`。这个写法**两个方向都错**：
+/// - **漏真阳**：真实写法多半带命名构造器（`Image.file(` / `Image.memory(` /
+///   `Image.network(` / `Image.asset(`），`Image` 后面是 `.` 不是 `(`，子串匹配不到——
+///   守卫对它声称要防的回归形态零覆盖。
+/// - **报假阳**：`PortraitCoverImage(` / `LandscapeCoverImage(` 这类**以 `Image` 结尾**
+///   的更长标识符本身就含子串 `Image(`，于是正确写法反被判红。本仓已因此两次踩坑
+///   （BUG-1272/1299 守卫、合集 hero 守卫）。
+///
+/// 这里用负向后顾 `(?<![A-Za-z0-9_$])` 定前边界（Dart 标识符合法字符全含），并可选
+/// 吃掉命名构造器和泛型实参，一次把两个方向都堵上：
+/// - `Image(` 命中、`Image.file(` 命中、`Image .memory (` 命中、`Image<T>(` 命中
+/// - `PortraitCoverImage(` 不命中、`resolveMediaCoverImage(` 不命中、`_buildImage(` 不命中
+///
+/// [allowNamedConstructor] 置 false 时只匹配裸调用，用于「命名构造器是合法写法、
+/// 只禁裸构造」的场景。
+RegExp identifierCall(String name, {bool allowNamedConstructor = true}) {
+  return RegExp(
+    r'(?<![A-Za-z0-9_$])' +
+        RegExp.escape(name) +
+        (allowNamedConstructor ? r'(?:\s*\.\s*[A-Za-z_][A-Za-z0-9_]*)?' : '') +
+        r'(?:\s*<[^>]*>)?\s*\(',
+  );
+}
+
+/// [identifierCall] 的 `contains` 形态：[source] 里是否出现以独立标识符身份调用的
+/// [name]。守卫断言一律用它替代裸 `contains('Name(')`。
+bool containsIdentifierCall(
+  String source,
+  String name, {
+  bool allowNamedConstructor = true,
+}) {
+  return identifierCall(
+    name,
+    allowNamedConstructor: allowNamedConstructor,
+  ).hasMatch(source);
+}
+
 /// 截出 `switch` 里某个 `case` 标签到**下一个 `case` / `default` / switch 结束**之间
 /// 的分支体。
 ///
