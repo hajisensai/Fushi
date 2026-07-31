@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1240 条。点号进各自文件。
+> 共 1241 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1299](bugs/BUG-1299-video-hidden-chrome-steals-focus-ring.md) | ✅ | ✅ | 视频页隐形chrome可聚焦致空焦点框 |
 | [BUG-1291](bugs/BUG-1291-destructive-confirm-checkbox-truncated.md) | ✅ | ✅ | 销毁确认弹窗勾选行文案被单行省略号截断 |
 | [BUG-1290](bugs/BUG-1290-bangumi-dashboard-history.md) | ✅ | ✅ | Bangumi 首页卡把映射误当观看历史且不列待手动关联条目 |
 | [BUG-1289](bugs/BUG-1289-youtube-caption-track-labels-ambiguous.md) | ✅ | ✅ | YouTube 字幕轨标签退化成语言码且人工/ASR 重名，无法分辨选哪条 |
