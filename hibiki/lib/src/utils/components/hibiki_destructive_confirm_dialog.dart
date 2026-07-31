@@ -90,6 +90,14 @@ class _HibikiDestructiveConfirmDialogState
               HibikiListItem(
                 density: HibikiListDensity.compact,
                 padding: EdgeInsets.zero,
+                // BUG-1289：勾选文案是整句解释（「同时删除其中的视频（保留你的
+                // 原始视频文件）」），不是列表里的标题短语。[HibikiListItem] 的
+                // titleMaxLines 默认 1 + ellipsis，在 420 宽的对话框里会把括号
+                // 里的免责说明整段吃掉，用户读到的是「…保留你的原始视…」——恰好
+                // 是最需要看清的那半句。此处父容器高度自由（外层
+                // [HibikiDialogFrame] 默认 scrollable），放开行数不会像
+                // BUG-1184 的固定高容器那样撑破布局。
+                titleMaxLines: 3,
                 title: Text(widget.checkboxLabel!),
                 // 勾选状态由整行 onTap 驱动；Checkbox 本身既不接指针也不进
                 // 焦点遍历（单站点契约，行即唯一停靠点）。
