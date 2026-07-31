@@ -684,6 +684,17 @@ class InterconnectSyncBackend extends SyncBackend
   /// downgrading API keys to plaintext transport.
   Future<InterconnectServiceConfigSnapshot?> getRemoteServiceConfig() async {
     await _ensureResolved();
+    // 明文会话上这个端点**必然**是 403（host 侧 `HTTPS required for service
+    // config`），因为 API key 不允许降级到明文传输——这是有意的拒绝，不是故障。
+    // 而 TLS 默认是关的（`SyncRepository.getServerTlsEnabled()` 默认 false，存量
+    // host 一律保持明文），照样发请求只会让每一轮同步都收到一条
+    // `SyncAuthError: Authentication failed`，把「同步完成」永久挂上「N 项失败」，
+    // 并且把用户引去反复重配 token——而 token 根本没问题（BUG-1311）。
+    //
+    // 答案本地就已知，别问。返回 null 与「旧 host 404」「host 关掉了该能力 404」
+    // 归一到同一条「对端不提供此能力」语义，和 host 自己在 /api/capabilities 上
+    // 广播的 `serviceConfig: _securityContext != null && ...` 逐字一致。
+    if (Uri.tryParse(_apiBase)?.scheme != 'https') return null;
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase/api/interconnect/service-config',

@@ -104,13 +104,21 @@ void main() {
       find.byKey(const ValueKey<String>('game-text-thread-selector')),
       findsOneWidget,
     );
-    // followLive 首帧定位到最新一行：视口高度有限（筛选 chips 占位后更矮），
-    // 旧行「坏线程文本」在视口外不参与懒构建，改在服务层断言其存在。
+    // v12 契约（BUG-1193）：带线程身份的行在用户显式选中之前一行都不发布。
+    // 两条行仍在诊断 buffer 里（它们正是选择器的原材料），但工作台此刻
+    // 必须是空的。旧断言在这里期望「干净台词」已经可见，那是 v12 之前
+    // 「不选 = 全部线程」的旧语义。
     expect(
       TexthookerService.instance.lines,
       contains('坏线程文本'),
     );
-    expect(find.textContaining('干'), findsWidgets);
+    expect(
+      TexthookerService.instance.lines,
+      contains('干净台词'),
+    );
+    expect(find.textContaining('干'), findsNothing,
+        reason: 'v12：未显式选线程时带线程身份的行一行也不得发布');
+    expect(find.textContaining('坏'), findsNothing);
 
     await tester.tap(
       find.byKey(const ValueKey<String>('game-text-thread-selector')),
@@ -129,6 +137,35 @@ void main() {
 
     expect(find.textContaining('干'), findsWidgets);
     expect(find.textContaining('坏'), findsNothing);
+  });
+
+  testWidgets('BUG-1315：无线程身份的行不受线程选择门控，未选线程也必须发布',
+      (WidgetTester tester) async {
+    // 带线程身份的行：v12 起未被显式选中就不发布。
+    TexthookerService.instance.appendLine(
+      'フックした台詞',
+      textThreadKey: 'luna:hooked',
+      textThreadLabel: 'LunaHook 0x3000',
+      textHookCode: 'HS932@3000',
+      nativeTextThreadId: 0x3000,
+    );
+    // WebSocket / Textractor 端点的行不带 textThreadKey，永远进不了线程目录，
+    // 也就永远没有下拉项能选中它。拿「有没有选线程」去门控它等于永久丢弃，
+    // 而且用户无法自救——下拉里只会有上面那条 hook 线程。
+    TexthookerService.instance.appendLine(
+      'ソケット行',
+      source: TexthookerLineSource.websocket,
+      sourceLabel: 'ws://127.0.0.1:6677',
+    );
+    await tester.pumpWidget(
+      _wrapPage(const TexthookerPage()),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('ソ'), findsWidgets,
+        reason: '无线程身份的行不归属任何候选线程，必须无条件进入工作台');
+    expect(find.textContaining('詞'), findsNothing,
+        reason: 'v12：带线程身份的行未被显式选中就不发布（BUG-1193 契约不得松动）');
   });
 
   testWidgets('thread selector lists discovered TextRender before any output',
