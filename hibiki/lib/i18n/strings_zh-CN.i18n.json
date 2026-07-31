@@ -2778,7 +2778,7 @@
   "anime_download_no_results_detail": "服务已正常响应，但按当前条件返回 0 条。查询：$query；筛选：$filters。请尝试别名或放宽筛选。",
   "anime_download_streaming_ready": "已入库 · 下载继续",
   "anime_download_unfiltered": "未启用 Trusted 筛选",
-  "interconnect_enable_footer": "用法：在存放内容的那台设备上开启下方「本机作为同步服务器」，再在另一台设备的「连接到其他设备」里完成配对。同一台设备同一时间只能担任服务器或客户端其中一种角色。",
+  "interconnect_enable_footer": "用法：在存放内容的那台设备上开启下方的同步服务器开关；在另一台设备上添加该服务器的地址完成配对。同一台设备同一时间只能担任服务器或客户端其中一种角色。",
   "interconnect_peer_list_title": "已添加的对端",
-  "interconnect_peer_list_empty": "尚未添加任何对端。可在下方「局域网设备」中点击发现的设备自动配对，或点「添加」手动输入对端地址。"
+  "interconnect_peer_list_empty": "尚未添加任何对端。可在下方的局域网设备列表中点击发现的设备自动配对，或手动添加对端地址。"
 }

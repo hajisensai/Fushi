@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hibiki/i18n/strings.g.dart';
 import 'package:hibiki/src/settings/settings_destination.dart';
 import 'package:hibiki/src/settings/settings_schema_card_creation.dart';
 import 'package:hibiki/src/settings/settings_schema_system.dart';
@@ -316,10 +317,19 @@ void main() {
       expect(idsOf(dest.sections[0]), <String>['interconnect.enabled']);
       expect(dest.sections[0].visible, isNull,
           reason: 'the enable toggle must always be visible');
-      // 角色模型用法说明（哪台开服务器、哪台连接、角色互斥）挂在总开关区 footer，
-      // 是整页唯一一处讲清 client/host 分工的文案，不得静默丢失。
-      expect(dest.sections[0].footer, isNotNull,
+      // 角色模型用法说明（哪台开服务器、哪台连接配对、角色互斥）挂在总开关区
+      // footer，是整页唯一一处讲清 client/host 分工的文案。只断 isNotNull 挡不住
+      // 「换成任何别的字符串」，所以两层守：① 绑定到 interconnect_enable_footer
+      // 这条 key（换成别的 key 或裸串即红）；② 断言语义锚点 server + pair（文案被
+      // 换成不相干内容即红）。刻意不做整串字面量全匹配——润色措辞不该误红。
+      final String? enableFooter = dest.sections[0].footer;
+      expect(enableFooter, t.interconnect_enable_footer,
           reason: 'the enable section must keep the role-model usage note');
+      final String enableFooterText = (enableFooter ?? '').toLowerCase();
+      expect(enableFooterText, contains('server'),
+          reason: 'the note must say which device runs the sync server');
+      expect(enableFooterText, contains('pair'),
+          reason: 'the note must say the other device pairs with that server');
       expect(idsOf(dest.sections[1]),
           <String>['sync.hibiki_server_config', 'sync.lan_devices']);
       expect(dest.sections[1].visible, isNotNull);
@@ -340,6 +350,24 @@ void main() {
       expect(dest.sections[3].visible, isNotNull);
       expect(idsOf(dest.sections[4]), <String>['sync.server_mode']);
       expect(dest.sections[4].visible, isNotNull);
+    });
+
+    test('peer address list keeps its title and empty-state guidance', () {
+      // 对端地址列表的标题与空态引导是 _HibikiServerConfigWidget 内的纯 widget
+      // 文案，进不了 SettingsSection 树，只能源码扫描守：任一处被删即红。同样只断
+      // key 引用 + 语义锚点，不做整串字面量匹配。
+      final String source = File(
+        'lib/src/sync/sync_settings_schema/interconnect.part.dart',
+      ).readAsStringSync();
+      expect(source, contains('t.interconnect_peer_list_title'),
+          reason: 'the peer address list must keep its title');
+      expect(source, contains('t.interconnect_peer_list_empty'),
+          reason: 'an empty peer address list must keep its guidance text');
+      final String emptyHint = t.interconnect_peer_list_empty.toLowerCase();
+      expect(emptyHint, contains('peer'),
+          reason: 'the empty-state text must name what the list holds');
+      expect(emptyHint, contains('pair'),
+          reason: 'the empty-state text must point at how to get a peer in');
     });
 
     test('delegate section lives with interconnect, not in card creation', () {
