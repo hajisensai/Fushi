@@ -225,6 +225,7 @@ class _Rig {
       subtitleDelayDecrease: _noop,
       alignSubtitleToPrev: _noop,
       alignSubtitleToNext: _noop,
+      enterCaret: () => bump(ShortcutAction.videoEnterCaret),
       escape: () {
         bump(ShortcutAction.videoEscape);
         if (state.fullscreenActive) {

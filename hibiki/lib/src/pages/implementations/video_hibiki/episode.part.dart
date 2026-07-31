@@ -237,8 +237,10 @@ extension _VideoEpisode on _VideoHibikiPageState {
   /// 剧集列表改为覆盖在**视频底部**的横向轨道：画面继续作为沉浸式背景，不把
   /// 16:9 视频挤成窄栏。字幕跳转列表仍是 push-aside；两者沿用既有互斥状态。
   ///
-  /// 隐藏态留在树里做 slide + fade，且 [IgnorePointer] 保证不可见层不吃画面点击。
-  /// × / Esc / 控制条按钮仍全部经 [_closeEpisodeList]，关闭副作用不分叉。
+  /// 隐藏态留在树里做 slide + fade，经 [FadingChromeGate] 保证不可见层不吃画面点击
+  /// **且不可聚焦**（BUG-1301：旧实现只有 [IgnorePointer]，挡不住焦点遍历——手柄
+  /// 浏览剧集卡片后关面板，焦点滞留在 opacity=0 的卡片 InkWell 上，焦点环在画面上
+  /// 画出一个空框）。× / Esc / 控制条按钮仍全部经 [_closeEpisodeList]，关闭副作用不分叉。
   Widget _episodeOverlayPanel(bool visible) {
     final ColorScheme cs = _videoChromeColorScheme(context);
     final double panelHeight = (220 * _videoUiScale).clamp(200.0, 360.0);
@@ -248,31 +250,28 @@ extension _VideoEpisode on _VideoHibikiPageState {
       start: 0,
       end: 0,
       bottom: 0,
-      child: IgnorePointer(
-        ignoring: !visible,
+      child: FadingChromeGate(
+        visible: visible,
+        duration: duration,
+        curve: Curves.easeOut,
         child: AnimatedSlide(
           offset: visible ? Offset.zero : const Offset(0, 0.18),
           duration: duration,
           curve: Curves.easeOutCubic,
-          child: AnimatedOpacity(
-            opacity: visible ? 1 : 0,
-            duration: duration,
-            curve: Curves.easeOut,
-            child: _withSidePanelOpaqueCursor(
-              SafeArea(
-                top: false,
-                child: VideoEpisodePanel(
-                  key: const ValueKey<String>('video-episode-panel'),
-                  episodes: _episodePanelEntries(),
-                  currentIndex: _currentEpisode,
-                  onTapEpisode: _handleEpisodeListTap,
-                  onClose: _closeEpisodeList,
-                  colorScheme: cs,
-                  title: t.video_episode_list,
-                  emptyHint: t.video_episode_list_empty,
-                  fontSize: 14 * _videoUiScale,
-                  height: panelHeight,
-                ),
+          child: _withSidePanelOpaqueCursor(
+            SafeArea(
+              top: false,
+              child: VideoEpisodePanel(
+                key: const ValueKey<String>('video-episode-panel'),
+                episodes: _episodePanelEntries(),
+                currentIndex: _currentEpisode,
+                onTapEpisode: _handleEpisodeListTap,
+                onClose: _closeEpisodeList,
+                colorScheme: cs,
+                title: t.video_episode_list,
+                emptyHint: t.video_episode_list_empty,
+                fontSize: 14 * _videoUiScale,
+                height: panelHeight,
               ),
             ),
           ),
@@ -280,6 +279,9 @@ extension _VideoEpisode on _VideoHibikiPageState {
       ),
     );
   }
+
+  // BUG-1301 note: 上面的 [FadingChromeGate] 同时承担旧 IgnorePointer + AnimatedOpacity
+  // 的职责（少一层嵌套），几何与动画时序不变。
 
   /// 自动连播倒计时 overlay（TODO-639）。一集播完且自动连播开关开着时，画面右下角弹出
   /// 「N 秒后播放下一集」+「取消」可点按钮；点取消调 [_cancelAutoAdvanceCountdown] 停在

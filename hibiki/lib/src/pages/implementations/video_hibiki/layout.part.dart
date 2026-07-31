@@ -337,6 +337,8 @@ extension _VideoLayout on _VideoHibikiPageState {
                               ReaderHibikiSource.instance.hoverAutoLookup,
                           onHoverChanged: _handleSubtitleHover,
                           hitTester: _subtitleHitTester,
+                          // 字级选词光标环（videoEnterCaret，手柄/键盘查词）。
+                          caretEntryIndex: _subtitleCaretEntry,
                           // 当前句已收藏时在字幕盒角标实心星（TODO-301）。读同一收藏缓存
                           // [_favoritedVideoSentences]（[_isCueFavorited]）；收藏 / 取消收藏
                           // 后 setState 触发本 builder 重建，标记即时更新。
@@ -531,14 +533,12 @@ extension _VideoLayout on _VideoHibikiPageState {
       builder: (BuildContext _, __) {
         final bool visible =
             _lockButtonVisible.value || _lockButtonHovered.value;
-        return IgnorePointer(
-          ignoring: !visible,
-          child: AnimatedOpacity(
-            opacity: visible ? 1.0 : 0.0,
-            duration: _videoControlsTransitionDuration,
-            curve: Curves.easeInOut,
-            child: _lockButtonHoverKeepAlive(child: child),
-          ),
+        // BUG-1301：淡出后不可点**且不可聚焦**（FadingChromeGate 统一门控），
+        // 根除焦点滞留在隐形按钮上画出空焦点框。
+        return FadingChromeGate(
+          visible: visible,
+          duration: _videoControlsTransitionDuration,
+          child: _lockButtonHoverKeepAlive(child: child),
         );
       },
     );
@@ -826,45 +826,43 @@ extension _VideoLayout on _VideoHibikiPageState {
                 builder: (BuildContext __, ___) {
                   final bool visible =
                       _lockButtonVisible.value || _lockButtonHovered.value;
-                  return IgnorePointer(
-                    ignoring: !visible,
-                    child: AnimatedOpacity(
-                      opacity: visible ? 1.0 : 0.0,
-                      // TODO-435：与 media_kit 控制条同源的淡入淡出时长 + 曲线，
-                      // 让锁按钮与控制条一致地淡入淡出（旧实现 200ms + 默认 linear）。
-                      duration: _videoControlsTransitionDuration,
-                      curve: Curves.easeInOut,
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        // hover 保活：鼠标进按钮置 [_lockButtonHovered]=true 顶住显示 +
-                        // [_pokeLockButton] 续命淡出定时器；移出置 false 回落到自然淡出。
-                        // 与屏幕右侧 rail 的 [_railHoverKeepAlive] 同款（用户要求「改成和屏幕
-                        // 右侧按钮一样」）。
-                        child: _lockButtonHoverKeepAlive(
-                          child: Material(
-                            // 锁按钮带自有 surface 圆底（非裸压 scrim），底色 / 图标
-                            // 仍按主题自配对；alpha 收敛进两档制的半透明档
-                            // （UI 巡检 PR-4，此前 0.55 独立一档）。
-                            color: cs.surface.withValues(
-                                alpha: kVideoOverlayTranslucentAlpha),
-                            shape: const CircleBorder(),
-                            clipBehavior: Clip.antiAlias,
-                            child: IconButton(
-                              tooltip: locked
-                                  ? t.video_immersive_unlock
-                                  : t.video_menu_lock,
-                              iconSize: iconSize,
-                              // TODO-604：与左 / 右侧浮条按钮、底 / 顶栏按钮统一用主题
-                              // 强调色 cs.primary（此前 cs.onSurface 中性前景看上去没吃主题色）。
-                              color: cs.primary,
-                              // 状态语义（TODO-153/BUG-216）：锁住=闭锁图标、未锁=开锁图标。
-                              icon: Icon(
-                                locked
-                                    ? Icons.lock_outline
-                                    : Icons.lock_open_outlined,
-                              ),
-                              onPressed: _toggleImmersiveLock,
+                  // TODO-435：与 media_kit 控制条同源的淡入淡出时长 + 曲线，
+                  // 让锁按钮与控制条一致地淡入淡出（旧实现 200ms + 默认 linear）。
+                  // BUG-1301：FadingChromeGate 统一门控——淡出后不可点且不可聚焦，
+                  // 根除焦点滞留在隐形锁按钮上画出空焦点框。
+                  return FadingChromeGate(
+                    visible: visible,
+                    duration: _videoControlsTransitionDuration,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      // hover 保活：鼠标进按钮置 [_lockButtonHovered]=true 顶住显示 +
+                      // [_pokeLockButton] 续命淡出定时器；移出置 false 回落到自然淡出。
+                      // 与屏幕右侧 rail 的 [_railHoverKeepAlive] 同款（用户要求「改成和屏幕
+                      // 右侧按钮一样」）。
+                      child: _lockButtonHoverKeepAlive(
+                        child: Material(
+                          // 锁按钮带自有 surface 圆底（非裸压 scrim），底色 / 图标
+                          // 仍按主题自配对；alpha 收敛进两档制的半透明档
+                          // （UI 巡检 PR-4，此前 0.55 独立一档）。
+                          color: cs.surface
+                              .withValues(alpha: kVideoOverlayTranslucentAlpha),
+                          shape: const CircleBorder(),
+                          clipBehavior: Clip.antiAlias,
+                          child: IconButton(
+                            tooltip: locked
+                                ? t.video_immersive_unlock
+                                : t.video_menu_lock,
+                            iconSize: iconSize,
+                            // TODO-604：与左 / 右侧浮条按钮、底 / 顶栏按钮统一用主题
+                            // 强调色 cs.primary（此前 cs.onSurface 中性前景看上去没吃主题色）。
+                            color: cs.primary,
+                            // 状态语义（TODO-153/BUG-216）：锁住=闭锁图标、未锁=开锁图标。
+                            icon: Icon(
+                              locked
+                                  ? Icons.lock_outline
+                                  : Icons.lock_open_outlined,
                             ),
+                            onPressed: _toggleImmersiveLock,
                           ),
                         ),
                       ),

@@ -202,6 +202,7 @@ void main() {
         subtitleDelayDecrease: noop,
         alignSubtitleToPrev: noop,
         alignSubtitleToNext: noop,
+        enterCaret: noop,
         escape: noop,
       );
     }

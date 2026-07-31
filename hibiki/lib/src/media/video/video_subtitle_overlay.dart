@@ -39,6 +39,138 @@ class VideoSubtitleHitTester {
   /// 容差——查词浮层 dismiss barrier 用它区分「点空白想关闭」与「点字上想切词」。
   SubtitleCharHit? hitTest(Offset globalPos, {bool exactOnly = false}) =>
       _impl?.call(globalPos, exactOnly: exactOnly);
+
+  // ── 字级选词光标视图（手柄查词，videoEnterCaret）────────────────────────
+  //
+  // 与 [bindHitTest] 同范式：overlay 每帧 build 把「按登记表下标读几何/命中」的实现
+  // 绑进来，页面持同一句柄驱动选词光标（进入锚点、方向移动、A 确认查词）。光标本身
+  // 只是页面持有的一个 entry 下标，几何真相源始终在 overlay 的字符登记表。
+
+  int Function()? _entryCountImpl;
+  SubtitleCharHit? Function(int entryIndex)? _entryHitImpl;
+  List<Rect> Function()? _entryRectsImpl;
+  int Function()? _caretAnchorImpl;
+
+  void bindCaretView({
+    required int Function() entryCount,
+    required SubtitleCharHit? Function(int entryIndex) hitAt,
+    required List<Rect> Function() entryRects,
+    required int Function() anchorEntry,
+  }) {
+    _entryCountImpl = entryCount;
+    _entryHitImpl = hitAt;
+    _entryRectsImpl = entryRects;
+    _caretAnchorImpl = anchorEntry;
+  }
+
+  /// 当前帧登记的字幕字符总数（主 + 副字幕活动集）。overlay 未绑定 / 无字幕时为 0。
+  int caretEntryCount() => _entryCountImpl?.call() ?? 0;
+
+  /// 按登记表下标取 (整句, grapheme 下标, 字符全局矩形)——选词光标 A 确认查词用，
+  /// 复用点击查词的同一命中内核（[_charHitByEntryIndex]）。越界 / 模糊返回 null。
+  SubtitleCharHit? caretHitAt(int entryIndex) =>
+      _entryHitImpl?.call(entryIndex);
+
+  /// 全部登记字符的全局矩形（模糊字符为 [Rect.zero]），供 [moveSubtitleCaretEntry]
+  /// 做方向移动。
+  List<Rect> caretEntryRects() => _entryRectsImpl?.call() ?? const <Rect>[];
+
+  /// 进入选词模式的锚点下标：主字幕层第一个可见（非模糊）字符；主层全模糊/为空时
+  /// 回退任意层第一个可见字符；无可选字符返回 -1（页面据此拒绝进入并提示）。
+  int caretAnchorEntry() => _caretAnchorImpl?.call() ?? -1;
+}
+
+/// 选词光标的一次方向移动（手柄 D-pad / 键盘方向键，物理方向）。
+enum SubtitleCaretMove { left, right, up, down }
+
+/// 在一组字符矩形里按物理方向移动选词光标（纯函数，可测）。
+///
+/// [rects] 是 overlay 当前帧全部登记字符的全局矩形（模糊字符为 [Rect.zero]，恒跳过）；
+/// [current] 是当前光标 entry 下标。返回移动后的下标；无处可去（行首再左 / 末字再右 /
+/// 已是最上/下一行）或输入非法时返回 [current] 原地不动——光标绝不越界、绝不消失。
+///
+/// 左/右 = 取**同一行**（垂直中心落在当前字符高度带内）水平方向紧邻的可见字符；
+/// 行尽头原地不动（换行交给上/下，语义可预期、不绕圈）。
+/// 上/下 = 先取该方向上**最近的行**（按垂直中心距离聚类），行内取水平中心最近者——
+/// 与全局焦点遍历的方向语义一致，跨主/副字幕层也成立（几何驱动，不关心层归属）。
+int moveSubtitleCaretEntry(
+  List<Rect> rects,
+  int current,
+  SubtitleCaretMove move,
+) {
+  if (current < 0 || current >= rects.length) return current;
+  final Rect cur = rects[current];
+  if (cur == Rect.zero) return current;
+
+  bool sameRow(Rect r) =>
+      (r.center.dy - cur.center.dy).abs() < (cur.height + r.height) / 4;
+
+  switch (move) {
+    case SubtitleCaretMove.left:
+    case SubtitleCaretMove.right:
+      // 同一行内：取水平方向紧邻的可见字符（按几何位置，不依赖登记序——重叠 cue
+      // 的登记序与视觉序可能不同）。
+      final bool forward = move == SubtitleCaretMove.right;
+      int best = -1;
+      double bestDx = double.infinity;
+      for (int i = 0; i < rects.length; i++) {
+        if (i == current) continue;
+        final Rect r = rects[i];
+        if (r == Rect.zero || !sameRow(r)) continue;
+        final double dx =
+            forward ? r.center.dx - cur.center.dx : cur.center.dx - r.center.dx;
+        if (dx <= 0) continue;
+        if (dx < bestDx) {
+          bestDx = dx;
+          best = i;
+        }
+      }
+      // 行尽头：原地不动（换行交给上/下方向键）。
+      return best >= 0 ? best : current;
+    case SubtitleCaretMove.up:
+    case SubtitleCaretMove.down:
+      return _nearestInDirection(rects, current, cur,
+          vertical: true, positive: move == SubtitleCaretMove.down);
+  }
+}
+
+/// [moveSubtitleCaretEntry] 的跨行/跨盒兜底：在 [vertical] 轴的 [positive] 方向上找
+/// 「主轴最近的一行/一列，行列内副轴中心最近」的可见字符；该方向没有任何字符返回
+/// [current]。
+int _nearestInDirection(
+  List<Rect> rects,
+  int current,
+  Rect cur, {
+  required bool vertical,
+  required bool positive,
+}) {
+  int best = -1;
+  double bestMajor = double.infinity;
+  double bestMinor = double.infinity;
+  for (int i = 0; i < rects.length; i++) {
+    if (i == current) continue;
+    final Rect r = rects[i];
+    if (r == Rect.zero) continue;
+    final double major = vertical
+        ? (positive ? r.center.dy - cur.center.dy : cur.center.dy - r.center.dy)
+        : (positive
+            ? r.center.dx - cur.center.dx
+            : cur.center.dx - r.center.dx);
+    // 主轴必须真的在目标方向上（至少越过半个字符高/宽，排除同行/同列邻居）。
+    final double minStep = vertical ? cur.height / 2 : cur.width / 2;
+    if (major < minStep) continue;
+    final double minor = vertical
+        ? (r.center.dx - cur.center.dx).abs()
+        : (r.center.dy - cur.center.dy).abs();
+    // 先比主轴（最近的行/列），主轴几乎相同（同一行内）再比副轴。
+    if (major < bestMajor - 0.5 ||
+        ((major - bestMajor).abs() <= 0.5 && minor < bestMinor)) {
+      bestMajor = major;
+      bestMinor = minor;
+      best = i;
+    }
+  }
+  return best >= 0 ? best : current;
 }
 
 /// 按全局坐标在一组字符屏幕矩形里反查命中的字符下标（纯函数，可测）。
@@ -158,6 +290,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.hoverAutoLookupEnabled = false,
     this.onHoverChanged,
     this.hitTester,
+    this.caretEntryIndex,
     this.isCueFavorited,
     this.blurEnabled = false,
     this.subtitleHidden = false,
@@ -211,6 +344,12 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// 可选的字符命中句柄：build 时把按全局坐标反查字符的实现绑进来，供查词浮层的
   /// dismiss barrier「点同句换词保持暂停」用（见 [VideoSubtitleHitTester]）。
   final VideoSubtitleHitTester? hitTester;
+
+  /// 选词光标（手柄查词，videoEnterCaret）当前停在的登记表下标；null = 光标未激活。
+  /// 命中该下标的字符外画一圈主题色光标环（与阅读器 hoshiCaret 环同语义）。下标由
+  /// 页面驱动（进入锚点 / [moveSubtitleCaretEntry] 移动），几何真相源在本 overlay 的
+  /// 登记表；越界（cue 已切换等）不画环，页面在下一次输入时重锚。
+  final int? caretEntryIndex;
 
   /// 当前字幕句是否已收藏（TODO-301 / BUG-264）。非 null 时，当前句已收藏会在字幕盒
   /// 起始处显示一枚实心星标记（与字幕列表行的收藏标记同语义）。null（测试 / 有声书等
@@ -533,6 +672,28 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     );
   }
 
+  /// 选词光标视图（手柄查词）：全部登记字符的全局矩形（模糊字符 [Rect.zero]），
+  /// 供 [moveSubtitleCaretEntry] 做方向移动。与 [_hitEntryIndexAt] 同一几何口径。
+  List<Rect> _caretEntryRects() {
+    return <Rect>[
+      for (final _SubtitleCharEntry e in _charEntries)
+        e.blurred ? Rect.zero : _globalRectOf(e.context),
+    ];
+  }
+
+  /// 选词光标进入锚点：主字幕层第一个可见（非模糊、已布局）字符；主层不可用时回退
+  /// 任意层第一个可见字符；无可选字符返回 -1（模糊未显形 / 无字幕，页面拒绝进入）。
+  int _caretAnchorEntry() {
+    int fallback = -1;
+    for (int i = 0; i < _charEntries.length; i++) {
+      final _SubtitleCharEntry e = _charEntries[i];
+      if (e.blurred || _globalRectOf(e.context) == Rect.zero) continue;
+      if (!e.isSecondary) return i;
+      if (fallback < 0) fallback = i;
+    }
+    return fallback;
+  }
+
   /// 桌面 Shift-鼠标悬停查词（TODO-756a）。仅在 [VideoSubtitleOverlay.onCharHover] 注册时由
   /// [MouseRegion.onHover] 调；语义与阅读器 `onShiftHover`（`webview.part.dart`）一致：
   /// 按住 Shift 在字幕字符上移动即对命中字符走查词。移动端无 OS hover、自然不触发。
@@ -648,6 +809,13 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         // 时 hitTest 返回 null（barrier 走 dismiss）。TODO-1312：登记表二维（主 + 副字幕）。
         _charEntries.clear();
         widget.hitTester?.bindHitTest(_charHitTest);
+        // 选词光标视图与命中句柄同帧绑定（同一登记表真相源）。
+        widget.hitTester?.bindCaretView(
+          entryCount: () => _charEntries.length,
+          hitAt: _charHitByEntryIndex,
+          entryRects: _caretEntryRects,
+          anchorEntry: _caretAnchorEntry,
+        );
 
         // 主字幕活动集（重叠 cue 全渲染，TODO-1312）。遮蔽模式「隐藏」时主层不渲染
         // （TODO-840 Part B）——只影响底部主字幕，不影响副字幕 / 查词 / 字幕列表。
@@ -1345,15 +1513,36 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     Widget charWidget(int i) {
       return Builder(
         builder: (BuildContext charContext) {
+          int entryIndex = -1;
           if (registerHits) {
+            entryIndex = _charEntries.length;
             _charEntries.add(_SubtitleCharEntry(
               sentence: text,
               graphemeIndex: i,
               context: charContext,
               blurred: blurred,
+              isSecondary: isSecondary,
             ));
           }
-          return _buildSubtitleChar(chars[i], i, markup, cue);
+          final Widget ch = _buildSubtitleChar(chars[i], i, markup, cue);
+          // 选词光标环（手柄查词）：光标停在本字符时外画一圈主题色圆角框。
+          // foregroundDecoration 画在字形之上、不改变布局几何（字幕排版零位移）。
+          // 登记与画环同帧同源（entryIndex 即登记序），不存在几何滞后。
+          if (entryIndex >= 0 &&
+              !blurred &&
+              widget.caretEntryIndex == entryIndex) {
+            return Container(
+              foregroundDecoration: BoxDecoration(
+                border: Border.all(
+                  color: Theme.of(charContext).colorScheme.primary,
+                  width: 2,
+                ),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: ch,
+            );
+          }
+          return ch;
         },
       );
     }
@@ -2400,6 +2589,7 @@ class _SubtitleCharEntry {
     required this.graphemeIndex,
     required this.context,
     required this.blurred,
+    required this.isSecondary,
   });
 
   /// 该字符所属的整条 cue 文本（查词 / 制卡取整句用）。
@@ -2414,6 +2604,9 @@ class _SubtitleCharEntry {
   /// 该字符所在层是否模糊（听力沉浸主层模糊时为 true）——模糊字符不参与命中反查
   /// （与点击不查词一致），命中扫描时按 [Rect.zero] 跳过。
   final bool blurred;
+
+  /// 是否属于副字幕层。选词光标进入锚点优先选主字幕层（副字幕是翻译参考）。
+  final bool isSecondary;
 }
 
 /// [_VideoSubtitleOverlayState._groupSlots] 的一格（TODO-1372/BUG-698）：槽主 cue + 是否

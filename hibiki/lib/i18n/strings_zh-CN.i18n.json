@@ -2866,5 +2866,6 @@
   "delete_disclosure_audiobook_source_kept": "你导入时选择的原始音频文件",
   "audiobook_delete": "删除有声书",
   "audiobook_delete_confirm": "删除已附加的有声书？它的音频文件会从本机删除。",
-  "delete_collection_confirm": "只解除分组，其中的条目会保留。"
+  "delete_collection_confirm": "只解除分组，其中的条目会保留。",
+  "shortcut_action_video_enter_caret": "进入字幕选词光标"
 }

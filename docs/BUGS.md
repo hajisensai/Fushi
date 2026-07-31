@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1251 条。点号进各自文件。
+> 共 1253 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -37,6 +37,8 @@
 | [BUG-1304](bugs/BUG-1304-engine-freq-pitch-enrich-before-truncate.md) | ✅ | ✅ | 词典引擎 freq/pitch 在截断前富化：中间结果被重复富化约 3 倍（实测微优化，非秒级根因） |
 | [BUG-1303](bugs/BUG-1303-hoshidicts-hash-probe-unbounded.md) | ✅ | ✅ | 词典 hash 探测无界循环 + load() 零边界校验：损坏词典可致查词永久挂死/越界读 |
 | [BUG-1302](bugs/BUG-1302-lookup-blocking-network-timeouts.md) | ✅ | ✅ | 查词弹窗被网络超时阻塞数秒（远端查词 remote-first + 逐词条 AnkiConnect 查重） |
+| [BUG-1301](bugs/BUG-1301-video-hidden-chrome-steals-focus-ring.md) | ✅ | ✅ | 视频页隐形chrome可聚焦致空焦点框 |
+| [BUG-1300](bugs/BUG-1300-focus-ring-stale-rect-on-layout-shift.md) | ✅ | ✅ | 焦点环矩形不随布局位移过期悬空 |
 | [BUG-1299](bugs/BUG-1299-continue-cover-portrait-crop.md) | ✅ | ✅ | 竖版海报封面在继续/继续观看/合集详情被裁切或留灰带 |
 | [BUG-1298](bugs/BUG-1298-collection-hero-portrait-cover.md) | ✅ | ✅ | 合集详情页 hero 用竖版刮削海报时被 BoxFit.cover 裁成中间一条 |
 | [BUG-1297](bugs/BUG-1297-danmaku-scroll-exit.md) | ✅ | ✅ | 滚动弹幕退场突兀：没滑出屏幕就被整条抹掉 |
