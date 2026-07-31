@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/media.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 
 /// 漫画 OCR P1 的接线守卫（源码扫描 + 键不变量），与 PDF 的
 /// `reader_pdf_routing_guard_test.dart` 同纪律。
@@ -27,16 +28,24 @@ void main() {
   });
 
   test('书架列书按 format 路由：format==manga 的行带 MangaHibikiSource 源标识', () {
-    final String src = read('lib/src/media/sources/reader_hibiki_source.dart');
-    // 判据统一走 BookFormat 枚举后，锚点跟着走（裸字符串比较已被
-    // book_format_discipline_guard 禁掉——它正是「只挡 manga、漏掉 pdf」的温床）。
-    expect(src.contains('format == BookFormat.manga'), isTrue,
-        reason: '_bookToMediaItem 应按 BookFormat.manga 分流');
-    expect(src.contains('MangaHibikiSource.kUniqueKey'), isTrue,
+    // BUG-1316：路由派生已收敛成公开的具名函数，故判据从「源码里有那串三元」升级
+    // 成**直接调它**——行为断言比语料锚点强，也不会被等价改写绕过。
+    expect(ReaderHibikiSource.mediaSourceKeyFor(BookFormat.manga),
+        MangaHibikiSource.kUniqueKey,
         reason: '漫画行 mediaSourceIdentifier 应取 MangaHibikiSource.kUniqueKey');
     // PDF 分流不能被漫画分流破坏（向后兼容守卫）。
-    expect(src.contains('format == BookFormat.pdf'), isTrue);
-    expect(src.contains('ReaderPdfSource.kUniqueKey'), isTrue);
+    expect(ReaderHibikiSource.mediaSourceKeyFor(BookFormat.pdf),
+        ReaderPdfSource.kUniqueKey);
+    expect(ReaderHibikiSource.mediaSourceKeyFor(BookFormat.epub),
+        ReaderHibikiSource.instance.uniqueKey);
+  });
+
+  test('_bookToMediaItem 走共享派生点，不得再内联自己的一套三元', () {
+    final String src = read('lib/src/media/sources/reader_hibiki_source.dart');
+    expect(src.contains('mediaSourceIdentifier: mediaSourceKeyFor(format)'),
+        isTrue,
+        reason: '书架列书必须与「跳回原文」入口共用 mediaSourceKeyFor：'
+            '两条各写各的，漫画/PDF 就会在其中一条上永远用错阅读器');
   });
 
   test('AppModel 注册 MangaHibikiSource.instance（否则打开漫画崩于 map 空断言）', () {

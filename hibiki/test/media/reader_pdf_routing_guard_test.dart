@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/media.dart';
+import 'package:hibiki_core/hibiki_core.dart';
 
 /// PDF 阅读器 Phase 1 的接线守卫（源码扫描 + 键不变量）。
 ///
@@ -26,14 +27,15 @@ void main() {
   });
 
   test('书架列书按 format 路由：format==pdf 的行带 ReaderPdfSource 源标识', () {
-    final String src = read('lib/src/media/sources/reader_hibiki_source.dart');
     // _bookToMediaItem 必须按 format 分流 mediaSourceIdentifier；缺这条 → PDF 行用
     // 'reader_ttu' 打开 → EPUB 阅读器解析 PDF → 崩。
-    // 判据统一走 BookFormat 枚举后，锚点跟着走（见 book_format_discipline_guard）。
-    expect(src.contains('format == BookFormat.pdf'), isTrue,
-        reason: '_bookToMediaItem 应按 BookFormat.pdf 分流');
-    expect(src.contains('ReaderPdfSource.kUniqueKey'), isTrue,
+    // BUG-1316：派生已收敛成公开具名函数，判据从源码语料升级成直接调它。
+    expect(ReaderHibikiSource.mediaSourceKeyFor(BookFormat.pdf),
+        ReaderPdfSource.kUniqueKey,
         reason: 'PDF 行 mediaSourceIdentifier 应取 ReaderPdfSource.kUniqueKey');
+    expect(ReaderHibikiSource.mediaSourceKeyFor(BookFormat.epub),
+        isNot(ReaderPdfSource.kUniqueKey),
+        reason: 'EPUB 不得塌缩到 PDF 源');
   });
 
   test('AppModel 注册 ReaderPdfSource.instance（否则打开 PDF 崩于 map 空断言）', () {
