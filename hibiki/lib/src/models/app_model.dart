@@ -4661,10 +4661,16 @@ class AppModel with ChangeNotifier {
   Future<void> openBackgroundListeningBook(WidgetRef ref) async {
     final SessionBookInfo? info = audiobookSession.book;
     if (info == null) return;
-    final ReaderHibikiSource source = ReaderHibikiSource.instance;
-    final MediaItem? item = await source.mediaItemForBookKey(info.bookKey);
+    final MediaItem? item =
+        await ReaderHibikiSource.instance.mediaItemForBookKey(info.bookKey);
     if (item == null) return;
-    await openMedia(ref: ref, mediaSource: source, item: item);
+    // 源必须跟着 item 自己的 mediaSourceIdentifier 走（它已按当前 format 现算）：
+    // 写死 ReaderHibikiSource 会让漫画 / PDF 书用 EPUB 阅读器打开。
+    await openMedia(
+      ref: ref,
+      mediaSource: item.getMediaSource(appModel: this),
+      item: item,
+    );
   }
 
   // ── search & dictionary display (delegated to PreferencesRepository) ─

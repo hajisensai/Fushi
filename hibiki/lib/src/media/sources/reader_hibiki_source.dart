@@ -178,6 +178,27 @@ class ReaderHibikiSource extends ReaderMediaSource {
   static String mediaIdentifierFor(String bookKey) =>
       '$_bookIdentifierPrefix$bookKey';
 
+  /// 「这本书该用哪个阅读器打开」的**唯一派生点**：`EpubBooks.format` →
+  /// `MediaItem.mediaSourceIdentifier`。
+  ///
+  /// 三种书共用 `mediaIdentifier`（`hoshi://book/<bookKey>`，与 format 无关），
+  /// 路由只认 `mediaSourceIdentifier`，而它**只能**由**当前**的 `format` 现算。
+  /// 书架列书（[_bookToMediaItem]）与所有「手上只有 bookKey、要跳回原文」的入口
+  /// （收藏句 / 制卡句）必须共用本函数：任何自己写死 `ReaderHibikiSource.instance`
+  /// 的入口，在漫画 / PDF 书上**今天就已经**用错阅读器打开（漫画行的 `epubPath`
+  /// 是 `manga.json`、`chaptersJson` 是 `'[]'`，落到 EPUB 阅读器直接在解析路径
+  /// 出错），书 ↔ 漫画转化只是把它从「导入即错」放大成「转化后突然错」。
+  static String mediaSourceKeyFor(BookFormat format) {
+    switch (format) {
+      case BookFormat.pdf:
+        return ReaderPdfSource.kUniqueKey;
+      case BookFormat.manga:
+        return MangaHibikiSource.kUniqueKey;
+      case BookFormat.epub:
+        return instance.uniqueKey;
+    }
+  }
+
   // HBK-AUDIT-127: percent-encode the href when building the URL so it is
   // symmetric with the consumer side, which decodes the whole post-'/epub/'
   // path with Uri.decodeComponent (reader_hibiki_page.dart, epub_book.dart).
@@ -504,10 +525,8 @@ class ReaderHibikiSource extends ReaderMediaSource {
     // 共用 `hoshi://book/<bookKey>`（bookKey 是主键、与 format 无关），路由只认
     // mediaSourceIdentifier。
     final BookFormat format = BookFormat.parseOrEpub(book.format);
-    final bool isPdf = format == BookFormat.pdf;
-    final bool isManga = format == BookFormat.manga;
     // 页码型书（PDF/漫画）：进度单位是页而非章内字数。
-    final bool pageBased = isPdf || isManga;
+    final bool pageBased = format.isPagedImageBook;
 
     // TODO-1346：进度纳入当前章内 charOffset（与章字数同单位），并对老书无字数时
     // 回退章级粗粒度，避免书架恒显 0%。见 [computeBookProgress]。
@@ -545,11 +564,7 @@ class ReaderHibikiSource extends ReaderMediaSource {
       author: book.author,
       imageUrl: imageUrl,
       mediaTypeIdentifier: mediaType.uniqueKey,
-      mediaSourceIdentifier: isPdf
-          ? ReaderPdfSource.kUniqueKey
-          : isManga
-              ? MangaHibikiSource.kUniqueKey
-              : uniqueKey,
+      mediaSourceIdentifier: mediaSourceKeyFor(format),
       position: position,
       duration: duration,
       canDelete: false,
