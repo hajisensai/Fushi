@@ -62,6 +62,7 @@ void main() {
           int fps = 8,
           int width = 320,
           MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+          bool diagnosticOnly = false,
           FfmpegFailureReporter? onFailure,
           String? tlsPinSha256}) async =>
       outputPath;
@@ -73,6 +74,7 @@ void main() {
           int fps = 8,
           int width = 320,
           MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+          bool diagnosticOnly = false,
           FfmpegFailureReporter? onFailure,
           String? tlsPinSha256}) async =>
       null;
@@ -281,6 +283,7 @@ void main() {
       int fps = 8,
       int width = 320,
       MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+      bool diagnosticOnly = false,
       FfmpegFailureReporter? onFailure,
       String? tlsPinSha256,
     }) async {
@@ -368,6 +371,7 @@ void main() {
         int fps = 8,
         int width = 320,
         MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+        bool diagnosticOnly = false,
         FfmpegFailureReporter? onFailure,
         String? tlsPinSha256}) async {
       gifInput = inputPath;
@@ -501,6 +505,7 @@ void main() {
         int fps = 8,
         int width = 320,
         MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+        bool diagnosticOnly = false,
         FfmpegFailureReporter? onFailure,
         String? tlsPinSha256}) async {
       gifCalled = true;
@@ -539,6 +544,7 @@ void main() {
         int fps = 8,
         int width = 320,
         MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+        bool diagnosticOnly = false,
         FfmpegFailureReporter? onFailure,
         String? tlsPinSha256}) async {
       gifCalled = true;

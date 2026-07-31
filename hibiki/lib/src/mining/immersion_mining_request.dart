@@ -98,16 +98,17 @@ enum VideoMiningImageMode {
 /// 「格式 × 静态来源」的笛卡尔积（avif/webp/gif × currentFrame/subtitleStart），而格式
 /// 只对动图有意义、静态来源只对静态图有意义。两轴独立取值，各自一个设置项。
 ///
-/// 每种格式自己声明**顶格档（最高清晰度档）用什么参数**（[maxTierFps]/[maxTierWidth]，
-/// `0` = 源帧率/源分辨率直通）。这不是装饰性属性——它是顶格档语义的唯一真相源，
-/// `MiningMediaCompression.resolve` 直接查它，不做「谁是特例」的分支判断。
+/// 每种格式自己声明**顶格档（最高清晰度档）的参数上限**（[maxTierFps]/[maxTierWidth]）。
+/// 这不是装饰性属性——它是顶格档语义的唯一真相源，`MiningMediaCompression.resolve`
+/// 直接查它，不做「谁是特例」的分支判断；[capFps]/[capWidth] 再保证任何来路的参数都
+/// 越不过本格式的上限。
 ///
 /// 为什么不是一个 `hasInterFrameCompression` 布尔（本改动的初版就是那样，被实测推翻）：
-/// 「有没有帧间压缩」是编解码规格问题，而顶格档要回答的是**「源直通跑得动吗」**，
+/// 「有没有帧间压缩」是编解码规格问题，而顶格档要回答的是**「这一档跑得动吗」**，
 /// 两者并不等价。本机 ffmpeg（libsvtav1 / libwebp_anim / native gif）实测，1080p30
 /// 合成源 4 秒窗：
 ///
-/// | 格式 | 标准档 480px·8fps | 原图档 1080p·30fps |
+/// | 格式 | 标准档 480px·8fps | 源分辨率·源帧率 1080p·30fps |
 /// |---|---|---|
 /// | gif  | 1973 ms / 471 KB | 11978 ms / 17.8 MB |
 /// | webp |  877 ms / 163 KB | **16383 ms** / 5.19 MB |
@@ -115,15 +116,32 @@ enum VideoMiningImageMode {
 ///
 /// WebP 规格上确有帧间差分，实测却是三者里**最慢**的——`libwebp_anim` 本质是逐帧 VP8
 /// 帧内编码的静态图编码器，没有真正的运动补偿，也不并行；SVT-AV1 是真视频编码器，
-/// 在源分辨率下反而比 GIF 快 3.4 倍。所以 WebP 与 GIF 一样吃封顶值，只有 AVIF 开放源
-/// 直通。GIF 的封顶值仍是 BUG-1039 的实测折中（那次 1080p/4 秒 = 48.9 秒 / 54 MB，
-/// 10 秒 cue 约 135 MB，撞 120 秒超时且 AnkiConnect 卡死）。
+/// 在源分辨率下反而比 GIF 快 3.4 倍。所以 WebP 与 GIF 吃同一组封顶值，AVIF 拿一组
+/// **更宽松但同样有限**的封顶值。GIF/WebP 的封顶值仍是 BUG-1039 的实测折中（那次
+/// 1080p/4 秒 = 48.9 秒 / 54 MB，10 秒 cue 约 135 MB，撞 120 秒超时且 AnkiConnect 卡死）。
+///
+/// ⚠️ **没有任何格式的顶格档是「源分辨率 + 源帧率」直通。** AVIF 一度被配成 `0/0`
+/// （源直通），按 **10 秒 cue 上限**（`buildFfmpegClipAnimatedArgs` 的 `maxDurationMs`
+/// 默认值，而不是上表那个 4 秒窗）重测后撤掉：
+///
+/// | AVIF 顶格档候选（10 秒窗） | 耗时 | 体积 |
+/// |---|---|---|
+/// | 4K30 源直通（旧 `0/0`） | 8537 ms | **34.54 MB** |
+/// | 1080p30 源直通（旧 `0/0`） | 2485 ms | **8.80 MB** |
+/// | **1440px·24fps（现值）** | 2918 ms | **2.91 MB** |
+/// | 960px·12fps（= GIF/WebP 封顶值） | 711 ms | 0.41 MB |
+/// | 同窗真 GIF @960px·12fps 参照 | 1690 ms | 4.97 MB |
+///
+/// 换了更好的编码器，该做的是**抬高**上限而不是删掉上限——BUG-1039 的教训是「顶格档
+/// 不该是不可用配置」，34 MB 的封面照样把 AnkiConnect 和同步打穿。现值 1440px·24fps
+/// 比 GIF/WebP 封顶值宽 1.5 倍、帧率翻倍，产出体积却仍**小于**同窗真 GIF（2.91 MB 对
+/// 4.97 MB）。体积预算守卫见 `test/mining/mining_animated_format_test.dart`。
 ///
 /// ⚠️ 默认值是 [avif] 而非 [gif]：这是本改动**唯一一处有意的现状变更**（老用户升级后
 /// 新卡默认变 AVIF）。[gif] 保留为可选项，既供用户回退，也供捆绑 ffmpeg 不支持新编码器
 /// 时 fail-open 降级（见 `galgame_window_gif.dart` / `desktop_audio_clipper.dart`）。
 enum MiningAnimatedFormat {
-  avif('avif', 'avif', maxTierFps: 0, maxTierWidth: 0),
+  avif('avif', 'avif', maxTierFps: 24, maxTierWidth: 1440),
   webp('webp', 'webp', maxTierFps: 12, maxTierWidth: 960),
   gif('gif', 'gif', maxTierFps: 12, maxTierWidth: 960);
 
@@ -140,15 +158,24 @@ enum MiningAnimatedFormat {
   /// 输出文件扩展名（不含点）。ffmpeg 按扩展名选 muxer，故这也是 muxer 选择依据。
   final String fileExtension;
 
-  /// 顶格档帧率。`0` = 源帧率直通（不加 `fps` 滤镜）。见枚举文档的实测表。
+  /// 顶格档帧率上限。恒为正——没有格式开放源帧率直通，理由见枚举文档的两张实测表。
   final int maxTierFps;
 
-  /// 顶格档宽度（px）。`0` = 源分辨率直通（不加 `scale` 滤镜）。同上。
+  /// 顶格档宽度上限（px）。恒为正——同 [maxTierFps]。
   final int maxTierWidth;
 
-  /// 顶格档是否真的是「原图」（源分辨率 + 源帧率）。仅供 UI 决定顶格档文案该说
-  /// 「原图」还是「最高」——不参与参数计算，参数一律读 [maxTierFps]/[maxTierWidth]。
-  bool get maxTierIsSourcePassthrough => maxTierFps == 0 && maxTierWidth == 0;
+  /// 把 [requested] 帧率夹到本格式的顶格档上限。`<= 0`（历史「源帧率直通」哨兵）同样
+  /// 夹成上限。
+  ///
+  /// 这是 BUG-1039 的收口点：换格式重试时若沿用**上一个格式**的参数，就会把 AVIF 顶格
+  /// 档的 24fps/1440px 原样喂给 GIF（GIF 无帧间压缩，体积线性爆炸）。夹取对三种格式、
+  /// 四个档位一致，不是「谁是特例」的分支。
+  int capFps(int requested) =>
+      (requested <= 0 || requested > maxTierFps) ? maxTierFps : requested;
+
+  /// 把 [requested] 宽度夹到本格式的顶格档上限。语义同 [capFps]。
+  int capWidth(int requested) =>
+      (requested <= 0 || requested > maxTierWidth) ? maxTierWidth : requested;
 
   /// 从偏好字符串解析；未知/null → [avif]（新默认）。
   static MiningAnimatedFormat fromWireName(String? name) {

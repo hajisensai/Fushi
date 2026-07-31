@@ -40,6 +40,7 @@ Future<String?> _okGif(
         int fps = 8,
         int width = 320,
         MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+        bool diagnosticOnly = false,
         FfmpegFailureReporter? onFailure,
         String? tlsPinSha256}) async =>
     outputPath;

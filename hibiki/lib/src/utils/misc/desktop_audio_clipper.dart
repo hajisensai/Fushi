@@ -205,8 +205,8 @@ Future<String?> materializeRemoteAudioViaRangeDownload({
 /// 不可变值对象（纯数据，可单测、可在隔离中构造）。各底层纯函数（[buildFfmpegClipArgs]
 /// / [buildFfmpegClipGifArgs] / [downsampleCardScreenshot]）仍接收原始可选参数，本类只是
 /// 调用点选档时的参数捆绑，不让纯函数读全局偏好。最高档用 [screenshotMaxLongEdge] == 0
-/// 表示「不缩放」（截图原图直通），由底层纯函数解读；动图侧的 0 哨兵只有 **AVIF** 在顶格
-/// 档产出（WebP/GIF 任何档位都是有限值），依据见 [MiningAnimatedFormat] 与 [resolve]。
+/// 表示「不缩放」（截图原图直通），由底层纯函数解读；**动图侧任何格式、任何档位都是
+/// 有限值**（顶格档上限由格式自己声明，见 [MiningAnimatedFormat] 与 [resolve]）。
 class MiningMediaCompression {
   const MiningMediaCompression({
     required this.audioChannels,
@@ -223,12 +223,12 @@ class MiningMediaCompression {
   /// 音频比特率（`-b:a`，如 `'64k'`）。
   final String audioBitrate;
 
-  /// cue 封面动图帧率（`fps=`）。**0 = 源帧率**（不加 fps 滤镜）。只有「顶格档 + AVIF」
-  /// 会产出 0（见 [resolve]）；WebP/GIF 全档恒为有限值。
+  /// cue 封面动图帧率（`fps=`）。**0 = 源帧率**（不加 fps 滤镜），但 [resolve] 三种格式
+  /// 全档都不再产出 0（顶格档取格式声明的上限）；纯函数仍支持 0 供直接调用方使用。
   final int gifFps;
 
   /// cue 封面动图宽度（`scale=W:-2`）。**0 = 源分辨率**（不加 scale 滤镜）。同 [gifFps]：
-  /// 仅顶格档 + AVIF 产出 0。
+  /// [resolve] 不产出 0。
   final int gifWidth;
 
   /// 帧截图封面降采样长边（px）。**0 = 不缩放**（最高档，原图字节直通）。
@@ -246,9 +246,11 @@ class MiningMediaCompression {
   /// 原图，故改名为「最高」：只承诺是滑块顶格，不承诺具体保真度。
   ///
   /// ⚠️ 顶格档这两个 gif 字段是 `0` 占位，**永远被 [resolve] 用格式自己声明的
-  /// [MiningAnimatedFormat.maxTierFps]/[MiningAnimatedFormat.maxTierWidth] 覆写**。
-  /// 下面那段爆炸分析对 GIF（与实测同样慢的 WebP）永远成立，只有 AVIF 例外——它在源
-  /// 分辨率下比 GIF 还快 3.4 倍，实测表见 [MiningAnimatedFormat]。
+  /// [MiningAnimatedFormat.maxTierFps]/[MiningAnimatedFormat.maxTierWidth] 覆写**，
+  /// 三种格式的覆写结果都是有限值。下面那段爆炸分析对 GIF 和实测同样慢的 WebP 直接
+  /// 成立；AVIF 快得多（源分辨率下比 GIF 快 3.4 倍）故拿到更宽松的上限，但按 10 秒
+  /// cue 上限重测后**同样不开放源直通**（4K30 直通 = 34.5 MB），实测表见
+  /// [MiningAnimatedFormat]。
   ///
   /// BUG-1039：这一档过去对 GIF 也用 0 哨兵（源分辨率 + 源帧率），这是把「截图」的
   /// 语义错套到「动图」上——截图原图直通只是几 MB 的一张 JPEG，而 GIF 是 8-bit 调色板
@@ -334,9 +336,10 @@ class MiningMediaCompression {
   /// 据图片/动图清晰度档 [imageTier] + 音频质量档 [audioTier] 组装媒体档（越界自动夹取）。
   ///
   /// 顶格档（[imageTierMax]）的动图参数取自 [format] 自己声明的
-  /// [MiningAnimatedFormat.maxTierFps]/[MiningAnimatedFormat.maxTierWidth]——AVIF 是
-  /// `0/0`（源分辨率 + 源帧率，真·原图档），WebP/GIF 是封顶值。判据不是「有没有帧间
-  /// 压缩」而是「源直通跑不跑得动」，实测依据见 [MiningAnimatedFormat] 文档。
+  /// [MiningAnimatedFormat.maxTierFps]/[MiningAnimatedFormat.maxTierWidth]——AVIF 拿
+  /// 更宽松的 24fps/1440px，WebP/GIF 拿 12fps/960px，**都是有限值**。判据不是「有没有
+  /// 帧间压缩」而是「这一档在 10 秒 cue 上限下跑不跑得动」，实测依据见
+  /// [MiningAnimatedFormat] 文档。
   ///
   /// 低三档与格式无关：它们的有限值对三种编码器同样有意义，不按格式分叉，免得同一个
   /// 滑块位置在不同格式下含义漂开。截图侧的原图直通语义自始至终没变。
@@ -364,25 +367,40 @@ class MiningMediaCompression {
   }
 }
 
+/// 把一条 ffmpeg 失败摘要落进日志。[diagnosticOnly] = 调用方**还会用降级参数再试一次**
+/// （能力探测），此时失败是预期内的正常降级，只进诊断日志（不计错误数、不进用户可见
+/// 错误日志页）；否则进错误日志。默认 false = 既有行为逐字等价。
+void _logFfmpegSummary(String source, String summary, StackTrace stack,
+    {required bool diagnosticOnly}) {
+  if (diagnosticOnly) {
+    ErrorLogService.instance.logDiagnostic(source, summary);
+  } else {
+    ErrorLogService.instance.log(source, summary, stack);
+  }
+}
+
 void _reportFfmpegFailure(
   String source,
   FfmpegRunResult result,
-  FfmpegFailureReporter? onFailure,
-) {
+  FfmpegFailureReporter? onFailure, {
+  bool diagnosticOnly = false,
+}) {
   final String summary = result.failureSummary;
   onFailure?.call(summary);
-  ErrorLogService.instance.log(source, summary, StackTrace.current);
+  _logFfmpegSummary(source, summary, StackTrace.current,
+      diagnosticOnly: diagnosticOnly);
 }
 
 void _reportFfmpegProcessException(
   String source,
   ProcessException exception,
   StackTrace stack,
-  FfmpegFailureReporter? onFailure,
-) {
+  FfmpegFailureReporter? onFailure, {
+  bool diagnosticOnly = false,
+}) {
   final String summary = describeFfmpegProcessException(exception);
   onFailure?.call(summary);
-  ErrorLogService.instance.log(source, summary, stack);
+  _logFfmpegSummary(source, summary, stack, diagnosticOnly: diagnosticOnly);
 }
 
 /// TODO-1005 / BUG-472：「ffmpeg 还没跑」的早返回（零长/错位区间、输入缺失）统一上报：
@@ -401,11 +419,12 @@ void _reportFfmpegUnexpectedException(
   String source,
   Object error,
   StackTrace stack,
-  FfmpegFailureReporter? onFailure,
-) {
+  FfmpegFailureReporter? onFailure, {
+  bool diagnosticOnly = false,
+}) {
   final String summary = error.toString();
   onFailure?.call(summary);
-  ErrorLogService.instance.log(source, error, stack);
+  _logFfmpegSummary(source, summary, stack, diagnosticOnly: diagnosticOnly);
 }
 
 /// Desktop (Windows/Linux/macOS) audio-clip extraction via ffmpeg.
@@ -800,8 +819,9 @@ List<String> buildFfmpegClipAnimatedArgs({
   final int clampedDur =
       rawDur > maxDurationMs ? maxDurationMs : (rawDur < 1 ? 1 : rawDur);
   final double durationSeconds = clampedDur / 1000.0;
-  // [fps]<=0 / [width]<=0 表示「源帧率 / 源分辨率」（原图档，仅帧间压缩格式开放——见
-  // MiningMediaCompression.imageTiers 档 3 与 BUG-1039）：对应滤镜段整段省略。
+  // [fps]<=0 / [width]<=0 表示「源帧率 / 源分辨率」。[MiningMediaCompression.resolve]
+  // 已不产出 0（三种格式的顶格档都是有限上限，见 MiningAnimatedFormat 与 BUG-1039），
+  // 这条分支只服务直接调用方；命中时对应滤镜段整段省略。
   final StringBuffer pre = StringBuffer();
   if (fps > 0) pre.write('fps=$fps,');
   if (width > 0) pre.write('scale=$width:-2:flags=lanczos,');
@@ -902,6 +922,10 @@ Future<String?> extractClipGifViaFfmpeg({
   int width = 320,
   // 动图编码格式。默认 gif = 旧行为逐字等价（未传的既有调用点/测试不受影响）。
   MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+  // true = 调用方失败后**还会用降级参数再试一次**（换 GIF 重编）。捆绑 ffmpeg 缺
+  // libsvtav1/libwebp 时首选格式是 100% 必然失败的能力探测，这类失败只记诊断日志，
+  // 不往用户可见的错误日志里每制一张卡塞一条。默认 false = 既有行为逐字等价。
+  bool diagnosticOnly = false,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
 }) async {
@@ -935,7 +959,8 @@ Future<String?> extractClipGifViaFfmpeg({
         output.deleteSync();
       } catch (_) {}
     }
-    _reportFfmpegFailure('extractClipGifViaFfmpeg', result, onFailure);
+    _reportFfmpegFailure('extractClipGifViaFfmpeg', result, onFailure,
+        diagnosticOnly: diagnosticOnly);
     return null;
   } on ProcessException catch (e, stack) {
     // 移动端无 CLI ffmpeg：优雅回退（调用方改用单帧截图）。
@@ -944,6 +969,7 @@ Future<String?> extractClipGifViaFfmpeg({
       e,
       stack,
       onFailure,
+      diagnosticOnly: diagnosticOnly,
     );
     return null;
   } catch (e, stack) {
@@ -952,6 +978,7 @@ Future<String?> extractClipGifViaFfmpeg({
       e,
       stack,
       onFailure,
+      diagnosticOnly: diagnosticOnly,
     );
     return null;
   }
