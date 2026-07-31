@@ -77,10 +77,18 @@ class AnkiMediaDedupRunner {
 
   /// 跑一轮去重。[dryRun] = 只扫描规划、不改动任何东西（不写 journal、不更新
   /// 时间戳），产出的 `AnkiMediaDedupReport.deletions` 就是给用户看的删除清单。
-  /// 后端不支持返回 null。
-  Future<AnkiMediaDedupReport?> runNow({required bool dryRun}) async {
+  /// [onProgress] / [shouldCancel] 直通仓库层（BUG-1263：分钟级长任务必须有
+  /// 进度和取消）。后端不支持返回 null。
+  Future<AnkiMediaDedupReport?> runNow({
+    required bool dryRun,
+    AnkiMediaDedupOnProgress? onProgress,
+    bool Function()? shouldCancel,
+  }) async {
     if (!_repository.supportsMediaMaintenance) return null;
-    if (dryRun) return _repository.runMediaDedup(dryRun: true);
+    if (dryRun) {
+      return _repository.runMediaDedup(
+          dryRun: true, onProgress: onProgress, shouldCancel: shouldCancel);
+    }
 
     final Directory dir = await journalDirectory();
     final String stamp =
@@ -94,8 +102,11 @@ class AnkiMediaDedupRunner {
           wroteAny = true;
           sink.writeln(jsonEncode(entry));
         },
+        onProgress: onProgress,
+        shouldCancel: shouldCancel,
       );
-      if (report != null) {
+      // 取消的轮不算「完成过一轮」：不推进时间戳，下次自动扫描照常到期。
+      if (report != null && !report.cancelled) {
         final int nowMs = DateTime.now().millisecondsSinceEpoch;
         await _repository.updateSettings((AnkiSettings s) => s.copyWith(
               lastMediaDedupAtMs: nowMs,
