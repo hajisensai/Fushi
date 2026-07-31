@@ -3651,7 +3651,7 @@ class AppModel with ChangeNotifier {
               '${dictionary.name}: $e');
         }
       }
-      // BUG-1226：检查成功且无需更新也是完整成功；旧逻辑只在真正重导过词典时写
+      // BUG-1281：检查成功且无需更新也是完整成功；旧逻辑只在真正重导过词典时写
       // 时间，导致长期没有新版的用户永远显示“从未”并在每次启动重复联网。
       if (didCompleteDictionaryAutoUpdateBatch(
         totalCount: updatable.length,

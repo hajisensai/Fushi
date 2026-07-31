@@ -124,7 +124,7 @@ void main() {
     });
   });
 
-  test('BUG-1226 自动更新按完整检查结果写时间，而非只认实际重导数量', () {
+  test('BUG-1281 自动更新按完整检查结果写时间，而非只认实际重导数量', () {
     final String source =
         File('lib/src/models/app_model.dart').readAsStringSync();
     expect(
