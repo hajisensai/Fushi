@@ -21,7 +21,7 @@
   - `SyncProgressBanner` 文字行两级取值：有阶段 tick 用 `syncProgressLine`，否则退化到 `syncActivityLine`；同步中不再可能出现零文字。设置页「立即同步」行再加第三级：空闲时显示上一轮的 `syncOutcomeLine`（尤其「没有可用的同步通道」＝上轮其实什么都没同步）。
   - 新增 10 个 i18n key（走 `hibiki/tool/i18n_sync.dart --add`，17 语言）。
   - 设置页「立即同步」的空闲副标题只认 `SyncActivityKind.fullSweep` 的结局：那一行讲的是「立即同步」这件事，拿后台单本 / 合集轻量同步的结局来填会答非所问。进行中的两段不做此过滤——它们回答的是「现在有没有东西在跑」，任何同步都算数（BUG-101 的教训）。
-  - 提交 `5ce8cfdc4`、`b95dd88c9`。
+  - 提交 `5ce8cfdc4`、`74f0ff4cc`。
 - **[x] ② 已加自动化测试** — `hibiki/test/sync/sync_activity_visibility_test.dart`（15 例）：
   - 文案层：三种身份 / 六种结局两两不同且非空（断言语言无关信号，不绑措辞）；单本带书名/空书名/无书名三分支；**「跑完了」与「一条通道都没跑起来」文案必须不同**（本 bug 的核心）。
   - widget 层：同步中无阶段 tick（轻量路径 / 准备段）时 banner **仍有文字**；有 tick 时阶段行优先且进度确定；无同步时零高度。
