@@ -55,6 +55,62 @@ void main() {
         isFalse,
       );
     });
+
+    // videoEnterCaret（PR#632 审查 C2）：第三个条件 caretHoldsPause。字级选词光标
+    // 仍激活 = 用户关掉浮层后还要移动光标继续查下一个词，这时恢复播放会让 cue 换掉、
+    // 光标当场失锚；暂停改由光标会话接管，退出光标时按同一 pausedForLookup 恢复
+    // （单一恢复真相源）。默认 false ⇒ 上面三条既有用例的真值表逐字不变。
+    test('前两条件成立但光标仍激活 → 不恢复（暂停交给光标会话）', () {
+      expect(
+        VideoHibikiPage.shouldResumeAfterLookupDismiss(
+          stackEmpty: true,
+          pausedForLookup: true,
+          caretHoldsPause: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('光标已退出（caretHoldsPause=false）→ 与旧行为一致，恢复', () {
+      expect(
+        VideoHibikiPage.shouldResumeAfterLookupDismiss(
+          stackEmpty: true,
+          pausedForLookup: true,
+          caretHoldsPause: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('caretHoldsPause 默认 false：旧调用点（两参）行为不变', () {
+      expect(
+        VideoHibikiPage.shouldResumeAfterLookupDismiss(
+          stackEmpty: true,
+          pausedForLookup: true,
+        ),
+        isTrue,
+        reason: '新增的第三条件不得改变既有两参调用点的真值表',
+      );
+    });
+
+    test('光标激活但栈非空 / 未置位 → 仍不恢复（与门，不是或门）', () {
+      expect(
+        VideoHibikiPage.shouldResumeAfterLookupDismiss(
+          stackEmpty: false,
+          pausedForLookup: true,
+          caretHoldsPause: true,
+        ),
+        isFalse,
+      );
+      expect(
+        VideoHibikiPage.shouldResumeAfterLookupDismiss(
+          stackEmpty: true,
+          pausedForLookup: false,
+          caretHoldsPause: true,
+        ),
+        isFalse,
+      );
+    });
   });
 
   group('源码接线守卫', () {
@@ -113,6 +169,10 @@ void main() {
           reason: '空栈判定必须源自 !_hasVisiblePopup（热槽不算）');
       expect(pop.contains('stackEmpty: stackEmpty'), isTrue);
       expect(pop.contains('pausedForLookup: _pausedForLookup'), isTrue);
+      // videoEnterCaret（PR#632 C2）：光标仍激活时暂停由光标会话接管，关栈不得续播。
+      expect(pop.contains('caretHoldsPause: _videoCaretActive'), isTrue,
+          reason: '关栈汇聚点必须把光标激活态喂进纯函数，否则关浮层会把还在选词的'
+              '视频播起来、光标当场失锚');
       expect(pop.contains('_pausedForLookup = false'), isTrue,
           reason: '恢复后必须清标记，否则下次关任意子层都会误续播');
       expect(pop.contains('_controller?.play()'), isTrue,

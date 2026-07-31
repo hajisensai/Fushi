@@ -238,7 +238,7 @@ extension _VideoEpisode on _VideoHibikiPageState {
   /// 16:9 视频挤成窄栏。字幕跳转列表仍是 push-aside；两者沿用既有互斥状态。
   ///
   /// 隐藏态留在树里做 slide + fade，经 [FadingChromeGate] 保证不可见层不吃画面点击
-  /// **且不可聚焦**（BUG-1299：旧实现只有 [IgnorePointer]，挡不住焦点遍历——手柄
+  /// **且不可聚焦**（BUG-1301：旧实现只有 [IgnorePointer]，挡不住焦点遍历——手柄
   /// 浏览剧集卡片后关面板，焦点滞留在 opacity=0 的卡片 InkWell 上，焦点环在画面上
   /// 画出一个空框）。× / Esc / 控制条按钮仍全部经 [_closeEpisodeList]，关闭副作用不分叉。
   Widget _episodeOverlayPanel(bool visible) {
@@ -280,7 +280,7 @@ extension _VideoEpisode on _VideoHibikiPageState {
     );
   }
 
-  // BUG-1299 note: 上面的 [FadingChromeGate] 同时承担旧 IgnorePointer + AnimatedOpacity
+  // BUG-1301 note: 上面的 [FadingChromeGate] 同时承担旧 IgnorePointer + AnimatedOpacity
   // 的职责（少一层嵌套），几何与动画时序不变。
 
   /// 自动连播倒计时 overlay（TODO-639）。一集播完且自动连播开关开着时，画面右下角弹出

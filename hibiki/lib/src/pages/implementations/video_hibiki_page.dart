@@ -1472,9 +1472,10 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 画光标环）；null = 主面无锚（未激活，或字幕 gap 期环隐藏）。
   int? _subtitleCaretEntry;
 
-  /// 光标会话内已观测到「暂停已生效」（进入时的 fire-and-forget pause 落地）。此后
-  /// 再看到 isPlaying=true 即为外部恢复播放 → 自动退出光标（见 _onCaretControllerTick）。
-  bool _caretSawPausedTick = false;
+  /// 光标会话的「暂停 → 再播放」迁移追踪；null = 无进行中的光标会话。见
+  /// [SubtitleCaretPauseTracker]（初值必须来自进入时的播放态，否则本就暂停的视频
+  /// 进光标后自动退出永久失效）。
+  SubtitleCaretPauseTracker? _caretPauseTracker;
 
   /// 光标会话内当前活动 cue 集合签名（跳句/seek 后重锚判据）。
   String _caretCueSignature = '';
@@ -4514,6 +4515,52 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
+  /// [ShortcutAction.videoEnterCaret] 的实时键盘 activator（注册表可重映射，桌面
+  /// 默认 Enter）。`includeRepeats: false` = press-edge-only：长按不连发查词。
+  Iterable<ShortcutActivator> _videoEnterCaretActivators() =>
+      appModel.shortcutRegistry
+          .bindingsFor(ShortcutAction.videoEnterCaret)
+          .keyboardBindings
+          .map((InputBinding b) => b.toActivator(includeRepeats: false));
+
+  /// videoEnterCaret 的键盘**进入**通道，挂在页面最外层 [Focus]（窗口与全屏共用
+  /// 同一个 [_wrapVideoGamepadControls]，两种模式行为一致）。
+  ///
+  /// 为什么不放进 media_kit 的 `keyboardShortcuts`：那是一个包住整个 controls 子树
+  /// 的 [CallbackShortcuts]，activator 一匹配就返回 handled，Enter 从此再也到不了
+  /// WidgetsApp 的 Enter→ActivateIntent —— 底栏 / 顶栏每个按钮的「焦点确认」被整片
+  /// 吃掉（本 app 裸空格已被中和，Enter 是唯一确认键，见 CLAUDE.md）。
+  ///
+  /// 判据交给纯函数 [decideVideoEnterCaretKey]：焦点归属直接读
+  /// [_videoFocusNode]`.hasPrimaryFocus`（画面持焦），不额外维护一份状态——这与
+  /// [_focusOwnership] 的 [PageFocusOwnership] 模型是同一个真相源（它 reclaim 的
+  /// 就是这个节点），焦点落到控制条按钮上时 `hasPrimaryFocus` 自然为 false。
+  /// 与阅读器 `caret.part.dart` 的 `_isCaretEntryTrigger` 是同一条 contextual 范式。
+  bool _handleVideoEnterCaretKey(KeyEvent event) {
+    final VideoEnterCaretKeyDecision decision = decideVideoEnterCaretKey(
+      event: event,
+      enterActivators: _videoEnterCaretActivators(),
+      keyboardState: HardwareKeyboard.instance,
+      caretActive: _videoCaretActive,
+      hasEditableFocus: focusedEditableText() != null,
+      hasVisiblePopup: _hasVisiblePopup,
+      videoSurfaceHoldsFocus: _videoFocusNode.hasPrimaryFocus,
+    );
+    switch (decision) {
+      case VideoEnterCaretKeyDecision.notTrigger:
+      case VideoEnterCaretKeyDecision.passThrough:
+        return false;
+      case VideoEnterCaretKeyDecision.dismissPopup:
+        _dismissTopVisiblePopup();
+        return true;
+      case VideoEnterCaretKeyDecision.enterCaret:
+        final VideoPlayerController? controller = _controller;
+        if (controller == null) return false;
+        _handleEnterCaretAction(controller);
+        return true;
+    }
+  }
+
   /// TODO-1342：把整页子树包进手柄输入层。外层 [Actions] 接桌面轮询派发的
   /// [GamepadButtonIntent]；内层 [Focus] 只旁观 Android 原生手柄按键的冒泡（不夺焦、
   /// 不参与焦点遍历，故不干扰 [_videoFocusNode] 的键盘持焦与既有 [autofocus] 时序）。
@@ -4539,6 +4586,12 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
           // （Tab / [ ] / , . / 未绑定的方向键与 Esc 等；已绑键在内层
           // guardVideoShortcutsWithSubtitleCaret 就被接管，不会冒泡到这里）。
           if (_handleCaretUnboundKey(event)) {
+            return KeyEventResult.handled;
+          }
+          // videoEnterCaret 的**进入**通道（光标未激活时）。刻意不走内层
+          // media_kit `keyboardShortcuts`：那层一旦匹配就无条件消费，会把控制条
+          // 按钮的 Enter 确认整片吃掉（见 [_handleVideoEnterCaretKey]）。
+          if (_handleVideoEnterCaretKey(event)) {
             return KeyEventResult.handled;
           }
           // BUG-880：Shift 按下瞬间在最后指针位置反查字幕字符立即查词，根治「光标停在词上

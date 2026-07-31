@@ -9,6 +9,8 @@ import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_defaults.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
 
+import '../../pages/video_hibiki_page_source_corpus.dart';
+
 /// videoEnterCaret：视频页手柄/键盘字级选词查词（用户诉求「视频支持手柄查词」——
 /// 此前唯一非鼠标查词入口是 Shift+指针位置，纯手柄下完全无法查词）。
 ///
@@ -18,7 +20,17 @@ import 'package:hibiki_audio/hibiki_audio.dart';
 ///     （entryCount / hitAt / anchorEntry 主字幕优先）；
 ///  ③ 键盘接管纯函数 [guardVideoShortcutsWithSubtitleCaret]（激活期无修饰方向键
 ///     改走光标、Ctrl 组合键放行、未激活零变化）；
-///  ④ 默认键位——videoEnterCaret 桌面默认 Enter + 手柄 Select。
+///  ④ 默认键位——videoEnterCaret 桌面默认 Enter + 手柄 Select；
+///  ⑤ [SubtitleCaretPauseTracker]「暂停→再播放」迁移（外部恢复播放自动退光标）。
+/// 截取 [source] 中 [start] 标记到 [end] 标记之间的源码片段（含 [start]、不含 [end]）。
+String _sliceSource(String source, String start, String end) {
+  final int startIndex = source.indexOf(start);
+  expect(startIndex, isNonNegative, reason: 'Missing start marker: $start');
+  final int endIndex = source.indexOf(end, startIndex + start.length);
+  expect(endIndex, isNonNegative, reason: 'Missing end marker: $end');
+  return source.substring(startIndex, endIndex);
+}
+
 AudioCue _cue(String text, int startMs, int endMs) => AudioCue()
   ..bookKey = 'b'
   ..chapterHref = 'ch'
@@ -221,6 +233,118 @@ void main() {
       );
       runActivator(guarded, ctrl: false);
       expect(log, <String>['seekBack']);
+    });
+  });
+
+  /// PR#632 审查 C1：光标必须在暂停下工作，所以「外部恢复播放」= 用户不想选词了
+  /// ⇒ 自动退出光标。判据是「先见过暂停，再见到播放」，要害在**初值**——视频本来
+  /// 就是暂停态时进光标，不会调 pause、播放态不翻转、播放器也不再通知，标记若恒
+  /// 初始化成 false 就永远置不上位，自动退出在这条路径上**永久失效**（用户按空格
+  /// 续播后光标还活着、方向键继续被吞）。
+  group('⑤ SubtitleCaretPauseTracker 暂停→再播放迁移', () {
+    test('播放中进光标：pause 未落地那几个 tick 不得自退，落地后再播放才退', () {
+      final SubtitleCaretPauseTracker t =
+          SubtitleCaretPauseTracker(playingAtEntry: true);
+      expect(t.sawPaused, isFalse);
+      // fire-and-forget pause 还没落地：仍是 playing，不能当场自退。
+      expect(t.onTick(playing: true), isFalse);
+      // pause 落地。
+      expect(t.onTick(playing: false), isFalse);
+      expect(t.sawPaused, isTrue);
+      // 外部恢复播放（空格 / 点画面 / 连播）→ 退光标。
+      expect(t.onTick(playing: true), isTrue);
+    });
+
+    test('本来就暂停时进光标：外部恢复播放**必须**退光标（C1 主诉）', () {
+      final SubtitleCaretPauseTracker t =
+          SubtitleCaretPauseTracker(playingAtEntry: false);
+      expect(t.sawPaused, isTrue, reason: '进入时已暂停 = 暂停已生效，不能等一个永远不会来的暂停通知');
+      // 暂停下的 tick（跳句 / seek 重锚）不退。
+      expect(t.onTick(playing: false), isFalse);
+      // 用户按空格续播 → 必须退光标，否则光标僵尸化、方向键继续被吞。
+      expect(t.onTick(playing: true), isTrue, reason: '本就暂停进光标后按空格续播，光标必须自动退出');
+    });
+
+    test('退出后再进入是全新会话（旧标记不串场）', () {
+      final SubtitleCaretPauseTracker first =
+          SubtitleCaretPauseTracker(playingAtEntry: false);
+      expect(first.onTick(playing: true), isTrue);
+      final SubtitleCaretPauseTracker second =
+          SubtitleCaretPauseTracker(playingAtEntry: true);
+      expect(second.onTick(playing: true), isFalse,
+          reason: '新会话在播放中进入，pause 未落地前不得自退');
+    });
+  });
+
+  /// PR#632 审查「顺带项」：两条只活在 page state 私有 extension 上的接线（没有
+  /// 可落地的 widget 层，故守在源码接线层；断言全部落在**切出来的方法体**内，
+  /// 不做全文件模糊 contains）。
+  group('⑥ 光标会话收尾 / 扳机放行 源码接线守卫', () {
+    final String src = readVideoHibikiSource();
+
+    test('_exitSubtitleCaret 与「surface 被悄悄清空」共用同一个收尾出口', () {
+      final String exit = _sliceSource(
+        src,
+        'void _exitSubtitleCaret({required bool resume}) {',
+        '/// 光标会话收尾的**唯一出口**',
+      );
+      expect(exit, contains('_finishSubtitleCaretSession(resume: resume)'),
+          reason: '退出必须走唯一收尾出口，不得各写一份');
+
+      final String finish = _sliceSource(
+        src,
+        'void _finishSubtitleCaretSession({required bool resume}) {',
+        '/// 光标会话期间监听播放器',
+      );
+      // 收尾三件事必须绑在一起，少做任何一件就是僵尸态。
+      expect(finish, contains('removeListener(_onCaretControllerTick)'),
+          reason: '不摘监听器 → 下次进光标重复注册');
+      expect(finish, contains('_caretPauseTracker = null'),
+          reason: '不清追踪器 → 旧会话的暂停迁移状态串进下一次会话');
+      expect(finish, contains('_subtitleCaretEntry = null'),
+          reason: '不清锚点 → 字幕上留一圈光标环');
+
+      final String popup = _sliceSource(
+        src,
+        'Future<void> _runPopupSurfaceCaretAction(CaretAction action) async {',
+        '_videoCaret.busy = true;',
+      );
+      expect(popup, contains('_videoCaret.resumePopupCaretForHardwareNav()'));
+      expect(
+        popup,
+        contains('if (!_videoCaretActive) _finishSubtitleCaretSession('),
+        reason: 'resumePopupCaretForHardwareNav 在弹窗已消失时把 surface 直接清成'
+            ' none 且不经 caretSetState；不在此补收尾就会留下光标环 + 未摘监听器 +'
+            ' 未复位暂停的僵尸态',
+      );
+    });
+
+    test('主面 LT/RT 不被 caret 路由吞掉，整体交回注册表', () {
+      final String gp = _sliceSource(
+        src,
+        'bool _handleCaretGamepadButton(GamepadButton button) {',
+        '/// 键盘光标键执行',
+      );
+      expect(
+        gp,
+        contains('final CaretAction? caretAction = shoulderOnSubtitleSurface'),
+      );
+      expect(
+        gp,
+        contains('? null'),
+      );
+      expect(
+        gp,
+        contains(': ReaderCaretRouter.decideGamepad(button);'),
+        reason: '主面无词典段语义：LT/RT 走 decideGamepad 会被映射成 jumpDict* 并'
+            '静默 return（用户按 RT 全屏 / LT 重听毫无反应）',
+      );
+      expect(
+        gp,
+        contains('(shoulderOnSubtitleSurface ||'),
+        reason: '主面的放行白名单必须把这两个扳机算进去，否则末尾的 return true'
+            '仍会把它们吞掉',
+      );
     });
   });
 

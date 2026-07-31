@@ -1,4 +1,4 @@
-## BUG-1299 · 视频页隐形chrome可聚焦致空焦点框
+## BUG-1301 · 视频页隐形chrome可聚焦致空焦点框
 - **报告**：2026-08-01（用户：手柄看视频时，字幕「思うけど」附近凭空浮着一个空的浅色矩形框，截图为证；要求根本性修复）
 - **真实性**：✅ 真 bug。视频页三处淡出型 chrome 隐藏态**留在树里**、只包 `IgnorePointer` 挡指针，但 `IgnorePointer` 挡不住焦点遍历/滞留：
   - 剧集横轨面板 `hibiki/lib/src/pages/implementations/video_hibiki/episode.part.dart:242`（`_episodeOverlayPanel`，卡片是 `InkWell(canRequestFocus: true)`，`hibiki/lib/src/media/video/video_episode_rail.dart:173`）；

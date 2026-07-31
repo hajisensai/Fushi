@@ -57,7 +57,11 @@ extension _VideoSubtitleCaret on _VideoHibikiPageState {
       _pausedForLookup = true;
       unawaited(controller.pause());
     }
-    _caretSawPausedTick = false;
+    // 迁移追踪的初值来自**进入时的播放态**（见 [SubtitleCaretPauseTracker]）：
+    // 本来就暂停时进光标不会调 pause、播放态不翻转、播放器也不再通知，恒 false 的
+    // 初值会让「外部恢复播放自动退光标」永久失效。
+    _caretPauseTracker =
+        SubtitleCaretPauseTracker(playingAtEntry: controller.isPlaying);
     _caretCueSignature = _caretCurrentCueSignature(controller);
     controller.addListener(_onCaretControllerTick);
     setState(() {
@@ -71,7 +75,17 @@ extension _VideoSubtitleCaret on _VideoHibikiPageState {
   /// 本会话（查词/进光标）持有、且没有浮层再接管时恢复播放。
   void _exitSubtitleCaret({required bool resume}) {
     if (!_videoCaretActive) return;
+    _finishSubtitleCaretSession(resume: resume);
+  }
+
+  /// 光标会话收尾的**唯一出口**：摘播放器监听器、清光标环、复位 surface，并按
+  /// [resume] 决定是否恢复播放。与 [_exitSubtitleCaret] 的唯一区别是不检查
+  /// `active` —— 供「surface 已被 [DictionaryCaretController] 悄悄清成 none」的
+  /// 路径补做收尾（见 [_runPopupSurfaceCaretAction]）。收尾三件事必须绑在一起，
+  /// 少做任何一件就是僵尸态：留环 / 监听器重复注册 / 视频永远卡在暂停。
+  void _finishSubtitleCaretSession({required bool resume}) {
     _controller?.removeListener(_onCaretControllerTick);
+    _caretPauseTracker = null;
     setState(() {
       _videoCaret.surface = CaretSurface.none;
       _videoCaret.popupState = null;
@@ -93,11 +107,10 @@ extension _VideoSubtitleCaret on _VideoHibikiPageState {
     if (!mounted || !_videoCaretActive) return;
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    final bool playing = controller.isPlaying;
-    if (!playing) _caretSawPausedTick = true;
-    if (playing && _caretSawPausedTick) {
-      // 进入时的 fire-and-forget 暂停已生效过、现在又在播放 = 外部恢复：退出光标。
-      // 播放恢复不是我们要撤销的操作（用户意图优先），只收光标、不再动播放态。
+    final SubtitleCaretPauseTracker? tracker = _caretPauseTracker;
+    if (tracker != null && tracker.onTick(playing: controller.isPlaying)) {
+      // 暂停已生效过、现在又在播放 = 外部恢复：退出光标。播放恢复不是我们要撤销的
+      // 操作（用户意图优先），只收光标、不再动播放态。
       _pausedForLookup = false;
       _exitSubtitleCaret(resume: false);
       return;
@@ -142,7 +155,15 @@ extension _VideoSubtitleCaret on _VideoHibikiPageState {
   /// 只会把用户正在选的字幕换掉（阅读器 caret 同款收敛）。
   bool _handleCaretGamepadButton(GamepadButton button) {
     if (!_videoCaretActive) return false;
-    final CaretAction? caretAction = ReaderCaretRouter.decideGamepad(button);
+    // 主面没有「词典段」语义：[ReaderCaretRouter.decideGamepad] 把 LT/RT 映射成
+    // jumpDictPrev/Next，而主面对这两个动作是空 return —— 用户在光标态按 RT(全屏)
+    // / LT(重听当前句) 静默无反应。主面把两个扳机整体交回注册表解析（弹窗面仍是
+    // 跳词典段，那里才有词典段）。
+    final bool shoulderOnSubtitleSurface = _caretOnSubtitleSurface &&
+        (button == GamepadButton.lt || button == GamepadButton.rt);
+    final CaretAction? caretAction = shoulderOnSubtitleSurface
+        ? null
+        : ReaderCaretRouter.decideGamepad(button);
     if (caretAction != null) {
       unawaited(_runVideoCaretAction(caretAction));
       return true;
@@ -158,7 +179,8 @@ extension _VideoSubtitleCaret on _VideoHibikiPageState {
       return true;
     }
     if (_caretOnSubtitleSurface &&
-        (action == ShortcutAction.videoPreviousSubtitle ||
+        (shoulderOnSubtitleSurface ||
+            action == ShortcutAction.videoPreviousSubtitle ||
             action == ShortcutAction.videoNextSubtitle ||
             action == ShortcutAction.videoReplayCurrentSubtitle)) {
       final VideoPlayerController? controller = _controller;
@@ -306,6 +328,12 @@ extension _VideoSubtitleCaret on _VideoHibikiPageState {
     if (popup == null || !identical(popup, _videoCaret.popupState)) {
       // 鼠标在光标会话外改了弹窗栈：按硬件导航恢复语义重校（transfer/回落）。
       _videoCaret.resumePopupCaretForHardwareNav();
+      // 弹窗已整个消失时上面把 surface 直接清成 none（不经 caretSetState，那是
+      // 控制器层的共享语义）。对视频页而言这就是「光标会话结束」，必须补做收尾：
+      // 否则 [_exitSubtitleCaret] 首行的 `!_videoCaretActive` 早返回会让字幕上留
+      // 一圈光标环、[_onCaretControllerTick] 监听器不摘（下次进光标重复注册）、
+      // _pausedForLookup 不复位（视频永远卡在暂停）。
+      if (!_videoCaretActive) _finishSubtitleCaretSession(resume: true);
       return;
     }
     _videoCaret.busy = true;

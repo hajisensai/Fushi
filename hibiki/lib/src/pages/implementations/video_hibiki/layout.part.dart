@@ -533,7 +533,7 @@ extension _VideoLayout on _VideoHibikiPageState {
       builder: (BuildContext _, __) {
         final bool visible =
             _lockButtonVisible.value || _lockButtonHovered.value;
-        // BUG-1299：淡出后不可点**且不可聚焦**（FadingChromeGate 统一门控），
+        // BUG-1301：淡出后不可点**且不可聚焦**（FadingChromeGate 统一门控），
         // 根除焦点滞留在隐形按钮上画出空焦点框。
         return FadingChromeGate(
           visible: visible,
@@ -828,7 +828,7 @@ extension _VideoLayout on _VideoHibikiPageState {
                       _lockButtonVisible.value || _lockButtonHovered.value;
                   // TODO-435：与 media_kit 控制条同源的淡入淡出时长 + 曲线，
                   // 让锁按钮与控制条一致地淡入淡出（旧实现 200ms + 默认 linear）。
-                  // BUG-1299：FadingChromeGate 统一门控——淡出后不可点且不可聚焦，
+                  // BUG-1301：FadingChromeGate 统一门控——淡出后不可点且不可聚焦，
                   // 根除焦点滞留在隐形锁按钮上画出空焦点框。
                   return FadingChromeGate(
                     visible: visible,

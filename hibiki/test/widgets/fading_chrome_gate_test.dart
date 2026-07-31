@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/utils/components/fading_chrome_gate.dart';
 
-/// BUG-1299：视频页淡出型 chrome（剧集横轨 / 侧边沉浸锁 / on-rail 沉浸退出钮）
+/// BUG-1301：视频页淡出型 chrome（剧集横轨 / 侧边沉浸锁 / on-rail 沉浸退出钮）
 /// 隐藏态留树只挡指针不挡焦点，手柄浏览后焦点滞留在 opacity=0 的控件上，
 /// `HibikiFocusRing` 据 primaryFocus 画出一个空焦点框。
 ///
@@ -49,7 +49,7 @@ void main() {
     inner.requestFocus();
     await tester.pump();
     expect(inner.hasFocus, isFalse,
-        reason: '隐藏 chrome 内的控件绝不能拿到焦点（BUG-1299 根因）');
+        reason: '隐藏 chrome 内的控件绝不能拿到焦点（BUG-1301 根因）');
   });
 
   testWidgets('可见→隐藏：已持焦子孙被自动撤离，焦点回到门外', (WidgetTester tester) async {
@@ -99,7 +99,7 @@ void main() {
   });
 
   test('源码守卫：视频页三处淡出 chrome 必须走 FadingChromeGate', () {
-    // BUG-1299 调用点守卫：episode.part.dart（剧集横轨）与 layout.part.dart
+    // BUG-1301 调用点守卫：episode.part.dart（剧集横轨）与 layout.part.dart
     // （侧边锁按钮 + on-rail 沉浸退出钮）不得回退成「裸 IgnorePointer(ignoring:
     // !visible) 挡指针、不挡焦点」的旧写法。chapter.part.dart 的常驻 IgnorePointer
     // 是纯展示层（无可聚焦子孙、永不拦指针），不在此列。

@@ -215,14 +215,24 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
     // 按下/松开判定（_handleHoldSpeedKey）就永远收不到。手柄通道不受影响——
     // resolveGamepad 派发仍走 videoActionCallbacks 里的 toggleHoldSpeed。
     if (action == ShortcutAction.videoHoldSpeed) continue;
+    // 进入字级选词光标的**键盘绑定同样永不进本表**（默认 Enter）。本表被装进
+    // media_kit 桌面 controls 的 `keyboardShortcuts`，即一个 [CallbackShortcuts]，
+    // 而它**包住整个 controls 子树**（顶栏 / 底栏按钮全在里面）、一旦 activator
+    // 匹配就无条件返回 handled——回调里再怎么判断也收不回这次消费。Enter 是本 app
+    // 的全局焦点确认键（裸空格已被中和成 DoNothingIntent，见 `global_navigation.dart`），
+    // 装进这张表等于把控制条上每个按钮的 Enter 确认整片吃掉：Tab / 手柄把焦点落到
+    // 播放 / 全屏 / ±10s 上再按 Enter，按钮不会被按下，而是弹出选词光标。
+    // 改由页面最外层 Focus.onKeyEvent 按**焦点归属**做 contextual 判定——只有视频
+    // 画面持焦才进光标，焦点在 chrome 按钮上时不消费、放行给 ActivateIntent
+    // （[decideVideoEnterCaretKey]，阅读器 `_isCaretEntryTrigger` 同款范式）。
+    // 顺带（有意）：任何复用本表的调用点（如字幕对轴弹窗）都不会再意外装上 Enter。
+    if (action == ShortcutAction.videoEnterCaret) continue;
     // 模糊切换 / 遮蔽循环 / 隐藏切换都是 press-edge-only（按一下翻一次，长按不连发，
     // 与历史 videoToggleSubtitleBlur 同语义）。TODO-840 Part B。
     const Set<ShortcutAction> pressEdgeOnly = <ShortcutAction>{
       ShortcutAction.videoToggleSubtitleBlur,
       ShortcutAction.videoCycleSubtitleObscure,
       ShortcutAction.videoToggleSubtitleHide,
-      // 进入选词光标 / 光标处查词：按一下进一次，长按不得连发查词。
-      ShortcutAction.videoEnterCaret,
     };
     final bool includeRepeats = !pressEdgeOnly.contains(action);
     for (final binding in registry.bindingsFor(action).keyboardBindings) {
@@ -275,6 +285,88 @@ Map<ShortcutActivator, VoidCallback> guardVideoShortcutsWithSubtitleCaret(
       },
     ),
   );
+}
+
+/// 字级选词光标会话的「暂停 → 再播放」迁移追踪（videoEnterCaret）。
+///
+/// 光标必须在暂停下工作（activeCues 随播放每帧重算，不暂停必失锚），所以「外部
+/// 恢复播放」（用户按空格 / 触屏点画面 / 自动连播）就是「用户不想选词了」，光标
+/// 应当自动退出。判据不能只看 `playing == true`——进光标那一下的 pause 是
+/// fire-and-forget，还没落地时也是 playing，会当场自退。
+///
+/// 因此必须先见过一次暂停、再见到播放才算迁移。要害在**初值**：视频本来就是暂停
+/// 态时进光标，不会调 pause、播放态不翻转、播放器也就不再通知，「见过暂停」这个
+/// 标记如果初始化成 false 就**永远置不上位**，自动退出在这条路径上永久失效
+/// （用户按空格续播后光标还活着、方向键继续被吞）。把初值绑进构造函数，让
+/// 「进入时是否已暂停」成为类型契约的一部分，这个特殊情况就不存在了。
+class SubtitleCaretPauseTracker {
+  SubtitleCaretPauseTracker({required bool playingAtEntry})
+      : _sawPaused = !playingAtEntry;
+
+  bool _sawPaused;
+
+  /// 已观测到暂停生效（进入时本就暂停，或进入时的 fire-and-forget pause 已落地）。
+  bool get sawPaused => _sawPaused;
+
+  /// 喂一次播放器 tick，返回**是否应自动退出光标**。
+  bool onTick({required bool playing}) {
+    if (!playing) {
+      _sawPaused = true;
+      return false;
+    }
+    return _sawPaused;
+  }
+}
+
+/// [decideVideoEnterCaretKey] 的判决：一次按键对「进入字级选词光标」意味着什么。
+///
+/// 把判据和执行分开，是因为这条路径的要害恰恰在「**什么时候不该消费**」——它
+/// 必须能表达「命中了绑定键但仍然放行」，而回调式的 [CallbackShortcuts] 表达不了
+/// （见 [buildVideoPlayerShortcutsFromRegistry] 里 videoEnterCaret 的 skip 注释）。
+enum VideoEnterCaretKeyDecision {
+  /// 不是「进入选词光标」的绑定键，或光标已激活 / 焦点在文本框：本层不消费，
+  /// 事件按原有路径继续（光标激活期由 `_handleCaretUnboundKey` 接管）。
+  notTrigger,
+
+  /// 命中绑定键，但**焦点不在视频画面上**（控制条按钮等其它控件持焦）：一样不
+  /// 消费——Enter 在本 app 是全局焦点确认键，必须继续上浮到 WidgetsApp 的
+  /// Enter→ActivateIntent，让按钮的 onPressed 照常触发。
+  passThrough,
+
+  /// 命中绑定键且有可见词典浮层：先关顶层浮层（BUG-924：浮层可见时任一视频键
+  /// 都先关浮层，不穿透去控制后面的视频）。
+  dismissPopup,
+
+  /// 命中绑定键且视频画面持焦：进入 / 推进字级选词光标。
+  enterCaret,
+}
+
+/// videoEnterCaret 的键盘触发判据（纯函数，与本文件另两个 guard 同范式，可单测）。
+///
+/// [enterActivators] = 注册表里 [ShortcutAction.videoEnterCaret] 的实时键盘绑定
+/// （默认 Enter，可重映射），由调用方以 `includeRepeats: false` 构造 → 长按不连发。
+/// [videoSurfaceHoldsFocus] = 视频画面的 FocusNode 是否**精确持焦**（`hasPrimaryFocus`）：
+/// 这就是阅读器 `_isCaretEntryTrigger` 那条 contextual 判据在视频侧的对应物——
+/// 「正文持焦才算选词键」在视频侧就是「画面持焦才算选词键」。
+VideoEnterCaretKeyDecision decideVideoEnterCaretKey({
+  required KeyEvent event,
+  required Iterable<ShortcutActivator> enterActivators,
+  required HardwareKeyboard keyboardState,
+  required bool caretActive,
+  required bool hasEditableFocus,
+  required bool hasVisiblePopup,
+  required bool videoSurfaceHoldsFocus,
+}) {
+  if (caretActive || hasEditableFocus) {
+    return VideoEnterCaretKeyDecision.notTrigger;
+  }
+  final bool hit = enterActivators.any(
+    (ShortcutActivator activator) => activator.accepts(event, keyboardState),
+  );
+  if (!hit) return VideoEnterCaretKeyDecision.notTrigger;
+  if (hasVisiblePopup) return VideoEnterCaretKeyDecision.dismissPopup;
+  if (!videoSurfaceHoldsFocus) return VideoEnterCaretKeyDecision.passThrough;
+  return VideoEnterCaretKeyDecision.enterCaret;
 }
 
 Map<ShortcutActivator, VoidCallback> guardVideoShortcutsWithPopupDismiss(

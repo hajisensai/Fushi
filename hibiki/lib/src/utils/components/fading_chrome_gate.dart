@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-/// 淡出型 chrome 的统一门（BUG-1299 根因修复）：**不可见 ⇒ 不可点、不可聚焦**，
+/// 淡出型 chrome 的统一门（BUG-1301 根因修复）：**不可见 ⇒ 不可点、不可聚焦**，
 /// 三者绑死同一个 [visible] 判据，结构上消除「隐形但可聚焦」这类特殊状态。
 ///
 /// 动机：视频页多处 chrome（剧集横轨、侧边沉浸锁按钮、on-rail 沉浸退出钮）淡出后
@@ -8,7 +8,7 @@ import 'package:flutter/widgets.dart';
 /// [IgnorePointer] 挡不住焦点遍历：手柄 D-pad / Tab 仍能把焦点落进（或留在）
 /// opacity=0 的 `InkWell(canRequestFocus: true)` 上。焦点高亮开启
 /// （`FocusHighlightMode.traditional`）时，`HibikiFocusRing` 按 primaryFocus 的
-/// RenderBox 画 2.5px 空心框 → 画面上凭空出现一个空焦点框（BUG-1299 用户截图）。
+/// RenderBox 画 2.5px 空心框 → 画面上凭空出现一个空焦点框（BUG-1301 用户截图）。
 ///
 /// [ExcludeFocus] 翻 excluding=true 时 Flutter 会自动把已持焦的子孙 unfocus 回
 /// scope 的上一个持焦者（`FocusNode.descendantsAreFocusable` setter →
