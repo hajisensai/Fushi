@@ -1,9 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_player_controller.dart';
 import 'package:hibiki/src/media/video/video_subtitle_overlay.dart';
 import 'package:hibiki/src/media/video/video_subtitle_style.dart';
 import 'package:hibiki_audio/hibiki_audio.dart';
+
+import '../../pages/video_hibiki_page_source_corpus.dart';
 
 /// 主字幕与副字幕的垂直位置**各自独立**（用户诉求：「主字幕和副字幕能支持分开高度调节」）。
 ///
@@ -176,6 +180,57 @@ void main() {
           VideoSubtitleStyle.defaults.copyWith(secondaryBottomPadding: 150);
       expect(s.secondaryBottomPadding, 150);
       expect(s.bottomPadding, VideoSubtitleStyle.defaults.bottomPadding);
+    });
+  });
+
+  // ①②③ 只证明「overlay 拿到 secondaryBottomPadding 后几何正确」。设置页滑杆 →
+  // VideoSubtitleStyle → 视频页 → overlay 这条**接线**若断掉（删掉滑杆、或
+  // layout.part.dart 不再往 overlay 传该参数），上面 8 项照样全绿、用户拖滑杆却
+  // 毫无反应——这正是 settings_schema_coverage_test 的 kCoveredElsewhere 登记
+  // 'video/Secondary subtitle position' 所声称要覆盖的那半。视频页要真播放器 +
+  // media_kit，widget harness 起不来，故这半用源码守卫咬住（与主字幕位置的
+  // video_subtitle_push_up_guard_test.dart 同范式）。
+  group('④ 设置滑杆 → style → 视频页 → overlay 接线（源码守卫）', () {
+    late String schemaSrc;
+    late String pageSrc;
+    setUpAll(() {
+      final File schema = File('lib/src/settings/settings_schema_video.dart');
+      expect(schema.existsSync(), isTrue, reason: '视频设置 schema 源文件应存在');
+      schemaSrc = schema.readAsStringSync().replaceAll('\r\n', '\n');
+      pageSrc = readVideoHibikiSource();
+    });
+
+    test('设置页有独立的副字幕位置滑杆，且写的是 secondaryBottomPadding', () {
+      expect(schemaSrc, contains("id: 'video.subtitle.position_secondary'"),
+          reason: '副字幕垂直位置必须有自己的滑杆，否则用户没有解耦入口');
+      expect(schemaSrc, contains('t.video_setting_subtitle_position_secondary'),
+          reason: '滑杆标题必须走 i18n key，不能裸字符串');
+      // 拖动预览 + 松手落盘两处都必须改副字幕字段；只改一处 = 拖着有效松手回弹
+      // 或拖着不动松手才跳。
+      expect(
+        'copyWith(secondaryBottomPadding: v)'.allMatches(schemaSrc).length,
+        greaterThanOrEqualTo(2),
+        reason: 'onChanged 预览与 onChangeEnd 落盘都必须写 secondaryBottomPadding',
+      );
+      // 未单独调过时滑杆显示主字幕当前值（「跟随」语义），不能显示成 0。
+      expect(schemaSrc, contains('s.secondaryBottomPadding ?? s.bottomPadding'),
+          reason: '未解耦时滑杆初值必须回落到主字幕基线');
+    });
+
+    test('主字幕滑杆只写 bottomPadding，不再连带改副字幕', () {
+      expect(schemaSrc, contains("id: 'video.subtitle.position'"),
+          reason: '主字幕位置滑杆必须保留');
+      expect(schemaSrc, isNot(contains('copyWith(bottomPadding: v, ')),
+          reason: '主字幕滑杆一次只准改 bottomPadding，联动改副字幕就是本 bug 的回归');
+    });
+
+    test('视频页把 style 的副字幕基线真传给 overlay', () {
+      expect(pageSrc, contains('secondaryBottomPadding:'),
+          reason: 'overlay 必须接上副字幕基线参数，否则滑杆写穿 DB 也不生效');
+      expect(pageSrc, contains('_subtitleStyle.secondaryBottomPadding'),
+          reason: '传给 overlay 的必须是 style 里的真值，不能钉常量或恒 null');
+      expect(pageSrc, contains('bottomPadding: _subtitleStyle.bottomPadding'),
+          reason: '主字幕基线接线同时保持不变（相邻功能不被带坏）');
     });
   });
 }
