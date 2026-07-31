@@ -14,6 +14,12 @@ enum DictionaryCategory {
   frequency,
   names,
   supplementary,
+
+  /// 非日语学习语言的「学习语言→释义语言」双语词典分组。
+  bilingual,
+
+  /// 非日语学习语言的单语词典分组。
+  monolingual,
 }
 
 class RecommendedDictionary {
@@ -59,15 +65,17 @@ class RecommendedDictionary {
     if (url.startsWith(yomidevsPrefix) && url.endsWith('.zip')) {
       return '${url.substring(0, url.length - '.zip'.length)}.json';
     }
-    // wty: .../latest/dict/ja/<lang>/wty-ja-<lang>.zip
-    //   →  .../latest/index/wty-ja-<lang>-index.json?download=true
+    // wty: .../latest/dict/<src>/<tgt>/wty-<src>-<tgt>.zip
+    //   →  .../latest/index/wty-<src>-<tgt>-index.json?download=true
+    // （对任意语言对同构；ja 与非 ja 学习语言共用一条派生规则，实测非 ja 对
+    // 的 index 端点同样 200，如 wty-en-zh-index.json。）
     final RegExp wtyRe = RegExp(
-      r'^(https://huggingface\.co/datasets/daxida/wty-release/resolve/main/latest)/dict/ja/([a-z-]+)/(wty-ja-[a-z-]+)\.zip$',
+      r'^(https://huggingface\.co/datasets/daxida/wty-release/resolve/main/latest)/dict/[a-z-]+/[a-z-]+/(wty-[a-z-]+)\.zip$',
     );
     final RegExpMatch? m = wtyRe.firstMatch(url);
     if (m != null) {
       final String base = m.group(1)!;
-      final String stem = m.group(3)!;
+      final String stem = m.group(2)!;
       return '$base/index/$stem-index.json?download=true';
     }
     return null;
@@ -163,6 +171,107 @@ class DictionaryDownloader {
     final RecommendedDictionary? wty = wtyDictForLang(langCode);
     if (wty != null) result.add(wty);
     return result;
+  }
+
+  // ── 学习语言维度（非日语） ──────────────────────────────────────────
+  //
+  // wty-release 语言对矩阵实测快照（2026-07-31，逐语言枚举 HuggingFace tree API）：
+  // [availableLanguages] 的 23 种语言全部存在源语言目录；仅下述受限源缺少
+  // {hu, sl, sv, mn} 目标语言（含各自的单语包）。快照可能随上游再生成漂移，
+  // 下载失败路径由 UI 层既有错误提示兜底。
+
+  /// wty 上目标语言覆盖不全的源语言（缺 [_wtyLimitedTargets]）。
+  static const Set<String> _wtyLimitedSources = {'hu', 'sl', 'sv', 'id', 'mn'};
+
+  /// 受限源语言缺失的目标语言集合。
+  static const Set<String> _wtyLimitedTargets = {'hu', 'sl', 'sv', 'mn'};
+
+  /// Whether wty publishes a `wty-<src>-<tgt>.zip` for this pair.
+  static bool wtyPairAvailable(String srcLang, String tgtLang) {
+    if (!availableLanguages.containsKey(srcLang) ||
+        !availableLanguages.containsKey(tgtLang)) {
+      return false;
+    }
+    return !(_wtyLimitedSources.contains(srcLang) &&
+        _wtyLimitedTargets.contains(tgtLang));
+  }
+
+  /// Builds the wty entry for learning [srcLang] glossed in [tgtLang].
+  /// Returns null when the pair is not published.
+  static RecommendedDictionary? wtyPairDict({
+    required String srcLang,
+    required String tgtLang,
+  }) {
+    if (!wtyPairAvailable(srcLang, tgtLang)) return null;
+    final String srcName = availableLanguages[srcLang]!;
+    final String tgtName = availableLanguages[tgtLang]!;
+    final bool mono = srcLang == tgtLang;
+    return RecommendedDictionary(
+      name: mono
+          ? 'Wiktionary ${srcLang.toUpperCase()}-${srcLang.toUpperCase()} '
+              '($srcName)'
+          : 'Wiktionary ${srcLang.toUpperCase()}-${tgtLang.toUpperCase()} '
+              '($tgtName)',
+      url: '$_wtyBase/$srcLang/$tgtLang/wty-$srcLang-$tgtLang.zip',
+      description:
+          mono ? 'Wiktionary $srcName' : 'Wiktionary $srcName–$tgtName',
+      matchPrefix: 'wty-$srcLang-$tgtLang',
+      category:
+          mono ? DictionaryCategory.monolingual : DictionaryCategory.bilingual,
+      sizeEstimate: '~10 MB',
+      langCode: tgtLang,
+    );
+  }
+
+  /// Catalog for learning [learningLang] with glosses in [glossLang].
+  ///
+  /// 日语沿用完整人工目录（行为与 [catalogForLang] 完全一致）；其余学习语言
+  /// 动态生成 wty 双语（学习语言→释义语言，另附→英语兜底）+ 单语条目。
+  static List<RecommendedDictionary> catalogForLearningLang({
+    required String learningLang,
+    required String glossLang,
+  }) {
+    if (learningLang == 'ja') return catalogForLang(glossLang);
+    final List<RecommendedDictionary> result = [];
+    void add(RecommendedDictionary? d) {
+      if (d == null) return;
+      if (result.any((e) => e.matchPrefix == d.matchPrefix)) return;
+      result.add(d);
+    }
+
+    if (glossLang != learningLang) {
+      add(wtyPairDict(srcLang: learningLang, tgtLang: glossLang));
+    }
+    if (glossLang != 'en' && learningLang != 'en') {
+      add(wtyPairDict(srcLang: learningLang, tgtLang: 'en'));
+    }
+    add(wtyPairDict(srcLang: learningLang, tgtLang: learningLang));
+    return result;
+  }
+
+  /// Pre-checked indices for the learning-language catalog.
+  ///
+  /// 日语委托 [defaultSelectionForLang]；其余学习语言默认勾选第一个双语条目
+  /// （学习语言→释义语言，缺对时是→英语兜底），没有双语时勾单语。
+  static Set<int> defaultSelectionForLearningLang({
+    required String learningLang,
+    required String glossLang,
+    required List<RecommendedDictionary> workingCatalog,
+  }) {
+    if (learningLang == 'ja') {
+      return defaultSelectionForLang(glossLang, workingCatalog);
+    }
+    for (int i = 0; i < workingCatalog.length; i++) {
+      if (workingCatalog[i].category == DictionaryCategory.bilingual) {
+        return {i};
+      }
+    }
+    for (int i = 0; i < workingCatalog.length; i++) {
+      if (workingCatalog[i].category == DictionaryCategory.monolingual) {
+        return {i};
+      }
+    }
+    return {};
   }
 
   /// Groups [items] by category.

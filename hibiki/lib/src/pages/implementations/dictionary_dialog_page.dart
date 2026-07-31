@@ -548,6 +548,10 @@ class _DictionaryDialogPageState extends BasePageState {
         return t.dict_category_names;
       case DictionaryCategory.supplementary:
         return t.dict_category_supplementary;
+      case DictionaryCategory.bilingual:
+        return t.dict_category_bilingual;
+      case DictionaryCategory.monolingual:
+        return t.dict_category_monolingual;
     }
   }
 
@@ -591,10 +595,14 @@ class _DictionaryDialogPageState extends BasePageState {
     if (!DictionaryDownloader.availableLanguages.containsKey(selectedLang)) {
       selectedLang = 'en';
     }
-    var workingCatalog = DictionaryDownloader.catalogForLang(selectedLang);
+    var selectedLearningLang = 'ja';
+    var workingCatalog = DictionaryDownloader.catalogForLearningLang(
+        learningLang: selectedLearningLang, glossLang: selectedLang);
     var installedIndices = _computeInstalledIndices(workingCatalog);
-    var defaults = DictionaryDownloader.defaultSelectionForLang(
-        selectedLang, workingCatalog);
+    var defaults = DictionaryDownloader.defaultSelectionForLearningLang(
+        learningLang: selectedLearningLang,
+        glossLang: selectedLang,
+        workingCatalog: workingCatalog);
     var checked = Set<int>.from(defaults.difference(installedIndices));
     // HBK-AUDIT-110: byCategory and the rec->index map depend only on
     // workingCatalog, not on checkbox toggles. Compute them here (and again
@@ -602,9 +610,25 @@ class _DictionaryDialogPageState extends BasePageState {
     // don't re-derive the grouping or run O(n) catalog.indexOf per checkbox.
     var byCategory = DictionaryDownloader.byCategoryFrom(workingCatalog);
     var recIndex = _computeRecIndices(workingCatalog);
+    // 学习语言/释义语言任一变化都重建整个目录派生状态。
+    void recomputeCatalogState() {
+      workingCatalog = DictionaryDownloader.catalogForLearningLang(
+          learningLang: selectedLearningLang, glossLang: selectedLang);
+      byCategory = DictionaryDownloader.byCategoryFrom(workingCatalog);
+      recIndex = _computeRecIndices(workingCatalog);
+      installedIndices = _computeInstalledIndices(workingCatalog);
+      defaults = DictionaryDownloader.defaultSelectionForLearningLang(
+          learningLang: selectedLearningLang,
+          glossLang: selectedLang,
+          workingCatalog: workingCatalog);
+      checked = Set<int>.from(defaults.difference(installedIndices));
+    }
+
     final Set<DictionaryCategory> expandedCategories = <DictionaryCategory>{
       DictionaryCategory.jaEn,
       DictionaryCategory.jaJa,
+      DictionaryCategory.bilingual,
+      DictionaryCategory.monolingual,
     };
 
     final selected = await showAppDialog<Set<int>>(
@@ -621,25 +645,26 @@ class _DictionaryDialogPageState extends BasePageState {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     _buildLanguageSelector(
+                      label: t.dict_download_learning_language,
+                      selectedLang: selectedLearningLang,
+                      onChanged: (String lang) {
+                        setDialogState(() {
+                          selectedLearningLang = lang;
+                          recomputeCatalogState();
+                        });
+                      },
+                    ),
+                    SizedBox(height: tokens.spacing.gap),
+                    _buildLanguageSelector(
+                      label: t.dict_download_language,
                       selectedLang: selectedLang,
                       onChanged: (String lang) {
                         setDialogState(() {
                           selectedLang = lang;
-                          workingCatalog =
-                              DictionaryDownloader.catalogForLang(lang);
                           // HBK-AUDIT-110: recompute the catalog-derived
                           // structures only when the language (hence catalog)
                           // actually changes.
-                          byCategory = DictionaryDownloader.byCategoryFrom(
-                              workingCatalog);
-                          recIndex = _computeRecIndices(workingCatalog);
-                          installedIndices =
-                              _computeInstalledIndices(workingCatalog);
-                          defaults =
-                              DictionaryDownloader.defaultSelectionForLang(
-                                  lang, workingCatalog);
-                          checked = Set<int>.from(
-                              defaults.difference(installedIndices));
+                          recomputeCatalogState();
                         });
                       },
                     ),
@@ -705,6 +730,7 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Widget _buildLanguageSelector({
+    required String label,
     required String selectedLang,
     required ValueChanged<String> onChanged,
   }) {
@@ -712,7 +738,7 @@ class _DictionaryDialogPageState extends BasePageState {
     final HibikiDesignTokens tokens = HibikiDesignTokens.of(context);
     return Row(
       children: [
-        Text(t.dict_download_language, style: tokens.type.controlLabel),
+        Text(label, style: tokens.type.controlLabel),
         SizedBox(width: tokens.spacing.gap),
         Expanded(
           child: GamepadMenuDropdown<String>(
