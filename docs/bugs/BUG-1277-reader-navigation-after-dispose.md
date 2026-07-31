@@ -1,4 +1,4 @@
-## BUG-1246 · 有声书跨章等待后触发已销毁 State 重绘
+## BUG-1277 · 有声书跨章等待后触发已销毁 State 重绘
 
 - **报告**：2026-07-29（用户：Android 错误日志显示有声书 cue 跨章节时，
   `_handleCueCrossChapter → _navigateToChapter → _beginNavigation → _rebuild`
