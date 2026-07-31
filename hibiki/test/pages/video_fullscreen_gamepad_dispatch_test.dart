@@ -203,6 +203,7 @@ class _Rig {
       speedUp: _noop,
       speedDown: _noop,
       resetSpeed: _noop,
+      toggleHoldSpeed: _noop,
       previousFrame: _noop,
       nextFrame: _noop,
       screenshot: _noop,

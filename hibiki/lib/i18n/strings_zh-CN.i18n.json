@@ -2765,6 +2765,7 @@
   "selection_web_search": "网页搜索",
   "selection_web_search_unavailable": "没有可用的网页搜索应用。",
   "selection_share_failed": "无法打开分享面板。",
+  "shortcut_action_video_hold_speed": "按住临时倍速",
   "handlebar_phonetic_transcriptions": "音标",
   "sync_progress_preparing": "正在准备同步",
   "sync_progress_collections": "同步合集",

@@ -1603,6 +1603,15 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
   /// 调速手势中；横向拖动以此为基准连续加减，松手清空。
   double? _longPressDragBaseSpeed;
 
+  /// 键盘按住/手柄翻转的临时倍速是否进行中（用户请求：与手机长按画面同语义）。
+  /// 与手势长按共用 [_longPressPreviousSpeed] 恢复位，此标志区分恢复权归属：
+  /// true 时恢复只走 [_releaseHoldSpeed]，手势松手不越权恢复。
+  bool _holdSpeedActive = false;
+
+  /// 键盘按住临时倍速的触发键（非空 = 正按住中）。keyup/repeat 只按此键识别、
+  /// 不看修饰键，按住期间先松修饰键也不会把倍速卡在加速态。
+  LogicalKeyboardKey? _holdSpeedTriggerKey;
+
   /// TODO-1154：长按倍速指示徽章的跟随锚点（局部坐标，即 GestureDetector/Stack 同一坐标系
   /// 的 `details.localPosition`）+ 当前速度。非空时在指针上方渲染「Nx」徽章跟手移动
   /// （B 站/YouTube 长按倍速气泡观感），松手清空。**不**复用钉死左上角的 [_showOsd]。
@@ -4138,6 +4147,9 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
       resetSpeed: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_setSpeed(1.0)),
       ),
+      // 手柄通道的按住临时倍速（键盘通道不经此表，见 _handleHoldSpeedKey）：
+      // 手柄没有可靠的松开事件管线，退化成按一下开/再按恢复的翻转语义。
+      toggleHoldSpeed: () => _runWhenImmersiveAllowsShortcuts(_toggleHoldSpeed),
       previousFrame: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(controller.frameStep(forward: false)),
       ),
@@ -4365,6 +4377,49 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
     }
   }
 
+  /// 按住临时倍速的键盘入口（用户请求：与手机长按画面同语义——按下加速、松开
+  /// 恢复）。按住语义需要 keyup 边沿，SingleActivator/CallbackShortcuts 表达不了，
+  /// 故该动作的键盘绑定不进 activator 表（见 [buildVideoPlayerShortcutsFromRegistry]），
+  /// 由本页最外层 [Focus] 的 onKeyEvent 直接判定：状态机是纯函数
+  /// [resolveHoldSpeedKeyTransition]，绑定命中是 [keyDownMatchesHoldSpeed]（都在
+  /// video_player_shortcuts.dart，可单测）。
+  ///
+  /// 与其它视频键语义对齐：词典浮层可见时先关浮层不执行（BUG-924 同款）；进入
+  /// 动作过 [_runWhenImmersiveAllowsShortcuts] 沉浸锁门控；文本框持焦时不接管。
+  /// keyup/repeat 只按触发键识别（不看修饰键/门控），保证任何情况下松开都能恢复。
+  KeyEventResult _handleHoldSpeedKey(KeyEvent event) {
+    final bool matches = event is KeyDownEvent &&
+        _controller != null &&
+        keyDownMatchesHoldSpeed(
+          appModel.shortcutRegistry,
+          event,
+          hasEditableFocus: focusedEditableText() != null,
+        );
+    switch (resolveHoldSpeedKeyTransition(
+      event: event,
+      activeTriggerKey: _holdSpeedTriggerKey,
+      matchesHoldSpeedBinding: matches,
+    )) {
+      case HoldSpeedKeyTransition.none:
+        return KeyEventResult.ignored;
+      case HoldSpeedKeyTransition.swallow:
+        return KeyEventResult.handled;
+      case HoldSpeedKeyTransition.release:
+        _holdSpeedTriggerKey = null;
+        _releaseHoldSpeed();
+        return KeyEventResult.handled;
+      case HoldSpeedKeyTransition.engage:
+        // BUG-924 同语义：浮层可见时任何视频键先关顶层浮层、不执行原动作。
+        if (_hasVisiblePopup) {
+          _dismissTopVisiblePopup();
+          return KeyEventResult.handled;
+        }
+        _holdSpeedTriggerKey = event.logicalKey;
+        _runWhenImmersiveAllowsShortcuts(_engageHoldSpeed);
+        return KeyEventResult.handled;
+    }
+  }
+
   /// TODO-1342：把整页子树包进手柄输入层。外层 [Actions] 接桌面轮询派发的
   /// [GamepadButtonIntent]；内层 [Focus] 只旁观 Android 原生手柄按键的冒泡（不夺焦、
   /// 不参与焦点遍历，故不干扰 [_videoFocusNode] 的键盘持焦与既有 [autofocus] 时序）。
@@ -4387,6 +4442,11 @@ class _VideoHibikiPageState extends ConsumerState<VideoHibikiPage>
               (event.logicalKey == LogicalKeyboardKey.shiftLeft ||
                   event.logicalKey == LogicalKeyboardKey.shiftRight)) {
             _triggerShiftLookupAtLastPointer();
+          }
+          // 按住临时倍速（按下加速/松开恢复）需要 keyup 边沿，绑定不进内层
+          // activator 表，在此按注册表绑定判定按下/松开（见 _handleHoldSpeedKey）。
+          if (_handleHoldSpeedKey(event) == KeyEventResult.handled) {
+            return KeyEventResult.handled;
           }
           // BUG-853：IME 改写成 process 的裸空格上浮到此，先按物理键还原播放/暂停；
           // 其余键交回手柄原生入口，行为不变。

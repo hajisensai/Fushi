@@ -107,6 +107,13 @@ extension _VideoSpeed on _VideoHibikiPageState {
   }
 
   void _handleVideoLongPressEnd(LongPressEndDetails details) {
+    // 键盘/手柄的按住临时倍速正持有恢复位（手势 start 在 previous 非空时早退、
+    // 从未接管），这次长按松手只清徽章、不动倍速——恢复权归 [_releaseHoldSpeed]。
+    if (_holdSpeedActive) {
+      _longPressDragBaseSpeed = null;
+      _longPressSpeedBadge.value = null;
+      return;
+    }
     final double? previous = _longPressPreviousSpeed;
     _longPressPreviousSpeed = null;
     _longPressDragBaseSpeed = null;
@@ -114,6 +121,42 @@ extension _VideoSpeed on _VideoHibikiPageState {
     _longPressSpeedBadge.value = null;
     if (previous == null) return;
     unawaited(_setSpeed(previous, persist: false));
+  }
+
+  /// 键盘按住/手柄翻转的「临时倍速」进入（用户请求：与手机长按画面同语义）。
+  /// 与手势 [_handleVideoLongPressStart] 共用 [_longPressPreviousSpeed] 恢复位，
+  /// 两条输入通道互斥、绝不叠加接管；键盘无指针位置，反馈走左上角 OSD 而非
+  /// 跟随徽章。临时倍速一律 persist: false——松开恢复原速，绝不污染速度记忆。
+  void _engageHoldSpeed() {
+    if (_holdSpeedActive) return;
+    if (_longPressPreviousSpeed != null) return; // 手势长按已占用临时倍速
+    _holdSpeedActive = true;
+    _longPressPreviousSpeed = _playbackSpeed;
+    final double speed = _asbConfig.longPressSpeed;
+    unawaited(_setSpeed(speed, persist: false));
+    _showOsd('${speed}x', icon: Icons.speed);
+  }
+
+  /// 松开/再按恢复原速（[_engageHoldSpeed] 的逆操作）。未处于键盘/手柄按住态时
+  /// no-op——手势通道自己的恢复走 [_handleVideoLongPressEnd]。
+  void _releaseHoldSpeed() {
+    if (!_holdSpeedActive) return;
+    _holdSpeedActive = false;
+    final double? previous = _longPressPreviousSpeed;
+    _longPressPreviousSpeed = null;
+    if (previous == null) return;
+    unawaited(_setSpeed(previous, persist: false));
+    _showOsd('${previous}x', icon: Icons.speed);
+  }
+
+  /// 手柄通道的翻转语义（手柄没有可靠的松开事件管线）：按一下进入临时倍速、
+  /// 再按恢复。与键盘按住共用同一状态，二者混用也不会叠加。
+  void _toggleHoldSpeed() {
+    if (_holdSpeedActive) {
+      _releaseHoldSpeed();
+    } else {
+      _engageHoldSpeed();
+    }
   }
 
   Future<void> _adjustSpeed(double delta) async {

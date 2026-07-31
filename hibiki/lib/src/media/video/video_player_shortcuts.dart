@@ -1,7 +1,15 @@
 import 'package:flutter/services.dart'
-    show LogicalKeyboardKey, PhysicalKeyboardKey;
+    show
+        HardwareKeyboard,
+        KeyDownEvent,
+        KeyEvent,
+        KeyRepeatEvent,
+        KeyUpEvent,
+        LogicalKeyboardKey,
+        PhysicalKeyboardKey;
 import 'package:flutter/widgets.dart';
 
+import 'package:hibiki/src/shortcuts/input_binding.dart' show ModifierKey;
 import 'package:hibiki/src/shortcuts/shortcut_action.dart';
 import 'package:hibiki/src/shortcuts/shortcut_registry.dart';
 
@@ -21,6 +29,7 @@ class VideoPlayerShortcutActions {
     required this.speedUp,
     required this.speedDown,
     required this.resetSpeed,
+    required this.toggleHoldSpeed,
     required this.previousFrame,
     required this.nextFrame,
     required this.screenshot,
@@ -59,6 +68,13 @@ class VideoPlayerShortcutActions {
   final VoidCallback speedUp;
   final VoidCallback speedDown;
   final VoidCallback resetSpeed;
+
+  /// 按住临时倍速（对齐手机长按画面，默认裸 E）。**键盘通道不经本表**：按住语义
+  /// 需要 keyup 边沿，SingleActivator 表达不了，键盘按下/松开由视频页最外层
+  /// Focus.onKeyEvent 直接判定（见 _handleHoldSpeedKey）。本回调只服务手柄通道
+  /// （videoActionCallbacks → resolveGamepad 派发），退化成翻转语义：按一下切到
+  /// 长按倍速、再按恢复原速。
+  final VoidCallback toggleHoldSpeed;
   final VoidCallback previousFrame;
   final VoidCallback nextFrame;
   final VoidCallback screenshot;
@@ -138,6 +154,7 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoSpeedUp: actions.speedUp,
     ShortcutAction.videoSpeedDown: actions.speedDown,
     ShortcutAction.videoResetSpeed: actions.resetSpeed,
+    ShortcutAction.videoHoldSpeed: actions.toggleHoldSpeed,
     ShortcutAction.videoPreviousFrame: actions.previousFrame,
     ShortcutAction.videoNextFrame: actions.nextFrame,
     ShortcutAction.videoScreenshot: actions.screenshot,
@@ -186,6 +203,11 @@ Map<ShortcutActivator, VoidCallback> buildVideoPlayerShortcutsFromRegistry(
     // 调用点可排除个别动作（如字幕对轴弹窗复用本 map 时排除 Escape / 全屏 / 打开字幕列表 /
     // 沉浸锁，避免它们拦掉弹窗自身的关闭或在弹窗后面改变布局）。
     if (exclude.contains(action)) continue;
+    // 按住临时倍速的**键盘绑定永不进本表**：按住语义需要 keyup 边沿，装成
+    // SingleActivator 会在 keydown 就把事件消费掉，页面级 Focus.onKeyEvent 的
+    // 按下/松开判定（_handleHoldSpeedKey）就永远收不到。手柄通道不受影响——
+    // resolveGamepad 派发仍走 videoActionCallbacks 里的 toggleHoldSpeed。
+    if (action == ShortcutAction.videoHoldSpeed) continue;
     // 模糊切换 / 遮蔽循环 / 隐藏切换都是 press-edge-only（按一下翻一次，长按不连发，
     // 与历史 videoToggleSubtitleBlur 同语义）。TODO-840 Part B。
     const Set<ShortcutAction> pressEdgeOnly = <ShortcutAction>{
@@ -263,4 +285,83 @@ bool isVideoImeSpacePlayPause({
   // 走既有 SingleActivator 路径，不进本回退。
   return physicalKey == PhysicalKeyboardKey.space &&
       logicalKey != LogicalKeyboardKey.space;
+}
+
+/// 按住临时倍速键盘状态机的单步结论（[resolveHoldSpeedKeyTransition]）。
+enum HoldSpeedKeyTransition {
+  /// 命中绑定的 keydown：进入临时倍速并记录触发键。
+  engage,
+
+  /// 按住期间的重复/重入事件：消费掉、状态不变（阻止 OS key-repeat 冒泡成别的行为）。
+  swallow,
+
+  /// 触发键的 keyup：恢复原速并清空触发键。
+  release,
+
+  /// 与按住倍速无关：不消费，交回既有解析路径。
+  none,
+}
+
+/// 按住临时倍速的键盘状态机（纯函数，供视频页最外层 Focus.onKeyEvent 调用与单测）。
+///
+/// 语义与手机长按画面一致：按下进入临时倍速、松开恢复。SingleActivator 只有按下
+/// 边沿，表达不了「松开」，故本动作不进 CallbackShortcuts activator 表（见
+/// [buildVideoPlayerShortcutsFromRegistry] 的跳过分支），按下/松开都在这里判定。
+///
+/// [activeTriggerKey] 非空 = 正在按住中。keyup/repeat 只按**触发键本身**识别、
+/// 不看修饰键——用户按住期间松开修饰键时 keyup 仍能命中，绝不把倍速卡在加速态。
+/// [matchesHoldSpeedBinding] 是 keydown 是否命中注册表绑定（[keyDownMatchesHoldSpeed]），
+/// 非 keydown 事件传什么都不影响结论。
+HoldSpeedKeyTransition resolveHoldSpeedKeyTransition({
+  required KeyEvent event,
+  required LogicalKeyboardKey? activeTriggerKey,
+  required bool matchesHoldSpeedBinding,
+}) {
+  if (event is KeyUpEvent) {
+    return activeTriggerKey == event.logicalKey
+        ? HoldSpeedKeyTransition.release
+        : HoldSpeedKeyTransition.none;
+  }
+  if (event is KeyRepeatEvent) {
+    return activeTriggerKey == event.logicalKey
+        ? HoldSpeedKeyTransition.swallow
+        : HoldSpeedKeyTransition.none;
+  }
+  if (event is! KeyDownEvent) return HoldSpeedKeyTransition.none;
+  if (activeTriggerKey != null) {
+    // 已在按住态：同键的再次 down（个别平台把 repeat 报成 down）照旧消费，
+    // 其它键不接管。
+    return activeTriggerKey == event.logicalKey
+        ? HoldSpeedKeyTransition.swallow
+        : HoldSpeedKeyTransition.none;
+  }
+  return matchesHoldSpeedBinding
+      ? HoldSpeedKeyTransition.engage
+      : HoldSpeedKeyTransition.none;
+}
+
+/// keydown 是否命中注册表里 [ShortcutAction.videoHoldSpeed] 的键盘绑定。
+///
+/// 修饰键取 [HardwareKeyboard] 实时状态（与 SingleActivator 同口径）；physicalKey
+/// 透传给 [HibikiShortcutRegistry.resolveKeyboard] 供 IME 改写回退（TODO-847）。
+/// [hasEditableFocus] 为 true（文本框持焦）时恒不命中，避免输入时误触加速。
+bool keyDownMatchesHoldSpeed(
+  HibikiShortcutRegistry registry,
+  KeyDownEvent event, {
+  required bool hasEditableFocus,
+}) {
+  if (hasEditableFocus) return false;
+  final Set<ModifierKey> modifiers = <ModifierKey>{
+    if (HardwareKeyboard.instance.isControlPressed) ModifierKey.ctrl,
+    if (HardwareKeyboard.instance.isShiftPressed) ModifierKey.shift,
+    if (HardwareKeyboard.instance.isAltPressed) ModifierKey.alt,
+    if (HardwareKeyboard.instance.isMetaPressed) ModifierKey.meta,
+  };
+  return registry.resolveKeyboard(
+        event.logicalKey,
+        modifiers: modifiers,
+        scope: ShortcutScope.video,
+        physicalKey: event.physicalKey,
+      ) ==
+      ShortcutAction.videoHoldSpeed;
 }
