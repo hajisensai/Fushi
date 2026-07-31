@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:hibiki/src/media/collections/collection_season_groups.dart'
+    show isMultiSeasonGrouped;
 import 'package:hibiki/src/media/tracking/bangumi_api_client.dart';
 import 'package:hibiki/src/media/tracking/media_tracking_repository.dart';
 import 'package:hibiki/src/media/video/scraper/filename_parser.dart';
@@ -559,8 +561,17 @@ class MediaTrackingService {
     required int episodeIndex,
     bool seriesCompleted = false,
   }) async {
-    // 已有合集映射属于用户显式配置或旧版自动映射，优先沿用且绝不改写。
+    // v64 分季合集（≥2 组）：「整合集 → 单个 Bangumi 条目」结构性失真——Bangumi
+    // 一季一条目，合集下标当集数会把 S02E01 报成 E13、完结误报给第一季条目。此时
+    // 绕开合集级映射（保留不改写，只不再使用），一律走按集通道（季度感知刮削
+    // subject + 文件名季内集号）。
+    bool multiSeason = false;
     if (collectionId != null) {
+      multiSeason = isMultiSeasonGrouped(
+          await _repository.loadCollectionVideoGroupKeys(collectionId));
+    }
+    // 已有合集映射属于用户显式配置或旧版自动映射，优先沿用且绝不改写。
+    if (collectionId != null && !multiSeason) {
       final MediaTrackingMappingRow? collectionMapping =
           await _repository.findMapping(
         mediaType: TrackingMediaType.videoCollection,
@@ -588,6 +599,9 @@ class MediaTrackingService {
     // 文件名已有明确集数时按单文件建映射，避免一个本地合集混入短篇、PV 或多季后，
     // 合集 sortIndex 被误当成 Bangumi 正片集数。无集数的电影/整季文件仍走原合集语义。
     final bool itemScoped = parsedEpisodeNumber > 0;
+    // 分季合集里解析不出集号的成员是 PV/特典：不上报，也不给整个多季合集建
+    // 一条注定错位的合集级映射。
+    if (multiSeason && !itemScoped) return;
     final TrackingMediaType type = itemScoped || collectionId == null
         ? TrackingMediaType.video
         : TrackingMediaType.videoCollection;

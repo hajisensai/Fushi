@@ -7,6 +7,8 @@ import 'package:path/path.dart' as p;
 
 import 'package:hibiki_audio/hibiki_audio.dart';
 import 'package:hibiki_core/hibiki_core.dart';
+import 'package:hibiki/src/media/collections/collection_season_groups.dart'
+    show collectionGroupKeyForFilename;
 import 'package:hibiki/src/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:hibiki/src/media/video/m3u8_playlist.dart' show PlaylistEntry;
@@ -219,8 +221,11 @@ class VideoBookRepository {
       }
       collectionId = await _db.createMediaCollection(collectionName,
           collectionType: 'playlist');
-      for (final String uid in epUids) {
-        await _db.addToCollection(collectionId, MediaKind.video, uid);
+      for (int i = 0; i < epUids.length; i++) {
+        // v64 分季：入库即按文件名固化「属于哪一季 / PV」分组键（详情页分节 +
+        // tracking 分季上报的持久事实；单组合集 UI 不显示分节，无感）。
+        await _db.addToCollection(collectionId, MediaKind.video, epUids[i],
+            groupKey: collectionGroupKeyForFilename(entries[i].path));
       }
     });
     return (collectionId: collectionId, episodeUids: epUids);
@@ -289,7 +294,8 @@ class VideoBookRepository {
           ),
           sourceId: sourceId,
         );
-        await _db.addToCollection(collectionId, MediaKind.video, uid);
+        await _db.addToCollection(collectionId, MediaKind.video, uid,
+            groupKey: collectionGroupKeyForFilename(e.path));
         added++;
       }
       // 后删：成员有、清单已删的基身份（只解绑，保留 VideoBook 本体）。
