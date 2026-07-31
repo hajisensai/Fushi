@@ -54,8 +54,14 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
   /// 副标题分三段取值，都是「说清现在到底怎么了」：
   /// 1. 同步中且有阶段 tick → 阶段行；
   /// 2. 同步中但还没有 tick（准备段 / 轻量路径）→ 这轮同步的身份；
-  /// 3. 空闲 → 上一轮的**结局**（尤其「没有可用的同步通道」＝上轮其实什么都没同步；
-  ///    以前它与正常跑完同形，用户只看得到进度条闪一下）。没跑过才回落到静态提示。
+  /// 3. 空闲 → 上一轮**全量**同步的结局（尤其「没有可用的同步通道」＝上轮其实什么
+  ///    都没同步；以前它与正常跑完同形，用户只看得到进度条闪一下）。没跑过才回落到
+  ///    静态提示。
+  ///
+  /// 第 3 段只认 [SyncActivityKind.fullSweep]：本行讲的是「立即同步」这件事，拿后台
+  /// 单本 / 合集轻量同步的结局来填会答非所问（用户点的是全量，看到的却是某本书的
+  /// 结果）。进行中的第 1、2 段不做这个过滤 —— 那两段回答的是「现在有没有东西在跑」，
+  /// 任何同步都算数（BUG-101 的教训）。
   Widget _buildRow(bool syncing, SyncProgress? p) {
     return ValueListenableBuilder<SyncActivity?>(
       valueListenable: syncActivity,
@@ -68,7 +74,9 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
               subtitle = syncProgressLine(p);
             } else if (syncing && activity != null) {
               subtitle = syncActivityLine(activity);
-            } else if (!syncing && outcome != null) {
+            } else if (!syncing &&
+                outcome != null &&
+                outcome.kind == SyncActivityKind.fullSweep) {
               subtitle = syncOutcomeLine(outcome);
             } else {
               subtitle = t.sync_now_hint;

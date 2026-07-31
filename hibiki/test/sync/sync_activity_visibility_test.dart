@@ -232,6 +232,22 @@ void main() {
       expect(occurrences('_activeSyncs--'), 1);
     });
 
+    test('设置页「立即同步」只拿全量同步的结局填副标题', () {
+      // 那一行讲的是「立即同步」这件事；拿后台单本 / 合集轻量同步的结局来填会
+      // 答非所问（用户点的是全量，看到的却是某本书的结果）。设置页运行时表面要
+      // AppModel + SettingsContext，headless 挂不稳，故在此锁不变式。
+      final String rowSrc =
+          File('lib/src/sync/sync_settings_schema/actions.part.dart')
+              .readAsStringSync();
+      expect(
+        rowSrc,
+        contains('outcome.kind == SyncActivityKind.fullSweep'),
+        reason: '空闲副标题必须过滤同步种类，否则会显示别的同步的结局',
+      );
+      // 进行中的两段不做这个过滤：它们回答「现在有没有东西在跑」，任何同步都算数。
+      expect(rowSrc, contains('syncActivityLine(activity)'));
+    });
+
     test('最后一个在飞同步退出时同时清掉阶段与身份', () {
       // 两者必须一起清：只清其一会把上一轮的残留文字带进下一轮开头。
       expect(src, contains('syncProgress.value = null'));
