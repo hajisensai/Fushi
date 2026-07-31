@@ -15,7 +15,7 @@ class linear {
 
   void build_to_file(const std::vector<std::pair<uint64_t, uint64_t>>& hash_entries, const std::string& path);
 
-  // BUG-1285: [size] is the mapped size of hash.table in bytes. The stored
+  // BUG-1300: [size] is the mapped size of hash.table in bytes. The stored
   // capacity is a bare uint32 read straight out of the file; a truncated or
   // corrupt table would otherwise make the probe walk off the end of the
   // mapping. Callers must pass the real mapping size -- probe_dict_content()

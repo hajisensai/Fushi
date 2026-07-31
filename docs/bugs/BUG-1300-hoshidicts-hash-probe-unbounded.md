@@ -1,4 +1,4 @@
-## BUG-1285 · 词典 hash 探测无界循环 + load() 零边界校验：损坏词典可致查词永久挂死/越界读
+## BUG-1300 · 词典 hash 探测无界循环 + load() 零边界校验：损坏词典可致查词永久挂死/越界读
 
 - **报告**：2026-07-31（用户：「词典出来的速度特别特别慢，**还有可能卡死**」——查「卡死」的成因时在引擎里挖到）
 - **真实性**：✅ 真 bug，且**已用变异实测证明会真崩**（见 ② 的 SegFault 证据）。根因在 `native/hoshidicts/hoshidicts_src/hash/hash.cpp`：
@@ -35,6 +35,6 @@
   四个场景走**公开查询路径**：hash.table 截断到只剩 header+1 槽（header 仍宣称原始大 capacity）／capacity 字段改写为 0（旧代码除零）／capacity 改写为 `0xFFFFFFFF`（旧代码无界探测 + 越界读）／未损坏副本仍能查出 猫（证明钳制没有把正常查询一起干掉）。
   - **变异实测（关键证据）**：把 `load()` 的钳制改成 `if (false && stored > max_slots)` 重新编译后，该测试**以 SegFault 失败（25.16 秒后崩溃）**——硬证明了三件事：旧代码确实会越界读、这个测试真能抓到、修复确实解决了它。变异用反向 `sed` 替换还原（不用 `git checkout --`，那会连带打回未提交的其它修改），还原后核验零 `MUTANT` 残留、全套 19/19 恢复绿。
 - **备注**：
-  - 与 [BUG-1284](BUG-1284-lookup-blocking-network-timeouts.md)（网络超时阻塞）、[BUG-1286](BUG-1286-engine-freq-pitch-enrich-before-truncate.md)（引擎线性放大）同轮，是同一句用户报告拆出的三条独立根因：1281 解释「慢 4-5 秒」，1283 解释「词典装得多的人更慢」，本条解释「卡死」。
-  - 本条修的是**触发后果**（不崩、不挂）。「同步 FFI 直接跑在 UI isolate」这个使其后果如此严重的架构成因未动，记在 BUG-1284 的未修项里。
+  - 与 [BUG-1299](BUG-1299-lookup-blocking-network-timeouts.md)（网络超时阻塞）、[BUG-1301](BUG-1301-engine-freq-pitch-enrich-before-truncate.md)（引擎线性放大）同轮，是同一句用户报告拆出的三条独立根因：BUG-1299 解释「慢 4-5 秒」，BUG-1301 解释「词典装得多的人更慢」，本条解释「卡死」。
+  - 本条修的是**触发后果**（不崩、不挂）。「同步 FFI 直接跑在 UI isolate」这个使其后果如此严重的架构成因未动，记在 BUG-1299 的未修项里。
   - 验证环境：MSVC 2022 + Ninja + C++23，`cmake -S native/hoshidicts/tests -B <build> -G Ninja -DCMAKE_BUILD_TYPE=Release` → `ctest`。注意 `tests/run_all.bat` 把构建树固定放在 `%TEMP%\hoshi_tests_build`，多个 worktree 并发时会撞 CMake cache（报 source 不匹配），换独立短路径构建目录即可。

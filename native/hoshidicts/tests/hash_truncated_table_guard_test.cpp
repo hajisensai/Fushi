@@ -1,4 +1,4 @@
-// BUG-1285 guard: a truncated / corrupt hash.table must not hang or read out
+// BUG-1300 guard: a truncated / corrupt hash.table must not hang or read out
 // of bounds on the query path.
 //
 // hash::linear::load() used to take the capacity straight out of the mapped

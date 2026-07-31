@@ -7,7 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// BUG-1284 ②：AnkiConnect 查重的「传输层不可达」熔断守卫。
+/// BUG-1299 ②：AnkiConnect 查重的「传输层不可达」熔断守卫。
 ///
 /// 为什么这条在查词热路径上：`popup.js` 的 `createEntryHeader` 对结果里**每个
 /// 词条**都发一次 `duplicateCheck` 桥调用，而 `createAnkiRepository()` 每次都
@@ -49,7 +49,7 @@ void main() {
 
   test(
       'transport-dead host is probed once, then short-circuited inside the '
-      'cooldown window (BUG-1284)', () async {
+      'cooldown window (BUG-1299)', () async {
     await seedSettings();
     var calls = 0;
     final repo = AnkiConnectRepository(
@@ -115,7 +115,8 @@ void main() {
           calls++;
           // 主机活着，只是这个 action 报了业务错误。
           return http.Response(
-            jsonEncode({'result': null, 'error': 'collection is not available'}),
+            jsonEncode(
+                {'result': null, 'error': 'collection is not available'}),
             200,
           );
         }),

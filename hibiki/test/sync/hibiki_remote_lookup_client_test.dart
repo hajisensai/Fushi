@@ -406,14 +406,14 @@ void main() {
       expect(url, isNull);
     });
 
-    // BUG-1284 契约变更：词典路径此前是全仓唯一「拿到 allUnreachable 却不消费」
+    // BUG-1299 契约变更：词典路径此前是全仓唯一「拿到 allUnreachable 却不消费」
     // 的调用点（旧断言：全不可达 → 返回 null）。因为远端查词排在本地缓存之前，
     // 那等于配对设备离线时每次查词都白付一遍「3s × 候选数」，重复查同一个词也
     // 不例外——用户报的「某些机器上查词 4-5 秒」。现在与音频路径对称抛出，
     // 供 AppModel 计入失败冷却。
     test(
         'dictionary lookup throws RemoteLookupUnreachableError when all '
-        'candidates are transport-dead (BUG-1284)', () async {
+        'candidates are transport-dead (BUG-1299)', () async {
       final HibikiDatabase db = _testDb();
       addTearDown(db.close);
       final SyncRepository repo = await _repo(

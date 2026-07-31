@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 1240 条。点号进各自文件。
+> 共 1243 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-1301](bugs/BUG-1301-engine-freq-pitch-enrich-before-truncate.md) | ✅ | ✅ | 词典引擎 freq/pitch 在截断前富化：中间结果被重复富化约 3 倍（实测微优化，非秒级根因） |
+| [BUG-1300](bugs/BUG-1300-hoshidicts-hash-probe-unbounded.md) | ✅ | ✅ | 词典 hash 探测无界循环 + load() 零边界校验：损坏词典可致查词永久挂死/越界读 |
+| [BUG-1299](bugs/BUG-1299-lookup-blocking-network-timeouts.md) | ✅ | ✅ | 查词弹窗被网络超时阻塞数秒（远端查词 remote-first + 逐词条 AnkiConnect 查重） |
 | [BUG-1291](bugs/BUG-1291-destructive-confirm-checkbox-truncated.md) | ✅ | ✅ | 销毁确认弹窗勾选行文案被单行省略号截断 |
 | [BUG-1290](bugs/BUG-1290-bangumi-dashboard-history.md) | ✅ | ✅ | Bangumi 首页卡把映射误当观看历史且不列待手动关联条目 |
 | [BUG-1289](bugs/BUG-1289-youtube-caption-track-labels-ambiguous.md) | ✅ | ✅ | YouTube 字幕轨标签退化成语言码且人工/ASR 重名，无法分辨选哪条 |

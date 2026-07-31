@@ -103,13 +103,19 @@ class DictionaryQuery {
  private:
   friend class Lookup;
 
-  // BUG-1286: query_raw() returns terms WITHOUT frequency/pitch enrichment.
+  // BUG-1301: query_raw() returns terms WITHOUT frequency/pitch enrichment.
   // Lookup::lookup() calls it once per (scan candidate x text variant x
-  // deinflection) -- hundreds to thousands of times per single user lookup --
-  // and enriching inside it meant every intermediate term hit every frequency
-  // and pitch dictionary (each with its own JSON parse), only for ~all of that
-  // work to be thrown away by the dedup + partial_sort + resize that follow.
+  // deinflection) -- ~69 times per user lookup, measured, not the ~1600 the
+  // first draft of BUG-1301 extrapolated from the loop bounds -- and enriching
+  // inside it meant every intermediate term hit every frequency and pitch
+  // dictionary (each with its own JSON parse), only for most of that work to be
+  // thrown away by the dedup + partial_sort + resize that follow.
   // The enrichment now happens once, on the surviving set, in lookup.cpp.
+  //
+  // Measured magnitude (Release, 7 term dicts x 150k entries, 3 freq dicts,
+  // 2 pitch dicts, max_results=200): enrichment count 9.4 -> 3.2 per lookup
+  // (2.94x), end-to-end 0.182 ms -> 0.173 ms per lookup (~5-9%). This is a real
+  // but SMALL win -- do not cite it as a cause of seconds-scale lookup latency.
   // The public query_freq/query_pitch keep enriching a whole vector so
   // query() -- the single-expression entry point -- is unchanged.
   std::vector<TermResult> query_raw(const std::string& expression) const;

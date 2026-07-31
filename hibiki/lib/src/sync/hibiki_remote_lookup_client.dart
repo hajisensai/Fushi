@@ -13,7 +13,7 @@ import 'package:http/http.dart' as http;
 /// 机制）。音频路径 [HibikiRemoteLookupClient.lookupAudioUrl] 与词典路径
 /// [HibikiRemoteLookupClient.searchDictionary] 现在**对称**抛出：词典路径此前是
 /// 全仓唯一不消费 `allUnreachable` 的调用点，导致配对设备离线时每次查词都要把
-/// 「3s × 候选数」重付一遍（BUG-1284）。
+/// 「3s × 候选数」重付一遍（BUG-1299）。
 class RemoteLookupUnreachableError implements Exception {
   RemoteLookupUnreachableError(this.message);
 
@@ -23,7 +23,7 @@ class RemoteLookupUnreachableError implements Exception {
   String toString() => 'RemoteLookupUnreachableError: $message';
 }
 
-/// 远端**词典**查询在「全部配对候选传输层不可达」后的失败冷却窗（BUG-1284）。
+/// 远端**词典**查询在「全部配对候选传输层不可达」后的失败冷却窗（BUG-1299）。
 ///
 /// 与音频源的 `kRemoteAudioFailureCooldown`（45s，`word_audio_resolver.dart`）同
 /// 量级同语义：设备被证实死了之后，冷却窗内不再重复付「3s × 候选数」的连接超时。
@@ -55,7 +55,7 @@ class HibikiRemoteLookupClient {
   /// - 抛 [RemoteLookupUnreachableError]：所有已启用候选全部传输层失败
   ///   （连接拒绝/超时/DNS）——「配对设备死了」，供上层计入失败冷却。
   ///
-  /// 为什么词典路径也必须抛（BUG-1284）：远端查词排在本地缓存**之前**
+  /// 为什么词典路径也必须抛（BUG-1299）：远端查词排在本地缓存**之前**
   /// （`AppModel.searchDictionary` 的 remote-first 语义），配对设备离线/换网/
   /// 休眠时每次查词都要把「3s × 候选数」全额付一遍，且因为短路在缓存之前，
   /// 重复查同一个词也不例外——这正是用户报的「某些机器上查词要 4-5 秒」。
