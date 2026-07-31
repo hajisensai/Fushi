@@ -2764,5 +2764,15 @@
   "manga_import_detected_message": "\"$name\" is a manga file, so it will go through the manga importer instead of the book importer.",
   "selection_web_search": "Search the web",
   "selection_web_search_unavailable": "No app can search the web.",
-  "selection_share_failed": "Could not open the share sheet."
+  "selection_share_failed": "Could not open the share sheet.",
+  "sync_progress_preparing": "Preparing sync",
+  "sync_progress_collections": "Syncing collections",
+  "sync_progress_book": "Syncing book",
+  "sync_progress_book_titled": "Syncing $title",
+  "sync_last_completed": "Last sync: done ($count channels)",
+  "sync_last_no_channels": "Last sync: nothing synced - no connected sync channel",
+  "sync_last_nothing": "Last sync: nothing to sync",
+  "sync_last_auto_disabled": "Last sync: skipped - auto sync is off",
+  "sync_last_cooled_down": "Last sync: skipped - synced recently",
+  "sync_last_failed": "Last sync: failed"
 }

@@ -2764,5 +2764,15 @@
   "manga_import_detected_message": "「$name」是漫画文件，将走漫画导入流程，而不是书籍导入流程。",
   "selection_web_search": "网页搜索",
   "selection_web_search_unavailable": "没有可用的网页搜索应用。",
-  "selection_share_failed": "无法打开分享面板。"
+  "selection_share_failed": "无法打开分享面板。",
+  "sync_progress_preparing": "正在准备同步",
+  "sync_progress_collections": "同步合集",
+  "sync_progress_book": "同步书籍",
+  "sync_progress_book_titled": "同步 $title",
+  "sync_last_completed": "上次同步：已完成（$count 条通道）",
+  "sync_last_no_channels": "上次同步：未同步——没有已连接的同步通道",
+  "sync_last_nothing": "上次同步：没有可同步的内容",
+  "sync_last_auto_disabled": "上次同步：已跳过——自动同步已关闭",
+  "sync_last_cooled_down": "上次同步：已跳过——刚同步过",
+  "sync_last_failed": "上次同步：失败"
 }

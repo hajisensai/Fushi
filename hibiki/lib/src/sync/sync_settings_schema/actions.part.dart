@@ -44,10 +44,38 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
         return ValueListenableBuilder<SyncProgress?>(
           valueListenable: syncProgress,
           builder: (BuildContext context, SyncProgress? p, __) {
+            return _buildRow(syncing, p);
+          },
+        );
+      },
+    );
+  }
+
+  /// 副标题分三段取值，都是「说清现在到底怎么了」：
+  /// 1. 同步中且有阶段 tick → 阶段行；
+  /// 2. 同步中但还没有 tick（准备段 / 轻量路径）→ 这轮同步的身份；
+  /// 3. 空闲 → 上一轮的**结局**（尤其「没有可用的同步通道」＝上轮其实什么都没同步；
+  ///    以前它与正常跑完同形，用户只看得到进度条闪一下）。没跑过才回落到静态提示。
+  Widget _buildRow(bool syncing, SyncProgress? p) {
+    return ValueListenableBuilder<SyncActivity?>(
+      valueListenable: syncActivity,
+      builder: (BuildContext context, SyncActivity? activity, _) {
+        return ValueListenableBuilder<SyncRunOutcome?>(
+          valueListenable: lastSyncOutcome,
+          builder: (BuildContext context, SyncRunOutcome? outcome, __) {
+            final String subtitle;
+            if (syncing && p != null) {
+              subtitle = syncProgressLine(p);
+            } else if (syncing && activity != null) {
+              subtitle = syncActivityLine(activity);
+            } else if (!syncing && outcome != null) {
+              subtitle = syncOutcomeLine(outcome);
+            } else {
+              subtitle = t.sync_now_hint;
+            }
             final AdaptiveSettingsRow row = AdaptiveSettingsRow(
               title: t.sync_now,
-              subtitle:
-                  syncing && p != null ? syncProgressLine(p) : t.sync_now_hint,
+              subtitle: subtitle,
               icon: Icons.sync,
               controlBelow: true,
               // The action lives on the trailing button; giving the ROW an onTap

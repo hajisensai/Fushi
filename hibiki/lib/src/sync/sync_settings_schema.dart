@@ -34,6 +34,7 @@ import 'package:hibiki/src/sync/pairing/hibiki_ping_client.dart';
 import 'package:hibiki/src/sync/pairing/discovered_pairing_probe.dart';
 import 'package:hibiki/src/sync/sftp_sync_backend.dart';
 import 'package:hibiki/src/sync/tls/hibiki_tofu_probe.dart';
+import 'package:hibiki/src/sync/sync_activity.dart';
 import 'package:hibiki/src/sync/sync_backend.dart';
 import 'package:hibiki/src/sync/sync_auto_trigger.dart';
 import 'package:hibiki/src/sync/sync_compare_dialog.dart';
