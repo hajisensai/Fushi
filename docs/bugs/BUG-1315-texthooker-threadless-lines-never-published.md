@@ -40,3 +40,29 @@
   `test/mining/gal_capture_audio_integrity_test.dart:376-388` 的 v12 契约守卫
   （`selectTextThread(null)` 后 `workbenchLines` / `selectedSessionLines` 必须为空）
   用的是 `threadId: 7` 的带身份行，修复后仍然绿——契约没有被松动。
+
+### 追加（gal overlay 专线独立复核，2026-08-01）
+
+第①②组（gal overlay 6 条）由独立线程在自己的 worktree 上对照复核，确认与本条同根因：
+把本条修复单独应用到 `origin/develop` 上，那 6 条 6/6 转绿、原本就绿的 3 条不变；把谓词
+的放行分支变异成 `return false` 后 6 条原样转红。**结论成立，无需另修。**
+
+同一轮复核发现修复的**第一版谓词写过头**：`if (key == null || key.isEmpty) return true;`
+让无身份行**在用户已经选定线程时也照样发布**。这不是本条要修的东西，而是一处新引入的
+行为变更——`origin/develop`（以及 v12 之前）在选定线程时都只发布该线程的行：
+
+- 实测对照（同一个探针，只换 `gal_hook_session_controller.dart`）：
+  `origin/develop` → `selectedSessionLines=1`、浮窗显示引擎行；
+  第一版谓词 → `selectedSessionLines=2`、浮窗显示 **WebSocket 行**。
+- 危害落在 galgame 侧：浮窗 `latest` 在两个来源之间跳；且无身份行不会写
+  `_lineTextEventIdCache`（只有 `TexthookerLineSource.engineHook` 行会写，
+  `gal_hook_session_controller.dart:3330-3332`），逐句语音配对拿不到 `textEventId`，
+  只能退回时间戳兜底窗 —— 正是 BUG-1193 记录过要避开的 BUG-1159 失败链。
+
+- **[x] 已收敛** — 放行分支改为 `return selectedKey == null;`：未选线程时无身份行发布
+  （本条正方向不变），已选线程时让位（隔离不变量恢复成 v12 之前的行为）。
+- **[x] 已加自动化测试** — `hibiki/test/lookup/gal_hook_overlay_thread_isolation_guard_test.dart`
+  两条用例分别钉住两个方向。变异实测：改回 `return true` → 只有「已选线程不得混入」那条红；
+  改成 `return false` → 只有「未选线程仍须发布」那条红；正确实现下 2/2 绿。
+  相邻定向套件（`texthooker_page_test` / `gal_capture_audio_integrity_test` /
+  `texthooker_service_test` / 上述两个 overlay 测试）合计 62/62 绿，`flutter analyze` 零问题。
