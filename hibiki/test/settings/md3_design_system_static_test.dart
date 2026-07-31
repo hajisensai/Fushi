@@ -271,12 +271,6 @@ void main() {
       't.game_waveform_select_title',
       't.game_waveform_range_label',
     ],
-    'lib/src/mining/magpie_download_confirm.dart': <String>[
-      'showAppDialog<bool>(',
-      'HibikiDialogFrame',
-      'HibikiModalSheetFrame',
-      'adaptiveDialogAction',
-    ],
     // 刮削二跳收口后，详情页的刮削 UI 全部委托统一弹窗（galgame_scrape_dialog）。
     'lib/src/pages/implementations/galgame_detail_page.dart': <String>[
       'showGalgameScrapeDialog(',
@@ -605,10 +599,6 @@ void main() {
         'AlertDialog(',
         '选择音频范围',
       ],
-      'lib/src/mining/magpie_download_confirm.dart': <String>[
-        'showDialog<',
-        'AlertDialog(',
-      ],
       'lib/src/pages/implementations/galgame_detail_page.dart': <String>[
         'showDialog<',
         'AlertDialog(',
@@ -899,6 +889,21 @@ void main() {
               'adaptiveSlider / AdaptiveSettingsTextField).',
       'lib/src/media/video/video_danmaku_overlay.dart':
           'Danmaku overlay renders timed video content text, not app chrome.',
+      'lib/src/media/video/video_danmaku_text_metrics.dart':
+          'BUG-1297/PR#627 danmaku font-size single source of truth, shared '
+              'by rendering (video_danmaku_overlay) and geometry measurement '
+              '(VideoDanmakuTextMetrics.widthOf -> video_danmaku_layout). The '
+              'file is headless: no Widget/build/BuildContext/Theme.of at all, '
+              'and its only fontSize: is kVideoDanmakuBaseFontSize * the user '
+              'fontScale preference inside the videoDanmakuTextStyle factory - '
+              'timed video content typography, the same reviewed exception '
+              'class as the video_danmaku_overlay entry it was extracted from '
+              'and the user-configurable subtitle caption font size in '
+              'video_hibiki/layout.part.dart. Routing it through a shared MD3 '
+              'type role would break the contract the file documents '
+              '(inherit: false, so the host DefaultTextStyle cannot desync '
+              'measurement from render) and reintroduce the measure-18px / '
+              'render-20px drift that made danmaku vanish mid-screen.',
       'lib/src/media/video/video_thumbnail_preview_overlay.dart':
           'TODO-669 hover/seek thumbnail preview overlay: thumbnail frame corner '
               'radius (BorderRadius.circular(6*uiScale)) and timestamp bubble '

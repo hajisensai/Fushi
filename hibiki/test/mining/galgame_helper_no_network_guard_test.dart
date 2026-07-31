@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 // 复用同款字符级注释剥除器，避免文档/行/块注释里的示例文字污染静态守卫。
 import '../sync/desktop_lookup_foreground_guard_static_test.dart'
     show stripDartComments;
+import 'offline_installer_guard.dart';
 
 /// BUG-1196 静态守卫：**galgame helper 安装器不得联网**。
 ///
@@ -26,21 +27,14 @@ void main() {
       stripDartComments(File(path).readAsStringSync());
 
   group('helper 安装器不得联网', () {
-    test('安装器源码里没有任何 HTTP 客户端 / 下载入口', () {
-      final String src = readStripped(installer);
-      for (final String needle in <String>[
-        'HttpClient',
-        'applyUpdateProxy',
-        'ResumableDownload',
-        'https://',
-      ]) {
-        expect(
-          src.contains(needle),
-          isFalse,
-          reason: 'helper 随主包发布，安装器不该出现「$needle」——'
-              '它注入用户游戏进程的原生代码，联网取包即 BUG-1103 的攻击面',
-        );
-      }
+    // 🔴 判据是「可达通道」而不是几个字面串：import 白名单 + 归一化后的能力名扫描。
+    // 为什么必须这样，见 offline_installer_guard.dart 顶部（旧的字面量黑名单挡不住
+    // `import 'package:http/http.dart'` + `Uri.parse('htt' 'ps://…')` 这种最自然的写法）。
+    test('安装器的依赖面与符号面都不含任何网络通道', () {
+      expectOfflineInstaller(
+        path: installer,
+        allowedImports: kGalgameHelperInstallerImports,
+      );
     });
 
     test('后台静默自更新已删除，且 main.dart 不再调用', () {
@@ -63,13 +57,16 @@ void main() {
       expect(src.contains('galgameHelperMissingFiles'), isTrue);
     });
 
-    test('Magpie 仍可联网（它不注入任何进程），两者不得混为一谈', () {
-      // 防止有人「顺手」把 Magpie 的下载也一并删掉：超分是独立缩放程序，按需下载是
-      // 它的既定设计（用户确认后才下），与 helper 的注入语义完全不同。
-      final String magpie =
-          readStripped('lib/src/mining/magpie_installer.dart');
-      expect(magpie.contains('magpieDownloadCandidateUrls'), isTrue);
-      expect(magpie.contains('kMagpieTrustedSidecarHosts'), isTrue);
+    test('Magpie 也只认随包归档，内置组件不恢复下载兜底', () {
+      expectOfflineInstaller(
+        path: 'lib/src/mining/magpie_installer.dart',
+        allowedImports: kMagpieInstallerImports,
+      );
+      expect(
+        readStripped('lib/src/mining/magpie_installer.dart')
+            .contains('_installBundledMagpie'),
+        isTrue,
+      );
     });
   });
 }

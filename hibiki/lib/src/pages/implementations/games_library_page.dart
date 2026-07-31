@@ -168,7 +168,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     if (exe == null || exe.isEmpty) {
       return; // 用户取消
     }
-    if (filterDroppedGameExes(_games, <String>[exe]).isEmpty) {
+    if (filterOutDuplicateGameExes(_games, <String>[exe]).isEmpty) {
       HibikiToast.show(msg: t.game_already_added);
       return; // 已在库里：不重复添加
     }
@@ -181,7 +181,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 拖入文件导入：筛出新的 `.exe` 批量添加，toast 汇报数量；每条落库后走
   /// 与「添加游戏」同一套 [_autoCover] 后台补齐封面（#370 目录级联 + exe 图标）。
   Future<void> _handleDrop(List<String> paths, Offset _) async {
-    final List<String> exes = filterDroppedGameExes(_games, paths);
+    final List<String> exes = filterOutDuplicateGameExes(_games, paths);
     if (exes.isEmpty) {
       HibikiToast.show(msg: t.game_drop_no_exe);
       return;

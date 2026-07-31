@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/sync/deletion_disclosure.dart';
 import 'package:hibiki/src/media/collections/collection_one_key_sort.dart';
 import 'package:hibiki/src/media/video/video_storage.dart';
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart'
@@ -38,6 +39,7 @@ Future<void> showCollectionContextDialog({
   Future<void> Function(List<MediaCollectionItemRow> members)?
       onDeleteMembersMedia,
   String? deleteMembersCheckboxLabel,
+  DeletionDisclosure? deleteMembersDisclosure,
   List<DialogListAction> extraListActions = const <DialogListAction>[],
   Widget? cover,
 }) async {
@@ -124,6 +126,7 @@ Future<void> showCollectionContextDialog({
                 onChanged: onChanged,
                 onDeleteMembersMedia: onDeleteMembersMedia,
                 deleteMembersCheckboxLabel: deleteMembersCheckboxLabel,
+                deleteMembersDisclosure: deleteMembersDisclosure,
               ),
             ),
           ),
@@ -194,6 +197,7 @@ Future<void> _deleteCollection({
   required Future<void> Function(List<MediaCollectionItemRow> members)?
       onDeleteMembersMedia,
   required String? deleteMembersCheckboxLabel,
+  required DeletionDisclosure? deleteMembersDisclosure,
 }) async {
   final List<MediaCollectionItemRow> members =
       await db.getCollectionItems(collection.id);
@@ -208,6 +212,7 @@ Future<void> _deleteCollection({
       message: t.delete_collection_confirm,
       confirmLabel: t.delete_collection,
       checkboxLabel: canDeleteMembers ? deleteMembersCheckboxLabel : null,
+      checkedDisclosure: canDeleteMembers ? deleteMembersDisclosure : null,
     ),
   );
   if (result == null || !context.mounted) return;

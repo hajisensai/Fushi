@@ -235,6 +235,10 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
   /// [forceReload] = true 时（导入新音频后重解析）先 stop 旧会话，逼 session 重新 load
   /// 新音频；首次开书 = false，优先复用既有后台会话。
   Future<void> _resolveAudioSlot({bool forceReload = false}) async {
+    // TODO-perf（开媒体反馈）：openMedia 已改为不阻塞等 audio_service 冷启，这里
+    // 是 handler 的真正消费点（session attach/start 挂媒体通知与控制流）——await
+    // 同一份记忆化 future 补齐时序契约；已就绪时立即返回，零额外开销。
+    await appModel.initialiseAudioHandler();
     final AudiobookSession session = appModel.audiobookSession;
     final AudiobookPlayerController? old = _audiobookController;
     if (old != null) {
@@ -245,6 +249,11 @@ extension _ReaderAudiobook on _ReaderHibikiPageState {
       _srtBookUid = null;
       _srtCueChapterMap = null;
       _srtChapterRanges = null;
+      // 缓存生命周期 = 音频槽绑定：detach 即失效，重接后由
+      // _primeAudioCuesForCurrentBook 重灌（_prepareSasayakiCuesJson 复用它，
+      // 不再每章重查全书 cue）。
+      _cachedAllCues = null;
+      _cachedSasayaki = false;
     }
     if (forceReload && session.isActive) {
       // 导入了新音频：必须重 load，stop 旧会话让 session.start 走全新加载分支。

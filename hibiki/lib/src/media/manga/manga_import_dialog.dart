@@ -290,10 +290,10 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   // ── 导入 ────────────────────────────────────────────────────────────────
 
   /// 同名书弹窗回调。是→加后缀，否/关闭→取消这本书。与书籍框逐字同语义。
-  Future<DuplicateTitleResolution> _onDuplicateTitle(
+  Future<DuplicateChoice> _askOnDuplicate(
     String proposedTitle,
   ) async {
-    if (!mounted) return DuplicateTitleResolution.cancel;
+    if (!mounted) return DuplicateChoice.cancel;
     final bool? keep = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
@@ -311,9 +311,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         ],
       ),
     );
-    return keep == true
-        ? DuplicateTitleResolution.addSuffix
-        : DuplicateTitleResolution.cancel;
+    return keep == true ? DuplicateChoice.suffix : DuplicateChoice.cancel;
   }
 
   void _reportCopyProgress(int done, int total) {
@@ -359,7 +357,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
               db: widget.db,
               path: path,
               title: title,
-              onDuplicateTitle: _onDuplicateTitle,
+              policy: DuplicatePolicy.ask(_askOnDuplicate),
               onProgress: _reportCopyProgress,
             );
           case ImportCarrier.mangaMokuro:
@@ -367,7 +365,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
               db: widget.db,
               path: path,
               title: title,
-              onDuplicateTitle: _onDuplicateTitle,
+              policy: DuplicatePolicy.ask(_askOnDuplicate),
               onProgress: _reportCopyProgress,
             );
           case ImportCarrier.mangaArchive:
@@ -375,7 +373,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
               db: widget.db,
               path: path,
               title: title,
-              onDuplicateTitle: _onDuplicateTitle,
+              policy: DuplicatePolicy.ask(_askOnDuplicate),
               onProgress: _reportCopyProgress,
             );
           case ImportCarrier.pdf:

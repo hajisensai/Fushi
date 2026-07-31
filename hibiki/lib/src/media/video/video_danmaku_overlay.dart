@@ -3,6 +3,7 @@ import 'package:flutter/scheduler.dart';
 
 import 'package:hibiki/src/media/video/video_danmaku_layout.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
+import 'package:hibiki/src/media/video/video_danmaku_text_metrics.dart';
 
 class VideoDanmakuOverlay extends StatefulWidget {
   const VideoDanmakuOverlay({
@@ -206,22 +207,13 @@ class _DanmakuText extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.visible,
         softWrap: false,
-        style: TextStyle(
+        // 与 VideoDanmakuTextMetrics 的测量条件保持逐项一致：字号由弹幕自己的
+        // fontScale 偏好决定，不再叠加系统字体缩放——否则实际渲染比测量宽，
+        // 弹幕会在还没滑出视口时被判过期而突然消失。
+        textScaler: TextScaler.noScaling,
+        style: videoDanmakuTextStyle(
           color: Color(entry.item.colorArgb),
-          fontSize: 20 * fontScale,
-          fontWeight: FontWeight.w700,
-          shadows: const <Shadow>[
-            Shadow(
-              color: Colors.black,
-              blurRadius: 3,
-              offset: Offset(1, 1),
-            ),
-            Shadow(
-              color: Colors.black,
-              blurRadius: 3,
-              offset: Offset(-1, -1),
-            ),
-          ],
+          fontScale: fontScale,
         ),
       ),
     );

@@ -177,6 +177,12 @@ class EmbeddedTorrentBackend implements TorrentRemovalBackend {
       savePath: t.savePath,
       contentPath: t.contentPath,
       amountLeft: t.left,
+      // BUG-1294：native 一直导出速率/流量/peer 数，此前在这里被丢弃。
+      downRateBps: t.downRate,
+      upRateBps: t.upRate,
+      downloadedBytes: t.downloaded,
+      uploadedBytes: t.uploaded,
+      numPeers: t.numPeers,
     );
   }
 }

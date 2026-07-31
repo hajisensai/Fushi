@@ -34,6 +34,7 @@ import 'package:hibiki_anki/hibiki_anki.dart';
 import 'package:hibiki/src/media/floating_dict_channel.dart';
 import 'package:hibiki/src/models/app_font_loader.dart';
 import 'package:hibiki/src/models/builtin_tags.dart';
+import 'package:hibiki/src/epub/book_title_conflict.dart';
 import 'package:hibiki/src/epub/epub_importer.dart';
 import 'package:hibiki/src/reader/reader_settings.dart';
 import 'package:hibiki/src/lookup/browser_extension_installer.dart';
@@ -3423,7 +3424,7 @@ class AppModel with ChangeNotifier {
   }
 
   /// 下载完成的书籍（epub）入库回调：逐个走 [EpubImporter] 进阅读库
-  /// （skipIfExists，重复导入不报错），返回成功入库的书本数。单本失败跳过。
+  /// （DuplicatePolicy.skip()，重复导入不报错），返回成功入库的书本数。单本失败跳过。
   Future<int?> _importDownloadedBooks(
       AnimeDownloadPlan plan, List<String> bookAbsolutePaths) async {
     int imported = 0;
@@ -3433,7 +3434,7 @@ class AppModel with ChangeNotifier {
           db: database,
           filePath: filePath,
           fileName: path.basename(filePath),
-          skipIfExists: true,
+          policy: const DuplicatePolicy.skip(),
         );
         imported++;
       } catch (_) {
@@ -3963,14 +3964,36 @@ class AppModel with ChangeNotifier {
     return DictionarySearchResult(searchTerm: searchTerm);
   }
 
+  /// 远端词典「全部配对候选不可达」后的冷却截止时刻（BUG-1302）；null = 不在冷却中。
+  /// 只被 [_searchRemoteDictionary] 读写，单 isolate 内无并发写。
+  DateTime? _remoteDictionaryUnreachableUntil;
+
+  /// 测试可见：当前是否处于远端词典失败冷却窗内。
+  @visibleForTesting
+  bool get isRemoteDictionaryInFailureCooldown {
+    final DateTime? until = _remoteDictionaryUnreachableUntil;
+    return until != null && DateTime.now().isBefore(until);
+  }
+
   Future<DictionarySearchResult?> _searchRemoteDictionary({
     required String searchTerm,
     required bool searchWithWildcards,
     required int maximumTerms,
   }) async {
     if (!remoteLookupEnabled) return null;
+    // 配对设备被证实不可达后的冷却窗内直接短路（BUG-1302）。远端查词排在本地
+    // 缓存**之前**，不短路的话设备离线/换网/休眠时每次查词都要重付一遍
+    // 「3s × 候选数」的传输层超时——这是「某些机器上查词 4-5 秒」的主因。
+    final DateTime? until = _remoteDictionaryUnreachableUntil;
+    if (until != null) {
+      if (DateTime.now().isBefore(until)) return null;
+      _remoteDictionaryUnreachableUntil = null;
+    }
     try {
-      return HibikiRemoteLookupClient(
+      // await 必须收进 try：原实现直接 return 未 await 的 Future，catch 只能抓
+      // 同步 throw，异步错误全部漏出成 uncaught（音频路径 lookupRemoteAudio 已
+      // 修过同一处写法，词典路径此前遗留）。
+      final DictionarySearchResult? result = await HibikiRemoteLookupClient(
         repo: SyncRepository(_database),
         httpClient: _remoteLookupClient,
       ).searchDictionary(
@@ -3978,6 +4001,14 @@ class AppModel with ChangeNotifier {
         wildcards: searchWithWildcards,
         maximumTerms: maximumTerms,
       );
+      // 拿到任何 HTTP 响应即证明设备活着（含「可达但无结果」的 null），清冷却。
+      _remoteDictionaryUnreachableUntil = null;
+      return result;
+    } on RemoteLookupUnreachableError catch (e, stack) {
+      _remoteDictionaryUnreachableUntil =
+          DateTime.now().add(kRemoteDictionaryFailureCooldown);
+      ErrorLogService.instance.log('remoteDictionaryLookup', e, stack);
+      return null;
     } catch (e, stack) {
       ErrorLogService.instance.log('remoteDictionaryLookup', e, stack);
       return null;
@@ -4078,7 +4109,14 @@ class AppModel with ChangeNotifier {
 
     mediaSource.clearCurrentSentence();
     mediaSource.clearExtraData();
-    await initialiseAudioHandler();
+    // TODO-perf（开媒体反馈）：audio_service 冷启是平台通道重活（冷路径可达数百
+    // ms），此前串行挡在 Navigator.push 之前——点下卡片后到路由动画开始前屏幕零
+    // 反馈的那段就在这里。改为起跑不阻塞导航：AudioController.initialiseHandler
+    // 记忆化在飞 future（并发安全），真正需要 handler 的消费端（reader 的
+    // _resolveAudioSlot、书架后台听书 startBackgroundListening）await 同一份，
+    // 「会话挂通知前 handler 必就绪」的时序契约不变。方法自带兜底构造、永不抛，
+    // unawaited 安全。
+    unawaited(initialiseAudioHandler());
 
     _currentMediaSource = mediaSource;
     if (item != null) {

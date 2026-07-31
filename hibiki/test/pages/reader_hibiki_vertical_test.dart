@@ -21,12 +21,19 @@ void main() {
       '  void _syncPositionFromCurrentCue()',
     );
 
+    // 渐进重建 phase2：-1→null 的取舍语义凿进纯函数 readerPositionSaveArgs
+    // （真行为测在 test/reader/reader_position_save_args_test.dart），本守卫降级为
+    // 只钉接线：_persistPosition 必须经该纯函数落库，不得绕开手写参数。
     expect(
       persist,
-      contains('charOffset: charOffset >= 0 ? charOffset : null'),
-      reason: 'A transient charOffset=-1 must map to null so '
-          'ReaderPositionRepository.save keeps the existing same-section exact '
-          'anchor instead of overwriting it with -1 (chapter granularity).',
+      contains('readerPositionSaveArgs(progress: progress'),
+      reason: '_persistPosition 必须经 readerPositionSaveArgs 归一化落库参数——'
+          '绕开它手写 charOffset 正是 BUG-285 的回归入口。',
+    );
+    expect(
+      persist,
+      contains('charOffset: saveArgs.charOffset'),
+      reason: 'repo.save 的精确锚必须来自纯函数结果（-1 已映射 null）。',
     );
     expect(
       persist,

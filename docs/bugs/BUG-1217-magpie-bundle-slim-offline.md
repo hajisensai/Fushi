@@ -12,11 +12,11 @@
 - **为什么不自研超分**（同轮评估，结论记在这里免得反复）：Magpie 是 GPL-3.0，但**功能不受版权保护**，重新实现合法，FSR/Anime4K 着色器本身也是 MIT。真正劝退的是工程量分布——查证 Magpie **一行 hook 都没有**（全仓 0 处 `CreateNamedPipe`/`WM_COPYDATA`/共享内存/socket，纯外部覆盖 + WGC 捕获 + `WS_EX_NOACTIVATE` 缩放窗 + 2ms/50ms 轮询），难点全在 `CursorManager` 那类脏活（自绘光标、黑边阻挡、坐标映射、`adjustCursorSpeed`）而非放大算法。11 MB 不值得换这些。
 - **[x] ① 已实现** —
   - 新增 `tools/build_magpie_slim.ps1`：下载 fork release 完整包 → **先校验上游 SHA-256** → 按默认 scalingMode 清单裁剪 → 重打包 → 生成侧车。校验必须早于重打包：裁剪等于重新签名，源包被掉包而不先验，我们的侧车就成了给污染产物背书的东西（守卫测试钉住这个顺序）。
-  - `magpie_installer.dart`：新增 `kMagpieBundledDirectoryName = 'magpie_bundle'`（与安装落点 `magpie/` 刻意不同名）、`magpieBundledZipName`（带 `slim`）、`_installBundledMagpie`，插在 `ensureInstalled` 的确认框**之前** —— x64 用户从此看不到下载框。校验强度与网络路径完全一致（同一个 `magpieRequireVerifiedSha`）：随包不等于可信，主包本身可能被改。
+  - `magpie_installer.dart`：新增 `kMagpieBundledDirectoryName = 'magpie_bundle'`（与安装落点 `magpie/` 刻意不同名）、`magpieBundledZipName`（带 `slim`）、`_installBundledMagpie`。随包归档仍做 SHA-256 校验：随包不等于可信，主包本身可能被改。最初暂留的网络兜底已由后续 [BUG-1292](BUG-1292-magpie-bundled-only.md) 删除。
   - 把 `_installCore` 的安装尾段抽成 `_installVerifiedZip`，网络与随包两条来源在此合流。
   - 🔴 **自更新熔断**：随包装完写 `installed.source = bundle`，`_updateSilently` 见到它立刻早退。不做这一步的话，精简包 sha ≠ release 完整包 sha → `magpieNeedsUpdate` 永远判「有新版」→ 每次开 app 都静默下载 10.79 MB 完整包覆盖掉 4.72 MB 的精简包，内置的意义当场归零。反向也堵了：网络装的会**删掉**该标记，否则它会伪装成随包版从此不再更新。
   - 两个 workflow（debug/release）加组包步骤，产物复制到 `magpie_bundle/`；Inno Setup 是 `{#SourceDir}\*` 递归收，无需改 iss。`dist/` 加进 `.gitignore`。
-  - **只出 x64**：ARM64 用户极少且能跑 x64 模拟，为它多背 4.7 MB 不划算，那条路继续走按需下载（网络路径完整保留）。
+  - **只出 x64**：ARM64 Windows 通过系统 x64 模拟运行随包版，不再为另一个切片联网。
 - **[x] ② 已加自动化测试** — `hibiki/test/mining/magpie_bundled_install_test.dart`（16 项全绿）：命名契约（随包目录 ≠ 落点、文件名带 slim、两个标记文件分开）、校验强度四条边界（无归档返回 false / 缺侧车 / 摘要不符 / 侧车非法一律硬失败）、源码守卫（自更新早退必须早于任何标记与网络判据、两条来源的 source 写入与清除、随包归档装完不得删除）、组包脚本契约（校验早于重打包、8 个默认 effect 一个不少、`*.hlsli` 保留）、以及 debug/release 两个 workflow 的随包资产契约。
 - **备注**：
   - 组包脚本已在本机实跑通过：保留 19 个文件、裁掉 145 个、产物 4.72 MB + 侧车。

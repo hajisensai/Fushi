@@ -141,7 +141,7 @@ void main() {
       );
     });
 
-    test('auto 装了 → installed（不为用自家产物重复下载）', () {
+    test('auto 装了 → installed（不重复解压随包归档）', () {
       expect(
         resolveMagpieBackend(
           mode: MagpieUpscalingMode.auto,
@@ -152,14 +152,14 @@ void main() {
       );
     });
 
-    test('auto 没装 → needsDownload', () {
+    test('auto 没装 → needsBundledInstall', () {
       expect(
         resolveMagpieBackend(
           mode: MagpieUpscalingMode.auto,
           isWindows: true,
           installedAvailable: false,
         ),
-        MagpieBackend.needsDownload,
+        MagpieBackend.needsBundledInstall,
       );
     });
   });
@@ -635,26 +635,32 @@ void main() {
 
     test('installedOnly 且没装 → unavailable，零网络', () async {
       // 安装目录不存在（真实 MagpieInstaller.isInstalled() 在测试环境必为 false）。
+      // `installedOnly` 是用户自己选的「只用机器上已有的」，没有就是没有 —— 这不是
+      // 交付错误，所以停在 unavailable，**不**升级成 failed。
       final MagpieUpscalingService service = build(
         mode: MagpieUpscalingMode.installedOnly,
       );
       await service.onGameWindowReady(hwnd: 1234);
       expect(service.report.status, MagpieUpscalingStatus.unavailable);
+      expect(service.report.failureReason, isNull);
     });
 
-    test('auto 但没提供确认回调 → unavailable，绝不静默下载', () async {
+    test('auto 但随包归档缺失 → failed/bundleMissing，绝不联网', () async {
       final MagpieUpscalingService service = MagpieUpscalingService(
         modeReader: () => MagpieUpscalingMode.auto,
         bridge: FakeBridge(),
         configPathOverride: configPath,
         hibikiExecutablePath: kHibikiExe,
         isWindowsOverride: true,
-        // confirmDownload 故意不传
         processLauncher: (String exe, List<String> args) async =>
             throw StateError('不该走到这'),
       );
       await service.onGameWindowReady(hwnd: 1234);
-      expect(service.report.status, MagpieUpscalingStatus.unavailable);
+      // BUG-1292：`auto` 承诺「用内置的那份」，随包归档缺失就是**安装包不完整**，
+      // 不是「这台机器暂时没这个功能」。降级成 unavailable 会把交付错误伪装成常态。
+      expect(service.report.status, MagpieUpscalingStatus.failed);
+      expect(service.report.failureReason,
+          MagpieUpscalingFailureReason.bundleMissing);
     });
 
     test('会话结束是幂等的空操作（从没启动过超分时）', () async {
@@ -755,11 +761,13 @@ void main() {
     MagpieUpscalingReport report(
       MagpieUpscalingStatus status, {
       MagpieProfileSkipReason? skip,
+      MagpieUpscalingFailureReason? failure,
       bool scaling = false,
     }) =>
         MagpieUpscalingReport(
           status: status,
           profileSkipReason: skip,
+          failureReason: failure,
           scalingActive: scaling,
         );
 
@@ -797,27 +805,59 @@ void main() {
             .map((MagpieUpscalingStatus e) => e.name),
         ...MagpieProfileSkipReason.values
             .map((MagpieProfileSkipReason e) => e.name),
+        ...MagpieUpscalingFailureReason.values
+            .map((MagpieUpscalingFailureReason e) => e.name),
         'MagpieUpscalingStatus',
         'MagpieProfileSkipReason',
+        'MagpieUpscalingFailureReason',
       ];
+      // failureReason 这一维以前没被遍历过，于是 BUG-1292 新加的两条交付错误文案完全
+      // 不在守卫范围内 —— 「failed verification」里的 failed 就是 MagpieUpscalingStatus
+      // 的枚举名。三维全遍历才守得住。
       for (final MagpieUpscalingStatus status in MagpieUpscalingStatus.values) {
         for (final MagpieProfileSkipReason? skip in <MagpieProfileSkipReason?>[
           null,
           ...MagpieProfileSkipReason.values
         ]) {
-          final MagpieUpscalingReport r = report(status, skip: skip);
-          final String text =
-              '${magpieUpscalingStatusLabel(r)} ${magpieUpscalingActionHint(r) ?? ''}';
-          expect(text.trim(), isNotEmpty);
-          for (final String token in internal) {
-            expect(
-              text.contains(token),
-              isFalse,
-              reason: '「$text」泄漏了内部标识符 $token',
-            );
+          for (final MagpieUpscalingFailureReason? failure
+              in <MagpieUpscalingFailureReason?>[
+            null,
+            ...MagpieUpscalingFailureReason.values
+          ]) {
+            final MagpieUpscalingReport r =
+                report(status, skip: skip, failure: failure);
+            final String text =
+                '${magpieUpscalingStatusLabel(r)} ${magpieUpscalingActionHint(r) ?? ''}';
+            expect(text.trim(), isNotEmpty);
+            for (final String token in internal) {
+              expect(
+                text.contains(token),
+                isFalse,
+                reason: '「$text」泄漏了内部标识符 $token',
+              );
+            }
           }
         }
       }
+    });
+
+    test('随包归档缺失或损坏 → 明确报安装包错误，不伪装成暂时不可用', () {
+      final MagpieUpscalingReport missing = report(
+        MagpieUpscalingStatus.failed,
+        failure: MagpieUpscalingFailureReason.bundleMissing,
+      );
+      final MagpieUpscalingReport invalid = report(
+        MagpieUpscalingStatus.failed,
+        failure: MagpieUpscalingFailureReason.bundleInvalid,
+      );
+
+      expect(magpieUpscalingActionHint(missing), contains('Magpie'));
+      expect(magpieUpscalingActionHint(missing), contains('Hibiki'));
+      expect(magpieUpscalingActionHint(invalid), contains('Magpie'));
+      expect(
+        magpieUpscalingActionHint(missing),
+        isNot(magpieUpscalingActionHint(invalid)),
+      );
     });
 
     test('首次初始化失败 → 给「下次就自动了」的专属处置，而不是通用话', () {
@@ -1208,13 +1248,31 @@ void main() {
       expect(kMagpieExitQuitGrace, lessThan(kMagpieQuitGrace));
     });
 
-    test('BUG-1076 契约：确认回调之前不 await 体积探测', () {
+    test('BUG-1292 契约：安装器不再有确认框或体积探测', () {
       final File installer = File(
         p.join(Directory.current.path, 'lib/src/mining/magpie_installer.dart'),
       );
       final String source = installer.readAsStringSync();
-      expect(source.contains('await _probeSize('), isFalse,
-          reason: '体积探测绝不能在确认框之前被 await');
+      expect(source.contains('_probeSize'), isFalse);
+      expect(source.contains('confirmDownload'), isFalse);
+      expect(source.contains('HttpClient'), isFalse);
+    });
+
+    test('BUG-1292 契约：正式包缺 Magpie 必须进入 failed，不得伪装成 unavailable', () {
+      final int missingCase =
+          serviceSource.indexOf('case MagpieInstallResult.bundleMissing:');
+      final int invalidCase =
+          serviceSource.indexOf('case MagpieInstallResult.verificationFailed:');
+      expect(missingCase, greaterThan(0));
+      expect(invalidCase, greaterThan(missingCase));
+
+      final String branch = serviceSource.substring(missingCase, invalidCase);
+      expect(branch, contains('status: MagpieUpscalingStatus.failed'));
+      expect(
+        branch,
+        contains('MagpieUpscalingFailureReason.bundleMissing'),
+      );
+      expect(branch, isNot(contains('MagpieUpscalingStatus.unavailable')));
     });
   });
 }

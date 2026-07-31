@@ -206,6 +206,12 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     final String mime = isHtmlDocument ? 'text/html' : extMime;
 
     if (mime == 'text/css') {
+      // 插入后按插入序逐出最老条目（[_kSanitizedCssCacheLimit] 封顶，见字段注释）。
+      while (_sanitizedCssCache.length >=
+              _ReaderHibikiPageState._kSanitizedCssCacheLimit &&
+          !_sanitizedCssCache.containsKey(filePath)) {
+        _sanitizedCssCache.remove(_sanitizedCssCache.keys.first);
+      }
       data = _sanitizedCssCache.putIfAbsent(filePath, () {
         // HBK-AUDIT-118: tolerate non-UTF-8 CSS bytes instead of throwing.
         final String cssText = utf8.decode(data, allowMalformed: true);
@@ -451,10 +457,16 @@ extension _ReaderWebView on _ReaderHibikiPageState {
 
   // BUG-270: warm the LRU with the next chapter (in reading direction) so a
   // forward page-turn that crosses a chapter boundary hits the cache instead of
-  // paying disk read + decode + sanitize + inject. Runs off the UI frame; skips
-  // when already cached, already in flight, or settings/book not ready. Reads on
-  // the main isolate (sanitizeXhtml is sync) but only one chapter at a time, and
-  // the result is dropped if the page was disposed or styles changed meanwhile.
+  // paying disk read + decode + sanitize + inject. Skips when already cached,
+  // already in flight, or settings/book not ready.
+  //
+  // 调度纪律（渐进重建 phase2）：旧实现用 scheduleMicrotask + 同步读盘——microtask
+  // 在当前任务展开后**立刻**执行，读盘+净化全落在同一帧内（还恰好在等
+  // onRestoreComplete 的窗口里），「Runs off the UI frame」是错觉；同步执行也让
+  // _prefetchingHtmlPath 在飞守卫形同虚设（同步不可能重入）。现改事件队列任务 +
+  // 异步 IO：当前帧先收尾，IO 让出主 isolate，净化（单章 ms 级 sync CPU）保留；
+  // 真异步后按 _styleEpoch 丢弃跨样式失效的过期结果（styleTag 烤进缓存条目），
+  // 在飞守卫此时才真正有防重入意义。
   void _prefetchAdjacentChapter(int index) {
     if (_settings == null) return;
     final String? filePath = _chapterFilePath(index);
@@ -462,16 +474,18 @@ extension _ReaderWebView on _ReaderHibikiPageState {
     if (_sanitizedHtmlCache.containsKey(filePath)) return;
     if (_prefetchingHtmlPath == filePath) return;
     _prefetchingHtmlPath = filePath;
-    scheduleMicrotask(() {
+    final int styleEpochAtStart = _styleEpoch;
+    unawaited(Future<void>(() async {
       try {
         if (!mounted || _settings == null) return;
         if (_sanitizedHtmlCache.containsKey(filePath)) return;
         final File file = File(filePath);
-        if (!file.existsSync()) return;
-        final Uint8List raw = file.readAsBytesSync();
+        if (!await file.exists()) return;
+        final Uint8List raw = await file.readAsBytes();
+        if (!mounted || _settings == null) return;
         final Uint8List built =
             _buildSanitizedChapterHtmlBytes(raw, chapterIndex: index);
-        if (!mounted) return;
+        if (!mounted || _styleEpoch != styleEpochAtStart) return;
         _putChapterHtml(filePath, built);
       } catch (e, stack) {
         ErrorLogService.instance
@@ -481,21 +495,18 @@ extension _ReaderWebView on _ReaderHibikiPageState {
           _prefetchingHtmlPath = null;
         }
       }
-    });
+    }));
   }
 
-  /// [EpubBook.isImageOnlyChapter] 要 parse 整章 HTML，而章节 HTML 在一次阅读会话里
-  /// 不变，故按章号记忆化。章号非法 / 书未就绪时返回 true（保守走 eager，宁可慢一点也
-  /// 不冒「该 eager 的图被挂 lazy」导致分页几何塌缩的风险）。
+  /// 章号非法 / 书未就绪时返回 true（保守走 eager，宁可慢一点也不冒「该 eager 的图
+  /// 被挂 lazy」导致分页几何塌缩的风险）；其余委托 [EpubBook.isImageOnlyChapter]——
+  /// 记忆化已下沉到数据拥有者，本拦截器热路径与 spread 配对 / 边缘分析 / 预取共享
+  /// 同一份按章缓存，不再各存一份。
   bool _isImageOnlyChapterCached(int chapterIndex) {
     if (chapterIndex < 0) return true;
     final EpubBook? book = _book;
     if (book == null) return true;
-    final bool? cached = _imageOnlyChapterCache[chapterIndex];
-    if (cached != null) return cached;
-    final bool value = book.isImageOnlyChapter(chapterIndex);
-    _imageOnlyChapterCache[chapterIndex] = value;
-    return value;
+    return book.isImageOnlyChapter(chapterIndex);
   }
 
   /// TODO-perf（跨章·图片）：把下一章的插图预热进 WebView 的 HTTP 缓存。

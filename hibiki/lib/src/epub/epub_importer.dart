@@ -26,7 +26,7 @@ class EpubImporter {
     required HibikiDatabase db,
     required Uint8List bytes,
     required String fileName,
-    DuplicateTitleCallback? onDuplicateTitle,
+    DuplicatePolicy policy = const DuplicatePolicy.suffix(),
   }) async {
     final int tempId = DateTime.now().millisecondsSinceEpoch;
     final String tempDir = await EpubStorage.bookDirectory('.tmp-$tempId');
@@ -40,7 +40,7 @@ class EpubImporter {
       result: result,
       fileName: fileName,
       tempDir: tempDir,
-      onDuplicateTitle: onDuplicateTitle,
+      policy: policy,
     );
   }
 
@@ -51,13 +51,13 @@ class EpubImporter {
   static Future<String> importFromFile({
     required HibikiDatabase db,
     required String filePath,
-    DuplicateTitleCallback? onDuplicateTitle,
+    DuplicatePolicy policy = const DuplicatePolicy.suffix(),
   }) async {
     return importFromPath(
       db: db,
       filePath: filePath,
       fileName: p.basename(filePath),
-      onDuplicateTitle: onDuplicateTitle,
+      policy: policy,
     );
   }
 
@@ -67,9 +67,8 @@ class EpubImporter {
     required HibikiDatabase db,
     required String filePath,
     required String fileName,
-    DuplicateTitleCallback? onDuplicateTitle,
+    DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     int? sourceId,
-    bool skipIfExists = false,
   }) async {
     final int tempId = DateTime.now().millisecondsSinceEpoch;
     final String tempDir = await EpubStorage.bookDirectory('.tmp-$tempId');
@@ -83,9 +82,8 @@ class EpubImporter {
       result: result,
       fileName: fileName,
       tempDir: tempDir,
-      onDuplicateTitle: onDuplicateTitle,
+      policy: policy,
       sourceId: sourceId,
-      skipIfExists: skipIfExists,
     );
   }
 
@@ -103,9 +101,8 @@ class EpubImporter {
     required _ParseResult result,
     required String fileName,
     required String tempDir,
-    DuplicateTitleCallback? onDuplicateTitle,
+    DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     int? sourceId,
-    bool skipIfExists = false,
   }) async {
     String? insertedKey;
     String extractDir = tempDir;
@@ -147,22 +144,21 @@ class EpubImporter {
               : book.title;
 
       final List<EpubBookRow> existingBooks = await db.getAllEpubBooks();
-      final String storedTitle = await resolveBookTitleConflict(
+      final String storedTitle = await resolveDuplicateTitle(
         existingTitles: existingBooks.map((EpubBookRow b) => b.title).toList(),
         proposedTitle: resolvedTitle,
-        onDuplicateTitle: onDuplicateTitle,
-        skipIfExists: skipIfExists,
+        policy: policy,
       );
 
       // bookKey is the EpubBooks primary key (= sanitized stored title). It is
-      // unique by construction (resolveBookTitleConflict guarantees no two
+      // unique by construction (resolveDuplicateTitle guarantees no two
       // local books share a sanitized key).
       final String bookKey = sanitizeTtuFilename(storedTitle);
 
       // Move the freshly-extracted temp dir to the key-named directory.
       //
       // BUG-564: the target dir may already exist on disk even though no live
-      // row owns the key (resolveBookTitleConflict guarantees key uniqueness
+      // row owns the key (resolveDuplicateTitle guarantees key uniqueness
       // against live rows): a crashed import or a failed post-delete disk
       // cleanup leaves an orphan dir, and Linux rename(2) onto a non-empty
       // target throws ENOTEMPTY (errno 39) -- e.g. re-downloading a remote

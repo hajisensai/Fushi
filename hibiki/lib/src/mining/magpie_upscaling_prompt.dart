@@ -5,8 +5,8 @@
 /// 档位存在 galgame 库那一行上，入口就在游戏卡片的右键菜单里（与「重命名」「设置封面」
 /// 「标签」同一处）—— 用户在哪儿管这个游戏，就在哪儿改它的超分。
 ///
-/// 单独成文件的理由同 `magpie_download_confirm.dart`：让 [MagpieUpscalingService] 保持
-/// 零 UI 依赖（不持 BuildContext、不引 i18n、不碰 DB），这样它才能被单测直接构造。
+/// 单独成文件是为了让 [MagpieUpscalingService] 保持零 UI 依赖（不持 BuildContext、
+/// 不引 i18n、不碰 DB），这样它才能被单测直接构造。
 library;
 
 import 'package:flutter/material.dart';

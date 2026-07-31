@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/sync/deletion_disclosure.dart';
 import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
     show sortedCollectionRows;
 import 'package:hibiki/src/media/collections/collection_shelf_row.dart'
@@ -146,6 +147,11 @@ class _MediaCollectionGridDetailPageState
     final HibikiDestructiveConfirmResult? result =
         await confirmDetailCollectionDelete(
       checkboxLabel: canDeleteMembers ? t.delete_collection_also_books : null,
+      checkedDisclosure: canDeleteMembers
+          ? buildDeletionDisclosure(
+              target: DeletionDisclosureTarget.shelfBook,
+            )
+          : null,
     );
     if (result == null || !mounted) return;
     // 先删成员本体（书/有声书/视频 DB 行 + 磁盘副本），再解散容器。删书不动合集引用

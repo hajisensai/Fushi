@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hibiki/src/media/video/video_danmaku_layout.dart';
 import 'package:hibiki/src/media/video/video_danmaku_model.dart';
 import 'package:hibiki/src/media/video/video_danmaku_source.dart';
+import 'package:hibiki/src/media/video/video_danmaku_text_metrics.dart';
 
 VideoDanmakuItem _item(int startMs, String text) => VideoDanmakuItem(
       startMs: startMs,
@@ -50,6 +51,100 @@ List<String> _keys(Iterable<VideoDanmakuItem> items) {
 }
 
 void main() {
+  // layout 现在用 TextPainter 实测文本宽度，需要测试 binding 提供字体集合。
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('VideoDanmakuLayout 退场几何（BUG-1297）', () {
+    // 滚动弹幕的行程 = 视口宽 + 自身宽；progress 走到 1 的同一刻它离开活动集。
+    // 因此「宽度」必须是真实渲染宽度，且滚动弹幕不得在画面内被淡出。
+    const Size viewport = Size(400, 200);
+    const int scrollMs = 8000;
+
+    VideoDanmakuLayoutEntry entryAt(String text, int positionMs,
+        {double fontScale = 1.0}) {
+      return VideoDanmakuLayout.layout(
+        items: <VideoDanmakuItem>[_item(0, text)],
+        positionMs: positionMs,
+        viewportSize: viewport,
+        maxActive: 10,
+        maxLanes: 4,
+        fontScale: fontScale,
+      ).entries.single;
+    }
+
+    test('scroll danmaku is fully off-screen on the last frame it renders', () {
+      // 短、中、长三档：旧实现按「每字 18px 且封顶 720px」估宽，长弹幕在右半截
+      // 仍可见时就被判过期，表现为走到一半突然消失。
+      for (final String text in <String>[
+        'あ',
+        '短いコメント',
+        'とても長いコメントです' * 6,
+      ]) {
+        final VideoDanmakuLayoutEntry entry = entryAt(text, scrollMs);
+        // 右边缘用**独立测得**的宽度算，不用 entry.width——否则几何一旦退回估算，
+        // 断言基准会跟着一起偏，守卫自洽成一句废话。
+        final double renderedWidth =
+            VideoDanmakuTextMetrics.shared.widthOf(text, 1.0);
+        expect(
+          entry.position.dx + renderedWidth,
+          lessThanOrEqualTo(0.0),
+          reason: '过期那一帧文本右边缘必须已越过视口左边界（len=${text.length}）',
+        );
+        expect(entry.width, renderedWidth, reason: 'entry.width 必须是实测渲染宽度');
+      }
+    });
+
+    test('scroll danmaku still overlaps the viewport one frame before expiry',
+        () {
+      // 反向守卫：不能靠「提前很久就把弹幕推出屏外」蒙混过关——退场必须刚好衔接。
+      final VideoDanmakuLayoutEntry entry = entryAt('短いコメント', scrollMs - 100);
+      expect(
+        entry.position.dx + entry.width,
+        greaterThan(0.0),
+        reason: '尚未过期时弹幕仍应与视口有交集，退场时刻要与过期时刻严丝合缝',
+      );
+    });
+
+    test('scroll danmaku never fades out inside the viewport', () {
+      for (int positionMs = 0; positionMs <= scrollMs; positionMs += 100) {
+        expect(
+          entryAt('短いコメント', positionMs).opacity,
+          1.0,
+          reason: '滚动弹幕靠位移退场，任何时刻都不得渐隐（positionMs=$positionMs）',
+        );
+      }
+    });
+
+    test('fixed danmaku keeps the tail fade-out', () {
+      // 固定弹幕不移动，不淡出就是凭空消失——淡出只属于它们。
+      double opacityAt(int positionMs, VideoDanmakuMode mode) =>
+          VideoDanmakuLayout.layout(
+            items: <VideoDanmakuItem>[_itemMode(0, 'ピン留め', mode)],
+            positionMs: positionMs,
+            viewportSize: viewport,
+            maxActive: 10,
+            maxLanes: 4,
+          ).entries.single.opacity;
+      for (final VideoDanmakuMode mode in <VideoDanmakuMode>[
+        VideoDanmakuMode.top,
+        VideoDanmakuMode.bottom,
+      ]) {
+        expect(opacityAt(2000, mode), 1.0, reason: '$mode 停留期间完全不透明');
+        expect(opacityAt(3900, mode), lessThan(1.0), reason: '$mode 末段应渐隐');
+        expect(opacityAt(4000, mode), 0.0, reason: '$mode 到期时已淡到全透明');
+      }
+    });
+
+    test('measured width is not capped, and scales with font size', () {
+      // 旧估算把宽度封在 720px：40 个全角字（测试字体每字 = 字号）已经超过它。
+      final VideoDanmakuLayoutEntry long = entryAt('あ' * 40, 0);
+      expect(long.width, greaterThan(720.0), reason: '长弹幕宽度不得被硬上限截断');
+      final VideoDanmakuLayoutEntry small = entryAt('あ' * 10, 0);
+      final VideoDanmakuLayoutEntry big = entryAt('あ' * 10, 0, fontScale: 2.0);
+      expect(big.width, greaterThan(small.width), reason: '宽度随字号缩放');
+    });
+  });
+
   group('VideoDanmakuLayout', () {
     test('does not place simultaneous active comments on the same lane', () {
       final VideoDanmakuLayoutSnapshot snapshot = VideoDanmakuLayout.layout(

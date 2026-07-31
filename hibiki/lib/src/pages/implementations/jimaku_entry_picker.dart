@@ -59,69 +59,56 @@ class JimakuEntryPicker extends StatelessWidget {
   Widget _buildEntryChoice(BuildContext context, JimakuEntry entry) {
     final ThemeData theme = Theme.of(context);
     final bool selected = selectedEntryId == entry.id;
-    return Material(
+    return HibikiCard(
       key: ValueKey<String>('jimaku_entry_${entry.id}'),
-      color: selected
-          ? theme.colorScheme.secondaryContainer
-          : theme.colorScheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: selected
-              ? theme.colorScheme.primary
-              : theme.colorScheme.outlineVariant,
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: enabled ? () => onSelected(entry) : null,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Icon(
-                  selected
-                      ? Icons.radio_button_checked
-                      : Icons.radio_button_unchecked,
-                  size: 20,
-                  color: selected
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      entry.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyLarge,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      <String>[
-                        'Jimaku #${entry.id}',
-                        if (entry.anilistId != null)
-                          'AniList #${entry.anilistId}',
-                      ].join(' · '),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    _buildInventorySummary(theme, entry.id),
-                  ],
-                ),
-              ),
-            ],
+      selected: selected,
+      borderColor: selected
+          ? theme.colorScheme.primary
+          : theme.colorScheme.outlineVariant,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      onTap: enabled ? () => onSelected(entry) : null,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(
+              selected
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_unchecked,
+              size: 20,
+              color: selected
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-        ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  entry.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyLarge,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  <String>[
+                    'Jimaku #${entry.id}',
+                    if (entry.anilistId != null) 'AniList #${entry.anilistId}',
+                  ].join(' · '),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                _buildInventorySummary(theme, entry.id),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

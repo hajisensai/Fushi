@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:hibiki/src/sync/deletion_disclosure.dart';
 import 'package:hibiki/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
 import 'package:hibiki/src/pages/implementations/tag_picker_page.dart';
@@ -114,6 +115,7 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
   /// 返回 null = 取消。
   Future<HibikiDestructiveConfirmResult?> confirmDetailCollectionDelete({
     String? checkboxLabel,
+    DeletionDisclosure? checkedDisclosure,
   }) {
     return showAppDialog<HibikiDestructiveConfirmResult>(
       context: context,
@@ -122,6 +124,7 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
         message: t.delete_collection_confirm,
         confirmLabel: t.delete_collection,
         checkboxLabel: checkboxLabel,
+        checkedDisclosure: checkedDisclosure,
       ),
     );
   }

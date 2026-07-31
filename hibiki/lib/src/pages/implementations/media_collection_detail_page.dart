@@ -6,6 +6,8 @@ import 'package:hibiki/src/media/collections/collection_continue.dart';
 import 'package:hibiki/src/media/collections/collection_one_key_sort.dart'
     show CollectionSortMeta, compareCollectionMembers;
 import 'package:hibiki/src/media/media_cover_source.dart';
+import 'package:hibiki/src/media/video/cover_ui/landscape_cover_image.dart';
+import 'package:hibiki/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:hibiki/src/media/video/video_episode_rail.dart';
 import 'package:hibiki/src/pages/implementations/collection_detail_shared.dart';
 import 'package:hibiki/src/pages/implementations/jimaku_batch_dialog.dart';
@@ -268,9 +270,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     Navigator.of(context).maybePop();
   }
 
-  /// 单集封面缩略图（16:9）：有封面文件则 [Image.file]，否则 letterbox 占位图标。
+  /// 单集封面缩略图（16:9 槽）：有封面文件则渲染，否则 letterbox 占位图标。
   /// 每集是独立视频行，[VideoBookRow.coverPath] 由导入 / 后台补齐（home_video_page
-  /// `_maybeBackfillCovers`）逐集抽帧填充。
+  /// `_maybeBackfillCovers`）逐集抽帧填充；刮削可把它覆盖成 2:3 竖版海报——
+  /// BUG-1299：走 [PortraitCoverImage] 的横槽自适应（横版截帧铺满、竖版海报
+  /// 模糊垫底 + contain），不再 `BoxFit.cover` 把海报裁成中间一条。
   Widget _episodeThumb(VideoBookRow ep, ColorScheme cs) {
     const double w = 96;
     const double h = 54;
@@ -281,14 +285,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     if (cover != null) {
       return ClipRRect(
         borderRadius: HibikiBorderRadius.card,
-        child: Image(
-          image: cover,
+        child: SizedBox(
           width: w,
           height: h,
-          fit: BoxFit.cover,
-          // 抽帧文件损坏 / 读取失败时退回占位，绝不抛。
-          errorBuilder: (BuildContext _, Object __, StackTrace? ___) =>
-              _thumbPlaceholder(w, h, cs),
+          child: PortraitCoverImage(
+            image: cover,
+            landscapeSlot: true,
+            // 抽帧文件损坏 / 读取失败时退回占位，绝不抛。
+            errorBuilder: (BuildContext _) => _thumbPlaceholder(w, h, cs),
+          ),
         ),
       );
     }
@@ -315,48 +320,63 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final ImageProvider? cover = _heroCover;
     final VideoBookRow episode = _members[_continueIndex];
     final bool rtl = Directionality.of(context) == TextDirection.rtl;
+    // 可读性渐变：压在封面之上、竖版海报前景之下（层序由 [LandscapeCoverImage]
+    // 保证，见该组件文档）。无封面时直接铺在底色上，与引入组件前一致。
+    final List<Widget> overlays = <Widget>[
+      const DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            stops: <double>[0, 0.48, 1],
+            colors: <Color>[
+              Color(0x52000000),
+              Color(0x22000000),
+              Color(0xE8000000),
+            ],
+          ),
+        ),
+      ),
+      DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: rtl ? Alignment.centerRight : Alignment.centerLeft,
+            end: rtl ? Alignment.centerLeft : Alignment.centerRight,
+            stops: const <double>[0, 0.66, 1],
+            colors: const <Color>[
+              Color(0xC9000000),
+              Color(0x26000000),
+              Color(0x7A000000),
+            ],
+          ),
+        ),
+      ),
+    ];
     return SizedBox(
       height: height,
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
           ColoredBox(color: cs.surfaceContainerHighest),
+          // 合集封面列（`MediaCollections.coverPath`）同时承载导入抽帧的 16:9 横图
+          // 与刮削写入的 2:3 竖版海报，故朝向判定交给 [LandscapeCoverImage]：横图
+          // 照旧 cover 铺满，竖版海报走模糊垫底 + 靠右完整显示（BUG-1298）。
           if (cover != null)
-            Image(
+            LandscapeCoverImage(
+              key: const ValueKey<String>('collection-hero-cover'),
               image: cover,
-              fit: BoxFit.cover,
-              alignment: Alignment.center,
-              errorBuilder: (_, __, ___) =>
+              overlays: overlays,
+              // 竖版海报避让顶部 AppBar 与底部内容区，靠右不压左下标题/播放按钮。
+              foregroundPadding: EdgeInsetsDirectional.only(
+                top: kToolbarHeight,
+                bottom: tokens.spacing.section,
+                end: tokens.spacing.page,
+              ),
+              errorBuilder: (BuildContext _) =>
                   ColoredBox(color: cs.surfaceContainerHighest),
-            ),
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                stops: <double>[0, 0.48, 1],
-                colors: <Color>[
-                  Color(0x52000000),
-                  Color(0x22000000),
-                  Color(0xE8000000),
-                ],
-              ),
-            ),
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: rtl ? Alignment.centerRight : Alignment.centerLeft,
-                end: rtl ? Alignment.centerLeft : Alignment.centerRight,
-                stops: const <double>[0, 0.66, 1],
-                colors: const <Color>[
-                  Color(0xC9000000),
-                  Color(0x26000000),
-                  Color(0x7A000000),
-                ],
-              ),
-            ),
-          ),
+            )
+          else
+            ...overlays,
           SafeArea(
             bottom: false,
             child: Padding(

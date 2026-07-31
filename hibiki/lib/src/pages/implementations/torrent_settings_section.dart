@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hibiki/src/media/torrent/anime_download_config.dart';
 import 'package:hibiki/src/media/torrent/download_network_proxy.dart';
 import 'package:hibiki/src/media/torrent/download_save_root.dart';
+import 'package:hibiki/src/media/torrent/qb_torrent_backend.dart';
 import 'package:hibiki/src/media/torrent/torrent_backend.dart';
 import 'package:hibiki/src/models/app_model.dart';
 import 'package:hibiki/utils.dart';
@@ -78,25 +79,35 @@ class _TorrentSettingsSectionState
   }
 
   /// 测试与下载后端的连通性（按当前配置解析后端；qb = WebUI 版本号）。
-  /// 成功 snack 显示版本，失败提示检查地址/账号。
+  /// 成功 snack 显示版本；失败时透传后端给的具体原因（BUG-1295：网络不通/
+  /// 账密错/qb 封 IP 此前折叠成同一句「检查地址与账号密码」，无从自查）。
   Future<void> _probeConnection() async {
     if (_probing) return;
     setState(() => _probing = true);
     final TorrentBackend backend =
         ref.read(appProvider).createTorrentBackend(_config);
     String? version;
+    String? failure;
     try {
       version = await backend.probeConnection();
     } finally {
+      if (version == null && backend is QbTorrentBackend) {
+        failure = backend.lastProbeFailure;
+      }
       backend.close();
     }
     if (!mounted) return;
     setState(() => _probing = false);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(version == null
-          ? t.download_test_connection_failed
-          : t.download_test_connection_ok(version: version)),
-    ));
+    final String message;
+    if (version != null) {
+      message = t.download_test_connection_ok(version: version);
+    } else if (failure != null && failure.isNotEmpty) {
+      message = t.download_test_connection_failed_reason(message: failure);
+    } else {
+      message = t.download_test_connection_failed;
+    }
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// TODO-1961：选新的下载目录。校验不过**不写**配置，直接 snack 报原因（不静默）。

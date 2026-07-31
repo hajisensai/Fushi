@@ -106,8 +106,18 @@ void main() {
       expect(prefBody.contains('_sanitizedHtmlCache.containsKey(filePath)'),
           isTrue,
           reason: '已缓存就跳过预取');
-      expect(prefBody.contains('scheduleMicrotask'), isTrue,
-          reason: '预取走后台，不阻塞当前帧');
+      // 渐进重建 phase2：旧断言钉的 scheduleMicrotask 恰是问题本身——microtask
+      // 在当前任务展开后立刻同步执行，读盘+净化全落在同一帧内（假「后台」）。
+      // 现钉事件队列任务 + 异步 IO + style epoch 过期丢弃三件套。
+      expect(prefBody.contains('scheduleMicrotask'), isFalse,
+          reason: 'microtask 同帧同步执行会阻塞 UI，预取必须走事件队列任务');
+      expect(prefBody.contains('unawaited(Future<void>(()'), isTrue,
+          reason: '预取走事件队列任务（当前帧先收尾）+ 异步读盘');
+      expect(prefBody.contains('await file.readAsBytes()'), isTrue,
+          reason: 'IO 必须异步，让出主 isolate');
+      expect(prefBody.contains('_styleEpoch != styleEpochAtStart'), isTrue,
+          reason: '真异步后必须按 style epoch 丢弃跨样式失效的过期结果'
+              '（styleTag 烤进缓存条目，旧代际入缓存=脏样式）');
     });
   });
 

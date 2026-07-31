@@ -39,19 +39,23 @@ List<TorrentSnapshot> parseQbTorrentInfos(String body) {
       if (e is! Map) continue;
       final dynamic hash = e['hash'];
       if (hash is! String || hash.isEmpty) continue;
-      out.add(
-        TorrentSnapshot(
-          hash: hash,
-          name: e['name'] is String ? e['name'] as String : '',
-          progress:
-              e['progress'] is num ? (e['progress'] as num).toDouble() : 0,
-          state: e['state'] is String ? e['state'] as String : '',
-          savePath: e['save_path'] is String ? e['save_path'] as String : '',
-          contentPath:
-              e['content_path'] is String ? e['content_path'] as String : '',
-          amountLeft: e['amount_left'] is int ? e['amount_left'] as int : -1,
-        ),
-      );
+      out.add(TorrentSnapshot(
+        hash: hash,
+        name: e['name'] is String ? e['name'] as String : '',
+        progress: e['progress'] is num ? (e['progress'] as num).toDouble() : 0,
+        state: e['state'] is String ? e['state'] as String : '',
+        savePath: e['save_path'] is String ? e['save_path'] as String : '',
+        contentPath:
+            e['content_path'] is String ? e['content_path'] as String : '',
+        amountLeft: e['amount_left'] is int ? e['amount_left'] as int : -1,
+        // BUG-1294：qb 一直返回这些字段，此前解析时被丢弃。
+        downRateBps: e['dlspeed'] is int ? e['dlspeed'] as int : 0,
+        upRateBps: e['upspeed'] is int ? e['upspeed'] as int : 0,
+        downloadedBytes: e['downloaded'] is int ? e['downloaded'] as int : 0,
+        uploadedBytes: e['uploaded'] is int ? e['uploaded'] as int : 0,
+        numPeers: (e['num_seeds'] is int ? e['num_seeds'] as int : 0) +
+            (e['num_leechs'] is int ? e['num_leechs'] as int : 0),
+      ));
     }
     return out;
   } catch (_) {
@@ -113,7 +117,19 @@ class QBittorrentClient {
   /// 当前会话 cookie；null = 尚未登录或已失效。
   String? _sid;
 
-  /// 登录并缓存 SID cookie。成功返回 true；凭据错误/网络异常返回 false。
+  /// qBittorrent 开着「对本地主机的客户端跳过身份验证」时，登录接口仍校验
+  /// 账密（用户往往根本没设/记不得），但业务接口匿名即可用。BUG-1295：
+  /// 登录失败后做一次匿名探测，通了就免登录直连，别把可用的 API 卡死在
+  /// 登录门外。true = 已验证匿名可用。
+  bool _anonymousOk = false;
+
+  /// 最近一次连接/登录失败的可读原因（英文原样，探测 UI 透传显示）；
+  /// 成功后清空。BUG-1295：此前所有失败路径都折叠成一个 null，用户无从自查。
+  String? get lastFailure => _lastFailure;
+  String? _lastFailure;
+
+  /// 登录并缓存 SID cookie。成功返回 true；凭据错误/网络异常返回 false
+  /// （原因落 [lastFailure]）。
   Future<bool> login() async {
     _sid = null;
     try {
@@ -123,23 +139,72 @@ class QBittorrentClient {
         headers: <String, String>{'Referer': baseUrl},
         body: <String, String>{'username': username, 'password': password},
       ).timeout(requestTimeout);
+      final String body = res.body.trim();
+      // 登录失败超限（默认 5 次）后 qb 返回 403 + "…banned…"，解封前填对
+      // 账密也进不去——必须单独说清，否则用户会反复重试把封禁续期。
+      if (res.statusCode == 403) {
+        _lastFailure = body.toLowerCase().contains('banned')
+            ? 'IP banned by qBittorrent after too many failed logins '
+                '(unban: restart qBittorrent or wait, default 1 hour)'
+            : 'HTTP 403: $body';
+        return false;
+      }
       // 成功是 200 + body `Ok.`；密码错误也是 200 但 body `Fails.`。
-      if (res.statusCode != 200 || !res.body.trim().startsWith('Ok')) {
+      if (res.statusCode != 200) {
+        _lastFailure = 'HTTP ${res.statusCode}${body.isEmpty ? '' : ': $body'}';
+        return false;
+      }
+      if (!body.startsWith('Ok')) {
+        _lastFailure = 'login rejected (wrong username/password)';
         return false;
       }
       _sid = extractSidCookie(res.headers['set-cookie']);
-      return _sid != null;
-    } catch (_) {
+      if (_sid == null) {
+        _lastFailure = 'login ok but no SID cookie in response';
+        return false;
+      }
+      _lastFailure = null;
+      return true;
+    } catch (e) {
+      _lastFailure = e.toString();
       return false;
     }
   }
 
-  /// 连接测试：`GET /api/v2/app/version` → 形如 `v4.6.5`；失败返回 null。
+  /// 匿名探测：不带 Cookie 直接拉版本号。qb 的 localhost 免密（或整体关闭
+  /// 认证）时可用。成功则清空 [lastFailure]（连接本身是通的）。
+  Future<bool> _probeAnonymous() async {
+    try {
+      final http.Response res = await _client.get(
+        Uri.parse('$baseUrl/api/v2/app/version'),
+        headers: <String, String>{'Referer': baseUrl},
+      ).timeout(requestTimeout);
+      if (res.statusCode == 200 && res.body.trim().isNotEmpty) {
+        _lastFailure = null;
+        return true;
+      }
+      return false;
+    } catch (_) {
+      // 保留 login() 已记下的失败原因（网络不通时两边是同一个原因）。
+      return false;
+    }
+  }
+
+  /// 连接测试：`GET /api/v2/app/version` → 形如 `v4.6.5`；失败返回 null
+  /// （原因见 [lastFailure]）。
   Future<String?> fetchVersion() async {
     final http.Response? res = await _request('GET', '/api/v2/app/version');
-    if (res == null || res.statusCode != 200) return null;
+    if (res == null) return null;
+    if (res.statusCode != 200) {
+      _lastFailure = 'HTTP ${res.statusCode} from /api/v2/app/version';
+      return null;
+    }
     final String version = res.body.trim();
-    return version.isEmpty ? null : version;
+    if (version.isEmpty) {
+      _lastFailure = 'empty version response';
+      return null;
+    }
+    return version;
   }
 
   /// 添加下载：[urls] 是 magnet 链接或 .torrent URL（多个换行连接）。
@@ -276,8 +341,8 @@ class QBittorrentClient {
     return (false, body.isEmpty ? 'HTTP ${res.statusCode}' : body);
   }
 
-  /// 带会话编排的请求：懒登录 → 发请求 → 403 时重新登录一次并重试。
-  /// 任何异常/登录失败返回 null。
+  /// 带会话编排的请求：懒登录（登录失败退匿名探测，BUG-1295）→ 发请求 →
+  /// 403 时重新认证一次并重试。任何异常/认证失败返回 null。
   Future<http.Response?> _request(
     String method,
     String path, {
@@ -285,18 +350,29 @@ class QBittorrentClient {
     Map<String, String>? form,
   }) async {
     try {
-      if (_sid == null && !await login()) return null;
+      if (_sid == null && !_anonymousOk && !await _authenticate()) return null;
       http.Response res = await _send(method, path, query: query, form: form);
       if (res.statusCode == 403) {
-        // 会话过期：只重登一次，仍失败就把 403 交给调用方按失败处理。
+        // 会话过期 / 免密开关被关掉：只重认证一次，仍失败就把 403 交给
+        // 调用方按失败处理。
         _sid = null;
-        if (!await login()) return null;
+        _anonymousOk = false;
+        if (!await _authenticate()) return null;
         res = await _send(method, path, query: query, form: form);
       }
       return res;
-    } catch (_) {
+    } catch (e) {
+      _lastFailure = e.toString();
       return null;
     }
+  }
+
+  /// 认证编排：正常登录优先；登录失败（典型：qb localhost 免密下账密没配）
+  /// 再匿名探测一次，通了就免登录直连。
+  Future<bool> _authenticate() async {
+    if (await login()) return true;
+    _anonymousOk = await _probeAnonymous();
+    return _anonymousOk;
   }
 
   /// 发一次裸请求（带 SID cookie 与 Referer）。

@@ -12,6 +12,10 @@ class QbTorrentBackend implements TorrentRemovalBackend {
   @override
   Future<String?> probeConnection() => _client.fetchVersion();
 
+  /// 最近一次连接/登录失败的可读原因（BUG-1295：设置页测试连接透传显示，
+  /// 不再把网络不通/账密错/IP 被封折叠成同一句话）。
+  String? get lastProbeFailure => _client.lastFailure;
+
   /// 确保分类存在（qb 侧 409 已存在也算成功）。
   @override
   Future<bool> prepareCategory(String category) =>

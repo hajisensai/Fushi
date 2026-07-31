@@ -133,6 +133,44 @@ void main() {
     });
   });
 
+  group('isImageOnlyChapter — 字数提示免解析短路（开书性能）', () {
+    // 提示口径（kChapterCharCountCaliber 实义字数）恒 ≤ 纯文本长度，因此
+    // hint > 阈值 ⇒ 必非纯图片章，无需解析。这里用「HTML 本身会被判为插图页、
+    // 提示却超阈值」的矛盾构造观察短路真的生效（真实数据中该矛盾不会出现，
+    // 因为插图页的实义字数必 ≤ 纯文本长度 ≤ 20）。
+    const String illustrationHtml =
+        '<html><body><img src="p1.jpg"/></body></html>';
+
+    test('hint > 阈值：免解析直接判非插图页（短路生效的可观测证据）', () {
+      final EpubBook book = _book(illustrationHtml);
+      book.setChapterCharCountHints(<int>[100]);
+      expect(book.isImageOnlyChapter(0), isFalse,
+          reason: '实义字数超阈值的章必是正文章，不该再读盘/解析');
+    });
+
+    test('hint ≤ 阈值：不能反推，回落全量解析（插图页仍被识别）', () {
+      final EpubBook book = _book(illustrationHtml);
+      book.setChapterCharCountHints(<int>[0]);
+      expect(book.isImageOnlyChapter(0), isTrue,
+          reason: '低字数只是必要条件，仍需解析确认「有图 + 短文本」');
+    });
+
+    test('hints 长度不足：超界章节按无提示处理（回落解析）', () {
+      final EpubBook book = _book(illustrationHtml);
+      book.setChapterCharCountHints(const <int>[]);
+      expect(book.isImageOnlyChapter(0), isTrue);
+    });
+
+    test('记忆化：注入提示前已解析过的章保持原判定（答案会话内恒定）', () {
+      final EpubBook book = _book(illustrationHtml);
+      expect(book.isImageOnlyChapter(0), isTrue);
+      // 后注入的矛盾提示不翻转已记忆化的结果——章节文件在一次会话内不变，
+      // 判定恒定；这同时证明第二次调用走的是缓存而非重新解析。
+      book.setChapterCharCountHints(<int>[100]);
+      expect(book.isImageOnlyChapter(0), isTrue);
+    });
+  });
+
   group('chapterImageSrc / chapterImageSrcs — feed the merge renderer', () {
     test('first <img> src', () {
       final EpubBook book =

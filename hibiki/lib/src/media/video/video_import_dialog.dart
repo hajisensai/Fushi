@@ -69,7 +69,7 @@ String singleVideoBookUid(String videoPath) {
 /// （`base (2)` / `base (3)`...）；否则原样返回。
 ///
 /// 纯函数。照搬 EpubImporter 的**无回调静默加后缀**策略（见
-/// `resolveBookTitleConflict` 的 `_uniqueSuffixedTitle`），保持"本地不出现两个
+/// `resolveDuplicateTitle` 的 `_uniqueSuffixedTitle`），保持"本地不出现两个
 /// 同 book_uid 视频"的不变量，供同步/导入安全使用。video 导入对话框无重名提示
 /// 回调基础设施，故采用与 EpubImporter 无回调路径一致的静默后缀 UX。
 String uniqueVideoBookUid(String base, Set<String> existingKeys) {
@@ -432,10 +432,10 @@ class _VideoImportDialogState extends State<VideoImportDialog>
   /// 单集 → 单片 VideoBook（内嵌默认字幕轨）。返回写入的 bookUid。
   Future<String?> _importGroup(VideoGroup group) async {
     // TODO-1237 ②：文件夹扫描去重——同一物理文件已在库则跳过，不再 uniqueVideoBookUid
-    // 加后缀建 `X (2)` 重复条目（对齐 EPUB 扫描的 skipIfExists，BUG-443）。以首集/单片
+    // 加后缀建 `X (2)` 重复条目（对齐 EPUB 扫描的 DuplicatePolicy.skip()，BUG-443）。以首集/单片
     // 绝对路径判重（findByVideoPath 的单一真相，按 normalizeVideoPath 归一），返回 null
     // 表示本组已导入、被跳过。
-    if (await widget.repo.isVideoPathReferenced(group.episodes.first.path)) {
+    if (await widget.repo.isDuplicateVideoPath(group.episodes.first.path)) {
       return null;
     }
     if (group.isPlaylist) {

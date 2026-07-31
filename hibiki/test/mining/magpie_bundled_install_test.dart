@@ -78,18 +78,14 @@ void main() {
       expect(kMagpieBundledDirectoryName, isNot(kMagpieInstallDirName));
     });
 
-    test('随包文件名带 slim，与 fork release 的完整包区分开', () {
+    test('随包文件名带 slim，明确是精简归档', () {
       expect(magpieBundledZipName('x64'), 'Magpie-hibiki-slim-x64.zip');
-      expect(magpieBundledZipName('x64'), isNot(magpieZipName('x64')));
-    });
-
-    test('来源标记与 sha 标记是两个文件', () {
-      expect(magpieSourceMarkerName(), isNot(magpieMarkerName()));
+      expect(magpieBundledZipName('x64'), contains('slim'));
     });
   });
 
   group('随包安装的校验强度', () {
-    test('没有随包归档 → 返回 false（让调用方回退网络），不抛', () async {
+    test('没有随包归档 → 返回 false，由调用方提示更新 Hibiki，不抛', () async {
       final MagpieInstaller installer =
           MagpieInstaller(bundledDirectory: bundleDir);
       expect(await installer.installBundledMagpieForTesting('x64'), isFalse);
@@ -125,41 +121,6 @@ void main() {
         installer.installBundledMagpieForTesting('x64'),
         throwsA(isA<MagpieInstallException>()),
       );
-    });
-  });
-
-  group('源码守卫：自更新熔断', () {
-    late String source;
-
-    setUpAll(() {
-      source = File('lib/src/mining/magpie_installer.dart').readAsStringSync();
-    });
-
-    test('_updateSilently 必须在读标记之前就对随包版早退', () {
-      final int guard = source.indexOf('if (installedFromBundle()) return;');
-      expect(guard, greaterThanOrEqualTo(0),
-          reason: '随包精简版的 sha 必然不等于 release 完整包，不早退就会每次开 app '
-              '都下载 10.79 MB 覆盖掉 4.72 MB 的精简包');
-      final int updateStart = source.indexOf('Future<void> _updateSilently()');
-      final int markerRead =
-          source.indexOf('final File marker = _markerFile();', updateStart);
-      expect(updateStart, greaterThanOrEqualTo(0));
-      expect(guard, greaterThan(updateStart));
-      expect(guard, lessThan(markerRead), reason: '早退必须在任何网络/标记判据之前');
-    });
-
-    test('随包路径写 bundle 来源，网络路径清掉它', () {
-      // 网络装的若留着旧的 bundle 标记，会伪装成随包版从此不再更新。
-      expect(source, contains('source: kMagpieBundleSource'));
-      expect(source, contains('source: null'));
-      expect(source, contains('await sourceMarker.delete()'));
-    });
-
-    test('随包归档装完不得删除归档（另一次修复还要用）', () {
-      final int bundleCall = source.indexOf('source: kMagpieBundleSource');
-      final int before =
-          source.lastIndexOf('deleteArchiveOnSuccess: false', bundleCall);
-      expect(before, greaterThanOrEqualTo(0), reason: '随包归档是主包的一部分，删了就没法再修复安装');
     });
   });
 
